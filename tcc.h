@@ -889,6 +889,7 @@ struct TCCState {
 
     /* predefined sections */
     Section *text_section, *data_section, *rodata_section, *bss_section;
+    Section *tdata_section, *tbss_section;
     Section *common_section;
     Section *cur_text_section; /* current section where function code is generated */
 #ifdef CONFIG_TCC_BCHECK
@@ -1063,7 +1064,8 @@ struct filespec {
 #define VT_STATIC  0x00002000  /* static variable */
 #define VT_TYPEDEF 0x00004000  /* typedef definition */
 #define VT_INLINE  0x00008000  /* inline definition */
-/* currently unused: 0x000[1248]0000  */
+#define VT_TLS     0x00010000  /* thread-local storage */
+/* currently unused: 0x000[248]0000  */
 
 #define VT_STRUCT_SHIFT 20     /* shift for bitfield shift values (32 - 2*6) */
 #define VT_STRUCT_MASK (((1U << (6+6)) - 1) << VT_STRUCT_SHIFT | VT_BITFIELD)
@@ -1081,7 +1083,7 @@ struct filespec {
 #define VT_ATOMIC   VT_VOLATILE
 
 /* type mask (except storage) */
-#define VT_STORAGE (VT_EXTERN | VT_STATIC | VT_TYPEDEF | VT_INLINE)
+#define VT_STORAGE (VT_EXTERN | VT_STATIC | VT_TYPEDEF | VT_INLINE | VT_TLS)
 #define VT_TYPE (~(VT_STORAGE|VT_STRUCT_MASK))
 
 /* symbol was created by tccasm.c first */
@@ -1970,6 +1972,8 @@ static inline void post_sem(TCCSem *p) {
 #define data_section        TCC_STATE_VAR(data_section)
 #define rodata_section      TCC_STATE_VAR(rodata_section)
 #define bss_section         TCC_STATE_VAR(bss_section)
+#define tdata_section       TCC_STATE_VAR(tdata_section)
+#define tbss_section        TCC_STATE_VAR(tbss_section)
 #define common_section      TCC_STATE_VAR(common_section)
 #define cur_text_section    TCC_STATE_VAR(cur_text_section)
 #define bounds_section      TCC_STATE_VAR(bounds_section)

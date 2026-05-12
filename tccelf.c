@@ -70,6 +70,8 @@ ST_FUNC void tccelf_new(TCCState *s)
     /* create ro data section (make ro after relocation done with GNU_RELRO) */
     rodata_section = new_section(s, rdata, SHT_PROGBITS, shf_RELRO);
     bss_section = new_section(s, ".bss", SHT_NOBITS, SHF_ALLOC | SHF_WRITE);
+    tdata_section = new_section(s, ".tdata", SHT_PROGBITS, SHF_ALLOC | SHF_WRITE | SHF_TLS);
+    tbss_section = new_section(s, ".tbss", SHT_NOBITS, SHF_ALLOC | SHF_WRITE | SHF_TLS);
     common_section = new_section(s, ".common", SHT_NOBITS, SHF_PRIVATE);
     common_section->sh_num = SHN_COMMON;
 
@@ -2294,7 +2296,7 @@ static int sort_sections(TCCState *s1, int *sec_order, struct dyn_inf *d)
         if (k < 0x900)
             ++d->shnum;
         if (k < 0x700) {
-            f = s->sh_flags & (SHF_ALLOC|SHF_WRITE|SHF_EXECINSTR|SHF_TLS);
+            f = s->sh_flags & (SHF_ALLOC|SHF_WRITE|SHF_EXECINSTR);
 #if TARGETOS_NetBSD
 	    /* NetBSD only supports 2 PT_LOAD sections.
 	       See: https://blog.netbsd.org/tnf/entry/the_first_report_on_lld */
@@ -2353,6 +2355,18 @@ static int layout_sections(TCCState *s1, int *sec_order, struct dyn_inf *d)
         ++phnum;
     if (d->roinf)
         ++phnum;
+    {
+        int has_tls = 0;
+        for (i = 1; i < s1->nb_sections; i++) {
+            s = s1->sections[i];
+            if (s->sh_flags & SHF_TLS) {
+                has_tls = 1;
+                break;
+            }
+        }
+        if (has_tls)
+            ++phnum;
+    }
     d->phnum = phnum;
     d->phdr = tcc_mallocz(phnum * sizeof(ElfW(Phdr)));
 
@@ -2429,10 +2443,6 @@ static int layout_sections(TCCState *s1, int *sec_order, struct dyn_inf *d)
                 ph->p_flags |= PF_W;
             if (f & SHF_EXECINSTR)
                 ph->p_flags |= PF_X;
-            if (f & SHF_TLS) {
-                ph->p_type = PT_TLS;
-                ph->p_align = align + 1;
-            }
 
             ph->p_offset = file_offset;
             ph->p_vaddr = addr;
@@ -2477,6 +2487,34 @@ static int layout_sections(TCCState *s1, int *sec_order, struct dyn_inf *d)
         fill_phdr(++ph, PT_GNU_EH_FRAME, eh_frame_hdr_section);
     if (d->roinf)
         fill_phdr(++ph, PT_GNU_RELRO, d->roinf)->p_flags |= PF_W;
+    {
+        /* Create PT_TLS segment covering all TLS sections */
+        Section *tls_start_sec = NULL;
+        addr_t tls_start = 0, tls_end = 0;
+        for (i = 1; i < s1->nb_sections; i++) {
+            s = s1->sections[i];
+            if (s->sh_flags & SHF_TLS && s->sh_size) {
+                if (!tls_start_sec) {
+                    tls_start_sec = s;
+                    tls_start = s->sh_addr;
+                    tls_end = s->sh_addr + s->sh_size;
+                } else {
+                    if (s->sh_addr < tls_start)
+                        tls_start = s->sh_addr;
+                    if (s->sh_addr + s->sh_size > tls_end)
+                        tls_end = s->sh_addr + s->sh_size;
+                }
+            }
+        }
+        if (tls_start_sec) {
+            ph = fill_phdr(++ph, PT_TLS, tls_start_sec);
+            ph->p_vaddr = tls_start;
+            ph->p_paddr = tls_start;
+            ph->p_filesz = tls_end - tls_start;
+            ph->p_memsz = ph->p_filesz;
+            ph->p_align = tls_start_sec->sh_addralign;
+        }
+    }
     if (d->interp)
         fill_phdr(&d->phdr[1], PT_INTERP, d->interp);
     if (phfill) {

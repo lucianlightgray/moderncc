@@ -526,6 +526,8 @@ ST_FUNC void put_extern_sym2(Sym *sym, int sh_num,
             sym_type = STT_NOTYPE;
             if (IS_ASM_FUNC(t))
                 sym_type = STT_FUNC;
+        } else if (t & VT_TLS) {
+            sym_type = STT_TLS;
         } else {
             sym_type = STT_OBJECT;
         }
@@ -4931,7 +4933,12 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label)
             }
             goto basic_type2;
         case TOK_THREAD_LOCAL:
-            tcc_error("_Thread_local is not implemented");
+        case TOK___thread:
+            if (t & VT_TLS)
+                tcc_error("multiple thread-local storage specifiers");
+            t |= VT_TLS;
+            next();
+            break;
         default:
             if (typespec_found)
                 goto the_end;
@@ -8376,7 +8383,12 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
             CType *tp = type;
             while ((tp->t & (VT_BTYPE|VT_ARRAY)) == (VT_PTR|VT_ARRAY))
                 tp = &tp->ref->type;
-            if (tp->t & VT_CONSTANT) {
+            if (type->t & VT_TLS) {
+                if (has_init)
+                    sec = tdata_section;
+                else
+                    sec = tbss_section;
+            } else if (tp->t & VT_CONSTANT) {
 		sec = rodata_section;
             } else if (has_init) {
 		sec = data_section;
