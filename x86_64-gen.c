@@ -368,7 +368,8 @@ void load(int r, SValue *sv)
 #ifndef TCC_TARGET_PE
     /* we use indirect access via got */
     if ((fr & VT_VALMASK) == VT_CONST && (fr & VT_SYM) &&
-        (fr & VT_LVAL) && !(sv->sym->type.t & VT_STATIC)) {
+        (fr & VT_LVAL) && !(sv->sym->type.t & VT_STATIC)
+        && !(sv->sym->type.t & VT_TLS)) {
         /* use the result register as a temporal register */
         int tr = r | TREG_MEM;
         if (is_float(ft)) {
@@ -385,6 +386,19 @@ void load(int r, SValue *sv)
     v = fr & VT_VALMASK;
     if (fr & VT_LVAL) {
         int b, ll;
+        if ((fr & VT_SYM) && sv->sym->type.t & VT_TLS) {
+            int dst_reg = REG_VALUE(r);
+            int is64 = is64_type(ft);
+            o(0x64); /* fs segment prefix */
+            if (is64 || REX_BASE(r))
+                o(0x40 | (REX_BASE(r) << 0) | (is64 << 3)); /* rex.w/rex.r */
+            o(0x8b); /* mov r/m, r */
+            o(0x04 | (dst_reg << 3)); /* modrm: [sib] | destreg */
+            o(0x25); /* sib: disp32 */
+            greloca(cur_text_section, sv->sym, ind, R_X86_64_TPOFF32, fc);
+            gen_le32(0);
+            return;
+        }
         if (v == VT_LLOCAL) {
             v1.type.t = VT_PTR;
             v1.r = VT_LOCAL | VT_LVAL;
@@ -571,6 +585,20 @@ void store(int r, SValue *v)
       tcc_error("64 bit addend in store");
     ft &= ~(VT_VOLATILE | VT_CONSTANT);
     bt = ft & VT_BTYPE;
+
+    if ((v->r & VT_SYM) && v->sym->type.t & VT_TLS) {
+        int src_reg = REG_VALUE(r);
+        int is64 = is64_type(bt);
+        o(0x64);
+        if (is64 || REX_BASE(r))
+            o(0x40 | (REX_BASE(r) << 0) | (is64 << 3));
+        o(0x89);
+        o(0x04 | (src_reg << 3));
+        o(0x25);
+        greloca(cur_text_section, v->sym, ind, R_X86_64_TPOFF32, fc);
+        gen_le32(0);
+        return;
+    }
 
 #ifndef TCC_TARGET_PE
     /* we need to access the variable via got */

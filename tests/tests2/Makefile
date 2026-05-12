@@ -19,6 +19,9 @@ ifeq (,$(filter i386 x86_64,$(ARCH)))
  SKIP += 85_asm-outside-function.test # x86 asm
  SKIP += 127_asm_goto.test    # hardcodes x86 asm
 endif
+ifeq (,$(filter x86_64,$(ARCH)))
+ SKIP += 144_tls.test # TLS only implemented on x86_64 so far
+endif
 ifeq ($(CONFIG_backtrace),no)
  SKIP += 113_btdll.test
  CONFIG_bcheck = no
@@ -106,6 +109,10 @@ GEN-ALWAYS =
 
 # constructor/destructor
 108_constructor.test: NORUN = true
+
+# TLS needs executable and pthread, not -run
+144_tls.test: FLAGS += -pthread
+144_tls.test: NORUN = true
 
 112_backtrace.test: FLAGS += -dt -b
 112_backtrace.test 113_btdll.test 126_bound_global.test: FILTER += \
