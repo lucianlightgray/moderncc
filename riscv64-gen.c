@@ -179,6 +179,19 @@ static int load_symofs(int r, SValue *sv, int forstore, int *new_fc)
     if (sv->r & VT_SYM) {
         Sym label = {0};
         assert(v == VT_CONST);
+        if (sv->sym->type.t & VT_TLS) {
+            /* TLS Local Exec model: lui + addi + add tp */
+            rr = is_ireg(r) ? ireg(r) : 5;
+            greloca(cur_text_section, sv->sym, ind,
+                    R_RISCV_TPREL_HI20, sv->c.i);
+            o(0x37 | (rr << 7));  // lui RR, 0 %tprel_hi(sym)
+            greloca(cur_text_section, sv->sym, ind,
+                    R_RISCV_TPREL_LO12_I, 0);
+            EI(0x13, 0, rr, rr, 0); // addi RR, RR, 0 %tprel_lo(sym)
+            ER(0x33, 0, rr, rr, 4, 0); // add RR, RR, tp
+            *new_fc = 0;
+            return rr;
+        }
         if (sv->sym->type.t & VT_STATIC) { // XXX do this per linker relax
             greloca(cur_text_section, sv->sym, ind,
                     R_RISCV_PCREL_HI20, sv->c.i);
