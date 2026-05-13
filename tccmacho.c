@@ -1058,6 +1058,7 @@ static void convert_symbol(TCCState *s1, struct macho *mo, struct nlist_64 *pn)
     case STT_NOTYPE:
     case STT_OBJECT:
     case STT_FUNC:
+    case STT_TLS:
     case STT_SECTION:
         n.n_type = N_SECT;
         break;
