@@ -313,6 +313,16 @@ ST_FUNC void load(int r, SValue *sv)
 #endif
 
     if (fr & VT_LVAL) {
+        if ((fr & VT_SYM) && sv->sym->type.t & VT_TLS) {
+            int dst_reg = REG_VALUE(r);
+            o(0x65); /* gs segment prefix */
+            o(0x8b); /* mov r/m, r */
+            o(0x04 | (dst_reg << 3)); /* modrm: [sib] | destreg */
+            o(0x25); /* sib: disp32 */
+            greloca(cur_text_section, sv->sym, ind, R_386_TLS_LE, fc);
+            gen_le32(0);
+            return;
+        }
         if (v == VT_LLOCAL) {
             v1.type.t = VT_INT;
             v1.r = VT_LOCAL | VT_LVAL;
@@ -428,6 +438,16 @@ ST_FUNC void store(int r, SValue *v)
 	o(3 + (r << 3));
     } else
 #endif
+
+    if ((fr & VT_SYM) && v->sym->type.t & VT_TLS) {
+        o(0x65); /* gs segment prefix */
+        o(opc);
+        o(0x04 | (REG_VALUE(r) << 3)); /* modrm: [sib] | srcreg */
+        o(0x25); /* sib: disp32 */
+        greloca(cur_text_section, v->sym, ind, R_386_TLS_LE, fc);
+        gen_le32(0);
+        return;
+    }
 
     if (fr == VT_CONST || fr == VT_LOCAL || (v->r & VT_LVAL)) {
         gen_modrm(opc, r, v->r, v->sym, fc);
