@@ -572,7 +572,7 @@ static void load_value(SValue *sv, int r)
 void load(int r, SValue *sv)
 {
   int v, ft, fc, fr, sign;
-  uint32_t op;
+  uint32_t op, base;
   SValue v1;
 
   fr = sv->r;
@@ -588,7 +588,15 @@ void load(int r, SValue *sv)
 
   v = fr & VT_VALMASK;
   if (fr & VT_LVAL) {
-    uint32_t base = 0xB; // fp
+    if ((fr & VT_SYM) && sv->sym->type.t & VT_TLS) {
+        uint32_t op;
+        o(0xee1d0fe0); /* mrc p15, 0, lr, c13, c0, 3 */
+        op = 0xe510e000; /* ldr r, [lr, #0] */
+        greloca(cur_text_section, sv->sym, ind, R_ARM_TLS_LE32, 0);
+        o(op | (intr(r) << 12));
+        return;
+    }
+    base = 0xB; // fp
     if(v == VT_LLOCAL) {
       v1.type.t = VT_PTR;
       v1.r = VT_LOCAL | VT_LVAL;
@@ -703,7 +711,7 @@ void store(int r, SValue *sv)
 {
   SValue v1;
   int v, ft, fc, fr, sign;
-  uint32_t op;
+  uint32_t op, base;
 
   fr = sv->r;
   ft = sv->type.t;
@@ -718,7 +726,15 @@ void store(int r, SValue *sv)
 
   v = fr & VT_VALMASK;
   if (fr & VT_LVAL || fr == VT_LOCAL) {
-    uint32_t base = 0xb; /* fp */
+    if ((fr & VT_SYM) && sv->sym->type.t & VT_TLS) {
+        uint32_t op;
+        o(0xee1d0fe0); /* mrc p15, 0, lr, c13, c0, 3 */
+        op = 0xe500e000; /* str r, [lr, #0] */
+        greloca(cur_text_section, sv->sym, ind, R_ARM_TLS_LE32, 0);
+        o(op | (intr(r) << 12));
+        return;
+    }
+    base = 0xb; /* fp */
     if(v < VT_CONST) {
       base=intr(v);
       v=VT_LOCAL;
