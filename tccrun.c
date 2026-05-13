@@ -130,8 +130,15 @@ static int rt_mem(TCCState *s1, int size)
     //printf("map %p %p %p\n", ptr, prw, (void*)ptr_diff);
     size *= 2;
 #else
+# ifdef _WIN32
+    /* Generated code is page-protected below; avoid changing CRT heap pages. */
+    ptr = VirtualAlloc(NULL, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+# else
     ptr = tcc_malloc(size += PAGESIZE); /* one extra page to align malloc memory */
+# endif
 #endif
+    if (!ptr)
+        return tcc_error_noabort("tccrun: could not allocate memory");
     s1->run_ptr = ptr;
     s1->run_size = size;
     return ptr_diff;
@@ -188,12 +195,20 @@ ST_FUNC void tcc_run_free(TCCState *s1)
 #ifdef CONFIG_SELINUX
     munmap(ptr, size);
 #else
+# ifdef _WIN32
+    (void)size;
+#  ifdef _WIN64
+    win64_del_function_table(s1->run_function_table);
+#  endif
+    VirtualFree(ptr, 0, MEM_RELEASE);
+# else
     /* unprotect memory to make it usable for malloc again */
     protect_pages((void*)PAGEALIGN(ptr), size - PAGESIZE, 2 /*rw*/);
 # ifdef _WIN64
     win64_del_function_table(s1->run_function_table);
 # endif
     tcc_free(ptr);
+# endif
 #endif
 }
 
