@@ -1918,10 +1918,15 @@ dwarf_read_sleb128(unsigned char **ln, unsigned char *end)
 /********************************************************/
 #if CONFIG_TCC_SEMLOCK
 #if defined _WIN32
-typedef struct { int init; CRITICAL_SECTION cs; } TCCSem;
+typedef struct { volatile LONG init; CRITICAL_SECTION cs; } TCCSem;
 static inline void wait_sem(TCCSem *p) {
-    if (!p->init)
-        InitializeCriticalSection(&p->cs), p->init = 1;
+    if (InterlockedCompareExchange(&p->init, 1, 0) == 0) {
+        InitializeCriticalSection(&p->cs);
+        InterlockedExchange(&p->init, 2);
+    } else {
+        while (InterlockedCompareExchange(&p->init, 2, 2) != 2)
+            Sleep(0);
+    }
     EnterCriticalSection(&p->cs);
 }
 static inline void post_sem(TCCSem *p) {
