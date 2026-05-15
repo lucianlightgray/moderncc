@@ -1406,6 +1406,20 @@ succ:
 
 static void args_parser_add_file(TCCState *s, const char* filename, int filetype);
 
+#ifdef TCC_TARGET_PE
+static void tcc_pe_set_dll_characteristics(TCCState *s, unsigned flags)
+{
+    s->pe_dll_characteristics |= flags;
+    s->pe_dll_characteristics_clear &= ~flags;
+}
+
+static void tcc_pe_clear_dll_characteristics(TCCState *s, unsigned flags)
+{
+    s->pe_dll_characteristics &= ~flags;
+    s->pe_dll_characteristics_clear |= flags;
+}
+#endif
+
 /* set linker options */
 static int tcc_set_linker(TCCState *s, const char *optarg)
 {
@@ -1475,7 +1489,31 @@ static int tcc_set_linker(TCCState *s, const char *optarg)
             s->znodelete = 1;
 #ifdef TCC_TARGET_PE
         } else if (link_option(&o, "large-address-aware")) {
-            s->pe_characteristics |= 0x20;
+            s->pe_characteristics |= PE_IMAGE_FILE_LARGE_ADDRESS_AWARE;
+        } else if (link_option(&o, "dynamicbase")) {
+            tcc_pe_set_dll_characteristics(s, PE_DLLCHARACTERISTICS_DYNAMIC_BASE);
+        } else if (link_option(&o, "disable-dynamicbase|no-dynamicbase")) {
+            tcc_pe_clear_dll_characteristics(s,
+                PE_DLLCHARACTERISTICS_DYNAMIC_BASE |
+                PE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA);
+        } else if (link_option(&o, "nxcompat")) {
+            tcc_pe_set_dll_characteristics(s, PE_DLLCHARACTERISTICS_NX_COMPAT);
+        } else if (link_option(&o, "disable-nxcompat|no-nxcompat")) {
+            tcc_pe_clear_dll_characteristics(s, PE_DLLCHARACTERISTICS_NX_COMPAT);
+        } else if (link_option(&o, "high-entropy-va")) {
+# if defined(TCC_TARGET_X86_64) || defined(TCC_TARGET_ARM64)
+            tcc_pe_set_dll_characteristics(s,
+                PE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA |
+                PE_DLLCHARACTERISTICS_DYNAMIC_BASE);
+# else
+            goto err;
+# endif
+        } else if (link_option(&o, "disable-high-entropy-va|no-high-entropy-va")) {
+            tcc_pe_clear_dll_characteristics(s, PE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA);
+        } else if (link_option(&o, "tsaware")) {
+            tcc_pe_set_dll_characteristics(s, PE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE);
+        } else if (link_option(&o, "disable-tsaware|no-tsaware")) {
+            tcc_pe_clear_dll_characteristics(s, PE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE);
         } else if (link_option(&o, "file-alignment=")) {
             s->pe_file_align = strtoul(o.arg, &end, 16);
         } else if (link_option(&o, "stack=")) {
