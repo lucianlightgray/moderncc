@@ -27,6 +27,8 @@
 #define stricmp strcasecmp
 #define strnicmp strncasecmp
 #include <sys/stat.h> /* chmod() */
+#else
+#include <process.h>
 #endif
 
 #ifdef TCC_TARGET_X86_64
@@ -563,17 +565,55 @@ static void pe_add_coffsym(struct pe_info *pe)
 
 /* Run cv2pdb, available at https://github.com/rainers/cv2pdb.  It reads
    and strips the dwarf info and creates a <exename>.pdb file instead */
+#ifndef _WIN32
+static void pe_shell_quote(CString *cmd, const char *arg)
+{
+    cstr_cat(cmd, "'", 1);
+    while (*arg) {
+        if (*arg == '\'')
+            cstr_cat(cmd, "'\\''", 4);
+        else
+            cstr_cat(cmd, arg, 1);
+        ++arg;
+    }
+    cstr_cat(cmd, "'", 1);
+}
+#endif
+
+static intptr_t pe_run_cv2pdb(const char *exename)
+{
+#ifdef _WIN32
+    const char *argv[] = { "cv2pdb.exe", exename, NULL };
+    return _spawnvp(_P_WAIT, "cv2pdb.exe", argv);
+#else
+    CString cmd;
+    intptr_t ret;
+
+    cstr_new(&cmd);
+    cstr_cat(&cmd, "cv2pdb.exe ", -1);
+    pe_shell_quote(&cmd, exename);
+    cstr_ccat(&cmd, 0);
+    ret = system(cmd.data);
+    cstr_free(&cmd);
+    return ret;
+#endif
+}
+
 static void pe_create_pdb(TCCState *s1, const char *exename)
 {
-    char buf[300]; int r;
-    snprintf(buf, sizeof buf, "cv2pdb.exe %s", exename);
-    r = system(buf);
-    strcpy(tcc_fileextension(strcpy(buf, exename)), ".pdb");
+    size_t len = strlen(exename);
+    char *pdbfile = tcc_malloc(len + sizeof(".pdb"));
+    intptr_t r;
+
+    strcpy(pdbfile, exename);
+    strcpy(tcc_fileextension(pdbfile), ".pdb");
+    r = pe_run_cv2pdb(exename);
     if (r) {
-        tcc_error_noabort("could not create '%s'\n(need working cv2pdb from https://github.com/rainers/cv2pdb)", buf);
+        tcc_error_noabort("could not create '%s'\n(need working cv2pdb from https://github.com/rainers/cv2pdb)", pdbfile);
     } else if (s1->verbose) {
-        printf("<- %s\n", buf);
+        printf("<- %s\n", pdbfile);
     }
+    tcc_free(pdbfile);
 }
 
 /*----------------------------------------------------------------------------*/
