@@ -427,7 +427,11 @@ redo:
             }
             if (protect_pages((void*)addr, n, f) < 0)
                 return tcc_error_noabort(
+#ifdef _WIN32
+                    "VirtualProtect failed");
+#else
                     "mprotect failed (did you mean to configure --with-selinux?)");
+#endif
         }
     }
 
@@ -502,11 +506,14 @@ static void *win64_add_function_table(TCCState *s1)
     void *p = NULL;
     if (s1->uw_pdata) {
         p = (void*)s1->uw_pdata->sh_addr;
-        RtlAddFunctionTable(
+        if (!RtlAddFunctionTable(
             (RUNTIME_FUNCTION*)p,
             s1->uw_pdata->data_offset / sizeof (RUNTIME_FUNCTION),
             s1->pe_imagebase
-            );
+            )) {
+            tcc_error_noabort("RtlAddFunctionTable failed");
+            p = NULL;
+        }
         s1->uw_pdata = NULL;
     }
     return p;
