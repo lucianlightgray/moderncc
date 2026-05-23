@@ -1930,46 +1930,12 @@ dwarf_read_sleb128(unsigned char **ln, unsigned char *end)
 #if CONFIG_TCC_SEMLOCK
 #if defined _WIN32
 typedef struct { volatile LONG init; CRITICAL_SECTION cs; } TCCSem;
-#if defined __TINYC__ && (defined __aarch64__ || defined __arm64__)
-/* Windows/arm64 Interlocked* names are compiler intrinsics, not
-   kernel32 exports, so tcc -run must not emit calls to them. */
-# define TCC_SEM_USE_ATOMICS 1
-enum { TCC_SEM_ATOMIC_SEQ_CST = 5 };
-#endif
-static inline LONG tcc_sem_cmpxchg(volatile LONG *ptr, LONG val, LONG cmp) {
-#ifdef TCC_SEM_USE_ATOMICS
-    LONG old = cmp;
-    __atomic_compare_exchange((LONG *)ptr, &old, &val, 0,
-                              TCC_SEM_ATOMIC_SEQ_CST,
-                              TCC_SEM_ATOMIC_SEQ_CST);
-    return old;
-#else
-    return InterlockedCompareExchange(ptr, val, cmp);
-#endif
-}
-static inline void tcc_sem_store(volatile LONG *ptr, LONG val) {
-#ifdef TCC_SEM_USE_ATOMICS
-    __atomic_store((LONG *)ptr, &val, TCC_SEM_ATOMIC_SEQ_CST);
-#else
-    InterlockedExchange(ptr, val);
-#endif
-}
-static inline LONG tcc_sem_load(volatile LONG *ptr) {
-#ifdef TCC_SEM_USE_ATOMICS
-    LONG val;
-    __atomic_load((LONG *)ptr, &val, TCC_SEM_ATOMIC_SEQ_CST);
-    return val;
-#else
-    return InterlockedCompareExchange(ptr, 0, 0);
-#endif
-}
 static inline void wait_sem(TCCSem *p) {
-    if (tcc_sem_cmpxchg(&p->init, 1, 0) == 0) {
+    if (InterlockedCompareExchange(&p->init, 1, 0) == 0) {
         InitializeCriticalSection(&p->cs);
-        tcc_sem_store(&p->init, 2);
+        InterlockedExchange(&p->init, 2);
     } else {
-        /* On tcc/arm64, __atomic_load maps to the acquire helper path. */
-        while (tcc_sem_load(&p->init) != 2)
+        while (InterlockedCompareExchange(&p->init, 2, 2) != 2)
             Sleep(0);
     }
     EnterCriticalSection(&p->cs);

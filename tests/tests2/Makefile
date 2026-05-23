@@ -65,6 +65,11 @@ ifeq (,$(filter arm64 aarch64,$(ARCH)))
  SKIP += 139_arm64_errors.test
  SKIP += 140_arm64_extasm.test
 endif
+ifneq ($(CONFIG_WIN32),yes)
+ SKIP += 145_winarm64_interlocked.test
+else ifeq (,$(filter arm64 aarch64,$(ARCH)))
+ SKIP += 145_winarm64_interlocked.test
+endif
 ifeq (,$(filter riscv64,$(ARCH)))
  SKIP += 141_riscv_asm.test # riscv64 asm
 endif
