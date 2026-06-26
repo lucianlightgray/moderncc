@@ -6,12 +6,11 @@
 # `Makefile` / `lib/Makefile` / `tests/Makefile` to CMake. It builds tcc,
 # libtcc, the libtcc1 runtime (compiled by the freshly-built tcc), cross
 # compilers, docs, the install layout, and the pp/tests2/libtcc test suites.
-# See docs/preprocessor-flags.md for the config.h flag catalog.
+# See the dynamic preprocessor flag catalog in section 3a for the config.h flags.
 #
-# Everything lives in this one CMakeLists.txt on purpose: the target detection
-# (was cmake/TccDetectTarget.cmake), the config.h template (was
-# cmake/config.h.in), the libtcc1 runtime build (was lib/CMakeLists.txt) and the
-# test suite (was tests/CMakeLists.txt) are all inlined as sections below.
+# Everything lives in this one CMakeLists.txt on purpose: the target detection,
+# the config.h template, the libtcc1 runtime build and the test suite are all
+# inlined as sections below.
 #
 # Source-of-truth mapping:
 #   configure        -> options, target/OS detection, config.h / config.mak gen
@@ -19,11 +18,9 @@
 #   lib/Makefile     -> libtcc1.a runtime (built BY the freshly-built tcc)
 #   tests/Makefile   -> test suite
 #
-# Status legend used throughout:
-#   [DONE]  scaffolded/implemented enough to be usable
-#   NOTE:   a deliberate divergence from configure/Makefile, explained inline
-# Every configure/Makefile feature with a CMake analogue is now ported; the only
-# omissions are the intentional ones catalogued in section 15.
+# This build covers every configure/Makefile feature with a CMake analogue; the
+# only omissions are the intentional ones catalogued in section 15. Inline `NOTE:`
+# comments flag deliberate divergences from configure/Makefile.
 # ===========================================================================
 
 cmake_minimum_required(VERSION 3.16)
@@ -85,7 +82,7 @@ option(TCC_CONFIG_NEW_DTAGS "Use DT_RUNPATH instead of DT_RPATH" OFF)
 set(TCC_CONFIG_CODESIGN "" CACHE STRING "Use codesign on apple to sign executables: yes|no|auto")
 
 # --- Path / string options (configure: install dirs & tcc runtime paths) ----
-# Implemented via GNUInstallDirs below + cache strings here.
+# Provided via GNUInstallDirs below + cache strings here.
 set(TCC_SYSROOT          "" CACHE STRING "configure --sysroot")
 set(TCC_TRIPLET          "" CACHE STRING "configure --triplet")
 set(TCC_SYSINCLUDEPATHS  "" CACHE STRING "configure --sysincludepaths (colon sep)")
@@ -114,12 +111,12 @@ endif()
 # CMAKE_CROSSCOMPILING + the prefixed tools) rather than replicating cross_prefix.
 
 # ===========================================================================
-# 2. TARGET (CPU/OS) DETECTION   (inlined; was cmake/TccDetectTarget.cmake)
+# 2. TARGET (CPU/OS) DETECTION   (inlined here)
 # ===========================================================================
 #    configure: `uname` + big case statements normalizing cpu & targetos,
 #    plus conftest.c runtime probe for compiler/endianness/triplet. Under CMake
 #    we lean on CMAKE_SYSTEM_* / the compiler ID, which already encode most of
-#    what conftest.c discovered at configure time.
+#    what conftest.c probes.
 
 # --- CPU normalization (configure: the `case "$cpu"` block) ----------------
 # Maps CMAKE_SYSTEM_PROCESSOR onto tcc's canonical names: i386, x86_64, arm,
@@ -289,18 +286,262 @@ endif()
 message(STATUS "tcc target: CPU=${TCC_CPU} OS=${TCC_TARGETOS} bigendian=${TCC_BIGENDIAN}")
 
 # ===========================================================================
-# 3. config.h GENERATION   (inlined; was cmake/config.h.in + configure_file)
+# 3. config.h GENERATION   (inlined here)
 # ===========================================================================
 #    configure writes config.h from print_str/print_num of every CONFIG_*. We
 #    build the file contents as a string and file(WRITE) it directly. Every value
 #    (CC_NAME, GCC_MAJOR/MINOR, triplet, sysinclude/lib/crt, elfinterp, sysroot,
 #    tccdir, dwarf, bcheck/backtrace/pie, ...) is wired from the options/detection
 #    above, inside the `#if !(TCC_TARGET_*)` native guard so cross builds (which
-#    pass -DTCC_TARGET_* on the command line) skip it. See the generator below
-#    and docs/preprocessor-flags.md.
+#    pass -DTCC_TARGET_* on the command line) skip it. The dynamic-flag catalog
+#    below is the reference for this generator.
+#
+# ===========================================================================
+# 3a. DYNAMIC PREPROCESSOR FLAG CATALOG (config.h reference)
+# ===========================================================================
+# Every *dynamic* C preprocessor configuration macro in the TinyCC sources — the
+# ones a build system (configure -> config.h, the Makefile DEF-<target> tables,
+# or this file) sets to shape the build. It deliberately excludes purely
+# internal/derived macros and the per-platform host macros (__GNUC__, _WIN32, ...)
+# that the code merely *reads*.
+#
+# Sources of truth:
+#   * tcc.h ~159-328 and ~1900-1976 — the `#ifndef X #define X <default>`
+#     fallbacks. The default of any flag is whatever tcc.h falls back to when the
+#     macro is absent.
+#   * configure ~617-728 — how each macro is emitted into config.h (print_str =
+#     quoted string, print_num = bare number).
+#   * Makefile ~99-123 — the cross-compiler DEF-<target> flag tables.
+#
+# "Default" = the effective value when nothing defines the macro.
+# "Scope": native-guard = emitted only for the native build (inside
+#   `#if !(TCC_TARGET_*)`); always = emitted unconditionally.
+#
+# --- 1. Target selectors (set by the build, not by the user directly) --------
+# Exactly one CPU macro is active. A native build defines it inside the
+#   `#if !(TCC_TARGET_I386 || TCC_TARGET_X86_64 || TCC_TARGET_ARM ||
+#     TCC_TARGET_ARM64 || TCC_TARGET_RISCV64 || TCC_TARGET_C67)`
+# guard; cross builds pass -DTCC_TARGET_* on the command line (so the guard
+# suppresses the native block). If *no* CPU macro is defined, tcc.h:159
+# auto-selects from the host (__x86_64__->X86_64, __arm__->ARM+EABI+VFP+HARDFLOAT,
+# __aarch64__->ARM64, __riscv->RISCV64, else I386; plus PE on _WIN32, MACHO on
+# __APPLE__).
+#   TCC_TARGET_I386     32-bit x86 backend
+#   TCC_TARGET_X86_64   64-bit x86 backend (also defines
+#                       TCC_TARGET_NATIVE_STRUCT_COPY, x86_64-gen.c:111)
+#   TCC_TARGET_ARM      32-bit ARM backend
+#   TCC_TARGET_ARM64    AArch64 backend
+#   TCC_TARGET_RISCV64  RISC-V 64 backend
+#   TCC_TARGET_C67      TI C67x backend (cross only; auto-defines
+#                       TCC_TARGET_COFF, tcc.h:379)
+#   TCC_TARGET_PE       Windows PE object/exe format (selects tccpe.c)
+#   TCC_TARGET_MACHO    Apple Mach-O format (selects tccmacho.c)
+#   TARGETOS_FreeBSD / _FreeBSD_kernel / _OpenBSD / _NetBSD
+#                       BSD target OS; any of these defines TARGETOS_BSD
+#                       (tcc.h:219)
+#   TARGETOS_ANDROID    Android target
+#
+# Derived target macros (computed in tcc.h; do NOT set these yourself):
+#   TCC_IS_NATIVE                  host OS+arch == target (tcc.h:185). Gates -run.
+#   TCC_TARGET_UNIX                1 when not PE and not MachO (tcc.h:231); else
+#                                  ELF_OBJ_ONLY is defined
+#   TARGETOS_BSD                   any TARGETOS_*BSD* (tcc.h:219)
+#   TARGETOS_Linux                 not PE, not MachO, not BSD (tcc.h:225) — for
+#                                  tccdefs_.h
+#   TCC_TARGET_COFF                defined for C67 (tcc.h:379)
+#   TCC_TARGET_NATIVE_STRUCT_COPY  defined in x86_64-gen.c:111
+#   TCC_EH_FRAME                   1 unless ELF_OBJ_ONLY / ARM / BSD (tcc.h:1847)
+#   TCC_USING_DOUBLE_FOR_LDOUBLE   PE, or MachO+ARM64 (tcc.h:236); also ARM when
+#                                  LDOUBLE_SIZE==8
+#   CONFIG_TCC_ASM                 defined by each arch *-gen.c/*-asm.c (all real
+#                                  targets) — not a config.h flag
+#
+# --- 2. ARM float-ABI sub-features (Makefile DEF-arm*, configure triplet probe) -
+# The Makefile DEF-arm family layers these; configure derives them from the
+# triplet (...eabihf / ...eabi) or /proc/cpuinfo.
+#   TCC_ARM_EABI         (default off) ARM EABI calling convention; sets
+#                        LDOUBLE_ALIGN 8. Requires VFP (`#error` otherwise,
+#                        arm-gen.c:26).
+#   TCC_ARM_VFP          (default off) use VFP FP instructions; NB_REGS 9->13
+#                        (arm-gen.c:31).
+#   TCC_ARM_HARDFLOAT    (default off) default float_abi = ARM_HARD_FLOAT
+#                        (libtcc.c:899). Set explicitly (not implied by VFP in
+#                        code).
+#   __ARM_FEATURE_IDIV   (default off) HW integer divide. Consumed only by the
+#                        runtime lib/armeabi.c, NOT the compiler core. From
+#                        --config-arm_idiv.
+#   CONFIG_TCC_CPUVER    (default 5, arm-gen.c:37) ARM arch version; gates BLX
+#                        (arm-link.c:203). configure sets 7 for Android/eabihf.
+#   LDOUBLE_SIZE         (default 8 on ARM, arm-gen.c:117) long double byte size;
+#                        12 via DEF-arm-fpa-ld. 8 => TCC_USING_DOUBLE_FOR_LDOUBLE.
+# DEF-<target> reference (from Makefile):
+#   DEF-arm-fpa     = -DTCC_TARGET_ARM
+#   DEF-arm-fpa-ld  = -DTCC_TARGET_ARM -DLDOUBLE_SIZE=12
+#   DEF-arm-vfp     = -DTCC_TARGET_ARM -DTCC_ARM_VFP
+#   DEF-arm-eabi    = -DTCC_TARGET_ARM -DTCC_ARM_VFP -DTCC_ARM_EABI
+#   DEF-arm-eabihf  = -DTCC_TARGET_ARM -DTCC_ARM_VFP -DTCC_ARM_EABI -DTCC_ARM_HARDFLOAT
+#   DEF-arm         = DEF-arm-eabihf
+#
+# --- 3a. Tri-state toggles — default ON, disable by defining to 0 ------------
+# tcc.h:201-217 uses `#if defined X && X==0 -> #undef X; else #define X 1`.
+# Leaving these undefined means ON. To turn one off, emit `#define X 0` (which
+# tcc.h then #undefs). configure only ever emits the 0 form (the --config-*=no
+# case); the enabled state emits nothing.
+#   CONFIG_TCC_BCHECK      (default 1) bounds/memory checker (-b); disabled by
+#                          `#define ...=0` / --config-bcheck=no; c67-gen.c:111
+#                          #undefs it
+#   CONFIG_TCC_BACKTRACE   (default 1) built-in stack backtraces (-bt, lib/bt-*);
+#                          disabled by `#define ...=0` / --config-backtrace=no
+#   CONFIG_NEW_MACHO       (default 1) new Mach-O chained-fixups codepath
+#                          (tccmacho.c); disabled by `#define ...=0` /
+#                          --config-new_macho=no
+#
+# --- 3b. Plain `#ifdef` toggles — default OFF, enable by defining (to 1) ------
+#   CONFIG_SELINUX               (native-guard) -run uses a temp dual-mapping
+#                                instead of RWX memory (tccrun.c:115).
+#                                Set by --with-selinux.
+#   CONFIG_TCC_PIE               (native-guard) TCC_OUTPUT_EXE => dynamic; PIE ELF
+#                                header. Auto-defines CONFIG_TCC_PIC 1 (tcc.h:241).
+#                                Set by --config-pie.
+#   CONFIG_TCC_PIC               (native-guard) emit PIC/GOT-relative code (mainly
+#                                i386). Set by --config-pic (or implied by PIE).
+#   CONFIG_NEW_DTAGS             (native-guard) linker emits DT_RUNPATH not
+#                                DT_RPATH (libtcc.c:902). Set by --config-new_dtags.
+#   CONFIG_CODESIGN              (native-guard) ad-hoc Mach-O code signature
+#                                (tccmacho.c:2237). Set by --config-codesign
+#                                (default on macOS).
+#   CONFIG_TCC_MUSL              (native-guard) use linux-musl OS-release/triplet
+#                                (libtcc.c:1814). Set by --config-musl.
+#   CONFIG_TCC_UCLIBC            (native-guard) legacy libc selector — NOT
+#                                referenced in current sources. Set by
+#                                --config-uClibc.
+#   CONFIG_TCC_STATIC            (command line) static tcc: drop <dlfcn.h>, dummy
+#                                dlopen (tcc.h:45, tccrun.c:1536). Set by tcc_p
+#                                profiling build.
+#   TCC_PROFILE                  (command line) `#define static`/`inline` empty so
+#                                all fns are profiler-visible (tcc.h:355). tcc_p
+#                                build.
+#   LIBTCC_AS_DLL                (command line) export libtcc API as a Windows DLL
+#                                (tcc.h:74). libtcc.dll build.
+#   CONFIG_TCC_BACKTRACE_ONLY    (command line) strip run/relocate, keep only
+#                                backtrace; set when lib/bt-exe.c includes
+#                                tccrun.c. Runtime lib build.
+#   CONFIG_TCCBOOT               (command line) bootable-kernel build; changes the
+#                                -run exit path (tccrun.c:1561). Special builds.
+#   ONE_SOURCE                   (command line) amalgamated single-TU build:
+#                                ST_FUNC/ST_DATA become static (tcc.h:341).
+#                                Default 0. Set by Makefile ONE_SOURCE.
+#   TCC_LIBGCC                   (path/toggle) also link libgcc (tccelf.c:1857) —
+#                                absolute path => add file, else add dll. Rarely.
+#
+# --- 4. Numeric / version macros ---------------------------------------------
+#   CONFIG_TCC_PREDEFS    (default 1 from configure; no header fallback —
+#                         `#if`-tested, so absent => 0) 1: compile predefined
+#                         macros from tccdefs_.h into the binary; 0: load
+#                         <tccdefs.h> at runtime (tccpp.c:3625).
+#                         --config-predefs=no => 0.
+#   CONFIG_DWARF_VERSION  (default 0, tcc.h:1920) default DWARF version for plain
+#                         -g; 0 => emit stabs instead. Set by --config-dwarf=N
+#                         (macOS/Android default 4).
+#   CONFIG_TCC_SEMLOCK    (default 1, tcc.h:246) thread-safe libtcc via
+#                         semaphore/critical-section; 0 removes all locking.
+#                         Set by --config-semlock=N.
+#   CONFIG_RUNMEM_RO      (default 1 on __APPLE__, else 0, tccrun.c:323) -run makes
+#                         code memory read-only after relocation (W^X). Per-target.
+#   CONFIG_OS_RELEASE     (absent => block skipped) "maj.min.patch" string ->
+#                         Mach-O version-min (tccelf.c:2949). Set by --os-release.
+# Note: DEFAULT_DWARF_VERSION (for an *explicit* -gdwarf) is separate: 2 on MachO
+# else 5 (tcc.h:1907). Don't confuse it with CONFIG_DWARF_VERSION.
+#
+# --- 5. Path / string macros (triplet-aware) ---------------------------------
+# tcc.h:260 defines USE_TRIPLET(s) / ALSO_TRIPLET(s): if CONFIG_TRIPLET is defined
+# they append "/" CONFIG_TRIPLET; otherwise they are identity. Overriding a path
+# macro directly bypasses the triplet expansion. In path values {B} is substituted
+# at runtime by CONFIG_TCCDIR (or -B), {R} by CONFIG_SYSROOT. PATHSEP is ";" on
+# Windows, ":" elsewhere (tcc.h:130).
+#   CONFIG_TCCDIR               (default "/usr/local/lib/tcc" non-Win, tcc.h:256;
+#                               runtime-computed on Win/LIBTCC_AS_DLL; scope always
+#                               via `#ifndef`) base install dir = {B}; suppressed
+#                               when tccdir==bindir (Win)
+#   CONFIG_SYSROOT              (default "", tcc.h:252; scope always via `#ifndef`)
+#                               prefix {R} for system include/lib/crt
+#   CONFIG_TRIPLET              (absent => identity, tcc.h:263; native-guard) GNU
+#                               multiarch triplet (e.g. x86_64-linux-gnu)
+#   CONFIG_TCC_CRTPREFIX        (default USE_TRIPLET(CONFIG_SYSROOT "/usr/lib"),
+#                               tcc.h:269; native-guard) where crt1/crti/crtn.o live
+#   CONFIG_TCC_SYSINCLUDEPATHS  (default PE: "{B}/include":"{B}/include/winapi";
+#                               else "{B}/include":ALSO_TRIPLET(CONFIG_SYSROOT
+#                               "/usr/include"), tcc.h:277; native-guard) system
+#                               include search list
+#   CONFIG_TCC_LIBPATHS         (default PE: "{B}/lib"; else "{B}":ALSO_TRIPLET(
+#                               CONFIG_SYSROOT "/usr/lib"), tcc.h:288; native-guard)
+#                               library search list
+#   CONFIG_TCC_ELFINTERP        (target-derived, tcc.h:299: arm64
+#                               /lib/ld-linux-aarch64.so.1, x86_64
+#                               /lib64/ld-linux-x86-64.so.2, riscv64
+#                               /lib/ld-linux-riscv64-lp64d.so.1, arm
+#                               /lib/ld-linux.so.3, PE "-", else /lib/ld-linux.so.2;
+#                               native-guard) PT_INTERP dynamic loader path
+#   CONFIG_TCC_ELFINTERP_ARMHF  (ARM only: /lib/ld-linux-armhf.so.3, tcc.h:312;
+#                               native-guard) hard-float ARM loader
+#   CONFIG_TCC_SWITCHES         (absent; native-guard) options applied to every
+#                               TCCState (libtcc.c:910); Android sets
+#                               -Wl,-rpath=$sysroot/lib
+#   TCC_LIBTCC1                 (default "libtcc1.a", tcc.h:319; scope always via
+#                               `#ifndef`) runtime support archive name
+#   CONFIG_TCC_CROSSPREFIX      (default "", tcc.h:324; scope always via `#ifndef`)
+#                               prefix for libtcc1.a / cross tools
+#
+# --- 6. Compiler-identity macros (emitted by configure, consumed by tests) ---
+# config.h always carries these (before the native guard). The compiler core does
+# not read them; tests/tcctest.c does (e.g. CC_NAME == CC_clang).
+#   CC_NAME      CC_gcc / CC_clang / CC_tcc / CC_msvc (conftest.c `c` probe)
+#   GCC_MAJOR    host compiler major (0 if unknown) (conftest.c `v` probe)
+#   GCC_MINOR    host compiler minor (0 if unknown) (conftest.c `m` probe)
+#   TCC_VERSION  from the VERSION file (configure)
+#   TCC_GITHASH  "<date> <branch>@<hash>[*]" (Makefile git, applied ONLY to tcc.c)
+#
+# --- 7. Absent / legacy macros (in configure/Makefile history, not in *.c) ---
+#   CONFIG_BIGENDIAN     written to config.mak but NEVER emitted to config.h;
+#                        endianness is handled by explicit read*le/write*le helpers.
+#   CONFIG_USE_LIBGCC    not present; only TCC_LIBGCC is used.
+#   CONFIG_LDOUBLE       not a macro; use LDOUBLE_SIZE /
+#                        TCC_USING_DOUBLE_FOR_LDOUBLE.
+#
+# --- 8. config.h emission order (the generator below mirrors this) -----------
+#   #define TCC_VERSION "x.y.z"
+#   #define CC_NAME CC_<id>
+#   #define GCC_MAJOR <n>
+#   #define GCC_MINOR <n>
+#
+#   #if !(TCC_TARGET_I386 || TCC_TARGET_X86_64 || TCC_TARGET_ARM \
+#      || TCC_TARGET_ARM64 || TCC_TARGET_RISCV64 || TCC_TARGET_C67)
+#      /* native-guard block */
+#      #define TCC_TARGET_<cpu> 1
+#      /* + TCC_TARGET_PE / TCC_TARGET_MACHO / TARGETOS_* as applicable      */
+#      /* + CONFIG_TCC_CPUVER, TCC_ARM_*, __ARM_FEATURE_IDIV for arm         */
+#      /* + CONFIG_TCC_UCLIBC / CONFIG_TCC_MUSL                              */
+#      /* + CONFIG_SELINUX, CONFIG_TCC_PIE/PIC, CONFIG_NEW_DTAGS,            */
+#      /*   CONFIG_CODESIGN, CONFIG_NEW_MACHO=0, CONFIG_TCC_BCHECK=0,        */
+#      /*   CONFIG_TCC_BACKTRACE=0, CONFIG_DWARF_VERSION, CONFIG_TCC_SEMLOCK */
+#      /* + CONFIG_TCC_SYSINCLUDEPATHS, _LIBPATHS, _CRTPREFIX, _ELFINTERP,   */
+#      /*   _SWITCHES, CONFIG_TRIPLET, CONFIG_OS_RELEASE (only if non-empty) */
+#   #endif
+#
+#   #ifndef CONFIG_SYSROOT
+#   # define CONFIG_SYSROOT "..."
+#   #endif
+#   #ifndef CONFIG_TCCDIR          /* omitted when tccdir==bindir (Win auto) */
+#   # define CONFIG_TCCDIR "..."
+#   #endif
+#   #define CONFIG_TCC_PREDEFS <0|1>
+# The two tri-state toggles and CONFIG_NEW_MACHO are emitted ONLY in their 0
+# (disabled) form; everything else is emitted only when it differs from the tcc.h
+# default (i.e. when an option was given), so config.h stays minimal.
+# ===========================================================================
 
-# SCAFFOLD: map the detected CPU/OS to the TCC_TARGET_* define(s) the sources
-# require (configure: print_num TCC_TARGET_<cpu>). Enough to build native tcc.
+# Map the detected CPU/OS to the TCC_TARGET_* define(s) the sources require
+# (configure: print_num TCC_TARGET_<cpu>).
 set(_tcc_cpu_define_i386    TCC_TARGET_I386)
 set(_tcc_cpu_define_x86_64  TCC_TARGET_X86_64)
 set(_tcc_cpu_define_arm     TCC_TARGET_ARM)
@@ -422,8 +663,8 @@ set(TCC_INSTALL_TCCDIR "" CACHE STRING
     "Runtime tccdir (CONFIG_TCCDIR); empty = <prefix>/<libdir>/tcc")
 
 # CONFIG_TCC_PREDEFS: 1 = compile tccdefs_.h into the binary (configure default),
-# 0 = load <tccdefs.h> at runtime. Honored here because section 5 now generates
-# tccdefs_.h via the c2str host tool.
+# 0 = load <tccdefs.h> at runtime. Section 5 generates tccdefs_.h via the c2str
+# host tool.
 if(TCC_CONFIG_PREDEFS)
     set(_tcc_predefs_value 1)
 else()
@@ -431,9 +672,9 @@ else()
 endif()
 
 # --- Build the config.h body --------------------------------------------------
-# Faithful port of configure's print_str/print_num emission (see
-# docs/preprocessor-flags.md). `tcc.h` supplies every default via `#ifndef`, so
-# we emit a macro ONLY when it differs from that default -> config.h stays small.
+# Faithful port of configure's print_str/print_num emission (see the section 3a
+# catalog). `tcc.h` supplies every default via `#ifndef`, so we emit a macro ONLY
+# when it differs from that default -> config.h stays small.
 
 # emit `#define NAME "VAL"` into ${var}, but only when VAL is non-empty
 # (mirrors configure's print_str, which skips empty values).
@@ -551,8 +792,8 @@ file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/config.h"
  *
  * Faithful port of the config.h produced by ./configure. Every macro below is
  * a *dynamic* preprocessor flag whose default lives in tcc.h; we only emit one
- * when it differs from that default. See docs/preprocessor-flags.md for the
- * full catalog and emission rules.
+ * when it differs from that default. See the dynamic preprocessor flag catalog
+ * in CMakeLists.txt (section 3a) for the full catalog and emission rules.
  */
 
 #define TCC_VERSION \"${TCC_VERSION}\"
@@ -591,11 +832,11 @@ file(WRITE "${TCC_CONFIG_TEXI}" "@set VERSION ${TCC_VERSION}\n")
 # ===========================================================================
 # 4. GIT HASH  (Makefile: DEF_GITHASH = -DTCC_GITHASH="...")
 # ===========================================================================
-# Reproduce the Makefile recipe:
+# Mirror of the Makefile recipe:
 #   GITHASH = `git rev-parse --abbrev-ref HEAD`             (branch, else "no")
 #   GITHASH = `git log -1 --date=short --pretty='%cd <branch>@%h'`
 #   GITMODF = "*" when the working tree is dirty
-# Applied ONLY to the tcc.c driver TU (see section 8), as in the Makefile.
+# Applies ONLY to the tcc.c driver TU (see section 8), as in the Makefile.
 # Computed at configure time; re-run CMake to refresh the hash.
 find_package(Git QUIET)
 set(TCC_GITHASH "")
@@ -678,8 +919,8 @@ set(TCC_CORE_SRC
     libtcc.c tccpp.c tccgen.c tccdbg.c tccelf.c tccasm.c tccrun.c tcctools.c)
 
 # Per-CPU backend sources (Makefile: <cpu>_FILES). Selected by TCC_CPU.
-# (Verified against the Makefile *_FILES: x86_64 reuses i386-asm.c; c67 uses
-# tcccoff.c; PE/MachO object-format sources are appended just below.)
+# (Matches the Makefile *_FILES: x86_64 reuses i386-asm.c; c67 uses tcccoff.c;
+# PE/MachO object-format sources are appended just below.)
 set(TCC_BACKEND_i386    i386-gen.c i386-link.c i386-asm.c)
 set(TCC_BACKEND_x86_64  x86_64-gen.c x86_64-link.c i386-asm.c)
 set(TCC_BACKEND_arm     arm-gen.c arm-link.c arm-asm.c)
@@ -848,7 +1089,7 @@ endif()
 # (Registered after libtcc1 below, where $<TARGET_FILE:tcc> and the runtime exist.)
 
 # ===========================================================================
-# 9. libtcc1.a runtime   (inlined; was lib/CMakeLists.txt / lib/Makefile)
+# 9. libtcc1.a runtime   (inlined; mirrors lib/Makefile)
 # ===========================================================================
 # KEY FACT: libtcc1.a is compiled by the freshly-built `tcc` (XCC = $(TOP)/tcc),
 # NOT by the host compiler. Each object is produced via a custom command invoking
@@ -1162,7 +1403,7 @@ if(TCC_BUILD_DOC)
     if(PERL_EXE AND POD2MAN_EXE)
         # texi -> pod (texi2pod.pl) -> man page (pod2man writes in.pod out.1).
         # texi2pod.pl resolves `@include config.texi` against its cwd, which for a
-        # custom command is the build dir where config.texi was generated.
+        # custom command is the build dir where config.texi is generated.
         add_custom_command(OUTPUT "${CMAKE_BINARY_DIR}/tcc-doc.pod"
             COMMAND "${PERL_EXE}" "${CMAKE_CURRENT_SOURCE_DIR}/texi2pod.pl"
                     "${_texi}" "${CMAKE_BINARY_DIR}/tcc-doc.pod"
@@ -1228,8 +1469,8 @@ if(TCC_BUILD_DOC)
         DESTINATION "${CMAKE_INSTALL_DOCDIR}" OPTIONAL)
 endif()
 
-# On WIN32 the layout differs (win32/lib/*.def, win32/include tree, examples).
-# Port the essentials when actually targeting Windows.
+# On WIN32 the layout differs (win32/lib/*.def, win32/include tree, examples);
+# this block installs the essentials for a Windows target.
 if(TCC_TARGETOS STREQUAL "WIN32")
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/win32/include/"
         DESTINATION "${_tccdir}/include")
@@ -1244,7 +1485,7 @@ if(TCC_TARGETOS STREQUAL "WIN32")
 endif()
 
 # ===========================================================================
-# 14. TESTS   (inlined; was tests/CMakeLists.txt / tests/Makefile + tests2 + pp)
+# 14. TESTS   (inlined; mirrors tests/Makefile + tests2 + pp)
 # ===========================================================================
 # All tests run the freshly-built `tcc` against fixtures and diff output, so
 # every add_test() depends on the tcc / libtcc / libtcc1 targets being built.
@@ -1253,9 +1494,73 @@ if(TCC_BUILD_TESTS)
     set(_tcc_exe "$<TARGET_FILE:tcc>")
     set(_bdir "${CMAKE_BINARY_DIR}")                          # {B}: runtime+libtcc1
     set(_idir "${CMAKE_CURRENT_SOURCE_DIR}/include")          # tcc's own headers
-    set(_driver "${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_tcc_test.cmake")
     set(_t2 "${CMAKE_CURRENT_SOURCE_DIR}/tests/tests2")
     set(_pp "${CMAKE_CURRENT_SOURCE_DIR}/tests/pp")
+
+    # Portable CTest driver, emitted into the build dir and run per test via
+    # `cmake -P` (the `${...}` placeholders below stay literal in the bracket
+    # argument and bind to the -D vars each add_test() passes). It runs the
+    # freshly-built tcc on a fixture and diffs its output against the matching
+    # .expect file, like tests/tests2/Makefile and tests/pp/Makefile.
+    #   TCC/MODE/SRCFILE/EXPECT/BDIR/IDIR : required -D vars (MODE = run | pp)
+    #   ARGS/OUTFILE                      : optional extra args / output path
+    set(_driver "${CMAKE_BINARY_DIR}/run_tcc_test.cmake")
+    file(WRITE "${_driver}" [==[
+if(NOT OUTFILE)
+    set(OUTFILE "${CMAKE_CURRENT_BINARY_DIR}/tcctest.output")
+endif()
+
+if(MODE STREQUAL "pp")
+    # Preprocessor test: capture tcc's own stdout+stderr (pp/Makefile: >out 2>&1).
+    # OUTPUT_VARIABLE is reliable here since the output is tcc's, not a JIT child.
+    execute_process(
+        COMMAND "${TCC}" "-B${BDIR}" "-I${IDIR}" -E -P "${SRCFILE}"
+        OUTPUT_VARIABLE _out ERROR_VARIABLE _err RESULT_VARIABLE _rc)
+    set(_actual "${_out}${_err}")
+    # Strip the fixture's source-dir prefix (Makefile sed FILTER) and write out.
+    get_filename_component(_srcdir "${SRCFILE}" DIRECTORY)
+    string(REPLACE "${_srcdir}/" "" _actual "${_actual}")
+    file(WRITE "${OUTFILE}" "${_actual}")
+else()
+    # `tcc -run` JITs and forks a child for signal/backtrace handling, so
+    # execute_process reaps tcc before the grandchild flushes -> lost output.
+    # Compile to a temp exe and run THAT (the Makefile's NORUN path); a plain
+    # process flushes to OUTPUT_FILE on exit. Same program, same output.
+    separate_arguments(_args UNIX_COMMAND "${ARGS}")
+    set(_exe "${OUTFILE}.exe")
+    execute_process(
+        COMMAND "${TCC}" "-B${BDIR}" "-I${IDIR}" ${_args} "${SRCFILE}" -o "${_exe}"
+        RESULT_VARIABLE _crc ERROR_VARIABLE _cerr OUTPUT_VARIABLE _cout)
+    if(NOT _crc EQUAL 0)
+        message(FATAL_ERROR "tcc failed to compile ${SRCFILE}:\n${_cout}${_cerr}")
+    endif()
+    execute_process(COMMAND "${_exe}"
+        OUTPUT_FILE "${OUTFILE}" ERROR_VARIABLE _err RESULT_VARIABLE _rc)
+    get_filename_component(_srcdir "${SRCFILE}" DIRECTORY)
+    file(READ "${OUTFILE}" _actual)
+    string(REPLACE "${_srcdir}/" "" _actual "${_actual}")
+    file(WRITE "${OUTFILE}" "${_actual}")
+endif()
+
+# Diff like the Makefiles (-Nbu): ignore whitespace amount, treat missing as empty.
+find_program(_diff diff)
+if(_diff)
+    execute_process(COMMAND "${_diff}" -Nbu "${EXPECT}" "${OUTFILE}"
+        RESULT_VARIABLE _drc OUTPUT_VARIABLE _dout ERROR_VARIABLE _derr)
+    if(NOT _drc EQUAL 0)
+        message(FATAL_ERROR "tcc test mismatch for ${SRCFILE}:\n${_dout}${_derr}")
+    endif()
+else()
+    # No diff tool: tolerant string compare (trailing whitespace stripped).
+    file(READ "${EXPECT}" _expected)
+    file(READ "${OUTFILE}" _actual)
+    string(STRIP "${_expected}" _expected)
+    string(STRIP "${_actual}" _actual)
+    if(NOT _actual STREQUAL _expected)
+        message(FATAL_ERROR "tcc test mismatch for ${SRCFILE} (no diff tool)")
+    endif()
+endif()
+]==])
 
     # Make the build dir a complete tccdir so `tcc -B<build>` resolves <stddef.h>,
     # <tcclib.h>, ... without relying on a host CPATH. Mirror the install layout:
@@ -1338,7 +1643,7 @@ if(TCC_BUILD_TESTS)
         if(Threads_FOUND)
             target_link_libraries(libtcc_test_mt PRIVATE Threads::Threads)
         endif()
-        # Built for parity, but not registered as a gating CTest case: the
+        # Compiled for parity, but not registered as a gating CTest case: the
         # multithreaded harness needs the in-tree libtcc1 reachable the way the
         # Makefile arranges (TESTINSTALL paths) and is flaky as a bare run here.
         # Run manually: ./libtcc_test_mt -B<build> -I<src>/include
@@ -1362,7 +1667,7 @@ endif()
 # ===========================================================================
 # 15. MISC FEATURES  (status of the remaining configure/Makefile bits)
 # ===========================================================================
-# DONE (see section 2/3):
+# Handled in earlier sections:
 #   * compiler flag tuning (-Wdeclaration-after-statement / -Wno-unused-result)
 #     and the gcc4 _FORTIFY_SOURCE=0 workaround -> the flag-tuning block.
 #   * ARM eabi/vfp/hardfloat/idiv + cpuver detection -> the ARM detection block
@@ -1380,16 +1685,14 @@ endif()
 #   * config.texi (@set VERSION) for the doc build (section 3/12).
 #   * host-built c2str when CMAKE_CROSSCOMPILING (TCC_HOSTCC, section 5).
 #
-# Intentionally deferred (host here is x86_64-linux; these need the matching
-# target to exercise, and the C sources don't read CONFIG_BIGENDIAN at all):
+# Intentionally not emitted (no CMake-side effect on this build):
 #   * big-endian CONFIG_BIGENDIAN: configure writes it to config.mak only; no
-#     C source consumes it (it's handled via read*le/write*le). Nothing to emit.
-#   * uClibc/musl elfinterp defaults: selected by TCC_CONFIG_LIBC; the per-libc
-#     ld.so path defaults live in tcc.h. Override via -DTCC_ELFINTERP=... .
+#     C source consumes it (read*le/write*le handle endianness). Nothing to emit.
+#   * uClibc/musl elfinterp defaults: TCC_CONFIG_LIBC selects the libc; the
+#     per-libc ld.so path defaults live in tcc.h. TCC_ELFINTERP overrides them.
 #   * macOS SDK/xcrun sysincludepaths, deployment-target, flat_namespace and the
-#     M1 --cpu=x86_64-under-rosetta -arch flags: deeper Apple-host specifics;
-#     wire when building on those hosts (the option plumbing already accepts them).
+#     M1 --cpu=x86_64-under-rosetta -arch flags: Apple-host specifics; the option
+#     plumbing accepts the values, the C sources carry the platform defaults.
 #
-# Not ported (developer conveniences, not part of the compiler build):
-#   * `make tags/ETAGS`, `make tar` release tarball — add as custom targets only
-#     if desired; CMake's CPack covers packaging.
+# Outside the compiler build (developer conveniences):
+#   * `make tags/ETAGS`, `make tar` release tarball: CPack covers packaging.
