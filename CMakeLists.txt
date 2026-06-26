@@ -19,7 +19,7 @@
 #   tests/Makefile   -> test suite
 #
 # This build covers every configure/Makefile feature with a CMake analogue; the
-# only omissions are the intentional ones catalogued in section 15. Inline `NOTE:`
+# only omissions are the intentional ones catalogued in section 16. Inline `NOTE:`
 # comments flag deliberate divergences from configure/Makefile.
 # ===========================================================================
 
@@ -40,6 +40,17 @@ project(tcc
 # ===========================================================================
 # 1. OPTIONS  (mirror of ./configure flags)
 # ===========================================================================
+# Custom-config hook (Makefile: `-include config-extra.mak` + `make EXTRA-DEFS=`).
+# A user-supplied config-extra.cmake (next to this file, or -DTCC_CONFIG_EXTRA=path)
+# is read FIRST so it can pre-seed any TCC_* variable below — e.g. cross search
+# paths (TCC_TRIPLET/_SYSROOT/_LIBPATHS/...) or extra defines (TCC_EXTRA_CFLAGS).
+set(TCC_CONFIG_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/config-extra.cmake"
+    CACHE FILEPATH "Optional extra CMake config, included before options")
+if(EXISTS "${TCC_CONFIG_EXTRA}")
+    include("${TCC_CONFIG_EXTRA}")
+    message(STATUS "tcc: included ${TCC_CONFIG_EXTRA}")
+endif()
+
 # configure flag                     -> CMake option
 #   --enable-cross                   -> TCC_ENABLE_CROSS
 #   --enable-static/--disable-static -> TCC_BUILD_STATIC (libtcc .a vs shared)
@@ -268,6 +279,14 @@ elseif(TCC_TARGETOS STREQUAL "Android")
     if("${TCC_SWITCHES}" STREQUAL "")
         set(TCC_SWITCHES "-Wl,-rpath=${TCC_SYSROOT}/lib")
     endif()
+endif()
+
+# os_release defaults to the host kernel release (configure:
+# `default os_release "$(uname -r)"`). Emitted as CONFIG_OS_RELEASE; consumed
+# for the Mach-O version-min, otherwise inert. Skipped when cross-compiling
+# (the host release would not describe the target).
+if("${TCC_OS_RELEASE}" STREQUAL "" AND NOT CMAKE_CROSSCOMPILING)
+    set(TCC_OS_RELEASE "${CMAKE_HOST_SYSTEM_VERSION}")
 endif()
 
 # --- Endianness (configure: conftest.c `bigendian` probe) ------------------
@@ -628,6 +647,16 @@ if(NOT TCC_TARGETOS STREQUAL "WIN32" AND NOT CMAKE_CROSSCOMPILING)
         endif()
     endif()
     message(STATUS "tcc paths: triplet='${TCC_TRIPLET}' libpaths='${TCC_LIBPATHS}' crtprefix='${TCC_CRTPREFIX}'")
+    # Suggest the alternate-libc switches when the matching loader is present and
+    # nothing was configured (configure lines ~486-493).
+    if("${TCC_CONFIG_LIBC}" STREQUAL "")
+        if(EXISTS "/lib/ld-uClibc.so.0")
+            message(STATUS "Perhaps you want -DTCC_CONFIG_LIBC=uClibc")
+        endif()
+        if(EXISTS "/lib/ld-musl-${TCC_CPU}.so.1")
+            message(STATUS "Perhaps you want -DTCC_CONFIG_LIBC=musl")
+        endif()
+    endif()
 endif()
 
 # --- Host compiler flag tuning (configure lines ~532-552; Makefile fortify) --
@@ -654,6 +683,41 @@ endif()
 if(TCC_CC_NAME STREQUAL "gcc" AND TCC_GCC_MAJOR EQUAL 4
    AND NOT TCC_GCC_MINOR MATCHES "^[5-9]$")
     add_compile_options(-D_FORTIFY_SOURCE=0)
+endif()
+
+# --- OS-specific host link flags (Makefile lines ~33-77) ---------------------
+# macOS (CONFIG_OSX, non-tcc host compiler): a flat namespace + tolerate
+# undefined symbols (the latter is deprecated in clang >= 15), and pin the
+# deployment target the Makefile exports (MACOSX_DEPLOYMENT_TARGET := 10.6).
+if(TCC_TARGETOS STREQUAL "Darwin" AND NOT TCC_CC_NAME STREQUAL "tcc")
+    add_link_options(-flat_namespace)
+    if(TCC_CC_NAME STREQUAL "clang" AND TCC_GCC_MAJOR LESS 15)
+        add_link_options(-undefined warning)
+    endif()
+    if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "10.6" CACHE STRING
+            "Makefile: MACOSX_DEPLOYMENT_TARGET" FORCE)
+    endif()
+    # M1 with -DTCC_CPU=x86_64: build a wholly-x86_64 tcc that runs under Rosetta
+    # (Makefile/configure: CFLAGS/LDFLAGS += -arch $cpu when cpu_sys is arm64).
+    if(TCC_CPU STREQUAL "x86_64" AND CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+        add_compile_options(-arch x86_64)
+        add_link_options(-arch x86_64)
+    endif()
+endif()
+
+# WIN32 host link flags (Makefile lines ~27-37):
+if(TCC_TARGETOS STREQUAL "WIN32")
+    # mingw gcc: link -static to avoid libgcc_s_dw2-1.dll &c. runtime deps
+    # (configure: `default LDFLAGS -static` when cc is gcc-based).
+    if(TCC_CC_NAME STREQUAL "gcc")
+        add_link_options(-static)
+    endif()
+    # Strip release binaries (Makefile: `LDFLAGS += -s`) unless debug/clang.
+    if(NOT TCC_CC_NAME STREQUAL "clang"
+       AND NOT CMAKE_BUILD_TYPE MATCHES "Debug|RelWithDebInfo")
+        add_link_options(-s)
+    endif()
 endif()
 
 # CONFIG_TCCDIR = install lib/tcc ({B}). Honors CMAKE_INSTALL_PREFIX; empty on
@@ -1327,10 +1391,36 @@ if(TCC_ENABLE_CROSS)
             set(_cdefs TCC_TARGET_ARM64 TCC_TARGET_MACHO)
         endif()
 
+        # Default sysroot/search paths for the Linux cross compilers (Makefile
+        # lines 170-187): for a bare-arch target with a known GNU triplet, assume
+        # the support files live under /usr/<triplet> and point CONFIG_SYSROOT
+        # ({R}) + the include/lib/crt search lists there. The -win32/-osx/-wince
+        # variants have no TRIPLET-<T> in the Makefile, so they get none of this.
+        set(_ctriplet "")
+        if(_t STREQUAL "i386")
+            set(_ctriplet "i686-linux-gnu")
+        elseif(_t STREQUAL "x86_64")
+            set(_ctriplet "x86_64-linux-gnu")
+        elseif(_t STREQUAL "arm")
+            set(_ctriplet "arm-linux-gnueabihf")
+        elseif(_t STREQUAL "arm64")
+            set(_ctriplet "aarch64-linux-gnu")
+        elseif(_t STREQUAL "riscv64")
+            set(_ctriplet "riscv64-linux-gnu")
+        endif()
+        set(_cpath_defs "")
+        if(NOT _ctriplet STREQUAL "")
+            list(APPEND _cpath_defs
+                "CONFIG_SYSROOT=\"/usr/${_ctriplet}\""       # ROOT-$T
+                "CONFIG_TCC_CRTPREFIX=\"{R}/lib\""           # CRT-$T
+                "CONFIG_TCC_LIBPATHS=\"{R}/lib:{B}\""        # LIB-$T
+                "CONFIG_TCC_SYSINCLUDEPATHS=\"{B}/include:{R}/include\"")  # INC-$T
+        endif()
+
         add_executable(${_t}-tcc tcc.c)
         # config.h is on the global include path; libtcc.c/tcctools.c resolve
         # relative to tcc.c. CONFIG_TCC_CROSSPREFIX prefixes libtcc1/tool names.
-        target_compile_definitions(${_t}-tcc PRIVATE ${_cdefs}
+        target_compile_definitions(${_t}-tcc PRIVATE ${_cdefs} ${_cpath_defs}
             "CONFIG_TCC_CROSSPREFIX=\"${_t}-\"")
         if(_cos STREQUAL "WIN32")
             target_compile_definitions(${_t}-tcc PRIVATE   # Makefile DEF-win
@@ -1562,6 +1652,97 @@ else()
 endif()
 ]==])
 
+    # Sibling driver: compile SRCS with tcc to an exe and run it, asserting exit 0
+    # (tests/Makefile: hello-exe, vla_test-run). Optional RUNARGS.
+    set(_exe_driver "${CMAKE_BINARY_DIR}/run_tcc_exe.cmake")
+    file(WRITE "${_exe_driver}" [==[
+separate_arguments(_srcs UNIX_COMMAND "${SRCS}")
+separate_arguments(_rargs UNIX_COMMAND "${RUNARGS}")
+execute_process(
+    COMMAND "${TCC}" "-B${BDIR}" "-I${IDIR}" ${_srcs} -o "${OUTFILE}"
+    RESULT_VARIABLE _crc OUTPUT_VARIABLE _o ERROR_VARIABLE _e)
+if(NOT _crc EQUAL 0)
+    message(FATAL_ERROR "tcc compile failed for ${SRCS}:\n${_o}${_e}")
+endif()
+execute_process(COMMAND "${OUTFILE}" ${_rargs} RESULT_VARIABLE _rrc)
+if(NOT _rrc EQUAL 0)
+    message(FATAL_ERROR "${OUTFILE} exited with ${_rrc}")
+endif()
+]==])
+
+    # Sibling driver: the flagship auto test (tests/Makefile: test.ref + test1/
+    # test4). Compile tests/tcctest.c with the host CC (reference) and with tcc,
+    # run both as plain exes (robust capture; no -run fork), and diff. TCCARGS adds
+    # e.g. -b for the bound-checked variant.
+    set(_tcctest_driver "${CMAKE_BINARY_DIR}/run_tcctest.cmake")
+    file(WRITE "${_tcctest_driver}" [==[
+set(_ref_exe "${OUTDIR}/tcctest.gcc")
+set(_ref_out "${OUTDIR}/tcctest.ref")
+separate_arguments(_refflags UNIX_COMMAND "${REFFLAGS}")
+execute_process(
+    COMMAND "${CC}" "${SRC}" -o "${_ref_exe}" "-I${SRCDIR}" "-I${BDIR}"
+            -w -O0 -std=gnu99 -fno-omit-frame-pointer ${_refflags}
+    RESULT_VARIABLE _rc OUTPUT_VARIABLE _o ERROR_VARIABLE _e)
+if(NOT _rc EQUAL 0)
+    message(FATAL_ERROR "cc failed to build tcctest.c:\n${_o}${_e}")
+endif()
+execute_process(COMMAND "${_ref_exe}" OUTPUT_FILE "${_ref_out}")
+separate_arguments(_targs UNIX_COMMAND "${TCCARGS}")
+set(_tcc_exe "${OUTDIR}/tcctest.tcc")
+set(_tcc_out "${OUTDIR}/tcctest.out")
+execute_process(
+    COMMAND "${TCC}" "-B${BDIR}" "-I${IDIR}" "-I${SRCDIR}" "-I${BDIR}"
+            ${_targs} "${SRC}" -o "${_tcc_exe}"
+    RESULT_VARIABLE _rc OUTPUT_VARIABLE _o ERROR_VARIABLE _e)
+if(NOT _rc EQUAL 0)
+    message(FATAL_ERROR "tcc failed to build tcctest.c:\n${_o}${_e}")
+endif()
+execute_process(COMMAND "${_tcc_exe}" OUTPUT_FILE "${_tcc_out}")
+find_program(_diff diff)
+execute_process(COMMAND "${_diff}" -u "${_ref_out}" "${_tcc_out}"
+    RESULT_VARIABLE _drc OUTPUT_VARIABLE _d)
+if(NOT _drc EQUAL 0)
+    message(FATAL_ERROR "tcctest mismatch (cc vs tcc):\n${_d}")
+endif()
+]==])
+
+    # Sibling driver: asm-c-connect (tests/Makefile). Build the two TUs both as a
+    # single exe and as separately-assembled objects linked together, run each,
+    # and diff their outputs (they must agree).
+    set(_asmconnect_driver "${CMAKE_BINARY_DIR}/run_asm_c_connect.cmake")
+    file(WRITE "${_asmconnect_driver}" [==[
+set(_1 "${SRCDIR}/asm-c-connect-1.c")
+set(_2 "${SRCDIR}/asm-c-connect-2.c")
+set(_flags "-B${BDIR}" "-I${IDIR}")
+# single-exe build
+execute_process(COMMAND "${TCC}" ${_flags} "${_1}" "${_2}"
+        -o "${OUTDIR}/asm-c-connect" RESULT_VARIABLE _rc
+        OUTPUT_VARIABLE _o ERROR_VARIABLE _e)
+if(NOT _rc EQUAL 0)
+    message(FATAL_ERROR "asm-c-connect single build failed:\n${_o}${_e}")
+endif()
+execute_process(COMMAND "${OUTDIR}/asm-c-connect"
+    OUTPUT_FILE "${OUTDIR}/asm-c-connect.out1")
+# separate objects then link
+execute_process(COMMAND "${TCC}" ${_flags} -c "${_1}" -o "${OUTDIR}/acc1.o")
+execute_process(COMMAND "${TCC}" ${_flags} -c "${_2}" -o "${OUTDIR}/acc2.o")
+execute_process(COMMAND "${TCC}" ${_flags}
+        "${OUTDIR}/acc1.o" "${OUTDIR}/acc2.o" -o "${OUTDIR}/asm-c-connect-sep"
+        RESULT_VARIABLE _rc OUTPUT_VARIABLE _o ERROR_VARIABLE _e)
+if(NOT _rc EQUAL 0)
+    message(FATAL_ERROR "asm-c-connect separate link failed:\n${_o}${_e}")
+endif()
+execute_process(COMMAND "${OUTDIR}/asm-c-connect-sep"
+    OUTPUT_FILE "${OUTDIR}/asm-c-connect.out2")
+find_program(_diff diff)
+execute_process(COMMAND "${_diff}" -u
+        "${OUTDIR}/asm-c-connect.out1" "${OUTDIR}/asm-c-connect.out2"
+    RESULT_VARIABLE _drc OUTPUT_VARIABLE _d)
+if(NOT _drc EQUAL 0)
+    message(FATAL_ERROR "asm-c-connect single vs separate mismatch:\n${_d}")
+endif()
+]==])
+
     # Make the build dir a complete tccdir so `tcc -B<build>` resolves <stddef.h>,
     # <tcclib.h>, ... without relying on a host CPATH. Mirror the install layout:
     # {B}/include = include/*.h + tcclib.h (see section 13).
@@ -1649,23 +1830,159 @@ endif()
         # Run manually: ./libtcc_test_mt -B<build> -I<src>/include
     endif()
 
-    # --- hello-run (tests/Makefile): tcc -run a hello-world fixture ---------
+    # --- hello-run / hello-exe (tests/Makefile): the ex1.c hello world ------
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples/ex1.c")
         add_test(NAME hello-run
             COMMAND ${_tcc_exe} "-B${CMAKE_BINARY_DIR}"
                     "-I${CMAKE_CURRENT_SOURCE_DIR}/include"
                     -run "${CMAKE_CURRENT_SOURCE_DIR}/examples/ex1.c")
         set_tests_properties(hello-run PROPERTIES FIXTURES_REQUIRED TCC_BUILT)
+        # hello-exe: compile ex1.c to an exe and run it.
+        add_test(NAME hello-exe COMMAND "${CMAKE_COMMAND}"
+            -DTCC=${_tcc_exe} -DBDIR=${_bdir} -DIDIR=${_idir}
+            -DSRCS=${CMAKE_CURRENT_SOURCE_DIR}/examples/ex1.c
+            -DOUTFILE=${CMAKE_BINARY_DIR}/hello${TCC_EXESUF} -P "${_exe_driver}")
+        set_tests_properties(hello-exe PROPERTIES FIXTURES_REQUIRED TCC_BUILT)
     endif()
 
-    # Special test modes (tcov-test / sani-test / test-install) map to building
-    # tcc_c / tcc_s (section 8) and `cmake --install`; not registered as CTest
-    # cases here since they are opt-in diagnostic builds.
-    message(STATUS "tcc tests: registered pp + tests2 + libtcc API tests (ctest)")
+    # --- vla_test-run (tests/Makefile): compile vla_test.c to an exe + run ---
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/vla_test.c")
+        add_test(NAME vla_test-run COMMAND "${CMAKE_COMMAND}"
+            -DTCC=${_tcc_exe} -DBDIR=${_bdir} -DIDIR=${_idir}
+            -DSRCS=${CMAKE_CURRENT_SOURCE_DIR}/tests/vla_test.c
+            -DOUTFILE=${CMAKE_BINARY_DIR}/vla_test${TCC_EXESUF} -P "${_exe_driver}")
+        set_tests_properties(vla_test-run PROPERTIES FIXTURES_REQUIRED TCC_BUILT)
+    endif()
+
+    # --- abitest (tests/Makefile: abitest-cc) -------------------------------
+    # abitest.c drives libtcc to JIT snippets and checks they are binary-compatible
+    # with the host CC's ABI. (The abitest-tcc variant, which recompiles libtcc.c
+    # with tcc, is not registered; run it via the Makefile.)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/abitest.c")
+        add_executable(abitest tests/abitest.c)
+        target_link_libraries(abitest PRIVATE libtcc)
+        target_include_directories(abitest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+        add_test(NAME abitest-cc
+            COMMAND abitest "-B${CMAKE_BINARY_DIR}"
+                    "-I${CMAKE_CURRENT_SOURCE_DIR}/include")
+        set_tests_properties(abitest-cc PROPERTIES FIXTURES_REQUIRED TCC_BUILT)
+    endif()
+
+    # --- tcctest auto test (tests/Makefile: test1/test4) --------------------
+    # The flagship correctness test: diff the host CC's tcctest.c output against
+    # tcc's. The bound-checked variant (test1b: -b) is added when bcheck is on.
+    # REFFLAGS mirrors the Makefile's per-host test.ref tweaks: arm builds with
+    # -marm (thumb skews function alignment); 32-bit-non-Windows i386 disables PIC
+    # (get_asm_string trips GCC's PIC checks).
+    set(_tcctest_refflags "")
+    if(TCC_CPU STREQUAL "arm")
+        set(_tcctest_refflags "-marm")
+    elseif(TCC_CPU STREQUAL "i386" AND NOT TCC_TARGETOS STREQUAL "WIN32")
+        set(_tcctest_refflags "-fno-PIC -fno-PIE -Wl,-z,notext")
+    endif()
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/tcctest.c")
+        add_test(NAME tcctest COMMAND "${CMAKE_COMMAND}"
+            -DCC=${CMAKE_C_COMPILER} -DTCC=${_tcc_exe}
+            -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/tcctest.c
+            -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR} -DBDIR=${_bdir} -DIDIR=${_idir}
+            -DOUTDIR=${CMAKE_BINARY_DIR} "-DREFFLAGS=${_tcctest_refflags}"
+            -P "${_tcctest_driver}")
+        set_tests_properties(tcctest PROPERTIES FIXTURES_REQUIRED TCC_BUILT)
+        if(TCC_CONFIG_BCHECK)
+            file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bcheck")  # driver writes here
+            add_test(NAME tcctest-bcheck COMMAND "${CMAKE_COMMAND}"
+                -DCC=${CMAKE_C_COMPILER} -DTCC=${_tcc_exe}
+                -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/tcctest.c
+                -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR} -DBDIR=${_bdir} -DIDIR=${_idir}
+                -DOUTDIR=${CMAKE_BINARY_DIR}/bcheck "-DREFFLAGS=${_tcctest_refflags}"
+                -DTCCARGS=-b -P "${_tcctest_driver}")
+            set_tests_properties(tcctest-bcheck PROPERTIES FIXTURES_REQUIRED TCC_BUILT)
+        endif()
+    endif()
+
+    # --- asm-c-connect (tests/Makefile): C<->asm symbol connection ----------
+    # Only on i386/x86_64 (the fixture hardcodes x86 asm). Compile the two TUs as
+    # one exe and as separate objects, run both, and diff the outputs.
+    if(TCC_CPU MATCHES "^(i386|x86_64)$"
+       AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/asm-c-connect-1.c")
+        add_test(NAME asm-c-connect-test COMMAND "${CMAKE_COMMAND}"
+            -DTCC=${_tcc_exe} -DBDIR=${_bdir} -DIDIR=${_idir}
+            -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}/tests -DOUTDIR=${CMAKE_BINARY_DIR}
+            -P "${_asmconnect_driver}")
+        set_tests_properties(asm-c-connect-test PROPERTIES FIXTURES_REQUIRED TCC_BUILT)
+    endif()
+
+    # Additional tests from tests/Makefile NOT registered here (each needs a
+    # bespoke harness or is host/arch-fragile); run them via the Makefile:
+    #   test2/test3      iterated auto tests (tcc compiles tcc then tcctest)
+    #   test4_static     -static auto test (incomplete reloc types)
+    #   btest / tccb     bounds-checker pass/fail matrix + self-rebuild
+    #   memtest          MEM_DEBUG=2 leak check while compiling tcc.c
+    #   dlltest          build libtcc as a DLL via tcc, then a tcc that links it
+    #   cross-test       quick -DTCC_CROSS_TEST sanity for every CROSS-TGT
+    #   asmtest/weaktest/speedtest   objdump/gcc diff, symbol weakness, timing
+    # Special test MODES (tcov-test / sani-test / test-install) map to the tcc_c /
+    # tcc_s diagnostic builds (section 8) + `cmake --install`; opt-in, not gating.
+    message(STATUS "tcc tests: registered pp + tests2 + libtcc/abitest/tcctest "
+                   "+ hello/vla (ctest)")
 endif()
 
 # ===========================================================================
-# 15. MISC FEATURES  (status of the remaining configure/Makefile bits)
+# 15. DEVELOPER TARGETS  (Makefile: tags / ETAGS / tar)
+# ===========================================================================
+# Convenience targets, each built only when its tool exists. None are part of
+# `all`; invoke explicitly (e.g. `cmake --build . --target tags`).
+set(TCC_TAGFILES "*.[ch]" "include/*.h" "lib/*.[chS]")   # Makefile TAGFILES
+find_program(CTAGS_EXE ctags)
+if(CTAGS_EXE)
+    add_custom_target(tags
+        COMMAND "${CTAGS_EXE}" ${TCC_TAGFILES}
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        COMMENT "ctags ${TCC_TAGFILES}" VERBATIM)
+endif()
+find_program(ETAGS_EXE etags)
+if(ETAGS_EXE)
+    add_custom_target(ETAGS
+        COMMAND "${ETAGS_EXE}" ${TCC_TAGFILES}
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        COMMENT "etags ${TCC_TAGFILES}" VERBATIM)
+endif()
+# `config-matrix`: build-configuration regression harness (tests/config_matrix.sh).
+# Rebuilds the project under every code-driving config value and re-runs the ctest
+# baseline, reporting which knobs are regression-safe vs which change behavior. Its
+# header documents the verified on/off/value semantics + overlap map. Opt-in (it
+# runs many nested builds); needs a POSIX sh.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/config_matrix.sh")
+    add_custom_target(config-matrix
+        COMMAND "${CMAKE_COMMAND}" -E env "JOBS=${CMAKE_BUILD_PARALLEL_LEVEL}"
+                sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/config_matrix.sh"
+                "${CMAKE_BINARY_DIR}/config-matrix"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        USES_TERMINAL
+        COMMENT "config_matrix.sh: per-config regression over the ctest baseline"
+        VERBATIM)
+endif()
+
+# `dist`: a release tarball from the current git branch (Makefile: tar). The
+# Makefile names it tinycc-mob-<short-hash>; `git archive` reproduces that
+# content deterministically (without the Makefile's win32 CRLF rewrite).
+if(Git_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
+    execute_process(COMMAND "${GIT_EXECUTABLE}" rev-parse --short=7 HEAD
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        OUTPUT_VARIABLE _dist_hash OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    if(_dist_hash)
+        set(_dist "tinycc-mob-${_dist_hash}")
+        add_custom_target(dist
+            COMMAND "${GIT_EXECUTABLE}" archive --format=tar
+                    "--prefix=${_dist}/" HEAD
+                    -o "${CMAKE_BINARY_DIR}/${_dist}.tar"
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+            COMMENT "git archive -> ${_dist}.tar" VERBATIM)
+    endif()
+endif()
+
+# ===========================================================================
+# 16. MISC FEATURES  (status of the remaining configure/Makefile bits)
 # ===========================================================================
 # Handled in earlier sections:
 #   * compiler flag tuning (-Wdeclaration-after-statement / -Wno-unused-result)
@@ -1684,15 +2001,32 @@ endif()
 #   * --config-mingw32 forcing a WIN32/PE target on a non-Windows host (section 2).
 #   * config.texi (@set VERSION) for the doc build (section 3/12).
 #   * host-built c2str when CMAKE_CROSSCOMPILING (TCC_HOSTCC, section 5).
+#   * os_release default = host kernel release (section 2).
+#   * macOS host link flags (-flat_namespace, -undefined warning for clang<15,
+#     MACOSX_DEPLOYMENT_TARGET=10.6) + M1 -arch x86_64 rosetta build (section 3).
+#   * WIN32 mingw -static / strip -s (section 3).
+#   * uClibc/musl `Perhaps you want ...` suggestions (section 3).
+#   * cross-compiler default sysroot/triplet/inc/lib/crt paths (section 10).
+#   * config-extra.cmake custom-config hook (section 1).
+#   * tags / ETAGS / dist developer targets (section 15).
+#   * extra ctest cases: hello-exe, vla_test-run, abitest-cc, tcctest(+bcheck),
+#     asm-c-connect-test (section 14).
 #
 # Intentionally not emitted (no CMake-side effect on this build):
 #   * big-endian CONFIG_BIGENDIAN: configure writes it to config.mak only; no
 #     C source consumes it (read*le/write*le handle endianness). Nothing to emit.
 #   * uClibc/musl elfinterp defaults: TCC_CONFIG_LIBC selects the libc; the
 #     per-libc ld.so path defaults live in tcc.h. TCC_ELFINTERP overrides them.
-#   * macOS SDK/xcrun sysincludepaths, deployment-target, flat_namespace and the
-#     M1 --cpu=x86_64-under-rosetta -arch flags: Apple-host specifics; the option
-#     plumbing accepts the values, the C sources carry the platform defaults.
+#   * macOS SDK/xcrun sysincludepaths: Apple-host specifics; the option plumbing
+#     accepts the values, the C sources carry the platform defaults.
 #
-# Outside the compiler build (developer conveniences):
-#   * `make tags/ETAGS`, `make tar` release tarball: CPack covers packaging.
+# Divergences kept deliberately (run via the Makefile if needed):
+#   * lib/Makefile `<target>-libtcc1-usegcc=yes`: build libtcc1 with the host CC
+#     (+ -fPIC -gdwarf/-gstabs) instead of the freshly-built tcc, which makes the
+#     bounds-checked objects ~40-60% faster. CMake always builds libtcc1 with tcc
+#     (section 9). Set CC manually + rebuild lib/ to reproduce the gcc variant.
+#   * iterated/self-rebuild & host-fragile tests (test2/test3, memtest, dlltest,
+#     btest/tccb, cross-test, asmtest/weaktest/speedtest): see the note at the end
+#     of section 14.
+#   * `make tar` win32-CRLF rewrite: the `dist` target (section 15) ships the raw
+#     git content; CPack also covers packaging.
