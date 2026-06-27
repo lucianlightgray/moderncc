@@ -67,6 +67,10 @@
      DEF(TOK_TYPEOF1, "typeof")
      DEF(TOK_TYPEOF2, "__typeof")
      DEF(TOK_TYPEOF3, "__typeof__")
+     DEF(TOK_REALPART1, "__real")
+     DEF(TOK_REALPART2, "__real__")
+     DEF(TOK_IMAGPART1, "__imag")
+     DEF(TOK_IMAGPART2, "__imag__")
      DEF(TOK_LABEL, "__label__")
 
 /*********************************************************************/

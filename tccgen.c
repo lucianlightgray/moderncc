@@ -211,6 +211,12 @@ ST_INLN int is_float(int t)
         || bt == VT_QFLOAT;
 }
 
+/* True if 'type' is a C99 _Complex type (modelled as a marked 2-field struct). */
+static inline int is_complex_type(CType *type)
+{
+    return (type->t & VT_BTYPE) == VT_STRUCT && type->ref->a.is_complex;
+}
+
 static inline int is_integer_btype(int bt)
 {
     return bt == VT_BYTE
@@ -4721,26 +4727,54 @@ static void parse_btype_qualify(CType *type, int qualifiers)
 static void mk_complex_type(CType *type, CType *base)
 {
     static int re_tok, im_tok;
+    static CType cache[3]; /* one shared type per base: float, double, ldouble */
+    int idx, bt = base->t & VT_BTYPE;
     Sym *s, *f0, *f1;
-    CType st;
     AttributeDef ad;
 
+    idx = bt == VT_FLOAT ? 0 : bt == VT_DOUBLE ? 1 : 2;
+    if (cache[idx].ref) {           /* all `T _Complex` share one type so that
+                                       two of them are compatible (copy-init) */
+        *type = cache[idx];
+        return;
+    }
     if (!re_tok) {
         re_tok = tok_alloc_const("__real");
         im_tok = tok_alloc_const("__imag");
     }
-    st.t = VT_STRUCT;
-    st.ref = NULL;
-    s = sym_push(anon_sym++ | SYM_STRUCT, &st, 0, -1);
+    /* build on the GLOBAL stack so the cached type outlives any function scope */
+    s = sym_push2(&global_stack, anon_sym++ | SYM_STRUCT, VT_STRUCT, -1);
     s->r = 0;
     s->a.is_complex = 1;
+    f0 = sym_push2(&global_stack, re_tok | SYM_FIELD, base->t, 0);
+    f0->type.ref = base->ref;
+    f1 = sym_push2(&global_stack, im_tok | SYM_FIELD, base->t, 0);
+    f1->type.ref = base->ref;
+    s->next = f0, f0->next = f1, f1->next = NULL;
     type->t = VT_STRUCT;
     type->ref = s;
-    f0 = sym_push(re_tok | SYM_FIELD, base, 0, 0);
-    f1 = sym_push(im_tok | SYM_FIELD, base, 0, 0);
-    s->next = f0, f0->next = f1, f1->next = NULL;
     memset(&ad, 0, sizeof ad);
     struct_layout(type, &ad);
+    cache[idx] = *type;
+}
+
+/* Replace the complex lvalue on top of the value stack with one of its
+   components as an lvalue of the base type: imag!=0 selects __imag (the second
+   field), else __real (the first). Accessed by offset, so it does not depend on
+   the synthetic field names. */
+static void complex_part(int imag)
+{
+    Sym *fre = vtop->type.ref->next;     /* __real field */
+    CType base = fre->type;
+    int ofs = imag ? fre->next->c : fre->c;
+
+    test_lvalue();
+    gaddrof();
+    vtop->type = char_pointer_type;
+    vpushi(ofs);
+    gen_op('+');
+    vtop->type = base;
+    vtop->r |= VT_LVAL;
 }
 
 /* return 0 if no type declaration. otherwise, return the basic type
@@ -5850,6 +5884,27 @@ ST_FUNC void unary(void)
         unary();
         vpushi(-1);
         gen_op('^');
+        break;
+    case TOK_REALPART1:
+    case TOK_REALPART2:
+    case TOK_IMAGPART1:
+    case TOK_IMAGPART2:
+        {
+            int imag = (tok == TOK_IMAGPART1 || tok == TOK_IMAGPART2);
+            next();
+            unary();
+            if (is_complex_type(&vtop->type)) {
+                complex_part(imag);
+            } else if (imag) {
+                /* __imag__ of a real value is 0 of that type (operand still
+                   evaluated for side effects) */
+                CType bt = vtop->type;
+                vpop();
+                vpushi(0);
+                gen_cast(&bt);
+            }
+            /* __real__ of a real value is the value itself */
+        }
         break;
     case '+':
         next();
