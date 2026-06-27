@@ -104,8 +104,15 @@ Missing features:
        implemented; likely()/unlikely() idioms work.
 - [x] atexit (Nigel Horne)
        handler runs after main.
-- [ ] C99: add complex types (gcc 3.2 testsuite issue)
-       REPRODUCES: '_Complex is not yet supported'. LARGE feature. INVESTIGATION §B2.
+- [x] C99: add complex types (gcc 3.2 testsuite issue)
+       IMPLEMENTED: _Complex modelled as a marked struct {T __real,__imag;} so the
+       ABI is free (matches struct{T,T}). Declarations, sizeof, __real__/__imag__
+       (lvalue), copy, pass/return, + - * / with real promotion, ==/!=, negation,
+       casts, the i/j imaginary suffix, and a bundled <complex.h> (I, creal/cimag,
+       libm decls) all match gcc/clang. 3-way test tests2/196; self-host 185/185.
+       Limitations: static/global init from a complex *expression* (needs complex
+       const folding) and brace-init {re,im} (struct-shaped, gcc treats _Complex
+       as scalar). INVESTIGATION §B2.
 - [x] postfix compound literals (see 20010124-1.c)
        ((struct S){.a=3,.b=4}).b -> 4.
 - [~] interactive mode / integrated debugger

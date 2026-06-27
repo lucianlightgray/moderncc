@@ -66,7 +66,23 @@ Investigation start points:
 - Scope check: gcc only honors it for function parameters/returns; matching that
   exactly avoids opening a hole in ordinary union assignment.
 
-### B2. `_Complex` / C99 complex types — LARGE (concrete blockers identified)
+### B2. `_Complex` / C99 complex types — ✅ IMPLEMENTED (2026-06-27)
+Done via the struct-representation plan below: `_Complex T` is a cached, marked
+anonymous `struct { T __real, __imag; }` (`SymAttr.is_complex`), so pass/return/
+copy/sizeof/ABI come from the struct machinery for free. Added: `__real__`/
+`__imag__` lvalue access (`complex_part`), arithmetic `+ - * /` with real↔complex
+promotion plus `==`/`!=` and negation (`gen_complex_op` dispatched from `gen_op`),
+casts every direction (`gen_complex_cast` from `gen_cast`), the `i`/`j` imaginary
+suffix (`tok_imaginary` in `parse_number`), and a bundled `include/complex.h`
+(`I`/`_Complex_I` as a compound literal, `creal`/`cimag` via `__real__`/`__imag__`,
+libm decls). All complex-specific code is gated on `is_complex`, so the x86-64
+self-host build is untouched (185/185). Verified vs gcc & clang (`tests2/196`).
+Remaining gaps (documented, not blocking common use): static/global init from a
+complex *expression* needs complex constant folding; brace-init `{re,im}` is
+struct-shaped whereas gcc treats `_Complex` as scalar; `long double _Complex`
+arithmetic is wired but lightly tested. Original analysis follows.
+
+### B2-orig. `_Complex` — original blocker analysis
 ```c
 #include <complex.h>
 double complex z = 1.0 + 2.0*I;   /* error: _Complex is not yet supported */
