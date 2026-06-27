@@ -9,9 +9,10 @@ The goal: model tcc's build configuration as a graph of nodes with
 parent→child *reveal*, parent→child *derive*, and sibling *constrain* edges;
 collapse low-level knobs under high-level **profiles**; and drive the `ccmake`/
 `cmake-gui` menus off that graph — showing/hiding child options based on the
-parent values that make them relevant. Knob ↔ preprocessor-flag mapping lives in
-[`docs/feature-matrix.md`](docs/feature-matrix.md); the generated user-knob
-table is [`docs/config-nodes.md`](docs/config-nodes.md).
+parent values that make them relevant. The knob ↔ preprocessor-flag catalog
+lives in `CMakeLists.txt` section 3a; the node declarations (section 1z) are the
+source of truth for the option table (render it with `-DTCC_REGEN_DOCS=ON`,
+which writes `config-nodes.md` into the build dir).
 
 ## Design as built
 
@@ -62,8 +63,9 @@ before, so **every `-DTCC_*` keeps working unchanged** (verified).
   - Fixed a pre-existing cross bug surfaced by `cross`: `arm-wince` libtcc1 was
     fed the x86 `win32/lib/chkstk.S` (`lib/Makefile` omits `chkstk.o` for
     `arm-wince`); chkstk is now i386/x86_64/arm64-win32 only.
-- `tcc_generate_node_doc()` — regenerates `docs/config-nodes.md` from the
-  registry, gated on `-DTCC_REGEN_DOCS=ON` so normal builds touch no tracked file.
+- `tcc_generate_node_doc()` — renders the node registry as a Markdown table into
+  the build dir (`config-nodes.md`), gated on `-DTCC_REGEN_DOCS=ON`; a convenience
+  view, not a tracked file (the declarations are the source of truth).
 
 ## Corrections the analysis forced (vs the original proposal)
 
@@ -118,14 +120,16 @@ regress back-compat. `STRINGS` only seeds the GUI dropdown; it never enforces.
       `CMAKE_CROSSCOMPILING_EMULATOR`/wine path + validation, or FATAL clearly.
 - [ ] **Grow the profile seed tables** honestly — only defaults the build does
       not already set, each marked as a real addition (not "matching current").
-- [ ] **CI doc check** — run `-DTCC_REGEN_DOCS=ON` and fail if
-      `docs/config-nodes.md` is dirty (keep the generated slice in sync).
 - [ ] **Auto-correct option** (behind a flag) for `BCHECK`-without-`BACKTRACE`
       and non-host-runnable `TCC_BUILD_TESTS`, if a non-strict mode is wanted.
 - [x] **Port the remaining knob clusters into the graph** — runtime paths,
       build flags, `TCC_INSTALL_TCCDIR`, and the diagnostic trio are now ADVANCED
-      nodes; the report + `docs/config-nodes.md` cover all 36 user knobs.
+      nodes; the report + rendered node table cover all 36 user knobs.
       (`TCC_HOSTCC` stays a `find_program` result, surfaced via STATUS.)
+- [x] **Fold the docs into CMakeLists.txt** — the preprocessor-flag catalog
+      (former `docs/feature-matrix.md`) now lives in section 3a (incl. internal/
+      host/dev macros in §9); the node table is rendered on demand into the build
+      dir. The `docs/` folder is removed.
 
 ## Open questions
 
