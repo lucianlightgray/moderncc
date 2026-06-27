@@ -51,7 +51,7 @@ compiled-in `tccdefs_.h`. Everything else is pure build-system scaffolding.
    `configure ~617`, `Makefile ~99-123`, `lib/Makefile`, etc. After deletion
    these become historical. Keep them (they explain *why*), but add a one-line
    header note: "line refs are to the pre-CMake autotools build, kept in git
-   history at tag `pre-cmake`." Tag the last commit that still has them.
+   history at tag `autotools-final`." Tag the last commit that still has them.
 
 ### Phase 2 — Extract the c2str generator from conftest.c
 `conftest.c` mixes the configure probe (dead) with the `#if C2STR` codegen (live).
@@ -169,9 +169,9 @@ These turn "works on my box" into "works/CI-tested everywhere".
   build is already opt-in (`TCC_BUILD_DOC=OFF`); document the perl/makeinfo
   prerequisite, or (stretch) port `texi2pod.pl` to a CMake `-P` script.
 - **Source-of-truth comments** go stale once the Makefiles are gone — mitigate by
-  tagging `pre-cmake` and adding the header note (Phase 1.3).
+  tagging `autotools-final` and adding the header note (Phase 1.3).
 - **Rollback**: each phase is a separate commit; `git revert` restores the
-  scaffolding. Keep the `pre-cmake` tag as the canonical reference point.
+  scaffolding. Keep the `autotools-final` tag as the canonical reference point.
 
 ---
 
@@ -179,7 +179,7 @@ These turn "works on my box" into "works/CI-tested everywhere".
 
 - [ ] 1.1 Parity run (native + matrix) green on a clean tree.
 - [ ] 1.2 `TCC_LIBTCC1_USEGCC` option; decide fragile-tests (port or document).
-- [ ] 1.3 Tag `pre-cmake`; add the "historical line refs" header note.
+- [ ] 1.3 Tag `autotools-final`; add the "historical line refs" header note.
 - [ ] 2.x Extract `c2str.c` from `conftest.c`; repoint CMake + bat + tccdefs.h.
 - [ ] 3.x `git rm` configure + all Makefiles + conftest.c; verify zero refs.
 - [ ] 4.x Prune `.gitignore`; rewrite README to the CMake quickstart.
