@@ -2473,14 +2473,210 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/tcclib.h"
 if(TCC_TARGETOS STREQUAL "WIN32")
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/win32/include/"
         DESTINATION "${_tccdir}/include")
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/include/" # tcc headers too
-        DESTINATION "${_tccdir}/include" OPTIONAL)
+    # (the tcc runtime headers are already installed to ${_tccdir}/include by the
+    # generic install(DIRECTORY include/) above -- no extra win32 copy needed.)
     file(GLOB _win_defs "${CMAKE_CURRENT_SOURCE_DIR}/win32/lib/*.def")
     install(FILES ${_win_defs} DESTINATION "${_tccdir}/lib")
     if(NOT TCC_BUILD_STATIC)
         install(FILES "${CMAKE_BINARY_DIR}/libtcc.def"
             DESTINATION "${CMAKE_INSTALL_LIBDIR}" OPTIONAL)
     endif()
+    # examples (build-tcc.bat copied examples/*.c + tests/libtcc_test.c into the
+    # win32 'examples' layout): ship them so the readme's examples resolve.
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/examples/"
+        DESTINATION examples FILES_MATCHING PATTERN "*.c")
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/tests/libtcc_test.c"
+        DESTINATION examples)
+    # Windows usage readme. Migrated here from the former standalone
+    # win32/tcc-win32.txt (win32/build-tcc.bat used to copy it into doc/); the
+    # text is the single source now, generated at configure time and installed to
+    # <prefix>/doc for WIN32 builds.
+    file(WRITE "${CMAKE_BINARY_DIR}/tcc-win32.txt" [==[
+
+    TinyCC
+    ======
+
+    This file contains specific information for usage of TinyCC
+    under MS-Windows.
+
+
+    Installation from the binary ZIP package:
+    -----------------------------------------
+    Unzip the package to a directory of your choice.
+
+
+    Set the system PATH:
+    --------------------
+    To be able to invoke the compiler from everywhere on your computer by
+    just typing "tcc", please add the directory containing tcc.exe to your
+    system PATH.
+
+
+    Include and library search paths
+    --------------------------------
+    On windows,  the standard "include" and "lib" directories are searched
+    relatively from the location of the executables (tcc.exe, libtcc.dll).
+
+
+    Examples:
+    ---------
+    Open a console window (DOS box) and 'cd' to the examples directory.
+
+    For the 'Fibonacci' example type:
+
+	tcc fib.c
+
+    For the 'Hello Windows' GUI example type:
+
+	tcc hello_win.c
+
+    For the 'Hello DLL' example type
+
+	tcc -shared dll.c
+	tcc -impdef dll.dll (optional)
+        tcc hello_dll.c dll.def
+
+
+    Using libtcc as JIT compiler in your program
+    --------------------------------------------
+    Check out the 'libtcc_test' example:
+
+    - Running it from source:
+        tcc -I libtcc libtcc/libtcc.def -run examples/libtcc_test.c
+
+    - Compiling with TCC:
+        tcc examples/libtcc_test.c -I libtcc libtcc/libtcc.def
+
+    - Compiling with MinGW:
+        gcc examples/libtcc_test.c -I libtcc libtcc.dll -o libtcc_test.exe
+
+    - Compiling with MSVC:
+        lib /def:libtcc\libtcc.def /out:libtcc.lib
+        cl /MD examples/libtcc_test.c -I libtcc libtcc.lib
+
+
+    Import Definition Files:
+    ------------------------
+    To link with Windows system DLLs, TCC uses import definition
+    files (.def) instead of libraries.
+
+    The now built-in 'tiny_impdef' program may be used to make
+    additional .def files for any DLL. For example
+
+        tcc -impdef [-v] opengl32.dll [-o opengl32.def]
+
+    Put opengl32.def into the tcc/lib directory.  Specify -lopengl32 at
+    the TCC commandline to link a program that uses opengl32.dll.
+
+
+    Header Files:
+    -------------
+    The system header files (except _mingw.h) are from the MinGW
+    distribution:
+
+	http://www.mingw.org/
+
+    From the windows headers, only a minimal set is included.  If you need
+    more,  get MinGW's "w32api" package.  Extract the files from "include"
+    into your "tcc/include/winapi" directory.
+
+    If the latest mingw headers don't play nice with the TinyCC headers,
+    there's also TinyCC-specific win32 headers package which contains
+    an "include" dir. Files in that dir are additional to the built-in
+    include files. At the time of writing there are few files in that
+    package which also exist as built-in headers:
+
+        unistd.h
+        winapi/qos.h
+        winapi/winnls.h
+        winapi/ws2ipdef.h
+        winapi/ws2tcpip.h
+        winapi/windows.h
+        winapi/winsock2.h
+
+    With the exception of winapi/winsock2.h, these should overwrite the
+    built-in headers (unistd.h and winapi/windows.h are enhanced in that
+    package, winapi/winsock2.h is older than the built-in file - and with
+    less definitions, and the rest are identical).
+
+    The latest package at the time of writing is winapi-full-for-0.9.27.zip
+    which works well also with TinyCC 0.9.28rc, and is available at:
+
+        http://download.savannah.nongnu.org/releases/tinycc/
+
+
+    Resource Files:
+    ---------------
+    TCC can link windows resources in coff format as generated by MinGW's
+    windres.exe.  For example:
+
+        windres -O coff app.rc -o appres.o
+        tcc app.c appres.o -o app.exe
+
+
+    Tiny Libmaker:
+    --------------
+    The now built-in tiny_libmaker tool by Timovj Lahde can be used as
+    'ar' replacement to make a library from several object files:
+
+	tcc -ar [rcsv] library objectfiles ...
+
+
+    Compilation from source:
+    ------------------------
+    The build is CMake (this CMakeLists.txt) -- it replaces the old
+    win32/build-tcc.bat and ./configure scripts and produces tcc.exe,
+    libtcc.dll, libtcc1.a and the install layout (include, lib, examples,
+    libtcc, doc).
+
+    * MinGW / MSYS2 (GCC), from an MSYS2/MinGW shell:
+        cmake -S . -B build
+        cmake --build build
+        cmake --install build --prefix <installpath>
+
+    * MSVC, from a "VS Developer Command Prompt":
+        cmake -S . -B build -G "NMake Makefiles"   (or "Ninja")
+        cmake --build build
+        cmake --install build --prefix <installpath>
+
+    * Cross-build a Windows tcc from another host by pointing CMake at a
+      mingw-w64 toolchain file (-DCMAKE_TOOLCHAIN_FILE=...), or force a PE
+      target in place with -DTCC_CONFIG_MINGW32=ON.
+
+    Limitations:
+    ------------
+    - On the object file level, currently TCC supports only the ELF format,
+      not COFF as used by MinGW and MSVC.  It is not possible to exchange
+      object files or libraries between TCC and these compilers.
+
+      However libraries for TCC from objects by TCC can be made using
+        tcc -ar lib.a files.o ,,,
+
+    - No leading underscore is generated in the ELF symbols.
+
+    Documentation and License:
+    --------------------------
+    TCC is distributed under the GNU Lesser General Public License. (See
+    COPYING file or http://www.gnu.org/licenses/lgpl-2.1.html)
+
+    TinyCC homepage is at:
+
+	http://fabrice.bellard.free.fr/tcc/
+
+
+    WinAPI Help and 3rd-party tools:
+    --------------------------------
+    The Windows API documentation (Win95) in a single .hlp file is
+    available on the lcc-win32 site as "win32hlp.exe" or from other
+    locations as "win32hlp_big.zip".
+
+    A nice RAD tool to create windows resources (dialog boxes etc.) is
+    "ResEd", available at the RadASM website.
+
+
+    --- grischka
+]==])
+    install(FILES "${CMAKE_BINARY_DIR}/tcc-win32.txt" DESTINATION doc)
 endif()
 
 # ===========================================================================
@@ -2692,13 +2888,23 @@ endif()
     # --- tcctest auto test (tests/Makefile: test1/test4) --------------------
     # The flagship correctness test: diff the host CC's tcctest.c output against
     # tcc's. The bound-checked variant (test1b: -b) is added when bcheck is on.
-    # REFFLAGS mirrors the Makefile's per-host test.ref tweaks: arm builds with
-    # -marm (thumb skews function alignment); 32-bit-non-Windows i386 disables PIC
-    # (get_asm_string trips GCC's PIC checks).
+    # REFFLAGS mirrors the per-host test.ref tweaks (formerly tests/Makefile and,
+    # for Windows, tests/test-win32.bat): arm builds with -marm (thumb skews
+    # function alignment); 32-bit-non-Windows i386 disables PIC (get_asm_string
+    # trips GCC's PIC checks); WIN32 builds the reference freestanding against
+    # msvcrt (the bat's REF_LINK), matching how tcc links on Windows.
     set(_tcctest_refflags "")
-    if(TCC_CPU STREQUAL "arm")
+    if(TCC_TARGETOS STREQUAL "WIN32")
+        set(_msvcrt_start "${CMAKE_CURRENT_SOURCE_DIR}/tests/msvcrt_start.c")
+        if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
+            set(_tcctest_refflags "-nostdlib ${_msvcrt_start} -lkernel32 msvcrt.lib")
+        else() # mingw gcc/clang
+            set(_tcctest_refflags
+                "-nostdlib ${_msvcrt_start} -lgcc -lkernel32 c:/windows/system32/msvcrt.dll")
+        endif()
+    elseif(TCC_CPU STREQUAL "arm")
         set(_tcctest_refflags "-marm")
-    elseif(TCC_CPU STREQUAL "i386" AND NOT TCC_TARGETOS STREQUAL "WIN32")
+    elseif(TCC_CPU STREQUAL "i386")
         set(_tcctest_refflags "-fno-PIC -fno-PIE -Wl,-z,notext")
     endif()
     # tcctest.c contains inline assembler, so it requires an asm-enabled tcc.
