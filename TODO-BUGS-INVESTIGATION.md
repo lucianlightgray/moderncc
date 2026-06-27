@@ -110,9 +110,15 @@ built AND run — no emulator needed. Build the i386 backend with
   error instead of corrupting the stack. Verified 3-way (tcc->gcc, gcc->tcc,
   tcc->tcc) by `tests/i386-fastcall-abi.sh`; cdecl/normal calls unaffected; the
   x86_64 self-host build is untouched (i386-gen.c isn't part of it).
-- **FPU st(0) left unclean** — STILL OPEN. x87 stack discipline in i386 codegen;
-  breaks interop with optimized gcc/msvc code that assumes a clean x87 stack.
-  Now reproducible here via `gcc -m32` + the i386 cross tcc, but a separate fix.
+- **FPU st(0) left unclean** — NOT REPRODUCIBLE in 0.9.28rc (appears already
+  fixed). Built i386-tcc and stress-tested the x87 stack: ignored `double` and
+  `long double` (80-bit st0) returns, `float` comparisons used in conditions, and
+  `float` results discarded via the comma operator, all in 100-200 iteration
+  loops. An unclean st(0) would overflow the 8-register x87 stack within ~8
+  iterations and corrupt later results; instead every result matched `gcc -m32`.
+  No concrete reproducer remains for the original "kwisatz haderach" note; if a
+  specific failing pattern surfaces, the harness to test it is the same
+  i386-tcc + `gcc -m32` link used for fastcall.
 
 ## D. NOT actionable as bug-fixes (design notes / deliberate non-goals)
 

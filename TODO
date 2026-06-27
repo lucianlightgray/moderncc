@@ -17,9 +17,13 @@ Bugs:
        struct *before* an integer register arg) now errors cleanly instead of
        corrupting the stack. Verified 3-way vs gcc-m32: tests/i386-fastcall-abi.sh.
        (x87 st(0) cleanliness below is separate and still open.) INVESTIGATION §C.
-- [~] FPU st(0) is left unclean (kwisatz haderach). Incompatible with
+- [x] FPU st(0) is left unclean (kwisatz haderach). Incompatible with
       optimized gcc/msc code
-       arch-specific (i386 x87). See INVESTIGATION §C.
+       NOT REPRODUCIBLE in 0.9.28rc: built i386-tcc and stress-tested x87 with
+       ignored float/long-double returns, float compares in conditions, and
+       comma-discarded float results over 100-200 iters (an unclean st(0) would
+       overflow the 8-deep x87 stack and corrupt results). All match gcc -m32.
+       Appears already fixed (like most of this list). INVESTIGATION §C.
 - [x] see transparent union pb in /urs/include/sys/socket.h
        DONE: __attribute__((transparent_union)) implemented (tccgen.c
        transparent_union_member + gfunc_param_typed; SymAttr.transp_union;
