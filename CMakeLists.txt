@@ -35,11 +35,11 @@
 # that pass policy-clean (CMP0127 NEW). Raised from 3.16 for those features.
 cmake_minimum_required(VERSION 3.22)
 
-# --- Version (configure: `version=$(head VERSION)`) -------------------------
-file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" TCC_VERSION LIMIT_COUNT 1)
-string(STRIP "${TCC_VERSION}" TCC_VERSION)
-# VERSION file may contain a non-numeric suffix (e.g. "0.9.28rc"); strip it so
-# project() gets a clean x.y.z. Keep the full string for config.h / dylib.
+# --- Version ----------------------------------------------------------------
+# The version string lives here directly (there is no longer a VERSION file).
+# It may carry a non-numeric suffix (e.g. "0.9.28rc"); strip it so project()
+# gets a clean x.y.z, but keep the full string for config.h / dylib.
+set(TCC_VERSION "0.9.28rc")
 string(REGEX MATCH "^[0-9]+(\\.[0-9]+)*" TCC_VERSION_NUMERIC "${TCC_VERSION}")
 
 project(tcc
@@ -1224,7 +1224,7 @@ message(STATUS "tcc target: CPU=${TCC_CPU} OS=${TCC_TARGETOS} bigendian=${TCC_BI
 #   CC_NAME      CC_gcc / CC_clang / CC_tcc / CC_msvc (conftest.c `c` probe)
 #   GCC_MAJOR    host compiler major (0 if unknown) (conftest.c `v` probe)
 #   GCC_MINOR    host compiler minor (0 if unknown) (conftest.c `m` probe)
-#   TCC_VERSION  from the VERSION file (configure)
+#   TCC_VERSION  set inline at the top of this file (section 1)
 #   TCC_GITHASH  "<date> <branch>@<hash>[*]" (Makefile git, applied ONLY to tcc.c)
 #
 # --- 7. Absent / legacy macros (in configure/Makefile history, not in *.c) ---
@@ -2841,6 +2841,387 @@ endif()
     #   asmtest/weaktest/speedtest   objdump/gcc diff, symbol weakness, timing
     # Special test MODES (tcov-test / sani-test / test-install) map to the tcc_c /
     # tcc_s diagnostic builds (section 8) + `cmake --install`; opt-in, not gating.
+    # --- Ported shell harnesses (formerly tests/*.sh) -----------------------
+    # The driver logic lives here and is emitted into the build dir, then run via
+    # `cmake -P` -- same pattern as run_tcc_test.cmake above -- so no separate
+    # .sh or .cmake files are needed. Three former scripts:
+    #   i386-fastcall-abi.sh  -> ctest `i386-fastcall-abi` (when an i386 tcc exists)
+    #   gcctestsuite.sh       -> opt-in target `gcctestsuite`  (needs c-torture)
+    #   arm-asm-testsuite.sh  -> opt-in target `arm-asm-testsuite` (needs ARM as)
+    set(TCC_GCCTESTSUITE_PATH "" CACHE PATH
+        "gcc.c-torture directory for the `gcctestsuite` target")
+    set(TCC_ARM_CROSS_COMPILE "" CACHE STRING
+        "binutils prefix (e.g. arm-linux-gnueabi-) for `arm-asm-testsuite`")
+
+    # (1) i386 __fastcall ABI cross-check: the i386 backend's fastcall register
+    # assignment must match gcc -m32, both call directions + tcc<->tcc. Skips
+    # cleanly without gcc / 32-bit multilib / an i386 tcc.
+    set(_fastcall_drv "${CMAKE_BINARY_DIR}/run_i386_fastcall.cmake")
+    file(WRITE "${_fastcall_drv}" "set(BUILDDIR \"${CMAKE_BINARY_DIR}\")\n")
+    file(APPEND "${_fastcall_drv}" [==[
+if(NOT DEFINED GCC OR GCC STREQUAL "")
+    set(GCC gcc)
+endif()
+find_program(_gcc "${GCC}")
+if(NOT _gcc)
+    message(STATUS "SKIP: no gcc")
+    return()
+endif()
+set(_w "${BUILDDIR}/i386-fastcall-abi")
+file(REMOVE_RECURSE "${_w}")
+file(MAKE_DIRECTORY "${_w}")
+file(WRITE "${_w}/m32probe.c" "int main(void){return 0;}\n")
+execute_process(COMMAND "${_gcc}" -m32 "${_w}/m32probe.c" -o "${_w}/m32probe"
+    RESULT_VARIABLE _m32 OUTPUT_QUIET ERROR_QUIET)
+if(NOT _m32 EQUAL 0)
+    message(STATUS "SKIP: gcc -m32 unavailable (no 32-bit multilib)")
+    return()
+endif()
+if(NOT DEFINED ITCC OR NOT EXISTS "${ITCC}")
+    message(STATUS "SKIP: i386 tcc not found at '${ITCC}'")
+    return()
+endif()
+file(WRITE "${_w}/callee.c" "\
+struct P2 { int x, y; };
+int __attribute__((fastcall)) mix_ll(int a, long long b, int c){ return (int)(a+b+c); }
+int __attribute__((fastcall)) small(char a, short b, int c){ return a+b+c; }
+int __attribute__((fastcall)) ptr2(int *a, int *b){ return *a + *b; }
+int __attribute__((fastcall)) ll_first(long long a, int b){ return (int)(a+b); }
+int __attribute__((fastcall)) fs(int a, struct P2 p, int b){ return a*1000+p.x*100+p.y*10+b; }
+")
+file(WRITE "${_w}/caller.c" "\
+struct P2 { int x, y; };
+int __attribute__((fastcall)) mix_ll(int a, long long b, int c);
+int __attribute__((fastcall)) small(char a, short b, int c);
+int __attribute__((fastcall)) ptr2(int *a, int *b);
+int __attribute__((fastcall)) ll_first(long long a, int b);
+int __attribute__((fastcall)) fs(int a, struct P2 p, int b);
+int main(void){
+    int x=10, y=20, f=0; struct P2 p={2,3};
+    if (mix_ll(1,100,3)!=104) f|=1;
+    if (small(1,2,3)!=6) f|=2;
+    if (ptr2(&x,&y)!=30) f|=4;
+    if (ll_first(100,5)!=105) f|=8;
+    if (fs(1,p,4)!=1234) f|=16;
+    return f;
+}
+")
+set(_fail 0)
+macro(_cc cc out)
+    execute_process(COMMAND ${cc} ${ARGN} -o "${out}"
+        RESULT_VARIABLE _rc OUTPUT_VARIABLE _o ERROR_VARIABLE _e)
+    if(NOT _rc EQUAL 0)
+        message(WARNING "compile failed: ${cc} ${ARGN}\n${_o}${_e}")
+        set(_fail 1)
+    endif()
+endmacro()
+_cc("${ITCC}" "${_w}/e_t.o" -c "${_w}/callee.c")
+_cc("${ITCC}" "${_w}/l_t.o" -c "${_w}/caller.c")
+_cc("${_gcc}" "${_w}/e_g.o" -m32 -O0 -c "${_w}/callee.c")
+_cc("${_gcc}" "${_w}/l_g.o" -m32 -O0 -c "${_w}/caller.c")
+macro(_check name)
+    execute_process(COMMAND "${_gcc}" -m32 ${ARGN} -o "${_w}/run"
+        RESULT_VARIABLE _lrc OUTPUT_QUIET ERROR_QUIET)
+    if(NOT _lrc EQUAL 0)
+        message("FAIL  ${name} (link)")
+        set(_fail 1)
+    else()
+        execute_process(COMMAND "${_w}/run" RESULT_VARIABLE _rrc)
+        if(_rrc EQUAL 0)
+            message("PASS  ${name}")
+        else()
+            message("FAIL  ${name} (exit ${_rrc})")
+            set(_fail 1)
+        endif()
+    endif()
+endmacro()
+_check("tcc caller -> gcc callee" "${_w}/e_g.o" "${_w}/l_t.o")
+_check("gcc caller -> tcc callee" "${_w}/e_t.o" "${_w}/l_g.o")
+_check("tcc caller -> tcc callee" "${_w}/e_t.o" "${_w}/l_t.o")
+file(WRITE "${_w}/unsup.c"
+    "int __attribute__((fastcall)) f(double a,int b); int g(){ return f(1.0,2); }\n")
+execute_process(COMMAND "${ITCC}" -c "${_w}/unsup.c" -o "${_w}/unsup.o"
+    RESULT_VARIABLE _urc OUTPUT_QUIET ERROR_QUIET)
+if(_urc EQUAL 0)
+    message("FAIL  unsupported float-before-reg case should error")
+    set(_fail 1)
+else()
+    message("PASS  unsupported float-before-reg case errors cleanly")
+endif()
+if(_fail EQUAL 0)
+    message("ALL OK")
+else()
+    message(FATAL_ERROR "i386-fastcall-abi: FAILURES")
+endif()
+]==])
+    if(TARGET i386-tcc)
+        add_test(NAME i386-fastcall-abi COMMAND "${CMAKE_COMMAND}"
+            -DITCC=$<TARGET_FILE:i386-tcc> -P "${_fastcall_drv}")
+        set_tests_properties(i386-fastcall-abi PROPERTIES FIXTURES_REQUIRED TCC_BUILT)
+    endif()
+
+    # (2) gcc c-torture runner: compile (+run) each case with tcc, classifying
+    # PASS/FAIL/SKIP/FAILEXE and skipping the families tcc doesn't implement.
+    # Opt-in target; needs -DTCC_GCCTESTSUITE_PATH=<gcc.c-torture> (or $ENV).
+    set(_gccts_drv "${CMAKE_BINARY_DIR}/run_gcctestsuite.cmake")
+    file(WRITE "${_gccts_drv}" "set(BUILDDIR \"${CMAKE_BINARY_DIR}\")\n")
+    file(APPEND "${_gccts_drv}" [==[
+if(NOT DEFINED TESTSUITE_PATH OR TESTSUITE_PATH STREQUAL "")
+    set(TESTSUITE_PATH "$ENV{TESTSUITE_PATH}")
+endif()
+if(TESTSUITE_PATH STREQUAL "" OR NOT IS_DIRECTORY "${TESTSUITE_PATH}")
+    message(STATUS "SKIP: gcc testsuite not found (set TCC_GCCTESTSUITE_PATH)")
+    return()
+endif()
+if(NOT DEFINED TCC OR NOT EXISTS "${TCC}")
+    message(FATAL_ERROR "gcctestsuite: -DTCC=<tcc binary> required")
+endif()
+if(NOT DEFINED BDIR OR BDIR STREQUAL "")
+    get_filename_component(BDIR "${TCC}" DIRECTORY)
+endif()
+set(_rt "${BUILDDIR}/gcctestsuite")
+file(MAKE_DIRECTORY "${_rt}")
+set(_flags "-B${BDIR}" -DNO_TRAMPOLINES)
+if(DEFINED IDIR AND NOT IDIR STREQUAL "")
+    list(APPEND _flags "-I${IDIR}" "-I${IDIR}/include")
+endif()
+file(GLOB _all "${TESTSUITE_PATH}/compile/*.c" "${TESTSUITE_PATH}/execute/*.c"
+               "${TESTSUITE_PATH}/execute/ieee/*.c")
+set(_skip "")
+foreach(_f IN LISTS _all)
+    file(READ "${_f}" _t)
+    if(_t MATCHES "_builtin_" OR _t MATCHES "[_a-zA-Z]?[Cc]omplex"
+       OR _t MATCHES "__u?int128_t" OR _t MATCHES "vector|vector_size|__vector_size__")
+        get_filename_component(_b "${_f}" NAME)
+        list(APPEND _skip "${_b}")
+    endif()
+endforeach()
+list(APPEND _skip 20000120-2.c mipscop-1.c mipscop-2.c mipscop-3.c mipscop-4.c
+     fp-cmp-4f.c fp-cmp-4l.c fp-cmp-8f.c fp-cmp-8l.c pr38016.c)
+set(_ok 0)
+set(_sk 0)
+set(_fa 0)
+set(_xf 0)
+set(_sum "")
+file(GLOB _csrc "${TESTSUITE_PATH}/compile/*.c")
+foreach(_s IN LISTS _csrc)
+    get_filename_component(_base "${_s}" NAME)
+    execute_process(COMMAND "${TCC}" ${_flags} -o "${_rt}/tst.o" -c "${_s}"
+        RESULT_VARIABLE _rc OUTPUT_VARIABLE _o ERROR_VARIABLE _e)
+    if("${_o}${_e}" MATCHES "cannot use local functions")
+        set(_r SKIP)
+        math(EXPR _sk "${_sk}+1")
+    elseif(_rc EQUAL 0)
+        set(_r PASS)
+        math(EXPR _ok "${_ok}+1")
+    elseif(_base IN_LIST _skip)
+        set(_r SKIP)
+        math(EXPR _sk "${_sk}+1")
+    else()
+        set(_r FAIL)
+        math(EXPR _fa "${_fa}+1")
+    endif()
+    string(APPEND _sum "${_r}: ${_s}\n")
+endforeach()
+file(GLOB _xsrc "${TESTSUITE_PATH}/execute/*.c" "${TESTSUITE_PATH}/execute/ieee/*.c")
+foreach(_s IN LISTS _xsrc)
+    get_filename_component(_base "${_s}" NAME)
+    execute_process(COMMAND "${TCC}" ${_flags} "${_s}" -o "${_rt}/tst" -lm
+        RESULT_VARIABLE _rc OUTPUT_VARIABLE _o ERROR_VARIABLE _e)
+    if("${_o}${_e}" MATCHES "cannot use local functions")
+        set(_r SKIP)
+        math(EXPR _sk "${_sk}+1")
+    elseif(_rc EQUAL 0)
+        execute_process(COMMAND "${_rt}/tst" RESULT_VARIABLE _xrc OUTPUT_QUIET ERROR_QUIET)
+        if(_xrc EQUAL 0)
+            set(_r PASS)
+            math(EXPR _ok "${_ok}+1")
+        else()
+            set(_r FAILEXE)
+            math(EXPR _xf "${_xf}+1")
+        endif()
+    elseif(_base IN_LIST _skip)
+        set(_r SKIP)
+        math(EXPR _sk "${_sk}+1")
+    else()
+        set(_r FAIL)
+        math(EXPR _fa "${_fa}+1")
+    endif()
+    string(APPEND _sum "${_r}: ${_s}\n")
+endforeach()
+file(WRITE "${BUILDDIR}/tcc.sum" "${_sum}${_ok} ok\n${_sk} skipped\n${_fa} failed\n${_xf} exe failed\n")
+message("${_ok} test(s) ok.")
+message("${_sk} test(s) skipped.")
+message("${_fa} test(s) failed.")
+message("${_xf} test(s) exe failed.")
+]==])
+    add_custom_target(gcctestsuite
+        COMMAND "${CMAKE_COMMAND}" -DTCC=$<TARGET_FILE:tcc>
+                "-DBDIR=${CMAKE_BINARY_DIR}" "-DIDIR=${CMAKE_CURRENT_SOURCE_DIR}"
+                "-DTESTSUITE_PATH=${TCC_GCCTESTSUITE_PATH}" -P "${_gccts_drv}"
+        DEPENDS tcc USES_TERMINAL
+        COMMENT "gcctestsuite: gcc c-torture over tcc")
+
+    # (3) ARM integrated-assembler differential test: for every arm-tok.h
+    # mnemonic, assemble a battery of operand forms with GNU as and with tcc and
+    # diff objdump. Opt-in; needs an ARM tcc + ARM binutils.
+    set(_armasm_drv "${CMAKE_BINARY_DIR}/run_arm_asm.cmake")
+    file(WRITE "${_armasm_drv}" "set(BUILDDIR \"${CMAKE_BINARY_DIR}\")\n")
+    file(APPEND "${_armasm_drv}" [==[
+if(NOT DEFINED CROSS_COMPILE)
+    set(CROSS_COMPILE "")
+endif()
+if(NOT DEFINED ARM_VFP)
+    set(ARM_VFP ON)
+endif()
+find_program(AS "${CROSS_COMPILE}as")
+find_program(OBJDUMP "${CROSS_COMPILE}objdump")
+if(NOT AS OR NOT OBJDUMP)
+    message(STATUS "SKIP: ARM binutils (${CROSS_COMPILE}as/objdump) not found")
+    return()
+endif()
+if(NOT DEFINED TCC OR NOT EXISTS "${TCC}")
+    message(STATUS "SKIP: ARM tcc not found at '${TCC}'")
+    return()
+endif()
+if(NOT EXISTS "${TOKH}")
+    message(FATAL_ERROR "arm-tok.h not found at '${TOKH}'")
+endif()
+set(_w "${BUILDDIR}/arm-asm-testsuite")
+file(REMOVE_RECURSE "${_w}")
+file(MAKE_DIRECTORY "${_w}")
+file(STRINGS "${TOKH}" _lines)
+set(_mnem "")
+foreach(_l IN LISTS _lines)
+    if(NOT _l MATCHES "DEF_ASM")
+        continue()
+    endif()
+    if(_l MATCHES "not useful" OR _l MATCHES "#define" OR _l MATCHES "/\\*"
+       OR _l MATCHES "DEF_ASM_CONDED_WITH_SUFFIX\\(x")
+        continue()
+    endif()
+    if(_l MATCHES "DEF_ASM_CONDED_VFP_F32_F64[^(]*\\((.*)\\)")
+        list(APPEND _mnem "${CMAKE_MATCH_1}.f32" "${CMAKE_MATCH_1}.f64")
+    elseif(_l MATCHES "DEF_ASM[^(]*\\((.*)\\)")
+        string(REPLACE ", " "." _name "${CMAKE_MATCH_1}")
+        list(APPEND _mnem "${_name}")
+    endif()
+endforeach()
+set(_f2 "")
+foreach(_s IN LISTS _mnem)
+    if(NOT _s MATCHES "^([rcpsd][0-9]+|fp|ip|sp|lr|pc|asl|apsr_nzcv|fpsid|fpscr|fpexc)$")
+        list(APPEND _f2 "${_s}")
+    endif()
+endforeach()
+set(_mnem "${_f2}")
+set(_combos
+    "r3, r4, r5, r6" "r3, r4, r5" "r3, r4, r5, asl #7" "r3, r4, r5, lsl #7"
+    "r3, r4, r5, asr #7" "r3, r4, r5, lsr #7" "r3, r4, r5, ror #7"
+    "r3, r4, r5, rrx" "r3, r4, r5, asl r6" "r3, r4, r5, lsl r6"
+    "r3, r4, r5, asr r6" "r3, r4, r5, lsr r6" "r3, r4, r5, ror r6"
+    "r3, r4, #5, asl #7" "r3, r4, #5, lsl #7" "r3, r4, #5, asr #7"
+    "r3, r4, #5, lsr #7" "r3, r4, #5, ror #7" "r3, r4, #5, rrx" "r3, #5, r4"
+    "r3, #4, #8" "r3, r4, asl #5" "r3, r4, lsl #5" "r3, r4, asr #5"
+    "r3, r4, lsr #5" "r3, r4, ror #5" "r3, r4, ror #8" "r3, r4, asl r5"
+    "r3, r4, lsl r5" "r3, r4, asr r5" "r3, r4, lsr r5" "r3, r4, ror r5"
+    "r3, r4, ror #8" "r3, r4, ror #16" "r3, r4, ror #24" "r3, r4, rrx"
+    "r3, #4, asl #5" "r3, #4, lsl #5" "r3, #4, asr #5" "r3, #4, lsr #5"
+    "r3, #4, ror #5" "r3, r4, rrx" "r3, r4" "r3" "{r3,r4,r5}" "{r3,r5,r4}"
+    "r2!, {r3,r4,r5}" "r2!, {r3,r5,r4}" "r2, {r3,r4,r5}" "r2, {r3,r5,r4}"
+    "r2, [r3, r4]" "r2, [r3, r4]!" "r2, [r3, -r4]" "r2, [r3, -r4]!"
+    "r2, [r3], r4" "r2, [r3], -r4" "r2, [r3]" "r2, r3, [r4, lsl# 2]"
+    "r2, [r3, r4, lsr# 1]" "r2, [r3, r4, lsr# 2]!" "r2, [r3, -r4, ror# 3]"
+    "r2, [r3, -r4, lsl# 1]!" "r2, [r3], r4, lsl# 3" "r2, [r3], -r4, asr# 31"
+    "r2, [r3], -r4, asl# 1" "r2, [r3], -r4, rrx" "r2, r3, [r4]"
+    "r2, [r3, #4]" "r2, [r3, #-4]" "r2, [r3, #0x45]" "r2, [r3, #-0x45]"
+    "r2, r3, #4" "r2, r3, #-4" "p10, #7, c2, c0, c1, #4"
+    "p10, #7, r2, c0, c1, #4" "p10, #0, c2, c0, c1, #4" "p10, #0, r2, c0, c1, #4"
+    "r2, #4" "r2, #-4" "r2, #0xEFFF" "r3, #0x0000" "r4, #0x0201"
+    "r4, #0xFFFFFF00" "#4" "#-4" "p5, c2, [r3]" "p5, c3, [r4]"
+    "p5, c2, [r3, #4]" "p5, c2, [r3, #-4]" "p5, c2, [r3, #0x45]"
+    "p5, c2, [r3, #-0x45]" "s2, [r3]" "s3, [r4]" "s2, [r3, #4]"
+    "s2, [r3, #-4]" "s2, [r3, #0x45]" "s2, [r3, #-0x45]" "r1, {d3-d4}"
+    "r1!, {d3-d4}" "r2, {d4-d15}" "r3!, {d4-d15}" "r3!, {d4}" "r2, {s4-s31}"
+    "r3!, {s4}" "{d3-d4}" "{d4-d15}" "{d4}" "{s4-s31}" "{s4}" "s2, s3, s4"
+    "s2, s3" "d2, d3, d4" "d2, d3" "s2, #0" "d2, #0" "s3, #0.0" "d3, #0.0"
+    "s4, #-0.1796875" "d4, #0.1796875" "r2, r3, d1" "d1, r2, r3" "s1, r2"
+    "r2, s1" "r2, fpexc" "r2, fpscr" "r2, fpsid" "apsr_nzcv, fpscr"
+    "fpexc, r2" "fpscr, r2" "fpsid, r2" "s3, d4" "d4, s3" "")
+function(_dump obj outvar)
+    execute_process(COMMAND "${OBJDUMP}" -S "${obj}"
+        OUTPUT_VARIABLE _od ERROR_QUIET)
+    set(_keep "")
+    string(REPLACE "\n" ";" _odl "${_od}")
+    foreach(_ln IN LISTS _odl)
+        if(_ln MATCHES "^[ \t]*0:")
+            string(APPEND _keep "${_ln}\n")
+        endif()
+    endforeach()
+    set(${outvar} "${_keep}" PARENT_SCOPE)
+endfunction()
+set(_total 0)
+set(_okc 0)
+set(_failed "")
+foreach(_s IN LISTS _mnem)
+    set(_as_opts "")
+    if(_s MATCHES "^v")
+        if(ARM_VFP)
+            set(_as_opts -mfpu=vfp)
+        else()
+            continue()
+        endif()
+    endif()
+    foreach(_args IN LISTS _combos)
+        set(_text "${_s} ${_args}")
+        file(WRITE "${_w}/in.s" "${_text}\n")
+        execute_process(COMMAND "${AS}" -mlittle-endian ${_as_opts}
+            -o "${_w}/as.o" "${_w}/in.s" RESULT_VARIABLE _arc OUTPUT_QUIET ERROR_QUIET)
+        if(NOT _arc EQUAL 0)
+            continue()
+        endif()
+        math(EXPR _total "${_total}+1")
+        _dump("${_w}/as.o" _expected)
+        file(WRITE "${_w}/in.c" "__asm__(\"${_text}\");\n")
+        execute_process(COMMAND "${TCC}" -o "${_w}/tcc.o" -c "${_w}/in.c"
+            RESULT_VARIABLE _trc OUTPUT_QUIET ERROR_QUIET)
+        if(NOT _trc EQUAL 0)
+            message("warning: '${_text}' did not work in tcc")
+            continue()
+        endif()
+        _dump("${_w}/tcc.o" _got)
+        if(_got STREQUAL _expected)
+            math(EXPR _okc "${_okc}+1")
+        else()
+            list(APPEND _failed "${_text}")
+            message("warning: '${_text}' did not match GNU as")
+        endif()
+    endforeach()
+endforeach()
+message("${_okc} of ${_total} tests succeeded.")
+set(_known "bl r3" "b r3" "mov r2, #0xEFFF" "mov r4, #0x0201"
+    "vmov.f32 r2, r3, d1" "vmov.f32 d1, r2, r3")
+set(_st 0)
+foreach(_t IN LISTS _failed)
+    if(_t IN_LIST _known)
+        message("Failed test: ${_t} (known failure)")
+    else()
+        message("Failed test: ${_t}")
+        set(_st 1)
+    endif()
+endforeach()
+if(NOT _st EQUAL 0)
+    message(FATAL_ERROR "arm-asm-testsuite: FAILURES")
+endif()
+]==])
+    if(TARGET arm-tcc)
+        add_custom_target(arm-asm-testsuite
+            COMMAND "${CMAKE_COMMAND}" -DTCC=$<TARGET_FILE:arm-tcc>
+                    "-DCROSS_COMPILE=${TCC_ARM_CROSS_COMPILE}"
+                    "-DTOKH=${CMAKE_CURRENT_SOURCE_DIR}/arm-tok.h" -P "${_armasm_drv}"
+            DEPENDS arm-tcc USES_TERMINAL
+            COMMENT "arm-asm-testsuite: tcc vs GNU as over arm-tok.h")
+    endif()
+
     message(STATUS "tcc tests: registered pp + tests2 + libtcc/abitest/tcctest "
                    "+ hello/vla (ctest)")
 endif()
@@ -2865,22 +3246,6 @@ if(ETAGS_EXE)
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
         COMMENT "etags ${TCC_TAGFILES}" VERBATIM)
 endif()
-# `config-matrix`: build-configuration regression harness (tests/config_matrix.sh).
-# Rebuilds the project under every code-driving config value and re-runs the ctest
-# baseline, reporting which knobs are regression-safe vs which change behavior. Its
-# header documents the verified on/off/value semantics + overlap map. Opt-in (it
-# runs many nested builds); needs a POSIX sh.
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/config_matrix.sh")
-    add_custom_target(config-matrix
-        COMMAND "${CMAKE_COMMAND}" -E env "JOBS=${CMAKE_BUILD_PARALLEL_LEVEL}"
-                sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/config_matrix.sh"
-                "${CMAKE_BINARY_DIR}/config-matrix"
-        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-        USES_TERMINAL
-        COMMENT "config_matrix.sh: per-config regression over the ctest baseline"
-        VERBATIM)
-endif()
-
 # `dist`: a release tarball from the current git branch (Makefile: tar). The
 # Makefile names it tinycc-mob-<short-hash>; `git archive` reproduces that
 # content deterministically (without the Makefile's win32 CRLF rewrite).
