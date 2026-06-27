@@ -865,6 +865,64 @@ LIBTCCAPI void tcc_undefine_symbol(TCCState *s1, const char *sym)
     cstr_printf(&s1->cmdline_defs, "#undef %s\n", sym);
 }
 
+/* Build-path-first runtime discovery (build option TCC_AUTO_TCCDIR).
+ *
+ * On win32 CONFIG_TCCDIR already resolves to the directory of tcc.exe (see
+ * config_tccdir_w32 above). This is the POSIX analogue: if the running tcc
+ * executable sits in a directory that already holds the runtime -- i.e. a
+ * freshly-built tcc next to libtcc1.a and include/<stdarg.h> in its build
+ * tree -- default its tccdir there, so `tcc foo.c` finds libtcc1.a and the
+ * headers with no -B. Otherwise fall back to the compiled-in install path
+ * CONFIG_TCCDIR (the "system" location). -B always overrides this default.
+ *
+ * The probe (one stat of <exedir>/include) makes the choice safe for both
+ * layouts: a build tree has bin == tccdir, so the probe hits; an installed
+ * tcc lives in <prefix>/bin with the runtime under <prefix>/lib/tcc, so the
+ * probe misses and the compiled-in install path is used. */
+#if defined CONFIG_TCC_AUTO_TCCDIR && !defined _WIN32
+#include <sys/stat.h>
+#if defined __APPLE__
+#include <mach-o/dyld.h>
+#endif
+static const char *tcc_auto_tccdir(void)
+{
+    static char dir[1024];
+    char exe[1024], probe[1024];
+    struct stat st;
+    char *p;
+    int n = -1;
+#if defined __linux__ || defined __CYGWIN__
+    n = readlink("/proc/self/exe", exe, sizeof exe - 1);
+#elif defined __NetBSD__
+    n = readlink("/proc/curproc/exe", exe, sizeof exe - 1);
+#elif defined __FreeBSD__ || defined __DragonFly__
+    n = readlink("/proc/curproc/file", exe, sizeof exe - 1);
+#elif defined __APPLE__
+    {
+        unsigned int sz = sizeof exe;
+        if (_NSGetExecutablePath(exe, &sz) == 0)
+            n = (int)strlen(exe);
+    }
+#endif
+    if (n <= 0 || n >= (int)sizeof exe)
+        return CONFIG_TCCDIR;             /* can't locate exe -> system path */
+    exe[n] = 0;
+    p = tcc_basename(exe);
+    if (p > exe)
+        --p;
+    *p = 0;                               /* exe -> directory of the binary */
+    pstrcpy(probe, sizeof probe, exe);
+    pstrcat(probe, sizeof probe, "/include");
+    if (stat(probe, &st) != 0 || !S_ISDIR(st.st_mode))
+        return CONFIG_TCCDIR;             /* not a tccdir -> system path */
+    pstrcpy(dir, sizeof dir, exe);
+    return dir;                           /* build-tree runtime found locally */
+}
+#define CONFIG_TCCDIR_DEFAULT tcc_auto_tccdir()
+#else
+#define CONFIG_TCCDIR_DEFAULT CONFIG_TCCDIR
+#endif
+
 
 LIBTCCAPI TCCState *tcc_new(void)
 {
@@ -906,7 +964,7 @@ LIBTCCAPI TCCState *tcc_new(void)
     /* might be used in error() before preprocess_start() */
     s->include_stack_ptr = s->include_stack;
 
-    tcc_set_lib_path(s, CONFIG_TCCDIR);
+    tcc_set_lib_path(s, CONFIG_TCCDIR_DEFAULT);
 #ifdef CONFIG_TCC_SWITCHES /* predefined options */
     tcc_set_options(s, CONFIG_TCC_SWITCHES);
 #endif

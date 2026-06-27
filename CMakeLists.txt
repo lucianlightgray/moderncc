@@ -82,6 +82,16 @@ option(TCC_CONFIG_PIC      "Position independent code" OFF)
 option(TCC_ONE_SOURCE      "Build libtcc from a single TU (Makefile: ONE_SOURCE)" OFF)
 option(TCC_BUILD_TESTS     "Build/enable the test suite (tests/Makefile)" ON)
 option(TCC_BUILD_DOC       "Build documentation (man/html/info)" OFF)
+# Build-path-first runtime discovery. When ON, the freshly-built tcc (and the
+# cross compilers / anything linking libtcc) auto-discovers its runtime
+# (libtcc1.a + include/) from the build directory it lives in, so it runs with
+# NO -B and the build dir is a complete, self-contained tccdir. It only falls
+# back to the compiled-in install path (CONFIG_TCCDIR, the "system" location)
+# when the binary is NOT sitting next to its runtime -- i.e. once installed
+# under <prefix>/bin. This is what fixes bare in-tree runs that otherwise hit
+# `error: file 'libtcc1.a' not found` / `include file 'stdarg.h' not found`.
+# Implemented in libtcc.c (tcc_auto_tccdir); -B always overrides. See section 9.
+option(TCC_AUTO_TCCDIR     "Build-tree tcc auto-discovers libtcc1.a + headers locally, falling back to system CONFIG_TCCDIR" ON)
 
 set(TCC_CONFIG_LIBC ""   CACHE STRING "Target libc: '', uClibc, or musl")
 set(TCC_CONFIG_DWARF ""  CACHE STRING "DWARF debug version (2..5); empty = stabs")
@@ -720,6 +730,19 @@ if(TCC_TARGETOS STREQUAL "WIN32")
     endif()
 endif()
 
+# Default the install prefix to a project-local directory instead of the
+# system-absolute /usr/local. Without an explicit -DCMAKE_INSTALL_PREFIX, an
+# in-tree build should not assume write access to (or pollute) system paths;
+# it installs into <build>/install, a self-contained tree. CMake only reports
+# the prefix as "initialized to default" when the user did NOT set it, so an
+# explicit prefix on the command line always wins.
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+    set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/install"
+        CACHE PATH "Install prefix (default: project-local <build>/install)" FORCE)
+    message(STATUS "tcc install prefix: defaulted to local '${CMAKE_INSTALL_PREFIX}' "
+                   "(pass -DCMAKE_INSTALL_PREFIX=/usr/local for a system install)")
+endif()
+
 # CONFIG_TCCDIR = install lib/tcc ({B}). Honors CMAKE_INSTALL_PREFIX; empty on
 # WIN32 (configure: tccdir_auto -> runtime lookup, no #define emitted).
 include(GNUInstallDirs)
@@ -883,6 +906,15 @@ message(STATUS "tcc config.h: CC_NAME=CC_${TCC_CC_NAME} predefs=${_tcc_predefs_v
                "bcheck=${TCC_CONFIG_BCHECK} backtrace=${TCC_CONFIG_BACKTRACE}")
 
 include_directories("${CMAKE_CURRENT_BINARY_DIR}")   # find generated config.h (Makefile: -I$(TOP))
+
+# Build-path-first runtime discovery (option TCC_AUTO_TCCDIR). Defined globally
+# so every TU that compiles libtcc.c picks it up -- the native libtcc, the
+# ONE_SOURCE tcc, and each cross compiler's own libtcc.c -- enabling
+# tcc_auto_tccdir() in libtcc.c. Harmless in every other TU (the macro only
+# guards that one function). Placed before any target so all inherit it.
+if(TCC_AUTO_TCCDIR)
+    add_compile_definitions(CONFIG_TCC_AUTO_TCCDIR=1)
+endif()
 
 # config.texi (configure: `echo "@set VERSION $version" > config.texi`). Included
 # by tcc-doc.texi (`@include config.texi`) to supply @value{VERSION}; the doc
@@ -1309,6 +1341,19 @@ endfunction()
 tcc_build_libtcc1(libtcc1 tcc "${TCC_CPU}" "${TCC_TARGETOS}" ON
     "${CMAKE_BINARY_DIR}/libtcc1.a" "${CMAKE_BINARY_DIR}/lib"
     LIBTCC1_EXTRA_OBJS)
+
+# Make the build dir a complete, self-contained tccdir: libtcc1.a already lands
+# at the build root (above), so mirror the install layout's headers too --
+# {B}/include = include/*.h + tcclib.h (see section 13). With this in place the
+# build dir IS a valid tccdir, which is exactly what TCC_AUTO_TCCDIR's runtime
+# discovery (tcc_auto_tccdir in libtcc.c) keys off and what `tcc -B<build>`
+# uses. Done unconditionally (not gated on tests) so a bare `cmake --build`
+# yields a runnable in-tree tcc that resolves <stddef.h>/<stdarg.h>/libtcc1.a
+# with no -B and no host CPATH.
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/include/"
+    DESTINATION "${CMAKE_BINARY_DIR}/include" FILES_MATCHING PATTERN "*.h")
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/tcclib.h"
+    DESTINATION "${CMAKE_BINARY_DIR}/include")
 
 # tcc_c coverage build (Makefile: the freshly-built tcc compiles itself). Needs
 # config.h (-I build), headers + runtime (-B src + -B build for libtcc1.a).
@@ -1743,13 +1788,9 @@ if(NOT _drc EQUAL 0)
 endif()
 ]==])
 
-    # Make the build dir a complete tccdir so `tcc -B<build>` resolves <stddef.h>,
-    # <tcclib.h>, ... without relying on a host CPATH. Mirror the install layout:
-    # {B}/include = include/*.h + tcclib.h (see section 13).
-    file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/include/"
-        DESTINATION "${CMAKE_BINARY_DIR}/include" FILES_MATCHING PATTERN "*.h")
-    file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/tcclib.h"
-        DESTINATION "${CMAKE_BINARY_DIR}/include")
+    # The build dir is already populated as a complete tccdir (include/*.h +
+    # tcclib.h + libtcc1.a) in section 9, so `tcc -B<build>` here resolves
+    # <stddef.h>/<tcclib.h>/... without a host CPATH.
 
     # CTest doesn't build targets itself; a fixture-setup test runs the build so
     # `ctest` alone produces tcc + libtcc1 before any fixture test executes.
