@@ -66,15 +66,28 @@ Investigation start points:
 - Scope check: gcc only honors it for function parameters/returns; matching that
   exactly avoids opening a hole in ordinary union assignment.
 
-### B2. `_Complex` / C99 complex types — LARGE
+### B2. `_Complex` / C99 complex types — LARGE (concrete blockers identified)
 ```c
 #include <complex.h>
 double complex z = 1.0 + 2.0*I;   /* error: _Complex is not yet supported */
 ```
-Genuinely unimplemented (the error is explicit in tccgen). This is a large
-feature — type system, codegen for `+ - * /`, `creal/cimag/conj`, ABI for
-passing/returning `_Complex` per arch. Out of scope for an incremental fix; keep
-as a tracked feature, not a bug.
+Rejected in `parse_btype` (tccgen.c, `case TOK_COMPLEX`). Implementing it is a
+large feature, and the type-system entry cost alone is real:
+- `VT_BTYPE` is a 4-bit field (`0x000f`, tcc.h:1058). Values 0-11/13/14 are
+  taken; only **12 and 15 are free** — but `_Complex` needs THREE base types
+  (complex float/double/long double). Two free slots < three.
+- There is **no spare modifier bit** in the type range (0x0010-0x0800 are all in
+  use: UNSIGNED/DEFSIGN/ARRAY/BITFIELD/CONSTANT/VOLATILE/VLA/LONG) to tag
+  "complex" onto the existing VT_FLOAT/VT_DOUBLE/VT_LDOUBLE btypes.
+So representation requires repurposing scarce bits (e.g. a QFLOAT/QLONG-style
+ABI-only pair, or dropping complex-long-double), *before* the pervasive work:
+every `gen_op` case (+ - * / with the complex multiply/divide expansions),
+`type_size`/alignment, two-component load/store, real<->complex and
+complex<->complex casts, `__real__`/`__imag__` operators, the x86-64 SysV
+pass/return ABI (e.g. `_Complex double` returned in xmm0:xmm1), and `<complex.h>`
++ the `I` macro. No safe partial gate: once `parse_btype` accepts `_Complex`,
+every downstream path must handle it or miscompile. Out of scope for an
+incremental fix; keep as a tracked, scoped feature.
 
 ---
 
