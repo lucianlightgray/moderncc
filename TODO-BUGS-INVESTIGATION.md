@@ -101,13 +101,16 @@ built AND run — no emulator needed. Build the i386 backend with
 - **i386 fastcall mostly wrong** — ✅ FIXED. The register-arg calling convention
   in `i386-gen.c` (`gfunc_call` + `gfunc_prolog`) blindly put the first two stack
   dwords in ecx/edx (the code even said `XXX: incorrect for struct/floats`). Now a
-  shared classifier `fastcall_arg_class()` implements gcc/MSVC rules: only a
-  leading run of integral/pointer args <=4 bytes goes in ecx/edx; `long long`
-  spills to the stack and exhausts the remaining register budget; float/double/
-  struct stay on the stack without consuming a slot. The one corner that the
-  push-then-pop call sequence can't express (a float/struct arg *before* an
-  integer register arg, where gcc still uses a register) is rejected with a clear
-  error instead of corrupting the stack. Verified 3-way (tcc->gcc, gcc->tcc,
+  shared slot model (`fastcall_arg_inreg()` + `fastcall_arg_slots()`) implements
+  the gcc/MSVC rules exactly: there is a 2-slot integer-register budget
+  (ecx/edx); an integral/pointer arg <=4 bytes is passed in the next register;
+  float/double reserve no slots and go on the stack; a `long long` or a *struct*
+  is passed on the stack but still reserves `ceil(size/4)` slots, so a 4-byte
+  struct lets a following int keep the 2nd register while an 8-byte struct (or
+  long long) blocks it -- matching gcc's observed codegen. The one corner the
+  push-then-pop call sequence can't express (a stack arg -- float/struct/long
+  long -- *before* an integer register arg, where gcc still uses a register) is
+  rejected with a clear error instead of corrupting the stack. Verified 3-way (tcc->gcc, gcc->tcc,
   tcc->tcc) by `tests/i386-fastcall-abi.sh`; cdecl/normal calls unaffected; the
   x86_64 self-host build is untouched (i386-gen.c isn't part of it).
 - **FPU st(0) left unclean** — NOT REPRODUCIBLE in 0.9.28rc (appears already

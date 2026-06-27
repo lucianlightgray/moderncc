@@ -507,21 +507,31 @@ static void gcall_or_jmp(int is_jmp)
 static const uint8_t fastcall_regs[3] = { TREG_EAX, TREG_EDX, TREG_ECX };
 static const uint8_t fastcallw_regs[2] = { TREG_ECX, TREG_EDX };
 
-/* Classify a fastcall/regparm argument (matching gcc/MSVC __fastcall):
-     1 = pass in the next integer register (ecx/edx): integral or pointer, <=4 bytes
-     2 = pass on the stack AND exhaust the remaining integer registers: a >32-bit
-         integer (e.g. long long) needs a register pair, so once it spills no later
-         argument is passed in a register either
-     0 = pass on the stack without touching the register budget: float/double and
-         structs never use the integer argument registers */
-static int fastcall_arg_class(CType *type)
+/* fastcall/regparm argument placement, matching gcc/MSVC __fastcall on i386.
+   There is a budget of fastcall_nb_regs integer registers (ecx, edx). Each
+   argument advances a slot counter:
+     - float/double reserve no integer slots and go on the stack;
+     - an integral/pointer value that fits in one slot (<=4 bytes) is passed IN
+       the next register if one is free, otherwise on the stack;
+     - a long long or a struct is passed on the STACK but still reserves
+       ceil(size/4) integer slots (capped at the 2 available), so it pushes later
+       arguments out of the registers exactly like gcc does.
+   fastcall_arg_inreg() says whether the value itself travels in a register;
+   fastcall_arg_slots() says how many slots it reserves. */
+static int fastcall_arg_inreg(CType *type)
 {
     int align;
-    if ((type->t & VT_BTYPE) == VT_STRUCT)
-        return 0;
+    return !is_float(type->t)
+        && (type->t & VT_BTYPE) != VT_STRUCT
+        && type_size(type, &align) <= 4;
+}
+static int fastcall_arg_slots(CType *type)
+{
+    int align, words;
     if (is_float(type->t))
         return 0;
-    return type_size(type, &align) <= 4 ? 1 : 2;
+    words = (type_size(type, &align) + 3) >> 2;
+    return words > 2 ? 2 : words;
 }
 
 /* Return the number of registers needed to return the struct, or 0 if
@@ -586,23 +596,25 @@ ST_FUNC void gfunc_call(int nb_args)
         fastcall_regs_ptr = fastcall_regs, fastcall_nb_regs = func_call - FUNC_FASTCALL1 + 1;
     }
     if (fastcall_nb_regs) {
-        int slots = fastcall_nb_regs;
-        for (int s = 0; s < nb_args && slots > 0; s++) {
-            int cls = fastcall_arg_class(&vtop[-nb_args + 1 + s].type);
-            if (cls == 1) {
-                if (n_reg_pop != s)
-                    /* a float/struct preceded this register-eligible arg, so it
-                       is not at the top of the stack and we cannot pop it; gcc
-                       would still pass it in a register. Refuse rather than
-                       silently corrupt the stack. */
-                    tcc_error("fastcall with a float/struct argument before an "
+        int slots = 0, spilled = 0;
+        for (int s = 0; s < nb_args; s++) {
+            CType *t = &vtop[-nb_args + 1 + s].type;
+            if (fastcall_arg_inreg(t) && slots < fastcall_nb_regs) {
+                if (spilled)
+                    /* this argument travels in a register, but a stack argument
+                       (float/struct/long long) precedes it, so it is not at the
+                       top of the stack and the pop-after-push sequence below
+                       cannot place it. gcc would still use a register here.
+                       Refuse rather than silently corrupt the stack. */
+                    tcc_error("fastcall with a non-register argument before an "
                               "integer register argument is not supported");
-                n_reg_pop++, slots--;
-            } else if (cls == 2) {
-                break; /* long long needs a register pair: it and every later
-                          argument are passed on the stack */
+                n_reg_pop++, slots++;
+            } else {
+                spilled = 1;
+                slots += fastcall_arg_slots(t);
+                if (slots >= fastcall_nb_regs)
+                    break; /* no register slots left for any later argument */
             }
-            /* cls == 0 (float/struct): on the stack, registers untouched */
         }
     }
 
@@ -700,7 +712,7 @@ ST_FUNC void gfunc_prolog(Sym *func_sym)
 {
     CType *func_type = &func_sym->type;
     int addr, align, size, func_call, fastcall_nb_regs;
-    int param_index, param_addr, fastcall_used, cls;
+    int param_index, param_addr, fastcall_used;
     const uint8_t *fastcall_regs_ptr;
     Sym *sym;
     CType *type;
@@ -758,19 +770,21 @@ ST_FUNC void gfunc_prolog(Sym *func_sym)
             size = 4;
         }
 #endif
-        cls = fastcall_arg_class(type);
-        if (cls == 1 && fastcall_used < fastcall_nb_regs) {
-            /* save FASTCALL register */
+        if (fastcall_arg_inreg(type) && fastcall_used < fastcall_nb_regs) {
+            /* value travels in the next integer register; spill it to a local */
             loc -= 4;
             /* movl */
             gen_modrm(0x89, fastcall_regs_ptr[fastcall_used], VT_LOCAL, NULL, loc);
             param_addr = loc;
             fastcall_used++;
         } else {
+            /* on the stack; a long long/struct still reserves its register
+               slot(s), pushing later args out of ecx/edx like gcc */
             param_addr = addr;
             addr += size;
-            if (cls == 2)
-                fastcall_used = fastcall_nb_regs; /* long long blocks the rest */
+            fastcall_used += fastcall_arg_slots(type);
+            if (fastcall_used > fastcall_nb_regs)
+                fastcall_used = fastcall_nb_regs;
         }
         gfunc_set_param(sym, param_addr, 0);
         param_index++;

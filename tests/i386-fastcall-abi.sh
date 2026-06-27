@@ -22,23 +22,30 @@ tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 cat > "$tmp/callee.c" <<'EOF'
 /* fastcall register-assignment edge cases: long long blocks the register
    budget; char/short are promoted into a register; pointers use registers;
-   a long long as the first arg goes entirely on the stack. */
+   a long long as the first arg goes entirely on the stack; an 8-byte struct
+   reserves both register slots (blocks), and an int after it spills. */
+struct P2 { int x, y; };
 int __attribute__((fastcall)) mix_ll(int a, long long b, int c){ return (int)(a+b+c); }
 int __attribute__((fastcall)) small(char a, short b, int c){ return a+b+c; }
 int __attribute__((fastcall)) ptr2(int *a, int *b){ return *a + *b; }
 int __attribute__((fastcall)) ll_first(long long a, int b){ return (int)(a+b); }
+int __attribute__((fastcall)) fs(int a, struct P2 p, int b){ return a*1000+p.x*100+p.y*10+b; }
 EOF
 cat > "$tmp/caller.c" <<'EOF'
+struct P2 { int x, y; };
 int __attribute__((fastcall)) mix_ll(int a, long long b, int c);
 int __attribute__((fastcall)) small(char a, short b, int c);
 int __attribute__((fastcall)) ptr2(int *a, int *b);
 int __attribute__((fastcall)) ll_first(long long a, int b);
+int __attribute__((fastcall)) fs(int a, struct P2 p, int b);
 int main(void){
     int x=10, y=20, f=0;
-    if (mix_ll(1,100,3)   != 104) f|=1;
-    if (small(1,2,3)      != 6)   f|=2;
-    if (ptr2(&x,&y)       != 30)  f|=4;
-    if (ll_first(100,5)   != 105) f|=8;
+    struct P2 p={2,3};
+    if (mix_ll(1,100,3)   != 104)  f|=1;
+    if (small(1,2,3)      != 6)    f|=2;
+    if (ptr2(&x,&y)       != 30)   f|=4;
+    if (ll_first(100,5)   != 105)  f|=8;
+    if (fs(1,p,4)         != 1234) f|=16; /* int->ecx, struct+int->stack */
     return f;   /* 0 = ABI matches gcc */
 }
 EOF
