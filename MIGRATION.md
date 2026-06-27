@@ -4,9 +4,19 @@ A staged, verification-gated plan to (A) delete every autotools/`configure`/
 hand-written-`Make` file now that `CMakeLists.txt` is the build, and (B) fold the
 generated files/targets into modern, cross-platform-clean CMake idioms.
 
-Status: **proposal**. Nothing here is executed yet. Each phase has an explicit
-"done when" gate (`cmake -S . -B b && cmake --build b && ctest`, plus the
-`gcc;clang × native;cross` matrix from TODO.md) so the build never breaks.
+Status: **EXECUTED.** Phases 1-4 (removal) and Part 2/3 modernization are landed;
+each phase passed its gate (`cmake -S . -B b && cmake --build b && ctest` = 137/137,
+plus the `gcc;clang × native;cross` matrix). The autotools build (`configure` +
+all Makefiles + `conftest.c`) is deleted; the last commit that contained it is
+tagged `autotools-final`. Per-item completion is marked in the Part 5 checklist.
+
+Notable decision: **6.1** (c2str host tool) is satisfied by the existing direct
+`execute_process` host-compile of `c2str.c` rather than a full host-tools
+`ExternalProject` — for one self-contained generator that is simpler and equally
+robust (it compiles + runs on the build machine under cross-compile). The
+`ExternalProject` route is only worth it if more host codegen tools appear.
+Phase 5 (`win32/*.bat`) is intentionally **kept** as the zero-dependency Windows
+bootstrap until a Windows CI lane proves the CMake path.
 
 ---
 
@@ -177,16 +187,20 @@ These turn "works on my box" into "works/CI-tested everywhere".
 
 ## Part 5 — Sequenced checklist
 
-- [ ] 1.1 Parity run (native + matrix) green on a clean tree.
-- [ ] 1.2 `TCC_LIBTCC1_USEGCC` option; decide fragile-tests (port or document).
-- [ ] 1.3 Tag `autotools-final`; add the "historical line refs" header note.
-- [ ] 2.x Extract `c2str.c` from `conftest.c`; repoint CMake + bat + tccdefs.h.
-- [ ] 3.x `git rm` configure + all Makefiles + conftest.c; verify zero refs.
-- [ ] 4.x Prune `.gitignore`; rewrite README to the CMake quickstart.
-- [ ] 6.1 Host-tools ExternalProject for `c2str` (drop `TCC_HOSTCC` plumbing).
-- [ ] 6.2 `CMakePresets.json` (+ README).
-- [ ] 6.3 `install(EXPORT)` + `tccConfig.cmake` (find_package(tcc)).
-- [ ] 6.4 `CPack` config; retire the `dist` target.
-- [ ] 6.5 `$<BUILD_INTERFACE>`/`$<INSTALL_INTERFACE>` on libtcc; `EXPORT_COMPILE_COMMANDS`.
-- [ ] 6.6 CI matrix (linux/macos/windows × gcc/clang/msvc/mingw) on presets.
-- [ ] 5.x (optional) Remove `win32/*.bat` once Windows CI proves the CMake path.
+- [x] 1.1 Parity run (native + matrix) green on a clean tree.
+- [x] 1.2 `TCC_LIBTCC1_USEGCC` option added; fragile dev tests stay documented
+      (section 16), not ported.
+- [x] 1.3 Tag `autotools-final`; "historical line refs" header note added.
+- [x] 2.x Extract `c2str.c` from `conftest.c`; repointed CMake + bat + tccdefs.h.
+- [x] 3.x `git rm` configure + all Makefiles + conftest.c (2,332 lines); verified.
+- [x] 4.x Prune `.gitignore`; README rewritten to the CMake quickstart.
+- [x] 6.1 `c2str` host tool via direct host-compile (kept; simpler than an EP).
+- [x] 6.2 `CMakePresets.json` (default/release/asan/cross/matrix) + README.
+- [x] 6.3 `install(EXPORT)` + generated `tccConfig.cmake` — `find_package(tcc)`
+      + `tcc::libtcc` verified against an installed tree.
+- [x] 6.4 `CPack` (section 17): binary + source tarballs verified.
+- [x] 6.5 `$<BUILD_INTERFACE>`/`$<INSTALL_INTERFACE>` on libtcc; `EXPORT_COMPILE_COMMANDS`.
+- [x] 6.6 CI matrix (`.github/workflows/ci.yml`): linux gcc/clang, macOS,
+      windows-mingw, the toolchain×target matrix, and a CPack artifact job.
+- [ ] 5.x (optional) Remove `win32/*.bat` once Windows CI proves the CMake path
+      — deliberately deferred (kept as the zero-dependency Windows bootstrap).

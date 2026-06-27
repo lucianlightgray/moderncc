@@ -45,7 +45,11 @@ string(REGEX MATCH "^[0-9]+(\\.[0-9]+)*" TCC_VERSION_NUMERIC "${TCC_VERSION}")
 project(tcc
     VERSION "${TCC_VERSION_NUMERIC}"
     LANGUAGES C ASM
-    DESCRIPTION "Tiny C Compiler")
+    DESCRIPTION "Tiny C Compiler"
+    HOMEPAGE_URL "https://repo.or.cz/tinycc.git")
+
+# Emit compile_commands.json for clangd / IDE tooling across platforms.
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # CMP0174 (CMake 3.31+): make cmake_parse_arguments() set a single-value keyword
 # to "" when followed by an empty string, instead of unsetting it. tcc_config_node
@@ -1728,7 +1732,11 @@ endif()
 # NOTE: include/ holds tcc's RUNTIME headers (for libtcc1 / compiled programs),
 # NOT host build headers. The Makefile only adds -I$(TOP) (config.h) + source
 # dir when compiling the host objects, so we must not put include/ here.
-target_include_directories(libtcc PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+# Interface generator expressions so both the build tree and an installed
+# consumer (find_package(tcc)) resolve libtcc.h from the right place.
+target_include_directories(libtcc PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
 # Link libraries (Makefile unix branch: -lm -ldl -lpthread; BSD sets ldl=no;
 # win: none). CMAKE_DL_LIBS is already empty where libdl doesn't exist (BSD),
@@ -2250,14 +2258,41 @@ endif()
 install(TARGETS tcc RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 
 # libtcc: shared -> bindir-style perms but into libdir; static -> libdir
-# (Makefile: into $(libdir); RUNTIME handles the Windows DLL).
-install(TARGETS libtcc
+# (Makefile: into $(libdir); RUNTIME handles the Windows DLL). EXPORT records
+# the target so downstream projects can find_package(tcc) (see below).
+install(TARGETS libtcc EXPORT tccTargets
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-    ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}")
+    ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 # libtcc.h -> includedir (Makefile: IF $(TOPSRC)/libtcc.h "$(includedir)").
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/libtcc.h"
     DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+
+# --- CMake package config: find_package(tcc) -> tcc::libtcc -----------------
+# Modern consumer story. Generated entirely here (no tracked template file), so
+# downstream can: find_package(tcc); target_link_libraries(app PRIVATE tcc::libtcc).
+include(CMakePackageConfigHelpers)
+set(_tcc_cmakedir "${CMAKE_INSTALL_LIBDIR}/cmake/tcc")
+install(EXPORT tccTargets
+    NAMESPACE tcc::
+    FILE tccTargets.cmake
+    DESTINATION "${_tcc_cmakedir}")
+# libtcc's PUBLIC link interface can include Threads::Threads (an imported
+# target), so the consumer must resolve it before loading tccTargets.cmake.
+file(WRITE "${CMAKE_BINARY_DIR}/tccConfig.cmake.in"
+"@PACKAGE_INIT@\ninclude(CMakeFindDependencyMacro)\nfind_dependency(Threads)\ninclude(\"\${CMAKE_CURRENT_LIST_DIR}/tccTargets.cmake\")\ncheck_required_components(tcc)\n")
+configure_package_config_file(
+    "${CMAKE_BINARY_DIR}/tccConfig.cmake.in"
+    "${CMAKE_BINARY_DIR}/tccConfig.cmake"
+    INSTALL_DESTINATION "${_tcc_cmakedir}")
+write_basic_package_version_file(
+    "${CMAKE_BINARY_DIR}/tccConfigVersion.cmake"
+    VERSION "${PROJECT_VERSION}" COMPATIBILITY SameMajorVersion)
+install(FILES
+    "${CMAKE_BINARY_DIR}/tccConfig.cmake"
+    "${CMAKE_BINARY_DIR}/tccConfigVersion.cmake"
+    DESTINATION "${_tcc_cmakedir}")
 
 # Runtime archive + EXTRA_O standalone objects -> tccdir (Makefile:
 # IFw $(LIBTCC1) $(EXTRA_O) "$(tccdir)"). LIBTCC1_EXTRA_OBJS comes from section 9.
@@ -2738,12 +2773,37 @@ endif()
 #     accepts the values, the C sources carry the platform defaults.
 #
 # Divergences kept deliberately (run via the Makefile if needed):
-#   * lib/Makefile `<target>-libtcc1-usegcc=yes`: build libtcc1 with the host CC
-#     (+ -fPIC -gdwarf/-gstabs) instead of the freshly-built tcc, which makes the
-#     bounds-checked objects ~40-60% faster. CMake always builds libtcc1 with tcc
-#     (section 9). Set CC manually + rebuild lib/ to reproduce the gcc variant.
+#   * lib/Makefile `<target>-libtcc1-usegcc=yes` (host-CC-built libtcc1, ~40-60%
+#     faster bounds-checked objects) is now the TCC_LIBTCC1_USEGCC option
+#     (section 9, native only) -- no longer a divergence.
 #   * iterated/self-rebuild & host-fragile tests (test2/test3, memtest, dlltest,
 #     btest/tccb, cross-test, asmtest/weaktest/speedtest): see the note at the end
 #     of section 14.
 #   * `make tar` win32-CRLF rewrite: the `dist` target (section 15) ships the raw
-#     git content; CPack also covers packaging.
+#     git content; CPack (section 17) also covers packaging.
+
+# ===========================================================================
+# 17. CPACK PACKAGING  (replaces `make tar` / the dist tarball)
+# ===========================================================================
+# One `cpack`/`cpack --config CPackSourceConfig.cmake` produces binary/source
+# archives on every platform. Runs after all install() rules (section 13).
+set(CPACK_PACKAGE_NAME "tcc")
+set(CPACK_PACKAGE_VENDOR "TinyCC")
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${PROJECT_DESCRIPTION}")
+set(CPACK_PACKAGE_HOMEPAGE_URL "${PROJECT_HOMEPAGE_URL}")
+set(CPACK_PACKAGE_CONTACT "tinycc-devel")
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/COPYING")
+    set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/COPYING")
+endif()
+# Per-platform binary generators (NSIS/WIX need their tools; ZIP/TGZ are universal).
+if(WIN32)
+    set(CPACK_GENERATOR "ZIP")
+else()
+    set(CPACK_GENERATOR "TGZ")
+endif()
+# Source package: tarball/zip of the tree minus VCS + build dirs.
+set(CPACK_SOURCE_GENERATOR "TGZ;ZIP")
+set(CPACK_SOURCE_IGNORE_FILES
+    "/\\.git/" "/build/" "/cmake-build-[^/]*/" "/\\.idea/" "\\.o$" "\\.a$")
+include(CPack)

@@ -1,0 +1,54 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 22, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "default",
+      "displayName": "Default (Ninja, Debug)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "release",
+      "displayName": "Release",
+      "inherits": "default",
+      "binaryDir": "${sourceDir}/build-release",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "asan",
+      "displayName": "Sanitizer build (tcc_s)",
+      "inherits": "default",
+      "binaryDir": "${sourceDir}/build-asan",
+      "cacheVariables": { "TCC_BUILD_SANITIZE": "ON" }
+    },
+    {
+      "name": "cross",
+      "displayName": "Native + all cross compilers",
+      "inherits": "default",
+      "binaryDir": "${sourceDir}/build-cross",
+      "cacheVariables": { "TCC_ENABLE_CROSS": "ON" }
+    },
+    {
+      "name": "matrix",
+      "displayName": "Toolchain x target matrix (gcc;clang x native;cross)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-matrix",
+      "cacheVariables": {
+        "TCC_TOOLCHAIN_PROFILE": "gcc;clang",
+        "TCC_TARGETS": "native;cross"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "default", "configurePreset": "default" },
+    { "name": "release", "configurePreset": "release" },
+    { "name": "cross", "configurePreset": "cross" },
+    { "name": "matrix", "configurePreset": "matrix" }
+  ],
+  "testPresets": [
+    { "name": "default", "configurePreset": "default", "output": { "outputOnFailure": true } },
+    { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } }
+  ]
+}

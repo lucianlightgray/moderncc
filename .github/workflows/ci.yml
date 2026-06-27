@@ -1,0 +1,94 @@
+name: CI
+
+# Cross-platform build + test matrix driven by CMakePresets.json. Proves the
+# "functions well across all platforms" goal of the CMake migration.
+
+on:
+  push:
+    branches: [ mob, main, master ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    name: linux-${{ matrix.cc }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [ gcc, clang ]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Configure
+        env:
+          CC: ${{ matrix.cc }}
+        run: cmake --preset default
+      - name: Build
+        run: cmake --build --preset default
+      - name: Test
+        run: ctest --preset default
+
+  macos:
+    name: macos
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Ninja
+        run: brew install ninja
+      - name: Configure
+        run: cmake --preset default
+      - name: Build
+        run: cmake --build --preset default
+      - name: Test
+        run: ctest --preset default
+
+  windows:
+    name: windows-mingw
+    runs-on: windows-latest
+    # tcc builds cleanly with mingw (gcc); the MSVC lane is not yet wired, so
+    # this lane uses the MinGW gcc that ships with the runner image.
+    defaults:
+      run:
+        shell: cmd
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure (MinGW + Ninja)
+        run: cmake -S . -B build -G Ninja -DCMAKE_C_COMPILER=gcc -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  cross-matrix:
+    name: linux-toolchain-target-matrix
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Ninja + clang
+        run: sudo apt-get update && sudo apt-get install -y ninja-build clang
+      - name: Configure matrix (gcc;clang x native;cross)
+        run: cmake --preset matrix
+      - name: Build matrix (also runs each cell's ctest)
+        run: cmake --build --preset matrix
+
+  package:
+    name: cpack-artifacts
+    runs-on: ubuntu-latest
+    needs: [ linux ]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Configure + build (release)
+        run: cmake --preset release && cmake --build --preset release
+      - name: Package (binary + source)
+        run: |
+          cd build-release
+          cpack -G TGZ
+          cpack --config CPackSourceConfig.cmake -G TGZ
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tcc-packages
+          path: build-release/*.tar.gz
