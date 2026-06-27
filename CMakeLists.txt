@@ -23,7 +23,10 @@
 # comments flag deliberate divergences from configure/Makefile.
 # ===========================================================================
 
-cmake_minimum_required(VERSION 3.16)
+# 3.18+ is required for cmake_language(EVAL) used by the config node graph's
+# relevance-visibility pass (section 1z); 3.22 makes grouped if() conditions in
+# that pass policy-clean (CMP0127 NEW). Raised from 3.16 for those features.
+cmake_minimum_required(VERSION 3.22)
 
 # --- Version (configure: `version=$(head VERSION)`) -------------------------
 file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" TCC_VERSION LIMIT_COUNT 1)
@@ -36,6 +39,15 @@ project(tcc
     VERSION "${TCC_VERSION_NUMERIC}"
     LANGUAGES C ASM
     DESCRIPTION "Tiny C Compiler")
+
+# CMP0174 (CMake 3.31+): make cmake_parse_arguments() set a single-value keyword
+# to "" when followed by an empty string, instead of unsetting it. tcc_config_node
+# passes DEFAULT "" for the empty-default STRING nodes; opting into NEW silences
+# the dev warning and keeps the empty default well-defined. Guarded so it is a
+# no-op on the 3.22-3.30 range where the policy does not exist.
+if(POLICY CMP0174)
+    cmake_policy(SET CMP0174 NEW)
+endif()
 
 # ===========================================================================
 # 1. OPTIONS  (mirror of ./configure flags)
@@ -50,6 +62,345 @@ if(EXISTS "${TCC_CONFIG_EXTRA}")
     include("${TCC_CONFIG_EXTRA}")
     message(STATUS "tcc: included ${TCC_CONFIG_EXTRA}")
 endif()
+
+# ===========================================================================
+# 1z. CONFIG NODE GRAPH  (interactive-config automation, all inline)
+# ===========================================================================
+# A thin metadata layer over the ordinary option()/set(CACHE) declarations
+# below. It does NOT change any default or behavior -- every existing
+# -DTCC_* flag keeps working byte-for-byte. What it adds, driven by a
+# registry of "nodes":
+#   * dropdowns      -- STRINGS combo boxes in ccmake/cmake-gui for enums.
+#   * relevance      -- hide knobs that don't apply to the resolved target
+#                       (ARM-only, Darwin-only, shared-libtcc-only, ...).
+#                       Hiding flips the cache TYPE to INTERNAL; the stored
+#                       VALUE is preserved (verified), so it is purely
+#                       cosmetic -- the consuming if() branches still decide
+#                       behavior and an explicit -D is never overridden.
+#   * validation     -- STRINGS does NOT enforce, so enum/range/combination
+#                       checks live in tcc_validate_config() (section 2z).
+#   * profiles       -- TCC_TOOLCHAIN_PROFILE seeds safe feature defaults
+#                       (section 1y) with an explicit override guard.
+# The parent->child reveal edges are encoded as each node's VISIBLE_WHEN.
+# Derived facts (TCC_CPU/TCC_TARGETOS/sizes) are reported, never edited.
+#
+# tcc_config_node(<NAME> TYPE <BOOL|STRING|PATH> DEFAULT <v> HELP <text>
+#                 [GROUP <g>] [CHOICES <a> <b> ...] [EMPTY_OK] [ADVANCED]
+#                 [VISIBLE_WHEN <cmake-if-condition string>])
+function(tcc_config_node name)
+    # PARSE_ARGV (not ${ARGN}) so HELP/VISIBLE_WHEN strings containing ';'
+    # survive intact instead of being re-split into a list.
+    cmake_parse_arguments(PARSE_ARGV 1 N "EMPTY_OK;ADVANCED"
+        "TYPE;DEFAULT;HELP;GROUP;VISIBLE_WHEN" "CHOICES")
+
+    # Effective default: a toolchain profile may have pre-seeded one.
+    set(_def "${N_DEFAULT}")
+    if(DEFINED TCC_SEED_${name})
+        set(_def "${TCC_SEED_${name}}")
+    endif()
+
+    # Declare the cache entry. Idempotent: an existing cache value (e.g. a
+    # user -D, or a previous configure) always wins -- back-compat preserved.
+    if(N_TYPE STREQUAL "BOOL")
+        option(${name} "${N_HELP}" "${_def}")
+    else()
+        set(${name} "${_def}" CACHE "${N_TYPE}" "${N_HELP}")
+    endif()
+
+    # Dropdown choices (GUI affordance only; enforced by tcc_validate_config).
+    if(N_CHOICES OR N_EMPTY_OK)
+        if(N_EMPTY_OK)
+            set_property(CACHE ${name} PROPERTY STRINGS "" ${N_CHOICES})
+        else()
+            set_property(CACHE ${name} PROPERTY STRINGS ${N_CHOICES})
+        endif()
+    endif()
+    if(N_ADVANCED)
+        mark_as_advanced(${name})
+    endif()
+
+    # Register metadata for the visibility / validation / doc passes.
+    set_property(GLOBAL APPEND PROPERTY TCC_NODES "${name}")
+    set_property(GLOBAL PROPERTY TCC_NODE_${name}_DEFAULT "${N_DEFAULT}")
+    set_property(GLOBAL PROPERTY TCC_NODE_${name}_TYPE    "${N_TYPE}")
+    set_property(GLOBAL PROPERTY TCC_NODE_${name}_GROUP   "${N_GROUP}")
+    set_property(GLOBAL PROPERTY TCC_NODE_${name}_HELP    "${N_HELP}")
+    set_property(GLOBAL PROPERTY TCC_NODE_${name}_CHOICES "${N_CHOICES}")
+    set_property(GLOBAL PROPERTY TCC_NODE_${name}_EMPTYOK "${N_EMPTY_OK}")
+    set_property(GLOBAL PROPERTY TCC_NODE_${name}_WHEN    "${N_VISIBLE_WHEN}")
+endfunction()
+
+# Hide nodes whose VISIBLE_WHEN is false for the resolved target by flipping
+# their cache TYPE to INTERNAL (value-preserving); restore the real TYPE when
+# relevant. Run AFTER target/OS/CPU detection so the conditions are settled
+# (section 2z). Purely cosmetic: never mutates a node's value.
+function(tcc_apply_node_visibility)
+    get_property(_nodes GLOBAL PROPERTY TCC_NODES)
+    foreach(_n IN LISTS _nodes)
+        get_property(_when GLOBAL PROPERTY TCC_NODE_${_n}_WHEN)
+        get_property(_type GLOBAL PROPERTY TCC_NODE_${_n}_TYPE)
+        set(_vis TRUE)
+        if(NOT "${_when}" STREQUAL "")
+            cmake_language(EVAL CODE "if(${_when})\nelse()\nset(_vis FALSE)\nendif()")
+        endif()
+        if(_vis)
+            set_property(CACHE ${_n} PROPERTY TYPE "${_type}")
+        else()
+            set_property(CACHE ${_n} PROPERTY TYPE INTERNAL)
+        endif()
+    endforeach()
+endfunction()
+
+# A read-only derived fact (target cpu/os, sizes, ...). Not a cache entry and
+# never edited; reported by tcc_report_config(). Recorded for the doc slice.
+function(tcc_status_node name value)
+    set_property(GLOBAL APPEND PROPERTY TCC_STATUS_NODES "${name}")
+    set_property(GLOBAL PROPERTY TCC_STATUS_${name} "${value}")
+endfunction()
+
+# Record which TCC_* cache vars are already present at this point -- i.e. set by
+# the user via -D or config-extra.cmake. Used by the superbuild orchestrator to
+# forward the user's explicit options to each child. Computed once and persisted.
+function(tcc_snapshot_user_presets)
+    if(DEFINED CACHE{_TCC_PRESET_VARS})
+        return()
+    endif()
+    get_cmake_property(_cv CACHE_VARIABLES)
+    set(_preset "")
+    foreach(_v IN LISTS _cv)
+        if(_v MATCHES "^TCC_" AND NOT _v MATCHES "^_TCC_")
+            list(APPEND _preset "${_v}")
+        endif()
+    endforeach()
+    set(_TCC_PRESET_VARS "${_preset}" CACHE INTERNAL
+        "TCC_* cache vars set by the user (-D / config-extra), for superbuild forwarding")
+endfunction()
+
+# Seed a profile's default for a node by setting TCC_SEED_<var>, which
+# tcc_config_node() consults as the node's DEFAULT. This is a *default only*:
+# it is applied via a non-FORCE option()/set(CACHE), so an explicit -D, a
+# config-extra value, or a prior cache value ALWAYS wins (the "individual
+# overrides" contract). Call BEFORE the node is declared.
+# Trade-off: switching profiles IN PLACE does not auto-revert a previously
+# seeded knob (set it explicitly with -D). This is moot for the multi-toolchain
+# superbuild, where each child is a fresh build dir. (See TODO.md.)
+macro(tcc_profile_seed var val)
+    set(TCC_SEED_${var} "${val}")
+endmacro()
+
+# Map a toolchain name to a C compiler command for a multi-toolchain sub-build.
+# Empty result = 'auto' (let the child inherit the default compiler). Each
+# mapping is overridable with -DTCC_CC_<name>=<path> (e.g. -DTCC_CC_tcc=/x/tcc),
+# and the resolved path is cached as TCC_TOOLCHAIN_CC_<name>.
+function(tcc_map_toolchain_cc tc outvar)
+    if(DEFINED TCC_CC_${tc})
+        set(${outvar} "${TCC_CC_${tc}}" PARENT_SCOPE)
+        return()
+    endif()
+    if(tc STREQUAL "auto")
+        set(${outvar} "" PARENT_SCOPE)
+        return()
+    endif()
+    set(_names_auto "")
+    set(_names_gcc gcc cc)
+    set(_names_clang clang)
+    set(_names_tcc tcc)
+    set(_names_msvc cl)
+    find_program(TCC_TOOLCHAIN_CC_${tc} NAMES ${_names_${tc}})
+    if(TCC_TOOLCHAIN_CC_${tc})
+        set(${outvar} "${TCC_TOOLCHAIN_CC_${tc}}" PARENT_SCOPE)
+    else()
+        set(${outvar} "" PARENT_SCOPE)
+    endif()
+endfunction()
+
+# Map a target-platform name to the extra CMake configure args that produce it,
+# for a multi-target sub-build. Built-ins:
+#   native -> (host build)            cross -> -DTCC_ENABLE_CROSS=ON (host-runnable
+#                                              cross compilers for other arches)
+# Any other name must be defined by the user as a list in TCC_TARGET_ARGS_<name>
+# (e.g. -DTCC_TARGET_ARGS_win="-DCMAKE_TOOLCHAIN_FILE=...;-DTCC_BUILD_TESTS=OFF").
+# Returns __UNKNOWN__ for an unmapped name so the caller can error.
+function(tcc_map_target_args name outvar)
+    if(DEFINED TCC_TARGET_ARGS_${name})
+        set(${outvar} "${TCC_TARGET_ARGS_${name}}" PARENT_SCOPE)
+    elseif(name STREQUAL "native")
+        set(${outvar} "" PARENT_SCOPE)
+    elseif(name STREQUAL "cross")
+        set(${outvar} "-DTCC_ENABLE_CROSS=ON" PARENT_SCOPE)
+    else()
+        set(${outvar} "__UNKNOWN__" PARENT_SCOPE)
+    endif()
+endfunction()
+
+# Validation pass. STRINGS only populates the GUI dropdown; it does NOT reject
+# bad input -- so every enumerated node is range-checked here (FATAL), plus the
+# cross-cutting invalid-combination rules surfaced by the analysis. Run AFTER
+# all detection + per-OS defaults, BEFORE config.h/targets. Three actions:
+# FATAL_ERROR (impossible), WARNING (inert/foot-gun, proceed), STATUS (note).
+# Strict back-compat: this pass NEVER mutates a node's value -- it only reports.
+function(tcc_validate_config)
+    # --- generic enum/range checks driven by the node table -----------------
+    get_property(_nodes GLOBAL PROPERTY TCC_NODES)
+    foreach(_n IN LISTS _nodes)
+        get_property(_choices GLOBAL PROPERTY TCC_NODE_${_n}_CHOICES)
+        get_property(_emptyok GLOBAL PROPERTY TCC_NODE_${_n}_EMPTYOK)
+        if(_choices)
+            set(_allowed ${_choices})
+            if(_emptyok)
+                list(APPEND _allowed "")
+            endif()
+            if(NOT "${${_n}}" IN_LIST _allowed)
+                # WARNING, not FATAL: these values were silently accepted before
+                # the node graph (the config.h emit still handles any value), so
+                # a hard error would be a back-compat regression. We flag the
+                # likely typo but never break a previously-valid configure.
+                message(WARNING
+                    "tcc config: ${_n}='${${_n}}' is not one of the known values "
+                    "(${_allowed}); proceeding, but check for a typo.")
+            endif()
+        endif()
+    endforeach()
+
+    # --- numeric leaf (SEMLOCK is free-form numeric, no enum) ---------------
+    # A non-numeric SEMLOCK is emitted as a bare token and breaks the C compile,
+    # so this one stays FATAL.
+    if(NOT "${TCC_CONFIG_SEMLOCK}" STREQUAL "" AND
+       NOT "${TCC_CONFIG_SEMLOCK}" MATCHES "^[0-9]+$")
+        message(FATAL_ERROR
+            "tcc config: TCC_CONFIG_SEMLOCK='${TCC_CONFIG_SEMLOCK}' must be a number")
+    endif()
+
+    # --- impossible combinations (FATAL) ------------------------------------
+    # tcc_s (-fsanitize) and tcc_p (-pg) are compiled by the HOST cc, which must
+    # be gcc/clang. tcc_c (coverage) is NOT here: it is compiled by the freshly
+    # built tcc, so the host compiler is irrelevant to it.
+    if((TCC_BUILD_SANITIZE OR TCC_BUILD_PROFILE)
+       AND NOT CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        message(FATAL_ERROR
+            "tcc config: TCC_BUILD_SANITIZE/PROFILE need a GCC/Clang host compiler "
+            "(have '${CMAKE_C_COMPILER_ID}'); disable them or set -DCMAKE_C_COMPILER "
+            "to gcc/clang.")
+    endif()
+    # tcc_p links -static; macOS ships no crt0.o for static executables.
+    if(TCC_BUILD_PROFILE AND TCC_TARGETOS STREQUAL "Darwin")
+        message(FATAL_ERROR
+            "tcc config: TCC_BUILD_PROFILE (tcc_p, -static) is unsupported on Darwin "
+            "(no static crt0.o).")
+    endif()
+
+    # --- foot-guns / inert settings (WARNING; behavior unchanged) -----------
+    # bcheck's runtime object is built only inside the backtrace guard, so
+    # `tcc -b` would fail to link. We do NOT silently flip the value
+    # (back-compat); we warn loudly.
+    if(TCC_CONFIG_BCHECK AND NOT TCC_CONFIG_BACKTRACE)
+        message(WARNING
+            "tcc config: TCC_CONFIG_BCHECK=ON with TCC_CONFIG_BACKTRACE=OFF -- the "
+            "bcheck runtime is gated behind backtrace, so `tcc -b` will fail to link. "
+            "Enable backtrace or disable bcheck.")
+    endif()
+    if(TCC_DISABLE_RPATH AND TCC_BUILD_STATIC)
+        message(WARNING
+            "tcc config: TCC_DISABLE_RPATH has no effect with a static libtcc "
+            "(TCC_BUILD_STATIC=ON); rpath is only baked for a shared libtcc.")
+    endif()
+    # Profile names a build chain that isn't the one actually detected.
+    if(NOT TCC_TOOLCHAIN_PROFILE STREQUAL "auto"
+       AND NOT TCC_TOOLCHAIN_PROFILE STREQUAL "${TCC_CC_NAME}")
+        message(WARNING
+            "tcc config: TCC_TOOLCHAIN_PROFILE='${TCC_TOOLCHAIN_PROFILE}' but the "
+            "detected host compiler is '${TCC_CC_NAME}'. The profile seeds defaults; "
+            "it does NOT switch compilers (use -DCMAKE_C_COMPILER for that).")
+    endif()
+    if(NOT TCC_CONFIG_PREDEFS)
+        message(WARNING
+            "tcc config: TCC_CONFIG_PREDEFS=OFF makes tcc load <tccdefs.h> from the "
+            "tccdir at runtime instead of compiling it in -- a runtime dependency.")
+    endif()
+    if(TCC_CONFIG_LIBC STREQUAL "uClibc")
+        message(WARNING
+            "tcc config: TCC_CONFIG_LIBC=uClibc is a legacy selector (emits "
+            "CONFIG_TCC_UCLIBC, no path effect on modern hosts).")
+    endif()
+    # ELF-only knobs on a PE/Mach-O target are inert (incl. the libc selector).
+    if((TCC_TARGETOS STREQUAL "WIN32" OR TCC_TARGETOS STREQUAL "Darwin") AND
+       (TCC_CONFIG_NEW_DTAGS OR TCC_CONFIG_PIE OR TCC_CONFIG_PIC
+        OR NOT TCC_CONFIG_LIBC STREQUAL ""))
+        message(WARNING
+            "tcc config: NEW_DTAGS/PIE/PIC/LIBC are ELF-only and inert on the "
+            "${TCC_TARGETOS} target.")
+    endif()
+    # Darwin-only knobs explicitly set to any non-empty value on a non-Darwin target.
+    if(NOT TCC_TARGETOS STREQUAL "Darwin")
+        if(NOT TCC_CONFIG_CODESIGN STREQUAL "" OR NOT TCC_CONFIG_NEW_MACHO STREQUAL "")
+            message(WARNING
+                "tcc config: CODESIGN/NEW_MACHO only affect Mach-O output; inert on the "
+                "${TCC_TARGETOS} target.")
+        endif()
+    endif()
+endfunction()
+
+# Emit a compact STATUS report of the resolved configuration: the derived
+# target facts plus every relevant (visible) knob and its value. Gives the
+# user the same picture ccmake would, on a plain `cmake -S . -B ...`.
+function(tcc_report_config)
+    message(STATUS "================ tcc configuration ================")
+    get_property(_st GLOBAL PROPERTY TCC_STATUS_NODES)
+    foreach(_n IN LISTS _st)
+        get_property(_v GLOBAL PROPERTY TCC_STATUS_${_n})
+        message(STATUS "  ${_n} = ${_v}   [derived]")
+    endforeach()
+    get_property(_nodes GLOBAL PROPERTY TCC_NODES)
+    foreach(_n IN LISTS _nodes)
+        get_property(_type GLOBAL PROPERTY TCC_NODE_${_n}_TYPE)
+        get_property(_realtype CACHE ${_n} PROPERTY TYPE)
+        if(_realtype STREQUAL "INTERNAL")
+            continue()   # hidden as irrelevant for this target; skip in report
+        endif()
+        message(STATUS "  ${_n} = ${${_n}}")
+    endforeach()
+    message(STATUS "===================================================")
+endfunction()
+
+# Generate the user-configurable slice of the docs from the node registry --
+# the single source of truth for the option table. Writes docs/config-nodes.md.
+# Gated on -DTCC_REGEN_DOCS=ON so normal builds never touch tracked files; the
+# hand-written docs/feature-matrix.md (autodetected/derived/dev sections) is NOT
+# generated and stays authoritative for those.
+function(tcc_generate_node_doc outfile)
+    set(_md "<!-- GENERATED by CMakeLists.txt tcc_generate_node_doc(); do not edit. -->\n")
+    string(APPEND _md "# tcc configurable nodes\n\n")
+    string(APPEND _md "The user-settable build knobs, grouped, with their relevance gate.\n")
+    string(APPEND _md "Generated from the config node registry (CMakeLists.txt section 1z).\n")
+    string(APPEND _md "See [feature-matrix.md](feature-matrix.md) for the full preprocessor catalog.\n\n")
+    string(APPEND _md "| Node | Group | Type | Default | Choices | Shown when | Description |\n")
+    string(APPEND _md "|---|---|---|---|---|---|---|\n")
+    get_property(_nodes GLOBAL PROPERTY TCC_NODES)
+    foreach(_n IN LISTS _nodes)
+        get_property(_g GLOBAL PROPERTY TCC_NODE_${_n}_GROUP)
+        get_property(_t GLOBAL PROPERTY TCC_NODE_${_n}_TYPE)
+        get_property(_d GLOBAL PROPERTY TCC_NODE_${_n}_DEFAULT)
+        get_property(_c GLOBAL PROPERTY TCC_NODE_${_n}_CHOICES)
+        get_property(_e GLOBAL PROPERTY TCC_NODE_${_n}_EMPTYOK)
+        get_property(_w GLOBAL PROPERTY TCC_NODE_${_n}_WHEN)
+        get_property(_h GLOBAL PROPERTY TCC_NODE_${_n}_HELP)
+        if(_e AND _c)
+            set(_c "'';${_c}")
+        elseif(_e)
+            set(_c "''")
+        endif()
+        string(REPLACE ";" ", " _c "${_c}")
+        if(_d STREQUAL "")
+            set(_d "''")
+        endif()
+        if(_w STREQUAL "")
+            set(_w "always")
+        endif()
+        string(APPEND _md "| `${_n}` | ${_g} | ${_t} | `${_d}` | ${_c} | ${_w} | ${_h} |\n")
+    endforeach()
+    file(WRITE "${outfile}" "${_md}")
+    message(STATUS "tcc: generated ${outfile}")
+endfunction()
 
 # configure flag                     -> CMake option
 #   --enable-cross                   -> TCC_ENABLE_CROSS
@@ -69,19 +420,185 @@ endif()
 #   --config-dwarf=x                 -> TCC_CONFIG_DWARF
 #   --config-semlock=x               -> TCC_CONFIG_SEMLOCK
 
-option(TCC_ENABLE_CROSS    "Build all cross compilers (Makefile: make cross)" OFF)
-option(TCC_BUILD_STATIC    "Build libtcc.a (ON) instead of shared libtcc (OFF)" ON)
-option(TCC_DISABLE_RPATH   "Do not bake -rpath into binaries linking libtcc.so" OFF)
-option(TCC_WITH_SELINUX    "Use mmap for executable memory (tcc -run)" OFF)
-option(TCC_CONFIG_MINGW32  "Build a WIN32/mingw32 target" OFF)
-option(TCC_CONFIG_BCHECK   "Enable bounds checker (-b)" ON)
-option(TCC_CONFIG_BACKTRACE "Enable stack backtraces (-bt / -run)" ON)
-option(TCC_CONFIG_PREDEFS  "Compile tccdefs.h into the binary (c2str)" ON)
-option(TCC_CONFIG_PIE      "Let tcc generate position independent executables" OFF)
-option(TCC_CONFIG_PIC      "Position independent code" OFF)
-option(TCC_ONE_SOURCE      "Build libtcc from a single TU (Makefile: ONE_SOURCE)" OFF)
-option(TCC_BUILD_TESTS     "Build/enable the test suite (tests/Makefile)" ON)
-option(TCC_BUILD_DOC       "Build documentation (man/html/info)" OFF)
+# Declared through tcc_config_node() (section 1z) so each carries its UI group,
+# dropdown choices, and relevance condition (VISIBLE_WHEN) -- but the cache
+# entry produced is byte-identical to the plain option()/set() it replaces, so
+# every -DTCC_* keeps working unchanged. VISIBLE_WHEN only governs whether the
+# knob is SHOWN in ccmake/cmake-gui for the resolved target; it never alters a
+# value. Conditions referencing TCC_CPU/TCC_TARGETOS are evaluated later, by the
+# visibility pass (after section 2 detection), not at declaration time.
+set(_elf "NOT TCC_TARGETOS STREQUAL \"WIN32\" AND NOT TCC_TARGETOS STREQUAL \"Darwin\"")
+set(_darwin "TCC_TARGETOS STREQUAL \"Darwin\"")
+
+# Snapshot user-set TCC_* vars (-D / config-extra) BEFORE any node declaration
+# so profile seeding can never overwrite them.
+tcc_snapshot_user_presets()
+
+# -- Toolchain profile / list (auto|gcc|clang|tcc|msvc; may be a LIST) --------
+# Accepts an ORDERED LIST of toolchains, e.g. -DTCC_TOOLCHAIN_PROFILE="gcc;clang;tcc".
+#   * single entry  -> ordinary in-tree build. The entry seeds a consistent set
+#     of safe feature defaults (each overridable; an explicit -D always wins,
+#     see tcc_profile_seed) but never sets CMAKE_C_COMPILER for THIS configure
+#     (that is locked before project()) nor CC_NAME (stays derived, consumed by
+#     tests). 'auto' = derive from the detected compiler and seed nothing.
+#   * multiple entries -> this build becomes a SUPERBUILD ORCHESTRATOR: it
+#     compiles the whole project once per toolchain, in order, each in its own
+#     <build>/toolchain-<name> subdir with that toolchain's compiler, via
+#     ExternalProject (see the orchestrator block just below). There each child
+#     IS a single-entry in-tree build, so it CAN pin CMAKE_C_COMPILER at its own
+#     configure time -- which is the valid way to build with N compilers.
+tcc_config_node(TCC_TOOLCHAIN_PROFILE TYPE STRING DEFAULT auto GROUP "Build targets"
+    HELP "Toolchain(s) to build with, in order (list, e.g. gcc;clang;tcc); single = profile+defaults"
+    CHOICES auto gcc clang tcc msvc)
+
+# Validate every entry up front (the value may be a list, so the generic enum
+# check below cannot cover it).
+set(_tc_allowed auto gcc clang tcc msvc)
+foreach(_tc IN LISTS TCC_TOOLCHAIN_PROFILE)
+    if(NOT _tc IN_LIST _tc_allowed)
+        message(FATAL_ERROR
+            "tcc config: TCC_TOOLCHAIN_PROFILE entry '${_tc}' is not one of: ${_tc_allowed}")
+    endif()
+endforeach()
+
+# --- Multi-toolchain x multi-target superbuild orchestration ----------------
+# TCC_TOOLCHAIN_PROFILE (toolchains) and TCC_TARGETS (cross-platform targets)
+# are both ORDERED LISTS forming a build MATRIX. When the matrix has more than
+# the single native cell (and this is not already a delegated child), the
+# top-level build becomes an orchestrator: one ExternalProject child per
+# (toolchain, target) cell, each a fresh single-cell build, then return().
+#   * targets within a toolchain build SIMULTANEOUSLY (no DEPENDS between them).
+#   * toolchain stages run IN ORDER by default (each stage's cells wait for the
+#     whole previous stage) -- toggle with TCC_SUPERBUILD_SEQUENTIAL=OFF to make
+#     the entire matrix build in parallel.
+option(TCC_SUPERBUILD_TEST "Run ctest after each matrix sub-build" ON)
+option(TCC_SUPERBUILD_SEQUENTIAL "Build toolchain stages in order (targets within a stage stay parallel)" ON)
+set(TCC_TARGETS "native" CACHE STRING
+    "Cross-platform target(s) to build, as a list (native;cross;<custom>)")
+set_property(CACHE TCC_TARGETS PROPERTY STRINGS native cross)
+
+list(LENGTH TCC_TOOLCHAIN_PROFILE _tc_count)
+list(LENGTH TCC_TARGETS _tg_count)
+set(_is_matrix FALSE)
+if(_tc_count GREATER 1 OR _tg_count GREATER 1 OR NOT TCC_TARGETS STREQUAL "native")
+    set(_is_matrix TRUE)
+endif()
+if(_is_matrix AND NOT TCC_SUPERBUILD_CHILD)
+    include(ExternalProject)
+    set(_order "parallel")
+    if(TCC_SUPERBUILD_SEQUENTIAL)
+        set(_order "toolchains in order, targets parallel")
+    endif()
+    message(STATUS "tcc: superbuild matrix toolchains=[${TCC_TOOLCHAIN_PROFILE}] x "
+                   "targets=[${TCC_TARGETS}] (${_order})")
+    # Forward the user's explicitly-set TCC_* options (snapshot) to every cell,
+    # minus the orchestration controls themselves.
+    set(_forward "")
+    foreach(_v IN LISTS _TCC_PRESET_VARS)
+        if(_v MATCHES "^TCC_(TOOLCHAIN_PROFILE|TARGETS|SUPERBUILD_TEST|SUPERBUILD_SEQUENTIAL)$")
+            continue()
+        endif()
+        list(APPEND _forward "-D${_v}=${${_v}}")
+    endforeach()
+    set(_prev_stage "")          # all cells of the previous toolchain stage
+    foreach(_tc IN LISTS TCC_TOOLCHAIN_PROFILE)
+        tcc_map_toolchain_cc("${_tc}" _cc)
+        if(NOT _tc STREQUAL "auto" AND _cc STREQUAL "")
+            message(FATAL_ERROR
+                "tcc config: toolchain '${_tc}' requested but its compiler was not "
+                "found; install it or pass -DTCC_CC_${_tc}=<path>.")
+        endif()
+        set(_this_stage "")
+        foreach(_tg IN LISTS TCC_TARGETS)
+            tcc_map_target_args("${_tg}" _targs)
+            if(_targs STREQUAL "__UNKNOWN__")
+                message(FATAL_ERROR
+                    "tcc config: target '${_tg}' is unknown; use native/cross or "
+                    "define -DTCC_TARGET_ARGS_${_tg}=\"-Dk=v;...\".")
+            endif()
+            set(_cell "${_tc}-${_tg}")
+            set(_cargs -DTCC_TOOLCHAIN_PROFILE=${_tc} -DTCC_SUPERBUILD_CHILD=ON
+                       ${_forward} ${_targs})
+            if(NOT "${CMAKE_BUILD_TYPE}" STREQUAL "")
+                list(APPEND _cargs "-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}")
+            endif()
+            if(NOT _cc STREQUAL "")
+                list(APPEND _cargs "-DCMAKE_C_COMPILER=${_cc}")
+            endif()
+            # Order: cells in a stage are parallel; a stage waits for the prior
+            # stage (all its cells) when sequential.
+            set(_dep "")
+            if(TCC_SUPERBUILD_SEQUENTIAL AND _prev_stage)
+                set(_dep DEPENDS ${_prev_stage})
+            endif()
+            ExternalProject_Add(${_cell}
+                SOURCE_DIR  "${CMAKE_CURRENT_SOURCE_DIR}"
+                BINARY_DIR  "${CMAKE_BINARY_DIR}/${_cell}"
+                CMAKE_ARGS  ${_cargs}
+                CONFIGURE_HANDLED_BY_BUILD ON
+                BUILD_ALWAYS ON
+                INSTALL_COMMAND ""
+                ${_dep})
+            if(TCC_SUPERBUILD_TEST)
+                ExternalProject_Add_Step(${_cell} ctest
+                    COMMAND "${CMAKE_CTEST_COMMAND}" --output-on-failure
+                    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/${_cell}"
+                    DEPENDEES build ALWAYS ON USES_TERMINAL ON)
+            endif()
+            list(APPEND _this_stage ${_cell})
+        endforeach()
+        set(_prev_stage "${_this_stage}")
+    endforeach()
+    # Stop here: the orchestrator delegates all compilation to the children.
+    return()
+endif()
+
+# -- Toolchain-profile seed table (node DEFAULTS only; -D always wins) --------
+# Runs BEFORE the feature nodes so each seed becomes that node's default via a
+# non-FORCE declaration. Only genuinely-safe, profile-differentiated defaults
+# the build does not already set; this is the extensible seam. In a child build
+# TCC_TOOLCHAIN_PROFILE is a single value.
+if(TCC_TOOLCHAIN_PROFILE STREQUAL "tcc")
+    tcc_profile_seed(TCC_ONE_SOURCE ON)   # tcc self-hosts fastest as one TU
+endif()
+
+# -- Build targets / shape ---------------------------------------------------
+tcc_config_node(TCC_ENABLE_CROSS  TYPE BOOL DEFAULT OFF GROUP "Build targets"
+    HELP "Build all cross compilers (Makefile: make cross)")
+tcc_config_node(TCC_BUILD_STATIC  TYPE BOOL DEFAULT ON  GROUP "Build targets"
+    HELP "Build libtcc.a (ON) instead of shared libtcc (OFF)")
+tcc_config_node(TCC_DISABLE_RPATH TYPE BOOL DEFAULT OFF GROUP "Build targets"
+    HELP "Do not bake -rpath into binaries linking libtcc.so"
+    VISIBLE_WHEN "NOT TCC_BUILD_STATIC")          # rpath only with a shared libtcc
+tcc_config_node(TCC_ONE_SOURCE    TYPE BOOL DEFAULT OFF GROUP "Build targets"
+    HELP "Build libtcc from a single TU (Makefile: ONE_SOURCE)")
+tcc_config_node(TCC_BUILD_TESTS   TYPE BOOL DEFAULT ON  GROUP "Build targets"
+    HELP "Build/enable the test suite (tests/Makefile)")
+tcc_config_node(TCC_BUILD_DOC     TYPE BOOL DEFAULT OFF GROUP "Build targets"
+    HELP "Build documentation (man/html/info)")
+
+# -- tcc compiler features ---------------------------------------------------
+tcc_config_node(TCC_CONFIG_MINGW32  TYPE BOOL DEFAULT OFF GROUP "tcc features"
+    HELP "Build a WIN32/mingw32 target (input: forces TCC_TARGETOS=WIN32)")
+tcc_config_node(TCC_CONFIG_BACKTRACE TYPE BOOL DEFAULT ON GROUP "tcc features"
+    HELP "Enable stack backtraces (-bt / -run)")
+tcc_config_node(TCC_CONFIG_BCHECK   TYPE BOOL DEFAULT ON GROUP "tcc features"
+    HELP "Enable bounds checker (-b)"
+    VISIBLE_WHEN "TCC_CONFIG_BACKTRACE")          # bcheck runtime rides on backtrace
+tcc_config_node(TCC_CONFIG_PREDEFS  TYPE BOOL DEFAULT ON GROUP "tcc features"
+    HELP "Compile tccdefs.h into the binary (c2str)")
+tcc_config_node(TCC_CONFIG_PIE      TYPE BOOL DEFAULT OFF GROUP "tcc features"
+    HELP "Let tcc generate position independent executables"
+    VISIBLE_WHEN "${_elf}")                       # PIE/PIC are ELF-only
+tcc_config_node(TCC_CONFIG_PIC      TYPE BOOL DEFAULT OFF GROUP "tcc features"
+    HELP "Position independent code"
+    VISIBLE_WHEN "${_elf}")
+tcc_config_node(TCC_WITH_SELINUX    TYPE BOOL DEFAULT OFF GROUP "tcc features"
+    HELP "Use mmap for executable memory (tcc -run)")
+tcc_config_node(TCC_CONFIG_NEW_DTAGS TYPE BOOL DEFAULT OFF GROUP "tcc features"
+    HELP "Use DT_RUNPATH instead of DT_RPATH (tcc-emitted; always relevant on ELF)"
+    VISIBLE_WHEN "${_elf}")
+
 # Build-path-first runtime discovery. When ON, the freshly-built tcc (and the
 # cross compilers / anything linking libtcc) auto-discovers its runtime
 # (libtcc1.a + include/) from the build directory it lives in, so it runs with
@@ -91,16 +608,24 @@ option(TCC_BUILD_DOC       "Build documentation (man/html/info)" OFF)
 # under <prefix>/bin. This is what fixes bare in-tree runs that otherwise hit
 # `error: file 'libtcc1.a' not found` / `include file 'stdarg.h' not found`.
 # Implemented in libtcc.c (tcc_auto_tccdir); -B always overrides. See section 9.
-option(TCC_AUTO_TCCDIR     "Build-tree tcc auto-discovers libtcc1.a + headers locally, falling back to system CONFIG_TCCDIR" ON)
+tcc_config_node(TCC_AUTO_TCCDIR     TYPE BOOL DEFAULT ON GROUP "tcc features"
+    HELP "Build-tree tcc auto-discovers libtcc1.a + headers locally, falling back to system CONFIG_TCCDIR")
 
-set(TCC_CONFIG_LIBC ""   CACHE STRING "Target libc: '', uClibc, or musl")
-set(TCC_CONFIG_DWARF ""  CACHE STRING "DWARF debug version (2..5); empty = stabs")
-set(TCC_CONFIG_SEMLOCK "" CACHE STRING "CONFIG_TCC_SEMLOCK value")
-set(TCC_CONFIG_NEW_MACHO "" CACHE STRING "Force apple object format: yes|no|auto")
-option(TCC_CONFIG_NEW_DTAGS "Use DT_RUNPATH instead of DT_RPATH" OFF)
-# Tri-state like new_macho (configure: --config-codesign=no): empty = auto
-# (defaults ON when targeting Darwin, see the Darwin defaults block in section 2).
-set(TCC_CONFIG_CODESIGN "" CACHE STRING "Use codesign on apple to sign executables: yes|no|auto")
+# -- Enumerated feature values (dropdowns; validated in tcc_validate_config) --
+tcc_config_node(TCC_CONFIG_LIBC    TYPE STRING DEFAULT "" GROUP "tcc features"
+    HELP "Target libc: '', uClibc, or musl" CHOICES uClibc musl EMPTY_OK
+    VISIBLE_WHEN "${_elf}")
+tcc_config_node(TCC_CONFIG_DWARF   TYPE STRING DEFAULT "" GROUP "tcc features"
+    HELP "DWARF debug version (2..5); empty = stabs" CHOICES 0 2 3 4 5 EMPTY_OK)
+tcc_config_node(TCC_CONFIG_SEMLOCK TYPE STRING DEFAULT "" GROUP "tcc features"
+    HELP "CONFIG_TCC_SEMLOCK value (free-form numeric; empty = tcc.h default 1)")
+tcc_config_node(TCC_CONFIG_NEW_MACHO TYPE STRING DEFAULT "" GROUP "Darwin"
+    HELP "Force apple object format: yes|no|auto" CHOICES yes no auto EMPTY_OK
+    VISIBLE_WHEN "${_darwin}")
+tcc_config_node(TCC_CONFIG_CODESIGN TYPE STRING DEFAULT "" GROUP "Darwin"
+    HELP "Use codesign on apple to sign executables: yes|no|auto" CHOICES yes no auto EMPTY_OK
+    VISIBLE_WHEN "${_darwin}")
+
 
 # --- Path / string options (configure: install dirs & tcc runtime paths) ----
 # Provided via GNUInstallDirs below + cache strings here.
@@ -758,6 +1283,29 @@ else()
     set(_tcc_predefs_value 0)
 endif()
 
+# ===========================================================================
+# 2z. CONFIG NODE GRAPH — finalize (visibility, validation, report)
+# ===========================================================================
+# Everything the node graph needs is now resolved: TCC_CPU / TCC_TARGETOS
+# (section 2), the per-OS default overrides, and CMAKE_C_COMPILER_ID. Register
+# the derived target facts as read-only STATUS nodes, hide the knobs that don't
+# apply to this target, validate the combination, and print the resolved config.
+tcc_status_node(TCC_CPU         "${TCC_CPU}")
+tcc_status_node(TCC_TARGETOS    "${TCC_TARGETOS}")
+tcc_status_node(host_compiler   "${TCC_CC_NAME} (${CMAKE_C_COMPILER_ID} ${CMAKE_C_COMPILER_VERSION})")
+tcc_status_node(cross_compiling "${CMAKE_CROSSCOMPILING}")
+if(TCC_CPU STREQUAL "arm")
+    # ARM ABI facts are autodetected (cc -dM), never user options -> report only.
+    tcc_status_node(arm_abi "eabi=${_arm_eabi} vfp=${_arm_vfp} hardfloat=${_arm_hardfloat} cpuver=${TCC_CPUVER}")
+endif()
+
+tcc_apply_node_visibility()    # hide irrelevant knobs (cosmetic; value-preserving)
+tcc_validate_config()          # enum/range + invalid-combination checks
+tcc_report_config()            # STATUS summary of the resolved configuration
+if(TCC_REGEN_DOCS)             # opt-in: regenerate the node table doc slice
+    tcc_generate_node_doc("${CMAKE_CURRENT_SOURCE_DIR}/docs/config-nodes.md")
+endif()
+
 # --- Build the config.h body --------------------------------------------------
 # Faithful port of configure's print_str/print_num emission (see the section 3a
 # catalog). `tcc.h` supplies every default via `#ifndef`, so we emit a macro ONLY
@@ -1266,7 +1814,13 @@ function(tcc_build_libtcc1 tname tcctgt cpu os native archive objdir out_extra)
 
     # per-OBJ extras (lib/Makefile OBJ-<target> lines)
     if(_win)
-        list(APPEND _objs chkstk crt1 crt1w wincrt1 wincrt1w dllcrt1 dllmain winex)
+        # WIN_O (lib/Makefile:44). chkstk.S is x86/arm64 asm and is added ONLY to
+        # i386/x86_64/arm64-win32 (Makefile:64-68); OBJ-arm-wince (Makefile:75)
+        # omits it -- assembling x86 chkstk.S with arm-wince-tcc fails otherwise.
+        list(APPEND _objs crt1 crt1w wincrt1 wincrt1w dllcrt1 dllmain winex)
+        if(cpu STREQUAL "i386" OR cpu STREQUAL "x86_64" OR cpu STREQUAL "arm64")
+            list(APPEND _objs chkstk)
+        endif()
     elseif(_osx)
         if(cpu STREQUAL "x86_64")
             list(APPEND _objs va_list)
