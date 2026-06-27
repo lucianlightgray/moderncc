@@ -576,6 +576,15 @@ tcc_config_node(TCC_BUILD_TESTS   TYPE BOOL DEFAULT ON  GROUP "Build targets"
     HELP "Build/enable the test suite (tests/Makefile)")
 tcc_config_node(TCC_BUILD_DOC     TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Build documentation (man/html/info)")
+# Optional diagnostic builds (consumed in the diagnostic-builds section). tcc_p
+# (-pg) and tcc_s (-fsanitize) need a GCC/Clang host (validated); tcc_c coverage
+# is compiled by the built tcc itself.
+tcc_config_node(TCC_BUILD_PROFILE  TYPE BOOL DEFAULT OFF GROUP "Diagnostics"
+    HELP "Also build tcc_p (profiling: -pg -static)")
+tcc_config_node(TCC_BUILD_COVERAGE TYPE BOOL DEFAULT OFF GROUP "Diagnostics"
+    HELP "Also build tcc_c (coverage instrumentation)")
+tcc_config_node(TCC_BUILD_SANITIZE TYPE BOOL DEFAULT OFF GROUP "Diagnostics"
+    HELP "Also build tcc_s (-fsanitize=address,undefined)")
 
 # -- tcc compiler features ---------------------------------------------------
 tcc_config_node(TCC_CONFIG_MINGW32  TYPE BOOL DEFAULT OFF GROUP "tcc features"
@@ -628,22 +637,36 @@ tcc_config_node(TCC_CONFIG_CODESIGN TYPE STRING DEFAULT "" GROUP "Darwin"
 
 
 # --- Path / string options (configure: install dirs & tcc runtime paths) ----
-# Provided via GNUInstallDirs below + cache strings here.
-set(TCC_SYSROOT          "" CACHE STRING "configure --sysroot")
-set(TCC_TRIPLET          "" CACHE STRING "configure --triplet")
-set(TCC_SYSINCLUDEPATHS  "" CACHE STRING "configure --sysincludepaths (colon sep)")
-set(TCC_LIBPATHS         "" CACHE STRING "configure --libpaths (colon sep)")
-set(TCC_CRTPREFIX        "" CACHE STRING "configure --crtprefix (colon sep)")
-set(TCC_ELFINTERP        "" CACHE STRING "configure --elfinterp")
-set(TCC_SWITCHES         "" CACHE STRING "configure --tcc-switches")
-set(TCC_OS_RELEASE       "" CACHE STRING "configure --os-release")
+# Registered as ADVANCED nodes (group "Runtime paths") so they join the report/
+# doc, but stay out of the basic ccmake view. Each is an empty-default STRING,
+# byte-identical to the plain set(CACHE) it replaces; the per-OS defaults block
+# below still overrides the (non-cache) value when the user leaves them empty.
+tcc_config_node(TCC_SYSROOT         TYPE STRING DEFAULT "" GROUP "Runtime paths" ADVANCED
+    HELP "configure --sysroot")
+tcc_config_node(TCC_TRIPLET         TYPE STRING DEFAULT "" GROUP "Runtime paths" ADVANCED
+    HELP "configure --triplet")
+tcc_config_node(TCC_SYSINCLUDEPATHS TYPE STRING DEFAULT "" GROUP "Runtime paths" ADVANCED
+    HELP "configure --sysincludepaths (colon sep)")
+tcc_config_node(TCC_LIBPATHS        TYPE STRING DEFAULT "" GROUP "Runtime paths" ADVANCED
+    HELP "configure --libpaths (colon sep)")
+tcc_config_node(TCC_CRTPREFIX       TYPE STRING DEFAULT "" GROUP "Runtime paths" ADVANCED
+    HELP "configure --crtprefix (colon sep)")
+tcc_config_node(TCC_ELFINTERP       TYPE STRING DEFAULT "" GROUP "Runtime paths" ADVANCED
+    HELP "configure --elfinterp")
+tcc_config_node(TCC_SWITCHES        TYPE STRING DEFAULT "" GROUP "Runtime paths" ADVANCED
+    HELP "configure --tcc-switches")
+tcc_config_node(TCC_OS_RELEASE      TYPE STRING DEFAULT "" GROUP "Runtime paths" ADVANCED
+    HELP "configure --os-release")
 # --extra-cflags / --extra-ldflags / --extra-libs (configure appends these to
 # CFLAGS / LDFLAGS / extralibs). Applied globally so every host-compiled TU and
 # every link picks them up, exactly like the Makefile's global CFLAGS/LDFLAGS.
 # extralibs is appended to the libtcc link in section 7.
-set(TCC_EXTRA_CFLAGS  "" CACHE STRING "configure --extra-cflags (space separated)")
-set(TCC_EXTRA_LDFLAGS "" CACHE STRING "configure --extra-ldflags (space separated)")
-set(TCC_EXTRA_LIBS    "" CACHE STRING "configure --extra-libs (space separated)")
+tcc_config_node(TCC_EXTRA_CFLAGS  TYPE STRING DEFAULT "" GROUP "Build flags" ADVANCED
+    HELP "configure --extra-cflags (space separated)")
+tcc_config_node(TCC_EXTRA_LDFLAGS TYPE STRING DEFAULT "" GROUP "Build flags" ADVANCED
+    HELP "configure --extra-ldflags (space separated)")
+tcc_config_node(TCC_EXTRA_LIBS    TYPE STRING DEFAULT "" GROUP "Build flags" ADVANCED
+    HELP "configure --extra-libs (space separated)")
 if(NOT "${TCC_EXTRA_CFLAGS}" STREQUAL "")
     separate_arguments(_tcc_extra_cflags NATIVE_COMMAND "${TCC_EXTRA_CFLAGS}")
     add_compile_options(${_tcc_extra_cflags})
@@ -1271,8 +1294,8 @@ endif()
 # CONFIG_TCCDIR = install lib/tcc ({B}). Honors CMAKE_INSTALL_PREFIX; empty on
 # WIN32 (configure: tccdir_auto -> runtime lookup, no #define emitted).
 include(GNUInstallDirs)
-set(TCC_INSTALL_TCCDIR "" CACHE STRING
-    "Runtime tccdir (CONFIG_TCCDIR); empty = <prefix>/<libdir>/tcc")
+tcc_config_node(TCC_INSTALL_TCCDIR TYPE STRING DEFAULT "" GROUP "Install" ADVANCED
+    HELP "Runtime tccdir (CONFIG_TCCDIR); empty = <prefix>/<libdir>/tcc")
 
 # CONFIG_TCC_PREDEFS: 1 = compile tccdefs_.h into the binary (configure default),
 # 0 = load <tccdefs.h> at runtime. Section 5 generates tccdefs_.h via the c2str
@@ -1690,9 +1713,7 @@ endif()
 # --- Optional diagnostic builds (Makefile: tcc_p / tcc_c / tcc_s) ------------
 # Built as ONE_SOURCE amalgamations from tcc.c (which, with ONE_SOURCE defaulting
 # to 1, pulls in libtcc.c -> all TUs). Off by default; opt in with -DTCC_BUILD_*.
-option(TCC_BUILD_PROFILE  "Also build tcc_p (profiling: -pg -static)" OFF)
-option(TCC_BUILD_COVERAGE "Also build tcc_c (coverage instrumentation)" OFF)
-option(TCC_BUILD_SANITIZE "Also build tcc_s (-fsanitize=address,undefined)" OFF)
+# (Declared as nodes up in section 1 so they join the graph/report/validation.)
 
 # tcc_p: -pg -static -DCONFIG_TCC_STATIC -DTCC_PROFILE (Makefile CFLAGS_P).
 if(TCC_BUILD_PROFILE)

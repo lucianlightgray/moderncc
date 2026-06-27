@@ -14,6 +14,9 @@ See [feature-matrix.md](feature-matrix.md) for the full preprocessor catalog.
 | `TCC_ONE_SOURCE` | Build targets | BOOL | `OFF` |  | always | Build libtcc from a single TU (Makefile: ONE_SOURCE) |
 | `TCC_BUILD_TESTS` | Build targets | BOOL | `ON` |  | always | Build/enable the test suite (tests/Makefile) |
 | `TCC_BUILD_DOC` | Build targets | BOOL | `OFF` |  | always | Build documentation (man/html/info) |
+| `TCC_BUILD_PROFILE` | Diagnostics | BOOL | `OFF` |  | always | Also build tcc_p (profiling: -pg -static) |
+| `TCC_BUILD_COVERAGE` | Diagnostics | BOOL | `OFF` |  | always | Also build tcc_c (coverage instrumentation) |
+| `TCC_BUILD_SANITIZE` | Diagnostics | BOOL | `OFF` |  | always | Also build tcc_s (-fsanitize=address,undefined) |
 | `TCC_CONFIG_MINGW32` | tcc features | BOOL | `OFF` |  | always | Build a WIN32/mingw32 target (input: forces TCC_TARGETOS=WIN32) |
 | `TCC_CONFIG_BACKTRACE` | tcc features | BOOL | `ON` |  | always | Enable stack backtraces (-bt / -run) |
 | `TCC_CONFIG_BCHECK` | tcc features | BOOL | `ON` |  | TCC_CONFIG_BACKTRACE | Enable bounds checker (-b) |
@@ -28,3 +31,15 @@ See [feature-matrix.md](feature-matrix.md) for the full preprocessor catalog.
 | `TCC_CONFIG_SEMLOCK` | tcc features | STRING | `''` |  | always | CONFIG_TCC_SEMLOCK value (free-form numeric; empty = tcc.h default 1) |
 | `TCC_CONFIG_NEW_MACHO` | Darwin | STRING | `''` | '', yes, no, auto | TCC_TARGETOS STREQUAL "Darwin" | Force apple object format: yes|no|auto |
 | `TCC_CONFIG_CODESIGN` | Darwin | STRING | `''` | '', yes, no, auto | TCC_TARGETOS STREQUAL "Darwin" | Use codesign on apple to sign executables: yes|no|auto |
+| `TCC_SYSROOT` | Runtime paths | STRING | `''` |  | always | configure --sysroot |
+| `TCC_TRIPLET` | Runtime paths | STRING | `''` |  | always | configure --triplet |
+| `TCC_SYSINCLUDEPATHS` | Runtime paths | STRING | `''` |  | always | configure --sysincludepaths (colon sep) |
+| `TCC_LIBPATHS` | Runtime paths | STRING | `''` |  | always | configure --libpaths (colon sep) |
+| `TCC_CRTPREFIX` | Runtime paths | STRING | `''` |  | always | configure --crtprefix (colon sep) |
+| `TCC_ELFINTERP` | Runtime paths | STRING | `''` |  | always | configure --elfinterp |
+| `TCC_SWITCHES` | Runtime paths | STRING | `''` |  | always | configure --tcc-switches |
+| `TCC_OS_RELEASE` | Runtime paths | STRING | `''` |  | always | configure --os-release |
+| `TCC_EXTRA_CFLAGS` | Build flags | STRING | `''` |  | always | configure --extra-cflags (space separated) |
+| `TCC_EXTRA_LDFLAGS` | Build flags | STRING | `''` |  | always | configure --extra-ldflags (space separated) |
+| `TCC_EXTRA_LIBS` | Build flags | STRING | `''` |  | always | configure --extra-libs (space separated) |
+| `TCC_INSTALL_TCCDIR` | Install | STRING | `''` |  | always | Runtime tccdir (CONFIG_TCCDIR); empty = <prefix>/<libdir>/tcc |
