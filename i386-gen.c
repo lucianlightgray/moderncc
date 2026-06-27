@@ -507,6 +507,23 @@ static void gcall_or_jmp(int is_jmp)
 static const uint8_t fastcall_regs[3] = { TREG_EAX, TREG_EDX, TREG_ECX };
 static const uint8_t fastcallw_regs[2] = { TREG_ECX, TREG_EDX };
 
+/* Classify a fastcall/regparm argument (matching gcc/MSVC __fastcall):
+     1 = pass in the next integer register (ecx/edx): integral or pointer, <=4 bytes
+     2 = pass on the stack AND exhaust the remaining integer registers: a >32-bit
+         integer (e.g. long long) needs a register pair, so once it spills no later
+         argument is passed in a register either
+     0 = pass on the stack without touching the register budget: float/double and
+         structs never use the integer argument registers */
+static int fastcall_arg_class(CType *type)
+{
+    int align;
+    if ((type->t & VT_BTYPE) == VT_STRUCT)
+        return 0;
+    if (is_float(type->t))
+        return 0;
+    return type_size(type, &align) <= 4 ? 1 : 2;
+}
+
 /* Return the number of registers needed to return the struct, or 0 if
    returning via struct pointer. */
 ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int *regsize)
@@ -541,12 +558,53 @@ ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int 
 ST_FUNC void gfunc_call(int nb_args)
 {
     int size, align, r, args_size, func_call;
+    int fastcall_nb_regs, n_reg_pop;
+    const uint8_t *fastcall_regs_ptr;
     Sym *func_sym;
 
 #ifdef CONFIG_TCC_BCHECK
     if (tcc_state->do_bounds_check)
         gbound_args(nb_args);
 #endif
+
+    /* Decide the fastcall register assignment up front, while the argument
+       types are still on the value stack (the function symbol sits just below
+       the nb_args arguments). Only a leading run of integer/pointer args (each
+       <=4 bytes) is passed in ecx/edx; the count n_reg_pop is how many 4-byte
+       words to lift off the top of the stack into those registers after the
+       push loop. */
+    func_sym = vtop[-nb_args].type.ref;
+    func_call = func_sym->f.func_call;
+    fastcall_regs_ptr = NULL;
+    fastcall_nb_regs = 0;
+    n_reg_pop = 0;
+    if (func_call == FUNC_FASTCALLW) {
+        fastcall_regs_ptr = fastcallw_regs, fastcall_nb_regs = 2;
+    } else if (func_call == FUNC_THISCALL) {
+        fastcall_regs_ptr = fastcallw_regs, fastcall_nb_regs = 1;
+    } else if (func_call >= FUNC_FASTCALL1 && func_call <= FUNC_FASTCALL3) {
+        fastcall_regs_ptr = fastcall_regs, fastcall_nb_regs = func_call - FUNC_FASTCALL1 + 1;
+    }
+    if (fastcall_nb_regs) {
+        int slots = fastcall_nb_regs;
+        for (int s = 0; s < nb_args && slots > 0; s++) {
+            int cls = fastcall_arg_class(&vtop[-nb_args + 1 + s].type);
+            if (cls == 1) {
+                if (n_reg_pop != s)
+                    /* a float/struct preceded this register-eligible arg, so it
+                       is not at the top of the stack and we cannot pop it; gcc
+                       would still pass it in a register. Refuse rather than
+                       silently corrupt the stack. */
+                    tcc_error("fastcall with a float/struct argument before an "
+                              "integer register argument is not supported");
+                n_reg_pop++, slots--;
+            } else if (cls == 2) {
+                break; /* long long needs a register pair: it and every later
+                          argument are passed on the stack */
+            }
+            /* cls == 0 (float/struct): on the stack, registers untouched */
+        }
+    }
 
     save_regs(nb_args + 1);
 
@@ -609,28 +667,13 @@ ST_FUNC void gfunc_call(int nb_args)
         vtop--;
     }
 
-    func_sym = vtop->type.ref;
-    func_call = func_sym->f.func_call;
-    /* fast call case */
-    if ((func_call >= FUNC_FASTCALL1 && func_call <= FUNC_FASTCALL3) ||
-        func_call == FUNC_FASTCALLW || func_call == FUNC_THISCALL) {
-        int fastcall_nb_regs;
-        const uint8_t *fastcall_regs_ptr;
-        if (func_call == FUNC_FASTCALLW) {
-            fastcall_regs_ptr = fastcallw_regs;
-            fastcall_nb_regs = 2;
-        } else if (func_call == FUNC_THISCALL) {
-            fastcall_regs_ptr = fastcallw_regs;
-            fastcall_nb_regs = 1;
-        } else {
-            fastcall_regs_ptr = fastcall_regs;
-            fastcall_nb_regs = func_call - FUNC_FASTCALL1 + 1;
-        }
-        for(int i = 0;i < fastcall_nb_regs; i++) {
+    /* fast call case: lift the leading register-eligible args (computed above
+       as n_reg_pop) off the top of the stack into ecx/edx */
+    if (fastcall_nb_regs) {
+        for (int i = 0; i < n_reg_pop; i++) {
             if (args_size <= 0)
                 break;
             o(0x58 + fastcall_regs_ptr[i]); /* pop r */
-            /* XXX: incorrect for struct/floats */
             args_size -= 4;
         }
     }
@@ -657,7 +700,7 @@ ST_FUNC void gfunc_prolog(Sym *func_sym)
 {
     CType *func_type = &func_sym->type;
     int addr, align, size, func_call, fastcall_nb_regs;
-    int param_index, param_addr;
+    int param_index, param_addr, fastcall_used, cls;
     const uint8_t *fastcall_regs_ptr;
     Sym *sym;
     CType *type;
@@ -682,6 +725,7 @@ ST_FUNC void gfunc_prolog(Sym *func_sym)
         fastcall_regs_ptr = NULL;
     }
     param_index = 0;
+    fastcall_used = 0;
 
     ind += FUNC_PROLOG_SIZE;
     func_sub_sp_offset = ind;
@@ -698,6 +742,10 @@ ST_FUNC void gfunc_prolog(Sym *func_sym)
         func_vc = addr;
         addr += 4;
         param_index++;
+        /* keep register indexing of the following params unchanged: the hidden
+           struct-return pointer historically reserves the first register slot */
+        if (fastcall_nb_regs)
+            fastcall_used++;
     }
     /* define parameters */
     while ((sym = sym->next) != NULL) {
@@ -710,15 +758,19 @@ ST_FUNC void gfunc_prolog(Sym *func_sym)
             size = 4;
         }
 #endif
-        if (param_index < fastcall_nb_regs) {
+        cls = fastcall_arg_class(type);
+        if (cls == 1 && fastcall_used < fastcall_nb_regs) {
             /* save FASTCALL register */
             loc -= 4;
             /* movl */
-            gen_modrm(0x89, fastcall_regs_ptr[param_index], VT_LOCAL, NULL, loc);
+            gen_modrm(0x89, fastcall_regs_ptr[fastcall_used], VT_LOCAL, NULL, loc);
             param_addr = loc;
+            fastcall_used++;
         } else {
             param_addr = addr;
             addr += size;
+            if (cls == 2)
+                fastcall_used = fastcall_nb_regs; /* long long blocks the rest */
         }
         gfunc_set_param(sym, param_addr, 0);
         param_index++;

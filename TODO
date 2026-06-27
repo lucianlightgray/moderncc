@@ -9,8 +9,14 @@ Full reproducers + investigation scaffold: see TODO-BUGS-INVESTIGATION.md
 
 Bugs:
 
-- [~] i386 fastcall is mostly wrong
-       arch-specific; no-op on x86_64 host. See INVESTIGATION §C.
+- [x] i386 fastcall is mostly wrong
+       FIXED the register-assignment ABI in i386-gen.c (gfunc_call + gfunc_prolog)
+       to match gcc -m32: only leading integral/pointer args <=4 bytes use ecx/edx;
+       long long blocks the remaining register budget; float/double/struct stay on
+       the stack without consuming a slot. The one corner not handled (a float/
+       struct *before* an integer register arg) now errors cleanly instead of
+       corrupting the stack. Verified 3-way vs gcc-m32: tests/i386-fastcall-abi.sh.
+       (x87 st(0) cleanliness below is separate and still open.) INVESTIGATION §C.
 - [~] FPU st(0) is left unclean (kwisatz haderach). Incompatible with
       optimized gcc/msc code
        arch-specific (i386 x87). See INVESTIGATION §C.

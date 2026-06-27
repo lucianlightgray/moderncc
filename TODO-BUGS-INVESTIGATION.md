@@ -93,17 +93,26 @@ incremental fix; keep as a tracked, scoped feature.
 
 ## C. Open but ARCH-SPECIFIC (not reproducible on x86_64 host)
 
-Need an i386 (or relevant) build/cross + emulator to even reproduce. The CMake
-build supports cross via `TCC_EMULATOR`; see `c99-cmake-todo-progress` memory.
+On this host `gcc -m32` works (32-bit multilib present), so i386 code can be
+built AND run — no emulator needed. Build the i386 backend with
+`cmake -S . -B build-i386 -DTCC_ENABLE_CROSS=ON && cmake --build build-i386
+--target i386-tcc`.
 
-- **i386 fastcall mostly wrong** — register-arg calling convention in
-  `i386-gen.c` `gfunc_call`/`gfunc_prolog`. On x86_64 the `fastcall` attribute is
-  effectively a no-op (verified: a fastcall add() returns correctly), so the bug
-  lives specifically in the i386 backend. Requires i386 reproducer + ABI test
-  vs gcc-generated callers.
-- **FPU st(0) left unclean** — x87 stack discipline in i386 codegen; breaks
-  interop with optimized gcc/msvc code that assumes a clean stack. Same: needs
-  i386 + an interop harness.
+- **i386 fastcall mostly wrong** — ✅ FIXED. The register-arg calling convention
+  in `i386-gen.c` (`gfunc_call` + `gfunc_prolog`) blindly put the first two stack
+  dwords in ecx/edx (the code even said `XXX: incorrect for struct/floats`). Now a
+  shared classifier `fastcall_arg_class()` implements gcc/MSVC rules: only a
+  leading run of integral/pointer args <=4 bytes goes in ecx/edx; `long long`
+  spills to the stack and exhausts the remaining register budget; float/double/
+  struct stay on the stack without consuming a slot. The one corner that the
+  push-then-pop call sequence can't express (a float/struct arg *before* an
+  integer register arg, where gcc still uses a register) is rejected with a clear
+  error instead of corrupting the stack. Verified 3-way (tcc->gcc, gcc->tcc,
+  tcc->tcc) by `tests/i386-fastcall-abi.sh`; cdecl/normal calls unaffected; the
+  x86_64 self-host build is untouched (i386-gen.c isn't part of it).
+- **FPU st(0) left unclean** — STILL OPEN. x87 stack discipline in i386 codegen;
+  breaks interop with optimized gcc/msvc code that assumes a clean x87 stack.
+  Now reproducible here via `gcc -m32` + the i386 cross tcc, but a separate fix.
 
 ## D. NOT actionable as bug-fixes (design notes / deliberate non-goals)
 
