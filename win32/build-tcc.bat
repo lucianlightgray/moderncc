@@ -118,7 +118,7 @@ echo>..\config.h #define TCC_VERSION "%VERSION%"
 @if not _%TX%_==__ @echo>>..\config.h #define CONFIG_TCC_CROSSPREFIX "%TX%"
 
 @rem echo>> ..\config.h #define CONFIG_TCC_PREDEFS 1
-@rem %CC% -DC2STR ..\conftest.c -o c2str.exe
+@rem %CC% ..\c2str.c -o c2str.exe
 @rem .\c2str.exe ../include/tccdefs.h ../tccdefs_.h
 
 @if not _%TX%_==__ goto :tcc_cross

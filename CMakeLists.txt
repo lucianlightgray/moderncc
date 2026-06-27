@@ -1597,9 +1597,9 @@ endif()
 # ===========================================================================
 # Needed only when TCC_CONFIG_PREDEFS is ON (configure default predefs=1): tccpp.c
 # #includes "tccdefs_.h" under `#if CONFIG_TCC_PREDEFS`. c2str is a HOST tool
-# (built from conftest.c with -DC2STR), so it must run with the build machine's
-# compiler. The generated header lands in the binary dir, already on the include
-# path (include_directories above). libtcc depends on it (wired in section 7).
+# (c2str.c), so it must run with the build machine's compiler. The generated
+# header lands in the binary dir, already on the include path
+# (include_directories above). libtcc depends on it (wired in section 7).
 if(TCC_CONFIG_PREDEFS)
     if(CMAKE_CROSSCOMPILING)
         # c2str must RUN on the build host, but add_executable() would compile it
@@ -1616,17 +1616,16 @@ if(TCC_CONFIG_PREDEFS)
         endif()
         set(_c2str_exe "${CMAKE_CURRENT_BINARY_DIR}/c2str_host")
         execute_process(
-            COMMAND "${TCC_HOSTCC}" -DC2STR
+            COMMAND "${TCC_HOSTCC}"
                     -o "${_c2str_exe}"
-                    "${CMAKE_CURRENT_SOURCE_DIR}/conftest.c"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/c2str.c"
             RESULT_VARIABLE _c2str_rc)
         if(NOT _c2str_rc EQUAL 0)
             message(FATAL_ERROR "Host compiler '${TCC_HOSTCC}' failed to build c2str")
         endif()
         set(_c2str_dep "${_c2str_exe}")   # depend on the prebuilt exe, not a target
     else()
-        add_executable(c2str conftest.c)
-        target_compile_definitions(c2str PRIVATE C2STR)
+        add_executable(c2str c2str.c)
         set(_c2str_exe "$<TARGET_FILE:c2str>")
         set(_c2str_dep c2str)
     endif()

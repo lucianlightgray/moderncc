@@ -9,7 +9,7 @@
     Note that line indent matters:
 
     - in lines starting at column 1, platform macros are replaced by
-      corresponding TCC target compile-time macros.  See conftest.c for
+      corresponding TCC target compile-time macros.  See c2str.c for
       the list of platform macros supported in lines starting at column 1.
 
     - only lines indented >= 4 are actually included into the executable,
