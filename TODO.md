@@ -122,9 +122,10 @@ regress back-compat. `STRINGS` only seeds the GUI dropdown; it never enforces.
       `docs/config-nodes.md` is dirty (keep the generated slice in sync).
 - [ ] **Auto-correct option** (behind a flag) for `BCHECK`-without-`BACKTRACE`
       and non-host-runnable `TCC_BUILD_TESTS`, if a non-strict mode is wanted.
-- [ ] **Port the remaining section-1 path cluster** (`TCC_SYSROOT/TRIPLET/...`,
-      `TCC_INSTALL_TCCDIR`, `TCC_EXTRA_*`, `TCC_HOSTCC`) into nodes for grouping/
-      visibility (they work today; this is UI polish + doc completeness).
+- [x] **Port the remaining knob clusters into the graph** — runtime paths,
+      build flags, `TCC_INSTALL_TCCDIR`, and the diagnostic trio are now ADVANCED
+      nodes; the report + `docs/config-nodes.md` cover all 36 user knobs.
+      (`TCC_HOSTCC` stays a `find_program` result, surfaced via STATUS.)
 
 ## Open questions
 
