@@ -382,6 +382,14 @@ function(tcc_validate_config)
             "tcc config: TCC_DISABLE_RPATH has no effect with a static libtcc "
             "(TCC_BUILD_STATIC=ON); rpath is only baked for a shared libtcc.")
     endif()
+    # A CONFIG_TCC_ASM=OFF tcc has no integrated assembler, so it cannot build the
+    # libtcc1 runtime's hand-written .S sources (e.g. lib/atomic.S). The runtime
+    # MUST therefore be compiled with the host CC (USEGCC). This is mandatory, not
+    # a preference, so force it (with a clear status line) rather than failing.
+    if(NOT TCC_CONFIG_ASM AND NOT TCC_LIBTCC1_USEGCC)
+        tcc_autocorrect(TCC_LIBTCC1_USEGCC ON
+            "asm disabled: libtcc1 .S sources must be built with the host CC")
+    endif()
     # Profile names a build chain that isn't the one actually detected.
     if(NOT TCC_TOOLCHAIN_PROFILE STREQUAL "auto"
        AND NOT TCC_TOOLCHAIN_PROFILE STREQUAL "${TCC_CC_NAME}")
@@ -719,6 +727,8 @@ tcc_config_node(TCC_CONFIG_BACKTRACE TYPE BOOL DEFAULT ON GROUP "tcc features"
 tcc_config_node(TCC_CONFIG_BCHECK   TYPE BOOL DEFAULT ON GROUP "tcc features"
     HELP "Enable bounds checker (-b)"
     VISIBLE_WHEN "TCC_CONFIG_BACKTRACE")          # bcheck runtime rides on backtrace
+tcc_config_node(TCC_CONFIG_ASM      TYPE BOOL DEFAULT ON GROUP "tcc features"
+    HELP "Enable the integrated assembler (inline asm, global asm, .s files, asm labels)")
 tcc_config_node(TCC_CONFIG_PREDEFS  TYPE BOOL DEFAULT ON GROUP "tcc features"
     HELP "Compile tccdefs.h into the binary (c2str)")
 tcc_config_node(TCC_CONFIG_PIE      TYPE BOOL DEFAULT OFF GROUP "tcc features"
@@ -1651,6 +1661,11 @@ endif()
 # tri-state toggles (default ON in tcc.h): emit ONLY the disabled `0` form
 if(NOT TCC_CONFIG_BCHECK)
     string(APPEND _nat "#define CONFIG_TCC_BCHECK 0\n")
+endif()
+# CONFIG_TCC_ASM is otherwise defined (valueless) per-arch in each *-gen.c; the
+# `0` form is reconciled to TCC_DISABLE_ASM in tcc.h (which gates those defines).
+if(NOT TCC_CONFIG_ASM)
+    string(APPEND _nat "#define CONFIG_TCC_ASM 0\n")
 endif()
 if(NOT TCC_CONFIG_BACKTRACE)
     string(APPEND _nat "#define CONFIG_TCC_BACKTRACE 0\n")
@@ -2754,6 +2769,10 @@ endif()
         60_errors_and_warnings 96_nodata_wanted          # diff compile stderr, not stdout
         22_floating_point 24_math_library                # need -lm at link (exe path)
         03_struct 33_ternary_op 34_array_assignment 102_alignas)  # -run-specific output
+    if(NOT TCC_CONFIG_ASM)
+        # a no-asm tcc can't assemble inline/global asm -> these can't run
+        list(APPEND _t2_skip 127_asm_goto 85_asm-outside-function 98_al_ax_extend)
+    endif()
     file(GLOB _t2_srcs "${_t2}/[0-9][0-9]_*.c" "${_t2}/[0-9][0-9][0-9]_*.c")
     foreach(_f IN LISTS _t2_srcs)
         get_filename_component(_n "${_f}" NAME_WE)
@@ -2843,7 +2862,8 @@ endif()
     elseif(TCC_CPU STREQUAL "i386" AND NOT TCC_TARGETOS STREQUAL "WIN32")
         set(_tcctest_refflags "-fno-PIC -fno-PIE -Wl,-z,notext")
     endif()
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/tcctest.c")
+    # tcctest.c contains inline assembler, so it requires an asm-enabled tcc.
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/tcctest.c" AND TCC_CONFIG_ASM)
         add_test(NAME tcctest COMMAND "${CMAKE_COMMAND}"
             -DCC=${CMAKE_C_COMPILER} -DTCC=${_tcc_exe}
             -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/tcctest.c
@@ -2866,7 +2886,7 @@ endif()
     # --- asm-c-connect (tests/Makefile): C<->asm symbol connection ----------
     # Only on i386/x86_64 (the fixture hardcodes x86 asm). Compile the two TUs as
     # one exe and as separate objects, run both, and diff the outputs.
-    if(TCC_CPU MATCHES "^(i386|x86_64)$"
+    if(TCC_CPU MATCHES "^(i386|x86_64)$" AND TCC_CONFIG_ASM
        AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/asm-c-connect-1.c")
         add_test(NAME asm-c-connect-test COMMAND "${CMAKE_COMMAND}"
             -DTCC=${_tcc_exe} -DBDIR=${_bdir} -DIDIR=${_idir}

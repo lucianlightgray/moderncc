@@ -829,7 +829,11 @@ static int tcc_compile(TCCState *s1, int filetype, const char *str, int fd)
         } else {
             tccelf_begin_file(s1);
             if (filetype & (AFF_TYPE_ASM | AFF_TYPE_ASMPP)) {
+#ifdef CONFIG_TCC_ASM
                 tcc_assemble(s1, !!(filetype & AFF_TYPE_ASMPP));
+#else
+                tcc_error_noabort("assembler source not supported (built without CONFIG_TCC_ASM)");
+#endif
             } else {
                 tccgen_compile(s1);
             }

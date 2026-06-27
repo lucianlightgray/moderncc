@@ -216,6 +216,15 @@ extern long double strtold (const char *__nptr, char **__endptr);
 #  define CONFIG_NEW_MACHO 1 /* enable new macho code */
 #endif
 
+/* CONFIG_TCC_ASM is normally defined (valueless) by each arch's *-gen.c below.
+   A config.h "#define CONFIG_TCC_ASM 0" requests a build without the integrated
+   assembler: translate it to TCC_DISABLE_ASM here, which suppresses the per-arch
+   define (and is read by the call-site guards in tccgen.c / libtcc.c). */
+#if defined CONFIG_TCC_ASM && CONFIG_TCC_ASM==0
+#  undef CONFIG_TCC_ASM
+#  define TCC_DISABLE_ASM 1
+#endif
+
 #if defined TARGETOS_OpenBSD \
     || defined TARGETOS_FreeBSD \
     || defined TARGETOS_NetBSD \

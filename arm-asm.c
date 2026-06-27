@@ -21,7 +21,9 @@
 
 #ifdef TARGET_DEFS_ONLY
 
+#ifndef TCC_DISABLE_ASM
 #define CONFIG_TCC_ASM
+#endif
 #define NB_ASM_REGS 16
 
 ST_FUNC void g(int c);
@@ -34,6 +36,7 @@ ST_FUNC void gen_le32(int c);
 
 #define USING_GLOBALS
 #include "tcc.h"
+#ifdef CONFIG_TCC_ASM
 
 enum {
     OPT_REG32,
@@ -3086,4 +3089,5 @@ ST_FUNC int asm_parse_regvar (int t)
 }
 
 /*************************************************************/
+#endif /* def CONFIG_TCC_ASM */
 #endif /* ndef TARGET_DEFS_ONLY */

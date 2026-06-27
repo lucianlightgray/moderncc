@@ -5007,7 +5007,10 @@ ST_FUNC CString* parse_asm_str(void)
     return parse_mult_str("string constant");
 }
 
-/* Parse an asm label and return the token */
+/* Parse an asm label and return the token. NB: asm *labels* (symbol renaming,
+   e.g. the predefined __builtin_memcpy __asm__("memcpy") aliases) only parse a
+   string and do not need the integrated assembler, so this stays available even
+   in a CONFIG_TCC_ASM=0 build. */
 static int asm_label_instr(void)
 {
     int v;
@@ -7492,7 +7495,11 @@ again:
         skip(';');
 
     } else if (t == TOK_ASM1 || t == TOK_ASM2 || t == TOK_ASM3) {
+#ifdef CONFIG_TCC_ASM
         asm_instr();
+#else
+        tcc_error("inline assembler not supported (built without CONFIG_TCC_ASM)");
+#endif
 
     } else {
         if (tok == ':' && t >= TOK_UIDENT) {
@@ -8789,8 +8796,12 @@ static int decl(int l)
                 break;
             if (tok == TOK_ASM1 || tok == TOK_ASM2 || tok == TOK_ASM3) {
                 /* global asm block */
+#ifdef CONFIG_TCC_ASM
                 asm_global_instr();
                 continue;
+#else
+                tcc_error("assembler not supported (built without CONFIG_TCC_ASM)");
+#endif
             }
             if (tok >= TOK_UIDENT) {
                /* special test for old K&R protos without explicit int

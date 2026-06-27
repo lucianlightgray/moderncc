@@ -6,7 +6,9 @@
 
 #ifdef TARGET_DEFS_ONLY
 
+#ifndef TCC_DISABLE_ASM
 #define CONFIG_TCC_ASM
+#endif
 /* 32 general purpose + 32 floating point registers */
 #define NB_ASM_REGS 64
 
@@ -19,6 +21,7 @@ ST_FUNC void gen_le32(int c);
 /*************************************************************/
 #define USING_GLOBALS
 #include "tcc.h"
+#ifdef CONFIG_TCC_ASM
 
 enum {
     OPT_REG,
@@ -3055,4 +3058,5 @@ static void asm_emit_css(int token, uint16_t opcode, const Operand *rs2, const O
 }
 
 /*************************************************************/
+#endif /* def CONFIG_TCC_ASM */
 #endif /* ndef TARGET_DEFS_ONLY */

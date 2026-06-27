@@ -2,7 +2,9 @@
 
 // Number of registers available to allocator:
 #define NB_REGS 19 // x10-x17 aka a0-a7, f10-f17 aka fa0-fa7, xxx, ra, sp
+#ifndef TCC_DISABLE_ASM
 #define CONFIG_TCC_ASM
+#endif
 
 #define TREG_R(x) (x) // x = 0..7
 #define TREG_F(x) (x + 8) // x = 0..7

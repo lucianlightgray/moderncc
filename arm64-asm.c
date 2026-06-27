@@ -9,7 +9,9 @@
 
 #ifdef TARGET_DEFS_ONLY
 
+#ifndef TCC_DISABLE_ASM
 #define CONFIG_TCC_ASM
+#endif
 /* 32 general purpose + 32 SIMD/FP registers */
 #define NB_ASM_REGS 64
 
@@ -23,6 +25,7 @@ ST_FUNC void gen_le32(int c);
 
 #define USING_GLOBALS
 #include "tcc.h"
+#ifdef CONFIG_TCC_ASM
 
 /* Register type flags */
 #define REG_X     0x01  /* 64-bit general purpose */
@@ -2271,4 +2274,5 @@ ST_FUNC int asm_parse_regvar(int t)
 }
 
 /*************************************************************/
+#endif /* def CONFIG_TCC_ASM */
 #endif /* ndef TARGET_DEFS_ONLY */

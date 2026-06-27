@@ -21,6 +21,7 @@
 
 #define USING_GLOBALS
 #include "tcc.h"
+#ifdef CONFIG_TCC_ASM
 
 #define MAX_OPERANDS 3
 
@@ -1747,3 +1748,5 @@ ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str)
     }
     clobber_regs[reg] = 1;
 }
+
+#endif /* CONFIG_TCC_ASM */

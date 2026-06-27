@@ -101,10 +101,18 @@ build supports cross via `TCC_EMULATOR`; see `c99-cmake-todo-progress` memory.
 - Bound-checking edge cases (RedHat 7.3 exit, setjmp, `&` on locals, float/
   longlong/struct copy) — old, gated by `TCC_CONFIG_BCHECK`; hard to even
   reproduce on a modern host; defer unless bcheck work is specifically requested.
-- **disable-asm option** — DECLINED: `CONFIG_TCC_ASM` is intentionally defined
-  per-arch in each `*-gen.c`, documented as "not a config.h flag" at
-  `CMakeLists.txt:1067`. The CMake-modernization goal deliberately did not expose
-  it. (The sibling **disable-bcheck** *does* exist: `TCC_CONFIG_BCHECK`.)
+- **disable-asm option** — ✅ DONE. New `TCC_CONFIG_ASM` (default ON). When OFF,
+  config.h emits `#define CONFIG_TCC_ASM 0`, reconciled in tcc.h to
+  `TCC_DISABLE_ASM`, which suppresses the per-arch `#define CONFIG_TCC_ASM` and
+  guards the `i386-asm.c` body. The integrated-assembler entry points (inline asm
+  `asm_instr`, global asm `asm_global_instr`, `.s`/`.S` via `tcc_assemble`) are
+  `#ifdef CONFIG_TCC_ASM`-guarded to a clear error. IMPORTANT: asm *labels*
+  (`decl __asm__("name")` symbol renaming) are NOT disabled — they only parse a
+  string (`parse_asm_str`, in tccgen.c) and are required by the predefined
+  `__builtin_memcpy`/`malloc`/`alloca` aliases in tccdefs.h. CMake forces
+  `TCC_LIBTCC1_USEGCC` when asm is off (a no-asm tcc can't assemble `lib/*.S`) and
+  drops the 6 asm-dependent tests. Verified: default 179/179, asm-off 173/173.
+  (The sibling **disable-bcheck** already existed: `TCC_CONFIG_BCHECK`.)
 - Reentrancy of libtcc, leak-after-longjmp, interactive debugger, PowerPC/
   portable-bytecode backends — large, separate projects, not point fixes.
 

@@ -81,15 +81,15 @@ Bound checking:
 
 Missing features:
 
-- [~] disable-asm and disable-bcheck options
-       disable-bcheck EXISTS (TCC_CONFIG_BCHECK). disable-asm DECLINED after
-       scoping: the asm call sites in tccgen.c (asm_instr 7495, asm_global_instr
-       8792, asm_label_instr 8854/def 5011) and parse_asm_str are NOT guarded by
-       #ifdef CONFIG_TCC_ASM, so the tree does not build without asm today.
-       Adding the guards is bounded but invasive on the parser hot path AND
-       disables asm-label symbol renaming (used in real headers), for marginal
-       benefit, and contradicts the documented CMake policy (CMakeLists.txt:1067,
-       "not a config.h flag"). INVESTIGATION §D.
+- [x] disable-asm and disable-bcheck options
+       BOTH DONE. disable-bcheck = TCC_CONFIG_BCHECK (pre-existing). disable-asm =
+       new TCC_CONFIG_ASM (default ON). OFF emits CONFIG_TCC_ASM 0, reconciled to
+       TCC_DISABLE_ASM in tcc.h (gates the per-arch defines + i386-asm.c body);
+       the integrated-assembler call sites (inline asm, global asm, .s files) are
+       #ifdef-guarded to a clean error; asm LABELS stay enabled (symbol renaming,
+       needed by the predefined __builtin aliases). CMake forces TCC_LIBTCC1_USEGCC
+       when asm off (no-asm tcc can't assemble lib/*.S), and gates the 6 asm tests.
+       Verified: default 179/179, asm-off 173/173, both green.
 - [x] __builtin_expect()
        implemented; likely()/unlikely() idioms work.
 - [x] atexit (Nigel Horne)
