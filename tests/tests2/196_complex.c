@@ -50,5 +50,10 @@ int main(void)
     __real__ h = 2.0f; __imag__ h = -1.0f;
     float _Complex s = g + h;
     printf("fadd %g %g\n", (double)__real__ s, (double)__imag__ s); /* 3.5 -0.5 */
+
+    /* imaginary constant suffix (local scope) */
+    double _Complex k = 3.0 + 4.0i;
+    pr("isuf", k);                 /* 3 4 */
+    pr("imul", 2.0i * 3.0i);       /* -6 0 */
     return 0;
 }

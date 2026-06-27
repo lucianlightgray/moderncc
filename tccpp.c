@@ -33,6 +33,7 @@ ST_DATA int parse_flags;
 ST_DATA struct BufferedFile *file;
 ST_DATA int tok;
 ST_DATA CValue tokc;
+ST_DATA int tok_imaginary;
 ST_DATA const int *macro_ptr;
 ST_DATA CString tokcstr; /* current parsed string, if any */
 
@@ -2247,6 +2248,7 @@ static void parse_number(const char *p)
     long double d;
 
     /* number */
+    tok_imaginary = 0;
     q = token_buf;
     ch = *p++;
     t = ch;
@@ -2520,6 +2522,12 @@ static void parse_number(const char *p)
 	if (ucount)
 	    ++tok; /* TOK_CU... */
         tokc.i = n;
+    }
+    /* C99/GNU imaginary suffix on a floating constant: 1.0i, 2.5fj, ... */
+    if ((ch == 'i' || ch == 'I' || ch == 'j' || ch == 'J')
+        && (tok == TOK_CFLOAT || tok == TOK_CDOUBLE || tok == TOK_CLDOUBLE)) {
+        tok_imaginary = 1;
+        ch = *p++;
     }
     if (ch)
         tcc_error("invalid number");

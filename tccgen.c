@@ -5892,6 +5892,20 @@ ST_FUNC void unary(void)
  push_tokc:
 	type.t = t;
 	vsetc(&type, VT_CONST, &tokc);
+        if (tok_imaginary) {
+            /* a floating constant with an i/j suffix is the value times i:
+               turn the real scalar just pushed into 0 + value*i */
+            CType cbase, ccplx;
+            SValue r;
+            cbase.t = t & (VT_BTYPE | VT_LONG);
+            cbase.ref = NULL;
+            mk_complex_type(&ccplx, &cbase);
+            cplx_local(&ccplx, &r);
+            cplx_store_part(&r, 1);              /* __imag = value */
+            vpushi(0); gen_cast(&cbase);
+            cplx_store_part(&r, 0);              /* __real = 0 */
+            vpushv(&r);
+        }
         next();
         break;
     case TOK_CUINT:

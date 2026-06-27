@@ -1353,6 +1353,7 @@ ST_FUNC int normalized_PATHCMP(const char *f1, const char *f2);
 ST_DATA struct BufferedFile *file;
 ST_DATA int tok;
 ST_DATA CValue tokc;
+ST_DATA int tok_imaginary; /* current numeric token had an i/j (imaginary) suffix */
 ST_DATA const int *macro_ptr;
 ST_DATA int parse_flags;
 ST_DATA int tok_flags;
