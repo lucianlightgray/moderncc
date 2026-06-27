@@ -79,15 +79,23 @@ large feature, and the type-system entry cost alone is real:
 - There is **no spare modifier bit** in the type range (0x0010-0x0800 are all in
   use: UNSIGNED/DEFSIGN/ARRAY/BITFIELD/CONSTANT/VOLATILE/VLA/LONG) to tag
   "complex" onto the existing VT_FLOAT/VT_DOUBLE/VT_LDOUBLE btypes.
-So representation requires repurposing scarce bits (e.g. a QFLOAT/QLONG-style
-ABI-only pair, or dropping complex-long-double), *before* the pervasive work:
-every `gen_op` case (+ - * / with the complex multiply/divide expansions),
-`type_size`/alignment, two-component load/store, real<->complex and
-complex<->complex casts, `__real__`/`__imag__` operators, the x86-64 SysV
-pass/return ABI (e.g. `_Complex double` returned in xmm0:xmm1), and `<complex.h>`
-+ the `I` macro. No safe partial gate: once `parse_btype` accepts `_Complex`,
-every downstream path must handle it or miscompile. Out of scope for an
-incremental fix; keep as a tracked, scoped feature.
+**Tractable approach (validated 2026-06-27): model `_Complex T` as a marked
+2-member struct `{ T __re, __im; }`.** Verified against gcc that `_Complex T` has
+the *same* x86-64 SysV ABI class as `struct{T,T}` (sizes match: cfloat=8,
+cdouble=16, cldouble=32; `_Complex double` and `struct{double,double}` are both
+2-SSE / xmm0:xmm1). So pass-by-value, return, assignment, storage, and alignment
+come *free* from the (verified-correct) struct machinery -- side-stepping the
+VT_BTYPE bit pressure entirely, since the type stays VT_STRUCT. Only these need
+complex-specific code, each gated on a `is_complex` marker so non-complex paths
+are untouched (self-host build never uses `_Complex`):
+  1. parse `_Complex` in `parse_btype` -> synthesize the marked struct;
+  2. `__real__`/`__imag__` and `creal`/`cimag` -> member access;
+  3. `gen_op` for + - (component-wise) and * / (the complex expansions),
+     including real<->complex promotion in mixed expressions;
+  4. casts real<->complex (re=value, im=0 / take re);
+  5. the imaginary constant (`_Complex_I` / `1.0i`) and `<complex.h>`.
+Increment 1+2 (declare/sizeof/__real__/__imag__) is a safe first commit; verify
+the suite stays green after each step.
 
 ---
 
