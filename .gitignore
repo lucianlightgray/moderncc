@@ -1,40 +1,34 @@
+# Editor / OS noise
 *~
 \#*
 .#*
+.idea
+.gdb_history
+
+# CMake build trees (this project builds out-of-source)
+/build/
+/cmake-build-*/
+CMakeUserPresets.json
+
+# Stray in-tree compile/link artifacts. CMake builds out-of-source, so the
+# former in-tree generated files -- config.h, tccdefs_.h (*_.h), config.mak,
+# config.texi, conftest*/c2str host tool, the tcc/-tcc binaries, the doc
+# outputs -- now live in the build dir, not here, and no longer need ignoring.
 *.o
 *.a
+*.so
 *.exe
 *.dll
+*.dylib
 *.obj
 *.pdb
 *.lib
 *.exp
-*.log
-*.bz2
-*.zip
-.gdb_history
 a.out
-tcc_g
-tcc
-tcc_c
-tcc_p
-*-tcc
-libtcc*.def
-
-config*.h
-*_.h
-config*.mak
-config.texi
-conftest*
-c2str
 tags
 TAGS
-tcc.1
-*.pod
-*.tcov
-tcc-doc.html
-tcc-doc.info
 
+# win32 native bootstrap (win32/build-tcc.bat) copies these into the tree
 win32/doc
 win32/examples/libtcc_test.c
 win32/libtcc
@@ -51,22 +45,3 @@ win32/include/tcclib.h
 win32/include/tccdefs.h
 win32/include/stdatomic.h
 win32/include/tgmath.h
-
-tests/tcctest[1234]
-tests/tcctest.gcc
-tests/*.out*
-tests/*.ref
-tests/*.txt
-tests/*.gcc
-tests/*-cc*
-tests/*-tcc*
-tests/libtcc_test
-tests/libtcc_test_mt
-tests/asm-c-connect
-tests/asm-c-connect-sep
-tests/vla_test
-tests/hello
-tests/tests2/fred.txt
-libtcc.dylib
-
-.idea
