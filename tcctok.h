@@ -111,6 +111,8 @@
      DEF(TOK_ALIGNED2, "__aligned__")
      DEF(TOK_PACKED1, "packed")
      DEF(TOK_PACKED2, "__packed__")
+     DEF(TOK_TRANSPARENT_UNION1, "transparent_union")
+     DEF(TOK_TRANSPARENT_UNION2, "__transparent_union__")
      DEF(TOK_WEAK1, "weak")
      DEF(TOK_WEAK2, "__weak__")
      DEF(TOK_ALIAS1, "alias")

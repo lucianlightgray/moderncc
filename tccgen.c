@@ -3999,6 +3999,10 @@ redo:
         case TOK_PACKED2:
             ad->a.packed = 1;
             break;
+        case TOK_TRANSPARENT_UNION1:
+        case TOK_TRANSPARENT_UNION2:
+            ad->a.transp_union = 1;
+            break;
         case TOK_WEAK1:
         case TOK_WEAK2:
             ad->a.weak = 1;
@@ -4342,6 +4346,13 @@ static void struct_layout(CType *type, AttributeDef *ad)
     }
     c = (c + a - 1) & -a;
     type->ref->c = c;
+
+    if (ad->a.transp_union) {
+        if (!IS_UNION(type->t))
+            tcc_warning("'transparent_union' attribute ignored on non-union");
+        else
+            type->ref->a.transp_union = 1;
+    }
 
 #ifdef BF_DEBUG
     printf("struct size %-2d align %-2d\n\n", c, a), fflush(stdout);
@@ -5328,9 +5339,36 @@ ST_FUNC void indir(void)
 }
 
 /* pass a parameter to a function and do type checking and casting */
+/* If 'type' is a transparent union and the current vtop value is assignable to
+   one of its members, return that member (so the value can be passed as the
+   member's scalar type, which shares the union's calling convention). Returns
+   NULL otherwise, including when the union itself is being passed. */
+static Sym *transparent_union_member(CType *type)
+{
+    Sym *m;
+    CType *st = &vtop->type;
+
+    if ((type->t & VT_BTYPE) != VT_STRUCT || type->ref->c < 0
+        || !type->ref->a.transp_union)
+        return NULL;
+    if ((st->t & VT_BTYPE) == VT_STRUCT
+        && is_compatible_unqualified_types(type, st))
+        return NULL; /* passing the union itself: handle normally */
+    for (m = type->ref->next; m; m = m->next) {
+        if (is_compatible_unqualified_types(&m->type, st))
+            return m;
+        /* any pointer (or null) is accepted for a pointer member */
+        if ((m->type.t & VT_BTYPE) == VT_PTR
+            && ((st->t & VT_BTYPE) == VT_PTR || is_null_pointer(vtop)))
+            return m;
+    }
+    return NULL;
+}
+
 static void gfunc_param_typed(Sym *func, Sym *arg)
 {
     int func_type;
+    Sym *tu;
     CType type;
 
     func_type = func->f.func_type;
@@ -5351,7 +5389,12 @@ static void gfunc_param_typed(Sym *func, Sym *arg)
     } else {
         type = arg->type;
         type.t &= ~VT_CONSTANT; /* need to do that to avoid false warning */
-        gen_assign_cast(&type);
+        tu = transparent_union_member(&type);
+        if (tu)
+            /* pass the value as the matching member's (scalar) type */
+            gen_cast(&tu->type);
+        else
+            gen_assign_cast(&type);
     }
 }
 
