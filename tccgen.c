@@ -146,6 +146,7 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r, int has
 static int decl(int l);
 static void expr_eq(void);
 static void vpush_type_size(CType *type, int *a);
+static void gen_complex_op(int op);
 static int is_compatible_unqualified_types(CType *type1, CType *type2);
 static inline int64_t expr_const64(void);
 static void vpush64(int ty, unsigned long long v);
@@ -3053,7 +3054,12 @@ redo:
     t2 = vtop[0].type.t;
     bt1 = t1 & VT_BTYPE;
     bt2 = t2 & VT_BTYPE;
-        
+
+    if (is_complex_type(&vtop[-1].type) || is_complex_type(&vtop[0].type)) {
+        gen_complex_op(op);
+        return;
+    }
+
     if (bt1 == VT_FUNC || bt2 == VT_FUNC) {
 	if (bt2 == VT_FUNC) {
 	    mk_pointer(&vtop->type);
@@ -4775,6 +4781,115 @@ static void complex_part(int imag)
     gen_op('+');
     vtop->type = base;
     vtop->r |= VT_LVAL;
+}
+
+/* allocate a fresh complex temporary in the local frame; *out describes it as an
+   addressable lvalue */
+static void cplx_local(CType *cplx, SValue *out)
+{
+    int align, size = type_size(cplx, &align);
+    loc = (loc - size) & -align;
+    out->type = *cplx;
+    out->r = VT_LOCAL | VT_LVAL;
+    out->r2 = VT_CONST;
+    out->c.i = loc;
+    out->sym = NULL;
+}
+
+/* push the (imag?1:0) component of complex lvalue *sv as a loaded scalar rvalue */
+static void cplx_push_part(SValue *sv, int imag)
+{
+    vpushv(sv);
+    complex_part(imag);
+    gv(RC_FLOAT);
+}
+
+/* store the scalar rvalue currently on top of the stack into the (imag?1:0)
+   component of complex lvalue *dst (consumes the value) */
+static void cplx_store_part(SValue *dst, int imag)
+{
+    vpushv(dst);
+    complex_part(imag);
+    vswap();
+    vstore();
+    vpop();
+}
+
+/* materialize the value on top of the stack (a complex value, or a real scalar
+   to be promoted to re+0i) into a fresh complex local; *out receives that local
+   (an lvalue) and the original value is popped */
+static void cplx_materialize(CType *cplx, CType *base, SValue *out)
+{
+    cplx_local(cplx, out);
+    if (is_complex_type(&vtop->type)) {
+        vpushv(out);    /* src, dst */
+        vswap();        /* dst, src */
+        vstore();       /* struct copy src -> dst */
+        vpop();
+    } else {
+        gen_cast(base);            /* real scalar -> base float type */
+        cplx_store_part(out, 0);   /* dst.__real = value */
+        vpushi(0);
+        gen_cast(base);
+        cplx_store_part(out, 1);   /* dst.__imag = 0 */
+    }
+}
+
+/* Arithmetic / equality on C99 _Complex values (at least one operand of vtop[-1],
+   vtop[0] is complex). Real operands are promoted to re+0i. The two operands are
+   replaced by the result: a complex temporary for + - * /, or an int for == != */
+static void gen_complex_op(int op)
+{
+    SValue a, b, r;
+    CType cplx, base;
+
+    cplx = is_complex_type(&vtop[-1].type) ? vtop[-1].type : vtop[0].type;
+    base = cplx.ref->next->type;
+
+    cplx_materialize(&cplx, &base, &b);   /* right operand (was on top) */
+    cplx_materialize(&cplx, &base, &a);   /* left operand */
+
+    if (op == TOK_EQ || op == TOK_NE) {
+        cplx_push_part(&a, 0); cplx_push_part(&b, 0); gen_op(TOK_EQ);
+        cplx_push_part(&a, 1); cplx_push_part(&b, 1); gen_op(TOK_EQ);
+        gen_op('&');                       /* re-equal AND im-equal */
+        if (op == TOK_NE) { vpushi(0); gen_op(TOK_EQ); } /* logical negate */
+        return;
+    }
+
+    cplx_local(&cplx, &r);
+    if (op == '+' || op == '-') {
+        for (int k = 0; k < 2; k++) {
+            cplx_push_part(&a, k); cplx_push_part(&b, k); gen_op(op);
+            cplx_store_part(&r, k);
+        }
+    } else if (op == '*') {
+        /* re = a.re*b.re - a.im*b.im */
+        cplx_push_part(&a, 0); cplx_push_part(&b, 0); gen_op('*');
+        cplx_push_part(&a, 1); cplx_push_part(&b, 1); gen_op('*');
+        gen_op('-'); cplx_store_part(&r, 0);
+        /* im = a.re*b.im + a.im*b.re */
+        cplx_push_part(&a, 0); cplx_push_part(&b, 1); gen_op('*');
+        cplx_push_part(&a, 1); cplx_push_part(&b, 0); gen_op('*');
+        gen_op('+'); cplx_store_part(&r, 1);
+    } else if (op == '/') {
+        /* denominator b.re*b.re + b.im*b.im is recomputed for each component */
+        /* re = (a.re*b.re + a.im*b.im) / denom */
+        cplx_push_part(&a, 0); cplx_push_part(&b, 0); gen_op('*');
+        cplx_push_part(&a, 1); cplx_push_part(&b, 1); gen_op('*'); gen_op('+');
+        cplx_push_part(&b, 0); cplx_push_part(&b, 0); gen_op('*');
+        cplx_push_part(&b, 1); cplx_push_part(&b, 1); gen_op('*'); gen_op('+');
+        gen_op('/'); cplx_store_part(&r, 0);
+        /* im = (a.im*b.re - a.re*b.im) / denom */
+        cplx_push_part(&a, 1); cplx_push_part(&b, 0); gen_op('*');
+        cplx_push_part(&a, 0); cplx_push_part(&b, 1); gen_op('*'); gen_op('-');
+        cplx_push_part(&b, 0); cplx_push_part(&b, 0); gen_op('*');
+        cplx_push_part(&b, 1); cplx_push_part(&b, 1); gen_op('*'); gen_op('+');
+        gen_op('/'); cplx_store_part(&r, 1);
+    } else {
+        tcc_error("invalid operation on complex operands");
+    }
+    vpushv(&r);
 }
 
 /* return 0 if no type declaration. otherwise, return the basic type
