@@ -194,7 +194,7 @@ endfunction()
 # overrides" contract). Call BEFORE the node is declared.
 # Trade-off: switching profiles IN PLACE does not auto-revert a previously
 # seeded knob (set it explicitly with -D). This is moot for the multi-toolchain
-# superbuild, where each child is a fresh build dir. (See TODO.md.)
+# superbuild, where each child is a fresh build dir.
 macro(tcc_profile_seed var val)
     set(TCC_SEED_${var} "${val}")
 endmacro()
