@@ -3,7 +3,7 @@
     ======
 
     This file contains specific information for usage of TinyCC
-    under MS-Windows.  See tcc-doc.html to have all the features.
+    under MS-Windows.
 
 
     Installation from the binary ZIP package:

@@ -9,7 +9,6 @@ set CC=gcc -O2 -Wall
 set /p VERSION= < ..\VERSION
 set TCCDIR=
 set BINDIR=
-set DOC=no
 set TX=
 set SELF=%~nx0
 goto :a0
@@ -28,7 +27,6 @@ if (%1)==(-t) set T=%2&& goto :a2
 if (%1)==(-v) set VERSION=%~2&& goto :a2
 if (%1)==(-i) set TCCDIR=%2&& goto :a2
 if (%1)==(-b) set BINDIR=%2&& goto :a2
-if (%1)==(-d) set DOC=yes&& goto :a3
 if (%1)==(-x) set TX=%2&& goto :a2
 if (%1)==() goto :p1
 
@@ -42,7 +40,6 @@ echo   -x target            build tcc cross-compiler for target
 echo   -v "version"         set tcc version
 echo   -i tccdir            install tcc into tccdir
 echo   -b bindir            but install tcc.exe and libtcc.dll into bindir
-echo   -d                   create tcc-doc.html too (needs makeinfo)
 echo   -clean               delete all previously produced files and directories
 echo   supported targets    i386 x86_64 arm64
 exit /B 1
@@ -54,7 +51,7 @@ exit /B 1
 set LOG=echo
 %LOG% removing files:
 for %%f in (*tcc.exe libtcc.dll lib\*.a) do call :del_file %%f
-for %%f in (..\config.h ..\config.texi) do call :del_file %%f
+for %%f in (..\config.h) do call :del_file %%f
 for %%f in (include\*.h) do @if exist ..\%%f call :del_file %%f
 for %%f in (include\tcclib.h examples\libtcc_test.c) do call :del_file %%f
 for %%f in (lib\*.o *.o *.obj *.def *.pdb *.lib *.exp *.ilk) do call :del_file %%f
@@ -160,12 +157,6 @@ if exist libtcc.dll .\tcc -impdef libtcc.dll -o libtcc\libtcc.def
 
 :lib
 @call :make_lib %TX% || goto :the_end
-
-:tcc-doc.html
-@if not (%DOC%)==(yes) goto :doc-done
-echo>..\config.texi @set VERSION %VERSION%
-cmd /c makeinfo --html --no-split ../tcc-doc.texi -o doc/tcc-doc.html
-:doc-done
 
 :files_done
 for %%f in (*.o *.def) do @del %%f

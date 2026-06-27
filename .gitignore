@@ -15,8 +15,8 @@ CMakeUserPresets.json
 
 # Stray in-tree compile/link artifacts. CMake builds out-of-source, so the
 # former in-tree generated files -- config.h, tccdefs_.h (*_.h), config.mak,
-# config.texi, conftest*/c2str host tool, the tcc/-tcc binaries, the doc
-# outputs -- now live in the build dir, not here, and no longer need ignoring.
+# conftest*/c2str host tool, the tcc/-tcc binaries -- now live in the build
+# dir, not here, and no longer need ignoring.
 *.o
 *.a
 *.so

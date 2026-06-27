@@ -678,8 +678,6 @@ tcc_config_node(TCC_ONE_SOURCE    TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Build libtcc from a single TU (Makefile: ONE_SOURCE)")
 tcc_config_node(TCC_BUILD_TESTS   TYPE BOOL DEFAULT ON  GROUP "Build targets"
     HELP "Build/enable the test suite (tests/Makefile)")
-tcc_config_node(TCC_BUILD_DOC     TYPE BOOL DEFAULT OFF GROUP "Build targets"
-    HELP "Build documentation (man/html/info)")
 # Umbrella "everything on" diagnostics switch. Turns the whole tree into a
 # diagnostic build: verbose compiler warnings + full debug info on the core
 # compiler TUs (wired in sections 7/8 via TCC_DIAG_FLAGS), AND builds every
@@ -1751,11 +1749,6 @@ if(TCC_AUTO_TCCDIR)
     add_compile_definitions(CONFIG_TCC_AUTO_TCCDIR=1)
 endif()
 
-# config.texi (configure: `echo "@set VERSION $version" > config.texi`). Included
-# by tcc-doc.texi (`@include config.texi`) to supply @value{VERSION}; the doc
-# build in section 12 points makeinfo/texi2pod at this generated copy.
-set(TCC_CONFIG_TEXI "${CMAKE_CURRENT_BINARY_DIR}/config.texi")
-file(WRITE "${TCC_CONFIG_TEXI}" "@set VERSION ${TCC_VERSION}\n")
 # NOTE: config.mak is a Make-only artifact (consumed by the recursive Makefiles);
 # it is intentionally NOT generated under CMake, which carries the same values as
 # CMake variables/targets instead.
@@ -2412,54 +2405,6 @@ if(TCC_TARGETOS STREQUAL "WIN32" AND NOT TCC_BUILD_STATIC)
 endif()
 
 # ===========================================================================
-# 12. DOCUMENTATION  (Makefile doc section)
-# ===========================================================================
-# Best-effort, like the Makefile's run-if helper: each target builds only if its
-# tool (makeinfo / perl+pod2man) is present.
-if(TCC_BUILD_DOC)
-    set(_texi "${CMAKE_CURRENT_SOURCE_DIR}/tcc-doc.texi")
-    find_program(MAKEINFO_EXE makeinfo)
-    find_program(PERL_EXE perl)
-    find_program(POD2MAN_EXE pod2man)
-    set(_doc_outputs "")
-    # tcc-doc.texi `@include config.texi`; -I <build> lets makeinfo find the
-    # generated copy (section 3), and texi2pod.pl finds it via its run cwd (build).
-    if(MAKEINFO_EXE)
-        add_custom_command(OUTPUT "${CMAKE_BINARY_DIR}/tcc-doc.html"
-            COMMAND "${MAKEINFO_EXE}" -I "${CMAKE_BINARY_DIR}"
-                    --no-split --html --number-sections
-                    -o "${CMAKE_BINARY_DIR}/tcc-doc.html" "${_texi}"
-            DEPENDS "${_texi}" "${TCC_CONFIG_TEXI}" COMMENT "makeinfo --html tcc-doc" VERBATIM)
-        add_custom_command(OUTPUT "${CMAKE_BINARY_DIR}/tcc-doc.info"
-            COMMAND "${MAKEINFO_EXE}" -I "${CMAKE_BINARY_DIR}"
-                    -o "${CMAKE_BINARY_DIR}/tcc-doc.info" "${_texi}"
-            DEPENDS "${_texi}" "${TCC_CONFIG_TEXI}" COMMENT "makeinfo tcc-doc.info" VERBATIM)
-        list(APPEND _doc_outputs
-            "${CMAKE_BINARY_DIR}/tcc-doc.html" "${CMAKE_BINARY_DIR}/tcc-doc.info")
-    endif()
-    if(PERL_EXE AND POD2MAN_EXE)
-        # texi -> pod (texi2pod.pl) -> man page (pod2man writes in.pod out.1).
-        # texi2pod.pl resolves `@include config.texi` against its cwd, which for a
-        # custom command is the build dir where config.texi is generated.
-        add_custom_command(OUTPUT "${CMAKE_BINARY_DIR}/tcc-doc.pod"
-            COMMAND "${PERL_EXE}" "${CMAKE_CURRENT_SOURCE_DIR}/texi2pod.pl"
-                    "${_texi}" "${CMAKE_BINARY_DIR}/tcc-doc.pod"
-            DEPENDS "${_texi}" "${TCC_CONFIG_TEXI}" COMMENT "texi2pod tcc-doc" VERBATIM)
-        add_custom_command(OUTPUT "${CMAKE_BINARY_DIR}/tcc.1"
-            COMMAND "${POD2MAN_EXE}" --section=1 --center=Tiny\ C\ Compiler
-                    --release=${TCC_VERSION}
-                    "${CMAKE_BINARY_DIR}/tcc-doc.pod" "${CMAKE_BINARY_DIR}/tcc.1"
-            DEPENDS "${CMAKE_BINARY_DIR}/tcc-doc.pod" COMMENT "pod2man tcc.1" VERBATIM)
-        list(APPEND _doc_outputs "${CMAKE_BINARY_DIR}/tcc.1")
-    endif()
-    if(_doc_outputs)
-        add_custom_target(tcc_docs ALL DEPENDS ${_doc_outputs})
-    else()
-        message(WARNING "TCC_BUILD_DOC=ON but no makeinfo/perl+pod2man found")
-    endif()
-endif()
-
-# ===========================================================================
 # 13. INSTALL  (Makefile: install-unx / install-win, uninstall-*)
 # ===========================================================================
 include(GNUInstallDirs)
@@ -2522,16 +2467,6 @@ install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/"
     DESTINATION "${_tccdir}/include" FILES_MATCHING PATTERN "*.h")
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/tcclib.h"
     DESTINATION "${_tccdir}/include")
-
-# docs (best-effort; only if produced). Mirrors install-unx man/info/html.
-if(TCC_BUILD_DOC)
-    install(FILES "${CMAKE_BINARY_DIR}/tcc.1"
-        DESTINATION "${CMAKE_INSTALL_MANDIR}/man1" OPTIONAL)
-    install(FILES "${CMAKE_BINARY_DIR}/tcc-doc.info"
-        DESTINATION "${CMAKE_INSTALL_INFODIR}" OPTIONAL)
-    install(FILES "${CMAKE_BINARY_DIR}/tcc-doc.html"
-        DESTINATION "${CMAKE_INSTALL_DOCDIR}" OPTIONAL)
-endif()
 
 # On WIN32 the layout differs (win32/lib/*.def, win32/include tree, examples);
 # this block installs the essentials for a Windows target.
@@ -2982,7 +2917,6 @@ endif()
 #     - Android/Termux sysroot/triplet/libpaths/crtprefix/elfinterp/switches +
 #       pie/new_dtags/dwarf=4/shared-libtcc.
 #   * --config-mingw32 forcing a WIN32/PE target on a non-Windows host (section 2).
-#   * config.texi (@set VERSION) for the doc build (section 3/12).
 #   * host-built c2str when CMAKE_CROSSCOMPILING (TCC_HOSTCC, section 5).
 #   * os_release default = host kernel release (section 2).
 #   * macOS host link flags (-flat_namespace, -undefined warning for clang<15,
