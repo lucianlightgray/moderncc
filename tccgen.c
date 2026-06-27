@@ -147,6 +147,7 @@ static int decl(int l);
 static void expr_eq(void);
 static void vpush_type_size(CType *type, int *a);
 static void gen_complex_op(int op);
+static void gen_complex_cast(CType *type);
 static int is_compatible_unqualified_types(CType *type1, CType *type2);
 static inline int64_t expr_const64(void);
 static void vpush64(int ty, unsigned long long v);
@@ -3262,6 +3263,13 @@ static void gen_cast(CType *type)
     if (vtop->r & VT_MUSTCAST)
         force_charshort_cast();
 
+    /* C99 _Complex is a marked struct; handle its casts before the generic
+       (struct/scalar) paths below */
+    if (is_complex_type(type) || is_complex_type(&vtop->type)) {
+        gen_complex_cast(type);
+        return;
+    }
+
     /* bitfields first get cast to ints */
     if (vtop->type.t & VT_BITFIELD)
         gv(RC_INT);
@@ -4890,6 +4898,40 @@ static void gen_complex_op(int op)
         tcc_error("invalid operation on complex operands");
     }
     vpushv(&r);
+}
+
+/* Cast involving a C99 _Complex operand and/or target (called from gen_cast):
+     complex -> complex : cast each component to the destination base
+     complex -> real/int: take the real part, then cast it
+     real/int -> complex: build re=cast(value), im=0 */
+static void gen_complex_cast(CType *dt)
+{
+    SValue src, r;
+
+    if (is_complex_type(&vtop->type)) {
+        CType sbase = vtop->type.ref->next->type;
+        cplx_materialize(&vtop->type, &sbase, &src);
+        if (is_complex_type(dt)) {
+            CType dbase = dt->ref->next->type;
+            cplx_local(dt, &r);
+            cplx_push_part(&src, 0); gen_cast(&dbase); cplx_store_part(&r, 0);
+            cplx_push_part(&src, 1); gen_cast(&dbase); cplx_store_part(&r, 1);
+            vpushv(&r);
+        } else {
+            /* keep only the real part, then cast it to the scalar target */
+            vpushv(&src);
+            complex_part(0);
+            gen_cast(dt);
+        }
+    } else {
+        CType dbase = dt->ref->next->type;
+        cplx_local(dt, &r);
+        gen_cast(&dbase);            /* value -> base float */
+        cplx_store_part(&r, 0);
+        vpushi(0); gen_cast(&dbase);
+        cplx_store_part(&r, 1);
+        vpushv(&r);
+    }
 }
 
 /* return 0 if no type declaration. otherwise, return the basic type
