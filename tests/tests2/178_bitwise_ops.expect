@@ -1,9 +1,0 @@
-and: 15
-or:  4095
-xor: 4080
-set: 40
-clear: 32
-toggle: 0
-xinv: 1
-demorgan: 1
-lowbyte: 52

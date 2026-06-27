@@ -1,8 +1,0 @@
-s2u: 4294967295
-narrow: 52
-uac: 1
-promote: -1
-ftrunc: 3 -3
-rt: 1
-widen: -12345
-bool: 1 0

@@ -1,7 +1,0 @@
-const: 42
-ptr_to_const: 2
-const_ptr: 20
-cpc: 42
-const_arr: 50
-volatile: 2
-read_const: 42

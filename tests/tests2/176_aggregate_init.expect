@@ -1,7 +1,0 @@
-partial: 1 2 0 0 0
-zero: 0 0 0
-nested: 2 6
-str: [hi] len-region=6 c2=0
-desig: 0 20 50 0
-memdesig: 1 0 9
-override: 7 2

@@ -1,9 +1,0 @@
-bases: 255 255 255
-octal0: 0
-widths: 4 4 8 8 8
-dec_overflow_size: 8
-hex_unsigned_size: 4
-hex_big_size: 8
-signedness: 1 0 1
-wrap: 4294967295 0
-suffixed: 4294967296

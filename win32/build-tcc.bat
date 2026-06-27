@@ -184,11 +184,11 @@ exit /B %ERRORLEVEL%
 .\%1tcc -B. -c lib/dllcrt1.c
 .\%1tcc -B. -c lib/dllmain.c
 .\%1tcc -B. -c lib/winex.c
-.\%1tcc -B. -c lib/chkstk.S
-.\%1tcc -B. -c ../lib/alloca.S
-.\%1tcc -B. -c ../lib/alloca-bt.S
+.\%1tcc -B. -c lib/chkstk.c
+.\%1tcc -B. -c ../lib/alloca.c
+.\%1tcc -B. -c ../lib/alloca-bt.c
 .\%1tcc -B. -c ../lib/stdatomic.c
-.\%1tcc -B. -c ../lib/atomic.S
+.\%1tcc -B. -c ../lib/atomic.c
 .\%1tcc -B. -c ../lib/builtin.c
 .\%1tcc -ar lib/%1libtcc1.a %LIBTCC1%.o crt1.o crt1w.o wincrt1.o wincrt1w.o dllcrt1.o dllmain.o winex.o chkstk.o alloca.o alloca-bt.o stdatomic.o atomic.o builtin.o
 .\%1tcc -B. -c ../lib/bcheck.c -o lib/%1bcheck.o -bt -I..

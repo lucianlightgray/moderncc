@@ -1,8 +1,0 @@
-simple: 7 8 12 10 13 9 11
-punct: 92 39 34 63
-nul: 0
-octal: 65 0 127
-hex: 65 126
-isnl: 1
-arith: 32
-type: 4

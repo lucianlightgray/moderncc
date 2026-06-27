@@ -383,7 +383,7 @@ function(tcc_validate_config)
             "(TCC_BUILD_STATIC=ON); rpath is only baked for a shared libtcc.")
     endif()
     # A CONFIG_TCC_ASM=OFF tcc has no integrated assembler, so it cannot build the
-    # libtcc1 runtime's hand-written .S sources (e.g. lib/atomic.S). The runtime
+    # libtcc1 runtime's hand-written asm (file-scope __asm__ in lib/atomic.c etc.). The runtime
     # MUST therefore be compiled with the host CC (USEGCC). This is mandatory, not
     # a preference, so force it (with a clear status line) rather than failing.
     if(NOT TCC_CONFIG_ASM AND NOT TCC_LIBTCC1_USEGCC)
@@ -2047,9 +2047,9 @@ function(_tcc_libtcc1_src obj outvar)
     elseif(obj MATCHES "^(crt1|wincrt1|dllcrt1|dllmain|winex)$")
         set(${outvar} "${_win}/${obj}.c" PARENT_SCOPE)
     elseif(obj STREQUAL "chkstk")
-        set(${outvar} "${_win}/chkstk.S" PARENT_SCOPE)
-    elseif(obj MATCHES "^(atomic|alloca|alloca-bt|pic86)$")
-        set(${outvar} "${_lib}/${obj}.S" PARENT_SCOPE)   # tcc assembles .S too
+        set(${outvar} "${_win}/chkstk.c" PARENT_SCOPE)
+        # (atomic/alloca/alloca-bt/pic86 were ported from .S to .c -- file-scope
+        #  __asm__ -- so they fall through to the .c default below.)
     else()
         set(${outvar} "${_lib}/${obj}.c" PARENT_SCOPE)
     endif()
@@ -2493,80 +2493,12 @@ if(TCC_BUILD_TESTS)
     set(_tcc_exe "$<TARGET_FILE:tcc>")
     set(_bdir "${CMAKE_BINARY_DIR}")                          # {B}: runtime+libtcc1
     set(_idir "${CMAKE_CURRENT_SOURCE_DIR}/include")          # tcc's own headers
-    set(_t2 "${CMAKE_CURRENT_SOURCE_DIR}/tests/tests2")
-    set(_pp "${CMAKE_CURRENT_SOURCE_DIR}/tests/pp")
 
-    # Portable CTest driver, emitted into the build dir and run per test via
-    # `cmake -P` (the `${...}` placeholders below stay literal in the bracket
-    # argument and bind to the -D vars each add_test() passes). It runs the
-    # freshly-built tcc on a fixture and diffs its output against the matching
-    # .expect file, like tests/tests2/Makefile and tests/pp/Makefile.
-    #   TCC/MODE/SRCFILE/EXPECT/BDIR/IDIR : required -D vars (MODE = run | pp)
-    #   ARGS/OUTFILE                      : optional extra args / output path
-    set(_driver "${CMAKE_BINARY_DIR}/run_tcc_test.cmake")
-    # Bake the cross emulator (empty for a native build) so the driver can run a
-    # foreign tcc + the foreign test exe it produces; unquoted ${EMU} expands to
-    # nothing when empty. CTest applies the same emulator to target-based tests
-    # (abitest/libtcc_test) itself, so only these -P drivers need it threaded in.
-    file(WRITE "${_driver}" "set(EMU \"${TCC_EMULATOR}\")\n")
-    file(APPEND "${_driver}" [==[
-if(NOT OUTFILE)
-    set(OUTFILE "${CMAKE_CURRENT_BINARY_DIR}/tcctest.output")
-endif()
+    # (The former per-file `run_tcc_test.cmake` driver + tests/{tests2,pp}/*.expect
+    # were replaced by the native-C tests2_runner below; its goldens live in
+    # tests/tests2_data.h.)
 
-if(MODE STREQUAL "pp")
-    # Preprocessor test: capture tcc's own stdout+stderr (pp/Makefile: >out 2>&1).
-    # OUTPUT_VARIABLE is reliable here since the output is tcc's, not a JIT child.
-    execute_process(
-        COMMAND ${EMU} "${TCC}" "-B${BDIR}" "-I${IDIR}" -E -P "${SRCFILE}"
-        OUTPUT_VARIABLE _out ERROR_VARIABLE _err RESULT_VARIABLE _rc)
-    set(_actual "${_out}${_err}")
-    # Strip the fixture's source-dir prefix (Makefile sed FILTER) and write out.
-    get_filename_component(_srcdir "${SRCFILE}" DIRECTORY)
-    string(REPLACE "${_srcdir}/" "" _actual "${_actual}")
-    file(WRITE "${OUTFILE}" "${_actual}")
-else()
-    # `tcc -run` JITs and forks a child for signal/backtrace handling, so
-    # execute_process reaps tcc before the grandchild flushes -> lost output.
-    # Compile to a temp exe and run THAT (the Makefile's NORUN path); a plain
-    # process flushes to OUTPUT_FILE on exit. Same program, same output.
-    separate_arguments(_args UNIX_COMMAND "${ARGS}")
-    set(_exe "${OUTFILE}.exe")
-    execute_process(
-        COMMAND ${EMU} "${TCC}" "-B${BDIR}" "-I${IDIR}" ${_args} "${SRCFILE}" -o "${_exe}"
-        RESULT_VARIABLE _crc ERROR_VARIABLE _cerr OUTPUT_VARIABLE _cout)
-    if(NOT _crc EQUAL 0)
-        message(FATAL_ERROR "tcc failed to compile ${SRCFILE}:\n${_cout}${_cerr}")
-    endif()
-    execute_process(COMMAND ${EMU} "${_exe}"
-        OUTPUT_FILE "${OUTFILE}" ERROR_VARIABLE _err RESULT_VARIABLE _rc)
-    get_filename_component(_srcdir "${SRCFILE}" DIRECTORY)
-    file(READ "${OUTFILE}" _actual)
-    string(REPLACE "${_srcdir}/" "" _actual "${_actual}")
-    file(WRITE "${OUTFILE}" "${_actual}")
-endif()
-
-# Diff like the Makefiles (-Nbu): ignore whitespace amount, treat missing as empty.
-find_program(_diff diff)
-if(_diff)
-    execute_process(COMMAND "${_diff}" -Nbu "${EXPECT}" "${OUTFILE}"
-        RESULT_VARIABLE _drc OUTPUT_VARIABLE _dout ERROR_VARIABLE _derr)
-    if(NOT _drc EQUAL 0)
-        message(FATAL_ERROR "tcc test mismatch for ${SRCFILE}:\n${_dout}${_derr}")
-    endif()
-else()
-    # No diff tool: tolerant string compare (trailing whitespace stripped).
-    file(READ "${EXPECT}" _expected)
-    file(READ "${OUTFILE}" _actual)
-    string(STRIP "${_expected}" _expected)
-    string(STRIP "${_actual}" _actual)
-    if(NOT _actual STREQUAL _expected)
-        message(FATAL_ERROR "tcc test mismatch for ${SRCFILE} (no diff tool)")
-    endif()
-endif()
-]==])
-
-    # Sibling driver: compile SRCS with tcc to an exe and run it, asserting exit 0
+    # Driver: compile SRCS with tcc to an exe and run it, asserting exit 0
     # (tests/Makefile: hello-exe, vla_test-run). Optional RUNARGS.
     set(_exe_driver "${CMAKE_BINARY_DIR}/run_tcc_exe.cmake")
     file(WRITE "${_exe_driver}" "set(EMU \"${TCC_EMULATOR}\")\n")
@@ -2670,55 +2602,27 @@ endif()
         COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}")
     set_tests_properties(tcc_build PROPERTIES FIXTURES_SETUP TCC_BUILT)
 
-    # --- pp subdir: tcc -E -P <f> | diff <f>.expect (tests/pp/Makefile) -----
-    set(_pp_skip 02)   # 02.expect encodes gcc-cpp whitespace tcc -P differs on
-    file(GLOB _pp_srcs "${_pp}/*.c" "${_pp}/*.S")
-    foreach(_f IN LISTS _pp_srcs)
-        get_filename_component(_n "${_f}" NAME_WE)
-        if(EXISTS "${_pp}/${_n}.expect" AND NOT _n IN_LIST _pp_skip)
-            add_test(NAME pp.${_n} COMMAND "${CMAKE_COMMAND}"
-                -DTCC=${_tcc_exe} -DMODE=pp -DSRCFILE=${_f}
-                -DEXPECT=${_pp}/${_n}.expect -DBDIR=${_bdir} -DIDIR=${_idir}
-                -DOUTFILE=${CMAKE_BINARY_DIR}/pp_${_n}.output -P "${_driver}")
-            set_tests_properties(pp.${_n} PROPERTIES FIXTURES_REQUIRED TCC_BUILT)
-        endif()
-    endforeach()
-
-    # --- tests2 subdir: tcc -run <f> | diff <f>.expect (tests/tests2/Makefile) -
-    # SKIP mirrors the Makefile's SKIP/ARGS/GEN/NORUN special-casing plus the
-    # other-arch asm tests; these need bespoke harnesses, not plain -run+diff.
-    # The Makefile drives tests2 with `tcc -run` plus per-test ARGS/GEN/NORUN/T1
-    # rules and stderr capture. This CMake port uses the simpler compile-to-exe +
-    # stdout-diff path (robust output capture), so tests needing those extras are
-    # skipped here, just as the Makefile SKIPs many. Each group notes why.
-    set(_t2_skip
-        31_args 46_grep                                  # need ARGS
-        95_bitfields_ms 104_inline 120_alias             # GEN-ed expect
-        73_arm64 138_arm64_encoding 139_arm64_errors     # other-arch asm
-        140_arm64_extasm 141_riscv_asm
-        99_fastcall 145_winarm64_interlocked             # i386/win-arm specific
-        112_backtrace 113_btdll                          # backtrace/dll harness
-        114_bound_signal 115_bound_setjmp 116_bound_setjmp2  # NORUN / bound
-        125_atomic_misc 126_bound_global                 # atomic/bound -run semantics
-        117_builtins 128_run_atexit 144_tls              # custom flags / NORUN
-        60_errors_and_warnings 96_nodata_wanted          # diff compile stderr, not stdout
-        22_floating_point 24_math_library                # need -lm at link (exe path)
-        03_struct 33_ternary_op 34_array_assignment 102_alignas)  # -run-specific output
+    # --- tests2 + pp suites: native-C runner (tests/tests2_runner.c) ---------
+    # Formerly a per-file `cmake -P` driver diffing tcc output against
+    # tests/{tests2,pp}/*.expect. The goldens now live embedded in
+    # tests/tests2_data.h and a single C program (built by the host CC) compiles+
+    # runs each tests2 case and `-E -P`'s each pp case, comparing internally with
+    # the same srcdir-strip + diff -Nbu (whitespace/trailing-blank) tolerance.
+    # It covers exactly the cases the old driver ran (the Makefile's
+    # ARGS/GEN/NORUN/stderr/-lm/other-arch specials remain out of scope -- their
+    # *.expect are untouched). On a no-asm tcc the three inline-asm cases are
+    # passed as skip args.
+    add_executable(tests2_runner tests/tests2_runner.c)
+    target_include_directories(tests2_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
+    set(_t2r_skip "")
     if(NOT TCC_CONFIG_ASM)
-        # a no-asm tcc can't assemble inline/global asm -> these can't run
-        list(APPEND _t2_skip 127_asm_goto 85_asm-outside-function 98_al_ax_extend)
+        set(_t2r_skip 127_asm_goto 85_asm-outside-function 98_al_ax_extend)
     endif()
-    file(GLOB _t2_srcs "${_t2}/[0-9][0-9]_*.c" "${_t2}/[0-9][0-9][0-9]_*.c")
-    foreach(_f IN LISTS _t2_srcs)
-        get_filename_component(_n "${_f}" NAME_WE)
-        if(EXISTS "${_t2}/${_n}.expect" AND NOT _n IN_LIST _t2_skip)
-            add_test(NAME tests2.${_n} COMMAND "${CMAKE_COMMAND}"
-                -DTCC=${_tcc_exe} -DMODE=run -DSRCFILE=${_f}
-                -DEXPECT=${_t2}/${_n}.expect -DBDIR=${_bdir} -DIDIR=${_idir}
-                -DOUTFILE=${CMAKE_BINARY_DIR}/t2_${_n}.output -P "${_driver}")
-            set_tests_properties(tests2.${_n} PROPERTIES FIXTURES_REQUIRED TCC_BUILT)
-        endif()
-    endforeach()
+    add_test(NAME tests2-runner
+        COMMAND tests2_runner "${_tcc_exe}" "${_bdir}" "${_idir}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests" "${CMAKE_BINARY_DIR}" ${_t2r_skip})
+    set_tests_properties(tests2-runner PROPERTIES FIXTURES_REQUIRED TCC_BUILT
+        ENVIRONMENT "TCC_TEST_EMU=${TCC_EMULATOR}")
 
     # --- libtcc API test (tests/Makefile: libtest) --------------------------
     # libtcc_test compiles an in-memory program; -B points it at the runtime,

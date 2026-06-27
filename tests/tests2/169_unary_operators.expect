@@ -1,8 +1,0 @@
-indir: 43
-roundtrip: 43
-neg: -7 7
-not: 1 0 1
-compl: 4294967295
-mask: 240
-addr: 20 30
-order: 1

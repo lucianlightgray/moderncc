@@ -1,7 +1,0 @@
-char1: 1
-noeval: counter=0 nonzero_size=1
-order: 1
-strlit: 6
-arr: 40 elems=10
-expr: 1
-match: 1

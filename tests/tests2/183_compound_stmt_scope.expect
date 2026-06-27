@@ -1,8 +1,0 @@
-outer: 1
-inner: 2
-inner2: 3
-back2: 2
-back1: 1
-loopscope: sum=6 i=99
-fresh: 33
-mixed: 42

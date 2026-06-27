@@ -1,6 +1,0 @@
-convert: 1 1 0 1
-float/ptr: 1 0 1 0
-macros: 1 0 sum=3
-index: no yes
-size=1 bitfields: 1 0 1
-incr: 1

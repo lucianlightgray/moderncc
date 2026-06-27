@@ -1,6 +1,0 @@
-concat: abcdefghi len=9
-multi: line one is here and continues here
-escapes: [tab	end\backslash"quote]
-bytes: 65 68
-embedded: strlen=2 sizeof=6 byte4=99
-array: h o sizeof=6

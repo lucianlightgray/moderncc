@@ -1,8 +1,0 @@
-sel: 10 20
-true_branch: a=7 calls=1
-false_branch: b=9 calls=1
-commontype: 5
-sign(-1)=neg
-sign(0)=zero
-sign(1)=pos
-use: 101

@@ -1,9 +1,0 @@
-post: 5
-after: 6
-pre: 7
-after: 7
-postdec: 5
-predec: 3
-walk: 10
-preptr: 1
-index: picked=0 k=1
