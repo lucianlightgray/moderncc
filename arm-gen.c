@@ -296,10 +296,9 @@ static uint32_t stuff_const(uint32_t op, uint32_t c)
   }
   do {
     uint32_t m;
-    int i;
     if(c<256) /* catch undefined <<32 */
       return op|c;
-    for(i=2;i<32;i+=2) {
+    for(int i=2;i<32;i+=2) {
       m=(0xffu>>i)|(0xffu<<(32-i));
       if(!(c&~m))
 	return op|(i<<7)|(c<<i)|(c>>(32-i));
@@ -319,13 +318,12 @@ void stuff_const_harder(uint32_t op, uint32_t v) {
     o(x);
   else {
     uint32_t a[16], nv, no, o2, n2;
-    int i,j,k;
     a[0]=0xff;
     o2=(op&0xfff0ffff)|((op&0xf000)<<4);;
-    for(i=1;i<16;i++)
+    for(int i=1;i<16;i++)
       a[i]=(a[i-1]>>2)|(a[i-1]<<30);
-    for(i=0;i<12;i++)
-      for(j=i<4?i+12:15;j>=i+4;j--)
+    for(int i=0;i<12;i++)
+      for(int j=i<4?i+12:15;j>=i+4;j--)
 	if((v&(a[i]|a[j]))==v) {
 	  o(stuff_const(op,v&a[i]));
 	  o(stuff_const(o2,v&a[j]));
@@ -334,16 +332,16 @@ void stuff_const_harder(uint32_t op, uint32_t v) {
     no=op^0xC00000;
     n2=o2^0xC00000;
     nv=-v;
-    for(i=0;i<12;i++)
-      for(j=i<4?i+12:15;j>=i+4;j--)
+    for(int i=0;i<12;i++)
+      for(int j=i<4?i+12:15;j>=i+4;j--)
 	if((nv&(a[i]|a[j]))==nv) {
 	  o(stuff_const(no,nv&a[i]));
 	  o(stuff_const(n2,nv&a[j]));
 	  return;
 	}
-    for(i=0;i<8;i++)
-      for(j=i+4;j<12;j++)
-	for(k=i<4?i+12:15;k>=j+4;k--)
+    for(int i=0;i<8;i++)
+      for(int j=i+4;j<12;j++)
+	for(int k=i<4?i+12:15;k>=j+4;k--)
 	  if((v&(a[i]|a[j]|a[k]))==v) {
 	    o(stuff_const(op,v&a[i]));
 	    o(stuff_const(o2,v&a[j]));
@@ -352,9 +350,9 @@ void stuff_const_harder(uint32_t op, uint32_t v) {
 	  }
     no=op^0xC00000;
     nv=-v;
-    for(i=0;i<8;i++)
-      for(j=i+4;j<12;j++)
-	for(k=i<4?i+12:15;k>=j+4;k--)
+    for(int i=0;i<8;i++)
+      for(int j=i+4;j<12;j++)
+	for(int k=i<4?i+12:15;k>=j+4;k--)
 	  if((nv&(a[i]|a[j]|a[k]))==nv) {
 	    o(stuff_const(no,nv&a[i]));
 	    o(stuff_const(n2,nv&a[j]));
@@ -1080,14 +1078,14 @@ static void add_param_plan(struct plan* plan, int cls, int start, int end, SValu
    before copy_params). */
 static int assign_regs(int nb_args, int float_abi, struct plan *plan, int *todo)
 {
-  int i, size, align;
+  int size, align;
   int ncrn /* next core register number */, nsaa /* next stacked argument address*/;
   struct avail_regs avregs = {{0}};
 
   ncrn = nsaa = 0;
   *todo = 0;
 
-  for(i = nb_args; i-- ;) {
+  for(int i = nb_args; i-- ;) {
     int j, start_vfpreg = 0;
     CType type = vtop[-i].type;
     type.t &= ~VT_ARRAY;
@@ -1163,7 +1161,7 @@ static int assign_regs(int nb_args, int float_abi, struct plan *plan, int *todo)
    Returns the number of SValue added by this function on the value stack */
 static int copy_params(int nb_args, struct plan *plan, int todo)
 {
-  int size, align, r, i, nb_extra_sval = 0;
+  int size, align, r, nb_extra_sval = 0;
   struct param_plan *pplan;
   int pass = 0;
 
@@ -1183,7 +1181,7 @@ static int copy_params(int nb_args, struct plan *plan, int todo)
         VFP regs as the copy might use an even numbered VFP reg that already
         holds part of a structure. */
 again:
-  for(i = 0; i < NB_CLASSES; i++) {
+  for(int i = 0; i < NB_CLASSES; i++) {
     for(pplan = plan->clsplans[i]; pplan; pplan = pplan->prev) {
 
       if (pass
@@ -1305,13 +1303,12 @@ again:
   if(todo) {
     o(0xE8BD0000|todo); /* pop {todo} */
     for(pplan = plan->clsplans[CORE_STRUCT_CLASS]; pplan; pplan = pplan->prev) {
-      int r;
       pplan->sval->r = pplan->start;
       /* An SValue can only pin 2 registers at best (r and r2) but a structure
          can occupy more than 2 registers. Thus, we need to push on the value
          stack some fake parameter to have on SValue for each registers used
          by a structure (r2 is not used). */
-      for (r = pplan->start + 1; r <= pplan->end; r++) {
+      for (int r = pplan->start + 1; r <= pplan->end; r++) {
         if (todo & (1 << r)) {
           nb_extra_sval++;
           vpushi(0);

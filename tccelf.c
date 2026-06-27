@@ -140,11 +140,9 @@ ST_FUNC void free_section(Section *s)
 
 ST_FUNC void tccelf_delete(TCCState *s1)
 {
-    int i;
-
 #ifndef ELF_OBJ_ONLY
     /* free symbol versions */
-    for (i = 0; i < nb_sym_versions; i++) {
+    for (int i = 0; i < nb_sym_versions; i++) {
         tcc_free(sym_versions[i].version);
         tcc_free(sym_versions[i].lib);
     }
@@ -153,11 +151,11 @@ ST_FUNC void tccelf_delete(TCCState *s1)
 #endif
 
     /* free all sections */
-    for(i = 1; i < s1->nb_sections; i++)
+    for(int i = 1; i < s1->nb_sections; i++)
         free_section(s1->sections[i]);
     dynarray_reset(&s1->sections, &s1->nb_sections);
 
-    for(i = 0; i < s1->nb_priv_sections; i++)
+    for(int i = 0; i < s1->nb_priv_sections; i++)
         free_section(s1->priv_sections[i]);
     dynarray_reset(&s1->priv_sections, &s1->nb_priv_sections);
 
@@ -168,8 +166,8 @@ ST_FUNC void tccelf_delete(TCCState *s1)
 /* save section data state */
 ST_FUNC void tccelf_begin_file(TCCState *s1)
 {
-    Section *s; int i;
-    for (i = 1; i < s1->nb_sections; i++) {
+    Section *s;
+    for (int i = 1; i < s1->nb_sections; i++) {
         s = s1->sections[i];
         s->sh_offset = s->data_offset;
     }
@@ -188,7 +186,7 @@ static void update_relocs(TCCState *s1, Section *s, int *old_to_new_syms, int fi
 ST_FUNC void tccelf_end_file(TCCState *s1)
 {
     Section *s = s1->symtab;
-    int first_sym, nb_syms, *tr, i;
+    int first_sym, nb_syms, *tr;
 
     first_sym = s->sh_offset / sizeof (ElfSym);
     nb_syms = s->data_offset / sizeof (ElfSym) - first_sym;
@@ -197,7 +195,7 @@ ST_FUNC void tccelf_end_file(TCCState *s1)
     s->hash = s->reloc, s->reloc = NULL;
     tr = tcc_mallocz(nb_syms * sizeof *tr);
 
-    for (i = 0; i < nb_syms; ++i) {
+    for (int i = 0; i < nb_syms; ++i) {
         ElfSym *sym = (ElfSym*)s->data + first_sym + i;
         if (sym->st_shndx == SHN_UNDEF) {
             int sym_bind = ELFW(ST_BIND)(sym->st_info);
@@ -220,7 +218,7 @@ ST_FUNC void tccelf_end_file(TCCState *s1)
     update_relocs(s1, s, tr, first_sym);
     tcc_free(tr);
     /* record text/data/bss output for -bench info */
-    for (i = 0; i < 4; ++i) {
+    for (int i = 0; i < 4; ++i) {
         s = s1->sections[i + 1];
         s1->total_output[i] += s->data_offset - s->sh_offset;
     }
@@ -352,8 +350,7 @@ static void section_reserve(Section *sec, unsigned long size)
 static Section *have_section(TCCState *s1, const char *name)
 {
     Section *sec;
-    int i;
-    for(i = 1; i < s1->nb_sections; i++) {
+    for(int i = 1; i < s1->nb_sections; i++) {
         sec = s1->sections[i];
         if (!strcmp(name, sec->name))
             return sec;
@@ -406,7 +403,7 @@ static ElfW(Word) elf_hash(const unsigned char *name)
 static void rebuild_hash(Section *s, unsigned int nb_buckets)
 {
     ElfW(Sym) *sym;
-    int *ptr, *hash, nb_syms, sym_index, h;
+    int *ptr, *hash, nb_syms, h;
     unsigned char *strtab;
 
     strtab = s->link->data;
@@ -425,7 +422,7 @@ static void rebuild_hash(Section *s, unsigned int nb_buckets)
     ptr += nb_buckets + 1;
 
     sym = (ElfW(Sym) *)s->data + 1;
-    for(sym_index = 1; sym_index < nb_syms; sym_index++) {
+    for(int sym_index = 1; sym_index < nb_syms; sym_index++) {
         if (ELFW(ST_BIND)(sym->st_info) != STB_LOCAL) {
             h = elf_hash(strtab + sym->st_name) % nb_buckets;
             *ptr = hash[h];
@@ -596,7 +593,6 @@ LIBTCCAPI void tcc_list_symbols(TCCState *s, void *ctx,
 static void
 version_add (TCCState *s1)
 {
-    int i;
     ElfW(Sym) *sym;
     ElfW(Verneed) *vn = NULL;
     Section *symtab;
@@ -643,7 +639,7 @@ version_add (TCCState *s1)
         verneed_section = new_section(s1, ".gnu.version_r",
                                       SHT_GNU_verneed, SHF_ALLOC);
         verneed_section->link = s1->dynsym->link;
-        for (i = nb_sym_versions; i-- > 0;) {
+        for (int i = nb_sym_versions; i-- > 0;) {
             struct sym_version *sv = &sym_versions[i];
             int n_same_libs = 0, prev;
             size_t vnofs;
@@ -840,11 +836,11 @@ ST_FUNC struct sym_attr *get_sym_attr(TCCState *s1, int index, int alloc)
 
 static void update_relocs(TCCState *s1, Section *s, int *old_to_new_syms, int first_sym)
 {
-    int i, type, sym_index;
+    int type, sym_index;
     Section *sr;
     ElfW_Rel *rel;
 
-    for(i = 1; i < s1->nb_sections; i++) {
+    for(int i = 1; i < s1->nb_sections; i++) {
         sr = s1->sections[i];
         if (sr->sh_type == SHT_RELX && sr->link == s) {
             for_each_elem(sr, 0, rel, ElfW_Rel) {
@@ -867,7 +863,7 @@ static void sort_syms(TCCState *s1, Section *s)
 {
     int *old_to_new_syms;
     ElfW(Sym) *new_syms;
-    int nb_syms, i;
+    int nb_syms;
     ElfW(Sym) *p, *q;
 
     nb_syms = s->data_offset / sizeof(ElfW(Sym));
@@ -877,7 +873,7 @@ static void sort_syms(TCCState *s1, Section *s)
     /* first pass for local symbols */
     p = (ElfW(Sym) *)s->data;
     q = new_syms;
-    for(i = 0; i < nb_syms; i++) {
+    for(int i = 0; i < nb_syms; i++) {
         if (ELFW(ST_BIND)(p->st_info) == STB_LOCAL) {
             old_to_new_syms[i] = q - new_syms;
             *q++ = *p;
@@ -890,7 +886,7 @@ static void sort_syms(TCCState *s1, Section *s)
 
     /* then second pass for non local symbols */
     p = (ElfW(Sym) *)s->data;
-    for(i = 0; i < nb_syms; i++) {
+    for(int i = 0; i < nb_syms; i++) {
         if (ELFW(ST_BIND)(p->st_info) != STB_LOCAL) {
             old_to_new_syms[i] = q - new_syms;
             *q++ = *p;
@@ -912,7 +908,7 @@ static void sort_syms(TCCState *s1, Section *s)
 
 static Section *create_gnu_hash(TCCState *s1)
 {
-    int nb_syms, i, ndef, nbuckets, symoffset, bloom_size, bloom_shift;
+    int nb_syms, ndef, nbuckets, symoffset, bloom_size, bloom_shift;
     ElfW(Sym) *p;
     Section *gnu_hash;
     Section *dynsym = s1->dynsym;
@@ -926,7 +922,7 @@ static Section *create_gnu_hash(TCCState *s1)
     /* count def symbols */
     ndef = 0;
     p = (ElfW(Sym) *)dynsym->data;
-    for(i = 0; i < nb_syms; i++, p++)
+    for(int i = 0; i < nb_syms; i++, p++)
         ndef += p->st_shndx != SHN_UNDEF;
 
     /* calculate gnu hash sizes and fill header */
@@ -961,7 +957,7 @@ static void update_gnu_hash(TCCState *s1, Section *gnu_hash)
 {
     int *old_to_new_syms;
     ElfW(Sym) *new_syms;
-    int nb_syms, i, nbuckets, bloom_size, bloom_shift;
+    int nb_syms, nbuckets, bloom_size, bloom_shift;
     ElfW(Sym) *p, *q;
     Section *vs;
     Section *dynsym = s1->dynsym;
@@ -981,7 +977,7 @@ static void update_gnu_hash(TCCState *s1, Section *gnu_hash)
     /* calculate hashes and copy undefs */
     p = (ElfW(Sym) *)dynsym->data;
     q = new_syms;
-    for(i = 0; i < nb_syms; i++, p++) {
+    for(int i = 0; i < nb_syms; i++, p++) {
         if (p->st_shndx == SHN_UNDEF) {
             old_to_new_syms[i] = q - new_syms;
             *q++ = *p;
@@ -1006,11 +1002,11 @@ static void update_gnu_hash(TCCState *s1, Section *gnu_hash)
 	tcc_error_noabort ("gnu_hash size incorrect");
 
     /* find buckets */
-    for(i = 0; i < nbuckets; i++)
+    for(int i = 0; i < nbuckets; i++)
 	buck[i].first = -1;
 
     p = (ElfW(Sym) *)dynsym->data;
-    for(i = 0; i < nb_syms; i++, p++)
+    for(int i = 0; i < nb_syms; i++, p++)
         if (p->st_shndx != SHN_UNDEF) {
 	    int bucket = hash[i] % nbuckets;
 
@@ -1024,7 +1020,7 @@ static void update_gnu_hash(TCCState *s1, Section *gnu_hash)
 
     /* fill buckets/chains/bloom and sort symbols */
     p = (ElfW(Sym) *)dynsym->data;
-    for(i = 0; i < nbuckets; i++) {
+    for(int i = 0; i < nbuckets; i++) {
 	int cur = buck[i].first;
 
 	if (cur != -1) {
@@ -1059,7 +1055,7 @@ static void update_gnu_hash(TCCState *s1, Section *gnu_hash)
 
 	if (1/*versym*/) {
             newver = tcc_malloc(nb_syms * sizeof(*newver));
-	    for (i = 0; i < nb_syms; i++)
+	    for (int i = 0; i < nb_syms; i++)
 	        newver[old_to_new_syms[i]] = versym[i];
 	    memcpy(vs->data, newver, nb_syms * sizeof(*newver));
 	    tcc_free(newver);
@@ -1097,8 +1093,7 @@ ST_FUNC void relocate_syms(TCCState *s1, Section *symtab, int do_resolve)
                 if (!s1->nostdlib)
                     addr = dlsym(RTLD_DEFAULT, name_ud);
 		if (addr == NULL) {
-		    int i;
-		    for (i = 0; i < s1->nb_loaded_dlls; i++)
+		    for (int i = 0; i < s1->nb_loaded_dlls; i++)
                         if ((addr = dlsym(s1->loaded_dlls[i]->handle, name_ud)))
 			    break;
 		}
@@ -1192,10 +1187,9 @@ static void relocate_section(TCCState *s1, Section *s, Section *sr)
 /* relocate all sections */
 ST_FUNC void relocate_sections(TCCState *s1)
 {
-    int i;
     Section *s, *sr;
 
-    for (i = 1; i < s1->nb_sections; ++i) {
+    for (int i = 1; i < s1->nb_sections; ++i) {
         sr = s1->sections[i];
         if (sr->sh_type != SHT_RELX)
             continue;
@@ -1419,11 +1413,11 @@ ST_FUNC void build_got_entries(TCCState *s1, int got_sym)
     Section *s;
     ElfW_Rel *rel;
     ElfW(Sym) *sym;
-    int i, type, gotplt_entry, reloc_type, sym_index;
+    int type, gotplt_entry, reloc_type, sym_index;
     struct sym_attr *attr;
     int pass = 0;
 redo:
-    for(i = 1; i < s1->nb_sections; i++) {
+    for(int i = 1; i < s1->nb_sections; i++) {
         s = s1->sections[i];
         if (s->sh_type != SHT_RELX)
             continue;
@@ -1881,7 +1875,6 @@ ST_FUNC void tcc_add_runtime(TCCState *s1)
 static void tcc_add_linker_symbols(TCCState *s1)
 {
     char buf[1024];
-    int i;
     Section *s;
 
     set_global_sym(s1, "_etext", text_section, -1);
@@ -1900,7 +1893,7 @@ static void tcc_add_linker_symbols(TCCState *s1)
     add_init_array_defines(s1, ".fini_array");
     /* add start and stop symbols for sections whose name can be
        expressed in C */
-    for(i = 1; i < s1->nb_sections; i++) {
+    for(int i = 1; i < s1->nb_sections; i++) {
         s = s1->sections[i];
         if ((s->sh_flags & SHF_ALLOC)
             && (s->sh_type == SHT_PROGBITS || s->sh_type == SHT_NOBITS
@@ -1969,9 +1962,8 @@ ST_FUNC void fill_got(TCCState *s1)
 {
     Section *s;
     ElfW_Rel *rel;
-    int i;
 
-    for(i = 1; i < s1->nb_sections; i++) {
+    for(int i = 1; i < s1->nb_sections; i++) {
         s = s1->sections[i];
         if (s->sh_type != SHT_RELX)
             continue;
@@ -2151,13 +2143,12 @@ static void export_global_syms(TCCState *s1)
 /* decide if an unallocated section should be output. */
 static int set_sec_sizes(TCCState *s1)
 {
-    int i;
     Section *s;
     int textrel = 0;
     int file_type = s1->output_type;
 
     /* Allocate strings for section names */
-    for(i = 1; i < s1->nb_sections; i++) {
+    for(int i = 1; i < s1->nb_sections; i++) {
         s = s1->sections[i];
         if (s->sh_type == SHT_RELX && !(s->sh_flags & SHF_ALLOC)) {
             /* when generating a DLL, we include relocations but
@@ -2213,11 +2204,11 @@ struct dyn_inf {
 static int sort_sections(TCCState *s1, int *sec_order, struct dyn_inf *d)
 {
     Section *s;
-    int i, j, k, f, f0, n;
+    int j, k, f, f0, n;
     int nb_sections = s1->nb_sections;
     int *sec_cls = sec_order + nb_sections;
 
-    for (i = 1; i < nb_sections; i++) {
+    for (int i = 1; i < nb_sections; i++) {
         s = s1->sections[i];
         if (0 == s->sh_name) {
             j = 0x900; /* no sh_name: won't go to file */
@@ -2289,7 +2280,7 @@ static int sort_sections(TCCState *s1, int *sec_order, struct dyn_inf *d)
 
     /* count PT_LOAD headers needed */
     n = f0 = 0;
-    for (i = 1; i < nb_sections; i++) {
+    for (int i = 1; i < nb_sections; i++) {
         s = s1->sections[sec_order[i]];
         k = sec_cls[i];
         f = 0;
@@ -2338,7 +2329,7 @@ static int layout_sections(TCCState *s1, int *sec_order, struct dyn_inf *d)
     Section *s;
     addr_t addr, tmp, align, s_align, base;
     ElfW(Phdr) *ph = NULL;
-    int i, f, n, phnum, phfill;
+    int f, n, phnum, phfill;
     int file_offset;
 
     /* compute number of program headers */
@@ -2357,7 +2348,7 @@ static int layout_sections(TCCState *s1, int *sec_order, struct dyn_inf *d)
         ++phnum;
     {
         int has_tls = 0;
-        for (i = 1; i < s1->nb_sections; i++) {
+        for (int i = 1; i < s1->nb_sections; i++) {
             s = s1->sections[i];
             if (s->sh_flags & SHF_TLS) {
                 has_tls = 1;
@@ -2402,7 +2393,7 @@ static int layout_sections(TCCState *s1, int *sec_order, struct dyn_inf *d)
     addr += file_offset;
 
     n = 0;
-    for(i = 1; i < s1->nb_sections; i++) {
+    for(int i = 1; i < s1->nb_sections; i++) {
         s = s1->sections[sec_order[i]];
         f = sec_order[i + s1->nb_sections];
         align = s->sh_addralign - 1;
@@ -2491,7 +2482,7 @@ static int layout_sections(TCCState *s1, int *sec_order, struct dyn_inf *d)
         /* Create PT_TLS segment covering all TLS sections */
         Section *tls_start_sec = NULL;
         addr_t tls_start = 0, tls_end = 0;
-        for (i = 1; i < s1->nb_sections; i++) {
+        for (int i = 1; i < s1->nb_sections; i++) {
             s = s1->sections[i];
             if (s->sh_flags & SHF_TLS && s->sh_size) {
                 if (!tls_start_sec) {
@@ -2615,7 +2606,6 @@ static void fill_dynamic(TCCState *s1, struct dyn_inf *dyninf)
    is illegal. OpenBSD/arm64 does not support R_...NONE reloc. */
 static void update_reloc_sections(TCCState *s1, struct dyn_inf *dyninf)
 {
-    int i;
     unsigned long file_offset = 0;
     Section *s;
     Section *relocplt = s1->plt ? s1->plt->reloc : NULL;
@@ -2623,7 +2613,7 @@ static void update_reloc_sections(TCCState *s1, struct dyn_inf *dyninf)
     /* dynamic relocation table information, for .dynamic section */
     dyninf->rel_addr = dyninf->rel_size = 0;
 
-    for(i = 1; i < s1->nb_sections; i++) {
+    for(int i = 1; i < s1->nb_sections; i++) {
         s = s1->sections[i];
 	if (s->sh_type == SHT_RELX && s != relocplt) {
 	    if (dyninf->rel_size == 0) {
@@ -2977,7 +2967,7 @@ static void alloc_sec_names(TCCState *s1, int is_obj);
 /* XXX: suppress unneeded sections */
 static int elf_output_file(TCCState *s1, const char *filename)
 {
-    int i, ret, file_type, *sec_order;
+    int ret, file_type, *sec_order;
     struct dyn_inf dyninf = {0};
     Section *interp, *dynstr, *dynamic;
     int textrel, got_sym, dt_flags_1;
@@ -3061,7 +3051,7 @@ static int elf_output_file(TCCState *s1, const char *filename)
 
     if (!s1->static_link) {
         /* add a list of needed dlls */
-        for(i = 0; i < s1->nb_loaded_dlls; i++) {
+        for(int i = 0; i < s1->nb_loaded_dlls; i++) {
             DLLReference *dllref = s1->loaded_dlls[i];
             if (dllref->level == 0)
                 put_dt(dynamic, DT_NEEDED, put_elf_str(dynstr, dllref->name));
@@ -3152,12 +3142,11 @@ static int elf_output_file(TCCState *s1, const char *filename)
 /* Allocate strings for section names */
 static void alloc_sec_names(TCCState *s1, int is_obj)
 {
-    int i;
     Section *s, *strsec;
 
     strsec = new_section(s1, ".shstrtab", SHT_STRTAB, 0);
     put_elf_str(strsec, "");
-    for(i = 1; i < s1->nb_sections; i++) {
+    for(int i = 1; i < s1->nb_sections; i++) {
         s = s1->sections[i];
         if (is_obj)
             s->sh_size = s->data_offset;
@@ -3171,7 +3160,7 @@ static void alloc_sec_names(TCCState *s1, int is_obj)
 static int elf_output_obj(TCCState *s1, const char *filename)
 {
     Section *s;
-    int i, ret, file_offset;
+    int ret, file_offset;
 #ifdef TCC_TARGET_RISCV64
     create_riscv_attribute_section(s1);
 #endif
@@ -3179,7 +3168,7 @@ static int elf_output_obj(TCCState *s1, const char *filename)
     alloc_sec_names(s1, 1);
     file_offset = (sizeof (ElfW(Ehdr)) + 3) & -4;
     file_offset += s1->nb_sections * sizeof(ElfW(Shdr));
-    for(i = 1; i < s1->nb_sections; i++) {
+    for(int i = 1; i < s1->nb_sections; i++) {
         s = s1->sections[i];
         file_offset = (file_offset + 15) & -16;
         s->sh_offset = file_offset;

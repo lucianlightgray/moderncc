@@ -586,9 +586,9 @@ static void reg_pass(CType *type, int *prc, int *fieldofs, int named)
 
 ST_FUNC void gfunc_call(int nb_args)
 {
-    int i, align, size, areg[2];
+    int align, size, areg[2];
     int *info = tcc_malloc((nb_args + 1) * sizeof (int));
-    int stack_adj = 0, tempspace = 0, stack_add, ofs, splitofs = 0;
+    int stack_adj = 0, tempspace = 0, stack_add, splitofs = 0;
     int old = (vtop[-nb_args].type.ref->f.func_type == FUNC_OLD);
     SValue *sv;
     Sym *sa;
@@ -602,7 +602,7 @@ ST_FUNC void gfunc_call(int nb_args)
     areg[0] = 0; /* int arg regs */
     areg[1] = 8; /* float arg regs */
     sa = vtop[-nb_args].type.ref->next;
-    for (i = 0; i < nb_args; i++) {
+    for (int i = 0; i < nb_args; i++) {
         int nregs, byref = 0, tempofs;
         int prc[3], fieldofs[3];
         sv = &vtop[1 + i - nb_args];
@@ -669,7 +669,7 @@ ST_FUNC void gfunc_call(int nb_args)
         }
         else
             EI(0x13, 0, 2, 2, -stack_add);   // addi sp, sp, -adj
-        for (i = ofs = 0; i < nb_args; i++) {
+        for (int i = 0, ofs = 0; i < nb_args; i++) {
             if (info[i] & (64 | 32)) {
                 vrotb(nb_args - i);
                 size = type_size(&vtop->type, &align);
@@ -712,7 +712,7 @@ ST_FUNC void gfunc_call(int nb_args)
             }
         }
     }
-    for (i = 0; i < nb_args; i++) {
+    for (int i = 0; i < nb_args; i++) {
         int ii = info[nb_args - 1 - i], r = ii, r2 = r;
         if (!(r & 32)) {
             CType origtype;
@@ -807,7 +807,7 @@ static int func_sub_sp_offset, num_va_regs, func_va_list_ofs;
 ST_FUNC void gfunc_prolog(Sym *func_sym)
 {
     CType *func_type = &func_sym->type;
-    int i, addr, align, size;
+    int addr, align, size;
     int param_addr = 0;
     int areg[2];
     Sym *sym;
@@ -853,7 +853,7 @@ ST_FUNC void gfunc_prolog(Sym *func_sym)
         } else {
             loc -= regcount * 8; // XXX could reserve only 'size' bytes
             param_addr = loc;
-            for (i = 0; i < regcount; i++) {
+            for (int i = 0; i < regcount; i++) {
                 if (areg[prc[1+i] - 1] >= 8) {
                     assert(i == 1 && regcount == 2 && !(addr & 7));
                     EI(0x03, 3, 5, 8, addr); // ld t0, addr(s0)

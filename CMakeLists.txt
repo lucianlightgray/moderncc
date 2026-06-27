@@ -1293,11 +1293,8 @@ endif()
 # the global CFLAGS in the Makefile, so we use add_compile_options().
 include(CheckCCompilerFlag)
 if(NOT TCC_CC_NAME STREQUAL "tcc" AND NOT MSVC)
-    # OPT1 enable-list: -Wdeclaration-after-statement (if accepted)
-    check_c_compiler_flag("-Wdeclaration-after-statement" TCC_HAS_WDECL_AFTER_STMT)
-    if(TCC_HAS_WDECL_AFTER_STMT)
-        add_compile_options(-Wdeclaration-after-statement)
-    endif()
+    # (Removed -Wdeclaration-after-statement: TCC now targets C99 and
+    # deliberately uses mixed declarations / declare-in-for; see CodingStyle.)
     # OPT2 disable-list: gcc warns on unused-result; clang gets nothing here
     if(NOT TCC_CC_NAME STREQUAL "clang")
         check_c_compiler_flag("-Wno-unused-result" TCC_HAS_WNO_UNUSED_RESULT)

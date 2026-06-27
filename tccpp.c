@@ -498,11 +498,10 @@ static TokenSym *tok_alloc_new(TokenSym **pts, const char *str, int len)
 ST_FUNC TokenSym *tok_alloc(const char *str, int len)
 {
     TokenSym *ts, **pts;
-    int i;
     unsigned int h;
-    
+
     h = TOK_HASH_INIT;
-    for(i=0;i<len;i++)
+    for(int i=0;i<len;i++)
         h = TOK_HASH_FUNC(h, ((unsigned char *)str)[i]);
     h &= (TOK_HASH_SIZE - 1);
 
@@ -529,7 +528,7 @@ ST_FUNC int tok_alloc_const(const char *str)
 ST_FUNC const char *get_tok_str(int v, CValue *cv)
 {
     char *p;
-    int i, len;
+    int len;
 
     cstr_reset(&cstr_buf);
     p = cstr_buf.data;
@@ -561,11 +560,11 @@ ST_FUNC const char *get_tok_str(int v, CValue *cv)
         cstr_ccat(&cstr_buf, '\"');
         if (v == TOK_STR) {
             len = cv->str.size - 1;
-            for(i=0;i<len;i++)
+            for(int i=0;i<len;i++)
                 add_char(&cstr_buf, ((unsigned char *)cv->str.data)[i]);
         } else {
             len = (cv->str.size / sizeof(nwchar_t)) - 1;
-            for(i=0;i<len;i++)
+            for(int i=0;i<len;i++)
                 add_char(&cstr_buf, ((nwchar_t *)cv->str.data)[i]);
         }
         cstr_ccat(&cstr_buf, '\"');
@@ -2218,11 +2217,10 @@ static void parse_string(const char *s, int len)
 /* bn = (bn << shift) | or_val */
 static int bn_lshift(unsigned int *bn, int shift, int or_val)
 {
-    int i;
     unsigned int v;
     if (bn[BN_SIZE - 1] >> (32 - shift))
 	return shift;
-    for(i=0;i<BN_SIZE;i++) {
+    for(int i=0;i<BN_SIZE;i++) {
         v = bn[i];
         bn[i] = (v << shift) | or_val;
         or_val = v >> (32 - shift);
@@ -2232,8 +2230,7 @@ static int bn_lshift(unsigned int *bn, int shift, int or_val)
 
 static void bn_zero(unsigned int *bn)
 {
-    int i;
-    for(i=0;i<BN_SIZE;i++) {
+    for(int i=0;i<BN_SIZE;i++) {
         bn[i] = 0;
     }
 }
@@ -3687,18 +3684,18 @@ ST_FUNC int set_idnum(int c, int val)
 
 ST_FUNC void tccpp_new(TCCState *s)
 {
-    int i, c;
+    int c;
     const char *p, *r;
 
     /* init isid table */
-    for(i = CH_EOF; i<128; i++)
+    for(int i = CH_EOF; i<128; i++)
         set_idnum(i,
             is_space(i) ? IS_SPC
             : isid(i) ? IS_ID
             : isnum(i) ? IS_NUM
             : 0);
 
-    for(i = 128; i<256; i++)
+    for(int i = 128; i<256; i++)
         set_idnum(i, IS_ID);
 
     /* init allocators */
@@ -3740,7 +3737,7 @@ ST_FUNC void tccpp_new(TCCState *s)
 
 ST_FUNC void tccpp_delete(TCCState *s)
 {
-    int i, n;
+    int n;
 
     dynarray_reset(&s->cached_includes, &s->nb_cached_includes);
 
@@ -3748,7 +3745,7 @@ ST_FUNC void tccpp_delete(TCCState *s)
     n = tok_ident - TOK_IDENT;
     if (n > total_idents)
         total_idents = n;
-    for (i = n; --i >= 0;)
+    for (int i = n; --i >= 0;)
         tal_free(&toksym_alloc, table_ident[i]);
     tcc_free(table_ident);
     table_ident = NULL;

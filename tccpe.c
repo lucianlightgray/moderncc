@@ -436,8 +436,7 @@ static const char *pe_export_name(TCCState *s1, ElfW(Sym) *sym)
 
 static int dynarray_assoc(void **pp, int n, int key)
 {
-    int i;
-    for (i = 0; i < n; ++i, ++pp)
+    for (int i = 0; i < n; ++i, ++pp)
     if (key == **(int **) pp)
         return i;
     return -1;
@@ -480,10 +479,10 @@ static int pe_fwrite(struct pe_info *pe, const void *data, int len)
 {
     const WORD *p = data;
     DWORD sum;
-    int ret, i;
+    int ret;
     pe->pos += (ret = fwrite(data, 1, len, pe->op));
     sum = pe->sum;
-    for (i = len; i > 0; i -= 2) {
+    for (int i = len; i > 0; i -= 2) {
         sum += (i >= 2) ? *p++ : *(BYTE*)p;
         sum = (sum + (sum >> 16)) & 0xFFFF;
     }
@@ -531,7 +530,6 @@ static void pe_add_coffsym(struct pe_info *pe)
     TCCState *s1 = pe->s1;
     ElfSym *esym;
     struct syment *se;
-    int n;
 
     if (NULL == pe->coffsym) {
         pe->coffsym = new_section(s1, ".coffsym", SHT_PROGBITS, SHF_PRIVATE);
@@ -552,7 +550,7 @@ static void pe_add_coffsym(struct pe_info *pe)
 
 #if 1
     esym = (ElfSym*)s1->symtab->data;
-    for (n = s1->symtab->data_offset / sizeof *esym; ++esym, --n;) {
+    for (int n = s1->symtab->data_offset / sizeof *esym; ++esym, --n;) {
         int sym_bind = ELFW(ST_BIND)(esym->st_info);
         if (sym_bind == STB_GLOBAL) {
             char *name = esym->st_name + (char*)s1->symtab->link->data;
@@ -755,7 +753,6 @@ static int pe_write(struct pe_info *pe)
 
     struct pe_header pe_header = pe_template;
 
-    int i;
     DWORD file_offset;
     struct section_info *si;
     IMAGE_SECTION_HEADER *psh;
@@ -778,7 +775,7 @@ static int pe_write(struct pe_info *pe)
     if (2 == s1->verbose)
         printf("-------------------------------"
                "\n  virt   file   size  section" "\n");
-    for (i = 0; i < pe->sec_count; ++i) {
+    for (int i = 0; i < pe->sec_count; ++i) {
         DWORD addr, size;
         const char *sh_name;
 
@@ -878,11 +875,11 @@ static int pe_write(struct pe_info *pe)
     }
 
     pe_fwrite(pe, &pe_header, sizeof pe_header);
-    for (i = 0; i < pe->sec_count; ++i)
+    for (int i = 0; i < pe->sec_count; ++i)
         pe_fwrite(pe, &pe->sec_info[i]->ish, sizeof(IMAGE_SECTION_HEADER));
 
     file_offset = pe->sizeofheaders;
-    for (i = 0; i < pe->sec_count; ++i) {
+    for (int i = 0; i < pe->sec_count; ++i) {
         Section *s;
         si = pe->sec_info[i];
         if (!si->data_size)
@@ -957,8 +954,7 @@ found_dll:
 
 static void pe_free_imports(struct pe_info *pe)
 {
-    int i;
-    for (i = 0; i < pe->imp_count; ++i) {
+    for (int i = 0; i < pe->imp_count; ++i) {
         struct pe_import_info *p = pe->imp_info[i];
         dynarray_reset(&p->symbols, &p->sym_count);
     }
@@ -991,7 +987,7 @@ static void pe_build_imports(struct pe_info *pe)
 
     for (i = 0; i < pe->imp_count; ++i) {
         IMAGE_IMPORT_DESCRIPTOR *hdr;
-        int k, n, dllindex;
+        int dllindex;
         ADDR3264 v;
         struct pe_import_info *p = pe->imp_info[i];
         const char *name;
@@ -1010,7 +1006,7 @@ static void pe_build_imports(struct pe_info *pe)
         hdr->OriginalFirstThunk = ent_ptr + rva_base;
         hdr->Name = v + rva_base;
 
-        for (k = 0, n = p->sym_count; k <= n; ++k) {
+        for (int k = 0, n = p->sym_count; k <= n; ++k) {
             if (k < n) {
                 int iat_index = p->symbols[k]->iat_index;
                 int sym_index = p->symbols[k]->sym_index;
@@ -1084,7 +1080,7 @@ static void pe_build_exports(struct pe_info *pe)
     int sym_index, sym_end;
     DWORD rva_base, base_o, func_o, name_o, ord_o, str_o;
     IMAGE_EXPORT_DIRECTORY *hdr;
-    int sym_count, ord;
+    int sym_count;
     struct pe_sort_sym **sorted, *p;
     TCCState *s1 = pe->s1;
 
@@ -1153,7 +1149,7 @@ static void pe_build_exports(struct pe_info *pe)
     }
 #endif
 
-    for (ord = 0; ord < sym_count; ++ord)
+    for (int ord = 0; ord < sym_count; ++ord)
     {
         p = sorted[ord], sym_index = p->index, name = p->name;
         /* insert actual address later in relocate_sections() */
@@ -1403,14 +1399,14 @@ add_section:
 /*----------------------------------------------------------------------------*/
 static int pe_check_symbols(struct pe_info *pe)
 {
-    int sym_index, sym_end;
+    int sym_end;
     int ret = 0;
     TCCState *s1 = pe->s1;
 
     pe_align_section(text_section, 8);
 
     sym_end = symtab_section->data_offset / sizeof(ElfW(Sym));
-    for (sym_index = 1; sym_index < sym_end; ++sym_index) {
+    for (int sym_index = 1; sym_index < sym_end; ++sym_index) {
         ElfW(Sym) *sym = (ElfW(Sym) *)symtab_section->data + sym_index;
         if (sym->st_shndx == SHN_UNDEF) {
             const char *name = (char*)symtab_section->link->data + sym->st_name;
@@ -1788,7 +1784,7 @@ static int pe_load_res(TCCState *s1, int fd)
 {
     struct pe_rsrc_header hdr;
     Section *rsrc_section;
-    int i, ret = -1, sym_index;
+    int ret = -1, sym_index;
     BYTE *ptr;
     unsigned offs;
 
@@ -1807,7 +1803,7 @@ static int pe_load_res(TCCState *s1, int fd)
         goto quit;
     offs = hdr.sectionhdr.PointerToRelocations;
     sym_index = put_elf_sym(symtab_section, 0, 0, 0, 0, rsrc_section->sh_num, ".rsrc");
-    for (i = 0; i < hdr.sectionhdr.NumberOfRelocations; ++i) {
+    for (int i = 0; i < hdr.sectionhdr.NumberOfRelocations; ++i) {
         struct pe_rsrc_reloc rel;
         if (!read_mem(fd, offs, &rel, sizeof rel))
             goto quit;

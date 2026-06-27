@@ -322,12 +322,11 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
                 Section *sec;
                 int32_t x;
                 addr_t tls_start = 0, tls_end = 0, tls_align = 1;
-                int i;
 
                 sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
                 sec = s1->sections[sym->st_shndx];
 
-                for (i = 1; i < s1->nb_sections; i++) {
+                for (int i = 1; i < s1->nb_sections; i++) {
                     Section *s = s1->sections[i];
                     if (s->sh_flags & SHF_TLS && s->sh_size) {
                         if (!tls_start || s->sh_addr < tls_start)

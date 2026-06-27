@@ -511,7 +511,6 @@ ST_FUNC int tcc_output_coff(TCCState *s1, FILE *f)
 	AUXFUNC auxfunc;
 	AUXBF auxbf;
 	AUXEF auxef;
-	int i;
 	Elf32_Sym *p;
 	const char *name;
 	int nstr;
@@ -524,7 +523,7 @@ ST_FUNC int tcc_output_coff(TCCState *s1, FILE *f)
 	p = (Elf32_Sym *) symtab_section->data;
 
 
-	for (i = 0; i < nb_syms; i++) {
+	for (int i = 0; i < nb_syms; i++) {
 
 	    name = symtab_section->link->data + p->st_name;
 
@@ -695,7 +694,7 @@ ST_FUNC int tcc_output_coff(TCCState *s1, FILE *f)
 
 void SortSymbolTable(TCCState *s1)
 {
-    int i, j, k, n = 0;
+    int k, n = 0;
     Elf32_Sym *p, *p2, *NewTable;
     char *name, *name2;
 
@@ -708,7 +707,7 @@ void SortSymbolTable(TCCState *s1)
     // then scan the whole symbol list and copy any function
     // symbols that match the file association
 
-    for (i = 0; i < nb_syms; i++) {
+    for (int i = 0; i < nb_syms; i++) {
 	if (p->st_info == 4) {
 	    name = (char *) symtab_section->link->data + p->st_name;
 
@@ -718,7 +717,7 @@ void SortSymbolTable(TCCState *s1)
 
 	    p2 = (Elf32_Sym *) symtab_section->data;
 
-	    for (j = 0; j < nb_syms; j++) {
+	    for (int j = 0; j < nb_syms; j++) {
 		if (p2->st_info == 0x12) {
 		    // this is a func symbol
 
@@ -752,7 +751,7 @@ void SortSymbolTable(TCCState *s1)
     // copy all the rest over (all except file and funcs)
 
     p = (Elf32_Sym *) symtab_section->data;
-    for (i = 0; i < nb_syms; i++) {
+    for (int i = 0; i < nb_syms; i++) {
 	if (p->st_info != 4 && p->st_info != 0x12) {
 	    NewTable[n++] = *p;
 	}
@@ -765,7 +764,7 @@ void SortSymbolTable(TCCState *s1)
     // copy it all back
 
     p = (Elf32_Sym *) symtab_section->data;
-    for (i = 0; i < nb_syms; i++) {
+    for (int i = 0; i < nb_syms; i++) {
 	*p++ = NewTable[i];
     }
 
@@ -775,13 +774,13 @@ void SortSymbolTable(TCCState *s1)
 
 int FindCoffSymbolIndex(TCCState *s1, const char *func_name)
 {
-    int i, n = 0;
+    int n = 0;
     Elf32_Sym *p;
     char *name;
 
     p = (Elf32_Sym *) symtab_section->data;
 
-    for (i = 0; i < nb_syms; i++) {
+    for (int i = 0; i < nb_syms; i++) {
 
 	name = (char *) symtab_section->link->data + p->st_name;
 
@@ -848,9 +847,8 @@ short int GetCoffFlags(const char *s)
 Section *FindSection(TCCState * s1, const char *sname)
 {
     Section *s;
-    int i;
 
-    for (i = 1; i < s1->nb_sections; i++) {
+    for (int i = 1; i < s1->nb_sections; i++) {
 	s = s1->sections[i];
 
 	if (!strcmp(sname, s->name))
@@ -868,7 +866,6 @@ ST_FUNC int tcc_load_coff(TCCState * s1, int fd)
     FILE *f;
     unsigned int str_size;
     char *Coff_str_table, *name;
-    int i, k;
     struct syment csym;
     char name2[9];
     FILHDR file_hdr;		/* FILE HEADER STRUCTURE              */
@@ -905,7 +902,7 @@ ST_FUNC int tcc_load_coff(TCCState * s1, int fd)
     if (fseek(f, file_hdr.f_symptr, SEEK_SET))
 	tcc_error("error reading .out file for input");
 
-    for (i = 0; i < file_hdr.f_nsyms; i++) {
+    for (int i = 0; i < file_hdr.f_nsyms; i++) {
 	if (fread(&csym, SYMESZ, 1, f) != 1)
 	    tcc_error("error reading .out file for input");
 
@@ -915,7 +912,7 @@ ST_FUNC int tcc_load_coff(TCCState * s1, int fd)
 	    name = csym._n._n_name;
 
 	    if (name[7] != 0) {
-		for (k = 0; k < 8; k++)
+		for (int k = 0; k < 8; k++)
 		    name2[k] = name[k];
 
 		name2[8] = 0;

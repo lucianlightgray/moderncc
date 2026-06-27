@@ -189,8 +189,7 @@ static void riscv64_record_pcrel_hi(TCCState *s1, addr_t addr, addr_t val)
 
 static int riscv64_lookup_pcrel_hi(TCCState *s1, addr_t hi_addr, addr_t *hi_val)
 {
-    int i;
-    for (i = s1->nb_pcrel_hi_entries; i > 0; ) {
+    for (int i = s1->nb_pcrel_hi_entries; i > 0; ) {
         struct pcrel_hi *entry = s1->pcrel_hi_entries[--i];
         if (entry->addr == hi_addr) {
             *hi_val = entry->val;
@@ -409,8 +408,7 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
     case R_RISCV_TPREL_LO12_I: {
         addr_t tls_start = 0;
         int64_t tp_offset;
-        int i;
-        for (i = 1; i < s1->nb_sections; i++) {
+        for (int i = 1; i < s1->nb_sections; i++) {
             Section *s = s1->sections[i];
             if (s->sh_flags & SHF_TLS && s->sh_size) {
                 if (!tls_start || s->sh_addr < tls_start)

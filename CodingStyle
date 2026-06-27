@@ -16,19 +16,39 @@ have large indentation) while most are indented with 4 spaces.
 
     Language
 
-TCC is mostly implemented in C90. Do not use any non-C90 features
-that are not already in use.
+TCC targets C99. The compiler builds itself, and the supported
+toolchains (the CMake matrix: gcc, clang, tcc, mingw) all provide C99,
+so prefer C99 constructs that reduce code over the older C90 idioms.
 
-Non-C90 features currently in use, as revealed by
-./configure --extra-cflags="-std=c90 -Wpedantic":
+Encouraged C99 (and a couple of already-accepted later) features:
 
-- long long (including "LL" constants)
+- declarations at point of use, and loop counters declared in the
+  "for" header:  for (int i = 0; i < n; i++)
+- mixed declarations and statements (no more top-of-block-only decls)
+- flexible array members:  char name[];  (not the [1] "struct hack")
+- designated initializers:  { .field = x }  /  [INDEX] = x
+- compound literals:  f(&(CType){ .t = VT_INT })
+- <stdbool.h> bool/true/false for flag-typed values
+- <stdint.h> fixed-width integer types
+- snprintf and other bounds-checked stdio
+- long long and "LL" constants
 - inline
-- very long string constants
-- assignment between function pointer and 'void *'
+- variadic macros (__VA_ARGS__)
 - "//" comments
 - empty macro arguments (DEF_ASMTEST in i386-tok.h)
 - unnamed struct and union fields (in struct Sym), a C11 feature
+
+The runtime library (lib/*.c), the bundled headers (include/,
+win32/include/), and the format/ABI headers (elf.h, dwarf.h, coff.h,
+stab.h) stay conservative: they are shipped and/or compiled by tcc
+itself for arbitrary targets, so do not introduce host-only assumptions
+there.
+
+Prefer constructs that remove code over equivalent rewrites. A change
+that only swaps one spelling for another of the same length is churn;
+skip it. But genuine code reduction (deleting a temporary, a separate
+declaration line, or hand-rolled buffer arithmetic) is welcome even
+though it touches the VCS history.
 
     Testing
 

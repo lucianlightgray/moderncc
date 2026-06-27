@@ -174,10 +174,9 @@ ST_FUNC void tcc_run_free(TCCState *s1)
 {
     unsigned size;
     void *ptr;
-    int i;
 
     /* free any loaded DLLs */
-    for ( i = 0; i < s1->nb_loaded_dlls; i++) {
+    for ( int i = 0; i < s1->nb_loaded_dlls; i++) {
         DLLReference *ref = s1->loaded_dlls[i];
         if ( ref->handle )
 #ifdef _WIN32
@@ -605,7 +604,6 @@ LIBTCCAPI void tcc_set_backtrace_func(TCCState *s1, void *data, TCCBtFunc *func)
 static TCCState *rt_find_state(rt_frame *f)
 {
     TCCState *s;
-    int level;
     addr_t pc;
 
     s = g_s1;
@@ -613,7 +611,7 @@ static TCCState *rt_find_state(rt_frame *f)
         /* play it safe in the simple case when there is only one state */
         return s;
     }
-    for (level = 0; level < 8; ++level) {
+    for (int level = 0; level < 8; ++level) {
         if (rt_get_caller_pc(&pc, f, level) < 0)
             break;
         for (s = g_s1; s; s = s->next) {

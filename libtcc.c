@@ -1095,8 +1095,7 @@ LIBTCCAPI void tcc_set_lib_path(TCCState *s, const char *path)
 ST_FUNC DLLReference *tcc_add_dllref(TCCState *s1, const char *dllname, int level)
 {
     DLLReference *ref = NULL;
-    int i;
-    for (i = 0; i < s1->nb_loaded_dlls; i++)
+    for (int i = 0; i < s1->nb_loaded_dlls; i++)
         if (0 == strcmp(s1->loaded_dlls[i]->name, dllname)) {
             ref = s1->loaded_dlls[i];
             break;
@@ -1312,9 +1311,9 @@ static int tcc_add_library_internal(TCCState *s1, const char *fmt,
     const char *filename, int flags, char **paths, int nb_paths)
 {
     char buf[1024];
-    int i, ret;
+    int ret;
 
-    for(i = 0; i < nb_paths; i++) {
+    for(int i = 0; i < nb_paths; i++) {
         snprintf(buf, sizeof(buf), fmt, paths[i], filename);
         ret = tcc_add_file_internal(s1, buf, flags & ~AFF_PRINT_ERROR);
         if (ret != FILE_NOT_FOUND)
@@ -1390,8 +1389,7 @@ LIBTCCAPI int tcc_add_library(TCCState *s, const char *libraryname)
 /* handle #pragma comment(lib,) */
 ST_FUNC void tcc_add_pragma_libs(TCCState *s1)
 {
-    int i;
-    for (i = 0; i < s1->nb_pragma_libs; i++)
+    for (int i = 0; i < s1->nb_pragma_libs; i++)
         tcc_add_library(s1, s1->pragma_libs[i]);
 }
 
@@ -1901,8 +1899,7 @@ static void insert_args(TCCState *s1, char ***pargv, int *pargc, int optind, con
 {
     int argc = 0;
     char **argv = NULL;
-    int i;
-    for (i = 0; i < *pargc; ++i)
+    for (int i = 0; i < *pargc; ++i)
         if (i == optind)
             dynarray_split(&argv, &argc, p, sep);
         else

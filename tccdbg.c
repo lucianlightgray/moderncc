@@ -449,7 +449,6 @@ ST_FUNC void tcc_debug_new(TCCState *s1)
 #endif
 
     if (s1->dwarf) {
-	int i;
 	/* The sections below are just to make reloctions with
 	   R_DATA_32DW work correctly. See tccelf.c */
 	static const char *const debug[] = {
@@ -471,7 +470,7 @@ ST_FUNC void tcc_debug_new(TCCState *s1)
 	    new_section(s1, ".debug_line", SHT_PROGBITS, shf);
         dwarf_aranges_section =
 	    new_section(s1, ".debug_aranges", SHT_PROGBITS, shf);
-	for (i = 0; i < sizeof(debug)/sizeof(debug[0]); i++)
+	for (int i = 0; i < sizeof(debug)/sizeof(debug[0]); i++)
 	    new_section(s1, debug[i], SHT_PROGBITS, 0)->sh_addralign = 1;
 	shf |= SHF_MERGE | SHF_STRINGS;
         dwarf_str_section =
@@ -572,9 +571,7 @@ static void dwarf_reloc(Section *s, int sym, int rel)
 
 static void free_str(struct dwarf_str_hash **str)
 {
-    int i;
-
-    for (i = 0; i < N_STR_HASH; i++) {
+    for (int i = 0; i < N_STR_HASH; i++) {
        while (str[i]) {
            struct dwarf_str_hash *next = str[i]->next;
 
@@ -1101,7 +1098,6 @@ next:
 /* start of translation unit info */
 ST_FUNC void tcc_debug_start(TCCState *s1)
 {
-    int i;
     char buf[512];
     char *filename;
 
@@ -1265,7 +1261,7 @@ ST_FUNC void tcc_debug_start(TCCState *s1)
             dwarf_line_op(s1, 0); // extended
             dwarf_uleb128_op(s1, 1 + PTR_SIZE); // extended size
             dwarf_line_op(s1, DW_LNE_set_address);
-            for (i = 0; i < PTR_SIZE; i++)
+            for (int i = 0; i < PTR_SIZE; i++)
     	        dwarf_line_op(s1, 0);
             memset(&dwarf_info.base_type_used, 0, sizeof(dwarf_info.base_type_used));
         }
@@ -1280,7 +1276,7 @@ ST_FUNC void tcc_debug_start(TCCState *s1)
                         text_section->data_offset, text_section, section_sym);
             put_stabs_r(s1, filename, N_SO, 0, 0,
                         text_section->data_offset, text_section, section_sym);
-            for (i = 0; i < N_DEFAULT_DEBUG; i++)
+            for (int i = 0; i < N_DEFAULT_DEBUG; i++)
                 put_stabs(s1, default_debug[i].name, N_LSYM, 0, 0, 0);
         }
         /* we're currently 'including' the <command line> */
@@ -2192,11 +2188,10 @@ static void tcc_debug_finish (TCCState *s1, struct _debug_info *cur)
 {
     while (cur) {
         struct _debug_info *next = cur->next;
-        int i;
 
         if (s1->dwarf) {
 
-            for (i = cur->n_sym - 1; i >= 0; i--) {
+            for (int i = cur->n_sym - 1; i >= 0; i--) {
                 struct debug_sym *s = &cur->sym[i];
 
 		dwarf_data1(dwarf_info_section,
@@ -2253,7 +2248,7 @@ static void tcc_debug_finish (TCCState *s1, struct _debug_info *cur)
         }
         else
         {
-            for (i = 0; i < cur->n_sym; i++) {
+            for (int i = 0; i < cur->n_sym; i++) {
                 struct debug_sym *s = &cur->sym[i];
 
                 if (s->sec)

@@ -792,7 +792,7 @@ static void check_relocs(TCCState *s1, struct macho *mo)
     Section *s;
     ElfW_Rel *rel, save_rel;
     ElfW(Sym) *sym;
-    int i, type, gotplt_entry, sym_index, for_code;
+    int type, gotplt_entry, sym_index, for_code;
     int bind_offset, la_symbol_offset;
     uint32_t *pi, *goti;
     struct sym_attr *attr;
@@ -831,7 +831,7 @@ static void check_relocs(TCCState *s1, struct macho *mo)
     
     goti = NULL;
     mo->nr_plt = mo->n_got = 0;
-    for (i = 1; i < s1->nb_sections; i++) {
+    for (int i = 1; i < s1->nb_sections; i++) {
         s = s1->sections[i];
         if (s->sh_type != SHT_RELX ||
 	    !strncmp(s1->sections[s->sh_info]->name, ".debug_", 7))
@@ -1002,12 +1002,12 @@ static void check_relocs(TCCState *s1, struct macho *mo)
 
 static int check_symbols(TCCState *s1, struct macho *mo)
 {
-    int sym_index, sym_end;
+    int sym_end;
     int ret = 0;
 
     mo->ilocal = mo->iextdef = mo->iundef = -1;
     sym_end = symtab_section->data_offset / sizeof(ElfW(Sym));
-    for (sym_index = 1; sym_index < sym_end; ++sym_index) {
+    for (int sym_index = 1; sym_index < sym_end; ++sym_index) {
         int elf_index = ((struct nlist_64 *)mo->symtab->data + sym_index - 1)->n_value;
         ElfW(Sym) *sym = (ElfW(Sym) *)symtab_section->data + elf_index;
         const char *name = (char*)symtab_section->link->data + sym->st_name;
@@ -1160,7 +1160,7 @@ static void tcc_qsort (void  *base, size_t nel, size_t width,
 
 static void create_symtab(TCCState *s1, struct macho *mo)
 {
-    int sym_index, sym_end;
+    int sym_end;
     struct nlist_64 *pn;
 
     /* Stub creation belongs to check_relocs, but we need to create
@@ -1203,7 +1203,7 @@ static void create_symtab(TCCState *s1, struct macho *mo)
     put_elf_str(mo->strtab, " "); /* Mach-O starts strtab with a space */
     sym_end = symtab_section->data_offset / sizeof(ElfW(Sym));
     pn = section_ptr_add(mo->symtab, sizeof(*pn) * (sym_end - 1));
-    for (sym_index = 1; sym_index < sym_end; ++sym_index) {
+    for (int sym_index = 1; sym_index < sym_end; ++sym_index) {
         ElfW(Sym) *sym = (ElfW(Sym) *)symtab_section->data + sym_index;
         const char *name = (char*)symtab_section->link->data + sym->st_name;
         pn[sym_index - 1].n_strx = put_elf_str(mo->strtab, name);
@@ -1213,7 +1213,7 @@ static void create_symtab(TCCState *s1, struct macho *mo)
     tcc_qsort(pn, sym_end - 1, sizeof(*pn), machosymcmp, s1);
     mo->e2msym = tcc_malloc(sym_end * sizeof(*mo->e2msym));
     mo->e2msym[0] = -1;
-    for (sym_index = 1; sym_index < sym_end; ++sym_index) {
+    for (int sym_index = 1; sym_index < sym_end; ++sym_index) {
         mo->e2msym[pn[sym_index - 1].n_value] = sym_index - 1;
     }
 }
@@ -1274,16 +1274,16 @@ const struct {
 #ifdef CONFIG_NEW_MACHO
 static void calc_fixup_size(TCCState *s1, struct macho *mo)
 {
-    int i, size;
+    int size;
 
     size = (sizeof(struct dyld_chained_fixups_header) + 7) & -8;
     size += (sizeof(struct dyld_chained_starts_in_image) + (mo->nseg - 1) * sizeof(uint32_t) + 7) & -8;
-    for (i = (s1->output_type == TCC_OUTPUT_EXE); i < mo->nseg - 1; i++) {
+    for (int i = (s1->output_type == TCC_OUTPUT_EXE); i < mo->nseg - 1; i++) {
 	int page_count = (get_segment(mo, i)->vmsize + SEG_PAGE_SIZE - 1) / SEG_PAGE_SIZE;
 	size += (sizeof(struct dyld_chained_starts_in_segment) + (page_count - 1) * sizeof(uint16_t) + 7) & -8;
     }
     size += mo->n_bind * sizeof (struct dyld_chained_import) + 1;
-    for (i = 0; i < mo->n_bind_rebase; i++) {
+    for (int i = 0; i < mo->n_bind_rebase; i++) {
 	if (mo->bind_rebase[i].bind) {
 	    int sym_index = ELFW(R_SYM)(mo->bind_rebase[i].rel.r_info);
 	    ElfW(Sym) *sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
@@ -1315,12 +1315,11 @@ static void set_segment_and_offset(TCCState *s1, struct macho *mo, addr_t addr,
 
 static void bind_rebase(TCCState *s1, struct macho *mo)
 {
-    int i;
     uint8_t *ptr;
     ElfW(Sym) *sym;
     const char *name;
 
-    for (i = 0; i < mo->n_lazy_bind; i++) {
+    for (int i = 0; i < mo->n_lazy_bind; i++) {
 	int sym_index = ELFW(R_SYM)(mo->s_lazy_bind[i].rel.r_info);
 
 	sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
@@ -1343,7 +1342,7 @@ static void bind_rebase(TCCState *s1, struct macho *mo)
 	*ptr++ = BIND_OPCODE_DO_BIND;
 	*ptr = BIND_OPCODE_DONE;
     }
-    for (i = 0; i < mo->n_rebase; i++) {
+    for (int i = 0; i < mo->n_rebase; i++) {
 	Section *s = s1->sections[mo->s_rebase[i].section];
 
 	ptr = section_ptr_add(mo->rebase, 2);
@@ -1356,7 +1355,7 @@ static void bind_rebase(TCCState *s1, struct macho *mo)
 	ptr = section_ptr_add(mo->rebase, 1);
 	*ptr = REBASE_OPCODE_DO_REBASE_IMM_TIMES | 1;
     }
-    for (i = 0; i < mo->n_bind; i++) {
+    for (int i = 0; i < mo->n_bind; i++) {
 	int sym_index = ELFW(R_SYM)(mo->bind[i].rel.r_info);
 	Section *s = s1->sections[mo->bind[i].section];
 	Section *binding;
@@ -1483,11 +1482,11 @@ static int create_seq(int *offset, int *n_seq, struct trie_seq **seq,
                         struct trie_node *node,
                         int n_trie, struct trie_info *trie)
 {
-    int i, nest_offset, last_seq = *n_seq, retval = *offset;
+    int nest_offset, last_seq = *n_seq, retval = *offset;
     struct trie_seq *p_seq;
     struct trie_node *p_nest;
 
-    for (i = 0; i < node->n_child; i++) {
+    for (int i = 0; i < node->n_child; i++) {
         p_nest = &node->child[i];
         *seq = tcc_realloc(*seq, (*n_seq + 1) * sizeof(struct trie_seq));
         p_seq = &(*seq)[(*n_seq)++];
@@ -1498,7 +1497,7 @@ static int create_seq(int *offset, int *n_seq, struct trie_seq **seq,
         *offset += (i == 0 ? 1 + 1 : 0) +
                    p_nest->index_end - p_nest->index_start + 1 + 3;
     }
-    for (i = 0; i < node->n_child; i++) {
+    for (int i = 0; i < node->n_child; i++) {
         nest_offset =
             create_seq(offset, n_seq, seq, &node->child[i], n_trie, trie);
         p_seq = &(*seq)[last_seq + i];
@@ -1509,9 +1508,7 @@ static int create_seq(int *offset, int *n_seq, struct trie_seq **seq,
 
 static void node_free(struct trie_node *node)
 {
-    int i;
-
-    for (i = 0; i < node->n_child; i++)
+    for (int i = 0; i < node->n_child; i++)
 	node_free(&node->child[i]);
     tcc_free(node->child);
 }
@@ -1531,9 +1528,8 @@ static int triecmp(const void *_a, const void *_b, void *arg)
 
 static void export_trie(TCCState *s1, struct macho *mo)
 {
-    int i, size, offset = 0, save_offset;
+    int size, offset = 0, save_offset;
     uint8_t *ptr;
-    int sym_index;
     int sym_end = symtab_section->data_offset / sizeof(ElfW(Sym));
     int n_trie = 0, n_seq = 0;
     struct trie_info *trie = NULL, *p_trie;
@@ -1541,7 +1537,7 @@ static void export_trie(TCCState *s1, struct macho *mo)
     struct trie_seq *seq = NULL;
     addr_t vm_addr = get_segment(mo, s1->output_type == TCC_OUTPUT_EXE)->vmaddr;
 
-    for (sym_index = 1; sym_index < sym_end; ++sym_index) {
+    for (int sym_index = 1; sym_index < sym_end; ++sym_index) {
 	ElfW(Sym) *sym = (ElfW(Sym) *)symtab_section->data + sym_index;
 	const char *name = (char*)symtab_section->link->data + sym->st_name;
 
@@ -1570,7 +1566,7 @@ static void export_trie(TCCState *s1, struct macho *mo)
         create_trie(&node, 0, n_trie, 0, n_trie, trie);
 	create_seq(&offset, &n_seq, &seq, &node, n_trie, trie);
         save_offset = offset;
-        for (i = 0; i < n_seq; i++) {
+        for (int i = 0; i < n_seq; i++) {
             p_node = seq[i].node;
             if (p_node->n_child == 0) {
                 p_trie = &trie[p_node->start];
@@ -1578,7 +1574,7 @@ static void export_trie(TCCState *s1, struct macho *mo)
                 offset += 1 + p_trie->term_size + 1;
             }
         }
-        for (i = 0; i < n_seq; i++) {
+        for (int i = 0; i < n_seq; i++) {
             p_node = seq[i].node;
             p_trie = &trie[p_node->start];
             if (seq[i].n_child >= 0) {
@@ -1595,7 +1591,7 @@ static void export_trie(TCCState *s1, struct macho *mo)
             write_uleb128(mo->exports, seq[i].nest_offset);
         }
         section_ptr_add(mo->exports, save_offset - mo->exports->data_offset);
-        for (i = 0; i < n_seq; i++) {
+        for (int i = 0; i < n_seq; i++) {
             p_node = seq[i].node;
             if (p_node->n_child == 0) {
                 p_trie = &trie[p_node->start];
@@ -1959,7 +1955,7 @@ static void collect_sections(TCCState *s1, struct macho *mo, const char *filenam
 
 static void macho_write(TCCState *s1, struct macho *mo, FILE *fp)
 {
-    int i, sk;
+    int sk;
     uint64_t fileofs = 0;
     Section *s;
     mo->mh.mh.magic = MH_MAGIC_64;
@@ -1980,12 +1976,12 @@ static void macho_write(TCCState *s1, struct macho *mo, FILE *fp)
     }
     mo->mh.mh.ncmds = mo->nlc;
     mo->mh.mh.sizeofcmds = 0;
-    for (i = 0; i < mo->nlc; i++)
+    for (int i = 0; i < mo->nlc; i++)
       mo->mh.mh.sizeofcmds += mo->lc[i]->cmdsize;
 
     fwrite(&mo->mh, 1, sizeof(mo->mh), fp);
     fileofs += sizeof(mo->mh);
-    for (i = 0; i < mo->nlc; i++) {
+    for (int i = 0; i < mo->nlc; i++) {
         fwrite(mo->lc[i], 1, mo->lc[i]->cmdsize, fp);
         fileofs += mo->lc[i]->cmdsize;
     }
@@ -2024,7 +2020,7 @@ static int bind_rebase_cmp(const void *_a, const void *_b, void *arg)
 
 ST_FUNC void bind_rebase_import(TCCState *s1, struct macho *mo)
 {
-    int i, j, k, bind_index, size, page_count, sym_index;
+    int i, k, bind_index, size, page_count, sym_index;
     const char *name;
     ElfW(Sym) *sym;
     unsigned char *data = mo->chained_fixups->data;
@@ -2084,7 +2080,7 @@ ST_FUNC void bind_rebase_import(TCCState *s1, struct macho *mo)
 	// add bind/rebase
 	bind_index = 0;
 	k = 0;
-	for (j = 0; j < page_count; j++) {
+	for (int j = 0; j < page_count; j++) {
 	    addr_t start = seg->vmaddr + j * SEG_PAGE_SIZE;
 	    addr_t end = start + SEG_PAGE_SIZE;
 	    void *last = NULL;
@@ -2180,7 +2176,7 @@ ST_FUNC int macho_output_file(TCCState *s1, const char *filename)
 {
     int fd, mode, file_type;
     FILE *fp;
-    int i, ret = -1;
+    int ret = -1;
     struct macho mo;
 
     (void)memset(&mo, 0, sizeof(mo));
@@ -2226,7 +2222,7 @@ ST_FUNC int macho_output_file(TCCState *s1, const char *filename)
     }
 
  do_ret:
-    for (i = 0; i < mo.nlc; i++)
+    for (int i = 0; i < mo.nlc; i++)
       tcc_free(mo.lc[i]);
     tcc_free(mo.seg2lc);
     tcc_free(mo.lc);

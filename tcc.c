@@ -211,9 +211,8 @@ static const char version[] =
 
 static void print_dirs(const char *msg, char **paths, int nb_paths)
 {
-    int i;
     printf("%s:\n%s", msg, nb_paths ? "" : "  -\n");
-    for(i = 0; i < nb_paths; i++)
+    for(int i = 0; i < nb_paths; i++)
         printf("  %s\n", paths[i]);
 }
 

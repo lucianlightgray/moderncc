@@ -357,7 +357,6 @@ static void asm_coprocessor_opcode(TCCState *s1, int token) {
     Operand opcode1;
     Operand opcode2;
     uint8_t registers[3];
-    unsigned int i;
     uint8_t high_nibble;
     uint8_t mrc = 0;
 
@@ -373,7 +372,7 @@ static void asm_coprocessor_opcode(TCCState *s1, int token) {
         tcc_error("opcode1 of instruction '%s' must be an immediate value between 0 and 15", get_tok_str(token, NULL));
     }
 
-    for (i = 0; i < 3; ++i) {
+    for (int i = 0; i < 3; ++i) {
         skip(',');
         if (i == 0 && token != TOK_ASM_cdp2 && (ARM_INSTRUCTION_GROUP(token) == TOK_ASM_mrceq || ARM_INSTRUCTION_GROUP(token) == TOK_ASM_mcreq)) {
             if (tok >= TOK_ASM_r0 && tok <= TOK_ASM_pc) {
@@ -1579,8 +1578,7 @@ static void asm_floating_point_block_data_transfer_opcode(TCCState *s1, int toke
 static uint32_t vmov_parse_fractional_part(const char* s)
 {
     uint32_t result = 0;
-    int i;
-    for (i = 0; i < VMOV_FRACTIONAL_DIGITS; ++i) {
+    for (int i = 0; i < VMOV_FRACTIONAL_DIGITS; ++i) {
         char c = *s;
         result *= 10;
         if (c >= '0' && c <= '9') {
@@ -1640,10 +1638,9 @@ static uint8_t vmov_encode_immediate_value(uint32_t value)
     uint32_t beginning = 0;
     int r = -1;
     int n;
-    int i;
 
     limit = 32 * VMOV_ONE;
-    for (i = 0; i < 8; ++i) {
+    for (int i = 0; i < 8; ++i) {
         if (value < limit) {
             end = limit;
             limit >>= 1;
@@ -2681,7 +2678,7 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
 {
     uint8_t regs_allocated[NB_ASM_REGS];
     ASMOperand *op;
-    int i, reg;
+    int reg;
     uint32_t saved_regset = 0;
 
     // TODO: Check non-E ABI.
@@ -2690,12 +2687,12 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
 
     /* mark all used registers */
     memcpy(regs_allocated, clobber_regs, sizeof(regs_allocated));
-    for(i = 0; i < nb_operands;i++) {
+    for(int i = 0; i < nb_operands;i++) {
         op = &operands[i];
         if (op->reg >= 0)
             regs_allocated[op->reg] = 1;
     }
-    for(i = 0; i < sizeof(reg_saved)/sizeof(reg_saved[0]); i++) {
+    for(int i = 0; i < sizeof(reg_saved)/sizeof(reg_saved[0]); i++) {
         reg = reg_saved[i];
         if (regs_allocated[reg])
             saved_regset |= 1 << reg;
@@ -2707,7 +2704,7 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
             gen_le32(0xe92d0000 | saved_regset); // push {...}
 
         /* generate load code */
-        for(i = 0; i < nb_operands; i++) {
+        for(int i = 0; i < nb_operands; i++) {
             op = &operands[i];
             if (op->reg >= 0) {
                 if ((op->vt->r & VT_VALMASK) == VT_LLOCAL &&
@@ -2729,7 +2726,7 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
         }
     } else { // epilog
         /* generate save code */
-        for(i = 0 ; i < nb_outputs; i++) {
+        for(int i = 0 ; i < nb_outputs; i++) {
             op = &operands[i];
             if (op->reg >= 0) {
                 if ((op->vt->r & VT_VALMASK) == VT_LLOCAL) {
@@ -2847,12 +2844,12 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
     */
     ASMOperand *op;
     int sorted_op[MAX_ASM_OPERANDS];
-    int i, j, k, p1, p2, tmp, reg, c, reg_mask;
+    int j, k, p1, p2, tmp, reg, c, reg_mask;
     const char *str;
     uint8_t regs_allocated[NB_ASM_REGS];
 
     /* init fields */
-    for (i = 0; i < nb_operands; i++) {
+    for (int i = 0; i < nb_operands; i++) {
         op = &operands[i];
         op->input_index = -1;
         op->ref_index = -1;
@@ -2862,7 +2859,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
     }
     /* compute constraint priority and evaluate references to output
        constraints if input constraints */
-    for (i = 0; i < nb_operands; i++) {
+    for (int i = 0; i < nb_operands; i++) {
         op = &operands[i];
         str = op->constraint;
         str = skip_constraint_modifiers(str);
@@ -2888,9 +2885,9 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
     }
 
     /* sort operands according to their priority */
-    for (i = 0; i < nb_operands; i++)
+    for (int i = 0; i < nb_operands; i++)
         sorted_op[i] = i;
-    for (i = 0; i < nb_operands - 1; i++) {
+    for (int i = 0; i < nb_operands - 1; i++) {
         for (j = i + 1; j < nb_operands; j++) {
             p1 = operands[sorted_op[i]].priority;
             p2 = operands[sorted_op[j]].priority;
@@ -2902,7 +2899,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
         }
     }
 
-    for (i = 0; i < NB_ASM_REGS; i++) {
+    for (int i = 0; i < NB_ASM_REGS; i++) {
         if (clobber_regs[i])
             regs_allocated[i] = REG_IN_MASK | REG_OUT_MASK;
         else
@@ -2914,7 +2911,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
     regs_allocated[11] = REG_IN_MASK | REG_OUT_MASK;
 
     /* allocate registers and generate corresponding asm moves */
-    for (i = 0; i < nb_operands; i++) {
+    for (int i = 0; i < nb_operands; i++) {
         j = sorted_op[i];
         op = &operands[j];
         str = op->constraint;
@@ -3021,7 +3018,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
     /* compute out_reg. It is used to store outputs registers to memory
        locations references by pointers (VT_LLOCAL case) */
     *pout_reg = -1;
-    for (i = 0; i < nb_operands; i++) {
+    for (int i = 0; i < nb_operands; i++) {
         op = &operands[i];
         if (op->reg >= 0 &&
             (op->vt->r & VT_VALMASK) == VT_LLOCAL && !op->is_memory) {
@@ -3038,7 +3035,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 
     /* print sorted constraints */
 #ifdef ASM_DEBUG
-    for (i = 0; i < nb_operands; i++) {
+    for (int i = 0; i < nb_operands; i++) {
         j = sorted_op[i];
         op = &operands[j];
         printf("%%%d [%s]: \"%s\" r=0x%04x reg=%d\n",

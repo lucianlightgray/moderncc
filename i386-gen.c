@@ -538,7 +538,7 @@ ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int 
    parameters and the function address. */
 ST_FUNC void gfunc_call(int nb_args)
 {
-    int size, align, r, args_size, i, func_call;
+    int size, align, r, args_size, func_call;
     Sym *func_sym;
 
 #ifdef CONFIG_TCC_BCHECK
@@ -549,7 +549,7 @@ ST_FUNC void gfunc_call(int nb_args)
     save_regs(nb_args + 1);
 
     args_size = 0;
-    for(i = 0;i < nb_args; i++) {
+    for(int i = 0;i < nb_args; i++) {
         if ((vtop->type.t & VT_BTYPE) == VT_STRUCT) {
             size = type_size(&vtop->type, &align);
             /* align to stack align size */
@@ -624,7 +624,7 @@ ST_FUNC void gfunc_call(int nb_args)
             fastcall_regs_ptr = fastcall_regs;
             fastcall_nb_regs = func_call - FUNC_FASTCALL1 + 1;
         }
-        for(i = 0;i < fastcall_nb_regs; i++) {
+        for(int i = 0;i < fastcall_nb_regs; i++) {
             if (args_size <= 0)
                 break;
             o(0x58 + fastcall_regs_ptr[i]); /* pop r */

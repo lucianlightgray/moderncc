@@ -626,14 +626,13 @@ ST_FUNC void greloc(Section *s, Sym *sym, unsigned long offset, int type)
 static Sym *__sym_malloc(void)
 {
     Sym *sym_pool, *sym, *last_sym;
-    int i;
 
     sym_pool = tcc_malloc(SYM_POOL_NB * sizeof(Sym));
     dynarray_add(&sym_pools, &nb_sym_pools, sym_pool);
 
     last_sym = sym_free_first;
     sym = sym_pool;
-    for(i = 0; i < SYM_POOL_NB; i++) {
+    for(int i = 0; i < SYM_POOL_NB; i++) {
         sym->next = last_sym;
         last_sym = sym;
         sym++;
@@ -6521,8 +6520,7 @@ static int precedence(int tok)
 static unsigned char prec[256];
 static void init_prec(void)
 {
-    int i;
-    for (i = 0; i < 256; i++)
+    for (int i = 0; i < 256; i++)
 	prec[i] = precedence(i);
 }
 #define precedence(i) ((unsigned)i < 256 ? prec[i] : 0)
@@ -7764,7 +7762,6 @@ static int decl_designator(init_params *p, CType *type, unsigned long c,
     if (!(flags & DIF_SIZE_ONLY) && nb_elems > 1) {
         Sym aref = {0};
         CType t1;
-        int i;
         if (p->sec || (type->t & VT_ARRAY)) {
             /* make init_putv/vstore believe it were a struct */
             aref.c = elem_size;
@@ -7775,7 +7772,7 @@ static int decl_designator(init_params *p, CType *type, unsigned long c,
             vpush_ref(type, p->sec, c, elem_size);
         else
 	    vset(type, VT_LOCAL|VT_LVAL, c);
-        for (i = 1; i < nb_elems; i++) {
+        for (int i = 1; i < nb_elems; i++) {
             vdup();
             init_putv(p, type, c + elem_size * i);
 	}
@@ -8012,7 +8009,7 @@ static void init_putv(init_params *p, CType *type, unsigned long c)
    size only evaluation is wanted (only for arrays). */
 static void decl_initializer(init_params *p, CType *type, unsigned long c, int flags)
 {
-    int len, n, no_oblock, i;
+    int len, n, no_oblock;
     int size1, align1;
     Sym *s, *f;
     Sym indexsym;
@@ -8103,7 +8100,7 @@ static void decl_initializer(init_params *p, CType *type, unsigned long c, int f
                     if (!NODATA_WANTED)
                       memcpy(p->sec->data + c, initstr.data, nb);
                 } else {
-                    for(i=0;i<n;i++) {
+                    for(int i=0;i<n;i++) {
                         if (i >= nb) {
                           /* only add trailing zero if enough storage (no
                              warning in this case since it is standard) */
@@ -8648,14 +8645,14 @@ static void gen_function(Sym *sym)
 static void gen_inline_functions(TCCState *s)
 {
     Sym *sym;
-    int inline_generated, i;
+    int inline_generated;
     struct InlineFunc *fn;
 
     tcc_open_bf(s, ":inline:", 0);
     /* iterate while inline function are referenced */
     do {
         inline_generated = 0;
-        for (i = 0; i < s->nb_inline_fns; ++i) {
+        for (int i = 0; i < s->nb_inline_fns; ++i) {
             fn = s->inline_fns[i];
             sym = fn->sym;
             if (sym && (sym->c || !(sym->type.t & VT_INLINE))) {
@@ -8678,9 +8675,8 @@ static void gen_inline_functions(TCCState *s)
 
 static void free_inline_functions(TCCState *s)
 {
-    int i;
     /* free tokens of unused inline functions */
-    for (i = 0; i < s->nb_inline_fns; ++i) {
+    for (int i = 0; i < s->nb_inline_fns; ++i) {
         struct InlineFunc *fn = s->inline_fns[i];
         if (fn->sym)
             tok_str_free(fn->func_str);

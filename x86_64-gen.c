@@ -825,7 +825,7 @@ static int gfunc_arg_size(CType *type) {
 
 void gfunc_call(int nb_args)
 {
-    int size, r, args_size, i, d, bt, struct_size;
+    int size, r, args_size, d, bt, struct_size;
     int arg;
 
 #ifdef CONFIG_TCC_BCHECK
@@ -842,7 +842,7 @@ void gfunc_call(int nb_args)
        call breaks register passing arguments we are preparing.
        So, we process arguments which will be passed by stack first. */
     struct_size = args_size;
-    for(i = 0; i < nb_args; i++) {
+    for(int i = 0; i < nb_args; i++) {
         SValue *sv;
         
         --arg;
@@ -879,7 +879,7 @@ void gfunc_call(int nb_args)
     arg = nb_args;
     struct_size = args_size;
 
-    for(i = 0; i < nb_args; i++) {
+    for(int i = 0; i < nb_args; i++) {
         --arg;
         bt = (vtop->type.t & VT_BTYPE);
 
@@ -1261,7 +1261,7 @@ void gfunc_call(int nb_args)
 {
     X86_64_Mode mode;
     CType type;
-    int size, align, r, args_size, stack_adjust, i, reg_count, k;
+    int size, align, r, args_size, stack_adjust, reg_count;
     int nb_reg_args = 0;
     int nb_sse_args = 0;
     int sse_reg, gen_reg;
@@ -1279,7 +1279,7 @@ void gfunc_call(int nb_args)
        if we have to align the stack pointer to 16 (onstack[i] == 2).  Needs
        to be done in a left-to-right pass over arguments.  */
     stack_adjust = 0;
-    for(i = nb_args - 1; i >= 0; i--) {
+    for(int i = nb_args - 1; i >= 0; i--) {
         mode = classify_x86_64_arg(&vtop[-i].type, NULL, &size, &align, &reg_count);
         if (size == 0) continue;
         if (mode == x86_64_mode_sse && nb_sse_args + reg_count <= 8) {
@@ -1310,7 +1310,7 @@ void gfunc_call(int nb_args)
     sse_reg = nb_sse_args;
     args_size = 0;
     stack_adjust &= 15;
-    for (i = k = 0; i < nb_args;) {
+    for (int i = 0, k = 0; i < nb_args;) {
 	mode = classify_x86_64_arg(&vtop[-i].type, NULL, &size, &align, &reg_count);
 	if (size) {
             if (!onstack[i + k]) {
@@ -1395,7 +1395,7 @@ void gfunc_call(int nb_args)
        instead of them */
     assert(gen_reg <= REGN);
     assert(sse_reg <= 8);
-    for(i = 0; i < nb_args; i++) {
+    for(int i = 0; i < nb_args; i++) {
         mode = classify_x86_64_arg(&vtop->type, &type, &size, &align, &reg_count);
         if (size == 0) continue;
         /* Alter stack entry type so that gv() knows how to treat it */
@@ -1466,7 +1466,7 @@ void gfunc_prolog(Sym *func_sym)
 {
     CType *func_type = &func_sym->type;
     X86_64_Mode mode, ret_mode;
-    int i, addr, align, size, reg_count;
+    int addr, align, size, reg_count;
     int param_addr = 0, reg_param_index, sse_param_index;
     Sym *sym;
     CType *type;
@@ -1529,7 +1529,7 @@ void gfunc_prolog(Sym *func_sym)
 	o(0xf85d894c);
 
         /* save all register passing arguments */
-        for (i = 0; i < 8; i++) {
+        for (int i = 0; i < 8; i++) {
             loc -= 16;
 	    if (!tcc_state->nosse) {
 		o(0xd60f66); /* movq */
@@ -1540,7 +1540,7 @@ void gfunc_prolog(Sym *func_sym)
             gen_le32(loc + 8);
             gen_le32(0);
         }
-        for (i = 0; i < REGN; i++) {
+        for (int i = 0; i < REGN; i++) {
             push_arg_reg(REGN-1-i);
         }
     }
@@ -1568,7 +1568,7 @@ void gfunc_prolog(Sym *func_sym)
                 /* save arguments passed by register */
                 loc -= reg_count * 8;
                 param_addr = loc;
-                for (i = 0; i < reg_count; ++i) {
+                for (int i = 0; i < reg_count; ++i) {
                     o(0xd60f66); /* movq */
                     gen_modrm(sse_param_index, VT_LOCAL, NULL, param_addr + i*8);
                     ++sse_param_index;
@@ -1592,7 +1592,7 @@ void gfunc_prolog(Sym *func_sym)
                 /* save arguments passed by register */
                 loc -= reg_count * 8;
                 param_addr = loc;
-                for (i = 0; i < reg_count; ++i) {
+                for (int i = 0; i < reg_count; ++i) {
                     gen_modrm64(0x89, arg_regs[reg_param_index], VT_LOCAL, NULL, param_addr + i*8);
                     ++reg_param_index;
                 }

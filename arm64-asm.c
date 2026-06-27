@@ -886,12 +886,10 @@ static int arm64_memory_needs_address_reg(const SValue *sv)
 
 static int arm64_prepare_memory_operand(ASMOperand *op, uint8_t *regs_allocated)
 {
-    int reg;
-
     if (!arm64_memory_needs_address_reg(op->vt))
         return 1;
 
-    for (reg = 0; reg < 31; reg++) {
+    for (int reg = 0; reg < 31; reg++) {
         if (arm64_int_reg_is_allocatable(reg)
             && !(regs_allocated[reg] & REG_IN_MASK)) {
             regs_allocated[reg] |= REG_IN_MASK;
@@ -1205,9 +1203,9 @@ static void asm_barrier(TCCState *s1, int token)
 static void gen_mov_imm(int rd, uint64_t imm, int is_64bit)
 {
     uint16_t hw;
-    int i, first = 1;
+    int first = 1;
 
-    for (i = 0; i < (is_64bit ? 4 : 2); i++) {
+    for (int i = 0; i < (is_64bit ? 4 : 2); i++) {
         hw = (imm >> (i * 16)) & 0xFFFF;
         if (hw != 0 || i == 0) {
             if (first) {
@@ -1932,7 +1930,7 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
 {
     uint8_t regs_allocated[NB_ASM_REGS];
     ASMOperand *op;
-    int i, reg, saved_count, stack_size, stack_off;
+    int reg, saved_count, stack_size, stack_off;
     int saved_regs[12];
     static const uint8_t reg_saved[] = {
         19, 20, 21, 22, 23, 24, 25, 26, 27, 28,
@@ -1940,14 +1938,14 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
     };
 
     memcpy(regs_allocated, clobber_regs, sizeof(regs_allocated));
-    for (i = 0; i < nb_operands; i++) {
+    for (int i = 0; i < nb_operands; i++) {
         op = &operands[i];
         if (op->reg >= 0)
             regs_allocated[op->reg] = 1;
     }
 
     saved_count = 0;
-    for (i = 0; i < sizeof(reg_saved) / sizeof(reg_saved[0]); i++) {
+    for (int i = 0; i < sizeof(reg_saved) / sizeof(reg_saved[0]); i++) {
         reg = reg_saved[i];
         if (regs_allocated[reg])
             saved_regs[saved_count++] = reg;
@@ -1958,7 +1956,7 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
         if (saved_count > 0) {
             gen_sub_imm(31, 31, stack_size, 1, 0);
 
-            for (i = stack_off = 0; i < saved_count; ) {
+            for (int i = stack_off = 0; i < saved_count; ) {
                 if (i + 1 < saved_count) {
                     gen_ldst_pair(ARM64_STP_X, saved_regs[i], saved_regs[i + 1],
                                   TREG_SP, stack_off, 3);
@@ -1972,7 +1970,7 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
             }
         }
 
-        for (i = 0; i < nb_operands; i++) {
+        for (int i = 0; i < nb_operands; i++) {
             op = &operands[i];
             if (op->reg >= 0) {
                 if (op->is_memory) {
@@ -1983,7 +1981,7 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
             }
         }
     } else {
-        for (i = 0; i < nb_outputs; i++) {
+        for (int i = 0; i < nb_outputs; i++) {
             op = &operands[i];
             if (op->reg >= 0) {
                 if (op->is_memory)
@@ -2007,7 +2005,7 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
         }
 
         if (saved_count > 0) {
-            for (i = stack_off = 0; i < saved_count; ) {
+            for (int i = stack_off = 0; i < saved_count; ) {
                 if (i + 1 < saved_count) {
                     gen_ldst_pair(ARM64_LDP_X, saved_regs[i], saved_regs[i + 1],
                                   TREG_SP, stack_off, 3);
@@ -2031,11 +2029,11 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 {
     ASMOperand *op;
     int sorted_op[MAX_ASM_OPERANDS];
-    int i, j, k, p1, p2, tmp, reg, c, reg_mask;
+    int j, k, p1, p2, tmp, reg, c, reg_mask;
     const char *str;
     uint8_t regs_allocated[NB_ASM_REGS];
 
-    for (i = 0; i < nb_operands; i++) {
+    for (int i = 0; i < nb_operands; i++) {
         op = &operands[i];
         op->input_index = -1;
         op->ref_index = -1;
@@ -2045,7 +2043,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
         op->is_llong = 0;
     }
 
-    for (i = 0; i < nb_operands; i++) {
+    for (int i = 0; i < nb_operands; i++) {
         op = &operands[i];
         str = op->constraint;
         str = skip_constraint_modifiers(str);
@@ -2068,9 +2066,9 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
         }
     }
 
-    for (i = 0; i < nb_operands; i++)
+    for (int i = 0; i < nb_operands; i++)
         sorted_op[i] = i;
-    for (i = 0; i < nb_operands - 1; i++) {
+    for (int i = 0; i < nb_operands - 1; i++) {
         for (j = i + 1; j < nb_operands; j++) {
             p1 = operands[sorted_op[i]].priority;
             p2 = operands[sorted_op[j]].priority;
@@ -2082,14 +2080,14 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
         }
     }
 
-    for (i = 0; i < NB_ASM_REGS; i++) {
+    for (int i = 0; i < NB_ASM_REGS; i++) {
         if (clobber_regs[i])
             regs_allocated[i] = REG_IN_MASK | REG_OUT_MASK;
         else
             regs_allocated[i] = 0;
     }
 
-    for (i = 0; i < nb_operands; i++) {
+    for (int i = 0; i < nb_operands; i++) {
         j = sorted_op[i];
         op = &operands[j];
         str = op->constraint;
@@ -2233,7 +2231,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
     }
 
     *pout_reg = -1;
-    for (i = 0; i < nb_operands; i++) {
+    for (int i = 0; i < nb_operands; i++) {
         op = &operands[i];
         if (op->reg >= 0 &&
             (op->vt->r & VT_VALMASK) == VT_LLOCAL &&

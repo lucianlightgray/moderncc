@@ -372,8 +372,7 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
         case R_AARCH64_TLSLE_ADD_TPREL_HI12:
         case R_AARCH64_TLSLE_ADD_TPREL_LO12: {
             addr_t tls_start = 0;
-            int i;
-            for (i = 1; i < s1->nb_sections; i++) {
+            for (int i = 1; i < s1->nb_sections; i++) {
                 Section *s = s1->sections[i];
                 if (s->sh_flags & SHF_TLS && s->sh_size) {
                     if (!tls_start || s->sh_addr < tls_start)

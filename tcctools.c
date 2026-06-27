@@ -74,7 +74,7 @@ ST_FUNC int tcc_tool_ar(int argc, char **argv)
     ElfW(Ehdr) *ehdr;
     ElfW(Shdr) *shdr;
     ElfW(Sym) *sym;
-    int i, fsize, i_lib, i_obj;
+    int fsize, i_lib, i_obj;
     char *buf, *shstr, *symtab, *strtab;
     int symtabsize = 0;//, strtabsize = 0;
     char *anames = NULL;
@@ -89,7 +89,7 @@ ST_FUNC int tcc_tool_ar(int argc, char **argv)
     int verbose = 0;
 
     i_lib = 0; i_obj = 0;  // will hold the index of the lib and first obj
-    for (i = 1; i < argc; i++) {
+    for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
         if (*a == '-' && strchr(a, '.'))
             ret = 1; // -x.y is always invalid (same as gnu ar)
@@ -223,7 +223,7 @@ finish:
         shdr = (ElfW(Shdr) *) (buf + ehdr->e_shoff + ehdr->e_shstrndx * ehdr->e_shentsize);
         shstr = (char *)(buf + shdr->sh_offset);
         symtab = strtab = NULL;
-        for (i = 0; i < ehdr->e_shnum; i++)
+        for (int i = 0; i < ehdr->e_shnum; i++)
         {
             shdr = (ElfW(Shdr) *) (buf + ehdr->e_shoff + i * ehdr->e_shentsize);
             if (!shdr->sh_offset)
@@ -247,7 +247,7 @@ finish:
         {
             int nsym = symtabsize / sizeof(ElfW(Sym));
             //printf("symtab: info size shndx name\n");
-            for (i = 1; i < nsym; i++)
+            for (int i = 1; i < nsym; i++)
             {
                 sym = (ElfW(Sym) *) (symtab + i * sizeof(ElfW(Sym)));
                 if (sym->st_shndx &&
@@ -307,7 +307,7 @@ finish:
     memcpy(&arhdr.ar_size, stmp, 10);
     fwrite(&arhdr, sizeof(arhdr), 1, fh);
     afpos[0] = le2belong(funccnt);
-    for (i=1; i<=funccnt; i++)
+    for (int i=1; i<=funccnt; i++)
         afpos[i] = le2belong(afpos[i] + hofs);
     fwrite(afpos, (funccnt+1) * sizeof(int), 1, fh);
     fwrite(anames, strpos, 1, fh);
@@ -601,7 +601,7 @@ ST_FUNC int gen_makedeps(TCCState *s1, const char *target, const char *filename)
     FILE *depout;
     char buf[1024];
     char **escaped_targets;
-    int i, k, num_targets;
+    int num_targets;
 
     if (!filename) {
         /* compute filename automatically: dir/file.o -> dir/file.d */
@@ -622,8 +622,8 @@ ST_FUNC int gen_makedeps(TCCState *s1, const char *target, const char *filename)
 
     escaped_targets = tcc_malloc(s1->nb_target_deps * sizeof(*escaped_targets));
     num_targets = 0;
-    for (i = 0; i<s1->nb_target_deps; ++i) {
-        for (k = 0; k < i; ++k)
+    for (int i = 0; i<s1->nb_target_deps; ++i) {
+        for (int k = 0; k < i; ++k)
             if (0 == strcmp(s1->target_deps[i], s1->target_deps[k]))
                 goto next;
         escaped_targets[num_targets++] = escape_target_dep(s1->target_deps[i]);
@@ -631,17 +631,17 @@ ST_FUNC int gen_makedeps(TCCState *s1, const char *target, const char *filename)
     }
 
     fprintf(depout, "%s:", target);
-    for (i = 0; i < num_targets; ++i)
+    for (int i = 0; i < num_targets; ++i)
         fprintf(depout, " \\\n  %s", escaped_targets[i]);
     fprintf(depout, "\n");
     if (s1->gen_phony_deps) {
         /* Skip first file, which is the c file.
          * Only works for single file give on command-line,
          * but other compilers have the same limitation */
-        for (i = 1; i < num_targets; ++i)
+        for (int i = 1; i < num_targets; ++i)
             fprintf(depout, "%s:\n", escaped_targets[i]);
     }
-    for (i = 0; i < num_targets; ++i)
+    for (int i = 0; i < num_targets; ++i)
         tcc_free(escaped_targets[i]);
     tcc_free(escaped_targets);
     fclose(depout);

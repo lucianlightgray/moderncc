@@ -637,7 +637,7 @@ static void asm_parse_directive(TCCState *s1, int global)
         break;
     case TOK_ASMDIR_fill:
         {
-            int repeat, size, val, i, j;
+            int repeat, size, val;
             uint8_t repeat_buf[8];
             next();
             repeat = asm_int_expr(s1);
@@ -670,8 +670,8 @@ static void asm_parse_directive(TCCState *s1, int global)
             repeat_buf[5] = 0;
             repeat_buf[6] = 0;
             repeat_buf[7] = 0;
-            for(i = 0; i < repeat; i++) {
-                for(j = 0; j < size; j++) {
+            for(int i = 0; i < repeat; i++) {
+                for(int j = 0; j < size; j++) {
                     g(repeat_buf[j]);
                 }
             }
@@ -755,7 +755,7 @@ static void asm_parse_directive(TCCState *s1, int global)
     case TOK_ASMDIR_asciz:
         {
             const char *p;
-            int i, size, t;
+            int size, t;
 
             t = tok;
             next();
@@ -766,7 +766,7 @@ static void asm_parse_directive(TCCState *s1, int global)
                 size = tokc.str.size;
                 if (t == TOK_ASMDIR_ascii && size > 0)
                     size--;
-                for(i = 0; i < size; i++)
+                for(int i = 0; i < size; i++)
                     g(p[i]);
                 next();
                 if (tok == ',') {
@@ -1329,7 +1329,7 @@ ST_FUNC void asm_instr(void)
     CString astr, *astr1;
 
     ASMOperand operands[MAX_ASM_OPERANDS];
-    int nb_outputs, nb_operands, i, must_subst, out_reg, nb_labels;
+    int nb_outputs, nb_operands, must_subst, out_reg, nb_labels;
     uint8_t clobber_regs[NB_ASM_REGS];
     Section *sec;
 
@@ -1468,7 +1468,7 @@ ST_FUNC void asm_instr(void)
                  clobber_regs, out_reg);
     
     /* free everything */
-    for(i=0;i<nb_operands;i++) {
+    for(int i=0;i<nb_operands;i++) {
         vpop();
     }
 

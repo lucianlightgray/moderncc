@@ -1879,7 +1879,7 @@ ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int 
    context. Stack entry is popped */
 void gfunc_call(int nb_args)
 {
-    int i, r, size = 0;
+    int r, size = 0;
     int args_sizes[NoCallArgsPassedOnStack];
 
     if (nb_args > NoCallArgsPassedOnStack) {
@@ -1887,7 +1887,7 @@ void gfunc_call(int nb_args)
 	// handle more than 10, put some on the stack
     }
 
-    for (i = 0; i < nb_args; i++) {
+    for (int i = 0; i < nb_args; i++) {
 	if ((vtop->type.t & VT_BTYPE) == VT_STRUCT) {
 	    ALWAYS_ASSERT(FALSE);
 	} else {
@@ -1924,7 +1924,7 @@ void gfunc_call(int nb_args)
     // POP all the params on the stack into registers for the
     // immediate call (in reverse order)
 
-    for (i = nb_args - 1; i >= 0; i--) {
+    for (int i = nb_args - 1; i >= 0; i--) {
 
 	if (args_sizes[i] == 8)
 	    C67_POP_DW(TREG_C67_A4 + i * 2);
@@ -1949,7 +1949,7 @@ void gfunc_call(int nb_args)
 void gfunc_prolog(Sym *func_sym)
 {
     CType *func_type = &func_sym->type;
-    int addr, align, size, func_call, i;
+    int addr, align, size, func_call;
     Sym *sym;
     CType *type;
 
@@ -1998,7 +1998,7 @@ void gfunc_prolog(Sym *func_sym)
     // place all the args passed in regs onto the stack
 
     loc = 0;
-    for (i = 0; i < NoOfCurFuncArgs; i++) {
+    for (int i = 0; i < NoOfCurFuncArgs; i++) {
 
 	ParamLocOnStack[i] = loc;	// remember where the param is
 	loc += -8;
