@@ -1461,7 +1461,7 @@ static int pe_check_symbols(struct pe_info *pe)
 
                     /* add a helper symbol, will be patched later in
                        pe_build_imports */
-                    sprintf(buffer, "IAT.%s", name);
+                    snprintf(buffer, sizeof(buffer), "IAT.%s", name);
                     is->iat_index = put_elf_sym(
                         symtab_section, 0, sizeof(DWORD),
                         ELFW(ST_INFO)(STB_LOCAL, STT_OBJECT),

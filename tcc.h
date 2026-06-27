@@ -1967,7 +1967,7 @@ static inline void post_sem(TCCSem *p) {
     sem_post(&p->sem);
 }
 #endif
-#define TCC_SEM(s) TCCSem s
+#define TCC_SEM(s) static TCCSem s   /* storage class first (-Wold-style-declaration) */
 #define WAIT_SEM wait_sem
 #define POST_SEM post_sem
 #else

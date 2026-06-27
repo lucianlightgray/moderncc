@@ -65,7 +65,7 @@ typedef struct rt_frame {
 
 static TCCState *g_s1;
 /* semaphore to protect it */
-TCC_SEM(static rt_sem);
+TCC_SEM(rt_sem);
 static void rt_wait_sem(void) { WAIT_SEM(&rt_sem); }
 static void rt_post_sem(void) { POST_SEM(&rt_sem); }
 static int rt_get_caller_pc(addr_t *paddr, rt_frame *f, int level);

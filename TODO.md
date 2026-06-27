@@ -72,13 +72,17 @@ before, so **every `-DTCC_*` keeps working unchanged** (verified).
 1. **`TCC_CPU`/`TCC_TARGETOS` are derived, not editable** — they are STATUS
    nodes. The target axis is chosen via the host / toolchain file /
    `TCC_CONFIG_MINGW32` (the *input* that forces WIN32) / `TCC_ENABLE_CROSS`.
-2. **ARM ABI knobs are autodetected internals** (`_arm_eabi/_vfp/_hardfloat`,
-   `TCC_CPUVER`), not options — reported via STATUS only.
+2. **ARM ABI knobs are autodetect-seeded nodes** (`TCC_ARM_EABI/_VFP/
+   _HARDFLOAT/_IDIV`, `TCC_CPUVER`): the `cc -dM` probe seeds each node's
+   DEFAULT, an explicit `-D` wins, and they are hidden off-arm. (Originally
+   STATUS-only; promoted to overridable nodes — see "Remaining work".)
 3. **Profiles must not set `CMAKE_C_COMPILER` or `CC_NAME`** — compiler is
    locked before `project()`; `CC_NAME` stays derived and is consumed by tests.
-4. **Back-compat is strict** — hiding is visibility-only (no value-forcing
-   `cmake_dependent_option`); invalid combos are *validated*, not auto-mutated.
-   `BCHECK`-without-`BACKTRACE` warns (does not flip the value).
+4. **Back-compat is strict BY DEFAULT** — hiding is visibility-only (no
+   value-forcing `cmake_dependent_option`); invalid combos are *validated*, not
+   auto-mutated. `BCHECK`-without-`BACKTRACE` warns (does not flip the value).
+   The lone opt-in exception is `-DTCC_CONFIG_AUTOCORRECT=ON` (see "Remaining
+   work"), which flips such foot-guns to a coherent value and reports it.
 5. **Deleted false edges** — `tests→coverage` (coverage is independent);
    `AUTO_TCCDIR↔TCCDIR` "coherence" (it is a fallback, not a constraint).
 6. **`NEW_DTAGS` split from `DISABLE_RPATH`** — DTAGS is always ELF-relevant;
@@ -112,16 +116,34 @@ regress back-compat. `STRINGS` only seeds the GUI dropdown; it never enforces.
 
 ## Remaining / future work
 
-- [ ] **Make ARM ABI overridable** (optional): rewrite the `cc -dM` detection to
-      seed real cache vars + rewire the config.h emitter, with autodetect as the
-      default and explicit override precedence. Currently STATUS-only.
-- [ ] **Toolchain-file whole-build cross** (`CMAKE_CROSSCOMPILING`): today the
-      build runs the target `tcc` on the host (libtcc1/tests/impdef). Add a
-      `CMAKE_CROSSCOMPILING_EMULATOR`/wine path + validation, or FATAL clearly.
-- [ ] **Grow the profile seed tables** honestly — only defaults the build does
-      not already set, each marked as a real addition (not "matching current").
-- [ ] **Auto-correct option** (behind a flag) for `BCHECK`-without-`BACKTRACE`
-      and non-host-runnable `TCC_BUILD_TESTS`, if a non-strict mode is wanted.
+- [x] **Make ARM ABI overridable**: the `cc -dM` detection now seeds five real
+      `tcc_config_node`s (`TCC_ARM_EABI/_VFP/_HARDFLOAT/_IDIV`, `TCC_CPUVER`,
+      `VISIBLE_WHEN TCC_CPU STREQUAL arm`, ADVANCED). Autodetection is the
+      DEFAULT; an explicit `-D` wins; the config.h emit + `arm_abi` STATUS line
+      read the (post-override) node values, not the detection accumulators.
+- [x] **Toolchain-file whole-build cross** (`CMAKE_CROSSCOMPILING`): the build
+      now honors `CMAKE_CROSSCOMPILING_EMULATOR` (`TCC_EMULATOR`) when it must run
+      the just-built foreign `tcc` — threaded through the native libtcc1 compile +
+      archive, the coverage `tcc_c`, `tcc -impdef`, and all five `-P` test drivers
+      (emulator baked in as `${EMU}`, empty for native; CTest auto-applies it to
+      the target-based abitest/libtcc_test). `tcc_validate_config()` FATALs clearly
+      if crosscompiling with no emulator (pointing at `-DCMAKE_CROSSCOMPILING_EMULATOR`
+      or the host-runnable `-DTCC_ENABLE_CROSS=ON` model).
+- [x] **Grow the profile seed tables** honestly: added a documented POLICY (seeds
+      must be a real change from the node default for that profile, and -D still
+      wins; defaults the build already sets are deliberately NOT duplicated) plus
+      two genuine `msvc`-profile seeds — `TCC_ONE_SOURCE=ON` (the only established
+      MSVC build of libtcc is the `libtcc.c` amalgamation; node default OFF) and
+      `TCC_BUILD_TESTS=OFF` (the tcctest reference uses GNU-only cc flags `cl`
+      rejects; node default ON). Verified seeds apply and `-D` overrides win.
+- [x] **Auto-correct option** behind `-DTCC_CONFIG_AUTOCORRECT=ON` (default OFF =
+      strict). Adds `tcc_autocorrect()` (FORCE-sets a node, preserving help, and
+      reports it). Non-strict mode: (a) `BCHECK` w/o `BACKTRACE` enables BACKTRACE
+      instead of warning; (b) a non-host-runnable target (CMAKE_CROSSCOMPILING, no
+      emulator) enables `USEGCC` (builds libtcc1 with the host CC, no tcc run) and
+      disables `TCC_BUILD_TESTS`/`COVERAGE` instead of FATAL — with a residual
+      FATAL only for WIN32 *shared* libtcc (`tcc -impdef` must still run). All
+      paths verified; default strict build unchanged (137/137).
 - [x] **Port the remaining knob clusters into the graph** — runtime paths,
       build flags, `TCC_INSTALL_TCCDIR`, and the diagnostic trio are now ADVANCED
       nodes; the report + rendered node table cover all 36 user knobs.

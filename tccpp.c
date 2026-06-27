@@ -545,6 +545,7 @@ ST_FUNC const char *get_tok_str(int v, CValue *cv)
         break;
     case TOK_LCHAR:
         cstr_ccat(&cstr_buf, 'L');
+        /* fall through */
     case TOK_CCHAR:
         cstr_ccat(&cstr_buf, '\'');
         add_char(&cstr_buf, cv->i);
@@ -556,6 +557,7 @@ ST_FUNC const char *get_tok_str(int v, CValue *cv)
         return (char*)cv->str.data;
     case TOK_LSTR:
         cstr_ccat(&cstr_buf, 'L');
+        /* fall through */
     case TOK_STR:
         cstr_ccat(&cstr_buf, '\"');
         if (v == TOK_STR) {
@@ -2649,7 +2651,7 @@ maybe_newline:
         if (!(isidnum_table['$' - CH_EOF] & IS_ID)
          || (parse_flags & PARSE_FLAG_ASM_FILE))
             goto parse_simple;
-
+        /* fall through */
     case 'a': case 'b': case 'c': case 'd':
     case 'e': case 'f': case 'g': case 'h':
     case 'i': case 'j': case 'k': case 'l':
@@ -2930,6 +2932,7 @@ maybe_newline:
             p += 3;
             goto redo_no_start;
         }
+        /* fall through */
     default:
         if (c >= 0x80 && c <= 0xFF) /* utf8 identifiers */
 	    goto parse_ident_fast;

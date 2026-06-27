@@ -180,7 +180,7 @@ finish:
     }
     created_file = argv[i_lib];
 
-    sprintf(tfile, "%s.tmp", argv[i_lib]);
+    snprintf(tfile, sizeof(tfile), "%s.tmp", argv[i_lib]);
     if ((fo = fopen(tfile, "wb+")) == NULL)
     {
         fprintf(stderr, "tcc: ar: can't create temporary file %s\n", tfile);
@@ -282,7 +282,7 @@ finish:
         memset(arhdro.ar_name, ' ', sizeof(arhdro.ar_name));
         memcpy(arhdro.ar_name, name, istrlen);
         arhdro.ar_name[istrlen] = '/';
-        sprintf(stmp, "%-10d", fsize);
+        snprintf(stmp, sizeof(stmp), "%-10d", fsize);
         memcpy(&arhdro.ar_size, stmp, 10);
         fwrite(&arhdro, sizeof(arhdro), 1, fo);
         fwrite(buf, fsize, 1, fo);
@@ -303,7 +303,7 @@ finish:
         ret = 0;
         goto the_end;
     }
-    sprintf(stmp, "%-10d", (int)(strpos + (funccnt+1) * sizeof(int)) + fpos);
+    snprintf(stmp, sizeof(stmp), "%-10d", (int)(strpos + (funccnt+1) * sizeof(int)) + fpos);
     memcpy(&arhdr.ar_size, stmp, 10);
     fwrite(&arhdr, sizeof(arhdr), 1, fh);
     afpos[0] = le2belong(funccnt);
@@ -388,11 +388,11 @@ ST_FUNC int tcc_tool_impdef(int argc, char **argv)
             } else if (0 == strcmp(a, "-o")) {
                 if (++i == argc)
                     goto usage;
-                strcpy(outfile, argv[i]);
+                pstrcpy(outfile, sizeof outfile, argv[i]);
             } else
                 goto usage;
         } else if (0 == infile[0])
-            strcpy(infile, a);
+            pstrcpy(infile, sizeof infile, a);
         else
             goto usage;
     }
@@ -407,11 +407,11 @@ usage:
     }
 
     if (0 == outfile[0]) {
-        strcpy(outfile, tcc_basename(infile));
+        pstrcpy(outfile, sizeof outfile, tcc_basename(infile));
         q = strrchr(outfile, '.');
         if (NULL == q)
             q = strchr(outfile, 0);
-        strcpy(q, ".def");
+        pstrcpy(q, sizeof outfile - (q - outfile), ".def");
     }
 
     file = infile;

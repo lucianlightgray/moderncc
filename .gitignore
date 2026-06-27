@@ -5,8 +5,11 @@
 .idea
 .gdb_history
 
-# CMake build trees (this project builds out-of-source)
+# CMake build trees (this project builds out-of-source). The CMakePresets.json
+# presets use /build (default) and /build-release, /build-asan, /build-cross,
+# /build-matrix -- ignore the whole /build-* family.
 /build/
+/build-*/
 /cmake-build-*/
 CMakeUserPresets.json
 
@@ -25,6 +28,9 @@ CMakeUserPresets.json
 *.lib
 *.exp
 a.out
+gmon.out
+*.gcda
+*.gcno
 tags
 TAGS
 

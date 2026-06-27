@@ -71,7 +71,7 @@
 
 /* XXX: get rid of this ASAP (or maybe not) */
 ST_DATA struct TCCState *tcc_state;
-TCC_SEM(static tcc_compile_sem);
+TCC_SEM(tcc_compile_sem);
 /* an array of pointers to memory to be free'd after errors */
 ST_DATA void** stk_data;
 ST_DATA int nb_stk_data;
@@ -341,7 +341,7 @@ struct mem_debug_header {
 
 typedef struct mem_debug_header mem_debug_header_t;
 
-TCC_SEM(static mem_sem);
+TCC_SEM(mem_sem);
 static mem_debug_header_t *mem_debug_chain;
 static unsigned mem_cur_size;
 static unsigned mem_max_size;
@@ -884,9 +884,14 @@ LIBTCCAPI void tcc_undefine_symbol(TCCState *s1, const char *sym)
 #if defined __APPLE__
 #include <mach-o/dyld.h>
 #endif
+/* Persistent storage for the returned path, hoisted to file scope on purpose:
+   in the TCC_PROFILE build tcc.h does `#define static` (to make every function
+   profiler-visible), which would turn an in-function `static char dir[]` into a
+   stack array -- and `return dir` would then be a use-after-return. At file
+   scope the buffer keeps static storage duration regardless of that macro. */
+static char auto_tccdir_buf[1024];
 static const char *tcc_auto_tccdir(void)
 {
-    static char dir[1024];
     char exe[1024], probe[1024];
     struct stat st;
     char *p;
@@ -915,8 +920,8 @@ static const char *tcc_auto_tccdir(void)
     pstrcat(probe, sizeof probe, "/include");
     if (stat(probe, &st) != 0 || !S_ISDIR(st.st_mode))
         return CONFIG_TCCDIR;             /* not a tccdir -> system path */
-    pstrcpy(dir, sizeof dir, exe);
-    return dir;                           /* build-tree runtime found locally */
+    pstrcpy(auto_tccdir_buf, sizeof auto_tccdir_buf, exe);
+    return auto_tccdir_buf;               /* build-tree runtime found locally */
 }
 #define CONFIG_TCCDIR_DEFAULT tcc_auto_tccdir()
 #else

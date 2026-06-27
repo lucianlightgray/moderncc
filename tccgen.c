@@ -544,7 +544,7 @@ ST_FUNC void put_extern_sym2(Sym *sym, int sh_num,
                 can_add_underscore = 0;
             }
             if (ref->f.func_call == FUNC_STDCALL && can_add_underscore) {
-                sprintf(buf1, "_%s@%d", name, ref->f.func_args * PTR_SIZE);
+                snprintf(buf1, sizeof(buf1), "_%s@%d", name, ref->f.func_args * PTR_SIZE);
                 name = buf1;
                 other |= ST_PE_STDCALL;
                 can_add_underscore = 0;
@@ -932,12 +932,9 @@ static void vpush(CType *type)
 /* push arbitrary 64bit constant */
 static void vpush64(int ty, unsigned long long v)
 {
-    CValue cval;
-    CType ctype;
-    ctype.t = ty;
-    ctype.ref = NULL;
-    cval.i = v;
-    vsetc(&ctype, VT_CONST, &cval);
+    /* the literals only need to outlive the vsetc() call, which copies both
+       (vtop->type = *type; vtop->c = *vc) -- so block scope is sufficient. */
+    vsetc(&(CType){.t = ty, .ref = NULL}, VT_CONST, &(CValue){.i = v});
 }
 
 /* push integer constant */
@@ -960,17 +957,12 @@ static inline void vpushll(long long v)
 
 ST_FUNC void vset(CType *type, int r, int v)
 {
-    CValue cval;
-    cval.i = v;
-    vsetc(type, r, &cval);
+    vsetc(type, r, &(CValue){.i = v});
 }
 
 static void vseti(int r, int v)
 {
-    CType type;
-    type.t = VT_INT;
-    type.ref = NULL;
-    vset(&type, r, v);
+    vset(&(CType){.t = VT_INT, .ref = NULL}, r, v);
 }
 
 ST_FUNC void vpushv(SValue *v)
@@ -1885,7 +1877,7 @@ ST_FUNC int gv(int rc)
             (vtop->r & (VT_VALMASK | VT_LVAL)) == VT_CONST) {
             /* CPUs usually cannot use float constants, so we store them
                generically in data segment */
-            init_params p = { rodata_section };
+            init_params p = { .sec = rodata_section };
             unsigned long offset;
             size = type_size(&vtop->type, &align);
             if (NODATA_WANTED)
@@ -2721,6 +2713,7 @@ static void type_to_str(char *buf, int buf_size,
         tstr = "double";
         if (!(t & VT_LONG))
             goto add_tstr;
+        /* fall through */
     case VT_LDOUBLE:
         tstr = "long double";
     add_tstr:
@@ -3244,10 +3237,7 @@ static void force_charshort_cast(void)
 
 static void gen_cast_s(int t)
 {
-    CType type;
-    type.t = t;
-    type.ref = NULL;
-    gen_cast(&type);
+    gen_cast(&(CType){.t = t, .ref = NULL});
 }
 
 /* cast 'vtop' to 'type'. Casting to bitfields is forbidden. */
@@ -5427,12 +5417,14 @@ static void parse_builtin_params(int nc, const char *args)
 		continue;
 	    case 'V':
                 type.t = VT_CONSTANT;
+                /* fall through */
 	    case 'v':
                 type.t |= VT_VOID;
                 mk_pointer (&type);
                 break;
 	    case 'S':
                 type.t = VT_CONSTANT;
+                /* fall through */
 	    case 's':
                 type.t |= char_type.t;
                 mk_pointer (&type);
@@ -5563,7 +5555,7 @@ static void parse_atomic(int atok)
         break;
     }
 
-    sprintf(buf, "%s_%d", get_tok_str(atok, 0), size);
+    snprintf(buf, sizeof(buf), "%s_%d", get_tok_str(atok, 0), size);
     vpush_helper_func(tok_alloc_const(buf));
     vrott(arg - save + 1);
     gfunc_call(arg - save);

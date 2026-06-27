@@ -24,6 +24,13 @@
       "cacheVariables": { "TCC_BUILD_SANITIZE": "ON" }
     },
     {
+      "name": "diagnostics",
+      "displayName": "Everything-on diagnostics (warnings + debug + tcc_s/tcc_p/tcc_c)",
+      "inherits": "default",
+      "binaryDir": "${sourceDir}/build-diag",
+      "cacheVariables": { "TCC_DIAGNOSTICS": "ON" }
+    },
+    {
       "name": "cross",
       "displayName": "Native + all cross compilers",
       "inherits": "default",
@@ -44,11 +51,13 @@
   "buildPresets": [
     { "name": "default", "configurePreset": "default" },
     { "name": "release", "configurePreset": "release" },
+    { "name": "diagnostics", "configurePreset": "diagnostics" },
     { "name": "cross", "configurePreset": "cross" },
     { "name": "matrix", "configurePreset": "matrix" }
   ],
   "testPresets": [
     { "name": "default", "configurePreset": "default", "output": { "outputOnFailure": true } },
-    { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } }
+    { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
+    { "name": "diagnostics", "configurePreset": "diagnostics", "output": { "outputOnFailure": true } }
   ]
 }
