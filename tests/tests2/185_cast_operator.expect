@@ -1,0 +1,8 @@
+trunc: 3 -3
+widen: 1
+narrow: 33
+voidcast: 5
+intdiv: 3
+fltdiv: 35
+avg: 7
+ptrrt: 1234

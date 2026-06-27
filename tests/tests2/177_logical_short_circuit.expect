@@ -1,0 +1,6 @@
+vals: 1 0 1 0
+and_sc: r=0 calls=0
+or_sc: r=1 calls=0
+and_eval: r=1 calls=1
+guard: 1
+prec: 1

@@ -4713,18 +4713,49 @@ static void parse_btype_qualify(CType *type, int qualifiers)
     type->t |= qualifiers;
 }
 
+/* C99 _Complex T is modelled as an anonymous struct { T __real, __imag; } that
+   carries the is_complex marker. This gives it T's pair ABI (same as
+   struct{T,T}) and reuses all aggregate codegen; only arithmetic, __real__/
+   __imag__ and casts get complex-specific handling. A fresh struct is built per
+   occurrence (like any anonymous struct) so its lifetime tracks the using scope. */
+static void mk_complex_type(CType *type, CType *base)
+{
+    static int re_tok, im_tok;
+    Sym *s, *f0, *f1;
+    CType st;
+    AttributeDef ad;
+
+    if (!re_tok) {
+        re_tok = tok_alloc_const("__real");
+        im_tok = tok_alloc_const("__imag");
+    }
+    st.t = VT_STRUCT;
+    st.ref = NULL;
+    s = sym_push(anon_sym++ | SYM_STRUCT, &st, 0, -1);
+    s->r = 0;
+    s->a.is_complex = 1;
+    type->t = VT_STRUCT;
+    type->ref = s;
+    f0 = sym_push(re_tok | SYM_FIELD, base, 0, 0);
+    f1 = sym_push(im_tok | SYM_FIELD, base, 0, 0);
+    s->next = f0, f0->next = f1, f1->next = NULL;
+    memset(&ad, 0, sizeof ad);
+    struct_layout(type, &ad);
+}
+
 /* return 0 if no type declaration. otherwise, return the basic type
-   and skip it. 
+   and skip it.
  */
 static int parse_btype(CType *type, AttributeDef *ad, int ignore_label)
 {
-    int t, u, bt, st, type_found, typespec_found, g, n;
+    int t, u, bt, st, type_found, typespec_found, g, n, complex_seen;
     Sym *s;
     CType type1;
 
     memset(ad, 0, sizeof(AttributeDef));
     type_found = 0;
     typespec_found = 0;
+    complex_seen = 0;
     t = VT_INT;
     bt = st = -1;
     type->ref = NULL;
@@ -4802,7 +4833,10 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label)
             u = VT_BOOL;
             goto basic_type;
         case TOK_COMPLEX:
-            tcc_error("_Complex is not yet supported");
+            complex_seen = 1;
+            next();
+            typespec_found = 1;
+            break;
         case TOK_FLOAT:
             u = VT_FLOAT;
             goto basic_type;
@@ -4983,6 +5017,18 @@ the_end:
     if (bt == VT_LDOUBLE)
         t = (t & ~(VT_BTYPE|VT_LONG)) | (VT_DOUBLE|VT_LONG);
 #endif
+    if (complex_seen) {
+        CType base;
+        base.t = t & (VT_BTYPE | VT_LONG);
+        base.ref = NULL;
+        if (!is_float(base.t))
+            tcc_error("_Complex requires a floating-point type");
+        mk_complex_type(type, &base);
+        /* carry the original qualifiers (const/volatile) onto the struct type */
+        type->t |= t & (VT_CONSTANT | VT_VOLATILE | VT_DEFSIGN | VT_EXTERN
+                        | VT_STATIC | VT_TYPEDEF | VT_INLINE);
+        return type_found;
+    }
     type->t = t;
     return type_found;
 }

@@ -1,0 +1,6 @@
+arr_of_ptr: 1 2 3
+ptr_to_arr: 60 10
+ptr_to_func: 42
+arr_of_func: 32
+ptr_ptr: 70
+const_chain: 20

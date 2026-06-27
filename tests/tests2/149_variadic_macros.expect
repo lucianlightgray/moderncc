@@ -1,0 +1,7 @@
+one=1 two=2
+none
+two=10,20
+stringized: [a, b, c]
+first: 7
+count: 1 2 4
+sum: 15

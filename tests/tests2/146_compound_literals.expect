@@ -1,0 +1,7 @@
+array: 10 20 30 40
+struct: 13 4
+arg sum: 11
+dot: 32
+rect area: 12
+loop total: 20
+sizeof literal: 20

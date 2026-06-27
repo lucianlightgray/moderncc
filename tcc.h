@@ -514,7 +514,7 @@ struct SymAttr {
     addrtaken   : 1,
     nodebug     : 1,
     transp_union : 1, /* __attribute__((transparent_union)) on a union */
-    xxxx        : 1; /* not used */
+    is_complex  : 1; /* C99 _Complex: a struct {T __real, __imag;} in disguise */
 };
 
 /* function attributes or temporary attributes for parsing */

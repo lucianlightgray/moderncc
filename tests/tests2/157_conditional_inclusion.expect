@@ -1,0 +1,6 @@
+arith: yes
+level: 3 in range
+features: A only
+undef: zero
+branch: three
+nested: A set, B unset

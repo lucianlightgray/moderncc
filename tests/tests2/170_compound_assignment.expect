@@ -1,0 +1,11 @@
+add: 15
+sub: 12
+mul: 48
+div: 9
+mod: 1
+shl: 240
+shr: 60
+and: 48
+or: 53
+xor: 202
+once: calls=1 val=207
