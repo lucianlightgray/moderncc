@@ -1744,6 +1744,12 @@ ST_FUNC void gen_increment_tcov (SValue *sv);
 ST_FUNC void gen_clear_cache(void);
 #endif
 
+/* x86_64 also needs the custom return-register transfer, for `long double
+   _Complex` (returned in st0:st1, which the generic ret path can't express). */
+#ifdef TCC_TARGET_X86_64
+ST_FUNC void arch_transfer_ret_regs(int);
+#endif
+
 /* ------------ c67-gen.c ------------ */
 #ifdef TCC_TARGET_C67
 #endif

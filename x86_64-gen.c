@@ -1233,14 +1233,59 @@ ST_FUNC int classify_x86_64_va_arg(CType *ty)
 
 /* Return the number of registers needed to return the struct, or 0 if
    returning via struct pointer. */
+/* A C99 `long double _Complex` is returned in st0(real):st1(imag), NOT in memory
+   like the generic 32-byte struct its model would suggest. Shared by gfunc_sret
+   (return via -1 / arch_transfer_ret_regs) and gfunc_prolog (so it does NOT
+   reserve the hidden struct-return pointer register) -- the two must agree or
+   register arguments shift by one slot. */
+static int x86_64_complex_ldouble(CType *vt)
+{
+    return (vt->t & VT_BTYPE) == VT_STRUCT && vt->ref->a.is_complex
+        && (vt->ref->next->type.t & VT_BTYPE) == VT_LDOUBLE;
+}
+
 ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int *regsize)
 {
     int size, align, reg_count;
+    /* long double _Complex -> st0:st1; no x87 register *pair* class exists for
+       the generic ret path, so signal the custom transfer with -1. */
+    if (x86_64_complex_ldouble(vt)) {
+        *ret_align = 1;
+        *regsize = 16;          /* one 16-byte long double slot per part */
+        ret->t = VT_LDOUBLE;
+        ret->ref = NULL;
+        return -1;
+    }
     if (classify_x86_64_arg(vt, ret, &size, &align, &reg_count) == x86_64_mode_memory)
         return 0;
     *ret_align = 1; // Never have to re-align return values for x86-64
     *regsize = 8 * reg_count; /* the (virtual) regsize is 16 for VT_QLONG/QFLOAT */
     return 1;
+}
+
+/* Move a `long double _Complex` between the st0(real):st1(imag) return slots and
+   its in-memory struct (vtop, a long-double-pair lvalue). Called only when
+   gfunc_sret returned -1 (see above). aftercall=1: caller side, pop st0/st1 into
+   the struct; aftercall=0: callee side, push the struct into st0/st1. The x87
+   stack is LIFO, so the two halves are ordered oppositely on each side. We emit
+   fldt/fstpt directly rather than via load()/store() (whose ldouble store is
+   deliberately non-popping) and bypass the value stack, exactly at the call
+   boundary, so tcc's x87 bookkeeping is untouched. */
+ST_FUNC void arch_transfer_ret_regs(int aftercall)
+{
+    SValue *sv = vtop;
+    Sym *re = sv->type.ref->next;          /* __real field, __imag = re->next */
+    int fr = sv->r & VT_VALMASK;
+    int fc = sv->c.i;
+    if (aftercall) {
+        /* st0=real, st1=imag -> store popping into the struct */
+        o(0xdb); gen_modrm(7, fr, sv->sym, fc + re->c);        /* fstpt real */
+        o(0xdb); gen_modrm(7, fr, sv->sym, fc + re->next->c);  /* fstpt imag */
+    } else {
+        /* struct -> st0=real, st1=imag : push imag first, then real on top */
+        o(0xdb); gen_modrm(5, fr, sv->sym, fc + re->next->c);  /* fldt imag */
+        o(0xdb); gen_modrm(5, fr, sv->sym, fc + re->c);        /* fldt real */
+    }
 }
 
 #define REGN 6
@@ -1483,7 +1528,8 @@ void gfunc_prolog(Sym *func_sym)
 
     if (func_var) {
         int seen_reg_num, seen_sse_num, seen_stack_size;
-        seen_reg_num = ret_mode == x86_64_mode_memory;
+        seen_reg_num = ret_mode == x86_64_mode_memory
+                       && !x86_64_complex_ldouble(&func_vt);
         seen_sse_num = 0;
         /* frame pointer and return address */
         seen_stack_size = PTR_SIZE * 2;
@@ -1551,9 +1597,11 @@ void gfunc_prolog(Sym *func_sym)
     reg_param_index = 0;
     sse_param_index = 0;
 
-    /* if the function returns a structure, then add an
-       implicit pointer parameter */
-    if (ret_mode == x86_64_mode_memory) {
+    /* if the function returns a structure, then add an implicit pointer
+       parameter -- UNLESS it is a `long double _Complex`, which is returned in
+       st0:st1 with no hidden pointer (see gfunc_sret). Reserving it here would
+       shift every register argument by one slot. */
+    if (ret_mode == x86_64_mode_memory && !x86_64_complex_ldouble(&func_vt)) {
         push_arg_reg(reg_param_index);
         func_vc = loc;
         reg_param_index++;

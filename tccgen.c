@@ -4809,7 +4809,11 @@ static void cplx_push_part(SValue *sv, int imag)
 {
     vpushv(sv);
     complex_part(imag);
-    gv(RC_FLOAT);
+    /* RC_TYPE picks the right class for the base type: a long double part must
+       go to RC_ST0 (x86_64 x87) / RC_INT (riscv64 soft quad), not the SSE/VFP
+       RC_FLOAT -- otherwise the 80/128-bit value is loaded into the wrong file
+       and corrupted (NaN/zero complex arithmetic). */
+    gv(RC_TYPE(vtop->type.t));
 }
 
 /* store the scalar rvalue currently on top of the stack into the (imag?1:0)
@@ -6624,7 +6628,7 @@ special_math_val:
 
             if (ret_nregs < 0) {
                 vsetc(&ret.type, ret.r, &ret.c);
-#ifdef TCC_TARGET_RISCV64
+#if defined(TCC_TARGET_RISCV64) || defined(TCC_TARGET_X86_64)
                 arch_transfer_ret_regs(1);
 #endif
             } else {
@@ -7122,7 +7126,7 @@ static void gfunc_return(CType *func_type)
         ret_nregs = gfunc_sret(func_type, func_var, &ret_type,
                                &ret_align, &regsize);
         if (ret_nregs < 0) {
-#ifdef TCC_TARGET_RISCV64
+#if defined(TCC_TARGET_RISCV64) || defined(TCC_TARGET_X86_64)
             arch_transfer_ret_regs(0);
 #endif
         } else if (0 == ret_nregs) {

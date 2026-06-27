@@ -534,6 +534,21 @@ static int fastcall_arg_slots(CType *type)
     return words > 2 ? 2 : words;
 }
 
+/* SysV i386 returns every struct in memory EXCEPT a C99 `float _Complex`, which
+   the psABI returns in edx:eax (real=eax, imag=edx). Shared by gfunc_sret (which
+   half) and gfunc_prolog (whether to reserve the hidden return pointer), so the
+   two never disagree -- a mismatch corrupts the stack. SysV-only; the PE/BSD
+   branches keep their own small-struct-in-regs rule. */
+#if !defined(TCC_TARGET_PE) && !TARGETOS_FreeBSD && !TARGETOS_OpenBSD
+static int sysv_struct_ret_in_regs(CType *vt)
+{
+    /* raw is_complex check (the tccgen.c helper is static; backends are a
+       separate TU under ONE_SOURCE=0) */
+    return (vt->t & VT_BTYPE) == VT_STRUCT && vt->ref->a.is_complex
+        && (vt->ref->next->type.t & VT_BTYPE) == VT_FLOAT;
+}
+#endif
+
 /* Return the number of registers needed to return the struct, or 0 if
    returning via struct pointer. */
 ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int *regsize)
@@ -558,6 +573,15 @@ ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int 
     return nregs;
 #else
     *ret_align = 1; // Never have to re-align return values for x86
+    /* float _Complex -> edx:eax (real=eax, imag=edx); all other structs (incl.
+       double/long double _Complex) go in memory. Required for tcc<->gcc interop
+       (R3). */
+    if (sysv_struct_ret_in_regs(vt)) {
+        *regsize = 4;
+        ret->t = VT_INT;        /* two 4-byte integer-register halves */
+        ret->ref = NULL;
+        return 2;               /* eax:edx */
+    }
     return 0;
 #endif
 }
@@ -748,7 +772,8 @@ ST_FUNC void gfunc_prolog(Sym *func_sym)
     if (((func_vt.t & VT_BTYPE) == VT_STRUCT)
         && (size > 8 || (size & (size - 1)))) {
 #else
-    if ((func_vt.t & VT_BTYPE) == VT_STRUCT) {
+    if ((func_vt.t & VT_BTYPE) == VT_STRUCT
+        && !sysv_struct_ret_in_regs(&func_vt)) {
 #endif
         /* XXX: fastcall case ? */
         func_vc = addr;
