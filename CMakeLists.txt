@@ -1657,6 +1657,41 @@ endif()
         SKIP_RETURN_CODE 77
         ENVIRONMENT "MCC_TEST_EMU=${MCC_EMULATOR};MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS};MCC_TEST_ASM=$<IF:$<BOOL:${MCC_CONFIG_ASM}>,1,0>;MCC_TEST_BCHECK=$<IF:$<BOOL:${MCC_CONFIG_BCHECK}>,1,0>;MCC_TEST_BACKTRACE=$<IF:$<BOOL:${MCC_CONFIG_BACKTRACE}>,1,0>")
 
+    # Structural CLI suite: compiles with mcc and inspects the result with
+    # readelf/nm (output structure, not just program stdout).  Native only --
+    # the readelf/nm assertions assume a host-readable ELF toolchain.
+    if(NOT MCC_EMULATOR)
+        add_executable(cli_runner tests/cli/runner.c)
+        target_include_directories(cli_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli")
+        add_test(NAME cli-suite
+            COMMAND cli_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                    "${CMAKE_BINARY_DIR}/cli-work" "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli")
+        set_tests_properties(cli-suite PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77
+            ENVIRONMENT "MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS}")
+    else()
+        mcc_skip_test(cli-suite "structural readelf/nm suite runs on native host only")
+    endif()
+
+    # Three-way differential suite: gcc vs clang vs mcc on every portable "run"
+    # golden, comparing program stdout (gcc/clang are the source of truth).
+    # Native only, and only when BOTH reference compilers are available.
+    find_program(DIFF3_GCC NAMES gcc cc)
+    find_program(DIFF3_CLANG NAMES clang)
+    if(NOT MCC_EMULATOR AND DIFF3_GCC AND DIFF3_CLANG)
+        add_executable(diff3_runner tests/diff3/runner.c)
+        target_include_directories(diff3_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec")
+        add_test(NAME diff3-suite
+            COMMAND diff3_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests" "${CMAKE_BINARY_DIR}/diff3-work"
+                    "${DIFF3_GCC}" "${DIFF3_CLANG}")
+        set_tests_properties(diff3-suite PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77
+            ENVIRONMENT "MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS}")
+    else()
+        mcc_skip_test(diff3-suite "needs native host + both gcc and clang")
+    endif()
+
     add_executable(libmcc_test tests/embed/api_basic.c)
     target_link_libraries(libmcc_test PRIVATE libmcc)
     target_include_directories(libmcc_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -1664,6 +1699,16 @@ endif()
         COMMAND libmcc_test "-B${CMAKE_BINARY_DIR}"
                 "-I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
     set_tests_properties(libtest PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
+    # Extra API coverage: list_symbols, undefine_symbol, add_library,
+    # mcc_run argv/return-code, and mcc_output_file (MCC_OUTPUT_OBJ).
+    add_executable(libmcc_test_extra tests/embed/api_extra.c)
+    target_link_libraries(libmcc_test_extra PRIVATE libmcc)
+    target_include_directories(libmcc_test_extra PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    add_test(NAME libtest-extra
+        COMMAND libmcc_test_extra "-B${CMAKE_BINARY_DIR}"
+                "-I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
+    set_tests_properties(libtest-extra PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
     if(MCC_CONFIG_BACKTRACE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/embed/api_threaded.c")
         add_executable(libmcc_test_mt tests/embed/api_threaded.c)

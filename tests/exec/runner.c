@@ -210,37 +210,41 @@ int main(int argc, char **argv){
             while (*a){ if (!strncmp(a, "{SELF}", 6)){ w += sprintf(w, "\"%s\"", path); a += 6; }
                         else *w++ = *a++; } *w = 0; }
 
+        /* tests/support is on the include path so any test may
+           #include "vlog.h" for -DVLOG_ENABLE verbose tracing. */
+        char sup[4096]; snprintf(sup, sizeof sup, "%s/support", root);
+
         if (!strcmp(g->mode, "pp")){
             snprintf(cmd, sizeof cmd,
-                "%s \"%s\" \"-B%s\" \"-I%s\" -E -P \"%s\" 2>&1",
-                emu, mcc, bdir, idir, path);
+                "%s \"%s\" \"-B%s\" \"-I%s\" \"-I%s\" -E -P \"%s\" 2>&1",
+                emu, mcc, bdir, idir, sup, path);
             out = run_capture(cmd, &rc);
         } else if (!strcmp(g->mode, "brun")){
 
             snprintf(cmd, sizeof cmd,
-                "cd \"%s\" && %s \"%s\" \"-B%s\" \"-I%s\" -b -run \"%s\" %s 2>&1",
-                work, emu, mcc, bdir, idir, path, g->flags);
+                "cd \"%s\" && %s \"%s\" \"-B%s\" \"-I%s\" \"-I%s\" -b -run \"%s\" %s 2>&1",
+                work, emu, mcc, bdir, idir, sup, path, g->flags);
             out = run_capture(cmd, &rc);
         } else if (!strcmp(g->mode, "dt")){
 
 
             snprintf(cmd, sizeof cmd,
-                "cd \"%s\" && %s \"%s\" \"-B%s\" \"-I%s\" -dt -run \"%s\" %s 2>&1",
-                work, emu, mcc, bdir, idir, path, g->flags);
+                "cd \"%s\" && %s \"%s\" \"-B%s\" \"-I%s\" \"-I%s\" -dt -run \"%s\" %s 2>&1",
+                work, emu, mcc, bdir, idir, sup, path, g->flags);
             out = run_capture(cmd, &rc);
         } else if (!strcmp(g->mode, "run2")){
 
             snprintf(cmd, sizeof cmd,
-                "cd \"%s\" && ( %s \"%s\" \"-B%s\" \"-I%s\" -run \"%s\" && "
-                "%s \"%s\" \"-B%s\" \"-I%s\" -b -run \"%s\" ) 2>&1",
-                work, emu, mcc, bdir, idir, path, emu, mcc, bdir, idir, path);
+                "cd \"%s\" && ( %s \"%s\" \"-B%s\" \"-I%s\" \"-I%s\" -run \"%s\" && "
+                "%s \"%s\" \"-B%s\" \"-I%s\" \"-I%s\" -b -run \"%s\" ) 2>&1",
+                work, emu, mcc, bdir, idir, sup, path, emu, mcc, bdir, idir, sup, path);
             out = run_capture(cmd, &rc);
         } else {
             char exe[4096];
             snprintf(exe, sizeof exe, "%s/t2_%s.exe", work, g->name);
             snprintf(cmd, sizeof cmd,
-                "%s \"%s\" \"-B%s\" \"-I%s\" \"%s\" %s -o \"%s\" 2>&1",
-                emu, mcc, bdir, idir, path, g->flags, exe);
+                "%s \"%s\" \"-B%s\" \"-I%s\" \"-I%s\" \"%s\" %s -o \"%s\" 2>&1",
+                emu, mcc, bdir, idir, sup, path, g->flags, exe);
             char *cerr = run_capture(cmd, &rc);
             if (rc != 0){
                 printf("FAIL  %-32s (compile)\n%s", g->name, cerr);

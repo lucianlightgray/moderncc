@@ -1215,6 +1215,16 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
             reg_mask = REG_IN_MASK | REG_OUT_MASK;
             goto try_next;
         case 'A':
+#ifdef MCC_TARGET_X86_64
+            /* On x86_64 the 'A' constraint is a single 64-bit register (rax);
+               the edx:eax pair form only applies to 32-bit i386, where a
+               'long long' value needs two registers.  gcc/clang both treat
+               '=A' for a <=64-bit value as plain rax here. */
+            if (is_reg_allocated(TREG_XAX))
+                goto try_next;
+            op->reg = TREG_XAX;
+            regs_allocated[TREG_XAX] |= reg_mask;
+#else
             if (is_reg_allocated(TREG_XAX) ||
                 is_reg_allocated(TREG_XDX))
                 goto try_next;
@@ -1222,6 +1232,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
             op->reg = TREG_XAX;
             regs_allocated[TREG_XAX] |= reg_mask;
             regs_allocated[TREG_XDX] |= reg_mask;
+#endif
             break;
         case 'a':
             reg = TREG_XAX;
