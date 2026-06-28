@@ -1550,9 +1550,10 @@ if(MCC_BUILD_TESTS)
 
     # Register a test that always reports "Skipped" (with a reason) in ctest,
     # so platform-/config-inapplicable tests are visible instead of omitted.
+    # Extra args (e.g. LABELS qemu) are forwarded to set_tests_properties.
     function(mcc_skip_test _name _reason)
         add_test(NAME ${_name} COMMAND "${CMAKE_COMMAND}" -E echo "SKIP: ${_reason}")
-        set_tests_properties(${_name} PROPERTIES SKIP_REGULAR_EXPRESSION "SKIP:")
+        set_tests_properties(${_name} PROPERTIES SKIP_REGULAR_EXPRESSION "SKIP:" ${ARGN})
     endfunction()
 
 
@@ -2158,6 +2159,197 @@ endif()
         endforeach()
     else()
         mcc_skip_test(compile.win32 "requires WIN32 target (win32 runtime examples)")
+    endif()
+
+    # ------------------------------------------------------------------ #
+    # qemu-user cross-target conformance matrix (opt-in: -DMCC_QEMU_TESTS=ON)
+    #
+    # For each (arch x libc) it downloads a minimal Gentoo stage3 rootfs (glibc
+    # and musl variants), cross-compiles the self-checking tests/qemu/conformance
+    # programs against that sysroot, and runs them under qemu-<arch> -L <rootfs>.
+    # Everything is gated behind the cache flag and labelled "qemu" so the normal
+    # ctest run stays fast and offline. All sources/URLs are cache variables.
+    # ------------------------------------------------------------------ #
+    option(MCC_QEMU_TESTS
+        "Download Gentoo stage3 rootfs and run cross conformance tests under qemu-user" OFF)
+    if(MCC_QEMU_TESTS)
+        set(MCC_QEMU_MIRROR "https://distfiles.gentoo.org/releases" CACHE STRING
+            "Base URL of the Gentoo releases mirror (…/releases)")
+        set(MCC_QEMU_ARCHS "x86_64;i386;arm;arm64;riscv64" CACHE STRING
+            "Architectures to exercise under qemu-user")
+        set(MCC_QEMU_LIBCS "glibc;musl" CACHE STRING
+            "C libraries to exercise (glibc;musl)")
+        set(MCC_QEMU_DLDIR "${CMAKE_BINARY_DIR}/qemu-roots" CACHE PATH
+            "Where downloaded rootfs trees are extracted")
+
+        set(_qfetch "${CMAKE_BINARY_DIR}/run_qemu_fetch.cmake")
+        file(WRITE "${_qfetch}" [==[
+# Resolve a Gentoo latest-stage3-*.txt pointer, download the stage3 tarball and
+# extract it. Idempotent: a MARKER file short-circuits repeat runs.
+if(EXISTS "${MARKER}")
+    return()
+endif()
+file(DOWNLOAD "${PTRURL}" "${DEST}.ptr" STATUS _st TIMEOUT 120)
+list(GET _st 0 _code)
+if(NOT _code EQUAL 0)
+    message(FATAL_ERROR "fetch pointer failed (${_st}): ${PTRURL}")
+endif()
+# The latest-stage3-*.txt pointer is a PGP-clearsigned document; the path we
+# want is the first whitespace-delimited token on the line naming the tarball.
+file(STRINGS "${DEST}.ptr" _lines)
+set(_rel "")
+foreach(_l IN LISTS _lines)
+    if(_l MATCHES "\\.tar\\.(xz|bz2|gz)")
+        string(REGEX MATCH "^[^ \t]+" _rel "${_l}")
+        break()
+    endif()
+endforeach()
+if(_rel STREQUAL "")
+    message(FATAL_ERROR "could not parse stage3 path from ${PTRURL}")
+endif()
+file(MAKE_DIRECTORY "${DEST}")
+message(STATUS "qemu-roots: downloading ${MIRRORBASE}/${_rel}")
+file(DOWNLOAD "${MIRRORBASE}/${_rel}" "${DEST}.tar" STATUS _st2 SHOW_PROGRESS TIMEOUT 1800)
+list(GET _st2 0 _code2)
+if(NOT _code2 EQUAL 0)
+    message(FATAL_ERROR "fetch stage3 failed (${_st2}): ${MIRRORBASE}/${_rel}")
+endif()
+# A Gentoo stage3 contains /dev device nodes; `cmake -E tar` aborts on those as
+# a non-root user, so prefer system tar (skip dev/, don't chown). We only need
+# the headers/libs anyway.
+find_program(_TAR NAMES tar)
+if(_TAR)
+    execute_process(COMMAND "${_TAR}" --no-same-owner --exclude=./dev/*
+        -xpf "${DEST}.tar" -C "${DEST}" RESULT_VARIABLE _xrc)
+else()
+    execute_process(COMMAND "${CMAKE_COMMAND}" -E tar xf "${DEST}.tar"
+        WORKING_DIRECTORY "${DEST}" RESULT_VARIABLE _xrc)
+endif()
+if(NOT _xrc EQUAL 0)
+    message(FATAL_ERROR "extract failed for ${DEST}.tar")
+endif()
+file(REMOVE "${DEST}.tar")
+file(WRITE "${MARKER}" "${_rel}\n")
+]==])
+
+        set(_qrun "${CMAKE_BINARY_DIR}/run_qemu_run.cmake")
+        file(WRITE "${_qrun}" [==[
+# Cross-compile every tests/qemu/conformance/*.c against SYSROOT with MCC and
+# run it under QEMU -L SYSROOT; each program self-checks and must exit 0.
+file(MAKE_DIRECTORY "${WORKDIR}")
+file(GLOB _srcs "${SRCDIR}/*.c")
+set(_fails "")
+foreach(_src IN LISTS _srcs)
+    get_filename_component(_n "${_src}" NAME_WE)
+    set(_out "${WORKDIR}/${_n}")
+    execute_process(
+        COMMAND "${MCC}" "-B${MCCBASE}" "--sysroot=${SYSROOT}"
+                "-isystem" "${SYSROOT}/usr/include"
+                "-L${SYSROOT}/usr/lib" "-L${SYSROOT}/usr/lib64"
+                "-L${SYSROOT}/lib" "-L${SYSROOT}/lib64"
+                "${_src}" -o "${_out}"
+        RESULT_VARIABLE _crc OUTPUT_VARIABLE _co ERROR_VARIABLE _ce)
+    if(NOT _crc EQUAL 0)
+        string(APPEND _fails "  ${_n}: compile failed\n${_co}${_ce}\n")
+        continue()
+    endif()
+    execute_process(COMMAND "${QEMU}" -L "${SYSROOT}" "${_out}"
+        RESULT_VARIABLE _rrc OUTPUT_VARIABLE _ro ERROR_VARIABLE _re)
+    if(NOT _rrc EQUAL 0)
+        string(APPEND _fails "  ${_n}: run exited ${_rrc}\n${_ro}${_re}\n")
+    endif()
+endforeach()
+if(NOT _fails STREQUAL "")
+    message(FATAL_ERROR "qemu conformance failures:\n${_fails}")
+endif()
+message(STATUS "qemu conformance: all programs passed")
+]==])
+
+        set(_qsrc "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/conformance")
+        foreach(_arch IN LISTS MCC_QEMU_ARCHS)
+            # arch -> (gentoo autobuilds subdir, qemu binary, glibc ptr, musl ptr)
+            if(_arch STREQUAL "x86_64")
+                set(_gdir amd64)
+                set(_qbin qemu-x86_64)
+                set(_gptr latest-stage3-amd64-openrc.txt)
+                set(_mptr latest-stage3-amd64-musl-openrc.txt)
+            elseif(_arch STREQUAL "i386")
+                set(_gdir x86)
+                set(_qbin qemu-i386)
+                set(_gptr latest-stage3-i686-openrc.txt)
+                set(_mptr latest-stage3-i686-musl-openrc.txt)
+            elseif(_arch STREQUAL "arm")
+                set(_gdir arm)
+                set(_qbin qemu-arm)
+                set(_gptr latest-stage3-armv7a_hardfp-openrc.txt)
+                set(_mptr latest-stage3-armv7a_hardfp_musl-openrc.txt)
+            elseif(_arch STREQUAL "arm64")
+                set(_gdir arm64)
+                set(_qbin qemu-aarch64)
+                set(_gptr latest-stage3-arm64-openrc.txt)
+                set(_mptr latest-stage3-arm64-musl-openrc.txt)
+            elseif(_arch STREQUAL "riscv64")
+                set(_gdir riscv)
+                set(_qbin qemu-riscv64)
+                set(_gptr latest-stage3-rv64_lp64d-openrc.txt)
+                set(_mptr latest-stage3-rv64_lp64d_musl-openrc.txt)
+            else()
+                message(WARNING "MCC_QEMU_TESTS: unknown arch '${_arch}', skipping")
+                continue()
+            endif()
+
+            # Pick the compiler: native mcc for the host arch, else <arch>-mcc.
+            if(_arch STREQUAL MCC_CPU)
+                set(_qcc "$<TARGET_FILE:mcc>")
+            elseif(TARGET ${_arch}-mcc)
+                set(_qcc "$<TARGET_FILE:${_arch}-mcc>")
+            else()
+                set(_qcc "")
+            endif()
+            find_program(_QEMU_${_arch} ${_qbin})
+
+            foreach(_libc IN LISTS MCC_QEMU_LIBCS)
+                set(_tn "qemu-${_arch}-${_libc}")
+                if(_libc STREQUAL "glibc")
+                    set(_ptr "${_gptr}")
+                elseif(_libc STREQUAL "musl")
+                    set(_ptr "${_mptr}")
+                else()
+                    mcc_skip_test(${_tn} "unknown libc '${_libc}'" LABELS qemu)
+                    continue()
+                endif()
+                if(_qcc STREQUAL "")
+                    mcc_skip_test(${_tn}
+                        "no compiler for ${_arch} (native target is ${MCC_CPU}; build ${_arch}-mcc via -DMCC_ENABLE_CROSS=ON)"
+                        LABELS qemu)
+                    continue()
+                endif()
+                if(NOT _QEMU_${_arch})
+                    mcc_skip_test(${_tn} "${_qbin} not found (install the qemu-user package)" LABELS qemu)
+                    continue()
+                endif()
+
+                set(_root "${MCC_QEMU_DLDIR}/${_arch}-${_libc}")
+                add_test(NAME ${_tn}-fetch COMMAND "${CMAKE_COMMAND}"
+                    "-DPTRURL=${MCC_QEMU_MIRROR}/${_gdir}/autobuilds/${_ptr}"
+                    "-DMIRRORBASE=${MCC_QEMU_MIRROR}/${_gdir}/autobuilds"
+                    "-DDEST=${_root}" "-DMARKER=${_root}/.fetched"
+                    -P "${_qfetch}")
+                set_tests_properties(${_tn}-fetch PROPERTIES
+                    FIXTURES_SETUP FX_${_tn} LABELS qemu TIMEOUT 2000)
+
+                add_test(NAME ${_tn} COMMAND "${CMAKE_COMMAND}"
+                    "-DMCC=${_qcc}" "-DMCCBASE=${CMAKE_BINARY_DIR}"
+                    "-DSYSROOT=${_root}" "-DQEMU=${_QEMU_${_arch}}"
+                    "-DSRCDIR=${_qsrc}"
+                    "-DWORKDIR=${CMAKE_BINARY_DIR}/qemu-work/${_arch}-${_libc}"
+                    -P "${_qrun}")
+                set_tests_properties(${_tn} PROPERTIES
+                    FIXTURES_REQUIRED "MCC_BUILT;FX_${_tn}" LABELS qemu TIMEOUT 600)
+            endforeach()
+        endforeach()
+        message(STATUS "mcc tests: qemu matrix enabled (ctest -L qemu) for "
+                       "archs=[${MCC_QEMU_ARCHS}] libcs=[${MCC_QEMU_LIBCS}]")
     endif()
 
     message(STATUS "mcc tests: registered exec (golden) + preprocess + embed/abitest/diff "
