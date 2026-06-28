@@ -1,8 +1,3 @@
-/**
- * This file has no copyright assigned and is placed in the Public Domain.
- * This file is part of the w64 mingw-runtime package.
- * No warranty is given; refer to the file DISCLAIMER within this package.
- */
 #ifndef _INC_EXCPT
 #define _INC_EXCPT
 
@@ -58,7 +53,6 @@ extern "C" {
 #define EXCEPTION_CONTINUE_SEARCH 0
 #define EXCEPTION_CONTINUE_EXECUTION -1
 
-  /* CRT stuff */
   typedef void (__cdecl * _PHNDLR)(int);
 
   struct _XCPT_ACTION {
@@ -76,17 +70,9 @@ extern "C" {
   int __cdecl __CppXcptFilter(unsigned long _ExceptionNum,struct _EXCEPTION_POINTERS * _ExceptionPtr);
   int __cdecl _XcptFilter(unsigned long _ExceptionNum,struct _EXCEPTION_POINTERS * _ExceptionPtr);
 
-  /*
-  * The type of function that is expected as an exception handler to be
-  * installed with _try1.
-  */
   typedef EXCEPTION_DISPOSITION (*PEXCEPTION_HANDLER)(struct _EXCEPTION_RECORD*, void*, struct _CONTEXT*, void*);
 
 #ifndef HAVE_NO_SEH
-  /*
-  * This is not entirely necessary, but it is the structure installed by
-  * the _try1 primitive below.
-  */
   typedef struct _EXCEPTION_REGISTRATION {
     struct _EXCEPTION_REGISTRATION *prev;
     EXCEPTION_DISPOSITION (*handler)(struct _EXCEPTION_RECORD*, void*, struct _CONTEXT*, void*);

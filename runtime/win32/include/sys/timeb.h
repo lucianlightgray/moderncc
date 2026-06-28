@@ -1,8 +1,3 @@
-/**
- * This file has no copyright assigned and is placed in the Public Domain.
- * This file is part of the w64 mingw-runtime package.
- * No warranty is given; refer to the file DISCLAIMER within this package.
- */
 #ifndef _TIMEB_H_
 #define _TIMEB_H_
 
@@ -22,7 +17,7 @@ extern "C" {
 #define _CRTIMP __declspec(dllimport)
 #endif
 
-#ifndef __TINYC__ /* gr */
+#ifndef __TINYC__
 #ifdef _USE_32BIT_TIME_T
 #ifdef _WIN64
 #undef _USE_32BIT_TIME_T
@@ -85,7 +80,6 @@ extern "C" {
 
 #ifdef _USE_32BIT_TIME_T
 #define _timeb __timeb32
-//gr #define _ftime _ftime32
 #define _ftime32 _ftime
 #else
 #define _timeb __timeb64
@@ -101,13 +95,13 @@ extern "C" {
 #ifndef _TIMESPEC_DEFINED
 #define _TIMESPEC_DEFINED
 struct timespec {
-  time_t  tv_sec;   /* Seconds */
-  long    tv_nsec;  /* Nanoseconds */
+  time_t  tv_sec;
+  long    tv_nsec;
 };
 
 struct itimerspec {
-  struct timespec  it_interval;  /* Timer period */
-  struct timespec  it_value;     /* Timer expiration */
+  struct timespec  it_interval;
+  struct timespec  it_value;
 };
 #endif
 

@@ -1,8 +1,3 @@
-/**
- * This file has no copyright assigned and is placed in the Public Domain.
- * This file is part of the w64 mingw-runtime package.
- * No warranty is given; refer to the file DISCLAIMER within this package.
- */
 #ifndef _INC_STDIO
 #define _INC_STDIO
 
@@ -95,10 +90,10 @@ extern "C" {
   _CRTIMP FILE *__cdecl __iob_func(void);
 #else
 #ifdef _MSVCRT_
-extern FILE _iob[];     /* A pointer to an array of FILE */
+extern FILE _iob[];
 #define __iob_func()    (_iob)
 #else
-extern FILE (*_imp___iob)[];    /* A pointer to an array of FILE */
+extern FILE (*_imp___iob)[];
 #define __iob_func()    (*_imp___iob)
 #define _iob __iob_func()
 #endif
@@ -238,7 +233,6 @@ extern FILE (*_imp___iob)[];    /* A pointer to an array of FILE */
   int __cdecl ungetc(int _Ch,FILE *_File);
   int __cdecl vfprintf(FILE *_File,const char *_Format,va_list _ArgList);
   int __cdecl vprintf(const char *_Format,va_list _ArgList);
-  /* Make sure macros are not defined.  */
 #pragma push_macro("vsnprintf")
 #pragma push_macro("snprintf")
 # undef vsnprintf
@@ -254,7 +248,7 @@ extern FILE (*_imp___iob)[];    /* A pointer to an array of FILE */
   _CRTIMP int __cdecl _vsnprintf(char *_Dest,size_t _Count,const char *_Format,va_list _Args);
   int __cdecl sprintf(char *_Dest,const char *_Format,...);
   int __cdecl vsprintf(char *_Dest,const char *_Format,va_list _Args);
-#ifndef __NO_ISOCEXT  /* externs in libmingwex.a */
+#ifndef __NO_ISOCEXT
   int __cdecl snprintf(char* s, size_t n, const char*  format, ...);
   __CRT_INLINE int __cdecl vsnprintf (char* s, size_t n, const char* format,va_list arg) {
     return _vsnprintf ( s, n, format, arg);
@@ -263,10 +257,8 @@ extern FILE (*_imp___iob)[];    /* A pointer to an array of FILE */
   int __cdecl vfscanf (FILE * fp, const char * Format,va_list argp);
   int __cdecl vsscanf (const char * _Str,const char * Format,va_list argp);
 #endif
-/* Restore may prior defined macros snprintf/vsnprintf.  */
 #pragma pop_macro("snprintf")
 #pragma pop_macro("vsnprintf")
-/* Check if vsnprintf and snprintf are defaulting to gnu-style.  */
 # if defined(USE_MINGW_GNU_SNPRINTF) && USE_MINGW_GNU_SNPRINTF
 # ifndef vsnprint
 # define vsnprintf __mingw_vsnprintf
@@ -314,7 +306,7 @@ extern FILE (*_imp___iob)[];    /* A pointer to an array of FILE */
   _CRTIMP int __cdecl _vswprintf_c(wchar_t *_DstBuf,size_t _SizeInWords,const wchar_t *_Format,va_list _ArgList);
   _CRTIMP int __cdecl _snwprintf(wchar_t *_Dest,size_t _Count,const wchar_t *_Format,...);
   _CRTIMP int __cdecl _vsnwprintf(wchar_t *_Dest,size_t _Count,const wchar_t *_Format,va_list _Args);
-#ifndef __NO_ISOCEXT  /* externs in libmingwex.a */
+#ifndef __NO_ISOCEXT
   int __cdecl snwprintf (wchar_t* s, size_t n, const wchar_t*  format, ...);
   __CRT_INLINE int __cdecl vsnwprintf (wchar_t* s, size_t n, const wchar_t* format, va_list arg) { return _vsnwprintf(s,n,format,arg); }
   int __cdecl vwscanf (const wchar_t *, va_list);

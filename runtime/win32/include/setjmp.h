@@ -1,8 +1,3 @@
-/**
- * This file has no copyright assigned and is placed in the Public Domain.
- * This file is part of the w64 mingw-runtime package.
- * No warranty is given; refer to the file DISCLAIMER within this package.
- */
 #ifndef _INC_SETJMP
 #define _INC_SETJMP
 
@@ -186,7 +181,7 @@ extern "C" {
 #elif defined __x86_64__
   int _setjmp(jmp_buf _Buf, void *frame);
   #define setjmp(BUF) _setjmp((BUF), __builtin_frame_address(0))
-#else /* __i386__ */
+#else
   int _setjmp(jmp_buf _Buf);
   #define setjmp _setjmp
 #endif

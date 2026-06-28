@@ -1,28 +1,8 @@
-/*
- *  GAS like assembler for TCC
- * 
- *  Copyright (c) 2001-2004 Fabrice Bellard
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- */
-
 #define USING_GLOBALS
 #include "tcc.h"
 #ifdef CONFIG_TCC_ASM
 
-static Section *last_text_section; /* to handle .previous asm directive */
+static Section *last_text_section;
 static int asmgoto_n;
 
 static int tcc_assemble_internal(TCCState *s1, int do_preprocess, int global);
@@ -30,7 +10,6 @@ static Sym* asm_new_label(TCCState *s1, int label, int is_local);
 static Sym* asm_new_label1(TCCState *s1, int label, int is_local, int sh_num, int value);
 
 #if PTR_SIZE == 8
-/* output constant with relocation if 'r & VT_SYM' is true */
 ST_FUNC void gen_addr64(int r, Sym *sym, int64_t c)
 {
     if (r & VT_SYM)
@@ -57,12 +36,6 @@ ST_FUNC int asm_get_local_label_name(TCCState *s1, unsigned int n)
     return asm_get_prefix_name(s1, "L..", n);
 }
 
-/* If a C name has an _ prepended then only asm labels that start
-   with _ are representable in C, by removing the first _.  ASM names
-   without _ at the beginning don't correspond to C names, but we use
-   the global C symbol table to track ASM names as well, so we need to
-   transform those into ones that don't conflict with a C name,
-   so prepend a '.' for them, but force the ELF asm name to be set.  */
 static int asm2cname(int v, int *addeddot)
 {
     const char *name;
@@ -97,25 +70,13 @@ static Sym *asm_label_find(int v)
 static Sym *asm_label_push(int v)
 {
     int addeddot, v2 = asm2cname(v, &addeddot);
-    /* We always add VT_EXTERN, for sym definition that's tentative
-       (for .set, removed for real defs), for mere references it's correct
-       as is.  */
     Sym *sym = global_identifier_push(v2, VT_ASM | VT_EXTERN | VT_STATIC, 0);
     if (addeddot)
         sym->asm_label = v;
     return sym;
 }
 
-/* Return a symbol we can use inside the assembler, having name NAME.
-   Symbols from asm and C source share a namespace.  If we generate
-   an asm symbol it's also a (file-global) C symbol, but it's
-   either not accessible by name (like "L.123"), or its type information
-   is such that it's not usable without a proper C declaration.
 
-   Sometimes we need symbols accessible by name from asm, which
-   are anonymous in C, in this case CSYM can be used to transfer
-   all information from that symbol to the (possibly newly created)
-   asm symbol.  */
 ST_FUNC Sym* get_asm_sym(int name, Sym *csym)
 {
     Sym *sym = asm_label_find(name);
@@ -136,8 +97,6 @@ static Sym* asm_section_sym(TCCState *s1, Section *sec)
     return sym ? sym : asm_new_label1(s1, label, 1, sec->sh_num, 0);
 }
 
-/* We do not use the C expression parser to handle symbols. Maybe the
-   C expression parser could be tweaked to do so. */
 
 static void asm_expr_unary(TCCState *s1, ExprValue *pe)
 {
@@ -151,19 +110,15 @@ static void asm_expr_unary(TCCState *s1, ExprValue *pe)
         p = tokc.str.data;
         n = strtoull(p, (char **)&p, 0);
         if (*p == 'b' || *p == 'f') {
-            /* backward or forward label */
             label = asm_get_local_label_name(s1, n);
             sym = asm_label_find(label);
             if (*p == 'b') {
-                /* backward : find the last corresponding defined label */
                 if (sym && (!sym->c || elfsym(sym)->st_shndx == SHN_UNDEF))
                     sym = sym->prev_tok;
                 if (!sym)
                     tcc_error("local label '%d' not found backward", (int)n);
             } else {
-                /* forward */
                 if (!sym || (sym->c && elfsym(sym)->st_shndx != SHN_UNDEF)) {
-                    /* if the last label is defined, then define a new one */
 		    sym = asm_label_push(label);
                 }
             }
@@ -216,11 +171,9 @@ static void asm_expr_unary(TCCState *s1, ExprValue *pe)
     default:
         if (tok >= TOK_IDENT) {
 	    ElfSym *esym;
-            /* label case : if the label was not found, add one */
 	    sym = get_asm_sym(tok, NULL);
 	    esym = elfsym(sym);
             if (esym && esym->st_shndx == SHN_ABS) {
-                /* if absolute symbol, no need to put a symbol value */
                 pe->v = esym->st_value;
                 pe->sym = NULL;
 		pe->pcrel = 0;
@@ -328,13 +281,9 @@ static inline void asm_expr_sum(TCCState *s1, ExprValue *pe)
                 pe->sym = e2.sym;
         } else {
             pe->v -= e2.v;
-            /* NOTE: we are less powerful than gas in that case
-               because we store only one symbol in the expression */
 	    if (!e2.sym) {
-		/* OK */
 	    } else if (pe->sym == e2.sym) { 
-		/* OK */
-		pe->sym = NULL; /* same symbols can be subtracted to NULL */
+		pe->sym = NULL;
 	    } else {
 		ElfSym *esym1, *esym2;
 		esym1 = elfsym(pe->sym);
@@ -343,12 +292,9 @@ static inline void asm_expr_sum(TCCState *s1, ExprValue *pe)
 		    goto cannot_relocate;
 		if (esym1 && esym1->st_shndx == esym2->st_shndx
 		    && esym1->st_shndx != SHN_UNDEF) {
-		    /* we also accept defined symbols in the same section */
 		    pe->v += (int)(esym1->st_value - esym2->st_value);
 		    pe->sym = NULL;
 		} else if (esym2->st_shndx == cur_text_section->sh_num) {
-		    /* When subtracting a defined symbol in current section
-		       this actually makes the value PC-relative.  */
 		    pe->v += (int)(0 - esym2->st_value);
 		    pe->pcrel = 1;
 		    e2.sym = NULL;
@@ -398,7 +344,6 @@ static inline void asm_expr_cmp(TCCState *s1, ExprValue *pe)
         default:
             break;
         }
-	/* GAS compare results are -1/0 not 1/0.  */
 	pe->v = -(int64_t)pe->v;
     }
 }
@@ -428,11 +373,7 @@ static Sym* asm_new_label1(TCCState *s1, int label, int is_local,
     sym = asm_label_find(label);
     if (sym) {
 	esym = elfsym(sym);
-	/* A VT_EXTERN symbol, even if it has a section is considered
-	   overridable.  This is how we "define" .set targets.  Real
-	   definitions won't have VT_EXTERN set.  */
         if (esym && esym->st_shndx != SHN_UNDEF) {
-            /* the label is already defined */
             if (IS_ASM_SYM(sym)
                 && (is_local == 1 || (sym->type.t & VT_EXTERN)))
                 goto new_label;
@@ -459,8 +400,6 @@ static Sym* asm_new_label(TCCState *s1, int label, int is_local)
     return asm_new_label1(s1, label, is_local, cur_text_section->sh_num, ind);
 }
 
-/* Set the value of LABEL to that of some expression (possibly
-   involving other symbols).  LABEL can be overwritten later still.  */
 static Sym* set_symbol(TCCState *s1, int label)
 {
     long n;
@@ -514,7 +453,6 @@ static void asm_parse_directive(TCCState *s1, int global)
     Section *sec;
     uint8_t *ptr;
 
-    /* assembler directive */
     sec = cur_text_section;
     switch(tok) {
     case TOK_ASMDIR_align:
@@ -537,7 +475,6 @@ static void asm_parse_directive(TCCState *s1, int global)
                 tcc_error("alignment must be a positive power of two");
             offset = (ind + n - 1) & -n;
             size = offset - ind;
-            /* the section must have a compatible alignment */
             if (sec->sh_addralign < n)
                 sec->sh_addralign = n;
             c = sec->sh_flags & SHF_EXECINSTR;
@@ -585,7 +522,6 @@ static void asm_parse_directive(TCCState *s1, int global)
                 goto error_constant;
             next();
             if (sec->sh_type != SHT_NOBITS) {
-                /* XXX: endianness */
                 gen_le32(vl);
                 gen_le32(vl >> 32);
             } else {
@@ -661,7 +597,6 @@ static void asm_parse_directive(TCCState *s1, int global)
                     val = asm_int_expr(s1);
                 }
             }
-            /* XXX: endianness */
             repeat_buf[0] = val;
             repeat_buf[1] = val >> 8;
             repeat_buf[2] = val >> 16;
@@ -724,8 +659,6 @@ static void asm_parse_directive(TCCState *s1, int global)
 	next();
 	tok1 = tok;
 	next();
-	/* Also accept '.set stuff', but don't do anything with this.
-	   It's used in GAS to set various features like '.set mips16'.  */
 	if (tok == ',')
 	    set_symbol(s1, tok1);
 	break;
@@ -841,7 +774,6 @@ static void asm_parse_directive(TCCState *s1, int global)
             sym = asm_label_find(tok);
             if (!sym)
                 tcc_error("label not found: %s", get_tok_str(tok, NULL));
-            /* XXX .size name,label2-label1 */
             tcc_warning_c(warn_unsupported)("ignoring .size %s,*", get_tok_str(tok, NULL));
             next();
             skip(',');
@@ -899,7 +831,6 @@ static void asm_parse_directive(TCCState *s1, int global)
             int flags = SHF_ALLOC;
 
 	    tok1 = tok;
-            /* XXX: support more options */
             next();
             sname[0] = '\0';
             while (tok != ';' && tok != TOK_LINEFEED && tok != ',') {
@@ -911,7 +842,6 @@ static void asm_parse_directive(TCCState *s1, int global)
             }
             if (tok == ',') {
                 const char *p;
-                /* skip section options */
                 next();
                 if (tok != TOK_STR)
                     expect("string constant");
@@ -934,13 +864,8 @@ static void asm_parse_directive(TCCState *s1, int global)
 	        use_section(s1, sname);
 	    else
 	        push_section(s1, sname);
-	    /* If we just allocated a new section reset its alignment to
-	       1.  new_section normally acts for GCC compatibility and
-	       sets alignment to PTR_SIZE.  The assembler behaves different. */
 	    if (old_nb_section != s1->nb_sections) {
 	        cur_text_section->sh_addralign = 1;
-                /* Make .init and .fini sections executable by default.
-                   GAS does so, too, and musl relies on it. */
                 if (!strcmp(sname, ".init") || !strcmp(sname, ".fini"))
                     flags |= SHF_EXECINSTR;
 	        cur_text_section->sh_flags = flags;
@@ -977,7 +902,6 @@ static void asm_parse_directive(TCCState *s1, int global)
         break;
 #endif
 #if PTR_SIZE == 8
-    /* added for compatibility with GAS */
     case TOK_ASMDIR_code64:
         next();
         break;
@@ -986,19 +910,17 @@ static void asm_parse_directive(TCCState *s1, int global)
     case TOK_ASMDIR_option:
         next();
         switch(tok){
-            case TOK_ASM_rvc:    /* Will be deprecated soon in favor of arch */
-            case TOK_ASM_norvc:  /* Will be deprecated soon in favor of arch */
+            case TOK_ASM_rvc:
+            case TOK_ASM_norvc:
             case TOK_ASM_pic:
             case TOK_ASM_nopic:
             case TOK_ASM_relax:
             case TOK_ASM_norelax:
             case TOK_ASM_push:
             case TOK_ASM_pop:
-                /* TODO: unimplemented */
                 next();
                 break;
             case TOK_ASM_arch:
-                /* TODO: unimplemented, requires extra parsing */
                 tcc_error("unimp .option '.%s'", get_tok_str(tok, NULL));
                 break;
             default:
@@ -1007,7 +929,6 @@ static void asm_parse_directive(TCCState *s1, int global)
         }
         break;
 #endif
-    /* TODO: Implement symvar support. FreeBSD >= 14 needs this */
     case TOK_ASMDIR_symver:
 	next();
 	next();
@@ -1064,7 +985,6 @@ static void asm_parse_directive(TCCState *s1, int global)
 }
 
 
-/* assemble a file */
 static int tcc_assemble_internal(TCCState *s1, int do_preprocess, int global)
 {
     int opcode;
@@ -1078,11 +998,10 @@ static int tcc_assemble_internal(TCCState *s1, int do_preprocess, int global)
         if (tok == TOK_EOF)
             break;
         tcc_debug_line(s1);
-        parse_flags |= PARSE_FLAG_LINEFEED; /* XXX: suppress that hack */
+        parse_flags |= PARSE_FLAG_LINEFEED;
     redo:
 #if !defined(TCC_TARGET_ARM64)
         if (tok == '#') {
-            /* horrible gas comment */
             while (tok != TOK_LINEFEED)
                 next();
         } else
@@ -1096,17 +1015,14 @@ static int tcc_assemble_internal(TCCState *s1, int do_preprocess, int global)
             n = strtoul(p, (char **)&p, 10);
             if (*p != '\0')
                 expect("':'");
-            /* new local label */
             asm_new_label(s1, asm_get_local_label_name(s1, n), 1);
             next();
             skip(':');
             goto redo;
         } else if (tok >= TOK_IDENT) {
-            /* instruction or label */
             opcode = tok;
             next();
             if (tok == ':') {
-                /* new label */
                 asm_new_label(s1, opcode, 0);
                 next();
                 goto redo;
@@ -1117,22 +1033,19 @@ static int tcc_assemble_internal(TCCState *s1, int do_preprocess, int global)
                 asm_opcode(s1, opcode);
             }
         }
-        /* end of line */
         if (tok != ';' && tok != TOK_LINEFEED)
             expect("end of line");
-        parse_flags &= ~PARSE_FLAG_LINEFEED; /* XXX: suppress that hack */
+        parse_flags &= ~PARSE_FLAG_LINEFEED;
     }
 
     parse_flags = saved_parse_flags;
     return 0;
 }
 
-/* Assemble the current file */
 ST_FUNC int tcc_assemble(TCCState *s1, int do_preprocess)
 {
     int ret;
     tcc_debug_start(s1);
-    /* default section is text */
     cur_text_section = text_section;
     ind = cur_text_section->data_offset;
     nocode_wanted = 0;
@@ -1142,11 +1055,7 @@ ST_FUNC int tcc_assemble(TCCState *s1, int do_preprocess)
     return ret;
 }
 
-/********************************************************************/
-/* GCC inline asm support */
 
-/* assemble the string 'str' in the current C compilation unit without
-   C preprocessing. */
 static void tcc_assemble_inline(TCCState *s1, const char *str, int len, int global)
 {
     const int *saved_macro_ptr = macro_ptr;
@@ -1168,9 +1077,6 @@ static void tcc_assemble_inline(TCCState *s1, const char *str, int len, int glob
     macro_ptr = saved_macro_ptr;
 }
 
-/* find a constraint by its number or id (gcc 3 extended
-   syntax). return -1 if not found. Return in *pp in char after the
-   constraint */
 ST_FUNC int find_constraint(ASMOperand *operands, int nb_operands, 
                            const char *name, const char **pp)
 {
@@ -1233,8 +1139,6 @@ static void subst_asm_operands(ASMOperand *operands, int nb_operands,
 #ifdef TCC_TARGET_RISCV64
 		*str == 'z' ||
 #endif
-		/* P in GCC would add "@PLT" to symbol refs in PIC mode,
-		   and make literal operands not be decorated with '$'.  */
 		*str == 'P')
                 modifier = *str++;
             index = find_constraint(operands, nb_operands, str, &str);
@@ -1295,10 +1199,6 @@ static void parse_asm_operands(ASMOperand *operands, int *nb_operands_ptr,
                 if (!(vtop->type.t & VT_ARRAY))
                     test_lvalue();
             } else {
-                /* we want to avoid LLOCAL case, except when the 'm'
-                   constraint is used. Note that it may come from
-                   register storage, so we need to convert (reg)
-                   case */
                 if ((vtop->r & VT_LVAL) &&
                     ((vtop->r & VT_VALMASK) == VT_LLOCAL ||
                      (vtop->r & VT_VALMASK) < VT_CONST) &&
@@ -1323,7 +1223,6 @@ static void parse_asm_operands(ASMOperand *operands, int *nb_operands_ptr,
     }
 }
 
-/* parse the GCC asm() instruction */
 ST_FUNC void asm_instr(void)
 {
     CString astr, *astr1;
@@ -1333,8 +1232,6 @@ ST_FUNC void asm_instr(void)
     uint8_t clobber_regs[NB_ASM_REGS];
     Section *sec;
 
-    /* since we always generate the asm() instruction, we can ignore
-       volatile */
     while (tok == TOK_VOLATILE1 || tok == TOK_VOLATILE2 || tok == TOK_VOLATILE3
            || tok == TOK_GOTO) {
         next();
@@ -1352,17 +1249,13 @@ ST_FUNC void asm_instr(void)
     if (tok == ':') {
         next();
         must_subst = 1;
-        /* output args */
         parse_asm_operands(operands, &nb_operands, 1);
         nb_outputs = nb_operands;
         if (tok == ':') {
             next();
             if (tok != ')') {
-                /* input args */
                 parse_asm_operands(operands, &nb_operands, 0);
                 if (tok == ':') {
-                    /* clobber list */
-                    /* XXX: handle registers */
                     next();
                     for(;;) {
                         if (tok == ':')
@@ -1379,7 +1272,6 @@ ST_FUNC void asm_instr(void)
                     }
                 }
                 if (tok == ':') {
-                    /* goto labels */
                     next();
                     for (;;) {
                         Sym *csym;
@@ -1417,20 +1309,14 @@ ST_FUNC void asm_instr(void)
         }
     }
     skip(')');
-    /* NOTE: we do not eat the ';' so that we can restore the current
-       token after the assembler parsing */
     if (tok != ';')
         expect("';'");
     
-    /* save all values in the memory */
     save_regs(0);
 
-    /* compute constraints */
     asm_compute_constraints(operands, nb_operands, nb_outputs, 
                             clobber_regs, &out_reg);
 
-    /* substitute the operands in the asm string. No substitution is
-       done if no operands (GCC behaviour) */
 #ifdef ASM_DEBUG
     printf("asm: \"%s\"\n", (char *)astr.data);
 #endif
@@ -1445,14 +1331,10 @@ ST_FUNC void asm_instr(void)
     printf("subst_asm: \"%s\"\n", (char *)astr.data);
 #endif
 
-    /* generate loads */
     asm_gen_code(operands, nb_operands, nb_outputs, 0, 
                  clobber_regs, out_reg);    
 
-    /* We don't allow switching section within inline asm to
-       bleed out to surrounding code.  */
     sec = cur_text_section;
-    /* assemble the string with tcc internal assembler */
     tcc_assemble_inline(tcc_state, astr.data, astr.size - 1, 0);
     cstr_free_s(&astr);
     if (sec != cur_text_section) {
@@ -1460,14 +1342,11 @@ ST_FUNC void asm_instr(void)
         use_section1(tcc_state, sec);
     }
 
-    /* restore the current C token */
     next();
 
-    /* store the output values if needed */
     asm_gen_code(operands, nb_operands, nb_outputs, 1, 
                  clobber_regs, out_reg);
     
-    /* free everything */
     for(int i=0;i<nb_operands;i++) {
         vpop();
     }
@@ -1479,13 +1358,10 @@ ST_FUNC void asm_global_instr(void)
     CString *astr;
     int saved_nocode_wanted = nocode_wanted;
 
-    /* Global asm blocks are always emitted.  */
     nocode_wanted = 0;
     next();
     astr = parse_asm_str();
     skip(')');
-    /* NOTE: we do not eat the ';' so that we can restore the current
-       token after the assembler parsing */
     if (tok != ';')
         expect("';'");
     
@@ -1495,18 +1371,15 @@ ST_FUNC void asm_global_instr(void)
     cur_text_section = text_section;
     ind = cur_text_section->data_offset;
 
-    /* assemble the string with tcc internal assembler */
     tcc_assemble_inline(tcc_state, astr->data, astr->size - 1, 1);
     
     cur_text_section->data_offset = ind;
 
-    /* restore the current C token */
     next();
 
     nocode_wanted = saved_nocode_wanted;
 }
 
-/********************************************************/
 #else
 ST_FUNC int tcc_assemble(TCCState *s1, int do_preprocess)
 {
@@ -1522,4 +1395,4 @@ ST_FUNC void asm_global_instr(void)
 {
     tcc_error("inline asm() not supported");
 }
-#endif /* CONFIG_TCC_ASM */
+#endif

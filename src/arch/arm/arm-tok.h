@@ -1,8 +1,3 @@
-/* ------------------------------------------------------------------ */
-/* WARNING: relative order of tokens is important.                    */
-
-/* register */
-
  DEF_ASM(r0)
  DEF_ASM(r1)
  DEF_ASM(r2)
@@ -14,39 +9,36 @@
  DEF_ASM(r8)
  DEF_ASM(r9)
  DEF_ASM(r10)
- DEF_ASM(r11) /* fp */
- DEF_ASM(r12) /* ip[c] */
- DEF_ASM(r13) /* sp */
- DEF_ASM(r14) /* lr */
- DEF_ASM(r15) /* pc */
+ DEF_ASM(r11)
+ DEF_ASM(r12)
+ DEF_ASM(r13)
+ DEF_ASM(r14)
+ DEF_ASM(r15)
 
-/* synonym register names */
 
- DEF_ASM(a1) /* argument/result/scratch register 1: alias for r0 */
- DEF_ASM(a2) /* argument/result/scratch register 2: alias for r1 */
- DEF_ASM(a3) /* argument/result/scratch register 3: alias for r2 */
- DEF_ASM(a4) /* argument/result/scratch register 4: alias for r3 */
+ DEF_ASM(a1)
+ DEF_ASM(a2)
+ DEF_ASM(a3)
+ DEF_ASM(a4)
 
- DEF_ASM(v1) /* variable register 1: alias for r4 */
- DEF_ASM(v2) /* variable register 2: alias for r5 */
- DEF_ASM(v3) /* variable register 3: alias for r6 */
- DEF_ASM(v4) /* variable register 4: alias for r7 */
- DEF_ASM(v5) /* ARM state variable register 5: alias for r8 */
- DEF_ASM(v6) /* ARM state variable register 6: alias for r9 */
- DEF_ASM(v7) /* ARM state variable register 7: alias for r10 */
- DEF_ASM(v8) /* ARM state variable register 8: alias for r11 */
+ DEF_ASM(v1)
+ DEF_ASM(v2)
+ DEF_ASM(v3)
+ DEF_ASM(v4)
+ DEF_ASM(v5)
+ DEF_ASM(v6)
+ DEF_ASM(v7)
+ DEF_ASM(v8)
 
-/* special register names */
 
- DEF_ASM(sb) /* alias for r9  */
- DEF_ASM(sl) /* alias for r10 */
- DEF_ASM(fp) /* alias for r11 */
- DEF_ASM(ip) /* alias for r12 */
- DEF_ASM(sp) /* alias for r13 */
- DEF_ASM(lr) /* alias for r14 */
- DEF_ASM(pc) /* alias for r15 */
+ DEF_ASM(sb)
+ DEF_ASM(sl)
+ DEF_ASM(fp)
+ DEF_ASM(ip)
+ DEF_ASM(sp)
+ DEF_ASM(lr)
+ DEF_ASM(pc)
 
- /* coprocessors */
 
  DEF_ASM(p0)
  DEF_ASM(p1)
@@ -65,7 +57,6 @@
  DEF_ASM(p14)
  DEF_ASM(p15)
 
- /* coprocessor registers */
 
  DEF_ASM(c0)
  DEF_ASM(c1)
@@ -84,7 +75,6 @@
  DEF_ASM(c14)
  DEF_ASM(c15)
 
- /* single-precision VFP registers */
 
  DEF_ASM(s0)
  DEF_ASM(s1)
@@ -119,7 +109,6 @@
  DEF_ASM(s30)
  DEF_ASM(s31)
 
- /* double-precision VFP registers */
 
  DEF_ASM(d0)
  DEF_ASM(d1)
@@ -138,21 +127,17 @@
  DEF_ASM(d14)
  DEF_ASM(d15)
 
- /* VFP status registers */
 
  DEF_ASM(fpsid)
  DEF_ASM(fpscr)
  DEF_ASM(fpexc)
 
- /* VFP magical ARM register */
 
  DEF_ASM(apsr_nzcv)
 
- /* data processing directives */
 
  DEF_ASM(asl)
 
- /* instructions that have no condition code */
 
  DEF_ASM(cdp2)
  DEF_ASM(ldc2)
@@ -162,7 +147,6 @@
 
 #define ARM_INSTRUCTION_GROUP(tok) ((((tok) - TOK_ASM_nopeq) & 0xFFFFFFF0) + TOK_ASM_nopeq)
 
-/* Note: condition code is 4 bits */
 #define DEF_ASM_CONDED(x) \
   DEF(TOK_ASM_ ## x ## eq, #x "eq") \
   DEF(TOK_ASM_ ## x ## ne, #x "ne") \
@@ -181,7 +165,6 @@
   DEF(TOK_ASM_ ## x, #x) \
   DEF(TOK_ASM_ ## x ## rsvd, #x "rsvd")
 
-/* Note: condition code is 4 bits */
 #define DEF_ASM_CONDED_WITH_SUFFIX(x, y) \
   DEF(TOK_ASM_ ## x ## eq ## _ ## y, #x "eq." #y) \
   DEF(TOK_ASM_ ## x ## ne ## _ ## y, #x "ne." #y) \
@@ -222,7 +205,6 @@
   DEF(TOK_ASM_ ## x ## _ ## y ## _ ## z, #x "." #y "." #z) \
   DEF(TOK_ASM_ ## x ## rsvd ## _ ## y ## _ ## z, #x "rsvd." #y "." #z)
 
-/* Note: add new tokens after nop (MUST always use DEF_ASM_CONDED) */
 
  DEF_ASM_CONDED(nop)
  DEF_ASM_CONDED(wfe)
@@ -230,10 +212,8 @@
  DEF_ASM_CONDED(swi)
  DEF_ASM_CONDED(svc)
 
- /* misc */
  DEF_ASM_CONDED(clz)
 
- /* size conversion */
 
  DEF_ASM_CONDED(sxtb)
  DEF_ASM_CONDED(sxth)
@@ -242,7 +222,6 @@
  DEF_ASM_CONDED(movt)
  DEF_ASM_CONDED(movw)
 
- /* multiplication */
 
  DEF_ASM_CONDED(mul)
  DEF_ASM_CONDED(muls)
@@ -260,7 +239,6 @@
  DEF_ASM_CONDED(udiv)
  DEF_ASM_CONDED(sdiv)
 
- /* load/store */
 
  DEF_ASM_CONDED(ldr)
  DEF_ASM_CONDED(ldrb)
@@ -293,19 +271,16 @@
  DEF_ASM_CONDED(stc)
  DEF_ASM_CONDED(stcl)
 
- /* instruction macros */
 
  DEF_ASM_CONDED(push)
  DEF_ASM_CONDED(pop)
 
- /* branches */
 
  DEF_ASM_CONDED(b)
  DEF_ASM_CONDED(bl)
  DEF_ASM_CONDED(bx)
  DEF_ASM_CONDED(blx)
 
- /* data processing instructions; order is important */
 
  DEF_ASM_CONDED(and)
  DEF_ASM_CONDED(ands)
@@ -324,13 +299,13 @@
  DEF_ASM_CONDED(rsc)
  DEF_ASM_CONDED(rscs)
  DEF_ASM_CONDED(tst)
- DEF_ASM_CONDED(tsts) // necessary here--but not useful to the user
+ DEF_ASM_CONDED(tsts)
  DEF_ASM_CONDED(teq)
- DEF_ASM_CONDED(teqs) // necessary here--but not useful to the user
+ DEF_ASM_CONDED(teqs)
  DEF_ASM_CONDED(cmp)
- DEF_ASM_CONDED(cmps) // necessary here--but not useful to the user
+ DEF_ASM_CONDED(cmps)
  DEF_ASM_CONDED(cmn)
- DEF_ASM_CONDED(cmns) // necessary here--but not useful to the user
+ DEF_ASM_CONDED(cmns)
  DEF_ASM_CONDED(orr)
  DEF_ASM_CONDED(orrs)
  DEF_ASM_CONDED(mov)
@@ -355,7 +330,6 @@
  DEF_ASM_CONDED(mcr)
  DEF_ASM_CONDED(mrc)
 
- // Floating point high-level instructions
 
  DEF_ASM_CONDED(vldr)
  DEF_ASM_CONDED(vstr)

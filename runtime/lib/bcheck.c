@@ -1,22 +1,3 @@
-/*
- *  Tiny C Memory and bounds checker
- * 
- *  Copyright (c) 2002 Fabrice Bellard
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- */
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdarg.h>
@@ -50,7 +31,6 @@
 #endif
 
 #ifdef __attribute__
-  /* an __attribute__ macro is defined in the system headers */
   #undef __attribute__ 
 #endif
 #define FASTCALL __attribute__((regparm(3)))
@@ -108,7 +88,7 @@ static CRITICAL_SECTION bounds_sem;
 
 #else
 
-#define __USE_GNU              /* get RTLD_NEXT */
+#define __USE_GNU
 #include <sys/mman.h>
 #include <ctype.h>
 #include <pthread.h>
@@ -142,7 +122,6 @@ static pthread_mutex_t bounds_mtx;
 #define TRY_SEM()              if (use_sem) pthread_mutex_trylock (&bounds_mtx)
 #else
 static pthread_spinlock_t bounds_spin;
-/* about 25% faster then semaphore. */
 #define INIT_SEM()             pthread_spin_init (&bounds_spin, 0)
 #define EXIT_SEM()             pthread_spin_destroy (&bounds_spin)
 #define WAIT_SEM()             if (use_sem) pthread_spin_lock (&bounds_spin)
@@ -204,7 +183,6 @@ static int (*fork_redir) (void);
 #define TCC_TYPE_MEMALIGN       (4)
 #define TCC_TYPE_STRDUP         (5)
 
-/* this pointer is generated when bound check is incorrect */
 #define INVALID_POINTER ((void *)(-2))
 
 typedef struct tree_node Tree;
@@ -213,7 +191,7 @@ struct tree_node {
     size_t start;
     size_t size;
     unsigned char type;
-    unsigned char is_invalid; /* true if pointers outside region are invalid */
+    unsigned char is_invalid;
 };
 
 typedef struct alloca_list_struct {
@@ -258,7 +236,6 @@ static Tree * splay_insert(size_t addr, size_t size, Tree * t);
 static Tree * splay_delete(size_t addr, Tree *t);
 void splay_printtree(Tree * t, int d);
 
-/* external interface */
 void __bounds_checking (int no_check);
 void __bound_checking_lock (void);
 void __bound_checking_unlock (void);
@@ -450,7 +427,6 @@ static unsigned long long bound_splay_delete;
 
 int tcc_backtrace(const char *fmt, ...);
 
-/* print a bound error message */
 #define bound_warning(...) \
     do {                                                 \
         WAIT_SEM ();                                     \
@@ -484,7 +460,6 @@ static void bound_not_found_warning(const char *file, const char *function,
     dprintf(stderr, "%s%s, %s(): Not found %p\n", exec, file, function, ptr);
 }
 
-/* enable/disable checking. This can be used in signal handlers. */
 void __bounds_checking (int no_check)
 {
 #if HAVE_TLS_FUNC || HAVE_TLS_VAR
@@ -504,14 +479,11 @@ void __bound_checking_unlock(void)
     POST_SEM ();
 }
 
-/* enable/disable checking. This can be used in signal handlers. */
 void __bound_never_fatal (int neverfatal)
 {
     atomic_fetch_add (&never_fatal, neverfatal);
 }
 
-/* return '(p + offset)' for pointer arithmetic (a pointer can reach
-   the end of a region in this case */
 void * __bound_ptr_add(void *p, size_t offset)
 {
     size_t addr = (size_t)p;
@@ -544,11 +516,11 @@ void * __bound_ptr_add(void *p, size_t offset)
                                   p + offset, (long)tree->start,
                                   (long)(tree->start + tree->size - 1));
                 if (never_fatal <= 0)
-                    return INVALID_POINTER; /* return an invalid pointer */
+                    return INVALID_POINTER;
                 return p + offset;
             }
         }
-        else if (p) { /* Allow NULL + offset. offsetoff is using it. */
+        else if (p) {
             INCR_COUNT(bound_not_found);
             POST_SEM ();
             bound_not_found_warning (__FILE__, __FUNCTION__, p);
@@ -559,8 +531,6 @@ void * __bound_ptr_add(void *p, size_t offset)
     return p + offset;
 }
 
-/* return '(p + offset)' for pointer indirection (the resulting must
-   be strictly inside the region */
 #define BOUND_PTR_INDIR(dsize)                                                 \
 void * __bound_ptr_indir ## dsize (void *p, size_t offset)                     \
 {                                                                              \
@@ -593,7 +563,7 @@ void * __bound_ptr_indir ## dsize (void *p, size_t offset)                     \
                               p + offset, dsize, (long)tree->start,            \
                               (long)(tree->start + tree->size - 1));           \
                 if (never_fatal <= 0)                                          \
-                    return INVALID_POINTER; /* return an invalid pointer */    \
+                    return INVALID_POINTER;      \
                 return p + offset;                                             \
             }                                                                  \
         }                                                                      \
@@ -615,23 +585,16 @@ BOUND_PTR_INDIR(8)
 BOUND_PTR_INDIR(12)
 BOUND_PTR_INDIR(16)
 
-/* Needed when using ...libtcc1-usegcc=yes in lib/Makefile */
 #if (defined(__GNUC__) && (__GNUC__ >= 6)) || defined(__clang__)
-/*
- * At least gcc 6.2 complains when __builtin_frame_address is used with
- * nonzero argument.
- */
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wframe-address"
 #endif
 
-/* return the frame pointer of the caller */
 #define GET_CALLER_FP(fp)\
 {\
     fp = (size_t)__builtin_frame_address(1);\
 }
 
-/* called when entering a function to add all the local regions */
 void FASTCALL __bound_local_new(void *p1) 
 {
     size_t addr, fp, *p = p1;
@@ -661,7 +624,6 @@ void FASTCALL __bound_local_new(void *p1)
 #endif
 }
 
-/* called when leaving a function to delete all the local regions */
 void FASTCALL __bound_local_delete(void *p1) 
 {
     size_t addr, fp, *p = p1;
@@ -737,7 +699,6 @@ void FASTCALL __bound_local_delete(void *p1)
 #endif
 }
 
-/* used by alloca */
 void __bound_new_region(void *p, size_t size)
 {
     size_t fp;
@@ -959,10 +920,6 @@ void __bound_init(size_t *p, int mode)
     {
         void *addr = mode > 0 ? RTLD_DEFAULT : RTLD_NEXT;
 
-        /* tcc -run required RTLD_DEFAULT. Normal usage requires RTLD_NEXT,
-           but using RTLD_NEXT with -run segfaults on MacOS in dyld as the
-           generated code segment isn't registered with dyld and hence the
-           caller image of dlsym isn't known to it */
         *(void **) (&malloc_redir) = dlsym (addr, "malloc");
         if (malloc_redir == NULL) {
             dprintf(stderr, "%s, %s(): use RTLD_DEFAULT\n",
@@ -1025,7 +982,6 @@ void __bound_init(size_t *p, int mode)
             (unsigned long) __builtin_return_address(0);
         char line[1000];
 
-        /* Display exec name. Usefull when a lot of code is compiled with tcc */
         fp = fopen ("/proc/self/comm", "r");
         if (fp) {
             memset (exec, 0, sizeof(exec));
@@ -1035,7 +991,6 @@ void __bound_init(size_t *p, int mode)
             strcat (exec, ":");
             fclose (fp);
         }
-        /* check if dlopen is used (is threre a better way?) */ 
         found = 0;
         fp = fopen ("/proc/self/maps", "r");
         if (fp) {
@@ -1064,7 +1019,6 @@ void __bound_init(size_t *p, int mode)
     tree = splay_insert((size_t) &_DefaultRuneLocale,
                         sizeof (_DefaultRuneLocale), tree);
 #else
-    /* XXX: Does not work if locale is changed */
     tree = splay_insert((size_t) __ctype_b_loc(),
                         sizeof (unsigned short *), tree);
     tree = splay_insert((size_t) (*__ctype_b_loc() - 128),
@@ -1087,7 +1041,6 @@ add_bounds:
     if (!p)
         goto no_bounds;
 
-    /* add all static bound check values */
     while (p[0] != 0) {
         tree = splay_insert(p[0], p[1], tree);
 #if BOUND_DEBUG
@@ -1467,7 +1420,6 @@ void *__bound_malloc(size_t size, const void *caller)
     void *ptr;
     
 #if MALLOC_REDIR
-    /* This will catch the first dlsym call from __bound_init */
     if (malloc_redir == NULL) {
         __bound_init (0, -1);
         if (malloc_redir == NULL) {
@@ -1481,9 +1433,6 @@ void *__bound_malloc(size_t size, const void *caller)
         }
     }
 #endif
-    /* we allocate one more byte to ensure the regions will be
-       separated by at least one byte. With the glibc malloc, it may
-       be in fact not necessary */
     ptr = BOUND_MALLOC (size + 1);
     dprintf(stderr, "%s, %s(): %p, 0x%lx\n",
             __FILE__, __FUNCTION__, ptr, (unsigned long)size);
@@ -1511,16 +1460,11 @@ void *__bound_memalign(size_t align, size_t size, const void *caller)
     void *ptr;
 
 #if HAVE_MEMALIGN
-    /* we allocate one more byte to ensure the regions will be
-       separated by at least one byte. With the glibc malloc, it may
-       be in fact not necessary */
     ptr = BOUND_MEMALIGN(align, size + 1);
 #else
     if (align > 4) {
-        /* XXX: handle it ? */
         ptr = NULL;
     } else {
-        /* we suppose that malloc aligns to at least four bytes */
         ptr = BOUND_MALLOC(size + 1);
     }
 #endif
@@ -1631,7 +1575,6 @@ void *__bound_calloc(size_t nmemb, size_t size)
 
     size *= nmemb;
 #if MALLOC_REDIR
-    /* This will catch the first dlsym call from __bound_init */
     if (malloc_redir == NULL) {
         __bound_init (0, -1);
         if (malloc_redir == NULL) {
@@ -1699,9 +1642,7 @@ int __bound_munmap (void *start, size_t size)
 }
 #endif
 
-/* some useful checked functions */
 
-/* check that (p ... p + size - 1) lies inside 'p' region, if any */
 static void __bound_check(const void *p, size_t size, const char *function)
 {
     if (size != 0 && __bound_ptr_add((void *)p, size) == INVALID_POINTER) {
@@ -1718,8 +1659,8 @@ static int check_overlap (const void *p1, size_t n1,
     const void *p2e = (const void *) ((const char *) p2 + n2);
 
     if (NO_CHECKING_GET() == 0 && n1 != 0 && n2 !=0 &&
-        ((p1 <= p2 && p1e > p2) ||     /* p1----p2====p1e----p2e */
-         (p2 <= p1 && p2e > p1))) {    /* p2----p1====p2e----p1e */
+        ((p1 <= p2 && p1e > p2) ||
+         (p2 <= p1 && p2e > p1))) {
         bound_error("overlapping regions %p(0x%lx), %p(0x%lx) in %s",
                 p1, (unsigned long)n1, p2, (unsigned long)n2, function);
         return never_fatal < 0;
@@ -2015,62 +1956,19 @@ char *__bound_strdup(const char *s)
     return new;
 }
 
-/*
-           An implementation of top-down splaying with sizes
-             D. Sleator <sleator@cs.cmu.edu>, January 1994.
 
-  This extends top-down-splay.c to maintain a size field in each node.
-  This is the number of nodes in the subtree rooted there.  This makes
-  it possible to efficiently compute the rank of a key.  (The rank is
-  the number of nodes to the left of the given key.)  It it also
-  possible to quickly find the node of a given rank.  Both of these
-  operations are illustrated in the code below.  The remainder of this
-  introduction is taken from top-down-splay.c.
 
-  "Splay trees", or "self-adjusting search trees" are a simple and
-  efficient data structure for storing an ordered set.  The data
-  structure consists of a binary tree, with no additional fields.  It
-  allows searching, insertion, deletion, deletemin, deletemax,
-  splitting, joining, and many other operations, all with amortized
-  logarithmic performance.  Since the trees adapt to the sequence of
-  requests, their performance on real access patterns is typically even
-  better.  Splay trees are described in a number of texts and papers
-  [1,2,3,4].
 
-  The code here is adapted from simple top-down splay, at the bottom of
-  page 669 of [2].  It can be obtained via anonymous ftp from
-  spade.pc.cs.cmu.edu in directory /usr/sleator/public.
 
-  The chief modification here is that the splay operation works even if the
-  item being splayed is not in the tree, and even if the tree root of the
-  tree is NULL.  So the line:
 
-                              t = splay(i, t);
 
-  causes it to search for item with key i in the tree rooted at t.  If it's
-  there, it is splayed to the root.  If it isn't there, then the node put
-  at the root is the last one before NULL that would have been reached in a
-  normal binary search for i.  (It's a neighbor of i in the tree.)  This
-  allows many other operations to be easily implemented, as shown below.
 
-  [1] "Data Structures and Their Algorithms", Lewis and Denenberg,
-       Harper Collins, 1991, pp 243-251.
-  [2] "Self-adjusting Binary Search Trees" Sleator and Tarjan,
-       JACM Volume 32, No 3, July 1985, pp 652-686.
-  [3] "Data Structure and Algorithm Analysis", Mark Weiss,
-       Benjamin Cummins, 1992, pp 119-130.
-  [4] "Data Structures, Algorithms, and Performance", Derick Wood,
-       Addison-Wesley, 1993, pp 367-375
-*/
 
-/* Code adapted for tcc */
 
 #define compare(start,tstart,tsize) (start < tstart ? -1 : \
                                      start >= tstart+tsize  ? 1 : 0)
 
 static Tree * splay (size_t addr, Tree *t)
-/* Splay using the key start (which may or may not be in the tree.) */
-/* The starting root is t, and the tree used is defined by rat      */
 {
     Tree N, *l, *r, *y;
     int comp;
@@ -2086,31 +1984,31 @@ static Tree * splay (size_t addr, Tree *t)
             y = t->left;
             if (y == NULL) break;
             if (compare(addr, y->start, y->size) < 0) {
-                t->left = y->right;                    /* rotate right */
+                t->left = y->right;
                 y->right = t;
                 t = y;
                 if (t->left == NULL) break;
             }
-            r->left = t;                               /* link right */
+            r->left = t;
             r = t;
             t = t->left;
         } else if (comp > 0) {
             y = t->right;
             if (y == NULL) break;
             if (compare(addr, y->start, y->size) > 0) {
-                t->right = y->left;                    /* rotate left */
+                t->right = y->left;
                 y->left = t;
                 t = y;
                 if (t->right == NULL) break;
             }
-            l->right = t;                              /* link left */
+            l->right = t;
             l = t;
             t = t->right;
         } else {
             break;
         }
     }
-    l->right = t->left;                                /* assemble */
+    l->right = t->left;
     r->left = t->right;
     t->left = N.right;
     t->right = N.left;
@@ -2122,8 +2020,6 @@ static Tree * splay (size_t addr, Tree *t)
                                  start > tend  ? 1 : 0)
 
 static Tree * splay_end (size_t addr, Tree *t)
-/* Splay using the key start (which may or may not be in the tree.) */
-/* The starting root is t, and the tree used is defined by rat  */
 {
     Tree N, *l, *r, *y;
     int comp;
@@ -2139,31 +2035,31 @@ static Tree * splay_end (size_t addr, Tree *t)
             y = t->left;
             if (y == NULL) break;
             if (compare_end(addr, y->start + y->size) < 0) {
-                t->left = y->right;                    /* rotate right */
+                t->left = y->right;
                 y->right = t;
                 t = y;
                 if (t->left == NULL) break;
             }
-            r->left = t;                               /* link right */
+            r->left = t;
             r = t;
             t = t->left;
         } else if (comp > 0) {
             y = t->right;
             if (y == NULL) break;
             if (compare_end(addr, y->start + y->size) > 0) {
-                t->right = y->left;                    /* rotate left */
+                t->right = y->left;
                 y->left = t;
                 t = y;
                 if (t->right == NULL) break;
             }
-            l->right = t;                              /* link left */
+            l->right = t;
             l = t;
             t = t->right;
         } else {
             break;
         }
     }
-    l->right = t->left;                                /* assemble */
+    l->right = t->left;
     r->left = t->right;
     t->left = N.right;
     t->right = N.left;
@@ -2172,8 +2068,6 @@ static Tree * splay_end (size_t addr, Tree *t)
 }
 
 static Tree * splay_insert(size_t addr, size_t size, Tree * t)
-/* Insert key start into the tree t, if it is not already there. */
-/* Return a pointer to the resulting tree.                       */
 {
     Tree * new;
 
@@ -2181,7 +2075,7 @@ static Tree * splay_insert(size_t addr, size_t size, Tree * t)
     if (t != NULL) {
         t = splay(addr,t);
         if (compare(addr, t->start, t->size)==0) {
-            return t;  /* it's already there */
+            return t;
         }
     }
 #if TREE_REUSE
@@ -2221,15 +2115,13 @@ static Tree * splay_insert(size_t addr, size_t size, Tree * t)
                                        start > tstart  ? 1 : 0)
 
 static Tree * splay_delete(size_t addr, Tree *t)
-/* Deletes addr from the tree if it's there.               */
-/* Return a pointer to the resulting tree.                 */
 {
     Tree * x;
 
     INCR_COUNT_SPLAY(bound_splay_delete);
     if (t==NULL) return NULL;
     t = splay(addr,t);
-    if (compare_destroy(addr, t->start) == 0) {        /* found it */
+    if (compare_destroy(addr, t->start) == 0) {
         if (t->left == NULL) {
             x = t->right;
         } else {
@@ -2244,7 +2136,7 @@ static Tree * splay_delete(size_t addr, Tree *t)
 #endif
         return x;
     } else {
-        return t;                                      /* It wasn't there */
+        return t;
     }
 }
 

@@ -1,14 +1,8 @@
-/**
- * This file has no copyright assigned and is placed in the Public Domain.
- * This file is part of the w64 mingw-runtime package.
- * No warranty is given; refer to the file DISCLAIMER within this package.
- */
 #ifndef _INC_PROCESS
 #define _INC_PROCESS
 
 #include <_mingw.h>
 
-/* Includes a definition of _pid_t and pid_t */
 #include <sys/types.h>
 
 #ifndef _POSIX_
@@ -149,10 +143,6 @@ extern "C" {
   intptr_t __cdecl spawnlpe(int,const char *_Filename,const char *_ArgList,...);
   int __cdecl getpid(void);
 #ifdef __GNUC__
-  /* Those methods are predefined by gcc builtins to return int. So to prevent
-     stupid warnings, define them in POSIX way.  This is save, because those
-     methods do not return in success case, so that the return value is not
-     really dependent to its scalar width.  */
   int __cdecl execv(const char *_Filename,const char *const _ArgList[]);
   int __cdecl execve(const char *_Filename,const char *const _ArgList[],const char *const _Env[]);
   int __cdecl execvp(const char *_Filename,const char *const _ArgList[]);

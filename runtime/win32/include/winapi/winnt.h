@@ -1,8 +1,3 @@
-/**
- * This file has no copyright assigned and is placed in the Public Domain.
- * This file is part of the w64 mingw-runtime package.
- * No warranty is given; refer to the file DISCLAIMER within this package.
- */
 #ifndef _WINNT_
 #define _WINNT_
 
@@ -13,7 +8,6 @@ extern "C" {
 #include <ctype.h>
 #define ANYSIZE_ARRAY 1
 
-//gr #include <specstrings.h>
 
 #define RESTRICTED_POINTER
 
@@ -1047,7 +1041,6 @@ typedef DWORD LCID;
 	: : "r"(Value),"m"(*Destination) : "memory");
       return *Destination;
     }
-    //		$$$$
     __CRT_INLINE LONG64 InterlockedAnd64(LONG64 volatile *Destination,LONG64 Value) {
       __asm__ __volatile__("lock ; andq %0,%1"
 	: : "r"(Value),"m"(*Destination) : "memory");
@@ -1159,7 +1152,6 @@ typedef DWORD LCID;
     VOID __faststorefence(VOID);
     VOID _m_prefetchw(volatile CONST VOID *Source);
 
-//!__TINYC__: #include <intrin.h>
 
 #define YieldProcessor _mm_pause
 #define MemoryBarrier __faststorefence
@@ -1417,20 +1409,13 @@ typedef DWORD LCID;
   typedef DWORD (*POUT_OF_PROCESS_FUNCTION_TABLE_CALLBACK)(HANDLE Process,PVOID TableAddress,PDWORD Entries,PRUNTIME_FUNCTION *Functions);
 
 #define OUT_OF_PROCESS_FUNCTION_TABLE_CALLBACK_EXPORT_NAME "OutOfProcessFunctionTableCallback"
-#endif /* defined(__x86_64) && !defined(RC_INVOKED) */
+#endif
 
 #if defined(__TINYC__) && (defined(__aarch64__) || defined(__arm64__)) && !defined(RC_INVOKED)
 
 #define __TCC_WINNT_ATOMIC_SEQ_CST 5
-/* TCC lowers __atomic_compare_exchange's fourth argument as weak, but the
-   ARM64 helper reads it as success_memorder.  Strong CAS passes weak == 0,
-   so keep Interlocked's barriers explicit here. */
 #define __TCC_WINNT_MEMORY_BARRIER() __asm__ __volatile__("dmb ish" : : : "memory")
 
-/* This covers the LONG operations needed by TCC's semaphore code and the
-   pointer helpers that winbase.h exposes through Interlocked pointer macros.
-   Add local helpers before relying on increment/decrement, add/exchange-add,
-   bitwise, or 64-bit Interlocked forms on Windows ARM64 with TCC. */
 
     __CRT_INLINE LONG InterlockedExchange(LONG volatile *Target,LONG Value) {
       LONG Old;
@@ -1480,11 +1465,10 @@ typedef DWORD LCID;
 #undef __TCC_WINNT_MEMORY_BARRIER
 #undef __TCC_WINNT_ATOMIC_SEQ_CST
 
-#endif /* defined(__TINYC__) && (defined(__aarch64__) || defined(__arm64__)) && !defined(RC_INVOKED) */
+#endif
 
 #if defined(_ARM64_)
 
-/* ARM64 Context Definition */
 #define CONTEXT_ARM64 0x00400000
 #define CONTEXT_CONTROL (CONTEXT_ARM64 | 0x00000001L)
 #define CONTEXT_INTEGER (CONTEXT_ARM64 | 0x00000002L)
@@ -1568,7 +1552,7 @@ typedef DWORD LCID;
   typedef PRUNTIME_FUNCTION (*PGET_RUNTIME_FUNCTION_CALLBACK)(DWORD64 ControlPc,PVOID Context);
   typedef DWORD (*POUT_OF_PROCESS_FUNCTION_TABLE_CALLBACK)(HANDLE Process,PVOID TableAddress,PDWORD Entries,PRUNTIME_FUNCTION *Functions);
 
-#endif /* _ARM64_ */
+#endif
 
 #if (defined _ARM64_ || defined _AMD64_) && !defined RC_INVOKED
   NTSYSAPI VOID __cdecl RtlRestoreContext (PCONTEXT ContextRecord,struct _EXCEPTION_RECORD *ExceptionRecord);
@@ -2125,7 +2109,6 @@ typedef DWORD LCID;
     typedef EXCEPTION_ROUTINE *PEXCEPTION_ROUTINE;
 #endif
 
-    /* http://msdn.microsoft.com/en-us/library/ms680597(VS.85).aspx */
 
 #define UNWIND_HISTORY_TABLE_SIZE 12
 
@@ -2146,7 +2129,6 @@ typedef DWORD LCID;
     UNWIND_HISTORY_TABLE_ENTRY Entry[UNWIND_HISTORY_TABLE_SIZE];
   } UNWIND_HISTORY_TABLE, *PUNWIND_HISTORY_TABLE;
 
-  /* http://msdn.microsoft.com/en-us/library/b6sf5kbd(VS.80).aspx */
 
   struct _DISPATCHER_CONTEXT;
   typedef struct _DISPATCHER_CONTEXT DISPATCHER_CONTEXT;
@@ -2161,20 +2143,18 @@ typedef DWORD LCID;
     PCONTEXT ContextRecord;
     PEXCEPTION_ROUTINE LanguageHandler;
     PVOID HandlerData;
-    /* http://www.nynaeve.net/?p=99 */
     PUNWIND_HISTORY_TABLE HistoryTable;
     ULONG ScopeIndex;
     ULONG Fill0;
   };
 
-  /* http://msdn.microsoft.com/en-us/library/ms680617(VS.85).aspx */
 
   typedef struct _KNONVOLATILE_CONTEXT_POINTERS
   {
     PM128A FloatingContext[16];
     PULONG64 IntegerContext[16];
   } KNONVOLATILE_CONTEXT_POINTERS, *PKNONVOLATILE_CONTEXT_POINTERS;
-#endif /* defined(__x86_64) */
+#endif
 
     typedef PVOID PACCESS_TOKEN;
     typedef PVOID PSECURITY_DESCRIPTOR;

@@ -2,7 +2,6 @@
 
 #define EM_TCC_TARGET EM_386
 
-/* relocation type for 32 bit data relocation */
 #define R_DATA_32   R_386_32
 #define R_DATA_PTR  R_386_32
 #define R_JMP_SLOT  R_386_JMP_SLOT
@@ -22,13 +21,11 @@
 #endif
 #define RELOCATE_DLLPLT 1
 
-#else /* !TARGET_DEFS_ONLY */
+#else
 
 #include "tcc.h"
 
 #ifdef NEED_RELOC_TYPE
-/* Returns 1 for a code relocation, 0 for a data relocation. For unknown
-   relocations, returns -1. */
 ST_FUNC int code_reloc (int reloc_type)
 {
     switch (reloc_type) {
@@ -56,9 +53,6 @@ ST_FUNC int code_reloc (int reloc_type)
     return -1;
 }
 
-/* Returns an enumerator to describe whether and when the relocation needs a
-   GOT and/or PLT entry to be created. See tcc.h for a description of the
-   different values. */
 ST_FUNC int gotplt_entry_type (int reloc_type)
 {
     switch (reloc_type) {
@@ -70,9 +64,6 @@ ST_FUNC int gotplt_entry_type (int reloc_type)
             return NO_GOTPLT_ENTRY;
 
         case R_386_32:
-	    /* This relocations shouldn't normally need GOT or PLT
-	       slots if it weren't for simplicity in the code generator.
-	       See our caller for comments.  */
             return AUTO_GOTPLT_ENTRY;
 
 	case R_386_PC16:
@@ -103,45 +94,35 @@ ST_FUNC unsigned create_plt_entry(TCCState *s1, unsigned got_offset, struct sym_
     int modrm;
     unsigned plt_offset, relofs;
 
-    /* on i386 if we build a DLL, we add a %ebx offset */
     if (s1->output_type & TCC_OUTPUT_DYN)
         modrm = 0xa3;
     else
         modrm = 0x25;
 
-    /* empty PLT: create PLT0 entry that pushes the library identifier
-       (GOT + PTR_SIZE) and jumps to ld.so resolution routine
-       (GOT + 2 * PTR_SIZE) */
     if (plt->data_offset == 0) {
         p = section_ptr_add(plt, 16);
-        p[0] = 0xff; /* pushl got + PTR_SIZE */
+        p[0] = 0xff;
         p[1] = modrm + 0x10;
         write32le(p + 2, PTR_SIZE);
-        p[6] = 0xff; /* jmp *(got + PTR_SIZE * 2) */
+        p[6] = 0xff;
         p[7] = modrm;
         write32le(p + 8, PTR_SIZE * 2);
     }
     plt_offset = plt->data_offset;
 
-    /* The PLT slot refers to the relocation entry it needs via offset.
-       The reloc entry is created below, so its offset is the current
-       data_offset */
     relofs = s1->plt->reloc ? s1->plt->reloc->data_offset : 0;
 
-    /* Jump to GOT entry where ld.so initially put the address of ip + 4 */
     p = section_ptr_add(plt, 16);
-    p[0] = 0xff; /* jmp *(got + x) */
+    p[0] = 0xff;
     p[1] = modrm;
     write32le(p + 2, got_offset);
-    p[6] = 0x68; /* push $xxx */
+    p[6] = 0x68;
     write32le(p + 7, relofs - sizeof (ElfW_Rel));
-    p[11] = 0xe9; /* jmp plt_start */
+    p[11] = 0xe9;
     write32le(p + 12, -(plt->data_offset));
     return plt_offset;
 }
 
-/* relocate the PLT: compute addresses and offsets in the PLT now that final
-   address for PLT and GOT are known (see fill_program_header) */
 ST_FUNC void relocate_plt(TCCState *s1)
 {
     uint8_t *p, *p_end;
@@ -199,7 +180,6 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
             return;
         case R_386_PC32:
             if (s1->output_type == TCC_OUTPUT_DLL) {
-                /* DLL relocation */
                 esym_index = get_sym_attr(s1, sym_index, 0)->dyn_index;
                 if (esym_index) {
                     qrel->r_offset = rel->r_offset;
@@ -225,7 +205,6 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
             return;
         case R_386_GOT32:
         case R_386_GOT32X:
-            /* we load the got offset */
             add32le(ptr, get_sym_attr(s1, sym_index, 0)->got_offset);
             return;
         case R_386_16:
@@ -244,25 +223,16 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 #ifdef TCC_TARGET_PE
             add32le(ptr, val - s1->pe_imagebase);
 #endif
-            /* do nothing */
             return;
         case R_386_COPY:
-            /* This relocation must copy initialized data from the library
-            to the program .bss segment. Currently made like for ARM
-            (to remove noise of default case). Is this true?
-            */
             return;
         case R_386_TLS_GD:
             {
                 static const unsigned char expect[] = {
-                    /* lea 0(,%ebx,1),%eax */
                     0x8d, 0x04, 0x1d, 0x00, 0x00, 0x00, 0x00,
-                    /* call __tls_get_addr@PLT */
                     0xe8, 0xfc, 0xff, 0xff, 0xff };
                 static const unsigned char replace[] = {
-                    /* mov %gs:0,%eax */
                     0x65, 0xa1, 0x00, 0x00, 0x00, 0x00,
-                    /* sub 0,%eax */
                     0x81, 0xe8, 0x00, 0x00, 0x00, 0x00 };
 
                 if (memcmp (ptr-3, expect, sizeof(expect)) == 0) {
@@ -284,16 +254,11 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
         case R_386_TLS_LDM:
             {
                 static const unsigned char expect[] = {
-                    /* lea 0(%ebx),%eax */
                     0x8d, 0x83, 0x00, 0x00, 0x00, 0x00,
-                    /* call __tls_get_addr@PLT */
                     0xe8, 0xfc, 0xff, 0xff, 0xff };
                 static const unsigned char replace[] = {
-                    /* mov %gs:0,%eax */
                     0x65, 0xa1, 0x00, 0x00, 0x00, 0x00,
-                    /* nop */
                     0x90,
-                    /* lea 0(%esi,%eiz,1),%esi */
                     0x8d, 0x74, 0x26, 0x00 };
 
                 if (memcmp (ptr-2, expect, sizeof(expect)) == 0) {
@@ -356,4 +321,4 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
     }
 }
 
-#endif /* !TARGET_DEFS_ONLY */
+#endif

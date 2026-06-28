@@ -1,35 +1,6 @@
-/* This file defines standard DWARF types, structures, and macros.
-   Copyright (C) 2000-2011, 2014, 2016, 2017, 2018 Red Hat, Inc.
-   This file is part of elfutils.
-
-   This file is free software; you can redistribute it and/or modify
-   it under the terms of either
-
-     * the GNU Lesser General Public License as published by the Free
-       Software Foundation; either version 3 of the License, or (at
-       your option) any later version
-
-   or
-
-     * the GNU General Public License as published by the Free
-       Software Foundation; either version 2 of the License, or (at
-       your option) any later version
-
-   or both in parallel, as here.
-
-   elfutils is distributed in the hope that it will be useful, but
-   WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   General Public License for more details.
-
-   You should have received copies of the GNU General Public License and
-   the GNU Lesser General Public License along with this program.  If
-   not, see <http://www.gnu.org/licenses/>.  */
-
 #ifndef _DWARF_H
 #define	_DWARF_H 1
 
-/* DWARF Unit Header Types.  */
 enum
   {
     DW_UT_compile = 0x01,
@@ -43,7 +14,6 @@ enum
     DW_UT_hi_user = 0xff
   };
 
-/* DWARF tags.  */
 enum
   {
     DW_TAG_array_type = 0x01,
@@ -51,21 +21,15 @@ enum
     DW_TAG_entry_point = 0x03,
     DW_TAG_enumeration_type = 0x04,
     DW_TAG_formal_parameter = 0x05,
-    /* 0x06 reserved.  */
-    /* 0x07 reserved.  */
     DW_TAG_imported_declaration = 0x08,
-    /* 0x09 reserved.  */
     DW_TAG_label = 0x0a,
     DW_TAG_lexical_block = 0x0b,
-    /* 0x0c reserved.  */
     DW_TAG_member = 0x0d,
-    /* 0x0e reserved.  */
     DW_TAG_pointer_type = 0x0f,
     DW_TAG_reference_type = 0x10,
     DW_TAG_compile_unit = 0x11,
     DW_TAG_string_type = 0x12,
     DW_TAG_structure_type = 0x13,
-    /* 0x14 reserved.  */
     DW_TAG_subroutine_type = 0x15,
     DW_TAG_typedef = 0x16,
     DW_TAG_union_type = 0x17,
@@ -107,7 +71,6 @@ enum
     DW_TAG_unspecified_type = 0x3b,
     DW_TAG_partial_unit = 0x3c,
     DW_TAG_imported_unit = 0x3d,
-    /* 0x3e reserved.  Was DW_TAG_mutable_type.  */
     DW_TAG_condition = 0x3f,
     DW_TAG_shared_type = 0x40,
     DW_TAG_type_unit = 0x41,
@@ -142,7 +105,6 @@ enum
   };
 
 
-/* Children determination encodings.  */
 enum
   {
     DW_CHILDREN_no = 0,
@@ -150,29 +112,19 @@ enum
   };
 
 
-/* DWARF attributes encodings.  */
 enum
   {
     DW_AT_sibling = 0x01,
     DW_AT_location = 0x02,
     DW_AT_name = 0x03,
-    /* 0x04 reserved.  */
-    /* 0x05 reserved.  */
-    /* 0x06 reserved.  */
-    /* 0x07 reserved.  */
-    /* 0x08 reserved.  */
     DW_AT_ordering = 0x09,
-    /* 0x0a reserved.  */
     DW_AT_byte_size = 0x0b,
-    DW_AT_bit_offset = 0x0c,  /* Deprecated in DWARF4.  */
+    DW_AT_bit_offset = 0x0c,
     DW_AT_bit_size = 0x0d,
-    /* 0x0e reserved.  */
-    /* 0x0f reserved.  */
     DW_AT_stmt_list = 0x10,
     DW_AT_low_pc = 0x11,
     DW_AT_high_pc = 0x12,
     DW_AT_language = 0x13,
-    /* 0x14 reserved.  */
     DW_AT_discr = 0x15,
     DW_AT_discr_value = 0x16,
     DW_AT_visibility = 0x17,
@@ -183,24 +135,15 @@ enum
     DW_AT_const_value = 0x1c,
     DW_AT_containing_type = 0x1d,
     DW_AT_default_value = 0x1e,
-    /* 0x1f reserved.  */
     DW_AT_inline = 0x20,
     DW_AT_is_optional = 0x21,
     DW_AT_lower_bound = 0x22,
-    /* 0x23 reserved.  */
-    /* 0x24 reserved.  */
     DW_AT_producer = 0x25,
-    /* 0x26 reserved.  */
     DW_AT_prototyped = 0x27,
-    /* 0x28 reserved.  */
-    /* 0x29 reserved.  */
     DW_AT_return_addr = 0x2a,
-    /* 0x2b reserved.  */
     DW_AT_start_scope = 0x2c,
-    /* 0x2d reserved.  */
     DW_AT_bit_stride = 0x2e,
     DW_AT_upper_bound = 0x2f,
-    /* 0x30 reserved.  */
     DW_AT_abstract_origin = 0x31,
     DW_AT_accessibility = 0x32,
     DW_AT_address_class = 0x33,
@@ -219,7 +162,7 @@ enum
     DW_AT_frame_base = 0x40,
     DW_AT_friend = 0x41,
     DW_AT_identifier_case = 0x42,
-    DW_AT_macro_info = 0x43, /* Deprecated in DWARF5.  */
+    DW_AT_macro_info = 0x43,
     DW_AT_namelist_item = 0x44,
     DW_AT_priority = 0x45,
     DW_AT_segment = 0x46,
@@ -269,7 +212,6 @@ enum
     DW_AT_str_offsets_base = 0x72,
     DW_AT_addr_base = 0x73,
     DW_AT_rnglists_base = 0x74,
-    /* 0x75 reserved.  */
     DW_AT_dwo_name = 0x76,
     DW_AT_reference = 0x77,
     DW_AT_rvalue_reference = 0x78,
@@ -314,7 +256,6 @@ enum
     DW_AT_MIPS_assumed_shape_dopetype = 0x2010,
     DW_AT_MIPS_assumed_size = 0x2011,
 
-    /* GNU extensions.  */
     DW_AT_sf_names = 0x2101,
     DW_AT_src_info = 0x2102,
     DW_AT_mac_info = 0x2103,
@@ -343,7 +284,6 @@ enum
     DW_AT_GNU_entry_view = 0x2138,
     DW_AT_GNU_macros = 0x2119,
     DW_AT_GNU_deleted = 0x211a,
-    /* GNU Debug Fission extensions.  */
     DW_AT_GNU_dwo_name = 0x2130,
     DW_AT_GNU_dwo_id = 0x2131,
     DW_AT_GNU_ranges_base = 0x2132,
@@ -351,26 +291,18 @@ enum
     DW_AT_GNU_pubnames = 0x2134,
     DW_AT_GNU_pubtypes = 0x2135,
 
-    /* https://gcc.gnu.org/wiki/DW_AT_GNU_numerator_denominator  */
     DW_AT_GNU_numerator = 0x2303,
     DW_AT_GNU_denominator = 0x2304,
-    /* https://gcc.gnu.org/wiki/DW_AT_GNU_bias  */
     DW_AT_GNU_bias = 0x2305,
 
     DW_AT_hi_user = 0x3fff
   };
 
-/* Old unofficially attribute names.  Should not be used.
-   Will not appear in known-dwarf.h  */
 
-/* DWARF1 array subscripts and element data types.  */
 #define DW_AT_subscr_data	0x0a
-/* DWARF1 enumeration literals.  */
 #define DW_AT_element_list	0x0f
-/* DWARF1 reference for variable to member structure, class or union.  */
 #define DW_AT_member		0x14
 
-/* DWARF form encodings.  */
 enum
   {
     DW_FORM_addr = 0x01,
@@ -417,34 +349,32 @@ enum
     DW_FORM_addrx3 = 0x2b,
     DW_FORM_addrx4 = 0x2c,
 
-    /* GNU Debug Fission extensions.  */
     DW_FORM_GNU_addr_index = 0x1f01,
     DW_FORM_GNU_str_index = 0x1f02,
 
-    DW_FORM_GNU_ref_alt = 0x1f20, /* offset in alternate .debuginfo.  */
-    DW_FORM_GNU_strp_alt = 0x1f21 /* offset in alternate .debug_str. */
+    DW_FORM_GNU_ref_alt = 0x1f20,
+    DW_FORM_GNU_strp_alt = 0x1f21
   };
 
 
-/* DWARF location operation encodings.  */
 enum
   {
-    DW_OP_addr = 0x03,		/* Constant address.  */
+    DW_OP_addr = 0x03,
     DW_OP_deref = 0x06,
-    DW_OP_const1u = 0x08,	/* Unsigned 1-byte constant.  */
-    DW_OP_const1s = 0x09,	/* Signed 1-byte constant.  */
-    DW_OP_const2u = 0x0a,	/* Unsigned 2-byte constant.  */
-    DW_OP_const2s = 0x0b,	/* Signed 2-byte constant.  */
-    DW_OP_const4u = 0x0c,	/* Unsigned 4-byte constant.  */
-    DW_OP_const4s = 0x0d,	/* Signed 4-byte constant.  */
-    DW_OP_const8u = 0x0e,	/* Unsigned 8-byte constant.  */
-    DW_OP_const8s = 0x0f,	/* Signed 8-byte constant.  */
-    DW_OP_constu = 0x10,	/* Unsigned LEB128 constant.  */
-    DW_OP_consts = 0x11,	/* Signed LEB128 constant.  */
+    DW_OP_const1u = 0x08,
+    DW_OP_const1s = 0x09,
+    DW_OP_const2u = 0x0a,
+    DW_OP_const2s = 0x0b,
+    DW_OP_const4u = 0x0c,
+    DW_OP_const4s = 0x0d,
+    DW_OP_const8u = 0x0e,
+    DW_OP_const8s = 0x0f,
+    DW_OP_constu = 0x10,
+    DW_OP_consts = 0x11,
     DW_OP_dup = 0x12,
     DW_OP_drop = 0x13,
     DW_OP_over = 0x14,
-    DW_OP_pick = 0x15,		/* 1-byte stack index.  */
+    DW_OP_pick = 0x15,
     DW_OP_swap = 0x16,
     DW_OP_rot = 0x17,
     DW_OP_xderef = 0x18,
@@ -458,131 +388,131 @@ enum
     DW_OP_not = 0x20,
     DW_OP_or = 0x21,
     DW_OP_plus = 0x22,
-    DW_OP_plus_uconst = 0x23,	/* Unsigned LEB128 addend.  */
+    DW_OP_plus_uconst = 0x23,
     DW_OP_shl = 0x24,
     DW_OP_shr = 0x25,
     DW_OP_shra = 0x26,
     DW_OP_xor = 0x27,
-    DW_OP_bra = 0x28,		/* Signed 2-byte constant.  */
+    DW_OP_bra = 0x28,
     DW_OP_eq = 0x29,
     DW_OP_ge = 0x2a,
     DW_OP_gt = 0x2b,
     DW_OP_le = 0x2c,
     DW_OP_lt = 0x2d,
     DW_OP_ne = 0x2e,
-    DW_OP_skip = 0x2f,		/* Signed 2-byte constant.  */
-    DW_OP_lit0 = 0x30,		/* Literal 0.  */
-    DW_OP_lit1 = 0x31,		/* Literal 1.  */
-    DW_OP_lit2 = 0x32,		/* Literal 2.  */
-    DW_OP_lit3 = 0x33,		/* Literal 3.  */
-    DW_OP_lit4 = 0x34,		/* Literal 4.  */
-    DW_OP_lit5 = 0x35,		/* Literal 5.  */
-    DW_OP_lit6 = 0x36,		/* Literal 6.  */
-    DW_OP_lit7 = 0x37,		/* Literal 7.  */
-    DW_OP_lit8 = 0x38,		/* Literal 8.  */
-    DW_OP_lit9 = 0x39,		/* Literal 9.  */
-    DW_OP_lit10 = 0x3a,		/* Literal 10.  */
-    DW_OP_lit11 = 0x3b,		/* Literal 11.  */
-    DW_OP_lit12 = 0x3c,		/* Literal 12.  */
-    DW_OP_lit13 = 0x3d,		/* Literal 13.  */
-    DW_OP_lit14 = 0x3e,		/* Literal 14.  */
-    DW_OP_lit15 = 0x3f,		/* Literal 15.  */
-    DW_OP_lit16 = 0x40,		/* Literal 16.  */
-    DW_OP_lit17 = 0x41,		/* Literal 17.  */
-    DW_OP_lit18 = 0x42,		/* Literal 18.  */
-    DW_OP_lit19 = 0x43,		/* Literal 19.  */
-    DW_OP_lit20 = 0x44,		/* Literal 20.  */
-    DW_OP_lit21 = 0x45,		/* Literal 21.  */
-    DW_OP_lit22 = 0x46,		/* Literal 22.  */
-    DW_OP_lit23 = 0x47,		/* Literal 23.  */
-    DW_OP_lit24 = 0x48,		/* Literal 24.  */
-    DW_OP_lit25 = 0x49,		/* Literal 25.  */
-    DW_OP_lit26 = 0x4a,		/* Literal 26.  */
-    DW_OP_lit27 = 0x4b,		/* Literal 27.  */
-    DW_OP_lit28 = 0x4c,		/* Literal 28.  */
-    DW_OP_lit29 = 0x4d,		/* Literal 29.  */
-    DW_OP_lit30 = 0x4e,		/* Literal 30.  */
-    DW_OP_lit31 = 0x4f,		/* Literal 31.  */
-    DW_OP_reg0 = 0x50,		/* Register 0.  */
-    DW_OP_reg1 = 0x51,		/* Register 1.  */
-    DW_OP_reg2 = 0x52,		/* Register 2.  */
-    DW_OP_reg3 = 0x53,		/* Register 3.  */
-    DW_OP_reg4 = 0x54,		/* Register 4.  */
-    DW_OP_reg5 = 0x55,		/* Register 5.  */
-    DW_OP_reg6 = 0x56,		/* Register 6.  */
-    DW_OP_reg7 = 0x57,		/* Register 7.  */
-    DW_OP_reg8 = 0x58,		/* Register 8.  */
-    DW_OP_reg9 = 0x59,		/* Register 9.  */
-    DW_OP_reg10 = 0x5a,		/* Register 10.  */
-    DW_OP_reg11 = 0x5b,		/* Register 11.  */
-    DW_OP_reg12 = 0x5c,		/* Register 12.  */
-    DW_OP_reg13 = 0x5d,		/* Register 13.  */
-    DW_OP_reg14 = 0x5e,		/* Register 14.  */
-    DW_OP_reg15 = 0x5f,		/* Register 15.  */
-    DW_OP_reg16 = 0x60,		/* Register 16.  */
-    DW_OP_reg17 = 0x61,		/* Register 17.  */
-    DW_OP_reg18 = 0x62,		/* Register 18.  */
-    DW_OP_reg19 = 0x63,		/* Register 19.  */
-    DW_OP_reg20 = 0x64,		/* Register 20.  */
-    DW_OP_reg21 = 0x65,		/* Register 21.  */
-    DW_OP_reg22 = 0x66,		/* Register 22.  */
-    DW_OP_reg23 = 0x67,		/* Register 24.  */
-    DW_OP_reg24 = 0x68,		/* Register 24.  */
-    DW_OP_reg25 = 0x69,		/* Register 25.  */
-    DW_OP_reg26 = 0x6a,		/* Register 26.  */
-    DW_OP_reg27 = 0x6b,		/* Register 27.  */
-    DW_OP_reg28 = 0x6c,		/* Register 28.  */
-    DW_OP_reg29 = 0x6d,		/* Register 29.  */
-    DW_OP_reg30 = 0x6e,		/* Register 30.  */
-    DW_OP_reg31 = 0x6f,		/* Register 31.  */
-    DW_OP_breg0 = 0x70,		/* Base register 0.  */
-    DW_OP_breg1 = 0x71,		/* Base register 1.  */
-    DW_OP_breg2 = 0x72,		/* Base register 2.  */
-    DW_OP_breg3 = 0x73,		/* Base register 3.  */
-    DW_OP_breg4 = 0x74,		/* Base register 4.  */
-    DW_OP_breg5 = 0x75,		/* Base register 5.  */
-    DW_OP_breg6 = 0x76,		/* Base register 6.  */
-    DW_OP_breg7 = 0x77,		/* Base register 7.  */
-    DW_OP_breg8 = 0x78,		/* Base register 8.  */
-    DW_OP_breg9 = 0x79,		/* Base register 9.  */
-    DW_OP_breg10 = 0x7a,	/* Base register 10.  */
-    DW_OP_breg11 = 0x7b,	/* Base register 11.  */
-    DW_OP_breg12 = 0x7c,	/* Base register 12.  */
-    DW_OP_breg13 = 0x7d,	/* Base register 13.  */
-    DW_OP_breg14 = 0x7e,	/* Base register 14.  */
-    DW_OP_breg15 = 0x7f,	/* Base register 15.  */
-    DW_OP_breg16 = 0x80,	/* Base register 16.  */
-    DW_OP_breg17 = 0x81,	/* Base register 17.  */
-    DW_OP_breg18 = 0x82,	/* Base register 18.  */
-    DW_OP_breg19 = 0x83,	/* Base register 19.  */
-    DW_OP_breg20 = 0x84,	/* Base register 20.  */
-    DW_OP_breg21 = 0x85,	/* Base register 21.  */
-    DW_OP_breg22 = 0x86,	/* Base register 22.  */
-    DW_OP_breg23 = 0x87,	/* Base register 23.  */
-    DW_OP_breg24 = 0x88,	/* Base register 24.  */
-    DW_OP_breg25 = 0x89,	/* Base register 25.  */
-    DW_OP_breg26 = 0x8a,	/* Base register 26.  */
-    DW_OP_breg27 = 0x8b,	/* Base register 27.  */
-    DW_OP_breg28 = 0x8c,	/* Base register 28.  */
-    DW_OP_breg29 = 0x8d,	/* Base register 29.  */
-    DW_OP_breg30 = 0x8e,	/* Base register 30.  */
-    DW_OP_breg31 = 0x8f,	/* Base register 31.  */
-    DW_OP_regx = 0x90,		/* Unsigned LEB128 register.  */
-    DW_OP_fbreg = 0x91,		/* Signed LEB128 offset.  */
-    DW_OP_bregx = 0x92,		/* ULEB128 register followed by SLEB128 off. */
-    DW_OP_piece = 0x93,		/* ULEB128 size of piece addressed. */
-    DW_OP_deref_size = 0x94,	/* 1-byte size of data retrieved.  */
-    DW_OP_xderef_size = 0x95,	/* 1-byte size of data retrieved.  */
+    DW_OP_skip = 0x2f,
+    DW_OP_lit0 = 0x30,
+    DW_OP_lit1 = 0x31,
+    DW_OP_lit2 = 0x32,
+    DW_OP_lit3 = 0x33,
+    DW_OP_lit4 = 0x34,
+    DW_OP_lit5 = 0x35,
+    DW_OP_lit6 = 0x36,
+    DW_OP_lit7 = 0x37,
+    DW_OP_lit8 = 0x38,
+    DW_OP_lit9 = 0x39,
+    DW_OP_lit10 = 0x3a,
+    DW_OP_lit11 = 0x3b,
+    DW_OP_lit12 = 0x3c,
+    DW_OP_lit13 = 0x3d,
+    DW_OP_lit14 = 0x3e,
+    DW_OP_lit15 = 0x3f,
+    DW_OP_lit16 = 0x40,
+    DW_OP_lit17 = 0x41,
+    DW_OP_lit18 = 0x42,
+    DW_OP_lit19 = 0x43,
+    DW_OP_lit20 = 0x44,
+    DW_OP_lit21 = 0x45,
+    DW_OP_lit22 = 0x46,
+    DW_OP_lit23 = 0x47,
+    DW_OP_lit24 = 0x48,
+    DW_OP_lit25 = 0x49,
+    DW_OP_lit26 = 0x4a,
+    DW_OP_lit27 = 0x4b,
+    DW_OP_lit28 = 0x4c,
+    DW_OP_lit29 = 0x4d,
+    DW_OP_lit30 = 0x4e,
+    DW_OP_lit31 = 0x4f,
+    DW_OP_reg0 = 0x50,
+    DW_OP_reg1 = 0x51,
+    DW_OP_reg2 = 0x52,
+    DW_OP_reg3 = 0x53,
+    DW_OP_reg4 = 0x54,
+    DW_OP_reg5 = 0x55,
+    DW_OP_reg6 = 0x56,
+    DW_OP_reg7 = 0x57,
+    DW_OP_reg8 = 0x58,
+    DW_OP_reg9 = 0x59,
+    DW_OP_reg10 = 0x5a,
+    DW_OP_reg11 = 0x5b,
+    DW_OP_reg12 = 0x5c,
+    DW_OP_reg13 = 0x5d,
+    DW_OP_reg14 = 0x5e,
+    DW_OP_reg15 = 0x5f,
+    DW_OP_reg16 = 0x60,
+    DW_OP_reg17 = 0x61,
+    DW_OP_reg18 = 0x62,
+    DW_OP_reg19 = 0x63,
+    DW_OP_reg20 = 0x64,
+    DW_OP_reg21 = 0x65,
+    DW_OP_reg22 = 0x66,
+    DW_OP_reg23 = 0x67,
+    DW_OP_reg24 = 0x68,
+    DW_OP_reg25 = 0x69,
+    DW_OP_reg26 = 0x6a,
+    DW_OP_reg27 = 0x6b,
+    DW_OP_reg28 = 0x6c,
+    DW_OP_reg29 = 0x6d,
+    DW_OP_reg30 = 0x6e,
+    DW_OP_reg31 = 0x6f,
+    DW_OP_breg0 = 0x70,
+    DW_OP_breg1 = 0x71,
+    DW_OP_breg2 = 0x72,
+    DW_OP_breg3 = 0x73,
+    DW_OP_breg4 = 0x74,
+    DW_OP_breg5 = 0x75,
+    DW_OP_breg6 = 0x76,
+    DW_OP_breg7 = 0x77,
+    DW_OP_breg8 = 0x78,
+    DW_OP_breg9 = 0x79,
+    DW_OP_breg10 = 0x7a,
+    DW_OP_breg11 = 0x7b,
+    DW_OP_breg12 = 0x7c,
+    DW_OP_breg13 = 0x7d,
+    DW_OP_breg14 = 0x7e,
+    DW_OP_breg15 = 0x7f,
+    DW_OP_breg16 = 0x80,
+    DW_OP_breg17 = 0x81,
+    DW_OP_breg18 = 0x82,
+    DW_OP_breg19 = 0x83,
+    DW_OP_breg20 = 0x84,
+    DW_OP_breg21 = 0x85,
+    DW_OP_breg22 = 0x86,
+    DW_OP_breg23 = 0x87,
+    DW_OP_breg24 = 0x88,
+    DW_OP_breg25 = 0x89,
+    DW_OP_breg26 = 0x8a,
+    DW_OP_breg27 = 0x8b,
+    DW_OP_breg28 = 0x8c,
+    DW_OP_breg29 = 0x8d,
+    DW_OP_breg30 = 0x8e,
+    DW_OP_breg31 = 0x8f,
+    DW_OP_regx = 0x90,
+    DW_OP_fbreg = 0x91,
+    DW_OP_bregx = 0x92,
+    DW_OP_piece = 0x93,
+    DW_OP_deref_size = 0x94,
+    DW_OP_xderef_size = 0x95,
     DW_OP_nop = 0x96,
     DW_OP_push_object_address = 0x97,
     DW_OP_call2 = 0x98,
     DW_OP_call4 = 0x99,
     DW_OP_call_ref = 0x9a,
-    DW_OP_form_tls_address = 0x9b,/* TLS offset to address in current thread */
-    DW_OP_call_frame_cfa = 0x9c,/* CFA as determined by CFI.  */
-    DW_OP_bit_piece = 0x9d,	/* ULEB128 size and ULEB128 offset in bits.  */
-    DW_OP_implicit_value = 0x9e, /* DW_FORM_block follows opcode.  */
-    DW_OP_stack_value = 0x9f,	 /* No operands, special like DW_OP_piece.  */
+    DW_OP_form_tls_address = 0x9b,
+    DW_OP_call_frame_cfa = 0x9c,
+    DW_OP_bit_piece = 0x9d,
+    DW_OP_implicit_value = 0x9e,
+    DW_OP_stack_value = 0x9f,
 
     DW_OP_implicit_pointer = 0xa0,
     DW_OP_addrx = 0xa1,
@@ -595,7 +525,6 @@ enum
     DW_OP_convert = 0xa8,
     DW_OP_reinterpret = 0xa9,
 
-    /* GNU extensions.  */
     DW_OP_GNU_push_tls_address = 0xe0,
     DW_OP_GNU_uninit = 0xf0,
     DW_OP_GNU_encoded_addr = 0xf1,
@@ -608,18 +537,16 @@ enum
     DW_OP_GNU_reinterpret = 0xf9,
     DW_OP_GNU_parameter_ref = 0xfa,
 
-    /* GNU Debug Fission extensions.  */
     DW_OP_GNU_addr_index = 0xfb,
     DW_OP_GNU_const_index = 0xfc,
 
     DW_OP_GNU_variable_value = 0xfd,
 
-    DW_OP_lo_user = 0xe0,	/* Implementation-defined range start.  */
-    DW_OP_hi_user = 0xff	/* Implementation-defined range end.  */
+    DW_OP_lo_user = 0xe0,
+    DW_OP_hi_user = 0xff
   };
 
 
-/* DWARF base type encodings.  */
 enum
   {
     DW_ATE_void = 0x0,
@@ -647,7 +574,6 @@ enum
   };
 
 
-/* DWARF decimal sign encodings.  */
 enum
   {
     DW_DS_unsigned = 1,
@@ -658,7 +584,6 @@ enum
   };
 
 
-/* DWARF endianity encodings.  */
 enum
   {
     DW_END_default = 0,
@@ -670,7 +595,6 @@ enum
   };
 
 
-/* DWARF accessibility encodings.  */
 enum
   {
     DW_ACCESS_public = 1,
@@ -679,7 +603,6 @@ enum
   };
 
 
-/* DWARF visibility encodings.  */
 enum
   {
     DW_VIS_local = 1,
@@ -688,7 +611,6 @@ enum
   };
 
 
-/* DWARF virtuality encodings.  */
 enum
   {
     DW_VIRTUALITY_none = 0,
@@ -697,56 +619,53 @@ enum
   };
 
 
-/* DWARF language encodings.  */
 enum
   {
-    DW_LANG_C89 = 0x0001,	     /* ISO C:1989 */
-    DW_LANG_C = 0x0002,		     /* C */
-    DW_LANG_Ada83 = 0x0003,	     /* ISO Ada:1983 */
-    DW_LANG_C_plus_plus	= 0x0004,    /* ISO C++:1998 */
-    DW_LANG_Cobol74 = 0x0005,	     /* ISO Cobol:1974 */
-    DW_LANG_Cobol85 = 0x0006,	     /* ISO Cobol:1985 */
-    DW_LANG_Fortran77 = 0x0007,	     /* ISO FORTRAN 77 */
-    DW_LANG_Fortran90 = 0x0008,	     /* ISO Fortran 90 */
-    DW_LANG_Pascal83 = 0x0009,	     /* ISO Pascal:1983 */
-    DW_LANG_Modula2 = 0x000a,	     /* ISO Modula-2:1996 */
-    DW_LANG_Java = 0x000b,	     /* Java */
-    DW_LANG_C99 = 0x000c,	     /* ISO C:1999 */
-    DW_LANG_Ada95 = 0x000d,	     /* ISO Ada:1995 */
-    DW_LANG_Fortran95 = 0x000e,	     /* ISO Fortran 95 */
-    DW_LANG_PLI = 0x000f,	     /* ISO PL/1:1976 */
-    DW_LANG_ObjC = 0x0010,	     /* Objective-C */
-    DW_LANG_ObjC_plus_plus = 0x0011, /* Objective-C++ */
-    DW_LANG_UPC = 0x0012,	     /* Unified Parallel C */
-    DW_LANG_D = 0x0013,		     /* D */
-    DW_LANG_Python = 0x0014,	     /* Python */
-    DW_LANG_OpenCL = 0x0015,	     /* OpenCL */
-    DW_LANG_Go = 0x0016,	     /* Go */
-    DW_LANG_Modula3 = 0x0017,	     /* Modula-3 */
-    DW_LANG_Haskell = 0x0018,	     /* Haskell */
-    DW_LANG_C_plus_plus_03 = 0x0019, /* ISO C++:2003 */
-    DW_LANG_C_plus_plus_11 = 0x001a, /* ISO C++:2011 */
-    DW_LANG_OCaml = 0x001b,	     /* OCaml */
-    DW_LANG_Rust = 0x001c,	     /* Rust */
-    DW_LANG_C11 = 0x001d,	     /* ISO C:2011 */
-    DW_LANG_Swift = 0x001e,	     /* Swift */
-    DW_LANG_Julia = 0x001f,	     /* Julia */
-    DW_LANG_Dylan = 0x0020,	     /* Dylan */
-    DW_LANG_C_plus_plus_14 = 0x0021, /* ISO C++:2014 */
-    DW_LANG_Fortran03 = 0x0022,	     /* ISO/IEC 1539-1:2004 */
-    DW_LANG_Fortran08 = 0x0023,	     /* ISO/IEC 1539-1:2010 */
-    DW_LANG_RenderScript = 0x0024,   /* RenderScript Kernal Language */
-    DW_LANG_BLISS = 0x0025,	     /* BLISS */
+    DW_LANG_C89 = 0x0001,
+    DW_LANG_C = 0x0002,
+    DW_LANG_Ada83 = 0x0003,
+    DW_LANG_C_plus_plus	= 0x0004,
+    DW_LANG_Cobol74 = 0x0005,
+    DW_LANG_Cobol85 = 0x0006,
+    DW_LANG_Fortran77 = 0x0007,
+    DW_LANG_Fortran90 = 0x0008,
+    DW_LANG_Pascal83 = 0x0009,
+    DW_LANG_Modula2 = 0x000a,
+    DW_LANG_Java = 0x000b,
+    DW_LANG_C99 = 0x000c,
+    DW_LANG_Ada95 = 0x000d,
+    DW_LANG_Fortran95 = 0x000e,
+    DW_LANG_PLI = 0x000f,
+    DW_LANG_ObjC = 0x0010,
+    DW_LANG_ObjC_plus_plus = 0x0011,
+    DW_LANG_UPC = 0x0012,
+    DW_LANG_D = 0x0013,
+    DW_LANG_Python = 0x0014,
+    DW_LANG_OpenCL = 0x0015,
+    DW_LANG_Go = 0x0016,
+    DW_LANG_Modula3 = 0x0017,
+    DW_LANG_Haskell = 0x0018,
+    DW_LANG_C_plus_plus_03 = 0x0019,
+    DW_LANG_C_plus_plus_11 = 0x001a,
+    DW_LANG_OCaml = 0x001b,
+    DW_LANG_Rust = 0x001c,
+    DW_LANG_C11 = 0x001d,
+    DW_LANG_Swift = 0x001e,
+    DW_LANG_Julia = 0x001f,
+    DW_LANG_Dylan = 0x0020,
+    DW_LANG_C_plus_plus_14 = 0x0021,
+    DW_LANG_Fortran03 = 0x0022,
+    DW_LANG_Fortran08 = 0x0023,
+    DW_LANG_RenderScript = 0x0024,
+    DW_LANG_BLISS = 0x0025,
 
     DW_LANG_lo_user = 0x8000,
-    DW_LANG_Mips_Assembler = 0x8001, /* Assembler */
+    DW_LANG_Mips_Assembler = 0x8001,
     DW_LANG_hi_user = 0xffff
   };
 
-/* Old (typo) '1' != 'I'.  */
 #define DW_LANG_PL1 DW_LANG_PLI
 
-/* DWARF identifier case encodings.  */
 enum
   {
     DW_ID_case_sensitive = 0,
@@ -756,10 +675,6 @@ enum
   };
 
 
-/* DWARF calling conventions encodings.
-   Used as values of DW_AT_calling_convention for subroutines
-   (normal, program or nocall) or structures, unions and class types
-   (normal, reference or value).  */
 enum
   {
     DW_CC_normal = 0x1,
@@ -772,7 +687,6 @@ enum
   };
 
 
-/* DWARF inline encodings.  */
 enum
   {
     DW_INL_not_inlined = 0,
@@ -782,7 +696,6 @@ enum
   };
 
 
-/* DWARF ordering encodings.  */
 enum
   {
     DW_ORD_row_major = 0,
@@ -790,14 +703,12 @@ enum
   };
 
 
-/* DWARF discriminant descriptor encodings.  */
 enum
   {
     DW_DSC_label = 0,
     DW_DSC_range = 1
   };
 
-/* DWARF defaulted member function encodings.  */
 enum
   {
     DW_DEFAULTED_no = 0,
@@ -805,7 +716,6 @@ enum
     DW_DEFAULTED_out_of_class = 2
   };
 
-/* DWARF line content descriptions.  */
 enum
   {
     DW_LNCT_path = 0x1,
@@ -817,7 +727,6 @@ enum
     DW_LNCT_hi_user = 0x3fff
   };
 
-/* DWARF standard opcode encodings.  */
 enum
   {
     DW_LNS_copy = 1,
@@ -835,7 +744,6 @@ enum
   };
 
 
-/* DWARF extended opcode encodings.  */
 enum
   {
     DW_LNE_end_sequence = 1,
@@ -852,7 +760,6 @@ enum
   };
 
 
-/* DWARF macinfo type encodings.  */
 enum
   {
     DW_MACINFO_define = 1,
@@ -863,7 +770,6 @@ enum
   };
 
 
-/* DWARF debug_macro type encodings.  */
 enum
   {
     DW_MACRO_define = 0x01,
@@ -882,9 +788,6 @@ enum
     DW_MACRO_hi_user = 0xff
   };
 
-/* Old GNU extension names for DWARF5 debug_macro type encodings.
-   There are no equivalents for the supplementary object file (sup)
-   and indirect string references (strx).  */
 #define DW_MACRO_GNU_define		 DW_MACRO_define
 #define DW_MACRO_GNU_undef		 DW_MACRO_undef
 #define DW_MACRO_GNU_start_file		 DW_MACRO_start_file
@@ -896,7 +799,6 @@ enum
 #define DW_MACRO_GNU_hi_user		 DW_MACRO_hi_user
 
 
-/* Range list entry encoding.  */
 enum
   {
     DW_RLE_end_of_list = 0x0,
@@ -910,7 +812,6 @@ enum
   };
 
 
-/* Location list entry encoding.  */
 enum
   {
     DW_LLE_end_of_list = 0x0,
@@ -925,7 +826,6 @@ enum
   };
 
 
-/* GNU DebugFission list entry encodings (.debug_loc.dwo).  */
 enum
   {
     DW_LLE_GNU_end_of_list_entry = 0x0,
@@ -934,11 +834,9 @@ enum
     DW_LLE_GNU_start_length_entry = 0x3
   };
 
-/* DWARF5 package file section identifiers.  */
 enum
   {
     DW_SECT_INFO = 1,
-    /* Reserved = 2, */
     DW_SECT_ABBREV = 3,
     DW_SECT_LINE = 4,
     DW_SECT_LOCLISTS = 5,
@@ -948,7 +846,6 @@ enum
   };
 
 
-/* DWARF call frame instruction encodings.  */
 enum
   {
     DW_CFA_advance_loc = 0x40,
@@ -989,21 +886,18 @@ enum
     DW_CFA_high_user = 0x3f
   };
 
-/* ID indicating CIE as opposed to FDE in .debug_frame.  */
 enum
   {
-    DW_CIE_ID_32 = 0xffffffffU,		 /* In 32-bit format CIE header.  */
-    DW_CIE_ID_64 = 0xffffffffffffffffULL /* In 64-bit format CIE header.  */
+    DW_CIE_ID_32 = 0xffffffffU,
+    DW_CIE_ID_64 = 0xffffffffffffffffULL
   };
 
 
-/* Information for GNU unwind information.  */
 enum
   {
     DW_EH_PE_absptr = 0x00,
     DW_EH_PE_omit = 0xff,
 
-    /* FDE data encoding.  */
     DW_EH_PE_uleb128 = 0x01,
     DW_EH_PE_udata2 = 0x02,
     DW_EH_PE_udata4 = 0x03,
@@ -1014,7 +908,6 @@ enum
     DW_EH_PE_sdata8 = 0x0c,
     DW_EH_PE_signed = 0x08,
 
-    /* FDE flags.  */
     DW_EH_PE_pcrel = 0x10,
     DW_EH_PE_textrel = 0x20,
     DW_EH_PE_datarel = 0x30,
@@ -1025,22 +918,12 @@ enum
   };
 
 
-/* DWARF XXX.  */
 #define DW_ADDR_none	0
 
-/* Section 7.2.2 of the DWARF3 specification defines a range of escape
-   codes that can appear in the length field of certain DWARF structures.
 
-   These defines enumerate the minimum and maximum values of this range.
-   Currently only the maximum value is used (to indicate that 64-bit
-   values are going to be used in the dwarf data that accompanies the
-   structure).  The other values are reserved.
 
-   Note: There is a typo in DWARF3 spec (published Dec 20, 2005).  In
-   sections 7.4, 7.5.1, 7.19, 7.20 the minimum escape code is referred to
-   as 0xffffff00 whereas in fact it should be 0xfffffff0.  */
 #define DWARF3_LENGTH_MIN_ESCAPE_CODE 0xfffffff0u
 #define DWARF3_LENGTH_MAX_ESCAPE_CODE 0xffffffffu
 #define DWARF3_LENGTH_64_BIT          DWARF3_LENGTH_MAX_ESCAPE_CODE
 
-#endif	/* dwarf.h */
+#endif

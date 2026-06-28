@@ -1,4 +1,3 @@
-/* uses alias to allow building with gcc/clang */
 #ifdef __TINYC__
 #define	BUILTIN(x)	__builtin_##x
 #define	BUILTINN(x)	"__builtin_" # x
@@ -7,16 +6,6 @@
 #define	BUILTINN(x)	"__tcc_builtin_" # x
 #endif
 
-/* ---------------------------------------------- */
-/* This file implements:
- * __builtin_ffs
- * __builtin_clz
- * __builtin_ctz
- * __builtin_clrsb
- * __builtin_popcount
- * __builtin_parity
- * for int, long and long long
- */
 
 static const unsigned char table_1_32[] = {
      0,  1, 28,  2, 29, 14, 24,  3, 30, 22, 20, 15, 25, 17,  4,  8, 
@@ -73,8 +62,6 @@ static const unsigned char table_2_64[] = {
     x = (x + (x >> 4)) & 0xf0f0f0f0f0f0f0full;                            \
     return ((x * 0x0101010101010101ull) >> 56) & m;
 
-/* Returns one plus the index of the least significant 1-bit of x,
-   or if x is zero, returns zero. */
 int BUILTIN(ffs) (int x) { FFSI(x) }
 int BUILTIN(ffsll) (long long x) { FFSL(x) }
 #if __SIZEOF_LONG__ == 4
@@ -83,8 +70,6 @@ int BUILTIN(ffsl) (long x) __attribute__((alias(BUILTINN(ffs))));
 int BUILTIN(ffsl) (long x) __attribute__((alias(BUILTINN(ffsll))));
 #endif
 
-/* Returns the number of leading 0-bits in x, starting at the most significant
-   bit position. If x is 0, the result is undefined.  */
 int BUILTIN(clz) (unsigned int x) { CLZI(x) }
 int BUILTIN(clzll) (unsigned long long x) { CLZL(x) }
 #if __SIZEOF_LONG__ == 4
@@ -93,8 +78,6 @@ int BUILTIN(clzl) (unsigned long x) __attribute__((alias(BUILTINN(clz))));
 int BUILTIN(clzl) (unsigned long x) __attribute__((alias(BUILTINN(clzll))));
 #endif
 
-/* Returns the number of trailing 0-bits in x, starting at the least
-   significant bit position. If x is 0, the result is undefined. */
 int BUILTIN(ctz) (unsigned int x) { CTZI(x) }
 int BUILTIN(ctzll) (unsigned long long x) { CTZL(x) }
 #if __SIZEOF_LONG__ == 4
@@ -103,9 +86,6 @@ int BUILTIN(ctzl) (unsigned long x) __attribute__((alias(BUILTINN(ctz))));
 int BUILTIN(ctzl) (unsigned long x) __attribute__((alias(BUILTINN(ctzll))));
 #endif
 
-/* Returns the number of leading redundant sign bits in x, i.e. the number
-   of bits following the most significant bit that are identical to it.
-   There are no special cases for 0 or other values. */
 int BUILTIN(clrsb) (int x) { if (x < 0) x = ~x; x <<= 1; CLZI(x) }
 int BUILTIN(clrsbll) (long long x) { if (x < 0) x = ~x; x <<= 1; CLZL(x) }
 #if __SIZEOF_LONG__ == 4
@@ -114,7 +94,6 @@ int BUILTIN(clrsbl) (long x) __attribute__((alias(BUILTINN(clrsb))));
 int BUILTIN(clrsbl) (long x) __attribute__((alias(BUILTINN(clrsbll))));
 #endif
 
-/* Returns the number of 1-bits in x.*/
 int BUILTIN(popcount) (unsigned int x) { POPCOUNTI(x, 0x3f) }
 int BUILTIN(popcountll) (unsigned long long x) { POPCOUNTL(x, 0x7f) }
 #if __SIZEOF_LONG__ == 4
@@ -123,7 +102,6 @@ int BUILTIN(popcountl) (unsigned long x) __attribute__((alias(BUILTINN(popcount)
 int BUILTIN(popcountl ) (unsigned long x) __attribute__((alias(BUILTINN(popcountll))));
 #endif
 
-/* Returns the parity of x, i.e. the number of 1-bits in x modulo 2. */
 int BUILTIN(parity) (unsigned int x) { POPCOUNTI(x, 0x01) }
 int BUILTIN(parityll) (unsigned long long x) { POPCOUNTL(x, 0x01) }
 #if __SIZEOF_LONG__ == 4
@@ -134,7 +112,6 @@ int BUILTIN(parityl) (unsigned long x) __attribute__((alias(BUILTINN(parityll)))
 
 #ifndef __TINYC__
 #if defined(__GNUC__) && (__GNUC__ >= 6)
-/* gcc overrides alias from __builtin_ffs... to ffs.. so use assembly code */
 __asm__(".globl  __builtin_ffs");
 __asm__(".set __builtin_ffs,__tcc_builtin_ffs");
 __asm__(".globl  __builtin_ffsl");

@@ -1,8 +1,3 @@
-/**
- * This file has no copyright assigned and is placed in the Public Domain.
- * This file is part of the w64 mingw-runtime package.
- * No warranty is given; refer to the file DISCLAIMER within this package.
- */
 #ifndef _INC_LOCKING
 #define _INC_LOCKING
 
@@ -10,7 +5,6 @@
 #error Only Win32 target is supported!
 #endif
 
-/* All the headers include this file. */
 #include <_mingw.h>
 
 #define _LK_UNLCK 0

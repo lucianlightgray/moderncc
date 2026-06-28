@@ -1,18 +1,9 @@
-/* armflush.c - flush the instruction cache
-
-   __clear_cache is used in tccrun.c,  It is a built-in
-   intrinsic with gcc.  However tcc in order to compile
-   itself needs this function */
-
-/* ------------------------------------------------------------- */
 #if defined __arm__
 
 #ifdef __TINYC__
 
-/* syscall wrapper */
 unsigned _tccsyscall(unsigned syscall_nr, ...);
 
-/* arm-tcc supports only fake asm currently */
 __asm__(
     ".global _tccsyscall\n"
     "_tccsyscall:\n"
@@ -25,7 +16,6 @@ __asm__(
     "pop     {r7, pc}"
     );
 
-/* from unistd.h: */
 #if defined(__thumb__) || defined(__ARM_EABI__)
 # define __NR_SYSCALL_BASE      0x0
 #else
@@ -45,20 +35,15 @@ __asm__(
 
 #endif
 
-/* Flushing for tccrun */
 void __clear_cache(void *beginning, void *end)
 {
-/* __ARM_NR_cacheflush is kernel private and should not be used in user space.
- * However, there is no ARM asm parser in tcc so we use it for now */
     syscall(__ARM_NR_cacheflush, beginning, end, 0);
 }
 
-/* ------------------------------------------------------------- */
 #elif defined __aarch64__
 void __clear_cache(void *beg, void *end)
 {
     __arm64_clear_cache(beg, end);
 }
 
-/* ------------------------------------------------------------- */
 #endif

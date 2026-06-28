@@ -1,8 +1,3 @@
-/**
- * This file has no copyright assigned and is placed in the Public Domain.
- * This file is part of the w64 mingw-runtime package.
- * No warranty is given; refer to the file DISCLAIMER within this package.
- */
 #ifndef _INC_CTYPE
 #define _INC_CTYPE
 
@@ -67,7 +62,6 @@ extern "C" {
 #endif
 #endif
 
-  /* CRT stuff */
 #if 1
   extern const unsigned char __newclmap[];
   extern const unsigned char __newcumap[];

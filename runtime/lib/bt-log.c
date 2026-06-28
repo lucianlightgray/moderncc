@@ -1,6 +1,3 @@
-/* ------------------------------------------------------------- */
-/* function to get a stack backtrace on demand with a message */
-
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -12,7 +9,6 @@
 # define DLL_EXPORT
 #endif
 
-/* Needed when using ...libtcc1-usegcc=yes in lib/Makefile */
 #if (defined(__GNUC__) && (__GNUC__ >= 6)) || defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wframe-address"

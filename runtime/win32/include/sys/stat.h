@@ -1,8 +1,3 @@
-/**
- * This file has no copyright assigned and is placed in the Public Domain.
- * This file is part of the w64 mingw-runtime package.
- * No warranty is given; refer to the file DISCLAIMER within this package.
- */
 #ifndef _INC_STAT
 #define _INC_STAT
 
@@ -25,7 +20,7 @@ extern "C" {
 
 #include <sys/types.h>
 
-#ifndef __TINYC__ /* gr */
+#ifndef __TINYC__
 #ifdef _USE_32BIT_TIME_T
 #ifdef _WIN64
 #undef _USE_32BIT_TIME_T
@@ -231,7 +226,7 @@ extern "C" {
 #endif
 
 #ifndef	NO_OLDNAMES
-#define	_S_IFBLK	0x3000	/* Block: Is this ever set under w32? */
+#define	_S_IFBLK	0x3000
 
 #define S_IFMT _S_IFMT
 #define S_IFDIR _S_IFDIR

@@ -1,23 +1,3 @@
-/*
- *  TCC - Tiny C Compiler
- * 
- *  Copyright (c) 2001-2004 Fabrice Bellard
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- */
-
 #ifndef ONE_SOURCE
 # define ONE_SOURCE 1
 #endif
@@ -217,7 +197,6 @@ static void print_dirs(const char *msg, char **paths, int nb_paths)
 static void print_search_dirs(TCCState *s)
 {
     printf("install: %s\n", s->tcc_lib_path);
-    /* print_dirs("programs", NULL, 0); */
     print_dirs("include", s->sysinclude_paths, s->nb_sysinclude_paths);
     print_dirs("libraries", s->library_paths, s->nb_library_paths);
     printf("libtcc1:\n  %s/%s\n", s->library_paths[0], CONFIG_TCC_CROSSPREFIX TCC_LIBTCC1);
@@ -318,7 +297,6 @@ redo:
             ret = tcc_tool_impdef(argc, argv);
 #endif
         if (opt == OPT_PRINT_DIRS) {
-            /* initialize search dirs */
             set_environment(s);
             tcc_set_output_type(s, TCC_OUTPUT_MEMORY);
             print_search_dirs(s);
@@ -358,7 +336,7 @@ redo:
 
     if ((s->output_type == TCC_OUTPUT_MEMORY
       || s->output_type == TCC_OUTPUT_PREPROCESS)
-        && (s->dflag & 16)) { /* -dt option */
+        && (s->dflag & 16)) {
         if (t)
             s->dflag |= 32;
         s->run_test = ++t;
@@ -366,7 +344,6 @@ redo:
             --n;
     }
 
-    /* compile or add each files or library */
     first_file = NULL;
     while (0 == ret) {
         struct filespec *f = s->files[n];
@@ -410,13 +387,12 @@ redo:
 
     done = 1;
     if (t)
-        done = 0; /* run more tests with -dt -run */
+        done = 0;
     else if (ret) {
         if (s->nb_errors)
             ret = 1;
-        /* else keep the original exit code from tcc_run() */
     } else if (n < s->nb_files)
-        done = 0; /* compile more files with -c */
+        done = 0;
     else if (s->do_bench)
         tcc_print_stats(s, end_time - start_time);
 

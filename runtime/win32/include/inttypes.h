@@ -1,10 +1,3 @@
-/**
- * This file has no copyright assigned and is placed in the Public Domain.
- * This file is part of the w64 mingw-runtime package.
- * No warranty is given; refer to the file DISCLAIMER within this package.
- */
-/* 7.8 Format conversion of integer types <inttypes.h> */
-
 #ifndef _INTTYPES_H_
 #define _INTTYPES_H_
 
@@ -24,15 +17,7 @@ typedef struct {
 
 #if !defined(__cplusplus) || defined(__STDC_FORMAT_MACROS)
 
-/* 7.8.1 Macros for format specifiers
- * 
- * MS runtime does not yet understand C9x standard "ll"
- * length specifier. It appears to treat "ll" as "l".
- * The non-standard I64 length specifier causes warning in GCC,
- * but understood by MS runtime functions.
- */
 
-/* fprintf macros for signed types */
 #define PRId8 "d"
 #define PRId16 "d"
 #define PRId32 "d"
@@ -84,7 +69,6 @@ typedef struct {
 
 #define PRIoMAX "I64o"
 
-/* fprintf macros for unsigned types */
 #define PRIu8 "u"
 #define PRIu16 "u"
 #define PRIu32 "u"
@@ -137,12 +121,6 @@ typedef struct {
 
 #define PRIXMAX "I64X"
 
-/*
- *   fscanf macros for signed int types
- *   NOTE: if 32-bit int is used for int_fast8_t and int_fast16_t
- *   (see stdint.h, 7.18.1.3), FAST8 and FAST16 should have
- *   no length identifiers
- */
 
 #define SCNd16 "hd"
 #define SCNd32 "d"
@@ -200,7 +178,6 @@ typedef struct {
 
 #define SCNxMAX "I64x"
 
-/* fscanf macros for unsigned int types */
 
 #define SCNu16 "hu"
 #define SCNu32 "u"
@@ -243,12 +220,7 @@ typedef struct {
 #endif
 
 #if defined (__STDC_VERSION__) && __STDC_VERSION__ >= 199901L
-/*
- * no length modifier for char types prior to C9x
- * MS runtime  scanf appears to treat "hh" as "h" 
- */
 
-/* signed char */
 #define SCNd8 "hhd"
 #define SCNdLEAST8 "hhd"
 #define SCNdFAST8 "hhd"
@@ -265,20 +237,18 @@ typedef struct {
 #define SCNxLEAST8 "hhx"
 #define SCNxFAST8 "hhx"
 
-/* unsigned char */
 #define SCNu8 "hhu"
 #define SCNuLEAST8 "hhu"
 #define SCNuFAST8 "hhu"
-#endif /* __STDC_VERSION__ >= 199901 */
+#endif
 
-#endif	/* !defined(__cplusplus) || defined(__STDC_FORMAT_MACROS) */
+#endif
 
 intmax_t __cdecl imaxabs (intmax_t j);
 __CRT_INLINE intmax_t __cdecl imaxabs (intmax_t j)
 	{return	(j >= 0 ? j : -j);}
 imaxdiv_t __cdecl imaxdiv (intmax_t numer, intmax_t denom);
 
-/* 7.8.2 Conversion functions for greatest-width integer types */
 
 intmax_t __cdecl strtoimax (const char* __restrict__ nptr,
                             char** __restrict__ endptr, int base);
@@ -294,4 +264,4 @@ uintmax_t __cdecl wcstoumax (const wchar_t* __restrict__ nptr,
 }
 #endif
 
-#endif /* ndef _INTTYPES_H */
+#endif

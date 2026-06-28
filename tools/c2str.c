@@ -1,11 +1,6 @@
-/* c2str: convert include/tccdefs.h to compiled-in C strings (tccdefs_.h). */
-/* Host codegen tool, built and run by CMakeLists.txt section 5. Extracted */
-/* from the former conftest.c (#if C2STR half) during the autotools removal. */
-
 #include <stdio.h>
 #include <string.h>
 
-/* replace native host macros by compile-time versions */
 const char *platform_macros[] = {
     "__i386__",             "TCC_TARGET_I386",
     "__x86_64__",           "TCC_TARGET_X86_64",
@@ -67,18 +62,15 @@ int main(int argc, char **argv)
         } else if (p == l)
             break;
 
-        /* check for continuation */
         if (p > l && p[-1] == '\\') {
             p[-1] = ' ';
             goto append;
         }
 
-        /* count & skip leading spaces */
         p = l, q = l2, f = 0;
         while (*p && isspc(*p))
             ++p, ++f;
 
-        /* handle comments */
         if (p[0] == '/' && cmt == 0) {
             if (p[1] == '*')
                 cmt = 2;
@@ -102,11 +94,8 @@ int main(int argc, char **argv)
 
         if (f < 4) {
             do {
-                /* replace machine/os macros by compile-time counterparts */
                 for (e = f = 0; (r = platform_macros[f]); f += 2) {
                     c = strlen(r);
-                    /* remove 'defined' */
-                    //e = memcmp(p, "defined ", 8) ? 0 : 8;
                     if (0 == memcmp(p + e, r, c)) {
                         p += e + c;
                         q = strchr(strcpy(q, platform_macros[f + 1]), 0);
@@ -117,7 +106,6 @@ int main(int argc, char **argv)
                 if (r)
                     continue;
             } while (!!(*q++ = *p++));
-            /* output as is */
             fprintf(op, "%s\n", l2);
             continue;
 
@@ -131,10 +119,9 @@ int main(int argc, char **argv)
                     continue;
                 }
                 if (c == '/' && (p[0] == '/' || p[0] == '*'))
-                    c = 0; /* trailing comment detected */
+                    c = 0;
                 else if (s && q > l2
                     && ((isid(q[-1]) && isid(c))
-                        // keep space after macro name
                         || (q >= l2 + 2
                             && l2[0] == '#'
                             && l2[1] == 'd'
@@ -154,7 +141,6 @@ int main(int argc, char **argv)
                     break;
                 p0 = p;
             }
-            /* output with quotes */
             fprintf(op, "    \"%s\\n\"%s\n", l2, p0);
         }
     }

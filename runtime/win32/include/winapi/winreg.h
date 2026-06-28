@@ -1,8 +1,3 @@
-/**
- * This file has no copyright assigned and is placed in the Public Domain.
- * This file is part of the w64 mingw-runtime package.
- * No warranty is given; refer to the file DISCLAIMER within this package.
- */
 #ifndef _WINREG_
 #define _WINREG_
 
@@ -238,7 +233,6 @@ extern "C" {
   WINADVAPI WINBOOL WINAPI AbortSystemShutdownA(LPSTR lpMachineName);
   WINADVAPI WINBOOL WINAPI AbortSystemShutdownW(LPWSTR lpMachineName);
 
-//gr #include <reason.h>
 
 #define REASON_SWINSTALL SHTDN_REASON_MAJOR_SOFTWARE|SHTDN_REASON_MINOR_INSTALLATION
 #define REASON_HWINSTALL SHTDN_REASON_MAJOR_HARDWARE|SHTDN_REASON_MINOR_INSTALLATION

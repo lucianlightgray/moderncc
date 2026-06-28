@@ -1,8 +1,3 @@
-/**
- * This file has no copyright assigned and is placed in the Public Domain.
- * This file is part of the w64 mingw-runtime package.
- * No warranty is given; refer to the file DISCLAIMER within this package.
- */
 #ifndef _WINUSER_
 #define _WINUSER_
 
@@ -4871,7 +4866,6 @@ extern "C" {
 #define CDS_RESET 0x40000000
 #define CDS_NORESET 0x10000000
 
-//gr #include <tvout.h>
 
 #define DISP_CHANGE_SUCCESSFUL 0
 #define DISP_CHANGE_RESTART 1
@@ -5644,7 +5638,7 @@ extern "C" {
   WINUSERAPI UINT WINAPI GetRawInputDeviceList(PRAWINPUTDEVICELIST pRawInputDeviceList,PUINT puiNumDevices,UINT cbSize);
   WINUSERAPI LRESULT WINAPI DefRawInputProc(PRAWINPUT *paRawInput,INT nInput,UINT cbSizeHeader);
 
-#endif /* NOUSER */
+#endif
 
 #ifdef __cplusplus
 }

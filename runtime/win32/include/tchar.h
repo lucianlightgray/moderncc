@@ -1,8 +1,3 @@
-/**
- * This file has no copyright assigned and is placed in the Public Domain.
- * This file is part of the w64 mingw-runtime package.
- * No warranty is given; refer to the file DISCLAIMER within this package.
- */
 #include <_mingw.h>
 
 #ifndef _INC_TCHAR
@@ -459,7 +454,6 @@ extern "C" {
 #define _wcsnset_l(_Destination,_Value,_Count,_Locale) (_wcsnset(_Destination,_Value,_Count))
 #define _wcsset_l(_Destination,_Value,_Locale) (_wcsset(_Destination,_Value))
 
-  /* dirent structures and functions */
 #define _tdirent	_wdirent
 #define _TDIR 		_WDIR
 #define _topendir	_wopendir
@@ -1031,7 +1025,6 @@ extern "C" {
 #define _tccpy(_pc1,_cpc2) (*(_pc1) = *(_cpc2))
 #define _tccmp(_cpc1,_cpc2) (((unsigned char)*(_cpc1))-((unsigned char)*(_cpc2)))
 
-  /* dirent structures and functions */
 #define _tdirent	dirent
 #define _TDIR 		DIR
 #define _topendir	opendir

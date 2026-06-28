@@ -17,13 +17,10 @@
 #define PCRELATIVE_DLLPLT 1
 #define RELOCATE_DLLPLT 1
 
-#else /* !TARGET_DEFS_ONLY */
+#else
 
-//#define DEBUG_RELOC
 #include "tcc.h"
 
-/* Returns 1 for a code relocation, 0 for a data relocation. For unknown
-   relocations, returns -1. */
 ST_FUNC int code_reloc (int reloc_type)
 {
     switch (reloc_type) {
@@ -63,9 +60,6 @@ ST_FUNC int code_reloc (int reloc_type)
     return -1;
 }
 
-/* Returns an enumerator to describe whether and when the relocation needs a
-   GOT and/or PLT entry to be created. See tcc.h for a description of the
-   different values. */
 ST_FUNC int gotplt_entry_type (int reloc_type)
 {
     switch (reloc_type) {
@@ -126,8 +120,6 @@ ST_FUNC unsigned create_plt_entry(TCCState *s1, unsigned got_offset, struct sym_
     return plt_offset;
 }
 
-/* relocate the PLT: compute addresses and offsets in the PLT now that final
-   address for PLT and GOT are known (see fill_program_header) */
 ST_FUNC void relocate_plt(TCCState *s1)
 {
     uint8_t *p, *p_end;
@@ -144,16 +136,16 @@ ST_FUNC void relocate_plt(TCCState *s1)
         uint64_t off = (got - plt + 0x800) >> 12;
         if ((off + ((uint32_t)1 << 20)) >> 21)
             tcc_error_noabort("Failed relocating PLT (off=0x%lx, got=0x%lx, plt=0x%lx)", (long)off, (long)got, (long)plt);
-        write32le(p, 0x397 | (off << 12)); // auipc t2, %pcrel_hi(got)
-        write32le(p + 4, 0x41c30333); // sub t1, t1, t3
-        write32le(p + 8, 0x0003be03   // ld t3, %pcrel_lo(got)(t2)
+        write32le(p, 0x397 | (off << 12));
+        write32le(p + 4, 0x41c30333);
+        write32le(p + 8, 0x0003be03
                          | (((got - plt) & 0xfff) << 20));
-        write32le(p + 12, 0xfd430313); // addi t1, t1, -(32+12)
-        write32le(p + 16, 0x00038293   // addi t0, t2, %pcrel_lo(got)
+        write32le(p + 12, 0xfd430313);
+        write32le(p + 16, 0x00038293
                           | (((got - plt) & 0xfff) << 20));
-        write32le(p + 20, 0x00135313); // srli t1, t1, log2(16/PTRSIZE)
-        write32le(p + 24, 0x0082b283); // ld t0, PTRSIZE(t0)
-        write32le(p + 28, 0x000e0067); // jr t3
+        write32le(p + 20, 0x00135313);
+        write32le(p + 24, 0x0082b283);
+        write32le(p + 28, 0x000e0067);
         p += 32;
         while (p < p_end) {
             uint64_t pc = plt + (p - s1->plt->data);
@@ -161,11 +153,11 @@ ST_FUNC void relocate_plt(TCCState *s1)
             uint64_t off = (addr - pc + 0x800) >> 12;
             if ((off + ((uint32_t)1 << 20)) >> 21)
                 tcc_error_noabort("Failed relocating PLT (off=0x%lx, addr=0x%lx, pc=0x%lx)", (long)off, (long)addr, (long)pc);
-            write32le(p, 0xe17 | (off << 12)); // auipc t3, %pcrel_hi(func@got)
-            write32le(p + 4, 0x000e3e03 // ld t3, %pcrel_lo(func@got)(t3)
+            write32le(p, 0xe17 | (off << 12));
+            write32le(p + 4, 0x000e3e03
                              | (((addr - pc) & 0xfff) << 20));
-            write32le(p + 8, 0x000e0367); // jalr t1, t3
-            write32le(p + 12, 0x00000013); // nop
+            write32le(p + 8, 0x000e0367);
+            write32le(p + 12, 0x00000013);
             p += 16;
         }
     }
@@ -315,11 +307,8 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 
     case R_RISCV_32:
         if (s1->output_type & TCC_OUTPUT_DYN) {
-            /* XXX: this logic may depend on TCC's codegen
-               now TCC uses R_RISCV_RELATIVE even for a 64bit pointer */
             qrel->r_offset = rel->r_offset;
             qrel->r_info = ELFW(R_INFO)(0, R_RISCV_RELATIVE);
-            /* Use sign extension! */
             qrel->r_addend = (int)read32le(ptr) + val;
             qrel++;
         }
@@ -378,12 +367,10 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
         return;
     case R_RISCV_32_PCREL:
         if (s1->output_type & TCC_OUTPUT_DYN) {
-	    /* DLL relocation */
 	    esym_index = get_sym_attr(s1, sym_index, 0)->dyn_index;
 	    if (esym_index) {
                 qrel->r_offset = rel->r_offset;
                 qrel->r_info = ELFW(R_INFO)(esym_index, R_RISCV_32_PCREL);
-                /* Use sign extension! */
                 qrel->r_addend = (int)read32le(ptr) + rel->r_addend;
                 qrel++;
 		break;
@@ -393,15 +380,10 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
         return;
     case R_RISCV_SET_ULEB128:
     case R_RISCV_SUB_ULEB128:
-	/* ignore. used in section .debug_loclists */
         return;
     case R_RISCV_COPY:
-        /* XXX */
         return;
     case R_RISCV_RELATIVE:
-        /* R_RISCV_RELATIVE value is already applied in R_RISCV_32/64
-           dynamic output paths, but we need this case for incoming
-           RELATIVE relocations from object files. */
         return;
 
     case R_RISCV_TPREL_HI20:

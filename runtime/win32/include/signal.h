@@ -1,8 +1,3 @@
-/**
- * This file has no copyright assigned and is placed in the Public Domain.
- * This file is part of the w64 mingw-runtime package.
- * No warranty is given; refer to the file DISCLAIMER within this package.
- */
 #ifndef _INC_SIGNAL
 #define _INC_SIGNAL
 
@@ -19,22 +14,22 @@ extern "C" {
 
 #define NSIG 23
 
-#define	SIGHUP	1	/* hangup */
+#define	SIGHUP	1
 #define SIGINT 2
-#define	SIGQUIT	3	/* quit */
+#define	SIGQUIT	3
 #define SIGILL 4
-#define	SIGTRAP	5	/* trace trap (not reset when caught) */
-#define	SIGIOT	6	/* IOT instruction */
-#define	SIGABRT 6	/* used by abort, replace SIGIOT in the future */
-#define	SIGEMT	7	/* EMT instruction */
+#define	SIGTRAP	5
+#define	SIGIOT	6
+#define	SIGABRT 6
+#define	SIGEMT	7
 #define SIGFPE 8
-#define	SIGKILL	9	/* kill (cannot be caught or ignored) */
-#define	SIGBUS	10	/* bus error */
+#define	SIGKILL	9
+#define	SIGBUS	10
 #define SIGSEGV 11
-#define	SIGSYS	12	/* bad argument to system call */
-#define	SIGPIPE	13	/* write on a pipe with no one to read it */
+#define	SIGSYS	12
+#define	SIGPIPE	13
 #ifdef __USE_MINGW_ALARM
-#define	SIGALRM	14	/* alarm clock */
+#define	SIGALRM	14
 #endif
 #define SIGTERM 15
 #define SIGBREAK 21

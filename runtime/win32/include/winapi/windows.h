@@ -1,8 +1,3 @@
-/**
- * This file has no copyright assigned and is placed in the Public Domain.
- * This file is part of the w64 mingw-runtime package.
- * No warranty is given; refer to the file DISCLAIMER within this package.
- */
 #ifndef _WINDOWS_
 #define _WINDOWS_
 
@@ -71,7 +66,6 @@
 #include <wincon.h>
 #include <winver.h>
 #include <winreg.h>
-//gr #include <winnetwk.h>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #include <cderr.h>
@@ -104,7 +98,6 @@
 #endif
 #endif
 
-//gr #include <stralign.h>
 
 #ifdef INC_OLE2
 #include <ole2.h>

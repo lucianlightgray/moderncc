@@ -1,8 +1,3 @@
-/**
- * This file has no copyright assigned and is placed in the Public Domain.
- * This file is part of the w64 mingw-runtime package.
- * No warranty is given; refer to the file DISCLAIMER within this package.
- */
 #ifndef _TIME_H_
 #define _TIME_H_
 
@@ -249,7 +244,7 @@ __CRT_INLINE time_t __cdecl time(time_t *_Time) { return _time64(_Time); }
   void __cdecl tzset(void);
 #endif
 
-#ifndef _TIMEVAL_DEFINED /* also in winsock[2].h */
+#ifndef _TIMEVAL_DEFINED
 #define _TIMEVAL_DEFINED
 struct timeval {
   long tv_sec;
@@ -258,10 +253,10 @@ struct timeval {
 #define timerisset(tvp) ((tvp)->tv_sec || (tvp)->tv_usec)
 #define timercmp(tvp,uvp,cmp) ((tvp)->tv_sec cmp (uvp)->tv_sec || (tvp)->tv_sec==(uvp)->tv_sec && (tvp)->tv_usec cmp (uvp)->tv_usec)
 #define timerclear(tvp) (tvp)->tv_sec = (tvp)->tv_usec = 0
-#endif /* _TIMEVAL_DEFINED */
+#endif
 
 #ifndef __STRICT_ANSI__
-#ifndef _TIMEZONE_DEFINED /* also in sys/time.h */
+#ifndef _TIMEZONE_DEFINED
 #define _TIMEZONE_DEFINED
 struct timezone {
   int tz_minuteswest;
@@ -270,7 +265,7 @@ struct timezone {
 
   extern int __cdecl mingw_gettimeofday (struct timeval *p, struct timezone *z);
 #endif
-#endif /* __STRICT_ANSI__ */
+#endif
 
 #ifdef __cplusplus
 }
@@ -280,8 +275,7 @@ struct timezone {
 
 #include <sec_api/time_s.h>
 
-/* Adding timespec definition.  */
 #include <sys/timeb.h>
 
-#endif /* End _TIME_H_ */
+#endif
 

@@ -1,8 +1,3 @@
-//+---------------------------------------------------------------------------
-//
-//  HELLO_DLL.C - Windows DLL example - main application part
-//
-
 #include <windows.h>
 
 void hello_func (void);

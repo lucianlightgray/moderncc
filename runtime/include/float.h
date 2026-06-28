@@ -3,7 +3,6 @@
 
 #define FLT_RADIX 2
 
-/* IEEE float */
 #define FLT_MANT_DIG 24
 #define FLT_DIG 6
 #define FLT_ROUNDS 1
@@ -15,7 +14,6 @@
 #define FLT_MAX 3.40282347e+38F
 #define FLT_MAX_10_EXP 38
 
-/* IEEE double */
 #define DBL_MANT_DIG 53
 #define DBL_DIG 15
 #define DBL_EPSILON 2.2204460492503131e-16
@@ -26,7 +24,6 @@
 #define DBL_MAX 1.7976931348623157e+308
 #define DBL_MAX_10_EXP 308
 
-/* horrible intel long double */
 #if defined __i386__ || defined __x86_64__
 
 #define LDBL_MANT_DIG 64
@@ -41,10 +38,6 @@
 #define DECIMAL_DIG 21
 
 #elif defined __aarch64__ || defined __riscv
-/*
- * Use values from:
- * gcc -dM -E -xc /dev/null | grep LDBL | sed -e "s/__//g"
- */
 #define LDBL_MANT_DIG 113
 #define LDBL_DIG 33
 #define LDBL_EPSILON 1.92592994438723585305597794258492732e-34L
@@ -58,7 +51,6 @@
 
 #else
 
-/* same as IEEE double */
 #define LDBL_MANT_DIG 53
 #define LDBL_DIG 15
 #define LDBL_EPSILON 2.2204460492503131e-16L
@@ -72,4 +64,4 @@
 
 #endif
 
-#endif /* _FLOAT_H_ */
+#endif

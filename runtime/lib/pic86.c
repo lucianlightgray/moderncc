@@ -1,8 +1,3 @@
-/* get_pc_thunk helpers for i386 PIC (formerly pic86.S).
- * Ported to a C translation unit: the assembly lives in a file-scope __asm__
- * block so the project carries no .S files. STR(_(name)) yields the symbol with
- * the target's leading-underscore convention, exactly as the old `_()` macro
- * did through the .S preprocessor. */
 #ifdef __leading_underscore
 # define _(s) _##s
 #else

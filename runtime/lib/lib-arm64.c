@@ -1,14 +1,3 @@
-/*
- *  TCC runtime library for arm64.
- *
- *  Copyright (c) 2015 Edmund Grimley Evans
- *
- * Copying and distribution of this file, with or without modification,
- * are permitted in any medium without royalty provided the copyright
- * notice and this notice are preserved.  This file is offered as-is,
- * without any warranty.
- */
-
 #ifdef __TINYC__
 typedef signed char int8_t;
 typedef unsigned char uint8_t;
@@ -53,10 +42,8 @@ static long double f3_infinity(int sgn)
 static long double f3_NaN(void)
 {
 #if 0
-    // ARM's default NaN usually has just the top fraction bit set:
     u128_t x = {  0, 0x7fff800000000000 };
 #else
-    // GCC's library sets all fraction bits:
     u128_t x = { -1, 0x7fffffffffffffff };
 #endif
     return x.f;
@@ -78,13 +65,11 @@ static int fp3_detect_NaNs(long double *f,
 #define b (*b)
 {
 #if 0
-    // Detect signalling NaNs:
     if (a_exp == 32767 && (a.x0 | a.x1 << 16) && !(a.x1 >> 47 & 1))
         return fp3_convert_NaN(f, a_sgn, a);
     if (b_exp == 32767 && (b.x0 | b.x1 << 16) && !(b.x1 >> 47 & 1))
         return fp3_convert_NaN(f, b_sgn, b);
 #endif
-    // Detect quiet NaNs:
     if (a_exp == 32767 && (a.x0 | a.x1 << 16))
         return fp3_convert_NaN(f, a_sgn, a);
     if (b_exp == 32767 && (b.x0 | b.x1 << 16))
@@ -200,7 +185,6 @@ static long double f3_add(long double fa, long double fb, int neg)
 
     b_sgn ^= neg;
 
-    // Handle infinities and zeroes:
     if (a_exp == 32767 && b_exp == 32767 && a_sgn != b_sgn)
         return f3_NaN();
     if (a_exp == 32767)
@@ -271,7 +255,6 @@ long double __multf3(long double fa, long double fb)
     if (fp3_detect_NaNs(&fx, a_sgn, a_exp, a, b_sgn, b_exp, b))
         return fx;
 
-    // Handle infinities and zeroes:
     if ((a_exp == 32767 && !(b.x0 | b.x1)) ||
         (b_exp == 32767 && !(a.x0 | a.x1)))
         return f3_NaN();
@@ -287,8 +270,6 @@ long double __multf3(long double fa, long double fb)
     x_exp = a_exp + b_exp - 16352;
 
     {
-        // Convert to base (1 << 30), discarding bottom 6 bits, which are zero,
-        // so there are (32, 30, 30, 30) bits in (a3, a2, a1, a0):
         uint64_t a0 = a.x0 << 28 >> 34;
         uint64_t b0 = b.x0 << 28 >> 34;
         uint64_t a1 = a.x0 >> 36 | a.x1 << 62 >> 34;
@@ -297,7 +278,6 @@ long double __multf3(long double fa, long double fb)
         uint64_t b2 = b.x1 << 32 >> 34;
         uint64_t a3 = a.x1 >> 32;
         uint64_t b3 = b.x1 >> 32;
-        // Use 16 small multiplications and additions that do not overflow:
         uint64_t x0 = a0 * b0;
         uint64_t x1 = (x0 >> 30) + a0 * b1 + a1 * b0;
         uint64_t x2 = (x1 >> 30) + a0 * b2 + a1 * b1 + a2 * b0;
@@ -305,12 +285,9 @@ long double __multf3(long double fa, long double fb)
         uint64_t x4 = (x3 >> 30) + a1 * b3 + a2 * b2 + a3 * b1;
         uint64_t x5 = (x4 >> 30) + a2 * b3 + a3 * b2;
         uint64_t x6 = (x5 >> 30) + a3 * b3;
-        // We now have (64, 30, 30, ...) bits in (x6, x5, x4, ...).
-        // Take the top 128 bits, setting bottom bit if any lower bits were set:
         uint64_t y0 = (x5 << 34 | x4 << 34 >> 30 | x3 << 34 >> 60 |
                        !!(x3 << 38 | (x2 | x1 | x0) << 34));
         uint64_t y1 = x6;
-        // Top bit may be zero. Renormalise:
         if (!(y1 >> 63)) {
             y1 = y1 << 1 | y0 >> 63;
             y0 = y0 << 1;
@@ -336,7 +313,6 @@ long double __divtf3(long double fa, long double fb)
     if (fp3_detect_NaNs(&fx, a_sgn, a_exp, a, b_sgn, b_exp, b))
         return fx;
 
-    // Handle infinities and zeroes:
     if ((a_exp == 32767 && b_exp == 32767) ||
         (!(a.x0 | a.x1) && !(b.x0 | b.x1)))
         return f3_NaN();

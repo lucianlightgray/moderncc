@@ -1,23 +1,4 @@
-/*  tccdefs.h
-
-    Nothing is defined before this file except target machine, target os
-    and the few things related to option settings in tccpp.c:tcc_predefs().
-
-    This file is either included at runtime as is, or converted and
-    included as C-strings at compile-time (depending on CONFIG_TCC_PREDEFS).
-
-    Note that line indent matters:
-
-    - in lines starting at column 1, platform macros are replaced by
-      corresponding TCC target compile-time macros.  See c2str.c for
-      the list of platform macros supported in lines starting at column 1.
-
-    - only lines indented >= 4 are actually included into the executable,
-      check tccdefs_.h.
-*/
-
 #if __SIZEOF_POINTER__ == 4
-    /* 32bit systems. */
 #if defined  __OpenBSD__
     #define __SIZE_TYPE__ unsigned long
     #define __PTRDIFF_TYPE__ long
@@ -28,19 +9,17 @@
     #define __ILP32__ 1
     #define __INT64_TYPE__ long long
 #elif __SIZEOF_LONG__ == 4
-    /* 64bit Windows. */
     #define __SIZE_TYPE__ unsigned long long
     #define __PTRDIFF_TYPE__ long long
     #define __LLP64__ 1
     #define __INT64_TYPE__ long long
 #else
-    /* Other 64bit systems. */
     #define __SIZE_TYPE__ unsigned long
     #define __PTRDIFF_TYPE__ long
     #define __LP64__ 1
 # if defined __linux__
     #define __INT64_TYPE__ long
-# else /* APPLE, BSD */
+# else
     #define __INT64_TYPE__ long long
 # endif
 #endif
@@ -105,7 +84,7 @@
     #define _Pragma(x)
     #define __ELF__ 1
 #if defined __aarch64__
-    #define _LOCORE /* avoids usage of __asm */
+    #define _LOCORE
 #endif
 
 #elif defined __OpenBSD__
@@ -113,26 +92,21 @@
     #define _ANSI_LIBRARY 1
 
 #elif defined __APPLE__
-    /* emulate APPLE-GCC to make libc's headerfiles compile: */
-    #define __GNUC__ 4   /* darwin emits warning on GCC<4 */
-    #define __APPLE_CC__ 1 /* for <TargetConditionals.h> */
+    #define __GNUC__ 4
+    #define __APPLE_CC__ 1
     #define __LITTLE_ENDIAN__ 1
     #define _DONT_USE_CTYPE_INLINE_ 1
-    /* avoids usage of GCC/clang specific builtins in libc-headerfiles: */
     #define __FINITE_MATH_ONLY__ 1
     #define _FORTIFY_SOURCE 0
-    //#define __has_builtin(x) 0
-    #define _Float16 short unsigned int /* fake type just for size & alignment (macOS Sequoia) */
+    #define _Float16 short unsigned int
 
 #elif defined __ANDROID__
     #define  BIONIC_IOCTL_NO_SIGNEDNESS_OVERLOAD
 
 #else
-    /* Linux */
 
 #endif
 
-    /* Some derived integer types needed to get stdint.h to compile correctly on some platforms */
 #ifndef __NetBSD__
     #define __UINTPTR_TYPE__ unsigned __PTRDIFF_TYPE__
     #define __INTPTR_TYPE__ __PTRDIFF_TYPE__
@@ -140,55 +114,43 @@
     #define __INT32_TYPE__ int
 
 #if !defined _WIN32
-    /* glibc defines. We do not support __USER_NAME_PREFIX__ */
     #define __REDIRECT(name, proto, alias) name proto __asm__ (#alias)
     #define __REDIRECT_NTH(name, proto, alias) name proto __asm__ (#alias) __THROW
     #define __REDIRECT_NTHNL(name, proto, alias) name proto __asm__ (#alias) __THROWNL
 #endif
 
-    /* not implemented */
     #define  __PRETTY_FUNCTION__ __FUNCTION__
     #define __has_builtin(x) 0
     #define __has_feature(x) 0
     #define __has_attribute(x) 0
-    /* C23 Keywords */
     #define _Nonnull
     #define _Nullable
     #define _Nullable_result
     #define _Null_unspecified
 
-    /* skip __builtin... with -E */
     #ifndef __TCC_PP__
 
     #define __builtin_offsetof(type, field) ((__SIZE_TYPE__)&((type*)0)->field)
     #define __builtin_extract_return_addr(x) x
 #if !defined __linux__ && !defined _WIN32
-    /* used by math.h */
     #define __builtin_huge_val() 1e500
     #define __builtin_huge_valf() 1e50f
     #define __builtin_huge_vall() 1e5000L
 # if defined __APPLE__
     #define __builtin_nanf(ignored_string) (0.0F/0.0F)
-    /* used by floats.h to implement FLT_ROUNDS C99 macro. 1 == to nearest */
     #define __builtin_flt_rounds() 1
-    /* used by _fd_def.h */
     #define __builtin_bzero(p, ignored_size) bzero(p, sizeof(*(p)))
 # else
     #define __builtin_nanf(ignored_string) (0.0F/0.0F)
 # endif
 #endif
 
-    /* GCC's __uint128_t appears in some Linux/OSX header files.
-       Just make it some type with same size and alignment. */
     struct __uint128__ { char x[16]; } __attribute((__aligned__(16)));
     #define __int128_t struct __uint128__
     #define __uint128_t struct __uint128__
 
-    /* __builtin_va_list */
 #if defined __x86_64__
 #if !defined _WIN32
-    /* GCC compatible definition of va_list. */
-    /* This should be in sync with the declaration in our lib/va_list.c */
     typedef struct {
         unsigned gp_offset, fp_offset;
         union {
@@ -205,7 +167,7 @@
        (*(t *)(__va_arg(ap, __builtin_va_arg_types(t), sizeof(t), __alignof__(t))))
     #define __builtin_va_copy(dest, src) (*(dest) = *(src))
 
-#else /* _WIN64 */
+#else
     typedef char *__builtin_va_list;
     #define __builtin_va_arg(ap, t) ((sizeof(t) > 8 || (sizeof(t) & (sizeof(t) - 1))) \
         ? **(t **)((ap += 8) - 8) : *(t  *)((ap += 8) - 8))
@@ -242,7 +204,7 @@
                                   & -(__alignof__(type)))
     #define __builtin_va_arg(ap,type) (*(sizeof(type) > (2*__va_reg_size) ? *(type **)((ap += __va_reg_size) - __va_reg_size) : (ap = (va_list)(_tcc_align(ap,type) + (sizeof(type)+__va_reg_size - 1)& -__va_reg_size), (type *)(ap - ((sizeof(type)+ __va_reg_size - 1)& -__va_reg_size)))))
 
-#else /* __i386__ */
+#else
     typedef char *__builtin_va_list;
     #define __builtin_va_start(ap,last) (ap = ((char *)&(last)) + ((sizeof(last)+3)&~3))
     #define __builtin_va_arg(ap,t) (*(t*)((ap+=(sizeof(t)+3)&~3)-((sizeof(t)+3)&~3)))
@@ -253,7 +215,6 @@
     # define __builtin_va_copy(dest, src) (dest) = (src)
     #endif
 
-    /* TCC BBUILTIN AND BOUNDS ALIASES */
     #ifdef __leading_underscore
     # define __RENAME(X) __asm__("_"X)
     #else
@@ -297,7 +258,7 @@
     __BOUND(void*,__aeabi_memset,(void*,int,__SIZE_TYPE__))
 #endif
 
-#if defined __linux__ || defined __APPLE__ // HAVE MALLOC_REDIR
+#if defined __linux__ || defined __APPLE__
     #define __MAYBE_REDIR __BUILTIN
 #else
     #define __MAYBE_REDIR __BOTH
@@ -334,4 +295,4 @@
     __BUILTIN_EXTERN(parity, unsigned)
     #undef __BUILTIN_EXTERN
 
-    #endif /* ndef __TCC_PP__ */
+    #endif

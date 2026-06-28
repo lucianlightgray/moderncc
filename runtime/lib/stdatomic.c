@@ -1,5 +1,3 @@
-// for libtcc1, avoid including files that are not part of tcc
-// #include <stdint.h>
 #define uint8_t unsigned char
 #define uint16_t unsigned short
 #define uint32_t unsigned int
@@ -74,7 +72,6 @@ ATOMIC_GEN(uint16_t, 2)
 ATOMIC_GEN(uint32_t, 4)
 ATOMIC_GEN(uint64_t, 8)
 
-/* uses alias to allow building with gcc/clang */
 #ifdef __TINYC__
 #define ATOMIC(x)      __atomic_##x
 #else

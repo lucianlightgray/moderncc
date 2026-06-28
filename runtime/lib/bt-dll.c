@@ -1,6 +1,3 @@
-/* ------------------------------------------------------------- */
-/* stubs for calling bcheck functions from a dll. */
-
 #include <windows.h>
 #include <stdio.h>
 
@@ -57,10 +54,10 @@ static const char all_names[] = REDIR_ALL;
 #if __aarch64__
 # define REDIR(s) \
     __asm__(".global "_(s)";"_(s)":"); \
-    __asm__(".int 0x58000090"); /* ldr x16, [pc, #16] */ \
-    __asm__(".int 0xf9400210"); /* ldr x16, [x16] */ \
-    __asm__(".int 0xd61f0200"); /* br x16 */ \
-    __asm__(".int 0xd503201f"); /* nop for alignment */ \
+    __asm__(".int 0x58000090");   \
+    __asm__(".int 0xf9400210");   \
+    __asm__(".int 0xd61f0200");   \
+    __asm__(".int 0xd503201f");   \
     __asm__(".quad all_ptrs + (. - all_jmps - 16) / 24 * 8"); \
     __asm__(".type "_(s)",function\n.size "_(s)",.-"_(s));
 

@@ -1,8 +1,3 @@
-/**
- * This file has no copyright assigned and is placed in the Public Domain.
- * This file is part of the w64 mingw-runtime package.
- * No warranty is given; refer to the file DISCLAIMER within this package.
- */
 #ifndef _INC_CONIO
 #define _INC_CONIO
 
@@ -91,7 +86,6 @@ extern "C" {
   unsigned short __cdecl outpw(unsigned short,unsigned short);
 #endif
 
-  /* I/O intrin functions.  */
   __CRT_INLINE unsigned char __inbyte(unsigned short Port)
   {
       unsigned char value;
@@ -193,8 +187,6 @@ extern "C" {
       return value;
   }
  
-  /* Register sizes are different between 32/64 bit mode. So we have to do this for _WIN64 and _WIN32
-     separately.  */
  
 #ifdef _WIN64
   __CRT_INLINE void __writecr0(unsigned __int64 Data)

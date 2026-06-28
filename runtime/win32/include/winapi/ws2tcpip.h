@@ -1,8 +1,3 @@
-/**
- * This file has no copyright assigned and is placed in the Public Domain.
- * This file is part of the w64 mingw-runtime package.
- * No warranty is given; refer to the file DISCLAIMER within this package.
- */
 #ifndef _WS2TCPIP_H
 #define _WS2TCPIP_H
 
@@ -190,7 +185,7 @@ WS2TCPIP_INLINE void IN6ADDR_SETLOOPBACK(struct sockaddr_in6 *a) {
   IN6_SET_ADDR_LOOPBACK(&a->sin6_addr);
   a->sin6_scope_id = 0;
 }
-#endif /* !__CRT__NO_INLINE */
+#endif
 
 typedef union sockaddr_gen {
   struct sockaddr Address;

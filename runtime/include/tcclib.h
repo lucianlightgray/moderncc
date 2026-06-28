@@ -1,16 +1,9 @@
-/* Simple libc header for TCC 
- * 
- * Add any function you want from the libc there. This file is here
- * only for your convenience so that you do not need to put the whole
- * glibc include files on your floppy disk 
- */
 #ifndef _TCCLIB_H
 #define _TCCLIB_H
 
 #include <stddef.h>
 #include <stdarg.h>
 
-/* stdlib.h */
 void *calloc(size_t nmemb, size_t size);
 void *malloc(size_t size);
 void free(void *ptr);
@@ -21,7 +14,6 @@ unsigned long int strtoul(const char *nptr, char **endptr, int base);
 void exit(int);
 void *alloca(size_t);
 
-/* stdio.h */
 typedef struct __FILE FILE;
 #define EOF (-1)
 extern FILE *stdin;
@@ -58,7 +50,6 @@ int vdprintf(int fd, const char *format, va_list ap);
 
 void perror(const char *s);
 
-/* string.h */
 char *strcat(char *dest, const char *src);
 char *strchr(const char *s, int c);
 char *strrchr(const char *s, int c);
@@ -69,7 +60,6 @@ void *memset(void *s, int c, size_t n);
 char *strdup(const char *s);
 size_t strlen(const char *s);
 
-/* dlfcn.h */
 #define RTLD_LAZY       0x001
 #define RTLD_NOW        0x002
 #define RTLD_GLOBAL     0x100
@@ -79,4 +69,4 @@ const char *dlerror(void);
 void *dlsym(void *handle, char *symbol);
 int dlclose(void *handle);
 
-#endif /* _TCCLIB_H */
+#endif

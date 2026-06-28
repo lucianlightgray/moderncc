@@ -4,47 +4,13 @@
 #include "../math.h"
 #include "../stdint.h"
 
-/* TCC uses 8 bytes for double and long double, so effectively the l variants
- * are never used. For now, they just run the normal (double) variant.
- */
 
-/*
- * most of the code in this file is taken from MUSL rs-1.0 (MIT license)
- * - musl-libc: http://git.musl-libc.org/cgit/musl/tree/src/math?h=rs-1.0
- * - License:   http://git.musl-libc.org/cgit/musl/tree/COPYRIGHT?h=rs-1.0
- */
 
-/*******************************************************************************
-  Start of code based on MUSL
-*******************************************************************************/
-/*
-musl as a whole is licensed under the following standard MIT license:
 
-----------------------------------------------------------------------
-Copyright © 2005-2014 Rich Felker, et al.
 
-Permission is hereby granted, free of charge, to any person obtaining
-a copy of this software and associated documentation files (the
-"Software"), to deal in the Software without restriction, including
-without limitation the rights to use, copy, modify, merge, publish,
-distribute, sublicense, and/or sell copies of the Software, and to
-permit persons to whom the Software is furnished to do so, subject to
-the following conditions:
 
-The above copyright notice and this permission notice shall be
-included in all copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-----------------------------------------------------------------------
-*/
 
-/* fpclassify */
 
 __CRT_INLINE int __cdecl __fpclassify (double x) {
   union {double f; uint64_t i;} u = {.f = x};
@@ -67,7 +33,6 @@ __CRT_INLINE int __cdecl __fpclassifyl (long double x) {
 }
 
 
-/* signbit */
 
 __CRT_INLINE int __cdecl __signbit (double x) {
   union {double f; uint64_t i;} u = {.f = x};
@@ -84,7 +49,6 @@ __CRT_INLINE int __cdecl __signbitl (long double x) {
 }
 
 
-/* fmin*, fmax* */
 
 #define TCCFP_FMIN_EVAL (isnan(x) ? y :                                      \
                          isnan(y) ? x :                                      \
@@ -121,7 +85,6 @@ __CRT_INLINE long double __cdecl fmaxl (long double x, long double y) {
 }
 
 
-/* *round* */
 
 #define TCCFP_FORCE_EVAL(x) do {  \
   volatile typeof(x) __x;         \
@@ -138,12 +101,11 @@ __CRT_INLINE double __cdecl round (double x) {
   if (u.i >> 63)
     x = -x;
   if (e < 0x3ff-1) {
-    /* raise inexact if x!=0 */
     TCCFP_FORCE_EVAL(x + 0x1p52);
     return 0*u.f;
   }
   y = (double)(x + 0x1p52) - 0x1p52 - x;
-  y = y + x - (y > 0.5) + (y <= -0.5); /* branchless */
+  y = y + x - (y > 0.5) + (y <= -0.5);
   return (u.i >> 63) ? -y : y;
 }
 
@@ -180,14 +142,13 @@ __CRT_INLINE long long __cdecl llroundl (long double x) {
 }
 
 
-/* MUSL asinh, acosh, atanh */
 
 __CRT_INLINE double __cdecl asinh(double x) {
   union {double f; uint64_t i;} u = {.f = x};
   unsigned e = u.i >> 52 & 0x7ff, s = u.i >> 63;
   u.i &= -1ull / 2, x = u.f;
   if (e >= 0x3ff + 26) x = log(x) + 0.693147180559945309;
-  else if (e >= 0x3ff + 1) x = log(2*x + 1 / (sqrt(x*x + 1) + x)); /* |x|>=2 */
+  else if (e >= 0x3ff + 1) x = log(2*x + 1 / (sqrt(x*x + 1) + x));
   else if (e >= 0x3ff - 26) x = log1p(x + x*x / (sqrt(x*x + 1) + 1));
   else TCCFP_FORCE_EVAL(x + 0x1p120f);
   return s ? -x : x;
@@ -196,7 +157,7 @@ __CRT_INLINE double __cdecl asinh(double x) {
 __CRT_INLINE double __cdecl acosh(double x) {
   union {double f; uint64_t i;} u = {.f = x};
   unsigned e = u.i >> 52 & 0x7ff;
-  if (e < 0x3ff + 1) return --x, log1p(x + sqrt(x*x + 2*x)); /* |x|<2 */
+  if (e < 0x3ff + 1) return --x, log1p(x + sqrt(x*x + 2*x));
   if (e < 0x3ff + 26) return log(2*x - 1 / (x + sqrt(x*x - 1)));
   return log(x) + 0.693147180559945309;
 }
@@ -207,12 +168,11 @@ __CRT_INLINE double __cdecl atanh(double x) {
   u.i &= -1ull / 2, x = u.f;
   if (e < 0x3ff - 1) {
     if (e < 0x3ff - 32) { if (e == 0) TCCFP_FORCE_EVAL((float)x); }
-    else x = 0.5 * log1p(2*x + 2*x*x / (1 - x)); /* |x| < 0.5 */
-  } else x = 0.5 * log1p(2*(x / (1 - x))); /* avoid overflow */
+    else x = 0.5 * log1p(2*x + 2*x*x / (1 - x));
+  } else x = 0.5 * log1p(2*(x / (1 - x)));
   return s ? -x : x;
 }
 
-/* MUSL scalbn */
 
 __CRT_INLINE double __cdecl scalbn(double x, int n) {
   union {double f; uint64_t i;} u;
@@ -233,7 +193,6 @@ __CRT_INLINE double __cdecl scalbn(double x, int n) {
   return x * u.f;
 }
 
-/* MUSL: Override msvcrt frexp(): 4.5x speedup! */
 
 __CRT_INLINE double __cdecl frexp(double x, int *e) {
   union {double f; uint64_t i;} u = {.f = x};
@@ -250,7 +209,6 @@ __CRT_INLINE double __cdecl frexp(double x, int *e) {
   return u.f;
 }
 
-/* MUSL nan */
 
 __CRT_INLINE double __cdecl nan(const char* s) {
   return NAN;
@@ -263,16 +221,8 @@ __CRT_INLINE long double __cdecl nanl(const char* s) {
 }
 
 
-/*******************************************************************************
-  End of code based on MUSL
-*******************************************************************************/
 
 
-/* Following are math functions missing from msvcrt.dll, and not defined
- * in math.h or above. Functions still remaining:
- * remquo(), remainder(), fma(), erf(), erfc(), nearbyint().
- * In <stdlib.h>: lldiv().
- */
 
 __CRT_INLINE float __cdecl scalbnf(float x, int n) {
   return scalbn(x, n);
@@ -291,7 +241,6 @@ __CRT_INLINE long double __cdecl scalblnl(long double x, long n) {
   return scalbn(x, n);
 }
 
-/* Override msvcrt ldexp(): 7.3x speedup! */
 
 __CRT_INLINE double __cdecl ldexp(double x, int expn) {
   return scalbn(x, expn);
@@ -333,7 +282,6 @@ __CRT_INLINE long double __cdecl rintl (long double x) {
 }
 
 
-/* 7.12.9.5 */
 __CRT_INLINE long __cdecl lrint(double x) {
   long retval;
   __asm__ __volatile__
@@ -380,14 +328,14 @@ __CRT_INLINE double __cdecl trunc(double _x) {
   double retval;
   unsigned short saved_cw;
   unsigned short tmp_cw;
-  __asm__ ("fnstcw %0;" : "=m" (saved_cw)); /* save FPU control word */
+  __asm__ ("fnstcw %0;" : "=m" (saved_cw));
   tmp_cw = (saved_cw & ~(FE_TONEAREST | FE_DOWNWARD | FE_UPWARD | FE_TOWARDZERO))
     | FE_TOWARDZERO;
   __asm__ ("fldcw %0;" : : "m" (tmp_cw));
   __asm__ ("fldl  %1;"
            "frndint;"
-           "fstpl  %0;" : "=m" (retval)  : "m" (_x)); /* round towards zero */
-  __asm__ ("fldcw %0;" : : "m" (saved_cw) ); /* restore saved control word */
+           "fstpl  %0;" : "=m" (retval)  : "m" (_x));
+  __asm__ ("fldcw %0;" : : "m" (saved_cw) );
   return retval;
 }
 
@@ -413,7 +361,6 @@ __CRT_INLINE long double __cdecl nexttowardl(long double x, long double to) {
   return nextafter(x, to);
 }
 
-/* Override msvcrt fabs(): 6.3x speedup! */
 
 __CRT_INLINE double __cdecl fabs(double x) {
   return x < 0 ? -x : x;
@@ -476,7 +423,6 @@ __CRT_INLINE long double __cdecl sqrtl(long double x) { return sqrt(x); }
 __CRT_INLINE long double __cdecl tanhl(long double x) { return tanh(x); }
 __CRT_INLINE long double __cdecl tanl(long double x) { return tan(x); }
 
-/* Following are accurate, but much shorter implementations than MUSL lib. */
 
 __CRT_INLINE double __cdecl log1p(double x) {
   double u = 1.0 + x;
@@ -562,10 +508,6 @@ __CRT_INLINE long double __cdecl fdiml(long double x, long double y) {
 }
 
 
-/* tgamma and lgamma: Lanczos approximation
- * https://rosettacode.org/wiki/Gamma_function
- * https://www.johndcook.com/blog/cpp_gamma
- */
 
 __CRT_INLINE double __cdecl tgamma(double x) {
   double m = 1.0, t = 3.14159265358979323;
@@ -583,9 +525,9 @@ __CRT_INLINE double __cdecl tgamma(double x) {
                               771.32342877765313, -176.61502916214059,
                               12.507343278686905, -0.13857109526572012,
                               9.9843695780195716e-6, 1.5056327351493116e-7};
-  m = 0.99999999999980993, t = x + 6.5; /* x-1+8-.5 */
+  m = 0.99999999999980993, t = x + 6.5;
   for (int k = 0; k < 8; ++k) m += c[k] / (x + k);
-  return 2.50662827463100050 * pow(t, x - 0.5)*exp(-t)*m; /* C=sqrt(2pi) */
+  return 2.50662827463100050 * pow(t, x - 0.5)*exp(-t)*m;
 }
 
 
@@ -599,7 +541,7 @@ __CRT_INLINE double __cdecl lgamma(double x) {
                               1.0/1188.0, -691.0/360360.0, 1.0/156.0};
   double m = -3617.0/122400.0, t = 1.0 / (x*x);
   for (int k = 6; k >= 0; --k) m = m*t + c[k];
-  return (x - 0.5)*log(x) - x + 0.918938533204672742 + m / x; /* C=log(2pi)/2 */
+  return (x - 0.5)*log(x) - x + 0.918938533204672742 + m / x;
 }
 
 __CRT_INLINE float __cdecl tgammaf(float x) {
@@ -615,4 +557,4 @@ __CRT_INLINE long double __cdecl lgammal(long double x) {
   return lgamma(x);
 }
 
-#endif /* _TCC_LIBM_H_ */
+#endif

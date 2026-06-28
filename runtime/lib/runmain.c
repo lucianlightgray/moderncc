@@ -1,6 +1,3 @@
-/* ------------------------------------------------------------- */
-/* support for tcc_run() */
-
 #ifdef __leading_underscore
 # define _(s) s
 #else

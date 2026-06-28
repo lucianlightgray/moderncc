@@ -1,42 +1,28 @@
-/*************************************************************/
-/*
- *  ARM64 (AArch64) assembler for TCC
- *
- *  Based on ARM64 Architecture Reference Manual
- *  Supports AArch64 assembler parsing and extended inline asm
- *  with operands, constraints, and clobbers.
- */
-
 #ifdef TARGET_DEFS_ONLY
 
 #ifndef TCC_DISABLE_ASM
 #define CONFIG_TCC_ASM
 #endif
-/* 32 general purpose + 32 SIMD/FP registers */
 #define NB_ASM_REGS 64
 
 ST_FUNC void g(int c);
 ST_FUNC void gen_le16(int c);
 ST_FUNC void gen_le32(int c);
 
-/*************************************************************/
 #else
-/*************************************************************/
 
 #define USING_GLOBALS
 #include "tcc.h"
 #ifdef CONFIG_TCC_ASM
 
-/* Register type flags */
-#define REG_X     0x01  /* 64-bit general purpose */
-#define REG_W     0x02  /* 32-bit general purpose */
-#define REG_V     0x04  /* 128-bit SIMD */
-#define REG_D     0x08  /* 64-bit FP */
-#define REG_S     0x10  /* 32-bit FP */
-#define REG_H     0x20  /* 16-bit FP */
-#define REG_B     0x40  /* 8-bit SIMD */
+#define REG_X     0x01
+#define REG_W     0x02
+#define REG_V     0x04
+#define REG_D     0x08
+#define REG_S     0x10
+#define REG_H     0x20
+#define REG_B     0x40
 
-/* Operand types */
 enum {
     OPT_REG,
     OPT_IM,
@@ -49,13 +35,11 @@ enum {
 #define OP_ADDR    (1 << OPT_ADDR)
 #define OP_COND    (1 << OPT_COND)
 
-/* Register allocation masks */
 #define REG_OUT_MASK 0x01
 #define REG_IN_MASK  0x02
 
 #define is_reg_allocated(reg) (regs_allocated[reg] & reg_mask)
 
-/* ARM64 register constants */
 #define TREG_X0  0
 #define TREG_X1  1
 #define TREG_X2  2
@@ -109,10 +93,8 @@ enum {
     ADDR_POST,
 };
 
-/* Forward declaration */
 static void parse_addr_operand(TCCState *s1, Operand *op);
 
-/* XXX: make it faster ? */
 ST_FUNC void g(int c)
 {
     int ind1;
@@ -142,7 +124,6 @@ ST_FUNC void gen_expr32(ExprValue *pe)
     gen_le32(pe->v);
 }
 
-/* Emit 32-bit instruction */
 static void emit_instr32(uint32_t val)
 {
     if (nocode_wanted)
@@ -153,37 +134,27 @@ static void emit_instr32(uint32_t val)
     ind += 4;
 }
 
-/* Parse ARM64 register token for assembler syntax. */
 static int arm64_parse_asm_reg(int t)
 {
-    /* X registers (64-bit) */
     if (t >= TOK_ASM_x0 && t <= TOK_ASM_x30)
         return t - TOK_ASM_x0;
-    /* W registers (32-bit) */
     if (t >= TOK_ASM_w0 && t <= TOK_ASM_w30)
         return t - TOK_ASM_w0;
-    /* V registers (128-bit SIMD) */
     if (t >= TOK_ASM_v0 && t <= TOK_ASM_v31)
         return (t - TOK_ASM_v0) + 32;
-    /* D registers (64-bit FP) */
     if (t >= TOK_ASM_d0 && t <= TOK_ASM_d31)
         return (t - TOK_ASM_d0) + 32;
-    /* S registers (32-bit FP) */
     if (t >= TOK_ASM_s0 && t <= TOK_ASM_s31)
         return (t - TOK_ASM_s0) + 32;
-    /* H registers (16-bit FP) */
     if (t >= TOK_ASM_h0 && t <= TOK_ASM_h31)
         return (t - TOK_ASM_h0) + 32;
-    /* B registers (8-bit SIMD) */
     if (t >= TOK_ASM_b0 && t <= TOK_ASM_b31)
         return (t - TOK_ASM_b0) + 32;
-    /* Special registers */
     if (t == TOK_ASM_sp || t == TOK_ASM_xzr || t == TOK_ASM_wzr)
-        return 31;  /* SP/ZR encoded as 31 */
+        return 31;
     return -1;
 }
 
-/* Get register type from token */
 static uint8_t get_reg_type(int t)
 {
     if (t >= TOK_ASM_x0 && t <= TOK_ASM_x30)
@@ -200,7 +171,6 @@ static uint8_t get_reg_type(int t)
         return REG_H;
     if (t >= TOK_ASM_b0 && t <= TOK_ASM_b31)
         return REG_B;
-    /* Special registers - sp is 64-bit, xzr is 64-bit, wzr is 32-bit */
     if (t == TOK_ASM_sp || t == TOK_ASM_xzr)
         return REG_X;
     if (t == TOK_ASM_wzr)
@@ -208,7 +178,6 @@ static uint8_t get_reg_type(int t)
     return REG_X;
 }
 
-/* Parse condition code */
 static int parse_condition(int t)
 {
     switch (t) {
@@ -272,7 +241,6 @@ static int arm64_parse_regvar(int t)
     return -1;
 }
 
-/* Parse a single operand */
 static void parse_operand(TCCState *s1, Operand *op)
 {
     int reg;
@@ -285,13 +253,11 @@ static void parse_operand(TCCState *s1, Operand *op)
     op->addr_mode = ADDR_OFF;
     op->reg_tok = 0;
 
-    /* Address operand in brackets [xn, ...] */
     if (tok == '[') {
         parse_addr_operand(s1, op);
         return;
     }
 
-    /* Register */
     reg = arm64_parse_asm_reg(tok);
     if (reg >= 0) {
         op->type = OP_REG;
@@ -302,7 +268,6 @@ static void parse_operand(TCCState *s1, Operand *op)
         return;
     }
 
-    /* Condition code */
     reg = parse_condition(tok);
     if (reg >= 0) {
         op->type = OP_COND;
@@ -311,7 +276,6 @@ static void parse_operand(TCCState *s1, Operand *op)
         return;
     }
 
-    /* Immediate or address expression */
     if (tok == '#' || tok == ':' || tok == '@' || tok == '$') {
         next();
         asm_expr(s1, &op->e);
@@ -325,7 +289,6 @@ static void parse_operand(TCCState *s1, Operand *op)
     }
 }
 
-/* Parse a symbolic/immediate expression operand used by branch instructions. */
 static void parse_expr_operand(TCCState *s1, Operand *op)
 {
     op->type = OP_IM;
@@ -341,7 +304,6 @@ static void parse_expr_operand(TCCState *s1, Operand *op)
     asm_expr(s1, &op->e);
 }
 
-/* Parse address operand in brackets [xn, ...] */
 static void parse_addr_operand(TCCState *s1, Operand *op)
 {
     int reg;
@@ -363,7 +325,6 @@ static void parse_addr_operand(TCCState *s1, Operand *op)
     op->reg = reg;
     op->reg_tok = tok;
     next();
-    /* Check for offset */
     if (tok == ',') {
         next();
         if (tok == '#' || tok == '@' || tok == '$')
@@ -383,13 +344,11 @@ static void parse_addr_operand(TCCState *s1, Operand *op)
     }
 }
 
-/* Generate MOVZ/MOVN/MOVK with base opcode */
 static void gen_mov_with_base(int rd, uint16_t imm, int shift,
                               int is_64bit, uint32_t base_opcode)
 {
     uint32_t instr = base_opcode;
     if (is_64bit) instr |= ARM64_SF(1);
-    /* shift is halfword index (0-3), encode as LSL #0/16/32/48 */
     instr |= ARM64_IMM_HW(imm, shift);
     instr |= ARM64_RD(rd);
     emit_instr32(instr);
@@ -400,19 +359,16 @@ static void gen_movz(int rd, uint16_t imm, int shift, int is_64bit)
     gen_mov_with_base(rd, imm, shift, is_64bit, ARM64_MOVZ);
 }
 
-/* Generate MOVN instruction */
 static void gen_movn(int rd, uint16_t imm, int shift, int is_64bit)
 {
     gen_mov_with_base(rd, imm, shift, is_64bit, ARM64_MOVN);
 }
 
-/* Generate MOVK instruction */
 static void gen_movk(int rd, uint16_t imm, int shift, int is_64bit)
 {
     gen_mov_with_base(rd, imm, shift, is_64bit, ARM64_MOVK);
 }
 
-/* Generate ADD (immediate) */
 static void gen_add_imm(int rd, int rn, uint32_t imm, int is_64bit, int setflags)
 {
     uint32_t instr = ARM64_ADD_IMM;
@@ -437,7 +393,6 @@ static void gen_add_imm(int rd, int rn, uint32_t imm, int is_64bit, int setflags
     emit_instr32(instr);
 }
 
-/* Generate SUB (immediate) */
 static void gen_sub_imm(int rd, int rn, uint32_t imm, int is_64bit, int setflags)
 {
     uint32_t instr = ARM64_SUB_IMM;
@@ -462,7 +417,6 @@ static void gen_sub_imm(int rd, int rn, uint32_t imm, int is_64bit, int setflags
     emit_instr32(instr);
 }
 
-/* Generate data processing register instruction */
 static void gen_dp_reg(uint32_t opcode, int rd, int rn, int rm, int is_64bit)
 {
     uint32_t instr = opcode;
@@ -473,7 +427,6 @@ static void gen_dp_reg(uint32_t opcode, int rd, int rn, int rm, int is_64bit)
     emit_instr32(instr);
 }
 
-/* Generate LDR/STR (unsigned immediate) */
 static void gen_ldst_imm(uint32_t base_opcode, int rt, int rn,
                          int32_t offset, int size_log2)
 {
@@ -519,7 +472,6 @@ static void gen_ldst_imm(uint32_t base_opcode, int rt, int rn,
     tcc_error("load/store offset out of range");
 }
 
-/* Generate STP/LDP (signed immediate) */
 static void gen_ldst_pair(uint32_t base_opcode, int rt, int rt2, int rn,
                           int32_t offset, int size_log2)
 {
@@ -539,8 +491,6 @@ static void gen_ldst_pair(uint32_t base_opcode, int rt, int rt2, int rn,
     emit_instr32(instr);
 }
 
-/* Generate B (branch) */
-/* Generate B/BL with base opcode */
 static void gen_b_or_bl(int32_t offset, uint32_t base_opcode)
 {
     uint32_t instr = base_opcode;
@@ -553,13 +503,11 @@ static void gen_b(int32_t offset)
     gen_b_or_bl(offset, ARM64_B);
 }
 
-/* Generate BL (branch with link) */
 static void gen_bl(int32_t offset)
 {
     gen_b_or_bl(offset, ARM64_BL);
 }
 
-/* Generate BR (branch to register) */
 static void gen_br(int rn)
 {
     uint32_t instr = ARM64_BR;
@@ -567,7 +515,6 @@ static void gen_br(int rn)
     emit_instr32(instr);
 }
 
-/* Generate BLR (branch with link to register) */
 static void gen_blr(int rn)
 {
     uint32_t instr = ARM64_BLR;
@@ -575,7 +522,6 @@ static void gen_blr(int rn)
     emit_instr32(instr);
 }
 
-/* Generate RET */
 static void gen_ret(int rn)
 {
     uint32_t instr = ARM64_RET;
@@ -583,7 +529,6 @@ static void gen_ret(int rn)
     emit_instr32(instr);
 }
 
-/* Generate conditional branch */
 static void gen_b_cond(int cond, int32_t offset)
 {
     uint32_t instr = ARM64_B_COND;
@@ -592,8 +537,6 @@ static void gen_b_cond(int cond, int32_t offset)
     emit_instr32(instr);
 }
 
-/* Generate CBZ */
-/* Generate CBZ/CBNZ with base opcode */
 static void gen_cbz_or_cbnz(int rt, int32_t offset, int is_64bit, uint32_t base_opcode)
 {
     uint32_t instr = base_opcode;
@@ -608,13 +551,11 @@ static void gen_cbz(int rt, int32_t offset, int is_64bit)
     gen_cbz_or_cbnz(rt, offset, is_64bit, ARM64_CBZ);
 }
 
-/* Generate CBNZ */
 static void gen_cbnz(int rt, int32_t offset, int is_64bit)
 {
     gen_cbz_or_cbnz(rt, offset, is_64bit, ARM64_CBNZ);
 }
 
-/* Generate MOV (register) - ORR with zero register */
 static void gen_mov_reg(int rd, int rm, int is_64bit)
 {
     uint32_t instr = ARM64_MOV_REG;
@@ -716,8 +657,6 @@ static void gen_logical_imm(uint32_t opcode, int rd, int rn,
     emit_instr32(instr);
 }
 
-/* return the constraint priority (we allocate first the lowest
-   numbered constraints) */
 static inline int constraint_priority(const char *str)
 {
     int priority, c, pr;
@@ -946,10 +885,10 @@ static void gen_mrs(int rt, int sysreg)
     uint32_t instr;
 
     switch (sysreg) {
-        case 0: /* FPCR */
+        case 0:
             instr = ARM64_MRS_FPCR;
             break;
-        case 1: /* FPSR */
+        case 1:
             instr = ARM64_MRS_FPSR;
             break;
         default:
@@ -964,10 +903,10 @@ static void gen_msr(int rt, int sysreg)
     uint32_t instr;
 
     switch (sysreg) {
-        case 0: /* FPCR */
+        case 0:
             instr = ARM64_MSR_FPCR;
             break;
-        case 1: /* FPSR */
+        case 1:
             instr = ARM64_MSR_FPSR;
             break;
         default:
@@ -977,22 +916,19 @@ static void gen_msr(int rt, int sysreg)
     emit_instr32(instr | ARM64_RD(rt));
 }
 
-/* Generate NOP */
 static void gen_nop(void)
 {
     emit_instr32(ARM64_NOP);
 }
 
-/* Generate shift operations (LSL, LSR, ASR, ROR) */
 static void gen_shift(int rd, int rn, int rm_or_imm, int shift_type, int is_imm, int is_64bit)
 {
     uint32_t instr;
     int width = is_64bit ? 64 : 32;
 
     if (is_imm) {
-        /* Shift by immediate */
         switch (shift_type) {
-            case 0: /* LSL - UBFM alias */
+            case 0:
                 if (rm_or_imm < 0 || rm_or_imm >= width) {
                     tcc_error("shift immediate out of range");
                     return;
@@ -1001,7 +937,7 @@ static void gen_shift(int rd, int rn, int rm_or_imm, int shift_type, int is_imm,
                 instr |= ARM64_IMM_R((width - rm_or_imm) & (width - 1));
                 instr |= ARM64_IMM_S(width - rm_or_imm - 1);
                 break;
-            case 1: /* LSR - UBFM alias: immr = shift, imms = width - 1 */
+            case 1:
                 if (rm_or_imm < 0 || rm_or_imm >= width) {
                     tcc_error("shift immediate out of range");
                     return;
@@ -1010,7 +946,7 @@ static void gen_shift(int rd, int rn, int rm_or_imm, int shift_type, int is_imm,
                 instr |= ARM64_IMM_R(rm_or_imm);
                 instr |= ARM64_IMM_S(width - 1);
                 break;
-            case 2: /* ASR - SBFM alias: immr = shift, imms = width - 1 */
+            case 2:
                 if (rm_or_imm < 0 || rm_or_imm >= width) {
                     tcc_error("shift immediate out of range");
                     return;
@@ -1019,7 +955,7 @@ static void gen_shift(int rd, int rn, int rm_or_imm, int shift_type, int is_imm,
                 instr |= ARM64_IMM_R(rm_or_imm);
                 instr |= ARM64_IMM_S(width - 1);
                 break;
-            case 3: /* ROR - EXTR alias: Rm = source, Rn = source, imms = shift */
+            case 3:
                 if (rm_or_imm < 0 || rm_or_imm >= width) {
                     tcc_error("shift immediate out of range");
                     return;
@@ -1038,18 +974,17 @@ static void gen_shift(int rd, int rn, int rm_or_imm, int shift_type, int is_imm,
         instr |= ARM64_RN(rn);
         instr |= ARM64_RD(rd);
     } else {
-        /* Shift by register */
         switch (shift_type) {
-            case 0: /* LSL */
+            case 0:
                 instr = ARM64_LSL_REG;
                 break;
-            case 1: /* LSR */
+            case 1:
                 instr = ARM64_LSR_REG;
                 break;
-            case 2: /* ASR */
+            case 2:
                 instr = ARM64_ASR_REG;
                 break;
-            case 3: /* ROR */
+            case 3:
                 instr = ARM64_ROR_REG;
                 break;
             default:
@@ -1065,7 +1000,6 @@ static void gen_shift(int rd, int rn, int rm_or_imm, int shift_type, int is_imm,
     emit_instr32(instr);
 }
 
-/* Handle shift instructions */
 static void asm_shift(TCCState *s1, int token)
 {
     Operand op1, op2, op3;
@@ -1133,19 +1067,18 @@ static void asm_shift(TCCState *s1, int token)
     }
 }
 
-/* Generate barrier instructions (ISB, DSB, DMB) */
 static void gen_barrier(int barrier_type, int option)
 {
     uint32_t instr;
 
     switch (barrier_type) {
-        case 0: /* ISB - Instruction Synchronization Barrier */
+        case 0:
             instr = ARM64_ISB;
             break;
-        case 1: /* DSB - Data Synchronization Barrier */
+        case 1:
             instr = ARM64_DSB;
             break;
-        case 2: /* DMB - Data Memory Barrier */
+        case 2:
             instr = ARM64_DMB;
             break;
         default:
@@ -1156,7 +1089,6 @@ static void gen_barrier(int barrier_type, int option)
     emit_instr32(instr);
 }
 
-/* Handle barrier instructions */
 static void asm_barrier(TCCState *s1, int token)
 {
     int barrier_type, option;
@@ -1177,10 +1109,8 @@ static void asm_barrier(TCCState *s1, int token)
             return;
     }
 
-    /* Default option = sy/full system. */
     option = 0xF;
 
-    /* Check for an optional named or numeric barrier scope. */
     if (tok != TOK_LINEFEED) {
         option = parse_barrier_option_name(tok);
         if (option >= 0) {
@@ -1202,7 +1132,6 @@ static void asm_barrier(TCCState *s1, int token)
     gen_barrier(barrier_type, option);
 }
 
-/* Generate immediate move sequence */
 static void gen_mov_imm(int rd, uint64_t imm, int is_64bit)
 {
     uint16_t hw;
@@ -1212,7 +1141,6 @@ static void gen_mov_imm(int rd, uint64_t imm, int is_64bit)
         hw = (imm >> (i * 16)) & 0xFFFF;
         if (hw != 0 || i == 0) {
             if (first) {
-                /* Pass halfword index (0-3), not bit count */
                 gen_movz(rd, hw, i, is_64bit);
                 first = 0;
             } else {
@@ -1224,7 +1152,6 @@ static void gen_mov_imm(int rd, uint64_t imm, int is_64bit)
     }
 }
 
-/* Handle mov instruction */
 static void asm_mov(TCCState *s1)
 {
     Operand op1, op2;
@@ -1238,14 +1165,12 @@ static void asm_mov(TCCState *s1)
     is_64bit = (op1.reg_type & REG_X);
 
     if (op2.type & OP_IM) {
-        /* Handle immediate: mov x0, #123 */
         if (operand_is_sp(&op1)) {
             tcc_error("cannot move an immediate into sp");
             return;
         }
         gen_mov_imm(rd, op2.e.v, is_64bit);
     } else if (op2.type & OP_REG) {
-        /* Handle register: mov x0, x1 */
         rn = op2.reg;
         if (operand_is_sp(&op1) || operand_is_sp(&op2))
             gen_add_imm(rd, rn, 0, 1, 0);
@@ -1256,7 +1181,6 @@ static void asm_mov(TCCState *s1)
     }
 }
 
-/* Handle data processing instructions */
 static void asm_data_proc(TCCState *s1, int token)
 {
     Operand op1, op2, op3;
@@ -1351,7 +1275,6 @@ static void asm_data_proc(TCCState *s1, int token)
     }
 }
 
-/* Handle load/store instructions */
 static void asm_ldst(TCCState *s1, int token)
 {
     Operand op1, op2;
@@ -1514,12 +1437,10 @@ static void asm_sysreg(TCCState *s1, int token)
     gen_msr(op.reg, sysreg);
 }
 
-/* Get condition code from branch instruction token */
 static int get_branch_condition(int branch_token)
 {
     int cond_token;
 
-    /* Map branch token to condition token (strip 'b' prefix) */
     switch (branch_token) {
         case TOK_ASM_beq: cond_token = TOK_ASM_eq; break;
         case TOK_ASM_bne: cond_token = TOK_ASM_ne; break;
@@ -1543,7 +1464,6 @@ static int get_branch_condition(int branch_token)
     return parse_condition(cond_token);
 }
 
-/* Handle branch instructions */
 static void asm_branch(TCCState *s1, int token)
 {
     Operand op;
@@ -1551,9 +1471,8 @@ static void asm_branch(TCCState *s1, int token)
     Sym *sym;
     int32_t offset;
 
-    /* ret can be used without operand */
     if (token == TOK_ASM_ret && (tok == TOK_LINEFEED || tok == ';' || tok == TOK_EOF)) {
-        gen_ret(30);  /* x30 is the link register */
+        gen_ret(30);
         return;
     }
 
@@ -1565,12 +1484,10 @@ static void asm_branch(TCCState *s1, int token)
     if (op.type & OP_IM) {
         sym = op.e.sym;
         if (sym) {
-            /* Symbolic address - emit relocation */
             offset = 0;
 
             cond = get_branch_condition(token);
             if (cond >= 0) {
-                /* Conditional branch - use CONDBR19 relocation */
                 gen_b_cond(cond, 0);
                 greloca(cur_text_section, sym, ind - 4, R_AARCH64_CONDBR19, 0);
             } else {
@@ -1623,7 +1540,6 @@ static void asm_branch(TCCState *s1, int token)
     }
 }
 
-/* Handle CBZ/CBNZ */
 static void asm_cb(TCCState *s1, int token)
 {
     Operand op1, op2;
@@ -1640,7 +1556,6 @@ static void asm_cb(TCCState *s1, int token)
     sym = op2.e.sym;
 
     if (sym) {
-        /* Symbolic address - emit relocation */
         offset = 0;
         if (token == TOK_ASM_cbz) {
             gen_cbz(rt, offset, is_64bit);
@@ -1658,7 +1573,6 @@ static void asm_cb(TCCState *s1, int token)
     }
 }
 
-/* Handle MOVZ/MOVN/MOVK */
 static void asm_move_wide(TCCState *s1, int token)
 {
     Operand op1, op2;
@@ -1718,7 +1632,6 @@ static void asm_move_wide(TCCState *s1, int token)
     }
 }
 
-/* Main assembler opcode dispatcher */
 ST_FUNC void asm_opcode(TCCState *s1, int opcode)
 {
     switch (opcode) {
@@ -1735,7 +1648,6 @@ ST_FUNC void asm_opcode(TCCState *s1, int opcode)
             break;
 
         case TOK_ASM_mov:
-            /* mov is handled separately - it's ORR with zero register */
             asm_mov(s1);
             break;
 
@@ -1817,7 +1729,6 @@ ST_FUNC void asm_opcode(TCCState *s1, int opcode)
     }
 }
 
-/* Substitute assembler operand */
 ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier)
 {
     int r, reg, size, fp_reg, align;
@@ -1864,7 +1775,6 @@ ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier)
             tcc_internal_error("");
         cstr_printf(add_str, "[x%d]", reg);
     } else {
-        /* register case */
         reg = r & VT_VALMASK;
         if (reg >= VT_CONST)
             tcc_internal_error("");
@@ -1894,7 +1804,6 @@ ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier)
             }
         }
 
-        /* choose register operand size */
         if ((sv->type.t & VT_BTYPE) == VT_BYTE ||
             (sv->type.t & VT_BTYPE) == VT_BOOL)
             size = 1;
@@ -2251,7 +2160,6 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
     }
 }
 
-/* Handle clobber list */
 ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str)
 {
     int reg;
@@ -2267,12 +2175,10 @@ ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str)
     clobber_regs[reg] = 1;
 }
 
-/* Parse register variable - this is the ST_FUNC that tcc.h expects */
 ST_FUNC int asm_parse_regvar(int t)
 {
     return arm64_parse_regvar(t);
 }
 
-/*************************************************************/
-#endif /* def CONFIG_TCC_ASM */
-#endif /* ndef TARGET_DEFS_ONLY */
+#endif
+#endif

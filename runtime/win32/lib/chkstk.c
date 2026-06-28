@@ -1,11 +1,5 @@
-/* Auto-ported from win32/lib/chkstk.S to a C translation unit (file-scope __asm__)
-   so the project carries no .S files. The assembly is byte-identical; the
-   former cpp-time _(sym) symbol decoration is preserved via STR(_(sym)),
-   and labels resolve across the separate __asm__ blocks (same TU). */
 #define STR_(x) #x
 #define STR(x) STR_(x)
-/* ---------------------------------------------- */
-/* chkstk86.s */
 
 #ifdef __leading_underscore
 # define _(s) _##s
@@ -13,17 +7,12 @@
 # define _(s) s
 #endif
 
-/* ---------------------------------------------- */
 #if defined(__aarch64__)
 
 __asm__(
 ".globl __chkstk\n"
 "__chkstk:\n"
 );
-    /* Windows ARM64 stack probing helper.
-       arm64-gen.c passes the requested frame size in x15, scaled in 16-byte
-       units. Probe one 4 KiB page at a time and leave SP unchanged; the caller
-       subtracts SP after the probe returns. */
 __asm__(
 "    mov     x16, sp\n"
 "    lsl     x17, x15, 4\n"
@@ -42,7 +31,6 @@ __asm__(
 "    ret\n"
 );
 
-/* ---------------------------------------------- */
 #elif defined(__i386__)
 
 __asm__(
@@ -70,8 +58,7 @@ __asm__(
 "    jmp     *4(%eax)\n"
 );
 
-/* ---------------------------------------------- */
-#else /* __x86_64__ */
+#else
 
 __asm__(
 ".globl " STR(_(__chkstk)) "\n"
@@ -99,6 +86,4 @@ __asm__(
 "    jmp     *8(%rax)\n"
 );
 
-/* ---------------------------------------------- */
 #endif
-/* ---------------------------------------------- */

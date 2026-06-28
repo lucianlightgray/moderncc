@@ -17,13 +17,11 @@
 #define PCRELATIVE_DLLPLT 1
 #define RELOCATE_DLLPLT 1
 
-#else /* !TARGET_DEFS_ONLY */
+#else
 
 #include "tcc.h"
 
 #ifdef NEED_RELOC_TYPE
-/* Returns 1 for a code relocation, 0 for a data relocation. For unknown
-   relocations, returns -1. */
 ST_FUNC int code_reloc (int reloc_type)
 {
     switch (reloc_type) {
@@ -59,9 +57,6 @@ ST_FUNC int code_reloc (int reloc_type)
     return -1;
 }
 
-/* Returns an enumerator to describe whether and when the relocation needs a
-   GOT and/or PLT entry to be created. See tcc.h for a description of the
-   different values. */
 ST_FUNC int gotplt_entry_type (int reloc_type)
 {
     switch (reloc_type) {
@@ -117,8 +112,6 @@ ST_FUNC unsigned create_plt_entry(TCCState *s1, unsigned got_offset, struct sym_
     return plt_offset;
 }
 
-/* relocate the PLT: compute addresses and offsets in the PLT now that final
-   address for PLT and GOT are known (see fill_program_header) */
 ST_FUNC void relocate_plt(TCCState *s1)
 {
     uint8_t *p, *p_end;
@@ -136,17 +129,17 @@ ST_FUNC void relocate_plt(TCCState *s1)
         if ((off + ((uint32_t)1 << 20)) >> 21)
             tcc_error_noabort("Failed relocating PLT (off=0x%lx, got=0x%lx, plt=0x%lx)", (long)off, (long)got, (long)plt);
         write32le(p, ARM64_STP_X_PRE | ARM64_RT(16) | ARM64_RT2(30) |
-                      ARM64_RN(31) | ARM64_IMM7(-2)); // stp x16,x30,[sp,#-16]!
-        write32le(p + 4, (ARM64_ADRP | ARM64_RD(16) | // adrp x16,...
+                      ARM64_RN(31) | ARM64_IMM7(-2));
+        write32le(p + 4, (ARM64_ADRP | ARM64_RD(16) |
 			  (off & 0x1ffffc) << 3 | (off & 3) << 29));
-        write32le(p + 8, (ARM64_LDR_X | ARM64_RT(17) | ARM64_RN(16) | // ldr x17,[x16,#...]
+        write32le(p + 8, (ARM64_LDR_X | ARM64_RT(17) | ARM64_RN(16) |
 			  (got & 0xff8) << 7));
-        write32le(p + 12, (ARM64_ADD_IMM | ARM64_SF(1) | ARM64_RD(16) | ARM64_RN(16) | // add x16,x16,#...
+        write32le(p + 12, (ARM64_ADD_IMM | ARM64_SF(1) | ARM64_RD(16) | ARM64_RN(16) |
 			   (got & 0xfff) << 10));
-        write32le(p + 16, ARM64_BR | ARM64_RN(17)); // br x17
-        write32le(p + 20, ARM64_NOP); // nop
-        write32le(p + 24, ARM64_NOP); // nop
-        write32le(p + 28, ARM64_NOP); // nop
+        write32le(p + 16, ARM64_BR | ARM64_RN(17));
+        write32le(p + 20, ARM64_NOP);
+        write32le(p + 24, ARM64_NOP);
+        write32le(p + 28, ARM64_NOP);
         p += 32;
 	got = s1->got->sh_addr;
         while (p < p_end) {
@@ -155,13 +148,13 @@ ST_FUNC void relocate_plt(TCCState *s1)
             uint64_t off = (addr >> 12) - (pc >> 12);
             if ((off + ((uint32_t)1 << 20)) >> 21)
                 tcc_error_noabort("Failed relocating PLT (off=0x%lx, addr=0x%lx, pc=0x%lx)", (long)off, (long)addr, (long)pc);
-            write32le(p, (ARM64_ADRP | ARM64_RD(16) | // adrp x16,...
+            write32le(p, (ARM64_ADRP | ARM64_RD(16) |
 			  (off & 0x1ffffc) << 3 | (off & 3) << 29));
-            write32le(p + 4, (ARM64_LDR_X | ARM64_RT(17) | ARM64_RN(16) | // ldr x17,[x16,#...]
+            write32le(p + 4, (ARM64_LDR_X | ARM64_RT(17) | ARM64_RN(16) |
 			      (addr & 0xff8) << 7));
-            write32le(p + 8, (ARM64_ADD_IMM | ARM64_SF(1) | ARM64_RD(16) | ARM64_RN(16) | // add x16,x16,#...
+            write32le(p + 8, (ARM64_ADD_IMM | ARM64_SF(1) | ARM64_RD(16) | ARM64_RN(16) |
 			      (addr & 0xfff) << 10));
-            write32le(p + 12, ARM64_BR | ARM64_RN(17)); // br x17
+            write32le(p + 12, ARM64_BR | ARM64_RN(17));
             p += 16;
         }
     }
@@ -204,11 +197,8 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
             return;
         case R_AARCH64_ABS32:
             if (s1->output_type & TCC_OUTPUT_DYN) {
-                /* XXX: this logic may depend on TCC's codegen
-                   now TCC uses R_AARCH64_RELATIVE even for a 64bit pointer */
                 qrel->r_offset = rel->r_offset;
                 qrel->r_info = ELFW(R_INFO)(0, R_AARCH64_RELATIVE);
-                /* Use sign extension! */
                 qrel->r_addend = (int)read32le(ptr) + val;
                 qrel++;
             }
@@ -216,12 +206,10 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
             return;
 	case R_AARCH64_PREL32:
             if (s1->output_type == TCC_OUTPUT_DLL) {
-                /* DLL relocation */
                 esym_index = get_sym_attr(s1, sym_index, 0)->dyn_index;
                 if (esym_index) {
                     qrel->r_offset = rel->r_offset;
                     qrel->r_info = ELFW(R_INFO)(esym_index, R_AARCH64_PREL32);
-                    /* Use sign extension! */
                     qrel->r_addend = (int)read32le(ptr) + rel->r_addend;
                     qrel++;
                     break;
@@ -248,9 +236,6 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
         case R_AARCH64_ADR_PREL_PG_HI21: {
             uint64_t off = (val >> 12) - (addr >> 12);
 #ifdef TCC_TARGET_PE
-            /* Weak undefined symbols resolve to address 0 on PE. ADRP cannot
-               encode that from the default 64-bit image base, so materialize
-               zero directly and let the paired ADD handle any low addend. */
             if ((off + ((uint64_t)1 << 20)) >> 21) {
                 ElfW(Sym) *sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
                 if (sym->st_shndx == SHN_UNDEF
@@ -290,7 +275,6 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
                             (val & 0xff0) << 6));
             return;
         case R_AARCH64_CONDBR19:
-            /* Conditional branch: 19-bit signed offset, bits 23:5 */
 #ifdef DEBUG_RELOC
      printf ("reloc %d @ 0x%lx: val=0x%lx name=%s\n", type, addr, val,
       (char *) symtab_section->link->data + sym->st_name);
@@ -302,7 +286,6 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
                             (((val - addr) >> 2 & 0x7ffff) << 5)));
             return;
         case R_AARCH64_TSTBR14:
-            /* Test and branch: 14-bit signed offset, bits 20:5 */
 #ifdef DEBUG_RELOC
      printf ("reloc %d @ 0x%lx: val=0x%lx name=%s\n", type, addr, val,
       (char *) symtab_section->link->data + sym->st_name);
@@ -326,7 +309,7 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
                 ElfW(Sym) *sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
                 if (sym->st_shndx == SHN_UNDEF
                     && ELFW(ST_BIND)(sym->st_info) == STB_WEAK) {
-                    write32le(ptr, ARM64_NOP); /* nop */
+                    write32le(ptr, ARM64_NOP);
                     return;
                 }
 #endif
@@ -361,7 +344,6 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
             return;
         case R_AARCH64_GLOB_DAT:
         case R_AARCH64_JUMP_SLOT:
-            /* They don't need addend */
 #ifdef DEBUG_RELOC
 	    printf ("reloc %d @ 0x%lx: val=0x%lx name=%s\n", type, addr,
 		    val - rel->r_addend,
@@ -379,7 +361,6 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
                         tls_start = s->sh_addr;
                 }
             }
-            /* glibc arm64: tp points to tcbhead_t (DTV), TLS data starts after it */
             int64_t tp_offset = val - tls_start + 16;
             int64_t imm;
             if (type == R_AARCH64_TLSLE_ADD_TPREL_HI12)
@@ -393,7 +374,6 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 #ifdef TCC_TARGET_PE
             add32le(ptr, val - s1->pe_imagebase);
 #endif
-            /* do nothing */
             return;
         default:
             fprintf(stderr, "FIXME: handle reloc type %x at %x [%p] to %x\n",
@@ -402,4 +382,4 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
     }
 }
 
-#endif /* !TARGET_DEFS_ONLY */
+#endif

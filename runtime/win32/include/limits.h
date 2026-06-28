@@ -1,21 +1,8 @@
-/**
- * This file has no copyright assigned and is placed in the Public Domain.
- * This file is part of the w64 mingw-runtime package.
- * No warranty is given; refer to the file DISCLAIMER within this package.
- */
 #include <_mingw.h>
 
 #ifndef _INC_LIMITS
 #define _INC_LIMITS
 
-/*
-* File system limits
-*
-* TODO: NAME_MAX and OPEN_MAX are file system limits or not? Are they the
-*       same as FILENAME_MAX and FOPEN_MAX from stdio.h?
-* NOTE: Apparently the actual size of PATH_MAX is 260, but a space is
-*       required for the NUL. TODO: Test?
-*/
 #define PATH_MAX	(259)
 
 #define CHAR_BIT 8

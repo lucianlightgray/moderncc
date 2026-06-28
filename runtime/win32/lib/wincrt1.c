@@ -1,6 +1,3 @@
-//+---------------------------------------------------------------------------
-
-// _UNICODE for tchar.h, UNICODE for API
 #include <tchar.h>
 
 #include <windows.h>
@@ -71,12 +68,11 @@ int _twinstart(void)
     exit(go_winmain(__argc > 1 ? __targv[1] : NULL));
 }
 
-int _runtwinmain(int argc, /* as tcc passed in */ char **argv)
+int _runtwinmain(int argc,   char **argv)
 {
 #ifdef UNICODE
     _startupinfo start_info = {0};
     __tgetmainargs(&__argc, &__targv, &_tenviron, 0, &start_info);
-    /* may be wrong when tcc has received wildcards (*.c) */
     if (argc < __argc)
         __targv += __argc - argc, __argc = argc;
 #else

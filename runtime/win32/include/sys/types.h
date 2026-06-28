@@ -1,8 +1,3 @@
-/**
- * This file has no copyright assigned and is placed in the Public Domain.
- * This file is part of the w64 mingw-runtime package.
- * No warranty is given; refer to the file DISCLAIMER within this package.
- */
 #ifndef _INC_TYPES
 #define _INC_TYPES
 
@@ -12,7 +7,7 @@
 
 #include <_mingw.h>
 
-#ifndef __TINYC__ /* gr */
+#ifndef __TINYC__
 #ifdef _USE_32BIT_TIME_T
 #ifdef _WIN64
 #undef _USE_32BIT_TIME_T
@@ -72,7 +67,7 @@ typedef __int64	_pid_t;
 #ifndef	NO_OLDNAMES
 typedef _pid_t	pid_t;
 #endif
-#endif	/* Not _PID_T_ */
+#endif
 
 #ifndef _MODE_T_
 #define	_MODE_T_
@@ -81,7 +76,7 @@ typedef unsigned short _mode_t;
 #ifndef	NO_OLDNAMES
 typedef _mode_t	mode_t;
 #endif
-#endif	/* Not _MODE_T_ */
+#endif
 
 #ifndef _OFF_T_DEFINED
 #define _OFF_T_DEFINED
@@ -102,7 +97,6 @@ typedef _mode_t	mode_t;
 #endif
 #endif
 
-/* required by (unbundled) unistd.h for usleep arg type */
 #ifndef __NO_ISOCEXT
 typedef unsigned int useconds_t;
 #endif
@@ -110,13 +104,13 @@ typedef unsigned int useconds_t;
 #ifndef _TIMESPEC_DEFINED
 #define _TIMESPEC_DEFINED
 struct timespec {
-  time_t  tv_sec;   /* Seconds */
-  long    tv_nsec;  /* Nanoseconds */
+  time_t  tv_sec;
+  long    tv_nsec;
 };
 
 struct itimerspec {
-  struct timespec  it_interval;  /* Timer period */
-  struct timespec  it_value;     /* Timer expiration */
+  struct timespec  it_interval;
+  struct timespec  it_value;
 };
 #endif
 

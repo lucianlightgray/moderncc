@@ -1,9 +1,3 @@
-/**
- * This file has no copyright assigned and is placed in the Public Domain.
- * This file is part of the w64 mingw-runtime package.
- * No warranty is given; refer to the file DISCLAIMER within this package.
- */
-
 #ifndef _WINSOCK2API_
 #define _WINSOCK2API_
 
@@ -61,7 +55,7 @@ extern "C" {
 #define FD_ZERO(set) (((fd_set *)(set))->fd_count=0)
 #define FD_ISSET(fd,set) __WSAFDIsSet((SOCKET)(fd),(fd_set *)(set))
 
-#ifndef _TIMEVAL_DEFINED /* also in winsock[2].h */
+#ifndef _TIMEVAL_DEFINED
 #define _TIMEVAL_DEFINED
   struct timeval {
     long tv_sec;
@@ -71,7 +65,7 @@ extern "C" {
 #define timerisset(tvp) ((tvp)->tv_sec || (tvp)->tv_usec)
 #define timercmp(tvp,uvp,cmp) ((tvp)->tv_sec cmp (uvp)->tv_sec || (tvp)->tv_sec==(uvp)->tv_sec && (tvp)->tv_usec cmp (uvp)->tv_usec)
 #define timerclear(tvp) (tvp)->tv_sec = (tvp)->tv_usec = 0
-#endif /* _TIMEVAL_DEFINED */
+#endif
 
 #define IOCPARM_MASK 0x7f
 #define IOC_VOID 0x20000000
@@ -592,7 +586,7 @@ extern "C" {
 #ifndef WSA_QOS_RESERVED_PETYPE
 #define WSA_QOS_RESERVED_PETYPE (WSABASEERR + 1031)
 #endif
-#endif // WSABASEERR
+#endif
 
 #define h_errno WSAGetLastError()
 #define HOST_NOT_FOUND WSAHOST_NOT_FOUND
@@ -1428,7 +1422,6 @@ extern "C" {
 #define WSAGETSELECTEVENT(lParam) LOWORD(lParam)
 #define WSAGETSELECTERROR(lParam) HIWORD(lParam)
 
-/* #if (_WIN32_WINNT >= 0x0600) */
 #define POLLRDNORM  0x0100
 #define POLLRDBAND  0x0200
 #define POLLIN      (POLLRDNORM | POLLRDBAND)
@@ -1449,7 +1442,6 @@ typedef struct pollfd {
 } WSAPOLLFD, *PWSAPOLLFD, FAR *LPWSAPOLLFD;
 
 WINSOCK_API_LINKAGE int WSAAPI WSAPoll(LPWSAPOLLFD fdArray, ULONG fds, INT timeout);
-/* #endif // (_WIN32_WINNT >= 0x0600) */
 
 #ifdef __cplusplus
 }

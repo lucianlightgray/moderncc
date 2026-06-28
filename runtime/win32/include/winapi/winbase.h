@@ -1,8 +1,3 @@
-/**
- * This file has no copyright assigned and is placed in the Public Domain.
- * This file is part of the w64 mingw-runtime package.
- * No warranty is given; refer to the file DISCLAIMER within this package.
- */
 #ifndef _WINBASE_
 #define _WINBASE_
 
@@ -1237,7 +1232,6 @@ extern "C" {
   WINBASEAPI WINBOOL WINAPI TerminateProcess(HANDLE hProcess,UINT uExitCode);
   WINBASEAPI WINBOOL WINAPI GetExitCodeProcess(HANDLE hProcess,LPDWORD lpExitCode);
   WINBASEAPI VOID WINAPI FatalExit(int ExitCode);
-  /*	WINBASEAPI LPCH WINAPI GetEnvironmentStrings(VOID); */
   WINBASEAPI LPWCH WINAPI GetEnvironmentStringsW(VOID);
   WINBASEAPI WINBOOL WINAPI SetEnvironmentStringsA(LPCH NewEnvironment);
   WINBASEAPI WINBOOL WINAPI SetEnvironmentStringsW(LPWCH NewEnvironment);

@@ -1,8 +1,3 @@
-/**
- * This file has no copyright assigned and is placed in the Public Domain.
- * This file is part of the w64 mingw-runtime package.
- * No warranty is given; refer to the file DISCLAIMER within this package.
- */
 #ifndef _MATH_H_
 #define _MATH_H_
 
@@ -51,19 +46,18 @@ struct exception;
 #endif
 
 #ifndef __STRICT_ANSI__
-/* See also float.h  */
 #ifndef __MINGW_FPCLASS_DEFINED
 #define __MINGW_FPCLASS_DEFINED 1
-#define	_FPCLASS_SNAN	0x0001	/* Signaling "Not a Number" */
-#define	_FPCLASS_QNAN	0x0002	/* Quiet "Not a Number" */
-#define	_FPCLASS_NINF	0x0004	/* Negative Infinity */
-#define	_FPCLASS_NN	0x0008	/* Negative Normal */
-#define	_FPCLASS_ND	0x0010	/* Negative Denormal */
-#define	_FPCLASS_NZ	0x0020	/* Negative Zero */
-#define	_FPCLASS_PZ	0x0040	/* Positive Zero */
-#define	_FPCLASS_PD	0x0080	/* Positive Denormal */
-#define	_FPCLASS_PN	0x0100	/* Positive Normal */
-#define	_FPCLASS_PINF	0x0200	/* Positive Infinity */
+#define	_FPCLASS_SNAN	0x0001
+#define	_FPCLASS_QNAN	0x0002
+#define	_FPCLASS_NINF	0x0004
+#define	_FPCLASS_NN	0x0008
+#define	_FPCLASS_ND	0x0010
+#define	_FPCLASS_NZ	0x0020
+#define	_FPCLASS_PZ	0x0040
+#define	_FPCLASS_PD	0x0080
+#define	_FPCLASS_PN	0x0100
+#define	_FPCLASS_PINF	0x0200
 #endif
 #endif
 
@@ -157,7 +151,6 @@ extern "C" {
 
 #if(defined(_X86_) && !defined(__x86_64))
   _CRTIMP int __cdecl _set_SSE2_enable(int _Flag);
-  /* from libmingwex */
   float __cdecl _hypotf(float _X,float _Y);
 #endif
 
@@ -187,7 +180,6 @@ extern "C" {
    float __cdecl _hypotf(float _X,float _Y);
   float __cdecl fabsf(float _X);
 #if !defined(__ia64__)
-   /* from libmingwex */
    float __cdecl _copysignf (float _Number,float _Sign);
    float __cdecl _chgsignf (float _X);
    float __cdecl _logbf(float _X);
@@ -201,7 +193,6 @@ extern "C" {
 #define matherr _matherr
 
 #define HUGE	_HUGE
-  /*	double __cdecl cabs(struct _complex _X); */
   double __cdecl hypot(double _X,double _Y);
   _CRTIMP double __cdecl j0(double _X);
   _CRTIMP double __cdecl j1(double _X);
@@ -226,53 +217,29 @@ extern "C" {
 #define FP_INFINITE	(FP_NAN | FP_NORMAL)
 #define FP_ZERO		0x4000
 #define FP_SUBNORMAL	(FP_NORMAL | FP_ZERO)
-  /* 0x0200 is signbit mask */
 
 
-  /*
-  We can't __CRT_INLINE float or double, because we want to ensure truncation
-  to semantic type before classification. 
-  (A normal long double value might become subnormal when 
-  converted to double, and zero when converted to float.)
-  */
 
   extern int __cdecl __fpclassifyf (float);
   extern int __cdecl __fpclassify (double);
   extern int __cdecl __fpclassifyl (long double);
 
-/* Implemented at tcc/tcc_libm.h
-#define fpclassify(x) (sizeof (x) == sizeof (float) ? __fpclassifyf (x)	  \
-  : sizeof (x) == sizeof (double) ? __fpclassify (x) \
-  : __fpclassifyl (x))
-*/
 #define fpclassify(x) \
   _Generic(x, float: __fpclassifyf, double: __fpclassify, long double: __fpclassifyl)(x)
 
-  /* 7.12.3.2 */
 #define isfinite(x) ((fpclassify(x) & FP_NAN) == 0)
 
-  /* 7.12.3.3 */
 #define isinf(x) (fpclassify(x) == FP_INFINITE)
 
-  /* 7.12.3.4 */
-  /* We don't need to worry about truncation here:
-  A NaN stays a NaN. */
 #define isnan(x) (fpclassify(x) == FP_NAN)
 
-  /* 7.12.3.5 */
 #define isnormal(x) (fpclassify(x) == FP_NORMAL)
 
-  /* 7.12.3.6 The signbit macro */
 
   extern int __cdecl __signbitf (float);
   extern int __cdecl __signbit (double);
   extern int __cdecl __signbitl (long double);
 
-/* Implemented at tcc/tcc_libm.h
-#define signbit(x) (sizeof (x) == sizeof (float) ? __signbitf (x)	\
-  : sizeof (x) == sizeof (double) ? __signbit (x)	\
-  : __signbitl (x))
-*/
 #define signbit(x) \
   _Generic(x, float: __signbitf, double: __signbit, long double: __signbitl)(x)
 
@@ -300,7 +267,6 @@ extern "C" {
 
   extern long double __cdecl modfl (long double, long double*);
 
-  /* 7.12.6.13 */
   extern double __cdecl scalbn (double, int);
   extern float __cdecl scalbnf (float, int);
   extern long double __cdecl scalbnl (long double, int);
@@ -309,8 +275,6 @@ extern "C" {
   extern float __cdecl scalblnf (float, long);
   extern long double __cdecl scalblnl (long double, long);
 
-  /* 7.12.7.1 */
-  /* Implementations adapted from Cephes versions */ 
   extern double __cdecl cbrt (double);
   extern float __cdecl cbrtf (float);
   extern long double __cdecl cbrtl (long double);
@@ -331,26 +295,16 @@ extern "C" {
   extern long double __cdecl sinhl(long double);
   extern long double __cdecl tanhl(long double);
 
-  /* 7.12.8.1 The erf functions  */
   extern double __cdecl erf (double);
   extern float __cdecl erff (float);
-  /* TODO
-  extern long double __cdecl erfl (long double);
-  */ 
 
-  /* 7.12.8.2 The erfc functions  */
   extern double __cdecl erfc (double);
   extern float __cdecl erfcf (float);
-  /* TODO
-  extern long double __cdecl erfcl (long double);
-  */ 
 
-  /* 7.12.8.3 The lgamma functions */
   extern double __cdecl lgamma (double);
   extern float __cdecl lgammaf (float);
   extern long double __cdecl lgammal (long double);
 
-  /* 7.12.8.4 The tgamma functions */
   extern double __cdecl tgamma (double);
   extern float __cdecl tgammaf (float);
   extern long double __cdecl tgammal (long double);
@@ -365,13 +319,10 @@ extern "C" {
   extern long double __cdecl tanl(long double);
   extern long double sqrtl(long double);
 
-  /* 7.12.9.3 */
   extern double __cdecl nearbyint ( double);
   extern float __cdecl nearbyintf (float);
   extern long double __cdecl nearbyintl (long double);
 
-  /* 7.12.9.4 */
-  /* round, using fpu control word settings */
   extern double __cdecl rint (double);
   extern float __cdecl rintf (float);
   extern long double __cdecl rintl (long double);
@@ -389,13 +340,10 @@ extern "C" {
   #define FE_UPWARD	0x0800
   #define FE_TOWARDZERO	0x0c00
 
-  /* 7.12.9.6 */
-  /* round away from zero, regardless of fpu control word settings */
   extern double __cdecl round (double);
   extern float __cdecl roundf (float);
   extern long double __cdecl roundl (long double);
 
-  /* 7.12.9.7  */
   extern long __cdecl lround (double);
   extern long __cdecl lroundf (float);
   extern long __cdecl lroundl (long double);
@@ -404,30 +352,24 @@ extern "C" {
   extern long long __cdecl llroundf (float);
   extern long long __cdecl llroundl (long double);
 
-  /* 7.12.9.8 */
-  /* round towards zero, regardless of fpu control word settings */
   extern double __cdecl trunc (double);
   extern float __cdecl truncf (float);
   extern long double __cdecl truncl (long double);
 
   extern long double __cdecl fmodl (long double, long double);
 
-  /* 7.12.10.2 */ 
   extern double __cdecl remainder (double, double);
   extern float __cdecl remainderf (float, float);
   extern long double __cdecl remainderl (long double, long double);
 
-  /* 7.12.10.3 */
   extern double __cdecl remquo(double, double, int *);
   extern float __cdecl remquof(float, float, int *);
   extern long double __cdecl remquol(long double, long double, int *);
 
-  /* 7.12.11.1 */
-  extern double __cdecl copysign (double, double); /* in libmoldname.a */
+  extern double __cdecl copysign (double, double);
   extern float __cdecl copysignf (float, float);
   extern long double __cdecl copysignl (long double, long double);
 
-  /* 7.12.11.2 Return a NaN */
   extern double __cdecl nan(const char *tagp);
   extern float __cdecl nanf(const char *tagp);
   extern long double __cdecl nanl(const char *tagp);
@@ -438,60 +380,39 @@ extern "C" {
 #define _nanl() nanl("")
 #endif
 
-  /* 7.12.11.3 */
-  extern double __cdecl nextafter (double, double); /* in libmoldname.a */
+  extern double __cdecl nextafter (double, double);
   extern float __cdecl nextafterf (float, float);
   extern long double __cdecl nextafterl (long double, long double);
 
-  /* 7.12.11.4 The nexttoward functions: TODO */
 
-  /* 7.12.12.1 */
-  /*  x > y ? (x - y) : 0.0  */
   extern double __cdecl fdim (double x, double y);
   extern float __cdecl fdimf (float x, float y);
   extern long double __cdecl fdiml (long double x, long double y);
 
-  /* fmax and fmin.
-  NaN arguments are treated as missing data: if one argument is a NaN
-  and the other numeric, then these functions choose the numeric
-  value. */
 
-  /* 7.12.12.2 */
   extern double __cdecl fmax  (double, double);
   extern float __cdecl fmaxf (float, float);
   extern long double __cdecl fmaxl (long double, long double);
 
-  /* 7.12.12.3 */
   extern double __cdecl fmin (double, double);
   extern float __cdecl fminf (float, float);
   extern long double __cdecl fminl (long double, long double);
 
-  /* 7.12.13.1 */
-  /* return x * y + z as a ternary op */ 
   extern double __cdecl fma (double, double, double);
   extern float __cdecl fmaf (float, float, float);
   extern long double __cdecl fmal (long double, long double, long double);
 
 
-#endif /* __STDC_VERSION__ >= 199901L */
-#endif /* __NO_ISOCEXT */
+#endif
+#endif
 
 #ifdef __cplusplus
 }
 #endif
 #pragma pack(pop)
 
-/* 7.12.14 */
-/* 
- *  With these functions, comparisons involving quiet NaNs set the FP
- *  condition code to "unordered".  The IEEE floating-point spec
- *  dictates that the result of floating-point comparisons should be
- *  false whenever a NaN is involved, with the exception of the != op, 
- *  which always returns true: yes, (NaN != NaN) is true).
- */
 
-/* Mini libm (inline __fpclassify*, __signbit* and variants) */
 #include "tcc/tcc_libm.h"
 
-#endif /* End _MATH_H_ */
+#endif
 

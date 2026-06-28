@@ -1,14 +1,3 @@
-/* This file is derived from clang's stdatomic.h */
-
-/*===---- stdatomic.h - Standard header for atomic types and operations -----===
- *
- * Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
- * See https://llvm.org/LICENSE.txt for license information.
- * SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
- *
- *===-----------------------------------------------------------------------===
- */
-
 #ifndef _STDATOMIC_H
 #define _STDATOMIC_H
 
@@ -23,7 +12,6 @@
 #define __ATOMIC_ACQ_REL 4
 #define __ATOMIC_SEQ_CST 5
 
-/* Memory ordering */
 typedef enum {
     memory_order_relaxed = __ATOMIC_RELAXED,
     memory_order_consume = __ATOMIC_CONSUME,
@@ -33,7 +21,6 @@ typedef enum {
     memory_order_seq_cst = __ATOMIC_SEQ_CST,
 } memory_order;
 
-/* Atomic typedefs */
 typedef _Atomic(_Bool) atomic_bool;
 typedef _Atomic(char) atomic_char;
 typedef _Atomic(signed char) atomic_schar;
@@ -72,7 +59,6 @@ typedef _Atomic(ptrdiff_t) atomic_ptrdiff_t;
 typedef _Atomic(intmax_t) atomic_intmax_t;
 typedef _Atomic(uintmax_t) atomic_uintmax_t;
 
-/* Atomic flag */
 typedef struct {
     atomic_bool value;
 } atomic_flag;
@@ -80,7 +66,6 @@ typedef struct {
 #define ATOMIC_FLAG_INIT {0}
 #define ATOMIC_VAR_INIT(value) (value)
 
-/* Generic routines */
 #define atomic_init(object, desired)                                      \
     atomic_store_explicit(object, desired, __ATOMIC_RELAXED)
 
@@ -168,4 +153,4 @@ extern bool atomic_flag_test_and_set(void *object);
 extern bool atomic_flag_test_and_set_explicit(void *object, memory_order order);
 extern void atomic_flag_clear(void *object);
 extern void atomic_flag_clear_explicit(void *object, memory_order order);
-#endif /* _STDATOMIC_H */
+#endif

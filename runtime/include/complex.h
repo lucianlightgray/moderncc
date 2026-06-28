@@ -1,19 +1,13 @@
 #ifndef _TCC_COMPLEX_H
 #define _TCC_COMPLEX_H
 
-/* C99 <complex.h> for tcc. tcc models _Complex T as a 2-component value and
-   supports __real__/__imag__, the arithmetic operators, and casts; the
-   transcendental functions live in the platform math library (link with -lm). */
 
 #define complex         _Complex
 #define _Complex_I      ((__extension__ (double _Complex){ 0.0, 1.0 }))
 #define I               _Complex_I
 
-/* GCC also offers an imaginary unit per real type; build them from _Complex_I */
 #define _Imaginary_I    _Complex_I
 
-/* 7.3.9.5 / 7.3.9.4: real and imaginary parts. tcc can extract these directly,
-   which also avoids a libm dependency for the common case. */
 #define creal(z)        (__real__ (double _Complex)(z))
 #define crealf(z)       (__real__ (float _Complex)(z))
 #define creall(z)       (__real__ (long double _Complex)(z))
@@ -21,7 +15,6 @@
 #define cimagf(z)       (__imag__ (float _Complex)(z))
 #define cimagl(z)       (__imag__ (long double _Complex)(z))
 
-/* remaining functions are provided by the math library */
 double cabs(double _Complex);
 float cabsf(float _Complex);
 long double cabsl(long double _Complex);
@@ -58,4 +51,4 @@ double _Complex csinh(double _Complex);
 double _Complex ccosh(double _Complex);
 double _Complex ctanh(double _Complex);
 
-#endif /* _TCC_COMPLEX_H */
+#endif

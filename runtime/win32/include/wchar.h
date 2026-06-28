@@ -1,8 +1,3 @@
-/**
- * This file has no copyright assigned and is placed in the Public Domain.
- * This file is part of the w64 mingw-runtime package.
- * No warranty is given; refer to the file DISCLAIMER within this package.
- */
 #ifndef _INC_WCHAR
 #define _INC_WCHAR
 
@@ -14,9 +9,9 @@
 extern "C" {
 #endif
 
-#ifndef WCHAR_MIN  /* also at stdint.h */
+#ifndef WCHAR_MIN
 #define WCHAR_MIN 0
-#define WCHAR_MAX ((wchar_t) -1) /* UINT16_MAX */
+#define WCHAR_MAX ((wchar_t) -1)
 #endif
 
 #ifndef __GNUC_VA_LIST
@@ -53,10 +48,10 @@ extern "C" {
   _CRTIMP FILE *__cdecl __iob_func(void);
 #else
 #ifdef _MSVCRT_
-extern FILE _iob[];	/* A pointer to an array of FILE */
+extern FILE _iob[];
 #define __iob_func()	(_iob)
 #else
-extern FILE (*_imp___iob)[];	/* A pointer to an array of FILE */
+extern FILE (*_imp___iob)[];
 #define __iob_func()	(*_imp___iob)
 #define _iob __iob_func()
 #endif
@@ -87,7 +82,6 @@ extern FILE (*_imp___iob)[];	/* A pointer to an array of FILE */
     wchar_t name[260];
   };
 
-/* #if _INTEGRAL_MAX_BITS >= 64 */
 
   struct _wfinddata32i64_t {
     unsigned attrib;
@@ -115,7 +109,6 @@ extern FILE (*_imp___iob)[];	/* A pointer to an array of FILE */
     __int64 size;
     wchar_t name[260];
   };
-/* #endif */
 
 #ifdef _USE_32BIT_TIME_T
 #define _wfinddata_t _wfinddata32_t
@@ -583,7 +576,7 @@ extern FILE (*_imp___iob)[];	/* A pointer to an array of FILE */
   _CRTIMP int __cdecl _vswprintf_c(wchar_t *_DstBuf,size_t _SizeInWords,const wchar_t *_Format,va_list _ArgList);
   _CRTIMP int __cdecl _snwprintf(wchar_t *_Dest,size_t _Count,const wchar_t *_Format,...);
   _CRTIMP int __cdecl _vsnwprintf(wchar_t *_Dest,size_t _Count,const wchar_t *_Format,va_list _Args);
-#ifndef __NO_ISOCEXT  /* externs in libmingwex.a */
+#ifndef __NO_ISOCEXT
   int __cdecl snwprintf (wchar_t *s, size_t n, const wchar_t * format, ...);
   __CRT_INLINE int __cdecl vsnwprintf (wchar_t *s, size_t n, const wchar_t *format, va_list arg) { return _vsnwprintf(s,n,format,arg); }
   int __cdecl vwscanf (const wchar_t *, va_list);
@@ -686,10 +679,10 @@ extern FILE (*_imp___iob)[];	/* A pointer to an array of FILE */
   double __cdecl wcstod(const wchar_t *_Str,wchar_t **_EndPtr);
   _CRTIMP double __cdecl _wcstod_l(const wchar_t *_Str,wchar_t **_EndPtr,_locale_t _Locale);
   float __cdecl wcstof( const wchar_t *nptr, wchar_t **endptr);
-#if !defined __NO_ISOCEXT /* in libmingwex.a */
+#if !defined __NO_ISOCEXT
   float __cdecl wcstof (const wchar_t * __restrict__, wchar_t ** __restrict__);
   long double __cdecl wcstold (const wchar_t * __restrict__, wchar_t ** __restrict__);
-#endif /* __NO_ISOCEXT */
+#endif
   long __cdecl wcstol(const wchar_t *_Str,wchar_t **_EndPtr,int _Radix);
   _CRTIMP long __cdecl _wcstol_l(const wchar_t *_Str,wchar_t **_EndPtr,int _Radix,_locale_t _Locale);
   unsigned long __cdecl wcstoul(const wchar_t *_Str,wchar_t **_EndPtr,int _Radix);
@@ -838,7 +831,7 @@ __CRT_INLINE wchar_t *__cdecl _wctime(const time_t *_Time) { return _wctime64(_T
   size_t __cdecl wcsrtombs(char *_Dest,const wchar_t **_PSource,size_t _Count,mbstate_t *_State);
   int __cdecl wctob(wint_t _WCh);
 
-#ifndef __NO_ISOCEXT /* these need static lib libmingwex.a */
+#ifndef __NO_ISOCEXT
   wchar_t *__cdecl wmemset(wchar_t *s, wchar_t c, size_t n);
   _CONST_RETURN wchar_t *__cdecl wmemchr(const wchar_t *s, wchar_t c, size_t n);
   int wmemcmp(const wchar_t *s1, const wchar_t *s2,size_t n);
@@ -846,7 +839,7 @@ __CRT_INLINE wchar_t *__cdecl _wctime(const time_t *_Time) { return _wctime64(_T
   wchar_t *__cdecl wmemmove(wchar_t *s1, const wchar_t *s2, size_t n);
   long long __cdecl wcstoll(const wchar_t *nptr,wchar_t **endptr, int base);
   unsigned long long __cdecl wcstoull(const wchar_t *nptr,wchar_t **endptr, int base);
-#endif /* __NO_ISOCEXT */
+#endif
 
   void *__cdecl memmove(void *_Dst,const void *_Src,size_t _MaxCount);
   void *__cdecl memcpy(void *_Dst,const void *_Src,size_t _MaxCount);

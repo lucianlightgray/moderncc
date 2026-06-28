@@ -1,11 +1,5 @@
-/* Auto-ported from lib/alloca-bt.S to a C translation unit (file-scope __asm__)
-   so the project carries no .S files. The assembly is byte-identical; the
-   former cpp-time _(sym) symbol decoration is preserved via STR(_(sym)),
-   and labels resolve across the separate __asm__ blocks (same TU). */
 #define STR_(x) #x
 #define STR(x) STR_(x)
-/* ---------------------------------------------- */
-/* alloca-bt.S */
 
 #ifdef __leading_underscore
 # define _(s) _##s
@@ -13,7 +7,6 @@
 # define _(s) s
 #endif
 
-/* ---------------------------------------------- */
 #if defined __i386__
 
 __asm__(
@@ -67,7 +60,6 @@ __asm__(
 "    ret\n"
 );
 
-/* ---------------------------------------------- */
 #elif defined __x86_64__
 
 __asm__(
@@ -122,7 +114,6 @@ __asm__(
 );
 #endif
 
-/* ---------------------------------------------- */
 #elif defined __arm__
 
 __asm__(
@@ -140,7 +131,6 @@ __asm__(
 "    mov pc, lr\n"
 );
 
-/* ---------------------------------------------- */
 #elif defined __aarch64__ || defined __arm64__
 
 __asm__(
@@ -232,7 +222,6 @@ __asm__(
 );
 #endif
 
-/* ---------------------------------------------- */
 #elif defined __riscv
 
 __asm__(
@@ -254,5 +243,4 @@ __asm__(
 "    ret\n"
 );
 
-/* ---------------------------------------------- */
 #endif

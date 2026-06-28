@@ -1,8 +1,3 @@
-/**
- * This file has no copyright assigned and is placed in the Public Domain.
- * This file is part of the w64 mingw-runtime package.
- * No warranty is given; refer to the file DISCLAIMER within this package.
- */
 #ifndef _WINGDI_
 #define _WINGDI_
 
@@ -454,9 +449,6 @@ extern "C" {
 #define CS_DISABLE 0x00000002L
 #define CS_DELETE_TRANSFORM 0x00000003L
 
-//!__TINYC__: #define LCS_SIGNATURE 'PSOC'
-//!__TINYC__: #define LCS_sRGB 'sRGB'
-//!__TINYC__: #define LCS_WINDOWS_COLOR_SPACE 'Win '
 
   typedef LONG LCSCSTYPE;
 #define LCS_CALIBRATED_RGB 0x00000000L
@@ -609,8 +601,6 @@ extern "C" {
     DWORD bV5Reserved;
   } BITMAPV5HEADER,*LPBITMAPV5HEADER,*PBITMAPV5HEADER;
 
-//!__TINYC__: #define PROFILE_LINKED 'LINK'
-//!__TINYC__: #define PROFILE_EMBEDDED 'MBED'
 
 #define BI_RGB 0L
 #define BI_RLE8 1L

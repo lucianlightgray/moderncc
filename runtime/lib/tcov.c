@@ -10,19 +10,6 @@
 #include <io.h>
 #endif
 
-/* section layout (all little endian):
-   32bit offset to executable/so file name
-     filename \0
-       function name \0
-       align to 64 bits
-       64bit function start line
-         64bits end_line(28bits) / start_line(28bits) / flag=0xff(8bits)
-	 64bits counter
-       \0
-     \0
-   \0
-   executable/so file name \0
- */
 
 typedef struct tcov_line {
     unsigned int fline;
@@ -55,7 +42,7 @@ static FILE *open_tcov_file (char *cov_filename)
     lock.l_type = F_WRLCK;
     lock.l_whence = SEEK_SET;
     lock.l_start = 0;
-    lock.l_len = 0; /* Until EOF.  */
+    lock.l_len = 0;
     lock.l_pid = getpid ();
 #endif
     fd = open (cov_filename, O_RDWR | O_CREAT, 0666);
@@ -106,7 +93,6 @@ static int sort_line (const void *p, const void *q)
 	   pp->count > pq->count ? -1 : 0;
 }
 
-/* sort to let inline functions work */
 static tcov_file *sort_test_coverage (unsigned char *p)
 {
     int i, j, k;
@@ -214,7 +200,6 @@ static tcov_file *sort_test_coverage (unsigned char *p)
     return file;
 }
 
-/* merge with previous tcov file */
 static void merge_test_coverage (tcov_file *file, FILE *fp,
 				 unsigned int *pruns)
 {
@@ -268,7 +253,6 @@ static void merge_test_coverage (tcov_file *file, FILE *fp,
     }
 }
 
-/* store tcov data in file */
 void __store_test_coverage (unsigned char * p)
 {
     int i, j;

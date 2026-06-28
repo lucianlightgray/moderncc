@@ -1,8 +1,3 @@
-//+---------------------------------------------------------------------------
-//
-//  dll.c - Windows DLL example - dynamically linked part
-//
-
 #include <windows.h>
 
 __declspec(dllexport) const char *hello_data = "(not set)";

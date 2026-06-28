@@ -1,33 +1,3 @@
-/* TCC runtime library. 
-   Parts of this code are (c) 2002 Fabrice Bellard 
-
-   Copyright (C) 1987, 1988, 1992, 1994, 1995 Free Software Foundation, Inc.
-
-This file is free software; you can redistribute it and/or modify it
-under the terms of the GNU General Public License as published by the
-Free Software Foundation; either version 2, or (at your option) any
-later version.
-
-In addition to the permissions in the GNU General Public License, the
-Free Software Foundation gives you unlimited permission to link the
-compiled version of this file into combinations with other programs,
-and to distribute those combinations without any restriction coming
-from the use of this file.  (The General Public License restrictions
-do apply in other respects; for example, they cover modification of
-the file, and distribution when not linked into a combine
-executable.)
-
-This file is distributed in the hope that it will be useful, but
-WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program; see the file COPYING.  If not, write to
-the Free Software Foundation, 59 Temple Place - Suite 330,
-Boston, MA 02111-1307, USA.  
-*/
-
 #define W_TYPE_SIZE   32
 #define BITS_PER_UNIT 8
 
@@ -51,7 +21,6 @@ typedef long double XFtype;
 #define WORD_SIZE (sizeof (Wtype) * BITS_PER_UNIT)
 #define HIGH_WORD_COEFF (((UDWtype) 1) << WORD_SIZE)
 
-/* the following deal with IEEE single-precision numbers */
 #define EXCESS		126
 #define SIGNBIT		0x80000000
 #define HIDDEN		(1 << 23)
@@ -60,7 +29,6 @@ typedef long double XFtype;
 #define MANT(fp)	(((fp) & 0x7FFFFF) | HIDDEN)
 #define PACK(s,e,m)	((s) | ((e) << 23) | (m))
 
-/* the following deal with IEEE double-precision numbers */
 #define EXCESSD		1022
 #define HIDDEND		(1 << 20)
 #define EXPD(fp)	(((fp.l.upper) >> 20) & 0x7FF)
@@ -71,12 +39,10 @@ typedef long double XFtype;
 #define MANTD_LL(fp)	((fp.ll & (HIDDEND_LL-1)) | HIDDEND_LL)
 #define PACKD_LL(s,e,m)	(((long long)((s)+((e)<<20))<<32)|(m))
 
-/* the following deal with x86 long double-precision numbers */
 #define EXCESSLD	16382
 #define EXPLD(fp)	(fp.l.upper & 0x7fff)
 #define SIGNLD(fp)	((fp.l.upper) & 0x8000)
 
-/* only for x86 */
 union ldouble_long {
     long double ld;
     struct {
@@ -106,10 +72,8 @@ union float_long {
     unsigned int l;
 };
 
-/* XXX: we don't support several builtin supports for now */
 #if defined __i386__
 
-/* XXX: use gcc/tcc intrinsic ? */
 #define sub_ddmmss(sh, sl, ah, al, bh, bl) \
   __asm__ ("subl %5,%1\n\tsbbl %3,%0"					\
 	   : "=r" ((USItype) (sh)),					\
@@ -139,7 +103,6 @@ union float_long {
     (count) = __cbtmp ^ 31;						\
   } while (0)
 
-/* most of this code is taken from libgcc2.c from gcc */
 
 static UDWtype __udivmoddi4 (UDWtype n, UDWtype d, UDWtype *rp)
 {
@@ -163,24 +126,20 @@ static UDWtype __udivmoddi4 (UDWtype n, UDWtype d, UDWtype *rp)
     {
       if (d0 > n1)
 	{
-	  /* 0q = nn / 0D */
 
 	  udiv_qrnnd (q0, n0, n1, n0, d0);
 	  q1 = 0;
 
-	  /* Remainder in n0.  */
 	}
       else
 	{
-	  /* qq = NN / 0d */
 
 	  if (d0 == 0)
-	    d0 = 1 / d0;	/* Divide intentionally by zero.  */
+	    d0 = 1 / d0;
 
 	  udiv_qrnnd (q1, n1, 0, n1, d0);
 	  udiv_qrnnd (q0, n0, n1, n0, d0);
 
-	  /* Remainder in n0.  */
 	}
 
       if (rp != 0)
@@ -191,20 +150,17 @@ static UDWtype __udivmoddi4 (UDWtype n, UDWtype d, UDWtype *rp)
 	}
     }
 
-#else /* UDIV_NEEDS_NORMALIZATION */
+#else
 
   if (d1 == 0)
     {
       if (d0 > n1)
 	{
-	  /* 0q = nn / 0D */
 
 	  count_leading_zeros (bm, d0);
 
 	  if (bm != 0)
 	    {
-	      /* Normalize, i.e. make the most significant bit of the
-		 denominator set.  */
 
 	      d0 = d0 << bm;
 	      n1 = (n1 << bm) | (n0 >> (W_TYPE_SIZE - bm));
@@ -214,32 +170,24 @@ static UDWtype __udivmoddi4 (UDWtype n, UDWtype d, UDWtype *rp)
 	  udiv_qrnnd (q0, n0, n1, n0, d0);
 	  q1 = 0;
 
-	  /* Remainder in n0 >> bm.  */
 	}
       else
 	{
-	  /* qq = NN / 0d */
 
 	  if (d0 == 0)
-	    d0 = 1 / d0;	/* Divide intentionally by zero.  */
+	    d0 = 1 / d0;
 
 	  count_leading_zeros (bm, d0);
 
 	  if (bm == 0)
 	    {
-	      /* From (n1 >= d0) /\ (the most significant bit of d0 is set),
-		 conclude (the most significant bit of n1 is set) /\ (the
-		 leading quotient digit q1 = 1).
 
-		 This special case is necessary, not an optimization.
-		 (Shifts counts of W_TYPE_SIZE are undefined.)  */
 
 	      n1 -= d0;
 	      q1 = 1;
 	    }
 	  else
 	    {
-	      /* Normalize.  */
 
 	      b = W_TYPE_SIZE - bm;
 
@@ -251,11 +199,9 @@ static UDWtype __udivmoddi4 (UDWtype n, UDWtype d, UDWtype *rp)
 	      udiv_qrnnd (q1, n1, n2, n1, d0);
 	    }
 
-	  /* n1 != d0...  */
 
 	  udiv_qrnnd (q0, n0, n1, n0, d0);
 
-	  /* Remainder in n0 >> bm.  */
 	}
 
       if (rp != 0)
@@ -265,18 +211,16 @@ static UDWtype __udivmoddi4 (UDWtype n, UDWtype d, UDWtype *rp)
 	  *rp = rr.ll;
 	}
     }
-#endif /* UDIV_NEEDS_NORMALIZATION */
+#endif
 
   else
     {
       if (d1 > n1)
 	{
-	  /* 00 = nn / DD */
 
 	  q0 = 0;
 	  q1 = 0;
 
-	  /* Remainder in n1n0.  */
 	  if (rp != 0)
 	    {
 	      rr.s.low = n0;
@@ -286,19 +230,12 @@ static UDWtype __udivmoddi4 (UDWtype n, UDWtype d, UDWtype *rp)
 	}
       else
 	{
-	  /* 0q = NN / dd */
 
 	  count_leading_zeros (bm, d1);
 	  if (bm == 0)
 	    {
-	      /* From (n1 >= d1) /\ (the most significant bit of d1 is set),
-		 conclude (the most significant bit of n1 is set) /\ (the
-		 quotient digit q0 = 0 or 1).
 
-		 This special case is necessary, not an optimization.  */
 
-	      /* The condition on the next line takes advantage of that
-		 n1 >= d1 (true due to program flow).  */
 	      if (n1 > d1 || n0 >= d0)
 		{
 		  q0 = 1;
@@ -319,7 +256,6 @@ static UDWtype __udivmoddi4 (UDWtype n, UDWtype d, UDWtype *rp)
 	  else
 	    {
 	      UWtype m1, m0;
-	      /* Normalize.  */
 
 	      b = W_TYPE_SIZE - bm;
 
@@ -340,7 +276,6 @@ static UDWtype __udivmoddi4 (UDWtype n, UDWtype d, UDWtype *rp)
 
 	      q1 = 0;
 
-	      /* Remainder in (n1n0 - m1m0) >> bm.  */
 	      if (rp != 0)
 		{
 		  sub_ddmmss (n1, n0, n1, n0, m1, m0);
@@ -417,7 +352,6 @@ unsigned long long __umoddi3(unsigned long long u, unsigned long long v)
     return w;
 }
 
-/* XXX: fix tcc's code generator to do this instead */
 long long __ashrdi3(long long a, int b)
 {
 #ifdef __TINYC__
@@ -436,7 +370,6 @@ long long __ashrdi3(long long a, int b)
 #endif
 }
 
-/* XXX: fix tcc's code generator to do this instead */
 unsigned long long __lshrdi3(unsigned long long a, int b)
 {
 #ifdef __TINYC__
@@ -455,7 +388,6 @@ unsigned long long __lshrdi3(unsigned long long a, int b)
 #endif
 }
 
-/* XXX: fix tcc's code generator to do this instead */
 long long __ashldi3(long long a, int b)
 {
 #ifdef __TINYC__
@@ -474,9 +406,8 @@ long long __ashldi3(long long a, int b)
 #endif
 }
 
-#endif /* __i386__ */
+#endif
 
-/* XXX: fix tcc's code generator to do this instead */
 float __floatundisf(unsigned long long a)
 {
     DWunion uu; 
@@ -571,7 +502,7 @@ unsigned long long __fixunsdfdi (double a1)
     l = MANTD_LL(dl1);
 
     if (exp >= 12)
-        return 1ULL << 63; /* overflow result (like gcc, somewhat) */
+        return 1ULL << 63;
     else if (exp >= 0)
         l <<= exp;
     else if (exp >= -52)
@@ -620,4 +551,4 @@ long long __fixxfdi (long double a1)
     ret = __fixunsxfdi((s = a1 >= 0) ? a1 : -a1);
     return s ? ret : -ret;
 }
-#endif /* !ARM */
+#endif
