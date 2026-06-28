@@ -19,8 +19,6 @@
 #include <sys/syscall.h>
 #endif
 
-#include "config.h"
-
 #define BOUND_DEBUG             (1)
 #define BOUND_STATISTIC         (1)
 

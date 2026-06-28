@@ -1,9 +1,6 @@
 
 
 
-#include "config.h"
-
-
 #define CC_gcc 1
 #define CC_clang 2
 #define CC_mcc 3

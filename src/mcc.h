@@ -3,7 +3,16 @@
 
 #define _GNU_SOURCE
 #define _DARWIN_C_SOURCE
-#include "config.h"
+
+/* Build configuration (target, libc, search paths, identity) is supplied
+   entirely via -D on the compiler command line; see the _mccdefs list in
+   CMakeLists.txt. Everything below provides the default for a macro that was
+   not passed. The version funnels through MCC_VERSION (banner, -dumpversion,
+   DWARF producer string, __MCC__/__TINYC__ predefines); fall back to a sane
+   default when it was not defined on the command line. */
+#ifndef MCC_VERSION
+# define MCC_VERSION "1.0.0"
+#endif
 
 #include <stdarg.h>
 #include <stdlib.h>

@@ -857,94 +857,92 @@ endif()
 
 macro(mcc_def_str _var _name _val)
     if(NOT "${_val}" STREQUAL "")
-        string(APPEND ${_var} "#define ${_name} \"${_val}\"\n")
+        list(APPEND ${_var} "${_name}=\"${_val}\"")
     endif()
 endmacro()
 
-set(_nat "#define ${_mcc_cpu_define_${MCC_CPU}} 1\n")
+set(_mccdefs "${_mcc_cpu_define_${MCC_CPU}}=1")
 
 if(MCC_CPU STREQUAL "arm")
     if(MCC_CPUVER)
-        string(APPEND _nat "#define CONFIG_MCC_CPUVER ${MCC_CPUVER}\n")
+        list(APPEND _mccdefs "CONFIG_MCC_CPUVER=${MCC_CPUVER}")
     endif()
     if(MCC_ARM_EABI)
-        string(APPEND _nat "#define MCC_ARM_EABI 1\n")
+        list(APPEND _mccdefs "MCC_ARM_EABI=1")
     endif()
     if(MCC_ARM_VFP)
-        string(APPEND _nat "#define MCC_ARM_VFP 1\n")
+        list(APPEND _mccdefs "MCC_ARM_VFP=1")
     endif()
     if(MCC_ARM_HARDFLOAT)
-        string(APPEND _nat "#define MCC_ARM_HARDFLOAT 1\n")
+        list(APPEND _mccdefs "MCC_ARM_HARDFLOAT=1")
     endif()
     if(MCC_ARM_IDIV)
-        string(APPEND _nat "#define __ARM_FEATURE_IDIV 1\n")
+        list(APPEND _mccdefs "__ARM_FEATURE_IDIV=1")
     endif()
 endif()
 
 if(MCC_TARGETOS STREQUAL "WIN32")
-    string(APPEND _nat "#define MCC_TARGET_PE 1\n")
+    list(APPEND _mccdefs "MCC_TARGET_PE=1")
 elseif(MCC_TARGETOS STREQUAL "Darwin")
-    string(APPEND _nat "#define MCC_TARGET_MACHO 1\n")
+    list(APPEND _mccdefs "MCC_TARGET_MACHO=1")
 elseif(MCC_TARGETOS STREQUAL "Android")
-    string(APPEND _nat "#define TARGETOS_ANDROID 1\n")
+    list(APPEND _mccdefs "TARGETOS_ANDROID=1")
 elseif(MCC_TARGETOS MATCHES "FreeBSD|OpenBSD|NetBSD|DragonFly")
-    string(APPEND _nat "#define TARGETOS_${MCC_TARGETOS} 1\n")
+    list(APPEND _mccdefs "TARGETOS_${MCC_TARGETOS}=1")
 endif()
 
 if(MCC_CONFIG_LIBC STREQUAL "musl")
-    string(APPEND _nat "#define CONFIG_MCC_MUSL 1\n")
+    list(APPEND _mccdefs "CONFIG_MCC_MUSL=1")
 elseif(MCC_CONFIG_LIBC STREQUAL "uClibc")
-    string(APPEND _nat "#define CONFIG_MCC_UCLIBC 1\n")
+    list(APPEND _mccdefs "CONFIG_MCC_UCLIBC=1")
 endif()
 
 if(MCC_WITH_SELINUX)
-    string(APPEND _nat "#define CONFIG_SELINUX 1\n")
+    list(APPEND _mccdefs "CONFIG_SELINUX=1")
 endif()
 if(MCC_CONFIG_PIE)
-    string(APPEND _nat "#define CONFIG_MCC_PIE 1\n")
+    list(APPEND _mccdefs "CONFIG_MCC_PIE=1")
 endif()
 if(MCC_CONFIG_PIC)
-    string(APPEND _nat "#define CONFIG_MCC_PIC 1\n")
+    list(APPEND _mccdefs "CONFIG_MCC_PIC=1")
 endif()
 if(MCC_CONFIG_NEW_DTAGS)
-    string(APPEND _nat "#define CONFIG_NEW_DTAGS 1\n")
+    list(APPEND _mccdefs "CONFIG_NEW_DTAGS=1")
 endif()
 if(MCC_CONFIG_CODESIGN)
-    string(APPEND _nat "#define CONFIG_CODESIGN 1\n")
+    list(APPEND _mccdefs "CONFIG_CODESIGN=1")
 endif()
 
 if(NOT MCC_CONFIG_BCHECK)
-    string(APPEND _nat "#define CONFIG_MCC_BCHECK 0\n")
+    list(APPEND _mccdefs "CONFIG_MCC_BCHECK=0")
 endif()
 if(NOT MCC_CONFIG_ASM)
-    string(APPEND _nat "#define CONFIG_MCC_ASM 0\n")
+    list(APPEND _mccdefs "CONFIG_MCC_ASM=0")
 endif()
 if(NOT MCC_CONFIG_BACKTRACE)
-    string(APPEND _nat "#define CONFIG_MCC_BACKTRACE 0\n")
+    list(APPEND _mccdefs "CONFIG_MCC_BACKTRACE=0")
 endif()
 if(MCC_CONFIG_NEW_MACHO STREQUAL "no")
-    string(APPEND _nat "#define CONFIG_NEW_MACHO 0\n")
+    list(APPEND _mccdefs "CONFIG_NEW_MACHO=0")
 endif()
 
 if(NOT "${MCC_CONFIG_DWARF}" STREQUAL "")
-    string(APPEND _nat "#define CONFIG_DWARF_VERSION ${MCC_CONFIG_DWARF}\n")
+    list(APPEND _mccdefs "CONFIG_DWARF_VERSION=${MCC_CONFIG_DWARF}")
 endif()
 if(NOT "${MCC_CONFIG_SEMLOCK}" STREQUAL "")
-    string(APPEND _nat "#define CONFIG_MCC_SEMLOCK ${MCC_CONFIG_SEMLOCK}\n")
+    list(APPEND _mccdefs "CONFIG_MCC_SEMLOCK=${MCC_CONFIG_SEMLOCK}")
 endif()
 
-mcc_def_str(_nat CONFIG_MCC_SYSINCLUDEPATHS "${MCC_SYSINCLUDEPATHS}")
-mcc_def_str(_nat CONFIG_MCC_LIBPATHS        "${MCC_LIBPATHS}")
-mcc_def_str(_nat CONFIG_MCC_CRTPREFIX       "${MCC_CRTPREFIX}")
-mcc_def_str(_nat CONFIG_MCC_ELFINTERP       "${MCC_ELFINTERP}")
-mcc_def_str(_nat CONFIG_MCC_SWITCHES        "${MCC_SWITCHES}")
-mcc_def_str(_nat CONFIG_TRIPLET             "${MCC_TRIPLET}")
-mcc_def_str(_nat CONFIG_OS_RELEASE          "${MCC_OS_RELEASE}")
+mcc_def_str(_mccdefs CONFIG_MCC_SYSINCLUDEPATHS "${MCC_SYSINCLUDEPATHS}")
+mcc_def_str(_mccdefs CONFIG_MCC_LIBPATHS        "${MCC_LIBPATHS}")
+mcc_def_str(_mccdefs CONFIG_MCC_CRTPREFIX       "${MCC_CRTPREFIX}")
+mcc_def_str(_mccdefs CONFIG_MCC_ELFINTERP       "${MCC_ELFINTERP}")
+mcc_def_str(_mccdefs CONFIG_MCC_SWITCHES        "${MCC_SWITCHES}")
+mcc_def_str(_mccdefs CONFIG_TRIPLET             "${MCC_TRIPLET}")
+mcc_def_str(_mccdefs CONFIG_OS_RELEASE          "${MCC_OS_RELEASE}")
 
-set(_always "")
 if(NOT "${MCC_SYSROOT}" STREQUAL "")
-    string(APPEND _always
-        "#ifndef CONFIG_SYSROOT\n# define CONFIG_SYSROOT \"${MCC_SYSROOT}\"\n#endif\n")
+    list(APPEND _mccdefs "CONFIG_SYSROOT=\"${MCC_SYSROOT}\"")
 endif()
 if(NOT MCC_TARGETOS STREQUAL "WIN32")
     if("${MCC_INSTALL_MCCDIR}" STREQUAL "")
@@ -952,39 +950,26 @@ if(NOT MCC_TARGETOS STREQUAL "WIN32")
     else()
         set(_mccdir "${MCC_INSTALL_MCCDIR}")
     endif()
-    string(APPEND _always
-        "#ifndef CONFIG_MCCDIR\n# define CONFIG_MCCDIR \"${_mccdir}\"\n#endif\n")
+    list(APPEND _mccdefs "CONFIG_MCCDIR=\"${_mccdir}\"")
 endif()
 
-file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/config.h"
-"/* config.h - automatically generated by CMake. Do NOT edit.
- *
- * Faithful port of the config.h produced by ./configure. Every macro below is
- * a *dynamic* preprocessor flag whose default lives in mcc.h; we only emit one
- * when it differs from that default. See the dynamic preprocessor flag catalog
- * in CMakeLists.txt (section 3a) for the full catalog and emission rules.
- */
+set(_mccdefs_common
+    "MCC_VERSION=\"${MCC_VERSION}\""
+    "CC_NAME=CC_${MCC_CC_NAME}"
+    "GCC_MAJOR=${MCC_GCC_MAJOR}"
+    "GCC_MINOR=${MCC_GCC_MINOR}"
+    "CONFIG_MCC_PREDEFS=${_mcc_predefs_value}")
+add_compile_definitions(${_mccdefs_common})
 
-#define MCC_VERSION \"${MCC_VERSION}\"
 
-/* compiler identity (configure: conftest.c probes; consumed by tests) */
-#define CC_NAME CC_${MCC_CC_NAME}
-#define GCC_MAJOR ${MCC_GCC_MAJOR}
-#define GCC_MINOR ${MCC_GCC_MINOR}
+set(_mccdefs_flags "")
+foreach(_d IN LISTS _mccdefs)
+    if(NOT _d MATCHES "\"")
+        list(APPEND _mccdefs_flags "-D${_d}")
+    endif()
+endforeach()
 
-/* ---- native-target block ------------------------------------------------
- * configure suppresses this whole block for cross builds (which pass
- * -DMCC_TARGET_* on the command line, making the guard false). */
-#if !(MCC_TARGET_I386 || MCC_TARGET_X86_64 || MCC_TARGET_ARM \\
-   || MCC_TARGET_ARM64 || MCC_TARGET_RISCV64)
-${_nat}#endif
-
-/* ---- always-emitted defines (outside the native guard) ------------------ */
-${_always}/* CONFIG_MCC_PREDEFS 1 -> mccdefs_.h compiled in (section 5);
- * 0 -> mcc loads <mccdefs.h> at runtime. */
-#define CONFIG_MCC_PREDEFS ${_mcc_predefs_value}
-")
-message(STATUS "mcc config.h: CC_NAME=CC_${MCC_CC_NAME} predefs=${_mcc_predefs_value} "
+message(STATUS "mcc build defines: CC_NAME=CC_${MCC_CC_NAME} predefs=${_mcc_predefs_value} "
                "bcheck=${MCC_CONFIG_BCHECK} backtrace=${MCC_CONFIG_BACKTRACE}")
 
 include_directories("${CMAKE_CURRENT_BINARY_DIR}")
@@ -1192,6 +1177,11 @@ if(MCC_BUILD_SANITIZE)
     endif()
 endif()
 
+foreach(_nt mcc libmcc mcc_p mcc_s)
+    if(TARGET ${_nt})
+        target_compile_definitions(${_nt} PRIVATE ${_mccdefs})
+    endif()
+endforeach()
 
 
 set(MCC_LIBMCC1_EXTRA_O runmain bt-exe bt-dll bt-log bcheck)
@@ -1276,11 +1266,13 @@ function(mcc_build_libmcc1 tname mcctgt cpu os native archive objdir out_extra)
         -I${CMAKE_CURRENT_SOURCE_DIR}/src/arch/riscv64
         -I${CMAKE_CURRENT_SOURCE_DIR}/src/objfmt)
     if(_win)
-        set(_xflags -B${CMAKE_CURRENT_SOURCE_DIR}/runtime/win32
+        set(_xflags ${_mccdefs_flags}
+                    -B${CMAKE_CURRENT_SOURCE_DIR}/runtime/win32
                     -I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include
                     -I${CMAKE_BINARY_DIR} ${_arch_incs})
     else()
-        set(_xflags -B${CMAKE_CURRENT_SOURCE_DIR}/runtime
+        set(_xflags ${_mccdefs_flags}
+                    -B${CMAKE_CURRENT_SOURCE_DIR}/runtime
                     -I${CMAKE_BINARY_DIR} ${_arch_incs})
     endif()
 
@@ -1290,7 +1282,8 @@ function(mcc_build_libmcc1 tname mcctgt cpu os native archive objdir out_extra)
     set(_use_gcc OFF)
     if(native AND MCC_LIBMCC1_USEGCC)
         set(_use_gcc ON)
-        set(_gccflags -fPIC -fno-omit-frame-pointer -Wno-unused-function
+        set(_gccflags ${_mccdefs_flags}
+                      -fPIC -fno-omit-frame-pointer -Wno-unused-function
                       -Wno-unused-variable
                       -I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include -I${CMAKE_BINARY_DIR}
                       ${_arch_incs})
@@ -1579,9 +1572,10 @@ endif()
 set(_ref_exe "${OUTDIR}/mcctest.gcc")
 set(_ref_out "${OUTDIR}/mcctest.ref")
 separate_arguments(_refflags UNIX_COMMAND "${REFFLAGS}")
+separate_arguments(_tdefs UNIX_COMMAND "${TESTDEFS}")
 execute_process(
     COMMAND "${CC}" "${SRC}" -o "${_ref_exe}" "-I${IDIR}" "-I${SRCDIR}" "-I${BDIR}"
-            -w -O0 -std=gnu99 -fno-omit-frame-pointer ${_refflags}
+            ${_tdefs} -w -O0 -std=gnu99 -fno-omit-frame-pointer ${_refflags}
     RESULT_VARIABLE _rc OUTPUT_VARIABLE _o ERROR_VARIABLE _e)
 if(NOT _rc EQUAL 0)
     message(FATAL_ERROR "cc failed to build mcctest.c:\n${_o}${_e}")
@@ -1592,7 +1586,7 @@ set(_mcc_exe "${OUTDIR}/mcctest.mcc")
 set(_mcc_out "${OUTDIR}/mcctest.out")
 execute_process(
     COMMAND ${EMU} "${MCC}" "-B${BDIR}" "-I${IDIR}" "-I${SRCDIR}" "-I${BDIR}"
-            ${_targs} "${SRC}" -o "${_mcc_exe}"
+            ${_tdefs} ${_targs} "${SRC}" -o "${_mcc_exe}"
     RESULT_VARIABLE _rc OUTPUT_VARIABLE _o ERROR_VARIABLE _e)
 if(NOT _rc EQUAL 0)
     message(FATAL_ERROR "mcc failed to build mcctest.c:\n${_o}${_e}")
@@ -1725,6 +1719,7 @@ endif()
             -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/mcctest.c
             -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR} -DBDIR=${_bdir} -DIDIR=${_idir}
             -DOUTDIR=${CMAKE_BINARY_DIR} "-DREFFLAGS=${_mcctest_refflags}"
+            "-DTESTDEFS=-DCC_NAME=CC_${MCC_CC_NAME} -DGCC_MAJOR=${MCC_GCC_MAJOR}"
             -P "${_mcctest_driver}")
         set_tests_properties(mcctest PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         if(MCC_CONFIG_BCHECK)
@@ -1734,6 +1729,7 @@ endif()
                 -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/mcctest.c
                 -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR} -DBDIR=${_bdir} -DIDIR=${_idir}
                 -DOUTDIR=${CMAKE_BINARY_DIR}/bcheck "-DREFFLAGS=${_mcctest_refflags}"
+                "-DTESTDEFS=-DCC_NAME=CC_${MCC_CC_NAME} -DGCC_MAJOR=${MCC_GCC_MAJOR}"
                 -DMCCARGS=-b -P "${_mcctest_driver}")
             set_tests_properties(mcctest-bcheck PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endif()

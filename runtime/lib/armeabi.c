@@ -507,7 +507,6 @@ __aeabi_memset (void *s, size_t n, int c)
 }
 
 #if UIDIVMOD_ASM
-#include <config.h>
 __asm__(
    "\n  .global __aeabi_idiv, __aeabi_idivmod"
    "\n  .global __aeabi_uidiv, __aeabi_uidivmod"
