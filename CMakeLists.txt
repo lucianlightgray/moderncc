@@ -1548,6 +1548,13 @@ if(MCC_BUILD_TESTS)
     set(_bdir "${CMAKE_BINARY_DIR}")
     set(_idir "${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
 
+    # Register a test that always reports "Skipped" (with a reason) in ctest,
+    # so platform-/config-inapplicable tests are visible instead of omitted.
+    function(mcc_skip_test _name _reason)
+        add_test(NAME ${_name} COMMAND "${CMAKE_COMMAND}" -E echo "SKIP: ${_reason}")
+        set_tests_properties(${_name} PROPERTIES SKIP_REGULAR_EXPRESSION "SKIP:")
+    endfunction()
+
 
     set(_exe_driver "${CMAKE_BINARY_DIR}/run_mcc_exe.cmake")
     file(WRITE "${_exe_driver}" "set(EMU \"${MCC_EMULATOR}\")\n")
@@ -1640,15 +1647,14 @@ endif()
 
     add_executable(exec_runner tests/exec/runner.c)
     target_include_directories(exec_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec")
-    set(_t2r_skip "")
-    if(NOT MCC_CONFIG_ASM)
-        set(_t2r_skip asm_goto asm_outside_function al_ax_extend)
-    endif()
     add_test(NAME exec-suite
         COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
-                "${CMAKE_CURRENT_SOURCE_DIR}/tests" "${CMAKE_BINARY_DIR}" ${_t2r_skip})
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests" "${CMAKE_BINARY_DIR}")
+    # The runner reports its own per-test SKIP lines (host/config requirements);
+    # it returns 77 only when every test skipped, which ctest treats as Skipped.
     set_tests_properties(exec-suite PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-        ENVIRONMENT "MCC_TEST_EMU=${MCC_EMULATOR}")
+        SKIP_RETURN_CODE 77
+        ENVIRONMENT "MCC_TEST_EMU=${MCC_EMULATOR};MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS};MCC_TEST_ASM=$<IF:$<BOOL:${MCC_CONFIG_ASM}>,1,0>;MCC_TEST_BCHECK=$<IF:$<BOOL:${MCC_CONFIG_BCHECK}>,1,0>;MCC_TEST_BACKTRACE=$<IF:$<BOOL:${MCC_CONFIG_BACKTRACE}>,1,0>")
 
     add_executable(libmcc_test tests/embed/api_basic.c)
     target_link_libraries(libmcc_test PRIVATE libmcc)
@@ -1666,6 +1672,14 @@ endif()
         if(Threads_FOUND)
             target_link_libraries(libmcc_test_mt PRIVATE Threads::Threads)
         endif()
+        add_test(NAME libtest-mt
+            COMMAND libmcc_test_mt
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/embed/mt_workload.c"
+                    "-B${CMAKE_BINARY_DIR}"
+                    "-I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
+        set_tests_properties(libtest-mt PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+    else()
+        mcc_skip_test(libtest-mt "requires MCC_CONFIG_BACKTRACE (multithread libmcc test)")
     endif()
 
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples/ex1.c")
@@ -1732,7 +1746,12 @@ endif()
                 "-DTESTDEFS=-DCC_NAME=CC_${MCC_CC_NAME} -DGCC_MAJOR=${MCC_GCC_MAJOR}"
                 -DMCCARGS=-b -P "${_mcctest_driver}")
             set_tests_properties(mcctest-bcheck PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+        else()
+            mcc_skip_test(mcctest-bcheck "requires MCC_CONFIG_BCHECK (bounds-checked differential test)")
         endif()
+    else()
+        mcc_skip_test(mcctest "requires integrated assembler (MCC_CONFIG_ASM)")
+        mcc_skip_test(mcctest-bcheck "requires integrated assembler + MCC_CONFIG_BCHECK")
     endif()
 
     if(MCC_CPU MATCHES "^(i386|x86_64)$" AND MCC_CONFIG_ASM
@@ -1742,6 +1761,9 @@ endif()
             -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}/tests -DOUTDIR=${CMAKE_BINARY_DIR}
             -P "${_asmconnect_driver}")
         set_tests_properties(asm-c-connect-test PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+    else()
+        mcc_skip_test(asm-c-connect-test
+            "requires x86 target with integrated assembler (host target: ${MCC_CPU})")
     endif()
 
     set(MCC_GCCTESTSUITE_PATH "" CACHE PATH
@@ -1851,6 +1873,9 @@ endif()
         add_test(NAME i386-fastcall-abi COMMAND "${CMAKE_COMMAND}"
             -DIMCC=$<TARGET_FILE:i386-mcc> -P "${_fastcall_drv}")
         set_tests_properties(i386-fastcall-abi PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+    else()
+        mcc_skip_test(i386-fastcall-abi
+            "requires an i386 cross-compiler (target i386-mcc is not configured)")
     endif()
 
     set(_gccts_drv "${CMAKE_BINARY_DIR}/run_gcctestsuite.cmake")
@@ -2131,6 +2156,8 @@ endif()
                 -c "${_f}" -o "${CMAKE_BINARY_DIR}/orphan_win_${_n}.o")
             set_tests_properties(compile.win32.${_n} PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endforeach()
+    else()
+        mcc_skip_test(compile.win32 "requires WIN32 target (win32 runtime examples)")
     endif()
 
     message(STATUS "mcc tests: registered exec (golden) + preprocess + embed/abitest/diff "

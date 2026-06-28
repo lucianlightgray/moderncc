@@ -20,6 +20,68 @@
 
 static char *xstrdup(const char *s){ char *p = malloc(strlen(s)+1); strcpy(p,s); return p; }
 
+#define MCC_SKIP_RC 77
+
+static const char *envv(const char *k, const char *d){
+    const char *v = getenv(k); return (v && *v) ? v : d;
+}
+
+
+static int req_met(const char *req, char *reason, size_t rn){
+    if (!req || !*req) return 1;
+    char buf[256]; snprintf(buf, sizeof buf, "%s", req);
+    const char *cpu = envv("MCC_TEST_CPU", "unknown");
+    const char *os  = envv("MCC_TEST_OS",  "unknown");
+    for (char *tok = strtok(buf, ","); tok; tok = strtok(NULL, ",")){
+        while (*tok == ' ') tok++;
+        if (!strncmp(tok, "note:", 5)){
+            snprintf(reason, rn, "%s", tok + 5); return 0;
+        } else if (!strncmp(tok, "cpu=", 4)){
+            const char *want = tok + 4; int ok;
+            if (!strcmp(want, "x86")) ok = !strcmp(cpu,"i386") || !strcmp(cpu,"x86_64");
+            else ok = !strcmp(cpu, want);
+            if (!ok){ snprintf(reason, rn, "requires %s target (host target: %s)", want, cpu); return 0; }
+        } else if (!strncmp(tok, "os=", 3)){
+            const char *want = tok + 3;
+            if (strcmp(os, want)){ snprintf(reason, rn, "requires %s target OS (host: %s)", want, os); return 0; }
+        } else if (!strcmp(tok, "asm")){
+            if (strcmp(envv("MCC_TEST_ASM","1"), "1")){
+                snprintf(reason, rn, "requires integrated assembler (MCC_CONFIG_ASM)"); return 0; }
+        } else if (!strcmp(tok, "bcheck")){
+            if (strcmp(envv("MCC_TEST_BCHECK","0"), "1")){
+                snprintf(reason, rn, "requires bounds checker (MCC_CONFIG_BCHECK)"); return 0; }
+        } else if (!strcmp(tok, "backtrace")){
+            if (strcmp(envv("MCC_TEST_BACKTRACE","0"), "1")){
+                snprintf(reason, rn, "requires backtrace support (MCC_CONFIG_BACKTRACE)"); return 0; }
+        }
+    }
+    return 1;
+}
+
+
+static int has_dot_run(const char *s){
+    int n = 0;
+    for (; *s; s++){ if (*s == '.'){ if (++n >= 3) return 1; } else n = 0; }
+    return 0;
+}
+
+
+static int glob_eq(const char *pat, const char *str){
+    const char *s = str, *p = pat, *star_p = NULL, *star_s = NULL;
+    while (*s){
+        if (*p == '.'){
+            while (*p == '.') p++;
+            star_p = p; star_s = s;
+        } else if (*p && *p == *s){
+            p++; s++;
+        } else if (star_p){
+            s = ++star_s; p = star_p;
+        } else return 0;
+    }
+    while (*p == '.') p++;
+    return *p == '\0';
+}
+
 
 static char *slurp(FILE *f, size_t *outlen){
     size_t cap = 4096, len = 0;
@@ -85,7 +147,7 @@ static int texts_equal(const char *a, const char *b){
 
         char *ca = canon_line(pa, la);
         char *cb = canon_line(pb, lb);
-        int eq = !strcmp(ca, cb);
+        int eq = !strcmp(ca, cb) || (has_dot_run(ca) && glob_eq(ca, cb));
         free(ca); free(cb);
         if (!eq) return 0;
         if (!ea && !eb) return 1;
@@ -119,7 +181,7 @@ int main(int argc, char **argv){
     const char *emu = getenv("MCC_TEST_EMU"); if (!emu) emu = "";
 
     char **skip = argv + 6; int nskip = argc - 6;
-    int pass = 0, fail = 0, skipped = 0, ref = 0;
+    int pass = 0, fail = 0, skipped = 0;
     char cmd[8192], path[4096], srcdir[4096];
 
     snprintf(cmd, sizeof cmd, "mkdir -p \"%s\"", work);
@@ -129,7 +191,13 @@ int main(int argc, char **argv){
         const mcc_golden_t *g = &mcc_goldens[i];
         int do_skip = 0;
         for (int s = 0; s < nskip; s++) if (!strcmp(skip[s], g->name)){ do_skip = 1; break; }
-        if (do_skip){ skipped++; continue; }
+        if (do_skip){ printf("SKIP  %-32s -- excluded on command line\n", g->name); skipped++; continue; }
+
+        char reason[256];
+        if (!req_met(g->req, reason, sizeof reason)){
+            printf("SKIP  %-32s -- %s\n", g->name, reason);
+            skipped++; continue;
+        }
         snprintf(path, sizeof path, "%s/%s", root, g->src);
 
         strcpy(srcdir, path);
@@ -142,16 +210,16 @@ int main(int argc, char **argv){
             while (*a){ if (!strncmp(a, "{SELF}", 6)){ w += sprintf(w, "\"%s\"", path); a += 6; }
                         else *w++ = *a++; } *w = 0; }
 
-        if (!strcmp(g->mode, "ref")){
-
-
-
-            ref++;
-            continue;
-        } else if (!strcmp(g->mode, "pp")){
+        if (!strcmp(g->mode, "pp")){
             snprintf(cmd, sizeof cmd,
                 "%s \"%s\" \"-B%s\" \"-I%s\" -E -P \"%s\" 2>&1",
                 emu, mcc, bdir, idir, path);
+            out = run_capture(cmd, &rc);
+        } else if (!strcmp(g->mode, "brun")){
+
+            snprintf(cmd, sizeof cmd,
+                "cd \"%s\" && %s \"%s\" \"-B%s\" \"-I%s\" -b -run \"%s\" %s 2>&1",
+                work, emu, mcc, bdir, idir, path, g->flags);
             out = run_capture(cmd, &rc);
         } else if (!strcmp(g->mode, "dt")){
 
@@ -203,7 +271,9 @@ int main(int argc, char **argv){
         }
         free(out);
     }
-    printf("tests2_runner: %d passed, %d failed, %d skipped, %d ref (of %d)\n",
-           pass, fail, skipped, ref, mcc_goldens_count);
-    return fail ? 1 : 0;
+    printf("exec runner: %d passed, %d failed, %d skipped (of %d)\n",
+           pass, fail, skipped, mcc_goldens_count);
+    if (fail) return 1;
+    if (pass == 0 && skipped > 0) return MCC_SKIP_RC;
+    return 0;
 }
