@@ -1740,15 +1740,15 @@ include_directories("${CMAKE_CURRENT_BINARY_DIR}")   # find generated config.h (
 # "i386-gen.c", i386-asm.c -> "x86_64-asm.h", tcctok.h -> "i386-tok.h") resolve
 # regardless of which directory a TU is compiled from.
 include_directories(
-    "${CMAKE_CURRENT_SOURCE_DIR}"
-    "${CMAKE_CURRENT_SOURCE_DIR}/i386"
-    "${CMAKE_CURRENT_SOURCE_DIR}/x86_64"
-    "${CMAKE_CURRENT_SOURCE_DIR}/arm"
-    "${CMAKE_CURRENT_SOURCE_DIR}/arm64"
-    "${CMAKE_CURRENT_SOURCE_DIR}/riscv64"
-    "${CMAKE_CURRENT_SOURCE_DIR}/windows"
-    "${CMAKE_CURRENT_SOURCE_DIR}/linux"
-    "${CMAKE_CURRENT_SOURCE_DIR}/macos")
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/arch/i386"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/arch/x86_64"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/arch/arm"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/arch/arm64"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/arch/riscv64"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/objfmt"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/formats"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
 # Build-path-first runtime discovery (option TCC_AUTO_TCCDIR). Defined globally
 # so every TU that compiles libtcc.c picks it up -- the native libtcc, the
@@ -1820,23 +1820,23 @@ if(TCC_CONFIG_PREDEFS)
         execute_process(
             COMMAND "${TCC_HOSTCC}"
                     -o "${_c2str_exe}"
-                    "${CMAKE_CURRENT_SOURCE_DIR}/build/c2str.c"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tools/c2str.c"
             RESULT_VARIABLE _c2str_rc)
         if(NOT _c2str_rc EQUAL 0)
             message(FATAL_ERROR "Host compiler '${TCC_HOSTCC}' failed to build c2str")
         endif()
         set(_c2str_dep "${_c2str_exe}")   # depend on the prebuilt exe, not a target
     else()
-        add_executable(c2str build/c2str.c)
+        add_executable(c2str tools/c2str.c)
         set(_c2str_exe "$<TARGET_FILE:c2str>")
         set(_c2str_dep c2str)
     endif()
     add_custom_command(
         OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/tccdefs_.h"
         COMMAND "${_c2str_exe}"
-                "${CMAKE_CURRENT_SOURCE_DIR}/include/tccdefs.h"
+                "${CMAKE_CURRENT_SOURCE_DIR}/runtime/include/tccdefs.h"
                 "${CMAKE_CURRENT_BINARY_DIR}/tccdefs_.h"
-        DEPENDS ${_c2str_dep} "${CMAKE_CURRENT_SOURCE_DIR}/include/tccdefs.h"
+        DEPENDS ${_c2str_dep} "${CMAKE_CURRENT_SOURCE_DIR}/runtime/include/tccdefs.h"
         COMMENT "Generating tccdefs_.h (c2str include/tccdefs.h)"
         VERBATIM)
     add_custom_target(tcc_tccdefs
@@ -1846,35 +1846,34 @@ endif()
 # ===========================================================================
 # 6. SOURCE FILE LISTS  (Makefile: CORE_FILES + per-target *_FILES)
 # ===========================================================================
-# The source tree is organised by concern (see section above): core TUs at the
-# root, per-CPU backends in i386/ x86_64/ arm/ arm64/ riscv64/, the OS
-# object-format writers in windows/ linux/ macos/. So the file lists are GLOBbed
-# straight from those directories (CONFIGURE_DEPENDS re-runs the glob when files
-# are added/removed). The few cross-references are spelled out explicitly.
+# The source tree is organised by concern: compiler core TUs in src/, per-CPU
+# backends in src/arch/{i386,x86_64,arm,arm64,riscv64}/, the OS object-format
+# writers in src/objfmt/, and the vendored format tables in src/formats/. So the
+# file lists are GLOBbed straight from those directories (CONFIGURE_DEPENDS
+# re-runs the glob when files are added/removed). The few cross-references (the
+# OS writers and i386-asm.c) are spelled out explicitly.
 
-# Core: every root *.c (minus tcc.c, the driver, kept out so libtcc can exclude
-# it) plus linux/tccelf.c (the always-on ELF object writer).
+# Core: every src/*.c (minus tcc.c, the driver, kept out so libtcc can exclude
+# it) plus src/objfmt/tccelf.c (the always-on ELF object writer).
 file(GLOB TCC_CORE_SRC CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/*.c" "${CMAKE_CURRENT_SOURCE_DIR}/linux/*.c")
-list(REMOVE_ITEM TCC_CORE_SRC "${CMAKE_CURRENT_SOURCE_DIR}/tcc.c")
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c" "${CMAKE_CURRENT_SOURCE_DIR}/src/objfmt/tccelf.c")
+list(REMOVE_ITEM TCC_CORE_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/tcc.c")
 
 # Per-CPU backend: the subdirectory named after TCC_CPU *is* the source list.
 # x86_64 additionally reuses the shared x86 assembler i386-asm.c.
-file(GLOB TCC_BACKEND_SRC CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${TCC_CPU}/*.c")
+file(GLOB TCC_BACKEND_SRC CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/arch/${TCC_CPU}/*.c")
 if(NOT TCC_BACKEND_SRC)
-    message(FATAL_ERROR "No backend sources for CPU '${TCC_CPU}' (no ${TCC_CPU}/ directory)")
+    message(FATAL_ERROR "No backend sources for CPU '${TCC_CPU}' (no src/arch/${TCC_CPU}/ directory)")
 endif()
 if(TCC_CPU STREQUAL "x86_64")
-    list(APPEND TCC_BACKEND_SRC "${CMAKE_CURRENT_SOURCE_DIR}/i386/i386-asm.c")
+    list(APPEND TCC_BACKEND_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/arch/i386/i386-asm.c")
 endif()
 
-# OS-specific object-format writer: windows/ (PE) or macos/ (Mach-O).
+# OS-specific object-format writer: src/objfmt/tccpe.c (PE) or tccmacho.c (Mach-O).
 if(TCC_TARGETOS STREQUAL "WIN32")
-    file(GLOB _os_src CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/windows/*.c")
-    list(APPEND TCC_BACKEND_SRC ${_os_src})
+    list(APPEND TCC_BACKEND_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/objfmt/tccpe.c")
 elseif(TCC_TARGETOS STREQUAL "Darwin")
-    file(GLOB _os_src CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/macos/*.c")
-    list(APPEND TCC_BACKEND_SRC ${_os_src})
+    list(APPEND TCC_BACKEND_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/objfmt/tccmacho.c")
 endif()
 
 # ===========================================================================
@@ -1882,13 +1881,13 @@ endif()
 # ===========================================================================
 # All libtcc TUs (core + backend), minus tcc.c (driver) and tcctools.c.
 set(LIBTCC_ALL_SRC ${TCC_CORE_SRC} ${TCC_BACKEND_SRC})
-list(REMOVE_ITEM LIBTCC_ALL_SRC "${CMAKE_CURRENT_SOURCE_DIR}/tcctools.c")  # driver-only
+list(REMOVE_ITEM LIBTCC_ALL_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/tcctools.c")  # driver-only
 
 # ONE_SOURCE=yes (Makefile): compile ONLY libtcc.c, which #includes every other
 # TU (libtcc.c:21 defaults ONE_SOURCE to 1). Otherwise compile each TU separately
 # and force ONE_SOURCE=0 so libtcc.c does NOT include the others.
 if(TCC_ONE_SOURCE)
-    set(LIBTCC_SRC libtcc.c)
+    set(LIBTCC_SRC src/libtcc.c)
 else()
     set(LIBTCC_SRC ${LIBTCC_ALL_SRC})
 endif()
@@ -1925,7 +1924,7 @@ else()
             list(APPEND _one_src_deps "${CMAKE_CURRENT_SOURCE_DIR}/${_s}")
         endif()
     endforeach()
-    set_source_files_properties(libtcc.c PROPERTIES OBJECT_DEPENDS "${_one_src_deps}")
+    set_source_files_properties(src/libtcc.c PROPERTIES OBJECT_DEPENDS "${_one_src_deps}")
 endif()
 # tccpp.c #includes the generated tccdefs_.h when CONFIG_TCC_PREDEFS=1 (section 5).
 if(TARGET tcc_tccdefs)
@@ -1937,7 +1936,7 @@ endif()
 # Interface generator expressions so both the build tree and an installed
 # consumer (find_package(tcc)) resolve libtcc.h from the right place.
 target_include_directories(libtcc PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
 # Link libraries (Makefile unix branch: -lm -ldl -lpthread; BSD sets ldl=no;
@@ -1966,9 +1965,9 @@ endif()
 # ===========================================================================
 # tcctools.c is #included by tcc.c (Makefile lists it only as a dependency of
 # tcc.o), so it is NOT compiled as a separate TU here.
-add_executable(tcc tcc.c)
-set_source_files_properties(tcc.c PROPERTIES OBJECT_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/tcctools.c")
+add_executable(tcc src/tcc.c)
+set_source_files_properties(src/tcc.c PROPERTIES OBJECT_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/tcctools.c")
 target_compile_definitions(tcc PRIVATE ONE_SOURCE=0)  # Makefile: tcc.o gets ONE_SOURCE=0
 target_link_libraries(tcc PRIVATE libtcc)
 # -DTCC_GITHASH only on the driver TU (Makefile: applied to $(X)tcc.o alone).
@@ -1999,9 +1998,9 @@ endif()
 
 # tcc_p: -pg -static -DCONFIG_TCC_STATIC -DTCC_PROFILE (Makefile CFLAGS_P).
 if(TCC_BUILD_PROFILE)
-    add_executable(tcc_p tcc.c)
-    set_source_files_properties(tcc.c PROPERTIES OBJECT_DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/tcctools.c")
+    add_executable(tcc_p src/tcc.c)
+    set_source_files_properties(src/tcc.c PROPERTIES OBJECT_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/tcctools.c")
     target_include_directories(tcc_p PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
     target_compile_options(tcc_p PRIVATE -pg)
     target_compile_definitions(tcc_p PRIVATE CONFIG_TCC_STATIC TCC_PROFILE)
@@ -2016,9 +2015,9 @@ endif()
 
 # tcc_s: -fsanitize=address,undefined (Makefile tcc_s).
 if(TCC_BUILD_SANITIZE)
-    add_executable(tcc_s tcc.c)
-    set_source_files_properties(tcc.c PROPERTIES OBJECT_DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/tcctools.c")
+    add_executable(tcc_s src/tcc.c)
+    set_source_files_properties(src/tcc.c PROPERTIES OBJECT_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/tcctools.c")
     target_include_directories(tcc_s PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
     target_compile_options(tcc_s PRIVATE -fsanitize=address,undefined)
     target_link_options(tcc_s PRIVATE -fsanitize=address,undefined)
@@ -2052,8 +2051,8 @@ set(TCC_LIBTCC1_EXTRA_O runmain bt-exe bt-dll bt-log bcheck)
 # Map a libtcc1 object basename to its source file (lib/ or win32/lib/, .c or .S;
 # crt1w/wincrt1w are built from the non-w sources, lib/Makefile lines 99-100).
 function(_tcc_libtcc1_src obj outvar)
-    set(_lib "${CMAKE_CURRENT_SOURCE_DIR}/lib")
-    set(_win "${CMAKE_CURRENT_SOURCE_DIR}/win32/lib")
+    set(_lib "${CMAKE_CURRENT_SOURCE_DIR}/runtime/lib")
+    set(_win "${CMAKE_CURRENT_SOURCE_DIR}/runtime/win32/lib")
     if(obj STREQUAL "crt1w")
         set(${outvar} "${_win}/crt1.c" PARENT_SCOPE)
     elseif(obj STREQUAL "wincrt1w")
@@ -2142,21 +2141,22 @@ function(tcc_build_libtcc1 tname tcctgt cpu os native archive objdir out_extra)
     # -B lets tcc find include/; -I gives the headers; -I<build> is the $(TOP)
     # that holds config.h (needed by native bt-exe.c / bcheck.c -> tcc.h).
     # tcc.h pulls in the per-arch backend (TARGET_DEFS_ONLY -> "<arch>-gen.c"),
-    # which now lives in a subdir, so -I every backend dir too.
+    # libtcc.h (include/), and the format tables (src/formats/), so -I src, the
+    # public header dir, the format dir, and every backend/objfmt dir.
     set(_arch_incs
-        -I${CMAKE_CURRENT_SOURCE_DIR}/i386    -I${CMAKE_CURRENT_SOURCE_DIR}/x86_64
-        -I${CMAKE_CURRENT_SOURCE_DIR}/arm     -I${CMAKE_CURRENT_SOURCE_DIR}/arm64
-        -I${CMAKE_CURRENT_SOURCE_DIR}/riscv64
-        -I${CMAKE_CURRENT_SOURCE_DIR}/windows -I${CMAKE_CURRENT_SOURCE_DIR}/linux
-        -I${CMAKE_CURRENT_SOURCE_DIR}/macos)
+        -I${CMAKE_CURRENT_SOURCE_DIR}/src
+        -I${CMAKE_CURRENT_SOURCE_DIR}/include
+        -I${CMAKE_CURRENT_SOURCE_DIR}/src/formats
+        -I${CMAKE_CURRENT_SOURCE_DIR}/src/arch/i386    -I${CMAKE_CURRENT_SOURCE_DIR}/src/arch/x86_64
+        -I${CMAKE_CURRENT_SOURCE_DIR}/src/arch/arm     -I${CMAKE_CURRENT_SOURCE_DIR}/src/arch/arm64
+        -I${CMAKE_CURRENT_SOURCE_DIR}/src/arch/riscv64
+        -I${CMAKE_CURRENT_SOURCE_DIR}/src/objfmt)
     if(_win)
-        set(_xflags -B${CMAKE_CURRENT_SOURCE_DIR}/win32
-                    -I${CMAKE_CURRENT_SOURCE_DIR}/include
-                    -I${CMAKE_CURRENT_SOURCE_DIR}
+        set(_xflags -B${CMAKE_CURRENT_SOURCE_DIR}/runtime/win32
+                    -I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include
                     -I${CMAKE_BINARY_DIR} ${_arch_incs})
     else()
-        set(_xflags -B${CMAKE_CURRENT_SOURCE_DIR}
-                    -I${CMAKE_CURRENT_SOURCE_DIR}
+        set(_xflags -B${CMAKE_CURRENT_SOURCE_DIR}/runtime
                     -I${CMAKE_BINARY_DIR} ${_arch_incs})
     endif()
 
@@ -2174,8 +2174,8 @@ function(tcc_build_libtcc1 tname tcctgt cpu os native archive objdir out_extra)
     if(native AND TCC_LIBTCC1_USEGCC)
         set(_use_gcc ON)
         set(_gccflags -fPIC -fno-omit-frame-pointer -Wno-unused-function
-                      -Wno-unused-variable -I${CMAKE_CURRENT_SOURCE_DIR}
-                      -I${CMAKE_CURRENT_SOURCE_DIR}/include -I${CMAKE_BINARY_DIR}
+                      -Wno-unused-variable
+                      -I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include -I${CMAKE_BINARY_DIR}
                       ${_arch_incs})
         if(TCC_CONFIG_DWARF STREQUAL "")
             set(_bflags_gcc -gstabs)
@@ -2255,27 +2255,25 @@ tcc_build_libtcc1(libtcc1 tcc "${TCC_CPU}" "${TCC_TARGETOS}" ON
 
 # Make the build dir a complete, self-contained tccdir: libtcc1.a already lands
 # at the build root (above), so mirror the install layout's headers too --
-# {B}/include = include/*.h + tcclib.h (see section 13). With this in place the
+# {B}/include = runtime/include/*.h (which includes tcclib.h). With this in place the
 # build dir IS a valid tccdir, which is exactly what TCC_AUTO_TCCDIR's runtime
 # discovery (tcc_auto_tccdir in libtcc.c) keys off and what `tcc -B<build>`
 # uses. Done unconditionally (not gated on tests) so a bare `cmake --build`
 # yields a runnable in-tree tcc that resolves <stddef.h>/<stdarg.h>/libtcc1.a
 # with no -B and no host CPATH.
-file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/include/"
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/runtime/include/"
     DESTINATION "${CMAKE_BINARY_DIR}/include" FILES_MATCHING PATTERN "*.h")
-file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/tcclib.h"
-    DESTINATION "${CMAKE_BINARY_DIR}/include")
 
 # tcc_c coverage build (Makefile: the freshly-built tcc compiles itself). Needs
 # config.h (-I build), headers + runtime (-B src + -B build for libtcc1.a).
 if(TCC_BUILD_COVERAGE)
     add_custom_command(
         OUTPUT "${CMAKE_BINARY_DIR}/tcc_c"
-        COMMAND ${TCC_EMULATOR} "$<TARGET_FILE:tcc>" "${CMAKE_CURRENT_SOURCE_DIR}/tcc.c"
+        COMMAND ${TCC_EMULATOR} "$<TARGET_FILE:tcc>" "${CMAKE_CURRENT_SOURCE_DIR}/src/tcc.c"
                 -o "${CMAKE_BINARY_DIR}/tcc_c" -ftest-coverage
                 "-I${CMAKE_BINARY_DIR}" "-I${CMAKE_CURRENT_SOURCE_DIR}"
                 "-B${CMAKE_CURRENT_SOURCE_DIR}" "-B${CMAKE_BINARY_DIR}"
-        DEPENDS tcc libtcc1 "${CMAKE_CURRENT_SOURCE_DIR}/tcc.c"
+        DEPENDS tcc libtcc1 "${CMAKE_CURRENT_SOURCE_DIR}/src/tcc.c"
         COMMENT "tcc -ftest-coverage tcc.c -> tcc_c" VERBATIM)
     # Drive the build with a target whose name differs from the output file's
     # basename: a custom target named `tcc_c` becomes a Ninja phony that collides
@@ -2374,7 +2372,7 @@ if(TCC_ENABLE_CROSS)
                 "CONFIG_TCC_SYSINCLUDEPATHS=\"{B}/include:{R}/include\"")  # INC-$T
         endif()
 
-        add_executable(${_t}-tcc tcc.c)
+        add_executable(${_t}-tcc src/tcc.c)
         # config.h is on the global include path; libtcc.c/tcctools.c resolve
         # relative to tcc.c. CONFIG_TCC_CROSSPREFIX prefixes libtcc1/tool names.
         target_compile_definitions(${_t}-tcc PRIVATE ${_cdefs} ${_cpath_defs}
@@ -2441,7 +2439,7 @@ install(TARGETS libtcc EXPORT tccTargets
     ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 # libtcc.h -> includedir (Makefile: IF $(TOPSRC)/libtcc.h "$(includedir)").
-install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/libtcc.h"
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/include/libtcc.h"
     DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 
 # --- CMake package config: find_package(tcc) -> tcc::libtcc -----------------
@@ -2475,19 +2473,17 @@ install(FILES "${CMAKE_BINARY_DIR}/libtcc1.a" ${LIBTCC1_EXTRA_OBJS}
     DESTINATION "${_tccdir}")
 
 # tcc runtime headers -> tccdir/include (Makefile: include/*.h + tcclib.h).
-install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/"
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/runtime/include/"
     DESTINATION "${_tccdir}/include" FILES_MATCHING PATTERN "*.h")
-install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/tcclib.h"
-    DESTINATION "${_tccdir}/include")
 
 # On WIN32 the layout differs (win32/lib/*.def, win32/include tree, examples);
 # this block installs the essentials for a Windows target.
 if(TCC_TARGETOS STREQUAL "WIN32")
-    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/win32/include/"
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/runtime/win32/include/"
         DESTINATION "${_tccdir}/include")
     # (the tcc runtime headers are already installed to ${_tccdir}/include by the
     # generic install(DIRECTORY include/) above -- no extra win32 copy needed.)
-    file(GLOB _win_defs "${CMAKE_CURRENT_SOURCE_DIR}/win32/lib/*.def")
+    file(GLOB _win_defs "${CMAKE_CURRENT_SOURCE_DIR}/runtime/win32/lib/*.def")
     install(FILES ${_win_defs} DESTINATION "${_tccdir}/lib")
     if(NOT TCC_BUILD_STATIC)
         install(FILES "${CMAKE_BINARY_DIR}/libtcc.def"
@@ -2692,14 +2688,14 @@ if(TCC_TARGETOS STREQUAL "WIN32")
 endif()
 
 # ===========================================================================
-# 13b. NATIVE BUILDER TOOL  (build/build.c)
+# 13b. NATIVE BUILDER TOOL  (tools/build.c)
 # ===========================================================================
-# build/build.c is the self-contained host-CC bootstrap builder (normally run as
-# `cc build/build.c -o build && ./build`). Give it a CMake target too so the file
+# tools/build.c is the self-contained host-CC bootstrap builder (normally run as
+# `cc tools/build.c -o build && ./build`). Give it a CMake target too so the file
 # is built/verified by the tree. It is host-only POSIX code (system(), uname),
 # so it builds only on a UNIX host that isn't cross-compiling.
 if(UNIX AND NOT CMAKE_CROSSCOMPILING)
-    add_executable(tccbuild build/build.c)
+    add_executable(tccbuild tools/build.c)
 endif()
 
 # ===========================================================================
@@ -2711,7 +2707,7 @@ if(TCC_BUILD_TESTS)
     enable_testing()
     set(_tcc_exe "$<TARGET_FILE:tcc>")
     set(_bdir "${CMAKE_BINARY_DIR}")                          # {B}: runtime+libtcc1
-    set(_idir "${CMAKE_CURRENT_SOURCE_DIR}/include")          # tcc's own headers
+    set(_idir "${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")          # tcc's own headers
 
     # (The former per-file `run_tcc_test.cmake` driver + tests/{tests2,pp}/*.expect
     # were replaced by the native-C tests2_runner below; its goldens live in
@@ -2747,7 +2743,7 @@ set(_ref_exe "${OUTDIR}/tcctest.gcc")
 set(_ref_out "${OUTDIR}/tcctest.ref")
 separate_arguments(_refflags UNIX_COMMAND "${REFFLAGS}")
 execute_process(
-    COMMAND "${CC}" "${SRC}" -o "${_ref_exe}" "-I${SRCDIR}" "-I${BDIR}"
+    COMMAND "${CC}" "${SRC}" -o "${_ref_exe}" "-I${IDIR}" "-I${SRCDIR}" "-I${BDIR}"
             -w -O0 -std=gnu99 -fno-omit-frame-pointer ${_refflags}
     RESULT_VARIABLE _rc OUTPUT_VARIABLE _o ERROR_VARIABLE _e)
 if(NOT _rc EQUAL 0)
@@ -2851,7 +2847,7 @@ endif()
     target_include_directories(libtcc_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
     add_test(NAME libtest
         COMMAND libtcc_test "-B${CMAKE_BINARY_DIR}"
-                "-I${CMAKE_CURRENT_SOURCE_DIR}/include")
+                "-I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
     set_tests_properties(libtest PROPERTIES FIXTURES_REQUIRED TCC_BUILT)
 
     # libtcc_test_mt (multithreaded) — dropped when backtrace is disabled, like
@@ -2874,7 +2870,7 @@ endif()
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples/ex1.c")
         add_test(NAME hello-run
             COMMAND ${_tcc_exe} "-B${CMAKE_BINARY_DIR}"
-                    "-I${CMAKE_CURRENT_SOURCE_DIR}/include"
+                    "-I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include"
                     -run "${CMAKE_CURRENT_SOURCE_DIR}/examples/ex1.c")
         set_tests_properties(hello-run PROPERTIES FIXTURES_REQUIRED TCC_BUILT)
         # hello-exe: compile ex1.c to an exe and run it.
@@ -2904,7 +2900,7 @@ endif()
         target_include_directories(abitest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
         add_test(NAME abitest-cc
             COMMAND abitest "-B${CMAKE_BINARY_DIR}"
-                    "-I${CMAKE_CURRENT_SOURCE_DIR}/include")
+                    "-I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
         set_tests_properties(abitest-cc PROPERTIES FIXTURES_REQUIRED TCC_BUILT)
     endif()
 
@@ -3350,7 +3346,7 @@ endif()
         add_custom_target(arm-asm-testsuite
             COMMAND "${CMAKE_COMMAND}" -DTCC=$<TARGET_FILE:arm-tcc>
                     "-DCROSS_COMPILE=${TCC_ARM_CROSS_COMPILE}"
-                    "-DTOKH=${CMAKE_CURRENT_SOURCE_DIR}/arm/arm-tok.h" -P "${_armasm_drv}"
+                    "-DTOKH=${CMAKE_CURRENT_SOURCE_DIR}/src/arch/arm/arm-tok.h" -P "${_armasm_drv}"
             DEPENDS arm-tcc USES_TERMINAL
             COMMENT "arm-asm-testsuite: tcc vs GNU as over arm-tok.h")
     endif()
@@ -3375,12 +3371,12 @@ endif()
     endforeach()
     # Windows demos need a PE-target tcc (windows.h + the win32 header tree).
     if(TCC_TARGETOS STREQUAL "WIN32")
-        file(GLOB _win_ex CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/win32/examples/*.c")
+        file(GLOB _win_ex CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/runtime/win32/examples/*.c")
         foreach(_f IN LISTS _win_ex)
             get_filename_component(_n "${_f}" NAME_WE)
             add_test(NAME compile.win32.${_n} COMMAND ${TCC_EMULATOR} "${_tcc_exe}"
-                "-B${CMAKE_CURRENT_SOURCE_DIR}/win32"
-                "-I${CMAKE_CURRENT_SOURCE_DIR}/win32/include" "-I${_idir}"
+                "-B${CMAKE_CURRENT_SOURCE_DIR}/runtime/win32"
+                "-I${CMAKE_CURRENT_SOURCE_DIR}/runtime/win32/include" "-I${_idir}"
                 -c "${_f}" -o "${CMAKE_BINARY_DIR}/orphan_win_${_n}.o")
             set_tests_properties(compile.win32.${_n} PROPERTIES FIXTURES_REQUIRED TCC_BUILT)
         endforeach()

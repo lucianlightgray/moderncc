@@ -5,14 +5,14 @@
  * "build the compiler in C" path (Phase 6 of TODO.md); CMakeLists.txt remains
  * the full-featured build (cross targets, install, packaging, the test suite).
  *
- *   cc build/build.c -o build && ./build [--cc <cc>] [--out <dir>] [--run]
+ *   cc tools/build.c -o build && ./build [--cc <cc>] [--out <dir>] [--run]
  *   (run from the repo root so the relative source paths resolve)
  *
  * Steps, mirroring what CMake's sections 3/5/9 do for a native x86_64 build:
  *   1. write <out>/config.h            (version + native-target defaults)
- *   2. cc -DONE_SOURCE=1 tcc.c -> tcc   (tcc.c #includes libtcc.c -> everything)
+ *   2. cc -DONE_SOURCE=1 src/tcc.c -> tcc (#includes src/libtcc.c -> everything)
  *   3. populate <out>/include with tcc's runtime headers
- *   4. use the fresh tcc to compile lib/*.c into <out>/libtcc1.a
+ *   4. use the fresh tcc to compile runtime/lib/*.c into <out>/libtcc1.a
  *   5. with --run, smoke-test the result
  */
 #include <stdio.h>
@@ -78,22 +78,24 @@ int main(int argc, char **argv){
 
     /* 2. compile the tcc driver (ONE_SOURCE pulls in libtcc.c -> all TUs) --- */
     printf("[2/4] cc tcc.c -> tcc\n");
-    /* The per-arch / per-OS backend sources live in subdirs; -I each so the
-       quoted #includes inside libtcc.c (pulled in by ONE_SOURCE) resolve.
-       Run this from the repo root: `cc build/build.c -o build && ./build`. */
-    if (run("\"%s\" -O2 -DONE_SOURCE=1 -DTCC_TARGET_X86_64 -I\"%s\" -I. "
-            "-Ii386 -Ix86_64 -Iarm -Iarm64 -Iriscv64 -Iwindows -Ilinux -Imacos "
-            "-o \"%s/tcc\" tcc.c -lm -ldl -lpthread", CC, OUT, OUT)) return 1;
+    /* The compiler core, per-arch backends, object-format writers, and format
+       tables live under src/; libtcc.h is in include/. -I each so the quoted
+       #includes inside libtcc.c (pulled in by ONE_SOURCE) resolve.
+       Run this from the repo root: `cc tools/build.c -o build && ./build`. */
+    if (run("\"%s\" -O2 -DONE_SOURCE=1 -DTCC_TARGET_X86_64 -I\"%s\" -Isrc -Iinclude "
+            "-Isrc/formats -Isrc/objfmt -Isrc/arch/i386 -Isrc/arch/x86_64 "
+            "-Isrc/arch/arm -Isrc/arch/arm64 -Isrc/arch/riscv64 "
+            "-o \"%s/tcc\" src/tcc.c -lm -ldl -lpthread", CC, OUT, OUT)) return 1;
 
     /* 3. runtime headers --------------------------------------------------- */
     printf("[3/4] install runtime headers\n");
-    if (run("cp include/*.h \"%s/include/\"", OUT)) return 1;
+    if (run("cp runtime/include/*.h \"%s/include/\"", OUT)) return 1;
 
     /* 4. libtcc1.a, compiled by the fresh tcc ------------------------------ */
     printf("[4/4] tcc -> libtcc1.a\n");
     char objs[4096] = "";
     for (int i = 0; RT_OBJS[i]; i++){
-        if (run("\"%s/tcc\" -B\"%s\" -c lib/%s.c -o \"%s/%s.o\"",
+        if (run("\"%s/tcc\" -B\"%s\" -c runtime/lib/%s.c -o \"%s/%s.o\"",
                 OUT, OUT, RT_OBJS[i], OUT, RT_OBJS[i])) return 1;
         char one[256]; snprintf(one, sizeof one, " \"%s/%s.o\"", OUT, RT_OBJS[i]);
         strncat(objs, one, sizeof objs - strlen(objs) - 1);
@@ -103,15 +105,17 @@ int main(int argc, char **argv){
     /* standalone runtime objects (NOT in libtcc1.a): the bounds-checker and the
      * backtrace/-run runtime, which `tcc -b` / `tcc -run` link from the tccdir. */
     printf("      + bcheck/backtrace runtime objects\n");
-    /* bcheck.c / bt-exe.c #include tcc.h -> config.h (-I<out>) and the per-arch
-     * backend (-Ii386/-Ix86_64/... ), so add the same arch includes used above. */
-    const char *AINC = "-Ii386 -Ix86_64 -Iarm -Iarm64 -Iriscv64 "
-                       "-Iwindows -Ilinux -Imacos";
-    if (run("\"%s/tcc\" -B\"%s\" -c lib/bcheck.c -o \"%s/bcheck.o\" -bt "
-            "-I\"%s\" -Iinclude -I. %s", OUT, OUT, OUT, OUT, AINC)) return 1;
+    /* bcheck.c / bt-exe.c #include tcc.h -> config.h (-I<out>), the compiler
+     * core (-Isrc), the format tables (-Isrc/formats) and the per-arch backend
+     * (-Isrc/arch/...), so add the same includes used for the tcc.c build. */
+    const char *AINC = "-Isrc -Iinclude -Isrc/formats -Isrc/objfmt "
+                       "-Isrc/arch/i386 -Isrc/arch/x86_64 -Isrc/arch/arm "
+                       "-Isrc/arch/arm64 -Isrc/arch/riscv64";
+    if (run("\"%s/tcc\" -B\"%s\" -c runtime/lib/bcheck.c -o \"%s/bcheck.o\" -bt "
+            "-I\"%s\" -Iruntime/include %s", OUT, OUT, OUT, OUT, AINC)) return 1;
     const char *bt[] = { "bt-exe", "bt-log", "runmain", 0 };
     for (int i = 0; bt[i]; i++)
-        if (run("\"%s/tcc\" -B\"%s\" -c lib/%s.c -o \"%s/%s.o\" -I\"%s\" -Iinclude -I. %s",
+        if (run("\"%s/tcc\" -B\"%s\" -c runtime/lib/%s.c -o \"%s/%s.o\" -I\"%s\" -Iruntime/include %s",
                 OUT, OUT, bt[i], OUT, bt[i], OUT, AINC)) return 1;
 
     printf("\nbuild: done -- %s/tcc (use: %s/tcc -B%s <file.c>)\n", OUT, OUT, OUT);
