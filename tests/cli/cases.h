@@ -131,5 +131,95 @@ static const cli_case_t cli_cases[] = {
   "nm {W}/resp.o | grep -oE 'exported_fn'",
   "exported_fn\n" },
 
+/* ---- symbol metadata / assembler driver ----------------------------- */
+{ "symbol_type_func_object", "cpu=x86_64,os=linux",
+  "{MCC} -B{B} -I{I} -c {D}/lib.c -o {W}/ts.o && "
+  "readelf -s {W}/ts.o | grep -E 'exported_fn|global_var' | awk '{print $4}' | sort -u",
+  "FUNC\nOBJECT\n" },
+
+{ "assemble_dot_s_file", "cpu=x86_64,os=linux",
+  "{MCC} -B{B} -I{I} {D}/asmadd.s {D}/asmmain.c -o {W}/ae && {W}/ae",
+  "42\n" },
+
+{ "weak_override_multi_tu", "cpu=x86_64,os=linux",
+  "{MCC} -B{B} -I{I} -c {D}/wstrong.c -o {W}/wstrong.o && "
+  "{MCC} -B{B} -I{I} {D}/wmain.c {W}/wstrong.o -o {W}/we && {W}/we",
+  "1\n" },
+
+/* ---- dynamic / debug / TLS structure -------------------------------- */
+{ "shared_dynamic_tags", "cpu=x86_64,os=linux",
+  "{MCC} -B{B} -I{I} -shared -Wl,-soname,libt.so.1 {D}/lib.c -o {W}/lt.so && "
+  "readelf -d {W}/lt.so | grep -oE 'SONAME|GNU_HASH|BIND_NOW' | sort -u && "
+  "readelf -l {W}/lt.so | grep -oE 'GNU_RELRO' | head -1",
+  "BIND_NOW\nGNU_HASH\nSONAME\nGNU_RELRO\n" },
+
+{ "rpath_new_dtags_runpath", "cpu=x86_64,os=linux",
+  "{MCC} -B{B} -I{I} -Wl,-rpath,/opt/x -Wl,--enable-new-dtags -shared {D}/lib.c -o {W}/rp.so && "
+  "readelf -d {W}/rp.so | grep -oE 'RUNPATH'",
+  "RUNPATH\n" },
+
+{ "dwarf_line_table", "cpu=x86_64,os=linux",
+  "{MCC} -B{B} -I{I} -gdwarf-5 -c {D}/lib.c -o {W}/gl.o && "
+  "readelf --debug-dump=decodedline {W}/gl.o 2>/dev/null | grep -oE 'lib\\.c' | head -1",
+  "lib.c\n" },
+
+{ "tls_segment_and_run", "os=linux",
+  "{MCC} -B{B} -I{I} {D}/tlsvar.c -o {W}/te && {W}/te && "
+  "readelf -l {W}/te | grep -oE 'TLS' | head -1",
+  "7\nTLS\n" },
+
+{ "fcommon_vs_default", "cpu=x86_64,os=linux",
+  "printf 'int gg;\\n' > {W}/cm.c && "
+  "{MCC} -B{B} -I{I} -c {W}/cm.c -o {W}/cm.o && nm {W}/cm.o | awk '/ gg$/{print $2}' && "
+  "{MCC} -B{B} -I{I} -fcommon -c {W}/cm.c -o {W}/cmc.o && nm {W}/cmc.o | awk '/ gg$/{print $2}'",
+  "B\nC\n" },
+
+/* ---- warnings / preprocessor flags ---------------------------------- */
+{ "werror_promotes_to_error", "",
+  "printf 'int main(void){ undeclared_fn(); return 0; }\\n' > {W}/werr.c && "
+  "{MCC} -B{B} -I{I} -Werror -c {W}/werr.c -o {W}/werr.o 2>&1 | grep -oE 'error: implicit declaration' | head -1",
+  "error: implicit declaration\n" },
+
+{ "wwrite_strings_warns", "",
+  "printf 'char *p = \\\"x\\\"; void f(void){ *p = 0; }\\n' > {W}/ws.c && "
+  "{MCC} -B{B} -I{I} -Wwrite-strings -c {W}/ws.c -o {W}/ws.o 2>&1 | grep -coE 'discards qualifiers|read-only'",
+  "1\n" },
+
+{ "multichar_warning", "",
+  "{MCC} -B{B} -I{I} -Wall -c {D}/multichar.c -o {W}/mc.o 2>&1 | grep -oE 'multi-character'",
+  "multi-character\n" },
+
+{ "integer_suffix_error", "",
+  "{MCC} -B{B} -I{I} -c {D}/suffix_bad.c -o {W}/sb.o 2>&1 | grep -oE \"three 'l's\"",
+  "three 'l's\n" },
+
+{ "include_flag", "",
+  "printf '#define INCV 7\\n' > {W}/inc.h && printf 'int x = INCV;\\n' > {W}/iu.c && "
+  "{MCC} -B{B} -I{I} -include {W}/inc.h -E -P {W}/iu.c | grep -oE 'int x = 7'",
+  "int x = 7\n" },
+
+{ "isystem_include", "",
+  "mkdir -p {W}/sysinc && printf '#define SYSVAL 11\\n' > {W}/sysinc/syshdr.h && "
+  "printf '#include <syshdr.h>\\nint v = SYSVAL;\\n' > {W}/ui.c && "
+  "{MCC} -B{B} -I{I} -isystem {W}/sysinc -E -P {W}/ui.c | grep -oE 'int v = 11'",
+  "int v = 11\n" },
+
+{ "pragma_comment_lib", "",
+  "printf '#pragma comment(lib,\\\"m\\\")\\nint main(void){ return 0; }\\n' > {W}/pc.c && "
+  "{MCC} -B{B} -I{I} {W}/pc.c -o {W}/pce && echo OK",
+  "OK\n" },
+
+{ "x_force_language", "",
+  "printf '#include <stdio.h>\\nint main(void){ puts(\\\"xc\\\"); return 0; }\\n' > {W}/notc.txt && "
+  "{MCC} -B{B} -I{I} -x c {W}/notc.txt -o {W}/xce && {W}/xce",
+  "xc\n" },
+
+{ "common_symbol_merge", "cpu=x86_64,os=linux",
+  "printf 'int shared_g;\\nvoid set_it(void){ shared_g = 5; }\\n' > {W}/cm1.c && "
+  "printf '#include <stdio.h>\\nint shared_g; void set_it(void);\\n"
+  "int main(void){ set_it(); printf(\\\"%%d\\\\n\\\", shared_g); return 0; }\\n' > {W}/cm2.c && "
+  "{MCC} -B{B} -I{I} -fcommon {W}/cm1.c {W}/cm2.c -o {W}/cme && {W}/cme",
+  "5\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

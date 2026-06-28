@@ -9,6 +9,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
+#include <sys/wait.h>
 #include "libmcc.h"
 
 static const char *g_B, *g_I;
@@ -121,6 +123,59 @@ static void test_output_obj(void)
     check("output_obj", ok);
 }
 
+/* ---- mcc_set_realloc: custom global allocator hook -------------------- */
+static long realloc_calls;
+static void *counting_realloc(void *p, unsigned long n) { realloc_calls++; return realloc(p, n); }
+
+static void test_set_realloc(void)
+{
+    realloc_calls = 0;
+    mcc_set_realloc(counting_realloc);
+    MCCState *s = fresh(MCC_OUTPUT_MEMORY);   /* mcc_new() allocates via the hook */
+    mcc_compile_string(s, "int q(void){ return 9; }");
+    int ok = mcc_relocate(s) >= 0;
+    int (*f)(void) = mcc_get_symbol(s, "q");
+    ok = ok && f && f() == 9;
+    mcc_delete(s);
+    mcc_set_realloc((MCCReallocFunc *)realloc);   /* restore default */
+    check("set_realloc", ok && realloc_calls > 0);
+}
+
+/* ---- mcc_add_sysinclude_path: <> include resolution ------------------ */
+static void test_add_sysinclude(void)
+{
+    if (system("mkdir -p api_extra_sysinc && "
+               "printf '#define SYSAPI 77\\n' > api_extra_sysinc/sysapi.h") != 0) {
+        check("add_sysinclude", 0); return;
+    }
+    MCCState *s = fresh(MCC_OUTPUT_MEMORY);
+    mcc_add_sysinclude_path(s, "api_extra_sysinc");
+    int rc = mcc_compile_string(s,
+        "#include <sysapi.h>\nint getv(void){ return SYSAPI; }");
+    int ok = rc == 0 && mcc_relocate(s) >= 0;
+    int (*f)(void) = ok ? mcc_get_symbol(s, "getv") : NULL;
+    ok = ok && f && f() == 77;
+    mcc_delete(s);
+    system("rm -rf api_extra_sysinc");
+    check("add_sysinclude", ok);
+}
+
+/* ---- mcc_relocate double-call guard (forked: it exit()s) ------------- */
+static void test_relocate_double_guard(void)
+{
+    fflush(stdout);                 /* don't let the child re-flush our buffer */
+    pid_t pid = fork();
+    if (pid == 0) {
+        MCCState *s = fresh(MCC_OUTPUT_MEMORY);
+        mcc_compile_string(s, "int z(void){ return 0; }");
+        mcc_relocate(s);
+        mcc_relocate(s);            /* guard fires and exits the process */
+        _exit(0);                  /* only reached if the guard is gone */
+    }
+    int st; waitpid(pid, &st, 0);
+    check("relocate_double_guard", WIFEXITED(st) && WEXITSTATUS(st) != 0);
+}
+
 int main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
@@ -132,6 +187,9 @@ int main(int argc, char **argv)
     test_add_library();
     test_run_argv();
     test_output_obj();
+    test_set_realloc();
+    test_add_sysinclude();
+    test_relocate_double_guard();
     printf("api_extra: %s\n", failures ? "FAILURES" : "all passed");
     return failures ? 1 : 0;
 }
