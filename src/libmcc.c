@@ -1966,12 +1966,15 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
                 if (*std == '=')
                     std++;
                 const char *disp = std;
+                /* Strip the gnu/c/iso9899 prefix and keep only the version.
+                   mcc leaves GNU extensions enabled regardless of -std: its
+                   gnu_ext flag also gates __asm__/__attribute__/__typeof__,
+                   which the system headers rely on even in strict C mode. */
                 if (strstart("gnu", &std))
-                    s->gnu_ext = 1;
+                    ;
                 else if (strstart("c", &std))
-                    s->gnu_ext = 0;
+                    ;
                 else if (strstart("iso9899:", &std)) {
-                    s->gnu_ext = 0;
                     if (!strcmp(std, "1990"))                                std = "90";
                     else if (!strcmp(std, "199409"))                         std = "94";
                     else if (!strcmp(std, "1999") || !strcmp(std, "199901")) std = "99";
@@ -2058,6 +2061,20 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
                     else if (!strcmp(vis, "internal"))  s->visibility = STV_INTERNAL;
                     else if (!strcmp(vis, "protected")) s->visibility = STV_PROTECTED;
                     else mcc_warning("unsupported visibility '%s'", vis);
+                } else if (!strcmp(optarg, "pic")  || !strcmp(optarg, "PIC")
+                        || !strcmp(optarg, "pie")  || !strcmp(optarg, "PIE")
+                        || !strcmp(optarg, "no-pic") || !strcmp(optarg, "no-PIC")
+                        || !strcmp(optarg, "no-pie") || !strcmp(optarg, "no-PIE")) {
+                    /* Accepted: x86_64 codegen is position-independent already;
+                       on i386 PIC is selected at build time (CONFIG_MCC_PIC).
+                       Use -pie/-no-pie to choose the output (ET_DYN vs ET_EXEC). */
+                } else if (!strcmp(optarg, "stack-protector")
+                        || !strcmp(optarg, "stack-protector-strong")
+                        || !strcmp(optarg, "stack-protector-all")) {
+                    mcc_warning_c(warn_unsupported)(
+                        "-f%s: stack protection is not implemented", optarg);
+                } else if (!strcmp(optarg, "no-stack-protector")) {
+                    /* nothing to disable */
                 } else if (set_flag(s, options_f, optarg) < 0)
                     goto unsupported_option;
             }

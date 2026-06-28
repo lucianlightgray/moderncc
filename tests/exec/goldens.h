@@ -208,6 +208,7 @@ static const mcc_golden_t mcc_goldens[] = {
   { "pp_21","pp","preprocess/21.c","----- 1 ------\nOK\n----- 2 ------\nOK\n----- 3 ------\nOK\n----- 4 ------\nOK\n----- 5 ------\nline 39\nline ##\n----- 10 ------\n1 true\n2 true\n3 true\n4 true\n5 true\n6 true\n","","" },
   { "pp_22","pp","preprocess/22.c","A 1 B\nX ARG_1 X ARG_2 X ARG_3 X;\n","","" },
   { "pp_23","pp","preprocess/23.S","1\n3\n20\n22\n30\n40 \"23.S\"\n50 \"file1\"\n60 \"file2\"\n","","" },
+  { "std_short_enums","run","exec/types/std_short_enums.c","201112\n1\n","-std=c11 -fshort-enums","" },
   { "pp_counter","pp","preprocess/counter.c","X1 0\nX2 1\nX3 3\nX4 x 4 y\nX5 x 5 y 6\nX6 b 7\nX7 8 9\nX8 x 10 y x 10 y 11 x2 x 10 y 12 y2 13\nX9 x 14 y 15 x 14 y 15 16 x2 x 14 y 15 17 y2 18\nX10 19 19 20 x2 19 21 y2 22\nX11 23 23 24 x2 23 25 y2 26\nX12 \"__COUNTER__\"\nX13 x27\nX14 x__COUNTER__\nX15 x2828\n","","" },
 };
-static const int mcc_goldens_count = 207;
+static const int mcc_goldens_count = 208;
