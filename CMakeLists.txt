@@ -1534,7 +1534,7 @@ if(MCC_TARGETOS STREQUAL "WIN32")
     endif()
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/examples/"
         DESTINATION examples FILES_MATCHING PATTERN "*.c")
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/tests/libmcc_test.c"
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/tests/embed/api_basic.c"
         DESTINATION examples)
 endif()
 
@@ -1603,8 +1603,8 @@ endif()
     set(_asmconnect_driver "${CMAKE_BINARY_DIR}/run_asm_c_connect.cmake")
     file(WRITE "${_asmconnect_driver}" "set(EMU \"${MCC_EMULATOR}\")\n")
     file(APPEND "${_asmconnect_driver}" [==[
-set(_1 "${SRCDIR}/asm-c-connect-1.c")
-set(_2 "${SRCDIR}/asm-c-connect-2.c")
+set(_1 "${SRCDIR}/asm/asm_c_connect/part1.c")
+set(_2 "${SRCDIR}/asm/asm_c_connect/part2.c")
 set(_flags "-B${BDIR}" "-I${IDIR}")
 execute_process(COMMAND ${EMU} "${MCC}" ${_flags} "${_1}" "${_2}"
         -o "${OUTDIR}/asm-c-connect" RESULT_VARIABLE _rc
@@ -1638,19 +1638,19 @@ endif()
         COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}")
     set_tests_properties(mcc_build PROPERTIES FIXTURES_SETUP MCC_BUILT)
 
-    add_executable(tests2_runner tests/tests2_runner.c)
-    target_include_directories(tests2_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
+    add_executable(exec_runner tests/exec/runner.c)
+    target_include_directories(exec_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec")
     set(_t2r_skip "")
     if(NOT MCC_CONFIG_ASM)
-        set(_t2r_skip 127_asm_goto 85_asm-outside-function 98_al_ax_extend)
+        set(_t2r_skip asm_goto asm_outside_function al_ax_extend)
     endif()
-    add_test(NAME tests2-runner
-        COMMAND tests2_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+    add_test(NAME exec-suite
+        COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests" "${CMAKE_BINARY_DIR}" ${_t2r_skip})
-    set_tests_properties(tests2-runner PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+    set_tests_properties(exec-suite PROPERTIES FIXTURES_REQUIRED MCC_BUILT
         ENVIRONMENT "MCC_TEST_EMU=${MCC_EMULATOR}")
 
-    add_executable(libmcc_test tests/libmcc_test.c)
+    add_executable(libmcc_test tests/embed/api_basic.c)
     target_link_libraries(libmcc_test PRIVATE libmcc)
     target_include_directories(libmcc_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
     add_test(NAME libtest
@@ -1658,8 +1658,8 @@ endif()
                 "-I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
     set_tests_properties(libtest PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
-    if(MCC_CONFIG_BACKTRACE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/libmcc_test_mt.c")
-        add_executable(libmcc_test_mt tests/libmcc_test_mt.c)
+    if(MCC_CONFIG_BACKTRACE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/embed/api_threaded.c")
+        add_executable(libmcc_test_mt tests/embed/api_threaded.c)
         target_link_libraries(libmcc_test_mt PRIVATE libmcc)
         target_include_directories(libmcc_test_mt PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
         find_package(Threads)
@@ -1681,16 +1681,16 @@ endif()
         set_tests_properties(hello-exe PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/vla_test.c")
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/behavior/vla.c")
         add_test(NAME vla_test-run COMMAND "${CMAKE_COMMAND}"
             -DMCC=${_mcc_exe} -DBDIR=${_bdir} -DIDIR=${_idir}
-            -DSRCS=${CMAKE_CURRENT_SOURCE_DIR}/tests/vla_test.c
+            -DSRCS=${CMAKE_CURRENT_SOURCE_DIR}/tests/behavior/vla.c
             -DOUTFILE=${CMAKE_BINARY_DIR}/vla_test${MCC_EXESUF} -P "${_exe_driver}")
         set_tests_properties(vla_test-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/abitest.c")
-        add_executable(abitest tests/abitest.c)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/embed/abi.c")
+        add_executable(abitest tests/embed/abi.c)
         target_link_libraries(abitest PRIVATE libmcc)
         target_include_directories(abitest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
         add_test(NAME abitest-cc
@@ -1701,7 +1701,7 @@ endif()
 
     set(_mcctest_refflags "")
     if(MCC_TARGETOS STREQUAL "WIN32")
-        set(_msvcrt_start "${CMAKE_CURRENT_SOURCE_DIR}/tests/msvcrt_start.c")
+        set(_msvcrt_start "${CMAKE_CURRENT_SOURCE_DIR}/tests/support/msvcrt_start.c")
         if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
             set(_mcctest_refflags "-nostdlib ${_msvcrt_start} -lkernel32 msvcrt.lib")
         else()
@@ -1713,10 +1713,10 @@ endif()
     elseif(MCC_CPU STREQUAL "i386")
         set(_mcctest_refflags "-fno-PIC -fno-PIE -Wl,-z,notext")
     endif()
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/mcctest.c" AND MCC_CONFIG_ASM)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c" AND MCC_CONFIG_ASM)
         add_test(NAME mcctest COMMAND "${CMAKE_COMMAND}"
             -DCC=${CMAKE_C_COMPILER} -DMCC=${_mcc_exe}
-            -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/mcctest.c
+            -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c
             -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR} -DBDIR=${_bdir} -DIDIR=${_idir}
             -DOUTDIR=${CMAKE_BINARY_DIR} "-DREFFLAGS=${_mcctest_refflags}"
             "-DTESTDEFS=-DCC_NAME=CC_${MCC_CC_NAME} -DGCC_MAJOR=${MCC_GCC_MAJOR}"
@@ -1726,7 +1726,7 @@ endif()
             file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bcheck")
             add_test(NAME mcctest-bcheck COMMAND "${CMAKE_COMMAND}"
                 -DCC=${CMAKE_C_COMPILER} -DMCC=${_mcc_exe}
-                -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/mcctest.c
+                -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c
                 -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR} -DBDIR=${_bdir} -DIDIR=${_idir}
                 -DOUTDIR=${CMAKE_BINARY_DIR}/bcheck "-DREFFLAGS=${_mcctest_refflags}"
                 "-DTESTDEFS=-DCC_NAME=CC_${MCC_CC_NAME} -DGCC_MAJOR=${MCC_GCC_MAJOR}"
@@ -1736,7 +1736,7 @@ endif()
     endif()
 
     if(MCC_CPU MATCHES "^(i386|x86_64)$" AND MCC_CONFIG_ASM
-       AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/asm-c-connect-1.c")
+       AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/asm/asm_c_connect/part1.c")
         add_test(NAME asm-c-connect-test COMMAND "${CMAKE_COMMAND}"
             -DMCC=${_mcc_exe} -DBDIR=${_bdir} -DIDIR=${_idir}
             -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}/tests -DOUTDIR=${CMAKE_BINARY_DIR}
@@ -2111,9 +2111,9 @@ endif()
 
     file(GLOB _orphan_srcs CONFIGURE_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/examples/*.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/boundtest.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/testfp.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/bug.c")
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/behavior/bounds_stress.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/behavior/floating_point.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/diagnostics/compile_errors.c")
     foreach(_f IN LISTS _orphan_srcs)
         get_filename_component(_n "${_f}" NAME_WE)
         add_test(NAME compile.${_n} COMMAND ${MCC_EMULATOR} "${_mcc_exe}"
@@ -2133,7 +2133,7 @@ endif()
         endforeach()
     endif()
 
-    message(STATUS "mcc tests: registered pp + tests2 + libmcc/abitest/mcctest "
+    message(STATUS "mcc tests: registered exec (golden) + preprocess + embed/abitest/diff "
                    "+ hello/vla + orphan compile checks (ctest)")
 endif()
 

@@ -225,7 +225,7 @@ void dump(void *p, int s)
 # define MS_BITFIELDS 0
 #endif
 
-#define SELF "95_bitfields.c"
+#define SELF "bitfields.c"
 
 int top = 1;
 

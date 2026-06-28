@@ -60,16 +60,16 @@ typedef __SIZE_TYPE__ uintptr_t;
 
 #include "mcclib.h"
 
-#include "mcctest.h"
+#include "full_language.h"
 
 
-#define INC(name) <tests/name.h>
+#define INC(name) <tests/diff/name.h>
 #define funnyname 42test.h
-#define incdir tests/
+#define incdir tests/diff/
 #ifdef __clang__
 
 
-#define incname <tests/42test.h>
+#define incname <tests/diff/42test.h>
 #else
 #define incname < incdir funnyname >
 #endif

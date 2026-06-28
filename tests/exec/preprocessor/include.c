@@ -3,15 +3,15 @@
 int main()
 {
    printf("including\n");
-#include "18_include.h"
+#include "include.h"
 #define  test_missing_nl
    printf("done\n");
 
-#define  INC   "18_include.h"
+#define  INC   "include.h"
 
 #ifdef __has_include
 #if defined __has_include
-#if __has_include("18_include.h")
+#if __has_include("include.h")
    printf("has_include\n");
 #endif
 #if __has_include(INC)
@@ -25,7 +25,7 @@ int main()
 
 #ifdef __has_include_next
 #if defined __has_include_next
-#if __has_include_next("18_include.h")
+#if __has_include_next("include.h")
    printf("has_include_next\n");
 #endif
 #if __has_include_next(INC)
@@ -37,9 +37,9 @@ int main()
 #endif
 #endif
 
-#include "18_include2.h"
-#include "./18_include2.h"
-#include "../tests2/18_include2.h"
+#include "include2.h"
+#include "./include2.h"
+#include "../preprocessor/include2.h"
 
    return 0;
 }

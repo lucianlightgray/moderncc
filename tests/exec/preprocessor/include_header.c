@@ -3,8 +3,8 @@
 
 
 #include <stdio.h>
-#include "inc188.h"
-#include "inc188.h"
+#include "inc_header.h"
+#include "inc_header.h"
 
 
 #ifndef INC188_H

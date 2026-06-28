@@ -19,7 +19,7 @@ int main(void)
     int here = __LINE__; printf("same_line: %d\n", here == __LINE__);
 
 
-    printf("file_ok: %d\n", strstr(__FILE__, "154_predefined_macros.c") != NULL);
+    printf("file_ok: %d\n", strstr(__FILE__, "predefined_macros.c") != NULL);
 
 
     printf("date_len: %d time_len: %d\n",

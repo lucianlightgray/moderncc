@@ -16,7 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "tests2_data.h"
+#include "goldens.h"
 
 static char *xstrdup(const char *s){ char *p = malloc(strlen(s)+1); strcpy(p,s); return p; }
 
