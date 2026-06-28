@@ -1,6 +1,6 @@
-/* Test that the memmove TCC is emitting for the struct copy
-   and hence implicitely declares can be declared properly also
-   later.  */
+
+
+
 struct S { int a,b,c,d, e[1024];};
 int foo (struct S *a, struct S *b)
 {

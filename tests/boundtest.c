@@ -3,7 +3,7 @@
 #include <string.h>
 
 #define NB_ITS 1000000
-//#define NB_ITS 1
+
 #define TAB_SIZE 100
 
 int tab[TAB_SIZE];
@@ -19,7 +19,7 @@ int test1(void)
     return sum;
 }
 
-/* error */
+
 int test2(void)
 {
     int i, sum = 0;
@@ -29,7 +29,7 @@ int test2(void)
     return sum;
 }
 
-/* actually, profiling test */
+
 int test3(void)
 {
     int sum;
@@ -44,7 +44,7 @@ int test3(void)
     return sum;
 }
 
-/* ok */
+
 int test4(void)
 {
     int i, sum = 0;
@@ -59,7 +59,7 @@ int test4(void)
     return sum;
 }
 
-/* error */
+
 int test5(void)
 {
     int i, sum = 0;
@@ -74,7 +74,7 @@ int test5(void)
     return sum;
 }
 
-/* error */
+
 int test6(void)
 {
     int i, sum = 0;
@@ -89,7 +89,7 @@ int test6(void)
     return sum;
 }
 
-/* error */
+
 int test7(void)
 {
     int i, sum = 0;
@@ -104,7 +104,7 @@ int test7(void)
     return sum;
 }
 
-/* ok */
+
 int test8(void)
 {
     int i, sum = 0;
@@ -116,7 +116,7 @@ int test8(void)
     return sum;
 }
 
-/* error */
+
 int test9(void)
 {
     int i, sum = 0;
@@ -128,7 +128,7 @@ int test9(void)
     return sum;
 }
 
-/* ok */
+
 int test10(void)
 {
     char tab[10];
@@ -140,7 +140,7 @@ int test10(void)
     return 0;
 }
 
-/* error */
+
 int test11(void)
 {
     char tab[10];
@@ -149,7 +149,7 @@ int test11(void)
     return 0;
 }
 
-/* error */
+
 int test12(void)
 {
     void *ptr;
@@ -159,7 +159,7 @@ int test12(void)
     return 0;
 }
 
-/* error */
+
 int test13(void)
 {
     char pad1 = 0;
@@ -179,7 +179,7 @@ int test14(void)
     return ret;
 }
 
-/* error */
+
 int test15(void)
 {
     char *p = alloca(TAB_SIZE-1);
@@ -190,7 +190,7 @@ int test15(void)
     return ret;
 }
 
-/* ok */
+
 int test16()
 {
     char *demo = "This is only a test.";
@@ -199,13 +199,13 @@ int test16()
     p = alloca(16);
     strcpy(p,"12345678901234");
 
-    /* Test alloca embedded in a larger expression */
+
     printf("alloca : %s : %s\n", p, strcpy(q=alloca(strlen(demo)+1),demo) );
 
     return 0;
 }
 
-/* error */
+
 int test17()
 {
     char *demo = "This is only a test.";
@@ -214,7 +214,7 @@ int test17()
     p = alloca(16);
     strcpy(p,"12345678901234");
 
-    /* Test alloca embedded in a larger expression */
+
     printf("alloca : %s : %s\n", p, strcpy(q=alloca(strlen(demo)),demo) );
 
     return 0;
@@ -259,7 +259,7 @@ int main(int argc, char **argv)
     int (*ftest)(void);
     int index_max = sizeof(table_test)/sizeof(table_test[0]);
 
-    /* check bounds checking main arg */
+
     for (i = 0; i < argc; i++) {
         cp = argv[i];
         while (*cp) {
@@ -284,14 +284,14 @@ int main(int argc, char **argv)
         exit(2);
     }
 
-    /* well, we also use bounds on this ! */
+
     ftest = table_test[index];
     ftest();
 
     return 0;
 }
 
-/*
- * without bound   0.77 s
- * with bounds    4.73
- */  
+
+
+
+

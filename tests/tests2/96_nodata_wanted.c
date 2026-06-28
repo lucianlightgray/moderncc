@@ -1,28 +1,28 @@
-/*****************************************************************************/
-/* test 'nodata_wanted' data output suppression */
+
+
 
 #if defined test_static_data_error
 void foo() {
     if (1) {
-	static short w = (int)&foo; /* initializer not computable */
+	static short w = (int)&foo;
     }
 }
 
 #elif defined test_static_nodata_error
 void foo() {
     if (0) {
-	static short w = (int)&foo; /* initializer not computable */
+	static short w = (int)&foo;
     }
 }
 
 #elif defined test_global_data_error
 void foo();
-static short w = (int)&foo; /* initializer not computable */
+static short w = (int)&foo;
 
 
 #elif defined test_local_data_noerror
 void foo() {
-    short w = &foo; /* 2 cast warnings */
+    short w = &foo;
 }
 
 #elif defined test_data_suppression_off || defined test_data_suppression_on
@@ -34,7 +34,7 @@ void foo() {
 #endif
 
 #include <stdio.h>
-/* some gcc headers #define __attribute__ to empty if it's not gcc */
+
 #undef __attribute__
 
 int main()
@@ -44,14 +44,14 @@ int main()
 
     static const char ds0 = 0;
     static const char de0 = 0;
-    /* get reference size of empty jmp */
+
 ts0:;
     if (!SKIP) {}
 te0:;
     dl = -(&de0 - &ds0);
     tl = -(&&te0 - &&ts0);
 
-    /* test data and code suppression */
+
     static const char ds1 = 0;
 ts1:;
     if (!SKIP) {
@@ -81,7 +81,7 @@ te1:;
     tl += &&te1 - &&ts1;
     printf("size of data/text:\n  %s/%s\n",
         dl ? "non-zero":"zero", tl ? "non-zero":"zero");
-    /*printf("# %d/%d\n", dl, tl);*/
+
 }
 
 #elif defined test_static_data
@@ -92,7 +92,7 @@ int main(int argc, char **argv)
     goto there;
     if (0) {
         static int a = 1;
-        printf("hello\n"); /* the "hello\n" string is still suppressed */
+        printf("hello\n");
 there:
         printf("a = %d\n", a);
     }

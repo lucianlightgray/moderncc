@@ -2,12 +2,12 @@
 #include <stdbool.h>
 #include <stdio.h>
 
-// standard assert would popup a dialog box on windows
+
 #define assert(x) \
     printf("assert \"%s\" : %s\n", #x, (x) ? "yes" : "no");
 
 int main() {
-    // Test 1: Basic functionality of __atomic_store_n and __atomic_load_n
+
     {
         int atomic_var = 0;
         __atomic_store_n(&atomic_var, 42, __ATOMIC_SEQ_CST);
@@ -15,7 +15,7 @@ int main() {
         assert(loaded == 42);
     }
 
-    // Test 2: Successful exchange with __atomic_compare_exchange_n
+
     {
         int atomic_var = 100;
         int expected = 100;
@@ -25,10 +25,10 @@ int main() {
         );
         assert(success);
         assert(atomic_var == 200);
-        assert(expected == 100);  // expected remains unchanged on success
+        assert(expected == 100);
     }
 
-    // Test 3: Failed exchange with __atomic_compare_exchange_n (update expected)
+
     {
         int atomic_var = 100;
         int expected = 99;
@@ -38,10 +38,10 @@ int main() {
         );
         assert(!success);
         assert(atomic_var == 100);
-        assert(expected == 100);  // expected updated to current value on failure
+        assert(expected == 100);
     }
 
-    // Test 4: Weak version (spurious failure handling)
+
     {
         int atomic_var = 50;
         int expected = 50;
@@ -56,7 +56,7 @@ int main() {
         assert(atomic_var == 60);
     }
 
-    // Test 5: Pointer type operations
+
     {
         int value = 100;
         int* atomic_ptr = &value;
@@ -66,7 +66,7 @@ int main() {
         assert(loaded_ptr == NULL);
     }
 
-    // Test 6: Relaxed memory ordering
+
     {
         int atomic_var = 0;
         __atomic_store_n(&atomic_var, 10, __ATOMIC_RELAXED);

@@ -1,11 +1,11 @@
-/* ARM64 instruction encoding verification test.
-   Exercises shift-by-immediate, load/store addressing modes,
-   conditional branches, and system register access. */
+
+
+
 
 #include <stdio.h>
 #include <stdint.h>
 
-/* ---- shift-by-immediate helpers ---- */
+
 
 static uint32_t lsl32(uint32_t x, int n) { return x << n; }
 static uint32_t lsr32(uint32_t x, int n) { return x >> n; }
@@ -32,7 +32,7 @@ static void test_shifts(void)
     printf("%llx\n", (unsigned long long)asr64(-256LL, 4));
 }
 
-/* ---- load/store with various addressing modes ---- */
+
 
 static void test_ldr_str(void)
 {
@@ -44,22 +44,22 @@ static void test_ldr_str(void)
 
     printf("ldr-str:\n");
 
-    /* LDR X, [Xn, #offset] */
+
     val = buf[0];
     printf("%llx\n", (unsigned long long)val);
     val = buf[1];
     printf("%llx\n", (unsigned long long)val);
 
-    /* LDR W, [Xn, #offset] (32-bit load) */
+
     wval = *(int32_t*)&buf[0];
     printf("%x\n", (unsigned)wval);
 
-    /* Pre-indexed: store pointer, modify */
+
     p = &buf[0];
     val = *(p + 2);
     printf("%llx\n", (unsigned long long)val);
 
-    /* Post-indexed simulation via pointer arithmetic */
+
     p = &buf[0];
     val = *p;
     p++;
@@ -67,14 +67,14 @@ static void test_ldr_str(void)
            (unsigned long long)*p);
 }
 
-/* ---- STP/LDP (store/load pair) ---- */
+
 
 static void test_ldp_stp(void)
 {
     int64_t src[2] = { 0xAAAABBBBCCCCDDDDLL, 0x1111222233334444LL };
     int64_t dst[2];
 
-    /* The compiler should use stp/ldp for this */
+
     dst[0] = src[0];
     dst[1] = src[1];
 
@@ -84,7 +84,7 @@ static void test_ldp_stp(void)
            (unsigned long long)dst[1]);
 }
 
-/* ---- CBZ / CBNZ via C patterns ---- */
+
 
 static const char *cbz_test(int x)
 {
@@ -109,11 +109,11 @@ static void test_cond_branches(void)
     printf("%s\n", cbnz_test(42));
 }
 
-/* ---- conditional compare patterns (CCMP/CCMN) ---- */
+
 
 static int cond_select(int a, int b)
 {
-    /* TCC should generate csel or equivalent */
+
     return a > b ? a : b;
 }
 
@@ -126,7 +126,7 @@ static void test_cond_select(void)
     printf("%d\n", cond_select(-1, 1));
 }
 
-/* ---- MRS/MSR system registers (FPCR/FPSR) ---- */
+
 
 static void test_sysregs(void)
 {
@@ -134,18 +134,18 @@ static void test_sysregs(void)
 
     printf("sysregs:\n");
 
-    /* Read FPCR */
+
     __asm__ volatile ("mrs %0, fpcr" : "=r"(fpcr));
     printf("%u\n", fpcr & 0x0F);
 
-    /* Read FPSR */
+
     __asm__ volatile ("mrs %0, fpsr" : "=r"(fpsr));
     printf("%u\n", fpsr);
 
-    /* Write/restore FPCR (should be same value) */
+
     __asm__ volatile ("msr fpcr, %0" : : "r"(fpcr));
 
-    /* Read back and verify */
+
     {
         unsigned int check;
         __asm__ volatile ("mrs %0, fpcr" : "=r"(check));
@@ -153,7 +153,7 @@ static void test_sysregs(void)
     }
 }
 
-/* ---- NOP encoding (should not crash) ---- */
+
 
 static void test_nop(void)
 {
@@ -164,7 +164,7 @@ static void test_nop(void)
     printf("ok\n");
 }
 
-/* ---- barrier instructions ---- */
+
 
 static void test_barriers(void)
 {
@@ -175,7 +175,7 @@ static void test_barriers(void)
     printf("ok\n");
 }
 
-/* ---- MOV (register) patterns ---- */
+
 
 static int64_t mov_x0_x1(int64_t x)
 {
@@ -191,7 +191,7 @@ static void test_mov_reg(void)
     printf("%lld\n", (long long)mov_x0_x1(-1));
 }
 
-/* ---- large struct passing (reference semantics) ---- */
+
 
 struct large { int64_t a, b, c, d; };
 
@@ -220,7 +220,7 @@ static void test_large_structs(void)
            (long long)t.c, (long long)t.d);
 }
 
-/* ---- boundary-sized structs ---- */
+
 
 struct s18 { char x[18]; };
 struct s24 { char x[24]; };

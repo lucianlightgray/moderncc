@@ -7,7 +7,7 @@
 #endif
 
 #ifdef __clang__
-/* clang needs some help tp not throw functions away even at -O0 */
+
 #define __USED __attribute__((__used__))
 #else
 #define __USED
@@ -22,7 +22,7 @@ static int __USED x1_c (void)
 #if __i386__
 asm(".text;"_"x1: call "_"x1_c; ret");
 #else
-/* Keep stack aligned */
+
 asm(".text;"_"x1: sub $8,%rsp; call "_"x1_c; add $8,%rsp; ret");
 #endif
 

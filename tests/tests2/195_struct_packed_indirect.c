@@ -1,12 +1,12 @@
-/* Harder struct corners: a __attribute__((packed)) struct (no padding, validated
-   by an exact byte dump), struct return through an indirect call via a function
-   pointer, a compound literal passed by value with postfix member access, _Bool
-   struct members, and a deeply recursive by-value pass. Compared to gcc/clang.
-   3-way verified. */
+
+
+
+
+
 #include <stdio.h>
 #include <string.h>
 
-typedef struct __attribute__((packed)) { char c; int i; double d; } Packed; /* 13B */
+typedef struct __attribute__((packed)) { char c; int i; double d; } Packed;
 typedef struct { _Bool f1, f2; int n; } SB;
 typedef struct { int x, y; } P;
 
@@ -21,7 +21,7 @@ static void dump(const char *t, const void *p, unsigned n)
 
 static P addp(P a, P b) { P r = { a.x + b.x, a.y + b.y }; return r; }
 static P (*fp)(P, P) = addp;
-static P viaptr(P a, P b) { return fp(a, b); }                 /* indirect call */
+static P viaptr(P a, P b) { return fp(a, b); }
 static int sumPacked(Packed p) { return p.c + p.i + (int)p.d; }
 static SB flip(SB s) { s.f1 = !s.f1; s.f2 = !s.f2; s.n = -s.n; return s; }
 static int deep(P p, int n) { if (!n) return p.x + p.y; P q = { p.x + 1, p.y - 1 }; return deep(q, n - 1); }
@@ -33,7 +33,7 @@ int main(void)
     dump("Packed", &pk, (unsigned)sizeof pk);
 
     SB sb = { 1, 0, 42 };
-    sb = flip(flip(sb)); /* double flip -> identity */
+    sb = flip(flip(sb));
     printf("SB %d %d %d\n", sb.f1, sb.f2, sb.n);
 
     P a = { 3, 4 }, b = { 10, 20 };

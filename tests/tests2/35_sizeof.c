@@ -8,7 +8,7 @@ int main()
     printf("sizeof a : %d %d\n", sizeof(char), sizeof(a));
     printf("sizeof b : %d %d\n", sizeof(short), sizeof(b));
 
-    int ii[] = {}; /* gnu extension, size = 0 */
+    int ii[] = {};
     printf("sizeof ii : %d\n", sizeof ii);
 
     int kk[] = { 1 };

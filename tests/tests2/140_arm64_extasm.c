@@ -1,7 +1,7 @@
-/*
- * ARM64 Extended Inline Assembly Tests
- * Tests for GCC-style extended inline assembly with operands, constraints, and clobbers
- */
+
+
+
+
 
 #include <stdio.h>
 #include <stdint.h>
@@ -22,7 +22,7 @@ static void test_symbolic_address_constraint_compile_only(void)
     asm volatile("" : : "S"(arm64_symbol_target));
 }
 
-/* Test 1: Basic output operand */
+
 void test_basic_output(void)
 {
     int x;
@@ -31,7 +31,7 @@ void test_basic_output(void)
     printf("Test 1 (basic output): PASSED\n");
 }
 
-/* Test 2: Input operand */
+
 void test_input_operand(void)
 {
     int x = 10;
@@ -41,7 +41,7 @@ void test_input_operand(void)
     printf("Test 2 (input operand): PASSED\n");
 }
 
-/* Test 3: Read-write operand */
+
 void test_read_write_operand(void)
 {
     int x = 10;
@@ -50,7 +50,7 @@ void test_read_write_operand(void)
     printf("Test 3 (read-write operand): PASSED\n");
 }
 
-/* Test 4: Memory operand - load */
+
 void test_memory_load(void)
 {
     int x = 42;
@@ -60,7 +60,7 @@ void test_memory_load(void)
     printf("Test 4 (memory load): PASSED\n");
 }
 
-/* Test 5: Memory operand - store */
+
 void test_memory_store(void)
 {
     int x;
@@ -70,7 +70,7 @@ void test_memory_store(void)
     printf("Test 5 (memory store): PASSED\n");
 }
 
-/* Test 5a: Stack memory operand with frame-relative offset */
+
 void test_stack_memory_operand(void)
 {
     long x = 0;
@@ -81,7 +81,7 @@ void test_stack_memory_operand(void)
     printf("Test 5a (stack memory operand): PASSED\n");
 }
 
-/* Test 5b: Symbol memory operand */
+
 static long arm64_symbol_mem;
 
 void test_symbol_memory_operand(void)
@@ -94,7 +94,7 @@ void test_symbol_memory_operand(void)
     printf("Test 5b (symbol memory operand): PASSED\n");
 }
 
-/* Test 6: Clobber list */
+
 void test_clobber_list(void)
 {
     int x = 10;
@@ -108,7 +108,7 @@ void test_clobber_list(void)
     printf("Test 6 (clobber list): PASSED\n");
 }
 
-/* Test 7: Multiple outputs */
+
 void test_multiple_outputs(void)
 {
     int a, b;
@@ -118,7 +118,7 @@ void test_multiple_outputs(void)
     printf("Test 7 (multiple outputs): PASSED\n");
 }
 
-/* Test 8: Constraint reference */
+
 void test_constraint_reference(void)
 {
     int x = 10;
@@ -128,7 +128,7 @@ void test_constraint_reference(void)
     printf("Test 8 (constraint reference): PASSED\n");
 }
 
-/* Test 9: Early clobber */
+
 void test_early_clobber(void)
 {
     int x = 10;
@@ -138,7 +138,7 @@ void test_early_clobber(void)
     printf("Test 9 (early clobber): PASSED\n");
 }
 
-/* Test 10: 32-bit register modifier */
+
 void test_w_register(void)
 {
     uint32_t x = 100;
@@ -148,7 +148,7 @@ void test_w_register(void)
     printf("Test 10 (w register modifier): PASSED\n");
 }
 
-/* Test 11: Immediate constraint 'I' (12-bit immediate) */
+
 void test_immediate_i_constraint(void)
 {
     int x = 100;
@@ -158,7 +158,7 @@ void test_immediate_i_constraint(void)
     printf("Test 11 (immediate I constraint): PASSED\n");
 }
 
-/* Test 12: Register constraint */
+
 void test_general_operand_constraint(void)
 {
     int x = 50;
@@ -168,7 +168,7 @@ void test_general_operand_constraint(void)
     printf("Test 12 (general operand constraint): PASSED\n");
 }
 
-/* Test 13: Multiple inputs and outputs */
+
 void test_multiple_io(void)
 {
     int a = 10, b = 20;
@@ -179,7 +179,7 @@ void test_multiple_io(void)
     printf("Test 13 (multiple IO): PASSED\n");
 }
 
-/* Test 14: Register variable preservation */
+
 void test_regvar_preservation(void)
 {
     register uint64_t keep asm("x19") = 0x123456789abcdef0ULL;
@@ -194,7 +194,7 @@ void test_regvar_preservation(void)
     printf("Test 14 (regvar preservation): PASSED\n");
 }
 
-/* Test 15: Complex arithmetic */
+
 void test_complex_arithmetic(void)
 {
     int a = 100, b = 50, c = 25;
@@ -206,7 +206,7 @@ void test_complex_arithmetic(void)
     printf("Test 15 (complex arithmetic): PASSED\n");
 }
 
-/* Test 16: Named operand (GCC extension) */
+
 void test_named_operand(void)
 {
     int input = 10;
@@ -218,7 +218,7 @@ void test_named_operand(void)
     printf("Test 16 (named operand): PASSED\n");
 }
 
-/* Test 17: Memory clobber */
+
 void test_memory_clobber(void)
 {
     int x = 10;
@@ -227,7 +227,7 @@ void test_memory_clobber(void)
     printf("Test 17 (memory clobber): PASSED\n");
 }
 
-/* Test 18: Condition flags clobber */
+
 void test_cc_clobber(void)
 {
     int x = 100;
@@ -237,7 +237,7 @@ void test_cc_clobber(void)
     printf("Test 18 (cc clobber): PASSED\n");
 }
 
-/* Test 19: Large immediate with movz/movk */
+
 void test_large_immediate(void)
 {
     uint64_t val;
@@ -246,7 +246,7 @@ void test_large_immediate(void)
     printf("Test 19 (large immediate): PASSED\n");
 }
 
-/* Test 20: Bitwise operations */
+
 void test_bitwise_ops(void)
 {
     uint64_t a = 0xf0f0f0f00f0f0f0fULL;
@@ -269,7 +269,7 @@ void test_bitwise_ops(void)
     printf("Test 20 (bitwise ops): PASSED\n");
 }
 
-/* Test 21: Register shift operands */
+
 void test_register_shift_operands(void)
 {
     uint64_t val = 3;
@@ -285,7 +285,7 @@ void test_register_shift_operands(void)
     printf("Test 21 (register shifts): PASSED\n");
 }
 
-/* Test 22: ROR immediate alias of EXTR */
+
 void test_ror_immediate(void)
 {
     uint64_t rotated;
@@ -295,7 +295,7 @@ void test_ror_immediate(void)
     printf("Test 22 (ror immediate): PASSED\n");
 }
 
-/* Test 23: FP/SIMD register constraint and modifier */
+
 void test_fp_register_operand(void)
 {
     double x = 3.5;
@@ -306,7 +306,7 @@ void test_fp_register_operand(void)
     printf("Test 23 (fp register operand): PASSED\n");
 }
 
-/* Test 24: Zero constraint */
+
 void test_zero_constraint(void)
 {
     uint64_t x = 41;
@@ -317,7 +317,7 @@ void test_zero_constraint(void)
     printf("Test 24 (Z constraint): PASSED\n");
 }
 
-/* Test 25: 32-bit logical immediate constraint */
+
 void test_logical_imm32_constraint(void)
 {
     uint32_t y;
@@ -327,7 +327,7 @@ void test_logical_imm32_constraint(void)
     printf("Test 25 (K constraint): PASSED\n");
 }
 
-/* Test 26: 64-bit logical immediate constraint */
+
 void test_logical_imm64_constraint(void)
 {
     uint64_t y;
@@ -337,7 +337,7 @@ void test_logical_imm64_constraint(void)
     printf("Test 26 (L constraint): PASSED\n");
 }
 
-/* Test 27: 32-bit MOV pseudo immediate constraint */
+
 void test_mov_imm32_constraint(void)
 {
     uint32_t y;
@@ -347,7 +347,7 @@ void test_mov_imm32_constraint(void)
     printf("Test 27 (M constraint): PASSED\n");
 }
 
-/* Test 28: 64-bit MOV pseudo immediate constraint */
+
 void test_mov_imm64_constraint(void)
 {
     uint64_t y;
@@ -357,7 +357,7 @@ void test_mov_imm64_constraint(void)
     printf("Test 28 (N constraint): PASSED\n");
 }
 
-/* Test 29: x FP/SIMD register constraint */
+
 void test_x_constraint_fp(void)
 {
     double x = 6.25;
@@ -368,7 +368,7 @@ void test_x_constraint_fp(void)
     printf("Test 29 (x constraint): PASSED\n");
 }
 
-/* Test 30: y FP/SIMD register constraint */
+
 void test_y_constraint_fp(void)
 {
     double x = 7.25;
@@ -379,7 +379,7 @@ void test_y_constraint_fp(void)
     printf("Test 30 (y constraint): PASSED\n");
 }
 
-/* Test 31: Q memory constraint */
+
 static int arm64_q_load(int *ptr)
 {
     int y;
@@ -395,7 +395,7 @@ void test_q_memory_constraint(void)
     printf("Test 31 (Q constraint): PASSED\n");
 }
 
-/* Test 32: Ump pair-memory constraint */
+
 void test_ump_memory_constraint(void)
 {
     struct pair64 pair = { 0x1122334455667788ULL, 0x99aabbccddeeff00ULL };

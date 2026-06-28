@@ -6,11 +6,11 @@ struct contains_empty {
     u8 b;
 };
 struct contains_empty ce = { { (1) }, (empty_s){}, 022, };
-/* The following decl of 'q' would demonstrate the TCC bug in init_putv when
-   handling copying compound literals.  (Compound literals
-   aren't acceptable constant initializers in isoc99, but
-   we accept them like gcc, except for this case)
-//char *q = (char *){ "trara" }; */
+
+
+
+
+
 struct SS {u8 a[3], b; };
 struct SS sinit16[] = { { 1 }, 2 };
 struct S
@@ -51,20 +51,20 @@ struct S gs2 = {1, 2, {3, 4}};
 struct T gt = {"hello", 42};
 struct U gu = {3, 5,6,7,8, 4, "huhu", 43};
 struct U gu2 = {3, {5,6,7,8}, 4, {"huhu", 43}};
-/* Optional braces around scalar initializers.  Accepted, but with
-   a warning.  */
+
+
 struct U gu3 = { {3}, {5,6,7,8,}, 4, {"huhu", 43}};
-/* Many superfluous braces and leaving out one initializer for U.s.c[1] */
+
 struct U gu4 = { 3, {5,6,7,},  5, { "bla", {44}} };
-/* Superfluous braces and useless parens around values */
+
 struct S gs3 = { (1), {(2)}, {(((3))), {4}}};
-/* Superfluous braces, and leaving out braces for V.t, plus cast */
+
 struct V gv = {{{3},4,{5,6}}, "haha", (u8)45, 46};
-/* Compound literal */
+
 struct V gv2 = {(struct S){7,8,{9,10}}, {"hihi", 47}, 48};
-/* Parens around compound literal */
+
 struct V gv3 = {((struct S){7,8,{9,10}}), {"hoho", 49}, 50};
-/* Initialization of a flex array member (warns in GCC) */
+
 struct W gw = {{1,2,3,4}, {1,2,3,4,5}};
 
 union UU {
@@ -77,8 +77,8 @@ struct SU {
 };
 struct SU gsu = {5,6};
 
-/* Unnamed struct/union members aren't ISO C, but it's a widely accepted
-   extension.  See below for further extensions to that under -fms-extension.*/
+
+
 union UV {
     struct {u8 a,b;};
     struct S s;
@@ -94,14 +94,14 @@ struct SSU {
 struct SSU gssu1 = { .y = 5, .x = 3 };
 struct SSU gssu2 = { 5, 3 };
 
-/* Under -fms-extensions also the following is valid:
-union UV2 {
-    struct Anon {u8 a,b;};    // unnamed member, but tagged struct, ...
-    struct S s;
-};
-struct Anon gan = { 10, 11 }; // ... which makes it available here.
-union UV2 guv4 = {{4,3}};     // and the other inits from above as well
-*/
+
+
+
+
+
+
+
+
 
 struct in6_addr {
     union {
@@ -153,29 +153,29 @@ void foo (struct W *w, struct pkthdr *phdr_)
   const struct S *pls = &ls;
   struct S ls21 = *pls;
   struct U lu22 = {3, *pls, 4, {"huhu", 43}};
-  /* Incomplete bracing.  */
+
   struct U lu21 = {3, ls, 4, "huhu", 43};
-  /* Optional braces around scalar initializers.  Accepted, but with
-     a warning.  */
+
+
   struct U lu3 = { 3, {5,6,7,8,}, 4, {"huhu", 43}};
-  /* Many superfluous braces and leaving out one initializer for U.s.c[1] */
+
   struct U lu4 = { 3, {5,6,7,},  5, { "bla", 44} };
-  /* Superfluous braces and useless parens around values */
+
   struct S ls3 = { (1), (2), {(((3))), 4}};
-  /* Superfluous braces, and leaving out braces for V.t, plus cast */
+
   struct V lv = {{3,4,{5,6}}, "haha", (u8)45, 46};
-  /* Compound literal */
+
   struct V lv2 = {(struct S)w->t.s, {"hihi", 47}, 48};
-  /* Parens around compound literal */
+
   struct V lv3 = {((struct S){7,8,{9,10}}), ((const struct W *)w)->t.t, 50};
   const struct pkthdr *phdr = phdr_;
   struct flowi6 flow = { .daddr = phdr->daddr, .saddr = phdr->saddr };
   int elt = 0x42;
-  /* Range init, overlapping */
+
   struct T lt2 = { { [1 ... 5] = 9, [6 ... 10] = elt, [4 ... 7] = elt+1 }, 1 };
   struct SSU lssu1 = { 5, 3 };
   struct SSU lssu2 = { .y = 5, .x = 3 };
-  /* designated initializers in GNU form */
+
 #if defined(__GNUC__) || defined(__TINYC__)
   struct S ls4 = {a: 1, b: 2, c: {3, 4}};
 #else
@@ -269,7 +269,7 @@ void test_multi_relocs(void)
     printf(" %d", dd[i]);
   printf("\n");
 
-  /* multi-dimensional flex array with range initializers */
+
   static char m1[][2][3] = {[0 ... 2]={{3,4,5},{6,7,8}},{{9},10},"abc"};
   char        m2[][2][3] = {[0 ... 2]={{3,4,5},{6,7,8}},{{9},10},"abc"};
   int g, j, k;
@@ -310,7 +310,7 @@ void test_init_ranges(void) {
 }
 
 
-/* Following is from GCC gcc.c-torture/execute/20050613-1.c.  */
+
 
 struct SEA { int i; int j; int k; int l; };
 struct SEB { struct SEA a; int r[1]; };
@@ -331,9 +331,9 @@ test_correct_filling (struct SEA *x)
 int
 test_zero_init (void)
 {
-  /* The peculiarity here is that only a.j is initialized.  That
-     means that all other members must be zero initialized.  TCC
-     once didn't do that for sub-level designators.  */
+
+
+
   struct SEB b = { .a.j = 5 };
   struct SEC c = { .a.j = 5 };
   struct SED d = { .a.j = 5 };
@@ -413,7 +413,7 @@ int main()
   print(gssu2);
   print(phdr);
   foo(&gw, &phdr);
-  //printf("q: %s\n", q);
+
   test_compound_with_relocs();
   test_multi_relocs();
   test_zero_init();

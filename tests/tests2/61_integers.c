@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-/* This was first introduced to test the ARM port */
+
 
 #define UINT_MAX ((unsigned) -1)
 

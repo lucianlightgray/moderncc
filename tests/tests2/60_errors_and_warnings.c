@@ -73,15 +73,15 @@ unsigned char **u1;
 
 int no_main ()
 {
-    // function
+
     f1 = f2;
-    // struct
+
     ps1 = ps2;
-    // void*
+
     v1 = v3;
     v2 = v3;
 
-    // enum
+
     e11 = e12;
     e11 = e21;
     e11 = &e10;
@@ -94,12 +94,12 @@ int no_main ()
     lp = ip;
     lp = llp;
 
-    // constness
+
     c1 = c2;
     *c1 = *c2;
     **c1 = **c2;
 
-    // unsigned = signed
+
     u1 = c2;
     *u1 = *c2;
     **u1 = **c2;
@@ -121,9 +121,9 @@ void f3(enum e5 e);
 #elif defined test_enum_compat_2
 enum e6 { E1 = -1, E0 };
 void f3(enum e6);
-void f3(int);        // should work as int and e6 are compatible
+void f3(int);
 void f4(enum e6 e);
-void f4(unsigned e); // should error as unsigned and e6 are incompatible
+void f4(unsigned e);
 
 #elif defined test_ptr_to_str
 void f() { _Generic((int const *[]){0}, int:0); }
@@ -138,13 +138,13 @@ void foo(void) {
 static enum myenum { L = -1 } L;                                                
 }
 #elif defined test_abstract_decls
-int bar(const char *());     // abstract declarator here is okay
-int bar (const char *(*g)()) // should match this 'g' argument
+int bar(const char *());
+int bar (const char *(*g)())
 {
   g();
   return 42;
 }
-int foo(int ())              // abstract decl is wrong in definitions
+int foo(int ())
 {
   return 0;
 #elif defined test_invalid_1
@@ -184,7 +184,7 @@ int main(void) {
   int t[][][X];
 }
 #elif defined test_invalid_alignas
-/* _Alignas is no type qualifier */
+
 void * _Alignas(16) p1;
 
 #elif defined test_static_assert
@@ -218,9 +218,9 @@ struct z {  _Static_assert(0); }
   const f t[3];
 
 #elif defined test_incomplete_array_array
-  int t[][3]; // gr: not an error, see below
+  int t[][3];
 
-/******************************************************************/
+
 #elif defined test_extern_array
 int iii[] = { 1,2,3 };
 extern int iii[];
@@ -233,7 +233,7 @@ extern int x[2];
 extern int x[];
 int x[3];
 
-/******************************************************************/
+
 #elif defined test_func_1 \
  || defined test_func_2 \
  || defined test_func_3 \
@@ -263,7 +263,7 @@ int hello(int a)
 #endif
 { printf("%s: a = %d\n", __FUNCTION__, a); return 0; }
 
-/******************************************************************/
+
 #elif defined test_var_1 \
    || defined test_var_2 \
    || defined test_var_3
@@ -318,7 +318,7 @@ void f2() {
 struct yyy y, *yy;
 struct zzz { int z; } z, *zz;
 
-/******************************************************************/
+
 #elif defined test_long_double_type_for_win32
 
 int main()
@@ -341,7 +341,7 @@ int main()
     printf("%sn\n", S(\\));
 }
 
-/******************************************************************/
+
 #elif defined test_var_array
 
 static struct var_len { int i; const char str[]; } var_array[] =
@@ -358,23 +358,23 @@ struct c2 { int c; struct c1 c1; };
 struct c2 c2 = { 1, { 2, { 3, 4, 5 }}};
 
 #elif defined test_var_array3
-/* similar to test_var_array2 but with string initializers */
+
 struct A { int a; char b[]; };
 struct A a = { 1, "1" };
 struct B { struct A a; };
 struct B b = { { 1, "1" } };
-/******************************************************************/
+
 #elif defined test_default_int_type
-n; // warn
-f(); // don't warn
+n;
+f();
 
 #elif defined test_invalid_global_stmtexpr
-n[sizeof({3;})]; // crashed in block() due to missing local scope
+n[sizeof({3;})];
 
 #elif defined test_invalid_tokckill
-f(){"12"3;} // second const token killed the value of the first
+f(){"12"3;}
 
-/******************************************************************/
+
 #elif defined test_duplicate_member
 struct S {
   int a, a;
@@ -393,7 +393,7 @@ struct S2 {
   };
 };
 
-/******************************************************************/
+
 #elif defined test_conflicting_array_definition
 extern int array[2];
 int array[] = { 1, 2, 3 };
@@ -452,7 +452,7 @@ int main()
 int f() { ({ return 78; }); }
 int main() { return f(); }
 
-/******************************************************************/
+
 
 #elif defined test_illegal_unicode
 int main() {
@@ -477,10 +477,10 @@ struct A {
 };
 
 #elif defined test_pp_error_1
-# if //no expression
+# if
 # endif
 #elif defined test_pp_error_2
-# if X(1,2) //undefined function macro
+# if X(1,2)
 # endif
 
 #elif defined test_pointer_plus_double
@@ -496,11 +496,11 @@ int main()
 {
     unsigned int x;
     switch (x) {
-        case -1 ... 0: /* empty case range with unsigned */
+        case -1 ... 0:
         case 3:
         case 1:
         case 2:
-        case 3: /* show this line number in error */
+        case 3:
         case 4:
         case 5:
     }
@@ -522,20 +522,20 @@ int main()
 
 struct xxx {int x[4];};
 
-/* 'ee' not defined outside of function, 'i' not redefined */
+
 int bar(enum ee { a = 12, b = 34 } i, int(*f)(int i))
 {
     printf("bar %d %d %d\n", i, a, b);
     return 0;
 }
-/* 'xxx' not defined outside of function */
+
 int foo(struct xxx {int x[3];}*p)
 {
     printf("foo %d", sizeof *p);
     return p->x[3];
 }
 #ifdef test_scope_2
-/* incompatible redefinition */
+
 int foo(struct xxx {int x[2];}*p);
 #endif
 #ifndef test_scope_3

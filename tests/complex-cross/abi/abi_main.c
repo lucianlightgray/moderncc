@@ -1,6 +1,6 @@
-/* gcc-compiled oracle for the tcc<->gcc _Complex ABI check. Parameterised by
- * -DABI_BASE (default double). Prints "ok" / exits 0 iff every cross-compiler
- * call agrees. Built once per base type by run-complex-abi.sh. */
+
+
+
 #include <stdio.h>
 #ifndef ABI_BASE
 #define ABI_BASE double
@@ -22,9 +22,9 @@ static int fail = 0;
 int main(void)
 {
     C a = mk(1, 2), b = mk(3, 4);
-    CHK(eq(tcc_op(a, b),        4, 6), "tcc_op");          /* tcc callee */
-    CHK(eq(tcc_calls_gcc(a, b), 4, 6), "tcc_calls_gcc");   /* tcc -> gcc */
-    CHK(eq(tcc_mix(3, a, 4),    8, 2), "tcc_mix");         /* mixed args */
+    CHK(eq(tcc_op(a, b),        4, 6), "tcc_op");
+    CHK(eq(tcc_calls_gcc(a, b), 4, 6), "tcc_calls_gcc");
+    CHK(eq(tcc_mix(3, a, 4),    8, 2), "tcc_mix");
     if (!fail) printf("ok\n");
     return fail;
 }

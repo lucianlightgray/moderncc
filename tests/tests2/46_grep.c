@@ -1,31 +1,31 @@
-/*
- * The  information  in  this  document  is  subject  to  change
- * without  notice  and  should not be construed as a commitment
- * by Digital Equipment Corporation or by DECUS.
- *
- * Neither Digital Equipment Corporation, DECUS, nor the authors
- * assume any responsibility for the use or reliability of  this
- * document or the described software.
- *
- *      Copyright (C) 1980, DECUS
- *
- * General permission to copy or modify, but not for profit,  is
- * hereby  granted,  provided that the above copyright notice is
- * included and reference made to  the  fact  that  reproduction
- * privileges were granted by DECUS.
- */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #include <stdio.h>
 #include <stdlib.h>
-#include <ctype.h>	// tolower()
+#include <ctype.h>
 
-/*
- * grep
- *
- * Runs on the Decus compiler or on vms, On vms, define as:
- *      grep :== "$disk:[account]grep"      (native)
- *      grep :== "$disk:[account]grep grep" (Decus)
- * See below for more information.
- */
+
+
+
+
+
+
+
+
 
 char    *documentation[] = {
    "grep searches a file for a given pattern.  Execute by",
@@ -103,19 +103,19 @@ void badpat(char *, char *, char *);
 int match(void);
 
 
-/*** Display a file name *******************************/
+
 void file(char *s)
 {
    printf("File %s:\n", s);
 }
 
-/*** Report unopenable file ****************************/
+
 void cant(char *s)
 {
    fprintf(stderr, "%s: cannot open\n", s);
 }
 
-/*** Give good help ************************************/
+
 void help(char **hp)
 {
    char   **dp;
@@ -124,7 +124,7 @@ void help(char **hp)
       printf("%s\n", *dp);
 }
 
-/*** Display usage summary *****************************/
+
 void usage(char *s)
 {
    fprintf(stderr, "?GREP-E-%s\n", s);
@@ -133,23 +133,23 @@ void usage(char *s)
    exit(1);
 }
 
-/*** Compile the pattern into global pbuf[] ************/
+
 void compile(char *source)
 {
-   char  *s;         /* Source string pointer     */
-   char  *lp;        /* Last pattern pointer      */
-   int   c;          /* Current character         */
-   int            o;          /* Temp                      */
-   char           *spp;       /* Save beginning of pattern */
+   char  *s;
+   char  *lp;
+   int   c;
+   int            o;
+   char           *spp;
 
    s = source;
    if (debug)
       printf("Pattern = \"%s\"\n", s);
    pp = pbuf;
    while (c = *s++) {
-      /*
-       * STAR, PLUS and MINUS are special.
-       */
+
+
+
       if (c == '*' || c == '+' || c == '-') {
          if (pp == pbuf ||
                (o=pp[-1]) == BOL ||
@@ -160,18 +160,18 @@ void compile(char *source)
             badpat("Illegal occurrence op.", source, s);
          store(ENDPAT);
          store(ENDPAT);
-         spp = pp;               /* Save pattern end     */
-         while (--pp > lp)       /* Move pattern down    */
-            *pp = pp[-1];        /* one byte             */
+         spp = pp;
+         while (--pp > lp)
+            *pp = pp[-1];
          *pp =   (c == '*') ? STAR :
             (c == '-') ? MINUS : PLUS;
-         pp = spp;               /* Restore pattern end  */
+         pp = spp;
          continue;
       }
-      /*
-       * All the rest.
-       */
-      lp = pp;         /* Remember start       */
+
+
+
+      lp = pp;
       switch(c) {
 
          case '^':
@@ -231,7 +231,7 @@ void compile(char *source)
       }
    }
    store(ENDPAT);
-   store(0);                /* Terminate string     */
+   store(0);
    if (debug) {
       for (lp = pbuf; lp < pp;) {
          if ((c = (*lp++ & 0377)) < ' ')
@@ -242,15 +242,15 @@ void compile(char *source)
    }
 }
 
-/*** Compile a class (within []) ***********************/
+
 char *cclass(char *source, char *src)
-   /* char       *source;   // Pattern start -- for error msg. */
-   /* char       *src;      // Class start */
+
+
 {
-   char   *s;        /* Source pointer    */
-   char   *cp;       /* Pattern start     */
-   int    c;         /* Current character */
-   int             o;         /* Temp              */
+   char   *s;
+   char   *cp;
+   int    c;
+   int             o;
 
    s = src;
    o = CLASS;
@@ -260,23 +260,23 @@ char *cclass(char *source, char *src)
    }
    store(o);
    cp = pp;
-   store(0);                          /* Byte count      */
+   store(0);
    while ((c = *s++) && c!=']') {
-      if (c == '\\') {                /* Store quoted char    */
-         if ((c = *s++) == '\0')      /* Gotta get something  */
+      if (c == '\\') {
+         if ((c = *s++) == '\0')
             badpat("Class terminates badly", source, s);
          else    store(tolower(c));
       }
       else if (c == '-' &&
             (pp - cp) > 1 && *s != ']' && *s != '\0') {
-         c = pp[-1];             /* Range start     */
-         pp[-1] = RANGE;         /* Range signal    */
-         store(c);               /* Re-store start  */
-         c = *s++;               /* Get end char and*/
-         store(tolower(c));      /* Store it        */
+         c = pp[-1];
+         pp[-1] = RANGE;
+         store(c);
+         c = *s++;
+         store(tolower(c));
       }
       else {
-         store(tolower(c));      /* Store normal char */
+         store(tolower(c));
       }
    }
    if (c != ']')
@@ -289,7 +289,7 @@ char *cclass(char *source, char *src)
    return(s);
 }
 
-/*** Store an entry in the pattern buffer **************/
+
 void store(int op)
 {
    if (pp >= &pbuf[PMAX])
@@ -297,11 +297,11 @@ void store(int op)
    *pp++ = op;
 }
 
-/*** Report a bad pattern specification ****************/
+
 void badpat(char *message, char *source, char *stop)
-   /* char  *message;       // Error message */
-   /* char  *source;        // Pattern start */
-   /* char  *stop;          // Pattern end   */
+
+
+
 {
    fprintf(stderr, "-GREP-E-%s, pattern is\"%s\"\n", message, source);
    fprintf(stderr, "-GREP-E-Stopped at byte %ld, '%c'\n",
@@ -309,10 +309,10 @@ void badpat(char *message, char *source, char *stop)
    error("?GREP-E-Bad pattern\n");
 }
 
-/*** Scan the file for the pattern in pbuf[] ***********/
+
 void grep(FILE *fp, char *fn)
-   /* FILE       *fp;       // File to process            */
-   /* char       *fn;       // File name (for -f option)  */
+
+
 {
    int lno, count, m;
 
@@ -341,10 +341,10 @@ void grep(FILE *fp, char *fn)
    }
 }
 
-/*** Match line (lbuf) with pattern (pbuf) return 1 if match ***/
+
 int match()
 {
-   char   *l;        /* Line pointer       */
+   char   *l;
 
    for (l = lbuf; *l; ++l) {
       if (pmatch(l, pbuf))
@@ -353,18 +353,18 @@ int match()
    return(0);
 }
 
-/*** Match partial line with pattern *******************/
+
 char *pmatch(char *line, char *pattern)
-   /* char               *line;     // (partial) line to match      */
-   /* char               *pattern;  // (partial) pattern to match   */
+
+
 {
-   char   *l;        /* Current line pointer         */
-   char   *p;        /* Current pattern pointer      */
-   char   c;         /* Current character            */
-   char            *e;        /* End for STAR and PLUS match  */
-   int             op;        /* Pattern operation            */
-   int             n;         /* Class counter                */
-   char            *are;      /* Start of STAR match          */
+   char   *l;
+   char   *p;
+   char   c;
+   char            *e;
+   int             op;
+   int             n;
+   char            *are;
 
    l = line;
    if (debug > 1)
@@ -442,28 +442,28 @@ char *pmatch(char *line, char *pattern)
             break;
 
          case MINUS:
-            e = pmatch(l, p);       /* Look for a match    */
-            while (*p++ != ENDPAT); /* Skip over pattern   */
-            if (e)                  /* Got a match?        */
-               l = e;               /* Yes, update string  */
-            break;                  /* Always succeeds     */
+            e = pmatch(l, p);
+            while (*p++ != ENDPAT);
+            if (e)
+               l = e;
+            break;
 
-         case PLUS:                 /* One or more ...     */
+         case PLUS:
             if ((l = pmatch(l, p)) == 0)
-               return(0);           /* Gotta have a match  */
-         case STAR:                 /* Zero or more ...    */
-            are = l;                /* Remember line start */
+               return(0);
+         case STAR:
+            are = l;
             while (*l && (e = pmatch(l, p)))
-               l = e;               /* Get longest match   */
-            while (*p++ != ENDPAT); /* Skip over pattern   */
-            while (l > are) {       /* Try to match rest   */
+               l = e;
+            while (*p++ != ENDPAT);
+            while (l > are) {
                if (e = pmatch(l, p))
                   return(e);
-               --l;                 /* Nope, try earlier   */
+               --l;
             }
             if (e = pmatch(l, p))
                return(e);
-            return(0);              /* Nothing else worked */
+            return(0);
 
          default:
             printf("Bad op code %d\n", op);
@@ -473,14 +473,14 @@ char *pmatch(char *line, char *pattern)
    return(l);
 }
 
-/*** Report an error ***********************************/
+
 void error(char *s)
 {
    fprintf(stderr, "%s", s);
    exit(1);
 }
 
-/*** Main program - parse arguments & grep *************/
+
 int main(int argc, char **argv)
 {
    char   *p;

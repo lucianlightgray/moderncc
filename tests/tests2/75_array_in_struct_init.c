@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-/* This test is a snippet from the J interpreter */
+
 
 typedef long I;
 typedef struct{I c[4];I b,e,k;} PT;

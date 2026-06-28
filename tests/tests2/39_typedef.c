@@ -37,7 +37,7 @@ int main()
    printf("%d\n", (int)sizeof((t){1,2,3}));
    printf("%d\n", (int)sizeof((t){1,2,3,4}));
 
-   /* two arrays derived from same base type */
+
    t t3 = { 1,2,3 }, t4 = { 4,5,6,7 };
    for (p = t3, i = 0; i < 3 ; i++) printf("%d ", *p++);
    for (p = t4, i = 0; i < 4 ; i++) printf("%d ", *p++); printf("\n");
@@ -48,8 +48,8 @@ int main()
    return 0;
 }
 
-/* "If the specification of an array type includes any type qualifiers,
-   the element type is so-qualified, not the array type." */
+
+
 
 typedef int A[3];
 extern A const ca;
@@ -64,7 +64,7 @@ extern const int cb[1][2][3];
 extern B b;
 extern int b[1][2][3];
 
-/* Funny but valid function declaration.  */
+
 typedef int functype (int);
 extern functype func;
 int func(int i)
@@ -72,7 +72,7 @@ int func(int i)
    return i + 1;
 }
 
-/* Even funnier function decl and definition using typeof.  */
+
 int set_anon_super(void);
 int set_anon_super(void)
 {
@@ -82,4 +82,4 @@ typedef int sas_type (void);
 extern typeof(set_anon_super) set_anon_super;
 extern sas_type set_anon_super;
 
-/* vim: set expandtab ts=4 sw=3 sts=3 tw=80 :*/
+

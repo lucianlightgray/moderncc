@@ -9,47 +9,47 @@ int main_1(){
     {
         myassert(!in);
         if(sizeof(enum{in=1})) myassert(in);
-        myassert(!in); //OOPS
+        myassert(!in);
     }
     {
         myassert(!in);
         switch(sizeof(enum{in=1})) { default: myassert(in); }
-        myassert(!in); //OOPS
+        myassert(!in);
     }
     {
         myassert(!in);
         while(sizeof(enum{in=1})) { myassert(in); break; }
-        myassert(!in); //OOPS
+        myassert(!in);
     }
     {
         myassert(!in);
         do{ myassert(!in);}while(0*sizeof(enum{in=1}));
-        myassert(!in); //OOPS
+        myassert(!in);
     }
 
     {
         myassert(!in);
         for(sizeof(enum{in=1});;){ myassert(in); break; }
-        myassert(!in); //OK
+        myassert(!in);
     }
     {
         myassert(!in);
         for(;;sizeof(enum{in=1})){ myassert(in); break; }
-        myassert(!in); //OK
+        myassert(!in);
     }
     {
         myassert(!in);
         for(;sizeof(enum{in=1});){ myassert(in); break; }
-        myassert(!in); //OK
+        myassert(!in);
     }
     return 0;
 }
 
-/* --------------------------------------------- */
+
 int main_2()
 {
   char c = 'a';
-  void func1(char c); /* param 'c' must not shadow local 'c' */
+  void func1(char c);
   func1(c);
   return 0;
 }
@@ -61,11 +61,11 @@ void func1(char c)
 
 struct st { int a; };
 
-/* --------------------------------------------- */
+
 int main_3()
 {
   struct st func(void);
-  struct st st = func(); /* not an 'incompatible redefinition' */
+  struct st st = func();
   myassert(st.a == 10);
   return 0;
 }
@@ -76,8 +76,8 @@ struct st func(void)
   return st;
 }
 
-/* --------------------------------------------- */
-/* func* 'md' must not be shadowed by param 'md' */
+
+
 static void f4(char *(*md)(char *md))
 {
    (*md)("test");
@@ -95,7 +95,7 @@ int main_4()
     return 0;
 }
 
-/* --------------------------------------------- */
+
 int a5[3], b5[];
 int f5(void);
 int main_5()
@@ -111,7 +111,7 @@ int f5(void)
 }
 int b5[3];
 
-/* --------------------------------------------- */
+
 static int f6(int);
 int i6 = 11;
 
@@ -136,7 +136,7 @@ int f6(int x)
     return x;
 }
 
-/* --------------------------------------------- */
+
 
 #if defined __TINYC__ \
     ? !defined __leading_underscore \
@@ -172,7 +172,7 @@ int main_7()
 
 struct xx7 z7 = { 0, 34 };
 
-/* --------------------------------------------- */
+
 int main()
 {
     main_1();

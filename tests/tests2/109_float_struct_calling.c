@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-/* This test used to fail on x86_64 on linux with sse registers */
+
 
 struct Point {
    float x;

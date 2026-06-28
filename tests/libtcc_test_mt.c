@@ -1,6 +1,6 @@
-/*
- * Multi-thread Test for libtcc
- */
+
+
+
 
 #ifndef FIB
 #include <stdlib.h>
@@ -9,8 +9,8 @@
 #include <setjmp.h>
 #include "libtcc.h"
 
-#define M 20 /* number of states */
-#define F(n) (n % 20 + 2) /* fib argument */
+#define M 20
+#define F(n) (n % 20 + 2)
 
 #ifdef _WIN32
 #include <windows.h>
@@ -60,7 +60,7 @@ void handle_error(void *opaque, const char *msg)
     fprintf(opaque, "%s\n", msg);
 }
 
-/* this function is called by the generated code */
+
 int add(int a, int b)
 {
     return a + b;
@@ -68,12 +68,12 @@ int add(int a, int b)
 
 #define _str(s) #s
 #define str(s) _str(s)
-/* as a trick, prepend #line directive for better error/warning messages */
+
 #define PROG(lbl) \
     char lbl[] = "#line " str(__LINE__) " " str(__FILE__) "\n\n"
 
 PROG(my_program)
-"#include <tcclib.h>\n" /* include the "Simple libc header for TCC" */
+"#include <tcclib.h>\n"
 "int add(int a, int b);\n"
 "int fib(int n)\n"
 "{\n"
@@ -99,7 +99,7 @@ int g_argc; char **g_argv;
 void parse_args(TCCState *s)
 {
     int i;
-    /* if tcclib.h and libtcc1.a are not installed, where can we find them */
+
     for (i = 1; i < g_argc; ++i) {
         char *a = g_argv[i];
         if (a[0] == '-') {
@@ -130,11 +130,11 @@ int backtrace_func(
         file ? file : "?",
         line,
         func ? func : "?");
-    return 1; // want more backtrace levels
+    return 1;
 #else
-    //printf(" [%d]", *(int*)ud);
+
     printf("!");
-    return 0; // cancel backtrace
+    return 0;
 #endif
 }
 
@@ -173,7 +173,7 @@ void *reloc_state(TCCState *s, const char *entry)
     return func;
 }
 
-/* work with several states at the same time */
+
 int state_test(int w)
 {
     TCCState *s[M];
@@ -201,7 +201,7 @@ int state_test(int w)
     return 0;
 }
 
-/* simple compilation in threads */
+
 TF_TYPE(thread_test_simple, vn)
 {
     TCCState *s;
@@ -210,7 +210,7 @@ TF_TYPE(thread_test_simple, vn)
     int n = (size_t)vn;
     jmp_buf jb;
 
-    s = new_state(0); /* '2' for exceptions */
+    s = new_state(0);
     sleep_ms(1);
     ret = tcc_compile_string(s, my_program);
     sleep_ms(1);
@@ -226,7 +226,7 @@ TF_TYPE(thread_test_simple, vn)
     return 0;
 }
 
-/* more complex compilation in threads */
+
 TF_TYPE(thread_test_complex, vn)
 {
     TCCState *s;
@@ -310,14 +310,14 @@ int main(int argc, char **argv)
     printf("\n (%u ms)\n", getclock_ms() - t);
 #endif
 #if 1
-    //{ int i; for (i = 0; i < 100; ++i) { printf("(%d) ", i);
+
     printf("running fib in threads\n "), fflush(stdout);
     t = getclock_ms();
     for (n = 0; n < M; ++n)
         create_thread(thread_test_simple, n);
     wait_threads(n);
     printf("\n (%u ms)\n", getclock_ms() - t);
-        //}}
+
 #endif
 #if 1
     printf("running tcc.c in threads to run fib\n "), fflush(stdout);

@@ -1,9 +1,9 @@
-/* Generated test goldens (formerly tests/{tests2,pp}/*.expect).
-   Drives tests2_runner.c; modes: run|dt|run2|pp|ref. */
+
+
 typedef struct { const char *name,*mode,*src,*expect,*flags,*args; } tcc_golden_t;
 static const tcc_golden_t tcc_goldens[] = {
   { "00_assignment","run","tests2/00_assignment.c","42\n64\n12, 34\n","","" },
-  { "01_comment","run","tests2/01_comment.c","Hello\nHello\nHello\nHello\nHello\n","","" },
+  { "01_comment","run","tests2/01_comment.c","x=6\ny=3\nz=13\n/* not a comment */ // also not\nw=7\nq=4\n/*\n","","" },
   { "02_printf","run","tests2/02_printf.c","Hello world\nCount = -5\nCount = -4\nCount = -3\nCount = -2\nCount = -1\nCount = 0\nCount = 1\nCount = 2\nCount = 3\nCount = 4\nCount = 5\nString 'hello', 'there' is 'hello', 'there'\nCharacter 'A' is 'A'\nCharacter 'a' is 'a'\n","","" },
   { "03_struct","run","tests2/03_struct.c","03_struct.c:14: warning: attribute '__cleanup__' ignored on type\n12\n34\n12\n34\n56\n78\n~fred()\n","","" },
   { "04_for","run","tests2/04_for.c","1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n","","" },

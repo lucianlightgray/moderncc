@@ -28,8 +28,8 @@ static int another_jump(void)
 {
   asm goto ("jmp %l[label]" : : : : label);
   return 70;
-  /* Use the same label name as in simple_jump to check that
-     that doesn't confuse our C/ASM symbol tables */
+
+
 label:
   return 71;
 }

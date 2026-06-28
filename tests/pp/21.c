@@ -1,4 +1,4 @@
-/* accept 'defined' as result of substitution */
+
 
 ----- 1 ------
 #define AAA 2
@@ -41,7 +41,7 @@ line __LINE__
 line __LINE__
 
 ----- 10 ------
-/* preprocessor numbers are (u)intmax_t */
+
 #if -2147483648 < 0
 1 true
 #endif
@@ -51,7 +51,7 @@ line __LINE__
 #if -9223372036854775808U > 0
 3 true
 #endif
-#if -0x8000000000000000 > 0 // unsigned by overflow
+#if -0x8000000000000000 > 0
 4 true
 #endif
 #if 1 << 31 > 2 && 1 << 32 > 2 && 1 << 63 < 2 && 1U << 63 > 2

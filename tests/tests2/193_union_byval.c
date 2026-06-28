@@ -1,7 +1,7 @@
-/* Union pass-by-value and bit-pattern aliasing through nested calls, plus the
-   GNU transparent_union attribute (a function parameter accepts any member type
-   with no cast). Every union is memset to 0 before use so byte dumps are
-   deterministic across compilers. 3-way verified (gcc/clang/tcc). */
+
+
+
+
 #include <stdio.h>
 #include <string.h>
 
@@ -20,18 +20,18 @@ static void dump(const char *t, const void *p, int n)
 static U4 u4_mut(U4 u) { u.i ^= 0x0f0f0f0f; return u; }
 static U8 u8_pass(U8 u) { return u; }
 
-/* transparent_union: tu_first accepts a struct A*, struct B* or void* directly */
+
 struct A { int x, y; };
 struct B { int x, y; };
 typedef union { struct A *pa; struct B *pb; void *pv; }
     __attribute__((transparent_union)) TU;
 static int tu_first(TU u) { return *(int *)u.pv; }
-static int tu_nested(TU u) { return tu_first(u) + 1; } /* TU forwarded through a call */
+static int tu_nested(TU u) { return tu_first(u) + 1; }
 
 int main(void)
 {
     U4 a; memset(&a, 0, sizeof a); a.f = 1.5f;
-    a = u4_mut(u4_mut(a)); /* xor twice -> identity */
+    a = u4_mut(u4_mut(a));
     printf("U4 %g\n", a.f); dump("U4", &a, sizeof a);
 
     U8 b; memset(&b, 0, sizeof b); b.d = 2.5;

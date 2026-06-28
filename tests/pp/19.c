@@ -71,17 +71,17 @@
   TEST1(TEST2(op))
 #define KO(a) ((void)1)
 
-/* This checks that the various expansions that ultimately lead to
-   something like 'KO(arg,arg)', where 'KO' comes from a macro
-   expansion reducing from a large macro chain do not are regarded
-   as funclike macro invocation of KO.  E.g. X93 and X94 expand to 'KO',
-   but X95 must not consume the (a,b) arguments outside the M_IF()
-   invocation to reduce the 'KO' macro to an invocation.  Instead
-   X95 should reduce via M_IF(KO)(a,b) to 'a'. 
-   
-   The other lines here are variations on this scheme, with X1 to
-   X6 coming from the bug report at
-   http://lists.nongnu.org/archive/html/tinycc-devel/2017-07/msg00017.html */
+
+
+
+
+
+
+
+
+
+
+
 X92 M_IF(KO)
 X93 M_GET_METHOD(INIT, 0, INIT(KO))
 X94 M_GET_METHOD(INIT, 0, M_FLAT (INIT(KO)))
@@ -90,12 +90,12 @@ X96 M_IF(M_GET_METHOD(INIT, 0, M_FLAT (INIT(KO))))
 X97 M_IF(M_GET_METHOD(INIT, 0, M_FLAT (INIT(KO))))(ok,nok)
 X98 (M_TEST_METHOD_P(INIT, (INIT(KO))))(ok, nok)
 X99 M_IF(M_TEST_METHOD_P(INIT, (INIT(KO))))(ok, nok)
-// test begins
-X1 TEST1(TRUE)          // ==> expect ok, get ok
-// First test with a token which is not a macro
-X2 TEST2((INIT(ok)))    // ==> expect 1, get 1
-X3 TEST3((INIT(ok)))    // ==> expect ok, get ok
-// Then test with a token which is a macro, but should not be expanded.
-X4 TEST2((INIT(KO)))    // ==> expect 1, get 1
+
+X1 TEST1(TRUE)
+
+X2 TEST2((INIT(ok)))
+X3 TEST3((INIT(ok)))
+
+X4 TEST2((INIT(KO)))
 X5 TEST4(INIT(KO))
-X6 TEST3((INIT(KO)))    // ==> expect ok, get "error: macro 'KO' used with too many args"
+X6 TEST3((INIT(KO)))

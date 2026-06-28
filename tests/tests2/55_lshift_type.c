@@ -1,11 +1,11 @@
-/* $Id: lshift-type.c 53089 2012-07-06 11:18:26Z vinc17/ypig $
 
-Tests on left-shift type, written by Vincent Lefevre <vincent@vinc17.net>.
 
-ISO C99 TC3 says: [6.5.7#3] "The integer promotions are performed on
-each of the operands. The type of the result is that of the promoted
-left operand."
-*/
+
+
+
+
+
+
 
 #include <stdio.h>
 

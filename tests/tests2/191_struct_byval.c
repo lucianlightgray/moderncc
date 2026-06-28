@@ -1,18 +1,18 @@
-/* Struct pass-by-value correctness: structs of varied size and x86-64 ABI class
-   (INTEGER vs SSE eightbytes, and >16-byte MEMORY class) are passed into and
-   returned from nested function calls, then validated both by member value and
-   by a raw-byte dump (redundancy check that every bit lands where expected).
-   Structs are memset to 0 before member init so padding bytes are deterministic
-   across gcc/clang/tcc. 3-way verified. */
+
+
+
+
+
+
 #include <stdio.h>
 #include <string.h>
 
-typedef struct { int a, b; } S2i;                 /* 8B,  1 INTEGER eightbyte */
-typedef struct { int a; double d; } Sid;          /* 16B, INTEGER + SSE       */
-typedef struct { double x, y; } S2d;              /* 16B, 2 SSE               */
-typedef struct { long a, b, c; } S3l;             /* 24B, MEMORY class        */
-typedef struct { float a, b, c, d; } S4f;         /* 16B, 2 SSE               */
-typedef struct { S2i lo, hi; } Snest;             /* nested aggregate         */
+typedef struct { int a, b; } S2i;
+typedef struct { int a; double d; } Sid;
+typedef struct { double x, y; } S2d;
+typedef struct { long a, b, c; } S3l;
+typedef struct { float a, b, c, d; } S4f;
+typedef struct { S2i lo, hi; } Snest;
 
 static void dump(const char *t, const void *p, int n)
 {
@@ -27,7 +27,7 @@ static S2i  f1(S2i s) { s.a += 1; s.b += 2; return s; }
 static Sid  f2(Sid s) { s.a ^= 0x5a5a; s.d = -s.d; return s; }
 static S2d  f3(S2d s) { double t = s.x; s.x = s.y; s.y = t; return s; }
 static S3l  f4(S3l s) { s.a += s.b; s.b += s.c; s.c += s.a; return s; }
-static S4f  f5(S4f s) { S4f r = { s.d, s.c, s.b, s.a }; return r; } /* permute */
+static S4f  f5(S4f s) { S4f r = { s.d, s.c, s.b, s.a }; return r; }
 static Snest f6(Snest s) { s.lo = f1(s.lo); s.hi = f1(f1(s.hi)); return s; }
 
 int main(void)

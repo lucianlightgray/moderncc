@@ -6,7 +6,7 @@ float fd;
 int
 test()
 {
-   // was an internal tcc compiler error with arm64 backend until 2019-11-08
+
    if (fd < 5.5) {
      return 1;
    } else {
@@ -30,7 +30,7 @@ int main()
    static int e4 = -1.0 >= 0.0;
    static int e5 = -1.0 <= 0.0;
    static int e6 = -1.0 > 0.0;
-   // variables
+
    float af = 12.34f + 56.78f;
    double ad = 12.34 + 56.78;
    long double ald = 12.34l + 56.78l;
@@ -38,12 +38,12 @@ int main()
    printf("%g %g\n", ad, td);
    printf("%Lf %Lf\n", ald, tld);
 
-   // infix operators
+
    printf("%f %f %f %f\n", 12.34f + 56.78f, 12.34f - 56.78f, 12.34f * 56.78f, 12.34f / 56.78f);
    printf("%g %g %g %g\n", 12.34 + 56.78, 12.34 - 56.78, 12.34 * 56.78, 12.34 / 56.78);
    printf("%Lf %Lf %Lf %Lf\n", 12.34l + 56.78l, 12.34l - 56.78l, 12.34l * 56.78l, 12.34l / 56.78l);
 #ifdef __i386__
-   // gcc/clang -m32 -mno-sse and tcc all fail for + and * but all have the same value
+
    printf("%f %f %f %f\n", 12.34f + 56.78f, f1 - f2, 12.34f * 56.78f, f1 / f2);
 #else
    printf("%f %f %f %f\n", f1 + f2, f1 - f2, f1 * f2, f1 / f2);
@@ -51,7 +51,7 @@ int main()
    printf("%g %g %g %g\n", d1 + d2, d1 - d2, d1 * d2, d1 / d2);
    printf("%Lf %Lf %Lf %Lf\n", ld1 + ld2, ld1 - ld2, ld1 * ld2, ld1 / ld2);
 
-   // comparison operators
+
    printf("%d %d %d %d %d %d\n", 12.34f < 56.78f, 12.34f <= 56.78f, 12.34f == 56.78f, 12.34f >= 56.78f, 12.34f > 56.78f, 12.34f != 56.78f);
    printf("%d %d %d %d %d %d\n", 12.34f < 12.34f, 12.34f <= 12.34f, 12.34f == 12.34f, 12.34f >= 12.34f, 12.34f > 12.34f, 12.34f != 12.34f);
    printf("%d %d %d %d %d %d\n", 56.78f < 12.34f, 56.78f <= 12.34f, 56.78f == 12.34f, 56.78f >= 12.34f, 56.78f > 12.34f, 56.78f != 12.34f);
@@ -72,7 +72,7 @@ int main()
    printf("%d %d %d %d %d %d\n", ld2 < ld1, ld2 <= ld1, ld2 == ld1, ld2 >= ld1, ld2 > ld1, ld2 != ld1);
    printf("%d %d %d %d %d %d\n", e1, e2, e3, e4, e5, e6);
 
-   // assignment operators
+
    af = 12.34f; ad = 12.34; ald = 12.34l;
    af += 56.78f; ad += 56.78; ald += 56.78l;
    printf("%f %g %Lf\n", af, ad, ald);
@@ -109,11 +109,11 @@ int main()
    af /= f2; ad /= d2; ald /= ld2;
    printf("%f %g %Lf\n", af, ad, ald);
 
-   // prefix operators
+
    printf("%f %g %Lf\n", +12.34f, +12.34, +12.34l);
    printf("%f %g %Lf\n", -12.34f, -12.34, -12.34l);
 
-   // type coercion
+
    af = 2;
    printf("%f\n", af);
    printf("%f\n", sin(2));
@@ -121,4 +121,4 @@ int main()
    return 0;
 }
 
-/* vim: set expandtab ts=4 sw=3 sts=3 tw=80 :*/
+

@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-/* This test segfaults as of April 27, 2015. */
+
 void f1(int argc)
 {
   char test[argc];
@@ -12,14 +12,14 @@ void f1(int argc)
   goto label;
 }
 
-/* This segfaulted on 2015-11-19. */
+
 void f2(void)
 {
     goto start;
     {
-        int a[1 && 1]; /* not a variable-length array */
-        int b[1 || 1]; /* not a variable-length array */
-        int c[1 ? 1 : 1]; /* not a variable-length array */
+        int a[1 && 1];
+        int b[1 || 1];
+        int c[1 ? 1 : 1];
     start:
         a[0] = 0;
         b[0] = 0;

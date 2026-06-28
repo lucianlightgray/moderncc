@@ -15,15 +15,15 @@ a: ;
 
 void tst_void_ptr(void *pv, int i) 
 {
-  i ? *pv : *pv; // dr106
+  i ? *pv : *pv;
 }
 
 void tst_shift(void)
 {
   int i = 1;
   long long l = 1;
-  i = i << 32; // illegal. just test
-  l = l << 64; // illegal. just test
+  i = i << 32;
+  l = l << 64;
 }
 
 #if !defined(_WIN32)
@@ -67,7 +67,7 @@ int tst(void)
 
 void tst_compare(void)
 {
-  /* This failed on risc64 */
+
   printf ("tst_compare: %s\n", tst() > 0 ? "error" : "ok");
 }
 

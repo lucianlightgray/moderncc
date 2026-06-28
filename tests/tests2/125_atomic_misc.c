@@ -182,7 +182,7 @@ int main()
 int main()
 {
     size_t _Atomic i = 1;
-    /* assignment to integer from pointer */
+
     atomic_store(&i, &i);
 }
 
@@ -192,7 +192,7 @@ int main()
     int i = 1;
     char c = 2;
     int _Atomic *p = &i;
-    /* assignment from incompatible pointer */
+
     atomic_store(&p, &c);
 }
 
@@ -200,7 +200,7 @@ int main()
 int main()
 {
     int const i = 1;
-    /* assignment to read-only -location */
+
     atomic_fetch_add(&i, 2);
 }
 

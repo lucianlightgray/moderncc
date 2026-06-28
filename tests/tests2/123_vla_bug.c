@@ -5,7 +5,7 @@ char str[] = "blabla";
 int g;
 int main()
 {
-  //char helpme[strlen(str) + 1];
+
   int i = 0;
 #if 0
   if (g) {

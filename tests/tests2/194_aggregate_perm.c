@@ -1,8 +1,8 @@
-/* Aggregate initialization and manipulation: designated initializers with gaps
-   (unset members zero), sparse and re-specified array indices, anonymous struct/
-   union members, long-double-containing structs, and struct-assignment chains
-   that must copy the whole object. Member values are deterministic and checked
-   against gcc/clang. 3-way verified. */
+
+
+
+
+
 #include <stdio.h>
 #include <string.h>
 
@@ -17,7 +17,7 @@ static S5 chain(S5 s) { S5 t; t = s; t.a += t.e; return t; }
 
 int main(void)
 {
-    /* designated init with a gap; mutate through nested by-value calls */
+
     SA a = { .arr = { 1, 2, 3, 4 }, .tag = 'X' };
     a = mutSA(mutSA(a));
     printf("SA %d %d %d %d %d\n", a.arr[0], a.arr[1], a.arr[2], a.arr[3], a.tag);
@@ -30,16 +30,16 @@ int main(void)
     an.top = 1; an.u = 42; an.lo = 5; an.hi = 6;
     printf("Anon %d %d %d %d\n", an.top, an.u, an.lo, an.hi);
 
-    /* sparse array designators, last writer to an index wins */
+
     int idx[8] = { [2] = 20, [5] = 50, [2] = 22 };
     printf("idx %d %d %d %d\n", idx[0], idx[2], idx[5], idx[7]);
 
-    /* assignment chains through by-value calls */
+
     S5 q = { 1, 2, 3, 4, 5 };
     q = chain(chain(q));
     printf("S5 %d %d %d %d %d\n", q.a, q.b, q.c, q.d, q.e);
 
-    /* whole-object struct copy */
+
     SA b = a, c;
     c = b;
     printf("copy %d %d\n", c.arr[3], c.tag);

@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-/* ------------------------------------------------------- */
+
 #if defined test_backtrace_1
 
 void f3()
@@ -26,7 +26,7 @@ int main(int argc, char **argv)
     return 0;
 }
 
-/* ------------------------------------------------------- */
+
 #elif defined test_bcheck_1
 
 struct s { int a,b,c,d,e; };
@@ -45,10 +45,10 @@ int main(int argc, char **argv)
     return 0;
 }
 
-/* ------------------------------------------------------- */
+
 #elif defined test_tcc_backtrace_2
 
-/* test custom backtrace and 'exit()' redirection */
+
 int tcc_backtrace(const char *fmt, ...);
 void exit(int);
 
@@ -72,17 +72,17 @@ int main(int argc, char **argv)
     return 0;
 }
 
-/* ------------------------------------------------------- */
+
 #elif defined test_tcc_backtrace_3
 
-/* this test should be run despite of the exit(34) above */
+
 int main(int argc, char **argv)
 {
     printf("* main\n"), fflush(stdout);
     return 1;
 }
 
-/* ------------------------------------------------------- */
+
 #else
 #include <stdlib.h>
 #include <string.h>
@@ -171,5 +171,5 @@ int main()
     free(strdup(&b[0]));
 #endif
 }
-/* ------------------------------------------------------- */
+
 #endif

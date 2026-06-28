@@ -1,5 +1,5 @@
-// This program is designed to test some arm64-specific things, such as the
-// calling convention, but should give the same results on any architecture.
+
+
 
 #include <stdarg.h>
 #include <stdint.h>
@@ -39,7 +39,7 @@ struct hfa33 { long double a, b, c; } hfa33 = { 33.1, 33.2, 33.3 };
 struct hfa34 { long double a, b, c, d; } hfa34 = { 34.1, 34.2, 34.3, 34.4 };
 
 struct empty { };
-/* Keep the top-level offsets at zero without changing the type into a union. */
+
 struct hfae12 { struct empty e; struct hfa12 h; } hfae12 = { { }, { 112.1, 112.2 } };
 struct hfae22 { struct empty e; struct hfa22 h; } hfae22 = { { }, { 122.1, 122.2 } };
 
@@ -247,10 +247,10 @@ void ret(void)
 
 void*
 va_arg_with_struct_ptr(va_list ap) {
-        /*
-         * This was a BUG identified with FFTW-3.3.8 on arm64.
-         * The test case only checks it compiles.
-         */
+
+
+
+
         struct X { int _x; };
         struct X *x = va_arg(ap, struct X *);
         return x;

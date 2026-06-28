@@ -29,9 +29,9 @@ int main()
    floatfunc(98);
    floatfunc(99.0);
 
-   /* printf("%c %d %f\n", 'a', 'b', 'c'); */
-   /* printf("%c %d %f\n", 97, 98, 99); */
-   /* printf("%c %d %f\n", 97.0, 98.0, 99.0); */
+
+
+
 
    char b = 97;
    char c = 97.0;
@@ -51,4 +51,4 @@ int main()
    return 0;
 }
 
-/* vim: set expandtab ts=4 sw=3 sts=3 tw=80 :*/
+

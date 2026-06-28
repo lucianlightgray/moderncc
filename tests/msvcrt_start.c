@@ -1,5 +1,5 @@
-/* ------------------------------------------------------------- */
-/* minimal startup with runtime linker to msvcrt */
+
+
 
 #if 0
 
@@ -42,14 +42,14 @@ static const char all_names[] = REDIR_ALL;
   #if defined __TINYC__
   # define ALIGN ".align 8"
   #else
-  # define ALIGN ".align 3" /* .align is power of 2 on non-ELF platforms */
+  # define ALIGN ".align 3"
   #endif
 # define REDIR(s) \
     __asm__("\n"_(s)":"); \
-    __asm__(".int 0x58000090"); /* ldr x16, [pc, #16] */ \
-    __asm__(".int 0xf9400210"); /* ldr x16, [x16] */ \
-    __asm__(".int 0xd61f0200"); /* br x16 */ \
-    __asm__(".int 0xd503201f"); /* nop for alignment */ \
+    __asm__(".int 0x58000090");   \
+    __asm__(".int 0xf9400210");   \
+    __asm__(".int 0xd61f0200");   \
+    __asm__(".int 0xd503201f");   \
     __asm__(".quad all_ptrs + (. - all_jmps - 16) / 24 * 8"); \
     __asm__(".global "_(s));
 
@@ -127,8 +127,8 @@ typedef struct { int newmode; } _startupinfo;
 int __getmainargs(int *pargc, char ***pargv, char ***penv, int globb, _startupinfo*);
 
 void _controlfp(unsigned a, unsigned b);
-#define _MCW_PC 0x00030000 // Precision Control
-#define _PC_53 0x00010000 // 53 bits
+#define _MCW_PC 0x00030000
+#define _PC_53 0x00010000
 
 int __argc;
 char **__argv;
@@ -151,7 +151,7 @@ void mainCRTStartup(void)
 int printf(const char *, ...);
 int _vsnprintf(char *, size_t, const char *, va_list);
 
-/* undefined on windows-11-arm64 */
+
 int vprintf(const char *format, va_list ap)
 {
     char buf[1000];
@@ -159,6 +159,6 @@ int vprintf(const char *format, va_list ap)
     return printf("%s", buf);
 }
 
-void __main() {} /* for gcc */
-void _pei386_runtime_relocator(void) {} /* for gcc */
-void __chkstk(unsigned n) {} /* for clang */
+void __main() {}
+void _pei386_runtime_relocator(void) {}
+void __chkstk(unsigned n) {}

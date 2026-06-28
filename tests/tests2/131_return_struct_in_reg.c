@@ -16,12 +16,12 @@ struct s8 {
     unsigned a, b;
 } g8 = { 0x12345678, 0x9abcdef0 };
 
-/* returned in 2 registers on riscv64 */
+
 struct s16 {
     unsigned long long a, b;
 } g16 = { 0x123456789abcdef0ULL, 0xfedcba9876543210ULL };
 
-/* Homogeneous float aggregate on ARM hard-float */
+
 struct s_f4 {
     double a, b, c, d;
 } g_f4 = { 1,2,3,4 };

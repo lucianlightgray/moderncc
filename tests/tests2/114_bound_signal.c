@@ -111,7 +111,7 @@ main (void)
     pthread_create(&id3, NULL, do_fork, NULL);
 #endif
 
-    /* sleep does not work !!! */
+
     end = time(NULL) + 2;
     while (time(NULL) < end) ;
     run = 0;

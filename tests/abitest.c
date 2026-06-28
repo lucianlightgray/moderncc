@@ -4,7 +4,7 @@
 #include <string.h>
 #include <stdarg.h>
 
-// MinGW has 80-bit rather than 64-bit long double which isn't compatible with TCC or MSVC
+
 #if defined(_WIN32) && defined(__GNUC__)
 #define LONG_DOUBLE double
 #define LONG_DOUBLE_LITERAL(x) x
@@ -34,9 +34,9 @@ static void set_options(TCCState *s, int argc, char **argv)
 
 typedef int (*callback_type) (void*);
 
-/*
- * Compile source code and call a callback with a pointer to the symbol "f".
- */
+
+
+
 static int run_callback(const char *src, callback_type callback) {
   TCCState *s;
   int result;
@@ -87,12 +87,12 @@ RET_PRIMITIVE_TEST(float, float, 63.0)
 RET_PRIMITIVE_TEST(double, double, 14789798.0)
 RET_PRIMITIVE_TEST(longdouble, LONG_DOUBLE, LONG_DOUBLE_LITERAL(378943892.0))
 
-/*
- * ret_2float_test:
- * 
- * On x86-64, a struct with 2 floats should be packed into a single
- * SSE register (VT_DOUBLE is used for this purpose).
- */
+
+
+
+
+
+
 typedef struct ret_2float_test_type_s {float x, y;} ret_2float_test_type;
 typedef ret_2float_test_type (*ret_2float_test_function_type) (ret_2float_test_type);
 
@@ -115,12 +115,12 @@ static int ret_2float_test(void) {
   return run_callback(src, ret_2float_test_callback);
 }
 
-/*
- * ret_2double_test:
- * 
- * On x86-64, a struct with 2 doubles should be passed in two SSE
- * registers.
- */
+
+
+
+
+
+
 typedef struct ret_2double_test_type_s {double x, y;} ret_2double_test_type;
 typedef ret_2double_test_type (*ret_2double_test_function_type) (ret_2double_test_type);
 
@@ -143,18 +143,18 @@ static int ret_2double_test(void) {
   return run_callback(src, ret_2double_test_callback);
 }
 
-/*
- * ret_8plus2double_test:
- *
- * This catches a corner case in the x86_64 ABI code: the first 7
- * arguments fit into registers, the 8th doesn't, but the 9th argument
- * fits into the 8th XMM register.
- *
- * Note that the purpose of the 10th argument is to avoid a situation
- * in which gcc would accidentally put the double at the right
- * address, thus causing a success message even though TCC actually
- * generated incorrect code.
- */
+
+
+
+
+
+
+
+
+
+
+
+
 typedef ret_2double_test_type (*ret_8plus2double_test_function_type) (double, double, double, double, double, double, double, ret_2double_test_type, double, double);
 
 static int ret_8plus2double_test_callback(void *ptr) {
@@ -176,12 +176,12 @@ static int ret_8plus2double_test(void) {
   return run_callback(src, ret_8plus2double_test_callback);
 }
 
-/*
- * ret_mixed_test:
- *
- * On x86-64, a struct with a double and a 64-bit integer should be
- * passed in one SSE register and one integer register.
- */
+
+
+
+
+
+
 typedef struct ret_mixed_test_type_s {double x; long long y;} ret_mixed_test_type;
 typedef ret_mixed_test_type (*ret_mixed_test_function_type) (ret_mixed_test_type);
 
@@ -204,12 +204,12 @@ static int ret_mixed_test(void) {
   return run_callback(src, ret_mixed_test_callback);
 }
 
-/*
- * ret_mixed2_test:
- *
- * On x86-64, a struct with two floats and two 32-bit integers should
- * be passed in one SSE register and one integer register.
- */
+
+
+
+
+
+
 typedef struct ret_mixed2_test_type_s {float x,x2; int y,y2;} ret_mixed2_test_type;
 typedef ret_mixed2_test_type (*ret_mixed2_test_function_type) (ret_mixed2_test_type);
 
@@ -232,11 +232,11 @@ static int ret_mixed2_test(void) {
   return run_callback(src, ret_mixed2_test_callback);
 }
 
-/*
- * ret_mixed3_test:
- *
- * On x86-64, this struct should be passed in two integer registers.
- */
+
+
+
+
+
 typedef struct ret_mixed3_test_type_s {float x; int y; float x2; int y2;} ret_mixed3_test_type;
 typedef ret_mixed3_test_type (*ret_mixed3_test_function_type) (ret_mixed3_test_type);
 
@@ -259,10 +259,10 @@ static int ret_mixed3_test(void) {
   return run_callback(src, ret_mixed3_test_callback);
 }
 
-/*
- * reg_pack_test: return a small struct which should be packed into
- * registers (Win32) during return.
- */
+
+
+
+
 typedef struct reg_pack_test_type_s {int x, y;} reg_pack_test_type;
 typedef reg_pack_test_type (*reg_pack_test_function_type) (reg_pack_test_type);
 
@@ -285,10 +285,10 @@ static int reg_pack_test(void) {
   return run_callback(src, reg_pack_test_callback);
 }
 
-/*
- * reg_pack_longlong_test: return a small struct which should be packed into
- * registers (x86-64) during return.
- */
+
+
+
+
 typedef struct reg_pack_longlong_test_type_s {long long x, y;} reg_pack_longlong_test_type;
 typedef reg_pack_longlong_test_type (*reg_pack_longlong_test_function_type) (reg_pack_longlong_test_type);
 
@@ -311,18 +311,18 @@ static int reg_pack_longlong_test(void) {
   return run_callback(src, reg_pack_longlong_test_callback);
 }
 
-/*
- * ret_6plus2longlong_test:
- *
- * This catches a corner case in the x86_64 ABI code: the first 5
- * arguments fit into registers, the 6th doesn't, but the 7th argument
- * fits into the 6th argument integer register, %r9.
- *
- * Note that the purpose of the 10th argument is to avoid a situation
- * in which gcc would accidentally put the longlong at the right
- * address, thus causing a success message even though TCC actually
- * generated incorrect code.
- */
+
+
+
+
+
+
+
+
+
+
+
+
 typedef reg_pack_longlong_test_type (*ret_6plus2longlong_test_function_type) (long long, long long, long long, long long, long long, reg_pack_longlong_test_type, long long, long long);
 
 static int ret_6plus2longlong_test_callback(void *ptr) {
@@ -344,10 +344,10 @@ static int ret_6plus2longlong_test(void) {
   return run_callback(src, ret_6plus2longlong_test_callback);
 }
 
-/*
- * sret_test: Create a struct large enough to be returned via sret
- * (hidden pointer as first function argument)
- */
+
+
+
+
 typedef struct sret_test_type_s {long long a, b, c;} sret_test_type;
 typedef sret_test_type (*sret_test_function_type) (sret_test_type);
 
@@ -369,12 +369,12 @@ static int sret_test(void) {
   return run_callback(src, sret_test_callback);
 }
 
-/*
- * one_member_union_test:
- * 
- * In the x86-64 ABI a union should always be passed on the stack. However
- * it appears that a single member union is treated by GCC as its member.
- */
+
+
+
+
+
+
 typedef union one_member_union_test_type_u {int x;} one_member_union_test_type;
 typedef one_member_union_test_type (*one_member_union_test_function_type) (one_member_union_test_type);
 
@@ -397,11 +397,11 @@ static int one_member_union_test(void) {
   return run_callback(src, one_member_union_test_callback);
 }
 
-/*
- * two_member_union_test:
- * 
- * In the x86-64 ABI a union should always be passed on the stack.
- */
+
+
+
+
+
 typedef union two_member_union_test_type_u {int x; long y;} two_member_union_test_type;
 typedef two_member_union_test_type (*two_member_union_test_function_type) (two_member_union_test_type);
 
@@ -424,9 +424,9 @@ static int two_member_union_test(void) {
   return run_callback(src, two_member_union_test_callback);
 }
 
-/*
- * Win64 calling convention test.
- */
+
+
+
 
 typedef struct many_struct_test_type_s {long long a, b, c;} many_struct_test_type;
 typedef many_struct_test_type (*many_struct_test_function_type) (many_struct_test_type,many_struct_test_type,many_struct_test_type,many_struct_test_type,many_struct_test_type,many_struct_test_type);
@@ -451,9 +451,9 @@ static int many_struct_test(void) {
   return run_callback(src, many_struct_test_callback);
 }
 
-/*
- * Win64 calling convention test.
- */
+
+
+
 
 typedef struct many_struct_test_2_type_s {int a, b;} many_struct_test_2_type;
 typedef many_struct_test_2_type (*many_struct_test_2_function_type) (many_struct_test_2_type,many_struct_test_2_type,many_struct_test_2_type,many_struct_test_2_type,many_struct_test_2_type,many_struct_test_2_type);
@@ -477,9 +477,9 @@ static int many_struct_test_2(void) {
   return run_callback(src, many_struct_test_2_callback);
 }
 
-/*
- * Win64 calling convention test.
- */
+
+
+
 
 typedef struct many_struct_test_3_type_s {int a, b;} many_struct_test_3_type;
 typedef many_struct_test_3_type (*many_struct_test_3_function_type) (many_struct_test_3_type,many_struct_test_3_type,many_struct_test_3_type,many_struct_test_3_type,many_struct_test_3_type,many_struct_test_3_type, ...);
@@ -513,9 +513,9 @@ static int many_struct_test_3(void) {
   return run_callback(src, many_struct_test_3_callback);
 }
 
-/*
- * stdarg_test: Test variable argument list ABI
- */
+
+
+
 
 typedef struct {long long a, b, c;} stdarg_test_struct_type;
 typedef void (*stdarg_test_function_type) (int,int,int,...);
@@ -588,10 +588,10 @@ static int stdarg_many_test(void)
   return run_callback(src, stdarg_many_test_callback);
 }
 
-/*
- * Test Win32 stdarg handling, since the calling convention will pass a pointer
- * to the struct and the stdarg pointer must point to that pointer initially.
- */
+
+
+
+
 
 typedef struct {long long a, b, c;} stdarg_struct_test_struct_type;
 typedef int (*stdarg_struct_test_function_type) (stdarg_struct_test_struct_type a, ...);
@@ -617,7 +617,7 @@ static int stdarg_struct_test(void) {
   return run_callback(src, stdarg_struct_test_callback);
 }
 
-/* Test that x86-64 arranges the stack correctly for arguments with alignment >8 bytes */
+
 
 typedef LONG_DOUBLE (*arg_align_test_callback_type) (LONG_DOUBLE,int,LONG_DOUBLE,int,LONG_DOUBLE);
 
@@ -652,7 +652,7 @@ int main(int argc, char **argv) {
   const char *testname = NULL;
   int retval = EXIT_SUCCESS;
   
-  /* if tcclib.h and libtcc1.a are not installed, where can we find them */
+
   for (i = 1; i < argc; ++i) {
     if (!memcmp(argv[i], "run_test=", 9))
       testname = argv[i] + 9;
@@ -670,7 +670,7 @@ int main(int argc, char **argv) {
   RUN_TEST(ret_8plus2double_test);
   RUN_TEST(ret_6plus2longlong_test);
 #if !defined __x86_64__ || defined _WIN32
-  /* currently broken on x86_64 linux */
+
   RUN_TEST(ret_mixed_test);
   RUN_TEST(ret_mixed2_test);
 #endif

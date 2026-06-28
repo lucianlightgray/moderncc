@@ -1,4 +1,4 @@
-/* integer promotion */
+
 
 int printf(const char*, ...);
 #define promote(s) printf(" %ssigned : %s\n", (s) - 100 < 0 ? "  " : "un", #s);

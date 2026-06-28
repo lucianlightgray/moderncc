@@ -1,4 +1,4 @@
-/* test bound checking code without -run */
+
 
 int arr[10];
 

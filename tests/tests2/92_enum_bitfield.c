@@ -1,10 +1,10 @@
-/* This checks if enums needing 8 bit but only having positive
-   values are correctly zero extended (instead of sign extended)
-   when stored into/loaded from a 8 bit bit-field of enum type (which
-   itself is implementation defined, so isn't necessarily supported by all
-   other compilers).  */
+
+
+
+
+
 enum tree_code {
-  SOME_CODE = 148, /* has bit 7 set, and hence all further enum values as well */
+  SOME_CODE = 148,
   LAST_AND_UNUSED_TREE_CODE
 };
 typedef union tree_node *tree;
@@ -37,9 +37,9 @@ int convert_like_real (tree convs)
 {
   switch (((enum tree_code) (convs)->common.code))
     {
-    case AMBIG_CONV: /* This has bit 7 set, which must not be the sign
-			bit in tree_common.code, i.e. the bitfield must
-			be somehow marked unsigned.  */
+    case AMBIG_CONV:
+
+
       return blah();
     default:
       break;

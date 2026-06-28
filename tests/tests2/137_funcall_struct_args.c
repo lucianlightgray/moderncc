@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-// arm64-gen.c: gfunc_call() Second pass when struct args may overwrite previous func call result
+
 struct vec {
         float x;
         float y;

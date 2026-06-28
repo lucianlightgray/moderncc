@@ -2,8 +2,8 @@
 
 #ifdef __riscv
 
-/* P0.4 + P1.4: riscv64 asm pseudo-instructions test.
-   Exercises neg/negw, sext.w, fmv.s/d, fneg.s/d.  */
+
+
 
 int test_neg(int x)
 {
@@ -89,9 +89,9 @@ int test_pseudo(void)
     return ok;
 }
 
-/* P1.1: riscv64 inline asm with 64-bit immediate (li).
-   Tests that long long immediates assemble correctly,
-   including the lui+addi sequence for large constants.  */
+
+
+
 
 long long test_li_small(void)
 {
@@ -133,8 +133,8 @@ int test_ll(void)
     return ok;
 }
 
-/* P1.3: riscv64 F/D extension arithmetic instructions.
-   Tests fadd/fsub/fmul/fdiv for both single and double precision.  */
+
+
 
 float test_fadd_s(float a, float b)
 {
@@ -271,7 +271,7 @@ int csr_pseudo_main(void)
 
 int fp_cmp_cvt_main(void)
 {
-    /* F/D comparison (use raw regs to avoid inline asm float→int bug) */
+
     asm volatile("feq.s a0, fa0, fa1");
     asm volatile("feq.d a0, fa0, fa1");
     asm volatile("flt.s a0, fa0, fa1");
@@ -279,7 +279,7 @@ int fp_cmp_cvt_main(void)
     asm volatile("fle.s a0, fa0, fa1");
     asm volatile("fle.d a0, fa0, fa1");
 
-    /* fcvt conversions */
+
     asm volatile("fcvt.w.s a0, fa0");
     asm volatile("fcvt.wu.s a0, fa0");
     asm volatile("fcvt.s.w fa0, a0");
@@ -288,7 +288,7 @@ int fp_cmp_cvt_main(void)
     asm volatile("fcvt.d.s fa0, fa0");
     asm volatile("fcvt.s.d fa0, fa0");
 
-    /* fclass */
+
     asm volatile("fclass.s a0, fa0");
     asm volatile("fclass.d a0, fa0");
 

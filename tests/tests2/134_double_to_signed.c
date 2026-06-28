@@ -11,7 +11,7 @@ int main() {
 #ifndef _WIN32
   printf("%llu\n", (unsigned long long)1e19);
 #else
-  /* some msvc compiler won't compile tcc correctly in this ragard */
+
   printf("10000000000000000000\n");
 #endif
 }

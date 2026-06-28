@@ -40,7 +40,7 @@ A test(void)
 }
 
 int main(void) {
-    /* This code resulted in a bounds checking error */
+
     Node data;
     A a;
     dummy (data);

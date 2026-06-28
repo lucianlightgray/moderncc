@@ -1,6 +1,6 @@
 # gas comment with ``gnu'' style quotes
 
-/* some directive tests */
+
 
    .byte 0xff
    .byte 1, 2, 3
@@ -10,14 +10,14 @@
    .int 1, 2, 3
    .align 8
    .byte 1
-/* .align 16, 0x90 gas is too clever for us with 0x90 fill */
+
    .balign 4, 0x92
-   .align 16, 0x91 /* 0x91 tests the non-clever behaviour */
+   .align 16, 0x91
    .skip 3
    .skip 15, 0x90
    .string "hello\0world"
-/* Macro expansion should work like with C, the #n shouldn't be parsed
-   as asm line comment */
+
+
 #define __stringify(n) #n
 #define stringify(n) __stringify(n)
    .skip 8,0x90
@@ -26,7 +26,7 @@
 
 # 28 "asmtest.S"        # a line directive (and a line comment)
         movl %eax, %ebx # some more asm comment
-/* some label tests */
+
 L1:
         movl %eax, %ebx
         mov 0x10000, %eax
@@ -37,7 +37,7 @@ var1:
 
         mov var1, %eax
 
-/* instruction tests */
+
 movl %eax, %ebx
 mov 0x10000, %eax
 mov 0x10000, %ax
@@ -177,7 +177,7 @@ notl %r15d
   out %ax, $100                       
   out %eax, $100                       
 
-  /* NOTE: gas is bugged here, so size must be added */
+
   outb %al, %dx                       
   outw %ax, %dx                       
   outl %eax, %dx                       
@@ -425,7 +425,7 @@ L3:
 
  fsubp %st(5)
  fsubp
- //fsubp %st(1), %st # not accepted by new GAS anymore
+
 
  fsubs 0x1000
  fisubs 0x1002
@@ -438,7 +438,7 @@ L3:
 
  fsubrp %st(5)
  fsubrp
- //fsubrp %st(1), %st # not accepted by new GAS anymore
+
 
  fsubrs 0x1000
  fisubrs 0x1002
@@ -451,7 +451,7 @@ L3:
 
  fdivp %st(5)
  fdivp
- //fdivp %st(1), %st # not accepted by new GAS anymore
+
 
  fdivs 0x1000
  fidivs 0x1002
@@ -646,7 +646,7 @@ int $0x10
     vmresume
     vmxoff
 
-    /* XXX: handle prefixes */
+
 #if 0
     aword
     addr16
@@ -667,7 +667,7 @@ int $0x10
     repne;movsb
     repnz;outsb
 
-    /* handle one-line prefix + ops */
+
     lock  negl (%eax)
     wait  pushf
     rep   stosb
@@ -810,11 +810,11 @@ int $0x10
 
     swapgs
 
-    /* Newer gas assemble 'str %rdx' as 'str %edx', based on the observation
-       that the 16bit value of the task register is zero-extended into the
-       destination anyway, and hence storing into %edx is the same as storing
-       into %rdx.  TCC doesn't do that micro-optimization, hence just store
-       into the 32bit reg as well.  */
+
+
+
+
+
     str %edx
     str %r9d
 #endif
@@ -849,7 +849,7 @@ int $0x10
     pushw $1
     push $1
 
-#ifdef __ASSEMBLER__ // should be defined, for S files
+#ifdef __ASSEMBLER__
     inc %eax
 #endif
 
@@ -946,9 +946,9 @@ overrideme:
     movq %rcx, %mm1
     movq %rdx, %xmm2
     movq %r13, %xmm3
-    /* movq mem64->xmm is encoded as f30f7e by GAS, but as
-       660f6e by tcc (which really is a movd and would need 
-       a REX.W prefix to be movq).  */
+
+
+
     movq (%rsi), %xmm3
     movq %mm1, %rdx
     movq %xmm3, %rcx
