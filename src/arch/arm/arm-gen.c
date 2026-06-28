@@ -1,17 +1,17 @@
 #ifdef TARGET_DEFS_ONLY
 
-#if defined(TCC_ARM_EABI) && !defined(TCC_ARM_VFP)
-#error "Currently TinyCC only supports float computation with VFP instructions"
+#if defined(MCC_ARM_EABI) && !defined(MCC_ARM_VFP)
+#error "Currently ModernCC only supports float computation with VFP instructions"
 #endif
 
-#ifdef TCC_ARM_VFP
+#ifdef MCC_ARM_VFP
 #define NB_REGS            13
 #else
 #define NB_REGS             9
 #endif
 
-#ifndef CONFIG_TCC_CPUVER
-# define CONFIG_TCC_CPUVER 5
+#ifndef CONFIG_MCC_CPUVER
+# define CONFIG_MCC_CPUVER 5
 #endif
 
 #define RC_INT     0x0001
@@ -25,7 +25,7 @@
 #define RC_F1      0x0100
 #define RC_F2      0x0200
 #define RC_F3      0x0400
-#ifdef TCC_ARM_VFP
+#ifdef MCC_ARM_VFP
 #define RC_F4      0x0800
 #define RC_F5      0x1000
 #define RC_F6      0x2000
@@ -45,7 +45,7 @@ enum {
     TREG_F1,
     TREG_F2,
     TREG_F3,
-#ifdef TCC_ARM_VFP
+#ifdef MCC_ARM_VFP
     TREG_F4,
     TREG_F5,
     TREG_F6,
@@ -55,7 +55,7 @@ enum {
     TREG_LR,
 };
 
-#ifdef TCC_ARM_VFP
+#ifdef MCC_ARM_VFP
 #define T2CPR(t) (((t) & VT_BTYPE) != VT_FLOAT ? 0x100 : 0)
 #endif
 
@@ -63,7 +63,7 @@ enum {
 #define REG_IRE2 TREG_R1
 #define REG_FRET TREG_F0
 
-#ifdef TCC_ARM_EABI
+#ifdef MCC_ARM_EABI
 #define TOK___divdi3 TOK___aeabi_ldivmod
 #define TOK___moddi3 TOK___aeabi_ldivmod
 #define TOK___udivdi3 TOK___aeabi_uldivmod
@@ -75,7 +75,7 @@ enum {
 
 #define PTR_SIZE 4
 
-#ifdef TCC_ARM_VFP
+#ifdef MCC_ARM_VFP
 #define LDOUBLE_SIZE  8
 #endif
 
@@ -83,14 +83,14 @@ enum {
 #define LDOUBLE_SIZE  8
 #endif
 
-#ifdef TCC_ARM_EABI
+#ifdef MCC_ARM_EABI
 #define LDOUBLE_ALIGN 8
 #else
 #define LDOUBLE_ALIGN 4
 #endif
 
 #if LDOUBLE_SIZE == 8
-# define TCC_USING_DOUBLE_FOR_LDOUBLE 1
+# define MCC_USING_DOUBLE_FOR_LDOUBLE 1
 #endif
 
 #define MAX_ALIGN     8
@@ -102,7 +102,7 @@ enum {
 
 #else
 #define USING_GLOBALS
-#include "tcc.h"
+#include "mcc.h"
 
 ST_DATA const char * const target_machine_defs =
     "__arm__\0"
@@ -114,7 +114,7 @@ ST_DATA const char * const target_machine_defs =
     "__ARM_ARCH_4__\0"
     "__ARMEL__\0"
     "__APCS_32__\0"
-#if defined TCC_ARM_EABI
+#if defined MCC_ARM_EABI
     "__ARM_EABI__\0"
 #endif
     ;
@@ -129,7 +129,7 @@ ST_DATA const int reg_classes[NB_REGS] = {
       RC_FLOAT | RC_F1,
       RC_FLOAT | RC_F2,
       RC_FLOAT | RC_F3,
-#ifdef TCC_ARM_VFP
+#ifdef MCC_ARM_VFP
    RC_FLOAT | RC_F4,
   RC_FLOAT | RC_F5,
   RC_FLOAT | RC_F6,
@@ -141,15 +141,15 @@ static int float_abi;
 static int func_sub_sp_offset, last_itod_magic;
 static int leaffunc;
 
-#if defined(CONFIG_TCC_BCHECK)
+#if defined(CONFIG_MCC_BCHECK)
 static addr_t func_bound_offset;
 static unsigned long func_bound_ind;
 ST_DATA int func_bound_add_epilog;
 #endif
 
-#if defined(TCC_ARM_EABI) && defined(TCC_ARM_VFP)
+#if defined(MCC_ARM_EABI) && defined(MCC_ARM_VFP)
 static CType float_type, double_type, func_float_type, func_double_type;
-ST_FUNC void arm_init(struct TCCState *s)
+ST_FUNC void arm_init(struct MCCState *s)
 {
     float_type.t = VT_FLOAT;
     double_type.t = VT_DOUBLE;
@@ -159,22 +159,22 @@ ST_FUNC void arm_init(struct TCCState *s)
     func_double_type.ref = sym_push(SYM_FIELD, &double_type, FUNC_CDECL, FUNC_OLD);
 
     float_abi = s->float_abi;
-#ifndef TCC_ARM_HARDFLOAT
+#ifndef MCC_ARM_HARDFLOAT
 #endif
 }
 #else
 #define func_float_type func_old_type
 #define func_double_type func_old_type
 #define func_ldouble_type func_old_type
-ST_FUNC void arm_init(struct TCCState *s)
+ST_FUNC void arm_init(struct MCCState *s)
 {
 #if 0
-#if !defined (TCC_ARM_VFP)
-    tcc_warning("Support for FPA is deprecated and will be removed in next"
+#if !defined (MCC_ARM_VFP)
+    mcc_warning("Support for FPA is deprecated and will be removed in next"
                 " release");
 #endif
-#if !defined (TCC_ARM_EABI)
-    tcc_warning("Support for OABI is deprecated and will be removed in next"
+#if !defined (MCC_ARM_EABI)
+    mcc_warning("Support for OABI is deprecated and will be removed in next"
                 " release");
 #endif
 #endif
@@ -185,13 +185,13 @@ ST_FUNC void arm_init(struct TCCState *s)
 
 static int two2mask(int a,int b) {
   if (!CHECK_R(a) || !CHECK_R(b))
-    tcc_error("compiler error! registers %i,%i is not valid",a,b);
+    mcc_error("compiler error! registers %i,%i is not valid",a,b);
   return (reg_classes[a]|reg_classes[b])&~(RC_INT|RC_FLOAT);
 }
 
 static int regmask(int r) {
   if (!CHECK_R(r))
-    tcc_error("compiler error! register %i is not valid",r);
+    mcc_error("compiler error! register %i is not valid",r);
   return reg_classes[r]&~(RC_INT|RC_FLOAT);
 }
 
@@ -203,7 +203,7 @@ void o(uint32_t i)
     return;
   ind1 = ind + 4;
   if (!cur_text_section)
-    tcc_error("compiler error! This happens f.ex. if the compiler\n"
+    mcc_error("compiler error! This happens f.ex. if the compiler\n"
          "can't evaluate constant expressions outside of a function.");
   if (ind1 > cur_text_section->data_allocated)
     section_realloc(cur_text_section, ind1);
@@ -329,7 +329,7 @@ uint32_t encbranch(int pos, int addr, int fail)
   addr/=4;
   if(addr>=0x1000000 || addr<-0x1000000) {
     if(fail)
-      tcc_error("FIXME: function bigger than 32MB");
+      mcc_error("FIXME: function bigger than 32MB");
     return 0;
   }
   return 0x0A000000|(addr&0xffffff);
@@ -361,18 +361,18 @@ void gsym_addr(int t, int a)
   }
 }
 
-#ifdef TCC_ARM_VFP
+#ifdef MCC_ARM_VFP
 static uint32_t vfpr(int r)
 {
   if(r<TREG_F0 || r>TREG_F7)
-    tcc_error("compiler error! register %i is no vfp register",r);
+    mcc_error("compiler error! register %i is no vfp register",r);
   return r - TREG_F0;
 }
 #else
 static uint32_t fpr(int r)
 {
   if(r<TREG_F0 || r>TREG_F3)
-    tcc_error("compiler error! register %i is no fpa register",r);
+    mcc_error("compiler error! register %i is no fpa register",r);
   return r - TREG_F0;
 }
 #endif
@@ -384,7 +384,7 @@ static uint32_t intr(int r)
   if(r >= TREG_R0 && r <= TREG_R3)
     return r - TREG_R0;
   if (!(r >= TREG_SP && r <= TREG_LR))
-    tcc_error("compiler error! register %i is no int register",r);
+    mcc_error("compiler error! register %i is no int register",r);
   return r + (13 - TREG_SP);
 }
 
@@ -444,7 +444,7 @@ static uint32_t mapcc(int cc)
     case TOK_GT:
       return 0xC0000000;
   }
-  tcc_error("unexpected condition code");
+  mcc_error("unexpected condition code");
   return 0xE0000000;
 }
 
@@ -477,13 +477,13 @@ static int negcc(int cc)
     case TOK_GT:
       return TOK_LE;
   }
-  tcc_error("unexpected condition code");
+  mcc_error("unexpected condition code");
   return TOK_NE;
 }
 
 static void load_value(SValue *sv, int r)
 {
-#if CONFIG_TCC_CPUVER >= 7
+#if CONFIG_MCC_CPUVER >= 7
     if (!(sv->r & VT_SYM)) {
         unsigned x=sv->c.i;
         o(0xE3000000|intr(r)<<12|(x&0xFFF)|(x<<4&0xF0000));
@@ -494,7 +494,7 @@ static void load_value(SValue *sv, int r)
 #endif
     o(0xE59F0000|(intr(r)<<12));
     o(0xEA000000);
-#ifndef CONFIG_TCC_PIC
+#ifndef CONFIG_MCC_PIC
     if(sv->r & VT_SYM)
         greloc(cur_text_section, sv->sym, ind, R_ARM_ABS32);
     o(sv->c.i);
@@ -573,7 +573,7 @@ void load(int r, SValue *sv)
     if(v == VT_LOCAL) {
       if(is_float(ft)) {
 	calcaddr(&base,&fc,&sign,1020,2);
-#ifdef TCC_ARM_VFP
+#ifdef MCC_ARM_VFP
         op=0xED100A00;
         if(!sign)
           op|=0x800000;
@@ -644,7 +644,7 @@ void load(int r, SValue *sv)
       return;
     } else if (v < VT_CONST) {
       if(is_float(ft))
-#ifdef TCC_ARM_VFP
+#ifdef MCC_ARM_VFP
         o(0xEEB00A40|(vfpr(r)<<12)|vfpr(v)|T2CPR(ft));
 #else
 	o(0xEE008180|(fpr(r)<<12)|fpr(v));
@@ -654,7 +654,7 @@ void load(int r, SValue *sv)
       return;
     }
   }
-  tcc_error("load unimplemented!");
+  mcc_error("load unimplemented!");
 }
 
 void store(int r, SValue *sv)
@@ -702,7 +702,7 @@ void store(int r, SValue *sv)
     if(v == VT_LOCAL) {
        if(is_float(ft)) {
 	calcaddr(&base,&fc,&sign,1020,2);
-#ifdef TCC_ARM_VFP
+#ifdef MCC_ARM_VFP
         op=0xED000A00;
         if(!sign)
           op|=0x800000;
@@ -740,7 +740,7 @@ void store(int r, SValue *sv)
       return;
     }
   }
-  tcc_error("store unimplemented");
+  mcc_error("store unimplemented");
 }
 
 static void gadd_sp(int val)
@@ -773,7 +773,7 @@ static void gcall_or_jmp(int is_jmp)
 	o(vtop->c.i);
      }
   } else {
-#ifdef CONFIG_TCC_BCHECK
+#ifdef CONFIG_MCC_BCHECK
     vtop->r &= ~VT_MUSTBOUND;
 #endif
     r = gv(RC_INT);
@@ -783,7 +783,7 @@ static void gcall_or_jmp(int is_jmp)
   }
 }
 
-#if defined(CONFIG_TCC_BCHECK)
+#if defined(CONFIG_MCC_BCHECK)
 
 static void gen_bounds_call(int v)
 {
@@ -908,7 +908,7 @@ int floats_in_core_regs(SValue *sval)
     case TOK___floatundidf:
     case TOK___fixunssfdi:
     case TOK___fixunsdfdi:
-#ifndef TCC_ARM_VFP
+#ifndef MCC_ARM_VFP
     case TOK___fixunsxfdi:
 #endif
     case TOK___floatdisf:
@@ -923,7 +923,7 @@ int floats_in_core_regs(SValue *sval)
 }
 
 ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int *regsize) {
-#ifdef TCC_ARM_EABI
+#ifdef MCC_ARM_EABI
     int size, align;
     size = type_size(vt, &align);
     if (float_abi == ARM_HARD_FLOAT && !variadic &&
@@ -1096,7 +1096,7 @@ again:
             }
           } else {
             if (is_float(pplan->sval->type.t)) {
-#ifdef TCC_ARM_VFP
+#ifdef MCC_ARM_VFP
               r = vfpr(gv(RC_FLOAT)) << 12;
               if ((pplan->sval->type.t & VT_BTYPE) == VT_FLOAT)
                 size = 4;
@@ -1185,18 +1185,18 @@ void gfunc_call(int nb_args)
   int def_float_abi = float_abi;
   int todo;
   struct plan plan;
-#ifdef TCC_ARM_EABI
+#ifdef MCC_ARM_EABI
   int variadic;
 #endif
 
-#ifdef CONFIG_TCC_BCHECK
-  if (tcc_state->do_bounds_check)
+#ifdef CONFIG_MCC_BCHECK
+  if (mcc_state->do_bounds_check)
     gbound_args(nb_args);
 #endif
 
   save_regs(nb_args + 1);
 
-#ifdef TCC_ARM_EABI
+#ifdef MCC_ARM_EABI
   if (float_abi == ARM_HARD_FLOAT) {
     variadic = (vtop[-nb_args].type.ref->f.func_type == FUNC_ELLIPSIS);
     if (variadic || floats_in_core_regs(&vtop[-nb_args]))
@@ -1206,11 +1206,11 @@ void gfunc_call(int nb_args)
 
   memset(&plan, 0, sizeof plan);
   if (nb_args)
-    plan.pplans = tcc_malloc(nb_args * sizeof(*plan.pplans));
+    plan.pplans = mcc_malloc(nb_args * sizeof(*plan.pplans));
 
   args_size = assign_regs(nb_args, float_abi, &plan, &todo);
 
-#ifdef TCC_ARM_EABI
+#ifdef MCC_ARM_EABI
   if (args_size & 7) {
     args_size = (args_size + 7) & ~7;
     o(0xE24DD004);
@@ -1218,13 +1218,13 @@ void gfunc_call(int nb_args)
 #endif
 
   nb_args += copy_params(nb_args, &plan, todo);
-  tcc_free(plan.pplans);
+  mcc_free(plan.pplans);
 
   vrotb(nb_args + 1);
   gcall_or_jmp(0);
   if (args_size)
       gadd_sp(args_size);
-#if defined(TCC_ARM_EABI) && defined(TCC_ARM_VFP)
+#if defined(MCC_ARM_EABI) && defined(MCC_ARM_VFP)
   if(float_abi == ARM_SOFTFP_FLOAT && is_float(vtop->type.ref->type.t)) {
     if((vtop->type.ref->type.t & VT_BTYPE) == VT_FLOAT) {
       o(0xEE000A10);
@@ -1247,7 +1247,7 @@ void gfunc_prolog(Sym *func_sym)
   int addr, pn, sn;
   CType ret_type;
 
-#ifdef TCC_ARM_EABI
+#ifdef MCC_ARM_EABI
   struct avail_regs avregs = {{0}};
 #endif
 
@@ -1263,7 +1263,7 @@ void gfunc_prolog(Sym *func_sym)
   }
   for(sym2 = sym->next; sym2 && (n < 4 || nf < 16); sym2 = sym2->next) {
     size = type_size(&sym2->type, &align);
-#ifdef TCC_ARM_EABI
+#ifdef MCC_ARM_EABI
     if (float_abi == ARM_HARD_FLOAT && !func_var &&
         (is_float(sym2->type.t) || is_hgen_float_aggr(&sym2->type))) {
       int tmpnf = assign_vfpreg(&avregs, align, size);
@@ -1280,7 +1280,7 @@ void gfunc_prolog(Sym *func_sym)
   if (n) {
     if(n>4)
       n=4;
-#ifdef TCC_ARM_EABI
+#ifdef MCC_ARM_EABI
     n=(n+1)&-2;
 #endif
     o(0xE92D0000|((1<<n)-1));
@@ -1296,7 +1296,7 @@ void gfunc_prolog(Sym *func_sym)
   func_sub_sp_offset = ind;
   o(0xE1A00000);
 
-#ifdef TCC_ARM_EABI
+#ifdef MCC_ARM_EABI
   if (float_abi == ARM_HARD_FLOAT) {
     func_vc += nf * 4;
     memset(&avregs, 0, sizeof avregs);
@@ -1309,7 +1309,7 @@ void gfunc_prolog(Sym *func_sym)
     size = type_size(type, &align);
     size = (size + 3) >> 2;
     align = (align + 3) & ~3;
-#ifdef TCC_ARM_EABI
+#ifdef MCC_ARM_EABI
     if (float_abi == ARM_HARD_FLOAT && !func_var && (is_float(sym->type.t)
         || is_hgen_float_aggr(&sym->type))) {
       int fpn = assign_vfpreg(&avregs, align, size << 2);
@@ -1320,7 +1320,7 @@ void gfunc_prolog(Sym *func_sym)
     } else
 #endif
     if (pn < 4) {
-#ifdef TCC_ARM_EABI
+#ifdef MCC_ARM_EABI
         pn = (pn + (align-1)/4) & -(align/4);
 #endif
       addr = (nf + pn) * 4;
@@ -1328,7 +1328,7 @@ void gfunc_prolog(Sym *func_sym)
       if (!sn && pn > 4)
         sn = (pn - 4);
     } else {
-#ifdef TCC_ARM_EABI
+#ifdef MCC_ARM_EABI
 from_stack:
         sn = (sn + (align-1)/4) & -(align/4);
 #endif
@@ -1340,8 +1340,8 @@ from_stack:
   last_itod_magic=0;
   leaffunc = 1;
   loc = 0;
-#ifdef CONFIG_TCC_BCHECK
-  if (tcc_state->do_bounds_check)
+#ifdef CONFIG_MCC_BCHECK
+  if (mcc_state->do_bounds_check)
     gen_bounds_prolog();
 #endif
 }
@@ -1351,11 +1351,11 @@ void gfunc_epilog(void)
   uint32_t x;
   int diff;
 
-#ifdef CONFIG_TCC_BCHECK
-  if (tcc_state->do_bounds_check)
+#ifdef CONFIG_MCC_BCHECK
+  if (mcc_state->do_bounds_check)
     gen_bounds_epilog();
 #endif
-#if defined(TCC_ARM_EABI) && defined(TCC_ARM_VFP)
+#if defined(MCC_ARM_EABI) && defined(MCC_ARM_VFP)
   if ((float_abi == ARM_SOFTFP_FLOAT || func_var) && is_float(func_vt.t)) {
     if((func_vt.t & VT_BTYPE) == VT_FLOAT)
       o(0xEE100A10);
@@ -1367,7 +1367,7 @@ void gfunc_epilog(void)
 #endif
   o(0xE89BA800);
   diff = (-loc + 3) & -4;
-#ifdef TCC_ARM_EABI
+#ifdef MCC_ARM_EABI
   if(!leaffunc)
     diff = ((diff + 11) & -8) - 4;
 #endif
@@ -1390,7 +1390,7 @@ void gfunc_epilog(void)
 ST_FUNC void gen_fill_nops(int bytes)
 {
     if ((bytes & 3))
-      tcc_error("alignment of code section not multiple of 4");
+      mcc_error("alignment of code section not multiple of 4");
     while (bytes > 0) {
 	o(0xE1A00000);
 	bytes -= 4;
@@ -1514,7 +1514,7 @@ void gen_opi(int op)
       c=3;
       break;
     case '%':
-#ifdef TCC_ARM_EABI
+#ifdef MCC_ARM_EABI
       func=TOK___aeabi_idivmod;
       retreg=REG_IRE2;
 #else
@@ -1523,7 +1523,7 @@ void gen_opi(int op)
       c=3;
       break;
     case TOK_UMOD:
-#ifdef TCC_ARM_EABI
+#ifdef MCC_ARM_EABI
       func=TOK___aeabi_uidivmod;
       retreg=REG_IRE2;
 #else
@@ -1570,7 +1570,7 @@ void gen_opi(int op)
 	}
       }
       fr=intr(gv(RC_INT));
-#ifdef CONFIG_TCC_BCHECK
+#ifdef CONFIG_MCC_BCHECK
       if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) {
         vswap();
         c=intr(gv(RC_INT));
@@ -1599,7 +1599,7 @@ done:
 	o(opc|r|(c<<7)|(fr<<12));
       } else {
         fr=intr(gv(RC_INT));
-#ifdef CONFIG_TCC_BCHECK
+#ifdef CONFIG_MCC_BCHECK
         if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) {
           vswap();
           r=intr(gv(RC_INT));
@@ -1619,11 +1619,11 @@ done:
       vtop->r = retreg;
       break;
     default:
-      tcc_error("gen_opi %i unimplemented!",op);
+      mcc_error("gen_opi %i unimplemented!",op);
   }
 }
 
-#ifdef TCC_ARM_VFP
+#ifdef MCC_ARM_VFP
 static int is_zero(int i)
 {
   if((vtop[i].r & (VT_VALMASK | VT_LVAL | VT_SYM)) != VT_CONST)
@@ -1671,7 +1671,7 @@ void gen_opf(int op)
       break;
     default:
       if(op < TOK_ULT || op > TOK_GT) {
-        tcc_error("unknown fp op %x!",op);
+        mcc_error("unknown fp op %x!",op);
         return;
       }
       if(is_zero(-1)) {
@@ -1715,7 +1715,7 @@ void gen_opf(int op)
     r2=gv(RC_FLOAT);
     x|=vfpr(r2)<<16;
     r|=regmask(r2);
-#ifdef CONFIG_TCC_BCHECK
+#ifdef CONFIG_MCC_BCHECK
     if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) {
       vswap();
       r=gv(RC_FLOAT);
@@ -1800,7 +1800,7 @@ void gen_opf(int op)
 	r2=c2&0xf;
       } else {
 	r2=fpr(gv(RC_FLOAT));
-#ifdef CONFIG_TCC_BCHECK
+#ifdef CONFIG_MCC_BCHECK
         if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) {
           vswap();
           r=fpr(gv(RC_FLOAT));
@@ -1828,7 +1828,7 @@ void gen_opf(int op)
 	r=fpr(gv(RC_FLOAT));
 	vswap();
 	r2=fpr(gv(RC_FLOAT));
-#ifdef CONFIG_TCC_BCHECK
+#ifdef CONFIG_MCC_BCHECK
         if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) {
           vswap();
           r=fpr(gv(RC_FLOAT));
@@ -1849,7 +1849,7 @@ void gen_opf(int op)
 	r2=c2;
       else {
 	r2=fpr(gv(RC_FLOAT));
-#ifdef CONFIG_TCC_BCHECK
+#ifdef CONFIG_MCC_BCHECK
         if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) {
           vswap();
           r=fpr(gv(RC_FLOAT));
@@ -1877,7 +1877,7 @@ void gen_opf(int op)
 	r=fpr(gv(RC_FLOAT));
 	vswap();
 	r2=fpr(gv(RC_FLOAT));
-#ifdef CONFIG_TCC_BCHECK
+#ifdef CONFIG_MCC_BCHECK
         if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) {
           vswap();
           r=fpr(gv(RC_FLOAT));
@@ -1894,7 +1894,7 @@ void gen_opf(int op)
 	  case TOK_UGE:
 	  case TOK_ULE:
 	  case TOK_UGT:
-            tcc_error("unsigned comparison on floats?");
+            mcc_error("unsigned comparison on floats?");
 	    break;
 	  case TOK_LT:
             op=TOK_Nset;
@@ -1934,7 +1934,7 @@ void gen_opf(int op)
 	  r2=c2&0xf;
 	} else {
 	  r2=fpr(gv(RC_FLOAT));
-#ifdef CONFIG_TCC_BCHECK
+#ifdef CONFIG_MCC_BCHECK
           if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) {
             vswap();
             r=fpr(gv(RC_FLOAT));
@@ -1946,7 +1946,7 @@ void gen_opf(int op)
         vset_VT_CMP(op);
         ++vtop;
       } else {
-        tcc_error("unknown fp op %x!",op);
+        mcc_error("unknown fp op %x!",op);
 	return;
       }
   }
@@ -1970,11 +1970,11 @@ ST_FUNC void gen_cvt_itof(int t)
   int bt;
   bt=vtop->type.t & VT_BTYPE;
   if(bt == VT_INT || bt == VT_SHORT || bt == VT_BYTE) {
-#ifndef TCC_ARM_VFP
+#ifndef MCC_ARM_VFP
     uint32_t dsize = 0;
 #endif
     r=intr(gv(RC_INT));
-#ifdef TCC_ARM_VFP
+#ifdef MCC_ARM_VFP
     r2=vfpr(vtop->r=get_reg(RC_FLOAT));
     o(0xEE000A10|(r<<12)|(r2<<16));
     r2|=r2<<12;
@@ -2039,7 +2039,7 @@ ST_FUNC void gen_cvt_itof(int t)
       return;
     }
   }
-  tcc_error("unimplemented gen_cvt_itof %x!",vtop->type.t);
+  mcc_error("unimplemented gen_cvt_itof %x!",vtop->type.t);
 }
 
 void gen_cvt_ftoi(int t)
@@ -2050,7 +2050,7 @@ void gen_cvt_ftoi(int t)
   t&=VT_BTYPE;
   r2=vtop->type.t & VT_BTYPE;
   if(t==VT_INT) {
-#ifdef TCC_ARM_VFP
+#ifdef MCC_ARM_VFP
     r=vfpr(gv(RC_FLOAT));
     u=u?0:0x10000;
     o(0xEEBC0AC0|(r<<12)|r|T2CPR(r2)|u);
@@ -2094,12 +2094,12 @@ void gen_cvt_ftoi(int t)
     vtop->r = REG_IRET;
     return;
   }
-  tcc_error("unimplemented gen_cvt_ftoi!");
+  mcc_error("unimplemented gen_cvt_ftoi!");
 }
 
 void gen_cvt_ftof(int t)
 {
-#ifdef TCC_ARM_VFP
+#ifdef MCC_ARM_VFP
   uint32_t r = gv(RC_FLOAT);
   if(((vtop->type.t & VT_BTYPE) == VT_FLOAT) != ((t & VT_BTYPE) == VT_FLOAT)) {
     r = vfpr(r);
@@ -2156,17 +2156,17 @@ ST_FUNC void gen_vla_sp_restore(int addr) {
 
 ST_FUNC void gen_vla_alloc(CType *type, int align) {
     int r;
-#if defined(CONFIG_TCC_BCHECK)
-    if (tcc_state->do_bounds_check)
+#if defined(CONFIG_MCC_BCHECK)
+    if (mcc_state->do_bounds_check)
         vpushv(vtop);
 #endif
     r = intr(gv(RC_INT));
-#if defined(CONFIG_TCC_BCHECK)
-    if (tcc_state->do_bounds_check)
+#if defined(CONFIG_MCC_BCHECK)
+    if (mcc_state->do_bounds_check)
         o(0xe2800001 | (r<<16)|(r<<12));
 #endif
     o(0xE04D0000|(r<<12)|r);
-#ifdef TCC_ARM_EABI
+#ifdef MCC_ARM_EABI
     if (align < 8)
         align = 8;
 #else
@@ -2174,11 +2174,11 @@ ST_FUNC void gen_vla_alloc(CType *type, int align) {
         align = 4;
 #endif
     if (align & (align - 1))
-        tcc_error("alignment is not a power of 2: %i", align);
+        mcc_error("alignment is not a power of 2: %i", align);
     o(stuff_const(0xE3C0D000|(r<<16), align - 1));
     vpop();
-#if defined(CONFIG_TCC_BCHECK)
-    if (tcc_state->do_bounds_check) {
+#if defined(CONFIG_MCC_BCHECK)
+    if (mcc_state->do_bounds_check) {
         vpushi(0);
         vtop->r = TREG_R0;
         o(0xe1a0000d | (vtop->r << 12));

@@ -412,7 +412,7 @@ extern "C" {
 #pragma pack(pop)
 
 
-#include "tcc/tcc_libm.h"
+#include "mcc/mcc_libm.h"
 
 #endif
 

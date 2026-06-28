@@ -1,9 +1,9 @@
-#ifdef __TINYC__
+#ifdef __MCC__
 #define	BUILTIN(x)	__builtin_##x
 #define	BUILTINN(x)	"__builtin_" # x
 #else
-#define	BUILTIN(x)	__tcc_builtin_##x
-#define	BUILTINN(x)	"__tcc_builtin_" # x
+#define	BUILTIN(x)	__mcc_builtin_##x
+#define	BUILTINN(x)	"__mcc_builtin_" # x
 #endif
 
 
@@ -110,32 +110,32 @@ int BUILTIN(parityl) (unsigned long x) __attribute__((alias(BUILTINN(parity))));
 int BUILTIN(parityl) (unsigned long x) __attribute__((alias(BUILTINN(parityll))));
 #endif
 
-#ifndef __TINYC__
+#ifndef __MCC__
 #if defined(__GNUC__) && (__GNUC__ >= 6)
 __asm__(".globl  __builtin_ffs");
-__asm__(".set __builtin_ffs,__tcc_builtin_ffs");
+__asm__(".set __builtin_ffs,__mcc_builtin_ffs");
 __asm__(".globl  __builtin_ffsl");
-__asm__(".set __builtin_ffsl,__tcc_builtin_ffsl");
+__asm__(".set __builtin_ffsl,__mcc_builtin_ffsl");
 __asm__(".globl  __builtin_ffsll");
-__asm__(".set __builtin_ffsll,__tcc_builtin_ffsll");
+__asm__(".set __builtin_ffsll,__mcc_builtin_ffsll");
 #else
-int __builtin_ffs(int x) __attribute__((alias("__tcc_builtin_ffs")));
-int __builtin_ffsl(long x) __attribute__((alias("__tcc_builtin_ffsl")));
-int __builtin_ffsll(long long x) __attribute__((alias("__tcc_builtin_ffsll")));
+int __builtin_ffs(int x) __attribute__((alias("__mcc_builtin_ffs")));
+int __builtin_ffsl(long x) __attribute__((alias("__mcc_builtin_ffsl")));
+int __builtin_ffsll(long long x) __attribute__((alias("__mcc_builtin_ffsll")));
 #endif
-int __builtin_clz(unsigned int x) __attribute__((alias("__tcc_builtin_clz")));
-int __builtin_clzl(unsigned long x) __attribute__((alias("__tcc_builtin_clzl")));
-int __builtin_clzll(unsigned long long x) __attribute__((alias("__tcc_builtin_clzll")));
-int __builtin_ctz(unsigned int x) __attribute__((alias("__tcc_builtin_ctz")));
-int __builtin_ctzl(unsigned long x) __attribute__((alias("__tcc_builtin_ctzl")));
-int __builtin_ctzll(unsigned long long x) __attribute__((alias("__tcc_builtin_ctzll")));
-int __builtin_clrsb(int x) __attribute__((alias("__tcc_builtin_clrsb")));
-int __builtin_clrsbl(long x) __attribute__((alias("__tcc_builtin_clrsbl")));
-int __builtin_clrsbll(long long x) __attribute__((alias("__tcc_builtin_clrsbll")));
-int __builtin_popcount(unsigned int x) __attribute__((alias("__tcc_builtin_popcount")));
-int __builtin_popcountl(unsigned long x) __attribute__((alias("__tcc_builtin_popcountl")));
-int __builtin_popcountll(unsigned long long x) __attribute__((alias("__tcc_builtin_popcountll")));
-int __builtin_parity(unsigned int x) __attribute__((alias("__tcc_builtin_parity")));
-int __builtin_parityl(unsigned long x) __attribute__((alias("__tcc_builtin_parityl")));
-int __builtin_parityll(unsigned long long x) __attribute__((alias("__tcc_builtin_parityll")));
+int __builtin_clz(unsigned int x) __attribute__((alias("__mcc_builtin_clz")));
+int __builtin_clzl(unsigned long x) __attribute__((alias("__mcc_builtin_clzl")));
+int __builtin_clzll(unsigned long long x) __attribute__((alias("__mcc_builtin_clzll")));
+int __builtin_ctz(unsigned int x) __attribute__((alias("__mcc_builtin_ctz")));
+int __builtin_ctzl(unsigned long x) __attribute__((alias("__mcc_builtin_ctzl")));
+int __builtin_ctzll(unsigned long long x) __attribute__((alias("__mcc_builtin_ctzll")));
+int __builtin_clrsb(int x) __attribute__((alias("__mcc_builtin_clrsb")));
+int __builtin_clrsbl(long x) __attribute__((alias("__mcc_builtin_clrsbl")));
+int __builtin_clrsbll(long long x) __attribute__((alias("__mcc_builtin_clrsbll")));
+int __builtin_popcount(unsigned int x) __attribute__((alias("__mcc_builtin_popcount")));
+int __builtin_popcountl(unsigned long x) __attribute__((alias("__mcc_builtin_popcountl")));
+int __builtin_popcountll(unsigned long long x) __attribute__((alias("__mcc_builtin_popcountll")));
+int __builtin_parity(unsigned int x) __attribute__((alias("__mcc_builtin_parity")));
+int __builtin_parityl(unsigned long x) __attribute__((alias("__mcc_builtin_parityl")));
+int __builtin_parityll(unsigned long long x) __attribute__((alias("__mcc_builtin_parityll")));
 #endif

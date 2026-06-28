@@ -1,6 +1,6 @@
 #ifdef TARGET_DEFS_ONLY
 
-#define EM_TCC_TARGET EM_ARM
+#define EM_MCC_TARGET EM_ARM
 
 #define R_DATA_32   R_ARM_ABS32
 #define R_DATA_PTR  R_ARM_ABS32
@@ -19,7 +19,7 @@
 
 #else
 
-#include "tcc.h"
+#include "mcc.h"
 
 #ifdef NEED_RELOC_TYPE
 ST_FUNC int code_reloc (int reloc_type)
@@ -99,7 +99,7 @@ ST_FUNC int gotplt_entry_type (int reloc_type)
 }
 
 #ifdef NEED_BUILD_GOT
-ST_FUNC unsigned create_plt_entry(TCCState *s1, unsigned got_offset, struct sym_attr *attr)
+ST_FUNC unsigned create_plt_entry(MCCState *s1, unsigned got_offset, struct sym_attr *attr)
 {
     Section *plt = s1->plt;
     uint8_t *p;
@@ -125,7 +125,7 @@ ST_FUNC unsigned create_plt_entry(TCCState *s1, unsigned got_offset, struct sym_
     return plt_offset;
 }
 
-ST_FUNC void relocate_plt(TCCState *s1)
+ST_FUNC void relocate_plt(MCCState *s1)
 {
     uint8_t *p, *p_end;
 
@@ -162,7 +162,7 @@ ST_FUNC void relocate_plt(TCCState *s1)
 #endif
 #endif
 
-ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr, addr_t addr, addr_t val)
+ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr, addr_t addr, addr_t val)
 {
     ElfW(Sym) *sym;
     int sym_index, esym_index;
@@ -186,7 +186,7 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
                 x <<= 2;
                 if (x & 0x2000000)
                     x -= 0x4000000;
-                blx_avail = (CONFIG_TCC_CPUVER >= 5);
+                blx_avail = (CONFIG_MCC_CPUVER >= 5);
                 is_thumb = val & 1;
                 is_bl = code == 0xeb000000;
                 is_call = (type == R_ARM_CALL || (type == R_ARM_PC24 && is_bl));
@@ -198,7 +198,7 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
                 h = x & 2;
                 th_ko = (x & 3) && (!blx_avail || !is_call);
                 if (th_ko || x >= 0x2000000 || x < -0x2000000)
-                    tcc_error_noabort("can't relocate value at %x,%d",addr, type);
+                    mcc_error_noabort("can't relocate value at %x,%d",addr, type);
                 x >>= 2;
                 x &= 0xffffff;
                 if (is_thumb) {
@@ -272,7 +272,7 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 
                 if (!to_thumb || x >= 0x1000000 || x < -0x1000000)
                     if (to_thumb || (val & 2) || (!is_call && !to_plt))
-                        tcc_error_noabort("can't relocate value at %x,%d",addr, type);
+                        mcc_error_noabort("can't relocate value at %x,%d",addr, type);
 
                 s = (x >> 24) & 1;
                 i1 = (x >> 23) & 1;
@@ -342,13 +342,13 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
                 x = (x * 2) / 2;
                 x += val - addr;
                 if((x^(x>>1))&0x40000000)
-                    tcc_error_noabort("can't relocate value at %x,%d",addr, type);
+                    mcc_error_noabort("can't relocate value at %x,%d",addr, type);
                 write32le(ptr, read32le(ptr) | (x & 0x7fffffff));
             }
             return;
         case R_ARM_ABS32:
         case R_ARM_TARGET1:
-            if (s1->output_type & TCC_OUTPUT_DYN) {
+            if (s1->output_type & MCC_OUTPUT_DYN) {
                 esym_index = get_sym_attr(s1, sym_index, 0)->dyn_index;
                 qrel->r_offset = rel->r_offset;
                 if (esym_index) {
@@ -392,7 +392,7 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
         case R_ARM_NONE:
             return;
         case R_ARM_RELATIVE:
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
             add32le(ptr, val - s1->pe_imagebase);
 #endif
             return;

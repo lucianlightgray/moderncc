@@ -17,29 +17,29 @@
     },
     {
       "name": "asan",
-      "displayName": "Sanitizer build (tcc_s)",
+      "displayName": "Sanitizer build (mcc_s)",
       "inherits": "debug",
-      "cacheVariables": { "TCC_BUILD_SANITIZE": "ON" }
+      "cacheVariables": { "MCC_BUILD_SANITIZE": "ON" }
     },
     {
       "name": "diagnostics",
-      "displayName": "Everything-on diagnostics (warnings + debug + tcc_s/tcc_p/tcc_c)",
+      "displayName": "Everything-on diagnostics (warnings + debug + mcc_s/mcc_p/mcc_c)",
       "inherits": "debug",
-      "cacheVariables": { "TCC_DIAGNOSTICS": "ON" }
+      "cacheVariables": { "MCC_DIAGNOSTICS": "ON" }
     },
     {
       "name": "cross",
       "displayName": "Native + all cross compilers",
       "inherits": "debug",
-      "cacheVariables": { "TCC_ENABLE_CROSS": "ON" }
+      "cacheVariables": { "MCC_ENABLE_CROSS": "ON" }
     },
     {
       "name": "matrix",
       "displayName": "Toolchain x target matrix (gcc;clang x native;cross)",
       "inherits": "debug",
       "cacheVariables": {
-        "TCC_TOOLCHAIN_PROFILE": "gcc;clang",
-        "TCC_TARGETS": "native;cross"
+        "MCC_TOOLCHAIN_PROFILE": "gcc;clang",
+        "MCC_TARGETS": "native;cross"
       }
     }
   ],

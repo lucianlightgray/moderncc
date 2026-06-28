@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include "libtcc.h"
+#include "libmcc.h"
 
 void handle_error(void *opaque, const char *msg)
 {
@@ -23,7 +23,7 @@ int add(int a, int b)
 const char hello[] = "Hello World!";
 
 char my_program[] =
-"#include <tcclib.h>\n"
+"#include <mcclib.h>\n"
 "extern int add(int a, int b);\n"
 "#ifdef _WIN32\n"
 " __attribute__((dllimport))\n"
@@ -47,49 +47,49 @@ char my_program[] =
 
 int main(int argc, char **argv)
 {
-    TCCState *s;
+    MCCState *s;
     int i;
     int (*func)(int);
 
-    s = tcc_new();
+    s = mcc_new();
     if (!s) {
-        fprintf(stderr, "Could not create tcc state\n");
+        fprintf(stderr, "Could not create mcc state\n");
         exit(1);
     }
 
 
-    tcc_set_error_func(s, stderr, handle_error);
+    mcc_set_error_func(s, stderr, handle_error);
 
 
     for (i = 1; i < argc; ++i) {
         char *a = argv[i];
         if (a[0] == '-') {
             if (a[1] == 'B')
-                tcc_set_lib_path(s, a+2);
+                mcc_set_lib_path(s, a+2);
             else if (a[1] == 'I')
-                tcc_add_include_path(s, a+2);
+                mcc_add_include_path(s, a+2);
             else if (a[1] == 'L')
-                tcc_add_library_path(s, a+2);
+                mcc_add_library_path(s, a+2);
         }
     }
 
 
-    tcc_set_output_type(s, TCC_OUTPUT_MEMORY);
+    mcc_set_output_type(s, MCC_OUTPUT_MEMORY);
 
-    if (tcc_compile_string(s, my_program) == -1)
+    if (mcc_compile_string(s, my_program) == -1)
         return 1;
 
 
 
-    tcc_add_symbol(s, "add", add);
-    tcc_add_symbol(s, "hello", hello);
+    mcc_add_symbol(s, "add", add);
+    mcc_add_symbol(s, "hello", hello);
 
 
-    if (tcc_relocate(s) < 0)
+    if (mcc_relocate(s) < 0)
         return 1;
 
 
-    func = tcc_get_symbol(s, "foo");
+    func = mcc_get_symbol(s, "foo");
     if (!func)
         return 1;
 
@@ -97,7 +97,7 @@ int main(int argc, char **argv)
     func(32);
 
 
-    tcc_delete(s);
+    mcc_delete(s);
 
     return 0;
 }

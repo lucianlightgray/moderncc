@@ -1,7 +1,7 @@
 #ifdef TARGET_DEFS_ONLY
 
-#ifndef TCC_DISABLE_ASM
-#define CONFIG_TCC_ASM
+#ifndef MCC_DISABLE_ASM
+#define CONFIG_MCC_ASM
 #endif
 #define NB_ASM_REGS 64
 
@@ -11,8 +11,8 @@ ST_FUNC void gen_le32(int c);
 
 #else
 #define USING_GLOBALS
-#include "tcc.h"
-#ifdef CONFIG_TCC_ASM
+#include "mcc.h"
+#ifdef CONFIG_MCC_ASM
 
 enum {
     OPT_REG,
@@ -45,7 +45,7 @@ static const Operand zero = { OP_REG, { 0 }};
 static const Operand ra = { OP_REG, { 1 }};
 static const Operand zimm = { OP_IM12S };
 
-static void asm_binary_opcode(TCCState* s1, int token);
+static void asm_binary_opcode(MCCState* s1, int token);
 ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str);
 ST_FUNC void asm_compute_constraints(ASMOperand *operands, int nb_operands, int nb_outputs, const uint8_t *clobber_regs, int *pout_reg);
 static void asm_emit_a(int token, uint32_t opcode, const Operand *rs1, const Operand *rs2, const Operand *rd1, int aq, int rl);
@@ -60,18 +60,18 @@ static void asm_emit_f(int token, uint32_t opcode, const Operand *rd, const Oper
 static void asm_emit_fb(int token, uint32_t opcode, const Operand *rd, const Operand *rs);
 static void asm_emit_fq(int token, uint32_t opcode, const Operand *rd, const Operand *rs1, const Operand *rs2, const Operand *rs3);
 ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands, int nb_outputs, int is_output, uint8_t *clobber_regs, int out_reg);
-static void asm_nullary_opcode(TCCState *s1, int token);
-ST_FUNC void asm_opcode(TCCState *s1, int token);
+static void asm_nullary_opcode(MCCState *s1, int token);
+ST_FUNC void asm_opcode(MCCState *s1, int token);
 static int asm_parse_csrvar(int t);
 ST_FUNC int asm_parse_regvar(int t);
-static void asm_ternary_opcode(TCCState *s1, int token);
-static void asm_unary_opcode(TCCState *s1, int token);
-static void asm_branch_opcode(TCCState *s1, int token, int argc);
+static void asm_ternary_opcode(MCCState *s1, int token);
+static void asm_unary_opcode(MCCState *s1, int token);
+static void asm_branch_opcode(MCCState *s1, int token, int argc);
 ST_FUNC void gen_expr32(ExprValue *pe);
-static void parse_operand(TCCState *s1, Operand *op);
-static void parse_branch_offset_operand(TCCState *s1, Operand *op);
-static void parse_operands(TCCState *s1, Operand *ops, int count);
-static void parse_mem_access_operands(TCCState *s1, Operand* ops);
+static void parse_operand(MCCState *s1, Operand *op);
+static void parse_branch_offset_operand(MCCState *s1, Operand *op);
+static void parse_operands(MCCState *s1, Operand *ops, int count);
+static void parse_mem_access_operands(MCCState *s1, Operand* ops);
 ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier);
 static void asm_emit_ca(int token, uint16_t opcode, const Operand *rd, const Operand *rs2);
 static void asm_emit_cb(int token, uint16_t opcode, const Operand *rs1, const Operand *imm);
@@ -124,7 +124,7 @@ static void asm_emit_opcode(uint32_t opcode) {
     gen_le32(opcode);
 }
 
-static void asm_nullary_opcode(TCCState *s1, int token)
+static void asm_nullary_opcode(MCCState *s1, int token)
 {
     switch (token) {
 
@@ -165,7 +165,7 @@ static void asm_nullary_opcode(TCCState *s1, int token)
     }
 }
 
-static void parse_operand(TCCState *s1, Operand *op)
+static void parse_operand(MCCState *s1, Operand *op)
 {
     ExprValue e = {0};
     Sym label = {0};
@@ -210,7 +210,7 @@ static void parse_operand(TCCState *s1, Operand *op)
     }
 }
 
-static void parse_branch_offset_operand(TCCState *s1, Operand *op){
+static void parse_branch_offset_operand(MCCState *s1, Operand *op){
     ExprValue e = {0};
 
     asm_expr(s1, &e);
@@ -227,7 +227,7 @@ static void parse_branch_offset_operand(TCCState *s1, Operand *op){
     }
 }
 
-static void parse_jump_offset_operand(TCCState *s1, Operand *op){
+static void parse_jump_offset_operand(MCCState *s1, Operand *op){
     ExprValue e = {0};
 
     asm_expr(s1, &e);
@@ -245,7 +245,7 @@ static void parse_jump_offset_operand(TCCState *s1, Operand *op){
     }
 }
 
-static void parse_operands(TCCState *s1, Operand* ops, int count){
+static void parse_operands(MCCState *s1, Operand* ops, int count){
     for (int i = 0; i < count; i++) {
         if ( i != 0 )
             skip(',');
@@ -253,7 +253,7 @@ static void parse_operands(TCCState *s1, Operand* ops, int count){
     }
 }
 
-static void parse_mem_access_operands(TCCState *s1, Operand* ops){
+static void parse_mem_access_operands(MCCState *s1, Operand* ops){
 
     Operand op;
 
@@ -279,7 +279,7 @@ static void parse_mem_access_operands(TCCState *s1, Operand* ops){
     }
 }
 
-static void asm_jal_opcode(TCCState *s1, int token){
+static void asm_jal_opcode(MCCState *s1, int token){
     Operand ops[2];
 
     if (token == TOK_ASM_j ){
@@ -294,7 +294,7 @@ static void asm_jal_opcode(TCCState *s1, int token){
     asm_emit_j(token, 0x6f, &ops[0], &ops[1]);
 }
 
-static void asm_jalr_opcode(TCCState *s1, int token){
+static void asm_jalr_opcode(MCCState *s1, int token){
     Operand ops[3];
     Operand op;
 
@@ -328,7 +328,7 @@ static void asm_jalr_opcode(TCCState *s1, int token){
 }
 
 
-static void asm_unary_opcode(TCCState *s1, int token)
+static void asm_unary_opcode(MCCState *s1, int token)
 {
     uint32_t opcode = (0x1C << 2) | 3 | (2 << 12);
     Operand op;
@@ -400,12 +400,12 @@ static void asm_unary_opcode(TCCState *s1, int token)
 static void asm_emit_u(int token, uint32_t opcode, const Operand* rd, const Operand* rs2)
 {
     if (rd->type != OP_REG) {
-        tcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
     }
     if (rs2->type != OP_IM12S && rs2->type != OP_IM32) {
-        tcc_error("'%s': Expected second source operand that is an immediate value", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected second source operand that is an immediate value", get_tok_str(token, NULL));
     } else if (rs2->e.v >= 0x100000) {
-        tcc_error("'%s': Expected second source operand that is an immediate value between 0 and 0xfffff", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected second source operand that is an immediate value between 0 and 0xfffff", get_tok_str(token, NULL));
     }
     gen_le32(opcode | ENCODE_RD(rd->reg) | (rs2->e.v << 12));
 }
@@ -419,23 +419,23 @@ static int parse_fence_operand(){
     return t - (TOK_ASM_w_fence - 1);
 }
 
-static void asm_fence_opcode(TCCState *s1, int token){
+static void asm_fence_opcode(MCCState *s1, int token){
     int succ = 0xF, pred = 0xF;
     if (tok != TOK_LINEFEED && tok != ';' && tok != CH_EOF){
         pred = parse_fence_operand();
         if ( pred > 0xF || pred < 0) {
-            tcc_error("'%s': Expected first operand that is a valid predecessor operand", get_tok_str(token, NULL));
+            mcc_error("'%s': Expected first operand that is a valid predecessor operand", get_tok_str(token, NULL));
         }
         skip(',');
         succ = parse_fence_operand();
         if ( succ > 0xF || succ < 0) {
-            tcc_error("'%s': Expected second operand that is a valid successor operand", get_tok_str(token, NULL));
+            mcc_error("'%s': Expected second operand that is a valid successor operand", get_tok_str(token, NULL));
         }
     }
     asm_emit_opcode((0x3 << 2) | 3 | (0 << 12) | succ<<20 | pred<<24);
 }
 
-static void asm_binary_opcode(TCCState* s1, int token)
+static void asm_binary_opcode(MCCState* s1, int token)
 {
     Operand imm = { OP_IM12S };
     Operand ops[2];
@@ -560,7 +560,7 @@ static void asm_binary_opcode(TCCState* s1, int token)
         return;
     case TOK_ASM_li:
         if(ops[1].type != OP_IM32 && ops[1].type != OP_IM12S){
-            tcc_error("'%s': Expected first source operand that is an immediate value between 0 and 0xFFFFFFFFFFFFFFFF", get_tok_str(token, NULL));
+            mcc_error("'%s': Expected first source operand that is an immediate value between 0 and 0xFFFFFFFFFFFFFFFF", get_tok_str(token, NULL));
         }
         lo = ops[1].e.v;
         hi = (int64_t)ops[1].e.v >> 32;
@@ -677,13 +677,13 @@ static void asm_binary_opcode(TCCState* s1, int token)
 static void asm_emit_r(int token, uint32_t opcode, const Operand* rd, const Operand* rs1, const Operand* rs2)
 {
     if (rd->type != OP_REG) {
-        tcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
     }
     if (rs1->type != OP_REG) {
-        tcc_error("'%s': Expected first source operand that is a register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected first source operand that is a register", get_tok_str(token, NULL));
     }
     if (rs2->type != OP_REG) {
-        tcc_error("'%s': Expected second source operand that is a register or immediate", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected second source operand that is a register or immediate", get_tok_str(token, NULL));
     }
     gen_le32(opcode | ENCODE_RD(rd->reg) | ENCODE_RS1(rs1->reg) | ENCODE_RS2(rs2->reg));
 }
@@ -691,39 +691,39 @@ static void asm_emit_r(int token, uint32_t opcode, const Operand* rd, const Oper
 static void asm_emit_f(int token, uint32_t opcode, const Operand* rd, const Operand* rs1, const Operand* rs2)
 {
     if (rd->type != OP_REG || !REG_IS_FLOAT(rd->reg)) {
-        tcc_error("'%s': Expected destination operand that is a floating-point register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected destination operand that is a floating-point register", get_tok_str(token, NULL));
     }
     if (rs1->type != OP_REG || !REG_IS_FLOAT(rs1->reg)) {
-        tcc_error("'%s': Expected first source operand that is a floating-point register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected first source operand that is a floating-point register", get_tok_str(token, NULL));
     }
     if (rs2->type != OP_REG || !REG_IS_FLOAT(rs2->reg)) {
-        tcc_error("'%s': Expected second source operand that is a floating-point register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected second source operand that is a floating-point register", get_tok_str(token, NULL));
     }
     gen_le32(opcode | ENCODE_RD(rd->reg) | ENCODE_RS1(rs1->reg) | ENCODE_RS2(rs2->reg));
 }
 static void asm_emit_fb(int token, uint32_t opcode, const Operand* rd, const Operand* rs)
 {
     if (rd->type != OP_REG || !REG_IS_FLOAT(rd->reg)) {
-        tcc_error("'%s': Expected destination operand that is a floating-point register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected destination operand that is a floating-point register", get_tok_str(token, NULL));
     }
     if (rs->type != OP_REG || !REG_IS_FLOAT(rs->reg)) {
-        tcc_error("'%s': Expected source operand that is a floating-point register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected source operand that is a floating-point register", get_tok_str(token, NULL));
     }
     gen_le32(opcode | ENCODE_RD(rd->reg) | ENCODE_RS1(rs->reg) | ENCODE_RS2(0));
 }
 static void asm_emit_fq(int token, uint32_t opcode, const Operand* rd, const Operand* rs1, const Operand* rs2, const Operand* rs3)
 {
     if (rd->type != OP_REG || !REG_IS_FLOAT(rd->reg)) {
-        tcc_error("'%s': Expected destination operand that is a floating-point register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected destination operand that is a floating-point register", get_tok_str(token, NULL));
     }
     if (rs1->type != OP_REG || !REG_IS_FLOAT(rs1->reg)) {
-        tcc_error("'%s': Expected first source operand that is a floating-point register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected first source operand that is a floating-point register", get_tok_str(token, NULL));
     }
     if (rs2->type != OP_REG || !REG_IS_FLOAT(rs2->reg)) {
-        tcc_error("'%s': Expected second source operand that is a floating-point register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected second source operand that is a floating-point register", get_tok_str(token, NULL));
     }
     if (rs3->type != OP_REG || !REG_IS_FLOAT(rs3->reg)) {
-        tcc_error("'%s': Expected third source operand that is a floating-point register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected third source operand that is a floating-point register", get_tok_str(token, NULL));
     }
     gen_le32(opcode | ENCODE_RD(rd->reg) | ENCODE_RS1(rs1->reg) | ENCODE_RS2(rs2->reg) | (REG_VALUE(rs3->reg) << 27));
 }
@@ -731,13 +731,13 @@ static void asm_emit_fq(int token, uint32_t opcode, const Operand* rd, const Ope
 static void asm_emit_i(int token, uint32_t opcode, const Operand* rd, const Operand* rs1, const Operand* rs2)
 {
     if (rd->type != OP_REG) {
-        tcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
     }
     if (rs1->type != OP_REG) {
-        tcc_error("'%s': Expected first source operand that is a register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected first source operand that is a register", get_tok_str(token, NULL));
     }
     if (rs2->type != OP_IM12S) {
-        tcc_error("'%s': Expected second source operand that is an immediate value between 0 and 8191", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected second source operand that is an immediate value between 0 and 8191", get_tok_str(token, NULL));
     }
 
     gen_le32(opcode | ENCODE_RD(rd->reg) | ENCODE_RS1(rs1->reg) | (rs2->e.v << 20));
@@ -748,25 +748,25 @@ static void asm_emit_j(int token, uint32_t opcode, const Operand* rd, const Oper
     uint32_t imm;
 
     if (rd->type != OP_REG) {
-        tcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
     }
     if (rs2->type != OP_IM12S && rs2->type != OP_IM32) {
-        tcc_error("'%s': Expected second source operand that is an immediate value", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected second source operand that is an immediate value", get_tok_str(token, NULL));
     }
 
     imm = rs2->e.v;
 
     if ((int)imm > (1 << 20) -1 || (int)imm <= -1 * ((1 << 20) -1)) {
-        tcc_error("'%s': Expected second source operand that is an immediate value between 0 and 0x1fffff", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected second source operand that is an immediate value between 0 and 0x1fffff", get_tok_str(token, NULL));
     }
 
     if (imm & 1) {
-        tcc_error("'%s': Expected second source operand that is an even immediate value", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected second source operand that is an even immediate value", get_tok_str(token, NULL));
     }
     gen_le32(opcode | ENCODE_RD(rd->reg) | (((imm >> 20) & 1) << 31) | (((imm >> 1) & 0x3ff) << 21) | (((imm >> 11) & 1) << 20) | (((imm >> 12) & 0xff) << 12));
 }
 
-static void asm_mem_access_opcode(TCCState *s1, int token)
+static void asm_mem_access_opcode(MCCState *s1, int token)
 {
 
     Operand ops[3];
@@ -823,7 +823,7 @@ static void asm_mem_access_opcode(TCCState *s1, int token)
     }
 }
 
-static void asm_branch_opcode(TCCState *s1, int token, int argc)
+static void asm_branch_opcode(MCCState *s1, int token, int argc)
 {
     Operand ops[3];
     parse_operands(s1, &ops[0], argc-1);
@@ -882,7 +882,7 @@ static void asm_branch_opcode(TCCState *s1, int token, int argc)
     }
 }
 
-static void asm_ternary_opcode(TCCState *s1, int token)
+static void asm_ternary_opcode(MCCState *s1, int token)
 {
     Operand ops[3];
     parse_operands(s1, &ops[0], 3);
@@ -1133,7 +1133,7 @@ static void asm_ternary_opcode(TCCState *s1, int token)
     }
 }
 
-static void asm_quaternary_opcode(TCCState *s1, int token)
+static void asm_quaternary_opcode(MCCState *s1, int token)
 {
     Operand ops[4];
     parse_operands(s1, &ops[0], 4);
@@ -1151,7 +1151,7 @@ static void asm_quaternary_opcode(TCCState *s1, int token)
     }
 }
 
-static void asm_atomic_opcode(TCCState *s1, int token)
+static void asm_atomic_opcode(MCCState *s1, int token)
 {
     Operand ops[3];
 
@@ -1374,24 +1374,24 @@ static void asm_atomic_opcode(TCCState *s1, int token)
 static void asm_emit_a(int token, uint32_t opcode, const Operand *rd1, const Operand *rs2, const Operand *rs1, int aq, int rl)
 {
     if (rd1->type != OP_REG)
-        tcc_error("'%s': Expected first destination operand that is a register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected first destination operand that is a register", get_tok_str(token, NULL));
     if (rs2->type != OP_REG)
-        tcc_error("'%s': Expected second source operand that is a register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected second source operand that is a register", get_tok_str(token, NULL));
     if (rs1->type != OP_REG)
-        tcc_error("'%s': Expected third source operand that is a register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected third source operand that is a register", get_tok_str(token, NULL));
     gen_le32(opcode | ENCODE_RS1(rs1->reg) | ENCODE_RS2(rs2->reg) | ENCODE_RD(rd1->reg) | aq << 26 | rl << 25);
 }
 
 static void asm_emit_s(int token, uint32_t opcode, const Operand* rs1, const Operand* rs2, const Operand* imm)
 {
     if (rs1->type != OP_REG) {
-        tcc_error("'%s': Expected first source operand that is a register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected first source operand that is a register", get_tok_str(token, NULL));
     }
     if (rs2->type != OP_REG) {
-        tcc_error("'%s': Expected second source operand that is a register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected second source operand that is a register", get_tok_str(token, NULL));
     }
     if (imm->type != OP_IM12S) {
-        tcc_error("'%s': Expected third operand that is an immediate value between 0 and 8191", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected third operand that is an immediate value between 0 and 8191", get_tok_str(token, NULL));
     }
     {
         uint16_t v = imm->e.v;
@@ -1404,10 +1404,10 @@ static void asm_emit_b(int token, uint32_t opcode, const Operand *rs1, const Ope
     uint32_t offset;
 
     if (rs1->type != OP_REG) {
-        tcc_error("'%s': Expected first source operand that is a register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected first source operand that is a register", get_tok_str(token, NULL));
     }
     if (rs2->type != OP_REG) {
-        tcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
     }
     if (imm->type == OP_IM32 && imm->e.sym) {
         int b_ofs = ind;
@@ -1426,7 +1426,7 @@ static void asm_emit_b(int token, uint32_t opcode, const Operand *rs1, const Ope
         return;
     }
     if (imm->type != OP_IM12S) {
-        tcc_error("'%s': Expected second source operand that is an immediate value between 0 and 8191", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected second source operand that is an immediate value between 0 and 8191", get_tok_str(token, NULL));
     }
 
     offset = imm->e.v;
@@ -1434,7 +1434,7 @@ static void asm_emit_b(int token, uint32_t opcode, const Operand *rs1, const Ope
     asm_emit_opcode(opcode | ENCODE_RS1(rs1->reg) | ENCODE_RS2(rs2->reg) | (((offset >> 1) & 0xF) << 8) | (((offset >> 5) & 0x1f) << 25) | (((offset >> 11) & 1) << 7) | (((offset >> 12) & 1) << 31));
 }
 
-static int asm_fcvt_rm(TCCState *s1)
+static int asm_fcvt_rm(MCCState *s1)
 {
     int rm = 7;
     if (tok == ',') {
@@ -1451,7 +1451,7 @@ static int asm_fcvt_rm(TCCState *s1)
     return rm;
 }
 
-static void asm_fcvt_opcode(TCCState *s1, int token)
+static void asm_fcvt_opcode(MCCState *s1, int token)
 {
     Operand ops[2];
     int rm;
@@ -1487,7 +1487,7 @@ static void asm_fcvt_opcode(TCCState *s1, int token)
     asm_emit_opcode(enc | ENCODE_RD(ops[0].reg) | ENCODE_RS1(ops[1].reg));
 }
 
-ST_FUNC void asm_opcode(TCCState *s1, int token)
+ST_FUNC void asm_opcode(MCCState *s1, int token)
 {
     switch (token) {
     case TOK_ASM_ebreak:
@@ -1904,7 +1904,7 @@ ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier)
             if (sv->sym->v >= SYM_FIRST_ANOM) {
                 get_asm_sym(tok_alloc(name, strlen(name))->tok, sv->sym);
             }
-            if (tcc_state->leading_underscore)
+            if (mcc_state->leading_underscore)
                 cstr_ccat(add_str, '_');
             cstr_cat(add_str, name, -1);
             if ((uint32_t) sv->c.i == 0)
@@ -1925,7 +1925,7 @@ ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier)
     } else if (r & VT_LVAL) {
         reg = r & VT_VALMASK;
         if (reg >= VT_CONST)
-            tcc_internal_error("");
+            mcc_internal_error("");
         if ((sv->type.t & VT_BTYPE) == VT_FLOAT ||
             (sv->type.t & VT_BTYPE) == VT_DOUBLE) {
             reg = TOK_ASM_f0 + REG_VALUE(reg);
@@ -1936,7 +1936,7 @@ ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier)
     } else {
         reg = r & VT_VALMASK;
         if (reg >= VT_CONST)
-            tcc_internal_error("");
+            mcc_internal_error("");
         if ((sv->type.t & VT_BTYPE) == VT_FLOAT ||
             (sv->type.t & VT_BTYPE) == VT_DOUBLE) {
             reg = TOK_ASM_f0 + REG_VALUE(reg);
@@ -1947,10 +1947,10 @@ ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier)
     }
 }
 
-static int tcc_ireg(int r){
+static int mcc_ireg(int r){
     return REG_VALUE(r) - 10;
 }
-static int tcc_freg(int r){
+static int mcc_freg(int r){
     return REG_VALUE(r) - 10 + 8;
 }
 
@@ -2001,13 +2001,13 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
                     sv = *op->vt;
                     sv.r = (sv.r & ~VT_VALMASK) | VT_LOCAL | VT_LVAL;
                     sv.type.t = VT_PTR;
-                    load(tcc_ireg(op->reg), &sv);
+                    load(mcc_ireg(op->reg), &sv);
                 } else if (i >= nb_outputs || op->is_rw) {
                     if ((op->vt->type.t & VT_BTYPE) == VT_FLOAT ||
                         (op->vt->type.t & VT_BTYPE) == VT_DOUBLE) {
-                        load(tcc_freg(op->reg), op->vt);
+                        load(mcc_freg(op->reg), op->vt);
                     } else {
-                        load(tcc_ireg(op->reg), op->vt);
+                        load(mcc_ireg(op->reg), op->vt);
                     }
                 }
             }
@@ -2022,18 +2022,18 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
                         sv = *op->vt;
                         sv.r = (sv.r & ~VT_VALMASK) | VT_LOCAL;
                         sv.type.t = VT_PTR;
-                        load(tcc_ireg(out_reg), &sv);
+                        load(mcc_ireg(out_reg), &sv);
 
                         sv = *op->vt;
                         sv.r = (sv.r & ~VT_VALMASK) | out_reg;
-                        store(tcc_ireg(op->reg), &sv);
+                        store(mcc_ireg(op->reg), &sv);
                     }
                 } else {
                     if ((op->vt->type.t & VT_BTYPE) == VT_FLOAT ||
                         (op->vt->type.t & VT_BTYPE) == VT_DOUBLE) {
-                        store(tcc_freg(op->reg), op->vt);
+                        store(mcc_freg(op->reg), op->vt);
                     } else {
-                        store(tcc_ireg(op->reg), op->vt);
+                        store(mcc_ireg(op->reg), op->vt);
                     }
                 }
             }
@@ -2080,9 +2080,9 @@ static inline int constraint_priority(const char *str)
             pr = 4;
             break;
         case 'v':
-            tcc_error("unimp: constraint '%c'", c);
+            mcc_error("unimp: constraint '%c'", c);
         default:
-            tcc_error("unknown constraint '%d'", c);
+            mcc_error("unknown constraint '%d'", c);
         }
         if (pr > priority)
             priority = pr;
@@ -2130,11 +2130,11 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
         if (isnum(*str) || *str == '[') {
             k = find_constraint(operands, nb_operands, str, NULL);
             if ((unsigned) k >= i || i < nb_outputs)
-                tcc_error("invalid reference in constraint %d ('%s')",
+                mcc_error("invalid reference in constraint %d ('%s')",
                           i, str);
             op->ref_index = k;
             if (operands[k].input_index >= 0)
-                tcc_error("cannot reference twice the same operand");
+                mcc_error("cannot reference twice the same operand");
             operands[k].input_index = i;
             op->priority = 5;
         } else if ((op->vt->r & VT_VALMASK) == VT_LOCAL
@@ -2183,7 +2183,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
         }
         if (op->reg >= 0) {
             if (is_reg_allocated(op->reg))
-                tcc_error
+                mcc_error
                     ("asm regvar requests register that's taken already");
             reg = op->reg;
         }
@@ -2196,7 +2196,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
             op->is_rw = 1;
         case '&':
             if (j >= nb_outputs)
-                tcc_error("'%c' modifier can only be applied to outputs", c);
+                mcc_error("'%c' modifier can only be applied to outputs", c);
             reg_mask = REG_IN_MASK | REG_OUT_MASK;
             goto try_next;
         case 'r':
@@ -2243,7 +2243,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
             }
             break;
         default:
-            tcc_error("asm constraint %d ('%s') could not be satisfied",
+            mcc_error("asm constraint %d ('%s') could not be satisfied",
                       j, op->constraint);
             break;
         }
@@ -2269,7 +2269,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
                         goto reg_found2;
                 }
             }
-            tcc_error("could not find free output register for reloading");
+            mcc_error("could not find free output register for reloading");
           reg_found2:
             *pout_reg = reg;
             break;
@@ -2302,7 +2302,7 @@ ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str)
     ts = tok_alloc(str, strlen(str));
     reg = asm_parse_regvar(ts->tok);
     if (reg == -1) {
-        tcc_error("invalid clobber register '%s'", str);
+        mcc_error("invalid clobber register '%s'", str);
     }
     clobber_regs[reg] = 1;
 }
@@ -2330,22 +2330,22 @@ static void asm_emit_ca(int token, uint16_t opcode, const Operand *rd, const Ope
     uint8_t dst, src;
 
     if (rd->type != OP_REG) {
-        tcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
     }
 
     if (rs2->type != OP_REG) {
-        tcc_error("'%s': Expected source operand that is a register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected source operand that is a register", get_tok_str(token, NULL));
     }
 
     dst = rd->reg - 8;
     src = rs2->reg - 8;
 
     if (dst > 7) {
-        tcc_error("'%s': Expected destination operand that is a valid C-extension register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected destination operand that is a valid C-extension register", get_tok_str(token, NULL));
     }
 
     if (src > 7) {
-        tcc_error("'%s': Expected source operand that is a valid C-extension register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected source operand that is a valid C-extension register", get_tok_str(token, NULL));
     }
 
 
@@ -2358,23 +2358,23 @@ static void asm_emit_cb(int token, uint16_t opcode, const Operand *rs1, const Op
     uint8_t src;
 
     if (rs1->type != OP_REG) {
-        tcc_error("'%s': Expected source operand that is a register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected source operand that is a register", get_tok_str(token, NULL));
     }
 
     if (imm->type != OP_IM12S && imm->type != OP_IM32) {
-        tcc_error("'%s': Expected source operand that is an immediate value", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected source operand that is an immediate value", get_tok_str(token, NULL));
     }
 
     offset = imm->e.v;
 
     if (offset & 1) {
-        tcc_error("'%s': Expected source operand that is an even immediate value", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected source operand that is an even immediate value", get_tok_str(token, NULL));
     }
 
     src = rs1->reg - 8;
 
     if (src > 7) {
-        tcc_error("'%s': Expected source operand that is a valid C-extension register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected source operand that is a valid C-extension register", get_tok_str(token, NULL));
     }
 
 
@@ -2395,11 +2395,11 @@ static void asm_emit_ci(int token, uint16_t opcode, const Operand *rd, const Ope
     uint32_t immediate;
 
     if (rd->type != OP_REG) {
-        tcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
     }
 
     if (imm->type != OP_IM12S && imm->type != OP_IM32) {
-        tcc_error("'%s': Expected source operand that is an immediate value", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected source operand that is an immediate value", get_tok_str(token, NULL));
     }
 
     immediate = imm->e.v;
@@ -2440,27 +2440,27 @@ static void asm_emit_ciw(int token, uint16_t opcode, const Operand *rd, const Op
     uint8_t dst;
 
     if (rd->type != OP_REG) {
-        tcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
     }
 
     if (imm->type != OP_IM12S && imm->type != OP_IM32) {
-        tcc_error("'%s': Expected source operand that is an immediate value", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected source operand that is an immediate value", get_tok_str(token, NULL));
     }
 
     dst = rd->reg - 8;
 
     if (dst > 7) {
-        tcc_error("'%s': Expected destination operand that is a valid C-extension register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected destination operand that is a valid C-extension register", get_tok_str(token, NULL));
     }
 
     nzuimm = imm->e.v;
 
     if (nzuimm > 0x3fc) {
-        tcc_error("'%s': Expected source operand that is an immediate value between 0 and 0x3ff", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected source operand that is an immediate value between 0 and 0x3ff", get_tok_str(token, NULL));
     }
 
     if (nzuimm & 3) {
-        tcc_error("'%s': Expected source operand that is a non-zero immediate value divisible by 4", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected source operand that is a non-zero immediate value divisible by 4", get_tok_str(token, NULL));
     }
 
 
@@ -2472,13 +2472,13 @@ static void asm_emit_cj(int token, uint16_t opcode, const Operand *imm)
     uint32_t offset;
 
     if (imm->type != OP_IM12S) {
-        tcc_error("'%s': Expected source operand that is a 12-bit immediate value", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected source operand that is a 12-bit immediate value", get_tok_str(token, NULL));
     }
 
     offset = imm->e.v;
 
     if (offset & 1) {
-        tcc_error("'%s': Expected source operand that is an even immediate value", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected source operand that is an even immediate value", get_tok_str(token, NULL));
     }
 
 
@@ -2491,36 +2491,36 @@ static void asm_emit_cl(int token, uint16_t opcode, const Operand *rd, const Ope
     uint8_t dst, src;
 
     if (rd->type != OP_REG) {
-        tcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
     }
 
     if (rs1->type != OP_REG) {
-        tcc_error("'%s': Expected source operand that is a register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected source operand that is a register", get_tok_str(token, NULL));
     }
 
     if (imm->type != OP_IM12S && imm->type != OP_IM32) {
-        tcc_error("'%s': Expected source operand that is an immediate value", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected source operand that is an immediate value", get_tok_str(token, NULL));
     }
 
     dst = rd->reg - 8;
     src = rs1->reg - 8;
 
     if (dst > 7) {
-        tcc_error("'%s': Expected destination operand that is a valid C-extension register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected destination operand that is a valid C-extension register", get_tok_str(token, NULL));
     }
 
     if (src > 7) {
-        tcc_error("'%s': Expected source operand that is a valid C-extension register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected source operand that is a valid C-extension register", get_tok_str(token, NULL));
     }
 
     offset = imm->e.v;
 
     if (offset > 0xff) {
-        tcc_error("'%s': Expected source operand that is an immediate value between 0 and 0xff", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected source operand that is an immediate value between 0 and 0xff", get_tok_str(token, NULL));
     }
 
     if (offset & 3) {
-        tcc_error("'%s': Expected source operand that is an immediate value divisible by 4", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected source operand that is an immediate value divisible by 4", get_tok_str(token, NULL));
     }
 
 
@@ -2541,11 +2541,11 @@ static void asm_emit_cl(int token, uint16_t opcode, const Operand *rd, const Ope
 static void asm_emit_cr(int token, uint16_t opcode, const Operand *rd, const Operand *rs2)
 {
     if (rd->type != OP_REG) {
-        tcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
     }
 
     if (rs2->type != OP_REG) {
-        tcc_error("'%s': Expected source operand that is a register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected source operand that is a register", get_tok_str(token, NULL));
     }
 
 
@@ -2558,36 +2558,36 @@ static void asm_emit_cs(int token, uint16_t opcode, const Operand *rs2, const Op
     uint8_t base, src;
 
     if (rs2->type != OP_REG) {
-        tcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
     }
 
     if (rs1->type != OP_REG) {
-        tcc_error("'%s': Expected source operand that is a register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected source operand that is a register", get_tok_str(token, NULL));
     }
 
     if (imm->type != OP_IM12S && imm->type != OP_IM32) {
-        tcc_error("'%s': Expected source operand that is an immediate value", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected source operand that is an immediate value", get_tok_str(token, NULL));
     }
 
     base = rs1->reg - 8;
     src = rs2->reg - 8;
 
     if (base > 7) {
-        tcc_error("'%s': Expected destination operand that is a valid C-extension register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected destination operand that is a valid C-extension register", get_tok_str(token, NULL));
     }
 
     if (src > 7) {
-        tcc_error("'%s': Expected source operand that is a valid C-extension register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected source operand that is a valid C-extension register", get_tok_str(token, NULL));
     }
 
     offset = imm->e.v;
 
     if (offset > 0xff) {
-        tcc_error("'%s': Expected source operand that is an immediate value between 0 and 0xff", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected source operand that is an immediate value between 0 and 0xff", get_tok_str(token, NULL));
     }
 
     if (offset & 3) {
-        tcc_error("'%s': Expected source operand that is an immediate value divisible by 4", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected source operand that is an immediate value divisible by 4", get_tok_str(token, NULL));
     }
 
     switch (token) {
@@ -2609,21 +2609,21 @@ static void asm_emit_css(int token, uint16_t opcode, const Operand *rs2, const O
     uint32_t offset;
 
     if (rs2->type != OP_REG) {
-        tcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
     }
 
     if (imm->type != OP_IM12S && imm->type != OP_IM32) {
-        tcc_error("'%s': Expected source operand that is an immediate value", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected source operand that is an immediate value", get_tok_str(token, NULL));
     }
 
     offset = imm->e.v;
 
     if (offset > 0xff) {
-        tcc_error("'%s': Expected source operand that is an immediate value between 0 and 0xff", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected source operand that is an immediate value between 0 and 0xff", get_tok_str(token, NULL));
     }
 
     if (offset & 3) {
-        tcc_error("'%s': Expected source operand that is an immediate value divisible by 4", get_tok_str(token, NULL));
+        mcc_error("'%s': Expected source operand that is an immediate value divisible by 4", get_tok_str(token, NULL));
     }
 
 

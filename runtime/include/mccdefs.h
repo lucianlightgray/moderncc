@@ -128,7 +128,7 @@
     #define _Nullable_result
     #define _Null_unspecified
 
-    #ifndef __TCC_PP__
+    #ifndef __MCC_PP__
 
     #define __builtin_offsetof(type, field) ((__SIZE_TYPE__)&((type*)0)->field)
     #define __builtin_extract_return_addr(x) x
@@ -175,11 +175,11 @@
 
 #elif defined __arm__
     typedef char *__builtin_va_list;
-    #define _tcc_alignof(type) ((int)&((struct {char c;type x;} *)0)->x)
-    #define _tcc_align(addr,type) (((unsigned)addr + _tcc_alignof(type) - 1) \
-                                  & ~(_tcc_alignof(type) - 1))
+    #define _mcc_alignof(type) ((int)&((struct {char c;type x;} *)0)->x)
+    #define _mcc_align(addr,type) (((unsigned)addr + _mcc_alignof(type) - 1) \
+                                  & ~(_mcc_alignof(type) - 1))
     #define __builtin_va_start(ap,last) (ap = ((char *)&(last)) + ((sizeof(last)+3)&~3))
-    #define __builtin_va_arg(ap,type) (ap = (void *) ((_tcc_align(ap,type)+sizeof(type)+3) \
+    #define __builtin_va_arg(ap,type) (ap = (void *) ((_mcc_align(ap,type)+sizeof(type)+3) \
                            &~3), *(type *)(ap - ((sizeof(type)+3)&~3)))
 
 #elif defined __aarch64__
@@ -200,9 +200,9 @@
 #elif defined __riscv
     typedef char *__builtin_va_list;
     #define __va_reg_size (__riscv_xlen >> 3)
-    #define _tcc_align(addr,type) (((unsigned long)addr + __alignof__(type) - 1) \
+    #define _mcc_align(addr,type) (((unsigned long)addr + __alignof__(type) - 1) \
                                   & -(__alignof__(type)))
-    #define __builtin_va_arg(ap,type) (*(sizeof(type) > (2*__va_reg_size) ? *(type **)((ap += __va_reg_size) - __va_reg_size) : (ap = (va_list)(_tcc_align(ap,type) + (sizeof(type)+__va_reg_size - 1)& -__va_reg_size), (type *)(ap - ((sizeof(type)+ __va_reg_size - 1)& -__va_reg_size)))))
+    #define __builtin_va_arg(ap,type) (*(sizeof(type) > (2*__va_reg_size) ? *(type **)((ap += __va_reg_size) - __va_reg_size) : (ap = (va_list)(_mcc_align(ap,type) + (sizeof(type)+__va_reg_size - 1)& -__va_reg_size), (type *)(ap - ((sizeof(type)+ __va_reg_size - 1)& -__va_reg_size)))))
 
 #else
     typedef char *__builtin_va_list;
@@ -221,7 +221,7 @@
     # define __RENAME(X) __asm__(X)
     #endif
 
-    #ifdef __TCC_BCHECK__
+    #ifdef __MCC_BCHECK__
     # define __BUILTINBC(ret,name,params) ret __builtin_##name params __RENAME("__bound_"#name);
     # define __BOUND(ret,name,params) ret name params __RENAME("__bound_"#name);
     #else

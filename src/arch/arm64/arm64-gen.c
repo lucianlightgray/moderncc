@@ -25,19 +25,19 @@
 
 #define MAX_ALIGN 16
 
-#if !defined(TCC_TARGET_MACHO) && !defined(TCC_TARGET_PE)
+#if !defined(MCC_TARGET_MACHO) && !defined(MCC_TARGET_PE)
 #define CHAR_IS_UNSIGNED
 #endif
 
 #define PROMOTE_RET
 #else
 #define USING_GLOBALS
-#include "tcc.h"
+#include "mcc.h"
 #include <assert.h>
 
 ST_DATA const char * const target_machine_defs =
     "__aarch64__\0"
-#if defined(TCC_TARGET_MACHO)
+#if defined(MCC_TARGET_MACHO)
     "__arm64__\0"
 #endif
     "__AARCH64EL__\0"
@@ -62,7 +62,7 @@ ST_DATA const int reg_classes[NB_REGS] = {
   RC_INT | RC_R(15),
   RC_INT | RC_R(16),
   RC_INT | RC_R(17),
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
   RC_R(18),
 #else
   RC_INT | RC_R(18),
@@ -78,7 +78,7 @@ ST_DATA const int reg_classes[NB_REGS] = {
   RC_FLOAT | RC_F(7)
 };
 
-#if defined(CONFIG_TCC_BCHECK)
+#if defined(CONFIG_MCC_BCHECK)
 static addr_t func_bound_offset;
 static unsigned long func_bound_ind;
 ST_DATA int func_bound_add_epilog;
@@ -231,7 +231,7 @@ ST_FUNC void gsym_addr(int t_, int a_)
         unsigned char *ptr = cur_text_section->data + t;
         uint32_t next = read32le(ptr);
         if (a - t + 0x8000000 >= 0x10000000)
-            tcc_error("branch out of range");
+            mcc_error("branch out of range");
         write32le(ptr, (a - t == 4 ? ARM64_NOP :
                         ARM64_B | ((a - t) >> 2 & 0x3ffffff)));
         t = next;
@@ -436,7 +436,7 @@ static void arm64_strv(int sz_, int dst, int bas, uint64_t off)
 
 static void arm64_sym(int r, Sym *sym, unsigned long addend)
 {
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
     greloca(cur_text_section, sym, ind, R_AARCH64_ADR_PREL_PG_HI21, 0);
     o(ARM64_ADRP | r);
     greloca(cur_text_section, sym, ind, R_AARCH64_ADD_ABS_LO12_NC, 0);
@@ -701,14 +701,14 @@ static void arm64_gen_bl_or_b(int b)
 	o(b ? ARM64_B : ARM64_BL);
     }
     else {
-#ifdef CONFIG_TCC_BCHECK
+#ifdef CONFIG_MCC_BCHECK
         vtop->r &= ~VT_MUSTBOUND;
 #endif
         o((b ? ARM64_BR : ARM64_BLR) | intr(gv(RC_R30)) << 5);
     }
 }
 
-#if defined(CONFIG_TCC_BCHECK)
+#if defined(CONFIG_MCC_BCHECK)
 
 static void gen_bounds_call(int v)
 {
@@ -843,13 +843,13 @@ static unsigned long arm64_pcs_aux(int variadic, int n, CType **type, unsigned l
         else
             size = type_size(type[i], &align);
 
-#if defined(TCC_TARGET_MACHO)
+#if defined(MCC_TARGET_MACHO)
         if (variadic && i == variadic) {
             nx = 8;
             nv = 8;
 	}
 
-#elif defined(TCC_TARGET_PE)
+#elif defined(MCC_TARGET_PE)
         if (variadic && i >= variadic) {
             hfa = 0;
             if (is_float(bt))
@@ -992,7 +992,7 @@ static void arm64_sub_sp(uint64_t diff)
 {
     if (!diff)
         return;
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
     if (diff >= 4096) {
         Sym *sym = external_helper_sym(TOK___chkstk);
 
@@ -1034,8 +1034,8 @@ ST_FUNC void gfunc_call(int nb_args)
 
     save_regs(nb_args + 1);
 
-#ifdef CONFIG_TCC_BCHECK
-    if (tcc_state->do_bounds_check)
+#ifdef CONFIG_MCC_BCHECK
+    if (mcc_state->do_bounds_check)
         gbound_args(nb_args);
 #endif
 
@@ -1043,16 +1043,16 @@ ST_FUNC void gfunc_call(int nb_args)
     if ((return_type->t & VT_BTYPE) == VT_STRUCT)
         --nb_args;
 
-    t = tcc_malloc((nb_args + 1) * sizeof(*t));
-    a = tcc_malloc((nb_args + 1) * sizeof(*a));
-    a1 = tcc_malloc((nb_args + 1) * sizeof(*a1));
+    t = mcc_malloc((nb_args + 1) * sizeof(*t));
+    a = mcc_malloc((nb_args + 1) * sizeof(*a));
+    a1 = mcc_malloc((nb_args + 1) * sizeof(*a1));
 
     t[0] = return_type;
     for (int i = 0; i < nb_args; i++)
         t[nb_args - i] = &vtop[-i].type;
 
     stack = arm64_pcs(
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
         old_style ?   -1 :
 #endif
         var_nb_arg, nb_args + 1, t, a);
@@ -1070,7 +1070,7 @@ ST_FUNC void gfunc_call(int nb_args)
     stack = (stack + 15) >> 4 << 4;
 
     if (stack >= 0x1000000)
-        tcc_error("stack size too big %lu", stack);
+        mcc_error("stack size too big %lu", stack);
     arm64_sub_sp(stack);
 
     for (int i = nb_args; i; i--) {
@@ -1193,9 +1193,9 @@ ST_FUNC void gfunc_call(int nb_args)
         }
     }
 
-    tcc_free(a1);
-    tcc_free(a);
-    tcc_free(t);
+    mcc_free(a1);
+    mcc_free(a);
+    mcc_free(t);
 }
 
 static unsigned long arm64_func_va_list_stack;
@@ -1206,7 +1206,7 @@ static int arm64_func_sub_sp_offset;
 static unsigned arm64_func_start_offset;
 #define ARM64_FUNC_STACK_SETUP_SLOTS 6
 
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
 static unsigned long arm64_pe_param_off(unsigned long a)
 {
     return a < 16 ? 160 + a / 2 * 8 :
@@ -1234,28 +1234,28 @@ ST_FUNC void gfunc_prolog(Sym *func_sym)
     for (sym = func_type->ref; sym; sym = sym->next)
         ++n;
 
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
     n += variadic;
 #endif
 
-    t = tcc_malloc(n * sizeof(*t));
-    a = tcc_malloc(n * sizeof(*a));
+    t = mcc_malloc(n * sizeof(*t));
+    a = mcc_malloc(n * sizeof(*a));
     for (sym = func_type->ref; sym; sym = sym->next)
         t[i++] = &sym->type;
 
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
     if (variadic)
         t[i] = &int_type;
 #endif
 
     arm64_func_va_list_stack = arm64_pcs(var_nb_arg, n, t, a);
 
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
     if (variadic)
         arm64_func_va_list_stack = arm64_pe_param_off(a[n - 1]);
 #endif
 
-#if !defined(TCC_TARGET_MACHO)
+#if !defined(MCC_TARGET_MACHO)
     if (variadic) {
         use_x8 = 1;
         last_int = 4;
@@ -1323,15 +1323,15 @@ ST_FUNC void gfunc_prolog(Sym *func_sym)
         }
     }
 
-    tcc_free(a);
-    tcc_free(t);
+    mcc_free(a);
+    mcc_free(t);
 
     arm64_func_sub_sp_offset = ind;
     for (i = 0; i < ARM64_FUNC_STACK_SETUP_SLOTS; ++i)
         o(ARM64_NOP);
     loc = 0;
-#ifdef CONFIG_TCC_BCHECK
-    if (tcc_state->do_bounds_check)
+#ifdef CONFIG_MCC_BCHECK
+    if (mcc_state->do_bounds_check)
         gen_bounds_prolog();
 #endif
 }
@@ -1342,7 +1342,7 @@ ST_FUNC void gen_va_start(void)
     --vtop;
     r = intr(gv_addr(RC_INT));
 
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
     if (arm64_func_va_list_stack) {
         arm64_movimm(30, arm64_func_va_list_stack);
         o(0x8b1e03be);
@@ -1358,7 +1358,7 @@ ST_FUNC void gen_va_start(void)
         o(0x910383be);
     o(0xf900001e | r << 5);
 
-#if !defined(TCC_TARGET_MACHO)
+#if !defined(MCC_TARGET_MACHO)
     if (arm64_func_va_list_gr_offs) {
         if (arm64_func_va_list_stack)
             o(0x910383be);
@@ -1386,7 +1386,7 @@ ST_FUNC void gen_va_arg(CType *t)
     int align, size = type_size(t, &align);
     uint32_t r0, r1;
 
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
     int indirect = 0, slot = (size + 7) & -8;
 
     if (size > 16)
@@ -1429,7 +1429,7 @@ ST_FUNC void gen_va_arg(CType *t)
     if (!hfa) {
         uint32_t n = size > 16 ? 8 : (size + 7) & -8;
 
-#if !defined(TCC_TARGET_MACHO)
+#if !defined(MCC_TARGET_MACHO)
         o(0xb940181e | r0 << 5);
         if (align == 16) {
             assert(0);
@@ -1448,7 +1448,7 @@ ST_FUNC void gen_va_arg(CType *t)
         o(0x9100001e | r1 << 5 | n << 10);
         o(0xf900001e | r0 << 5);
 
-#if !defined(TCC_TARGET_MACHO)
+#if !defined(MCC_TARGET_MACHO)
         o(ARM64_B | 4);
         o(0xb9001800 | r1 | r0 << 5);
         o(0xf9400400 | r1 | r0 << 5);
@@ -1460,7 +1460,7 @@ ST_FUNC void gen_va_arg(CType *t)
     }
     else {
         uint32_t ssz = (size + 7) & -(uint32_t)8;
-#if !defined(TCC_TARGET_MACHO)
+#if !defined(MCC_TARGET_MACHO)
         uint32_t rsz = hfa << 4;
         uint32_t b1, b2;
         o(0xb9401c1e | r0 << 5);
@@ -1474,7 +1474,7 @@ ST_FUNC void gen_va_arg(CType *t)
         }
         o(0x9100001e | r1 << 5 | ssz << 10);
         o(0xf900001e | r0 << 5);
-#if !defined(TCC_TARGET_MACHO)
+#if !defined(MCC_TARGET_MACHO)
         b2 = ind; o(ARM64_B);
         write32le(cur_text_section->data + b1, 0x5400000d | (ind - b1) << 3);
         o(0xb9001c00 | r1 | r0 << 5);
@@ -1553,8 +1553,8 @@ ST_FUNC void gfunc_return(CType *func_type)
 
 ST_FUNC void gfunc_epilog(void)
 {
-#ifdef CONFIG_TCC_BCHECK
-    if (tcc_state->do_bounds_check)
+#ifdef CONFIG_MCC_BCHECK
+    if (mcc_state->do_bounds_check)
         gen_bounds_epilog();
 #endif
 
@@ -1573,7 +1573,7 @@ ST_FUNC void gfunc_epilog(void)
 
     o(0xd65f03c0);
 
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
     pe_add_unwind_data(arm64_func_start_offset, ind, -loc);
 #endif
 }
@@ -1581,7 +1581,7 @@ ST_FUNC void gfunc_epilog(void)
 ST_FUNC void gen_fill_nops(int bytes)
 {
     if ((bytes & 3))
-      tcc_error("alignment of code section not multiple of 4");
+      mcc_error("alignment of code section not multiple of 4");
     while (bytes > 0) {
 	o(ARM64_NOP);
 	bytes -= 4;
@@ -2208,13 +2208,13 @@ ST_FUNC void gen_vla_sp_restore(int addr) {
 
 ST_FUNC void gen_vla_alloc(CType *type, int align) {
     uint32_t r;
-#if defined(CONFIG_TCC_BCHECK)
-    if (tcc_state->do_bounds_check)
+#if defined(CONFIG_MCC_BCHECK)
+    if (mcc_state->do_bounds_check)
         vpushv(vtop);
 #endif
     r = intr(gv(RC_INT));
-#if defined(CONFIG_TCC_BCHECK)
-    if (tcc_state->do_bounds_check)
+#if defined(CONFIG_MCC_BCHECK)
+    if (mcc_state->do_bounds_check)
         o(0x91004000 | r | r << 5);
     else
 #endif
@@ -2222,8 +2222,8 @@ ST_FUNC void gen_vla_alloc(CType *type, int align) {
     o(0x927cec00 | r | r << 5);
     o(0xcb2063ff | r << 16);
     vpop();
-#if defined(CONFIG_TCC_BCHECK)
-    if (tcc_state->do_bounds_check) {
+#if defined(CONFIG_MCC_BCHECK)
+    if (mcc_state->do_bounds_check) {
         vpushi(0);
         vtop->r = TREG_R(0);
         o(0x910003e0 | vtop->r);

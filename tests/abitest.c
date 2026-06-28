@@ -1,4 +1,4 @@
-#include <libtcc.h>
+#include <libmcc.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -16,18 +16,18 @@
 static int g_argc;
 static char **g_argv;
 
-static void set_options(TCCState *s, int argc, char **argv)
+static void set_options(MCCState *s, int argc, char **argv)
 {
     int i;
     for (i = 1; i < argc; ++i) {
         char *a = argv[i];
         if (a[0] == '-') {
             if (a[1] == 'B')
-                tcc_set_lib_path(s, a+2);
+                mcc_set_lib_path(s, a+2);
             else if (a[1] == 'I')
-                tcc_add_include_path(s, a+2);
+                mcc_add_include_path(s, a+2);
             else if (a[1] == 'L')
-                tcc_add_library_path(s, a+2);
+                mcc_add_library_path(s, a+2);
         }
     }
 }
@@ -38,29 +38,29 @@ typedef int (*callback_type) (void*);
 
 
 static int run_callback(const char *src, callback_type callback) {
-  TCCState *s;
+  MCCState *s;
   int result;
   void *ptr;
   
-  s = tcc_new();
+  s = mcc_new();
   if (!s)
     return -1;
 
   set_options(s, g_argc, g_argv);
 
-  if (tcc_set_output_type(s, TCC_OUTPUT_MEMORY) == -1)
+  if (mcc_set_output_type(s, MCC_OUTPUT_MEMORY) == -1)
     return -1;
-  if (tcc_compile_string(s, src) == -1)
+  if (mcc_compile_string(s, src) == -1)
     return -1;
-  if (tcc_relocate(s) == -1)
+  if (mcc_relocate(s) == -1)
     return -1;
   
-  ptr = tcc_get_symbol(s, "f");
+  ptr = mcc_get_symbol(s, "f");
   if (!ptr)
     return -1;
   result = callback(ptr);
   
-  tcc_delete(s);
+  mcc_delete(s);
   
   return result;
 }

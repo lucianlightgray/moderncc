@@ -2,14 +2,14 @@
 #include <string.h>
 
 const char *platform_macros[] = {
-    "__i386__",             "TCC_TARGET_I386",
-    "__x86_64__",           "TCC_TARGET_X86_64",
-    "_WIN32",               "TCC_TARGET_PE",
-    "__arm__",              "TCC_TARGET_ARM",
-    "__ARM_EABI__",         "TCC_ARM_EABI",
-    "__aarch64__",          "TCC_TARGET_ARM64",
-    "__riscv",              "TCC_TARGET_RISCV64",
-    "__APPLE__",            "TCC_TARGET_MACHO",
+    "__i386__",             "MCC_TARGET_I386",
+    "__x86_64__",           "MCC_TARGET_X86_64",
+    "_WIN32",               "MCC_TARGET_PE",
+    "__arm__",              "MCC_TARGET_ARM",
+    "__ARM_EABI__",         "MCC_ARM_EABI",
+    "__aarch64__",          "MCC_TARGET_ARM64",
+    "__riscv",              "MCC_TARGET_RISCV64",
+    "__APPLE__",            "MCC_TARGET_MACHO",
     "__FreeBSD__",          "TARGETOS_FreeBSD",
     "__FreeBSD_kernel__",   "TARGETOS_FreeBSD_kernel",
     "__OpenBSD__",          "TARGETOS_OpenBSD",

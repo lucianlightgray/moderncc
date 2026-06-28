@@ -22,7 +22,7 @@ extern "C" {
 #define _WCHAR_T_DEFINED
 #endif
 
-#ifndef __TINYC__
+#ifndef __MCC__
 #ifdef _USE_32BIT_TIME_T
 #ifdef _WIN64
 #undef _USE_32BIT_TIME_T

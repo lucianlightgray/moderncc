@@ -1,5 +1,5 @@
-#ifndef _TCC_COMPLEX_H
-#define _TCC_COMPLEX_H
+#ifndef _MCC_COMPLEX_H
+#define _MCC_COMPLEX_H
 
 
 #define complex         _Complex

@@ -2,8 +2,8 @@
 
 #define NB_REGS         5
 #define NB_ASM_REGS     8
-#ifndef TCC_DISABLE_ASM
-#define CONFIG_TCC_ASM
+#ifndef MCC_DISABLE_ASM
+#define CONFIG_MCC_ASM
 #endif
 
 #define RC_INT     0x0001
@@ -47,14 +47,14 @@ enum {
 
 #else
 #define USING_GLOBALS
-#include "tcc.h"
+#include "mcc.h"
 
 ST_DATA const char * const target_machine_defs =
     "__i386__\0"
     "__i386\0"
     ;
 
-#if defined CONFIG_TCC_PIC
+#if defined CONFIG_MCC_PIC
 # define USE_EBX 2
 #else
 # define USE_EBX 0
@@ -70,7 +70,7 @@ ST_DATA const int reg_classes[NB_REGS] = {
 
 static unsigned long func_sub_sp_offset;
 static int func_ret_sub;
-#ifdef CONFIG_TCC_BCHECK
+#ifdef CONFIG_MCC_BCHECK
 static addr_t func_bound_offset;
 static unsigned long func_bound_ind;
 ST_DATA int func_bound_add_epilog;
@@ -139,7 +139,7 @@ ST_FUNC void gen_fill_nops(int bytes)
       g(0x90);
 }
 
-#if defined CONFIG_TCC_PIC
+#if defined CONFIG_MCC_PIC
 static void gen_static_call(int v);
 static void get_pc_thunk(int r, int add)
 {
@@ -199,7 +199,7 @@ static void gen_modrm(int opc, int op_r2, int r, Sym *sym, int c)
 {
     int op_reg = REG_VALUE(op_r2) << 3;
 
-#if defined CONFIG_TCC_PIC
+#if defined CONFIG_MCC_PIC
     if ((r & (VT_VALMASK|VT_SYM)) == (VT_CONST|VT_SYM)) {
         int is_got = (op_r2 & TREG_MEM) && !(sym->type.t & VT_STATIC);
         int here = ind;
@@ -250,7 +250,7 @@ ST_FUNC void load(int r, SValue *sv)
     ft &= ~(VT_VOLATILE | VT_CONSTANT);
     v = fr & VT_VALMASK;
 
-#if defined CONFIG_TCC_PIC
+#if defined CONFIG_MCC_PIC
     if ((fr & (VT_VALMASK|VT_SYM|VT_LVAL)) == (VT_CONST|VT_SYM|VT_LVAL)
         && !(sv->sym->type.t & VT_STATIC)) {
         int tr = r | TREG_MEM;
@@ -306,7 +306,7 @@ ST_FUNC void load(int r, SValue *sv)
         }
         gen_modrm(opc, r, fr, sv->sym, fc);
     } else {
-#if defined CONFIG_TCC_PIC
+#if defined CONFIG_MCC_PIC
         if ((fr & (VT_VALMASK|VT_SYM)) == (VT_CONST|VT_SYM)) {
             if (sv->sym->type.t & VT_STATIC) {
                 get_pc_thunk(r, 0);
@@ -374,7 +374,7 @@ ST_FUNC void store(int r, SValue *v)
     fc = v->c.i;
     fr = v->r & VT_VALMASK;
 
-#if defined CONFIG_TCC_PIC
+#if defined CONFIG_MCC_PIC
     if ((v->r & (VT_VALMASK|VT_SYM)) == (VT_CONST|VT_SYM)
         && !(v->sym->type.t & VT_STATIC)) {
 	get_pc_thunk(TREG_EBX, 1);
@@ -413,7 +413,7 @@ static void gadd_sp(int val)
     }
 }
 
-#if defined CONFIG_TCC_BCHECK || defined TCC_TARGET_PE || defined CONFIG_TCC_PIC
+#if defined CONFIG_MCC_BCHECK || defined MCC_TARGET_PE || defined CONFIG_MCC_PIC
 static void gen_static_call(int v)
 {
     Sym *sym;
@@ -428,7 +428,7 @@ static void gcall_or_jmp(int is_jmp)
 {
     int r;
     if ((vtop->r & (VT_VALMASK|VT_LVAL|VT_SYM)) == (VT_CONST|VT_SYM)) {
-#if defined CONFIG_TCC_PIC
+#if defined CONFIG_MCC_PIC
 	if (!(vtop->sym->type.t & VT_STATIC)) {
 	    get_pc_thunk(TREG_EBX, 1);
             oad(0xe8 + is_jmp, vtop->c.i - 4);
@@ -464,7 +464,7 @@ static int fastcall_arg_slots(CType *type)
     return words > 2 ? 2 : words;
 }
 
-#if !defined(TCC_TARGET_PE) && !TARGETOS_FreeBSD && !TARGETOS_OpenBSD
+#if !defined(MCC_TARGET_PE) && !TARGETOS_FreeBSD && !TARGETOS_OpenBSD
 static int sysv_struct_ret_in_regs(CType *vt)
 {
     return (vt->t & VT_BTYPE) == VT_STRUCT && vt->ref->a.is_complex
@@ -474,7 +474,7 @@ static int sysv_struct_ret_in_regs(CType *vt)
 
 ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int *regsize)
 {
-#if defined(TCC_TARGET_PE) || TARGETOS_FreeBSD || TARGETOS_OpenBSD
+#if defined(MCC_TARGET_PE) || TARGETOS_FreeBSD || TARGETOS_OpenBSD
     int size, align, nregs;
     *ret_align = 1;
     *regsize = 4;
@@ -511,8 +511,8 @@ ST_FUNC void gfunc_call(int nb_args)
     const uint8_t *fastcall_regs_ptr;
     Sym *func_sym;
 
-#ifdef CONFIG_TCC_BCHECK
-    if (tcc_state->do_bounds_check)
+#ifdef CONFIG_MCC_BCHECK
+    if (mcc_state->do_bounds_check)
         gbound_args(nb_args);
 #endif
 
@@ -534,7 +534,7 @@ ST_FUNC void gfunc_call(int nb_args)
             CType *t = &vtop[-nb_args + 1 + s].type;
             if (fastcall_arg_inreg(t) && slots < fastcall_nb_regs) {
                 if (spilled)
-                    tcc_error("fastcall with a non-register argument before an "
+                    mcc_error("fastcall with a non-register argument before an "
                               "integer register argument is not supported");
                 n_reg_pop++, slots++;
             } else {
@@ -553,7 +553,7 @@ ST_FUNC void gfunc_call(int nb_args)
         if ((vtop->type.t & VT_BTYPE) == VT_STRUCT) {
             size = type_size(&vtop->type, &align);
             size = (size + 3) & ~3;
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
             if (size >= 4096) {
                 save_reg(TREG_EDX);
                 r = get_reg(RC_EAX);
@@ -609,7 +609,7 @@ ST_FUNC void gfunc_call(int nb_args)
             args_size -= 4;
         }
     }
-#if !defined(TCC_TARGET_PE) && !TARGETOS_FreeBSD || TARGETOS_OpenBSD
+#if !defined(MCC_TARGET_PE) && !TARGETOS_FreeBSD || TARGETOS_OpenBSD
     else if ((vtop->type.ref->type.t & VT_BTYPE) == VT_STRUCT)
         args_size -= 4;
 #endif
@@ -621,7 +621,7 @@ ST_FUNC void gfunc_call(int nb_args)
     vtop--;
 }
 
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
 #define FUNC_PROLOG_SIZE (10 + !!USE_EBX)
 #else
 #define FUNC_PROLOG_SIZE (9 + !!USE_EBX)
@@ -660,7 +660,7 @@ ST_FUNC void gfunc_prolog(Sym *func_sym)
 
     ind += FUNC_PROLOG_SIZE;
     func_sub_sp_offset = ind;
-#if defined(TCC_TARGET_PE) || TARGETOS_FreeBSD || TARGETOS_OpenBSD
+#if defined(MCC_TARGET_PE) || TARGETOS_FreeBSD || TARGETOS_OpenBSD
     size = type_size(&func_vt,&align);
     if (((func_vt.t & VT_BTYPE) == VT_STRUCT)
         && (size > 8 || (size & (size - 1)))) {
@@ -701,13 +701,13 @@ ST_FUNC void gfunc_prolog(Sym *func_sym)
     func_ret_sub = 0;
     if (func_call == FUNC_STDCALL || func_call == FUNC_FASTCALLW || func_call == FUNC_THISCALL)
         func_ret_sub = addr - 8;
-#if !defined(TCC_TARGET_PE) && !TARGETOS_FreeBSD || TARGETOS_OpenBSD
+#if !defined(MCC_TARGET_PE) && !TARGETOS_FreeBSD || TARGETOS_OpenBSD
     else if (func_vc)
         func_ret_sub = 4;
 #endif
 
-#ifdef CONFIG_TCC_BCHECK
-    if (tcc_state->do_bounds_check)
+#ifdef CONFIG_MCC_BCHECK
+    if (mcc_state->do_bounds_check)
         gen_bounds_prolog();
 #endif
 }
@@ -716,8 +716,8 @@ ST_FUNC void gfunc_epilog(void)
 {
     addr_t v, saved_ind;
 
-#ifdef CONFIG_TCC_BCHECK
-    if (tcc_state->do_bounds_check)
+#ifdef CONFIG_MCC_BCHECK
+    if (mcc_state->do_bounds_check)
         gen_bounds_epilog();
 #endif
 
@@ -737,7 +737,7 @@ ST_FUNC void gfunc_epilog(void)
     }
     saved_ind = ind;
     ind = func_sub_sp_offset - FUNC_PROLOG_SIZE;
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
     if (v >= 4096) {
         oad(0xb8, v);
         gen_static_call(TOK___chkstk);
@@ -747,7 +747,7 @@ ST_FUNC void gfunc_epilog(void)
         o(0xe58955);
         o(0xec81);
         gen_le32(v);
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
         o(0x90);
 #endif
     }
@@ -1106,7 +1106,7 @@ ST_FUNC void gen_cvt_csti(int t)
 ST_FUNC void gen_increment_tcov (SValue *sv)
 {
    int indir, rel, add1, add2;
-#if defined CONFIG_TCC_PIC
+#if defined CONFIG_MCC_PIC
    get_pc_thunk(TREG_EBX, 0);
    indir = 0x8300;
    rel = R_386_PC32;
@@ -1134,14 +1134,14 @@ ST_FUNC void ggoto(void)
     vtop--;
 }
 
-#ifdef CONFIG_TCC_BCHECK
+#ifdef CONFIG_MCC_BCHECK
 
 static void gen_bound_call(int v)
 {
     Sym *sym;
 
     sym = external_helper_sym(v);
-#if defined CONFIG_TCC_PIC
+#if defined CONFIG_MCC_PIC
     get_pc_thunk(TREG_EBX, 1);
     oad(0xe8, -4);
     greloc(cur_text_section, sym, ind - 4, R_386_PLT32);
@@ -1156,7 +1156,7 @@ static void gen_bounds_prolog(void)
     func_bound_offset = lbounds_section->data_offset;
     func_bound_ind = ind;
     func_bound_add_epilog = 0;
-#if defined CONFIG_TCC_PIC
+#if defined CONFIG_MCC_PIC
     oad(0xb8, 0);
     oad(0x808d, 0);
     oad(0xb8, 0);
@@ -1187,7 +1187,7 @@ static void gen_bounds_epilog(void)
     if (offset_modified) {
         saved_ind = ind;
         ind = func_bound_ind;
-#if defined CONFIG_TCC_PIC
+#if defined CONFIG_MCC_PIC
 	get_pc_thunk(TREG_EAX, 0);
 	o(0x808d | TREG_EAX * 0x900);
 	greloc(cur_text_section, sym_data, ind, R_386_PC32);
@@ -1201,7 +1201,7 @@ static void gen_bounds_epilog(void)
     }
 
     o(0x5250);
-#if defined CONFIG_TCC_PIC
+#if defined CONFIG_MCC_PIC
     get_pc_thunk(TREG_EAX, 0);
     o(0x808d | TREG_EAX * 0x900);
     greloc(cur_text_section, sym_data, ind, R_386_PC32);
@@ -1226,10 +1226,10 @@ ST_FUNC void gen_vla_sp_restore(int addr) {
 ST_FUNC void gen_vla_alloc(CType *type, int align) {
     int use_call = 0;
 
-#if defined(CONFIG_TCC_BCHECK)
-    use_call = tcc_state->do_bounds_check;
+#if defined(CONFIG_MCC_BCHECK)
+    use_call = mcc_state->do_bounds_check;
 #endif
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
     use_call = 1;
 #endif
     if (use_call)

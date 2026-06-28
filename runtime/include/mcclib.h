@@ -1,5 +1,5 @@
-#ifndef _TCCLIB_H
-#define _TCCLIB_H
+#ifndef _MCCLIB_H
+#define _MCCLIB_H
 
 #include <stddef.h>
 #include <stdarg.h>

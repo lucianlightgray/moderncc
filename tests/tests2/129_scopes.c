@@ -138,7 +138,7 @@ int f6(int x)
 
 
 
-#if defined __TINYC__ \
+#if defined __MCC__ \
     ? !defined __leading_underscore \
     : !(defined __APPLE__ || defined _WIN32)
 # define _

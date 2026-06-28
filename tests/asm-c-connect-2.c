@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-#if (defined _WIN32 || defined __APPLE__) && (!defined __TINYC__ || defined __leading_underscore)
+#if (defined _WIN32 || defined __APPLE__) && (!defined __MCC__ || defined __leading_underscore)
 # define _ "_"
 #else
 # define _
@@ -28,7 +28,7 @@ __asm__(_"callx4: call "_"x4; ret;"
 
 __asm__(_"callx4: sub $8,%rsp; call "_"x4; add $8,%rsp; ret;"
 #endif
-#ifndef __TINYC__
+#ifndef __MCC__
     " .global "_"callx4"
 #endif
 );

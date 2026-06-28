@@ -1,8 +1,8 @@
-#include "tcc.h"
+#include "mcc.h"
 
-#ifdef TCC_IS_NATIVE
+#ifdef MCC_IS_NATIVE
 
-#ifdef CONFIG_TCC_BACKTRACE
+#ifdef CONFIG_MCC_BACKTRACE
 typedef struct rt_context
 {
     union {
@@ -37,28 +37,28 @@ typedef struct rt_frame {
     addr_t ip, fp, sp;
 } rt_frame;
 
-static TCCState *g_s1;
-TCC_SEM(rt_sem);
+static MCCState *g_s1;
+MCC_SEM(rt_sem);
 static void rt_wait_sem(void) { WAIT_SEM(&rt_sem); }
 static void rt_post_sem(void) { POST_SEM(&rt_sem); }
 static int rt_get_caller_pc(addr_t *paddr, rt_frame *f, int level);
 static void rt_exit(rt_frame *f, int code);
 
-#ifndef CONFIG_TCC_BACKTRACE_ONLY
+#ifndef CONFIG_MCC_BACKTRACE_ONLY
 
 #ifndef _WIN32
 # include <sys/mman.h>
 #endif
 
 static int protect_pages(void *ptr, unsigned long length, int mode);
-static int tcc_relocate_ex(TCCState *s1, void *ptr, unsigned ptr_diff);
-static void st_link(TCCState *s1);
-static void st_unlink(TCCState *s1);
-#ifdef CONFIG_TCC_BACKTRACE
-static int _tcc_backtrace(rt_frame *f, const char *fmt, va_list ap);
+static int mcc_relocate_ex(MCCState *s1, void *ptr, unsigned ptr_diff);
+static void st_link(MCCState *s1);
+static void st_unlink(MCCState *s1);
+#ifdef CONFIG_MCC_BACKTRACE
+static int _mcc_backtrace(rt_frame *f, const char *fmt, va_list ap);
 #endif
 #ifdef _WIN64
-static void *win64_add_function_table(TCCState *s1);
+static void *win64_add_function_table(MCCState *s1);
 static void win64_del_function_table(void *);
 #endif
 
@@ -78,13 +78,13 @@ static void win64_del_function_table(void *);
 #if !_WIN32 && !__APPLE__
 #endif
 
-static int rt_mem(TCCState *s1, int size)
+static int rt_mem(MCCState *s1, int size)
 {
     void *ptr;
     int ptr_diff = 0;
 #ifdef CONFIG_SELINUX
     void *prw;
-    char tmpfname[] = "/tmp/.tccrunXXXXXX";
+    char tmpfname[] = "/tmp/.mccrunXXXXXX";
     int fd = mkstemp(tmpfname);
     unlink(tmpfname);
     ftruncate(fd, size);
@@ -93,47 +93,47 @@ static int rt_mem(TCCState *s1, int size)
     prw = mmap((char*)ptr + size, size, PROT_READ|PROT_WRITE, MAP_SHARED|MAP_FIXED, fd, 0);
     close(fd);
     if (ptr == MAP_FAILED || prw == MAP_FAILED)
-	return tcc_error_noabort("tccrun: could not map memory");
+	return mcc_error_noabort("mccrun: could not map memory");
     ptr_diff = (char*)prw - (char*)ptr;
     size *= 2;
 #else
 # ifdef _WIN32
     ptr = VirtualAlloc(NULL, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 # else
-    ptr = tcc_malloc(size += PAGESIZE);
+    ptr = mcc_malloc(size += PAGESIZE);
 # endif
 #endif
     if (!ptr)
-        return tcc_error_noabort("tccrun: could not allocate memory");
+        return mcc_error_noabort("mccrun: could not allocate memory");
     s1->run_ptr = ptr;
     s1->run_size = size;
     return ptr_diff;
 }
 
 
-LIBTCCAPI int tcc_relocate(TCCState *s1)
+LIBMCCAPI int mcc_relocate(MCCState *s1)
 {
     int size, ret, ptr_diff;
 
     if (s1->run_ptr)
-        exit(tcc_error_noabort("'tcc_relocate()' twice is no longer supported"));
-#ifdef CONFIG_TCC_BACKTRACE
+        exit(mcc_error_noabort("'mcc_relocate()' twice is no longer supported"));
+#ifdef CONFIG_MCC_BACKTRACE
     if (s1->do_backtrace)
-        tcc_add_symbol(s1, "_tcc_backtrace", _tcc_backtrace);
+        mcc_add_symbol(s1, "_mcc_backtrace", _mcc_backtrace);
 #endif
-    size = tcc_relocate_ex(s1, NULL, 0);
+    size = mcc_relocate_ex(s1, NULL, 0);
     if (size < 0)
         return -1;
     ptr_diff = rt_mem(s1, size);
     if (ptr_diff < 0)
         return -1;
-    ret = tcc_relocate_ex(s1, s1->run_ptr, ptr_diff);
+    ret = mcc_relocate_ex(s1, s1->run_ptr, ptr_diff);
     if (ret == 0)
         st_link(s1);
     return ret;
 }
 
-ST_FUNC void tcc_run_free(TCCState *s1)
+ST_FUNC void mcc_run_free(MCCState *s1)
 {
     unsigned size;
     void *ptr;
@@ -166,14 +166,14 @@ ST_FUNC void tcc_run_free(TCCState *s1)
 # ifdef _WIN64
     win64_del_function_table(s1->run_function_table);
 # endif
-    tcc_free(ptr);
+    mcc_free(ptr);
 # endif
 #endif
 }
 
 #define RT_EXIT_ZERO 0xE0E00E0E
 
-LIBTCCAPI int tcc_run(TCCState *s1, int argc, char **argv)
+LIBMCCAPI int mcc_run(MCCState *s1, int argc, char **argv)
 {
     int (*prog_main)(int, char **, char **), ret;
     const char *top_sym;
@@ -192,13 +192,13 @@ LIBTCCAPI int tcc_run(TCCState *s1, int argc, char **argv)
     if ((s1->dflag & 16) && (addr_t)-1 == get_sym_addr(s1, "main", 0, 1))
         return 0;
 
-    tcc_add_symbol(s1, "__rt_exit", rt_exit);
+    mcc_add_symbol(s1, "__rt_exit", rt_exit);
     s1->run_main = "_runmain", top_sym = "main";
     if (s1->elf_entryname)
         s1->run_main = top_sym = s1->elf_entryname;
-    tcc_add_support(s1, "runmain.o");
+    mcc_add_support(s1, "runmain.o");
 
-    if (tcc_relocate(s1) < 0)
+    if (mcc_relocate(s1) < 0)
         return -1;
 
     prog_main = (void*)get_sym_addr(s1, s1->run_main, 1, 1);
@@ -206,7 +206,7 @@ LIBTCCAPI int tcc_run(TCCState *s1, int argc, char **argv)
         return -1;
 
     if (s1->run_stdin && !freopen(s1->run_stdin, "r", stdin)) {
-        tcc_error_noabort("failed to reopen stdin from '%s'", s1->run_stdin);
+        mcc_error_noabort("failed to reopen stdin from '%s'", s1->run_stdin);
         return -1;
     }
 
@@ -214,7 +214,7 @@ LIBTCCAPI int tcc_run(TCCState *s1, int argc, char **argv)
     fflush(stdout);
     fflush(stderr);
 
-    ret = tcc_setjmp(s1, main_jb, tcc_get_symbol(s1, top_sym));
+    ret = mcc_setjmp(s1, main_jb, mcc_get_symbol(s1, top_sym));
     if (0 == ret) {
         ret = prog_main(argc, argv, envp);
     } else if (RT_EXIT_ZERO == ret) {
@@ -226,7 +226,7 @@ LIBTCCAPI int tcc_run(TCCState *s1, int argc, char **argv)
     return ret;
 }
 
-static void cleanup_symbols(TCCState *s1)
+static void cleanup_symbols(MCCState *s1)
 {
     Section *s = s1->symtab;
     int sym_index, end_sym = s->data_offset / sizeof (ElfSym);
@@ -241,7 +241,7 @@ static void cleanup_symbols(TCCState *s1)
     }
 }
 
-static void cleanup_sections(TCCState *s1)
+static void cleanup_sections(MCCState *s1)
 {
     struct { Section **secs; int nb_secs; } *p = (void*)&s1->sections;
     int i, f = 2;
@@ -249,9 +249,9 @@ static void cleanup_sections(TCCState *s1)
         for (i = --f; i < p->nb_secs; i++) {
             Section *s = p->secs[i];
             if (s == s1->symtab || s == s1->symtab->link || s == s1->symtab->hash) {
-                s->data = tcc_realloc(s->data, s->data_allocated = s->data_offset);
+                s->data = mcc_realloc(s->data, s->data_allocated = s->data_offset);
             } else {
-                free_section(s), tcc_free(s), p->secs[i] = NULL;
+                free_section(s), mcc_free(s), p->secs[i] = NULL;
             }
         }
     } while (++p, f);
@@ -267,7 +267,7 @@ static void cleanup_sections(TCCState *s1)
 #  endif
 #endif
 
-static int tcc_relocate_ex(TCCState *s1, void *ptr, unsigned ptr_diff)
+static int mcc_relocate_ex(MCCState *s1, void *ptr, unsigned ptr_diff)
 {
     Section *s;
     unsigned offset, length, align, i, k, f;
@@ -276,10 +276,10 @@ static int tcc_relocate_ex(TCCState *s1, void *ptr, unsigned ptr_diff)
 
     if (NULL == ptr) {
         s1->nb_errors = 0;
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
         pe_output_file(s1, NULL);
 #else
-        tcc_add_runtime(s1);
+        mcc_add_runtime(s1);
 	resolve_common_syms(s1);
         build_got_entries(s1, 0);
 #endif
@@ -327,7 +327,7 @@ redo:
 
             align = s->sh_addralign;
             if (++n == 1) {
-#if defined TCC_TARGET_I386 || defined TCC_TARGET_X86_64
+#if defined MCC_TARGET_I386 || defined MCC_TARGET_X86_64
                 if (align < 64)
                     align = 64;
 #endif
@@ -359,7 +359,7 @@ redo:
                     &"rx\0ro\0rw\0rwx"[f*3], (void*)addr, (unsigned)n);
             }
             if (protect_pages((void*)addr, n, f) < 0)
-                return tcc_error_noabort(
+                return mcc_error_noabort(
 #ifdef _WIN32
                     "VirtualProtect failed");
 #else
@@ -386,7 +386,7 @@ redo:
     relocate_syms(s1, s1->symtab, 1);
     if (s1->nb_errors)
         goto redo;
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
     s1->pe_imagebase = mem;
 #else
     relocate_plt(s1);
@@ -417,7 +417,7 @@ static int protect_pages(void *ptr, unsigned long length, int mode)
         };
     if (mprotect(ptr, length, protect[mode]))
         return -1;
-# if (defined TCC_TARGET_ARM && !TARGETOS_BSD) || defined TCC_TARGET_ARM64 || defined TCC_TARGET_RISCV64
+# if (defined MCC_TARGET_ARM && !TARGETOS_BSD) || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64
     if (mode == 0 || mode == 3) {
         void __clear_cache(void *beginning, void *end);
         __clear_cache(ptr, (char *)ptr + length);
@@ -428,7 +428,7 @@ static int protect_pages(void *ptr, unsigned long length, int mode)
 }
 
 #ifdef _WIN64
-static void *win64_add_function_table(TCCState *s1)
+static void *win64_add_function_table(MCCState *s1)
 {
     void *p = NULL;
     if (s1->uw_pdata) {
@@ -438,7 +438,7 @@ static void *win64_add_function_table(TCCState *s1)
             s1->uw_pdata->data_offset / sizeof (RUNTIME_FUNCTION),
             s1->pe_imagebase
             )) {
-            tcc_error_noabort("RtlAddFunctionTable failed");
+            mcc_error_noabort("RtlAddFunctionTable failed");
             p = NULL;
         }
         s1->uw_pdata = NULL;
@@ -454,13 +454,13 @@ static void win64_del_function_table(void *p)
 }
 #endif
 
-static void bt_link(TCCState *s1)
+static void bt_link(MCCState *s1)
 {
-#ifdef CONFIG_TCC_BACKTRACE
+#ifdef CONFIG_MCC_BACKTRACE
     rt_context *rc;
     if (!s1->do_backtrace)
         return;
-    rc = tcc_get_symbol(s1, "__rt_info");
+    rc = mcc_get_symbol(s1, "__rt_info");
     if (!rc)
         return;
     rc->esym_start = (ElfW(Sym) *)(symtab_section->data);
@@ -468,10 +468,10 @@ static void bt_link(TCCState *s1)
     rc->elf_str = (char *)symtab_section->link->data;
     if (PTR_SIZE == 8 && !s1->dwarf)
         rc->prog_base &= 0xffffffff00000000ULL;
-#ifdef CONFIG_TCC_BCHECK
+#ifdef CONFIG_MCC_BCHECK
     if (s1->do_bounds_check) {
         void *p;
-        if ((p = tcc_get_symbol(s1, "__bound_init")))
+        if ((p = mcc_get_symbol(s1, "__bound_init")))
             ((void(*)(void*,int))p)(rc->bounds_start, 1);
     }
 #endif
@@ -481,7 +481,7 @@ static void bt_link(TCCState *s1)
 #endif
 }
 
-static void st_link(TCCState *s1)
+static void st_link(MCCState *s1)
 {
     rt_wait_sem();
     s1->next = g_s1, g_s1 = s1;
@@ -501,36 +501,36 @@ static void ptr_unlink(void *list, void *e, unsigned next)
     }
 }
 
-static void st_unlink(TCCState *s1)
+static void st_unlink(MCCState *s1)
 {
     rt_wait_sem();
-#ifdef CONFIG_TCC_BACKTRACE
+#ifdef CONFIG_MCC_BACKTRACE
     ptr_unlink(&g_rc, s1->rc, offsetof(rt_context, next));
 #endif
-    ptr_unlink(&g_s1, s1, offsetof(TCCState, next));
+    ptr_unlink(&g_s1, s1, offsetof(MCCState, next));
     rt_post_sem();
 }
 
-LIBTCCAPI void *_tcc_setjmp(TCCState *s1, void *p_jmp_buf, void *func, void *p_longjmp)
+LIBMCCAPI void *_mcc_setjmp(MCCState *s1, void *p_jmp_buf, void *func, void *p_longjmp)
 {
     s1->run_lj = p_longjmp;
     s1->run_jb = p_jmp_buf;
-#ifdef CONFIG_TCC_BACKTRACE
+#ifdef CONFIG_MCC_BACKTRACE
     if (s1->rc)
         s1->rc->top_func = func;
 #endif
     return p_jmp_buf;
 }
 
-LIBTCCAPI void tcc_set_backtrace_func(TCCState *s1, void *data, TCCBtFunc *func)
+LIBMCCAPI void mcc_set_backtrace_func(MCCState *s1, void *data, MCCBtFunc *func)
 {
     s1->bt_func = func;
     s1->bt_data = data;
 }
 
-static TCCState *rt_find_state(rt_frame *f)
+static MCCState *rt_find_state(rt_frame *f)
 {
-    TCCState *s;
+    MCCState *s;
     addr_t pc;
 
     s = g_s1;
@@ -551,14 +551,14 @@ static TCCState *rt_find_state(rt_frame *f)
 
 static void rt_exit(rt_frame *f, int code)
 {
-    TCCState *s;
+    MCCState *s;
     rt_wait_sem();
     s = rt_find_state(f);
     rt_post_sem();
     if (s && s->run_lj) {
-#ifdef CONFIG_TCC_BCHECK
+#ifdef CONFIG_MCC_BCHECK
         if (f->fp) {
-            void *p = tcc_get_symbol(s, "__bound_exit");
+            void *p = mcc_get_symbol(s, "__bound_exit");
             if (p)
                 ((void (*)(void))p)();
         }
@@ -576,7 +576,7 @@ static void rt_exit(rt_frame *f, int code)
     exit(code);
 }
 #endif
-#ifdef CONFIG_TCC_BACKTRACE
+#ifdef CONFIG_MCC_BACKTRACE
 
 static int rt_vprintf(const char *fmt, va_list ap)
 {
@@ -927,7 +927,7 @@ check_pc:
 #else
 		        pc = dwarf_read_8(cp, end);
 #endif
-#if defined TCC_TARGET_MACHO
+#if defined MCC_TARGET_MACHO
 			pc += rc->prog_base;
 #endif
 		        opindex = 0;
@@ -1012,10 +1012,10 @@ found:
     bi->func_pc = func_addr;
     return (addr_t)func_addr;
 }
-#ifndef CONFIG_TCC_BACKTRACE_ONLY
+#ifndef CONFIG_MCC_BACKTRACE_ONLY
 static
 #endif
-int _tcc_backtrace(rt_frame *f, const char *fmt, va_list ap)
+int _mcc_backtrace(rt_frame *f, const char *fmt, va_list ap)
 {
     rt_context *rc, *rc2;
     addr_t pc;
@@ -1060,9 +1060,9 @@ int _tcc_backtrace(rt_frame *f, const char *fmt, va_list ap)
         }
         if (skip[0] && strstr(bi.file, skip))
             continue;
-#ifndef CONFIG_TCC_BACKTRACE_ONLY
+#ifndef CONFIG_MCC_BACKTRACE_ONLY
         {
-            TCCState *s = rt_find_state(f);
+            MCCState *s = rt_find_state(f);
             if (s && s->bt_func) {
                 ret = s->bt_func(
                     s->bt_data,
@@ -1091,7 +1091,7 @@ int _tcc_backtrace(rt_frame *f, const char *fmt, va_list ap)
         }
         rt_printf("\n");
 
-#ifndef CONFIG_TCC_BACKTRACE_ONLY
+#ifndef CONFIG_MCC_BACKTRACE_ONLY
     check_break:
 #endif
         if (rc2
@@ -1109,7 +1109,7 @@ static int rt_error(rt_frame *f, const char *fmt, ...)
     va_list ap; char msg[200]; int ret;
     va_start(ap, fmt);
     snprintf(msg, sizeof msg, "RUNTIME ERROR: %s", fmt);
-    ret = _tcc_backtrace(f, msg, ap);
+    ret = _mcc_backtrace(f, msg, ap);
     va_end(ap);
     return ret;
 }
@@ -1421,7 +1421,7 @@ static int rt_get_caller_pc(addr_t *paddr, rt_frame *f, int level)
     return 0;
 }
 #endif
-#ifdef CONFIG_TCC_STATIC
+#ifdef CONFIG_MCC_STATIC
 
 ST_FUNC void *dlopen(const char *filename, int flag)
 {
@@ -1437,28 +1437,28 @@ ST_FUNC const char *dlerror(void)
     return "error";
 }
 
-typedef struct TCCSyms {
+typedef struct MCCSyms {
     char *str;
     void *ptr;
-} TCCSyms;
+} MCCSyms;
 
 
-static TCCSyms tcc_syms[] = {
-#if !defined(CONFIG_TCCBOOT)
-#define TCCSYM(a) { #a, &a, },
-    TCCSYM(printf)
-    TCCSYM(fprintf)
-    TCCSYM(fopen)
-    TCCSYM(fclose)
-#undef TCCSYM
+static MCCSyms mcc_syms[] = {
+#if !defined(CONFIG_MCCBOOT)
+#define MCCSYM(a) { #a, &a, },
+    MCCSYM(printf)
+    MCCSYM(fprintf)
+    MCCSYM(fopen)
+    MCCSYM(fclose)
+#undef MCCSYM
 #endif
     { NULL, NULL },
 };
 
 ST_FUNC void *dlsym(void *handle, const char *symbol)
 {
-    TCCSyms *p;
-    p = tcc_syms;
+    MCCSyms *p;
+    p = mcc_syms;
     while (p->str != NULL) {
         if (!strcmp(p->str, symbol))
             return p->ptr;

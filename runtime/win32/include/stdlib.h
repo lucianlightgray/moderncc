@@ -384,7 +384,7 @@ extern wchar_t **_wenviron;
   void __cdecl srand(unsigned int _Seed);
   double __cdecl strtod(const char *_Str,char **_EndPtr);
 #if !defined __NO_ISOCEXT
-#if __TINYC__
+#if __MCC__
   __CRT_INLINE float __cdecl strtof (const char *p, char ** e) { return strtod(p, e); }
   __CRT_INLINE long double __cdecl strtold(const char *p, char ** e) { return strtod(p, e); }
 #else
@@ -556,7 +556,7 @@ extern wchar_t **_wenviron;
 
   __CRT_INLINE long long __cdecl llabs(long long _j) { return (_j >= 0 ? _j : -_j); }
 
- #ifdef __TINYC__
+ #ifdef __MCC__
   #define strtoll _strtoi64
   #define strtoull _strtoui64
  #else

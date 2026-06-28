@@ -1,7 +1,7 @@
-#define CONFIG_TCC_BACKTRACE_ONLY
+#define CONFIG_MCC_BACKTRACE_ONLY
 #define ONE_SOURCE 1
-#define pstrcpy tcc_pstrcpy
-#include "../tccrun.c"
+#define pstrcpy mcc_pstrcpy
+#include "../mccrun.c"
 
 #ifndef _WIN32
 # define __declspec(n)

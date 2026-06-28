@@ -1,4 +1,4 @@
-#include "tcc.h"
+#include "mcc.h"
 
 #define ARFMAG "`\n"
 
@@ -18,12 +18,12 @@ static unsigned long le2belong(unsigned long ul) {
 }
 
 static int ar_usage(int ret) {
-    fprintf(stderr, "usage: tcc -ar [crstvx] lib [files]\n");
+    fprintf(stderr, "usage: mcc -ar [crstvx] lib [files]\n");
     fprintf(stderr, "create library ([abdiopN] not supported).\n");
     return ret;
 }
 
-ST_FUNC int tcc_tool_ar(int argc, char **argv)
+ST_FUNC int mcc_tool_ar(int argc, char **argv)
 {
     static const ArHdr arhdr_init = {
         "/               ",
@@ -89,14 +89,14 @@ ST_FUNC int tcc_tool_ar(int argc, char **argv)
     if (extract || table) {
         if ((fh = fopen(argv[i_lib], "rb")) == NULL)
         {
-            fprintf(stderr, "tcc: ar: can't open file %s\n", argv[i_lib]);
+            fprintf(stderr, "mcc: ar: can't open file %s\n", argv[i_lib]);
             goto finish;
         }
         fread(stmp, 1, 8, fh);
 	if (memcmp(stmp,ARMAG,8))
 	{
 no_ar:
-            fprintf(stderr, "tcc: ar: not an ar archive %s\n", argv[i_lib]);
+            fprintf(stderr, "mcc: ar: not an ar archive %s\n", argv[i_lib]);
             goto finish;
 	}
 	while (fread(&arhdr, 1, sizeof(arhdr), fh) == sizeof(arhdr)) {
@@ -110,7 +110,7 @@ no_ar:
 	    *e = '\0';
 	    arhdr.ar_size[sizeof arhdr.ar_size-1] = 0;
 	    fsize = atoi(arhdr.ar_size);
-	    buf = tcc_malloc(fsize + 1);
+	    buf = mcc_malloc(fsize + 1);
 	    fread(buf, fsize, 1, fh);
 	    if (strcmp(arhdr.ar_name,"/") && strcmp(arhdr.ar_name,"/SYM64/")) {
 		if (e > p && e[-1] == '/')
@@ -120,9 +120,9 @@ no_ar:
 		if (extract) {
 		    if ((fo = fopen(arhdr.ar_name, "wb")) == NULL)
 		    {
-			fprintf(stderr, "tcc: ar: can't create file %s\n",
+			fprintf(stderr, "mcc: ar: can't create file %s\n",
 				arhdr.ar_name);
-		        tcc_free(buf);
+		        mcc_free(buf);
 			goto finish;
 		    }
 		    fwrite(buf, fsize, 1, fo);
@@ -131,7 +131,7 @@ no_ar:
 	    }
             if (fsize & 1)
                 fgetc(fh);
-            tcc_free(buf);
+            mcc_free(buf);
 	}
 	ret = 0;
 finish:
@@ -142,7 +142,7 @@ finish:
 
     if ((fh = fopen(argv[i_lib], "wb")) == NULL)
     {
-        fprintf(stderr, "tcc: ar: can't create file %s\n", argv[i_lib]);
+        fprintf(stderr, "mcc: ar: can't create file %s\n", argv[i_lib]);
         goto the_end;
     }
     created_file = argv[i_lib];
@@ -150,12 +150,12 @@ finish:
     snprintf(tfile, sizeof(tfile), "%s.tmp", argv[i_lib]);
     if ((fo = fopen(tfile, "wb+")) == NULL)
     {
-        fprintf(stderr, "tcc: ar: can't create temporary file %s\n", tfile);
+        fprintf(stderr, "mcc: ar: can't create temporary file %s\n", tfile);
         goto the_end;
     }
 
     funcmax = 250;
-    afpos = tcc_realloc(NULL, funcmax * sizeof *afpos);
+    afpos = mcc_realloc(NULL, funcmax * sizeof *afpos);
     memcpy(&arhdro.ar_mode, "100644", 6);
 
     while (i_obj < argc)
@@ -165,7 +165,7 @@ finish:
             continue;
         }
         if ((fi = fopen(argv[i_obj], "rb")) == NULL) {
-            fprintf(stderr, "tcc: ar: can't open file %s \n", argv[i_obj]);
+            fprintf(stderr, "mcc: ar: can't open file %s \n", argv[i_obj]);
             goto the_end;
         }
         if (verbose)
@@ -174,14 +174,14 @@ finish:
         fseek(fi, 0, SEEK_END);
         fsize = ftell(fi);
         fseek(fi, 0, SEEK_SET);
-        buf = tcc_malloc(fsize + 1);
+        buf = mcc_malloc(fsize + 1);
         fread(buf, fsize, 1, fi);
         fclose(fi);
 
         ehdr = (ElfW(Ehdr) *)buf;
         if (ehdr->e_ident[4] != ELFCLASSW)
         {
-            fprintf(stderr, "tcc: ar: Unsupported Elf Class: %s\n", argv[i_obj]);
+            fprintf(stderr, "mcc: ar: Unsupported Elf Class: %s\n", argv[i_obj]);
             goto the_end;
         }
 
@@ -222,12 +222,12 @@ finish:
                     || sym->st_info == 0x22
                     )) {
                     istrlen = strlen(strtab + sym->st_name)+1;
-                    anames = tcc_realloc(anames, strpos+istrlen);
+                    anames = mcc_realloc(anames, strpos+istrlen);
                     strcpy(anames + strpos, strtab + sym->st_name);
                     strpos += istrlen;
                     if (++funccnt >= funcmax) {
                         funcmax += 250;
-                        afpos = tcc_realloc(afpos, funcmax * sizeof *afpos);
+                        afpos = mcc_realloc(afpos, funcmax * sizeof *afpos);
                     }
                     afpos[funccnt] = fpos;
                 }
@@ -248,7 +248,7 @@ finish:
         memcpy(&arhdro.ar_size, stmp, 10);
         fwrite(&arhdro, sizeof(arhdro), 1, fo);
         fwrite(buf, fsize, 1, fo);
-        tcc_free(buf);
+        mcc_free(buf);
         i_obj++;
         fpos += (fsize + sizeof(arhdro));
         if (fpos & 1)
@@ -276,16 +276,16 @@ finish:
     fseek(fo, 0, SEEK_END);
     fsize = ftell(fo);
     fseek(fo, 0, SEEK_SET);
-    buf = tcc_malloc(fsize + 1);
+    buf = mcc_malloc(fsize + 1);
     fread(buf, fsize, 1, fo);
     fwrite(buf, fsize, 1, fh);
-    tcc_free(buf);
+    mcc_free(buf);
     ret = 0;
 the_end:
     if (anames)
-        tcc_free(anames);
+        mcc_free(anames);
     if (afpos)
-        tcc_free(afpos);
+        mcc_free(afpos);
     if (fh)
         fclose(fh);
     if (created_file && ret != 0)
@@ -296,9 +296,9 @@ the_end:
 }
 
 
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
 
-ST_FUNC int tcc_tool_impdef(int argc, char **argv)
+ST_FUNC int mcc_tool_impdef(int argc, char **argv)
 {
     int ret, v, i;
     char infile[260];
@@ -338,14 +338,14 @@ ST_FUNC int tcc_tool_impdef(int argc, char **argv)
     if (0 == infile[0]) {
 usage:
         fprintf(stderr,
-            "usage: tcc -impdef library.dll [-v] [-o outputfile]\n"
+            "usage: mcc -impdef library.dll [-v] [-o outputfile]\n"
             "create export definition file (.def) from dll\n"
             );
         goto the_end;
     }
 
     if (0 == outfile[0]) {
-        pstrcpy(outfile, sizeof outfile, tcc_basename(infile));
+        pstrcpy(outfile, sizeof outfile, mcc_basename(infile));
         q = strrchr(outfile, '.');
         if (NULL == q)
             q = strchr(outfile, 0);
@@ -357,9 +357,9 @@ usage:
     if (SearchPath(NULL, file, ".dll", sizeof path, path, NULL))
         file = path;
 #endif
-    ret = tcc_get_dllexports(file, &p);
+    ret = mcc_get_dllexports(file, &p);
     if (ret || !p) {
-        fprintf(stderr, "tcc: impdef: %s '%s'\n",
+        fprintf(stderr, "mcc: impdef: %s '%s'\n",
             ret == -1 ? "can't find file" :
             ret ==  1 ? "can't read symbols" :
             ret ==  0 ? "no symbols found in" :
@@ -373,11 +373,11 @@ usage:
 
     op = fopen(outfile, "wb");
     if (NULL == op) {
-        fprintf(stderr, "tcc: impdef: could not create output file: %s\n", outfile);
+        fprintf(stderr, "mcc: impdef: could not create output file: %s\n", outfile);
         goto the_end;
     }
 
-    fprintf(op, "LIBRARY %s\n\nEXPORTS\n", tcc_basename(file));
+    fprintf(op, "LIBRARY %s\n\nEXPORTS\n", mcc_basename(file));
     for (q = p, i = 0; *q; ++i) {
         fprintf(op, "%s\n", q);
         q += strlen(q) + 1;
@@ -390,7 +390,7 @@ usage:
 
 the_end:
     if (p)
-        tcc_free(p);
+        mcc_free(p);
     if (fp)
         fclose(fp);
     if (op)
@@ -402,11 +402,11 @@ the_end:
 
 
 
-#if !defined TCC_TARGET_I386 && !defined TCC_TARGET_X86_64
+#if !defined MCC_TARGET_I386 && !defined MCC_TARGET_X86_64
 
-ST_FUNC int tcc_tool_cross(char **argv, int option)
+ST_FUNC int mcc_tool_cross(char **argv, int option)
 {
-    fprintf(stderr, "tcc -m%d not implemented\n", option);
+    fprintf(stderr, "mcc -m%d not implemented\n", option);
     return 1;
 }
 
@@ -416,7 +416,7 @@ ST_FUNC int tcc_tool_cross(char **argv, int option)
 
 static char *quote_win32(const char *s)
 {
-    char *o, *r = tcc_malloc(2 * strlen(s) + 3);
+    char *o, *r = mcc_malloc(2 * strlen(s) + 3);
     int cbs = 0, quoted = !*s;
 
     for (o = r; *s; *o++ = *s++) {
@@ -452,18 +452,18 @@ static int execvp_win32(const char *prog, char **argv)
 #define execvp execvp_win32
 #endif
 
-ST_FUNC int tcc_tool_cross(char **argv, int target)
+ST_FUNC int mcc_tool_cross(char **argv, int target)
 {
     char program[4096];
     char *a0 = argv[0];
-    int prefix = tcc_basename(a0) - a0;
+    int prefix = mcc_basename(a0) - a0;
 
     snprintf(program, sizeof program,
         "%.*s%s"
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
         "-win32"
 #endif
-        "-tcc"
+        "-mcc"
 #ifdef _WIN32
         ".exe"
 #endif
@@ -471,7 +471,7 @@ ST_FUNC int tcc_tool_cross(char **argv, int target)
 
     if (strcmp(a0, program))
         execvp(argv[0] = program, argv);
-    fprintf(stderr, "tcc: could not run '%s'\n", program);
+    fprintf(stderr, "mcc: could not run '%s'\n", program);
     return 1;
 }
 
@@ -486,7 +486,7 @@ const int _dowildcard = 1;
 
 
 static char *escape_target_dep(const char *s) {
-    char *res = tcc_malloc(strlen(s) * 2 + 1);
+    char *res = mcc_malloc(strlen(s) * 2 + 1);
     int j;
     for (j = 0; *s; s++, j++) {
         if (is_space(*s)) {
@@ -498,7 +498,7 @@ static char *escape_target_dep(const char *s) {
     return res;
 }
 
-ST_FUNC int gen_makedeps(TCCState *s1, const char *target, const char *filename)
+ST_FUNC int gen_makedeps(MCCState *s1, const char *target, const char *filename)
 {
     FILE *depout;
     char buf[1024];
@@ -507,7 +507,7 @@ ST_FUNC int gen_makedeps(TCCState *s1, const char *target, const char *filename)
 
     if (!filename) {
         snprintf(buf, sizeof buf, "%.*s.d",
-            (int)(tcc_fileextension(target) - target), target);
+            (int)(mcc_fileextension(target) - target), target);
         filename = buf;
     }
 
@@ -516,11 +516,11 @@ ST_FUNC int gen_makedeps(TCCState *s1, const char *target, const char *filename)
     else
         depout = fopen(filename, "w");
     if (!depout)
-        return tcc_error_noabort("could not open '%s'", filename);
+        return mcc_error_noabort("could not open '%s'", filename);
     if (s1->verbose)
         printf("<- %s\n", filename);
 
-    escaped_targets = tcc_malloc(s1->nb_target_deps * sizeof(*escaped_targets));
+    escaped_targets = mcc_malloc(s1->nb_target_deps * sizeof(*escaped_targets));
     num_targets = 0;
     for (int i = 0; i<s1->nb_target_deps; ++i) {
         for (int k = 0; k < i; ++k)
@@ -539,8 +539,8 @@ ST_FUNC int gen_makedeps(TCCState *s1, const char *target, const char *filename)
             fprintf(depout, "%s:\n", escaped_targets[i]);
     }
     for (int i = 0; i < num_targets; ++i)
-        tcc_free(escaped_targets[i]);
-    tcc_free(escaped_targets);
+        mcc_free(escaped_targets[i]);
+    mcc_free(escaped_targets);
     fclose(depout);
     return 0;
 }

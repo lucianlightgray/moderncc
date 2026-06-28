@@ -72,10 +72,10 @@ ATOMIC_GEN(uint16_t, 2)
 ATOMIC_GEN(uint32_t, 4)
 ATOMIC_GEN(uint64_t, 8)
 
-#ifdef __TINYC__
+#ifdef __MCC__
 #define ATOMIC(x)      __atomic_##x
 #else
-#define ATOMIC(x)      __tcc_atomic_##x
+#define ATOMIC(x)      __mcc_atomic_##x
 #endif
 
 bool ATOMIC(is_lock_free) (unsigned long size, const volatile void *ptr)
@@ -96,6 +96,6 @@ bool ATOMIC(is_lock_free) (unsigned long size, const volatile void *ptr)
     return ret;
 }
 
-#ifndef __TINYC__
-bool __atomic_is_lock_free(unsigned long size, const volatile void *ptr) __attribute__((alias("__tcc_atomic_is_lock_free")));
+#ifndef __MCC__
+bool __atomic_is_lock_free(unsigned long size, const volatile void *ptr) __attribute__((alias("__mcc_atomic_is_lock_free")));
 #endif

@@ -51,7 +51,7 @@ int main()
     printf("%f\n%f\n%f\n\n", dd0, dd1, dd2);
     printf("\n");
 
-#ifdef __TINYC__
+#ifdef __MCC__
 
 
     long double la0 = 0B.110101100P12L;

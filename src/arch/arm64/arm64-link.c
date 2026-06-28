@@ -1,6 +1,6 @@
 #ifdef TARGET_DEFS_ONLY
 
-#define EM_TCC_TARGET EM_AARCH64
+#define EM_MCC_TARGET EM_AARCH64
 
 #define R_DATA_32  R_AARCH64_ABS32
 #define R_DATA_PTR R_AARCH64_ABS64
@@ -19,7 +19,7 @@
 
 #else
 
-#include "tcc.h"
+#include "mcc.h"
 
 #ifdef NEED_RELOC_TYPE
 ST_FUNC int code_reloc (int reloc_type)
@@ -95,7 +95,7 @@ ST_FUNC int gotplt_entry_type (int reloc_type)
 }
 
 #ifdef NEED_BUILD_GOT
-ST_FUNC unsigned create_plt_entry(TCCState *s1, unsigned got_offset, struct sym_attr *attr)
+ST_FUNC unsigned create_plt_entry(MCCState *s1, unsigned got_offset, struct sym_attr *attr)
 {
     Section *plt = s1->plt;
     uint8_t *p;
@@ -112,7 +112,7 @@ ST_FUNC unsigned create_plt_entry(TCCState *s1, unsigned got_offset, struct sym_
     return plt_offset;
 }
 
-ST_FUNC void relocate_plt(TCCState *s1)
+ST_FUNC void relocate_plt(MCCState *s1)
 {
     uint8_t *p, *p_end;
 
@@ -127,7 +127,7 @@ ST_FUNC void relocate_plt(TCCState *s1)
         uint64_t got = s1->got->sh_addr + 16;
         uint64_t off = (got >> 12) - (plt >> 12);
         if ((off + ((uint32_t)1 << 20)) >> 21)
-            tcc_error_noabort("Failed relocating PLT (off=0x%lx, got=0x%lx, plt=0x%lx)", (long)off, (long)got, (long)plt);
+            mcc_error_noabort("Failed relocating PLT (off=0x%lx, got=0x%lx, plt=0x%lx)", (long)off, (long)got, (long)plt);
         write32le(p, ARM64_STP_X_PRE | ARM64_RT(16) | ARM64_RT2(30) |
                       ARM64_RN(31) | ARM64_IMM7(-2));
         write32le(p + 4, (ARM64_ADRP | ARM64_RD(16) |
@@ -147,7 +147,7 @@ ST_FUNC void relocate_plt(TCCState *s1)
             uint64_t addr = got + read64le(p);
             uint64_t off = (addr >> 12) - (pc >> 12);
             if ((off + ((uint32_t)1 << 20)) >> 21)
-                tcc_error_noabort("Failed relocating PLT (off=0x%lx, addr=0x%lx, pc=0x%lx)", (long)off, (long)addr, (long)pc);
+                mcc_error_noabort("Failed relocating PLT (off=0x%lx, addr=0x%lx, pc=0x%lx)", (long)off, (long)addr, (long)pc);
             write32le(p, (ARM64_ADRP | ARM64_RD(16) |
 			  (off & 0x1ffffc) << 3 | (off & 3) << 29));
             write32le(p + 4, (ARM64_LDR_X | ARM64_RT(17) | ARM64_RN(16) |
@@ -170,7 +170,7 @@ ST_FUNC void relocate_plt(TCCState *s1)
 #endif
 #endif
 
-ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr, addr_t addr, addr_t val)
+ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr, addr_t addr, addr_t val)
 {
     int sym_index = ELFW(R_SYM)(rel->r_info), esym_index;
 #ifdef DEBUG_RELOC
@@ -179,7 +179,7 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 
     switch(type) {
         case R_AARCH64_ABS64:
-            if ((s1->output_type & TCC_OUTPUT_DYN)) {
+            if ((s1->output_type & MCC_OUTPUT_DYN)) {
                 esym_index = get_sym_attr(s1, sym_index, 0)->dyn_index;
                 qrel->r_offset = rel->r_offset;
                 if (esym_index) {
@@ -196,7 +196,7 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
             add64le(ptr, val);
             return;
         case R_AARCH64_ABS32:
-            if (s1->output_type & TCC_OUTPUT_DYN) {
+            if (s1->output_type & MCC_OUTPUT_DYN) {
                 qrel->r_offset = rel->r_offset;
                 qrel->r_info = ELFW(R_INFO)(0, R_AARCH64_RELATIVE);
                 qrel->r_addend = (int)read32le(ptr) + val;
@@ -205,7 +205,7 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
             add32le(ptr, val);
             return;
 	case R_AARCH64_PREL32:
-            if (s1->output_type == TCC_OUTPUT_DLL) {
+            if (s1->output_type == MCC_OUTPUT_DLL) {
                 esym_index = get_sym_attr(s1, sym_index, 0)->dyn_index;
                 if (esym_index) {
                     qrel->r_offset = rel->r_offset;
@@ -235,7 +235,7 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
             return;
         case R_AARCH64_ADR_PREL_PG_HI21: {
             uint64_t off = (val >> 12) - (addr >> 12);
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
             if ((off + ((uint64_t)1 << 20)) >> 21) {
                 ElfW(Sym) *sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
                 if (sym->st_shndx == SHN_UNDEF
@@ -243,11 +243,11 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
                     write32le(ptr, 0xd2800000 | (read32le(ptr) & 0x1f));
                     return;
                 }
-                tcc_error_noabort("R_AARCH64_ADR_PREL_PG_HI21 relocation failed");
+                mcc_error_noabort("R_AARCH64_ADR_PREL_PG_HI21 relocation failed");
             }
 #else
             if ((off + ((uint64_t)1 << 20)) >> 21)
-                tcc_error_noabort("R_AARCH64_ADR_PREL_PG_HI21 relocation failed");
+                mcc_error_noabort("R_AARCH64_ADR_PREL_PG_HI21 relocation failed");
 #endif
             write32le(ptr, ((read32le(ptr) & 0x9f00001f) |
                             (off & 0x1ffffc) << 3 | (off & 3) << 29));
@@ -280,7 +280,7 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
       (char *) symtab_section->link->data + sym->st_name);
 #endif
             if (((val - addr) + ((uint64_t)1 << 20)) & ~(uint64_t)0x1ffffc)
-                tcc_error_noabort("R_AARCH64_CONDBR19 relocation failed"
+                mcc_error_noabort("R_AARCH64_CONDBR19 relocation failed"
                           " (val=%lx, addr=%lx)", (long)val, (long)addr);
             write32le(ptr, ((read32le(ptr) & 0xff00001f) |
                             (((val - addr) >> 2 & 0x7ffff) << 5)));
@@ -291,7 +291,7 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
       (char *) symtab_section->link->data + sym->st_name);
 #endif
             if (((val - addr) + ((uint64_t)1 << 15)) & ~(uint64_t)0xfffc)
-                tcc_error_noabort("R_AARCH64_TSTBR14 relocation failed"
+                mcc_error_noabort("R_AARCH64_TSTBR14 relocation failed"
                           " (val=%lx, addr=%lx)", (long)val, (long)addr);
             write32le(ptr, ((read32le(ptr) & 0xfff8001f) |
                             (((val - addr) >> 2 & 0x3fff) << 5)));
@@ -305,7 +305,7 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		    (char *) symtab_section->link->data + sym->st_name);
 #endif
             if (((val - addr) + ((uint64_t)1 << 27)) & ~(uint64_t)0xffffffc) {
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
                 ElfW(Sym) *sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
                 if (sym->st_shndx == SHN_UNDEF
                     && ELFW(ST_BIND)(sym->st_info) == STB_WEAK) {
@@ -315,7 +315,7 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 #endif
                 name = (char *)symtab_section->link->data +
                     ((ElfW(Sym) *)symtab_section->data)[sym_index].st_name;
-                tcc_error_noabort("R_AARCH64_(JUMP|CALL)26 relocation failed"
+                mcc_error_noabort("R_AARCH64_(JUMP|CALL)26 relocation failed"
                           " for '%s' (val=%lx, addr=%lx)",
                           name, (long)val, (long)addr);
             }
@@ -329,7 +329,7 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
                 (((s1->got->sh_addr +
                    get_sym_attr(s1, sym_index, 0)->got_offset) >> 12) - (addr >> 12));
             if ((off + ((uint64_t)1 << 20)) >> 21)
-                tcc_error_noabort("R_AARCH64_ADR_GOT_PAGE relocation failed");
+                mcc_error_noabort("R_AARCH64_ADR_GOT_PAGE relocation failed");
             write32le(ptr, ((read32le(ptr) & 0x9f00001f) |
                             (off & 0x1ffffc) << 3 | (off & 3) << 29));
             return;
@@ -371,7 +371,7 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
             return;
         }
         case R_AARCH64_RELATIVE:
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
             add32le(ptr, val - s1->pe_imagebase);
 #endif
             return;

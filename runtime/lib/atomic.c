@@ -784,7 +784,7 @@ __asm__(
 __asm__(
 "        .text\n"
 );
-#ifndef __TINYC__
+#ifndef __MCC__
 __asm__(
 "        .arch   armv6k\n"
 "        .syntax unified\n"
@@ -796,7 +796,7 @@ __asm__(
 "        .type   " STR(_(__atomic_load_1)) ", %function\n"
 "" STR(_(__atomic_load_1)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0xe3510000\n"
 "        .int 0x1a000002\n"
@@ -831,7 +831,7 @@ __asm__(
 "        .type   " STR(_(__atomic_load_2)) ", %function\n"
 "" STR(_(__atomic_load_2)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0xe3510000\n"
 "        .int 0x1a000002\n"
@@ -866,7 +866,7 @@ __asm__(
 "        .type   " STR(_(__atomic_load_4)) ", %function\n"
 "" STR(_(__atomic_load_4)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0xe3510000\n"
 "        .int 0x1a000001\n"
@@ -897,7 +897,7 @@ __asm__(
 "        .type   " STR(_(__atomic_load_8)) ", %function\n"
 "" STR(_(__atomic_load_8)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0xe3510000\n"
 "        .int 0x1a000001\n"
@@ -928,7 +928,7 @@ __asm__(
 "        .type   " STR(_(__atomic_store_1)) ", %function\n"
 "" STR(_(__atomic_store_1)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0xe3520000\n"
 "        .int 0x1a000001\n"
@@ -959,7 +959,7 @@ __asm__(
 "        .type   " STR(_(__atomic_store_2)) ", %function\n"
 "" STR(_(__atomic_store_2)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0xe3520000\n"
 "        .int 0x1a000001\n"
@@ -990,7 +990,7 @@ __asm__(
 "        .type   " STR(_(__atomic_store_4)) ", %function\n"
 "" STR(_(__atomic_store_4)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0xe3520000\n"
 "        .int 0x1a000001\n"
@@ -1021,7 +1021,7 @@ __asm__(
 "        .type   " STR(_(__atomic_store_8)) ", %function\n"
 "" STR(_(__atomic_store_8)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0xe92d0030\n"
 "        .int 0xe1a04002\n"
@@ -1078,7 +1078,7 @@ __asm__(
 "        .type   " STR(_(__atomic_compare_exchange_1)) ", %function\n"
 "" STR(_(__atomic_compare_exchange_1)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0xe52de004\n"
 "        .int 0xe3530000\n"
@@ -1144,7 +1144,7 @@ __asm__(
 "        .type   " STR(_(__atomic_compare_exchange_2)) ", %function\n"
 "" STR(_(__atomic_compare_exchange_2)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0xe52de004\n"
 "        .int 0xe3530000\n"
@@ -1210,7 +1210,7 @@ __asm__(
 "        .type   " STR(_(__atomic_compare_exchange_4)) ", %function\n"
 "" STR(_(__atomic_compare_exchange_4)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0xe52d4004\n"
 "        .int 0xe3530000\n"
@@ -1278,7 +1278,7 @@ __asm__(
 "        .type   " STR(_(__atomic_compare_exchange_8)) ", %function\n"
 "" STR(_(__atomic_compare_exchange_8)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0xe92d00f0\n"
 "        .int 0xe1a05003\n"
@@ -1356,7 +1356,7 @@ __asm__(
 "        .type   " STR(_(__atomic_test_and_set_1)) ", %function\n"
 "" STR(_(__atomic_test_and_set_1)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0xe3a02001\n"
 "        .int 0xe3510000\n"
@@ -1407,7 +1407,7 @@ __asm__(
 "        .type   " STR(_(__atomic_test_and_set_2)) ", %function\n"
 "" STR(_(__atomic_test_and_set_2)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0xe3a02001\n"
 "        .int 0xe3510000\n"
@@ -1458,7 +1458,7 @@ __asm__(
 "        .type   " STR(_(__atomic_test_and_set_4)) ", %function\n"
 "" STR(_(__atomic_test_and_set_4)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0xe3a02001\n"
 "        .int 0xe3510000\n"
@@ -1509,7 +1509,7 @@ __asm__(
 "        .type   " STR(_(__atomic_test_and_set_8)) ", %function\n"
 "" STR(_(__atomic_test_and_set_8)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0xe3a02001\n"
 "        .int 0xe3510000\n"
@@ -1560,7 +1560,7 @@ __asm__(
 "        .type   " STR(_(atomic_thread_fence)) ", %function\n"
 "" STR(_(atomic_thread_fence)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0xee070fba\n"
 "        .int 0xe12fff1e\n"
@@ -1578,7 +1578,7 @@ __asm__(
 "        .type   " STR(_(atomic_signal_fence)) ", %function\n"
 "" STR(_(atomic_signal_fence)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0xe12fff1e\n"
 );
@@ -1594,7 +1594,7 @@ __asm__(
 "        .type   " STR(_(atomic_flag_test_and_set)) ", %function\n"
 "" STR(_(atomic_flag_test_and_set)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0xe3a02001\n"
 "        .int 0xee070fba\n"
@@ -1627,7 +1627,7 @@ __asm__(
 "        .type   " STR(_(atomic_flag_test_and_set_explicit)) ", %function\n"
 "" STR(_(atomic_flag_test_and_set_explicit)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0xe3a02001\n"
 "        .int 0xee070fba\n"
@@ -1660,7 +1660,7 @@ __asm__(
 "        .type   " STR(_(atomic_flag_clear)) ", %function\n"
 "" STR(_(atomic_flag_clear)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0xe3b03000\n"
 "        .int 0xee070fba\n"
@@ -1684,7 +1684,7 @@ __asm__(
 "        .type   " STR(_(atomic_flag_clear_explicit)) ", %function\n"
 "" STR(_(atomic_flag_clear_explicit)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0xe3b03000\n"
 "        .int 0xee070fba\n"
@@ -1715,7 +1715,7 @@ __asm__(
 "        .type   " STR(_(__atomic_load_1)) ", %function\n"
 "" STR(_(__atomic_load_1)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x35000081\n"
 "        .int 0x39400000\n"
@@ -1744,7 +1744,7 @@ __asm__(
 "        .type   " STR(_(__atomic_load_2)) ", %function\n"
 "" STR(_(__atomic_load_2)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x35000081\n"
 "        .int 0x79400000\n"
@@ -1773,7 +1773,7 @@ __asm__(
 "        .type   " STR(_(__atomic_load_4)) ", %function\n"
 "" STR(_(__atomic_load_4)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x35000061\n"
 "        .int 0xb9400000\n"
@@ -1798,7 +1798,7 @@ __asm__(
 "        .type   " STR(_(__atomic_load_8)) ", %function\n"
 "" STR(_(__atomic_load_8)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x35000061\n"
 "        .int 0xf9400000\n"
@@ -1823,7 +1823,7 @@ __asm__(
 "        .type   " STR(_(__atomic_store_1)) ", %function\n"
 "" STR(_(__atomic_store_1)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x12001c21\n"
 "        .int 0x35000062\n"
@@ -1850,7 +1850,7 @@ __asm__(
 "        .type   " STR(_(__atomic_store_2)) ", %function\n"
 "" STR(_(__atomic_store_2)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x12003c21\n"
 "        .int 0x35000062\n"
@@ -1877,7 +1877,7 @@ __asm__(
 "        .type   " STR(_(__atomic_store_4)) ", %function\n"
 "" STR(_(__atomic_store_4)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x35000062\n"
 "        .int 0xb9000001\n"
@@ -1902,7 +1902,7 @@ __asm__(
 "        .type   " STR(_(__atomic_store_8)) ", %function\n"
 "" STR(_(__atomic_store_8)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x35000062\n"
 "        .int 0xf9000001\n"
@@ -1927,7 +1927,7 @@ __asm__(
 "        .type   " STR(_(__atomic_compare_exchange_1)) ", %function\n"
 "" STR(_(__atomic_compare_exchange_1)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x12001c42\n"
 "        .int 0x35000143\n"
@@ -1990,7 +1990,7 @@ __asm__(
 "        .type   " STR(_(__atomic_compare_exchange_2)) ", %function\n"
 "" STR(_(__atomic_compare_exchange_2)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x12003c42\n"
 "        .int 0x35000143\n"
@@ -2053,7 +2053,7 @@ __asm__(
 "        .type   " STR(_(__atomic_compare_exchange_4)) ", %function\n"
 "" STR(_(__atomic_compare_exchange_4)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x35000143\n"
 "        .int 0xb9400023\n"
@@ -2114,7 +2114,7 @@ __asm__(
 "        .type   " STR(_(__atomic_compare_exchange_8)) ", %function\n"
 "" STR(_(__atomic_compare_exchange_8)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x35000143\n"
 "        .int 0xf9400023\n"
@@ -2175,7 +2175,7 @@ __asm__(
 "        .type   " STR(_(__atomic_test_and_set_1)) ", %function\n"
 "" STR(_(__atomic_test_and_set_1)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x52800022\n"
 "        .int 0x350000c1\n"
@@ -2215,7 +2215,7 @@ __asm__(
 "        .type   " STR(_(__atomic_test_and_set_2)) ", %function\n"
 "" STR(_(__atomic_test_and_set_2)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x52800022\n"
 "        .int 0x350000c1\n"
@@ -2255,7 +2255,7 @@ __asm__(
 "        .type   " STR(_(__atomic_test_and_set_4)) ", %function\n"
 "" STR(_(__atomic_test_and_set_4)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x52800022\n"
 "        .int 0x350000c1\n"
@@ -2295,7 +2295,7 @@ __asm__(
 "        .type   " STR(_(__atomic_test_and_set_8)) ", %function\n"
 "" STR(_(__atomic_test_and_set_8)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x52800022\n"
 "        .int 0x350000c1\n"
@@ -2335,7 +2335,7 @@ __asm__(
 "        .type   " STR(_(atomic_thread_fence)) ", %function\n"
 "" STR(_(atomic_thread_fence)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0xd5033bbf\n"
 "        .int 0xd65f03c0\n"
@@ -2353,7 +2353,7 @@ __asm__(
 "        .type   " STR(_(atomic_signal_fence)) ", %function\n"
 "" STR(_(atomic_signal_fence)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0xd65f03c0\n"
 );
@@ -2369,7 +2369,7 @@ __asm__(
 "        .type   " STR(_(atomic_flag_test_and_set)) ", %function\n"
 "" STR(_(atomic_flag_test_and_set)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0xaa0003e1\n"
 "        .int 0x52800022\n"
@@ -2396,7 +2396,7 @@ __asm__(
 "        .type   " STR(_(atomic_flag_test_and_set_explicit)) ", %function\n"
 "" STR(_(atomic_flag_test_and_set_explicit)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0xaa0003e1\n"
 "        .int 0x52800022\n"
@@ -2423,7 +2423,7 @@ __asm__(
 "        .type   " STR(_(atomic_flag_clear)) ", %function\n"
 "" STR(_(atomic_flag_clear)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x089ffc1f\n"
 "        .int 0xd65f03c0\n"
@@ -2441,7 +2441,7 @@ __asm__(
 "        .type   " STR(_(atomic_flag_clear_explicit)) ", %function\n"
 "" STR(_(atomic_flag_clear_explicit)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x089ffc1f\n"
 "        .int 0xd65f03c0\n"
@@ -2466,7 +2466,7 @@ __asm__(
 "        .type   " STR(_(__atomic_load_1)) ", %function\n"
 "" STR(_(__atomic_load_1)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x0330000f\n"
 "        .int 0x00054503\n"
@@ -2488,7 +2488,7 @@ __asm__(
 "        .type   " STR(_(__atomic_load_2)) ", %function\n"
 "" STR(_(__atomic_load_2)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x0330000f\n"
 "        .int 0x00055503\n"
@@ -2510,7 +2510,7 @@ __asm__(
 "        .type   " STR(_(__atomic_load_4)) ", %function\n"
 "" STR(_(__atomic_load_4)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x0330000f\n"
 "        .short 0x4108\n"
@@ -2534,7 +2534,7 @@ __asm__(
 "        .type   " STR(_(__atomic_load_8)) ", %function\n"
 "" STR(_(__atomic_load_8)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x0330000f\n"
 "        .short 0x6108\n"
@@ -2556,7 +2556,7 @@ __asm__(
 "        .type   " STR(_(__atomic_store_1)) ", %function\n"
 "" STR(_(__atomic_store_1)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x0330000f\n"
 "        .int 0x00b50023\n"
@@ -2578,7 +2578,7 @@ __asm__(
 "        .type   " STR(_(__atomic_store_2)) ", %function\n"
 "" STR(_(__atomic_store_2)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x0330000f\n"
 "        .int 0x00b51023\n"
@@ -2600,7 +2600,7 @@ __asm__(
 "        .type   " STR(_(__atomic_store_4)) ", %function\n"
 "" STR(_(__atomic_store_4)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x0310000f\n"
 "        .short 0xc10c\n"
@@ -2622,7 +2622,7 @@ __asm__(
 "        .type   " STR(_(__atomic_store_8)) ", %function\n"
 "" STR(_(__atomic_store_8)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x0310000f\n"
 "        .short 0xe10c\n"
@@ -2644,7 +2644,7 @@ __asm__(
 "        .type   " STR(_(__atomic_compare_exchange_1)) ", %function\n"
 "" STR(_(__atomic_compare_exchange_1)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x0005c683\n"
 "        .int 0x00357793\n"
@@ -2719,7 +2719,7 @@ __asm__(
 "        .type   " STR(_(__atomic_compare_exchange_2)) ", %function\n"
 "" STR(_(__atomic_compare_exchange_2)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x0005d683\n"
 "        .int 0x00357713\n"
@@ -2796,7 +2796,7 @@ __asm__(
 "        .type   " STR(_(__atomic_compare_exchange_4)) ", %function\n"
 "" STR(_(__atomic_compare_exchange_4)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .short 0x419c\n"
 "        .int 0x1605272f\n"
@@ -2835,7 +2835,7 @@ __asm__(
 "        .type   " STR(_(__atomic_compare_exchange_8)) ", %function\n"
 "" STR(_(__atomic_compare_exchange_8)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .short 0x619c\n"
 "        .int 0x1605372f\n"
@@ -2874,7 +2874,7 @@ __asm__(
 "        .type   " STR(_(__atomic_test_and_set_1)) ", %function\n"
 "" STR(_(__atomic_test_and_set_1)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x00357793\n"
 "        .int 0x0037979b\n"
@@ -2906,7 +2906,7 @@ __asm__(
 "        .type   " STR(_(__atomic_test_and_set_2)) ", %function\n"
 "" STR(_(__atomic_test_and_set_2)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x00357793\n"
 "        .int 0x0037979b\n"
@@ -2938,7 +2938,7 @@ __asm__(
 "        .type   " STR(_(__atomic_test_and_set_4)) ", %function\n"
 "" STR(_(__atomic_test_and_set_4)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x00357793\n"
 "        .int 0x0037979b\n"
@@ -2970,7 +2970,7 @@ __asm__(
 "        .type   " STR(_(__atomic_test_and_set_8)) ", %function\n"
 "" STR(_(__atomic_test_and_set_8)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x00357793\n"
 "        .int 0x0037979b\n"
@@ -3002,7 +3002,7 @@ __asm__(
 "        .type   " STR(_(atomic_thread_fence)) ", %function\n"
 "" STR(_(atomic_thread_fence)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x0330000f\n"
 "        .short 0x8082\n"
@@ -3020,7 +3020,7 @@ __asm__(
 "        .type   " STR(_(atomic_signal_fence)) ", %function\n"
 "" STR(_(atomic_signal_fence)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .short 0x8082\n"
 );
@@ -3036,7 +3036,7 @@ __asm__(
 "        .type   " STR(_(atomic_flag_test_and_set)) ", %function\n"
 "" STR(_(atomic_flag_test_and_set)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x00357793\n"
 "        .int 0x0037979b\n"
@@ -3068,7 +3068,7 @@ __asm__(
 "        .type   " STR(_(atomic_flag_test_and_set_explicit)) ", %function\n"
 "" STR(_(atomic_flag_test_and_set_explicit)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x00357793\n"
 "        .int 0x0037979b\n"
@@ -3100,7 +3100,7 @@ __asm__(
 "        .type   " STR(_(atomic_flag_clear)) ", %function\n"
 "" STR(_(atomic_flag_clear)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x0330000f\n"
 "        .int 0x00050023\n"
@@ -3122,7 +3122,7 @@ __asm__(
 "        .type   " STR(_(atomic_flag_clear_explicit)) ", %function\n"
 "" STR(_(atomic_flag_clear_explicit)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "        .int 0x0330000f\n"
 "        .int 0x00050023\n"

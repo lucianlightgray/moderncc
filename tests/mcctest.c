@@ -6,7 +6,7 @@
 
 #define CC_gcc 1
 #define CC_clang 2
-#define CC_tcc 3
+#define CC_mcc 3
 
 
 #define ALL_ISOC99
@@ -46,24 +46,24 @@ typedef __SIZE_TYPE__ uintptr_t;
 
 
 
-#define TCCLIB_INC <tcclib.h>
-#define TCCLIB_INC1 <tcclib
-#define TCCLIB_INC2 h>
-#define TCCLIB_INC3 "tcclib.h"
+#define MCCLIB_INC <mcclib.h>
+#define MCCLIB_INC1 <mcclib
+#define MCCLIB_INC2 h>
+#define MCCLIB_INC3 "mcclib.h"
 
-#include TCCLIB_INC
+#include MCCLIB_INC
 
-#include TCCLIB_INC1.TCCLIB_INC2
+#include MCCLIB_INC1.MCCLIB_INC2
 
-#include TCCLIB_INC1.h>
+#include MCCLIB_INC1.h>
 
-#include TCCLIB_INC3
+#include MCCLIB_INC3
 
-#include <tcclib.h>
+#include <mcclib.h>
 
-#include "tcclib.h"
+#include "mcclib.h"
 
-#include "tcctest.h"
+#include "mcctest.h"
 
 
 #define INC(name) <tests/name.h>
@@ -335,7 +335,7 @@ static struct recursive_macro { int rm_field; } G;
     WRAP((printf("rm_field = %d %d\n", rm_field, WRAP(rm_field))));
 }
 
-#if __TINYC__
+#if __MCC__
 int op(a, b)
 {
     return a / b;
@@ -351,7 +351,7 @@ int ret(a)
 }
 #endif
 
-#if !defined(__TINYC__) && (__GNUC__ >= 8)
+#if !defined(__MCC__) && (__GNUC__ >= 8)
 
 #define CONSTANTINDEXEDSTRLIT
 #endif
@@ -1474,7 +1474,7 @@ uintptr_t cinit3 = (uintptr_t)"AA";
 char const * const cinit8[] = { [0 ... 1] = "BB", [2 ... 4] = "CC" };
 void *cinit52 = &(void*){ (void*) 52 };
 
-#if __TINYC__ || __GNUC__ >= 6
+#if __MCC__ || __GNUC__ >= 6
 int cinit4 = (int){44};
 void *cinit51 = (void*){ (void*) 51 };
 struct _c6 { int a,b; } cinit6 = (struct _c6){61,62}, *cinit7 = &(struct _c6){71,72};
@@ -1535,7 +1535,7 @@ void compound_literal_test(void)
 }
 
 
-#if __TINYC__
+#if __MCC__
 
 
 
@@ -3720,7 +3720,7 @@ void test_asm_call(void)
 
 
   asm volatile ("push %%rdi; push %%rdi; mov %0, %%rdi;"
-#if 1 && !defined(__TINYC__) && (defined(__PIC__) || defined(__PIE__))
+#if 1 && !defined(__MCC__) && (defined(__PIC__) || defined(__PIE__))
 		"call getenv@plt;"
 #else
 		"call getenv;"
@@ -4388,18 +4388,18 @@ void func_arg_test(void)
 
 
 
-#ifdef __TINYC__
+#ifdef __MCC__
 
 #endif
 
-#define	tcc_test()
+#define	mcc_test()
 
 
 
 void whitespace_test(void)
 {
     char *str;
-    int tcc_test = 1;
+    int mcc_test = 1;
 
 
 #if 1
@@ -4452,7 +4452,7 @@ n 456\"\n");
 
     printf ("%d\n",
 #if 1
-	    tcc_test
+	    mcc_test
 #endif
             );
 

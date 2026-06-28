@@ -1,13 +1,13 @@
 #define USING_GLOBALS
-#include "tcc.h"
-#ifdef CONFIG_TCC_ASM
+#include "mcc.h"
+#ifdef CONFIG_MCC_ASM
 
 static Section *last_text_section;
 static int asmgoto_n;
 
-static int tcc_assemble_internal(TCCState *s1, int do_preprocess, int global);
-static Sym* asm_new_label(TCCState *s1, int label, int is_local);
-static Sym* asm_new_label1(TCCState *s1, int label, int is_local, int sh_num, int value);
+static int mcc_assemble_internal(MCCState *s1, int do_preprocess, int global);
+static Sym* asm_new_label(MCCState *s1, int label, int is_local);
+static Sym* asm_new_label1(MCCState *s1, int label, int is_local, int sh_num, int value);
 
 #if PTR_SIZE == 8
 ST_FUNC void gen_addr64(int r, Sym *sym, int64_t c)
@@ -24,14 +24,14 @@ ST_FUNC void gen_expr64(ExprValue *pe)
 }
 #endif
 
-static int asm_get_prefix_name(TCCState *s1, const char *prefix, unsigned int n)
+static int asm_get_prefix_name(MCCState *s1, const char *prefix, unsigned int n)
 {
     char buf[64];
     snprintf(buf, sizeof(buf), "%s%u", prefix, n);
     return tok_alloc_const(buf);
 }
 
-ST_FUNC int asm_get_local_label_name(TCCState *s1, unsigned int n)
+ST_FUNC int asm_get_local_label_name(MCCState *s1, unsigned int n)
 {
     return asm_get_prefix_name(s1, "L..", n);
 }
@@ -40,7 +40,7 @@ static int asm2cname(int v, int *addeddot)
 {
     const char *name;
     *addeddot = 0;
-    if (!tcc_state->leading_underscore)
+    if (!mcc_state->leading_underscore)
       return v;
     name = get_tok_str(v, NULL);
     if (!name)
@@ -88,7 +88,7 @@ ST_FUNC Sym* get_asm_sym(int name, Sym *csym)
     return sym;
 }
 
-static Sym* asm_section_sym(TCCState *s1, Section *sec)
+static Sym* asm_section_sym(MCCState *s1, Section *sec)
 {
     char buf[100]; int label; Sym *sym;
     snprintf(buf, sizeof buf, "L.%s", sec->name);
@@ -98,7 +98,7 @@ static Sym* asm_section_sym(TCCState *s1, Section *sec)
 }
 
 
-static void asm_expr_unary(TCCState *s1, ExprValue *pe)
+static void asm_expr_unary(MCCState *s1, ExprValue *pe)
 {
     Sym *sym;
     int op, label;
@@ -116,7 +116,7 @@ static void asm_expr_unary(TCCState *s1, ExprValue *pe)
                 if (sym && (!sym->c || elfsym(sym)->st_shndx == SHN_UNDEF))
                     sym = sym->prev_tok;
                 if (!sym)
-                    tcc_error("local label '%d' not found backward", (int)n);
+                    mcc_error("local label '%d' not found backward", (int)n);
             } else {
                 if (!sym || (sym->c && elfsym(sym)->st_shndx != SHN_UNDEF)) {
 		    sym = asm_label_push(label);
@@ -130,7 +130,7 @@ static void asm_expr_unary(TCCState *s1, ExprValue *pe)
             pe->sym = NULL;
 	    pe->pcrel = 0;
         } else {
-            tcc_error("invalid number syntax");
+            mcc_error("invalid number syntax");
         }
         next();
         break;
@@ -144,7 +144,7 @@ static void asm_expr_unary(TCCState *s1, ExprValue *pe)
         next();
         asm_expr_unary(s1, pe);
         if (pe->sym)
-            tcc_error("invalid operation with label");
+            mcc_error("invalid operation with label");
         if (op == '-')
             pe->v = -pe->v;
         else
@@ -184,13 +184,13 @@ static void asm_expr_unary(TCCState *s1, ExprValue *pe)
             }
             next();
         } else {
-            tcc_error("bad expression syntax [%s]", get_tok_str(tok, &tokc));
+            mcc_error("bad expression syntax [%s]", get_tok_str(tok, &tokc));
         }
         break;
     }
 }
     
-static void asm_expr_prod(TCCState *s1, ExprValue *pe)
+static void asm_expr_prod(MCCState *s1, ExprValue *pe)
 {
     int op;
     ExprValue e2;
@@ -204,7 +204,7 @@ static void asm_expr_prod(TCCState *s1, ExprValue *pe)
         next();
         asm_expr_unary(s1, &e2);
         if (pe->sym || e2.sym)
-            tcc_error("invalid operation with label");
+            mcc_error("invalid operation with label");
         switch(op) {
         case '*':
             pe->v *= e2.v;
@@ -212,7 +212,7 @@ static void asm_expr_prod(TCCState *s1, ExprValue *pe)
         case '/':  
             if (e2.v == 0) {
             div_error:
-                tcc_error("division by zero");
+                mcc_error("division by zero");
             }
             pe->v /= e2.v;
             break;
@@ -232,7 +232,7 @@ static void asm_expr_prod(TCCState *s1, ExprValue *pe)
     }
 }
 
-static void asm_expr_logic(TCCState *s1, ExprValue *pe)
+static void asm_expr_logic(MCCState *s1, ExprValue *pe)
 {
     int op;
     ExprValue e2;
@@ -245,7 +245,7 @@ static void asm_expr_logic(TCCState *s1, ExprValue *pe)
         next();
         asm_expr_prod(s1, &e2);
         if (pe->sym || e2.sym)
-            tcc_error("invalid operation with label");
+            mcc_error("invalid operation with label");
         switch(op) {
         case '&':
             pe->v &= e2.v;
@@ -261,7 +261,7 @@ static void asm_expr_logic(TCCState *s1, ExprValue *pe)
     }
 }
 
-static inline void asm_expr_sum(TCCState *s1, ExprValue *pe)
+static inline void asm_expr_sum(MCCState *s1, ExprValue *pe)
 {
     int op;
     ExprValue e2;
@@ -300,14 +300,14 @@ static inline void asm_expr_sum(TCCState *s1, ExprValue *pe)
 		    e2.sym = NULL;
 		} else {
 cannot_relocate:
-		    tcc_error("invalid operation with label");
+		    mcc_error("invalid operation with label");
 		}
 	    }
         }
     }
 }
 
-static inline void asm_expr_cmp(TCCState *s1, ExprValue *pe)
+static inline void asm_expr_cmp(MCCState *s1, ExprValue *pe)
 {
     int op;
     ExprValue e2;
@@ -321,7 +321,7 @@ static inline void asm_expr_cmp(TCCState *s1, ExprValue *pe)
         next();
         asm_expr_sum(s1, &e2);
         if (pe->sym || e2.sym)
-            tcc_error("invalid operation with label");
+            mcc_error("invalid operation with label");
         switch(op) {
 	case TOK_EQ:
 	    pe->v = pe->v == e2.v;
@@ -348,23 +348,23 @@ static inline void asm_expr_cmp(TCCState *s1, ExprValue *pe)
     }
 }
 
-ST_FUNC void asm_expr(TCCState *s1, ExprValue *pe)
+ST_FUNC void asm_expr(MCCState *s1, ExprValue *pe)
 {
     asm_expr_cmp(s1, pe);
 }
 
-ST_FUNC int asm_int_expr(TCCState *s1)
+ST_FUNC int asm_int_expr(MCCState *s1)
 {
     ExprValue e;
     asm_expr(s1, &e);
     if (e.sym)
         expect("constant");
     if ((int)e.v != e.v)
-	tcc_error("integer out of range %lld", (long long)e.v);
+	mcc_error("integer out of range %lld", (long long)e.v);
     return e.v;
 }
 
-static Sym* asm_new_label1(TCCState *s1, int label, int is_local,
+static Sym* asm_new_label1(MCCState *s1, int label, int is_local,
                            int sh_num, int value)
 {
     Sym *sym;
@@ -378,7 +378,7 @@ static Sym* asm_new_label1(TCCState *s1, int label, int is_local,
                 && (is_local == 1 || (sym->type.t & VT_EXTERN)))
                 goto new_label;
             if (!(sym->type.t & VT_EXTERN))
-                tcc_error("assembler label '%s' already defined",
+                mcc_error("assembler label '%s' already defined",
                           get_tok_str(label, NULL));
         }
     } else {
@@ -395,12 +395,12 @@ static Sym* asm_new_label1(TCCState *s1, int label, int is_local,
     return sym;
 }
 
-static Sym* asm_new_label(TCCState *s1, int label, int is_local)
+static Sym* asm_new_label(MCCState *s1, int label, int is_local)
 {
     return asm_new_label1(s1, label, is_local, cur_text_section->sh_num, ind);
 }
 
-static Sym* set_symbol(TCCState *s1, int label)
+static Sym* set_symbol(MCCState *s1, int label)
 {
     long n;
     ExprValue e;
@@ -417,37 +417,37 @@ static Sym* set_symbol(TCCState *s1, int label)
     return sym;
 }
 
-static void use_section1(TCCState *s1, Section *sec)
+static void use_section1(MCCState *s1, Section *sec)
 {
     cur_text_section->data_offset = ind;
     cur_text_section = sec;
     ind = cur_text_section->data_offset;
 }
 
-static void use_section(TCCState *s1, const char *name)
+static void use_section(MCCState *s1, const char *name)
 {
     Section *sec;
     sec = find_section(s1, name);
     use_section1(s1, sec);
 }
 
-static void push_section(TCCState *s1, const char *name)
+static void push_section(MCCState *s1, const char *name)
 {
     Section *sec = find_section(s1, name);
     sec->prev = cur_text_section;
     use_section1(s1, sec);
 }
 
-static void pop_section(TCCState *s1)
+static void pop_section(MCCState *s1)
 {
     Section *prev = cur_text_section->prev;
     if (!prev)
-        tcc_error(".popsection without .pushsection");
+        mcc_error(".popsection without .pushsection");
     cur_text_section->prev = NULL;
     use_section1(s1, prev);
 }
 
-static void asm_parse_directive(TCCState *s1, int global)
+static void asm_parse_directive(MCCState *s1, int global)
 {
     int n, offset, v, size, tok1, c;
     Section *sec;
@@ -466,13 +466,13 @@ static void asm_parse_directive(TCCState *s1, int global)
         if (tok1 == TOK_ASMDIR_p2align)
         {
             if (n < 0 || n > 30)
-                tcc_error("invalid p2align, must be between 0 and 30");
+                mcc_error("invalid p2align, must be between 0 and 30");
             n = 1 << n;
             tok1 = TOK_ASMDIR_align;
         }
         if (tok1 == TOK_ASMDIR_align || tok1 == TOK_ASMDIR_balign) {
             if (n <= 0 || (n & (n-1)) != 0)
-                tcc_error("alignment must be a positive power of two");
+                mcc_error("alignment must be a positive power of two");
             offset = (ind + n - 1) & -n;
             size = offset - ind;
             if (sec->sh_addralign < n)
@@ -490,7 +490,7 @@ static void asm_parse_directive(TCCState *s1, int global)
         }
     zero_pad:
 	if ((uint64_t)ind + size >= 1<<30)
-	    tcc_error("too much data");
+	    mcc_error("too much data");
         if (sec->sh_type != SHT_NOBITS) {
             if (c) {
                 gen_fill_nops(size);
@@ -515,7 +515,7 @@ static void asm_parse_directive(TCCState *s1, int global)
             p = tokc.str.data;
             if (tok != TOK_PPNUM) {
             error_constant:
-                tcc_error("64 bit constant");
+                mcc_error("64 bit constant");
             }
             vl = strtoll(p, (char **)&p, 0);
             if (*p != '\0')
@@ -578,7 +578,7 @@ static void asm_parse_directive(TCCState *s1, int global)
             next();
             repeat = asm_int_expr(s1);
             if (repeat < 0) {
-                tcc_error("repeat < 0; .fill ignored");
+                mcc_error("repeat < 0; .fill ignored");
                 break;
             }
             size = 1;
@@ -587,7 +587,7 @@ static void asm_parse_directive(TCCState *s1, int global)
                 next();
                 size = asm_int_expr(s1);
                 if (size < 0) {
-                    tcc_error("size < 0; .fill ignored");
+                    mcc_error("size < 0; .fill ignored");
                     break;
                 }
                 if (size > 8)
@@ -621,13 +621,13 @@ static void asm_parse_directive(TCCState *s1, int global)
             init_str = tok_str_alloc();
             while (next(), tok != TOK_ASMDIR_endr) {
                 if (tok == CH_EOF)
-                    tcc_error("we at end of file, .endr not found");
+                    mcc_error("we at end of file, .endr not found");
                 tok_str_add_tok(init_str);
             }
             tok_str_add(init_str, TOK_EOF);
             begin_macro(init_str, 1);
             while (repeat-- > 0) {
-                tcc_assemble_internal(s1, (parse_flags & PARSE_FLAG_PREPROCESS),
+                mcc_assemble_internal(s1, (parse_flags & PARSE_FLAG_PREPROCESS),
 				      global);
                 macro_ptr = init_str->str;
             }
@@ -649,7 +649,7 @@ static void asm_parse_directive(TCCState *s1, int global)
 		n += esym->st_value;
 	    }
             if (n < ind)
-                tcc_error("attempt to .org backwards");
+                mcc_error("attempt to .org backwards");
             v = c = 0;
             size = n - ind;
             goto zero_pad;
@@ -745,7 +745,7 @@ static void asm_parse_directive(TCCState *s1, int global)
                 skip_to_eol(0);
                 break;
             }
-            tccpp_putfile(p);
+            mccpp_putfile(p);
             next();
         }
         break;
@@ -759,7 +759,7 @@ static void asm_parse_directive(TCCState *s1, int global)
                 pstrcat(ident, sizeof(ident), tokc.str.data);
             else
                 pstrcat(ident, sizeof(ident), get_tok_str(tok, &tokc));
-            tcc_warning_c(warn_unsupported)("ignoring .ident %s", ident);
+            mcc_warning_c(warn_unsupported)("ignoring .ident %s", ident);
             next();
         }
         break;
@@ -773,8 +773,8 @@ static void asm_parse_directive(TCCState *s1, int global)
 		expect("identifier");
             sym = asm_label_find(tok);
             if (!sym)
-                tcc_error("label not found: %s", get_tok_str(tok, NULL));
-            tcc_warning_c(warn_unsupported)("ignoring .size %s,*", get_tok_str(tok, NULL));
+                mcc_error("label not found: %s", get_tok_str(tok, NULL));
+            mcc_warning_c(warn_unsupported)("ignoring .size %s,*", get_tok_str(tok, NULL));
             next();
             skip(',');
             n = asm_int_expr(s1);
@@ -817,7 +817,7 @@ static void asm_parse_directive(TCCState *s1, int global)
                 st_type = STT_OBJECT;
                 goto set_st_type;
             } else
-                tcc_warning_c(warn_unsupported)("change type of '%s' from 0x%x to '%s' ignored",
+                mcc_warning_c(warn_unsupported)("change type of '%s' from 0x%x to '%s' ignored",
                     get_tok_str(sym->v, NULL), sym->type.t, newtype);
 
             next();
@@ -877,7 +877,7 @@ static void asm_parse_directive(TCCState *s1, int global)
             Section *sec;
             next();
             if (!last_text_section)
-                tcc_error("no previous section referenced");
+                mcc_error("no previous section referenced");
             sec = cur_text_section;
             use_section1(s1, last_text_section);
             last_text_section = sec;
@@ -887,7 +887,7 @@ static void asm_parse_directive(TCCState *s1, int global)
 	next();
 	pop_section(s1);
 	break;
-#ifdef TCC_TARGET_I386
+#ifdef MCC_TARGET_I386
     case TOK_ASMDIR_code16:
         {
             next();
@@ -906,7 +906,7 @@ static void asm_parse_directive(TCCState *s1, int global)
         next();
         break;
 #endif
-#ifdef TCC_TARGET_RISCV64
+#ifdef MCC_TARGET_RISCV64
     case TOK_ASMDIR_option:
         next();
         switch(tok){
@@ -921,10 +921,10 @@ static void asm_parse_directive(TCCState *s1, int global)
                 next();
                 break;
             case TOK_ASM_arch:
-                tcc_error("unimp .option '.%s'", get_tok_str(tok, NULL));
+                mcc_error("unimp .option '.%s'", get_tok_str(tok, NULL));
                 break;
             default:
-                tcc_error("unknown .option '.%s'", get_tok_str(tok, NULL));
+                mcc_error("unknown .option '.%s'", get_tok_str(tok, NULL));
                 break;
         }
         break;
@@ -947,10 +947,10 @@ static void asm_parse_directive(TCCState *s1, int global)
 	    asm_expr(s1, &e);
 	    skip(',');
 	    reloc_name = get_tok_str(tok, NULL);
-#if defined(TCC_TARGET_ARM64)
+#if defined(MCC_TARGET_ARM64)
 	    if (!strcmp(reloc_name, "R_AARCH64_CALL26"))
 	        reloc_type = R_AARCH64_CALL26;
-#elif defined(TCC_TARGET_RISCV64)
+#elif defined(MCC_TARGET_RISCV64)
 	    if (!strcmp(reloc_name, "R_RISCV_CALL") || !strcmp(reloc_name, "R_RISCV_CALL_PLT"))
 	        reloc_type = R_RISCV_CALL;
 	    else if (!strcmp(reloc_name, "R_RISCV_BRANCH"))
@@ -971,7 +971,7 @@ static void asm_parse_directive(TCCState *s1, int global)
 	        reloc_type = R_RISCV_64;
 #endif
 	    if (reloc_type < 0)
-	        tcc_error("unimp: reloc '%s' unknown", reloc_name);
+	        mcc_error("unimp: reloc '%s' unknown", reloc_name);
 	    next();
 	    skip(',');
 	    greloca(cur_text_section, get_asm_sym(tok, NULL), e.v, reloc_type, 0);
@@ -979,13 +979,13 @@ static void asm_parse_directive(TCCState *s1, int global)
 	}
 	break;
     default:
-        tcc_error("unknown assembler directive '.%s'", get_tok_str(tok, NULL));
+        mcc_error("unknown assembler directive '.%s'", get_tok_str(tok, NULL));
         break;
     }
 }
 
 
-static int tcc_assemble_internal(TCCState *s1, int do_preprocess, int global)
+static int mcc_assemble_internal(MCCState *s1, int do_preprocess, int global)
 {
     int opcode;
     int saved_parse_flags = parse_flags;
@@ -997,10 +997,10 @@ static int tcc_assemble_internal(TCCState *s1, int do_preprocess, int global)
         next();
         if (tok == TOK_EOF)
             break;
-        tcc_debug_line(s1);
+        mcc_debug_line(s1);
         parse_flags |= PARSE_FLAG_LINEFEED;
     redo:
-#if !defined(TCC_TARGET_ARM64)
+#if !defined(MCC_TARGET_ARM64)
         if (tok == '#') {
             while (tok != TOK_LINEFEED)
                 next();
@@ -1042,35 +1042,35 @@ static int tcc_assemble_internal(TCCState *s1, int do_preprocess, int global)
     return 0;
 }
 
-ST_FUNC int tcc_assemble(TCCState *s1, int do_preprocess)
+ST_FUNC int mcc_assemble(MCCState *s1, int do_preprocess)
 {
     int ret;
-    tcc_debug_start(s1);
+    mcc_debug_start(s1);
     cur_text_section = text_section;
     ind = cur_text_section->data_offset;
     nocode_wanted = 0;
-    ret = tcc_assemble_internal(s1, do_preprocess, 1);
+    ret = mcc_assemble_internal(s1, do_preprocess, 1);
     cur_text_section->data_offset = ind;
-    tcc_debug_end(s1);
+    mcc_debug_end(s1);
     return ret;
 }
 
 
-static void tcc_assemble_inline(TCCState *s1, const char *str, int len, int global)
+static void mcc_assemble_inline(MCCState *s1, const char *str, int len, int global)
 {
     const int *saved_macro_ptr = macro_ptr;
     int dotid = set_idnum('.', IS_ID);
-#if !defined(TCC_TARGET_RISCV64) && !defined(TCC_TARGET_X86_64)
+#if !defined(MCC_TARGET_RISCV64) && !defined(MCC_TARGET_X86_64)
     int dolid = set_idnum('$', 0);
 #endif
 
-    tcc_open_bf(s1, ":asm:", len);
+    mcc_open_bf(s1, ":asm:", len);
     memcpy(file->buffer, str, len);
     macro_ptr = NULL;
-    tcc_assemble_internal(s1, 0, global);
-    tcc_close();
+    mcc_assemble_internal(s1, 0, global);
+    mcc_close();
 
-#if !defined(TCC_TARGET_RISCV64) && !defined(TCC_TARGET_X86_64)
+#if !defined(MCC_TARGET_RISCV64) && !defined(MCC_TARGET_X86_64)
     set_idnum('$', dolid);
 #endif
     set_idnum('.', dotid);
@@ -1133,10 +1133,10 @@ static void subst_asm_operands(ASMOperand *operands, int nb_operands,
             if (*str == 'c' || *str == 'n' ||
                 *str == 'b' || *str == 'w' || *str == 'h' || *str == 'k' ||
 		*str == 'q' || *str == 'l' ||
-#ifdef TCC_TARGET_ARM64
+#ifdef MCC_TARGET_ARM64
                 *str == 'x' || *str == 's' || *str == 'd' || *str == 'Z' ||
 #endif
-#ifdef TCC_TARGET_RISCV64
+#ifdef MCC_TARGET_RISCV64
 		*str == 'z' ||
 #endif
 		*str == 'P')
@@ -1144,7 +1144,7 @@ static void subst_asm_operands(ASMOperand *operands, int nb_operands,
             index = find_constraint(operands, nb_operands, str, &str);
             if (index < 0)
         error:
-                tcc_error("invalid operand reference after %%");
+                mcc_error("invalid operand reference after %%");
             op = &operands[index];
             if (modifier == 'l') {
                 cstr_cat(out_str, get_tok_str(op->is_label, NULL), -1);
@@ -1180,7 +1180,7 @@ static void parse_asm_operands(ASMOperand *operands, int *nb_operands_ptr,
         nb_operands = *nb_operands_ptr;
         for(;;) {
             if (nb_operands >= MAX_ASM_OPERANDS)
-                tcc_error("too many asm operands");
+                mcc_error("too many asm operands");
             op = &operands[nb_operands++];
             op->id = 0;
             if (tok == '[') {
@@ -1203,7 +1203,7 @@ static void parse_asm_operands(ASMOperand *operands, int *nb_operands_ptr,
                     ((vtop->r & VT_VALMASK) == VT_LLOCAL ||
                      (vtop->r & VT_VALMASK) < VT_CONST) &&
                     !strchr(op->constraint, 'm')
-#ifdef TCC_TARGET_ARM64
+#ifdef MCC_TARGET_ARM64
                     && !strchr(op->constraint, 'Q')
                     && !strstr(op->constraint, "Ump")
 #endif
@@ -1277,7 +1277,7 @@ ST_FUNC void asm_instr(void)
                         Sym *csym;
                         int asmname;
                         if (nb_operands + nb_labels >= MAX_ASM_OPERANDS)
-                          tcc_error("too many asm operands");
+                          mcc_error("too many asm operands");
                         if (tok < TOK_UIDENT)
                           expect("label identifier");
 			memset(operands + nb_operands + nb_labels, 0,
@@ -1293,7 +1293,7 @@ ST_FUNC void asm_instr(void)
                               csym->r = LABEL_FORWARD;
                         }
                         next();
-                        asmname = asm_get_prefix_name(tcc_state, "LG.",
+                        asmname = asm_get_prefix_name(mcc_state, "LG.",
                                                       ++asmgoto_n);
                         if (!csym->c)
                           put_extern_sym2(csym, SHN_UNDEF, 0, 0, 1);
@@ -1335,11 +1335,11 @@ ST_FUNC void asm_instr(void)
                  clobber_regs, out_reg);    
 
     sec = cur_text_section;
-    tcc_assemble_inline(tcc_state, astr.data, astr.size - 1, 0);
+    mcc_assemble_inline(mcc_state, astr.data, astr.size - 1, 0);
     cstr_free_s(&astr);
     if (sec != cur_text_section) {
-        tcc_warning("inline asm tries to change current section");
-        use_section1(tcc_state, sec);
+        mcc_warning("inline asm tries to change current section");
+        use_section1(mcc_state, sec);
     }
 
     next();
@@ -1371,7 +1371,7 @@ ST_FUNC void asm_global_instr(void)
     cur_text_section = text_section;
     ind = cur_text_section->data_offset;
 
-    tcc_assemble_inline(tcc_state, astr->data, astr->size - 1, 1);
+    mcc_assemble_inline(mcc_state, astr->data, astr->size - 1, 1);
     
     cur_text_section->data_offset = ind;
 
@@ -1381,18 +1381,18 @@ ST_FUNC void asm_global_instr(void)
 }
 
 #else
-ST_FUNC int tcc_assemble(TCCState *s1, int do_preprocess)
+ST_FUNC int mcc_assemble(MCCState *s1, int do_preprocess)
 {
-    tcc_error("asm not supported");
+    mcc_error("asm not supported");
 }
 
 ST_FUNC void asm_instr(void)
 {
-    tcc_error("inline asm() not supported");
+    mcc_error("inline asm() not supported");
 }
 
 ST_FUNC void asm_global_instr(void)
 {
-    tcc_error("inline asm() not supported");
+    mcc_error("inline asm() not supported");
 }
 #endif

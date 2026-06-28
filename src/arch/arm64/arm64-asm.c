@@ -1,7 +1,7 @@
 #ifdef TARGET_DEFS_ONLY
 
-#ifndef TCC_DISABLE_ASM
-#define CONFIG_TCC_ASM
+#ifndef MCC_DISABLE_ASM
+#define CONFIG_MCC_ASM
 #endif
 #define NB_ASM_REGS 64
 
@@ -12,8 +12,8 @@ ST_FUNC void gen_le32(int c);
 #else
 
 #define USING_GLOBALS
-#include "tcc.h"
-#ifdef CONFIG_TCC_ASM
+#include "mcc.h"
+#ifdef CONFIG_MCC_ASM
 
 #define REG_X     0x01
 #define REG_W     0x02
@@ -93,7 +93,7 @@ enum {
     ADDR_POST,
 };
 
-static void parse_addr_operand(TCCState *s1, Operand *op);
+static void parse_addr_operand(MCCState *s1, Operand *op);
 
 ST_FUNC void g(int c)
 {
@@ -241,7 +241,7 @@ static int arm64_parse_regvar(int t)
     return -1;
 }
 
-static void parse_operand(TCCState *s1, Operand *op)
+static void parse_operand(MCCState *s1, Operand *op)
 {
     int reg;
 
@@ -281,7 +281,7 @@ static void parse_operand(TCCState *s1, Operand *op)
         asm_expr(s1, &op->e);
         op->type = OP_IM;
     } else if (tok >= TOK_IDENT) {
-        tcc_error("invalid operand '%s'", get_tok_str(tok, &tokc));
+        mcc_error("invalid operand '%s'", get_tok_str(tok, &tokc));
         op->type = OP_IM;
     } else {
         asm_expr(s1, &op->e);
@@ -289,7 +289,7 @@ static void parse_operand(TCCState *s1, Operand *op)
     }
 }
 
-static void parse_expr_operand(TCCState *s1, Operand *op)
+static void parse_expr_operand(MCCState *s1, Operand *op)
 {
     op->type = OP_IM;
     op->reg = -1;
@@ -304,7 +304,7 @@ static void parse_expr_operand(TCCState *s1, Operand *op)
     asm_expr(s1, &op->e);
 }
 
-static void parse_addr_operand(TCCState *s1, Operand *op)
+static void parse_addr_operand(MCCState *s1, Operand *op)
 {
     int reg;
 
@@ -319,7 +319,7 @@ static void parse_addr_operand(TCCState *s1, Operand *op)
     skip('[');
     reg = arm64_parse_asm_reg(tok);
     if (reg < 0 || reg >= 32) {
-        tcc_error("invalid register in address operand");
+        mcc_error("invalid register in address operand");
         return;
     }
     op->reg = reg;
@@ -383,7 +383,7 @@ static void gen_add_imm(int rd, int rn, uint32_t imm, int is_64bit, int setflags
         instr |= ARM64_SH(1);
         imm12 = imm >> 12;
     } else {
-        tcc_error("add immediate out of range");
+        mcc_error("add immediate out of range");
         return;
     }
 
@@ -407,7 +407,7 @@ static void gen_sub_imm(int rd, int rn, uint32_t imm, int is_64bit, int setflags
         instr |= ARM64_SH(1);
         imm12 = imm >> 12;
     } else {
-        tcc_error("sub immediate out of range");
+        mcc_error("sub immediate out of range");
         return;
     }
 
@@ -468,8 +468,8 @@ static void gen_ldst_imm(uint32_t base_opcode, int rt, int rn,
     }
 
     if (offset & ((1 << size_log2) - 1))
-        tcc_error("invalid load/store offset");
-    tcc_error("load/store offset out of range");
+        mcc_error("invalid load/store offset");
+    mcc_error("load/store offset out of range");
 }
 
 static void gen_ldst_pair(uint32_t base_opcode, int rt, int rt2, int rn,
@@ -479,10 +479,10 @@ static void gen_ldst_pair(uint32_t base_opcode, int rt, int rt2, int rn,
     uint32_t instr = base_opcode;
 
     if (offset & ((1 << size_log2) - 1))
-        tcc_error("invalid pair load/store offset");
+        mcc_error("invalid pair load/store offset");
     imm7 = offset >> size_log2;
     if (imm7 < -64 || imm7 > 63)
-        tcc_error("pair load/store offset out of range");
+        mcc_error("pair load/store offset out of range");
 
     instr |= ARM64_IMM7(imm7);
     instr |= ARM64_RT2(rt2);
@@ -642,7 +642,7 @@ static void gen_logical_imm(uint32_t opcode, int rd, int rn,
 
     enc = arm64_asm_encode_bimm64(val);
     if (enc < 0) {
-        tcc_error("logical immediate out of range");
+        mcc_error("logical immediate out of range");
         return;
     }
 
@@ -694,7 +694,7 @@ static inline int constraint_priority(const char *str)
                 pr = 4;
                 break;
             }
-            tcc_warning("unknown constraint '%c'", c);
+            mcc_warning("unknown constraint '%c'", c);
             pr = 0;
             break;
         case 'I':
@@ -713,7 +713,7 @@ static inline int constraint_priority(const char *str)
             pr = 8;
             break;
         default:
-            tcc_warning("unknown constraint '%c'", c);
+            mcc_warning("unknown constraint '%c'", c);
             pr = 0;
             break;
         }
@@ -803,7 +803,7 @@ static int arm64_memory_is_pair_suitable(const SValue *sv)
 
 static int arm64_int_reg_is_allocatable(int reg)
 {
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
     return reg >= TREG_X0 && reg <= TREG_X17;
 #else
     return reg >= TREG_X0 && reg <= TREG_X30;
@@ -856,7 +856,7 @@ static void arm64_load_memory_operand_base(int reg, SValue *sv)
     } else if (rval == VT_CONST || rval == VT_LOCAL) {
         base.r &= ~VT_LVAL;
     } else {
-        tcc_internal_error("unsupported ARM64 memory operand base");
+        mcc_internal_error("unsupported ARM64 memory operand base");
     }
     load(reg, &base);
 }
@@ -892,7 +892,7 @@ static void gen_mrs(int rt, int sysreg)
             instr = ARM64_MRS_FPSR;
             break;
         default:
-            tcc_error("unsupported system register");
+            mcc_error("unsupported system register");
             return;
     }
     emit_instr32(instr | ARM64_RD(rt));
@@ -910,7 +910,7 @@ static void gen_msr(int rt, int sysreg)
             instr = ARM64_MSR_FPSR;
             break;
         default:
-            tcc_error("unsupported system register");
+            mcc_error("unsupported system register");
             return;
     }
     emit_instr32(instr | ARM64_RD(rt));
@@ -930,7 +930,7 @@ static void gen_shift(int rd, int rn, int rm_or_imm, int shift_type, int is_imm,
         switch (shift_type) {
             case 0:
                 if (rm_or_imm < 0 || rm_or_imm >= width) {
-                    tcc_error("shift immediate out of range");
+                    mcc_error("shift immediate out of range");
                     return;
                 }
                 instr = is_64bit ? ARM64_LSL_IMM : ARM64_LSR_IMM_32;
@@ -939,7 +939,7 @@ static void gen_shift(int rd, int rn, int rm_or_imm, int shift_type, int is_imm,
                 break;
             case 1:
                 if (rm_or_imm < 0 || rm_or_imm >= width) {
-                    tcc_error("shift immediate out of range");
+                    mcc_error("shift immediate out of range");
                     return;
                 }
                 instr = is_64bit ? ARM64_LSL_IMM : ARM64_LSR_IMM_32;
@@ -948,7 +948,7 @@ static void gen_shift(int rd, int rn, int rm_or_imm, int shift_type, int is_imm,
                 break;
             case 2:
                 if (rm_or_imm < 0 || rm_or_imm >= width) {
-                    tcc_error("shift immediate out of range");
+                    mcc_error("shift immediate out of range");
                     return;
                 }
                 instr = is_64bit ? ARM64_ASR_IMM : (ARM64_ASR_IMM & ~(1U << 31));
@@ -957,7 +957,7 @@ static void gen_shift(int rd, int rn, int rm_or_imm, int shift_type, int is_imm,
                 break;
             case 3:
                 if (rm_or_imm < 0 || rm_or_imm >= width) {
-                    tcc_error("shift immediate out of range");
+                    mcc_error("shift immediate out of range");
                     return;
                 }
                 instr = is_64bit ? ARM64_EXTR64 : ARM64_EXTR;
@@ -968,7 +968,7 @@ static void gen_shift(int rd, int rn, int rm_or_imm, int shift_type, int is_imm,
                 emit_instr32(instr);
                 return;
             default:
-                tcc_error("unknown shift type");
+                mcc_error("unknown shift type");
                 return;
         }
         instr |= ARM64_RN(rn);
@@ -988,7 +988,7 @@ static void gen_shift(int rd, int rn, int rm_or_imm, int shift_type, int is_imm,
                 instr = ARM64_ROR_REG;
                 break;
             default:
-                tcc_error("unknown shift type");
+                mcc_error("unknown shift type");
                 return;
         }
         if (is_64bit)
@@ -1000,7 +1000,7 @@ static void gen_shift(int rd, int rn, int rm_or_imm, int shift_type, int is_imm,
     emit_instr32(instr);
 }
 
-static void asm_shift(TCCState *s1, int token)
+static void asm_shift(MCCState *s1, int token)
 {
     Operand op1, op2, op3;
     int rd, rn, shift_amount;
@@ -1021,7 +1021,7 @@ static void asm_shift(TCCState *s1, int token)
             shift_type = 3;
             break;
         default:
-            tcc_error("unknown shift instruction");
+            mcc_error("unknown shift instruction");
             return;
     }
 
@@ -1030,11 +1030,11 @@ static void asm_shift(TCCState *s1, int token)
     parse_operand(s1, &op2);
 
     if (!(op1.type & OP_REG)) {
-        tcc_error("expected register in first operand");
+        mcc_error("expected register in first operand");
         return;
     }
     if (!(op2.type & OP_REG)) {
-        tcc_error("expected register in second operand");
+        mcc_error("expected register in second operand");
         return;
     }
 
@@ -1046,12 +1046,12 @@ static void asm_shift(TCCState *s1, int token)
         parse_operand(s1, &op3);
         is_64bit = (op1.reg_type & REG_X);
         if (is_64bit != !!(op2.reg_type & REG_X)) {
-            tcc_error("mismatched register widths");
+            mcc_error("mismatched register widths");
             return;
         }
         if (op3.type & OP_REG) {
             if (is_64bit != !!(op3.reg_type & REG_X)) {
-                tcc_error("mismatched register widths");
+                mcc_error("mismatched register widths");
                 return;
             }
             gen_shift(rd, rn, op3.reg, shift_type, 0, is_64bit);
@@ -1059,10 +1059,10 @@ static void asm_shift(TCCState *s1, int token)
             shift_amount = op3.e.v;
             gen_shift(rd, rn, shift_amount, shift_type, 1, is_64bit);
         } else {
-            tcc_error("shift requires immediate or register operand");
+            mcc_error("shift requires immediate or register operand");
         }
     } else {
-        tcc_error("shift requires immediate or register operand");
+        mcc_error("shift requires immediate or register operand");
         return;
     }
 }
@@ -1082,14 +1082,14 @@ static void gen_barrier(int barrier_type, int option)
             instr = ARM64_DMB;
             break;
         default:
-            tcc_error("unknown barrier type");
+            mcc_error("unknown barrier type");
             return;
     }
     instr |= ARM64_ISB_OPTION(option);
     emit_instr32(instr);
 }
 
-static void asm_barrier(TCCState *s1, int token)
+static void asm_barrier(MCCState *s1, int token)
 {
     int barrier_type, option;
     Operand op;
@@ -1105,7 +1105,7 @@ static void asm_barrier(TCCState *s1, int token)
             barrier_type = 2;
             break;
         default:
-            tcc_error("unknown barrier instruction");
+            mcc_error("unknown barrier instruction");
             return;
     }
 
@@ -1118,11 +1118,11 @@ static void asm_barrier(TCCState *s1, int token)
         } else {
             parse_operand(s1, &op);
             if (!(op.type & OP_IM) || op.e.sym) {
-                tcc_error("barrier option must be an immediate or scope name");
+                mcc_error("barrier option must be an immediate or scope name");
                 return;
             }
             if (op.e.v > 0xF) {
-                tcc_error("barrier option out of range");
+                mcc_error("barrier option out of range");
                 return;
             }
             option = op.e.v;
@@ -1152,7 +1152,7 @@ static void gen_mov_imm(int rd, uint64_t imm, int is_64bit)
     }
 }
 
-static void asm_mov(TCCState *s1)
+static void asm_mov(MCCState *s1)
 {
     Operand op1, op2;
     int rd, rn;
@@ -1166,7 +1166,7 @@ static void asm_mov(TCCState *s1)
 
     if (op2.type & OP_IM) {
         if (operand_is_sp(&op1)) {
-            tcc_error("cannot move an immediate into sp");
+            mcc_error("cannot move an immediate into sp");
             return;
         }
         gen_mov_imm(rd, op2.e.v, is_64bit);
@@ -1177,11 +1177,11 @@ static void asm_mov(TCCState *s1)
         else
             gen_mov_reg(rd, rn, is_64bit);
     } else {
-        tcc_error("invalid operand for mov");
+        mcc_error("invalid operand for mov");
     }
 }
 
-static void asm_data_proc(TCCState *s1, int token)
+static void asm_data_proc(MCCState *s1, int token)
 {
     Operand op1, op2, op3;
     int rd, rn, rm;
@@ -1211,7 +1211,7 @@ static void asm_data_proc(TCCState *s1, int token)
             opcode = ARM64_MUL_REG;
             break;
         default:
-            tcc_error("unsupported data processing instruction");
+            mcc_error("unsupported data processing instruction");
             return;
     }
 
@@ -1220,11 +1220,11 @@ static void asm_data_proc(TCCState *s1, int token)
     parse_operand(s1, &op2);
 
     if (!(op1.type & OP_REG)) {
-        tcc_error("expected register in first operand");
+        mcc_error("expected register in first operand");
         return;
     }
     if (!(op2.type & OP_REG)) {
-        tcc_error("expected register in second operand");
+        mcc_error("expected register in second operand");
         return;
     }
 
@@ -1236,7 +1236,7 @@ static void asm_data_proc(TCCState *s1, int token)
         parse_operand(s1, &op3);
         is_64bit = (op1.reg_type & REG_X);
         if (is_64bit != !!(op2.reg_type & REG_X)) {
-            tcc_error("mismatched register widths");
+            mcc_error("mismatched register widths");
             return;
         }
         if (op3.type & OP_IM) {
@@ -1255,27 +1255,27 @@ static void asm_data_proc(TCCState *s1, int token)
             else if (token == TOK_ASM_eor)
                 gen_logical_imm(ARM64_EOR_IMM, rd, rn, op3.e.v, is_64bit);
             else
-                tcc_error("immediate operand not valid for this instruction");
+                mcc_error("immediate operand not valid for this instruction");
         } else {
             if (!(op3.type & OP_REG)) {
-                tcc_error("expected register in third operand");
+                mcc_error("expected register in third operand");
                 return;
             }
             rm = op3.reg;
             if (is_64bit != !!(op2.reg_type & REG_X) || is_64bit != !!(op3.reg_type & REG_X)) {
-                tcc_error("mismatched register widths");
+                mcc_error("mismatched register widths");
                 return;
             }
             gen_dp_reg(opcode, rd, rn, rm, is_64bit);
         }
     } else if (op2.type & OP_IM) {
-        tcc_error("missing source register for immediate form");
+        mcc_error("missing source register for immediate form");
     } else {
-        tcc_error("missing third operand");
+        mcc_error("missing third operand");
     }
 }
 
-static void asm_ldst(TCCState *s1, int token)
+static void asm_ldst(MCCState *s1, int token)
 {
     Operand op1, op2;
     int rt, rn;
@@ -1288,11 +1288,11 @@ static void asm_ldst(TCCState *s1, int token)
     parse_operand(s1, &op2);
 
     if (!(op1.type & OP_REG)) {
-        tcc_error("expected register in first operand");
+        mcc_error("expected register in first operand");
         return;
     }
     if (op2.type != OP_ADDR) {
-        tcc_error("expected address operand in second operand");
+        mcc_error("expected address operand in second operand");
         return;
     }
 
@@ -1312,7 +1312,7 @@ static void asm_ldst(TCCState *s1, int token)
                 base_opcode = ARM64_LDR_D;
                 size_log2 = 3;
             } else {
-                tcc_error("ldr requires a w, x, or d register");
+                mcc_error("ldr requires a w, x, or d register");
                 return;
             }
             break;
@@ -1335,7 +1335,7 @@ static void asm_ldst(TCCState *s1, int token)
                 base_opcode = ARM64_STR_D;
                 size_log2 = 3;
             } else {
-                tcc_error("str requires a w, x, or d register");
+                mcc_error("str requires a w, x, or d register");
                 return;
             }
             break;
@@ -1348,16 +1348,16 @@ static void asm_ldst(TCCState *s1, int token)
             size_log2 = 1;
             break;
         default:
-            tcc_error("unsupported load/store instruction");
+            mcc_error("unsupported load/store instruction");
             return;
     }
 
     if (op2.addr_mode != ADDR_OFF)
-        tcc_error("only offset addressing is implemented for ldr/str");
+        mcc_error("only offset addressing is implemented for ldr/str");
     gen_ldst_imm(base_opcode, rt, rn, offset, size_log2);
 }
 
-static void asm_ldst_pair(TCCState *s1, int token)
+static void asm_ldst_pair(MCCState *s1, int token)
 {
     Operand op1, op2, op3;
     uint32_t base_opcode;
@@ -1372,15 +1372,15 @@ static void asm_ldst_pair(TCCState *s1, int token)
     parse_operand(s1, &op3);
 
     if (!(op1.type & OP_REG)) {
-        tcc_error("expected register in first operand");
+        mcc_error("expected register in first operand");
         return;
     }
     if (!(op2.type & OP_REG)) {
-        tcc_error("expected register in second operand");
+        mcc_error("expected register in second operand");
         return;
     }
     if (!(op3.type & OP_ADDR))
-        tcc_error("pair load/store requires an address operand");
+        mcc_error("pair load/store requires an address operand");
 
     if ((op1.reg_type & REG_X) && (op2.reg_type & REG_X)) {
         if (token == TOK_ASM_stp) {
@@ -1403,14 +1403,14 @@ static void asm_ldst_pair(TCCState *s1, int token)
                           ARM64_LDP_D;
         }
     } else {
-        tcc_error("stp/ldp requires matching x or d registers");
+        mcc_error("stp/ldp requires matching x or d registers");
         return;
     }
 
     gen_ldst_pair(base_opcode, op1.reg, op2.reg, op3.reg, op3.e.v, size_log2);
 }
 
-static void asm_sysreg(TCCState *s1, int token)
+static void asm_sysreg(MCCState *s1, int token)
 {
     Operand op;
     int sysreg;
@@ -1421,7 +1421,7 @@ static void asm_sysreg(TCCState *s1, int token)
             next();
         sysreg = parse_sysreg_name(tok);
         if (sysreg < 0)
-            tcc_error("unsupported system register");
+            mcc_error("unsupported system register");
         next();
         gen_mrs(op.reg, sysreg);
         return;
@@ -1429,7 +1429,7 @@ static void asm_sysreg(TCCState *s1, int token)
 
     sysreg = parse_sysreg_name(tok);
     if (sysreg < 0)
-        tcc_error("unsupported system register");
+        mcc_error("unsupported system register");
     next();
     if (tok == ',')
         next();
@@ -1464,7 +1464,7 @@ static int get_branch_condition(int branch_token)
     return parse_condition(cond_token);
 }
 
-static void asm_branch(TCCState *s1, int token)
+static void asm_branch(MCCState *s1, int token)
 {
     Operand op;
     int cond;
@@ -1501,7 +1501,7 @@ static void asm_branch(TCCState *s1, int token)
                         greloca(cur_text_section, sym, ind - 4, R_AARCH64_CALL26, 0);
                         break;
                     default:
-                        tcc_error("unsupported branch");
+                        mcc_error("unsupported branch");
                 }
             }
         } else {
@@ -1519,7 +1519,7 @@ static void asm_branch(TCCState *s1, int token)
                         gen_bl(offset);
                         break;
                     default:
-                        tcc_error("unsupported branch");
+                        mcc_error("unsupported branch");
                 }
             }
         }
@@ -1535,12 +1535,12 @@ static void asm_branch(TCCState *s1, int token)
                 gen_ret(op.reg);
                 break;
             default:
-                tcc_error("register branch not valid");
+                mcc_error("register branch not valid");
         }
     }
 }
 
-static void asm_cb(TCCState *s1, int token)
+static void asm_cb(MCCState *s1, int token)
 {
     Operand op1, op2;
     int rt, is_64bit;
@@ -1573,7 +1573,7 @@ static void asm_cb(TCCState *s1, int token)
     }
 }
 
-static void asm_move_wide(TCCState *s1, int token)
+static void asm_move_wide(MCCState *s1, int token)
 {
     Operand op1, op2;
     int rd, is_64bit = 1;
@@ -1585,18 +1585,18 @@ static void asm_move_wide(TCCState *s1, int token)
     parse_operand(s1, &op2);
 
     if (!(op1.type & OP_REG)) {
-        tcc_error("expected register in first operand");
+        mcc_error("expected register in first operand");
         return;
     }
     if (!(op2.type & OP_IM) || op2.e.sym) {
-        tcc_error("expected immediate in second operand");
+        mcc_error("expected immediate in second operand");
         return;
     }
 
     rd = op1.reg;
     is_64bit = (op1.reg_type & REG_X);
     if ((uint64_t)op2.e.v > 0xFFFF) {
-        tcc_error("move wide immediate out of range");
+        mcc_error("move wide immediate out of range");
         return;
     }
     imm = op2.e.v;
@@ -1604,14 +1604,14 @@ static void asm_move_wide(TCCState *s1, int token)
     if (tok == ',') {
         next();
         if (tok != TOK_ASM_lsl) {
-            tcc_error("move wide shift must use lsl");
+            mcc_error("move wide shift must use lsl");
             return;
         }
             next();
             if (tok == '#') next();
             asm_expr(s1, &op2.e);
         if (op2.e.sym || !is_valid_movw_shift((int)op2.e.v, is_64bit)) {
-            tcc_error("move wide shift out of range");
+            mcc_error("move wide shift out of range");
             return;
         }
             shift = (int)op2.e.v / 16;
@@ -1628,11 +1628,11 @@ static void asm_move_wide(TCCState *s1, int token)
             gen_movk(rd, imm, shift, is_64bit);
             break;
         default:
-            tcc_error("unknown move wide instruction");
+            mcc_error("unknown move wide instruction");
     }
 }
 
-ST_FUNC void asm_opcode(TCCState *s1, int opcode)
+ST_FUNC void asm_opcode(MCCState *s1, int opcode)
 {
     switch (opcode) {
         case TOK_ASM_add:
@@ -1723,7 +1723,7 @@ ST_FUNC void asm_opcode(TCCState *s1, int opcode)
             break;
 
         default:
-            tcc_error("ARM64 instruction '%s' not implemented",
+            mcc_error("ARM64 instruction '%s' not implemented",
                      get_tok_str(opcode, NULL));
             break;
     }
@@ -1749,7 +1749,7 @@ ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier)
             const char *name = get_tok_str(sv->sym->v, NULL);
             if (sv->sym->v >= SYM_FIRST_ANOM)
                 get_asm_sym(tok_alloc(name, strlen(name))->tok, sv->sym);
-            if (tcc_state->leading_underscore)
+            if (mcc_state->leading_underscore)
                 cstr_ccat(add_str, '_');
             cstr_cat(add_str, name, -1);
             if ((uint32_t) sv->c.i == 0)
@@ -1772,12 +1772,12 @@ ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier)
     } else if (r & VT_LVAL) {
         reg = r & VT_VALMASK;
         if (reg >= VT_CONST)
-            tcc_internal_error("");
+            mcc_internal_error("");
         cstr_printf(add_str, "[x%d]", reg);
     } else {
         reg = r & VT_VALMASK;
         if (reg >= VT_CONST)
-            tcc_internal_error("");
+            mcc_internal_error("");
 
         if (ARM64_FREG_BASE <= reg && reg <= ARM64_FREG_LAST) {
             fp_reg = reg - ARM64_FREG_BASE;
@@ -1799,7 +1799,7 @@ ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier)
                             fp_reg);
                 return;
             default:
-                tcc_error("invalid operand modifier for SIMD/FP register");
+                mcc_error("invalid operand modifier for SIMD/FP register");
                 return;
             }
         }
@@ -1962,10 +1962,10 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
         if (isnum(*str) || *str == '[') {
             k = find_constraint(operands, nb_operands, str, NULL);
             if ((unsigned)k >= i || i < nb_outputs)
-                tcc_error("invalid reference in constraint %d ('%s')", i, str);
+                mcc_error("invalid reference in constraint %d ('%s')", i, str);
             op->ref_index = k;
             if (operands[k].input_index >= 0)
-                tcc_error("cannot reference twice the same operand");
+                mcc_error("cannot reference twice the same operand");
             operands[k].input_index = i;
             op->priority = 5;
         } else if ((op->vt->r & VT_VALMASK) == VT_LOCAL
@@ -2014,7 +2014,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
         }
         if (op->reg >= 0) {
             if (is_reg_allocated(op->reg))
-                tcc_error("asm regvar requests register that's taken already");
+                mcc_error("asm regvar requests register that's taken already");
             reg = op->reg;
             goto reg_found;
         }
@@ -2027,7 +2027,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
             op->is_rw = 1;
         case '&':
             if (j >= nb_outputs)
-                tcc_error("'%c' modifier can only be applied to outputs", c);
+                mcc_error("'%c' modifier can only be applied to outputs", c);
             reg_mask = REG_IN_MASK | REG_OUT_MASK;
             goto try_next;
         case 'r':
@@ -2123,7 +2123,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
                 goto try_next;
             break;
         default:
-            tcc_error("asm constraint %d ('%s') could not be satisfied",
+            mcc_error("asm constraint %d ('%s') could not be satisfied",
                        j, op->constraint);
             break;
         }
@@ -2152,7 +2152,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
                 if (!(regs_allocated[reg] & REG_OUT_MASK))
                     goto reg_found2;
             }
-            tcc_error("could not find free output register for reloading");
+            mcc_error("could not find free output register for reloading");
         reg_found2:
             *pout_reg = reg;
             break;
@@ -2171,7 +2171,7 @@ ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str)
 
     reg = arm64_parse_regvar(tok_alloc_const(str));
     if (reg == -1)
-        tcc_error("invalid clobber register '%s'", str);
+        mcc_error("invalid clobber register '%s'", str);
     clobber_regs[reg] = 1;
 }
 

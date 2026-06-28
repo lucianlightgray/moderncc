@@ -7,9 +7,9 @@
 #endif
 typedef ABI_BASE _Complex C;
 
-extern C tcc_op(C, C);
-extern C tcc_calls_gcc(C, C);
-extern C tcc_mix(int, C, ABI_BASE);
+extern C mcc_op(C, C);
+extern C mcc_calls_gcc(C, C);
+extern C mcc_mix(int, C, ABI_BASE);
 
 C gcc_op(C a, C b){ return a + b; }
 
@@ -22,9 +22,9 @@ static int fail = 0;
 int main(void)
 {
     C a = mk(1, 2), b = mk(3, 4);
-    CHK(eq(tcc_op(a, b),        4, 6), "tcc_op");
-    CHK(eq(tcc_calls_gcc(a, b), 4, 6), "tcc_calls_gcc");
-    CHK(eq(tcc_mix(3, a, 4),    8, 2), "tcc_mix");
+    CHK(eq(mcc_op(a, b),        4, 6), "mcc_op");
+    CHK(eq(mcc_calls_gcc(a, b), 4, 6), "mcc_calls_gcc");
+    CHK(eq(mcc_mix(3, a, 4),    8, 2), "mcc_mix");
     if (!fail) printf("ok\n");
     return fail;
 }

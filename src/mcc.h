@@ -1,5 +1,5 @@
-#ifndef _TCC_H
-#define _TCC_H
+#ifndef _MCC_H
+#define _MCC_H
 
 #define _GNU_SOURCE
 #define _DARWIN_C_SOURCE
@@ -8,7 +8,7 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <stdio.h>
-#ifdef __TINYC__
+#ifdef __MCC__
 # undef __attribute__
 #endif
 #include <string.h>
@@ -21,7 +21,7 @@
 #ifndef _WIN32
 # include <unistd.h>
 # include <sys/time.h>
-# ifndef CONFIG_TCC_STATIC
+# ifndef CONFIG_MCC_STATIC
 #  include <dlfcn.h>
 # endif
 extern float strtof (const char *__nptr, char **__endptr);
@@ -49,9 +49,9 @@ extern long double strtold (const char *__nptr, char **__endptr);
 #  define strtoll _strtoi64
 #  define strtoull _strtoui64
 # endif
-# ifdef LIBTCC_AS_DLL
-#  define LIBTCCAPI __declspec(dllexport)
-#  define PUB_FUNC LIBTCCAPI
+# ifdef LIBMCC_AS_DLL
+#  define LIBMCCAPI __declspec(dllexport)
+#  define PUB_FUNC LIBMCCAPI
 # endif
 # ifdef _MSC_VER
 #  pragma warning (disable : 4244)
@@ -116,56 +116,56 @@ extern long double strtold (const char *__nptr, char **__endptr);
 
 
 
-#if !defined(TCC_TARGET_I386) && !defined(TCC_TARGET_ARM) && \
-    !defined(TCC_TARGET_ARM64) && \
-    !defined(TCC_TARGET_X86_64) && !defined(TCC_TARGET_RISCV64)
+#if !defined(MCC_TARGET_I386) && !defined(MCC_TARGET_ARM) && \
+    !defined(MCC_TARGET_ARM64) && \
+    !defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_RISCV64)
 # if defined __x86_64__
-#  define TCC_TARGET_X86_64
+#  define MCC_TARGET_X86_64
 # elif defined __arm__
-#  define TCC_TARGET_ARM
-#  define TCC_ARM_EABI
-#  define TCC_ARM_VFP
-#  define TCC_ARM_HARDFLOAT
+#  define MCC_TARGET_ARM
+#  define MCC_ARM_EABI
+#  define MCC_ARM_VFP
+#  define MCC_ARM_HARDFLOAT
 # elif defined __aarch64__
-#  define TCC_TARGET_ARM64
+#  define MCC_TARGET_ARM64
 # elif defined __riscv
-#  define TCC_TARGET_RISCV64
+#  define MCC_TARGET_RISCV64
 # else
-#  define TCC_TARGET_I386
+#  define MCC_TARGET_I386
 # endif
 # ifdef _WIN32
-#  define TCC_TARGET_PE 1
+#  define MCC_TARGET_PE 1
 # endif
 # ifdef __APPLE__
-#  define TCC_TARGET_MACHO 1
+#  define MCC_TARGET_MACHO 1
 # endif
 #endif
 
-#if defined _WIN32 == defined TCC_TARGET_PE \
-    && defined __APPLE__ == defined TCC_TARGET_MACHO
-# if defined __i386__ && defined TCC_TARGET_I386
-#  define TCC_IS_NATIVE
-# elif defined __x86_64__ && defined TCC_TARGET_X86_64
-#  define TCC_IS_NATIVE
-# elif defined __arm__ && defined TCC_TARGET_ARM
-#  define TCC_IS_NATIVE
-# elif defined __aarch64__ && defined TCC_TARGET_ARM64
-#  define TCC_IS_NATIVE
-# elif defined __riscv && defined __LP64__ && defined TCC_TARGET_RISCV64
-#  define TCC_IS_NATIVE
+#if defined _WIN32 == defined MCC_TARGET_PE \
+    && defined __APPLE__ == defined MCC_TARGET_MACHO
+# if defined __i386__ && defined MCC_TARGET_I386
+#  define MCC_IS_NATIVE
+# elif defined __x86_64__ && defined MCC_TARGET_X86_64
+#  define MCC_IS_NATIVE
+# elif defined __arm__ && defined MCC_TARGET_ARM
+#  define MCC_IS_NATIVE
+# elif defined __aarch64__ && defined MCC_TARGET_ARM64
+#  define MCC_IS_NATIVE
+# elif defined __riscv && defined __LP64__ && defined MCC_TARGET_RISCV64
+#  define MCC_IS_NATIVE
 # endif
 #endif
 
-#if defined CONFIG_TCC_BACKTRACE && CONFIG_TCC_BACKTRACE==0
-# undef CONFIG_TCC_BACKTRACE
+#if defined CONFIG_MCC_BACKTRACE && CONFIG_MCC_BACKTRACE==0
+# undef CONFIG_MCC_BACKTRACE
 #else
-# define CONFIG_TCC_BACKTRACE 1
+# define CONFIG_MCC_BACKTRACE 1
 #endif
 
-#if defined CONFIG_TCC_BCHECK && CONFIG_TCC_BCHECK==0
-#  undef CONFIG_TCC_BCHECK
+#if defined CONFIG_MCC_BCHECK && CONFIG_MCC_BCHECK==0
+#  undef CONFIG_MCC_BCHECK
 #else
-#  define CONFIG_TCC_BCHECK 1
+#  define CONFIG_MCC_BCHECK 1
 #endif
 
 #if defined CONFIG_NEW_MACHO && CONFIG_NEW_MACHO==0
@@ -174,9 +174,9 @@ extern long double strtold (const char *__nptr, char **__endptr);
 #  define CONFIG_NEW_MACHO 1
 #endif
 
-#if defined CONFIG_TCC_ASM && CONFIG_TCC_ASM==0
-#  undef CONFIG_TCC_ASM
-#  define TCC_DISABLE_ASM 1
+#if defined CONFIG_MCC_ASM && CONFIG_MCC_ASM==0
+#  undef CONFIG_MCC_ASM
+#  define MCC_DISABLE_ASM 1
 #endif
 
 #if defined TARGETOS_OpenBSD \
@@ -184,27 +184,27 @@ extern long double strtold (const char *__nptr, char **__endptr);
     || defined TARGETOS_NetBSD \
     || defined TARGETOS_FreeBSD_kernel
 # define TARGETOS_BSD 1
-#elif !(defined TCC_TARGET_PE || defined TCC_TARGET_MACHO)
+#elif !(defined MCC_TARGET_PE || defined MCC_TARGET_MACHO)
 # define TARGETOS_Linux 1
 #endif
 
-#if defined TCC_TARGET_PE || defined TCC_TARGET_MACHO
+#if defined MCC_TARGET_PE || defined MCC_TARGET_MACHO
 # define ELF_OBJ_ONLY
 #else
-# define TCC_TARGET_UNIX 1
+# define MCC_TARGET_UNIX 1
 #endif
 
-#if defined TCC_TARGET_PE \
-    || (defined TCC_TARGET_MACHO && defined TCC_TARGET_ARM64)
-# define TCC_USING_DOUBLE_FOR_LDOUBLE 1
+#if defined MCC_TARGET_PE \
+    || (defined MCC_TARGET_MACHO && defined MCC_TARGET_ARM64)
+# define MCC_USING_DOUBLE_FOR_LDOUBLE 1
 #endif
 
-#ifdef CONFIG_TCC_PIE
-# define CONFIG_TCC_PIC 1
+#ifdef CONFIG_MCC_PIE
+# define CONFIG_MCC_PIC 1
 #endif
 
-#ifndef CONFIG_TCC_SEMLOCK
-# define CONFIG_TCC_SEMLOCK 1
+#ifndef CONFIG_MCC_SEMLOCK
+# define CONFIG_MCC_SEMLOCK 1
 #endif
 
 
@@ -212,8 +212,8 @@ extern long double strtold (const char *__nptr, char **__endptr);
 # define CONFIG_SYSROOT ""
 #endif
 
-#if !defined CONFIG_TCCDIR && !defined _WIN32
-# define CONFIG_TCCDIR "/usr/local/lib/tcc"
+#if !defined CONFIG_MCCDIR && !defined _WIN32
+# define CONFIG_MCCDIR "/usr/local/lib/mcc"
 #endif
 
 #ifdef CONFIG_TRIPLET
@@ -224,61 +224,61 @@ extern long double strtold (const char *__nptr, char **__endptr);
 # define ALSO_TRIPLET(s) s
 #endif
 
-#ifndef CONFIG_TCC_CRTPREFIX
-# define CONFIG_TCC_CRTPREFIX \
+#ifndef CONFIG_MCC_CRTPREFIX
+# define CONFIG_MCC_CRTPREFIX \
     USE_TRIPLET(CONFIG_SYSROOT "/usr/lib")
 #endif
 
 
-#ifndef CONFIG_TCC_SYSINCLUDEPATHS
-# if defined TCC_TARGET_PE || defined _WIN32
-#  define CONFIG_TCC_SYSINCLUDEPATHS \
+#ifndef CONFIG_MCC_SYSINCLUDEPATHS
+# if defined MCC_TARGET_PE || defined _WIN32
+#  define CONFIG_MCC_SYSINCLUDEPATHS \
     "{B}/include" PATHSEP "{B}/include/winapi"
 # else
-#  define CONFIG_TCC_SYSINCLUDEPATHS \
+#  define CONFIG_MCC_SYSINCLUDEPATHS \
     "{B}/include" PATHSEP ALSO_TRIPLET(CONFIG_SYSROOT "/usr/include")
 # endif
 #endif
 
-#ifndef CONFIG_TCC_LIBPATHS
-# if defined TCC_TARGET_PE || defined _WIN32
-#  define CONFIG_TCC_LIBPATHS \
+#ifndef CONFIG_MCC_LIBPATHS
+# if defined MCC_TARGET_PE || defined _WIN32
+#  define CONFIG_MCC_LIBPATHS \
     "{B}/lib"
 # else
-#  define CONFIG_TCC_LIBPATHS \
+#  define CONFIG_MCC_LIBPATHS \
     "{B}" PATHSEP ALSO_TRIPLET(CONFIG_SYSROOT "/usr/lib")
 # endif
 #endif
 
-#ifndef CONFIG_TCC_ELFINTERP
+#ifndef CONFIG_MCC_ELFINTERP
 # if defined __GNU__
-#  define CONFIG_TCC_ELFINTERP "/lib/ld.so"
-# elif defined(TCC_TARGET_PE)
-#  define CONFIG_TCC_ELFINTERP "-"
-# elif defined TCC_TARGET_ARM64
-#  define CONFIG_TCC_ELFINTERP "/lib/ld-linux-aarch64.so.1"
-# elif defined(TCC_TARGET_X86_64)
-#  define CONFIG_TCC_ELFINTERP "/lib64/ld-linux-x86-64.so.2"
-# elif defined(TCC_TARGET_RISCV64)
-#  define CONFIG_TCC_ELFINTERP "/lib/ld-linux-riscv64-lp64d.so.1"
-# elif defined(TCC_TARGET_ARM)
-#  define CONFIG_TCC_ELFINTERP "/lib/ld-linux.so.3"
-#  define CONFIG_TCC_ELFINTERP_ARMHF "/lib/ld-linux-armhf.so.3"
+#  define CONFIG_MCC_ELFINTERP "/lib/ld.so"
+# elif defined(MCC_TARGET_PE)
+#  define CONFIG_MCC_ELFINTERP "-"
+# elif defined MCC_TARGET_ARM64
+#  define CONFIG_MCC_ELFINTERP "/lib/ld-linux-aarch64.so.1"
+# elif defined(MCC_TARGET_X86_64)
+#  define CONFIG_MCC_ELFINTERP "/lib64/ld-linux-x86-64.so.2"
+# elif defined(MCC_TARGET_RISCV64)
+#  define CONFIG_MCC_ELFINTERP "/lib/ld-linux-riscv64-lp64d.so.1"
+# elif defined(MCC_TARGET_ARM)
+#  define CONFIG_MCC_ELFINTERP "/lib/ld-linux.so.3"
+#  define CONFIG_MCC_ELFINTERP_ARMHF "/lib/ld-linux-armhf.so.3"
 # else
-#  define CONFIG_TCC_ELFINTERP "/lib/ld-linux.so.2"
+#  define CONFIG_MCC_ELFINTERP "/lib/ld-linux.so.2"
 # endif
 #endif
 
-#ifndef TCC_LIBTCC1
-# define TCC_LIBTCC1 "libtcc1.a"
+#ifndef MCC_LIBMCC1
+# define MCC_LIBMCC1 "libmcc1.a"
 #endif
 
-#ifndef CONFIG_TCC_CROSSPREFIX
-# define CONFIG_TCC_CROSSPREFIX ""
+#ifndef CONFIG_MCC_CROSSPREFIX
+# define CONFIG_MCC_CROSSPREFIX ""
 #endif
 
 
-#include "libtcc.h"
+#include "libmcc.h"
 #include "elf.h"
 #include "stab.h"
 #include "dwarf.h"
@@ -302,28 +302,28 @@ extern long double strtold (const char *__nptr, char **__endptr);
 #define ST_DATA extern
 #endif
 
-#ifdef TCC_PROFILE
+#ifdef MCC_PROFILE
 # define static
 # define inline
 #endif
 
 
 #define TARGET_DEFS_ONLY
-#ifdef TCC_TARGET_I386
+#ifdef MCC_TARGET_I386
 # include "i386-gen.c"
 # include "i386-link.c"
-#elif defined TCC_TARGET_X86_64
+#elif defined MCC_TARGET_X86_64
 # include "x86_64-gen.c"
 # include "x86_64-link.c"
-#elif defined TCC_TARGET_ARM
+#elif defined MCC_TARGET_ARM
 # include "arm-gen.c"
 # include "arm-link.c"
 # include "arm-asm.c"
-#elif defined TCC_TARGET_ARM64
+#elif defined MCC_TARGET_ARM64
 # include "arm64-gen.c"
 # include "arm64-link.c"
 # include "arm64-asm.c"
-#elif defined(TCC_TARGET_RISCV64)
+#elif defined(MCC_TARGET_RISCV64)
 # include "riscv64-gen.c"
 # include "riscv64-link.c"
 # include "riscv64-asm.c"
@@ -351,7 +351,7 @@ extern long double strtold (const char *__nptr, char **__endptr);
 #define addr_t ElfW(Addr)
 #define ElfSym ElfW(Sym)
 
-#if PTR_SIZE == 8 && !defined TCC_TARGET_PE
+#if PTR_SIZE == 8 && !defined MCC_TARGET_PE
 # define LONG_SIZE 8
 #else
 # define LONG_SIZE 4
@@ -380,7 +380,7 @@ typedef struct TokenSym {
     char str[1];
 } TokenSym;
 
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
 typedef unsigned short nwchar_t;
 #else
 typedef int nwchar_t;
@@ -493,7 +493,7 @@ typedef struct Section {
     unsigned long data_offset;
     unsigned char *data;
     unsigned long data_allocated;
-    TCCState *s1;
+    MCCState *s1;
     int sh_name;
     int sh_num;
     int sh_type;
@@ -610,7 +610,7 @@ typedef struct CachedInclude {
 
 #define CACHED_INCLUDES_HASH_SIZE 32
 
-#ifdef CONFIG_TCC_ASM
+#ifdef CONFIG_MCC_ASM
 typedef struct ExprValue {
     uint64_t v;
     Sym *sym;
@@ -639,12 +639,12 @@ struct sym_attr {
     unsigned plt_offset;
     int plt_sym;
     int dyn_index;
-#ifdef TCC_TARGET_ARM
+#ifdef MCC_TARGET_ARM
     unsigned char plt_thumb_stub:1;
 #endif
 };
 
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
 #define PE_IMAGE_FILE_RELOCS_STRIPPED            0x0001
 #define PE_IMAGE_FILE_LARGE_ADDRESS_AWARE        0x0020
 #define PE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA    0x0020
@@ -653,7 +653,7 @@ struct sym_attr {
 #define PE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE 0x8000
 #endif
 
-struct TCCState {
+struct MCCState {
     unsigned char verbose;
     unsigned char nostdinc;
     unsigned char nostdlib;
@@ -698,32 +698,32 @@ struct TCCState {
     unsigned char do_debug;
     unsigned char dwarf;
     unsigned char do_backtrace;
-#ifdef CONFIG_TCC_BCHECK
+#ifdef CONFIG_MCC_BCHECK
     unsigned char do_bounds_check;
 #endif
     unsigned char test_coverage;
 
     unsigned char gnu_ext;
-    unsigned char tcc_ext;
+    unsigned char mcc_ext;
 
     unsigned char dflag;
     unsigned char Pflag;
 
-#ifdef TCC_TARGET_X86_64
+#ifdef MCC_TARGET_X86_64
     unsigned char nosse;
 #endif
-#ifdef TCC_TARGET_ARM
+#ifdef MCC_TARGET_ARM
     unsigned char float_abi;
 #endif
 
     unsigned char has_text_addr;
     addr_t text_addr;
     unsigned section_align;
-#ifdef TCC_TARGET_I386
+#ifdef MCC_TARGET_I386
     int seg_size;
 #endif
 
-    char *tcc_lib_path;
+    char *mcc_lib_path;
     char *soname;
     char *rpath;
     char *elfint;
@@ -793,7 +793,7 @@ struct TCCState {
     Section *tdata_section, *tbss_section;
     Section *common_section;
     Section *cur_text_section;
-#ifdef CONFIG_TCC_BCHECK
+#ifdef CONFIG_MCC_BCHECK
     Section *bounds_section;
     Section *lbounds_section;
 #endif
@@ -813,19 +813,19 @@ struct TCCState {
     Section *dwarf_line_str_section;
     int dwlo, dwhi;
     Section *tcov_section;
-    struct _tccdbg *dState;
+    struct _mccdbg *dState;
 
     struct sym_attr *sym_attrs;
     int nb_sym_attrs;
     ElfW_Rel *qrel;
     #define qrel s1->qrel
 
-#ifdef TCC_TARGET_RISCV64
+#ifdef MCC_TARGET_RISCV64
     struct pcrel_hi { addr_t addr, val; } **pcrel_hi_entries;
     int nb_pcrel_hi_entries;
 #endif
 
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
     int pe_subsystem;
     unsigned pe_characteristics;
     unsigned pe_dll_characteristics;
@@ -833,7 +833,7 @@ struct TCCState {
     unsigned pe_file_align;
     unsigned pe_stack_size;
     addr_t pe_imagebase;
-# if defined(TCC_TARGET_X86_64) || defined(TCC_TARGET_ARM64)
+# if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
     Section *uw_pdata;
     int uw_sym;
     int uw_xsym;
@@ -841,7 +841,7 @@ struct TCCState {
 # endif
 #endif
 
-#if defined TCC_TARGET_MACHO
+#if defined MCC_TARGET_MACHO
     char *install_name;
     uint32_t compatibility_version;
     uint32_t current_version;
@@ -857,7 +857,7 @@ struct TCCState {
     Section *verneed_section;
 #endif
 
-#ifdef TCC_IS_NATIVE
+#ifdef MCC_IS_NATIVE
     const char *run_main;
     void *run_ptr;
     unsigned run_size;
@@ -865,14 +865,14 @@ struct TCCState {
 #ifdef _WIN64
     void *run_function_table;
 #endif
-    struct TCCState *next;
+    struct MCCState *next;
     struct rt_context *rc;
     void *run_lj, *run_jb;
-    TCCBtFunc *bt_func;
+    MCCBtFunc *bt_func;
     void *bt_data;
 #endif
 
-#ifdef CONFIG_TCC_BACKTRACE
+#ifdef CONFIG_MCC_BACKTRACE
     int rt_num_callers;
 #endif
 
@@ -1055,17 +1055,17 @@ struct filespec {
 
 #define TOK_IDENT 256
 
-enum tcc_token {
+enum mcc_token {
     TOK_LAST = TOK_IDENT - 1
 #define DEF(id, str) ,id
-#include "tcctok.h"
+#include "mcctok.h"
 #undef DEF
 };
 
 #define TOK_UIDENT TOK_DEFINE
 
 
-ST_DATA struct TCCState *tcc_state;
+ST_DATA struct MCCState *mcc_state;
 ST_DATA void** stk_data;
 ST_DATA int nb_stk_data;
 ST_DATA int g_debug;
@@ -1073,39 +1073,39 @@ ST_DATA int g_debug;
 ST_FUNC char *pstrcpy(char *buf, size_t buf_size, const char *s);
 ST_FUNC char *pstrcat(char *buf, size_t buf_size, const char *s);
 ST_FUNC char *pstrncpy(char *out, size_t buf_size, const char *s, size_t num);
-PUB_FUNC char *tcc_basename(const char *name);
-PUB_FUNC char *tcc_fileextension (const char *name);
+PUB_FUNC char *mcc_basename(const char *name);
+PUB_FUNC char *mcc_fileextension (const char *name);
 
-PUB_FUNC void tcc_free(void *ptr);
-PUB_FUNC void *tcc_malloc(unsigned long size);
-PUB_FUNC void *tcc_mallocz(unsigned long size);
-PUB_FUNC void *tcc_realloc(void *ptr, unsigned long size);
-PUB_FUNC char *tcc_strdup(const char *str);
+PUB_FUNC void mcc_free(void *ptr);
+PUB_FUNC void *mcc_malloc(unsigned long size);
+PUB_FUNC void *mcc_mallocz(unsigned long size);
+PUB_FUNC void *mcc_realloc(void *ptr, unsigned long size);
+PUB_FUNC char *mcc_strdup(const char *str);
 
 #ifdef MEM_DEBUG
-#define tcc_free(ptr)           tcc_free_debug(ptr)
-#define tcc_malloc(size)        tcc_malloc_debug(size, __FILE__, __LINE__)
-#define tcc_mallocz(size)       tcc_mallocz_debug(size, __FILE__, __LINE__)
-#define tcc_realloc(ptr,size)   tcc_realloc_debug(ptr, size, __FILE__, __LINE__)
-#define tcc_strdup(str)         tcc_strdup_debug(str, __FILE__, __LINE__)
-PUB_FUNC void tcc_free_debug(void *ptr);
-PUB_FUNC void *tcc_malloc_debug(unsigned long size, const char *file, int line);
-PUB_FUNC void *tcc_mallocz_debug(unsigned long size, const char *file, int line);
-PUB_FUNC void *tcc_realloc_debug(void *ptr, unsigned long size, const char *file, int line);
-PUB_FUNC char *tcc_strdup_debug(const char *str, const char *file, int line);
+#define mcc_free(ptr)           mcc_free_debug(ptr)
+#define mcc_malloc(size)        mcc_malloc_debug(size, __FILE__, __LINE__)
+#define mcc_mallocz(size)       mcc_mallocz_debug(size, __FILE__, __LINE__)
+#define mcc_realloc(ptr,size)   mcc_realloc_debug(ptr, size, __FILE__, __LINE__)
+#define mcc_strdup(str)         mcc_strdup_debug(str, __FILE__, __LINE__)
+PUB_FUNC void mcc_free_debug(void *ptr);
+PUB_FUNC void *mcc_malloc_debug(unsigned long size, const char *file, int line);
+PUB_FUNC void *mcc_mallocz_debug(unsigned long size, const char *file, int line);
+PUB_FUNC void *mcc_realloc_debug(void *ptr, unsigned long size, const char *file, int line);
+PUB_FUNC char *mcc_strdup_debug(const char *str, const char *file, int line);
 #endif
 
 ST_FUNC void libc_free(void *ptr);
-#define free(p) use_tcc_free(p)
-#define malloc(s) use_tcc_malloc(s)
-#define realloc(p, s) use_tcc_realloc(p, s)
+#define free(p) use_mcc_free(p)
+#define malloc(s) use_mcc_malloc(s)
+#define realloc(p, s) use_mcc_realloc(p, s)
 #undef strdup
-#define strdup(s) use_tcc_strdup(s)
-PUB_FUNC int _tcc_error_noabort(const char *fmt, ...) PRINTF_LIKE(1,2);
-PUB_FUNC NORETURN void _tcc_error(const char *fmt, ...) PRINTF_LIKE(1,2);
-PUB_FUNC void _tcc_warning(const char *fmt, ...) PRINTF_LIKE(1,2);
-#define tcc_internal_error(msg) \
-    tcc_error("internal compiler error in %s:%d: %s", __FUNCTION__,__LINE__,msg)
+#define strdup(s) use_mcc_strdup(s)
+PUB_FUNC int _mcc_error_noabort(const char *fmt, ...) PRINTF_LIKE(1,2);
+PUB_FUNC NORETURN void _mcc_error(const char *fmt, ...) PRINTF_LIKE(1,2);
+PUB_FUNC void _mcc_warning(const char *fmt, ...) PRINTF_LIKE(1,2);
+#define mcc_internal_error(msg) \
+    mcc_error("internal compiler error in %s:%d: %s", __FUNCTION__,__LINE__,msg)
 
 ST_FUNC void dynarray_add(void *ptab, int *nb_ptr, void *data);
 ST_FUNC void dynarray_reset(void *pp, int *n);
@@ -1117,16 +1117,16 @@ ST_FUNC void cstr_free(CString *cstr);
 ST_FUNC int cstr_printf(CString *cs, const char *fmt, ...) PRINTF_LIKE(2,3);
 ST_FUNC int cstr_vprintf(CString *cstr, const char *fmt, va_list ap);
 ST_FUNC void cstr_reset(CString *cstr);
-ST_FUNC void tcc_open_bf(TCCState *s1, const char *filename, int initlen);
-ST_FUNC int tcc_open(TCCState *s1, const char *filename);
-ST_FUNC void tcc_close(void);
+ST_FUNC void mcc_open_bf(MCCState *s1, const char *filename, int initlen);
+ST_FUNC int mcc_open(MCCState *s1, const char *filename);
+ST_FUNC void mcc_close(void);
 
 #define stk_push(p) dynarray_add(&stk_data, &nb_stk_data, p)
 #define stk_pop() (--nb_stk_data)
 #define cstr_new_s(cstr) (cstr_new(cstr), stk_push(&(cstr)->data))
 #define cstr_free_s(cstr) (cstr_free(cstr), stk_pop())
 
-ST_FUNC int tcc_add_file_internal(TCCState *s1, const char *filename, int flags);
+ST_FUNC int mcc_add_file_internal(MCCState *s1, const char *filename, int flags);
 #define AFF_PRINT_ERROR     0x10
 #define AFF_REFERENCED_DLL  0x20
 #define AFF_TYPE_BIN        0x40
@@ -1145,30 +1145,30 @@ ST_FUNC int tcc_add_file_internal(TCCState *s1, const char *filename, int flags)
 #define FILE_NOT_RECOGNIZED -3
 
 #ifndef ELF_OBJ_ONLY
-ST_FUNC int tcc_add_crt(TCCState *s, const char *filename);
+ST_FUNC int mcc_add_crt(MCCState *s, const char *filename);
 #endif
-ST_FUNC int tcc_add_dll(TCCState *s, const char *filename, int flags);
-ST_FUNC int tcc_add_support(TCCState *s1, const char *filename);
-#ifdef CONFIG_TCC_BCHECK
-ST_FUNC void tcc_add_bcheck(TCCState *s1);
+ST_FUNC int mcc_add_dll(MCCState *s, const char *filename, int flags);
+ST_FUNC int mcc_add_support(MCCState *s1, const char *filename);
+#ifdef CONFIG_MCC_BCHECK
+ST_FUNC void mcc_add_bcheck(MCCState *s1);
 #endif
-#ifdef CONFIG_TCC_BACKTRACE
-ST_FUNC void tcc_add_btstub(TCCState *s1);
+#ifdef CONFIG_MCC_BACKTRACE
+ST_FUNC void mcc_add_btstub(MCCState *s1);
 #endif
-ST_FUNC void tcc_add_pragma_libs(TCCState *s1);
-PUB_FUNC int tcc_add_library_err(TCCState *s, const char *f);
-PUB_FUNC void tcc_print_stats(TCCState *s, unsigned total_time);
-PUB_FUNC int tcc_parse_args(TCCState *s, int *argc, char ***argv);
+ST_FUNC void mcc_add_pragma_libs(MCCState *s1);
+PUB_FUNC int mcc_add_library_err(MCCState *s, const char *f);
+PUB_FUNC void mcc_print_stats(MCCState *s, unsigned total_time);
+PUB_FUNC int mcc_parse_args(MCCState *s, int *argc, char ***argv);
 #ifdef _WIN32
 ST_FUNC char *normalize_slashes(char *path);
-PUB_FUNC FILE *tcc_fopen(const char *f, const char *m);
-PUB_FUNC int tcc_fclose(FILE *f);
+PUB_FUNC FILE *mcc_fopen(const char *f, const char *m);
+PUB_FUNC int mcc_fclose(FILE *f);
 #else
-# define tcc_fopen fopen
-# define tcc_fclose fclose
+# define mcc_fopen fopen
+# define mcc_fclose fclose
 #endif
-ST_FUNC DLLReference *tcc_add_dllref(TCCState *s1, const char *dllname, int level);
-ST_FUNC char *tcc_load_text(int fd);
+ST_FUNC DLLReference *mcc_add_dllref(MCCState *s1, const char *dllname, int level);
+ST_FUNC char *mcc_load_text(int fd);
 ST_FUNC int normalized_PATHCMP(const char *f1, const char *f2);
 
 #define OPT_HELP 1
@@ -1238,12 +1238,12 @@ ST_FUNC void skip_to_eol(int warn);
 ST_FUNC void preprocess(int is_bof);
 ST_FUNC void next(void);
 ST_INLN void unget_tok(int last_tok);
-ST_FUNC void preprocess_start(TCCState *s1, int filetype);
-ST_FUNC void preprocess_end(TCCState *s1);
-ST_FUNC void tccpp_new(TCCState *s);
-ST_FUNC void tccpp_delete(TCCState *s);
-ST_FUNC void tccpp_putfile(const char *filename);
-ST_FUNC int tcc_preprocess(TCCState *s1);
+ST_FUNC void preprocess_start(MCCState *s1, int filetype);
+ST_FUNC void preprocess_end(MCCState *s1);
+ST_FUNC void mccpp_new(MCCState *s);
+ST_FUNC void mccpp_delete(MCCState *s);
+ST_FUNC void mccpp_putfile(const char *filename);
+ST_FUNC int mcc_preprocess(MCCState *s1);
 ST_FUNC void skip(int c);
 ST_FUNC NORETURN void expect(const char *msg);
 ST_FUNC void pp_error(CString *cs);
@@ -1286,9 +1286,9 @@ ST_DATA int func_vc;
 ST_DATA int func_ind;
 ST_DATA const char *funcname;
 
-ST_FUNC void tccgen_init(TCCState *s1);
-ST_FUNC int tccgen_compile(TCCState *s1);
-ST_FUNC void tccgen_finish(TCCState *s1);
+ST_FUNC void mccgen_init(MCCState *s1);
+ST_FUNC int mccgen_compile(MCCState *s1);
+ST_FUNC void mccgen_finish(MCCState *s1);
 ST_FUNC void check_vstack(void);
 
 ST_INLN int is_float(int t);
@@ -1333,7 +1333,7 @@ ST_FUNC void vpop(void);
 #if PTR_SIZE == 4
 ST_FUNC void lexpand(void);
 #endif
-#ifdef TCC_TARGET_ARM
+#ifdef MCC_TARGET_ARM
 ST_FUNC int get_reg_ex(int rc, int rc2);
 #endif
 ST_FUNC void save_reg(int r);
@@ -1354,22 +1354,22 @@ ST_FUNC void indir(void);
 ST_FUNC void unary(void);
 ST_FUNC void gexpr(void);
 ST_FUNC int expr_const(void);
-#ifdef CONFIG_TCC_BCHECK
+#ifdef CONFIG_MCC_BCHECK
 ST_FUNC Sym *get_sym_ref(CType *type, Section *sec, unsigned long offset, unsigned long size);
 #endif
-#if defined TCC_TARGET_X86_64 && !defined TCC_TARGET_PE
+#if defined MCC_TARGET_X86_64 && !defined MCC_TARGET_PE
 ST_FUNC int classify_x86_64_va_arg(CType *ty);
 #endif
-#ifdef CONFIG_TCC_BCHECK
+#ifdef CONFIG_MCC_BCHECK
 ST_FUNC void gbound_args(int nb_args);
 ST_DATA int func_bound_add_epilog;
 #endif
 ST_FUNC Sym *gfunc_set_param(Sym *s, int c, int byref);
 
 
-#define TCC_OUTPUT_FORMAT_ELF    0
-#define TCC_OUTPUT_FORMAT_BINARY 1
-#define TCC_OUTPUT_DYN           TCC_OUTPUT_DLL
+#define MCC_OUTPUT_FORMAT_ELF    0
+#define MCC_OUTPUT_FORMAT_BINARY 1
+#define MCC_OUTPUT_DYN           MCC_OUTPUT_DLL
 
 #define ARMAG  "!<arch>\n"
 
@@ -1381,17 +1381,17 @@ typedef struct {
     unsigned int n_value;
 } Stab_Sym;
 
-ST_FUNC void tccelf_new(TCCState *s);
-ST_FUNC void tccelf_delete(TCCState *s);
-ST_FUNC void tccelf_begin_file(TCCState *s1);
-ST_FUNC void tccelf_end_file(TCCState *s1);
-ST_FUNC Section *new_section(TCCState *s1, const char *name, int sh_type, int sh_flags);
+ST_FUNC void mccelf_new(MCCState *s);
+ST_FUNC void mccelf_delete(MCCState *s);
+ST_FUNC void mccelf_begin_file(MCCState *s1);
+ST_FUNC void mccelf_end_file(MCCState *s1);
+ST_FUNC Section *new_section(MCCState *s1, const char *name, int sh_type, int sh_flags);
 ST_FUNC void section_realloc(Section *sec, unsigned long new_size);
 ST_FUNC size_t section_add(Section *sec, addr_t size, int align);
 ST_FUNC void *section_ptr_add(Section *sec, addr_t size);
-ST_FUNC Section *find_section(TCCState *s1, const char *name);
+ST_FUNC Section *find_section(MCCState *s1, const char *name);
 ST_FUNC void free_section(Section *s);
-ST_FUNC Section *new_symtab(TCCState *s1, const char *symtab_name, int sh_type, int sh_flags, const char *strtab_name, const char *hash_name, int hash_sh_flags);
+ST_FUNC Section *new_symtab(MCCState *s1, const char *symtab_name, int sh_type, int sh_flags, const char *strtab_name, const char *hash_name, int hash_sh_flags);
 ST_FUNC void init_symtab(Section *s);
 
 ST_FUNC int put_elf_str(Section *s, const char *sym);
@@ -1401,39 +1401,39 @@ ST_FUNC int find_elf_sym(Section *s, const char *name);
 ST_FUNC void put_elf_reloc(Section *symtab, Section *s, unsigned long offset, int type, int symbol);
 ST_FUNC void put_elf_reloca(Section *symtab, Section *s, unsigned long offset, int type, int symbol, addr_t addend);
 
-ST_FUNC void resolve_common_syms(TCCState *s1);
-ST_FUNC void relocate_syms(TCCState *s1, Section *symtab, int do_resolve);
-ST_FUNC void relocate_sections(TCCState *s1);
+ST_FUNC void resolve_common_syms(MCCState *s1);
+ST_FUNC void relocate_syms(MCCState *s1, Section *symtab, int do_resolve);
+ST_FUNC void relocate_sections(MCCState *s1);
 
 ST_FUNC ssize_t full_read(int fd, void *buf, size_t count);
 ST_FUNC void *load_data(int fd, unsigned long file_offset, unsigned long size);
-ST_FUNC int tcc_object_type(int fd, ElfW(Ehdr) *h);
-ST_FUNC int tcc_load_object_file(TCCState *s1, int fd, unsigned long file_offset);
-ST_FUNC int tcc_load_archive(TCCState *s1, int fd, int alacarte);
-ST_FUNC void add_array(TCCState *s1, const char *sec, int c);
+ST_FUNC int mcc_object_type(int fd, ElfW(Ehdr) *h);
+ST_FUNC int mcc_load_object_file(MCCState *s1, int fd, unsigned long file_offset);
+ST_FUNC int mcc_load_archive(MCCState *s1, int fd, int alacarte);
+ST_FUNC void add_array(MCCState *s1, const char *sec, int c);
 
-ST_FUNC struct sym_attr *get_sym_attr(TCCState *s1, int index, int alloc);
-ST_FUNC addr_t get_sym_addr(TCCState *s, const char *name, int err, int forc);
-ST_FUNC void list_elf_symbols(TCCState *s, void *ctx,
+ST_FUNC struct sym_attr *get_sym_attr(MCCState *s1, int index, int alloc);
+ST_FUNC addr_t get_sym_addr(MCCState *s, const char *name, int err, int forc);
+ST_FUNC void list_elf_symbols(MCCState *s, void *ctx,
     void (*symbol_cb)(void *ctx, const char *name, const void *val));
-ST_FUNC int set_global_sym(TCCState *s1, const char *name, Section *sec, addr_t offs);
+ST_FUNC int set_global_sym(MCCState *s1, const char *name, Section *sec, addr_t offs);
 
 #define for_each_elem(sec, startoff, elem, type) \
     for (elem = (type *) sec->data + startoff; \
          elem < (type *) (sec->data + sec->data_offset); elem++)
 
 #ifndef ELF_OBJ_ONLY
-ST_FUNC int tcc_load_dll(TCCState *s1, int fd, const char *filename, int level);
-ST_FUNC int tcc_load_ldscript(TCCState *s1, int fd);
-ST_FUNC void tccelf_add_crtbegin(TCCState *s1);
-ST_FUNC void tccelf_add_crtend(TCCState *s1);
+ST_FUNC int mcc_load_dll(MCCState *s1, int fd, const char *filename, int level);
+ST_FUNC int mcc_load_ldscript(MCCState *s1, int fd);
+ST_FUNC void mccelf_add_crtbegin(MCCState *s1);
+ST_FUNC void mccelf_add_crtend(MCCState *s1);
 #endif
-#ifndef TCC_TARGET_PE
-ST_FUNC void tcc_add_runtime(TCCState *s1);
+#ifndef MCC_TARGET_PE
+ST_FUNC void mcc_add_runtime(MCCState *s1);
 #endif
 
 
-#ifndef TCC_TARGET_PE
+#ifndef MCC_TARGET_PE
 ST_FUNC int code_reloc (int reloc_type);
 ST_FUNC int gotplt_entry_type (int reloc_type);
 enum gotplt_entry {
@@ -1443,15 +1443,15 @@ enum gotplt_entry {
     ALWAYS_GOTPLT_ENTRY
 };
 #define NEED_RELOC_TYPE
-#if !defined TCC_TARGET_MACHO || defined TCC_IS_NATIVE
-ST_FUNC unsigned create_plt_entry(TCCState *s1, unsigned got_offset, struct sym_attr *attr);
-ST_FUNC void relocate_plt(TCCState *s1);
-ST_FUNC void build_got_entries(TCCState *s1, int got_sym);
+#if !defined MCC_TARGET_MACHO || defined MCC_IS_NATIVE
+ST_FUNC unsigned create_plt_entry(MCCState *s1, unsigned got_offset, struct sym_attr *attr);
+ST_FUNC void relocate_plt(MCCState *s1);
+ST_FUNC void build_got_entries(MCCState *s1, int got_sym);
 #define NEED_BUILD_GOT
 #endif
 #endif
 
-ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr, addr_t addr, addr_t val);
+ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr, addr_t addr, addr_t val);
 
 ST_DATA const char * const target_machine_defs;
 ST_DATA const int reg_classes[NB_REGS];
@@ -1504,36 +1504,36 @@ static inline void write64le(unsigned char *p, uint64_t x) {
 static inline void add64le(unsigned char *p, int64_t x) {
     write64le(p, read64le(p) + x);
 }
-#if defined TCC_TARGET_I386 || defined TCC_TARGET_X86_64 || defined TCC_TARGET_ARM
+#if defined MCC_TARGET_I386 || defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM
 ST_FUNC void g(int c);
 ST_FUNC void gen_le16(int c);
 ST_FUNC void gen_le32(int c);
 #endif
-#if defined TCC_TARGET_I386 || defined TCC_TARGET_X86_64
+#if defined MCC_TARGET_I386 || defined MCC_TARGET_X86_64
 ST_FUNC void gen_addr32(int r, Sym *sym, int c);
 ST_FUNC void gen_addrpc32(int r, Sym *sym, int c);
 ST_FUNC void gen_cvt_csti(int t);
 ST_FUNC void gen_increment_tcov (SValue *sv);
 #endif
 
-#ifdef TCC_TARGET_X86_64
+#ifdef MCC_TARGET_X86_64
 ST_FUNC void gen_opl(int op);
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
 ST_FUNC void gen_vla_result(int addr);
 #endif
 ST_FUNC void gen_cvt_sxtw(void);
 ST_FUNC void gen_cvt_csti(int t);
 #endif
 
-#ifdef TCC_TARGET_ARM
-#if defined(TCC_ARM_EABI) && !defined(CONFIG_TCC_ELFINTERP)
-PUB_FUNC const char *default_elfinterp(struct TCCState *s);
+#ifdef MCC_TARGET_ARM
+#if defined(MCC_ARM_EABI) && !defined(CONFIG_MCC_ELFINTERP)
+PUB_FUNC const char *default_elfinterp(struct MCCState *s);
 #endif
-ST_FUNC void arm_init(struct TCCState *s);
+ST_FUNC void arm_init(struct MCCState *s);
 ST_FUNC void gen_increment_tcov (SValue *sv);
 #endif
 
-#ifdef TCC_TARGET_ARM64
+#ifdef MCC_TARGET_ARM64
 ST_FUNC void gen_opl(int op);
 ST_FUNC void gfunc_return(CType *func_type);
 ST_FUNC void gen_va_start(void);
@@ -1544,7 +1544,7 @@ ST_FUNC void gen_cvt_csti(int t);
 ST_FUNC void gen_increment_tcov (SValue *sv);
 #endif
 
-#ifdef TCC_TARGET_RISCV64
+#ifdef MCC_TARGET_RISCV64
 ST_FUNC void gen_opl(int op);
 ST_FUNC void gen_va_start(void);
 ST_FUNC void arch_transfer_ret_regs(int);
@@ -1554,23 +1554,23 @@ ST_FUNC void gen_increment_tcov (SValue *sv);
 ST_FUNC void gen_clear_cache(void);
 #endif
 
-#ifdef TCC_TARGET_X86_64
+#ifdef MCC_TARGET_X86_64
 ST_FUNC void arch_transfer_ret_regs(int);
 #endif
 
 ST_FUNC void asm_instr(void);
 ST_FUNC void asm_global_instr(void);
-ST_FUNC int tcc_assemble(TCCState *s1, int do_preprocess);
-#ifdef CONFIG_TCC_ASM
+ST_FUNC int mcc_assemble(MCCState *s1, int do_preprocess);
+#ifdef CONFIG_MCC_ASM
 ST_FUNC int find_constraint(ASMOperand *operands, int nb_operands, const char *name, const char **pp);
 ST_FUNC Sym* get_asm_sym(int name, Sym *csym);
-ST_FUNC void asm_expr(TCCState *s1, ExprValue *pe);
-ST_FUNC int asm_int_expr(TCCState *s1);
+ST_FUNC void asm_expr(MCCState *s1, ExprValue *pe);
+ST_FUNC int asm_int_expr(MCCState *s1);
 #if PTR_SIZE == 8
 ST_FUNC void gen_expr64(ExprValue *pe);
 #endif
 ST_FUNC void gen_expr32(ExprValue *pe);
-ST_FUNC void asm_opcode(TCCState *s1, int opcode);
+ST_FUNC void asm_opcode(MCCState *s1, int opcode);
 ST_FUNC int asm_parse_regvar(int t);
 ST_FUNC void asm_compute_constraints(ASMOperand *operands, int nb_operands, int nb_outputs, const uint8_t *clobber_regs, int *pout_reg);
 ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier);
@@ -1578,34 +1578,34 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands, int nb_outputs,
 ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str);
 #endif
 
-#ifdef TCC_TARGET_PE
-ST_FUNC int pe_load_file(struct TCCState *s1, int fd, const char *filename);
-ST_FUNC int pe_output_file(TCCState * s1, const char *filename);
-ST_FUNC int pe_putimport(TCCState *s1, int dllindex, const char *name, addr_t value);
-ST_FUNC int pe_setsubsy(TCCState *s1, const char *arg);
-#if defined TCC_TARGET_I386 || defined TCC_TARGET_X86_64
+#ifdef MCC_TARGET_PE
+ST_FUNC int pe_load_file(struct MCCState *s1, int fd, const char *filename);
+ST_FUNC int pe_output_file(MCCState * s1, const char *filename);
+ST_FUNC int pe_putimport(MCCState *s1, int dllindex, const char *name, addr_t value);
+ST_FUNC int pe_setsubsy(MCCState *s1, const char *arg);
+#if defined MCC_TARGET_I386 || defined MCC_TARGET_X86_64
 #endif
-#if defined(TCC_TARGET_X86_64) || defined(TCC_TARGET_ARM64)
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
 ST_FUNC void pe_add_unwind_data(unsigned start, unsigned end, unsigned stack);
 #endif
-PUB_FUNC int tcc_get_dllexports(const char *filename, char **pp);
+PUB_FUNC int mcc_get_dllexports(const char *filename, char **pp);
 # define ST_PE_EXPORT 0x10
 # define ST_PE_IMPORT 0x20
 # define ST_PE_STDCALL 0x40
 #endif
 #define ST_ASM_SET 0x04
 
-#ifdef TCC_TARGET_MACHO
-ST_FUNC int macho_output_file(TCCState * s1, const char *filename);
-ST_FUNC int macho_load_dll(TCCState *s1, int fd, const char *filename, int lev);
-ST_FUNC int macho_load_tbd(TCCState *s1, int fd, const char *filename, int lev);
-#ifdef TCC_IS_NATIVE
-ST_FUNC void tcc_add_macos_sdkpath(TCCState* s);
+#ifdef MCC_TARGET_MACHO
+ST_FUNC int macho_output_file(MCCState * s1, const char *filename);
+ST_FUNC int macho_load_dll(MCCState *s1, int fd, const char *filename, int lev);
+ST_FUNC int macho_load_tbd(MCCState *s1, int fd, const char *filename, int lev);
+#ifdef MCC_IS_NATIVE
+ST_FUNC void mcc_add_macos_sdkpath(MCCState* s);
 ST_FUNC char* macho_tbd_soname(int fd);
 #endif
 #endif
-#ifdef TCC_IS_NATIVE
-#ifdef CONFIG_TCC_STATIC
+#ifdef MCC_IS_NATIVE
+#ifdef CONFIG_MCC_STATIC
 #define RTLD_LAZY       0x001
 #define RTLD_NOW        0x002
 #define RTLD_GLOBAL     0x100
@@ -1615,50 +1615,50 @@ ST_FUNC void dlclose(void *p);
 ST_FUNC const char *dlerror(void);
 ST_FUNC void *dlsym(void *handle, const char *symbol);
 #endif
-ST_FUNC void tcc_run_free(TCCState *s1);
+ST_FUNC void mcc_run_free(MCCState *s1);
 #endif
 
 #if 0
-ST_FUNC int tcc_tool_ar(TCCState *s, int argc, char **argv);
-#ifdef TCC_TARGET_PE
-ST_FUNC int tcc_tool_impdef(TCCState *s, int argc, char **argv);
+ST_FUNC int mcc_tool_ar(MCCState *s, int argc, char **argv);
+#ifdef MCC_TARGET_PE
+ST_FUNC int mcc_tool_impdef(MCCState *s, int argc, char **argv);
 #endif
-ST_FUNC int tcc_tool_cross(TCCState *s, char **argv, int option);
-ST_FUNC int gen_makedeps(TCCState *s, const char *target, const char *filename);
-#endif
-
-
-ST_FUNC void tcc_debug_new(TCCState *s);
-
-ST_FUNC void tcc_debug_start(TCCState *s1);
-ST_FUNC void tcc_debug_end(TCCState *s1);
-ST_FUNC void tcc_debug_bincl(TCCState *s1);
-ST_FUNC void tcc_debug_eincl(TCCState *s1);
-ST_FUNC void tcc_debug_newfile(TCCState *s1);
-
-ST_FUNC void tcc_debug_line(TCCState *s1);
-ST_FUNC void tcc_add_debug_info(TCCState *s1, Sym *s, Sym *e);
-ST_FUNC void tcc_debug_funcstart(TCCState *s1, Sym *sym);
-ST_FUNC void tcc_debug_prolog_epilog(TCCState *s1, int value);
-ST_FUNC void tcc_debug_funcend(TCCState *s1, int size);
-ST_FUNC void tcc_debug_extern_sym(TCCState *s1, Sym *sym, int sh_num, int sym_bind, int sym_type);
-ST_FUNC void tcc_debug_typedef(TCCState *s1, Sym *sym);
-ST_FUNC void tcc_debug_stabn(TCCState *s1, int type, int value);
-ST_FUNC void tcc_debug_fix_forw(TCCState *s1, CType *t);
-
-#if !(defined ELF_OBJ_ONLY || defined TCC_TARGET_ARM || defined TARGETOS_BSD)
-ST_FUNC void tcc_eh_frame_start(TCCState *s1);
-ST_FUNC void tcc_eh_frame_end(TCCState *s1);
-ST_FUNC void tcc_eh_frame_hdr(TCCState *s1, int final);
-#define TCC_EH_FRAME 1
+ST_FUNC int mcc_tool_cross(MCCState *s, char **argv, int option);
+ST_FUNC int gen_makedeps(MCCState *s, const char *target, const char *filename);
 #endif
 
-ST_FUNC void tcc_tcov_start(TCCState *s1);
-ST_FUNC void tcc_tcov_end(TCCState *s1);
-ST_FUNC void tcc_tcov_check_line(TCCState *s1, int start);
-ST_FUNC void tcc_tcov_block_end(TCCState *s1, int line);
-ST_FUNC void tcc_tcov_block_begin(TCCState *s1);
-ST_FUNC void tcc_tcov_reset_ind(TCCState *s1);
+
+ST_FUNC void mcc_debug_new(MCCState *s);
+
+ST_FUNC void mcc_debug_start(MCCState *s1);
+ST_FUNC void mcc_debug_end(MCCState *s1);
+ST_FUNC void mcc_debug_bincl(MCCState *s1);
+ST_FUNC void mcc_debug_eincl(MCCState *s1);
+ST_FUNC void mcc_debug_newfile(MCCState *s1);
+
+ST_FUNC void mcc_debug_line(MCCState *s1);
+ST_FUNC void mcc_add_debug_info(MCCState *s1, Sym *s, Sym *e);
+ST_FUNC void mcc_debug_funcstart(MCCState *s1, Sym *sym);
+ST_FUNC void mcc_debug_prolog_epilog(MCCState *s1, int value);
+ST_FUNC void mcc_debug_funcend(MCCState *s1, int size);
+ST_FUNC void mcc_debug_extern_sym(MCCState *s1, Sym *sym, int sh_num, int sym_bind, int sym_type);
+ST_FUNC void mcc_debug_typedef(MCCState *s1, Sym *sym);
+ST_FUNC void mcc_debug_stabn(MCCState *s1, int type, int value);
+ST_FUNC void mcc_debug_fix_forw(MCCState *s1, CType *t);
+
+#if !(defined ELF_OBJ_ONLY || defined MCC_TARGET_ARM || defined TARGETOS_BSD)
+ST_FUNC void mcc_eh_frame_start(MCCState *s1);
+ST_FUNC void mcc_eh_frame_end(MCCState *s1);
+ST_FUNC void mcc_eh_frame_hdr(MCCState *s1, int final);
+#define MCC_EH_FRAME 1
+#endif
+
+ST_FUNC void mcc_tcov_start(MCCState *s1);
+ST_FUNC void mcc_tcov_end(MCCState *s1);
+ST_FUNC void mcc_tcov_check_line(MCCState *s1, int start);
+ST_FUNC void mcc_tcov_block_end(MCCState *s1, int line);
+ST_FUNC void mcc_tcov_block_begin(MCCState *s1);
+ST_FUNC void mcc_tcov_reset_ind(MCCState *s1);
 
 #define stab_section            s1->stab_section
 #define stabstr_section         stab_section->link
@@ -1715,7 +1715,7 @@ dwarf_read_sleb128(unsigned char **ln, unsigned char *end)
     return retval;
 }
 
-#ifdef TCC_TARGET_MACHO
+#ifdef MCC_TARGET_MACHO
 # define DEFAULT_DWARF_VERSION 2
 #else
 # define DEFAULT_DWARF_VERSION 5
@@ -1725,16 +1725,16 @@ dwarf_read_sleb128(unsigned char **ln, unsigned char *end)
 # define CONFIG_DWARF_VERSION 0
 #endif
 
-#if defined TCC_TARGET_X86_64
+#if defined MCC_TARGET_X86_64
 # define R_DATA_32DW R_X86_64_32
 #else
 # define R_DATA_32DW R_DATA_32
 #endif
 
-#if CONFIG_TCC_SEMLOCK
+#if CONFIG_MCC_SEMLOCK
 #if defined _WIN32
-typedef struct { volatile LONG init; CRITICAL_SECTION cs; } TCCSem;
-static inline void wait_sem(TCCSem *p) {
+typedef struct { volatile LONG init; CRITICAL_SECTION cs; } MCCSem;
+static inline void wait_sem(MCCSem *p) {
     if (InterlockedCompareExchange(&p->init, 1, 0) == 0) {
         InitializeCriticalSection(&p->cs);
         InterlockedExchange(&p->init, 2);
@@ -1744,37 +1744,37 @@ static inline void wait_sem(TCCSem *p) {
     }
     EnterCriticalSection(&p->cs);
 }
-static inline void post_sem(TCCSem *p) {
+static inline void post_sem(MCCSem *p) {
     LeaveCriticalSection(&p->cs);
 }
 #elif defined __APPLE__
 #include <dispatch/dispatch.h>
-typedef struct { int init; dispatch_semaphore_t sem; } TCCSem;
-static inline void wait_sem(TCCSem *p) {
+typedef struct { int init; dispatch_semaphore_t sem; } MCCSem;
+static inline void wait_sem(MCCSem *p) {
     if (!p->init)
         p->sem = dispatch_semaphore_create(1), p->init = 1;
     dispatch_semaphore_wait(p->sem, DISPATCH_TIME_FOREVER);
 }
-static inline void post_sem(TCCSem *p) {
+static inline void post_sem(MCCSem *p) {
     dispatch_semaphore_signal(p->sem);
 }
 #else
 #include <semaphore.h>
-typedef struct { int init; sem_t sem; } TCCSem;
-static inline void wait_sem(TCCSem *p) {
+typedef struct { int init; sem_t sem; } MCCSem;
+static inline void wait_sem(MCCSem *p) {
     if (!p->init)
         sem_init(&p->sem, 0, 1), p->init = 1;
     while (sem_wait(&p->sem) < 0 && errno == EINTR);
 }
-static inline void post_sem(TCCSem *p) {
+static inline void post_sem(MCCSem *p) {
     sem_post(&p->sem);
 }
 #endif
-#define TCC_SEM(s) static TCCSem s
+#define MCC_SEM(s) static MCCSem s
 #define WAIT_SEM wait_sem
 #define POST_SEM post_sem
 #else
-#define TCC_SEM(s)
+#define MCC_SEM(s)
 #define WAIT_SEM(p)
 #define POST_SEM(p)
 #endif
@@ -1786,45 +1786,45 @@ static inline void post_sem(TCCSem *p) {
 #define ST_DATA
 #endif
 
-#define text_section        TCC_STATE_VAR(text_section)
-#define data_section        TCC_STATE_VAR(data_section)
-#define rodata_section      TCC_STATE_VAR(rodata_section)
-#define bss_section         TCC_STATE_VAR(bss_section)
-#define tdata_section       TCC_STATE_VAR(tdata_section)
-#define tbss_section        TCC_STATE_VAR(tbss_section)
-#define common_section      TCC_STATE_VAR(common_section)
-#define cur_text_section    TCC_STATE_VAR(cur_text_section)
-#define bounds_section      TCC_STATE_VAR(bounds_section)
-#define lbounds_section     TCC_STATE_VAR(lbounds_section)
-#define symtab_section      TCC_STATE_VAR(symtab_section)
-#define gnu_ext             TCC_STATE_VAR(gnu_ext)
-#define tcc_error_noabort   TCC_SET_STATE(_tcc_error_noabort)
-#define tcc_error           TCC_SET_STATE(_tcc_error)
-#define tcc_warning         TCC_SET_STATE(_tcc_warning)
+#define text_section        MCC_STATE_VAR(text_section)
+#define data_section        MCC_STATE_VAR(data_section)
+#define rodata_section      MCC_STATE_VAR(rodata_section)
+#define bss_section         MCC_STATE_VAR(bss_section)
+#define tdata_section       MCC_STATE_VAR(tdata_section)
+#define tbss_section        MCC_STATE_VAR(tbss_section)
+#define common_section      MCC_STATE_VAR(common_section)
+#define cur_text_section    MCC_STATE_VAR(cur_text_section)
+#define bounds_section      MCC_STATE_VAR(bounds_section)
+#define lbounds_section     MCC_STATE_VAR(lbounds_section)
+#define symtab_section      MCC_STATE_VAR(symtab_section)
+#define gnu_ext             MCC_STATE_VAR(gnu_ext)
+#define mcc_error_noabort   MCC_SET_STATE(_mcc_error_noabort)
+#define mcc_error           MCC_SET_STATE(_mcc_error)
+#define mcc_warning         MCC_SET_STATE(_mcc_warning)
 
-#define total_idents        TCC_STATE_VAR(total_idents)
-#define total_lines         TCC_STATE_VAR(total_lines)
-#define total_bytes         TCC_STATE_VAR(total_bytes)
+#define total_idents        MCC_STATE_VAR(total_idents)
+#define total_lines         MCC_STATE_VAR(total_lines)
+#define total_bytes         MCC_STATE_VAR(total_bytes)
 
-PUB_FUNC void tcc_enter_state(TCCState *s1);
-PUB_FUNC void tcc_exit_state(TCCState *s1);
+PUB_FUNC void mcc_enter_state(MCCState *s1);
+PUB_FUNC void mcc_exit_state(MCCState *s1);
 
-#define tcc_warning_c(sw) TCC_SET_STATE((\
-    tcc_state->warn_num = offsetof(TCCState, sw) \
-    - offsetof(TCCState, warn_none), _tcc_warning))
+#define mcc_warning_c(sw) MCC_SET_STATE((\
+    mcc_state->warn_num = offsetof(MCCState, sw) \
+    - offsetof(MCCState, warn_none), _mcc_warning))
 
 #endif
 
-#undef TCC_STATE_VAR
-#undef TCC_SET_STATE
+#undef MCC_STATE_VAR
+#undef MCC_SET_STATE
 
 #ifdef USING_GLOBALS
-# define TCC_STATE_VAR(sym) tcc_state->sym
-# define TCC_SET_STATE(fn) fn
+# define MCC_STATE_VAR(sym) mcc_state->sym
+# define MCC_SET_STATE(fn) fn
 # undef USING_GLOBALS
-# undef _tcc_error
+# undef _mcc_error
 #else
-# define TCC_STATE_VAR(sym) s1->sym
-# define TCC_SET_STATE(fn) (tcc_enter_state(s1),fn)
-# define _tcc_error use_tcc_error_noabort
+# define MCC_STATE_VAR(sym) s1->sym
+# define MCC_SET_STATE(fn) (mcc_enter_state(s1),fn)
+# define _mcc_error use_mcc_error_noabort
 #endif

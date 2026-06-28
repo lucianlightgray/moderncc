@@ -100,7 +100,7 @@ __asm__(
 ".globl " STR(_(alloca)) "\n"
 "" STR(_(alloca)) ":\n"
 );
-#ifdef __TINYC__
+#ifdef __MCC__
 __asm__(
 "    .int 0x91003c00\n"
 "    .int 0x927cec00\n"

@@ -1,8 +1,8 @@
 #ifdef TARGET_DEFS_ONLY
 
 #define NB_REGS 19
-#ifndef TCC_DISABLE_ASM
-#define CONFIG_TCC_ASM
+#ifndef MCC_DISABLE_ASM
+#define CONFIG_MCC_ASM
 #endif
 
 #define TREG_R(x) (x)
@@ -34,7 +34,7 @@
 
 #else
 #define USING_GLOBALS
-#include "tcc.h"
+#include "mcc.h"
 #include <assert.h>
 
 #define UPPER(x)	(((unsigned)(x) + 0x800u) & 0xfffff000)
@@ -80,7 +80,7 @@ ST_DATA const int reg_classes[NB_REGS] = {
   1 << TREG_SP
 };
 
-#if defined(CONFIG_TCC_BCHECK)
+#if defined(CONFIG_MCC_BCHECK)
 static addr_t func_bound_offset;
 static unsigned long func_bound_ind;
 ST_DATA int func_bound_add_epilog;
@@ -159,7 +159,7 @@ ST_FUNC void gsym_addr(int t_, int a_)
         uint32_t next = read32le(ptr);
         uint32_t r = a - t, imm;
         if ((r + (1 << 21)) & ~((1U << 22) - 2))
-          tcc_error("out-of-range branch chain");
+          mcc_error("out-of-range branch chain");
         imm = (((r >> 12) &  0xff) << 12)
             | (((r >> 11) &     1) << 20)
             | (((r >>  1) & 0x3ff) << 21)
@@ -219,7 +219,7 @@ static int load_symofs(int r, SValue *sv, int forstore, int *new_fc)
     } else if (v == VT_LOCAL || v == VT_LLOCAL) {
         rr = 8;
         if (fc != sv->c.i)
-          tcc_error("unimp: store(giant local off) (0x%lx)", (long)sv->c.i);
+          mcc_error("unimp: store(giant local off) (0x%lx)", (long)sv->c.i);
         if (LOW_OVERFLOW(fc)) {
             rr = is_ireg(r) ? ireg(r) : 5;
             o(0x37 | (rr << 7) | UPPER(fc));
@@ -227,7 +227,7 @@ static int load_symofs(int r, SValue *sv, int forstore, int *new_fc)
             *new_fc = SIGN11(fc);
         }
     } else
-      tcc_error("uhh");
+      mcc_error("uhh");
     return rr;
 }
 
@@ -283,7 +283,7 @@ ST_FUNC void load(int r, SValue *sv)
 	    }
             br = rr;
 	} else {
-            tcc_error("unimp: load(non-local lval)");
+            mcc_error("unimp: load(non-local lval)");
         }
         EI(opcode, func3, rr, br, fc);
     } else if (v == VT_CONST) {
@@ -392,7 +392,7 @@ ST_FUNC void load(int r, SValue *sv)
         gsym(fc);
         EI(0x13, 0, rr, 0, t ^ 1);
     } else
-      tcc_error("unimp: load(non-const)");
+      mcc_error("unimp: load(non-const)");
 }
 
 ST_FUNC void store(int r, SValue *sv)
@@ -406,9 +406,9 @@ ST_FUNC void store(int r, SValue *sv)
     if (bt == VT_LDOUBLE)
       size = align = 8;
     if (bt == VT_STRUCT)
-      tcc_error("unimp: store(struct)");
+      mcc_error("unimp: store(struct)");
     if (size > 8)
-      tcc_error("unimp: large sized store");
+      mcc_error("unimp: large sized store");
     assert(sv->r & VT_LVAL);
     if (fr == VT_LOCAL || (sv->r & VT_SYM)) {
         ptrreg = load_symofs(-1, sv, 1, &fc);
@@ -427,7 +427,7 @@ ST_FUNC void store(int r, SValue *sv)
             fc = SIGN11(fc);
 	}
     } else
-      tcc_error("implement me: %s(!local)", __FUNCTION__);
+      mcc_error("implement me: %s(!local)", __FUNCTION__);
     ES(is_freg(r) ? 0x27 : 0x23,
        size == 1 ? 0 : size == 2 ? 1 : size == 4 ? 2 : 3,
        ptrreg, rr, fc);
@@ -453,7 +453,7 @@ static void gcall_or_jmp(int docall)
     }
 }
 
-#if defined(CONFIG_TCC_BCHECK)
+#if defined(CONFIG_MCC_BCHECK)
 
 static void gen_bounds_call(int v)
 {
@@ -568,15 +568,15 @@ static void reg_pass(CType *type, int *prc, int *fieldofs, int named)
 ST_FUNC void gfunc_call(int nb_args)
 {
     int align, size, areg[2];
-    int *info = tcc_malloc((nb_args + 1) * sizeof (int));
+    int *info = mcc_malloc((nb_args + 1) * sizeof (int));
     int stack_adj = 0, tempspace = 0, stack_add, splitofs = 0;
     int old = (vtop[-nb_args].type.ref->f.func_type == FUNC_OLD);
     SValue *sv;
     Sym *sa;
 
-#ifdef CONFIG_TCC_BCHECK
-    int bc_save = tcc_state->do_bounds_check;
-    if (tcc_state->do_bounds_check)
+#ifdef CONFIG_MCC_BCHECK
+    int bc_save = mcc_state->do_bounds_check;
+    if (mcc_state->do_bounds_check)
         gbound_args(nb_args);
 #endif
 
@@ -728,13 +728,13 @@ ST_FUNC void gfunc_call(int nb_args)
                 gaddrof();
                 vtop->type = char_pointer_type;
                 vpushi(ii >> 20);
-#ifdef CONFIG_TCC_BCHECK
+#ifdef CONFIG_MCC_BCHECK
 		if ((origtype.t & VT_BTYPE) == VT_STRUCT)
-                    tcc_state->do_bounds_check = 0;
+                    mcc_state->do_bounds_check = 0;
 #endif
                 gen_op('+');
-#ifdef CONFIG_TCC_BCHECK
-		tcc_state->do_bounds_check = bc_save;
+#ifdef CONFIG_MCC_BCHECK
+		mcc_state->do_bounds_check = bc_save;
 #endif
                 indir();
                 vtop->type = origtype;
@@ -774,7 +774,7 @@ done:
         else
             EI(0x13, 0, 2, 2, stack_add);
    }
-   tcc_free(info);
+   mcc_free(info);
 }
 
 static int func_sub_sp_offset, num_va_regs, func_va_list_ofs;
@@ -848,8 +848,8 @@ ST_FUNC void gfunc_prolog(Sym *func_sym)
             ES(0x23, 3, 8, 10 + areg[0], -8 + num_va_regs * 8);
         }
     }
-#ifdef CONFIG_TCC_BCHECK
-    if (tcc_state->do_bounds_check)
+#ifdef CONFIG_MCC_BCHECK
+    if (mcc_state->do_bounds_check)
         gen_bounds_prolog();
 #endif
 }
@@ -894,8 +894,8 @@ ST_FUNC void gfunc_epilog(void)
 {
     int v, saved_ind, d, large_ofs_ind;
 
-#ifdef CONFIG_TCC_BCHECK
-    if (tcc_state->do_bounds_check)
+#ifdef CONFIG_MCC_BCHECK
+    if (mcc_state->do_bounds_check)
         gen_bounds_epilog();
 #endif
 
@@ -940,7 +940,7 @@ ST_FUNC void gen_va_start(void)
 ST_FUNC void gen_fill_nops(int bytes)
 {
     if ((bytes & 3))
-      tcc_error("alignment of code section not multiple of 4");
+      mcc_error("alignment of code section not multiple of 4");
     while (bytes > 0) {
         EI(0x13, 0, 0, 0, 0);
         bytes -= 4;
@@ -1090,7 +1090,7 @@ static void gen_opil(int op, int ll)
             vtop->cmp_r = a | b << 8;
             break;
         }
-        tcc_error("implement me: %s(%s)", __FUNCTION__, get_tok_str(op, NULL));
+        mcc_error("implement me: %s(%s)", __FUNCTION__, get_tok_str(op, NULL));
         break;
 
     case '+':
@@ -1421,13 +1421,13 @@ ST_FUNC void gen_vla_sp_restore(int addr)
 ST_FUNC void gen_vla_alloc(CType *type, int align)
 {
     int rr;
-#if defined(CONFIG_TCC_BCHECK)
-    if (tcc_state->do_bounds_check)
+#if defined(CONFIG_MCC_BCHECK)
+    if (mcc_state->do_bounds_check)
         vpushv(vtop);
 #endif
     rr = ireg(gv(RC_INT));
-#if defined(CONFIG_TCC_BCHECK)
-    if (tcc_state->do_bounds_check)
+#if defined(CONFIG_MCC_BCHECK)
+    if (mcc_state->do_bounds_check)
         EI(0x13, 0, rr, rr, 15+1);
     else
 #endif
@@ -1435,8 +1435,8 @@ ST_FUNC void gen_vla_alloc(CType *type, int align)
     EI(0x13, 7, rr, rr, -16);
     ER(0x33, 0, 2, 2, rr, 0x20);
     vpop();
-#if defined(CONFIG_TCC_BCHECK)
-    if (tcc_state->do_bounds_check) {
+#if defined(CONFIG_MCC_BCHECK)
+    if (mcc_state->do_bounds_check) {
         vpushi(0);
         vtop->r = TREG_R(0);
         o(0x00010513);

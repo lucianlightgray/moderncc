@@ -1,6 +1,6 @@
-int tcc_backtrace(const char*, ...);
+int mcc_backtrace(const char*, ...);
 #define hello() \
-    tcc_backtrace("hello from %s() / %s:%d",__FUNCTION__,__FILE__,__LINE__)
+    mcc_backtrace("hello from %s() / %s:%d",__FUNCTION__,__FILE__,__LINE__)
 
 #ifndef _WIN32
 # define __declspec(n)

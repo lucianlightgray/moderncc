@@ -110,13 +110,13 @@ static int texts_equal(const char *a, const char *b){
 
 int main(int argc, char **argv){
     if (argc < 6){
-        fprintf(stderr, "usage: %s <tcc> <bdir> <idir> <testroot> <workdir>\n", argv[0]);
+        fprintf(stderr, "usage: %s <mcc> <bdir> <idir> <testroot> <workdir>\n", argv[0]);
         return 2;
     }
-    const char *tcc = argv[1], *bdir = argv[2], *idir = argv[3];
+    const char *mcc = argv[1], *bdir = argv[2], *idir = argv[3];
     const char *root = argv[4], *work = argv[5];
 
-    const char *emu = getenv("TCC_TEST_EMU"); if (!emu) emu = "";
+    const char *emu = getenv("MCC_TEST_EMU"); if (!emu) emu = "";
 
     char **skip = argv + 6; int nskip = argc - 6;
     int pass = 0, fail = 0, skipped = 0, ref = 0;
@@ -125,8 +125,8 @@ int main(int argc, char **argv){
     snprintf(cmd, sizeof cmd, "mkdir -p \"%s\"", work);
     if (system(cmd)) { fprintf(stderr, "cannot create workdir %s\n", work); return 2; }
 
-    for (int i = 0; i < tcc_goldens_count; i++){
-        const tcc_golden_t *g = &tcc_goldens[i];
+    for (int i = 0; i < mcc_goldens_count; i++){
+        const mcc_golden_t *g = &mcc_goldens[i];
         int do_skip = 0;
         for (int s = 0; s < nskip; s++) if (!strcmp(skip[s], g->name)){ do_skip = 1; break; }
         if (do_skip){ skipped++; continue; }
@@ -151,28 +151,28 @@ int main(int argc, char **argv){
         } else if (!strcmp(g->mode, "pp")){
             snprintf(cmd, sizeof cmd,
                 "%s \"%s\" \"-B%s\" \"-I%s\" -E -P \"%s\" 2>&1",
-                emu, tcc, bdir, idir, path);
+                emu, mcc, bdir, idir, path);
             out = run_capture(cmd, &rc);
         } else if (!strcmp(g->mode, "dt")){
 
 
             snprintf(cmd, sizeof cmd,
                 "cd \"%s\" && %s \"%s\" \"-B%s\" \"-I%s\" -dt -run \"%s\" %s 2>&1",
-                work, emu, tcc, bdir, idir, path, g->flags);
+                work, emu, mcc, bdir, idir, path, g->flags);
             out = run_capture(cmd, &rc);
         } else if (!strcmp(g->mode, "run2")){
 
             snprintf(cmd, sizeof cmd,
                 "cd \"%s\" && ( %s \"%s\" \"-B%s\" \"-I%s\" -run \"%s\" && "
                 "%s \"%s\" \"-B%s\" \"-I%s\" -b -run \"%s\" ) 2>&1",
-                work, emu, tcc, bdir, idir, path, emu, tcc, bdir, idir, path);
+                work, emu, mcc, bdir, idir, path, emu, mcc, bdir, idir, path);
             out = run_capture(cmd, &rc);
         } else {
             char exe[4096];
             snprintf(exe, sizeof exe, "%s/t2_%s.exe", work, g->name);
             snprintf(cmd, sizeof cmd,
                 "%s \"%s\" \"-B%s\" \"-I%s\" \"%s\" %s -o \"%s\" 2>&1",
-                emu, tcc, bdir, idir, path, g->flags, exe);
+                emu, mcc, bdir, idir, path, g->flags, exe);
             char *cerr = run_capture(cmd, &rc);
             if (rc != 0){
                 printf("FAIL  %-32s (compile)\n%s", g->name, cerr);
@@ -204,6 +204,6 @@ int main(int argc, char **argv){
         free(out);
     }
     printf("tests2_runner: %d passed, %d failed, %d skipped, %d ref (of %d)\n",
-           pass, fail, skipped, ref, tcc_goldens_count);
+           pass, fail, skipped, ref, mcc_goldens_count);
     return fail ? 1 : 0;
 }

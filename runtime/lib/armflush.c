@@ -1,12 +1,12 @@
 #if defined __arm__
 
-#ifdef __TINYC__
+#ifdef __MCC__
 
-unsigned _tccsyscall(unsigned syscall_nr, ...);
+unsigned _mccsyscall(unsigned syscall_nr, ...);
 
 __asm__(
-    ".global _tccsyscall\n"
-    "_tccsyscall:\n"
+    ".global _mccsyscall\n"
+    "_mccsyscall:\n"
     "push    {r7, lr}\n\t"
     "mov     r7, r0\n\t"
     "mov     r0, r1\n\t"
@@ -24,7 +24,7 @@ __asm__(
 #define __ARM_NR_BASE           (__NR_SYSCALL_BASE+0x0f0000)
 #define __ARM_NR_cacheflush     (__ARM_NR_BASE+2)
 
-#define syscall _tccsyscall
+#define syscall _mccsyscall
 
 #else
 

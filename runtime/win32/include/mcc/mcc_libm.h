@@ -1,5 +1,5 @@
-#ifndef _TCC_LIBM_H_
-#define _TCC_LIBM_H_
+#ifndef _MCC_LIBM_H_
+#define _MCC_LIBM_H_
 
 #include "../math.h"
 #include "../stdint.h"
@@ -50,43 +50,43 @@ __CRT_INLINE int __cdecl __signbitl (long double x) {
 
 
 
-#define TCCFP_FMIN_EVAL (isnan(x) ? y :                                      \
+#define MCCFP_FMIN_EVAL (isnan(x) ? y :                                      \
                          isnan(y) ? x :                                      \
                          (signbit(x) != signbit(y)) ? (signbit(x) ? x : y) : \
                          x < y ? x : y)
 
 __CRT_INLINE double __cdecl fmin (double x, double y) {
-  return TCCFP_FMIN_EVAL;
+  return MCCFP_FMIN_EVAL;
 }
 
 __CRT_INLINE float __cdecl fminf (float x, float y) {
-  return TCCFP_FMIN_EVAL;
+  return MCCFP_FMIN_EVAL;
 }
 
 __CRT_INLINE long double __cdecl fminl (long double x, long double y) {
-  return TCCFP_FMIN_EVAL;
+  return MCCFP_FMIN_EVAL;
 }
 
-#define TCCFP_FMAX_EVAL (isnan(x) ? y :                                      \
+#define MCCFP_FMAX_EVAL (isnan(x) ? y :                                      \
                          isnan(y) ? x :                                      \
                          (signbit(x) != signbit(y)) ? (signbit(x) ? y : x) : \
                          x < y ? y : x)
 
 __CRT_INLINE double __cdecl fmax (double x, double y) {
-  return TCCFP_FMAX_EVAL;
+  return MCCFP_FMAX_EVAL;
 }
 
 __CRT_INLINE float __cdecl fmaxf (float x, float y) {
-  return TCCFP_FMAX_EVAL;
+  return MCCFP_FMAX_EVAL;
 }
 
 __CRT_INLINE long double __cdecl fmaxl (long double x, long double y) {
-  return TCCFP_FMAX_EVAL;
+  return MCCFP_FMAX_EVAL;
 }
 
 
 
-#define TCCFP_FORCE_EVAL(x) do {  \
+#define MCCFP_FORCE_EVAL(x) do {  \
   volatile typeof(x) __x;         \
   __x = (x);                      \
 } while(0)
@@ -101,7 +101,7 @@ __CRT_INLINE double __cdecl round (double x) {
   if (u.i >> 63)
     x = -x;
   if (e < 0x3ff-1) {
-    TCCFP_FORCE_EVAL(x + 0x1p52);
+    MCCFP_FORCE_EVAL(x + 0x1p52);
     return 0*u.f;
   }
   y = (double)(x + 0x1p52) - 0x1p52 - x;
@@ -150,7 +150,7 @@ __CRT_INLINE double __cdecl asinh(double x) {
   if (e >= 0x3ff + 26) x = log(x) + 0.693147180559945309;
   else if (e >= 0x3ff + 1) x = log(2*x + 1 / (sqrt(x*x + 1) + x));
   else if (e >= 0x3ff - 26) x = log1p(x + x*x / (sqrt(x*x + 1) + 1));
-  else TCCFP_FORCE_EVAL(x + 0x1p120f);
+  else MCCFP_FORCE_EVAL(x + 0x1p120f);
   return s ? -x : x;
 }
 
@@ -167,7 +167,7 @@ __CRT_INLINE double __cdecl atanh(double x) {
   unsigned e = u.i >> 52 & 0x7ff, s = u.i >> 63;
   u.i &= -1ull / 2, x = u.f;
   if (e < 0x3ff - 1) {
-    if (e < 0x3ff - 32) { if (e == 0) TCCFP_FORCE_EVAL((float)x); }
+    if (e < 0x3ff - 32) { if (e == 0) MCCFP_FORCE_EVAL((float)x); }
     else x = 0.5 * log1p(2*x + 2*x*x / (1 - x));
   } else x = 0.5 * log1p(2*(x / (1 - x)));
   return s ? -x : x;

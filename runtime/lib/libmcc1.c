@@ -354,7 +354,7 @@ unsigned long long __umoddi3(unsigned long long u, unsigned long long v)
 
 long long __ashrdi3(long long a, int b)
 {
-#ifdef __TINYC__
+#ifdef __MCC__
     DWunion u;
     u.ll = a;
     if (b >= 32) {
@@ -372,7 +372,7 @@ long long __ashrdi3(long long a, int b)
 
 unsigned long long __lshrdi3(unsigned long long a, int b)
 {
-#ifdef __TINYC__
+#ifdef __MCC__
     DWunion u;
     u.ll = a;
     if (b >= 32) {
@@ -390,7 +390,7 @@ unsigned long long __lshrdi3(unsigned long long a, int b)
 
 long long __ashldi3(long long a, int b)
 {
-#ifdef __TINYC__
+#ifdef __MCC__
     DWunion u;
     u.ll = a;
     if (b >= 32) {

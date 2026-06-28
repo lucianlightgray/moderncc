@@ -1,5 +1,5 @@
-#!/usr/local/bin/tcc -run
-#include <tcclib.h>
+#!/usr/local/bin/mcc -run
+#include <mcclib.h>
 
 int main()
 {

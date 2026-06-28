@@ -20,7 +20,7 @@
  REDIR(malloc)\
  REDIR(free)\
 
-#if defined __i386__ && !defined __TINYC__
+#if defined __i386__ && !defined __MCC__
 # define __leading_underscore 1
 #endif
 
@@ -39,7 +39,7 @@ static const char all_names[] = REDIR_ALL;
 #undef REDIR
 
 #if __aarch64__
-  #if defined __TINYC__
+  #if defined __MCC__
   # define ALIGN ".align 8"
   #else
   # define ALIGN ".align 3"

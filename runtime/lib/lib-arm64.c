@@ -1,4 +1,4 @@
-#ifdef __TINYC__
+#ifdef __MCC__
 typedef signed char int8_t;
 typedef unsigned char uint8_t;
 typedef short int16_t;

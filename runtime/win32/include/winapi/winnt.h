@@ -1411,59 +1411,59 @@ typedef DWORD LCID;
 #define OUT_OF_PROCESS_FUNCTION_TABLE_CALLBACK_EXPORT_NAME "OutOfProcessFunctionTableCallback"
 #endif
 
-#if defined(__TINYC__) && (defined(__aarch64__) || defined(__arm64__)) && !defined(RC_INVOKED)
+#if defined(__MCC__) && (defined(__aarch64__) || defined(__arm64__)) && !defined(RC_INVOKED)
 
-#define __TCC_WINNT_ATOMIC_SEQ_CST 5
-#define __TCC_WINNT_MEMORY_BARRIER() __asm__ __volatile__("dmb ish" : : : "memory")
+#define __MCC_WINNT_ATOMIC_SEQ_CST 5
+#define __MCC_WINNT_MEMORY_BARRIER() __asm__ __volatile__("dmb ish" : : : "memory")
 
 
     __CRT_INLINE LONG InterlockedExchange(LONG volatile *Target,LONG Value) {
       LONG Old;
-      __atomic_load(Target,&Old,__TCC_WINNT_ATOMIC_SEQ_CST);
-      __TCC_WINNT_MEMORY_BARRIER();
+      __atomic_load(Target,&Old,__MCC_WINNT_ATOMIC_SEQ_CST);
+      __MCC_WINNT_MEMORY_BARRIER();
       while (!__atomic_compare_exchange(Target,&Old,&Value,0,
-	__TCC_WINNT_ATOMIC_SEQ_CST,__TCC_WINNT_ATOMIC_SEQ_CST))
+	__MCC_WINNT_ATOMIC_SEQ_CST,__MCC_WINNT_ATOMIC_SEQ_CST))
 	;
-      __TCC_WINNT_MEMORY_BARRIER();
+      __MCC_WINNT_MEMORY_BARRIER();
       return Old;
     }
     __CRT_INLINE LONG InterlockedCompareExchange(LONG volatile *Destination,LONG ExChange,LONG Comperand) {
       LONG Old = Comperand;
-      __TCC_WINNT_MEMORY_BARRIER();
+      __MCC_WINNT_MEMORY_BARRIER();
       __atomic_compare_exchange(Destination,&Old,&ExChange,0,
-	__TCC_WINNT_ATOMIC_SEQ_CST,__TCC_WINNT_ATOMIC_SEQ_CST);
-      __TCC_WINNT_MEMORY_BARRIER();
+	__MCC_WINNT_ATOMIC_SEQ_CST,__MCC_WINNT_ATOMIC_SEQ_CST);
+      __MCC_WINNT_MEMORY_BARRIER();
       return Old;
     }
-    __CRT_INLINE PVOID __TCC_WINNT_InterlockedExchangePointer(PVOID volatile *Target,PVOID Value) {
+    __CRT_INLINE PVOID __MCC_WINNT_InterlockedExchangePointer(PVOID volatile *Target,PVOID Value) {
       PVOID Old;
-      __atomic_load(Target,&Old,__TCC_WINNT_ATOMIC_SEQ_CST);
-      __TCC_WINNT_MEMORY_BARRIER();
+      __atomic_load(Target,&Old,__MCC_WINNT_ATOMIC_SEQ_CST);
+      __MCC_WINNT_MEMORY_BARRIER();
       while (!__atomic_compare_exchange(Target,&Old,&Value,0,
-	__TCC_WINNT_ATOMIC_SEQ_CST,__TCC_WINNT_ATOMIC_SEQ_CST))
+	__MCC_WINNT_ATOMIC_SEQ_CST,__MCC_WINNT_ATOMIC_SEQ_CST))
 	;
-      __TCC_WINNT_MEMORY_BARRIER();
+      __MCC_WINNT_MEMORY_BARRIER();
       return Old;
     }
-    __CRT_INLINE PVOID __TCC_WINNT_InterlockedCompareExchangePointer(PVOID volatile *Destination,PVOID ExChange,PVOID Comperand) {
+    __CRT_INLINE PVOID __MCC_WINNT_InterlockedCompareExchangePointer(PVOID volatile *Destination,PVOID ExChange,PVOID Comperand) {
       PVOID Old = Comperand;
-      __TCC_WINNT_MEMORY_BARRIER();
+      __MCC_WINNT_MEMORY_BARRIER();
       __atomic_compare_exchange(Destination,&Old,&ExChange,0,
-	__TCC_WINNT_ATOMIC_SEQ_CST,__TCC_WINNT_ATOMIC_SEQ_CST);
-      __TCC_WINNT_MEMORY_BARRIER();
+	__MCC_WINNT_ATOMIC_SEQ_CST,__MCC_WINNT_ATOMIC_SEQ_CST);
+      __MCC_WINNT_MEMORY_BARRIER();
       return Old;
     }
 
-#define InterlockedExchangePointer __TCC_WINNT_InterlockedExchangePointer
-#define InterlockedCompareExchangePointer __TCC_WINNT_InterlockedCompareExchangePointer
+#define InterlockedExchangePointer __MCC_WINNT_InterlockedExchangePointer
+#define InterlockedCompareExchangePointer __MCC_WINNT_InterlockedCompareExchangePointer
 #define InterlockedCompareExchangePointerAcquire InterlockedCompareExchangePointer
 #define InterlockedCompareExchangePointerRelease InterlockedCompareExchangePointer
 
 #define InterlockedCompareExchangeAcquire InterlockedCompareExchange
 #define InterlockedCompareExchangeRelease InterlockedCompareExchange
 
-#undef __TCC_WINNT_MEMORY_BARRIER
-#undef __TCC_WINNT_ATOMIC_SEQ_CST
+#undef __MCC_WINNT_MEMORY_BARRIER
+#undef __MCC_WINNT_ATOMIC_SEQ_CST
 
 #endif
 

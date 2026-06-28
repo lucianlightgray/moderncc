@@ -176,7 +176,7 @@ void foo (struct W *w, struct pkthdr *phdr_)
   struct SSU lssu1 = { 5, 3 };
   struct SSU lssu2 = { .y = 5, .x = 3 };
 
-#if defined(__GNUC__) || defined(__TINYC__)
+#if defined(__GNUC__) || defined(__MCC__)
   struct S ls4 = {a: 1, b: 2, c: {3, 4}};
 #else
   struct S ls4 = {.a = 1, .b = 2, .c = {3, 4}};

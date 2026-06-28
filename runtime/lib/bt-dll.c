@@ -4,7 +4,7 @@
 #define REDIR_ALL \
   REDIR(__bt_init) \
   REDIR(__bt_exit) \
-  REDIR(tcc_backtrace) \
+  REDIR(mcc_backtrace) \
   \
   REDIR(__bound_ptr_add) \
   REDIR(__bound_ptr_indir1) \
@@ -82,9 +82,9 @@ void __bt_init_dll(int bcheck)
                 "Error: function '%s()' not found in executable. "
                 "(Need -bt or -b for linking the exe.)", s);
             if (GetStdHandle(STD_ERROR_HANDLE))
-                fprintf(stderr, "TCC/BCHECK: %s\n", buf), fflush(stderr);
+                fprintf(stderr, "MCC/BCHECK: %s\n", buf), fflush(stderr);
             else
-                MessageBox(NULL, buf, "TCC/BCHECK", MB_ICONERROR);
+                MessageBox(NULL, buf, "MCC/BCHECK", MB_ICONERROR);
             ExitProcess(1);
         }
         s = strchr(s,'\0') + 1, ++p;

@@ -1,4 +1,4 @@
-#include "tcc.h"
+#include "mcc.h"
 
 
 static const struct {
@@ -30,7 +30,7 @@ static const struct {
     {   VT_BYTE | VT_DEFSIGN | VT_UNSIGNED, 1, DW_ATE_unsigned_char, "unsigned char:t13=r13;0;255;" },
     {   VT_FLOAT, 4, DW_ATE_float, "float:t14=r1;4;0;" },
     {   VT_DOUBLE, 8, DW_ATE_float, "double:t15=r1;8;0;" },
-#ifdef TCC_USING_DOUBLE_FOR_LDOUBLE
+#ifdef MCC_USING_DOUBLE_FOR_LDOUBLE
     {   VT_DOUBLE | VT_LONG, 8, DW_ATE_float, "long double:t16=r1;8;0;" },
 #else
     {   VT_LDOUBLE, 16, DW_ATE_float, "long double:t16=r1;16;0;" },
@@ -61,9 +61,9 @@ static const struct {
 #define	DWARF_LINE_RANGE			14
 #define	DWARF_OPCODE_BASE			13
 
-#if defined TCC_TARGET_ARM64
+#if defined MCC_TARGET_ARM64
 #define	DWARF_MIN_INSTR_LEN			4
-#elif defined TCC_TARGET_ARM
+#elif defined MCC_TARGET_ARM
 #define	DWARF_MIN_INSTR_LEN			2
 #else
 #define	DWARF_MIN_INSTR_LEN			1
@@ -287,7 +287,7 @@ struct dwarf_str_hash {
     struct dwarf_str_hash *next;
 };
 
-struct _tccdbg {
+struct _mccdbg {
 
     int last_line_num, new_file;
     int section_sym;
@@ -397,17 +397,17 @@ struct _tccdbg {
 
 #define	FDE_ENCODING        (DW_EH_PE_udata4 | DW_EH_PE_signed | DW_EH_PE_pcrel)
 
-static int put_stabs(TCCState *s1, const char *str, int type, int other,
+static int put_stabs(MCCState *s1, const char *str, int type, int other,
     int desc, unsigned long value);
 
-ST_FUNC void tcc_debug_new(TCCState *s1)
+ST_FUNC void mcc_debug_new(MCCState *s1)
 {
     int shf = 0;
     if (!s1->dState)
-        s1->dState = tcc_mallocz(sizeof *s1->dState);
+        s1->dState = mcc_mallocz(sizeof *s1->dState);
 
-#ifdef CONFIG_TCC_BACKTRACE
-    if (s1->do_debug && s1->output_type == TCC_OUTPUT_MEMORY)
+#ifdef CONFIG_MCC_BACKTRACE
+    if (s1->do_debug && s1->output_type == MCC_OUTPUT_MEMORY)
         s1->do_backtrace = 1;
     if (s1->do_backtrace)
         shf = SHF_ALLOC;
@@ -462,7 +462,7 @@ ST_FUNC void tcc_debug_new(TCCState *s1)
     }
 }
 
-static int put_stabs(TCCState *s1, const char *str, int type, int other, int desc,
+static int put_stabs(MCCState *s1, const char *str, int type, int other, int desc,
                       unsigned long value)
 {
     Stab_Sym *sym;
@@ -490,7 +490,7 @@ static int put_stabs(TCCState *s1, const char *str, int type, int other, int des
     return 1;
 }
 
-static void put_stabs_r(TCCState *s1, const char *str, int type, int other, int desc,
+static void put_stabs_r(MCCState *s1, const char *str, int type, int other, int desc,
                         unsigned long value, Section *sec, int sym_index)
 {
     if (put_stabs(s1, str, type, other, desc, value))
@@ -500,7 +500,7 @@ static void put_stabs_r(TCCState *s1, const char *str, int type, int other, int 
                       sym_index);
 }
 
-static void put_stabn(TCCState *s1, int type, int other, int desc, int value)
+static void put_stabn(MCCState *s1, int type, int other, int desc, int value)
 {
     put_stabs(s1, NULL, type, other, desc, value);
 }
@@ -516,7 +516,7 @@ static void put_stabn(TCCState *s1, int type, int other, int desc, int value)
 
 static int dwarf_get_section_sym(Section *s)
 {
-    TCCState *s1 = s->s1;
+    MCCState *s1 = s->s1;
     return put_elf_sym(symtab_section, 0, 0,
                        ELFW(ST_INFO)(STB_LOCAL, STT_SECTION), 0,
                        s->sh_num, NULL);
@@ -524,7 +524,7 @@ static int dwarf_get_section_sym(Section *s)
 
 static void dwarf_reloc(Section *s, int sym, int rel)
 {
-    TCCState *s1 = s->s1;
+    MCCState *s1 = s->s1;
     put_elf_reloca(symtab_section, s, s->data_offset, rel, sym, 0);
 }
 
@@ -534,7 +534,7 @@ static void free_str(struct dwarf_str_hash **str)
        while (str[i]) {
            struct dwarf_str_hash *next = str[i]->next;
 
-           tcc_free(str[i]);
+           mcc_free(str[i]);
            str[i] = next;
        }
     }
@@ -551,7 +551,7 @@ static unsigned str_hash(const char *s)
 
 static void dwarf_string(Section *s, Section *dw, int sym, const char *str)
 {
-    TCCState *s1 = s->s1;
+    MCCState *s1 = s->s1;
     int len, hash = str_hash(str) % N_STR_HASH;
     char *ptr;
     struct dwarf_str_hash *new_hash;
@@ -585,7 +585,7 @@ static void dwarf_string(Section *s, Section *dw, int sym, const char *str)
 	    memmove(ptr, str, len);
 	}
 	new_hash = (struct dwarf_str_hash *)
-	    tcc_malloc(sizeof(struct dwarf_str_hash));
+	    mcc_malloc(sizeof(struct dwarf_str_hash));
 	new_hash->len = len;
 	new_hash->data_offset = offset;
 	new_hash->next = dw_hash[hash];
@@ -598,28 +598,28 @@ static void dwarf_string(Section *s, Section *dw, int sym, const char *str)
 
 static void dwarf_strp(Section *s, const char *str)
 {
-    TCCState *s1 = s->s1;
+    MCCState *s1 = s->s1;
     dwarf_string(s, dwarf_str_section, dwarf_sym.str, str);
 }
 
 static void dwarf_line_strp(Section *s, const char *str)
 {
-    TCCState *s1 = s->s1;
+    MCCState *s1 = s->s1;
     dwarf_string(s, dwarf_line_str_section, dwarf_sym.line_str, str);
 }
 
-static void dwarf_line_op(TCCState *s1, unsigned char op)
+static void dwarf_line_op(MCCState *s1, unsigned char op)
 {
     if (dwarf_line.line_size >= dwarf_line.line_max_size) {
 	dwarf_line.line_max_size += 1024;
 	dwarf_line.line_data =
-	    (unsigned char *)tcc_realloc(dwarf_line.line_data,
+	    (unsigned char *)mcc_realloc(dwarf_line.line_data,
 					 dwarf_line.line_max_size);
     }
     dwarf_line.line_data[dwarf_line.line_size++] = op;
 }
 
-static void dwarf_file(TCCState *s1)
+static void dwarf_file(MCCState *s1)
 {
     int i, j;
     char *filename;
@@ -662,22 +662,22 @@ static void dwarf_file(TCCState *s1)
 	if (i == dwarf_line.dir_size) {
 	    dwarf_line.dir_size++;
 	    dwarf_line.dir_table =
-                (char **) tcc_realloc(dwarf_line.dir_table,
+                (char **) mcc_realloc(dwarf_line.dir_table,
                                       dwarf_line.dir_size *
                                       sizeof (char *));
-            dwarf_line.dir_table[i] = tcc_strdup(dir);
+            dwarf_line.dir_table[i] = mcc_strdup(dir);
 	}
 	*undo = '/';
     }
     dwarf_line.filename_table =
         (struct dwarf_filename_struct *)
-        tcc_realloc(dwarf_line.filename_table,
+        mcc_realloc(dwarf_line.filename_table,
                     (dwarf_line.filename_size + 1) *
                     sizeof (struct dwarf_filename_struct));
     dwarf_line.filename_table[dwarf_line.filename_size].dir_entry =
 	i + index_offset;
     dwarf_line.filename_table[dwarf_line.filename_size].name =
-        tcc_strdup(filename);
+        mcc_strdup(filename);
     dwarf_line.cur_file = dwarf_line.filename_size++ + index_offset;
     return;
 }
@@ -735,7 +735,7 @@ static void dwarf_sleb128 (Section *s, long long value)
     } while (more);
 }
 
-static void dwarf_uleb128_op (TCCState *s1, unsigned long long value)
+static void dwarf_uleb128_op (MCCState *s1, unsigned long long value)
 {
     do {
         unsigned char byte = value & 0x7f;
@@ -745,7 +745,7 @@ static void dwarf_uleb128_op (TCCState *s1, unsigned long long value)
     } while (value != 0);
 }
 
-static void dwarf_sleb128_op (TCCState *s1, long long value)
+static void dwarf_sleb128_op (MCCState *s1, long long value)
 {
     int more;
     long long end = value >> 63;
@@ -760,8 +760,8 @@ static void dwarf_sleb128_op (TCCState *s1, long long value)
     } while (more);
 }
 
-#if TCC_EH_FRAME
-ST_FUNC void tcc_eh_frame_start(TCCState *s1)
+#if MCC_EH_FRAME
+ST_FUNC void mcc_eh_frame_start(MCCState *s1)
 {
     if (!s1->unwind_tables)
         return;
@@ -774,7 +774,7 @@ ST_FUNC void tcc_eh_frame_start(TCCState *s1)
     dwarf_data1(eh_frame_section, 'z');
     dwarf_data1(eh_frame_section, 'R');
     dwarf_data1(eh_frame_section, 0);
-#if defined TCC_TARGET_I386
+#if defined MCC_TARGET_I386
     dwarf_uleb128(eh_frame_section, 1);
     dwarf_sleb128(eh_frame_section, -4);
     dwarf_uleb128(eh_frame_section, 8);
@@ -785,7 +785,7 @@ ST_FUNC void tcc_eh_frame_start(TCCState *s1)
     dwarf_uleb128(eh_frame_section, 4);
     dwarf_data1(eh_frame_section, DW_CFA_offset + 8);
     dwarf_uleb128(eh_frame_section, 1);
-#elif defined TCC_TARGET_X86_64
+#elif defined MCC_TARGET_X86_64
     dwarf_uleb128(eh_frame_section, 1);
     dwarf_sleb128(eh_frame_section, -8);
     dwarf_uleb128(eh_frame_section, 16);
@@ -796,7 +796,7 @@ ST_FUNC void tcc_eh_frame_start(TCCState *s1)
     dwarf_uleb128(eh_frame_section, 8);
     dwarf_data1(eh_frame_section, DW_CFA_offset + 16);
     dwarf_uleb128(eh_frame_section, 1);
-#elif defined TCC_TARGET_ARM
+#elif defined MCC_TARGET_ARM
     dwarf_uleb128(eh_frame_section, 2);
     dwarf_sleb128(eh_frame_section, -4);
     dwarf_uleb128(eh_frame_section, 14);
@@ -805,7 +805,7 @@ ST_FUNC void tcc_eh_frame_start(TCCState *s1)
     dwarf_data1(eh_frame_section, DW_CFA_def_cfa);
     dwarf_uleb128(eh_frame_section, 13);
     dwarf_uleb128(eh_frame_section, 0);
-#elif defined TCC_TARGET_ARM64
+#elif defined MCC_TARGET_ARM64
     dwarf_uleb128(eh_frame_section, 4);
     dwarf_sleb128(eh_frame_section, -8);
     dwarf_uleb128(eh_frame_section, 30);
@@ -814,7 +814,7 @@ ST_FUNC void tcc_eh_frame_start(TCCState *s1)
     dwarf_data1(eh_frame_section, DW_CFA_def_cfa);
     dwarf_uleb128(eh_frame_section, 31);
     dwarf_uleb128(eh_frame_section, 0);
-#elif defined TCC_TARGET_RISCV64
+#elif defined MCC_TARGET_RISCV64
     eh_frame_section->data[s1->eh_start + 8] = 3;
     dwarf_uleb128(eh_frame_section, 1);
     dwarf_sleb128(eh_frame_section, -4);
@@ -831,7 +831,7 @@ ST_FUNC void tcc_eh_frame_start(TCCState *s1)
 	      eh_frame_section->data_offset - s1->eh_start - 4);
 }
 
-static void tcc_debug_frame_end(TCCState *s1, int size)
+static void mcc_debug_frame_end(MCCState *s1, int size)
 {
     int eh_section_sym;
     unsigned long fde_start;
@@ -843,21 +843,21 @@ static void tcc_debug_frame_end(TCCState *s1, int size)
     dwarf_data4(eh_frame_section, 0);
     dwarf_data4(eh_frame_section,
 		fde_start - s1->eh_start + 4);
-#if defined TCC_TARGET_I386
+#if defined MCC_TARGET_I386
     dwarf_reloc(eh_frame_section, eh_section_sym, R_386_PC32);
-#elif defined TCC_TARGET_X86_64
+#elif defined MCC_TARGET_X86_64
     dwarf_reloc(eh_frame_section, eh_section_sym, R_X86_64_PC32);
-#elif defined TCC_TARGET_ARM
+#elif defined MCC_TARGET_ARM
     dwarf_reloc(eh_frame_section, eh_section_sym, R_ARM_REL32);
-#elif defined TCC_TARGET_ARM64
+#elif defined MCC_TARGET_ARM64
     dwarf_reloc(eh_frame_section, eh_section_sym, R_AARCH64_PREL32);
-#elif defined TCC_TARGET_RISCV64
+#elif defined MCC_TARGET_RISCV64
     dwarf_reloc(eh_frame_section, eh_section_sym, R_RISCV_32_PCREL);
 #endif
     dwarf_data4(eh_frame_section, func_ind);
     dwarf_data4(eh_frame_section, size);
     dwarf_data1(eh_frame_section, 0);
-#if defined TCC_TARGET_I386
+#if defined MCC_TARGET_I386
     dwarf_data1(eh_frame_section, DW_CFA_advance_loc + 1);
     dwarf_data1(eh_frame_section, DW_CFA_def_cfa_offset);
     dwarf_uleb128(eh_frame_section, 8);
@@ -872,7 +872,7 @@ static void tcc_debug_frame_end(TCCState *s1, int size)
     dwarf_data1(eh_frame_section, DW_CFA_def_cfa);
     dwarf_uleb128(eh_frame_section, 4);
     dwarf_uleb128(eh_frame_section, 4);
-#elif defined TCC_TARGET_X86_64
+#elif defined MCC_TARGET_X86_64
     dwarf_data1(eh_frame_section, DW_CFA_advance_loc + 1);
     dwarf_data1(eh_frame_section, DW_CFA_def_cfa_offset);
     dwarf_uleb128(eh_frame_section, 16);
@@ -886,7 +886,7 @@ static void tcc_debug_frame_end(TCCState *s1, int size)
     dwarf_data1(eh_frame_section, DW_CFA_def_cfa);
     dwarf_uleb128(eh_frame_section, 7);
     dwarf_uleb128(eh_frame_section, 8);
-#elif defined TCC_TARGET_ARM
+#elif defined MCC_TARGET_ARM
     dwarf_data1(eh_frame_section, DW_CFA_advance_loc + 2);
     dwarf_data1(eh_frame_section, DW_CFA_def_cfa_offset);
     dwarf_uleb128(eh_frame_section, 8);
@@ -898,7 +898,7 @@ static void tcc_debug_frame_end(TCCState *s1, int size)
     dwarf_data4(eh_frame_section, size / 2 - 5);
     dwarf_data1(eh_frame_section, DW_CFA_def_cfa_register);
     dwarf_uleb128(eh_frame_section, 11);
-#elif defined TCC_TARGET_ARM64
+#elif defined MCC_TARGET_ARM64
     dwarf_data1(eh_frame_section, DW_CFA_advance_loc + 1);
     dwarf_data1(eh_frame_section, DW_CFA_def_cfa_offset);
     dwarf_uleb128(eh_frame_section, 224);
@@ -915,7 +915,7 @@ static void tcc_debug_frame_end(TCCState *s1, int size)
     dwarf_data1(eh_frame_section, DW_CFA_restore + 29);
     dwarf_data1(eh_frame_section, DW_CFA_def_cfa_offset);
     dwarf_uleb128(eh_frame_section, 0);
-#elif defined TCC_TARGET_RISCV64
+#elif defined MCC_TARGET_RISCV64
     dwarf_data1(eh_frame_section, DW_CFA_advance_loc + 4);
     dwarf_data1(eh_frame_section, DW_CFA_def_cfa_offset);
     dwarf_uleb128(eh_frame_section, 16);
@@ -950,7 +950,7 @@ static void tcc_debug_frame_end(TCCState *s1, int size)
 	      eh_frame_section->data_offset - fde_start - 4);
 }
 
-ST_FUNC void tcc_eh_frame_end(TCCState *s1)
+ST_FUNC void mcc_eh_frame_end(MCCState *s1)
 {
     if (!eh_frame_section)
 	return;
@@ -970,7 +970,7 @@ static int sort_eh_table(const void *a, const void *b)
     return pc1 < pc2 ? -1 : pc1 > pc2 ? 1 : 0;
 }
 
-ST_FUNC void tcc_eh_frame_hdr(TCCState *s1, int final)
+ST_FUNC void mcc_eh_frame_hdr(MCCState *s1, int final)
 {
     int count = 0, offset;
     unsigned long count_offset, tab_offset;
@@ -1047,7 +1047,7 @@ next:
 }
 #endif
 
-ST_FUNC void tcc_debug_start(TCCState *s1)
+ST_FUNC void mcc_debug_start(MCCState *s1)
 {
     char buf[512];
     char *filename;
@@ -1110,7 +1110,7 @@ ST_FUNC void tcc_debug_start(TCCState *s1)
             dwarf_sym.abbrev = dwarf_get_section_sym(dwarf_abbrev_section);
             dwarf_sym.line = dwarf_get_section_sym(dwarf_line_section);
             dwarf_sym.str = dwarf_get_section_sym(dwarf_str_section);
-            if (tcc_state->dwarf >= 5)
+            if (mcc_state->dwarf >= 5)
     	        dwarf_sym.line_str = dwarf_get_section_sym(dwarf_line_str_section);
             else {
     	        dwarf_line_str_section = dwarf_str_section;
@@ -1134,7 +1134,7 @@ ST_FUNC void tcc_debug_start(TCCState *s1)
             }
 
             dwarf_data1(dwarf_info_section, DWARF_ABBREV_COMPILE_UNIT);
-            dwarf_strp(dwarf_info_section, "tcc " TCC_VERSION);
+            dwarf_strp(dwarf_info_section, "mcc " MCC_VERSION);
             dwarf_data1(dwarf_info_section, s1->cversion == 201112 ? DW_LANG_C11 : DW_LANG_C99);
             dwarf_line_strp(dwarf_info_section, filename);
             dwarf_line_strp(dwarf_info_section, buf);
@@ -1170,26 +1170,26 @@ ST_FUNC void tcc_debug_start(TCCState *s1)
 	    if (undo)
 		*undo = 0;
             dwarf_line.dir_size = 1 + (undo != NULL);
-            dwarf_line.dir_table = (char **) tcc_malloc(sizeof (char *) *
+            dwarf_line.dir_table = (char **) mcc_malloc(sizeof (char *) *
 							dwarf_line.dir_size);
-            dwarf_line.dir_table[0] = tcc_strdup(buf);
+            dwarf_line.dir_table[0] = mcc_strdup(buf);
 	    if (undo)
-                dwarf_line.dir_table[1] = tcc_strdup(filename);
+                dwarf_line.dir_table[1] = mcc_strdup(filename);
             dwarf_line.filename_size = 2;
             dwarf_line.filename_table =
     	        (struct dwarf_filename_struct *)
-    	        tcc_malloc(2*sizeof (struct dwarf_filename_struct));
+    	        mcc_malloc(2*sizeof (struct dwarf_filename_struct));
             dwarf_line.filename_table[0].dir_entry = 0;
 	    if (undo) {
-                dwarf_line.filename_table[0].name = tcc_strdup(undo + 1);
+                dwarf_line.filename_table[0].name = mcc_strdup(undo + 1);
                 dwarf_line.filename_table[1].dir_entry = 1;
-                dwarf_line.filename_table[1].name = tcc_strdup(undo + 1);
+                dwarf_line.filename_table[1].name = mcc_strdup(undo + 1);
 		*undo = '/';
 	    }
 	    else {
-                dwarf_line.filename_table[0].name = tcc_strdup(filename);
+                dwarf_line.filename_table[0].name = mcc_strdup(filename);
                 dwarf_line.filename_table[1].dir_entry = 0;
-                dwarf_line.filename_table[1].name = tcc_strdup(filename);
+                dwarf_line.filename_table[1].name = mcc_strdup(filename);
 	    }
             dwarf_line.line_size = dwarf_line.line_max_size = 0;
             dwarf_line.line_data = NULL;
@@ -1217,20 +1217,20 @@ ST_FUNC void tcc_debug_start(TCCState *s1)
             for (int i = 0; i < N_DEFAULT_DEBUG; i++)
                 put_stabs(s1, default_debug[i].name, N_LSYM, 0, 0, 0);
         }
-        tcc_debug_bincl(s1);
+        mcc_debug_bincl(s1);
     }
 }
 
-static void fix_debug_forw_hash(TCCState *s1, int global, int start);
+static void fix_debug_forw_hash(MCCState *s1, int global, int start);
 
-ST_FUNC void tcc_debug_end(TCCState *s1)
+ST_FUNC void mcc_debug_end(MCCState *s1)
 {
 
     if (!s1->do_debug || debug_next_type == 0)
         return;
 
     if (debug_info_root)
-        tcc_debug_funcend(s1, 0);
+        mcc_debug_funcend(s1, 0);
 
     if (s1->dwarf) {
 	int i;
@@ -1313,11 +1313,11 @@ ST_FUNC void tcc_debug_end(TCCState *s1)
 	    dwarf_data1(dwarf_line_section, 0);
 	}
 	for (i = 0; i < dwarf_line.dir_size; i++)
-	    tcc_free(dwarf_line.dir_table[i]);
-	tcc_free(dwarf_line.dir_table);
+	    mcc_free(dwarf_line.dir_table[i]);
+	mcc_free(dwarf_line.dir_table);
 	for (i = 0; i < dwarf_line.filename_size; i++)
-	    tcc_free(dwarf_line.filename_table[i].name);
-	tcc_free(dwarf_line.filename_table);
+	    mcc_free(dwarf_line.filename_table[i].name);
+	mcc_free(dwarf_line.filename_table);
 
 	dwarf_line_op(s1, 0);
 	dwarf_uleb128_op(s1, 1);
@@ -1329,7 +1329,7 @@ ST_FUNC void tcc_debug_end(TCCState *s1)
 	dwarf_reloc(dwarf_line_section, section_sym, R_DATA_PTR);
 	ptr = section_ptr_add(dwarf_line_section, dwarf_line.line_size - 3);
 	memmove(ptr - 3, dwarf_line.line_data, dwarf_line.line_size);
-	tcc_free(dwarf_line.line_data);
+	mcc_free(dwarf_line.line_data);
 	write32le(dwarf_line_section->data + dwarf_line.start,
 		  dwarf_line_section->data_offset - dwarf_line.start - 4);
     }
@@ -1340,14 +1340,14 @@ ST_FUNC void tcc_debug_end(TCCState *s1)
     }
     free_str (dwarf_str);
     free_str (dwarf_line_str);
-    tcc_free (debug_forw_hash_global);
-    tcc_free (debug_forw_hash_local);
-    tcc_free(debug_hash_global);
-    tcc_free(debug_hash_local);
+    mcc_free (debug_forw_hash_global);
+    mcc_free (debug_forw_hash_local);
+    mcc_free(debug_hash_global);
+    mcc_free(debug_hash_local);
     debug_next_type = 0;
 }
 
-static BufferedFile* put_new_file(TCCState *s1)
+static BufferedFile* put_new_file(MCCState *s1)
 {
     BufferedFile *f = file;
     if (f->filename[0] == ':')
@@ -1362,7 +1362,7 @@ static BufferedFile* put_new_file(TCCState *s1)
     return f;
 }
 
-ST_FUNC void tcc_debug_newfile(TCCState *s1)
+ST_FUNC void mcc_debug_newfile(MCCState *s1)
 {
     if (!s1->do_debug)
         return;
@@ -1371,7 +1371,7 @@ ST_FUNC void tcc_debug_newfile(TCCState *s1)
     new_file = 1;
 }
 
-ST_FUNC void tcc_debug_bincl(TCCState *s1)
+ST_FUNC void mcc_debug_bincl(MCCState *s1)
 {
     if (!s1->do_debug)
         return;
@@ -1382,7 +1382,7 @@ ST_FUNC void tcc_debug_bincl(TCCState *s1)
     new_file = 1;
 }
 
-ST_FUNC void tcc_debug_eincl(TCCState *s1)
+ST_FUNC void mcc_debug_eincl(MCCState *s1)
 {
     if (!s1->do_debug)
         return;
@@ -1393,7 +1393,7 @@ ST_FUNC void tcc_debug_eincl(TCCState *s1)
     new_file = 1;
 }
 
-ST_FUNC void tcc_debug_line(TCCState *s1)
+ST_FUNC void mcc_debug_line(MCCState *s1)
 {
     BufferedFile *f;
 
@@ -1457,20 +1457,20 @@ ST_FUNC void tcc_debug_line(TCCState *s1)
     }
 }
 
-static void tcc_debug_stabs (TCCState *s1, const char *str, int type, unsigned long value,
+static void mcc_debug_stabs (MCCState *s1, const char *str, int type, unsigned long value,
                              Section *sec, int sym_index, int info)
 {
     struct debug_sym *s;
 
     if (debug_info) {
         debug_info->sym =
-            (struct debug_sym *)tcc_realloc (debug_info->sym,
+            (struct debug_sym *)mcc_realloc (debug_info->sym,
                                              sizeof(struct debug_sym) *
                                              (debug_info->n_sym + 1));
         s = debug_info->sym + debug_info->n_sym++;
         s->type = type;
         s->value = value;
-        s->str = tcc_strdup(str);
+        s->str = mcc_strdup(str);
         s->sec = sec;
         s->sym_index = sym_index;
         s->info = info;
@@ -1483,7 +1483,7 @@ static void tcc_debug_stabs (TCCState *s1, const char *str, int type, unsigned l
         put_stabs (s1, str, type, 0, 0, value);
 }
 
-static void fix_debug_forw_hash(TCCState *s1, int global, int start)
+static void fix_debug_forw_hash(MCCState *s1, int global, int start)
 {
     if (s1->dwarf) {
         int i, j, n_hash = global
@@ -1508,18 +1508,18 @@ static void fix_debug_forw_hash(TCCState *s1, int global, int start)
 		write32le(dwarf_info_section->data +
 			  hash[i].debug_type[j],
 			  pos - dwarf_info.start);
-	    tcc_free (hash[i].debug_type);
+	    mcc_free (hash[i].debug_type);
 	}
     }
 }
 
-ST_FUNC void tcc_debug_stabn(TCCState *s1, int type, int value)
+ST_FUNC void mcc_debug_stabn(MCCState *s1, int type, int value)
 {
     if (!s1->do_debug)
         return;
     if (type == N_LBRAC) {
         struct _debug_info *info =
-            (struct _debug_info *) tcc_mallocz(sizeof (*info));
+            (struct _debug_info *) mcc_mallocz(sizeof (*info));
 
         info->start = value;
         info->last_debug_hash = n_debug_hash_local;
@@ -1561,7 +1561,7 @@ static int check_global(Sym *t)
     return 1;
 }
 
-static int tcc_debug_find(TCCState *s1, Sym *t, int dwarf)
+static int mcc_debug_find(MCCState *s1, Sym *t, int dwarf)
 {
     int i , g = check_global(t);
     int n_hash, *n_forw_hash;
@@ -1575,7 +1575,7 @@ static int tcc_debug_find(TCCState *s1, Sym *t, int dwarf)
             if (t == (*forw_hash)[i].type)
 		return 0;
 	*forw_hash = (struct _debug_forw_hash *)
-            tcc_realloc (*forw_hash,
+            mcc_realloc (*forw_hash,
                          (*n_forw_hash + 1) * sizeof(**forw_hash));
         (*forw_hash)[*n_forw_hash].n_debug_type = 0;
         (*forw_hash)[*n_forw_hash].debug_type = NULL;
@@ -1590,9 +1590,9 @@ static int tcc_debug_find(TCCState *s1, Sym *t, int dwarf)
     return -1;
 }
 
-static int tcc_get_dwarf_info(TCCState *s1, Sym *s);
+static int mcc_get_dwarf_info(MCCState *s1, Sym *s);
 
-static void tcc_debug_check_forw(TCCState *s1, Sym *t, int debug_type)
+static void mcc_debug_check_forw(MCCState *s1, Sym *t, int debug_type)
 {
     if ((t->type.t & VT_BTYPE) == VT_STRUCT && t->type.ref->c == -1) {
         int i, j, g = check_global(t);
@@ -1605,7 +1605,7 @@ static void tcc_debug_check_forw(TCCState *s1, Sym *t, int debug_type)
 	    for (j = 0; j < n_forw_hash; j++)
                 if (t->type.ref == (*forw_hash)[j].type) {
 		    (*forw_hash)[j].debug_type =
-		        tcc_realloc((*forw_hash)[j].debug_type,
+		        mcc_realloc((*forw_hash)[j].debug_type,
 				    ((*forw_hash)[j].n_debug_type + 1) * sizeof(int));
 		    (*forw_hash)[j].debug_type[(*forw_hash)[j].n_debug_type++] =
 		        debug_type;
@@ -1615,9 +1615,9 @@ static void tcc_debug_check_forw(TCCState *s1, Sym *t, int debug_type)
     }
 }
 
-static void stabs_struct_complete(TCCState *s1, CType *t);
+static void stabs_struct_complete(MCCState *s1, CType *t);
 
-ST_FUNC void tcc_debug_fix_forw(TCCState *s1, CType *t)
+ST_FUNC void mcc_debug_fix_forw(MCCState *s1, CType *t)
 {
     if (!(s1->do_debug & 2))
 	return;
@@ -1636,12 +1636,12 @@ ST_FUNC void tcc_debug_fix_forw(TCCState *s1, CType *t)
 		if (s1->dwarf) {
 		    Sym sym = {0}; sym .type = *t ;
 
-		    debug_type = tcc_get_dwarf_info(s1, &sym);
+		    debug_type = mcc_get_dwarf_info(s1, &sym);
 		    for (j = 0; j < (*forw_hash)[i].n_debug_type; j++)
 		        write32le(dwarf_info_section->data +
 			          (*forw_hash)[i].debug_type[j],
 			          debug_type - dwarf_info.start);
-		    tcc_free((*forw_hash)[i].debug_type);
+		    mcc_free((*forw_hash)[i].debug_type);
 		}
 		(*n_forw_hash)--;
 		for (; i < *n_forw_hash; i++)
@@ -1650,7 +1650,7 @@ ST_FUNC void tcc_debug_fix_forw(TCCState *s1, CType *t)
     }
 }
 
-static int tcc_debug_add(TCCState *s1, Sym *t, int dwarf)
+static int mcc_debug_add(MCCState *s1, Sym *t, int dwarf)
 {
     int offset = dwarf ? dwarf_info_section->data_offset : ++debug_next_type;
     int *n_hash, g = check_global(t);
@@ -1659,7 +1659,7 @@ static int tcc_debug_add(TCCState *s1, Sym *t, int dwarf)
     hash = g ? &debug_hash_global : &debug_hash_local;
     n_hash = g ? &n_debug_hash_global : &n_debug_hash_local;
     *hash = (struct _debug_hash *)
-	tcc_realloc (*hash,
+	mcc_realloc (*hash,
 		     (*n_hash + 1) * sizeof(**hash));
     (*hash)[*n_hash].debug_type = offset;
     (*hash)[(*n_hash)++].type = t;
@@ -1678,7 +1678,7 @@ static int STRUCT_NODEBUG(Sym *s)
        (s->type.t & VT_BTYPE) == VT_LLONG)));
 }
 
-static int stabs_struct_find(TCCState *s1, Sym *t, int *p_id)
+static int stabs_struct_find(MCCState *s1, Sym *t, int *p_id)
 {
     Sym *s = t->type.ref;
     if (NULL == p_id)
@@ -1704,7 +1704,7 @@ static int remove_type_info(int type)
 	return type;
 }
 
-static void tcc_get_debug_info(TCCState *s1, Sym *s, CString *result)
+static void mcc_get_debug_info(MCCState *s1, Sym *s, CString *result)
 {
     int type;
     int n = 0;
@@ -1739,7 +1739,7 @@ static void tcc_get_debug_info(TCCState *s1, Sym *s, CString *result)
                              (t->v & ~SYM_FIELD) >= SYM_FIRST_ANOM
                              ? "" : get_tok_str(t->v, NULL)
                              );
-                tcc_get_debug_info (s1, t, &str);
+                mcc_get_debug_info (s1, t, &str);
                 if (t->type.t & VT_BITFIELD) {
                     pos = t->c * 8 + BIT_POS(t->type.t);
                     size = BIT_SIZE(t->type.t);
@@ -1751,7 +1751,7 @@ static void tcc_get_debug_info(TCCState *s1, Sym *s, CString *result)
                 cstr_printf (&str, ",%d,%d;", pos, size);
             }
             cstr_printf (&str, ";");
-            tcc_debug_stabs(s1, str.data, N_LSYM, 0, NULL, 0, 0);
+            mcc_debug_stabs(s1, str.data, N_LSYM, 0, NULL, 0, 0);
             cstr_free (&str);
         }
     }
@@ -1772,7 +1772,7 @@ static void tcc_get_debug_info(TCCState *s1, Sym *s, CString *result)
                              (int)t->enum_val);
             }
             cstr_printf (&str, ";");
-            tcc_debug_stabs(s1, str.data, N_LSYM, 0, NULL, 0, 0);
+            mcc_debug_stabs(s1, str.data, N_LSYM, 0, NULL, 0, 0);
             cstr_free (&str);
 	}
     }
@@ -1800,7 +1800,7 @@ static void tcc_get_debug_info(TCCState *s1, Sym *s, CString *result)
                          ++debug_next_type, t->type.ref->c - 1);
         else if (type == VT_FUNC) {
             cstr_printf (result, "%d=f", ++debug_next_type);
-            tcc_get_debug_info (s1, t->type.ref, result);
+            mcc_get_debug_info (s1, t->type.ref, result);
             return;
         }
         else
@@ -1810,15 +1810,15 @@ static void tcc_get_debug_info(TCCState *s1, Sym *s, CString *result)
     cstr_printf (result, "%d", debug_type);
 }
 
-static void stabs_struct_complete(TCCState *s1, CType *t)
+static void stabs_struct_complete(MCCState *s1, CType *t)
 {
     if (stabs_struct_find(s1, t->ref, NULL)) {
         Sym s = {0}; s.type = *t;
-        tcc_get_debug_info(s1, &s, NULL);
+        mcc_get_debug_info(s1, &s, NULL);
     }
 }
 
-static int tcc_get_dwarf_info(TCCState *s1, Sym *s)
+static int mcc_get_dwarf_info(MCCState *s1, Sym *s)
 {
     int type;
     int debug_type = -1;
@@ -1838,11 +1838,11 @@ static int tcc_get_dwarf_info(TCCState *s1, Sym *s)
     }
     if ((type & VT_BTYPE) == VT_STRUCT) {
         t = t->type.ref;
-	debug_type = tcc_debug_find(s1, t, 1);
+	debug_type = mcc_debug_find(s1, t, 1);
 	if (debug_type == -1) {
 	    int pos_sib = 0, i, *pos_type;
 
-	    debug_type = tcc_debug_add(s1, t, 1);
+	    debug_type = mcc_debug_add(s1, t, 1);
 	    e = t;
 	    i = 0;
 	    while (e->next) {
@@ -1851,7 +1851,7 @@ static int tcc_get_dwarf_info(TCCState *s1, Sym *s)
 		    continue;
 		i++;
 	    }
-	    pos_type = (int *) tcc_malloc(i * sizeof(int));
+	    pos_type = (int *) mcc_malloc(i * sizeof(int));
 	    dwarf_data1(dwarf_info_section,
 			IS_UNION (t->type.t)
 		        ? t->next ? DWARF_ABBREV_UNION_TYPE
@@ -1904,23 +1904,23 @@ static int tcc_get_dwarf_info(TCCState *s1, Sym *s)
 		e = e->next;
 		if (STRUCT_NODEBUG(e))
 		    continue;
-		type = tcc_get_dwarf_info(s1, e);
-		tcc_debug_check_forw(s1, e, pos_type[i]);
+		type = mcc_get_dwarf_info(s1, e);
+		mcc_debug_check_forw(s1, e, pos_type[i]);
 		write32le(dwarf_info_section->data + pos_type[i++],
 			  type - dwarf_info.start);
 	    }
-	    tcc_free(pos_type);
+	    mcc_free(pos_type);
         }
     }
     else if (IS_ENUM(type)) {
         t = t->type.ref;
-	debug_type = tcc_debug_find(s1, t, 1);
+	debug_type = mcc_debug_find(s1, t, 1);
 	if (debug_type == -1) {
 	    int pos_sib, pos_type;
 	    Sym sym = {0}; sym.type.t = VT_INT | (type & VT_UNSIGNED);
 
-	    pos_type = tcc_get_dwarf_info(s1, &sym);
-	    debug_type = tcc_debug_add(s1, t, 1);
+	    pos_type = mcc_get_dwarf_info(s1, &sym);
+	    debug_type = mcc_debug_add(s1, t, 1);
 	    dwarf_data1(dwarf_info_section, DWARF_ABBREV_ENUMERATION_TYPE);
 	    dwarf_strp(dwarf_info_section,
                        (t->v & ~SYM_STRUCT) >= SYM_FIRST_ANOM
@@ -1985,7 +1985,7 @@ static int tcc_get_dwarf_info(TCCState *s1, Sym *s)
 	    dwarf_data1(dwarf_info_section, DWARF_ABBREV_POINTER);
 	    dwarf_data1(dwarf_info_section, PTR_SIZE);
 	    if (last_pos != -1) {
-		tcc_debug_check_forw(s1, e, last_pos);
+		mcc_debug_check_forw(s1, e, last_pos);
 		write32le(dwarf_info_section->data + last_pos,
 			  i - dwarf_info.start);
 	    }
@@ -2001,13 +2001,13 @@ static int tcc_get_dwarf_info(TCCState *s1, Sym *s)
 	    Sym sym = {0}; sym.type.t = VT_LLONG | VT_LONG | VT_UNSIGNED;
 #endif
 
-	    sub_type = tcc_get_dwarf_info(s1, &sym);
+	    sub_type = mcc_get_dwarf_info(s1, &sym);
 	    i = dwarf_info_section->data_offset;
 	    if (retval == debug_type)
 		retval = i;
 	    dwarf_data1(dwarf_info_section, DWARF_ABBREV_ARRAY_TYPE);
 	    if (last_pos != -1) {
-		tcc_debug_check_forw(s1, e, last_pos);
+		mcc_debug_check_forw(s1, e, last_pos);
 		write32le(dwarf_info_section->data + last_pos,
 			  i - dwarf_info.start);
 	    }
@@ -2035,14 +2035,14 @@ static int tcc_get_dwarf_info(TCCState *s1, Sym *s)
 	    Sym *f;
 
 	    i = dwarf_info_section->data_offset;
-	    debug_type = tcc_get_dwarf_info(s1, t->type.ref);
+	    debug_type = mcc_get_dwarf_info(s1, t->type.ref);
 	    if (retval == debug_type)
 		retval = i;
 	    dwarf_data1(dwarf_info_section,
 			t->type.ref->next ? DWARF_ABBREV_SUBROUTINE_TYPE
 					  : DWARF_ABBREV_SUBROUTINE_EMPTY_TYPE);
 	    if (last_pos != -1) {
-		tcc_debug_check_forw(s1, e, last_pos);
+		mcc_debug_check_forw(s1, e, last_pos);
 		write32le(dwarf_info_section->data + last_pos,
 			  i - dwarf_info.start);
 	    }
@@ -2059,7 +2059,7 @@ static int tcc_get_dwarf_info(TCCState *s1, Sym *s)
 		f = f->next;
 		i++;
 	    }
-	    pos_type = (int *) tcc_malloc(i * sizeof(int));
+	    pos_type = (int *) mcc_malloc(i * sizeof(int));
 	    f = t->type.ref;
 	    i = 0;
 	    while (f->next) {
@@ -2077,16 +2077,16 @@ static int tcc_get_dwarf_info(TCCState *s1, Sym *s)
 	    i = 0;
 	    while (f->next) {
 		f = f->next;
-		type = tcc_get_dwarf_info(s1, f);
-		tcc_debug_check_forw(s1, f, pos_type[i]);
+		type = mcc_get_dwarf_info(s1, f);
+		mcc_debug_check_forw(s1, f, pos_type[i]);
 	        write32le(dwarf_info_section->data + pos_type[i++],
                           type - dwarf_info.start);
 	    }
-	    tcc_free(pos_type);
+	    mcc_free(pos_type);
         }
         else {
 	    if (last_pos != -1) {
-		tcc_debug_check_forw(s1, e, last_pos);
+		mcc_debug_check_forw(s1, e, last_pos);
 		write32le(dwarf_info_section->data + last_pos,
 			  debug_type - dwarf_info.start);
 	    }
@@ -2097,7 +2097,7 @@ static int tcc_get_dwarf_info(TCCState *s1, Sym *s)
     return retval;
 }
 
-static void tcc_debug_finish (TCCState *s1, struct _debug_info *cur)
+static void mcc_debug_finish (MCCState *s1, struct _debug_info *cur)
 {
     while (cur) {
         struct _debug_info *next = cur->next;
@@ -2139,9 +2139,9 @@ static void tcc_debug_finish (TCCState *s1, struct _debug_info *cur)
                     dwarf_data1(dwarf_info_section, DW_OP_fbreg);
                     dwarf_sleb128(dwarf_info_section, (long)s->value);
 		}
-		tcc_free (s->str);
+		mcc_free (s->str);
             }
-            tcc_free (cur->sym);
+            mcc_free (cur->sym);
             dwarf_data1(dwarf_info_section,
 			cur->child ? DWARF_ABBREV_LEXICAL_BLOCK
 			           : DWARF_ABBREV_LEXICAL_EMPTY_BLOCK);
@@ -2153,7 +2153,7 @@ static void tcc_debug_finish (TCCState *s1, struct _debug_info *cur)
             dwarf_data8(dwarf_info_section, func_ind + cur->start);
             dwarf_data8(dwarf_info_section, cur->end - cur->start);
 #endif
-            tcc_debug_finish (s1, cur->child);
+            mcc_debug_finish (s1, cur->child);
 	    if (cur->child)
                 dwarf_data1(dwarf_info_section, 0);
         }
@@ -2167,19 +2167,19 @@ static void tcc_debug_finish (TCCState *s1, struct _debug_info *cur)
                                 s->sec, s->sym_index);
                 else
                     put_stabs(s1, s->str, s->type, 0, 0, s->value);
-                tcc_free (s->str);
+                mcc_free (s->str);
             }
-            tcc_free (cur->sym);
+            mcc_free (cur->sym);
             put_stabn(s1, N_LBRAC, 0, 0, cur->start);
-            tcc_debug_finish (s1, cur->child);
+            mcc_debug_finish (s1, cur->child);
             put_stabn(s1, N_RBRAC, 0, 0, cur->end);
         }
-        tcc_free (cur);
+        mcc_free (cur);
         cur = next;
     }
 }
 
-ST_FUNC void tcc_add_debug_info(TCCState *s1, Sym *s, Sym *e)
+ST_FUNC void mcc_add_debug_info(MCCState *s1, Sym *s, Sym *e)
 {
     CString debug_str;
     int param;
@@ -2193,24 +2193,24 @@ ST_FUNC void tcc_add_debug_info(TCCState *s1, Sym *s, Sym *e)
         if (!s->v || (s->r & VT_VALMASK) != VT_LOCAL)
             continue;
 	if (s1->dwarf) {
-	    tcc_debug_stabs(s1, get_tok_str(s->v, NULL),
+	    mcc_debug_stabs(s1, get_tok_str(s->v, NULL),
 			    param ? N_PSYM : N_LSYM, s->c, NULL, 0,
-			    tcc_get_dwarf_info(s1, s));
+			    mcc_get_dwarf_info(s1, s));
 	}
 	else
         {
             cstr_reset (&debug_str);
             cstr_printf (&debug_str, "%s:%s", get_tok_str(s->v, NULL),
 			 param ? "p" : "");
-            tcc_get_debug_info(s1, s, &debug_str);
-            tcc_debug_stabs(s1, debug_str.data, param ? N_PSYM : N_LSYM,
+            mcc_get_debug_info(s1, s, &debug_str);
+            mcc_debug_stabs(s1, debug_str.data, param ? N_PSYM : N_LSYM,
 			    s->c, NULL, 0, 0);
 	}
     }
     cstr_free (&debug_str);
 }
 
-ST_FUNC void tcc_debug_funcstart(TCCState *s1, Sym *sym)
+ST_FUNC void mcc_debug_funcstart(MCCState *s1, Sym *sym)
 {
     CString debug_str;
     BufferedFile *f;
@@ -2219,13 +2219,13 @@ ST_FUNC void tcc_debug_funcstart(TCCState *s1, Sym *sym)
         return;
     debug_info_root = NULL;
     debug_info = NULL;
-    tcc_debug_stabn(s1, N_LBRAC, ind - func_ind);
+    mcc_debug_stabn(s1, N_LBRAC, ind - func_ind);
     f = put_new_file(s1);
     if (!f)
 	return;
 
     if (s1->dwarf) {
-        tcc_debug_line(s1);
+        mcc_debug_line(s1);
         dwarf_info.func = sym;
         dwarf_info.line = file->line_num;
 	if (s1->do_backtrace) {
@@ -2243,14 +2243,14 @@ ST_FUNC void tcc_debug_funcstart(TCCState *s1, Sym *sym)
     {
         cstr_new (&debug_str);
         cstr_printf(&debug_str, "%s:%c", funcname, sym->type.t & VT_STATIC ? 'f' : 'F');
-        tcc_get_debug_info(s1, sym->type.ref, &debug_str);
+        mcc_get_debug_info(s1, sym->type.ref, &debug_str);
         put_stabs_r(s1, debug_str.data, N_FUN, 0, f->line_num, 0, cur_text_section, sym->c);
         cstr_free (&debug_str);
-        tcc_debug_line(s1);
+        mcc_debug_line(s1);
     }
 }
 
-ST_FUNC void tcc_debug_prolog_epilog(TCCState *s1, int value)
+ST_FUNC void mcc_debug_prolog_epilog(MCCState *s1, int value)
 {
     if (!s1->do_debug)
         return;
@@ -2260,24 +2260,24 @@ ST_FUNC void tcc_debug_prolog_epilog(TCCState *s1, int value)
     }
 }
 
-ST_FUNC void tcc_debug_funcend(TCCState *s1, int size)
+ST_FUNC void mcc_debug_funcend(MCCState *s1, int size)
 {
     int min_instr_len;
 
-#if TCC_EH_FRAME
-    tcc_debug_frame_end(s1, size);
+#if MCC_EH_FRAME
+    mcc_debug_frame_end(s1, size);
 #endif
     if (!s1->do_debug)
         return;
     min_instr_len = dwarf_line.last_pc == ind ? 0 : DWARF_MIN_INSTR_LEN;
     ind -= min_instr_len;
-    tcc_debug_line(s1);
+    mcc_debug_line(s1);
     ind += min_instr_len;
-    tcc_debug_stabn(s1, N_RBRAC, size);
+    mcc_debug_stabn(s1, N_RBRAC, size);
     if (s1->dwarf) {
         int func_sib = 0;
 	Sym *sym = dwarf_info.func;
-	int n_debug_info = tcc_get_dwarf_info(s1, sym->type.ref);
+	int n_debug_info = mcc_get_dwarf_info(s1, sym->type.ref);
 
         dwarf_data1(dwarf_info_section,
 	    sym->type.t & VT_STATIC ? DWARF_ABBREV_SUBPROGRAM_STATIC
@@ -2287,7 +2287,7 @@ ST_FUNC void tcc_debug_funcend(TCCState *s1, int size)
         dwarf_strp(dwarf_info_section, funcname);
         dwarf_uleb128(dwarf_info_section, dwarf_line.cur_file);
         dwarf_uleb128(dwarf_info_section, dwarf_info.line);
-	tcc_debug_check_forw(s1, sym->type.ref, dwarf_info_section->data_offset);
+	mcc_debug_check_forw(s1, sym->type.ref, dwarf_info_section->data_offset);
         dwarf_data4(dwarf_info_section, n_debug_info - dwarf_info.start);
         dwarf_reloc(dwarf_info_section, section_sym, R_DATA_PTR);
 #if PTR_SIZE == 4
@@ -2300,33 +2300,33 @@ ST_FUNC void tcc_debug_funcend(TCCState *s1, int size)
         func_sib = dwarf_info_section->data_offset;
         dwarf_data4(dwarf_info_section, 0);
         dwarf_data1(dwarf_info_section, 1);
-#if defined(TCC_TARGET_I386)
+#if defined(MCC_TARGET_I386)
         dwarf_data1(dwarf_info_section, DW_OP_reg5);
-#elif defined(TCC_TARGET_X86_64)
+#elif defined(MCC_TARGET_X86_64)
         dwarf_data1(dwarf_info_section, DW_OP_reg6);
-#elif defined TCC_TARGET_ARM
+#elif defined MCC_TARGET_ARM
         dwarf_data1(dwarf_info_section, DW_OP_reg13);
-#elif defined TCC_TARGET_ARM64
+#elif defined MCC_TARGET_ARM64
         dwarf_data1(dwarf_info_section, DW_OP_reg29);
-#elif defined TCC_TARGET_RISCV64
+#elif defined MCC_TARGET_RISCV64
         dwarf_data1(dwarf_info_section, DW_OP_reg8);
 #else
         dwarf_data1(dwarf_info_section, DW_OP_call_frame_cfa);
 #endif
-        tcc_debug_finish (s1, debug_info_root);
+        mcc_debug_finish (s1, debug_info_root);
 	dwarf_data1(dwarf_info_section, 0);
         write32le(dwarf_info_section->data + func_sib,
                   dwarf_info_section->data_offset - dwarf_info.start);
     }
     else
     {
-        tcc_debug_finish (s1, debug_info_root);
+        mcc_debug_finish (s1, debug_info_root);
     }
     debug_info_root = 0;
 }
 
 
-ST_FUNC void tcc_debug_extern_sym(TCCState *s1, Sym *sym, int sh_num, int sym_bind, int sym_type)
+ST_FUNC void mcc_debug_extern_sym(MCCState *s1, Sym *sym, int sh_num, int sym_bind, int sym_type)
 {
     if (!(s1->do_debug & 2))
         return;
@@ -2336,7 +2336,7 @@ ST_FUNC void tcc_debug_extern_sym(TCCState *s1, Sym *sym, int sh_num, int sym_bi
     if (s1->dwarf) {
         int debug_type;
 
-        debug_type = tcc_get_dwarf_info(s1, sym);
+        debug_type = mcc_get_dwarf_info(s1, sym);
 	dwarf_data1(dwarf_info_section,
 		    sym_bind == STB_GLOBAL
 		    ? DWARF_ABBREV_VARIABLE_EXTERNAL
@@ -2344,7 +2344,7 @@ ST_FUNC void tcc_debug_extern_sym(TCCState *s1, Sym *sym, int sh_num, int sym_bi
 	dwarf_strp(dwarf_info_section, get_tok_str(sym->v, NULL));
 	dwarf_uleb128(dwarf_info_section, dwarf_line.cur_file);
 	dwarf_uleb128(dwarf_info_section, file->line_num);
-	tcc_debug_check_forw(s1, sym, dwarf_info_section->data_offset);
+	mcc_debug_check_forw(s1, sym, dwarf_info_section->data_offset);
 	dwarf_data4(dwarf_info_section, debug_type - dwarf_info.start);
 	if (sym_bind == STB_GLOBAL)
 	    dwarf_data1(dwarf_info_section, 1);
@@ -2369,18 +2369,18 @@ ST_FUNC void tcc_debug_extern_sym(TCCState *s1, Sym *sym, int sh_num, int sym_bi
                 get_tok_str(sym->v, NULL),
                 sym_bind == STB_GLOBAL ? 'G' : func_ind != -1 ? 'V' : 'S'
                 );
-        tcc_get_debug_info(s1, sym, &str);
+        mcc_get_debug_info(s1, sym, &str);
         if (sym_bind == STB_GLOBAL)
-            tcc_debug_stabs(s1, str.data, N_GSYM, 0, NULL, 0, 0);
+            mcc_debug_stabs(s1, str.data, N_GSYM, 0, NULL, 0, 0);
         else
-            tcc_debug_stabs(s1, str.data,
+            mcc_debug_stabs(s1, str.data,
                 (sym->type.t & VT_STATIC) && data_section == s
                 ? N_STSYM : N_LCSYM, 0, s, sym->c, 0);
         cstr_free (&str);
     }
 }
 
-ST_FUNC void tcc_debug_typedef(TCCState *s1, Sym *sym)
+ST_FUNC void mcc_debug_typedef(MCCState *s1, Sym *sym)
 {
     if (!(s1->do_debug & 2))
         return;
@@ -2388,13 +2388,13 @@ ST_FUNC void tcc_debug_typedef(TCCState *s1, Sym *sym)
     if (s1->dwarf) {
 	int debug_type;
 
-        debug_type = tcc_get_dwarf_info(s1, sym);
+        debug_type = mcc_get_dwarf_info(s1, sym);
 	if (debug_type != -1) {
 	    dwarf_data1(dwarf_info_section, DWARF_ABBREV_TYPEDEF);
 	    dwarf_strp(dwarf_info_section, get_tok_str(sym->v, NULL));
 	    dwarf_uleb128(dwarf_info_section, dwarf_line.cur_file);
 	    dwarf_uleb128(dwarf_info_section, file->line_num);
-	    tcc_debug_check_forw(s1, sym, dwarf_info_section->data_offset);
+	    mcc_debug_check_forw(s1, sym, dwarf_info_section->data_offset);
 	    dwarf_data4(dwarf_info_section, debug_type - dwarf_info.start);
 	}
     }
@@ -2403,22 +2403,22 @@ ST_FUNC void tcc_debug_typedef(TCCState *s1, Sym *sym)
         CString str;
         cstr_new (&str);
         cstr_printf (&str, "%s:t", get_tok_str(sym->v, NULL));
-        tcc_get_debug_info(s1, sym, &str);
-        tcc_debug_stabs(s1, str.data, N_LSYM, 0, NULL, 0, 0);
+        mcc_get_debug_info(s1, sym, &str);
+        mcc_debug_stabs(s1, str.data, N_LSYM, 0, NULL, 0, 0);
         cstr_free (&str);
     }
 }
 
 
-ST_FUNC void tcc_tcov_block_end(TCCState *s1, int line);
+ST_FUNC void mcc_tcov_block_end(MCCState *s1, int line);
 
-ST_FUNC void tcc_tcov_block_begin(TCCState *s1)
+ST_FUNC void mcc_tcov_block_begin(MCCState *s1)
 {
     SValue sv;
     void *ptr;
     unsigned long last_offset = tcov_data.offset;
 
-    tcc_tcov_block_end (tcc_state, 0);
+    mcc_tcov_block_end (mcc_state, 0);
     if (s1->test_coverage == 0 || nocode_wanted)
 	return;
 
@@ -2481,9 +2481,9 @@ ST_FUNC void tcc_tcov_block_begin(TCCState *s1)
         sv.r2 = VT_CONST;
         sv.c.i = 0;
         sv.sym = &label;
-#if defined TCC_TARGET_I386 || defined TCC_TARGET_X86_64 || \
-    defined TCC_TARGET_ARM || defined TCC_TARGET_ARM64 || \
-    defined TCC_TARGET_RISCV64
+#if defined MCC_TARGET_I386 || defined MCC_TARGET_X86_64 || \
+    defined MCC_TARGET_ARM || defined MCC_TARGET_ARM64 || \
+    defined MCC_TARGET_RISCV64
         gen_increment_tcov (&sv);
 #else
         vpushv(&sv);
@@ -2495,7 +2495,7 @@ ST_FUNC void tcc_tcov_block_begin(TCCState *s1)
     }
 }
 
-ST_FUNC void tcc_tcov_block_end(TCCState *s1, int line)
+ST_FUNC void mcc_tcov_block_end(MCCState *s1, int line)
 {
     if (s1->test_coverage == 0)
 	return;
@@ -2510,36 +2510,36 @@ ST_FUNC void tcc_tcov_block_end(TCCState *s1, int line)
     }
 }
 
-ST_FUNC void tcc_tcov_check_line(TCCState *s1, int start)
+ST_FUNC void mcc_tcov_check_line(MCCState *s1, int start)
 {
     if (s1->test_coverage == 0)
 	return;
     if (tcov_data.line != file->line_num) {
         if ((tcov_data.line + 1) != file->line_num) {
-	    tcc_tcov_block_end (s1, -1);
+	    mcc_tcov_block_end (s1, -1);
 	    if (start)
-                tcc_tcov_block_begin (s1);
+                mcc_tcov_block_begin (s1);
 	}
 	else
 	    tcov_data.line = file->line_num;
     }
 }
 
-ST_FUNC void tcc_tcov_start(TCCState *s1)
+ST_FUNC void mcc_tcov_start(MCCState *s1)
 {
     if (s1->test_coverage == 0)
 	return;
     if (!s1->dState)
-        s1->dState = tcc_mallocz(sizeof *s1->dState);
+        s1->dState = mcc_mallocz(sizeof *s1->dState);
     memset (&tcov_data, 0, sizeof (tcov_data));
     if (tcov_section == NULL) {
-        tcov_section = new_section(tcc_state, ".tcov", SHT_PROGBITS,
+        tcov_section = new_section(mcc_state, ".tcov", SHT_PROGBITS,
 				   SHF_ALLOC | SHF_WRITE);
 	section_ptr_add(tcov_section, 4);
     }
 }
 
-ST_FUNC void tcc_tcov_end(TCCState *s1)
+ST_FUNC void mcc_tcov_end(MCCState *s1)
 {
     if (s1->test_coverage == 0)
 	return;
@@ -2549,7 +2549,7 @@ ST_FUNC void tcc_tcov_end(TCCState *s1)
         section_ptr_add(tcov_section, 1);
 }
 
-ST_FUNC void tcc_tcov_reset_ind(TCCState *s1)
+ST_FUNC void mcc_tcov_reset_ind(MCCState *s1)
 {
     tcov_data.ind = 0;
 }

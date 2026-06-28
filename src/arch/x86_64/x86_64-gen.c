@@ -2,8 +2,8 @@
 
 #define NB_REGS         25
 #define NB_ASM_REGS     16
-#ifndef TCC_DISABLE_ASM
-#define CONFIG_TCC_ASM
+#ifndef MCC_DISABLE_ASM
+#define CONFIG_MCC_ASM
 #endif
 
 #define RC_INT     0x0001
@@ -76,12 +76,12 @@ enum {
 
 #define PROMOTE_RET
 
-#define TCC_TARGET_NATIVE_STRUCT_COPY
+#define MCC_TARGET_NATIVE_STRUCT_COPY
 ST_FUNC void gen_struct_copy(int size);
 
 #else
 #define USING_GLOBALS
-#include "tcc.h"
+#include "mcc.h"
 #include <assert.h>
 
 ST_DATA const char * const target_machine_defs =
@@ -121,13 +121,13 @@ ST_DATA const int reg_classes[NB_REGS] = {
 static unsigned long func_sub_sp_offset;
 static int func_ret_sub;
 
-#if defined(CONFIG_TCC_BCHECK)
+#if defined(CONFIG_MCC_BCHECK)
 static addr_t func_bound_offset;
 static unsigned long func_bound_ind;
 ST_DATA int func_bound_add_epilog;
 #endif
 
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
 static int func_scratch, func_alloca;
 #endif
 
@@ -234,8 +234,8 @@ ST_FUNC void gen_addrpc32(int r, Sym *sym, int c)
 
 static void gen_gotpcrel(int r, Sym *sym, int c)
 {
-#ifdef TCC_TARGET_PE
-    tcc_error("internal error: no GOT on PE: %s %x %x | %02x %02x %02x\n",
+#ifdef MCC_TARGET_PE
+    mcc_error("internal error: no GOT on PE: %s %x %x | %02x %02x %02x\n",
         get_tok_str(sym->v, NULL), c, r,
         cur_text_section->data[ind-3],
         cur_text_section->data[ind-2],
@@ -308,11 +308,11 @@ void load(int r, SValue *sv)
     ft = sv->type.t & ~VT_DEFSIGN;
     fc = sv->c.i;
     if (fc != sv->c.i && (fr & VT_SYM))
-      tcc_error("64 bit addend in load");
+      mcc_error("64 bit addend in load");
 
     ft &= ~(VT_VOLATILE | VT_CONSTANT);
 
-#ifndef TCC_TARGET_PE
+#ifndef MCC_TARGET_PE
     if ((fr & VT_VALMASK) == VT_CONST && (fr & VT_SYM) &&
         (fr & VT_LVAL) && !(sv->sym->type.t & VT_STATIC)
         && !(sv->sym->type.t & VT_TLS)) {
@@ -372,7 +372,7 @@ void load(int r, SValue *sv)
 		case 4: ft = VT_INT; break;
 		case 8: ft = VT_LLONG; break;
 		default:
-		    tcc_error("invalid aggregate type for register load");
+		    mcc_error("invalid aggregate type for register load");
 		    break;
 	    }
 	}
@@ -412,7 +412,7 @@ void load(int r, SValue *sv)
     } else {
         if (v == VT_CONST) {
             if (fr & VT_SYM) {
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
                 orex(1,0,r,0x8d);
                 o(0x05 + REG_VALUE(r) * 8);
                 gen_addrpc32(fr, sv->sym, fc);
@@ -508,7 +508,7 @@ void store(int r, SValue *v)
     ft = v->type.t;
     fc = v->c.i;
     if (fc != v->c.i && (fr & VT_SYM))
-      tcc_error("64 bit addend in store");
+      mcc_error("64 bit addend in store");
     ft &= ~(VT_VOLATILE | VT_CONSTANT);
     bt = ft & VT_BTYPE;
 
@@ -526,7 +526,7 @@ void store(int r, SValue *v)
         return;
     }
 
-#ifndef TCC_TARGET_PE
+#ifndef MCC_TARGET_PE
     if (fr == VT_CONST
         && (v->r & VT_SYM)
         && !(v->sym->type.t & VT_STATIC)) {
@@ -598,7 +598,7 @@ static void gcall_or_jmp(int is_jmp)
     }
 }
 
-#if defined(CONFIG_TCC_BCHECK)
+#if defined(CONFIG_MCC_BCHECK)
 
 static void gen_bounds_call(int v)
 {
@@ -607,7 +607,7 @@ static void gen_bounds_call(int v)
     greloca(cur_text_section, sym, ind-4, R_X86_64_PLT32, -4);
 }
 
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
 # define TREG_FASTCALL_1 TREG_RCX
 #else
 # define TREG_FASTCALL_1 TREG_RDI
@@ -665,7 +665,7 @@ static void gen_bounds_epilog(void)
 }
 #endif
 
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
 
 #define REGN 4
 static const uint8_t arg_regs[REGN] = {
@@ -735,8 +735,8 @@ void gfunc_call(int nb_args)
     int size, r, args_size, d, bt, struct_size;
     int arg;
 
-#ifdef CONFIG_TCC_BCHECK
-    if (tcc_state->do_bounds_check)
+#ifdef CONFIG_MCC_BCHECK
+    if (mcc_state->do_bounds_check)
         gbound_args(nb_args);
 #endif
 
@@ -798,8 +798,8 @@ void gfunc_call(int nb_args)
             struct_size += size;
         } else {
             if (is_sse_float(vtop->type.t)) {
-		if (tcc_state->nosse)
-		  tcc_error("SSE disabled");
+		if (mcc_state->nosse)
+		  mcc_error("SSE disabled");
                 if (arg >= REGN) {
                     gv(RC_XMM0);
                     gen_offs_sp(0xd60f66, 0x100, arg*8);
@@ -841,8 +841,8 @@ void gfunc_call(int nb_args)
 
     if ((vtop->r & VT_SYM) && vtop->sym->v == TOK_alloca) {
         o(0x48); func_alloca = oad(0x05, func_alloca);
-#ifdef CONFIG_TCC_BCHECK
-        if (tcc_state->do_bounds_check)
+#ifdef CONFIG_MCC_BCHECK
+        if (mcc_state->do_bounds_check)
             gen_bounds_call(TOK___bound_alloca_nr);
 #endif
     }
@@ -890,8 +890,8 @@ void gfunc_prolog(Sym *func_sym)
         } else {
             if (reg_param_index < REGN) {
                 if ((bt == VT_FLOAT) || (bt == VT_DOUBLE)) {
-		    if (tcc_state->nosse)
-		      tcc_error("SSE disabled");
+		    if (mcc_state->nosse)
+		      mcc_error("SSE disabled");
                     o(0xd60f66);
                     gen_modrm(reg_param_index, VT_LOCAL, NULL, addr);
                 } else {
@@ -911,8 +911,8 @@ void gfunc_prolog(Sym *func_sym)
         }
         reg_param_index++;
     }
-#ifdef CONFIG_TCC_BCHECK
-    if (tcc_state->do_bounds_check)
+#ifdef CONFIG_MCC_BCHECK
+    if (mcc_state->do_bounds_check)
         gen_bounds_prolog();
 #endif
 }
@@ -924,8 +924,8 @@ void gfunc_epilog(void)
     func_scratch = (func_scratch + 15) & -16;
     loc = (loc & -16) - func_scratch;
 
-#ifdef CONFIG_TCC_BCHECK
-    if (tcc_state->do_bounds_check)
+#ifdef CONFIG_MCC_BCHECK
+    if (mcc_state->do_bounds_check)
         gen_bounds_epilog();
 #endif
 
@@ -1173,10 +1173,10 @@ void gfunc_call(int nb_args)
     int nb_reg_args = 0;
     int nb_sse_args = 0;
     int sse_reg, gen_reg;
-    char *onstack = tcc_malloc((nb_args + 1) * sizeof (char));
+    char *onstack = mcc_malloc((nb_args + 1) * sizeof (char));
 
-#ifdef CONFIG_TCC_BCHECK
-    if (tcc_state->do_bounds_check)
+#ifdef CONFIG_MCC_BCHECK
+    if (mcc_state->do_bounds_check)
         gbound_args(nb_args);
 #endif
 
@@ -1204,8 +1204,8 @@ void gfunc_call(int nb_args)
 	}
     }
 
-    if (nb_sse_args && tcc_state->nosse)
-      tcc_error("SSE disabled but floating point arguments passed");
+    if (nb_sse_args && mcc_state->nosse)
+      mcc_error("SSE disabled but floating point arguments passed");
 
     gen_reg = nb_reg_args;
     sse_reg = nb_sse_args;
@@ -1278,7 +1278,7 @@ void gfunc_call(int nb_args)
 	k++;
     }
 
-    tcc_free(onstack);
+    mcc_free(onstack);
 
     assert(gen_reg <= REGN);
     assert(sse_reg <= 8);
@@ -1402,7 +1402,7 @@ void gfunc_prolog(Sym *func_sym)
 
         for (int i = 0; i < 8; i++) {
             loc -= 16;
-	    if (!tcc_state->nosse) {
+	    if (!mcc_state->nosse) {
 		o(0xd60f66);
 		gen_modrm(7 - i, VT_LOCAL, NULL, loc);
 	    }
@@ -1429,8 +1429,8 @@ void gfunc_prolog(Sym *func_sym)
         mode = classify_x86_64_arg(type, NULL, &size, &align, &reg_count);
         switch (mode) {
         case x86_64_mode_sse:
-	    if (tcc_state->nosse)
-	        tcc_error("SSE disabled but floating point arguments used");
+	    if (mcc_state->nosse)
+	        mcc_error("SSE disabled but floating point arguments used");
             if (sse_param_index + reg_count <= 8) {
                 loc -= reg_count * 8;
                 param_addr = loc;
@@ -1473,8 +1473,8 @@ void gfunc_prolog(Sym *func_sym)
         gfunc_set_param(sym, param_addr, 0);
     }
 
-#ifdef CONFIG_TCC_BCHECK
-    if (tcc_state->do_bounds_check)
+#ifdef CONFIG_MCC_BCHECK
+    if (mcc_state->do_bounds_check)
         gen_bounds_prolog();
 #endif
 }
@@ -1483,8 +1483,8 @@ void gfunc_epilog(void)
 {
     int v, saved_ind;
 
-#ifdef CONFIG_TCC_BCHECK
-    if (tcc_state->do_bounds_check)
+#ifdef CONFIG_MCC_BCHECK
+    if (mcc_state->do_bounds_check)
         gen_bounds_epilog();
 #endif
     o(0xc9);
@@ -2071,7 +2071,7 @@ ST_FUNC void gen_vla_sp_restore(int addr) {
     gen_modrm64(0x8b, TREG_RSP, VT_LOCAL, NULL, addr);
 }
 
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
 ST_FUNC void gen_vla_result(int addr) {
     gen_modrm64(0x89, TREG_RAX, VT_LOCAL, NULL, addr);
 }
@@ -2080,10 +2080,10 @@ ST_FUNC void gen_vla_result(int addr) {
 ST_FUNC void gen_vla_alloc(CType *type, int align) {
     int use_call = 0;
 
-#if defined(CONFIG_TCC_BCHECK)
-    use_call = tcc_state->do_bounds_check;
+#if defined(CONFIG_MCC_BCHECK)
+    use_call = mcc_state->do_bounds_check;
 #endif
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
     use_call = 1;
 #endif
     if (use_call)
@@ -2105,7 +2105,7 @@ ST_FUNC void gen_vla_alloc(CType *type, int align) {
 ST_FUNC void gen_struct_copy(int size)
 {
     int n = size / PTR_SIZE;
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
     o(0x5756);
 #endif
     gv2(RC_RDI, RC_RSI);
@@ -2124,7 +2124,7 @@ ST_FUNC void gen_struct_copy(int size)
         o(0xa566);
     if (size & 0x01)
         o(0xa4);
-#ifdef TCC_TARGET_PE
+#ifdef MCC_TARGET_PE
     o(0x5e5f);
 #endif
     vpop();

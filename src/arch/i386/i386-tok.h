@@ -7,7 +7,7 @@
  DEF(TOK_ASM_ ## x ## w, #x "w") \
  DEF(TOK_ASM_ ## x ## l, #x "l") \
  DEF(TOK_ASM_ ## x, #x)
-#ifdef TCC_TARGET_X86_64
+#ifdef MCC_TARGET_X86_64
 # define DEF_BWLQ(x) \
  DEF(TOK_ASM_ ## x ## b, #x "b") \
  DEF(TOK_ASM_ ## x ## w, #x "w") \
@@ -95,7 +95,7 @@
  DEF_ASM(ebp)
  DEF_ASM(esi)
  DEF_ASM(edi)
-#ifdef TCC_TARGET_X86_64
+#ifdef MCC_TARGET_X86_64
  DEF_ASM(rax)
  DEF_ASM(rcx)
  DEF_ASM(rdx)
@@ -162,7 +162,7 @@
  DEF_ASM(st)
  DEF_ASM(rip)
 
-#ifdef TCC_TARGET_X86_64
+#ifdef MCC_TARGET_X86_64
  DEF_ASM(spl)
  DEF_ASM(bpl)
  DEF_ASM(sil)
@@ -204,14 +204,14 @@
 
  DEF_ASM(pushw)
  DEF_ASM(pushl)
-#ifdef TCC_TARGET_X86_64
+#ifdef MCC_TARGET_X86_64
  DEF_ASM(pushq)
 #endif
  DEF_ASM(push)
 
  DEF_ASM(popw)
  DEF_ASM(popl)
-#ifdef TCC_TARGET_X86_64
+#ifdef MCC_TARGET_X86_64
  DEF_ASM(popq)
 #endif
  DEF_ASM(pop)
@@ -224,7 +224,7 @@
  DEF_ASM(movsbw)
  DEF_ASM(movsbl)
  DEF_ASM(movswl)
-#ifdef TCC_TARGET_X86_64
+#ifdef MCC_TARGET_X86_64
  DEF_ASM(movsbq)
  DEF_ASM(movswq)
  DEF_ASM(movzwq)
@@ -298,7 +298,7 @@
 #define DEF_ASM_OP1(name, opcode, group, instr_type, op0)
 #define DEF_ASM_OP2(name, opcode, group, instr_type, op0, op1)
 #define DEF_ASM_OP3(name, opcode, group, instr_type, op0, op1, op2)
-#ifdef TCC_TARGET_X86_64
+#ifdef MCC_TARGET_X86_64
 # include "x86_64-asm.h"
 #else
 # include "i386-asm.h"
@@ -310,7 +310,7 @@
 #define DEF_ASM_OP1(name, opcode, group, instr_type, op0) DEF_ASM(name)
 #define DEF_ASM_OP2(name, opcode, group, instr_type, op0, op1) DEF_ASM(name)
 #define DEF_ASM_OP3(name, opcode, group, instr_type, op0, op1, op2) DEF_ASM(name)
-#ifdef TCC_TARGET_X86_64
+#ifdef MCC_TARGET_X86_64
 # include "x86_64-asm.h"
 #else
 # include "i386-asm.h"

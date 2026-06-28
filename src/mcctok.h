@@ -169,14 +169,14 @@
      DEF(TOK_builtin_return_address, "__builtin_return_address")
      DEF(TOK_builtin_expect, "__builtin_expect")
      DEF(TOK_builtin_unreachable, "__builtin_unreachable")
-#if defined TCC_TARGET_PE && defined TCC_TARGET_X86_64
+#if defined MCC_TARGET_PE && defined MCC_TARGET_X86_64
      DEF(TOK_builtin_va_start, "__builtin_va_start")
-#elif defined TCC_TARGET_X86_64
+#elif defined MCC_TARGET_X86_64
      DEF(TOK_builtin_va_arg_types, "__builtin_va_arg_types")
-#elif defined TCC_TARGET_ARM64
+#elif defined MCC_TARGET_ARM64
      DEF(TOK_builtin_va_start, "__builtin_va_start")
      DEF(TOK_builtin_va_arg, "__builtin_va_arg")
-#elif defined TCC_TARGET_RISCV64
+#elif defined MCC_TARGET_RISCV64
      DEF(TOK_builtin_va_start, "__builtin_va_start")
 #endif
 
@@ -199,9 +199,9 @@
      DEF_ATOMIC(atomic_nand_fetch)
 
      DEF(TOK_pack, "pack")
-#if !defined(TCC_TARGET_I386) && !defined(TCC_TARGET_X86_64) && \
-    !defined(TCC_TARGET_ARM) && !defined(TCC_TARGET_ARM64) && \
-    !defined(TCC_TARGET_RISCV64)
+#if !defined(MCC_TARGET_I386) && !defined(MCC_TARGET_X86_64) && \
+    !defined(MCC_TARGET_ARM) && !defined(MCC_TARGET_ARM64) && \
+    !defined(MCC_TARGET_RISCV64)
      DEF(TOK_ASM_push, "push")
      DEF(TOK_ASM_pop, "pop")
 #endif
@@ -212,7 +212,7 @@
      DEF(TOK_once, "once")
      DEF(TOK_option, "option")
 
-#ifndef TCC_ARM_EABI
+#ifndef MCC_ARM_EABI
      DEF(TOK_memcpy, "memcpy")
      DEF(TOK_memmove, "memmove")
      DEF(TOK_memset, "memset")
@@ -225,7 +225,7 @@
      DEF(TOK___ashldi3, "__ashldi3")
      DEF(TOK___floatundisf, "__floatundisf")
      DEF(TOK___floatundidf, "__floatundidf")
-# ifndef TCC_ARM_VFP
+# ifndef MCC_ARM_VFP
      DEF(TOK___floatundixf, "__floatundixf")
      DEF(TOK___fixunsxfdi, "__fixunsxfdi")
 # endif
@@ -233,8 +233,8 @@
      DEF(TOK___fixunsdfdi, "__fixunsdfdi")
 #endif
 
-#if defined TCC_TARGET_ARM
-# ifdef TCC_ARM_EABI
+#if defined MCC_TARGET_ARM
+# ifdef MCC_ARM_EABI
      DEF(TOK_memcpy, "__aeabi_memcpy")
      DEF(TOK_memmove, "__aeabi_memmove")
      DEF(TOK_memmove4, "__aeabi_memmove4")
@@ -264,7 +264,7 @@
      DEF(TOK___udivsi3, "__udivsi3")
      DEF(TOK___floatdisf, "__floatdisf")
      DEF(TOK___floatdidf, "__floatdidf")
-#  ifndef TCC_ARM_VFP
+#  ifndef MCC_ARM_VFP
      DEF(TOK___floatdixf, "__floatdixf")
      DEF(TOK___fixunssfsi, "__fixunssfsi")
      DEF(TOK___fixunsdfsi, "__fixunsdfsi")
@@ -276,27 +276,27 @@
 # endif
 #endif
 
-#if defined TCC_TARGET_I386
+#if defined MCC_TARGET_I386
      DEF(TOK___fixsfdi, "__fixsfdi")
      DEF(TOK___fixdfdi, "__fixdfdi")
      DEF(TOK___fixxfdi, "__fixxfdi")
 #endif
-#if defined TCC_TARGET_X86_64
+#if defined MCC_TARGET_X86_64
      DEF(TOK___fixxfdi, "__fixxfdi")
 #endif
 
      DEF(TOK_alloca, "alloca")
 
-#if defined TCC_TARGET_PE
+#if defined MCC_TARGET_PE
      DEF(TOK___chkstk, "__chkstk")
 #endif
-#ifdef TCC_TARGET_ARM64
+#ifdef MCC_TARGET_ARM64
      DEF(TOK___arm64_clear_cache, "__arm64_clear_cache")
 #endif
-#ifdef TCC_TARGET_RISCV64
+#ifdef MCC_TARGET_RISCV64
      DEF(TOK___riscv64_clear_cache, "__riscv64_clear_cache")
 #endif
-#if defined TCC_TARGET_ARM64 || defined TCC_TARGET_RISCV64
+#if defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64
      DEF(TOK___addtf3, "__addtf3")
      DEF(TOK___subtf3, "__subtf3")
      DEF(TOK___multf3, "__multf3")
@@ -322,7 +322,7 @@
      DEF(TOK___getf2, "__getf2")
 #endif
 
-#ifdef CONFIG_TCC_BCHECK
+#ifdef CONFIG_MCC_BCHECK
      DEF(TOK___bound_ptr_add, "__bound_ptr_add")
      DEF(TOK___bound_ptr_indir1, "__bound_ptr_indir1")
      DEF(TOK___bound_ptr_indir2, "__bound_ptr_indir2")
@@ -336,8 +336,8 @@
      DEF(TOK___bound_setjmp, "__bound_setjmp")
      DEF(TOK___bound_longjmp, "__bound_longjmp")
      DEF(TOK___bound_new_region, "__bound_new_region")
-# ifdef TCC_TARGET_PE
-#  ifdef TCC_TARGET_X86_64
+# ifdef MCC_TARGET_PE
+#  ifdef MCC_TARGET_X86_64
      DEF(TOK___bound_alloca_nr, "__bound_alloca_nr")
 #  endif
 # else
@@ -394,7 +394,7 @@
 #else
  DEF_ASMDIR(code64)
 #endif
-#if defined(TCC_TARGET_RISCV64)
+#if defined(MCC_TARGET_RISCV64)
  DEF_ASMDIR(option)
 #endif
  DEF_ASMDIR(short)
@@ -404,18 +404,18 @@
  DEF_ASMDIR(reloc)
  DEF_ASMDIR(section)
 
-#if defined TCC_TARGET_I386 || defined TCC_TARGET_X86_64
+#if defined MCC_TARGET_I386 || defined MCC_TARGET_X86_64
 #include "i386-tok.h"
 #endif
 
-#if defined TCC_TARGET_ARM
+#if defined MCC_TARGET_ARM
 #include "arm-tok.h"
 #endif
 
-#if defined TCC_TARGET_ARM64
+#if defined MCC_TARGET_ARM64
 #include "arm64-tok.h"
 #endif
 
-#if defined TCC_TARGET_RISCV64
+#if defined MCC_TARGET_RISCV64
 #include "riscv64-tok.h"
 #endif
