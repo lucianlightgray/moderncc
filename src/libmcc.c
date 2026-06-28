@@ -535,7 +535,8 @@ static void mcc_split_path(MCCState *s, void *p_ary, int *p_nb_ary, const char *
                 if (c == 'B')
                     cstr_cat(&str, s->mcc_lib_path, -1);
                 if (c == 'R')
-                    cstr_cat(&str, CONFIG_SYSROOT, -1);
+                    cstr_cat(&str, (s->sysroot && s->sysroot[0])
+                                   ? s->sysroot : CONFIG_SYSROOT, -1);
                 if (c == 'f' && file) {
                     const char *f = file->true_filename;
                     const char *b = mcc_basename(f);
@@ -853,6 +854,7 @@ LIBMCCAPI MCCState *mcc_new(void)
     s->nocommon = 1;
     s->dollars_in_identifiers = 1;
     s->cversion = 199901;
+    s->pie = -1;        /* auto: built-in CONFIG_MCC_PIE default */
     s->warn_implicit_function_declaration = 1;
     s->warn_discarded_qualifiers = 1;
     s->ms_extensions = 1;
@@ -895,6 +897,7 @@ LIBMCCAPI void mcc_delete(MCCState *s1)
 
     mcc_free(s1->mcc_lib_path);
     mcc_free(s1->soname);
+    mcc_free(s1->sysroot);
     mcc_free(s1->rpath);
     mcc_free(s1->elfint);
     mcc_free(s1->elf_entryname);
@@ -926,10 +929,17 @@ LIBMCCAPI void mcc_delete(MCCState *s1)
 
 LIBMCCAPI int mcc_set_output_type(MCCState *s, int output_type)
 {
+    if (output_type == MCC_OUTPUT_EXE) {
+        int pie = s->pie;       /* -pie / -no-pie override the build default */
+        if (pie < 0)
 #ifdef CONFIG_MCC_PIE
-    if (output_type == MCC_OUTPUT_EXE)
-        output_type |= MCC_OUTPUT_DYN;
+            pie = 1;
+#else
+            pie = 0;
 #endif
+        if (pie)
+            output_type |= MCC_OUTPUT_DYN;
+    }
     s->output_type = output_type;
 
     if (!s->nostdinc) {
@@ -1406,6 +1416,8 @@ static int mcc_set_linker(MCCState *s, const char *optarg)
             mcc_set_str(&s->elfint, o.arg);
         } else if (link_option(&o, "enable-new-dtags")) {
             s->enable_new_dtags = 1;
+        } else if (link_option(&o, "disable-new-dtags")) {
+            s->enable_new_dtags = 0;
         } else if (link_option(&o, "section-alignment=")) {
             s->section_align = strtoul(o.arg, &end, 16);
         } else if (link_option(&o, "soname=|install_name=")) {
@@ -1521,6 +1533,8 @@ enum {
     MCC_OPTION_m,
     MCC_OPTION_f,
     MCC_OPTION_isystem,
+    MCC_OPTION_sysroot,
+    MCC_OPTION_isysroot,
     MCC_OPTION_iwithprefix,
     MCC_OPTION_include,
     MCC_OPTION_nostdinc,
@@ -1541,6 +1555,9 @@ enum {
     MCC_OPTION_x,
     MCC_OPTION_ar,
     MCC_OPTION_impdef,
+    MCC_OPTION_pie,
+    MCC_OPTION_nopie,
+    MCC_OPTION_s,
     MCC_OPTION_dynamiclib,
     MCC_OPTION_flat_namespace,
     MCC_OPTION_two_levelnamespace,
@@ -1568,12 +1585,8 @@ static const MCCOption mcc_options[] = {
     { "B", MCC_OPTION_B, MCC_OPTION_HAS_ARG },
     { "l", MCC_OPTION_l, MCC_OPTION_HAS_ARG },
     { "bench", MCC_OPTION_bench, 0 },
-#ifdef CONFIG_MCC_BACKTRACE
     { "bt", MCC_OPTION_bt, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP },
-#endif
-#ifdef CONFIG_MCC_BCHECK
     { "b", MCC_OPTION_b, 0 },
-#endif
     { "g", MCC_OPTION_g, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP },
 #ifdef MCC_TARGET_MACHO
     { "compatibility_version", MCC_OPTION_compatibility_version, MCC_OPTION_HAS_ARG },
@@ -1608,6 +1621,8 @@ static const MCCOption mcc_options[] = {
     { "m", MCC_OPTION_m, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP },
     { "f", MCC_OPTION_f, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP },
     { "isystem", MCC_OPTION_isystem, MCC_OPTION_HAS_ARG },
+    { "-sysroot", MCC_OPTION_sysroot, MCC_OPTION_HAS_ARG },
+    { "isysroot", MCC_OPTION_isysroot, MCC_OPTION_HAS_ARG },
     { "include", MCC_OPTION_include, MCC_OPTION_HAS_ARG },
     { "nostdinc", MCC_OPTION_nostdinc, 0 },
     { "nostdlib", MCC_OPTION_nostdlib, 0 },
@@ -1629,9 +1644,11 @@ static const MCCOption mcc_options[] = {
     { "C", 0, 0 },
     { "-param", 0, MCC_OPTION_HAS_ARG },
     { "pedantic", 0, 0 },
-    { "pie", 0, 0 },
+    { "pie", MCC_OPTION_pie, 0 },
+    { "no-pie", MCC_OPTION_nopie, 0 },
+    { "nopie", MCC_OPTION_nopie, 0 },
     { "pipe", 0, 0 },
-    { "s", 0, 0 },
+    { "s", MCC_OPTION_s, 0 },
     { "traditional", 0, 0 },
     { NULL, 0, 0 },
 };
@@ -1666,6 +1683,12 @@ static const FlagDef options_f[] = {
     { offsetof(MCCState, reverse_funcargs), 0, "reverse-funcargs" },
     { offsetof(MCCState, gnu89_inline), 0, "gnu89-inline" },
     { offsetof(MCCState, unwind_tables), 0, "asynchronous-unwind-tables" },
+    { offsetof(MCCState, short_enums), 0, "short-enums" },
+    { offsetof(MCCState, nobuiltin), FD_INVERT, "builtin" },
+    { offsetof(MCCState, omit_frame_pointer), 0, "omit-frame-pointer" },
+    { offsetof(MCCState, function_sections), 0, "function-sections" },
+    { offsetof(MCCState, data_sections), 0, "data-sections" },
+    { offsetof(MCCState, wrapv), 0, "wrapv" },
     { 0, 0, NULL }
 };
 
@@ -1864,22 +1887,39 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
         case MCC_OPTION_bench:
             s->do_bench = 1;
             break;
-#ifdef CONFIG_MCC_BACKTRACE
+        case MCC_OPTION_pie:
+            s->pie = 1;
+            break;
+        case MCC_OPTION_nopie:
+            s->pie = 0;
+            break;
+        case MCC_OPTION_s:
+            /* accepted for gcc/clang compatibility; actual symbol stripping
+               is not implemented, so report under -Wunsupported (gcc honors
+               it) rather than silently dropping the request. */
+            mcc_warning_c(warn_unsupported)("-s: symbol stripping is not supported");
+            break;
         case MCC_OPTION_bt:
             s->rt_num_callers = atoi(optarg);
             goto enable_backtrace;
         enable_backtrace:
+#ifdef CONFIG_MCC_BACKTRACE
             s->do_backtrace = 1;
             if (0 == s->do_debug)
                 s->do_debug = 1;
 	    s->dwarf = CONFIG_DWARF_VERSION;
+#else
+            mcc_error("backtrace (-bt) support was not built into this mcc");
+#endif
             break;
-#ifdef CONFIG_MCC_BCHECK
         case MCC_OPTION_b:
+#ifdef CONFIG_MCC_BCHECK
             s->do_bounds_check = 1;
             goto enable_backtrace;
+#else
+            mcc_error("the bounds checker (-b) was not built into this mcc");
 #endif
-#endif
+            break;
         case MCC_OPTION_g:
             s->do_debug = 2;
             s->dwarf = CONFIG_DWARF_VERSION;
@@ -1921,8 +1961,41 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
             s->static_link = 1;
             break;
         case MCC_OPTION_std:
-            if (strcmp(optarg, "=c11") == 0 || strcmp(optarg, "=gnu11") == 0)
-                s->cversion = 201112;
+            {
+                const char *std = optarg;
+                if (*std == '=')
+                    std++;
+                const char *disp = std;
+                if (strstart("gnu", &std))
+                    s->gnu_ext = 1;
+                else if (strstart("c", &std))
+                    s->gnu_ext = 0;
+                else if (strstart("iso9899:", &std)) {
+                    s->gnu_ext = 0;
+                    if (!strcmp(std, "1990"))                                std = "90";
+                    else if (!strcmp(std, "199409"))                         std = "94";
+                    else if (!strcmp(std, "1999") || !strcmp(std, "199901")) std = "99";
+                    else if (!strcmp(std, "2011"))                           std = "11";
+                    else if (!strcmp(std, "2017") || !strcmp(std, "2018"))   std = "17";
+                } else {
+                    mcc_warning("unsupported language standard '%s'", disp);
+                    break;
+                }
+                if (!strcmp(std, "89") || !strcmp(std, "90"))
+                    s->cversion = 0;            /* C89: __STDC_VERSION__ undefined */
+                else if (!strcmp(std, "94"))
+                    s->cversion = 199409;
+                else if (!strcmp(std, "99"))
+                    s->cversion = 199901;
+                else if (!strcmp(std, "11"))
+                    s->cversion = 201112;
+                else if (!strcmp(std, "17") || !strcmp(std, "18"))
+                    s->cversion = 201710;
+                else if (!strcmp(std, "23") || !strcmp(std, "2x"))
+                    s->cversion = 202311;
+                else
+                    mcc_warning("unsupported language standard '%s'", disp);
+            }
             break;
         case MCC_OPTION_shared:
             x = MCC_OUTPUT_DLL;
@@ -1942,6 +2015,14 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
             goto set_output_type;
         case MCC_OPTION_isystem:
             mcc_add_sysinclude_path(s, optarg);
+            break;
+        case MCC_OPTION_sysroot:
+        case MCC_OPTION_isysroot:
+            /* override the compile-time CONFIG_SYSROOT used to expand the
+               default system include/lib/crt search paths (the {R} marker). */
+            if (*optarg == '=')
+                optarg++;
+            mcc_set_str(&s->sysroot, optarg);
             break;
         case MCC_OPTION_include:
             cstr_printf(&s->cmdline_incl, "#include \"%s\"\n", optarg);
@@ -1969,8 +2050,17 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
             do ++s->verbose; while (*optarg++ == 'v');
             continue;
         case MCC_OPTION_f:
-            if (set_flag(s, options_f, optarg) < 0)
-                goto unsupported_option;
+            {
+                const char *vis = optarg;
+                if (strstart("visibility=", &vis)) {
+                    if (!strcmp(vis, "default"))        s->visibility = STV_DEFAULT;
+                    else if (!strcmp(vis, "hidden"))    s->visibility = STV_HIDDEN;
+                    else if (!strcmp(vis, "internal"))  s->visibility = STV_INTERNAL;
+                    else if (!strcmp(vis, "protected")) s->visibility = STV_PROTECTED;
+                    else mcc_warning("unsupported visibility '%s'", vis);
+                } else if (set_flag(s, options_f, optarg) < 0)
+                    goto unsupported_option;
+            }
             break;
 #ifdef MCC_TARGET_ARM
         case MCC_OPTION_mfloat_abi:
@@ -1984,6 +2074,13 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
 #endif
         case MCC_OPTION_m:
             if (set_flag(s, options_m, optarg) < 0) {
+                const char *marg = optarg;
+                /* Accepted for gcc/clang compatibility: mcc has a single fixed
+                   codegen path, so arch/tuning selection does not change output. */
+                if (strstart("arch=", &marg) || strstart("tune=", &marg)
+                    || strstart("cpu=", &marg) || strstart("cmodel=", &marg)
+                    || strstart("fpmath=", &marg))
+                    break;
                 if (x = atoi(optarg), x != 32 && x != 64)
                     goto unsupported_option;
                 if (PTR_SIZE != x/8)
@@ -2060,7 +2157,24 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
             s->filetype = x | (s->filetype & ~AFF_TYPE_MASK);
             break;
         case MCC_OPTION_O:
-            s->optimize = isnum(optarg[0]) ? optarg[0]-'0' : 1  ;
+            /* mcc does not run optimization passes; -O only drives the
+               predefined macros, matching gcc/clang spelling of the levels. */
+            s->optimize_size = 0;
+            if (optarg[0] == '\0')                            /* -O == -O1 */
+                s->optimize = 1;
+            else if (isnum(optarg[0]))                        /* -O0..-O9 */
+                s->optimize = optarg[0] - '0';
+            else if (!strcmp(optarg, "s") || !strcmp(optarg, "z")) {  /* size */
+                s->optimize = 2;
+                s->optimize_size = 1;
+            } else if (!strcmp(optarg, "g"))                  /* -Og */
+                s->optimize = 1;
+            else if (!strcmp(optarg, "fast"))                 /* -Ofast */
+                s->optimize = 3;
+            else {
+                mcc_warning("unsupported optimization level '-O%s'", optarg);
+                s->optimize = 1;
+            }
             break;
 #if defined MCC_TARGET_MACHO
         case MCC_OPTION_dynamiclib:

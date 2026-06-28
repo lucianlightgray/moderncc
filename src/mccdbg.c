@@ -1135,7 +1135,7 @@ ST_FUNC void mcc_debug_start(MCCState *s1)
 
             dwarf_data1(dwarf_info_section, DWARF_ABBREV_COMPILE_UNIT);
             dwarf_strp(dwarf_info_section, "mcc " MCC_VERSION);
-            dwarf_data1(dwarf_info_section, s1->cversion == 201112 ? DW_LANG_C11 : DW_LANG_C99);
+            dwarf_data1(dwarf_info_section, s1->cversion >= 201112 ? DW_LANG_C11 : DW_LANG_C99);
             dwarf_line_strp(dwarf_info_section, filename);
             dwarf_line_strp(dwarf_info_section, buf);
             dwarf_reloc(dwarf_info_section, section_sym, R_DATA_PTR);

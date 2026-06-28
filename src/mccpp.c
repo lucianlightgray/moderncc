@@ -3356,6 +3356,8 @@ static void mcc_predefs(MCCState *s1, CString *cs, int is_asm)
       putdef(cs, "__CHAR_UNSIGNED__");
     if (s1->optimize > 0)
       putdef(cs, "__OPTIMIZE__");
+    if (s1->optimize_size)
+      putdef(cs, "__OPTIMIZE_SIZE__");
     if (s1->option_pthread)
       putdef(cs, "_REENTRANT");
     if (s1->leading_underscore)
@@ -3365,7 +3367,8 @@ static void mcc_predefs(MCCState *s1, CString *cs, int is_asm)
     if (!is_asm) {
       putdef(cs, "__STDC__");
       cstr_printf(cs, "#define __STDC_HOSTED__ %d\n", s1->nostdlib ? 0 : 1);
-      cstr_printf(cs, "#define __STDC_VERSION__ %dL\n", s1->cversion);
+      if (s1->cversion)        /* undefined under -std=c89 */
+          cstr_printf(cs, "#define __STDC_VERSION__ %dL\n", s1->cversion);
       cstr_cat(cs,
 #if CONFIG_MCC_PREDEFS
         #include "mccdefs_.h"

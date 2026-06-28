@@ -418,9 +418,14 @@ ST_FUNC void update_storage(Sym *sym)
     if (!esym)
         return;
 
-    if (sym->a.visibility)
+    if (sym->a.visibility_set)
         esym->st_other = (esym->st_other & ~ELFW(ST_VISIBILITY)(-1))
             | sym->a.visibility;
+    else if (mcc_state->visibility && esym->st_shndx != SHN_UNDEF)
+        /* -fvisibility=: default for defined symbols without an explicit
+           visibility attribute (references stay default). */
+        esym->st_other = (esym->st_other & ~ELFW(ST_VISIBILITY)(-1))
+            | mcc_state->visibility;
 
     if (sym->type.t & (VT_STATIC | VT_INLINE))
         sym_bind = STB_LOCAL;
@@ -1037,6 +1042,7 @@ static void merge_symattr(struct SymAttr *sa, struct SymAttr *sa1)
 	  vis = sa1->visibility;
 	sa->visibility = vis;
     }
+    sa->visibility_set |= sa1->visibility_set;
     sa->dllexport |= sa1->dllexport;
     sa->nodecorate |= sa1->nodecorate;
     sa->dllimport |= sa1->dllimport;
@@ -3532,6 +3538,7 @@ redo:
 	        ad->a.visibility = STV_PROTECTED;
 	    else
                 expect("visibility(\"default|hidden|internal|protected\")");
+            ad->a.visibility_set = 1;
             skip(')');
             break;
         case TOK_ALIGNED1:
@@ -4059,6 +4066,18 @@ do_decl:
                 t.t |= VT_UNSIGNED;
             } else if (pl != (int)pl || nl != (int)nl)
                 t.t = (LONG_SIZE==8 ? VT_LLONG|VT_LONG : VT_LLONG);
+
+            if (mcc_state->short_enums && (t.t & VT_BTYPE) == VT_INT) {
+                /* -fshort-enums: use the smallest integer type that holds the
+                   value range [nl, pl] (the enumerators themselves stay int). */
+                if (t.t & VT_UNSIGNED) {
+                    if (pl <= 0xff)         t.t = VT_BYTE | VT_UNSIGNED;
+                    else if (pl <= 0xffff)  t.t = VT_SHORT | VT_UNSIGNED;
+                } else {
+                    if (nl >= -0x80 && pl <= 0x7f)          t.t = VT_BYTE;
+                    else if (nl >= -0x8000 && pl <= 0x7fff)  t.t = VT_SHORT;
+                }
+            }
 
             for (ss = s->next; ss; ss = ss->next) {
                 ll = ss->enum_val;

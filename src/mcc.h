@@ -235,7 +235,7 @@ extern long double strtold (const char *__nptr, char **__endptr);
 
 #ifndef CONFIG_MCC_CRTPREFIX
 # define CONFIG_MCC_CRTPREFIX \
-    USE_TRIPLET(CONFIG_SYSROOT "/usr/lib")
+    USE_TRIPLET("{R}/usr/lib")
 #endif
 
 
@@ -245,7 +245,7 @@ extern long double strtold (const char *__nptr, char **__endptr);
     "{B}/include" PATHSEP "{B}/include/winapi"
 # else
 #  define CONFIG_MCC_SYSINCLUDEPATHS \
-    "{B}/include" PATHSEP ALSO_TRIPLET(CONFIG_SYSROOT "/usr/include")
+    "{B}/include" PATHSEP ALSO_TRIPLET("{R}/usr/include")
 # endif
 #endif
 
@@ -255,7 +255,7 @@ extern long double strtold (const char *__nptr, char **__endptr);
     "{B}/lib"
 # else
 #  define CONFIG_MCC_LIBPATHS \
-    "{B}" PATHSEP ALSO_TRIPLET(CONFIG_SYSROOT "/usr/lib")
+    "{B}" PATHSEP ALSO_TRIPLET("{R}/usr/lib")
 # endif
 #endif
 
@@ -436,11 +436,12 @@ typedef struct SValue {
 } SValue;
 
 struct SymAttr {
-    unsigned short
+    unsigned int
     aligned     : 5,
     packed      : 1,
     weak        : 1,
     visibility  : 2,
+    visibility_set : 1,         /* explicit visibility attr present */
     dllexport   : 1,
     nodecorate  : 1,
     dllimport   : 1,
@@ -674,6 +675,8 @@ struct MCCState {
     unsigned char znodelete;
     unsigned char filetype;
     unsigned char optimize;
+    unsigned char optimize_size;
+    signed char pie;            /* -1 auto, 0 -no-pie, 1 -pie */
     unsigned char option_pthread;
     unsigned char enable_new_dtags;
     unsigned int  cversion;
@@ -686,6 +689,13 @@ struct MCCState {
     unsigned char reverse_funcargs;
     unsigned char gnu89_inline;
     unsigned char unwind_tables;
+    unsigned char short_enums;          /* -fshort-enums: minimal enum type */
+    unsigned char nobuiltin;            /* -fno-builtin (accepted) */
+    unsigned char omit_frame_pointer;   /* -fomit-frame-pointer (accepted) */
+    unsigned char function_sections;    /* -ffunction-sections (accepted) */
+    unsigned char data_sections;        /* -fdata-sections (accepted) */
+    unsigned char wrapv;                /* -fwrapv (mcc always wraps) */
+    unsigned char visibility;           /* -fvisibility= default STV_* */
 
     unsigned char warn_none;
     unsigned char warn_all;
@@ -734,6 +744,7 @@ struct MCCState {
 
     char *mcc_lib_path;
     char *soname;
+    char *sysroot;          /* --sysroot / -isysroot: runtime CONFIG_SYSROOT */
     char *rpath;
     char *elfint;
     char *elf_entryname;
