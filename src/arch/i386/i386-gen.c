@@ -54,11 +54,11 @@ ST_DATA const char * const target_machine_defs =
     "__i386\0"
     ;
 
-#if defined CONFIG_MCC_PIC
+/* EBX is reserved as the PIC GOT/thunk base.  It is kept out of the general
+   allocation pool unconditionally (it has never been allocatable here), and
+   the prolog/epilog reserve a save slot for it; whether it is actually saved
+   and used is decided at runtime from mcc_state->pic. */
 # define USE_EBX 2
-#else
-# define USE_EBX 0
-#endif
 
 ST_DATA const int reg_classes[NB_REGS] = {
       RC_INT | RC_EAX,
@@ -139,7 +139,6 @@ ST_FUNC void gen_fill_nops(int bytes)
       g(0x90);
 }
 
-#if defined CONFIG_MCC_PIC
 static void gen_static_call(int v);
 static void get_pc_thunk(int r, int add)
 {
@@ -177,7 +176,6 @@ ST_FUNC void gen_gotpcrel(int r, Sym *sym, int c)
             oad(0xc081 + r * 0x100, c);
     }
 }
-#endif
 
 #define gjmp2(instr,lbl) oad(instr,lbl)
 
@@ -199,8 +197,7 @@ static void gen_modrm(int opc, int op_r2, int r, Sym *sym, int c)
 {
     int op_reg = REG_VALUE(op_r2) << 3;
 
-#if defined CONFIG_MCC_PIC
-    if ((r & (VT_VALMASK|VT_SYM)) == (VT_CONST|VT_SYM)) {
+    if (mcc_state->pic && (r & (VT_VALMASK|VT_SYM)) == (VT_CONST|VT_SYM)) {
         int is_got = (op_r2 & TREG_MEM) && !(sym->type.t & VT_STATIC);
         int here = ind;
         get_pc_thunk(TREG_EBX, is_got);
@@ -211,7 +208,7 @@ static void gen_modrm(int opc, int op_r2, int r, Sym *sym, int c)
         } else {
             gen_addrpc32(r, sym, c + (ind - here - 1));
         }
-    } else if ((r & VT_VALMASK) < VT_CONST && (r & TREG_MEM)) {
+    } else if (mcc_state->pic && (r & VT_VALMASK) < VT_CONST && (r & TREG_MEM)) {
         o(opc);
         if (c) {
             g(0x80 | op_reg | REG_VALUE(r));
@@ -220,7 +217,6 @@ static void gen_modrm(int opc, int op_r2, int r, Sym *sym, int c)
             g(0x00 | op_reg | REG_VALUE(r));
         }
     } else
-#endif
     if ((r & VT_VALMASK) == VT_CONST) {
         o(opc);
         o(0x05 | op_reg);
@@ -250,8 +246,8 @@ ST_FUNC void load(int r, SValue *sv)
     ft &= ~(VT_VOLATILE | VT_CONSTANT);
     v = fr & VT_VALMASK;
 
-#if defined CONFIG_MCC_PIC
-    if ((fr & (VT_VALMASK|VT_SYM|VT_LVAL)) == (VT_CONST|VT_SYM|VT_LVAL)
+    if (mcc_state->pic
+        && (fr & (VT_VALMASK|VT_SYM|VT_LVAL)) == (VT_CONST|VT_SYM|VT_LVAL)
         && !(sv->sym->type.t & VT_STATIC)) {
         int tr = r | TREG_MEM;
         if (is_float(ft)) {
@@ -260,7 +256,6 @@ ST_FUNC void load(int r, SValue *sv)
         gen_modrm(0x8b, tr, fr, sv->sym, 0);
         fr = tr | VT_LVAL;
     }
-#endif
 
     if (fr & VT_LVAL) {
         if ((fr & VT_SYM) && sv->sym->type.t & VT_TLS) {
@@ -306,8 +301,7 @@ ST_FUNC void load(int r, SValue *sv)
         }
         gen_modrm(opc, r, fr, sv->sym, fc);
     } else {
-#if defined CONFIG_MCC_PIC
-        if ((fr & (VT_VALMASK|VT_SYM)) == (VT_CONST|VT_SYM)) {
+        if (mcc_state->pic && (fr & (VT_VALMASK|VT_SYM)) == (VT_CONST|VT_SYM)) {
             if (sv->sym->type.t & VT_STATIC) {
                 get_pc_thunk(r, 0);
                 o(0x808d | REG_VALUE(r) * 0x900);
@@ -318,8 +312,6 @@ ST_FUNC void load(int r, SValue *sv)
                 gen_gotpcrel(r, sv->sym, fc);
             }
         } else
-
-#endif
         if (v == VT_CONST) {
             o(0xb8 + r);
             gen_addr32(fr, sv->sym, fc);
@@ -374,8 +366,8 @@ ST_FUNC void store(int r, SValue *v)
     fc = v->c.i;
     fr = v->r & VT_VALMASK;
 
-#if defined CONFIG_MCC_PIC
-    if ((v->r & (VT_VALMASK|VT_SYM)) == (VT_CONST|VT_SYM)
+    if (mcc_state->pic
+        && (v->r & (VT_VALMASK|VT_SYM)) == (VT_CONST|VT_SYM)
         && !(v->sym->type.t & VT_STATIC)) {
 	get_pc_thunk(TREG_EBX, 1);
 	o(0x9b8b);
@@ -383,7 +375,6 @@ ST_FUNC void store(int r, SValue *v)
 	o(opc);
 	o(3 + (r << 3));
     } else
-#endif
 
     if ((fr & VT_SYM) && v->sym->type.t & VT_TLS) {
         o(0x65);
@@ -413,7 +404,6 @@ static void gadd_sp(int val)
     }
 }
 
-#if defined CONFIG_MCC_BCHECK || defined MCC_TARGET_PE || defined CONFIG_MCC_PIC
 static void gen_static_call(int v)
 {
     Sym *sym;
@@ -422,20 +412,17 @@ static void gen_static_call(int v)
     oad(0xe8, -4);
     greloc(cur_text_section, sym, ind - 4, R_386_PC32);
 }
-#endif
 
 static void gcall_or_jmp(int is_jmp)
 {
     int r;
     if ((vtop->r & (VT_VALMASK|VT_LVAL|VT_SYM)) == (VT_CONST|VT_SYM)) {
-#if defined CONFIG_MCC_PIC
-	if (!(vtop->sym->type.t & VT_STATIC)) {
+	if (mcc_state->pic && !(vtop->sym->type.t & VT_STATIC)) {
 	    get_pc_thunk(TREG_EBX, 1);
             oad(0xe8 + is_jmp, vtop->c.i - 4);
             greloc(cur_text_section, vtop->sym, ind - 4, R_386_PLT32);
             return;
 	}
-#endif
         oad(0xe8 + is_jmp, vtop->c.i - 4);
         greloc(cur_text_section, vtop->sym, ind - 4, R_386_PC32);
     } else {
@@ -723,9 +710,8 @@ ST_FUNC void gfunc_epilog(void)
 
     v = (-loc + 3) & -4;
 
-#if USE_EBX
-    gen_modrm(0x8b, TREG_EBX, VT_LOCAL, NULL, -(v+4));
-#endif
+    if (mcc_state->pic)
+        gen_modrm(0x8b, TREG_EBX, VT_LOCAL, NULL, -(v+4));
 
     o(0xc9);
     if (func_ret_sub == 0) {
@@ -751,9 +737,8 @@ ST_FUNC void gfunc_epilog(void)
         o(0x90);
 #endif
     }
-#if USE_EBX
-    o(0x53);
-#endif
+    /* fill the reserved prolog byte: push %ebx when generating PIC, else nop */
+    o(mcc_state->pic ? 0x53 : 0x90);
     ind = saved_ind;
 }
 
@@ -1106,18 +1091,18 @@ ST_FUNC void gen_cvt_csti(int t)
 ST_FUNC void gen_increment_tcov (SValue *sv)
 {
    int indir, rel, add1, add2;
-#if defined CONFIG_MCC_PIC
-   get_pc_thunk(TREG_EBX, 0);
-   indir = 0x8300;
-   rel = R_386_PC32;
-   add1 = 2;
-   add2 = 13;
-#else
-   indir = 0x0500;
-   rel = R_386_32;
-   add1 = 0;
-   add2 = 4;
-#endif
+   if (mcc_state->pic) {
+       get_pc_thunk(TREG_EBX, 0);
+       indir = 0x8300;
+       rel = R_386_PC32;
+       add1 = 2;
+       add2 = 13;
+   } else {
+       indir = 0x0500;
+       rel = R_386_32;
+       add1 = 0;
+       add2 = 4;
+   }
    o(0x0083 + indir);
    greloc(cur_text_section, sv->sym, ind, rel);
    gen_le32(add1);
@@ -1141,14 +1126,14 @@ static void gen_bound_call(int v)
     Sym *sym;
 
     sym = external_helper_sym(v);
-#if defined CONFIG_MCC_PIC
-    get_pc_thunk(TREG_EBX, 1);
-    oad(0xe8, -4);
-    greloc(cur_text_section, sym, ind - 4, R_386_PLT32);
-#else
-    oad(0xe8, -4);
-    greloc(cur_text_section, sym, ind - 4, R_386_PC32);
-#endif
+    if (mcc_state->pic) {
+        get_pc_thunk(TREG_EBX, 1);
+        oad(0xe8, -4);
+        greloc(cur_text_section, sym, ind - 4, R_386_PLT32);
+    } else {
+        oad(0xe8, -4);
+        greloc(cur_text_section, sym, ind - 4, R_386_PC32);
+    }
 }
 
 static void gen_bounds_prolog(void)
@@ -1156,16 +1141,16 @@ static void gen_bounds_prolog(void)
     func_bound_offset = lbounds_section->data_offset;
     func_bound_ind = ind;
     func_bound_add_epilog = 0;
-#if defined CONFIG_MCC_PIC
-    oad(0xb8, 0);
-    oad(0x808d, 0);
-    oad(0xb8, 0);
-    oad(0xc381, 0);
-    oad(0xb8, 0);
-#else
-    oad(0xb8, 0);
-    oad(0xb8, 0);
-#endif
+    if (mcc_state->pic) {
+        oad(0xb8, 0);
+        oad(0x808d, 0);
+        oad(0xb8, 0);
+        oad(0xc381, 0);
+        oad(0xb8, 0);
+    } else {
+        oad(0xb8, 0);
+        oad(0xb8, 0);
+    }
 }
 
 static void gen_bounds_epilog(void)
@@ -1187,29 +1172,29 @@ static void gen_bounds_epilog(void)
     if (offset_modified) {
         saved_ind = ind;
         ind = func_bound_ind;
-#if defined CONFIG_MCC_PIC
-	get_pc_thunk(TREG_EAX, 0);
-	o(0x808d | TREG_EAX * 0x900);
-	greloc(cur_text_section, sym_data, ind, R_386_PC32);
-	gen_le32(2);
-#else
-        greloc(cur_text_section, sym_data, ind + 1, R_386_32);
-        ind = ind + 5;
-#endif
+	if (mcc_state->pic) {
+	    get_pc_thunk(TREG_EAX, 0);
+	    o(0x808d | TREG_EAX * 0x900);
+	    greloc(cur_text_section, sym_data, ind, R_386_PC32);
+	    gen_le32(2);
+	} else {
+            greloc(cur_text_section, sym_data, ind + 1, R_386_32);
+            ind = ind + 5;
+	}
         gen_bound_call(TOK___bound_local_new);
         ind = saved_ind;
     }
 
     o(0x5250);
-#if defined CONFIG_MCC_PIC
-    get_pc_thunk(TREG_EAX, 0);
-    o(0x808d | TREG_EAX * 0x900);
-    greloc(cur_text_section, sym_data, ind, R_386_PC32);
-    gen_le32(2);
-#else
-    greloc(cur_text_section, sym_data, ind + 1, R_386_32);
-    oad(0xb8, 0);
-#endif
+    if (mcc_state->pic) {
+        get_pc_thunk(TREG_EAX, 0);
+        o(0x808d | TREG_EAX * 0x900);
+        greloc(cur_text_section, sym_data, ind, R_386_PC32);
+        gen_le32(2);
+    } else {
+        greloc(cur_text_section, sym_data, ind + 1, R_386_32);
+        oad(0xb8, 0);
+    }
     gen_bound_call(TOK___bound_local_delete);
     o(0x585a);
 }

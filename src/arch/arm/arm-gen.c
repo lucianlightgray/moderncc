@@ -494,11 +494,11 @@ static void load_value(SValue *sv, int r)
 #endif
     o(0xE59F0000|(intr(r)<<12));
     o(0xEA000000);
-#ifndef CONFIG_MCC_PIC
+    if (!mcc_state->pic) {
     if(sv->r & VT_SYM)
         greloc(cur_text_section, sv->sym, ind, R_ARM_ABS32);
     o(sv->c.i);
-#else
+    } else {
     if(sv->r & VT_SYM) {
 	if (sv->sym->type.t & VT_STATIC) {
             greloc(cur_text_section, sv->sym, ind, R_ARM_REL32);
@@ -517,7 +517,7 @@ static void load_value(SValue *sv, int r)
     }
     else
         o(sv->c.i);
-#endif
+    }
 }
 
 void load(int r, SValue *sv)

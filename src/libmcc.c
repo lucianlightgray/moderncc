@@ -855,6 +855,9 @@ LIBMCCAPI MCCState *mcc_new(void)
     s->dollars_in_identifiers = 1;
     s->cversion = 199901;
     s->pie = -1;        /* auto: built-in CONFIG_MCC_PIE default */
+#if defined CONFIG_MCC_PIC
+    s->pic = 2;         /* default position-independent codegen */
+#endif
     s->warn_implicit_function_declaration = 1;
     s->warn_discarded_qualifiers = 1;
     s->ms_extensions = 1;
@@ -1902,10 +1905,11 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
             s->pie = 0;
             break;
         case MCC_OPTION_s:
-            /* accepted for gcc/clang compatibility; actual symbol stripping
-               is not implemented, so report under -Wunsupported (gcc honors
-               it) rather than silently dropping the request. */
-            mcc_warning_c(warn_unsupported)("-s: symbol stripping is not supported");
+            /* strip the symbol table from a linked output (.symtab/.strtab are
+               dropped at write time; .dynsym/.dynstr are retained). Stripping a
+               relocatable object would break later linking, so it only applies
+               to executables/shared objects. */
+            s->do_strip = 1;
             break;
         case MCC_OPTION_bt:
             s->rt_num_callers = atoi(optarg);
@@ -2069,13 +2073,13 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
                     else if (!strcmp(vis, "internal"))  s->visibility = STV_INTERNAL;
                     else if (!strcmp(vis, "protected")) s->visibility = STV_PROTECTED;
                     else mcc_warning("unsupported visibility '%s'", vis);
-                } else if (!strcmp(optarg, "pic")  || !strcmp(optarg, "PIC")
-                        || !strcmp(optarg, "pie")  || !strcmp(optarg, "PIE")
-                        || !strcmp(optarg, "no-pic") || !strcmp(optarg, "no-PIC")
+                } else if (!strcmp(optarg, "PIC") || !strcmp(optarg, "PIE")) {
+                    s->pic = 2;
+                } else if (!strcmp(optarg, "pic") || !strcmp(optarg, "pie")) {
+                    s->pic = 1;
+                } else if (!strcmp(optarg, "no-pic") || !strcmp(optarg, "no-PIC")
                         || !strcmp(optarg, "no-pie") || !strcmp(optarg, "no-PIE")) {
-                    /* Accepted: x86_64 codegen is position-independent already;
-                       on i386 PIC is selected at build time (CONFIG_MCC_PIC).
-                       Use -pie/-no-pie to choose the output (ET_DYN vs ET_EXEC). */
+                    s->pic = 0;
                 } else if (!strcmp(optarg, "stack-protector")
                         || !strcmp(optarg, "stack-protector-strong")
                         || !strcmp(optarg, "stack-protector-all")) {

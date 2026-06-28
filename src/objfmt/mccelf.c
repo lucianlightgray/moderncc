@@ -2841,6 +2841,11 @@ static void alloc_sec_names(MCCState *s1, int is_obj)
         s = s1->sections[i];
         if (is_obj)
             s->sh_size = s->data_offset;
+        /* -s: leave .symtab/.strtab unnamed so sort/reorder drop them from the
+           output (only for linked output; objects keep their symbols). */
+        if (s1->do_strip && !is_obj
+            && (s == s1->symtab || (s1->symtab && s == s1->symtab->link)))
+            continue;
 	if (s->sh_size || s == strsec || (s->sh_flags & SHF_ALLOC) || is_obj)
             s->sh_name = put_elf_str(strsec, s->name);
     }

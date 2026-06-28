@@ -18,6 +18,29 @@ static const cli_case_t cli_cases[] = {
   "nm {W}/m.o | grep -oE 'exported_fn|second_fn|placed_var' | sort -u",
   "REL\nexported_fn\nplaced_var\nsecond_fn\n" },
 
+/* -s: honored (no -Wunsupported warning under -Werror) and the linked output
+   carries no .symtab.  mcc never emits a static symbol table into linked output
+   anyway, so this also locks that in. */
+{ "strip_symbols", "cpu=x86_64,os=linux",
+  "printf 'int f(int x){return x+1;}\\nint main(void){return f(0);}\\n' > {W}/st.c && "
+  "{MCC} -B{B} -I{I} -Werror -s {W}/st.c -o {W}/st && "
+  "readelf -S {W}/st | grep -c '\\.symtab'",
+  "0\n" },
+
+/* -fPIC -pie produces a PIE (ET_DYN) with no text relocations; -fno-pic
+   -no-pie produces a plain executable (ET_EXEC). Runtime PIC on i386/arm is
+   additionally exercised under qemu (qemu matrix builds every program -fPIC). */
+{ "fpic_pie_dyn", "cpu=x86_64,os=linux",
+  "printf 'extern int g; int f(void){return g;}\\nint g=41; int main(void){return f()-g+1;}\\n' > {W}/pc.c && "
+  "{MCC} -B{B} -I{I} -fPIC -pie {W}/pc.c -o {W}/pc && "
+  "readelf -h {W}/pc | grep -oE 'DYN' && readelf -d {W}/pc | grep -c TEXTREL",
+  "DYN\n0\n" },
+
+{ "fno_pic_exec", "cpu=x86_64,os=linux",
+  "printf 'int main(void){return 0;}\\n' > {W}/np.c && "
+  "{MCC} -B{B} -I{I} -fno-pic -no-pie {W}/np.c -o {W}/np && readelf -h {W}/np | grep -oE 'EXEC'",
+  "EXEC\n" },
+
 /* ---- symbol attributes / visibility ---------------------------------- */
 { "visibility_attribute", "cpu=x86_64,os=linux",
   "{MCC} -B{B} -I{I} -c {D}/vis.c -o {W}/v.o && "

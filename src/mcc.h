@@ -677,6 +677,7 @@ struct MCCState {
     unsigned char optimize;
     unsigned char optimize_size;
     signed char pie;            /* -1 auto, 0 -no-pie, 1 -pie */
+    unsigned char pic;          /* -f[no-]pic/PIE: 0 none, 1 -fpic, 2 -fPIC */
     unsigned char option_pthread;
     unsigned char enable_new_dtags;
     unsigned int  cversion;
@@ -697,6 +698,7 @@ struct MCCState {
     unsigned char wrapv;                /* -fwrapv (mcc always wraps) */
     unsigned char visibility;           /* -fvisibility= default STV_* */
     unsigned char stack_protector;      /* -fstack-protector* (x86_64) */
+    unsigned char do_strip;             /* -s: omit .symtab/.strtab from output */
 
     unsigned char warn_none;
     unsigned char warn_all;

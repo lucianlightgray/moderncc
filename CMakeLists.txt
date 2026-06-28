@@ -1271,7 +1271,9 @@ function(mcc_build_libmcc1 tname mcctgt cpu os native archive objdir out_extra)
                     -I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include
                     -I${CMAKE_BINARY_DIR} ${_arch_incs})
     else()
-        set(_xflags ${_mccdefs_flags}
+        # Build the runtime position-independent (like libgcc) so it links into
+        # PIEs without text relocations (musl rejects TEXTREL on i386).
+        set(_xflags ${_mccdefs_flags} -fPIC
                     -B${CMAKE_CURRENT_SOURCE_DIR}/runtime
                     -I${CMAKE_BINARY_DIR} ${_arch_incs})
     endif()
@@ -2280,31 +2282,37 @@ file(WRITE "${MARKER}" "${_rel}\n")
         set(_qrun "${CMAKE_BINARY_DIR}/run_qemu_run.cmake")
         file(WRITE "${_qrun}" [==[
 # Cross-compile every tests/qemu/conformance/*.c against SYSROOT with MCC and
-# run it under QEMU -L SYSROOT; each program self-checks and must exit 0.
+# run it under QEMU -L SYSROOT; each program self-checks and must exit 0. Each
+# program is built twice: default codegen and -fPIC -pie (runtime PIC).
 file(MAKE_DIRECTORY "${WORKDIR}")
 file(GLOB _srcs "${SRCDIR}/*.c")
 set(_fails "")
+# lib64 first: on a multilib (amd64) stage3, /lib holds the 32-bit libc.so
+# linker script and would mis-link otherwise.
+set(_common "-B${MCCBASE}" "--sysroot=${SYSROOT}" "-isystem" "${SYSROOT}/usr/include"
+    "-L${SYSROOT}/usr/lib64" "-L${SYSROOT}/lib64" "-L${SYSROOT}/usr/lib" "-L${SYSROOT}/lib")
 foreach(_src IN LISTS _srcs)
     get_filename_component(_n "${_src}" NAME_WE)
-    set(_out "${WORKDIR}/${_n}")
-    execute_process(
-        COMMAND "${MCC}" "-B${MCCBASE}" "--sysroot=${SYSROOT}"
-                "-isystem" "${SYSROOT}/usr/include"
-                # lib64 first: on a multilib (amd64) stage3, /lib holds the
-                # 32-bit libc.so linker script and would mis-link otherwise.
-                "-L${SYSROOT}/usr/lib64" "-L${SYSROOT}/lib64"
-                "-L${SYSROOT}/usr/lib" "-L${SYSROOT}/lib"
-                "${_src}" -o "${_out}"
-        RESULT_VARIABLE _crc OUTPUT_VARIABLE _co ERROR_VARIABLE _ce)
-    if(NOT _crc EQUAL 0)
-        string(APPEND _fails "  ${_n}: compile failed\n${_co}${_ce}\n")
-        continue()
-    endif()
-    execute_process(COMMAND "${QEMU}" -L "${SYSROOT}" "${_out}"
-        RESULT_VARIABLE _rrc OUTPUT_VARIABLE _ro ERROR_VARIABLE _re)
-    if(NOT _rrc EQUAL 0)
-        string(APPEND _fails "  ${_n}: run exited ${_rrc}\n${_ro}${_re}\n")
-    endif()
+    foreach(_mode "default" "pic")
+        if(_mode STREQUAL "pic")
+            set(_modeflags -fPIC -pie)
+        else()
+            set(_modeflags "")
+        endif()
+        set(_out "${WORKDIR}/${_n}.${_mode}")
+        execute_process(
+            COMMAND "${MCC}" ${_common} ${_modeflags} "${_src}" -o "${_out}"
+            RESULT_VARIABLE _crc OUTPUT_VARIABLE _co ERROR_VARIABLE _ce)
+        if(NOT _crc EQUAL 0)
+            string(APPEND _fails "  ${_n} [${_mode}]: compile failed\n${_co}${_ce}\n")
+            continue()
+        endif()
+        execute_process(COMMAND "${QEMU}" -L "${SYSROOT}" "${_out}"
+            RESULT_VARIABLE _rrc OUTPUT_VARIABLE _ro ERROR_VARIABLE _re)
+        if(NOT _rrc EQUAL 0)
+            string(APPEND _fails "  ${_n} [${_mode}]: run exited ${_rrc}\n${_ro}${_re}\n")
+        endif()
+    endforeach()
 endforeach()
 if(NOT _fails STREQUAL "")
     message(FATAL_ERROR "qemu conformance failures:\n${_fails}")

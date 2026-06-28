@@ -14,11 +14,10 @@
 #define ELF_START_ADDR 0x08048000
 #define ELF_PAGE_SIZE  0x1000
 
-#if defined CONFIG_MCC_PIC
-#define PCRELATIVE_DLLPLT 1
-#else
-#define PCRELATIVE_DLLPLT 0
-#endif
+/* PC-relative PLT entries are used when generating position-independent code;
+   selected at runtime from the link state's pic flag (-f[no-]pic/PIE). Uses s1,
+   which is in scope at the single (link-phase) use site. */
+#define PCRELATIVE_DLLPLT (s1->pic != 0)
 #define RELOCATE_DLLPLT 1
 
 #else
