@@ -1222,6 +1222,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
                '=A' for a <=64-bit value as plain rax here. */
             if (is_reg_allocated(TREG_XAX))
                 goto try_next;
+            op->is_llong = 0;       /* rax only: do not store edx back as the high half */
             op->reg = TREG_XAX;
             regs_allocated[TREG_XAX] |= reg_mask;
 #else
