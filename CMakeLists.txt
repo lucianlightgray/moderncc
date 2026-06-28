@@ -1852,31 +1852,35 @@ endif()
 # ===========================================================================
 # 6. SOURCE FILE LISTS  (Makefile: CORE_FILES + per-target *_FILES)
 # ===========================================================================
-# Core sources shared by every target (Makefile: CORE_FILES, minus tcc.c which
-# is the driver, kept separate so libtcc can exclude it).
-set(TCC_CORE_SRC
-    libtcc.c tccpp.c tccgen.c tccdbg.c linux/tccelf.c tccasm.c tccrun.c tcctools.c)
+# The source tree is organised by concern (see section above): core TUs at the
+# root, per-CPU backends in i386/ x86_64/ arm/ arm64/ riscv64/ c67/, the OS
+# object-format writers in windows/ linux/ macos/. So the file lists are GLOBbed
+# straight from those directories (CONFIGURE_DEPENDS re-runs the glob when files
+# are added/removed). The few cross-references are spelled out explicitly.
 
-# Per-CPU backend sources (Makefile: <cpu>_FILES). Selected by TCC_CPU. Now under
-# per-arch subdirectories. (Matches the Makefile *_FILES: x86_64 reuses
-# i386-asm.c; c67 uses tcccoff.c; PE/MachO object-format sources appended below.)
-set(TCC_BACKEND_i386    i386/i386-gen.c i386/i386-link.c i386/i386-asm.c)
-set(TCC_BACKEND_x86_64  x86_64/x86_64-gen.c x86_64/x86_64-link.c i386/i386-asm.c)
-set(TCC_BACKEND_arm     arm/arm-gen.c arm/arm-link.c arm/arm-asm.c)
-set(TCC_BACKEND_arm64   arm64/arm64-gen.c arm64/arm64-link.c arm64/arm64-asm.c)
-set(TCC_BACKEND_riscv64 riscv64/riscv64-gen.c riscv64/riscv64-link.c riscv64/riscv64-asm.c)
-set(TCC_BACKEND_c67     c67/c67-gen.c c67/c67-link.c c67/tcccoff.c)
+# Core: every root *.c (minus tcc.c, the driver, kept out so libtcc can exclude
+# it) plus linux/tccelf.c (the always-on ELF object writer).
+file(GLOB TCC_CORE_SRC CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/*.c" "${CMAKE_CURRENT_SOURCE_DIR}/linux/*.c")
+list(REMOVE_ITEM TCC_CORE_SRC "${CMAKE_CURRENT_SOURCE_DIR}/tcc.c")
 
-if(NOT DEFINED TCC_BACKEND_${TCC_CPU})
-    message(FATAL_ERROR "No backend source list for CPU '${TCC_CPU}' (configure: 'Unsupported CPU')")
+# Per-CPU backend: the subdirectory named after TCC_CPU *is* the source list.
+# x86_64 additionally reuses the shared x86 assembler i386-asm.c.
+file(GLOB TCC_BACKEND_SRC CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${TCC_CPU}/*.c")
+if(NOT TCC_BACKEND_SRC)
+    message(FATAL_ERROR "No backend sources for CPU '${TCC_CPU}' (no ${TCC_CPU}/ directory)")
 endif()
-set(TCC_BACKEND_SRC ${TCC_BACKEND_${TCC_CPU}})
+if(TCC_CPU STREQUAL "x86_64")
+    list(APPEND TCC_BACKEND_SRC "${CMAKE_CURRENT_SOURCE_DIR}/i386/i386-asm.c")
+endif()
 
-# OS-specific object-format sources (Makefile: tccpe.c for PE, tccmacho.c for OSX)
+# OS-specific object-format writer: windows/ (PE) or macos/ (Mach-O).
 if(TCC_TARGETOS STREQUAL "WIN32")
-    list(APPEND TCC_BACKEND_SRC windows/tccpe.c)
+    file(GLOB _os_src CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/windows/*.c")
+    list(APPEND TCC_BACKEND_SRC ${_os_src})
 elseif(TCC_TARGETOS STREQUAL "Darwin")
-    list(APPEND TCC_BACKEND_SRC macos/tccmacho.c)
+    file(GLOB _os_src CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/macos/*.c")
+    list(APPEND TCC_BACKEND_SRC ${_os_src})
 endif()
 
 # ===========================================================================
@@ -1884,7 +1888,7 @@ endif()
 # ===========================================================================
 # All libtcc TUs (core + backend), minus tcc.c (driver) and tcctools.c.
 set(LIBTCC_ALL_SRC ${TCC_CORE_SRC} ${TCC_BACKEND_SRC})
-list(REMOVE_ITEM LIBTCC_ALL_SRC tcctools.c)   # tcctools.c belongs to the tcc driver
+list(REMOVE_ITEM LIBTCC_ALL_SRC "${CMAKE_CURRENT_SOURCE_DIR}/tcctools.c")  # driver-only
 
 # ONE_SOURCE=yes (Makefile): compile ONLY libtcc.c, which #includes every other
 # TU (libtcc.c:21 defaults ONE_SOURCE to 1). Otherwise compile each TU separately
@@ -3366,7 +3370,14 @@ endif()
 # ===========================================================================
 # Convenience targets, each built only when its tool exists. None are part of
 # `all`; invoke explicitly (e.g. `cmake --build . --target tags`).
-set(TCC_TAGFILES "*.[ch]" "include/*.h" "lib/*.[chS]")   # Makefile TAGFILES
+# All source across the tree (now that backends live in subdirs); skip the build
+# output and VCS dirs. (Was the Makefile's "*.[ch] include/*.h lib/*.[chS]", which
+# no longer reaches the per-arch subdirectories.)
+file(GLOB_RECURSE TCC_TAGFILES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/*.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/*.S")
+list(FILTER TCC_TAGFILES EXCLUDE REGEX "/(cmake-build-[^/]*|build-c|\\.git|\\.idea)/")
 find_program(CTAGS_EXE ctags)
 if(CTAGS_EXE)
     add_custom_target(tags
