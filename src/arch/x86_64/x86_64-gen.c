@@ -120,6 +120,7 @@ ST_DATA const int reg_classes[NB_REGS] = {
 
 static unsigned long func_sub_sp_offset;
 static int func_ret_sub;
+static int func_stack_chk_loc;   /* -fstack-protector canary slot, 0 = none */
 
 #if defined(CONFIG_MCC_BCHECK)
 static addr_t func_bound_offset;
@@ -1341,6 +1342,37 @@ static void push_arg_reg(int i) {
     gen_modrm64(0x89, arg_regs[i], VT_LOCAL, NULL, loc);
 }
 
+#ifndef MCC_TARGET_MACHO
+/* -fstack-protector: the SysV x86_64 ABI keeps the per-thread guard at
+   %fs:0x28. Prolog stashes it in a frame slot; epilog xors it back and
+   branches to __stack_chk_fail (provided by libc) on mismatch. Emitted only
+   under the flag, so the default codegen is untouched. */
+static void gen_stack_chk_prolog(void)
+{
+    func_stack_chk_loc = (loc -= 8);
+    /* mov %fs:0x28, %rax */
+    g(0x64); g(0x48); g(0x8b); g(0x04); g(0x25); gen_le32(0x28);
+    /* mov %rax, func_stack_chk_loc(%rbp) */
+    g(0x48); g(0x89); g(0x85); gen_le32(func_stack_chk_loc);
+}
+
+static void gen_stack_chk_epilog(void)
+{
+    /* Use %rcx, not %rax: the return value is already live in %rax/%rdx here.
+       mov func_stack_chk_loc(%rbp), %rcx */
+    g(0x48); g(0x8b); g(0x8d); gen_le32(func_stack_chk_loc);
+    /* xor %fs:0x28, %rcx */
+    g(0x64); g(0x48); g(0x33); g(0x0c); g(0x25); gen_le32(0x28);
+    /* je 1f  (skip the 5-byte call when the guard matches) */
+    g(0x74); g(0x05);
+    /* call __stack_chk_fail */
+    oad(0xe8, 0);
+    greloca(cur_text_section, external_helper_sym(TOK___stack_chk_fail),
+            ind - 4, R_X86_64_PLT32, -4);
+    /* 1: */
+}
+#endif
+
 void gfunc_prolog(Sym *func_sym)
 {
     CType *func_type = &func_sym->type;
@@ -1477,6 +1509,11 @@ void gfunc_prolog(Sym *func_sym)
     if (mcc_state->do_bounds_check)
         gen_bounds_prolog();
 #endif
+#ifndef MCC_TARGET_MACHO
+    func_stack_chk_loc = 0;
+    if (mcc_state->stack_protector)
+        gen_stack_chk_prolog();
+#endif
 }
 
 void gfunc_epilog(void)
@@ -1486,6 +1523,10 @@ void gfunc_epilog(void)
 #ifdef CONFIG_MCC_BCHECK
     if (mcc_state->do_bounds_check)
         gen_bounds_epilog();
+#endif
+#ifndef MCC_TARGET_MACHO
+    if (func_stack_chk_loc)
+        gen_stack_chk_epilog();
 #endif
     o(0xc9);
     if (func_ret_sub == 0) {

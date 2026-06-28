@@ -25,16 +25,24 @@ Done and tested (native 18/18 + regression test `tests2/197_cli_std_flags.c`):
 - **T3.2** `-Wl,--disable-new-dtags`.
 - **NW.8/9** `-march=`/`-mtune=`/`-mcpu=`/`-mcmodel=`/`-mfpmath=` accepted.
 
+- **NW.7** `-fstack-protector[-strong|-all]` — **implemented for x86_64 ELF**:
+  prolog stashes the `%fs:0x28` guard in a frame slot, epilog xors it back
+  (via `%rcx`, since `%rax`/`%rdx` hold the return value) and calls
+  `__stack_chk_fail` on mismatch. Tested end-to-end (real `*** stack smashing
+  detected ***`) + a clean-run golden. `-fno-stack-protector` disables; on
+  non-x86_64/Mach-O it reports under `-Wunsupported`. The `-strong`/`-all`
+  variants currently all behave as `-all` (every function protected); the
+  array-only heuristic is a future refinement.
+
 Partial / deferred (CLI surface done; deep codegen intentionally not shipped):
 - **N.2** `-s` — reports under `-Wunsupported`; real symtab stripping deferred
   (truncating `.symtab` corrupted the image; needs proper section removal).
 - **T1.5** `-fPIC`/`-fPIE`/`-fpic`/`-fpie`/`-fno-pic`/`-fno-pie` accepted; x86_64
   is position-independent already (`-fPIC -pie` runs as a PIE). The i386/arm
   `#if defined CONFIG_MCC_PIC` codegen→runtime conversion is the remaining deep
-  work (high regression risk; can't be verified without a PIC build).
-- **NW.7** `-fstack-protector[-strong|-all]` recognized → `-Wunsupported`
-  (`-fno-stack-protector` silently OK). Canary codegen across 5 backends + the
-  runtime is deferred rather than shipping untested security codegen.
+  work, deliberately not attempted: it's **untestable in this environment** (no
+  i386 multilib/libc, so i386 PIC binaries can't be run/verified) and the
+  refactor would risk regressing the i386 backend with no test coverage.
 
 ---
 

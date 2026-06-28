@@ -696,6 +696,7 @@ struct MCCState {
     unsigned char data_sections;        /* -fdata-sections (accepted) */
     unsigned char wrapv;                /* -fwrapv (mcc always wraps) */
     unsigned char visibility;           /* -fvisibility= default STV_* */
+    unsigned char stack_protector;      /* -fstack-protector* (x86_64) */
 
     unsigned char warn_none;
     unsigned char warn_all;

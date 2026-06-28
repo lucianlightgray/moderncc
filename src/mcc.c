@@ -115,6 +115,7 @@ static const char help2[] =
     "  test-coverage                 Instrument the generated code for coverage\n"
     "  short-enums                   Use the smallest underlying type for enums\n"
     "  visibility=<v>                Default symbol visibility (default/hidden/...)\n"
+    "  stack-protector[-all]         Emit stack canaries (x86_64 ELF)\n"
     "  PIC, PIE, pic, pie            Position-independent codegen (accepted)\n"
     "  wrapv, builtin, omit-frame-pointer, (function|data)-sections   (accepted)\n"
     "Target options (-m...):\n"

@@ -210,5 +210,6 @@ static const mcc_golden_t mcc_goldens[] = {
   { "pp_line_markers","pp","preprocess/asm/line_markers.S","1\n3\n20\n22\n30\n40 \"line_markers.S\"\n50 \"file1\"\n60 \"file2\"\n","","","" },
   { "pp_counter","pp","preprocess/directives/counter.c","X1 0\nX2 1\nX3 3\nX4 x 4 y\nX5 x 5 y 6\nX6 b 7\nX7 8 9\nX8 x 10 y x 10 y 11 x2 x 10 y 12 y2 13\nX9 x 14 y 15 x 14 y 15 16 x2 x 14 y 15 17 y2 18\nX10 19 19 20 x2 19 21 y2 22\nX11 23 23 24 x2 23 25 y2 26\nX12 \"__COUNTER__\"\nX13 x27\nX14 x__COUNTER__\nX15 x2828\n","","","" },
   { "std_short_enums","run","exec/types/std_short_enums.c","201112\n1\n","-std=c11 -fshort-enums","","" },
+  { "stack_protector","run","exec/codegen/stack_protector.c","30\n","-fstack-protector-all","","" },
 };
-static const int mcc_goldens_count = 208;
+static const int mcc_goldens_count = 209;

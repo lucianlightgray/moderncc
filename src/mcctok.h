@@ -286,6 +286,7 @@
 #endif
 
      DEF(TOK_alloca, "alloca")
+     DEF(TOK___stack_chk_fail, "__stack_chk_fail")
 
 #if defined MCC_TARGET_PE
      DEF(TOK___chkstk, "__chkstk")
