@@ -19,7 +19,8 @@ int main(void)
     if (neg + 1.5 != 0.0) return 6;
 
     float g = 16777216.0f;                      /* 2^24, float precision edge */
-    if (g + 1.0f != g) return 7;
+    volatile float g1 = g + 1.0f;               /* volatile: round to single   */
+    if (g1 != g) return 7;                       /* (i386 x87 keeps 80-bit else) */
 
     double big = 1e18;
     if ((long long)big != 1000000000000000000LL) return 8;

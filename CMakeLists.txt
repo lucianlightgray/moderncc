@@ -2245,8 +2245,10 @@ foreach(_src IN LISTS _srcs)
     execute_process(
         COMMAND "${MCC}" "-B${MCCBASE}" "--sysroot=${SYSROOT}"
                 "-isystem" "${SYSROOT}/usr/include"
-                "-L${SYSROOT}/usr/lib" "-L${SYSROOT}/usr/lib64"
-                "-L${SYSROOT}/lib" "-L${SYSROOT}/lib64"
+                # lib64 first: on a multilib (amd64) stage3, /lib holds the
+                # 32-bit libc.so linker script and would mis-link otherwise.
+                "-L${SYSROOT}/usr/lib64" "-L${SYSROOT}/lib64"
+                "-L${SYSROOT}/usr/lib" "-L${SYSROOT}/lib"
                 "${_src}" -o "${_out}"
         RESULT_VARIABLE _crc OUTPUT_VARIABLE _co ERROR_VARIABLE _ce)
     if(NOT _crc EQUAL 0)
