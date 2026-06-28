@@ -1739,6 +1739,22 @@ message(STATUS "tcc config.h: CC_NAME=CC_${TCC_CC_NAME} predefs=${_tcc_predefs_v
                "bcheck=${TCC_CONFIG_BCHECK} backtrace=${TCC_CONFIG_BACKTRACE}")
 
 include_directories("${CMAKE_CURRENT_BINARY_DIR}")   # find generated config.h (Makefile: -I$(TOP))
+# The per-target/OS backend sources live in subdirectories (i386/, x86_64/, ...,
+# windows/, linux/, macos/). Put the source root and every backend dir on the
+# global include path so the quoted #includes between them (e.g. libtcc.c ->
+# "i386-gen.c", i386-asm.c -> "x86_64-asm.h", tcctok.h -> "i386-tok.h") resolve
+# regardless of which directory a TU is compiled from.
+include_directories(
+    "${CMAKE_CURRENT_SOURCE_DIR}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/i386"
+    "${CMAKE_CURRENT_SOURCE_DIR}/x86_64"
+    "${CMAKE_CURRENT_SOURCE_DIR}/arm"
+    "${CMAKE_CURRENT_SOURCE_DIR}/arm64"
+    "${CMAKE_CURRENT_SOURCE_DIR}/riscv64"
+    "${CMAKE_CURRENT_SOURCE_DIR}/c67"
+    "${CMAKE_CURRENT_SOURCE_DIR}/windows"
+    "${CMAKE_CURRENT_SOURCE_DIR}/linux"
+    "${CMAKE_CURRENT_SOURCE_DIR}/macos")
 
 # Build-path-first runtime discovery (option TCC_AUTO_TCCDIR). Defined globally
 # so every TU that compiles libtcc.c picks it up -- the native libtcc, the
@@ -1810,14 +1826,14 @@ if(TCC_CONFIG_PREDEFS)
         execute_process(
             COMMAND "${TCC_HOSTCC}"
                     -o "${_c2str_exe}"
-                    "${CMAKE_CURRENT_SOURCE_DIR}/c2str.c"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/build/c2str.c"
             RESULT_VARIABLE _c2str_rc)
         if(NOT _c2str_rc EQUAL 0)
             message(FATAL_ERROR "Host compiler '${TCC_HOSTCC}' failed to build c2str")
         endif()
         set(_c2str_dep "${_c2str_exe}")   # depend on the prebuilt exe, not a target
     else()
-        add_executable(c2str c2str.c)
+        add_executable(c2str build/c2str.c)
         set(_c2str_exe "$<TARGET_FILE:c2str>")
         set(_c2str_dep c2str)
     endif()
@@ -1839,17 +1855,17 @@ endif()
 # Core sources shared by every target (Makefile: CORE_FILES, minus tcc.c which
 # is the driver, kept separate so libtcc can exclude it).
 set(TCC_CORE_SRC
-    libtcc.c tccpp.c tccgen.c tccdbg.c tccelf.c tccasm.c tccrun.c tcctools.c)
+    libtcc.c tccpp.c tccgen.c tccdbg.c linux/tccelf.c tccasm.c tccrun.c tcctools.c)
 
-# Per-CPU backend sources (Makefile: <cpu>_FILES). Selected by TCC_CPU.
-# (Matches the Makefile *_FILES: x86_64 reuses i386-asm.c; c67 uses tcccoff.c;
-# PE/MachO object-format sources are appended just below.)
-set(TCC_BACKEND_i386    i386-gen.c i386-link.c i386-asm.c)
-set(TCC_BACKEND_x86_64  x86_64-gen.c x86_64-link.c i386-asm.c)
-set(TCC_BACKEND_arm     arm-gen.c arm-link.c arm-asm.c)
-set(TCC_BACKEND_arm64   arm64-gen.c arm64-link.c arm64-asm.c)
-set(TCC_BACKEND_riscv64 riscv64-gen.c riscv64-link.c riscv64-asm.c)
-set(TCC_BACKEND_c67     c67-gen.c c67-link.c tcccoff.c)
+# Per-CPU backend sources (Makefile: <cpu>_FILES). Selected by TCC_CPU. Now under
+# per-arch subdirectories. (Matches the Makefile *_FILES: x86_64 reuses
+# i386-asm.c; c67 uses tcccoff.c; PE/MachO object-format sources appended below.)
+set(TCC_BACKEND_i386    i386/i386-gen.c i386/i386-link.c i386/i386-asm.c)
+set(TCC_BACKEND_x86_64  x86_64/x86_64-gen.c x86_64/x86_64-link.c i386/i386-asm.c)
+set(TCC_BACKEND_arm     arm/arm-gen.c arm/arm-link.c arm/arm-asm.c)
+set(TCC_BACKEND_arm64   arm64/arm64-gen.c arm64/arm64-link.c arm64/arm64-asm.c)
+set(TCC_BACKEND_riscv64 riscv64/riscv64-gen.c riscv64/riscv64-link.c riscv64/riscv64-asm.c)
+set(TCC_BACKEND_c67     c67/c67-gen.c c67/c67-link.c c67/tcccoff.c)
 
 if(NOT DEFINED TCC_BACKEND_${TCC_CPU})
     message(FATAL_ERROR "No backend source list for CPU '${TCC_CPU}' (configure: 'Unsupported CPU')")
@@ -1858,9 +1874,9 @@ set(TCC_BACKEND_SRC ${TCC_BACKEND_${TCC_CPU}})
 
 # OS-specific object-format sources (Makefile: tccpe.c for PE, tccmacho.c for OSX)
 if(TCC_TARGETOS STREQUAL "WIN32")
-    list(APPEND TCC_BACKEND_SRC tccpe.c)
+    list(APPEND TCC_BACKEND_SRC windows/tccpe.c)
 elseif(TCC_TARGETOS STREQUAL "Darwin")
-    list(APPEND TCC_BACKEND_SRC tccmacho.c)
+    list(APPEND TCC_BACKEND_SRC macos/tccmacho.c)
 endif()
 
 # ===========================================================================
@@ -2130,15 +2146,23 @@ function(tcc_build_libtcc1 tname tcctgt cpu os native archive objdir out_extra)
     # XFLAGS (lib/Makefile XFLAGS-unx / XFLAGS-win, then `XFLAGS += -I$(TOP)`).
     # -B lets tcc find include/; -I gives the headers; -I<build> is the $(TOP)
     # that holds config.h (needed by native bt-exe.c / bcheck.c -> tcc.h).
+    # tcc.h pulls in the per-arch backend (TARGET_DEFS_ONLY -> "<arch>-gen.c"),
+    # which now lives in a subdir, so -I every backend dir too.
+    set(_arch_incs
+        -I${CMAKE_CURRENT_SOURCE_DIR}/i386    -I${CMAKE_CURRENT_SOURCE_DIR}/x86_64
+        -I${CMAKE_CURRENT_SOURCE_DIR}/arm     -I${CMAKE_CURRENT_SOURCE_DIR}/arm64
+        -I${CMAKE_CURRENT_SOURCE_DIR}/riscv64 -I${CMAKE_CURRENT_SOURCE_DIR}/c67
+        -I${CMAKE_CURRENT_SOURCE_DIR}/windows -I${CMAKE_CURRENT_SOURCE_DIR}/linux
+        -I${CMAKE_CURRENT_SOURCE_DIR}/macos)
     if(_win)
         set(_xflags -B${CMAKE_CURRENT_SOURCE_DIR}/win32
                     -I${CMAKE_CURRENT_SOURCE_DIR}/include
                     -I${CMAKE_CURRENT_SOURCE_DIR}
-                    -I${CMAKE_BINARY_DIR})
+                    -I${CMAKE_BINARY_DIR} ${_arch_incs})
     else()
         set(_xflags -B${CMAKE_CURRENT_SOURCE_DIR}
                     -I${CMAKE_CURRENT_SOURCE_DIR}
-                    -I${CMAKE_BINARY_DIR})
+                    -I${CMAKE_BINARY_DIR} ${_arch_incs})
     endif()
 
     # tcc finds libtcc1.a AND the standalone EXTRA_O objects (runmain.o, bcheck.o,
@@ -2156,7 +2180,8 @@ function(tcc_build_libtcc1 tname tcctgt cpu os native archive objdir out_extra)
         set(_use_gcc ON)
         set(_gccflags -fPIC -fno-omit-frame-pointer -Wno-unused-function
                       -Wno-unused-variable -I${CMAKE_CURRENT_SOURCE_DIR}
-                      -I${CMAKE_CURRENT_SOURCE_DIR}/include -I${CMAKE_BINARY_DIR})
+                      -I${CMAKE_CURRENT_SOURCE_DIR}/include -I${CMAKE_BINARY_DIR}
+                      ${_arch_incs})
         if(TCC_CONFIG_DWARF STREQUAL "")
             set(_bflags_gcc -gstabs)
         else()
@@ -3445,5 +3470,5 @@ endif()
 # Source package: tarball/zip of the tree minus VCS + build dirs.
 set(CPACK_SOURCE_GENERATOR "TGZ;ZIP")
 set(CPACK_SOURCE_IGNORE_FILES
-    "/\\.git/" "/build/" "/cmake-build-[^/]*/" "/\\.idea/" "\\.o$" "\\.a$")
+    "/\\.git/" "/cmake-build-[^/]*/" "/\\.idea/" "\\.o$" "\\.a$")
 include(CPack)

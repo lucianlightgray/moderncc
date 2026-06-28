@@ -6628,7 +6628,7 @@ special_math_val:
 
             if (ret_nregs < 0) {
                 vsetc(&ret.type, ret.r, &ret.c);
-#if defined(TCC_TARGET_RISCV64) || defined(TCC_TARGET_X86_64)
+#if defined(TCC_TARGET_RISCV64) || (defined(TCC_TARGET_X86_64) && !defined(TCC_TARGET_PE))
                 arch_transfer_ret_regs(1);
 #endif
             } else {
@@ -7126,7 +7126,7 @@ static void gfunc_return(CType *func_type)
         ret_nregs = gfunc_sret(func_type, func_var, &ret_type,
                                &ret_align, &regsize);
         if (ret_nregs < 0) {
-#if defined(TCC_TARGET_RISCV64) || defined(TCC_TARGET_X86_64)
+#if defined(TCC_TARGET_RISCV64) || (defined(TCC_TARGET_X86_64) && !defined(TCC_TARGET_PE))
             arch_transfer_ret_regs(0);
 #endif
         } else if (0 == ret_nregs) {

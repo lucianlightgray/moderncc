@@ -5,7 +5,8 @@
  * "build the compiler in C" path (Phase 6 of TODO.md); CMakeLists.txt remains
  * the full-featured build (cross targets, install, packaging, the test suite).
  *
- *   cc -o build build.c && ./build [--cc <cc>] [--out <dir>] [--run]
+ *   cc build/build.c -o build && ./build [--cc <cc>] [--out <dir>] [--run]
+ *   (run from the repo root so the relative source paths resolve)
  *
  * Steps, mirroring what CMake's sections 3/5/9 do for a native x86_64 build:
  *   1. write <out>/config.h            (version + native-target defaults)
@@ -77,7 +78,11 @@ int main(int argc, char **argv){
 
     /* 2. compile the tcc driver (ONE_SOURCE pulls in libtcc.c -> all TUs) --- */
     printf("[2/4] cc tcc.c -> tcc\n");
+    /* The per-arch / per-OS backend sources live in subdirs; -I each so the
+       quoted #includes inside libtcc.c (pulled in by ONE_SOURCE) resolve.
+       Run this from the repo root: `cc build/build.c -o build && ./build`. */
     if (run("\"%s\" -O2 -DONE_SOURCE=1 -DTCC_TARGET_X86_64 -I\"%s\" -I. "
+            "-Ii386 -Ix86_64 -Iarm -Iarm64 -Iriscv64 -Ic67 -Iwindows -Ilinux -Imacos "
             "-o \"%s/tcc\" tcc.c -lm -ldl -lpthread", CC, OUT, OUT)) return 1;
 
     /* 3. runtime headers --------------------------------------------------- */
@@ -98,14 +103,16 @@ int main(int argc, char **argv){
     /* standalone runtime objects (NOT in libtcc1.a): the bounds-checker and the
      * backtrace/-run runtime, which `tcc -b` / `tcc -run` link from the tccdir. */
     printf("      + bcheck/backtrace runtime objects\n");
-    /* bcheck.c / bt-exe.c #include tcc.h -> config.h, so -I<out> (config.h) and
-     * -I. (tcc.h) are needed alongside -Iinclude (runtime headers). */
+    /* bcheck.c / bt-exe.c #include tcc.h -> config.h (-I<out>) and the per-arch
+     * backend (-Ii386/-Ix86_64/... ), so add the same arch includes used above. */
+    const char *AINC = "-Ii386 -Ix86_64 -Iarm -Iarm64 -Iriscv64 -Ic67 "
+                       "-Iwindows -Ilinux -Imacos";
     if (run("\"%s/tcc\" -B\"%s\" -c lib/bcheck.c -o \"%s/bcheck.o\" -bt "
-            "-I\"%s\" -Iinclude -I.", OUT, OUT, OUT, OUT)) return 1;
+            "-I\"%s\" -Iinclude -I. %s", OUT, OUT, OUT, OUT, AINC)) return 1;
     const char *bt[] = { "bt-exe", "bt-log", "runmain", 0 };
     for (int i = 0; bt[i]; i++)
-        if (run("\"%s/tcc\" -B\"%s\" -c lib/%s.c -o \"%s/%s.o\" -I\"%s\" -Iinclude -I.",
-                OUT, OUT, bt[i], OUT, bt[i], OUT)) return 1;
+        if (run("\"%s/tcc\" -B\"%s\" -c lib/%s.c -o \"%s/%s.o\" -I\"%s\" -Iinclude -I. %s",
+                OUT, OUT, bt[i], OUT, bt[i], OUT, AINC)) return 1;
 
     printf("\nbuild: done -- %s/tcc (use: %s/tcc -B%s <file.c>)\n", OUT, OUT, OUT);
 
