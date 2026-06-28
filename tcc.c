@@ -178,8 +178,6 @@ static const char version[] =
         "i386"
 #elif defined TCC_TARGET_X86_64
         "x86_64"
-#elif defined TCC_TARGET_C67
-        "C67"
 #elif defined TCC_TARGET_ARM
         "ARM"
 # ifdef TCC_ARM_EABI

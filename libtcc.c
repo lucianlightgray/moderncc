@@ -41,10 +41,6 @@
 #include "arm64-gen.c"
 #include "arm64-link.c"
 #include "arm64-asm.c"
-#elif defined(TCC_TARGET_C67)
-#include "c67-gen.c"
-#include "c67-link.c"
-#include "tcccoff.c"
 #elif defined(TCC_TARGET_X86_64)
 #include "x86_64-gen.c"
 #include "x86_64-link.c"
@@ -1214,11 +1210,6 @@ static int tcc_add_binary(TCCState *s1, int flags, const char *filename, int fd)
         break;
 #endif
 
-#ifdef TCC_TARGET_COFF
-    case AFF_BINTYPE_C67:
-        ret = tcc_load_coff(s1, fd);
-        break;
-#endif
     }
 
     close(fd);
@@ -1528,10 +1519,6 @@ static int tcc_set_linker(TCCState *s, const char *optarg)
                 s->output_format = TCC_OUTPUT_FORMAT_ELF;
             else if (0==strcmp("binary", o.arg))
                 s->output_format = TCC_OUTPUT_FORMAT_BINARY;
-#if defined TCC_TARGET_COFF
-            else if (0==strcmp("coff", o.arg))
-                s->output_format = TCC_OUTPUT_FORMAT_COFF;
-#endif
             else
                 goto err;
         } else if (link_option(&o, "export-all-symbols|export-dynamic|E")) {
@@ -1856,8 +1843,6 @@ static const char dumpmachine_str[] =
     "i386-pc"
 #elif defined TCC_TARGET_X86_64
     "x86_64-pc"
-#elif defined TCC_TARGET_C67
-    "c67"
 #elif defined TCC_TARGET_ARM
     "arm"
 #elif defined TCC_TARGET_ARM64

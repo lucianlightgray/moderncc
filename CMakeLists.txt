@@ -822,8 +822,8 @@ endif()
 
 # --- CPU normalization (configure: the `case "$cpu"` block) ----------------
 # Maps CMAKE_SYSTEM_PROCESSOR onto tcc's canonical names: i386, x86_64, arm,
-# arm64, riscv64 (c67 is cross-only; ppc/mips/s390/alpha are listed in configure
-# but have no backend here).
+# arm64, riscv64 (ppc/mips/s390/alpha are listed in configure but have no
+# backend here).
 set(_proc "${CMAKE_SYSTEM_PROCESSOR}")
 set(_arm_cpuver "")
 if(_proc MATCHES "^(x86|i[3-6]86|i86pc|BePC)$")
@@ -1016,10 +1016,10 @@ message(STATUS "tcc target: CPU=${TCC_CPU} OS=${TCC_TARGETOS} bigendian=${TCC_BI
 # and host-autodetected macros the code merely *reads* (folded in from the
 # former docs/feature-matrix.md, now removed — this catalog supersedes it).
 #
-# Scale: the compiler sources (*.c/*.h, excluding the elf/dwarf/coff/stab system
+# Scale: the compiler sources (*.c/*.h, excluding the elf/dwarf/stab system
 # tables) hold ~1,100 #if/#ifdef/#ifndef/#elif directives, ~360 distinct
 # conditions, driven by ~70 identifiers. Regenerate the raw frequency ranking:
-#   files=$(ls *.c *.h | grep -vE '^(elf|dwarf|coff|stab)\.h$')
+#   files=$(ls *.c *.h | grep -vE '^(elf|dwarf|stab)\.h$')
 #   grep -hE '^\s*#\s*(if|ifdef|ifndef|elif)\b' $files \
 #     | grep -oE '[A-Za-z_][A-Za-z0-9_]*' \
 #     | grep -vwE 'defined|sizeof' | sort | uniq -c | sort -rn
@@ -1039,7 +1039,7 @@ message(STATUS "tcc target: CPU=${TCC_CPU} OS=${TCC_TARGETOS} bigendian=${TCC_BI
 # --- 1. Target selectors (set by the build, not by the user directly) --------
 # Exactly one CPU macro is active. A native build defines it inside the
 #   `#if !(TCC_TARGET_I386 || TCC_TARGET_X86_64 || TCC_TARGET_ARM ||
-#     TCC_TARGET_ARM64 || TCC_TARGET_RISCV64 || TCC_TARGET_C67)`
+#     TCC_TARGET_ARM64 || TCC_TARGET_RISCV64)`
 # guard; cross builds pass -DTCC_TARGET_* on the command line (so the guard
 # suppresses the native block). If *no* CPU macro is defined, tcc.h:159
 # auto-selects from the host (__x86_64__->X86_64, __arm__->ARM+EABI+VFP+HARDFLOAT,
@@ -1051,8 +1051,6 @@ message(STATUS "tcc target: CPU=${TCC_CPU} OS=${TCC_TARGETOS} bigendian=${TCC_BI
 #   TCC_TARGET_ARM      32-bit ARM backend
 #   TCC_TARGET_ARM64    AArch64 backend
 #   TCC_TARGET_RISCV64  RISC-V 64 backend
-#   TCC_TARGET_C67      TI C67x backend (cross only; auto-defines
-#                       TCC_TARGET_COFF, tcc.h:379)
 #   TCC_TARGET_PE       Windows PE object/exe format (selects tccpe.c)
 #   TCC_TARGET_MACHO    Apple Mach-O format (selects tccmacho.c)
 #   TARGETOS_FreeBSD / _FreeBSD_kernel / _OpenBSD / _NetBSD
@@ -1067,7 +1065,6 @@ message(STATUS "tcc target: CPU=${TCC_CPU} OS=${TCC_TARGETOS} bigendian=${TCC_BI
 #   TARGETOS_BSD                   any TARGETOS_*BSD* (tcc.h:219)
 #   TARGETOS_Linux                 not PE, not MachO, not BSD (tcc.h:225) — for
 #                                  tccdefs_.h
-#   TCC_TARGET_COFF                defined for C67 (tcc.h:379)
 #   TCC_TARGET_NATIVE_STRUCT_COPY  defined in x86_64-gen.c:111
 #   TCC_EH_FRAME                   1 unless ELF_OBJ_ONLY / ARM / BSD (tcc.h:1847)
 #   TCC_USING_DOUBLE_FOR_LDOUBLE   PE, or MachO+ARM64 (tcc.h:236); also ARM when
@@ -1107,8 +1104,7 @@ message(STATUS "tcc target: CPU=${TCC_CPU} OS=${TCC_TARGETOS} bigendian=${TCC_BI
 # tcc.h then #undefs). configure only ever emits the 0 form (the --config-*=no
 # case); the enabled state emits nothing.
 #   CONFIG_TCC_BCHECK      (default 1) bounds/memory checker (-b); disabled by
-#                          `#define ...=0` / --config-bcheck=no; c67-gen.c:111
-#                          #undefs it
+#                          `#define ...=0` / --config-bcheck=no
 #   CONFIG_TCC_BACKTRACE   (default 1) built-in stack backtraces (-bt, lib/bt-*);
 #                          disabled by `#define ...=0` / --config-backtrace=no
 #   CONFIG_NEW_MACHO       (default 1) new Mach-O chained-fixups codepath
@@ -1241,7 +1237,7 @@ message(STATUS "tcc target: CPU=${TCC_CPU} OS=${TCC_TARGETOS} bigendian=${TCC_BI
 #   #define GCC_MINOR <n>
 #
 #   #if !(TCC_TARGET_I386 || TCC_TARGET_X86_64 || TCC_TARGET_ARM \
-#      || TCC_TARGET_ARM64 || TCC_TARGET_RISCV64 || TCC_TARGET_C67)
+#      || TCC_TARGET_ARM64 || TCC_TARGET_RISCV64)
 #      /* native-guard block */
 #      #define TCC_TARGET_<cpu> 1
 #      /* + TCC_TARGET_PE / TCC_TARGET_MACHO / TARGETOS_* as applicable      */
@@ -1295,7 +1291,7 @@ message(STATUS "tcc target: CPU=${TCC_CPU} OS=${TCC_TARGETOS} bigendian=${TCC_BI
 # 9d. Developer debug/trace toggles (default off; edit the source to enable; no
 #     build-system hook):
 #   MEM_DEBUG TAL_DEBUG TAL_INFO PP_DEBUG INC_DEBUG BF_DEBUG SYM_DEBUG
-#   PARSE_DEBUG ASM_DEBUG DEBUG_RELOC DEBUG_VERSION ASSEMBLY_LISTING_C67
+#   PARSE_DEBUG ASM_DEBUG DEBUG_RELOC DEBUG_VERSION
 #   PE_PRINT_SECTIONS
 #
 # Disabling CONFIG_TCC_BCHECK compiles out ~91 guarded blocks; TCC_IS_NATIVE
@@ -1310,7 +1306,6 @@ set(_tcc_cpu_define_x86_64  TCC_TARGET_X86_64)
 set(_tcc_cpu_define_arm     TCC_TARGET_ARM)
 set(_tcc_cpu_define_arm64   TCC_TARGET_ARM64)
 set(_tcc_cpu_define_riscv64 TCC_TARGET_RISCV64)
-set(_tcc_cpu_define_c67     TCC_TARGET_C67)
 # --- Compiler identity (configure: conftest.c compiler/version/minor probes) -
 # config.h carries CC_NAME / GCC_MAJOR / GCC_MINOR; the compiler core ignores
 # them but tests/tcctest.c branches on `CC_NAME == CC_clang` etc.
@@ -1462,7 +1457,7 @@ endif()
 #   -Wunused-parameter  : uniform handler/callback signatures;
 #   -Wtype-limits       : target-conditional constant comparisons (e.g.
 #                         CONFIG_RUNMEM_RO==0 makes `f >= 0` always true here);
-#   -Wunterminated-string-initialization (gcc>=15): the fixed-width ar/coff
+#   -Wunterminated-string-initialization (gcc>=15): the fixed-width ar
 #                         header fields that deliberately omit the NUL terminator.
 # Every flag is probed with check_c_compiler_flag so a non-GCC/Clang or older
 # compiler simply drops the ones it does not understand.
@@ -1727,7 +1722,7 @@ file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/config.h"
  * configure suppresses this whole block for cross builds (which pass
  * -DTCC_TARGET_* on the command line, making the guard false). */
 #if !(TCC_TARGET_I386 || TCC_TARGET_X86_64 || TCC_TARGET_ARM \\
-   || TCC_TARGET_ARM64 || TCC_TARGET_RISCV64 || TCC_TARGET_C67)
+   || TCC_TARGET_ARM64 || TCC_TARGET_RISCV64)
 ${_nat}#endif
 
 /* ---- always-emitted defines (outside the native guard) ------------------ */
@@ -1751,7 +1746,6 @@ include_directories(
     "${CMAKE_CURRENT_SOURCE_DIR}/arm"
     "${CMAKE_CURRENT_SOURCE_DIR}/arm64"
     "${CMAKE_CURRENT_SOURCE_DIR}/riscv64"
-    "${CMAKE_CURRENT_SOURCE_DIR}/c67"
     "${CMAKE_CURRENT_SOURCE_DIR}/windows"
     "${CMAKE_CURRENT_SOURCE_DIR}/linux"
     "${CMAKE_CURRENT_SOURCE_DIR}/macos")
@@ -1853,7 +1847,7 @@ endif()
 # 6. SOURCE FILE LISTS  (Makefile: CORE_FILES + per-target *_FILES)
 # ===========================================================================
 # The source tree is organised by concern (see section above): core TUs at the
-# root, per-CPU backends in i386/ x86_64/ arm/ arm64/ riscv64/ c67/, the OS
+# root, per-CPU backends in i386/ x86_64/ arm/ arm64/ riscv64/, the OS
 # object-format writers in windows/ linux/ macos/. So the file lists are GLOBbed
 # straight from those directories (CONFIGURE_DEPENDS re-runs the glob when files
 # are added/removed). The few cross-references are spelled out explicitly.
@@ -2085,9 +2079,6 @@ endfunction()
 #   objdir      : where to drop .o files
 #   out_extra   : parent-scope var name to receive standalone EXTRA_O .o paths
 function(tcc_build_libtcc1 tname tcctgt cpu os native archive objdir out_extra)
-    if(cpu STREQUAL "c67")
-        return()   # c67 has no runtime lib (lib/Makefile LIBTCC1_X filters it out)
-    endif()
     set(_common stdatomic atomic builtin alloca alloca-bt)
     if(cpu STREQUAL "i386" OR cpu STREQUAL "x86_64")
         set(_objs libtcc1 ${_common})
@@ -2155,7 +2146,7 @@ function(tcc_build_libtcc1 tname tcctgt cpu os native archive objdir out_extra)
     set(_arch_incs
         -I${CMAKE_CURRENT_SOURCE_DIR}/i386    -I${CMAKE_CURRENT_SOURCE_DIR}/x86_64
         -I${CMAKE_CURRENT_SOURCE_DIR}/arm     -I${CMAKE_CURRENT_SOURCE_DIR}/arm64
-        -I${CMAKE_CURRENT_SOURCE_DIR}/riscv64 -I${CMAKE_CURRENT_SOURCE_DIR}/c67
+        -I${CMAKE_CURRENT_SOURCE_DIR}/riscv64
         -I${CMAKE_CURRENT_SOURCE_DIR}/windows -I${CMAKE_CURRENT_SOURCE_DIR}/linux
         -I${CMAKE_CURRENT_SOURCE_DIR}/macos)
     if(_win)
@@ -2297,7 +2288,7 @@ endif()
 # 10. CROSS COMPILERS  (Makefile: TCC_X list, PROGS_CROSS, LIBTCC1_CROSS)
 # ===========================================================================
 # TCC_X = i386 x86_64 i386-win32 x86_64-win32 x86_64-osx arm arm64 arm64-win32
-#         arm-wince c67 riscv64 arm64-osx
+#         arm-wince riscv64 arm64-osx
 if(TCC_ENABLE_CROSS)
     # Install dir for the cross libtcc1 archives (= native tccdir).
     if("${TCC_INSTALL_TCCDIR}" STREQUAL "")
@@ -2311,7 +2302,7 @@ if(TCC_ENABLE_CROSS)
     # backends, selected by the DEF-<target> macros) + tcctools.c. This mirrors
     # the Makefile's cross rule (ONE_SOURCE defaults to yes for cross).
     set(TCC_X i386 x86_64 i386-win32 x86_64-win32 x86_64-osx arm arm64
-              arm64-win32 arm-wince c67 riscv64 arm64-osx)
+              arm64-win32 arm-wince riscv64 arm64-osx)
     foreach(_t IN LISTS TCC_X)
         # DEF-<target> macro table (Makefile lines 99-123) + cpu/os for the runtime.
         set(_cdefs "")
@@ -2348,9 +2339,6 @@ if(TCC_ENABLE_CROSS)
             set(_ccpu arm)
             set(_cos WIN32)
             set(_cdefs TCC_TARGET_ARM TCC_ARM_VFP TCC_ARM_EABI TCC_ARM_HARDFLOAT TCC_TARGET_PE)
-        elseif(_t STREQUAL "c67")
-            set(_ccpu c67)
-            set(_cdefs TCC_TARGET_C67)
         elseif(_t STREQUAL "riscv64")
             set(_ccpu riscv64)
             set(_cdefs TCC_TARGET_RISCV64)
@@ -2395,9 +2383,6 @@ if(TCC_ENABLE_CROSS)
             target_compile_definitions(${_t}-tcc PRIVATE   # Makefile DEF-win
                 "CONFIG_TCCDIR=\"${_tccdir_install}/win32\"")
         endif()
-        if(_t STREQUAL "c67")
-            target_compile_options(${_t}-tcc PRIVATE -w)   # DEF-c67 adds -w
-        endif()
         if(TCC_GITHASH)
             target_compile_definitions(${_t}-tcc PRIVATE "TCC_GITHASH=\"${TCC_GITHASH}\"")
         endif()
@@ -2407,14 +2392,12 @@ if(TCC_ENABLE_CROSS)
         install(TARGETS ${_t}-tcc RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 
         # cross runtime archive, compiled BY this cross tcc (native=OFF: no
-        # backtrace/bcheck/runmain). c67 has no runtime lib.
-        if(NOT _ccpu STREQUAL "c67")
-            tcc_build_libtcc1(${_t}-libtcc1 ${_t}-tcc "${_ccpu}" "${_cos}" OFF
-                "${CMAKE_BINARY_DIR}/${_t}-libtcc1.a"
-                "${CMAKE_BINARY_DIR}/lib-${_t}" _cross_extra)
-            install(FILES "${CMAKE_BINARY_DIR}/${_t}-libtcc1.a"
-                DESTINATION "${_tccdir_install}")
-        endif()
+        # backtrace/bcheck/runmain).
+        tcc_build_libtcc1(${_t}-libtcc1 ${_t}-tcc "${_ccpu}" "${_cos}" OFF
+            "${CMAKE_BINARY_DIR}/${_t}-libtcc1.a"
+            "${CMAKE_BINARY_DIR}/lib-${_t}" _cross_extra)
+        install(FILES "${CMAKE_BINARY_DIR}/${_t}-libtcc1.a"
+            DESTINATION "${_tccdir_install}")
     endforeach()
 endif()
 
@@ -2706,6 +2689,17 @@ if(TCC_TARGETOS STREQUAL "WIN32")
     --- grischka
 ]==])
     install(FILES "${CMAKE_BINARY_DIR}/tcc-win32.txt" DESTINATION doc)
+endif()
+
+# ===========================================================================
+# 13b. NATIVE BUILDER TOOL  (build/build.c)
+# ===========================================================================
+# build/build.c is the self-contained host-CC bootstrap builder (normally run as
+# `cc build/build.c -o build && ./build`). Give it a CMake target too so the file
+# is built/verified by the tree. It is host-only POSIX code (system(), uname),
+# so it builds only on a UNIX host that isn't cross-compiling.
+if(UNIX AND NOT CMAKE_CROSSCOMPILING)
+    add_executable(tccbuild build/build.c)
 endif()
 
 # ===========================================================================
@@ -3356,13 +3350,44 @@ endif()
         add_custom_target(arm-asm-testsuite
             COMMAND "${CMAKE_COMMAND}" -DTCC=$<TARGET_FILE:arm-tcc>
                     "-DCROSS_COMPILE=${TCC_ARM_CROSS_COMPILE}"
-                    "-DTOKH=${CMAKE_CURRENT_SOURCE_DIR}/arm-tok.h" -P "${_armasm_drv}"
+                    "-DTOKH=${CMAKE_CURRENT_SOURCE_DIR}/arm/arm-tok.h" -P "${_armasm_drv}"
             DEPENDS arm-tcc USES_TERMINAL
             COMMENT "arm-asm-testsuite: tcc vs GNU as over arm-tok.h")
     endif()
 
+    # --- orphan-source coverage --------------------------------------------
+    # Standalone programs not built by any other target: the examples and the
+    # boundtest/testfp/bug test programs. Their run semantics vary (X11 in ex4,
+    # nonzero exits, bug.c has no main), so compile-check each with the freshly
+    # built tcc -- enough to verify the file is live C the compiler accepts.
+    # GLOB so new files are covered.
+    file(GLOB _orphan_srcs CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/examples/*.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/boundtest.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/testfp.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/bug.c")
+    foreach(_f IN LISTS _orphan_srcs)
+        get_filename_component(_n "${_f}" NAME_WE)
+        add_test(NAME compile.${_n} COMMAND ${TCC_EMULATOR} "${_tcc_exe}"
+            "-B${_bdir}" "-I${_idir}" -c "${_f}"
+            -o "${CMAKE_BINARY_DIR}/orphan_${_n}.o")
+        set_tests_properties(compile.${_n} PROPERTIES FIXTURES_REQUIRED TCC_BUILT)
+    endforeach()
+    # Windows demos need a PE-target tcc (windows.h + the win32 header tree).
+    if(TCC_TARGETOS STREQUAL "WIN32")
+        file(GLOB _win_ex CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/win32/examples/*.c")
+        foreach(_f IN LISTS _win_ex)
+            get_filename_component(_n "${_f}" NAME_WE)
+            add_test(NAME compile.win32.${_n} COMMAND ${TCC_EMULATOR} "${_tcc_exe}"
+                "-B${CMAKE_CURRENT_SOURCE_DIR}/win32"
+                "-I${CMAKE_CURRENT_SOURCE_DIR}/win32/include" "-I${_idir}"
+                -c "${_f}" -o "${CMAKE_BINARY_DIR}/orphan_win_${_n}.o")
+            set_tests_properties(compile.win32.${_n} PROPERTIES FIXTURES_REQUIRED TCC_BUILT)
+        endforeach()
+    endif()
+
     message(STATUS "tcc tests: registered pp + tests2 + libtcc/abitest/tcctest "
-                   "+ hello/vla (ctest)")
+                   "+ hello/vla + orphan compile checks (ctest)")
 endif()
 
 # ===========================================================================

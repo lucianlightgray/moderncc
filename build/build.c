@@ -82,7 +82,7 @@ int main(int argc, char **argv){
        quoted #includes inside libtcc.c (pulled in by ONE_SOURCE) resolve.
        Run this from the repo root: `cc build/build.c -o build && ./build`. */
     if (run("\"%s\" -O2 -DONE_SOURCE=1 -DTCC_TARGET_X86_64 -I\"%s\" -I. "
-            "-Ii386 -Ix86_64 -Iarm -Iarm64 -Iriscv64 -Ic67 -Iwindows -Ilinux -Imacos "
+            "-Ii386 -Ix86_64 -Iarm -Iarm64 -Iriscv64 -Iwindows -Ilinux -Imacos "
             "-o \"%s/tcc\" tcc.c -lm -ldl -lpthread", CC, OUT, OUT)) return 1;
 
     /* 3. runtime headers --------------------------------------------------- */
@@ -105,7 +105,7 @@ int main(int argc, char **argv){
     printf("      + bcheck/backtrace runtime objects\n");
     /* bcheck.c / bt-exe.c #include tcc.h -> config.h (-I<out>) and the per-arch
      * backend (-Ii386/-Ix86_64/... ), so add the same arch includes used above. */
-    const char *AINC = "-Ii386 -Ix86_64 -Iarm -Iarm64 -Iriscv64 -Ic67 "
+    const char *AINC = "-Ii386 -Ix86_64 -Iarm -Iarm64 -Iriscv64 "
                        "-Iwindows -Ilinux -Imacos";
     if (run("\"%s/tcc\" -B\"%s\" -c lib/bcheck.c -o \"%s/bcheck.o\" -bt "
             "-I\"%s\" -Iinclude -I. %s", OUT, OUT, OUT, OUT, AINC)) return 1;

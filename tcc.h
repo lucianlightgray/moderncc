@@ -153,12 +153,11 @@ extern long double strtold (const char *__nptr, char **__endptr);
 /* #define TCC_TARGET_X86_64 *//* x86-64 code generator */
 /* #define TCC_TARGET_ARM    *//* ARMv4 code generator */
 /* #define TCC_TARGET_ARM64  *//* ARMv8 code generator */
-/* #define TCC_TARGET_C67    *//* TMS320C67xx code generator */
 /* #define TCC_TARGET_RISCV64 *//* risc-v code generator */
 
 /* default target is I386 */
 #if !defined(TCC_TARGET_I386) && !defined(TCC_TARGET_ARM) && \
-    !defined(TCC_TARGET_ARM64) && !defined(TCC_TARGET_C67) && \
+    !defined(TCC_TARGET_ARM64) && \
     !defined(TCC_TARGET_X86_64) && !defined(TCC_TARGET_RISCV64)
 # if defined __x86_64__
 #  define TCC_TARGET_X86_64
@@ -384,11 +383,6 @@ extern long double strtold (const char *__nptr, char **__endptr);
 # include "arm64-gen.c"
 # include "arm64-link.c"
 # include "arm64-asm.c"
-#elif defined TCC_TARGET_C67
-# define TCC_TARGET_COFF
-# include "coff.h"
-# include "c67-gen.c"
-# include "c67-link.c"
 #elif defined(TCC_TARGET_RISCV64)
 # include "riscv64-gen.c"
 # include "riscv64-link.c"
@@ -1304,7 +1298,6 @@ ST_FUNC int tcc_add_file_internal(TCCState *s1, const char *filename, int flags)
 #define AFF_BINTYPE_REL 1
 #define AFF_BINTYPE_DYN 2
 #define AFF_BINTYPE_AR  3
-#define AFF_BINTYPE_C67 4
 
 /* return value of tcc_add_file_internal(): 0, -1, or FILE_NOT_FOUND */
 #define FILE_NOT_FOUND -2
@@ -1529,7 +1522,7 @@ ST_FUNC void indir(void);
 ST_FUNC void unary(void);
 ST_FUNC void gexpr(void);
 ST_FUNC int expr_const(void);
-#if defined CONFIG_TCC_BCHECK || defined TCC_TARGET_C67
+#ifdef CONFIG_TCC_BCHECK
 ST_FUNC Sym *get_sym_ref(CType *type, Section *sec, unsigned long offset, unsigned long size);
 #endif
 #if defined TCC_TARGET_X86_64 && !defined TCC_TARGET_PE
@@ -1545,10 +1538,9 @@ ST_FUNC Sym *gfunc_set_param(Sym *s, int c, int byref);
 
 #define TCC_OUTPUT_FORMAT_ELF    0 /* default output format: ELF */
 #define TCC_OUTPUT_FORMAT_BINARY 1 /* binary image output */
-#define TCC_OUTPUT_FORMAT_COFF   2 /* COFF */
 #define TCC_OUTPUT_DYN           TCC_OUTPUT_DLL
 
-#define ARMAG  "!<arch>\n"    /* For COFF and a.out archives */
+#define ARMAG  "!<arch>\n"    /* For ar archives */
 
 typedef struct {
     unsigned int n_strx;         /* index into string table of name */
@@ -1658,9 +1650,7 @@ ST_FUNC void gen_cvt_ftoi(int t);
 ST_FUNC void gen_cvt_itof(int t);
 ST_FUNC void gen_cvt_ftof(int t);
 ST_FUNC void ggoto(void);
-#ifndef TCC_TARGET_C67
 ST_FUNC void o(unsigned int c);
-#endif
 ST_FUNC void gen_vla_sp_save(int addr);
 ST_FUNC void gen_vla_sp_restore(int addr);
 ST_FUNC void gen_vla_alloc(CType *type, int align);
@@ -1748,16 +1738,6 @@ ST_FUNC void gen_clear_cache(void);
    _Complex` (returned in st0:st1, which the generic ret path can't express). */
 #ifdef TCC_TARGET_X86_64
 ST_FUNC void arch_transfer_ret_regs(int);
-#endif
-
-/* ------------ c67-gen.c ------------ */
-#ifdef TCC_TARGET_C67
-#endif
-
-/* ------------ tcccoff.c ------------ */
-#ifdef TCC_TARGET_COFF
-ST_FUNC int tcc_output_coff(TCCState *s1, FILE *f);
-ST_FUNC int tcc_load_coff(TCCState * s1, int fd);
 #endif
 
 /* ------------ tccasm.c ------------ */

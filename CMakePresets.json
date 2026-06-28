@@ -4,8 +4,8 @@
   "configurePresets": [
     {
       "name": "debug",
-      "displayName": "Debug (Ninja)",
-      "generator": "Ninja",
+      "displayName": "Debug (Unix Makefiles)",
+      "generator": "Unix Makefiles",
       "binaryDir": "${sourceDir}/cmake-build-${presetName}",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
     },

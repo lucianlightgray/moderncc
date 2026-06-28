@@ -2788,11 +2788,6 @@ static int tcc_write_elf_file(TCCState *s1, const char *filename, int phnum,
         return tcc_error_noabort("could not write '%s: %s'", filename, strerror(errno));
     if (s1->verbose)
         printf("<- %s\n", filename);
-#ifdef TCC_TARGET_COFF
-    if (s1->output_format == TCC_OUTPUT_FORMAT_COFF)
-        tcc_output_coff(s1, f);
-    else
-#endif
     if (s1->output_format == TCC_OUTPUT_FORMAT_ELF)
         ret = tcc_output_elf(s1, f, phnum, phdr);
     else
@@ -3236,10 +3231,6 @@ ST_FUNC int tcc_object_type(int fd, ElfW(Ehdr) *h)
     } else if (size >= 8) {
         if (0 == memcmp(h, ARMAG, 8))
             return AFF_BINTYPE_AR;
-#ifdef TCC_TARGET_COFF
-        if (((struct filehdr*)h)->f_magic == COFF_C67_MAGIC)
-            return AFF_BINTYPE_C67;
-#endif
     }
     return 0;
 }
