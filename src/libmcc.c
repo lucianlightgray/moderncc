@@ -1242,8 +1242,16 @@ ST_FUNC int mcc_add_support(MCCState *s1, const char *filename)
 #ifdef MCC_TARGET_UNIX
 ST_FUNC int mcc_add_crt(MCCState *s1, const char *filename)
 {
-    return mcc_add_library_internal(s1, "%s/%s",
-        filename, AFF_PRINT_ERROR, s1->crt_paths, s1->nb_crt_paths);
+    /* crt_paths (CONFIG_MCC_CRTPREFIX) first; then fall back to the library
+       search paths (-L / CONFIG_MCC_LIBPATHS), since a sysroot may keep crt
+       objects in its libdir (e.g. <sysroot>/usr/lib64 on a 64-bit Gentoo
+       tree) rather than the configured crt prefix. */
+    int ret = mcc_add_library_internal(s1, "%s/%s",
+        filename, 0, s1->crt_paths, s1->nb_crt_paths);
+    if (ret == FILE_NOT_FOUND)
+        ret = mcc_add_library_internal(s1, "%s/%s",
+            filename, AFF_PRINT_ERROR, s1->library_paths, s1->nb_library_paths);
+    return ret;
 }
 #endif
 
