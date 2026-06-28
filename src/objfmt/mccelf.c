@@ -30,6 +30,42 @@ static const char rdata[] = ".data.ro";
 #endif
 
 
+#ifndef ELF_OBJ_ONLY
+/* When --sysroot points at a musl tree, return its in-sysroot dynamic linker
+   path (e.g. "/lib/ld-musl-x86_64.so.1") so the produced binary uses the musl
+   loader instead of the fixed glibc default. Mirrors how gcc/clang derive the
+   interpreter from the sysroot. Returns a malloc'd string, or NULL. */
+static char *musl_elfinterp(MCCState *s)
+{
+    const char *arch;
+    char interp[64], probe[1024];
+    FILE *f;
+
+    if (!s->sysroot || !s->sysroot[0])
+        return NULL;
+#if defined MCC_TARGET_X86_64
+    arch = "x86_64";
+#elif defined MCC_TARGET_I386
+    arch = "i386";
+#elif defined MCC_TARGET_ARM
+    arch = (s->float_abi == ARM_HARD_FLOAT) ? "armhf" : "arm";
+#elif defined MCC_TARGET_ARM64
+    arch = "aarch64";
+#elif defined MCC_TARGET_RISCV64
+    arch = "riscv64";
+#else
+    return NULL;
+#endif
+    snprintf(interp, sizeof interp, "/lib/ld-musl-%s.so.1", arch);
+    snprintf(probe, sizeof probe, "%s%s", s->sysroot, interp);
+    f = mcc_fopen(probe, "rb");
+    if (!f)
+        return NULL;
+    fclose(f);
+    return mcc_strdup(interp);
+}
+#endif
+
 ST_FUNC void mccelf_new(MCCState *s)
 {
     MCCState *s1 = s;
@@ -78,15 +114,18 @@ ST_FUNC void mccelf_new(MCCState *s)
 
 #ifndef ELF_OBJ_ONLY
     if (NULL == s->elfint && s1->output_type != MCC_OUTPUT_OBJ) {
-        const char *p = CONFIG_MCC_ELFINTERP;
+        s->elfint = musl_elfinterp(s);
+        if (NULL == s->elfint) {
+            const char *p = CONFIG_MCC_ELFINTERP;
 #if defined MCC_TARGET_ARM && defined CONFIG_MCC_ELFINTERP_ARMHF
-        if (s->float_abi == ARM_HARD_FLOAT)
-            p = CONFIG_MCC_ELFINTERP_ARMHF;
+            if (s->float_abi == ARM_HARD_FLOAT)
+                p = CONFIG_MCC_ELFINTERP_ARMHF;
 #endif
 #if defined MCC_IS_NATIVE && defined TARGETOS_BSD
-        { const char *e = getenv("LD_SO"); if (e) p = e; }
+            { const char *e = getenv("LD_SO"); if (e) p = e; }
 #endif
-        s->elfint = mcc_strdup(p);
+            s->elfint = mcc_strdup(p);
+        }
     }
 #endif
 }
