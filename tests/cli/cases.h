@@ -911,5 +911,30 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'is not assignable|address of a function-call|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 VALID_OK\n1 address of a function-call\n1 is not assignable\n" },
 
+/* §6.7.1p2: at most one storage-class specifier — auto/register conflict with
+   each other and with static/extern/typedef. A single register param, a
+   block-scope auto, and static/extern/typedef alone stay valid. */
+{ "storage_class_exclusivity", "",
+  "printf 'static auto int a;\\n' > {W}/sc1.c && "
+  "printf 'register static int b;\\n' > {W}/sc2.c && "
+  "printf 'auto auto int c;\\n' > {W}/sc3.c && "
+  "printf 'void f(register int n){(void)n; auto int x=5; (void)x;}\\n"
+  "static int s; extern int e; typedef int T;\\nint main(void){return 0;}\\n' > {W}/scok.c && "
+  "{ for n in sc1 sc2 sc3; do {MCC} -B{B} -I{I} -c {W}/$n.c -o {W}/$n.o 2>&1; done; "
+  "{MCC} -B{B} -I{I} {W}/scok.c -o {W}/scok 2>&1 && echo VALID_OK; } | "
+  "grep -oE 'multiple storage classes|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 VALID_OK\n3 multiple storage classes\n" },
+
+/* §6.7.6.3p7: `static` in an array parameter requires a size operand; `[static]`
+   alone is an error, while `[static N]`, `[const N]`, `[]` stay valid. */
+{ "array_static_param", "",
+  "printf 'void f(int a[static]);\\n' > {W}/ap.c && "
+  "printf 'void g(int a[static 3]); void h(int a[const 2]); void i(int a[]);\\n"
+  "int main(void){return 0;}\\n' > {W}/apok.c && "
+  "{ {MCC} -B{B} -I{I} -c {W}/ap.c -o {W}/ap.o 2>&1; "
+  "{MCC} -B{B} -I{I} -Werror -c {W}/apok.c -o {W}/apok.o 2>&1 && echo VALID_OK; } | "
+  "grep -oE 'without an array size|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 VALID_OK\n1 without an array size\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

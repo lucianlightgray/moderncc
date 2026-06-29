@@ -5038,11 +5038,12 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label)
             typespec_found = 1;
             break;
         case TOK_AUTO:
-            ad->storage_class |= 1;
-            next();
-            break;
         case TOK_REGISTER:
-            ad->storage_class |= 2;
+            /* 6.7.1p2: at most one storage-class specifier. auto/register
+               conflict with each other and with extern/static/typedef. */
+            if ((t & (VT_EXTERN|VT_STATIC|VT_TYPEDEF)) || (ad->storage_class & 3))
+                mcc_error("multiple storage classes");
+            ad->storage_class |= (tok == TOK_AUTO) ? 1 : 2;
             next();
             break;
         case TOK_RESTRICT1:
@@ -5069,7 +5070,8 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label)
             g = VT_TYPEDEF;
             goto storage;
        storage:
-            if (t & (VT_EXTERN|VT_STATIC|VT_TYPEDEF) & ~g)
+            /* 6.7.1p2: also conflicts with a prior auto/register (bits 1/2). */
+            if ((t & (VT_EXTERN|VT_STATIC|VT_TYPEDEF) & ~g) || (ad->storage_class & 3))
                 mcc_error("multiple storage classes");
             t |= g;
             next();
@@ -5326,6 +5328,7 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td)
 
     } else if (tok == '[') {
 	int saved_nocode_wanted = nocode_wanted;
+	int saw_static = 0;
         next();
         n = -1;
         t1 = 0;
@@ -5343,6 +5346,8 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td)
 		   declarator via storage_class bit 64). */
 		if (td & TYPE_NEST)
 		    mcc_error("'static' or type qualifiers used in non-outermost array declarator");
+		if (tok == TOK_STATIC)
+		    saw_static = 1;
 		ad->storage_class |= 64;
 		next();
 		continue;
@@ -5370,6 +5375,9 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td)
 		next();
 		goto check;
             }
+            /* 6.7.6.3p7: `static` in an array parameter requires a size. */
+            if (saw_static)
+                mcc_error("'static' may not be used without an array size");
             break;
 
 	} else if (tok != ']') {

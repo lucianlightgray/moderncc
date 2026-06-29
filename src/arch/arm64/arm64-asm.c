@@ -814,7 +814,7 @@ static int arm64_memory_needs_address_reg(const SValue *sv)
 {
     int r;
 
-    r = sv->r & ~(VT_BOUNDED | VT_NONCONST);
+    r = sv->r & ~(VT_BOUNDED | VT_NONCONST | VT_NONLVAL);
     if (!(r & VT_LVAL))
         return 0;
     switch (r & VT_VALMASK) {

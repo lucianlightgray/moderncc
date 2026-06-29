@@ -501,19 +501,19 @@ bulk of each area matched the references; these are the residual divergences.
 
 ### §6.7 / §6.2 / §6.9 declarations
 
-- [ ] **[DIAG] §6.7.1p2 — `auto`/`register` never enter the multiple-storage-class check (accepts-invalid).**
-  `parse_btype` records `auto`/`register` only in `ad->storage_class` (bits 1/2,
-  `src/mccgen.c:5040-5046`); the conflict check (`src/mccgen.c:5072`,
-  `t & (VT_EXTERN|VT_STATIC|VT_TYPEDEF) & ~g`) never sees them, so `static auto`,
-  `auto static`, `register static`, `extern auto`, `auto auto`, `register register`
-  all compile. gcc+clang reject "multiple storage classes". **Strong (accepts-invalid).**
-  3-way: mcc=accepts(all 8) | gcc=error | clang=error.
+- [x] **[DIAG] §6.7.1p2 — `auto`/`register` now enter the multiple-storage-class check.**
+  The `auto`/`register` cases (`src/mccgen.c`) now error "multiple storage
+  classes" when another storage class (extern/static/typedef or a prior
+  auto/register) is present, and the `storage:` label also rejects a prior
+  auto/register. `static auto`, `register static`, `auto auto`, etc. now error;
+  a single `register` param, block-scope `auto`, and static/extern/typedef alone
+  still compile. gcc+clang both reject. cli `storage_class_exclusivity`; 5-arch.
 
-- [ ] **[DIAG] §6.7.6.3p7 — `int a[static]` (no size operand) accepted (accepts-invalid).**
-  `void f(int a[static]);` compiles; the `static`/qualifiers in an array parameter
-  require a size expression. gcc+clang error "'static' may not be used without an
-  array size".
-  3-way: mcc=accepts | gcc=error | clang=error.
+- [x] **[DIAG] §6.7.6.3p7 — `int a[static]` (no size operand) now rejected.**
+  The array-parameter `[` parser (`src/mccgen.c`, `post_type`) tracks a
+  `saw_static` flag and errors "'static' may not be used without an array size"
+  when `static` is followed by `]` with no size. `[static N]`, `[const N]`, `[]`
+  still compile. gcc+clang both reject. cli `array_static_param`; 5-arch.
 
 - [ ] **[DIAG] §6.7p3 — C99 typedef redefinition (same type) not diagnosed under `-std=c99 -pedantic`.**
   `typedef int T; typedef int T;` is silent in C99 mode; same-type typedef

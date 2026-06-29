@@ -506,7 +506,7 @@ static void arm64_macho_tls_addr(Sym *sym, uint64_t addend)
 ST_FUNC void load(int r, SValue *sv)
 {
     int svtt = sv->type.t;
-    int svr = sv->r & ~(VT_BOUNDED | VT_NONCONST);
+    int svr = sv->r & ~(VT_BOUNDED | VT_NONCONST | VT_NONLVAL);
     int svrv = svr & VT_VALMASK;
     uint64_t svcul = sv->c.i;
     uint64_t svcoff = (uint64_t)(int64_t)(int32_t)sv->c.i;
