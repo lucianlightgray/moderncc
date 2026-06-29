@@ -94,3 +94,72 @@ Legend: `[ ]` open · `[~]` partial · `[x]` done.
     here `mcc` is the most conformant of the three.
   The suite returns non-zero on any divergence by design; these four are the
   expected residual on a macOS host.
+
+- [ ] **[BUG] PE thread-local storage (`_Thread_local` / `__thread`) reads the wrong address.**
+  On a PE target the backend still emits the **ELF** Local-Exec TLS sequence —
+  i386 `movl %gs:0,%reg ; addl $sym@ntpoff,%reg` with `R_386_TLS_LE`
+  (`src/arch/i386/i386-gen.c:284`, `:337`); x86_64 `movq %fs:0,%reg ; addq
+  $sym@tpoff,%reg` with `R_X86_64_TPOFF32` (`src/arch/x86_64/x86_64-gen.c:344`,
+  `:353`) — and the PE object writer never populates the TLS data directory
+  (`IMAGE_DIRECTORY_ENTRY_TLS` = 9 is `#define`d at `src/objfmt/mccpe.c:154` but
+  otherwise unused): no `.tls` template section, no `IMAGE_TLS_DIRECTORY`, no
+  `_tls_index`, no TLS-callback list. Windows TLS is unrelated to the ELF thread
+  pointer — `_Thread_local x` is reached through the TEB (x64: `%gs:0x58`
+  `ThreadLocalStoragePointer` → `[_tls_index]` → `+ offset`; x86: `%fs:0x2c`),
+  with the loader copying the `.tls` template per thread. So the emitted
+  `%fs/%gs`-relative access lands on an unrelated address and every thread-local
+  reads as 0/garbage. Observed: `tests/qemu/conformance/tls.c` returns 1 under
+  wine (`pe-wine-conformance`, x86_64-win32 + i386-win32) — the first check
+  `counter != 100` fails; an instrumented probe under wine prints `counter=0`
+  (want 100). Directly mirrors the Mach-O TLS item above (ELF on all five arches
+  is correct). Fix: emit a `.tls` section + `IMAGE_TLS_DIRECTORY` (index var,
+  raw-data start/end, callback array) in `src/objfmt/mccpe.c`, and switch the
+  PE TLS access in i386/x86_64 codegen to the TEB `_tls_index` sequence.
+
+- [ ] **[BUG] PE thread-local aggregates / pointer-init / `&tls`-into-libc paths.**
+  `tests/qemu/conformance/tls_aggr.c` returns 1 under wine (x86_64-win32 +
+  i386-win32). Same root cause as the PE `_Thread_local` item above (no
+  `IMAGE_TLS_DIRECTORY` / wrong access sequence), but it is the only conformance
+  program exercising three further codegen paths, which stay blocked until PE
+  TLS lands and must be re-checked then: a `_Thread_local struct` (member access
+  = thread-pointer + sym + member offset), a `_Thread_local` pointer initialised
+  to a global's address (a relocation that must live in the per-thread `.tls`
+  init image, not `.data`), and materialising `&tls_buffer` to hand to libc
+  (`memset`/`snprintf`) then reading it back via direct TLS. Fix with the PE TLS
+  item above.
+
+- [ ] **[LIMITATION] msvcrt prints `%e`/`%g` exponents with 3 digits — `varargs_fp` golden is glibc-shaped.**
+  `tests/qemu/conformance/varargs_fp.c` returns 4 under wine (x86_64-win32 +
+  i386-win32). The FP-varargs ABI is **correct**: checks 1–3 pass (`%.2f`;
+  interleaved int/double; ten doubles spilling past the 8 FP registers), so the
+  values reach libc in the right class and order. The sole divergence is the
+  exponent width — a probe under wine prints `100 5.000000e-001` where the golden
+  (and glibc, per C §7.21.6.1 "the exponent contains at least two digits") is
+  `100 5.000000e-01`. Microsoft's CRT has long emitted a ≥3-digit exponent. Not
+  an `mcc` defect — outside its control. Task: make the FP-varargs golden
+  libc-aware (normalise/accept the msvcrt exponent form) so the row passes under
+  wine/Windows.
+
+- [ ] **[LIMITATION] msvcrt rounds `%.*Lf` half-away-from-zero; `floats_libc` golden assumes round-to-even.**
+  `tests/qemu/conformance/floats_libc.c` returns 3 under wine (x86_64-win32 +
+  i386-win32). The long-double-varargs ABI is **correct**: check 1 (`%.2Lf` of
+  `3.5L` → `3.50`) and check 2 pass, so the value reaches libc. Check 3 formats
+  `%.1Lf` of `0.25L`: glibc rounds to even → `0.2` (the golden), msvcrt rounds
+  half away from zero — a probe under wine prints `7 0.5 0.3`. A C-library
+  rounding-mode difference, not `mcc`. (Checks 4–5, the `strtod`/`strtold`
+  round-trips, are unreached; `strtold` may additionally be absent from msvcrt.)
+  Task: make the golden rounding-aware, or skip the exact half-ulp case on msvcrt.
+
+- [ ] **[LIMITATION] wine's builtin msvcrt lacks `lldiv`, aborting `libc_struct` before `main`.**
+  `tests/qemu/conformance/libc_struct.c` returns 1 under wine (x86_64-win32 +
+  i386-win32). `lldiv` is present in the import lib (`runtime/win32/lib/msvcrt.def`
+  — added so the link resolves; real `msvcrt.dll` exports it), but **wine's**
+  builtin `msvcrt.dll` does not implement it, so the loader aborts at import
+  resolution — `wine: ... unimplemented function msvcrt.dll.lldiv, aborting` —
+  before `main` runs; the rc=1 is wine's abort, not a failing check. The
+  small-struct-return ABI the test targets is in fact correct: a probe under wine
+  shows `div(17,5)=q3 r2`, `div(-17,5)=q-3 r-2`, `ldiv=q1000 r3` all correct.
+  Only `lldiv` (16-byte `lldiv_t` via the win64 hidden-sret path) stays
+  unverified because it can't load under wine; it should pass on real Windows.
+  Task: gate the `lldiv` case behind a runtime availability check, or run this
+  row on a non-wine Windows host.
