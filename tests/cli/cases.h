@@ -895,5 +895,21 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'follows non-static|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 follows non-static\n" },
 
+/* §6.5.2.2: a by-value struct returned from a call is not a modifiable lvalue,
+   so `g().m = x` and `&g().m` are errors; reading the member, copying the whole
+   result, and assigning through a returned *pointer* (`gp()->m = x`) stay valid. */
+{ "rvalue_struct_member", "",
+  "printf 'struct S{int x;}; struct S g(void); void f(void){ g().x = 3; }\\n' > {W}/r1.c && "
+  "printf 'struct S{int x;}; struct S g(void); int*f(void){ return &g().x; }\\n' > {W}/r2.c && "
+  "printf 'struct S{int x,y;}; struct S g(void){struct S s={1,2};return s;}\\n"
+  "struct S*gp(void){static struct S s;return &s;}\\n"
+  "int f(void){ int a=g().x; struct S c=g(); gp()->x=7; return a+c.x+gp()->x; }\\n"
+  "int main(void){return 0;}\\n' > {W}/rok.c && "
+  "{ {MCC} -B{B} -I{I} -c {W}/r1.c -o {W}/r1.o 2>&1; "
+  "{MCC} -B{B} -I{I} -c {W}/r2.c -o {W}/r2.o 2>&1; "
+  "{MCC} -B{B} -I{I} {W}/rok.c -o {W}/rok 2>&1 && echo VALID_OK; } | "
+  "grep -oE 'is not assignable|address of a function-call|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 VALID_OK\n1 address of a function-call\n1 is not assignable\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

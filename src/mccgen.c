@@ -6406,6 +6406,10 @@ ST_FUNC void unary(void)
         if ((vtop->type.t & VT_BTYPE) != VT_FUNC &&
             !(vtop->type.t & (VT_ARRAY | VT_VLA)))
             test_lvalue();
+        /* 6.5.3.2: the operand of unary & must be an lvalue; a by-value
+           call result (and its members) is an rvalue. */
+        if (vtop->r & VT_NONLVAL)
+            mcc_error("cannot take the address of a function-call result");
         if (vtop->sym)
           vtop->sym->a.addrtaken = 1;
         mk_pointer(&vtop->type);
@@ -6980,10 +6984,14 @@ special_math_val:
             inc(1, tok);
             next();
         } else if (tok == '.' || tok == TOK_ARROW) {
-            int qualifiers, cumofs;
-            if (tok == TOK_ARROW) 
+            int qualifiers, cumofs, base_nonlval;
+            if (tok == TOK_ARROW)
                 indir();
             qualifiers = vtop->type.t & VT_QUALIFY;
+            /* a member of a non-lvalue struct (a by-value call result) is itself
+               a non-lvalue; carry the flag across the address computation below.
+               (`->` dereferenced a pointer above, yielding a real lvalue.) */
+            base_nonlval = vtop->r & VT_NONLVAL;
             test_lvalue();
             next();
 	    s = find_field(&vtop->type, tok, &cumofs);
@@ -6995,7 +7003,7 @@ special_math_val:
             if (qualifiers)
                 parse_btype_qualify(&vtop->type, qualifiers);
             if (!(vtop->type.t & VT_ARRAY)) {
-                vtop->r |= VT_LVAL;
+                vtop->r |= VT_LVAL | base_nonlval;
 #ifdef CONFIG_MCC_BCHECK
                 if (mcc_state->do_bounds_check)
                     vtop->r |= VT_MUSTBOUND;
@@ -7161,6 +7169,12 @@ special_math_val:
 #endif
                 }
             }
+            /* 6.5.2.2: a function call is not an lvalue; a struct/union returned
+               by value lives in an addressable temp, so mark it non-modifiable
+               (VT_NONLVAL) — `g().m = x` / `&g().m` are rejected while reading
+               and copying the result still work. */
+            if ((s->type.t & VT_BTYPE) == VT_STRUCT)
+                vtop->r |= VT_NONLVAL;
             if (s->f.func_noreturn) {
                 if (debug_modes)
 	            mcc_tcov_block_end(mcc_state, -1);
@@ -7508,6 +7522,10 @@ static void expr_eq(void)
     expr_cond();
     if ((t = tok) == '=' || TOK_ASSIGN(t)) {
         test_lvalue();
+        /* 6.5.16.1: the left operand must be a modifiable lvalue; a by-value
+           call result (and its members) is not assignable. */
+        if (vtop->r & VT_NONLVAL)
+            mcc_error("expression is not assignable (function-call result)");
         /* 6.5.16.2: a compound assignment to an _Atomic object is an atomic
            read-modify-write. Route the supported integer ops through the
            atomic helpers; reject the rest rather than silently miscompile. */

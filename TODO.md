@@ -150,19 +150,20 @@ targets before it is marked done.
 ## §6.5–6.6 Expressions & constant expressions
 
 *Cross-cutting: lvalue-ness is tracked via the `VT_LVAL` bit on the value stack.
-The cast and comma operators are now fixed (force the scalar result into a
-register so `VT_LVAL` drops). The remaining case — a function-call rvalue struct
-member (`g().x`) — can't use that trick (structs don't go in registers); it needs
-a distinct "rvalue struct" marker so the member isn't treated as assignable.*
+The cast and comma operators force the scalar result into a register so
+`VT_LVAL` drops; the function-call rvalue struct member (`g().x`) — which can't
+use that trick (structs don't go in registers) — uses the dedicated
+`VT_NONLVAL` marker. All three lvalue cases are fixed below.*
 
-- [ ] **[BUG] §6.5.2.2/§6.5.2.3 — member of a function-call rvalue struct treated as a modifiable lvalue.**
-  A function call is never an lvalue and `E.member` is an lvalue only if `E` is.
-  mcc accepts `g().x = 3` and `&g().x` with no diagnostic and miscompiles: the
-  struct-return value is left on the value stack with `VT_LVAL` set, so the
-  postfix member handler (`src/mccgen.c:6866`) and `test_lvalue`
-  (`src/mccgen.c:489`) accept it — the store is silently dropped, `&g().x`
-  points into a discarded temporary.
-  3-way: mcc=accepts(wrong runtime) | gcc=error "lvalue required" | clang=error.
+- [x] **[BUG] §6.5.2.2/§6.5.2.3 — member of a function-call rvalue struct is no longer a modifiable lvalue.**
+  A by-value struct returned from a call lives in an addressable temp but is not
+  a modifiable lvalue. Added a `VT_NONLVAL` value-stack bit (`src/mcc.h`, 0x2000)
+  set on struct call results (`src/mccgen.c`, end of the call `(` case),
+  propagated through `.` member access (but not `->`, which dereferences a
+  pointer to a real lvalue), and checked at unary `&` and at assignment. Now
+  `g().x = 3`, `&g().x`, `&g()` error (matching gcc/clang); reading `g().x`,
+  copying `c = g()`, and `gp()->x = 3` (assign through a returned pointer) still
+  work. cli `rvalue_struct_member`; 5-arch.
 
 - [x] **[BUG] §6.5.17 — comma-operator result no longer an lvalue.**
   `(a,b)=7` and `&(a,b)` now error "lvalue expected"; the comma result is forced

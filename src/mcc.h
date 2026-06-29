@@ -986,6 +986,9 @@ struct filespec {
 #define VT_SYM       0x0200
 #define VT_MUSTCAST  0x0C00
 #define VT_NONCONST  0x1000
+#define VT_NONLVAL   0x2000 /* addressable in memory but not a modifiable lvalue
+                               (a by-value struct/union returned from a call):
+                               §6.5.2.2 — `g().m = x` / `&g().m` are invalid */
 #define VT_MUSTBOUND 0x4000
 #define VT_BOUNDED   0x8000
 #define VT_BTYPE       0x000f
