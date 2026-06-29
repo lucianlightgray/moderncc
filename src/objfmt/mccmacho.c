@@ -16,6 +16,7 @@
 #define MH_DYLDLINK             (0x4)
 #define MH_DYLIB                (0x6)
 #define MH_PIE                  (0x200000)
+#define MH_HAS_TLV_DESCRIPTORS  (0x800000)
 
 #define CPU_SUBTYPE_LIB64       (0x80000000)
 #define CPU_SUBTYPE_X86_ALL     (3)
@@ -198,6 +199,9 @@ struct dyld_chained_ptr_64_bind
 #define S_SYMBOL_STUBS                  0x8
 #define S_MOD_INIT_FUNC_POINTERS        0x9
 #define S_MOD_TERM_FUNC_POINTERS        0xa
+#define S_THREAD_LOCAL_REGULAR          0x11
+#define S_THREAD_LOCAL_ZEROFILL         0x12
+#define S_THREAD_LOCAL_VARIABLES        0x13
 
 #define S_ATTR_PURE_INSTRUCTIONS        0x80000000
 #define S_ATTR_SOME_INSTRUCTIONS        0x00000400
@@ -359,7 +363,10 @@ enum skind {
     sk_init,
     sk_fini,
     sk_rw_data,
+    sk_tls_vars,
+    sk_tls_data,
     sk_bss,
+    sk_tls_bss,
     sk_linkedit,
     sk_last
 };
@@ -396,6 +403,10 @@ struct macho {
     uint32_t ilocal, iextdef, iundef;
     int stubsym, n_got, nr_plt;
     int segment[sk_last];
+    Section *tls_vars;          /* __thread_vars: per-variable TLV descriptors */
+    int has_tlv;                /* sets MH_HAS_TLV_DESCRIPTORS in the header   */
+    int n_tls;
+    struct tls_var { int desc_off; int orig_sec; addr_t orig_val; } *tls;
 #ifdef CONFIG_NEW_MACHO
     Section *chained_fixups;
     int n_bind;
@@ -1182,7 +1193,10 @@ const struct {
                 { 4, S_MOD_INIT_FUNC_POINTERS, "__mod_init_func" },
                 { 4, S_MOD_TERM_FUNC_POINTERS, "__mod_term_func" },
              { 4, S_REGULAR, "__data" },
+             { 4, S_THREAD_LOCAL_VARIABLES, "__thread_vars" },
+             { 4, S_THREAD_LOCAL_REGULAR, "__thread_data" },
                  { 4, S_ZEROFILL, "__bss" },
+             { 4, S_THREAD_LOCAL_ZEROFILL, "__thread_bss" },
             { 5, S_REGULAR, NULL },
 };
 
@@ -1579,7 +1593,9 @@ static void collect_sections(MCCState *s1, struct macho *mo, const char *filenam
             default:           sk = sk_unknown; break;
             case SHT_INIT_ARRAY: sk = sk_init; break;
             case SHT_FINI_ARRAY: sk = sk_fini; break;
-            case SHT_NOBITS:   sk = sk_bss; break;
+            case SHT_NOBITS:
+                sk = (flags & SHF_TLS) ? sk_tls_bss : sk_bss;
+                break;
             case SHT_SYMTAB:   sk = sk_discard; break;
             case SHT_STRTAB:
 		if (s == stabstr_section)
@@ -1592,6 +1608,10 @@ static void collect_sections(MCCState *s1, struct macho *mo, const char *filenam
             case SHT_PROGBITS:
                 if (s == mo->stubs)
                   sk = sk_stubs;
+                else if (s == mo->tls_vars)
+                  sk = sk_tls_vars;
+                else if (flags & SHF_TLS)
+                  sk = sk_tls_data;
 #ifndef CONFIG_NEW_MACHO
                 else if (s == mo->stub_helper)
                   sk = sk_stub_helper;
@@ -1907,6 +1927,8 @@ static void macho_write(MCCState *s1, struct macho *mo, FILE *fp)
         mo->mh.mh.filetype = MH_DYLIB;
         mo->mh.mh.flags = MH_DYLDLINK;
     }
+    if (mo->has_tlv)
+        mo->mh.mh.flags |= MH_HAS_TLV_DESCRIPTORS;
     mo->mh.mh.ncmds = mo->nlc;
     mo->mh.mh.sizeofcmds = 0;
     for (int i = 0; i < mo->nlc; i++)
@@ -2102,6 +2124,104 @@ ST_FUNC void bind_rebase_import(MCCState *s1, struct macho *mo)
 }
 #endif
 
+/* Thread-local storage on Mach-O uses TLV descriptors, not ELF tp-relative
+   addressing.  Each defined `_Thread_local` symbol gets a three-word descriptor
+   { thunk, key, offset } in __DATA,__thread_vars; the codegen resolves a TLS
+   access by loading the descriptor address, calling its thunk (which dyld fills
+   in from libSystem's _tlv_bootstrap) and using the returned per-thread address.
+   We synthesise the descriptors here, repoint the TLS symbols at them (so the
+   adrp/add the backend emitted resolves to the descriptor), and bind each
+   thunk word to __tlv_bootstrap.  The descriptor's third word is the variable's
+   byte offset within the contiguous __thread_data/__thread_bss template; it is
+   filled in by macho_tls_finalize once section addresses are assigned.  Called
+   before create_symtab so the new section and symbols make it into the tables. */
+static void macho_tls_setup(MCCState *s1, struct macho *mo)
+{
+    int i, tlv_sym = 0;
+    int sym_end = symtab_section->data_offset / sizeof(ElfW(Sym));
+
+    for (i = 1; i < sym_end; i++) {
+        ElfW(Sym) *sym = (ElfW(Sym) *)symtab_section->data + i;
+        int desc_off;
+        ElfW_Rel rel;
+
+        if (ELFW(ST_TYPE)(sym->st_info) != STT_TLS)
+            continue;
+        /* A genuine thread-local lives in .tdata/.tbss.  The front end can also
+           tag a static initializer template (e.g. for a TLS aggregate) STT_TLS
+           while leaving it in a regular data section; that is ordinary data on
+           Mach-O, not a TLV variable, so skip it. */
+        if (sym->st_shndx != tdata_section->sh_num &&
+            sym->st_shndx != tbss_section->sh_num) {
+            if (sym->st_shndx == SHN_UNDEF)
+                mcc_error("Mach-O: external thread-local '%s' is unsupported",
+                          (char *)symtab_section->link->data + sym->st_name);
+            continue;
+        }
+
+        if (!mo->tls_vars) {
+            mo->tls_vars = new_section(s1, ".tlv_descriptors", SHT_PROGBITS,
+                                       SHF_ALLOC | SHF_WRITE);
+            mo->tls_vars->sh_addralign = PTR_SIZE;
+            tlv_sym = put_elf_sym(symtab_section, 0, 0,
+                                  ELFW(ST_INFO)(STB_GLOBAL, STT_FUNC), 0,
+                                  SHN_UNDEF, "__tlv_bootstrap");
+            mo->has_tlv = 1;
+            /* put_elf_sym may have reallocated the symbol table. */
+            sym = (ElfW(Sym) *)symtab_section->data + i;
+        }
+
+        desc_off = mo->tls_vars->data_offset;
+        memset(section_ptr_add(mo->tls_vars, 3 * PTR_SIZE), 0, 3 * PTR_SIZE);
+
+        mo->tls = mcc_realloc(mo->tls, (mo->n_tls + 1) * sizeof(*mo->tls));
+        mo->tls[mo->n_tls].desc_off = desc_off;
+        mo->tls[mo->n_tls].orig_sec = sym->st_shndx;
+        mo->tls[mo->n_tls].orig_val = sym->st_value;
+        mo->n_tls++;
+
+        /* descriptor[0] (thunk) binds to __tlv_bootstrap (flat namespace). */
+        memset(&rel, 0, sizeof rel);
+        rel.r_offset = desc_off;
+        rel.r_info = ELFW(R_INFO)(tlv_sym, R_DATA_PTR);
+#ifdef CONFIG_NEW_MACHO
+        bind_rebase_add(mo, 1, mo->tls_vars->sh_num, &rel, NULL);
+#else
+        mo->bind = mcc_realloc(mo->bind, (mo->n_bind + 1) * sizeof(struct bind));
+        mo->bind[mo->n_bind].section = mo->tls_vars->sh_num;
+        mo->bind[mo->n_bind].rel = rel;
+        mo->n_bind++;
+#endif
+
+        /* Repoint the symbol at its descriptor: a plain data symbol now. */
+        sym->st_shndx = mo->tls_vars->sh_num;
+        sym->st_value = desc_off;
+        sym->st_size = 3 * PTR_SIZE;
+        sym->st_info = ELFW(ST_INFO)(ELFW(ST_BIND)(sym->st_info), STT_OBJECT);
+    }
+}
+
+static void macho_tls_finalize(MCCState *s1, struct macho *mo)
+{
+    addr_t base = (addr_t)-1;
+    int i;
+
+    if (!mo->n_tls)
+        return;
+    /* The per-thread template is __thread_data followed by __thread_bss; its
+       base is the lower of the two section addresses. */
+    if (tdata_section->sh_size && tdata_section->sh_addr < base)
+        base = tdata_section->sh_addr;
+    if (tbss_section->sh_size && tbss_section->sh_addr < base)
+        base = tbss_section->sh_addr;
+    for (i = 0; i < mo->n_tls; i++) {
+        Section *os = s1->sections[mo->tls[i].orig_sec];
+        addr_t var_addr = os->sh_addr + mo->tls[i].orig_val;
+        write64le(mo->tls_vars->data + mo->tls[i].desc_off + 2 * PTR_SIZE,
+                  var_addr - base);
+    }
+}
+
 ST_FUNC int macho_output_file(MCCState *s1, const char *filename)
 {
     int fd, mode, file_type;
@@ -2125,6 +2245,7 @@ ST_FUNC int macho_output_file(MCCState *s1, const char *filename)
     mcc_add_runtime(s1);
     mcc_macho_add_destructor(s1);
     resolve_common_syms(s1);
+    macho_tls_setup(s1, &mo);
     create_symtab(s1, &mo);
     check_relocs(s1, &mo);
     ret = check_symbols(s1, &mo);
@@ -2132,12 +2253,15 @@ ST_FUNC int macho_output_file(MCCState *s1, const char *filename)
 	int save_output = s1->output_type;
 
         collect_sections(s1, &mo, filename);
+        macho_tls_finalize(s1, &mo);
         relocate_syms(s1, s1->symtab, 0);
 	if (s1->output_type == MCC_OUTPUT_EXE)
             mo.ep->entryoff = get_sym_addr(s1, "main", 1, 1)
                             -     get_segment(&mo, 1)->vmaddr;
-        if (s1->nb_errors)
+        if (s1->nb_errors) {
+          ret = -1;             /* e.g. a default library (-lc) was not found */
           goto do_ret;
+        }
 	s1->output_type = MCC_OUTPUT_EXE;
         relocate_sections(s1);
 	s1->output_type = save_output;
@@ -2157,8 +2281,11 @@ ST_FUNC int macho_output_file(MCCState *s1, const char *filename)
     mcc_free(mo.lc);
     mcc_free(mo.elfsectomacho);
     mcc_free(mo.e2msym);
+    mcc_free(mo.tls);
 
     fclose(fp);
+    if (ret)
+        unlink(filename);       /* don't leave an empty/partial output behind */
 #ifdef CONFIG_CODESIGN
     if (!ret) {
 	char command[1024];

@@ -26,16 +26,32 @@ Legend: `[ ]` open · `[~]` partial · `[x]` done.
 
 ## Open items
 
-- [ ] **[BUG] Mach-O thread-local storage (`__thread` / `_Thread_local`) is unimplemented.**
-  On arm64 the backend emits ELF local-exec TLS relocations
-  (`R_AARCH64_TLSLE_ADD_TPREL_HI12/LO12`, base `tpidr_el0 + sym@tprel`;
-  `src/arch/arm64/arm64-gen.c`). Mach-O has no such relocations: a thread-local
-  resolves to a wrong address, so any `__thread` access segfaults (single- and
-  multi-threaded alike). Mach-O thread-locals use TLV descriptors — the
-  `__thread_vars`/`__thread_data`/`__thread_bss` sections plus a `tlv_get_addr`
-  call sequence — which the Mach-O object writer (`src/objfmt/mccmacho.c`) does
-  not emit. The `tls` exec golden carries `os!=Darwin` so it skips on Darwin and
-  runs on ELF.
+- [x] **[BUG] Mach-O thread-local storage (`__thread` / `_Thread_local`) now uses TLV descriptors.**
+  The backend emitted ELF local-exec TLS relocations (arm64 `R_AARCH64_TLSLE_*`,
+  base `tpidr_el0 + sym@tprel`; x86_64 `%fs:0 + sym@tpoff`), which Mach-O has no
+  equivalent of, so every thread-local read landed on a wrong address and
+  segfaulted. Implemented as native Mach-O TLV descriptors in three parts:
+  (1) `src/objfmt/mccmacho.c` `macho_tls_setup`/`macho_tls_finalize` synthesise a
+  `__DATA,__thread_vars` section (`S_THREAD_LOCAL_VARIABLES`) holding a 24-byte
+  `{ thunk, key, offset }` descriptor per thread-local, map `.tdata`/`.tbss` to
+  `__thread_data`/`__thread_bss` (`S_THREAD_LOCAL_REGULAR`/`_ZEROFILL`), repoint
+  each TLS symbol at its descriptor, bind the thunk word to libSystem's
+  `__tlv_bootstrap` (through the existing chained-fixups path), fill the third
+  word with the variable's byte offset in the contiguous template, and set
+  `MH_HAS_TLV_DESCRIPTORS`;
+  (2) codegen (`src/arch/{arm64,x86_64}/*-gen.c`) reaches a `_Thread_local` by
+  taking the descriptor address, calling its thunk (arm64 `ldr x16,[x0]; blr`;
+  x86_64 `lea _desc(%rip),%rdi; call *(%rdi)`) and using the returned per-thread
+  address for the load/store/`&tls` paths, saving the registers the thunk
+  clobbers around the call;
+  (3) a front-end fix (`src/mccgen.c` `gv`) strips `VT_TLS` from the rodata
+  symbol that spills a floating-point constant, so a literal in an FP TLS context
+  is no longer mistaken for a TLS access (this was also latent on ELF/PE), and
+  x86_64 `gen_opf` force-loads a TLS float lvalue instead of using it as a direct
+  memory operand. Verified natively on arm64 (`tls` + `tls_aggr` return 0
+  multi-threaded, plus a struct/array/bss/double stress test) and on x86_64-osx
+  via Rosetta; the full ELF qemu matrix (5 arches × glibc/musl) stays green. The
+  `tls` exec golden no longer carries `os!=Darwin` and now runs on Darwin.
 
 - [~] **[DIAG] §6.5.1.1p2 `_Generic` association-type completeness.**
   The "no two compatible association types" rule is enforced
@@ -75,11 +91,18 @@ Legend: `[ ]` open · `[~]` partial · `[x]` done.
   diagnostics that predate this tracker each have a regression test — is an
   ongoing audit and remains outstanding (not blocked on anything).
 
-- [ ] **[LIMITATION] The macOS SDK ships no C11 `<threads.h>`.**
-  Apple's libc provides no `<threads.h>` / `thrd_*` runtime, so a program using
-  C11 threads cannot compile or link on a stock macOS host. The `c11_threads`
-  exec golden carries `os!=Darwin` and skips on Darwin (it runs on the
-  glibc/musl ELF targets). Not an `mcc` gap.
+- [x] **[FEATURE] C11 `<threads.h>` now ships in mcc's bundled headers (Darwin shim over pthread).**
+  Apple's libc provides no `<threads.h>` / `thrd_*` runtime, so a C11-threads
+  program could not compile on a stock macOS host. `runtime/include/threads.h`
+  now provides the full §7.26 API (`thrd_*`, `mtx_*`, `cnd_*`, `tss_*`,
+  `call_once`/`once_flag`) as `static inline` wrappers over POSIX threads, using
+  the same `__has_include_next` delegate-or-define pattern as the bundled
+  `<stdint.h>`: where the hosting libc already supplies `<threads.h>` (glibc,
+  musl) it is included via `#include_next` and wins, so the ELF targets are
+  untouched; only where it is absent (macOS) does the shim apply. The
+  `c11_threads` exec golden no longer carries `os!=Darwin` and passes on Darwin
+  (arm64 native and x86_64-osx via Rosetta) alongside the glibc/musl ELF
+  targets; it stays `os!=WIN32` (msvcrt has no pthread).
 
 - [~] **[DIFF] diff3 differential divergences on macOS.**
   The `diff3` suite compiles each golden with `mcc`, gcc, and clang and flags

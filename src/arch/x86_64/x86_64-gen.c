@@ -347,6 +347,30 @@ static void gen_pe_tls_base(int dst)
 }
 #endif
 
+#ifdef MCC_TARGET_MACHO
+/* Materialise this thread's address of a thread-local into r11.  On Mach-O a
+   `_Thread_local` resolves to a { thunk, key, offset } TLV descriptor; the
+   symbol's address IS the descriptor.  Calling the (dyld-populated) thunk with
+   the descriptor address in %rdi returns the per-thread address of the variable
+   in %rax.  The TLV thunk preserves every register except %rax, so we save
+   %rax/%rdi around it and move the result into the scratch r11, leaving the
+   surrounding register allocation untouched.  The caller then reads/writes
+   [r11 + offset]; the constant member/element offset is applied there, so the
+   descriptor reference carries no addend (mirroring clang's relaxed
+   leaq _x(%rip),%rdi ; callq *(%rdi)). */
+static void gen_macho_tls_base(Sym *sym)
+{
+    o(0x50);                  /* push %rax                      */
+    o(0x57);                  /* push %rdi                      */
+    o(0x3d8d48);              /* lea  <descriptor>(%rip), %rdi  */
+    gen_addrpc32(VT_SYM, sym, 0);
+    o(0x17ff);                /* call *(%rdi)   -> %rax = &var  */
+    o(0xc38949);              /* mov  %rax, %r11                */
+    o(0x5f);                  /* pop  %rdi                      */
+    o(0x58);                  /* pop  %rax                      */
+}
+#endif
+
 void load(int r, SValue *sv)
 {
     int v, t, ft, fc, fr;
@@ -384,13 +408,20 @@ void load(int r, SValue *sv)
         int tr = r | TREG_MEM;
         if (is_float(ft))
             tr = get_reg(RC_INT) | TREG_MEM;
-#ifdef MCC_TARGET_PE
+#if defined(MCC_TARGET_PE)
         gen_pe_tls_base(tr);                  /* tr = per-thread TLS base  */
         o(0x48 | REX_BASE(tr));               /* REX.W (+REX.B if r8-r15)  */
         o(0x81);
         o(0xc0 | REG_VALUE(tr));              /* add tr, sym@secrel        */
         greloca(cur_text_section, sv->sym, ind, R_X86_64_TPOFF32, 0);
         gen_le32(0);
+#elif defined(MCC_TARGET_MACHO)
+        gen_macho_tls_base(sv->sym);          /* r11 = &var (via TLV thunk) */
+        /* Move &var into tr (a low register for the float case) before the
+           typed load: an SSE load through r8-r15 would mis-order the REX prefix
+           relative to the mandatory f3/66 prefix, so the base must stay low. */
+        orex(1, tr, TREG_R11, 0x89);          /* mov %r11, tr               */
+        o(0xc0 + REG_VALUE(tr) + REG_VALUE(TREG_R11) * 8);
 #else
         o(0x64);                              /* FS prefix                 */
         o(0x48 | (REX_BASE(tr) << 2));        /* REX.W (+REX.R if r8-r15)  */
@@ -500,6 +531,16 @@ void load(int r, SValue *sv)
                 }
 #else
                 if (sv->sym->type.t & VT_TLS) {
+#ifdef MCC_TARGET_MACHO
+                    /* &thread_local: the TLV thunk returns the per-thread
+                       address in r11; add the constant member/element offset
+                       and move it into the destination register. */
+                    gen_macho_tls_base(sv->sym);   /* r11 = &var */
+                    o(0x48 | (REX_BASE(r) << 2) | REX_BASE(TREG_R11));
+                    o(0x8d);                       /* lea r, [r11 + fc]        */
+                    o(0x80 | (REG_VALUE(r) << 3) | REG_VALUE(TREG_R11));
+                    gen_le32(fc);
+#else
                     /* Address of a thread-local (Local Exec): thread pointer
                        (%fs:0) + sym@tpoff, mirroring gcc's
                            movq %fs:0,%reg ; addq $sym@tpoff,%reg
@@ -520,6 +561,7 @@ void load(int r, SValue *sv)
                     greloca(cur_text_section, sv->sym, ind,
                             R_X86_64_TPOFF32, fc);
                     gen_le32(0);                   /* += sym@tpoff             */
+#endif
                 } else if (sv->sym->type.t & VT_STATIC) {
                     orex(1,0,r,0x8d);
                     o(0x05 + REG_VALUE(r) * 8);
@@ -620,11 +662,17 @@ void store(int r, SValue *v)
            through [r11] with the normal typed path.  The old segment-relative
            form hard-coded a full-word mov (0x89), so a char/short TLS store
            wrote 4/8 bytes and clobbered the neighbouring object. */
-#ifdef MCC_TARGET_PE
+#if defined(MCC_TARGET_PE)
         gen_pe_tls_base(TREG_R11);            /* r11 = per-thread TLS base */
         o(0x49); o(0x81); o(0xc3);            /* add r11, (sym+fc)@secrel  */
         greloca(cur_text_section, v->sym, ind, R_X86_64_TPOFF32, fc);
         gen_le32(0);
+#elif defined(MCC_TARGET_MACHO)
+        gen_macho_tls_base(v->sym);           /* r11 = &var (via TLV thunk) */
+        if (fc) {
+            o(0x49); o(0x81); o(0xc3);        /* add r11, fc (member offset) */
+            gen_le32(fc);
+        }
 #else
         o(0x64);                              /* FS prefix                 */
         o(0x4c); o(0x8b); o(0x1c); o(0x25);   /* mov r11, %fs:[disp32]     */
@@ -1862,6 +1910,22 @@ void gen_opf(int op)
     }
     if ((vtop[0].r & (VT_VALMASK | VT_LVAL)) == VT_CONST)
         gv(float_type);
+
+    /* A thread-local lvalue must not become a direct memory operand: its symbol
+       resolves to the TLV descriptor / template image, not this thread's live
+       copy.  Force it through the TLS-aware load path into a register first.
+       (Affects the SSE path; the x87/LDOUBLE branch already calls load().) */
+    if (float_type == RC_FLOAT) {
+        if ((vtop[0].r & (VT_LVAL | VT_SYM)) == (VT_LVAL | VT_SYM) &&
+            vtop[0].sym && (vtop[0].sym->type.t & VT_TLS))
+            gv(float_type);
+        if ((vtop[-1].r & (VT_LVAL | VT_SYM)) == (VT_LVAL | VT_SYM) &&
+            vtop[-1].sym && (vtop[-1].sym->type.t & VT_TLS)) {
+            vswap();
+            gv(float_type);
+            vswap();
+        }
+    }
 
     if ((vtop[-1].r & VT_LVAL) &&
         (vtop[0].r & VT_LVAL)) {
