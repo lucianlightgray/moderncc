@@ -110,6 +110,9 @@ static struct scope {
     struct { Sym *s; int n; } cl;
     int *bsym, *csym;
     Sym *lstk, *llstk;
+    /* 6.10.6: #pragma STDC switches are block-scoped — snapshot on entry to a
+       compound statement, restore on exit (see new_scope/prev_scope). */
+    unsigned char stdc_fp_contract, stdc_fenv_access, stdc_cx_limited;
 } *cur_scope, *loop_scope, *root_scope;
 
 typedef struct {
@@ -126,6 +129,89 @@ static void init_prec(void);
 static void block(int flags);
 #define STMT_EXPR 1
 #define STMT_COMPOUND 2
+
+/* 6.5p2 -Wsequence-point (10.1): single-pass side-effect tracker.  mcc has no
+   expression AST, so we record reads/writes of plain-variable lvalues into a
+   small ring for the current sequence-point region; a full expression resets
+   the ring, internal sequence points (&&, ||, ?:, comma, call-arg boundaries)
+   flush-and-restart it.  v1 diagnoses the unambiguous case: an object written
+   twice with no intervening sequence point (e.g. `i = i++`).  Reads are also
+   recorded for the future through-pointer/subscript extension (10.1.9); they
+   do not drive the v1 diagnosis, so `i = i + 1` (one write) never warns.
+   If a region exceeds the ring it sets seqp_overflow and analysis is skipped
+   for that region — sound (no false positives), just less thorough. */
+enum { SEQP_READ, SEQP_WRITE };
+#define SEQP_MAX 64
+static struct { Sym *obj; unsigned char kind; } seqp_ev[SEQP_MAX];
+static int nb_seqp;
+static int seqp_overflow;
+
+static void seqp_reset(void)
+{
+    nb_seqp = 0;
+    seqp_overflow = 0;
+}
+
+/* True when sv is a whole, plain scalar variable lvalue (the only objects v1
+   tracks).  Excludes *p / pointer-subscripts (register address in VT_VALMASK),
+   bitfields, and — crucially — array elements and aggregate members, which
+   keep the aggregate's VT_LOCAL/VT_CONST sym but are sub-objects (10.1.9). */
+static int seqp_is_plain_var(SValue *sv)
+{
+    int r = sv->r;
+    if (!(r & VT_LVAL) || !sv->sym || (sv->type.t & VT_BITFIELD))
+        return 0;
+    if ((r & VT_VALMASK) != VT_LOCAL && (r & VT_VALMASK) != VT_CONST)
+        return 0;
+    if ((sv->sym->type.t & VT_BTYPE) == VT_STRUCT
+        || (sv->sym->type.t & VT_ARRAY))
+        return 0;
+    return 1;
+}
+
+static void seqp_record(Sym *obj, int kind)
+{
+    if (!mcc_state->warn_sequence_point || !obj || nocode_wanted)
+        return;
+    if (nb_seqp >= SEQP_MAX) {
+        seqp_overflow = 1;
+        return;
+    }
+    seqp_ev[nb_seqp].obj = obj;
+    seqp_ev[nb_seqp].kind = kind;
+    nb_seqp++;
+}
+
+/* Diagnose the current region: warn once per object modified ≥2 times. */
+static void seqp_check(void)
+{
+    int i, j;
+    if (seqp_overflow || !mcc_state->warn_sequence_point)
+        return;
+    for (i = 0; i < nb_seqp; i++) {
+        Sym *o = seqp_ev[i].obj;
+        int writes = 0;
+        if (!o || seqp_ev[i].kind != SEQP_WRITE)
+            continue;
+        for (j = i; j < nb_seqp; j++)
+            if (seqp_ev[j].obj == o && seqp_ev[j].kind == SEQP_WRITE)
+                writes++;
+        /* mark earlier duplicates consumed so each object warns once */
+        for (j = i + 1; j < nb_seqp; j++)
+            if (seqp_ev[j].obj == o)
+                seqp_ev[j].obj = NULL;
+        if (writes >= 2)
+            mcc_warning_c(warn_sequence_point)(
+                "operation on '%s' may be undefined", get_tok_str(o->v, NULL));
+    }
+}
+
+/* End of a sequence-point region: diagnose it, then start a fresh region. */
+static void seqp_flush(void)
+{
+    seqp_check();
+    seqp_reset();
+}
 
 static void gen_cast(CType *type);
 static void gen_cast_s(int t);
@@ -1758,6 +1844,12 @@ ST_FUNC int gv(int rc)
 {
     int r, r2, r_ok, r2_ok, rc2, bt;
     int bit_pos, bit_size, size, align;
+
+    /* 6.5p2 (10.1): record a read of a plain-variable lvalue at the single
+       canonical lvalue->rvalue load site.  Recorded for the future
+       through-pointer extension (10.1.9); the v1 diagnosis keys on writes. */
+    if (seqp_is_plain_var(vtop))
+        seqp_record(vtop->sym, SEQP_READ);
 
     /* 6.2.5p27: reading a wider-than-word _Atomic scalar (e.g. _Atomic long long
        on a 32-bit target) must be a single atomic load, not two word reads.
@@ -3422,6 +3514,15 @@ ST_FUNC void vstore(void)
 {
     int sbt, dbt, ft, r, size, align, bit_size, bit_pos, delayed_cast;
 
+    /* 6.5p2 (10.1): record a write to a plain-variable destination.  *p and
+       pointer subscripts go through gaddrof()/indir(), so their lvalue carries
+       a register in VT_VALMASK and is excluded; but a local array element or a
+       global aggregate member keeps VT_LOCAL/VT_CONST with the aggregate's sym,
+       so also require the symbol itself to be a scalar object (its members /
+       elements are deferred to 10.1.9). */
+    if (seqp_is_plain_var(vtop - 1))
+        seqp_record(vtop[-1].sym, SEQP_WRITE);
+
     /* 6.2.5p27: copying *from* an _Atomic aggregate / >8-byte object (e.g.
        `Big r = g;`) must read it atomically, not as a plain struct copy. Snap
        it into a temp via the generic load first; the copy then proceeds from
@@ -4549,6 +4650,63 @@ static void cplx_materialize(CType *cplx, CType *base, SValue *out)
     }
 }
 
+/* Annex G robust complex multiply/divide (10.2): call the runtime helper
+   (runtime/lib/complex.c) instead of inlining the naive formula.  The helpers
+   take the result by pointer and return void — see complex.c for why this
+   avoids any per-target complex-return ABI work here.  a/b are the already
+   materialized operands; on return the result complex is left on vtop. */
+static void gen_complex_call(int op, CType *cplx, CType *base, SValue *a, SValue *b)
+{
+    char buf[16];
+    int bt = base->t & VT_BTYPE;
+    char suf = bt == VT_FLOAT ? 'f' : bt == VT_LDOUBLE ? 'l' : 0;
+    Sym *fsym, *p, *prev;
+    CType functype, ptype;
+    SValue r;
+    int i;
+
+    cplx_local(cplx, &r);
+
+    if (suf)
+        snprintf(buf, sizeof buf, "__mcc_c%s%c", op == '*' ? "mul" : "div", suf);
+    else
+        snprintf(buf, sizeof buf, "__mcc_c%s", op == '*' ? "mul" : "div");
+
+    /* Build the function type  void (base *, base, base, base, base). */
+    ptype = *base;
+    mk_pointer(&ptype);
+    fsym = sym_push2(&global_stack, SYM_FIELD, VT_VOID, 0);
+    fsym->type.ref = NULL;
+    fsym->f.func_call = FUNC_CDECL;
+    fsym->f.func_type = FUNC_NEW;
+    fsym->f.func_args = 5;
+    prev = NULL;
+    for (i = 0; i < 4; i++) {                   /* four scalar parts */
+        p = sym_push2(&global_stack, SYM_FIELD, base->t, 0);
+        p->type.ref = base->ref;
+        p->next = prev;
+        prev = p;
+    }
+    p = sym_push2(&global_stack, SYM_FIELD, ptype.t, 0);   /* result pointer */
+    p->type.ref = ptype.ref;
+    p->next = prev;
+    fsym->next = p;
+    functype.t = VT_FUNC;
+    functype.ref = fsym;
+
+    vpushsym(&functype, external_global_sym(tok_alloc_const(buf), &functype));
+    vpushv(&r);                 /* &result */
+    mk_pointer(&vtop->type);
+    gaddrof();
+    cplx_push_part(a, 0);       /* a.real, a.imag, b.real, b.imag */
+    cplx_push_part(a, 1);
+    cplx_push_part(b, 0);
+    cplx_push_part(b, 1);
+    gfunc_call(5);
+
+    vpushv(&r);
+}
+
 static void gen_complex_op(int op)
 {
     SValue a, b, r;
@@ -4565,6 +4723,15 @@ static void gen_complex_op(int op)
         cplx_push_part(&a, 1); cplx_push_part(&b, 1); gen_op(TOK_EQ);
         gen_op('&');
         if (op == TOK_NE) { vpushi(0); gen_op(TOK_EQ); }
+        return;
+    }
+
+    /* 10.2: route * and / to the Annex G robust helper unless the program
+       opted into the naive limited-range path (CX_LIMITED_RANGE ON or
+       -fcx-limited-range), matching gcc/clang's default behavior. */
+    if ((op == '*' || op == '/') &&
+        !(mcc_state->cx_limited_range || stdc_cx_limited(mcc_state))) {
+        gen_complex_call(op, &cplx, &base, &a, &b);
         return;
     }
 
@@ -6764,6 +6931,10 @@ special_math_val:
                     } else {
                         expr_eq();
                         gfunc_param_typed(s, sa);
+                        /* 6.5.2.2: call arguments are unsequenced w.r.t. each
+                           other — treat each as its own region so f(i++, j++)
+                           does not falsely warn. */
+                        seqp_flush();
                     }
                     nb_args++;
                     if (sa)
@@ -6787,6 +6958,7 @@ special_math_val:
                     expr_eq();
                     gfunc_param_typed(s, sa);
                     end_macro();
+                    seqp_flush();       /* per-argument region (see above) */
                 }
                 vrev(n);
             }
@@ -7045,6 +7217,7 @@ static void expr_landor(int op)
         else
             vpop();
         next();
+        seqp_flush();       /* 6.5p2: && / || sequence the LHS before the RHS */
         expr_landor_next(op);
     }
     if (cc || f) {
@@ -7077,6 +7250,7 @@ static void expr_cond(void)
     if (tok == '?') {
         next();
 	c = condition_3way();
+        seqp_flush();       /* 6.5p2: ?: sequences the condition before either arm */
         g = (tok == ':' && gnu_ext);
         tt = 0;
         if (!g) {
@@ -7249,6 +7423,7 @@ ST_FUNC void gexpr(void)
         do {
             vpop();
             next();
+            seqp_flush();       /* 6.5p2: the comma operator is a sequence point */
             expr_eq();
         } while (tok == ',');
 
@@ -7561,6 +7736,16 @@ static void new_scope(struct scope *o)
     cur_scope->vla.num = 0;
     cur_scope->vla_diag = 0;
 
+    /* 6.10.6: remember the #pragma STDC state in effect at scope entry so it
+       can be restored when this compound statement closes.  block() overrides
+       these with the pre-lookahead snapshot (see stdc_save below), because the
+       caller has already consumed one token past the opening brace — a pragma
+       on the line right after '{' would otherwise be captured as the entry
+       state and wrongly persist past the block. */
+    o->stdc_fp_contract = mcc_state->stdc_fp_contract;
+    o->stdc_fenv_access = mcc_state->stdc_fenv_access;
+    o->stdc_cx_limited  = mcc_state->stdc_cx_limited;
+
     o->lstk = local_stack;
     o->llstk = local_label_stack;
     ++local_scope;
@@ -7587,6 +7772,12 @@ static void prev_scope(struct scope *o, int is_expr)
 
 
     sym_pop(&local_stack, o->lstk, is_expr);
+
+    /* 6.10.6: a #pragma STDC switch set inside this block does not leak out. */
+    mcc_state->stdc_fp_contract = o->stdc_fp_contract;
+    mcc_state->stdc_fenv_access = o->stdc_fenv_access;
+    mcc_state->stdc_cx_limited  = o->stdc_cx_limited;
+
     cur_scope = o->prev;
     --local_scope;
 }
@@ -7648,12 +7839,26 @@ static void block(int flags)
     int a, b, c, d, e, t;
     struct scope o;
     Sym *s;
+    unsigned char stdc_save_fp, stdc_save_fenv, stdc_save_cx;
 
 again:
     t = tok;
     if (TOK_HAS_VALUE(t))
         goto expr;
+    /* 6.10.6: snapshot the #pragma STDC state BEFORE the lookahead next()
+       below crosses into the block body — a pragma directly after '{' (or
+       before a 'for' header) is processed by that next(), so capturing here
+       gives the true pre-block state for new_scope/prev_scope to restore. */
+    stdc_save_fp = mcc_state->stdc_fp_contract;
+    stdc_save_fenv = mcc_state->stdc_fenv_access;
+    stdc_save_cx = mcc_state->stdc_cx_limited;
     next();
+
+    /* 6.5p2 (10.1): every statement begins a fresh full-expression context, so
+       side effects never leak across the statement boundary (a sequence point).
+       Controller/return expressions below call seqp_check() at their end to
+       diagnose; the for-header's three expressions flush between themselves. */
+    seqp_reset();
 
     if (debug_modes)
         mcc_tcov_check_line (mcc_state, 0), mcc_tcov_block_begin (mcc_state);
@@ -7662,6 +7867,7 @@ again:
         new_scope_s(&o);
         skip('(');
         gexpr_decl();
+        seqp_check();           /* 6.5p2: diagnose the controlling expression */
         a = gvtst(1, 0);
         skip(')');
         block(0);
@@ -7681,6 +7887,7 @@ again:
         d = gind();
         skip('(');
         gexpr();
+        seqp_check();           /* 6.5p2: diagnose the controlling expression */
         a = gvtst(1, 0);
         skip(')');
         b = 0;
@@ -7694,6 +7901,9 @@ again:
         if (debug_modes)
             mcc_debug_stabn(mcc_state, N_LBRAC, ind - func_ind);
         new_scope(&o);
+        o.stdc_fp_contract = stdc_save_fp;
+        o.stdc_fenv_access = stdc_save_fenv;
+        o.stdc_cx_limited  = stdc_save_cx;
 
         while (tok == TOK_LABEL) {
             do {
@@ -7729,6 +7939,7 @@ again:
         b = (func_vt.t & VT_BTYPE) != VT_VOID;
         if (tok != ';') {
             gexpr();
+            seqp_check();       /* 6.5p2: diagnose the return expression */
             if (b) {
                 gen_assign_cast(&func_vt);
             } else {
@@ -7771,6 +7982,9 @@ again:
 
     } else if (t == TOK_FOR) {
         new_scope(&o);
+        o.stdc_fp_contract = stdc_save_fp;
+        o.stdc_fenv_access = stdc_save_fenv;
+        o.stdc_cx_limited  = stdc_save_cx;
 
         skip('(');
         if (tok != ';') {
@@ -7781,6 +7995,7 @@ again:
             }
             in_for_init = 0;
         }
+        seqp_flush();           /* 6.5p2: ; after the for-init is a sequence pt */
         skip(';');
         a = b = 0;
         c = d = gind();
@@ -7788,11 +8003,13 @@ again:
             gexpr();
             a = gvtst(1, 0);
         }
+        seqp_flush();           /* 6.5p2: the controlling expression is its own region */
         skip(';');
         if (tok != ')') {
             e = gjmp(0);
             d = gind();
             gexpr();
+            seqp_check();       /* 6.5p2: diagnose the iteration expression */
             vpop();
             gjmp_addr(c);
             gsym(e);
@@ -7813,6 +8030,7 @@ again:
         skip(TOK_WHILE);
         skip('(');
 	gexpr();
+        seqp_check();           /* 6.5p2: diagnose the do-while condition */
         c = gvtst(0, 0);
         skip(')');
         skip(';');
@@ -7834,6 +8052,7 @@ again:
         new_scope_s(&o);
         skip('(');
         gexpr_decl();
+        seqp_check();           /* 6.5p2: diagnose the switch controlling expr */
         if (!is_integer_btype(vtop->type.t & VT_BTYPE))
             mcc_error("switch value not an integer");
         skip(')');
@@ -7990,6 +8209,7 @@ again:
             if (t != ';') {
                 unget_tok(t);
     expr:
+                seqp_reset();           /* 6.5p2: start of a full expression */
                 if (flags & STMT_EXPR) {
                     vpop();
                     gexpr();
@@ -7997,6 +8217,7 @@ again:
                     gexpr();
                     vpop();
                 }
+                seqp_check();           /* diagnose the trailing region */
                 skip(';');
             }
         }
@@ -8597,6 +8818,10 @@ static void decl_initializer(init_params *p, CType *type, unsigned long c, int f
 		if (tok == '}')
 		    break;
 		skip(',');
+		/* 6.7.9p23: initializer-list expressions are indeterminately
+		   sequenced w.r.t. one another — a sequence point separates
+		   them, so {++c, ++c} is well-defined.  Start a fresh region. */
+		seqp_flush();
 	    }
         }
         if (!no_oblock)
@@ -8879,7 +9104,12 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
         cur_scope->vla.num++;
     } else if (has_init) {
         p.sec = sec;
+        /* 6.5p2 (10.1): a declarator initializer is its own full expression —
+           reset so side effects from a preceding for-header/statement do not
+           leak in, then diagnose what the initializer itself contains. */
+        seqp_reset();
         decl_initializer(&p, type, addr, DIF_FIRST);
+        seqp_check();
         if (flexible_array)
             flexible_array->type.ref->c = -1;
     }

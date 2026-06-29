@@ -1203,7 +1203,7 @@ function(_mcc_libmcc1_src obj outvar)
 endfunction()
 
 function(mcc_build_libmcc1 tname mcctgt cpu os native archive objdir out_extra)
-    set(_common stdatomic atomic builtin alloca alloca-bt)
+    set(_common stdatomic atomic builtin alloca alloca-bt complex)
     if(cpu STREQUAL "i386" OR cpu STREQUAL "x86_64")
         set(_objs libmcc1 ${_common})
     elseif(cpu STREQUAL "arm")
@@ -2521,6 +2521,44 @@ message(STATUS "qemu conformance: all programs passed")
 
     message(STATUS "mcc tests: registered exec (golden) + preprocess + embed/abitest/diff "
                    "+ hello/vla + orphan compile checks (ctest)")
+endif()
+
+# ------------------------------------------------------------------ #
+# qemu-docker: run the MCC_QEMU_TESTS cross matrix inside a Linux
+# container. The matrix needs user-mode qemu (qemu-x86_64, qemu-aarch64,
+# …), which only builds on a Linux host — so on macOS (and any non-Linux
+# host) it can't run natively. This target builds tests/qemu/docker and
+# runs the whole grid there:
+#     cmake --build <dir> --target qemu-docker
+# Sysroot downloads are cached in the `mcc-qemu-roots` Docker volume.
+# Narrow the grid with -DMCC_QEMU_DOCKER_ARCHS=... / _LIBCS=... (the same
+# values MCC_QEMU_ARCHS/_LIBCS accept); empty uses the image defaults.
+# ------------------------------------------------------------------ #
+find_program(DOCKER_EXE NAMES docker)
+if(DOCKER_EXE)
+    set(MCC_QEMU_DOCKER_ARCHS "" CACHE STRING
+        "ARCHS to pass to the qemu-docker matrix (empty = image default)")
+    set(MCC_QEMU_DOCKER_LIBCS "" CACHE STRING
+        "LIBCS to pass to the qemu-docker matrix (empty = image default)")
+    set(_qd_env "")
+    if(MCC_QEMU_DOCKER_ARCHS)
+        list(APPEND _qd_env -e "ARCHS=${MCC_QEMU_DOCKER_ARCHS}")
+    endif()
+    if(MCC_QEMU_DOCKER_LIBCS)
+        list(APPEND _qd_env -e "LIBCS=${MCC_QEMU_DOCKER_LIBCS}")
+    endif()
+    add_custom_target(qemu-docker
+        COMMAND "${DOCKER_EXE}" build -t mcc-qemu
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/docker"
+        COMMAND "${DOCKER_EXE}" run --rm
+                -v "${CMAKE_CURRENT_SOURCE_DIR}:/work"
+                -v mcc-qemu-roots:/qemu-roots
+                ${_qd_env} mcc-qemu
+        USES_TERMINAL VERBATIM
+        COMMENT "qemu-user cross matrix in Docker (image mcc-qemu)")
+else()
+    message(STATUS "mcc: docker not found — `qemu-docker` target unavailable "
+                   "(see tests/qemu/docker/README.md)")
 endif()
 
 file(GLOB_RECURSE MCC_TAGFILES CONFIGURE_DEPENDS

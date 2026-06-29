@@ -698,6 +698,20 @@ static const cli_case_t cli_cases[] = {
   "grep -oE \"type defaults to 'int' in declaration|return type defaults to 'int'|CLEAN_OK\" | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 return type defaults to 'int'\n2 type defaults to 'int' in declaration\n" },
 
+/* 6.5p2 -Wsequence-point: an object modified twice with no intervening
+   sequence point warns (i=i++); the neighboring well-defined forms (i=i+1,
+   the comma operator, distinct call arguments, ?: arms) stay quiet, and
+   -Wno-sequence-point silences the warning entirely. */
+{ "wsequence_point_diag", "",
+  "printf 'void g(void){int i=0;i=i++;}\\n' > {W}/spw.c && "
+  "printf 'int f(int a,int b){return a+b;}\\n"
+  "void h(void){int i=0,j=0,a=0;i=i+1;i++,j++;f(i++,j++);a=i?i++:j++;}\\n' > {W}/spo.c && "
+  "{ {MCC} -B{B} -I{I} -c {W}/spw.c -o {W}/spw.o 2>&1; "
+  "{MCC} -B{B} -I{I} -Wno-sequence-point -c {W}/spw.c -o {W}/spw.o 2>&1; "
+  "{MCC} -B{B} -I{I} -c {W}/spo.c -o {W}/spo.o 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE \"operation on 'i' may be undefined|CLEAN_OK\" | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 operation on 'i' may be undefined\n" },
+
 { "common_symbol_merge", "cpu=x86_64,os=linux",
   "printf 'int shared_g;\\nvoid set_it(void){ shared_g = 5; }\\n' > {W}/cm1.c && "
   "printf '#include <stdio.h>\\nint shared_g; void set_it(void);\\n"

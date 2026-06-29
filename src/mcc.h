@@ -375,6 +375,12 @@ extern long double strtold (const char *__nptr, char **__endptr);
 #define TOKSTR_MAX_SIZE     256
 #define PACK_STACK_SIZE     8
 
+/* 6.10.6 #pragma STDC switch states (see MCCState.stdc_*). DEFAULT must be 0
+   so a zero-initialized MCCState starts every switch in its default regime. */
+#define STDC_DEFAULT        0
+#define STDC_ON             1
+#define STDC_OFF            2
+
 #define TOK_HASH_SIZE       16384
 #define TOK_ALLOC_INCR      512
 #define TOK_MAX_SIZE        4
@@ -720,6 +726,7 @@ struct MCCState {
     unsigned char warn_unsupported;
     unsigned char warn_implicit_function_declaration;
     unsigned char warn_discarded_qualifiers;
+    unsigned char warn_sequence_point;  /* 6.5p2: unsequenced side effects (default on, like gcc) */
     unsigned char warn_pedantic;        /* -pedantic: diagnose ISO C extensions */
     unsigned char pedantic_errors;      /* -pedantic-errors: make them hard errors */
     #define WARN_ON  1
@@ -817,6 +824,17 @@ struct MCCState {
     int *pack_stack_ptr;
     char **pragma_libs;
     int nb_pragma_libs;
+
+    /* 6.10.6: #pragma STDC <FP_CONTRACT|FENV_ACCESS|CX_LIMITED_RANGE> state.
+       Block-scoped (saved/restored across compound statements, see block()).
+       Values: STDC_DEFAULT (0, zero-init) / STDC_ON / STDC_OFF. */
+    unsigned char stdc_fp_contract;
+    unsigned char stdc_fenv_access;
+    unsigned char stdc_cx_limited;
+
+    /* -fcx-limited-range: force the naive (non-Annex-G) complex multiply and
+       divide for the whole TU, regardless of #pragma STDC CX_LIMITED_RANGE. */
+    unsigned char cx_limited_range;
 
     struct InlineFunc **inline_fns;
     int nb_inline_fns;
@@ -933,6 +951,23 @@ struct MCCState {
     char **link_argv;
     int link_argc, link_optind;
 };
+
+/* 6.10.6 #pragma STDC accessors. A switch is "active" when explicitly set ON
+   in the current block scope; DEFAULT/unset means the compiler picks its
+   conforming default. cx_limited() gates the naive complex mul/div path
+   (10.2); fenv_access() gates compile-time FP folding (10.3). */
+static inline int stdc_cx_limited(MCCState *s1)
+{
+    return s1->stdc_cx_limited == STDC_ON;
+}
+static inline int stdc_fenv_access(MCCState *s1)
+{
+    return s1->stdc_fenv_access == STDC_ON;
+}
+static inline int stdc_fp_contract(MCCState *s1)
+{
+    return s1->stdc_fp_contract == STDC_ON;
+}
 
 struct filespec {
     char type;

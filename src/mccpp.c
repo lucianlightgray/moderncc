@@ -1747,10 +1747,48 @@ static int pragma_parse(MCCState *s1)
         return 1;
 
     } else if (tok == TOK_STDC) {
-        /* 6.10.6: #pragma STDC FP_CONTRACT|FENV_ACCESS|CX_LIMITED_RANGE
-           ON|OFF|DEFAULT — recognized and accepted. mcc performs no unsafe
-           floating-point contraction or fenv-dependent reordering, so the
-           ON/OFF/DEFAULT state needs no codegen action today. */
+        /* 6.10.6: #pragma STDC <FP_CONTRACT|FENV_ACCESS|CX_LIMITED_RANGE>
+           <ON|OFF|DEFAULT>. The switch name selects one of the three
+           MCCState.stdc_* fields; the state word maps to STDC_ON/OFF/DEFAULT.
+           These pragmas are block-scoped (block() in src/mccgen.c saves and
+           restores the fields), so a setting inside a compound statement does
+           not leak past its closing brace. STDC pragma tokens are not
+           macro-expanded, matching gcc. */
+        unsigned char *slot, state;
+        const char *sw;
+        next_nomacro();
+        sw = get_tok_str(tok, &tokc);
+        if (!strcmp(sw, "FP_CONTRACT"))
+            slot = &s1->stdc_fp_contract;
+        else if (!strcmp(sw, "FENV_ACCESS"))
+            slot = &s1->stdc_fenv_access;
+        else if (!strcmp(sw, "CX_LIMITED_RANGE"))
+            slot = &s1->stdc_cx_limited;
+        else {
+            /* Unknown STDC switch: warn and swallow the rest of the line. */
+            mcc_warning_c(warn_all)("unknown #pragma STDC '%s'", sw);
+            while (tok != TOK_LINEFEED && tok != TOK_EOF)
+                next_nomacro();
+            return 1;
+        }
+        next_nomacro();
+        if (tok == TOK_DEFAULT)
+            state = STDC_DEFAULT;
+        else {
+            const char *st = get_tok_str(tok, &tokc);
+            if (!strcmp(st, "ON"))
+                state = STDC_ON;
+            else if (!strcmp(st, "OFF"))
+                state = STDC_OFF;
+            else {
+                mcc_warning_c(warn_all)(
+                    "malformed #pragma STDC %s (expected ON/OFF/DEFAULT)", sw);
+                while (tok != TOK_LINEFEED && tok != TOK_EOF)
+                    next_nomacro();
+                return 1;
+            }
+        }
+        *slot = state;
         while (tok != TOK_LINEFEED && tok != TOK_EOF)
             next_nomacro();
         return 1;
@@ -3940,6 +3978,55 @@ static int pp_check_he0xE(int t, const char *p)
     return t;
 }
 
+/* 6.10.9: under -E, re-emit a _Pragma("...") operator as a '#pragma <text>'
+   directive on its own line (instead of passing the _Pragma ( "..." ) tokens
+   through verbatim).  Consumes the '(' string ')' that follow the already-read
+   TOK__Pragma; the string is used as-is (parse_string already destringized
+   it, matching the compile-mode pragma_operator()).  *ptoken_seen is left as
+   TOK_LINEFEED so the next real token re-syncs the line marker via pp_line. */
+static void pp_pragma_operator(MCCState *s1, int *ptoken_seen)
+{
+    const char *raw;
+    char *content, *q;
+
+    next();                              /* '(' */
+    if (tok != '(')
+        return;
+    next();                              /* string-literal */
+    /* In -E the lexer leaves a string as TOK_PPSTR holding its raw spelling
+       (PARSE_FLAG_TOK_STR is off), so destringize here per 6.10.9 rather than
+       reading a parsed tokc.str. */
+    if (tok != TOK_PPSTR && tok != TOK_STR) {
+        while (tok != ')' && tok != TOK_EOF && tok != TOK_LINEFEED)
+            next();
+        return;
+    }
+    raw = get_tok_str(tok, &tokc);
+    /* 6.10.9 destringize: drop an encoding prefix (L/u/U/u8) and the enclosing
+       double-quotes, replace \" with " and \\ with \. */
+    while (*raw && *raw != '"')
+        raw++;                           /* skip past prefix to opening quote */
+    if (*raw == '"')
+        raw++;
+    content = mcc_malloc(strlen(raw) + 1);
+    q = content;
+    while (*raw && *raw != '"') {
+        if (*raw == '\\' && (raw[1] == '"' || raw[1] == '\\'))
+            raw++;
+        *q++ = *raw++;
+    }
+    *q = 0;
+    next();                              /* ')' */
+
+    if (*ptoken_seen != TOK_LINEFEED)    /* break off the current line first */
+        fputc('\n', s1->ppfp);
+    fputs("#pragma ", s1->ppfp);
+    fputs(content, s1->ppfp);
+    fputc('\n', s1->ppfp);
+    mcc_free(content);
+    *ptoken_seen = TOK_LINEFEED;
+}
+
 ST_FUNC int mcc_preprocess(MCCState *s1)
 {
     BufferedFile **iptr;
@@ -3982,6 +4069,12 @@ ST_FUNC int mcc_preprocess(MCCState *s1)
             pp_debug_defines(s1);
             if (s1->dflag & 4)
                 continue;
+        }
+
+        if (tok == TOK__Pragma) {
+            spcs = 0;                    /* drop any pending leading whitespace */
+            pp_pragma_operator(s1, &token_seen);
+            continue;
         }
 
         if (is_space(tok)) {

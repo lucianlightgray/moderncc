@@ -3683,7 +3683,15 @@ static int ld_add_file(MCCState *s1, const char filename[])
 {
     if (filename[0] == '-' && filename[1] == 'l')
         return mcc_add_library(s1, filename + 2);
-    if (CONFIG_SYSROOT[0] != '\0' || !IS_ABSPATH(filename)) {
+    /* When any sysroot is in effect, a linker-script GROUP/INPUT member named
+       by an absolute path (e.g. GROUP(/lib64/libc.so.6 ...)) must be resolved
+       by basename against the search paths (which point into the sysroot),
+       not opened at that literal path on the real root. Honour the runtime
+       --sysroot (s1->sysroot), not just the compile-time CONFIG_SYSROOT, so a
+       native compiler given --sysroot rebases these the same way a cross
+       compiler (non-empty CONFIG_SYSROOT) already does. */
+    if ((s1->sysroot && s1->sysroot[0]) || CONFIG_SYSROOT[0] != '\0'
+            || !IS_ABSPATH(filename)) {
         int ret = mcc_add_dll(s1, mcc_basename(filename), 0);
         if (ret != FILE_NOT_FOUND)
             return ret;

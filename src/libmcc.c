@@ -860,6 +860,7 @@ LIBMCCAPI MCCState *mcc_new(void)
 #endif
     s->warn_implicit_function_declaration = 1;
     s->warn_discarded_qualifiers = 1;
+    s->warn_sequence_point = 1;         /* 6.5p2: on by default, like gcc */
     s->ms_extensions = 1;
     s->unwind_tables = 1;
 
@@ -1685,6 +1686,7 @@ static const FlagDef options_W[] = {
     { offsetof(MCCState, warn_unsupported), 0, "unsupported" },
     { offsetof(MCCState, warn_implicit_function_declaration), WD_ALL, "implicit-function-declaration" },
     { offsetof(MCCState, warn_discarded_qualifiers), WD_ALL, "discarded-qualifiers" },
+    { offsetof(MCCState, warn_sequence_point), WD_ALL, "sequence-point" },
     { 0, 0, NULL }
 };
 
@@ -1706,6 +1708,7 @@ static const FlagDef options_f[] = {
     { offsetof(MCCState, data_sections), 0, "data-sections" },
     { offsetof(MCCState, wrapv), 0, "wrapv" },
     { offsetof(MCCState, trigraphs), 0, "trigraphs" },
+    { offsetof(MCCState, cx_limited_range), 0, "cx-limited-range" },
     { 0, 0, NULL }
 };
 

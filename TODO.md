@@ -240,29 +240,27 @@ runtime, real numeric win) → 10.5 (small, isolated to `-E`) → 10.1 (the big
 diagnostic) → 10.3 (largest, couples with future FP work) → 10.6 (infra, do
 whenever CI is set up).
 
-### 10.1 `-Wsequence-point` (§6.5p2 unsequenced side effects) — currently [ ], no-AST
-The single largest open diagnostic. mcc is single-pass with no expression AST, so
-it needs a purpose-built side-effect tracker for the current full-expression.
-Decomposed so each step compiles and is testable on its own:
-- [ ] **[S] 10.1.1 Scaffolding** — add a file-static ring in `src/mccgen.c`: `struct{Sym*obj; uint8_t kind;} seqp_ev[64]; int nb_seqp;` plus `seqp_reset()`, `seqp_record(Sym*,int kind)`, `seqp_overflow` (set when >64 events → skip analysis, stay sound). No call sites yet; just builds clean.
-- [ ] **[S] 10.1.2 Record writes** — in `vstore()` (`src/mccgen.c`), when the destination SValue is a plain-variable lvalue (`(r&VT_VALMASK)∈{VT_LOCAL,VT_CONST}` with a real `sym`, not `VT_LVAL` through a pointer), call `seqp_record(sym, WRITE)`. Bail (record nothing) for pointer/subscript/bitfield destinations in v1.
-- [ ] **[S] 10.1.3 Record reads** — at the single lvalue→rvalue load site (`gv()` when `vtop->r&VT_LVAL` and the operand is a plain-variable sym), `seqp_record(sym, READ)`. Verify there is one canonical load path; if not, hook the 1–2 that exist.
-- [ ] **[S] 10.1.4 Full-expression boundaries** — call `seqp_reset()` at the *start* of each full expression and run the check at its *end*: the expression-statement, `if`/`while`/`for`/`switch` controllers, `return`, and declarator initializers (all route through `gexpr`/`expr_eq` from `block()` — enumerate the ~6 call sites and wrap them).
-- [ ] **[S] 10.1.5 Sequence-point sub-regions** — flush-and-restart the event set at `&&`/`||` (`expr_landor`), `?:` after the condition (`expr_cond`), the comma operator (`gexpr` loop), and each function-call argument boundary (`gfunc_call` arg loop). Prevents false positives on `i++, i++` / `f(i++, j++)`.
-- [ ] **[S] 10.1.6 The diagnosis** — after a region, if `!seqp_overflow` and some `obj` has ≥2 WRITEs, or a WRITE unsequenced vs a READ, warn `operation on '%s' may be undefined [-Wsequence-point]` (gcc wording). O(n²) over ≤64 events is fine.
-- [ ] **[S] 10.1.7 Flag** — add `unsigned char warn_sequence_point` to `MCCState` (default 1, like gcc), add `{ offsetof(MCCState,warn_sequence_point), WD_ALL, "sequence-point" }` to `options_W` (`src/libmcc.c:1681`), gate the warning on it.
-- [ ] **[S] 10.1.8 Tests** — cli: must-warn (`i=i++`, `i=i++ + ++i`, `a[i]=i++` once 10.1.9 lands), must-NOT-warn (`i=i+1`, `i++, j++`, `f(i++, j++)`, `a?i++:j++`). 3-way vs gcc/clang.
-- [ ] **[M] 10.1.9 (later) Through-pointer/subscript objects** — extend the object key from `Sym*` to a best-effort `(base-Sym, constant-offset)` so `*p`/`a[k]`/`s.f` are covered when statically resolvable; keep the v1 plain-variable bail-out otherwise.
+### 10.1 `-Wsequence-point` (§6.5p2 unsequenced side effects) — DONE (v1; 10.1.9 deferred)
+mcc is single-pass with no expression AST, so it uses a purpose-built
+side-effect tracker for the current full-expression region.
+- [x] **[S] 10.1.1 Scaffolding** — file-static ring in `src/mccgen.c`: `seqp_ev[64]` of `{Sym*obj; unsigned char kind}`, `nb_seqp`, `seqp_overflow` (set when >64 events → skip analysis, stay sound), plus `seqp_reset`/`seqp_record`/`seqp_check`/`seqp_flush` and the `seqp_is_plain_var` predicate.
+- [x] **[S] 10.1.2 Record writes** — `vstore()` records a WRITE when the destination passes `seqp_is_plain_var` (lvalue, `(r&VT_VALMASK)∈{VT_LOCAL,VT_CONST}`, real `sym`, not bitfield, and the **symbol's own type is a scalar** — excludes array elements / aggregate members that keep the aggregate's `VT_LOCAL/VT_CONST` sym). *p / pointer subscripts already carry a register in VT_VALMASK.
+- [x] **[S] 10.1.3 Record reads** — `gv()` (the canonical lvalue→rvalue load) records a READ via the same predicate. Reads are kept for 10.1.9; the v1 diagnosis keys on writes (so `i=i+1` never warns).
+- [x] **[S] 10.1.4 Full-expression boundaries** — `seqp_reset()` at `block()` entry (per-statement fresh context) and `seqp_check()` at the end of the expression-statement, `if`/`while`/`for`/`switch`/`do` controllers, `return`, and declarator initializers (`decl_initializer_alloc`).
+- [x] **[S] 10.1.5 Sequence-point sub-regions** — `seqp_flush()` at `&&`/`||` (`expr_landor`), `?:` after the condition (`expr_cond`), the comma operator (`gexpr`), each call-argument boundary (both arg-eval loops), the for-header `;`s, and between initializer-list elements (6.7.9p23 indeterminate sequencing). Kills false positives on `i++,j++` / `f(i++,j++)` / `{++c,++c}`.
+- [x] **[S] 10.1.6 The diagnosis** — `seqp_check()`: when `!seqp_overflow`, warn once per object written ≥2× in a region: `operation on '%s' may be undefined`. (The write-vs-read sub-case is intentionally deferred with 10.1.9 — it needs value-flow to avoid flagging `i=i+1`.)
+- [x] **[S] 10.1.7 Flag** — `unsigned char warn_sequence_point` on `MCCState` (default 1), registered `WD_ALL "sequence-point"` in `options_W` (`src/libmcc.c`); `-Wno-sequence-point` silences it.
+- [x] **[S] 10.1.8 Tests** — cli `wsequence_point_diag` (must-warn `i=i++`; must-NOT-warn `i=i+1`/`i++,j++`/`f(i++,j++)`/`a?i++:j++`; `-Wno-` silences). 3-way verified: mcc matches clang/gcc on `i=i++`, `i=i++ + ++i`, `i=++i`, `i++*i++` (warn) and the well-defined neighbors (quiet). Zero false positives across the full `tests/`+`examples/` corpus.
+- [ ] **[M] 10.1.9 (later) Through-pointer/subscript objects** — extend the object key from `Sym*` to a best-effort `(base-Sym, constant-offset)` so `*p`/`a[k]`/`s.f` are covered when statically resolvable; keep the v1 plain-variable bail-out otherwise. (Reads are already recorded to support this.)
 
-### 10.2 Annex G robust complex multiply/divide (real content behind `CX_LIMITED_RANGE`) — new
-`gen_complex_op` (`src/mccgen.c:4577`) uses naive `(ac−bd)+(ad+bc)i` / naive-divide
-with **no inf/nan rescaling**, so mcc is permanently in the `CX_LIMITED_RANGE ON`
-regime. gcc/clang default to the robust algorithm (`__mul?c3`/`__div?c3`).
-- [ ] **[S] 10.2.1 Strategy spike** — decide inline vs runtime helper. Recommend per-precision runtime helpers `__mulsc3/__muldc3/__mulxc3` + `__div*c3` (libgcc-ABI-compatible: pass/return the two parts) in a new `runtime/lib/complex.c`, matching how gcc lowers it — keeps codegen tiny and ABI-portable across the 5 arches.
-- [ ] **[S] 10.2.2 Robust multiply helper** — implement the Annex G.5.1 reference multiply (detect inf operands with nan partners, recover by replacing nan with `copysign(0,·)` and re-multiplying) in `complex.c`, one per precision. Unit-test in isolation vs glibc `__muldc3`.
-- [ ] **[S] 10.2.3 Robust divide helper** — implement Smith's scaled division (branch on `|c|≥|d|`, scale by the larger) + the Annex G.5.1 inf/zero recovery. Unit-test vs glibc `__divdc3`.
-- [ ] **[S] 10.2.4 Route codegen** — in `gen_complex_op`, when the op is `*`/`/` and `CX_LIMITED_RANGE` is OFF/DEFAULT (query 10.4), call the helper via `vpush_helper_func` + `gfunc_call`; keep the existing naive inline path when ON.
-- [ ] **[S] 10.2.5 Tests** — vs gcc: `(INFINITY+0i)*(2+0i)`, `1.0/(0+0i)`, magnitude-extreme divides give matching inf/nan; confirm `-fcx-limited-range`/pragma-ON still uses the naive path (objdump: no `__div*c3` call). Run under the qemu matrix.
+### 10.2 Annex G robust complex multiply/divide (real content behind `CX_LIMITED_RANGE`) — DONE
+gcc/clang default to the robust algorithm; mcc now matches, falling back to the
+naive inline form only under `CX_LIMITED_RANGE ON` / `-fcx-limited-range`.
+- [x] **[S] 10.2.1 Strategy spike** — chose per-precision runtime helpers in `runtime/lib/complex.c`, but with an **out-pointer ABI** (`void __mcc_c{mul,div}{,f,l}(T *res, T,T,T,T)`, result via pointer) rather than the libgcc `__mul?c3` complex-return ABI — this sidesteps per-target complex-return reconstruction in the codegen and is identical across all 5 backends. Freestanding (no `<math.h>`): isnan/isinf/copysign/fabs and +inf are built from arithmetic + one bit pattern.
+- [x] **[S] 10.2.2 Robust multiply helper** — Annex G.5.1 reference multiply (recover inf operands with nan partners via `copysign(0/1,·)` and rescale by inf), `GEN_MUL` for float/double/long double.
+- [x] **[S] 10.2.3 Robust divide helper** — Smith's scaled division (branch on `|c|≥|d|`) + Annex G.5.2 inf/zero recovery, `GEN_DIV` per precision.
+- [x] **[S] 10.2.4 Route codegen** — `gen_complex_op`/`gen_complex_call` (`src/mccgen.c`): for `*`/`/` when not `stdc_cx_limited()` and not `-fcx-limited-range`, build a `void(T*,T,T,T,T)` function type, push `&result` + the four parts, and `gfunc_call(5)`. Naive inline path kept otherwise. Added the `-fcx-limited-range` flag (`src/libmcc.c`, `MCCState.cx_limited_range`).
+- [x] **[S] 10.2.5 Tests** — exec `complex_annexg` self-checks `(1+2i)*(3+4i)`, `/`, `1/(inf+inf*i)→0`, `(1+2i)*(inf)→inf real`, `1/(0+0i)→inf real`, float+long double; passes under mcc and (`OK`) clang/gcc, and **FAIL**s under `-fcx-limited-range` (proving the routing). Edge cases `(inf+0i)*(2+0i)`, `1/(0+0i)`, `1/(inf+inf*i)` match gcc/clang exactly.
 
 ### 10.3 `<fenv.h>` access + `#pragma STDC FENV_ACCESS` (Annex F) — new
 - [ ] **[S] 10.3.1 Header availability** — confirm hosted `<fenv.h>` + symbols (`fesetround`/`fetestexcept`/`feraiseexcept`/`FE_*`) resolve through the system libc with no bundling (like `<threads.h>`); add a compile+link smoke test. Only bundle a forwarding shim if a target lacks it.
@@ -271,18 +269,17 @@ regime. gcc/clang default to the robust algorithm (`__mul?c3`/`__div?c3`).
 - [ ] **[M] 10.3.4 Honor `FENV_ACCESS ON`** — when ON in a region (query 10.4), suppress compile-time FP constant folding so the runtime rounding mode governs (matches gcc, which stops folding under `#pragma STDC FENV_ACCESS ON`). Leave folding on when OFF/DEFAULT.
 - [ ] **[S] 10.3.5 Tests** — `fesetround(FE_DOWNWARD)` + arithmetic under `FENV_ACCESS ON` vs gcc; `fetestexcept` after an inexact op.
 
-### 10.4 `#pragma STDC` state plumbing (§6.10.6) — currently [~], unblocks 10.2/10.3
-Today `pragma_parse` discards the STDC tokens (`src/mccpp.c:1754`). These pragmas
-are **block-scoped** (revert at the end of the enclosing compound statement), so
-they need block save/restore — *not* an explicit push/pop stack like `pack`.
-- [ ] **[S] 10.4.1 Parse + store** — in `pragma_parse`'s `TOK_STDC` branch, parse `<FP_CONTRACT|FENV_ACCESS|CX_LIMITED_RANGE> <ON|OFF|DEFAULT>` into 3 `unsigned char` fields on `MCCState` (e.g. `stdc_fp_contract`/`stdc_fenv_access`/`stdc_cx_limited`), initialized to a "default" sentinel. Replaces the token-discard loop.
-- [ ] **[S] 10.4.2 Block save/restore** — snapshot the 3 fields on entry to a compound statement and restore on exit (`block()`/`prev_scope` in `src/mccgen.c`), so `{ #pragma STDC … ON … }` doesn't leak out. Small struct copy.
-- [ ] **[S] 10.4.3 Accessors** — tiny inline getters consumed by 10.2.4 (`cx_limited`) and 10.3.4 (`fenv_access`). FP_CONTRACT getter exists but stays unused until FMA contraction is ever added.
+### 10.4 `#pragma STDC` state plumbing (§6.10.6) — DONE
+These pragmas are **block-scoped** (revert at the end of the enclosing compound
+statement), so they use block save/restore — *not* an explicit push/pop stack.
+- [x] **[S] 10.4.1 Parse + store** — `pragma_parse`'s `TOK_STDC` branch (`src/mccpp.c`) parses `<FP_CONTRACT|FENV_ACCESS|CX_LIMITED_RANGE> <ON|OFF|DEFAULT>` into `MCCState.stdc_fp_contract`/`stdc_fenv_access`/`stdc_cx_limited` (values `STDC_DEFAULT`/`STDC_ON`/`STDC_OFF`, default 0). Unknown switch / malformed state warn under `-Wall` and the line is swallowed.
+- [x] **[S] 10.4.2 Block save/restore** — `block()` snapshots the 3 fields *before* its lookahead `next()` (a pragma right after `{` is otherwise consumed before the snapshot) and `new_scope`/`prev_scope` (`src/mccgen.c`) carry/restore them, so `{ #pragma STDC … ON … }` doesn't leak out. Verified via exec `complex_annexg` block-scope path.
+- [x] **[S] 10.4.3 Accessors** — `stdc_cx_limited()`/`stdc_fenv_access()`/`stdc_fp_contract()` inline getters in `src/mcc.h`; `cx_limited` consumed by 10.2.4. (`fenv_access`/`fp_contract` available, unused until 10.3.4 / FMA contraction.)
 
-### 10.5 `_Pragma` in `-E` output (§6.10.9) — currently [~], `-E` emitter
-- [ ] **[S] 10.5.1 Emitter spike** — confirm how the `-E` path turns tokens to text and tracks line numbers (`tok_print`, the `# <line> "file"` marker logic around `src/mccpp.c:1140`), so the re-emission lands on its own line with correct markers.
-- [ ] **[M] 10.5.2 Re-emit as a directive** — under `-E`, when `pragma_operator()` fires, emit `\n#pragma <text>\n` into the output (instead of pass-through tokens) and resync the line counter so following tokens get the right `#line`. Compile-mode behavior unchanged.
-- [ ] **[S] 10.5.3 Tests** — `-E` of `_Pragma("message(\"x\")")` and macro-generated `DO_PRAGMA(GCC diagnostic …)`; diff the directive line + surrounding line numbers vs gcc `-E`.
+### 10.5 `_Pragma` in `-E` output (§6.10.9) — DONE
+- [x] **[S] 10.5.1 Emitter spike** — `mcc_preprocess` (`src/mccpp.c`) is the `-E` token→text loop; `pp_line` tracks the `# <line> "file"` markers. `_Pragma` flows through as `TOK__Pragma` (compile-mode interception is gated off under `-E`).
+- [x] **[M] 10.5.2 Re-emit as a directive** — `pp_pragma_operator()` consumes the `( "…" )`, destringizes the `TOK_PPSTR` per 6.10.9 (no `PARSE_FLAG_TOK_STR` under `-E`), and emits `#pragma <text>` on its own line; `*token_seen=TOK_LINEFEED` lets the next token resync the line marker via `pp_line`. Compile mode unchanged.
+- [x] **[S] 10.5.3 Tests** — exec `pp` golden `pp_pragma_operator_emit` (`tests/exec/preprocess/pragma_operator_emit.c`): `-E -P` of a direct `_Pragma("message \"x\"")` + macro-generated `DO_PRAGMA(GCC diagnostic push)` both reconstruct as `#pragma …` lines (matches gcc).
 
 ### 10.6 CI wiring of the cross/qemu/PE/Mach-O matrix (§9) — currently [~], infra
 - [ ] **[S] 10.6.1 Labels + entry point** — confirm the qemu/wine/macho CTests carry stable labels (`qemu`/`wine`/`macho`) and self-skip when tooling is absent (mostly done); add a documented `ctest -L` invocation.
