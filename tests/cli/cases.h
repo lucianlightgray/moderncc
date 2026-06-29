@@ -712,6 +712,37 @@ static const cli_case_t cli_cases[] = {
   "grep -oE \"operation on 'i' may be undefined|CLEAN_OK\" | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 operation on 'i' may be undefined\n" },
 
+/* 6.5p2 (10.1.9): objects are keyed by (symbol, constant offset), so a constant
+   array element / aggregate member modified twice with no sequence point warns
+   (a[2]=a[2]++, s.a=s.a++) while distinct siblings (a[0]=a[1], s.a=s.b) stay
+   quiet — sub-objects are tracked without conflation. */
+{ "wsequence_point_subobject", "",
+  "printf 'struct S{int a,b;};\\n"
+  "void g(void){struct S s;int a[4];s.a=s.a++;a[2]=a[2]++;(void)s;(void)a;}\\n' > {W}/spsw.c && "
+  "printf 'struct S{int a,b;};\\n"
+  "void h(void){struct S s;int a[4];s.a=s.b;a[0]=a[1];(void)s;(void)a;}\\n' > {W}/spso.c && "
+  "{ {MCC} -B{B} -I{I} -c {W}/spsw.c -o {W}/spsw.o 2>&1; "
+  "{MCC} -B{B} -I{I} -c {W}/spso.c -o {W}/spso.o 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE \"operation on '[sa]' may be undefined|CLEAN_OK\" | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 operation on 'a' may be undefined\n1 operation on 's' may be undefined\n" },
+
+/* §6.8 jump/selection constraints (10.7.2/10.7.3): classic constraints that
+   predate the conformance tracker — break/continue outside a loop, case/default
+   outside a switch, a duplicate case label — each must be diagnosed, while the
+   well-formed loop+switch neighbor still compiles. mcc aborts on the first
+   error, so each bad form is compiled on its own. */
+{ "jump_constraints", "",
+  "printf 'void f(void){break;}\\n' > {W}/j1.c && "
+  "printf 'void f(void){continue;}\\n' > {W}/j2.c && "
+  "printf 'void f(void){case 1:;}\\n' > {W}/j3.c && "
+  "printf 'void f(int x){switch(x){case 1:;case 1:;}}\\n' > {W}/j4.c && "
+  "printf 'int f(int x){int s=0;for(int i=0;i<x;i++){if(i==2)continue;if(i==5)break;s+=i;}"
+  "switch(x){case 1:s++;break;default:s--;}return s;}\\n' > {W}/jok.c && "
+  "{ for n in j1 j2 j3 j4; do {MCC} -B{B} -I{I} -c {W}/$n.c -o {W}/$n.o 2>&1; done; "
+  "{MCC} -B{B} -I{I} -c {W}/jok.c -o {W}/jok.o 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE \"cannot break|cannot continue|duplicate case value|switch expected|CLEAN_OK\" | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 cannot break\n1 cannot continue\n1 duplicate case value\n1 switch expected\n" },
+
 { "common_symbol_merge", "cpu=x86_64,os=linux",
   "printf 'int shared_g;\\nvoid set_it(void){ shared_g = 5; }\\n' > {W}/cm1.c && "
   "printf '#include <stdio.h>\\nint shared_g; void set_it(void);\\n"

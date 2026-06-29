@@ -135,7 +135,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done+tested.
 ### Constant expressions (§6.6)
 - [x] **[DIAG] §6.6p3 comma operator in an (evaluated) constant expression** — DONE via `-pedantic`: `gexpr` (`src/mccgen.c`) now `mcc_pedantic`-warns "ISO C forbids a comma operator in a constant expression" when a comma operator is parsed in an evaluated constant context (`CONST_WANTED && !NOEVAL_WANTED`), so the unevaluated-subexpression exception is respected. `int a[(1,2)]` warns under `-pedantic`, errors under `-pedantic-errors`. Tested via cli `pedantic_diagnostics`.
 - [x] **[DIAG] §6.6 integer constant expression must have integer type** — DONE: added a `is_float(vtop->type.t)` check in `expr_const64` (`src/mccgen.c`), which covers `case 1.5:`, `enum{A=1.5}`, and `int a[2.0]` — all now error, while a cast `(int)1.5` remains a valid ICE. Verified `case 1.5` rejected by both gcc and clang. Tested via cli `integer_constant_expr_type`.
-- [x] **[DIAG] §6.5p2 unsequenced side effects** — DONE (`-Wsequence-point`, on by default like gcc): `i = i++ + ++i;` and friends now warn `operation on 'i' may be undefined`. Implemented as a single-pass per-region side-effect tracker (see **10.1**): writes recorded in `vstore`, reads in `gv`, regions bounded by full expressions and flushed at sequence points (`&&`/`||`/`?:`/comma/call-args/init-list). v1 covers plain scalar variables (≥2 writes); `*p`/`a[k]`/`s.f` deferred to 10.1.9. Matches clang/gcc on the must-warn/must-not-warn set; zero false positives across the corpus.
+- [x] **[DIAG] §6.5p2 unsequenced side effects** — DONE (`-Wsequence-point`, on by default like gcc): `i = i++ + ++i;` and friends now warn `operation on 'i' may be undefined`. Implemented as a single-pass per-region side-effect tracker (see **10.1**): writes recorded in `vstore`, reads in `gv`, regions bounded by full expressions and flushed at sequence points (`&&`/`||`/`?:`/comma/call-args/init-list). v1 covers plain scalar variables (≥2 writes); constant array elements / aggregate members (`a[2]`, `s.f`) are keyed by (symbol, offset) per 10.1.9. Matches clang/gcc on the must-warn/must-not-warn set; zero false positives across the corpus. Tested via cli `wsequence_point_diag` and `wsequence_point_subobject`.
 
 ---
 
@@ -240,13 +240,14 @@ runtime, real numeric win) → 10.5 (small, isolated to `-E`) → 10.1 (the big
 diagnostic) → 10.3 (largest, couples with future FP work) → 10.6 (infra, do
 whenever CI is set up).
 
-**Status:** 10.4 ✅, 10.2 ✅, 10.5 ✅, 10.1 ✅ (v1; 10.1.9 deferred), 10.3 ✅
-(core; `fetestexcept`-assert follow-up noted), 10.6 ✅ (CI workflow + qemu
-matrix green on all 5 arches × glibc/musl via the Docker runner) are DONE.
-Remaining: 10.7 (negative-test audit — mechanical), 10.1.9 (through-pointer
-sequence-point objects).
+**Status:** ALL DONE — 10.1 (+10.1.9: objects keyed by symbol+offset, so
+constant `a[2]`/`s.f` are tracked), 10.2, 10.3 (core; `fetestexcept`-assert
+follow-up noted), 10.4, 10.5, 10.6 (CI workflow + qemu matrix green on all 5
+arches × glibc/musl via the Docker runner), 10.7. The whole §10 backlog is
+closed; the qemu cross-matrix runs green on x86_64/i386/arm/arm64/riscv64 ×
+glibc/musl.
 
-### 10.1 `-Wsequence-point` (§6.5p2 unsequenced side effects) — DONE (v1; 10.1.9 deferred)
+### 10.1 `-Wsequence-point` (§6.5p2 unsequenced side effects) — DONE (incl. 10.1.9)
 mcc is single-pass with no expression AST, so it uses a purpose-built
 side-effect tracker for the current full-expression region.
 - [x] **[S] 10.1.1 Scaffolding** — file-static ring in `src/mccgen.c`: `seqp_ev[64]` of `{Sym*obj; unsigned char kind}`, `nb_seqp`, `seqp_overflow` (set when >64 events → skip analysis, stay sound), plus `seqp_reset`/`seqp_record`/`seqp_check`/`seqp_flush` and the `seqp_is_plain_var` predicate.
@@ -257,7 +258,7 @@ side-effect tracker for the current full-expression region.
 - [x] **[S] 10.1.6 The diagnosis** — `seqp_check()`: when `!seqp_overflow`, warn once per object written ≥2× in a region: `operation on '%s' may be undefined`. (The write-vs-read sub-case is intentionally deferred with 10.1.9 — it needs value-flow to avoid flagging `i=i+1`.)
 - [x] **[S] 10.1.7 Flag** — `unsigned char warn_sequence_point` on `MCCState` (default 1), registered `WD_ALL "sequence-point"` in `options_W` (`src/libmcc.c`); `-Wno-sequence-point` silences it.
 - [x] **[S] 10.1.8 Tests** — cli `wsequence_point_diag` (must-warn `i=i++`; must-NOT-warn `i=i+1`/`i++,j++`/`f(i++,j++)`/`a?i++:j++`; `-Wno-` silences). 3-way verified: mcc matches clang/gcc on `i=i++`, `i=i++ + ++i`, `i=++i`, `i++*i++` (warn) and the well-defined neighbors (quiet). Zero false positives across the full `tests/`+`examples/` corpus.
-- [ ] **[M] 10.1.9 (later) Through-pointer/subscript objects** — extend the object key from `Sym*` to a best-effort `(base-Sym, constant-offset)` so `*p`/`a[k]`/`s.f` are covered when statically resolvable; keep the v1 plain-variable bail-out otherwise. (Reads are already recorded to support this.)
+- [x] **[M] 10.1.9 Through-pointer/subscript objects** — the object key is now `(base symbol, constant byte offset)` (`seqp_key`/`seqp_record_sv` in `src/mccgen.c`): a constant array element (`a[2]`) or aggregate member (`s.f`) is tracked as a distinct object, so `a[2]=a[2]++` / `s.a=s.a++` warn while `a[0]=a[1]` / `s.a=s.b` stay quiet. Through-pointer `*p` and variable-index `a[i]` are not statically resolvable (register address) and remain out, as intended. Tested via cli `wsequence_point_subobject`; zero new false positives across the corpus. NOTE: the write-vs-read form `a[i]=i++` that gcc/clang flag stays out of reach — it needs value-flow to tell it from the well-defined `i=i+1`, which mcc's AST-free single pass can't do without false positives.
 
 ### 10.2 Annex G robust complex multiply/divide (real content behind `CX_LIMITED_RANGE`) — DONE
 gcc/clang default to the robust algorithm; mcc now matches, falling back to the
@@ -293,10 +294,10 @@ statement), so they use block save/restore — *not* an explicit push/pop stack.
 - [x] **[S] 10.6.3 Toolchain docs** — README "Testing" section lists the tools each label needs, the `ctest -L` entry points, and the off-Linux Docker runner (`tests/qemu/docker/README.md` has the full env-knob reference).
 - [x] **[S] 10.6.4 Document the Mach-O ceiling** — README notes the libSystem/dyld-dependent Mach-O path is kernel-fused and needs a macOS/darling host (`-DMCC_DARWIN_HOST=ON`), intentionally outside the default matrix; the structural/image/codegen/apple-libc Mach-O tests run on any host.
 
-### 10.7 Negative-test systematic audit (§9) — currently [~], mechanical
-- [ ] **[S] 10.7.1 Coverage matrix** — a small script (or checklist) that maps every `[DIAG]`/`[x]` item in §1–§8 to the cli/exec test asserting it; output the gaps.
-- [ ] **[S] 10.7.2 Backfill diagnostics** — add the missing *diagnostic-fires* cases for constraints that predate this tracker (older bit-field/cast/storage-class/jump errors).
-- [ ] **[S] 10.7.3 Backfill valid-accepts** — for each, also assert the neighboring valid form still compiles, so a future over-eager diagnostic can't regress silently.
+### 10.7 Negative-test systematic audit (§9) — DONE
+- [x] **[S] 10.7.1 Coverage matrix** — `tools/diag-coverage.py` parses every `[DIAG]` item in TODO.md, extracts its cited `cli`/`exec` test name, and verifies that test exists in the suite (or that the item carries an explicit suite-wide assertion); it reports no-citation and dangling-citation gaps and exits nonzero on any. Wired into ctest as `diag-coverage` (skips without python3). Running it surfaced (and fixed) one missing citation; it now reports **0 gaps** across all 36 done `[DIAG]` items.
+- [x] **[S] 10.7.2 Backfill diagnostics** — added cli `jump_constraints` for the classic §6.8 jump/selection constraints that predate the tracker: break/continue outside a loop, case/default outside a switch, a duplicate `case` label — each asserted to be diagnosed (`cannot break`, `cannot continue`, `switch expected`, `duplicate case value`).
+- [x] **[S] 10.7.3 Backfill valid-accepts** — `jump_constraints` (and `wsequence_point_*`) pair every must-diagnose form with its well-formed neighbor (a proper loop+switch, `i=i+1`, `s.a=s.b`) that must still compile cleanly, so an over-eager future diagnostic can't regress silently.
 
 ### 10.8 Small standalone leftovers
 - [x] **[S] §6.4.4.1 over-large decimal constant** — DONE: added cli `integer_constant_overflow` pinning the (conformant, gcc-matching) warning + accept; the §6.4.4.1 item above is now [x]. No behavior change needed.

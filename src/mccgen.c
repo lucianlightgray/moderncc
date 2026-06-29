@@ -131,18 +131,25 @@ static void block(int flags);
 #define STMT_COMPOUND 2
 
 /* 6.5p2 -Wsequence-point (10.1): single-pass side-effect tracker.  mcc has no
-   expression AST, so we record reads/writes of plain-variable lvalues into a
+   expression AST, so we record reads/writes of statically-named lvalues into a
    small ring for the current sequence-point region; a full expression resets
    the ring, internal sequence points (&&, ||, ?:, comma, call-arg boundaries)
    flush-and-restart it.  v1 diagnoses the unambiguous case: an object written
    twice with no intervening sequence point (e.g. `i = i++`).  Reads are also
-   recorded for the future through-pointer/subscript extension (10.1.9); they
-   do not drive the v1 diagnosis, so `i = i + 1` (one write) never warns.
+   recorded (they don't drive the v1 diagnosis, so `i = i + 1` never warns).
+
+   10.1.9: an object is keyed by (base symbol, constant byte offset), so a
+   constant array element (`a[2]`) or aggregate member (`s.f`) is tracked as a
+   distinct object from its siblings and from the whole — without conflating
+   them.  Through-pointer lvalues (`*p`, variable-index `a[i]`) are not
+   statically resolvable: they carry a register in VT_VALMASK rather than
+   VT_LOCAL/VT_CONST and are left out.  Bitfields are excluded (sub-byte).
    If a region exceeds the ring it sets seqp_overflow and analysis is skipped
    for that region — sound (no false positives), just less thorough. */
 enum { SEQP_READ, SEQP_WRITE };
 #define SEQP_MAX 64
-static struct { Sym *obj; unsigned char kind; } seqp_ev[SEQP_MAX];
+static struct { Sym *obj; unsigned long long off; unsigned char kind; }
+    seqp_ev[SEQP_MAX];
 static int nb_seqp;
 static int seqp_overflow;
 
@@ -152,32 +159,37 @@ static void seqp_reset(void)
     seqp_overflow = 0;
 }
 
-/* True when sv is a whole, plain scalar variable lvalue (the only objects v1
-   tracks).  Excludes *p / pointer-subscripts (register address in VT_VALMASK),
-   bitfields, and — crucially — array elements and aggregate members, which
-   keep the aggregate's VT_LOCAL/VT_CONST sym but are sub-objects (10.1.9). */
-static int seqp_is_plain_var(SValue *sv)
+/* If sv is a statically-named lvalue, fill *obj/*off with its (symbol, byte
+   offset) key and return 1; otherwise return 0.  The offset distinguishes
+   sub-objects (10.1.9); for VT_LOCAL it is the frame offset, for a VT_SYM
+   global the offset from the symbol — either way unique per storage location
+   (and union members at the same offset alias, which is the correct key). */
+static int seqp_key(SValue *sv, Sym **obj, unsigned long long *off)
 {
     int r = sv->r;
     if (!(r & VT_LVAL) || !sv->sym || (sv->type.t & VT_BITFIELD))
         return 0;
     if ((r & VT_VALMASK) != VT_LOCAL && (r & VT_VALMASK) != VT_CONST)
         return 0;
-    if ((sv->sym->type.t & VT_BTYPE) == VT_STRUCT
-        || (sv->sym->type.t & VT_ARRAY))
-        return 0;
+    *obj = sv->sym;
+    *off = (unsigned long long)sv->c.i;
     return 1;
 }
 
-static void seqp_record(Sym *obj, int kind)
+static void seqp_record_sv(SValue *sv, int kind)
 {
-    if (!mcc_state->warn_sequence_point || !obj || nocode_wanted)
+    Sym *obj;
+    unsigned long long off;
+    if (!mcc_state->warn_sequence_point || nocode_wanted)
+        return;
+    if (!seqp_key(sv, &obj, &off))
         return;
     if (nb_seqp >= SEQP_MAX) {
         seqp_overflow = 1;
         return;
     }
     seqp_ev[nb_seqp].obj = obj;
+    seqp_ev[nb_seqp].off = off;
     seqp_ev[nb_seqp].kind = kind;
     nb_seqp++;
 }
@@ -190,15 +202,17 @@ static void seqp_check(void)
         return;
     for (i = 0; i < nb_seqp; i++) {
         Sym *o = seqp_ev[i].obj;
+        unsigned long long ooff = seqp_ev[i].off;
         int writes = 0;
         if (!o || seqp_ev[i].kind != SEQP_WRITE)
             continue;
         for (j = i; j < nb_seqp; j++)
-            if (seqp_ev[j].obj == o && seqp_ev[j].kind == SEQP_WRITE)
+            if (seqp_ev[j].obj == o && seqp_ev[j].off == ooff
+                && seqp_ev[j].kind == SEQP_WRITE)
                 writes++;
         /* mark earlier duplicates consumed so each object warns once */
         for (j = i + 1; j < nb_seqp; j++)
-            if (seqp_ev[j].obj == o)
+            if (seqp_ev[j].obj == o && seqp_ev[j].off == ooff)
                 seqp_ev[j].obj = NULL;
         if (writes >= 2)
             mcc_warning_c(warn_sequence_point)(
@@ -1845,11 +1859,9 @@ ST_FUNC int gv(int rc)
     int r, r2, r_ok, r2_ok, rc2, bt;
     int bit_pos, bit_size, size, align;
 
-    /* 6.5p2 (10.1): record a read of a plain-variable lvalue at the single
-       canonical lvalue->rvalue load site.  Recorded for the future
-       through-pointer extension (10.1.9); the v1 diagnosis keys on writes. */
-    if (seqp_is_plain_var(vtop))
-        seqp_record(vtop->sym, SEQP_READ);
+    /* 6.5p2 (10.1): record a read of a statically-named lvalue at the single
+       canonical lvalue->rvalue load site (keyed by symbol+offset, 10.1.9). */
+    seqp_record_sv(vtop, SEQP_READ);
 
     /* 6.2.5p27: reading a wider-than-word _Atomic scalar (e.g. _Atomic long long
        on a 32-bit target) must be a single atomic load, not two word reads.
@@ -3523,14 +3535,11 @@ ST_FUNC void vstore(void)
 {
     int sbt, dbt, ft, r, size, align, bit_size, bit_pos, delayed_cast;
 
-    /* 6.5p2 (10.1): record a write to a plain-variable destination.  *p and
-       pointer subscripts go through gaddrof()/indir(), so their lvalue carries
-       a register in VT_VALMASK and is excluded; but a local array element or a
-       global aggregate member keeps VT_LOCAL/VT_CONST with the aggregate's sym,
-       so also require the symbol itself to be a scalar object (its members /
-       elements are deferred to 10.1.9). */
-    if (seqp_is_plain_var(vtop - 1))
-        seqp_record(vtop[-1].sym, SEQP_WRITE);
+    /* 6.5p2 (10.1/10.1.9): record a write to a statically-named destination,
+       keyed by (symbol, constant offset) so `s.f` / `a[2]` are tracked
+       distinctly.  *p and variable-index subscripts are register-addressed and
+       fall out in seqp_key(). */
+    seqp_record_sv(vtop - 1, SEQP_WRITE);
 
     /* 6.2.5p27: copying *from* an _Atomic aggregate / >8-byte object (e.g.
        `Big r = g;`) must read it atomically, not as a plain struct copy. Snap

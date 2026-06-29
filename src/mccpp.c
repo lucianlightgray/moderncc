@@ -1772,14 +1772,16 @@ static int pragma_parse(MCCState *s1)
             return 1;
         }
         next_nomacro();
-        if (tok == TOK_DEFAULT)
-            state = STDC_DEFAULT;
-        else {
+        {
+            /* ON/OFF/DEFAULT are uppercase identifiers, not the lowercase
+               `default` keyword (TOK_DEFAULT) — compare by spelling. */
             const char *st = get_tok_str(tok, &tokc);
             if (!strcmp(st, "ON"))
                 state = STDC_ON;
             else if (!strcmp(st, "OFF"))
                 state = STDC_OFF;
+            else if (!strcmp(st, "DEFAULT"))
+                state = STDC_DEFAULT;
             else {
                 mcc_warning_c(warn_all)(
                     "malformed #pragma STDC %s (expected ON/OFF/DEFAULT)", sw);
