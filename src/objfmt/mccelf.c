@@ -542,8 +542,15 @@ ST_FUNC void list_elf_symbols(MCCState *s, void *ctx,
             name = (char *) symtab->link->data + sym->st_name;
             sym_bind = ELFW(ST_BIND)(sym->st_info);
             sym_vis = ELFW(ST_VISIBILITY)(sym->st_other);
-            if (sym_bind == STB_GLOBAL && sym_vis == STV_DEFAULT)
-                symbol_cb(ctx, name, (void*)(uintptr_t)sym->st_value);
+            if (sym_bind == STB_GLOBAL && sym_vis == STV_DEFAULT) {
+                /* Report the source-level name so it round-trips with
+                   mcc_get_symbol(): on leading-underscore targets (Mach-O)
+                   the object symbol is '_name', but callers pass 'name'. */
+                const char *uname = name;
+                if (s->leading_underscore && uname[0] == '_')
+                    uname++;
+                symbol_cb(ctx, uname, (void*)(uintptr_t)sym->st_value);
+            }
         }
     }
 }

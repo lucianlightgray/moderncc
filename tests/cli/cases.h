@@ -139,9 +139,11 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -dumpversion | grep -cE '^[0-9]+\\.[0-9]+'",
   "1\n" },
 
+/* crt: is an ELF-only section (Mach-O links crt via the SDK, not a crtprefix),
+   so assert only the sections every target prints. */
 { "print_search_dirs", "",
-  "{MCC} -B{B} -print-search-dirs | grep -oE '^(install|include|libraries|crt):'",
-  "install:\ninclude:\nlibraries:\ncrt:\n" },
+  "{MCC} -B{B} -print-search-dirs | grep -oE '^(install|include|libraries):'",
+  "install:\ninclude:\nlibraries:\n" },
 
 /* ---- sub-tools / driver --------------------------------------------- */
 { "ar_create_list", "",
@@ -448,7 +450,9 @@ static const cli_case_t cli_cases[] = {
    integer ops (+= -= &= |= ^=, ++/--) use direct __atomic_* helpers; the other
    integer ops (*= /= %= <<= >>=) and float atomics use a compare-exchange loop;
    only types larger than a machine word (e.g. long double) are rejected. */
-{ "atomic_rmw_unsupported", "",
+/* elf: on Mach-O/arm64 (and PE) long double == double, so the _Atomic long
+   double RMW is a small lock-free op mcc accepts rather than rejecting. */
+{ "atomic_rmw_unsupported", "elf",
   "printf '_Atomic long double ld; void f(void){ ld*=2; }\\n' > {W}/ar1.c && "
   "{MCC} -B{B} -I{I} -std=c11 -c {W}/ar1.c -o {W}/ar1.o 2>&1 | "
   "grep -oE 'compound assignment to an ._Atomic. object is not supported'; "
@@ -557,7 +561,9 @@ static const cli_case_t cli_cases[] = {
    >8-byte object (e.g. _Atomic struct, _Atomic long double) must be indivisible
    — lowered to the generic __atomic_store/__atomic_load(size,...) libcall (needs
    -latomic), not a non-atomic struct/multi-word copy. */
-{ "atomic_inlang_aggregate", "",
+/* elf: nm output and the __atomic_* symbol spelling assume ELF naming; Mach-O
+   prefixes them with an extra underscore (___atomic_load) and PE differs. */
+{ "atomic_inlang_aggregate", "elf",
   "printf '#include <stdatomic.h>\\ntypedef struct{long a,b,c;}Big;\\n"
   "_Atomic Big g; _Atomic long double ld;\\n"
   "void f(Big v){ g = v; }\\nvoid h(long double x){ ld = x; }\\n"

@@ -503,7 +503,14 @@ mcc_config_node(MCC_DIAGNOSTICS TYPE BOOL DEFAULT OFF GROUP "Diagnostics" ADVANC
 if(MCC_DIAGNOSTICS)
     mcc_profile_seed(MCC_BUILD_SANITIZE ON)
     mcc_profile_seed(MCC_BUILD_COVERAGE ON)
-    mcc_profile_seed(MCC_BUILD_PROFILE  ON)
+    # mcc_p (-pg -static) needs a static crt0.o, which Darwin does not ship.
+    # Seed the profiling build only where it can actually link; diagnostics
+    # still turns on everything else the platform supports.
+    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+        message(STATUS "mcc diagnostics: skipping mcc_p (-static profiling) on Darwin (no static crt0.o)")
+    else()
+        mcc_profile_seed(MCC_BUILD_PROFILE  ON)
+    endif()
 endif()
 
 mcc_config_node(MCC_BUILD_PROFILE  TYPE BOOL DEFAULT OFF GROUP "Diagnostics"
@@ -1455,6 +1462,11 @@ if(MCC_BUILD_COVERAGE)
         COMMAND ${MCC_EMULATOR} "$<TARGET_FILE:mcc>" "${CMAKE_CURRENT_SOURCE_DIR}/src/mcc.c"
                 -o "${CMAKE_BINARY_DIR}/mcc_c" -ftest-coverage
                 "-I${CMAKE_BINARY_DIR}" "-I${CMAKE_CURRENT_SOURCE_DIR}"
+                "-I${CMAKE_CURRENT_SOURCE_DIR}/src"
+                "-I${CMAKE_CURRENT_SOURCE_DIR}/src/formats"
+                "-I${CMAKE_CURRENT_SOURCE_DIR}/src/objfmt"
+                "-I${CMAKE_CURRENT_SOURCE_DIR}/src/arch/${MCC_CPU}"
+                "-I${CMAKE_CURRENT_SOURCE_DIR}/include"
                 "-B${CMAKE_CURRENT_SOURCE_DIR}" "-B${CMAKE_BINARY_DIR}"
         DEPENDS mcc libmcc1 "${CMAKE_CURRENT_SOURCE_DIR}/src/mcc.c"
         COMMENT "mcc -ftest-coverage mcc.c -> mcc_c" VERBATIM)

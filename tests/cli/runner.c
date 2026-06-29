@@ -52,6 +52,11 @@ static int req_met(const char *req, char *reason, size_t rn){
             if (!ok){ snprintf(reason, rn, "requires %s target (host: %s)", want, cpu); return 0; }
         } else if (!strncmp(tok, "os=", 3)){
             if (strcmp(os, tok + 3)){ snprintf(reason, rn, "requires %s OS (host: %s)", tok+3, os); return 0; }
+        } else if (!strcmp(tok, "elf")){
+            /* ELF symbol naming (no leading underscore) and an ELF crt prefix.
+               Mach-O underscores C symbols and has no crt: dir; PE differs too. */
+            if (!strcmp(os, "Darwin") || !strcmp(os, "WIN32")){
+                snprintf(reason, rn, "requires an ELF target (host: %s)", os); return 0; }
         }
     }
     return 1;

@@ -511,6 +511,11 @@ ST_FUNC const char *get_tok_str(int v, CValue *cv)
     int len;
 
     cstr_reset(&cstr_buf);
+    /* This function writes short fixed strings straight into cstr_buf.data via
+       p (snprintf/strcpy below); make sure the buffer exists and is big enough
+       for the longest of them ("<long double>", a 64-bit value, ...). */
+    if (cstr_buf.size_allocated < 32)
+        cstr_realloc(&cstr_buf, 32);
     p = cstr_buf.data;
 
     switch(v) {
@@ -520,7 +525,7 @@ ST_FUNC const char *get_tok_str(int v, CValue *cv)
     case TOK_CULONG:
     case TOK_CLLONG:
     case TOK_CULLONG:
-        sprintf(p, "%llu", (unsigned long long)cv->i);
+        snprintf(p, cstr_buf.size_allocated, "%llu", (unsigned long long)cv->i);
         break;
     case TOK_U16CHAR:
         cstr_ccat(&cstr_buf, 'u');
@@ -598,7 +603,7 @@ ST_FUNC const char *get_tok_str(int v, CValue *cv)
                 q += 3;
             }
             if (v >= 127 || (v < 32 && !is_space(v) && v != '\n')) {
-                sprintf(p, "<\\x%02x>", v);
+                snprintf(p, cstr_buf.size_allocated, "<\\x%02x>", v);
                 break;
             }
     addv:
@@ -607,7 +612,7 @@ ST_FUNC const char *get_tok_str(int v, CValue *cv)
         } else if (v < tok_ident) {
             return table_ident[v - TOK_IDENT]->str;
         } else if (v >= SYM_FIRST_ANOM) {
-            sprintf(p, "L.%u", v - SYM_FIRST_ANOM);
+            snprintf(p, cstr_buf.size_allocated, "L.%u", v - SYM_FIRST_ANOM);
         } else {
             return NULL;
         }

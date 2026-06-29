@@ -47,6 +47,9 @@ static int portable_req(const char *req){
             if (!ok) return 0;
         } else if (!strncmp(tok, "os=", 3)){
             if (strcmp(os, tok + 3)) return 0;
+        } else if (!strcmp(tok, "elf")){
+            /* ELF symbol/section conventions; Mach-O and PE differ. */
+            if (!strcmp(os, "Darwin") || !strcmp(os, "WIN32")) return 0;
         }
         /* "asm" and other tokens: gcc/clang have an assembler too -> keep. */
     }

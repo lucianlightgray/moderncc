@@ -57,6 +57,12 @@ static int req_met(const char *req, char *reason, size_t rn){
         } else if (!strncmp(tok, "os=", 3)){
             const char *want = tok + 3;
             if (strcmp(os, want)){ snprintf(reason, rn, "requires %s target OS (host: %s)", want, os); return 0; }
+        } else if (!strcmp(tok, "elf")){
+            /* ELF symbol/section conventions (unprefixed global asm labels,
+               ELF .section flags). Mach-O prefixes C symbols with '_' and uses
+               a different section syntax; PE differs too. */
+            if (!strcmp(os, "Darwin") || !strcmp(os, "WIN32")){
+                snprintf(reason, rn, "requires an ELF target (host: %s)", os); return 0; }
         } else if (!strncmp(tok, "os!=", 4)){
             /* os!=NAME[:reason] — skip when the target OS *is* NAME (the test
                is inapplicable there). Optional ':' reason after the name. */

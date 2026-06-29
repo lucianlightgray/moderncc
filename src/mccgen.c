@@ -159,8 +159,8 @@ static void seqp_reset(void)
     seqp_overflow = 0;
 }
 
-/* If sv is a statically-named lvalue, fill *obj/*off with its (symbol, byte
-   offset) key and return 1; otherwise return 0.  The offset distinguishes
+/* If sv is a statically-named lvalue, fill *obj and *off with its (symbol,
+   byte offset) key and return 1; otherwise return 0.  The offset distinguishes
    sub-objects (10.1.9); for VT_LOCAL it is the frame offset, for a VT_SYM
    global the offset from the symbol — either way unique per storage location
    (and union members at the same offset alias, which is the correct key). */
@@ -379,6 +379,7 @@ static int R_RET(int t)
 static int R2_RET(int t)
 {
     t &= VT_BTYPE;
+    (void)t; /* unused on targets without a second integer/float return reg */
 #if PTR_SIZE == 4
     if (t == VT_LLONG)
         return REG_IRE2;
@@ -4580,12 +4581,18 @@ static void parse_btype_qualify(CType *type, int qualifiers)
 static void mk_complex_type(CType *type, CType *base)
 {
     static int re_tok, im_tok;
-    static CType cache[3];
+    static CType cache[4];
     int idx, bt = base->t & VT_BTYPE;
     Sym *s, *f0, *f1;
     AttributeDef ad;
 
-    idx = bt == VT_FLOAT ? 0 : bt == VT_DOUBLE ? 1 : 2;
+    /* On MCC_USING_DOUBLE_FOR_LDOUBLE targets (e.g. arm64 Mach-O) `long double`
+       is carried as VT_DOUBLE|VT_LONG so it stays a distinct type from `double`.
+       The complex variants must stay distinct too, so cache them separately
+       (slot 3) instead of aliasing the plain double-complex slot 1. */
+    idx = bt == VT_FLOAT ? 0
+        : bt == VT_DOUBLE ? ((base->t & VT_LONG) ? 3 : 1)
+        : 2;
     if (cache[idx].ref) {
         *type = cache[idx];
         return;
