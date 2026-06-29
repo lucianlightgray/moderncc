@@ -2272,10 +2272,10 @@ static void parse_string(const char *s, int len)
                 nchars++;
             }
             if (nchars > 1)
-                mcc_warning_c(warn_all)("multi-character character constant");
+                mcc_warning("multi-character character constant");
         } else {
             if (n > 1)
-                mcc_warning_c(warn_all)("multi-character character constant");
+                mcc_warning("multi-character character constant");
             for (c = i = 0; i < n; ++i) {
                 if (is_long)
                     c = ((nwchar_t *)tokcstr.data)[i];

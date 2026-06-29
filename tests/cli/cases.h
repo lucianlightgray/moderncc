@@ -210,8 +210,10 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -Wwrite-strings -c {W}/ws.c -o {W}/ws.o 2>&1 | grep -coE 'discards qualifiers|read-only'",
   "1\n" },
 
+/* §6.4.4.4p10: a multi-character character constant warns by default (like
+   gcc/clang -Wmultichar), not only under -Wall. */
 { "multichar_warning", "",
-  "{MCC} -B{B} -I{I} -Wall -c {D}/multichar.c -o {W}/mc.o 2>&1 | grep -oE 'multi-character'",
+  "{MCC} -B{B} -I{I} -c {D}/multichar.c -o {W}/mc.o 2>&1 | grep -oE 'multi-character'",
   "multi-character\n" },
 
 { "integer_suffix_error", "",

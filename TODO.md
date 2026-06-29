@@ -459,10 +459,11 @@ bulk of each area matched the references; these are the residual divergences.
   defensible).
   3-way: mcc=stray-`\`/no-splice | gcc/clang=splice+warn.
 
-- [ ] **[DIAG] §6.4.4.4p10 — multi-character character constant not diagnosed.**
-  `'ab'` (value impl-defined) compiles silently in code and in `#if`; both refs
-  warn `-Wmultichar` (default-on). The value mcc computes is correct (big-endian).
-  3-way: mcc=silent | gcc/clang=warning.
+- [x] **[DIAG] §6.4.4.4p10 — multi-character character constant now warns by default.**
+  The existing `'ab'` warning (`src/mccpp.c`) was gated on `-Wall`; now it is a
+  default-on `mcc_warning` (matching gcc/clang `-Wmultichar`), still suppressible
+  with `-w`. Single-char constants stay clean. cli `multichar_warning` (now at
+  default level). Also covers the `#if 'ab'` case.
 
 - [ ] **[DIAG] §6.10.1 — integer overflow in a `#if` controlling expression not diagnosed.**
   `#if 9223372036854775807 + 1 < 0` is silent (takes the wrapped branch); `#if 1%0`
