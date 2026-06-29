@@ -1153,6 +1153,7 @@ isxdigit
 labs
 ldexp
 ldiv
+lldiv
 localeconv
 localtime
 log

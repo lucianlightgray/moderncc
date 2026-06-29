@@ -120,7 +120,11 @@ ST_DATA const int reg_classes[NB_REGS] = {
 
 static unsigned long func_sub_sp_offset;
 static int func_ret_sub;
-static int func_stack_chk_loc;   /* -fstack-protector canary slot, 0 = none */
+#if !defined(MCC_TARGET_PE) && !defined(MCC_TARGET_MACHO)
+/* -fstack-protector canary slot, 0 = none. The SysV %fs:0x28 guard is emitted
+   only on this path; PE and Mach-O use neither (see gen_stack_chk_*). */
+static int func_stack_chk_loc;
+#endif
 
 #if defined(CONFIG_MCC_BCHECK)
 static addr_t func_bound_offset;

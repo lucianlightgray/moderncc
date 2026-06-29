@@ -242,6 +242,7 @@ static uint32_t stuff_const(uint32_t op, uint32_t c)
     case 0x0:
       if(c==~0)
 	return (op&0xF010F000)|((op>>16)&0xF)|0x1A00000;
+    /* fall through */
     case 0x1C00000:
       try_neg=1;
       negop=op^0x1C00000;
@@ -1001,7 +1002,7 @@ static int assign_regs(int nb_args, int float_abi, struct plan *plan, int *todo)
 {
   int size, align;
   int ncrn  , nsaa  ;
-  struct avail_regs avregs = {{0}};
+  struct avail_regs avregs = {0};
 
   ncrn = nsaa = 0;
   *todo = 0;
@@ -1266,7 +1267,7 @@ void gfunc_prolog(Sym *func_sym)
   CType ret_type;
 
 #ifdef MCC_ARM_EABI
-  struct avail_regs avregs = {{0}};
+  struct avail_regs avregs = {0};
 #endif
 
   sym = func_type->ref;

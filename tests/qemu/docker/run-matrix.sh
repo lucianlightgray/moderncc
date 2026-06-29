@@ -39,11 +39,15 @@ echo "==> configuring (archs=[$ARCHS] libcs=[$LIBCS])"
 # Mirrors the `cross` preset (MCC_ENABLE_CROSS=ON, Debug, Unix Makefiles) but
 # with an out-of-source build dir so the preset's in-tree binaryDir never lands
 # on the host mount. MCC_QEMU_DLDIR redirects sysroots to the cache volume.
+# MCC_CROSS_DIR points the darwin/macho row (qemu-arm64-osx) at this build's
+# cross compilers (arm64-osx-mcc + lib-arm64-osx live in $BUILD, not the default
+# in-source cmake-build-cross), so it runs here instead of self-skipping.
 cmake -S "$SRC" -B "$BUILD" -G "Unix Makefiles" \
     -DCMAKE_BUILD_TYPE=Debug \
     -DMCC_ENABLE_CROSS=ON \
     -DMCC_QEMU_TESTS=ON \
     -DMCC_QEMU_DLDIR="$ROOTS" \
+    -DMCC_CROSS_DIR="$BUILD" \
     -DMCC_QEMU_ARCHS="$ARCHS" \
     -DMCC_QEMU_LIBCS="$LIBCS"
 

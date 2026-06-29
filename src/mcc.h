@@ -1638,7 +1638,10 @@ ST_FUNC void gen_increment_tcov (SValue *sv);
 ST_FUNC void gen_clear_cache(void);
 #endif
 
-#ifdef MCC_TARGET_X86_64
+#if defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_PE)
+/* Defined and called only on the SysV path (the !PE #else branch of
+   x86_64-gen.c; callers in mccgen.c are likewise PE-guarded). Declaring it for
+   the PE target leaves a dead static prototype (-Wunused-function). */
 ST_FUNC void arch_transfer_ret_regs(int);
 #endif
 

@@ -1031,6 +1031,7 @@ static void gen_opil(int op, int ll)
                     if (fc <= -(1 << 11))
                       break;
                     fc = -fc;
+                /* fall through */
                 case '+':
                     func3 = 0;
                     cll = ll;
@@ -1047,11 +1048,13 @@ static void gen_opil(int op, int ll)
                     if (fc >= (1 << 11) - 1)
                       break;
                     ++fc;
+                /* fall through */
                 case TOK_LT:  func3 = 2; goto do_cop;
                 case TOK_ULE:
                     if (fc >= (1 << 11) - 1 || fc == -1)
                       break;
                     ++fc;
+                /* fall through */
                 case TOK_ULT: func3 = 3; goto do_cop;
                 case '^':     func3 = 4; goto do_cop;
                 case '|':     func3 = 6; goto do_cop;

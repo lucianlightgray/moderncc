@@ -1745,6 +1745,7 @@ static int arm64_gen_opic(int op, uint32_t l, int rev, uint64_t val,
             o(0x2a2003e0 | l << 31 | x | a << 16);
             return 1;
         }
+    /* fall through */
     case '&':
     case '|': {
         int e = arm64_encode_bimm64(l ? val : val | val << 32);

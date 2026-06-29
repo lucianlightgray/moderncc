@@ -16,6 +16,10 @@ FROM debian:stable-slim
 # - ca-certificates                : TLS for the Gentoo stage3 downloads
 # - tar/xz-utils/bzip2             : stage3 tarballs are .tar.xz / .tar.bz2
 # - rsync                          : stage a clean source copy off the mount
+# - clang/lld                      : aarch64 cross-link for the darwin/macho row
+#                                    (qemu-arm64-osx): link mcc's arm64-osx -c
+#                                    object against the arm64 glibc sysroot and
+#                                    run it under qemu-aarch64
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         build-essential \
         cmake \
@@ -27,6 +31,8 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
         xz-utils \
         bzip2 \
         rsync \
+        clang \
+        lld \
     && rm -rf /var/lib/apt/lists/*
 
 # Fail the build early if the distro ever stops shipping a needed emulator

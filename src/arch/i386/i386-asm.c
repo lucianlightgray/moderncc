@@ -1209,6 +1209,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
             goto try_next;
         case '+':
             op->is_rw = 1;
+            /* fall through */
         case '&':
             if (j >= nb_outputs)
                 mcc_error("'%c' modifier can only be applied to outputs", c);
