@@ -290,6 +290,16 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'integer constant expression must have integer type|CAST_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CAST_OK\n2 integer constant expression must have integer type\n" },
 
+/* 6.4.4.1: a decimal/hex integer constant too large for any standard type is a
+   warning (and accepted), not a hard error — matching gcc (only clang escalates
+   to an error). Covers a suffixless decimal > LLONG_MAX and a hex > ULLONG_MAX. */
+{ "integer_constant_overflow", "",
+  "printf 'unsigned long long a=99999999999999999999;\\n"
+  "unsigned long long b=0xFFFFFFFFFFFFFFFF0;\\nint main(void){return (a!=0)&&(b!=0)?0:1;}\\n' > {W}/ov.c && "
+  "{MCC} -B{B} -I{I} -std=c11 {W}/ov.c -o {W}/ov 2>&1 | grep -c 'integer constant overflow'; "
+  "{W}/ov && echo OVF_RUN_OK",
+  "2\nOVF_RUN_OK\n" },
+
 /* 6.5.4: no cast between a floating type and a pointer (either direction). */
 { "float_pointer_cast_constraint", "",
   "printf 'void *p(double d){return (void*)d;}\\n' > {W}/fp1.c && "
@@ -320,10 +330,17 @@ static const cli_case_t cli_cases[] = {
 { "restrict_requires_pointer", "",
   "printf 'int restrict x;\\n' > {W}/rr1.c && "
   "printf 'typedef int* IP; restrict IP q; int *restrict p;\\nint main(void){return !!p+!!q;}\\n' > {W}/rr2.c && "
+  /* 6.7.3p2: a restrict-qualified pointer to a *function* (the function part is
+     parsed after the *restrict) is a constraint violation; a restrict pointer
+     to an object (incl. pointer-to-array) is fine. */
+  "printf 'void (*restrict fp)(void);\\n' > {W}/rr3.c && "
+  "printf 'int (*restrict pa)[3]; int *restrict *pp;\\nint main(void){return !!pa+!!pp;}\\n' > {W}/rr4.c && "
   "{ {MCC} -B{B} -I{I} -std=c11 -c {W}/rr1.c -o {W}/rr1.o 2>&1; "
-  "{MCC} -B{B} -I{I} -std=c11 {W}/rr2.c -o {W}/rr2 2>&1 && echo PTR_OK; } | "
-  "grep -oE \"'restrict' requires a pointer type|PTR_OK\"",
-  "'restrict' requires a pointer type\nPTR_OK\n" },
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/rr3.c -o {W}/rr3.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 {W}/rr2.c -o {W}/rr2 2>&1 && echo PTR_OK; "
+  "{MCC} -B{B} -I{I} -std=c11 {W}/rr4.c -o {W}/rr4 2>&1 && echo OBJPTR_OK; } | "
+  "grep -oE \"'restrict' requires a pointer type|pointer to function type may not be 'restrict'-qualified|PTR_OK|OBJPTR_OK\"",
+  "'restrict' requires a pointer type\npointer to function type may not be 'restrict'-qualified\nPTR_OK\nOBJPTR_OK\n" },
 
 /* 6.7.5p2,p4: _Alignas constraints (typedef, function, register, bit-field,
    under-alignment). Valid over-alignment must still compile. */
@@ -452,8 +469,15 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -std=c11 {W}/dn.c -o {W}/dn >/dev/null 2>&1 && {W}/dn && echo DN_OK; "
   "printf 'struct U{int @;};\\n' > {W}/dn2.c && "
   "{MCC} -B{B} -I{I} -std=c11 -c {W}/dn2.c -o {W}/dn2.o 2>&1 | "
-  "grep -oE 'identifier expected'",
-  "2\nDN_OK\nidentifier expected\n" },
+  "grep -oE 'identifier expected'; "
+  /* a named-tag struct member with no declarator: silent under MS extensions
+     (mcc default, == gcc -fms-extensions), warn+accept under
+     -fno-ms-extensions (== gcc/clang default), never reject-valid. */
+  "printf 'struct W{struct T{int a;};};\\n' > {W}/dn3.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/dn3.c -o {W}/dn3.o 2>&1 | wc -l | tr -d ' '; "
+  "{MCC} -B{B} -I{I} -std=c11 -fno-ms-extensions -c {W}/dn3.c -o {W}/dn3.o 2>&1 | "
+  "grep -c 'declaration does not declare anything'",
+  "2\nDN_OK\nidentifier expected\n0\n1\n" },
 
 /* 6.5.4p2: the type name in a cast shall be void or scalar; casting to an
    array type or to a struct unrelated to the operand is a constraint
@@ -517,8 +541,17 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'flexible array member'; "
   "printf 'enum E *p; int main(void){return p!=0;}\\n' > {W}/pd7.c && "
   "{MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/pd7.c -o {W}/pd7.o 2>&1 | "
-  "grep -oE \"forward references to .enum. types\"; echo END",
-  "0\nvariably modified type\nrange of 'int'\ncomma operator in a constant expression\nin a 'for' loop initializer\n'_Noreturn' used outside of a function\nflexible array member\nforward references to 'enum' types\nEND\n" },
+  "grep -oE \"forward references to .enum. types\"; "
+  "printf 'void fn(void); int m(void){return (int)sizeof(fn);}\\n' > {W}/pd8.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/pd8.c -o {W}/pd8.o 2>&1 | "
+  "grep -oE \".sizeof. applied to a function type\"; "
+  "printf '_Static_assert(1,\"ok\"); int main(void){return 0;}\\n' > {W}/pd9.c && "
+  "{MCC} -B{B} -I{I} -std=c99 -pedantic -c {W}/pd9.c -o {W}/pd9.o 2>&1 | "
+  "grep -oE \"does not support ._Static_assert. before C11\"; "
+  "printf 'struct S{int d[];}; int main(void){return (int)sizeof(struct S);}\\n' > {W}/pd10.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/pd10.c -o {W}/pd10.o 2>&1 | "
+  "grep -oE 'flexible array member in a struct with no named members'; echo END",
+  "0\nvariably modified type\nrange of 'int'\ncomma operator in a constant expression\nin a 'for' loop initializer\n'_Noreturn' used outside of a function\nflexible array member\nforward references to 'enum' types\n'sizeof' applied to a function type\ndoes not support '_Static_assert' before C11\nflexible array member in a struct with no named members\nEND\n" },
 
 /* 6.2.5p27: a plain in-language store to / read from an _Atomic aggregate or
    >8-byte object (e.g. _Atomic struct, _Atomic long double) must be indivisible
@@ -615,6 +648,19 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -std=c11 {W}/ix4.c -o {W}/ix4 2>&1 && echo VALID_OK; } | "
   "grep -oE 'incorrect integer suffix|_Alignof. applied to an incomplete type|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 VALID_OK\n1 _Alignof' applied to an incomplete type\n2 incorrect integer suffix\n" },
+
+/* 6.4.3p2: a universal character name in an identifier may not designate a
+   code point < 00A0 (except $ @ `) nor a surrogate (D800-DFFF). gcc and clang
+   both reject these. A legal UCN (e.g. é) and the $ exception compile. */
+{ "ucn_identifier_range", "",
+  "printf 'int \\\\u0041 = 5;\\n' > {W}/un1.c && "
+  "printf 'int \\\\U0000d800x;\\n' > {W}/un2.c && "
+  "printf 'int \\\\u00e9 = 5;\\nint main(void){return \\\\u00e9-5;}\\n' > {W}/un3.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -c {W}/un1.c -o {W}/un1.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/un2.c -o {W}/un2.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 {W}/un3.c -o {W}/un3 2>&1 && echo UCN_OK; } | "
+  "grep -oE 'universal character .u(0041|d800) is not valid in an identifier|UCN_OK' | sort",
+  "UCN_OK\nuniversal character \\u0041 is not valid in an identifier\nuniversal character \\ud800 is not valid in an identifier\n" },
 
 /* 6.5.1: implicit function declaration is diagnosed even inside a K&R-style
    (empty-paren) function body, not only inside prototyped bodies. */

@@ -348,6 +348,14 @@ static int decode_ucn(uint8_t **pp)
         else return -1;
     }
     *pp = p + 2 + n;
+    /* 6.4.3p2: a UCN in an identifier shall not designate a code point < 00A0
+       (except 0024 '$', 0040 '@', 0060 '`') nor one in the surrogate range
+       D800–DFFF. Both callers of decode_ucn are identifier contexts (UCNs in
+       string/char literals go through parse_string, where gcc is lenient). */
+    if ((v < 0xA0 && v != 0x24 && v != 0x40 && v != 0x60)
+        || (v >= 0xD800 && v <= 0xDFFF))
+        mcc_error("universal character \\u%04x is not valid in an identifier",
+                  v);
     return (int)v;
 }
 

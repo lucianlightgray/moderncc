@@ -4324,15 +4324,31 @@ do_decl:
                     	    } else {
 				int v = btype.ref->v;
 				if ((v & ~SYM_STRUCT) < SYM_FIRST_ANOM) {
+				    /* A named-tag struct/union with no declarator
+				       (e.g. `struct S{struct T{int a;};};`)
+				       declares only the tag. With MS extensions
+				       (mcc's default) it is taken as an anonymous
+				       member, matching gcc -fms-extensions (silent);
+				       without them gcc/clang warn "declaration does
+				       not declare anything" and accept — so warn
+				       rather than reject-valid. */
 				    if (mcc_state->ms_extensions == 0)
-                        		expect("identifier");
+                        		mcc_warning("declaration does not "
+						    "declare anything");
 				}
                     	    }
                         }
                         if (type_size(&type1, &align) < 0) {
-			    if ((u == VT_STRUCT) && (type1.t & VT_ARRAY) && c)
+			    if ((u == VT_STRUCT) && (type1.t & VT_ARRAY)) {
+				/* 6.7.2.1p3: a flexible array member. gcc/clang
+				   accept it as the last member; as the *sole*
+				   member ("no named members") it is a GNU
+				   extension, diagnosed under -pedantic. */
 			        flexible = 1;
-			    else
+				if (!c)
+				    mcc_pedantic("flexible array member in a "
+						 "struct with no named members");
+			    } else
 			        mcc_error("field '%s' has incomplete type",
                                       get_tok_str(v, NULL));
                         }
@@ -5179,10 +5195,23 @@ check:
     return 1;
 }
 
+/* 6.7.3p2: restrict may only qualify a pointer to an object type. A
+   declarator-level `restrict` on a pointer whose pointee turns out to be a
+   function type (e.g. `void (*restrict p)(void)`) is a constraint violation,
+   but the function part is parsed *after* the `*restrict`, so the pointees of
+   restrict-qualified pointers are recorded during the declarator parse and
+   checked once the whole (possibly nested) declarator has been built. */
+static Sym *restrict_ptr_pointee[8];
+static int  nb_restrict_ptr;
+static int  type_decl_depth;
+
 static CType *type_decl(CType *type, AttributeDef *ad, int *v, int td)
 {
     CType *post, *ret;
-    int qualifiers, storage;
+    int qualifiers, restrict_q, storage;
+
+    if (type_decl_depth++ == 0)
+        nb_restrict_ptr = 0;
 
     storage = type->t & VT_STORAGE;
     type->t &= ~VT_STORAGE;
@@ -5190,6 +5219,7 @@ static CType *type_decl(CType *type, AttributeDef *ad, int *v, int td)
 
     while (tok == '*') {
         qualifiers = 0;
+        restrict_q = 0;
     redo:
         next();
         switch(tok) {
@@ -5209,6 +5239,7 @@ static CType *type_decl(CType *type, AttributeDef *ad, int *v, int td)
         case TOK_RESTRICT1:
         case TOK_RESTRICT2:
         case TOK_RESTRICT3:
+            restrict_q = 1;
             goto redo;
 	case TOK_ATTRIBUTE1:
 	case TOK_ATTRIBUTE2:
@@ -5217,6 +5248,8 @@ static CType *type_decl(CType *type, AttributeDef *ad, int *v, int td)
         }
         mk_pointer(type);
         type->t |= qualifiers;
+        if (restrict_q && nb_restrict_ptr < 8)
+            restrict_ptr_pointee[nb_restrict_ptr++] = type->ref;
 	if (ret == type)
 	    ret = pointed_type(type);
     }
@@ -5241,6 +5274,16 @@ static CType *type_decl(CType *type, AttributeDef *ad, int *v, int td)
               td & ~(TYPE_DIRECT|TYPE_ABSTRACT));
     parse_attribute(ad);
     type->t |= storage;
+    if (--type_decl_depth == 0) {
+        int bad = 0;
+        while (nb_restrict_ptr)
+            if ((restrict_ptr_pointee[--nb_restrict_ptr]->type.t & VT_BTYPE)
+                == VT_FUNC)
+                bad = 1;
+        if (bad)
+            mcc_error("pointer to function type may not be "
+                      "'restrict'-qualified");
+    }
     return ret;
 }
 
@@ -6157,6 +6200,13 @@ ST_FUNC void unary(void)
         if (type.t & VT_BITFIELD)
             mcc_error("'%s' cannot be applied to a bit-field",
                       t == TOK_SIZEOF ? "sizeof" : "_Alignof");
+        /* 6.5.3.4: sizeof/_Alignof shall not be applied to a function type.
+           gcc/clang accept it as an extension (sizeof yields 1); diagnose
+           under -pedantic. */
+        if ((type.t & VT_BTYPE) == VT_FUNC)
+            mcc_pedantic(t == TOK_SIZEOF
+                         ? "'sizeof' applied to a function type"
+                         : "'_Alignof' applied to a function type");
         if (t == TOK_SIZEOF) {
             vpush_type_size(&type, &align);
             gen_cast_s(VT_SIZE_T);
@@ -9021,6 +9071,11 @@ static void do_Static_assert(void)
     int c;
     const char *msg;
 
+    /* 6.7.10: _Static_assert is a C11 feature. mcc accepts it in every mode
+       as an extension; diagnose its pre-C11 use under -pedantic (gcc/clang
+       both warn). */
+    if (mcc_state->cversion < 201112)
+        mcc_pedantic("ISO C does not support '_Static_assert' before C11");
     next();
     skip('(');
     c = expr_const();
