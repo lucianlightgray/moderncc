@@ -40,7 +40,25 @@
 #define FLT_TRUE_MIN 1.40129846e-45F
 #define DBL_TRUE_MIN 4.9406564584124654e-324
 
-#if defined __i386__ || defined __x86_64__
+#if defined _WIN32 || (defined __APPLE__ && defined __aarch64__)
+/* MSVC/PE and AArch64 Mach-O ABIs: long double has the same 64-bit
+   representation as double (mcc's MCC_USING_DOUBLE_FOR_LDOUBLE). Reporting the
+   x86 80-bit properties here makes LDBL_MIN/LDBL_TRUE_MIN underflow to 0 and
+   breaks <tgmath.h>'s long double == double detection. */
+#define LDBL_MANT_DIG 53
+#define LDBL_DIG 15
+#define LDBL_EPSILON 2.2204460492503131e-16L
+#define LDBL_MIN_EXP (-1021)
+#define LDBL_MIN 2.2250738585072014e-308L
+#define LDBL_MIN_10_EXP (-307)
+#define LDBL_MAX_EXP 1024
+#define LDBL_MAX 1.7976931348623157e+308L
+#define LDBL_MAX_10_EXP 308
+#define DECIMAL_DIG 17
+#define LDBL_DECIMAL_DIG 17
+#define LDBL_TRUE_MIN 4.9406564584124654e-324L
+
+#elif defined __i386__ || defined __x86_64__
 
 #define LDBL_MANT_DIG 64
 #define LDBL_DIG 18

@@ -15,6 +15,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
+#ifdef _WIN32
+#include <direct.h>
+#define MKDIR(p) _mkdir(p)
+#else
+#include <sys/stat.h>
+#define MKDIR(p) mkdir((p), 0777)
+#endif
 
 #include "cases.h"
 
@@ -74,7 +82,16 @@ static char *slurp(FILE *f){
 }
 
 static char *run_capture(const char *cmd){
+#ifdef _WIN32
+    /* See tests/exec/runner.c: wrap so cmd.exe /c strips an outer quote pair
+       rather than the first/last quote of our multi-quoted command line. */
+    char *wrapped = malloc(strlen(cmd) + 3);
+    sprintf(wrapped, "\"%s\"", cmd);
+    FILE *f = popen(wrapped, "r");
+    free(wrapped);
+#else
     FILE *f = popen(cmd, "r");
+#endif
     if (!f) return strdup("");
     char *out = slurp(f); pclose(f); return out;
 }
@@ -142,9 +159,8 @@ static char *subst(const char *cmd, const char *mcc, const char *b,
 int main(int argc, char **argv){
     if (argc < 6){ fprintf(stderr, "usage: %s <mcc> <bdir> <idir> <workdir> <clidir>\n", argv[0]); return 2; }
     const char *mcc = argv[1], *bdir = argv[2], *idir = argv[3], *work = argv[4], *cdir = argv[5];
-    char cmd[1024];
-    snprintf(cmd, sizeof cmd, "mkdir -p \"%s\"", work);
-    if (system(cmd)) { fprintf(stderr, "cannot create workdir %s\n", work); return 2; }
+    if (MKDIR(work) != 0 && errno != EEXIST) {
+        fprintf(stderr, "cannot create workdir %s\n", work); return 2; }
 
     int pass = 0, fail = 0, skipped = 0;
     for (int i = 0; i < cli_cases_count; i++){
