@@ -327,22 +327,33 @@ void load(int r, SValue *sv)
     }
 #endif
 
+    /* TLS lvalue: materialise the tp-relative address into a register, then
+       load through it with the normal typed path.  The old segment-relative
+       form hard-coded a full-word mov (0x8b), so a char/short TLS read pulled
+       4/8 bytes and ignored sign/zero extension.  (Outside the PIC #ifndef so
+       it still applies on PE, matching the store path.) */
+    if ((fr & VT_VALMASK) == VT_CONST && (fr & VT_SYM) &&
+        (fr & VT_LVAL) && (sv->sym->type.t & VT_TLS)) {
+        int tr = r | TREG_MEM;
+        if (is_float(ft))
+            tr = get_reg(RC_INT) | TREG_MEM;
+        o(0x64);                              /* FS prefix                 */
+        o(0x48 | (REX_BASE(tr) << 2));        /* REX.W (+REX.R if r8-r15)  */
+        o(0x8b);
+        o(0x04 | (REG_VALUE(tr) << 3));       /* mov tr, %fs:[disp32]      */
+        o(0x25);
+        gen_le32(0);                          /* tr = TP                   */
+        o(0x48 | REX_BASE(tr));               /* REX.W (+REX.B if r8-r15)  */
+        o(0x81);
+        o(0xc0 | REG_VALUE(tr));              /* add tr, sym@tpoff         */
+        greloca(cur_text_section, sv->sym, ind, R_X86_64_TPOFF32, 0);
+        gen_le32(0);
+        fr = tr | VT_LVAL;                     /* now [tr + fc], typed      */
+    }
+
     v = fr & VT_VALMASK;
     if (fr & VT_LVAL) {
         int b, ll;
-        if ((fr & VT_SYM) && sv->sym->type.t & VT_TLS) {
-            int dst_reg = REG_VALUE(r);
-            int is64 = is64_type(ft);
-            o(0x64);
-            if (is64 || REX_BASE(r))
-                o(0x40 | (REX_BASE(r) << 0) | (is64 << 3));
-            o(0x8b);
-            o(0x04 | (dst_reg << 3));
-            o(0x25);
-            greloca(cur_text_section, sv->sym, ind, R_X86_64_TPOFF32, fc);
-            gen_le32(0);
-            return;
-        }
         if (v == VT_LLOCAL) {
             v1.type.t = VT_PTR;
             v1.r = VT_LOCAL | VT_LVAL;
@@ -418,7 +429,28 @@ void load(int r, SValue *sv)
                 o(0x05 + REG_VALUE(r) * 8);
                 gen_addrpc32(fr, sv->sym, fc);
 #else
-                if (sv->sym->type.t & VT_STATIC) {
+                if (sv->sym->type.t & VT_TLS) {
+                    /* Address of a thread-local (Local Exec): thread pointer
+                       (%fs:0) + sym@tpoff, mirroring gcc's
+                           movq %fs:0,%reg ; addq $sym@tpoff,%reg
+                       The value load/store paths emit %fs:-relative accesses;
+                       taking the &address must materialise the same tp-relative
+                       pointer, not the section image address (which is only the
+                       per-thread init template, not any thread's live copy). */
+                    int dst = REG_VALUE(r);
+                    o(0x64);                       /* FS segment prefix        */
+                    o(0x48 | (REX_BASE(r) << 2));  /* REX.W (+REX.R if r8-r15) */
+                    o(0x8b);                       /* mov reg, [disp32]        */
+                    o(0x04 | (dst << 3));          /* mod=00 reg=dst rm=SIB    */
+                    o(0x25);                       /* SIB: disp32, no base/idx */
+                    gen_le32(0);                   /* %fs:0 -> reg = TP        */
+                    o(0x48 | REX_BASE(r));         /* REX.W (+REX.B if r8-r15) */
+                    o(0x81);                       /* add reg, imm32 (/0)      */
+                    o(0xc0 | dst);
+                    greloca(cur_text_section, sv->sym, ind,
+                            R_X86_64_TPOFF32, fc);
+                    gen_le32(0);                   /* += sym@tpoff             */
+                } else if (sv->sym->type.t & VT_STATIC) {
                     orex(1,0,r,0x8d);
                     o(0x05 + REG_VALUE(r) * 8);
                     gen_addrpc32(fr, sv->sym, fc);
@@ -514,21 +546,21 @@ void store(int r, SValue *v)
     bt = ft & VT_BTYPE;
 
     if ((v->r & VT_SYM) && v->sym->type.t & VT_TLS) {
-        int src_reg = REG_VALUE(r);
-        int is64 = is64_type(bt);
-        o(0x64);
-        if (is64 || REX_BASE(r))
-            o(0x40 | (REX_BASE(r) << 0) | (is64 << 3));
-        o(0x89);
-        o(0x04 | (src_reg << 3));
-        o(0x25);
+        /* TLS lvalue: materialise the tp-relative address into r11, then store
+           through [r11] with the normal typed path.  The old segment-relative
+           form hard-coded a full-word mov (0x89), so a char/short TLS store
+           wrote 4/8 bytes and clobbered the neighbouring object. */
+        o(0x64);                              /* FS prefix                 */
+        o(0x4c); o(0x8b); o(0x1c); o(0x25);   /* mov r11, %fs:[disp32]     */
+        gen_le32(0);                          /* r11 = TP                  */
+        o(0x49); o(0x81); o(0xc3);            /* add r11, sym@tpoff        */
         greloca(cur_text_section, v->sym, ind, R_X86_64_TPOFF32, fc);
         gen_le32(0);
-        return;
+        pic = is64_type(bt) ? 0x49 : 0x41;    /* subsequent store -> [r11] */
+        fc = 0;
     }
-
 #ifndef MCC_TARGET_PE
-    if (fr == VT_CONST
+    else if (fr == VT_CONST
         && (v->r & VT_SYM)
         && !(v->sym->type.t & VT_STATIC)) {
         o(0x1d8b4c);

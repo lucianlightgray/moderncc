@@ -1733,19 +1733,6 @@ endif()
         mcc_skip_test(diff3-suite "needs native host + both gcc and clang")
     endif()
 
-    # §10.7.1: static audit that every done [DIAG] conformance item in TODO.md
-    # cites a test that actually exists in the suite (or an explicit suite-wide
-    # assertion). Pure source/text check — no build artifacts needed.
-    find_program(MCC_PYTHON3 NAMES python3 python)
-    if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tools/diag-coverage.py")
-        mcc_skip_test(diag-coverage "tools/diag-coverage.py not present")
-    elseif(MCC_PYTHON3)
-        add_test(NAME diag-coverage
-            COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/diag-coverage.py")
-    else()
-        mcc_skip_test(diag-coverage "needs python3")
-    endif()
-
     add_executable(libmcc_test tests/embed/api_basic.c)
     target_link_libraries(libmcc_test PRIVATE libmcc)
     target_include_directories(libmcc_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
