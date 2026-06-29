@@ -3140,3 +3140,89 @@ __asm__(
 
 #endif
 #endif
+
+/* ------------------------------------------------------------------------- *
+ * Size-generic atomic ops (libatomic-compatible) for _Atomic objects with no
+ * lock-free instruction — aggregates (e.g. _Atomic struct) and >8-byte scalars.
+ * mcc's gen_atomic_{load,store}_aggregate lowering emits calls to these
+ * (size, mem, val/ret, order). A small spinlock pool indexed by the object
+ * address gives mutual exclusion; the lock provides the (seq-cst) ordering, so
+ * the `order` argument is intentionally ignored. Portable C, compiled for every
+ * target; the byte-lock uses the __atomic_*_n builtins (which lower to the
+ * size-1 ops defined above). Mixing these with lock-free ops on the same object
+ * is not lock-free (atomic_is_lock_free reports false), as the standard allows.
+ * ------------------------------------------------------------------------- */
+typedef __SIZE_TYPE__ __mcc_usize;
+
+static volatile unsigned char __mcc_atomic_locks[64];
+
+static volatile unsigned char *__mcc_atomic_lock_for(const volatile void *p)
+{
+    return &__mcc_atomic_locks[((__mcc_usize)p >> 4) & 63];
+}
+
+static void __mcc_atomic_lock(const volatile void *p)
+{
+    volatile unsigned char *l = __mcc_atomic_lock_for(p);
+    while (__atomic_exchange_n(l, (unsigned char)1, __ATOMIC_ACQUIRE))
+        ;
+}
+
+static void __mcc_atomic_unlock(const volatile void *p)
+{
+    __atomic_store_n(__mcc_atomic_lock_for(p), (unsigned char)0, __ATOMIC_RELEASE);
+}
+
+static void __mcc_byte_copy(volatile void *dst, const volatile void *src, __mcc_usize n)
+{
+    volatile unsigned char *d = dst;
+    const volatile unsigned char *s = src;
+    while (n--)
+        *d++ = *s++;
+}
+
+void __atomic_load(__mcc_usize size, const volatile void *mem, void *ret, int order)
+{
+    (void)order;
+    __mcc_atomic_lock(mem);
+    __mcc_byte_copy(ret, mem, size);
+    __mcc_atomic_unlock(mem);
+}
+
+void __atomic_store(__mcc_usize size, volatile void *mem, void *val, int order)
+{
+    (void)order;
+    __mcc_atomic_lock(mem);
+    __mcc_byte_copy(mem, val, size);
+    __mcc_atomic_unlock(mem);
+}
+
+void __atomic_exchange(__mcc_usize size, volatile void *mem, void *val,
+                       void *ret, int order)
+{
+    (void)order;
+    __mcc_atomic_lock(mem);
+    __mcc_byte_copy(ret, mem, size);
+    __mcc_byte_copy(mem, val, size);
+    __mcc_atomic_unlock(mem);
+}
+
+int __atomic_compare_exchange(__mcc_usize size, volatile void *mem,
+                              void *expected, void *desired,
+                              int success, int failure)
+{
+    int ok = 1;
+    __mcc_usize i;
+    const volatile unsigned char *m = mem;
+    const unsigned char *e = expected;
+    (void)success; (void)failure;
+    __mcc_atomic_lock(mem);
+    for (i = 0; i < size; i++)
+        if (m[i] != e[i]) { ok = 0; break; }
+    if (ok)
+        __mcc_byte_copy(mem, desired, size);
+    else
+        __mcc_byte_copy(expected, mem, size);
+    __mcc_atomic_unlock(mem);
+    return ok;
+}

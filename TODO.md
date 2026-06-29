@@ -394,14 +394,15 @@ complex→complex *constant conversion* — see §6.9.2 and §7.3.1 above.*
   is a load-time constant. Runtime-verified vs gcc on all 5 arches; static +
   runtime + global covered by exec `c11_complex_convert`.
 
-- [ ] **[BUG] §7.17.7 — atomic load/store on aggregate (struct) `_Atomic` types fail to link.**
-  `_Atomic struct{int x,y;} p; atomic_store(&p,n); ... = atomic_load(&p);` →
-  "unresolved reference to '__atomic_load'". Scalar atomics work and run; only
-  non-register aggregates break. Needs size-generic `__atomic_load`/`store`/
-  `exchange`/`compare_exchange` (write-through-dest-ptr) library routines —
-  neither inlined nor provided by the mcc runtime. (Couples with real `_Atomic`
-  codegen; `VT_ATOMIC == VT_VOLATILE` today.)
-  3-way: mcc=link error | gcc=OK | clang=OK.
+- [x] **[BUG] §7.17.7 — atomic load/store/exchange/CAS on aggregate `_Atomic` types now work.**
+  mcc's `gen_atomic_{load,store}_aggregate` lowering emits the size-generic
+  `__atomic_load`/`store`/`exchange`/`compare_exchange(size, mem, …, order)`
+  calls; the runtime now provides them (`runtime/lib/atomic.c`) as portable-C
+  libatomic-compatible functions backed by an address-indexed spinlock pool
+  (the `__atomic_*_n` byte-lock lowers to the size-1 ops already in the file).
+  `_Atomic struct{int x,y,z;}` load/store/exchange/compare_exchange link and run,
+  matching gcc on all 5 arches. exec `atomic_aggregate`; the lowering's symbol
+  emission is also covered by cli `atomic_aggregate_load_generic`.
 
 - [x] **[DIAG] §7.1.4p1 — `creal`/`cimag` family now have callable functions.**
   `complex.h` now declares `double creal(double _Complex);` etc. *before* the

@@ -35,7 +35,13 @@ x86_64)
     [ -f "$OSXRT/atomic.o" ] || { echo "SKIP: no x86_64-osx runtime objects"; exit 77; }
     # native link + run; SysV varargs match Darwin's, so the full set runs.
     RUNTIME="$OSXRT/atomic.o $OSXRT/stdatomic.o $OSXRT/va_list.o $OSXRT/builtin.o"
-    SKIP_PROGS=""
+    # tls/tls_aggr now use native Mach-O TLV descriptors (a thunk call into
+    # libSystem's __tlv_bootstrap), which the Linux ELF shortcut can't provide —
+    # so they segfault here even though the codegen is correct. (Previously the
+    # Darwin local-exec %fs relocation happened to also work on the Linux host.)
+    # Skipped on this path like arm64; covered on real Darwin (arm64 native +
+    # x86_64-osx via Rosetta) per the §6.7.1 TLS work.
+    SKIP_PROGS="tls tls_aggr"
     BR=jmp; PLT='@PLT'
     ;;
 arm64)
