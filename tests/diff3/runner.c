@@ -47,6 +47,12 @@ static int portable_req(const char *req){
             if (!ok) return 0;
         } else if (!strncmp(tok, "os=", 3)){
             if (strcmp(os, tok + 3)) return 0;
+        } else if (!strncmp(tok, "os!=", 4)){
+            /* os!=NAME[:reason] — skip when the target OS *is* NAME. */
+            const char *want = tok + 4;
+            const char *colon = strchr(want, ':');
+            size_t wl = colon ? (size_t)(colon - want) : strlen(want);
+            if (!strncmp(os, want, wl) && os[wl] == '\0') return 0;
         } else if (!strcmp(tok, "elf")){
             /* ELF symbol/section conventions; Mach-O and PE differ. */
             if (!strcmp(os, "Darwin") || !strcmp(os, "WIN32")) return 0;
