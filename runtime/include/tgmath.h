@@ -2,6 +2,7 @@
 #define _TGMATH_H
 
 #include <math.h>
+#include <complex.h>
 
 #ifndef __cplusplus
 #define __tgmath_real(x, F) \
@@ -15,23 +16,40 @@
 #define __tgmath_real_3(x, y, z, F) \
   _Generic ((x)+(y)+(z), float: F##f, long double: F##l, default: F)(x, y, z)
 
-#define acos(z)          __tgmath_real(z, acos)
-#define asin(z)          __tgmath_real(z, asin)
-#define atan(z)          __tgmath_real(z, atan)
-#define acosh(z)         __tgmath_real(z, acosh)
-#define asinh(z)         __tgmath_real(z, asinh)
-#define atanh(z)         __tgmath_real(z, atanh)
-#define cos(z)           __tgmath_real(z, cos)
-#define sin(z)           __tgmath_real(z, sin)
-#define tan(z)           __tgmath_real(z, tan)
-#define cosh(z)          __tgmath_real(z, cosh)
-#define sinh(z)          __tgmath_real(z, sinh)
-#define tanh(z)          __tgmath_real(z, tanh)
-#define exp(z)           __tgmath_real(z, exp)
-#define log(z)           __tgmath_real(z, log)
-#define pow(z1,z2)       __tgmath_real_2(z1, z2, pow)
-#define sqrt(z)          __tgmath_real(z, sqrt)
-#define fabs(z)          __tgmath_real(z, fabs)
+/* 7.25: functions with both real and complex variants dispatch to the
+   c-prefixed function when any argument has complex type. */
+#define __tgmath_rc(x, F, C) _Generic ((x),                     \
+    float _Complex: C##f, double _Complex: C, long double _Complex: C##l, \
+    float: F##f, long double: F##l, default: F)(x)
+#define __tgmath_rc2(x, y, F, C) _Generic ((x)+(y),             \
+    float _Complex: C##f, double _Complex: C, long double _Complex: C##l, \
+    float: F##f, long double: F##l, default: F)(x, y)
+/* 7.25p7: type-generic forms of the complex-only functions. */
+#define __tgmath_cx(x, C) _Generic ((x),                        \
+    float _Complex: C##f, long double _Complex: C##l, default: C)(x)
+
+#define acos(z)          __tgmath_rc(z, acos, cacos)
+#define asin(z)          __tgmath_rc(z, asin, casin)
+#define atan(z)          __tgmath_rc(z, atan, catan)
+#define acosh(z)         __tgmath_rc(z, acosh, cacosh)
+#define asinh(z)         __tgmath_rc(z, asinh, casinh)
+#define atanh(z)         __tgmath_rc(z, atanh, catanh)
+#define cos(z)           __tgmath_rc(z, cos, ccos)
+#define sin(z)           __tgmath_rc(z, sin, csin)
+#define tan(z)           __tgmath_rc(z, tan, ctan)
+#define cosh(z)          __tgmath_rc(z, cosh, ccosh)
+#define sinh(z)          __tgmath_rc(z, sinh, csinh)
+#define tanh(z)          __tgmath_rc(z, tanh, ctanh)
+#define exp(z)           __tgmath_rc(z, exp, cexp)
+#define log(z)           __tgmath_rc(z, log, clog)
+#define pow(z1,z2)       __tgmath_rc2(z1, z2, pow, cpow)
+#define sqrt(z)          __tgmath_rc(z, sqrt, csqrt)
+#define fabs(z)          __tgmath_rc(z, fabs, cabs)
+
+#define carg(z)          __tgmath_cx(z, carg)
+#define conj(z)          __tgmath_cx(z, conj)
+#define cproj(z)         __tgmath_cx(z, cproj)
+/* creal/cimag are provided generically by <complex.h>. */
 
 #define atan2(x,y)       __tgmath_real_2(x, y, atan2)
 #define cbrt(x)          __tgmath_real(x, cbrt)

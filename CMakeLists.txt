@@ -2209,6 +2209,118 @@ endif()
     endif()
 
     # ------------------------------------------------------------------ #
+    # PE (Windows) RUNTIME conformance under wine. The win32 cross compilers
+    # are built by the 'cross' preset; this links tests/qemu/conformance/*.c
+    # into PE executables and runs them under wine. The driver self-skips
+    # (exit 0) when wine or the win32 cross compilers are unavailable, so it is
+    # safe to register unconditionally. MCC_CROSS_DIR points at the cross build
+    # tree (default: <source>/cmake-build-cross).
+    find_program(MCC_WINE NAMES wine wine64 wine64-proton-10.0.4)
+    set(MCC_CROSS_DIR "${CMAKE_SOURCE_DIR}/cmake-build-cross"
+        CACHE PATH "cross-compiler build dir for the wine PE runtime test")
+    if(MCC_WINE AND EXISTS "${MCC_CROSS_DIR}/x86_64-win32-mcc")
+        add_test(NAME pe-wine-conformance
+            COMMAND /bin/sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/run_pe_wine.sh"
+                    "${CMAKE_CURRENT_SOURCE_DIR}" "${MCC_CROSS_DIR}"
+                    "${CMAKE_BINARY_DIR}/pe-wine-work")
+        set_tests_properties(pe-wine-conformance PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT LABELS "wine")
+    else()
+        mcc_skip_test(pe-wine-conformance
+            "requires wine + the win32 cross compilers (cmake --preset cross)")
+    endif()
+
+    # ------------------------------------------------------------------ #
+    # Mach-O (Darwin) structural validation. Executing Mach-O needs macOS or
+    # darling (absent off-Darwin), so this links the codegen-self-contained
+    # conformance programs into Mach-O executables and confirms a Mach-O parser
+    # (llvm-otool/otool) reads the header and all load commands. Self-skips
+    # when a parser or the osx cross compilers are unavailable.
+    find_program(MCC_OTOOL NAMES llvm-otool otool)
+    if(MCC_OTOOL AND EXISTS "${MCC_CROSS_DIR}/x86_64-osx-mcc")
+        add_test(NAME macho-structural
+            COMMAND /bin/sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/validate_macho.sh"
+                    "${CMAKE_CURRENT_SOURCE_DIR}" "${MCC_CROSS_DIR}"
+                    "${CMAKE_BINARY_DIR}/macho-work")
+        set_tests_properties(macho-structural PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT LABELS "macho")
+    else()
+        mcc_skip_test(macho-structural
+            "requires llvm-otool/otool + the osx cross compilers (cmake --preset cross)")
+    endif()
+
+    # Mach-O (Darwin) codegen RUNTIME execution. A Mach-O binary can't be loaded
+    # on Linux, but mcc's osx `-c` emits the Darwin-target machine code in an ELF
+    # object; on an x86_64 host (identical SysV ABI) we link the self-checking
+    # conformance programs into a Linux ELF (via a libc trampoline shim + mcc's
+    # osx runtime objects) and run them, executing the exact code mcc generates
+    # for Darwin. Self-skips off-x86_64 or when the osx compiler is absent.
+    if(EXISTS "${MCC_CROSS_DIR}/x86_64-osx-mcc")
+        add_test(NAME macho-codegen-run
+            COMMAND /bin/sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/run_macho_codegen.sh"
+                    "${CMAKE_CURRENT_SOURCE_DIR}" "${MCC_CROSS_DIR}"
+                    "${CMAKE_BINARY_DIR}/macho-codegen-work")
+        set_tests_properties(macho-codegen-run PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT LABELS "macho")
+    else()
+        mcc_skip_test(macho-codegen-run
+            "requires the x86_64-osx cross compiler (cmake --preset cross)")
+    endif()
+
+    # Mach-O (Darwin) IMAGE execution. A minimal in-repo Mach-O loader
+    # (tests/qemu/macho/loader.c) maps an mcc-produced Mach-O executable's
+    # segments, seccomp-traps the macOS syscalls, and jumps to LC_MAIN — so the
+    # actual Mach-O binary is loaded and run on Linux/x86_64 (no macOS/darling).
+    # Self-skips off-x86_64 or when the osx compiler / seccomp are unavailable.
+    if(EXISTS "${MCC_CROSS_DIR}/x86_64-osx-mcc")
+        add_test(NAME macho-image-run
+            COMMAND /bin/sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/run_macho_image.sh"
+                    "${CMAKE_CURRENT_SOURCE_DIR}" "${MCC_CROSS_DIR}"
+                    "${CMAKE_BINARY_DIR}/macho-image-work")
+        set_tests_properties(macho-image-run PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT LABELS "macho")
+    else()
+        mcc_skip_test(macho-image-run
+            "requires the x86_64-osx cross compiler (cmake --preset cross)")
+    endif()
+
+    # Mach-O against Apple's REAL libc. tests/qemu/apple-libc/src/*.c are verbatim
+    # copies of the C library that ships in macOS's libSystem (apple-oss-
+    # distributions/Libc); this compiles them with mcc for x86_64 Darwin, links
+    # them into a Mach-O image, and executes that image through the in-repo loader
+    # on Linux/x86_64. It is the closest achievable approximation off-macOS to
+    # exercising Mach-O against its actual target libc (the kernel-fused remainder
+    # of libSystem — commpage asm, Mach-VM malloc, Darwin stdio — needs a
+    # macOS/darling host; see tests/qemu/apple-libc/PROVENANCE.md).
+    if(EXISTS "${MCC_CROSS_DIR}/x86_64-osx-mcc")
+        add_test(NAME macho-apple-libc
+            COMMAND /bin/sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/run_macho_apple_libc.sh"
+                    "${CMAKE_CURRENT_SOURCE_DIR}" "${MCC_CROSS_DIR}"
+                    "${CMAKE_BINARY_DIR}/macho-apple-libc-work")
+        set_tests_properties(macho-apple-libc PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT LABELS "macho")
+    else()
+        mcc_skip_test(macho-apple-libc
+            "requires the x86_64-osx cross compiler (cmake --preset cross)")
+    endif()
+
+    # The kernel-fused remainder of libSystem (libmalloc, locale/FILE stdio,
+    # dyld, pthread, GCD, ObjC) cannot be exercised off-macOS: verified
+    # empirically — `mcc -c` of Apple's libmalloc stops at internal.h:32 with a
+    # hard #error and pulls ~34 Apple-private headers (mach/*, os/lock_private,
+    # os/tsd, mach-o/dyld_priv, corecrypto, machine/cpu_capabilities=commpage,
+    # ptrauth); Libc's locale stdio is bound to xlocale/__v2printf/__sFILE/gdtoa.
+    # Running these requires a macOS or darling host (see PROVENANCE.md). This
+    # permanent, reasoned skip keeps that boundary visible in ctest output rather
+    # than silent. Set MCC_DARWIN_HOST=ON on an actual macOS/darling host to wire
+    # the full-libSystem suite here.
+    option(MCC_DARWIN_HOST "Tests run on a macOS/darling host with real libSystem" OFF)
+    if(NOT MCC_DARWIN_HOST)
+        mcc_skip_test(macho-libsystem-kernel-fused
+            "libmalloc/locale-stdio/dyld/pthread/GCD/ObjC need a macOS or darling host (-DMCC_DARWIN_HOST=ON); kernel-fused, no portable variant — see tests/qemu/apple-libc/PROVENANCE.md")
+    endif()
+
+    # ------------------------------------------------------------------ #
     # qemu-user cross-target conformance matrix (opt-in: -DMCC_QEMU_TESTS=ON)
     #
     # For each (arch x libc) it downloads a minimal Gentoo stage3 rootfs (glibc

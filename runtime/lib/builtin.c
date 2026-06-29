@@ -110,6 +110,27 @@ int BUILTIN(parityl) (unsigned long x) __attribute__((alias(BUILTINN(parity))));
 int BUILTIN(parityl) (unsigned long x) __attribute__((alias(BUILTINN(parityll))));
 #endif
 
+unsigned short BUILTIN(bswap16) (unsigned short x)
+{
+    return (unsigned short)((x >> 8) | (x << 8));
+}
+unsigned int BUILTIN(bswap32) (unsigned int x)
+{
+    return ((x & 0xff000000u) >> 24) | ((x & 0x00ff0000u) >> 8)
+         | ((x & 0x0000ff00u) <<  8) | ((x & 0x000000ffu) << 24);
+}
+unsigned long long BUILTIN(bswap64) (unsigned long long x)
+{
+    return ((x & 0xff00000000000000ull) >> 56)
+         | ((x & 0x00ff000000000000ull) >> 40)
+         | ((x & 0x0000ff0000000000ull) >> 24)
+         | ((x & 0x000000ff00000000ull) >>  8)
+         | ((x & 0x00000000ff000000ull) <<  8)
+         | ((x & 0x0000000000ff0000ull) << 24)
+         | ((x & 0x000000000000ff00ull) << 40)
+         | ((x & 0x00000000000000ffull) << 56);
+}
+
 #ifndef __MCC__
 #if defined(__GNUC__) && (__GNUC__ >= 6)
 __asm__(".globl  __builtin_ffs");
@@ -138,4 +159,57 @@ int __builtin_popcountll(unsigned long long x) __attribute__((alias("__mcc_built
 int __builtin_parity(unsigned int x) __attribute__((alias("__mcc_builtin_parity")));
 int __builtin_parityl(unsigned long x) __attribute__((alias("__mcc_builtin_parityl")));
 int __builtin_parityll(unsigned long long x) __attribute__((alias("__mcc_builtin_parityll")));
+unsigned short __builtin_bswap16(unsigned short x) __attribute__((alias("__mcc_builtin_bswap16")));
+unsigned int __builtin_bswap32(unsigned int x) __attribute__((alias("__mcc_builtin_bswap32")));
+unsigned long long __builtin_bswap64(unsigned long long x) __attribute__((alias("__mcc_builtin_bswap64")));
+#endif
+
+/* __builtin_{add,sub,mul}_overflow — per-result-type runtime helpers.
+   The dispatch macros (mccdefs.h) convert both operands to the result type T
+   via these prototypes, then this code computes the operation in a wider domain
+   and reports whether the true result is representable in T.  For T <= 32 bits
+   the computation is exact in 64 bits and overflow is detected by storing the
+   result and comparing it back (`(T)s != s`).  For 64-bit T there is no wider
+   builtin type, so add/sub use the sign/carry trick and mul uses a guarded
+   division check (no __int128 required). */
+#define MCC_OV_SMALL(T, W, NM)                                                  \
+    int __mcc_addo_##NM(T a, T b, T *r){ W s=(W)a+(W)b; *r=(T)s; return (T)s!=s;}\
+    int __mcc_subo_##NM(T a, T b, T *r){ W s=(W)a-(W)b; *r=(T)s; return (T)s!=s;}\
+    int __mcc_mulo_##NM(T a, T b, T *r){ W s=(W)a*(W)b; *r=(T)s; return (T)s!=s;}
+
+#define MCC_OV_BIG_S(T, TMIN, NM)                                              \
+    int __mcc_addo_##NM(T a, T b, T *r){                                       \
+        unsigned long long u=(unsigned long long)a+(unsigned long long)b;      \
+        *r=(T)u; return (~(a^b) & (a^(T)u)) < 0; }                             \
+    int __mcc_subo_##NM(T a, T b, T *r){                                       \
+        unsigned long long u=(unsigned long long)a-(unsigned long long)b;      \
+        *r=(T)u; return ((a^b) & (a^(T)u)) < 0; }                             \
+    int __mcc_mulo_##NM(T a, T b, T *r){                                       \
+        unsigned long long u=(unsigned long long)a*(unsigned long long)b;      \
+        *r=(T)u;                                                              \
+        if (a==0 || b==0) return 0;                                           \
+        if (a==-1) return b==(TMIN);                                          \
+        if (b==-1) return a==(TMIN);                                          \
+        return (T)u/a != b; }
+
+#define MCC_OV_BIG_U(T, NM)                                                    \
+    int __mcc_addo_##NM(T a, T b, T *r){ *r=a+b; return *r<a; }               \
+    int __mcc_subo_##NM(T a, T b, T *r){ *r=a-b; return a<b; }                \
+    int __mcc_mulo_##NM(T a, T b, T *r){ *r=a*b; return a!=0 && *r/a!=b; }
+
+MCC_OV_SMALL(signed char, long long, sc)
+MCC_OV_SMALL(char, long long, c)
+MCC_OV_SMALL(short, long long, s)
+MCC_OV_SMALL(int, long long, i)
+MCC_OV_SMALL(unsigned char, unsigned long long, uc)
+MCC_OV_SMALL(unsigned short, unsigned long long, us)
+MCC_OV_SMALL(unsigned int, unsigned long long, u)
+MCC_OV_BIG_S(long long, (-9223372036854775807LL - 1), ll)
+MCC_OV_BIG_U(unsigned long long, ull)
+#if __SIZEOF_LONG__ == 8
+MCC_OV_BIG_S(long, (-9223372036854775807LL - 1), l)
+MCC_OV_BIG_U(unsigned long, ul)
+#else
+MCC_OV_SMALL(long, long long, l)
+MCC_OV_SMALL(unsigned long, unsigned long long, ul)
 #endif

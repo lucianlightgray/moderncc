@@ -237,6 +237,421 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -x c {W}/notc.txt -o {W}/xce && {W}/xce",
   "xc\n" },
 
+/* 6.7.2.4p3: _Atomic rejects array and function types — both the explicit
+   _Atomic(type-name) form and the bare qualifier on a typedef'd array/function
+   (e.g. `typedef int A[3]; _Atomic A a;`). _Atomic on a typedef'd pointer, and
+   `_Atomic int x[3]` (array of atomic int), remain valid. */
+{ "atomic_type_constraints", "",
+  "printf '_Atomic(int[3]) a;\\n' > {W}/ata.c && "
+  "printf '_Atomic(int(void)) f;\\n' > {W}/atf.c && "
+  "printf 'typedef int A[3]; _Atomic A a;\\n' > {W}/atq.c && "
+  "printf 'typedef int F(void); _Atomic F f;\\n' > {W}/atqf.c && "
+  "printf 'typedef int* P; _Atomic P p; _Atomic int v[3]; int main(void){return 0;}\\n' > {W}/atok.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -c {W}/ata.c -o {W}/ata.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/atf.c -o {W}/atf.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/atq.c -o {W}/atq.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/atqf.c -o {W}/atqf.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 {W}/atok.c -o {W}/atok 2>&1 && echo VALID_OK; } | "
+  "grep -oE '_Atomic cannot be applied to an? (array|function) type|VALID_OK' | sort -u",
+  "VALID_OK\n_Atomic cannot be applied to a function type\n_Atomic cannot be applied to an array type\n" },
+
+/* 6.7.4p2 / 6.7.1p3,p4: function specifier on non-function, _Thread_local on
+   a function, and block-scope _Thread_local without static/extern. */
+{ "storage_specifier_constraints", "",
+  "printf 'inline int x;\\n' > {W}/sc1.c && "
+  "printf '_Thread_local void f(void);\\n' > {W}/sc2.c && "
+  "printf 'void g(void){ _Thread_local int y; (void)y; }\\n' > {W}/sc3.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -c {W}/sc1.c -o {W}/sc1.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/sc2.c -o {W}/sc2.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/sc3.c -o {W}/sc3.o 2>&1; } | "
+  "grep -oE \"'(inline|_Thread_local)'.*\" | sort -u",
+  "'_Thread_local' applied to a function\n'_Thread_local' at block scope requires 'static' or 'extern'\n'inline' used outside of a function declaration\n" },
+
+/* 6.5.3.2 / 6.5.3.4: & , sizeof, _Alignof may not be applied to a bit-field. */
+{ "bitfield_operand_constraints", "",
+  "printf 'struct S{int b:3;}s; int *p(void){return &s.b;}\\n' > {W}/bf1.c && "
+  "printf 'struct S{int b:3;}s; int n(void){return (int)sizeof(s.b);}\\n' > {W}/bf2.c && "
+  "printf 'struct S{int b:3;}s; int a(void){return (int)_Alignof(s.b);}\\n' > {W}/bf3.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -c {W}/bf1.c -o {W}/bf1.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/bf2.c -o {W}/bf2.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/bf3.c -o {W}/bf3.o 2>&1; } | "
+  "grep -oE '(cannot take address of|(sizeof|_Alignof). cannot be applied to a) bit-field' | sort -u",
+  "_Alignof' cannot be applied to a bit-field\ncannot take address of bit-field\nsizeof' cannot be applied to a bit-field\n" },
+
+/* 6.6: an integer constant expression must have integer type (case labels,
+   enum values, array sizes). A cast to int is still a valid ICE. */
+{ "integer_constant_expr_type", "",
+  "printf 'int f(int x){switch(x){case 1.5: return 1; default: return 0;}}\\n' > {W}/ic1.c && "
+  "printf 'enum E{A=1.5};\\n' > {W}/ic2.c && "
+  "printf 'int v[(int)1.5];int main(void){return (int)sizeof v;}\\n' > {W}/ic3.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -c {W}/ic1.c -o {W}/ic1.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/ic2.c -o {W}/ic2.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 {W}/ic3.c -o {W}/ic3 2>&1 && echo CAST_OK; } | "
+  "grep -oE 'integer constant expression must have integer type|CAST_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CAST_OK\n2 integer constant expression must have integer type\n" },
+
+/* 6.5.4: no cast between a floating type and a pointer (either direction). */
+{ "float_pointer_cast_constraint", "",
+  "printf 'void *p(double d){return (void*)d;}\\n' > {W}/fp1.c && "
+  "printf 'double g(void*q){return (double)q;}\\n' > {W}/fp2.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -c {W}/fp1.c -o {W}/fp1.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/fp2.c -o {W}/fp2.o 2>&1; } | "
+  "grep -oE 'cannot cast between a floating type and a pointer' | sort | uniq -c | sed 's/^ *//'",
+  "2 cannot cast between a floating type and a pointer\n" },
+
+/* 6.5.1.1p2: no two _Generic associations may specify compatible types. */
+{ "generic_duplicate_assoc", "",
+  "printf 'int f(void){return _Generic(1,long:1,long:2,int:3);}\\n' > {W}/gd.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/gd.c -o {W}/gd.o 2>&1 | "
+  "grep -oE '_Generic specifies two compatible types'",
+  "_Generic specifies two compatible types\n" },
+
+/* 6.9p2: file-scope declarations may not specify auto or register. */
+{ "file_scope_storage_class", "",
+  "printf 'auto int x;\\n' > {W}/fs1.c && "
+  "printf 'register int y;\\n' > {W}/fs2.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -c {W}/fs1.c -o {W}/fs1.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/fs2.c -o {W}/fs2.o 2>&1; } | "
+  "grep -oE \"file-scope declaration of '.' specifies '(auto|register)'\" | sort",
+  "file-scope declaration of 'x' specifies 'auto'\nfile-scope declaration of 'y' specifies 'register'\n" },
+
+/* 6.7.3p2: specifier-level restrict on a non-pointer type is a constraint
+   violation; restrict on a pointer (incl. via a pointer typedef) is fine. */
+{ "restrict_requires_pointer", "",
+  "printf 'int restrict x;\\n' > {W}/rr1.c && "
+  "printf 'typedef int* IP; restrict IP q; int *restrict p;\\nint main(void){return !!p+!!q;}\\n' > {W}/rr2.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -c {W}/rr1.c -o {W}/rr1.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 {W}/rr2.c -o {W}/rr2 2>&1 && echo PTR_OK; } | "
+  "grep -oE \"'restrict' requires a pointer type|PTR_OK\"",
+  "'restrict' requires a pointer type\nPTR_OK\n" },
+
+/* 6.7.5p2,p4: _Alignas constraints (typedef, function, register, bit-field,
+   under-alignment). Valid over-alignment must still compile. */
+{ "alignas_constraints", "",
+  "printf 'typedef _Alignas(16) int T;\\n' > {W}/aa1.c && "
+  "printf '_Alignas(16) void f(void);\\n' > {W}/aa2.c && "
+  "printf '_Alignas(1) double d;\\n' > {W}/aa3.c && "
+  "printf 'struct S{_Alignas(16) int b:3;};\\n' > {W}/aa4.c && "
+  "printf 'void f(_Alignas(16) int x);\\n' > {W}/aa6.c && "
+  "printf '_Alignas(64) int a; int main(void){return (int)_Alignof(a);}\\n' > {W}/aa5.c && "
+  "{ for f in aa1 aa2 aa3 aa4 aa6; do {MCC} -B{B} -I{I} -std=c11 -c {W}/$f.c -o {W}/$f.o 2>&1; done; "
+  "{MCC} -B{B} -I{I} -std=c11 {W}/aa5.c -o {W}/aa5 2>&1 && echo OVERALIGN_OK; } | "
+  "grep -oE \"'_Alignas' specified for a (typedef|function|bit-field|function parameter)|requested alignment is less than the minimum alignment of the type|OVERALIGN_OK\" | sort",
+  "'_Alignas' specified for a bit-field\n'_Alignas' specified for a function\n'_Alignas' specified for a function parameter\n'_Alignas' specified for a typedef\nOVERALIGN_OK\nrequested alignment is less than the minimum alignment of the type\n" },
+
+/* 6.10.6: #pragma STDC FP_CONTRACT/FENV_ACCESS/CX_LIMITED_RANGE recognized and
+   accepted (no "ignored" warning, even under -Werror); unknown pragmas still
+   warn. */
+{ "pragma_stdc_recognized", "",
+  "printf '#pragma STDC FP_CONTRACT ON\\n#pragma STDC FENV_ACCESS OFF\\n"
+  "#pragma STDC CX_LIMITED_RANGE DEFAULT\\nint main(void){return 0;}\\n' > {W}/ps.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -Wall -Werror -c {W}/ps.c -o {W}/ps.o && echo OK; "
+  "printf '#pragma frobnicate q\\nint main(void){return 0;}\\n' > {W}/pf.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -Wall -c {W}/pf.c -o {W}/pf.o 2>&1 | grep -oE 'frobnicate ignored'",
+  "OK\nfrobnicate ignored\n" },
+
+/* 6.7.2p2: C11 removed implicit int — a K&R parameter with no declaration
+   defaults to int and is diagnosed (gcc/clang error; mcc warns, matching its
+   lenient legacy-code stance). A fully-declared old-style list is fine. */
+{ "knr_implicit_int_param", "",
+  "printf 'int f(x){ return x; }\\nint h(a,b) int a; char b; { return a+b; }\\n"
+  "int main(void){return f(1)+h(2,3);}\\n' > {W}/kr.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/kr.c -o {W}/kr.o 2>&1 | "
+  "grep -c \"type of 'x' defaults to 'int'\"",
+  "1\n" },
+
+/* 6.7.6.2p4: `[*]` (unspecified-size VLA) may appear only in function prototype
+   scope, not in a definition. gcc and clang both error. A prototype, a nested
+   prototype inside a definition's parameter, and ordinary [n]/[static N]/[]
+   parameters are all fine. */
+{ "star_array_in_funcdef", "",
+  "printf 'void f(int a[*]){(void)a;}\\n' > {W}/sd.c && "
+  "printf 'void p(int a[*]); void g(void(*fp)(int a[*])){(void)fp;}\\n"
+  "int n=3; void h(int a[n],int b[static 3],int c[]){(void)a;(void)b;(void)c;}\\n"
+  "int main(void){return 0;}\\n' > {W}/sp.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/sd.c -o {W}/sd.o 2>&1 | "
+  "grep -oE \"'\\[\\*\\]' not allowed in a function definition\"; "
+  "{MCC} -B{B} -I{I} -std=c11 {W}/sp.c -o {W}/sp && echo PROTO_OK",
+  "'[*]' not allowed in a function definition\nPROTO_OK\n" },
+
+/* 6.7.6.3p7: 'static' and type qualifiers in an array parameter's '[]' may
+   appear only in the outermost array derivation. gcc+clang reject the inner
+   forms; the outermost forms (incl. VLA size) stay valid. */
+{ "array_param_static_outermost", "",
+  "printf 'void f(int (*a)[static 3]){(void)a;}\\n' > {W}/b1.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/b1.c -o {W}/b1.o 2>&1 | "
+  "grep -oE 'non-outermost array declarator'; "
+  "printf 'void g(int a[3][static 3]){(void)a;}\\n' > {W}/b2.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/b2.c -o {W}/b2.o 2>&1 | "
+  "grep -oE 'non-outermost array declarator'; "
+  "printf 'int n=3;\\nvoid ok(int a[static 3],int b[const static 3],"
+  "int c[static 3][4],int d[static n]){(void)a;(void)b;(void)c;(void)d;}\\n"
+  "int main(void){return 0;}\\n' > {W}/b3.c && "
+  "{MCC} -B{B} -I{I} -std=c11 {W}/b3.c -o {W}/b3 && echo OUTERMOST_OK",
+  "non-outermost array declarator\nnon-outermost array declarator\nOUTERMOST_OK\n" },
+
+/* 6.8.6.1/6.8.4.2: a goto or switch that jumps into the scope of a variably
+   modified (VLA) declaration is a constraint violation; gcc+clang both reject.
+   Forward goto, backward goto into a closed VLA scope, and switch-into-VLA all
+   error; valid jumps within/around a VLA scope stay accepted. */
+{ "jump_into_vla_scope", "",
+  "printf 'int n=3; int f(void){goto L; { int a[n]; L: return sizeof a; } }\\n' > {W}/j1.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/j1.c -o {W}/j1.o 2>&1 | "
+  "grep -oE 'variably modified declaration'; "
+  "printf 'int n=3; int g(int c){switch(c){ int a[n]; case 1: return sizeof a; default: return 0;} }\\n' > {W}/j2.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/j2.c -o {W}/j2.o 2>&1 | "
+  "grep -oE 'variably modified declaration'; "
+  "printf 'int n=3; int h(void){ { int a[n]; L: (void)a; } goto L; return 0; }\\n' > {W}/j3.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/j3.c -o {W}/j3.o 2>&1 | "
+  "grep -oE 'variably modified declaration'; "
+  "printf 'int n=3;\\nint ok(int c){ int a[n]; L: if(a[0]) goto L;"
+  " switch(c){ case 1: { int b[n]; return sizeof b; } default: return sizeof a; } }\\n"
+  "int main(void){return 0;}\\n' > {W}/j4.c && "
+  "{MCC} -B{B} -I{I} -std=c11 {W}/j4.c -o {W}/j4 && echo VALID_OK",
+  "variably modified declaration\nvariably modified declaration\nvariably modified declaration\nVALID_OK\n" },
+
+/* 6.2.6/7.17: atomics on objects larger than a machine word use the size-
+   generic, pointer-based libatomic helpers (__atomic_load/store/exchange/
+   compare_exchange — needs -latomic at link, like gcc/clang); 1/2/4/8-byte
+   objects keep the lock-free size-suffixed path (no -latomic). */
+{ "atomic_large_generic", "",
+  "printf '#include <stdatomic.h>\\ntypedef struct{long a,b,c;}Big;\\n"
+  "_Atomic Big g;\\nvoid f(Big v,Big*e,Big d){ atomic_store(&g,v);"
+  " Big r=atomic_load(&g);(void)r; Big o=atomic_exchange(&g,v);(void)o;"
+  " (void)atomic_compare_exchange_strong(&g,e,d); }\\n' > {W}/lg.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/lg.c -o {W}/lg.o && "
+  "nm {W}/lg.o | grep -oE '__atomic_(load|store|exchange|compare_exchange)$' | sort -u; "
+  "printf '#include <stdatomic.h>\\nstruct P{int x,y;}; _Atomic struct P s;\\n"
+  "void h(struct P v){ atomic_store(&s,v); }\\n' > {W}/sm.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/sm.c -o {W}/sm.o && "
+  "nm {W}/sm.o | grep -cE '__atomic_store$'",
+  "__atomic_compare_exchange\n__atomic_exchange\n__atomic_load\n__atomic_store\n0\n" },
+
+/* 6.5.16.2/6.5.2.4: a read-modify-write on an _Atomic object is atomic. The
+   integer ops (+= -= &= |= ^=, ++/--) use direct __atomic_* helpers; the other
+   integer ops (*= /= %= <<= >>=) and float atomics use a compare-exchange loop;
+   only types larger than a machine word (e.g. long double) are rejected. */
+{ "atomic_rmw_unsupported", "",
+  "printf '_Atomic long double ld; void f(void){ ld*=2; }\\n' > {W}/ar1.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/ar1.c -o {W}/ar1.o 2>&1 | "
+  "grep -oE 'compound assignment to an ._Atomic. object is not supported'; "
+  "printf '#include <stdatomic.h>\\nint main(void){ atomic_int g=7; g*=3; g%%=5;"
+  " g<<=4; _Atomic double d=2; d*=2.5; d+=1; return ((int)g==16 && d==6)?0:1; }\\n' > {W}/ar3.c && "
+  "{MCC} -B{B} -I{I} -std=c11 {W}/ar3.c -o {W}/ar3 && {W}/ar3 && echo RMW_OK",
+  "compound assignment to an '_Atomic' object is not supported\nRMW_OK\n" },
+
+/* 6.7.2.1: a struct/union member with a type specifier but no declarator
+   (e.g. 'int;' or a tagged enum) declares nothing; gcc/clang warn and accept
+   (previously mcc errored "identifier expected"). Anonymous bit-fields and
+   normal members are unaffected; a malformed declarator still errors. */
+{ "member_declares_nothing", "",
+  "printf 'struct S{int;}; struct T{enum E{A=5};};\\n"
+  "int main(void){ return (sizeof(struct S)>=0 && A==5)?0:1; }\\n' > {W}/dn.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/dn.c -o {W}/dn.o 2>&1 | "
+  "grep -c 'declaration does not declare anything'; "
+  "{MCC} -B{B} -I{I} -std=c11 {W}/dn.c -o {W}/dn >/dev/null 2>&1 && {W}/dn && echo DN_OK; "
+  "printf 'struct U{int @;};\\n' > {W}/dn2.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/dn2.c -o {W}/dn2.o 2>&1 | "
+  "grep -oE 'identifier expected'",
+  "2\nDN_OK\nidentifier expected\n" },
+
+/* 6.5.4p2: the type name in a cast shall be void or scalar; casting to an
+   array type or to a struct unrelated to the operand is a constraint
+   violation (gcc+clang reject). No-op casts to a compatible struct and casts
+   to a complex type stay accepted; va_start/va_arg (which cast through
+   'struct __va_list_tag *', not the array type) still compile and run. */
+{ "cast_to_nonscalar", "",
+  "printf 'struct A{int x;}; struct B{int y;}; int f(struct A a){ return ((struct B)a).y; }\\n' > {W}/c1.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/c1.c -o {W}/c1.o 2>&1 | "
+  "grep -oE 'conversion to non-scalar type requested'; "
+  "printf 'typedef int AT[3]; int f(int*p){ (void)(AT)p; return 0; }\\n' > {W}/c2.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/c2.c -o {W}/c2.o 2>&1 | "
+  "grep -oE 'conversion to non-scalar type requested'; "
+  "printf '#include <stdarg.h>\\nstruct A{int x;};\\n"
+  "int sum(int n,...){va_list a; va_start(a,n); int t=0;"
+  " for(int i=0;i<n;i++) t+=va_arg(a,int); va_end(a); return t;}\\n"
+  "int ns(struct A a){ return ((struct A)a).x; }\\n"
+  "int main(void){ struct A a={7}; return (sum(3,10,20,30)==60 && ns(a)==7)?0:1; }\\n' > {W}/c3.c && "
+  "{MCC} -B{B} -I{I} -std=c11 {W}/c3.c -o {W}/c3 && {W}/c3 && echo CAST_OK",
+  "conversion to non-scalar type requested\nconversion to non-scalar type requested\nCAST_OK\n" },
+
+/* 7.17.2.1: atomic_load/atomic_exchange of an aggregate _Atomic now route
+   through the size-generic libatomic helper (no more register-return crash; it
+   delivers the result through a pointer). The .o references __atomic_load /
+   __atomic_exchange (needs -latomic to link); aggregate atomic_store stays on
+   the lock-free size-suffixed path, and scalar atomics still compile + run. */
+{ "atomic_aggregate_load_generic", "",
+  "printf '#include <stdatomic.h>\\nstruct P{int x,y;};\\n_Atomic struct P p;\\n"
+  "void f(struct P v){ struct P r=atomic_load(&p);(void)r;"
+  " struct P o=atomic_exchange(&p,v);(void)o; atomic_store(&p,v); }\\n' > {W}/aa.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/aa.c -o {W}/aa.o && "
+  "nm {W}/aa.o | grep -oE '__atomic_(load|exchange|store_8)$' | sort -u; "
+  "printf '#include <stdatomic.h>\\nint main(void){ atomic_int x=1; atomic_store(&x,5);"
+  " return (int)atomic_load(&x)==5?0:1; }\\n' > {W}/as.c && "
+  "{MCC} -B{B} -I{I} -std=c11 {W}/as.c -o {W}/as && {W}/as && echo SCALAR_OK",
+  "__atomic_exchange\n__atomic_load\n__atomic_store_8\nSCALAR_OK\n" },
+
+/* -pedantic / -pedantic-errors: diagnose strict-ISO-C constraint violations
+   that mcc (like gcc) accepts as extensions by default. Silent without the
+   flag, a warning with -pedantic, a hard error with -pedantic-errors. Covers
+   6.7.2.1p9 (VLA member), 6.7.2.2p2 (enum value range), 6.6p3 (comma in ICE). */
+{ "pedantic_diagnostics", "",
+  "printf 'int f(void){ int n=3; struct S{int a[n];}; struct S s; return sizeof s; }\\n' > {W}/pd1.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/pd1.c -o {W}/pd1.o 2>&1 | wc -l | tr -d ' '; "        /* default: silent (0 lines) */
+  "{MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/pd1.c -o {W}/pd1.o 2>&1 | "
+  "grep -oE 'variably modified type'; "
+  "printf 'enum E{X=0x100000000}; int main(void){return X*0;}\\n' > {W}/pd2.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/pd2.c -o {W}/pd2.o 2>&1 | "
+  "grep -oE 'range of .int.'; "
+  "printf 'int a[(1,2)]; int main(void){return sizeof a*0;}\\n' > {W}/pd3.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/pd3.c -o {W}/pd3.o 2>&1 | "
+  "grep -oE 'comma operator in a constant expression'; "
+  "printf 'int main(void){ for(static int i=0;i<1;i++); return 0; }\\n' > {W}/pd4.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/pd4.c -o {W}/pd4.o 2>&1 | "
+  "grep -oE \"in a .for. loop initializer\"; "
+  "printf '_Noreturn int x;\\n' > {W}/pd5.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/pd5.c -o {W}/pd5.o 2>&1 | "
+  "grep -oE \"._Noreturn. used outside of a function\"; "
+  "printf 'struct F{int n;int d[];}; struct G{struct F f;int x;};\\n' > {W}/pd6.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/pd6.c -o {W}/pd6.o 2>&1 | "
+  "grep -oE 'flexible array member'; "
+  "printf 'enum E *p; int main(void){return p!=0;}\\n' > {W}/pd7.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/pd7.c -o {W}/pd7.o 2>&1 | "
+  "grep -oE \"forward references to .enum. types\"; echo END",
+  "0\nvariably modified type\nrange of 'int'\ncomma operator in a constant expression\nin a 'for' loop initializer\n'_Noreturn' used outside of a function\nflexible array member\nforward references to 'enum' types\nEND\n" },
+
+/* 6.2.5p27: a plain in-language store to / read from an _Atomic aggregate or
+   >8-byte object (e.g. _Atomic struct, _Atomic long double) must be indivisible
+   — lowered to the generic __atomic_store/__atomic_load(size,...) libcall (needs
+   -latomic), not a non-atomic struct/multi-word copy. */
+{ "atomic_inlang_aggregate", "",
+  "printf '#include <stdatomic.h>\\ntypedef struct{long a,b,c;}Big;\\n"
+  "_Atomic Big g; _Atomic long double ld;\\n"
+  "void f(Big v){ g = v; }\\nvoid h(long double x){ ld = x; }\\n"
+  "void r(Big *p){ *p = g; }\\n' > {W}/ia.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/ia.c -o {W}/ia.o && "
+  "nm {W}/ia.o | grep -oE 'U __atomic_(store|load)' | sort -u",
+  "U __atomic_load\nU __atomic_store\n" },
+
+/* 6.4.1/Annex G: _Imaginary is a reserved keyword but imaginary types are not
+   implemented (nor by gcc/clang); using it gives a clear diagnostic rather than
+   being treated as an undeclared identifier. _Complex is unaffected. */
+{ "imaginary_not_supported", "",
+  "printf '_Imaginary float x;\\n' > {W}/im.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/im.c -o {W}/im.o 2>&1 | "
+  "grep -oE 'imaginary types are not supported'; "
+  "printf '#include <complex.h>\\ndouble _Complex z=1.0;\\nint main(void){return 0;}\\n' > {W}/cx.c && "
+  "{MCC} -B{B} -I{I} -std=c11 {W}/cx.c -o {W}/cx && echo COMPLEX_OK",
+  "imaginary types are not supported\nCOMPLEX_OK\n" },
+
+/* 6.7.4p9: a _Noreturn function that returns to its caller is UB; gcc and clang
+   both warn on a return statement inside one. A non-noreturn function is fine. */
+{ "noreturn_returns", "",
+  "printf '_Noreturn void f(int x){ if(x) return; for(;;); }\\n"
+  "void ok(void){ return; }\\nint main(void){return 0;}\\n' > {W}/nr.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/nr.c -o {W}/nr.o 2>&1 | "
+  "grep -c \"function declared 'noreturn' has a 'return' statement\"",
+  "1\n" },
+
+/* 6.10.3p5: __VA_ARGS__ may appear only in the replacement list of a variadic
+   (...) macro; gcc warns by default. A genuinely variadic macro is fine. */
+{ "va_args_non_variadic", "",
+  "printf '#define F(a) __VA_ARGS__\\n#define V(a, ...) __VA_ARGS__\\n"
+  "int main(void){return 0;}\\n' > {W}/va.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/va.c -o {W}/va.o 2>&1 | "
+  "grep -c 'can only appear in the expansion'",
+  "1\n" },
+
+/* 6.10p1: an unknown #-directive is a constraint violation; gcc and clang both
+   make it a hard error. #ident/#sccs remain accepted (ignored) extensions. */
+{ "unknown_directive_error", "",
+  "printf '#frobnicate xyz\\nint main(void){return 0;}\\n' > {W}/ud.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/ud.c -o {W}/ud.o 2>&1 | "
+  "grep -oE 'invalid preprocessing directive #frobnicate'; "
+  "printf '#ident \\\"v\\\"\\n#sccs \\\"w\\\"\\nint main(void){return 0;}\\n' > {W}/ui.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/ui.c -o {W}/ui.o && echo IDENT_OK",
+  "invalid preprocessing directive #frobnicate\nIDENT_OK\n" },
+
+/* 6.10.6: #pragma message("...") emits a note (gcc/clang compatible), not
+   gated on -Wall; accepts both the parenthesized and bare-string forms; does
+   not raise an error even under -Werror. */
+{ "pragma_message_note", "",
+  "printf '#pragma message(\\\"hi there\\\")\\n#pragma message \\\"bare form\\\"\\n"
+  "int main(void){return 0;}\\n' > {W}/pm.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -Werror -c {W}/pm.c -o {W}/pm.o 2>&1 | "
+  "grep -oE 'note: #pragma message: (hi there|bare form)'",
+  "note: #pragma message: hi there\nnote: #pragma message: bare form\n" },
+
+/* 6.7.6.3p1 / 6.9.1: a function shall not return a function or array type
+   (incl. via a typedef name); returning a pointer to one is fine. */
+{ "function_return_type_constraint", "",
+  "printf 'typedef int AT[3]; AT f(void);\\n' > {W}/rt1.c && "
+  "printf 'typedef int FT(void); FT g(void);\\n' > {W}/rt2.c && "
+  "printf 'typedef int AT[3]; AT *ok1(void); typedef int FT(void); FT *ok2(void);\\n"
+  "int main(void){return 0;}\\n' > {W}/rt3.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -c {W}/rt1.c -o {W}/rt1.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/rt2.c -o {W}/rt2.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 {W}/rt3.c -o {W}/rt3 2>&1 && echo PTR_OK; } | "
+  "grep -oE 'function cannot return an? (array|function) type|PTR_OK' | sort",
+  "PTR_OK\nfunction cannot return a function type\nfunction cannot return an array type\n" },
+
+/* 6.4.2.2: __func__ is only defined inside a function (warn at file scope). */
+{ "func_outside_function", "",
+  "printf 'const char *p = __func__;\\n' > {W}/fn.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/fn.c -o {W}/fn.o 2>&1 | "
+  "grep -oE \"'__func__' is not defined outside of function scope\"",
+  "'__func__' is not defined outside of function scope\n" },
+
+/* 6.4.4.1: the ll/LL suffix must be case-uniform (1Ll / 1lL are invalid);
+   6.5.3.4: _Alignof must not be applied to an incomplete type. */
+{ "lexical_alignof_constraints", "",
+  "printf 'long long a=1Ll;\\n' > {W}/ix1.c && "
+  "printf 'long long a=1lL;\\n' > {W}/ix2.c && "
+  "printf 'struct S; int n=_Alignof(struct S);\\n' > {W}/ix3.c && "
+  "printf 'long long a=1LL,b=1ll; unsigned long long c=1ull,d=1ULL;\\n"
+  "struct T{int x;}; int n=(int)_Alignof(struct T)+(int)_Alignof(int);\\n"
+  "int main(void){return 0;}\\n' > {W}/ix4.c && "
+  "{ for f in ix1 ix2 ix3; do {MCC} -B{B} -I{I} -std=c11 -c {W}/$f.c -o {W}/$f.o 2>&1; done; "
+  "{MCC} -B{B} -I{I} -std=c11 {W}/ix4.c -o {W}/ix4 2>&1 && echo VALID_OK; } | "
+  "grep -oE 'incorrect integer suffix|_Alignof. applied to an incomplete type|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 VALID_OK\n1 _Alignof' applied to an incomplete type\n2 incorrect integer suffix\n" },
+
+/* 6.5.1: implicit function declaration is diagnosed even inside a K&R-style
+   (empty-paren) function body, not only inside prototyped bodies. */
+{ "implicit_decl_in_knr_body", "",
+  "printf 'int main(){ return foo(); }\\n' > {W}/id.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -Wall -c {W}/id.c -o {W}/id.o 2>&1 | "
+  "grep -oE \"implicit declaration of function 'foo'\"",
+  "implicit declaration of function 'foo'\n" },
+
+/* 6.7.2.1p4: a _Bool bit-field may not be wider than 1. */
+{ "bool_bitfield_width", "",
+  "printf 'struct S{_Bool b:2;};\\n' > {W}/bb.c && "
+  "printf 'struct T{_Bool b:1; int d:8;}; int main(void){return 0;}\\n' > {W}/bg.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -c {W}/bb.c -o {W}/bb.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 {W}/bg.c -o {W}/bg 2>&1 && echo VALID_OK; } | "
+  "grep -oE \"width of '.' exceeds its type|VALID_OK\"",
+  "width of 'b' exceeds its type\nVALID_OK\n" },
+
+/* 6.5.3.2/6.7.1: the address of a register-qualified object may not be taken. */
+{ "register_address_constraint", "",
+  "printf 'int *f(void){register int x=0; return &x;}\\n' > {W}/rga.c && "
+  "printf 'int main(void){register int x=5; int y=x; int *p=&y; return *p+x-10;}\\n' > {W}/rgb.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -c {W}/rga.c -o {W}/rga.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 {W}/rgb.c -o {W}/rgb 2>&1 && echo VALID_OK; } | "
+  "grep -oE \"address of register variable '.' requested|VALID_OK\"",
+  "address of register variable 'x' requested\nVALID_OK\n" },
+
+/* 6.7.2p2: C11 removed implicit int — diagnose specifier-only object decls and
+   implicit-int function return types; valid typed declarations stay quiet. */
+{ "implicit_int_diag", "",
+  "printf 'const x = 3;\\nstatic y = 7;\\nfoo(void){return 0;}\\n' > {W}/ii.c && "
+  "printf 'long a; unsigned b; const int c; int g(void){return 0;}\\nint main(void){return g();}\\n' > {W}/iv.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -c {W}/ii.c -o {W}/ii.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -Wall {W}/iv.c -o {W}/iv 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE \"type defaults to 'int' in declaration|return type defaults to 'int'|CLEAN_OK\" | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 return type defaults to 'int'\n2 type defaults to 'int' in declaration\n" },
+
 { "common_symbol_merge", "cpu=x86_64,os=linux",
   "printf 'int shared_g;\\nvoid set_it(void){ shared_g = 5; }\\n' > {W}/cm1.c && "
   "printf '#include <stdio.h>\\nint shared_g; void set_it(void);\\n"

@@ -47,9 +47,20 @@
     #define __WINT_TYPE__ int
 #endif
 
+#if !defined _WIN32
+    #define __STDC_ISO_10646__ 201706L
+#endif
+
+    /* All mcc targets use IEC 60559 (IEEE 754) binary float/double with
+       round-to-nearest-even and no unsafe contraction, so advertise Annex F/G
+       conformance like gcc/clang do on these targets. */
+    #define __STDC_IEC_559__ 1
+    #define __STDC_IEC_559_COMPLEX__ 1
+
     #if __STDC_VERSION__ >= 201112L
-    # define __STDC_NO_ATOMICS__ 1
-    # define __STDC_NO_THREADS__ 1
+    /* _Atomic and C11 threads (via the hosted libc on glibc/musl) both work, so
+       neither __STDC_NO_ATOMICS__ nor __STDC_NO_THREADS__ is defined (defining
+       either would tell programs to skip working functionality). */
 #if !defined _WIN32
     # define __STDC_UTF_16__ 1
     # define __STDC_UTF_32__ 1
@@ -112,6 +123,14 @@
     #define __INTPTR_TYPE__ __PTRDIFF_TYPE__
 #endif
     #define __INT32_TYPE__ int
+    #define __CHAR16_TYPE__ unsigned short
+    #define __CHAR32_TYPE__ unsigned int
+    #define __ATOMIC_RELAXED 0
+    #define __ATOMIC_CONSUME 1
+    #define __ATOMIC_ACQUIRE 2
+    #define __ATOMIC_RELEASE 3
+    #define __ATOMIC_ACQ_REL 4
+    #define __ATOMIC_SEQ_CST 5
 
 #if !defined _WIN32
     #define __REDIRECT(name, proto, alias) name proto __asm__ (#alias)
@@ -132,6 +151,42 @@
 
     #define __builtin_offsetof(type, field) ((__SIZE_TYPE__)&((type*)0)->field)
     #define __builtin_extract_return_addr(x) x
+    /* __builtin_bswap16/32/64 are recognized by the compiler (mccgen.c):
+       folded for constant arguments, else lowered to the runtime helper. */
+    #define __sync_fetch_and_add(p,v) __atomic_fetch_add((p),(v),__ATOMIC_SEQ_CST)
+    #define __sync_fetch_and_sub(p,v) __atomic_fetch_sub((p),(v),__ATOMIC_SEQ_CST)
+    #define __sync_fetch_and_or(p,v)  __atomic_fetch_or((p),(v),__ATOMIC_SEQ_CST)
+    #define __sync_fetch_and_and(p,v) __atomic_fetch_and((p),(v),__ATOMIC_SEQ_CST)
+    #define __sync_fetch_and_xor(p,v) __atomic_fetch_xor((p),(v),__ATOMIC_SEQ_CST)
+    #define __sync_add_and_fetch(p,v) (__atomic_fetch_add((p),(v),__ATOMIC_SEQ_CST)+(v))
+    #define __sync_sub_and_fetch(p,v) (__atomic_fetch_sub((p),(v),__ATOMIC_SEQ_CST)-(v))
+    #define __sync_or_and_fetch(p,v)  (__atomic_fetch_or((p),(v),__ATOMIC_SEQ_CST)|(v))
+    #define __sync_and_and_fetch(p,v) (__atomic_fetch_and((p),(v),__ATOMIC_SEQ_CST)&(v))
+    #define __sync_xor_and_fetch(p,v) (__atomic_fetch_xor((p),(v),__ATOMIC_SEQ_CST)^(v))
+    #define __sync_bool_compare_and_swap(p,o,n) \
+        ({ __typeof__(*(p)) __o=(o), __n=(n); \
+           __atomic_compare_exchange((p),&__o,&__n,0,__ATOMIC_SEQ_CST,__ATOMIC_SEQ_CST); })
+    #define __sync_val_compare_and_swap(p,o,n) \
+        ({ __typeof__(*(p)) __o=(o), __n=(n); \
+           __atomic_compare_exchange((p),&__o,&__n,0,__ATOMIC_SEQ_CST,__ATOMIC_SEQ_CST); __o; })
+    #define __sync_lock_test_and_set(p,v) \
+        ({ __typeof__(*(p)) __v=(v), __o; \
+           __atomic_exchange((p),&__v,&__o,__ATOMIC_SEQ_CST); __o; })
+    #define __sync_lock_release(p) \
+        ({ __typeof__(*(p)) __z=0; __atomic_store((p),&__z,__ATOMIC_SEQ_CST); })
+    #define __sync_synchronize() \
+        ({ volatile int __mcc_bar = 0; \
+           (void)__atomic_fetch_add(&__mcc_bar, 0, __ATOMIC_SEQ_CST); (void)0; })
+    #define __atomic_load_n(p, o) \
+        ({ __typeof__(*(p)) __r; __atomic_load((p), &__r, (o)); __r; })
+    #define __atomic_store_n(p, v, o) \
+        ({ __typeof__(*(p)) __v = (v); __atomic_store((p), &__v, (o)); })
+    #define __atomic_exchange_n(p, v, o) \
+        ({ __typeof__(*(p)) __v = (v), __r; \
+           __atomic_exchange((p), &__v, &__r, (o)); __r; })
+    #define __atomic_compare_exchange_n(p, e, d, w, s, f) \
+        ({ __typeof__(*(p)) __d = (d); \
+           __atomic_compare_exchange((p), (e), &__d, (w), (s), (f)); })
 #if !defined __linux__ && !defined _WIN32
     #define __builtin_huge_val() 1e500
     #define __builtin_huge_valf() 1e50f
@@ -151,7 +206,7 @@
 
 #if defined __x86_64__
 #if !defined _WIN32
-    typedef struct {
+    typedef struct __va_list_tag {
         unsigned gp_offset, fp_offset;
         union {
             unsigned overflow_offset;
@@ -161,8 +216,10 @@
     } __builtin_va_list[1];
 
     void *__va_arg(__builtin_va_list ap, int arg_type, int size, int align);
+    /* Cast through 'struct __va_list_tag *' (not the array type) so this stays
+       valid under the 6.5.4 cast-to-non-scalar diagnostic. */
     #define __builtin_va_start(ap, last) \
-       (*(ap) = *(__builtin_va_list)((char*)__builtin_frame_address(0) - 24))
+       (*(ap) = *(struct __va_list_tag *)((char*)__builtin_frame_address(0) - 24))
     #define __builtin_va_arg(ap, t)   \
        (*(t *)(__va_arg(ap, __builtin_va_arg_types(t), sizeof(t), __alignof__(t))))
     #define __builtin_va_copy(dest, src) (*(dest) = *(src))
@@ -283,16 +340,40 @@
     #undef __MAYBE_REDIR
     #undef __RENAME
 
-    #define __BUILTIN_EXTERN(name,u) 		\
-        int __builtin_##name(u int);		\
-        int __builtin_##name##l(u long);	\
-        int __builtin_##name##ll(u long long);
-    __BUILTIN_EXTERN(ffs,)
-    __BUILTIN_EXTERN(clz, unsigned)
-    __BUILTIN_EXTERN(ctz, unsigned)
-    __BUILTIN_EXTERN(clrsb,)
-    __BUILTIN_EXTERN(popcount, unsigned)
-    __BUILTIN_EXTERN(parity, unsigned)
-    #undef __BUILTIN_EXTERN
+    /* __builtin_{ffs,clz,ctz,clrsb,popcount,parity}{,l,ll} are recognized
+       directly by the compiler (mccgen.c): folded when the argument is a
+       constant, otherwise lowered to the matching runtime call in
+       runtime/lib/builtin.c. No C declarations are needed (they are keywords,
+       as in gcc/clang). */
+
+    #define __MCC_OV_DECL(T, NM)			\
+        int __mcc_addo_##NM(T, T, T*);		\
+        int __mcc_subo_##NM(T, T, T*);		\
+        int __mcc_mulo_##NM(T, T, T*);
+    __MCC_OV_DECL(signed char, sc)
+    __MCC_OV_DECL(char, c)
+    __MCC_OV_DECL(short, s)
+    __MCC_OV_DECL(int, i)
+    __MCC_OV_DECL(unsigned char, uc)
+    __MCC_OV_DECL(unsigned short, us)
+    __MCC_OV_DECL(unsigned int, u)
+    __MCC_OV_DECL(long, l)
+    __MCC_OV_DECL(unsigned long, ul)
+    __MCC_OV_DECL(long long, ll)
+    __MCC_OV_DECL(unsigned long long, ull)
+    #undef __MCC_OV_DECL
+    #define __mcc_ov_disp(op, res) _Generic((res),			\
+        signed char: __mcc_##op##o_sc, char: __mcc_##op##o_c,		\
+        short: __mcc_##op##o_s, int: __mcc_##op##o_i,			\
+        long: __mcc_##op##o_l, long long: __mcc_##op##o_ll,		\
+        unsigned char: __mcc_##op##o_uc, unsigned short: __mcc_##op##o_us, \
+        unsigned int: __mcc_##op##o_u, unsigned long: __mcc_##op##o_ul,	\
+        unsigned long long: __mcc_##op##o_ull)
+    #define __builtin_add_overflow(a, b, res) \
+        (__mcc_ov_disp(add, *(res))((a), (b), (res)))
+    #define __builtin_sub_overflow(a, b, res) \
+        (__mcc_ov_disp(sub, *(res))((a), (b), (res)))
+    #define __builtin_mul_overflow(a, b, res) \
+        (__mcc_ov_disp(mul, *(res))((a), (b), (res)))
 
     #endif

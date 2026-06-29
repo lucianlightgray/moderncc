@@ -326,6 +326,31 @@ ST_INLN void cstr_u8cat(CString *cstr, int ch)
     cstr_cat(cstr, buf, e - buf);
 }
 
+/* 6.4.3: if *pp points at a universal character name (\uXXXX or \UXXXXXXXX),
+   decode it, advance *pp past it and return the code point; otherwise leave
+   *pp unchanged and return -1. Reads raw buffer bytes, so a UCN straddling a
+   buffer-refill boundary is treated as not-a-UCN (vanishingly rare). */
+static int decode_ucn(uint8_t **pp)
+{
+    uint8_t *p = *pp;
+    int n, i, c;
+    unsigned int v = 0;
+    if (p[0] != '\\')
+        return -1;
+    if (p[1] == 'u') n = 4;
+    else if (p[1] == 'U') n = 8;
+    else return -1;
+    for (i = 0; i < n; i++) {
+        c = p[2 + i];
+        if (c >= '0' && c <= '9') v = v * 16 + (c - '0');
+        else if (c >= 'a' && c <= 'f') v = v * 16 + (c - 'a' + 10);
+        else if (c >= 'A' && c <= 'F') v = v * 16 + (c - 'A' + 10);
+        else return -1;
+    }
+    *pp = p + 2 + n;
+    return (int)v;
+}
+
 ST_FUNC void cstr_cat(CString *cstr, const char *str, int len)
 {
     int size;
@@ -489,9 +514,16 @@ ST_FUNC const char *get_tok_str(int v, CValue *cv)
     case TOK_CULLONG:
         sprintf(p, "%llu", (unsigned long long)cv->i);
         break;
+    case TOK_U16CHAR:
+        cstr_ccat(&cstr_buf, 'u');
+        goto do_char_const;
+    case TOK_U32CHAR:
+        cstr_ccat(&cstr_buf, 'U');
+        goto do_char_const;
     case TOK_LCHAR:
         cstr_ccat(&cstr_buf, 'L');
     case TOK_CCHAR:
+    do_char_const:
         cstr_ccat(&cstr_buf, '\'');
         add_char(&cstr_buf, cv->i);
         cstr_ccat(&cstr_buf, '\'');
@@ -500,6 +532,8 @@ ST_FUNC const char *get_tok_str(int v, CValue *cv)
     case TOK_PPNUM:
     case TOK_PPSTR:
         return (char*)cv->str.data;
+    case TOK_U16STR:
+    case TOK_U32STR:
     case TOK_LSTR:
         cstr_ccat(&cstr_buf, 'L');
     case TOK_STR:
@@ -574,6 +608,31 @@ ST_FUNC const char *get_tok_str(int v, CValue *cv)
     return cstr_buf.data;
 }
 
+/* 5.1.1.2 phase 1: replace the nine trigraph sequences (??=, ??(, ??), ??<,
+   ??>, ??/, ??', ??!, ??-) with their single-character equivalents, in place.
+   Done at buffer-fill time so the result feeds both the tokenizer and phase-2
+   line splicing (a `??/` newline becomes `\` newline → a spliced line). Returns
+   the new length.  Off by default; enabled by -trigraphs (gcc-compatible). */
+static int trigraph_replace(unsigned char *buf, int len)
+{
+    unsigned char *src = buf, *dst = buf, *end = buf + len;
+    while (src < end) {
+        if (src[0] == '?' && src + 2 < end && src[1] == '?') {
+            int t = 0;
+            switch (src[2]) {
+            case '=':  t = '#';  break;  case '(':  t = '[';  break;
+            case ')':  t = ']';  break;  case '<':  t = '{';  break;
+            case '>':  t = '}';  break;  case '/':  t = '\\'; break;
+            case '\'': t = '^';  break;  case '!':  t = '|';  break;
+            case '-':  t = '~';  break;
+            }
+            if (t) { *dst++ = (unsigned char)t; src += 3; continue; }
+        }
+        *dst++ = *src++;
+    }
+    return (int)(dst - buf);
+}
+
 static int handle_eob(void)
 {
     BufferedFile *bf = file;
@@ -589,6 +648,20 @@ static int handle_eob(void)
             len = read(bf->fd, bf->buffer, len);
             if (len < 0)
                 len = 0;
+            if (mcc_state->trigraphs && len > 0) {
+                len = trigraph_replace(bf->buffer, len);
+                /* A trailing run of up to two '?' may begin a trigraph completed
+                   by the next chunk; push it back so it is reconsidered (only
+                   possible on a seekable fd — boundary-split trigraphs in a pipe
+                   are not handled). */
+                if (len > 2) {
+                    int k = 0;
+                    while (k < 2 && bf->buffer[len - 1 - k] == '?')
+                        k++;
+                    if (k > 0 && lseek(bf->fd, -(long)k, SEEK_CUR) != (off_t)-1)
+                        len -= k;
+                }
+            }
         } else {
             len = 0;
         }
@@ -1003,6 +1076,8 @@ static void tok_str_add2(TokenString *s, int t, CValue *cv)
     case TOK_CUINT:
     case TOK_CCHAR:
     case TOK_LCHAR:
+    case TOK_U16CHAR:
+    case TOK_U32CHAR:
     case TOK_CFLOAT:
     case TOK_LINENUM:
 #if LONG_SIZE == 4
@@ -1015,6 +1090,8 @@ static void tok_str_add2(TokenString *s, int t, CValue *cv)
     case TOK_PPSTR:
     case TOK_STR:
     case TOK_LSTR:
+    case TOK_U16STR:
+    case TOK_U32STR:
         {
             size_t nb_words =
                 1 + (cv->str.size + sizeof(int) - 1) / sizeof(int);
@@ -1081,6 +1158,8 @@ static inline void tok_get(int *t, const int **pp, CValue *cv)
     case TOK_CINT:
     case TOK_CCHAR:
     case TOK_LCHAR:
+    case TOK_U16CHAR:
+    case TOK_U32CHAR:
     case TOK_LINENUM:
         cv->i = *p++;
         break;
@@ -1095,6 +1174,8 @@ static inline void tok_get(int *t, const int **pp, CValue *cv)
 	break;
     case TOK_STR:
     case TOK_LSTR:
+    case TOK_U16STR:
+    case TOK_U32STR:
     case TOK_PPNUM:
     case TOK_PPSTR:
         cv->str.size = *p++;
@@ -1465,6 +1546,11 @@ ST_FUNC void parse_define(void)
                 tok = TOK_PPJOIN;
                 t |= MACRO_JOIN;
             }
+            /* C11 6.10.3p5: __VA_ARGS__ shall occur only in the replacement
+               list of a variadic (...) macro. gcc warns by default. */
+            if (tok == TOK___VA_ARGS__ && !is_vaargs)
+                mcc_warning("__VA_ARGS__ can only appear in the expansion of a "
+                            "C99 variadic macro");
             tok_str_add2_spc(&str, tok, &tokc);
             t0 = tok;
         }
@@ -1623,6 +1709,43 @@ static int pragma_parse(MCCState *s1)
             mcc_free(p);
         }
 
+    } else if (tok == TOK_pragma_message) {
+        /* 6.10.6: #pragma message("...") — emit the string as a note.
+           Common diagnostic pragma (gcc/clang compatible); not gated on
+           -Wall. Accepts both #pragma message "str" and
+           #pragma message("str"). */
+        int paren = 0;
+        next();
+        if (tok == '(') {
+            paren = 1;
+            next();
+        }
+        if (tok != TOK_STR)
+            goto pragma_err;
+        if (file)
+            fprintf(stderr, "%s:%d: note: #pragma message: %s\n",
+                    file->filename, file->line_num, (char *)tokc.str.data);
+        else
+            fprintf(stderr, "note: #pragma message: %s\n",
+                    (char *)tokc.str.data);
+        next();
+        if (paren) {
+            if (tok != ')')
+                goto pragma_err;
+            next();
+        }
+        while (tok != TOK_LINEFEED && tok != TOK_EOF)
+            next_nomacro();
+        return 1;
+
+    } else if (tok == TOK_STDC) {
+        /* 6.10.6: #pragma STDC FP_CONTRACT|FENV_ACCESS|CX_LIMITED_RANGE
+           ON|OFF|DEFAULT — recognized and accepted. mcc performs no unsafe
+           floating-point contraction or fenv-dependent reordering, so the
+           ON/OFF/DEFAULT state needs no codegen action today. */
+        while (tok != TOK_LINEFEED && tok != TOK_EOF)
+            next_nomacro();
+        return 1;
     } else {
         mcc_warning_c(warn_all)("#pragma %s ignored", get_tok_str(tok, &tokc));
         return 0;
@@ -1828,7 +1951,16 @@ ST_FUNC void preprocess(int is_bof)
             goto ignore;
         if (tok == '!' && is_bof)
             goto ignore;
-        mcc_warning("ignoring unknown preprocessing directive #%s", get_tok_str(tok, &tokc));
+        /* gcc/clang accept #ident and #sccs as extensions (ignored). */
+        if (tok >= TOK_IDENT) {
+            const char *d = get_tok_str(tok, &tokc);
+            if (!strcmp(d, "ident") || !strcmp(d, "sccs"))
+                goto ignore;
+        }
+        /* C11 6.10p1: a non-directive (unknown #-directive) is a constraint
+           violation requiring a diagnostic; gcc and clang both make it a hard
+           error. */
+        mcc_error("invalid preprocessing directive #%s", get_tok_str(tok, &tokc));
     ignore:
         skip_to_eol(0);
         goto the_end;
@@ -2010,10 +2142,11 @@ static void parse_escape_string(CString *outstr, const uint8_t *buf, int is_long
 static void parse_string(const char *s, int len)
 {
     uint8_t buf[1000], *p = buf;
-    int is_long, sep;
+    int is_long, sep, prefix = 0;
 
-    if ((is_long = *s == 'L'))
-        ++s, --len;
+    if (*s == 'L' || *s == 'u' || *s == 'U')
+        prefix = *s++, --len;
+    is_long = (prefix != 0);     /* wide/code-point decoding for L/u/U */
     sep = *s++;
     len -= 2;
     if (len >= sizeof buf)
@@ -2032,6 +2165,10 @@ static void parse_string(const char *s, int len)
             tok = TOK_CCHAR, char_size = 1;
         else
             tok = TOK_LCHAR, char_size = sizeof(nwchar_t);
+        if (prefix == 'u')
+            tok = TOK_U16CHAR;
+        else if (prefix == 'U')
+            tok = TOK_U32CHAR;
         n = tokcstr.size / char_size - 1;
         if (n < 1)
             mcc_error("empty character constant");
@@ -2043,11 +2180,42 @@ static void parse_string(const char *s, int len)
             else
                 c = (c << 8) | ((char *)tokcstr.data)[i];
         }
+        if (prefix == 'u')
+            c &= 0xFFFF;          /* char16_t range */
         tokc.i = c;
+    } else if (prefix == 'u') {
+        /* u"..." char16_t string: re-encode the parsed code points (nwchar_t
+           units) as UTF-16 (2-byte units, surrogate pairs above U+FFFF). */
+        int i, ncp = tokcstr.size / sizeof(nwchar_t);
+        nwchar_t *cps = mcc_malloc((ncp ? ncp : 1) * sizeof(nwchar_t));
+        memcpy(cps, tokcstr.data, ncp * sizeof(nwchar_t));
+        cstr_reset(&tokcstr);
+        for (i = 0; i < ncp; i++) {
+            unsigned int cp = (unsigned int)cps[i];
+            if (cp < 0x10000) {
+                cstr_ccat(&tokcstr, cp & 0xff);
+                cstr_ccat(&tokcstr, (cp >> 8) & 0xff);
+            } else {
+                unsigned int hi, lo;
+                cp -= 0x10000;
+                hi = 0xD800 + (cp >> 10);
+                lo = 0xDC00 + (cp & 0x3FF);
+                cstr_ccat(&tokcstr, hi & 0xff); cstr_ccat(&tokcstr, (hi >> 8) & 0xff);
+                cstr_ccat(&tokcstr, lo & 0xff); cstr_ccat(&tokcstr, (lo >> 8) & 0xff);
+            }
+        }
+        mcc_free(cps);
+        tokc.str.size = tokcstr.size;
+        tokc.str.data = tokcstr.data;
+        tok = TOK_U16STR;
     } else {
         tokc.str.size = tokcstr.size;
         tokc.str.data = tokcstr.data;
-        if (!is_long)
+        /* U"..." char32_t string: code points are nwchar_t units (4-byte on
+           non-PE targets), reuse the wide-string data path tagged char32_t. */
+        if (prefix == 'U')
+            tok = TOK_U32STR;
+        else if (!is_long)
             tok = TOK_STR;
         else
             tok = TOK_LSTR;
@@ -2256,7 +2424,7 @@ static void parse_number(const char *p)
         }
     } else {
         unsigned long long n, n1;
-        int lcount, ucount, ov = 0;
+        int lcount, ucount, l0, ov = 0;
         const char *p1;
 
         *q = '\0';
@@ -2285,14 +2453,18 @@ static void parse_number(const char *p)
         }
 
         lcount = ucount = 0;
+        l0 = 0;
         p1 = p;
         for(;;) {
             t = toup(ch);
             if (t == 'L') {
                 if (lcount >= 2)
                     mcc_error("three 'l's in integer constant");
-                if (lcount && *(p - 1) != ch)
+                /* 6.4.4.1: the ll/LL suffix must be case-uniform. */
+                if (lcount == 1 && ch != l0)
                     mcc_error("incorrect integer suffix: %s", p1);
+                if (lcount == 0)
+                    l0 = ch;
                 lcount++;
                 ch = *p++;
             } else if (t == 'U') {
@@ -2362,7 +2534,7 @@ static void parse_number(const char *p)
 
 static void next_nomacro(void)
 {
-    int t, c, is_long, len;
+    int t, c, str_prefix, len, uc;
     TokenSym *ts;
     uint8_t *p, *p1;
     unsigned int h;
@@ -2387,6 +2559,15 @@ static void next_nomacro(void)
         p++;
         goto redo_no_start;
     case '\\':
+        /* 6.4.2.1/6.4.3: an identifier may begin with a universal character
+           name (\uXXXX / \UXXXXXXXX). Decode it and parse the rest as an
+           identifier rather than diagnosing a stray backslash. */
+        if ((uc = decode_ucn(&p)) >= 0) {
+            cstr_reset(&tokcstr);
+            cstr_u8cat(&tokcstr, uc);
+            c = *p;
+            goto parse_ident_ucn;
+        }
         c = handle_stray(&p);
         if (c == '\\')
             goto parse_simple;
@@ -2468,15 +2649,15 @@ maybe_newline:
     case 'i': case 'j': case 'k': case 'l':
     case 'm': case 'n': case 'o': case 'p':
     case 'q': case 'r': case 's': case 't':
-    case 'u': case 'v': case 'w': case 'x':
-    case 'y': case 'z': 
+    case 'v': case 'w': case 'x':
+    case 'y': case 'z':
     case 'A': case 'B': case 'C': case 'D':
     case 'E': case 'F': case 'G': case 'H':
     case 'I': case 'J': case 'K': 
     case 'M': case 'N': case 'O': case 'P':
     case 'Q': case 'R': case 'S': case 'T':
-    case 'U': case 'V': case 'W': case 'X':
-    case 'Y': case 'Z': 
+    case 'V': case 'W': case 'X':
+    case 'Y': case 'Z':
     case '_':
     parse_ident_fast:
         p1 = p;
@@ -2503,23 +2684,62 @@ maybe_newline:
         } else {
             cstr_reset(&tokcstr);
             cstr_cat(&tokcstr, (char *) p1, len);
-            p--;
-            PEEKC(c, p);
-            while (isidnum_table[c - CH_EOF] & (IS_ID|IS_NUM))
-            {
-                cstr_ccat(&tokcstr, c);
-                PEEKC(c, p);
+        parse_ident_ucn:
+            /* identifier containing a universal character name (6.4.3) or a
+               line-spliced backslash. */
+            for (;;) {
+                if (c == '\\') {
+                    if ((uc = decode_ucn(&p)) >= 0) {
+                        cstr_u8cat(&tokcstr, uc);   /* UCN -> UTF-8 in the name */
+                        c = *p;
+                        continue;
+                    }
+                    p--;
+                    PEEKC(c, p);                    /* line splice, or stray '\' (errors) */
+                    continue;
+                }
+                if (isidnum_table[c - CH_EOF] & (IS_ID|IS_NUM)) {
+                    cstr_ccat(&tokcstr, c);
+                    c = *++p;
+                    continue;
+                }
+                break;
             }
             ts = tok_alloc(tokcstr.data, tokcstr.size);
         }
         tok = ts->tok;
         break;
+    case 'u':
+        /* 6.4.5: u8"..." UTF-8 string -> char array; 6.4.4.4: u'...' -> char16_t.
+           (u"..." char16_t string literals are not yet supported.) */
+        if (p[1] == '8' && p[2] == '\"') {
+            p += 2;           /* advance to the opening '"' */
+            c = *p;
+            str_prefix = 0;
+            goto str_const;
+        }
+        if (p[1] == '\'' || p[1] == '\"') {
+            PEEKC(c, p);      /* c = the quote */
+            str_prefix = 'u';
+            goto str_const;
+        }
+        goto parse_ident_fast;
+
+    case 'U':
+        /* 6.4.4.4/6.4.5: U'...' / U"..." -> char32_t. */
+        if (p[1] == '\'' || p[1] == '\"') {
+            PEEKC(c, p);      /* c = the quote */
+            str_prefix = 'U';
+            goto str_const;
+        }
+        goto parse_ident_fast;
+
     case 'L':
         t = p[1];
         if (t == '\'' || t == '\"' || t == '\\') {
             PEEKC(c, p);
             if (c == '\'' || c == '\"') {
-                is_long = 1;
+                str_prefix = 'L';
                 goto str_const;
             }
             *--p = c = 'L';
@@ -2577,11 +2797,11 @@ maybe_newline:
         break;
     case '\'':
     case '\"':
-        is_long = 0;
+        str_prefix = 0;
     str_const:
         cstr_reset(&tokcstr);
-        if (is_long)
-            cstr_ccat(&tokcstr, 'L');
+        if (str_prefix)
+            cstr_ccat(&tokcstr, str_prefix);
         cstr_ccat(&tokcstr, c);
         p = parse_pp_string(p, c, &tokcstr);
         cstr_ccat(&tokcstr, c);
@@ -2604,6 +2824,12 @@ maybe_newline:
             } else {
                 tok = TOK_SHL;
             }
+        } else if (c == ':') {     /* 6.4.6 digraph <: == [ */
+            p++;
+            tok = '[';
+        } else if (c == '%') {     /* 6.4.6 digraph <% == { */
+            p++;
+            tok = '{';
         } else {
             tok = TOK_LT;
         }
@@ -2684,7 +2910,33 @@ maybe_newline:
     PARSE2('!', '!', '=', TOK_NE)
     PARSE2('=', '=', '=', TOK_EQ)
     PARSE2('*', '*', '=', TOK_A_MUL)
-    PARSE2('%', '%', '=', TOK_A_MOD)
+    case '%':
+        PEEKC(c, p);
+        if (c == '=') {
+            p++;
+            tok = TOK_A_MOD;
+        } else if (c == '>') {     /* 6.4.6 digraph %> == } */
+            p++;
+            tok = '}';
+        } else if (c == ':') {     /* 6.4.6 digraph %: == # , %:%: == ## */
+            PEEKC(c, p);           /* c = char after the ':' */
+            if (c == '%' && p[1] == ':') {
+                p += 2;            /* consume the second "%:" */
+                tok = TOK_TWOSHARPS;
+            } else if ((tok_flags & TOK_FLAG_BOL)
+                       && (parse_flags & PARSE_FLAG_PREPROCESS)) {
+                tok_flags &= ~TOK_FLAG_BOL;
+                file->buf_ptr = p;
+                preprocess(tok_flags & TOK_FLAG_BOF);
+                p = file->buf_ptr;
+                goto maybe_newline;
+            } else {
+                tok = '#';
+            }
+        } else {
+            tok = '%';
+        }
+        break;
     PARSE2('^', '^', '=', TOK_A_XOR)
         
     case '/':
@@ -2720,12 +2972,20 @@ maybe_newline:
     case '}':
     case ',':
     case ';':
-    case ':':
     case '?':
     case '~':
     parse_simple:
         tok = c;
         p++;
+        break;
+    case ':':
+        PEEKC(c, p);
+        if (c == '>') {            /* 6.4.6 digraph :> == ] */
+            p++;
+            tok = ']';
+        } else {
+            tok = ':';
+        }
         break;
     case 0xEF:
         if (p[1] == 0xBB && p[2] == 0xBF && p == file->buffer) {
@@ -3220,6 +3480,43 @@ static int macro_subst(
     return nosubst;
 }
 
+/* 6.10.9: process `_Pragma ( string-literal )` as the corresponding #pragma.
+   The string content is already destringized by parse_string, so it is fed to
+   the pragma directive handler via a temporary buffer (compile mode only; in -E
+   mode _Pragma is left as tokens for the existing pass-through). */
+static void pragma_operator(void)
+{
+    MCCState *s1 = mcc_state;
+    const int *saved_macro_ptr;
+    char *content;
+    int n;
+
+    next();                              /* '(' */
+    if (tok != '(')
+        return;
+    next();                              /* string-literal */
+    if (tok != TOK_STR) {
+        while (tok != ')' && tok != TOK_EOF && tok != TOK_LINEFEED)
+            next();
+        return;
+    }
+    n = tokc.str.size - 1;               /* content length, excluding NUL */
+    content = mcc_malloc(n + 2);
+    memcpy(content, tokc.str.data, n);
+    content[n] = '\n';                   /* the lexer wants a line terminator */
+    content[n + 1] = 0;
+    next();                              /* ')' */
+
+    saved_macro_ptr = macro_ptr;
+    mcc_open_bf(s1, ":pragma:", n + 1);
+    memcpy(file->buffer, content, n + 1);
+    macro_ptr = NULL;
+    pragma_parse(s1);
+    mcc_close();
+    macro_ptr = saved_macro_ptr;
+    mcc_free(content);
+}
+
 ST_FUNC void next(void)
 {
     int t;
@@ -3246,11 +3543,24 @@ redo:
             }
         }
         tok = t;
+        if (t == TOK__Pragma
+            && (parse_flags & PARSE_FLAG_PREPROCESS)
+            && mcc_state->output_type != MCC_OUTPUT_PREPROCESS) {
+            pragma_operator();
+            goto redo;
+        }
         return;
     }
 
     next_nomacro();
     t = tok;
+    if (t == TOK__Pragma
+        && (parse_flags & PARSE_FLAG_PREPROCESS)
+        && mcc_state->output_type != MCC_OUTPUT_PREPROCESS) {
+        pragma_operator();
+        next();
+        return;
+    }
     if (t >= TOK_IDENT && (parse_flags & PARSE_FLAG_PREPROCESS)) {
         Sym *s = define_find(t);
         if (s) {

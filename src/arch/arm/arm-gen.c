@@ -1259,7 +1259,7 @@ void gfunc_prolog(Sym *func_sym)
   {
     n++;
     struct_ret = 1;
-    func_vc = 12;
+    func_vc = 16;       /* saved-register area is now {r10,fp,ip,lr} = 16 bytes */
   }
   for(sym2 = sym->next; sym2 && (n < 4 || nf < 16); sym2 = sym2->next) {
     size = type_size(&sym2->type, &align);
@@ -1291,7 +1291,13 @@ void gfunc_prolog(Sym *func_sym)
     nf=(nf+1)&-2;
     o(0xED2D0A00|nf);
   }
-  o(0xE92D5800);
+  /* Save {r10, fp, ip, lr} (16 bytes, not the historical 12) so that after
+     'mov fp, sp' the frame pointer is 8-byte aligned. The incoming SP is
+     8-aligned (AAPCS) and the earlier arg/float pushes are even-sized, so a
+     16-byte save keeps fp on an 8-byte boundary — required for 8-byte locals
+     (long long/double/_Atomic) whose atomic access (ARM LDREXD) traps when
+     misaligned. r10 (v7) is callee-saved; saving/restoring it is harmless. */
+  o(0xE92D5C00);
   o(0xE1A0B00D);
   func_sub_sp_offset = ind;
   o(0xE1A00000);
@@ -1335,7 +1341,7 @@ from_stack:
       addr = (n + nf + sn) * 4;
       sn += size;
     }
-    gfunc_set_param(sym, addr + 12, 0);
+    gfunc_set_param(sym, addr + 16, 0);   /* +16: {r10,fp,ip,lr} saved area */
   }
   last_itod_magic=0;
   leaffunc = 1;
@@ -1365,11 +1371,11 @@ void gfunc_epilog(void)
     }
   }
 #endif
-  o(0xE89BA800);
+  o(0xE89BAC00);        /* ldm fp, {r10, fp, sp, pc} -- matches the 16-byte save */
   diff = (-loc + 3) & -4;
 #ifdef MCC_ARM_EABI
   if(!leaffunc)
-    diff = ((diff + 11) & -8) - 4;
+    diff = (diff + 7) & -8;   /* fp is now 8-aligned, so keep sp 8-aligned too */
 #endif
   if(diff > 0) {
     x=stuff_const(0xE24BD000, diff);

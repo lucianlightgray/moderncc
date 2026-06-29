@@ -160,7 +160,7 @@ int main()
 int main()
 {
     struct { char c[3]; } _Atomic c3;
-    atomic_load(&c3);
+    atomic_fetch_add(&c3, 1);
 }
 
 #elif defined test_atomic_error_3

@@ -21,6 +21,7 @@
 # undef __attribute__
 #endif
 #include <string.h>
+#include <limits.h>
 #include <errno.h>
 #include <math.h>
 #include <fcntl.h>
@@ -448,7 +449,9 @@ struct SymAttr {
     addrtaken   : 1,
     nodebug     : 1,
     transp_union : 1,
-    is_complex  : 1;
+    is_complex  : 1,
+    tentative_array : 1,        /* 6.9.2: incomplete-array tentative definition */
+    is_register : 1;            /* 6.7.1: declared with the register specifier */
 };
 
 struct FuncAttr {
@@ -460,7 +463,8 @@ struct FuncAttr {
     func_dtor   : 1,
     func_args   : 8,
     func_alwinl : 1,
-    xxxx        : 15;
+    func_star_param : 1,        /* 6.7.6.2p4: a parameter used [*] (prototype-only) */
+    xxxx        : 14;
 };
 
 typedef struct Sym {
@@ -491,6 +495,12 @@ typedef struct Sym {
         struct Sym *cleanupstate;
         int *vla_array_str;
     };
+    /* 6.8.6.1/6.8.4.2: jump-into-VLA-scope diagnostics, used on label syms.
+       vla_inner_id = id of the innermost in-scope VLA at the label's
+       definition (0 = none); vla_min_goto_gpp = smallest VLA program-point
+       among forward gotos seen before the label was defined (INT_MAX = none). */
+    int vla_inner_id;
+    int vla_min_goto_gpp;
     struct Sym *prev;
     union {
         struct Sym *prev_tok;
@@ -603,6 +613,8 @@ typedef struct AttributeDef {
     int alias_target;
     int asm_label;
     char attr_mode;
+    char storage_class;   /* 1 = auto, 2 = register (C11 6.7.1 constraints) */
+    char implicit_int;    /* 6.7.2p2: specifiers but no type specifier */
 } AttributeDef;
 
 typedef struct InlineFunc {
@@ -696,6 +708,7 @@ struct MCCState {
     unsigned char function_sections;    /* -ffunction-sections (accepted) */
     unsigned char data_sections;        /* -fdata-sections (accepted) */
     unsigned char wrapv;                /* -fwrapv (mcc always wraps) */
+    unsigned char trigraphs;            /* -ftrigraphs/-trigraphs: phase-1 trigraph replacement */
     unsigned char visibility;           /* -fvisibility= default STV_* */
     unsigned char stack_protector;      /* -fstack-protector* (x86_64) */
     unsigned char do_strip;             /* -s: omit .symtab/.strtab from output */
@@ -707,6 +720,8 @@ struct MCCState {
     unsigned char warn_unsupported;
     unsigned char warn_implicit_function_declaration;
     unsigned char warn_discarded_qualifiers;
+    unsigned char warn_pedantic;        /* -pedantic: diagnose ISO C extensions */
+    unsigned char pedantic_errors;      /* -pedantic-errors: make them hard errors */
     #define WARN_ON  1
     unsigned char warn_num;
 
@@ -981,7 +996,13 @@ struct filespec {
 #define IS_ENUM_VAL(t) ((t & VT_STRUCT_MASK) == VT_ENUM_VAL)
 #define IS_UNION(t) ((t & (VT_STRUCT_MASK|VT_BTYPE)) == VT_UNION)
 
-#define VT_ATOMIC   VT_VOLATILE
+/* _Atomic gets its own type-flag bit (so atomic objects can be distinguished
+   from plain volatile for atomic codegen), but also sets VT_VOLATILE so all
+   existing no-reorder/no-cache handling keeps applying. VT_QUALIFY is the full
+   set of type qualifiers, used wherever qualifiers are stripped/propagated. */
+#define VT_ATOMIC_BIT 0x00020000
+#define VT_ATOMIC   (VT_ATOMIC_BIT | VT_VOLATILE)
+#define VT_QUALIFY  (VT_CONSTANT | VT_VOLATILE | VT_ATOMIC_BIT)
 
 #define VT_STORAGE (VT_EXTERN | VT_STATIC | VT_TYPEDEF | VT_INLINE | VT_TLS)
 #define VT_TYPE (~(VT_STORAGE|VT_STRUCT_MASK))
@@ -1070,8 +1091,12 @@ struct filespec {
 #define TOK_PPNUM   0xcd
 #define TOK_PPSTR   0xce
 #define TOK_LINENUM 0xcf
+#define TOK_U16CHAR 0xd0   /* u'…'  char16_t constant */
+#define TOK_U32CHAR 0xd1   /* U'…'  char32_t constant */
+#define TOK_U16STR  0xd2   /* u"…"  char16_t string   */
+#define TOK_U32STR  0xd3   /* U"…"  char32_t string   */
 
-#define TOK_HAS_VALUE(t) (t >= TOK_CCHAR && t <= TOK_LINENUM)
+#define TOK_HAS_VALUE(t) (t >= TOK_CCHAR && t <= TOK_U32STR)
 
 #define TOK_EOF       (-1)
 #define TOK_LINEFEED  10

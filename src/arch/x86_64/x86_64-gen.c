@@ -311,7 +311,7 @@ void load(int r, SValue *sv)
     if (fc != sv->c.i && (fr & VT_SYM))
       mcc_error("64 bit addend in load");
 
-    ft &= ~(VT_VOLATILE | VT_CONSTANT);
+    ft &= ~VT_QUALIFY;
 
 #ifndef MCC_TARGET_PE
     if ((fr & VT_VALMASK) == VT_CONST && (fr & VT_SYM) &&
@@ -510,7 +510,7 @@ void store(int r, SValue *v)
     fc = v->c.i;
     if (fc != v->c.i && (fr & VT_SYM))
       mcc_error("64 bit addend in store");
-    ft &= ~(VT_VOLATILE | VT_CONSTANT);
+    ft &= ~VT_QUALIFY;
     bt = ft & VT_BTYPE;
 
     if ((v->r & VT_SYM) && v->sym->type.t & VT_TLS) {

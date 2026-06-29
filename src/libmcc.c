@@ -1549,6 +1549,7 @@ enum {
     MCC_OPTION_iwithprefix,
     MCC_OPTION_include,
     MCC_OPTION_nostdinc,
+    MCC_OPTION_trigraphs,
     MCC_OPTION_nostdlib,
     MCC_OPTION_print_search_dirs,
     MCC_OPTION_rdynamic,
@@ -1568,6 +1569,8 @@ enum {
     MCC_OPTION_impdef,
     MCC_OPTION_pie,
     MCC_OPTION_nopie,
+    MCC_OPTION_pedantic,
+    MCC_OPTION_pedantic_errors,
     MCC_OPTION_s,
     MCC_OPTION_dynamiclib,
     MCC_OPTION_flat_namespace,
@@ -1636,6 +1639,7 @@ static const MCCOption mcc_options[] = {
     { "isysroot", MCC_OPTION_isysroot, MCC_OPTION_HAS_ARG },
     { "include", MCC_OPTION_include, MCC_OPTION_HAS_ARG },
     { "nostdinc", MCC_OPTION_nostdinc, 0 },
+    { "trigraphs", MCC_OPTION_trigraphs, 0 },
     { "nostdlib", MCC_OPTION_nostdlib, 0 },
     { "print-search-dirs", MCC_OPTION_print_search_dirs, 0 },
     { "w", MCC_OPTION_w, 0 },
@@ -1654,7 +1658,8 @@ static const MCCOption mcc_options[] = {
     { "arch", 0, MCC_OPTION_HAS_ARG},
     { "C", 0, 0 },
     { "-param", 0, MCC_OPTION_HAS_ARG },
-    { "pedantic", 0, 0 },
+    { "pedantic", MCC_OPTION_pedantic, 0 },
+    { "pedantic-errors", MCC_OPTION_pedantic_errors, 0 },
     { "pie", MCC_OPTION_pie, 0 },
     { "no-pie", MCC_OPTION_nopie, 0 },
     { "nopie", MCC_OPTION_nopie, 0 },
@@ -1700,6 +1705,7 @@ static const FlagDef options_f[] = {
     { offsetof(MCCState, function_sections), 0, "function-sections" },
     { offsetof(MCCState, data_sections), 0, "data-sections" },
     { offsetof(MCCState, wrapv), 0, "wrapv" },
+    { offsetof(MCCState, trigraphs), 0, "trigraphs" },
     { 0, 0, NULL }
 };
 
@@ -1904,6 +1910,13 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
         case MCC_OPTION_nopie:
             s->pie = 0;
             break;
+        case MCC_OPTION_pedantic:
+            s->warn_pedantic = 1;
+            break;
+        case MCC_OPTION_pedantic_errors:
+            s->warn_pedantic = 1;
+            s->pedantic_errors = 1;
+            break;
         case MCC_OPTION_s:
             /* strip the symbol table from a linked output (.symtab/.strtab are
                dropped at write time; .dynsym/.dynstr are retained). Stripping a
@@ -2044,6 +2057,9 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
             break;
         case MCC_OPTION_nostdinc:
             s->nostdinc = 1;
+            break;
+        case MCC_OPTION_trigraphs:
+            s->trigraphs = 1;
             break;
         case MCC_OPTION_nostdlib:
             s->nostdlib = 1;

@@ -1,0 +1,3 @@
+#ifndef _COMPAT_PLATFORM_COMPAT_H
+#define _COMPAT_PLATFORM_COMPAT_H
+#endif

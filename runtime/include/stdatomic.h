@@ -12,6 +12,24 @@
 #define __ATOMIC_ACQ_REL 4
 #define __ATOMIC_SEQ_CST 5
 
+/* 7.17.1: lock-free property macros.  0 = never, 1 = sometimes, 2 = always.
+   Types no wider than a pointer are always lock-free on every mcc target;
+   8-byte types are always lock-free only on 64-bit targets. */
+#define ATOMIC_BOOL_LOCK_FREE     2
+#define ATOMIC_CHAR_LOCK_FREE     2
+#define ATOMIC_CHAR16_T_LOCK_FREE 2
+#define ATOMIC_CHAR32_T_LOCK_FREE 2
+#define ATOMIC_WCHAR_T_LOCK_FREE  2
+#define ATOMIC_SHORT_LOCK_FREE    2
+#define ATOMIC_INT_LOCK_FREE      2
+#define ATOMIC_POINTER_LOCK_FREE  2
+#define ATOMIC_LONG_LOCK_FREE     2
+#if __SIZEOF_POINTER__ >= 8
+#define ATOMIC_LLONG_LOCK_FREE    2
+#else
+#define ATOMIC_LLONG_LOCK_FREE    1
+#endif
+
 typedef enum {
     memory_order_relaxed = __ATOMIC_RELAXED,
     memory_order_consume = __ATOMIC_CONSUME,
@@ -66,11 +84,17 @@ typedef struct {
 #define ATOMIC_FLAG_INIT {0}
 #define ATOMIC_VAR_INIT(value) (value)
 
+/* 7.17.3.1: kill_dependency yields the value of y, ending any dependency. */
+#define kill_dependency(y)                                                \
+    ({ __typeof__(y) __mcc_kd_tmp = (y); __mcc_kd_tmp; })
+
 #define atomic_init(object, desired)                                      \
     atomic_store_explicit(object, desired, __ATOMIC_RELAXED)
 
+#ifndef __atomic_store_n
 #define __atomic_store_n(ptr, val, order)                                 \
     (*(ptr) = (val), __atomic_store((ptr), &(typeof(*(ptr))){val}, (order)))
+#endif
 #define atomic_store_explicit(object, desired, order)                     \
     ({ __typeof__ (object) ptr = (object);                                \
        __typeof__ (*ptr) tmp = (desired);                                 \
@@ -79,10 +103,12 @@ typedef struct {
 #define atomic_store(object, desired)                                     \
      atomic_store_explicit (object, desired, __ATOMIC_SEQ_CST)
 
+#ifndef __atomic_load_n
 #define __atomic_load_n(ptr, order)                                       \
     ({ typeof(*(ptr)) __val;                                              \
        __atomic_load((ptr), &__val, (order));                             \
        __val; })
+#endif
 #define atomic_load_explicit(object, order)                               \
     ({ __typeof__ (object) ptr = (object);                                \
        __typeof__ ((void)0,*ptr) tmp;                                             \
@@ -100,10 +126,12 @@ typedef struct {
     })
 #define atomic_exchange(object, desired)                                  \
   atomic_exchange_explicit (object, desired, __ATOMIC_SEQ_CST)
+#ifndef __atomic_compare_exchange_n
 #define __atomic_compare_exchange_n(ptr, expected, desired, weak, success, failure) \
     ({ typeof(*(ptr)) __desired = (desired);                              \
        __atomic_compare_exchange((ptr), (expected), &__desired,          \
          (weak), (success), (failure)); })
+#endif
 #define atomic_compare_exchange_strong_explicit(object, expected, desired, success, failure) \
     ({ __typeof__ (object) ptr = (object);                                \
        __typeof__ (*ptr) tmp = desired;                                   \
