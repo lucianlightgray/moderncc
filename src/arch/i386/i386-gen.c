@@ -235,6 +235,40 @@ static void gen_modrm(int opc, int op_r2, int r, Sym *sym, int c)
     }
 }
 
+#ifdef MCC_TARGET_PE
+/* The synthetic _tls_index slot; defined in the image by pe_add_tls(). */
+static Sym *pe_tls_index_sym(void)
+{
+    CType ct;
+    ct.t = VT_INT;
+    ct.ref = NULL;
+    return external_global_sym(tok_alloc_const("_tls_index"), &ct);
+}
+
+/* Materialise the base of this thread's TLS block into register `dst`:
+       mov  dst, %fs:0x2C          ; TEB->ThreadLocalStoragePointer (array)
+       mov  sc,  [_tls_index]      ; this module's slot
+       mov  dst, [dst + sc*4]      ; -> per-thread TLS block base
+   The Windows TLS model is unrelated to the SysV %gs:0 thread pointer; the
+   caller adds the variable's template offset (sym@secrel, an R_386_TLS_LE the
+   PE linker resolves as val-tls_start) and dereferences. `sc` is a scratch
+   distinct from dst, preserved with push/pop. `dst` is clobbered. */
+static void gen_pe_tls_base(int dst)
+{
+    int sc = (dst == TREG_EAX) ? TREG_ECX : TREG_EAX;
+    o(0x50 + sc);                            /* push sc                      */
+    o(0x64); o(0x8b); o(0x05 | (dst << 3));  /* mov dst, fs:[disp32]         */
+    gen_le32(0x2c);                          /* dst = ThreadLocalStoragePointer */
+    o(0x8b); o(0x05 | (sc << 3));            /* mov sc, [_tls_index] (abs)   */
+    greloca(cur_text_section, pe_tls_index_sym(), ind, R_386_32, 0);
+    gen_le32(0);
+    o(0x8b); o(0x44 | (dst << 3));           /* mov dst, [dst + sc*4]        */
+    o((2 << 6) | (sc << 3) | dst);           /* SIB scale=4 index=sc base=dst */
+    g(0x00);                                 /* disp8 = 0 (g, not o(0))      */
+    o(0x58 + sc);                            /* pop sc                       */
+}
+#endif
+
 ST_FUNC void load(int r, SValue *sv)
 {
     int v, t, ft, fc, fr, opc;
@@ -275,6 +309,16 @@ ST_FUNC void load(int r, SValue *sv)
                 opc = 0xb70f;                          /* movzwl */
             else
                 opc = 0x8b;                            /* mov (word) */
+#ifdef MCC_TARGET_PE
+            /* Windows: compute the per-thread block base, then a typed load
+               from [base + sym@secrel + fc]. (The PE linker resolves the
+               R_386_TLS_LE disp as the offset into the TLS template.) */
+            gen_pe_tls_base(dst_reg);
+            o(opc);
+            o(0x80 | (dst_reg << 3) | dst_reg);        /* opc dst,[dst+disp32] */
+            greloca(cur_text_section, sv->sym, ind, R_386_TLS_LE, 0);
+            gen_le32(fc);
+#else
             o(0x65);                                   /* GS prefix */
             o(opc);
             o(0x04 | (dst_reg << 3));
@@ -283,6 +327,7 @@ ST_FUNC void load(int r, SValue *sv)
                not the reloc addend -- needed for tls_arr[const]. */
             greloca(cur_text_section, sv->sym, ind, R_386_TLS_LE, 0);
             gen_le32(fc);
+#endif
             return;
         }
         if (v == VT_LLOCAL) {
@@ -326,6 +371,15 @@ ST_FUNC void load(int r, SValue *sv)
                bare &address must materialise the same tp-relative pointer,
                not the section image address. */
             int dst = REG_VALUE(r);
+#ifdef MCC_TARGET_PE
+            /* &thread_local: per-thread block base + variable template offset,
+               not the section image address (only the per-thread init copy). */
+            gen_pe_tls_base(dst);
+            o(0x81);                       /* add reg, imm32 (/0)      */
+            o(0xc0 | dst);
+            greloca(cur_text_section, sv->sym, ind, R_386_TLS_LE, 0);
+            gen_le32(fc);                  /* (sym+fc)@secrel          */
+#else
             o(0x65);                       /* GS segment prefix        */
             o(0x8b);                       /* mov reg, [disp32]        */
             o(0x05 | (dst << 3));          /* mod=00 reg=dst rm=disp32 */
@@ -336,6 +390,7 @@ ST_FUNC void load(int r, SValue *sv)
                field, not the reloc addend (R_386_TLS_LE adds ntpoff to it). */
             greloca(cur_text_section, sv->sym, ind, R_386_TLS_LE, 0);
             gen_le32(fc);                  /* (sym+fc)@ntpoff          */
+#endif
         } else
         if (mcc_state->pic && (fr & (VT_VALMASK|VT_SYM)) == (VT_CONST|VT_SYM)) {
             if (sv->sym->type.t & VT_STATIC) {
@@ -416,6 +471,21 @@ ST_FUNC void store(int r, SValue *v)
         /* NB: test v->r, not fr -- fr = v->r & VT_VALMASK has VT_SYM masked
            off, so the old (fr & VT_SYM) was always false and TLS stores fell
            through to an absolute (image-address) store. */
+#ifdef MCC_TARGET_PE
+        /* Windows: compute the per-thread block base into a scratch register
+           (preserved with push/pop so the value reg `r` and others are
+           untouched), then a typed store to [base + sym@secrel + fc]. */
+        {
+            int base = (REG_VALUE(r) == TREG_EAX) ? TREG_ECX : TREG_EAX;
+            o(0x50 + base);                          /* push base            */
+            gen_pe_tls_base(base);
+            o(opc);
+            o(0x80 | (REG_VALUE(r) << 3) | base);    /* opc [base+disp32], r */
+            greloca(cur_text_section, v->sym, ind, R_386_TLS_LE, 0);
+            gen_le32(fc);
+            o(0x58 + base);                          /* pop base             */
+        }
+#else
         o(0x65);
         o(opc);
         o(0x04 | (REG_VALUE(r) << 3));
@@ -424,6 +494,7 @@ ST_FUNC void store(int r, SValue *v)
            not the reloc addend -- needed for tls_arr[const]. */
         greloca(cur_text_section, v->sym, ind, R_386_TLS_LE, 0);
         gen_le32(fc);
+#endif
         return;
     }
 

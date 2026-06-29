@@ -1,0 +1,54 @@
+name: CI
+
+# Runs the portable ctest suites on every push/PR, plus the qemu-user cross
+# matrix (x86_64/i386/arm/arm64/riscv64 x glibc/musl) via the repo's Docker
+# runner. See tests/qemu/docker/ and TODO.md.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  portable:
+    name: portable suites (${{ matrix.cc }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build ${{ matrix.cc }}
+      - name: configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_C_COMPILER=${{ matrix.cc }}
+      - name: build
+        run: cmake --build build -j"$(nproc)"
+      - name: test
+        # macho/wine rows self-skip without their cross compilers; the qemu
+        # matrix is opt-in (MCC_QEMU_TESTS, off here) and covered by the job
+        # below. Exclude those labels so a red run means a real portable break.
+        run: ctest --test-dir build -j"$(nproc)" --output-on-failure -LE "qemu|macho|wine"
+
+  qemu-matrix:
+    name: qemu-user cross matrix (docker)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build runner image
+        run: docker build -t mcc-qemu tests/qemu/docker
+      - name: run matrix
+        # The entrypoint stages a clean source copy, builds mcc + the cross
+        # compilers, fetches per-(arch,libc) Gentoo sysroots, and runs
+        # `ctest -L qemu`. Narrow with e.g. -e ARCHS=arm64 -e LIBCS=glibc.
+        run: |
+          docker run --rm \
+            -v "$PWD:/work:ro" \
+            -v mcc-qemu-roots:/qemu-roots \
+            mcc-qemu

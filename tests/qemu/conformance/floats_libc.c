@@ -24,9 +24,13 @@ int main(void)
     snprintf(buf, sizeof buf, "%.1f %.1Lf", 1.5, 2.5L);
     if (strcmp(buf, "1.5 2.5")) return 2;
 
-    /* int, double, long double interleaved -- maximal class mixing */
+    /* int, double, long double interleaved -- maximal class mixing. %.1Lf of
+       0.25L is an exact half-ulp: glibc rounds to even -> "0.2", Microsoft's CRT
+       rounds half-away-from-zero -> "0.3". Both are conforming C-library rounding
+       choices; accept either, since this check exercises the long-double-varargs
+       ABI class (the value reaching libc), not the libc's rounding mode. */
     snprintf(buf, sizeof buf, "%d %.1f %.1Lf", 7, 0.5, 0.25L);
-    if (strcmp(buf, "7 0.5 0.2")) return 3;     /* %.1Lf rounds 0.25 -> 0.2 (banker's/RN) */
+    if (strcmp(buf, "7 0.5 0.2") && strcmp(buf, "7 0.5 0.3")) return 3;
 
     /* strtod round-trips an exact decimal */
     char *end;

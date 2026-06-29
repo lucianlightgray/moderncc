@@ -47,13 +47,12 @@ Legend: `[ ]` open · `[~]` partial · `[x]` done.
   enforcing it diverges from gcc (the leniency reference) and from where the
   standard is heading.
 
-- [ ] **[TASK] The qemu cross-conformance matrix is not wired into CI.**
-  `tests/qemu/conformance/` (gated by `MCC_QEMU_TESTS`) covers
-  x86_64/i386/arm/arm64/riscv64 × glibc/musl, built twice (default and
-  `-fPIC -pie`), and runs either under native qemu-user or via the Docker
-  runner (`tests/qemu/docker`, `docker build -t mcc-qemu …`). No CI workflow
-  invokes it — `.github/workflows/` is empty. Task: add a workflow that runs
-  the portable suites plus the qemu matrix on every push.
+- [x] **[TASK] The qemu cross-conformance matrix is wired into CI.**
+  `.github/workflows/ci.yml` runs on every push/PR/dispatch: a `portable` job
+  (gcc + clang on ubuntu) configures, builds, and runs `ctest -LE
+  "qemu|macho|wine"` (the host-portable suites), and a `qemu-matrix` job builds
+  the repo's Docker runner (`tests/qemu/docker`) and executes the full
+  x86_64/i386/arm/arm64/riscv64 × glibc/musl matrix via `ctest -L qemu`.
 
 - [~] **[LIMITATION] The kernel-fused Mach-O / libSystem path needs a macOS or darling host.**
   The self-contained Mach-O tests run on any host: structural validation
@@ -67,11 +66,14 @@ Legend: `[ ]` open · `[~]` partial · `[x]` done.
   These require `-DMCC_DARWIN_HOST=ON` (a macOS or darling host); the boundary
   is documented in `tests/qemu/apple-libc/PROVENANCE.md`.
 
-- [ ] **[TASK] Systematic diagnostic-coverage sweep.**
+- [~] **[TASK] Systematic diagnostic-coverage sweep.**
   Each `[DIAG]`/`[FEATURE]` item ships with a cli/exec test that asserts the
-  diagnostic fires and that the valid forms still compile. A mechanical sweep
-  to confirm coverage parity for the few diagnostics that predate this tracker
-  is outstanding (not blocked on anything).
+  diagnostic fires and that the valid forms still compile; the one open DIAG
+  item (`_Generic` association completeness) has coverage (`generic_*` cases in
+  `tests/cli/cases.h`). A full mechanical parity sweep across all ~312
+  `mcc_error`/`mcc_warning`/`mcc_pedantic` call sites in `src/` — to confirm the
+  diagnostics that predate this tracker each have a regression test — is an
+  ongoing audit and remains outstanding (not blocked on anything).
 
 - [ ] **[LIMITATION] The macOS SDK ships no C11 `<threads.h>`.**
   Apple's libc provides no `<threads.h>` / `thrd_*` runtime, so a program using
@@ -95,71 +97,58 @@ Legend: `[ ]` open · `[~]` partial · `[x]` done.
   The suite returns non-zero on any divergence by design; these four are the
   expected residual on a macOS host.
 
-- [ ] **[BUG] PE thread-local storage (`_Thread_local` / `__thread`) reads the wrong address.**
-  On a PE target the backend still emits the **ELF** Local-Exec TLS sequence —
-  i386 `movl %gs:0,%reg ; addl $sym@ntpoff,%reg` with `R_386_TLS_LE`
-  (`src/arch/i386/i386-gen.c:284`, `:337`); x86_64 `movq %fs:0,%reg ; addq
-  $sym@tpoff,%reg` with `R_X86_64_TPOFF32` (`src/arch/x86_64/x86_64-gen.c:344`,
-  `:353`) — and the PE object writer never populates the TLS data directory
-  (`IMAGE_DIRECTORY_ENTRY_TLS` = 9 is `#define`d at `src/objfmt/mccpe.c:154` but
-  otherwise unused): no `.tls` template section, no `IMAGE_TLS_DIRECTORY`, no
-  `_tls_index`, no TLS-callback list. Windows TLS is unrelated to the ELF thread
-  pointer — `_Thread_local x` is reached through the TEB (x64: `%gs:0x58`
-  `ThreadLocalStoragePointer` → `[_tls_index]` → `+ offset`; x86: `%fs:0x2c`),
-  with the loader copying the `.tls` template per thread. So the emitted
-  `%fs/%gs`-relative access lands on an unrelated address and every thread-local
-  reads as 0/garbage. Observed: `tests/qemu/conformance/tls.c` returns 1 under
-  wine (`pe-wine-conformance`, x86_64-win32 + i386-win32) — the first check
-  `counter != 100` fails; an instrumented probe under wine prints `counter=0`
-  (want 100). Directly mirrors the Mach-O TLS item above (ELF on all five arches
-  is correct). Fix: emit a `.tls` section + `IMAGE_TLS_DIRECTORY` (index var,
-  raw-data start/end, callback array) in `src/objfmt/mccpe.c`, and switch the
-  PE TLS access in i386/x86_64 codegen to the TEB `_tls_index` sequence.
+- [x] **[BUG] PE thread-local storage (`_Thread_local` / `__thread`) now uses the TEB.**
+  The PE backend emitted the ELF Local-Exec sequence (`%fs:0`/`%gs:0` thread
+  pointer + `sym@tpoff`) and the object writer never populated the TLS data
+  directory, so every thread-local read landed on an unrelated address (a
+  segfault natively; `tls.c` returned 1 under wine). Fixed in three parts:
+  (1) `src/objfmt/mccpe.c` `pe_add_tls`/`pe_set_tls` synthesise `_tls_index`, a
+  NULL-terminated callback array, and a populated `IMAGE_TLS_DIRECTORY`
+  (StartAddressOfRawData/EndAddressOfRawData over `.tdata`, `SizeOfZeroFill`
+  over `.tbss`, AddressOfIndex/Callbacks), pointed to by DataDirectory[9];
+  (2) i386/x86_64 codegen (`src/arch/{i386,x86_64}/*-gen.c`) reach a
+  `_Thread_local` through the TEB — x64 `%gs:0x58`, x86 `%fs:0x2c`
+  ThreadLocalStoragePointer → `[_tls_index]` → `+ template offset` — for the
+  load, store, and `&tls` paths; (3) the PE branch of `R_X86_64_TPOFF32` /
+  `R_386_TLS_LE` resolution (`*-link.c`) now yields the offset from the start of
+  the TLS template instead of the SysV tp-relative offset. Verified natively:
+  `tls.c` and `tls_aggr.c` return 0 on x86_64 and on i386 (WoW64), and the full
+  16-program conformance set passes on both. (Default x86/x64 exes are
+  non-relocatable, so the directory's absolute VAs need no base relocations; an
+  ASLR/DLL build would additionally need `.reloc` entries for them.)
 
-- [ ] **[BUG] PE thread-local aggregates / pointer-init / `&tls`-into-libc paths.**
-  `tests/qemu/conformance/tls_aggr.c` returns 1 under wine (x86_64-win32 +
-  i386-win32). Same root cause as the PE `_Thread_local` item above (no
-  `IMAGE_TLS_DIRECTORY` / wrong access sequence), but it is the only conformance
-  program exercising three further codegen paths, which stay blocked until PE
-  TLS lands and must be re-checked then: a `_Thread_local struct` (member access
-  = thread-pointer + sym + member offset), a `_Thread_local` pointer initialised
-  to a global's address (a relocation that must live in the per-thread `.tls`
-  init image, not `.data`), and materialising `&tls_buffer` to hand to libc
-  (`memset`/`snprintf`) then reading it back via direct TLS. Fix with the PE TLS
-  item above.
+- [x] **[BUG] PE thread-local aggregates / pointer-init / `&tls`-into-libc paths.**
+  `tests/qemu/conformance/tls_aggr.c` (a `_Thread_local struct` member access, a
+  TLS pointer initialised to a global's address, and `&tls_buffer` handed to
+  libc `memset`/`snprintf` then read back via direct TLS) returned 1 under wine.
+  Fixed together with the PE TLS item above — `tls_aggr.c` now returns 0 on both
+  x86_64 (native) and i386 (WoW64).
 
-- [ ] **[LIMITATION] msvcrt prints `%e`/`%g` exponents with 3 digits — `varargs_fp` golden is glibc-shaped.**
-  `tests/qemu/conformance/varargs_fp.c` returns 4 under wine (x86_64-win32 +
-  i386-win32). The FP-varargs ABI is **correct**: checks 1–3 pass (`%.2f`;
-  interleaved int/double; ten doubles spilling past the 8 FP registers), so the
-  values reach libc in the right class and order. The sole divergence is the
-  exponent width — a probe under wine prints `100 5.000000e-001` where the golden
-  (and glibc, per C §7.21.6.1 "the exponent contains at least two digits") is
-  `100 5.000000e-01`. Microsoft's CRT has long emitted a ≥3-digit exponent. Not
-  an `mcc` defect — outside its control. Task: make the FP-varargs golden
-  libc-aware (normalise/accept the msvcrt exponent form) so the row passes under
-  wine/Windows.
+- [x] **[LIMITATION] `varargs_fp` golden is now libc-aware (msvcrt 3-digit exponent).**
+  `tests/qemu/conformance/varargs_fp.c` returned 4 under wine: the FP-varargs
+  ABI is correct (checks 1–3 pass), but check 4 compared `%g %e` against the
+  glibc 2-digit-exponent form `100 5.000000e-01` while Microsoft's CRT emits a
+  ≥3-digit exponent (`…e-001`). The golden now accepts either form, so the row
+  passes against glibc, musl, and msvcrt alike. Verified: returns 0 natively
+  (x86_64 + i386).
 
-- [ ] **[LIMITATION] msvcrt rounds `%.*Lf` half-away-from-zero; `floats_libc` golden assumes round-to-even.**
-  `tests/qemu/conformance/floats_libc.c` returns 3 under wine (x86_64-win32 +
-  i386-win32). The long-double-varargs ABI is **correct**: check 1 (`%.2Lf` of
-  `3.5L` → `3.50`) and check 2 pass, so the value reaches libc. Check 3 formats
-  `%.1Lf` of `0.25L`: glibc rounds to even → `0.2` (the golden), msvcrt rounds
-  half away from zero — a probe under wine prints `7 0.5 0.3`. A C-library
-  rounding-mode difference, not `mcc`. (Checks 4–5, the `strtod`/`strtold`
-  round-trips, are unreached; `strtold` may additionally be absent from msvcrt.)
-  Task: make the golden rounding-aware, or skip the exact half-ulp case on msvcrt.
+- [x] **[LIMITATION] `floats_libc` golden is now rounding-aware (msvcrt half-away).**
+  `tests/qemu/conformance/floats_libc.c` returned 3 under wine: the
+  long-double-varargs ABI is correct (checks 1–2 pass), but check 3 formats
+  `%.1Lf` of the exact half `0.25L`, where glibc rounds to even → `0.2` and
+  msvcrt rounds half-away-from-zero → `0.3` (both conforming). The golden now
+  accepts either, and checks 4–5 (`strtod`/`strtold` round-trips) then run and
+  pass on msvcrt. Verified: returns 0 natively (x86_64 + i386).
 
-- [ ] **[LIMITATION] wine's builtin msvcrt lacks `lldiv`, aborting `libc_struct` before `main`.**
-  `tests/qemu/conformance/libc_struct.c` returns 1 under wine (x86_64-win32 +
-  i386-win32). `lldiv` is present in the import lib (`runtime/win32/lib/msvcrt.def`
-  — added so the link resolves; real `msvcrt.dll` exports it), but **wine's**
-  builtin `msvcrt.dll` does not implement it, so the loader aborts at import
-  resolution — `wine: ... unimplemented function msvcrt.dll.lldiv, aborting` —
-  before `main` runs; the rc=1 is wine's abort, not a failing check. The
-  small-struct-return ABI the test targets is in fact correct: a probe under wine
-  shows `div(17,5)=q3 r2`, `div(-17,5)=q-3 r-2`, `ldiv=q1000 r3` all correct.
-  Only `lldiv` (16-byte `lldiv_t` via the win64 hidden-sret path) stays
-  unverified because it can't load under wine; it should pass on real Windows.
-  Task: gate the `lldiv` case behind a runtime availability check, or run this
-  row on a non-wine Windows host.
+- [x] **[LIMITATION] `libc_struct` resolves `lldiv` at runtime (wine's builtin msvcrt lacks it).**
+  `tests/qemu/conformance/libc_struct.c` returned 1 under wine: a static import
+  of `lldiv` aborts the loader before `main` (`wine: … unimplemented function
+  msvcrt.dll.lldiv`), even though the small-struct-return ABI under test is
+  correct. On `_WIN32` the test now resolves `lldiv` via `GetProcAddress` and
+  calls it through a function pointer — so on real msvcrt the 16-byte `lldiv_t`
+  hidden-sret ABI is exercised, and under wine (where the export is absent) it
+  falls back to a manual computation rather than aborting (the lldiv-vs-libc ABI
+  is simply unverified there; `div`/`ldiv` still validate struct return against
+  the platform libc). ELF builds keep the direct call. Verified: returns 0
+  natively (x86_64 + i386), and links even against an import lib without
+  `lldiv`.

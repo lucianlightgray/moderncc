@@ -304,6 +304,49 @@ static void gen_modrm64(int opcode, int op_reg, int r, Sym *sym, int c)
 }
 
 
+#ifdef MCC_TARGET_PE
+/* The synthetic _tls_index slot the loader fills with this module's TLS index.
+   Defined in the image by pe_add_tls(); referenced here as an external. */
+static Sym *pe_tls_index_sym(void)
+{
+    CType ct;
+    ct.t = VT_INT;
+    ct.ref = NULL;
+    return external_global_sym(tok_alloc_const("_tls_index"), &ct);
+}
+
+/* Materialise the base of this thread's TLS block into register `dst`:
+       mov  dst, %gs:0x58          ; TEB->ThreadLocalStoragePointer (array)
+       mov  sc,  [rip + _tls_index] ; this module's slot
+       mov  dst, [dst + sc*8]       ; -> per-thread TLS block base
+   The Windows TLS model is unrelated to the SysV %fs:0 thread pointer; the
+   caller adds the variable's template offset (sym@secrel, an R_X86_64_TPOFF32
+   the PE linker resolves as val-tls_start) and dereferences. A scratch is
+   needed for the slot index; pick one distinct from dst and preserve it with
+   push/pop so the surrounding register allocation is undisturbed. */
+static void gen_pe_tls_base(int dst)
+{
+    int sc = (REG_VALUE(dst) == TREG_RAX) ? TREG_RCX : TREG_RAX;
+    o(0x50 + sc);                            /* push sc (low reg, no REX)    */
+    o(0x65);                                 /* GS prefix                    */
+    o(0x48 | (REX_BASE(dst) << 2));          /* REX.W (+R if dst is r8-r15)  */
+    o(0x8b);
+    o(0x04 | (REG_VALUE(dst) << 3));         /* mod=00 reg=dst rm=SIB        */
+    o(0x25);                                 /* SIB: [disp32], no base/index */
+    gen_le32(0x58);                          /* dst = ThreadLocalStoragePointer */
+    o(0x8b);                                 /* mov sc, [rip+_tls_index]     */
+    o(0x05 | (sc << 3));                     /* mod=00 reg=sc rm=RIP-disp32  */
+    gen_addrpc32(VT_SYM, pe_tls_index_sym(), 0);
+    o(0x48 | (REX_BASE(dst) << 2) | REX_BASE(dst)); /* REX.W +R(reg) +B(base) */
+    o(0x8b);                                 /* mov dst, [dst + sc*8]        */
+    o(0x44 | (REG_VALUE(dst) << 3));         /* mod=01 reg=dst rm=SIB        */
+    o((3 << 6) | (sc << 3) | REG_VALUE(dst));/* SIB scale=8 index=sc base=dst */
+    g(0x00);                                 /* disp8 = 0 (g: emit one byte; */
+                                             /*  o(0) would emit nothing)    */
+    o(0x58 + sc);                            /* pop sc                       */
+}
+#endif
+
 void load(int r, SValue *sv)
 {
     int v, t, ft, fc, fr;
@@ -341,6 +384,14 @@ void load(int r, SValue *sv)
         int tr = r | TREG_MEM;
         if (is_float(ft))
             tr = get_reg(RC_INT) | TREG_MEM;
+#ifdef MCC_TARGET_PE
+        gen_pe_tls_base(tr);                  /* tr = per-thread TLS base  */
+        o(0x48 | REX_BASE(tr));               /* REX.W (+REX.B if r8-r15)  */
+        o(0x81);
+        o(0xc0 | REG_VALUE(tr));              /* add tr, sym@secrel        */
+        greloca(cur_text_section, sv->sym, ind, R_X86_64_TPOFF32, 0);
+        gen_le32(0);
+#else
         o(0x64);                              /* FS prefix                 */
         o(0x48 | (REX_BASE(tr) << 2));        /* REX.W (+REX.R if r8-r15)  */
         o(0x8b);
@@ -352,6 +403,7 @@ void load(int r, SValue *sv)
         o(0xc0 | REG_VALUE(tr));              /* add tr, sym@tpoff         */
         greloca(cur_text_section, sv->sym, ind, R_X86_64_TPOFF32, 0);
         gen_le32(0);
+#endif
         fr = tr | VT_LVAL;                     /* now [tr + fc], typed      */
     }
 
@@ -429,9 +481,23 @@ void load(int r, SValue *sv)
         if (v == VT_CONST) {
             if (fr & VT_SYM) {
 #ifdef MCC_TARGET_PE
-                orex(1,0,r,0x8d);
-                o(0x05 + REG_VALUE(r) * 8);
-                gen_addrpc32(fr, sv->sym, fc);
+                if (sv->sym->type.t & VT_TLS) {
+                    /* &thread_local: materialise the per-thread block base via
+                       the TEB, then add the variable's template offset. The
+                       value paths produce TEB-relative accesses; the bare
+                       &address must be the same thread-relative pointer, not the
+                       section image address (only the per-thread init template). */
+                    gen_pe_tls_base(r);
+                    o(0x48 | REX_BASE(r));         /* REX.W (+REX.B if r8-r15) */
+                    o(0x81);
+                    o(0xc0 | REG_VALUE(r));        /* add r, (sym+fc)@secrel   */
+                    greloca(cur_text_section, sv->sym, ind, R_X86_64_TPOFF32, fc);
+                    gen_le32(0);
+                } else {
+                    orex(1,0,r,0x8d);
+                    o(0x05 + REG_VALUE(r) * 8);
+                    gen_addrpc32(fr, sv->sym, fc);
+                }
 #else
                 if (sv->sym->type.t & VT_TLS) {
                     /* Address of a thread-local (Local Exec): thread pointer
@@ -554,12 +620,19 @@ void store(int r, SValue *v)
            through [r11] with the normal typed path.  The old segment-relative
            form hard-coded a full-word mov (0x89), so a char/short TLS store
            wrote 4/8 bytes and clobbered the neighbouring object. */
+#ifdef MCC_TARGET_PE
+        gen_pe_tls_base(TREG_R11);            /* r11 = per-thread TLS base */
+        o(0x49); o(0x81); o(0xc3);            /* add r11, (sym+fc)@secrel  */
+        greloca(cur_text_section, v->sym, ind, R_X86_64_TPOFF32, fc);
+        gen_le32(0);
+#else
         o(0x64);                              /* FS prefix                 */
         o(0x4c); o(0x8b); o(0x1c); o(0x25);   /* mov r11, %fs:[disp32]     */
         gen_le32(0);                          /* r11 = TP                  */
         o(0x49); o(0x81); o(0xc3);            /* add r11, sym@tpoff        */
         greloca(cur_text_section, v->sym, ind, R_X86_64_TPOFF32, fc);
         gen_le32(0);
+#endif
         pic = is64_type(bt) ? 0x49 : 0x41;    /* subsequent store -> [r11] */
         fc = 0;
     }

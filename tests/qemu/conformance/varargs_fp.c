@@ -35,9 +35,15 @@ int main(void)
              0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5);
     if (strcmp(buf, "0.5 1.5 2.5 3.5 4.5 5.5 6.5 7.5 8.5 9.5")) return 3;
 
-    /* %g and %e formats (different libc paths, same FP-varargs ABI) */
+    /* %g and %e formats (different libc paths, same FP-varargs ABI). glibc
+       prints a 2-digit exponent (C §7.21.6.1: "the exponent contains at least
+       two digits"); Microsoft's CRT has long emitted >=3 digits ("5.000000e-001").
+       Both conform; accept either -- this check exercises the FP-varargs ABI
+       (the value reaching libc in the right class/order), not the libc's
+       exponent-field width. */
     snprintf(buf, sizeof buf, "%g %e", 100.0, 0.5);
-    if (strcmp(buf, "100 5.000000e-01")) return 4;
+    if (strcmp(buf, "100 5.000000e-01") && strcmp(buf, "100 5.000000e-001"))
+        return 4;
 
     /* a long long and a double together: distinct widths in distinct classes */
     snprintf(buf, sizeof buf, "%lld %.1f", 0x100000000LL, 0.5);

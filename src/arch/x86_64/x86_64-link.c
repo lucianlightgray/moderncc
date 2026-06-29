@@ -343,11 +343,13 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 
                 for (int i = 1; i < s1->nb_sections; i++) {
                     Section *s = s1->sections[i];
-                    if (s->sh_flags & SHF_TLS && s->sh_size) {
+                    /* PE layout leaves s->sh_size 0; the live size is data_offset. */
+                    addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
+                    if (s->sh_flags & SHF_TLS && ssz) {
                         if (!tls_start || s->sh_addr < tls_start)
                             tls_start = s->sh_addr;
-                        if (s->sh_addr + s->sh_size > tls_end)
-                            tls_end = s->sh_addr + s->sh_size;
+                        if (s->sh_addr + ssz > tls_end)
+                            tls_end = s->sh_addr + ssz;
                         if (s->sh_addralign > tls_align)
                             tls_align = s->sh_addralign;
                     }
@@ -355,7 +357,17 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
                 if (tls_end > tls_start) {
                     addr_t tls_size = tls_end - tls_start;
                     addr_t aligned_size = (tls_size + tls_align - 1) & ~(tls_align - 1);
+#ifdef MCC_TARGET_PE
+                    /* Windows static TLS: the access sequence indexes the
+                       per-thread TLS block (TEB->ThreadLocalStoragePointer[
+                       _tls_index]), so a variable's displacement is its offset
+                       from the *start* of the TLS template (.tdata|.tbss), not
+                       the SysV tp-relative negative offset (tp = end-of-block). */
+                    (void)aligned_size;
+                    x = val - tls_start;
+#else
                     x = val - (tls_start + aligned_size);
+#endif
                 } else {
                     x = val - sec->sh_addr - sec->data_offset;
                 }
@@ -375,11 +387,13 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 
                 for (int i = 1; i < s1->nb_sections; i++) {
                     Section *s = s1->sections[i];
-                    if (s->sh_flags & SHF_TLS && s->sh_size) {
+                    /* PE layout leaves s->sh_size 0; the live size is data_offset. */
+                    addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
+                    if (s->sh_flags & SHF_TLS && ssz) {
                         if (!tls_start || s->sh_addr < tls_start)
                             tls_start = s->sh_addr;
-                        if (s->sh_addr + s->sh_size > tls_end)
-                            tls_end = s->sh_addr + s->sh_size;
+                        if (s->sh_addr + ssz > tls_end)
+                            tls_end = s->sh_addr + ssz;
                         if (s->sh_addralign > tls_align)
                             tls_align = s->sh_addralign;
                     }
@@ -387,7 +401,12 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
                 if (tls_end > tls_start) {
                     addr_t tls_size = tls_end - tls_start;
                     addr_t aligned_size = (tls_size + tls_align - 1) & ~(tls_align - 1);
+#ifdef MCC_TARGET_PE
+                    (void)aligned_size;
+                    x = val - tls_start;        /* offset into the template */
+#else
                     x = val - (tls_start + aligned_size);
+#endif
                 } else {
                     x = val - sec->sh_addr - sec->data_offset;
                 }

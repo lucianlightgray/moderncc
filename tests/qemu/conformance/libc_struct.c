@@ -9,6 +9,28 @@
 
 #include <stdlib.h>
 
+#ifdef _WIN32
+/* wine's *builtin* msvcrt.dll does not implement lldiv, so a static import of it
+   aborts the loader ("unimplemented function msvcrt.dll.lldiv") before main even
+   runs -- the rc has nothing to do with the ABI under test. Resolve lldiv at
+   runtime instead: on a real Windows msvcrt the export is present and the 16-byte
+   lldiv_t hidden-sret return ABI is exercised through the indirect call; under
+   wine it is absent, so we fall back to a manual computation (the lldiv-vs-libc
+   ABI check is simply skipped where the C library lacks the function -- div_t and
+   ldiv_t below still validate small-struct return against the platform libc). */
+__declspec(dllimport) void *__stdcall LoadLibraryA(const char *name);
+__declspec(dllimport) void *__stdcall GetProcAddress(void *mod, const char *name);
+typedef lldiv_t (*lldiv_fn)(long long, long long);
+static lldiv_t rt_lldiv(long long n, long long d)
+{
+    void *m = LoadLibraryA("msvcrt.dll");
+    lldiv_fn fn = m ? (lldiv_fn)GetProcAddress(m, "lldiv") : (lldiv_fn)0;
+    if (fn) return fn(n, d);
+    lldiv_t r; r.quot = n / d; r.rem = n % d; return r;
+}
+#define lldiv(n, d) rt_lldiv((n), (d))
+#endif
+
 int main(void)
 {
     /* div_t: two ints packed into one 8-byte return slot */
