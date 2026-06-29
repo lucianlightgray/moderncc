@@ -439,20 +439,24 @@ bulk of each area matched the references; these are the residual divergences.
 
 ### §6.4 / §6.10 lexical & preprocessor
 
-- [ ] **[BUG] §5.1.1.2 — `mcc -E` infinite-loops on an identifier followed by `\`+whitespace+newline.**
-  `printf 'a\\ \nb\n' | mcc -E` spins forever (rc=124). The `parse_ident_ucn`
-  loop (`src/mccpp.c:2818-2827`) hits a `\` that `decode_ucn` rejects and that is
-  not an immediate splice, then `p--; PEEKC(c,p); continue;` re-reads the same
-  `\` (`PEEKC` = `c=*++p`, `src/mccpp.c:747`) → no progress. A *different* trigger
-  from the already-fixed `//`/`/*` paste hang.
-  3-way: mcc=HANG | gcc/clang=splice + "backslash and newline separated by space".
-  Gap: consume `\`+ws+NL as a (warned) splice, or end the token; must make progress.
+- [x] **[BUG] §5.1.1.2 — `mcc -E` no longer hangs on an identifier followed by `\`+whitespace+newline.**
+  The `parse_ident_ucn` loop (`src/mccpp.c`) re-read a stray `\` forever
+  (`handle_stray` under `-E`/`ACCEPT_STRAYS` re-presents the `\` without
+  consuming it; `-c` errored instead, so only `-E` hung). Now: if `PEEKC` yields
+  `\` again (a stray, not a consumed splice), the identifier ends (`break`) and
+  the `\` is tokenized separately — the loop always makes progress. In-identifier
+  line splices (`ab\<NL>cd`→`abcd`) and UCN identifiers still work. cli
+  `ident_backslash_no_hang` (with a `timeout` hang-guard). (Full gcc-style
+  splice of `\`+ws+NL — emit `ab` + warning instead of a stray `\` — is the
+  separate item below.)
 
-- [ ] **[BUG] §5.1.1.2 / §6.10 — `\`+whitespace+newline neither spliced nor diagnosed.**
-  Non-hang manifestation of the same lexer hole: `-c` hard-errors "stray '\'"
-  (rejects-valid vs the refs' splice extension); `#define A 1 \  <NL>B` under `-E`
-  silently emits an invalid stray `\` token. Fixing the lexer to treat `\`+ws+NL
-  as a warned splice resolves both this and the hang above.
+- [~] **[BUG] §5.1.1.2 / §6.10 — `\`+whitespace+newline not spliced (now terminates, still not gcc-compat).**
+  The hang above is fixed; the residual is behavioral: `-c` hard-errors "stray
+  '\'" and `-E` emits a stray `\` token, whereas gcc/clang treat `\`+ws+NL as a
+  line-continuation splice with a `-Wbackslash-newline-escape` warning. Making
+  `handle_stray` consume `\`+whitespace+newline as a warned splice would match
+  the references. Low priority (extension; mcc's strict-ISO rejection is
+  defensible).
   3-way: mcc=stray-`\`/no-splice | gcc/clang=splice+warn.
 
 - [ ] **[DIAG] §6.4.4.4p10 — multi-character character constant not diagnosed.**

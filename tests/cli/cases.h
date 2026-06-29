@@ -936,5 +936,13 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'without an array size|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 VALID_OK\n1 without an array size\n" },
 
+/* §5.1.1.2: `mcc -E` must terminate on an identifier followed by `\`+space+
+   newline (it used to spin forever re-reading the stray `\`). The `timeout`
+   guards against a hang regression; rc 0 = clean termination. */
+{ "ident_backslash_no_hang", "",
+  "printf 'a\\\\ \\nb\\n' > {W}/ib.c && "
+  "timeout 10 {MCC} -B{B} -I{I} -E -P {W}/ib.c >/dev/null 2>&1 && echo TERMINATED",
+  "TERMINATED\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

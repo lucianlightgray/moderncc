@@ -2823,7 +2823,13 @@ maybe_newline:
                         continue;
                     }
                     p--;
-                    PEEKC(c, p);                    /* line splice, or stray '\' (errors) */
+                    PEEKC(c, p);                    /* consume a line splice, else stray '\' */
+                    /* A stray '\' (e.g. '\'+space+newline under -E, where
+                       handle_stray re-presents the '\' without consuming it)
+                       ends the identifier; otherwise we re-read the same '\'
+                       forever. The '\' is then tokenized separately. */
+                    if (c == '\\')
+                        break;
                     continue;
                 }
                 if (isidnum_table[c - CH_EOF] & (IS_ID|IS_NUM)) {
