@@ -468,6 +468,41 @@ static void arm64_sym(int r, Sym *sym, unsigned long addend)
 
 static void arm64_load_cmp(int r, SValue *sv);
 
+#ifdef MCC_TARGET_MACHO
+/* Mach-O thread-local access uses TLV descriptors instead of the ELF Local-Exec
+   sequence.  A `_Thread_local` symbol resolves to a three-word descriptor
+   { thunk, key, offset } in __thread_vars; calling the (dyld-populated) thunk
+   with the descriptor address in x0 returns the address of this thread's copy
+   of the variable.  The thunk's special calling convention preserves every
+   register except x0 (plus the always-scratch x16/x17 and lr/flags), so we save
+   x0/x16/x17 around the call and leave the result (&var + addend) in x30 —
+   mcc's reserved scratch, which is never an allocatable register.  */
+static void arm64_macho_tls_addr(Sym *sym, uint64_t addend)
+{
+    o(ARM64_SUB_IMM | ARM64_SF(1) | ARM64_RN(31) | ARM64_RD(31) | ARM64_IMM12(32));
+    arm64_strx(3, 0, 31, 0);                         /* str x0,  [sp]      */
+    arm64_strx(3, 16, 31, 8);                        /* str x16, [sp, #8]  */
+    arm64_strx(3, 17, 31, 16);                       /* str x17, [sp, #16] */
+    greloca(cur_text_section, sym, ind, R_AARCH64_ADR_PREL_PG_HI21, 0);
+    o(ARM64_ADRP | ARM64_RD(0));                     /* adrp x0, _descriptor       */
+    greloca(cur_text_section, sym, ind, R_AARCH64_ADD_ABS_LO12_NC, 0);
+    o(ARM64_ADD_IMM | ARM64_SF(1) | ARM64_RN(0) | ARM64_RD(0)); /* add x0,x0,:lo12: */
+    o(ARM64_LDR_X | ARM64_RN(0) | ARM64_RT(16));     /* ldr x16, [x0]  (thunk) */
+    o(ARM64_BLR | ARM64_RN(16));                     /* blr x16  ->  x0 = &var */
+    if (addend & 0xfff)
+        o(ARM64_ADD_IMM | ARM64_SF(1) | ARM64_RN(0) | ARM64_RD(0) |
+          ARM64_IMM12(addend & 0xfff));
+    if (addend > 0xfff)
+        o(ARM64_ADD_IMM | ARM64_SF(1) | ARM64_SH(1) | ARM64_RN(0) | ARM64_RD(0) |
+          ARM64_IMM12((addend >> 12) & 0xfff));
+    o(ARM64_MOV_REG | ARM64_SF(1) | ARM64_RM(0) | ARM64_RD(30)); /* mov x30, x0 */
+    arm64_ldrx(0, 3, 0, 31, 0);                      /* ldr x0,  [sp]      */
+    arm64_ldrx(0, 3, 16, 31, 8);                     /* ldr x16, [sp, #8]  */
+    arm64_ldrx(0, 3, 17, 31, 16);                    /* ldr x17, [sp, #16] */
+    o(ARM64_ADD_IMM | ARM64_SF(1) | ARM64_RN(31) | ARM64_RD(31) | ARM64_IMM12(32));
+}
+#endif
+
 ST_FUNC void load(int r, SValue *sv)
 {
     int svtt = sv->type.t;
@@ -515,6 +550,14 @@ ST_FUNC void load(int r, SValue *sv)
 
     if (svr == (VT_CONST | VT_LVAL | VT_SYM)) {
         if (sv->sym->type.t & VT_TLS) {
+#ifdef MCC_TARGET_MACHO
+            arm64_macho_tls_addr(sv->sym, svcoff);
+            if (IS_FREG(r))
+                arm64_ldrv(arm64_type_size(svtt), fltr(r), 30, 0);
+            else
+                arm64_ldrx(!(svtt&VT_UNSIGNED), arm64_type_size(svtt),
+                           intr(r), 30, 0);
+#else
             o(0xd53bd05e);
             greloca(cur_text_section, sv->sym, ind,
                     R_AARCH64_TLSLE_ADD_TPREL_HI12, 0);
@@ -529,6 +572,7 @@ ST_FUNC void load(int r, SValue *sv)
             else
                 arm64_ldrx(!(svtt&VT_UNSIGNED), arm64_type_size(svtt),
                            intr(r), 30, svcoff);
+#endif
             return;
         }
         arm64_sym(30, sv->sym,
@@ -544,6 +588,12 @@ ST_FUNC void load(int r, SValue *sv)
 
     if (svr == (VT_CONST | VT_SYM)) {
         if (sv->sym->type.t & VT_TLS) {
+#ifdef MCC_TARGET_MACHO
+            /* &thread_local: the TLV thunk returns the per-thread address; add
+               any constant member/element offset, then move it into r. */
+            arm64_macho_tls_addr(sv->sym, svcul);
+            o(ARM64_MOV_REG | ARM64_SF(1) | ARM64_RM(30) | ARM64_RD(intr(r)));
+#else
             /* &thread_local (Local Exec): tpidr_el0 + sym@tprel.  The value
                load/store paths build this same tp-relative address before the
                ldr/str; a bare &address must materialise it too, not the section
@@ -557,6 +607,7 @@ ST_FUNC void load(int r, SValue *sv)
                     R_AARCH64_TLSLE_ADD_TPREL_LO12, svcul);
             o(ARM64_ADD_IMM | ARM64_SF(1) |
               ARM64_RN(30) | ARM64_RD(intr(r)));
+#endif
             return;
         }
         arm64_sym(intr(r), sv->sym, svcul);
@@ -640,6 +691,13 @@ ST_FUNC void store(int r, SValue *sv)
 	uint64_t i = sv->c.i;
 
 	if (sv->sym && (sv->sym->type.t & VT_TLS)) {
+#ifdef MCC_TARGET_MACHO
+            arm64_macho_tls_addr(sv->sym, i);
+            if (IS_FREG(r))
+                arm64_strv(arm64_type_size(svtt), fltr(r), 30, 0);
+            else
+                arm64_strx(arm64_type_size(svtt), intr(r), 30, 0);
+#else
             o(0xd53bd05e);
             greloca(cur_text_section, sv->sym, ind,
                     R_AARCH64_TLSLE_ADD_TPREL_HI12, 0);
@@ -653,6 +711,7 @@ ST_FUNC void store(int r, SValue *sv)
                 arm64_strv(arm64_type_size(svtt), fltr(r), 30, i);
             else
                 arm64_strx(arm64_type_size(svtt), intr(r), 30, i);
+#endif
             return;
         }
 	if (sv->sym)
@@ -679,6 +738,13 @@ ST_FUNC void store(int r, SValue *sv)
 
     if (svr == (VT_CONST | VT_LVAL | VT_SYM)) {
         if (sv->sym->type.t & VT_TLS) {
+#ifdef MCC_TARGET_MACHO
+            arm64_macho_tls_addr(sv->sym, svcoff);
+            if (IS_FREG(r))
+                arm64_strv(arm64_type_size(svtt), fltr(r), 30, 0);
+            else
+                arm64_strx(arm64_type_size(svtt), intr(r), 30, 0);
+#else
             o(0xd53bd05e);
             greloca(cur_text_section, sv->sym, ind,
                     R_AARCH64_TLSLE_ADD_TPREL_HI12, 0);
@@ -692,6 +758,7 @@ ST_FUNC void store(int r, SValue *sv)
                 arm64_strv(arm64_type_size(svtt), fltr(r), 30, svcoff);
             else
                 arm64_strx(arm64_type_size(svtt), intr(r), 30, svcoff);
+#endif
             return;
         }
         arm64_sym(30, sv->sym,

@@ -1911,15 +1911,21 @@ ST_FUNC int gv(int rc)
         }
         r = gv(rc);
     } else {
-        if (is_float(vtop->type.t) && 
+        if (is_float(vtop->type.t) &&
             (vtop->r & (VT_VALMASK | VT_LVAL)) == VT_CONST) {
             init_params p = { .sec = rodata_section };
             unsigned long offset;
+            /* The constant is spilled into rodata; its reference symbol is a
+               plain static object, never thread-local — strip VT_TLS so the
+               backend does not mistake the literal for a TLS access (which on
+               Mach-O resolves through a TLV descriptor). */
+            CType ltype = vtop->type;
+            ltype.t &= ~VT_TLS;
             size = type_size(&vtop->type, &align);
             if (NODATA_WANTED)
                 size = 0, align = 1;
             offset = section_add(p.sec, size, align);
-            vpush_ref(&vtop->type, p.sec, offset, size);
+            vpush_ref(&ltype, p.sec, offset, size);
 	    vswap();
 	    init_putv(&p, &vtop->type, offset);
 	    vtop->r |= VT_LVAL;
