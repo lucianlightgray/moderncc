@@ -359,6 +359,44 @@ if(_is_matrix AND NOT MCC_SUPERBUILD_CHILD)
     endif()
     message(STATUS "mcc: superbuild matrix toolchains=[${MCC_TOOLCHAIN_PROFILE}] x "
                    "targets=[${MCC_TARGETS}] (${_order})")
+
+    # msvc cells build with the Visual Studio generator, not the parent's
+    # generator: cl.exe under Ninja needs an external vcvars environment and
+    # trips a CONFIGURE_DEPENDS glob-verify path bug on Windows, whereas the VS
+    # generator finds the toolset itself. Auto-detect the installed VS major via
+    # vswhere; override with -DMCC_MSVC_GENERATOR / -DMCC_MSVC_PLATFORM.
+    set(MCC_MSVC_GENERATOR "" CACHE STRING
+        "CMake generator for 'msvc' toolchain cells (empty = auto-detect)")
+    set(MCC_MSVC_PLATFORM "x64" CACHE STRING
+        "Generator platform (-A) for 'msvc' toolchain cells")
+    if(WIN32 AND MCC_MSVC_GENERATOR STREQUAL "" AND "msvc" IN_LIST MCC_TOOLCHAIN_PROFILE)
+        if(CMAKE_GENERATOR MATCHES "Visual Studio")
+            set(MCC_MSVC_GENERATOR "${CMAKE_GENERATOR}")
+        else()
+            find_program(MCC_VSWHERE vswhere PATHS
+                "$ENV{ProgramFiles\(x86\)}/Microsoft Visual Studio/Installer")
+            if(MCC_VSWHERE)
+                execute_process(COMMAND "${MCC_VSWHERE}" -latest -property installationVersion
+                    OUTPUT_VARIABLE _vsver OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+                string(REGEX MATCH "^[0-9]+" _vsmaj "${_vsver}")
+                if(_vsmaj STREQUAL "18")
+                    set(MCC_MSVC_GENERATOR "Visual Studio 18 2026")
+                elseif(_vsmaj STREQUAL "17")
+                    set(MCC_MSVC_GENERATOR "Visual Studio 17 2022")
+                elseif(_vsmaj STREQUAL "16")
+                    set(MCC_MSVC_GENERATOR "Visual Studio 16 2019")
+                endif()
+            endif()
+        endif()
+        if(MCC_MSVC_GENERATOR STREQUAL "")
+            message(FATAL_ERROR
+                "mcc config: toolchain 'msvc' requested but no Visual Studio "
+                "generator could be detected; pass -DMCC_MSVC_GENERATOR=\"Visual "
+                "Studio NN YYYY\" (and optionally -DMCC_MSVC_PLATFORM).")
+        endif()
+        message(STATUS "mcc: msvc cells use generator '${MCC_MSVC_GENERATOR}' (-A ${MCC_MSVC_PLATFORM})")
+    endif()
+
     set(_forward "")
     foreach(_v IN LISTS _MCC_PRESET_VARS)
         if(_v MATCHES "^MCC_(TOOLCHAIN_PROFILE|TARGETS|SUPERBUILD_TEST|SUPERBUILD_SEQUENTIAL)$")
@@ -369,7 +407,11 @@ if(_is_matrix AND NOT MCC_SUPERBUILD_CHILD)
     set(_prev_stage "")
     foreach(_tc IN LISTS MCC_TOOLCHAIN_PROFILE)
         mcc_map_toolchain_cc("${_tc}" _cc)
-        if(NOT _tc STREQUAL "auto" AND _cc STREQUAL "")
+        set(_cell_is_msvc OFF)
+        if(_tc STREQUAL "msvc")
+            set(_cell_is_msvc ON)   # VS generator locates cl itself; no path needed
+        endif()
+        if(NOT _tc STREQUAL "auto" AND _cc STREQUAL "" AND NOT _cell_is_msvc)
             message(FATAL_ERROR
                 "mcc config: toolchain '${_tc}' requested but its compiler was not "
                 "found; install it or pass -DMCC_CC_${_tc}=<path>.")
@@ -388,8 +430,15 @@ if(_is_matrix AND NOT MCC_SUPERBUILD_CHILD)
             if(NOT "${CMAKE_BUILD_TYPE}" STREQUAL "")
                 list(APPEND _cargs "-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}")
             endif()
-            if(NOT _cc STREQUAL "")
+            if(NOT _cc STREQUAL "" AND NOT _cell_is_msvc)
                 list(APPEND _cargs "-DCMAKE_C_COMPILER=${_cc}")
+            endif()
+            # msvc cells override the generator (see MCC_MSVC_GENERATOR above);
+            # every other cell inherits the parent generator.
+            set(_cell_gen_args "")
+            if(_cell_is_msvc AND NOT MCC_MSVC_GENERATOR STREQUAL "")
+                set(_cell_gen_args CMAKE_GENERATOR "${MCC_MSVC_GENERATOR}"
+                                   CMAKE_GENERATOR_PLATFORM "${MCC_MSVC_PLATFORM}")
             endif()
             set(_dep "")
             if(MCC_SUPERBUILD_SEQUENTIAL AND _prev_stage)
@@ -399,13 +448,24 @@ if(_is_matrix AND NOT MCC_SUPERBUILD_CHILD)
                 SOURCE_DIR  "${CMAKE_CURRENT_SOURCE_DIR}"
                 BINARY_DIR  "${CMAKE_BINARY_DIR}/${_cell}"
                 CMAKE_ARGS  ${_cargs}
+                ${_cell_gen_args}
                 CONFIGURE_HANDLED_BY_BUILD ON
                 BUILD_ALWAYS ON
                 INSTALL_COMMAND ""
                 ${_dep})
             if(MCC_SUPERBUILD_TEST)
+                # Multi-config generators (the VS generator used for msvc cells)
+                # need ctest -C <config>; single-config ones ignore a -C.
+                set(_cell_ctest_cfg "")
+                if(_cell_is_msvc AND NOT MCC_MSVC_GENERATOR STREQUAL "")
+                    if(CMAKE_BUILD_TYPE STREQUAL "")
+                        set(_cell_ctest_cfg -C Debug)
+                    else()
+                        set(_cell_ctest_cfg -C "${CMAKE_BUILD_TYPE}")
+                    endif()
+                endif()
                 ExternalProject_Add_Step(${_cell} ctest
-                    COMMAND "${CMAKE_CTEST_COMMAND}" --output-on-failure
+                    COMMAND "${CMAKE_CTEST_COMMAND}" ${_cell_ctest_cfg} --output-on-failure
                     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/${_cell}"
                     DEPENDEES build ALWAYS ON USES_TERMINAL ON)
             endif()
@@ -419,8 +479,12 @@ endif()
 if(MCC_TOOLCHAIN_PROFILE STREQUAL "mcc")
     mcc_profile_seed(MCC_ONE_SOURCE ON)
 elseif(MCC_TOOLCHAIN_PROFILE STREQUAL "msvc")
-    mcc_profile_seed(MCC_ONE_SOURCE ON)
-    mcc_profile_seed(MCC_BUILD_TESTS OFF)
+    # NB: do NOT force ONE_SOURCE here. With ONE_SOURCE the per-TU helpers in
+    # libmcc become `static` (ST_FUNC), but the separate mcc executable is built
+    # ONE_SOURCE=0 and links against libmcc — on a PE target it references e.g.
+    # pstrcpy from the Windows-only impdef tool, which then goes unresolved
+    # (LNK2019). The normal multi-TU build keeps those symbols external. Tests
+    # default ON so msvc participates in the build *and test* matrix.
 endif()
 
 mcc_config_node(MCC_ENABLE_CROSS  TYPE BOOL DEFAULT OFF GROUP "Build targets"
@@ -817,8 +881,11 @@ if(MCC_TARGETOS STREQUAL "WIN32")
     if(MCC_CC_NAME STREQUAL "gcc")
         add_link_options(-static)
     endif()
-    if(NOT MCC_CC_NAME STREQUAL "clang"
+    if(NOT MCC_CC_NAME STREQUAL "clang" AND NOT MCC_CC_NAME STREQUAL "msvc"
        AND NOT CMAKE_BUILD_TYPE MATCHES "Debug|RelWithDebInfo")
+        # GNU-style strip. MSVC's link.exe rejects -s (LNK4044 "unrecognized
+        # option /s"); it omits debug info via /DEBUG:NONE + no PDB instead,
+        # which CMake already arranges for non-debug configs.
         add_link_options(-s)
     endif()
 endif()
@@ -1826,7 +1893,15 @@ endif()
     elseif(MCC_CPU STREQUAL "i386")
         set(_mcctest_refflags "-fno-PIC -fno-PIE -Wl,-z,notext")
     endif()
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c" AND MCC_CONFIG_ASM)
+    if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
+        # The differential test builds tests/diff/full_language.c with BOTH mcc
+        # and the host reference cc, feeding both mcc's runtime/include headers
+        # and gcc-style driver flags (-std=gnu99 -O0 -fno-omit-frame-pointer; see
+        # run_mcctest.cmake). cl.exe parses neither mcc's __SIZE_TYPE__-based
+        # headers nor those flags, so MSVC can't serve as the reference compiler.
+        mcc_skip_test(mcctest "needs a GCC-compatible reference cc (host cc is MSVC)")
+        mcc_skip_test(mcctest-bcheck "needs a GCC-compatible reference cc (host cc is MSVC)")
+    elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c" AND MCC_CONFIG_ASM)
         add_test(NAME mcctest COMMAND "${CMAKE_COMMAND}"
             -DCC=${CMAKE_C_COMPILER} -DMCC=${_mcc_exe}
             -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c
@@ -2619,11 +2694,19 @@ else()
                    "(see tests/qemu/docker/README.md)")
 endif()
 
-file(GLOB_RECURSE MCC_TAGFILES CONFIGURE_DEPENDS
+# ctags over the whole source tree. NOTE: deliberately NO CONFIGURE_DEPENDS —
+# it makes the Ninja generator watch every directory under the source root for
+# the re-glob check, including in-source build dirs (build-*/, cmake-build-*/).
+# Those hold generated .c/.h, so any incremental build trips a spurious "GLOB
+# mismatch" reconfigure, and on Windows ninja's directory restat mangles their
+# absolute paths (FindFirstFileExA "<src>/<abs-src>/..." -> syntax error). tags
+# is a dev-convenience target, so a configure-time snapshot is enough. The
+# EXCLUDE below also keeps generated build-tree files out of the tag set.
+file(GLOB_RECURSE MCC_TAGFILES
     "${CMAKE_CURRENT_SOURCE_DIR}/*.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/*.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/*.S")
-list(FILTER MCC_TAGFILES EXCLUDE REGEX "/(cmake-build-[^/]*|build-c|\\.git|\\.idea)/")
+list(FILTER MCC_TAGFILES EXCLUDE REGEX "/(cmake-build-[^/]*|build-[^/]*|\\.git|\\.idea|\\.cache)/")
 find_program(CTAGS_EXE ctags)
 if(CTAGS_EXE)
     add_custom_target(tags

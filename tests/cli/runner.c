@@ -19,6 +19,11 @@
 #ifdef _WIN32
 #include <direct.h>
 #define MKDIR(p) _mkdir(p)
+#ifdef _MSC_VER
+/* mingw exposes the POSIX names; MSVC only ships the underscore-prefixed CRT. */
+#define popen  _popen
+#define pclose _pclose
+#endif
 #else
 #include <sys/stat.h>
 #define MKDIR(p) mkdir((p), 0777)

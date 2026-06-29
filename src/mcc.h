@@ -69,6 +69,7 @@ extern long double strtold (const char *__nptr, char **__endptr);
 #  pragma warning (disable : 4996)
 #  pragma warning (disable : 4018)
 #  pragma warning (disable : 4146)
+#  include <sys/types.h>   /* off_t (mingw drags this in via <io.h>; MSVC does not) */
 #  define ssize_t intptr_t
 #  ifdef _X86_
 #   define __i386__ 1
