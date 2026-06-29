@@ -260,12 +260,29 @@ ST_FUNC void load(int r, SValue *sv)
     if (fr & VT_LVAL) {
         if ((fr & VT_SYM) && sv->sym->type.t & VT_TLS) {
             int dst_reg = REG_VALUE(r);
-            o(0x65);
-            o(0x8b);
+            int opc;
+            /* Pick the load opcode by type, else a char/short TLS read would
+               pull a full word and skip sign/zero extension (mirrors the
+               non-TLS dispatch below). */
+            if ((ft & VT_TYPE) == VT_BYTE || (ft & VT_TYPE) == VT_BOOL)
+                opc = 0xbe0f;                          /* movsbl */
+            else if ((ft & VT_TYPE) == (VT_BYTE | VT_UNSIGNED) ||
+                     (ft & VT_TYPE) == (VT_BOOL | VT_UNSIGNED))
+                opc = 0xb60f;                          /* movzbl */
+            else if ((ft & VT_TYPE) == VT_SHORT)
+                opc = 0xbf0f;                          /* movswl */
+            else if ((ft & VT_TYPE) == (VT_SHORT | VT_UNSIGNED))
+                opc = 0xb70f;                          /* movzwl */
+            else
+                opc = 0x8b;                            /* mov (word) */
+            o(0x65);                                   /* GS prefix */
+            o(opc);
             o(0x04 | (dst_reg << 3));
             o(0x25);
-            greloca(cur_text_section, sv->sym, ind, R_386_TLS_LE, fc);
-            gen_le32(0);
+            /* REL arch: offset goes in the disp32 (R_386_TLS_LE adds ntpoff),
+               not the reloc addend -- needed for tls_arr[const]. */
+            greloca(cur_text_section, sv->sym, ind, R_386_TLS_LE, 0);
+            gen_le32(fc);
             return;
         }
         if (v == VT_LLOCAL) {
@@ -301,6 +318,25 @@ ST_FUNC void load(int r, SValue *sv)
         }
         gen_modrm(opc, r, fr, sv->sym, fc);
     } else {
+        if ((fr & (VT_VALMASK|VT_SYM)) == (VT_CONST|VT_SYM)
+            && (sv->sym->type.t & VT_TLS)) {
+            /* &thread_local (Local Exec): GS thread pointer + sym@ntpoff,
+               mirroring gcc's  movl %gs:0,%reg ; addl $sym@ntpoff,%reg.
+               The value load/store paths emit %gs:-relative accesses; the
+               bare &address must materialise the same tp-relative pointer,
+               not the section image address. */
+            int dst = REG_VALUE(r);
+            o(0x65);                       /* GS segment prefix        */
+            o(0x8b);                       /* mov reg, [disp32]        */
+            o(0x05 | (dst << 3));          /* mod=00 reg=dst rm=disp32 */
+            gen_le32(0);                   /* %gs:0 -> reg = TP        */
+            o(0x81);                       /* add reg, imm32 (/0)      */
+            o(0xc0 | dst);
+            /* i386 is REL: the constant offset (fc) must live in the imm32
+               field, not the reloc addend (R_386_TLS_LE adds ntpoff to it). */
+            greloca(cur_text_section, sv->sym, ind, R_386_TLS_LE, 0);
+            gen_le32(fc);                  /* (sym+fc)@ntpoff          */
+        } else
         if (mcc_state->pic && (fr & (VT_VALMASK|VT_SYM)) == (VT_CONST|VT_SYM)) {
             if (sv->sym->type.t & VT_STATIC) {
                 get_pc_thunk(r, 0);
@@ -376,13 +412,18 @@ ST_FUNC void store(int r, SValue *v)
 	o(3 + (r << 3));
     } else
 
-    if ((fr & VT_SYM) && v->sym->type.t & VT_TLS) {
+    if ((v->r & VT_SYM) && v->sym->type.t & VT_TLS) {
+        /* NB: test v->r, not fr -- fr = v->r & VT_VALMASK has VT_SYM masked
+           off, so the old (fr & VT_SYM) was always false and TLS stores fell
+           through to an absolute (image-address) store. */
         o(0x65);
         o(opc);
         o(0x04 | (REG_VALUE(r) << 3));
         o(0x25);
-        greloca(cur_text_section, v->sym, ind, R_386_TLS_LE, fc);
-        gen_le32(0);
+        /* REL arch: offset goes in the disp32 (R_386_TLS_LE adds ntpoff),
+           not the reloc addend -- needed for tls_arr[const]. */
+        greloca(cur_text_section, v->sym, ind, R_386_TLS_LE, 0);
+        gen_le32(fc);
         return;
     }
 

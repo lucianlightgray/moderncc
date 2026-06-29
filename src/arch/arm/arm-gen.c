@@ -520,6 +520,25 @@ static void load_value(SValue *sv, int r)
     }
 }
 
+/* Compute the address of a thread-local object sym+coff into LR (r14, a
+   non-allocatable scratch), Local Exec model:
+       lr = TPIDRURO (thread pointer);  lr += coff + sym@tpoff
+   The tpoff is materialised from an inline literal because R_ARM_TLS_LE32
+   patches a full 32-bit data word, not an instruction immediate.  IP (r12) is
+   used as a temporary and preserved, so no allocatable register is disturbed;
+   callers then load/store through [lr] (or move lr into the destination). */
+static void arm_tls_addr(Sym *sym, int coff)
+{
+    o(0xe52dc004);                 /* push {ip}  (str ip,[sp,#-4]!)       */
+    o(0xee1def70);                 /* mrc p15,0,lr,c13,c0,3   (lr = TP)   */
+    o(0xe59fc000);                 /* ldr ip,[pc,#0]  (ip = literal)      */
+    o(0xea000000);                 /* b   .+4         (skip the literal)  */
+    greloca(cur_text_section, sym, ind, R_ARM_TLS_LE32, 0);
+    o(coff);                       /* literal: coff + sym@tpoff           */
+    o(0xe08ee00c);                 /* add lr, lr, ip                      */
+    o(0xe49dc004);                 /* pop {ip}   (ldr ip,[sp],#4)         */
+}
+
 void load(int r, SValue *sv)
 {
   int v, ft, fc, fr, sign;
@@ -539,15 +558,12 @@ void load(int r, SValue *sv)
 
   v = fr & VT_VALMASK;
   if (fr & VT_LVAL) {
-    if ((fr & VT_SYM) && sv->sym->type.t & VT_TLS) {
-        uint32_t op;
-        o(0xee1d0fe0);
-        op = 0xe510e000;
-        greloca(cur_text_section, sv->sym, ind, R_ARM_TLS_LE32, 0);
-        o(op | (intr(r) << 12));
-        return;
-    }
     base = 0xB;
+    if ((fr & VT_SYM) && sv->sym->type.t & VT_TLS) {
+      /* &tls -> lr, then a normal typed load from [lr] */
+      arm_tls_addr(sv->sym, sv->c.i);
+      base = 14; fc = sign = 0; v = VT_LOCAL;
+    } else
     if(v == VT_LLOCAL) {
       v1.type.t = VT_PTR;
       v1.r = VT_LOCAL | VT_LVAL;
@@ -616,6 +632,11 @@ void load(int r, SValue *sv)
     }
   } else {
     if (v == VT_CONST) {
+      if ((fr & VT_SYM) && sv->sym->type.t & VT_TLS) {
+        arm_tls_addr(sv->sym, sv->c.i);          /* &tls -> lr */
+        o(0xe1a0000e | (intr(r) << 12));         /* mov r, lr  */
+        return;
+      }
       op=stuff_const(0xE3A00000|(intr(r)<<12),sv->c.i);
       if (fr & VT_SYM || !op)
 	load_value(sv, r);
@@ -676,15 +697,12 @@ void store(int r, SValue *sv)
 
   v = fr & VT_VALMASK;
   if (fr & VT_LVAL || fr == VT_LOCAL) {
-    if ((fr & VT_SYM) && sv->sym->type.t & VT_TLS) {
-        uint32_t op;
-        o(0xee1d0fe0);
-        op = 0xe500e000;
-        greloca(cur_text_section, sv->sym, ind, R_ARM_TLS_LE32, 0);
-        o(op | (intr(r) << 12));
-        return;
-    }
     base = 0xb;
+    if ((fr & VT_SYM) && sv->sym->type.t & VT_TLS) {
+      /* &tls -> lr (preserves the source value reg r), then store to [lr] */
+      arm_tls_addr(sv->sym, sv->c.i);
+      base = 14; v = VT_LOCAL; fc = sign = 0;
+    } else
     if(v < VT_CONST) {
       base=intr(v);
       v=VT_LOCAL;

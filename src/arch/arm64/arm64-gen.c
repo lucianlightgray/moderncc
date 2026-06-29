@@ -543,6 +543,22 @@ ST_FUNC void load(int r, SValue *sv)
     }
 
     if (svr == (VT_CONST | VT_SYM)) {
+        if (sv->sym->type.t & VT_TLS) {
+            /* &thread_local (Local Exec): tpidr_el0 + sym@tprel.  The value
+               load/store paths build this same tp-relative address before the
+               ldr/str; a bare &address must materialise it too, not the section
+               image address (only the per-thread init template). */
+            o(0xd53bd05e);                          /* mrs x30, tpidr_el0   */
+            greloca(cur_text_section, sv->sym, ind,
+                    R_AARCH64_TLSLE_ADD_TPREL_HI12, svcul);
+            o(ARM64_ADD_IMM | ARM64_SF(1) | ARM64_SH(1) |
+              ARM64_RN(30) | ARM64_RD(30));
+            greloca(cur_text_section, sv->sym, ind,
+                    R_AARCH64_TLSLE_ADD_TPREL_LO12, svcul);
+            o(ARM64_ADD_IMM | ARM64_SF(1) |
+              ARM64_RN(30) | ARM64_RD(intr(r)));
+            return;
+        }
         arm64_sym(intr(r), sv->sym, svcul);
         return;
     }
