@@ -531,9 +531,13 @@ bulk of each area matched the references; these are the residual divergences.
   *named* members is a GNU extension. Both refs error under `-pedantic`. (The
   FAM-in-no-named-members case IS diagnosed; this is the plain unnamed-bitfield-only one.)
 
-- [ ] **[DIAG] §6.7.2.1 — empty struct `struct S { };` not diagnosed under `-pedantic`.**
-  Compiles even at `-pedantic-errors`; an empty struct/union is a GNU extension,
-  not valid ISO C. Both refs error under `-pedantic`.
+- [x] **[DIAG] §6.7.2.1 — empty struct/union now diagnosed under `-pedantic`.**
+  `struct S{};` / `union U{};` (no members) now emit `mcc_pedantic` "ISO C
+  forbids a struct/union with no named members" (`src/mccgen.c`, after the
+  member loop, when `type->ref->next` is empty). A named member or an anonymous
+  struct/union member keeps it valid. cli `empty_struct_pedantic`. (The
+  unnamed-bit-field-only case `struct S{int:4;}` pushes a member so it is not
+  caught here — that finding stays open below.)
 
 - [ ] **[DIAG] §6.7.2.1 — anonymous struct/union members not flagged as a C11 feature in `-std=c99 -pedantic`.**
   `struct S { struct { int x; }; };` is silent in C99 mode; anonymous members are

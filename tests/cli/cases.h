@@ -955,5 +955,18 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -E -P {W}/fh.c; } | tr -d ' '",
   "0\n1\n1\n" },
 
+/* §6.7.2.1: an empty struct/union (no members) is a GNU extension diagnosed
+   under -pedantic; a named member or an anonymous struct/union member keeps it
+   valid even under -pedantic-errors. */
+{ "empty_struct_pedantic", "",
+  "printf 'struct S{}; int main(void){return 0;}\\n' > {W}/es.c && "
+  "printf 'union U{}; int main(void){return 0;}\\n' > {W}/eu.c && "
+  "printf 'struct B{int x;}; struct A{struct{int y;};}; int main(void){return 0;}\\n' > {W}/eok.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/es.c -o {W}/es.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/eu.c -o {W}/eu.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/eok.c -o {W}/eok.o 2>&1 && echo VALID_OK; } | "
+  "grep -oE 'no named members|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 VALID_OK\n2 no named members\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

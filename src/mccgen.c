@@ -4599,6 +4599,15 @@ do_decl:
                 skip(';');
             }
             skip('}');
+            /* 6.7.2.1: a struct/union with no named members — empty (`struct
+               S{};`) or only unnamed bit-fields (`struct S{int:4;};`) — is a GNU
+               extension, not valid ISO C. (Anonymous struct/union members and a
+               flexible array member populate the member list, so they are not
+               flagged here.) */
+            if (!type->ref->next)
+                mcc_pedantic(u == VT_UNION
+                    ? "ISO C forbids a union with no named members"
+                    : "ISO C forbids a struct with no named members");
 	    parse_attribute(&ad);
             if (ad.cleanup_func) {
                 mcc_warning("attribute '__cleanup__' ignored on type");
