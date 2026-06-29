@@ -15,6 +15,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
+#ifdef _WIN32
+#include <direct.h>
+#define MKDIR(p) _mkdir(p)
+#else
+#include <sys/stat.h>
+#define MKDIR(p) mkdir((p), 0777)
+#endif
 
 #include "goldens.h"
 
@@ -44,6 +52,20 @@ static int req_met(const char *req, char *reason, size_t rn){
         } else if (!strncmp(tok, "os=", 3)){
             const char *want = tok + 3;
             if (strcmp(os, want)){ snprintf(reason, rn, "requires %s target OS (host: %s)", want, os); return 0; }
+        } else if (!strncmp(tok, "os!=", 4)){
+            /* os!=NAME[:reason] — skip when the target OS *is* NAME (the test
+               is inapplicable there). Optional ':' reason after the name. */
+            const char *want = tok + 4;
+            const char *colon = strchr(want, ':');
+            char wbuf[64];
+            size_t wl = colon ? (size_t)(colon - want) : strlen(want);
+            if (wl >= sizeof wbuf) wl = sizeof wbuf - 1;
+            memcpy(wbuf, want, wl); wbuf[wl] = 0;
+            if (!strcmp(os, wbuf)){
+                if (colon && colon[1]) snprintf(reason, rn, "%s", colon + 1);
+                else snprintf(reason, rn, "not applicable to the %s target", wbuf);
+                return 0;
+            }
         } else if (!strcmp(tok, "asm")){
             if (strcmp(envv("MCC_TEST_ASM","1"), "1")){
                 snprintf(reason, rn, "requires integrated assembler (MCC_CONFIG_ASM)"); return 0; }
@@ -97,7 +119,19 @@ static char *slurp(FILE *f, size_t *outlen){
 }
 
 static char *run_capture(const char *cmd, int *status){
+#ifdef _WIN32
+    /* popen() runs `cmd.exe /c <cmd>`. With more than one quoted token (our
+       commands quote every path) cmd.exe strips the first and last quote of
+       the whole line, mangling the program path. Wrapping the entire command
+       in one more quote pair makes cmd strip those outer quotes instead,
+       leaving the inner per-path quoting intact. */
+    char *wrapped = malloc(strlen(cmd) + 3);
+    sprintf(wrapped, "\"%s\"", cmd);
+    FILE *f = popen(wrapped, "r");
+    free(wrapped);
+#else
     FILE *f = popen(cmd, "r");
+#endif
     if (!f){ if (status) *status = -1; return xstrdup(""); }
     char *out = slurp(f, NULL);
     int rc = pclose(f);
@@ -124,7 +158,9 @@ static char *canon_line(const char *line, size_t len){
     size_t o = 0; int ws = 0, started = 0;
     for (size_t i = 0; i < len; i++){
         char c = line[i];
-        if (c == ' ' || c == '\t'){ ws = 1; continue; }
+        /* Treat CR as whitespace so CRLF output (Windows) canonicalises to the
+           same text as the LF-only goldens. */
+        if (c == ' ' || c == '\t' || c == '\r'){ ws = 1; continue; }
         if (ws && started) out[o++] = ' ';
         ws = 0; started = 1;
         out[o++] = c;
@@ -184,8 +220,8 @@ int main(int argc, char **argv){
     int pass = 0, fail = 0, skipped = 0;
     char cmd[8192], path[4096], srcdir[4096];
 
-    snprintf(cmd, sizeof cmd, "mkdir -p \"%s\"", work);
-    if (system(cmd)) { fprintf(stderr, "cannot create workdir %s\n", work); return 2; }
+    if (MKDIR(work) != 0 && errno != EEXIST) {
+        fprintf(stderr, "cannot create workdir %s\n", work); return 2; }
 
     for (int i = 0; i < mcc_goldens_count; i++){
         const mcc_golden_t *g = &mcc_goldens[i];
@@ -208,7 +244,13 @@ int main(int argc, char **argv){
 
         char xargs[8192]; { const char *a = g->args; char *w = xargs;
             while (*a){ if (!strncmp(a, "{SELF}", 6)){ w += sprintf(w, "\"%s\"", path); a += 6; }
-                        else *w++ = *a++; } *w = 0; }
+                        else { char ch = *a++;
+#ifdef _WIN32
+                            /* cmd.exe doesn't treat single quotes as grouping;
+                               POSIX-style '...' arg quoting maps to "..." . */
+                            if (ch == '\'') ch = '"';
+#endif
+                            *w++ = ch; } } *w = 0; }
 
         /* tests/support is on the include path so any test may
            #include "vlog.h" for -DVLOG_ENABLE verbose tracing. */

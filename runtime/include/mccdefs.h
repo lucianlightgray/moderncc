@@ -285,13 +285,12 @@
     # define __BUILTINBC(ret,name,params) ret __builtin_##name params __RENAME(#name);
     # define __BOUND(ret,name,params)
     #endif
-#ifdef _WIN32
-    #define __BOTH __BOUND
-    #define __BUILTIN(ret,name,params)
-#else
+    /* The __builtin_* spellings (e.g. __builtin_memcpy) are valid everywhere,
+       including the PE/Windows target: they alias the plain libc routine (or
+       its __bound_ variant under -b). x86_64 PE has no leading underscore, so
+       __RENAME works the same as on the SysV targets. */
     #define __BOTH(ret,name,params) __BUILTINBC(ret,name,params)__BOUND(ret,name,params)
     #define __BUILTIN(ret,name,params) ret __builtin_##name params __RENAME(#name);
-#endif
 
     __BOTH(void*, memcpy, (void *, const void*, __SIZE_TYPE__))
     __BOTH(void*, memmove, (void *, const void*, __SIZE_TYPE__))

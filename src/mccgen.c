@@ -8749,7 +8749,8 @@ static void decl_initializer(init_params *p, CType *type, unsigned long c, int f
 	    len = 0;
             cstr_reset(&initstr);
             if (size1 != (tok == TOK_STR ? 1
-                          : tok == TOK_U16STR ? 2 : sizeof(nwchar_t)))
+                          : tok == TOK_U16STR ? 2
+                          : tok == TOK_U32STR ? 4 : sizeof(nwchar_t)))
               mcc_error("unhandled string literal merging");
             while (tok == TOK_STR || tok == TOK_LSTR
                    || tok == TOK_U16STR || tok == TOK_U32STR) {
@@ -8763,7 +8764,8 @@ static void decl_initializer(init_params *p, CType *type, unsigned long c, int f
             if (tok != ')' && tok != '}' && tok != ',' && tok != ';'
                 && tok != TOK_EOF) {
                 unget_tok(size1 == 1 ? TOK_STR
-                          : size1 == 2 ? TOK_U16STR : TOK_LSTR);
+                          : size1 == 2 ? TOK_U16STR
+                          : size1 == 4 ? TOK_U32STR : TOK_LSTR);
                 tokc.str.size = initstr.size;
                 tokc.str.data = initstr.data;
                 goto do_init_array;
@@ -8795,7 +8797,11 @@ static void decl_initializer(init_params *p, CType *type, unsigned long c, int f
                         else if (size1 == 2)
                           ch = ((unsigned short *)initstr.data)[i];
                         else
-                          ch = ((nwchar_t *)initstr.data)[i];
+                          /* 4-byte element: char32_t (U"") on every target, or
+                             wchar_t (L"") where nwchar_t is 4 bytes. U32STR data
+                             is stored in explicit 4-byte units, so read 4 bytes
+                             rather than nwchar_t (2 bytes on PE). */
+                          ch = ((unsigned int *)initstr.data)[i];
                         vpushi(ch);
                         init_putv(p, t1, c + i * size1);
                     }

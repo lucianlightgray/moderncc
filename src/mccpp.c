@@ -2220,16 +2220,39 @@ static void parse_string(const char *s, int len)
         n = tokcstr.size / char_size - 1;
         if (n < 1)
             mcc_error("empty character constant");
-        if (n > 1)
-            mcc_warning_c(warn_all)("multi-character character constant");
-        for (c = i = 0; i < n; ++i) {
-            if (is_long)
-                c = ((nwchar_t *)tokcstr.data)[i];
-            else
-                c = (c << 8) | ((char *)tokcstr.data)[i];
+        if (prefix == 'U') {
+            /* char32_t: recombine UTF-16 surrogate pairs (PE splits astral
+               code points) so U'\U0001F600' yields one 32-bit value. */
+            int nchars = 0;
+            for (c = i = 0; i < n; ++i) {
+                /* nwchar_t units: 2-byte (unsigned) on PE, 4-byte on others —
+                   read at native width, no masking, so non-PE keeps the full
+                   32-bit code point. */
+                unsigned int u = (unsigned int)((nwchar_t *)tokcstr.data)[i];
+                if (u >= 0xD800 && u <= 0xDBFF && i + 1 < n) {
+                    unsigned int lo = (unsigned int)((nwchar_t *)tokcstr.data)[i + 1] & 0xFFFFu;
+                    if (lo >= 0xDC00 && lo <= 0xDFFF) {
+                        u = 0x10000 + ((u - 0xD800) << 10) + (lo - 0xDC00);
+                        i++;
+                    }
+                }
+                c = (int)u;
+                nchars++;
+            }
+            if (nchars > 1)
+                mcc_warning_c(warn_all)("multi-character character constant");
+        } else {
+            if (n > 1)
+                mcc_warning_c(warn_all)("multi-character character constant");
+            for (c = i = 0; i < n; ++i) {
+                if (is_long)
+                    c = ((nwchar_t *)tokcstr.data)[i];
+                else
+                    c = (c << 8) | ((char *)tokcstr.data)[i];
+            }
+            if (prefix == 'u')
+                c &= 0xFFFF;          /* char16_t range */
         }
-        if (prefix == 'u')
-            c &= 0xFFFF;          /* char16_t range */
         tokc.i = c;
     } else if (prefix == 'u') {
         /* u"..." char16_t string: re-encode the parsed code points (nwchar_t
@@ -2256,14 +2279,38 @@ static void parse_string(const char *s, int len)
         tokc.str.size = tokcstr.size;
         tokc.str.data = tokcstr.data;
         tok = TOK_U16STR;
+    } else if (prefix == 'U') {
+        /* U"..." char32_t string: parse_escape_string stored code points as
+           nwchar_t units — 4 bytes (full code points) off PE, but 2-byte
+           UTF-16 (astral code points split into surrogate pairs) on PE.
+           Recombine any surrogate pairs and emit explicit 4-byte char32_t
+           units, independent of the target's wchar_t width. */
+        int i, ncp = tokcstr.size / sizeof(nwchar_t);
+        nwchar_t *cps = mcc_malloc((ncp ? ncp : 1) * sizeof(nwchar_t));
+        memcpy(cps, tokcstr.data, ncp * sizeof(nwchar_t));
+        cstr_reset(&tokcstr);
+        for (i = 0; i < ncp; i++) {
+            unsigned int cp = (unsigned int)cps[i] & 0xFFFFFFFFu;
+            if (cp >= 0xD800 && cp <= 0xDBFF && i + 1 < ncp) {
+                unsigned int lo = (unsigned int)cps[i + 1] & 0xFFFFu;
+                if (lo >= 0xDC00 && lo <= 0xDFFF) {
+                    cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
+                    i++;
+                }
+            }
+            cstr_ccat(&tokcstr, cp & 0xff);
+            cstr_ccat(&tokcstr, (cp >> 8) & 0xff);
+            cstr_ccat(&tokcstr, (cp >> 16) & 0xff);
+            cstr_ccat(&tokcstr, (cp >> 24) & 0xff);
+        }
+        mcc_free(cps);
+        tokc.str.size = tokcstr.size;
+        tokc.str.data = tokcstr.data;
+        tok = TOK_U32STR;
     } else {
         tokc.str.size = tokcstr.size;
         tokc.str.data = tokcstr.data;
-        /* U"..." char32_t string: code points are nwchar_t units (4-byte on
-           non-PE targets), reuse the wide-string data path tagged char32_t. */
-        if (prefix == 'U')
-            tok = TOK_U32STR;
-        else if (!is_long)
+        if (!is_long)
             tok = TOK_STR;
         else
             tok = TOK_LSTR;

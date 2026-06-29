@@ -1275,6 +1275,13 @@ LIBMCCAPI int mcc_add_library(MCCState *s, const char *libraryname)
         NULL
     };
     int flags = AFF_TYPE_LIB | (s->filetype & AFF_WHOLE_ARCHIVE);
+#if defined MCC_TARGET_PE
+    /* On Windows the math routines live in the C runtime (msvcrt), which is
+       linked automatically. Treat -lm as a no-op, like gcc/mingw, instead of
+       failing to find a libm that the platform does not ship separately. */
+    if (!strcmp(libraryname, "m"))
+        return 0;
+#endif
     if (*libraryname == ':') {
         libraryname++;
     } else {

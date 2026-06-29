@@ -1356,12 +1356,31 @@ function(mcc_build_libmcc1 tname mcctgt cpu os native archive objdir out_extra)
     set(${out_extra} "${_extra}" PARENT_SCOPE)
 endfunction()
 
+# Where the in-tree mcc looks for libmcc1.a + support objects (runmain.o,
+# bt-*.o, bcheck.o). On a PE/Windows host the search path is {B}/lib
+# (CONFIG_MCC_LIBPATHS), so place them there; elsewhere it is {B} (top level).
+if(MCC_TARGETOS STREQUAL "WIN32")
+    set(MCC_LIBMCC1_ARCHIVE "${CMAKE_BINARY_DIR}/lib/libmcc1.a")
+else()
+    set(MCC_LIBMCC1_ARCHIVE "${CMAKE_BINARY_DIR}/libmcc1.a")
+endif()
 mcc_build_libmcc1(libmcc1 mcc "${MCC_CPU}" "${MCC_TARGETOS}" ON
-    "${CMAKE_BINARY_DIR}/libmcc1.a" "${CMAKE_BINARY_DIR}/lib"
+    "${MCC_LIBMCC1_ARCHIVE}" "${CMAKE_BINARY_DIR}/lib"
     LIBMCC1_EXTRA_OBJS)
 
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/runtime/include/"
     DESTINATION "${CMAKE_BINARY_DIR}/include" FILES_MATCHING PATTERN "*.h")
+
+# A PE/Windows host resolves <stdio.h> etc. from {B}/include + the bundled
+# win32 headers, and links the CRT/libc stubs from {B}/lib/*.def. The install
+# tree gets these (below); mirror them into the build tree so the in-tree mcc
+# (driven by -B${CMAKE_BINARY_DIR}) works under ctest.
+if(MCC_TARGETOS STREQUAL "WIN32")
+    file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/runtime/win32/include/"
+        DESTINATION "${CMAKE_BINARY_DIR}/include")
+    file(GLOB _win_build_defs "${CMAKE_CURRENT_SOURCE_DIR}/runtime/win32/lib/*.def")
+    file(COPY ${_win_build_defs} DESTINATION "${CMAKE_BINARY_DIR}/lib")
+endif()
 
 if(MCC_BUILD_COVERAGE)
     add_custom_command(
@@ -1519,8 +1538,16 @@ install(FILES
     "${CMAKE_BINARY_DIR}/mccConfigVersion.cmake"
     DESTINATION "${_mcc_cmakedir}")
 
-install(FILES "${CMAKE_BINARY_DIR}/libmcc1.a" ${LIBMCC1_EXTRA_OBJS}
-    DESTINATION "${_mccdir}")
+# On WIN32 the search path is {B}/lib, so libmcc1.a + support objects install
+# into <mccdir>/lib alongside the .def import libs; elsewhere they sit at the
+# <mccdir> top level (search path {B}).
+if(MCC_TARGETOS STREQUAL "WIN32")
+    install(FILES "${MCC_LIBMCC1_ARCHIVE}" ${LIBMCC1_EXTRA_OBJS}
+        DESTINATION "${_mccdir}/lib")
+else()
+    install(FILES "${MCC_LIBMCC1_ARCHIVE}" ${LIBMCC1_EXTRA_OBJS}
+        DESTINATION "${_mccdir}")
+endif()
 
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/runtime/include/"
     DESTINATION "${_mccdir}/include" FILES_MATCHING PATTERN "*.h")
@@ -1602,11 +1629,13 @@ if(NOT _rc EQUAL 0)
     message(FATAL_ERROR "mcc failed to build mcctest.c:\n${_o}${_e}")
 endif()
 execute_process(COMMAND ${EMU} "${_mcc_exe}" OUTPUT_FILE "${_mcc_out}")
-find_program(_diff diff)
-execute_process(COMMAND "${_diff}" -u "${_ref_out}" "${_mcc_out}"
-    RESULT_VARIABLE _drc OUTPUT_VARIABLE _d)
+execute_process(COMMAND "${CMAKE_COMMAND}" -E compare_files "${_ref_out}" "${_mcc_out}"
+    RESULT_VARIABLE _drc)
 if(NOT _drc EQUAL 0)
-    message(FATAL_ERROR "mcctest mismatch (cc vs mcc):\n${_d}")
+    file(READ "${_ref_out}" _dref)
+    file(READ "${_mcc_out}" _dmcc)
+    message(FATAL_ERROR
+        "mcctest mismatch (cc vs mcc):\n--- cc ---\n${_dref}\n--- mcc ---\n${_dmcc}")
 endif()
 ]==])
 
@@ -1634,12 +1663,16 @@ if(NOT _rc EQUAL 0)
 endif()
 execute_process(COMMAND ${EMU} "${OUTDIR}/asm-c-connect-sep"
     OUTPUT_FILE "${OUTDIR}/asm-c-connect.out2")
-find_program(_diff diff)
-execute_process(COMMAND "${_diff}" -u
+# Compare with cmake -E (portable; an external `diff` isn't present on every
+# host, e.g. a bare Windows/mingw box).
+execute_process(COMMAND "${CMAKE_COMMAND}" -E compare_files
         "${OUTDIR}/asm-c-connect.out1" "${OUTDIR}/asm-c-connect.out2"
-    RESULT_VARIABLE _drc OUTPUT_VARIABLE _d)
+    RESULT_VARIABLE _drc)
 if(NOT _drc EQUAL 0)
-    message(FATAL_ERROR "asm-c-connect single vs separate mismatch:\n${_d}")
+    file(READ "${OUTDIR}/asm-c-connect.out1" _d1)
+    file(READ "${OUTDIR}/asm-c-connect.out2" _d2)
+    message(FATAL_ERROR
+        "asm-c-connect single vs separate mismatch:\n--- single ---\n${_d1}\n--- separate ---\n${_d2}")
 endif()
 ]==])
 
@@ -1661,8 +1694,16 @@ endif()
 
     # Structural CLI suite: compiles with mcc and inspects the result with
     # readelf/nm (output structure, not just program stdout).  Native only --
-    # the readelf/nm assertions assume a host-readable ELF toolchain.
-    if(NOT MCC_EMULATOR)
+    # the readelf/nm assertions assume a host-readable ELF toolchain.  Its case
+    # commands are POSIX shell pipelines (printf/grep/sed/sort/{ } grouping)
+    # that the runner executes via popen(); on a Windows host popen() routes
+    # through cmd.exe, which provides none of those, so the suite is skipped
+    # there (it needs a POSIX shell + coreutils/binutils).
+    if(MCC_EMULATOR)
+        mcc_skip_test(cli-suite "structural readelf/nm suite runs on native host only")
+    elseif(MCC_TARGETOS STREQUAL "WIN32")
+        mcc_skip_test(cli-suite "needs a POSIX shell + coreutils/binutils (popen uses cmd.exe on Windows)")
+    else()
         add_executable(cli_runner tests/cli/runner.c)
         target_include_directories(cli_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli")
         add_test(NAME cli-suite
@@ -1671,8 +1712,6 @@ endif()
         set_tests_properties(cli-suite PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77
             ENVIRONMENT "MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS}")
-    else()
-        mcc_skip_test(cli-suite "structural readelf/nm suite runs on native host only")
     endif()
 
     # Three-way differential suite: gcc vs clang vs mcc on every portable "run"
@@ -1698,7 +1737,9 @@ endif()
     # cites a test that actually exists in the suite (or an explicit suite-wide
     # assertion). Pure source/text check — no build artifacts needed.
     find_program(MCC_PYTHON3 NAMES python3 python)
-    if(MCC_PYTHON3)
+    if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tools/diag-coverage.py")
+        mcc_skip_test(diag-coverage "tools/diag-coverage.py not present")
+    elseif(MCC_PYTHON3)
         add_test(NAME diag-coverage
             COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/diag-coverage.py")
     else()
@@ -2200,6 +2241,13 @@ endif()
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/diagnostics/compile_errors.c")
     foreach(_f IN LISTS _orphan_srcs)
         get_filename_component(_n "${_f}" NAME_WE)
+        # X11 examples can't be parsed without X11 headers, which the WIN32
+        # target doesn't ship (and a Windows host won't have).
+        file(READ "${_f}" _orphan_txt)
+        if(MCC_TARGETOS STREQUAL "WIN32" AND _orphan_txt MATCHES "X11/Xlib.h")
+            mcc_skip_test(compile.${_n} "X11 example; no X11 headers on the WIN32 target")
+            continue()
+        endif()
         add_test(NAME compile.${_n} COMMAND ${MCC_EMULATOR} "${_mcc_exe}"
             "-B${_bdir}" "-I${_idir}" -c "${_f}"
             -o "${CMAKE_BINARY_DIR}/orphan_${_n}.o")
