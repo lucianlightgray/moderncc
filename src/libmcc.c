@@ -797,7 +797,11 @@ LIBMCCAPI void mcc_undefine_symbol(MCCState *s1, const char *sym)
 #if defined CONFIG_MCC_AUTO_MCCDIR && !defined _WIN32
 #include <sys/stat.h>
 #if defined __APPLE__
-#include <mach-o/dyld.h>
+/* We only need _NSGetExecutablePath here. Pulling in <mach-o/dyld.h> would
+   transitively include <mach-o/loader.h>, whose load-command structs collide
+   with the ones mccmacho.c defines when both share a TU (ONE_SOURCE builds:
+   mcc_s/mcc_c). Declare the one symbol we use instead of including the header. */
+extern int _NSGetExecutablePath(char *buf, unsigned int *bufsize);
 #endif
 static char auto_mccdir_buf[1024];
 static const char *mcc_auto_mccdir(void)
@@ -948,6 +952,9 @@ LIBMCCAPI int mcc_set_output_type(MCCState *s, int output_type)
 
     if (!s->nostdinc) {
         mcc_add_sysinclude_path(s, CONFIG_MCC_SYSINCLUDEPATHS);
+#if defined MCC_TARGET_MACHO && defined MCC_IS_NATIVE
+        mcc_add_macos_sdkincludepath(s);
+#endif
     }
 
     if (output_type == MCC_OUTPUT_PREPROCESS) {

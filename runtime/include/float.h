@@ -55,7 +55,9 @@
 #define LDBL_DECIMAL_DIG 21
 #define LDBL_TRUE_MIN 3.64519953188247460253e-4951L
 
-#elif defined __aarch64__ || defined __riscv
+#elif (defined __aarch64__ && !defined __APPLE__) || defined __riscv
+/* AArch64 (non-Apple) and RISC-V use 128-bit IEEE quad long double. Apple
+   arm64 instead makes long double == double (64-bit), handled by the #else. */
 #define LDBL_MANT_DIG 113
 #define LDBL_DIG 33
 #define LDBL_EPSILON 1.92592994438723585305597794258492732e-34L

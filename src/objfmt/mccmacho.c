@@ -1924,7 +1924,7 @@ static void macho_write(MCCState *s1, struct macho *mo, FILE *fp)
 	    (s1->output_type == MCC_OUTPUT_EXE && !mo->segment[sk]) ||
 	    !mo->sk_to_sect[sk].s)
           continue;
-          get_segment(mo, mo->segment[sk]);
+        get_segment(mo, mo->segment[sk]);
         for (s = mo->sk_to_sect[sk].s; s; s = s->prev) {
             if (s->sh_type != SHT_NOBITS) {
                 while (fileofs < s->sh_offset)
@@ -2187,29 +2187,60 @@ static uint32_t macho_swap32(uint32_t x)
 #define tbd_parse_trample *pos++=0
 
 #ifdef MCC_IS_NATIVE
-ST_FUNC void mcc_add_macos_sdkpath(MCCState* s)
+/* Resolve the active macOS SDK root ("<...>/MacOSX*.sdk") into 'out'.
+   Returns 1 if a path was written, 0 otherwise (caller falls back). */
+static int macos_sdkroot(CString *out)
 {
     char *sdkroot = NULL, *pos = NULL;
     void* xcs = dlopen("libxcselect.dylib", RTLD_GLOBAL | RTLD_LAZY);
-    CString path;
-    int (*f)(unsigned int, char**) = dlsym(xcs, "xcselect_host_sdk_path");
-    cstr_new(&path);
+    int (*f)(unsigned int, char**) = xcs ? dlsym(xcs, "xcselect_host_sdk_path") : NULL;
+    int ok = 0;
     if (f) f(1, &sdkroot);
     if (sdkroot)
-        pos = strstr(sdkroot,"SDKs/MacOSX");
-    if (pos)
-        cstr_printf(&path, "%.*s.sdk/usr/lib", (int)(pos - sdkroot + 11), sdkroot);
+        pos = strstr(sdkroot, "SDKs/MacOSX");
+    if (pos) {
+        cstr_printf(out, "%.*s.sdk", (int)(pos - sdkroot + 11), sdkroot);
+        ok = 1;
+    }
 #pragma push_macro("free")
 #undef free
     free(sdkroot);
 #pragma pop_macro("free")
-    if (path.size)
+    return ok;
+}
+
+ST_FUNC void mcc_add_macos_sdkpath(MCCState* s)
+{
+    CString path;
+    cstr_new(&path);
+    if (macos_sdkroot(&path)) {
+        cstr_cat(&path, "/usr/lib", -1);
         mcc_add_library_path(s, (char*)path.data);
-    else
+    } else {
         mcc_add_library_path(s,
             "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib"
             ":" "/Applications/Xcode.app/Developer/SDKs/MacOSX.sdk/usr/lib"
             );
+    }
+    cstr_free(&path);
+}
+
+/* The SDK's headers live under <sdk>/usr/include, not /usr/include (which
+   modern macOS does not ship). Add it as a system include dir so mcc can find
+   <stdio.h> et al. when used as the native compiler. */
+ST_FUNC void mcc_add_macos_sdkincludepath(MCCState* s)
+{
+    CString path;
+    cstr_new(&path);
+    if (macos_sdkroot(&path)) {
+        cstr_cat(&path, "/usr/include", -1);
+        mcc_add_sysinclude_path(s, (char*)path.data);
+    } else {
+        mcc_add_sysinclude_path(s,
+            "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include"
+            ":" "/Applications/Xcode.app/Developer/SDKs/MacOSX.sdk/usr/include"
+            );
+    }
     cstr_free(&path);
 }
 

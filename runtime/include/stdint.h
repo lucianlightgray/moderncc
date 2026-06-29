@@ -101,10 +101,21 @@ typedef unsigned long long uintmax_t;
 #define SIZE_MAX    UINTPTR_MAX
 #define SIG_ATOMIC_MIN INT32_MIN
 #define SIG_ATOMIC_MAX INT32_MAX
+/* Guard the wide-character limits: on hosts whose system headers are also in
+   the include path (e.g. the macOS SDK), <stdint.h>/<wchar.h> may have defined
+   these already with matching values; redefining them just warns. */
+#ifndef WCHAR_MIN
 #define WCHAR_MIN   INT32_MIN
+#endif
+#ifndef WCHAR_MAX
 #define WCHAR_MAX   INT32_MAX
+#endif
+#ifndef WINT_MIN
 #define WINT_MIN    0
+#endif
+#ifndef WINT_MAX
 #define WINT_MAX    UINT32_MAX
+#endif
 
 #define INT8_C(x)   x
 #define INT16_C(x)  x
