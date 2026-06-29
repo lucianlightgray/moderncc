@@ -501,15 +501,25 @@ mcc_config_node(MCC_BUILD_TESTS   TYPE BOOL DEFAULT ON  GROUP "Build targets"
 mcc_config_node(MCC_DIAGNOSTICS TYPE BOOL DEFAULT OFF GROUP "Diagnostics" ADVANCED
     HELP "Everything-on diagnostics: verbose warnings + debug info + build mcc_s/mcc_p/mcc_c")
 if(MCC_DIAGNOSTICS)
-    mcc_profile_seed(MCC_BUILD_SANITIZE ON)
-    mcc_profile_seed(MCC_BUILD_COVERAGE ON)
-    # mcc_p (-pg -static) needs a static crt0.o, which Darwin does not ship.
-    # Seed the profiling build only where it can actually link; diagnostics
-    # still turns on everything else the platform supports.
-    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-        message(STATUS "mcc diagnostics: skipping mcc_p (-static profiling) on Darwin (no static crt0.o)")
+    # The sanitize/coverage/profile variants (mcc_s/mcc_c/mcc_p) are built with
+    # -fsanitize/-fprofile/-pg, which only a GCC/Clang host understands. MSVC's
+    # cl.exe has no equivalent here, so seeding them aborts the configure
+    # (mcc_validate_config). On such a host, diagnostics still turns on the
+    # portable half: verbose warnings + debug info.
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        mcc_profile_seed(MCC_BUILD_SANITIZE ON)
+        mcc_profile_seed(MCC_BUILD_COVERAGE ON)
+        # mcc_p (-pg -static) needs a static crt0.o, which Darwin does not ship.
+        # Seed the profiling build only where it can actually link; diagnostics
+        # still turns on everything else the platform supports.
+        if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+            message(STATUS "mcc diagnostics: skipping mcc_p (-static profiling) on Darwin (no static crt0.o)")
+        else()
+            mcc_profile_seed(MCC_BUILD_PROFILE  ON)
+        endif()
     else()
-        mcc_profile_seed(MCC_BUILD_PROFILE  ON)
+        message(STATUS "mcc diagnostics: host CC '${CMAKE_C_COMPILER_ID}' is not GCC/Clang; "
+                       "skipping mcc_s/mcc_c/mcc_p (sanitize/coverage/profile need GCC/Clang)")
     endif()
 endif()
 
@@ -849,16 +859,30 @@ endif()
 
 set(MCC_DIAG_FLAGS "")
 if(MCC_DIAGNOSTICS)
-    foreach(_f -Wall -Wextra -Wnull-dereference
-               -Wno-sign-compare -Wno-unused-parameter -Wno-type-limits
-               -Wno-unterminated-string-initialization
-               -g3 -fno-omit-frame-pointer)
-        string(MAKE_C_IDENTIFIER "MCC_HAS_DIAGFLAG_${_f}" _v)
-        check_c_compiler_flag("${_f}" ${_v})
-        if(${_v})
-            list(APPEND MCC_DIAG_FLAGS "${_f}")
-        endif()
-    endforeach()
+    if(MSVC)
+        # cl.exe accepts the GNU spellings only by aliasing them to surprising
+        # things (-Wall => /Wall, which floods with system-header noise). Use the
+        # practical MSVC maximum: /W4 verbose warnings + /Zi debug info. No /WX —
+        # diagnostics surfaces warnings, it does not turn the build red.
+        foreach(_f /W4 /Zi)
+            string(MAKE_C_IDENTIFIER "MCC_HAS_DIAGFLAG_${_f}" _v)
+            check_c_compiler_flag("${_f}" ${_v})
+            if(${_v})
+                list(APPEND MCC_DIAG_FLAGS "${_f}")
+            endif()
+        endforeach()
+    else()
+        foreach(_f -Wall -Wextra -Wnull-dereference
+                   -Wno-sign-compare -Wno-unused-parameter -Wno-type-limits
+                   -Wno-unterminated-string-initialization
+                   -g3 -fno-omit-frame-pointer)
+            string(MAKE_C_IDENTIFIER "MCC_HAS_DIAGFLAG_${_f}" _v)
+            check_c_compiler_flag("${_f}" ${_v})
+            if(${_v})
+                list(APPEND MCC_DIAG_FLAGS "${_f}")
+            endif()
+        endforeach()
+    endif()
     message(STATUS "mcc diagnostics: core warning/debug flags =${MCC_DIAG_FLAGS}")
 endif()
 
