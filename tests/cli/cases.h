@@ -944,5 +944,14 @@ static const cli_case_t cli_cases[] = {
   "timeout 10 {MCC} -B{B} -I{I} -E -P {W}/ib.c >/dev/null 2>&1 && echo TERMINATED",
   "TERMINATED\n" },
 
+/* §6.10.8.1/§5.1.2.1: -ffreestanding makes __STDC_HOSTED__ expand to 0 (and
+   -fhosted / the default keep it 1), matching gcc/clang. */
+{ "freestanding_hosted_macro", "",
+  "printf '__STDC_HOSTED__\\n' > {W}/fh.c && "
+  "{ {MCC} -B{B} -I{I} -ffreestanding -E -P {W}/fh.c; "
+  "{MCC} -B{B} -I{I} -ffreestanding -fhosted -E -P {W}/fh.c; "
+  "{MCC} -B{B} -I{I} -E -P {W}/fh.c; } | tr -d ' '",
+  "0\n1\n1\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

@@ -597,13 +597,14 @@ bulk of each area matched the references; these are the residual divergences.
 
 ### infrastructure (sweep 2)
 
-- [ ] **[FEATURE] §6.10.8.1/§5.1.2.1 — `-ffreestanding` is a silent no-op; `__STDC_HOSTED__` stays 1.**
-  `mcc -ffreestanding -dM -E` still defines `__STDC_HOSTED__ 1`; `-fhosted`
-  likewise. A freestanding implementation must report 0 so programs/headers can
-  gate hosted-only library use. gcc/clang flip it to 0. Gap: wire
-  `-ffreestanding`/`-fhosted` to drive `__STDC_HOSTED__` (and, ideally, the
-  freestanding-vs-hosted header set).
-  3-way: mcc=1 | gcc/clang=0 (all =1 with no flag).
+- [x] **[FEATURE] §6.10.8.1/§5.1.2.1 — `-ffreestanding` now sets `__STDC_HOSTED__` to 0.**
+  Added a `freestanding` state field (`src/mcc.h`) wired via `options_f`
+  (`-ffreestanding` sets it, `-fhosted` clears it); `__STDC_HOSTED__` is now
+  `(nostdlib || freestanding) ? 0 : 1` (`src/mccpp.c`). `-ffreestanding`→0,
+  `-fhosted`/default→1, matching gcc/clang. cli `freestanding_hosted_macro`.
+  (A distinct freestanding-vs-hosted *header set* is not implemented — the
+  bundled freestanding headers already work via `-nostdinc`.)
+  3-way: mcc=0 | gcc/clang=0.
 
 ---
 

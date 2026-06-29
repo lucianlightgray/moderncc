@@ -1723,6 +1723,8 @@ static const FlagDef options_f[] = {
     { offsetof(MCCState, wrapv), 0, "wrapv" },
     { offsetof(MCCState, trigraphs), 0, "trigraphs" },
     { offsetof(MCCState, cx_limited_range), 0, "cx-limited-range" },
+    { offsetof(MCCState, freestanding), 0, "freestanding" },
+    { offsetof(MCCState, freestanding), FD_INVERT, "hosted" },
     { 0, 0, NULL }
 };
 
