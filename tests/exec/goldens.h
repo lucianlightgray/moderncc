@@ -23,6 +23,7 @@ static const mcc_golden_t mcc_goldens[] = {
   { "c11_complex_decls","run","exec/features_c99_c11/c11_complex_decls.c","OK\n","","","" },
   { "c11_complex_convert","run","exec/features_c99_c11/c11_complex_convert.c","OK\n","","","" },
   { "complex_annexg","run","exec/features_c99_c11/complex_annexg.c","OK\n","","","" },
+  { "fenv_access_fold","run","exec/features_c99_c11/fenv_access_fold.c","OK\n","-lm","","" },
   { "tgmath_dispatch","run","exec/features_c99_c11/tgmath_dispatch.c","OK\n","-lm","","" },
   { "builtin_bswap","run","exec/features_c99_c11/builtin_bswap.c","OK\n","","","" },
   { "sync_builtins","run","exec/features_c99_c11/sync_builtins.c","OK\n","","","" },

@@ -113,10 +113,47 @@ Covered combinations:
 | arm64   | ✅ | ✅ |
 | riscv64 | ✅ | ✅ |
 
-Each combo compiles and runs six conformance programs (integers, floats,
-aggregates/ABI, varargs, libc, control flow); each program self-checks and
-exits non-zero on the first failure, so it is independent of libc output
-formatting.
+Each combo compiles and runs the self-checking programs in
+`tests/qemu/conformance/` (integers, floats, complex Annex-G multiply/divide,
+aggregates/ABI, varargs, atomics, libc, lexical, control flow), built twice
+(default codegen and `-fPIC -pie`); each program self-checks and exits non-zero
+on the first failure, so it is independent of libc output formatting.
+
+### Running the matrix off Linux (Docker)
+
+macOS (and any host without user-mode QEMU) can run the same matrix via the
+containerized runner in `tests/qemu/docker/` — it supplies the `qemu-<arch>`
+emulators and a Linux toolchain, caching the sysroots in a named volume:
+
+```sh
+docker build -t mcc-qemu tests/qemu/docker
+docker run --rm -v "$PWD":/work -v mcc-qemu-roots:/qemu-roots mcc-qemu
+# narrow the grid: -e ARCHS=x86_64 -e LIBCS=glibc, or pass ctest flags (-R …)
+```
+
+### CI and test labels
+
+CTests carry stable labels so a CI host can select what its tooling supports:
+
+| Label | Selects | Needs |
+|---|---|---|
+| `qemu`  | cross-conformance matrix | qemu-user + per-arch glibc/musl sysroots |
+| `wine`  | PE/Windows runtime conformance | the win32 cross compilers + `wine` |
+| `macho` | Mach-O structural + self-contained image/codegen | native host (some need a Darwin/darling host) |
+
+```sh
+ctest --test-dir <build> -L qemu          # just the qemu matrix
+ctest --test-dir <build> -LE 'qemu|wine|macho'   # everything else (portable)
+```
+
+`.github/workflows/ci.yml` runs the portable suites and the qemu matrix on
+every push (the latter via the Docker runner above).
+
+**Mach-O ceiling:** the structural, self-contained-image, codegen and
+apple-libc Mach-O tests run on any host, but the libSystem/dyld-dependent path
+(libmalloc, locale stdio, dyld, pthread/GCD, ObjC) is kernel-fused and needs a
+macOS or **darling** host (`-DMCC_DARWIN_HOST=ON`); it is intentionally outside
+the default matrix.
 
 ## Repository layout
 

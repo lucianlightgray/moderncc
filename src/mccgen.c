@@ -2472,6 +2472,15 @@ static void gen_opif(int op)
 
     c1 = (v1->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
     c2 = (v2->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
+    /* 10.3.4 / Annex F: under #pragma STDC FENV_ACCESS ON the runtime rounding
+       mode and exception flags are observable, so don't fold rounding-sensitive
+       FP arithmetic at compile time (matches gcc) — leave it to runtime ops.
+       CONST_WANTED contexts (static init, case label, array size, ...) still
+       fold, since a constant is mandatory there.  Default-OFF, so this changes
+       nothing unless the program opts in. */
+    if (c1 && c2 && !CONST_WANTED && stdc_fenv_access(mcc_state)
+        && (op == '+' || op == '-' || op == '*' || op == '/'))
+        goto general_case;
     if (c1 && c2) {
         if (bt == VT_FLOAT) {
             f1 = v1->c.f;
