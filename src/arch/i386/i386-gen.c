@@ -659,7 +659,7 @@ ST_FUNC void gfunc_prolog(Sym *func_sym)
 {
     CType *func_type = &func_sym->type;
     int addr, align, size, func_call, fastcall_nb_regs;
-    int param_index, param_addr, fastcall_used;
+    int param_addr, fastcall_used;
     const uint8_t *fastcall_regs_ptr;
     Sym *sym;
     CType *type;
@@ -683,7 +683,6 @@ ST_FUNC void gfunc_prolog(Sym *func_sym)
         fastcall_nb_regs = 0;
         fastcall_regs_ptr = NULL;
     }
-    param_index = 0;
     fastcall_used = 0;
 
     ind += FUNC_PROLOG_SIZE;
@@ -698,7 +697,6 @@ ST_FUNC void gfunc_prolog(Sym *func_sym)
 #endif
         func_vc = addr;
         addr += 4;
-        param_index++;
         if (fastcall_nb_regs)
             fastcall_used++;
     }
@@ -724,7 +722,6 @@ ST_FUNC void gfunc_prolog(Sym *func_sym)
                 fastcall_used = fastcall_nb_regs;
         }
         gfunc_set_param(sym, param_addr, 0);
-        param_index++;
     }
     func_ret_sub = 0;
     if (func_call == FUNC_STDCALL || func_call == FUNC_FASTCALLW || func_call == FUNC_THISCALL)

@@ -329,6 +329,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
                 qrel++;
             }
         }
+    /* fall through */
     case R_RISCV_JUMP_SLOT:
         add64le(ptr, val);
         return;

@@ -43,7 +43,7 @@ typedef struct Operand {
 
 static const Operand zero = { OP_REG, { 0 }};
 static const Operand ra = { OP_REG, { 1 }};
-static const Operand zimm = { OP_IM12S };
+static const Operand zimm = { OP_IM12S, { 0 }};
 
 static void asm_binary_opcode(MCCState* s1, int token);
 ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str);
@@ -437,7 +437,7 @@ static void asm_fence_opcode(MCCState *s1, int token){
 
 static void asm_binary_opcode(MCCState* s1, int token)
 {
-    Operand imm = { OP_IM12S };
+    Operand imm = { OP_IM12S, { 0 }};
     Operand ops[2];
     int32_t lo;
     uint32_t hi;
@@ -2194,6 +2194,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
             goto try_next;
         case '+':
             op->is_rw = 1;
+        /* fall through */
         case '&':
             if (j >= nb_outputs)
                 mcc_error("'%c' modifier can only be applied to outputs", c);

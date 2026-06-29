@@ -1465,6 +1465,7 @@ if(MCC_BUILD_COVERAGE)
                 "-I${CMAKE_CURRENT_SOURCE_DIR}/src"
                 "-I${CMAKE_CURRENT_SOURCE_DIR}/src/formats"
                 "-I${CMAKE_CURRENT_SOURCE_DIR}/src/objfmt"
+                "-I${CMAKE_CURRENT_SOURCE_DIR}/src/arch/i386"
                 "-I${CMAKE_CURRENT_SOURCE_DIR}/src/arch/${MCC_CPU}"
                 "-I${CMAKE_CURRENT_SOURCE_DIR}/include"
                 "-B${CMAKE_CURRENT_SOURCE_DIR}" "-B${CMAKE_BINARY_DIR}"
@@ -1550,6 +1551,11 @@ if(MCC_ENABLE_CROSS)
         add_executable(${_t}-mcc src/mcc.c)
         target_compile_definitions(${_t}-mcc PRIVATE ${_cdefs} ${_cpath_defs}
             "CONFIG_MCC_CROSSPREFIX=\"${_t}-\"")
+        if(MCC_DIAGNOSTICS)
+            # Surface per-target backend warnings (arm-gen.c, riscv64-gen.c, …)
+            # that the host build never compiles.
+            target_compile_options(${_t}-mcc PRIVATE ${MCC_DIAG_FLAGS})
+        endif()
         if(_cos STREQUAL "WIN32")
             target_compile_definitions(${_t}-mcc PRIVATE
                 "CONFIG_MCCDIR=\"${_mccdir_install}/win32\"")
@@ -2403,7 +2409,7 @@ endif()
                     "${CMAKE_CURRENT_SOURCE_DIR}" "${MCC_CROSS_DIR}"
                     "${CMAKE_BINARY_DIR}/macho-codegen-work")
         set_tests_properties(macho-codegen-run PROPERTIES
-            FIXTURES_REQUIRED MCC_BUILT LABELS "macho")
+            FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
     else()
         mcc_skip_test(macho-codegen-run
             "requires the x86_64-osx cross compiler (cmake --preset cross)")
@@ -2657,6 +2663,35 @@ message(STATUS "qemu conformance: all programs passed")
                     FIXTURES_REQUIRED "MCC_BUILT;FX_${_tn}" LABELS qemu TIMEOUT 600)
             endforeach()
         endforeach()
+
+        # darwin/macho row of the qemu matrix: run arm64-osx (Mach-O target)
+        # codegen under qemu-aarch64. mcc's osx `-c` emits an aarch64 ELF object
+        # (AAPCS64, the base ABI shared with Linux), so we link it against the
+        # arm64 glibc sysroot (clang --target=aarch64 + lld) and run it under
+        # qemu-aarch64, reusing the arm64-glibc fetch fixture. The x86_64-osx
+        # target runs natively via the separate macho-codegen-run test; this row
+        # extends that darwin runtime coverage to aarch64 through qemu. (A subset
+        # — TLS + variadic-libc programs — self-skips: see run_macho_codegen.sh.)
+        # NB: don't gate registration on EXISTS(arm64-osx-mcc) — in a clean build
+        # (e.g. the docker matrix) configure runs before the cross compiler is
+        # built, so it wouldn't exist yet. The script self-skips (exit 77) at run
+        # time when the compiler/sysroot/toolchain is absent.
+        if((";${MCC_QEMU_ARCHS};" MATCHES ";arm64;")
+           AND (";${MCC_QEMU_LIBCS};" MATCHES ";glibc;"))
+            add_test(NAME qemu-arm64-osx COMMAND /bin/sh
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/run_macho_codegen.sh"
+                "${CMAKE_CURRENT_SOURCE_DIR}" "${MCC_CROSS_DIR}"
+                "${CMAKE_BINARY_DIR}/macho-arm64-work" "arm64"
+                "${MCC_QEMU_DLDIR}/arm64-glibc")
+            set_tests_properties(qemu-arm64-osx PROPERTIES
+                FIXTURES_REQUIRED "MCC_BUILT;FX_qemu-arm64-glibc"
+                LABELS "qemu;macho" SKIP_RETURN_CODE 77 TIMEOUT 600)
+        else()
+            mcc_skip_test(qemu-arm64-osx
+                "requires arm64+glibc in the qemu matrix and the arm64-osx cross compiler (cmake --preset cross)"
+                LABELS qemu)
+        endif()
+
         message(STATUS "mcc tests: qemu matrix enabled (ctest -L qemu) for "
                        "archs=[${MCC_QEMU_ARCHS}] libcs=[${MCC_QEMU_LIBCS}]")
     endif()

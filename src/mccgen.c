@@ -2641,6 +2641,7 @@ static void type_to_str(char *buf, int buf_size,
         tstr = "double";
         if (!(t & VT_LONG))
             goto add_tstr;
+        /* fall through */
     case VT_LDOUBLE:
         tstr = "long double";
     add_tstr:
@@ -5610,12 +5611,14 @@ static void parse_builtin_params(int nc, const char *args)
 		continue;
 	    case 'V':
                 type.t = VT_CONSTANT;
+                /* fall through */
 	    case 'v':
                 type.t |= VT_VOID;
                 mk_pointer (&type);
                 break;
 	    case 'S':
                 type.t = VT_CONSTANT;
+                /* fall through */
 	    case 's':
                 type.t |= char_type.t;
                 mk_pointer (&type);
@@ -6230,6 +6233,7 @@ ST_FUNC void unary(void)
     case TOK___FUNCTION__:
         if (!gnu_ext)
             goto tok_identifier;
+        /* fall through */
     case TOK___FUNC__:
         /* 6.4.2.2: __func__ is implicitly declared only inside a function. */
         if (!funcname[0])
