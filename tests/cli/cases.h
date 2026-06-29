@@ -756,5 +756,144 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -fcommon {W}/cm1.c {W}/cm2.c -o {W}/cme && {W}/cme",
   "5\n" },
 
+/* §6.5.3.3p1: the operand of unary - shall have arithmetic type; a pointer
+   operand is a constraint violation (gcc+clang both error). The valid integer
+   form still compiles. */
+{ "unary_minus_pointer", "",
+  "printf 'int f(int*p){return (-p)==0;}\\n' > {W}/umn.c && "
+  "printf 'int f(int x){return -x;}\\nint main(void){return 0;}\\n' > {W}/umok.c && "
+  "{ {MCC} -B{B} -I{I} -c {W}/umn.c -o {W}/umn.o 2>&1; "
+  "{MCC} -B{B} -I{I} {W}/umok.c -o {W}/umok 2>&1 && echo VALID_OK; } | "
+  "grep -oE 'pointer not accepted for unary minus|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 VALID_OK\n1 pointer not accepted for unary minus\n" },
+
+/* §6.4.4.4p9: a non-wide octal/hex escape shall be representable in unsigned
+   char; out-of-range narrow escapes warn (gcc warns, clang errors), while
+   in-range escapes compile clean under -Werror. */
+{ "escape_out_of_range", "",
+  "printf 'char *s=\"\\\\777\";\\n' > {W}/eo.c && "
+  "printf 'char *s=\"\\\\xfff\";\\n' > {W}/ex.c && "
+  "printf 'char *s=\"\\\\77\\\\xff\";\\nint main(void){return 0;}\\n' > {W}/eok.c && "
+  "{ {MCC} -B{B} -I{I} -c {W}/eo.c -o {W}/eo.o 2>&1; "
+  "{MCC} -B{B} -I{I} -c {W}/ex.c -o {W}/ex.o 2>&1; "
+  "{MCC} -B{B} -I{I} -Werror {W}/eok.c -o {W}/eok 2>&1 && echo VALID_OK; } | "
+  "grep -oE 'octal escape sequence out of range|hex escape sequence out of range|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 VALID_OK\n1 hex escape sequence out of range\n1 octal escape sequence out of range\n" },
+
+/* §6.7.6.3p10 (qualified lone 'void' param), §6.7.1p3 (_Thread_local + typedef),
+   §6.7.6.2p2 (extern/linkage on a VLA type) — each rejected by gcc+clang, while
+   the valid neighbors (plain void param, _Thread_local static, local VLA) still
+   compile. */
+{ "decl_storage_type_constraints", "",
+  "printf 'void f(const void);\\n' > {W}/dq.c && "
+  "printf '_Thread_local typedef int T;\\n' > {W}/dt.c && "
+  "printf 'void f(int n){ extern int a[n]; }\\n' > {W}/dv.c && "
+  "printf 'void f(void); _Thread_local static int x;\\n"
+  "void g(int n){int a[n]; a[0]=0; (void)a;}\\nint main(void){return 0;}\\n' > {W}/dok.c && "
+  "{ for n in dq dt dv; do {MCC} -B{B} -I{I} -std=c11 -c {W}/$n.c -o {W}/$n.o 2>&1; done; "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/dok.c -o {W}/dok.o 2>&1 && echo VALID_OK; } | "
+  "grep -oE \"only parameter may not be qualified|'_Thread_local' used with 'typedef'|must have no linkage|VALID_OK\" | sort | uniq -c | sed 's/^ *//'",
+  "1 '_Thread_local' used with 'typedef'\n1 VALID_OK\n1 must have no linkage\n1 only parameter may not be qualified\n" },
+
+/* §6.10.8p2: a predefined macro name shall not be the subject of #define/#undef.
+   The magic builtin tokens (__LINE__/__FILE__/__DATE__/__TIME__) now warn like
+   gcc/clang; ordinary macro define/undef stays clean under -Werror. */
+{ "builtin_macro_redefine", "",
+  "printf '#define __LINE__ 5\\n#undef __FILE__\\nint x;\\n' > {W}/bm.c && "
+  "printf '#define FOO 1\\n#undef FOO\\nint y;\\n' > {W}/bmok.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -c {W}/bm.c -o {W}/bm.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -Werror -c {W}/bmok.c -o {W}/bmok.o 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE '__LINE__ redefined|undefining __FILE__|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 __LINE__ redefined\n1 undefining __FILE__\n" },
+
+/* §6.5.4 (a cast does not yield an lvalue) and §6.5.17 (the comma operator does
+   not yield an lvalue): `(int)a=9`, `&(int)a`, `(a,b)=7`, `&(a,b)` are all
+   constraint violations (gcc+clang reject), while using the cast/comma result as
+   an rvalue still compiles. */
+{ "lvalue_cast_comma_constraints", "",
+  "printf 'int f(int a){ (int)a = 9; return a; }\\n' > {W}/l1.c && "
+  "printf 'int f(int a){ return *&(int)a; }\\n' > {W}/l2.c && "
+  "printf 'int f(int a,int b){ (a,b) = 7; return b; }\\n' > {W}/l3.c && "
+  "printf 'int f(int a,int b){ return *&(a,b); }\\n' > {W}/l4.c && "
+  "printf 'int f(int a,int b){ int c=(int)a+1; c=(a,b); return c; }\\nint main(void){return 0;}\\n' > {W}/lok.c && "
+  "{ for n in l1 l2 l3 l4; do {MCC} -B{B} -I{I} -c {W}/$n.c -o {W}/$n.o 2>&1; done; "
+  "{MCC} -B{B} -I{I} {W}/lok.c -o {W}/lok 2>&1 && echo VALID_OK; } | "
+  "grep -oE 'lvalue expected|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 VALID_OK\n4 lvalue expected\n" },
+
+/* §6.10.3.3p3: a ## that forms a comment introducer ('//' or '/*') is not a
+   valid preprocessing token; mcc must diagnose and terminate (it used to run the
+   comment scanner off the synthetic paste buffer and loop forever). The
+   `timeout` guards against a hang regression; a valid paste still works. */
+{ "paste_comment_introducer", "",
+  "printf '#define C(a,b) a ## b\\nC(/,/)\\n' > {W}/pc1.c && "
+  "printf '#define C(a,b) a ## b\\nC(/,*)\\n' > {W}/pc2.c && "
+  "printf '#define C(a,b) a ## b\\nint C(foo,bar)=5;\\nint main(void){return foobar-5;}\\n' > {W}/pcok.c && "
+  "{ timeout 10 {MCC} -B{B} -I{I} -std=c11 -E -P {W}/pc1.c 2>&1; "
+  "timeout 10 {MCC} -B{B} -I{I} -std=c11 -E -P {W}/pc2.c 2>&1; "
+  "{MCC} -B{B} -I{I} {W}/pcok.c -o {W}/pcok 2>&1 && echo VALID_OK; } | "
+  "grep -oE 'invalid preprocessing token|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 VALID_OK\n2 invalid preprocessing token\n" },
+
+/* §7.1.4p1 / §7.3.9.5-6: creal/cimag are functions that may also be macros;
+   `(creal)(z)` (parenthesized, function) and `&creal` must work alongside the
+   fast `creal(z)` macro. (Previously creal/cimag were macro-only.) */
+{ "complex_creal_function", "cpu=x86_64,os=linux",
+  "printf '#include <complex.h>\\n#include <stdio.h>\\n"
+  "int main(void){ double _Complex z=3.0+4.0*I; double(*p)(double _Complex)=creal;\\n"
+  "if((int)(creal)(z)==3 && (int)cimag(z)==4 && (int)p(z)==3) puts(\\\"OK\\\"); return 0; }\\n' > {W}/cf.c && "
+  "{MCC} -B{B} -I{I} {W}/cf.c -lm -o {W}/cf && {W}/cf",
+  "OK\n" },
+
+/* §7.28: <uchar.h> provides char16_t/char32_t/mbstate_t both hosted (via the
+   system header) and freestanding (-nostdinc, via the bundled fallback). */
+{ "uchar_header", "cpu=x86_64,os=linux",
+  "printf '#include <uchar.h>\\nint main(void){char16_t a=0; char32_t b=0; mbstate_t s;\\n"
+  "(void)a;(void)b;(void)s; return (sizeof(char16_t)==2 && sizeof(char32_t)==4)?0:1;}\\n' > {W}/uh.c && "
+  "{MCC} -B{B} -I{I} {W}/uh.c -o {W}/uh && {W}/uh && echo HOSTED_OK && "
+  "{MCC} -B{B} -nostdinc -I{I} {W}/uh.c -o {W}/uhf && {W}/uhf && echo FREE_OK",
+  "HOSTED_OK\nFREE_OK\n" },
+
+/* §5.2.1.1 / translation phase 1: trigraphs are processed in a strict ISO mode
+   (-std=c11) like gcc/clang, but NOT in -std=gnu11 (or the default). */
+{ "trigraphs_strict_std", "",
+  "printf 'int a??(2??);\\n' > {W}/tg.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -E -P {W}/tg.c 2>&1; "
+  "{MCC} -B{B} -I{I} -std=gnu11 -E -P {W}/tg.c 2>&1; } | "
+  "grep -oE 'a\\?\\?\\(|a\\[2\\]' | sort | uniq -c | sed 's/^ *//'",
+  "1 a??(\n1 a[2]\n" },
+
+/* §6.10.3p4 (pre-C23): invoking a variadic macro with no argument for the '...'
+   is diagnosed under -pedantic (warning) / -pedantic-errors (error); a call that
+   supplies the variadic argument stays clean even under -pedantic-errors. */
+{ "va_args_empty_pedantic", "",
+  "printf '#define V(f,...) f\\nint a = V(1);\\n' > {W}/ve.c && "
+  "printf '#define V(f,...) f\\nint b = V(1,2);\\nint main(void){return 0;}\\n' > {W}/vok.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/ve.c -o {W}/ve.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/vok.c -o {W}/vok.o 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE 'no argument for the|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 no argument for the\n" },
+
+/* §7.17.8: atomic_flag_* take volatile atomic_flag *, so a non-pointer argument
+   is diagnosed; the correct &atomic_flag form compiles clean under -Werror. */
+{ "atomic_flag_type", "",
+  "printf '#include <stdatomic.h>\\nvoid f(void){int x=0; atomic_flag_clear(x);}\\n' > {W}/aft.c && "
+  "printf '#include <stdatomic.h>\\nvoid g(void){atomic_flag a=ATOMIC_FLAG_INIT; atomic_flag_clear(&a);}\\n' > {W}/afok.c && "
+  "{ {MCC} -B{B} -I{I} -c {W}/aft.c -o {W}/aft.o 2>&1; "
+  "{MCC} -B{B} -I{I} -Werror -c {W}/afok.c -o {W}/afok.o 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE 'pointer from integer|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 pointer from integer\n" },
+
+/* §6.2.2p7: a static declaration following a non-static (extern) one is an error
+   (both internal+external linkage = UB); the reverse (extern after static) keeps
+   internal linkage and is well-formed. */
+{ "linkage_static_after_extern", "",
+  "printf 'extern int x; static int x;\\n' > {W}/les.c && "
+  "printf 'static int y; extern int y;\\n' > {W}/lse.c && "
+  "{ {MCC} -B{B} -I{I} -c {W}/les.c -o {W}/les.o 2>&1; "
+  "{MCC} -B{B} -I{I} -Werror -c {W}/lse.c -o {W}/lse.o 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE 'follows non-static|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 follows non-static\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

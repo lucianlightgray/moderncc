@@ -1499,6 +1499,17 @@ ST_FUNC void pp_error(CString *cs)
         cstr_printf(cs, " %s", get_tok_str(tok, &tokc));
 }
 
+/* 6.10.8p2: none of the predefined macro names (and the identifier 'defined')
+   shall be the subject of a #define or #undef. These four are handled as magic
+   builtin tokens (define_push at startup) and so bypass the regular macro-table
+   redefinition warning; flag them explicitly. (__COUNTER__ is a GNU builtin
+   treated the same way by gcc.) gcc/clang diagnose; mcc warns. */
+static int is_predef_macro(int v)
+{
+    return v == TOK___LINE__ || v == TOK___FILE__ || v == TOK___DATE__
+        || v == TOK___TIME__ || v == TOK___COUNTER__;
+}
+
 ST_FUNC void parse_define(void)
 {
     Sym *s, *first, **ps;
@@ -1509,6 +1520,8 @@ ST_FUNC void parse_define(void)
     v = tok;
     if (v < TOK_IDENT || v == TOK_DEFINED)
         mcc_error("invalid macro name '%s'", get_tok_str(tok, &tokc));
+    if (is_predef_macro(v))
+        mcc_warning("%s redefined", get_tok_str(v, NULL));
     first = NULL;
     t = MACRO_OBJ;
     parse_flags = ((parse_flags & ~PARSE_FLAG_ASM_FILE) | PARSE_FLAG_SPACES);
@@ -1859,6 +1872,8 @@ ST_FUNC void preprocess(int is_bof)
         pp_debug_tok = tok;
         next_nomacro();
         pp_debug_symv = tok;
+        if (is_predef_macro(tok))           /* 6.10.8p2 */
+            mcc_warning("undefining %s", get_tok_str(tok, NULL));
         s = define_find(tok);
         if (s)
             define_undef(s);
@@ -2053,6 +2068,10 @@ static void parse_escape_string(CString *outstr, const uint8_t *buf, int is_long
                         p++;
                     }
                 }
+                /* 6.4.4.4p9: a non-wide octal escape shall be representable in
+                   unsigned char. gcc warns, clang errors; mcc warns. */
+                if (!is_long && n > 0xFF)
+                    mcc_warning("octal escape sequence out of range");
                 c = n;
                 goto add_char_nonext;
             case 'x': i = 0; goto parse_hex_or_ucn;
@@ -2071,8 +2090,14 @@ static void parse_escape_string(CString *outstr, const uint8_t *buf, int is_long
                         c = c - '0';
                     else if (i >= 0)
                         expect("more hex digits in universal-character-name");
-                    else
+                    else {
+                        /* 6.4.4.4p9: a non-wide hex escape shall be
+                           representable in unsigned char (i<0 ⇒ this is a \x
+                           escape, not a \u/\U universal-character-name). */
+                        if (!is_long && n > 0xFF)
+                            mcc_warning("hex escape sequence out of range");
                         goto add_hex_or_ucn;
+                    }
                     n = (unsigned) n * 16 + c;
                     p++;
                 } while (--i);
@@ -3283,7 +3308,19 @@ static inline int *macro_twosharps(const int *ptr0)
             cstr_cat(&tokcstr, get_tok_str(t2, &cv2), -1);
         }
         if (tokcstr.size) {
+            int ci;
             cstr_ccat(&tokcstr, 0);
+            /* 6.10.3.3p3: if ## produces a comment introducer ('//' or '/*')
+               the result is not a valid preprocessing token. Re-lexing it would
+               run the comment scanner off the end of the synthetic :paste:
+               buffer (no terminating newline) and loop forever, so diagnose and
+               stop here as gcc/clang do, instead of re-lexing. */
+            for (ci = 0; ci + 1 < tokcstr.size - 1; ci++) {
+                char *d = (char *)tokcstr.data;
+                if (d[ci] == '/' && (d[ci + 1] == '/' || d[ci + 1] == '*'))
+                    mcc_error("pasting formed '%s', an invalid preprocessing token",
+                              (char *)tokcstr.data);
+            }
             mcc_open_bf(mcc_state, ":paste:", tokcstr.size);
             memcpy(file->buffer, tokcstr.data, tokcstr.size);
             tok_flags = 0;
@@ -3452,8 +3489,22 @@ static int macro_subst_tok(
                 if (t == ')') {
                     if (!sa)
                         break;
-                    if (sa->type.t && gnu_ext)
+                    if (sa->type.t && gnu_ext) {
+                        /* 6.10.3p4 (pre-C23): when the parameter list ends with
+                           '...' there must be more arguments than named
+                           parameters. Invoking with no argument for the '...' is
+                           a constraint violation; gcc/clang diagnose it under
+                           -pedantic (it is made legal in C23), so do the same. */
+                        if (mcc_state->warn_pedantic) {
+                            if (mcc_state->pedantic_errors)
+                                mcc_error("ISO C does not permit a variadic macro "
+                                    "to be invoked with no argument for the '...'");
+                            else
+                                mcc_warning("ISO C does not permit a variadic macro "
+                                    "to be invoked with no argument for the '...'");
+                        }
                         goto empty_arg;
+                    }
                     mcc_error("macro '%s' used with too few args",
                         get_tok_str(v, 0));
                 }

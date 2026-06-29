@@ -37,8 +37,8 @@ NOT OK
 
 ----- 5 ------
 line __LINE__
-#define __LINE__ # ## #
-line __LINE__
+#define PASTE # ## #
+PASTE
 
 ----- 10 ------
 

@@ -33,6 +33,7 @@ static const mcc_golden_t mcc_goldens[] = {
   { "digraphs","run","exec/lexical/digraphs.c","20 1 4\n","","","" },
   { "trigraphs","run","exec/lexical/trigraphs.c","OK\n","-trigraphs","","" },
   { "u8_string","run","exec/lexical/u8_string.c","OK\n","","","" },
+  { "string_concat_mixed","run","exec/lexical/string_concat_mixed.c","OK\n","","","" },
   { "uU_char_constants","run","exec/lexical/uU_char_constants.c","OK\n","","","" },
   { "ucn_identifiers","run","exec/lexical/ucn_identifiers.c","OK\n","","","" },
   { "U32_string","run","exec/lexical/U32_string.c","OK\n","","","" },
@@ -65,6 +66,7 @@ static const mcc_golden_t mcc_goldens[] = {
   { "atomic_misc","dt","exec/features_c99_c11/atomic_misc.c","[test_atomic_compare_exchange]\n1 99 77\n0 80 80\n85 33 80\n90 66 80\n\n[test_atomic_store]\nr = 12, i = 24\n\n[test_atomic_store_pointer]\n*p = 2\n\n[test_atomic_store_struct]\n1 2 3 4\n\n[test_atomic_op]\nfetch_add: SUCCESS\nfetch_sub: SUCCESS\nfetch_or: SUCCESS\nfetch_xor: SUCCESS\nfetch_and: SUCCESS\n\n[test_atomic_op2]\nfetch_add: SUCCESS\nfetch_sub: SUCCESS\nfetch_or: SUCCESS\nfetch_xor: SUCCESS\nfetch_and: SUCCESS\nfetch_nand: SUCCESS\nadd_fetch: SUCCESS\nsub_fetch: SUCCESS\nor_fetch: SUCCESS\nxor_fetch: SUCCESS\nand_fetch: SUCCESS\nnand_fetch: SUCCESS\n\n[test_atomic_thread_signal]\n1\n\n[test_atomic_error_1]\natomic_misc.c:156: error: pointer expected\n\n[test_atomic_error_2]\natomic_misc.c:163: error: integral or integer-sized pointer target type expected\n\n[test_atomic_error_3]\natomic_misc.c:170: error: integral or integer-sized pointer target type expected\n\n[test_atomic_error_4]\natomic_misc.c:178: error: pointer target type mismatch in argument 2\n\n[test_atomic_warn_1]\natomic_misc.c:186: warning: assignment makes integer from pointer without a cast\n\n[test_atomic_warn_2]\natomic_misc.c:196: warning: assignment from incompatible pointer type\n\n[test_atomic_warn_3]\natomic_misc.c:204: warning: assignment of read-only location\n","","","" },
   { "bound_global","brun","exec/bounds/bound_global.c","bound_global.c:11: at main: BCHECK: ........ (size 4) is outside of the region (..................)\nbound_global.c:11: at main: RUNTIME ERROR: invalid memory access\n","","","bcheck" },
   { "asm_goto","run","exec/inline_asm/asm_goto.c","simple_jump: okay\nanother_jump: okay\nthree_way_jump(0): okay\nthree_way_jump(1): okay\nthree_way_jump(-1): okay\n","","","asm,cpu=x86" },
+  { "asm_lvalue_cast","run","exec/inline_asm/asm_lvalue_cast.c","OK\n","","","asm,cpu=x86" },
   { "run_atexit","dt","exec/features_c99_c11/run_atexit.c","[test_128_return]\nstartup5\ncleanup5\n1 cleanup4\n1 cleanup3\ncleanup2\ncleanup1\n[returns 1]\n\n[test_128_exit]\nstartup5\ncleanup5\n2 cleanup4\n2 cleanup3\ncleanup2\ncleanup1\n[returns 2]\n","","","" },
   { "scopes","run","exec/statements/scopes.c","scopes.c:10: ok : \"!in\"\nscopes.c:11: ok : \"in\"\nscopes.c:12: ok : \"!in\"\nscopes.c:15: ok : \"!in\"\nscopes.c:16: ok : \"in\"\nscopes.c:17: ok : \"!in\"\nscopes.c:20: ok : \"!in\"\nscopes.c:21: ok : \"in\"\nscopes.c:22: ok : \"!in\"\nscopes.c:25: ok : \"!in\"\nscopes.c:26: ok : \"!in\"\nscopes.c:27: ok : \"!in\"\nscopes.c:31: ok : \"!in\"\nscopes.c:32: ok : \"in\"\nscopes.c:33: ok : \"!in\"\nscopes.c:36: ok : \"!in\"\nscopes.c:37: ok : \"in\"\nscopes.c:38: ok : \"!in\"\nscopes.c:41: ok : \"!in\"\nscopes.c:42: ok : \"in\"\nscopes.c:43: ok : \"!in\"\nscopes.c:59: ok : \"c == 'a'\"\nscopes.c:69: ok : \"st.a == 10\"\nscopes.c:88: ok : \"!strcmp(a, \"test\")\"\nscopes.c:105: ok : \"f5() == 10 + 4\"\nscopes.c:122: ok : \"i6 == 33 && f6 == 44\"\nscopes.c:126: ok : \"i6 == 11 && f6(22) == 22\"\nscopes.c:128: ok : \"i6 == 33 && f6 == 44\"\nscopes.c:130: ok : \"i6 == 11 && f6(22) == 22\"\nxx7 (1) : 78 90\nxx7 (2) : 12 34\n","","","" },
   { "hashdefine","run","exec/preprocessor/hashdefine.c","12\n12, 24, 36\n","","","" },
@@ -229,7 +231,7 @@ static const mcc_golden_t mcc_goldens[] = {
   { "pp_empty_detection","pp","preprocess/variadic/empty_detection.c","X181 1\nX182 0\nX183 yeah\nABC : a b c\nTEST : t e s t\n","","","" },
   { "pp_bool_metaprogramming","pp","preprocess/variadic/bool_metaprogramming.c","X92 M_IFI_1\nX93 KO\nX94 KO\nX95 a\nX96 M_IFI_1\nX97 ok\nX98 (1)(ok, nok)\nX99 ok\nX1 ok\nX2 1\nX3 ok\nX4 1\nX5 nok\nX6 ok\n","","","" },
   { "pp_gnu_comma_paste","pp","preprocess/variadic/gnu_comma_paste.c","X1 printk(KERN_WARNING \"pipapo\",bla);\nX2 printk(KERN_WARNING \"bla\",foo);\nX2 twoopq\nX3 otwopq\nX4 optwoq\nX5 opqtwo\n","","","" },
-  { "pp_defined_operator","pp","preprocess/conditional/defined_operator.c","----- 1 ------\nOK\n----- 2 ------\nOK\n----- 3 ------\nOK\n----- 4 ------\nOK\n----- 5 ------\nline 39\nline ##\n----- 10 ------\n1 true\n2 true\n3 true\n4 true\n5 true\n6 true\n","","","" },
+  { "pp_defined_operator","pp","preprocess/conditional/defined_operator.c","----- 1 ------\nOK\n----- 2 ------\nOK\n----- 3 ------\nOK\n----- 4 ------\nOK\n----- 5 ------\nline 39\n##\n----- 10 ------\n1 true\n2 true\n3 true\n4 true\n5 true\n6 true\n","","","" },
   { "pp_directives_in_args","pp","preprocess/conditional/directives_in_args.c","A 1 B\nX ARG_1 X ARG_2 X ARG_3 X;\n","","","" },
   { "pp_line_markers","pp","preprocess/asm/line_markers.S","1\n3\n20\n22\n30\n40 \"line_markers.S\"\n50 \"file1\"\n60 \"file2\"\n","","","" },
   { "pp_counter","pp","preprocess/directives/counter.c","X1 0\nX2 1\nX3 3\nX4 x 4 y\nX5 x 5 y 6\nX6 b 7\nX7 8 9\nX8 x 10 y x 10 y 11 x2 x 10 y 12 y2 13\nX9 x 14 y 15 x 14 y 15 16 x2 x 14 y 15 17 y2 18\nX10 19 19 20 x2 19 21 y2 22\nX11 23 23 24 x2 23 25 y2 26\nX12 \"__COUNTER__\"\nX13 x27\nX14 x__COUNTER__\nX15 x2828\n","","","" },
@@ -269,4 +271,4 @@ static const mcc_golden_t mcc_goldens[] = {
   { "char_unsigned","run","exec/types/char_signedness.c","255 0\n","-funsigned-char","","" },
   { "bound_test_b","brun","exec/bounds/bound_test.c","42000\n8\n","","","bcheck" },
 };
-static const int mcc_goldens_count = 259;
+static const int mcc_goldens_count = 261;

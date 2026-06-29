@@ -24,6 +24,11 @@ static SValue _vstack[1 + VSTACK_SIZE];
 
 ST_DATA int nocode_wanted;
 #define NODATA_WANTED (nocode_wanted > 0)
+
+/* Nonzero while parsing an asm operand: the GNU lvalue-cast extension
+   (`"=a" ((USItype)(x))`) is valid there, so the §6.5.4 "a cast is not an
+   lvalue" materialization below must be suppressed. */
+ST_DATA int asm_lvalue_cast;
 #define DATA_ONLY_WANTED 0x80000000
 
 #define CODE_OFF_BIT 0x20000000
@@ -1362,9 +1367,15 @@ static void patch_type(Sym *sym, CType *type)
         if ((sym->type.t & VT_ARRAY) && type->ref->c >= 0) {
             sym->type.ref->c = type->ref->c;
         }
-        if ((type->t ^ sym->type.t) & VT_STATIC)
-            mcc_warning("storage mismatch for redefinition of '%s'",
-                get_tok_str(sym->v, NULL));
+        if ((type->t ^ sym->type.t) & VT_STATIC) {
+            /* 6.2.2p7: a static declaration following a non-static (external)
+               one gives the identifier both internal and external linkage —
+               undefined; gcc/clang reject. The reverse (extern after static)
+               keeps internal linkage and is well-defined, so stays silent. */
+            if ((type->t & VT_STATIC) && !(sym->type.t & VT_STATIC))
+                mcc_error("static declaration of '%s' follows non-static "
+                    "declaration", get_tok_str(sym->v, NULL));
+        }
     }
 }
 
@@ -3143,6 +3154,14 @@ static void gen_cast(CType *type)
         force_charshort_cast();
 
     if (is_complex_type(type) || is_complex_type(&vtop->type)) {
+        /* A cast between identical complex types is a no-op; skip it so that an
+           lvalue/constant operand (e.g. a rodata reference from
+           __builtin_complex) is preserved for the caller instead of being
+           materialized into a fresh local. */
+        if (is_complex_type(type) && is_complex_type(&vtop->type)
+            && (type->ref->next->type.t & (VT_BTYPE | VT_LONG))
+               == (vtop->type.ref->next->type.t & (VT_BTYPE | VT_LONG)))
+            return;
         gen_complex_cast(type);
         return;
     }
@@ -3508,7 +3527,10 @@ static void verify_assign_cast(CType *dt)
         if (sbt == VT_PTR || sbt == VT_FUNC) {
             mcc_warning("assignment makes integer from pointer without a cast");
         } else if (sbt == VT_STRUCT) {
-            goto case_VT_STRUCT;
+            /* 6.3.1.7: a complex value converts to an integer type via its real
+               part; only a non-complex struct→integer is an error. */
+            if (!is_complex_type(st))
+                goto case_VT_STRUCT;
         }
         break;
     case VT_STRUCT:
@@ -3560,6 +3582,26 @@ ST_FUNC void vstore(void)
        the complex destination type first (real part = value, imag = 0), so the
        struct-copy path below moves a real complex object (6.3.1.6/6.3.1.7). */
     if (is_complex_type(&vtop[-1].type) && !is_complex_type(&vtop->type)) {
+        gen_cast(&vtop[-1].type);
+        sbt = vtop->type.t & VT_BTYPE;
+    }
+    /* 6.3.1.7: storing a complex value into a real (integer/float/_Bool) object
+       drops the imaginary part. Convert to the destination real type first so
+       the scalar store below sees a real value instead of raw-copying the
+       complex struct's bytes. */
+    else if (!is_complex_type(&vtop[-1].type) && is_complex_type(&vtop->type)
+             && dbt != VT_STRUCT) {
+        gen_cast(&vtop[-1].type);
+        sbt = vtop->type.t & VT_BTYPE;
+    }
+    /* 6.3.1.6: storing a complex value into a complex object of a DIFFERENT
+       element type (e.g. float _Complex -> double _Complex) must convert each
+       part. Gated to differing elements only: a same-element complex store is a
+       correct raw copy AND is what cplx_materialize uses internally, so matching
+       it here would recurse into gen_complex_cast forever (vstack overflow). */
+    else if (is_complex_type(&vtop[-1].type) && is_complex_type(&vtop->type)
+             && (vtop[-1].type.ref->next->type.t & (VT_BTYPE | VT_LONG))
+                != (vtop->type.ref->next->type.t & (VT_BTYPE | VT_LONG))) {
         gen_cast(&vtop[-1].type);
         sbt = vtop->type.t & VT_BTYPE;
     }
@@ -5201,8 +5243,14 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td)
         if (l) {
             for(;;) {
                 if (l != FUNC_OLD) {
-                    if ((pt.t & VT_BTYPE) == VT_VOID && tok == ')')
+                    if ((pt.t & VT_BTYPE) == VT_VOID && tok == ')') {
+                        /* 6.7.6.3p10: the no-parameter special case is an
+                           unnamed, unqualified 'void'. A qualified lone 'void'
+                           is invalid (gcc+clang both reject). */
+                        if (pt.t & (VT_CONSTANT | VT_VOLATILE))
+                            mcc_error("'void' as only parameter may not be qualified");
                         break;
+                    }
                     type_decl(&pt, &ad1, &n, TYPE_DIRECT | TYPE_ABSTRACT | TYPE_PARAM);
                     if ((pt.t & VT_BTYPE) == VT_VOID)
                         mcc_error("parameter declared as void");
@@ -6305,6 +6353,18 @@ ST_FUNC void unary(void)
                     && !is_compatible_unqualified_types(&type, &vtop->type))
                     mcc_error("conversion to non-scalar type requested");
                 gen_cast(&type);
+                /* 6.5.4: a cast does not yield an lvalue. A real conversion
+                   already materialised an rvalue; only a no-op cast of an
+                   lvalue (e.g. `(int)i`) leaves VT_LVAL set, which would wrongly
+                   accept `(int)i = x` / `&(int)i`. Force the value into a
+                   register so it is a true rvalue. Aggregates/complex/void
+                   cannot go to a register and are never assignable here anyway. */
+                if ((vtop->r & VT_LVAL) && !nocode_wanted && !asm_lvalue_cast) {
+                    int bt = vtop->type.t & VT_BTYPE;
+                    if (bt != VT_STRUCT && bt != VT_VOID
+                        && !is_complex_type(&vtop->type))
+                        gv(RC_TYPE(vtop->type.t));
+                }
             }
         } else if (tok == '{') {
 	    int saved_nocode_wanted = nocode_wanted;
@@ -6458,6 +6518,54 @@ ST_FUNC void unary(void)
 	    skip(')');
 	}
         break;
+    case TOK_builtin_complex:
+	{
+	    /* __builtin_complex(re, im): construct a complex value from two real
+	       floating parts (C11 CMPLX is defined in terms of this). gcc requires
+	       both args to be the same real floating type; we take the real part's
+	       type (promoted to a floating type) as the common element base. */
+	    CType cbase, ccplx;
+	    SValue r;
+	    next();
+	    skip('(');
+	    expr_eq();                          /* [re] */
+	    skip(',');
+	    expr_eq();                          /* [re, im] */
+	    skip(')');
+	    cbase = vtop[-1].type;
+	    cbase.t &= (VT_BTYPE | VT_LONG);
+	    if (!is_float(cbase.t))
+		cbase.t = VT_DOUBLE;
+	    cbase.ref = NULL;
+	    mk_complex_type(&ccplx, &cbase);
+	    if ((vtop[-1].r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST
+		&& (vtop[0].r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) {
+		/* Both parts are compile-time constants: emit the complex into a
+		   rodata anonymous object so the result is itself a constant
+		   usable in a static/file-scope initializer (§7.3.1/§7.3.9.3),
+		   not just at runtime. Mirrors how struct compound literals get a
+		   static home (gv()'s float-constant path). vtop=im, vtop[-1]=re. */
+		init_params p = { .sec = rodata_section };
+		unsigned long offset;
+		int bsz, bal, csz, cal;
+		bsz = type_size(&cbase, &bal);
+		csz = type_size(&ccplx, &cal);
+		if (NODATA_WANTED) { csz = 0; cal = 1; }
+		offset = section_add(p.sec, csz, cal);
+		init_putv(&p, &cbase, offset + bsz);   /* imag = im (vtop) */
+		init_putv(&p, &cbase, offset);         /* real = re (now vtop) */
+		vpush_ref(&ccplx, p.sec, offset, csz);
+		vtop->r |= VT_LVAL;
+	    } else {
+		cplx_local(&ccplx, &r);
+		gen_cast(&cbase);                   /* im -> base */
+		cplx_store_part(&r, 1);             /* imag part (consumes im) */
+		gen_cast(&cbase);                   /* re -> base */
+		cplx_store_part(&r, 0);             /* real part (consumes re) */
+		vpushv(&r);
+	    }
+	}
+	break;
     case TOK_builtin_constant_p:
 	parse_builtin_params(1, "e");
 	n = 1;
@@ -6700,6 +6808,8 @@ ST_FUNC void unary(void)
     case '-':
         next();
         unary();
+        if ((vtop->type.t & VT_BTYPE) == VT_PTR)
+            mcc_error("pointer not accepted for unary minus");
 	if (is_float(vtop->type.t)) {
             gen_opif(TOK_NEG);
 	} else {
@@ -7457,6 +7567,18 @@ ST_FUNC void gexpr(void)
         } while (tok == ',');
 
         convert_parameter_type(&vtop->type);
+
+        /* 6.5.17: the comma operator does not yield an lvalue, so `(a,b)=x` and
+           `&(a,b)` are constraint violations. Force a scalar result into a
+           register so VT_LVAL is dropped; aggregates/arrays/functions/complex
+           cannot go to a register and are not assignable here anyway. */
+        if ((vtop->r & VT_LVAL) && !nocode_wanted) {
+            int bt = vtop->type.t & VT_BTYPE;
+            if (bt != VT_STRUCT && bt != VT_VOID && bt != VT_FUNC
+                && !(vtop->type.t & (VT_ARRAY | VT_VLA))
+                && !is_complex_type(&vtop->type))
+                gv(RC_TYPE(vtop->type.t));
+        }
 
         if ((vtop->r & VT_VALMASK) == VT_CONST && nocode_wanted && !CONST_WANTED)
             if (vtop->type.t != VT_VOID && (vtop->type.t & VT_BTYPE) != VT_STRUCT)
@@ -8759,18 +8881,46 @@ static void decl_initializer(init_params *p, CType *type, unsigned long c, int f
               || (tok == TOK_STR && (t1->t & VT_BTYPE) == VT_BYTE)) {
 	    len = 0;
             cstr_reset(&initstr);
-            if (size1 != (tok == TOK_STR ? 1
-                          : tok == TOK_U16STR ? 2
-                          : tok == TOK_U32STR ? 4 : sizeof(nwchar_t)))
-              mcc_error("unhandled string literal merging");
-            while (tok == TOK_STR || tok == TOK_LSTR
-                   || tok == TOK_U16STR || tok == TOK_U32STR) {
+            /* 6.4.5: concatenate adjacent string literals into the array's
+               element width (size1). A narrow literal adjacent to a wide one is
+               widened to the wide element type (p5); two different wide encoding
+               prefixes cannot be combined (p2). The element type here is fixed by
+               the first literal, so a literal wider than that element (a wide
+               literal following a narrower one) can't be represented. */
+            {
+              int merge_kind = (tok == TOK_STR) ? 0 : tok;
+              while (tok == TOK_STR || tok == TOK_LSTR
+                     || tok == TOK_U16STR || tok == TOK_U32STR) {
+                int toksz = tok == TOK_STR ? 1 : tok == TOK_U16STR ? 2
+                          : tok == TOK_U32STR ? 4 : sizeof(nwchar_t);
+                int nch = tokc.str.size / toksz, i;
+                if (tok != TOK_STR) {
+                    if (merge_kind && merge_kind != tok)
+                        mcc_error("unsupported concatenation of string literals "
+                                  "with different encoding prefixes");
+                    merge_kind = tok;
+                }
+                if (toksz > size1)
+                    mcc_error("a wide string literal cannot follow a narrower "
+                              "string literal in a concatenation");
                 if (initstr.size)
-                  initstr.size -= size1;
-                len += tokc.str.size / size1;
-                len--;
-                cstr_cat(&initstr, tokc.str.data, tokc.str.size);
+                    initstr.size -= size1;       /* drop the previous NUL */
+                len += nch - 1;
+                if (toksz == size1) {
+                    cstr_cat(&initstr, tokc.str.data, tokc.str.size);
+                } else {
+                    for (i = 0; i < nch; i++) {
+                        unsigned int ch =
+                            toksz == 1 ? ((unsigned char *)tokc.str.data)[i]
+                          : toksz == 2 ? ((unsigned short *)tokc.str.data)[i]
+                          : ((unsigned int *)tokc.str.data)[i];
+                        if (size1 == 1) { unsigned char v = ch; cstr_cat(&initstr, (char *)&v, 1); }
+                        else if (size1 == 2) { unsigned short v = ch; cstr_cat(&initstr, (char *)&v, 2); }
+                        else { unsigned int v = ch; cstr_cat(&initstr, (char *)&v, 4); }
+                    }
+                }
                 next();
+              }
             }
             if (tok != ')' && tok != '}' && tok != ',' && tok != ';'
                 && tok != TOK_EOF) {
@@ -9500,6 +9650,12 @@ static int decl(int l)
             }
             if ((type.t & VT_BTYPE) != VT_FUNC && (type.t & VT_INLINE))
                 mcc_error("'inline' used outside of a function declaration");
+            /* 6.7.6.2p2 / 6.7p5: an object with a variably-modified (VLA) type
+               shall have no linkage. extern gives linkage; file-scope/static
+               VLAs are rejected elsewhere, but the extern path is unguarded. */
+            if ((type.t & VT_VLA) && (type.t & VT_EXTERN)
+                && (type.t & VT_BTYPE) != VT_FUNC)
+                mcc_error("object with variably modified type must have no linkage");
             /* 6.7.4p2: _Noreturn shall apply only to a function. gcc accepts
                `_Noreturn int x;` as an extension; diagnose under -pedantic.
                (Bit 128 marks the _Noreturn *keyword*, distinct from
@@ -9507,7 +9663,11 @@ static int decl(int l)
             if ((ad.storage_class & 128) && (type.t & VT_BTYPE) != VT_FUNC)
                 mcc_pedantic("'_Noreturn' used outside of a function declaration");
             if (type.t & VT_TLS) {
-                if ((type.t & VT_BTYPE) == VT_FUNC)
+                /* 6.7.1p3: _Thread_local may appear only with static or extern;
+                   combined with typedef it is a constraint violation. */
+                if (type.t & VT_TYPEDEF)
+                    mcc_error("'_Thread_local' used with 'typedef'");
+                else if ((type.t & VT_BTYPE) == VT_FUNC)
                     mcc_error("'_Thread_local' applied to a function");
                 else if (l != VT_CONST && !(type.t & (VT_STATIC | VT_EXTERN)))
                     mcc_error("'_Thread_local' at block scope requires "

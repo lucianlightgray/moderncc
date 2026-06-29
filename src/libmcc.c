@@ -2008,15 +2008,19 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
                 if (*std == '=')
                     std++;
                 const char *disp = std;
+                int strict_iso = 0;
                 /* Strip the gnu/c/iso9899 prefix and keep only the version.
                    mcc leaves GNU extensions enabled regardless of -std: its
                    gnu_ext flag also gates __asm__/__attribute__/__typeof__,
-                   which the system headers rely on even in strict C mode. */
+                   which the system headers rely on even in strict C mode.
+                   strict_iso records `c`/`iso9899` (not `gnu`) so trigraphs can
+                   be turned on for strict ISO mode below (5.2.1.1). */
                 if (strstart("gnu", &std))
                     ;
                 else if (strstart("c", &std))
-                    ;
+                    strict_iso = 1;
                 else if (strstart("iso9899:", &std)) {
+                    strict_iso = 1;
                     if (!strcmp(std, "1990"))                                std = "90";
                     else if (!strcmp(std, "199409"))                         std = "94";
                     else if (!strcmp(std, "1999") || !strcmp(std, "199901")) std = "99";
@@ -2040,6 +2044,11 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
                     s->cversion = 202311;
                 else
                     mcc_warning("unsupported language standard '%s'", disp);
+                /* 5.2.1.1 / translation phase 1: a strict ISO mode processes
+                   trigraphs (gcc/clang do in -std=cNN/iso9899); -std=gnu* and
+                   the default leave them off. Trigraphs were removed in C23. */
+                if (strict_iso)
+                    s->trigraphs = !(s->cversion >= 202311);
             }
             break;
         case MCC_OPTION_shared:

@@ -1194,7 +1194,12 @@ static void parse_asm_operands(ASMOperand *operands, int *nb_operands_ptr,
 	    astr = parse_mult_str("string constant")->data;
             pstrcpy(op->constraint, sizeof op->constraint, astr);
             skip('(');
+            /* GNU lvalue-cast extension is valid for asm operands, so suppress
+               the §6.5.4 cast-is-not-an-lvalue materialization while parsing
+               the operand expression (e.g. `"=a" ((USItype)(x))`). */
+            asm_lvalue_cast++;
             gexpr();
+            asm_lvalue_cast--;
             if (is_output) {
                 if (!(vtop->type.t & VT_ARRAY))
                     test_lvalue();

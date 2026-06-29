@@ -1363,6 +1363,7 @@ ST_DATA int rsym, anon_sym, ind, loc;
 ST_DATA char debug_modes;
 
 ST_DATA int nocode_wanted;
+ST_DATA int asm_lvalue_cast;
 ST_DATA int global_expr;
 ST_DATA CType func_vt;
 ST_DATA int func_var;

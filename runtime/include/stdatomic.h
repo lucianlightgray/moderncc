@@ -177,8 +177,10 @@ extern void atomic_signal_fence (memory_order);
 extern bool __atomic_is_lock_free(size_t size, void *ptr);
 #define atomic_is_lock_free(OBJ) __atomic_is_lock_free (sizeof (*(OBJ)), (OBJ))
 
-extern bool atomic_flag_test_and_set(void *object);
-extern bool atomic_flag_test_and_set_explicit(void *object, memory_order order);
-extern void atomic_flag_clear(void *object);
-extern void atomic_flag_clear_explicit(void *object, memory_order order);
+/* 7.17.8: the standard signatures take volatile atomic_flag * (not void *), so
+   passing a non-atomic_flag argument is diagnosed (matching gcc/clang). */
+extern bool atomic_flag_test_and_set(volatile atomic_flag *object);
+extern bool atomic_flag_test_and_set_explicit(volatile atomic_flag *object, memory_order order);
+extern void atomic_flag_clear(volatile atomic_flag *object);
+extern void atomic_flag_clear_explicit(volatile atomic_flag *object, memory_order order);
 #endif
