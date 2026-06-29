@@ -430,6 +430,179 @@ complex→complex *constant conversion* — see §6.9.2 and §7.3.1 above.*
 
 ---
 
+## Sweep 2 — additional gaps (fresh 5-agent aggressive pass, 2026-06-29)
+
+A second clause-by-clause sweep (Annex F/G FP, deep §7 library, §6.3/6.5/6.6
+expressions, §6.7/6.2 declarations, §6.10/§5 preprocessor), each item 3-way
+verified vs gcc 15.3 / clang 22 and confirmed *not* already tracked above. The
+bulk of each area matched the references; these are the residual divergences.
+
+### §6.4 / §6.10 lexical & preprocessor
+
+- [ ] **[BUG] §5.1.1.2 — `mcc -E` infinite-loops on an identifier followed by `\`+whitespace+newline.**
+  `printf 'a\\ \nb\n' | mcc -E` spins forever (rc=124). The `parse_ident_ucn`
+  loop (`src/mccpp.c:2818-2827`) hits a `\` that `decode_ucn` rejects and that is
+  not an immediate splice, then `p--; PEEKC(c,p); continue;` re-reads the same
+  `\` (`PEEKC` = `c=*++p`, `src/mccpp.c:747`) → no progress. A *different* trigger
+  from the already-fixed `//`/`/*` paste hang.
+  3-way: mcc=HANG | gcc/clang=splice + "backslash and newline separated by space".
+  Gap: consume `\`+ws+NL as a (warned) splice, or end the token; must make progress.
+
+- [ ] **[BUG] §5.1.1.2 / §6.10 — `\`+whitespace+newline neither spliced nor diagnosed.**
+  Non-hang manifestation of the same lexer hole: `-c` hard-errors "stray '\'"
+  (rejects-valid vs the refs' splice extension); `#define A 1 \  <NL>B` under `-E`
+  silently emits an invalid stray `\` token. Fixing the lexer to treat `\`+ws+NL
+  as a warned splice resolves both this and the hang above.
+  3-way: mcc=stray-`\`/no-splice | gcc/clang=splice+warn.
+
+- [ ] **[DIAG] §6.4.4.4p10 — multi-character character constant not diagnosed.**
+  `'ab'` (value impl-defined) compiles silently in code and in `#if`; both refs
+  warn `-Wmultichar` (default-on). The value mcc computes is correct (big-endian).
+  3-way: mcc=silent | gcc/clang=warning.
+
+- [ ] **[DIAG] §6.10.1 — integer overflow in a `#if` controlling expression not diagnosed.**
+  `#if 9223372036854775807 + 1 < 0` is silent (takes the wrapped branch); `#if 1%0`
+  is correctly diagnosed — only overflow is silent. Both refs warn "integer
+  overflow in preprocessor expression".
+  3-way: mcc=silent | gcc/clang=warning.
+
+- [ ] **[DIFF] §6.10.4p3 — `#line 2147483648` wraps `__LINE__` to a negative value.**
+  Parsed into signed 32-bit → `__LINE__` becomes `-2147483648` (UB territory).
+  Both refs carry 2147483648. Low priority (>INT_MAX line numbers are UB).
+  3-way: mcc=-2147483648 | gcc/clang=2147483648.
+
+### §6.3 / §6.5 / §6.6 conversions & expressions
+
+- [ ] **[DIAG] §6.5.16.1/§6.3.2.3p2 — nested-pointer qualifier mismatch silently accepted (const-laundering).**
+  `const int **q = p;` (p is `int**`) compiles with no diagnostic even at
+  `-pedantic-errors`, and *miscompiles*: `*q = &c; *mut = 99;` mutates a `const
+  int`. `verify_assign_cast` (`src/mccgen.c:3504-3527`) only flags the top-level
+  qualifier-*discard* direction; `is_compatible_unqualified_types` strips deep
+  qualifiers, masking the incompatibility. (The reverse `const int**→int**` IS
+  warned.) gcc errors, clang warns. **Strongest sweep-2 finding — a real safety
+  hole.**
+  3-way: mcc=accepts(const-launders) | gcc=error | clang=warn.
+
+- [ ] **[OPT] §6.5.6 — `void *` / function-pointer arithmetic never diagnosed.**
+  `void *p; p++;`, `fp++`, `fp+1`, `void*−void*` all accepted even at
+  `-pedantic-errors` (mcc treats `sizeof(void)`/`sizeof(func)`=1). gcc/clang
+  diagnose under `-pedantic` (`-Wpointer-arith`/`-Wgnu-pointer-arith`). No
+  pointer-arith pedantic diagnostic exists in the source.
+
+- [ ] **[OPT] §6.3.2.3 — function-pointer ↔ `void *` conversion never diagnosed.**
+  `void *v = fp;` / `fp = v;` silent even at `-pedantic-errors`; gcc/clang error
+  under `-pedantic` ("ISO C forbids ... between function pointer and 'void *'").
+
+- [ ] **[OPT] §6.6p6 — float-derived (non-ICE) array size silently folded.**
+  `int a[(int)(1.0+2.0)];` / `int a[(1.0<2.0)?4:2];` accepted silently at file
+  scope; a cast of a float *expression* (not a float constant) is not an ICE.
+  gcc/clang warn by default (VLA-folded). Distinct from the tracked comma-in-ICE
+  §6.6p3 item.
+
+### §6.7 / §6.2 / §6.9 declarations
+
+- [ ] **[DIAG] §6.7.1p2 — `auto`/`register` never enter the multiple-storage-class check (accepts-invalid).**
+  `parse_btype` records `auto`/`register` only in `ad->storage_class` (bits 1/2,
+  `src/mccgen.c:5040-5046`); the conflict check (`src/mccgen.c:5072`,
+  `t & (VT_EXTERN|VT_STATIC|VT_TYPEDEF) & ~g`) never sees them, so `static auto`,
+  `auto static`, `register static`, `extern auto`, `auto auto`, `register register`
+  all compile. gcc+clang reject "multiple storage classes". **Strong (accepts-invalid).**
+  3-way: mcc=accepts(all 8) | gcc=error | clang=error.
+
+- [ ] **[DIAG] §6.7.6.3p7 — `int a[static]` (no size operand) accepted (accepts-invalid).**
+  `void f(int a[static]);` compiles; the `static`/qualifiers in an array parameter
+  require a size expression. gcc+clang error "'static' may not be used without an
+  array size".
+  3-way: mcc=accepts | gcc=error | clang=error.
+
+- [ ] **[DIAG] §6.7p3 — C99 typedef redefinition (same type) not diagnosed under `-std=c99 -pedantic`.**
+  `typedef int T; typedef int T;` is silent in C99 mode; same-type typedef
+  redefinition is only permitted in C11. Both refs warn under `-pedantic`/note it
+  as a C11 feature. (Correctly silent in C11; conflicting-type redef is correctly
+  an error in both modes.)
+
+- [ ] **[DIAG] §6.7.2.1 — struct with only unnamed bit-fields not diagnosed under `-pedantic`.**
+  `struct S { int : 4; };` compiles even at `-pedantic-errors`; a struct with no
+  *named* members is a GNU extension. Both refs error under `-pedantic`. (The
+  FAM-in-no-named-members case IS diagnosed; this is the plain unnamed-bitfield-only one.)
+
+- [ ] **[DIAG] §6.7.2.1 — empty struct `struct S { };` not diagnosed under `-pedantic`.**
+  Compiles even at `-pedantic-errors`; an empty struct/union is a GNU extension,
+  not valid ISO C. Both refs error under `-pedantic`.
+
+- [ ] **[DIAG] §6.7.2.1 — anonymous struct/union members not flagged as a C11 feature in `-std=c99 -pedantic`.**
+  `struct S { struct { int x; }; };` is silent in C99 mode; anonymous members are
+  C11. Both refs warn "ISO C99 doesn't support unnamed structs/unions" under
+  `-pedantic`. (Correctly accepted in C11.)
+
+- [ ] **[DIAG] §6.9p1 — stray `;` at file scope not diagnosed under `-pedantic`.**
+  A top-level `;` (empty external declaration) compiles at `-pedantic`; not valid
+  ISO C. Both refs warn (`-Wpedantic`/`-Wextra-semi`).
+
+- [ ] **[DIAG] §6.7.2.1 — no-declarator tagged struct *member* not flagged "declaration does not declare anything".**
+  `struct S { struct T { int x; }; };` is silent even at `-pedantic`, though mcc
+  has the warning for the file-scope `int;`/`typedef int;` cases. Both refs warn.
+  Low value.
+
+- [ ] **[DIAG] §6.7.9p14 — wrong-element-type string-literal initializer gives a misleading diagnostic.**
+  `int a[4] = "abc";` / `char a[]=L"abc"` / `wchar_t a[]="abc"` are rejected (so
+  conformant) but with "assignment makes integer from pointer without a cast" +
+  "',' expected" instead of a string-literal-init message. Quality-only.
+
+- [ ] **[DIAG] §6.8.6.4p1 — `return <expr>;` in `void` / `return;` in non-`void` warn instead of error.**
+  mcc warns (rc=0) where both refs hard-error. Severity-only divergence (same
+  lenient-warning stance as the tracked const-assignment §6.5.16.1 item). Low priority.
+
+- [ ] **[DIAG] §7.16.1.4 — `va_start` on a `register`-qualified last parameter not diagnosed.**
+  `int f(register int n, ...){ va_start(a,n); }` is silent at all levels; both refs
+  warn (`-Wvarargs`). UB, no diagnostic mandated — low priority.
+
+### §7 library / floating-point builtins
+
+- [ ] **[FEATURE] §F/§7.12 — the GCC/Clang floating-point builtin family is entirely absent.**
+  `__builtin_{inf,inff,infl,nan,nanf,nans,huge_val*,fabs,copysign,isnan,isinf,
+  isfinite,isnormal,signbit,fpclassify,isgreater,isless,isunordered,...}` are all
+  unknown → "implicit declaration" + unresolved-reference link failure, and cannot
+  appear in constant expressions (`static int a=__builtin_isnan(1.0)` fails). gcc+
+  clang provide all. mcc only survives `#include <math.h>` because glibc/musl gate
+  `NAN`/`INFINITY` on `__GNUC__` (which mcc doesn't define) and fall back. This is
+  also the root cause of the two DIFFs below. Implement at least
+  inf*/nan*/huge_val*/fabs/copysign (codegen + constant-foldable) and the
+  isnan/isinf/isfinite/isnormal/signbit/fpclassify/isgreater/isless/isunordered
+  classification builtins.
+
+- [ ] **[DIFF] §7.12/F.2.1 — the `NAN` macro yields a *negative* NaN (`-nan`).**
+  Downstream of the missing `__builtin_nanf`: glibc falls back to `(0.0f/0.0f)`,
+  which mcc folds to a sign-bit-set NaN; gcc/clang use `__builtin_nanf("")` → +NaN.
+  Conforming (sign unspecified) but observably divergent. Fixed by providing
+  `__builtin_nanf` (positive quiet NaN).
+  3-way: mcc=`-nan` | gcc/clang=`nan`.
+
+- [ ] **[DIFF] §7.12.3.6 — `signbit(-1.0)` returns 128, not 1.**
+  Downstream of the missing `__builtin_signbit`: glibc takes the extern-`__signbit`
+  path returning the sign byte (0x80). Nonzero → conforming, but diverges from
+  both refs (which return 1 via `__builtin_signbit`).
+  3-way: mcc=128 | gcc/clang=1.
+
+- [ ] **[DIAG] §7.3.1p2 — `<complex.h>` defines `_Imaginary_I` though mcc has no imaginary types.**
+  `complex.h:12` `#define _Imaginary_I _Complex_I` — the macro shall be defined
+  iff the implementation supports imaginary types (it doesn't). A feature probe
+  would wrongly conclude imaginary types exist. (`imaginary` itself is correctly
+  undefined.) Drop the line.
+  3-way: mcc=defined | gcc/clang=undefined.
+
+### infrastructure (sweep 2)
+
+- [ ] **[FEATURE] §6.10.8.1/§5.1.2.1 — `-ffreestanding` is a silent no-op; `__STDC_HOSTED__` stays 1.**
+  `mcc -ffreestanding -dM -E` still defines `__STDC_HOSTED__ 1`; `-fhosted`
+  likewise. A freestanding implementation must report 0 so programs/headers can
+  gate hosted-only library use. gcc/clang flip it to 0. Gap: wire
+  `-ffreestanding`/`-fhosted` to drive `__STDC_HOSTED__` (and, ideally, the
+  freestanding-vs-hosted header set).
+  3-way: mcc=1 | gcc/clang=0 (all =1 with no flag).
+
+---
+
 ## Cross-cutting infrastructure
 
 - [x] **[TASK] `-pedantic` / `-pedantic-errors` flag.** Already implemented
