@@ -2313,13 +2313,22 @@ endif()
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/behavior/bounds_stress.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/behavior/floating_point.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/diagnostics/compile_errors.c")
+    # X11 examples need <X11/Xlib.h>, which isn't part of the C toolchain: the
+    # WIN32 target doesn't ship it, and many hosts (e.g. a stock macOS without
+    # XQuartz) lack it too. Probe the headers mcc would actually see so the
+    # example is skipped-with-reason rather than failing to compile.
+    # Probe only the dirs mcc itself searches (NO_DEFAULT_PATH avoids false hits
+    # like the SDK's Tk.framework/Headers/X11, which mcc never looks in).
+    set(_x11_search "${MCC_SYSROOT}/usr/include" /usr/include /opt/X11/include
+                    /usr/X11R6/include /usr/local/include)
+    unset(MCC_X11_INCLUDE_DIR CACHE)
+    find_path(MCC_X11_INCLUDE_DIR NAMES X11/Xlib.h PATHS ${_x11_search} NO_DEFAULT_PATH)
     foreach(_f IN LISTS _orphan_srcs)
         get_filename_component(_n "${_f}" NAME_WE)
-        # X11 examples can't be parsed without X11 headers, which the WIN32
-        # target doesn't ship (and a Windows host won't have).
         file(READ "${_f}" _orphan_txt)
-        if(MCC_TARGETOS STREQUAL "WIN32" AND _orphan_txt MATCHES "X11/Xlib.h")
-            mcc_skip_test(compile.${_n} "X11 example; no X11 headers on the WIN32 target")
+        if(_orphan_txt MATCHES "X11/Xlib.h"
+           AND (MCC_TARGETOS STREQUAL "WIN32" OR NOT MCC_X11_INCLUDE_DIR))
+            mcc_skip_test(compile.${_n} "X11 example; <X11/Xlib.h> not available on this host/target")
             continue()
         endif()
         add_test(NAME compile.${_n} COMMAND ${MCC_EMULATOR} "${_mcc_exe}"
