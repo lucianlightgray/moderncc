@@ -2701,7 +2701,7 @@ endif()
                     "${CMAKE_CURRENT_SOURCE_DIR}" "${MCC_CROSS_DIR}"
                     "${CMAKE_BINARY_DIR}/macho-image-work")
         set_tests_properties(macho-image-run PROPERTIES
-            FIXTURES_REQUIRED MCC_BUILT LABELS "macho")
+            FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
     else()
         mcc_skip_test(macho-image-run
             "requires the x86_64-osx cross compiler (cmake --preset cross)")
@@ -2721,11 +2721,28 @@ endif()
                     "${CMAKE_CURRENT_SOURCE_DIR}" "${MCC_CROSS_DIR}"
                     "${CMAKE_BINARY_DIR}/macho-apple-libc-work")
         set_tests_properties(macho-apple-libc PROPERTIES
-            FIXTURES_REQUIRED MCC_BUILT LABELS "macho")
+            FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
     else()
         mcc_skip_test(macho-apple-libc
             "requires the x86_64-osx cross compiler (cmake --preset cross)")
     endif()
+
+    # Mach-O (Darwin) NATIVE runtime conformance — for an actual macOS host.
+    # The codegen/image/apple-libc drivers above approximate, on Linux/x86_64,
+    # what a macOS host provides natively (a loader, dyld, real libSystem, TLV).
+    # On Darwin none of that scaffolding is needed: the native `mcc` emits a
+    # native Mach-O linked against the system libSystem, so each self-checking
+    # conformance program just compiles and runs. This covers a STRICT SUPERSET
+    # of the Linux approximations — the TLS programs (Darwin TLV) and the
+    # libc-dependent programs (real locale/stdio/malloc) run here too. The driver
+    # self-skips (exit 77) off a Darwin host or with a non-Mach-O mcc, so it is
+    # registered unconditionally and reported as Skipped where inapplicable.
+    add_test(NAME macho-conformance-native
+        COMMAND /bin/sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/run_macho_native.sh"
+                "${CMAKE_CURRENT_SOURCE_DIR}" "$<TARGET_FILE:mcc>"
+                "${CMAKE_BINARY_DIR}" "${CMAKE_BINARY_DIR}/macho-native-work")
+    set_tests_properties(macho-conformance-native PROPERTIES
+        FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
 
     # The kernel-fused remainder of libSystem (libmalloc, locale/FILE stdio,
     # dyld, pthread, GCD, ObjC) cannot be exercised off-macOS: verified

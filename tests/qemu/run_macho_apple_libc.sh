@@ -23,7 +23,8 @@
 # host; PROVENANCE.md documents that boundary.
 #
 # Usage: run_macho_apple_libc.sh <src-dir> <cross-build-dir> <work-dir>
-# Skips (exit 0) unless host is x86_64 with the x86_64-osx cross compiler + gcc.
+# Self-skips (exit 77, ctest SKIP_RETURN_CODE) unless host is x86_64 with the
+# x86_64-osx cross compiler + gcc.
 set -eu
 
 SRC=$1; XB=$2; WORK=$3
@@ -31,14 +32,14 @@ AL="$SRC/tests/qemu/apple-libc"
 MCC="$XB/x86_64-osx-mcc"
 OSXRT="$XB/lib-x86_64-osx"        # mcc's own Darwin runtime (__va_arg etc.)
 
-[ "$(uname -m)" = x86_64 ] || { echo "SKIP: host is not x86_64"; exit 0; }
-[ -x "$MCC" ] || { echo "SKIP: no x86_64-osx-mcc"; exit 0; }
-command -v gcc >/dev/null 2>&1 || { echo "SKIP: no gcc for the loader"; exit 0; }
-[ -f "$AL/src/strcspn.c" ] || { echo "SKIP: vendored Apple sources absent"; exit 0; }
+[ "$(uname -m)" = x86_64 ] || { echo "SKIP: host is not x86_64"; exit 77; }
+[ -x "$MCC" ] || { echo "SKIP: no x86_64-osx-mcc"; exit 77; }
+command -v gcc >/dev/null 2>&1 || { echo "SKIP: no gcc for the loader"; exit 77; }
+[ -f "$AL/src/strcspn.c" ] || { echo "SKIP: vendored Apple sources absent"; exit 77; }
 
 mkdir -p "$WORK"
 if ! gcc -O2 "$SRC/tests/qemu/macho/loader.c" -o "$WORK/machoload" 2>"$WORK/err.txt"; then
-    echo "SKIP: cannot build Mach-O loader (no seccomp?): $(head -1 "$WORK/err.txt")"; exit 0
+    echo "SKIP: cannot build Mach-O loader (no seccomp?): $(head -1 "$WORK/err.txt")"; exit 77
 fi
 
 # Freestanding entry only -- NO hand-written libc. Every str*/mem*/format symbol
