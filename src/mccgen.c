@@ -9454,7 +9454,89 @@ static void decl_initializer(init_params *p, CType *type, unsigned long c, int f
     }
 }
 
-static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r, 
+/* 6.4.5p5: gather a run of adjacent string literals (current tok is the first)
+   into a token stream. The common prefix of a run is the WIDEST one present,
+   regardless of order, and an unprefixed literal takes the others'. The merge
+   loop in decl_initializer fixes the element width from the FIRST literal, so a
+   NARROW-FIRST run (`"a" L"b"`) would reject the later wider literal. When the
+   run is narrow-first this re-concatenates the whole run into a single literal of
+   the run's widest prefix (with the 6.4.5p2 different-prefix-conflict check), so
+   the rest of the path sees one consistent wide literal; for the synthesized
+   bare-string-expression type (has_init==2) the array element is widened to
+   match. Wide-first/same-prefix/single-string runs are copied through unchanged. */
+static TokenString *gather_string_run(CType *type, int has_init)
+{
+#define MCC_STRSZ(k) ((k)==TOK_STR?1:(k)==TOK_U16STR?2:(k)==TOK_U32STR?4:(int)sizeof(nwchar_t))
+    TokenString *istr = tok_str_alloc();
+    CString *parts = NULL;
+    int *pkinds = NULL, nparts = 0, firstsz = 0, wsz = 0, wkind = TOK_STR;
+    while (tok == TOK_STR || tok == TOK_LSTR
+           || tok == TOK_U32STR || tok == TOK_U16STR) {
+        int sz = MCC_STRSZ(tok);
+        tok_str_add_tok(istr);
+        parts = mcc_realloc(parts, (nparts + 1) * sizeof(CString));
+        pkinds = mcc_realloc(pkinds, (nparts + 1) * sizeof(int));
+        cstr_new(&parts[nparts]);
+        cstr_cat(&parts[nparts], tokc.str.data, tokc.str.size);
+        pkinds[nparts] = tok;
+        if (!firstsz) firstsz = sz;
+        if (sz > wsz) { wsz = sz; wkind = tok; }
+        nparts++;
+        next();
+    }
+    tok_str_add(istr, TOK_EOF);
+    if (firstsz && wsz > firstsz) {     /* narrow-first: must widen */
+        int wet = wkind == TOK_U16STR ? (VT_SHORT | VT_UNSIGNED)
+                : wkind == TOK_U32STR ? (VT_INT | VT_UNSIGNED)
+#ifdef MCC_TARGET_PE
+                : (VT_SHORT | VT_UNSIGNED);
+#else
+                : VT_INT;
+#endif
+        CString cc;
+        int merge_kind = 0, j, i, save_tok = tok;
+        CValue save_tokc = tokc;
+        cstr_new(&cc);
+        for (j = 0; j < nparts; j++) {
+            int tk = pkinds[j], toksz = MCC_STRSZ(tk);
+            int nch = parts[j].size / toksz;
+            /* 6.4.5p2: two different non-empty prefixes cannot combine */
+            if (tk != TOK_STR) {
+                if (merge_kind && merge_kind != tk)
+                    mcc_error("unsupported concatenation of string "
+                              "literals with different encoding prefixes");
+                merge_kind = tk;
+            }
+            for (i = 0; i < nch - 1; i++) {   /* drop each trailing NUL */
+                unsigned int ch =
+                    toksz == 1 ? ((unsigned char *)parts[j].data)[i]
+                  : toksz == 2 ? ((unsigned short *)parts[j].data)[i]
+                  : ((unsigned int *)parts[j].data)[i];
+                if (wsz == 2) { unsigned short v = ch; cstr_cat(&cc, (char *)&v, 2); }
+                else { unsigned int v = ch; cstr_cat(&cc, (char *)&v, 4); }
+            }
+        }
+        { unsigned int z = 0; cstr_cat(&cc, (char *)&z, wsz); }   /* final NUL */
+        /* replace istr with one synthesized widest-prefix literal */
+        tok_str_free(istr);
+        istr = tok_str_alloc();
+        tok = wkind; tokc.str.size = cc.size; tokc.str.data = cc.data;
+        tok_str_add_tok(istr);
+        tok = save_tok; tokc = save_tokc;
+        tok_str_add(istr, TOK_EOF);
+        cstr_free(&cc);
+        if (has_init == 2 && (type->t & VT_ARRAY))
+            type->ref->type.t = wet | (type->ref->type.t & VT_CONSTANT);
+    }
+    for (int j = 0; j < nparts; j++)
+        cstr_free(&parts[j]);
+    mcc_free(parts);
+    mcc_free(pkinds);
+    return istr;
+#undef MCC_STRSZ
+}
+
+static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
                                    int has_init, int v, int scope)
 {
     int size, align, addr;
@@ -9512,87 +9594,7 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
         if (has_init == 2
             || tok == TOK_STR || tok == TOK_LSTR
             || tok == TOK_U16STR || tok == TOK_U32STR) {
-            /* 6.4.5p5: in a run of adjacent string literals the common prefix is
-               the widest one present, regardless of order; an unprefixed literal
-               takes the others'. The merge loop in decl_initializer fixes the
-               element width from the FIRST literal, so a NARROW-FIRST run
-               (`"a" L"b"`) would reject the later wider literal. Capture the run's
-               literals here; if it is narrow-first, re-concatenate the whole run
-               into a single literal of the widest prefix and widen the synthesized
-               array's element type to match, so the rest of the path sees one
-               consistent wide literal. (Wide-first/same-prefix runs are
-               untouched — they already work and stay on the existing path.) */
-#define MCC_STRSZ(k) ((k)==TOK_STR?1:(k)==TOK_U16STR?2:(k)==TOK_U32STR?4:(int)sizeof(nwchar_t))
-            CString *parts = NULL;
-            int *pkinds = NULL, nparts = 0, firstsz = 0, wsz = 0, wkind = TOK_STR;
-            init_str = tok_str_alloc();
-            while (tok == TOK_STR || tok == TOK_LSTR
-                   || tok == TOK_U32STR || tok == TOK_U16STR) {
-                int sz = MCC_STRSZ(tok);
-                tok_str_add_tok(init_str);
-                parts = mcc_realloc(parts, (nparts + 1) * sizeof(CString));
-                pkinds = mcc_realloc(pkinds, (nparts + 1) * sizeof(int));
-                cstr_new(&parts[nparts]);
-                cstr_cat(&parts[nparts], tokc.str.data, tokc.str.size);
-                pkinds[nparts] = tok;
-                if (!firstsz) firstsz = sz;
-                if (sz > wsz) { wsz = sz; wkind = tok; }
-                nparts++;
-                next();
-            }
-            tok_str_add(init_str, TOK_EOF);
-            if (firstsz && wsz > firstsz) {     /* narrow-first: must widen */
-                int wet = wkind == TOK_U16STR ? (VT_SHORT | VT_UNSIGNED)
-                        : wkind == TOK_U32STR ? (VT_INT | VT_UNSIGNED)
-#ifdef MCC_TARGET_PE
-                        : (VT_SHORT | VT_UNSIGNED);
-#else
-                        : VT_INT;
-#endif
-                CString cc;
-                int merge_kind = 0, j, i, save_tok = tok;
-                CValue save_tokc = tokc;
-                cstr_new(&cc);
-                for (j = 0; j < nparts; j++) {
-                    int tk = pkinds[j], toksz = MCC_STRSZ(tk);
-                    int nch = parts[j].size / toksz;
-                    /* 6.4.5p2: two different non-empty prefixes cannot combine */
-                    if (tk != TOK_STR) {
-                        if (merge_kind && merge_kind != tk)
-                            mcc_error("unsupported concatenation of string "
-                                      "literals with different encoding prefixes");
-                        merge_kind = tk;
-                    }
-                    for (i = 0; i < nch - 1; i++) {   /* drop each trailing NUL */
-                        unsigned int ch =
-                            toksz == 1 ? ((unsigned char *)parts[j].data)[i]
-                          : toksz == 2 ? ((unsigned short *)parts[j].data)[i]
-                          : ((unsigned int *)parts[j].data)[i];
-                        if (wsz == 2) { unsigned short v = ch; cstr_cat(&cc, (char *)&v, 2); }
-                        else { unsigned int v = ch; cstr_cat(&cc, (char *)&v, 4); }
-                    }
-                }
-                { unsigned int z = 0; cstr_cat(&cc, (char *)&z, wsz); }   /* final NUL */
-                /* replace init_str with one synthesized widest-prefix literal */
-                tok_str_free(init_str);
-                init_str = tok_str_alloc();
-                tok = wkind; tokc.str.size = cc.size; tokc.str.data = cc.data;
-                tok_str_add_tok(init_str);
-                tok = save_tok; tokc = save_tokc;
-                tok_str_add(init_str, TOK_EOF);
-                cstr_free(&cc);
-                /* Only widen a *synthesized* element type (the bare string
-                   literal expression, has_init==2); a declared array's element
-                   is fixed — if the widened run doesn't match it, the normal
-                   element-type mismatch diagnostic fires downstream. */
-                if (has_init == 2 && (type->t & VT_ARRAY))
-                    type->ref->type.t = wet | (type->ref->type.t & VT_CONSTANT);
-            }
-            for (int j = 0; j < nparts; j++)
-                cstr_free(&parts[j]);
-            mcc_free(parts);
-            mcc_free(pkinds);
-#undef MCC_STRSZ
+            init_str = gather_string_run(type, has_init);
         } else
             skip_or_save_block(&init_str);
         unget_tok(0);
@@ -9763,6 +9765,26 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
         cur_scope->vla.num++;
     } else if (has_init) {
         p.sec = sec;
+        /* 6.4.5p5: an *explicitly-sized* array (size>=0, so no size<0 gather
+           above ran) initialized by a bare string run is read live below — which
+           fixes the element width from the first literal. If the array element is
+           WIDER than the first literal, the run may be narrow-first (e.g.
+           `wchar_t a[3]="x" L"y"`), so route it through the same gather+widen and
+           replay it. Gated on element-wider-than-first-token so the common cases
+           (`char a[N]="..."`, wide-first into a wide array) stay on the live path. */
+        if (!init_str && size >= 0 && (type->t & VT_ARRAY)
+            && (tok == TOK_STR || tok == TOK_LSTR
+                || tok == TOK_U16STR || tok == TOK_U32STR)) {
+            int el_al, el_sz = type_size(pointed_type(type), &el_al);
+            int firstsz = tok == TOK_STR ? 1 : tok == TOK_U16STR ? 2
+                        : tok == TOK_U32STR ? 4 : (int)sizeof(nwchar_t);
+            if (el_sz > firstsz) {
+                init_str = gather_string_run(type, has_init);
+                unget_tok(0);
+                begin_macro(init_str, 1);
+                next();
+            }
+        }
         /* 6.5p2 (10.1): a declarator initializer is its own full expression —
            reset so side effects from a preceding for-header/statement do not
            leak in, then diagnose what the initializer itself contains. */

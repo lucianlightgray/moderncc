@@ -128,11 +128,14 @@ targets before it is marked done.
   `wchar_t a[]="x" L"y"`. Wide-first/same-prefix/single-string runs stay on the
   untouched fast path. Genuinely-mismatched inits (`char a[]=L"x"`, `wchar_t
   a[]="abc"`, `int a[]="abc"`) still error (the §6.7.9p14 check), matching gcc.
-  exec `string_concat_mixed` (extended); runtime-verified i386/arm/arm64/riscv64
-  via qemu + x86_64 native. NOTE: an *explicitly-sized* array with a narrow-first
-  mixed init (`wchar_t a[3]="x" L"y"`, the size-known live-read path with no
-  gather point) is the one remaining rare sliver — still errors cleanly, never
-  miscompiles.
+  The gather logic is factored into `gather_string_run()`, used by both the
+  incomplete-array/expression path and — gated on the array element being *wider*
+  than the first literal (so common `char a[N]="..."` and wide-first cases stay on
+  the untouched live path) — the **explicitly-sized** array path
+  (`wchar_t a[3]="x" L"y"`), which is now handled too. exec `string_concat_mixed`
+  (extended with narrow-first expr/incomplete/sized + `u`/`U` forms);
+  runtime-verified i386/arm/arm64/riscv64 via qemu + x86_64 native. No remaining
+  narrow-first cases — all match gcc.
 
 - [x] **[BUG]/[DIAG] §6.4.5p2 — conflicting wide-prefix concatenation now rejected.**
   The merge loop tracks the established wide encoding prefix and errors
@@ -799,5 +802,5 @@ bulk of each area matched the references; these are the residual divergences.
 - [x] §6.10.3p4 empty-`__VA_ARGS__` variadic invocation diagnosed under -pedantic — cli `va_args_empty_pedantic`.
 - [x] §7.17.8 `atomic_flag_*` typed `volatile atomic_flag *` (diagnoses non-pointer args) — cli `atomic_flag_type`.
 - [x] §6.2.2p7 `static` after non-static `extern` is an error (reverse stays silent) — cli `linkage_static_after_extern`.
-- [x] §6.4.5p5 mixed wide/narrow string concat: both wide-first and narrow-first widen (run's widest prefix) — exec `string_concat_mixed`; only explicit-sized-array narrow-first remains a rare sliver.
+- [x] §6.4.5p5 mixed wide/narrow string concat: wide-first AND narrow-first widen to the run's widest prefix, in expression, incomplete-array, and explicitly-sized-array forms — exec `string_concat_mixed`.
 - [x] §6.4.5p2 conflicting wide-prefix string concatenation rejected — exec `string_concat_mixed`.

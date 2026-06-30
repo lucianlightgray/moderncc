@@ -20,6 +20,7 @@ int main(void)
     const wchar_t *nf  = "ab" L"cd";       /* narrow-first expr           */
     const wchar_t *nf2 = "x" "y" L"z";     /* narrow-narrow-wide expr     */
     wchar_t wnf[] = "x" L"y";              /* narrow-first declared array */
+    wchar_t wnf3[3] = "p" L"q";            /* narrow-first explicitly-sized   */
 
     if (!(s[0]==(wchar_t)'a' && s[1]==(wchar_t)'b' && s[2]==(wchar_t)'c'
           && s[3]==(wchar_t)'d' && s[4]==0 && wlen(s)==4)) ok = 0;
@@ -29,6 +30,7 @@ int main(void)
     if (!(nf[0]==(wchar_t)'a' && nf[3]==(wchar_t)'d' && wlen(nf)==4)) ok = 0;
     if (!(nf2[0]==(wchar_t)'x' && nf2[2]==(wchar_t)'z' && wlen(nf2)==3)) ok = 0;
     if (!(wnf[0]==(wchar_t)'x' && wnf[1]==(wchar_t)'y' && wlen(wnf)==2)) ok = 0;
+    if (!(wnf3[0]==(wchar_t)'p' && wnf3[1]==(wchar_t)'q' && wnf3[2]==0)) ok = 0;
 
     printf(ok ? "OK\n" : "FAIL\n");
     return ok ? 0 : 1;
