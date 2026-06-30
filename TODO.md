@@ -72,10 +72,6 @@ Re-crawled C9911.md's `mcc:✗ gcc:✓ clang:✓` lines and re-probed each 3-way
 against the live binary. ~30 were stale (fixed in prior rounds; their C9911
 tags lag reality). These four are genuinely still open and actionable:
 
-- [ ] **§7.26.1p3 — `TSS_DTOR_ITERATIONS` is not a usable integer constant.**
-  `<threads.h>` expands it to `PTHREAD_DESTRUCTOR_ITERATIONS`, which mcc reports
-  undeclared, so `int a[TSS_DTOR_ITERATIONS];` errors where gcc/clang accept it
-  as an ICE. Fix the bundled `<threads.h>` to expand it to an integer constant.
 - [ ] **§7.25p7 — `creal`/`cimag` tgmath lose precision.** `tgmath.h` doesn't
   redefine them, so `<complex.h>`'s fixed-`double` macros give
   `sizeof(creal(long double complex))`=8 (want 16, `creall`) and

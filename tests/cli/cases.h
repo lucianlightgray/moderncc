@@ -1831,5 +1831,13 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -c {W}/un.c -o /dev/null 2>&1 && echo DEFAULT_SILENT",
   "2 warn\nOK_CLEAN\nDEFAULT_SILENT\n" },
 
+/* §7.26.1p3: <threads.h>'s TSS_DTOR_ITERATIONS must be an integer constant
+   expression — usable as an array size and in _Static_assert (was undeclared via
+   PTHREAD_DESTRUCTOR_ITERATIONS). */
+{ "tss_dtor_iterations_ice", "",
+  "printf '#include <threads.h>\\n_Static_assert(TSS_DTOR_ITERATIONS>=1,\"ice\");\\nint a[TSS_DTOR_ITERATIONS];\\nint main(void){return (int)(sizeof a/sizeof a[0])==4 ? 0 : 1;}\\n' > {W}/tss.c && "
+  "{MCC} -B{B} -I{I} -c {W}/tss.c -o /dev/null 2>&1 && echo ICE_OK",
+  "ICE_OK\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

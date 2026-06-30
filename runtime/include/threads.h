@@ -35,7 +35,15 @@ typedef int  (*thrd_start_t)(void *);
 typedef void (*tss_dtor_t)(void *);
 
 #define ONCE_FLAG_INIT      PTHREAD_ONCE_INIT
+/* §7.26.1p3: TSS_DTOR_ITERATIONS must be an integer constant expression (it is
+   used in e.g. `int a[TSS_DTOR_ITERATIONS];`). PTHREAD_DESTRUCTOR_ITERATIONS is
+   a glibc internal from <limits.h>, not reliably visible here, so fall back to
+   the POSIX-required value (_POSIX_THREAD_DESTRUCTOR_ITERATIONS == 4). */
+#ifdef PTHREAD_DESTRUCTOR_ITERATIONS
 #define TSS_DTOR_ITERATIONS PTHREAD_DESTRUCTOR_ITERATIONS
+#else
+#define TSS_DTOR_ITERATIONS 4
+#endif
 
 /* §7.26.1p3: <threads.h> shall provide the convenience macro `thread_local`
    expanding to _Thread_local. (Only in the shim branch — when a system
