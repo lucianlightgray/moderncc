@@ -737,6 +737,7 @@ struct MCCState {
     unsigned char warn_undef;           /* -Wundef: undefined identifier in #if (opt-in) */
     unsigned char warn_unknown_pragmas; /* -Wunknown-pragmas: unrecognized #pragma (-Wall) */
     unsigned char warn_implicit_int;    /* -Wimplicit-int: type defaults to int (on, like gcc) */
+    unsigned char warn_sign_compare;    /* -Wsign-compare: signed/unsigned comparison (opt-in) */
     unsigned char warn_pedantic;        /* -pedantic: diagnose ISO C extensions */
     unsigned char pedantic_errors;      /* -pedantic-errors: make them hard errors */
     #define WARN_ON  1

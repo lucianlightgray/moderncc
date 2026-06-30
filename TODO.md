@@ -74,7 +74,6 @@ new `-Wformat`.) Most need scope/dataflow tracking — size each before starting
 - [ ] **[diag] `-Wuninitialized`** — use of an uninitialized local. Needs simple
   dataflow; can be conservative to avoid false positives.
 - [ ] **[diag] `-Wparentheses`** — assignment used as a truth value (`if (x = 1)`).
-- [ ] **[diag] `-Wsign-compare`** — signed/unsigned comparison (under `-Wextra`).
 - [ ] **[diag] `-Wswitch`** — `switch` on an enum that omits a case / lacks `default`.
 - [ ] **[diag] `-Wshadow`** — a declaration shadowing one in an outer scope.
 - [ ] **[diag] `-Wextra` umbrella is inert** — accepted but enables nothing. Wire

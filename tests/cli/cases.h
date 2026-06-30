@@ -1681,5 +1681,17 @@ static const cli_case_t cli_cases[] = {
   "grep -oE \"return type defaults to 'int'|OFF_OK\" | sort | uniq -c | sed 's/^ *//'",
   "1 OFF_OK\n1 return type defaults to 'int'\n" },
 
+/* -Wsign-compare warns on a relational/equality comparison mixing signed and
+   unsigned operands (opt-in, like gcc's -Wextra). Suppressed when an operand is
+   a constant (`u < 5`, `u == 0`) or same-signedness; default is silent. */
+{ "wsign_compare", "",
+  "printf 'int bad(int a, unsigned b){ return a < b; }\\n' > {W}/sc_bad.c && "
+  "printf 'int ok(unsigned u, int a, int b){ return (u < 5) + (u == 0) + (a < b); }\\n' > {W}/sc_ok.c && "
+  "{ {MCC} -B{B} -I{I} -Wsign-compare -c {W}/sc_bad.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -Wsign-compare -Werror -c {W}/sc_ok.c -o /dev/null 2>&1 && echo OK_CLEAN; "
+  "{MCC} -B{B} -I{I} -c {W}/sc_bad.c -o /dev/null 2>&1 && echo DEFAULT_SILENT; } | "
+  "grep -oE 'different signedness|OK_CLEAN|DEFAULT_SILENT' | sort | uniq -c | sed 's/^ *//'",
+  "1 DEFAULT_SILENT\n1 OK_CLEAN\n1 different signedness\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

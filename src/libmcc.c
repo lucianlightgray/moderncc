@@ -1757,6 +1757,9 @@ static const FlagDef options_W[] = {
     /* -Wimplicit-int: a declaration whose type defaults to int (C99 removed
        implicit int). On by default (set in mcc_new); -Wno-implicit-int disables. */
     { offsetof(MCCState, warn_implicit_int), 0, "implicit-int" },
+    /* -Wsign-compare: a relational/equality comparison mixing signed and
+       unsigned operands. Opt-in (gcc enables it under -Wextra). */
+    { offsetof(MCCState, warn_sign_compare), 0, "sign-compare" },
     /* -Wunknown-pragmas: an unrecognized #pragma. Enabled by -Wall (WD_ALL),
        matching gcc, and separately controllable via -W[no-]unknown-pragmas. */
     { offsetof(MCCState, warn_unknown_pragmas), WD_ALL, "unknown-pragmas" },

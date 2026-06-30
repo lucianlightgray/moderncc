@@ -3153,6 +3153,19 @@ op_err:
             goto op_err;
         }
     std_op:
+        /* -Wsign-compare: a relational/equality comparison whose two operands
+           differ in signedness (one converts to the other's range, which can
+           surprise). Suppressed when either operand is a constant — matching
+           gcc's low-noise behavior for the common `u < 5` / `u == 0` forms. */
+        if (op_class == CMP_OP && (mcc_state->warn_sign_compare & WARN_ON)
+            && !is_float(combtype.t)
+            && (t1 & VT_UNSIGNED) != (t2 & VT_UNSIGNED)) {
+            int ac = (vtop[-1].r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
+            int bc = (vtop[0].r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
+            if (!ac && !bc)
+                mcc_warning_c(warn_sign_compare)(
+                    "comparison of integer expressions of different signedness");
+        }
         t = t2 = combtype.t;
         if (op_class == SHIFT_OP)
             t2 = VT_INT;
