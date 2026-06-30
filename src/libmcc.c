@@ -1745,9 +1745,10 @@ static const FlagDef options_W[] = {
     { offsetof(MCCState, warn_implicit_function_declaration), WD_ALL, "implicit-function-declaration" },
     { offsetof(MCCState, warn_discarded_qualifiers), WD_ALL, "discarded-qualifiers" },
     { offsetof(MCCState, warn_sequence_point), WD_ALL, "sequence-point" },
-    /* -Wformat is opt-in (NOT under -Wall) so existing -Wall builds and the
-       self-host are unaffected; it only runs when explicitly requested. */
-    { offsetof(MCCState, warn_format), 0, "format" },
+    /* -Wformat: printf/scanf format vs argument checking. Enabled by -Wall
+       (WD_ALL), matching gcc/clang; -Wno-format turns it off. The checker only
+       runs when warn_format is set, so the self-host (no -Wall) is unaffected. */
+    { offsetof(MCCState, warn_format), WD_ALL, "format" },
     /* -Wvla: diagnose use of a variable-length array (C11 made VLAs optional).
        Opt-in, like gcc (not part of -Wall/-Wextra). */
     { offsetof(MCCState, warn_vla), 0, "vla" },

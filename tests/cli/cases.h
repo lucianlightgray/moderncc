@@ -1728,5 +1728,12 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -c {W}/sw_bad.c -o /dev/null 2>&1 && echo DEFAULT_SILENT",
   "1 warn\nOK_CLEAN\nDEFAULT_SILENT\n" },
 
+/* -Wformat is now part of -Wall (matching gcc/clang); -Wno-format turns it off. */
+{ "wall_enables_format", "",
+  "printf '#include <stdio.h>\\nint main(void){ printf(\"%%d\\\\n\", \"x\"); return 0; }\\n' > {W}/f.c && "
+  "echo \"$({MCC} -B{B} -I{I} -Wall -c {W}/f.c -o /dev/null 2>&1 | grep -c 'expects an integer') warn\"; "
+  "{MCC} -B{B} -I{I} -Wall -Wno-format -Werror -c {W}/f.c -o /dev/null 2>&1 && echo NOFORMAT_OK",
+  "1 warn\nNOFORMAT_OK\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));
