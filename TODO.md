@@ -597,12 +597,12 @@ bulk of each area matched the references; these are the residual divergences.
   both refs (which return 1 via `__builtin_signbit`).
   3-way: mcc=128 | gcc/clang=1.
 
-- [ ] **[DIAG] §7.3.1p2 — `<complex.h>` defines `_Imaginary_I` though mcc has no imaginary types.**
-  `complex.h:12` `#define _Imaginary_I _Complex_I` — the macro shall be defined
-  iff the implementation supports imaginary types (it doesn't). A feature probe
-  would wrongly conclude imaginary types exist. (`imaginary` itself is correctly
-  undefined.) Drop the line.
-  3-way: mcc=defined | gcc/clang=undefined.
+- [x] **[DIAG] §7.3.1p2 — `<complex.h>` no longer defines `_Imaginary_I`.**
+  Removed the `#define _Imaginary_I _Complex_I` line from
+  `runtime/include/complex.h` — the macro is defined iff the implementation
+  supports imaginary types (mcc does not), matching gcc/clang. Verified
+  `#ifdef _Imaginary_I` is now false; complex `I` arithmetic still works (covered
+  by `c11_complex_*` exec tests).
 
 ### infrastructure (sweep 2)
 

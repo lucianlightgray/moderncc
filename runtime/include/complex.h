@@ -9,7 +9,9 @@
 #define _Complex_I      __builtin_complex(0.0f, 1.0f)
 #define I               _Complex_I
 
-#define _Imaginary_I    _Complex_I
+/* 7.3.1p2: imaginary / _Imaginary_I are defined only if the implementation
+   supports imaginary types (Annex G); mcc does not, so neither is defined
+   (matching gcc/clang). */
 
 /* 7.3.9.3: build a complex value from real/imaginary parts via the compiler's
    __builtin_complex (constant when its arguments are; usable at runtime and,
