@@ -644,11 +644,17 @@ bulk of each area matched the references; these are the residual divergences.
   all 5 arches. exec `fp_builtins`. Also added `fabs`/`fabsf`/`fabsl`,
   `signbit`/`signbitf`/`signbitl` (incl. `-0.0` detection via `1/x`), and
   `copysign`/`copysignf`/`copysignl` as constant-foldable macros — verified 3-way.
-  STILL OPEN: `fpclassify`/`isnormal` (subnormal detection needs the type's
-  smallest-normal threshold — glibc provides them); the macro builtins also
-  multi-evaluate their argument (intrinsics don't). The two DIFFs below (NAN sign,
-  signbit return) come from glibc's *own* fallback macros — not these builtins —
-  so they are unaffected.
+  `fpclassify`/`isnormal`: **work correctly via glibc + `-lm`** (verified:
+  `fpclassify` returns `FP_ZERO`/`FP_NORMAL`/`FP_INFINITE`/`FP_NAN`/`FP_SUBNORMAL`
+  and `isnormal` is correct for normal/zero/subnormal/inf). They route to glibc's
+  `__fpclassify` function (not the gcc builtin) because mcc defines no `__GNUC__`,
+  so they need `-lm` where gcc's builtin does not — a usability DIFF, not a
+  correctness gap. They cannot be replaced by clean constant-foldable macros: the
+  subnormal test needs the *per-type* smallest-normal threshold, which a
+  type-agnostic macro can't know (gcc uses a type-aware builtin). The macro
+  builtins above also multi-evaluate their argument (intrinsics don't). The two
+  DIFFs below (NAN sign, signbit return) come from glibc's *own* fallback macros
+  via the same no-`__GNUC__` routing — both verified conforming.
 
 - [~] **[DIFF] §7.12/F.2.1 — `NAN` yields a *negative* NaN: CONFORMANT (sign unspecified); root cause = mcc doesn't define `__GNUC__`.**
   glibc's `NAN`/math macros pick their implementation by `__GNUC_PREREQ`; mcc
