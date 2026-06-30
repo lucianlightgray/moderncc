@@ -738,6 +738,7 @@ struct MCCState {
     unsigned char warn_unused_value;
     unsigned char warn_uninitialized;
     unsigned char warn_varargs;
+    unsigned char warn_strict_prototypes;
     int max_errors;
     unsigned char warn_pedantic;
     unsigned char pedantic_errors;

@@ -1750,6 +1750,7 @@ static const FlagDef options_W[] = {
     { offsetof(MCCState, warn_unused_value), WD_ALL, "unused-value" },
     { offsetof(MCCState, warn_uninitialized), WD_ALL, "uninitialized" },
     { offsetof(MCCState, warn_varargs), 0, "varargs" },
+    { offsetof(MCCState, warn_strict_prototypes), 0, "strict-prototypes" },
     { 0, 0, NULL }
 };
 

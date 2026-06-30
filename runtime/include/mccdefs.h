@@ -175,45 +175,16 @@
     #define __atomic_compare_exchange_n(p, e, d, w, s, f) \
         ({ __typeof__(*(p)) __d = (d); \
            __atomic_compare_exchange((p), (e), &__d, (w), (s), (f)); })
+/* __builtin_{nan,nanf,nanl,inf,inff,infl,huge_val,huge_valf,huge_vall} are
+   implemented as real, foldable, non-trapping constant builtins in mcc (a NaN
+   or infinity literal must not raise FE_INVALID/FE_OVERFLOW the way a runtime
+   0.0/0.0 or 1e200*1e200 would). Only the signaling-NaN helpers remain macros. */
 #if !defined __linux__ && !defined _WIN32
-    #define __builtin_huge_val() 1e500
-    #define __builtin_huge_valf() 1e50f
-    #define __builtin_huge_vall() 1e5000L
 # if defined __APPLE__
-    #define __builtin_nanf(ignored_string) (0.0F/0.0F)
     #define __builtin_flt_rounds() 1
     #define __builtin_bzero(p, ignored_size) bzero(p, sizeof(*(p)))
-# else
-    #define __builtin_nanf(ignored_string) (0.0F/0.0F)
 # endif
 #endif
-    #ifndef __builtin_inff
-    #define __builtin_inff() (1e30f * 1e30f)
-    #endif
-    #ifndef __builtin_inf
-    #define __builtin_inf() (1e200 * 1e200)
-    #endif
-    #ifndef __builtin_infl
-    #define __builtin_infl() ((long double)(1e200 * 1e200))
-    #endif
-    #ifndef __builtin_huge_valf
-    #define __builtin_huge_valf() __builtin_inff()
-    #endif
-    #ifndef __builtin_huge_val
-    #define __builtin_huge_val() __builtin_inf()
-    #endif
-    #ifndef __builtin_huge_vall
-    #define __builtin_huge_vall() __builtin_infl()
-    #endif
-    #ifndef __builtin_nanf
-    #define __builtin_nanf(s) (0.0f / 0.0f)
-    #endif
-    #ifndef __builtin_nan
-    #define __builtin_nan(s) (0.0 / 0.0)
-    #endif
-    #ifndef __builtin_nanl
-    #define __builtin_nanl(s) (0.0L / 0.0L)
-    #endif
     #ifndef __builtin_nansf
     #define __builtin_nansf(s) (0.0f / 0.0f)
     #endif
