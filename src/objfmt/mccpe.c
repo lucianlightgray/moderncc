@@ -1662,8 +1662,10 @@ ST_FUNC int pe_putimport(MCCState *s1, int dllindex, const char *name, addr_t va
 
 static int read_mem(int fd, unsigned offset, void *buffer, unsigned len)
 {
+    int got;
     lseek(fd, offset, SEEK_SET);
-    return len == read(fd, buffer, len);
+    got = read(fd, buffer, len);
+    return got >= 0 && (unsigned)got == len;
 }
 
 
