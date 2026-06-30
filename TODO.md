@@ -243,13 +243,17 @@ use that trick (structs don't go in registers) — uses the dedicated
   `VT_CONSTANT`/`VT_VOLATILE`). `void f(void)` still compiles. gcc+clang both
   reject. cli `decl_storage_type_constraints`.
 
-- [ ] **[DIAG] §6.7.4p3 — inline external definition referencing a static object / internal-linkage identifier.**
-  An inline definition of an external-linkage function shall not define a
-  modifiable `static`-duration object nor reference an internal-linkage
-  identifier. `inline int counter(void){ static int n; return ++n; }` (used
-  externally) compiles with no diagnostic at any level incl `-Wpedantic`.
-  3-way: mcc=silent | gcc=warn (both cases) | clang=warn (static-object case).
-  Low priority (both refs only warn).
+- [x] **[DIAG] §6.7.4p3 — inline external definition with a modifiable static object now diagnosed.**
+  A non-`const` `static`-duration object defined inside an inline external-linkage
+  function (`inline int counter(void){ static int n; return ++n; }`) now warns
+  "'n' is static but declared in inline function 'counter' which is not static",
+  matching gcc/clang exactly. `gen_function` (`src/mccgen.c`) sets
+  `cur_func_inline_extern` when the function is `inline` and not `static`
+  (`extern inline` has had `VT_INLINE` stripped, so it is excluded); the local
+  static-object decl site checks it. A `const` static local, a `static` (internal-
+  linkage) function, and an `extern inline` function are all silent. cli
+  `inline_extern_static_object`. (The internal-linkage *reference* sub-case — only
+  gcc, not clang, warns — is left out to stay within the 3-way-agreed set.)
 
 - [x] **[DIAG] §6.7.1 / §6.2.2p7 — `static` declaration following `extern` now an error.**
   `extern int x; static int x;` now errors "static declaration of 'x' follows

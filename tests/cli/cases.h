@@ -925,6 +925,22 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'follows non-static|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 follows non-static\n" },
 
+/* §6.7.4p3: an inline definition of an external-linkage function shall not
+   define a modifiable static-duration object. A non-const static local in such
+   a function warns (gcc/clang agree); a const static local, a static (internal-
+   linkage) function, and an extern-inline function are all valid. */
+{ "inline_extern_static_object", "",
+  "printf 'inline int counter(void){ static int n; return ++n; }\\n"
+  "int(*p)(void)=counter;\\n' > {W}/ie.c && "
+  "printf 'inline int a(void){static const int c=5;return c;}\\n"
+  "static inline int b(void){static int m;return ++m;}\\n"
+  "extern inline int d(void){static int k;return ++k;}\\n"
+  "int main(void){return a();}\\n' > {W}/ieok.c && "
+  "{ {MCC} -B{B} -I{I} -c {W}/ie.c -o {W}/ie.o 2>&1; "
+  "{MCC} -B{B} -I{I} -Werror -c {W}/ieok.c -o {W}/ieok.o 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE 'static but declared in inline|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 static but declared in inline\n" },
+
 /* §6.5.2.2: a by-value struct returned from a call is not a modifiable lvalue,
    so `g().m = x` and `&g().m` are errors; reading the member, copying the whole
    result, and assigning through a returned *pointer* (`gp()->m = x`) stay valid. */

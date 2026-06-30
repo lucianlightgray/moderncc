@@ -49,6 +49,7 @@ ST_DATA int func_vc;
 ST_DATA int func_ind;
 static int func_old;
 static int cur_func_noreturn; /* the function being compiled is _Noreturn */
+static int cur_func_inline_extern; /* 6.7.4p3: inline def with external linkage */
 ST_DATA const char *funcname;
 ST_DATA CType int_type, func_old_type, char_type, char_pointer_type;
 static CString initstr;
@@ -9504,6 +9505,11 @@ static void gen_function(Sym *sym)
     func_var = sym->type.ref->f.func_type == FUNC_ELLIPSIS;
     func_old = sym->type.ref->f.func_type == FUNC_OLD;
     cur_func_noreturn = sym->type.ref->f.func_noreturn;
+    /* 6.7.4p3: an inline definition of a function with external linkage (inline
+       and not static; `extern inline` has had VT_INLINE stripped) shall not
+       contain a definition of a modifiable static-storage-duration object. */
+    cur_func_inline_extern =
+        (sym->type.t & VT_INLINE) && !(sym->type.t & VT_STATIC);
     vla_seq = 0;
     nb_vla_open = 0;
     vla_track_ovf = 0;
@@ -9529,6 +9535,7 @@ static void gen_function(Sym *sym)
     mcc_debug_prolog_epilog(mcc_state, 0);
     func_vla_arg(sym);
     block(0);
+    cur_func_inline_extern = 0;
     gsym(rsym);
     nocode_wanted = 0;
     mcc_debug_end_scope(NULL, !func_var);
@@ -9922,6 +9929,16 @@ static int decl(int l)
                         if (was_tentative_flex && sym)
                             sym->a.tentative_array = 1;
                     } else {
+                        /* 6.7.4p3: a modifiable static-duration object defined
+                           inside an inline external-linkage definition is UB;
+                           gcc/clang warn. (const static objects are not
+                           modifiable, so they are allowed.) */
+                        if (cur_func_inline_extern && l != VT_CONST
+                            && (type.t & VT_STATIC)
+                            && !(type.t & VT_CONSTANT) && v)
+                            mcc_warning("'%s' is static but declared in inline "
+                                "function '%s' which is not static",
+                                get_tok_str(v, NULL), funcname);
                         if (l == VT_CONST || (type.t & VT_STATIC))
                             r |= VT_CONST;
                         else
