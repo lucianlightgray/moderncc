@@ -1857,5 +1857,15 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -Werror -c {W}/ucr_ok.c -o /dev/null 2>&1 && echo OK_CLEAN; }",
   "1\nOK_CLEAN\n" },
 
+/* §7.16.1.4p3: va_start whose 2nd arg is not the last named parameter is UB;
+   mcc warns on the builtin-va_start targets (riscv64/arm64/x86_64-PE) — verified
+   on arm64-mcc. On x86_64 SysV va_start is a frame-reading macro (like the
+   existing register-param check), so this guard only confirms a CORRECT call
+   stays clean under -Werror on the native target (no false positive). */
+{ "va_start_last_param_clean", "",
+  "printf '#include <stdarg.h>\\nint f(int a,int b,...){va_list ap;va_start(ap,b);int r=va_arg(ap,int);va_end(ap);return r+a;}\\nint main(void){return f(1,2,3);}\\n' > {W}/vc.c && "
+  "{MCC} -B{B} -I{I} -Werror -c {W}/vc.c -o /dev/null 2>&1 && echo CLEAN",
+  "CLEAN\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

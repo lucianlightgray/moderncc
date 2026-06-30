@@ -894,6 +894,7 @@ LIBMCCAPI MCCState *mcc_new(void)
     s->warn_discarded_qualifiers = 1;
     s->warn_sequence_point = 1;         /* 6.5p2: on by default, like gcc */
     s->warn_implicit_int = 1;           /* 6.7.2p2: on by default, like gcc */
+    s->warn_varargs = 1;                /* 7.16.1.4: on by default, like gcc */
     s->ms_extensions = 1;
     s->unwind_tables = 1;
 
@@ -1807,6 +1808,9 @@ static const FlagDef options_W[] = {
        order). Conservative — only the canonical read/write sites are tracked.
        Enabled by -Wall (WD_ALL), like gcc. */
     { offsetof(MCCState, warn_uninitialized), WD_ALL, "uninitialized" },
+    /* -Wvarargs: a misuse of va_start's second argument (not the last named
+       parameter). On by default, like gcc. */
+    { offsetof(MCCState, warn_varargs), 0, "varargs" },
     { 0, 0, NULL }
 };
 

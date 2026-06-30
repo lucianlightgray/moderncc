@@ -72,6 +72,3 @@ Re-crawled C9911.md's `mcc:✗ gcc:✓ clang:✓` lines and re-probed each 3-way
 against the live binary. ~30 were stale (fixed in prior rounds; their C9911
 tags lag reality). These four are genuinely still open and actionable:
 
-- [ ] **§7.16.1.4p3 — `va_start` second arg not the last named parameter** (UB)
-  is not diagnosed. gcc/clang warn (`-Wvarargs`); mcc is silent. Optional
-  diagnostic (UB, not required), but cheap parity. Add a `-Wvarargs`-style warning.

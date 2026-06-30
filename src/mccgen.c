@@ -49,6 +49,8 @@ ST_DATA int func_vc;
 ST_DATA int func_ind;
 static int func_old;
 static int cur_func_noreturn; /* the function being compiled is _Noreturn */
+static int cur_func_last_param; /* 7.16.1.4: token of the last named parameter of
+                                   the variadic function being compiled (0 = none) */
 /* -Wparentheses / -Wunused-value state set during expression parsing; see the
    detailed comments at expr_eq() and gen_op(). Declared here because gen_op()
    (above expr_eq) also writes expr_has_effect. */
@@ -6107,6 +6109,17 @@ static void check_va_start_register(void)
 }
 #endif
 
+/* 7.16.1.4p3: passing a second argument to va_start that is not the last named
+   parameter of the enclosing function is undefined behavior; gcc/clang warn
+   (-Wvarargs). vtop holds that argument's lvalue. */
+static void check_va_start_last_param(void)
+{
+    if ((mcc_state->warn_varargs & WARN_ON) && cur_func_last_param
+        && vtop->sym && (vtop->sym->v & ~SYM_FIELD) != cur_func_last_param)
+        mcc_warning_c(warn_varargs)("second argument to 'va_start' is not the "
+                                    "last named parameter");
+}
+
 static Sym *transparent_union_member(CType *type)
 {
     Sym *m;
@@ -7450,6 +7463,7 @@ ST_FUNC void unary(void)
     case TOK_builtin_va_start:
         parse_builtin_params(0, "ee");
         check_va_start_register();
+        check_va_start_last_param();
         r = vtop->r & VT_VALMASK;
         if (r == VT_LLOCAL)
             r = VT_LOCAL;
@@ -7464,6 +7478,7 @@ ST_FUNC void unary(void)
     case TOK_builtin_va_start:
 	parse_builtin_params(0, "ee");
         check_va_start_register();
+        check_va_start_last_param();
         r = vtop->r & VT_VALMASK;
         if (r == VT_LLOCAL)
             r = VT_LOCAL;
@@ -7488,6 +7503,7 @@ ST_FUNC void unary(void)
     case TOK_builtin_va_start: {
 	parse_builtin_params(0, "ee");
         check_va_start_register();
+        check_va_start_last_param();
         gen_va_start();
         vpushi(0);
         vtop->type.t = VT_VOID;
@@ -10550,6 +10566,14 @@ static void gen_function(Sym *sym)
     func_ind = ind;
     func_vt = sym->type.ref->type;
     func_var = sym->type.ref->f.func_type == FUNC_ELLIPSIS;
+    /* 7.16.1.4: remember the last named parameter (by token) so a va_start whose
+       second argument is some other parameter can be diagnosed (-Wvarargs). */
+    cur_func_last_param = 0;
+    if (func_var) {
+        Sym *pa;
+        for (pa = sym->type.ref->next; pa; pa = pa->next)
+            cur_func_last_param = pa->v & ~SYM_FIELD;
+    }
     func_old = sym->type.ref->f.func_type == FUNC_OLD;
     cur_func_noreturn = sym->type.ref->f.func_noreturn;
     /* 6.7.4p3: an inline definition of a function with external linkage (inline
