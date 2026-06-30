@@ -78,12 +78,63 @@ static char *cap(const char *cmd, int *status){
     return o;
 }
 
+/* Wrap a program invocation with a wall-clock hang guard so a runaway golden
+   (e.g. one that loops forever or blocks on stdin) can't stall the whole suite.
+   GNU coreutils `timeout` is present on Linux CI but absent on macOS/BSD, so
+   when neither it nor Homebrew's `gtimeout` exists, fall back to a dependency-
+   free POSIX-shell watchdog: run the program in the background, arm a killer
+   that SIGKILLs it after the deadline, and report the program's own status.
+   The watchdog's stdout is redirected to /dev/null so it never holds the
+   capture pipe open past the program's exit. `out` must hold >= strlen(cmd)+256. */
+#define DIFF3_RUN_TIMEOUT 20
+static void timeout_wrap(const char *cmd, char *out, size_t n){
+    static int probed, have_timeout, have_gtimeout;
+    if (!probed){
+        have_timeout  = system("command -v timeout  >/dev/null 2>&1") == 0;
+        have_gtimeout = system("command -v gtimeout >/dev/null 2>&1") == 0;
+        probed = 1;
+    }
+    if (have_timeout)
+        snprintf(out, n, "timeout %d %s", DIFF3_RUN_TIMEOUT, cmd);
+    else if (have_gtimeout)
+        snprintf(out, n, "gtimeout %d %s", DIFF3_RUN_TIMEOUT, cmd);
+    else
+        /* POSIX fallback: background the program, kill it after the deadline,
+           and exit with the program's own status (137 if the watchdog fired). */
+        snprintf(out, n,
+            "{ %s & __p=$!; ( sleep %d; kill -9 $__p ) >/dev/null 2>&1 & __w=$!; "
+            "wait $__p; __r=$?; kill $__w 2>/dev/null; exit $__r; }",
+            cmd, DIFF3_RUN_TIMEOUT);
+}
+
 static int file_has(const char *path, const char *needle){
     FILE *f = fopen(path, "rb");
     if (!f) return 0;
     char *s = slurp(f); fclose(f);
     int hit = strstr(s, needle) != NULL;
     free(s); return hit;
+}
+
+/* The three-way differential treats "gcc and clang agree but mcc differs" as an
+   mcc divergence. That inference only holds when gcc and clang are *distinct*
+   implementations: implementation-defined goldens are absorbed by the
+   gcc!=clang branch (counted as impl-defined, not a failure). On hosts where
+   `gcc` and `clang` resolve to the SAME compiler -- e.g. macOS, where
+   /usr/bin/gcc and /usr/bin/clang are both Apple clang -- the two references
+   trivially agree on everything, so every intentional/impl-defined divergence
+   (cleanup, bitfields_ms, predefined_macros, ...) is misreported as a false mcc
+   failure, and the suite can no longer distinguish a real bug from a sanctioned
+   choice. Detect that by comparing `--version` output and skip with a reason,
+   matching the suite's "needs BOTH reference compilers" precondition. */
+static int same_compiler(const char *a, const char *b){
+    char cmd[4096];
+    snprintf(cmd, sizeof cmd, "\"%s\" --version 2>/dev/null", a);
+    char *va = cap(cmd, NULL);
+    snprintf(cmd, sizeof cmd, "\"%s\" --version 2>/dev/null", b);
+    char *vb = cap(cmd, NULL);
+    int same = va[0] && !strcmp(va, vb);
+    free(va); free(vb);
+    return same;
 }
 
 /* substitute {SELF} -> src in a flags/args string */
@@ -113,12 +164,17 @@ static int build_run(const char *label, const char *cc, const char *mcc,
             "\"%s\" \"-B%s\" \"-I%s\" \"-I%s\" %s \"%s\" -o \"%s\" >/dev/null 2>&1",
             mcc, bdir, idir, sup, flags, src, exe);
     if (verbose) fprintf(stderr, "  [%s build] %s\n", label, cmd);
-    int brc = system(cmd);
+    char gbuild[8448];
+    timeout_wrap(cmd, gbuild, sizeof gbuild);   /* a pathological source must
+        not be able to hang a compiler forever (cleanup.c can spin Apple clang's
+        codegen); the hang guard caps every build, not just the run. */
+    int brc = system(gbuild);
     if (brc != 0){ *out = strdup(""); return 0; }
 
-    char run[8192]; int rrc;
+    char run[8192], guarded[8448]; int rrc;
     snprintf(run, sizeof run, "cd \"%s\" && \"%s\" %s 2>/dev/null", work, exe, args);
-    *out = cap(run, &rrc);
+    timeout_wrap(run, guarded, sizeof guarded);
+    *out = cap(guarded, &rrc);
     if (verbose) fprintf(stderr, "  [%s out] %s\n", label, *out);
     return 1;
 }
@@ -135,6 +191,13 @@ int main(int argc, char **argv){
 #ifdef DIFF3_VERBOSE
     verbose = 1;
 #endif
+
+    if (same_compiler(gcc, clang)){
+        printf("diff3: SKIP -- '%s' and '%s' are the same compiler; a three-way "
+               "differential needs two distinct references (the exec golden suite "
+               "still covers these programs)\n", gcc, clang);
+        return MCC_SKIP_RC;
+    }
 
     char cmd[4096];
     snprintf(cmd, sizeof cmd, "mkdir -p \"%s\"", work);
@@ -156,6 +219,7 @@ int main(int argc, char **argv){
         sub_self(g->flags, src, flags, sizeof flags);
         sub_self(g->args,  src, args,  sizeof args);
 
+        if (verbose){ fprintf(stderr, "RUN   %s\n", g->name); fflush(stderr); }
         char *gout,*cout,*mout;
         int gok = build_run("gcc",   gcc,  NULL, bdir,idir,sup,work,src,flags,args,&gout);
         int cok = build_run("clang", clang,NULL, bdir,idir,sup,work,src,flags,args,&cout);

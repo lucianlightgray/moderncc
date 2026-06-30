@@ -2402,7 +2402,7 @@ static void gen_opic(int op)
             pp_expr = pp_save;
         }
         /* 6.6p4: a constant expression shall evaluate to a value in the range
-           of representable values for its type. A signed +/-/* fold that
+           of representable values for its type. A signed +, -, or * fold that
            overflows its result type is diagnosed by gcc/clang; mirror that
            under -pedantic outside the preprocessor (the pp path above already
            covers #if). int operands fold in int64 (which they cannot overflow),
@@ -9293,8 +9293,8 @@ static void write_ldouble(unsigned char *d, void *s)
         write64le(d+6, m << 1);
         write16le(d+14, e);
     #elif (__aarch64__ || __riscv) && (defined MCC_TARGET_I386 || defined MCC_TARGET_X86_64)
-        uint64_t m = read64le((char*)s + 6);
-        int e = read16le((char*)s + 14);
+        uint64_t m = read64le((unsigned char*)s + 6);
+        int e = read16le((unsigned char*)s + 14);
         (e & 0x7fff) && (m & 1) && 0 == ++m && ++e;
         write64le(d, m >> 1 | ((e & 0x7fff) ? 1ULL<<63 : 0));
         write16le(d+8, e);
