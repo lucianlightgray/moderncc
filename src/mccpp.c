@@ -3243,6 +3243,22 @@ static int *macro_arg_subst(Sym **nested_list, const int *macro_str, Sym *args)
                         ++s;
                     }
                 }
+                /* 6.10.3.2p2: a stringized argument ending in a stray backslash
+                   (one not closing a string/char escape) would have the trailing
+                   '\' escape the closing quote, yielding an invalid string
+                   literal. gcc/clang drop the final backslash; do the same with a
+                   warning. Count trailing backslashes (excluding the opening '"'
+                   at index 0): an odd run means the last one is dangling. */
+                {
+                    int nb = 0;
+                    while (tokcstr.size - 1 - nb >= 1
+                           && tokcstr.data[tokcstr.size - 1 - nb] == '\\')
+                        ++nb;
+                    if (nb & 1) {
+                        --tokcstr.size;
+                        mcc_warning("invalid string literal, ignoring final '\\'");
+                    }
+                }
                 cstr_ccat(&tokcstr, '\"');
                 cstr_ccat(&tokcstr, '\0');
                 cval.str.size = tokcstr.size;

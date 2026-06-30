@@ -367,11 +367,15 @@ The one remaining complex gap is constant-folding (static initializers) — see
   (The genuinely-broken comment-introducer case `//`/`/*` IS a hard error now —
   see §6.10.3.3 above.) 3-way: mcc=warn(rc=0) | gcc=error | clang=error.
 
-- [ ] **[DIFF] §6.10.3.2p2 — stringizing an argument ending in a stray `\` yields an invalid literal silently.**
-  `#define S(x) #x` / `S("a\n" 'b' \ )` → `"\"a\\n\" 'b' \"` (the trailing lone
-  backslash is escaped, leaving an unterminated/invalid string literal) with no
-  diagnostic. Both references warn and drop the stray backslash.
-  3-way: mcc=invalid(silent) | gcc=warn+drop | clang=warn+valid.
+- [x] **[DIAG] §6.10.3.2p2 — stringizing an argument ending in a stray `\` now drops it and warns.**
+  `#define S(x) #x` / `S(a\)` previously stringized to the invalid `"a\"` (the
+  trailing lone backslash escaped the closing quote → "unknown escape sequence"
+  at compile). The stringize builder (`macro_arg_subst`, `src/mccpp.c`) now counts
+  the trailing backslash run before appending the closing quote; an odd run means
+  the last `\` is dangling, so it is dropped with "invalid string literal,
+  ignoring final '\'" — yielding the valid `"a"`, matching gcc exactly. An even
+  backslash run (a real escaped `\\`) and normal arguments stringize unchanged.
+  cli `stringize_trailing_backslash`.
 
 ---
 

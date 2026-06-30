@@ -842,6 +842,20 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'invalid preprocessing token|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 VALID_OK\n2 invalid preprocessing token\n" },
 
+/* §6.10.3.2p2: stringizing an argument ending in a stray backslash would have
+   the trailing '\' escape the closing quote, yielding an invalid string literal.
+   mcc now drops the dangling backslash and warns (matching gcc -> "a"), instead
+   of silently emitting "a\" (which then failed with "unknown escape sequence").
+   An even backslash run and a normal argument stringize cleanly. */
+{ "stringize_trailing_backslash", "",
+  "printf '#define S(x) #x\\nconst char *p = S(a\\\\);\\nint main(void){return p[0];}\\n' > {W}/sb.c && "
+  "printf '#define S(x) #x\\nconst char *a=S(hi);const char *b=S(a\\\\\\\\);"
+  "int main(void){return a[0]+b[0];}\\n' > {W}/sbok.c && "
+  "{ {MCC} -B{B} -I{I} -c {W}/sb.c -o {W}/sb.o 2>&1; "
+  "{MCC} -B{B} -I{I} -Werror -c {W}/sbok.c -o {W}/sbok.o 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE 'ignoring final|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 ignoring final\n" },
+
 /* §7.1.4p1 / §7.3.9.5-6: creal/cimag are functions that may also be macros;
    `(creal)(z)` (parenthesized, function) and `&creal` must work alongside the
    fast `creal(z)` macro. (Previously creal/cimag were macro-only.) */
