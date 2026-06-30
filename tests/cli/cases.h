@@ -1542,12 +1542,17 @@ static const cli_case_t cli_cases[] = {
 
 /* §7.25p6: the type-generic nexttoward selects its function from the FIRST
    argument only (its second argument is always long double).  sizeof is
-   unevaluated, so this checks the *selected return type* (float=4, double=8,
-   long double=16) without needing libm — keying on (x)+(y) wrongly gave 16 16 16. */
+   unevaluated, so the selected return type must match the first argument's type
+   (float/double/long double) without needing libm — keying on (x)+(y) wrongly
+   selected long double for all three.  We assert the result type *tracks the
+   first arg* via sizeof(nexttoward(x,..))==sizeof(x), which is ABI-independent:
+   it reads 1 1 1 everywhere, including targets where long double==double
+   (Mach-O/arm64, PE) — whereas a raw "4 8 16" golden would hard-code the
+   16-byte-long-double ELF/x86 ABI and falsely fail on Darwin. */
 { "tgmath_nexttoward_first_arg", "os!=WIN32:PE has long double==double (8), so nexttoward(long double) is 8 not 16",
-  "printf '#include <tgmath.h>\\n#include <stdio.h>\\nint main(void){ float f=1; double d=1; long double l=1; printf(\"%%d %%d %%d\\\\n\", (int)sizeof(nexttoward(f,2.0L)), (int)sizeof(nexttoward(d,2.0L)), (int)sizeof(nexttoward(l,2.0L))); return 0; }\\n' > {W}/ntg.c && "
+  "printf '#include <tgmath.h>\\n#include <stdio.h>\\nint main(void){ float f=1; double d=1; long double l=1; printf(\"%%d %%d %%d\\\\n\", (int)(sizeof(nexttoward(f,2.0L))==sizeof(f)), (int)(sizeof(nexttoward(d,2.0L))==sizeof(d)), (int)(sizeof(nexttoward(l,2.0L))==sizeof(l))); return 0; }\\n' > {W}/ntg.c && "
   "{MCC} -B{B} -I{I} -std=c11 {W}/ntg.c -o {W}/ntg && {W}/ntg",
-  "4 8 16\n" },
+  "1 1 1\n" },
 
 /* §6.4.2.1 / Annex D.2: a combining-mark code point (e.g. U+0300) may appear in
    an identifier but NOT as its first character.  As an initial UCN it is now
