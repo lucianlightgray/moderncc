@@ -1071,11 +1071,13 @@ static const cli_case_t cli_cases[] = {
   "1 VALID_OK\n1 without an array size\n" },
 
 /* §5.1.1.2: `mcc -E` must terminate on an identifier followed by `\`+space+
-   newline (it used to spin forever re-reading the stray `\`). The `timeout`
-   guards against a hang regression; rc 0 = clean termination. */
+   newline (it used to spin forever re-reading the stray `\`). The {TIMEOUT}
+   guard guards against a hang regression; rc 0 = clean termination. {TIMEOUT}
+   expands to nothing where coreutils `timeout` is absent (macOS/BSD), leaving
+   ctest's own per-test timeout as the backstop. */
 { "ident_backslash_no_hang", "",
   "printf 'a\\\\ \\nb\\n' > {W}/ib.c && "
-  "timeout 10 {MCC} -B{B} -I{I} -E -P {W}/ib.c >/dev/null 2>&1 && echo TERMINATED",
+  "{TIMEOUT}{MCC} -B{B} -I{I} -E -P {W}/ib.c >/dev/null 2>&1 && echo TERMINATED",
   "TERMINATED\n" },
 
 /* §6.10.8.1/§5.1.2.1: -ffreestanding makes __STDC_HOSTED__ expand to 0 (and
@@ -1260,7 +1262,7 @@ static const cli_case_t cli_cases[] = {
   "1 CLEAN_OK\n1 dereferencing a 'void\n" },
 
 /* §6.6p4: a constant expression shall evaluate to a value representable in its
-   type; a signed +/-/* fold that overflows its result type is diagnosed by
+   type; a signed +, -, or * fold that overflows its result type is diagnosed by
    gcc/clang. Mirrored under -pedantic. In-range folds, unsigned wraparound, and
    a product that fits a wider result stay clean. */
 { "const_integer_overflow", "",
