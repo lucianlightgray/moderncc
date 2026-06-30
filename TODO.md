@@ -66,9 +66,22 @@ fixpoint. Finished items are removed per the goal's convention; the landed work
 
 ---
 
-# C9911 re-verification (fresh crawl) — confirmed-open gaps
+# C9911 re-verification (fresh crawl) — COMPLETE
 
-Re-crawled C9911.md's `mcc:✗ gcc:✓ clang:✓` lines and re-probed each 3-way
+Re-crawled C9911.md's 35 `mcc:✗ gcc:✓ clang:✓` lines and re-probed each 3-way
 against the live binary. ~30 were stale (fixed in prior rounds; their C9911
-tags lag reality). These four are genuinely still open and actionable:
+tags lagged reality). Four were genuinely open — **all now fixed** (each with a
+cli test, full ctest 34/34, byte-identical self-host, and the C9911.md line
+retagged `mcc:✓`):
+
+- §7.26.1p3 `TSS_DTOR_ITERATIONS` made a usable integer constant.
+- §7.25p7 `creal`/`cimag` tgmath dispatch by complex element type.
+- §D/§6.4.2.1 Annex D.1 allowed-range check for UCNs in identifiers.
+- §7.16.1.4p3 `va_start` non-last-parameter diagnostic (builtin-va_start targets).
+
+The remaining `mcc:✗`-tagged C9911 lines are non-actionable: `mcc==gcc==clang`
+(no divergence: §F.10.11 isgreater, §G.5.1 complex-inf — both now match),
+permissive-by-default-then-`-Werror` (implicit decls / K&R implicit-int / `gets`),
+or a deliberate divergence (§6.7.4p6 plain-inline link semantics — self-host
+sensitive). See C9911.md's classification notes.
 
