@@ -1835,6 +1835,7 @@ static int pe_load_def(MCCState *s1, int fd)
         case 2:
             dllindex = mcc_add_dllref(s1, dllname, 0)->index;
             ++state;
+            FALLTHROUGH;
         default:
             ord = 0;
             if (next == '@') {
