@@ -613,6 +613,26 @@ ST_FUNC int mccgen_compile(MCCState *s1)
     decl(VT_CONST);
     finalize_tentative_arrays();
     gen_inline_functions(s1);
+    /* -Wunused-function: at end of TU, warn for each static (internal-linkage),
+       non-inline function that was defined but never referenced. The `used` bit
+       is set wherever the name resolves in unary() (a call or address-of). */
+    if (mcc_state->warn_unused_function & WARN_ON) {
+        Sym *fs;
+        for (fs = global_stack; fs; fs = fs->prev) {
+            ElfSym *es;
+            if ((fs->type.t & VT_BTYPE) != VT_FUNC
+                || !(fs->type.t & VT_STATIC) || (fs->type.t & VT_INLINE)
+                || fs->a.used
+                || fs->v < TOK_IDENT || fs->v >= SYM_FIRST_ANOM)
+                continue;
+            es = elfsym(fs);
+            if (!es || es->st_shndx == SHN_UNDEF)
+                continue;               /* declared only, not defined here */
+            mcc_warning_c(warn_unused_function)(
+                "%i:'%s' defined but not used",
+                fs->vla_inner_id, get_tok_str(fs->v, NULL));
+        }
+    }
     check_vstack();
 #if MCC_EH_FRAME
     mcc_eh_frame_end(s1);
@@ -10492,6 +10512,11 @@ static void gen_function(Sym *sym)
     sym_push2(&local_stack, SYM_FIELD, 0, 0);
     local_scope = 1;
     sym_push_params(sym->type.ref);
+
+    /* -Wunused-function: stamp the definition line on the function sym (free to
+       reuse vla_inner_id — functions are never label syms) so the TU-end walk
+       can report at the definition like gcc. */
+    sym->vla_inner_id = file->line_num;
 
     local_scope = 0;
     rsym = 0;

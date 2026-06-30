@@ -67,10 +67,6 @@ Each below was confirmed: mcc=0 warnings where gcc/clang warn. (mcc already does
 `-Wreturn-type`-style "missing return", implicit-function-declaration, and the
 new `-Wformat`.) Most need scope/dataflow tracking — size each before starting.
 
-- [ ] **[diag] `-Wunused-function`** — an unused `static` function (under `-Wall`).
-  Needs a TU-end walk of file-scope static functions never referenced.
-  (`-Wunused-variable` is done: a `used` SymAttr bit set on reference, checked at
-  scope close, reported at the declaration line.)
 - [ ] **[diag] `-Wunused-value`** — a statement with no effect (`1+1;`).
 - [ ] **[diag] `-Wuninitialized`** — use of an uninitialized local. Needs simple
   dataflow; can be conservative to avoid false positives.

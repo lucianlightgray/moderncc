@@ -743,6 +743,7 @@ struct MCCState {
     unsigned char warn_switch;          /* -Wswitch: enum switch omits a case (-Wall) */
     unsigned char warn_unused_variable; /* -Wunused-variable: never-referenced local (-Wall) */
     unsigned char warn_unused_parameter;/* -Wunused-parameter: never-referenced param (-Wextra) */
+    unsigned char warn_unused_function; /* -Wunused-function: unused static function (-Wall) */
     unsigned char warn_pedantic;        /* -pedantic: diagnose ISO C extensions */
     unsigned char pedantic_errors;      /* -pedantic-errors: make them hard errors */
     #define WARN_ON  1

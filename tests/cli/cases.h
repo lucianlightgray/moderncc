@@ -1757,5 +1757,17 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -c {W}/up.c -o /dev/null 2>&1 && echo DEFAULT_SILENT",
   "1 warn\nOK_CLEAN\nDEFAULT_SILENT\n" },
 
+/* -Wunused-function warns on a static function defined but never referenced in
+   the TU (reported at the definition line, like gcc). A used or address-taken
+   static fn, a non-static fn, and a declaration-only static stay clean. Enabled
+   by -Wall; default silent. */
+{ "wunused_function", "",
+  "printf 'static int helper(void){return 1;}\\nint main(void){return 0;}\\n' > {W}/uf.c && "
+  "printf 'static int used(void){return 1;}\\nint main(void){return used();}\\n' > {W}/uf_ok.c && "
+  "echo \"$({MCC} -B{B} -I{I} -Wunused-function -c {W}/uf.c -o /dev/null 2>&1 | grep -c \"'helper' defined but not used\") warn\"; "
+  "{MCC} -B{B} -I{I} -Wunused-function -Werror -c {W}/uf_ok.c -o /dev/null 2>&1 && echo OK_CLEAN; "
+  "{MCC} -B{B} -I{I} -c {W}/uf.c -o /dev/null 2>&1 && echo DEFAULT_SILENT",
+  "1 warn\nOK_CLEAN\nDEFAULT_SILENT\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

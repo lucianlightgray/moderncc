@@ -1774,6 +1774,9 @@ static const FlagDef options_W[] = {
     /* -Wunused-parameter: a function parameter never referenced in the body.
        Opt-in; enabled by -Wextra (handled in the -W option case), like gcc. */
     { offsetof(MCCState, warn_unused_parameter), 0, "unused-parameter" },
+    /* -Wunused-function: a static function defined but never referenced in the
+       TU. Enabled by -Wall (WD_ALL), like gcc. */
+    { offsetof(MCCState, warn_unused_function), WD_ALL, "unused-function" },
     /* -Wunknown-pragmas: an unrecognized #pragma. Enabled by -Wall (WD_ALL),
        matching gcc, and separately controllable via -W[no-]unknown-pragmas. */
     { offsetof(MCCState, warn_unknown_pragmas), WD_ALL, "unknown-pragmas" },
