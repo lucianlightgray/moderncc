@@ -4637,10 +4637,11 @@ do_decl:
             skip('}');
             /* 6.7.2.1: a struct/union with no named members — empty (`struct
                S{};`) or only unnamed bit-fields (`struct S{int:4;};`) — is a GNU
-               extension, not valid ISO C. (Anonymous struct/union members and a
-               flexible array member populate the member list, so they are not
-               flagged here.) */
-            if (!type->ref->next)
+               extension, not valid ISO C. `c` is set for a named member, an
+               anonymous struct/union member, or a (named) flexible array member,
+               so testing `!c` catches both the empty and the unnamed-bit-field
+               cases while leaving those valid forms alone. */
+            if (!c)
                 mcc_pedantic(u == VT_UNION
                     ? "ISO C forbids a union with no named members"
                     : "ISO C forbids a struct with no named members");

@@ -963,12 +963,17 @@ static const cli_case_t cli_cases[] = {
 { "empty_struct_pedantic", "",
   "printf 'struct S{}; int main(void){return 0;}\\n' > {W}/es.c && "
   "printf 'union U{}; int main(void){return 0;}\\n' > {W}/eu.c && "
-  "printf 'struct B{int x;}; struct A{struct{int y;};}; int main(void){return 0;}\\n' > {W}/eok.c && "
+  "printf 'struct S{int:4;}; int main(void){return 0;}\\n' > {W}/ubf.c && "
+  "printf 'union U{int:4;}; int main(void){return 0;}\\n' > {W}/ubfu.c && "
+  "printf 'struct B{int x;}; struct A{struct{int y;};}; struct C{int x;int:4;};"
+  " int main(void){return 0;}\\n' > {W}/eok.c && "
   "{ {MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/es.c -o {W}/es.o 2>&1; "
   "{MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/eu.c -o {W}/eu.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/ubf.c -o {W}/ubf.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/ubfu.c -o {W}/ubfu.o 2>&1; "
   "{MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/eok.c -o {W}/eok.o 2>&1 && echo VALID_OK; } | "
   "grep -oE 'no named members|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
-  "1 VALID_OK\n2 no named members\n" },
+  "1 VALID_OK\n4 no named members\n" },
 
 /* §6.9p1: a stray ';' at file scope (empty external declaration) is a GNU
    extension diagnosed under -pedantic; a ';' inside a function is a valid null

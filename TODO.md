@@ -532,10 +532,14 @@ bulk of each area matched the references; these are the residual divergences.
   `cversion < 201112` (C99/C90). Silent in C11; incompatible-type redefinition
   is still an error in all modes. cli `typedef_redefinition_c99`.
 
-- [ ] **[DIAG] §6.7.2.1 — struct with only unnamed bit-fields not diagnosed under `-pedantic`.**
-  `struct S { int : 4; };` compiles even at `-pedantic-errors`; a struct with no
-  *named* members is a GNU extension. Both refs error under `-pedantic`. (The
-  FAM-in-no-named-members case IS diagnosed; this is the plain unnamed-bitfield-only one.)
+- [x] **[DIAG] §6.7.2.1 — struct with only unnamed bit-fields now diagnosed under `-pedantic`.**
+  `struct S{int:4;};` / `union U{int:4;};` now emit `mcc_pedantic` "ISO C forbids
+  a struct/union with no named members", matching gcc/clang `-Wpedantic`. The
+  existing empty-struct check (`src/mccgen.c`, after the member loop) was broadened
+  from `!type->ref->next` to `!c`, where `c` is set for a named member, an
+  anonymous struct/union member, or a named flexible array member — so the valid
+  forms (`struct C{int x;int:4;}`, anon members, FAMs) stay silent. cli
+  `empty_struct_pedantic` (now also covers the unnamed-bit-field cases).
 
 - [x] **[DIAG] §6.7.2.1 — empty struct/union now diagnosed under `-pedantic`.**
   `struct S{};` / `union U{};` (no members) now emit `mcc_pedantic` "ISO C
