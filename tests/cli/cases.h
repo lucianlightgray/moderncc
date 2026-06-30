@@ -1430,5 +1430,153 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} {W}/cxp.c -lm -o {W}/cxp && {W}/cxp",
   "0.10000000000000001\n" },
 
+/* §6.4.4.1 / §6.4.4.4 / §6.7.6.2p1: GNU/C23 extensions ISO C99/C11 do not have —
+   binary integer constants (0b…), the \e escape, and a zero-size array — are
+   diagnosed under -pedantic; the ISO-valid neighbours (hex, standard escapes, a
+   sized array, the proper flexible array member) stay clean under -Werror. */
+{ "pedantic_extension_diagnostics", "",
+  "printf 'int x=0b1010;\\n' > {W}/pb.c && "
+  "printf 'char *s=\"\\\\e[0m\";\\n' > {W}/pe.c && "
+  "printf 'int a[0];\\n' > {W}/pa.c && "
+  "printf 'int x=0x1f,y=42; const char*s=\"\\\\n\\\\t\"; int arr[3]; struct S{int n;int d[];};\\nint main(void){return 0;}\\n' > {W}/pok.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/pb.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/pe.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/pa.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -Werror -pedantic-errors -c {W}/pok.c -o /dev/null 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE 'binary integer constants|non-ISO escape sequence|forbids zero-size array|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 binary integer constants\n1 forbids zero-size array\n1 non-ISO escape sequence\n" },
+
+/* §6.4.4.4/§6.4.5/§6.7.1/§6.7.2.4: u/U/u8 literal prefixes, _Thread_local and
+   _Atomic are C11 additions — diagnosed under -std=c99 -pedantic-errors; the L
+   (C90) prefix and all three under -std=c11 stay clean. */
+{ "c11_features_in_c99", "",
+  "printf 'const void*p=u\"hi\";\\n' > {W}/cu.c && "
+  "printf 'static _Thread_local int x;\\n' > {W}/ct.c && "
+  "printf '_Atomic(int) a;\\n' > {W}/ca.c && "
+  "printf 'const void*p=u\"hi\"; static _Thread_local int x; _Atomic(int) a; const void*q=L\"w\";\\nint main(void){return 0;}\\n' > {W}/cok.c && "
+  "{ {MCC} -B{B} -I{I} -std=c99 -pedantic-errors -c {W}/cu.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c99 -pedantic-errors -c {W}/ct.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c99 -pedantic-errors -c {W}/ca.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -Werror -c {W}/cok.c -o /dev/null 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE 'character/string prefix|_Thread_local|_Atomic|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 _Atomic\n1 _Thread_local\n1 character/string prefix\n" },
+
+/* §6.10.9p1 (_Pragma operand must be a parenthesized string literal) and §6.7p3
+   (a variably-modified typedef may not be redefined, even with the same type). */
+{ "pragma_vla_typedef_constraints", "",
+  "printf 'void f(void){ _Pragma(foo); }\\n' > {W}/pn.c && "
+  "printf 'void f(int n){ typedef int T[n]; typedef int T[n]; (void)sizeof(T[0]); }\\n' > {W}/tv.c && "
+  "printf 'void g(void){ _Pragma(\"pack(1)\"); }\\ntypedef int U; typedef int U; U z;\\nint main(void){return 0;}\\n' > {W}/pvok.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -c {W}/pn.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/tv.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -Werror -c {W}/pvok.c -o /dev/null 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE '_Pragma takes a parenthesized|redefinition of variably modified|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 _Pragma takes a parenthesized\n1 redefinition of variably modified\n" },
+
+/* §6.7.6.3p3: an identifier list in a function declarator that is NOT part of a
+   definition shall be empty — `int f(a,b);` is rejected, while the K&R
+   *definition* `int def(a,b) int a,b; {…}` and an empty `int proto();` are fine. */
+{ "kr_identifier_list_declaration", "",
+  "printf 'int f(a,b);\\nint main(void){return 0;}\\n' > {W}/kr_bad.c && "
+  "printf 'int def(a,b) int a,b; { return a+b; }\\nint proto();\\nint main(void){return def(1,2)+proto();}\\n' > {W}/kr_ok.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -c {W}/kr_bad.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -Werror -c {W}/kr_ok.c -o /dev/null 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE 'parameter names \\(without types\\)|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 parameter names (without types)\n" },
+
+/* §6.9.1p3 / §6.9.1p7: in a function *definition* the return type must be void
+   or a complete object type, and every parameter's adjusted type must be a
+   complete object type — an incomplete struct return or parameter is rejected.
+   The same incomplete types are fine via a pointer, a void return, or a mere
+   declaration (all of ic_ok.c stays clean even under -Werror). */
+{ "function_definition_complete_types", "",
+  "printf 'struct S; struct S g(void){ }\\n' > {W}/ic_ret.c && "
+  "printf 'struct S; int h(struct S s){ return 0; }\\n' > {W}/ic_par.c && "
+  "printf 'struct C{int x;}; struct C cc(struct C a){return a;}\\nstruct S; struct S *p(void){return 0;} int q(struct S *s){return !!s;}\\nvoid v(void){}\\nint main(void){return 0;}\\n' > {W}/ic_ok.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -c {W}/ic_ret.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/ic_par.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -Werror -c {W}/ic_ok.c -o /dev/null 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE 'return type is an incomplete|has incomplete type|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 has incomplete type\n1 return type is an incomplete\n" },
+
+/* §6.7.8p3 / §6.2.3: a typedef name and an ordinary identifier share one name
+   space — reusing a typedef name for an object (`int T;`) or a function
+   definition (`int T(void){…}`) in the same scope is rejected, while a deeper
+   block may shadow the typedef and ordinary redeclarations remain valid. */
+{ "typedef_ordinary_name_space", "",
+  "printf 'typedef int T; int T;\\n' > {W}/ns_obj.c && "
+  "printf 'typedef int T; int T(void){return 0;}\\n' > {W}/ns_fn.c && "
+  "printf 'typedef int T; void f(void){ int T; T=1; (void)T; }\\nextern int x; int x=5;\\nint main(void){return x;}\\n' > {W}/ns_ok.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -c {W}/ns_obj.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/ns_fn.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -Werror -c {W}/ns_ok.c -o /dev/null 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE \"redeclared as different kind|redefinition of 'T'|CLEAN_OK\" | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 redeclared as different kind\n1 redefinition of 'T'\n" },
+
+/* §6.9.1p2: a function definition's declarator must itself include a parameter
+   (or K&R identifier) list — the function type may not be supplied entirely by a
+   typedef name (`typedef int F(void); F f {…}`).  A typedef *return* type, a K&R
+   definition, and using the function typedef for a pointer all stay valid. */
+{ "function_definition_typedef_type", "",
+  "printf 'typedef int F(void); F f { return 0; }\\n' > {W}/tdf_bad.c && "
+  "printf 'typedef int T; T h(void){ return 0; }\\nint def(a,b) int a,b; { return a+b; }\\ntypedef int F(void); F *fp;\\nint main(void){return h()+def(1,2)+(fp!=0);}\\n' > {W}/tdf_ok.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -c {W}/tdf_bad.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -Werror -c {W}/tdf_ok.c -o /dev/null 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE \"declared with a typedef'd function type|CLEAN_OK\" | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 declared with a typedef'd function type\n" },
+
+/* §6.4.4 / GNU: imaginary *integer* constants (`3i`, `5j`, `0x4I`) — previously
+   only the floating forms (`3.0i`) were accepted; the integer forms now build a
+   complex value too (matching gcc/clang).  Compile and run, checking real/imag. */
+{ "imaginary_integer_constants", "",
+  "printf '#include <complex.h>\\n#include <stdio.h>\\nint main(void){ double complex z = 2 + 3i; long double complex w = 4 + 5j; printf(\"%%g %%g %%Lg %%Lg\\\\n\", creal(z), cimag(z), creall(w), cimagl(w)); return 0; }\\n' > {W}/imag_rt.c && "
+  "{MCC} -B{B} -I{I} -std=c11 {W}/imag_rt.c -o {W}/imag_rt && {W}/imag_rt",
+  "2 3 4 5\n" },
+
+/* §7.25p6: the type-generic nexttoward selects its function from the FIRST
+   argument only (its second argument is always long double).  sizeof is
+   unevaluated, so this checks the *selected return type* (float=4, double=8,
+   long double=16) without needing libm — keying on (x)+(y) wrongly gave 16 16 16. */
+{ "tgmath_nexttoward_first_arg", "",
+  "printf '#include <tgmath.h>\\n#include <stdio.h>\\nint main(void){ float f=1; double d=1; long double l=1; printf(\"%%d %%d %%d\\\\n\", (int)sizeof(nexttoward(f,2.0L)), (int)sizeof(nexttoward(d,2.0L)), (int)sizeof(nexttoward(l,2.0L))); return 0; }\\n' > {W}/ntg.c && "
+  "{MCC} -B{B} -I{I} -std=c11 {W}/ntg.c -o {W}/ntg && {W}/ntg",
+  "4 8 16\n" },
+
+/* §6.4.2.1 / Annex D.2: a combining-mark code point (e.g. U+0300) may appear in
+   an identifier but NOT as its first character.  As an initial UCN it is now
+   rejected; the same mark as a NON-initial character, and ordinary leading UCNs
+   like U+00C0, stay valid. */
+{ "ucn_identifier_initial_combining", "",
+  "printf 'int \\\\u0300x;\\n' > {W}/ucn_bad.c && "
+  "printf 'int a\\\\u0300b = 5;\\nint \\\\u00C0v = 7;\\nint main(void){ return a\\\\u0300b + \\\\u00C0v; }\\n' > {W}/ucn_ok.c && "
+  "{ {MCC} -B{B} -I{I} -c {W}/ucn_bad.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -Werror -c {W}/ucn_ok.c -o /dev/null 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE 'not valid as the first character|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 not valid as the first character\n" },
+
+/* §6.6/§G: a complex constant whose real part overflows to infinity must yield
+   inf in BOTH a static and a LOCAL initializer.  The local form used to store 0
+   (the gen_complex_op constant-fold path called init_putv on a value gen_op had
+   declined to fold in a non-CONST_WANTED context); now it falls to the robust
+   runtime path.  Finite locals stay exact. Compile and run, check the values. */
+{ "complex_const_init_overflow", "",
+  "printf '#include <complex.h>\\n#include <stdio.h>\\ndouble complex gz = 4.0e38f + 0.0*I;\\nint main(void){ double complex lz = 4.0e38f + 0.0*I; double complex lf = 2.0 + 3.0*I; printf(\"%%g %%g %%g %%g\\\\n\", creal(gz), creal(lz), creal(lf), cimag(lf)); return 0; }\\n' > {W}/imc.c && "
+  "{MCC} -B{B} -I{I} -std=c11 {W}/imc.c -lm -o {W}/imc && {W}/imc",
+  "inf inf 2 3\n" },
+
+/* §7.21.6.1/2 — -Wformat: a printf/scanf-family call with a string-literal
+   format is checked for argument class (integer/floating/pointer) and count.
+   The four mismatches warn; a fully-correct call (incl. %*.*f, %% and scanf
+   pointers) is clean even under -Werror; and a default build (no -Wformat)
+   stays silent so existing builds and the self-host are unaffected. */
+{ "wformat_printf_scanf_checking", "",
+  "printf '#include <stdio.h>\\nint main(void){ printf(\"%%d\\\\n\",\"x\"); printf(\"%%s\\\\n\",1); printf(\"%%f\\\\n\",2); printf(\"%%d %%d\\\\n\",1); return 0; }\\n' > {W}/wf_bad.c && "
+  "printf '#include <stdio.h>\\nint main(void){ char b[8]; int x; printf(\"%%d %%s %%f %%c %%p %%%%\\\\n\",1,\"x\",2.0,(int)0x61,(void*)0); printf(\"%%*.*f\\\\n\",4,2,3.14); scanf(\"%%d %%7s\",&x,b); return x; }\\n' > {W}/wf_ok.c && "
+  "{ {MCC} -B{B} -I{I} -Wformat -c {W}/wf_bad.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -Wformat -Werror -c {W}/wf_ok.c -o /dev/null 2>&1 && echo CLEAN_OK; "
+  "{MCC} -B{B} -I{I} -c {W}/wf_bad.c -o /dev/null 2>&1 && echo SILENT_DEFAULT; } | "
+  "grep -oE 'expects an integer argument|expects a pointer argument|expects a floating argument|more conversions than arguments|CLEAN_OK|SILENT_DEFAULT' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 SILENT_DEFAULT\n1 expects a floating argument\n1 expects a pointer argument\n1 expects an integer argument\n1 more conversions than arguments\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

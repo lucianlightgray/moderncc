@@ -1712,6 +1712,9 @@ static const FlagDef options_W[] = {
     { offsetof(MCCState, warn_implicit_function_declaration), WD_ALL, "implicit-function-declaration" },
     { offsetof(MCCState, warn_discarded_qualifiers), WD_ALL, "discarded-qualifiers" },
     { offsetof(MCCState, warn_sequence_point), WD_ALL, "sequence-point" },
+    /* -Wformat is opt-in (NOT under -Wall) so existing -Wall builds and the
+       self-host are unaffected; it only runs when explicitly requested. */
+    { offsetof(MCCState, warn_format), 0, "format" },
     { 0, 0, NULL }
 };
 

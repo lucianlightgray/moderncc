@@ -359,6 +359,17 @@ static int decode_ucn(uint8_t **pp)
     return (int)v;
 }
 
+/* 6.4.2.1 / Annex D.2: code points that may appear within an identifier but not
+   as its first character (the combining-mark ranges). gcc and clang both reject
+   such a UCN at the start of an identifier. */
+static int ucn_disallowed_initial(unsigned int v)
+{
+    return (v >= 0x0300 && v <= 0x036F)
+        || (v >= 0x1DC0 && v <= 0x1DFF)
+        || (v >= 0x20D0 && v <= 0x20FF)
+        || (v >= 0xFE20 && v <= 0xFE2F);
+}
+
 ST_FUNC void cstr_cat(CString *cstr, const char *str, int len)
 {
     int size;
@@ -2202,6 +2213,14 @@ static void parse_escape_string(CString *outstr, const uint8_t *buf, int is_long
             case 'e':
                 if (!gnu_ext)
                     goto invalid_escape;
+                /* 6.4.4.4: \e (ESC) is a GNU extension, not an ISO escape;
+                   gcc/clang diagnose it under -pedantic. */
+                if (mcc_state->warn_pedantic) {
+                    if (mcc_state->pedantic_errors)
+                        mcc_error("\\e is a non-ISO escape sequence");
+                    else
+                        mcc_warning("\\e is a non-ISO escape sequence");
+                }
                 c = 27;
                 break;
             case '\'':
@@ -2445,6 +2464,19 @@ static void bn_zero(unsigned int *bn)
     }
 }
 
+/* 6.4.4.4/6.4.5: the u/U/u8 character- and string-literal prefixes are C11
+   additions; diagnose under -pedantic in a strict C99/C90 mode (gcc/clang do).
+   The L prefix is C90, so it is never diagnosed. */
+static void pp_c11_prefix_pedantic(const char *what)
+{
+    if (mcc_state->cversion >= 201112 || !mcc_state->warn_pedantic)
+        return;
+    if (mcc_state->pedantic_errors)
+        mcc_error("%s is a C11 feature", what);
+    else
+        mcc_warning("%s is a C11 feature", what);
+}
+
 static void parse_number(const char *p)
 {
     int b, t, shift, frac_bits, s, exp_val, ch;
@@ -2467,6 +2499,14 @@ static void parse_number(const char *p)
             ch = *p++;
             b = 16;
         } else if (mcc_state->mcc_ext && (ch == 'b' || ch == 'B')) {
+            /* 6.4.4.1: binary integer constants (0b…) are a GNU/C23 extension,
+               not in C99/C11; gcc/clang diagnose under -pedantic. */
+            if (mcc_state->warn_pedantic) {
+                if (mcc_state->pedantic_errors)
+                    mcc_error("binary integer constants are a C23/GNU extension");
+                else
+                    mcc_warning("binary integer constants are a C23/GNU extension");
+            }
             q--;
             ch = *p++;
             b = 2;
@@ -2713,7 +2753,10 @@ static void parse_number(const char *p)
         tokc.i = n;
     }
     if ((ch == 'i' || ch == 'I' || ch == 'j' || ch == 'J')
-        && (tok == TOK_CFLOAT || tok == TOK_CDOUBLE || tok == TOK_CLDOUBLE)) {
+        && (tok == TOK_CFLOAT || tok == TOK_CDOUBLE || tok == TOK_CLDOUBLE
+            /* GNU imaginary *integer* constants (3i / 0x4j) — the value gets a
+               complex integer type in unary(); gcc/clang accept both forms. */
+            || (tok >= TOK_CINT && tok <= TOK_CULONG))) {
         tok_imaginary = 1;
         ch = *p++;
     }
@@ -2764,6 +2807,11 @@ static void next_nomacro(void)
            name (\uXXXX / \UXXXXXXXX). Decode it and parse the rest as an
            identifier rather than diagnosing a stray backslash. */
         if ((uc = decode_ucn(&p)) >= 0) {
+            /* 6.4.2.1/D.2: a combining-mark code point is valid only as a
+               non-initial identifier character — reject it here at the start. */
+            if (ucn_disallowed_initial(uc))
+                mcc_error("universal character \\u%04x is not valid as the "
+                          "first character of an identifier", uc);
             cstr_reset(&tokcstr);
             cstr_u8cat(&tokcstr, uc);
             c = *p;
@@ -2921,6 +2969,7 @@ maybe_newline:
         /* 6.4.5: u8"..." UTF-8 string -> char array; 6.4.4.4: u'...' -> char16_t.
            (u"..." char16_t string literals are not yet supported.) */
         if (p[1] == '8' && p[2] == '\"') {
+            pp_c11_prefix_pedantic("the 'u8' string-literal prefix");
             p += 2;           /* advance to the opening '"' */
             c = *p;
             str_prefix = '8'; /* mark UTF-8 so it stays distinct from a plain
@@ -2928,6 +2977,7 @@ maybe_newline:
             goto str_const;
         }
         if (p[1] == '\'' || p[1] == '\"') {
+            pp_c11_prefix_pedantic("the 'u' character/string prefix");
             PEEKC(c, p);      /* c = the quote */
             str_prefix = 'u';
             goto str_const;
@@ -2937,6 +2987,7 @@ maybe_newline:
     case 'U':
         /* 6.4.4.4/6.4.5: U'...' / U"..." -> char32_t. */
         if (p[1] == '\'' || p[1] == '\"') {
+            pp_c11_prefix_pedantic("the 'U' character/string prefix");
             PEEKC(c, p);      /* c = the quote */
             str_prefix = 'U';
             goto str_const;
@@ -3762,6 +3813,8 @@ static void pragma_operator(void)
         return;
     next();                              /* string-literal */
     if (tok != TOK_STR) {
+        /* 6.10.9p1: the _Pragma operand shall be a parenthesized string literal. */
+        mcc_error("_Pragma takes a parenthesized string literal");
         while (tok != ')' && tok != TOK_EOF && tok != TOK_LINEFEED)
             next();
         return;

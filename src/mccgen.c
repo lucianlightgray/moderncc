@@ -5097,7 +5097,15 @@ static void gen_complex_op(int op)
     {
         SValue are, aim, bre, bim;
         int ebt = base.t & VT_BTYPE;
+        /* Only fold when a constant is actually required (CONST_WANTED: static
+           initializer, case label, ...). gen_op declines to fold a non-finite
+           FP operation (e.g. inf+0) unless CONST_WANTED, so taking this path in
+           a plain local initializer would call init_putv on a non-constant and
+           silently store 0 (the runtime result is computed but discarded). In
+           non-const contexts the robust runtime path below handles every value,
+           including infinities, correctly. */
         if ((ebt == VT_FLOAT || ebt == VT_DOUBLE)
+            && CONST_WANTED
             && (op == '+' || op == '-' || op == '*' || op == '/')
             && cplx_extract_const(&vtop[-1], &are, &aim)
             && cplx_extract_const(&vtop[0], &bre, &bim)) {
@@ -5390,6 +5398,9 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label)
             goto basic_type2;
 
         case TOK__Atomic:
+            /* 6.7.2.4 / 6.7.3: _Atomic is a C11 addition; diagnose in C99/C90. */
+            if (mcc_state->cversion < 201112)
+                mcc_pedantic("'_Atomic' is a C11 feature");
             next();
             type->t = t;
             parse_btype_qualify(type, VT_ATOMIC);
@@ -5515,6 +5526,10 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label)
             goto basic_type2;
         case TOK_THREAD_LOCAL:
         case TOK___thread:
+            /* 6.7.1: _Thread_local is a C11 addition; diagnose in C99/C90. The
+               GNU __thread spelling is an extension, left alone. */
+            if (tok == TOK_THREAD_LOCAL && mcc_state->cversion < 201112)
+                mcc_pedantic("'_Thread_local' is a C11 feature");
             if (t & VT_TLS)
                 mcc_error("multiple thread-local storage specifiers");
             t |= VT_TLS;
@@ -5809,6 +5824,11 @@ check:
                 n = vtop->c.i;
                 if (n < 0)
                     mcc_error("invalid array size");
+                /* 6.7.6.2p1: a constant array size shall be greater than zero;
+                   a zero-size array is a GNU extension gcc/clang diagnose under
+                   -pedantic (covers `int a[0]` and the GNU `int d[0]` member). */
+                else if (n == 0)
+                    mcc_pedantic("ISO C forbids zero-size array");
                 /* 6.6p6: a size that only folds to a constant via a floating
                    operation is not an integer constant expression; gcc/clang
                    accept it as a folded-VLA extension and diagnose it. */
@@ -6669,6 +6689,145 @@ static void gen_atomic_load_scalar(void)
     if (bt == VT_BYTE || bt == VT_SHORT || bt == VT_BOOL)
         vtop->type.t = VT_INT;
     atomic_lowering--;
+}
+
+/* ---- -Wformat: printf/scanf format-string vs argument checking (opt-in) ---- */
+
+/* If a known printf/scanf-family function, fill *fmt_arg / *first_vararg with
+   their 1-based argument positions and return 1 (sets *is_scanf); else 0. */
+static int format_func_spec(const char *name, int *is_scanf,
+                            int *fmt_arg, int *first_vararg)
+{
+    static const struct { const char *n; char scanf, fmt, va; } tbl[] = {
+        { "printf",   0, 1, 2 }, { "fprintf", 0, 2, 3 },
+        { "sprintf",  0, 2, 3 }, { "snprintf",0, 3, 4 },
+        { "dprintf",  0, 2, 3 },
+        { "scanf",    1, 1, 2 }, { "fscanf",  1, 2, 3 },
+        { "sscanf",   1, 2, 3 },
+    };
+    unsigned i;
+    if (!name) return 0;
+    for (i = 0; i < sizeof tbl / sizeof tbl[0]; i++)
+        if (!strcmp(name, tbl[i].n)) {
+            *is_scanf = tbl[i].scanf;
+            *fmt_arg = tbl[i].fmt;
+            *first_vararg = tbl[i].va;
+            return 1;
+        }
+    return 0;
+}
+
+/* Return a pointer to the bytes of a constant string-literal operand (a char
+   array in a non-relocated data section), bounding the readable length in
+   *avail; or NULL if sv is not such a literal. */
+static const char *format_str_literal(SValue *sv, int *avail)
+{
+    Section *ssec;
+    ElfSym *esym;
+    unsigned long off;
+    if (!(sv->type.t & VT_ARRAY) && (sv->type.t & VT_BTYPE) != VT_PTR)
+        return NULL;
+    if ((sv->r & (VT_SYM | VT_CONST)) != (VT_SYM | VT_CONST)
+        || !sv->sym || sv->sym->v < SYM_FIRST_ANOM)
+        return NULL;
+    esym = elfsym(sv->sym);
+    if (!esym || esym->st_shndx == SHN_UNDEF)
+        return NULL;
+    ssec = mcc_state->sections[esym->st_shndx];
+    if (!ssec || !ssec->data || ssec->reloc)
+        return NULL;
+    off = esym->st_value + (unsigned)sv->c.i;
+    if (off >= ssec->data_offset)
+        return NULL;
+    *avail = (int)(ssec->data_offset - off);
+    return (const char *)(ssec->data + off);
+}
+
+/* Broad type class of a (default-promoted) argument: 0 integer, 1 floating,
+   2 pointer, 3 other (struct/complex/...). Kept coarse to avoid false positives
+   on length-modifier width mismatches — only cross-class errors are reported. */
+static int format_arg_class(CType *t)
+{
+    int bt = t->t & VT_BTYPE;
+    if (t->t & VT_ARRAY) return 2;
+    if (bt == VT_PTR || bt == VT_FUNC) return 2;
+    if (bt == VT_FLOAT || bt == VT_DOUBLE || bt == VT_LDOUBLE) return 1;
+    if (bt == VT_BOOL || bt == VT_BYTE || bt == VT_SHORT || bt == VT_INT
+        || bt == VT_LLONG)
+        return 0;
+    return 3;
+}
+
+/* Parse a printf/scanf format string and check each conversion against the
+   corresponding variadic argument (args[0..nvar-1] are contiguous vstack
+   SValues). Reports class mismatches and argument-count mismatches. */
+static void format_check(int is_scanf, const char *fmt, int favail,
+                         SValue *args, int nvar)
+{
+    int i = 0, used = 0;
+    while (i < favail && fmt[i]) {
+        int cls_want;       /* 0 int, 1 float, 2 pointer */
+        char conv;
+        if (fmt[i] != '%') { i++; continue; }
+        i++;
+        if (i < favail && fmt[i] == '%') { i++; continue; }
+        /* flags */
+        while (i < favail && (fmt[i]=='-'||fmt[i]=='+'||fmt[i]==' '
+                              ||fmt[i]=='#'||fmt[i]=='0')) i++;
+        if (is_scanf && i < favail && fmt[i] == '*') { i++; /* assignment-suppress: no arg */
+            /* still need to skip width+conv below, but consumes no argument */ }
+        /* width (printf '*' consumes an int arg) */
+        if (!is_scanf && i < favail && fmt[i] == '*') {
+            if (used < nvar && format_arg_class(&args[used].type) != 0)
+                mcc_warning_c(warn_format)("field width '*' expects an int argument");
+            used++; i++;
+        } else while (i < favail && fmt[i] >= '0' && fmt[i] <= '9') i++;
+        /* precision */
+        if (i < favail && fmt[i] == '.') {
+            i++;
+            if (!is_scanf && i < favail && fmt[i] == '*') {
+                if (used < nvar && format_arg_class(&args[used].type) != 0)
+                    mcc_warning_c(warn_format)("precision '*' expects an int argument");
+                used++; i++;
+            } else while (i < favail && fmt[i] >= '0' && fmt[i] <= '9') i++;
+        }
+        /* length modifiers (skip; width not checked, only class) */
+        while (i < favail && (fmt[i]=='h'||fmt[i]=='l'||fmt[i]=='L'
+                              ||fmt[i]=='j'||fmt[i]=='z'||fmt[i]=='t')) i++;
+        if (i >= favail || !fmt[i]) break;
+        conv = fmt[i++];
+        switch (conv) {
+        case 'd': case 'i': case 'u': case 'o': case 'x': case 'X': case 'c':
+            cls_want = 0; break;
+        case 'f': case 'F': case 'e': case 'E': case 'g': case 'G':
+        case 'a': case 'A':
+            cls_want = 1; break;
+        case 's': case 'p': case 'n':
+            cls_want = 2; break;
+        default:
+            continue;       /* unknown conversion: don't guess */
+        }
+        /* scanf: every conversion takes a pointer to the target object. */
+        if (is_scanf) cls_want = 2;
+        if (used >= nvar) {
+            mcc_warning_c(warn_format)(
+                "more conversions than arguments for '%s'",
+                is_scanf ? "scanf" : "printf");
+            return;
+        }
+        {
+            int got = format_arg_class(&args[used].type);
+            if (got <= 2 && got != cls_want) {
+                static const char *cn[] = { "an integer", "a floating",
+                                            "a pointer" };
+                mcc_warning_c(warn_format)(
+                    "format '%%%c' expects %s argument", conv, cn[cls_want]);
+            }
+        }
+        used++;
+    }
+    if (used < nvar)
+        mcc_warning_c(warn_format)("too many arguments for format string");
 }
 
 /* Set by the parenthesized-type-name branch of unary() when sizeof/_Alignof
@@ -7542,6 +7701,14 @@ special_math_val:
             Sym *sa;
             int nb_args, ret_nregs, ret_align, regsize, variadic;
             TokenString *p, *p2;
+            const char *fmt_fname = NULL;
+
+            /* -Wformat: remember the callee name (before vtop is consumed) so a
+               printf/scanf-family call can be format-checked after its args are
+               parsed. Gated on warn_format, so a default build is unaffected. */
+            if ((mcc_state->warn_format & WARN_ON)
+                && (vtop->r & VT_SYM) && vtop->sym)
+                fmt_fname = get_tok_str(vtop->sym->v, NULL);
 
             if ((vtop->type.t & VT_BTYPE) != VT_FUNC) {
                 if ((vtop->type.t & (VT_BTYPE | VT_ARRAY)) == VT_PTR) {
@@ -7635,6 +7802,28 @@ special_math_val:
                     seqp_flush();       /* per-argument region (see above) */
                 }
                 vrev(n);
+            }
+
+            /* -Wformat: all arguments are now on the value stack in call order
+               (vtop[0] = last argument). Check a recognized printf/scanf call
+               whose format operand is a string literal. Skipped under
+               -freverse-funcargs (different stack discipline) and for
+               struct-returning callees (a hidden sret arg shifts the indices). */
+            if (fmt_fname && !mcc_state->reverse_funcargs
+                && (s->type.t & VT_BTYPE) != VT_STRUCT) {
+                int is_scanf, fa, fv;
+                if (format_func_spec(fmt_fname, &is_scanf, &fa, &fv)
+                    && nb_args >= fa) {
+                    int favail;
+                    const char *fstr =
+                        format_str_literal(vtop - (nb_args - fa), &favail);
+                    if (fstr) {
+                        int nvar = nb_args - fv + 1;
+                        if (nvar < 0) nvar = 0;
+                        format_check(is_scanf, fstr, favail,
+                                     vtop - (nb_args - fv), nvar);
+                    }
+                }
             }
 
             next();
@@ -10532,13 +10721,42 @@ static int decl(int l)
                 if (type.ref->f.func_star_param)
                     mcc_error("'[*]' not allowed in a function definition");
 
+                /* 6.9.1p2: the declarator in a function definition shall itself
+                   include a parameter list (or K&R identifier list) — the
+                   function type may not be supplied entirely by a typedef name
+                   (`typedef int F(void); F f {…}` is invalid). post_type records
+                   any function declarator in ad.f.func_type; a value of 0 means
+                   the VT_FUNC type came purely from the base typedef. */
+                if (ad.f.func_type == 0)
+                    mcc_error("function definition declared with a typedef'd function type");
                 merge_funcattr(&type.ref->f, &ad.f);
                 type.t &= ~VT_EXTERN;
                 sym = external_sym(v, &type, 0, &ad);
 
+                /* 6.9.1p3: the return type of a function definition shall be
+                   void or a complete object type — an incomplete struct/union
+                   or enum is invalid (array/function returns are rejected in
+                   post_type). The same type is fine on a mere declaration, so
+                   this is checked only here on the definition. */
+                {
+                    CType *rt = &sym->type.ref->type;
+                    if ((rt->t & VT_BTYPE) != VT_VOID
+                        && ((rt->t & VT_BTYPE) == VT_STRUCT || IS_ENUM(rt->t))
+                        && rt->ref->c < 0)
+                        mcc_error("return type is an incomplete type");
+                }
+
                 for (sa = sym->type.ref; (sa = sa->next) != NULL;) {
                     if (!(sa->v & ~SYM_FIELD))
                         expect("identifier");
+                    /* 6.9.1p7: each parameter's adjusted type in a function
+                       definition shall be a complete object type. Arrays and
+                       functions are already adjusted to pointers, so only an
+                       incomplete struct/union/enum parameter can reach here. */
+                    if (((sa->type.t & VT_BTYPE) == VT_STRUCT || IS_ENUM(sa->type.t))
+                        && sa->type.ref->c < 0)
+                        mcc_error("parameter '%s' has incomplete type",
+                                  get_tok_str(sa->v & ~SYM_FIELD, NULL));
                     if (sym->type.ref->f.func_type == FUNC_OLD) {
                         /* 6.7.2p2: C11 removed implicit int. A K&R parameter
                            with no matching declaration retains the VT_EXTERN
@@ -10571,6 +10789,15 @@ static int decl(int l)
                 break;
             } else {
                 has_init = 0;
+                /* 6.7.6.3p3: an identifier list in a function declarator that is
+                   not part of a definition of that function shall be empty.  A
+                   FUNC_OLD function type with a non-empty parameter chain that
+                   reaches this (non-'{') declaration path is 'int f(a,b);' — the
+                   names have no types and this is only a declaration. */
+                if ((type.t & VT_BTYPE) == VT_FUNC
+                    && type.ref->f.func_type == FUNC_OLD
+                    && type.ref->next != NULL)
+                    mcc_error("parameter names (without types) in function declaration");
 		if (l == VT_CMP) {
 		    for (sym = func_vt.ref->next; sym; sym = sym->next)
 			if ((sym->v & ~SYM_FIELD) == v)
@@ -10593,6 +10820,12 @@ static int decl(int l)
                             || !(sym->type.t & VT_TYPEDEF))
                             mcc_error("incompatible redefinition of '%s'",
                                 get_tok_str(v, NULL));
+                        /* 6.7p3: the C11 same-type redefinition allowance does
+                           NOT extend to a variably modified (VLA) type — that is
+                           a constraint violation in every mode (gcc/clang reject). */
+                        else if ((sym->type.t & VT_VLA) || (type.t & VT_VLA))
+                            mcc_error("redefinition of variably modified typedef '%s'",
+                                get_tok_str(v, NULL));
                         /* 6.7p3: redefining a typedef with the same type is
                            permitted only in C11; in C99/C90 it is a constraint
                            violation. */
@@ -10611,6 +10844,18 @@ static int decl(int l)
 			   && !(type.t & VT_EXTERN)) {
 		    mcc_error("declaration of void object");
                 } else {
+                    /* 6.7.8p3 / 6.2.3: a typedef name and an ordinary identifier
+                       share one name space, so an object/function declaration may
+                       not reuse a name already a typedef in the SAME scope (a
+                       deeper block may still shadow it). The reverse order
+                       (typedef after object) is caught in the VT_TYPEDEF path. */
+                    {
+                        Sym *prev = sym_find(v);
+                        if (prev && (prev->type.t & VT_TYPEDEF)
+                            && prev->sym_scope == local_scope)
+                            mcc_error("'%s' redeclared as different kind of symbol",
+                                      get_tok_str(v, NULL));
+                    }
                     r = 0;
                     if ((type.t & VT_BTYPE) == VT_FUNC) {
                         merge_funcattr(&type.ref->f, &ad.f);

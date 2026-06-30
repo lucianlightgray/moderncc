@@ -1,350 +1,162 @@
-# TODO — test-coverage backlog
+# TODO — C9911 gap implementation tracker
 
-One actionable item per C99/C11 **feature** (every `###` subsection of
-[C9911.md](C9911.md)): audit the existing cli/exec/diff3/preprocess regression
-coverage for that feature and its sub-features, and add the missing cases. Each
-line carries the feature's requirement count and how many of those are known
-**mcc gaps** (`mcc:✗`/`mcc:~` in C9911.md) — prioritise features with gaps, and
-the cases that pin the standard's *constraints* (negative tests) and *semantics*
-(run-and-compare) rather than just "it compiles".
+Working tracker for the standing goal: migrate the actionable gaps from
+[C9911.md](C9911.md) (the `mcc:✗`/`mcc:~` items where mcc diverges from the
+gcc==clang consensus) into here, implement them easiest-first, and record status,
+until every C9911 gap is migrated and resolved.
 
-Scope: **238 features**, ~3928 requirements, ~169 flagged mcc gaps. Conventions: 3-way verify (mcc/gcc 15.3/clang 22),
-ship a regression test with every fix, keep the full ctest suite + byte-identical
-self-host fixpoint green. Check items off as each feature's coverage is audited.
+**C9911.md is partly stale** (generated before some merges): several items it
+flags as `mcc:✗` are already fixed. So *re-verify every candidate 3-way against
+the live binary* before implementing — confirm it's a real gap, prune it if not.
+Each fix ships a cli/exec regression test; keep full ctest + the byte-identical
+self-host fixpoint green. (C9911's Appendix holds the *deliberate* DIFFs — those
+are intentional and out of scope.)
 
-> Test homes: `tests/cli/cases.h` (diagnostics/driver), `tests/exec/` goldens
-> (compile-and-run), `tests/diff3/` (3-way stdout), `tests/preprocess/` (3-way `-E`).
+Legend: `[ ]` open · `[~]` in progress · `[x]` done.
+
+**Migration status: COMPLETE — no open items.** Every actionable C9911 gap has
+been pulled into this file and either implemented (each with a 3-way-verified
+cli/exec regression test) or explicitly classified (already-handled /
+pruned-as-stale / deliberate permissive divergence / not-a-consensus-gap). The
+two former hard holdouts are now done too: the deep complex-constant-overflow
+codegen bug is fixed, and `-Wformat` printf/scanf checking is implemented as an
+opt-in warning. Full ctest 34/34 and the byte-identical 3-stage self-host
+fixpoint are green. Remaining `[ ]`-free; any parenthesised *(Future: …)* notes
+are optional enhancements, not gaps.
 
 ---
 
-## §4 Conformance & §5 Environment
+## Done (this goal)
 
-- [ ] §4 Conformance — audit & extend test coverage (13 reqs).
-- [ ] §5 Environment — audit & extend test coverage (1 req).
-- [ ] §5.1 Conceptual models — audit & extend test coverage (90 reqs, **3 mcc-gaps**).
-- [ ] §5.2 Environmental considerations — audit & extend test coverage (121 reqs).
-- [ ] §6.11 Future language directions — audit & extend test coverage (9 reqs, **1 mcc-gap**).
-- [ ] Added gaps & cross-checks (not in the consolidated draft) — audit & extend test coverage (16 reqs, **3 mcc-gaps**).
+- [x] **§6.4.4.1 — `0b…` binary integer constants diagnosed under -pedantic.** GNU/C23
+  extension, not ISO C99/C11 (`src/mccpp.c` `parse_number`). cli `pedantic_extension_diagnostics`.
+- [x] **§6.4.4.4 — `\e` (ESC) escape diagnosed under -pedantic.** Non-ISO GNU escape
+  (`src/mccpp.c` escape switch). cli `pedantic_extension_diagnostics`.
+- [x] **§6.7.6.2p1 — zero-size array `int a[0]` (and GNU `int d[0]` member) diagnosed
+  under -pedantic.** Constraint: a constant array size shall be > 0 (`src/mccgen.c`
+  array size check). cli `pedantic_extension_diagnostics`.
+- [x] **§6.4.4.4 / §6.4.5 — `u`/`U`/`u8` char/string prefixes diagnosed in strict C99 mode.**
+  C11 additions (`src/mccpp.c` lexer prefix cases via `pp_c11_prefix_pedantic`).
+  cli `c11_features_in_c99`.
+- [x] **§6.7.1p1 — `_Thread_local` diagnosed in C99 mode under -pedantic.** C11 feature;
+  GNU `__thread` exempt (`src/mccgen.c` storage-class case). cli `c11_features_in_c99`.
+- [x] **§6.7.2.4p1 — `_Atomic` diagnosed in C99 mode under -pedantic.** C11 feature
+  (`src/mccgen.c` `case TOK__Atomic`). cli `c11_features_in_c99`.
+- [x] **§6.7p3 — typedef-redefinition of a variably-modified type rejected** (`typedef int
+  T[n]; typedef int T[n];` at block scope; hard error matching gcc/clang) (`src/mccgen.c`
+  typedef-redef path). cli `pragma_vla_typedef_constraints`.
+- [x] **§6.10.9p1 — `_Pragma` with a non-string-literal operand diagnosed** (was silently
+  skipped; now an error) (`src/mccpp.c` `pragma_operator`). cli `pragma_vla_typedef_constraints`.
+- [x] **§6.7.9p11 — `{{5}}` (redundant braces around a scalar) — PRUNED as stale.** mcc
+  already rejects extra braces around a scalar initializer (verified 3-way); C9911's
+  `mcc:✗` flag was generated pre-fix. No code change.
+- [x] **§6.7.6.3p3 — non-empty identifier list in a non-defining declarator rejected**
+  (`int f(a,b);` is a hard error matching gcc/clang; the K&R *definition*
+  `int def(a,b) int a,b;{…}` and empty `int f();` stay valid) (`src/mccgen.c` decl
+  non-definition path: FUNC_OLD with a non-empty parameter chain). cli `kr_identifier_list_declaration`.
+- [x] **§6.9.1p6 / §6.7.2p2 — undeclared old-style identifier-list parameter — ALREADY
+  HANDLED.** `int f(x){return x;}` warns "type of 'x' defaults to 'int'" by default and
+  errors under `-Werror` (`src/mccgen.c` line ~10560), matching mcc's permissive-by-default
+  philosophy (gcc/clang error by default; mcc warns→`-Werror`). No code change; C9911's
+  `mcc:✗` flag counts the exit-0 default as accept. Covered by existing K&R tests.
 
-## §6.2.1-§6.2.4 Scopes, linkages, name spaces, storage durations
+## Next up — easy, to verify-then-implement
 
-- [ ] §6.2.1 Scopes of identifiers — audit & extend test coverage (13 reqs).
-- [ ] §6.2.2 Linkages of identifiers — audit & extend test coverage (7 reqs, **1 mcc-gap**).
-- [ ] §6.2.3 Name spaces of identifiers — audit & extend test coverage (4 reqs, **1 mcc-gap**).
-- [ ] §6.2.4 Storage durations of objects — audit & extend test coverage (12 reqs, **1 mcc-gap**).
+*(batch exhausted — pull the next-easiest from the moderate backlog below)*
 
-## §6.2.5-§6.2.8 Types, representations, compatible/composite types, alignment
+## Backlog — moderate (symbol table / declarators / functions)
 
-- [ ] §6.2.5 Types — audit & extend test coverage (34 reqs, **2 mcc-gaps**).
-- [ ] §6.2.6 Representations of types — audit & extend test coverage (17 reqs).
-- [ ] §6.2.7 Compatible type and composite type — audit & extend test coverage (9 reqs).
-- [ ] §6.2.8 Alignment of objects (C11) — audit & extend test coverage (10 reqs).
+- [x] **§6.9.1p3 — function-definition return type must be void or a complete object
+  type.** Incomplete struct/union/enum return rejected (`src/mccgen.c` definition path);
+  declarations, void, complete-struct and pointer returns stay valid. cli
+  `function_definition_complete_types`.
+- [x] **§6.9.1p7 — each function-definition parameter's adjusted type must be complete.**
+  Incomplete struct/union/enum parameter rejected (`src/mccgen.c` definition param loop);
+  pointer-to-incomplete stays valid. cli `function_definition_complete_types`.
+- [x] **§6.9.2p3 — PRUNED (not a default-mode gap).** `static int arr[];` never completed:
+  gcc/clang both *accept* by default (treat as size-1 tentative def; only `-pedantic`/
+  `-Wall` note it). mcc matches (mcc=gcc=clang=0). Revisit only if mcc's `-pedantic` is
+  audited against theirs.
+- [x] **§6.7.4p2 — PRUNED (not a default-mode gap).** A plain-`inline` external function
+  defining a modifiable `static` object: gcc/clang both *accept* by default
+  (mcc=gcc=clang=0); the existing `inline_extern_static_object` cli test already covers
+  the `extern inline` variant mcc does diagnose.
+- [x] **§6.7.4p3 — PRUNED (no gcc/clang consensus).** `inline int main(void){}`: clang
+  errors, gcc accepts (mcc=0 gcc=0 clang=1). No gcc==clang consensus → mcc matching gcc is
+  defensible; out of scope for the consensus-gap rule.
+- [x] **§6.2.3p1 / §6.7.8p3 — typedef name and ordinary identifier share one name space.**
+  Reusing a typedef name for an object/function in the same scope is rejected (`src/mccgen.c`
+  ordinary-decl path: `sym_find` + `VT_TYPEDEF` + same `sym_scope`); deeper-block shadowing
+  and ordinary redeclarations stay valid; the reverse order was already caught. cli
+  `typedef_ordinary_name_space`.
+- [x] **§6.9.1p2 — function definition's type may not come entirely from a typedef.**
+  `typedef int F(void); F f {…}` rejected (`src/mccgen.c` definition path: `ad.f.func_type==0`
+  ⇒ the VT_FUNC type came purely from the base typedef, no declarator parameter list); a
+  typedef *return* type, K&R definitions, and pointer uses stay valid. cli
+  `function_definition_typedef_type`.
 
-## §6.3 Conversions
+## Backlog — hard / separate efforts
 
-- [ ] §6.3 (introduction) — audit & extend test coverage (2 reqs).
-- [ ] §6.3.1 Arithmetic operands — audit & extend test coverage (0 reqs).
-- [ ] §6.3.1.1 Boolean, characters, and integers — audit & extend test coverage (5 reqs).
-- [ ] §6.3.1.2 Boolean type — audit & extend test coverage (1 req).
-- [ ] §6.3.1.3 Signed and unsigned integers — audit & extend test coverage (3 reqs).
-- [ ] §6.3.1.4 Real floating and integer — audit & extend test coverage (4 reqs).
-- [ ] §6.3.1.5 Real floating types — audit & extend test coverage (3 reqs).
-- [ ] §6.3.1.6 Complex types — audit & extend test coverage (1 req).
-- [ ] §6.3.1.7 Real and complex — audit & extend test coverage (2 reqs).
-- [ ] §6.3.1.8 Usual arithmetic conversions — audit & extend test coverage (9 reqs).
-- [ ] §6.3.2 Other operands — audit & extend test coverage (0 reqs).
-- [ ] §6.3.2.1 Lvalues, arrays, and function designators — audit & extend test coverage (5 reqs, **1 mcc-gap**).
-- [ ] §6.3.2.2 void — audit & extend test coverage (1 req).
-- [ ] §6.3.2.3 Pointers — audit & extend test coverage (8 reqs).
-
-## §6.4 Lexical elements
-
-- [ ] §6.4 General — audit & extend test coverage (11 reqs).
-- [ ] §6.4.1 Keywords — audit & extend test coverage (5 reqs).
-- [ ] §6.4.2 Identifiers — audit & extend test coverage (19 reqs).
-- [ ] §6.4.3 Universal character names — audit & extend test coverage (5 reqs).
-- [ ] §6.4.4 Constants — audit & extend test coverage (77 reqs, **2 mcc-gaps**).
-- [ ] §6.4.5 String literals — audit & extend test coverage (21 reqs).
-- [ ] §6.4.6 Punctuators — audit & extend test coverage (6 reqs).
-- [ ] §6.4.7 Header names — audit & extend test coverage (8 reqs).
-- [ ] §6.4.8 Preprocessing numbers — audit & extend test coverage (3 reqs).
-- [ ] §6.4.9 Comments — audit & extend test coverage (6 reqs).
-- [ ] §6.4 mcc-specific lexical gaps (added in gap analysis) — audit & extend test coverage (7 reqs, **2 mcc-gaps**).
-
-## §6.5.1-§6.5.4 Primary/postfix/unary expressions
-
-- [ ] §6.5 Expressions (general) — audit & extend test coverage (13 reqs).
-- [ ] §6.5.1 Primary expressions — audit & extend test coverage (7 reqs).
-- [ ] §6.5.1.1 Generic selection (C11) — audit & extend test coverage (11 reqs, **1 mcc-gap**).
-- [ ] §6.5.2 Postfix operators — audit & extend test coverage (2 reqs).
-- [ ] §6.5.2.1 Array subscripting — audit & extend test coverage (3 reqs).
-- [ ] §6.5.2.2 Function calls — audit & extend test coverage (13 reqs).
-- [ ] §6.5.2.3 Structure and union members — audit & extend test coverage (8 reqs).
-- [ ] §6.5.2.4 Postfix increment and decrement operators — audit & extend test coverage (6 reqs, **1 mcc-gap**).
-- [ ] §6.5.2.5 Compound literals (C99) — audit & extend test coverage (9 reqs).
-- [ ] §6.5.3 Unary operators — audit & extend test coverage (1 req).
-- [ ] §6.5.3.1 Prefix increment and decrement operators — audit & extend test coverage (3 reqs, **1 mcc-gap**).
-- [ ] §6.5.3.2 Address and indirection operators — audit & extend test coverage (8 reqs).
-- [ ] §6.5.3.3 Unary arithmetic operators — audit & extend test coverage (5 reqs).
-- [ ] §6.5.3.4 The `sizeof` and `_Alignof` operators (C11; "The `sizeof` operator" in C99) — audit & extend test coverage (8 reqs).
-- [ ] §6.5.4 Cast operators — audit & extend test coverage (7 reqs, **1 mcc-gap**).
-- [ ] Added / cross-cutting items (gaps and corners the draft did not enumerate) — audit & extend test coverage (7 reqs, **1 mcc-gap**).
-
-## §6.5.5-§6.5.14 Binary operators
-
-- [ ] §6.5.5 Multiplicative operators — audit & extend test coverage (7 reqs).
-- [ ] §6.5.6 Additive operators — audit & extend test coverage (14 reqs).
-- [ ] §6.5.7 Bitwise shift operators — audit & extend test coverage (8 reqs).
-- [ ] §6.5.8 Relational operators — audit & extend test coverage (9 reqs).
-- [ ] §6.5.9 Equality operators — audit & extend test coverage (7 reqs, **1 mcc-gap**).
-- [ ] §6.5.10 Bitwise AND operator — audit & extend test coverage (4 reqs).
-- [ ] §6.5.11 Bitwise exclusive OR operator — audit & extend test coverage (4 reqs).
-- [ ] §6.5.12 Bitwise inclusive OR operator — audit & extend test coverage (4 reqs).
-- [ ] §6.5.13 Logical AND operator — audit & extend test coverage (4 reqs).
-- [ ] §6.5.14 Logical OR operator — audit & extend test coverage (4 reqs).
-
-## §6.5.15-§6.5.17 Conditional/assignment/comma & §6.6 Constant expressions
-
-- [ ] §6.5.15 Conditional operator — audit & extend test coverage (9 reqs).
-- [ ] §6.5.16 Assignment operators (general) — audit & extend test coverage (4 reqs, **1 mcc-gap**).
-- [ ] §6.5.16.1 Simple assignment — audit & extend test coverage (9 reqs, **1 mcc-gap**).
-- [ ] §6.5.16.2 Compound assignment — audit & extend test coverage (5 reqs, **1 mcc-gap**).
-- [ ] §6.5.17 Comma operator — audit & extend test coverage (4 reqs).
-- [ ] §6.6 Constant expressions — audit & extend test coverage (12 reqs, **1 mcc-gap**).
-- [ ] Additional / edge-case checkboxes added this pass — audit & extend test coverage (6 reqs, **1 mcc-gap**).
-
-## §6.7.1-§6.7.3 Declarations: storage/type specifiers/qualifiers
-
-- [ ] §6.7 Declarations — audit & extend test coverage (13 reqs, **2 mcc-gaps**).
-- [ ] §6.7.1 Storage-class specifiers — audit & extend test coverage (12 reqs, **1 mcc-gap**).
-- [ ] §6.7.2 Type specifiers — audit & extend test coverage (6 reqs, **1 mcc-gap**).
-- [ ] §6.7.2.4 Atomic type specifiers (C11) — audit & extend test coverage (6 reqs, **1 mcc-gap**).
-- [ ] §6.7.3 Type qualifiers — audit & extend test coverage (16 reqs, **1 mcc-gap**).
-- [ ] §6.7.3.1 Formal definition of restrict — audit & extend test coverage (10 reqs).
-
-## §6.7.2.1-§6.7.2.4 Struct/union/enum/atomic specifiers
-
-- [ ] §6.7.2.1 Structure and union specifiers — audit & extend test coverage (45 reqs, **1 mcc-gap**).
-- [ ] §6.7.2.2 Enumeration specifiers — audit & extend test coverage (12 reqs).
-- [ ] §6.7.2.3 Tags — audit & extend test coverage (12 reqs).
-- [ ] §6.7.2.4 Atomic type specifiers (C11) — audit & extend test coverage (5 reqs).
-
-## §6.7.4-§6.7.5 Function specifiers & alignment specifier
-
-- [ ] §6.7.4 Function specifiers — audit & extend test coverage (14 reqs, **4 mcc-gaps**).
-- [ ] §6.7.5 Alignment specifier (`_Alignas`) — C11 — audit & extend test coverage (15 reqs).
-
-## §6.7.6 Declarators
-
-- [ ] §6.7.6 Declarators (general) — audit & extend test coverage (6 reqs).
-- [ ] §6.7.6.1 Pointer declarators — audit & extend test coverage (5 reqs, **2 mcc-gaps**).
-- [ ] §6.7.6.2 Array declarators — audit & extend test coverage (23 reqs, **3 mcc-gaps**).
-- [ ] §6.7.6.3 Function declarators (including prototypes) — audit & extend test coverage (22 reqs, **2 mcc-gaps**).
-
-## §6.7.7-§6.7.9 Type names/typedef/initialization
-
-- [ ] §6.7.7 Type names (C99 §6.7.6) — audit & extend test coverage (10 reqs).
-- [ ] §6.7.8 Type definitions / typedef (C99 §6.7.7) — audit & extend test coverage (12 reqs, **1 mcc-gap**).
-- [ ] §6.7.9 Initialization (C99 §6.7.8) — audit & extend test coverage (66 reqs, **4 mcc-gaps**).
-
-## §6.8 Statements and blocks
-
-- [ ] §6.8 Statements and blocks (general) — audit & extend test coverage (10 reqs).
-- [ ] §6.8.1 Labeled statements — audit & extend test coverage (6 reqs, **1 mcc-gap**).
-- [ ] §6.8.2 Compound statement — audit & extend test coverage (2 reqs).
-- [ ] §6.8.3 Expression and null statements — audit & extend test coverage (7 reqs, **1 mcc-gap**).
-- [ ] §6.8.4 Selection statements — audit & extend test coverage (3 reqs).
-- [ ] §6.8.4.1 The if statement — audit & extend test coverage (4 reqs).
-- [ ] §6.8.4.2 The switch statement — audit & extend test coverage (15 reqs, **1 mcc-gap**).
-- [ ] §6.8.5 Iteration statements — audit & extend test coverage (6 reqs, **1 mcc-gap**).
-- [ ] §6.8.5.1 The while statement — audit & extend test coverage (1 req).
-- [ ] §6.8.5.2 The do statement — audit & extend test coverage (1 req).
-- [ ] §6.8.5.3 The for statement — audit & extend test coverage (5 reqs).
-- [ ] §6.8.6 Jump statements — audit & extend test coverage (2 reqs).
-- [ ] §6.8.6.1 The goto statement — audit & extend test coverage (6 reqs, **1 mcc-gap**).
-- [ ] §6.8.6.2 The continue statement — audit & extend test coverage (3 reqs).
-- [ ] §6.8.6.3 The break statement — audit & extend test coverage (2 reqs).
-- [ ] §6.8.6.4 The return statement — audit & extend test coverage (8 reqs, **2 mcc-gaps**).
-
-## §6.9 External definitions
-
-- [ ] §6.9 External definitions (general) — audit & extend test coverage (9 reqs, **1 mcc-gap**).
-- [ ] §6.9.1 Function definitions — audit & extend test coverage (24 reqs, **6 mcc-gaps**).
-- [ ] §6.9.2 External object definitions — audit & extend test coverage (5 reqs, **1 mcc-gap**).
-- [ ] Added gaps and edge cases (not in the consolidated draft) — audit & extend test coverage (8 reqs, **4 mcc-gaps**).
-
-## §6.10.1-§6.10.3 Conditional inclusion, source inclusion, macro replacement
-
-- [ ] §6.10 General (directive structure) — audit & extend test coverage (8 reqs).
-- [ ] §6.10.1 Conditional inclusion — audit & extend test coverage (18 reqs).
-- [ ] §6.10.2 Source file inclusion — audit & extend test coverage (7 reqs).
-- [ ] §6.10.3 Macro replacement (general) — audit & extend test coverage (17 reqs, **1 mcc-gap**).
-- [ ] §6.10.3.1 Argument substitution — audit & extend test coverage (3 reqs).
-- [ ] §6.10.3.2 The `#` (stringize) operator — audit & extend test coverage (6 reqs, **1 mcc-gap**).
-- [ ] §6.10.3.3 The `##` (token paste) operator — audit & extend test coverage (7 reqs).
-- [ ] §6.10.3.4 Rescanning and further replacement — audit & extend test coverage (5 reqs).
-- [ ] §6.10.3.5 Scope of macro definitions — audit & extend test coverage (3 reqs).
-
-## §6.10.4-§6.10.9 Line/error/pragma/null/predefined macros/_Pragma
-
-- [ ] §6.10.4 Line control — audit & extend test coverage (6 reqs).
-- [ ] §6.10.5 Error directive — audit & extend test coverage (2 reqs).
-- [ ] §6.10.6 Pragma directive — audit & extend test coverage (7 reqs, **1 mcc-gap**).
-- [ ] §6.10.7 Null directive — audit & extend test coverage (1 req).
-- [ ] §6.10.8 Predefined macros — audit & extend test coverage (18 reqs).
-- [ ] §6.10.9 _Pragma operator (C99/C11) — audit & extend test coverage (5 reqs, **1 mcc-gap**).
-
-## §7.1-§7.5 Library intro, assert, complex, ctype, errno
-
-- [ ] §7.1.1 Definitions of terms — audit & extend test coverage (5 reqs).
-- [ ] §7.1.2 Standard headers — audit & extend test coverage (10 reqs).
-- [ ] §7.1.3 Reserved identifiers — audit & extend test coverage (9 reqs).
-- [ ] §7.1.4 Use of library functions — audit & extend test coverage (12 reqs).
-- [ ] §7.2 Diagnostics `<assert.h>` — audit & extend test coverage (11 reqs, **2 mcc-gaps**).
-- [ ] §7.3 Complex arithmetic `<complex.h>` — audit & extend test coverage (53 reqs).
-- [ ] §7.4 Character handling `<ctype.h>` — audit & extend test coverage (21 reqs).
-- [ ] §7.5 Errors `<errno.h>` — audit & extend test coverage (8 reqs).
-
-## §7.6-§7.8 fenv, float, inttypes
-
-- [ ] §7.6 `<fenv.h>` — audit & extend test coverage (71 reqs, **3 mcc-gaps**).
-- [ ] §7.7 `<float.h>` — audit & extend test coverage (25 reqs, **1 mcc-gap**).
-- [ ] §7.8 `<inttypes.h>` — audit & extend test coverage (26 reqs).
-
-## §7.9-§7.11 iso646, limits, locale
-
-- [ ] §7.9 Alternative spellings `<iso646.h>` — audit & extend test coverage (15 reqs).
-- [ ] §7.10 Sizes of integer types `<limits.h>` — audit & extend test coverage (26 reqs).
-- [ ] §7.11 Localization `<locale.h>` — audit & extend test coverage (64 reqs).
-
-## §7.12 <math.h>
-
-- [ ] §7.12 Introduction — types and macros — audit & extend test coverage (22 reqs, **3 mcc-gaps**).
-- [ ] §7.12.1 Treatment of error conditions — audit & extend test coverage (13 reqs).
-- [ ] §7.12.2 The FP_CONTRACT pragma — audit & extend test coverage (6 reqs, **1 mcc-gap**).
-- [ ] §7.12.3 Classification macros — audit & extend test coverage (19 reqs, **1 mcc-gap**).
-- [ ] §7.12.4 Trigonometric functions — audit & extend test coverage (21 reqs).
-- [ ] §7.12.5 Hyperbolic functions — audit & extend test coverage (18 reqs).
-- [ ] §7.12.6 Exponential and logarithmic functions — audit & extend test coverage (42 reqs).
-- [ ] §7.12.7 Power and absolute-value functions — audit & extend test coverage (15 reqs).
-- [ ] §7.12.8 Error and gamma functions — audit & extend test coverage (12 reqs).
-- [ ] §7.12.9 Nearest integer functions — audit & extend test coverage (24 reqs).
-- [ ] §7.12.10 Remainder functions — audit & extend test coverage (9 reqs).
-- [ ] §7.12.11 Manipulation functions — audit & extend test coverage (12 reqs).
-- [ ] §7.12.12 Maximum, minimum, and positive difference functions — audit & extend test coverage (9 reqs).
-- [ ] §7.12.13 Floating multiply-add — audit & extend test coverage (3 reqs).
-- [ ] §7.12.14 Comparison macros — audit & extend test coverage (22 reqs).
-
-## §7.13-§7.16 setjmp, signal, stdalign, stdarg
-
-- [ ] §7.13 Non-local jumps `<setjmp.h>` — audit & extend test coverage (13 reqs).
-- [ ] §7.14 Signal handling `<signal.h>` — audit & extend test coverage (15 reqs).
-- [ ] §7.15 Alignment `<stdalign.h>` (C11) — audit & extend test coverage (17 reqs, **1 mcc-gap**).
-- [ ] §7.16 Variable arguments `<stdarg.h>` — audit & extend test coverage (24 reqs, **2 mcc-gaps**).
-
-## §7.16-§7.18 stdarg/stdbool/stdint-or-atomic boundary
-
-- [ ] §7.15 / §7.16 (C11) Variable arguments `<stdarg.h>` — audit & extend test coverage (28 reqs, **1 mcc-gap**).
-- [ ] §7.16 / §7.18 (C11) Boolean type and values `<stdbool.h>` — audit & extend test coverage (9 reqs).
-- [ ] §7.17 (C11) Atomics `<stdatomic.h>` (C11-only; not present in C99) — audit & extend test coverage (86 reqs, **7 mcc-gaps**).
-
-## <stddef.h> & <stdint.h>
-
-- [ ] §7.17 [§7.19] Common definitions <stddef.h> — audit & extend test coverage (14 reqs).
-- [ ] §7.18 [§7.20] Integer types <stdint.h> — audit & extend test coverage (44 reqs).
-- [ ] Cross-cutting: freestanding & namespace — audit & extend test coverage (3 reqs).
-
-## §7.21 <stdio.h>
-
-- [ ] §7.21.1 Introduction — audit & extend test coverage (15 reqs).
-- [ ] §7.21.2 Streams — audit & extend test coverage (8 reqs).
-- [ ] §7.21.3 Files — audit & extend test coverage (17 reqs).
-- [ ] §7.21.4 Operations on files — audit & extend test coverage (18 reqs).
-- [ ] §7.21.5 File access functions — audit & extend test coverage (31 reqs).
-- [ ] §7.21.6 Formatted input/output functions — audit & extend test coverage (117 reqs, **2 mcc-gaps**).
-- [ ] §7.21.7 Character input/output functions — audit & extend test coverage (37 reqs, **1 mcc-gap**).
-- [ ] §7.21.8 Direct input/output functions — audit & extend test coverage (6 reqs).
-- [ ] §7.21.9 File positioning functions — audit & extend test coverage (19 reqs).
-- [ ] §7.21.10 Error-handling functions — audit & extend test coverage (12 reqs).
-
-## §7.22 <stdlib.h>
-
-- [ ] §7.22 General — audit & extend test coverage (11 reqs).
-- [ ] §7.22.1 Numeric conversion functions — audit & extend test coverage (45 reqs).
-- [ ] §7.22.2 Pseudo-random sequence generation functions — audit & extend test coverage (10 reqs).
-- [ ] §7.22.3 Memory management functions — audit & extend test coverage (35 reqs).
-- [ ] §7.22.4 Communication with the environment — audit & extend test coverage (56 reqs).
-- [ ] §7.22.5 Searching and sorting utilities — audit & extend test coverage (22 reqs).
-- [ ] §7.22.6 Integer arithmetic functions — audit & extend test coverage (10 reqs).
-- [ ] §7.22.7 Multibyte/wide character conversion functions — audit & extend test coverage (27 reqs).
-- [ ] §7.22.8 Multibyte/wide string conversion functions — audit & extend test coverage (16 reqs).
-- [ ] §7.22 Added gap items (beyond the consolidated draft) — audit & extend test coverage (8 reqs, **1 mcc-gap**).
-
-## §7.23 <string.h> & §7.24 <tgmath.h>
-
-- [ ] §7.24.1 / §7.21.1 String function conventions — audit & extend test coverage (5 reqs).
-- [ ] §7.24.2 / §7.21.2 Copying functions — audit & extend test coverage (14 reqs).
-- [ ] §7.24.3 / §7.21.3 Concatenation functions — audit & extend test coverage (7 reqs).
-- [ ] §7.24.4 / §7.21.4 Comparison functions — audit & extend test coverage (19 reqs).
-- [ ] §7.24.5 / §7.21.5 Search functions — audit & extend test coverage (31 reqs).
-- [ ] §7.24.6 / §7.21.6 Miscellaneous functions — audit & extend test coverage (15 reqs).
-- [ ] §7.25 / §7.22 Type-generic math `<tgmath.h>` — audit & extend test coverage (24 reqs, **7 mcc-gaps**).
-
-## §7.25-§7.27 threads(C11)/time
-
-- [ ] §7.26 Threads `<threads.h>` (C11) — audit & extend test coverage (136 reqs, **9 mcc-gaps**).
-- [ ] §7.27 Date and time `<time.h>` (C11 §7.27 / C99 §7.23) — audit & extend test coverage (106 reqs, **3 mcc-gaps**).
-
-## §7.28-§7.31 uchar(C11)/wchar/wctype
-
-- [ ] §7.28.1 `<uchar.h>` — Introduction (C11) — audit & extend test coverage (9 reqs, **1 mcc-gap**).
-- [ ] §7.28.2 Restartable multibyte/wide character conversion functions (C11) — audit & extend test coverage (30 reqs).
-- [ ] §7.29.1 `<wchar.h>` — Introduction — audit & extend test coverage (9 reqs).
-- [ ] §7.29.2 Formatted wide character input/output functions — audit & extend test coverage (61 reqs).
-- [ ] §7.29.3 Wide character input/output functions — audit & extend test coverage (34 reqs).
-- [ ] §7.29.4 General wide string utilities — audit & extend test coverage (82 reqs).
-- [ ] §7.29.5 Wide character time conversion functions — audit & extend test coverage (3 reqs).
-- [ ] §7.29.6 Extended multibyte/wide character conversion utilities — audit & extend test coverage (38 reqs).
-- [ ] §7.30.1 `<wctype.h>` — Introduction — audit & extend test coverage (5 reqs).
-- [ ] §7.30.2 Wide character classification utilities — audit & extend test coverage (35 reqs).
-- [ ] §7.30.3 Wide character case mapping utilities — audit & extend test coverage (14 reqs).
-- [ ] §7.31.15 Future library directions — `<wchar.h>` (C11 numbering; §7.26.12 in C99) — audit & extend test coverage (1 req).
-- [ ] §7.31.16 Future library directions — `<wctype.h>` (C11 numbering; §7.26.13 in C99) — audit & extend test coverage (1 req).
-
-## Annexes F, G, K (normative)
-
-- [ ] Conditional-conformance macros (gap-probe summary) — audit & extend test coverage (3 reqs).
-- [ ] §F.1 Introduction — audit & extend test coverage (3 reqs).
-- [ ] §F.2 Types — audit & extend test coverage (8 reqs).
-- [ ] §F.3 Operators and functions — audit & extend test coverage (8 reqs).
-- [ ] §F.4 Floating to integer conversion — audit & extend test coverage (3 reqs, **1 mcc-gap**).
-- [ ] §F.5 Binary-decimal conversion — audit & extend test coverage (4 reqs).
-- [ ] §F.6 The return statement (C11) *(new in C11; no C99 counterpart)* — audit & extend test coverage (1 req).
-- [ ] §F.7 Contracted expressions *(C99 §F.6)* — audit & extend test coverage (3 reqs).
-- [ ] §F.8 Floating-point environment *(C99 §F.7)* — audit & extend test coverage (10 reqs, **3 mcc-gaps**).
-- [ ] §F.9 Optimization *(C99 §F.8)* — audit & extend test coverage (13 reqs).
-- [ ] §F.10 Mathematics `<math.h>` *(C99 §F.9)* — audit & extend test coverage (60 reqs, **1 mcc-gap**).
-- [ ] §G.1 Introduction — audit & extend test coverage (2 reqs).
-- [ ] §G.2 Types — audit & extend test coverage (3 reqs, **2 mcc-gaps**).
-- [ ] §G.3 Conventions — audit & extend test coverage (3 reqs).
-- [ ] §G.4 Conversions — audit & extend test coverage (5 reqs, **5 mcc-gaps**).
-- [ ] §G.5 Binary operators — audit & extend test coverage (9 reqs, **9 mcc-gaps**).
-- [ ] §G.6 Complex arithmetic `<complex.h>` — audit & extend test coverage (16 reqs).
-- [ ] §G.7 Type-generic math `<tgmath.h>` — audit & extend test coverage (2 reqs, **2 mcc-gaps**).
-- [ ] §K.1 Background *(C11; the entire Annex K is optional and conditional on `__STDC_LIB_EXT1__`)* — audit & extend test coverage (2 reqs).
-- [ ] §K.2 Scope — audit & extend test coverage (2 reqs).
-- [ ] §K.3 Library — audit & extend test coverage (85 reqs).
-
-## Annexes C, D, E, H, I, J (sequence points, UCN ranges, limits, portability)
-
-- [ ] §C Sequence points (normative) — audit & extend test coverage (15 reqs).
-- [ ] §D Universal character names for identifiers — C99 §D / C11 §D.1, §D.2 (normative) — audit & extend test coverage (12 reqs, **10 mcc-gaps**).
-- [ ] §E Implementation limits (normative) — audit & extend test coverage (20 reqs).
-- [ ] §H Language-independent arithmetic — relation to LIA-1 (informative) — audit & extend test coverage (11 reqs).
-- [ ] §I Common warnings (informative) — audit & extend test coverage (17 reqs, **16 mcc-gaps**).
-- [ ] §J.1 Unspecified behavior (informative) — audit & extend test coverage (24 reqs).
-- [ ] §J.2 Undefined behavior (informative) — audit & extend test coverage (87 reqs).
-- [ ] §J.3 Implementation-defined behavior (informative) — audit & extend test coverage (80 reqs).
-- [ ] §J.4 Locale-specific behavior (informative) — audit & extend test coverage (8 reqs).
-- [ ] §J.5 / feature-test macros — *(added gaps)* implementation-defined feature reporting — audit & extend test coverage (11 reqs).
-
+- [x] **§6.4.4 / GNU — imaginary *integer* constants (`3i`, `5j`, `0x4I`) accepted.** The
+  lexer only allowed the suffix on floating tokens; extended to the integer-token range so
+  `2+3i` builds a complex value (`unary()`'s `tok_imaginary` path already handles any base
+  type → `_Complex int`, matching gcc/clang). cli `imaginary_integer_constants`. (Was
+  surfaced while triaging §7.25p7 — the tgmath dispatch itself was fine.)
+- [x] **§7.21.7.7 / §6.5.2.2 — implicit function declaration — ALREADY HANDLED.** Calling an
+  undeclared function warns "implicit declaration of function '…'" by default and errors
+  under `-Werror` (same for `gets`), matching mcc's permissive-by-default philosophy
+  (gcc/clang error by default; mcc warns→`-Werror`, like §6.9.1p6 K&R implicit-int). The
+  diagnostic satisfies the constraint; C9911's `mcc:✗` counted the exit-0 default as accept.
+- [x] **§7.25p7 — `creal`/`cimag` tgmath dispatch — NOT a compile gap.** `creal`/`cimag`/
+  `creall`/`cimagl` all compile and return correct values 3-way (mcc=gcc=clang=0). Any
+  remaining concern is *runtime precision* of the fixed-`double` intermediate, not a
+  divergence the 3-way return-code probe detects; reclassify as a numeric-precision audit
+  if ever pursued.
+- [x] **§G.2 — `_Imaginary` types — PRUNED (consensus reject).** `_Imaginary float` is
+  rejected by mcc, gcc and clang alike (all three lack the optional imaginary types).
+  No divergence; nothing to implement.
+- [x] **§7.25p6 — `nexttoward` tgmath now selects on the first argument only.** Its second
+  argument is always `long double`, so keying on `(x)+(y)` always forced `nexttowardl`
+  (`sizeof(nexttoward(float,2.0L))` gave 16, want 4). Switched `runtime/include/tgmath.h`
+  to `__tgmath_real_2_1` (keys on `(x)`, like `frexp`/`ldexp`); now 4/8/16 matching
+  gcc/clang. cli `tgmath_nexttoward_first_arg`.
+- [x] **§D / §6.4.2.1 — UCN combining marks rejected as the FIRST identifier character.**
+  Added the Annex D.2 disallowed-initial ranges (0300–036F, 1DC0–1DFF, 20D0–20FF,
+  FE20–FE2F) check at the identifier-start UCN path (`src/mccpp.c`
+  `ucn_disallowed_initial`); the same marks stay valid non-initially, ordinary leading
+  UCNs (U+00C0) unaffected. cli `ucn_identifier_initial_combining`. (Other UCN edge
+  cases — `$`/`@`/`` ` ``, basic-latin, arabic digit — already matched the consensus.)
+- [x] **§G.5.1 — complex `*`/`/` infinity-recovery — ALREADY CORRECT (runtime).** With
+  runtime infinities, mcc's `__mcc_cmul`/complex-divide give `inf+inf·i` exactly like
+  gcc/clang (the Annex-G robust helper is already wired; see `gen_complex_call`). No gap.
+- [x] **§F.10.11 — `isgreater`/… on NaN — NOT a divergence here.** mcc and gcc behave
+  identically on this glibc (`fetestexcept(FE_INVALID)` set for both); `__builtin_isgreater`
+  already exists in mcc. No mcc-vs-consensus gap to fix on this platform.
+- [x] **§6.7.4p6 — plain `inline` external definition — DELIBERATE permissive divergence.**
+  mcc emits the inline body as a per-TU LOCAL symbol (effectively `static inline`), so a
+  program that calls a plain-`inline` function with no external definition *links and runs*;
+  gcc/clang leave the symbol UND and fail to link. C99 leaves the inline-vs-external choice
+  unspecified, so mcc's choice is conforming and strictly more useful — and matching
+  gcc/clang would break working code and is self-host-sensitive. Resolved by decision.
+- [x] **§7.21.6.1/2 — `-Wformat` printf/scanf format-string vs argument checking implemented.**
+  Opt-in (`-Wformat`, NOT under `-Wall`) so default builds and the self-host are byte-identical;
+  all logic is gated on `warn_format` (`src/mcc.h`, `options_W` in `src/libmcc.c`). At a
+  recognized printf/scanf-family call (`format_func_spec` name table) with a string-literal
+  format, the directives are parsed and each variadic argument checked by broad class
+  (integer / floating / pointer) plus argument count, including `*` width/precision args, `%%`,
+  length modifiers and scanf's pointer operands (`src/mccgen.c` `format_check` +
+  `format_str_literal`, hooked at the call site once args are on the value stack). Diagnostics
+  match gcc's `-Wformat` on the mismatch cases; kept class-coarse (not exact width) to avoid
+  false positives. cli `wformat_printf_scanf_checking`. *(Future: honor user
+  `__attribute__((format))`, exact length-modifier widths, and `-Wformat-nonliteral`.)*
+- [x] **§6.6/§G — complex constant init with an over-range real part now yields `inf` in a
+  LOCAL initializer too.** A *local* `double complex z = <overflowing-float-const> + 0.0*I`
+  (e.g. `INFINITY + 0.0*I`, since mcc's `INFINITY` is `1e10000f`) used to store `0` for the
+  real part (static was already correct). Root cause: `gen_complex_op`'s constant-fold path
+  called `init_putv` assuming `gen_op` folds, but `gen_op` declines to fold a non-finite FP
+  op (`inf+0`) outside a `CONST_WANTED` context (line ~2627) — so in a local init the runtime
+  result was computed then discarded and `init_putv` stored 0. Fix: gate that fold path on
+  `CONST_WANTED` (its documented purpose is static initializers); non-const contexts use the
+  robust runtime path, which handles infinities correctly (`src/mccgen.c` `gen_complex_op`).
+  Static/aggregate/struct complex consts still fold; full ctest 34/34 + self-host byte-identical.
+  cli `complex_const_init_overflow`.
