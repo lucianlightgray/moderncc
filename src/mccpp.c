@@ -1355,9 +1355,13 @@ static int parse_include(MCCState *s1, int do_next, int test)
     if (!test)
         skip_to_eol(1);
 
+    /* track whether the resolved header is a system header: found via a
+       -isystem/default system path, or included from a system header. */
+    int parent_sys = file ? file->system_header : 0, cand_sys = 0;
     i = do_next ? file->include_next_index : -1;
     for (;;) {
         ++i;
+        cand_sys = 0;
         if (i == 0) {
             if (!IS_ABSPATH(name))
                 continue;
@@ -1371,9 +1375,10 @@ static int parse_include(MCCState *s1, int do_next, int test)
             int j = i - 2, k = j - s1->nb_include_paths;
             if (k < 0)
                 p = s1->include_paths[j];
-            else if (k < s1->nb_sysinclude_paths)
+            else if (k < s1->nb_sysinclude_paths) {
                 p = s1->sysinclude_paths[k];
-            else if (test)
+                cand_sys = 1;
+            } else if (test)
                 return 0;
             else
                 mcc_error("include file '%s' not found", name);
@@ -1394,6 +1399,9 @@ static int parse_include(MCCState *s1, int do_next, int test)
         if (mcc_open(s1, buf) >= 0)
             break;
     }
+    /* mcc_open pushed the new file; mark it system if it came from a system
+       path or was included from a system header (gcc/clang propagate this). */
+    file->system_header = cand_sys || parent_sys;
 
     if (test) {
         mcc_close();
@@ -3882,6 +3890,10 @@ ST_FUNC void preprocess_start(MCCState *s1, int filetype)
           cstr_cat(&cstr, s1->cmdline_incl.data, s1->cmdline_incl.size);
         *s1->include_stack_ptr++ = file;
         mcc_open_bf(s1, "<command line>", cstr.size);
+        /* the predef buffer (mcc's builtin defs + bundled mccdefs.h: va_list,
+           __int128, the __builtin macros, ...) is a system context — suppress
+           warnings/-pedantic originating in it (e.g. the va_list anon union). */
+        file->system_header = 1;
         memcpy(file->buffer, cstr.data, cstr.size);
         cstr_free(&cstr);
     }

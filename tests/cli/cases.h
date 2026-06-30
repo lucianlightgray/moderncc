@@ -1018,5 +1018,16 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'redefinition of typedef is a C11 feature|incompatible redefinition|C11_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 C11_OK\n1 incompatible redefinition\n1 redefinition of typedef is a C11 feature\n" },
 
+/* §6.7.2.1 + system-header suppression: an anonymous struct/union member is a
+   C11 feature diagnosed under -pedantic in user code, but the same construct in
+   a system header (-isystem) is suppressed (only the user's m.c warns -> 1); in
+   C11 it is silent everywhere. */
+{ "anon_member_c99_and_sysheader", "",
+  "mkdir -p {W}/sys && printf 'struct H{ struct { int x; }; };\\n' > {W}/sys/h.h && "
+  "printf '#include <h.h>\\nstruct U{ struct { int y; }; }; int main(void){return 0;}\\n' > {W}/m.c && "
+  "{ {MCC} -B{B} -I{I} -isystem {W}/sys -std=c99 -pedantic -c {W}/m.c -o {W}/m.o 2>&1 | grep -c 'C11 feature'; "
+  "{MCC} -B{B} -I{I} -isystem {W}/sys -std=c11 -pedantic-errors -c {W}/m.c -o {W}/m11.o 2>&1 && echo C11_OK; }",
+  "1\nC11_OK\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

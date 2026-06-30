@@ -543,14 +543,13 @@ bulk of each area matched the references; these are the residual divergences.
   unnamed-bit-field-only case `struct S{int:4;}` pushes a member so it is not
   caught here — that finding stays open below.)
 
-- [~] **[DIAG] §6.7.2.1 — anonymous struct/union members in C99 (deferred — needs system-header suppression).**
-  `struct S { struct { int x; }; };` is silent in C99 mode; both refs warn under
-  `-pedantic`. A `mcc_pedantic` at the anon-member site (`src/mccgen.c`
-  struct_decl, the `>= SYM_FIRST_ANOM` no-declarator branch) works for user code
-  BUT also fires on mcc's own `__va_list_tag` anonymous union in `mccdefs.h`
-  (included in every compilation) — so it broke every `-std=c99 -pedantic` build
-  and was reverted. Blocked on the system-header warning-suppression
-  infrastructure item below; revisit once that lands.
+- [x] **[DIAG] §6.7.2.1 — anonymous struct/union members in C99 now diagnosed under `-pedantic`.**
+  `struct S { struct { int x; }; };` now emits `mcc_pedantic` "anonymous
+  structs/unions are a C11 feature" when `cversion < 201112` (`src/mccgen.c`
+  struct_decl, the `>= SYM_FIRST_ANOM` no-declarator branch). Silent in C11, and
+  suppressed in system headers (mcc's own `__va_list_tag` no longer trips it) via
+  the system-header-suppression infrastructure above. cli
+  `anon_member_c99_and_sysheader`.
 
 - [x] **[DIAG] §6.9p1 — stray `;` at file scope now diagnosed under `-pedantic`.**
   A lone `;` at file scope (`l == VT_CONST` in `decl()`, `src/mccgen.c`) now emits
@@ -627,17 +626,18 @@ bulk of each area matched the references; these are the residual divergences.
 
 ## Cross-cutting infrastructure
 
-- [ ] **[TASK] System-header warning suppression.**
-  mcc has no notion of a "system header" for diagnostics, so a default-on or
-  `-pedantic` warning fires inside `mccdefs.h` (the always-included predef) and
-  system/libc headers, not just user code. This blocks otherwise-correct
-  diagnostics: the §6.7.2.1 anonymous-member-in-C99 `-pedantic` warning was
-  reverted because it fired on mcc's own `__va_list_tag` anonymous union in
-  `mccdefs.h` (every `-std=c99 -pedantic` build). gcc/clang suppress `-W`/
-  `-pedantic` in system headers (`#pragma GCC system_header` / the sysinclude
-  path). Implement a per-file/per-token "system header" bit (set for sysinclude
-  paths + the predef buffer) consulted by `mcc_warning`/`mcc_pedantic`. Unblocks
-  the anon-member diagnostic and makes `-pedantic` usable with real libc headers.
+- [x] **[TASK] System-header warning suppression.**
+  Added a `system_header` bit to `BufferedFile` (`src/mcc.h`), set for the predef
+  `<command line>` buffer (which embeds `mccdefs.h`: va_list, `__int128`, the
+  `__builtin` macros) and for files resolved via a `-isystem`/default system path
+  — and propagated to headers included from a system header. The central warning
+  emitter (`src/libmcc.c`) now suppresses `ERROR_WARN` (incl. `-pedantic`)
+  originating in a system context, *before* the `-Werror` upgrade, as gcc/clang
+  do; errors are never suppressed. Verified: `-isystem` header warnings are
+  silenced while the same construct in user code (`-I` or the main file) still
+  warns; the va_list anon union no longer breaks `-std=c99 -pedantic`. This makes
+  `-pedantic` usable against real libc headers and unblocked the anon-member
+  diagnostic below. cli `anon_member_c99_and_sysheader`.
 
 - [x] **[TASK] `-pedantic` / `-pedantic-errors` flag.** Already implemented
   (`src/libmcc.c:1676-1677,1930-1935` → `warn_pedantic`/`pedantic_errors`;

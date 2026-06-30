@@ -4522,7 +4522,13 @@ do_decl:
 				    if (mcc_state->ms_extensions == 0)
                         		mcc_warning("declaration does not "
 						    "declare anything");
-				}
+				} else if (mcc_state->cversion < 201112)
+				    /* 6.7.2.1: an anonymous (untagged) struct/union
+				       member was added in C11; diagnose it as an
+				       extension in C99/C90 mode. (Suppressed in
+				       system headers, e.g. mcc's own va_list.) */
+				    mcc_pedantic("anonymous structs/unions are a "
+						 "C11 feature");
                     	    }
                         }
                         if (type_size(&type1, &align) < 0) {

@@ -590,6 +590,8 @@ typedef struct BufferedFile {
     int ifndef_macro_saved;
     int *ifdef_stack_ptr;
     int include_next_index;
+    int system_header;          /* in a system include / the predef buffer:
+                                   warnings (and -pedantic) are suppressed here */
     int prev_tok_flags;
     char filename[1024];
     char *true_filename;

@@ -574,6 +574,17 @@ static void error1(int mode, const char *fmt, va_list ap)
     mcc_exit_state(s1);
 
     if (mode == ERROR_WARN) {
+        /* Suppress warnings (and -pedantic) originating inside a system header
+           or the predef buffer, as gcc/clang do — before the -Werror upgrade,
+           so they never become errors. Keeps -pedantic usable with real libc
+           headers and mcc's own mccdefs.h. Errors are never suppressed. */
+        if (s1->error_set_jmp_enabled) {
+            BufferedFile *wf;
+            for (wf = file; wf && wf->filename[0] == ':'; wf = wf->prev)
+                ;
+            if (wf && wf->system_header)
+                return;
+        }
         if (s1->warn_error)
             mode = ERROR_ERROR;
         if (s1->warn_num) {
