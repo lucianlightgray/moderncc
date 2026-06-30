@@ -486,6 +486,96 @@ add_custom_target(mingw-toolchain
     COMMENT "Fetching self-contained mingw toolchain (${MCC_MINGW_SOURCE}) into cmake-mingw-*"
     USES_TERMINAL VERBATIM)
 
+# ------------------------------------------------------------------ #
+# Downloadable, self-contained LLVM/clang toolchain ("cmake-clang").
+# The `clang-toolchain` target fetches an official LLVM release and unpacks it
+# under MCC_CLANG_DIR/cmake-clang (gitignored). It is the SECOND independent
+# reference compiler the diff3 / preprocess differential suites need: with only
+# a host gcc those suites skip ("needs BOTH gcc and clang"). Once this tree is
+# present, a (re)configure auto-wires it as DIFF3_CLANG, so the suites run with
+# zero system clang. SHA256-verified, idempotent (per-tree .mcc-clang-stamp).
+#   build it:  cmake --build <bld> --target clang-toolchain
+# Pinned to an official llvm-project release asset; override the URL/SHA/SUBDIR
+# cache vars to bump. Only Windows x86_64 has a baked-in default (this is the
+# Windows enablement path); elsewhere set MCC_CLANG_URL to opt in.
+# ------------------------------------------------------------------ #
+set(MCC_CLANG_DIR "${CMAKE_SOURCE_DIR}" CACHE PATH
+    "Parent directory the downloaded clang tree (cmake-clang) lives in")
+set(_clang_url "")
+set(_clang_sha "")
+set(_clang_subdir "")
+if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(_clang_ver "22.1.8")
+    set(_clang_subdir "clang+llvm-${_clang_ver}-x86_64-pc-windows-msvc")
+    set(_clang_url
+        "https://github.com/llvm/llvm-project/releases/download/llvmorg-${_clang_ver}/${_clang_subdir}.tar.xz")
+    set(_clang_sha "d96c2cc1736f4eb7fa43cb9bbdf56d93551a9ae0a9aadb9c99c3c3b2b712a234")
+    unset(_clang_ver)
+endif()
+set(MCC_CLANG_URL "${_clang_url}" CACHE STRING
+    "LLVM release archive URL for the `clang-toolchain` download")
+set(MCC_CLANG_SHA256 "${_clang_sha}" CACHE STRING
+    "SHA256 of the LLVM release archive (empty to skip verification)")
+set(MCC_CLANG_SUBDIR "${_clang_subdir}" CACHE STRING
+    "Top-level directory inside the LLVM archive (the one holding bin/clang)")
+unset(_clang_url)
+unset(_clang_sha)
+unset(_clang_subdir)
+
+# Resolve the expected clang path (downloaded tree) into the parent scope as
+# _MCC_CLANG_EXE, whether or not it has been fetched yet (callers EXISTS-check).
+function(mcc_clang_resolve)
+    set(_c "")
+    if(NOT MCC_CLANG_SUBDIR STREQUAL "")
+        set(_c "${MCC_CLANG_DIR}/cmake-clang/${MCC_CLANG_SUBDIR}/bin/clang${CMAKE_EXECUTABLE_SUFFIX}")
+    endif()
+    set(_MCC_CLANG_EXE "${_c}" PARENT_SCOPE)
+endfunction()
+
+# Generate the idempotent fetch driver and expose it as `clang-toolchain`.
+set(_clang_fetch "${CMAKE_BINARY_DIR}/run_clang_fetch.cmake")
+file(WRITE "${_clang_fetch}"
+    "set(URL \"${MCC_CLANG_URL}\")\n"
+    "set(SHA \"${MCC_CLANG_SHA256}\")\n"
+    "set(DEST \"${MCC_CLANG_DIR}/cmake-clang\")\n")
+file(APPEND "${_clang_fetch}" [==[
+# Download + unpack the LLVM release into cmake-clang/. Idempotent via a
+# .mcc-clang-stamp marker, SHA256-verified when a hash is set.
+if(URL STREQUAL "")
+    message(FATAL_ERROR
+        "clang-toolchain: no MCC_CLANG_URL for this host. Set -DMCC_CLANG_URL=<llvm-release-archive> "
+        "(and -DMCC_CLANG_SUBDIR=<top-dir-in-archive>).")
+endif()
+if(EXISTS "${DEST}/.mcc-clang-stamp")
+    message(STATUS "clang-toolchain: ${DEST} already present (delete its .mcc-clang-stamp to refetch)")
+    return()
+endif()
+get_filename_component(_arc "${DEST}.download" ABSOLUTE)
+message(STATUS "clang-toolchain: downloading ${URL}")
+set(_hashargs "")
+if(NOT SHA STREQUAL "")
+    set(_hashargs EXPECTED_HASH SHA256=${SHA})
+endif()
+file(DOWNLOAD "${URL}" "${_arc}" STATUS _st SHOW_PROGRESS TIMEOUT 7200 ${_hashargs})
+list(GET _st 0 _code)
+if(NOT _code EQUAL 0)
+    file(REMOVE "${_arc}")
+    message(FATAL_ERROR "clang-toolchain: download failed (${_st}): ${URL}")
+endif()
+file(REMOVE_RECURSE "${DEST}")
+file(MAKE_DIRECTORY "${DEST}")
+message(STATUS "clang-toolchain: extracting into ${DEST} (large archive; this takes a while)")
+file(ARCHIVE_EXTRACT INPUT "${_arc}" DESTINATION "${DEST}")
+file(REMOVE "${_arc}")
+file(WRITE "${DEST}/.mcc-clang-stamp" "${URL}\n")
+message(STATUS "clang-toolchain: established ${DEST}")
+]==])
+
+add_custom_target(clang-toolchain
+    COMMAND "${CMAKE_COMMAND}" -P "${_clang_fetch}"
+    COMMENT "Fetching self-contained LLVM/clang toolchain into cmake-clang"
+    USES_TERMINAL VERBATIM)
+
 list(LENGTH MCC_TOOLCHAIN_PROFILE _tc_count)
 list(LENGTH MCC_TARGETS _tg_count)
 set(_is_matrix FALSE)
@@ -2021,24 +2111,46 @@ endif()
     # Native only, and only when BOTH reference compilers are available.
     find_program(DIFF3_GCC NAMES gcc cc)
     find_program(DIFF3_CLANG NAMES clang)
-    if(NOT MCC_EMULATOR AND DIFF3_GCC AND DIFF3_CLANG)
+    # No system clang? Fall back to the self-contained `clang-toolchain` download
+    # (cmake-clang/...): once that target has been built, a (re)configure finds it
+    # here and the suite runs with zero system clang. On Windows the suite also
+    # needs a POSIX shell (MCC_TEST_SH, resolved by the cli-suite block above) to
+    # drive the runner's timeout/watchdog/pipeline plumbing.
+    if(NOT DIFF3_CLANG)
+        mcc_clang_resolve()
+        if(EXISTS "${_MCC_CLANG_EXE}")
+            set(DIFF3_CLANG "${_MCC_CLANG_EXE}")
+        endif()
+    endif()
+    set(_diff3_sh_ok TRUE)
+    if(MCC_TARGETOS STREQUAL "WIN32" AND NOT MCC_TEST_SH)
+        set(_diff3_sh_ok FALSE)
+    endif()
+    if(NOT MCC_EMULATOR AND DIFF3_GCC AND DIFF3_CLANG AND _diff3_sh_ok)
         add_executable(diff3_runner tests/diff3/runner.c)
         target_include_directories(diff3_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec")
         add_test(NAME diff3-suite
             COMMAND diff3_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests" "${CMAKE_BINARY_DIR}/diff3-work"
                     "${DIFF3_GCC}" "${DIFF3_CLANG}")
+        set(_diff3_env "MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS}")
+        if(MCC_TEST_SH)
+            set(_diff3_env "${_diff3_env};MCC_TEST_SH=${MCC_TEST_SH}")
+        endif()
         set_tests_properties(diff3-suite PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77
-            ENVIRONMENT "MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS}")
+            ENVIRONMENT "${_diff3_env}")
+    elseif(NOT _diff3_sh_ok)
+        mcc_skip_test(diff3-suite "needs a POSIX shell on Windows (no sh/bash found; set MCC_TEST_SH)")
     else()
-        mcc_skip_test(diff3-suite "needs native host + both gcc and clang")
+        mcc_skip_test(diff3-suite "needs native host + both gcc and clang (build the clang-toolchain target for a self-contained clang)")
     endif()
 
     # Preprocessor differential suite: `mcc -E` vs the gcc==clang consensus on
     # every tests/preprocess case (token-stream diff for .c transformations,
     # diagnostic-present check for diagnostics/, -E smoke for .S asm input).
-    # Native host + both reference compilers + a POSIX shell.
+    # Pure `cmake -P` (execute_process, no shell), so it needs only the two
+    # reference compilers -- DIFF3_CLANG may be the downloaded clang-toolchain.
     if(NOT MCC_EMULATOR AND DIFF3_GCC AND DIFF3_CLANG)
         # The `cmake -P` driver is generated into the build tree from the literal
         # below (formerly the standalone tests/preprocess/run_preprocess.cmake),
@@ -2272,7 +2384,7 @@ cmake_language(EXIT 0)
             SKIP_RETURN_CODE 77)
     else()
         mcc_skip_test(preprocess-suite
-            "needs native host + both gcc and clang + a POSIX shell")
+            "needs native host + both gcc and clang (build the clang-toolchain target for a self-contained clang)")
     endif()
 
     add_executable(libmcc_test tests/embed/api_basic.c)
@@ -3393,7 +3505,7 @@ file(GLOB_RECURSE MCC_TAGFILES
     "${CMAKE_CURRENT_SOURCE_DIR}/*.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/*.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/*.S")
-list(FILTER MCC_TAGFILES EXCLUDE REGEX "/(cmake-build-[^/]*|cmake-windows-[^/]*|cmake-mingw-[^/]*|build-[^/]*|\\.git|\\.idea|\\.cache)/")
+list(FILTER MCC_TAGFILES EXCLUDE REGEX "/(cmake-build-[^/]*|cmake-windows-[^/]*|cmake-mingw-[^/]*|cmake-clang|build-[^/]*|\\.git|\\.idea|\\.cache)/")
 find_program(CTAGS_EXE ctags)
 if(CTAGS_EXE)
     add_custom_target(tags
@@ -3441,5 +3553,5 @@ endif()
 set(CPACK_SOURCE_GENERATOR "TGZ;ZIP")
 set(CPACK_SOURCE_IGNORE_FILES
     "/\\.git/" "/cmake-build-[^/]*/" "/cmake-windows-[^/]*/" "/cmake-mingw-[^/]*/"
-    "/build-[^/]*/" "/\\.idea/" "\\.o$" "\\.a$")
+    "/cmake-clang/" "/build-[^/]*/" "/\\.idea/" "\\.o$" "\\.a$")
 include(CPack)
