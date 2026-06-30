@@ -551,9 +551,12 @@ ST_FUNC const char *get_tok_str(int v, CValue *cv)
     case TOK_LSTR:
         cstr_ccat(&cstr_buf, 'L');
         /* fall through */
+    case TOK_U8STR:
+        if (v == TOK_U8STR)
+            cstr_ccat(&cstr_buf, 'u'), cstr_ccat(&cstr_buf, '8');
     case TOK_STR:
         cstr_ccat(&cstr_buf, '\"');
-        if (v == TOK_STR) {
+        if (v == TOK_STR || v == TOK_U8STR) {
             len = cv->str.size - 1;
             for(int i=0;i<len;i++)
                 add_char(&cstr_buf, ((unsigned char *)cv->str.data)[i]);
@@ -1107,6 +1110,7 @@ static void tok_str_add2(TokenString *s, int t, CValue *cv)
     case TOK_LSTR:
     case TOK_U16STR:
     case TOK_U32STR:
+    case TOK_U8STR:
         {
             size_t nb_words =
                 1 + (cv->str.size + sizeof(int) - 1) / sizeof(int);
@@ -1191,6 +1195,7 @@ static inline void tok_get(int *t, const int **pp, CValue *cv)
     case TOK_LSTR:
     case TOK_U16STR:
     case TOK_U32STR:
+    case TOK_U8STR:
     case TOK_PPNUM:
     case TOK_PPSTR:
         cv->str.size = *p++;
@@ -1514,8 +1519,20 @@ ST_FUNC void pp_error(CString *cs)
    treated the same way by gcc.) gcc/clang diagnose; mcc warns. */
 static int is_predef_macro(int v)
 {
-    return v == TOK___LINE__ || v == TOK___FILE__ || v == TOK___DATE__
-        || v == TOK___TIME__ || v == TOK___COUNTER__;
+    const char *n;
+    if (v == TOK___LINE__ || v == TOK___FILE__ || v == TOK___DATE__
+        || v == TOK___TIME__ || v == TOK___COUNTER__)
+        return 1;
+    /* __STDC__/__STDC_VERSION__/__STDC_HOSTED__ are text-defined predefs (no
+       magic token id), so match them by name. The user-settable __STDC_WANT_*
+       feature-select macros are deliberately NOT protected. */
+    if (v >= TOK_IDENT) {
+        n = get_tok_str(v, NULL);
+        if (!strcmp(n, "__STDC__") || !strcmp(n, "__STDC_VERSION__")
+            || !strcmp(n, "__STDC_HOSTED__"))
+            return 1;
+    }
+    return 0;
 }
 
 ST_FUNC void parse_define(void)
@@ -1526,7 +1543,9 @@ ST_FUNC void parse_define(void)
     TokenString str;
 
     v = tok;
-    if (v < TOK_IDENT || v == TOK_DEFINED)
+    /* 6.10.8p4: 'defined' shall not be a macro name. 6.10.3p5: __VA_ARGS__
+       shall occur only in a variadic replacement list, never as a name. */
+    if (v < TOK_IDENT || v == TOK_DEFINED || v == TOK___VA_ARGS__)
         mcc_error("invalid macro name '%s'", get_tok_str(tok, &tokc));
     if (is_predef_macro(v))
         mcc_warning("%s redefined", get_tok_str(v, NULL));
@@ -1554,6 +1573,15 @@ ST_FUNC void parse_define(void)
             if (varg < TOK_IDENT)
         bad_list:
                 mcc_error("bad macro parameter list");
+            /* 6.10.3p6: the identifiers in a function-like macro's parameter
+               list shall be unique. gcc/clang reject a duplicate. */
+            {
+                Sym *pp;
+                for (pp = first; pp; pp = pp->next)
+                    if ((pp->v & ~SYM_FIELD) == (varg & ~SYM_FIELD))
+                        mcc_error("duplicate macro parameter \"%s\"",
+                                  get_tok_str(varg, NULL));
+            }
             s = sym_push2(&define_stack, varg | SYM_FIELD, is_vaargs, 0);
             *ps = s;
             ps = &s->next;
@@ -1880,6 +1908,8 @@ ST_FUNC void preprocess(int is_bof)
         pp_debug_tok = tok;
         next_nomacro();
         pp_debug_symv = tok;
+        if (tok == TOK_DEFINED || tok == TOK___VA_ARGS__)  /* 6.10.8p4 */
+            mcc_error("invalid macro name '%s'", get_tok_str(tok, NULL));
         if (is_predef_macro(tok))           /* 6.10.8p2 */
             mcc_warning("undefining %s", get_tok_str(tok, NULL));
         s = define_find(tok);
@@ -2067,7 +2097,7 @@ ST_FUNC void preprocess(int is_bof)
 
 static void parse_escape_string(CString *outstr, const uint8_t *buf, int is_long)
 {
-    int c, n, i;
+    int c, n, i, is_ucn;
     const uint8_t *p;
 
     p = buf;
@@ -2103,6 +2133,7 @@ static void parse_escape_string(CString *outstr, const uint8_t *buf, int is_long
             case 'u': i = 4; goto parse_hex_or_ucn;
             case 'U': i = 8; goto parse_hex_or_ucn;
     parse_hex_or_ucn:
+                is_ucn = (i != 0);   /* \u/\U (i>0) vs \x (i==0) */
                 p++;
                 n = 0;
                 do {
@@ -2126,6 +2157,20 @@ static void parse_escape_string(CString *outstr, const uint8_t *buf, int is_long
                     n = (unsigned) n * 16 + c;
                     p++;
                 } while (--i);
+                /* 6.4.3p2: a UCN shall not designate a code point < 00A0 (other
+                   than 0024 '$', 0040 '@', 0060 '`') nor one in D800–DFFF. C23
+                   removed this restriction; gcc/clang diagnose it as -pedantic
+                   ("before C23"). The surrogate/>10FFFF ranges are caught later
+                   by unicode_to_utf8 for the narrow path. */
+                if (is_ucn && mcc_state->warn_pedantic
+                    && mcc_state->cversion < 202311
+                    && ((n < 0xA0 && n != 0x24 && n != 0x40 && n != 0x60)
+                        || (n >= 0xD800 && n <= 0xDFFF))) {
+                    if (mcc_state->pedantic_errors)
+                        mcc_error("\\u%04x is not a valid universal character", n);
+                    else
+                        mcc_warning("\\u%04x is not a valid universal character", n);
+                }
 		if (is_long) {
     add_hex_or_ucn:
                     c = n;
@@ -2249,9 +2294,11 @@ static void parse_string(const char *s, int len)
     uint8_t buf[1000], *p = buf;
     int is_long, sep, prefix = 0;
 
-    if (*s == 'L' || *s == 'u' || *s == 'U')
+    if (*s == 'L' || *s == 'u' || *s == 'U' || *s == '8')
         prefix = *s++, --len;
-    is_long = (prefix != 0);     /* wide/code-point decoding for L/u/U */
+    /* u8 (prefix '8') is a char/UTF-8 literal, decoded narrow like an
+       unprefixed string; only L/u/U use wide/code-point decoding. */
+    is_long = (prefix == 'L' || prefix == 'u' || prefix == 'U');
     sep = *s++;
     len -= 2;
     if (len >= sizeof buf)
@@ -2367,7 +2414,9 @@ static void parse_string(const char *s, int len)
     } else {
         tokc.str.size = tokcstr.size;
         tokc.str.data = tokcstr.data;
-        if (!is_long)
+        if (prefix == '8')
+            tok = TOK_U8STR;
+        else if (!is_long)
             tok = TOK_STR;
         else
             tok = TOK_LSTR;
@@ -2874,7 +2923,8 @@ maybe_newline:
         if (p[1] == '8' && p[2] == '\"') {
             p += 2;           /* advance to the opening '"' */
             c = *p;
-            str_prefix = 0;
+            str_prefix = '8'; /* mark UTF-8 so it stays distinct from a plain
+                                 narrow literal (6.4.5p2 mixed-prefix concat) */
             goto str_const;
         }
         if (p[1] == '\'' || p[1] == '\"') {
@@ -3526,6 +3576,18 @@ static int macro_subst_tok(
                         parlevel--;
                     if (t == ' ')
                         str.need_spc |= 1;
+                    else if (t == TOK___LINE__) {
+                        /* 6.10.8.1: __LINE__ denotes the presumed line of its own
+                           token. Collected as a macro argument it would otherwise
+                           be expanded later, at the line of the invocation's
+                           closing ')'. Snap it to its real line now. */
+                        CValue lcv;
+                        char lbuf[32];
+                        snprintf(lbuf, sizeof(lbuf), "%d", file->line_num);
+                        lcv.str.size = strlen(lbuf) + 1;
+                        lcv.str.data = lbuf;
+                        tok_str_add2_spc(&str, TOK_PPNUM, &lcv);
+                    }
                     else
                         tok_str_add2_spc(&str, t, &tokc);
                     t = next_argstream(nested_list, NULL);
