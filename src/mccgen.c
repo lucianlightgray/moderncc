@@ -3526,6 +3526,12 @@ static void verify_assign_cast(CType *dt)
         }
         if (!is_compatible_unqualified_types(type1, type2)) {
             if ((dbt == VT_VOID || sbt == VT_VOID) && lvl == 0) {
+                /* 6.3.2.3: converting between 'void *' (an object pointer) and a
+                   function pointer is a GNU extension ISO C forbids; gcc/clang
+                   diagnose under -pedantic. (void* <-> object* stays silent.) */
+                if (dbt == VT_FUNC || sbt == VT_FUNC)
+                    mcc_pedantic("ISO C forbids conversion between a function "
+                                 "pointer and 'void *'");
             } else if (dbt == sbt
                 && is_integer_btype(sbt & VT_BTYPE)
                 && IS_ENUM(type1->t) + IS_ENUM(type2->t)

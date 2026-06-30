@@ -993,5 +993,18 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/paok.c -o {W}/paok.o 2>&1 && echo VALID_OK; }",
   "3\nVALID_OK\n" },
 
+/* §6.3.2.3: implicit conversion between a function pointer and 'void *' is a GNU
+   extension diagnosed under -pedantic; void*<->object* and an explicit cast
+   stay valid even under -pedantic-errors. */
+{ "fn_pointer_void_conversion", "",
+  "printf 'void*f(int(*fp)(void)){void*v=fp;return v;}\\n' > {W}/c1.c && "
+  "printf 'int(*g(void*v))(void){int(*fp)(void)=v;return fp;}\\n' > {W}/c2.c && "
+  "printf 'void*f(int*p){void*v=p;return v;} void*g(int(*fp)(void)){return (void*)fp;}\\n' > {W}/cok.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/c1.c -o {W}/c1.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/c2.c -o {W}/c2.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/cok.c -o {W}/cok.o 2>&1 && echo VALID_OK; } | "
+  "grep -oE 'function pointer and|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 VALID_OK\n2 function pointer and\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

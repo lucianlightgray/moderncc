@@ -495,9 +495,12 @@ bulk of each area matched the references; these are the residual divergences.
   target type is `void` or a function. Object/`char` pointer arithmetic stays
   clean. Matches gcc/clang `-Wpointer-arith`. cli `void_fn_pointer_arith`.
 
-- [ ] **[OPT] §6.3.2.3 — function-pointer ↔ `void *` conversion never diagnosed.**
-  `void *v = fp;` / `fp = v;` silent even at `-pedantic-errors`; gcc/clang error
-  under `-pedantic` ("ISO C forbids ... between function pointer and 'void *'").
+- [x] **[OPT] §6.3.2.3 — function-pointer ↔ `void *` conversion now diagnosed under `-pedantic`.**
+  `verify_assign_cast` (`src/mccgen.c`, the `void*`-vs-incompatible branch) now
+  emits `mcc_pedantic` "ISO C forbids conversion between a function pointer and
+  'void *'" when one pointer targets a function and the other is `void`.
+  `void*`↔object* and an explicit `(void*)fp` cast stay valid. Matches gcc/clang
+  `-pedantic`. cli `fn_pointer_void_conversion`.
 
 - [ ] **[OPT] §6.6p6 — float-derived (non-ICE) array size silently folded.**
   `int a[(int)(1.0+2.0)];` / `int a[(1.0<2.0)?4:2];` accepted silently at file
