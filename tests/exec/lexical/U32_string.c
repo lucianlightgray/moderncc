@@ -1,14 +1,14 @@
-/* 6.4.5: U"..." char32_t string literals (array init, pointer, concatenation). */
+
 typedef __CHAR32_TYPE__ char32_t;
 extern int printf(const char *, ...);
 
-char32_t g[] = U"Hi";                   /* static/global init */
+char32_t g[] = U"Hi";
 
 int main(void)
 {
-    char32_t s[] = U"ABC";              /* local array init: A,B,C,0 */
-    const char32_t *p = U"xy";          /* pointer to literal */
-    char32_t cat[] = U"a" U"b";         /* concatenation */
+    char32_t s[] = U"ABC";
+    const char32_t *p = U"xy";
+    char32_t cat[] = U"a" U"b";
 
     int ok = sizeof(s) == 4 * sizeof(char32_t)
           && s[0] == 65 && s[2] == 67 && s[3] == 0

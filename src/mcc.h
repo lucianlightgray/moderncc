@@ -4,12 +4,6 @@
 #define _GNU_SOURCE
 #define _DARWIN_C_SOURCE
 
-/* Build configuration (target, libc, search paths, identity) is supplied
-   entirely via -D on the compiler command line; see the _mccdefs list in
-   CMakeLists.txt. Everything below provides the default for a macro that was
-   not passed. The version funnels through MCC_VERSION (banner, -dumpversion,
-   DWARF producer string, __MCC__/__TINYC__ predefines); fall back to a sane
-   default when it was not defined on the command line. */
 #ifndef MCC_VERSION
 # define MCC_VERSION "1.0.0"
 #endif
@@ -69,7 +63,7 @@ extern long double strtold (const char *__nptr, char **__endptr);
 #  pragma warning (disable : 4996)
 #  pragma warning (disable : 4018)
 #  pragma warning (disable : 4146)
-#  include <sys/types.h>   /* off_t (mingw drags this in via <io.h>; MSVC does not) */
+#  include <sys/types.h>
 #  define ssize_t intptr_t
 #  ifdef _X86_
 #   define __i386__ 1
@@ -315,7 +309,7 @@ extern long double strtold (const char *__nptr, char **__endptr);
 
 #ifdef MCC_PROFILE
 # define static
-# undef inline    /* on _WIN32 'inline' is already a macro (__inline) */
+# undef inline
 # define inline
 #endif
 
@@ -377,8 +371,6 @@ extern long double strtold (const char *__nptr, char **__endptr);
 #define TOKSTR_MAX_SIZE     256
 #define PACK_STACK_SIZE     8
 
-/* 6.10.6 #pragma STDC switch states (see MCCState.stdc_*). DEFAULT must be 0
-   so a zero-initialized MCCState starts every switch in its default regime. */
 #define STDC_DEFAULT        0
 #define STDC_ON             1
 #define STDC_OFF            2
@@ -450,7 +442,7 @@ struct SymAttr {
     packed      : 1,
     weak        : 1,
     visibility  : 2,
-    visibility_set : 1,         /* explicit visibility attr present */
+    visibility_set : 1,
     dllexport   : 1,
     nodecorate  : 1,
     dllimport   : 1,
@@ -458,10 +450,10 @@ struct SymAttr {
     nodebug     : 1,
     transp_union : 1,
     is_complex  : 1,
-    tentative_array : 1,        /* 6.9.2: incomplete-array tentative definition */
-    is_register : 1,            /* 6.7.1: declared with the register specifier */
-    used : 1,                   /* -Wunused-variable: referenced after declaration */
-    inited : 1;                 /* -Wuninitialized: written (or init/addr-taken) before read */
+    tentative_array : 1,
+    is_register : 1,
+    used : 1,
+    inited : 1;
 };
 
 struct FuncAttr {
@@ -473,7 +465,7 @@ struct FuncAttr {
     func_dtor   : 1,
     func_args   : 8,
     func_alwinl : 1,
-    func_star_param : 1,        /* 6.7.6.2p4: a parameter used [*] (prototype-only) */
+    func_star_param : 1,
     xxxx        : 14;
 };
 
@@ -505,10 +497,6 @@ typedef struct Sym {
         struct Sym *cleanupstate;
         int *vla_array_str;
     };
-    /* 6.8.6.1/6.8.4.2: jump-into-VLA-scope diagnostics, used on label syms.
-       vla_inner_id = id of the innermost in-scope VLA at the label's
-       definition (0 = none); vla_min_goto_gpp = smallest VLA program-point
-       among forward gotos seen before the label was defined (INT_MAX = none). */
     int vla_inner_id;
     int vla_min_goto_gpp;
     struct Sym *prev;
@@ -593,8 +581,7 @@ typedef struct BufferedFile {
     int ifndef_macro_saved;
     int *ifdef_stack_ptr;
     int include_next_index;
-    int system_header;          /* in a system include / the predef buffer:
-                                   warnings (and -pedantic) are suppressed here */
+    int system_header;
     int prev_tok_flags;
     char filename[1024];
     char *true_filename;
@@ -625,8 +612,8 @@ typedef struct AttributeDef {
     int alias_target;
     int asm_label;
     char attr_mode;
-    char storage_class;   /* 1 = auto, 2 = register (C11 6.7.1 constraints) */
-    char implicit_int;    /* 6.7.2p2: specifiers but no type specifier */
+    char storage_class;
+    char implicit_int;
 } AttributeDef;
 
 typedef struct InlineFunc {
@@ -700,8 +687,8 @@ struct MCCState {
     unsigned char filetype;
     unsigned char optimize;
     unsigned char optimize_size;
-    signed char pie;            /* -1 auto, 0 -no-pie, 1 -pie */
-    unsigned char pic;          /* -f[no-]pic/PIE: 0 none, 1 -fpic, 2 -fPIC */
+    signed char pie;
+    unsigned char pic;
     unsigned char option_pthread;
     unsigned char enable_new_dtags;
     unsigned int  cversion;
@@ -714,18 +701,18 @@ struct MCCState {
     unsigned char reverse_funcargs;
     unsigned char gnu89_inline;
     unsigned char unwind_tables;
-    unsigned char short_enums;          /* -fshort-enums: minimal enum type */
-    unsigned char nobuiltin;            /* -fno-builtin (accepted) */
-    unsigned char omit_frame_pointer;   /* -fomit-frame-pointer (accepted) */
-    unsigned char function_sections;    /* -ffunction-sections (accepted) */
-    unsigned char data_sections;        /* -fdata-sections (accepted) */
-    unsigned char wrapv;                /* -fwrapv (mcc always wraps) */
-    unsigned char trigraphs;            /* -ftrigraphs/-trigraphs: phase-1 trigraph replacement */
-    unsigned char freestanding;         /* -ffreestanding: __STDC_HOSTED__ == 0 */
-    unsigned char syntax_only;          /* -fsyntax-only: check only, no output */
-    unsigned char visibility;           /* -fvisibility= default STV_* */
-    unsigned char stack_protector;      /* -fstack-protector* (x86_64) */
-    unsigned char do_strip;             /* -s: omit .symtab/.strtab from output */
+    unsigned char short_enums;
+    unsigned char nobuiltin;
+    unsigned char omit_frame_pointer;
+    unsigned char function_sections;
+    unsigned char data_sections;
+    unsigned char wrapv;
+    unsigned char trigraphs;
+    unsigned char freestanding;
+    unsigned char syntax_only;
+    unsigned char visibility;
+    unsigned char stack_protector;
+    unsigned char do_strip;
 
     unsigned char warn_none;
     unsigned char warn_all;
@@ -734,26 +721,26 @@ struct MCCState {
     unsigned char warn_unsupported;
     unsigned char warn_implicit_function_declaration;
     unsigned char warn_discarded_qualifiers;
-    unsigned char warn_sequence_point;  /* 6.5p2: unsequenced side effects (default on, like gcc) */
-    unsigned char warn_format;          /* -Wformat: printf/scanf format vs args (opt-in) */
-    unsigned char warn_vla;             /* -Wvla: use of a variable-length array (opt-in) */
-    unsigned char warn_undef;           /* -Wundef: undefined identifier in #if (opt-in) */
-    unsigned char warn_unknown_pragmas; /* -Wunknown-pragmas: unrecognized #pragma (-Wall) */
-    unsigned char warn_implicit_int;    /* -Wimplicit-int: type defaults to int (on, like gcc) */
-    unsigned char warn_sign_compare;    /* -Wsign-compare: signed/unsigned comparison (opt-in) */
-    unsigned char warn_parentheses;     /* -Wparentheses: assignment as a truth value (-Wall) */
-    unsigned char warn_switch;          /* -Wswitch: enum switch omits a case (-Wall) */
-    unsigned char warn_unused_variable; /* -Wunused-variable: never-referenced local (-Wall) */
-    unsigned char warn_unused_parameter;/* -Wunused-parameter: never-referenced param (-Wextra) */
-    unsigned char warn_unused_function; /* -Wunused-function: unused static function (-Wall) */
-    unsigned char warn_fatal_errors;    /* -Wfatal-errors: stop at the first error */
-    unsigned char warn_shadow;          /* -Wshadow: declaration shadows an outer one (opt-in) */
-    unsigned char warn_unused_value;    /* -Wunused-value: statement value unused, no effect (-Wall) */
-    unsigned char warn_uninitialized;   /* -Wuninitialized: local read before written (-Wall) */
-    unsigned char warn_varargs;         /* -Wvarargs: va_start 2nd arg misuse (on by default) */
-    int max_errors;                     /* -fmax-errors=N: stop after N errors (0 = no limit) */
-    unsigned char warn_pedantic;        /* -pedantic: diagnose ISO C extensions */
-    unsigned char pedantic_errors;      /* -pedantic-errors: make them hard errors */
+    unsigned char warn_sequence_point;
+    unsigned char warn_format;
+    unsigned char warn_vla;
+    unsigned char warn_undef;
+    unsigned char warn_unknown_pragmas;
+    unsigned char warn_implicit_int;
+    unsigned char warn_sign_compare;
+    unsigned char warn_parentheses;
+    unsigned char warn_switch;
+    unsigned char warn_unused_variable;
+    unsigned char warn_unused_parameter;
+    unsigned char warn_unused_function;
+    unsigned char warn_fatal_errors;
+    unsigned char warn_shadow;
+    unsigned char warn_unused_value;
+    unsigned char warn_uninitialized;
+    unsigned char warn_varargs;
+    int max_errors;
+    unsigned char warn_pedantic;
+    unsigned char pedantic_errors;
     #define WARN_ON  1
     unsigned char warn_num;
 
@@ -794,7 +781,7 @@ struct MCCState {
 
     char *mcc_lib_path;
     char *soname;
-    char *sysroot;          /* --sysroot / -isysroot: runtime CONFIG_SYSROOT */
+    char *sysroot;
     char *rpath;
     char *elfint;
     char *elf_entryname;
@@ -815,10 +802,10 @@ struct MCCState {
     char **sysinclude_paths;
     int nb_sysinclude_paths;
 
-    char **iquote_paths;        /* -iquote: searched only for "..." includes */
+    char **iquote_paths;
     int nb_iquote_paths;
 
-    char **afterinc_paths;      /* -idirafter: searched after the system dirs */
+    char **afterinc_paths;
     int nb_afterinc_paths;
 
     char **library_paths;
@@ -856,15 +843,10 @@ struct MCCState {
     char **pragma_libs;
     int nb_pragma_libs;
 
-    /* 6.10.6: #pragma STDC <FP_CONTRACT|FENV_ACCESS|CX_LIMITED_RANGE> state.
-       Block-scoped (saved/restored across compound statements, see block()).
-       Values: STDC_DEFAULT (0, zero-init) / STDC_ON / STDC_OFF. */
     unsigned char stdc_fp_contract;
     unsigned char stdc_fenv_access;
     unsigned char stdc_cx_limited;
 
-    /* -fcx-limited-range: force the naive (non-Annex-G) complex multiply and
-       divide for the whole TU, regardless of #pragma STDC CX_LIMITED_RANGE. */
     unsigned char cx_limited_range;
 
     struct InlineFunc **inline_fns;
@@ -977,17 +959,13 @@ struct MCCState {
     int nb_libraries;
     char *outfile;
     char *deps_outfile;
-    char *dep_target;                   /* -MT/-MQ: make-rule target override */
+    char *dep_target;
     int argc;
     char **argv;
     char **link_argv;
     int link_argc, link_optind;
 };
 
-/* 6.10.6 #pragma STDC accessors. A switch is "active" when explicitly set ON
-   in the current block scope; DEFAULT/unset means the compiler picks its
-   conforming default. cx_limited() gates the naive complex mul/div path
-   (10.2); fenv_access() gates compile-time FP folding (10.3). */
 static inline int stdc_cx_limited(MCCState *s1)
 {
     return s1->stdc_cx_limited == STDC_ON;
@@ -1017,9 +995,7 @@ struct filespec {
 #define VT_SYM       0x0200
 #define VT_MUSTCAST  0x0C00
 #define VT_NONCONST  0x1000
-#define VT_NONLVAL   0x2000 /* addressable in memory but not a modifiable lvalue
-                               (a by-value struct/union returned from a call):
-                               §6.5.2.2 — `g().m = x` / `&g().m` are invalid */
+#define VT_NONLVAL   0x2000
 #define VT_MUSTBOUND 0x4000
 #define VT_BOUNDED   0x8000
 #define VT_BTYPE       0x000f
@@ -1066,10 +1042,6 @@ struct filespec {
 #define IS_ENUM_VAL(t) ((t & VT_STRUCT_MASK) == VT_ENUM_VAL)
 #define IS_UNION(t) ((t & (VT_STRUCT_MASK|VT_BTYPE)) == VT_UNION)
 
-/* _Atomic gets its own type-flag bit (so atomic objects can be distinguished
-   from plain volatile for atomic codegen), but also sets VT_VOLATILE so all
-   existing no-reorder/no-cache handling keeps applying. VT_QUALIFY is the full
-   set of type qualifiers, used wherever qualifiers are stripped/propagated. */
 #define VT_ATOMIC_BIT 0x00020000
 #define VT_ATOMIC   (VT_ATOMIC_BIT | VT_VOLATILE)
 #define VT_QUALIFY  (VT_CONSTANT | VT_VOLATILE | VT_ATOMIC_BIT)
@@ -1161,11 +1133,11 @@ struct filespec {
 #define TOK_PPNUM   0xcd
 #define TOK_PPSTR   0xce
 #define TOK_LINENUM 0xcf
-#define TOK_U16CHAR 0xd0   /* u'…'  char16_t constant */
-#define TOK_U32CHAR 0xd1   /* U'…'  char32_t constant */
-#define TOK_U16STR  0xd2   /* u"…"  char16_t string   */
-#define TOK_U32STR  0xd3   /* U"…"  char32_t string   */
-#define TOK_U8STR   0xd4   /* u8"…" UTF-8 (char) string */
+#define TOK_U16CHAR 0xd0
+#define TOK_U32CHAR 0xd1
+#define TOK_U16STR  0xd2
+#define TOK_U32STR  0xd3
+#define TOK_U8STR   0xd4
 
 #define TOK_HAS_VALUE(t) (t >= TOK_CCHAR && t <= TOK_U8STR)
 
@@ -1675,9 +1647,6 @@ ST_FUNC void gen_clear_cache(void);
 #endif
 
 #if defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_PE)
-/* Defined and called only on the SysV path (the !PE #else branch of
-   x86_64-gen.c; callers in mccgen.c are likewise PE-guarded). Declaring it for
-   the PE target leaves a dead static prototype (-Wunused-function). */
 ST_FUNC void arch_transfer_ret_regs(int);
 #endif
 

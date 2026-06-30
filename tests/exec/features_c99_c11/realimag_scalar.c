@@ -1,5 +1,5 @@
-/* GNU __real__/__imag__ applied to a real (non-_Complex) scalar:
-   __real x == x, __imag x == 0 of x's type. */
+
+
 #include <stdio.h>
 
 int main(void)

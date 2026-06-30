@@ -40,7 +40,7 @@
 
 
 
-int A[N], B[N], C[N]; 
+int A[N], B[N], C[N];
 
 void Hanoi(int,int*,int*,int*);
 
@@ -93,7 +93,7 @@ void Hanoi(int n,int *source, int *dest, int *spare)
 
    Hanoi(n-1,source,spare,dest);
    Move(source,dest);
-   Hanoi(n-1,spare,dest,source);	
+   Hanoi(n-1,spare,dest,source);
    return;
 }
 

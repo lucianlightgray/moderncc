@@ -574,21 +574,11 @@ static void error1(int mode, const char *fmt, va_list ap)
     mcc_exit_state(s1);
 
     if (mode == ERROR_WARN) {
-        /* Capture and CLEAR the per-warning flag selector first: warn_num is a
-           one-shot set by mcc_warning_c() for the immediately following call.
-           It must be reset before any early return below, otherwise a warning
-           suppressed in a system header leaks its selector to the next
-           (possibly unconditional) warning, which would then read the wrong
-           flag byte. wopt < 0 marks an unconditional plain mcc_warning(). */
         int wopt = -1;
         if (s1->warn_num) {
             wopt = *(&s1->warn_none + s1->warn_num);
             s1->warn_num = 0;
         }
-        /* Suppress warnings (and -pedantic) originating inside a system header
-           or the predef buffer, as gcc/clang do — before the -Werror upgrade,
-           so they never become errors. Keeps -pedantic usable with real libc
-           headers and mcc's own mccdefs.h. Errors are never suppressed. */
         if (s1->error_set_jmp_enabled) {
             BufferedFile *wf;
             for (wf = file; wf && wf->filename[0] == ':'; wf = wf->prev)
@@ -647,10 +637,6 @@ static void error1(int mode, const char *fmt, va_list ap)
     cstr_free(&cs);
     if (mode != ERROR_WARN)
         s1->nb_errors++;
-    /* -Wfatal-errors / -fmax-errors=N: a recoverable (noabort) error normally
-       lets compilation continue; abort it if the program asked to stop at the
-       first error, or once the error limit is reached. Hard errors (ERROR_ERROR)
-       already abort below. */
     if (mode == ERROR_NOABORT && s1->error_set_jmp_enabled
         && (s1->warn_fatal_errors
             || (s1->max_errors && s1->nb_errors >= s1->max_errors)))
@@ -825,10 +811,6 @@ LIBMCCAPI void mcc_undefine_symbol(MCCState *s1, const char *sym)
 #if defined CONFIG_MCC_AUTO_MCCDIR && !defined _WIN32
 #include <sys/stat.h>
 #if defined __APPLE__
-/* We only need _NSGetExecutablePath here. Pulling in <mach-o/dyld.h> would
-   transitively include <mach-o/loader.h>, whose load-command structs collide
-   with the ones mccmacho.c defines when both share a TU (ONE_SOURCE builds:
-   mcc_s/mcc_c). Declare the one symbol we use instead of including the header. */
 extern int _NSGetExecutablePath(char *buf, unsigned int *bufsize);
 #endif
 static char auto_mccdir_buf[1024];
@@ -886,15 +868,15 @@ LIBMCCAPI MCCState *mcc_new(void)
     s->nocommon = 1;
     s->dollars_in_identifiers = 1;
     s->cversion = 199901;
-    s->pie = -1;        /* auto: built-in CONFIG_MCC_PIE default */
+    s->pie = -1;
 #if defined CONFIG_MCC_PIC
-    s->pic = 2;         /* default position-independent codegen */
+    s->pic = 2;
 #endif
     s->warn_implicit_function_declaration = 1;
     s->warn_discarded_qualifiers = 1;
-    s->warn_sequence_point = 1;         /* 6.5p2: on by default, like gcc */
-    s->warn_implicit_int = 1;           /* 6.7.2p2: on by default, like gcc */
-    s->warn_varargs = 1;                /* 7.16.1.4: on by default, like gcc */
+    s->warn_sequence_point = 1;
+    s->warn_implicit_int = 1;
+    s->warn_varargs = 1;
     s->ms_extensions = 1;
     s->unwind_tables = 1;
 
@@ -971,7 +953,7 @@ LIBMCCAPI void mcc_delete(MCCState *s1)
 LIBMCCAPI int mcc_set_output_type(MCCState *s, int output_type)
 {
     if (output_type == MCC_OUTPUT_EXE) {
-        int pie = s->pie;       /* -pie / -no-pie override the build default */
+        int pie = s->pie;
         if (pie < 0)
 #ifdef CONFIG_MCC_PIE
             pie = 1;
@@ -1298,10 +1280,6 @@ ST_FUNC int mcc_add_support(MCCState *s1, const char *filename)
 #ifdef MCC_TARGET_UNIX
 ST_FUNC int mcc_add_crt(MCCState *s1, const char *filename)
 {
-    /* crt_paths (CONFIG_MCC_CRTPREFIX) first; then fall back to the library
-       search paths (-L / CONFIG_MCC_LIBPATHS), since a sysroot may keep crt
-       objects in its libdir (e.g. <sysroot>/usr/lib64 on a 64-bit Gentoo
-       tree) rather than the configured crt prefix. */
     int ret = mcc_add_library_internal(s1, "%s/%s",
         filename, 0, s1->crt_paths, s1->nb_crt_paths);
     if (ret == FILE_NOT_FOUND)
@@ -1328,9 +1306,6 @@ LIBMCCAPI int mcc_add_library(MCCState *s, const char *libraryname)
     };
     int flags = AFF_TYPE_LIB | (s->filetype & AFF_WHOLE_ARCHIVE);
 #if defined MCC_TARGET_PE
-    /* On Windows the math routines live in the C runtime (msvcrt), which is
-       linked automatically. Treat -lm as a no-op, like gcc/mingw, instead of
-       failing to find a libm that the platform does not ship separately. */
     if (!strcmp(libraryname, "m"))
         return 0;
 #endif
@@ -1758,58 +1733,22 @@ static const FlagDef options_W[] = {
     { offsetof(MCCState, warn_implicit_function_declaration), WD_ALL, "implicit-function-declaration" },
     { offsetof(MCCState, warn_discarded_qualifiers), WD_ALL, "discarded-qualifiers" },
     { offsetof(MCCState, warn_sequence_point), WD_ALL, "sequence-point" },
-    /* -Wformat: printf/scanf format vs argument checking. Enabled by -Wall
-       (WD_ALL), matching gcc/clang; -Wno-format turns it off. The checker only
-       runs when warn_format is set, so the self-host (no -Wall) is unaffected. */
     { offsetof(MCCState, warn_format), WD_ALL, "format" },
-    /* -Wvla: diagnose use of a variable-length array (C11 made VLAs optional).
-       Opt-in, like gcc (not part of -Wall/-Wextra). */
     { offsetof(MCCState, warn_vla), 0, "vla" },
-    /* -Wundef: an undefined identifier in a #if expression (evaluates to 0).
-       Opt-in, like gcc (not in -Wall). */
     { offsetof(MCCState, warn_undef), 0, "undef" },
-    /* -Wimplicit-int: a declaration whose type defaults to int (C99 removed
-       implicit int). On by default (set in mcc_new); -Wno-implicit-int disables. */
     { offsetof(MCCState, warn_implicit_int), 0, "implicit-int" },
-    /* -Wsign-compare: a relational/equality comparison mixing signed and
-       unsigned operands. Opt-in (gcc enables it under -Wextra). */
     { offsetof(MCCState, warn_sign_compare), 0, "sign-compare" },
-    /* -Wparentheses: a plain assignment used directly as a controlling
-       expression (`if (x = y)`); double parentheses suppress it. Enabled by
-       -Wall (WD_ALL), like gcc. */
     { offsetof(MCCState, warn_parentheses), WD_ALL, "parentheses" },
-    /* -Wswitch: a switch on an enumerated type that omits a case and has no
-       `default`. Enabled by -Wall (WD_ALL), like gcc. */
     { offsetof(MCCState, warn_switch), WD_ALL, "switch" },
-    /* -Wunused-variable: an automatic local declared but never referenced.
-       Enabled by -Wall (WD_ALL), like gcc. */
     { offsetof(MCCState, warn_unused_variable), WD_ALL, "unused-variable" },
-    /* -Wunused-parameter: a function parameter never referenced in the body.
-       Opt-in; enabled by -Wextra (handled in the -W option case), like gcc. */
     { offsetof(MCCState, warn_unused_parameter), 0, "unused-parameter" },
-    /* -Wunused-function: a static function defined but never referenced in the
-       TU. Enabled by -Wall (WD_ALL), like gcc. */
     { offsetof(MCCState, warn_unused_function), WD_ALL, "unused-function" },
-    /* -Wunknown-pragmas: an unrecognized #pragma. Enabled by -Wall (WD_ALL),
-       matching gcc, and separately controllable via -W[no-]unknown-pragmas. */
     { offsetof(MCCState, warn_unknown_pragmas), WD_ALL, "unknown-pragmas" },
-    /* -Wpedantic / -Wno-pedantic are gcc/clang synonyms for -pedantic: they
-       toggle the same warn_pedantic state that diagnoses non-ISO extensions. */
     { offsetof(MCCState, warn_pedantic), 0, "pedantic" },
-    /* -Wfatal-errors: abort at the first error rather than continuing. */
     { offsetof(MCCState, warn_fatal_errors), 0, "fatal-errors" },
-    /* -Wshadow: a block-scope declaration whose name shadows a variable visible
-       in an enclosing scope (or a global). Opt-in, like gcc. */
     { offsetof(MCCState, warn_shadow), 0, "shadow" },
-    /* -Wunused-value: an expression statement whose value is computed but
-       unused and whose top-level operator has no side effect. -Wall, like gcc. */
     { offsetof(MCCState, warn_unused_value), WD_ALL, "unused-value" },
-    /* -Wuninitialized: an automatic local read before being written (in source
-       order). Conservative — only the canonical read/write sites are tracked.
-       Enabled by -Wall (WD_ALL), like gcc. */
     { offsetof(MCCState, warn_uninitialized), WD_ALL, "uninitialized" },
-    /* -Wvarargs: a misuse of va_start's second argument (not the last named
-       parameter). On by default, like gcc. */
     { offsetof(MCCState, warn_varargs), 0, "varargs" },
     { 0, 0, NULL }
 };
@@ -2048,10 +1987,6 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
             s->pedantic_errors = 1;
             break;
         case MCC_OPTION_s:
-            /* strip the symbol table from a linked output (.symtab/.strtab are
-               dropped at write time; .dynsym/.dynstr are retained). Stripping a
-               relocatable object would break later linking, so it only applies
-               to executables/shared objects. */
             s->do_strip = 1;
             break;
         case MCC_OPTION_bt:
@@ -2122,12 +2057,6 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
                     std++;
                 const char *disp = std;
                 int strict_iso = 0;
-                /* Strip the gnu/c/iso9899 prefix and keep only the version.
-                   mcc leaves GNU extensions enabled regardless of -std: its
-                   gnu_ext flag also gates __asm__/__attribute__/__typeof__,
-                   which the system headers rely on even in strict C mode.
-                   strict_iso records `c`/`iso9899` (not `gnu`) so trigraphs can
-                   be turned on for strict ISO mode below (5.2.1.1). */
                 if (strstart("gnu", &std))
                     ;
                 else if (strstart("c", &std))
@@ -2144,7 +2073,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
                     break;
                 }
                 if (!strcmp(std, "89") || !strcmp(std, "90"))
-                    s->cversion = 0;            /* C89: __STDC_VERSION__ undefined */
+                    s->cversion = 0;
                 else if (!strcmp(std, "94"))
                     s->cversion = 199409;
                 else if (!strcmp(std, "99"))
@@ -2157,9 +2086,6 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
                     s->cversion = 202311;
                 else
                     mcc_warning("unsupported language standard '%s'", disp);
-                /* 5.2.1.1 / translation phase 1: a strict ISO mode processes
-                   trigraphs (gcc/clang do in -std=cNN/iso9899); -std=gnu* and
-                   the default leave them off. Trigraphs were removed in C23. */
                 if (strict_iso)
                     s->trigraphs = !(s->cversion >= 202311);
             }
@@ -2191,8 +2117,6 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
             break;
         case MCC_OPTION_sysroot:
         case MCC_OPTION_isysroot:
-            /* override the compile-time CONFIG_SYSROOT used to expand the
-               default system include/lib/crt search paths (the {R} marker). */
             if (*optarg == '=')
                 optarg++;
             mcc_set_str(&s->sysroot, optarg);
@@ -2201,13 +2125,6 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
             cstr_printf(&s->cmdline_incl, "#include \"%s\"\n", optarg);
             break;
         case MCC_OPTION_imacros:
-            /* -imacros FILE: like -include, but gcc keeps only the file's macro
-               definitions and discards its output. mcc has no parser
-               token-discard seam, so it processes FILE in full (identical to
-               -include) — correct for the usual all-`#define` macro header, and
-               with include guards a header pulled in both ways is not doubled.
-               A FILE carrying real declarations would also contribute those (a
-               known, documented divergence from gcc's macros-only semantics). */
             cstr_printf(&s->cmdline_incl, "#include \"%s\"\n", optarg);
             break;
         case MCC_OPTION_nostdinc:
@@ -2239,7 +2156,6 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
             {
                 const char *vis = optarg;
                 if (strstart("max-errors=", &vis)) {
-                    /* -fmax-errors=N: stop after N diagnosed errors. */
                     s->max_errors = atoi(vis);
                 } else if (strstart("visibility=", &vis)) {
                     if (!strcmp(vis, "default"))        s->visibility = STV_DEFAULT;
@@ -2282,8 +2198,6 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
         case MCC_OPTION_m:
             if (set_flag(s, options_m, optarg) < 0) {
                 const char *marg = optarg;
-                /* Accepted for gcc/clang compatibility: mcc has a single fixed
-                   codegen path, so arch/tuning selection does not change output. */
                 if (strstart("arch=", &marg) || strstart("tune=", &marg)
                     || strstart("cpu=", &marg) || strstart("cmodel=", &marg)
                     || strstart("fpmath=", &marg))
@@ -2296,10 +2210,6 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
             }
             break;
         case MCC_OPTION_W:
-            /* -Wextra is an umbrella that enables a set of warnings (like gcc).
-               Handle it before set_flag (which only knows the per-name flags and
-               the -Wall group). Members listed once here; a later -Wno-<member>
-               can still turn an individual one back off. */
             if (!strcmp(optarg, "extra") || !strcmp(optarg, "no-extra")) {
                 unsigned char on = optarg[0] == 'e' ? WARN_ON : 0;
                 s->warn_sign_compare = on;
@@ -2332,7 +2242,6 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
 
         case MCC_OPTION_M:
             s->include_sys_deps = 1;
-            /* fall through */
         case MCC_OPTION_MM:
             s->just_deps = 1;
             s->gen_deps = 1;
@@ -2341,13 +2250,11 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
             break;
         case MCC_OPTION_MD:
             s->include_sys_deps = 1;
-            /* fall through */
         case MCC_OPTION_MMD:
             s->gen_deps = 1;
             if (*optarg != ',')
                 break;
             ++optarg;
-            /* fall through */
         case MCC_OPTION_MF:
             mcc_set_str(&s->deps_outfile, optarg);
             break;
@@ -2355,20 +2262,11 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
             s->gen_phony_deps = 1;
             break;
         case MCC_OPTION_S:
-            /* mcc, like its TCC lineage, is a single-pass compiler that emits
-               machine code directly into object sections; it has no textual
-               assembly emitter, so -S cannot be honored. Diagnose clearly rather
-               than with a generic "invalid option". (It can still *assemble* .s
-               input and link, just not produce .s output.) */
             return mcc_error_noabort(
                 "-S (assembly output) is not supported: mcc compiles directly to "
                 "object code; use -c for an object file");
         case MCC_OPTION_MT:
         case MCC_OPTION_MQ:
-            /* -MT <t> sets the make-rule target name verbatim; -MQ <t> also
-               quotes characters special to make ('$' -> '$$'). Multiple
-               occurrences accumulate into a space-separated target list, as in
-               gcc/clang. */
             {
                 const char *src = optarg;
                 int extra = 0, sep = s->dep_target ? 1 : 0;
@@ -2413,19 +2311,17 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
             s->filetype = x | (s->filetype & ~AFF_TYPE_MASK);
             break;
         case MCC_OPTION_O:
-            /* mcc does not run optimization passes; -O only drives the
-               predefined macros, matching gcc/clang spelling of the levels. */
             s->optimize_size = 0;
-            if (optarg[0] == '\0')                            /* -O == -O1 */
+            if (optarg[0] == '\0')
                 s->optimize = 1;
-            else if (isnum(optarg[0]))                        /* -O0..-O9 */
+            else if (isnum(optarg[0]))
                 s->optimize = optarg[0] - '0';
-            else if (!strcmp(optarg, "s") || !strcmp(optarg, "z")) {  /* size */
+            else if (!strcmp(optarg, "s") || !strcmp(optarg, "z")) {
                 s->optimize = 2;
                 s->optimize_size = 1;
-            } else if (!strcmp(optarg, "g"))                  /* -Og */
+            } else if (!strcmp(optarg, "g"))
                 s->optimize = 1;
-            else if (!strcmp(optarg, "fast"))                 /* -Ofast */
+            else if (!strcmp(optarg, "fast"))
                 s->optimize = 3;
             else {
                 mcc_warning("unsupported optimization level '-O%s'", optarg);

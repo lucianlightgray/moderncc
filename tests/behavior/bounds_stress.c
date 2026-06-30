@@ -79,7 +79,7 @@ int test6(void)
 {
     int i, sum = 0;
     int *tab4;
-    
+
     tab4 = malloc(20 * sizeof(int));
     free(tab4);
     for(i=0;i<21;i++) {

@@ -8,7 +8,7 @@
 
 
 
-
+
 #define __define_stab(NAME, CODE, STRING) NAME=CODE,
 
 enum __stab_debug_code
@@ -91,7 +91,7 @@ __define_stab (N_NBSTS,  0xF6, "NBSTS")
 __define_stab (N_NBLCS,  0xF8, "NBLCS")
 
 __define_stab (N_LENG, 0xfe, "LENG")
-
+
 
 
 

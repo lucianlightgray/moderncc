@@ -189,7 +189,7 @@ static void asm_expr_unary(MCCState *s1, ExprValue *pe)
         break;
     }
 }
-    
+
 static void asm_expr_prod(MCCState *s1, ExprValue *pe)
 {
     int op;
@@ -198,7 +198,7 @@ static void asm_expr_prod(MCCState *s1, ExprValue *pe)
     asm_expr_unary(s1, pe);
     for(;;) {
         op = tok;
-        if (op != '*' && op != '/' && op != '%' && 
+        if (op != '*' && op != '/' && op != '%' &&
             op != TOK_SHL && op != TOK_SAR)
             break;
         next();
@@ -209,14 +209,14 @@ static void asm_expr_prod(MCCState *s1, ExprValue *pe)
         case '*':
             pe->v *= e2.v;
             break;
-        case '/':  
+        case '/':
             if (e2.v == 0) {
             div_error:
                 mcc_error("division by zero");
             }
             pe->v /= e2.v;
             break;
-        case '%':  
+        case '%':
             if (e2.v == 0)
                 goto div_error;
             pe->v %= e2.v;
@@ -250,7 +250,7 @@ static void asm_expr_logic(MCCState *s1, ExprValue *pe)
         case '&':
             pe->v &= e2.v;
             break;
-        case '|':  
+        case '|':
             pe->v |= e2.v;
             break;
         default:
@@ -282,7 +282,7 @@ static inline void asm_expr_sum(MCCState *s1, ExprValue *pe)
         } else {
             pe->v -= e2.v;
 	    if (!e2.sym) {
-	    } else if (pe->sym == e2.sym) { 
+	    } else if (pe->sym == e2.sym) {
 		pe->sym = NULL;
 	    } else {
 		ElfSym *esym1, *esym2;
@@ -667,7 +667,7 @@ static void asm_parse_directive(MCCState *s1, int global)
     case TOK_ASMDIR_weak:
     case TOK_ASMDIR_hidden:
 	tok1 = tok;
-	do { 
+	do {
             Sym *sym;
             next();
 	    if (tok < TOK_IDENT)
@@ -713,7 +713,7 @@ static void asm_parse_directive(MCCState *s1, int global)
     case TOK_ASMDIR_text:
     case TOK_ASMDIR_data:
     case TOK_ASMDIR_bss:
-	{ 
+	{
             char sname[64];
             tok1 = tok;
             n = 0;
@@ -764,7 +764,7 @@ static void asm_parse_directive(MCCState *s1, int global)
         }
         break;
     case TOK_ASMDIR_size:
-        { 
+        {
             Sym *sym;
             ElfSym *esym;
 
@@ -785,7 +785,7 @@ static void asm_parse_directive(MCCState *s1, int global)
         }
         break;
     case TOK_ASMDIR_type:
-        { 
+        {
             Sym *sym;
             const char *newtype;
             int st_type;
@@ -873,7 +873,7 @@ static void asm_parse_directive(MCCState *s1, int global)
         }
         break;
     case TOK_ASMDIR_previous:
-        { 
+        {
             Section *sec;
             next();
             if (!last_text_section)
@@ -1077,7 +1077,7 @@ static void mcc_assemble_inline(MCCState *s1, const char *str, int len, int glob
     macro_ptr = saved_macro_ptr;
 }
 
-ST_FUNC int find_constraint(ASMOperand *operands, int nb_operands, 
+ST_FUNC int find_constraint(ASMOperand *operands, int nb_operands,
                            const char *name, const char **pp)
 {
     int index;
@@ -1115,7 +1115,7 @@ ST_FUNC int find_constraint(ASMOperand *operands, int nb_operands,
     return index;
 }
 
-static void subst_asm_operands(ASMOperand *operands, int nb_operands, 
+static void subst_asm_operands(ASMOperand *operands, int nb_operands,
                                CString *out_str, const char *str)
 {
     int c, index, modifier;
@@ -1194,9 +1194,6 @@ static void parse_asm_operands(ASMOperand *operands, int *nb_operands_ptr,
 	    astr = parse_mult_str("string constant")->data;
             pstrcpy(op->constraint, sizeof op->constraint, astr);
             skip('(');
-            /* GNU lvalue-cast extension is valid for asm operands, so suppress
-               the §6.5.4 cast-is-not-an-lvalue materialization while parsing
-               the operand expression (e.g. `"=a" ((USItype)(x))`). */
             asm_lvalue_cast++;
             gexpr();
             asm_lvalue_cast--;
@@ -1316,10 +1313,10 @@ ST_FUNC void asm_instr(void)
     skip(')');
     if (tok != ';')
         expect("';'");
-    
+
     save_regs(0);
 
-    asm_compute_constraints(operands, nb_operands, nb_outputs, 
+    asm_compute_constraints(operands, nb_operands, nb_outputs,
                             clobber_regs, &out_reg);
 
 #ifdef ASM_DEBUG
@@ -1336,8 +1333,8 @@ ST_FUNC void asm_instr(void)
     printf("subst_asm: \"%s\"\n", (char *)astr.data);
 #endif
 
-    asm_gen_code(operands, nb_operands, nb_outputs, 0, 
-                 clobber_regs, out_reg);    
+    asm_gen_code(operands, nb_operands, nb_outputs, 0,
+                 clobber_regs, out_reg);
 
     sec = cur_text_section;
     mcc_assemble_inline(mcc_state, astr.data, astr.size - 1, 0);
@@ -1349,9 +1346,9 @@ ST_FUNC void asm_instr(void)
 
     next();
 
-    asm_gen_code(operands, nb_operands, nb_outputs, 1, 
+    asm_gen_code(operands, nb_operands, nb_outputs, 1,
                  clobber_regs, out_reg);
-    
+
     for(int i=0;i<nb_operands;i++) {
         vpop();
     }
@@ -1369,7 +1366,7 @@ ST_FUNC void asm_global_instr(void)
     skip(')');
     if (tok != ';')
         expect("';'");
-    
+
 #ifdef ASM_DEBUG
     printf("asm_global: \"%s\"\n", (char *)astr->data);
 #endif
@@ -1377,7 +1374,7 @@ ST_FUNC void asm_global_instr(void)
     ind = cur_text_section->data_offset;
 
     mcc_assemble_inline(mcc_state, astr->data, astr->size - 1, 1);
-    
+
     cur_text_section->data_offset = ind;
 
     next();

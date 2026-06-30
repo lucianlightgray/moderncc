@@ -1,8 +1,6 @@
 #ifndef _MCC_LIMITS_H
 #define _MCC_LIMITS_H
 
-/* Pull in the system <limits.h> (POSIX/implementation extras) when hosted;
-   skip it for a freestanding build where there is no next header. */
 #if defined __has_include_next && __has_include_next(<limits.h>)
 # include_next <limits.h>
 #endif
@@ -25,7 +23,7 @@
 #endif
 
 #ifndef CHAR_MIN
-# if ('\xff' > 0)        /* plain char is unsigned (e.g. ARM default) */
+# if ('\xff' > 0)
 #  define CHAR_MIN 0
 # else
 #  define CHAR_MIN (-128)

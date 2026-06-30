@@ -1,24 +1,4 @@
-/* Annex G robust complex multiply / divide helpers for mcc.
- *
- * C11 Annex G.5.1/G.5.2 specify the inf/nan-correct multiply and divide that
- * gcc/clang use by default (their __mul?c3 / __div?c3).  mcc's inline complex
- * codegen (gen_complex_op in src/mccgen.c) only implements the naive
- * (ac-bd)+(ad+bc)i form, which is the CX_LIMITED_RANGE-ON regime; when that
- * pragma / -fcx-limited-range is not in force the codegen routes * and / here.
- *
- * The mcc/libgcc complex return ABI differs per target, so rather than depend
- * on it these helpers take the result by pointer (res[0]=real, res[1]=imag)
- * and return void — portable across all five backends with no ABI work in the
- * codegen.  They are mcc-internal (not libgcc-ABI __muldc3 &c.).
- *
- * Freestanding: no <math.h> / <float.h>.  isnan/isinf/copysign/fabs and a
- * +infinity are built from arithmetic and one bit pattern so this file builds
- * with the bundled headers alone (like the other runtime/lib/*.c sources).
- */
 
-/* +inf as a double via its IEEE-754 bit pattern; cast to float/long double
-   yields the corresponding +inf.  Avoids a literal divide-by-zero (which would
-   raise FE_DIVBYZERO) or a folded over-large constant. */
 static double mcc_dinf(void)
 {
     union { unsigned long long u; double d; } x;
@@ -26,13 +6,9 @@ static double mcc_dinf(void)
     return x.d;
 }
 
-/* A NaN is the only value unequal to itself.  inf-inf and nan-nan are NaN, so
-   x-x is NaN exactly for the non-finite x; finite x gives 0. */
 #define ISNAN(x)     ((x) != (x))
 #define ISFINITE(x)  (((x) - (x)) == ((x) - (x)))
 #define ISINF(x)     (!ISNAN(x) && !ISFINITE(x))
-/* signbit, incl. -0.0 (1/-0 = -inf < 0) and -inf; NaN has no sign here.
-   1.0/(x) keeps x's reciprocal sign for every float type, so no T needed. */
 #define SIGNBIT(x)   (((x) < 0) || ((x) == 0 && 1.0 / (x) < 0))
 #define FABS(x)      (SIGNBIT(x) ? -(x) : (x))
 #define COPYSIGN(m,s) (SIGNBIT(s) ? -FABS(m) : FABS(m))
@@ -45,14 +21,14 @@ void NAME(T *res, T a, T b, T c, T d)                                         \
     if (ISNAN(x) && ISNAN(y)) {                                               \
         T inf = (T)mcc_dinf();                                                \
         int recalc = 0;                                                       \
-        if (ISINF(a) || ISINF(b)) {              /* lhs is infinite */        \
+        if (ISINF(a) || ISINF(b)) {                       \
             a = COPYSIGN(ISINF(a) ? (T)1 : (T)0, a);                          \
             b = COPYSIGN(ISINF(b) ? (T)1 : (T)0, b);                          \
             if (ISNAN(c)) c = COPYSIGN((T)0, c);                              \
             if (ISNAN(d)) d = COPYSIGN((T)0, d);                              \
             recalc = 1;                                                       \
         }                                                                     \
-        if (ISINF(c) || ISINF(d)) {              /* rhs is infinite */        \
+        if (ISINF(c) || ISINF(d)) {                       \
             c = COPYSIGN(ISINF(c) ? (T)1 : (T)0, c);                          \
             d = COPYSIGN(ISINF(d) ? (T)1 : (T)0, d);                          \
             if (ISNAN(a)) a = COPYSIGN((T)0, a);                              \
@@ -76,8 +52,6 @@ void NAME(T *res, T a, T b, T c, T d)                                         \
     res[1] = y;                                                               \
 }
 
-/* Smith's scaled division (branch on the larger of |c|,|d| to avoid spurious
-   overflow) followed by the Annex G.5.2 inf/zero recovery. */
 #define GEN_DIV(NAME, T)                                                      \
 void NAME(T *res, T a, T b, T c, T d)                                         \
 {                                                                             \

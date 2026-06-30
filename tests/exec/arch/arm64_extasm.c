@@ -100,7 +100,7 @@ void test_clobber_list(void)
     int x = 10;
     int y = 20;
     int result;
-    asm("add %0, %1, %2" 
+    asm("add %0, %1, %2"
         : "=r"(result)
         : "r"(x), "r"(y)
         : "cc");
@@ -112,7 +112,7 @@ void test_clobber_list(void)
 void test_multiple_outputs(void)
 {
     int a, b;
-    asm("mov %0, #1; mov %1, #2" 
+    asm("mov %0, #1; mov %1, #2"
         : "=r"(a), "=r"(b));
     assert(a == 1 && b == 2);
     printf("Test 7 (multiple outputs): PASSED\n");

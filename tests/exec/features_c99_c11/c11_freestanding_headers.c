@@ -10,29 +10,29 @@ int main(void)
 {
     int ok = 1;
 
-    /* <stdatomic.h> 7.17.1 lock-free macros + 7.17.3.1 kill_dependency */
+
 #if ATOMIC_INT_LOCK_FREE != 2 || ATOMIC_BOOL_LOCK_FREE != 2 || ATOMIC_POINTER_LOCK_FREE != 2
     ok = 0;
 #endif
     if (ATOMIC_CHAR16_T_LOCK_FREE < 1 || ATOMIC_CHAR32_T_LOCK_FREE < 1) ok = 0;
     if (kill_dependency(40 + 2) != 42) ok = 0;
 
-    /* gcc/clang-compatible __ATOMIC_* memory-order predefs */
+
 #if !defined(__ATOMIC_RELAXED) || !defined(__ATOMIC_SEQ_CST)
     ok = 0;
 #else
     if (__ATOMIC_RELAXED != 0 || __ATOMIC_SEQ_CST != 5) ok = 0;
 #endif
 
-    /* gcc/clang-compatible char16_t/char32_t underlying-type predefs */
+
 #if !defined(__CHAR16_TYPE__) || !defined(__CHAR32_TYPE__)
     ok = 0;
 #else
     if (sizeof(__CHAR16_TYPE__) != 2 || sizeof(__CHAR32_TYPE__) != 4) ok = 0;
-    { __CHAR32_TYPE__ cp = 0x10FFFF; if (cp != 0x10FFFF) ok = 0; }  /* unsigned, 32-bit */
+    { __CHAR32_TYPE__ cp = 0x10FFFF; if (cp != 0x10FFFF) ok = 0; }
 #endif
 
-    /* <limits.h> (7.10) standard macros */
+
     if (CHAR_BIT != 8) ok = 0;
     if (SCHAR_MAX != 127 || UCHAR_MAX != 255) ok = 0;
     if (SHRT_MAX != 32767 || USHRT_MAX != 65535) ok = 0;
@@ -40,7 +40,7 @@ int main(void)
     if (LLONG_MAX != 9223372036854775807LL) ok = 0;
     if ((unsigned long long)ULLONG_MAX != 18446744073709551615ULL) ok = 0;
 
-    /* <stdint.h> (7.20) exact-width types + limits + _C macros */
+
     if (sizeof(int8_t) != 1 || sizeof(int16_t) != 2
         || sizeof(int32_t) != 4 || sizeof(int64_t) != 8) ok = 0;
     if (sizeof(intptr_t) != sizeof(void *)) ok = 0;
@@ -48,14 +48,14 @@ int main(void)
     if (INT64_MAX != 9223372036854775807LL) ok = 0;
     if (UINT64_C(1) != 1ULL || INTMAX_C(2) != 2) ok = 0;
 
-    /* §6.10.8.2: __STDC_ISO_10646__ (wchar_t is ISO-10646 on non-Windows) */
+
 #if !defined(_WIN32)
 # if !defined(__STDC_ISO_10646__) || __STDC_ISO_10646__ < 201103L
     ok = 0;
 # endif
 #endif
 
-    /* Annex F/G: IEC 60559 (IEEE 754) conformance is advertised. */
+
 #if !defined(__STDC_IEC_559__) || !defined(__STDC_IEC_559_COMPLEX__)
     ok = 0;
 #endif

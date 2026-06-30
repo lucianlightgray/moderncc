@@ -19,6 +19,6 @@ int main()
    fred(3);
 
    return 0;
-}    
+}
 
 

@@ -1,5 +1,5 @@
-/* Self-checking control-flow conformance test: recursion, loops, switch,
-   goto and function pointers. */
+
+
 
 static int fib(int n)
 {

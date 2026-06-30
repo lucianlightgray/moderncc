@@ -1,7 +1,7 @@
-/* 6.4.5p5: a narrow string literal adjacent to a wide one is widened to the wide
-   element type. Verifies wide-first + narrow concatenation (was miscompiled:
-   the narrow bytes were copied raw into the wide array) plus same-prefix and
-   narrow chains. */
+
+
+
+
 extern int printf(const char *, ...);
 
 typedef __WCHAR_TYPE__ wchar_t;
@@ -12,15 +12,15 @@ static int slen(const char *s)    { int n = 0; while (s[n]) n++; return n; }
 int main(void)
 {
     int ok = 1;
-    const wchar_t *s  = L"ab" "cd";        /* wide first, narrow widened  */
-    const wchar_t *s2 = L"xy" L"zw";       /* same wide prefix            */
-    const char    *n  = "ab" "cd" "ef";    /* narrow chain                */
-    wchar_t w[] = L"pq" "rs";              /* wide array, narrow widened  */
-    /* 6.4.5p5: NARROW-FIRST runs widen to the run's widest prefix too. */
-    const wchar_t *nf  = "ab" L"cd";       /* narrow-first expr           */
-    const wchar_t *nf2 = "x" "y" L"z";     /* narrow-narrow-wide expr     */
-    wchar_t wnf[] = "x" L"y";              /* narrow-first declared array */
-    wchar_t wnf3[3] = "p" L"q";            /* narrow-first explicitly-sized   */
+    const wchar_t *s  = L"ab" "cd";
+    const wchar_t *s2 = L"xy" L"zw";
+    const char    *n  = "ab" "cd" "ef";
+    wchar_t w[] = L"pq" "rs";
+
+    const wchar_t *nf  = "ab" L"cd";
+    const wchar_t *nf2 = "x" "y" L"z";
+    wchar_t wnf[] = "x" L"y";
+    wchar_t wnf3[3] = "p" L"q";
 
     if (!(s[0]==(wchar_t)'a' && s[1]==(wchar_t)'b' && s[2]==(wchar_t)'c'
           && s[3]==(wchar_t)'d' && s[4]==0 && wlen(s)==4)) ok = 0;

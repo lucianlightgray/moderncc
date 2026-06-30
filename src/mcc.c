@@ -251,10 +251,6 @@ static char *default_outputfile(MCCState *s, const char *first_file)
         name = "a";
     strcpy(buf, name);
     ext = mcc_fileextension(buf);
-    /* Deps-only (-M) and object output both name a `.o`, matching gcc -- and
-       this must win over the PE .exe default below: with bare -M the output
-       type is still EXE, so checking EXE first would mis-name the dependency
-       rule target `foo.exe:` on PE (it stays `foo.o:` everywhere else). */
     if ((s->just_deps || s->output_type == MCC_OUTPUT_OBJ) && !s->option_r && *ext)
         strcpy(ext, ".o");
 #ifdef MCC_TARGET_PE
@@ -393,9 +389,6 @@ redo:
             ret = mcc_run(s, argc, argv);
 #endif
         } else if (s->syntax_only) {
-            /* -fsyntax-only: the input was fully parsed and semantically
-               checked by mcc_add_file above (diagnostics already emitted); do
-               not link or write any output. */
             ;
         } else {
             if (!s->outfile)

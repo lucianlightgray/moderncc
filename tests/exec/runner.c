@@ -20,7 +20,7 @@
 #include <direct.h>
 #define MKDIR(p) _mkdir(p)
 #ifdef _MSC_VER
-/* mingw exposes the POSIX names; MSVC only ships the underscore-prefixed CRT. */
+
 #define popen  _popen
 #define pclose _pclose
 #endif
@@ -58,14 +58,14 @@ static int req_met(const char *req, char *reason, size_t rn){
             const char *want = tok + 3;
             if (strcmp(os, want)){ snprintf(reason, rn, "requires %s target OS (host: %s)", want, os); return 0; }
         } else if (!strcmp(tok, "elf")){
-            /* ELF symbol/section conventions (unprefixed global asm labels,
-               ELF .section flags). Mach-O prefixes C symbols with '_' and uses
-               a different section syntax; PE differs too. */
+
+
+
             if (!strcmp(os, "Darwin") || !strcmp(os, "WIN32")){
                 snprintf(reason, rn, "requires an ELF target (host: %s)", os); return 0; }
         } else if (!strncmp(tok, "os!=", 4)){
-            /* os!=NAME[:reason] — skip when the target OS *is* NAME (the test
-               is inapplicable there). Optional ':' reason after the name. */
+
+
             const char *want = tok + 4;
             const char *colon = strchr(want, ':');
             char wbuf[64];
@@ -131,11 +131,11 @@ static char *slurp(FILE *f, size_t *outlen){
 
 static char *run_capture(const char *cmd, int *status){
 #ifdef _WIN32
-    /* popen() runs `cmd.exe /c <cmd>`. With more than one quoted token (our
-       commands quote every path) cmd.exe strips the first and last quote of
-       the whole line, mangling the program path. Wrapping the entire command
-       in one more quote pair makes cmd strip those outer quotes instead,
-       leaving the inner per-path quoting intact. */
+
+
+
+
+
     char *wrapped = malloc(strlen(cmd) + 3);
     sprintf(wrapped, "\"%s\"", cmd);
     FILE *f = popen(wrapped, "r");
@@ -169,8 +169,8 @@ static char *canon_line(const char *line, size_t len){
     size_t o = 0; int ws = 0, started = 0;
     for (size_t i = 0; i < len; i++){
         char c = line[i];
-        /* Treat CR as whitespace so CRLF output (Windows) canonicalises to the
-           same text as the LF-only goldens. */
+
+
         if (c == ' ' || c == '\t' || c == '\r'){ ws = 1; continue; }
         if (ws && started) out[o++] = ' ';
         ws = 0; started = 1;
@@ -257,14 +257,14 @@ int main(int argc, char **argv){
             while (*a){ if (!strncmp(a, "{SELF}", 6)){ w += sprintf(w, "\"%s\"", path); a += 6; }
                         else { char ch = *a++;
 #ifdef _WIN32
-                            /* cmd.exe doesn't treat single quotes as grouping;
-                               POSIX-style '...' arg quoting maps to "..." . */
+
+
                             if (ch == '\'') ch = '"';
 #endif
                             *w++ = ch; } } *w = 0; }
 
-        /* tests/support is on the include path so any test may
-           #include "vlog.h" for -DVLOG_ENABLE verbose tracing. */
+
+
         char sup[4096]; snprintf(sup, sizeof sup, "%s/support", root);
 
         if (!strcmp(g->mode, "pp")){
@@ -319,8 +319,8 @@ int main(int argc, char **argv){
         snprintf(prefix, sizeof prefix, "%s/", srcdir);
         strip_all(out, prefix);
 
-        /* A few codegen goldens emit ABI-specific output (LLP64 vs LP64); when
-           a WIN32-specific golden is supplied, use it on the WIN32 target. */
+
+
         const char *expect = g->expect;
         if (g->expect_win32 && !strcmp(envv("MCC_TEST_OS", "unknown"), "WIN32"))
             expect = g->expect_win32;

@@ -1,6 +1,6 @@
-/* Self-checking libc conformance test: exercises the *target* C library from
-   the downloaded rootfs (malloc, mem*, str*, snprintf), so glibc vs musl are
-   genuinely covered, not just codegen. */
+
+
+
 
 #include <stdlib.h>
 #include <string.h>

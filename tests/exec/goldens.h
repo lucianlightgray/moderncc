@@ -1,10 +1,10 @@
 
 
-/* expect_win32 (optional, last field): when non-NULL and the target OS is
-   WIN32, the runner compares against it instead of `expect`. This lets a few
-   codegen goldens whose output is legitimately ABI-specific (LLP64 long==4 vs
-   LP64 long==8) run on the WIN32 target rather than skip. Entries that omit it
-   (7-field initializers) leave it NULL and use `expect` everywhere. */
+
+
+
+
+
 typedef struct { const char *name,*mode,*src,*expect,*flags,*args,*req,*expect_win32; } mcc_golden_t;
 static const mcc_golden_t mcc_goldens[] = {
   { "assignment","run","exec/statements/assignment.c","42\n64\n12, 34\n","","","" },

@@ -1,14 +1,10 @@
 #ifndef _MCC_STDINT_H
 #define _MCC_STDINT_H
 
-/* Hosted: pull the system <stdint.h> (its exact internal types + extras).
-   Freestanding (-nostdinc): no next header, so define everything below. */
 #if defined __has_include_next && __has_include_next(<stdint.h>)
 # include_next <stdint.h>
 #endif
 
-/* INT8_MAX is provided by any complete <stdint.h>; if it is absent the system
-   header was not included (freestanding) and we supply the C11 contents. */
 #ifndef INT8_MAX
 
 typedef signed char        int8_t;
@@ -101,9 +97,6 @@ typedef unsigned long long uintmax_t;
 #define SIZE_MAX    UINTPTR_MAX
 #define SIG_ATOMIC_MIN INT32_MIN
 #define SIG_ATOMIC_MAX INT32_MAX
-/* Guard the wide-character limits: on hosts whose system headers are also in
-   the include path (e.g. the macOS SDK), <stdint.h>/<wchar.h> may have defined
-   these already with matching values; redefining them just warns. */
 #ifndef WCHAR_MIN
 #define WCHAR_MIN   INT32_MIN
 #endif
@@ -123,13 +116,6 @@ typedef unsigned long long uintmax_t;
 #define UINT8_C(x)  x
 #define UINT16_C(x) x
 #define UINT32_C(x) x ## U
-/* 7.20.4.1p1: INT64_C(value) shall have type int_least64_t, which is int64_t =
-   __INT64_TYPE__. The suffix must match that type exactly. Per mccdefs.h,
-   __INT64_TYPE__ is `long` only on LP64 Linux; on every other target (LP64
-   macOS/BSD, where `long` is 64-bit but int64 is still `long long`, as well as
-   ILP32 and LLP64) it is `long long`. A bare `__SIZEOF_LONG__ == 8` test would
-   wrongly pick `L` on Darwin/BSD, so qualify it with __linux__ to mirror the
-   int64 type selection. */
 #if __SIZEOF_LONG__ == 8 && defined __linux__
 #define INT64_C(x)  x ## L
 #define UINT64_C(x) x ## UL
@@ -140,5 +126,5 @@ typedef unsigned long long uintmax_t;
 #define INTMAX_C(x)  x ## LL
 #define UINTMAX_C(x) x ## ULL
 
-#endif /* INT8_MAX */
-#endif /* _MCC_STDINT_H */
+#endif
+#endif

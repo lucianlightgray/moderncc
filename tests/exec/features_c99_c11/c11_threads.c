@@ -1,9 +1,9 @@
-/* C11 <threads.h> (7.26): thrd_, mtx_, cnd_, tss_, call_once and once_flag are
-   supported via the hosted libc (glibc/musl). Exercises the whole API with a
-   deterministic result; a non-atomic or broken mutex would corrupt the sum.
-   Covered symbols: thrd_create/join/current/equal/sleep/yield, mtx_init/lock/
-   trylock/unlock/destroy (mtx_plain), cnd_init/wait/signal/broadcast/destroy,
-   tss_create/set/get/delete, call_once + once_flag/ONCE_FLAG_INIT, thrd_success. */
+
+
+
+
+
+
 #include <threads.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -24,11 +24,11 @@ static int started = 0;
 static int worker(void *arg)
 {
     intptr_t id = (intptr_t)arg;
-    call_once(&once, once_fn);          /* runs the init exactly once */
+    call_once(&once, once_fn);
     tss_set(key, (void *)(id + 1));
 
-    /* signal that this thread has started (exercise both cnd wakeups: signal
-       wakes the single waiter, broadcast is robust either way) */
+
+
     mtx_lock(&mtx);
     started++;
     cnd_signal(&cnd);
@@ -37,12 +37,12 @@ static int worker(void *arg)
 
     for (int i = 0; i < STEPS; i++) {
         mtx_lock(&mtx);
-        shared += 2;                    /* mutex-protected accumulate */
+        shared += 2;
         mtx_unlock(&mtx);
         if ((i & 0x3ff) == 0)
-            thrd_yield();               /* exercise thrd_yield */
+            thrd_yield();
     }
-    return (int)(intptr_t)tss_get(key); /* == id + 1 */
+    return (int)(intptr_t)tss_get(key);
 }
 
 int main(void)
@@ -51,7 +51,7 @@ int main(void)
     mtx_init(&mtx, mtx_plain);
     cnd_init(&cnd);
 
-    /* exercise mtx_trylock on the uncontended (just-initialised) mutex */
+
     if (mtx_trylock(&mtx) == thrd_success)
         mtx_unlock(&mtx);
 
@@ -59,7 +59,7 @@ int main(void)
     for (intptr_t i = 0; i < NT; i++)
         thrd_create(&t[i], worker, (void *)i);
 
-    /* wait until all workers have started, via the condition variable */
+
     mtx_lock(&mtx);
     while (started < NT)
         cnd_wait(&cnd, &mtx);
@@ -68,7 +68,7 @@ int main(void)
     int sum_res = 0, res;
     for (int i = 0; i < NT; i++) {
         thrd_join(t[i], &res);
-        sum_res += res;                 /* sum of (id+1) = 1+2+3+4 = 10 */
+        sum_res += res;
     }
 
     struct timespec ts = { 0, 1000000 };

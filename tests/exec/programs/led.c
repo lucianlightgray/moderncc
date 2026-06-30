@@ -79,7 +79,7 @@ void midline(int d, char *p){
          *p++='|';
          break;
       default:
-         *p++=' ';	
+         *p++=' ';
    }
    switch(d){
 
@@ -134,7 +134,7 @@ void botline(int d, char *p){
          *p++='|';
          break;
       default:
-         *p++=' ';	
+         *p++=' ';
    }
    switch(d){
 

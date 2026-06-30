@@ -1,13 +1,13 @@
-/* 6.4.5: u8"..." UTF-8 string literal is an array of char. */
+
 extern int printf(const char *, ...);
 
 int main(void)
 {
     const char *s = u8"hello";
     char buf[] = u8"abc";
-    const char *cat = u8"x" "y";        /* concatenation with a narrow literal */
-    int u8 = 42;                        /* 'u8' is still a valid identifier */
-    unsigned u = 1;                     /* 'u'/keyword unaffected */
+    const char *cat = u8"x" "y";
+    int u8 = 42;
+    unsigned u = 1;
 
     int ok = s[0] == 'h' && s[4] == 'o'
           && sizeof buf == 4 && buf[2] == 'c'

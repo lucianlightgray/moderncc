@@ -51,18 +51,9 @@
     #define __STDC_ISO_10646__ 201706L
 #endif
 
-    /* All mcc targets use IEC 60559 (IEEE 754) binary float/double with
-       round-to-nearest-even and no unsafe contraction, so advertise Annex F/G
-       conformance like gcc/clang do on these targets. */
     #define __STDC_IEC_559__ 1
     #define __STDC_IEC_559_COMPLEX__ 1
 
-    /* char16_t/char32_t are UTF-16/UTF-32 encoded on every mcc target, so
-       advertise the C11 encoding macros — like gcc/clang, which predefine them
-       in their default (non-strict) mode on all targets, Windows included.
-       (mcc also never defines __STDC_NO_ATOMICS__/__STDC_NO_THREADS__: _Atomic
-       and C11 threads both work via the hosted libc, and defining either would
-       tell programs to skip working functionality.) */
     #define __STDC_UTF_16__ 1
     #define __STDC_UTF_32__ 1
 
@@ -150,8 +141,6 @@
 
     #define __builtin_offsetof(type, field) ((__SIZE_TYPE__)&((type*)0)->field)
     #define __builtin_extract_return_addr(x) x
-    /* __builtin_bswap16/32/64 are recognized by the compiler (mccgen.c):
-       folded for constant arguments, else lowered to the runtime helper. */
     #define __sync_fetch_and_add(p,v) __atomic_fetch_add((p),(v),__ATOMIC_SEQ_CST)
     #define __sync_fetch_and_sub(p,v) __atomic_fetch_sub((p),(v),__ATOMIC_SEQ_CST)
     #define __sync_fetch_and_or(p,v)  __atomic_fetch_or((p),(v),__ATOMIC_SEQ_CST)
@@ -198,20 +187,6 @@
     #define __builtin_nanf(ignored_string) (0.0F/0.0F)
 # endif
 #endif
-    /* C99/Annex F floating-point builtins (the de-facto gcc/clang contract).
-       Provided as constant-foldable macros so direct use compiles and folds in
-       a constant expression. Infinities = a folded overflow product; NaN =
-       0.0/0.0 (sign unspecified, 7.12-5). #ifndef so the BSD/Apple defines above
-       win where present. The classification macros may evaluate their argument
-       more than once (a macro-fallback limitation; gcc's intrinsics do not). */
-    /* These #ifndef guards are INDENTED on purpose: c2str emits indented lines
-       as injected predef *string* content, so the guard is evaluated in the
-       target program (where the BSD/Apple defines above were also injected) —
-       not at mcc-compile-time. A column-0 (live) guard would (a) fail to see the
-       injected BSD defines and (b) make mcc's self-compiled predefs oscillate,
-       since the guarded text defines the very macro the guard tests and that
-       text becomes mcc's own predefs (a 2-cycle that breaks reproducible
-       self-host). Keep them indented. */
     #ifndef __builtin_inff
     #define __builtin_inff() (1e30f * 1e30f)
     #endif
@@ -257,14 +232,9 @@
     #define __builtin_isless(a, b) (!__builtin_isunordered(a, b) && (a) < (b))
     #define __builtin_islessequal(a, b) (!__builtin_isunordered(a, b) && (a) <= (b))
     #define __builtin_islessgreater(a, b) (!__builtin_isunordered(a, b) && ((a) < (b) || (a) > (b)))
-    /* fabs/copysign/signbit as constant-foldable macros. Limitations vs the gcc
-       intrinsics (a macro fallback): they evaluate the argument more than once,
-       fabs(-0.0) keeps the sign, and signbit loses a NaN's sign — acceptable for
-       the rare direct-__builtin use (the real libm functions are exact). */
     #define __builtin_fabsf(x) ((float)((x) < 0 ? -(x) : (x)))
     #define __builtin_fabs(x)  ((double)((x) < 0 ? -(x) : (x)))
     #define __builtin_fabsl(x) ((long double)((x) < 0 ? -(x) : (x)))
-    /* signbit: x<0, plus the -0.0 case via 1/x == -inf (0 == 0 is true). */
     #define __builtin_signbit(x)  ((x) < 0 || ((x) == 0 && 1.0 / (double)(x) < 0))
     #define __builtin_signbitf(x) __builtin_signbit(x)
     #define __builtin_signbitl(x) __builtin_signbit(x)
@@ -288,8 +258,6 @@
     } __builtin_va_list[1];
 
     void *__va_arg(__builtin_va_list ap, int arg_type, int size, int align);
-    /* Cast through 'struct __va_list_tag *' (not the array type) so this stays
-       valid under the 6.5.4 cast-to-non-scalar diagnostic. */
     #define __builtin_va_start(ap, last) \
        (*(ap) = *(struct __va_list_tag *)((char*)__builtin_frame_address(0) - 24))
     #define __builtin_va_arg(ap, t)   \
@@ -357,10 +325,6 @@
     # define __BUILTINBC(ret,name,params) ret __builtin_##name params __RENAME(#name);
     # define __BOUND(ret,name,params)
     #endif
-    /* The __builtin_* spellings (e.g. __builtin_memcpy) are valid everywhere,
-       including the PE/Windows target: they alias the plain libc routine (or
-       its __bound_ variant under -b). x86_64 PE has no leading underscore, so
-       __RENAME works the same as on the SysV targets. */
     #define __BOTH(ret,name,params) __BUILTINBC(ret,name,params)__BOUND(ret,name,params)
     #define __BUILTIN(ret,name,params) ret __builtin_##name params __RENAME(#name);
 
@@ -411,11 +375,6 @@
     #undef __MAYBE_REDIR
     #undef __RENAME
 
-    /* __builtin_{ffs,clz,ctz,clrsb,popcount,parity}{,l,ll} are recognized
-       directly by the compiler (mccgen.c): folded when the argument is a
-       constant, otherwise lowered to the matching runtime call in
-       runtime/lib/builtin.c. No C declarations are needed (they are keywords,
-       as in gcc/clang). */
 
     #define __MCC_OV_DECL(T, NM)			\
         int __mcc_addo_##NM(T, T, T*);		\

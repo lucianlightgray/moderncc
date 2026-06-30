@@ -12,7 +12,7 @@ static void kb_wait_1(void)
 
 
 
-      (1 ? 
+      (1 ?
        printf("timeout=%ld\n", timeout) :
        ({
 	int i = 1;

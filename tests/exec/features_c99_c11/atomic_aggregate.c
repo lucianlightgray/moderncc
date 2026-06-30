@@ -1,8 +1,8 @@
-/* 7.17.7: atomic_load/store/exchange/compare_exchange on an aggregate _Atomic
-   object. These have no lock-free instruction, so mcc lowers them to the
-   size-generic __atomic_{load,store,exchange,compare_exchange} runtime helpers
-   (a spinlock-pool fallback in runtime/lib/atomic.c). This used to fail to link
-   ("unresolved reference to __atomic_load"). */
+
+
+
+
+
 #include <stdatomic.h>
 extern int printf(const char *, ...);
 
@@ -28,7 +28,7 @@ int main(void)
     g = atomic_load(&p);
     if (!(g.x == 7 && g.y == 8 && g.z == 9)) ok = 0;
 
-    /* failing CAS: 'expected' is updated with the current value, no store */
+
     P wrong = {0, 0, 0}, des2 = {1, 1, 1};
     if (atomic_compare_exchange_strong(&p, &wrong, des2)) ok = 0;
     if (!(wrong.x == 7 && wrong.y == 8 && wrong.z == 9)) ok = 0;

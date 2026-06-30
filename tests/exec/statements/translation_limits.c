@@ -1,4 +1,4 @@
-/* 5.2.4.1: implementation must meet the C11 minimum translation limits. */
+
 extern int printf(const char *, ...);
 struct Big {
     int m0;

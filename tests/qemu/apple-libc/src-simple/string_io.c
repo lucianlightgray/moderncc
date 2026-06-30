@@ -1,25 +1,25 @@
-/*
- * Copyright (c) 2005, 2006, 2009 Apple Computer, Inc. All rights reserved.
- *
- * @APPLE_LICENSE_HEADER_START@
- *
- * This file contains Original Code and/or Modifications of Original Code
- * as defined in and that are subject to the Apple Public Source License
- * Version 2.0 (the 'License'). You may not use this file except in
- * compliance with the License. Please obtain a copy of the License at
- * http://www.opensource.apple.com/apsl/ and read it before using this
- * file.
- *
- * The Original Code and all software distributed under the License are
- * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
- * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
- * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
- * Please see the License for the specific language governing rights and
- * limitations under the License.
- *
- * @APPLE_LICENSE_HEADER_END@
- */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 #include <stdlib.h>
 #include <unistd.h>
@@ -40,7 +40,7 @@
 #if DEBUG
 #define MYBUFSIZE	256
 #else
-/* we use a small buffer to minimize stack usage constraints */
+
 #define MYBUFSIZE	32
 #endif
 
@@ -52,7 +52,7 @@ typedef struct _BUF {
 	int (*full)(struct _BUF *);
 } BUF;
 
-/* flush the buffer */
+
 static int
 _flush(BUF *b)
 {
@@ -73,7 +73,7 @@ _flush(BUF *b)
 	return 1;
 }
 
-/* flush the buffer and reset the pointer */
+
 static int
 _flush_reset(BUF *b)
 {
@@ -82,7 +82,7 @@ _flush_reset(BUF *b)
 	return 1;
 }
 
-/* enlarge the buffer */
+
 static int
 _enlarge(BUF *b)
 {
@@ -93,7 +93,7 @@ _enlarge(BUF *b)
 
 	new = (vm_address_t)(b->end + 1);
 	if(vm_allocate(mach_task_self(), &new, VM_PAGE_SIZE, 0) == 0) {
-		/* page is adjacent */
+
 		b->end += VM_PAGE_SIZE;
 		return 1;
 	}
@@ -121,8 +121,8 @@ _enlarge(BUF *b)
 static int
 _snprintf_out_of_space(BUF *b)
 {
-	/* For snprintf, we use the fd field to track how many more bytes would
-	 * have been written, had the buffer been larger. */
+
+
 	if(b->fd < INT_MAX) {
 		b->fd++;
 	}
@@ -130,7 +130,7 @@ _snprintf_out_of_space(BUF *b)
 }
 
 static inline void put_s(BUF *, _esc_func, const char *);
-/* output a single character */
+
 static inline void
 put_c(BUF *b, _esc_func esc, unsigned char c)
 {
@@ -141,20 +141,20 @@ put_c(BUF *b, _esc_func esc, unsigned char c)
 	else {
 		if(b->ptr >= b->end)
 			if(!b->full(b)) {
-				/* We can't grow the underlying buffer, so we can't write any
-				 * more bytes. We could plumb this fact through all the above
-				 * layers to early return when we run out of space, but we
-				 * expect this to be a very rare case. We purposefully take the
-				 * perf hit when the buffer is too small instead of checking
-				 * the return value after every call to put_c.
-				 */
+
+
+
+
+
+
+
 				return;
 			}
 		*b->ptr++ = c;
 	}
 }
 
-/* output a null-terminated string */
+
 static inline void
 put_s(BUF *b, _esc_func esc, const char *str)
 {
@@ -162,7 +162,7 @@ put_s(BUF *b, _esc_func esc, const char *str)
 		put_c(b, esc, *str++);
 }
 
-/* output a string of the specified size */
+
 static inline void
 put_n(BUF *b, _esc_func esc, const char *str, ssize_t n)
 {
@@ -186,7 +186,7 @@ udiv10(unsigned long long a, unsigned long long *rem_out)
 		return (unsigned long long)((unsigned int)a / 10);
 	}
 
-	// The biggest multiple of 10 that dividend might contain
+
 	unsigned long long divisor  = 0xa000000000000000;
 	unsigned long long dividend = a;
 	unsigned long long quotient = 0;
@@ -205,11 +205,11 @@ udiv10(unsigned long long a, unsigned long long *rem_out)
 }
 #endif
 
-/*
- * Output the signed decimal string representing the number in "in".  "width" is
- * the minimum field width, and "zero" is a boolean value, true for zero padding
- * (otherwise blank padding).
- */
+
+
+
+
+
 static void
 dec(BUF *b, _esc_func esc, long long in, int width, int zero)
 {
@@ -246,11 +246,11 @@ dec(BUF *b, _esc_func esc, long long in, int width, int zero)
 	put_s(b, esc, cp);
 }
 
-/*
- * Output the octal string representing the number in "n".  "width" is
- * the minimum field width, and "zero" is a boolean value, true for zero padding
- * (otherwise blank padding).
- */
+
+
+
+
+
 static void
 oct(BUF *b, _esc_func esc, unsigned long long n, int width, int zero)
 {
@@ -275,13 +275,13 @@ oct(BUF *b, _esc_func esc, unsigned long long n, int width, int zero)
 	put_s(b, esc, cp);
 }
 
-/*
- * Output the hex string representing the number in "n".  "width" is the
- * minimum field width, and "zero" is a boolean value, true for zero padding
- * (otherwise blank padding).  "upper" is a boolean value, true for upper
- * case hex characters, lower case otherwise.  "p" is a boolean value, true
- * if 0x should be prepended (for %p), otherwise nothing.
- */
+
+
+
+
+
+
+
 static const char _h[] = "0123456789abcdef";
 static const char _H[] = "0123456789ABCDEF";
 static const char _0x[] = "0x";
@@ -317,11 +317,11 @@ hex(BUF *b, _esc_func esc, unsigned long long n, int width, int zero, int upper,
 	put_s(b, esc, cp);
 }
 
-/*
- * Output the unsigned decimal string representing the number in "n".  "width"
- * is the minimum field width, and "zero" is a boolean value, true for zero
- * padding (otherwise blank padding).
- */
+
+
+
+
+
 static void
 udec(BUF *b, _esc_func esc, unsigned long long n, int width, int zero)
 {
@@ -345,11 +345,11 @@ udec(BUF *b, _esc_func esc, unsigned long long n, int width, int zero)
 	put_s(b, esc, cp);
 }
 
-/*
- * Output the unsigned decimal string representing the number in "n", rounded
- * to the nearest MB, KB or b.  "width" is the minimum field width, and "zero"
- * is a boolean value, true for zero padding (otherwise blank padding).
- */
+
+
+
+
+
 static void
 ydec(BUF *b, _esc_func esc, unsigned long long n, int width, int zero)
 {
@@ -367,9 +367,9 @@ ydec(BUF *b, _esc_func esc, unsigned long long n, int width, int zero)
 	}
 }
 
-/*
- * The actual engine for all the _simple_*printf routines.
- */
+
+
+
 static void
 __simple_bprintf(BUF *b, _esc_func esc, const char *fmt, va_list ap)
 {
@@ -390,7 +390,7 @@ __simple_bprintf(BUF *b, _esc_func esc, const char *fmt, va_list ap)
 		lflag = zero = width = 0;
 		for(;;) {
 			if ( strncmp(fmt, ".*s", 3) == 0 ) {
-				/* special case .*s used by std::string_view */
+
 				width = va_arg(ap, int);
 				cp = va_arg(ap, char *);
 				while(width-- > 0)
@@ -402,7 +402,7 @@ __simple_bprintf(BUF *b, _esc_func esc, const char *fmt, va_list ap)
 			case '0':
 				zero++;
 				fmt++;
-				/* drop through */
+
 			case '1': case '2': case '3': case '4': case '5':
 			case '6': case '7': case '8': case '9':
 				while(*fmt >= '0' && *fmt <= '9')
@@ -509,11 +509,11 @@ __simple_bprintf(BUF *b, _esc_func esc, const char *fmt, va_list ap)
 	}
 }
 
-/*
- * A simplified vfprintf variant.  The format string is interpreted with
- * arguments from the va_list, and the results are written to the given
- * file descriptor.
- */
+
+
+
+
+
 void
 _simple_vdprintf(int fd, const char *fmt, va_list ap)
 {
@@ -529,11 +529,11 @@ _simple_vdprintf(int fd, const char *fmt, va_list ap)
 	_flush(&b);
 }
 
-/*
- * A simplified fprintf variant.  The format string is interpreted with
- * arguments from the variable argument list, and the results are written
- * to the given file descriptor.
- */
+
+
+
+
+
 void
 _simple_dprintf(int fd, const char *fmt, ...)
 {
@@ -544,13 +544,13 @@ _simple_dprintf(int fd, const char *fmt, ...)
 	va_end(ap);
 }
 
-/*
- * A simplified string allocate routine.  Pass the opaque pointer to structure
- * to _simple_*sprintf() routines.  Use _simple_string() to retrieve the
- * current string (the string is guaranteed to be null terminated only on
- * the call to _simple_string()).  Use _simple_sfree() to free the structure
- * and string memory.
- */
+
+
+
+
+
+
+
 _SIMPLE_STRING
 _simple_salloc(void)
 {
@@ -564,24 +564,24 @@ _simple_salloc(void)
 	return (_SIMPLE_STRING)b;
 }
 
-/*
- * The format string is interpreted with arguments from the va_list, and the
- * results are appended to the string maintained by the opaque structure, as
- * returned by a previous call to _simple_salloc().  Non-zero is returned on
- * out-of-memory error.
- */
+
+
+
+
+
+
 int
 _simple_vsprintf(_SIMPLE_STRING b, const char *fmt, va_list ap)
 {
 	return _simple_vesprintf(b, NULL, fmt, ap);
 }
 
-/*
- * The format string is interpreted with arguments from the variable argument
- * list, and the results are appended to the string maintained by the opaque
- * structure, as returned by a previous call to _simple_salloc().  Non-zero is
- * returned on out-of-memory error.
- */
+
+
+
+
+
+
 int
 _simple_sprintf(_SIMPLE_STRING b, const char *fmt, ...)
 {
@@ -594,11 +594,11 @@ _simple_sprintf(_SIMPLE_STRING b, const char *fmt, ...)
 	return ret;
 }
 
-/*
- * Like _simple_vsprintf(), except __esc is a function to call on each
- * character; the function returns NULL if the character should be passed
- * as is, otherwise, the returned character string is used instead.
- */
+
+
+
+
+
 int
 _simple_vesprintf(_SIMPLE_STRING b, _esc_func esc, const char *fmt, va_list ap)
 {
@@ -606,11 +606,11 @@ _simple_vesprintf(_SIMPLE_STRING b, _esc_func esc, const char *fmt, va_list ap)
 	return 0;
 }
 
-/*
- * Like _simple_sprintf(), except __esc is a function to call on each
- * character; the function returns NULL if the character should be passed
- * as is, otherwise, the returned character string is used instead.
- */
+
+
+
+
+
 int _simple_esprintf(_SIMPLE_STRING b, _esc_func esc, const char *fmt, ...)
 {
 	va_list ap;
@@ -622,10 +622,10 @@ int _simple_esprintf(_SIMPLE_STRING b, _esc_func esc, const char *fmt, ...)
 	return ret;
 }
 
-/*
- * Return the null terminated string from the opaque structure, as returned
- * by a previous call to _simple_salloc().
- */
+
+
+
+
 char *
 _simple_string(_SIMPLE_STRING b)
 {
@@ -633,40 +633,40 @@ _simple_string(_SIMPLE_STRING b)
 	return ((BUF *)b)->buf;
 }
 
-/*
- * Reposition the pointer to the first null in the buffer.  After a call to
- * _simple_string, the buffer can be modified, and shrunk.
- */
+
+
+
+
 void
 _simple_sresize(_SIMPLE_STRING b)
 {
 	((BUF *)b)->ptr = ((BUF *)b)->buf + strlen(((BUF *)b)->buf);
 }
 
-/*
- * Append the null-terminated string to the string associated with the opaque
- * structure.  Non-zero is returned on out-of-memory error.
- */
+
+
+
+
 int
 _simple_sappend(_SIMPLE_STRING b, const char *str)
 {
 	return _simple_esappend(b, NULL, str);
 }
 
-/*
- * Like _simple_sappend(), except __esc is a function to call on each
- * character; the function returns NULL if the character should be passed
- * as is, otherwise, the returned character string is used instead.
- */
+
+
+
+
+
 int _simple_esappend(_SIMPLE_STRING b, _esc_func esc, const char *str)
 {
 	put_s((BUF *)b, esc, str);
 	return 0;
 }
 
-/*
- * Write the string associated with the opaque structure to the file descriptor.
- */
+
+
+
 void
 _simple_put(_SIMPLE_STRING b, int fd)
 {
@@ -674,10 +674,10 @@ _simple_put(_SIMPLE_STRING b, int fd)
 	_flush((BUF *)b);
 }
 
-/*
- * Write the string associated with the opaque structure and a trailing newline,
- * to the file descriptor.
- */
+
+
+
+
 void
 _simple_putline(_SIMPLE_STRING b, int fd)
 {
@@ -687,9 +687,9 @@ _simple_putline(_SIMPLE_STRING b, int fd)
 	((BUF *)b)->ptr--;
 }
 
-/*
- * Free the opaque structure, and the associated string.
- */
+
+
+
 void
 _simple_sfree(_SIMPLE_STRING b)
 {
@@ -705,10 +705,10 @@ _simple_sfree(_SIMPLE_STRING b)
 	vm_deallocate(mach_task_self(), (vm_address_t)b, s);
 }
 
-/*
- * Some clients require that they manage the underlying storage for the string,
- * so we provide an snprintf-like API to let them use libplatform's formatting.
- */
+
+
+
+
 int
 _simple_vsnprintf(char *str, size_t size, const char *fmt, va_list ap)
 {
@@ -719,10 +719,10 @@ _simple_vsnprintf(char *str, size_t size, const char *fmt, va_list ap)
 	BUF b;
 	b.buf = str;
 	b.ptr = b.buf;
-	/* _bprintf stops writing when ptr == end. To leave space for the null char,
-	 * set end to be the last available byte in the client's buffer. */
+
+
 	b.end = b.buf + size - 1;
-	/* Tracks how many more bytes would have been written if size was larger */
+
 	b.fd = 0;
 	b.full = _snprintf_out_of_space;
 

@@ -1,12 +1,12 @@
-/* Structural CLI test cases for mcc. See runner.c for the format.
- * Commands use grep -o / awk to reduce tool output to a small deterministic
- * shape; "..." in expect is a wildcard. Most assert genuine behavior; a few
- * are smoke tests for flags that are accepted-but-no-op today (noted inline). */
+
+
+
+
 typedef struct { const char *name, *req, *cmd, *expect; } cli_case_t;
 
 static const cli_case_t cli_cases[] = {
 
-/* ---- output modes ---------------------------------------------------- */
+
 { "shared_dyn_soname", "cpu=x86_64,os=linux",
   "{MCC} -B{B} -I{I} -shared -Wl,-soname,libfoo.so.1 {D}/lib.c -o {W}/x.so && "
   "readelf -h {W}/x.so | grep -oE 'DYN' && readelf -d {W}/x.so | grep -oE 'libfoo\\.so\\.1'",
@@ -18,18 +18,18 @@ static const cli_case_t cli_cases[] = {
   "nm {W}/m.o | grep -oE 'exported_fn|second_fn|placed_var' | sort -u",
   "REL\nexported_fn\nplaced_var\nsecond_fn\n" },
 
-/* -s: honored (no -Wunsupported warning under -Werror) and the linked output
-   carries no .symtab.  mcc never emits a static symbol table into linked output
-   anyway, so this also locks that in. */
+
+
+
 { "strip_symbols", "cpu=x86_64,os=linux",
   "printf 'int f(int x){return x+1;}\\nint main(void){return f(0);}\\n' > {W}/st.c && "
   "{MCC} -B{B} -I{I} -Werror -s {W}/st.c -o {W}/st && "
   "readelf -S {W}/st | grep -c '\\.symtab'",
   "0\n" },
 
-/* -fPIC -pie produces a PIE (ET_DYN) with no text relocations; -fno-pic
-   -no-pie produces a plain executable (ET_EXEC). Runtime PIC on i386/arm is
-   additionally exercised under qemu (qemu matrix builds every program -fPIC). */
+
+
+
 { "fpic_pie_dyn", "cpu=x86_64,os=linux",
   "printf 'extern int g; int f(void){return g;}\\nint g=41; int main(void){return f()-g+1;}\\n' > {W}/pc.c && "
   "{MCC} -B{B} -I{I} -fPIC -pie {W}/pc.c -o {W}/pc && "
@@ -41,7 +41,7 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -fno-pic -no-pie {W}/np.c -o {W}/np && readelf -h {W}/np | grep -oE 'EXEC'",
   "EXEC\n" },
 
-/* ---- symbol attributes / visibility ---------------------------------- */
+
 { "visibility_attribute", "cpu=x86_64,os=linux",
   "{MCC} -B{B} -I{I} -c {D}/vis.c -o {W}/v.o && "
   "readelf -s {W}/v.o | grep -E 'hidden_att|shown_one|plain_one' | awk '{print $6, $8}' | sort",
@@ -64,13 +64,13 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -rdynamic {D}/hello.c -o {W}/hr && readelf --dyn-syms {W}/hr | grep -cE ' main$'",
   "1\n" },
 
-/* function/data-sections are currently accepted no-ops: smoke-test that the
-   flags parse and still produce a working object. */
+
+
 { "function_data_sections_accepted", "cpu=x86_64,os=linux",
   "{MCC} -B{B} -I{I} -ffunction-sections -fdata-sections -c {D}/lib.c -o {W}/fsd.o && echo OK",
   "OK\n" },
 
-/* ---- stack protector ------------------------------------------------- */
+
 { "stack_protector_on", "cpu=x86_64,os=linux",
   "{MCC} -B{B} -I{I} -fstack-protector-all -c {D}/sp.c -o {W}/sp.o && nm {W}/sp.o | grep -oE '__stack_chk_fail' | head -1",
   "__stack_chk_fail\n" },
@@ -79,7 +79,7 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -fno-stack-protector -c {D}/sp.c -o {W}/sp2.o && nm {W}/sp2.o | grep -c __stack_chk_fail",
   "0\n" },
 
-/* ---- debug info ------------------------------------------------------ */
+
 { "debug_default_stabs", "cpu=x86_64,os=linux",
   "{MCC} -B{B} -I{I} -g -c {D}/lib.c -o {W}/g.o && readelf -S {W}/g.o | grep -oE '\\.stab' | sort -u",
   ".stab\n" },
@@ -98,13 +98,13 @@ static const cli_case_t cli_cases[] = {
   "readelf --debug-dump=info {W}/g5b.o 2>/dev/null | awk '/Version/{print $2; exit}'",
   "5\n" },
 
-/* ---- constructors ---------------------------------------------------- */
+
 { "constructor_init_array", "cpu=x86_64,os=linux",
   "printf '__attribute__((constructor)) void c1(void){}\\nint main(void){return 0;}\\n' > {W}/ctor.c && "
   "{MCC} -B{B} -I{I} -c {W}/ctor.c -o {W}/ctor.o && readelf -S {W}/ctor.o | grep -oE '\\.init_array' | head -1",
   ".init_array\n" },
 
-/* ---- dependency generation ------------------------------------------- */
+
 { "deps_M_rule", "",
   "cd {D} && {MCC} -B{B} -I{I} -M dep.c",
   "dep.o: \\\ndep.c \\\ndep.h\n" },
@@ -113,7 +113,7 @@ static const cli_case_t cli_cases[] = {
   "cd {D} && {MCC} -B{B} -I{I} -MD -MF {W}/out.d -c dep.c -o {W}/dep.o && grep -oE 'dep\\.(c|h)' {W}/out.d",
   "dep.c\ndep.h\n" },
 
-/* ---- preprocessor flags ---------------------------------------------- */
+
 { "include_next_directive", "",
   "{MCC} -B{B} -I{I} -I{D}/incnext/d1 -I{D}/incnext/d2 {D}/incnext/incnext_main.c -o {W}/incn && {W}/incn",
   "1 2\n" },
@@ -126,9 +126,9 @@ static const cli_case_t cli_cases[] = {
   "printf '\\n' > {W}/empty.c && {MCC} -B{B} -E -dM {W}/empty.c | grep -cE '^#define __STDC__ '",
   "1\n" },
 
-/* §6.10.8.3 (C11): __STDC_UTF_16__/__STDC_UTF_32__ are predefined to 1 because
-   char16_t/char32_t are UTF-16/UTF-32 on every mcc target. gcc/clang predefine
-   them in default mode on all targets (Windows included); mcc must too. */
+
+
+
 { "stdc_utf_encoding_macros", "",
   "printf '\\n' > {W}/utf.c && {MCC} -B{B} -E -dM {W}/utf.c | grep -cE '^#define __STDC_UTF_(16|32)__ 1$'",
   "2\n" },
@@ -137,7 +137,7 @@ static const cli_case_t cli_cases[] = {
   "printf '#include <stdio.h>\\n' > {W}/ns.c && {MCC} -B{B} -nostdinc -E {W}/ns.c 2>&1 | grep -coE 'not found|No such'",
   "1\n" },
 
-/* ---- info / dump ----------------------------------------------------- */
+
 { "dumpmachine", "cpu=x86_64,os=linux",
   "{MCC} -dumpmachine | grep -oE 'x86_64'",
   "x86_64\n" },
@@ -146,13 +146,13 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -dumpversion | grep -cE '^[0-9]+\\.[0-9]+'",
   "1\n" },
 
-/* crt: is an ELF-only section (Mach-O links crt via the SDK, not a crtprefix),
-   so assert only the sections every target prints. */
+
+
 { "print_search_dirs", "",
   "{MCC} -B{B} -print-search-dirs | grep -oE '^(install|include|libraries):'",
   "install:\ninclude:\nlibraries:\n" },
 
-/* ---- sub-tools / driver --------------------------------------------- */
+
 { "ar_create_list", "",
   "{MCC} -B{B} -I{I} -c {D}/lib.c -o {W}/al.o && {MCC} -B{B} -I{I} -c {D}/sec.c -o {W}/as.o && "
   "{MCC} -ar rcs {W}/libcli.a {W}/al.o {W}/as.o && {MCC} -ar t {W}/libcli.a",
@@ -163,7 +163,7 @@ static const cli_case_t cli_cases[] = {
   "nm {W}/resp.o | grep -oE 'exported_fn'",
   "exported_fn\n" },
 
-/* ---- symbol metadata / assembler driver ----------------------------- */
+
 { "symbol_type_func_object", "cpu=x86_64,os=linux",
   "{MCC} -B{B} -I{I} -c {D}/lib.c -o {W}/ts.o && "
   "readelf -s {W}/ts.o | grep -E 'exported_fn|global_var' | awk '{print $4}' | sort -u",
@@ -178,7 +178,7 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} {D}/wmain.c {W}/wstrong.o -o {W}/we && {W}/we",
   "1\n" },
 
-/* ---- dynamic / debug / TLS structure -------------------------------- */
+
 { "shared_dynamic_tags", "cpu=x86_64,os=linux",
   "{MCC} -B{B} -I{I} -shared -Wl,-soname,libt.so.1 {D}/lib.c -o {W}/lt.so && "
   "readelf -d {W}/lt.so | grep -oE 'SONAME|GNU_HASH|BIND_NOW' | sort -u && "
@@ -206,7 +206,7 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -fcommon -c {W}/cm.c -o {W}/cmc.o && nm {W}/cmc.o | awk '/ gg$/{print $2}'",
   "B\nC\n" },
 
-/* ---- warnings / preprocessor flags ---------------------------------- */
+
 { "werror_promotes_to_error", "",
   "printf 'int main(void){ undeclared_fn(); return 0; }\\n' > {W}/werr.c && "
   "{MCC} -B{B} -I{I} -Werror -c {W}/werr.c -o {W}/werr.o 2>&1 | grep -oE 'error: implicit declaration' | head -1",
@@ -217,8 +217,8 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -Wwrite-strings -c {W}/ws.c -o {W}/ws.o 2>&1 | grep -coE 'discards qualifiers|read-only'",
   "1\n" },
 
-/* §6.4.4.4p10: a multi-character character constant warns by default (like
-   gcc/clang -Wmultichar), not only under -Wall. */
+
+
 { "multichar_warning", "",
   "{MCC} -B{B} -I{I} -c {D}/multichar.c -o {W}/mc.o 2>&1 | grep -oE 'multi-character'",
   "multi-character\n" },
@@ -248,10 +248,10 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -x c {W}/notc.txt -o {W}/xce && {W}/xce",
   "xc\n" },
 
-/* 6.7.2.4p3: _Atomic rejects array and function types — both the explicit
-   _Atomic(type-name) form and the bare qualifier on a typedef'd array/function
-   (e.g. `typedef int A[3]; _Atomic A a;`). _Atomic on a typedef'd pointer, and
-   `_Atomic int x[3]` (array of atomic int), remain valid. */
+
+
+
+
 { "atomic_type_constraints", "",
   "printf '_Atomic(int[3]) a;\\n' > {W}/ata.c && "
   "printf '_Atomic(int(void)) f;\\n' > {W}/atf.c && "
@@ -266,8 +266,8 @@ static const cli_case_t cli_cases[] = {
   "grep -oE '_Atomic cannot be applied to an? (array|function) type|VALID_OK' | sort -u",
   "VALID_OK\n_Atomic cannot be applied to a function type\n_Atomic cannot be applied to an array type\n" },
 
-/* 6.7.4p2 / 6.7.1p3,p4: function specifier on non-function, _Thread_local on
-   a function, and block-scope _Thread_local without static/extern. */
+
+
 { "storage_specifier_constraints", "",
   "printf 'inline int x;\\n' > {W}/sc1.c && "
   "printf '_Thread_local void f(void);\\n' > {W}/sc2.c && "
@@ -278,7 +278,7 @@ static const cli_case_t cli_cases[] = {
   "grep -oE \"'(inline|_Thread_local)'.*\" | sort -u",
   "'_Thread_local' applied to a function\n'_Thread_local' at block scope requires 'static' or 'extern'\n'inline' used outside of a function declaration\n" },
 
-/* 6.5.3.2 / 6.5.3.4: & , sizeof, _Alignof may not be applied to a bit-field. */
+
 { "bitfield_operand_constraints", "",
   "printf 'struct S{int b:3;}s; int *p(void){return &s.b;}\\n' > {W}/bf1.c && "
   "printf 'struct S{int b:3;}s; int n(void){return (int)sizeof(s.b);}\\n' > {W}/bf2.c && "
@@ -289,8 +289,8 @@ static const cli_case_t cli_cases[] = {
   "grep -oE '(cannot take address of|(sizeof|_Alignof). cannot be applied to a) bit-field' | sort -u",
   "_Alignof' cannot be applied to a bit-field\ncannot take address of bit-field\nsizeof' cannot be applied to a bit-field\n" },
 
-/* 6.6: an integer constant expression must have integer type (case labels,
-   enum values, array sizes). A cast to int is still a valid ICE. */
+
+
 { "integer_constant_expr_type", "",
   "printf 'int f(int x){switch(x){case 1.5: return 1; default: return 0;}}\\n' > {W}/ic1.c && "
   "printf 'enum E{A=1.5};\\n' > {W}/ic2.c && "
@@ -301,9 +301,9 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'integer constant expression must have integer type|CAST_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CAST_OK\n2 integer constant expression must have integer type\n" },
 
-/* 6.4.4.1: a decimal/hex integer constant too large for any standard type is a
-   warning (and accepted), not a hard error — matching gcc (only clang escalates
-   to an error). Covers a suffixless decimal > LLONG_MAX and a hex > ULLONG_MAX. */
+
+
+
 { "integer_constant_overflow", "",
   "printf 'unsigned long long a=99999999999999999999;\\n"
   "unsigned long long b=0xFFFFFFFFFFFFFFFF0;\\nint main(void){return (a!=0)&&(b!=0)?0:1;}\\n' > {W}/ov.c && "
@@ -311,7 +311,7 @@ static const cli_case_t cli_cases[] = {
   "{W}/ov && echo OVF_RUN_OK",
   "2\nOVF_RUN_OK\n" },
 
-/* 6.5.4: no cast between a floating type and a pointer (either direction). */
+
 { "float_pointer_cast_constraint", "",
   "printf 'void *p(double d){return (void*)d;}\\n' > {W}/fp1.c && "
   "printf 'double g(void*q){return (double)q;}\\n' > {W}/fp2.c && "
@@ -320,17 +320,17 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'cannot cast between a floating type and a pointer' | sort | uniq -c | sed 's/^ *//'",
   "2 cannot cast between a floating type and a pointer\n" },
 
-/* 6.5.1.1p2: no two _Generic associations may specify compatible types. */
+
 { "generic_duplicate_assoc", "",
   "printf 'int f(void){return _Generic(1,long:1,long:2,int:3);}\\n' > {W}/gd.c && "
   "{MCC} -B{B} -I{I} -std=c11 -c {W}/gd.c -o {W}/gd.o 2>&1 | "
   "grep -oE '_Generic specifies two compatible types'",
   "_Generic specifies two compatible types\n" },
 
-/* 6.5.1.1p2: a _Generic association type must be a complete object type other
-   than a variably modified type. A VLA association is an error (gcc+clang both
-   hard-error); a function-type association is diagnosed under -pedantic (gcc's
-   stance; clang errors). A normal association compiles clean under -Werror. */
+
+
+
+
 { "generic_assoc_type_completeness", "",
   "printf 'void h(int n){(void)_Generic(1,int[n]:1,default:2);(void)n;}\\n' > {W}/gv.c && "
   "printf 'int x=_Generic(1,int(void):1,int:2,default:3);\\n' > {W}/gf.c && "
@@ -341,7 +341,7 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'variably modified type|association with a function type|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 association with a function type\n1 variably modified type\n" },
 
-/* 6.9p2: file-scope declarations may not specify auto or register. */
+
 { "file_scope_storage_class", "",
   "printf 'auto int x;\\n' > {W}/fs1.c && "
   "printf 'register int y;\\n' > {W}/fs2.c && "
@@ -350,14 +350,14 @@ static const cli_case_t cli_cases[] = {
   "grep -oE \"file-scope declaration of '.' specifies '(auto|register)'\" | sort",
   "file-scope declaration of 'x' specifies 'auto'\nfile-scope declaration of 'y' specifies 'register'\n" },
 
-/* 6.7.3p2: specifier-level restrict on a non-pointer type is a constraint
-   violation; restrict on a pointer (incl. via a pointer typedef) is fine. */
+
+
 { "restrict_requires_pointer", "",
   "printf 'int restrict x;\\n' > {W}/rr1.c && "
   "printf 'typedef int* IP; restrict IP q; int *restrict p;\\nint main(void){return !!p+!!q;}\\n' > {W}/rr2.c && "
-  /* 6.7.3p2: a restrict-qualified pointer to a *function* (the function part is
-     parsed after the *restrict) is a constraint violation; a restrict pointer
-     to an object (incl. pointer-to-array) is fine. */
+
+
+
   "printf 'void (*restrict fp)(void);\\n' > {W}/rr3.c && "
   "printf 'int (*restrict pa)[3]; int *restrict *pp;\\nint main(void){return !!pa+!!pp;}\\n' > {W}/rr4.c && "
   "{ {MCC} -B{B} -I{I} -std=c11 -c {W}/rr1.c -o {W}/rr1.o 2>&1; "
@@ -367,8 +367,8 @@ static const cli_case_t cli_cases[] = {
   "grep -oE \"'restrict' requires a pointer type|pointer to function type may not be 'restrict'-qualified|PTR_OK|OBJPTR_OK\"",
   "'restrict' requires a pointer type\npointer to function type may not be 'restrict'-qualified\nPTR_OK\nOBJPTR_OK\n" },
 
-/* 6.7.5p2,p4: _Alignas constraints (typedef, function, register, bit-field,
-   under-alignment). Valid over-alignment must still compile. */
+
+
 { "alignas_constraints", "",
   "printf 'typedef _Alignas(16) int T;\\n' > {W}/aa1.c && "
   "printf '_Alignas(16) void f(void);\\n' > {W}/aa2.c && "
@@ -381,9 +381,9 @@ static const cli_case_t cli_cases[] = {
   "grep -oE \"'_Alignas' specified for a (typedef|function|bit-field|function parameter)|requested alignment is less than the minimum alignment of the type|OVERALIGN_OK\" | sort",
   "'_Alignas' specified for a bit-field\n'_Alignas' specified for a function\n'_Alignas' specified for a function parameter\n'_Alignas' specified for a typedef\nOVERALIGN_OK\nrequested alignment is less than the minimum alignment of the type\n" },
 
-/* 6.10.6: #pragma STDC FP_CONTRACT/FENV_ACCESS/CX_LIMITED_RANGE recognized and
-   accepted (no "ignored" warning, even under -Werror); unknown pragmas still
-   warn. */
+
+
+
 { "pragma_stdc_recognized", "",
   "printf '#pragma STDC FP_CONTRACT ON\\n#pragma STDC FENV_ACCESS OFF\\n"
   "#pragma STDC CX_LIMITED_RANGE DEFAULT\\nint main(void){return 0;}\\n' > {W}/ps.c && "
@@ -392,9 +392,9 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -std=c11 -Wall -c {W}/pf.c -o {W}/pf.o 2>&1 | grep -oE 'frobnicate ignored'",
   "OK\nfrobnicate ignored\n" },
 
-/* 6.7.2p2: C11 removed implicit int — a K&R parameter with no declaration
-   defaults to int and is diagnosed (gcc/clang error; mcc warns, matching its
-   lenient legacy-code stance). A fully-declared old-style list is fine. */
+
+
+
 { "knr_implicit_int_param", "",
   "printf 'int f(x){ return x; }\\nint h(a,b) int a; char b; { return a+b; }\\n"
   "int main(void){return f(1)+h(2,3);}\\n' > {W}/kr.c && "
@@ -402,10 +402,10 @@ static const cli_case_t cli_cases[] = {
   "grep -c \"type of 'x' defaults to 'int'\"",
   "1\n" },
 
-/* 6.7.6.2p4: `[*]` (unspecified-size VLA) may appear only in function prototype
-   scope, not in a definition. gcc and clang both error. A prototype, a nested
-   prototype inside a definition's parameter, and ordinary [n]/[static N]/[]
-   parameters are all fine. */
+
+
+
+
 { "star_array_in_funcdef", "",
   "printf 'void f(int a[*]){(void)a;}\\n' > {W}/sd.c && "
   "printf 'void p(int a[*]); void g(void(*fp)(int a[*])){(void)fp;}\\n"
@@ -416,9 +416,9 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -std=c11 {W}/sp.c -o {W}/sp && echo PROTO_OK",
   "'[*]' not allowed in a function definition\nPROTO_OK\n" },
 
-/* 6.7.6.3p7: 'static' and type qualifiers in an array parameter's '[]' may
-   appear only in the outermost array derivation. gcc+clang reject the inner
-   forms; the outermost forms (incl. VLA size) stay valid. */
+
+
+
 { "array_param_static_outermost", "",
   "printf 'void f(int (*a)[static 3]){(void)a;}\\n' > {W}/b1.c && "
   "{MCC} -B{B} -I{I} -std=c11 -c {W}/b1.c -o {W}/b1.o 2>&1 | "
@@ -432,10 +432,10 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -std=c11 {W}/b3.c -o {W}/b3 && echo OUTERMOST_OK",
   "non-outermost array declarator\nnon-outermost array declarator\nOUTERMOST_OK\n" },
 
-/* 6.8.6.1/6.8.4.2: a goto or switch that jumps into the scope of a variably
-   modified (VLA) declaration is a constraint violation; gcc+clang both reject.
-   Forward goto, backward goto into a closed VLA scope, and switch-into-VLA all
-   error; valid jumps within/around a VLA scope stay accepted. */
+
+
+
+
 { "jump_into_vla_scope", "",
   "printf 'int n=3; int f(void){goto L; { int a[n]; L: return sizeof a; } }\\n' > {W}/j1.c && "
   "{MCC} -B{B} -I{I} -std=c11 -c {W}/j1.c -o {W}/j1.o 2>&1 | "
@@ -455,10 +455,10 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -std=c11 {W}/j4.c -o {W}/j4 && echo VALID_OK",
   "variably modified declaration\nvariably modified declaration\nvariably modified declaration\nvariably modified declaration\nVALID_OK\n" },
 
-/* 6.2.6/7.17: atomics on objects larger than a machine word use the size-
-   generic, pointer-based libatomic helpers (__atomic_load/store/exchange/
-   compare_exchange — needs -latomic at link, like gcc/clang); 1/2/4/8-byte
-   objects keep the lock-free size-suffixed path (no -latomic). */
+
+
+
+
 { "atomic_large_generic", "",
   "printf '#include <stdatomic.h>\\ntypedef struct{long a,b,c;}Big;\\n"
   "_Atomic Big g;\\nvoid f(Big v,Big*e,Big d){ atomic_store(&g,v);"
@@ -472,12 +472,12 @@ static const cli_case_t cli_cases[] = {
   "nm {W}/sm.o | grep -cE '__atomic_store$'",
   "__atomic_compare_exchange\n__atomic_exchange\n__atomic_load\n__atomic_store\n0\n" },
 
-/* 6.5.16.2/6.5.2.4: a read-modify-write on an _Atomic object is atomic. The
-   integer ops (+= -= &= |= ^=, ++/--) use direct __atomic_* helpers; the other
-   integer ops (*= /= %= <<= >>=) and float atomics use a compare-exchange loop;
-   only types larger than a machine word (e.g. long double) are rejected. */
-/* elf: on Mach-O/arm64 (and PE) long double == double, so the _Atomic long
-   double RMW is a small lock-free op mcc accepts rather than rejecting. */
+
+
+
+
+
+
 { "atomic_rmw_unsupported", "elf",
   "printf '_Atomic long double ld; void f(void){ ld*=2; }\\n' > {W}/ar1.c && "
   "{MCC} -B{B} -I{I} -std=c11 -c {W}/ar1.c -o {W}/ar1.o 2>&1 | "
@@ -487,10 +487,10 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -std=c11 {W}/ar3.c -o {W}/ar3 && {W}/ar3 && echo RMW_OK",
   "compound assignment to an '_Atomic' object is not supported\nRMW_OK\n" },
 
-/* 6.7.2.1: a struct/union member with a type specifier but no declarator
-   (e.g. 'int;' or a tagged enum) declares nothing; gcc/clang warn and accept
-   (previously mcc errored "identifier expected"). Anonymous bit-fields and
-   normal members are unaffected; a malformed declarator still errors. */
+
+
+
+
 { "member_declares_nothing", "",
   "printf 'struct S{int;}; struct T{enum E{A=5};};\\n"
   "int main(void){ return (sizeof(struct S)>=0 && A==5)?0:1; }\\n' > {W}/dn.c && "
@@ -500,20 +500,20 @@ static const cli_case_t cli_cases[] = {
   "printf 'struct U{int @;};\\n' > {W}/dn2.c && "
   "{MCC} -B{B} -I{I} -std=c11 -c {W}/dn2.c -o {W}/dn2.o 2>&1 | "
   "grep -oE 'identifier expected'; "
-  /* a named-tag struct member with no declarator: silent under MS extensions
-     (mcc default, == gcc -fms-extensions), warn+accept under
-     -fno-ms-extensions (== gcc/clang default), never reject-valid. */
+
+
+
   "printf 'struct W{struct T{int a;};};\\n' > {W}/dn3.c && "
   "{MCC} -B{B} -I{I} -std=c11 -c {W}/dn3.c -o {W}/dn3.o 2>&1 | wc -l | tr -d ' '; "
   "{MCC} -B{B} -I{I} -std=c11 -fno-ms-extensions -c {W}/dn3.c -o {W}/dn3.o 2>&1 | "
   "grep -c 'declaration does not declare anything'",
   "2\nDN_OK\nidentifier expected\n0\n1\n" },
 
-/* 6.5.4p2: the type name in a cast shall be void or scalar; casting to an
-   array type or to a struct unrelated to the operand is a constraint
-   violation (gcc+clang reject). No-op casts to a compatible struct and casts
-   to a complex type stay accepted; va_start/va_arg (which cast through
-   'struct __va_list_tag *', not the array type) still compile and run. */
+
+
+
+
+
 { "cast_to_nonscalar", "",
   "printf 'struct A{int x;}; struct B{int y;}; int f(struct A a){ return ((struct B)a).y; }\\n' > {W}/c1.c && "
   "{MCC} -B{B} -I{I} -std=c11 -c {W}/c1.c -o {W}/c1.o 2>&1 | "
@@ -529,11 +529,11 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -std=c11 {W}/c3.c -o {W}/c3 && {W}/c3 && echo CAST_OK",
   "conversion to non-scalar type requested\nconversion to non-scalar type requested\nCAST_OK\n" },
 
-/* 7.17.2.1: atomic_load/atomic_exchange of an aggregate _Atomic now route
-   through the size-generic libatomic helper (no more register-return crash; it
-   delivers the result through a pointer). The .o references __atomic_load /
-   __atomic_exchange (needs -latomic to link); aggregate atomic_store stays on
-   the lock-free size-suffixed path, and scalar atomics still compile + run. */
+
+
+
+
+
 { "atomic_aggregate_load_generic", "",
   "printf '#include <stdatomic.h>\\nstruct P{int x,y;};\\n_Atomic struct P p;\\n"
   "void f(struct P v){ struct P r=atomic_load(&p);(void)r;"
@@ -545,13 +545,13 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -std=c11 {W}/as.c -o {W}/as && {W}/as && echo SCALAR_OK",
   "__atomic_exchange\n__atomic_load\n__atomic_store_8\nSCALAR_OK\n" },
 
-/* -pedantic / -pedantic-errors: diagnose strict-ISO-C constraint violations
-   that mcc (like gcc) accepts as extensions by default. Silent without the
-   flag, a warning with -pedantic, a hard error with -pedantic-errors. Covers
-   6.7.2.1p9 (VLA member), 6.7.2.2p2 (enum value range), 6.6p3 (comma in ICE). */
+
+
+
+
 { "pedantic_diagnostics", "",
   "printf 'int f(void){ int n=3; struct S{int a[n];}; struct S s; return sizeof s; }\\n' > {W}/pd1.c && "
-  "{MCC} -B{B} -I{I} -std=c11 -c {W}/pd1.c -o {W}/pd1.o 2>&1 | wc -l | tr -d ' '; "        /* default: silent (0 lines) */
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/pd1.c -o {W}/pd1.o 2>&1 | wc -l | tr -d ' '; "
   "{MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/pd1.c -o {W}/pd1.o 2>&1 | "
   "grep -oE 'variably modified type'; "
   "printf 'enum E{X=0x100000000}; int main(void){return X*0;}\\n' > {W}/pd2.c && "
@@ -583,12 +583,12 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'flexible array member in a struct with no named members'; echo END",
   "0\nvariably modified type\nrange of 'int'\ncomma operator in a constant expression\nin a 'for' loop initializer\n'_Noreturn' used outside of a function\nflexible array member\nforward references to 'enum' types\n'sizeof' applied to a function type\ndoes not support '_Static_assert' before C11\nflexible array member in a struct with no named members\nEND\n" },
 
-/* 6.2.5p27: a plain in-language store to / read from an _Atomic aggregate or
-   >8-byte object (e.g. _Atomic struct, _Atomic long double) must be indivisible
-   — lowered to the generic __atomic_store/__atomic_load(size,...) libcall (needs
-   -latomic), not a non-atomic struct/multi-word copy. */
-/* elf: nm output and the __atomic_* symbol spelling assume ELF naming; Mach-O
-   prefixes them with an extra underscore (___atomic_load) and PE differs. */
+
+
+
+
+
+
 { "atomic_inlang_aggregate", "elf",
   "printf '#include <stdatomic.h>\\ntypedef struct{long a,b,c;}Big;\\n"
   "_Atomic Big g; _Atomic long double ld;\\n"
@@ -598,9 +598,9 @@ static const cli_case_t cli_cases[] = {
   "nm {W}/ia.o | grep -oE 'U __atomic_(store|load)' | sort -u",
   "U __atomic_load\nU __atomic_store\n" },
 
-/* 6.4.1/Annex G: _Imaginary is a reserved keyword but imaginary types are not
-   implemented (nor by gcc/clang); using it gives a clear diagnostic rather than
-   being treated as an undeclared identifier. _Complex is unaffected. */
+
+
+
 { "imaginary_not_supported", "",
   "printf '_Imaginary float x;\\n' > {W}/im.c && "
   "{MCC} -B{B} -I{I} -std=c11 -c {W}/im.c -o {W}/im.o 2>&1 | "
@@ -609,8 +609,8 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -std=c11 {W}/cx.c -o {W}/cx && echo COMPLEX_OK",
   "imaginary types are not supported\nCOMPLEX_OK\n" },
 
-/* 6.7.4p9: a _Noreturn function that returns to its caller is UB; gcc and clang
-   both warn on a return statement inside one. A non-noreturn function is fine. */
+
+
 { "noreturn_returns", "",
   "printf '_Noreturn void f(int x){ if(x) return; for(;;); }\\n"
   "void ok(void){ return; }\\nint main(void){return 0;}\\n' > {W}/nr.c && "
@@ -618,8 +618,8 @@ static const cli_case_t cli_cases[] = {
   "grep -c \"function declared 'noreturn' has a 'return' statement\"",
   "1\n" },
 
-/* 6.10.3p5: __VA_ARGS__ may appear only in the replacement list of a variadic
-   (...) macro; gcc warns by default. A genuinely variadic macro is fine. */
+
+
 { "va_args_non_variadic", "",
   "printf '#define F(a) __VA_ARGS__\\n#define V(a, ...) __VA_ARGS__\\n"
   "int main(void){return 0;}\\n' > {W}/va.c && "
@@ -627,8 +627,8 @@ static const cli_case_t cli_cases[] = {
   "grep -c 'can only appear in the expansion'",
   "1\n" },
 
-/* 6.10p1: an unknown #-directive is a constraint violation; gcc and clang both
-   make it a hard error. #ident/#sccs remain accepted (ignored) extensions. */
+
+
 { "unknown_directive_error", "",
   "printf '#frobnicate xyz\\nint main(void){return 0;}\\n' > {W}/ud.c && "
   "{MCC} -B{B} -I{I} -std=c11 -c {W}/ud.c -o {W}/ud.o 2>&1 | "
@@ -637,9 +637,9 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -std=c11 -c {W}/ui.c -o {W}/ui.o && echo IDENT_OK",
   "invalid preprocessing directive #frobnicate\nIDENT_OK\n" },
 
-/* 6.10.6: #pragma message("...") emits a note (gcc/clang compatible), not
-   gated on -Wall; accepts both the parenthesized and bare-string forms; does
-   not raise an error even under -Werror. */
+
+
+
 { "pragma_message_note", "",
   "printf '#pragma message(\\\"hi there\\\")\\n#pragma message \\\"bare form\\\"\\n"
   "int main(void){return 0;}\\n' > {W}/pm.c && "
@@ -647,8 +647,8 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'note: #pragma message: (hi there|bare form)'",
   "note: #pragma message: hi there\nnote: #pragma message: bare form\n" },
 
-/* 6.7.6.3p1 / 6.9.1: a function shall not return a function or array type
-   (incl. via a typedef name); returning a pointer to one is fine. */
+
+
 { "function_return_type_constraint", "",
   "printf 'typedef int AT[3]; AT f(void);\\n' > {W}/rt1.c && "
   "printf 'typedef int FT(void); FT g(void);\\n' > {W}/rt2.c && "
@@ -660,15 +660,15 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'function cannot return an? (array|function) type|PTR_OK' | sort",
   "PTR_OK\nfunction cannot return a function type\nfunction cannot return an array type\n" },
 
-/* 6.4.2.2: __func__ is only defined inside a function (warn at file scope). */
+
 { "func_outside_function", "",
   "printf 'const char *p = __func__;\\n' > {W}/fn.c && "
   "{MCC} -B{B} -I{I} -std=c11 -c {W}/fn.c -o {W}/fn.o 2>&1 | "
   "grep -oE \"'__func__' is not defined outside of function scope\"",
   "'__func__' is not defined outside of function scope\n" },
 
-/* 6.4.4.1: the ll/LL suffix must be case-uniform (1Ll / 1lL are invalid);
-   6.5.3.4: _Alignof must not be applied to an incomplete type. */
+
+
 { "lexical_alignof_constraints", "",
   "printf 'long long a=1Ll;\\n' > {W}/ix1.c && "
   "printf 'long long a=1lL;\\n' > {W}/ix2.c && "
@@ -681,9 +681,9 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'incorrect integer suffix|_Alignof. applied to an incomplete type|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 VALID_OK\n1 _Alignof' applied to an incomplete type\n2 incorrect integer suffix\n" },
 
-/* 6.4.3p2: a universal character name in an identifier may not designate a
-   code point < 00A0 (except $ @ `) nor a surrogate (D800-DFFF). gcc and clang
-   both reject these. A legal UCN (e.g. é) and the $ exception compile. */
+
+
+
 { "ucn_identifier_range", "",
   "printf 'int \\\\u0041 = 5;\\n' > {W}/un1.c && "
   "printf 'int \\\\U0000d800x;\\n' > {W}/un2.c && "
@@ -694,15 +694,15 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'universal character .u(0041|d800) is not valid in an identifier|UCN_OK' | sort",
   "UCN_OK\nuniversal character \\u0041 is not valid in an identifier\nuniversal character \\ud800 is not valid in an identifier\n" },
 
-/* 6.5.1: implicit function declaration is diagnosed even inside a K&R-style
-   (empty-paren) function body, not only inside prototyped bodies. */
+
+
 { "implicit_decl_in_knr_body", "",
   "printf 'int main(){ return foo(); }\\n' > {W}/id.c && "
   "{MCC} -B{B} -I{I} -std=c11 -Wall -c {W}/id.c -o {W}/id.o 2>&1 | "
   "grep -oE \"implicit declaration of function 'foo'\"",
   "implicit declaration of function 'foo'\n" },
 
-/* 6.7.2.1p4: a _Bool bit-field may not be wider than 1. */
+
 { "bool_bitfield_width", "",
   "printf 'struct S{_Bool b:2;};\\n' > {W}/bb.c && "
   "printf 'struct T{_Bool b:1; int d:8;}; int main(void){return 0;}\\n' > {W}/bg.c && "
@@ -711,7 +711,7 @@ static const cli_case_t cli_cases[] = {
   "grep -oE \"width of '.' exceeds its type|VALID_OK\"",
   "width of 'b' exceeds its type\nVALID_OK\n" },
 
-/* 6.5.3.2/6.7.1: the address of a register-qualified object may not be taken. */
+
 { "register_address_constraint", "",
   "printf 'int *f(void){register int x=0; return &x;}\\n' > {W}/rga.c && "
   "printf 'int main(void){register int x=5; int y=x; int *p=&y; return *p+x-10;}\\n' > {W}/rgb.c && "
@@ -720,8 +720,8 @@ static const cli_case_t cli_cases[] = {
   "grep -oE \"address of register variable '.' requested|VALID_OK\"",
   "address of register variable 'x' requested\nVALID_OK\n" },
 
-/* 6.7.2p2: C11 removed implicit int — diagnose specifier-only object decls and
-   implicit-int function return types; valid typed declarations stay quiet. */
+
+
 { "implicit_int_diag", "",
   "printf 'const x = 3;\\nstatic y = 7;\\nfoo(void){return 0;}\\n' > {W}/ii.c && "
   "printf 'long a; unsigned b; const int c; int g(void){return 0;}\\nint main(void){return g();}\\n' > {W}/iv.c && "
@@ -730,10 +730,10 @@ static const cli_case_t cli_cases[] = {
   "grep -oE \"type defaults to 'int' in declaration|return type defaults to 'int'|CLEAN_OK\" | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 return type defaults to 'int'\n2 type defaults to 'int' in declaration\n" },
 
-/* 6.5p2 -Wsequence-point: an object modified twice with no intervening
-   sequence point warns (i=i++); the neighboring well-defined forms (i=i+1,
-   the comma operator, distinct call arguments, ?: arms) stay quiet, and
-   -Wno-sequence-point silences the warning entirely. */
+
+
+
+
 { "wsequence_point_diag", "",
   "printf 'void g(void){int i=0;i=i++;}\\n' > {W}/spw.c && "
   "printf 'int f(int a,int b){return a+b;}\\n"
@@ -744,10 +744,10 @@ static const cli_case_t cli_cases[] = {
   "grep -oE \"operation on 'i' may be undefined|CLEAN_OK\" | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 operation on 'i' may be undefined\n" },
 
-/* 6.5p2 (10.1.9): objects are keyed by (symbol, constant offset), so a constant
-   array element / aggregate member modified twice with no sequence point warns
-   (a[2]=a[2]++, s.a=s.a++) while distinct siblings (a[0]=a[1], s.a=s.b) stay
-   quiet — sub-objects are tracked without conflation. */
+
+
+
+
 { "wsequence_point_subobject", "",
   "printf 'struct S{int a,b;};\\n"
   "void g(void){struct S s;int a[4];s.a=s.a++;a[2]=a[2]++;(void)s;(void)a;}\\n' > {W}/spsw.c && "
@@ -758,11 +758,11 @@ static const cli_case_t cli_cases[] = {
   "grep -oE \"operation on '[sa]' may be undefined|CLEAN_OK\" | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 operation on 'a' may be undefined\n1 operation on 's' may be undefined\n" },
 
-/* §6.8 jump/selection constraints (10.7.2/10.7.3): classic constraints that
-   predate the conformance tracker — break/continue outside a loop, case/default
-   outside a switch, a duplicate case label — each must be diagnosed, while the
-   well-formed loop+switch neighbor still compiles. mcc aborts on the first
-   error, so each bad form is compiled on its own. */
+
+
+
+
+
 { "jump_constraints", "",
   "printf 'void f(void){break;}\\n' > {W}/j1.c && "
   "printf 'void f(void){continue;}\\n' > {W}/j2.c && "
@@ -782,9 +782,9 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -fcommon {W}/cm1.c {W}/cm2.c -o {W}/cme && {W}/cme",
   "5\n" },
 
-/* §6.5.3.3p1: the operand of unary - shall have arithmetic type; a pointer
-   operand is a constraint violation (gcc+clang both error). The valid integer
-   form still compiles. */
+
+
+
 { "unary_minus_pointer", "",
   "printf 'int f(int*p){return (-p)==0;}\\n' > {W}/umn.c && "
   "printf 'int f(int x){return -x;}\\nint main(void){return 0;}\\n' > {W}/umok.c && "
@@ -793,9 +793,9 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'pointer not accepted for unary minus|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 VALID_OK\n1 pointer not accepted for unary minus\n" },
 
-/* §6.4.4.4p9: a non-wide octal/hex escape shall be representable in unsigned
-   char; out-of-range narrow escapes warn (gcc warns, clang errors), while
-   in-range escapes compile clean under -Werror. */
+
+
+
 { "escape_out_of_range", "",
   "printf 'char *s=\"\\\\777\";\\n' > {W}/eo.c && "
   "printf 'char *s=\"\\\\xfff\";\\n' > {W}/ex.c && "
@@ -806,10 +806,10 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'octal escape sequence out of range|hex escape sequence out of range|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 VALID_OK\n1 hex escape sequence out of range\n1 octal escape sequence out of range\n" },
 
-/* §6.7.6.3p10 (qualified lone 'void' param), §6.7.1p3 (_Thread_local + typedef),
-   §6.7.6.2p2 (extern/linkage on a VLA type) — each rejected by gcc+clang, while
-   the valid neighbors (plain void param, _Thread_local static, local VLA) still
-   compile. */
+
+
+
+
 { "decl_storage_type_constraints", "",
   "printf 'void f(const void);\\n' > {W}/dq.c && "
   "printf '_Thread_local typedef int T;\\n' > {W}/dt.c && "
@@ -821,9 +821,9 @@ static const cli_case_t cli_cases[] = {
   "grep -oE \"only parameter may not be qualified|'_Thread_local' used with 'typedef'|must have no linkage|VALID_OK\" | sort | uniq -c | sed 's/^ *//'",
   "1 '_Thread_local' used with 'typedef'\n1 VALID_OK\n1 must have no linkage\n1 only parameter may not be qualified\n" },
 
-/* §6.10.8p2: a predefined macro name shall not be the subject of #define/#undef.
-   The magic builtin tokens (__LINE__/__FILE__/__DATE__/__TIME__) now warn like
-   gcc/clang; ordinary macro define/undef stays clean under -Werror. */
+
+
+
 { "builtin_macro_redefine", "",
   "printf '#define __LINE__ 5\\n#undef __FILE__\\nint x;\\n' > {W}/bm.c && "
   "printf '#define FOO 1\\n#undef FOO\\nint y;\\n' > {W}/bmok.c && "
@@ -832,10 +832,10 @@ static const cli_case_t cli_cases[] = {
   "grep -oE '__LINE__ redefined|undefining __FILE__|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 __LINE__ redefined\n1 undefining __FILE__\n" },
 
-/* §6.5.4 (a cast does not yield an lvalue) and §6.5.17 (the comma operator does
-   not yield an lvalue): `(int)a=9`, `&(int)a`, `(a,b)=7`, `&(a,b)` are all
-   constraint violations (gcc+clang reject), while using the cast/comma result as
-   an rvalue still compiles. */
+
+
+
+
 { "lvalue_cast_comma_constraints", "",
   "printf 'int f(int a){ (int)a = 9; return a; }\\n' > {W}/l1.c && "
   "printf 'int f(int a){ return *&(int)a; }\\n' > {W}/l2.c && "
@@ -847,12 +847,12 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'lvalue expected|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 VALID_OK\n4 lvalue expected\n" },
 
-/* §6.10.3.3p3: a ## that forms a comment introducer (a line- or block-comment
-   opener) is not a
-   valid preprocessing token; mcc must diagnose and terminate (it used to run the
-   comment scanner off the synthetic paste buffer and loop forever). The
-   {TIMEOUT} guards against a hang regression where available; a valid paste
-   still works. */
+
+
+
+
+
+
 { "paste_comment_introducer", "",
   "printf '#define C(a,b) a ## b\\nC(/,/)\\n' > {W}/pc1.c && "
   "printf '#define C(a,b) a ## b\\nC(/,*)\\n' > {W}/pc2.c && "
@@ -863,11 +863,11 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'invalid preprocessing token|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 VALID_OK\n2 invalid preprocessing token\n" },
 
-/* §6.10.3.2p2: stringizing an argument ending in a stray backslash would have
-   the trailing '\' escape the closing quote, yielding an invalid string literal.
-   mcc now drops the dangling backslash and warns (matching gcc -> "a"), instead
-   of silently emitting "a\" (which then failed with "unknown escape sequence").
-   An even backslash run and a normal argument stringize cleanly. */
+
+
+
+
+
 { "stringize_trailing_backslash", "",
   "printf '#define S(x) #x\\nconst char *p = S(a\\\\);\\nint main(void){return p[0];}\\n' > {W}/sb.c && "
   "printf '#define S(x) #x\\nconst char *a=S(hi);const char *b=S(a\\\\\\\\);"
@@ -877,9 +877,9 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'ignoring final|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 ignoring final\n" },
 
-/* §7.1.4p1 / §7.3.9.5-6: creal/cimag are functions that may also be macros;
-   `(creal)(z)` (parenthesized, function) and `&creal` must work alongside the
-   fast `creal(z)` macro. (Previously creal/cimag were macro-only.) */
+
+
+
 { "complex_creal_function", "cpu=x86_64,os=linux",
   "printf '#include <complex.h>\\n#include <stdio.h>\\n"
   "int main(void){ double _Complex z=3.0+4.0*I; double(*p)(double _Complex)=creal;\\n"
@@ -887,8 +887,8 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} {W}/cf.c -lm -o {W}/cf && {W}/cf",
   "OK\n" },
 
-/* §7.28: <uchar.h> provides char16_t/char32_t/mbstate_t both hosted (via the
-   system header) and freestanding (-nostdinc, via the bundled fallback). */
+
+
 { "uchar_header", "cpu=x86_64,os=linux",
   "printf '#include <uchar.h>\\nint main(void){char16_t a=0; char32_t b=0; mbstate_t s;\\n"
   "(void)a;(void)b;(void)s; return (sizeof(char16_t)==2 && sizeof(char32_t)==4)?0:1;}\\n' > {W}/uh.c && "
@@ -896,8 +896,8 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -nostdinc -I{I} {W}/uh.c -o {W}/uhf && {W}/uhf && echo FREE_OK",
   "HOSTED_OK\nFREE_OK\n" },
 
-/* §5.2.1.1 / translation phase 1: trigraphs are processed in a strict ISO mode
-   (-std=c11) like gcc/clang, but NOT in -std=gnu11 (or the default). */
+
+
 { "trigraphs_strict_std", "",
   "printf 'int a?" "?(2?" "?);\\n' > {W}/tg.c && "
   "{ {MCC} -B{B} -I{I} -std=c11 -E -P {W}/tg.c 2>&1; "
@@ -905,9 +905,9 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'a\\?\\?\\(|a\\[2\\]' | sort | uniq -c | sed 's/^ *//'",
   "1 a?" "?(\n1 a[2]\n" },
 
-/* §6.10.3p4 (pre-C23): invoking a variadic macro with no argument for the '...'
-   is diagnosed under -pedantic (warning) / -pedantic-errors (error); a call that
-   supplies the variadic argument stays clean even under -pedantic-errors. */
+
+
+
 { "va_args_empty_pedantic", "",
   "printf '#define V(f,...) f\\nint a = V(1);\\n' > {W}/ve.c && "
   "printf '#define V(f,...) f\\nint b = V(1,2);\\nint main(void){return 0;}\\n' > {W}/vok.c && "
@@ -916,9 +916,9 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'no argument for the|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 no argument for the\n" },
 
-/* §6.10.1: the preprocessor evaluates #if arithmetic in intmax_t; signed
-   overflow there is UB and is diagnosed (gcc/clang warn the same). A sum that
-   stays within 64-bit (e.g. INT_MAX+1) and unsigned wraparound are silent. */
+
+
+
 { "pp_if_integer_overflow", "",
   "printf '#if 9223372036854775807 + 1 < 0\\nint a;\\n#endif\\nint main(void){return 0;}\\n' > {W}/po.c && "
   "printf '#if 9223372036854775807 * 2 < 0\\nint b;\\n#endif\\nint main(void){return 0;}\\n' > {W}/pm.c && "
@@ -930,10 +930,10 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'overflow in preprocessor|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n2 overflow in preprocessor\n" },
 
-/* §6.10.4p3: the #line digit sequence shall not be zero nor exceed 2147483647.
-   Out-of-range and zero are diagnosed under -pedantic; the carried __LINE__ is
-   clamped to INT_MAX rather than wrapping negative (silent without -pedantic).
-   A valid line number is clean even under -pedantic-errors. */
+
+
+
+
 { "line_number_out_of_range", "",
   "printf '#line 2147483648\\nint x;\\n#line 0\\nint y;\\nint main(void){return 0;}\\n' > {W}/lr.c && "
   "printf '#line 100\\nint z;\\nint main(void){return 0;}\\n' > {W}/lrok.c && "
@@ -942,11 +942,11 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'line number out of range|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n2 line number out of range\n" },
 
-/* §6.7.9p14: a string literal can initialize an array only when its element
-   type matches the array's element type; a wide/narrow mismatch is rejected
-   with a clear message (not the old "integer from pointer" + "',' expected"
-   cascade). Matching narrow/wide string inits, a braced string, and a nested
-   sub-array string element stay valid even under -Werror. */
+
+
+
+
+
 { "string_init_element_mismatch", "os!=WIN32:int[]=L\"\" is clean only where wchar_t==int; PE wchar_t is 16-bit so it warns",
   "printf 'int a[4]=\"abc\";\\n' > {W}/sm.c && "
   "printf 'int wmain(void){char a[]=L\"abc\";return a[0];}\\n' > {W}/sm2.c && "
@@ -958,12 +958,12 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'from a string literal of a different|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n2 from a string literal of a different\n" },
 
-/* §6.6p6: a file-scope array size that only folds to a constant through a
-   floating operation is not an integer constant expression; it is diagnosed
-   under -pedantic (a folded-VLA extension, like gcc/clang). A floating constant
-   as the immediate operand of a cast ((int)3.0, (int)1.5+(int)2.5) IS a valid
-   ICE and stays silent even under -pedantic-errors; block-scope arrays fold
-   silently (VLAs are allowed there) — matching both refs. */
+
+
+
+
+
+
 { "float_derived_array_size", "",
   "printf 'int a[(int)(1.0+2.0)]; int b[(1.0<2.0)?4:2];\\n' > {W}/fd.c && "
   "printf 'int c[(int)3.0]; int d[(int)1.5+(int)2.5]; int e[3+4];\\n"
@@ -974,10 +974,10 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'not an integer constant expression|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n2 not an integer constant expression\n" },
 
-/* §6.8.1: a label (named, case, or default) prefixes a statement; a declaration
-   is not a statement before C23, so `L: int x;` is diagnosed under -pedantic
-   (matching gcc/clang -Wfree-labels), including a typedef-name declaration. It is
-   legal in C23 (silent under -std=c23) and a label-then-statement stays clean. */
+
+
+
+
 { "label_then_declaration", "",
   "printf 'typedef int T;\\nint f(int c){switch(c){case 1: int z=0; return z; default: return 1;}}\\n"
   "int g(void){ L: int y=0; return y; }\\nint h(void){ M: T t=0; return t; }\\n' > {W}/lab.c && "
@@ -987,10 +987,10 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/labok.c -o {W}/labok.o 2>&1 && echo CLEAN_OK; }",
   "3\n0\nCLEAN_OK\n" },
 
-/* §6.7.1/§6.5.3.2: the address of a 'register'-qualified parameter may not be
-   taken (now tracked on parameters, not just locals); a non-register parameter
-   is fine. (This same tracking drives the §7.16.1.4 va_start-on-register warning
-   on the token-va_start targets — verified cross-arch, not here.) */
+
+
+
+
 { "register_param_address", "",
   "printf 'int f(register int n){ int *p=&n; return *p; }\\n' > {W}/rp.c && "
   "printf 'int g(int n){ int *p=&n; return *p; }\\n' > {W}/rpok.c && "
@@ -999,8 +999,8 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'address of register variable|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 address of register variable\n" },
 
-/* §7.17.8: atomic_flag_* take volatile atomic_flag *, so a non-pointer argument
-   is diagnosed; the correct &atomic_flag form compiles clean under -Werror. */
+
+
 { "atomic_flag_type", "",
   "printf '#include <stdatomic.h>\\nvoid f(void){int x=0; atomic_flag_clear(x);}\\n' > {W}/aft.c && "
   "printf '#include <stdatomic.h>\\nvoid g(void){atomic_flag a=ATOMIC_FLAG_INIT; atomic_flag_clear(&a);}\\n' > {W}/afok.c && "
@@ -1009,9 +1009,9 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'pointer from integer|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 pointer from integer\n" },
 
-/* §6.2.2p7: a static declaration following a non-static (extern) one is an error
-   (both internal+external linkage = UB); the reverse (extern after static) keeps
-   internal linkage and is well-formed. */
+
+
+
 { "linkage_static_after_extern", "",
   "printf 'extern int x; static int x;\\n' > {W}/les.c && "
   "printf 'static int y; extern int y;\\n' > {W}/lse.c && "
@@ -1020,10 +1020,10 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'follows non-static|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 follows non-static\n" },
 
-/* §6.7.4p3: an inline definition of an external-linkage function shall not
-   define a modifiable static-duration object. A non-const static local in such
-   a function warns (gcc/clang agree); a const static local, a static (internal-
-   linkage) function, and an extern-inline function are all valid. */
+
+
+
+
 { "inline_extern_static_object", "",
   "printf 'inline int counter(void){ static int n; return ++n; }\\n"
   "int(*p)(void)=counter;\\n' > {W}/ie.c && "
@@ -1036,9 +1036,9 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'static but declared in inline|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 static but declared in inline\n" },
 
-/* §6.5.2.2: a by-value struct returned from a call is not a modifiable lvalue,
-   so `g().m = x` and `&g().m` are errors; reading the member, copying the whole
-   result, and assigning through a returned *pointer* (`gp()->m = x`) stay valid. */
+
+
+
 { "rvalue_struct_member", "",
   "printf 'struct S{int x;}; struct S g(void); void f(void){ g().x = 3; }\\n' > {W}/r1.c && "
   "printf 'struct S{int x;}; struct S g(void); int*f(void){ return &g().x; }\\n' > {W}/r2.c && "
@@ -1052,9 +1052,9 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'is not assignable|address of a function-call|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 VALID_OK\n1 address of a function-call\n1 is not assignable\n" },
 
-/* §6.7.1p2: at most one storage-class specifier — auto/register conflict with
-   each other and with static/extern/typedef. A single register param, a
-   block-scope auto, and static/extern/typedef alone stay valid. */
+
+
+
 { "storage_class_exclusivity", "",
   "printf 'static auto int a;\\n' > {W}/sc1.c && "
   "printf 'register static int b;\\n' > {W}/sc2.c && "
@@ -1066,8 +1066,8 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'multiple storage classes|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 VALID_OK\n3 multiple storage classes\n" },
 
-/* §6.7.6.3p7: `static` in an array parameter requires a size operand; `[static]`
-   alone is an error, while `[static N]`, `[const N]`, `[]` stay valid. */
+
+
 { "array_static_param", "",
   "printf 'void f(int a[static]);\\n' > {W}/ap.c && "
   "printf 'void g(int a[static 3]); void h(int a[const 2]); void i(int a[]);\\n"
@@ -1077,18 +1077,18 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'without an array size|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 VALID_OK\n1 without an array size\n" },
 
-/* §5.1.1.2: `mcc -E` must terminate on an identifier followed by `\`+space+
-   newline (it used to spin forever re-reading the stray `\`). The {TIMEOUT}
-   guard guards against a hang regression; rc 0 = clean termination. {TIMEOUT}
-   expands to nothing where coreutils `timeout` is absent (macOS/BSD), leaving
-   ctest's own per-test timeout as the backstop. */
+
+
+
+
+
 { "ident_backslash_no_hang", "",
   "printf 'a\\\\ \\nb\\n' > {W}/ib.c && "
   "{TIMEOUT}{MCC} -B{B} -I{I} -E -P {W}/ib.c >/dev/null 2>&1 && echo TERMINATED",
   "TERMINATED\n" },
 
-/* §6.10.8.1/§5.1.2.1: -ffreestanding makes __STDC_HOSTED__ expand to 0 (and
-   -fhosted / the default keep it 1), matching gcc/clang. */
+
+
 { "freestanding_hosted_macro", "",
   "printf '__STDC_HOSTED__\\n' > {W}/fh.c && "
   "{ {MCC} -B{B} -I{I} -ffreestanding -E -P {W}/fh.c; "
@@ -1096,9 +1096,9 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -E -P {W}/fh.c; } | tr -d ' '",
   "0\n1\n1\n" },
 
-/* §6.7.2.1: an empty struct/union (no members) is a GNU extension diagnosed
-   under -pedantic; a named member or an anonymous struct/union member keeps it
-   valid even under -pedantic-errors. */
+
+
+
 { "empty_struct_pedantic", "",
   "printf 'struct S{}; int main(void){return 0;}\\n' > {W}/es.c && "
   "printf 'union U{}; int main(void){return 0;}\\n' > {W}/eu.c && "
@@ -1114,9 +1114,9 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'no named members|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 VALID_OK\n4 no named members\n" },
 
-/* §6.9p1: a stray ';' at file scope (empty external declaration) is a GNU
-   extension diagnosed under -pedantic; a ';' inside a function is a valid null
-   statement (silent even under -pedantic-errors). */
+
+
+
 { "empty_declaration_pedantic", "",
   "printf 'int x;;\\n' > {W}/ed.c && "
   "printf 'int f(void){ ; ; return 0; }\\n' > {W}/edok.c && "
@@ -1125,9 +1125,9 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'empty declaration|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 VALID_OK\n1 empty declaration\n" },
 
-/* §6.5.6: arithmetic on a 'void *' or a function pointer (++, +/- int, and
-   pointer-pointer subtraction) is a GNU extension diagnosed under -pedantic;
-   object-pointer arithmetic stays clean even under -pedantic-errors. */
+
+
+
 { "void_fn_pointer_arith", "",
   "printf 'void f(void*p){p++;} long g(void*a,void*b){return a-b;}\\n"
   "void h(int(*fp)(void)){fp++;}\\n' > {W}/pa.c && "
@@ -1137,9 +1137,9 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/paok.c -o {W}/paok.o 2>&1 && echo VALID_OK; }",
   "3\nVALID_OK\n" },
 
-/* §6.3.2.3: implicit conversion between a function pointer and 'void *' is a GNU
-   extension diagnosed under -pedantic; void*<->object* and an explicit cast
-   stay valid even under -pedantic-errors. */
+
+
+
 { "fn_pointer_void_conversion", "",
   "printf 'void*f(int(*fp)(void)){void*v=fp;return v;}\\n' > {W}/c1.c && "
   "printf 'int(*g(void*v))(void){int(*fp)(void)=v;return fp;}\\n' > {W}/c2.c && "
@@ -1150,9 +1150,9 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'function pointer and|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 VALID_OK\n2 function pointer and\n" },
 
-/* §6.7p3: redefining a typedef with the same type is a C11 feature; in C99 it
-   is diagnosed under -pedantic but accepted silently in C11. An incompatible
-   redefinition is always an error. */
+
+
+
 { "typedef_redefinition_c99", "",
   "printf 'typedef int T; typedef int T;\\n' > {W}/td.c && "
   "printf 'typedef int U; typedef long U;\\n' > {W}/tdbad.c && "
@@ -1162,10 +1162,10 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'redefinition of typedef is a C11 feature|incompatible redefinition|C11_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 C11_OK\n1 incompatible redefinition\n1 redefinition of typedef is a C11 feature\n" },
 
-/* §6.7.2.1 + system-header suppression: an anonymous struct/union member is a
-   C11 feature diagnosed under -pedantic in user code, but the same construct in
-   a system header (-isystem) is suppressed (only the user's m.c warns -> 1); in
-   C11 it is silent everywhere. */
+
+
+
+
 { "anon_member_c99_and_sysheader", "",
   "mkdir -p {W}/sys && printf 'struct H{ struct { int x; }; };\\n' > {W}/sys/h.h && "
   "printf '#include <h.h>\\nstruct U{ struct { int y; }; }; int main(void){return 0;}\\n' > {W}/m.c && "
@@ -1173,10 +1173,10 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -isystem {W}/sys -std=c11 -pedantic-errors -c {W}/m.c -o {W}/m11.o 2>&1 && echo C11_OK; }",
   "1\nC11_OK\n" },
 
-/* §6.7.2.1 regression: -pedantic-errors at the default (C99) std must not abort
-   on mcc's own predef/<command line> buffer (the va_list anon union). The
-   suppression in mcc_pedantic covers the -pedantic-errors path too, so a clean
-   file compiles — while genuine user-code anon members are still caught. */
+
+
+
+
 { "pedantic_errors_predef_clean", "",
   "printf 'int main(void){return 0;}\\n' > {W}/pe.c && "
   "printf 'struct S{struct{int x;};}; int main(void){return 0;}\\n' > {W}/peb.c && "
@@ -1185,10 +1185,10 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'C11 feature|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 C11 feature\n1 CLEAN_OK\n" },
 
-/* §6.5.16.1: adding a qualifier at a nested pointer level (`int** -> const
-   int**`) launders it away and is an incompatible-pointer constraint violation;
-   a top-level qualifier add (`int* -> const int*`) is allowed, a top-level
-   discard (`const int* -> int*`) warns "discards qualifiers". */
+
+
+
+
 { "nested_pointer_qualifier_launder", "",
   "printf 'void f(int **p){ const int **q = p; (void)q; }\\n' > {W}/nl.c && "
   "printf 'void f(int *ip, const int *cp){ const int *a = ip; int *b = cp; (void)a;(void)b; }\\n' > {W}/nlmix.c && "
@@ -1197,10 +1197,10 @@ static const cli_case_t cli_cases[] = {
   "sort | uniq -c | sed 's/^ *//'",
   "1 discards\n1 incompatible pointer\n" },
 
-/* §6.10.3p6 (duplicate macro parameter), §6.10.8p4 (`defined`/`__VA_ARGS__`
-   may not be a macro name), §6.10.8p2 (the `__STDC__` predef family is
-   protected from #undef). Each is a constraint violation both gcc and clang
-   diagnose; a normal object/variadic macro and #define/#undef stay clean. */
+
+
+
+
 { "pp_macro_name_constraints", "",
   "printf '#define M(a,a) a\\n' > {W}/mdp.c && "
   "printf '#undef defined\\n' > {W}/mud.c && "
@@ -1215,10 +1215,10 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'duplicate macro parameter|invalid macro name|undefining __STDC__|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 duplicate macro parameter\n2 invalid macro name\n1 undefining __STDC__\n" },
 
-/* §6.5.3.4: the ISO `_Alignof` rejects an expression operand and a void type
-   (gcc/clang both reject); `sizeof(void)` is the GNU 1-byte extension diagnosed
-   under -pedantic. The GNU `__alignof__` spelling permits both an expression
-   and a void operand, so it stays clean. */
+
+
+
+
 { "sizeof_alignof_void", "",
   "printf 'int a=_Alignof(void);\\n' > {W}/sav.c && "
   "printf 'int f(int x){return _Alignof(x);}\\n' > {W}/sae.c && "
@@ -1231,9 +1231,9 @@ static const cli_case_t cli_cases[] = {
   "grep -oE '_Alignof. applied to a void|sizeof. applied to a void|applied to an expression|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 _Alignof' applied to a void\n1 applied to an expression\n1 sizeof' applied to a void\n" },
 
-/* §6.9.1p4: a function definition's declaration specifiers may specify only
-   extern/static; `typedef` is a constraint violation (gcc/clang reject). A
-   typedef of a function *type* (no body) stays valid. */
+
+
+
 { "function_def_typedef", "",
   "printf 'typedef int f(void){return 42;}\\n' > {W}/ft.c && "
   "printf 'typedef int myf(void); int g(void){return 1;}\\nint main(void){return 0;}\\n' > {W}/ftok.c && "
@@ -1242,11 +1242,11 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'function definition declared|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 function definition declared\n" },
 
-/* §6.7.2.1p18 (initializing a struct flexible array member) and §6.7.9p11
-   (a second brace level around a scalar, `int x={{1}}`) are ISO violations
-   gcc/clang diagnose. A FAM left uninitialized, a single brace around a scalar
-   member, a top-level incomplete-array init, and a braced scalar all stay
-   clean under -pedantic. */
+
+
+
+
+
 { "init_brace_constraints", "",
   "printf 'struct V{int len;int data[];}; struct V v={1,{2,3}};\\n' > {W}/fam.c && "
   "printf 'int x={{1}};\\n' > {W}/sb.c && "
@@ -1257,9 +1257,9 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'flexible array member|too many braces around scalar|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 flexible array member\n1 too many braces around scalar\n" },
 
-/* §6.5.3.2: indirection on a `void *` yields a void lvalue of incomplete type,
-   which ISO C does not allow (gcc warns, clang errors); diagnosed under
-   -pedantic. A real-typed dereference stays clean. */
+
+
+
 { "void_pointer_deref", "",
   "printf 'void f(void*p){*p;}\\n' > {W}/vd.c && "
   "printf 'void g(int*p){*p=1; (void)*p;}\\nint main(void){return 0;}\\n' > {W}/vdok.c && "
@@ -1268,10 +1268,10 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'dereferencing a .void|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 dereferencing a 'void\n" },
 
-/* §6.6p4: a constant expression shall evaluate to a value representable in its
-   type; a signed +, -, or * fold that overflows its result type is diagnosed by
-   gcc/clang. Mirrored under -pedantic. In-range folds, unsigned wraparound, and
-   a product that fits a wider result stay clean. */
+
+
+
+
 { "const_integer_overflow", "",
   "printf 'int x = 100000 * 100000;\\n' > {W}/co.c && "
   "printf 'int a = 2000000000 + 100000000;\\nunsigned b = 4000000000u + 1000000000u;\\nlong long c = 2000000000LL * 2000000000LL;\\nint main(void){return 0;}\\n' > {W}/cok.c && "
@@ -1280,16 +1280,16 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'integer overflow in constant expression|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 integer overflow in constant expression\n" },
 
-/* §6.10.8.1: __LINE__ as a multi-line macro argument expands to the line of its
-   own token (here line 3), not the line of the invocation's closing ')'. */
+
+
 { "line_macro_arg", "",
   "printf '#define ID(x) x\\nint a=ID(\\n__LINE__\\n);\\nint main(void){return a;}\\n' > {W}/lma.c && "
   "{MCC} -B{B} -I{I} {W}/lma.c -o {W}/lma && {W}/lma; echo L=$?",
   "L=3\n" },
 
-/* §6.4.5p2: a u8 literal cannot concatenate with a wide (L/u/U) literal; u8 with
-   a plain narrow literal is fine. The valid forms compile and run (RUN=3 = the
-   sizeof("hi")+0+0+0 self-check). */
+
+
+
 { "u8_string_concat", "",
   "printf 'const void*p=L\"a\" u8\"b\";\\n' > {W}/u8c.c && "
   "printf 'char a[]=u8\"hi\"; const char*b=u8\"x\" \"y\"; const char*c=\"p\" u8\"q\";\\n"
@@ -1299,17 +1299,17 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'concatenation of string literals|RUN=3'",
   "concatenation of string literals\nRUN=3\n" },
 
-/* §6.7.6.2: a pointer-to-VLA parameter `int (*a)[m]` keeps its VLA dimension —
-   sizeof(b[0])==16 and a[1][0] indexes the right element (self-check returns 7). */
+
+
 { "pointer_to_vla_param", "",
   "printf '#include <stddef.h>\\nvoid f(int m,int(*a)[m]){a[1][0]=42;}\\n"
   "int main(void){int b[3][4]={0}; f(4,b); size_t s=sizeof(b[0]); return (b[1][0]==42 && s==16)?7:0;}\\n' > {W}/pvp.c && "
   "{MCC} -B{B} -I{I} {W}/pvp.c -o {W}/pvp && {W}/pvp; echo R=$?",
   "R=7\n" },
 
-/* §6.6p6: a conditional with a non-constant operand in the discarded arm is not
-   an integer constant expression even when the constant condition picks the other
-   arm (`1?3:v`); a constant-only conditional stays a valid ICE. */
+
+
+
 { "conditional_ice", "",
   "printf 'int v; enum E{Z=1?3:v};\\n' > {W}/cic.c && "
   "printf 'enum F{A=1?3:4,B=1?3:(int)sizeof(int)};\\nint main(void){return A+B;}\\n' > {W}/cicok.c && "
@@ -1318,10 +1318,10 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'not an integer constant expression|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 not an integer constant expression\n" },
 
-/* §6.7.9p17-20: after a designator descends into a sub-aggregate, positional
-   initializers resume within it and brace-elide out when full (`.in[0]=1, 2, 3`
-   → in={1,2}, t=3); independent `.member[k]` designators each apply without
-   re-clearing. Self-check returns 9 when all members match gcc/clang. */
+
+
+
+
 { "designated_init_continuation", "",
   "printf 'struct O{int in[2];int t;};\\nstruct N{struct{int a,b;}s;int t;};\\nstruct F{int f1,f2;int fa[3];};\\n"
   "int main(void){\\n"
@@ -1334,9 +1334,9 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} {W}/dic.c -o {W}/dic && {W}/dic; echo R=$?",
   "R=9\n" },
 
-/* §6.5.1.1p2 (_Generic incomplete/void association), §6.7.2.4p3 (_Atomic on a
-   qualified type), §6.7.3p2 (restrict on a non-pointer array). Each diagnosed;
-   valid _Generic/_Atomic/restrict forms stay clean under -Werror. */
+
+
+
 { "generic_atomic_restrict_constraints", "",
   "printf 'struct S; int x=_Generic(1,struct S:1,int:2);\\n' > {W}/gi.c && "
   "printf 'int x=_Generic(1,void:1,int:2);\\n' > {W}/gv.c && "
@@ -1351,9 +1351,9 @@ static const cli_case_t cli_cases[] = {
   "grep -oE '_Generic. association with an incomplete|_Atomic cannot be applied to a qualified|requires a pointer type|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 _Atomic cannot be applied to a qualified\n2 _Generic' association with an incomplete\n1 requires a pointer type\n" },
 
-/* §6.7.6.3p2 (storage class other than register on a parameter), §6.7.1p7
-   (auto/register on a block-scope function declaration). register param and
-   extern block-scope function stay clean. */
+
+
+
 { "param_and_blockfn_storage", "",
   "printf 'void f(static int x);\\n' > {W}/ps.c && "
   "printf 'void g(void){ register int h(void); (void)h; }\\n' > {W}/bf.c && "
@@ -1364,8 +1364,8 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'storage class specified for parameter|invalid storage class for function|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 invalid storage class for function\n1 storage class specified for parameter\n" },
 
-/* §6.5.15p3 (one void operand in ?:), §6.5.4 (float<->pointer constant cast, both
-   directions), §6.5.16.1p1 (assignment to a struct with a const member). */
+
+
 { "expr_constraints", "",
   "printf 'void f(int c){ c?(void)0:1; }\\n' > {W}/cv.c && "
   "printf 'void*f(void){return (void*)2.5;}\\n' > {W}/fp.c && "
@@ -1380,9 +1380,9 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'only one void operand|cast between a floating type and a pointer|assignment of read-only|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 assignment of read-only\n2 cast between a floating type and a pointer\n1 only one void operand\n" },
 
-/* §6.6p6: a bit-field width / enumerator value / case label that only folds via
-   a floating operation is not an integer constant expression. The immediate
-   cast-of-float forms (`(int)2.5`) are valid ICEs and stay clean. */
+
+
+
 { "ice_float_constraints", "",
   "printf 'struct S{int b:(int)(2.5*2);};\\n' > {W}/ib.c && "
   "printf 'enum E{X=(int)(2.5*2)};\\n' > {W}/ie.c && "
@@ -1395,10 +1395,10 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'bit-field width that is not|enumerator value that is not|case label that is not|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 bit-field width that is not\n1 case label that is not\n1 enumerator value that is not\n" },
 
-/* §6.7.9p4: the address of a block-scope (automatic) compound literal is not a
-   constant, so it may not initialize a static-storage object. §6.4.3p2: a UCN
-   with a code point < 00A0 is invalid pre-C23. File-scope/runtime compound
-   literals and a valid UCN stay clean. */
+
+
+
+
 { "static_init_and_ucn", "",
   "printf 'void f(void){ static int *p=(int[]){10,20,30}; (void)p; }\\n' > {W}/sc.c && "
   "printf 'char *s=\\\"\\\\u0041\\\";\\n' > {W}/uc.c && "
@@ -1409,8 +1409,8 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'initializer element is not constant|not a valid universal|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 initializer element is not constant\n1 not a valid universal\n" },
 
-/* §7.20.4.1p1: INT64_C/UINT64_C shall have type int_least64_t/uint_least64_t.
-   Verified hosted and freestanding (the bundled <stdint.h> fallback). */
+
+
 { "int64_c_type", "",
   "printf '#include <stdint.h>\\n"
   "_Static_assert(_Generic(INT64_C(1), int_least64_t:1, default:0)==1, \\\"t1\\\");\\n"
@@ -1420,7 +1420,7 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -std=c11 -ffreestanding -nostdinc -Werror -c {W}/i64.c -o /dev/null 2>&1 && echo FREESTANDING_OK; } | sort",
   "FREESTANDING_OK\nHOSTED_OK\n" },
 
-/* §6.7.2.1p11: consecutive _Bool bit-fields pack into one byte (ABI). */
+
 { "bool_bitfield_packing", "",
   "printf '#include <stdio.h>\\n"
   "struct B{_Bool a:1;_Bool b:1;};\\n"
@@ -1429,18 +1429,18 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} {W}/bfp.c -o {W}/bfp && {W}/bfp",
   "1 1 11\n" },
 
-/* §6.3.1.8: `double * float _Complex` (the x*I idiom) is computed in double, not
-   narrowed to float — the imaginary part keeps double precision. */
+
+
 { "complex_real_precision", "",
   "printf '#include <complex.h>\\n#include <stdio.h>\\n"
   "int main(void){ volatile double r=0.1; double _Complex z=r*I; printf(\\\"%%.17g\\\\n\\\", cimag(z)); return 0; }\\n' > {W}/cxp.c && "
   "{MCC} -B{B} -I{I} {W}/cxp.c -lm -o {W}/cxp && {W}/cxp",
   "0.10000000000000001\n" },
 
-/* §6.4.4.1 / §6.4.4.4 / §6.7.6.2p1: GNU/C23 extensions ISO C99/C11 do not have —
-   binary integer constants (0b…), the \e escape, and a zero-size array — are
-   diagnosed under -pedantic; the ISO-valid neighbours (hex, standard escapes, a
-   sized array, the proper flexible array member) stay clean under -Werror. */
+
+
+
+
 { "pedantic_extension_diagnostics", "",
   "printf 'int x=0b1010;\\n' > {W}/pb.c && "
   "printf 'char *s=\"\\\\e[0m\";\\n' > {W}/pe.c && "
@@ -1453,9 +1453,9 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'binary integer constants|non-ISO escape sequence|forbids zero-size array|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 binary integer constants\n1 forbids zero-size array\n1 non-ISO escape sequence\n" },
 
-/* §6.4.4.4/§6.4.5/§6.7.1/§6.7.2.4: u/U/u8 literal prefixes, _Thread_local and
-   _Atomic are C11 additions — diagnosed under -std=c99 -pedantic-errors; the L
-   (C90) prefix and all three under -std=c11 stay clean. */
+
+
+
 { "c11_features_in_c99", "",
   "printf 'const void*p=u\"hi\";\\n' > {W}/cu.c && "
   "printf 'static _Thread_local int x;\\n' > {W}/ct.c && "
@@ -1468,8 +1468,8 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'character/string prefix|_Thread_local|_Atomic|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 _Atomic\n1 _Thread_local\n1 character/string prefix\n" },
 
-/* §6.10.9p1 (_Pragma operand must be a parenthesized string literal) and §6.7p3
-   (a variably-modified typedef may not be redefined, even with the same type). */
+
+
 { "pragma_vla_typedef_constraints", "",
   "printf 'void f(void){ _Pragma(foo); }\\n' > {W}/pn.c && "
   "printf 'void f(int n){ typedef int T[n]; typedef int T[n]; (void)sizeof(T[0]); }\\n' > {W}/tv.c && "
@@ -1480,9 +1480,9 @@ static const cli_case_t cli_cases[] = {
   "grep -oE '_Pragma takes a parenthesized|redefinition of variably modified|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 _Pragma takes a parenthesized\n1 redefinition of variably modified\n" },
 
-/* §6.7.6.3p3: an identifier list in a function declarator that is NOT part of a
-   definition shall be empty — `int f(a,b);` is rejected, while the K&R
-   *definition* `int def(a,b) int a,b; {…}` and an empty `int proto();` are fine. */
+
+
+
 { "kr_identifier_list_declaration", "",
   "printf 'int f(a,b);\\nint main(void){return 0;}\\n' > {W}/kr_bad.c && "
   "printf 'int def(a,b) int a,b; { return a+b; }\\nint proto();\\nint main(void){return def(1,2)+proto();}\\n' > {W}/kr_ok.c && "
@@ -1491,11 +1491,11 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'parameter names \\(without types\\)|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 parameter names (without types)\n" },
 
-/* §6.9.1p3 / §6.9.1p7: in a function *definition* the return type must be void
-   or a complete object type, and every parameter's adjusted type must be a
-   complete object type — an incomplete struct return or parameter is rejected.
-   The same incomplete types are fine via a pointer, a void return, or a mere
-   declaration (all of ic_ok.c stays clean even under -Werror). */
+
+
+
+
+
 { "function_definition_complete_types", "",
   "printf 'struct S; struct S g(void){ }\\n' > {W}/ic_ret.c && "
   "printf 'struct S; int h(struct S s){ return 0; }\\n' > {W}/ic_par.c && "
@@ -1506,10 +1506,10 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'return type is an incomplete|has incomplete type|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 has incomplete type\n1 return type is an incomplete\n" },
 
-/* §6.7.8p3 / §6.2.3: a typedef name and an ordinary identifier share one name
-   space — reusing a typedef name for an object (`int T;`) or a function
-   definition (`int T(void){…}`) in the same scope is rejected, while a deeper
-   block may shadow the typedef and ordinary redeclarations remain valid. */
+
+
+
+
 { "typedef_ordinary_name_space", "",
   "printf 'typedef int T; int T;\\n' > {W}/ns_obj.c && "
   "printf 'typedef int T; int T(void){return 0;}\\n' > {W}/ns_fn.c && "
@@ -1520,10 +1520,10 @@ static const cli_case_t cli_cases[] = {
   "grep -oE \"redeclared as different kind|redefinition of 'T'|CLEAN_OK\" | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 redeclared as different kind\n1 redefinition of 'T'\n" },
 
-/* §6.9.1p2: a function definition's declarator must itself include a parameter
-   (or K&R identifier) list — the function type may not be supplied entirely by a
-   typedef name (`typedef int F(void); F f {…}`).  A typedef *return* type, a K&R
-   definition, and using the function typedef for a pointer all stay valid. */
+
+
+
+
 { "function_definition_typedef_type", "",
   "printf 'typedef int F(void); F f { return 0; }\\n' > {W}/tdf_bad.c && "
   "printf 'typedef int T; T h(void){ return 0; }\\nint def(a,b) int a,b; { return a+b; }\\ntypedef int F(void); F *fp;\\nint main(void){return h()+def(1,2)+(fp!=0);}\\n' > {W}/tdf_ok.c && "
@@ -1532,32 +1532,32 @@ static const cli_case_t cli_cases[] = {
   "grep -oE \"declared with a typedef'd function type|CLEAN_OK\" | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 declared with a typedef'd function type\n" },
 
-/* §6.4.4 / GNU: imaginary *integer* constants (`3i`, `5j`, `0x4I`) — previously
-   only the floating forms (`3.0i`) were accepted; the integer forms now build a
-   complex value too (matching gcc/clang).  Compile and run, checking real/imag. */
+
+
+
 { "imaginary_integer_constants", "",
   "printf '#include <complex.h>\\n#include <stdio.h>\\nint main(void){ double complex z = 2 + 3i; long double complex w = 4 + 5j; printf(\"%%g %%g %%Lg %%Lg\\\\n\", creal(z), cimag(z), creall(w), cimagl(w)); return 0; }\\n' > {W}/imag_rt.c && "
   "{MCC} -B{B} -I{I} -std=c11 {W}/imag_rt.c -o {W}/imag_rt && {W}/imag_rt",
   "2 3 4 5\n" },
 
-/* §7.25p6: the type-generic nexttoward selects its function from the FIRST
-   argument only (its second argument is always long double).  sizeof is
-   unevaluated, so the selected return type must match the first argument's type
-   (float/double/long double) without needing libm — keying on (x)+(y) wrongly
-   selected long double for all three.  We assert the result type *tracks the
-   first arg* via sizeof(nexttoward(x,..))==sizeof(x), which is ABI-independent:
-   it reads 1 1 1 everywhere, including targets where long double==double
-   (Mach-O/arm64, PE) — whereas a raw "4 8 16" golden would hard-code the
-   16-byte-long-double ELF/x86 ABI and falsely fail on Darwin. */
+
+
+
+
+
+
+
+
+
 { "tgmath_nexttoward_first_arg", "os!=WIN32:PE has long double==double (8), so nexttoward(long double) is 8 not 16",
   "printf '#include <tgmath.h>\\n#include <stdio.h>\\nint main(void){ float f=1; double d=1; long double l=1; printf(\"%%d %%d %%d\\\\n\", (int)(sizeof(nexttoward(f,2.0L))==sizeof(f)), (int)(sizeof(nexttoward(d,2.0L))==sizeof(d)), (int)(sizeof(nexttoward(l,2.0L))==sizeof(l))); return 0; }\\n' > {W}/ntg.c && "
   "{MCC} -B{B} -I{I} -std=c11 {W}/ntg.c -o {W}/ntg && {W}/ntg",
   "1 1 1\n" },
 
-/* §6.4.2.1 / Annex D.2: a combining-mark code point (e.g. U+0300) may appear in
-   an identifier but NOT as its first character.  As an initial UCN it is now
-   rejected; the same mark as a NON-initial character, and ordinary leading UCNs
-   like U+00C0, stay valid. */
+
+
+
+
 { "ucn_identifier_initial_combining", "",
   "printf 'int \\\\u0300x;\\n' > {W}/ucn_bad.c && "
   "printf 'int a\\\\u0300b = 5;\\nint \\\\u00C0v = 7;\\nint main(void){ return a\\\\u0300b + \\\\u00C0v; }\\n' > {W}/ucn_ok.c && "
@@ -1566,21 +1566,21 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'not valid as the first character|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 not valid as the first character\n" },
 
-/* §6.6/§G: a complex constant whose real part overflows to infinity must yield
-   inf in BOTH a static and a LOCAL initializer.  The local form used to store 0
-   (the gen_complex_op constant-fold path called init_putv on a value gen_op had
-   declined to fold in a non-CONST_WANTED context); now it falls to the robust
-   runtime path.  Finite locals stay exact. Compile and run, check the values. */
+
+
+
+
+
 { "complex_const_init_overflow", "os!=WIN32:msvcrt prints infinity as \"1.#INF\", not glibc's \"inf\"",
   "printf '#include <complex.h>\\n#include <stdio.h>\\ndouble complex gz = 4.0e38f + 0.0*I;\\nint main(void){ double complex lz = 4.0e38f + 0.0*I; double complex lf = 2.0 + 3.0*I; printf(\"%%g %%g %%g %%g\\\\n\", creal(gz), creal(lz), creal(lf), cimag(lf)); return 0; }\\n' > {W}/imc.c && "
   "{MCC} -B{B} -I{I} -std=c11 {W}/imc.c -lm -o {W}/imc && {W}/imc",
   "inf inf 2 3\n" },
 
-/* §7.21.6.1/2 — -Wformat: a printf/scanf-family call with a string-literal
-   format is checked for argument class (integer/floating/pointer) and count.
-   The four mismatches warn; a fully-correct call (incl. %*.*f, %% and scanf
-   pointers) is clean even under -Werror; and a default build (no -Wformat)
-   stays silent so existing builds and the self-host are unaffected. */
+
+
+
+
+
 { "wformat_printf_scanf_checking", "",
   "printf '#include <stdio.h>\\nint main(void){ printf(\"%%d\\\\n\",\"x\"); printf(\"%%s\\\\n\",1); printf(\"%%f\\\\n\",2); printf(\"%%d %%d\\\\n\",1); return 0; }\\n' > {W}/wf_bad.c && "
   "printf '#include <stdio.h>\\nint main(void){ char b[8]; int x; printf(\"%%d %%s %%f %%c %%p %%%%\\\\n\",1,\"x\",2.0,(int)0x61,(void*)0); printf(\"%%*.*f\\\\n\",4,2,3.14); scanf(\"%%d %%7s\",&x,b); return x; }\\n' > {W}/wf_ok.c && "
@@ -1590,10 +1590,10 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'expects an integer argument|expects a pointer argument|expects a floating argument|more conversions than arguments|CLEAN_OK|SILENT_DEFAULT' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 SILENT_DEFAULT\n1 expects a floating argument\n1 expects a pointer argument\n1 expects an integer argument\n1 more conversions than arguments\n" },
 
-/* -Wpedantic / -Wno-pedantic are gcc/clang synonyms for -pedantic: -Wpedantic
-   turns the non-ISO-extension diagnostics on (here the 0b binary constant),
-   -Wno-pedantic turns them back off, and -pedantic-errors still makes them hard
-   errors. (Was previously accepted but inert.) */
+
+
+
+
 { "wpedantic_alias", "",
   "printf 'int x = 0b101;\\nint main(void){return x;}\\n' > {W}/wp.c && "
   "{ {MCC} -B{B} -I{I} -Wpedantic -c {W}/wp.c -o /dev/null 2>&1; "
@@ -1602,9 +1602,9 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'C23/GNU extension|OFF_OK' | sort | uniq -c | sed 's/^ *//'",
   "2 C23/GNU extension\n1 OFF_OK\n" },
 
-/* -fsyntax-only checks the input but writes NO output file (previously it was
-   accepted yet still produced the object). A valid input compiles to NO_OUTPUT;
-   an invalid input is still rejected (non-zero exit). */
+
+
+
 { "fsyntax_only_no_output", "",
   "printf 'int main(void){return 0;}\\n' > {W}/so_ok.c && "
   "printf 'int main(void){ int 3x; }\\n' > {W}/so_bad.c && "
@@ -1614,9 +1614,9 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -fsyntax-only -c {W}/so_bad.c -o /dev/null >/dev/null 2>&1 && echo BAD_OK || echo BAD_REJECTED; }",
   "NO_OUTPUT\nBAD_REJECTED\n" },
 
-/* -MT <t> / -MQ <t> set the make-rule target name in dependency output
-   (-MQ also escapes '$' -> '$$'); multiple occurrences accumulate into a
-   space-separated target list, matching gcc/clang. (Were rejected before.) */
+
+
+
 { "deps_target_MT_MQ", "",
   "printf 'int main(void){return 0;}\\n' > {W}/dep.c && "
   "{ {MCC} -B{B} -I{I} -M -MT custom.o {W}/dep.c 2>&1 | head -1; "
@@ -1624,10 +1624,10 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -M -MT a.o -MT b.o {W}/dep.c 2>&1 | head -1; } | sed 's/ .$//'",
   "custom.o:\nx/$$(N).o:\na.o b.o:\n" },
 
-/* -iquote <dir> adds a path searched ONLY for "..." includes (not <...>), ahead
-   of -I; -idirafter <dir> adds a path searched AFTER the system dirs. Both were
-   rejected before. Verifies the quote-only restriction and that idirafter is
-   found. */
+
+
+
+
 { "iquote_idirafter_paths", "",
   "rm -rf {W}/t_iq {W}/t_aft && mkdir -p {W}/t_iq {W}/t_aft && "
   "printf 'int q=1;\\n' > {W}/t_iq/qh.h && printf 'int a=1;\\n' > {W}/t_aft/ah.h && "
@@ -1639,9 +1639,9 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -idirafter {W}/t_aft -c {W}/c_a.c -o /dev/null 2>&1 && echo IDIRAFTER_OK; }",
   "IQUOTE_QUOTE_OK\nIQUOTE_ANGLE_SKIPPED\nIDIRAFTER_OK\n" },
 
-/* -Wvla diagnoses use of a variable-length array (C11 made VLAs optional);
-   opt-in like gcc (not under -Wall). Warns on a VLA local, stays silent by
-   default and on a fixed-size array even under -Werror. */
+
+
+
 { "wvla_variable_length_array", "",
   "printf 'int f(int n){ int a[n]; return a[0]; }\\nint main(void){return f(3);}\\n' > {W}/vla.c && "
   "printf 'int main(void){ int a[5]; return a[0]; }\\n' > {W}/fixed.c && "
@@ -1651,8 +1651,8 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'forbids variable length array|FIXED_CLEAN|DEFAULT_SILENT' | sort | uniq -c | sed 's/^ *//'",
   "1 DEFAULT_SILENT\n1 FIXED_CLEAN\n1 forbids variable length array\n" },
 
-/* -Wundef warns when an undefined identifier is evaluated in a #if (ISO C makes
-   it 0); a defined macro is silent, and so is the default (opt-in, like gcc). */
+
+
 { "wundef_if_undefined", "",
   "printf '#if FOO\\n#endif\\n#define BAR 1\\n#if BAR\\n#endif\\nint main(void){return 0;}\\n' > {W}/u.c && "
   "{ {MCC} -B{B} -I{I} -Wundef -c {W}/u.c -o /dev/null 2>&1; "
@@ -1660,9 +1660,9 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'is not defined, evaluates to 0|DEFAULT_SILENT' | sort | uniq -c | sed 's/^ *//'",
   "1 DEFAULT_SILENT\n1 is not defined, evaluates to 0\n" },
 
-/* -Wunknown-pragmas warns on an unrecognized #pragma; enabled by -Wall (so
-   -Wno-unknown-pragmas turns it back off) and controllable standalone; default
-   is silent. */
+
+
+
 { "wunknown_pragmas", "",
   "printf '#pragma frobnicate\\nint main(void){return 0;}\\n' > {W}/p.c && "
   "{ {MCC} -B{B} -I{I} -Wunknown-pragmas -c {W}/p.c -o /dev/null 2>&1; "
@@ -1671,9 +1671,9 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'frobnicate ignored|OFF_OK|DEFAULT_SILENT' | sort | uniq -c | sed 's/^ *//'",
   "1 DEFAULT_SILENT\n1 OFF_OK\n1 frobnicate ignored\n" },
 
-/* -Wimplicit-int controls the "type/return type defaults to 'int'" diagnostic
-   (C99 removed implicit int). On by default like gcc (so it still warns, and
-   -Werror makes it an error); -Wno-implicit-int turns it off. */
+
+
+
 { "wimplicit_int_flag", "",
   "printf 'foo(void){ return 0; }\\nint main(void){return foo();}\\n' > {W}/ii.c && "
   "{ {MCC} -B{B} -I{I} -c {W}/ii.c -o /dev/null 2>&1; "
@@ -1681,9 +1681,9 @@ static const cli_case_t cli_cases[] = {
   "grep -oE \"return type defaults to 'int'|OFF_OK\" | sort | uniq -c | sed 's/^ *//'",
   "1 OFF_OK\n1 return type defaults to 'int'\n" },
 
-/* -Wsign-compare warns on a relational/equality comparison mixing signed and
-   unsigned operands (opt-in, like gcc's -Wextra). Suppressed when an operand is
-   a constant (`u < 5`, `u == 0`) or same-signedness; default is silent. */
+
+
+
 { "wsign_compare", "",
   "printf 'int bad(int a, unsigned b){ return a < b; }\\n' > {W}/sc_bad.c && "
   "printf 'int ok(unsigned u, int a, int b){ return (u < 5) + (u == 0) + (a < b); }\\n' > {W}/sc_ok.c && "
@@ -1693,9 +1693,9 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'different signedness|OK_CLEAN|DEFAULT_SILENT' | sort | uniq -c | sed 's/^ *//'",
   "1 DEFAULT_SILENT\n1 OK_CLEAN\n1 different signedness\n" },
 
-/* -Wextra is an umbrella enabling a set of warnings (currently -Wsign-compare,
-   as in gcc). -Wextra enables it, -Wextra -Wno-sign-compare overrides that one
-   member back off, and -Wno-extra disables the group. */
+
+
+
 { "wextra_umbrella", "",
   "printf 'int bad(int a, unsigned b){ return a < b; }\\n' > {W}/sc.c && "
   "{ {MCC} -B{B} -I{I} -Wextra -c {W}/sc.c -o /dev/null 2>&1; "
@@ -1704,10 +1704,10 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'different signedness|MEMBER_OFF_OK|NOEXTRA_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 MEMBER_OFF_OK\n1 NOEXTRA_OK\n1 different signedness\n" },
 
-/* -Wparentheses warns on a plain assignment used directly as a controlling
-   expression (`if (x = 1)`, while/for/do); double parentheses, `==`, and the
-   for-init/iteration clauses are exempt. Enabled by -Wall (so -Wno-parentheses
-   turns it off); default silent. */
+
+
+
+
 { "wparentheses_assignment", "",
   "printf 'int g(void){return 0;}\\nint main(void){int x; if (x = 1){} while(x = g()){} return x;}\\n' > {W}/pp_bad.c && "
   "printf 'int main(void){int x=0; if ((x = 1)){} if (x == 1){} for(x=0;x<2;x++){} return x;}\\n' > {W}/pp_ok.c && "
@@ -1717,9 +1717,9 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -c {W}/pp_bad.c -o /dev/null 2>&1 && echo DEFAULT_SILENT",
   "2 warns\nOFF_OK\nOK_CLEAN\nDEFAULT_SILENT\n" },
 
-/* -Wswitch warns for each enumerator not handled by a switch on an enumerated
-   type that has no `default`; a switch covering all cases, one with default, and
-   a plain int switch stay clean. Enabled by -Wall; default silent. */
+
+
+
 { "wswitch_enum", "",
   "printf 'enum E{A,B,C}; int f(enum E e){switch(e){case A:return 1;case C:return 3;} return 0;}\\n' > {W}/sw_bad.c && "
   "printf 'enum E{A,B}; int g(enum E e){switch(e){case A:return 1;case B:return 2;} return 0;}\\nint h(enum E e){switch(e){case A:return 1;default:return 0;}}\\n' > {W}/sw_ok.c && "
@@ -1728,16 +1728,16 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -c {W}/sw_bad.c -o /dev/null 2>&1 && echo DEFAULT_SILENT",
   "1 warn\nOK_CLEAN\nDEFAULT_SILENT\n" },
 
-/* -Wformat is now part of -Wall (matching gcc/clang); -Wno-format turns it off. */
+
 { "wall_enables_format", "",
   "printf '#include <stdio.h>\\nint main(void){ printf(\"%%d\\\\n\", \"x\"); return 0; }\\n' > {W}/f.c && "
   "echo \"$({MCC} -B{B} -I{I} -Wall -c {W}/f.c -o /dev/null 2>&1 | grep -c 'expects an integer') warn\"; "
   "{MCC} -B{B} -I{I} -Wall -Wno-format -Werror -c {W}/f.c -o /dev/null 2>&1 && echo NOFORMAT_OK",
   "1 warn\nNOFORMAT_OK\n" },
 
-/* -Wunused-variable warns on an automatic local that is never referenced
-   (reported at the declaration line, like gcc); a read, an address-of, or a
-   parameter is exempt. Enabled by -Wall; default silent. */
+
+
+
 { "wunused_variable", "",
   "printf 'int main(void){ int unused; int used=5; return used; }\\n' > {W}/uv.c && "
   "printf 'void g(int*); int ok(void){ int x; g(&x); int y=1; return y; }\\n' > {W}/uv_ok.c && "
@@ -1746,9 +1746,9 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -c {W}/uv.c -o /dev/null 2>&1 && echo DEFAULT_SILENT",
   "1 warn\nOK_CLEAN\nDEFAULT_SILENT\n" },
 
-/* -Wunused-parameter warns on a function parameter never referenced in the
-   body (reported at the signature line, like gcc). Enabled by -Wextra, not
-   -Wall; default silent. */
+
+
+
 { "wunused_parameter", "",
   "printf 'int f(int a, int unusedp){ return a; }\\nint main(void){return f(1,2);}\\n' > {W}/up.c && "
   "printf 'int g(int a, int b){ return a+b; }\\nint main(void){return g(1,2);}\\n' > {W}/up_ok.c && "
@@ -1757,10 +1757,10 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -c {W}/up.c -o /dev/null 2>&1 && echo DEFAULT_SILENT",
   "1 warn\nOK_CLEAN\nDEFAULT_SILENT\n" },
 
-/* -Wunused-function warns on a static function defined but never referenced in
-   the TU (reported at the definition line, like gcc). A used or address-taken
-   static fn, a non-static fn, and a declaration-only static stay clean. Enabled
-   by -Wall; default silent. */
+
+
+
+
 { "wunused_function", "",
   "printf 'static int helper(void){return 1;}\\nint main(void){return 0;}\\n' > {W}/uf.c && "
   "printf 'static int used(void){return 1;}\\nint main(void){return used();}\\n' > {W}/uf_ok.c && "
@@ -1769,9 +1769,9 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -c {W}/uf.c -o /dev/null 2>&1 && echo DEFAULT_SILENT",
   "1 warn\nOK_CLEAN\nDEFAULT_SILENT\n" },
 
-/* -Wfatal-errors and -fmax-errors=N are recognized (were inert) and govern the
-   recoverable-error path; a clean compile is accepted, and a file with an error
-   still stops. (mcc already aborts on the first hard error, like -Wfatal-errors.) */
+
+
+
 { "fatal_errors_and_max_errors", "",
   "printf 'int main(void){ return 0; }\\n' > {W}/ok.c && "
   "printf 'int main(void){ undefined_thing; return 0; }\\n' > {W}/bad.c && "
@@ -1779,9 +1779,9 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -Wfatal-errors -c {W}/bad.c -o /dev/null >/dev/null 2>&1 || echo BAD_STOPS; }",
   "CLEAN_ACCEPTED\nBAD_STOPS\n" },
 
-/* -Wshadow warns when a block-scope declaration shadows a variable/parameter
-   visible in an enclosing scope (or a global). An `extern` redeclaration of the
-   same global, distinct names, and functions are exempt. Opt-in; default silent. */
+
+
+
 { "wshadow_declaration", "",
   "printf 'int x;\\nvoid f(int p){ int x; { int p; (void)x; (void)p; } }\\n' > {W}/sh.c && "
   "printf 'int x; void g(void){ int y; { extern int x; (void)x; } (void)y; }\\n' > {W}/sh_ok.c && "
@@ -1790,10 +1790,10 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -c {W}/sh.c -o /dev/null 2>&1 && echo DEFAULT_SILENT",
   "2 warn\nOK_CLEAN\nDEFAULT_SILENT\n" },
 
-/* -Wunused-value warns on an expression statement whose value is unused and
-   whose top-level operator has no side effect (`a==b;`, `g()+1;`); a call,
-   assignment, ++/--, and a (void) cast are exempt. Enabled by -Wall; default
-   silent. */
+
+
+
+
 { "wunused_value", "",
   "printf 'int g(void); void f(int a,int b){ a==b; g()+1; }\\n' > {W}/uvv.c && "
   "printf 'int g(void); void f(int x){ x=1; g(); x++; (void)x; }\\n' > {W}/uvv_ok.c && "
@@ -1802,27 +1802,27 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -c {W}/uvv.c -o /dev/null 2>&1 && echo DEFAULT_SILENT",
   "2 warn\nOK_CLEAN\nDEFAULT_SILENT\n" },
 
-/* -S is recognized with a clear diagnostic (mcc compiles directly to object
-   code; no textual assembly emitter) instead of the old generic "invalid
-   option"; -c still produces an object. */
+
+
+
 { "dash_S_clear_diagnostic", "",
   "printf 'int main(void){return 0;}\\n' > {W}/t.c && "
   "echo \"$({MCC} -B{B} -I{I} -S {W}/t.c 2>&1 | grep -c 'assembly output) is not supported') diag\"; "
   "{MCC} -B{B} -I{I} -c {W}/t.c -o /dev/null 2>&1 && echo C_OK",
   "1 diag\nC_OK\n" },
 
-/* -imacros FILE makes the file's macros available to the main source (was
-   rejected). For the usual all-#define macro header this matches gcc. */
+
+
 { "imacros_macro_header", "",
   "printf '#define CFG 42\\n#define DBL(x) ((x)*2)\\n' > {W}/macros.h && "
   "printf 'int main(void){ return CFG - DBL(21); }\\n' > {W}/imain.c && "
   "{MCC} -B{B} -I{I} -imacros {W}/macros.h {W}/imain.c -o {W}/imbin && {W}/imbin && echo RAN_OK_EXIT0",
   "RAN_OK_EXIT0\n" },
 
-/* -Wuninitialized warns on an automatic local read before being written in
-   source order (`int x; return x;`, `z=y;`). A declaration initializer, a write
-   on every prior path, an address-of, a parameter, and an unevaluated `sizeof`
-   are all exempt. Enabled by -Wall; default silent. */
+
+
+
+
 { "wuninitialized", "",
   "printf 'int f(void){ int x; return x; }\\nint g(void){ int y,z; z=y; return z; }\\n' > {W}/un.c && "
   "printf 'int f(int c){ int x; if(c) x=1; else x=2; return x; }\\nint h(void){ int a=5; void g(int*); int b; g(&b); return a+b; }\\n' > {W}/un_ok.c && "
@@ -1831,25 +1831,25 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -c {W}/un.c -o /dev/null 2>&1 && echo DEFAULT_SILENT",
   "2 warn\nOK_CLEAN\nDEFAULT_SILENT\n" },
 
-/* §7.26.1p3: <threads.h>'s TSS_DTOR_ITERATIONS must be an integer constant
-   expression — usable as an array size and in _Static_assert (was undeclared via
-   PTHREAD_DESTRUCTOR_ITERATIONS). */
+
+
+
 { "tss_dtor_iterations_ice", "os!=WIN32:<threads.h> (C11 threads) not provided on the WIN32 target",
   "printf '#include <threads.h>\\n_Static_assert(TSS_DTOR_ITERATIONS>=1,\"ice\");\\nint a[TSS_DTOR_ITERATIONS];\\nint main(void){return (int)(sizeof a/sizeof a[0])==4 ? 0 : 1;}\\n' > {W}/tss.c && "
   "{MCC} -B{B} -I{I} -c {W}/tss.c -o /dev/null 2>&1 && echo ICE_OK",
   "ICE_OK\n" },
 
-/* §7.25p7: type-generic creal/cimag select crealf/cimagf (float) or
-   creall/cimagl (long double) by element type — sizeof of the result is 4 / 16
-   for float / long double complex, 8 for double (was fixed-double 8/8). */
+
+
+
 { "tgmath_creal_cimag_precision", "os!=WIN32:WIN32 is LLP64 with long double == double; creal(long double complex) is 8 not 16",
   "printf '#include <tgmath.h>\\n#include <stdio.h>\\nint main(void){ long double complex l=1; float complex f=1; double complex d=1; printf(\"%%d %%d %%d\\\\n\",(int)sizeof(creal(l)),(int)sizeof(cimag(f)),(int)sizeof(creal(d))); return 0; }\\n' > {W}/cgt.c && "
   "{MCC} -B{B} -I{I} {W}/cgt.c -lm -o {W}/cgt && {W}/cgt",
   "16 4 8\n" },
 
-/* §6.4.2.1 / Annex D.1: a UCN in an identifier must designate a code point in
-   the enumerated allowed ranges; an out-of-range one (e.g. U+FFFF) is rejected,
-   while allowed ones (U+00C0, U+2460) form valid identifiers. */
+
+
+
 { "ucn_identifier_range", "",
   "printf 'int a\\\\uFFFFb;\\n' > {W}/ucr_bad.c && "
   "printf 'int a\\\\u00C0b=1; int c\\\\u2460d=2;\\nint main(void){return a\\\\u00C0b + c\\\\u2460d;}\\n' > {W}/ucr_ok.c && "
@@ -1857,11 +1857,11 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -Werror -c {W}/ucr_ok.c -o /dev/null 2>&1 && echo OK_CLEAN; }",
   "1\nOK_CLEAN\n" },
 
-/* §7.16.1.4p3: va_start whose 2nd arg is not the last named parameter is UB;
-   mcc warns on the builtin-va_start targets (riscv64/arm64/x86_64-PE) — verified
-   on arm64-mcc. On x86_64 SysV va_start is a frame-reading macro (like the
-   existing register-param check), so this guard only confirms a CORRECT call
-   stays clean under -Werror on the native target (no false positive). */
+
+
+
+
+
 { "va_start_last_param_clean", "",
   "printf '#include <stdarg.h>\\nint f(int a,int b,...){va_list ap;va_start(ap,b);int r=va_arg(ap,int);va_end(ap);return r+a;}\\nint main(void){return f(1,2,3);}\\n' > {W}/vc.c && "
   "{MCC} -B{B} -I{I} -Werror -c {W}/vc.c -o /dev/null 2>&1 && echo CLEAN",

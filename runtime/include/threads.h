@@ -1,18 +1,7 @@
 #ifndef _MCC_THREADS_H
 #define _MCC_THREADS_H
 
-/* C11 <threads.h> (N1570 §7.26).  When the hosting libc already provides one
-   (glibc, musl) delegate to it; otherwise — notably on macOS, whose libc ships
-   no <threads.h> / thrd_* runtime — provide a thin conforming shim over POSIX
-   threads.  This mirrors the bundled <stdint.h> delegate-or-define pattern, so
-   on every ELF target the system header still wins. */
 
-/* Hosted: pull the system <threads.h> (glibc/musl) and let it win.  Mirrors the
-   bundled <stdint.h>: try the next header, then self-provide only when its
-   contents are absent — keyed on ONCE_FLAG_INIT, a macro every conforming
-   <threads.h> defines.  This is robust even when the bundled directory appears
-   twice on the search path (e.g. -I source plus the build-tree copy), where the
-   include guard would otherwise turn the delegating copy into a no-op. */
 #if defined __has_include_next && __has_include_next(<threads.h>)
 # include_next <threads.h>
 #endif
@@ -35,19 +24,12 @@ typedef int  (*thrd_start_t)(void *);
 typedef void (*tss_dtor_t)(void *);
 
 #define ONCE_FLAG_INIT      PTHREAD_ONCE_INIT
-/* §7.26.1p3: TSS_DTOR_ITERATIONS must be an integer constant expression (it is
-   used in e.g. `int a[TSS_DTOR_ITERATIONS];`). PTHREAD_DESTRUCTOR_ITERATIONS is
-   a glibc internal from <limits.h>, not reliably visible here, so fall back to
-   the POSIX-required value (_POSIX_THREAD_DESTRUCTOR_ITERATIONS == 4). */
 #ifdef PTHREAD_DESTRUCTOR_ITERATIONS
 #define TSS_DTOR_ITERATIONS PTHREAD_DESTRUCTOR_ITERATIONS
 #else
 #define TSS_DTOR_ITERATIONS 4
 #endif
 
-/* §7.26.1p3: <threads.h> shall provide the convenience macro `thread_local`
-   expanding to _Thread_local. (Only in the shim branch — when a system
-   <threads.h> is delegated to above, it already defines this.) */
 #define thread_local _Thread_local
 
 enum {
@@ -64,7 +46,6 @@ enum {
     mtx_timed     = 2
 };
 
-/* ---- threads ---------------------------------------------------------- */
 
 struct __mcc_thrd_args { thrd_start_t __func; void *__arg; };
 
@@ -124,14 +105,12 @@ static inline int thrd_join(thrd_t __thr, int *__res)
     return thrd_success;
 }
 
-/* ---- call_once -------------------------------------------------------- */
 
 static inline void call_once(once_flag *__flag, void (*__func)(void))
 {
     pthread_once(__flag, __func);
 }
 
-/* ---- mutexes ---------------------------------------------------------- */
 
 static inline int mtx_init(mtx_t *__m, int __type)
 {
@@ -160,8 +139,6 @@ static inline int mtx_trylock(mtx_t *__m)
     return thrd_error;
 }
 
-/* macOS has no pthread_mutex_timedlock; approximate it with a trylock spin so
-   the API stays available (the relative interval is honoured coarsely). */
 static inline int mtx_timedlock(mtx_t *__m, const struct timespec *__ts)
 {
     for (;;) {
@@ -170,7 +147,7 @@ static inline int mtx_timedlock(mtx_t *__m, const struct timespec *__ts)
         if (__r != EBUSY)  return thrd_error;
         {
             struct timespec __now;
-            struct timespec __nap = { 0, 1000000 };  /* 1 ms */
+            struct timespec __nap = { 0, 1000000 };
             clock_gettime(CLOCK_REALTIME, &__now);
             if (__now.tv_sec > __ts->tv_sec ||
                 (__now.tv_sec == __ts->tv_sec && __now.tv_nsec >= __ts->tv_nsec))
@@ -187,7 +164,6 @@ static inline int mtx_unlock(mtx_t *__m)
 
 static inline void mtx_destroy(mtx_t *__m) { pthread_mutex_destroy(__m); }
 
-/* ---- condition variables --------------------------------------------- */
 
 static inline int cnd_init(cnd_t *__c)
 {
@@ -219,7 +195,6 @@ static inline int cnd_timedwait(cnd_t *__c, mtx_t *__m, const struct timespec *_
 
 static inline void cnd_destroy(cnd_t *__c) { pthread_cond_destroy(__c); }
 
-/* ---- thread-specific storage ----------------------------------------- */
 
 static inline int tss_create(tss_t *__key, tss_dtor_t __dtor)
 {
@@ -235,5 +210,5 @@ static inline int tss_set(tss_t __key, void *__val)
 
 static inline void tss_delete(tss_t __key) { (void)pthread_key_delete(__key); }
 
-#endif /* ONCE_FLAG_INIT (no system <threads.h>) */
-#endif /* _MCC_THREADS_H */
+#endif
+#endif

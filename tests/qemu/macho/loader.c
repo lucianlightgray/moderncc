@@ -1,8 +1,8 @@
-/* Minimal Mach-O image loader for Linux/x86_64: maps an mcc-produced Mach-O
-   executable's segments at their vmaddrs, installs a seccomp filter that traps
-   macOS (BSD) syscalls, emulates them in a SIGSYS handler (exit/write), and
-   jumps to the LC_MAIN entry. Proves a Mach-O *image* can be loaded and run on
-   this host (no macOS/dyld). */
+
+
+
+
+
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,11 +33,11 @@ static void sigsys(int s, siginfo_t *si, void *uc_) {
     (void)s; (void)si;
     ucontext_t *uc = uc_;
     greg_t *r = uc->uc_mcontext.gregs;
-    unsigned long nr = (unsigned long)r[REG_RAX] & 0xffffff;   /* strip BSD class bit */
+    unsigned long nr = (unsigned long)r[REG_RAX] & 0xffffff;
     switch (nr) {
-    case 1:  _exit((int)r[REG_RDI]);                            /* exit */
+    case 1:  _exit((int)r[REG_RDI]);
     case 4:  r[REG_RAX] = write((int)r[REG_RDI], (void*)r[REG_RSI], (size_t)r[REG_RDX]); break;
-    default: _exit(120);                                        /* unhandled macOS syscall */
+    default: _exit(120);
     }
 }
 
@@ -75,7 +75,7 @@ int main(int argc, char **argv) {
     if (!have_text || !entry) { fprintf(stderr, "no __TEXT / LC_MAIN\n"); return 2; }
     void (*go)(void) = (void(*)(void))(text_vmaddr + entry);
 
-    /* trap macOS syscalls (nr >= 0x2000000); let host Linux syscalls through */
+
     struct sigaction sa = {0};
     sa.sa_sigaction = sigsys; sa.sa_flags = SA_SIGINFO; sigemptyset(&sa.sa_mask);
     sigaction(SIGSYS, &sa, 0);
@@ -91,6 +91,6 @@ int main(int argc, char **argv) {
         perror("seccomp"); return 2;
     }
 
-    go();                       /* enter the Mach-O image; it exits via a macOS syscall */
-    return 121;                 /* entry returned without exiting -> unexpected */
+    go();
+    return 121;
 }

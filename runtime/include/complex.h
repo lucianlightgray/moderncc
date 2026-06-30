@@ -3,28 +3,14 @@
 
 
 #define complex         _Complex
-/* 7.3.1p2: _Complex_I is a constant expression of type const float _Complex.
-   __builtin_complex makes it usable in static initializers (the old compound
-   literal was not a constant and had the wrong type/value statically). */
 #define _Complex_I      __builtin_complex(0.0f, 1.0f)
 #define I               _Complex_I
 
-/* 7.3.1p2: imaginary / _Imaginary_I are defined only if the implementation
-   supports imaginary types (Annex G); mcc does not, so neither is defined
-   (matching gcc/clang). */
 
-/* 7.3.9.3: build a complex value from real/imaginary parts via the compiler's
-   __builtin_complex (constant when its arguments are; usable at runtime and,
-   unlike `x + y*I`, correct for infinities/NaNs). */
 #define CMPLX(x, y)     __builtin_complex((double)(x), (double)(y))
 #define CMPLXF(x, y)    __builtin_complex((float)(x), (float)(y))
 #define CMPLXL(x, y)    __builtin_complex((long double)(x), (long double)(y))
 
-/* 7.1.4p1 / 7.3.9.5-6: creal/cimag are library functions that may also be
-   masked by a macro. Declare the functions FIRST (before the function-like
-   macros below, so these prototypes are not themselves macro-expanded) so that
-   `(creal)(z)` and `&creal` work; the macros give the fast inline path for the
-   ordinary `creal(z)` call syntax. */
 double creal(double _Complex);
 float crealf(float _Complex);
 long double creall(long double _Complex);
@@ -65,7 +51,6 @@ double _Complex csqrt(double _Complex);
 float _Complex csqrtf(float _Complex);
 long double _Complex csqrtl(long double _Complex);
 
-/* 7.3.5 trigonometric functions */
 double _Complex csin(double _Complex);
 float _Complex csinf(float _Complex);
 long double _Complex csinl(long double _Complex);
@@ -85,7 +70,6 @@ double _Complex catan(double _Complex);
 float _Complex catanf(float _Complex);
 long double _Complex catanl(long double _Complex);
 
-/* 7.3.6 hyperbolic functions */
 double _Complex csinh(double _Complex);
 float _Complex csinhf(float _Complex);
 long double _Complex csinhl(long double _Complex);

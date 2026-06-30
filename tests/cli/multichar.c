@@ -1,1 +1,1 @@
-int multi = 'ab';   /* multi-character constant: warns under -Wall */
+int multi = 'ab';

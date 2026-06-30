@@ -41,10 +41,6 @@
 #define DBL_TRUE_MIN 4.9406564584124654e-324
 
 #if defined _WIN32 || (defined __APPLE__ && defined __aarch64__)
-/* MSVC/PE and AArch64 Mach-O ABIs: long double has the same 64-bit
-   representation as double (mcc's MCC_USING_DOUBLE_FOR_LDOUBLE). Reporting the
-   x86 80-bit properties here makes LDBL_MIN/LDBL_TRUE_MIN underflow to 0 and
-   breaks <tgmath.h>'s long double == double detection. */
 #define LDBL_MANT_DIG 53
 #define LDBL_DIG 15
 #define LDBL_EPSILON 2.2204460492503131e-16L
@@ -74,8 +70,6 @@
 #define LDBL_TRUE_MIN 3.64519953188247460253e-4951L
 
 #elif (defined __aarch64__ && !defined __APPLE__) || defined __riscv
-/* AArch64 (non-Apple) and RISC-V use 128-bit IEEE quad long double. Apple
-   arm64 instead makes long double == double (64-bit), handled by the #else. */
 #define LDBL_MANT_DIG 113
 #define LDBL_DIG 33
 #define LDBL_EPSILON 1.92592994438723585305597794258492732e-34L

@@ -1,20 +1,20 @@
-/* Exercises libmcc API surface not touched by api_basic.c / api_threaded.c:
- *   - mcc_list_symbols      (enumeration callback; previously zero callers)
- *   - mcc_undefine_symbol   (cancels a prior define)
- *   - mcc_add_library       (resolve -l<name> from the embedding API)
- *   - mcc_run               (argv passthrough + return-code propagation)
- *   - mcc_output_file       (MCC_OUTPUT_OBJ writes a real ELF object)
- * Self-checking: prints one line per check and exits non-zero on any failure.
- * Invoked like libmcc_test, with -B<builddir> and -I<runtime/include>. */
+
+
+
+
+
+
+
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #ifdef _WIN32
-#include <direct.h>     /* _mkdir */
-#include <process.h>    /* _spawnv, _P_WAIT */
+#include <direct.h>
+#include <process.h>
 #else
 #include <unistd.h>
-#include <sys/stat.h>   /* mkdir */
+#include <sys/stat.h>
 #include <sys/wait.h>
 #endif
 #include "libmcc.h"
@@ -43,7 +43,7 @@ static void check(const char *name, int ok)
     if (!ok) failures++;
 }
 
-/* ---- mcc_list_symbols ------------------------------------------------- */
+
 struct collected { int alpha, beta, gamma; const void *alpha_val; };
 
 static void collect_cb(void *ctx, const char *name, const void *val)
@@ -71,20 +71,20 @@ static void test_list_symbols(void)
     mcc_delete(s);
 }
 
-/* ---- mcc_undefine_symbol --------------------------------------------- */
+
 static void test_undefine_symbol(void)
 {
     MCCState *s = fresh(MCC_OUTPUT_MEMORY);
     mcc_define_symbol(s, "FEATURE_X", "1");
     mcc_undefine_symbol(s, "FEATURE_X");
-    /* If FEATURE_X is still defined this #error aborts the compile. */
+
     int rc = mcc_compile_string(s,
         "#ifdef FEATURE_X\n#error still defined\n#endif\nint ok = 1;\n");
     check("undefine_symbol", rc == 0);
     mcc_delete(s);
 }
 
-/* ---- mcc_add_library -------------------------------------------------- */
+
 static void test_add_library(void)
 {
     MCCState *s = fresh(MCC_OUTPUT_MEMORY);
@@ -98,7 +98,7 @@ static void test_add_library(void)
     mcc_delete(s);
 }
 
-/* ---- mcc_run: argv passthrough + return code ------------------------- */
+
 static void test_run_argv(void)
 {
     MCCState *s = fresh(MCC_OUTPUT_MEMORY);
@@ -111,7 +111,7 @@ static void test_run_argv(void)
     mcc_delete(s);
 }
 
-/* ---- mcc_output_file: MCC_OUTPUT_OBJ --------------------------------- */
+
 static void test_output_obj(void)
 {
     MCCState *s = fresh(MCC_OUTPUT_OBJ);
@@ -124,8 +124,8 @@ static void test_output_obj(void)
     if (ok) {
         FILE *f = fopen(path, "rb");
         unsigned char m[4] = {0};
-        /* mcc uses ELF as its relocatable object format on every target
-         * (including the PE/Windows build); only the final exe/DLL is PE. */
+
+
         ok = f && fread(m, 1, 4, f) == 4 &&
              m[0] == 0x7f && m[1] == 'E' && m[2] == 'L' && m[3] == 'F';
         if (f) fclose(f);
@@ -134,7 +134,7 @@ static void test_output_obj(void)
     check("output_obj", ok);
 }
 
-/* ---- mcc_set_realloc: custom global allocator hook -------------------- */
+
 static long realloc_calls;
 static void *counting_realloc(void *p, unsigned long n) { realloc_calls++; return realloc(p, n); }
 
@@ -142,17 +142,17 @@ static void test_set_realloc(void)
 {
     realloc_calls = 0;
     mcc_set_realloc(counting_realloc);
-    MCCState *s = fresh(MCC_OUTPUT_MEMORY);   /* mcc_new() allocates via the hook */
+    MCCState *s = fresh(MCC_OUTPUT_MEMORY);
     mcc_compile_string(s, "int q(void){ return 9; }");
     int ok = mcc_relocate(s) >= 0;
     int (*f)(void) = mcc_get_symbol(s, "q");
     ok = ok && f && f() == 9;
     mcc_delete(s);
-    mcc_set_realloc((MCCReallocFunc *)realloc);   /* restore default */
+    mcc_set_realloc((MCCReallocFunc *)realloc);
     check("set_realloc", ok && realloc_calls > 0);
 }
 
-/* ---- mcc_add_sysinclude_path: <> include resolution ------------------ */
+
 static void test_add_sysinclude(void)
 {
     const char *dir = "api_extra_sysinc";
@@ -184,10 +184,10 @@ static void test_add_sysinclude(void)
     check("add_sysinclude", ok);
 }
 
-/* ---- mcc_relocate double-call guard ---------------------------------- */
-/* The guard exit()s the process, so it must run in a child. We re-exec our
- * own binary with a sentinel flag (portable; fork() is unavailable on
- * Windows) and check the child terminated with a non-zero status. */
+
+
+
+
 #define GUARD_FLAG "--relocate-guard-child"
 
 static void run_guard_body(void)
@@ -195,13 +195,13 @@ static void run_guard_body(void)
     MCCState *s = fresh(MCC_OUTPUT_MEMORY);
     mcc_compile_string(s, "int z(void){ return 0; }");
     mcc_relocate(s);
-    mcc_relocate(s);                /* guard fires and exits the process */
-    _Exit(0);                       /* only reached if the guard is gone */
+    mcc_relocate(s);
+    _Exit(0);
 }
 
 static void test_relocate_double_guard(void)
 {
-    /* Build child argv: <self> GUARD_FLAG [-B... -I...] */
+
     char *av[5];
     int n = 0;
     av[n++] = g_argv[0];
@@ -211,7 +211,7 @@ static void test_relocate_double_guard(void)
             av[n++] = g_argv[i];
     av[n] = NULL;
 
-    fflush(stdout);                 /* don't let the child re-flush our buffer */
+    fflush(stdout);
 #ifdef _WIN32
     intptr_t rc = _spawnv(_P_WAIT, av[0], (const char *const *)av);
     check("relocate_double_guard", rc != 0);

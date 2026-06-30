@@ -1,9 +1,9 @@
-/* Minimal compat shim for Apple libplatform's private/_simple.h: the two
-   typedefs + the prototypes string_io.c needs, without <Availability.h>. */
+
+
 #ifndef _COMPAT__SIMPLE_H
 #define _COMPAT__SIMPLE_H
 #include <stdarg.h>
-#include <sys/types.h>          /* size_t */
+#include <sys/types.h>
 #ifndef __printflike
 #define __printflike(a, b)
 #endif

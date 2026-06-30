@@ -1,5 +1,5 @@
-/* C23 / GCC fixed underlying type for enums: `enum E : T`.
-   The base type controls sizeof(enum) and enumerator range. */
+
+
 #include <stdio.h>
 
 enum small : unsigned char { A = 1, B = 200 };

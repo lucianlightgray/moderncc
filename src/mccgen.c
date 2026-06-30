@@ -25,9 +25,6 @@ static SValue _vstack[1 + VSTACK_SIZE];
 ST_DATA int nocode_wanted;
 #define NODATA_WANTED (nocode_wanted > 0)
 
-/* Nonzero while parsing an asm operand: the GNU lvalue-cast extension
-   (`"=a" ((USItype)(x))`) is valid there, so the §6.5.4 "a cast is not an
-   lvalue" materialization below must be suppressed. */
 ST_DATA int asm_lvalue_cast;
 #define DATA_ONLY_WANTED 0x80000000
 
@@ -48,17 +45,13 @@ ST_DATA int func_var;
 ST_DATA int func_vc;
 ST_DATA int func_ind;
 static int func_old;
-static int cur_func_noreturn; /* the function being compiled is _Noreturn */
-static int cur_func_last_param; /* 7.16.1.4: token of the last named parameter of
-                                   the variadic function being compiled (0 = none) */
-/* -Wparentheses / -Wunused-value state set during expression parsing; see the
-   detailed comments at expr_eq() and gen_op(). Declared here because gen_op()
-   (above expr_eq) also writes expr_has_effect. */
+static int cur_func_noreturn;
+static int cur_func_last_param;
 static int expr_was_assign;
 static int expr_has_effect;
-static int cur_func_inline_extern; /* 6.7.4p3: inline def with external linkage */
-static int ice_float_op; /* 6.6: a floating op folded inside a constant expr */
-static int ice_nonconst; /* 6.6: a non-constant operand in a folded ?: arm */
+static int cur_func_inline_extern;
+static int ice_float_op;
+static int ice_nonconst;
 ST_DATA const char *funcname;
 ST_DATA CType int_type, func_old_type, char_type, char_pointer_type;
 static CString initstr;
@@ -85,22 +78,11 @@ static struct switch_t {
     struct scope *scope;
     struct switch_t *prev;
     SValue sv;
-    int vla_gpp;        /* 6.8.4.2: VLA program-point at switch entry */
+    int vla_gpp;
 } *cur_switch;
 
-/* 6.8.6.1/6.8.4.2: per-function tracking of variably-modified (VLA) scopes
-   so a goto/case/default jumping *into* such a scope can be diagnosed. Each
-   VLA declaration gets a 1-based birth id (vla_seq); the births of currently
-   open VLA scopes form a nesting stack (vla_open_birth). A label records the
-   innermost open VLA at its definition; a jump is illegal iff that VLA is not
-   in scope at the jump's origin. */
-/* Nonzero while lowering an atomic operation (RMW/CAS/store/load helpers), so
-   the gen_cast atomic-read hook does not re-fire on the atomic-typed lvalues
-   those helpers manipulate internally. */
 static int atomic_lowering;
 
-/* Nonzero while parsing a for-loop init declaration (6.8.5p3 storage-class
-   constraint, diagnosed under -pedantic). */
 static int in_for_init;
 
 #define VLA_TRACK_MAX 512
@@ -120,13 +102,10 @@ static int nb_temp_local_vars;
 static struct scope {
     struct scope *prev;
     struct { int loc, locorig, num; } vla;
-    int vla_diag;       /* 6.8.6.1: VLA scopes registered for jump diagnostics
-                           (counted even in dead code, unlike vla.num) */
+    int vla_diag;
     struct { Sym *s; int n; } cl;
     int *bsym, *csym;
     Sym *lstk, *llstk;
-    /* 6.10.6: #pragma STDC switches are block-scoped — snapshot on entry to a
-       compound statement, restore on exit (see new_scope/prev_scope). */
     unsigned char stdc_fp_contract, stdc_fenv_access, stdc_cx_limited;
 } *cur_scope, *loop_scope, *root_scope;
 
@@ -134,8 +113,8 @@ typedef struct {
     Section *sec;
     int local_offset;
     Sym *flex_array_ref;
-    char flex_is_member;   /* flex_array_ref is a struct flexible array member */
-    char flex_warned;      /* 6.7.2.1: FAM-initialization pedantic warning emitted */
+    char flex_is_member;
+    char flex_warned;
 } init_params;
 
 #if 1
@@ -147,22 +126,7 @@ static void block(int flags);
 #define STMT_EXPR 1
 #define STMT_COMPOUND 2
 
-/* 6.5p2 -Wsequence-point (10.1): single-pass side-effect tracker.  mcc has no
-   expression AST, so we record reads/writes of statically-named lvalues into a
-   small ring for the current sequence-point region; a full expression resets
-   the ring, internal sequence points (&&, ||, ?:, comma, call-arg boundaries)
-   flush-and-restart it.  v1 diagnoses the unambiguous case: an object written
-   twice with no intervening sequence point (e.g. `i = i++`).  Reads are also
-   recorded (they don't drive the v1 diagnosis, so `i = i + 1` never warns).
 
-   10.1.9: an object is keyed by (base symbol, constant byte offset), so a
-   constant array element (`a[2]`) or aggregate member (`s.f`) is tracked as a
-   distinct object from its siblings and from the whole — without conflating
-   them.  Through-pointer lvalues (`*p`, variable-index `a[i]`) are not
-   statically resolvable: they carry a register in VT_VALMASK rather than
-   VT_LOCAL/VT_CONST and are left out.  Bitfields are excluded (sub-byte).
-   If a region exceeds the ring it sets seqp_overflow and analysis is skipped
-   for that region — sound (no false positives), just less thorough. */
 enum { SEQP_READ, SEQP_WRITE };
 #define SEQP_MAX 64
 static struct { Sym *obj; unsigned long long off; unsigned char kind; }
@@ -176,11 +140,6 @@ static void seqp_reset(void)
     seqp_overflow = 0;
 }
 
-/* If sv is a statically-named lvalue, fill *obj and *off with its (symbol,
-   byte offset) key and return 1; otherwise return 0.  The offset distinguishes
-   sub-objects (10.1.9); for VT_LOCAL it is the frame offset, for a VT_SYM
-   global the offset from the symbol — either way unique per storage location
-   (and union members at the same offset alias, which is the correct key). */
 static int seqp_key(SValue *sv, Sym **obj, unsigned long long *off)
 {
     int r = sv->r;
@@ -197,16 +156,10 @@ static void seqp_record_sv(SValue *sv, int kind)
 {
     Sym *obj;
     unsigned long long off;
-    if (nocode_wanted)              /* unevaluated (sizeof, ...): not a real access */
+    if (nocode_wanted)
         return;
     if (!seqp_key(sv, &obj, &off))
         return;
-    /* -Wuninitialized: at the canonical read (gv) and write (vstore) sites,
-       track automatic locals. A read before any write (in source order) uses an
-       indeterminate value; a write/address-of (addrtaken) marks it initialized.
-       Conservative by construction: only direct named-lvalue accesses reach
-       here, so it warns the clear cases and never on `sizeof x` (nocode_wanted)
-       or an address-taken object. */
     if ((mcc_state->warn_uninitialized & WARN_ON)
         && (obj->r & VT_VALMASK) == VT_LOCAL
         && obj->v >= TOK_IDENT && obj->v < SYM_FIRST_ANOM) {
@@ -215,7 +168,7 @@ static void seqp_record_sv(SValue *sv, int kind)
         else if (!obj->a.inited && !obj->a.addrtaken) {
             mcc_warning_c(warn_uninitialized)(
                 "'%s' is used uninitialized", get_tok_str(obj->v, NULL));
-            obj->a.inited = 1;      /* warn once per object */
+            obj->a.inited = 1;
         }
     }
     if (!mcc_state->warn_sequence_point)
@@ -230,7 +183,6 @@ static void seqp_record_sv(SValue *sv, int kind)
     nb_seqp++;
 }
 
-/* Diagnose the current region: warn once per object modified ≥2 times. */
 static void seqp_check(void)
 {
     int i, j;
@@ -246,7 +198,6 @@ static void seqp_check(void)
             if (seqp_ev[j].obj == o && seqp_ev[j].off == ooff
                 && seqp_ev[j].kind == SEQP_WRITE)
                 writes++;
-        /* mark earlier duplicates consumed so each object warns once */
         for (j = i + 1; j < nb_seqp; j++)
             if (seqp_ev[j].obj == o && seqp_ev[j].off == ooff)
                 seqp_ev[j].obj = NULL;
@@ -256,7 +207,6 @@ static void seqp_check(void)
     }
 }
 
-/* End of a sequence-point region: diagnose it, then start a fresh region. */
 static void seqp_flush(void)
 {
     seqp_check();
@@ -303,20 +253,10 @@ static void cast_error(CType *st, CType *dt);
 static void end_switch(void);
 static void do_Static_assert(void);
 
-/* Emit a diagnostic for a construct that violates a strict ISO C constraint but
-   that mcc (like gcc) accepts as an extension by default: silent unless
-   -pedantic, a warning under -pedantic, and a hard error under
-   -pedantic-errors. C11 5.1.1.3 requires *a* diagnostic for a constraint
-   violation; -pedantic is where mcc (matching gcc) issues it. */
 static void mcc_pedantic(const char *msg)
 {
     if (!mcc_state->warn_pedantic)
         return;
-    /* Suppress -pedantic diagnostics originating in a system header or the
-       predef/<command line> buffer, as gcc/clang do — even under
-       -pedantic-errors, where the mcc_error() path below would otherwise bypass
-       error1()'s ERROR_WARN-only system-header suppression and abort on mcc's
-       own mccdefs.h (e.g. the va_list anon union in default-C99 mode). */
     if (mcc_state->error_set_jmp_enabled) {
         BufferedFile *wf;
         for (wf = file; wf && wf->filename[0] == ':'; wf = wf->prev)
@@ -330,9 +270,6 @@ static void mcc_pedantic(const char *msg)
         mcc_warning_c(warn_pedantic)("%s", msg);
 }
 
-/* 6.7.2.1p3: does 'type' name a struct/union whose last member is a flexible
-   array member (an incomplete array)? Such a type may not be an array element
-   or a member of another struct/union. */
 static int struct_has_flexible_member(CType *type)
 {
     Sym *f, *last = NULL;
@@ -401,10 +338,6 @@ static inline int is_integer_btype(int bt)
         || bt == VT_LLONG;
 }
 
-/* 6.7.6.2p4: a type is variably modified if a VLA appears anywhere in its
-   derivation — directly or via a pointer/array to one (mcc marks both pointers
-   and arrays with VT_BTYPE==VT_PTR, so the same descent visits both). Struct,
-   union and function btypes stop the descent, so the loop always terminates. */
 static int type_is_vm(CType *type)
 {
     CType *t = type;
@@ -442,7 +375,7 @@ static int R_RET(int t)
 static int R2_RET(int t)
 {
     t &= VT_BTYPE;
-    (void)t; /* unused on targets without a second integer/float return reg */
+    (void)t;
 #if PTR_SIZE == 4
     if (t == VT_LLONG)
         return REG_IRE2;
@@ -465,11 +398,6 @@ static void PUT_R_RET(SValue *sv, int t)
     sv->r = R_RET(t), sv->r2 = R2_RET(t);
 }
 
-/* Constant folding for the __builtin_{ffs,clz,ctz,clrsb,popcount,parity}
-   family. 'op' selects the operation, W is the operand width in bits, 's' is
-   the W-bit operand value. Results match gcc/clang and the runtime helpers in
-   runtime/lib/builtin.c. clz/ctz on 0 are undefined per gcc; we mirror the
-   runtime's value (W) for determinism. */
 enum { BB_FFS, BB_CLZ, BB_CTZ, BB_CLRSB, BB_POPCOUNT, BB_PARITY };
 static int fold_bit_builtin(int op, int W, int64_t s)
 {
@@ -639,9 +567,6 @@ ST_FUNC int mccgen_compile(MCCState *s1)
     decl(VT_CONST);
     finalize_tentative_arrays();
     gen_inline_functions(s1);
-    /* -Wunused-function: at end of TU, warn for each static (internal-linkage),
-       non-inline function that was defined but never referenced. The `used` bit
-       is set wherever the name resolves in unary() (a call or address-of). */
     if (mcc_state->warn_unused_function & WARN_ON) {
         Sym *fs;
         for (fs = global_stack; fs; fs = fs->prev) {
@@ -653,7 +578,7 @@ ST_FUNC int mccgen_compile(MCCState *s1)
                 continue;
             es = elfsym(fs);
             if (!es || es->st_shndx == SHN_UNDEF)
-                continue;               /* declared only, not defined here */
+                continue;
             mcc_warning_c(warn_unused_function)(
                 "%i:'%s' defined but not used",
                 fs->vla_inner_id, get_tok_str(fs->v, NULL));
@@ -668,9 +593,6 @@ ST_FUNC int mccgen_compile(MCCState *s1)
     return 0;
 }
 
-/* 6.9.2p5: at end of translation unit, any file-scope incomplete-array
-   tentative definition that was never completed by a later declaration is
-   completed as if it had one element, emitted as a common symbol. */
 static void finalize_tentative_arrays(void)
 {
     Sym *sym;
@@ -680,11 +602,11 @@ static void finalize_tentative_arrays(void)
         if (!sym->a.tentative_array)
             continue;
         if (!(sym->type.t & VT_ARRAY) || sym->type.ref->c >= 0)
-            continue;                 /* completed by a later definition */
+            continue;
         esym = elfsym(sym);
         if (esym && esym->st_shndx != SHN_UNDEF)
-            continue;                 /* already defined elsewhere */
-        sym->type.ref->c = 1;         /* one element */
+            continue;
+        sym->type.ref->c = 1;
         sym->type.t &= ~VT_EXTERN;
         size = type_size(&sym->type, &align);
         put_extern_sym(sym, common_section, align, size);
@@ -734,8 +656,6 @@ ST_FUNC void update_storage(Sym *sym)
         esym->st_other = (esym->st_other & ~ELFW(ST_VISIBILITY)(-1))
             | sym->a.visibility;
     else if (mcc_state->visibility && esym->st_shndx != SHN_UNDEF)
-        /* -fvisibility=: default for defined symbols without an explicit
-           visibility attribute (references stay default). */
         esym->st_other = (esym->st_other & ~ELFW(ST_VISIBILITY)(-1))
             | mcc_state->visibility;
 
@@ -1312,7 +1232,7 @@ ST_FUNC Sym *get_sym_ref(CType *type, Section *sec, unsigned long offset, unsign
 
 static void vpush_ref(CType *type, Section *sec, unsigned long offset, unsigned long size)
 {
-    vpushsym(type, get_sym_ref(type, sec, offset, size));  
+    vpushsym(type, get_sym_ref(type, sec, offset, size));
 }
 
 ST_FUNC Sym *external_global_sym(int v, CType *type)
@@ -1446,10 +1366,6 @@ static void patch_type(Sym *sym, CType *type)
             sym->type.ref->c = type->ref->c;
         }
         if ((type->t ^ sym->type.t) & VT_STATIC) {
-            /* 6.2.2p7: a static declaration following a non-static (external)
-               one gives the identifier both internal and external linkage —
-               undefined; gcc/clang reject. The reverse (extern after static)
-               keeps internal linkage and is well-defined, so stays silent. */
             if ((type->t & VT_STATIC) && !(sym->type.t & VT_STATIC))
                 mcc_error("static declaration of '%s' follows non-static "
                     "declaration", get_tok_str(sym->v, NULL));
@@ -1608,7 +1524,7 @@ ST_FUNC int get_reg_ex(int rc, int rc2)
 {
     int r;
     SValue *p;
-    
+
     for(r=0;r<NB_REGS;r++) {
         if (reg_classes[r] & rc2) {
             int n;
@@ -1644,7 +1560,7 @@ ST_FUNC int get_reg(int rc)
         }
     notfound: ;
     }
-    
+
     for(p=vstack;p<=vtop;p++) {
         r = p->r2;
         if (r < VT_CONST && (reg_classes[r] & rc))
@@ -1949,15 +1865,8 @@ ST_FUNC int gv(int rc)
     int r, r2, r_ok, r2_ok, rc2, bt;
     int bit_pos, bit_size, size, align;
 
-    /* 6.5p2 (10.1): record a read of a statically-named lvalue at the single
-       canonical lvalue->rvalue load site (keyed by symbol+offset, 10.1.9). */
     seqp_record_sv(vtop, SEQP_READ);
 
-    /* 6.2.5p27: reading a wider-than-word _Atomic scalar (e.g. _Atomic long long
-       on a 32-bit target) must be a single atomic load, not two word reads.
-       The predicate is almost always false (non-atomic code), so this is a
-       cheap short-circuit on the hot path; when it fires, replace the lvalue
-       with the atomic-load result and re-enter gv to place it in rc. */
     if (vtop->type.t & VT_BITFIELD) {
         CType type;
 
@@ -1993,10 +1902,6 @@ ST_FUNC int gv(int rc)
             (vtop->r & (VT_VALMASK | VT_LVAL)) == VT_CONST) {
             init_params p = { .sec = rodata_section };
             unsigned long offset;
-            /* The constant is spilled into rodata; its reference symbol is a
-               plain static object, never thread-local — strip VT_TLS so the
-               backend does not mistake the literal for a TLS access (which on
-               Mach-O resolves through a TLV descriptor). */
             CType ltype = vtop->type;
             ltype.t &= ~VT_TLS;
             size = type_size(&vtop->type, &align);
@@ -2009,7 +1914,7 @@ ST_FUNC int gv(int rc)
 	    vtop->r |= VT_LVAL;
         }
 #ifdef CONFIG_MCC_BCHECK
-        if (vtop->r & VT_MUSTBOUND) 
+        if (vtop->r & VT_MUSTBOUND)
             gbound();
 #endif
 
@@ -2397,10 +2302,6 @@ static int gen_opic_lt(uint64_t a, uint64_t b)
     return (a ^ (uint64_t)1 << 63) < (b ^ (uint64_t)1 << 63);
 }
 
-/* 6.10.1: the preprocessor evaluates #if arithmetic in (u)intmax_t (64-bit
-   here). Signed overflow there is undefined, and gcc/clang both warn. Detect
-   it for +, -, * so we can emit the same diagnostic; unsigned wraps are
-   defined and never flagged. */
 static int pp_signed_ovf(int op, uint64_t l1, uint64_t l2)
 {
     int64_t a = (int64_t)l1, b = (int64_t)l2, r;
@@ -2439,21 +2340,11 @@ static void gen_opic(int op)
         if (pp_expr && t1 == VT_LLONG && !(v1->type.t & VT_UNSIGNED)
             && (op == '+' || op == '-' || op == '*')
             && pp_signed_ovf(op, l1, l2)) {
-            /* error1() rewrites any message into "bad preprocessor expression"
-               (and consumes the token stream) while pp_expr > 1; zero it across
-               the warning so the real text is emitted and parsing continues. */
             int pp_save = pp_expr;
             pp_expr = 0;
             mcc_warning("integer overflow in preprocessor expression");
             pp_expr = pp_save;
         }
-        /* 6.6p4: a constant expression shall evaluate to a value in the range
-           of representable values for its type. A signed +, -, or * fold that
-           overflows its result type is diagnosed by gcc/clang; mirror that
-           under -pedantic outside the preprocessor (the pp path above already
-           covers #if). int operands fold in int64 (which they cannot overflow),
-           so a range check against the result width suffices; the VT_LLONG
-           case reuses the 64-bit overflow predicate. */
         else if (!pp_expr && CONST_WANTED && !NOEVAL_WANTED
                  && !(v1->type.t & VT_UNSIGNED)
                  && (op == '+' || op == '-' || op == '*')
@@ -2522,7 +2413,7 @@ static void gen_opic(int op)
         v1->r |= v2->r & VT_NONCONST;
         vtop--;
     } else {
-        if (c1 && (op == '+' || op == '&' || op == '^' || 
+        if (c1 && (op == '+' || op == '&' || op == '^' ||
                    op == '|' || op == '*' || op == TOK_EQ || op == TOK_NE)) {
             vswap();
             c2 = c1;
@@ -2642,20 +2533,8 @@ static void gen_opif(int op)
 
     c1 = (v1->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
     c2 = (v2->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
-    /* 6.6p6: a floating operation (arithmetic or comparison) is not allowed in
-       an integer constant expression — only a floating constant as the immediate
-       operand of a cast is. Record that one occurred during a constant-expression
-       evaluation so contexts requiring an ICE (e.g. array size) can diagnose a
-       value that merely folds to a constant. Casts go through gen_cast, not here,
-       so `(int)3.0` is correctly not flagged. */
     if (CONST_WANTED)
         ice_float_op = 1;
-    /* 10.3.4 / Annex F: under #pragma STDC FENV_ACCESS ON the runtime rounding
-       mode and exception flags are observable, so don't fold rounding-sensitive
-       FP arithmetic at compile time (matches gcc) — leave it to runtime ops.
-       CONST_WANTED contexts (static init, case label, array size, ...) still
-       fold, since a constant is mandatory there.  Default-OFF, so this changes
-       nothing unless the program opts in. */
     if (c1 && c2 && !CONST_WANTED && stdc_fenv_access(mcc_state)
         && (op == '+' || op == '-' || op == '*' || op == '/'))
         goto general_case;
@@ -2676,7 +2555,7 @@ static void gen_opif(int op)
         case '+': f1 += f2; break;
         case '-': f1 -= f2; break;
         case '*': f1 *= f2; break;
-        case '/': 
+        case '/':
             if (f2 == 0.0) {
                 union { float f; unsigned u; } x1, x2, y;
                 if (!CONST_WANTED)
@@ -2806,7 +2685,6 @@ static void type_to_str(char *buf, int buf_size,
         tstr = "double";
         if (!(t & VT_LONG))
             goto add_tstr;
-        /* fall through */
     case VT_LDOUBLE:
         tstr = "long double";
     add_tstr:
@@ -3103,9 +2981,6 @@ ST_FUNC void gen_op(int op)
     CType type1, combtype;
     int op_class = op;
 
-    /* -Wunused-value: an arithmetic/comparison/bitwise/pointer operator yields a
-       value with no side effect. As the last operation in a full expression it
-       makes the top-level operator effect-free (e.g. `g()+1`). */
     expr_has_effect = 0;
 
     if (op == TOK_SHR || op == TOK_SAR || op == TOK_SHL)
@@ -3143,10 +3018,6 @@ op_err:
         int align;
         if (op_class == CMP_OP)
             goto std_op;
-        /* 6.5.6: pointer +/- and pointer-pointer subtraction require pointers
-           to complete object types. Arithmetic on a 'void *' or a function
-           pointer (mcc treats their size as 1) is a GNU extension ISO C forbids;
-           gcc/clang diagnose it under -pedantic. */
         if (op == '+' || op == '-') {
             CType *pt = bt1 == VT_PTR ? pointed_type(&vtop[-1].type)
                       : bt2 == VT_PTR ? pointed_type(&vtop[0].type) : NULL;
@@ -3204,10 +3075,6 @@ op_err:
             goto op_err;
         }
     std_op:
-        /* -Wsign-compare: a relational/equality comparison whose two operands
-           differ in signedness (one converts to the other's range, which can
-           surprise). Suppressed when either operand is a constant — matching
-           gcc's low-noise behavior for the common `u < 5` / `u == 0` forms. */
         if (op_class == CMP_OP && (mcc_state->warn_sign_compare & WARN_ON)
             && !is_float(combtype.t)
             && (t1 & VT_UNSIGNED) != (t2 & VT_UNSIGNED)) {
@@ -3259,7 +3126,7 @@ op_err:
 #else
 static void gen_cvt_itof1(int t)
 {
-    if ((vtop->type.t & (VT_BTYPE | VT_UNSIGNED)) == 
+    if ((vtop->type.t & (VT_BTYPE | VT_UNSIGNED)) ==
         (VT_LLONG | VT_UNSIGNED)) {
 
         if (t == VT_FLOAT)
@@ -3326,10 +3193,6 @@ static void gen_cast(CType *type)
     int sbt, dbt, sf, df, c;
     int dbt_bt, sbt_bt, ds, ss, bits, trunc;
 
-    /* 6.2.5p27: reading a wider-than-word _Atomic scalar must be a single atomic
-       load. Every lvalue-to-rvalue conversion of such an object passes through
-       gen_cast before the _Atomic qualifier is stripped, so intercept it here
-       (cheap short-circuit on VT_ATOMIC_BIT for normal code). */
     if (!atomic_lowering && (vtop->type.t & VT_ATOMIC_BIT) && (vtop->r & VT_LVAL)
         && atomic_store_needs_libcall(vtop))
         gen_atomic_load_scalar();
@@ -3338,10 +3201,6 @@ static void gen_cast(CType *type)
         force_charshort_cast();
 
     if (is_complex_type(type) || is_complex_type(&vtop->type)) {
-        /* A cast between identical complex types is a no-op; skip it so that an
-           lvalue/constant operand (e.g. a rodata reference from
-           __builtin_complex) is preserved for the caller instead of being
-           materialized into a fresh local. */
         if (is_complex_type(type) && is_complex_type(&vtop->type)
             && (type->ref->next->type.t & (VT_BTYPE | VT_LONG))
                == (vtop->type.ref->next->type.t & (VT_BTYPE | VT_LONG)))
@@ -3375,10 +3234,6 @@ error:
             cast_error(&vtop->type, type);
         }
 
-        /* 6.5.4: a floating type and a pointer shall not be cast to one another
-           (in either direction). Checked here, before the constant-fold path
-           below, so a constant operand (`(void*)2.5`, `(double)(void*)0`) is
-           caught too rather than silently converted. */
         if ((sf && dbt_bt == VT_PTR) || (df && sbt_bt == VT_PTR))
             mcc_error("cannot cast between a floating type and a pointer");
 
@@ -3457,8 +3312,6 @@ error:
         }
 
         if (sf || df) {
-            /* 6.5.4: a floating type and a pointer shall not be cast to one
-               another (in either direction). */
             if ((sf && dbt_bt == VT_PTR) || (df && sbt_bt == VT_PTR))
                 mcc_error("cannot cast between a floating type and a pointer");
             if (sf && df) {
@@ -3655,8 +3508,6 @@ static void cast_error(CType *st, CType *dt)
     type_incompatibility_error(st, dt, "cannot convert '%s' to '%s'");
 }
 
-/* 6.3.2.1p1: a struct/union lvalue is not modifiable if any member (recursively)
-   has a const-qualified type. */
 static int aggr_has_const_member(CType *type)
 {
     Sym *f;
@@ -3680,9 +3531,6 @@ static void verify_assign_cast(CType *dt)
     st = &vtop->type;
     dbt = dt->t & VT_BTYPE;
     sbt = st->t & VT_BTYPE;
-    /* 6.5.16.1p1: the left operand of assignment shall be a modifiable lvalue.
-       A whole-const destination, or a struct/union with a const-qualified member
-       (6.3.2.1p1), is not modifiable. mcc's long-standing stance is to warn. */
     if (dt->t & VT_CONSTANT)
         mcc_warning("assignment of read-only location");
     else if (dbt == VT_STRUCT && aggr_has_const_member(dt))
@@ -3712,12 +3560,6 @@ static void verify_assign_cast(CType *dt)
             if (((type2->t & VT_CONSTANT) && !(type1->t & VT_CONSTANT)) ||
                 ((type2->t & VT_VOLATILE) && !(type1->t & VT_VOLATILE)))
                 qualwarn = 1;
-            /* 6.5.16.1: the "left has all qualifiers of right" relaxation
-               applies only at the immediately-pointed-to level (lvl 0). Beyond
-               it, the destination adding a qualifier the source lacks would
-               launder it away (e.g. `int** -> const int**`, after which a write
-               through the alias mutates a const object), so the types are
-               incompatible. */
             if (lvl > 0 && ((type1->t & ~type2->t) & (VT_CONSTANT|VT_VOLATILE)))
                 deepqual = 1;
             dbt = type1->t & (VT_BTYPE|VT_LONG);
@@ -3733,9 +3575,6 @@ static void verify_assign_cast(CType *dt)
         }
         if (!is_compatible_unqualified_types(type1, type2)) {
             if ((dbt == VT_VOID || sbt == VT_VOID) && lvl == 0) {
-                /* 6.3.2.3: converting between 'void *' (an object pointer) and a
-                   function pointer is a GNU extension ISO C forbids; gcc/clang
-                   diagnose under -pedantic. (void* <-> object* stays silent.) */
                 if (dbt == VT_FUNC || sbt == VT_FUNC)
                     mcc_pedantic("ISO C forbids conversion between a function "
                                  "pointer and 'void *'");
@@ -3758,17 +3597,12 @@ static void verify_assign_cast(CType *dt)
         if (sbt == VT_PTR || sbt == VT_FUNC) {
             mcc_warning("assignment makes integer from pointer without a cast");
         } else if (sbt == VT_STRUCT) {
-            /* 6.3.1.7: a complex value converts to an integer type via its real
-               part; only a non-complex struct→integer is an error. */
             if (!is_complex_type(st))
                 goto case_VT_STRUCT;
         }
         break;
     case VT_STRUCT:
     case_VT_STRUCT:
-        /* 6.3.1.6/6.3.1.7: a complex target may be assigned/initialized from
-           any arithmetic or complex value; gen_complex_cast performs the
-           real/complex conversion (callers must gen_cast before storing). */
         if (is_complex_type(dt)
             && (is_complex_type(st) || is_integer_btype(sbt) || is_float(st->t)))
             break;
@@ -3790,16 +3624,8 @@ ST_FUNC void vstore(void)
 {
     int sbt, dbt, ft, r, size, align, bit_size, bit_pos, delayed_cast;
 
-    /* 6.5p2 (10.1/10.1.9): record a write to a statically-named destination,
-       keyed by (symbol, constant offset) so `s.f` / `a[2]` are tracked
-       distinctly.  *p and variable-index subscripts are register-addressed and
-       fall out in seqp_key(). */
     seqp_record_sv(vtop - 1, SEQP_WRITE);
 
-    /* 6.2.5p27: copying *from* an _Atomic aggregate / >8-byte object (e.g.
-       `Big r = g;`) must read it atomically, not as a plain struct copy. Snap
-       it into a temp via the generic load first; the copy then proceeds from
-       that private snapshot. Cheap short-circuit on VT_ATOMIC_BIT. */
     if (!atomic_lowering && (vtop->type.t & VT_ATOMIC_BIT) && (vtop->r & VT_LVAL)
         && atomic_store_needs_generic(vtop))
         gen_atomic_load_aggregate();
@@ -3809,27 +3635,15 @@ ST_FUNC void vstore(void)
     dbt = ft & VT_BTYPE;
     verify_assign_cast(&vtop[-1].type);
 
-    /* Storing an arithmetic value into a complex object: convert the source to
-       the complex destination type first (real part = value, imag = 0), so the
-       struct-copy path below moves a real complex object (6.3.1.6/6.3.1.7). */
     if (is_complex_type(&vtop[-1].type) && !is_complex_type(&vtop->type)) {
         gen_cast(&vtop[-1].type);
         sbt = vtop->type.t & VT_BTYPE;
     }
-    /* 6.3.1.7: storing a complex value into a real (integer/float/_Bool) object
-       drops the imaginary part. Convert to the destination real type first so
-       the scalar store below sees a real value instead of raw-copying the
-       complex struct's bytes. */
     else if (!is_complex_type(&vtop[-1].type) && is_complex_type(&vtop->type)
              && dbt != VT_STRUCT) {
         gen_cast(&vtop[-1].type);
         sbt = vtop->type.t & VT_BTYPE;
     }
-    /* 6.3.1.6: storing a complex value into a complex object of a DIFFERENT
-       element type (e.g. float _Complex -> double _Complex) must convert each
-       part. Gated to differing elements only: a same-element complex store is a
-       correct raw copy AND is what cplx_materialize uses internally, so matching
-       it here would recurse into gen_complex_cast forever (vstack overflow). */
     else if (is_complex_type(&vtop[-1].type) && is_complex_type(&vtop->type)
              && (vtop[-1].type.ref->next->type.t & (VT_BTYPE | VT_LONG))
                 != (vtop->type.ref->next->type.t & (VT_BTYPE | VT_LONG))) {
@@ -3980,14 +3794,13 @@ ST_FUNC void vstore(void)
 ST_FUNC void inc(int post, int c)
 {
     test_lvalue();
-    /* 6.5.2.4/6.5.3.1: ++/-- on an _Atomic object is an atomic RMW. */
     if (vtop->type.t & VT_ATOMIC_BIT) {
         if (atomic_rmw_size(vtop, '+')) {
-            vpushi(c - TOK_MID);        /* +1 (TOK_INC) or -1 (TOK_DEC) */
-            gen_atomic_rmw('+', !post); /* pre-: new value; post-: old value */
+            vpushi(c - TOK_MID);
+            gen_atomic_rmw('+', !post);
             return;
         }
-        if (atomic_cas_size(vtop)) {    /* e.g. float atomic ++ */
+        if (atomic_cas_size(vtop)) {
             vpushi(c - TOK_MID);
             gen_atomic_cas_rmw('+', !post);
             return;
@@ -4001,7 +3814,7 @@ ST_FUNC void inc(int post, int c)
         vrotb(3);
         vrotb(3);
     }
-    vpushi(c - TOK_MID); 
+    vpushi(c - TOK_MID);
     gen_op('+');
     vstore();
     if (post)
@@ -4042,7 +3855,7 @@ static void parse_attribute(AttributeDef *ad)
     int t, n;
     char *astr;
     AttributeDef ad_tmp;
-    
+
 redo:
     if (tok != TOK_ATTRIBUTE1 && tok != TOK_ATTRIBUTE2)
         return;
@@ -4124,7 +3937,7 @@ redo:
             if (tok == '(') {
                 next();
                 n = expr_const();
-                if (n <= 0 || (n & (n - 1)) != 0) 
+                if (n <= 0 || (n & (n - 1)) != 0)
                     mcc_error("alignment must be a positive power of two");
                 skip(')');
             } else {
@@ -4185,7 +3998,7 @@ redo:
         case TOK_REGPARM2:
             skip('(');
             n = expr_const();
-            if (n > 3) 
+            if (n > 3)
                 n = 3;
             else if (n < 0)
                 n = 0;
@@ -4242,9 +4055,9 @@ skip_param:
             if (tok == '(') {
                 int parenthesis = 0;
                 do {
-                    if (tok == '(') 
+                    if (tok == '(')
                         parenthesis++;
-                    else if (tok == ')') 
+                    else if (tok == ')')
                         parenthesis--;
                     next();
                 } while (parenthesis && tok != -1);
@@ -4588,9 +4401,6 @@ do_decl:
     type->t = s->type.t;
     type->ref = s;
 
-    /* 6.7.2.3p2: an `enum identifier` without an enumerator list may appear
-       only after the enum type is complete; a forward reference to an
-       incomplete enum is forbidden (gcc accepts it as an extension). */
     if (u == VT_ENUM && tok != '{' && s->c == -1)
         mcc_pedantic("ISO C forbids forward references to 'enum' types");
 
@@ -4618,9 +4428,6 @@ do_decl:
                     next();
                     ice_float_op = ice_nonconst = 0;
 		    ll = expr_const64();
-                    /* 6.6p6: an enumerator that only folds via a floating op, or
-                       via a constant ?: with a non-constant arm, is not an integer
-                       constant expression; gcc/clang diagnose. */
                     if (ice_float_op || ice_nonconst)
                         mcc_pedantic("ISO C forbids an enumerator value that is "
                                      "not an integer constant expression");
@@ -4628,8 +4435,6 @@ do_decl:
                 if (bt && !in_range(ll, t.t))
 		    mcc_error("enumerator '%s' out of range of its type",
 			get_tok_str(v, NULL));
-                /* 6.7.2.2p2: in a plain enum (no fixed underlying type) each
-                   enumerator value shall be representable as an int. */
                 if (!bt && ll != (int64_t)(int)ll)
                     mcc_pedantic("ISO C restricts enumerator values "
                                  "to the range of 'int'");
@@ -4664,8 +4469,6 @@ do_decl:
                 t.t = (LONG_SIZE==8 ? VT_LLONG|VT_LONG : VT_LLONG);
 
             if (mcc_state->short_enums && (t.t & VT_BTYPE) == VT_INT) {
-                /* -fshort-enums: use the smallest integer type that holds the
-                   value range [nl, pl] (the enumerators themselves stay int). */
                 if (t.t & VT_UNSIGNED) {
                     if (pl <= 0xff)         t.t = VT_BYTE | VT_UNSIGNED;
                     else if (pl <= 0xffff)  t.t = VT_SHORT | VT_UNSIGNED;
@@ -4715,9 +4518,6 @@ do_decl:
                             type_decl(&type1, &ad1, &v, TYPE_DIRECT);
                         if (v == 0) {
                     	    if ((type1.t & VT_BTYPE) != VT_STRUCT) {
-                    	        /* 6.7.2.1: a member with a type specifier but no
-                    	           declarator (e.g. 'int;' or a tagged enum)
-                    	           declares nothing; gcc/clang warn and accept. */
                     	        if (tok == ';')
                     	            mcc_warning("declaration does not declare anything");
                     	        else
@@ -4725,32 +4525,16 @@ do_decl:
                     	    } else {
 				int v = btype.ref->v;
 				if ((v & ~SYM_STRUCT) < SYM_FIRST_ANOM) {
-				    /* A named-tag struct/union with no declarator
-				       (e.g. `struct S{struct T{int a;};};`)
-				       declares only the tag. With MS extensions
-				       (mcc's default) it is taken as an anonymous
-				       member, matching gcc -fms-extensions (silent);
-				       without them gcc/clang warn "declaration does
-				       not declare anything" and accept — so warn
-				       rather than reject-valid. */
 				    if (mcc_state->ms_extensions == 0)
                         		mcc_warning("declaration does not "
 						    "declare anything");
 				} else if (mcc_state->cversion < 201112)
-				    /* 6.7.2.1: an anonymous (untagged) struct/union
-				       member was added in C11; diagnose it as an
-				       extension in C99/C90 mode. (Suppressed in
-				       system headers, e.g. mcc's own va_list.) */
 				    mcc_pedantic("anonymous structs/unions are a "
 						 "C11 feature");
                     	    }
                         }
                         if (type_size(&type1, &align) < 0) {
 			    if ((u == VT_STRUCT) && (type1.t & VT_ARRAY)) {
-				/* 6.7.2.1p3: a flexible array member. gcc/clang
-				   accept it as the last member; as the *sole*
-				   member ("no named members") it is a GNU
-				   extension, diagnosed under -pedantic. */
 			        flexible = 1;
 				if (!c)
 				    mcc_pedantic("flexible array member in a "
@@ -4764,13 +4548,9 @@ do_decl:
                             (type1.t & VT_STORAGE))
                             mcc_error("invalid type for '%s'",
                                   get_tok_str(v, NULL));
-                        /* 6.7.2.1p9: a member shall not have a variably modified
-                           type (gcc accepts this as an extension). */
                         if (type1.t & VT_VLA)
                             mcc_pedantic("ISO C forbids a member with a "
                                          "variably modified type");
-                        /* 6.7.2.1p3: a struct with a flexible array member shall
-                           not be a member of another struct/union. */
                         if (struct_has_flexible_member(&type1))
                             mcc_pedantic("ISO C forbids a member that is a "
                                          "structure with a flexible array member");
@@ -4779,9 +4559,6 @@ do_decl:
                         next();
                         ice_float_op = ice_nonconst = 0;
                         bit_size = expr_const();
-                        /* 6.6p6: a width that only folds via a floating op, or via
-                           a constant ?: with a non-constant arm, is not an integer
-                           constant expression; gcc/clang diagnose. */
                         if (ice_float_op || ice_nonconst)
                             mcc_pedantic("ISO C forbids a bit-field width that is "
                                          "not an integer constant expression");
@@ -4789,24 +4566,21 @@ do_decl:
                             mcc_error("negative width in bit-field '%s'",
                                   get_tok_str(v, NULL));
                         if (v && bit_size == 0)
-                            mcc_error("zero width for bit-field '%s'", 
+                            mcc_error("zero width for bit-field '%s'",
                                   get_tok_str(v, NULL));
 			parse_attribute(&ad1);
                     }
-                    /* 6.7.5p2: _Alignas shall not be applied to a bit-field. */
                     if ((ad1.storage_class & 8) && bit_size >= 0)
                         mcc_error("'_Alignas' specified for a bit-field");
                     size = type_size(&type1, &align);
                     if (bit_size >= 0) {
                         bt = type1.t & VT_BTYPE;
-                        if (bt != VT_INT && 
-                            bt != VT_BYTE && 
+                        if (bt != VT_INT &&
+                            bt != VT_BYTE &&
                             bt != VT_SHORT &&
                             bt != VT_BOOL &&
                             bt != VT_LLONG)
                             mcc_error("bitfields must have scalar type");
-                        /* 6.7.2.1p4: a _Bool bit-field holds only 0/1, so its
-                           width may not exceed 1. */
                         bsize = (bt == VT_BOOL) ? 1 : size * 8;
                         if (bit_size > bsize) {
                             mcc_error("width of '%s' exceeds its type",
@@ -4814,11 +4588,6 @@ do_decl:
                         } else if (bit_size == bsize && bt != VT_BOOL
 				    && !*mcc_state->pack_stack_ptr
                                     && !ad.a.packed && !ad1.a.packed) {
-                            /* A bit-field occupying the full width of its type is
-                               stored as a plain field — EXCEPT _Bool, whose
-                               "full width" is 1 bit: a `_Bool:1` must stay a real
-                               bit-field so consecutive ones pack into one byte
-                               (6.7.2.1p11), matching the gcc/clang psABI. */
                             ;
                         } else if (bit_size == 64) {
                             mcc_error("field width 64 not implemented");
@@ -4849,12 +4618,6 @@ do_decl:
                 skip(';');
             }
             skip('}');
-            /* 6.7.2.1: a struct/union with no named members — empty (`struct
-               S{};`) or only unnamed bit-fields (`struct S{int:4;};`) — is a GNU
-               extension, not valid ISO C. `c` is set for a named member, an
-               anonymous struct/union member, or a (named) flexible array member,
-               so testing `!c` catches both the empty and the unnamed-bit-field
-               cases while leaving those valid forms alone. */
             if (!c)
                 mcc_pedantic(u == VT_UNION
                     ? "ISO C forbids a union with no named members"
@@ -4895,10 +4658,6 @@ static void mk_complex_type(CType *type, CType *base)
     Sym *s, *f0, *f1;
     AttributeDef ad;
 
-    /* On MCC_USING_DOUBLE_FOR_LDOUBLE targets (e.g. arm64 Mach-O) `long double`
-       is carried as VT_DOUBLE|VT_LONG so it stays a distinct type from `double`.
-       The complex variants must stay distinct too, so cache them separately
-       (slot 3) instead of aliasing the plain double-complex slot 1. */
     idx = bt == VT_FLOAT ? 0
         : bt == VT_DOUBLE ? ((base->t & VT_LONG) ? 3 : 1)
         : 2;
@@ -4984,11 +4743,6 @@ static void cplx_materialize(CType *cplx, CType *base, SValue *out)
     }
 }
 
-/* Annex G robust complex multiply/divide (10.2): call the runtime helper
-   (runtime/lib/complex.c) instead of inlining the naive formula.  The helpers
-   take the result by pointer and return void — see complex.c for why this
-   avoids any per-target complex-return ABI work here.  a/b are the already
-   materialized operands; on return the result complex is left on vtop. */
 static void gen_complex_call(int op, CType *cplx, CType *base, SValue *a, SValue *b)
 {
     char buf[16];
@@ -5006,7 +4760,6 @@ static void gen_complex_call(int op, CType *cplx, CType *base, SValue *a, SValue
     else
         snprintf(buf, sizeof buf, "__mcc_c%s", op == '*' ? "mul" : "div");
 
-    /* Build the function type  void (base *, base, base, base, base). */
     ptype = *base;
     mk_pointer(&ptype);
     fsym = sym_push2(&global_stack, SYM_FIELD, VT_VOID, 0);
@@ -5015,13 +4768,13 @@ static void gen_complex_call(int op, CType *cplx, CType *base, SValue *a, SValue
     fsym->f.func_type = FUNC_NEW;
     fsym->f.func_args = 5;
     prev = NULL;
-    for (i = 0; i < 4; i++) {                   /* four scalar parts */
+    for (i = 0; i < 4; i++) {
         p = sym_push2(&global_stack, SYM_FIELD, base->t, 0);
         p->type.ref = base->ref;
         p->next = prev;
         prev = p;
     }
-    p = sym_push2(&global_stack, SYM_FIELD, ptype.t, 0);   /* result pointer */
+    p = sym_push2(&global_stack, SYM_FIELD, ptype.t, 0);
     p->type.ref = ptype.ref;
     p->next = prev;
     fsym->next = p;
@@ -5029,10 +4782,10 @@ static void gen_complex_call(int op, CType *cplx, CType *base, SValue *a, SValue
     functype.ref = fsym;
 
     vpushsym(&functype, external_global_sym(tok_alloc_const(buf), &functype));
-    vpushv(&r);                 /* &result */
+    vpushv(&r);
     mk_pointer(&vtop->type);
     gaddrof();
-    cplx_push_part(a, 0);       /* a.real, a.imag, b.real, b.imag */
+    cplx_push_part(a, 0);
     cplx_push_part(a, 1);
     cplx_push_part(b, 0);
     cplx_push_part(b, 1);
@@ -5041,14 +4794,6 @@ static void gen_complex_call(int op, CType *cplx, CType *base, SValue *a, SValue
     vpushv(&r);
 }
 
-/* §6.6/§6.7.9: extract the real and imaginary parts of a compile-time-constant
-   complex operand (a rodata-backed anonymous reference, as emitted by
-   __builtin_complex / a prior fold) or of a real scalar constant, into immediate
-   scalar SValues — so static-initializer complex arithmetic can be folded into a
-   constant (which gcc/clang accept). Returns 1 on success; re/im are filled in
-   place (not pushed). Limited to float/double elements: long double has a
-   target-dependent in-memory layout that can't be read back portably when cross
-   compiling, and a relocated source section means the parts aren't plain FP. */
 static int cplx_extract_const(SValue *sv, SValue *re, SValue *im)
 {
     if (is_complex_type(&sv->type)) {
@@ -5085,7 +4830,6 @@ static int cplx_extract_const(SValue *sv, SValue *re, SValue *im)
         }
         return 1;
     }
-    /* a real scalar constant: real = value, imag = 0 (all-zero bits) */
     if ((sv->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST
         && (is_float(sv->type.t) || is_integer_btype(sv->type.t & VT_BTYPE))) {
         *re = *sv;
@@ -5097,22 +4841,19 @@ static int cplx_extract_const(SValue *sv, SValue *re, SValue *im)
     return 0;
 }
 
-/* Push a copy of constant SValue v and fold-cast it to the common element type. */
 static void cplx_push_cst(SValue *v, CType *base)
 {
     vpushv(v);
     gen_cast(base);
 }
 
-/* Conversion rank of a real floating type (6.3.1.8). long double carried as
-   VT_DOUBLE|VT_LONG (MCC_USING_DOUBLE_FOR_LDOUBLE) ranks above plain double. */
 static int float_rank(int t)
 {
     int bt = t & VT_BTYPE;
     if (bt == VT_LDOUBLE) return 3;
     if (bt == VT_DOUBLE)  return (t & VT_LONG) ? 3 : 2;
     if (bt == VT_FLOAT)   return 1;
-    return 0;   /* integer (or other) ranks below every real floating type */
+    return 0;
 }
 
 static void gen_complex_op(int op)
@@ -5123,11 +4864,6 @@ static void gen_complex_op(int op)
     cplx = is_complex_type(&vtop[-1].type) ? vtop[-1].type : vtop[0].type;
     base = cplx.ref->next->type;
 
-    /* 6.3.1.8: the result's element type is the common real type of BOTH
-       operands' real/element types — not merely the complex operand's element.
-       Otherwise a higher-rank real operand (e.g. `double * float _Complex`, the
-       `x*I` idiom) would be narrowed to the complex element, losing precision.
-       Widen `cplx`/`base` to a complex type over the wider real base. */
     {
         CType *r0 = NULL, *r1 = NULL, *wb = NULL;
         int k0, k1, kc;
@@ -5150,24 +4886,9 @@ static void gen_complex_op(int op)
         }
     }
 
-    /* Constant folding: if both operands are compile-time constants, compute the
-       result and emit it into rodata as a constant complex, so it is usable in a
-       file-scope/static initializer (§6.6/§6.7.9) instead of materializing locals
-       and emitting runtime code (which is "not constant" at load time). Gated to
-       float/double elements and the four arithmetic ops; everything else falls
-       through to the runtime path below unchanged. The naive multiply and divide
-       formulas match what gcc/clang use when folding constants (the Annex G
-       robust runtime helper is for non-constant edge cases). */
     {
         SValue are, aim, bre, bim;
         int ebt = base.t & VT_BTYPE;
-        /* Only fold when a constant is actually required (CONST_WANTED: static
-           initializer, case label, ...). gen_op declines to fold a non-finite
-           FP operation (e.g. inf+0) unless CONST_WANTED, so taking this path in
-           a plain local initializer would call init_putv on a non-constant and
-           silently store 0 (the runtime result is computed but discarded). In
-           non-const contexts the robust runtime path below handles every value,
-           including infinities, correctly. */
         if ((ebt == VT_FLOAT || ebt == VT_DOUBLE)
             && CONST_WANTED
             && (op == '+' || op == '-' || op == '*' || op == '/')
@@ -5180,7 +4901,6 @@ static void gen_complex_op(int op)
             csz = type_size(&cplx, &cal);
             if (NODATA_WANTED) { csz = 0; cal = 1; }
             offset = section_add(pp.sec, csz, cal);
-            /* real part */
             switch (op) {
             case '+': case '-':
                 cplx_push_cst(&are, &base); cplx_push_cst(&bre, &base); gen_op(op);
@@ -5190,7 +4910,7 @@ static void gen_complex_op(int op)
                 cplx_push_cst(&aim, &base); cplx_push_cst(&bim, &base); gen_op('*');
                 gen_op('-');
                 break;
-            default: /* '/' : (are*bre + aim*bim) / (bre^2 + bim^2) */
+            default:
                 cplx_push_cst(&are, &base); cplx_push_cst(&bre, &base); gen_op('*');
                 cplx_push_cst(&aim, &base); cplx_push_cst(&bim, &base); gen_op('*');
                 gen_op('+');
@@ -5201,7 +4921,6 @@ static void gen_complex_op(int op)
                 break;
             }
             init_putv(&pp, &base, offset);
-            /* imaginary part */
             switch (op) {
             case '+': case '-':
                 cplx_push_cst(&aim, &base); cplx_push_cst(&bim, &base); gen_op(op);
@@ -5211,7 +4930,7 @@ static void gen_complex_op(int op)
                 cplx_push_cst(&aim, &base); cplx_push_cst(&bre, &base); gen_op('*');
                 gen_op('+');
                 break;
-            default: /* '/' : (aim*bre - are*bim) / (bre^2 + bim^2) */
+            default:
                 cplx_push_cst(&aim, &base); cplx_push_cst(&bre, &base); gen_op('*');
                 cplx_push_cst(&are, &base); cplx_push_cst(&bim, &base); gen_op('*');
                 gen_op('-');
@@ -5222,7 +4941,7 @@ static void gen_complex_op(int op)
                 break;
             }
             init_putv(&pp, &base, offset + bsz);
-            vtop -= 2;                  /* discard the two constant operands */
+            vtop -= 2;
             vpush_ref(&cplx, pp.sec, offset, csz);
             vtop->r |= VT_LVAL;
             return;
@@ -5240,9 +4959,6 @@ static void gen_complex_op(int op)
         return;
     }
 
-    /* 10.2: route * and / to the Annex G robust helper unless the program
-       opted into the naive limited-range path (CX_LIMITED_RANGE ON or
-       -fcx-limited-range), matching gcc/clang's default behavior. */
     if ((op == '*' || op == '/') &&
         !(mcc_state->cx_limited_range || stdc_cx_limited(mcc_state))) {
         gen_complex_call(op, &cplx, &base, &a, &b);
@@ -5283,12 +4999,6 @@ static void gen_complex_cast(CType *dt)
 {
     SValue src, r;
 
-    /* Constant folding (mirror of gen_complex_op): a compile-time-constant
-       source — a real scalar, or a float/double complex rodata constant — casts
-       to a constant, so it stays usable in a static initializer. Real->complex
-       and complex->complex (e.g. the float `_Complex_I` widened to double in
-       `1.0 + 2.0*I`) both fold; complex->real takes the real part. Non-constant
-       or long-double sources fall through to the runtime path below. */
     {
         SValue re, im;
         if (cplx_extract_const(vtop, &re, &im)) {
@@ -5303,11 +5013,10 @@ static void gen_complex_cast(CType *dt)
                 offset = section_add(pp.sec, csz, cal);
                 cplx_push_cst(&re, &dbase); init_putv(&pp, &dbase, offset);
                 cplx_push_cst(&im, &dbase); init_putv(&pp, &dbase, offset + bsz);
-                vtop--;                         /* drop the constant source */
+                vtop--;
                 vpush_ref(dt, pp.sec, offset, csz);
                 vtop->r |= VT_LVAL;
             } else {
-                /* complex/real constant -> real scalar: take the real part */
                 vtop--;
                 cplx_push_cst(&re, dt);
             }
@@ -5408,7 +5117,7 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label)
               }
               skip(')');
               ad->a.aligned = exact_log2p1(n);
-              ad->storage_class |= 8;   /* _Alignas (vs __attribute__((aligned))) */
+              ad->storage_class |= 8;
             }
             continue;
         case TOK_LONG:
@@ -5431,9 +5140,6 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label)
             typespec_found = 1;
             break;
         case TOK_IMAGINARY:
-            /* 6.4.1/Annex G: _Imaginary is a reserved keyword, but imaginary
-               types (optional) are not implemented — gcc and clang also reject
-               them. Diagnose clearly rather than treating it as an identifier. */
             mcc_error("imaginary types are not supported");
             break;
         case TOK_FLOAT:
@@ -5462,7 +5168,6 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label)
             goto basic_type2;
 
         case TOK__Atomic:
-            /* 6.7.2.4 / 6.7.3: _Atomic is a C11 addition; diagnose in C99/C90. */
             if (mcc_state->cversion < 201112)
                 mcc_pedantic("'_Atomic' is a C11 feature");
             next();
@@ -5471,10 +5176,6 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label)
             t = type->t;
             if (tok == '(') {
                 parse_expr_type(&type1);
-                /* 6.7.2.4p3: _Atomic ( type-name ) shall not specify an array
-                   type, a function type, an atomic type, or a qualified type.
-                   (VT_ATOMIC carries VT_VOLATILE, so test the atomic bit before
-                   the plain-qualifier bits.) */
                 if (type1.t & VT_ARRAY)
                     mcc_error("_Atomic cannot be applied to an array type");
                 if ((type1.t & VT_BTYPE) == VT_FUNC)
@@ -5488,9 +5189,6 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label)
                     sym_to_attr(ad, type1.ref);
                 goto basic_type2;
             }
-            /* Record that the bare _Atomic *qualifier* was seen (distinct from
-               VT_ATOMIC, which aliases VT_VOLATILE) so 6.7.2.4p3 can reject it
-               on a typedef'd array/function base type at the_end. */
             ad->storage_class |= 16;
             break;
         case TOK_CONST1:
@@ -5520,8 +5218,6 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label)
             break;
         case TOK_AUTO:
         case TOK_REGISTER:
-            /* 6.7.1p2: at most one storage-class specifier. auto/register
-               conflict with each other and with extern/static/typedef. */
             if ((t & (VT_EXTERN|VT_STATIC|VT_TYPEDEF)) || (ad->storage_class & 3))
                 mcc_error("multiple storage classes");
             ad->storage_class |= (tok == TOK_AUTO) ? 1 : 2;
@@ -5530,7 +5226,7 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label)
         case TOK_RESTRICT1:
         case TOK_RESTRICT2:
         case TOK_RESTRICT3:
-            ad->storage_class |= 4;   /* restrict in declaration specifiers */
+            ad->storage_class |= 4;
             next();
             break;
         case TOK_UNSIGNED:
@@ -5551,7 +5247,6 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label)
             g = VT_TYPEDEF;
             goto storage;
        storage:
-            /* 6.7.1p2: also conflicts with a prior auto/register (bits 1/2). */
             if ((t & (VT_EXTERN|VT_STATIC|VT_TYPEDEF) & ~g) || (ad->storage_class & 3))
                 mcc_error("multiple storage classes");
             t |= g;
@@ -5566,7 +5261,7 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label)
         case TOK_NORETURN3:
             next();
             ad->f.func_noreturn = 1;
-            ad->storage_class |= 128;   /* '_Noreturn' keyword seen (vs attribute) */
+            ad->storage_class |= 128;
             break;
         case TOK_ATTRIBUTE1:
         case TOK_ATTRIBUTE2:
@@ -5590,8 +5285,6 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label)
             goto basic_type2;
         case TOK_THREAD_LOCAL:
         case TOK___thread:
-            /* 6.7.1: _Thread_local is a C11 addition; diagnose in C99/C90. The
-               GNU __thread spelling is an extension, left alone. */
             if (tok == TOK_THREAD_LOCAL && mcc_state->cversion < 201112)
                 mcc_pedantic("'_Thread_local' is a C11 feature");
             if (t & VT_TLS)
@@ -5629,8 +5322,6 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label)
         type_found = 1;
     }
 the_end:
-    /* 6.7.2p2: specifiers present (type_found) but no type specifier among them
-       → implicit int. Recorded here; diagnosed in the declaration context. */
     if (type_found && !typespec_found)
         ad->implicit_int = 1;
     if (mcc_state->char_is_unsigned) {
@@ -5656,10 +5347,6 @@ the_end:
         return type_found;
     }
     type->t = t;
-    /* 6.7.2.4p3: the _Atomic qualifier shall not be applied to an array type or
-       a function type. The explicit _Atomic(type-name) form is checked above;
-       this catches the qualifier landing on a typedef'd array/function base type
-       (e.g. `typedef int A[3]; _Atomic A a;`). */
     if (ad->storage_class & 16) {
         if (t & VT_ARRAY)
             mcc_error("_Atomic cannot be applied to an array type");
@@ -5702,7 +5389,7 @@ static int asm_label_instr(void)
 static int post_type(CType *type, AttributeDef *ad, int storage, int td)
 {
     int n, l, t1, arg_size, align;
-    int star_param = 0; /* 6.7.6.2p4: a parameter used `[*]` */
+    int star_param = 0;
     Sym **plast, *s, *first, **ps, *sr;
     AttributeDef ad1;
     CType pt;
@@ -5737,9 +5424,6 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td)
             for(;;) {
                 if (l != FUNC_OLD) {
                     if ((pt.t & VT_BTYPE) == VT_VOID && tok == ')') {
-                        /* 6.7.6.3p10: the no-parameter special case is an
-                           unnamed, unqualified 'void'. A qualified lone 'void'
-                           is invalid (gcc+clang both reject). */
                         if (pt.t & (VT_CONSTANT | VT_VOLATILE))
                             mcc_error("'void' as only parameter may not be qualified");
                         break;
@@ -5747,20 +5431,13 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td)
                     type_decl(&pt, &ad1, &n, TYPE_DIRECT | TYPE_ABSTRACT | TYPE_PARAM);
                     if ((pt.t & VT_BTYPE) == VT_VOID)
                         mcc_error("parameter declared as void");
-                    /* 6.7.6.3p2: the only storage-class specifier that may
-                       appear in a parameter declaration is 'register'. */
                     if ((pt.t & (VT_STATIC | VT_EXTERN | VT_TYPEDEF | VT_TLS))
                         || (ad1.storage_class & 1))
                         mcc_error("storage class specified for parameter");
-                    /* 6.7.5p2: _Alignas shall not be applied to a parameter. */
                     if (ad1.storage_class & 8)
                         mcc_error("'_Alignas' specified for a function parameter");
                     if (ad1.storage_class & 32)
                         star_param = 1;
-                    /* 6.7.6.3p7: 'static'/qualifiers in a non-nested array
-                       '[]' (bit 64) are valid only when the parameter's
-                       top-level type is the array itself (array or VLA);
-                       e.g. 'int (*a)[static 3]' has a pointer at top → bad. */
                     if ((ad1.storage_class & 64) && !(pt.t & (VT_ARRAY | VT_VLA)))
                         mcc_error("'static' or type qualifiers used in non-outermost array declarator");
                     if (n == 0 || (td & TYPE_PARAM))
@@ -5776,14 +5453,8 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td)
                 convert_parameter_type(&pt);
                 arg_size += (type_size(&pt, &align) + PTR_SIZE - 1) / PTR_SIZE;
                 s = sym_push(n, &pt, VT_LOCAL|VT_LVAL, 0);
-                /* -Wunused-parameter: remember the declaration (signature) line;
-                   sym_copy carries it into the body's local copy (see gen_function). */
                 s->vla_inner_id = file->line_num;
-                /* -Wuninitialized: a parameter is initialized by the caller. */
                 s->a.inited = 1;
-                /* 6.7.1/6.5.3.2: a 'register' parameter — remember it so taking
-                   its address (and va_start on it, 7.16.1.4) is diagnosed. The
-                   flag rides through sym_push_params/sym_copy into the body. */
                 if (ad1.storage_class & 2)
                     s->a.is_register = 1;
                 *plast = s;
@@ -5802,7 +5473,7 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td)
         } else
             l = FUNC_OLD;
         skip(')');
-        type->t &= ~VT_CONSTANT; 
+        type->t &= ~VT_CONSTANT;
         if (tok == '[') {
             next();
             skip(']');
@@ -5811,8 +5482,6 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td)
         ad->f.func_args = arg_size;
         ad->f.func_type = l;
         ad->f.func_star_param = star_param;
-        /* 6.7.6.3p1 / 6.9.1: a function shall not return a function type or an
-           array type (also catches the forms introduced via a typedef name). */
         if ((type->t & VT_BTYPE) == VT_FUNC)
             mcc_error("function cannot return a function type");
         if (type->t & VT_ARRAY)
@@ -5838,12 +5507,6 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td)
 	    case TOK_CONST1:
 	    case TOK_VOLATILE1:
 	    case TOK_STATIC:
-		/* 6.7.6.3p7: 'static' and type qualifiers in an array
-		   parameter's '[]' may appear only in the outermost array
-		   derivation. A nested derivation (TYPE_NEST) is always
-		   invalid; a non-nested one is valid only if the parameter's
-		   top-level type is itself the array (checked after the full
-		   declarator via storage_class bit 64). */
 		if (td & TYPE_NEST)
 		    mcc_error("'static' or type qualifiers used in non-outermost array declarator");
 		if (tok == TOK_STATIC)
@@ -5853,10 +5516,6 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td)
 		continue;
 	    case '*':
 		next();
-		/* 6.7.6.2p4: `[*]` (unspecified-size VLA) is permitted only in
-		   function prototype scope, not in a definition. Record it on
-		   the declarator's attr so the function-definition path can
-		   diagnose it. (`[*expr]` is a normal VLA, not this case.) */
 		if (tok == ']')
 		    ad->storage_class |= 32;
 		continue;
@@ -5875,7 +5534,6 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td)
 		next();
 		goto check;
             }
-            /* 6.7.6.3p7: `static` in an array parameter requires a size. */
             if (saw_static)
                 mcc_error("'static' may not be used without an array size");
             break;
@@ -5893,14 +5551,8 @@ check:
                 n = vtop->c.i;
                 if (n < 0)
                     mcc_error("invalid array size");
-                /* 6.7.6.2p1: a constant array size shall be greater than zero;
-                   a zero-size array is a GNU extension gcc/clang diagnose under
-                   -pedantic (covers `int a[0]` and the GNU `int d[0]` member). */
                 else if (n == 0)
                     mcc_pedantic("ISO C forbids zero-size array");
-                /* 6.6p6: a size that only folds to a constant via a floating
-                   operation is not an integer constant expression; gcc/clang
-                   accept it as a folded-VLA extension and diagnose it. */
                 if (ice_float_op)
                     mcc_pedantic("ISO C forbids an array size that is not an "
                                  "integer constant expression");
@@ -5909,8 +5561,6 @@ check:
                     mcc_error("size of variable length array should be an integer");
                 n = 0;
                 t1 = VT_VLA;
-                /* -Wvla: this `[expr]` size is not an integer constant
-                   expression, so the declarator is a variable-length array. */
                 mcc_warning_c(warn_vla)("ISO C90 forbids variable length array");
             }
         }
@@ -5922,8 +5572,6 @@ check:
         if ((type->t & VT_BTYPE) == VT_VOID
             || type_size(type, &align) < 0)
             mcc_error("declaration of an array of incomplete type elements");
-        /* 6.7.2.1p3: a struct with a flexible array member shall not be an
-           array element (gcc accepts as an extension). */
         if (struct_has_flexible_member(type))
             mcc_pedantic("ISO C forbids an array of a structure with a "
                          "flexible array member");
@@ -5950,7 +5598,7 @@ check:
         if (n != -1)
             vpop();
 	nocode_wanted = saved_nocode_wanted;
-                
+
         s = sym_push(SYM_FIELD, type, 0, n);
         type->t = (t1 ? VT_VLA : VT_ARRAY) | VT_PTR;
         type->ref = s;
@@ -5965,12 +5613,6 @@ check:
     return 1;
 }
 
-/* 6.7.3p2: restrict may only qualify a pointer to an object type. A
-   declarator-level `restrict` on a pointer whose pointee turns out to be a
-   function type (e.g. `void (*restrict p)(void)`) is a constraint violation,
-   but the function part is parsed *after* the `*restrict`, so the pointees of
-   restrict-qualified pointers are recorded during the declarator parse and
-   checked once the whole (possibly nested) declarator has been built. */
 static Sym *restrict_ptr_pointee[8];
 static int  nb_restrict_ptr;
 static int  type_decl_depth;
@@ -6029,10 +5671,6 @@ static CType *type_decl(CType *type, AttributeDef *ad, int *v, int td)
 	    parse_attribute(ad);
 	    post = type_decl(type, ad, v, td);
 	    skip(')');
-	    /* A parenthesized sub-declarator that introduced a derivation (e.g.
-	       the pointer in `(*a)[m]`) makes a trailing array a *nested*
-	       (pointed-to) array, not a top-level one — so its VLA size must be
-	       deferred like `a[][m]`. (`(a)[m]` adds no derivation: post==ret.) */
 	    if (post != ret)
 		arr_nested = 1;
 	} else
@@ -6073,10 +5711,6 @@ ST_FUNC void indir(void)
     if (vtop->r & VT_LVAL)
         gv(RC_INT);
     vtop->type = *pointed_type(&vtop->type);
-    /* 6.5.3.2: indirection on a `void *` yields a void lvalue of incomplete
-       type, which ISO C does not allow. gcc warns (clang errors); diagnose
-       under -pedantic. Skipped in unevaluated contexts (sizeof/_Alignof set
-       nocode_wanted), matching gcc which does not warn there. */
     if ((vtop->type.t & VT_BTYPE) == VT_VOID && !nocode_wanted)
         mcc_pedantic("dereferencing a 'void *' pointer");
     if (!(vtop->type.t & (VT_ARRAY | VT_VLA))
@@ -6089,16 +5723,6 @@ ST_FUNC void indir(void)
     }
 }
 
-/* 7.16.1.4: if the second argument to va_start (the last named parameter) is
-   declared with 'register' storage the behavior is undefined; gcc/clang warn
-   (-Wvarargs). Called after parse_builtin_params(0,"ee") leaves that argument's
-   lvalue on vtop. (On targets whose va_start macro expands to `&(last)` —
-   i386/arm — a register parameter is already rejected by the address-of-register
-   diagnostic; the x86_64 SysV macro reads the frame and never touches `last`, so
-   no UB manifests there.) Defined only for the targets whose va_start builtin
-   below calls it (riscv64, x86_64/PE, arm64); other targets handle va_start via
-   the address-of-register diagnostic or a frame-reading macro, so compiling it
-   for them would just warn unused. */
 #if defined MCC_TARGET_RISCV64 || defined MCC_TARGET_ARM64 \
     || (defined MCC_TARGET_X86_64 && defined MCC_TARGET_PE)
 static void check_va_start_register(void)
@@ -6109,9 +5733,6 @@ static void check_va_start_register(void)
 }
 #endif
 
-/* 7.16.1.4p3: passing a second argument to va_start that is not the last named
-   parameter of the enclosing function is undefined behavior; gcc/clang warn
-   (-Wvarargs). vtop holds that argument's lvalue. */
 static void check_va_start_last_param(void)
 {
     if ((mcc_state->warn_varargs & WARN_ON) && cur_func_last_param
@@ -6231,14 +5852,12 @@ static void parse_builtin_params(int nc, const char *args)
 		continue;
 	    case 'V':
                 type.t = VT_CONSTANT;
-                /* fall through */
 	    case 'v':
                 type.t |= VT_VOID;
                 mk_pointer (&type);
                 break;
 	    case 'S':
                 type.t = VT_CONSTANT;
-                /* fall through */
 	    case 's':
                 type.t |= char_type.t;
                 mk_pointer (&type);
@@ -6300,15 +5919,6 @@ static void parse_atomic(int atok)
                 expect("pointer");
             atom = pointed_type(atom_ptr);
             size = type_size(atom, &align);
-            /* load/store/exchange/compare_exchange route through the size-
-               generic, pointer-based libatomic helpers (needs -latomic, like
-               gcc/clang) when (a) the object is larger than a machine word, or
-               (b) it is an aggregate read by value (load/exchange) — the size-
-               suffixed helper would return the struct in a register and the
-               by-value store-back would misread it as an address (crash). A
-               1/2/4/8-byte scalar (and aggregate store/compare_exchange, which
-               have no by-value struct result) keep the lock-free size-suffixed
-               path (no -latomic). Fetch ops have no generic form. */
             if (atok <= TOK___atomic_compare_exchange
                 && (size > 8
                     || ((atom->t & VT_BTYPE) == VT_STRUCT
@@ -6327,7 +5937,7 @@ static void parse_atomic(int atok)
             if (use_generic) {
                 if ((vtop->type.t & VT_BTYPE) != VT_PTR)
                     mcc_error("pointer expected in argument %d", arg + 1);
-                break;          /* keep the pointer as-is for the generic call */
+                break;
             }
             if ((vtop->type.t & VT_BTYPE) != VT_PTR
              || type_size(pointed_type(&vtop->type), &align) != size)
@@ -6339,13 +5949,13 @@ static void parse_atomic(int atok)
             break;
         case 'l':
             if (use_generic)
-                break;          /* value passed by pointer (&tmp): keep it */
+                break;
             indir();
             gen_assign_cast(atom);
             break;
         case 's':
             if (use_generic)
-                break;          /* result written through this pointer: keep it */
+                break;
             save = 1;
             indir();
             store = *vtop;
@@ -6356,7 +5966,7 @@ static void parse_atomic(int atok)
             break;
         case 'b':
             if (use_generic) {
-                vpop();         /* generic __atomic_compare_exchange has no weak */
+                vpop();
                 break;
             }
             ct.t = VT_BOOL;
@@ -6370,23 +5980,20 @@ static void parse_atomic(int atok)
     skip(')');
 
     if (use_generic) {
-        /* __atomic_<op>(size_t size, void *ptr, <pointer args...>, <orders>).
-           Operands are already pointers (the stdatomic.h macros pass &tmp), so
-           we only prepend the size and drop the size suffix from the name. */
         int gn = arg - (atok == TOK___atomic_compare_exchange ? 1 : 0);
         vpushi(size);
         gen_cast_s(VT_SIZE_T);
-        vrott(gn + 1);                  /* size -> first argument */
-        vpush_helper_func(atok);        /* "__atomic_<op>" (no _N suffix) */
+        vrott(gn + 1);
+        vpush_helper_func(atok);
         vrott(gn + 2);
         gfunc_call(gn + 1);
         if (atok == TOK___atomic_compare_exchange) {
             vpushi(0);
-            vtop->type.t = VT_INT;      /* returns bool */
+            vtop->type.t = VT_INT;
             PUT_R_RET(vtop, VT_INT);
         } else {
             ct.t = VT_VOID;
-            vpush(&ct);                 /* result delivered via the pointer arg */
+            vpush(&ct);
         }
         return;
     }
@@ -6401,9 +6008,6 @@ static void parse_atomic(int atok)
         break;
     }
 
-    /* Aggregate atomic_load/atomic_exchange (which return the object by value)
-       were routed to the size-generic libcall above to avoid a register-return
-       ABI crash, so a by-value struct result cannot reach here. */
     snprintf(buf, sizeof(buf), "%s_%d", get_tok_str(atok, 0), size);
     vpush_helper_func(tok_alloc_const(buf));
     vrott(arg - save + 1);
@@ -6428,11 +6032,6 @@ static void parse_atomic(int atok)
     }
 }
 
-/* 6.5.16.2/6.5.2.4: a read-modify-write directly on an _Atomic object (`a += x`,
-   `a++`, ...) must be indivisible. Return the access size (1/2/4/8) if 'sv' is an
-   atomic scalar-integer lvalue and 'op' is one of + - & | ^ (the operators with a
-   direct __atomic_<op>_<size> helper); else 0. Float/pointer atomics and the
-   other compound operators are handled by the caller (diagnosed). */
 static int atomic_rmw_size(SValue *sv, int op)
 {
     int bt, size, align;
@@ -6440,11 +6039,10 @@ static int atomic_rmw_size(SValue *sv, int op)
         return 0;
     bt = sv->type.t & VT_BTYPE;
     if (bt == VT_PTR) {
-        /* atomic pointer: only += / -= / ++ / -- (scaled by pointee size). */
         if (op != '+' && op != '-')
             return 0;
         if (type_size(pointed_type(&sv->type), &align) <= 0)
-            return 0;   /* incomplete or void pointee: cannot scale */
+            return 0;
     } else {
         if (op != '+' && op != '-' && op != '&' && op != '|' && op != '^')
             return 0;
@@ -6458,11 +6056,6 @@ static int atomic_rmw_size(SValue *sv, int op)
     return size;
 }
 
-/* Lower an atomic read-modify-write. On entry the stack holds the atomic
-   lvalue then the right-hand value: [atomic_lvalue, rhs]. Emits a call to the
-   matching __atomic_<op>_<size> seq-cst helper and leaves the result on vtop —
-   the NEW value if ret_new (compound assignment / pre-inc-dec), else the OLD
-   value (post-inc-dec). 'op' must be one of + - & | ^ (see atomic_rmw_size). */
 static void gen_atomic_rmw(int op, int ret_new)
 {
     CType atomtype = vtop[-1].type;
@@ -6471,7 +6064,7 @@ static void gen_atomic_rmw(int op, int ret_new)
     const char *base;
 
     atomic_lowering++;
-    atomtype.t &= ~VT_QUALIFY;          /* the result is a plain value */
+    atomtype.t &= ~VT_QUALIFY;
     size = type_size(&atomtype, &align);
     switch (op) {
     case '+': base = ret_new ? "__atomic_add_fetch" : "__atomic_fetch_add"; break;
@@ -6482,23 +6075,20 @@ static void gen_atomic_rmw(int op, int ret_new)
     }
 
     if ((atomtype.t & VT_BTYPE) == VT_PTR) {
-        /* pointer atomic: scale the integer rhs by the pointee size so the
-           raw __atomic_fetch_add/sub on the pointer word matches C pointer
-           arithmetic (op is restricted to + / - by atomic_rmw_size). */
         int al;
         vpush_type_size(pointed_type(&atomtype), &al);
         gen_op('*');
     } else {
-        gen_assign_cast(&atomtype);     /* cast rhs (vtop) to the value type */
+        gen_assign_cast(&atomtype);
     }
-    vswap();                            /* [rhs, lvalue] */
+    vswap();
     mk_pointer(&vtop->type);
-    gaddrof();                          /* [rhs, &lvalue] */
-    vswap();                            /* [&lvalue, rhs] */
-    vpushi(0x5);                        /* memory_order_seq_cst */
+    gaddrof();
+    vswap();
+    vpushi(0x5);
     snprintf(buf, sizeof buf, "%s_%d", base, size);
     vpush_helper_func(tok_alloc_const(buf));
-    vrott(4);                           /* func below the 3 args */
+    vrott(4);
     gfunc_call(3);
 
     vpush(&atomtype);
@@ -6515,18 +6105,12 @@ static void gen_atomic_rmw(int op, int ret_new)
     atomic_lowering--;
 }
 
-/* Allocate a fresh private local stack slot (never reused) and return its
-   frame offset, for the atomic compare-exchange loop's temporaries. */
 static int alloc_local_slot(int size, int align)
 {
     loc = (loc - size) & -align;
     return loc;
 }
 
-/* Return the access size if 'sv' is an atomic scalar lvalue (integer or float,
-   1/2/4/8 bytes) eligible for the generic compare-exchange RMW loop — used for
-   the operators/types without a direct __atomic_<op> helper (*= /= %= <<= >>=,
-   and any float atomic). Pointers go through the direct path (atomic_rmw_size).*/
 static int atomic_cas_size(SValue *sv)
 {
     int bt, size, align;
@@ -6542,12 +6126,6 @@ static int atomic_cas_size(SValue *sv)
     return size;
 }
 
-/* Lower a general atomic read-modify-write via a compare-exchange retry loop:
-       old = *p;
-       do { new = old <op> rhs; } while (!__atomic_compare_exchange_N(
-                                            p, &old, new, 0, seq_cst, seq_cst));
-   Entry stack: [atomic_lvalue, rhs]. Leaves the result (new if ret_new, else
-   old) on vtop. Handles any arithmetic/shift operator and float atomics. */
 static void gen_atomic_cas_rmw(int op, int ret_new)
 {
     CType at = vtop[-1].type, pt;
@@ -6556,56 +6134,46 @@ static void gen_atomic_cas_rmw(int op, int ret_new)
     char buf[48];
 
     atomic_lowering++;
-    /* pointer-to-object keeps the object's qualifiers (so storing &lvalue does
-       not warn about discarding them); the value temporaries are unqualified. */
     pt = vtop[-1].type;
     mk_pointer(&pt);
     psize = type_size(&pt, &palign);
     at.t &= ~VT_QUALIFY;
     size = type_size(&at, &align);
 
-    s_pa = alloc_local_slot(psize, palign);     /* T*   : pointer to object */
-    s_vo = alloc_local_slot(size, align);       /* T    : old (expected)     */
-    s_vn = alloc_local_slot(size, align);       /* T    : new (desired)      */
-    s_vr = alloc_local_slot(size, align);       /* T    : rhs                */
+    s_pa = alloc_local_slot(psize, palign);
+    s_vo = alloc_local_slot(size, align);
+    s_vn = alloc_local_slot(size, align);
+    s_vr = alloc_local_slot(size, align);
 
-    /* s_vr = (T)rhs              [stack: lvalue, rhs] */
     gen_assign_cast(&at);
     vset(&at, VT_LOCAL | VT_LVAL, s_vr); vswap(); vstore(); vpop();
 
-    /* s_pa = &lvalue             [stack: lvalue] */
     mk_pointer(&vtop->type); gaddrof();
     vset(&pt, VT_LOCAL | VT_LVAL, s_pa); vswap(); vstore(); vpop();
 
-    /* s_vo = *s_pa  (initial load) */
     vset(&pt, VT_LOCAL | VT_LVAL, s_pa); indir();
     vset(&at, VT_LOCAL | VT_LVAL, s_vo); vswap(); vstore(); vpop();
 
     loop = gind();
-    /* s_vn = s_vo <op> s_vr */
     vset(&at, VT_LOCAL | VT_LVAL, s_vo);
     vset(&at, VT_LOCAL | VT_LVAL, s_vr);
     gen_op(op);
     gen_cast(&at);
     vset(&at, VT_LOCAL | VT_LVAL, s_vn); vswap(); vstore(); vpop();
 
-    /* ok = __atomic_compare_exchange_<size>(s_pa, &s_vo, s_vn, 0, 5, 5).
-       The desired value is read from its slot as an exact-size INTEGER so it is
-       passed in a general-purpose register (the size-suffixed helpers take it
-       there) — this is also what makes float atomics work (bit reinterpret). */
     {
         CType it;
         it.ref = NULL;
         it.t = (size == 8) ? VT_LLONG : (size == 2) ? VT_SHORT
              : (size == 1) ? VT_BYTE : VT_INT;
-        vset(&pt, VT_LOCAL | VT_LVAL, s_pa);        /* ptr            */
+        vset(&pt, VT_LOCAL | VT_LVAL, s_pa);
         vset(&at, VT_LOCAL | VT_LVAL, s_vo);
-        mk_pointer(&vtop->type); gaddrof();         /* &old (expected)*/
-        vset(&it, VT_LOCAL | VT_LVAL, s_vn);        /* desired (as int bits) */
+        mk_pointer(&vtop->type); gaddrof();
+        vset(&it, VT_LOCAL | VT_LVAL, s_vn);
     }
-    vpushi(0);                                      /* weak = false   */
-    vpushi(0x5);                                    /* success seq_cst*/
-    vpushi(0x5);                                    /* failure seq_cst*/
+    vpushi(0);
+    vpushi(0x5);
+    vpushi(0x5);
     snprintf(buf, sizeof buf, "__atomic_compare_exchange_%d", size);
     vpush_helper_func(tok_alloc_const(buf));
     vrott(7);
@@ -6614,24 +6182,14 @@ static void gen_atomic_cas_rmw(int op, int ret_new)
     vtop->type.t = VT_INT;
     PUT_R_RET(vtop, VT_INT);
 
-    /* loop back while the exchange failed (mirrors do { } while(!ok)). */
-    gen_test_zero(TOK_EQ);                          /* !ok */
+    gen_test_zero(TOK_EQ);
     c = gvtst(0, 0);
     gsym_addr(c, loop);
 
-    /* result: new value (compound/pre) or old value (post inc/dec). */
     vset(&at, VT_LOCAL | VT_LVAL, ret_new ? s_vn : s_vo);
     atomic_lowering--;
 }
 
-/* 6.2.5p27: a plain load/store of an _Atomic object must be indivisible. This
-   identifies the one case that mcc's normal codegen gets wrong: an _Atomic
-   *integer* scalar wider than a pointer (e.g. _Atomic long long on a 32-bit
-   target), whose plain access is two non-atomic word moves and so needs the
-   __atomic_load/store_<size> helper. Returns the size if so, else 0.
-   Excluded (already single-instruction atomic for an aligned object, no
-   helper): scalars <= a machine word; 8-byte FLOAT/double (one FP load/store);
-   aggregates and >8-byte objects (handled by parse_atomic's generic path). */
 static int atomic_store_needs_libcall(SValue *sv)
 {
     int size, align, bt;
@@ -6646,10 +6204,6 @@ static int atomic_store_needs_libcall(SValue *sv)
     return size;
 }
 
-/* Lower a plain `dest = rhs` where dest is an _Atomic scalar wider than a word,
-   to the seq-cst __atomic_store_<size>(&dest, value, order) helper. On entry the
-   '=' has been consumed and the dest lvalue is on vtop; leaves the stored value
-   on vtop (so `x = (g = v)` works). */
 static void gen_atomic_store_scalar(void)
 {
     CType at = vtop->type;
@@ -6661,25 +6215,20 @@ static void gen_atomic_store_scalar(void)
     size = type_size(&at, &align);
     s_v = alloc_local_slot(size, align);
 
-    mk_pointer(&vtop->type); gaddrof();         /* vtop = &dest */
-    expr_eq();                                  /* [&dest, rhs] */
+    mk_pointer(&vtop->type); gaddrof();
+    expr_eq();
     gen_assign_cast(&at);
-    vset(&at, VT_LOCAL | VT_LVAL, s_v); vswap(); vstore(); vpop();  /* tmp = rhs */
-    vset(&at, VT_LOCAL | VT_LVAL, s_v);         /* [&dest, value] */
-    vpushi(0x5);                                /* memory_order_seq_cst */
+    vset(&at, VT_LOCAL | VT_LVAL, s_v); vswap(); vstore(); vpop();
+    vset(&at, VT_LOCAL | VT_LVAL, s_v);
+    vpushi(0x5);
     snprintf(buf, sizeof buf, "__atomic_store_%d", size);
     vpush_helper_func(tok_alloc_const(buf));
     vrott(4);
     gfunc_call(3);
-    vset(&at, VT_LOCAL | VT_LVAL, s_v);         /* result = the stored value */
+    vset(&at, VT_LOCAL | VT_LVAL, s_v);
     atomic_lowering--;
 }
 
-/* True if a plain store to this _Atomic lvalue is an aggregate or a scalar
-   larger than 8 bytes (e.g. _Atomic struct, _Atomic long double) — none of
-   which has a single atomic store instruction, so it must go through the
-   size-generic __atomic_store(size, ptr, val, order) libcall (needs -latomic,
-   like the builtins and parse_atomic's generic path). */
 static int atomic_store_needs_generic(SValue *sv)
 {
     int size, align;
@@ -6691,9 +6240,6 @@ static int atomic_store_needs_generic(SValue *sv)
     return size > 8;
 }
 
-/* Lower `dest = rhs` where dest is an _Atomic aggregate or >8-byte object to the
-   seq-cst generic __atomic_store(size, &dest, &rhs, order). On entry '=' has been
-   consumed and the dest lvalue is on vtop; leaves the stored value on vtop. */
 static void gen_atomic_store_aggregate(void)
 {
     CType at = vtop->type;
@@ -6704,25 +6250,21 @@ static void gen_atomic_store_aggregate(void)
     size = type_size(&at, &align);
     s_v = alloc_local_slot(size, align);
 
-    mk_pointer(&vtop->type); gaddrof();         /* [&dest] */
-    expr_eq();                                  /* [&dest, rhs] */
+    mk_pointer(&vtop->type); gaddrof();
+    expr_eq();
     gen_assign_cast(&at);
-    vset(&at, VT_LOCAL | VT_LVAL, s_v); vswap(); vstore(); vpop();  /* tmp = rhs */
-    vset(&at, VT_LOCAL | VT_LVAL, s_v); mk_pointer(&vtop->type); gaddrof(); /* [&dest,&tmp] */
-    vpushi(0x5);                                /* memory_order_seq_cst */
+    vset(&at, VT_LOCAL | VT_LVAL, s_v); vswap(); vstore(); vpop();
+    vset(&at, VT_LOCAL | VT_LVAL, s_v); mk_pointer(&vtop->type); gaddrof();
+    vpushi(0x5);
     vpushi(size); gen_cast_s(VT_SIZE_T);
-    vrott(4);                                   /* [size, &dest, &tmp, order] */
-    vpush_helper_func(TOK___atomic_store);      /* generic (no _N suffix) */
+    vrott(4);
+    vpush_helper_func(TOK___atomic_store);
     vrott(5);
     gfunc_call(4);
-    vset(&at, VT_LOCAL | VT_LVAL, s_v);         /* result = the stored value */
+    vset(&at, VT_LOCAL | VT_LVAL, s_v);
     atomic_lowering--;
 }
 
-/* Read an _Atomic aggregate / >8-byte object atomically into a fresh temp via
-   the generic __atomic_load(size, &src, &tmp, order), and leave the temp lvalue
-   on vtop (so the surrounding struct copy proceeds from a private, consistent
-   snapshot). Called from vstore when the source of a copy is such an object. */
 static void gen_atomic_load_aggregate(void)
 {
     CType at = vtop->type;
@@ -6733,24 +6275,18 @@ static void gen_atomic_load_aggregate(void)
     size = type_size(&at, &align);
     s_v = alloc_local_slot(size, align);
 
-    mk_pointer(&vtop->type); gaddrof();         /* [&src] */
-    vset(&at, VT_LOCAL | VT_LVAL, s_v); mk_pointer(&vtop->type); gaddrof(); /* [&src,&tmp] */
-    vpushi(0x5);                                /* memory_order_seq_cst */
+    mk_pointer(&vtop->type); gaddrof();
+    vset(&at, VT_LOCAL | VT_LVAL, s_v); mk_pointer(&vtop->type); gaddrof();
+    vpushi(0x5);
     vpushi(size); gen_cast_s(VT_SIZE_T);
-    vrott(4);                                   /* [size, &src, &tmp, order] */
-    vpush_helper_func(TOK___atomic_load);       /* generic (no _N suffix) */
+    vrott(4);
+    vpush_helper_func(TOK___atomic_load);
     vrott(5);
     gfunc_call(4);
-    vset(&at, VT_LOCAL | VT_LVAL, s_v);         /* result = the loaded snapshot */
+    vset(&at, VT_LOCAL | VT_LVAL, s_v);
     atomic_lowering--;
 }
 
-/* Read a wider-than-word _Atomic scalar atomically (same predicate as the
-   store): replace the lvalue on vtop with __atomic_load_<size>(&src, seq_cst)'s
-   by-value result. Called from gen_cast, which every lvalue-to-rvalue
-   conversion of such an object passes through *before* the _Atomic qualifier is
-   stripped, so the read is a single atomic load rather than two word loads on a
-   32-bit target. */
 static void gen_atomic_load_scalar(void)
 {
     CType at = vtop->type;
@@ -6760,13 +6296,13 @@ static void gen_atomic_load_scalar(void)
     atomic_lowering++;
     at.t &= ~VT_QUALIFY;
     size = type_size(&at, &align);
-    mk_pointer(&vtop->type); gaddrof();         /* vtop = &src */
-    vpushi(0x5);                                 /* memory_order_seq_cst */
+    mk_pointer(&vtop->type); gaddrof();
+    vpushi(0x5);
     snprintf(buf, sizeof buf, "__atomic_load_%d", size);
     vpush_helper_func(tok_alloc_const(buf));
     vrott(3);
     gfunc_call(2);
-    vpush(&at);                                  /* rvalue: no VT_LVAL/VT_ATOMIC_BIT */
+    vpush(&at);
     PUT_R_RET(vtop, at.t);
     bt = at.t & VT_BTYPE;
     if (bt == VT_BYTE || bt == VT_SHORT || bt == VT_BOOL)
@@ -6774,10 +6310,7 @@ static void gen_atomic_load_scalar(void)
     atomic_lowering--;
 }
 
-/* ---- -Wformat: printf/scanf format-string vs argument checking (opt-in) ---- */
 
-/* If a known printf/scanf-family function, fill *fmt_arg / *first_vararg with
-   their 1-based argument positions and return 1 (sets *is_scanf); else 0. */
 static int format_func_spec(const char *name, int *is_scanf,
                             int *fmt_arg, int *first_vararg)
 {
@@ -6800,9 +6333,6 @@ static int format_func_spec(const char *name, int *is_scanf,
     return 0;
 }
 
-/* Return a pointer to the bytes of a constant string-literal operand (a char
-   array in a non-relocated data section), bounding the readable length in
-   *avail; or NULL if sv is not such a literal. */
 static const char *format_str_literal(SValue *sv, int *avail)
 {
     Section *ssec;
@@ -6826,9 +6356,6 @@ static const char *format_str_literal(SValue *sv, int *avail)
     return (const char *)(ssec->data + off);
 }
 
-/* Broad type class of a (default-promoted) argument: 0 integer, 1 floating,
-   2 pointer, 3 other (struct/complex/...). Kept coarse to avoid false positives
-   on length-modifier width mismatches — only cross-class errors are reported. */
 static int format_arg_class(CType *t)
 {
     int bt = t->t & VT_BTYPE;
@@ -6841,31 +6368,25 @@ static int format_arg_class(CType *t)
     return 3;
 }
 
-/* Parse a printf/scanf format string and check each conversion against the
-   corresponding variadic argument (args[0..nvar-1] are contiguous vstack
-   SValues). Reports class mismatches and argument-count mismatches. */
 static void format_check(int is_scanf, const char *fmt, int favail,
                          SValue *args, int nvar)
 {
     int i = 0, used = 0;
     while (i < favail && fmt[i]) {
-        int cls_want;       /* 0 int, 1 float, 2 pointer */
+        int cls_want;
         char conv;
         if (fmt[i] != '%') { i++; continue; }
         i++;
         if (i < favail && fmt[i] == '%') { i++; continue; }
-        /* flags */
         while (i < favail && (fmt[i]=='-'||fmt[i]=='+'||fmt[i]==' '
                               ||fmt[i]=='#'||fmt[i]=='0')) i++;
-        if (is_scanf && i < favail && fmt[i] == '*') { i++; /* assignment-suppress: no arg */
-            /* still need to skip width+conv below, but consumes no argument */ }
-        /* width (printf '*' consumes an int arg) */
+        if (is_scanf && i < favail && fmt[i] == '*') { i++;
+              }
         if (!is_scanf && i < favail && fmt[i] == '*') {
             if (used < nvar && format_arg_class(&args[used].type) != 0)
                 mcc_warning_c(warn_format)("field width '*' expects an int argument");
             used++; i++;
         } else while (i < favail && fmt[i] >= '0' && fmt[i] <= '9') i++;
-        /* precision */
         if (i < favail && fmt[i] == '.') {
             i++;
             if (!is_scanf && i < favail && fmt[i] == '*') {
@@ -6874,7 +6395,6 @@ static void format_check(int is_scanf, const char *fmt, int favail,
                 used++; i++;
             } else while (i < favail && fmt[i] >= '0' && fmt[i] <= '9') i++;
         }
-        /* length modifiers (skip; width not checked, only class) */
         while (i < favail && (fmt[i]=='h'||fmt[i]=='l'||fmt[i]=='L'
                               ||fmt[i]=='j'||fmt[i]=='z'||fmt[i]=='t')) i++;
         if (i >= favail || !fmt[i]) break;
@@ -6888,9 +6408,8 @@ static void format_check(int is_scanf, const char *fmt, int favail,
         case 's': case 'p': case 'n':
             cls_want = 2; break;
         default:
-            continue;       /* unknown conversion: don't guess */
+            continue;
         }
-        /* scanf: every conversion takes a pointer to the target object. */
         if (is_scanf) cls_want = 2;
         if (used >= nvar) {
             mcc_warning_c(warn_format)(
@@ -6913,9 +6432,6 @@ static void format_check(int is_scanf, const char *fmt, int favail,
         mcc_warning_c(warn_format)("too many arguments for format string");
 }
 
-/* Set by the parenthesized-type-name branch of unary() when sizeof/_Alignof
-   parsed a type-name (vs. an expression); read back in the sizeof/_Alignof
-   handler to diagnose '_Alignof(expression)' (6.5.3.4). */
 static int sizeof_parsed_type;
 
 ST_FUNC void unary(void)
@@ -6934,10 +6450,10 @@ ST_FUNC void unary(void)
     case TOK_EXTENSION:
         next();
         goto tok_next;
-    case TOK_U16CHAR:           /* char16_t (unsigned short) */
+    case TOK_U16CHAR:
         t = VT_SHORT|VT_UNSIGNED;
         goto push_tokc;
-    case TOK_U32CHAR:           /* char32_t (unsigned int) */
+    case TOK_U32CHAR:
         t = VT_INT|VT_UNSIGNED;
         goto push_tokc;
     case TOK_LCHAR:
@@ -6997,9 +6513,7 @@ ST_FUNC void unary(void)
     case TOK___FUNCTION__:
         if (!gnu_ext)
             goto tok_identifier;
-        /* fall through */
     case TOK___FUNC__:
-        /* 6.4.2.2: __func__ is implicitly declared only inside a function. */
         if (!funcname[0])
             mcc_warning("'__func__' is not defined outside of function scope");
         tok = TOK_STR;
@@ -7008,10 +6522,10 @@ ST_FUNC void unary(void)
         tokc.str.size = tokcstr.size;
         tokc.str.data = tokcstr.data;
         goto case_TOK_STR;
-    case TOK_U16STR:            /* char16_t string (unsigned short elements) */
+    case TOK_U16STR:
         t = VT_SHORT | VT_UNSIGNED;
         goto str_init;
-    case TOK_U32STR:            /* char32_t string (unsigned int elements) */
+    case TOK_U32STR:
         t = VT_INT | VT_UNSIGNED;
         goto str_init;
     case TOK_LSTR:
@@ -7021,7 +6535,7 @@ ST_FUNC void unary(void)
         t = VT_INT;
 #endif
         goto str_init;
-    case TOK_U8STR:             /* u8"…" UTF-8 string (char elements) */
+    case TOK_U8STR:
         t = char_type.t;
         goto str_init;
     case TOK_STR:
@@ -7046,13 +6560,6 @@ ST_FUNC void unary(void)
             skip(')');
             if (tok == '{') {
                 if (global_expr) {
-                    /* 6.5.2.5p5/6.6p7: a compound literal at BLOCK scope has
-                       automatic storage duration, so its address is not an
-                       address constant and it may not appear in a static-storage
-                       initializer (`static int *p = (int[]){1,2,3};`). At file
-                       scope it has static storage and is fine. gcc/clang reject
-                       the block-scope case as "initializer element is not
-                       constant". */
                     if (local_scope)
                         mcc_error("initializer element is not constant");
                     r = VT_CONST;
@@ -7068,12 +6575,6 @@ ST_FUNC void unary(void)
                 return;
             } else {
                 unary();
-                /* 6.5.4p2: unless the type name is void, the type name in a
-                   cast shall be a scalar type (the operand likewise). Casting
-                   to an array type, or to a struct unrelated to the operand,
-                   is a constraint violation. A no-op cast to a compatible
-                   struct, a cast to a complex type, and the GNU cast-to-union
-                   extension stay accepted. */
                 if (type.t & (VT_ARRAY | VT_VLA))
                     mcc_error("conversion to non-scalar type requested");
                 if ((type.t & VT_BTYPE) == VT_STRUCT
@@ -7082,16 +6583,8 @@ ST_FUNC void unary(void)
                     && !is_compatible_unqualified_types(&type, &vtop->type))
                     mcc_error("conversion to non-scalar type requested");
                 gen_cast(&type);
-                /* -Wunused-value: an explicit `(void)expr` is the idiomatic way
-                   to discard a value, so it is treated as having effect. */
                 if ((type.t & VT_BTYPE) == VT_VOID)
                     expr_has_effect = 1;
-                /* 6.5.4: a cast does not yield an lvalue. A real conversion
-                   already materialised an rvalue; only a no-op cast of an
-                   lvalue (e.g. `(int)i`) leaves VT_LVAL set, which would wrongly
-                   accept `(int)i = x` / `&(int)i`. Force the value into a
-                   register so it is a true rvalue. Aggregates/complex/void
-                   cannot go to a register and are never assignable here anyway. */
                 if ((vtop->r & VT_LVAL) && !nocode_wanted && !asm_lvalue_cast) {
                     int bt = vtop->type.t & VT_BTYPE;
                     if (bt != VT_STRUCT && bt != VT_VOID
@@ -7126,15 +6619,12 @@ ST_FUNC void unary(void)
         unary();
         if (vtop->type.t & VT_BITFIELD)
             mcc_error("cannot take address of bit-field");
-        /* 6.7.1: the address of a register-qualified object may not be taken. */
         if (vtop->sym && vtop->sym->a.is_register)
             mcc_error("address of register variable '%s' requested",
                       get_tok_str(vtop->sym->v, NULL));
         if ((vtop->type.t & VT_BTYPE) != VT_FUNC &&
             !(vtop->type.t & (VT_ARRAY | VT_VLA)))
             test_lvalue();
-        /* 6.5.3.2: the operand of unary & must be an lvalue; a by-value
-           call result (and its members) is an rvalue. */
         if (vtop->r & VT_NONLVAL)
             mcc_error("cannot take the address of a function-call result");
         if (vtop->sym)
@@ -7194,23 +6684,12 @@ ST_FUNC void unary(void)
         if (type.t & VT_BITFIELD)
             mcc_error("'%s' cannot be applied to a bit-field",
                       t == TOK_SIZEOF ? "sizeof" : "_Alignof");
-        /* 6.5.3.4: the ISO `_Alignof` (TOK_ALIGNOF3) shall be applied to a
-           parenthesized type-name; applying it to an expression is forbidden
-           (gcc/clang reject `_Alignof(expr)`). The GNU spellings `__alignof`/
-           `__alignof__` permit an expression operand, so they are exempt. */
         if (t == TOK_ALIGNOF3 && !sizeof_parsed_type)
             mcc_pedantic("ISO C does not allow '_Alignof' applied to an expression");
-        /* 6.5.3.4: sizeof/_Alignof shall not be applied to a function type.
-           gcc/clang accept it as an extension (sizeof yields 1); diagnose
-           under -pedantic. */
         if ((type.t & VT_BTYPE) == VT_FUNC)
             mcc_pedantic(t == TOK_SIZEOF
                          ? "'sizeof' applied to a function type"
                          : "'_Alignof' applied to a function type");
-        /* 6.5.3.4: void is an incomplete type. sizeof(void) is a GNU
-           extension yielding 1 (diagnosed under -pedantic); the ISO
-           `_Alignof(void)` is rejected outright by gcc/clang, while the GNU
-           `__alignof`/`__alignof__` accept it (yielding 1) and are exempt. */
         if ((type.t & VT_BTYPE) == VT_VOID) {
             if (t == TOK_SIZEOF)
                 mcc_pedantic("'sizeof' applied to a void type");
@@ -7221,7 +6700,6 @@ ST_FUNC void unary(void)
             vpush_type_size(&type, &align);
             gen_cast_s(VT_SIZE_T);
         } else {
-            /* 6.5.3.4: _Alignof shall not be applied to an incomplete type. */
             if (type_size(&type, &align) < 0)
                 mcc_error("'_Alignof' applied to an incomplete type");
             s = NULL;
@@ -7274,17 +6752,13 @@ ST_FUNC void unary(void)
         break;
     case TOK_builtin_complex:
 	{
-	    /* __builtin_complex(re, im): construct a complex value from two real
-	       floating parts (C11 CMPLX is defined in terms of this). gcc requires
-	       both args to be the same real floating type; we take the real part's
-	       type (promoted to a floating type) as the common element base. */
 	    CType cbase, ccplx;
 	    SValue r;
 	    next();
 	    skip('(');
-	    expr_eq();                          /* [re] */
+	    expr_eq();
 	    skip(',');
-	    expr_eq();                          /* [re, im] */
+	    expr_eq();
 	    skip(')');
 	    cbase = vtop[-1].type;
 	    cbase.t &= (VT_BTYPE | VT_LONG);
@@ -7294,11 +6768,6 @@ ST_FUNC void unary(void)
 	    mk_complex_type(&ccplx, &cbase);
 	    if ((vtop[-1].r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST
 		&& (vtop[0].r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) {
-		/* Both parts are compile-time constants: emit the complex into a
-		   rodata anonymous object so the result is itself a constant
-		   usable in a static/file-scope initializer (§7.3.1/§7.3.9.3),
-		   not just at runtime. Mirrors how struct compound literals get a
-		   static home (gv()'s float-constant path). vtop=im, vtop[-1]=re. */
 		init_params p = { .sec = rodata_section };
 		unsigned long offset;
 		int bsz, bal, csz, cal;
@@ -7306,16 +6775,16 @@ ST_FUNC void unary(void)
 		csz = type_size(&ccplx, &cal);
 		if (NODATA_WANTED) { csz = 0; cal = 1; }
 		offset = section_add(p.sec, csz, cal);
-		init_putv(&p, &cbase, offset + bsz);   /* imag = im (vtop) */
-		init_putv(&p, &cbase, offset);         /* real = re (now vtop) */
+		init_putv(&p, &cbase, offset + bsz);
+		init_putv(&p, &cbase, offset);
 		vpush_ref(&ccplx, p.sec, offset, csz);
 		vtop->r |= VT_LVAL;
 	    } else {
 		cplx_local(&ccplx, &r);
-		gen_cast(&cbase);                   /* im -> base */
-		cplx_store_part(&r, 1);             /* imag part (consumes im) */
-		gen_cast(&cbase);                   /* re -> base */
-		cplx_store_part(&r, 0);             /* real part (consumes re) */
+		gen_cast(&cbase);
+		cplx_store_part(&r, 1);
+		gen_cast(&cbase);
+		cplx_store_part(&r, 0);
 		vpushv(&r);
 	    }
 	}
@@ -7360,7 +6829,6 @@ ST_FUNC void unary(void)
             default:
                 bop = BB_PARITY; op_unsigned = 1; break;
             }
-            /* width follows the 'l'/'ll' suffix: plain=int(32), l=long, ll=64. */
             switch (btok) {
             case TOK_builtin_ffsll: case TOK_builtin_clzll: case TOK_builtin_ctzll:
             case TOK_builtin_clrsbll: case TOK_builtin_popcountll: case TOK_builtin_parityll:
@@ -7381,7 +6849,6 @@ ST_FUNC void unary(void)
                 vpop();
                 vpushi(fold_bit_builtin(bop, bw, cv));
             } else {
-                /* not constant: call the runtime helper of the same name. */
                 vpush_helper_func(btok);
                 vrott(2);
                 gfunc_call(1);
@@ -7564,7 +7031,7 @@ ST_FUNC void unary(void)
         next();
         unary();
         inc(0, t);
-        expr_has_effect = 1;            /* -Wunused-value: prefix ++/-- */
+        expr_has_effect = 1;
         break;
     case '-':
         next();
@@ -7634,12 +7101,6 @@ ST_FUNC void unary(void)
 		int v, i;
 		parse_btype(&type, &ad, 0);
 		type_decl(&type, &ad, &v, TYPE_ABSTRACT);
-		/* 6.5.1.1p2: a generic association type shall be a complete
-		   object type other than a variably modified type. A VLA is
-		   rejected (gcc and clang both hard-error); a function type and
-		   an incomplete object type (void / forward-declared struct) are
-		   diagnosed under -pedantic ("before C2Y" — C2Y relaxes the
-		   incomplete case and both references accept it by default). */
 		if (type.t & VT_VLA)
 		    mcc_error("'_Generic' association has a variably modified type");
 		else if ((type.t & VT_BTYPE) == VT_FUNC)
@@ -7648,14 +7109,10 @@ ST_FUNC void unary(void)
 		else {
 		    int gsz, galign;
 		    gsz = type_size(&type, &galign);
-		    /* void is incomplete but mcc's type_size(void) is 1 (the GNU
-		       sizeof(void) extension), so test it explicitly. */
 		    if (gsz < 0 || (type.t & VT_BTYPE) == VT_VOID)
 			mcc_pedantic("ISO C forbids a '_Generic' association "
 				     "with an incomplete type");
 		}
-		/* 6.5.1.1p2: no two generic associations shall specify
-		   compatible types. */
 		for (i = 0; i < nb_assoc; i++)
 		    if (compare_types(&assoc_types[i], &type, 0))
 			mcc_error("_Generic specifies two compatible types");
@@ -7721,14 +7178,12 @@ special_math_val:
             const char *name = get_tok_str(t, NULL);
             if (tok != '(')
                 mcc_error("'%s' undeclared", name);
-            /* 6.5.1: C11 removed implicit function declarations — diagnose
-               regardless of the enclosing function's (K&R) style. */
             mcc_warning_c(warn_implicit_function_declaration)(
                 "implicit declaration of function '%s'", name);
             s = external_global_sym(t, &func_old_type);
         }
 
-        s->a.used = 1;          /* -Wunused-variable: a reference counts as use */
+        s->a.used = 1;
 
         r = s->r;
         if ((r & VT_VALMASK) < VT_CONST)
@@ -7751,20 +7206,17 @@ special_math_val:
         }
         break;
     }
-    
+
     while (1) {
         if (tok == TOK_INC || tok == TOK_DEC) {
             inc(1, tok);
-            expr_has_effect = 1;        /* -Wunused-value: postfix ++/-- */
+            expr_has_effect = 1;
             next();
         } else if (tok == '.' || tok == TOK_ARROW) {
             int qualifiers, cumofs, base_nonlval;
             if (tok == TOK_ARROW)
                 indir();
             qualifiers = vtop->type.t & VT_QUALIFY;
-            /* a member of a non-lvalue struct (a by-value call result) is itself
-               a non-lvalue; carry the flag across the address computation below.
-               (`->` dereferenced a pointer above, yielding a real lvalue.) */
             base_nonlval = vtop->r & VT_NONLVAL;
             test_lvalue();
             next();
@@ -7797,9 +7249,6 @@ special_math_val:
             TokenString *p, *p2;
             const char *fmt_fname = NULL;
 
-            /* -Wformat: remember the callee name (before vtop is consumed) so a
-               printf/scanf-family call can be format-checked after its args are
-               parsed. Gated on warn_format, so a default build is unaffected. */
             if ((mcc_state->warn_format & WARN_ON)
                 && (vtop->r & VT_SYM) && vtop->sym)
                 fmt_fname = get_tok_str(vtop->sym->v, NULL);
@@ -7866,9 +7315,6 @@ special_math_val:
                     } else {
                         expr_eq();
                         gfunc_param_typed(s, sa);
-                        /* 6.5.2.2: call arguments are unsequenced w.r.t. each
-                           other — treat each as its own region so f(i++, j++)
-                           does not falsely warn. */
                         seqp_flush();
                     }
                     nb_args++;
@@ -7893,16 +7339,11 @@ special_math_val:
                     expr_eq();
                     gfunc_param_typed(s, sa);
                     end_macro();
-                    seqp_flush();       /* per-argument region (see above) */
+                    seqp_flush();
                 }
                 vrev(n);
             }
 
-            /* -Wformat: all arguments are now on the value stack in call order
-               (vtop[0] = last argument). Check a recognized printf/scanf call
-               whose format operand is a string literal. Skipped under
-               -freverse-funcargs (different stack discipline) and for
-               struct-returning callees (a hidden sret arg shifts the indices). */
             if (fmt_fname && !mcc_state->reverse_funcargs
                 && (s->type.t & VT_BTYPE) != VT_STRUCT) {
                 int is_scanf, fa, fv;
@@ -7923,7 +7364,7 @@ special_math_val:
             next();
             vcheck_cmp();
             gfunc_call(nb_args);
-            expr_has_effect = 1;        /* -Wunused-value: a function call */
+            expr_has_effect = 1;
 
             if (ret_nregs < 0) {
                 vsetc(&ret.type, ret.r, &ret.c);
@@ -7974,10 +7415,6 @@ special_math_val:
 #endif
                 }
             }
-            /* 6.5.2.2: a function call is not an lvalue; a struct/union returned
-               by value lives in an addressable temp, so mark it non-modifiable
-               (VT_NONLVAL) — `g().m = x` / `&g().m` are rejected while reading
-               and copying the result still work. */
             if ((s->type.t & VT_BTYPE) == VT_STRUCT)
                 vtop->r |= VT_NONLVAL;
             if (s->f.func_noreturn) {
@@ -8181,7 +7618,7 @@ static void expr_landor(int op)
         else
             vpop();
         next();
-        seqp_flush();       /* 6.5p2: && / || sequence the LHS before the RHS */
+        seqp_flush();
         expr_landor_next(op);
     }
     if (cc || f) {
@@ -8214,7 +7651,7 @@ static void expr_cond(void)
     if (tok == '?') {
         next();
 	c = condition_3way();
-        seqp_flush();       /* 6.5p2: ?: sequences the condition before either arm */
+        seqp_flush();
         g = (tok == ':' && gnu_ext);
         tt = 0;
         if (!g) {
@@ -8262,19 +7699,11 @@ static void expr_cond(void)
           type_incompatibility_error(&sv.type, &vtop->type,
             "type mismatch in conditional expression (have '%s' and '%s')");
 
-        /* 6.5.15p3: 'void' is allowed only when BOTH the second and third
-           operands are void (result void). Exactly one void operand is a
-           constraint violation; gcc/clang diagnose under -pedantic. */
         if (((sv.type.t & VT_BTYPE) == VT_VOID)
             != ((vtop->type.t & VT_BTYPE) == VT_VOID))
           mcc_pedantic("ISO C forbids conditional expression with "
                        "only one void operand");
 
-        /* 6.6: in an integer-constant-expression context, a non-constant object
-           operand disqualifies the conditional even when a constant condition
-           selects the other (constant) arm (`1?3:v`). Flag the discarded arm if
-           it is a non-constant so the unconditional-ICE sites (bit-field width,
-           enumerator, case label) diagnose it; gcc/clang reject. */
         if (CONST_WANTED && c >= 0) {
             SValue *dead = (c == 1) ? vtop : &sv;
             if ((dead->r & (VT_VALMASK | VT_LVAL | VT_SYM)) != VT_CONST)
@@ -8339,18 +7768,6 @@ static void expr_cond(void)
     }
 }
 
-/* -Wparentheses: set by expr_eq() to whether the expression it just parsed was,
-   at its top syntactic level, a plain or compound assignment. The outermost
-   expr_eq of a controlling expression writes this last (after its recursive
-   calls return), so a parenthesised assignment `(x = y)` correctly reports 0.
-   Read immediately after a controlling expression by the if/while/for/do
-   handlers; ignored everywhere else. */
-/* expr_was_assign / expr_has_effect are declared near the top of this file (used
-   by gen_op above). expr_has_effect (-Wunused-value): tracks whether the LAST
-   operation while evaluating a full expression had a side effect — because
-   operands are evaluated before their operator, the last operation reflects the
-   expression's TOP-LEVEL operator (call / assignment / ++ / -- / (void)-cast set
-   it; gen_op clears it; a bare lvalue/constant leaves the reset value 0). */
 static void expr_eq(void)
 {
     int t;
@@ -8360,13 +7777,8 @@ static void expr_eq(void)
     if ((t = tok) == '=' || TOK_ASSIGN(t)) {
         was_assign = 1;
         test_lvalue();
-        /* 6.5.16.1: the left operand must be a modifiable lvalue; a by-value
-           call result (and its members) is not assignable. */
         if (vtop->r & VT_NONLVAL)
             mcc_error("expression is not assignable (function-call result)");
-        /* 6.5.16.2: a compound assignment to an _Atomic object is an atomic
-           read-modify-write. Route the supported integer ops through the
-           atomic helpers; reject the rest rather than silently miscompile. */
         if (t != '=' && (vtop->type.t & VT_ATOMIC_BIT)) {
             int op = TOK_ASSIGN_OP(t);
             if (atomic_rmw_size(vtop, op)) {
@@ -8384,17 +7796,11 @@ static void expr_eq(void)
             mcc_error("this compound assignment to an '_Atomic' object is not "
                       "supported (float, or larger than a machine word)");
         }
-        /* 6.2.5p27: a plain store to a wider-than-word _Atomic scalar (e.g.
-           _Atomic long long on a 32-bit target) must be atomic, not two word
-           writes. */
         if (t == '=' && atomic_store_needs_libcall(vtop)) {
             next();
             gen_atomic_store_scalar();
             return;
         }
-        /* 6.2.5p27: a plain store to an _Atomic aggregate or >8-byte object is a
-           non-atomic struct/multi-word copy; route it through the generic
-           __atomic_store libcall instead. */
         if (t == '=' && atomic_store_needs_generic(vtop)) {
             next();
             gen_atomic_store_aggregate();
@@ -8410,11 +7816,7 @@ static void expr_eq(void)
         }
         vstore();
     }
-    /* written after any recursive expr_eq() above, so the OUTERMOST assignment
-       of a controlling expression is the value seen by its handler. */
     expr_was_assign = was_assign;
-    /* -Wunused-value: an assignment is the top-level operator and has effect.
-       Set after vstore() so any gen_op() inside it does not re-clear the flag. */
     if (was_assign)
         expr_has_effect = 1;
 }
@@ -8423,24 +7825,18 @@ ST_FUNC void gexpr(void)
 {
     expr_eq();
     if (tok == ',') {
-        /* 6.6p3: an evaluated constant expression shall not contain a comma
-           operator (the exception is an unevaluated subexpression). */
         if (CONST_WANTED && !NOEVAL_WANTED)
             mcc_pedantic("ISO C forbids a comma operator "
                          "in a constant expression");
         do {
             vpop();
             next();
-            seqp_flush();       /* 6.5p2: the comma operator is a sequence point */
+            seqp_flush();
             expr_eq();
         } while (tok == ',');
 
         convert_parameter_type(&vtop->type);
 
-        /* 6.5.17: the comma operator does not yield an lvalue, so `(a,b)=x` and
-           `&(a,b)` are constraint violations. Force a scalar result into a
-           register so VT_LVAL is dropped; aggregates/arrays/functions/complex
-           cannot go to a register and are not assignable here anyway. */
         if ((vtop->r & VT_LVAL) && !nocode_wanted) {
             int bt = vtop->type.t & VT_BTYPE;
             if (bt != VT_STRUCT && bt != VT_VOID && bt != VT_FUNC
@@ -8468,7 +7864,6 @@ static inline int64_t expr_const64(void)
     expr_const1();
     if ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM | VT_NONCONST)) != VT_CONST)
         expect("constant expression");
-    /* 6.6: an integer constant expression shall have integer type. */
     if (is_float(vtop->type.t))
         mcc_error("integer constant expression must have integer type");
     c = vtop->c.i;
@@ -8717,21 +8112,19 @@ static void vla_restore(int loc)
         gen_vla_sp_restore(loc);
 }
 
-/* 6.8.6.1: is the VLA scope with the given birth id currently in scope? */
 static int vla_scope_open(int id)
 {
     int i;
     if (id == 0)
         return 1;
     if (vla_track_ovf)
-        return 1;       /* too many VLAs tracked: be permissive, don't false-positive */
+        return 1;
     for (i = 0; i < nb_vla_open; i++)
         if (vla_open_birth[i] == id)
             return 1;
     return 0;
 }
 
-/* 6.8.6.1: birth id of the innermost currently-open VLA scope (0 = none). */
 static int vla_inner_scope(void)
 {
     return nb_vla_open ? vla_open_birth[nb_vla_open - 1] : 0;
@@ -8756,12 +8149,6 @@ static void new_scope(struct scope *o)
     cur_scope->vla.num = 0;
     cur_scope->vla_diag = 0;
 
-    /* 6.10.6: remember the #pragma STDC state in effect at scope entry so it
-       can be restored when this compound statement closes.  block() overrides
-       these with the pre-lookahead snapshot (see stdc_save below), because the
-       caller has already consumed one token past the opening brace — a pragma
-       on the line right after '{' would otherwise be captured as the entry
-       state and wrongly persist past the block. */
     o->stdc_fp_contract = mcc_state->stdc_fp_contract;
     o->stdc_fenv_access = mcc_state->stdc_fenv_access;
     o->stdc_cx_limited  = mcc_state->stdc_cx_limited;
@@ -8773,7 +8160,6 @@ static void new_scope(struct scope *o)
 
 static void prev_scope(struct scope *o, int is_expr)
 {
-    /* 6.8.6.1: the VLAs declared in this scope go out of scope. */
     if (o->vla_diag) {
         nb_vla_open -= o->vla_diag;
         if (nb_vla_open < 0)
@@ -8790,9 +8176,6 @@ static void prev_scope(struct scope *o, int is_expr)
 
     label_pop(&local_label_stack, o->llstk, is_expr);
 
-    /* -Wunused-variable: warn for each automatic local in this scope that was
-       never referenced. A statement-expression (is_expr) is left alone — its
-       last value is implicitly used. Walk before sym_pop frees the syms. */
     if ((mcc_state->warn_unused_variable & WARN_ON) && !is_expr) {
         Sym *sm;
         for (sm = local_stack; sm && sm != o->lstk; sm = sm->prev) {
@@ -8807,7 +8190,6 @@ static void prev_scope(struct scope *o, int is_expr)
 
     sym_pop(&local_stack, o->lstk, is_expr);
 
-    /* 6.10.6: a #pragma STDC switch set inside this block does not leak out. */
     mcc_state->stdc_fp_contract = o->stdc_fp_contract;
     mcc_state->stdc_fenv_access = o->stdc_fenv_access;
     mcc_state->stdc_cx_limited  = o->stdc_cx_limited;
@@ -8868,11 +8250,6 @@ static void gexpr_decl(void)
     }
 }
 
-/* 6.8.1: does the current token begin a declaration-specifier (so what follows
-   a label would be a *declaration*, not a statement)? Covers type specifiers,
-   qualifiers, storage-class and function specifiers, _Alignas/_Static_assert and
-   a typedef name. Used to diagnose `label: <declaration>`, a constraint in
-   C99/C11 that C23 lifted. */
 static int tok_starts_declspec(void)
 {
     switch (tok) {
@@ -8909,19 +8286,11 @@ again:
     t = tok;
     if (TOK_HAS_VALUE(t))
         goto expr;
-    /* 6.10.6: snapshot the #pragma STDC state BEFORE the lookahead next()
-       below crosses into the block body — a pragma directly after '{' (or
-       before a 'for' header) is processed by that next(), so capturing here
-       gives the true pre-block state for new_scope/prev_scope to restore. */
     stdc_save_fp = mcc_state->stdc_fp_contract;
     stdc_save_fenv = mcc_state->stdc_fenv_access;
     stdc_save_cx = mcc_state->stdc_cx_limited;
     next();
 
-    /* 6.5p2 (10.1): every statement begins a fresh full-expression context, so
-       side effects never leak across the statement boundary (a sequence point).
-       Controller/return expressions below call seqp_check() at their end to
-       diagnose; the for-header's three expressions flush between themselves. */
     seqp_reset();
 
     if (debug_modes)
@@ -8931,10 +8300,10 @@ again:
         new_scope_s(&o);
         skip('(');
         gexpr_decl();
-        if (expr_was_assign)    /* -Wparentheses: `if (x = y)` */
+        if (expr_was_assign)
             mcc_warning_c(warn_parentheses)("suggest parentheses around "
                 "assignment used as a truth value");
-        seqp_check();           /* 6.5p2: diagnose the controlling expression */
+        seqp_check();
         a = gvtst(1, 0);
         skip(')');
         block(0);
@@ -8954,10 +8323,10 @@ again:
         d = gind();
         skip('(');
         gexpr();
-        if (expr_was_assign)    /* -Wparentheses: `while (x = y)` */
+        if (expr_was_assign)
             mcc_warning_c(warn_parentheses)("suggest parentheses around "
                 "assignment used as a truth value");
-        seqp_check();           /* 6.5p2: diagnose the controlling expression */
+        seqp_check();
         a = gvtst(1, 0);
         skip(')');
         b = 0;
@@ -9002,14 +8371,12 @@ again:
             check_func_return();
 
     } else if (t == TOK_RETURN) {
-        /* 6.7.4p9: a _Noreturn function that returns to its caller is UB;
-           gcc and clang both warn on a return statement inside one. */
         if (cur_func_noreturn)
             mcc_warning("function declared 'noreturn' has a 'return' statement");
         b = (func_vt.t & VT_BTYPE) != VT_VOID;
         if (tok != ';') {
             gexpr();
-            seqp_check();       /* 6.5p2: diagnose the return expression */
+            seqp_check();
             if (b) {
                 gen_assign_cast(&func_vt);
             } else {
@@ -9065,24 +8432,24 @@ again:
             }
             in_for_init = 0;
         }
-        seqp_flush();           /* 6.5p2: ; after the for-init is a sequence pt */
+        seqp_flush();
         skip(';');
         a = b = 0;
         c = d = gind();
         if (tok != ';') {
             gexpr();
-            if (expr_was_assign)    /* -Wparentheses: `for (; x = y; )` */
+            if (expr_was_assign)
                 mcc_warning_c(warn_parentheses)("suggest parentheses around "
                     "assignment used as a truth value");
             a = gvtst(1, 0);
         }
-        seqp_flush();           /* 6.5p2: the controlling expression is its own region */
+        seqp_flush();
         skip(';');
         if (tok != ')') {
             e = gjmp(0);
             d = gind();
             gexpr();
-            seqp_check();       /* 6.5p2: diagnose the iteration expression */
+            seqp_check();
             vpop();
             gjmp_addr(c);
             gsym(e);
@@ -9103,10 +8470,10 @@ again:
         skip(TOK_WHILE);
         skip('(');
 	gexpr();
-        if (expr_was_assign)        /* -Wparentheses: `do … while (x = y)` */
+        if (expr_was_assign)
             mcc_warning_c(warn_parentheses)("suggest parentheses around "
                 "assignment used as a truth value");
-        seqp_check();           /* 6.5p2: diagnose the do-while condition */
+        seqp_check();
         c = gvtst(0, 0);
         skip(')');
         skip(';');
@@ -9122,13 +8489,13 @@ again:
         sw->scope = cur_scope;
         sw->prev = cur_switch;
         sw->nocode_wanted = nocode_wanted;
-        sw->vla_gpp = vla_seq;          /* 6.8.4.2: VLA program-point at entry */
+        sw->vla_gpp = vla_seq;
         cur_switch = sw;
 
         new_scope_s(&o);
         skip('(');
         gexpr_decl();
-        seqp_check();           /* 6.5p2: diagnose the switch controlling expr */
+        seqp_check();
         if (!is_integer_btype(vtop->type.t & VT_BTYPE))
             mcc_error("switch value not an integer");
         skip(')');
@@ -9139,8 +8506,6 @@ again:
         a = gjmp(a);
         gsym(b);
         prev_scope_s(&o);
-        /* -Wswitch: a switch on an enumerated type with no `default` should
-           handle every enumerator; warn for each one not covered by a case. */
         if ((mcc_state->warn_switch & WARN_ON)
             && IS_ENUM(sw->sv.type.t) && !sw->def_sym) {
             Sym *ev;
@@ -9183,9 +8548,6 @@ again:
         t = cur_switch->sv.type.t;
         ice_float_op = ice_nonconst = 0;
         cr->v1 = cr->v2 = value64(expr_const64(), t);
-        /* 6.6p6: a case label that only folds via a floating op, or via a
-           constant ?: with a non-constant arm, is not an integer constant
-           expression; gcc/clang diagnose. */
         if (ice_float_op || ice_nonconst)
             mcc_pedantic("ISO C forbids a case label that is not an integer "
                          "constant expression");
@@ -9199,9 +8561,6 @@ again:
             cr->ind = gind();
         cr->line = file->line_num;
         skip(':');
-        /* 6.8.4.2/6.8.6.1: the switch jumps to this case; if it lies inside a
-           VLA scope opened after the switch began, that is a jump into the
-           scope of a variably modified declaration. */
         if (cur_switch->vla_gpp < vla_inner_scope())
             mcc_error("switch jumps into the scope of a variably modified declaration");
         goto block_after_label;
@@ -9234,8 +8593,6 @@ again:
               s->r = LABEL_FORWARD;
 
 	    if (s->r & LABEL_FORWARD) {
-		/* 6.8.6.1: record the VLA program-point of this forward goto;
-		   the jump-into-VLA check happens when the label is defined. */
 		if (vla_seq < s->vla_min_goto_gpp)
 		    s->vla_min_goto_gpp = vla_seq;
 		if (cur_scope->cl.s && !nocode_wanted) {
@@ -9246,8 +8603,6 @@ again:
                 }
 		s->jnext = gjmp(s->jnext);
 	    } else {
-		/* 6.8.6.1: a backward goto must not land inside a VLA scope
-		   that has gone out of scope at the goto. */
 		if (!vla_scope_open(s->vla_inner_id))
 		    mcc_error("goto jumps into the scope of a variably modified declaration");
 		try_call_cleanup_goto(s->cleanupstate);
@@ -9287,9 +8642,6 @@ again:
             }
             s->jind = gind();
             s->cleanupstate = cur_scope->cl.s;
-            /* 6.8.6.1: record the innermost in-scope VLA at this label (for
-               later backward gotos), and reject any forward goto that
-               originated before that VLA was declared. */
             s->vla_inner_id = vla_inner_scope();
             if (s->vla_min_goto_gpp < s->vla_inner_id)
                 mcc_error("goto jumps into the scope of a variably modified declaration");
@@ -9297,9 +8649,6 @@ again:
     block_after_label:
             parse_attribute(NULL);
 
-            /* 6.8.1: a label (named, case, or default) prefixes a statement; a
-               declaration is not a statement before C23. Diagnose `L: int x;`
-               under -pedantic, matching gcc/clang (-Wfree-labels). */
             if (tok != '}' && mcc_state->cversion < 202311
                 && tok_starts_declspec())
                 mcc_pedantic("a label can only be part of a statement and a "
@@ -9319,18 +8668,13 @@ again:
             if (t != ';') {
                 unget_tok(t);
     expr:
-                seqp_reset();           /* 6.5p2: start of a full expression */
+                seqp_reset();
                 if (flags & STMT_EXPR) {
                     vpop();
                     gexpr();
                 } else {
-                    expr_has_effect = 0;        /* -Wunused-value */
+                    expr_has_effect = 0;
                     gexpr();
-                    /* -Wunused-value: a non-STMT_EXPR statement discards the
-                       expression's value; warn if its top-level operator had no
-                       side effect (matches gcc: `a==b;`, `x;`, `g()+1;` warn,
-                       while `x=1;`, `g();`, `x++;`, `(void)x;` do not). A volatile
-                       access counts as a side effect. */
                     if ((mcc_state->warn_unused_value & WARN_ON)
                         && !expr_has_effect
                         && !(vtop->type.t & VT_VOLATILE))
@@ -9338,7 +8682,7 @@ again:
                             "value computed is not used");
                     vpop();
                 }
-                seqp_check();           /* diagnose the trailing region */
+                seqp_check();
                 skip(';');
             }
         }
@@ -9466,9 +8810,6 @@ static void decl_design_delrels(Section *sec, int c, int size)
 static void decl_design_flex(init_params *p, Sym *ref, int index)
 {
     if (ref == p->flex_array_ref) {
-        /* 6.7.2.1p18: ISO C does not permit initializing a struct's flexible
-           array member (a top-level incomplete array, by contrast, is fine).
-           gcc/clang accept it as an extension; diagnose once under -pedantic. */
         if (p->flex_is_member && index >= 0 && !p->flex_warned) {
             p->flex_warned = 1;
             mcc_pedantic("initialization of a flexible array member is not "
@@ -9533,12 +8874,6 @@ static int decl_designator(init_params *p, CType *type, unsigned long c,
 	    type = &f->type;
             c += cumofs;
         }
-        /* 6.7.9p17-20: if the designator descends into an aggregate member /
-           element and the designator-list continues into it (`.in[0]`, `.s.x`,
-           `[0].x`), stop here and let decl_initializer fill that aggregate from
-           the designated subobject. Trailing positional initializers then
-           continue within it and brace-elide out when it is full, instead of
-           being misassigned to the enclosing aggregate's next member. */
         if (((type->t & VT_ARRAY) || (type->t & VT_BTYPE) == VT_STRUCT)
             && (tok == '[' || tok == '.')) {
             cur_field = NULL;
@@ -9579,11 +8914,6 @@ static int decl_designator(init_params *p, CType *type, unsigned long c,
     if (!elem_size)
         elem_size = type_size(type, &align);
 
-    /* For a routed sub-aggregate (the designator descended into it and a
-       sub-list will fill it), `c` is the aggregate's base while `al` is already
-       past it, which would spuriously trip the backward-designator re-clear and
-       zero the whole aggregate — wiping earlier `.member[k]` designators. The
-       sub-list overwrites only its own elements, so keep DIF_CLEAR. */
     if (!routed && !(flags & DIF_SIZE_ONLY) && c - corig < al) {
         decl_design_delrels(p->sec, c, elem_size * nb_elems);
         flags &= ~DIF_CLEAR;
@@ -9690,16 +9020,13 @@ static void init_putv(init_params *p, CType *type, unsigned long c)
     init_assert(p, c + size);
 
     if (sec) {
-        /* 6.7.9: static/global complex object initialized from a scalar
-           constant: write the value as the real part and zero the imaginary
-           part (the conversion cannot use the runtime gen_complex_cast path). */
         if (is_complex_type(type) && !is_complex_type(&vtop->type)) {
             CType base = type->ref->next->type;
             int bsz, bal;
             bsz = type_size(&base, &bal);
-            init_putv(p, &base, c);            /* real part = converted value */
+            init_putv(p, &base, c);
             vpushi(0);
-            init_putv(p, &base, c + bsz);      /* imaginary part = 0 */
+            init_putv(p, &base, c + bsz);
             return;
         }
         gen_assign_cast(&dtype);
@@ -9840,9 +9167,6 @@ static void decl_initializer(init_params *p, CType *type, unsigned long c, int f
     if (!(flags & DIF_HAVE_ELEM) && tok != '{' &&
 	tok != TOK_LSTR && tok != TOK_STR && tok != TOK_U32STR && tok != TOK_U16STR &&
 	tok != TOK_U8STR &&
-	/* a leading designator (`[`/`.`) on an aggregate is a brace-elided
-	   sub-list (e.g. the `[0]` left by a `.in[0]` designator) — route it
-	   into do_init_list below rather than parsing it as an expression. */
 	!(((type->t & VT_ARRAY) || (type->t & VT_BTYPE) == VT_STRUCT)
 	  && (tok == '[' || tok == '.')) &&
 	(!(flags & DIF_SIZE_ONLY)
@@ -9883,12 +9207,6 @@ static void decl_initializer(init_params *p, CType *type, unsigned long c, int f
                   && (t1->t & VT_BTYPE) == VT_BYTE)) {
 	    len = 0;
             cstr_reset(&initstr);
-            /* 6.4.5: concatenate adjacent string literals into the array's
-               element width (size1). A narrow literal adjacent to a wide one is
-               widened to the wide element type (p5); two different wide encoding
-               prefixes cannot be combined (p2). The element type here is fixed by
-               the first literal, so a literal wider than that element (a wide
-               literal following a narrower one) can't be represented. */
             {
               int merge_kind = (tok == TOK_STR) ? 0 : tok;
               while (tok == TOK_STR || tok == TOK_LSTR
@@ -9908,7 +9226,7 @@ static void decl_initializer(init_params *p, CType *type, unsigned long c, int f
                     mcc_error("a wide string literal cannot follow a narrower "
                               "string literal in a concatenation");
                 if (initstr.size)
-                    initstr.size -= size1;       /* drop the previous NUL */
+                    initstr.size -= size1;
                 len += nch - 1;
                 if (toksz == size1) {
                     cstr_cat(&initstr, tokc.str.data, tokc.str.size);
@@ -9962,10 +9280,6 @@ static void decl_initializer(init_params *p, CType *type, unsigned long c, int f
                         else if (size1 == 2)
                           ch = ((unsigned short *)initstr.data)[i];
                         else
-                          /* 4-byte element: char32_t (U"") on every target, or
-                             wchar_t (L"") where nwchar_t is 4 bytes. U32STR data
-                             is stored in explicit 4-byte units, so read 4 bytes
-                             rather than nwchar_t (2 bytes on PE). */
                           ch = ((unsigned int *)initstr.data)[i];
                         vpushi(ch);
                         init_putv(p, t1, c + i * size1);
@@ -9978,13 +9292,6 @@ static void decl_initializer(init_params *p, CType *type, unsigned long c, int f
                    && (tok == TOK_STR || tok == TOK_LSTR
                        || tok == TOK_U16STR || tok == TOK_U32STR
                        || tok == TOK_U8STR)) {
-            /* 6.7.9p14: a character-array initializer must be a string literal
-               whose element type matches the array's; a wide/narrow mismatch
-               (`int a[]="abc"`, `char a[]=L"abc"`) is rejected. Only fires when
-               the element is a scalar — a string against a nested *array*
-               element recurses through do_init_array below. Catch it here with a
-               clear message instead of the scalar path's misleading "integer
-               from pointer" + "',' expected" cascade. */
             char buf[64];
             type_to_str(buf, sizeof(buf), t1, NULL);
             mcc_error("cannot initialize array of '%s' from a string literal "
@@ -10006,13 +9313,6 @@ static void decl_initializer(init_params *p, CType *type, unsigned long c, int f
 	    {
 	    int sublist_comma = 0;
 	    while (tok != '}' || (flags & DIF_HAVE_ELEM)) {
-		/* 6.7.9p17-20: in a brace-elided sub-list (no_oblock), a designator
-		   that cannot apply to the current aggregate designates an enclosing
-		   object: `[` in a struct/union; `.` in an array; or `.field` whose
-		   name is not a member of the current struct/union. End this sub-list
-		   and hand the just-consumed comma + the designator back to the caller
-		   (which resumes at the next outer subobject). Only fires once a comma
-		   has actually been consumed here (sublist_comma). */
 		if (no_oblock && sublist_comma && !(flags & DIF_HAVE_ELEM)) {
 		    int climb = 0;
 		    if (tok == '[' && !(type->t & VT_ARRAY))
@@ -10022,11 +9322,11 @@ static void decl_initializer(init_params *p, CType *type, unsigned long c, int f
 			    climb = 1;
 			} else {
 			    int cumofs;
-			    next();          /* consume '.', peek the field name */
+			    next();
 			    if (tok >= TOK_UIDENT
 				&& !find_field(type, tok | SYM_FIELD, &cumofs))
 				climb = 1;
-			    unget_tok('.');  /* restore: tok='.', then field */
+			    unget_tok('.');
 			}
 		    }
 		    if (climb) {
@@ -10053,9 +9353,6 @@ static void decl_initializer(init_params *p, CType *type, unsigned long c, int f
 		    break;
 		skip(',');
 		sublist_comma = 1;
-		/* 6.7.9p23: initializer-list expressions are indeterminately
-		   sequenced w.r.t. one another — a sequence point separates
-		   them, so {++c, ++c} is well-defined.  Start a fresh region. */
 		seqp_flush();
 	    }
 	    }
@@ -10065,10 +9362,6 @@ static void decl_initializer(init_params *p, CType *type, unsigned long c, int f
 
     } else if ((flags & DIF_HAVE_ELEM)
             && (is_compatible_unqualified_types(type, &vtop->type)
-                /* 6.7.9: a complex object may take a non-brace scalar/complex
-                   initializer (real part = value, imag = 0). Block-scope uses
-                   the runtime conversion; static/global is handled as a
-                   constant in init_putv. */
                 || (is_complex_type(type)
                     && (is_complex_type(&vtop->type)
                         || is_integer_btype(vtop->type.t & VT_BTYPE)
@@ -10091,11 +9384,6 @@ static void decl_initializer(init_params *p, CType *type, unsigned long c, int f
         if (flags & DIF_HAVE_ELEM)
           skip(';');
         next();
-        /* 6.7.9p11: a scalar initializer is a single expression, optionally in
-           ONE pair of braces. A further brace level (`int x = {{1}}`) is a
-           constraint violation; gcc/clang diagnose. (A braced scalar *member*,
-           `struct{int x;}s={{1}}`, is the valid single brace and reaches here
-           with a non-'{' token, so it stays clean.) */
         if (tok == '{')
             mcc_pedantic("too many braces around scalar initializer");
         decl_initializer(p, type, c, flags & ~DIF_HAVE_ELEM);
@@ -10125,16 +9413,6 @@ static void decl_initializer(init_params *p, CType *type, unsigned long c, int f
     }
 }
 
-/* 6.4.5p5: gather a run of adjacent string literals (current tok is the first)
-   into a token stream. The common prefix of a run is the WIDEST one present,
-   regardless of order, and an unprefixed literal takes the others'. The merge
-   loop in decl_initializer fixes the element width from the FIRST literal, so a
-   NARROW-FIRST run (`"a" L"b"`) would reject the later wider literal. When the
-   run is narrow-first this re-concatenates the whole run into a single literal of
-   the run's widest prefix (with the 6.4.5p2 different-prefix-conflict check), so
-   the rest of the path sees one consistent wide literal; for the synthesized
-   bare-string-expression type (has_init==2) the array element is widened to
-   match. Wide-first/same-prefix/single-string runs are copied through unchanged. */
 static TokenString *gather_string_run(CType *type, int has_init)
 {
 #define MCC_STRSZ(k) ((k)==TOK_STR||(k)==TOK_U8STR?1:(k)==TOK_U16STR?2:(k)==TOK_U32STR?4:(int)sizeof(nwchar_t))
@@ -10156,7 +9434,7 @@ static TokenString *gather_string_run(CType *type, int has_init)
         next();
     }
     tok_str_add(istr, TOK_EOF);
-    if (firstsz && wsz > firstsz) {     /* narrow-first: must widen */
+    if (firstsz && wsz > firstsz) {
         int wet = wkind == TOK_U16STR ? (VT_SHORT | VT_UNSIGNED)
                 : wkind == TOK_U32STR ? (VT_INT | VT_UNSIGNED)
 #ifdef MCC_TARGET_PE
@@ -10171,14 +9449,13 @@ static TokenString *gather_string_run(CType *type, int has_init)
         for (j = 0; j < nparts; j++) {
             int tk = pkinds[j], toksz = MCC_STRSZ(tk);
             int nch = parts[j].size / toksz;
-            /* 6.4.5p2: two different non-empty prefixes cannot combine */
             if (tk != TOK_STR) {
                 if (merge_kind && merge_kind != tk)
                     mcc_error("unsupported concatenation of string "
                               "literals with different encoding prefixes");
                 merge_kind = tk;
             }
-            for (i = 0; i < nch - 1; i++) {   /* drop each trailing NUL */
+            for (i = 0; i < nch - 1; i++) {
                 unsigned int ch =
                     toksz == 1 ? ((unsigned char *)parts[j].data)[i]
                   : toksz == 2 ? ((unsigned short *)parts[j].data)[i]
@@ -10187,8 +9464,7 @@ static TokenString *gather_string_run(CType *type, int has_init)
                 else { unsigned int v = ch; cstr_cat(&cc, (char *)&v, 4); }
             }
         }
-        { unsigned int z = 0; cstr_cat(&cc, (char *)&z, wsz); }   /* final NUL */
-        /* replace istr with one synthesized widest-prefix literal */
+        { unsigned int z = 0; cstr_cat(&cc, (char *)&z, wsz); }
         tok_str_free(istr);
         istr = tok_str_alloc();
         tok = wkind; tokc.str.size = cc.size; tokc.str.data = cc.data;
@@ -10332,13 +9608,7 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 	    }
 
             sym->a = ad->a;
-            /* -Wunused-variable: remember this automatic object's declaration
-               line so the warning (issued at scope close) points at the
-               declaration like gcc. vla_inner_id is otherwise used only on label
-               syms, so it is free to reuse here for a VT_LOCAL object. */
             sym->vla_inner_id = file->line_num;
-            /* -Wuninitialized: a local with an initializer starts initialized
-               (the init store may not pass through the canonical write site). */
             if (has_init)
                 sym->a.inited = 1;
         } else {
@@ -10398,9 +9668,6 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 #endif
     }
 
-    /* 6.8.6.1: a variably-modified object that is not itself a VLA array (e.g. a
-       pointer to a VLA) allocates no storage but still establishes a scope a
-       goto/switch may not jump into. The VLA-array case registers itself below. */
     if (!(type->t & VT_VLA) && type_is_vm(type)) {
         if (nb_vla_open < VLA_TRACK_MAX)
             vla_open_birth[nb_vla_open++] = ++vla_seq;
@@ -10415,9 +9682,6 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
         if (has_init)
             mcc_error("variable length array cannot be initialized");
 
-        /* 6.8.6.1: register this VLA's scope for jump-into diagnostics. Done
-           unconditionally (even in dead code after a goto) so the constraint
-           is checked regardless of reachability. */
         if (nb_vla_open < VLA_TRACK_MAX)
             vla_open_birth[nb_vla_open++] = ++vla_seq;
         else
@@ -10446,13 +9710,6 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
         cur_scope->vla.num++;
     } else if (has_init) {
         p.sec = sec;
-        /* 6.4.5p5: an *explicitly-sized* array (size>=0, so no size<0 gather
-           above ran) initialized by a bare string run is read live below — which
-           fixes the element width from the first literal. If the array element is
-           WIDER than the first literal, the run may be narrow-first (e.g.
-           `wchar_t a[3]="x" L"y"`), so route it through the same gather+widen and
-           replay it. Gated on element-wider-than-first-token so the common cases
-           (`char a[N]="..."`, wide-first into a wide array) stay on the live path. */
         if (!init_str && size >= 0 && (type->t & VT_ARRAY)
             && (tok == TOK_STR || tok == TOK_LSTR
                 || tok == TOK_U16STR || tok == TOK_U32STR || tok == TOK_U8STR)) {
@@ -10467,9 +9724,6 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
                 next();
             }
         }
-        /* 6.5p2 (10.1): a declarator initializer is its own full expression —
-           reset so side effects from a preceding for-header/statement do not
-           leak in, then diagnose what the initializer itself contains. */
         seqp_reset();
         decl_initializer(&p, type, addr, DIF_FIRST);
         seqp_check();
@@ -10566,8 +9820,6 @@ static void gen_function(Sym *sym)
     func_ind = ind;
     func_vt = sym->type.ref->type;
     func_var = sym->type.ref->f.func_type == FUNC_ELLIPSIS;
-    /* 7.16.1.4: remember the last named parameter (by token) so a va_start whose
-       second argument is some other parameter can be diagnosed (-Wvarargs). */
     cur_func_last_param = 0;
     if (func_var) {
         Sym *pa;
@@ -10576,9 +9828,6 @@ static void gen_function(Sym *sym)
     }
     func_old = sym->type.ref->f.func_type == FUNC_OLD;
     cur_func_noreturn = sym->type.ref->f.func_noreturn;
-    /* 6.7.4p3: an inline definition of a function with external linkage (inline
-       and not static; `extern inline` has had VT_INLINE stripped) shall not
-       contain a definition of a modifiable static-storage-duration object. */
     cur_func_inline_extern =
         (sym->type.t & VT_INLINE) && !(sym->type.t & VT_STATIC);
     vla_seq = 0;
@@ -10598,9 +9847,6 @@ static void gen_function(Sym *sym)
     local_scope = 1;
     sym_push_params(sym->type.ref);
 
-    /* -Wunused-function: stamp the definition line on the function sym (free to
-       reuse vla_inner_id — functions are never label syms) so the TU-end walk
-       can report at the definition like gcc. */
     sym->vla_inner_id = file->line_num;
 
     local_scope = 0;
@@ -10611,11 +9857,6 @@ static void gen_function(Sym *sym)
     mcc_debug_prolog_epilog(mcc_state, 0);
     func_vla_arg(sym);
     block(0);
-    /* -Wunused-parameter: the body's scope has been popped, so what remains on
-       local_stack are the parameter copies (and any VLA-arg helper). Warn for
-       each named parameter never referenced; its `used` bit and signature line
-       rode in via sym_copy. Limited to the function type's own parameter list so
-       VLA-arg helpers are not mistaken for parameters. */
     if ((mcc_state->warn_unused_parameter & WARN_ON)
         && sym->type.ref->f.func_type != FUNC_OLD) {
         Sym *pc;
@@ -10700,9 +9941,6 @@ static void do_Static_assert(void)
     int c;
     const char *msg;
 
-    /* 6.7.10: _Static_assert is a C11 feature. mcc accepts it in every mode
-       as an extension; diagnose its pre-C11 use under -pedantic (gcc/clang
-       both warn). */
     if (mcc_state->cversion < 201112)
         mcc_pedantic("ISO C does not support '_Static_assert' before C11");
     next();
@@ -10752,16 +9990,12 @@ static int decl(int l)
 
         oldint = 0;
         if (parse_btype(&btype, &adbase, l == VT_LOCAL)) {
-            /* 6.7.2p2: C11 removed implicit int. */
             if (adbase.implicit_int)
                 mcc_warning_c(warn_implicit_int)("type defaults to 'int' in declaration");
         } else {
             if (l == VT_JMP)
                 return 0;
             if (tok == ';' && l != VT_CMP) {
-                /* 6.9p1: an empty external declaration (a lone ';' at file
-                   scope) is not valid ISO C — a GNU extension. At block scope a
-                   ';' is a valid null statement, so only diagnose at file scope. */
                 if (l == VT_CONST)
                     mcc_pedantic("ISO C does not allow an empty declaration");
                 next();
@@ -10810,7 +10044,6 @@ static int decl(int l)
 	    ad = adbase;
             type_decl(&type, &ad, &v, l == VT_CMP ? TYPE_DIRECT | TYPE_PARAM : TYPE_DIRECT);
             if ((type.t & VT_BTYPE) == VT_FUNC) {
-                /* 6.7.2p2: implicit-int function return type (e.g. `foo(void)`). */
                 if (oldint)
                     mcc_warning_c(warn_implicit_int)("return type defaults to 'int'");
                 if ((type.t & VT_STATIC) && (l != VT_CONST))
@@ -10833,29 +10066,19 @@ static int decl(int l)
                 mcc_warning("type defaults to int");
             }
 
-            /* 6.8.5p3: a for-loop init declaration may declare only auto or
-               register objects (gcc/clang accept static/extern/typedef as an
-               extension; diagnose under -pedantic). */
             if (in_for_init && (type.t & (VT_STATIC | VT_EXTERN | VT_TYPEDEF)))
                 mcc_pedantic("ISO C forbids a 'static', 'extern' or 'typedef' "
                              "declaration in a 'for' loop initializer");
 
-            /* C11 storage-class / function-specifier constraints */
             if (l == VT_CONST && (ad.storage_class & 1))
                 mcc_error("file-scope declaration of '%s' specifies 'auto'",
                           get_tok_str(v, NULL));
             if (l == VT_CONST && (ad.storage_class & 2))
                 mcc_error("file-scope declaration of '%s' specifies 'register'",
                           get_tok_str(v, NULL));
-            /* 6.7.3p2: restrict may only qualify a pointer to an object type.
-               A specifier-level restrict on a non-pointer declared type is a
-               constraint violation (e.g. `int restrict x;`). An array type is
-               represented with VT_BTYPE==VT_PTR, so it must be excluded
-               explicitly (`int restrict a[10];` qualifies the element type). */
             if ((ad.storage_class & 4) && !(type.t & VT_TYPEDEF)
                 && ((type.t & VT_BTYPE) != VT_PTR || (type.t & VT_ARRAY)))
                 mcc_error("'restrict' requires a pointer type");
-            /* 6.7.5p2,p4: _Alignas constraints. */
             if ((ad.storage_class & 8) && ad.a.aligned) {
                 int nat;
                 if (type.t & VT_TYPEDEF)
@@ -10871,21 +10094,12 @@ static int decl(int l)
             }
             if ((type.t & VT_BTYPE) != VT_FUNC && (type.t & VT_INLINE))
                 mcc_error("'inline' used outside of a function declaration");
-            /* 6.7.6.2p2 / 6.7p5: an object with a variably-modified (VLA) type
-               shall have no linkage. extern gives linkage; file-scope/static
-               VLAs are rejected elsewhere, but the extern path is unguarded. */
             if ((type.t & VT_VLA) && (type.t & VT_EXTERN)
                 && (type.t & VT_BTYPE) != VT_FUNC)
                 mcc_error("object with variably modified type must have no linkage");
-            /* 6.7.4p2: _Noreturn shall apply only to a function. gcc accepts
-               `_Noreturn int x;` as an extension; diagnose under -pedantic.
-               (Bit 128 marks the _Noreturn *keyword*, distinct from
-               __attribute__((noreturn)) which also sets func_noreturn.) */
             if ((ad.storage_class & 128) && (type.t & VT_BTYPE) != VT_FUNC)
                 mcc_pedantic("'_Noreturn' used outside of a function declaration");
             if (type.t & VT_TLS) {
-                /* 6.7.1p3: _Thread_local may appear only with static or extern;
-                   combined with typedef it is a constraint violation. */
                 if (type.t & VT_TYPEDEF)
                     mcc_error("'_Thread_local' used with 'typedef'");
                 else if ((type.t & VT_BTYPE) == VT_FUNC)
@@ -10895,9 +10109,6 @@ static int decl(int l)
                               "'static' or 'extern'");
             }
 
-            /* 6.7.1p7: a block-scope function declaration shall have no explicit
-               storage-class specifier other than extern. auto/register on such
-               a declaration is a constraint violation (gcc/clang both reject). */
             if (l != VT_CONST && (type.t & VT_BTYPE) == VT_FUNC
                 && (ad.storage_class & 3))
                 mcc_error("invalid storage class for function '%s'",
@@ -10918,37 +10129,19 @@ static int decl(int l)
             if (tok == '{') {
                 if (l != VT_CONST)
                     mcc_error("cannot use local functions");
-                /* 6.9.1p4: a function definition's declaration specifiers shall
-                   specify only 'extern' or 'static'; 'typedef' is a constraint
-                   violation (gcc/clang reject). Checked before the VT_FUNC test
-                   so the message is specific rather than "function definition". */
                 if (type.t & VT_TYPEDEF)
                     mcc_error("function definition declared 'typedef'");
                 if ((type.t & VT_BTYPE) != VT_FUNC)
                     expect("function definition");
-                /* 6.7.6.2p4: `[*]` may appear only in function prototype scope,
-                   not in a definition. type.ref->f reflects this definition's
-                   own parameter list (checked before any prototype merge). */
                 if (type.ref->f.func_star_param)
                     mcc_error("'[*]' not allowed in a function definition");
 
-                /* 6.9.1p2: the declarator in a function definition shall itself
-                   include a parameter list (or K&R identifier list) — the
-                   function type may not be supplied entirely by a typedef name
-                   (`typedef int F(void); F f {…}` is invalid). post_type records
-                   any function declarator in ad.f.func_type; a value of 0 means
-                   the VT_FUNC type came purely from the base typedef. */
                 if (ad.f.func_type == 0)
                     mcc_error("function definition declared with a typedef'd function type");
                 merge_funcattr(&type.ref->f, &ad.f);
                 type.t &= ~VT_EXTERN;
                 sym = external_sym(v, &type, 0, &ad);
 
-                /* 6.9.1p3: the return type of a function definition shall be
-                   void or a complete object type — an incomplete struct/union
-                   or enum is invalid (array/function returns are rejected in
-                   post_type). The same type is fine on a mere declaration, so
-                   this is checked only here on the definition. */
                 {
                     CType *rt = &sym->type.ref->type;
                     if ((rt->t & VT_BTYPE) != VT_VOID
@@ -10960,19 +10153,11 @@ static int decl(int l)
                 for (sa = sym->type.ref; (sa = sa->next) != NULL;) {
                     if (!(sa->v & ~SYM_FIELD))
                         expect("identifier");
-                    /* 6.9.1p7: each parameter's adjusted type in a function
-                       definition shall be a complete object type. Arrays and
-                       functions are already adjusted to pointers, so only an
-                       incomplete struct/union/enum parameter can reach here. */
                     if (((sa->type.t & VT_BTYPE) == VT_STRUCT || IS_ENUM(sa->type.t))
                         && sa->type.ref->c < 0)
                         mcc_error("parameter '%s' has incomplete type",
                                   get_tok_str(sa->v & ~SYM_FIELD, NULL));
                     if (sym->type.ref->f.func_type == FUNC_OLD) {
-                        /* 6.7.2p2: C11 removed implicit int. A K&R parameter
-                           with no matching declaration retains the VT_EXTERN
-                           marker from its implicit-int setup; gcc and clang
-                           both diagnose it. */
                         if (sa->type.t & VT_EXTERN)
                             mcc_warning_c(warn_implicit_int)("type of '%s' defaults to 'int'",
                                         get_tok_str(sa->v & ~SYM_FIELD, NULL));
@@ -11000,11 +10185,6 @@ static int decl(int l)
                 break;
             } else {
                 has_init = 0;
-                /* 6.7.6.3p3: an identifier list in a function declarator that is
-                   not part of a definition of that function shall be empty.  A
-                   FUNC_OLD function type with a non-empty parameter chain that
-                   reaches this (non-'{') declaration path is 'int f(a,b);' — the
-                   names have no types and this is only a declaration. */
                 if ((type.t & VT_BTYPE) == VT_FUNC
                     && type.ref->f.func_type == FUNC_OLD
                     && type.ref->next != NULL)
@@ -11031,15 +10211,9 @@ static int decl(int l)
                             || !(sym->type.t & VT_TYPEDEF))
                             mcc_error("incompatible redefinition of '%s'",
                                 get_tok_str(v, NULL));
-                        /* 6.7p3: the C11 same-type redefinition allowance does
-                           NOT extend to a variably modified (VLA) type — that is
-                           a constraint violation in every mode (gcc/clang reject). */
                         else if ((sym->type.t & VT_VLA) || (type.t & VT_VLA))
                             mcc_error("redefinition of variably modified typedef '%s'",
                                 get_tok_str(v, NULL));
-                        /* 6.7p3: redefining a typedef with the same type is
-                           permitted only in C11; in C99/C90 it is a constraint
-                           violation. */
                         else if (mcc_state->cversion < 201112)
                             mcc_pedantic("redefinition of typedef is a C11 feature");
                         sym->type = type;
@@ -11055,22 +10229,12 @@ static int decl(int l)
 			   && !(type.t & VT_EXTERN)) {
 		    mcc_error("declaration of void object");
                 } else {
-                    /* 6.7.8p3 / 6.2.3: a typedef name and an ordinary identifier
-                       share one name space, so an object/function declaration may
-                       not reuse a name already a typedef in the SAME scope (a
-                       deeper block may still shadow it). The reverse order
-                       (typedef after object) is caught in the VT_TYPEDEF path. */
                     {
                         Sym *prev = sym_find(v);
                         if (prev && (prev->type.t & VT_TYPEDEF)
                             && prev->sym_scope == local_scope)
                             mcc_error("'%s' redeclared as different kind of symbol",
                                       get_tok_str(v, NULL));
-                        /* -Wshadow: a new block-scope object whose name is already
-                           a variable/parameter visible in an enclosing scope (or a
-                           global). `extern` re-declares the same object, not a new
-                           one, so it is exempt; functions/typedefs/enum constants
-                           as either side are excluded to limit noise. */
                         else if ((mcc_state->warn_shadow & WARN_ON)
                                  && local_scope > 0 && prev
                                  && prev->sym_scope != local_scope
@@ -11111,16 +10275,9 @@ static int decl(int l)
                             && l == VT_CONST && type.ref->c < 0;
                         type.t |= VT_EXTERN;
                         sym = external_sym(v, &type, r, &ad);
-                        /* 6.9.2p5: a non-extern incomplete-array tentative
-                           definition is completed as one element at end of TU
-                           if no later definition completes it. */
                         if (was_tentative_flex && sym)
                             sym->a.tentative_array = 1;
                     } else {
-                        /* 6.7.4p3: a modifiable static-duration object defined
-                           inside an inline external-linkage definition is UB;
-                           gcc/clang warn. (const static objects are not
-                           modifiable, so they are allowed.) */
                         if (cur_func_inline_extern && l != VT_CONST
                             && (type.t & VT_STATIC)
                             && !(type.t & VT_CONSTANT) && v)
@@ -11139,8 +10296,6 @@ static int decl(int l)
                         decl_initializer_alloc(&type, &ad, r, has_init, v, l);
                     }
 
-                    /* 6.7.1: remember a `register` object so taking its address
-                       can be diagnosed (6.5.3.2). */
                     if ((ad.storage_class & 2) && v) {
                         Sym *rs = sym_find(v);
                         if (rs)

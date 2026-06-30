@@ -1,8 +1,8 @@
 #include <stdio.h>
 
-/* Compiled with -fstack-protector-all (see exec/goldens.h). Verifies that the
-   x86_64 canary prolog/epilog produce correct, working code for a function
-   with a local buffer (a stack smash would abort via __stack_chk_fail). */
+
+
+
 
 static int checksum(const int *a, int n)
 {

@@ -403,8 +403,8 @@ struct macho {
     uint32_t ilocal, iextdef, iundef;
     int stubsym, n_got, nr_plt;
     int segment[sk_last];
-    Section *tls_vars;          /* __thread_vars: per-variable TLV descriptors */
-    int has_tlv;                /* sets MH_HAS_TLV_DESCRIPTORS in the header   */
+    Section *tls_vars;
+    int has_tlv;
     int n_tls;
     struct tls_var { int desc_off; int orig_sec; addr_t orig_val; } *tls;
 #ifdef CONFIG_NEW_MACHO
@@ -421,19 +421,19 @@ struct macho {
     Section *stub_helper, *la_symbol_ptr;
     struct dyld_info_command *dyldinfo;
     int helpsym, lasym, dyld_private, dyld_stub_binder;
-    int n_lazy_bind;    
+    int n_lazy_bind;
     struct s_lazy_bind {
         int section;
         int bind_offset;
         int la_symbol_offset;
         ElfW_Rel rel;
     } *s_lazy_bind;
-    int n_rebase;    
+    int n_rebase;
     struct s_rebase {
         int section;
         ElfW_Rel rel;
     } *s_rebase;
-    int n_bind; 
+    int n_bind;
     struct bind {
         int section;
         ElfW_Rel rel;
@@ -536,7 +536,7 @@ static void mcc_macho_add_destructor(MCCState *s1)
 				    text_section->sh_num, "__mh_execute_header");
     s = find_section(s1, ".fini_array");
     if (s->data_offset == 0)
-        return; 
+        return;
     init_sym = put_elf_sym(s1->symtab, text_section->data_offset, 0,
                            ELFW(ST_INFO)(STB_LOCAL, STT_FUNC), 0,
                            text_section->sh_num, "___GLOBAL_init_65535");
@@ -556,7 +556,7 @@ static void mcc_macho_add_destructor(MCCState *s1)
         ptr[0] = 0x48;
         ptr[1] = 0x8d;
         ptr[2] = 0x05;
-        put_elf_reloca(s1->symtab, text_section, 
+        put_elf_reloca(s1->symtab, text_section,
 		       text_section->data_offset - 23,
 		       R_X86_64_PC32, sym_index, -4);
         ptr[7] = 0x48;
@@ -588,7 +588,7 @@ static void mcc_macho_add_destructor(MCCState *s1)
         int sym_index = ELFW(R_SYM)(rel->r_info);
 
         ptr = section_ptr_add(text_section, 24);
-        put_elf_reloc(s1->symtab, text_section, 
+        put_elf_reloc(s1->symtab, text_section,
 		      text_section->data_offset - 24,
 		      R_AARCH64_ADR_PREL_PG_HI21, sym_index);
         write32le(ptr, 0x90000000);
@@ -597,7 +597,7 @@ static void mcc_macho_add_destructor(MCCState *s1)
 		      R_AARCH64_LDST8_ABS_LO12_NC, sym_index);
         write32le(ptr + 4, 0x91000000);
         write32le(ptr + 8, 0xd2800001);
-        put_elf_reloc(s1->symtab, text_section, 
+        put_elf_reloc(s1->symtab, text_section,
 		      text_section->data_offset - 12,
 		      R_AARCH64_ADR_PREL_PG_HI21, mh_execute_header);
         write32le(ptr + 12, 0x90000002);
@@ -794,7 +794,7 @@ static void check_relocs(MCCState *s1, struct macho *mo)
     write32le(jmp + 16, 0xf9400210);
     write32le(jmp + 20, 0xd61f0200);
 #endif
-    
+
     goti = NULL;
     mo->nr_plt = mo->n_got = 0;
     for (int i = 1; i < s1->nb_sections; i++) {
@@ -2124,17 +2124,6 @@ ST_FUNC void bind_rebase_import(MCCState *s1, struct macho *mo)
 }
 #endif
 
-/* Thread-local storage on Mach-O uses TLV descriptors, not ELF tp-relative
-   addressing.  Each defined `_Thread_local` symbol gets a three-word descriptor
-   { thunk, key, offset } in __DATA,__thread_vars; the codegen resolves a TLS
-   access by loading the descriptor address, calling its thunk (which dyld fills
-   in from libSystem's _tlv_bootstrap) and using the returned per-thread address.
-   We synthesise the descriptors here, repoint the TLS symbols at them (so the
-   adrp/add the backend emitted resolves to the descriptor), and bind each
-   thunk word to __tlv_bootstrap.  The descriptor's third word is the variable's
-   byte offset within the contiguous __thread_data/__thread_bss template; it is
-   filled in by macho_tls_finalize once section addresses are assigned.  Called
-   before create_symtab so the new section and symbols make it into the tables. */
 static void macho_tls_setup(MCCState *s1, struct macho *mo)
 {
     int i, tlv_sym = 0;
@@ -2147,10 +2136,6 @@ static void macho_tls_setup(MCCState *s1, struct macho *mo)
 
         if (ELFW(ST_TYPE)(sym->st_info) != STT_TLS)
             continue;
-        /* A genuine thread-local lives in .tdata/.tbss.  The front end can also
-           tag a static initializer template (e.g. for a TLS aggregate) STT_TLS
-           while leaving it in a regular data section; that is ordinary data on
-           Mach-O, not a TLV variable, so skip it. */
         if (sym->st_shndx != tdata_section->sh_num &&
             sym->st_shndx != tbss_section->sh_num) {
             if (sym->st_shndx == SHN_UNDEF)
@@ -2167,7 +2152,6 @@ static void macho_tls_setup(MCCState *s1, struct macho *mo)
                                   ELFW(ST_INFO)(STB_GLOBAL, STT_FUNC), 0,
                                   SHN_UNDEF, "__tlv_bootstrap");
             mo->has_tlv = 1;
-            /* put_elf_sym may have reallocated the symbol table. */
             sym = (ElfW(Sym) *)symtab_section->data + i;
         }
 
@@ -2180,7 +2164,6 @@ static void macho_tls_setup(MCCState *s1, struct macho *mo)
         mo->tls[mo->n_tls].orig_val = sym->st_value;
         mo->n_tls++;
 
-        /* descriptor[0] (thunk) binds to __tlv_bootstrap (flat namespace). */
         memset(&rel, 0, sizeof rel);
         rel.r_offset = desc_off;
         rel.r_info = ELFW(R_INFO)(tlv_sym, R_DATA_PTR);
@@ -2193,7 +2176,6 @@ static void macho_tls_setup(MCCState *s1, struct macho *mo)
         mo->n_bind++;
 #endif
 
-        /* Repoint the symbol at its descriptor: a plain data symbol now. */
         sym->st_shndx = mo->tls_vars->sh_num;
         sym->st_value = desc_off;
         sym->st_size = 3 * PTR_SIZE;
@@ -2208,8 +2190,6 @@ static void macho_tls_finalize(MCCState *s1, struct macho *mo)
 
     if (!mo->n_tls)
         return;
-    /* The per-thread template is __thread_data followed by __thread_bss; its
-       base is the lower of the two section addresses. */
     if (tdata_section->sh_size && tdata_section->sh_addr < base)
         base = tdata_section->sh_addr;
     if (tbss_section->sh_size && tbss_section->sh_addr < base)
@@ -2259,7 +2239,7 @@ ST_FUNC int macho_output_file(MCCState *s1, const char *filename)
             mo.ep->entryoff = get_sym_addr(s1, "main", 1, 1)
                             -     get_segment(&mo, 1)->vmaddr;
         if (s1->nb_errors) {
-          ret = -1;             /* e.g. a default library (-lc) was not found */
+          ret = -1;
           goto do_ret;
         }
 	s1->output_type = MCC_OUTPUT_EXE;
@@ -2285,7 +2265,7 @@ ST_FUNC int macho_output_file(MCCState *s1, const char *filename)
 
     fclose(fp);
     if (ret)
-        unlink(filename);       /* don't leave an empty/partial output behind */
+        unlink(filename);
 #ifdef CONFIG_CODESIGN
     if (!ret) {
 	char command[1024];
@@ -2314,8 +2294,6 @@ static uint32_t macho_swap32(uint32_t x)
 #define tbd_parse_trample *pos++=0
 
 #ifdef MCC_IS_NATIVE
-/* Resolve the active macOS SDK root ("<...>/MacOSX*.sdk") into 'out'.
-   Returns 1 if a path was written, 0 otherwise (caller falls back). */
 static int macos_sdkroot(CString *out)
 {
     char *sdkroot = NULL, *pos = NULL;
@@ -2352,9 +2330,6 @@ ST_FUNC void mcc_add_macos_sdkpath(MCCState* s)
     cstr_free(&path);
 }
 
-/* The SDK's headers live under <sdk>/usr/include, not /usr/include (which
-   modern macOS does not ship). Add it as a system include dir so mcc can find
-   <stdio.h> et al. when used as the native compiler. */
 ST_FUNC void mcc_add_macos_sdkincludepath(MCCState* s)
 {
     CString path;

@@ -242,7 +242,6 @@ static uint32_t stuff_const(uint32_t op, uint32_t c)
     case 0x0:
       if(c==~0)
 	return (op&0xF010F000)|((op>>16)&0xF)|0x1A00000;
-    /* fall through */
     case 0x1C00000:
       try_neg=1;
       negop=op^0x1C00000;
@@ -521,23 +520,16 @@ static void load_value(SValue *sv, int r)
     }
 }
 
-/* Compute the address of a thread-local object sym+coff into LR (r14, a
-   non-allocatable scratch), Local Exec model:
-       lr = TPIDRURO (thread pointer);  lr += coff + sym@tpoff
-   The tpoff is materialised from an inline literal because R_ARM_TLS_LE32
-   patches a full 32-bit data word, not an instruction immediate.  IP (r12) is
-   used as a temporary and preserved, so no allocatable register is disturbed;
-   callers then load/store through [lr] (or move lr into the destination). */
 static void arm_tls_addr(Sym *sym, int coff)
 {
-    o(0xe52dc004);                 /* push {ip}  (str ip,[sp,#-4]!)       */
-    o(0xee1def70);                 /* mrc p15,0,lr,c13,c0,3   (lr = TP)   */
-    o(0xe59fc000);                 /* ldr ip,[pc,#0]  (ip = literal)      */
-    o(0xea000000);                 /* b   .+4         (skip the literal)  */
+    o(0xe52dc004);
+    o(0xee1def70);
+    o(0xe59fc000);
+    o(0xea000000);
     greloca(cur_text_section, sym, ind, R_ARM_TLS_LE32, 0);
-    o(coff);                       /* literal: coff + sym@tpoff           */
-    o(0xe08ee00c);                 /* add lr, lr, ip                      */
-    o(0xe49dc004);                 /* pop {ip}   (ldr ip,[sp],#4)         */
+    o(coff);
+    o(0xe08ee00c);
+    o(0xe49dc004);
 }
 
 void load(int r, SValue *sv)
@@ -561,7 +553,6 @@ void load(int r, SValue *sv)
   if (fr & VT_LVAL) {
     base = 0xB;
     if ((fr & VT_SYM) && sv->sym->type.t & VT_TLS) {
-      /* &tls -> lr, then a normal typed load from [lr] */
       arm_tls_addr(sv->sym, sv->c.i);
       base = 14; fc = sign = 0; v = VT_LOCAL;
     } else
@@ -634,8 +625,8 @@ void load(int r, SValue *sv)
   } else {
     if (v == VT_CONST) {
       if ((fr & VT_SYM) && sv->sym->type.t & VT_TLS) {
-        arm_tls_addr(sv->sym, sv->c.i);          /* &tls -> lr */
-        o(0xe1a0000e | (intr(r) << 12));         /* mov r, lr  */
+        arm_tls_addr(sv->sym, sv->c.i);
+        o(0xe1a0000e | (intr(r) << 12));
         return;
       }
       op=stuff_const(0xE3A00000|(intr(r)<<12),sv->c.i);
@@ -700,7 +691,6 @@ void store(int r, SValue *sv)
   if (fr & VT_LVAL || fr == VT_LOCAL) {
     base = 0xb;
     if ((fr & VT_SYM) && sv->sym->type.t & VT_TLS) {
-      /* &tls -> lr (preserves the source value reg r), then store to [lr] */
       arm_tls_addr(sv->sym, sv->c.i);
       base = 14; v = VT_LOCAL; fc = sign = 0;
     } else
@@ -1278,7 +1268,7 @@ void gfunc_prolog(Sym *func_sym)
   {
     n++;
     struct_ret = 1;
-    func_vc = 16;       /* saved-register area is now {r10,fp,ip,lr} = 16 bytes */
+    func_vc = 16;
   }
   for(sym2 = sym->next; sym2 && (n < 4 || nf < 16); sym2 = sym2->next) {
     size = type_size(&sym2->type, &align);
@@ -1310,12 +1300,6 @@ void gfunc_prolog(Sym *func_sym)
     nf=(nf+1)&-2;
     o(0xED2D0A00|nf);
   }
-  /* Save {r10, fp, ip, lr} (16 bytes, not the historical 12) so that after
-     'mov fp, sp' the frame pointer is 8-byte aligned. The incoming SP is
-     8-aligned (AAPCS) and the earlier arg/float pushes are even-sized, so a
-     16-byte save keeps fp on an 8-byte boundary — required for 8-byte locals
-     (long long/double/_Atomic) whose atomic access (ARM LDREXD) traps when
-     misaligned. r10 (v7) is callee-saved; saving/restoring it is harmless. */
   o(0xE92D5C00);
   o(0xE1A0B00D);
   func_sub_sp_offset = ind;
@@ -1360,7 +1344,7 @@ from_stack:
       addr = (n + nf + sn) * 4;
       sn += size;
     }
-    gfunc_set_param(sym, addr + 16, 0);   /* +16: {r10,fp,ip,lr} saved area */
+    gfunc_set_param(sym, addr + 16, 0);
   }
   last_itod_magic=0;
   leaffunc = 1;
@@ -1390,11 +1374,11 @@ void gfunc_epilog(void)
     }
   }
 #endif
-  o(0xE89BAC00);        /* ldm fp, {r10, fp, sp, pc} -- matches the 16-byte save */
+  o(0xE89BAC00);
   diff = (-loc + 3) & -4;
 #ifdef MCC_ARM_EABI
   if(!leaffunc)
-    diff = (diff + 7) & -8;   /* fp is now 8-aligned, so keep sp 8-aligned too */
+    diff = (diff + 7) & -8;
 #endif
   if(diff > 0) {
     x=stuff_const(0xE24BD000, diff);

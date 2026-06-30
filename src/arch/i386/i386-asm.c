@@ -1209,7 +1209,6 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
             goto try_next;
         case '+':
             op->is_rw = 1;
-            /* fall through */
         case '&':
             if (j >= nb_outputs)
                 mcc_error("'%c' modifier can only be applied to outputs", c);
@@ -1217,13 +1216,9 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
             goto try_next;
         case 'A':
 #ifdef MCC_TARGET_X86_64
-            /* On x86_64 the 'A' constraint is a single 64-bit register (rax);
-               the edx:eax pair form only applies to 32-bit i386, where a
-               'long long' value needs two registers.  gcc/clang both treat
-               '=A' for a <=64-bit value as plain rax here. */
             if (is_reg_allocated(TREG_XAX))
                 goto try_next;
-            op->is_llong = 0;       /* rax only: do not store edx back as the high half */
+            op->is_llong = 0;
             op->reg = TREG_XAX;
             regs_allocated[TREG_XAX] |= reg_mask;
 #else

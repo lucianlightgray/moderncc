@@ -381,7 +381,6 @@ static void asm_coprocessor_opcode(MCCState *s1, int token) {
         break;
     case TOK_ASM_mrceq:
         mrc = 1;
-    /* fall through */
     case TOK_ASM_mcreq:
         if (opcode1.e.v > 7) {
             mcc_error("opcode1 of instruction '%s' must be an immediate value between 0 and 7", get_tok_str(token, NULL));
@@ -640,7 +639,6 @@ static void asm_data_processing_opcode(MCCState *s1, int token)
                 operands |= half_immediate_rotation << 8;
                 break;
             }
-        /* fall through */
         case OP_IM8N:
             operands |= ENCODE_IMMEDIATE_FLAG;
             immediate_value = ops[2].e.v;
@@ -745,7 +743,6 @@ static void asm_shift_opcode(MCCState *s1, int token)
         switch (ARM_INSTRUCTION_GROUP(token)) {
         case TOK_ASM_rrxseq:
             opcode |= ENCODE_SET_CONDITION_CODES;
-        /* fall through */
         case TOK_ASM_rrxeq:
             if (ops[1].type == OP_REG32) {
                 operands |= ops[1].reg;
@@ -873,7 +870,6 @@ static void asm_multiplication_opcode(MCCState *s1, int token)
     switch (ARM_INSTRUCTION_GROUP(token)) {
     case TOK_ASM_mulseq:
         opcode |= 1 << 20;
-    /* fall through */
     case TOK_ASM_muleq:
         if (nb_ops != 3)
             expect("three operands");
@@ -883,7 +879,6 @@ static void asm_multiplication_opcode(MCCState *s1, int token)
         break;
     case TOK_ASM_mlaseq:
         opcode |= 1 << 20;
-    /* fall through */
     case TOK_ASM_mlaeq:
     case_TOK_ASM_mlaeq:
         if (nb_ops != 4)
@@ -898,7 +893,6 @@ static void asm_multiplication_opcode(MCCState *s1, int token)
         goto case_TOK_ASM_mlaeq;
     case TOK_ASM_udiveq:
         opcode |= 0x00200000;
-    /* fall through */
     case TOK_ASM_sdiveq:
         asm_emit_opcode(token, (opcode & ~0x80) | 0x0710f010);
         break;
@@ -946,20 +940,17 @@ static void asm_long_multiplication_opcode(MCCState *s1, int token)
     switch (ARM_INSTRUCTION_GROUP(token)) {
     case TOK_ASM_smullseq:
         opcode |= 1 << 20;
-    /* fall through */
     case TOK_ASM_smulleq:
         opcode |= 1 << 22;
         asm_emit_opcode(token, opcode);
         break;
     case TOK_ASM_umullseq:
         opcode |= 1 << 20;
-    /* fall through */
     case TOK_ASM_umulleq:
         asm_emit_opcode(token, opcode);
         break;
     case TOK_ASM_smlalseq:
         opcode |= 1 << 20;
-    /* fall through */
     case TOK_ASM_smlaleq:
         opcode |= 1 << 22;
         opcode |= 1 << 21;
@@ -967,7 +958,6 @@ static void asm_long_multiplication_opcode(MCCState *s1, int token)
         break;
     case TOK_ASM_umlalseq:
         opcode |= 1 << 20;
-    /* fall through */
     case TOK_ASM_umlaleq:
         opcode |= 1 << 21;
         asm_emit_opcode(token, opcode);
@@ -1086,7 +1076,6 @@ static void asm_single_data_transfer_opcode(MCCState *s1, int token)
     switch (ARM_INSTRUCTION_GROUP(token)) {
     case TOK_ASM_strbeq:
         opcode |= 1 << 22;
-    /* fall through */
     case TOK_ASM_streq:
         opcode |= 1 << 26;
         if (nb_shift)
@@ -1095,7 +1084,6 @@ static void asm_single_data_transfer_opcode(MCCState *s1, int token)
         break;
     case TOK_ASM_ldrbeq:
         opcode |= 1 << 22;
-    /* fall through */
     case TOK_ASM_ldreq:
         opcode |= 1 << 20;
         opcode |= 1 << 26;
@@ -1105,10 +1093,8 @@ static void asm_single_data_transfer_opcode(MCCState *s1, int token)
         break;
     case TOK_ASM_strexheq:
         opcode |= 1 << 21;
-    /* fall through */
     case TOK_ASM_strexbeq:
         opcode |= 1 << 22;
-    /* fall through */
     case TOK_ASM_strexeq:
         if ((opcode & 0xFFF) || nb_shift) {
             mcc_error("neither offset nor shift allowed with 'strex'");
@@ -1125,10 +1111,8 @@ static void asm_single_data_transfer_opcode(MCCState *s1, int token)
         break;
     case TOK_ASM_ldrexheq:
         opcode |= 1 << 21;
-    /* fall through */
     case TOK_ASM_ldrexbeq:
         opcode |= 1 << 22;
-    /* fall through */
     case TOK_ASM_ldrexeq:
         if ((opcode & 0xFFF) || nb_shift) {
             mcc_error("neither offset nor shift allowed with 'ldrex'");
@@ -1274,13 +1258,11 @@ static void asm_coprocessor_data_transfer_opcode(MCCState *s1, int token)
         switch (token) {
         case TOK_ASM_ldc2l:
             long_transfer = 1;
-        /* fall through */
         case TOK_ASM_ldc2:
             asm_emit_coprocessor_data_transfer(0xF, coprocessor, coprocessor_destination_register, &ops[1], &ops[2], op2_minus, preincrement, exclam, long_transfer, 1);
             break;
         case TOK_ASM_stc2l:
             long_transfer = 1;
-        /* fall through */
         case TOK_ASM_stc2:
             asm_emit_coprocessor_data_transfer(0xF, coprocessor, coprocessor_destination_register, &ops[1], &ops[2], op2_minus, preincrement, exclam, long_transfer, 0);
             break;
@@ -1288,13 +1270,11 @@ static void asm_coprocessor_data_transfer_opcode(MCCState *s1, int token)
     } else switch (ARM_INSTRUCTION_GROUP(token)) {
     case TOK_ASM_stcleq:
         long_transfer = 1;
-    /* fall through */
     case TOK_ASM_stceq:
         asm_emit_coprocessor_data_transfer(condition_code_of_token(token), coprocessor, coprocessor_destination_register, &ops[1], &ops[2], op2_minus, preincrement, exclam, long_transfer, 0);
         break;
     case TOK_ASM_ldcleq:
         long_transfer = 1;
-    /* fall through */
     case TOK_ASM_ldceq:
         asm_emit_coprocessor_data_transfer(condition_code_of_token(token), coprocessor, coprocessor_destination_register, &ops[1], &ops[2], op2_minus, preincrement, exclam, long_transfer, 1);
         break;
@@ -1432,7 +1412,6 @@ static void asm_floating_point_block_data_transfer_opcode(MCCState *s1, int toke
         break;
     case TOK_ASM_vldmdbeq:
         load = 1;
-    /* fall through */
     case TOK_ASM_vpusheq:
     case TOK_ASM_vstmdbeq:
         offset.type = OP_IM8N;
@@ -1689,7 +1668,6 @@ static void asm_floating_point_vcvt_data_processing_opcode(MCCState *s1, int tok
     case TOK_ASM_vcvteq_s32_f32:
     case TOK_ASM_vcvteq_s32_f64:
         ops[1].e.v |= 1;
-    /* fall through */
     case TOK_ASM_vcvteq_u32_f32:
     case TOK_ASM_vcvteq_u32_f64:
     case TOK_ASM_vcvtreq_u32_f32:
@@ -2110,7 +2088,6 @@ static void asm_misc_single_data_transfer_opcode(MCCState *s1, int token)
     switch (ARM_INSTRUCTION_GROUP(token)) {
     case TOK_ASM_ldrsheq:
         opcode |= 1 << 5;
-    /* fall through */
     case TOK_ASM_ldrsbeq:
         opcode |= 1 << 6;
         opcode |= 1 << 20;
@@ -2708,7 +2685,6 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
             goto try_next;
         case '+':
             op->is_rw = 1;
-        /* fall through */
         case '&':
             if (j >= nb_outputs)
                 mcc_error("'%c' modifier can only be applied to outputs",

@@ -14,9 +14,6 @@
 #define ELF_START_ADDR 0x08048000
 #define ELF_PAGE_SIZE  0x1000
 
-/* PC-relative PLT entries are used when generating position-independent code;
-   selected at runtime from the link state's pic flag (-f[no-]pic/PIE). Uses s1,
-   which is in scope at the single (link-phase) use site. */
 #define PCRELATIVE_DLLPLT (s1->pic != 0)
 #define RELOCATE_DLLPLT 1
 
@@ -292,7 +289,6 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 
                 for (int i = 1; i < s1->nb_sections; i++) {
                     Section *s = s1->sections[i];
-                    /* PE layout leaves s->sh_size 0; the live size is data_offset. */
                     addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
                     if (s->sh_flags & SHF_TLS && ssz) {
                         if (!tls_start || s->sh_addr < tls_start)
@@ -307,10 +303,6 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
                     addr_t tls_size = tls_end - tls_start;
                     addr_t aligned_size = (tls_size + tls_align - 1) & ~(tls_align - 1);
 #ifdef MCC_TARGET_PE
-                    /* Windows static TLS: displacement is the offset from the
-                       start of the TLS template, reached via the per-thread
-                       block at TEB->ThreadLocalStoragePointer[_tls_index] -- not
-                       the SysV tp-relative offset (%gs:0 thread pointer). */
                     (void)aligned_size;
                     x = val - tls_start;
 #else

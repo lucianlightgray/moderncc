@@ -1,8 +1,8 @@
-/* Self-contained compilation/run workload for the multithreaded libmcc
-   embedding stress test (api_threaded.c). It is compiled repeatedly and run
-   concurrently across threads; the harness only checks the exit code, so the
-   interleaved stdout is unimportant. Kept dependency-light so it compiles with
-   just the bundled runtime headers. */
+
+
+
+
+
 
 #include <stdio.h>
 

@@ -1,6 +1,6 @@
-/* GAS data directives via file-scope asm, read back from C:
-   .rept/.endr, .fill, .skip, .asciz vs .ascii, .set, and a symbol-relative
-   .long (local-label difference 2b-1b). Requires the integrated assembler. */
+
+
+
 #include <stdio.h>
 
 extern unsigned char  rep[4];
@@ -20,16 +20,16 @@ asm(
     ".globl skipd\n"
     "skipd: .byte 0xAA\n .skip 3,0xBB\n .byte 0xCC\n"
     ".globl asciz_s\n"
-    "asciz_s: .asciz \"ab\"\n"        /* keeps trailing NUL -> {'a','b',0} */
+    "asciz_s: .asciz \"ab\"\n"
     ".globl ascii_s\n"
-    "ascii_s: .ascii \"cd\"\n .byte 0\n"  /* .ascii drops NUL; we add one */
+    "ascii_s: .ascii \"cd\"\n .byte 0\n"
     ".globl delta\n"
     "1: .long 0\n"
     "2: .long 0\n"
-    "delta: .long 2b-1b\n"            /* local-label difference == 4 */
+    "delta: .long 2b-1b\n"
     ".globl realsym\n"
     "realsym: .long 99\n"
-    ".set aliased, realsym\n"         /* .set symbol aliasing */
+    ".set aliased, realsym\n"
 );
 
 int main(void)

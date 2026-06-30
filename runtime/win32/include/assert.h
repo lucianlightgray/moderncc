@@ -48,7 +48,7 @@ extern void __cdecl _assert(const char *, const char *, unsigned);
 #endif
 
 #if (__STDC_VERSION__ >= 201112L) && !defined(static_assert)
-#define static_assert(exp, str) _Static_assert(exp, str) 
+#define static_assert(exp, str) _Static_assert(exp, str)
 #endif
 
 #endif

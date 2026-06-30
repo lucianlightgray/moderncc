@@ -1,11 +1,11 @@
-/* __builtin_{ffs,clz,ctz,clrsb,popcount,parity}{,l,ll}: constant-foldable in
-   integer constant expressions (gcc/clang-compatible), and lowered to the
-   runtime helper when the argument is not a constant. The array sizes below
-   force compile-time folding (a negative size would fail to compile); the
-   printf path exercises the runtime-call fallback with volatile operands. */
+
+
+
+
+
 extern int printf(const char *, ...);
 
-/* ICE folding: these only compile if the builtins fold to constants. */
+
 int fold_clz[__builtin_clz(1u) == 31 ? 1 : -1];
 int fold_ctz[__builtin_ctz(8u) == 3 ? 1 : -1];
 int fold_pop[__builtin_popcount(0xffu) == 8 ? 1 : -1];

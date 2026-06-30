@@ -3141,17 +3141,6 @@ __asm__(
 #endif
 #endif
 
-/* ------------------------------------------------------------------------- *
- * Size-generic atomic ops (libatomic-compatible) for _Atomic objects with no
- * lock-free instruction — aggregates (e.g. _Atomic struct) and >8-byte scalars.
- * mcc's gen_atomic_{load,store}_aggregate lowering emits calls to these
- * (size, mem, val/ret, order). A small spinlock pool indexed by the object
- * address gives mutual exclusion; the lock provides the (seq-cst) ordering, so
- * the `order` argument is intentionally ignored. Portable C, compiled for every
- * target; the byte-lock uses the __atomic_*_n builtins (which lower to the
- * size-1 ops defined above). Mixing these with lock-free ops on the same object
- * is not lock-free (atomic_is_lock_free reports false), as the standard allows.
- * ------------------------------------------------------------------------- */
 typedef __SIZE_TYPE__ __mcc_usize;
 
 static volatile unsigned char __mcc_atomic_locks[64];

@@ -299,10 +299,10 @@ long long __divdi3(long long u, long long v)
     int c = 0;
     DWunion uu, vv;
     DWtype w;
-    
+
     uu.ll = u;
     vv.ll = v;
-    
+
     if (uu.s.high < 0) {
         c = ~c;
         uu.ll = __negdi2 (uu.ll);
@@ -322,17 +322,17 @@ long long __moddi3(long long u, long long v)
     int c = 0;
     DWunion uu, vv;
     DWtype w;
-    
+
     uu.ll = u;
     vv.ll = v;
-    
+
     if (uu.s.high < 0) {
         c = ~c;
         uu.ll = __negdi2 (uu.ll);
     }
     if (vv.s.high < 0)
         vv.ll = __negdi2 (vv.ll);
-    
+
     __udivmoddi4 (uu.ll, vv.ll, (UDWtype *) &w);
     if (c)
         w = __negdi2 (w);
@@ -347,7 +347,7 @@ unsigned long long __udivdi3(unsigned long long u, unsigned long long v)
 unsigned long long __umoddi3(unsigned long long u, unsigned long long v)
 {
     UDWtype w;
-    
+
     __udivmoddi4 (u, v, &w);
     return w;
 }
@@ -410,7 +410,7 @@ long long __ashldi3(long long a, int b)
 
 float __floatundisf(unsigned long long a)
 {
-    DWunion uu; 
+    DWunion uu;
     XFtype r;
 
     uu.ll = a;
@@ -425,7 +425,7 @@ float __floatundisf(unsigned long long a)
 
 double __floatundidf(unsigned long long a)
 {
-    DWunion uu; 
+    DWunion uu;
     XFtype r;
 
     uu.ll = a;
@@ -440,7 +440,7 @@ double __floatundidf(unsigned long long a)
 
 long double __floatundixf(unsigned long long a)
 {
-    DWunion uu; 
+    DWunion uu;
     XFtype r;
 
     uu.ll = a;

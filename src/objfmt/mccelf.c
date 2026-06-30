@@ -31,10 +31,6 @@ static const char rdata[] = ".data.ro";
 
 
 #ifndef ELF_OBJ_ONLY
-/* When --sysroot points at a musl tree, return its in-sysroot dynamic linker
-   path (e.g. "/lib/ld-musl-x86_64.so.1") so the produced binary uses the musl
-   loader instead of the fixed glibc default. Mirrors how gcc/clang derive the
-   interpreter from the sysroot. Returns a malloc'd string, or NULL. */
 static char *musl_elfinterp(MCCState *s)
 {
     const char *arch;
@@ -543,9 +539,6 @@ ST_FUNC void list_elf_symbols(MCCState *s, void *ctx,
             sym_bind = ELFW(ST_BIND)(sym->st_info);
             sym_vis = ELFW(ST_VISIBILITY)(sym->st_other);
             if (sym_bind == STB_GLOBAL && sym_vis == STV_DEFAULT) {
-                /* Report the source-level name so it round-trips with
-                   mcc_get_symbol(): on leading-underscore targets (Mach-O)
-                   the object symbol is '_name', but callers pass 'name'. */
                 const char *uname = name;
                 if (s->leading_underscore && uname[0] == '_')
                     uname++;
@@ -2848,8 +2841,6 @@ static void alloc_sec_names(MCCState *s1, int is_obj)
         s = s1->sections[i];
         if (is_obj)
             s->sh_size = s->data_offset;
-        /* -s: leave .symtab/.strtab unnamed so sort/reorder drop them from the
-           output (only for linked output; objects keep their symbols). */
         if (s1->do_strip && !is_obj
             && (s == s1->symtab || (s1->symtab && s == s1->symtab->link)))
             continue;
@@ -3690,13 +3681,6 @@ static int ld_add_file(MCCState *s1, const char filename[])
 {
     if (filename[0] == '-' && filename[1] == 'l')
         return mcc_add_library(s1, filename + 2);
-    /* When any sysroot is in effect, a linker-script GROUP/INPUT member named
-       by an absolute path (e.g. GROUP(/lib64/libc.so.6 ...)) must be resolved
-       by basename against the search paths (which point into the sysroot),
-       not opened at that literal path on the real root. Honour the runtime
-       --sysroot (s1->sysroot), not just the compile-time CONFIG_SYSROOT, so a
-       native compiler given --sysroot rebases these the same way a cross
-       compiler (non-empty CONFIG_SYSROOT) already does. */
     if ((s1->sysroot && s1->sysroot[0]) || CONFIG_SYSROOT[0] != '\0'
             || !IS_ABSPATH(filename)) {
         int ret = mcc_add_dll(s1, mcc_basename(filename), 0);

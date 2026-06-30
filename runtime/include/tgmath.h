@@ -8,10 +8,6 @@
 #ifndef __cplusplus
 
 #if LDBL_MANT_DIG == DBL_MANT_DIG
-/* On ABIs where long double has the same type as double (e.g. MSVC/PE, and
-   AArch64 Mach-O), an explicit `long double` / `long double _Complex` arm
-   duplicates the double arm and makes _Generic ill-formed ("two compatible
-   types"). Fold those into the double/default selection. */
 #define __tgmath_real(x, F) \
   _Generic ((x), float: F##f, default: F)(x)
 #define __tgmath_real_2_1(x, y, F) \
@@ -42,15 +38,12 @@
 #define __tgmath_real_3(x, y, z, F) \
   _Generic ((x)+(y)+(z), float: F##f, long double: F##l, default: F)(x, y, z)
 
-/* 7.25: functions with both real and complex variants dispatch to the
-   c-prefixed function when any argument has complex type. */
 #define __tgmath_rc(x, F, C) _Generic ((x),                     \
     float _Complex: C##f, double _Complex: C, long double _Complex: C##l, \
     float: F##f, long double: F##l, default: F)(x)
 #define __tgmath_rc2(x, y, F, C) _Generic ((x)+(y),             \
     float _Complex: C##f, double _Complex: C, long double _Complex: C##l, \
     float: F##f, long double: F##l, default: F)(x, y)
-/* 7.25p7: type-generic forms of the complex-only functions. */
 #define __tgmath_cx(x, C) _Generic ((x),                        \
     float _Complex: C##f, long double _Complex: C##l, default: C)(x)
 #endif
@@ -77,13 +70,6 @@
 #define conj(z)          __tgmath_cx(z, conj)
 #define cproj(z)         __tgmath_cx(z, cproj)
 
-/* 7.25p7: type-generic creal/cimag must select crealf/cimagf (float) or
-   creall/cimagl (long double) by the complex element type. <complex.h>'s plain
-   creal/cimag are fixed-double — `creal(long double complex)` would cast down to
-   double, losing precision. Redefine here via _Generic over the per-type macro
-   forms (still __real__/__imag__ expressions, so no libm call is introduced).
-   On LDBL==DBL ABIs the long double arm would duplicate the double arm and make
-   _Generic ill-formed, so it is folded into default there. */
 #undef creal
 #undef cimag
 #if LDBL_MANT_DIG == DBL_MANT_DIG
@@ -129,9 +115,6 @@
 #define lround(x)        __tgmath_real(x, lround)
 #define nearbyint(x)     __tgmath_real(x, nearbyint)
 #define nextafter(x,y)   __tgmath_real_2(x, y, nextafter)
-/* 7.25p6: nexttoward's second argument is always long double, so the generic
-   function is selected from the FIRST argument's type only (keying on (x)+(y)
-   would always promote to long double and force nexttowardl). */
 #define nexttoward(x,y)  __tgmath_real_2_1(x, y, nexttoward)
 #define remainder(x,y)   __tgmath_real_2(x, y, remainder)
 #define remquo(x,y,z)    __tgmath_real_3_2(x, y, z, remquo)

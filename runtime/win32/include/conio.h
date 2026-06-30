@@ -131,7 +131,7 @@ extern "C" {
   __CRT_INLINE void __inbytestring(unsigned short Port,unsigned char *Buffer,unsigned long Count)
   {
 	__asm__ __volatile__ (
-		"cld ; rep ; insb " 
+		"cld ; rep ; insb "
 		: "=D" (Buffer), "=c" (Count)
 		: "d"(Port), "0"(Buffer), "1" (Count)
 		);
@@ -139,7 +139,7 @@ extern "C" {
   __CRT_INLINE void __inwordstring(unsigned short Port,unsigned short *Buffer,unsigned long Count)
   {
 	__asm__ __volatile__ (
-		"cld ; rep ; insw " 
+		"cld ; rep ; insw "
 		: "=D" (Buffer), "=c" (Count)
 		: "d"(Port), "0"(Buffer), "1" (Count)
 		);
@@ -147,7 +147,7 @@ extern "C" {
   __CRT_INLINE void __indwordstring(unsigned short Port,unsigned long *Buffer,unsigned long Count)
   {
 	__asm__ __volatile__ (
-		"cld ; rep ; insl " 
+		"cld ; rep ; insl "
 		: "=D" (Buffer), "=c" (Count)
 		: "d"(Port), "0"(Buffer), "1" (Count)
 		);
@@ -156,7 +156,7 @@ extern "C" {
   __CRT_INLINE void __outbytestring(unsigned short Port,unsigned char *Buffer,unsigned long Count)
   {
       __asm__ __volatile__ (
-          "cld ; rep ; outsb " 
+          "cld ; rep ; outsb "
           : "=S" (Buffer), "=c" (Count)
           : "d"(Port), "0"(Buffer), "1" (Count)
           );
@@ -164,7 +164,7 @@ extern "C" {
   __CRT_INLINE void __outwordstring(unsigned short Port,unsigned short *Buffer,unsigned long Count)
   {
       __asm__ __volatile__ (
-          "cld ; rep ; outsw " 
+          "cld ; rep ; outsw "
           : "=S" (Buffer), "=c" (Count)
           : "d"(Port), "0"(Buffer), "1" (Count)
           );
@@ -172,7 +172,7 @@ extern "C" {
   __CRT_INLINE void __outdwordstring(unsigned short Port,unsigned long *Buffer,unsigned long Count)
   {
       __asm__ __volatile__ (
-          "cld ; rep ; outsl " 
+          "cld ; rep ; outsl "
           : "=S" (Buffer), "=c" (Count)
           : "d"(Port), "0"(Buffer), "1" (Count)
           );
@@ -182,12 +182,12 @@ extern "C" {
   {
       unsigned __int64 value;
       __asm__ __volatile__ (
-          "mov %%cr0, %[value]" 
+          "mov %%cr0, %[value]"
           : [value] "=q" (value));
       return value;
   }
- 
- 
+
+
 #ifdef _WIN64
   __CRT_INLINE void __writecr0(unsigned __int64 Data)
   {
@@ -197,12 +197,12 @@ extern "C" {
        : [Data] "q" (Data)
        : "memory");
   }
- 
+
   __CRT_INLINE unsigned __int64 __readcr2(void)
   {
       unsigned __int64 value;
       __asm__ __volatile__ (
-          "mov %%cr2, %[value]" 
+          "mov %%cr2, %[value]"
           : [value] "=q" (value));
       return value;
   }
@@ -215,12 +215,12 @@ extern "C" {
        : [Data] "q" (Data)
        : "memory");
  }
- 
+
   __CRT_INLINE unsigned __int64 __readcr3(void)
   {
       unsigned __int64 value;
       __asm__ __volatile__ (
-          "mov %%cr3, %[value]" 
+          "mov %%cr3, %[value]"
           : [value] "=q" (value));
       return value;
   }
@@ -233,12 +233,12 @@ extern "C" {
        : [Data] "q" (Data)
        : "memory");
  }
- 
+
   __CRT_INLINE unsigned __int64 __readcr4(void)
   {
       unsigned __int64 value;
       __asm__ __volatile__ (
-          "mov %%cr4, %[value]" 
+          "mov %%cr4, %[value]"
           : [value] "=q" (value));
       return value;
   }
@@ -251,12 +251,12 @@ extern "C" {
          : [Data] "q" (Data)
          : "memory");
  }
- 
+
   __CRT_INLINE unsigned __int64 __readcr8(void)
   {
       unsigned __int64 value;
       __asm__ __volatile__ (
-          "mov %%cr8, %[value]" 
+          "mov %%cr8, %[value]"
           : [value] "=q" (value));
       return value;
   }
@@ -269,7 +269,7 @@ extern "C" {
        : [Data] "q" (Data)
        : "memory");
  }
- 
+
 #elif defined(_WIN32)
 
   __CRT_INLINE void __writecr0(unsigned Data)
@@ -280,12 +280,12 @@ extern "C" {
        : [Data] "q" (Data)
        : "memory");
   }
- 
+
   __CRT_INLINE unsigned long __readcr2(void)
   {
       unsigned long value;
       __asm__ __volatile__ (
-          "mov %%cr2, %[value]" 
+          "mov %%cr2, %[value]"
           : [value] "=q" (value));
       return value;
   }
@@ -298,12 +298,12 @@ extern "C" {
        : [Data] "q" (Data)
        : "memory");
  }
- 
+
   __CRT_INLINE unsigned long __readcr3(void)
   {
       unsigned long value;
       __asm__ __volatile__ (
-          "mov %%cr3, %[value]" 
+          "mov %%cr3, %[value]"
           : [value] "=q" (value));
       return value;
   }
@@ -316,12 +316,12 @@ extern "C" {
        : [Data] "q" (Data)
        : "memory");
  }
- 
+
   __CRT_INLINE unsigned long __readcr4(void)
   {
       unsigned long value;
       __asm__ __volatile__ (
-          "mov %%cr4, %[value]" 
+          "mov %%cr4, %[value]"
           : [value] "=q" (value));
       return value;
   }
@@ -334,11 +334,11 @@ extern "C" {
          : [Data] "q" (Data)
          : "memory");
  }
- 
+
  __CRT_INLINE unsigned long __readcr8(void)
  {
    unsigned long value;      __asm__ __volatile__ (
-          "mov %%cr8, %[value]" 
+          "mov %%cr8, %[value]"
           : [value] "=q" (value));
      return value;
  }
@@ -351,7 +351,7 @@ extern "C" {
        : [Data] "q" (Data)
        : "memory");
  }
- 
+
 #endif
 
   __CRT_INLINE unsigned __int64 __readmsr(unsigned long msr)
@@ -372,12 +372,12 @@ extern "C" {
        :
        : "c" (msr), "a" (val1), "d" (val2));
  }
- 
+
   __CRT_INLINE unsigned __int64 __rdtsc(void)
   {
       unsigned __int64 val1, val2;
       __asm__ __volatile__ (
-          "rdtsc" 
+          "rdtsc"
           : "=a" (val1), "=d" (val2));
       return val1 | (val2 << 32);
   }

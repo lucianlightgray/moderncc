@@ -121,8 +121,6 @@ ST_DATA const int reg_classes[NB_REGS] = {
 static unsigned long func_sub_sp_offset;
 static int func_ret_sub;
 #if !defined(MCC_TARGET_PE) && !defined(MCC_TARGET_MACHO)
-/* -fstack-protector canary slot, 0 = none. The SysV %fs:0x28 guard is emitted
-   only on this path; PE and Mach-O use neither (see gen_stack_chk_*). */
 static int func_stack_chk_loc;
 #endif
 
@@ -305,8 +303,6 @@ static void gen_modrm64(int opcode, int op_reg, int r, Sym *sym, int c)
 
 
 #ifdef MCC_TARGET_PE
-/* The synthetic _tls_index slot the loader fills with this module's TLS index.
-   Defined in the image by pe_add_tls(); referenced here as an external. */
 static Sym *pe_tls_index_sym(void)
 {
     CType ct;
@@ -315,59 +311,39 @@ static Sym *pe_tls_index_sym(void)
     return external_global_sym(tok_alloc_const("_tls_index"), &ct);
 }
 
-/* Materialise the base of this thread's TLS block into register `dst`:
-       mov  dst, %gs:0x58          ; TEB->ThreadLocalStoragePointer (array)
-       mov  sc,  [rip + _tls_index] ; this module's slot
-       mov  dst, [dst + sc*8]       ; -> per-thread TLS block base
-   The Windows TLS model is unrelated to the SysV %fs:0 thread pointer; the
-   caller adds the variable's template offset (sym@secrel, an R_X86_64_TPOFF32
-   the PE linker resolves as val-tls_start) and dereferences. A scratch is
-   needed for the slot index; pick one distinct from dst and preserve it with
-   push/pop so the surrounding register allocation is undisturbed. */
 static void gen_pe_tls_base(int dst)
 {
     int sc = (REG_VALUE(dst) == TREG_RAX) ? TREG_RCX : TREG_RAX;
-    o(0x50 + sc);                            /* push sc (low reg, no REX)    */
-    o(0x65);                                 /* GS prefix                    */
-    o(0x48 | (REX_BASE(dst) << 2));          /* REX.W (+R if dst is r8-r15)  */
+    o(0x50 + sc);
+    o(0x65);
+    o(0x48 | (REX_BASE(dst) << 2));
     o(0x8b);
-    o(0x04 | (REG_VALUE(dst) << 3));         /* mod=00 reg=dst rm=SIB        */
-    o(0x25);                                 /* SIB: [disp32], no base/index */
-    gen_le32(0x58);                          /* dst = ThreadLocalStoragePointer */
-    o(0x8b);                                 /* mov sc, [rip+_tls_index]     */
-    o(0x05 | (sc << 3));                     /* mod=00 reg=sc rm=RIP-disp32  */
+    o(0x04 | (REG_VALUE(dst) << 3));
+    o(0x25);
+    gen_le32(0x58);
+    o(0x8b);
+    o(0x05 | (sc << 3));
     gen_addrpc32(VT_SYM, pe_tls_index_sym(), 0);
-    o(0x48 | (REX_BASE(dst) << 2) | REX_BASE(dst)); /* REX.W +R(reg) +B(base) */
-    o(0x8b);                                 /* mov dst, [dst + sc*8]        */
-    o(0x44 | (REG_VALUE(dst) << 3));         /* mod=01 reg=dst rm=SIB        */
-    o((3 << 6) | (sc << 3) | REG_VALUE(dst));/* SIB scale=8 index=sc base=dst */
-    g(0x00);                                 /* disp8 = 0 (g: emit one byte; */
-                                             /*  o(0) would emit nothing)    */
-    o(0x58 + sc);                            /* pop sc                       */
+    o(0x48 | (REX_BASE(dst) << 2) | REX_BASE(dst));
+    o(0x8b);
+    o(0x44 | (REG_VALUE(dst) << 3));
+    o((3 << 6) | (sc << 3) | REG_VALUE(dst));
+    g(0x00);
+    o(0x58 + sc);
 }
 #endif
 
 #ifdef MCC_TARGET_MACHO
-/* Materialise this thread's address of a thread-local into r11.  On Mach-O a
-   `_Thread_local` resolves to a { thunk, key, offset } TLV descriptor; the
-   symbol's address IS the descriptor.  Calling the (dyld-populated) thunk with
-   the descriptor address in %rdi returns the per-thread address of the variable
-   in %rax.  The TLV thunk preserves every register except %rax, so we save
-   %rax/%rdi around it and move the result into the scratch r11, leaving the
-   surrounding register allocation untouched.  The caller then reads/writes
-   [r11 + offset]; the constant member/element offset is applied there, so the
-   descriptor reference carries no addend (mirroring clang's relaxed
-   leaq _x(%rip),%rdi ; callq *(%rdi)). */
 static void gen_macho_tls_base(Sym *sym)
 {
-    o(0x50);                  /* push %rax                      */
-    o(0x57);                  /* push %rdi                      */
-    o(0x3d8d48);              /* lea  <descriptor>(%rip), %rdi  */
+    o(0x50);
+    o(0x57);
+    o(0x3d8d48);
     gen_addrpc32(VT_SYM, sym, 0);
-    o(0x17ff);                /* call *(%rdi)   -> %rax = &var  */
-    o(0xc38949);              /* mov  %rax, %r11                */
-    o(0x5f);                  /* pop  %rdi                      */
-    o(0x58);                  /* pop  %rax                      */
+    o(0x17ff);
+    o(0xc38949);
+    o(0x5f);
+    o(0x58);
 }
 #endif
 
@@ -398,44 +374,36 @@ void load(int r, SValue *sv)
     }
 #endif
 
-    /* TLS lvalue: materialise the tp-relative address into a register, then
-       load through it with the normal typed path.  The old segment-relative
-       form hard-coded a full-word mov (0x8b), so a char/short TLS read pulled
-       4/8 bytes and ignored sign/zero extension.  (Outside the PIC #ifndef so
-       it still applies on PE, matching the store path.) */
     if ((fr & VT_VALMASK) == VT_CONST && (fr & VT_SYM) &&
         (fr & VT_LVAL) && (sv->sym->type.t & VT_TLS)) {
         int tr = r | TREG_MEM;
         if (is_float(ft))
             tr = get_reg(RC_INT) | TREG_MEM;
 #if defined(MCC_TARGET_PE)
-        gen_pe_tls_base(tr);                  /* tr = per-thread TLS base  */
-        o(0x48 | REX_BASE(tr));               /* REX.W (+REX.B if r8-r15)  */
+        gen_pe_tls_base(tr);
+        o(0x48 | REX_BASE(tr));
         o(0x81);
-        o(0xc0 | REG_VALUE(tr));              /* add tr, sym@secrel        */
+        o(0xc0 | REG_VALUE(tr));
         greloca(cur_text_section, sv->sym, ind, R_X86_64_TPOFF32, 0);
         gen_le32(0);
 #elif defined(MCC_TARGET_MACHO)
-        gen_macho_tls_base(sv->sym);          /* r11 = &var (via TLV thunk) */
-        /* Move &var into tr (a low register for the float case) before the
-           typed load: an SSE load through r8-r15 would mis-order the REX prefix
-           relative to the mandatory f3/66 prefix, so the base must stay low. */
-        orex(1, tr, TREG_R11, 0x89);          /* mov %r11, tr               */
+        gen_macho_tls_base(sv->sym);
+        orex(1, tr, TREG_R11, 0x89);
         o(0xc0 + REG_VALUE(tr) + REG_VALUE(TREG_R11) * 8);
 #else
-        o(0x64);                              /* FS prefix                 */
-        o(0x48 | (REX_BASE(tr) << 2));        /* REX.W (+REX.R if r8-r15)  */
+        o(0x64);
+        o(0x48 | (REX_BASE(tr) << 2));
         o(0x8b);
-        o(0x04 | (REG_VALUE(tr) << 3));       /* mov tr, %fs:[disp32]      */
+        o(0x04 | (REG_VALUE(tr) << 3));
         o(0x25);
-        gen_le32(0);                          /* tr = TP                   */
-        o(0x48 | REX_BASE(tr));               /* REX.W (+REX.B if r8-r15)  */
+        gen_le32(0);
+        o(0x48 | REX_BASE(tr));
         o(0x81);
-        o(0xc0 | REG_VALUE(tr));              /* add tr, sym@tpoff         */
+        o(0xc0 | REG_VALUE(tr));
         greloca(cur_text_section, sv->sym, ind, R_X86_64_TPOFF32, 0);
         gen_le32(0);
 #endif
-        fr = tr | VT_LVAL;                     /* now [tr + fc], typed      */
+        fr = tr | VT_LVAL;
     }
 
     v = fr & VT_VALMASK;
@@ -513,15 +481,10 @@ void load(int r, SValue *sv)
             if (fr & VT_SYM) {
 #ifdef MCC_TARGET_PE
                 if (sv->sym->type.t & VT_TLS) {
-                    /* &thread_local: materialise the per-thread block base via
-                       the TEB, then add the variable's template offset. The
-                       value paths produce TEB-relative accesses; the bare
-                       &address must be the same thread-relative pointer, not the
-                       section image address (only the per-thread init template). */
                     gen_pe_tls_base(r);
-                    o(0x48 | REX_BASE(r));         /* REX.W (+REX.B if r8-r15) */
+                    o(0x48 | REX_BASE(r));
                     o(0x81);
-                    o(0xc0 | REG_VALUE(r));        /* add r, (sym+fc)@secrel   */
+                    o(0xc0 | REG_VALUE(r));
                     greloca(cur_text_section, sv->sym, ind, R_X86_64_TPOFF32, fc);
                     gen_le32(0);
                 } else {
@@ -532,35 +495,25 @@ void load(int r, SValue *sv)
 #else
                 if (sv->sym->type.t & VT_TLS) {
 #ifdef MCC_TARGET_MACHO
-                    /* &thread_local: the TLV thunk returns the per-thread
-                       address in r11; add the constant member/element offset
-                       and move it into the destination register. */
-                    gen_macho_tls_base(sv->sym);   /* r11 = &var */
+                    gen_macho_tls_base(sv->sym);
                     o(0x48 | (REX_BASE(r) << 2) | REX_BASE(TREG_R11));
-                    o(0x8d);                       /* lea r, [r11 + fc]        */
+                    o(0x8d);
                     o(0x80 | (REG_VALUE(r) << 3) | REG_VALUE(TREG_R11));
                     gen_le32(fc);
 #else
-                    /* Address of a thread-local (Local Exec): thread pointer
-                       (%fs:0) + sym@tpoff, mirroring gcc's
-                           movq %fs:0,%reg ; addq $sym@tpoff,%reg
-                       The value load/store paths emit %fs:-relative accesses;
-                       taking the &address must materialise the same tp-relative
-                       pointer, not the section image address (which is only the
-                       per-thread init template, not any thread's live copy). */
                     int dst = REG_VALUE(r);
-                    o(0x64);                       /* FS segment prefix        */
-                    o(0x48 | (REX_BASE(r) << 2));  /* REX.W (+REX.R if r8-r15) */
-                    o(0x8b);                       /* mov reg, [disp32]        */
-                    o(0x04 | (dst << 3));          /* mod=00 reg=dst rm=SIB    */
-                    o(0x25);                       /* SIB: disp32, no base/idx */
-                    gen_le32(0);                   /* %fs:0 -> reg = TP        */
-                    o(0x48 | REX_BASE(r));         /* REX.W (+REX.B if r8-r15) */
-                    o(0x81);                       /* add reg, imm32 (/0)      */
+                    o(0x64);
+                    o(0x48 | (REX_BASE(r) << 2));
+                    o(0x8b);
+                    o(0x04 | (dst << 3));
+                    o(0x25);
+                    gen_le32(0);
+                    o(0x48 | REX_BASE(r));
+                    o(0x81);
                     o(0xc0 | dst);
                     greloca(cur_text_section, sv->sym, ind,
                             R_X86_64_TPOFF32, fc);
-                    gen_le32(0);                   /* += sym@tpoff             */
+                    gen_le32(0);
 #endif
                 } else if (sv->sym->type.t & VT_STATIC) {
                     orex(1,0,r,0x8d);
@@ -658,30 +611,26 @@ void store(int r, SValue *v)
     bt = ft & VT_BTYPE;
 
     if ((v->r & VT_SYM) && v->sym->type.t & VT_TLS) {
-        /* TLS lvalue: materialise the tp-relative address into r11, then store
-           through [r11] with the normal typed path.  The old segment-relative
-           form hard-coded a full-word mov (0x89), so a char/short TLS store
-           wrote 4/8 bytes and clobbered the neighbouring object. */
 #if defined(MCC_TARGET_PE)
-        gen_pe_tls_base(TREG_R11);            /* r11 = per-thread TLS base */
-        o(0x49); o(0x81); o(0xc3);            /* add r11, (sym+fc)@secrel  */
+        gen_pe_tls_base(TREG_R11);
+        o(0x49); o(0x81); o(0xc3);
         greloca(cur_text_section, v->sym, ind, R_X86_64_TPOFF32, fc);
         gen_le32(0);
 #elif defined(MCC_TARGET_MACHO)
-        gen_macho_tls_base(v->sym);           /* r11 = &var (via TLV thunk) */
+        gen_macho_tls_base(v->sym);
         if (fc) {
-            o(0x49); o(0x81); o(0xc3);        /* add r11, fc (member offset) */
+            o(0x49); o(0x81); o(0xc3);
             gen_le32(fc);
         }
 #else
-        o(0x64);                              /* FS prefix                 */
-        o(0x4c); o(0x8b); o(0x1c); o(0x25);   /* mov r11, %fs:[disp32]     */
-        gen_le32(0);                          /* r11 = TP                  */
-        o(0x49); o(0x81); o(0xc3);            /* add r11, sym@tpoff        */
+        o(0x64);
+        o(0x4c); o(0x8b); o(0x1c); o(0x25);
+        gen_le32(0);
+        o(0x49); o(0x81); o(0xc3);
         greloca(cur_text_section, v->sym, ind, R_X86_64_TPOFF32, fc);
         gen_le32(0);
 #endif
-        pic = is64_type(bt) ? 0x49 : 0x41;    /* subsequent store -> [r11] */
+        pic = is64_type(bt) ? 0x49 : 0x41;
         fc = 0;
     }
 #ifndef MCC_TARGET_PE
@@ -794,7 +743,7 @@ static void gen_bounds_epilog(void)
     bounds_ptr = section_ptr_add(lbounds_section, sizeof(addr_t));
     *bounds_ptr = 0;
 
-    sym_data = get_sym_ref(&char_pointer_type, lbounds_section, 
+    sym_data = get_sym_ref(&char_pointer_type, lbounds_section,
                            func_bound_offset, PTR_SIZE);
 
     if (offset_modified) {
@@ -906,7 +855,7 @@ void gfunc_call(int nb_args)
     struct_size = args_size;
     for(int i = 0; i < nb_args; i++) {
         SValue *sv;
-        
+
         --arg;
         sv = &vtop[-i];
         bt = (sv->type.t & VT_BTYPE);
@@ -974,7 +923,7 @@ void gfunc_call(int nb_args)
                     vtop->type.t = size > 4 ? VT_LLONG : size > 2 ? VT_INT
                         : size > 1 ? VT_SHORT : VT_BYTE;
                 }
-                
+
                 r = gv(RC_INT);
                 if (arg >= REGN) {
                     gen_offs_sp(0x89, r, arg*8);
@@ -994,7 +943,7 @@ void gfunc_call(int nb_args)
             o(0xda894c);
         }
     }
-    
+
     gcall_or_jmp(0);
 
     if ((vtop->r & VT_SYM) && vtop->sym->v == TOK_alloca) {
@@ -1160,10 +1109,10 @@ static X86_64_Mode classify_x86_64_inner(CType *ty)
 {
     X86_64_Mode mode;
     Sym *f;
-    
+
     switch (ty->t & VT_BTYPE) {
     case VT_VOID: return x86_64_mode_none;
-    
+
     case VT_INT:
     case VT_BYTE:
     case VT_SHORT:
@@ -1172,19 +1121,19 @@ static X86_64_Mode classify_x86_64_inner(CType *ty)
     case VT_PTR:
     case VT_FUNC:
         return x86_64_mode_integer;
-    
+
     case VT_FLOAT:
     case VT_DOUBLE: return x86_64_mode_sse;
-    
+
     case VT_LDOUBLE: return x86_64_mode_x87;
-      
+
     case VT_STRUCT:
         f = ty->ref;
 
         mode = x86_64_mode_none;
         for (f = f->next; f; f = f->next)
             mode = classify_x86_64_merge(mode, classify_x86_64_inner(&f->type));
-        
+
         return mode;
     }
     assert(0);
@@ -1195,7 +1144,7 @@ static X86_64_Mode classify_x86_64_arg(CType *ty, CType *ret, int *psize, int *p
 {
     X86_64_Mode mode;
     int size, align, ret_t = 0;
-    
+
     if (ty->t & (VT_BITFIELD|VT_ARRAY)) {
         *psize = 8;
         *palign = 8;
@@ -1231,7 +1180,7 @@ static X86_64_Mode classify_x86_64_arg(CType *ty, CType *ret, int *psize, int *p
                         ret_t |= VT_UNSIGNED;
                 }
                 break;
-                
+
             case x86_64_mode_x87:
                 *reg_count = 1;
                 ret_t = VT_LDOUBLE;
@@ -1250,12 +1199,12 @@ static X86_64_Mode classify_x86_64_arg(CType *ty, CType *ret, int *psize, int *p
             }
         }
     }
-    
+
     if (ret) {
         ret->ref = NULL;
         ret->t = ret_t;
     }
-    
+
     return mode;
 }
 
@@ -1500,33 +1449,21 @@ static void push_arg_reg(int i) {
 }
 
 #ifndef MCC_TARGET_MACHO
-/* -fstack-protector: the SysV x86_64 ABI keeps the per-thread guard at
-   %fs:0x28. Prolog stashes it in a frame slot; epilog xors it back and
-   branches to __stack_chk_fail (provided by libc) on mismatch. Emitted only
-   under the flag, so the default codegen is untouched. */
 static void gen_stack_chk_prolog(void)
 {
     func_stack_chk_loc = (loc -= 8);
-    /* mov %fs:0x28, %rax */
     g(0x64); g(0x48); g(0x8b); g(0x04); g(0x25); gen_le32(0x28);
-    /* mov %rax, func_stack_chk_loc(%rbp) */
     g(0x48); g(0x89); g(0x85); gen_le32(func_stack_chk_loc);
 }
 
 static void gen_stack_chk_epilog(void)
 {
-    /* Use %rcx, not %rax: the return value is already live in %rax/%rdx here.
-       mov func_stack_chk_loc(%rbp), %rcx */
     g(0x48); g(0x8b); g(0x8d); gen_le32(func_stack_chk_loc);
-    /* xor %fs:0x28, %rcx */
     g(0x64); g(0x48); g(0x33); g(0x0c); g(0x25); gen_le32(0x28);
-    /* je 1f  (skip the 5-byte call when the guard matches) */
     g(0x74); g(0x05);
-    /* call __stack_chk_fail */
     oad(0xe8, 0);
     greloca(cur_text_section, external_helper_sym(TOK___stack_chk_fail),
             ind - 4, R_X86_64_PLT32, -4);
-    /* 1: */
 }
 #endif
 
@@ -1562,13 +1499,13 @@ void gfunc_prolog(Sym *func_sym)
             stack_arg:
                 seen_stack_size = ((seen_stack_size + align - 1) & -align) + size;
                 break;
-                
+
             case x86_64_mode_integer:
                 if (seen_reg_num + reg_count > REGN)
 		    goto stack_arg;
 		seen_reg_num += reg_count;
                 break;
-                
+
             case x86_64_mode_sse:
                 if (seen_sse_num + reg_count > 8)
 		    goto stack_arg;
@@ -1634,14 +1571,14 @@ void gfunc_prolog(Sym *func_sym)
                 addr += size;
             }
             break;
-            
+
         case x86_64_mode_memory:
         case x86_64_mode_x87:
             addr = (addr + align - 1) & -align;
             param_addr = addr;
             addr += size;
             break;
-            
+
         case x86_64_mode_integer: {
             if (reg_param_index + reg_count <= REGN) {
                 loc -= reg_count * 8;
@@ -1911,10 +1848,6 @@ void gen_opf(int op)
     if ((vtop[0].r & (VT_VALMASK | VT_LVAL)) == VT_CONST)
         gv(float_type);
 
-    /* A thread-local lvalue must not become a direct memory operand: its symbol
-       resolves to the TLV descriptor / template image, not this thread's live
-       copy.  Force it through the TLS-aware load path into a register first.
-       (Affects the SSE path; the x87/LDOUBLE branch already calls load().) */
     if (float_type == RC_FLOAT) {
         if ((vtop[0].r & (VT_LVAL | VT_SYM)) == (VT_LVAL | VT_SYM) &&
             vtop[0].sym && (vtop[0].sym->type.t & VT_TLS))
@@ -2031,7 +1964,7 @@ void gen_opf(int op)
                 vswap();
             }
             assert(!(vtop[-1].r & VT_LVAL));
-            
+
             if ((vtop->type.t & VT_BTYPE) == VT_DOUBLE)
                 o(0x66);
             if (op == TOK_EQ || op == TOK_NE)
@@ -2068,7 +2001,7 @@ void gen_opf(int op)
             ft = vtop->type.t;
             fc = vtop->c.i;
             assert((ft & VT_BTYPE) != VT_LDOUBLE);
-            
+
             r = vtop->r;
             if ((vtop->r & VT_VALMASK) == VT_LLOCAL) {
                 SValue v1;
@@ -2081,7 +2014,7 @@ void gen_opf(int op)
                 fc = 0;
                 vtop->r = r = r | VT_LVAL;
             }
-            
+
             assert(!(vtop[-1].r & VT_LVAL));
             if (swapped) {
                 assert(vtop->r & VT_LVAL);
@@ -2090,7 +2023,7 @@ void gen_opf(int op)
                 fc = vtop->c.i;
                 r = vtop->r;
             }
-            
+
             if ((ft & VT_BTYPE) == VT_DOUBLE) {
                 o(0xf2);
             } else {
@@ -2098,7 +2031,7 @@ void gen_opf(int op)
             }
             o(0x0f);
             o(0x58 + a);
-            
+
             if (vtop->r & VT_LVAL) {
                 gen_modrm(vtop[-1].r, r, vtop->sym, fc);
             } else {
@@ -2154,7 +2087,7 @@ void gen_cvt_ftof(int t)
     ft = vtop->type.t;
     bt = ft & VT_BTYPE;
     tbt = t & VT_BTYPE;
-    
+
     if (bt == VT_FLOAT) {
         gv(RC_FLOAT);
         if (tbt == VT_DOUBLE) {

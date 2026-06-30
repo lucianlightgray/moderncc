@@ -1,5 +1,5 @@
-/* Self-checking variadic-argument conformance test (integer and double
-   promotions through the per-arch va_list ABI). */
+
+
 
 #include <stdarg.h>
 

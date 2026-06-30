@@ -1,7 +1,7 @@
 #ifndef _COMPAT_LIMITS_H
 #define _COMPAT_LIMITS_H
 #define CHAR_BIT 8
-/* x86_64 Mach-O is LP64; a literal so Apple's `#if LONG_BIT == 64` works */
+
 #define LONG_BIT 64
 #define UCHAR_MAX 0xff
 #define SCHAR_MAX 0x7f

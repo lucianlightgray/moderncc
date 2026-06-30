@@ -1,4 +1,4 @@
-/* 6.4.5: u"..." char16_t (UTF-16) string literals, incl. surrogate pairs. */
+
 typedef __CHAR16_TYPE__ char16_t;
 extern int printf(const char *, ...);
 
@@ -9,7 +9,7 @@ int main(void)
     char16_t s[] = u"ABC";
     const char16_t *p = u"xy";
     char16_t cat[] = u"a" u"b";
-    char16_t emoji[] = u"\U0001F600";    /* surrogate pair D83D DE00 + NUL */
+    char16_t emoji[] = u"\U0001F600";
 
     int ok = sizeof(char16_t) == 2
           && sizeof(s) == 4 * sizeof(char16_t)

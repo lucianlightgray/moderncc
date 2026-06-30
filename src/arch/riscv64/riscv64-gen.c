@@ -181,10 +181,6 @@ static int load_symofs(int r, SValue *sv, int forstore, int *new_fc)
             greloca(cur_text_section, sv->sym, ind,
                     R_RISCV_TPREL_HI20, sv->c.i);
             o(0x37 | (rr << 7));
-            /* The HI20/LO12 pair both resolve to (tpoff = val - tls_start) and
-               must share the SAME addend, else any in-page element offset
-               (e.g. tls_arr[i]) cancels out and every access collapses to the
-               base. Carry sv->c.i into LO12 too. */
             greloca(cur_text_section, sv->sym, ind,
                     R_RISCV_TPREL_LO12_I, sv->c.i);
             EI(0x13, 0, rr, rr, 0);
@@ -1031,7 +1027,6 @@ static void gen_opil(int op, int ll)
                     if (fc <= -(1 << 11))
                       break;
                     fc = -fc;
-                /* fall through */
                 case '+':
                     func3 = 0;
                     cll = ll;
@@ -1048,13 +1043,11 @@ static void gen_opil(int op, int ll)
                     if (fc >= (1 << 11) - 1)
                       break;
                     ++fc;
-                /* fall through */
                 case TOK_LT:  func3 = 2; goto do_cop;
                 case TOK_ULE:
                     if (fc >= (1 << 11) - 1 || fc == -1)
                       break;
                     ++fc;
-                /* fall through */
                 case TOK_ULT: func3 = 3; goto do_cop;
                 case '^':     func3 = 4; goto do_cop;
                 case '|':     func3 = 6; goto do_cop;

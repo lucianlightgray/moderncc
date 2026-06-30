@@ -29,7 +29,7 @@
 #endif
 
 #ifdef __attribute__
-  #undef __attribute__ 
+  #undef __attribute__
 #endif
 #define FASTCALL __attribute__((regparm(3)))
 
@@ -366,11 +366,11 @@ static pthread_key_t no_checking_key;
 #elif HAVE_TLS_VAR
 static __thread int no_checking = 0;
 #define NO_CHECKING_GET()  no_checking
-#define NO_CHECKING_SET(v) no_checking = v 
+#define NO_CHECKING_SET(v) no_checking = v
 #else
 static _Atomic int no_checking = 0;
 #define NO_CHECKING_GET()  no_checking
-#define NO_CHECKING_SET(v) no_checking = v 
+#define NO_CHECKING_SET(v) no_checking = v
 #endif
 static char exec[100];
 
@@ -593,7 +593,7 @@ BOUND_PTR_INDIR(16)
     fp = (size_t)__builtin_frame_address(1);\
 }
 
-void FASTCALL __bound_local_new(void *p1) 
+void FASTCALL __bound_local_new(void *p1)
 {
     size_t addr, fp, *p = p1;
 
@@ -622,7 +622,7 @@ void FASTCALL __bound_local_new(void *p1)
 #endif
 }
 
-void FASTCALL __bound_local_delete(void *p1) 
+void FASTCALL __bound_local_delete(void *p1)
 {
     size_t addr, fp, *p = p1;
 
@@ -1256,7 +1256,7 @@ static void *bound_thread_create(void *bdata)
     void *retval;
 #if HAVE_TLS_FUNC
     int *p = (int *) BOUND_MALLOC(sizeof(int));
-  
+
     if (!p) bound_alloc_error("bound_thread_create malloc");
     *p = 0;
     pthread_setspecific(no_checking_key, p);
@@ -1278,7 +1278,7 @@ int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
     bound_thread_create_type *data;
     sigset_t mask;
     sigset_t old_mask;
-  
+
     use_sem = 1;
     dprintf (stderr, "%s, %s()\n", __FILE__, __FUNCTION__);
     sigfillset(&mask);
@@ -1416,7 +1416,7 @@ void *__bound_malloc(size_t size, const void *caller)
 #endif
 {
     void *ptr;
-    
+
 #if MALLOC_REDIR
     if (malloc_redir == NULL) {
         __bound_init (0, -1);
@@ -1434,7 +1434,7 @@ void *__bound_malloc(size_t size, const void *caller)
     ptr = BOUND_MALLOC (size + 1);
     dprintf(stderr, "%s, %s(): %p, 0x%lx\n",
             __FILE__, __FUNCTION__, ptr, (unsigned long)size);
-    
+
     if (inited && NO_CHECKING_GET() == 0) {
         WAIT_SEM ();
         INCR_COUNT(bound_malloc_count);
@@ -1970,12 +1970,12 @@ static Tree * splay (size_t addr, Tree *t)
 {
     Tree N, *l, *r, *y;
     int comp;
-    
+
     INCR_COUNT_SPLAY(bound_splay);
     if (t == NULL) return t;
     N.left = N.right = NULL;
     l = r = &N;
- 
+
     for (;;) {
         comp = compare(addr, t->start, t->size);
         if (comp < 0) {
@@ -2021,12 +2021,12 @@ static Tree * splay_end (size_t addr, Tree *t)
 {
     Tree N, *l, *r, *y;
     int comp;
-    
+
     INCR_COUNT_SPLAY(bound_splay_end);
     if (t == NULL) return t;
     N.left = N.right = NULL;
     l = r = &N;
- 
+
     for (;;) {
         comp = compare_end(addr, t->start + t->size);
         if (comp < 0) {

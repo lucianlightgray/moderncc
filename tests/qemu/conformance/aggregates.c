@@ -1,5 +1,5 @@
-/* Self-checking aggregate/ABI conformance test: struct by-value args and
-   returns, arrays, unions and bitfields. Endianness-independent. */
+
+
 
 struct point { int x, y; };
 
@@ -29,7 +29,7 @@ int main(void)
 
     union bytes u;
     u.i = 0x01020304;
-    if (u.b[0] + u.b[1] + u.b[2] + u.b[3] != 0x0A) return 3;  /* endian-safe */
+    if (u.b[0] + u.b[1] + u.b[2] + u.b[3] != 0x0A) return 3;
 
     struct bits bf;
     bf.a = 5;

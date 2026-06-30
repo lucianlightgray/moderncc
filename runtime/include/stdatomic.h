@@ -12,9 +12,6 @@
 #define __ATOMIC_ACQ_REL 4
 #define __ATOMIC_SEQ_CST 5
 
-/* 7.17.1: lock-free property macros.  0 = never, 1 = sometimes, 2 = always.
-   Types no wider than a pointer are always lock-free on every mcc target;
-   8-byte types are always lock-free only on 64-bit targets. */
 #define ATOMIC_BOOL_LOCK_FREE     2
 #define ATOMIC_CHAR_LOCK_FREE     2
 #define ATOMIC_CHAR16_T_LOCK_FREE 2
@@ -84,7 +81,6 @@ typedef struct {
 #define ATOMIC_FLAG_INIT {0}
 #define ATOMIC_VAR_INIT(value) (value)
 
-/* 7.17.3.1: kill_dependency yields the value of y, ending any dependency. */
 #define kill_dependency(y)                                                \
     ({ __typeof__(y) __mcc_kd_tmp = (y); __mcc_kd_tmp; })
 
@@ -177,8 +173,6 @@ extern void atomic_signal_fence (memory_order);
 extern bool __atomic_is_lock_free(size_t size, void *ptr);
 #define atomic_is_lock_free(OBJ) __atomic_is_lock_free (sizeof (*(OBJ)), (OBJ))
 
-/* 7.17.8: the standard signatures take volatile atomic_flag * (not void *), so
-   passing a non-atomic_flag argument is diagnosed (matching gcc/clang). */
 extern bool atomic_flag_test_and_set(volatile atomic_flag *object);
 extern bool atomic_flag_test_and_set_explicit(volatile atomic_flag *object, memory_order order);
 extern void atomic_flag_clear(volatile atomic_flag *object);

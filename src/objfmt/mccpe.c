@@ -383,7 +383,6 @@ struct pe_info {
     FILE *op;
     DWORD sum;
     unsigned pos;
-    /* static TLS (IMAGE_TLS_DIRECTORY); see pe_add_tls / pe_set_tls */
     int has_tls;
     Section *tls_dir_sec;
     DWORD tls_index_offset;
@@ -449,13 +448,6 @@ static void pe_set_datadir(struct pe_header *hdr, int dir, DWORD addr, DWORD siz
     hdr->opthdr.DataDirectory[dir].Size = size;
 }
 
-/* Fill the IMAGE_TLS_DIRECTORY (reserved by pe_add_tls) now that section
-   addresses are assigned, and point DataDirectory[TLS] at it. The directory
-   carries absolute VAs; the default x86/x64 exe is non-relocatable (no
-   DYNAMICBASE -> no .reloc), so they need no base relocations. The per-thread
-   template is .tdata (raw, copied) followed by .tbss (zero-fill); a variable's
-   access offset (val - tls_start, the PE-resolved TPOFF32) indexes into that
-   block. */
 static void pe_set_tls(struct pe_info *pe, struct pe_header *hdr)
 {
     MCCState *s1 = pe->s1;
@@ -469,7 +461,6 @@ static void pe_set_tls(struct pe_info *pe, struct pe_header *hdr)
     ds = pe->tls_dir_sec;
     for (i = 1; i < s1->nb_sections; i++) {
         Section *s = s1->sections[i];
-        /* PE layout never sets s->sh_size; the live size is data_offset. */
         ADDR3264 ssz = s->sh_size ? s->sh_size : s->data_offset;
         if ((s->sh_flags & SHF_TLS) && ssz) {
             if (!tls_start || s->sh_addr < tls_start)
@@ -480,17 +471,17 @@ static void pe_set_tls(struct pe_info *pe, struct pe_header *hdr)
                 raw_end = s->sh_addr + ssz;
         }
     }
-    if (!raw_end)                 /* purely zero-init TLS -> empty raw range */
+    if (!raw_end)
         raw_end = tls_start;
 
     p = ds->data + pe->tls_dir_offset;
     if (sizeof(ADDR3264) == 8) {
-        write64le(p +  0, tls_start);                              /* StartAddressOfRawData */
-        write64le(p +  8, raw_end);                                /* EndAddressOfRawData   */
-        write64le(p + 16, ds->sh_addr + pe->tls_index_offset);     /* AddressOfIndex        */
-        write64le(p + 24, ds->sh_addr + pe->tls_cb_offset);        /* AddressOfCallBacks    */
-        write32le(p + 32, (DWORD)(mem_end - raw_end));             /* SizeOfZeroFill        */
-        write32le(p + 36, 0);                                      /* Characteristics       */
+        write64le(p +  0, tls_start);
+        write64le(p +  8, raw_end);
+        write64le(p + 16, ds->sh_addr + pe->tls_index_offset);
+        write64le(p + 24, ds->sh_addr + pe->tls_cb_offset);
+        write32le(p + 32, (DWORD)(mem_end - raw_end));
+        write32le(p + 36, 0);
     } else {
         write32le(p +  0, (DWORD)tls_start);
         write32le(p +  4, (DWORD)raw_end);
@@ -1485,7 +1476,7 @@ static int pe_check_symbols(struct pe_info *pe)
 #ifdef MCC_TARGET_X86_64
                     write32le(p + 2, (DWORD)-4);
 #endif
-                    put_elf_reloc(symtab_section, text_section, 
+                    put_elf_reloc(symtab_section, text_section,
                         offset + 2, R_XXX_THUNKFIX, is->iat_index);
 #endif
                 }
@@ -1844,7 +1835,6 @@ static int pe_load_def(MCCState *s1, int fd)
         case 2:
             dllindex = mcc_add_dllref(s1, dllname, 0)->index;
             ++state;
-        /* fall through */
         default:
             ord = 0;
             if (next == '@') {
@@ -2035,12 +2025,6 @@ ST_FUNC void pe_add_unwind_data(unsigned start, unsigned end, unsigned stack)
 #define PE_STDSYM(n,s) "_" n s
 #endif
 
-/* When the program uses static thread-local storage, synthesise the support
-   data the Windows loader expects: the _tls_index slot (filled with this
-   module's TLS slot at load), a single-NULL TLS-callback array, and a reserved
-   IMAGE_TLS_DIRECTORY (populated by pe_set_tls once addresses are known). The
-   .tdata/.tbss sections already carry the template image; here we only add the
-   directory machinery and define _tls_index so the codegen reference resolves. */
 static void pe_add_tls(MCCState *s1, struct pe_info *pe)
 {
     Section *ds = data_section;
@@ -2056,8 +2040,6 @@ static void pe_add_tls(MCCState *s1, struct pe_info *pe)
     pe_align_section(ds, 4);
     pe->tls_index_offset = ds->data_offset;
     memset(section_ptr_add(ds, 4), 0, 4);
-    /* set_elf_sym (not put_elf_sym) so the codegen's undefined _tls_index
-       reference is *resolved* in place rather than shadowed by a duplicate. */
     set_elf_sym(symtab_section, pe->tls_index_offset, 4,
                 ELFW(ST_INFO)(STB_GLOBAL, STT_OBJECT), 0, ds->sh_num, "_tls_index");
 

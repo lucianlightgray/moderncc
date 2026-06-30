@@ -8,7 +8,7 @@
 
 
 static const unsigned char table_1_32[] = {
-     0,  1, 28,  2, 29, 14, 24,  3, 30, 22, 20, 15, 25, 17,  4,  8, 
+     0,  1, 28,  2, 29, 14, 24,  3, 30, 22, 20, 15, 25, 17,  4,  8,
     31, 27, 13, 23, 21, 19, 16,  7, 26, 12, 18,  6, 11,  5, 10,  9
 };
 static const unsigned char table_2_32[32] = {
@@ -55,7 +55,7 @@ static const unsigned char table_2_64[] = {
     x = x - ((x >> 1) & 0x55555555);                                      \
     x = (x & 0x33333333) + ((x >> 2) & 0x33333333);                       \
     x = (x + (x >> 4)) & 0xf0f0f0f;                                       \
-    return ((x * 0x01010101) >> 24) & m; 
+    return ((x * 0x01010101) >> 24) & m;
 #define POPCOUNTL(x, m)                                                   \
     x = x - ((x >> 1) & 0x5555555555555555ull);                           \
     x = (x & 0x3333333333333333ull) + ((x >> 2) & 0x3333333333333333ull); \
@@ -164,14 +164,6 @@ unsigned int __builtin_bswap32(unsigned int x) __attribute__((alias("__mcc_built
 unsigned long long __builtin_bswap64(unsigned long long x) __attribute__((alias("__mcc_builtin_bswap64")));
 #endif
 
-/* __builtin_{add,sub,mul}_overflow — per-result-type runtime helpers.
-   The dispatch macros (mccdefs.h) convert both operands to the result type T
-   via these prototypes, then this code computes the operation in a wider domain
-   and reports whether the true result is representable in T.  For T <= 32 bits
-   the computation is exact in 64 bits and overflow is detected by storing the
-   result and comparing it back (`(T)s != s`).  For 64-bit T there is no wider
-   builtin type, so add/sub use the sign/carry trick and mul uses a guarded
-   division check (no __int128 required). */
 #define MCC_OV_SMALL(T, W, NM)                                                  \
     int __mcc_addo_##NM(T a, T b, T *r){ W s=(W)a+(W)b; *r=(T)s; return (T)s!=s;}\
     int __mcc_subo_##NM(T a, T b, T *r){ W s=(W)a-(W)b; *r=(T)s; return (T)s!=s;}\

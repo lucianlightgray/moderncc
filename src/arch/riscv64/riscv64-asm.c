@@ -1801,7 +1801,7 @@ ST_FUNC void asm_opcode(MCCState *s1, int token)
     case TOK_ASM_amomin_d:
     case TOK_ASM_amominu_w:
     case TOK_ASM_amominu_d:
-        
+
     case TOK_ASM_amoadd_w_aq:
     case TOK_ASM_amoadd_w_rl:
     case TOK_ASM_amoadd_w_aqrl:
@@ -2194,7 +2194,6 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
             goto try_next;
         case '+':
             op->is_rw = 1;
-        /* fall through */
         case '&':
             if (j >= nb_outputs)
                 mcc_error("'%c' modifier can only be applied to outputs", c);

@@ -1,21 +1,21 @@
-/* diff3 -- three-way differential test runner: gcc vs clang vs mcc.
- *
- * For every portable "run" golden (the test list + per-test flags come straight
- * from tests/exec/goldens.h), this builds and runs the program with gcc, clang
- * and mcc, then compares PROGRAM STDOUT.  The reference compilers are the
- * "source of truth": when gcc and clang agree but mcc differs, that is reported
- * as an mcc divergence (non-zero exit).  Tests gcc/clang cannot build (they use
- * mcc-only features) are skipped, as are sources with compiler-specific
- * `#ifdef __MCC__` sections and bcheck/backtrace/arch-gated rows.
- *
- * Verbose logging is gated on a DEFINE: build with -DDIFF3_VERBOSE (or set the
- * env var MCC_DIFF3_VERBOSE=1) to print each compiler's build command and
- * captured output per test.  A unified-style mismatch dump is always printed
- * for real divergences.
- *
- * argv: <mcc> <bdir> <idir> <testroot> <workdir> <gcc> <clang>
- * env:  MCC_TEST_CPU, MCC_TEST_OS (gate cpu=/os= reqs, like the other runners)
- */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,7 +30,7 @@ static const char *envv(const char *k, const char *d){
     const char *v = getenv(k); return (v && *v) ? v : d;
 }
 
-/* req gate: skip arch/config-specific and intentionally-skipped rows. */
+
 static int portable_req(const char *req){
     if (!req || !*req) return 1;
     if (strstr(req, "note:") || strstr(req, "bcheck") || strstr(req, "backtrace"))
@@ -48,16 +48,16 @@ static int portable_req(const char *req){
         } else if (!strncmp(tok, "os=", 3)){
             if (strcmp(os, tok + 3)) return 0;
         } else if (!strncmp(tok, "os!=", 4)){
-            /* os!=NAME[:reason] — skip when the target OS *is* NAME. */
+
             const char *want = tok + 4;
             const char *colon = strchr(want, ':');
             size_t wl = colon ? (size_t)(colon - want) : strlen(want);
             if (!strncmp(os, want, wl) && os[wl] == '\0') return 0;
         } else if (!strcmp(tok, "elf")){
-            /* ELF symbol/section conventions; Mach-O and PE differ. */
+
             if (!strcmp(os, "Darwin") || !strcmp(os, "WIN32")) return 0;
         }
-        /* "asm" and other tokens: gcc/clang have an assembler too -> keep. */
+
     }
     return 1;
 }
@@ -68,7 +68,7 @@ static char *slurp(FILE *f){
     b[len]=0; return b;
 }
 
-/* run a shell command, capture stdout; *status gets the exit code. */
+
 static char *cap(const char *cmd, int *status){
     FILE *f = popen(cmd, "r");
     if (!f){ if(status)*status=-1; return strdup(""); }
@@ -78,14 +78,14 @@ static char *cap(const char *cmd, int *status){
     return o;
 }
 
-/* Wrap a program invocation with a wall-clock hang guard so a runaway golden
-   (e.g. one that loops forever or blocks on stdin) can't stall the whole suite.
-   GNU coreutils `timeout` is present on Linux CI but absent on macOS/BSD, so
-   when neither it nor Homebrew's `gtimeout` exists, fall back to a dependency-
-   free POSIX-shell watchdog: run the program in the background, arm a killer
-   that SIGKILLs it after the deadline, and report the program's own status.
-   The watchdog's stdout is redirected to /dev/null so it never holds the
-   capture pipe open past the program's exit. `out` must hold >= strlen(cmd)+256. */
+
+
+
+
+
+
+
+
 #define DIFF3_RUN_TIMEOUT 20
 static void timeout_wrap(const char *cmd, char *out, size_t n){
     static int probed, have_timeout, have_gtimeout;
@@ -99,8 +99,8 @@ static void timeout_wrap(const char *cmd, char *out, size_t n){
     else if (have_gtimeout)
         snprintf(out, n, "gtimeout %d %s", DIFF3_RUN_TIMEOUT, cmd);
     else
-        /* POSIX fallback: background the program, kill it after the deadline,
-           and exit with the program's own status (137 if the watchdog fired). */
+
+
         snprintf(out, n,
             "{ %s & __p=$!; ( sleep %d; kill -9 $__p ) >/dev/null 2>&1 & __w=$!; "
             "wait $__p; __r=$?; kill $__w 2>/dev/null; exit $__r; }",
@@ -115,17 +115,17 @@ static int file_has(const char *path, const char *needle){
     free(s); return hit;
 }
 
-/* The three-way differential treats "gcc and clang agree but mcc differs" as an
-   mcc divergence. That inference only holds when gcc and clang are *distinct*
-   implementations: implementation-defined goldens are absorbed by the
-   gcc!=clang branch (counted as impl-defined, not a failure). On hosts where
-   `gcc` and `clang` resolve to the SAME compiler -- e.g. macOS, where
-   /usr/bin/gcc and /usr/bin/clang are both Apple clang -- the two references
-   trivially agree on everything, so every intentional/impl-defined divergence
-   (cleanup, bitfields_ms, predefined_macros, ...) is misreported as a false mcc
-   failure, and the suite can no longer distinguish a real bug from a sanctioned
-   choice. Detect that by comparing `--version` output and skip with a reason,
-   matching the suite's "needs BOTH reference compilers" precondition. */
+
+
+
+
+
+
+
+
+
+
+
 static int same_compiler(const char *a, const char *b){
     char cmd[4096];
     snprintf(cmd, sizeof cmd, "\"%s\" --version 2>/dev/null", a);
@@ -137,7 +137,7 @@ static int same_compiler(const char *a, const char *b){
     return same;
 }
 
-/* substitute {SELF} -> src in a flags/args string */
+
 static void sub_self(const char *in, const char *src, char *out, size_t n){
     char *w = out; const char *a = in;
     while (*a && (size_t)(w-out) < n-1){
@@ -147,7 +147,7 @@ static void sub_self(const char *in, const char *src, char *out, size_t n){
     *w = 0;
 }
 
-/* Build with `cc` (NULL => mcc) and run; returns 1 if built, fills *out (stdout). */
+
 static int build_run(const char *label, const char *cc, const char *mcc,
                      const char *bdir, const char *idir, const char *sup,
                      const char *work, const char *src, const char *flags,
@@ -155,19 +155,19 @@ static int build_run(const char *label, const char *cc, const char *mcc,
     char exe[2048], cmd[8192];
     snprintf(exe, sizeof exe, "%s/%s.out", work, label);
     remove(exe);
-    if (cc) /* reference compiler */
+    if (cc)
         snprintf(cmd, sizeof cmd,
             "%s -w -O0 \"-I%s\" %s \"%s\" -o \"%s\" >/dev/null 2>&1",
             cc, sup, flags, src, exe);
-    else    /* mcc */
+    else
         snprintf(cmd, sizeof cmd,
             "\"%s\" \"-B%s\" \"-I%s\" \"-I%s\" %s \"%s\" -o \"%s\" >/dev/null 2>&1",
             mcc, bdir, idir, sup, flags, src, exe);
     if (verbose) fprintf(stderr, "  [%s build] %s\n", label, cmd);
     char gbuild[8448];
-    timeout_wrap(cmd, gbuild, sizeof gbuild);   /* a pathological source must
-        not be able to hang a compiler forever (cleanup.c can spin Apple clang's
-        codegen); the hang guard caps every build, not just the run. */
+    timeout_wrap(cmd, gbuild, sizeof gbuild);
+
+
     int brc = system(gbuild);
     if (brc != 0){ *out = strdup(""); return 0; }
 
@@ -210,7 +210,7 @@ int main(int argc, char **argv){
         if (!portable_req(g->req)) { continue; }
 
         char src[2048]; snprintf(src,sizeof src,"%s/%s",root,g->src);
-        /* compiler-specific sections we can't replicate under gcc/clang */
+
         if (file_has(src, "__MCC__")){
             printf("MCC-ONLY %-28s -- has #ifdef __MCC__ section\n", g->name);
             mcc_only++; continue;
