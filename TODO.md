@@ -627,16 +627,21 @@ bulk of each area matched the references; these are the residual divergences.
   conformant DIFF (forcing an error would diverge from mcc's coherent
   permissive-by-default / `-Werror`-enforces philosophy for no conformance gain).
 
-- [ ] **[DIFF] §7.16.1.4 — `va_start` on a `register`-qualified last parameter not diagnosed (fragmented, no mandated diag).**
-  `int f(register int n, ...){ va_start(a,n); }` is silent; both refs warn
-  (`-Wvarargs`, default-on). The standard mandates **no** diagnostic (it is UB),
-  and mcc's `va_start` is implemented differently per target (`runtime/include/
-  mccdefs.h`): the x86_64 SysV macro reads `__builtin_frame_address(0)` and never
-  references `last` at all (so register-ness is invisible); i386/arm/generic
-  expand to `&(last)`, which *does* already trip mcc's "address of register
-  variable requested" diagnostic; arm64/riscv64/x86_64-PE use a builtin token and
-  are silent. A uniform `-Wvarargs` would need per-target plumbing for a
-  non-mandated courtesy warning — low value. Left open.
+- [x] **[DIAG] §7.16.1.4 + §6.7.1 — `register` parameters now tracked; `va_start` on one is diagnosed.**
+  `register` parameters are now flagged (`s->a.is_register` set at the param-push
+  in `post_type`, riding through `sym_push_params`/`sym_copy` into the body) —
+  closing a real §6.7.1/§6.5.3.2 gap: **taking the address of a register
+  parameter** (`int f(register int n){ &n; }`) now errors like gcc (was silent;
+  only register *locals* were tracked before). cli `register_param_address`.
+  Building on that, `va_start` on a register last parameter (§7.16.1.4, UB —
+  the standard mandates no diagnostic, but gcc/clang warn `-Wvarargs`) is now
+  diagnosed on every target where it can manifest: arm64/riscv64/x86_64-PE warn
+  ("undefined behavior when the second parameter of 'va_start' is declared with
+  'register' storage") via a new `check_va_start_register()` after
+  `parse_builtin_params`; i386/arm error via the `&(last)` in their va_start
+  macro. The only target without a diagnostic is x86_64 SysV, whose va_start macro
+  reads `__builtin_frame_address(0)` and never references the parameter — so the
+  UB cannot manifest there. cross-verified.
 
 ### §7 library / floating-point builtins
 

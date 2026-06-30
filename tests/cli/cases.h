@@ -980,6 +980,18 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/labok.c -o {W}/labok.o 2>&1 && echo CLEAN_OK; }",
   "3\n0\nCLEAN_OK\n" },
 
+/* §6.7.1/§6.5.3.2: the address of a 'register'-qualified parameter may not be
+   taken (now tracked on parameters, not just locals); a non-register parameter
+   is fine. (This same tracking drives the §7.16.1.4 va_start-on-register warning
+   on the token-va_start targets — verified cross-arch, not here.) */
+{ "register_param_address", "",
+  "printf 'int f(register int n){ int *p=&n; return *p; }\\n' > {W}/rp.c && "
+  "printf 'int g(int n){ int *p=&n; return *p; }\\n' > {W}/rpok.c && "
+  "{ {MCC} -B{B} -I{I} -c {W}/rp.c -o {W}/rp.o 2>&1; "
+  "{MCC} -B{B} -I{I} -Werror -c {W}/rpok.c -o {W}/rpok.o 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE 'address of register variable|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 address of register variable\n" },
+
 /* §7.17.8: atomic_flag_* take volatile atomic_flag *, so a non-pointer argument
    is diagnosed; the correct &atomic_flag form compiles clean under -Werror. */
 { "atomic_flag_type", "",

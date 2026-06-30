@@ -5571,6 +5571,11 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td)
                 convert_parameter_type(&pt);
                 arg_size += (type_size(&pt, &align) + PTR_SIZE - 1) / PTR_SIZE;
                 s = sym_push(n, &pt, VT_LOCAL|VT_LVAL, 0);
+                /* 6.7.1/6.5.3.2: a 'register' parameter — remember it so taking
+                   its address (and va_start on it, 7.16.1.4) is diagnosed. The
+                   flag rides through sym_push_params/sym_copy into the body. */
+                if (ad1.storage_class & 2)
+                    s->a.is_register = 1;
                 *plast = s;
                 plast = &s->next;
                 if (tok == ')')
@@ -5852,6 +5857,20 @@ ST_FUNC void indir(void)
             vtop->r |= VT_MUSTBOUND;
 #endif
     }
+}
+
+/* 7.16.1.4: if the second argument to va_start (the last named parameter) is
+   declared with 'register' storage the behavior is undefined; gcc/clang warn
+   (-Wvarargs). Called after parse_builtin_params(0,"ee") leaves that argument's
+   lvalue on vtop. (On targets whose va_start macro expands to `&(last)` —
+   i386/arm — a register parameter is already rejected by the address-of-register
+   diagnostic; the x86_64 SysV macro reads the frame and never touches `last`, so
+   no UB manifests there.) */
+static void check_va_start_register(void)
+{
+    if (vtop->sym && vtop->sym->a.is_register)
+        mcc_warning("undefined behavior when the second parameter of 'va_start' "
+                    "is declared with 'register' storage");
 }
 
 static Sym *transparent_union_member(CType *type)
@@ -7018,6 +7037,7 @@ ST_FUNC void unary(void)
 #ifdef MCC_TARGET_RISCV64
     case TOK_builtin_va_start:
         parse_builtin_params(0, "ee");
+        check_va_start_register();
         r = vtop->r & VT_VALMASK;
         if (r == VT_LLOCAL)
             r = VT_LOCAL;
@@ -7031,6 +7051,7 @@ ST_FUNC void unary(void)
 #ifdef MCC_TARGET_PE
     case TOK_builtin_va_start:
 	parse_builtin_params(0, "ee");
+        check_va_start_register();
         r = vtop->r & VT_VALMASK;
         if (r == VT_LLOCAL)
             r = VT_LOCAL;
@@ -7054,6 +7075,7 @@ ST_FUNC void unary(void)
 #ifdef MCC_TARGET_ARM64
     case TOK_builtin_va_start: {
 	parse_builtin_params(0, "ee");
+        check_va_start_register();
         gen_va_start();
         vpushi(0);
         vtop->type.t = VT_VOID;
