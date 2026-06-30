@@ -60,15 +60,15 @@ targets before it is marked done.
   via Rosetta; the full ELF qemu matrix (5 arches × glibc/musl) stays green. The
   `tls` exec golden no longer carries `os!=Darwin` and now runs on Darwin.
 
-- [~] **[DIAG] §6.5.1.1p2 `_Generic` association-type completeness.**
-  The "no two compatible association types" rule is enforced
-  (`src/mccgen.c`, `TOK_GENERIC`; `_Generic(1, long:1, long:2, int:3)` errors,
-  cli `generic_duplicate_assoc`). The sub-rule that an association type is a
-  complete object type — not a VLA and not a function type — is unenforced:
-  `mcc` accepts all three forms. gcc also accepts all three; clang rejects only
-  the function-type form; C2y permits the incomplete-type case. Deferred —
-  enforcing it diverges from gcc (the leniency reference) and from where the
-  standard is heading.
+- [x] **[DIAG] §6.5.1.1p2 `_Generic` association-type completeness — VLA + function-type now enforced.**
+  The "no two compatible association types" rule was already enforced
+  (`src/mccgen.c`, `TOK_GENERIC`; cli `generic_duplicate_assoc`). Now the
+  complete-object-type sub-rule is too: a **variably modified** (VLA) association
+  type is a hard error (`int[n]:` — gcc and clang both error by default), and a
+  **function-type** association is diagnosed under `-pedantic` ("ISO C forbids a
+  '_Generic' association with a function type" — gcc's `-pedantic` stance; clang
+  errors). The incomplete-object case is left accepted (C2Y relaxes it and gcc
+  accepts it). cli `generic_assoc_type_completeness`.
 
 - [~] **[LIMITATION] The kernel-fused Mach-O / libSystem path needs a macOS or darling host.**
   The self-contained Mach-O tests run on any host: structural validation

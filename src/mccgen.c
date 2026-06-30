@@ -7183,6 +7183,17 @@ ST_FUNC void unary(void)
 		int v, i;
 		parse_btype(&type, &ad, 0);
 		type_decl(&type, &ad, &v, TYPE_ABSTRACT);
+		/* 6.5.1.1p2: a generic association type shall be a complete
+		   object type other than a variably modified type. A VLA is
+		   rejected (gcc and clang both hard-error); a function type is
+		   not an object type — gcc diagnoses it under -pedantic ("before
+		   C2Y"), so do the same. (The incomplete-object case is left
+		   accepted: C2Y relaxes it and gcc accepts it.) */
+		if (type.t & VT_VLA)
+		    mcc_error("'_Generic' association has a variably modified type");
+		if ((type.t & VT_BTYPE) == VT_FUNC)
+		    mcc_pedantic("ISO C forbids a '_Generic' association with a "
+				 "function type");
 		/* 6.5.1.1p2: no two generic associations shall specify
 		   compatible types. */
 		for (i = 0; i < nb_assoc; i++)

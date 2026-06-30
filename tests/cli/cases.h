@@ -320,6 +320,20 @@ static const cli_case_t cli_cases[] = {
   "grep -oE '_Generic specifies two compatible types'",
   "_Generic specifies two compatible types\n" },
 
+/* 6.5.1.1p2: a _Generic association type must be a complete object type other
+   than a variably modified type. A VLA association is an error (gcc+clang both
+   hard-error); a function-type association is diagnosed under -pedantic (gcc's
+   stance; clang errors). A normal association compiles clean under -Werror. */
+{ "generic_assoc_type_completeness", "",
+  "printf 'void h(int n){(void)_Generic(1,int[n]:1,default:2);(void)n;}\\n' > {W}/gv.c && "
+  "printf 'int x=_Generic(1,int(void):1,int:2,default:3);\\n' > {W}/gf.c && "
+  "printf 'int f(void){return _Generic(1,int:0,double:1,default:2);}\\n' > {W}/gok.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -c {W}/gv.c -o {W}/gv.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/gf.c -o {W}/gf.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -Werror -c {W}/gok.c -o {W}/gok.o 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE 'variably modified type|association with a function type|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 association with a function type\n1 variably modified type\n" },
+
 /* 6.9p2: file-scope declarations may not specify auto or register. */
 { "file_scope_storage_class", "",
   "printf 'auto int x;\\n' > {W}/fs1.c && "
