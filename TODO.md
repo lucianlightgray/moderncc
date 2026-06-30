@@ -67,7 +67,6 @@ Each below was confirmed: mcc=0 warnings where gcc/clang warn. (mcc already does
 `-Wreturn-type`-style "missing return", implicit-function-declaration, and the
 new `-Wformat`.) Most need scope/dataflow tracking — size each before starting.
 
-- [ ] **[diag] `-Wunused-value`** — a statement with no effect (`1+1;`).
 - [ ] **[diag] `-Wuninitialized`** — use of an uninitialized local. Needs simple
   dataflow; can be conservative to avoid false positives.
 

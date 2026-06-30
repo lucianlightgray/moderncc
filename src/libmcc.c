@@ -1796,6 +1796,9 @@ static const FlagDef options_W[] = {
     /* -Wshadow: a block-scope declaration whose name shadows a variable visible
        in an enclosing scope (or a global). Opt-in, like gcc. */
     { offsetof(MCCState, warn_shadow), 0, "shadow" },
+    /* -Wunused-value: an expression statement whose value is computed but
+       unused and whose top-level operator has no side effect. -Wall, like gcc. */
+    { offsetof(MCCState, warn_unused_value), WD_ALL, "unused-value" },
     { 0, 0, NULL }
 };
 

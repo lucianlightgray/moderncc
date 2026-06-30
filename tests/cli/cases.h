@@ -1790,5 +1790,17 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -c {W}/sh.c -o /dev/null 2>&1 && echo DEFAULT_SILENT",
   "2 warn\nOK_CLEAN\nDEFAULT_SILENT\n" },
 
+/* -Wunused-value warns on an expression statement whose value is unused and
+   whose top-level operator has no side effect (`a==b;`, `g()+1;`); a call,
+   assignment, ++/--, and a (void) cast are exempt. Enabled by -Wall; default
+   silent. */
+{ "wunused_value", "",
+  "printf 'int g(void); void f(int a,int b){ a==b; g()+1; }\\n' > {W}/uvv.c && "
+  "printf 'int g(void); void f(int x){ x=1; g(); x++; (void)x; }\\n' > {W}/uvv_ok.c && "
+  "echo \"$({MCC} -B{B} -I{I} -Wunused-value -c {W}/uvv.c -o /dev/null 2>&1 | grep -c 'not used') warn\"; "
+  "{MCC} -B{B} -I{I} -Wunused-value -Werror -c {W}/uvv_ok.c -o /dev/null 2>&1 && echo OK_CLEAN; "
+  "{MCC} -B{B} -I{I} -c {W}/uvv.c -o /dev/null 2>&1 && echo DEFAULT_SILENT",
+  "2 warn\nOK_CLEAN\nDEFAULT_SILENT\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

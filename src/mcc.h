@@ -746,6 +746,7 @@ struct MCCState {
     unsigned char warn_unused_function; /* -Wunused-function: unused static function (-Wall) */
     unsigned char warn_fatal_errors;    /* -Wfatal-errors: stop at the first error */
     unsigned char warn_shadow;          /* -Wshadow: declaration shadows an outer one (opt-in) */
+    unsigned char warn_unused_value;    /* -Wunused-value: statement value unused, no effect (-Wall) */
     int max_errors;                     /* -fmax-errors=N: stop after N errors (0 = no limit) */
     unsigned char warn_pedantic;        /* -pedantic: diagnose ISO C extensions */
     unsigned char pedantic_errors;      /* -pedantic-errors: make them hard errors */

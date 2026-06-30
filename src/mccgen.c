@@ -49,6 +49,11 @@ ST_DATA int func_vc;
 ST_DATA int func_ind;
 static int func_old;
 static int cur_func_noreturn; /* the function being compiled is _Noreturn */
+/* -Wparentheses / -Wunused-value state set during expression parsing; see the
+   detailed comments at expr_eq() and gen_op(). Declared here because gen_op()
+   (above expr_eq) also writes expr_has_effect. */
+static int expr_was_assign;
+static int expr_has_effect;
 static int cur_func_inline_extern; /* 6.7.4p3: inline def with external linkage */
 static int ice_float_op; /* 6.6: a floating op folded inside a constant expr */
 static int ice_nonconst; /* 6.6: a non-constant operand in a folded ?: arm */
@@ -3076,6 +3081,11 @@ ST_FUNC void gen_op(int op)
     int t1, t2, bt1, bt2, t;
     CType type1, combtype;
     int op_class = op;
+
+    /* -Wunused-value: an arithmetic/comparison/bitwise/pointer operator yields a
+       value with no side effect. As the last operation in a full expression it
+       makes the top-level operator effect-free (e.g. `g()+1`). */
+    expr_has_effect = 0;
 
     if (op == TOK_SHR || op == TOK_SAR || op == TOK_SHL)
         op_class = SHIFT_OP;
@@ -7038,6 +7048,10 @@ ST_FUNC void unary(void)
                     && !is_compatible_unqualified_types(&type, &vtop->type))
                     mcc_error("conversion to non-scalar type requested");
                 gen_cast(&type);
+                /* -Wunused-value: an explicit `(void)expr` is the idiomatic way
+                   to discard a value, so it is treated as having effect. */
+                if ((type.t & VT_BTYPE) == VT_VOID)
+                    expr_has_effect = 1;
                 /* 6.5.4: a cast does not yield an lvalue. A real conversion
                    already materialised an rvalue; only a no-op cast of an
                    lvalue (e.g. `(int)i`) leaves VT_LVAL set, which would wrongly
@@ -7513,6 +7527,7 @@ ST_FUNC void unary(void)
         next();
         unary();
         inc(0, t);
+        expr_has_effect = 1;            /* -Wunused-value: prefix ++/-- */
         break;
     case '-':
         next();
@@ -7703,6 +7718,7 @@ special_math_val:
     while (1) {
         if (tok == TOK_INC || tok == TOK_DEC) {
             inc(1, tok);
+            expr_has_effect = 1;        /* -Wunused-value: postfix ++/-- */
             next();
         } else if (tok == '.' || tok == TOK_ARROW) {
             int qualifiers, cumofs, base_nonlval;
@@ -7870,6 +7886,7 @@ special_math_val:
             next();
             vcheck_cmp();
             gfunc_call(nb_args);
+            expr_has_effect = 1;        /* -Wunused-value: a function call */
 
             if (ret_nregs < 0) {
                 vsetc(&ret.type, ret.r, &ret.c);
@@ -8291,8 +8308,12 @@ static void expr_cond(void)
    calls return), so a parenthesised assignment `(x = y)` correctly reports 0.
    Read immediately after a controlling expression by the if/while/for/do
    handlers; ignored everywhere else. */
-static int expr_was_assign;
-
+/* expr_was_assign / expr_has_effect are declared near the top of this file (used
+   by gen_op above). expr_has_effect (-Wunused-value): tracks whether the LAST
+   operation while evaluating a full expression had a side effect — because
+   operands are evaluated before their operator, the last operation reflects the
+   expression's TOP-LEVEL operator (call / assignment / ++ / -- / (void)-cast set
+   it; gen_op clears it; a bare lvalue/constant leaves the reset value 0). */
 static void expr_eq(void)
 {
     int t;
@@ -8355,6 +8376,10 @@ static void expr_eq(void)
     /* written after any recursive expr_eq() above, so the OUTERMOST assignment
        of a controlling expression is the value seen by its handler. */
     expr_was_assign = was_assign;
+    /* -Wunused-value: an assignment is the top-level operator and has effect.
+       Set after vstore() so any gen_op() inside it does not re-clear the flag. */
+    if (was_assign)
+        expr_has_effect = 1;
 }
 
 ST_FUNC void gexpr(void)
@@ -9262,7 +9287,18 @@ again:
                     vpop();
                     gexpr();
                 } else {
+                    expr_has_effect = 0;        /* -Wunused-value */
                     gexpr();
+                    /* -Wunused-value: a non-STMT_EXPR statement discards the
+                       expression's value; warn if its top-level operator had no
+                       side effect (matches gcc: `a==b;`, `x;`, `g()+1;` warn,
+                       while `x=1;`, `g();`, `x++;`, `(void)x;` do not). A volatile
+                       access counts as a side effect. */
+                    if ((mcc_state->warn_unused_value & WARN_ON)
+                        && !expr_has_effect
+                        && !(vtop->type.t & VT_VOLATILE))
+                        mcc_warning_c(warn_unused_value)(
+                            "value computed is not used");
                     vpop();
                 }
                 seqp_check();           /* diagnose the trailing region */
