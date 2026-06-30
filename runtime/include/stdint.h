@@ -120,11 +120,20 @@ typedef unsigned long long uintmax_t;
 #define INT8_C(x)   x
 #define INT16_C(x)  x
 #define INT32_C(x)  x
-#define INT64_C(x)  x ## LL
 #define UINT8_C(x)  x
 #define UINT16_C(x) x
 #define UINT32_C(x) x ## U
+/* 7.20.4.1p1: INT64_C(value) shall have type int_least64_t, which is int64_t =
+   __INT64_TYPE__. On LP64 that is `long` (suffix L), so a plain `LL` suffix
+   gives the wrong type (long long); pick the suffix matching the int64 type,
+   which is `long` exactly when `long` is 64-bit. */
+#if __SIZEOF_LONG__ == 8
+#define INT64_C(x)  x ## L
+#define UINT64_C(x) x ## UL
+#else
+#define INT64_C(x)  x ## LL
 #define UINT64_C(x) x ## ULL
+#endif
 #define INTMAX_C(x)  x ## LL
 #define UINTMAX_C(x) x ## ULL
 

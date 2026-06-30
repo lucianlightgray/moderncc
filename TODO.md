@@ -201,3 +201,52 @@ compilers, or low-priority residual gaps.
   returns `1` (used directly, off the glibc path). Matching gcc/clang's exact `1`
   would again require the risky blanket `__GNUC__` claim for no conformance gain.
   Left as a conformant DIFF. 3-way: mcc=128 | gcc/clang=1 (all conforming).
+
+---
+
+## Landed (2026-06-30 audit cycle)
+
+A fresh 4-agent clause-by-clause differential sweep (each finding 3-way verified
+vs gcc 15.3 / clang 22 against the live binary). 12 confirmed silent-acceptance /
+rejects-valid gaps closed; each ships with a cli regression test and the full
+suite (ctest 30/30) + self-host byte-identical fixpoint stay green.
+
+- [x] §6.10.3p6 — duplicate function-like macro parameter rejected — cli `pp_macro_name_constraints`.
+- [x] §6.10.8p4 — `defined` / `__VA_ARGS__` rejected as a `#define`/`#undef` macro name — cli `pp_macro_name_constraints`.
+- [x] §6.10.8p2 — `#define`/`#undef` of the `__STDC__`/`__STDC_VERSION__`/`__STDC_HOSTED__` predef family diagnosed (user-settable `__STDC_WANT_*` left alone) — cli `pp_macro_name_constraints`.
+- [x] §6.5.3.4 — ISO `_Alignof(expression)` diagnosed under -pedantic (GNU `__alignof__` exempt) — cli `sizeof_alignof_void`.
+- [x] §6.5.3.4 — `_Alignof(void)` rejected; `sizeof(void)` / `sizeof(*void*)` diagnosed under -pedantic (GNU `__alignof__` exempt) — cli `sizeof_alignof_void`.
+- [x] §6.9.1p4 — function definition declared `typedef` rejected — cli `function_def_typedef`.
+- [x] §6.7.2.1p18 — initialization of a struct flexible array member diagnosed under -pedantic — cli `init_brace_constraints`.
+- [x] §6.7.9p11 — too many braces around a scalar initializer (`int x={{1}}`) diagnosed under -pedantic — cli `init_brace_constraints`.
+- [x] §6.5.3.2 — dereference of a `void *` diagnosed under -pedantic (skipped in unevaluated/`sizeof` contexts) — cli `void_pointer_deref`.
+- [x] §6.6p4 — signed `+`/`-`/`*` constant-expression overflow diagnosed under -pedantic — cli `const_integer_overflow`.
+
+---
+
+## Landed (2026-06-30 — round 2)
+
+A 14-dimension differential workflow surfaced 17 confirmed findings; **all are now
+implemented**. 3-way verified, each ships a cli/exec regression test; full ctest
+30/30, the diff3 differential suite, and the self-host byte-identical fixpoint
+stay green.
+
+- [x] §6.7.9p17-20 — designated-initializer positional continuation out of a sub-aggregate (`{.in[0]=1, 2, 3}` → in={1,2}, t=3); the elided sub-list ends and hands the comma back when a designator can't apply to it (`.field` not a member / `.` in an array / `[` in a struct), so designator-after-designator runs and deep nesting work — cli `designated_init_continuation`.
+- [x] §6.7.6.2 — pointer-to-VLA parameter `int (*a)[m]` keeps its VLA dimension (TYPE_NEST now reaches the nested `[m]`) — cli `pointer_to_vla_param`.
+- [x] §6.10.8.1 — `__LINE__` as a multi-line macro argument uses its own token's line (snapped at argument collection) — cli `line_macro_arg`.
+- [x] §6.6p6 — conditional with a non-constant operand in the discarded arm rejected as a non-ICE (bit-field/enum/case) — cli `conditional_ice`.
+- [x] §6.4.5p2 — `u8` mixed with a wide string literal rejected; `u8`+narrow concat still valid (new `TOK_U8STR`) — cli `u8_string_concat`.
+- [x] §6.7.2.1p11 — consecutive `_Bool` bit-fields pack into one byte (ABI) — cli `bool_bitfield_packing`.
+- [x] §6.3.1.8 — mixed `_Complex`×real arithmetic keeps the wider real type (no float narrowing) — cli `complex_real_precision`.
+- [x] §7.20.4.1p1 — `INT64_C`/`UINT64_C` typed `int_least64_t`/`uint_least64_t` (hosted + freestanding) — cli `int64_c_type`.
+- [x] §6.7.9p4 — block-scope (automatic) compound-literal address rejected in a static initializer — cli `static_init_and_ucn`.
+- [x] §6.5.16.1p1/§6.3.2.1p1 — whole-struct assignment with a const-qualified member diagnosed — cli `expr_constraints`.
+- [x] §6.6p6 — floating-folded bit-field width / enumerator / case label diagnosed under -pedantic — cli `ice_float_constraints`.
+- [x] §6.5.15p3 — `?:` with exactly one `void` operand diagnosed under -pedantic — cli `expr_constraints`.
+- [x] §6.5.4 — float↔pointer constant cast (both directions) rejected — cli `expr_constraints`.
+- [x] §6.4.3p2 — UCN < 0x00A0 in a string/char literal diagnosed under -pedantic (pre-C23) — cli `static_init_and_ucn`.
+- [x] §6.7.1p7 — block-scope function declaration with auto/register rejected — cli `param_and_blockfn_storage`.
+- [x] §6.5.1.1p2 — `_Generic` association with an incomplete type (void / forward struct) diagnosed under -pedantic — cli `generic_atomic_restrict_constraints`.
+- [x] §6.7.2.4p3 — `_Atomic(qualified-type)` / `_Atomic(atomic-type)` rejected — cli `generic_atomic_restrict_constraints`.
+- [x] §6.7.6.3p2 — storage-class specifier other than `register` on a parameter rejected — cli `param_and_blockfn_storage`.
+- [x] §6.7.3p2 — `restrict` on a non-pointer (array) type rejected — cli `generic_atomic_restrict_constraints`.

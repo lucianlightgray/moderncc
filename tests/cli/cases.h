@@ -1188,5 +1188,245 @@ static const cli_case_t cli_cases[] = {
   "sort | uniq -c | sed 's/^ *//'",
   "1 discards\n1 incompatible pointer\n" },
 
+/* §6.10.3p6 (duplicate macro parameter), §6.10.8p4 (`defined`/`__VA_ARGS__`
+   may not be a macro name), §6.10.8p2 (the `__STDC__` predef family is
+   protected from #undef). Each is a constraint violation both gcc and clang
+   diagnose; a normal object/variadic macro and #define/#undef stay clean. */
+{ "pp_macro_name_constraints", "",
+  "printf '#define M(a,a) a\\n' > {W}/mdp.c && "
+  "printf '#undef defined\\n' > {W}/mud.c && "
+  "printf '#define __VA_ARGS__ 1\\n' > {W}/mva.c && "
+  "printf '#undef __STDC__\\nint main(void){return 0;}\\n' > {W}/mus.c && "
+  "printf '#define V(a,...) a\\n#define W2(x,y) x y\\nint main(void){return 0;}\\n' > {W}/mok.c && "
+  "{ {MCC} -B{B} -I{I} -c {W}/mdp.c -o {W}/mdp.o 2>&1; "
+  "{MCC} -B{B} -I{I} -c {W}/mud.c -o {W}/mud.o 2>&1; "
+  "{MCC} -B{B} -I{I} -c {W}/mva.c -o {W}/mva.o 2>&1; "
+  "{MCC} -B{B} -I{I} -c {W}/mus.c -o {W}/mus.o 2>&1; "
+  "{MCC} -B{B} -I{I} -Werror -c {W}/mok.c -o {W}/mok.o 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE 'duplicate macro parameter|invalid macro name|undefining __STDC__|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 duplicate macro parameter\n2 invalid macro name\n1 undefining __STDC__\n" },
+
+/* §6.5.3.4: the ISO `_Alignof` rejects an expression operand and a void type
+   (gcc/clang both reject); `sizeof(void)` is the GNU 1-byte extension diagnosed
+   under -pedantic. The GNU `__alignof__` spelling permits both an expression
+   and a void operand, so it stays clean. */
+{ "sizeof_alignof_void", "",
+  "printf 'int a=_Alignof(void);\\n' > {W}/sav.c && "
+  "printf 'int f(int x){return _Alignof(x);}\\n' > {W}/sae.c && "
+  "printf 'unsigned long g(void){return sizeof(void);}\\n' > {W}/ssv.c && "
+  "printf 'int h(int x){return __alignof__(x)+__alignof__(void);}\\nint main(void){return 0;}\\n' > {W}/sgnu.c && "
+  "{ {MCC} -B{B} -I{I} -c {W}/sav.c -o {W}/sav.o 2>&1; "
+  "{MCC} -B{B} -I{I} -pedantic-errors -c {W}/sae.c -o {W}/sae.o 2>&1; "
+  "{MCC} -B{B} -I{I} -pedantic-errors -c {W}/ssv.c -o {W}/ssv.o 2>&1; "
+  "{MCC} -B{B} -I{I} -Werror -c {W}/sgnu.c -o {W}/sgnu.o 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE '_Alignof. applied to a void|sizeof. applied to a void|applied to an expression|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 _Alignof' applied to a void\n1 applied to an expression\n1 sizeof' applied to a void\n" },
+
+/* §6.9.1p4: a function definition's declaration specifiers may specify only
+   extern/static; `typedef` is a constraint violation (gcc/clang reject). A
+   typedef of a function *type* (no body) stays valid. */
+{ "function_def_typedef", "",
+  "printf 'typedef int f(void){return 42;}\\n' > {W}/ft.c && "
+  "printf 'typedef int myf(void); int g(void){return 1;}\\nint main(void){return 0;}\\n' > {W}/ftok.c && "
+  "{ {MCC} -B{B} -I{I} -c {W}/ft.c -o {W}/ft.o 2>&1; "
+  "{MCC} -B{B} -I{I} -Werror -c {W}/ftok.c -o {W}/ftok.o 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE 'function definition declared|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 function definition declared\n" },
+
+/* §6.7.2.1p18 (initializing a struct flexible array member) and §6.7.9p11
+   (a second brace level around a scalar, `int x={{1}}`) are ISO violations
+   gcc/clang diagnose. A FAM left uninitialized, a single brace around a scalar
+   member, a top-level incomplete-array init, and a braced scalar all stay
+   clean under -pedantic. */
+{ "init_brace_constraints", "",
+  "printf 'struct V{int len;int data[];}; struct V v={1,{2,3}};\\n' > {W}/fam.c && "
+  "printf 'int x={{1}};\\n' > {W}/sb.c && "
+  "printf 'struct V{int len;int data[];}; struct V v={1};\\nstruct S{int a;}; struct S s={{5}};\\nint y={7}; int a3[]={1,2,3};\\nint main(void){return 0;}\\n' > {W}/iok.c && "
+  "{ {MCC} -B{B} -I{I} -pedantic-errors -c {W}/fam.c -o {W}/fam.o 2>&1; "
+  "{MCC} -B{B} -I{I} -pedantic-errors -c {W}/sb.c -o {W}/sb.o 2>&1; "
+  "{MCC} -B{B} -I{I} -Werror -pedantic -c {W}/iok.c -o {W}/iok.o 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE 'flexible array member|too many braces around scalar|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 flexible array member\n1 too many braces around scalar\n" },
+
+/* §6.5.3.2: indirection on a `void *` yields a void lvalue of incomplete type,
+   which ISO C does not allow (gcc warns, clang errors); diagnosed under
+   -pedantic. A real-typed dereference stays clean. */
+{ "void_pointer_deref", "",
+  "printf 'void f(void*p){*p;}\\n' > {W}/vd.c && "
+  "printf 'void g(int*p){*p=1; (void)*p;}\\nint main(void){return 0;}\\n' > {W}/vdok.c && "
+  "{ {MCC} -B{B} -I{I} -pedantic-errors -c {W}/vd.c -o {W}/vd.o 2>&1; "
+  "{MCC} -B{B} -I{I} -Werror -pedantic -c {W}/vdok.c -o {W}/vdok.o 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE 'dereferencing a .void|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 dereferencing a 'void\n" },
+
+/* §6.6p4: a constant expression shall evaluate to a value representable in its
+   type; a signed +/-/* fold that overflows its result type is diagnosed by
+   gcc/clang. Mirrored under -pedantic. In-range folds, unsigned wraparound, and
+   a product that fits a wider result stay clean. */
+{ "const_integer_overflow", "",
+  "printf 'int x = 100000 * 100000;\\n' > {W}/co.c && "
+  "printf 'int a = 2000000000 + 100000000;\\nunsigned b = 4000000000u + 1000000000u;\\nlong long c = 2000000000LL * 2000000000LL;\\nint main(void){return 0;}\\n' > {W}/cok.c && "
+  "{ {MCC} -B{B} -I{I} -pedantic-errors -c {W}/co.c -o {W}/co.o 2>&1; "
+  "{MCC} -B{B} -I{I} -Werror -pedantic -c {W}/cok.c -o {W}/cok.o 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE 'integer overflow in constant expression|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 integer overflow in constant expression\n" },
+
+/* §6.10.8.1: __LINE__ as a multi-line macro argument expands to the line of its
+   own token (here line 3), not the line of the invocation's closing ')'. */
+{ "line_macro_arg", "",
+  "printf '#define ID(x) x\\nint a=ID(\\n__LINE__\\n);\\nint main(void){return a;}\\n' > {W}/lma.c && "
+  "{MCC} -B{B} -I{I} {W}/lma.c -o {W}/lma && {W}/lma; echo L=$?",
+  "L=3\n" },
+
+/* §6.4.5p2: a u8 literal cannot concatenate with a wide (L/u/U) literal; u8 with
+   a plain narrow literal is fine. The valid forms compile and run (RUN=3 = the
+   sizeof("hi")+0+0+0 self-check). */
+{ "u8_string_concat", "",
+  "printf 'const void*p=L\"a\" u8\"b\";\\n' > {W}/u8c.c && "
+  "printf 'char a[]=u8\"hi\"; const char*b=u8\"x\" \"y\"; const char*c=\"p\" u8\"q\";\\n"
+  "int main(void){return sizeof(a)+(a[0]!=0x68)+(b[0]!=0x78)+(c[1]!=0x71);}\\n' > {W}/u8ok.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -c {W}/u8c.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -Werror {W}/u8ok.c -o {W}/u8ok 2>&1 && {W}/u8ok; echo RUN=$?; } | "
+  "grep -oE 'concatenation of string literals|RUN=3'",
+  "concatenation of string literals\nRUN=3\n" },
+
+/* §6.7.6.2: a pointer-to-VLA parameter `int (*a)[m]` keeps its VLA dimension —
+   sizeof(b[0])==16 and a[1][0] indexes the right element (self-check returns 7). */
+{ "pointer_to_vla_param", "",
+  "printf '#include <stddef.h>\\nvoid f(int m,int(*a)[m]){a[1][0]=42;}\\n"
+  "int main(void){int b[3][4]={0}; f(4,b); size_t s=sizeof(b[0]); return (b[1][0]==42 && s==16)?7:0;}\\n' > {W}/pvp.c && "
+  "{MCC} -B{B} -I{I} {W}/pvp.c -o {W}/pvp && {W}/pvp; echo R=$?",
+  "R=7\n" },
+
+/* §6.6p6: a conditional with a non-constant operand in the discarded arm is not
+   an integer constant expression even when the constant condition picks the other
+   arm (`1?3:v`); a constant-only conditional stays a valid ICE. */
+{ "conditional_ice", "",
+  "printf 'int v; enum E{Z=1?3:v};\\n' > {W}/cic.c && "
+  "printf 'enum F{A=1?3:4,B=1?3:(int)sizeof(int)};\\nint main(void){return A+B;}\\n' > {W}/cicok.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/cic.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -Werror -pedantic-errors -c {W}/cicok.c -o /dev/null 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE 'not an integer constant expression|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 not an integer constant expression\n" },
+
+/* §6.7.9p17-20: after a designator descends into a sub-aggregate, positional
+   initializers resume within it and brace-elide out when full (`.in[0]=1, 2, 3`
+   → in={1,2}, t=3); independent `.member[k]` designators each apply without
+   re-clearing. Self-check returns 9 when all members match gcc/clang. */
+{ "designated_init_continuation", "",
+  "printf 'struct O{int in[2];int t;};\\nstruct N{struct{int a,b;}s;int t;};\\nstruct F{int f1,f2;int fa[3];};\\n"
+  "int main(void){\\n"
+  "struct O o={.in[0]=1,2,3};\\n"
+  "struct N n={.s.a=1,2,3};\\n"
+  "struct F f={.f2=2,3,.f1=1,.fa[0]=10,.fa[1]=11,.fa[2]=12};\\n"
+  "int ok=o.in[0]==1&&o.in[1]==2&&o.t==3 && n.s.a==1&&n.s.b==2&&n.t==3 "
+  "&& f.f1==1&&f.f2==2&&f.fa[0]==10&&f.fa[1]==11&&f.fa[2]==12;\\n"
+  "return ok?9:0;}\\n' > {W}/dic.c && "
+  "{MCC} -B{B} -I{I} {W}/dic.c -o {W}/dic && {W}/dic; echo R=$?",
+  "R=9\n" },
+
+/* §6.5.1.1p2 (_Generic incomplete/void association), §6.7.2.4p3 (_Atomic on a
+   qualified type), §6.7.3p2 (restrict on a non-pointer array). Each diagnosed;
+   valid _Generic/_Atomic/restrict forms stay clean under -Werror. */
+{ "generic_atomic_restrict_constraints", "",
+  "printf 'struct S; int x=_Generic(1,struct S:1,int:2);\\n' > {W}/gi.c && "
+  "printf 'int x=_Generic(1,void:1,int:2);\\n' > {W}/gv.c && "
+  "printf '_Atomic(const int) x;\\n' > {W}/ac.c && "
+  "printf 'int restrict a[10];\\n' > {W}/ra.c && "
+  "printf 'int x=_Generic(1,long:1,int:2); _Atomic int y; int*restrict p;\\nint main(void){return 0;}\\n' > {W}/gok.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/gi.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/gv.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/ac.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/ra.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -Werror -pedantic-errors -c {W}/gok.c -o /dev/null 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE '_Generic. association with an incomplete|_Atomic cannot be applied to a qualified|requires a pointer type|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 _Atomic cannot be applied to a qualified\n2 _Generic' association with an incomplete\n1 requires a pointer type\n" },
+
+/* §6.7.6.3p2 (storage class other than register on a parameter), §6.7.1p7
+   (auto/register on a block-scope function declaration). register param and
+   extern block-scope function stay clean. */
+{ "param_and_blockfn_storage", "",
+  "printf 'void f(static int x);\\n' > {W}/ps.c && "
+  "printf 'void g(void){ register int h(void); (void)h; }\\n' > {W}/bf.c && "
+  "printf 'void f(register int x){(void)x;}\\nvoid g(void){ extern int h(void); (void)h; }\\nint main(void){return 0;}\\n' > {W}/sok.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -c {W}/ps.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/bf.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -Werror -c {W}/sok.c -o /dev/null 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE 'storage class specified for parameter|invalid storage class for function|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 invalid storage class for function\n1 storage class specified for parameter\n" },
+
+/* §6.5.15p3 (one void operand in ?:), §6.5.4 (float<->pointer constant cast, both
+   directions), §6.5.16.1p1 (assignment to a struct with a const member). */
+{ "expr_constraints", "",
+  "printf 'void f(int c){ c?(void)0:1; }\\n' > {W}/cv.c && "
+  "printf 'void*f(void){return (void*)2.5;}\\n' > {W}/fp.c && "
+  "printf 'double d=(double)(void*)0;\\n' > {W}/pf.c && "
+  "printf 'struct S{const int x;int y;}; void f(void){struct S a={1,2},b={3,4}; a=b;(void)a;}\\n' > {W}/cm.c && "
+  "printf 'int f(int c){return c?1:2;} void*g(void){return (void*)5;}\\nstruct T{int x;}; void h(void){struct T a={1},b={2}; a=b;(void)a;}\\nint main(void){return 0;}\\n' > {W}/eok.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/cv.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/fp.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/pf.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/cm.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -Werror -pedantic-errors -c {W}/eok.c -o /dev/null 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE 'only one void operand|cast between a floating type and a pointer|assignment of read-only|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 assignment of read-only\n2 cast between a floating type and a pointer\n1 only one void operand\n" },
+
+/* §6.6p6: a bit-field width / enumerator value / case label that only folds via
+   a floating operation is not an integer constant expression. The immediate
+   cast-of-float forms (`(int)2.5`) are valid ICEs and stay clean. */
+{ "ice_float_constraints", "",
+  "printf 'struct S{int b:(int)(2.5*2);};\\n' > {W}/ib.c && "
+  "printf 'enum E{X=(int)(2.5*2)};\\n' > {W}/ie.c && "
+  "printf 'int f(int x){switch(x){case (int)(2.5*2): return 1;} return 0;}\\n' > {W}/ic.c && "
+  "printf 'struct S{int b:(int)2.5;}; enum E{X=(int)3.0,Y=5}; int f(int x){switch(x){case (int)3.9:return 1;}return 0;}\\nint main(void){return 0;}\\n' > {W}/iok.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/ib.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/ie.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/ic.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -Werror -pedantic-errors -c {W}/iok.c -o /dev/null 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE 'bit-field width that is not|enumerator value that is not|case label that is not|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 bit-field width that is not\n1 case label that is not\n1 enumerator value that is not\n" },
+
+/* §6.7.9p4: the address of a block-scope (automatic) compound literal is not a
+   constant, so it may not initialize a static-storage object. §6.4.3p2: a UCN
+   with a code point < 00A0 is invalid pre-C23. File-scope/runtime compound
+   literals and a valid UCN stay clean. */
+{ "static_init_and_ucn", "",
+  "printf 'void f(void){ static int *p=(int[]){10,20,30}; (void)p; }\\n' > {W}/sc.c && "
+  "printf 'char *s=\\\"\\\\u0041\\\";\\n' > {W}/uc.c && "
+  "printf 'int*p=(int[]){1,2,3}; void g(void){int*q=(int[]){4,5}; (void)q;}\\nint main(void){return 0;}\\n' > {W}/nok.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -c {W}/sc.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/uc.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -Werror -pedantic-errors -c {W}/nok.c -o /dev/null 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE 'initializer element is not constant|not a valid universal|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n1 initializer element is not constant\n1 not a valid universal\n" },
+
+/* §7.20.4.1p1: INT64_C/UINT64_C shall have type int_least64_t/uint_least64_t.
+   Verified hosted and freestanding (the bundled <stdint.h> fallback). */
+{ "int64_c_type", "",
+  "printf '#include <stdint.h>\\n"
+  "_Static_assert(_Generic(INT64_C(1), int_least64_t:1, default:0)==1, \\\"t1\\\");\\n"
+  "_Static_assert(_Generic(UINT64_C(1), uint_least64_t:1, default:0)==1, \\\"t2\\\");\\n"
+  "int main(void){return 0;}\\n' > {W}/i64.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -Werror -c {W}/i64.c -o /dev/null 2>&1 && echo HOSTED_OK; "
+  "{MCC} -B{B} -I{I} -std=c11 -ffreestanding -nostdinc -Werror -c {W}/i64.c -o /dev/null 2>&1 && echo FREESTANDING_OK; } | sort",
+  "FREESTANDING_OK\nHOSTED_OK\n" },
+
+/* §6.7.2.1p11: consecutive _Bool bit-fields pack into one byte (ABI). */
+{ "bool_bitfield_packing", "",
+  "printf '#include <stdio.h>\\n"
+  "struct B{_Bool a:1;_Bool b:1;};\\n"
+  "struct C{_Bool a:1,b:1,c:1,d:1;};\\n"
+  "int main(void){ struct B v={1,1}; printf(\\\"%%zu %%zu %%d%%d\\\\n\\\",sizeof(struct B),sizeof(struct C),v.a,v.b); return 0; }\\n' > {W}/bfp.c && "
+  "{MCC} -B{B} -I{I} {W}/bfp.c -o {W}/bfp && {W}/bfp",
+  "1 1 11\n" },
+
+/* §6.3.1.8: `double * float _Complex` (the x*I idiom) is computed in double, not
+   narrowed to float — the imaginary part keeps double precision. */
+{ "complex_real_precision", "",
+  "printf '#include <complex.h>\\n#include <stdio.h>\\n"
+  "int main(void){ volatile double r=0.1; double _Complex z=r*I; printf(\\\"%%.17g\\\\n\\\", cimag(z)); return 0; }\\n' > {W}/cxp.c && "
+  "{MCC} -B{B} -I{I} {W}/cxp.c -lm -o {W}/cxp && {W}/cxp",
+  "0.10000000000000001\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));
