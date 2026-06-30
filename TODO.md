@@ -478,15 +478,17 @@ bulk of each area matched the references; these are the residual divergences.
 
 ### §6.3 / §6.5 / §6.6 conversions & expressions
 
-- [ ] **[DIAG] §6.5.16.1/§6.3.2.3p2 — nested-pointer qualifier mismatch silently accepted (const-laundering).**
-  `const int **q = p;` (p is `int**`) compiles with no diagnostic even at
-  `-pedantic-errors`, and *miscompiles*: `*q = &c; *mut = 99;` mutates a `const
-  int`. `verify_assign_cast` (`src/mccgen.c:3504-3527`) only flags the top-level
-  qualifier-*discard* direction; `is_compatible_unqualified_types` strips deep
-  qualifiers, masking the incompatibility. (The reverse `const int**→int**` IS
-  warned.) gcc errors, clang warns. **Strongest sweep-2 finding — a real safety
-  hole.**
-  3-way: mcc=accepts(const-launders) | gcc=error | clang=warn.
+- [x] **[DIAG] §6.5.16.1/§6.3.2.3p2 — nested-pointer qualifier laundering now diagnosed.**
+  `const int **q = p;` (p is `int**`) now warns "assignment from incompatible
+  pointer type" — closing the silent const-laundering hole. In `verify_assign_cast`'s
+  pointer-descent loop (`src/mccgen.c`), beyond the immediately-pointed-to level
+  the destination adding a qualifier the source lacks now sets a `deepqual` flag
+  that marks the types incompatible (the "left has all qualifiers" relaxation is
+  correctly applied only at level 0). Top-level add (`int*→const int*`) stays
+  valid; top-level discard (`const int*→int*`) still warns "discards qualifiers".
+  Matches gcc/clang (which both reject `int**→const int**`). The existing
+  `errors_and_warnings` test had a silently-accepted laundering case (line 107)
+  now correctly flagged. cli `nested_pointer_qualifier_launder`.
 
 - [x] **[OPT] §6.5.6 — `void *` / function-pointer arithmetic now diagnosed under `-pedantic`.**
   `gen_op` (`src/mccgen.c`, the `VT_PTR` arithmetic branch) now emits

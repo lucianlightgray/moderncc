@@ -1029,5 +1029,17 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -isystem {W}/sys -std=c11 -pedantic-errors -c {W}/m.c -o {W}/m11.o 2>&1 && echo C11_OK; }",
   "1\nC11_OK\n" },
 
+/* §6.5.16.1: adding a qualifier at a nested pointer level (`int** -> const
+   int**`) launders it away and is an incompatible-pointer constraint violation;
+   a top-level qualifier add (`int* -> const int*`) is allowed, a top-level
+   discard (`const int* -> int*`) warns "discards qualifiers". */
+{ "nested_pointer_qualifier_launder", "",
+  "printf 'void f(int **p){ const int **q = p; (void)q; }\\n' > {W}/nl.c && "
+  "printf 'void f(int *ip, const int *cp){ const int *a = ip; int *b = cp; (void)a;(void)b; }\\n' > {W}/nlmix.c && "
+  "{ {MCC} -B{B} -I{I} -c {W}/nl.c -o {W}/nl.o 2>&1 | grep -oE 'incompatible pointer'; "
+  "{MCC} -B{B} -I{I} -c {W}/nlmix.c -o {W}/nlmix.o 2>&1 | grep -oE 'discards|incompatible'; } | "
+  "sort | uniq -c | sed 's/^ *//'",
+  "1 discards\n1 incompatible pointer\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

@@ -3485,7 +3485,7 @@ static void cast_error(CType *st, CType *dt)
 static void verify_assign_cast(CType *dt)
 {
     CType *st, *type1, *type2;
-    int dbt, sbt, qualwarn, lvl;
+    int dbt, sbt, qualwarn, lvl, deepqual;
 
     st = &vtop->type;
     dbt = dt->t & VT_BTYPE;
@@ -3513,16 +3513,28 @@ static void verify_assign_cast(CType *dt)
             goto error;
         if (is_compatible_types(type1, type2))
             break;
-        for (qualwarn = lvl = 0;; ++lvl) {
+        for (qualwarn = lvl = deepqual = 0;; ++lvl) {
             if (((type2->t & VT_CONSTANT) && !(type1->t & VT_CONSTANT)) ||
                 ((type2->t & VT_VOLATILE) && !(type1->t & VT_VOLATILE)))
                 qualwarn = 1;
+            /* 6.5.16.1: the "left has all qualifiers of right" relaxation
+               applies only at the immediately-pointed-to level (lvl 0). Beyond
+               it, the destination adding a qualifier the source lacks would
+               launder it away (e.g. `int** -> const int**`, after which a write
+               through the alias mutates a const object), so the types are
+               incompatible. */
+            if (lvl > 0 && ((type1->t & ~type2->t) & (VT_CONSTANT|VT_VOLATILE)))
+                deepqual = 1;
             dbt = type1->t & (VT_BTYPE|VT_LONG);
             sbt = type2->t & (VT_BTYPE|VT_LONG);
             if (dbt != VT_PTR || sbt != VT_PTR)
                 break;
             type1 = pointed_type(type1);
             type2 = pointed_type(type2);
+        }
+        if (deepqual) {
+            mcc_warning("assignment from incompatible pointer type");
+            break;
         }
         if (!is_compatible_unqualified_types(type1, type2)) {
             if ((dbt == VT_VOID || sbt == VT_VOID) && lvl == 0) {
