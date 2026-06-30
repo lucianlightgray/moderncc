@@ -1980,10 +1980,27 @@ ST_FUNC void preprocess(int is_bof)
             goto ignore;
         c = 0;
     _line_num:
-        for (n = 0, q = tokc.str.data; *q; ++q) {
-            if (!isnum(*q))
-                goto _line_err;
-            n = n * 10 + *q - '0';
+        {
+            /* 6.10.4p3: the digit sequence shall not be zero nor greater than
+               2147483647. Accumulate in 64-bit so an out-of-range value is
+               detected rather than silently wrapping __LINE__ negative; clamp
+               the carried value to INT_MAX. */
+            uint64_t nn = 0;
+            int line_ovf = 0;
+            for (q = tokc.str.data; *q; ++q) {
+                if (!isnum(*q))
+                    goto _line_err;
+                nn = nn * 10 + (*q - '0');
+                if (nn > 2147483647)
+                    line_ovf = 1;
+            }
+            if ((line_ovf || nn == 0) && mcc_state->warn_pedantic) {
+                if (mcc_state->pedantic_errors)
+                    mcc_error("line number out of range");
+                else
+                    mcc_warning("line number out of range");
+            }
+            n = line_ovf ? 2147483647 : (int)nn;
         }
         parse_flags &= ~PARSE_FLAG_TOK_STR;
         next();

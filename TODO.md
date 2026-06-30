@@ -476,10 +476,14 @@ bulk of each area matched the references; these are the residual divergences.
   `INT_MAX+1`, evaluated in intmax_t) stay silent; div-by-zero still hard-errors.
   cli `pp_if_integer_overflow`.
 
-- [ ] **[DIFF] §6.10.4p3 — `#line 2147483648` wraps `__LINE__` to a negative value.**
-  Parsed into signed 32-bit → `__LINE__` becomes `-2147483648` (UB territory).
-  Both refs carry 2147483648. Low priority (>INT_MAX line numbers are UB).
-  3-way: mcc=-2147483648 | gcc/clang=2147483648.
+- [x] **[DIAG] §6.10.4p3 — `#line` number out of range now diagnosed; no more negative wrap.**
+  The `#line` digit sequence is now accumulated in 64-bit (`src/mccpp.c`, the
+  `_line_num` loop): a value of `0` or `> 2147483647` violates the §6.10.4p3
+  constraint and emits "line number out of range" under `-pedantic`
+  (`-pedantic-errors` → error), matching gcc/clang. The carried `__LINE__` is
+  clamped to `INT_MAX` instead of wrapping to `-2147483648` even without
+  `-pedantic`. A valid line number stays clean under `-pedantic-errors`. cli
+  `line_number_out_of_range`.
 
 ### §6.3 / §6.5 / §6.6 conversions & expressions
 

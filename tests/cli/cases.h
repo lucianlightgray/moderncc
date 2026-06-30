@@ -892,6 +892,18 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'overflow in preprocessor|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n2 overflow in preprocessor\n" },
 
+/* §6.10.4p3: the #line digit sequence shall not be zero nor exceed 2147483647.
+   Out-of-range and zero are diagnosed under -pedantic; the carried __LINE__ is
+   clamped to INT_MAX rather than wrapping negative (silent without -pedantic).
+   A valid line number is clean even under -pedantic-errors. */
+{ "line_number_out_of_range", "",
+  "printf '#line 2147483648\\nint x;\\n#line 0\\nint y;\\nint main(void){return 0;}\\n' > {W}/lr.c && "
+  "printf '#line 100\\nint z;\\nint main(void){return 0;}\\n' > {W}/lrok.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/lr.c -o {W}/lr.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/lrok.c -o {W}/lrok.o 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE 'line number out of range|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n2 line number out of range\n" },
+
 /* §7.17.8: atomic_flag_* take volatile atomic_flag *, so a non-pointer argument
    is diagnosed; the correct &atomic_flag form compiles clean under -Werror. */
 { "atomic_flag_type", "",
