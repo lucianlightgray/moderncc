@@ -582,10 +582,15 @@ bulk of each area matched the references; these are the residual divergences.
   has the warning for the file-scope `int;`/`typedef int;` cases. Both refs warn.
   Low value.
 
-- [ ] **[DIAG] §6.7.9p14 — wrong-element-type string-literal initializer gives a misleading diagnostic.**
-  `int a[4] = "abc";` / `char a[]=L"abc"` / `wchar_t a[]="abc"` are rejected (so
-  conformant) but with "assignment makes integer from pointer without a cast" +
-  "',' expected" instead of a string-literal-init message. Quality-only.
+- [x] **[DIAG] §6.7.9p14 — wrong-element-type string-literal initializer now gives a clear message.**
+  `int a[4] = "abc";` / `char a[]=L"abc"` now error "cannot initialize array of
+  'T' from a string literal of a different character type" instead of the old
+  "integer from pointer" + "',' expected" cascade. A new `else if` in the array
+  branch of `decl_initializer` (`src/mccgen.c`) catches a string-literal token
+  whose element type doesn't match the (scalar) array element — gated on
+  `no_oblock` and `!(t1->t & VT_ARRAY)` so braced (`char a[4]={"ab"}`) and nested
+  sub-array (`char m[][3]={"ab","cd"}`) string inits still recurse and stay valid.
+  cli `string_init_element_mismatch`.
 
 - [ ] **[DIAG] §6.8.6.4p1 — `return <expr>;` in `void` / `return;` in non-`void` warn instead of error.**
   mcc warns (rc=0) where both refs hard-error. Severity-only divergence (same

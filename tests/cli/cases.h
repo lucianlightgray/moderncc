@@ -907,6 +907,22 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'line number out of range|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n2 line number out of range\n" },
 
+/* §6.7.9p14: a string literal can initialize an array only when its element
+   type matches the array's element type; a wide/narrow mismatch is rejected
+   with a clear message (not the old "integer from pointer" + "',' expected"
+   cascade). Matching narrow/wide string inits, a braced string, and a nested
+   sub-array string element stay valid even under -Werror. */
+{ "string_init_element_mismatch", "",
+  "printf 'int a[4]=\"abc\";\\n' > {W}/sm.c && "
+  "printf 'int wmain(void){char a[]=L\"abc\";return a[0];}\\n' > {W}/sm2.c && "
+  "printf 'char a[]=\"abc\"; int b[]=L\"abc\"; char c[4]={\"ab\"};"
+  " char m[][3]={\"ab\",\"cd\"}; int main(void){return a[0]+b[0]+c[0]+m[0][0];}\\n' > {W}/smok.c && "
+  "{ {MCC} -B{B} -I{I} -c {W}/sm.c -o {W}/sm.o 2>&1; "
+  "{MCC} -B{B} -I{I} -c {W}/sm2.c -o {W}/sm2.o 2>&1; "
+  "{MCC} -B{B} -I{I} -Werror -c {W}/smok.c -o {W}/smok.o 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE 'from a string literal of a different|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n2 from a string literal of a different\n" },
+
 /* §7.17.8: atomic_flag_* take volatile atomic_flag *, so a non-pointer argument
    is diagnosed; the correct &atomic_flag form compiles clean under -Werror. */
 { "atomic_flag_type", "",

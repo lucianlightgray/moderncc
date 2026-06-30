@@ -9100,6 +9100,20 @@ static void decl_initializer(init_params *p, CType *type, unsigned long c, int f
             }
             if (tok == ',' && !no_oblock)
                 next();
+        } else if (no_oblock && !(t1->t & VT_ARRAY)
+                   && (tok == TOK_STR || tok == TOK_LSTR
+                       || tok == TOK_U16STR || tok == TOK_U32STR)) {
+            /* 6.7.9p14: a character-array initializer must be a string literal
+               whose element type matches the array's; a wide/narrow mismatch
+               (`int a[]="abc"`, `char a[]=L"abc"`) is rejected. Only fires when
+               the element is a scalar — a string against a nested *array*
+               element recurses through do_init_array below. Catch it here with a
+               clear message instead of the scalar path's misleading "integer
+               from pointer" + "',' expected" cascade. */
+            char buf[64];
+            type_to_str(buf, sizeof(buf), t1, NULL);
+            mcc_error("cannot initialize array of '%s' from a string literal "
+                      "of a different character type", buf);
         } else {
 
           do_init_array:
