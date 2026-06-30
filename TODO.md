@@ -62,16 +62,26 @@ Each below was confirmed: mcc=0 warnings where gcc/clang warn. (mcc already does
 `-Wreturn-type`-style "missing return", implicit-function-declaration, and the
 new `-Wformat`.) Most need scope/dataflow tracking — size each before starting.
 
-- [ ] **[diag] `-Wuninitialized`** — use of an uninitialized local. Needs simple
-  dataflow; can be conservative to avoid false positives.
+- [ ] **[diag] `-Wuninitialized`** — use of an uninitialized local. **Genuine
+  remaining effort.** A correct version needs to distinguish a *read* from a
+  *write* at each variable reference (mcc marks both identically in `unary()`)
+  and to follow control flow (a definite read-before-any-write vs. the
+  conditional `-Wmaybe-uninitialized` case). mcc is single-pass with no CFG, so
+  this is real dataflow work, not a one-point hook; a naive version produces
+  false positives under `-Wall`. Deferred as a focused project.
 
 ## Preprocessor / dependency-generation flags
 
-- [ ] **[build] `-imacros <file>`** rejected — like `-include` but contributes only
-  the file's macro definitions (no text). Standard gcc/clang option. Needs a
-  preprocessor pass that scans the file for `#define`s and discards its tokens;
-  a plain `#include` would wrongly pull in declarations, so kept out of the
-  `-iquote`/`-idirafter` batch.
+- [ ] **[build] `-imacros <file>`** — like `-include` but contributes only the
+  file's macro definitions (no text). **Genuine remaining effort.** mcc parses
+  the predef/`<command line>` buffer inline with the main file in one `decl()`
+  pass, and frees the macro table per `mcc_compile`, so there is no clean seam to
+  run a "process `#define`s, discard tokens" pass after predefs but before the
+  main file. The discard primitive exists (`do next(); while(EOF)` as in
+  `mcc_preprocess`), but wiring it in without disturbing predef ordering or the
+  self-host pipeline needs care. A plain `#include` would wrongly pull in
+  declarations (a real divergence in the rare non-pure-macro case), so it was
+  deliberately kept out. Deferred as a focused project.
 
 ## Diagnostics control (minor)
 
