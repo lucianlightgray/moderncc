@@ -9822,6 +9822,11 @@ static int decl(int l)
                             || !(sym->type.t & VT_TYPEDEF))
                             mcc_error("incompatible redefinition of '%s'",
                                 get_tok_str(v, NULL));
+                        /* 6.7p3: redefining a typedef with the same type is
+                           permitted only in C11; in C99/C90 it is a constraint
+                           violation. */
+                        else if (mcc_state->cversion < 201112)
+                            mcc_pedantic("redefinition of typedef is a C11 feature");
                         sym->type = type;
                     } else {
                         sym = sym_push(v, &type, 0, 0);

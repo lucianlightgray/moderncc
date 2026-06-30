@@ -524,11 +524,11 @@ bulk of each area matched the references; these are the residual divergences.
   when `static` is followed by `]` with no size. `[static N]`, `[const N]`, `[]`
   still compile. gcc+clang both reject. cli `array_static_param`; 5-arch.
 
-- [ ] **[DIAG] §6.7p3 — C99 typedef redefinition (same type) not diagnosed under `-std=c99 -pedantic`.**
-  `typedef int T; typedef int T;` is silent in C99 mode; same-type typedef
-  redefinition is only permitted in C11. Both refs warn under `-pedantic`/note it
-  as a C11 feature. (Correctly silent in C11; conflicting-type redef is correctly
-  an error in both modes.)
+- [x] **[DIAG] §6.7p3 — C99 typedef redefinition (same type) now diagnosed under `-pedantic`.**
+  The same-type typedef-redefinition path (`src/mccgen.c`) now emits
+  `mcc_pedantic` "redefinition of typedef is a C11 feature" when
+  `cversion < 201112` (C99/C90). Silent in C11; incompatible-type redefinition
+  is still an error in all modes. cli `typedef_redefinition_c99`.
 
 - [ ] **[DIAG] §6.7.2.1 — struct with only unnamed bit-fields not diagnosed under `-pedantic`.**
   `struct S { int : 4; };` compiles even at `-pedantic-errors`; a struct with no

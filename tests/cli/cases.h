@@ -1006,5 +1006,17 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'function pointer and|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 VALID_OK\n2 function pointer and\n" },
 
+/* §6.7p3: redefining a typedef with the same type is a C11 feature; in C99 it
+   is diagnosed under -pedantic but accepted silently in C11. An incompatible
+   redefinition is always an error. */
+{ "typedef_redefinition_c99", "",
+  "printf 'typedef int T; typedef int T;\\n' > {W}/td.c && "
+  "printf 'typedef int U; typedef long U;\\n' > {W}/tdbad.c && "
+  "{ {MCC} -B{B} -I{I} -std=c99 -pedantic -c {W}/td.c -o {W}/td.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/td.c -o {W}/td2.o 2>&1 && echo C11_OK; "
+  "{MCC} -B{B} -I{I} -c {W}/tdbad.c -o {W}/tdbad.o 2>&1; } | "
+  "grep -oE 'redefinition of typedef is a C11 feature|incompatible redefinition|C11_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 C11_OK\n1 incompatible redefinition\n1 redefinition of typedef is a C11 feature\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));
