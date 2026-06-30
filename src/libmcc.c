@@ -1760,6 +1760,10 @@ static const FlagDef options_W[] = {
     /* -Wsign-compare: a relational/equality comparison mixing signed and
        unsigned operands. Opt-in (gcc enables it under -Wextra). */
     { offsetof(MCCState, warn_sign_compare), 0, "sign-compare" },
+    /* -Wparentheses: a plain assignment used directly as a controlling
+       expression (`if (x = y)`); double parentheses suppress it. Enabled by
+       -Wall (WD_ALL), like gcc. */
+    { offsetof(MCCState, warn_parentheses), WD_ALL, "parentheses" },
     /* -Wunknown-pragmas: an unrecognized #pragma. Enabled by -Wall (WD_ALL),
        matching gcc, and separately controllable via -W[no-]unknown-pragmas. */
     { offsetof(MCCState, warn_unknown_pragmas), WD_ALL, "unknown-pragmas" },

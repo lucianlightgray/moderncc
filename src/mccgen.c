@@ -8260,12 +8260,22 @@ static void expr_cond(void)
     }
 }
 
+/* -Wparentheses: set by expr_eq() to whether the expression it just parsed was,
+   at its top syntactic level, a plain or compound assignment. The outermost
+   expr_eq of a controlling expression writes this last (after its recursive
+   calls return), so a parenthesised assignment `(x = y)` correctly reports 0.
+   Read immediately after a controlling expression by the if/while/for/do
+   handlers; ignored everywhere else. */
+static int expr_was_assign;
+
 static void expr_eq(void)
 {
     int t;
-    
+    int was_assign = 0;
+
     expr_cond();
     if ((t = tok) == '=' || TOK_ASSIGN(t)) {
+        was_assign = 1;
         test_lvalue();
         /* 6.5.16.1: the left operand must be a modifiable lvalue; a by-value
            call result (and its members) is not assignable. */
@@ -8317,6 +8327,9 @@ static void expr_eq(void)
         }
         vstore();
     }
+    /* written after any recursive expr_eq() above, so the OUTERMOST assignment
+       of a controlling expression is the value seen by its handler. */
+    expr_was_assign = was_assign;
 }
 
 ST_FUNC void gexpr(void)
@@ -8817,6 +8830,9 @@ again:
         new_scope_s(&o);
         skip('(');
         gexpr_decl();
+        if (expr_was_assign)    /* -Wparentheses: `if (x = y)` */
+            mcc_warning_c(warn_parentheses)("suggest parentheses around "
+                "assignment used as a truth value");
         seqp_check();           /* 6.5p2: diagnose the controlling expression */
         a = gvtst(1, 0);
         skip(')');
@@ -8837,6 +8853,9 @@ again:
         d = gind();
         skip('(');
         gexpr();
+        if (expr_was_assign)    /* -Wparentheses: `while (x = y)` */
+            mcc_warning_c(warn_parentheses)("suggest parentheses around "
+                "assignment used as a truth value");
         seqp_check();           /* 6.5p2: diagnose the controlling expression */
         a = gvtst(1, 0);
         skip(')');
@@ -8951,6 +8970,9 @@ again:
         c = d = gind();
         if (tok != ';') {
             gexpr();
+            if (expr_was_assign)    /* -Wparentheses: `for (; x = y; )` */
+                mcc_warning_c(warn_parentheses)("suggest parentheses around "
+                    "assignment used as a truth value");
             a = gvtst(1, 0);
         }
         seqp_flush();           /* 6.5p2: the controlling expression is its own region */
@@ -8980,6 +9002,9 @@ again:
         skip(TOK_WHILE);
         skip('(');
 	gexpr();
+        if (expr_was_assign)        /* -Wparentheses: `do … while (x = y)` */
+            mcc_warning_c(warn_parentheses)("suggest parentheses around "
+                "assignment used as a truth value");
         seqp_check();           /* 6.5p2: diagnose the do-while condition */
         c = gvtst(0, 0);
         skip(')');

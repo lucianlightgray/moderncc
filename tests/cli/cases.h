@@ -1704,5 +1704,18 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'different signedness|MEMBER_OFF_OK|NOEXTRA_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 MEMBER_OFF_OK\n1 NOEXTRA_OK\n1 different signedness\n" },
 
+/* -Wparentheses warns on a plain assignment used directly as a controlling
+   expression (`if (x = 1)`, while/for/do); double parentheses, `==`, and the
+   for-init/iteration clauses are exempt. Enabled by -Wall (so -Wno-parentheses
+   turns it off); default silent. */
+{ "wparentheses_assignment", "",
+  "printf 'int g(void){return 0;}\\nint main(void){int x; if (x = 1){} while(x = g()){} return x;}\\n' > {W}/pp_bad.c && "
+  "printf 'int main(void){int x=0; if ((x = 1)){} if (x == 1){} for(x=0;x<2;x++){} return x;}\\n' > {W}/pp_ok.c && "
+  "echo \"$({MCC} -B{B} -I{I} -Wparentheses -c {W}/pp_bad.c -o /dev/null 2>&1 | grep -c 'truth value') warns\"; "
+  "{MCC} -B{B} -I{I} -Wall -Wno-parentheses -Werror -c {W}/pp_bad.c -o /dev/null 2>&1 && echo OFF_OK; "
+  "{MCC} -B{B} -I{I} -Wparentheses -Werror -c {W}/pp_ok.c -o /dev/null 2>&1 && echo OK_CLEAN; "
+  "{MCC} -B{B} -I{I} -c {W}/pp_bad.c -o /dev/null 2>&1 && echo DEFAULT_SILENT",
+  "2 warns\nOFF_OK\nOK_CLEAN\nDEFAULT_SILENT\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));
