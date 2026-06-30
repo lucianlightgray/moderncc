@@ -2022,14 +2022,13 @@ endif()
     # every tests/preprocess case (token-stream diff for .c transformations,
     # diagnostic-present check for diagnostics/, -E smoke for .S asm input).
     # Native host + both reference compilers + a POSIX shell.
-    find_program(MCC_PP_SH NAMES sh bash)
-    if(NOT MCC_EMULATOR AND DIFF3_GCC AND DIFF3_CLANG AND MCC_PP_SH)
+    if(NOT MCC_EMULATOR AND DIFF3_GCC AND DIFF3_CLANG)
         add_test(NAME preprocess-suite
-            COMMAND "${MCC_PP_SH}"
-                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/preprocess/run_preprocess.sh"
-                    "${_mcc_exe}" "${_bdir}" "${_idir}"
-                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/preprocess"
-                    "${DIFF3_GCC}" "${DIFF3_CLANG}")
+            COMMAND ${CMAKE_COMMAND}
+                    "-DMCC=${_mcc_exe}" "-DBDIR=${_bdir}" "-DIDIR=${_idir}"
+                    "-DTDIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/preprocess"
+                    "-DGCC=${DIFF3_GCC}" "-DCLANG=${DIFF3_CLANG}"
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/preprocess/run_preprocess.cmake")
         set_tests_properties(preprocess-suite PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77)
     else()
@@ -2670,11 +2669,12 @@ endif()
         CACHE PATH "cross-compiler build dir for the wine PE runtime test")
     if(MCC_WINE AND EXISTS "${MCC_CROSS_DIR}/x86_64-win32-mcc")
         add_test(NAME pe-wine-conformance
-            COMMAND /bin/sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/run_pe_wine.sh"
-                    "${CMAKE_CURRENT_SOURCE_DIR}" "${MCC_CROSS_DIR}"
-                    "${CMAKE_BINARY_DIR}/pe-wine-work")
+            COMMAND ${CMAKE_COMMAND}
+                    "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}" "-DXB=${MCC_CROSS_DIR}"
+                    "-DWORK=${CMAKE_BINARY_DIR}/pe-wine-work"
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/run_pe_wine.cmake")
         set_tests_properties(pe-wine-conformance PROPERTIES
-            FIXTURES_REQUIRED MCC_BUILT LABELS "wine")
+            FIXTURES_REQUIRED MCC_BUILT LABELS "wine" SKIP_RETURN_CODE 77)
     else()
         mcc_skip_test(pe-wine-conformance
             "requires wine + the win32 cross compilers (cmake --preset cross)")
@@ -2689,11 +2689,12 @@ endif()
     find_program(MCC_OTOOL NAMES llvm-otool otool)
     if(MCC_OTOOL AND EXISTS "${MCC_CROSS_DIR}/x86_64-osx-mcc")
         add_test(NAME macho-structural
-            COMMAND /bin/sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/validate_macho.sh"
-                    "${CMAKE_CURRENT_SOURCE_DIR}" "${MCC_CROSS_DIR}"
-                    "${CMAKE_BINARY_DIR}/macho-work")
+            COMMAND ${CMAKE_COMMAND}
+                    "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}" "-DXB=${MCC_CROSS_DIR}"
+                    "-DWORK=${CMAKE_BINARY_DIR}/macho-work"
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/validate_macho.cmake")
         set_tests_properties(macho-structural PROPERTIES
-            FIXTURES_REQUIRED MCC_BUILT LABELS "macho")
+            FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
     else()
         mcc_skip_test(macho-structural
             "requires llvm-otool/otool + the osx cross compilers (cmake --preset cross)")
@@ -2707,9 +2708,10 @@ endif()
     # for Darwin. Self-skips off-x86_64 or when the osx compiler is absent.
     if(EXISTS "${MCC_CROSS_DIR}/x86_64-osx-mcc")
         add_test(NAME macho-codegen-run
-            COMMAND /bin/sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/run_macho_codegen.sh"
-                    "${CMAKE_CURRENT_SOURCE_DIR}" "${MCC_CROSS_DIR}"
-                    "${CMAKE_BINARY_DIR}/macho-codegen-work")
+            COMMAND ${CMAKE_COMMAND}
+                    "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}" "-DXB=${MCC_CROSS_DIR}"
+                    "-DWORK=${CMAKE_BINARY_DIR}/macho-codegen-work"
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/run_macho_codegen.cmake")
         set_tests_properties(macho-codegen-run PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
     else()
@@ -2724,9 +2726,10 @@ endif()
     # Self-skips off-x86_64 or when the osx compiler / seccomp are unavailable.
     if(EXISTS "${MCC_CROSS_DIR}/x86_64-osx-mcc")
         add_test(NAME macho-image-run
-            COMMAND /bin/sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/run_macho_image.sh"
-                    "${CMAKE_CURRENT_SOURCE_DIR}" "${MCC_CROSS_DIR}"
-                    "${CMAKE_BINARY_DIR}/macho-image-work")
+            COMMAND ${CMAKE_COMMAND}
+                    "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}" "-DXB=${MCC_CROSS_DIR}"
+                    "-DWORK=${CMAKE_BINARY_DIR}/macho-image-work"
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/run_macho_image.cmake")
         set_tests_properties(macho-image-run PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
     else()
@@ -2744,9 +2747,10 @@ endif()
     # macOS/darling host; see tests/qemu/apple-libc/PROVENANCE.md).
     if(EXISTS "${MCC_CROSS_DIR}/x86_64-osx-mcc")
         add_test(NAME macho-apple-libc
-            COMMAND /bin/sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/run_macho_apple_libc.sh"
-                    "${CMAKE_CURRENT_SOURCE_DIR}" "${MCC_CROSS_DIR}"
-                    "${CMAKE_BINARY_DIR}/macho-apple-libc-work")
+            COMMAND ${CMAKE_COMMAND}
+                    "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}" "-DXB=${MCC_CROSS_DIR}"
+                    "-DWORK=${CMAKE_BINARY_DIR}/macho-apple-libc-work"
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/run_macho_apple_libc.cmake")
         set_tests_properties(macho-apple-libc PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
     else()
@@ -2765,9 +2769,10 @@ endif()
     # self-skips (exit 77) off a Darwin host or with a non-Mach-O mcc, so it is
     # registered unconditionally and reported as Skipped where inapplicable.
     add_test(NAME macho-conformance-native
-        COMMAND /bin/sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/run_macho_native.sh"
-                "${CMAKE_CURRENT_SOURCE_DIR}" "$<TARGET_FILE:mcc>"
-                "${CMAKE_BINARY_DIR}" "${CMAKE_BINARY_DIR}/macho-native-work")
+        COMMAND ${CMAKE_COMMAND}
+                "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}" "-DMCC=$<TARGET_FILE:mcc>"
+                "-DBDIR=${CMAKE_BINARY_DIR}" "-DWORK=${CMAKE_BINARY_DIR}/macho-native-work"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/run_macho_native.cmake")
     set_tests_properties(macho-conformance-native PROPERTIES
         FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
 
@@ -2990,18 +2995,18 @@ message(STATUS "qemu conformance: all programs passed")
         # qemu-aarch64, reusing the arm64-glibc fetch fixture. The x86_64-osx
         # target runs natively via the separate macho-codegen-run test; this row
         # extends that darwin runtime coverage to aarch64 through qemu. (A subset
-        # — TLS + variadic-libc programs — self-skips: see run_macho_codegen.sh.)
+        # — TLS + variadic-libc programs — self-skips: see run_macho_codegen.cmake.)
         # NB: don't gate registration on EXISTS(arm64-osx-mcc) — in a clean build
         # (e.g. the docker matrix) configure runs before the cross compiler is
         # built, so it wouldn't exist yet. The script self-skips (exit 77) at run
         # time when the compiler/sysroot/toolchain is absent.
         if((";${MCC_QEMU_ARCHS};" MATCHES ";arm64;")
            AND (";${MCC_QEMU_LIBCS};" MATCHES ";glibc;"))
-            add_test(NAME qemu-arm64-osx COMMAND /bin/sh
-                "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/run_macho_codegen.sh"
-                "${CMAKE_CURRENT_SOURCE_DIR}" "${MCC_CROSS_DIR}"
-                "${CMAKE_BINARY_DIR}/macho-arm64-work" "arm64"
-                "${MCC_QEMU_DLDIR}/arm64-glibc")
+            add_test(NAME qemu-arm64-osx COMMAND ${CMAKE_COMMAND}
+                "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}" "-DXB=${MCC_CROSS_DIR}"
+                "-DWORK=${CMAKE_BINARY_DIR}/macho-arm64-work" "-DARCH=arm64"
+                "-DSYSROOT=${MCC_QEMU_DLDIR}/arm64-glibc"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/run_macho_codegen.cmake")
             set_tests_properties(qemu-arm64-osx PROPERTIES
                 FIXTURES_REQUIRED "MCC_BUILT;FX_qemu-arm64-glibc"
                 LABELS "qemu;macho" SKIP_RETURN_CODE 77 TIMEOUT 600)

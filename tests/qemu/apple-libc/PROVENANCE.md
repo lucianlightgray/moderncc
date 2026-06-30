@@ -3,7 +3,7 @@
 These are **verbatim** copies of Apple's open-source C library — the actual code
 that ships inside macOS's `libSystem` — compiled by mcc for x86_64 Darwin,
 linked into Mach-O images, and executed on a Linux host via
-`tests/qemu/macho/loader.c` (`run_macho_apple_libc.sh`, CMake test
+`tests/qemu/macho/loader.c` (`run_macho_apple_libc.cmake`, CMake test
 `macho-apple-libc`). No function body is modified; `shim-include/` is only a
 tiny freestanding compat layer so the sources build without a macOS SDK.
 
