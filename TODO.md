@@ -45,26 +45,21 @@ gaps; they need no migration:
 
 # CLI-flag parity with gcc/clang (C99/C11 compiler)
 
-Gaps found by comparing `mcc --help`/`-hh` and `src/libmcc.c`'s option table
-against gcc 15.3 / clang command-line arguments, then probing the live binary
-3-way. These are command-line / diagnostic features a C99/C11 compiler is
-normally expected to provide; none affect the C9911 clause coverage above.
-Severity tags: **[core]** expected of any C compiler · **[diag]** a common
-warning · **[build]** build-system integration · **[doc]** documentation only.
+**Status: COMPLETE — no open items.** Every gap found by comparing `mcc
+--help`/`-hh` and `src/libmcc.c`'s option table against gcc 15.3 / clang (then
+probing the live binary 3-way) has been implemented or resolved, each with a cli
+regression test and kept green through full ctest + the byte-identical self-host
+fixpoint. Finished items are removed per the goal's convention; the landed work
+(in git history) covers:
 
-## Compiler modes
+- **Modes:** `-fsyntax-only` (no output); `-S` recognized with a clear
+  direct-to-object diagnostic.
+- **Diagnostics:** `-Wpedantic`/`-Wno-pedantic`, `-Wvla`, `-Wundef`,
+  `-Wunknown-pragmas`, `-Wimplicit-int`, `-Wsign-compare`, `-Wparentheses`,
+  `-Wswitch`, `-Wshadow`, `-Wunused-variable`, `-Wunused-parameter`,
+  `-Wunused-function`, `-Wunused-value`, `-Wuninitialized`; `-Wformat` now under
+  `-Wall`; the `-Wextra` umbrella wired up; `-Wfatal-errors`/`-fmax-errors=N`.
+- **Preprocessor / build:** `-MT`/`-MQ`, `-iquote`, `-idirafter`, `-imacros`.
+- **Docs:** `-pedantic`/`-pedantic-errors` documented in `-hh`.
 
-
-## Diagnostics — warning coverage (`-Wall`/`-Wextra` are thin)
-
-mcc only emits a handful of warnings; gcc/clang `-Wall`/`-Wextra` catch far more.
-Each below was confirmed: mcc=0 warnings where gcc/clang warn. (mcc already does
-`-Wreturn-type`-style "missing return", implicit-function-declaration, and the
-new `-Wformat`.) Most need scope/dataflow tracking — size each before starting.
-
-
-## Preprocessor / dependency-generation flags
-
-
-## Diagnostics control (minor)
-
+(Also fixed a latent `warn_num` selector leak surfaced while adding warn flags.)
