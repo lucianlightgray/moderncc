@@ -1769,5 +1769,15 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -c {W}/uf.c -o /dev/null 2>&1 && echo DEFAULT_SILENT",
   "1 warn\nOK_CLEAN\nDEFAULT_SILENT\n" },
 
+/* -Wfatal-errors and -fmax-errors=N are recognized (were inert) and govern the
+   recoverable-error path; a clean compile is accepted, and a file with an error
+   still stops. (mcc already aborts on the first hard error, like -Wfatal-errors.) */
+{ "fatal_errors_and_max_errors", "",
+  "printf 'int main(void){ return 0; }\\n' > {W}/ok.c && "
+  "printf 'int main(void){ undefined_thing; return 0; }\\n' > {W}/bad.c && "
+  "{ {MCC} -B{B} -I{I} -Wfatal-errors -fmax-errors=3 -Werror -c {W}/ok.c -o /dev/null 2>&1 && echo CLEAN_ACCEPTED; "
+  "{MCC} -B{B} -I{I} -Wfatal-errors -c {W}/bad.c -o /dev/null >/dev/null 2>&1 || echo BAD_STOPS; }",
+  "CLEAN_ACCEPTED\nBAD_STOPS\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

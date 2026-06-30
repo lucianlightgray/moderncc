@@ -647,6 +647,14 @@ static void error1(int mode, const char *fmt, va_list ap)
     cstr_free(&cs);
     if (mode != ERROR_WARN)
         s1->nb_errors++;
+    /* -Wfatal-errors / -fmax-errors=N: a recoverable (noabort) error normally
+       lets compilation continue; abort it if the program asked to stop at the
+       first error, or once the error limit is reached. Hard errors (ERROR_ERROR)
+       already abort below. */
+    if (mode == ERROR_NOABORT && s1->error_set_jmp_enabled
+        && (s1->warn_fatal_errors
+            || (s1->max_errors && s1->nb_errors >= s1->max_errors)))
+        mode = ERROR_ERROR;
     if (mode == ERROR_ERROR && s1->error_set_jmp_enabled) {
         while (nb_stk_data)
             mcc_free(*(void**)stk_data[--nb_stk_data]);
@@ -1783,6 +1791,8 @@ static const FlagDef options_W[] = {
     /* -Wpedantic / -Wno-pedantic are gcc/clang synonyms for -pedantic: they
        toggle the same warn_pedantic state that diagnoses non-ISO extensions. */
     { offsetof(MCCState, warn_pedantic), 0, "pedantic" },
+    /* -Wfatal-errors: abort at the first error rather than continuing. */
+    { offsetof(MCCState, warn_fatal_errors), 0, "fatal-errors" },
     { 0, 0, NULL }
 };
 
@@ -2200,7 +2210,10 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
         case MCC_OPTION_f:
             {
                 const char *vis = optarg;
-                if (strstart("visibility=", &vis)) {
+                if (strstart("max-errors=", &vis)) {
+                    /* -fmax-errors=N: stop after N diagnosed errors. */
+                    s->max_errors = atoi(vis);
+                } else if (strstart("visibility=", &vis)) {
                     if (!strcmp(vis, "default"))        s->visibility = STV_DEFAULT;
                     else if (!strcmp(vis, "hidden"))    s->visibility = STV_HIDDEN;
                     else if (!strcmp(vis, "internal"))  s->visibility = STV_INTERNAL;

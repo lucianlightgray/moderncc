@@ -82,5 +82,3 @@ new `-Wformat`.) Most need scope/dataflow tracking — size each before starting
 
 ## Diagnostics control (minor)
 
-- [ ] **[diag] `-Wfatal-errors` / `-fmax-errors=N`** accepted but inert — should
-  stop after the first (or N-th) error. Currently mcc swallows them silently.
