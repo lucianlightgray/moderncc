@@ -138,9 +138,14 @@ than silently omitted, so coverage gaps are visible.
 ### Per-toolchain results
 
 A standing scaffold of the `ctest` suites against each host/toolchain. The
-Windows columns and the Docker qemu matrix are filled from local runs; the
-Linux and macOS columns are **left blank for other machines to record** (drop
-in `P`/`S` as you run them).
+Windows columns, the **macOS column**, and the Docker qemu matrix are filled
+from local runs; the Linux columns are **left blank for other machines to
+record** (drop in `P`/`S` as you run them). The `mac clang` column is a macOS
+26 / arm64 host (Apple clang 21) with `-DMCC_DIAGNOSTICS=ON -DMCC_ENABLE_CROSS=ON`:
+`34/34`, 0 fail, clean build. The same tree also builds clean with a Homebrew
+GNU `gcc` (`-DCMAKE_C_COMPILER=gcc-<n>`; `setup-gcc` installs one) — `34/34`,
+0 fail — which is what supplies the distinct second reference for `diff3`/
+`preprocess` below (see note ⁴).
 
 Legend: `P` = pass, `S` = skipped-with-reason here (environment/config-gated,
 not a failure), `—` = not applicable, blank = not yet recorded on that
@@ -148,21 +153,21 @@ machine/toolchain.
 
 | `ctest` suite | Win mingw¹ | Win gcc¹ | Win msvc¹ | Lin gcc | Lin clang | mac clang | docker² |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| `exec-suite` (golden run/diff)        | P | P | P |   |   |   | — |
-| `mcctest` / `mcctest-bcheck`³         | P | P | P |   |   |   | — |
-| `preprocess-suite`⁴                   | P | P | P |   |   |   | — |
-| `diff3-suite`⁴                        | P | P | P |   |   |   | — |
-| `cli-suite` (readelf/nm structural)⁵  | P | P | P |   |   |   | — |
-| `libtest` / `-extra` / `-mt`, `abitest-cc` | P | P | P |   |   |   | — |
-| `hello-run` / `hello-exe`, `vla_test-run`  | P | P | P |   |   |   | — |
-| `compile.*` (orphan `-c`)⁶            | P | P | P |   |   |   | — |
-| `asm-c-connect-test`                  | P | P | P |   |   |   | — |
-| `asm-gas-directives`⁷                 | S | S | S |   |   |   | — |
-| `i386-fastcall-abi`⁸                  | S | S | S |   |   |   | — |
-| `compile.win32.*` / `pe-native-conformance` | P | P | P |   |   |   | — |
-| `pe-wine-conformance` (label `wine`)  | S | S | S |   |   |   | — |
-| `macho-*` (5 drivers, label `macho`)  | S | S | S |   |   |   | — |
-| qemu cross×libc matrix (label `qemu`)⁹| S | S | S |   |   |   | P |
+| `exec-suite` (golden run/diff)        | P | P | P |   |   | P | — |
+| `mcctest` / `mcctest-bcheck`³         | P | P | P |   |   | P | — |
+| `preprocess-suite`⁴                   | P | P | P |   |   | P | — |
+| `diff3-suite`⁴                        | P | P | P |   |   | P | — |
+| `cli-suite` (readelf/nm structural)⁵  | P | P | P |   |   | P | — |
+| `libtest` / `-extra` / `-mt`, `abitest-cc` | P | P | P |   |   | P | — |
+| `hello-run` / `hello-exe`, `vla_test-run`  | P | P | P |   |   | P | — |
+| `compile.*` (orphan `-c`)⁶            | P | P | P |   |   | P | — |
+| `asm-c-connect-test`                  | P | P | P |   |   | S | — |
+| `asm-gas-directives`⁷                 | S | S | S |   |   | S | — |
+| `i386-fastcall-abi`⁸                  | S | S | S |   |   | S | — |
+| `compile.win32.*` / `pe-native-conformance` | P | P | P |   |   | S | — |
+| `pe-wine-conformance` (label `wine`)  | S | S | S |   |   | S | — |
+| `macho-*` (drivers, label `macho`)ª   | S | S | S |   |   | P | — |
+| qemu cross×libc matrix (label `qemu`)⁹| S | S | S |   |   | S | P |
 
 ¹ **Win mingw** = CLion's bundled mingw GCC 13.1; **Win gcc** = winlibs
 mingw-w64 GCC 16.1 (the `mingw-toolchain` download); **Win msvc** = VS 2026
@@ -176,9 +181,12 @@ the table below). A native Windows host has no user-mode qemu, so that row is
 ³ Differential vs. a GCC-compatible reference cc (needs the integrated
 assembler); the MSVC host auto-detects a mingw/winlibs `gcc` reference
 (`MCC_REF_CC`). `-bcheck` variant also needs `MCC_CONFIG_BCHECK`.
-⁴ Needs a **second** reference compiler — build the self-contained
-`clang-toolchain` (and a POSIX `sh`/`MCC_TEST_SH` for `diff3`); reported
-`Skipped` without it.
+⁴ Needs **two distinct** reference compilers (gcc *and* clang) — else the
+three-way differential degenerates and self-skips. On Windows, build the
+self-contained `clang-toolchain`. On macOS, `gcc`/`cc` are the Apple clang
+shim, so the build auto-detects a genuine Homebrew GNU `gcc` (`gcc-<n>`, which
+`setup-gcc` installs) as the distinct second reference; a POSIX `sh` (native on
+macOS) drives `diff3`.
 ⁵ Needs a POSIX `sh` (`MCC_TEST_SH`) plus mingw `nm`/`readelf` on `PATH`; the
 ~31 ELF-image cases self-skip on a PE target.
 ⁶ The X11 example (`compile.ex4`) skips when `<X11/Xlib.h>` is absent.
@@ -187,6 +195,13 @@ encodings (`sgdtq`/`sidtq`/`swapgs`).
 ⁸ Skips on Windows: the test mixes mcc objects (ELF) with reference-cc objects,
 but mingw `gcc` emits PE/COFF — needs an ELF-emitting 32-bit reference cc.
 ⁹ See the per-cell grid below; on Windows the matrix runs via Docker.
+ª On a **macOS host** the `macho` label is real native coverage:
+`macho-structural` and `macho-conformance-native` (the full self-checking
+conformance set built with the native `mcc` and run as real Mach-O images
+against libSystem) **pass**; the Linux-approximation drivers
+(`macho-codegen/image/apple-libc-run`) self-skip off x86_64, and
+`macho-libsystem-kernel-fused` needs a darling host. On non-Darwin hosts the
+whole label is `S`.
 
 ## Cross-target × libc coverage (qemu-user matrix)
 

@@ -5757,7 +5757,6 @@ static void check_va_start_register(void)
         mcc_warning("undefined behavior when the second parameter of 'va_start' "
                     "is declared with 'register' storage");
 }
-#endif
 
 static void check_va_start_last_param(void)
 {
@@ -5766,6 +5765,7 @@ static void check_va_start_last_param(void)
         mcc_warning_c(warn_varargs)("second argument to 'va_start' is not the "
                                     "last named parameter");
 }
+#endif
 
 static Sym *transparent_union_member(CType *type)
 {
@@ -9078,7 +9078,12 @@ static void write_ldouble(unsigned char *d, void *s)
     #elif (__aarch64__ || __riscv) && (defined MCC_TARGET_I386 || defined MCC_TARGET_X86_64)
         uint64_t m = read64le((unsigned char*)s + 6);
         int e = read16le((unsigned char*)s + 14);
-        (e & 0x7fff) && (m & 1) && 0 == ++m && ++e;
+        /* round-half-up the dropped low mantissa bit; carry into the exponent
+           when the increment overflows the 64-bit mantissa. Same short-circuit
+           semantics as the old `&&` chain, but as a statement (gcc's
+           -Wunused-value rightly flags a discarded boolean expression). */
+        if ((e & 0x7fff) && (m & 1) && 0 == ++m)
+            ++e;
         write64le(d, m >> 1 | ((e & 0x7fff) ? 1ULL<<63 : 0));
         write16le(d+8, e);
     #else
