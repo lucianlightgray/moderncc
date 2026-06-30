@@ -583,10 +583,16 @@ bulk of each area matched the references; these are the residual divergences.
   function stays a valid null statement (no warning). Matches gcc/clang
   `-Wpedantic`. cli `empty_declaration_pedantic`.
 
-- [ ] **[DIAG] §6.7.2.1 — no-declarator tagged struct *member* not flagged "declaration does not declare anything".**
-  `struct S { struct T { int x; }; };` is silent even at `-pedantic`, though mcc
-  has the warning for the file-scope `int;`/`typedef int;` cases. Both refs warn.
-  Low value.
+- [~] **[DIFF] §6.7.2.1 — no-declarator tagged struct *member*: mcc matches gcc `-fms-extensions` (silent).**
+  `struct S { struct T { int x; }; };` — re-verified 3-way: gcc *default* (no
+  `-fms-extensions`) warns "declaration does not declare anything"; but gcc
+  **`-fms-extensions` is silent even under `-pedantic`**, and clang
+  `-fms-extensions -pedantic` instead warns "anonymous structs are a Microsoft
+  extension". mcc enables MS extensions by default (so the nested tag becomes an
+  anonymous member), which matches gcc `-fms-extensions` exactly — silent. The two
+  references disagree once MS extensions are on, and mcc tracks gcc; adopting
+  clang's MS-extension warning would diverge from gcc. Left as a defensible DIFF.
+  (`src/mccgen.c` already warns when `ms_extensions == 0`.)
 
 - [x] **[DIAG] §6.7.9p14 — wrong-element-type string-literal initializer now gives a clear message.**
   `int a[4] = "abc";` / `char a[]=L"abc"` now error "cannot initialize array of
@@ -602,9 +608,16 @@ bulk of each area matched the references; these are the residual divergences.
   mcc warns (rc=0) where both refs hard-error. Severity-only divergence (same
   lenient-warning stance as the tracked const-assignment §6.5.16.1 item). Low priority.
 
-- [ ] **[DIAG] §7.16.1.4 — `va_start` on a `register`-qualified last parameter not diagnosed.**
-  `int f(register int n, ...){ va_start(a,n); }` is silent at all levels; both refs
-  warn (`-Wvarargs`). UB, no diagnostic mandated — low priority.
+- [ ] **[DIFF] §7.16.1.4 — `va_start` on a `register`-qualified last parameter not diagnosed (fragmented, no mandated diag).**
+  `int f(register int n, ...){ va_start(a,n); }` is silent; both refs warn
+  (`-Wvarargs`, default-on). The standard mandates **no** diagnostic (it is UB),
+  and mcc's `va_start` is implemented differently per target (`runtime/include/
+  mccdefs.h`): the x86_64 SysV macro reads `__builtin_frame_address(0)` and never
+  references `last` at all (so register-ness is invisible); i386/arm/generic
+  expand to `&(last)`, which *does* already trip mcc's "address of register
+  variable requested" diagnostic; arm64/riscv64/x86_64-PE use a builtin token and
+  are silent. A uniform `-Wvarargs` would need per-target plumbing for a
+  non-mandated courtesy warning — low value. Left open.
 
 ### §7 library / floating-point builtins
 
