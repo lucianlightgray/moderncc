@@ -107,7 +107,10 @@
 #define lround(x)        __tgmath_real(x, lround)
 #define nearbyint(x)     __tgmath_real(x, nearbyint)
 #define nextafter(x,y)   __tgmath_real_2(x, y, nextafter)
-#define nexttoward(x,y)  __tgmath_real_2(x, y, nexttoward)
+/* 7.25p6: nexttoward's second argument is always long double, so the generic
+   function is selected from the FIRST argument's type only (keying on (x)+(y)
+   would always promote to long double and force nexttowardl). */
+#define nexttoward(x,y)  __tgmath_real_2_1(x, y, nexttoward)
 #define remainder(x,y)   __tgmath_real_2(x, y, remainder)
 #define remquo(x,y,z)    __tgmath_real_3_2(x, y, z, remquo)
 #define rint(x)          __tgmath_real(x, rint)
