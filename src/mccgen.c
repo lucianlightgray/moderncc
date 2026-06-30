@@ -6003,13 +6003,19 @@ ST_FUNC void indir(void)
    lvalue on vtop. (On targets whose va_start macro expands to `&(last)` —
    i386/arm — a register parameter is already rejected by the address-of-register
    diagnostic; the x86_64 SysV macro reads the frame and never touches `last`, so
-   no UB manifests there.) */
+   no UB manifests there.) Defined only for the targets whose va_start builtin
+   below calls it (riscv64, x86_64/PE, arm64); other targets handle va_start via
+   the address-of-register diagnostic or a frame-reading macro, so compiling it
+   for them would just warn unused. */
+#if defined MCC_TARGET_RISCV64 || defined MCC_TARGET_ARM64 \
+    || (defined MCC_TARGET_X86_64 && defined MCC_TARGET_PE)
 static void check_va_start_register(void)
 {
     if (vtop->sym && vtop->sym->a.is_register)
         mcc_warning("undefined behavior when the second parameter of 'va_start' "
                     "is declared with 'register' storage");
 }
+#endif
 
 static Sym *transparent_union_member(CType *type)
 {
