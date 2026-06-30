@@ -544,9 +544,11 @@ bulk of each area matched the references; these are the residual divergences.
   C11. Both refs warn "ISO C99 doesn't support unnamed structs/unions" under
   `-pedantic`. (Correctly accepted in C11.)
 
-- [ ] **[DIAG] §6.9p1 — stray `;` at file scope not diagnosed under `-pedantic`.**
-  A top-level `;` (empty external declaration) compiles at `-pedantic`; not valid
-  ISO C. Both refs warn (`-Wpedantic`/`-Wextra-semi`).
+- [x] **[DIAG] §6.9p1 — stray `;` at file scope now diagnosed under `-pedantic`.**
+  A lone `;` at file scope (`l == VT_CONST` in `decl()`, `src/mccgen.c`) now emits
+  `mcc_pedantic` "ISO C does not allow an empty declaration". A `;` inside a
+  function stays a valid null statement (no warning). Matches gcc/clang
+  `-Wpedantic`. cli `empty_declaration_pedantic`.
 
 - [ ] **[DIAG] §6.7.2.1 — no-declarator tagged struct *member* not flagged "declaration does not declare anything".**
   `struct S { struct T { int x; }; };` is silent even at `-pedantic`, though mcc

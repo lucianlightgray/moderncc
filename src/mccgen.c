@@ -9586,6 +9586,11 @@ static int decl(int l)
             if (l == VT_JMP)
                 return 0;
             if (tok == ';' && l != VT_CMP) {
+                /* 6.9p1: an empty external declaration (a lone ';' at file
+                   scope) is not valid ISO C — a GNU extension. At block scope a
+                   ';' is a valid null statement, so only diagnose at file scope. */
+                if (l == VT_CONST)
+                    mcc_pedantic("ISO C does not allow an empty declaration");
                 next();
                 continue;
             }

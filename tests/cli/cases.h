@@ -970,5 +970,16 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'no named members|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 VALID_OK\n2 no named members\n" },
 
+/* §6.9p1: a stray ';' at file scope (empty external declaration) is a GNU
+   extension diagnosed under -pedantic; a ';' inside a function is a valid null
+   statement (silent even under -pedantic-errors). */
+{ "empty_declaration_pedantic", "",
+  "printf 'int x;;\\n' > {W}/ed.c && "
+  "printf 'int f(void){ ; ; return 0; }\\n' > {W}/edok.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/ed.c -o {W}/ed.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/edok.c -o {W}/edok.o 2>&1 && echo VALID_OK; } | "
+  "grep -oE 'empty declaration|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 VALID_OK\n1 empty declaration\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));
