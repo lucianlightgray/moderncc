@@ -2319,6 +2319,31 @@ static int gen_opic_lt(uint64_t a, uint64_t b)
     return (a ^ (uint64_t)1 << 63) < (b ^ (uint64_t)1 << 63);
 }
 
+/* 6.10.1: the preprocessor evaluates #if arithmetic in (u)intmax_t (64-bit
+   here). Signed overflow there is undefined, and gcc/clang both warn. Detect
+   it for +, -, * so we can emit the same diagnostic; unsigned wraps are
+   defined and never flagged. */
+static int pp_signed_ovf(int op, uint64_t l1, uint64_t l2)
+{
+    int64_t a = (int64_t)l1, b = (int64_t)l2, r;
+    switch (op) {
+    case '+':
+        r = (int64_t)((uint64_t)a + (uint64_t)b);
+        return ((a ^ r) & (b ^ r)) < 0;
+    case '-':
+        r = (int64_t)((uint64_t)a - (uint64_t)b);
+        return ((a ^ b) & (a ^ r)) < 0;
+    case '*':
+        if (a == 0 || b == 0)
+            return 0;
+        r = (int64_t)((uint64_t)a * (uint64_t)b);
+        return r / a != b
+            || (a == (int64_t)0x8000000000000000ULL && b == -1)
+            || (b == (int64_t)0x8000000000000000ULL && a == -1);
+    }
+    return 0;
+}
+
 static void gen_opic(int op)
 {
     SValue *v1 = vtop - 1;
@@ -2333,6 +2358,17 @@ static void gen_opic(int op)
     int r;
 
     if (c1 && c2) {
+        if (pp_expr && t1 == VT_LLONG && !(v1->type.t & VT_UNSIGNED)
+            && (op == '+' || op == '-' || op == '*')
+            && pp_signed_ovf(op, l1, l2)) {
+            /* error1() rewrites any message into "bad preprocessor expression"
+               (and consumes the token stream) while pp_expr > 1; zero it across
+               the warning so the real text is emitted and parsing continues. */
+            int pp_save = pp_expr;
+            pp_expr = 0;
+            mcc_warning("integer overflow in preprocessor expression");
+            pp_expr = pp_save;
+        }
         switch(op) {
         case '+': l1 += l2; break;
         case '-': l1 -= l2; break;

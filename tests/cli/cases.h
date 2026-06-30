@@ -878,6 +878,20 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'no argument for the|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 no argument for the\n" },
 
+/* §6.10.1: the preprocessor evaluates #if arithmetic in intmax_t; signed
+   overflow there is UB and is diagnosed (gcc/clang warn the same). A sum that
+   stays within 64-bit (e.g. INT_MAX+1) and unsigned wraparound are silent. */
+{ "pp_if_integer_overflow", "",
+  "printf '#if 9223372036854775807 + 1 < 0\\nint a;\\n#endif\\nint main(void){return 0;}\\n' > {W}/po.c && "
+  "printf '#if 9223372036854775807 * 2 < 0\\nint b;\\n#endif\\nint main(void){return 0;}\\n' > {W}/pm.c && "
+  "printf '#if 2147483647 + 1 > 0 && 18446744073709551615U + 1U == 0U\\nint c;\\n#endif\\n"
+  "int main(void){return 0;}\\n' > {W}/pok.c && "
+  "{ {MCC} -B{B} -I{I} -c {W}/po.c -o {W}/po.o 2>&1; "
+  "{MCC} -B{B} -I{I} -c {W}/pm.c -o {W}/pm.o 2>&1; "
+  "{MCC} -B{B} -I{I} -Werror -c {W}/pok.c -o {W}/pok.o 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE 'overflow in preprocessor|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n2 overflow in preprocessor\n" },
+
 /* §7.17.8: atomic_flag_* take volatile atomic_flag *, so a non-pointer argument
    is diagnosed; the correct &atomic_flag form compiles clean under -Werror. */
 { "atomic_flag_type", "",

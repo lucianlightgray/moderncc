@@ -465,11 +465,16 @@ bulk of each area matched the references; these are the residual divergences.
   with `-w`. Single-char constants stay clean. cli `multichar_warning` (now at
   default level). Also covers the `#if 'ab'` case.
 
-- [ ] **[DIAG] §6.10.1 — integer overflow in a `#if` controlling expression not diagnosed.**
-  `#if 9223372036854775807 + 1 < 0` is silent (takes the wrapped branch); `#if 1%0`
-  is correctly diagnosed — only overflow is silent. Both refs warn "integer
-  overflow in preprocessor expression".
-  3-way: mcc=silent | gcc/clang=warning.
+- [x] **[DIAG] §6.10.1 — integer overflow in a `#if` controlling expression now diagnosed.**
+  `#if 9223372036854775807 + 1 < 0` (and the `*` form) now emit `mcc_warning`
+  "integer overflow in preprocessor expression", matching gcc/clang. In the
+  constant folder `gen_opic` (`src/mccgen.c`), when `pp_expr` is active and the
+  operands are signed 64-bit, a new `pp_signed_ovf()` helper detects `+`/`-`/`*`
+  overflow before the wrap. `pp_expr` is temporarily zeroed across the warning so
+  `error1()`'s pp-expression message-rewrite (and its token-stream consumption)
+  doesn't fire. Unsigned wraparound and a sum that stays within 64-bit (e.g.
+  `INT_MAX+1`, evaluated in intmax_t) stay silent; div-by-zero still hard-errors.
+  cli `pp_if_integer_overflow`.
 
 - [ ] **[DIFF] §6.10.4p3 — `#line 2147483648` wraps `__LINE__` to a negative value.**
   Parsed into signed 32-bit → `__LINE__` becomes `-2147483648` (UB territory).
