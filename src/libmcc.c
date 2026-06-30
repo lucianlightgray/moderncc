@@ -2238,6 +2238,15 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
             }
             break;
         case MCC_OPTION_W:
+            /* -Wextra is an umbrella that enables a set of warnings (like gcc).
+               Handle it before set_flag (which only knows the per-name flags and
+               the -Wall group). Members listed once here; a later -Wno-<member>
+               can still turn an individual one back off. */
+            if (!strcmp(optarg, "extra") || !strcmp(optarg, "no-extra")) {
+                unsigned char on = optarg[0] == 'e' ? WARN_ON : 0;
+                s->warn_sign_compare = on;
+                break;
+            }
             if (optarg[0] && set_flag(s, options_W, optarg) < 0)
                 goto unsupported_option;
             break;

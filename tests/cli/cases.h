@@ -1693,5 +1693,16 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'different signedness|OK_CLEAN|DEFAULT_SILENT' | sort | uniq -c | sed 's/^ *//'",
   "1 DEFAULT_SILENT\n1 OK_CLEAN\n1 different signedness\n" },
 
+/* -Wextra is an umbrella enabling a set of warnings (currently -Wsign-compare,
+   as in gcc). -Wextra enables it, -Wextra -Wno-sign-compare overrides that one
+   member back off, and -Wno-extra disables the group. */
+{ "wextra_umbrella", "",
+  "printf 'int bad(int a, unsigned b){ return a < b; }\\n' > {W}/sc.c && "
+  "{ {MCC} -B{B} -I{I} -Wextra -c {W}/sc.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -Wextra -Wno-sign-compare -Werror -c {W}/sc.c -o /dev/null 2>&1 && echo MEMBER_OFF_OK; "
+  "{MCC} -B{B} -I{I} -Wno-extra -Werror -c {W}/sc.c -o /dev/null 2>&1 && echo NOEXTRA_OK; } | "
+  "grep -oE 'different signedness|MEMBER_OFF_OK|NOEXTRA_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 MEMBER_OFF_OK\n1 NOEXTRA_OK\n1 different signedness\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

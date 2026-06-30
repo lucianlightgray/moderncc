@@ -76,8 +76,6 @@ new `-Wformat`.) Most need scope/dataflow tracking — size each before starting
 - [ ] **[diag] `-Wparentheses`** — assignment used as a truth value (`if (x = 1)`).
 - [ ] **[diag] `-Wswitch`** — `switch` on an enum that omits a case / lacks `default`.
 - [ ] **[diag] `-Wshadow`** — a declaration shadowing one in an outer scope.
-- [ ] **[diag] `-Wextra` umbrella is inert** — accepted but enables nothing. Wire
-  it to a set (unused-parameter, sign-compare, …) like gcc/clang.
 - [ ] **[diag] consider enabling `-Wformat` under `-Wall`** (gcc/clang do). Held
   opt-in for self-host safety; revisit once the checker has soaked.
 
