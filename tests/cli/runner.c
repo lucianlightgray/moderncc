@@ -7,6 +7,7 @@
  * placeholders {MCC} {B} {I} {W} {D}, substituted before execution:
  *   {MCC}=mcc binary  {B}=build dir (-B)  {I}=runtime include dir (-I)
  *   {W}=scratch work dir  {D}=this source dir (tests/cli)
+ *   {TIMEOUT}=portable hang-guard prefix ("timeout 10 " where available)
  * Output (stdout+stderr) is compared to `expect` line by line; whitespace is
  * canonicalised and a run of 3+ dots ("...") in `expect` matches any text,
  * so addresses/paths can be wildcarded.  `req` gates like the exec runner:
@@ -35,6 +36,17 @@
 
 static const char *envv(const char *k, const char *d){
     const char *v = getenv(k); return (v && *v) ? v : d;
+}
+
+/* The {TIMEOUT} placeholder expands to a hang-guard command prefix. GNU
+   coreutils `timeout` is present on Linux CI but absent on macOS/BSD, where it
+   would otherwise make the wrapped command fail with no output. Probe for it
+   (then Homebrew's `gtimeout`); if neither exists, expand to nothing — ctest's
+   own per-test timeout remains the backstop. */
+static const char *timeout_prefix(void){
+    if (system("command -v timeout  >/dev/null 2>&1") == 0) return "timeout 10 ";
+    if (system("command -v gtimeout >/dev/null 2>&1") == 0) return "gtimeout 10 ";
+    return "";
 }
 
 static int req_met(const char *req, char *reason, size_t rn){
@@ -139,7 +151,7 @@ static int texts_equal(const char *a, const char *b){
 
 /* Replace every {KEY} in `cmd` with its value; returns malloc'd string. */
 static char *subst(const char *cmd, const char *mcc, const char *b,
-                   const char *i, const char *w, const char *d){
+                   const char *i, const char *w, const char *d, const char *t){
     size_t cap = strlen(cmd) * 4 + 256, o = 0;
     char *out = malloc(cap);
     for (const char *p = cmd; *p; ){
@@ -149,6 +161,7 @@ static char *subst(const char *cmd, const char *mcc, const char *b,
         else if (!strncmp(p, "{I}", 3)){ rep = i; p += 3; }
         else if (!strncmp(p, "{W}", 3)){ rep = w; p += 3; }
         else if (!strncmp(p, "{D}", 3)){ rep = d; p += 3; }
+        else if (!strncmp(p, "{TIMEOUT}", 9)){ rep = t; p += 9; }
         if (rep){
             size_t rl = strlen(rep);
             while (o + rl + 1 >= cap){ cap *= 2; out = realloc(out, cap); }
@@ -164,6 +177,7 @@ static char *subst(const char *cmd, const char *mcc, const char *b,
 int main(int argc, char **argv){
     if (argc < 6){ fprintf(stderr, "usage: %s <mcc> <bdir> <idir> <workdir> <clidir>\n", argv[0]); return 2; }
     const char *mcc = argv[1], *bdir = argv[2], *idir = argv[3], *work = argv[4], *cdir = argv[5];
+    const char *tmo = timeout_prefix();
     if (MKDIR(work) != 0 && errno != EEXIST) {
         fprintf(stderr, "cannot create workdir %s\n", work); return 2; }
 
@@ -174,7 +188,7 @@ int main(int argc, char **argv){
         if (!req_met(c->req, reason, sizeof reason)){
             printf("SKIP  %-28s -- %s\n", c->name, reason); skipped++; continue;
         }
-        char *full = subst(c->cmd, mcc, bdir, idir, work, cdir);
+        char *full = subst(c->cmd, mcc, bdir, idir, work, cdir, tmo);
         char *out = run_capture(full);
         if (texts_equal(c->expect, out)){
             printf("ok    %s\n", c->name); pass++;
