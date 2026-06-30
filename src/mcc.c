@@ -248,16 +248,18 @@ static char *default_outputfile(MCCState *s, const char *first_file)
         name = "a";
     strcpy(buf, name);
     ext = mcc_fileextension(buf);
-#ifdef MCC_TARGET_PE
-    if (s->output_type == MCC_OUTPUT_DLL)
-        strcpy(ext, ".dll");
-    else
-    if (s->output_type == MCC_OUTPUT_EXE)
-        strcpy(ext, ".exe");
-    else
-#endif
+    /* Deps-only (-M) and object output both name a `.o`, matching gcc -- and
+       this must win over the PE .exe default below: with bare -M the output
+       type is still EXE, so checking EXE first would mis-name the dependency
+       rule target `foo.exe:` on PE (it stays `foo.o:` everywhere else). */
     if ((s->just_deps || s->output_type == MCC_OUTPUT_OBJ) && !s->option_r && *ext)
         strcpy(ext, ".o");
+#ifdef MCC_TARGET_PE
+    else if (s->output_type == MCC_OUTPUT_DLL)
+        strcpy(ext, ".dll");
+    else if (s->output_type == MCC_OUTPUT_EXE)
+        strcpy(ext, ".exe");
+#endif
     else
         strcpy(buf, "a.out");
     return mcc_strdup(buf);

@@ -38,15 +38,46 @@ static const char *envv(const char *k, const char *d){
     const char *v = getenv(k); return (v && *v) ? v : d;
 }
 
+#ifdef _WIN32
+/* popen() on Windows runs the command through cmd.exe, which has none of the
+   POSIX tools the case pipelines rely on (printf/grep/sed/awk/{ }/&&). Route
+   each command through a Unix/MSYS `sh` instead: write the pipeline to a
+   throwaway script and run `sh <script>`. The script-file detour sidesteps the
+   cmd.exe-strips-quotes vs. sh-quoting maze entirely. The shell binary is
+   MCC_TEST_SH (set by CMake) or just "sh" from PATH. */
+static const char *g_work = ".";
+static FILE *shell_popen(const char *cmd){
+    char path[1024];
+    snprintf(path, sizeof path, "%s/_clicmd.sh", g_work);
+    FILE *sf = fopen(path, "wb");
+    if (sf){ fputs(cmd, sf); fputc('\n', sf); fclose(sf); }
+    const char *sh = envv("MCC_TEST_SH", "sh");
+    /* popen spawns `cmd.exe /c <line>`, and cmd.exe strips one outer quote
+       pair; wrap the whole `"sh" "script"` invocation in an extra pair so the
+       inner quotes (which protect spaces in either path) survive. */
+    char line[1200];
+    snprintf(line, sizeof line, "\"\"%s\" \"%s\"\"", sh, path);
+    return popen(line, "r");
+}
+#endif
+
 /* The {TIMEOUT} placeholder expands to a hang-guard command prefix. GNU
    coreutils `timeout` is present on Linux CI but absent on macOS/BSD, where it
    would otherwise make the wrapped command fail with no output. Probe for it
    (then Homebrew's `gtimeout`); if neither exists, expand to nothing — ctest's
    own per-test timeout remains the backstop. */
 static const char *timeout_prefix(void){
+#ifdef _WIN32
+    /* system() here would use cmd.exe, so probe through sh like everything else. */
+    FILE *f = shell_popen("command -v timeout >/dev/null 2>&1 && echo y");
+    int ok = 0;
+    if (f){ int c = fgetc(f); ok = (c == 'y'); pclose(f); }
+    return ok ? "timeout 10 " : "";
+#else
     if (system("command -v timeout  >/dev/null 2>&1") == 0) return "timeout 10 ";
     if (system("command -v gtimeout >/dev/null 2>&1") == 0) return "gtimeout 10 ";
     return "";
+#endif
 }
 
 static int req_met(const char *req, char *reason, size_t rn){
@@ -64,6 +95,20 @@ static int req_met(const char *req, char *reason, size_t rn){
             if (!ok){ snprintf(reason, rn, "requires %s target (host: %s)", want, cpu); return 0; }
         } else if (!strncmp(tok, "os=", 3)){
             if (strcmp(os, tok + 3)){ snprintf(reason, rn, "requires %s OS (host: %s)", tok+3, os); return 0; }
+        } else if (!strncmp(tok, "os!=", 4)){
+            /* os!=NAME[:reason] -- skip when the target OS *is* NAME (the case's
+               expected output is inapplicable there). Optional ':' reason. */
+            const char *want = tok + 4;
+            const char *colon = strchr(want, ':');
+            char wbuf[64];
+            size_t wl = colon ? (size_t)(colon - want) : strlen(want);
+            if (wl >= sizeof wbuf) wl = sizeof wbuf - 1;
+            memcpy(wbuf, want, wl); wbuf[wl] = 0;
+            if (!strcmp(os, wbuf)){
+                if (colon && colon[1]) snprintf(reason, rn, "%s", colon + 1);
+                else snprintf(reason, rn, "not applicable to the %s target", wbuf);
+                return 0;
+            }
         } else if (!strcmp(tok, "elf")){
             /* ELF symbol naming (no leading underscore) and an ELF crt prefix.
                Mach-O underscores C symbols and has no crt: dir; PE differs too. */
@@ -100,12 +145,7 @@ static char *slurp(FILE *f){
 
 static char *run_capture(const char *cmd){
 #ifdef _WIN32
-    /* See tests/exec/runner.c: wrap so cmd.exe /c strips an outer quote pair
-       rather than the first/last quote of our multi-quoted command line. */
-    char *wrapped = malloc(strlen(cmd) + 3);
-    sprintf(wrapped, "\"%s\"", cmd);
-    FILE *f = popen(wrapped, "r");
-    free(wrapped);
+    FILE *f = shell_popen(cmd);   /* via sh; see shell_popen() above */
 #else
     FILE *f = popen(cmd, "r");
 #endif
@@ -177,6 +217,9 @@ static char *subst(const char *cmd, const char *mcc, const char *b,
 int main(int argc, char **argv){
     if (argc < 6){ fprintf(stderr, "usage: %s <mcc> <bdir> <idir> <workdir> <clidir>\n", argv[0]); return 2; }
     const char *mcc = argv[1], *bdir = argv[2], *idir = argv[3], *work = argv[4], *cdir = argv[5];
+#ifdef _WIN32
+    g_work = work;                /* where shell_popen() drops its scratch script */
+#endif
     const char *tmo = timeout_prefix();
     if (MKDIR(work) != 0 && errno != EEXIST) {
         fprintf(stderr, "cannot create workdir %s\n", work); return 2; }

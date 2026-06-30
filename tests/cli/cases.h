@@ -940,7 +940,7 @@ static const cli_case_t cli_cases[] = {
    with a clear message (not the old "integer from pointer" + "',' expected"
    cascade). Matching narrow/wide string inits, a braced string, and a nested
    sub-array string element stay valid even under -Werror. */
-{ "string_init_element_mismatch", "",
+{ "string_init_element_mismatch", "os!=WIN32:int[]=L\"\" is clean only where wchar_t==int; PE wchar_t is 16-bit so it warns",
   "printf 'int a[4]=\"abc\";\\n' > {W}/sm.c && "
   "printf 'int wmain(void){char a[]=L\"abc\";return a[0];}\\n' > {W}/sm2.c && "
   "printf 'char a[]=\"abc\"; int b[]=L\"abc\"; char c[4]={\"ab\"};"

@@ -1717,6 +1717,17 @@ endif()
     file(APPEND "${_mcctest_driver}" [==[
 set(_ref_exe "${OUTDIR}/mcctest.gcc")
 set(_ref_out "${OUTDIR}/mcctest.ref")
+# The reference gcc spawns its own as/ld, which live next to it. Make sure that
+# directory is on PATH so an off-PATH reference (e.g. -DMCC_REF_CC=.../mingw/bin/
+# gcc.exe on a Windows host where mingw is not globally installed) still works.
+get_filename_component(_ccdir "${CC}" DIRECTORY)
+if(_ccdir)
+    if(WIN32)
+        set(ENV{PATH} "${_ccdir};$ENV{PATH}")
+    else()
+        set(ENV{PATH} "${_ccdir}:$ENV{PATH}")
+    endif()
+endif()
 separate_arguments(_refflags UNIX_COMMAND "${REFFLAGS}")
 separate_arguments(_tdefs UNIX_COMMAND "${TESTDEFS}")
 execute_process(
@@ -1805,22 +1816,40 @@ endif()
     # readelf/nm (output structure, not just program stdout).  Native only --
     # the readelf/nm assertions assume a host-readable ELF toolchain.  Its case
     # commands are POSIX shell pipelines (printf/grep/sed/sort/{ } grouping)
-    # that the runner executes via popen(); on a Windows host popen() routes
-    # through cmd.exe, which provides none of those, so the suite is skipped
-    # there (it needs a POSIX shell + coreutils/binutils).
+    # that the runner executes through a shell: directly via popen() on a POSIX
+    # host, or via an MSYS/Unix sh on Windows (see the WIN32 branch below).
     if(MCC_EMULATOR)
         mcc_skip_test(cli-suite "structural readelf/nm suite runs on native host only")
-    elseif(MCC_TARGETOS STREQUAL "WIN32")
-        mcc_skip_test(cli-suite "needs a POSIX shell + coreutils/binutils (popen uses cmd.exe on Windows)")
     else()
-        add_executable(cli_runner tests/cli/runner.c)
-        target_include_directories(cli_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli")
-        add_test(NAME cli-suite
-            COMMAND cli_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
-                    "${CMAKE_BINARY_DIR}/cli-work" "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli")
-        set_tests_properties(cli-suite PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-            SKIP_RETURN_CODE 77
-            ENVIRONMENT "MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS}")
+        # On a Windows host the case pipelines (printf/grep/sed/awk/{ }/&&) can't
+        # run through popen()'s cmd.exe, but they can through an MSYS/Unix sh; the
+        # runner routes them there (via MCC_TEST_SH). The ELF-image cases gate
+        # themselves off with os=linux and skip; the ~100 OS-agnostic driver /
+        # preprocessor / diagnostics cases run. (binutils-reading cases inspect
+        # mcc's ELF *relocatable objects*, which mingw nm/readelf parse fine even
+        # on a PE host -- they just need to be on PATH at test time.)
+        set(_cli_sh "")
+        if(MCC_TARGETOS STREQUAL "WIN32")
+            find_program(MCC_TEST_SH NAMES sh bash
+                DOC "POSIX shell used to run the cli-suite pipelines on Windows")
+            set(_cli_sh "${MCC_TEST_SH}")
+        endif()
+        if(MCC_TARGETOS STREQUAL "WIN32" AND NOT _cli_sh)
+            mcc_skip_test(cli-suite "needs a POSIX shell (no sh/bash found; set MCC_TEST_SH)")
+        else()
+            add_executable(cli_runner tests/cli/runner.c)
+            target_include_directories(cli_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli")
+            add_test(NAME cli-suite
+                COMMAND cli_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                        "${CMAKE_BINARY_DIR}/cli-work" "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli")
+            set(_cli_env "MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS}")
+            if(_cli_sh)
+                set(_cli_env "${_cli_env};MCC_TEST_SH=${_cli_sh}")
+            endif()
+            set_tests_properties(cli-suite PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77
+                ENVIRONMENT "${_cli_env}")
+        endif()
     endif()
 
     # Three-way differential suite: gcc vs clang vs mcc on every portable "run"
@@ -1909,45 +1938,75 @@ endif()
         set_tests_properties(abitest-cc PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
+    # --- Reference compiler for the differential tests (mcctest/-bcheck) ---
+    # The differential test builds tests/diff/full_language.c with BOTH mcc and a
+    # reference cc, then diffs the two programs' output. The reference must be a
+    # GCC-compatible driver: it is fed mcc's runtime/include headers (which are
+    # __SIZE_TYPE__-based, gcc-style) and gcc-style flags (-std=gnu99 -O0
+    # -fno-omit-frame-pointer; see run_mcctest.cmake). cl.exe parses neither, so
+    # on an MSVC host we look for a separate gcc to use as the reference (mingw
+    # gcc produces native PE exes just like mcc, so the diff is valid). Override
+    # with -DMCC_REF_CC=<path-to-gcc> when gcc is not on PATH.
+    set(MCC_REF_CC "" CACHE FILEPATH
+        "GCC-compatible reference compiler for the differential tests (mcctest/\
+-bcheck). Defaults to the host compiler; on an MSVC host, auto-detected from PATH.")
+    set(_ref_cc "${MCC_REF_CC}")
+    set(_ref_cc_name "${MCC_CC_NAME}")
+    set(_ref_cc_major "${MCC_GCC_MAJOR}")
+    if(NOT _ref_cc)
+        if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
+            find_program(_mcc_ref_gcc NAMES gcc)
+            set(_ref_cc "${_mcc_ref_gcc}")
+        else()
+            set(_ref_cc "${CMAKE_C_COMPILER}")
+        endif()
+    endif()
+    if(_ref_cc AND NOT "${_ref_cc}" STREQUAL "${CMAKE_C_COMPILER}")
+        # A reference distinct from the host compiler is, by construction, a gcc.
+        # Probe its major version (drives the GCC_MAJOR gates in full_language.c).
+        execute_process(COMMAND "${_ref_cc}" -dumpversion
+            OUTPUT_VARIABLE _ref_ver OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET RESULT_VARIABLE _ref_rc)
+        if(_ref_rc EQUAL 0 AND "${_ref_ver}" MATCHES "^([0-9]+)")
+            set(_ref_cc_major "${CMAKE_MATCH_1}")
+        else()
+            set(_ref_cc_major 0)
+        endif()
+        set(_ref_cc_name gcc)
+    endif()
+
     set(_mcctest_refflags "")
     if(MCC_TARGETOS STREQUAL "WIN32")
+        # The reference (a gcc) links straight against msvcrt.dll to match mcc's
+        # PE/msvcrt ABI, with no mingw CRT startup of its own (msvcrt_start.c).
         set(_msvcrt_start "${CMAKE_CURRENT_SOURCE_DIR}/tests/support/msvcrt_start.c")
-        if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
-            set(_mcctest_refflags "-nostdlib ${_msvcrt_start} -lkernel32 msvcrt.lib")
-        else()
-            set(_mcctest_refflags
-                "-nostdlib ${_msvcrt_start} -lgcc -lkernel32 c:/windows/system32/msvcrt.dll")
-        endif()
+        set(_mcctest_refflags
+            "-nostdlib ${_msvcrt_start} -lgcc -lkernel32 c:/windows/system32/msvcrt.dll")
     elseif(MCC_CPU STREQUAL "arm")
         set(_mcctest_refflags "-marm")
     elseif(MCC_CPU STREQUAL "i386")
         set(_mcctest_refflags "-fno-PIC -fno-PIE -Wl,-z,notext")
     endif()
-    if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
-        # The differential test builds tests/diff/full_language.c with BOTH mcc
-        # and the host reference cc, feeding both mcc's runtime/include headers
-        # and gcc-style driver flags (-std=gnu99 -O0 -fno-omit-frame-pointer; see
-        # run_mcctest.cmake). cl.exe parses neither mcc's __SIZE_TYPE__-based
-        # headers nor those flags, so MSVC can't serve as the reference compiler.
-        mcc_skip_test(mcctest "needs a GCC-compatible reference cc (host cc is MSVC)")
-        mcc_skip_test(mcctest-bcheck "needs a GCC-compatible reference cc (host cc is MSVC)")
+    if(CMAKE_C_COMPILER_ID STREQUAL "MSVC" AND NOT _ref_cc)
+        mcc_skip_test(mcctest "needs a GCC-compatible reference cc (host cc is MSVC; set MCC_REF_CC or put gcc on PATH)")
+        mcc_skip_test(mcctest-bcheck "needs a GCC-compatible reference cc (host cc is MSVC; set MCC_REF_CC or put gcc on PATH)")
     elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c" AND MCC_CONFIG_ASM)
         add_test(NAME mcctest COMMAND "${CMAKE_COMMAND}"
-            -DCC=${CMAKE_C_COMPILER} -DMCC=${_mcc_exe}
+            -DCC=${_ref_cc} -DMCC=${_mcc_exe}
             -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c
             -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR} -DBDIR=${_bdir} -DIDIR=${_idir}
             -DOUTDIR=${CMAKE_BINARY_DIR} "-DREFFLAGS=${_mcctest_refflags}"
-            "-DTESTDEFS=-DCC_NAME=CC_${MCC_CC_NAME} -DGCC_MAJOR=${MCC_GCC_MAJOR}"
+            "-DTESTDEFS=-DCC_NAME=CC_${_ref_cc_name} -DGCC_MAJOR=${_ref_cc_major}"
             -P "${_mcctest_driver}")
         set_tests_properties(mcctest PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         if(MCC_CONFIG_BCHECK)
             file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bcheck")
             add_test(NAME mcctest-bcheck COMMAND "${CMAKE_COMMAND}"
-                -DCC=${CMAKE_C_COMPILER} -DMCC=${_mcc_exe}
+                -DCC=${_ref_cc} -DMCC=${_mcc_exe}
                 -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c
                 -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR} -DBDIR=${_bdir} -DIDIR=${_idir}
                 -DOUTDIR=${CMAKE_BINARY_DIR}/bcheck "-DREFFLAGS=${_mcctest_refflags}"
-                "-DTESTDEFS=-DCC_NAME=CC_${MCC_CC_NAME} -DGCC_MAJOR=${MCC_GCC_MAJOR}"
+                "-DTESTDEFS=-DCC_NAME=CC_${_ref_cc_name} -DGCC_MAJOR=${_ref_cc_major}"
                 -DMCCARGS=-b -P "${_mcctest_driver}")
             set_tests_properties(mcctest-bcheck PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         else()
