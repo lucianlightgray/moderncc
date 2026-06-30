@@ -1,6 +1,11 @@
 
 
-typedef struct { const char *name,*mode,*src,*expect,*flags,*args,*req; } mcc_golden_t;
+/* expect_win32 (optional, last field): when non-NULL and the target OS is
+   WIN32, the runner compares against it instead of `expect`. This lets a few
+   codegen goldens whose output is legitimately ABI-specific (LLP64 long==4 vs
+   LP64 long==8) run on the WIN32 target rather than skip. Entries that omit it
+   (7-field initializers) leave it NULL and use `expect` everywhere. */
+typedef struct { const char *name,*mode,*src,*expect,*flags,*args,*req,*expect_win32; } mcc_golden_t;
 static const mcc_golden_t mcc_goldens[] = {
   { "assignment","run","exec/statements/assignment.c","42\n64\n12, 34\n","","","" },
   { "comment","run","exec/preprocessor/comment.c","x=6\ny=3\nz=13\n/* not a comment */ // also not\nw=7\nq=4\n/*\n","","","" },
@@ -96,7 +101,7 @@ static const mcc_golden_t mcc_goldens[] = {
   { "variadic_macros","run","exec/preprocessor/variadic_macros.c","one=1 two=2\nnone\ntwo=10,20\nstringized: [a, b, c]\nfirst: 7\ncount: 1 2 4\nsum: 15\n","","","" },
   { "if","run","exec/statements/if.c","a is true\nb is false\n","","","" },
   { "array_qual_params","run","exec/pointers_arrays/array_qual_params.c","third: 9\nrow_sum: 20\ndiag: 6\n","","","" },
-  { "integer_constants","run","exec/types/integer_constants.c","bases: 255 255 255\noctal0: 0\nwidths: 4 4 8 8 8\ndec_overflow_size: 8\nhex_unsigned_size: 4\nhex_big_size: 8\nsignedness: 1 0 1\nwrap: 4294967295 0\nsuffixed: 4294967296\n","","","os!=WIN32:golden assumes LP64 (long==8); WIN32 is LLP64 (long==4)" },
+  { "integer_constants","run","exec/types/integer_constants.c","bases: 255 255 255\noctal0: 0\nwidths: 4 4 8 8 8\ndec_overflow_size: 8\nhex_unsigned_size: 4\nhex_big_size: 8\nsignedness: 1 0 1\nwrap: 4294967295 0\nsuffixed: 4294967296\n","","","","bases: 255 255 255\noctal0: 0\nwidths: 4 4 4 4 8\ndec_overflow_size: 8\nhex_unsigned_size: 4\nhex_big_size: 8\nsignedness: 1 0 1\nwrap: 4294967295 0\nsuffixed: 4294967296\n" },
   { "char_escapes","run","exec/lexical/char_escapes.c","simple: 7 8 12 10 13 9 11\npunct: 92 39 34 63\nnul: 0\noctal: 65 0 127\nhex: 65 126\nisnl: 1\narith: 32\ntype: 4\n","","","" },
   { "string_literals","run","exec/lexical/string_literals.c","concat: abcdefghi len=9\nmulti: line one is here and continues here\nescapes: [tab\tend\\backslash\"quote]\nbytes: 65 68\nembedded: strlen=2 sizeof=6 byte4=99\narray: h o sizeof=6\n","","","" },
   { "predefined_macros","run","exec/preprocessor/predefined_macros.c","stdc: 1\nversion: 199901\nline_delta: 1\nsame_line: 1\nfile_ok: 1\ndate_len: 11 time_len: 8\n","","","" },
@@ -130,14 +135,14 @@ static const mcc_golden_t mcc_goldens[] = {
   { "variadic_promotions","run","exec/functions_abi/variadic_promotions.c","ints: 1105\ndoubles: 16\nmix: 10\n","","","" },
   { "compound_stmt_scope","run","exec/statements/compound_stmt_scope.c","outer: 1\ninner: 2\ninner2: 3\nback2: 2\nback1: 1\nloopscope: sum=6 i=99\nfresh: 33\nmixed: 42\n","","","" },
   { "conditional_operator","run","exec/statements/conditional_operator.c","sel: 10 20\ntrue_branch: a=7 calls=1\nfalse_branch: b=9 calls=1\ncommontype: 5\nsign(-1)=neg\nsign(0)=zero\nsign(1)=pos\nuse: 101\n","","","" },
-  { "cast_operator","run","exec/expressions/cast_operator.c","trunc: 3 -3\nwiden: 1\nnarrow: 33\nvoidcast: 5\nintdiv: 3\nfltdiv: 35\navg: 7\nptrrt: 1234\n","","","os!=WIN32:golden assumes LP64 (pointer fits in long); WIN32 is LLP64" },
+  { "cast_operator","run","exec/expressions/cast_operator.c","trunc: 3 -3\nwiden: 1\nnarrow: 33\nvoidcast: 5\nintdiv: 3\nfltdiv: 35\navg: 7\nptrrt: 1234\n","","","","cast_operator.c:37: warning: cast between pointer and integer of different size\ntrunc: 3 -3\nwiden: 1\nnarrow: 33\nvoidcast: 5\nintdiv: 3\nfltdiv: 35\navg: 7\nptrrt: 1234\n" },
   { "type_qualifiers","run","exec/types/type_qualifiers.c","const: 42\nptr_to_const: 2\nconst_ptr: 20\ncpc: 42\nconst_arr: 50\nvolatile: 2\nread_const: 42\n","","","" },
   { "integer_promotion_semantics","run","exec/expressions/integer_promotion_semantics.c","diff: -4\nadd: 200\ncompl: -1\nshift: 512\nmul: 90000\nrank: 1\nchar: 66\n","","","" },
   { "include_header","run","exec/preprocessor/include_header.c","answer: 42\ntriple: 42\ncombined: 42\n","","","" },
   { "declarators","run","exec/types/declarators.c","arr_of_ptr: 1 2 3\nptr_to_arr: 60 10\nptr_to_func: 42\narr_of_func: 32\nptr_ptr: 70\nconst_chain: 20\n","","","" },
   { "include","run","exec/preprocessor/include.c","including\nincluded\ndone\nhas_include\nhas_include\nhas_include_next\nhas_include_next\ncounter 0\n","","","" },
   { "transparent_union","run","exec/structs_unions/transparent_union.c","11\n22\n33\n11\n22\n","","","" },
-  { "struct_byval","run","exec/structs_unions/struct_byval.c","S2i 12 24\nS2i: 0c 00 00 00 18 00 00 00\nSid 18542 -3.5\nSid: 6e 48 00 00 00 00 00 00 00 00 00 00 00 00 0c c0\nS2d 1.5 2.5\nS2d: 00 00 00 00 00 00 f8 3f 00 00 00 00 00 00 04 40\nS3l 3 5 6\nS3l: 03 00 00 00 00 00 00 00 05 00 00 00 00 00 00 00 06 00 00 00 00 00 00 00\nS4f 1 2 3 4\nS4f: 00 00 80 3f 00 00 00 40 00 00 40 40 00 00 80 40\nSnest 2 3 4 6\n","","","os!=WIN32:golden has 8-byte longs (LP64); WIN32 long is 4 bytes (LLP64)" },
+  { "struct_byval","run","exec/structs_unions/struct_byval.c","S2i 12 24\nS2i: 0c 00 00 00 18 00 00 00\nSid 18542 -3.5\nSid: 6e 48 00 00 00 00 00 00 00 00 00 00 00 00 0c c0\nS2d 1.5 2.5\nS2d: 00 00 00 00 00 00 f8 3f 00 00 00 00 00 00 04 40\nS3l 3 5 6\nS3l: 03 00 00 00 00 00 00 00 05 00 00 00 00 00 00 00 06 00 00 00 00 00 00 00\nS4f 1 2 3 4\nS4f: 00 00 80 3f 00 00 00 40 00 00 40 40 00 00 80 40\nSnest 2 3 4 6\n","","","","S2i 12 24\nS2i: 0c 00 00 00 18 00 00 00\nSid 18542 -3.5\nSid: 6e 48 00 00 00 00 00 00 00 00 00 00 00 00 0c c0\nS2d 1.5 2.5\nS2d: 00 00 00 00 00 00 f8 3f 00 00 00 00 00 00 04 40\nS3l 3 5 6\nS3l: 03 00 00 00 05 00 00 00 06 00 00 00\nS4f 1 2 3 4\nS4f: 00 00 80 3f 00 00 00 40 00 00 40 40 00 00 80 40\nSnest 2 3 4 6\n" },
   { "struct_abi","run","exec/structs_unions/struct_abi.c","S2f 1.25 2.5\nSfi 3.5 7\nS4f 1 2 3 4\nSdf -6.5 1.5\nbig 226\nvsum 12\nBF 6 7 1952681 -1 536870912\n","","","" },
   { "union_byval","run","exec/structs_unions/union_byval.c","U4 1.5\nU4: 00 00 c0 3f\nU8 2.5 0 1074003968\nU8: 00 00 00 00 00 00 04 40\nTU 11 22 12 77\n","","","" },
   { "aggregate_perm","run","exec/structs_unions/aggregate_perm.c","SA 4 8 12 16 90\nSLD 18\nAnon 1 42 5 6\nidx 0 22 50 0\nS5 11 2 3 4 5\ncopy 16 90\n","","","" },

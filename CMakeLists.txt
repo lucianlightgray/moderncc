@@ -183,6 +183,13 @@ function(mcc_validate_config)
             "(have '${CMAKE_C_COMPILER_ID}'); disable them or set -DCMAKE_C_COMPILER "
             "to gcc/clang.")
     endif()
+    if(MCC_BUILD_SANITIZE AND MCC_TARGETOS STREQUAL "WIN32")
+        message(FATAL_ERROR
+            "mcc config: MCC_BUILD_SANITIZE (mcc_s, -fsanitize=address,undefined) "
+            "is unsupported on a PE/mingw target: mingw GCC ships no "
+            "libasan/libubsan. Disable it with -DMCC_BUILD_SANITIZE=OFF "
+            "(coverage and profiling do work on mingw).")
+    endif()
     if(MCC_BUILD_PROFILE AND MCC_TARGETOS STREQUAL "Darwin")
         message(FATAL_ERROR
             "mcc config: MCC_BUILD_PROFILE (mcc_p, -static) is unsupported on Darwin "
@@ -654,7 +661,17 @@ if(MCC_DIAGNOSTICS)
     # (mcc_validate_config). On such a host, diagnostics still turns on the
     # portable half: verbose warnings + debug info.
     if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-        mcc_profile_seed(MCC_BUILD_SANITIZE ON)
+        # mingw GCC ships no libasan/libubsan, so mcc_s (-fsanitize=address,
+        # undefined) cannot link on a PE target. MCC_TARGETOS is not derived yet
+        # here, so use the equivalent host signals (WIN32 host, or a forced
+        # mingw32 target). Coverage (--coverage) and profiling (-pg) do work on
+        # mingw, so they are still seeded.
+        if(WIN32 OR MCC_CONFIG_MINGW32)
+            message(STATUS "mcc diagnostics: skipping mcc_s (-fsanitize) on a PE/mingw "
+                           "target (mingw ships no libasan/libubsan)")
+        else()
+            mcc_profile_seed(MCC_BUILD_SANITIZE ON)
+        endif()
         mcc_profile_seed(MCC_BUILD_COVERAGE ON)
         # mcc_p (-pg -static) needs a static crt0.o, which Darwin does not ship.
         # Seed the profiling build only where it can actually link; diagnostics
@@ -2678,6 +2695,85 @@ endif()
     else()
         mcc_skip_test(pe-wine-conformance
             "requires wine + the win32 cross compilers (cmake --preset cross)")
+    endif()
+
+    # ------------------------------------------------------------------ #
+    # PE (Windows) RUNTIME conformance on a NATIVE Windows host. The default
+    # mcc already targets x86_64-win32 here, and its PE executables run
+    # directly on this host, so the same tests/qemu/conformance corpus that
+    # run_pe_wine.cmake exercises under wine can run natively — no wine, no
+    # separate win32 cross compiler. This makes the PE runtime conformance an
+    # actually-executed test on Windows instead of a skip.
+    if(MCC_TARGETOS STREQUAL "WIN32" AND NOT CMAKE_CROSSCOMPILING)
+        # The driver is generated into the build tree (rather than shipped as a
+        # separate file) so it lives with the test registration. MCC/B/SRC/WORK
+        # are supplied as -D args at ctest time — MCC is a generator expression
+        # ($<TARGET_FILE:mcc>), unknown at configure time — so the body is a pure
+        # bracket literal and its ${...} survive unexpanded into the script.
+        set(_pe_native_drv "${CMAKE_BINARY_DIR}/run_pe_native.cmake")
+        file(WRITE "${_pe_native_drv}" [==[
+# Runtime-verify mcc's PE (Windows) codegen on a NATIVE Windows host: the default
+# mcc already targets x86_64-win32 and the produced PE executables run directly
+# here, so for each tests/qemu/conformance/*.c, link it with the just-built mcc
+# (driven by -B${B} so it finds libmcc1.a + the .def import libs + the bundled
+# win32 headers) and run it. Each program self-checks and must exit 0.
+# Whole-test skip -> EXIT 77.  Any failure -> EXIT 1.  Else EXIT 0.
+if(NOT DEFINED MCC OR NOT DEFINED B OR NOT DEFINED SRC OR NOT DEFINED WORK)
+    message(FATAL_ERROR "usage: -DMCC= -DB= -DSRC= -DWORK= -P run_pe_native.cmake")
+endif()
+set(CONF "${SRC}/tests/qemu/conformance")
+if(NOT EXISTS "${MCC}")
+    message("SKIP: no native mcc at ${MCC}")
+    cmake_language(EXIT 77)
+endif()
+if(NOT EXISTS "${B}/lib/libmcc1.a")
+    message("SKIP: build tree ${B} has no lib/libmcc1.a")
+    cmake_language(EXIT 77)
+endif()
+file(MAKE_DIRECTORY "${WORK}")
+set(status 0)
+file(GLOB _confs "${CONF}/*.c")
+foreach(f ${_confs})
+    get_filename_component(n "${f}" NAME_WE)
+    set(exe "${WORK}/pe_native_${n}.exe")
+    execute_process(
+        COMMAND "${MCC}" "-B${B}" "-I${B}/include"
+                "-I${SRC}/runtime/win32/include" "-I${SRC}/runtime/include"
+                "${f}" -o "${exe}"
+        RESULT_VARIABLE crc OUTPUT_VARIABLE cout ERROR_VARIABLE cerr)
+    if(NOT crc EQUAL 0)
+        string(REGEX REPLACE "\n.*" "" _firstline "${cerr}")
+        message("FAIL ${n} (compile): ${_firstline}")
+        set(status 1)
+        continue()
+    endif()
+    execute_process(
+        COMMAND "${exe}" RESULT_VARIABLE rc
+        OUTPUT_FILE "${WORK}/pe-native-run.out" ERROR_FILE "${WORK}/pe-native-run.out")
+    if(rc EQUAL 0)
+        message("PASS ${n}")
+    else()
+        message("FAIL ${n} (run, rc=${rc})")
+        set(status 1)
+    endif()
+    file(REMOVE "${exe}")
+endforeach()
+if(NOT status EQUAL 0)
+    cmake_language(EXIT 1)
+endif()
+cmake_language(EXIT 0)
+]==])
+        add_test(NAME pe-native-conformance
+            COMMAND ${CMAKE_COMMAND}
+                    "-DMCC=${_mcc_exe}" "-DB=${_bdir}"
+                    "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}"
+                    "-DWORK=${CMAKE_BINARY_DIR}/pe-native-work"
+                    -P "${_pe_native_drv}")
+        set_tests_properties(pe-native-conformance PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+    else()
+        mcc_skip_test(pe-native-conformance
+            "native PE runtime conformance (only on a native WIN32 host)")
     endif()
 
     # ------------------------------------------------------------------ #
