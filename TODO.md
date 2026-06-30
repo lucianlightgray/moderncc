@@ -298,14 +298,15 @@ The one remaining complex gap is constant-folding (static initializers) — see
   complex constant conversion) so `a + b*I` reduces to a complex constant.
   3-way: mcc=rejects the `a+b*I` form | gcc=accepts | clang=accepts.
 
-- [ ] **[DIAG] §6.8.6.1 — jump into the scope of a variably-modified non-array object not diagnosed.**
-  The goto/switch-into-scope rule covers any variably-modified type, including a
-  pointer-to-VLA (`int (*p)[n]`) that allocates nothing. mcc registers a scope
-  only for top-level VLA arrays, gated on `type->t & VT_VLA`
-  (`src/mccgen.c:9105`); variably-modified-but-not-VLA declarators never call
-  the `vla_diag` machinery. (Array VLA jumps ARE correctly diagnosed — that part
-  of the prior "still-open" note is stale.)
-  3-way: mcc=accepts-invalid | gcc=error | clang=error.
+- [x] **[DIAG] §6.8.6.1 — jump into the scope of a variably-modified non-array object now diagnosed.**
+  A goto/switch into the scope of a pointer-to-VLA (`int (*p)[n]`) — variably
+  modified but not itself a VLA array, so it allocates nothing — now errors "goto
+  jumps into the scope of a variably modified declaration", matching gcc/clang.
+  A new `type_is_vm()` helper (`src/mccgen.c`) detects a VLA anywhere in a type's
+  pointer/array derivation; `decl_initializer_alloc` registers the jump-diag scope
+  (`vla_open_birth`/`vla_diag`) for the VM-but-not-VLA case without allocating
+  (the VLA-array case still registers + allocates as before). cli
+  `jump_into_vla_scope` (extended with the pointer-to-VLA case).
 
 - [~] **[DIAG] §6.8.1 — label immediately followed by a declaration (deferred, low value).**
   `l: int x;` is a constraint violation pre-C23. `l:` is parsed by `block()`

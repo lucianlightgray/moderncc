@@ -359,6 +359,21 @@ static inline int is_integer_btype(int bt)
         || bt == VT_LLONG;
 }
 
+/* 6.7.6.2p4: a type is variably modified if a VLA appears anywhere in its
+   derivation — directly or via a pointer/array to one (mcc marks both pointers
+   and arrays with VT_BTYPE==VT_PTR, so the same descent visits both). Struct,
+   union and function btypes stop the descent, so the loop always terminates. */
+static int type_is_vm(CType *type)
+{
+    CType *t = type;
+    while ((t->t & VT_BTYPE) == VT_PTR) {
+        if (t->t & VT_VLA)
+            return 1;
+        t = &t->ref->type;
+    }
+    return 0;
+}
+
 static int btype_size(int bt)
 {
     return bt == VT_BYTE || bt == VT_BOOL ? 1 :
@@ -9365,6 +9380,17 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
             bounds_ptr[1] = size;
         }
 #endif
+    }
+
+    /* 6.8.6.1: a variably-modified object that is not itself a VLA array (e.g. a
+       pointer to a VLA) allocates no storage but still establishes a scope a
+       goto/switch may not jump into. The VLA-array case registers itself below. */
+    if (!(type->t & VT_VLA) && type_is_vm(type)) {
+        if (nb_vla_open < VLA_TRACK_MAX)
+            vla_open_birth[nb_vla_open++] = ++vla_seq;
+        else
+            vla_track_ovf = 1;
+        cur_scope->vla_diag++;
     }
 
     if (type->t & VT_VLA) {

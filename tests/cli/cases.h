@@ -425,11 +425,14 @@ static const cli_case_t cli_cases[] = {
   "printf 'int n=3; int h(void){ { int a[n]; L: (void)a; } goto L; return 0; }\\n' > {W}/j3.c && "
   "{MCC} -B{B} -I{I} -std=c11 -c {W}/j3.c -o {W}/j3.o 2>&1 | "
   "grep -oE 'variably modified declaration'; "
+  "printf 'int n=3; int p(void){ goto L; int (*q)[n]; L: q=0; return !!q; }\\n' > {W}/j5.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -c {W}/j5.c -o {W}/j5.o 2>&1 | "
+  "grep -oE 'variably modified declaration'; "
   "printf 'int n=3;\\nint ok(int c){ int a[n]; L: if(a[0]) goto L;"
   " switch(c){ case 1: { int b[n]; return sizeof b; } default: return sizeof a; } }\\n"
   "int main(void){return 0;}\\n' > {W}/j4.c && "
   "{MCC} -B{B} -I{I} -std=c11 {W}/j4.c -o {W}/j4 && echo VALID_OK",
-  "variably modified declaration\nvariably modified declaration\nvariably modified declaration\nVALID_OK\n" },
+  "variably modified declaration\nvariably modified declaration\nvariably modified declaration\nvariably modified declaration\nVALID_OK\n" },
 
 /* 6.2.6/7.17: atomics on objects larger than a machine word use the size-
    generic, pointer-based libatomic helpers (__atomic_load/store/exchange/
