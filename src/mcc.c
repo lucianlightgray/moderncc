@@ -392,6 +392,11 @@ redo:
 #ifdef MCC_IS_NATIVE
             ret = mcc_run(s, argc, argv);
 #endif
+        } else if (s->syntax_only) {
+            /* -fsyntax-only: the input was fully parsed and semantically
+               checked by mcc_add_file above (diagnostics already emitted); do
+               not link or write any output. */
+            ;
         } else {
             if (!s->outfile)
                 s->outfile = default_outputfile(s, first_file);

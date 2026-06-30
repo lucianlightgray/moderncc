@@ -59,9 +59,6 @@ warning · **[build]** build-system integration · **[doc]** documentation only.
   a large effort; at minimum recognize `-S` and either emit a disassembly listing
   or fail with a clear "assembly output not supported" message rather than
   "invalid option". *Verify scope, then implement or document.*
-- [ ] **[core] `-fsyntax-only` is accepted but BROKEN** — it still writes the
-  object file. It must check syntax/semantics only and produce NO output (stop
-  after parse). gcc/clang both honor it. *Fix to actually suppress output.*
 
 ## Diagnostics — warning coverage (`-Wall`/`-Wextra` are thin)
 

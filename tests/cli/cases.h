@@ -1602,5 +1602,17 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'C23/GNU extension|OFF_OK' | sort | uniq -c | sed 's/^ *//'",
   "2 C23/GNU extension\n1 OFF_OK\n" },
 
+/* -fsyntax-only checks the input but writes NO output file (previously it was
+   accepted yet still produced the object). A valid input compiles to NO_OUTPUT;
+   an invalid input is still rejected (non-zero exit). */
+{ "fsyntax_only_no_output", "",
+  "printf 'int main(void){return 0;}\\n' > {W}/so_ok.c && "
+  "printf 'int main(void){ int 3x; }\\n' > {W}/so_bad.c && "
+  "rm -f {W}/so_out.o && "
+  "{ {MCC} -B{B} -I{I} -fsyntax-only -c {W}/so_ok.c -o {W}/so_out.o 2>&1 && "
+  "{ [ -f {W}/so_out.o ] && echo HAS_OUTPUT || echo NO_OUTPUT; }; "
+  "{MCC} -B{B} -I{I} -fsyntax-only -c {W}/so_bad.c -o /dev/null >/dev/null 2>&1 && echo BAD_OK || echo BAD_REJECTED; }",
+  "NO_OUTPUT\nBAD_REJECTED\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

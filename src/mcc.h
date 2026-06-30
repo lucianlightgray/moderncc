@@ -719,6 +719,7 @@ struct MCCState {
     unsigned char wrapv;                /* -fwrapv (mcc always wraps) */
     unsigned char trigraphs;            /* -ftrigraphs/-trigraphs: phase-1 trigraph replacement */
     unsigned char freestanding;         /* -ffreestanding: __STDC_HOSTED__ == 0 */
+    unsigned char syntax_only;          /* -fsyntax-only: check only, no output */
     unsigned char visibility;           /* -fvisibility= default STV_* */
     unsigned char stack_protector;      /* -fstack-protector* (x86_64) */
     unsigned char do_strip;             /* -s: omit .symtab/.strtab from output */
