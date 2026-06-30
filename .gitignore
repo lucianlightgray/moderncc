@@ -1,4 +1,5 @@
 /cmake-build-*/
+/cmake-windows-*/
 /build-*/
 
 /.idea/

@@ -32,6 +32,8 @@ echo "==> staging source $SRC_MOUNT -> $SRC"
 mkdir -p "$SRC" "$ROOTS"
 rsync -a --delete \
     --exclude 'cmake-build*' \
+    --exclude 'cmake-windows-*' \
+    --exclude 'build-*' \
     --exclude '.git' \
     "$SRC_MOUNT"/ "$SRC"/
 

@@ -2764,7 +2764,8 @@ endif()
 
 # ctags over the whole source tree. NOTE: deliberately NO CONFIGURE_DEPENDS —
 # it makes the Ninja generator watch every directory under the source root for
-# the re-glob check, including in-source build dirs (build-*/, cmake-build-*/).
+# the re-glob check, including in-source build dirs (build-*/, cmake-build-*/,
+# cmake-windows-*/).
 # Those hold generated .c/.h, so any incremental build trips a spurious "GLOB
 # mismatch" reconfigure, and on Windows ninja's directory restat mangles their
 # absolute paths (FindFirstFileExA "<src>/<abs-src>/..." -> syntax error). tags
@@ -2774,7 +2775,7 @@ file(GLOB_RECURSE MCC_TAGFILES
     "${CMAKE_CURRENT_SOURCE_DIR}/*.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/*.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/*.S")
-list(FILTER MCC_TAGFILES EXCLUDE REGEX "/(cmake-build-[^/]*|build-[^/]*|\\.git|\\.idea|\\.cache)/")
+list(FILTER MCC_TAGFILES EXCLUDE REGEX "/(cmake-build-[^/]*|cmake-windows-[^/]*|build-[^/]*|\\.git|\\.idea|\\.cache)/")
 find_program(CTAGS_EXE ctags)
 if(CTAGS_EXE)
     add_custom_target(tags
@@ -2821,5 +2822,6 @@ else()
 endif()
 set(CPACK_SOURCE_GENERATOR "TGZ;ZIP")
 set(CPACK_SOURCE_IGNORE_FILES
-    "/\\.git/" "/cmake-build-[^/]*/" "/\\.idea/" "\\.o$" "\\.a$")
+    "/\\.git/" "/cmake-build-[^/]*/" "/cmake-windows-[^/]*/" "/build-[^/]*/"
+    "/\\.idea/" "\\.o$" "\\.a$")
 include(CPack)
