@@ -1651,5 +1651,25 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'forbids variable length array|FIXED_CLEAN|DEFAULT_SILENT' | sort | uniq -c | sed 's/^ *//'",
   "1 DEFAULT_SILENT\n1 FIXED_CLEAN\n1 forbids variable length array\n" },
 
+/* -Wundef warns when an undefined identifier is evaluated in a #if (ISO C makes
+   it 0); a defined macro is silent, and so is the default (opt-in, like gcc). */
+{ "wundef_if_undefined", "",
+  "printf '#if FOO\\n#endif\\n#define BAR 1\\n#if BAR\\n#endif\\nint main(void){return 0;}\\n' > {W}/u.c && "
+  "{ {MCC} -B{B} -I{I} -Wundef -c {W}/u.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -c {W}/u.c -o /dev/null 2>&1 && echo DEFAULT_SILENT; } | "
+  "grep -oE 'is not defined, evaluates to 0|DEFAULT_SILENT' | sort | uniq -c | sed 's/^ *//'",
+  "1 DEFAULT_SILENT\n1 is not defined, evaluates to 0\n" },
+
+/* -Wunknown-pragmas warns on an unrecognized #pragma; enabled by -Wall (so
+   -Wno-unknown-pragmas turns it back off) and controllable standalone; default
+   is silent. */
+{ "wunknown_pragmas", "",
+  "printf '#pragma frobnicate\\nint main(void){return 0;}\\n' > {W}/p.c && "
+  "{ {MCC} -B{B} -I{I} -Wunknown-pragmas -c {W}/p.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -Wall -Wno-unknown-pragmas -Werror -c {W}/p.c -o /dev/null 2>&1 && echo OFF_OK; "
+  "{MCC} -B{B} -I{I} -c {W}/p.c -o /dev/null 2>&1 && echo DEFAULT_SILENT; } | "
+  "grep -oE 'frobnicate ignored|OFF_OK|DEFAULT_SILENT' | sort | uniq -c | sed 's/^ *//'",
+  "1 DEFAULT_SILENT\n1 OFF_OK\n1 frobnicate ignored\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

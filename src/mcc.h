@@ -734,6 +734,8 @@ struct MCCState {
     unsigned char warn_sequence_point;  /* 6.5p2: unsequenced side effects (default on, like gcc) */
     unsigned char warn_format;          /* -Wformat: printf/scanf format vs args (opt-in) */
     unsigned char warn_vla;             /* -Wvla: use of a variable-length array (opt-in) */
+    unsigned char warn_undef;           /* -Wundef: undefined identifier in #if (opt-in) */
+    unsigned char warn_unknown_pragmas; /* -Wunknown-pragmas: unrecognized #pragma (-Wall) */
     unsigned char warn_pedantic;        /* -pedantic: diagnose ISO C extensions */
     unsigned char pedantic_errors;      /* -pedantic-errors: make them hard errors */
     #define WARN_ON  1

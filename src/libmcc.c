@@ -574,6 +574,17 @@ static void error1(int mode, const char *fmt, va_list ap)
     mcc_exit_state(s1);
 
     if (mode == ERROR_WARN) {
+        /* Capture and CLEAR the per-warning flag selector first: warn_num is a
+           one-shot set by mcc_warning_c() for the immediately following call.
+           It must be reset before any early return below, otherwise a warning
+           suppressed in a system header leaks its selector to the next
+           (possibly unconditional) warning, which would then read the wrong
+           flag byte. wopt < 0 marks an unconditional plain mcc_warning(). */
+        int wopt = -1;
+        if (s1->warn_num) {
+            wopt = *(&s1->warn_none + s1->warn_num);
+            s1->warn_num = 0;
+        }
         /* Suppress warnings (and -pedantic) originating inside a system header
            or the predef buffer, as gcc/clang do — before the -Werror upgrade,
            so they never become errors. Keeps -pedantic usable with real libc
@@ -587,9 +598,7 @@ static void error1(int mode, const char *fmt, va_list ap)
         }
         if (s1->warn_error)
             mode = ERROR_ERROR;
-        if (s1->warn_num) {
-            int wopt = *(&s1->warn_none + s1->warn_num);
-            s1->warn_num = 0;
+        if (wopt >= 0) {
             if (0 == (wopt & WARN_ON))
                 return;
             if (wopt & WARN_ERR)
@@ -1741,6 +1750,12 @@ static const FlagDef options_W[] = {
     /* -Wvla: diagnose use of a variable-length array (C11 made VLAs optional).
        Opt-in, like gcc (not part of -Wall/-Wextra). */
     { offsetof(MCCState, warn_vla), 0, "vla" },
+    /* -Wundef: an undefined identifier in a #if expression (evaluates to 0).
+       Opt-in, like gcc (not in -Wall). */
+    { offsetof(MCCState, warn_undef), 0, "undef" },
+    /* -Wunknown-pragmas: an unrecognized #pragma. Enabled by -Wall (WD_ALL),
+       matching gcc, and separately controllable via -W[no-]unknown-pragmas. */
+    { offsetof(MCCState, warn_unknown_pragmas), WD_ALL, "unknown-pragmas" },
     /* -Wpedantic / -Wno-pedantic are gcc/clang synonyms for -pedantic: they
        toggle the same warn_pedantic state that diagnoses non-ISO extensions. */
     { offsetof(MCCState, warn_pedantic), 0, "pedantic" },

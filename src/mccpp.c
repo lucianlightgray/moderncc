@@ -1504,6 +1504,10 @@ static int expr_preprocess(MCCState *s1)
                 expect("')'");
             goto c_number;
         } else {
+            /* -Wundef: macros were already expanded, so any identifier left here
+               is not a defined macro; ISO C evaluates it to 0 (6.10.1p4). */
+            mcc_warning_c(warn_undef)("\"%s\" is not defined, evaluates to 0",
+                                      get_tok_str(tok, &tokc));
             c = 0;
         c_number:
             tok = TOK_CLLONG;
@@ -1874,7 +1878,8 @@ static int pragma_parse(MCCState *s1)
             next_nomacro();
         return 1;
     } else {
-        mcc_warning_c(warn_all)("#pragma %s ignored", get_tok_str(tok, &tokc));
+        mcc_warning_c(warn_unknown_pragmas)("#pragma %s ignored",
+                                            get_tok_str(tok, &tokc));
         return 0;
     }
     next();
