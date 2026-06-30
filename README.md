@@ -149,11 +149,17 @@ ctest --test-dir <build> -LE 'qemu|wine|macho'   # everything else (portable)
 `.github/workflows/ci.yml` runs the portable suites and the qemu matrix on
 every push (the latter via the Docker runner above).
 
-**Mach-O ceiling:** the structural, self-contained-image, codegen and
-apple-libc Mach-O tests run on any host, but the libSystem/dyld-dependent path
-(libmalloc, locale stdio, dyld, pthread/GCD, ObjC) is kernel-fused and needs a
-macOS or **darling** host (`-DMCC_DARWIN_HOST=ON`); it is intentionally outside
-the default matrix.
+**Mach-O coverage by host.** On a **macOS host**, `macho-conformance-native`
+compiles the full self-checking conformance set with the native `mcc` and runs
+each as a real Mach-O image against the system libSystem — the most direct
+coverage available (it subsumes the TLS and libc-dependent programs the Linux
+approximations must exclude). On a **Linux/x86_64 host**, the structural,
+self-contained-image, codegen and apple-libc drivers approximate the same
+codegen via a loader/trampoline; off x86_64 (e.g. arm64 macOS, where the native
+test covers it instead) they report **Skipped**, not a hollow pass. The
+remaining libSystem/dyld-dependent path (libmalloc, locale stdio, dyld,
+pthread/GCD, ObjC) is kernel-fused and needs a macOS or **darling** host
+(`-DMCC_DARWIN_HOST=ON`); it is intentionally outside the default matrix.
 
 ## Repository layout
 
