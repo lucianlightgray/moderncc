@@ -199,6 +199,57 @@
     #define __builtin_nanf(ignored_string) (0.0F/0.0F)
 # endif
 #endif
+    /* C99/Annex F floating-point builtins (the de-facto gcc/clang contract).
+       Provided as constant-foldable macros so direct use compiles and folds in
+       a constant expression. Infinities = a folded overflow product; NaN =
+       0.0/0.0 (sign unspecified, 7.12-5). #ifndef so the BSD/Apple defines above
+       win where present. The classification macros may evaluate their argument
+       more than once (a macro-fallback limitation; gcc's intrinsics do not). */
+#ifndef __builtin_inff
+    #define __builtin_inff() (1e30f * 1e30f)
+#endif
+#ifndef __builtin_inf
+    #define __builtin_inf() (1e200 * 1e200)
+#endif
+#ifndef __builtin_infl
+    #define __builtin_infl() ((long double)(1e200 * 1e200))
+#endif
+#ifndef __builtin_huge_valf
+    #define __builtin_huge_valf() __builtin_inff()
+#endif
+#ifndef __builtin_huge_val
+    #define __builtin_huge_val() __builtin_inf()
+#endif
+#ifndef __builtin_huge_vall
+    #define __builtin_huge_vall() __builtin_infl()
+#endif
+#ifndef __builtin_nanf
+    #define __builtin_nanf(s) (0.0f / 0.0f)
+#endif
+#ifndef __builtin_nan
+    #define __builtin_nan(s) (0.0 / 0.0)
+#endif
+#ifndef __builtin_nanl
+    #define __builtin_nanl(s) (0.0L / 0.0L)
+#endif
+#ifndef __builtin_nansf
+    #define __builtin_nansf(s) (0.0f / 0.0f)
+#endif
+#ifndef __builtin_nans
+    #define __builtin_nans(s) (0.0 / 0.0)
+#endif
+#ifndef __builtin_nansl
+    #define __builtin_nansl(s) (0.0L / 0.0L)
+#endif
+    #define __builtin_isnan(x) ((x) != (x))
+    #define __builtin_isinf(x) ((x) == __builtin_inf() || (x) == -__builtin_inf())
+    #define __builtin_isfinite(x) (!__builtin_isnan(x) && !__builtin_isinf(x))
+    #define __builtin_isunordered(a, b) (__builtin_isnan(a) || __builtin_isnan(b))
+    #define __builtin_isgreater(a, b) (!__builtin_isunordered(a, b) && (a) > (b))
+    #define __builtin_isgreaterequal(a, b) (!__builtin_isunordered(a, b) && (a) >= (b))
+    #define __builtin_isless(a, b) (!__builtin_isunordered(a, b) && (a) < (b))
+    #define __builtin_islessequal(a, b) (!__builtin_isunordered(a, b) && (a) <= (b))
+    #define __builtin_islessgreater(a, b) (!__builtin_isunordered(a, b) && ((a) < (b) || (a) > (b)))
 
     struct __uint128__ { char x[16]; } __attribute((__aligned__(16)));
     #define __int128_t struct __uint128__

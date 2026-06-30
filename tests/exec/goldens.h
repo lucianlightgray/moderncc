@@ -23,6 +23,7 @@ static const mcc_golden_t mcc_goldens[] = {
   { "c11_complex_decls","run","exec/features_c99_c11/c11_complex_decls.c","OK\n","","","" },
   { "c11_complex_convert","run","exec/features_c99_c11/c11_complex_convert.c","OK\n","","","" },
   { "atomic_aggregate","run","exec/features_c99_c11/atomic_aggregate.c","OK\n","","","" },
+  { "fp_builtins","run","exec/features_c99_c11/fp_builtins.c","OK\n","","","" },
   { "complex_annexg","run","exec/features_c99_c11/complex_annexg.c","OK\n","","","" },
   { "fenv_access_fold","run","exec/features_c99_c11/fenv_access_fold.c","OK\n","-lm","","os!=WIN32:needs fesetround, not exported by msvcrt" },
   { "tgmath_dispatch","run","exec/features_c99_c11/tgmath_dispatch.c","OK\n","-lm","","os!=WIN32:needs complex libm (cexp/cabs), absent on the WIN32 target" },
@@ -272,4 +273,4 @@ static const mcc_golden_t mcc_goldens[] = {
   { "char_unsigned","run","exec/types/char_signedness.c","255 0\n","-funsigned-char","","" },
   { "bound_test_b","brun","exec/bounds/bound_test.c","42000\n8\n","","","bcheck" },
 };
-static const int mcc_goldens_count = 262;
+static const int mcc_goldens_count = 263;

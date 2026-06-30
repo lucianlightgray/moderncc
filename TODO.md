@@ -568,17 +568,19 @@ bulk of each area matched the references; these are the residual divergences.
 
 ### §7 library / floating-point builtins
 
-- [ ] **[FEATURE] §F/§7.12 — the GCC/Clang floating-point builtin family is entirely absent.**
-  `__builtin_{inf,inff,infl,nan,nanf,nans,huge_val*,fabs,copysign,isnan,isinf,
-  isfinite,isnormal,signbit,fpclassify,isgreater,isless,isunordered,...}` are all
-  unknown → "implicit declaration" + unresolved-reference link failure, and cannot
-  appear in constant expressions (`static int a=__builtin_isnan(1.0)` fails). gcc+
-  clang provide all. mcc only survives `#include <math.h>` because glibc/musl gate
-  `NAN`/`INFINITY` on `__GNUC__` (which mcc doesn't define) and fall back. This is
-  also the root cause of the two DIFFs below. Implement at least
-  inf*/nan*/huge_val*/fabs/copysign (codegen + constant-foldable) and the
-  isnan/isinf/isfinite/isnormal/signbit/fpclassify/isgreater/isless/isunordered
-  classification builtins.
+- [~] **[FEATURE] §F/§7.12 — GCC/Clang floating-point builtins (constants + classification done).**
+  Added to `runtime/include/mccdefs.h` as constant-foldable macros (`#ifndef`-
+  guarded so the BSD/Apple defines win where present): `__builtin_inf`/`inff`/
+  `infl`, `huge_val`/`valf`/`vall`, `nan`/`nanf`/`nanl`/`nans*` (inf = folded
+  overflow product, nan = `0.0/0.0`), and the `isnan`/`isinf`/`isfinite`/
+  `isunordered`/`isgreater`/`isgreaterequal`/`isless`/`islessequal`/`islessgreater`
+  classification + comparison builtins. Direct use compiles, links, and folds in
+  a constant expression (`static int a=__builtin_isnan(0.0/0.0)`), matching gcc on
+  all 5 arches. exec `fp_builtins`. STILL OPEN: `fabs`/`copysign`/`signbit`/
+  `fpclassify`/`isnormal` (need bit-level ops, not clean foldable macros); the
+  classification macros also multi-evaluate their argument (intrinsics don't).
+  The two DIFFs below (NAN sign, signbit return) come from glibc's *own* fallback
+  macros — not these builtins — so they are unaffected.
 
 - [ ] **[DIFF] §7.12/F.2.1 — the `NAN` macro yields a *negative* NaN (`-nan`).**
   Downstream of the missing `__builtin_nanf`: glibc falls back to `(0.0f/0.0f)`,
