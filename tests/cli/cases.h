@@ -1095,6 +1095,18 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -isystem {W}/sys -std=c11 -pedantic-errors -c {W}/m.c -o {W}/m11.o 2>&1 && echo C11_OK; }",
   "1\nC11_OK\n" },
 
+/* §6.7.2.1 regression: -pedantic-errors at the default (C99) std must not abort
+   on mcc's own predef/<command line> buffer (the va_list anon union). The
+   suppression in mcc_pedantic covers the -pedantic-errors path too, so a clean
+   file compiles — while genuine user-code anon members are still caught. */
+{ "pedantic_errors_predef_clean", "",
+  "printf 'int main(void){return 0;}\\n' > {W}/pe.c && "
+  "printf 'struct S{struct{int x;};}; int main(void){return 0;}\\n' > {W}/peb.c && "
+  "{ {MCC} -B{B} -I{I} -std=c99 -pedantic-errors -c {W}/pe.c -o {W}/pe.o 2>&1 && echo CLEAN_OK; "
+  "{MCC} -B{B} -I{I} -std=c99 -pedantic-errors -c {W}/peb.c -o {W}/peb.o 2>&1; } | "
+  "grep -oE 'C11 feature|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 C11 feature\n1 CLEAN_OK\n" },
+
 /* §6.5.16.1: adding a qualifier at a nested pointer level (`int** -> const
    int**`) launders it away and is an incompatible-pointer constraint violation;
    a top-level qualifier add (`int* -> const int*`) is allowed, a top-level

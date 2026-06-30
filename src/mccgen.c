@@ -282,6 +282,18 @@ static void mcc_pedantic(const char *msg)
 {
     if (!mcc_state->warn_pedantic)
         return;
+    /* Suppress -pedantic diagnostics originating in a system header or the
+       predef/<command line> buffer, as gcc/clang do — even under
+       -pedantic-errors, where the mcc_error() path below would otherwise bypass
+       error1()'s ERROR_WARN-only system-header suppression and abort on mcc's
+       own mccdefs.h (e.g. the va_list anon union in default-C99 mode). */
+    if (mcc_state->error_set_jmp_enabled) {
+        BufferedFile *wf;
+        for (wf = file; wf && wf->filename[0] == ':'; wf = wf->prev)
+            ;
+        if (wf && wf->system_header)
+            return;
+    }
     if (mcc_state->pedantic_errors)
         mcc_error("%s", msg);
     else
