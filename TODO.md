@@ -40,3 +40,81 @@ gaps; they need no migration:
   implicit-int, etc.: mcc warns (errors under `-Werror`), matching its documented
   philosophy; C9911 counted the exit-0 default as accept.
 - **Deliberate divergences** — recorded in C9911.md's Appendix (out of scope).
+
+---
+
+# CLI-flag parity with gcc/clang (C99/C11 compiler)
+
+Gaps found by comparing `mcc --help`/`-hh` and `src/libmcc.c`'s option table
+against gcc 15.3 / clang command-line arguments, then probing the live binary
+3-way. These are command-line / diagnostic features a C99/C11 compiler is
+normally expected to provide; none affect the C9911 clause coverage above.
+Severity tags: **[core]** expected of any C compiler · **[diag]** a common
+warning · **[build]** build-system integration · **[doc]** documentation only.
+
+## Compiler modes
+
+- [ ] **[core] `-S` (emit assembly) is rejected** ("invalid option -- '-S'").
+  gcc/clang both produce a `.s`. mcc is direct-to-object, so true `.s` emission is
+  a large effort; at minimum recognize `-S` and either emit a disassembly listing
+  or fail with a clear "assembly output not supported" message rather than
+  "invalid option". *Verify scope, then implement or document.*
+- [ ] **[core] `-fsyntax-only` is accepted but BROKEN** — it still writes the
+  object file. It must check syntax/semantics only and produce NO output (stop
+  after parse). gcc/clang both honor it. *Fix to actually suppress output.*
+
+## Diagnostics — warning coverage (`-Wall`/`-Wextra` are thin)
+
+mcc only emits a handful of warnings; gcc/clang `-Wall`/`-Wextra` catch far more.
+Each below was confirmed: mcc=0 warnings where gcc/clang warn. (mcc already does
+`-Wreturn-type`-style "missing return", implicit-function-declaration, and the
+new `-Wformat`.) Most need scope/dataflow tracking — size each before starting.
+
+- [ ] **[diag] `-Wunused-variable` / `-Wunused-function`** — unused locals and
+  unused `static` functions (under `-Wall`). Needs use-tracking per scope/TU.
+- [ ] **[diag] `-Wunused-value`** — a statement with no effect (`1+1;`).
+- [ ] **[diag] `-Wunused-parameter`** — under `-Wextra`.
+- [ ] **[diag] `-Wuninitialized`** — use of an uninitialized local. Needs simple
+  dataflow; can be conservative to avoid false positives.
+- [ ] **[diag] `-Wparentheses`** — assignment used as a truth value (`if (x = 1)`).
+- [ ] **[diag] `-Wsign-compare`** — signed/unsigned comparison (under `-Wextra`).
+- [ ] **[diag] `-Wswitch`** — `switch` on an enum that omits a case / lacks `default`.
+- [ ] **[diag] `-Wshadow`** — a declaration shadowing one in an outer scope.
+- [ ] **[diag] `-Wvla`** — use of a variable-length array (C11 made VLAs optional).
+- [ ] **[diag] `-Wundef`** — an undefined identifier evaluated in a `#if` (mcc
+  treats it as 0 silently; gcc/clang warn under `-Wundef`).
+- [ ] **[diag] `-Wunknown-pragmas`** — an unrecognized `#pragma` (mcc is silent).
+- [ ] **[diag] `-Wimplicit-int`** — named flag for the implicit-`int` diagnostic
+  mcc already emits as a bare warning (give it a controllable `-W[no-]` name).
+- [ ] **[diag] `-Wextra` umbrella is inert** — accepted but enables nothing. Wire
+  it to a set (unused-parameter, sign-compare, …) like gcc/clang.
+- [ ] **[diag] `-Wpedantic` is inert** — accepted but does nothing; gcc/clang treat
+  it as a synonym for `-pedantic` (verified: `-pedantic` warns on `0b101`,
+  `-Wpedantic` does not). Make `-W[no-]pedantic` map to the pedantic state.
+- [ ] **[diag] consider enabling `-Wformat` under `-Wall`** (gcc/clang do). Held
+  opt-in for self-host safety; revisit once the checker has soaked.
+
+## Preprocessor / dependency-generation flags
+
+- [ ] **[build] `-MT <target>` / `-MQ <target>`** rejected ("invalid option").
+  These set (and `-MQ` quotes) the make-rule target name in `-M`/`-MD` output —
+  used pervasively by build systems. mcc has `-MF`/`-MP`/`-MD`/`-MMD` but no
+  target-name control. *Implement.*
+- [ ] **[build] `-iquote <dir>`** rejected — include path searched only for
+  `"..."` includes (not `<...>`). Standard gcc/clang path class.
+- [ ] **[build] `-idirafter <dir>`** rejected — include path searched *after* the
+  system directories. Standard gcc/clang path class.
+- [ ] **[build] `-imacros <file>`** rejected — like `-include` but contributes only
+  the file's macro definitions (no text). Standard gcc/clang option.
+
+## Diagnostics control (minor)
+
+- [ ] **[diag] `-Wfatal-errors` / `-fmax-errors=N`** accepted but inert — should
+  stop after the first (or N-th) error. Currently mcc swallows them silently.
+
+## Documentation
+
+- [ ] **[doc] `-hh` lists `-pedantic` under "Ignored options"** but it is fully
+  implemented (warns, and `-pedantic-errors` makes it fatal). Move it out of the
+  ignored list in `src/mcc.c`'s `help2[]` and document it (and `-pedantic-errors`)
+  properly. *(Confirmed working in this repo.)*
