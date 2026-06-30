@@ -120,12 +120,20 @@ targets before it is marked done.
   literal to the array's element width instead of byte-copying, with correct
   length math. `L"ab" "cd"` ⇒ correct 5-element `wchar_t` (was `wcslen=1`
   garbage); `wchar_t w[]=L"pq" "rs"` works; same-prefix and narrow chains
-  unchanged. exec `string_concat_mixed`. REMAINING: *narrow-first* promotion
-  (`"ab" L"cd"` / `wchar_t a[]="x" L"y"`) — the element type is fixed by the
-  first literal in `str_init` (unary), so a wider literal following it can't be
-  represented; mcc now errors cleanly ("a wide string literal cannot follow a
-  narrower one") instead of miscompiling. Full support needs a look-ahead in
-  `str_init` to pick the widest element type before building the array.
+  unchanged. exec `string_concat_mixed`. REMAINING (accepted limitation):
+  *narrow-first* promotion (`"ab" L"cd"` / `wchar_t a[]="x" L"y"`) — the element
+  type is fixed by the first literal in `str_init` (unary) before the concat loop
+  runs, so a wider literal following it can't be represented; mcc errors **cleanly**
+  ("a wide string literal cannot follow a narrower one") and **never miscompiles**.
+  Full support needs the element type chosen from the *widest* literal in the run,
+  which requires either a multi-token string look-ahead (mcc's `unget_tok` doesn't
+  preserve a string token's `tokc`, so this means save-and-replay through
+  `begin_macro`) or duplicating the concat+rodata-emit logic in `str_init`. Both
+  restructure the hot, fundamental, heavily-tested string-literal path and add
+  per-string-literal overhead, for a rare narrow-first-mixed construct that
+  already fails safely — a poor risk/value trade, so deliberately deferred. (gcc
+  widens; clang widens. mcc rejects-valid here — a real but contained conformance
+  gap, not a miscompile.)
 
 - [x] **[BUG]/[DIAG] §6.4.5p2 — conflicting wide-prefix concatenation now rejected.**
   The merge loop tracks the established wide encoding prefix and errors
