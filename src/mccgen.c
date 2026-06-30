@@ -5840,6 +5840,9 @@ check:
                     mcc_error("size of variable length array should be an integer");
                 n = 0;
                 t1 = VT_VLA;
+                /* -Wvla: this `[expr]` size is not an integer constant
+                   expression, so the declarator is a variable-length array. */
+                mcc_warning_c(warn_vla)("ISO C90 forbids variable length array");
             }
         }
         skip(']');

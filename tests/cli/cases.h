@@ -1639,5 +1639,17 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -idirafter {W}/t_aft -c {W}/c_a.c -o /dev/null 2>&1 && echo IDIRAFTER_OK; }",
   "IQUOTE_QUOTE_OK\nIQUOTE_ANGLE_SKIPPED\nIDIRAFTER_OK\n" },
 
+/* -Wvla diagnoses use of a variable-length array (C11 made VLAs optional);
+   opt-in like gcc (not under -Wall). Warns on a VLA local, stays silent by
+   default and on a fixed-size array even under -Werror. */
+{ "wvla_variable_length_array", "",
+  "printf 'int f(int n){ int a[n]; return a[0]; }\\nint main(void){return f(3);}\\n' > {W}/vla.c && "
+  "printf 'int main(void){ int a[5]; return a[0]; }\\n' > {W}/fixed.c && "
+  "{ {MCC} -B{B} -I{I} -Wvla -c {W}/vla.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -Wvla -Werror -c {W}/fixed.c -o /dev/null 2>&1 && echo FIXED_CLEAN; "
+  "{MCC} -B{B} -I{I} -c {W}/vla.c -o /dev/null 2>&1 && echo DEFAULT_SILENT; } | "
+  "grep -oE 'forbids variable length array|FIXED_CLEAN|DEFAULT_SILENT' | sort | uniq -c | sed 's/^ *//'",
+  "1 DEFAULT_SILENT\n1 FIXED_CLEAN\n1 forbids variable length array\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));
