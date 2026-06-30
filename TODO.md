@@ -70,7 +70,6 @@ new `-Wformat`.) Most need scope/dataflow tracking — size each before starting
 - [ ] **[diag] `-Wunused-value`** — a statement with no effect (`1+1;`).
 - [ ] **[diag] `-Wuninitialized`** — use of an uninitialized local. Needs simple
   dataflow; can be conservative to avoid false positives.
-- [ ] **[diag] `-Wshadow`** — a declaration shadowing one in an outer scope.
 
 ## Preprocessor / dependency-generation flags
 

@@ -1793,6 +1793,9 @@ static const FlagDef options_W[] = {
     { offsetof(MCCState, warn_pedantic), 0, "pedantic" },
     /* -Wfatal-errors: abort at the first error rather than continuing. */
     { offsetof(MCCState, warn_fatal_errors), 0, "fatal-errors" },
+    /* -Wshadow: a block-scope declaration whose name shadows a variable visible
+       in an enclosing scope (or a global). Opt-in, like gcc. */
+    { offsetof(MCCState, warn_shadow), 0, "shadow" },
     { 0, 0, NULL }
 };
 

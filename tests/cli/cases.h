@@ -1779,5 +1779,16 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -Wfatal-errors -c {W}/bad.c -o /dev/null >/dev/null 2>&1 || echo BAD_STOPS; }",
   "CLEAN_ACCEPTED\nBAD_STOPS\n" },
 
+/* -Wshadow warns when a block-scope declaration shadows a variable/parameter
+   visible in an enclosing scope (or a global). An `extern` redeclaration of the
+   same global, distinct names, and functions are exempt. Opt-in; default silent. */
+{ "wshadow_declaration", "",
+  "printf 'int x;\\nvoid f(int p){ int x; { int p; (void)x; (void)p; } }\\n' > {W}/sh.c && "
+  "printf 'int x; void g(void){ int y; { extern int x; (void)x; } (void)y; }\\n' > {W}/sh_ok.c && "
+  "echo \"$({MCC} -B{B} -I{I} -Wshadow -c {W}/sh.c -o /dev/null 2>&1 | grep -c shadow) warn\"; "
+  "{MCC} -B{B} -I{I} -Wshadow -Werror -c {W}/sh_ok.c -o /dev/null 2>&1 && echo OK_CLEAN; "
+  "{MCC} -B{B} -I{I} -c {W}/sh.c -o /dev/null 2>&1 && echo DEFAULT_SILENT",
+  "2 warn\nOK_CLEAN\nDEFAULT_SILENT\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

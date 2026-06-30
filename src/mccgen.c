@@ -10981,6 +10981,29 @@ static int decl(int l)
                             && prev->sym_scope == local_scope)
                             mcc_error("'%s' redeclared as different kind of symbol",
                                       get_tok_str(v, NULL));
+                        /* -Wshadow: a new block-scope object whose name is already
+                           a variable/parameter visible in an enclosing scope (or a
+                           global). `extern` re-declares the same object, not a new
+                           one, so it is exempt; functions/typedefs/enum constants
+                           as either side are excluded to limit noise. */
+                        else if ((mcc_state->warn_shadow & WARN_ON)
+                                 && local_scope > 0 && prev
+                                 && prev->sym_scope != local_scope
+                                 && v >= TOK_IDENT && v < SYM_FIRST_ANOM
+                                 && (type.t & VT_BTYPE) != VT_FUNC
+                                 && !(type.t & (VT_TYPEDEF | VT_EXTERN))
+                                 && (prev->type.t & VT_BTYPE) != VT_FUNC
+                                 && !(prev->type.t & VT_TYPEDEF)
+                                 && !IS_ENUM_VAL(prev->type.t)) {
+                            if ((prev->r & VT_VALMASK) == VT_LOCAL)
+                                mcc_warning_c(warn_shadow)(
+                                    "declaration of '%s' shadows a previous local",
+                                    get_tok_str(v, NULL));
+                            else
+                                mcc_warning_c(warn_shadow)(
+                                    "declaration of '%s' shadows a global declaration",
+                                    get_tok_str(v, NULL));
+                        }
                     }
                     r = 0;
                     if ((type.t & VT_BTYPE) == VT_FUNC) {
