@@ -90,10 +90,6 @@ new `-Wformat`.) Most need scope/dataflow tracking — size each before starting
 
 ## Preprocessor / dependency-generation flags
 
-- [ ] **[build] `-MT <target>` / `-MQ <target>`** rejected ("invalid option").
-  These set (and `-MQ` quotes) the make-rule target name in `-M`/`-MD` output —
-  used pervasively by build systems. mcc has `-MF`/`-MP`/`-MD`/`-MMD` but no
-  target-name control. *Implement.*
 - [ ] **[build] `-iquote <dir>`** rejected — include path searched only for
   `"..."` includes (not `<...>`). Standard gcc/clang path class.
 - [ ] **[build] `-idirafter <dir>`** rejected — include path searched *after* the

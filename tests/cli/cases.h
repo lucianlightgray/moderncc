@@ -1614,5 +1614,15 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -fsyntax-only -c {W}/so_bad.c -o /dev/null >/dev/null 2>&1 && echo BAD_OK || echo BAD_REJECTED; }",
   "NO_OUTPUT\nBAD_REJECTED\n" },
 
+/* -MT <t> / -MQ <t> set the make-rule target name in dependency output
+   (-MQ also escapes '$' -> '$$'); multiple occurrences accumulate into a
+   space-separated target list, matching gcc/clang. (Were rejected before.) */
+{ "deps_target_MT_MQ", "",
+  "printf 'int main(void){return 0;}\\n' > {W}/dep.c && "
+  "{ {MCC} -B{B} -I{I} -M -MT custom.o {W}/dep.c 2>&1 | head -1; "
+  "{MCC} -B{B} -I{I} -M -MQ 'x/$(N).o' {W}/dep.c 2>&1 | head -1; "
+  "{MCC} -B{B} -I{I} -M -MT a.o -MT b.o {W}/dep.c 2>&1 | head -1; } | sed 's/ .$//'",
+  "custom.o:\nx/$$(N).o:\na.o b.o:\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

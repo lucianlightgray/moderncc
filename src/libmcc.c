@@ -925,6 +925,7 @@ LIBMCCAPI void mcc_delete(MCCState *s1)
     mcc_free(s1->mapfile);
     mcc_free(s1->outfile);
     mcc_free(s1->deps_outfile);
+    mcc_free(s1->dep_target);
 #if defined MCC_TARGET_MACHO
     mcc_free(s1->install_name);
 #endif
@@ -1590,6 +1591,8 @@ enum {
     MCC_OPTION_MM,
     MCC_OPTION_MMD,
     MCC_OPTION_MP,
+    MCC_OPTION_MT,
+    MCC_OPTION_MQ,
     MCC_OPTION_x,
     MCC_OPTION_ar,
     MCC_OPTION_impdef,
@@ -1676,6 +1679,8 @@ static const MCCOption mcc_options[] = {
     { "MMD", MCC_OPTION_MMD, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP },
     { "MF", MCC_OPTION_MF, MCC_OPTION_HAS_ARG },
     { "MP", MCC_OPTION_MP, 0},
+    { "MT", MCC_OPTION_MT, MCC_OPTION_HAS_ARG },
+    { "MQ", MCC_OPTION_MQ, MCC_OPTION_HAS_ARG },
     { "x", MCC_OPTION_x, MCC_OPTION_HAS_ARG },
     { "ar", MCC_OPTION_ar, 0},
 #ifdef MCC_TARGET_PE
@@ -2231,6 +2236,33 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
             break;
         case MCC_OPTION_MP:
             s->gen_phony_deps = 1;
+            break;
+        case MCC_OPTION_MT:
+        case MCC_OPTION_MQ:
+            /* -MT <t> sets the make-rule target name verbatim; -MQ <t> also
+               quotes characters special to make ('$' -> '$$'). Multiple
+               occurrences accumulate into a space-separated target list, as in
+               gcc/clang. */
+            {
+                const char *src = optarg;
+                int extra = 0, sep = s->dep_target ? 1 : 0;
+                if (popt->index == MCC_OPTION_MQ)
+                    for (const char *q = src; *q; q++)
+                        if (*q == '$') extra++;
+                {
+                    int oldlen = s->dep_target ? (int)strlen(s->dep_target) : 0;
+                    char *nt = mcc_malloc(oldlen + sep + (int)strlen(src) + extra + 1);
+                    char *d = nt;
+                    if (s->dep_target) { memcpy(d, s->dep_target, oldlen); d += oldlen; *d++ = ' '; }
+                    for (const char *q = src; *q; q++) {
+                        if (popt->index == MCC_OPTION_MQ && *q == '$') *d++ = '$';
+                        *d++ = *q;
+                    }
+                    *d = '\0';
+                    mcc_free(s->dep_target);
+                    s->dep_target = nt;
+                }
+            }
             break;
 
         case MCC_OPTION_dumpmachine:

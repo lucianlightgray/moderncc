@@ -952,6 +952,7 @@ struct MCCState {
     int nb_libraries;
     char *outfile;
     char *deps_outfile;
+    char *dep_target;                   /* -MT/-MQ: make-rule target override */
     int argc;
     char **argv;
     char **link_argv;

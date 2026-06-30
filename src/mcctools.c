@@ -511,6 +511,11 @@ ST_FUNC int gen_makedeps(MCCState *s1, const char *target, const char *filename)
         filename = buf;
     }
 
+    /* -MT/-MQ override the make-rule target (left of the ':'); applied AFTER the
+       .d filename is derived above, which must use the real output name. */
+    if (s1->dep_target)
+        target = s1->dep_target;
+
     if(!strcmp(filename, "-"))
         depout = fdopen(1, "w");
     else
