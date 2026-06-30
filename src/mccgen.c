@@ -2685,6 +2685,7 @@ static void type_to_str(char *buf, int buf_size,
         tstr = "double";
         if (!(t & VT_LONG))
             goto add_tstr;
+        FALLTHROUGH;
     case VT_LDOUBLE:
         tstr = "long double";
     add_tstr:
@@ -5852,12 +5853,14 @@ static void parse_builtin_params(int nc, const char *args)
 		continue;
 	    case 'V':
                 type.t = VT_CONSTANT;
+                FALLTHROUGH;
 	    case 'v':
                 type.t |= VT_VOID;
                 mk_pointer (&type);
                 break;
 	    case 'S':
                 type.t = VT_CONSTANT;
+                FALLTHROUGH;
 	    case 's':
                 type.t |= char_type.t;
                 mk_pointer (&type);
@@ -6513,6 +6516,7 @@ ST_FUNC void unary(void)
     case TOK___FUNCTION__:
         if (!gnu_ext)
             goto tok_identifier;
+        FALLTHROUGH;
     case TOK___FUNC__:
         if (!funcname[0])
             mcc_warning("'__func__' is not defined outside of function scope");

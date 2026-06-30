@@ -106,6 +106,14 @@ extern long double strtold (const char *__nptr, char **__endptr);
 # define PRINTF_LIKE(x,y) __attribute__ ((format (printf, (x), (y))))
 #endif
 
+#if defined(__GNUC__) && __GNUC__ >= 7
+# define FALLTHROUGH __attribute__((fallthrough))
+#elif defined(__clang__) && (__clang_major__ >= 10)
+# define FALLTHROUGH __attribute__((fallthrough))
+#else
+# define FALLTHROUGH ((void)0)
+#endif
+
 #ifdef _WIN32
 # define IS_DIRSEP(c) (c == '/' || c == '\\')
 # define IS_ABSPATH(p) (IS_DIRSEP(p[0]) || (p[0] && p[1] == ':' && IS_DIRSEP(p[2])))

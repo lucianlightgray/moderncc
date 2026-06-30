@@ -2242,6 +2242,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
 
         case MCC_OPTION_M:
             s->include_sys_deps = 1;
+            FALLTHROUGH;
         case MCC_OPTION_MM:
             s->just_deps = 1;
             s->gen_deps = 1;
@@ -2250,11 +2251,13 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
             break;
         case MCC_OPTION_MD:
             s->include_sys_deps = 1;
+            FALLTHROUGH;
         case MCC_OPTION_MMD:
             s->gen_deps = 1;
             if (*optarg != ',')
                 break;
             ++optarg;
+            FALLTHROUGH;
         case MCC_OPTION_MF:
             mcc_set_str(&s->deps_outfile, optarg);
             break;
