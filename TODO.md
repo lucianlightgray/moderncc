@@ -90,12 +90,11 @@ new `-Wformat`.) Most need scope/dataflow tracking — size each before starting
 
 ## Preprocessor / dependency-generation flags
 
-- [ ] **[build] `-iquote <dir>`** rejected — include path searched only for
-  `"..."` includes (not `<...>`). Standard gcc/clang path class.
-- [ ] **[build] `-idirafter <dir>`** rejected — include path searched *after* the
-  system directories. Standard gcc/clang path class.
 - [ ] **[build] `-imacros <file>`** rejected — like `-include` but contributes only
-  the file's macro definitions (no text). Standard gcc/clang option.
+  the file's macro definitions (no text). Standard gcc/clang option. Needs a
+  preprocessor pass that scans the file for `#define`s and discards its tokens;
+  a plain `#include` would wrongly pull in declarations, so kept out of the
+  `-iquote`/`-idirafter` batch.
 
 ## Diagnostics control (minor)
 

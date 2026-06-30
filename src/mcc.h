@@ -796,6 +796,12 @@ struct MCCState {
     char **sysinclude_paths;
     int nb_sysinclude_paths;
 
+    char **iquote_paths;        /* -iquote: searched only for "..." includes */
+    int nb_iquote_paths;
+
+    char **afterinc_paths;      /* -idirafter: searched after the system dirs */
+    int nb_afterinc_paths;
+
     char **library_paths;
     int nb_library_paths;
 

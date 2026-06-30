@@ -1624,5 +1624,20 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -M -MT a.o -MT b.o {W}/dep.c 2>&1 | head -1; } | sed 's/ .$//'",
   "custom.o:\nx/$$(N).o:\na.o b.o:\n" },
 
+/* -iquote <dir> adds a path searched ONLY for "..." includes (not <...>), ahead
+   of -I; -idirafter <dir> adds a path searched AFTER the system dirs. Both were
+   rejected before. Verifies the quote-only restriction and that idirafter is
+   found. */
+{ "iquote_idirafter_paths", "",
+  "rm -rf {W}/t_iq {W}/t_aft && mkdir -p {W}/t_iq {W}/t_aft && "
+  "printf 'int q=1;\\n' > {W}/t_iq/qh.h && printf 'int a=1;\\n' > {W}/t_aft/ah.h && "
+  "printf '#include \"qh.h\"\\nint main(void){return q;}\\n' > {W}/c_q.c && "
+  "printf '#include <qh.h>\\nint main(void){return q;}\\n' > {W}/c_qa.c && "
+  "printf '#include <ah.h>\\nint main(void){return a;}\\n' > {W}/c_a.c && "
+  "{ {MCC} -B{B} -I{I} -iquote {W}/t_iq -c {W}/c_q.c -o /dev/null 2>&1 && echo IQUOTE_QUOTE_OK; "
+  "{MCC} -B{B} -I{I} -iquote {W}/t_iq -c {W}/c_qa.c -o /dev/null >/dev/null 2>&1 && echo IQUOTE_ANGLE_FOUND || echo IQUOTE_ANGLE_SKIPPED; "
+  "{MCC} -B{B} -I{I} -idirafter {W}/t_aft -c {W}/c_a.c -o /dev/null 2>&1 && echo IDIRAFTER_OK; }",
+  "IQUOTE_QUOTE_OK\nIQUOTE_ANGLE_SKIPPED\nIDIRAFTER_OK\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

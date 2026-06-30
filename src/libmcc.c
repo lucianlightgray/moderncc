@@ -913,6 +913,8 @@ LIBMCCAPI void mcc_delete(MCCState *s1)
 
     dynarray_reset(&s1->include_paths, &s1->nb_include_paths);
     dynarray_reset(&s1->sysinclude_paths, &s1->nb_sysinclude_paths);
+    dynarray_reset(&s1->iquote_paths, &s1->nb_iquote_paths);
+    dynarray_reset(&s1->afterinc_paths, &s1->nb_afterinc_paths);
 
     mcc_free(s1->mcc_lib_path);
     mcc_free(s1->soname);
@@ -1011,6 +1013,18 @@ LIBMCCAPI int mcc_add_include_path(MCCState *s, const char *pathname)
 LIBMCCAPI int mcc_add_sysinclude_path(MCCState *s, const char *pathname)
 {
     mcc_split_path(s, &s->sysinclude_paths, &s->nb_sysinclude_paths, pathname);
+    return 0;
+}
+
+LIBMCCAPI int mcc_add_iquote_path(MCCState *s, const char *pathname)
+{
+    mcc_split_path(s, &s->iquote_paths, &s->nb_iquote_paths, pathname);
+    return 0;
+}
+
+LIBMCCAPI int mcc_add_afterinc_path(MCCState *s, const char *pathname)
+{
+    mcc_split_path(s, &s->afterinc_paths, &s->nb_afterinc_paths, pathname);
     return 0;
 }
 
@@ -1574,6 +1588,8 @@ enum {
     MCC_OPTION_sysroot,
     MCC_OPTION_isysroot,
     MCC_OPTION_iwithprefix,
+    MCC_OPTION_iquote,
+    MCC_OPTION_idirafter,
     MCC_OPTION_include,
     MCC_OPTION_nostdinc,
     MCC_OPTION_trigraphs,
@@ -1664,6 +1680,8 @@ static const MCCOption mcc_options[] = {
     { "m", MCC_OPTION_m, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP },
     { "f", MCC_OPTION_f, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP },
     { "isystem", MCC_OPTION_isystem, MCC_OPTION_HAS_ARG },
+    { "iquote", MCC_OPTION_iquote, MCC_OPTION_HAS_ARG },
+    { "idirafter", MCC_OPTION_idirafter, MCC_OPTION_HAS_ARG },
     { "-sysroot", MCC_OPTION_sysroot, MCC_OPTION_HAS_ARG },
     { "isysroot", MCC_OPTION_isysroot, MCC_OPTION_HAS_ARG },
     { "include", MCC_OPTION_include, MCC_OPTION_HAS_ARG },
@@ -2094,6 +2112,12 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
             goto set_output_type;
         case MCC_OPTION_isystem:
             mcc_add_sysinclude_path(s, optarg);
+            break;
+        case MCC_OPTION_iquote:
+            mcc_add_iquote_path(s, optarg);
+            break;
+        case MCC_OPTION_idirafter:
+            mcc_add_afterinc_path(s, optarg);
             break;
         case MCC_OPTION_sysroot:
         case MCC_OPTION_isysroot:

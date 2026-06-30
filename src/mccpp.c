@@ -1388,12 +1388,24 @@ static int parse_include(MCCState *s1, int do_next, int test)
             p = file->true_filename;
             pstrncpy(buf, sizeof buf, p, mcc_basename(p) - p);
         } else {
-            int j = i - 2, k = j - s1->nb_include_paths;
-            if (k < 0)
+            /* Segments, in search order (all but -I/-isystem are empty unless
+               the corresponding option was given, so the default order is
+               unchanged): -iquote ("..." only) -> -I -> -isystem/default ->
+               -idirafter. Each segment occupies fixed index slots; -iquote slots
+               are skipped (via continue) for an <...> include. */
+            int j = i - 2;
+            if (j < s1->nb_iquote_paths) {
+                if (c != '\"')
+                    continue;
+                p = s1->iquote_paths[j];
+            } else if ((j -= s1->nb_iquote_paths) < s1->nb_include_paths) {
                 p = s1->include_paths[j];
-            else if (k < s1->nb_sysinclude_paths) {
-                p = s1->sysinclude_paths[k];
+            } else if ((j -= s1->nb_include_paths) < s1->nb_sysinclude_paths) {
+                p = s1->sysinclude_paths[j];
                 cand_sys = 1;
+            } else if ((j -= s1->nb_sysinclude_paths) < s1->nb_afterinc_paths) {
+                p = s1->afterinc_paths[j];
+                cand_sys = 1;       /* -idirafter dirs rank as system headers */
             } else if (test)
                 return 0;
             else
