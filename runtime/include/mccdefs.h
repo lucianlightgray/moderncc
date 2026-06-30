@@ -250,6 +250,20 @@
     #define __builtin_isless(a, b) (!__builtin_isunordered(a, b) && (a) < (b))
     #define __builtin_islessequal(a, b) (!__builtin_isunordered(a, b) && (a) <= (b))
     #define __builtin_islessgreater(a, b) (!__builtin_isunordered(a, b) && ((a) < (b) || (a) > (b)))
+    /* fabs/copysign/signbit as constant-foldable macros. Limitations vs the gcc
+       intrinsics (a macro fallback): they evaluate the argument more than once,
+       fabs(-0.0) keeps the sign, and signbit loses a NaN's sign — acceptable for
+       the rare direct-__builtin use (the real libm functions are exact). */
+    #define __builtin_fabsf(x) ((float)((x) < 0 ? -(x) : (x)))
+    #define __builtin_fabs(x)  ((double)((x) < 0 ? -(x) : (x)))
+    #define __builtin_fabsl(x) ((long double)((x) < 0 ? -(x) : (x)))
+    /* signbit: x<0, plus the -0.0 case via 1/x == -inf (0 == 0 is true). */
+    #define __builtin_signbit(x)  ((x) < 0 || ((x) == 0 && 1.0 / (double)(x) < 0))
+    #define __builtin_signbitf(x) __builtin_signbit(x)
+    #define __builtin_signbitl(x) __builtin_signbit(x)
+    #define __builtin_copysignf(x, y) (__builtin_signbit(y) ? -__builtin_fabsf(x) : __builtin_fabsf(x))
+    #define __builtin_copysign(x, y)  (__builtin_signbit(y) ? -__builtin_fabs(x)  : __builtin_fabs(x))
+    #define __builtin_copysignl(x, y) (__builtin_signbit(y) ? -__builtin_fabsl(x) : __builtin_fabsl(x))
 
     struct __uint128__ { char x[16]; } __attribute((__aligned__(16)));
     #define __int128_t struct __uint128__

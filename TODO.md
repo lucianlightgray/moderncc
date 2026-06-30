@@ -587,11 +587,14 @@ bulk of each area matched the references; these are the residual divergences.
   `isunordered`/`isgreater`/`isgreaterequal`/`isless`/`islessequal`/`islessgreater`
   classification + comparison builtins. Direct use compiles, links, and folds in
   a constant expression (`static int a=__builtin_isnan(0.0/0.0)`), matching gcc on
-  all 5 arches. exec `fp_builtins`. STILL OPEN: `fabs`/`copysign`/`signbit`/
-  `fpclassify`/`isnormal` (need bit-level ops, not clean foldable macros); the
-  classification macros also multi-evaluate their argument (intrinsics don't).
-  The two DIFFs below (NAN sign, signbit return) come from glibc's *own* fallback
-  macros — not these builtins — so they are unaffected.
+  all 5 arches. exec `fp_builtins`. Also added `fabs`/`fabsf`/`fabsl`,
+  `signbit`/`signbitf`/`signbitl` (incl. `-0.0` detection via `1/x`), and
+  `copysign`/`copysignf`/`copysignl` as constant-foldable macros — verified 3-way.
+  STILL OPEN: `fpclassify`/`isnormal` (subnormal detection needs the type's
+  smallest-normal threshold — glibc provides them); the macro builtins also
+  multi-evaluate their argument (intrinsics don't). The two DIFFs below (NAN sign,
+  signbit return) come from glibc's *own* fallback macros — not these builtins —
+  so they are unaffected.
 
 - [ ] **[DIFF] §7.12/F.2.1 — the `NAN` macro yields a *negative* NaN (`-nan`).**
   Downstream of the missing `__builtin_nanf`: glibc falls back to `(0.0f/0.0f)`,
