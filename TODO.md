@@ -706,25 +706,27 @@ bulk of each area matched the references; these are the residual divergences.
   *constant* conversion — the const evaluator has no complex support, so these
   still error cleanly (not a miscompile).
 
-- [ ] **[BUG] Self-host is not byte-reproducible across host binaries (latent uninitialized output bytes).**
-  The 3-stage ELF self-host (`mcc` compiles `mcc`) currently lands in a **2-cycle**
-  rather than a byte-identical fixpoint: stage2 (483849 B, codegen run inside the
-  gcc-built `mcc`) ≠ stage3 (484345 B, *same* codegen run inside stage2), while
-  stage2 == stage4. Characterized 2026-06-29: a **single** `mcc` binary is
-  perfectly **run-to-run deterministic** (compiling the same TU twice → identical
-  bytes), but two functionally-identical `mcc` binaries produce different output —
-  the signature of **uninitialized bytes written into emitted structures** (stale
-  static/heap contents that differ per host binary, stable per binary). This is a
-  **pre-existing** latent issue, *not* a functional regression: stage2/3/4 all
-  pass the full `tests/qemu/conformance` suite (16/16 compile+run) and the
-  doubly-self-hosted stage4 is a correct compiler. It is independent of the C99/C11
-  diagnostic work (diagnostics can't introduce address/host-dependent output
-  ordering; they only perturb binary size, which flips whether a pre-existing
-  non-determinism aligns to a fixpoint or a 2-cycle). Fix needs a valgrind/audit
-  pass to find the emitted struct(s) with uninitialized padding (likely an ELF
-  symtab/reloc/section record `mcc_malloc`'d instead of zeroed). Tracks toward
-  reproducible builds + a true self-host fixpoint (memory once recorded a 474681 B
-  fixpoint — that size happened to align). See [[mcc-self-host-bootstrap]].
+- [x] **[BUG] Self-host byte-reproducibility 2-cycle — FIXED (live `#ifndef __builtin_*` predef guards).**
+  The 3-stage ELF self-host had been landing in a **2-cycle** (stage2 ≠ stage3,
+  stage2 == stage4) instead of a byte-identical fixpoint. Root cause (diagnosed by
+  diffing the stage outputs to `.data.ro`, then to the embedded predef text): the
+  c2str-generated `mccdefs_.h` kept the `#ifndef __builtin_inff` / `#endif` guards
+  (and the `inf`/`nan`/`huge_val` family) as **live** preprocessor directives —
+  c2str emits column-0 lines as live directives and indented lines as injected
+  string fragments. So during mcc's *self*-compilation those guards were evaluated
+  against mcc's own predef macro state, and since the guarded text both *defines*
+  the tested macro and *becomes* mcc's next-generation predefs, it self-oscillated:
+  a generation that baked in `#define __builtin_inff` injected it as a predef, so
+  the `#ifndef` skipped the fragment in the next generation, which then didn't
+  inject it, so the one after re-included it — a stable 2-cycle (496 B = the 12
+  `inf`/`nan` lines). The guards were also **broken for their stated purpose**
+  ("BSD/Apple defines win where present") because those defines are injected
+  *target-time* strings while the guard ran at *mcc-compile-time*. Fix: **indent**
+  the guards in `runtime/include/mccdefs.h` so c2str emits them as injected
+  string content — now evaluated in the target program (correct phase, matching
+  the BSD/Apple defines) and no longer live during self-compilation. Result:
+  **stage2 == stage3 == stage4 byte-identical (484713 B)**; self-hosted compiler
+  passes 16/16 `tests/qemu/conformance`. See [[mcc-self-host-bootstrap]].
 
 - [ ] **[TASK] Regression tests + cross-target/libc coverage for every item above.**
   Per the standing goal, each fix ships with a cli/exec/diff regression test and

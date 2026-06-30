@@ -205,42 +205,50 @@
        0.0/0.0 (sign unspecified, 7.12-5). #ifndef so the BSD/Apple defines above
        win where present. The classification macros may evaluate their argument
        more than once (a macro-fallback limitation; gcc's intrinsics do not). */
-#ifndef __builtin_inff
+    /* These #ifndef guards are INDENTED on purpose: c2str emits indented lines
+       as injected predef *string* content, so the guard is evaluated in the
+       target program (where the BSD/Apple defines above were also injected) —
+       not at mcc-compile-time. A column-0 (live) guard would (a) fail to see the
+       injected BSD defines and (b) make mcc's self-compiled predefs oscillate,
+       since the guarded text defines the very macro the guard tests and that
+       text becomes mcc's own predefs (a 2-cycle that breaks reproducible
+       self-host). Keep them indented. */
+    #ifndef __builtin_inff
     #define __builtin_inff() (1e30f * 1e30f)
-#endif
-#ifndef __builtin_inf
+    #endif
+    #ifndef __builtin_inf
     #define __builtin_inf() (1e200 * 1e200)
-#endif
-#ifndef __builtin_infl
+    #endif
+    #ifndef __builtin_infl
     #define __builtin_infl() ((long double)(1e200 * 1e200))
-#endif
-#ifndef __builtin_huge_valf
+    #endif
+    #ifndef __builtin_huge_valf
     #define __builtin_huge_valf() __builtin_inff()
-#endif
-#ifndef __builtin_huge_val
+    #endif
+    #ifndef __builtin_huge_val
     #define __builtin_huge_val() __builtin_inf()
-#endif
-#ifndef __builtin_huge_vall
+    #endif
+    #ifndef __builtin_huge_vall
     #define __builtin_huge_vall() __builtin_infl()
-#endif
-#ifndef __builtin_nanf
+    #endif
+    #ifndef __builtin_nanf
     #define __builtin_nanf(s) (0.0f / 0.0f)
-#endif
-#ifndef __builtin_nan
+    #endif
+    #ifndef __builtin_nan
     #define __builtin_nan(s) (0.0 / 0.0)
-#endif
-#ifndef __builtin_nanl
+    #endif
+    #ifndef __builtin_nanl
     #define __builtin_nanl(s) (0.0L / 0.0L)
-#endif
-#ifndef __builtin_nansf
+    #endif
+    #ifndef __builtin_nansf
     #define __builtin_nansf(s) (0.0f / 0.0f)
-#endif
-#ifndef __builtin_nans
+    #endif
+    #ifndef __builtin_nans
     #define __builtin_nans(s) (0.0 / 0.0)
-#endif
-#ifndef __builtin_nansl
+    #endif
+    #ifndef __builtin_nansl
     #define __builtin_nansl(s) (0.0L / 0.0L)
-#endif
+    #endif
     #define __builtin_isnan(x) ((x) != (x))
     #define __builtin_isinf(x) ((x) == __builtin_inf() || (x) == -__builtin_inf())
     #define __builtin_isfinite(x) (!__builtin_isnan(x) && !__builtin_isinf(x))
