@@ -289,14 +289,12 @@ The one remaining complex gap is constant-folding (static initializers) — see
   the struct. Runtime-verified vs gcc (`n=3`, `b=1`); return/arg paths (already
   via `gen_assign_cast`) unaffected. exec `c11_complex_convert` (extended).
 
-- [~] **[BUG] §6.9.2/§6.6 — static complex initializer: `CMPLX` form works; `a+b*I` form pending.**
-  `static double _Complex g = CMPLX(3.0, 4.0);` now works (constant via
-  `__builtin_complex` → rodata). The arithmetic form `static double _Complex g =
-  3.0 + 4.0*I;` still errors "initializer element is not constant": complex `+`
-  and `*` are not constant-folded (the const evaluator has no complex support).
-  Remaining work: fold complex constant arithmetic (and cross-element complex→
-  complex constant conversion) so `a + b*I` reduces to a complex constant.
-  3-way: mcc=rejects the `a+b*I` form | gcc=accepts | clang=accepts.
+- [x] **[BUG] §6.9.2/§6.6 — static complex initializer: both `CMPLX` and `a+b*I` forms now work.**
+  `static double _Complex g = CMPLX(3.0,4.0);` and `static double _Complex g =
+  3.0 + 4.0*I;` both now produce a constant. Complex `+`/`-`/`*`/`/` and
+  real↔complex / cross-element conversions are constant-folded in `gen_complex_op`
+  / `gen_complex_cast` (see the `__builtin_complex` FEATURE item below for the
+  mechanism). 3-way: mcc/gcc/clang all accept, `creal`/`cimag` byte-match.
 
 - [x] **[DIAG] §6.8.6.1 — jump into the scope of a variably-modified non-array object now diagnosed.**
   A goto/switch into the scope of a pointer-to-VLA (`int (*p)[n]`) — variably
@@ -308,16 +306,15 @@ The one remaining complex gap is constant-folding (static initializers) — see
   (the VLA-array case still registers + allocates as before). cli
   `jump_into_vla_scope` (extended with the pointer-to-VLA case).
 
-- [~] **[DIAG] §6.8.1 — label immediately followed by a declaration (deferred, low value).**
-  `l: int x;` is a constraint violation pre-C23. `l:` is parsed by `block()`
-  (returns under `STMT_COMPOUND`) and `int x;` by the compound loop's
-  `decl(VT_LOCAL)`, so the two are decoupled; diagnosing needs a "does the next
-  token begin a declaration" predicate (declaration-specifier keywords +
-  typedef-names) at `block_after_label` in the hot statement path. Deferred:
-  both gcc and clang accept it by default (diagnose only under -pedantic), it is
-  legal in C23, and mcc has no such predicate — poor risk/value for a
-  pedantic-only diagnostic. Revisit if a type-start predicate is added for other
-  reasons.
+- [x] **[DIAG] §6.8.1 — label immediately followed by a declaration now diagnosed under `-pedantic`.**
+  `L: int x;` (and `case`/`default:` followed by a declaration) is a constraint
+  violation pre-C23. A new `tok_starts_declspec()` predicate (declaration-specifier
+  keywords + typedef-name lookup, `src/mccgen.c`) is checked at `block_after_label`
+  (covering named, `case`, and `default` labels) and emits `mcc_pedantic` "a label
+  can only be part of a statement and a declaration is not a statement", matching
+  gcc/clang `-Wfree-labels`. Gated on `cversion < 202311` so it is silent in C23
+  (where it is legal); a label-then-statement stays clean. cli
+  `label_then_declaration`.
 
 ---
 
@@ -386,14 +383,14 @@ rodata), so `CMPLX` and same-element static `_Complex_I` work. The remaining
 complex-constant gap is folding complex *arithmetic* (`a+b*I`) and cross-element
 complex→complex *constant conversion* — see §6.9.2 and §7.3.1 above.*
 
-- [~] **[FEATURE] §7.3.1p2 — `_Complex_I` / `I` is now a constant of the right type.**
-  `complex.h` now defines `_Complex_I` as `__builtin_complex(0.0f, 1.0f)` — type
+- [x] **[FEATURE] §7.3.1p2 — `_Complex_I` / `I` is a constant of the right type (incl. cross-element).**
+  `complex.h` defines `_Complex_I` as `__builtin_complex(0.0f, 1.0f)` — type
   `float _Complex` (matching the standard) and a genuine constant expression.
   `static float _Complex si = _Complex_I;` works (0,1); runtime `1.0 + 2.0*I`
-  works. exec `c11_complex_convert` (static `g_cI`). OPEN sliver: a *cross-element*
-  static conversion (`static double _Complex = _Complex_I`, float→double complex
-  constant) still folds to 0,0 — same root as §6.9.2 (complex→complex constant
-  conversion / arithmetic folding is not implemented).
+  works. The former cross-element sliver (`static double _Complex = _Complex_I`,
+  float→double complex constant) **now folds correctly** via the complex
+  constant-conversion path in `gen_complex_cast` (see the `__builtin_complex`
+  FEATURE item). exec `c11_complex_convert` + `c11_complex_const_fold`.
 
 - [x] **[FEATURE] §7.3.9.3 — `CMPLX`/`CMPLXF`/`CMPLXL` macros.**
   Added to `runtime/include/complex.h` via the new `__builtin_complex`
@@ -790,7 +787,7 @@ bulk of each area matched the references; these are the residual divergences.
 - [x] §6.3.1.7 implicit complex→integer/_Bool conversion — exec `c11_complex_convert`.
 - [x] §6.5.4 asm-operand GNU lvalue-cast carve-out preserved (regression guard) — exec `asm_lvalue_cast`.
 - [x] §7.3.9.3 `__builtin_complex` + `CMPLX`/`CMPLXF`/`CMPLXL` (runtime + static constant) — exec `c11_complex_convert`.
-- [~] §7.3.1 `_Complex_I` is a constant of type `float _Complex` (same-element static + runtime); cross-element static folding open.
+- [x] §7.3.1 `_Complex_I` is a constant of type `float _Complex` (same-element + cross-element static folding + runtime) — exec `c11_complex_const_fold`.
 - [x] §5.2.1.1 trigraphs processed in strict ISO `-std=cNN` mode (off for gnu/default/C23) — cli `trigraphs_strict_std`.
 - [x] §6.10.3p4 empty-`__VA_ARGS__` variadic invocation diagnosed under -pedantic — cli `va_args_empty_pedantic`.
 - [x] §7.17.8 `atomic_flag_*` typed `volatile atomic_flag *` (diagnoses non-pointer args) — cli `atomic_flag_type`.

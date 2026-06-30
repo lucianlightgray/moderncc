@@ -8309,6 +8309,36 @@ static void gexpr_decl(void)
     }
 }
 
+/* 6.8.1: does the current token begin a declaration-specifier (so what follows
+   a label would be a *declaration*, not a statement)? Covers type specifiers,
+   qualifiers, storage-class and function specifiers, _Alignas/_Static_assert and
+   a typedef name. Used to diagnose `label: <declaration>`, a constraint in
+   C99/C11 that C23 lifted. */
+static int tok_starts_declspec(void)
+{
+    switch (tok) {
+    case TOK_CHAR: case TOK_VOID: case TOK_SHORT: case TOK_INT:
+    case TOK_LONG: case TOK_BOOL: case TOK_COMPLEX: case TOK_IMAGINARY:
+    case TOK_FLOAT: case TOK_DOUBLE: case TOK_ENUM: case TOK_STRUCT:
+    case TOK_UNION: case TOK__Atomic: case TOK_UNSIGNED:
+    case TOK_CONST1: case TOK_CONST2: case TOK_CONST3:
+    case TOK_VOLATILE1: case TOK_VOLATILE2: case TOK_VOLATILE3:
+    case TOK_SIGNED1: case TOK_SIGNED2: case TOK_SIGNED3:
+    case TOK_RESTRICT1: case TOK_RESTRICT2: case TOK_RESTRICT3:
+    case TOK_AUTO: case TOK_REGISTER: case TOK_EXTERN: case TOK_STATIC:
+    case TOK_TYPEDEF: case TOK_INLINE1: case TOK_INLINE2: case TOK_INLINE3:
+    case TOK_NORETURN3: case TOK_THREAD_LOCAL: case TOK_ALIGNAS:
+    case TOK_STATIC_ASSERT: case TOK_EXTENSION:
+        return 1;
+    default:
+        if (tok >= TOK_IDENT) {
+            Sym *s = sym_find(tok);
+            return s && (s->type.t & VT_TYPEDEF);
+        }
+        return 0;
+    }
+}
+
 static void block(int flags)
 {
     int a, b, c, d, e, t;
@@ -8669,6 +8699,14 @@ again:
 
     block_after_label:
             parse_attribute(NULL);
+
+            /* 6.8.1: a label (named, case, or default) prefixes a statement; a
+               declaration is not a statement before C23. Diagnose `L: int x;`
+               under -pedantic, matching gcc/clang (-Wfree-labels). */
+            if (tok != '}' && mcc_state->cversion < 202311
+                && tok_starts_declspec())
+                mcc_pedantic("a label can only be part of a statement and a "
+                             "declaration is not a statement");
 
             if (debug_modes)
                 mcc_tcov_reset_ind(mcc_state);

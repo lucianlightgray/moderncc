@@ -953,6 +953,19 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'not an integer constant expression|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n2 not an integer constant expression\n" },
 
+/* §6.8.1: a label (named, case, or default) prefixes a statement; a declaration
+   is not a statement before C23, so `L: int x;` is diagnosed under -pedantic
+   (matching gcc/clang -Wfree-labels), including a typedef-name declaration. It is
+   legal in C23 (silent under -std=c23) and a label-then-statement stays clean. */
+{ "label_then_declaration", "",
+  "printf 'typedef int T;\\nint f(int c){switch(c){case 1: int z=0; return z; default: return 1;}}\\n"
+  "int g(void){ L: int y=0; return y; }\\nint h(void){ M: T t=0; return t; }\\n' > {W}/lab.c && "
+  "printf 'int f(void){ L: return 0; }\\n' > {W}/labok.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/lab.c -o {W}/lab.o 2>&1 | grep -c 'declaration is not a statement'; "
+  "{MCC} -B{B} -I{I} -std=c23 -c {W}/lab.c -o {W}/lab23.o 2>&1 | grep -c 'declaration is not a statement'; "
+  "{MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/labok.c -o {W}/labok.o 2>&1 && echo CLEAN_OK; }",
+  "3\n0\nCLEAN_OK\n" },
+
 /* §7.17.8: atomic_flag_* take volatile atomic_flag *, so a non-pointer argument
    is diagnosed; the correct &atomic_flag form compiles clean under -Werror. */
 { "atomic_flag_type", "",
