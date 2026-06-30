@@ -33,6 +33,8 @@ mkdir -p "$SRC" "$ROOTS"
 rsync -a --delete \
     --exclude 'cmake-build*' \
     --exclude 'cmake-windows-*' \
+    --exclude 'cmake-mingw-*' \
+    --exclude 'cmake-clang' \
     --exclude 'build-*' \
     --exclude '.git' \
     "$SRC_MOUNT"/ "$SRC"/

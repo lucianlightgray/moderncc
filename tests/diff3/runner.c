@@ -19,6 +19,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <direct.h>
+#define MKDIR(p) _mkdir(p)
+#define EXE_SFX ".exe"
+#ifdef _MSC_VER
+#define popen  _popen
+#define pclose _pclose
+#endif
+#else
+#include <sys/stat.h>
+#define MKDIR(p) mkdir((p), 0777)
+#define EXE_SFX ".out"
+#endif
 
 #include "goldens.h"
 
@@ -30,6 +43,33 @@ static const char *envv(const char *k, const char *d){
     const char *v = getenv(k); return (v && *v) ? v : d;
 }
 
+#ifdef _WIN32
+static const char *g_work = ".";
+static void diff3_script(const char *cmd, char *path, size_t pn){
+    snprintf(path, pn, "%s/_diff3cmd.sh", g_work);
+    FILE *sf = fopen(path, "wb");
+    if (sf){ fputs(cmd, sf); fputc('\n', sf); fclose(sf); }
+}
+static FILE *shell_popen(const char *cmd){
+    char path[1024]; diff3_script(cmd, path, sizeof path);
+    const char *sh = envv("MCC_TEST_SH", "sh");
+    char line[1200];
+    snprintf(line, sizeof line, "\"\"%s\" \"%s\"\"", sh, path);
+    return popen(line, "r");
+}
+static int shell_system(const char *cmd){
+    char path[1024]; diff3_script(cmd, path, sizeof path);
+    const char *sh = envv("MCC_TEST_SH", "sh");
+    char line[1200];
+    snprintf(line, sizeof line, "\"\"%s\" \"%s\"\"", sh, path);
+    return system(line);
+}
+#define RUN_SYSTEM(c) shell_system(c)
+#define RUN_POPEN(c)  shell_popen(c)
+#else
+#define RUN_SYSTEM(c) system(c)
+#define RUN_POPEN(c)  popen((c), "r")
+#endif
 
 static int portable_req(const char *req){
     if (!req || !*req) return 1;
@@ -53,6 +93,11 @@ static int portable_req(const char *req){
             const char *colon = strchr(want, ':');
             size_t wl = colon ? (size_t)(colon - want) : strlen(want);
             if (!strncmp(os, want, wl) && os[wl] == '\0') return 0;
+        } else if (!strncmp(tok, "diff3!=", 7)){
+            const char *want = tok + 7;
+            const char *colon = strchr(want, ':');
+            size_t wl = colon ? (size_t)(colon - want) : strlen(want);
+            if (!strncmp(os, want, wl) && os[wl] == '\0') return 0;
         } else if (!strcmp(tok, "elf")){
 
             if (!strcmp(os, "Darwin") || !strcmp(os, "WIN32")) return 0;
@@ -70,7 +115,7 @@ static char *slurp(FILE *f){
 
 
 static char *cap(const char *cmd, int *status){
-    FILE *f = popen(cmd, "r");
+    FILE *f = RUN_POPEN(cmd);
     if (!f){ if(status)*status=-1; return strdup(""); }
     char *o = slurp(f);
     int rc = pclose(f);
@@ -90,8 +135,8 @@ static char *cap(const char *cmd, int *status){
 static void timeout_wrap(const char *cmd, char *out, size_t n){
     static int probed, have_timeout, have_gtimeout;
     if (!probed){
-        have_timeout  = system("command -v timeout  >/dev/null 2>&1") == 0;
-        have_gtimeout = system("command -v gtimeout >/dev/null 2>&1") == 0;
+        have_timeout  = RUN_SYSTEM("command -v timeout  >/dev/null 2>&1") == 0;
+        have_gtimeout = RUN_SYSTEM("command -v gtimeout >/dev/null 2>&1") == 0;
         probed = 1;
     }
     if (have_timeout)
@@ -153,11 +198,11 @@ static int build_run(const char *label, const char *cc, const char *mcc,
                      const char *work, const char *src, const char *flags,
                      const char *args, char **out){
     char exe[2048], cmd[8192];
-    snprintf(exe, sizeof exe, "%s/%s.out", work, label);
+    snprintf(exe, sizeof exe, "%s/%s%s", work, label, EXE_SFX);
     remove(exe);
     if (cc)
         snprintf(cmd, sizeof cmd,
-            "%s -w -O0 \"-I%s\" %s \"%s\" -o \"%s\" >/dev/null 2>&1",
+            "\"%s\" -w -O0 \"-I%s\" %s \"%s\" -o \"%s\" >/dev/null 2>&1",
             cc, sup, flags, src, exe);
     else
         snprintf(cmd, sizeof cmd,
@@ -168,13 +213,14 @@ static int build_run(const char *label, const char *cc, const char *mcc,
     timeout_wrap(cmd, gbuild, sizeof gbuild);
 
 
-    int brc = system(gbuild);
+    int brc = RUN_SYSTEM(gbuild);
     if (brc != 0){ *out = strdup(""); return 0; }
 
-    char run[8192], guarded[8448]; int rrc;
-    snprintf(run, sizeof run, "cd \"%s\" && \"%s\" %s 2>/dev/null", work, exe, args);
-    timeout_wrap(run, guarded, sizeof guarded);
-    *out = cap(guarded, &rrc);
+    char prog[8192], guarded[8448], run[12288]; int rrc;
+    snprintf(prog, sizeof prog, "\"%s\" %s 2>/dev/null", exe, args);
+    timeout_wrap(prog, guarded, sizeof guarded);
+    snprintf(run, sizeof run, "cd \"%s\" && %s", work, guarded);
+    *out = cap(run, &rrc);
     if (verbose) fprintf(stderr, "  [%s out] %s\n", label, *out);
     return 1;
 }
@@ -192,6 +238,11 @@ int main(int argc, char **argv){
     verbose = 1;
 #endif
 
+#ifdef _WIN32
+    g_work = work;
+    MKDIR(work);
+#endif
+
     if (same_compiler(gcc, clang)){
         printf("diff3: SKIP -- '%s' and '%s' are the same compiler; a three-way "
                "differential needs two distinct references (the exec golden suite "
@@ -201,7 +252,7 @@ int main(int argc, char **argv){
 
     char cmd[4096];
     snprintf(cmd, sizeof cmd, "mkdir -p \"%s\"", work);
-    if (system(cmd)){ fprintf(stderr, "cannot mkdir %s\n", work); return 2; }
+    if (RUN_SYSTEM(cmd)){ fprintf(stderr, "cannot mkdir %s\n", work); return 2; }
 
     int pass=0, mcc_diff=0, impl=0, skip=0, mcc_build_fail=0, mcc_only=0;
     for (int i=0;i<mcc_goldens_count;i++){
