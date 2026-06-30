@@ -1746,5 +1746,16 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -c {W}/uv.c -o /dev/null 2>&1 && echo DEFAULT_SILENT",
   "1 warn\nOK_CLEAN\nDEFAULT_SILENT\n" },
 
+/* -Wunused-parameter warns on a function parameter never referenced in the
+   body (reported at the signature line, like gcc). Enabled by -Wextra, not
+   -Wall; default silent. */
+{ "wunused_parameter", "",
+  "printf 'int f(int a, int unusedp){ return a; }\\nint main(void){return f(1,2);}\\n' > {W}/up.c && "
+  "printf 'int g(int a, int b){ return a+b; }\\nint main(void){return g(1,2);}\\n' > {W}/up_ok.c && "
+  "echo \"$({MCC} -B{B} -I{I} -Wunused-parameter -c {W}/up.c -o /dev/null 2>&1 | grep -c \"unused parameter 'unusedp'\") warn\"; "
+  "{MCC} -B{B} -I{I} -Wextra -Werror -c {W}/up_ok.c -o /dev/null 2>&1 && echo OK_CLEAN; "
+  "{MCC} -B{B} -I{I} -c {W}/up.c -o /dev/null 2>&1 && echo DEFAULT_SILENT",
+  "1 warn\nOK_CLEAN\nDEFAULT_SILENT\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

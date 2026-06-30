@@ -5725,6 +5725,9 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td)
                 convert_parameter_type(&pt);
                 arg_size += (type_size(&pt, &align) + PTR_SIZE - 1) / PTR_SIZE;
                 s = sym_push(n, &pt, VT_LOCAL|VT_LVAL, 0);
+                /* -Wunused-parameter: remember the declaration (signature) line;
+                   sym_copy carries it into the body's local copy (see gen_function). */
+                s->vla_inner_id = file->line_num;
                 /* 6.7.1/6.5.3.2: a 'register' parameter — remember it so taking
                    its address (and va_start on it, 7.16.1.4) is diagnosed. The
                    flag rides through sym_push_params/sym_copy into the body. */
@@ -10498,6 +10501,23 @@ static void gen_function(Sym *sym)
     mcc_debug_prolog_epilog(mcc_state, 0);
     func_vla_arg(sym);
     block(0);
+    /* -Wunused-parameter: the body's scope has been popped, so what remains on
+       local_stack are the parameter copies (and any VLA-arg helper). Warn for
+       each named parameter never referenced; its `used` bit and signature line
+       rode in via sym_copy. Limited to the function type's own parameter list so
+       VLA-arg helpers are not mistaken for parameters. */
+    if ((mcc_state->warn_unused_parameter & WARN_ON)
+        && sym->type.ref->f.func_type != FUNC_OLD) {
+        Sym *pc;
+        for (pc = local_stack; pc; pc = pc->prev) {
+            if ((pc->r & VT_VALMASK) == VT_LOCAL && !pc->a.used
+                && pc->v >= TOK_IDENT && pc->v < SYM_FIRST_ANOM
+                && !(pc->type.t & VT_TYPEDEF))
+                mcc_warning_c(warn_unused_parameter)(
+                    "%i:unused parameter '%s'",
+                    pc->vla_inner_id, get_tok_str(pc->v, NULL));
+        }
+    }
     cur_func_inline_extern = 0;
     gsym(rsym);
     nocode_wanted = 0;

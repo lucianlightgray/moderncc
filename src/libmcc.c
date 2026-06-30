@@ -1771,6 +1771,9 @@ static const FlagDef options_W[] = {
     /* -Wunused-variable: an automatic local declared but never referenced.
        Enabled by -Wall (WD_ALL), like gcc. */
     { offsetof(MCCState, warn_unused_variable), WD_ALL, "unused-variable" },
+    /* -Wunused-parameter: a function parameter never referenced in the body.
+       Opt-in; enabled by -Wextra (handled in the -W option case), like gcc. */
+    { offsetof(MCCState, warn_unused_parameter), 0, "unused-parameter" },
     /* -Wunknown-pragmas: an unrecognized #pragma. Enabled by -Wall (WD_ALL),
        matching gcc, and separately controllable via -W[no-]unknown-pragmas. */
     { offsetof(MCCState, warn_unknown_pragmas), WD_ALL, "unknown-pragmas" },
@@ -2256,6 +2259,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
             if (!strcmp(optarg, "extra") || !strcmp(optarg, "no-extra")) {
                 unsigned char on = optarg[0] == 'e' ? WARN_ON : 0;
                 s->warn_sign_compare = on;
+                s->warn_unused_parameter = on;
                 break;
             }
             if (optarg[0] && set_flag(s, options_W, optarg) < 0)
