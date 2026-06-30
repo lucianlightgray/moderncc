@@ -1627,6 +1627,7 @@ enum {
     MCC_OPTION_MP,
     MCC_OPTION_MT,
     MCC_OPTION_MQ,
+    MCC_OPTION_S,
     MCC_OPTION_x,
     MCC_OPTION_ar,
     MCC_OPTION_impdef,
@@ -1717,6 +1718,7 @@ static const MCCOption mcc_options[] = {
     { "MP", MCC_OPTION_MP, 0},
     { "MT", MCC_OPTION_MT, MCC_OPTION_HAS_ARG },
     { "MQ", MCC_OPTION_MQ, MCC_OPTION_HAS_ARG },
+    { "S", MCC_OPTION_S, 0 },
     { "x", MCC_OPTION_x, MCC_OPTION_HAS_ARG },
     { "ar", MCC_OPTION_ar, 0},
 #ifdef MCC_TARGET_PE
@@ -2332,6 +2334,15 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
         case MCC_OPTION_MP:
             s->gen_phony_deps = 1;
             break;
+        case MCC_OPTION_S:
+            /* mcc, like its TCC lineage, is a single-pass compiler that emits
+               machine code directly into object sections; it has no textual
+               assembly emitter, so -S cannot be honored. Diagnose clearly rather
+               than with a generic "invalid option". (It can still *assemble* .s
+               input and link, just not produce .s output.) */
+            return mcc_error_noabort(
+                "-S (assembly output) is not supported: mcc compiles directly to "
+                "object code; use -c for an object file");
         case MCC_OPTION_MT:
         case MCC_OPTION_MQ:
             /* -MT <t> sets the make-rule target name verbatim; -MQ <t> also

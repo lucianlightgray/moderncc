@@ -1802,5 +1802,14 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -c {W}/uvv.c -o /dev/null 2>&1 && echo DEFAULT_SILENT",
   "2 warn\nOK_CLEAN\nDEFAULT_SILENT\n" },
 
+/* -S is recognized with a clear diagnostic (mcc compiles directly to object
+   code; no textual assembly emitter) instead of the old generic "invalid
+   option"; -c still produces an object. */
+{ "dash_S_clear_diagnostic", "",
+  "printf 'int main(void){return 0;}\\n' > {W}/t.c && "
+  "echo \"$({MCC} -B{B} -I{I} -S {W}/t.c 2>&1 | grep -c 'assembly output) is not supported') diag\"; "
+  "{MCC} -B{B} -I{I} -c {W}/t.c -o /dev/null 2>&1 && echo C_OK",
+  "1 diag\nC_OK\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

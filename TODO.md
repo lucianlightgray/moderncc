@@ -54,11 +54,6 @@ warning · **[build]** build-system integration · **[doc]** documentation only.
 
 ## Compiler modes
 
-- [ ] **[core] `-S` (emit assembly) is rejected** ("invalid option -- '-S'").
-  gcc/clang both produce a `.s`. mcc is direct-to-object, so true `.s` emission is
-  a large effort; at minimum recognize `-S` and either emit a disassembly listing
-  or fail with a clear "assembly output not supported" message rather than
-  "invalid option". *Verify scope, then implement or document.*
 
 ## Diagnostics — warning coverage (`-Wall`/`-Wextra` are thin)
 
