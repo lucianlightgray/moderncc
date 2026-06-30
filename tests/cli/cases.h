@@ -1819,5 +1819,17 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -imacros {W}/macros.h {W}/imain.c -o {W}/imbin && {W}/imbin && echo RAN_OK_EXIT0",
   "RAN_OK_EXIT0\n" },
 
+/* -Wuninitialized warns on an automatic local read before being written in
+   source order (`int x; return x;`, `z=y;`). A declaration initializer, a write
+   on every prior path, an address-of, a parameter, and an unevaluated `sizeof`
+   are all exempt. Enabled by -Wall; default silent. */
+{ "wuninitialized", "",
+  "printf 'int f(void){ int x; return x; }\\nint g(void){ int y,z; z=y; return z; }\\n' > {W}/un.c && "
+  "printf 'int f(int c){ int x; if(c) x=1; else x=2; return x; }\\nint h(void){ int a=5; void g(int*); int b; g(&b); return a+b; }\\n' > {W}/un_ok.c && "
+  "echo \"$({MCC} -B{B} -I{I} -Wuninitialized -c {W}/un.c -o /dev/null 2>&1 | grep -c 'is used uninitialized') warn\"; "
+  "{MCC} -B{B} -I{I} -Wuninitialized -Werror -c {W}/un_ok.c -o /dev/null 2>&1 && echo OK_CLEAN; "
+  "{MCC} -B{B} -I{I} -c {W}/un.c -o /dev/null 2>&1 && echo DEFAULT_SILENT",
+  "2 warn\nOK_CLEAN\nDEFAULT_SILENT\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

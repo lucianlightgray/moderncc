@@ -62,13 +62,6 @@ Each below was confirmed: mcc=0 warnings where gcc/clang warn. (mcc already does
 `-Wreturn-type`-style "missing return", implicit-function-declaration, and the
 new `-Wformat`.) Most need scope/dataflow tracking — size each before starting.
 
-- [ ] **[diag] `-Wuninitialized`** — use of an uninitialized local. **Genuine
-  remaining effort.** A correct version needs to distinguish a *read* from a
-  *write* at each variable reference (mcc marks both identically in `unary()`)
-  and to follow control flow (a definite read-before-any-write vs. the
-  conditional `-Wmaybe-uninitialized` case). mcc is single-pass with no CFG, so
-  this is real dataflow work, not a one-point hook; a naive version produces
-  false positives under `-Wall`. Deferred as a focused project.
 
 ## Preprocessor / dependency-generation flags
 

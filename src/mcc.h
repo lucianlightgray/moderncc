@@ -459,7 +459,8 @@ struct SymAttr {
     is_complex  : 1,
     tentative_array : 1,        /* 6.9.2: incomplete-array tentative definition */
     is_register : 1,            /* 6.7.1: declared with the register specifier */
-    used : 1;                   /* -Wunused-variable: referenced after declaration */
+    used : 1,                   /* -Wunused-variable: referenced after declaration */
+    inited : 1;                 /* -Wuninitialized: written (or init/addr-taken) before read */
 };
 
 struct FuncAttr {
@@ -747,6 +748,7 @@ struct MCCState {
     unsigned char warn_fatal_errors;    /* -Wfatal-errors: stop at the first error */
     unsigned char warn_shadow;          /* -Wshadow: declaration shadows an outer one (opt-in) */
     unsigned char warn_unused_value;    /* -Wunused-value: statement value unused, no effect (-Wall) */
+    unsigned char warn_uninitialized;   /* -Wuninitialized: local read before written (-Wall) */
     int max_errors;                     /* -fmax-errors=N: stop after N errors (0 = no limit) */
     unsigned char warn_pedantic;        /* -pedantic: diagnose ISO C extensions */
     unsigned char pedantic_errors;      /* -pedantic-errors: make them hard errors */

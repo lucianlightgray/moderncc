@@ -1803,6 +1803,10 @@ static const FlagDef options_W[] = {
     /* -Wunused-value: an expression statement whose value is computed but
        unused and whose top-level operator has no side effect. -Wall, like gcc. */
     { offsetof(MCCState, warn_unused_value), WD_ALL, "unused-value" },
+    /* -Wuninitialized: an automatic local read before being written (in source
+       order). Conservative — only the canonical read/write sites are tracked.
+       Enabled by -Wall (WD_ALL), like gcc. */
+    { offsetof(MCCState, warn_uninitialized), WD_ALL, "uninitialized" },
     { 0, 0, NULL }
 };
 

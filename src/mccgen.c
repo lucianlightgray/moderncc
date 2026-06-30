@@ -195,9 +195,28 @@ static void seqp_record_sv(SValue *sv, int kind)
 {
     Sym *obj;
     unsigned long long off;
-    if (!mcc_state->warn_sequence_point || nocode_wanted)
+    if (nocode_wanted)              /* unevaluated (sizeof, ...): not a real access */
         return;
     if (!seqp_key(sv, &obj, &off))
+        return;
+    /* -Wuninitialized: at the canonical read (gv) and write (vstore) sites,
+       track automatic locals. A read before any write (in source order) uses an
+       indeterminate value; a write/address-of (addrtaken) marks it initialized.
+       Conservative by construction: only direct named-lvalue accesses reach
+       here, so it warns the clear cases and never on `sizeof x` (nocode_wanted)
+       or an address-taken object. */
+    if ((mcc_state->warn_uninitialized & WARN_ON)
+        && (obj->r & VT_VALMASK) == VT_LOCAL
+        && obj->v >= TOK_IDENT && obj->v < SYM_FIRST_ANOM) {
+        if (kind == SEQP_WRITE)
+            obj->a.inited = 1;
+        else if (!obj->a.inited && !obj->a.addrtaken) {
+            mcc_warning_c(warn_uninitialized)(
+                "'%s' is used uninitialized", get_tok_str(obj->v, NULL));
+            obj->a.inited = 1;      /* warn once per object */
+        }
+    }
+    if (!mcc_state->warn_sequence_point)
         return;
     if (nb_seqp >= SEQP_MAX) {
         seqp_overflow = 1;
@@ -5758,6 +5777,8 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td)
                 /* -Wunused-parameter: remember the declaration (signature) line;
                    sym_copy carries it into the body's local copy (see gen_function). */
                 s->vla_inner_id = file->line_num;
+                /* -Wuninitialized: a parameter is initialized by the caller. */
+                s->a.inited = 1;
                 /* 6.7.1/6.5.3.2: a 'register' parameter — remember it so taking
                    its address (and va_start on it, 7.16.1.4) is diagnosed. The
                    flag rides through sym_push_params/sym_copy into the body. */
@@ -10300,6 +10321,10 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
                declaration like gcc. vla_inner_id is otherwise used only on label
                syms, so it is free to reuse here for a VT_LOCAL object. */
             sym->vla_inner_id = file->line_num;
+            /* -Wuninitialized: a local with an initializer starts initialized
+               (the init store may not pass through the canonical write site). */
+            if (has_init)
+                sym->a.inited = 1;
         } else {
             vset(type, r, addr);
         }
