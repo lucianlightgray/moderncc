@@ -37,6 +37,11 @@ typedef void (*tss_dtor_t)(void *);
 #define ONCE_FLAG_INIT      PTHREAD_ONCE_INIT
 #define TSS_DTOR_ITERATIONS PTHREAD_DESTRUCTOR_ITERATIONS
 
+/* §7.26.1p3: <threads.h> shall provide the convenience macro `thread_local`
+   expanding to _Thread_local. (Only in the shim branch — when a system
+   <threads.h> is delegated to above, it already defines this.) */
+#define thread_local _Thread_local
+
 enum {
     thrd_success  = 0,
     thrd_busy     = 1,

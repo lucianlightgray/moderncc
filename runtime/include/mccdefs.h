@@ -57,15 +57,14 @@
     #define __STDC_IEC_559__ 1
     #define __STDC_IEC_559_COMPLEX__ 1
 
-    #if __STDC_VERSION__ >= 201112L
-    /* _Atomic and C11 threads (via the hosted libc on glibc/musl) both work, so
-       neither __STDC_NO_ATOMICS__ nor __STDC_NO_THREADS__ is defined (defining
-       either would tell programs to skip working functionality). */
-#if !defined _WIN32
-    # define __STDC_UTF_16__ 1
-    # define __STDC_UTF_32__ 1
-#endif
-    #endif
+    /* char16_t/char32_t are UTF-16/UTF-32 encoded on every mcc target, so
+       advertise the C11 encoding macros — like gcc/clang, which predefine them
+       in their default (non-strict) mode on all targets, Windows included.
+       (mcc also never defines __STDC_NO_ATOMICS__/__STDC_NO_THREADS__: _Atomic
+       and C11 threads both work via the hosted libc, and defining either would
+       tell programs to skip working functionality.) */
+    #define __STDC_UTF_16__ 1
+    #define __STDC_UTF_32__ 1
 
 #if defined _WIN32
     #define __declspec(x) __attribute__((x))

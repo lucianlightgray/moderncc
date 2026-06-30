@@ -126,6 +126,13 @@ static const cli_case_t cli_cases[] = {
   "printf '\\n' > {W}/empty.c && {MCC} -B{B} -E -dM {W}/empty.c | grep -cE '^#define __STDC__ '",
   "1\n" },
 
+/* §6.10.8.3 (C11): __STDC_UTF_16__/__STDC_UTF_32__ are predefined to 1 because
+   char16_t/char32_t are UTF-16/UTF-32 on every mcc target. gcc/clang predefine
+   them in default mode on all targets (Windows included); mcc must too. */
+{ "stdc_utf_encoding_macros", "",
+  "printf '\\n' > {W}/utf.c && {MCC} -B{B} -E -dM {W}/utf.c | grep -cE '^#define __STDC_UTF_(16|32)__ 1$'",
+  "2\n" },
+
 { "nostdinc_drops_system", "os=linux",
   "printf '#include <stdio.h>\\n' > {W}/ns.c && {MCC} -B{B} -nostdinc -E {W}/ns.c 2>&1 | grep -coE 'not found|No such'",
   "1\n" },
@@ -1537,7 +1544,7 @@ static const cli_case_t cli_cases[] = {
    argument only (its second argument is always long double).  sizeof is
    unevaluated, so this checks the *selected return type* (float=4, double=8,
    long double=16) without needing libm — keying on (x)+(y) wrongly gave 16 16 16. */
-{ "tgmath_nexttoward_first_arg", "",
+{ "tgmath_nexttoward_first_arg", "os!=WIN32:PE has long double==double (8), so nexttoward(long double) is 8 not 16",
   "printf '#include <tgmath.h>\\n#include <stdio.h>\\nint main(void){ float f=1; double d=1; long double l=1; printf(\"%%d %%d %%d\\\\n\", (int)sizeof(nexttoward(f,2.0L)), (int)sizeof(nexttoward(d,2.0L)), (int)sizeof(nexttoward(l,2.0L))); return 0; }\\n' > {W}/ntg.c && "
   "{MCC} -B{B} -I{I} -std=c11 {W}/ntg.c -o {W}/ntg && {W}/ntg",
   "4 8 16\n" },
@@ -1559,7 +1566,7 @@ static const cli_case_t cli_cases[] = {
    (the gen_complex_op constant-fold path called init_putv on a value gen_op had
    declined to fold in a non-CONST_WANTED context); now it falls to the robust
    runtime path.  Finite locals stay exact. Compile and run, check the values. */
-{ "complex_const_init_overflow", "",
+{ "complex_const_init_overflow", "os!=WIN32:msvcrt prints infinity as \"1.#INF\", not glibc's \"inf\"",
   "printf '#include <complex.h>\\n#include <stdio.h>\\ndouble complex gz = 4.0e38f + 0.0*I;\\nint main(void){ double complex lz = 4.0e38f + 0.0*I; double complex lf = 2.0 + 3.0*I; printf(\"%%g %%g %%g %%g\\\\n\", creal(gz), creal(lz), creal(lf), cimag(lf)); return 0; }\\n' > {W}/imc.c && "
   "{MCC} -B{B} -I{I} -std=c11 {W}/imc.c -lm -o {W}/imc && {W}/imc",
   "inf inf 2 3\n" },
