@@ -115,25 +115,24 @@ targets before it is marked done.
 
 ## §6.4 Lexical elements
 
-- [~] **[BUG] §6.4.5p5 — mixed wide/narrow string-literal concatenation: wide-first fixed.**
-  The merge loop (`src/mccgen.c`, `decl_initializer`) now widens each narrow
-  literal to the array's element width instead of byte-copying, with correct
-  length math. `L"ab" "cd"` ⇒ correct 5-element `wchar_t` (was `wcslen=1`
-  garbage); `wchar_t w[]=L"pq" "rs"` works; same-prefix and narrow chains
-  unchanged. exec `string_concat_mixed`. REMAINING (accepted limitation):
-  *narrow-first* promotion (`"ab" L"cd"` / `wchar_t a[]="x" L"y"`) — the element
-  type is fixed by the first literal in `str_init` (unary) before the concat loop
-  runs, so a wider literal following it can't be represented; mcc errors **cleanly**
-  ("a wide string literal cannot follow a narrower one") and **never miscompiles**.
-  Full support needs the element type chosen from the *widest* literal in the run,
-  which requires either a multi-token string look-ahead (mcc's `unget_tok` doesn't
-  preserve a string token's `tokc`, so this means save-and-replay through
-  `begin_macro`) or duplicating the concat+rodata-emit logic in `str_init`. Both
-  restructure the hot, fundamental, heavily-tested string-literal path and add
-  per-string-literal overhead, for a rare narrow-first-mixed construct that
-  already fails safely — a poor risk/value trade, so deliberately deferred. (gcc
-  widens; clang widens. mcc rejects-valid here — a real but contained conformance
-  gap, not a miscompile.)
+- [x] **[BUG] §6.4.5p5 — mixed wide/narrow string-literal concatenation now widens regardless of order.**
+  The merge loop (`src/mccgen.c`, `decl_initializer`) widens each narrow literal to
+  the array's element width with correct length math (wide-first: `L"ab" "cd"`,
+  `wchar_t w[]=L"pq" "rs"`). And **narrow-first** runs now widen too: the
+  `decl_initializer_alloc` string gather captures the whole adjacent-literal run,
+  and when it is narrow-first (a later literal wider than the first) it
+  re-concatenates the run into a single literal of the run's widest prefix
+  (with the §6.4.5p2 different-prefix-conflict check) and, for the synthesized
+  bare-string-expression type, widens the element. Covers `const wchar_t *b =
+  "ab" L"cd"`, `"x" "y" L"z"`, `u`/`U` runs, and the declared incomplete array
+  `wchar_t a[]="x" L"y"`. Wide-first/same-prefix/single-string runs stay on the
+  untouched fast path. Genuinely-mismatched inits (`char a[]=L"x"`, `wchar_t
+  a[]="abc"`, `int a[]="abc"`) still error (the §6.7.9p14 check), matching gcc.
+  exec `string_concat_mixed` (extended); runtime-verified i386/arm/arm64/riscv64
+  via qemu + x86_64 native. NOTE: an *explicitly-sized* array with a narrow-first
+  mixed init (`wchar_t a[3]="x" L"y"`, the size-known live-read path with no
+  gather point) is the one remaining rare sliver — still errors cleanly, never
+  miscompiles.
 
 - [x] **[BUG]/[DIAG] §6.4.5p2 — conflicting wide-prefix concatenation now rejected.**
   The merge loop tracks the established wide encoding prefix and errors
@@ -800,5 +799,5 @@ bulk of each area matched the references; these are the residual divergences.
 - [x] §6.10.3p4 empty-`__VA_ARGS__` variadic invocation diagnosed under -pedantic — cli `va_args_empty_pedantic`.
 - [x] §7.17.8 `atomic_flag_*` typed `volatile atomic_flag *` (diagnoses non-pointer args) — cli `atomic_flag_type`.
 - [x] §6.2.2p7 `static` after non-static `extern` is an error (reverse stays silent) — cli `linkage_static_after_extern`.
-- [~] §6.4.5p5 mixed wide/narrow string concat: wide-first widening fixed; narrow-first promotion errors cleanly — exec `string_concat_mixed`.
+- [x] §6.4.5p5 mixed wide/narrow string concat: both wide-first and narrow-first widen (run's widest prefix) — exec `string_concat_mixed`; only explicit-sized-array narrow-first remains a rare sliver.
 - [x] §6.4.5p2 conflicting wide-prefix string concatenation rejected — exec `string_concat_mixed`.
