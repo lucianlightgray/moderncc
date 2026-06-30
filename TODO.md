@@ -72,11 +72,6 @@ Re-crawled C9911.md's `mcc:✗ gcc:✓ clang:✓` lines and re-probed each 3-way
 against the live binary. ~30 were stale (fixed in prior rounds; their C9911
 tags lag reality). These four are genuinely still open and actionable:
 
-- [ ] **§7.25p7 — `creal`/`cimag` tgmath lose precision.** `tgmath.h` doesn't
-  redefine them, so `<complex.h>`'s fixed-`double` macros give
-  `sizeof(creal(long double complex))`=8 (want 16, `creall`) and
-  `sizeof(cimag(float complex))`=8 (want 4, `cimagf`). Add `_Generic` `creal`/
-  `cimag` to `tgmath.h` dispatching by complex element type.
 - [ ] **§D / §6.4.2.1 — out-of-range UCN in an identifier is accepted.** mcc takes
   `￿` (and other code points outside the Annex D allowed ranges) as an
   identifier character; gcc/clang reject. Add the Annex D allowed-range check at

@@ -76,7 +76,29 @@
 #define carg(z)          __tgmath_cx(z, carg)
 #define conj(z)          __tgmath_cx(z, conj)
 #define cproj(z)         __tgmath_cx(z, cproj)
-/* creal/cimag are provided generically by <complex.h>. */
+
+/* 7.25p7: type-generic creal/cimag must select crealf/cimagf (float) or
+   creall/cimagl (long double) by the complex element type. <complex.h>'s plain
+   creal/cimag are fixed-double — `creal(long double complex)` would cast down to
+   double, losing precision. Redefine here via _Generic over the per-type macro
+   forms (still __real__/__imag__ expressions, so no libm call is introduced).
+   On LDBL==DBL ABIs the long double arm would duplicate the double arm and make
+   _Generic ill-formed, so it is folded into default there. */
+#undef creal
+#undef cimag
+#if LDBL_MANT_DIG == DBL_MANT_DIG
+#define creal(z) _Generic((z), float _Complex: crealf(z), \
+                          default: (__real__ (double _Complex)(z)))
+#define cimag(z) _Generic((z), float _Complex: cimagf(z), \
+                          default: (__imag__ (double _Complex)(z)))
+#else
+#define creal(z) _Generic((z), float _Complex: crealf(z), \
+                          long double _Complex: creall(z), \
+                          default: (__real__ (double _Complex)(z)))
+#define cimag(z) _Generic((z), float _Complex: cimagf(z), \
+                          long double _Complex: cimagl(z), \
+                          default: (__imag__ (double _Complex)(z)))
+#endif
 
 #define atan2(x,y)       __tgmath_real_2(x, y, atan2)
 #define cbrt(x)          __tgmath_real(x, cbrt)

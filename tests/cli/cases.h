@@ -1839,5 +1839,13 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -c {W}/tss.c -o /dev/null 2>&1 && echo ICE_OK",
   "ICE_OK\n" },
 
+/* §7.25p7: type-generic creal/cimag select crealf/cimagf (float) or
+   creall/cimagl (long double) by element type — sizeof of the result is 4 / 16
+   for float / long double complex, 8 for double (was fixed-double 8/8). */
+{ "tgmath_creal_cimag_precision", "",
+  "printf '#include <tgmath.h>\\n#include <stdio.h>\\nint main(void){ long double complex l=1; float complex f=1; double complex d=1; printf(\"%%d %%d %%d\\\\n\",(int)sizeof(creal(l)),(int)sizeof(cimag(f)),(int)sizeof(creal(d))); return 0; }\\n' > {W}/cgt.c && "
+  "{MCC} -B{B} -I{I} {W}/cgt.c -lm -o {W}/cgt && {W}/cgt",
+  "16 4 8\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));
