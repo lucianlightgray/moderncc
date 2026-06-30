@@ -1590,5 +1590,17 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'expects an integer argument|expects a pointer argument|expects a floating argument|more conversions than arguments|CLEAN_OK|SILENT_DEFAULT' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n1 SILENT_DEFAULT\n1 expects a floating argument\n1 expects a pointer argument\n1 expects an integer argument\n1 more conversions than arguments\n" },
 
+/* -Wpedantic / -Wno-pedantic are gcc/clang synonyms for -pedantic: -Wpedantic
+   turns the non-ISO-extension diagnostics on (here the 0b binary constant),
+   -Wno-pedantic turns them back off, and -pedantic-errors still makes them hard
+   errors. (Was previously accepted but inert.) */
+{ "wpedantic_alias", "",
+  "printf 'int x = 0b101;\\nint main(void){return x;}\\n' > {W}/wp.c && "
+  "{ {MCC} -B{B} -I{I} -Wpedantic -c {W}/wp.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -Wpedantic -Wno-pedantic -Werror -c {W}/wp.c -o /dev/null 2>&1 && echo OFF_OK; "
+  "{MCC} -B{B} -I{I} -Wpedantic -pedantic-errors -c {W}/wp.c -o /dev/null 2>&1; } | "
+  "grep -oE 'C23/GNU extension|OFF_OK' | sort | uniq -c | sed 's/^ *//'",
+  "2 C23/GNU extension\n1 OFF_OK\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

@@ -1715,6 +1715,9 @@ static const FlagDef options_W[] = {
     /* -Wformat is opt-in (NOT under -Wall) so existing -Wall builds and the
        self-host are unaffected; it only runs when explicitly requested. */
     { offsetof(MCCState, warn_format), 0, "format" },
+    /* -Wpedantic / -Wno-pedantic are gcc/clang synonyms for -pedantic: they
+       toggle the same warn_pedantic state that diagnoses non-ISO extensions. */
+    { offsetof(MCCState, warn_pedantic), 0, "pedantic" },
     { 0, 0, NULL }
 };
 

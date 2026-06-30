@@ -88,9 +88,6 @@ new `-Wformat`.) Most need scope/dataflow tracking — size each before starting
   mcc already emits as a bare warning (give it a controllable `-W[no-]` name).
 - [ ] **[diag] `-Wextra` umbrella is inert** — accepted but enables nothing. Wire
   it to a set (unused-parameter, sign-compare, …) like gcc/clang.
-- [ ] **[diag] `-Wpedantic` is inert** — accepted but does nothing; gcc/clang treat
-  it as a synonym for `-pedantic` (verified: `-pedantic` warns on `0b101`,
-  `-Wpedantic` does not). Make `-W[no-]pedantic` map to the pedantic state.
 - [ ] **[diag] consider enabling `-Wformat` under `-Wall`** (gcc/clang do). Held
   opt-in for self-host safety; revisit once the checker has soaked.
 
@@ -111,10 +108,3 @@ new `-Wformat`.) Most need scope/dataflow tracking — size each before starting
 
 - [ ] **[diag] `-Wfatal-errors` / `-fmax-errors=N`** accepted but inert — should
   stop after the first (or N-th) error. Currently mcc swallows them silently.
-
-## Documentation
-
-- [ ] **[doc] `-hh` lists `-pedantic` under "Ignored options"** but it is fully
-  implemented (warns, and `-pedantic-errors` makes it fatal). Move it out of the
-  ignored list in `src/mcc.c`'s `help2[]` and document it (and `-pedantic-errors`)
-  properly. *(Confirmed working in this repo.)*
