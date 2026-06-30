@@ -72,16 +72,6 @@ new `-Wformat`.) Most need scope/dataflow tracking — size each before starting
 
 ## Preprocessor / dependency-generation flags
 
-- [ ] **[build] `-imacros <file>`** — like `-include` but contributes only the
-  file's macro definitions (no text). **Genuine remaining effort.** mcc parses
-  the predef/`<command line>` buffer inline with the main file in one `decl()`
-  pass, and frees the macro table per `mcc_compile`, so there is no clean seam to
-  run a "process `#define`s, discard tokens" pass after predefs but before the
-  main file. The discard primitive exists (`do next(); while(EOF)` as in
-  `mcc_preprocess`), but wiring it in without disturbing predef ordering or the
-  self-host pipeline needs care. A plain `#include` would wrongly pull in
-  declarations (a real divergence in the rare non-pure-macro case), so it was
-  deliberately kept out. Deferred as a focused project.
 
 ## Diagnostics control (minor)
 

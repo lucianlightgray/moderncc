@@ -1811,5 +1811,13 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -c {W}/t.c -o /dev/null 2>&1 && echo C_OK",
   "1 diag\nC_OK\n" },
 
+/* -imacros FILE makes the file's macros available to the main source (was
+   rejected). For the usual all-#define macro header this matches gcc. */
+{ "imacros_macro_header", "",
+  "printf '#define CFG 42\\n#define DBL(x) ((x)*2)\\n' > {W}/macros.h && "
+  "printf 'int main(void){ return CFG - DBL(21); }\\n' > {W}/imain.c && "
+  "{MCC} -B{B} -I{I} -imacros {W}/macros.h {W}/imain.c -o {W}/imbin && {W}/imbin && echo RAN_OK_EXIT0",
+  "RAN_OK_EXIT0\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

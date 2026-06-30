@@ -1608,6 +1608,7 @@ enum {
     MCC_OPTION_iwithprefix,
     MCC_OPTION_iquote,
     MCC_OPTION_idirafter,
+    MCC_OPTION_imacros,
     MCC_OPTION_include,
     MCC_OPTION_nostdinc,
     MCC_OPTION_trigraphs,
@@ -1701,6 +1702,7 @@ static const MCCOption mcc_options[] = {
     { "isystem", MCC_OPTION_isystem, MCC_OPTION_HAS_ARG },
     { "iquote", MCC_OPTION_iquote, MCC_OPTION_HAS_ARG },
     { "idirafter", MCC_OPTION_idirafter, MCC_OPTION_HAS_ARG },
+    { "imacros", MCC_OPTION_imacros, MCC_OPTION_HAS_ARG },
     { "-sysroot", MCC_OPTION_sysroot, MCC_OPTION_HAS_ARG },
     { "isysroot", MCC_OPTION_isysroot, MCC_OPTION_HAS_ARG },
     { "include", MCC_OPTION_include, MCC_OPTION_HAS_ARG },
@@ -2188,6 +2190,16 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
             mcc_set_str(&s->sysroot, optarg);
             break;
         case MCC_OPTION_include:
+            cstr_printf(&s->cmdline_incl, "#include \"%s\"\n", optarg);
+            break;
+        case MCC_OPTION_imacros:
+            /* -imacros FILE: like -include, but gcc keeps only the file's macro
+               definitions and discards its output. mcc has no parser
+               token-discard seam, so it processes FILE in full (identical to
+               -include) — correct for the usual all-`#define` macro header, and
+               with include guards a header pulled in both ways is not doubled.
+               A FILE carrying real declarations would also contribute those (a
+               known, documented divergence from gcc's macros-only semantics). */
             cstr_printf(&s->cmdline_incl, "#include \"%s\"\n", optarg);
             break;
         case MCC_OPTION_nostdinc:
