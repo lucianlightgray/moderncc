@@ -1764,6 +1764,9 @@ static const FlagDef options_W[] = {
        expression (`if (x = y)`); double parentheses suppress it. Enabled by
        -Wall (WD_ALL), like gcc. */
     { offsetof(MCCState, warn_parentheses), WD_ALL, "parentheses" },
+    /* -Wswitch: a switch on an enumerated type that omits a case and has no
+       `default`. Enabled by -Wall (WD_ALL), like gcc. */
+    { offsetof(MCCState, warn_switch), WD_ALL, "switch" },
     /* -Wunknown-pragmas: an unrecognized #pragma. Enabled by -Wall (WD_ALL),
        matching gcc, and separately controllable via -W[no-]unknown-pragmas. */
     { offsetof(MCCState, warn_unknown_pragmas), WD_ALL, "unknown-pragmas" },

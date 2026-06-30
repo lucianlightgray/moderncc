@@ -1717,5 +1717,16 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -c {W}/pp_bad.c -o /dev/null 2>&1 && echo DEFAULT_SILENT",
   "2 warns\nOFF_OK\nOK_CLEAN\nDEFAULT_SILENT\n" },
 
+/* -Wswitch warns for each enumerator not handled by a switch on an enumerated
+   type that has no `default`; a switch covering all cases, one with default, and
+   a plain int switch stay clean. Enabled by -Wall; default silent. */
+{ "wswitch_enum", "",
+  "printf 'enum E{A,B,C}; int f(enum E e){switch(e){case A:return 1;case C:return 3;} return 0;}\\n' > {W}/sw_bad.c && "
+  "printf 'enum E{A,B}; int g(enum E e){switch(e){case A:return 1;case B:return 2;} return 0;}\\nint h(enum E e){switch(e){case A:return 1;default:return 0;}}\\n' > {W}/sw_ok.c && "
+  "echo \"$({MCC} -B{B} -I{I} -Wswitch -c {W}/sw_bad.c -o /dev/null 2>&1 | grep -c 'not handled') warn\"; "
+  "{MCC} -B{B} -I{I} -Wswitch -Werror -c {W}/sw_ok.c -o /dev/null 2>&1 && echo OK_CLEAN; "
+  "{MCC} -B{B} -I{I} -c {W}/sw_bad.c -o /dev/null 2>&1 && echo DEFAULT_SILENT",
+  "1 warn\nOK_CLEAN\nDEFAULT_SILENT\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

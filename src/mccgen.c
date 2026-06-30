@@ -9038,6 +9038,25 @@ again:
         a = gjmp(a);
         gsym(b);
         prev_scope_s(&o);
+        /* -Wswitch: a switch on an enumerated type with no `default` should
+           handle every enumerator; warn for each one not covered by a case. */
+        if ((mcc_state->warn_switch & WARN_ON)
+            && IS_ENUM(sw->sv.type.t) && !sw->def_sym) {
+            Sym *ev;
+            for (ev = sw->sv.type.ref->next; ev; ev = ev->next) {
+                int64_t val = ev->enum_val;
+                int i, covered = 0;
+                for (i = 0; i < sw->n; i++)
+                    if (val >= sw->p[i]->v1 && val <= sw->p[i]->v2) {
+                        covered = 1;
+                        break;
+                    }
+                if (!covered)
+                    mcc_warning_c(warn_switch)(
+                        "enumeration value '%s' not handled in switch",
+                        get_tok_str(ev->v & ~SYM_FIELD, NULL));
+            }
+        }
         if (sw->nocode_wanted)
             goto skip_switch;
         case_sort(sw);

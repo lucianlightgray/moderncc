@@ -73,7 +73,6 @@ new `-Wformat`.) Most need scope/dataflow tracking — size each before starting
 - [ ] **[diag] `-Wunused-parameter`** — under `-Wextra`.
 - [ ] **[diag] `-Wuninitialized`** — use of an uninitialized local. Needs simple
   dataflow; can be conservative to avoid false positives.
-- [ ] **[diag] `-Wswitch`** — `switch` on an enum that omits a case / lacks `default`.
 - [ ] **[diag] `-Wshadow`** — a declaration shadowing one in an outer scope.
 - [ ] **[diag] consider enabling `-Wformat` under `-Wall`** (gcc/clang do). Held
   opt-in for self-host safety; revisit once the checker has soaked.
