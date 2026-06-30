@@ -638,18 +638,27 @@ bulk of each area matched the references; these are the residual divergences.
   signbit return) come from glibc's *own* fallback macros — not these builtins —
   so they are unaffected.
 
-- [ ] **[DIFF] §7.12/F.2.1 — the `NAN` macro yields a *negative* NaN (`-nan`).**
-  Downstream of the missing `__builtin_nanf`: glibc falls back to `(0.0f/0.0f)`,
-  which mcc folds to a sign-bit-set NaN; gcc/clang use `__builtin_nanf("")` → +NaN.
-  Conforming (sign unspecified) but observably divergent. Fixed by providing
-  `__builtin_nanf` (positive quiet NaN).
-  3-way: mcc=`-nan` | gcc/clang=`nan`.
+- [~] **[DIFF] §7.12/F.2.1 — `NAN` yields a *negative* NaN: CONFORMANT (sign unspecified); root cause = mcc doesn't define `__GNUC__`.**
+  glibc's `NAN`/math macros pick their implementation by `__GNUC_PREREQ`; mcc
+  defines **no `__GNUC__`** (a deliberate, conservative tcc-lineage choice — not
+  claiming GCC compatibility avoids pulling in gcc-only header code paths), so
+  glibc falls to its non-builtin fallback (`(0.0f/0.0f)` → sign-bit-set NaN).
+  Annex F leaves the NaN sign **unspecified**, so `-nan` is fully conforming; it
+  merely differs cosmetically from gcc/clang's `+nan`. The only "fix" is to make
+  mcc advertise `__GNUC__ >= 6` so glibc routes to `__builtin_nan` — a broad,
+  risky GCC-compat claim that changes behavior across *every* system header, taken
+  purely to match an unspecified sign. Not worth it; left as a conformant DIFF.
+  3-way: mcc=`-nan` | gcc/clang=`nan` (all conforming).
 
-- [ ] **[DIFF] §7.12.3.6 — `signbit(-1.0)` returns 128, not 1.**
-  Downstream of the missing `__builtin_signbit`: glibc takes the extern-`__signbit`
-  path returning the sign byte (0x80). Nonzero → conforming, but diverges from
-  both refs (which return 1 via `__builtin_signbit`).
-  3-way: mcc=128 | gcc/clang=1.
+- [~] **[DIFF] §7.12.3.6 — `signbit(-1.0)` returns 128: CONFORMANT (nonzero iff negative); same `__GNUC__` root cause.**
+  §7.12.3.6 requires only a **nonzero** value when the sign is negative — `128`
+  is nonzero, and verified mcc+glibc gives nonzero iff negative / zero iff
+  non-negative, so it is **conforming**. As above, glibc routes `signbit` to its
+  extern `__signbit` (returns the 0x80 sign byte) rather than `__builtin_signbit`
+  because mcc defines no `__GNUC__`; mcc's own `__builtin_signbit(-1.0)` correctly
+  returns `1` (used directly, off the glibc path). Matching gcc/clang's exact `1`
+  would again require the risky blanket `__GNUC__` claim for no conformance gain.
+  Left as a conformant DIFF. 3-way: mcc=128 | gcc/clang=1 (all conforming).
 
 - [x] **[DIAG] §7.3.1p2 — `<complex.h>` no longer defines `_Imaginary_I`.**
   Removed the `#define _Imaginary_I _Complex_I` line from
