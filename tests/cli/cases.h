@@ -1847,5 +1847,15 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} {W}/cgt.c -lm -o {W}/cgt && {W}/cgt",
   "16 4 8\n" },
 
+/* §6.4.2.1 / Annex D.1: a UCN in an identifier must designate a code point in
+   the enumerated allowed ranges; an out-of-range one (e.g. U+FFFF) is rejected,
+   while allowed ones (U+00C0, U+2460) form valid identifiers. */
+{ "ucn_identifier_range", "",
+  "printf 'int a\\\\uFFFFb;\\n' > {W}/ucr_bad.c && "
+  "printf 'int a\\\\u00C0b=1; int c\\\\u2460d=2;\\nint main(void){return a\\\\u00C0b + c\\\\u2460d;}\\n' > {W}/ucr_ok.c && "
+  "{ {MCC} -B{B} -I{I} -c {W}/ucr_bad.c -o /dev/null 2>&1 | grep -c 'not valid in an identifier'; "
+  "{MCC} -B{B} -I{I} -Werror -c {W}/ucr_ok.c -o /dev/null 2>&1 && echo OK_CLEAN; }",
+  "1\nOK_CLEAN\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

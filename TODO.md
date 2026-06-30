@@ -72,11 +72,6 @@ Re-crawled C9911.md's `mcc:✗ gcc:✓ clang:✓` lines and re-probed each 3-way
 against the live binary. ~30 were stale (fixed in prior rounds; their C9911
 tags lag reality). These four are genuinely still open and actionable:
 
-- [ ] **§D / §6.4.2.1 — out-of-range UCN in an identifier is accepted.** mcc takes
-  `￿` (and other code points outside the Annex D allowed ranges) as an
-  identifier character; gcc/clang reject. Add the Annex D allowed-range check at
-  the UCN-in-identifier site (complements the D.2 initial-combining check already
-  done).
 - [ ] **§7.16.1.4p3 — `va_start` second arg not the last named parameter** (UB)
   is not diagnosed. gcc/clang warn (`-Wvarargs`); mcc is silent. Optional
   diagnostic (UB, not required), but cheap parity. Add a `-Wvarargs`-style warning.

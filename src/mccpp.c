@@ -326,6 +326,32 @@ ST_INLN void cstr_u8cat(CString *cstr, int ch)
     cstr_cat(cstr, buf, e - buf);
 }
 
+/* 6.4.2.1 / Annex D.1 (C11): the code points >= 00A0 permitted in an identifier.
+   Below 00A0 is handled separately by the 6.4.3p2 check in decode_ucn. */
+static int ucn_allowed_in_identifier(unsigned int v)
+{
+    static const struct { unsigned lo, hi; } r[] = {
+        {0x00A8,0x00A8},{0x00AA,0x00AA},{0x00AD,0x00AD},{0x00AF,0x00AF},
+        {0x00B2,0x00B5},{0x00B7,0x00BA},{0x00BC,0x00BE},{0x00C0,0x00D6},
+        {0x00D8,0x00F6},{0x00F8,0x00FF},
+        {0x0100,0x167F},{0x1681,0x180D},{0x180F,0x1FFF},
+        {0x200B,0x200D},{0x202A,0x202E},{0x203F,0x2040},{0x2054,0x2054},
+        {0x2060,0x206F},{0x2070,0x218F},{0x2460,0x24FF},{0x2776,0x2793},
+        {0x2C00,0x2DFF},{0x2E80,0x2FFF},
+        {0x3004,0x3007},{0x3021,0x302F},{0x3031,0x303F},
+        {0x3040,0xD7FF},
+        {0xF900,0xFD3D},{0xFD40,0xFDCF},{0xFDF0,0xFE44},{0xFE47,0xFFFD},
+    };
+    unsigned i;
+    for (i = 0; i < sizeof r / sizeof r[0]; i++)
+        if (v >= r[i].lo && v <= r[i].hi)
+            return 1;
+    /* the astral planes: 1_0000–1_FFFD, 2_0000–2_FFFD, … E_0000–E_FFFD. */
+    if (v >= 0x10000 && v <= 0xEFFFD && (v & 0xFFFF) <= 0xFFFD)
+        return 1;
+    return 0;
+}
+
 /* 6.4.3: if *pp points at a universal character name (\uXXXX or \UXXXXXXXX),
    decode it, advance *pp past it and return the code point; otherwise leave
    *pp unchanged and return -1. Reads raw buffer bytes, so a UCN straddling a
@@ -354,6 +380,12 @@ static int decode_ucn(uint8_t **pp)
        string/char literals go through parse_string, where gcc is lenient). */
     if ((v < 0xA0 && v != 0x24 && v != 0x40 && v != 0x60)
         || (v >= 0xD800 && v <= 0xDFFF))
+        mcc_error("universal character \\u%04x is not valid in an identifier",
+                  v);
+    /* 6.4.2.1 / Annex D.1: above 00A0 only the enumerated ranges of code points
+       are permitted in an identifier; a UCN outside them (e.g. ￿) is
+       rejected, matching gcc/clang. */
+    if (v >= 0xA0 && !ucn_allowed_in_identifier(v))
         mcc_error("universal character \\u%04x is not valid in an identifier",
                   v);
     return (int)v;
