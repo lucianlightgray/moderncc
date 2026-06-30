@@ -4900,6 +4900,69 @@ static void gen_complex_call(int op, CType *cplx, CType *base, SValue *a, SValue
     vpushv(&r);
 }
 
+/* §6.6/§6.7.9: extract the real and imaginary parts of a compile-time-constant
+   complex operand (a rodata-backed anonymous reference, as emitted by
+   __builtin_complex / a prior fold) or of a real scalar constant, into immediate
+   scalar SValues — so static-initializer complex arithmetic can be folded into a
+   constant (which gcc/clang accept). Returns 1 on success; re/im are filled in
+   place (not pushed). Limited to float/double elements: long double has a
+   target-dependent in-memory layout that can't be read back portably when cross
+   compiling, and a relocated source section means the parts aren't plain FP. */
+static int cplx_extract_const(SValue *sv, SValue *re, SValue *im)
+{
+    if (is_complex_type(&sv->type)) {
+        CType sb = sv->type.ref->next->type;
+        int sbt = sb.t & VT_BTYPE, bsz, al;
+        Section *ssec;
+        ElfSym *esym;
+        unsigned char *p;
+        if (sbt != VT_FLOAT && sbt != VT_DOUBLE)
+            return 0;
+        if ((sv->r & (VT_SYM | VT_CONST | VT_LVAL)) != (VT_SYM | VT_CONST | VT_LVAL)
+            || !sv->sym || sv->sym->v < SYM_FIRST_ANOM)
+            return 0;
+        esym = elfsym(sv->sym);
+        if (!esym || esym->st_shndx == SHN_UNDEF)
+            return 0;
+        ssec = mcc_state->sections[esym->st_shndx];
+        if (!ssec || !ssec->data || ssec->reloc)
+            return 0;
+        bsz = type_size(&sb, &al);
+        p = ssec->data + esym->st_value + (unsigned)sv->c.i;
+        memset(re, 0, sizeof *re);
+        memset(im, 0, sizeof *im);
+        re->type = im->type = sb;
+        re->r = im->r = VT_CONST;
+        if (sbt == VT_FLOAT) {
+            float fr, fi;
+            memcpy(&fr, p, 4); memcpy(&fi, p + bsz, 4);
+            re->c.f = fr; im->c.f = fi;
+        } else {
+            double dr, di;
+            memcpy(&dr, p, 8); memcpy(&di, p + bsz, 8);
+            re->c.d = dr; im->c.d = di;
+        }
+        return 1;
+    }
+    /* a real scalar constant: real = value, imag = 0 (all-zero bits) */
+    if ((sv->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST
+        && (is_float(sv->type.t) || is_integer_btype(sv->type.t & VT_BTYPE))) {
+        *re = *sv;
+        memset(im, 0, sizeof *im);
+        im->type = sv->type;
+        im->r = VT_CONST;
+        return 1;
+    }
+    return 0;
+}
+
+/* Push a copy of constant SValue v and fold-cast it to the common element type. */
+static void cplx_push_cst(SValue *v, CType *base)
+{
+    vpushv(v);
+    gen_cast(base);
+}
+
 static void gen_complex_op(int op)
 {
     SValue a, b, r;
@@ -4907,6 +4970,77 @@ static void gen_complex_op(int op)
 
     cplx = is_complex_type(&vtop[-1].type) ? vtop[-1].type : vtop[0].type;
     base = cplx.ref->next->type;
+
+    /* Constant folding: if both operands are compile-time constants, compute the
+       result and emit it into rodata as a constant complex, so it is usable in a
+       file-scope/static initializer (§6.6/§6.7.9) instead of materializing locals
+       and emitting runtime code (which is "not constant" at load time). Gated to
+       float/double elements and the four arithmetic ops; everything else falls
+       through to the runtime path below unchanged. The naive multiply and divide
+       formulas match what gcc/clang use when folding constants (the Annex G
+       robust runtime helper is for non-constant edge cases). */
+    {
+        SValue are, aim, bre, bim;
+        int ebt = base.t & VT_BTYPE;
+        if ((ebt == VT_FLOAT || ebt == VT_DOUBLE)
+            && (op == '+' || op == '-' || op == '*' || op == '/')
+            && cplx_extract_const(&vtop[-1], &are, &aim)
+            && cplx_extract_const(&vtop[0], &bre, &bim)) {
+            init_params pp = { .sec = rodata_section };
+            unsigned long offset;
+            int bsz, bal, csz, cal;
+            bsz = type_size(&base, &bal);
+            csz = type_size(&cplx, &cal);
+            if (NODATA_WANTED) { csz = 0; cal = 1; }
+            offset = section_add(pp.sec, csz, cal);
+            /* real part */
+            switch (op) {
+            case '+': case '-':
+                cplx_push_cst(&are, &base); cplx_push_cst(&bre, &base); gen_op(op);
+                break;
+            case '*':
+                cplx_push_cst(&are, &base); cplx_push_cst(&bre, &base); gen_op('*');
+                cplx_push_cst(&aim, &base); cplx_push_cst(&bim, &base); gen_op('*');
+                gen_op('-');
+                break;
+            default: /* '/' : (are*bre + aim*bim) / (bre^2 + bim^2) */
+                cplx_push_cst(&are, &base); cplx_push_cst(&bre, &base); gen_op('*');
+                cplx_push_cst(&aim, &base); cplx_push_cst(&bim, &base); gen_op('*');
+                gen_op('+');
+                cplx_push_cst(&bre, &base); cplx_push_cst(&bre, &base); gen_op('*');
+                cplx_push_cst(&bim, &base); cplx_push_cst(&bim, &base); gen_op('*');
+                gen_op('+');
+                gen_op('/');
+                break;
+            }
+            init_putv(&pp, &base, offset);
+            /* imaginary part */
+            switch (op) {
+            case '+': case '-':
+                cplx_push_cst(&aim, &base); cplx_push_cst(&bim, &base); gen_op(op);
+                break;
+            case '*':
+                cplx_push_cst(&are, &base); cplx_push_cst(&bim, &base); gen_op('*');
+                cplx_push_cst(&aim, &base); cplx_push_cst(&bre, &base); gen_op('*');
+                gen_op('+');
+                break;
+            default: /* '/' : (aim*bre - are*bim) / (bre^2 + bim^2) */
+                cplx_push_cst(&aim, &base); cplx_push_cst(&bre, &base); gen_op('*');
+                cplx_push_cst(&are, &base); cplx_push_cst(&bim, &base); gen_op('*');
+                gen_op('-');
+                cplx_push_cst(&bre, &base); cplx_push_cst(&bre, &base); gen_op('*');
+                cplx_push_cst(&bim, &base); cplx_push_cst(&bim, &base); gen_op('*');
+                gen_op('+');
+                gen_op('/');
+                break;
+            }
+            init_putv(&pp, &base, offset + bsz);
+            vtop -= 2;                  /* discard the two constant operands */
+            vpush_ref(&cplx, pp.sec, offset, csz);
+            vtop->r |= VT_LVAL;
+            return;
+        }
+    }
 
     cplx_materialize(&cplx, &base, &b);
     cplx_materialize(&cplx, &base, &a);
@@ -4961,6 +5095,38 @@ static void gen_complex_op(int op)
 static void gen_complex_cast(CType *dt)
 {
     SValue src, r;
+
+    /* Constant folding (mirror of gen_complex_op): a compile-time-constant
+       source — a real scalar, or a float/double complex rodata constant — casts
+       to a constant, so it stays usable in a static initializer. Real->complex
+       and complex->complex (e.g. the float `_Complex_I` widened to double in
+       `1.0 + 2.0*I`) both fold; complex->real takes the real part. Non-constant
+       or long-double sources fall through to the runtime path below. */
+    {
+        SValue re, im;
+        if (cplx_extract_const(vtop, &re, &im)) {
+            if (is_complex_type(dt)) {
+                CType dbase = dt->ref->next->type;
+                init_params pp = { .sec = rodata_section };
+                unsigned long offset;
+                int bsz, bal, csz, cal;
+                bsz = type_size(&dbase, &bal);
+                csz = type_size(dt, &cal);
+                if (NODATA_WANTED) { csz = 0; cal = 1; }
+                offset = section_add(pp.sec, csz, cal);
+                cplx_push_cst(&re, &dbase); init_putv(&pp, &dbase, offset);
+                cplx_push_cst(&im, &dbase); init_putv(&pp, &dbase, offset + bsz);
+                vtop--;                         /* drop the constant source */
+                vpush_ref(dt, pp.sec, offset, csz);
+                vtop->r |= VT_LVAL;
+            } else {
+                /* complex/real constant -> real scalar: take the real part */
+                vtop--;
+                cplx_push_cst(&re, dt);
+            }
+            return;
+        }
+    }
 
     if (is_complex_type(&vtop->type)) {
         CType sbase = vtop->type.ref->next->type;

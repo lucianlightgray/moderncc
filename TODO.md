@@ -721,17 +721,25 @@ bulk of each area matched the references; these are the residual divergences.
   adding the two *missing* pedantic diagnostics noted above
   (empty-`__VA_ARGS__` §6.10.3p4, label-then-declaration §6.8.1).
 
-- [~] **[FEATURE] `__builtin_complex` + complex constant-folding.**
+- [x] **[FEATURE] `__builtin_complex` + complex constant-folding — complete.**
   `__builtin_complex(re, im)` is implemented (`src/mccgen.c`, `TOK_builtin_complex`)
-  for both the **runtime** case (`cplx_local`) and the **constant** case (when
-  both parts are constants it emits the complex into a rodata anonymous object via
-  `section_add`/`vpush_ref`/`init_putv`, usable in static initializers). Wired to
-  `CMPLX` and `_Complex_I`; `gen_cast` was made a no-op for identical complex
-  types so the rodata reference survives to the static memmove. DONE: `CMPLX`
-  (§7.3.9.3) and same-element static `_Complex_I` (§7.3.1). OPEN: complex constant
-  *arithmetic* folding (`a+b*I`, §6.9.2) and cross-element complex→complex
-  *constant* conversion — the const evaluator has no complex support, so these
-  still error cleanly (not a miscompile).
+  for both the **runtime** case (`cplx_local`) and the **constant** case (rodata
+  anonymous object via `section_add`/`vpush_ref`/`init_putv`). Wired to `CMPLX`
+  and `_Complex_I`. **Now also folds complex constant *arithmetic* and conversions
+  in static initializers** (§6.6/§6.7.9): `gen_complex_op` and `gen_complex_cast`
+  recognise compile-time-constant operands — a real scalar constant, or a
+  float/double complex rodata constant read back via the source section
+  (`mcc_state->sections[elfsym(sym)->st_shndx]->data`, the same path the static-init
+  memmove uses) — compute `+`/`-`/`*`/`/` (and real↔complex / cross-element complex
+  conversion) with the scalar folder, and emit the result as a rodata complex
+  constant. So `double _Complex a = 1.0 + 2.0*I;`, `(2.0+1.0*I)*(1.0+1.0*I)`, the
+  float `_Complex_I` widened to double, division, and nesting all work at file
+  scope, **byte-matching gcc** (`creal`/`cimag` verified). Limited to float/double
+  elements (long double's in-memory layout isn't portable to read back when cross
+  compiling — it stays the clean runtime path); the Annex-G robust runtime helper
+  is unchanged for non-constant `*`/`/`. exec `c11_complex_const_fold`; runtime-
+  verified on i386/arm/arm64/riscv64 via qemu + x86_64 native; self-host fixpoint
+  preserved.
 
 - [x] **[BUG] Self-host byte-reproducibility 2-cycle — FIXED (live `#ifndef __builtin_*` predef guards).**
   The 3-stage ELF self-host had been landing in a **2-cycle** (stage2 ≠ stage3,
