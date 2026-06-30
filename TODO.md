@@ -518,11 +518,17 @@ bulk of each area matched the references; these are the residual divergences.
   `void*`↔object* and an explicit `(void*)fp` cast stay valid. Matches gcc/clang
   `-pedantic`. cli `fn_pointer_void_conversion`.
 
-- [ ] **[OPT] §6.6p6 — float-derived (non-ICE) array size silently folded.**
-  `int a[(int)(1.0+2.0)];` / `int a[(1.0<2.0)?4:2];` accepted silently at file
-  scope; a cast of a float *expression* (not a float constant) is not an ICE.
-  gcc/clang warn by default (VLA-folded). Distinct from the tracked comma-in-ICE
-  §6.6p3 item.
+- [x] **[OPT] §6.6p6 — float-derived (non-ICE) array size now diagnosed at file scope.**
+  `int a[(int)(1.0+2.0)];` / `int a[(1.0<2.0)?4:2];` now warn "ISO C forbids an
+  array size that is not an integer constant expression" under `-pedantic` at file
+  scope. `gen_opif` (`src/mccgen.c`) sets a new `ice_float_op` flag whenever a
+  floating arithmetic/comparison is folded in a `CONST_WANTED` context; the
+  array-size site resets it before `expr_const()` and warns if it folded to a
+  constant via a float op. A floating constant as the *immediate* operand of a
+  cast goes through `gen_cast` not `gen_opif`, so `(int)3.0` and `(int)1.5+(int)2.5`
+  stay valid ICEs (silent even under `-pedantic-errors`). Block-scope arrays fold
+  silently — VLAs are allowed there, matching gcc/clang exactly. cli
+  `float_derived_array_size`.
 
 ### §6.7 / §6.2 / §6.9 declarations
 

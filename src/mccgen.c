@@ -50,6 +50,7 @@ ST_DATA int func_ind;
 static int func_old;
 static int cur_func_noreturn; /* the function being compiled is _Noreturn */
 static int cur_func_inline_extern; /* 6.7.4p3: inline def with external linkage */
+static int ice_float_op; /* 6.6: a floating op folded inside a constant expr */
 ST_DATA const char *funcname;
 ST_DATA CType int_type, func_old_type, char_type, char_pointer_type;
 static CString initstr;
@@ -2566,6 +2567,14 @@ static void gen_opif(int op)
 
     c1 = (v1->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
     c2 = (v2->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
+    /* 6.6p6: a floating operation (arithmetic or comparison) is not allowed in
+       an integer constant expression — only a floating constant as the immediate
+       operand of a cast is. Record that one occurred during a constant-expression
+       evaluation so contexts requiring an ICE (e.g. array size) can diagnose a
+       value that merely folds to a constant. Casts go through gen_cast, not here,
+       so `(int)3.0` is correctly not flagged. */
+    if (CONST_WANTED)
+        ice_float_op = 1;
     /* 10.3.4 / Annex F: under #pragma STDC FENV_ACCESS ON the runtime rounding
        mode and exception flags are observable, so don't fold rounding-sensitive
        FP arithmetic at compile time (matches gcc) — leave it to runtime ops.
@@ -5491,6 +5500,7 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td)
             break;
 
 	} else if (tok != ']') {
+            ice_float_op = 0;
             if (!local_stack || (storage & VT_STATIC))
                 vpushi(expr_const());
             else {
@@ -5502,6 +5512,12 @@ check:
                 n = vtop->c.i;
                 if (n < 0)
                     mcc_error("invalid array size");
+                /* 6.6p6: a size that only folds to a constant via a floating
+                   operation is not an integer constant expression; gcc/clang
+                   accept it as a folded-VLA extension and diagnose it. */
+                if (ice_float_op)
+                    mcc_pedantic("ISO C forbids an array size that is not an "
+                                 "integer constant expression");
             } else {
                 if (!is_integer_btype(vtop->type.t & VT_BTYPE))
                     mcc_error("size of variable length array should be an integer");

@@ -923,6 +923,22 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'from a string literal of a different|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 CLEAN_OK\n2 from a string literal of a different\n" },
 
+/* §6.6p6: a file-scope array size that only folds to a constant through a
+   floating operation is not an integer constant expression; it is diagnosed
+   under -pedantic (a folded-VLA extension, like gcc/clang). A floating constant
+   as the immediate operand of a cast ((int)3.0, (int)1.5+(int)2.5) IS a valid
+   ICE and stays silent even under -pedantic-errors; block-scope arrays fold
+   silently (VLAs are allowed there) — matching both refs. */
+{ "float_derived_array_size", "",
+  "printf 'int a[(int)(1.0+2.0)]; int b[(1.0<2.0)?4:2];\\n' > {W}/fd.c && "
+  "printf 'int c[(int)3.0]; int d[(int)1.5+(int)2.5]; int e[3+4];\\n"
+  "int g(void){int z[(int)(1.0+2.0)]; return sizeof z;}\\n"
+  "int main(void){return 0;}\\n' > {W}/fdok.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/fd.c -o {W}/fd.o 2>&1; "
+  "{MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/fdok.c -o {W}/fdok.o 2>&1 && echo CLEAN_OK; } | "
+  "grep -oE 'not an integer constant expression|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
+  "1 CLEAN_OK\n2 not an integer constant expression\n" },
+
 /* §7.17.8: atomic_flag_* take volatile atomic_flag *, so a non-pointer argument
    is diagnosed; the correct &atomic_flag form compiles clean under -Werror. */
 { "atomic_flag_type", "",
