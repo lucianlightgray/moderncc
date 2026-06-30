@@ -3316,11 +3316,12 @@ static inline int *macro_twosharps(const int *ptr0)
         if (tokcstr.size) {
             int ci;
             cstr_ccat(&tokcstr, 0);
-            /* 6.10.3.3p3: if ## produces a comment introducer ('//' or '/*')
-               the result is not a valid preprocessing token. Re-lexing it would
-               run the comment scanner off the end of the synthetic :paste:
-               buffer (no terminating newline) and loop forever, so diagnose and
-               stop here as gcc/clang do, instead of re-lexing. */
+            /* 6.10.3.3p3: if ## produces a comment introducer (a line- or
+               block-comment opener) the result is not a valid preprocessing
+               token. Re-lexing it would run the comment scanner off the end of
+               the synthetic :paste: buffer (no terminating newline) and loop
+               forever, so diagnose and stop here as gcc/clang do, instead of
+               re-lexing. */
             for (ci = 0; ci + 1 < tokcstr.size - 1; ci++) {
                 char *d = (char *)tokcstr.data;
                 if (d[ci] == '/' && (d[ci + 1] == '/' || d[ci + 1] == '*'))

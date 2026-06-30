@@ -823,16 +823,18 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'lvalue expected|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 VALID_OK\n4 lvalue expected\n" },
 
-/* §6.10.3.3p3: a ## that forms a comment introducer ('//' or '/*') is not a
+/* §6.10.3.3p3: a ## that forms a comment introducer (a line- or block-comment
+   opener) is not a
    valid preprocessing token; mcc must diagnose and terminate (it used to run the
    comment scanner off the synthetic paste buffer and loop forever). The
-   `timeout` guards against a hang regression; a valid paste still works. */
+   {TIMEOUT} guards against a hang regression where available; a valid paste
+   still works. */
 { "paste_comment_introducer", "",
   "printf '#define C(a,b) a ## b\\nC(/,/)\\n' > {W}/pc1.c && "
   "printf '#define C(a,b) a ## b\\nC(/,*)\\n' > {W}/pc2.c && "
   "printf '#define C(a,b) a ## b\\nint C(foo,bar)=5;\\nint main(void){return foobar-5;}\\n' > {W}/pcok.c && "
-  "{ timeout 10 {MCC} -B{B} -I{I} -std=c11 -E -P {W}/pc1.c 2>&1; "
-  "timeout 10 {MCC} -B{B} -I{I} -std=c11 -E -P {W}/pc2.c 2>&1; "
+  "{ {TIMEOUT}{MCC} -B{B} -I{I} -std=c11 -E -P {W}/pc1.c 2>&1; "
+  "{TIMEOUT}{MCC} -B{B} -I{I} -std=c11 -E -P {W}/pc2.c 2>&1; "
   "{MCC} -B{B} -I{I} {W}/pcok.c -o {W}/pcok 2>&1 && echo VALID_OK; } | "
   "grep -oE 'invalid preprocessing token|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 VALID_OK\n2 invalid preprocessing token\n" },
@@ -859,11 +861,11 @@ static const cli_case_t cli_cases[] = {
 /* §5.2.1.1 / translation phase 1: trigraphs are processed in a strict ISO mode
    (-std=c11) like gcc/clang, but NOT in -std=gnu11 (or the default). */
 { "trigraphs_strict_std", "",
-  "printf 'int a??(2??);\\n' > {W}/tg.c && "
+  "printf 'int a?" "?(2?" "?);\\n' > {W}/tg.c && "
   "{ {MCC} -B{B} -I{I} -std=c11 -E -P {W}/tg.c 2>&1; "
   "{MCC} -B{B} -I{I} -std=gnu11 -E -P {W}/tg.c 2>&1; } | "
   "grep -oE 'a\\?\\?\\(|a\\[2\\]' | sort | uniq -c | sed 's/^ *//'",
-  "1 a??(\n1 a[2]\n" },
+  "1 a?" "?(\n1 a[2]\n" },
 
 /* §6.10.3p4 (pre-C23): invoking a variadic macro with no argument for the '...'
    is diagnosed under -pedantic (warning) / -pedantic-errors (error); a call that
