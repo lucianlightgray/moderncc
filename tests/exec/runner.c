@@ -319,12 +319,17 @@ int main(int argc, char **argv){
         snprintf(prefix, sizeof prefix, "%s/", srcdir);
         strip_all(out, prefix);
 
-        if (texts_equal(g->expect, out)){
+        /* A few codegen goldens emit ABI-specific output (LLP64 vs LP64); when
+           a WIN32-specific golden is supplied, use it on the WIN32 target. */
+        const char *expect = g->expect;
+        if (g->expect_win32 && !strcmp(envv("MCC_TEST_OS", "unknown"), "WIN32"))
+            expect = g->expect_win32;
+        if (texts_equal(expect, out)){
             pass++;
         } else {
             fail++;
             printf("FAIL  %-32s (mismatch)\n", g->name);
-            printf("  --- expected ---\n%s\n  --- got ---\n%s\n", g->expect, out);
+            printf("  --- expected ---\n%s\n  --- got ---\n%s\n", expect, out);
         }
         free(out);
     }
