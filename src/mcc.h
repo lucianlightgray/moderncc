@@ -458,7 +458,8 @@ struct SymAttr {
     transp_union : 1,
     is_complex  : 1,
     tentative_array : 1,        /* 6.9.2: incomplete-array tentative definition */
-    is_register : 1;            /* 6.7.1: declared with the register specifier */
+    is_register : 1,            /* 6.7.1: declared with the register specifier */
+    used : 1;                   /* -Wunused-variable: referenced after declaration */
 };
 
 struct FuncAttr {
@@ -740,6 +741,7 @@ struct MCCState {
     unsigned char warn_sign_compare;    /* -Wsign-compare: signed/unsigned comparison (opt-in) */
     unsigned char warn_parentheses;     /* -Wparentheses: assignment as a truth value (-Wall) */
     unsigned char warn_switch;          /* -Wswitch: enum switch omits a case (-Wall) */
+    unsigned char warn_unused_variable; /* -Wunused-variable: never-referenced local (-Wall) */
     unsigned char warn_pedantic;        /* -pedantic: diagnose ISO C extensions */
     unsigned char pedantic_errors;      /* -pedantic-errors: make them hard errors */
     #define WARN_ON  1

@@ -1735,5 +1735,16 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -Wall -Wno-format -Werror -c {W}/f.c -o /dev/null 2>&1 && echo NOFORMAT_OK",
   "1 warn\nNOFORMAT_OK\n" },
 
+/* -Wunused-variable warns on an automatic local that is never referenced
+   (reported at the declaration line, like gcc); a read, an address-of, or a
+   parameter is exempt. Enabled by -Wall; default silent. */
+{ "wunused_variable", "",
+  "printf 'int main(void){ int unused; int used=5; return used; }\\n' > {W}/uv.c && "
+  "printf 'void g(int*); int ok(void){ int x; g(&x); int y=1; return y; }\\n' > {W}/uv_ok.c && "
+  "echo \"$({MCC} -B{B} -I{I} -Wunused-variable -c {W}/uv.c -o /dev/null 2>&1 | grep -c \"unused variable 'unused'\") warn\"; "
+  "{MCC} -B{B} -I{I} -Wunused-variable -Werror -c {W}/uv_ok.c -o /dev/null 2>&1 && echo OK_CLEAN; "
+  "{MCC} -B{B} -I{I} -c {W}/uv.c -o /dev/null 2>&1 && echo DEFAULT_SILENT",
+  "1 warn\nOK_CLEAN\nDEFAULT_SILENT\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

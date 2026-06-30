@@ -7653,6 +7653,8 @@ special_math_val:
             s = external_global_sym(t, &func_old_type);
         }
 
+        s->a.used = 1;          /* -Wunused-variable: a reference counts as use */
+
         r = s->r;
         if ((r & VT_VALMASK) < VT_CONST)
             r = (r & ~VT_VALMASK) | VT_LOCAL;
@@ -8703,6 +8705,20 @@ static void prev_scope(struct scope *o, int is_expr)
 
     label_pop(&local_label_stack, o->llstk, is_expr);
 
+    /* -Wunused-variable: warn for each automatic local in this scope that was
+       never referenced. A statement-expression (is_expr) is left alone — its
+       last value is implicitly used. Walk before sym_pop frees the syms. */
+    if ((mcc_state->warn_unused_variable & WARN_ON) && !is_expr) {
+        Sym *sm;
+        for (sm = local_stack; sm && sm != o->lstk; sm = sm->prev) {
+            if ((sm->r & VT_VALMASK) == VT_LOCAL && !sm->a.used
+                && sm->v >= TOK_IDENT && sm->v < SYM_FIRST_ANOM
+                && !(sm->type.t & VT_TYPEDEF))
+                mcc_warning_c(warn_unused_variable)(
+                    "%i:unused variable '%s'",
+                    sm->vla_inner_id, get_tok_str(sm->v, NULL));
+        }
+    }
 
     sym_pop(&local_stack, o->lstk, is_expr);
 
@@ -10220,6 +10236,11 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 	    }
 
             sym->a = ad->a;
+            /* -Wunused-variable: remember this automatic object's declaration
+               line so the warning (issued at scope close) points at the
+               declaration like gcc. vla_inner_id is otherwise used only on label
+               syms, so it is free to reuse here for a VT_LOCAL object. */
+            sym->vla_inner_id = file->line_num;
         } else {
             vset(type, r, addr);
         }

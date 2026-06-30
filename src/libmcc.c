@@ -1768,6 +1768,9 @@ static const FlagDef options_W[] = {
     /* -Wswitch: a switch on an enumerated type that omits a case and has no
        `default`. Enabled by -Wall (WD_ALL), like gcc. */
     { offsetof(MCCState, warn_switch), WD_ALL, "switch" },
+    /* -Wunused-variable: an automatic local declared but never referenced.
+       Enabled by -Wall (WD_ALL), like gcc. */
+    { offsetof(MCCState, warn_unused_variable), WD_ALL, "unused-variable" },
     /* -Wunknown-pragmas: an unrecognized #pragma. Enabled by -Wall (WD_ALL),
        matching gcc, and separately controllable via -W[no-]unknown-pragmas. */
     { offsetof(MCCState, warn_unknown_pragmas), WD_ALL, "unknown-pragmas" },
