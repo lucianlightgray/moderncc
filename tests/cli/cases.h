@@ -981,5 +981,17 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'empty declaration|VALID_OK' | sort | uniq -c | sed 's/^ *//'",
   "1 VALID_OK\n1 empty declaration\n" },
 
+/* §6.5.6: arithmetic on a 'void *' or a function pointer (++, +/- int, and
+   pointer-pointer subtraction) is a GNU extension diagnosed under -pedantic;
+   object-pointer arithmetic stays clean even under -pedantic-errors. */
+{ "void_fn_pointer_arith", "",
+  "printf 'void f(void*p){p++;} long g(void*a,void*b){return a-b;}\\n"
+  "void h(int(*fp)(void)){fp++;}\\n' > {W}/pa.c && "
+  "printf 'int f(int*p){return *(p+1);} long g(int*a,int*b){return a-b;}\\n"
+  "char*h(char*p){return p+3;}\\n' > {W}/paok.c && "
+  "{ {MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/pa.c -o {W}/pa.o 2>&1 | grep -c 'forbids arithmetic'; "
+  "{MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/paok.c -o {W}/paok.o 2>&1 && echo VALID_OK; }",
+  "3\nVALID_OK\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

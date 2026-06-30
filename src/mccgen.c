@@ -2990,6 +2990,18 @@ op_err:
         int align;
         if (op_class == CMP_OP)
             goto std_op;
+        /* 6.5.6: pointer +/- and pointer-pointer subtraction require pointers
+           to complete object types. Arithmetic on a 'void *' or a function
+           pointer (mcc treats their size as 1) is a GNU extension ISO C forbids;
+           gcc/clang diagnose it under -pedantic. */
+        if (op == '+' || op == '-') {
+            CType *pt = bt1 == VT_PTR ? pointed_type(&vtop[-1].type)
+                      : bt2 == VT_PTR ? pointed_type(&vtop[0].type) : NULL;
+            if (pt && ((pt->t & VT_BTYPE) == VT_VOID
+                       || (pt->t & VT_BTYPE) == VT_FUNC))
+                mcc_pedantic("ISO C forbids arithmetic on a pointer to "
+                             "'void' or to a function");
+        }
         if (bt1 == VT_PTR && bt2 == VT_PTR) {
             if (op != '-')
                 goto op_err;

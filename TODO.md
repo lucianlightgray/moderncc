@@ -488,11 +488,12 @@ bulk of each area matched the references; these are the residual divergences.
   hole.**
   3-way: mcc=accepts(const-launders) | gcc=error | clang=warn.
 
-- [ ] **[OPT] §6.5.6 — `void *` / function-pointer arithmetic never diagnosed.**
-  `void *p; p++;`, `fp++`, `fp+1`, `void*−void*` all accepted even at
-  `-pedantic-errors` (mcc treats `sizeof(void)`/`sizeof(func)`=1). gcc/clang
-  diagnose under `-pedantic` (`-Wpointer-arith`/`-Wgnu-pointer-arith`). No
-  pointer-arith pedantic diagnostic exists in the source.
+- [x] **[OPT] §6.5.6 — `void *` / function-pointer arithmetic now diagnosed under `-pedantic`.**
+  `gen_op` (`src/mccgen.c`, the `VT_PTR` arithmetic branch) now emits
+  `mcc_pedantic` "ISO C forbids arithmetic on a pointer to 'void' or to a
+  function" for `+`/`-`/`++`/`--` and pointer-pointer subtraction when the
+  target type is `void` or a function. Object/`char` pointer arithmetic stays
+  clean. Matches gcc/clang `-Wpointer-arith`. cli `void_fn_pointer_arith`.
 
 - [ ] **[OPT] §6.3.2.3 — function-pointer ↔ `void *` conversion never diagnosed.**
   `void *v = fp;` / `fp = v;` silent even at `-pedantic-errors`; gcc/clang error
