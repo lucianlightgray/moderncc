@@ -597,6 +597,7 @@ ST_FUNC const char *get_tok_str(int v, CValue *cv)
     case TOK_U8STR:
         if (v == TOK_U8STR)
             cstr_ccat(&cstr_buf, 'u'), cstr_ccat(&cstr_buf, '8');
+        /* fall through */
     case TOK_STR:
         cstr_ccat(&cstr_buf, '\"');
         if (v == TOK_STR || v == TOK_U8STR) {

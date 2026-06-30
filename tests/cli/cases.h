@@ -1834,7 +1834,7 @@ static const cli_case_t cli_cases[] = {
 /* §7.26.1p3: <threads.h>'s TSS_DTOR_ITERATIONS must be an integer constant
    expression — usable as an array size and in _Static_assert (was undeclared via
    PTHREAD_DESTRUCTOR_ITERATIONS). */
-{ "tss_dtor_iterations_ice", "",
+{ "tss_dtor_iterations_ice", "os!=WIN32:<threads.h> (C11 threads) not provided on the WIN32 target",
   "printf '#include <threads.h>\\n_Static_assert(TSS_DTOR_ITERATIONS>=1,\"ice\");\\nint a[TSS_DTOR_ITERATIONS];\\nint main(void){return (int)(sizeof a/sizeof a[0])==4 ? 0 : 1;}\\n' > {W}/tss.c && "
   "{MCC} -B{B} -I{I} -c {W}/tss.c -o /dev/null 2>&1 && echo ICE_OK",
   "ICE_OK\n" },
@@ -1842,7 +1842,7 @@ static const cli_case_t cli_cases[] = {
 /* §7.25p7: type-generic creal/cimag select crealf/cimagf (float) or
    creall/cimagl (long double) by element type — sizeof of the result is 4 / 16
    for float / long double complex, 8 for double (was fixed-double 8/8). */
-{ "tgmath_creal_cimag_precision", "",
+{ "tgmath_creal_cimag_precision", "os!=WIN32:WIN32 is LLP64 with long double == double; creal(long double complex) is 8 not 16",
   "printf '#include <tgmath.h>\\n#include <stdio.h>\\nint main(void){ long double complex l=1; float complex f=1; double complex d=1; printf(\"%%d %%d %%d\\\\n\",(int)sizeof(creal(l)),(int)sizeof(cimag(f)),(int)sizeof(creal(d))); return 0; }\\n' > {W}/cgt.c && "
   "{MCC} -B{B} -I{I} {W}/cgt.c -lm -o {W}/cgt && {W}/cgt",
   "16 4 8\n" },

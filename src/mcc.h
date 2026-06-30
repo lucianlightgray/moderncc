@@ -315,6 +315,7 @@ extern long double strtold (const char *__nptr, char **__endptr);
 
 #ifdef MCC_PROFILE
 # define static
+# undef inline    /* on _WIN32 'inline' is already a macro (__inline) */
 # define inline
 #endif
 
