@@ -77,8 +77,6 @@ new `-Wformat`.) Most need scope/dataflow tracking — size each before starting
 - [ ] **[diag] `-Wsign-compare`** — signed/unsigned comparison (under `-Wextra`).
 - [ ] **[diag] `-Wswitch`** — `switch` on an enum that omits a case / lacks `default`.
 - [ ] **[diag] `-Wshadow`** — a declaration shadowing one in an outer scope.
-- [ ] **[diag] `-Wimplicit-int`** — named flag for the implicit-`int` diagnostic
-  mcc already emits as a bare warning (give it a controllable `-W[no-]` name).
 - [ ] **[diag] `-Wextra` umbrella is inert** — accepted but enables nothing. Wire
   it to a set (unused-parameter, sign-compare, …) like gcc/clang.
 - [ ] **[diag] consider enabling `-Wformat` under `-Wall`** (gcc/clang do). Held

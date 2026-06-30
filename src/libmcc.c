@@ -885,6 +885,7 @@ LIBMCCAPI MCCState *mcc_new(void)
     s->warn_implicit_function_declaration = 1;
     s->warn_discarded_qualifiers = 1;
     s->warn_sequence_point = 1;         /* 6.5p2: on by default, like gcc */
+    s->warn_implicit_int = 1;           /* 6.7.2p2: on by default, like gcc */
     s->ms_extensions = 1;
     s->unwind_tables = 1;
 
@@ -1753,6 +1754,9 @@ static const FlagDef options_W[] = {
     /* -Wundef: an undefined identifier in a #if expression (evaluates to 0).
        Opt-in, like gcc (not in -Wall). */
     { offsetof(MCCState, warn_undef), 0, "undef" },
+    /* -Wimplicit-int: a declaration whose type defaults to int (C99 removed
+       implicit int). On by default (set in mcc_new); -Wno-implicit-int disables. */
+    { offsetof(MCCState, warn_implicit_int), 0, "implicit-int" },
     /* -Wunknown-pragmas: an unrecognized #pragma. Enabled by -Wall (WD_ALL),
        matching gcc, and separately controllable via -W[no-]unknown-pragmas. */
     { offsetof(MCCState, warn_unknown_pragmas), WD_ALL, "unknown-pragmas" },

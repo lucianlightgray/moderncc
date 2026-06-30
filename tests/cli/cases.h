@@ -1671,5 +1671,15 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'frobnicate ignored|OFF_OK|DEFAULT_SILENT' | sort | uniq -c | sed 's/^ *//'",
   "1 DEFAULT_SILENT\n1 OFF_OK\n1 frobnicate ignored\n" },
 
+/* -Wimplicit-int controls the "type/return type defaults to 'int'" diagnostic
+   (C99 removed implicit int). On by default like gcc (so it still warns, and
+   -Werror makes it an error); -Wno-implicit-int turns it off. */
+{ "wimplicit_int_flag", "",
+  "printf 'foo(void){ return 0; }\\nint main(void){return foo();}\\n' > {W}/ii.c && "
+  "{ {MCC} -B{B} -I{I} -c {W}/ii.c -o /dev/null 2>&1; "
+  "{MCC} -B{B} -I{I} -Wno-implicit-int -Werror -c {W}/ii.c -o /dev/null 2>&1 && echo OFF_OK; } | "
+  "grep -oE \"return type defaults to 'int'|OFF_OK\" | sort | uniq -c | sed 's/^ *//'",
+  "1 OFF_OK\n1 return type defaults to 'int'\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));

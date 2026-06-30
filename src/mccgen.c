@@ -10546,7 +10546,7 @@ static int decl(int l)
         if (parse_btype(&btype, &adbase, l == VT_LOCAL)) {
             /* 6.7.2p2: C11 removed implicit int. */
             if (adbase.implicit_int)
-                mcc_warning("type defaults to 'int' in declaration");
+                mcc_warning_c(warn_implicit_int)("type defaults to 'int' in declaration");
         } else {
             if (l == VT_JMP)
                 return 0;
@@ -10604,7 +10604,7 @@ static int decl(int l)
             if ((type.t & VT_BTYPE) == VT_FUNC) {
                 /* 6.7.2p2: implicit-int function return type (e.g. `foo(void)`). */
                 if (oldint)
-                    mcc_warning("return type defaults to 'int'");
+                    mcc_warning_c(warn_implicit_int)("return type defaults to 'int'");
                 if ((type.t & VT_STATIC) && (l != VT_CONST))
                     mcc_error("function without file scope cannot be static");
                 sym = type.ref;
@@ -10766,7 +10766,7 @@ static int decl(int l)
                            marker from its implicit-int setup; gcc and clang
                            both diagnose it. */
                         if (sa->type.t & VT_EXTERN)
-                            mcc_warning("type of '%s' defaults to 'int'",
+                            mcc_warning_c(warn_implicit_int)("type of '%s' defaults to 'int'",
                                         get_tok_str(sa->v & ~SYM_FIELD, NULL));
                         if (sa->type.t == VT_FLOAT)
                             sa->type.t = VT_DOUBLE;
