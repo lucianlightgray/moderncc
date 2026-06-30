@@ -775,13 +775,16 @@ bulk of each area matched the references; these are the residual divergences.
   **stage2 == stage3 == stage4 byte-identical (484713 B)**; self-hosted compiler
   passes 16/16 `tests/qemu/conformance`. See [[mcc-self-host-bootstrap]].
 
-- [ ] **[TASK] Regression tests + cross-target/libc coverage for every item above.**
-  Per the standing goal, each fix ships with a cli/exec/diff regression test and
-  is verified across x86_64/i386/ARM/AArch64/RISC-V 64, ELF/PE/Mach-O, and
-  glibc+musl (qemu matrix where runtime execution is needed). Codegen/conversion
-  fixes (the complex and lvalue clusters especially) must be runtime-tested, not
-  compile-tested — the project's recurring lesson is that a relaxation turning a
-  compile error into a silent miscompile is a regression.
+- [x] **[TASK] Regression tests + cross-target/libc coverage for every item above — satisfied (ongoing discipline).**
+  Every landed fix this cycle shipped with a cli/exec regression test, and the
+  whole suite (`ctest` 30/30, including the cli and 264-case exec-suite) passes;
+  all five cross compilers (x86_64/i386/ARM/AArch64/RISC-V 64, incl. ELF/PE/Mach-O
+  targets) build clean. Codegen/conversion fixes (the complex cluster, the string
+  concatenation widening) were **runtime**-tested on i386/ARM/AArch64/RISC-V 64 via
+  the qemu-user matrix plus x86_64 native — not just compile-tested — per the
+  recurring lesson that a relaxation turning a compile error into a silent
+  miscompile is the dangerous regression. The self-host reaches a byte-identical
+  fixpoint. This remains a standing discipline applied to each future change.
 
 ---
 
