@@ -1871,6 +1871,25 @@ endif()
         mcc_skip_test(diff3-suite "needs native host + both gcc and clang")
     endif()
 
+    # Preprocessor differential suite: `mcc -E` vs the gcc==clang consensus on
+    # every tests/preprocess case (token-stream diff for .c transformations,
+    # diagnostic-present check for diagnostics/, -E smoke for .S asm input).
+    # Native host + both reference compilers + a POSIX shell.
+    find_program(MCC_PP_SH NAMES sh bash)
+    if(NOT MCC_EMULATOR AND DIFF3_GCC AND DIFF3_CLANG AND MCC_PP_SH)
+        add_test(NAME preprocess-suite
+            COMMAND "${MCC_PP_SH}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/preprocess/run_preprocess.sh"
+                    "${_mcc_exe}" "${_bdir}" "${_idir}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/preprocess"
+                    "${DIFF3_GCC}" "${DIFF3_CLANG}")
+        set_tests_properties(preprocess-suite PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77)
+    else()
+        mcc_skip_test(preprocess-suite
+            "needs native host + both gcc and clang + a POSIX shell")
+    endif()
+
     add_executable(libmcc_test tests/embed/api_basic.c)
     target_link_libraries(libmcc_test PRIVATE libmcc)
     target_include_directories(libmcc_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -2028,6 +2047,14 @@ endif()
         mcc_skip_test(asm-c-connect-test
             "requires x86 target with integrated assembler (host target: ${MCC_CPU})")
     endif()
+
+    # tests/asm/gas_directives.S is a GAS directive/instruction torture file for the
+    # integrated assembler (intended to be assembled and byte-compared against gas).
+    # mcc's assembler currently errors on the system-instruction encodings near EOF
+    # (sgdtq/sidtq/swapgs, gas_directives.S:811), so it cannot yet be assembled
+    # cleanly. Tracked as a documented skip until those encodings are supported.
+    mcc_skip_test(asm-gas-directives
+        "blocked: integrated assembler lacks sgdtq/sidtq/swapgs encodings (gas_directives.S:811)")
 
     set(MCC_GCCTESTSUITE_PATH "" CACHE PATH
         "gcc.c-torture directory for the `gcctestsuite` target")
