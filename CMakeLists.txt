@@ -108,6 +108,13 @@ function(mcc_map_toolchain_cc tc outvar)
         set(${outvar} "" PARENT_SCOPE)
         return()
     endif()
+    if(tc STREQUAL "mingw")
+        # The downloaded x86_64 gcc; returned even if not yet on disk -- the
+        # matrix cell DEPENDS on `mingw-toolchain`, which fetches it first.
+        mcc_mingw_resolve()
+        set(${outvar} "${_MCC_MINGW_X86_64_GCC}" PARENT_SCOPE)
+        return()
+    endif()
     set(_names_auto "")
     set(_names_gcc gcc cc)
     set(_names_clang clang)
@@ -329,9 +336,9 @@ mcc_snapshot_user_presets()
 
 mcc_config_node(MCC_TOOLCHAIN_PROFILE TYPE STRING DEFAULT auto GROUP "Build targets"
     HELP "Toolchain(s) to build with, in order (list, e.g. gcc;clang;mcc); single = profile+defaults"
-    CHOICES auto gcc clang mcc msvc)
+    CHOICES auto gcc clang mcc msvc mingw)
 
-set(_tc_allowed auto gcc clang mcc msvc)
+set(_tc_allowed auto gcc clang mcc msvc mingw)
 foreach(_tc IN LISTS MCC_TOOLCHAIN_PROFILE)
     if(NOT _tc IN_LIST _tc_allowed)
         message(FATAL_ERROR
@@ -345,10 +352,142 @@ set(MCC_TARGETS "native" CACHE STRING
     "Cross-platform target(s) to build, as a list (native;cross;<custom>)")
 set_property(CACHE MCC_TARGETS PROPERTY STRINGS native cross)
 
+# ------------------------------------------------------------------ #
+# Downloadable, self-contained mingw toolchain ("cmake-mingw-*").
+# The `mingw-toolchain` target fetches a portable mingw-w64 GCC and unpacks it
+# under MCC_MINGW_DIR/cmake-mingw-* (gitignored). Two flavours:
+#   winlibs  (default) - current GCC, two NATIVE compilers (x86_64 + i686) from
+#                        checksummed GitHub release zips; gives both ABIs.
+#   multilib           - one gcc that does -m32 AND -m64. No stable checksummed
+#                        host, so its archive URL is user-supplied.
+# Once present it is auto-wired as the differential-test reference cc (MCC_REF_CC)
+# and is selectable as a build toolchain (MCC_TOOLCHAIN_PROFILE=mingw).
+# ------------------------------------------------------------------ #
+mcc_config_node(MCC_MINGW_SOURCE TYPE STRING DEFAULT winlibs GROUP "Build targets" ADVANCED
+    HELP "Source for the `mingw-toolchain` download: winlibs (dual-arch, current) or multilib (single gcc -m32/-m64)"
+    CHOICES winlibs multilib)
+set(MCC_MINGW_DIR "${CMAKE_SOURCE_DIR}" CACHE PATH
+    "Parent directory the downloaded toolchain trees (cmake-mingw-*) live in")
+# WinLibs: pinned UCRT release assets (override to bump). SHA256 from the GitHub
+# release asset digests; file(DOWNLOAD) verifies them.
+set(_wl "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.1.0posix-14.0.0-ucrt-r3")
+set(MCC_MINGW_WINLIBS_X86_64_URL
+    "${_wl}/winlibs-x86_64-posix-seh-gcc-16.1.0-mingw-w64ucrt-14.0.0-r3.zip"
+    CACHE STRING "WinLibs x86_64 (64-bit) toolchain zip URL")
+set(MCC_MINGW_WINLIBS_X86_64_SHA256
+    "4273565109cd8ab8ecef1b0dc2a56fd7f5c7ee0885840a1c011b9325160ec0c3"
+    CACHE STRING "SHA256 of the WinLibs x86_64 zip")
+set(MCC_MINGW_WINLIBS_I686_URL
+    "${_wl}/winlibs-i686-posix-dwarf-gcc-16.1.0-mingw-w64ucrt-14.0.0-r3.zip"
+    CACHE STRING "WinLibs i686 (native 32-bit) toolchain zip URL")
+set(MCC_MINGW_WINLIBS_I686_SHA256
+    "c4c7419f2820ac2e169dc86f1397a07deff20297a107c7a1ca486643d8d435be"
+    CACHE STRING "SHA256 of the WinLibs i686 zip")
+unset(_wl)
+# Multilib (opt-in): supply your own archive (e.g. a SourceForge mingw-w64
+# multilib build). SHA256 optional; SUBDIR is the dir inside the archive that
+# contains bin/gcc.
+set(MCC_MINGW_MULTILIB_URL "" CACHE STRING
+    "Archive URL for a single-gcc multilib toolchain (required when MCC_MINGW_SOURCE=multilib)")
+set(MCC_MINGW_MULTILIB_SHA256 "" CACHE STRING "Optional SHA256 of the multilib archive")
+set(MCC_MINGW_MULTILIB_SUBDIR "mingw64" CACHE STRING
+    "Subdirectory inside the multilib archive that holds bin/gcc")
+
+# Resolve the expected gcc paths for the selected source into the parent scope:
+#   _MCC_MINGW_X86_64_GCC  - 64-bit gcc (matrix cc + reference), or ""
+#   _MCC_MINGW_I686_GCC    - native 32-bit gcc (winlibs only), or ""
+#   _MCC_MINGW_MULTILIB_GCC- single multilib gcc (multilib only), or ""
+# Paths are computed whether or not the toolchain has been downloaded yet (the
+# `mingw-toolchain` target / matrix DEPENDS provide it); callers EXISTS-check.
+function(mcc_mingw_resolve)
+    set(_x "")
+    set(_i "")
+    set(_m "")
+    if(MCC_MINGW_SOURCE STREQUAL "winlibs")
+        set(_x "${MCC_MINGW_DIR}/cmake-mingw-x86_64/mingw64/bin/gcc.exe")
+        set(_i "${MCC_MINGW_DIR}/cmake-mingw-i686/mingw32/bin/gcc.exe")
+    elseif(MCC_MINGW_SOURCE STREQUAL "multilib")
+        set(_m "${MCC_MINGW_DIR}/cmake-mingw-multilib/${MCC_MINGW_MULTILIB_SUBDIR}/bin/gcc.exe")
+        set(_x "${_m}")   # the one multilib gcc serves as the 64-bit cc too
+    endif()
+    set(_MCC_MINGW_X86_64_GCC   "${_x}" PARENT_SCOPE)
+    set(_MCC_MINGW_I686_GCC     "${_i}" PARENT_SCOPE)
+    set(_MCC_MINGW_MULTILIB_GCC "${_m}" PARENT_SCOPE)
+endfunction()
+
+# Build the (url|sha|dest) work-list for the selected source, then generate an
+# idempotent fetch driver and expose it as the `mingw-toolchain` target.
+set(_mingw_entries "")
+if(MCC_MINGW_SOURCE STREQUAL "winlibs")
+    list(APPEND _mingw_entries
+        "${MCC_MINGW_WINLIBS_X86_64_URL}|${MCC_MINGW_WINLIBS_X86_64_SHA256}|${MCC_MINGW_DIR}/cmake-mingw-x86_64")
+    list(APPEND _mingw_entries
+        "${MCC_MINGW_WINLIBS_I686_URL}|${MCC_MINGW_WINLIBS_I686_SHA256}|${MCC_MINGW_DIR}/cmake-mingw-i686")
+elseif(MCC_MINGW_SOURCE STREQUAL "multilib")
+    list(APPEND _mingw_entries
+        "${MCC_MINGW_MULTILIB_URL}|${MCC_MINGW_MULTILIB_SHA256}|${MCC_MINGW_DIR}/cmake-mingw-multilib")
+endif()
+
+set(_mingw_fetch "${CMAKE_BINARY_DIR}/run_mingw_fetch.cmake")
+file(WRITE "${_mingw_fetch}" "set(SOURCE \"${MCC_MINGW_SOURCE}\")\nset(ENTRIES\n")
+foreach(_e IN LISTS _mingw_entries)
+    file(APPEND "${_mingw_fetch}" "    \"${_e}\"\n")
+endforeach()
+file(APPEND "${_mingw_fetch}" ")\n")
+file(APPEND "${_mingw_fetch}" [==[
+# Download + unpack each toolchain archive into its cmake-mingw-* tree. Idempotent
+# via a per-tree .mcc-mingw-stamp marker, and SHA256-verified when a hash is set.
+foreach(_entry IN LISTS ENTRIES)
+    string(REPLACE "|" ";" _parts "${_entry}")
+    list(GET _parts 0 _url)
+    list(GET _parts 1 _sha)
+    list(GET _parts 2 _dest)
+    if(_url STREQUAL "")
+        message(FATAL_ERROR
+            "mingw-toolchain: no archive URL for source '${SOURCE}'. "
+            "For multilib, set -DMCC_MINGW_MULTILIB_URL=<archive-url>.")
+    endif()
+    if(EXISTS "${_dest}/.mcc-mingw-stamp")
+        message(STATUS "mingw-toolchain: ${_dest} already present (delete its "
+                       ".mcc-mingw-stamp to refetch)")
+        continue()
+    endif()
+    get_filename_component(_zip "${_dest}.download" ABSOLUTE)
+    message(STATUS "mingw-toolchain: downloading ${_url}")
+    set(_hashargs "")
+    if(NOT _sha STREQUAL "")
+        set(_hashargs EXPECTED_HASH SHA256=${_sha})
+    endif()
+    file(DOWNLOAD "${_url}" "${_zip}" STATUS _st SHOW_PROGRESS TIMEOUT 3600 ${_hashargs})
+    list(GET _st 0 _code)
+    if(NOT _code EQUAL 0)
+        file(REMOVE "${_zip}")
+        message(FATAL_ERROR "mingw-toolchain: download failed (${_st}): ${_url}")
+    endif()
+    file(REMOVE_RECURSE "${_dest}")
+    file(MAKE_DIRECTORY "${_dest}")
+    message(STATUS "mingw-toolchain: extracting into ${_dest}")
+    file(ARCHIVE_EXTRACT INPUT "${_zip}" DESTINATION "${_dest}")
+    file(REMOVE "${_zip}")
+    file(WRITE "${_dest}/.mcc-mingw-stamp" "${_url}\n")
+    message(STATUS "mingw-toolchain: established ${_dest}")
+endforeach()
+]==])
+
+add_custom_target(mingw-toolchain
+    COMMAND "${CMAKE_COMMAND}" -P "${_mingw_fetch}"
+    COMMENT "Fetching self-contained mingw toolchain (${MCC_MINGW_SOURCE}) into cmake-mingw-*"
+    USES_TERMINAL VERBATIM)
+
 list(LENGTH MCC_TOOLCHAIN_PROFILE _tc_count)
 list(LENGTH MCC_TARGETS _tg_count)
 set(_is_matrix FALSE)
-if(_tc_count GREATER 1 OR _tg_count GREATER 1 OR NOT MCC_TARGETS STREQUAL "native")
+# `mingw` always goes through the matrix even as a single profile: a leaf build
+# never switches CMAKE_C_COMPILER, but a mingw cell must build with the
+# downloaded toolchain (and DEPENDS on its fetch). So treat any config that
+# names mingw as a matrix.
+if(_tc_count GREATER 1 OR _tg_count GREATER 1 OR NOT MCC_TARGETS STREQUAL "native"
+   OR "mingw" IN_LIST MCC_TOOLCHAIN_PROFILE)
     set(_is_matrix TRUE)
 endif()
 if(_is_matrix AND NOT MCC_SUPERBUILD_CHILD)
@@ -440,9 +579,17 @@ if(_is_matrix AND NOT MCC_SUPERBUILD_CHILD)
                 set(_cell_gen_args CMAKE_GENERATOR "${MCC_MSVC_GENERATOR}"
                                    CMAKE_GENERATOR_PLATFORM "${MCC_MSVC_PLATFORM}")
             endif()
-            set(_dep "")
+            set(_dep_list "")
             if(MCC_SUPERBUILD_SEQUENTIAL AND _prev_stage)
-                set(_dep DEPENDS ${_prev_stage})
+                list(APPEND _dep_list ${_prev_stage})
+            endif()
+            if(_tc STREQUAL "mingw")
+                # Fetch/unpack the toolchain before this cell configures with it.
+                list(APPEND _dep_list mingw-toolchain)
+            endif()
+            set(_dep "")
+            if(_dep_list)
+                set(_dep DEPENDS ${_dep_list})
             endif()
             ExternalProject_Add(${_cell}
                 SOURCE_DIR  "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -1955,8 +2102,16 @@ endif()
     set(_ref_cc_major "${MCC_GCC_MAJOR}")
     if(NOT _ref_cc)
         if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
-            find_program(_mcc_ref_gcc NAMES gcc)
-            set(_ref_cc "${_mcc_ref_gcc}")
+            # Prefer the self-contained downloaded mingw (version-pinned, CI-
+            # reproducible) if `mingw-toolchain` has established it; else a gcc
+            # already on PATH.
+            mcc_mingw_resolve()
+            if(EXISTS "${_MCC_MINGW_X86_64_GCC}")
+                set(_ref_cc "${_MCC_MINGW_X86_64_GCC}")
+            else()
+                find_program(_mcc_ref_gcc NAMES gcc)
+                set(_ref_cc "${_mcc_ref_gcc}")
+            endif()
         else()
             set(_ref_cc "${CMAKE_C_COMPILER}")
         endif()
@@ -2045,18 +2200,42 @@ if(NOT _gcc)
     message(STATUS "SKIP: no gcc")
     return()
 endif()
+# How to force a 32-bit reference build. A multilib gcc needs -m32; a NATIVE
+# i686 gcc (e.g. WinLibs i686) is already 32-bit and rejects/ignores it, so the
+# caller passes M32="" for those. Defaults to -m32 for the classic Linux case.
+if(NOT DEFINED M32)
+    set(M32 "-m32")
+endif()
+separate_arguments(_m32 UNIX_COMMAND "${M32}")
 set(_w "${BUILDDIR}/i386-fastcall-abi")
 file(REMOVE_RECURSE "${_w}")
 file(MAKE_DIRECTORY "${_w}")
 file(WRITE "${_w}/m32probe.c" "int main(void){return 0;}\n")
-execute_process(COMMAND "${_gcc}" -m32 "${_w}/m32probe.c" -o "${_w}/m32probe"
-    RESULT_VARIABLE _m32 OUTPUT_QUIET ERROR_QUIET)
-if(NOT _m32 EQUAL 0)
-    message(STATUS "SKIP: gcc -m32 unavailable (no 32-bit multilib)")
+execute_process(COMMAND "${_gcc}" ${_m32} "${_w}/m32probe.c" -o "${_w}/m32probe"
+    RESULT_VARIABLE _m32rc OUTPUT_QUIET ERROR_QUIET)
+if(NOT _m32rc EQUAL 0)
+    message(STATUS "SKIP: 32-bit reference build unavailable (${_gcc} ${M32})")
     return()
 endif()
 if(NOT DEFINED IMCC OR NOT EXISTS "${IMCC}")
     message(STATUS "SKIP: i386 mcc not found at '${IMCC}'")
+    return()
+endif()
+# This test MIXES mcc-built and reference-cc-built objects in one link, so both
+# must share an object format. mcc emits ELF objects; the mingw reference cc
+# emits PE/COFF -- that pairing cannot be linked (it is the real reason this test
+# can't run on a Windows host, independent of -m32). Probe it and skip cleanly.
+file(WRITE "${_w}/fmtprobe.c" "int probe_fn(void){return 0;}\n")
+execute_process(COMMAND "${IMCC}" -c "${_w}/fmtprobe.c" -o "${_w}/fmt_mcc.o"
+    RESULT_VARIABLE _fp1 OUTPUT_QUIET ERROR_QUIET)
+file(WRITE "${_w}/fmtmain.c" "int probe_fn(void); int main(void){return probe_fn();}\n")
+execute_process(COMMAND "${_gcc}" ${_m32} -c "${_w}/fmtmain.c" -o "${_w}/fmt_gcc.o"
+    RESULT_VARIABLE _fp2 OUTPUT_QUIET ERROR_QUIET)
+execute_process(COMMAND "${_gcc}" ${_m32} "${_w}/fmt_gcc.o" "${_w}/fmt_mcc.o" -o "${_w}/fmtprobe"
+    RESULT_VARIABLE _fprc OUTPUT_QUIET ERROR_QUIET)
+if(NOT _fp1 EQUAL 0 OR NOT _fp2 EQUAL 0 OR NOT _fprc EQUAL 0)
+    message(STATUS "SKIP: cannot link mcc + reference-cc objects together "
+                   "(object-format mismatch, e.g. mcc ELF vs mingw PE/COFF)")
     return()
 endif()
 file(WRITE "${_w}/callee.c" "\
@@ -2095,10 +2274,10 @@ macro(_cc cc out)
 endmacro()
 _cc("${IMCC}" "${_w}/e_t.o" -c "${_w}/callee.c")
 _cc("${IMCC}" "${_w}/l_t.o" -c "${_w}/caller.c")
-_cc("${_gcc}" "${_w}/e_g.o" -m32 -O0 -c "${_w}/callee.c")
-_cc("${_gcc}" "${_w}/l_g.o" -m32 -O0 -c "${_w}/caller.c")
+_cc("${_gcc}" "${_w}/e_g.o" ${_m32} -O0 -c "${_w}/callee.c")
+_cc("${_gcc}" "${_w}/l_g.o" ${_m32} -O0 -c "${_w}/caller.c")
 macro(_check name)
-    execute_process(COMMAND "${_gcc}" -m32 ${ARGN} -o "${_w}/run"
+    execute_process(COMMAND "${_gcc}" ${_m32} ${ARGN} -o "${_w}/run"
         RESULT_VARIABLE _lrc OUTPUT_QUIET ERROR_QUIET)
     if(NOT _lrc EQUAL 0)
         message("FAIL  ${name} (link)")
@@ -2133,9 +2312,22 @@ else()
 endif()
 ]==])
     if(TARGET i386-mcc)
+        # Pick the 32-bit reference cc: a downloaded mingw i686 (native, no -m32),
+        # else a downloaded multilib gcc (-m32), else the driver's default system
+        # `gcc -m32`. NB: on a Windows host this still self-skips at run time --
+        # the test mixes mcc and reference-cc objects in one link, but mcc emits
+        # ELF and mingw gcc emits PE/COFF (see the driver's object-format probe).
+        mcc_mingw_resolve()
+        set(_fc_gcc_args "")
+        if(EXISTS "${_MCC_MINGW_I686_GCC}")
+            set(_fc_gcc_args "-DGCC=${_MCC_MINGW_I686_GCC}" "-DM32=")
+        elseif(EXISTS "${_MCC_MINGW_MULTILIB_GCC}")
+            set(_fc_gcc_args "-DGCC=${_MCC_MINGW_MULTILIB_GCC}" "-DM32=-m32")
+        endif()
         add_test(NAME i386-fastcall-abi COMMAND "${CMAKE_COMMAND}"
-            -DIMCC=$<TARGET_FILE:i386-mcc> -P "${_fastcall_drv}")
-        set_tests_properties(i386-fastcall-abi PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+            -DIMCC=$<TARGET_FILE:i386-mcc> ${_fc_gcc_args} -P "${_fastcall_drv}")
+        set_tests_properties(i386-fastcall-abi PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_REGULAR_EXPRESSION "SKIP:")
     else()
         mcc_skip_test(i386-fastcall-abi
             "requires an i386 cross-compiler (target i386-mcc is not configured)")
@@ -2834,7 +3026,7 @@ file(GLOB_RECURSE MCC_TAGFILES
     "${CMAKE_CURRENT_SOURCE_DIR}/*.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/*.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/*.S")
-list(FILTER MCC_TAGFILES EXCLUDE REGEX "/(cmake-build-[^/]*|cmake-windows-[^/]*|build-[^/]*|\\.git|\\.idea|\\.cache)/")
+list(FILTER MCC_TAGFILES EXCLUDE REGEX "/(cmake-build-[^/]*|cmake-windows-[^/]*|cmake-mingw-[^/]*|build-[^/]*|\\.git|\\.idea|\\.cache)/")
 find_program(CTAGS_EXE ctags)
 if(CTAGS_EXE)
     add_custom_target(tags
@@ -2881,6 +3073,6 @@ else()
 endif()
 set(CPACK_SOURCE_GENERATOR "TGZ;ZIP")
 set(CPACK_SOURCE_IGNORE_FILES
-    "/\\.git/" "/cmake-build-[^/]*/" "/cmake-windows-[^/]*/" "/build-[^/]*/"
-    "/\\.idea/" "\\.o$" "\\.a$")
+    "/\\.git/" "/cmake-build-[^/]*/" "/cmake-windows-[^/]*/" "/cmake-mingw-[^/]*/"
+    "/build-[^/]*/" "/\\.idea/" "\\.o$" "\\.a$")
 include(CPack)
