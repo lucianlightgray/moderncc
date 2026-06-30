@@ -63,3 +63,29 @@ fixpoint. Finished items are removed per the goal's convention; the landed work
 - **Docs:** `-pedantic`/`-pedantic-errors` documented in `-hh`.
 
 (Also fixed a latent `warn_num` selector leak surfaced while adding warn flags.)
+
+---
+
+# C9911 re-verification (fresh crawl) — confirmed-open gaps
+
+Re-crawled C9911.md's `mcc:✗ gcc:✓ clang:✓` lines and re-probed each 3-way
+against the live binary. ~30 were stale (fixed in prior rounds; their C9911
+tags lag reality). These four are genuinely still open and actionable:
+
+- [ ] **§7.26.1p3 — `TSS_DTOR_ITERATIONS` is not a usable integer constant.**
+  `<threads.h>` expands it to `PTHREAD_DESTRUCTOR_ITERATIONS`, which mcc reports
+  undeclared, so `int a[TSS_DTOR_ITERATIONS];` errors where gcc/clang accept it
+  as an ICE. Fix the bundled `<threads.h>` to expand it to an integer constant.
+- [ ] **§7.25p7 — `creal`/`cimag` tgmath lose precision.** `tgmath.h` doesn't
+  redefine them, so `<complex.h>`'s fixed-`double` macros give
+  `sizeof(creal(long double complex))`=8 (want 16, `creall`) and
+  `sizeof(cimag(float complex))`=8 (want 4, `cimagf`). Add `_Generic` `creal`/
+  `cimag` to `tgmath.h` dispatching by complex element type.
+- [ ] **§D / §6.4.2.1 — out-of-range UCN in an identifier is accepted.** mcc takes
+  `￿` (and other code points outside the Annex D allowed ranges) as an
+  identifier character; gcc/clang reject. Add the Annex D allowed-range check at
+  the UCN-in-identifier site (complements the D.2 initial-combining check already
+  done).
+- [ ] **§7.16.1.4p3 — `va_start` second arg not the last named parameter** (UB)
+  is not diagnosed. gcc/clang warn (`-Wvarargs`); mcc is silent. Optional
+  diagnostic (UB, not required), but cheap parity. Add a `-Wvarargs`-style warning.
