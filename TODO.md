@@ -608,9 +608,17 @@ bulk of each area matched the references; these are the residual divergences.
   sub-array (`char m[][3]={"ab","cd"}`) string inits still recurse and stay valid.
   cli `string_init_element_mismatch`.
 
-- [ ] **[DIAG] §6.8.6.4p1 — `return <expr>;` in `void` / `return;` in non-`void` warn instead of error.**
-  mcc warns (rc=0) where both refs hard-error. Severity-only divergence (same
-  lenient-warning stance as the tracked const-assignment §6.5.16.1 item). Low priority.
+- [~] **[DIFF] §6.8.6.4p1 — `return <expr>;` in `void` / `return;` in non-`void`: CONFORMANT (diagnosed as a default-on warning).**
+  §6.8.6.4 is a *constraint*, which requires only that a conforming implementation
+  issue **a diagnostic** — it does not mandate an error. mcc emits a default-on
+  warning ("void function returns a value" / "'return' with no value") and
+  upgrades it to an error under `-Werror`, so the standard's requirement is met.
+  This is mcc's deliberate, **consistent** lenient-warning stance for constraint
+  violations — verified identical to the const-assignment §6.5.16.1 case (both
+  warn by default, both become errors under `-Werror`). gcc/clang choosing to make
+  it a hard error by default is their policy, not a standard requirement. Left as a
+  conformant DIFF (forcing an error would diverge from mcc's coherent
+  permissive-by-default / `-Werror`-enforces philosophy for no conformance gain).
 
 - [ ] **[DIFF] §7.16.1.4 — `va_start` on a `register`-qualified last parameter not diagnosed (fragmented, no mandated diag).**
   `int f(register int n, ...){ va_start(a,n); }` is silent; both refs warn
