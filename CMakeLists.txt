@@ -957,14 +957,18 @@ if(DEFINED MCC_BUILD_STATIC AND NOT DEFINED MCC_BUILD_STATIC_LIB)
 endif()
 mcc_config_node(MCC_BUILD_STATIC_LIB TYPE BOOL DEFAULT ON  GROUP "Build targets"
     HELP "Build libmcc.a (ON) instead of shared libmcc (OFF)")
-mcc_config_node(MCC_BUILD_STATIC_EXE TYPE BOOL DEFAULT OFF GROUP "Build targets"
-    HELP "Link the mcc executable(s) fully static (-static); disables -run/JIT")
+mcc_config_node(MCC_BUILD_STATIC_EXE TYPE BOOL DEFAULT ON  GROUP "Build targets"
+    HELP "Link the mcc executable(s) fully static (-static); -run resolves libc via the built-in table (common symbols only)")
 mcc_config_node(MCC_BUILD_DYNAMIC_LIB TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Also build a shared libmcc (libmcc.so) alongside the static libmcc.a")
 mcc_config_node(MCC_BUILD_DYNAMIC_EXE TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Also build a self-contained (ONE_SOURCE) mcc-dynamic, linked only to libc")
-mcc_config_node(MCC_BUILD_MUSL       TYPE BOOL DEFAULT OFF GROUP "Build targets"
+mcc_config_node(MCC_BUILD_MUSL       TYPE BOOL DEFAULT ON  GROUP "Build targets"
     HELP "Also build musl-targeting compiler variants (mcc*-musl) beside the glibc ones")
+if(APPLE AND MCC_BUILD_STATIC_EXE)
+    set(MCC_BUILD_STATIC_EXE OFF)
+    message(STATUS "mcc: macOS has no fully-static libc; forcing MCC_BUILD_STATIC_EXE=OFF")
+endif()
 mcc_config_node(MCC_BUILD_STRIP      TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Strip symbols from the mcc executable(s) at link (-s)")
 mcc_config_node(MCC_DISABLE_RPATH TYPE BOOL DEFAULT OFF GROUP "Build targets"
@@ -2080,7 +2084,8 @@ foreach(_nt mcc mcc_dynamic libmcc libmcc_shared mcc_p mcc_s)
     endif()
 endforeach()
 
-if(MCC_BUILD_STATIC_EXE)
+if(MCC_BUILD_STATIC_EXE AND NOT MSVC AND NOT APPLE
+   AND NOT MCC_TARGETOS STREQUAL "WIN32")
     foreach(_st mcc libmcc mcc_musl libmcc_musl)
         if(TARGET ${_st})
             target_compile_definitions(${_st} PRIVATE CONFIG_MCC_STATIC)

@@ -77,6 +77,7 @@ echo "==> configuring (cc=$CC target=$TARGET type=$BUILD_TYPE musl=$MUSL)"
 cmake -S "$SRC" -B "$BUILD" -G Ninja \
     -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
     -DCMAKE_C_COMPILER="$CC" \
+    -DMCC_BUILD_STATIC_EXE=OFF \
     $cross_flag $musl_flag $release_flags
 
 echo "==> building (-j$JOBS)"

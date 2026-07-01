@@ -102,11 +102,15 @@ cmake --build cmake-build-release -j
 | `MCC_ENABLE_CROSS`     |   OFF   | Also build `mcc-<arch>` cross compilers    |
 | `MCC_BUILD_STATIC_LIB` |   ON    | Build static libmcc library                |
 | `MCC_BUILD_DYNAMIC_LIB`|   OFF   | Build shared libmcc library                |
-| `MCC_BUILD_STATIC_EXE` |   OFF   | Link executable(s) fully static (`-static`); enables `CONFIG_MCC_STATIC` so `-run` resolves libc via a built-in symbol table |
+| `MCC_BUILD_STATIC_EXE` |   ON¹   | Link executable(s) fully static (`-static`); enables `CONFIG_MCC_STATIC` so `-run` resolves libc via a built-in symbol table |
 | `MCC_BUILD_DYNAMIC_EXE`|   OFF   | Also build self-contained `mcc-dynamic`, linked only to libc |
-| `MCC_BUILD_MUSL`       |   OFF   | Also build musl-targeting variants (`*-musl`) |
+| `MCC_BUILD_MUSL`       |   ON²   | Also build musl-targeting variants (`*-musl`, Linux only) |
 | `MCC_BUILD_STRIP`      |   OFF   | Strip symbols during link                  |
 | `MCC_QEMU_TESTS`       |   OFF   | qemu-user cross-conformance matrix (below) |
+
+¹ The `debug`/`asan`/`diagnostics` presets keep it OFF (dynamic) so the full
+test suite can `-run` the whole libc surface; auto-forced OFF on macOS (no
+fully-static libc). ² Linux only; a no-op on macOS/Windows.
 
 Compiler binaries follow `mcc-<arch>[-dynamic][-musl]`: `<arch>` for cross
 targets, `-musl` for the musl-targeting variant. `mcc` is a fully static,
