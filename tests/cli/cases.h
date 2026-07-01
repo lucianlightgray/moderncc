@@ -213,7 +213,7 @@ static const cli_case_t cli_cases[] = {
   "error: implicit declaration\n" },
 
 { "wwrite_strings_warns", "",
-  "printf 'char *p = \\\"x\\\"; void f(void){ *p = 0; }\\n' > {W}/ws.c && "
+  "printf 'char *p = \"x\"; void f(void){ *p = 0; }\\n' > {W}/ws.c && "
   "{MCC} -B{B} -I{I} -Wwrite-strings -c {W}/ws.c -o {W}/ws.o 2>&1 | grep -coE 'discards qualifiers|read-only'",
   "1\n" },
 
@@ -239,12 +239,12 @@ static const cli_case_t cli_cases[] = {
   "int v = 11\n" },
 
 { "pragma_comment_lib", "",
-  "printf '#pragma comment(lib,\\\"m\\\")\\nint main(void){ return 0; }\\n' > {W}/pc.c && "
+  "printf '#pragma comment(lib,\"m\")\\nint main(void){ return 0; }\\n' > {W}/pc.c && "
   "{MCC} -B{B} -I{I} {W}/pc.c -o {W}/pce && echo OK",
   "OK\n" },
 
 { "x_force_language", "",
-  "printf '#include <stdio.h>\\nint main(void){ puts(\\\"xc\\\"); return 0; }\\n' > {W}/notc.txt && "
+  "printf '#include <stdio.h>\\nint main(void){ puts(\"xc\"); return 0; }\\n' > {W}/notc.txt && "
   "{MCC} -B{B} -I{I} -x c {W}/notc.txt -o {W}/xce && {W}/xce",
   "xc\n" },
 
@@ -688,7 +688,7 @@ static const cli_case_t cli_cases[] = {
   "printf '#frobnicate xyz\\nint main(void){return 0;}\\n' > {W}/ud.c && "
   "{MCC} -B{B} -I{I} -std=c11 -c {W}/ud.c -o {W}/ud.o 2>&1 | "
   "grep -oE 'invalid preprocessing directive #frobnicate'; "
-  "printf '#ident \\\"v\\\"\\n#sccs \\\"w\\\"\\nint main(void){return 0;}\\n' > {W}/ui.c && "
+  "printf '#ident \"v\"\\n#sccs \"w\"\\nint main(void){return 0;}\\n' > {W}/ui.c && "
   "{MCC} -B{B} -I{I} -std=c11 -c {W}/ui.c -o {W}/ui.o && echo IDENT_OK",
   "invalid preprocessing directive #frobnicate\nIDENT_OK\n" },
 
@@ -696,7 +696,7 @@ static const cli_case_t cli_cases[] = {
 
 
 { "pragma_message_note", "",
-  "printf '#pragma message(\\\"hi there\\\")\\n#pragma message \\\"bare form\\\"\\n"
+  "printf '#pragma message(\"hi there\")\\n#pragma message \"bare form\"\\n"
   "int main(void){return 0;}\\n' > {W}/pm.c && "
   "{MCC} -B{B} -I{I} -std=c11 -Werror -c {W}/pm.c -o {W}/pm.o 2>&1 | "
   "grep -oE 'note: #pragma message: (hi there|bare form)'",
@@ -833,7 +833,7 @@ static const cli_case_t cli_cases[] = {
 { "common_symbol_merge", "cpu=x86_64,os=linux",
   "printf 'int shared_g;\\nvoid set_it(void){ shared_g = 5; }\\n' > {W}/cm1.c && "
   "printf '#include <stdio.h>\\nint shared_g; void set_it(void);\\n"
-  "int main(void){ set_it(); printf(\\\"%%d\\\\n\\\", shared_g); return 0; }\\n' > {W}/cm2.c && "
+  "int main(void){ set_it(); printf(\"%%d\\\\n\", shared_g); return 0; }\\n' > {W}/cm2.c && "
   "{MCC} -B{B} -I{I} -fcommon {W}/cm1.c {W}/cm2.c -o {W}/cme && {W}/cme",
   "5\n" },
 
@@ -938,7 +938,7 @@ static const cli_case_t cli_cases[] = {
 { "complex_creal_function", "cpu=x86_64,os=linux",
   "printf '#include <complex.h>\\n#include <stdio.h>\\n"
   "int main(void){ double _Complex z=3.0+4.0*I; double(*p)(double _Complex)=creal;\\n"
-  "if((int)(creal)(z)==3 && (int)cimag(z)==4 && (int)p(z)==3) puts(\\\"OK\\\"); return 0; }\\n' > {W}/cf.c && "
+  "if((int)(creal)(z)==3 && (int)cimag(z)==4 && (int)p(z)==3) puts(\"OK\"); return 0; }\\n' > {W}/cf.c && "
   "{MCC} -B{B} -I{I} {W}/cf.c -lm -o {W}/cf && {W}/cf",
   "OK\n" },
 
@@ -1456,7 +1456,7 @@ static const cli_case_t cli_cases[] = {
 
 { "static_init_and_ucn", "",
   "printf 'void f(void){ static int *p=(int[]){10,20,30}; (void)p; }\\n' > {W}/sc.c && "
-  "printf 'char *s=\\\"\\\\u0041\\\";\\n' > {W}/uc.c && "
+  "printf 'char *s=\"\\\\u0041\";\\n' > {W}/uc.c && "
   "printf 'int*p=(int[]){1,2,3}; void g(void){int*q=(int[]){4,5}; (void)q;}\\nint main(void){return 0;}\\n' > {W}/nok.c && "
   "{ {MCC} -B{B} -I{I} -std=c11 -c {W}/sc.c -o /dev/null 2>&1; "
   "{MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/uc.c -o /dev/null 2>&1; "
@@ -1468,8 +1468,8 @@ static const cli_case_t cli_cases[] = {
 
 { "int64_c_type", "",
   "printf '#include <stdint.h>\\n"
-  "_Static_assert(_Generic(INT64_C(1), int_least64_t:1, default:0)==1, \\\"t1\\\");\\n"
-  "_Static_assert(_Generic(UINT64_C(1), uint_least64_t:1, default:0)==1, \\\"t2\\\");\\n"
+  "_Static_assert(_Generic(INT64_C(1), int_least64_t:1, default:0)==1, \"t1\");\\n"
+  "_Static_assert(_Generic(UINT64_C(1), uint_least64_t:1, default:0)==1, \"t2\");\\n"
   "int main(void){return 0;}\\n' > {W}/i64.c && "
   "{ {MCC} -B{B} -I{I} -std=c11 -Werror -c {W}/i64.c -o /dev/null 2>&1 && echo HOSTED_OK; "
   "{MCC} -B{B} -I{I} -std=c11 -ffreestanding -nostdinc -Werror -c {W}/i64.c -o /dev/null 2>&1 && echo FREESTANDING_OK; } | sort",
@@ -1480,7 +1480,7 @@ static const cli_case_t cli_cases[] = {
   "printf '#include <stdio.h>\\n"
   "struct B{_Bool a:1;_Bool b:1;};\\n"
   "struct C{_Bool a:1,b:1,c:1,d:1;};\\n"
-  "int main(void){ struct B v={1,1}; printf(\\\"%%zu %%zu %%d%%d\\\\n\\\",sizeof(struct B),sizeof(struct C),v.a,v.b); return 0; }\\n' > {W}/bfp.c && "
+  "int main(void){ struct B v={1,1}; printf(\"%%zu %%zu %%d%%d\\\\n\",sizeof(struct B),sizeof(struct C),v.a,v.b); return 0; }\\n' > {W}/bfp.c && "
   "{MCC} -B{B} -I{I} {W}/bfp.c -o {W}/bfp && {W}/bfp",
   "1 1 11\n" },
 
@@ -1488,7 +1488,7 @@ static const cli_case_t cli_cases[] = {
 
 { "complex_real_precision", "",
   "printf '#include <complex.h>\\n#include <stdio.h>\\n"
-  "int main(void){ volatile double r=0.1; double _Complex z=r*I; printf(\\\"%%.17g\\\\n\\\", cimag(z)); return 0; }\\n' > {W}/cxp.c && "
+  "int main(void){ volatile double r=0.1; double _Complex z=r*I; printf(\"%%.17g\\\\n\", cimag(z)); return 0; }\\n' > {W}/cxp.c && "
   "{MCC} -B{B} -I{I} {W}/cxp.c -lm -o {W}/cxp && {W}/cxp",
   "0.10000000000000001\n" },
 
@@ -1897,10 +1897,14 @@ static const cli_case_t cli_cases[] = {
 
 
 
-{ "tgmath_creal_cimag_precision", "os!=WIN32:WIN32 is LLP64 with long double == double; creal(long double complex) is 8 not 16",
-  "printf '#include <tgmath.h>\\n#include <stdio.h>\\nint main(void){ long double complex l=1; float complex f=1; double complex d=1; printf(\"%%d %%d %%d\\\\n\",(int)sizeof(creal(l)),(int)sizeof(cimag(f)),(int)sizeof(creal(d))); return 0; }\\n' > {W}/cgt.c && "
+{ "tgmath_creal_cimag_precision", "",
+  /* Test the INVARIANT (creal/cimag yield the complex's real component type),
+     not literal byte counts: long double is 8 not 16 wherever long double ==
+     double (WIN32 LLP64, and Mach-O/arm64 via MCC_USING_DOUBLE_FOR_LDOUBLE), so
+     `sizeof(creal(l))==sizeof(long double)` reads 1 on every ABI. */
+  "printf '#include <tgmath.h>\\n#include <stdio.h>\\nint main(void){ long double complex l=1; float complex f=1; double complex d=1; printf(\"%%d %%d %%d\\\\n\",(int)(sizeof(creal(l))==sizeof(long double)),(int)(sizeof(cimag(f))==sizeof(float)),(int)(sizeof(creal(d))==sizeof(double))); return 0; }\\n' > {W}/cgt.c && "
   "{MCC} -B{B} -I{I} {W}/cgt.c -lm -o {W}/cgt && {W}/cgt",
-  "16 4 8\n" },
+  "1 1 1\n" },
 
 
 

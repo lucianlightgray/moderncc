@@ -3,6 +3,38 @@ cmake_minimum_required(VERSION 3.22)
 set(MCC_VERSION "0.9.28rc")
 string(REGEX MATCH "^[0-9]+(\\.[0-9]+)*" MCC_VERSION_NUMERIC "${MCC_VERSION}")
 
+# A Homebrew GNU gcc on macOS defaults to an ancient -mmacosx-version-min (10.6)
+# when no deployment target is set; on current macOS that stale value makes gcc's
+# own linker spec emit a bogus `-l<garbage>` and EVERY link fails (a trivial
+# `int main(){}` included). So when mcc is built with such a gcc -- the `gcc`
+# matrix toolchain, or an explicit -DCMAKE_C_COMPILER=gcc-15 -- and no deployment
+# target was requested, pin one to the host's macOS version so it links. Apple
+# clang is unaffected (it is not GNU gcc and supplies its own default). This must
+# run before project()/compiler detection, hence the manual compiler probe.
+if(CMAKE_HOST_APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET
+   AND NOT DEFINED ENV{MACOSX_DEPLOYMENT_TARGET})
+    set(_mcc_sel_cc "${CMAKE_C_COMPILER}")
+    if(NOT _mcc_sel_cc)
+        set(_mcc_sel_cc "$ENV{CC}")
+    endif()
+    if(_mcc_sel_cc MATCHES "[gG][cC][cC]")
+        execute_process(COMMAND "${_mcc_sel_cc}" --version
+            OUTPUT_VARIABLE _mcc_cc_ver ERROR_QUIET RESULT_VARIABLE _mcc_cc_rc)
+        if(_mcc_cc_rc EQUAL 0 AND _mcc_cc_ver MATCHES "Free Software Foundation")
+            execute_process(COMMAND sw_vers -productVersion
+                OUTPUT_VARIABLE _mcc_osver OUTPUT_STRIP_TRAILING_WHITESPACE
+                ERROR_QUIET RESULT_VARIABLE _mcc_osrc)
+            if(NOT _mcc_osrc EQUAL 0 OR NOT _mcc_osver MATCHES "^[0-9]+")
+                set(_mcc_osver "11.0")   # safe arm64 floor if sw_vers is unavailable
+            endif()
+            set(CMAKE_OSX_DEPLOYMENT_TARGET "${_mcc_osver}" CACHE STRING
+                "macOS deployment target (pinned for a Homebrew GNU gcc host build)")
+            message(STATUS "mcc: GNU gcc on macOS -> pinned CMAKE_OSX_DEPLOYMENT_TARGET="
+                           "${_mcc_osver} (avoids the stale 10.6 default that breaks gcc's linker spec)")
+        endif()
+    endif()
+endif()
+
 project(mcc
     VERSION "${MCC_VERSION_NUMERIC}"
     LANGUAGES C ASM
@@ -115,6 +147,17 @@ function(mcc_map_toolchain_cc tc outvar)
         set(${outvar} "${_MCC_MINGW_X86_64_GCC}" PARENT_SCOPE)
         return()
     endif()
+    if(tc STREQUAL "gcc")
+        # Prefer a *real* GNU gcc (gcc-<major>) over a `gcc` that is an alias for
+        # clang (macOS), so a gcc;clang matrix actually builds mcc with two
+        # distinct compilers instead of Apple clang twice. `setup-gcc` installs
+        # one; falls back to whatever answers to `gcc`/`cc` if none is found.
+        mcc_find_gnu_gcc(_gnu_gcc)
+        if(_gnu_gcc)
+            set(${outvar} "${_gnu_gcc}" PARENT_SCOPE)
+            return()
+        endif()
+    endif()
     set(_names_auto "")
     set(_names_gcc gcc cc)
     set(_names_clang clang)
@@ -126,6 +169,35 @@ function(mcc_map_toolchain_cc tc outvar)
     else()
         set(${outvar} "" PARENT_SCOPE)
     endif()
+endfunction()
+
+# Locate a *real GNU* gcc distinct from the host clang, for the differential
+# suites (diff3 / preprocess). On macOS `gcc`/`cc` are the Apple clang shim, so
+# a three-way gcc-vs-clang-vs-mcc differential degenerates and the suites self-
+# skip; a Homebrew gcc (installed by `setup-gcc` as gcc-<major>, e.g. gcc-15)
+# restores a genuine second reference. Returns "" if none found. Honors an
+# explicit -DMCC_GNU_GCC=<path> override.
+function(mcc_find_gnu_gcc outvar)
+    if(MCC_GNU_GCC)
+        set(${outvar} "${MCC_GNU_GCC}" PARENT_SCOPE)
+        return()
+    endif()
+    foreach(_n gcc-16 gcc-15 gcc-14 gcc-13 gcc-12 gcc-11 gcc-10 gcc cc)
+        find_program(MCC_GNUGCC_${_n} NAMES ${_n})
+        if(MCC_GNUGCC_${_n})
+            execute_process(COMMAND "${MCC_GNUGCC_${_n}}" --version
+                OUTPUT_VARIABLE _v ERROR_QUIET RESULT_VARIABLE _rc
+                OUTPUT_STRIP_TRAILING_WHITESPACE)
+            # Real GNU gcc prints the FSF copyright line; the Apple/LLVM clang
+            # shim that answers to `gcc` does not (and says "clang").
+            if(_rc EQUAL 0 AND _v MATCHES "Free Software Foundation"
+               AND NOT _v MATCHES "clang")
+                set(${outvar} "${MCC_GNUGCC_${_n}}" PARENT_SCOPE)
+                return()
+            endif()
+        endif()
+    endforeach()
+    set(${outvar} "" PARENT_SCOPE)
 endfunction()
 
 function(mcc_map_target_args name outvar)
@@ -576,6 +648,126 @@ add_custom_target(clang-toolchain
     COMMENT "Fetching self-contained LLVM/clang toolchain into cmake-clang"
     USES_TERMINAL VERBATIM)
 
+# ----------------------------------------------------------------------------
+# Optional host-toolchain setup targets: `setup-gcc`, `setup-wine`,
+# `setup-mingw`, and the umbrella `setup-toolchains`. They install extra host
+# toolchains via the platform package manager (Homebrew on macOS; apt/dnf/
+# pacman/zypper on Linux) purely to WIDEN local test coverage -- nothing in the
+# normal build depends on them. After running one, re-run cmake so detection
+# picks the new tool up.
+#   * setup-gcc   -> a genuine GNU gcc reference, so the gcc-vs-clang-vs-mcc
+#                    differential suites (diff3 / preprocess) actually run where
+#                    `gcc` is otherwise an alias for clang (macOS). The build's
+#                    mcc_find_gnu_gcc() auto-wires the installed gcc-<major>.
+#   * setup-wine  -> runs mcc's PE/Windows output (pe-wine-conformance), paired
+#                    with the win32 cross compilers from `cmake --preset cross`.
+#   * setup-mingw -> a host-native mingw-w64 cross gcc (a PE reference compiler).
+#                    Distinct from `mingw-toolchain`, which fetches the Windows-
+#                    hosted winlibs gcc used as a *build* toolchain under wine.
+set(_toolchain_setup "${CMAKE_BINARY_DIR}/run_toolchain_setup.cmake")
+file(WRITE "${_toolchain_setup}" [==[
+# GENERATED by CMakeLists.txt -- installs an optional host toolchain to widen
+# local test coverage. Invoked as: cmake -DTOOL=<gcc|wine|mingw> -P <this file>.
+# Edit it in CMakeLists.txt, not in the build directory.
+cmake_minimum_required(VERSION 3.22)
+if(NOT DEFINED TOOL)
+    message(FATAL_ERROR "toolchain-setup: pass -DTOOL=gcc|wine|mingw")
+endif()
+
+find_program(_BREW brew)
+find_program(_APT apt-get)
+find_program(_DNF dnf)
+find_program(_PACMAN pacman)
+find_program(_ZYPPER zypper)
+
+set(_cmd "")
+if(_BREW)
+    if(TOOL STREQUAL "gcc")
+        set(_cmd "${_BREW}" install gcc)
+    elseif(TOOL STREQUAL "wine")
+        set(_cmd "${_BREW}" install --cask --no-quarantine wine-stable)
+    elseif(TOOL STREQUAL "mingw")
+        set(_cmd "${_BREW}" install mingw-w64)
+    endif()
+else()
+    # Linux system package managers need a privilege prefix.
+    set(_sudo "")
+    if(NOT "$ENV{USER}" STREQUAL "root")
+        find_program(_SUDO sudo)
+        if(_SUDO)
+            set(_sudo "${_SUDO}")
+        endif()
+    endif()
+    if(_APT)
+        if(TOOL STREQUAL "gcc")
+            set(_pkgs gcc)
+        elseif(TOOL STREQUAL "wine")
+            set(_pkgs wine)
+        elseif(TOOL STREQUAL "mingw")
+            set(_pkgs gcc-mingw-w64 g++-mingw-w64)
+        endif()
+        set(_cmd ${_sudo} "${_APT}" install -y ${_pkgs})
+    elseif(_DNF)
+        if(TOOL STREQUAL "gcc")
+            set(_pkgs gcc)
+        elseif(TOOL STREQUAL "wine")
+            set(_pkgs wine)
+        elseif(TOOL STREQUAL "mingw")
+            set(_pkgs mingw64-gcc)
+        endif()
+        set(_cmd ${_sudo} "${_DNF}" install -y ${_pkgs})
+    elseif(_PACMAN)
+        if(TOOL STREQUAL "gcc")
+            set(_pkgs gcc)
+        elseif(TOOL STREQUAL "wine")
+            set(_pkgs wine)
+        elseif(TOOL STREQUAL "mingw")
+            set(_pkgs mingw-w64-gcc)
+        endif()
+        set(_cmd ${_sudo} "${_PACMAN}" -S --noconfirm ${_pkgs})
+    elseif(_ZYPPER)
+        if(TOOL STREQUAL "gcc")
+            set(_pkgs gcc)
+        elseif(TOOL STREQUAL "wine")
+            set(_pkgs wine)
+        elseif(TOOL STREQUAL "mingw")
+            set(_pkgs mingw64-cross-gcc)
+        endif()
+        set(_cmd ${_sudo} "${_ZYPPER}" install -y ${_pkgs})
+    endif()
+endif()
+
+if(NOT _cmd)
+    message(FATAL_ERROR
+        "toolchain-setup(${TOOL}): no supported package manager found "
+        "(looked for brew/apt-get/dnf/pacman/zypper). Install '${TOOL}' manually.")
+endif()
+
+string(REPLACE ";" " " _pretty "${_cmd}")
+message(STATUS "toolchain-setup(${TOOL}): ${_pretty}")
+execute_process(COMMAND ${_cmd} RESULT_VARIABLE _rc)
+if(NOT _rc EQUAL 0)
+    message(FATAL_ERROR "toolchain-setup(${TOOL}): install failed (rc=${_rc})")
+endif()
+message(STATUS "toolchain-setup(${TOOL}): done -- re-run cmake to detect it")
+]==])
+
+add_custom_target(setup-gcc
+    COMMAND "${CMAKE_COMMAND}" -DTOOL=gcc -P "${_toolchain_setup}"
+    COMMENT "Installing a GNU gcc reference (widens diff3/preprocess coverage)"
+    USES_TERMINAL VERBATIM)
+add_custom_target(setup-wine
+    COMMAND "${CMAKE_COMMAND}" -DTOOL=wine -P "${_toolchain_setup}"
+    COMMENT "Installing wine (runs mcc PE output: pe-wine-conformance)"
+    USES_TERMINAL VERBATIM)
+add_custom_target(setup-mingw
+    COMMAND "${CMAKE_COMMAND}" -DTOOL=mingw -P "${_toolchain_setup}"
+    COMMENT "Installing a host mingw-w64 cross gcc (PE reference compiler)"
+    USES_TERMINAL VERBATIM)
+add_custom_target(setup-toolchains
+    COMMENT "Installing all optional host toolchains (gcc, wine, mingw)")
+add_dependencies(setup-toolchains setup-gcc setup-wine setup-mingw)
+
 list(LENGTH MCC_TOOLCHAIN_PROFILE _tc_count)
 list(LENGTH MCC_TARGETS _tg_count)
 set(_is_matrix FALSE)
@@ -759,6 +951,13 @@ if(MCC_DIAGNOSTICS)
         if(WIN32 OR MCC_CONFIG_MINGW32)
             message(STATUS "mcc diagnostics: skipping mcc_s (-fsanitize) on a PE/mingw "
                            "target (mingw ships no libasan/libubsan)")
+        elseif(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+            # A Homebrew GNU gcc on macOS emits `-lasan` but ships no linkable
+            # libasan/libubsan for Darwin, so mcc_s fails to link (`ld: library
+            # 'asan' not found`). Apple Clang on Darwin sanitizes fine and is
+            # unaffected. Coverage (mcc_c) still works, so it stays seeded.
+            message(STATUS "mcc diagnostics: skipping mcc_s (-fsanitize) with GNU gcc on "
+                           "macOS (Homebrew gcc ships no linkable libasan/libubsan here)")
         else()
             mcc_profile_seed(MCC_BUILD_SANITIZE ON)
         endif()
@@ -1144,9 +1343,16 @@ if(MCC_DIAGNOSTICS)
             endif()
         endforeach()
     else()
+        # -Wno-implicit-fallthrough: the FALLTHROUGH macro (src/mcc.h, commit
+        # 027c1060) annotates the intentional case-fallthroughs in the native
+        # build, but this all-backends diagnostics build also compiles the arm/
+        # arm64/riscv assemblers + codegen, which still carry ~30 un-annotated
+        # intentional fallthroughs (opcode-decode tables). Suppress the warning
+        # here until the macro is extended to those files; Apple clang (C mode)
+        # never raises it, so this only affects gcc.
         foreach(_f -Wall -Wextra -Wnull-dereference
                    -Wno-sign-compare -Wno-unused-parameter -Wno-type-limits
-                   -Wno-unterminated-string-initialization
+                   -Wno-unterminated-string-initialization -Wno-implicit-fallthrough
                    -g3 -fno-omit-frame-pointer)
             string(MAKE_C_IDENTIFIER "MCC_HAS_DIAGFLAG_${_f}" _v)
             check_c_compiler_flag("${_f}" ${_v})
@@ -2129,6 +2335,13 @@ endif()
     # Native only, and only when BOTH reference compilers are available.
     find_program(DIFF3_GCC NAMES gcc cc)
     find_program(DIFF3_CLANG NAMES clang)
+    # Prefer a genuine GNU gcc as the gcc reference so the three-way differential
+    # does not degenerate where `gcc` aliases clang (e.g. macOS, where the suite
+    # would otherwise self-skip via same_compiler()). `setup-gcc` installs one.
+    mcc_find_gnu_gcc(_diff3_gnu_gcc)
+    if(_diff3_gnu_gcc)
+        set(DIFF3_GCC "${_diff3_gnu_gcc}")
+    endif()
     # No system clang? Fall back to the self-contained `clang-toolchain` download
     # (cmake-clang/...): once that target has been built, a (re)configure finds it
     # here and the suite runs with zero system clang. On Windows the suite also
@@ -2532,6 +2745,22 @@ cmake_language(EXIT 0)
     if(CMAKE_C_COMPILER_ID STREQUAL "MSVC" AND NOT _ref_cc)
         mcc_skip_test(mcctest "needs a GCC-compatible reference cc (host cc is MSVC; set MCC_REF_CC or put gcc on PATH)")
         mcc_skip_test(mcctest-bcheck "needs a GCC-compatible reference cc (host cc is MSVC; set MCC_REF_CC or put gcc on PATH)")
+    elseif(_ref_cc_name STREQUAL "gcc" AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+        # full_language.c is an aggressive single-file differential that probes
+        # implementation-defined / UB ABI corners -- e.g. a narrow return value
+        # fetched through a deliberately-mismatched function-pointer type
+        # (the `csf` macro), and `%lx` applied to a wchar_t/int arg. Its expected
+        # output is curated for each target's CANONICAL compiler: Apple clang on
+        # Darwin, and GNU gcc on Linux. A GNU gcc reference on Darwin/arm64 makes
+        # different (ABI-sanctioned) choices there than gcc-on-Linux does, so the
+        # three-way ceases to be a valid bug signal. mcc's behavior on these
+        # sections is already pinned against Apple clang by this same test in the
+        # default build, and against gcc by diff3-suite, so skip (don't fail) the
+        # foreign-reference combination rather than mistune the curated goldens.
+        mcc_skip_test(mcctest
+            "GNU gcc reference on Darwin/arm64 diverges from clang on impl-defined/UB ABI corners (covered by the Apple-clang mcctest + diff3-suite)")
+        mcc_skip_test(mcctest-bcheck
+            "GNU gcc reference on Darwin/arm64 diverges from clang on impl-defined/UB ABI corners (covered by the Apple-clang mcctest + diff3-suite)")
     elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c" AND MCC_CONFIG_ASM)
         add_test(NAME mcctest COMMAND "${CMAKE_COMMAND}"
             -DCC=${_ref_cc} -DMCC=${_mcc_exe}
