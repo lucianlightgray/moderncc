@@ -1308,7 +1308,13 @@ static int pe_assign_addresses (struct pe_info *pe)
             c = sec_data;
 
         if (si && c == si->cls && c != sec_debug) {
-            s->sh_addr = addr = ((addr - 1) | (16 - 1)) + 1;
+            /* Merging into an existing PE segment: round the sub-section start up
+               to its own alignment (min 16), not a flat 16 -- otherwise an
+               over-aligned static (e.g. _Alignas(32)/_Alignas(64) in .bss, which
+               PE_MERGE_DATA folds into .data) lands at a merely-16-aligned base
+               and misses its required boundary. */
+            int a = s->sh_addralign < 16 ? 16 : s->sh_addralign;
+            s->sh_addr = addr = ((addr - 1) | (a - 1)) + 1;
         } else {
             si = NULL;
             s->sh_addr = addr = pe_virtual_align(pe, addr);
