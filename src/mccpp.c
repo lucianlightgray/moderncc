@@ -385,6 +385,52 @@ static int ucn_disallowed_initial(unsigned int v)
         || (v >= 0xFE20 && v <= 0xFE2F);
 }
 
+/* Decode one UTF-8 sequence at *pp (bounded by end); advance *pp. Returns the
+   code point, or -1 on an ill-formed sequence (advancing one byte). */
+static int utf8_next_cp(const uint8_t **pp, const uint8_t *end)
+{
+    const uint8_t *p = *pp;
+    unsigned c = *p, cp;
+    int i, n;
+    if (c < 0x80) { *pp = p + 1; return (int)c; }
+    if ((c & 0xE0) == 0xC0) { cp = c & 0x1F; n = 1; }
+    else if ((c & 0xF0) == 0xE0) { cp = c & 0x0F; n = 2; }
+    else if ((c & 0xF8) == 0xF0) { cp = c & 0x07; n = 3; }
+    else { *pp = p + 1; return -1; }
+    for (i = 0; i < n; i++) {
+        if (p + 1 + i >= end || (p[1 + i] & 0xC0) != 0x80) {
+            *pp = p + 1;
+            return -1;
+        }
+        cp = (cp << 6) | (p[1 + i] & 0x3F);
+    }
+    *pp = p + 1 + n;
+    return (int)cp;
+}
+
+/* Validate the raw (non-escaped) extended characters of an identifier against
+   the Annex D.1/D.2 ranges, matching what decode_ucn enforces for \u escapes. */
+static void validate_utf8_identifier(const char *s, int len)
+{
+    const uint8_t *p = (const uint8_t *)s, *end = p + len;
+    int first = 1;
+    while (p < end) {
+        int leadbyte = *p;
+        int cp = utf8_next_cp(&p, end);
+        if (cp >= 0 && leadbyte >= 0x80) {
+            if ((cp < 0xA0 && cp != 0x24 && cp != 0x40 && cp != 0x60)
+                || (cp >= 0xD800 && cp <= 0xDFFF)
+                || (cp >= 0xA0 && !ucn_allowed_in_identifier(cp)))
+                mcc_error("universal character \\u%04x is not valid in an "
+                          "identifier", cp);
+            if (first && ucn_disallowed_initial(cp))
+                mcc_error("universal character \\u%04x is not valid as the "
+                          "first character of an identifier", cp);
+        }
+        first = 0;
+    }
+}
+
 ST_FUNC void cstr_cat(CString *cstr, const char *str, int len)
 {
     int size;
@@ -1551,6 +1597,7 @@ ST_FUNC void parse_define(void)
 {
     Sym *s, *first, **ps;
     int v, t, varg, is_vaargs, t0;
+    int func_like, hash_pending = 0;
     int saved_parse_flags = parse_flags;
     TokenString str;
 
@@ -1605,6 +1652,7 @@ ST_FUNC void parse_define(void)
         set_idnum('.', dotid);
     }
 
+    func_like = (t == MACRO_FUNC);
     parse_flags |= PARSE_FLAG_ACCEPT_STRAYS | PARSE_FLAG_SPACES | PARSE_FLAG_LINEFEED;
     tok_str_new(&str);
     t0 = 0;
@@ -1618,6 +1666,19 @@ ST_FUNC void parse_define(void)
                 tok = TOK_PPJOIN;
                 t |= MACRO_JOIN;
             }
+            if (hash_pending) {
+                Sym *pp;
+                int isparam = 0;
+                for (pp = first; pp; pp = pp->next)
+                    if ((pp->v & ~SYM_FIELD) == (tok & ~SYM_FIELD)) {
+                        isparam = 1;
+                        break;
+                    }
+                if (!isparam)
+                    mcc_error("'#' is not followed by a macro parameter");
+                hash_pending = 0;
+            }
+            hash_pending = (func_like && tok == '#');
             if (tok == TOK___VA_ARGS__ && !is_vaargs)
                 mcc_warning("__VA_ARGS__ can only appear in the expansion of a "
                             "C99 variadic macro");
@@ -1626,6 +1687,8 @@ ST_FUNC void parse_define(void)
         }
         next_nomacro();
     }
+    if (hash_pending)
+        mcc_error("'#' is not followed by a macro parameter");
     parse_flags = saved_parse_flags;
     tok_str_add(&str, 0);
     if (t0 == TOK_PPJOIN)
@@ -2848,8 +2911,15 @@ maybe_newline:
         p1 = p;
         h = TOK_HASH_INIT;
         h = TOK_HASH_FUNC(h, c);
-        while (c = *++p, isidnum_table[c - CH_EOF] & (IS_ID|IS_NUM))
-            h = TOK_HASH_FUNC(h, c);
+        {
+            int hi = c;
+            while (c = *++p, isidnum_table[c - CH_EOF] & (IS_ID|IS_NUM)) {
+                h = TOK_HASH_FUNC(h, c);
+                hi |= c;
+            }
+            if (hi & 0x80)
+                validate_utf8_identifier((const char *)p1, p - p1);
+        }
         len = p - p1;
         if (c != '\\') {
             TokenSym **pts;

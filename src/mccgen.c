@@ -584,6 +584,22 @@ ST_FUNC int mccgen_compile(MCCState *s1)
                 fs->vla_inner_id, get_tok_str(fs->v, NULL));
         }
     }
+    if (mcc_state->warn_all & WARN_ON) {
+        Sym *fs;
+        for (fs = global_stack; fs; fs = fs->prev) {
+            ElfSym *es;
+            if ((fs->type.t & VT_BTYPE) != VT_FUNC
+                || !(fs->type.t & VT_STATIC) || (fs->type.t & VT_INLINE)
+                || !fs->a.used
+                || fs->v < TOK_IDENT || fs->v >= SYM_FIRST_ANOM)
+                continue;
+            es = elfsym(fs);
+            if (es && es->st_shndx != SHN_UNDEF)
+                continue;
+            mcc_warning_c(warn_all)("'%s' used but never defined",
+                                    get_tok_str(fs->v, NULL));
+        }
+    }
     check_vstack();
 #if MCC_EH_FRAME
     mcc_eh_frame_end(s1);
@@ -606,6 +622,8 @@ static void finalize_tentative_arrays(void)
         esym = elfsym(sym);
         if (esym && esym->st_shndx != SHN_UNDEF)
             continue;
+        mcc_warning_c(warn_all)("array '%s' assumed to have one element",
+                                get_tok_str(sym->v, NULL));
         sym->type.ref->c = 1;
         sym->type.t &= ~VT_EXTERN;
         size = type_size(&sym->type, &align);
@@ -1368,6 +1386,10 @@ static void patch_type(Sym *sym, CType *type)
         if ((type->t ^ sym->type.t) & VT_STATIC) {
             if ((type->t & VT_STATIC) && !(sym->type.t & VT_STATIC))
                 mcc_error("static declaration of '%s' follows non-static "
+                    "declaration", get_tok_str(sym->v, NULL));
+            else if (!(type->t & (VT_STATIC|VT_EXTERN))
+                     && (sym->type.t & VT_STATIC))
+                mcc_error("non-static declaration of '%s' follows static "
                     "declaration", get_tok_str(sym->v, NULL));
         }
     }
@@ -5473,6 +5495,9 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td)
             }
         } else
             l = FUNC_OLD;
+        if (l == FUNC_OLD && first == NULL)
+            mcc_warning_c(warn_strict_prototypes)(
+                "function declaration isn't a prototype");
         skip(')');
         type->t &= ~VT_CONSTANT;
         if (tok == '[') {
@@ -6413,6 +6438,7 @@ static void format_check(int is_scanf, const char *fmt, int favail,
         default:
             continue;
         }
+        int sc_base = cls_want;
         if (is_scanf) cls_want = 2;
         if (used >= nvar) {
             mcc_warning_c(warn_format)(
@@ -6427,6 +6453,15 @@ static void format_check(int is_scanf, const char *fmt, int favail,
                                             "a pointer" };
                 mcc_warning_c(warn_format)(
                     "format '%%%c' expects %s argument", conv, cn[cls_want]);
+            } else if (is_scanf && got == 2 && sc_base <= 1
+                       && (args[used].type.t & VT_BTYPE) == VT_PTR) {
+                int pc = format_arg_class(pointed_type(&args[used].type));
+                if (pc <= 1 && pc != sc_base) {
+                    static const char *cn2[] = { "int", "floating-point" };
+                    mcc_warning_c(warn_format)(
+                        "format '%%%c' expects a pointer to %s argument",
+                        conv, cn2[sc_base]);
+                }
             }
         }
         used++;
@@ -6808,6 +6843,44 @@ ST_FUNC void unary(void)
         type.t = VT_VOID;
         vpush(&type);
         CODE_OFF();
+        break;
+    case TOK_builtin_nan:    case TOK_builtin_nanf:    case TOK_builtin_nanl:
+    case TOK_builtin_inf:    case TOK_builtin_inff:    case TOK_builtin_infl:
+    case TOK_builtin_huge_val: case TOK_builtin_huge_valf:
+    case TOK_builtin_huge_vall:
+        {
+            int btok = tok, fbt;
+            unsigned long long bits;
+            CValue cv;
+            int is_nan = (btok == TOK_builtin_nan || btok == TOK_builtin_nanf
+                          || btok == TOK_builtin_nanl);
+            int is_float = (btok == TOK_builtin_nanf || btok == TOK_builtin_inff
+                            || btok == TOK_builtin_huge_valf);
+            int is_ld = (btok == TOK_builtin_nanl || btok == TOK_builtin_infl
+                         || btok == TOK_builtin_huge_vall);
+            /* nan() takes a (string) tag argument; inf()/huge_val() take () */
+            if (is_nan)
+                parse_builtin_params(1, "e");
+            else
+                parse_builtin_params(0, "");
+            if (is_nan)
+                vtop--;                 /* discard the tag-string operand */
+            if (is_float) {
+                union { unsigned u; float f; } x;
+                x.u = is_nan ? 0x7fc00000U : 0x7f800000U;
+                cv.f = x.f;
+                fbt = VT_FLOAT;
+            } else {
+                union { unsigned long long u; double d; } x;
+                x.u = is_nan ? 0x7ff8000000000000ULL : 0x7ff0000000000000ULL;
+                cv.d = x.d;
+                if (is_ld) { cv.ld = (long double)x.d; fbt = VT_LDOUBLE; }
+                else fbt = VT_DOUBLE;
+            }
+            type.t = fbt; type.ref = NULL;
+            vsetc(&type, VT_CONST, &cv);
+            (void)bits;
+        }
         break;
     case TOK_builtin_ffs:    case TOK_builtin_ffsl:    case TOK_builtin_ffsll:
     case TOK_builtin_clz:    case TOK_builtin_clzl:    case TOK_builtin_clzll:
@@ -8666,7 +8739,13 @@ again:
                 if (0 == (flags & STMT_COMPOUND))
                     goto again;
             } else {
-                mcc_warning_c(warn_all)("deprecated use of label at end of compound statement");
+                if (mcc_state->cversion < 202311
+                    && (mcc_state->warn_pedantic || mcc_state->pedantic_errors))
+                    mcc_pedantic("label at end of compound statement is a "
+                                 "C23 feature");
+                else
+                    mcc_warning_c(warn_all)("deprecated use of label at end of "
+                                            "compound statement");
             }
         } else {
             if (t != ';') {
@@ -8844,6 +8923,9 @@ static int decl_designator(init_params *p, CType *type, unsigned long c,
             goto struct_field;
         unget_tok(l);
     }
+
+    if ((tok == '[' || tok == '.') && mcc_state->cversion < 199901)
+        mcc_pedantic("designated initializers are a C99 feature");
 
     while (nb_elems == 1 && (tok == '[' || tok == '.')) {
         if (tok == '[') {
@@ -9388,8 +9470,13 @@ static void decl_initializer(init_params *p, CType *type, unsigned long c, int f
         if (flags & DIF_HAVE_ELEM)
           skip(';');
         next();
-        if (tok == '{')
-            mcc_pedantic("too many braces around scalar initializer");
+        if (tok == '{') {
+            if (mcc_state->warn_pedantic || mcc_state->pedantic_errors)
+                mcc_pedantic("too many braces around scalar initializer");
+            else
+                mcc_warning_c(warn_all)(
+                    "too many braces around scalar initializer");
+        }
         decl_initializer(p, type, c, flags & ~DIF_HAVE_ELEM);
         skip('}');
 
@@ -10295,8 +10382,16 @@ static int decl(int l)
                         type.t &= ~VT_EXTERN;
                         if (has_init)
                             next();
-                        else if (l == VT_CONST)
+                        else if (l == VT_CONST) {
+                            if (!(type.t & VT_STATIC)) {
+                                Sym *pe = sym_find(v);
+                                if (pe && (pe->type.t & VT_STATIC))
+                                    mcc_error("non-static declaration of '%s' "
+                                        "follows static declaration",
+                                        get_tok_str(v, NULL));
+                            }
                             type.t |= VT_EXTERN;
+                        }
                         decl_initializer_alloc(&type, &ad, r, has_init, v, l);
                     }
 

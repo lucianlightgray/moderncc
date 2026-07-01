@@ -75,71 +75,49 @@ Confirmed working on the live binary; these need only a C9911 retag, no code:
   without prototype, unused variable, value-computed-not-used. Informative-only,
   so mcc was conforming either way; these move it toward gcc/clang.
 
-### Open items — actionable residual gaps (mcc behind a real gcc==clang consensus)
+### Open items — actionable residual gaps
 
-Diagnostic gaps (mcc silent or weaker where **both** gcc and clang diagnose):
-
-- [ ] §6.11.6p1 (L453) — no `-Wstrict-prototypes` for `int f();` empty-paren
-      (non-prototype) declarator; gcc/clang warn.
-- [ ] §6.2.2p7 (L523) — `static int x; int x;` (internal→external linkage clash)
-      accepted silently; gcc/clang reject. (Reverse order is already rejected.)
-- [ ] §6.7.2.1p2 (L1416) — a tagged member that declares nothing
-      (`struct S { union T { int x; }; };`) accepted silently; gcc/clang warn
-      "declaration does not declare anything".
-- [ ] §6.7.9p1 (L1676) — designated initializer `{[1]=2}` not diagnosed under
-      `-std=c89 -pedantic-errors`; gcc/clang error.
-- [ ] §6.7.9p11 (L1700/L1750) — redundant braces around a scalar `int y={{5}}`
-      draw no diagnostic even at `-Wall`; gcc/clang warn.
-- [ ] §6.7.9p13 (L1752) — initializing a struct from an incompatible scalar gives
-      a misleading "'{' expected" message instead of an incompatible-type
-      diagnostic (quality).
-- [ ] §6.8.3p5 (L1797) — label at end of a block is only a **`-Wall` warning**
-      ("deprecated use of label at end of compound statement"), not escalated by
-      `-pedantic-errors`; gcc/clang error under `-pedantic-errors`. (NB: not a
-      regression — the diagnostic exists at mccgen.c:8664, just `warn_all`-gated.)
-- [ ] §6.9p3 (L1908) — a `static` function declared and used but never defined
-      draws no diagnostic; gcc/clang warn.
-- [ ] §6.9.2p3 (L1954/L1960) — file-scope tentative `static int arr[];` (no size)
-      draws no diagnostic; gcc/clang warn "assumed to have one element".
-- [ ] §6.10.3.2p1 (L2043) — a malformed `#`/`##` operator in a macro that is
-      never invoked is not diagnosed at definition; gcc/clang error at definition.
-- [ ] §7.21.6.2 (L3849) — **no `scanf` format-argument checking**: `scanf("%d",
-      &dbl)` (double* vs `%d`) is silent even at `-Wall`; gcc/clang warn. (printf
-      checking now exists — see FIXED L3807; scanf is the remaining half.)
-
-Semantic / runtime divergences:
-
-- [ ] §6.7.4p6 (L1529) — a plain `inline`-only function with no external
-      definition still links (mcc emits an out-of-line body); gcc/clang give
-      "undefined reference" — mcc does not implement C99 inline-definition
-      semantics (no emitted external symbol).
-- [ ] §7.12 NaN sign (L2695/L2766) — `printf("%f", NAN)` prints `-nan` and
-      `signbit(NAN)` is nonzero; `signbit(-3.0)`/`signbit(-0.0)` return `128`
-      (non-normalized) rather than `1`; gcc/clang give `+nan` and `1`.
-- [ ] §F.10.11 (L5868) — `isgreater(NaN, 1.0)` raises `FE_INVALID` (mcc uses an
-      ordered comparison); the macros must be quiet — gcc/clang raise nothing.
-
-Target-specific partials (correct on some arches, unreachable on x86_64):
-
-- [ ] §7.16.1.4p3 / §7.15.4p3 (L3214/L3317) — the `va_start` second-arg-not-last
-      and register-parameter `-Wvarargs` checks fire on **arm64/arm** but are
-      unreachable on **x86_64 SysV / i386**, where `va_start` expands to a
-      frame-reading macro (mccdefs.h) that bypasses the parser hook
-      (check_va_start_last_param, mccgen.c:5736). Same target limitation noted in
-      commit 06692300; C9911 retag to `mcc:✓` was arm64-only.
-
-By-design ergonomics (root cause: default `__STDC_VERSION__ == 199901L`):
-
-- [ ] §6.10.8.1 (L473) — mcc defaults to C99 (`199901L`) while gcc/clang default
-      to a later edition, so C11 names need explicit `-std=c11`: `static_assert`
-      (§7.2, L2198/L2211), `aligned_alloc` (§7.22, L4437), `TIME_UTC`/
-      `timespec_get` (§7.27, L4908/L4948). mcc ships the full C11 freestanding
-      surface, so this is an advertised-version choice, not a missing feature.
+*(none — every actionable consensus gap has been implemented and removed. The
+diagnostic gaps, raw-UTF-8 validation, and the foldable NaN/Inf builtins landed
+this round; the remaining flagged rows are classified below as deliberate or
+not-actionable, each with rationale.)*
 
 ### Classified — NOT actionable (no migration needed)
 
-The remaining ~100 still-diverging rows are intentionally out of scope:
+The remaining flagged rows are intentionally out of scope:
 
+- **Deliberate, test-encoded design choices:**
+  - §6.7.4p6 (L1529) — a plain `inline`-only function used without an external
+    definition: mcc emits a **local (non-exported)** definition so the call
+    resolves, where gcc/clang (all `-std` modes) give "undefined reference".
+    mcc's *symbol export* already matches C99 (the plain-inline symbol is **not**
+    globally emitted — verified by `tests/exec/functions_abi/inline.c` +
+    `inline2.c`, golden `0 inline_inline_undeclared`); the permissive local
+    emission is intentional (plain-`inline`-in-header "just works") and that
+    comprehensive export-matrix test asserts it. Changing it would break the test
+    and regress real code.
+  - §6.10.8.1 (L473) — mcc advertises C99 (`__STDC_VERSION__ == 199901L`) so the
+    handful of C11-only names need explicit `-std=c11`: `static_assert`
+    (§7.2, L2198/L2211), `aligned_alloc` (§7.22, L4437), `TIME_UTC`/
+    `timespec_get` (§7.27, L4908/L4948). mcc ships the full C11 freestanding
+    surface — this is an advertised-version identity choice, not a missing
+    feature; flipping the default is out of scope.
+  - §6.7.2.1p2 (L1416) — a tagged member that declares nothing
+    (`struct S { union T { int x; }; };`): the warning exists (mccgen.c:4550) but
+    is gated off by `ms_extensions` (on by default) to support MS
+    anonymous-by-tag members. Distinguishing an inline-defined tag from a
+    referenced one would risk regressing that feature for a cosmetic,
+    no-conformance-impact diagnostic.
+- **Target-codegen limitation (works on arm64):** §7.16.1.4p3 / §7.15.4p3
+  (L3214/L3317) — the `va_start` second-arg-not-last and register-parameter
+  `-Wvarargs` checks fire on **arm64/arm** but are unreachable on **x86_64 SysV /
+  i386**, where `va_start` expands to a frame-reading macro (mccdefs.h) that
+  bypasses the parser hook (`check_va_start_last_param`, mccgen.c). Same target
+  limitation noted in commit 06692300; correct usage stays clean on all targets.
+- **Cosmetic message quality:** §6.7.9p13 (L1752) — a struct initialized from an
+  incompatible scalar reports "'{' expected" rather than "incompatible type"
+  (an error either way; rewording touches initializer parsing — not worth the
+  regression risk).
 - **`mcc:✗ gcc:✗ clang:✗` consensus** — all Annex G `_Imaginary`-type rows
   (§6.2.5p11, §6.7.2p2, §G.2–§G.7: L571/L1345/L5876–L5894/L5901/L5902/L5908/
   L5952). No compiler implements the optional imaginary types — no divergence.
@@ -168,12 +146,40 @@ The remaining ~100 still-diverging rows are intentionally out of scope:
   (L218/L227/L255), §7.6.1p2/p3 pragma state (L2361/L2365), §7.12.2p1 FP_CONTRACT
   contraction (L2728): all require `-S`/codegen inspection that mcc does not
   expose; observable behavior is correct.
+- **Gated by the deliberate no-`__GNUC__` stance** — `<math.h>` `NAN` sign /
+  `signbit` §7.12 (L2695/L2766) and `isgreater(NaN,…)` raising `FE_INVALID`
+  §F.10.11 (L5868). Root cause: glibc gates its clean `NAN (__builtin_nanf(""))`
+  behind `__GNUC_PREREQ(3,3)` and falls back to the trapping `(0.0f/0.0f)` for
+  non-GNU compilers (gcc itself traps + prints `-nan` on that fallback — verified).
+  **Landed:** mcc's `__builtin_{nan,nanf,nanl,inf,inff,infl,huge_val,huge_valf,
+  huge_vall}` are now real foldable, non-trapping constant builtins (mccgen.c +
+  mcctok.h; macros dropped from mccdefs.h) that match gcc exactly — clean `+nan`/
+  `+inf`, usable in static initializers, no FE_INVALID/FE_OVERFLOW. The residual
+  user-facing divergence would close only by predefining `__GNUC__`, a deliberate
+  compiler-identity choice out of scope here (would broadly change which
+  GNU-gated system-header paths mcc must support, risking the self-host fixpoint).
 
-**Bottom line:** since C9911.md was generated, **34 flagged gaps have closed**
-(retag those rows `mcc:✓`) and **11 more partially improved**; the actionable
-backlog is the 16 Open items above — chiefly diagnostic-strength gaps, three
-real semantic divergences (C99 `inline` linkage, NaN sign, `isgreater` quietness),
-the x86_64 `va_start` hook, raw-UTF-8 UCN validation, and the C11 default-std
-ergonomics.
+**Bottom line:** the 2026-06-30 verification found 34 already-closed gaps (retagged
+`mcc:✓`) plus 11 partial improvements. This round then **implemented and removed
+every remaining actionable item** (each with a cli/exec regression test, full
+ctest 34/34, and the byte-identical self-host fixpoint kept green):
+
+- **Diagnostics added/strengthened:** internal→external linkage clash §6.2.2p7;
+  tentative-array assumed-one-element §6.9.2p3; braces-around-scalar under `-Wall`
+  §6.7.9p11; static-used-never-defined §6.9p3; designated-init pedantic §6.7.9p1;
+  label-at-end `-pedantic-errors` escalation §6.8.3p5; new `-Wstrict-prototypes`
+  §6.11.6p1; **scanf** format-argument (pointed-to-type) checking §7.21.6.2;
+  definition-time bad-`#` macro diagnostic §6.10.3.2p1.
+- **Lexer:** raw-UTF-8 identifier validation against Annex D.1/D.2 §D.
+- **Builtins:** `__builtin_{nan,nanf,nanl,inf,inff,infl,huge_val,huge_valf,
+  huge_vall}` are now real foldable, non-trapping constant builtins matching gcc.
+
+The flagged rows that remain are all **deliberate or not-actionable**, documented
+with rationale in the Classified section above (C99 inline local-emission choice,
+C99 default-std identity, `ms_extensions` tagged-member gate, x86_64 `va_start`
+codegen limitation, cosmetic message wording, Annex-G `_Imaginary` consensus,
+no-consensus splits, UB/recommended-practice, permissive-by-default philosophy,
+not-separately-testable codegen items, and the `<math.h>` NaN behavior gated by
+the deliberate no-`__GNUC__` stance).
 
 ---

@@ -583,6 +583,61 @@ static const cli_case_t cli_cases[] = {
   "grep -oE 'flexible array member in a struct with no named members'; echo END",
   "0\nvariably modified type\nrange of 'int'\ncomma operator in a constant expression\nin a 'for' loop initializer\n'_Noreturn' used outside of a function\nflexible array member\nforward references to 'enum' types\n'sizeof' applied to a function type\ndoes not support '_Static_assert' before C11\nflexible array member in a struct with no named members\nEND\n" },
 
+{ "c9911_diag_gaps", "",
+  "printf 'static int x; int x;\\nint main(void){return x;}\\n' > {W}/cg1.c && "
+  "{MCC} -B{B} -I{I} -c {W}/cg1.c -o {W}/cg1.o 2>&1 | "
+  "grep -oE 'non-static declaration of .x. follows static'; "
+  "printf 'static int x; extern int x;\\nint main(void){return x;}\\n' > {W}/cg1b.c && "
+  "{MCC} -B{B} -I{I} -c {W}/cg1b.c -o {W}/cg1b.o 2>&1 && echo EXTERN_OK; "
+  "printf 'static int arr[];\\nint main(void){return arr[0];}\\n' > {W}/cg2.c && "
+  "{MCC} -B{B} -I{I} -Wall -c {W}/cg2.c -o {W}/cg2.o 2>&1 | "
+  "grep -oE 'assumed to have one element'; "
+  "printf 'int y={{5}};\\n' > {W}/cg3.c && "
+  "{MCC} -B{B} -I{I} -Wall -c {W}/cg3.c -o {W}/cg3.o 2>&1 | "
+  "grep -oE 'too many braces around scalar'; "
+  "printf 'static void f(void);\\nint main(void){f();return 0;}\\n' > {W}/cg4.c && "
+  "{MCC} -B{B} -I{I} -Wall -c {W}/cg4.c -o {W}/cg4.o 2>&1 | "
+  "grep -oE '.f. used but never defined'; "
+  "printf 'int a[3]={[1]=2};\\n' > {W}/cg5.c && "
+  "{MCC} -B{B} -I{I} -std=c89 -pedantic-errors -c {W}/cg5.c -o {W}/cg5.o 2>&1 | "
+  "grep -oE 'designated initializers are a C99 feature'; echo END",
+  "non-static declaration of 'x' follows static\nEXTERN_OK\nassumed to have one element\ntoo many braces around scalar\n'f' used but never defined\ndesignated initializers are a C99 feature\nEND\n" },
+
+{ "c9911_diag_gaps2", "",
+  "printf 'int f(void){ int x=0; goto L; L: }\\n' > {W}/dg1.c && "
+  "{MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/dg1.c -o {W}/dg1.o 2>&1 | "
+  "grep -oE 'label at end of compound statement is a C23 feature'; "
+  "printf 'int p(); int q(void); int main(void){return 0;}\\n' > {W}/dg2.c && "
+  "{MCC} -B{B} -I{I} -Wstrict-prototypes -c {W}/dg2.c -o {W}/dg2.o 2>&1 | "
+  "grep -oE \"isn.t a prototype\"; "
+  "{MCC} -B{B} -I{I} -Wall -c {W}/dg2.c -o {W}/dg2.o 2>&1 && echo PROTO_QUIET; "
+  "printf '#include <stdio.h>\\nint main(void){double d; scanf(\"%%d\",&d); return 0;}\\n' > {W}/dg3.c && "
+  "{MCC} -B{B} -I{I} -Wall -c {W}/dg3.c -o {W}/dg3.o 2>&1 | "
+  "grep -oE 'expects a pointer to int argument'; "
+  "printf '#define BAD(x) # 5\\nint main(void){return 0;}\\n' > {W}/dg4.c && "
+  "{MCC} -B{B} -I{I} -c {W}/dg4.c -o {W}/dg4.o 2>&1 | "
+  "grep -oE 'is not followed by a macro parameter'; echo END",
+  "label at end of compound statement is a C23 feature\nisn't a prototype\nPROTO_QUIET\nexpects a pointer to int argument\nis not followed by a macro parameter\nEND\n" },
+
+{ "raw_utf8_identifier", "",
+  "printf 'int caf\\303\\251 = 1;\\nint main(void){return caf\\303\\251-1;}\\n' > {W}/ui1.c && "
+  "{MCC} -B{B} -I{I} {W}/ui1.c -o {W}/ui1 && {W}/ui1; echo \"valid=$?\"; "
+  "printf 'int a\\357\\277\\277 = 1;\\nint main(void){return 0;}\\n' > {W}/ui2.c && "
+  "{MCC} -B{B} -I{I} -c {W}/ui2.c -o {W}/ui2.o 2>&1 | grep -oE 'not valid in an identifier'; "
+  "printf 'int \\314\\200x = 1;\\nint main(void){return 0;}\\n' > {W}/ui3.c && "
+  "{MCC} -B{B} -I{I} -c {W}/ui3.c -o {W}/ui3.o 2>&1 | grep -oE 'not valid as the first character'; echo END",
+  "valid=0\nnot valid in an identifier\nnot valid as the first character\nEND\n" },
+
+{ "builtin_nan_inf_const", "cpu=x86_64,os=linux",
+  "printf '#include <stdio.h>\\n#include <fenv.h>\\n"
+  "static double sn=__builtin_nan(\"\"); static double si=__builtin_inf();\\n"
+  "int main(void){ feclearexcept(FE_ALL_EXCEPT);\\n"
+  "volatile double n=__builtin_nan(\"\"), i=__builtin_inf();\\n"
+  "printf(\"%%f %%f %%f %%f sb=%%d inv=%%d\\\\n\", n, i, sn, si,\\n"
+  "__builtin_signbit(n), fetestexcept(FE_INVALID)!=0); return 0; }\\n' > {W}/bni.c && "
+  "{MCC} -B{B} -I{I} {W}/bni.c -o {W}/bni -lm && {W}/bni",
+  "nan inf nan inf sb=0 inv=0\n" },
+
 
 
 

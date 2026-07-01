@@ -262,7 +262,7 @@ static const mcc_golden_t mcc_goldens[] = {
   { "pp_macro_too_few_args","pp","preprocess/diagnostics/macro_too_few_args.c","\nmacro_too_few_args.c:2: error: macro 'F' used with too few args\n","","","" },
   { "pp_macro_too_many_args","pp","preprocess/diagnostics/macro_too_many_args.c","\nmacro_too_many_args.c:2: error: macro 'F' used with too many args\n","","","" },
   { "pp_macro_eof_in_invocation","pp","preprocess/diagnostics/macro_eof_in_invocation.c","\nmacro_eof_in_invocation.c:2: error: EOF in invocation of macro 'F'\n","","","" },
-  { "pp_stringize_non_param","pp","preprocess/diagnostics/stringize_non_param.c","\nstringize_non_param.c:2: error: macro parameter after '#' expected\n","","","" },
+  { "pp_stringize_non_param","pp","preprocess/diagnostics/stringize_non_param.c","\nstringize_non_param.c:1: error: '#' is not followed by a macro parameter\n","","","" },
   { "pp_ifdef_non_identifier","pp","preprocess/diagnostics/ifdef_non_identifier.c","\nifdef_non_identifier.c:1: error: invalid argument for '#ifdef'\n","","","" },
   { "pp_missing_endif","pp","preprocess/diagnostics/missing_endif.c","x\n\nmissing_endif.c:2: error: missing #endif\n","","","" },
   { "pp_invalid_paste","pp","preprocess/diagnostics/invalid_paste.c","\ninvalid_paste.c:2: warning: pasting \"+\" and \"-\" does not give a valid preprocessing token\n+ -\n","","","" },
