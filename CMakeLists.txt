@@ -1074,9 +1074,26 @@ if(NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT CMAKE_CROSSCOMPILING)
     if("${MCC_TRIPLET}" STREQUAL "")
         execute_process(COMMAND "${CMAKE_C_COMPILER}" -dumpmachine
             OUTPUT_VARIABLE _dumpmachine OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
-        if(_dumpmachine AND EXISTS "/usr/lib/${_dumpmachine}/crti.o")
-            set(MCC_TRIPLET "${_dumpmachine}")
+        # Candidate multiarch triplets, in order: the compiler's own -dumpmachine,
+        # then a vendor-normalized form. gcc on Debian/Ubuntu reports the vendorless
+        # x86_64-linux-gnu that names the multiarch dir, but clang reports a 4-field
+        # x86_64-pc-linux-gnu / x86_64-unknown-linux-gnu -- so /usr/lib/<triplet>
+        # and /usr/include/<triplet> don't exist under clang's spelling. Drop the
+        # pc/unknown vendor field and retry, else the multiarch /usr/include/<t>
+        # (where glibc keeps bits/libc-header-start.h) is left off the search path.
+        set(_triplet_cands "")
+        if(_dumpmachine)
+            list(APPEND _triplet_cands "${_dumpmachine}")
+            if(_dumpmachine MATCHES "^([^-]+)-(pc|unknown)-(.+)$")
+                list(APPEND _triplet_cands "${CMAKE_MATCH_1}-${CMAKE_MATCH_3}")
+            endif()
         endif()
+        foreach(_cand IN LISTS _triplet_cands)
+            if(EXISTS "/usr/lib/${_cand}/crti.o" OR IS_DIRECTORY "/usr/include/${_cand}")
+                set(MCC_TRIPLET "${_cand}")
+                break()
+            endif()
+        endforeach()
     endif()
     if("${MCC_TRIPLET}" STREQUAL "" AND "${MCC_LIBPATHS}" STREQUAL ""
        AND MCC_CPU MATCHES "^(x86_64|arm64|riscv64)$"
