@@ -2246,7 +2246,7 @@ separate_arguments(_refflags UNIX_COMMAND "${REFFLAGS}")
 separate_arguments(_tdefs UNIX_COMMAND "${TESTDEFS}")
 execute_process(
     COMMAND "${CC}" "${SRC}" -o "${_ref_exe}" "-I${IDIR}" "-I${SRCDIR}" "-I${BDIR}"
-            ${_tdefs} -w -O0 -std=gnu11 -fno-omit-frame-pointer ${_refflags}
+            ${_tdefs} -w -O0 -std=gnu11 -fno-omit-frame-pointer ${_refflags} -lm
     RESULT_VARIABLE _rc OUTPUT_VARIABLE _o ERROR_VARIABLE _e)
 if(NOT _rc EQUAL 0)
     message(FATAL_ERROR "cc failed to build mcctest.c:\n${_o}${_e}")
@@ -2257,7 +2257,7 @@ set(_mcc_exe "${OUTDIR}/mcctest.mcc")
 set(_mcc_out "${OUTDIR}/mcctest.out")
 execute_process(
     COMMAND ${EMU} "${MCC}" "-B${BDIR}" "-I${IDIR}" "-I${SRCDIR}" "-I${BDIR}"
-            ${_tdefs} ${_targs} "${SRC}" -o "${_mcc_exe}"
+            ${_tdefs} ${_targs} "${SRC}" -o "${_mcc_exe}" -lm
     RESULT_VARIABLE _rc OUTPUT_VARIABLE _o ERROR_VARIABLE _e)
 if(NOT _rc EQUAL 0)
     message(FATAL_ERROR "mcc failed to build mcctest.c:\n${_o}${_e}")
@@ -2445,6 +2445,22 @@ endif()
         mcc_skip_test(diff3-suite "needs a POSIX shell on Windows (no sh/bash found; set MCC_TEST_SH)")
     else()
         mcc_skip_test(diff3-suite "needs native host + both gcc and clang (build the clang-toolchain target for a self-contained clang)")
+    endif()
+
+    # parts-suite: 3-way (gcc/clang/mcc) unit test of each tests/diff/parts/run_*.c
+    # wrapper. The same parts/*.h units are #include-aggregated into full_language.c
+    # (the all-in-one C11 test, run by mcctest); here each is exercised in isolation.
+    if(NOT MCC_EMULATOR AND DIFF3_GCC AND DIFF3_CLANG AND MCC_CONFIG_ASM
+       AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/run_parts.cmake")
+        add_test(NAME parts-suite COMMAND "${CMAKE_COMMAND}"
+            -DGCC=${DIFF3_GCC} -DCLANG=${DIFF3_CLANG} -DMCC=${_mcc_exe}
+            -DBDIR=${_bdir} -DIDIR=${_idir}
+            -DPARTS=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/parts
+            -DWORK=${CMAKE_BINARY_DIR}/parts-work
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/run_parts.cmake")
+        set_tests_properties(parts-suite PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+    else()
+        mcc_skip_test(parts-suite "needs native host + gcc + clang + integrated assembler")
     endif()
 
     

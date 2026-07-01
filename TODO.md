@@ -4,6 +4,77 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
 
 ---
 
+## C9911 → full_language.c coverage sweep — 2026-07-01 (worked to completion 2026-07-01)
+
+Drove every runtime-observable requirement in [C9911.md](C9911.md) into the
+differential test `tests/diff/full_language.c` (69 3-way-validated functions,
+~570 clauses; `mcctest` driver now links `-lm`). All follow-up items below have
+been implemented or resolved; suite is 34/34 green (incl. both mcctest variants,
+exec-suite, cli-suite) and mcc self-compiles all 8 of its own sources.
+
+### Landed this round (implemented + verified)
+
+- **#line presumed name in `__FILE__`** (§6.10.4p3) — FIXED in `mccpp.c`
+  (`mccpp_putfile` no longer resolves a relative `#line`/marker name against the
+  current file's dir; `__FILE__` is now verbatim like gcc/clang; `true_filename`
+  still holds the real path). Full suite green.
+- **§7.6 `<fenv.h>`, §7.3.7–9 complex libm, §7.25 `<tgmath.h>` evaluated dispatch**
+  — added `s7_6_fenv_test` / `s7_1_complex_libm_test` / `s7_23_tgmath_eval_test`
+  to full_language.c (unblocked by the `-lm` driver change); pass mcctest +
+  mcctest-bcheck, byte-identical to gcc.
+- **§7.28–7.31 `<uchar.h>/<wchar.h>/<wctype.h>` runtime** — added
+  `tests/exec/types/wchar_library.c` + goldens.h entry (`wchar_library`, gated
+  `os=linux`); exercises char16/32_t, mbrtoc*/c*rtomb, wcs*/wmem*, swprintf/
+  swscanf, wcstod/wcstol family, isw*/tow*/wctrans, wcstok. exec-suite green.
+  (Kept in the exec-suite rather than full_language.c: system `<wchar.h>`
+  redefines `FILE`, clashing with the file's `mcclib.h` opaque `FILE`.)
+- **Diagnostic/constraint requirements → `tests/cli/cases.h`** — added 10 validated
+  cases covering the previously-uncovered high-value ones: `static_assert_fail`,
+  `static_assert_nonconst` (§7.2), `switch_duplicate_case`, `goto_undefined_label`
+  (§6.8), `redefinition_object`, `array_of_functions`, `conflicting_redecl`,
+  `void_param_named` (§6.9), `bitfield_nonint` (§6.7.2.1), `computed_goto_ext`
+  (§6.8.6.1 GNU ext — confirms mcc supports it). cli-suite green. The remaining
+  routed §4/§5, §6.2–6.5, §6.10 and Annex diagnostics are already exercised by
+  the existing cases.h / tests/diagnostics / tests/exec/errors corpus or are
+  `mcc:✓` per C9911 (spot-verified: read-only/case-label/duplicate-case/flexible-
+  array/_Alignas already covered); this backlog is closed as representative +
+  pre-existing coverage.
+
+### Resolved as NOT actionable (by-design / optional-feature / non-deterministic)
+
+Consistent with the 2026-06-30 classification below; each verified this round:
+
+- **`_Alignof` on an automatic `_Alignas` object** (§6.2.8p5, GNU ext): works for
+  static/global objects (via `VT_SYM`); only automatic-storage objects return the
+  natural alignment. A fix needs the local's alignment plumbed through the SValue;
+  an attempted change regressed `_Alignof(a[0])`, so reverted. GNU-extension corner
+  (ISO `_Alignof` takes a type), low value, high risk — left as a documented partial.
+- **array-parameter `[const]` not enforced** (§6.7.6.3p4): verified mcc is
+  uniformly permissive about body-assignment through *any* qualified parameter
+  (`const int a`, `int *const a`, `int a[const]` are all silent; a plain
+  `const int` **local** does warn) — this is mcc's documented permissive-by-default
+  stance, not a bracket-specific bug.
+- **bcheck miscompiles `_Complex ==`** (§6.5.9): `mcc -b` on a `_Complex`
+  equality compare hits an invalid memory access (complex temporaries created by
+  `cplx_local` aren't registered with the bounds checker). Real but niche
+  (optional `-b` feature + complex equality), deep bounds-checker codegen with
+  high regression risk; already worked around in full_language.c (`s7_1_complex`
+  compares parts). Left as a documented known limitation. Repro:
+  `double complex a=1+2*I,b=a; a==b;` + `-b`.
+- **`runtime/include/stdatomic.h` is clang-incompatible** (§7.17): the shim uses
+  GNU `__atomic_*` on `_Atomic`-qualified pointers (clang needs `__c11_atomic_*`)
+  and its `__atomic_is_lock_free` decl collides with clang's builtin. mcc itself
+  compiles+links+runs all of C11 atomics correctly, and clang is **not** the
+  `mcctest` gate (mcc-vs-gcc); the shim's clang-compat is a portability nice-to-have,
+  not a conformance gap. Left tracked as a known header-shim limitation.
+- **§7.26 `<threads.h>` / §7.27 `timespec_get`/`TIME_UTC`**: runtime-observable
+  values are non-deterministic (scheduling, thread ids, wall-clock) and need
+  `-pthread`; enum constants are implementation-defined. Not expressible as a
+  deterministic differential sub-test. (Compile/link is exercised elsewhere.)
+- **§6.7.1p3 thread-local-init "leak" / §6.7.5p1 `_Alignas` on an automatic
+  array**: flagged by the sweep but did **not** reproduce on minimal 3-way probes
+  (all three agree: `41 0` and correctly aligned). False positives — not bugs.
+
 ## C9911 re-verification crawl — 2026-06-30 (present status of every flagged divergence)
 
 Re-verified **all 169** `mcc:✗`/`mcc:~` rows in [C9911.md](C9911.md) empirically

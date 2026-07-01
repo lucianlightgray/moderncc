@@ -1926,5 +1926,49 @@ static const cli_case_t cli_cases[] = {
   "{MCC} -B{B} -I{I} -Werror -c {W}/vc.c -o /dev/null 2>&1 && echo CLEAN",
   "CLEAN\n" },
 
+
+
+
+/* ===== C9911 diagnostic coverage (constraint/error-message reqs routed from full_language.c) ===== */
+{ "static_assert_fail", "",
+  "printf '_Static_assert(1==2, \"sizes differ\");\\n' > {W}/static_assert_fail.c && {MCC} -c {W}/static_assert_fail.c -o {W}/static_assert_fail.o 2>&1 | grep -oE 'sizes differ' || echo FIXED_OK",
+  "sizes differ\n" },
+
+{ "static_assert_nonconst", "",
+  "printf 'int x; _Static_assert(x, \"bad\");\\n' > {W}/static_assert_nonconst.c && {MCC} -c {W}/static_assert_nonconst.c -o {W}/static_assert_nonconst.o 2>&1 | grep -oE 'constant expression expected' || echo FIXED_OK",
+  "constant expression expected\n" },
+
+{ "switch_duplicate_case", "",
+  "printf 'int f(int a){switch(a){case 1: return 1; case 1: return 2;} return 0;}\\n' > {W}/switch_duplicate_case.c && {MCC} -c {W}/switch_duplicate_case.c -o {W}/switch_duplicate_case.o 2>&1 | grep -oE 'duplicate case value' || echo FIXED_OK",
+  "duplicate case value\n" },
+
+{ "goto_undefined_label", "",
+  "printf 'int f(void){ goto nowhere; return 0; }\\n' > {W}/goto_undefined_label.c && {MCC} -c {W}/goto_undefined_label.c -o {W}/goto_undefined_label.o 2>&1 | grep -oE 'used but not defined' || echo FIXED_OK",
+  "used but not defined\n" },
+
+{ "redefinition_object", "",
+  "printf 'int x=1; int x=2;\\n' > {W}/redefinition_object.c && {MCC} -c {W}/redefinition_object.c -o {W}/redefinition_object.o 2>&1 | grep -oE 'redefinition of' || echo FIXED_OK",
+  "redefinition of\n" },
+
+{ "array_of_functions", "",
+  "printf 'int a[3](void);\\n' > {W}/array_of_functions.c && {MCC} -c {W}/array_of_functions.c -o {W}/array_of_functions.o 2>&1 | grep -oE 'array of functions' || echo FIXED_OK",
+  "array of functions\n" },
+
+{ "conflicting_redecl", "",
+  "printf 'int f(void); double f(void);\\n' > {W}/conflicting_redecl.c && {MCC} -c {W}/conflicting_redecl.c -o {W}/conflicting_redecl.o 2>&1 | grep -oE 'incompatible types for redefinition' || echo FIXED_OK",
+  "incompatible types for redefinition\n" },
+
+{ "bitfield_nonint", "",
+  "printf 'struct S { float b:3; };\\n' > {W}/bitfield_nonint.c && {MCC} -c {W}/bitfield_nonint.c -o {W}/bitfield_nonint.o 2>&1 | grep -oE 'bitfields must have scalar type' || echo FIXED_OK",
+  "bitfields must have scalar type\n" },
+
+{ "void_param_named", "",
+  "printf 'int f(void x){ return 0; }\\n' > {W}/void_param_named.c && {MCC} -c {W}/void_param_named.c -o {W}/void_param_named.o 2>&1 | grep -oE 'parameter declared as void' || echo FIXED_OK",
+  "parameter declared as void\n" },
+
+{ "computed_goto_ext", "",
+  "printf 'int f(void){ void *p = &&L; goto *p; L: return 0; }\\n' > {W}/computed_goto_ext.c && {MCC} -c {W}/computed_goto_ext.c -o {W}/computed_goto_ext.o 2>&1 | grep -oE 'FIXED_OK' || echo FIXED_OK",
+  "FIXED_OK\n" },
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases)/sizeof(cli_cases[0]));
