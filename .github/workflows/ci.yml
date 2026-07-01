@@ -10,6 +10,12 @@ name: CI
 # The qemu cross-conformance grid runs in its own per-arch jobs (each covers
 # both libcs). See tests/qemu/docker/ and TODO.md. Test labels: `qemu` is the
 # cross matrix, `wine` PE runtime conformance, `macho` the Mach-O drivers.
+#
+# Docker parity: every cell that CAN run under a Linux Docker host does. The
+# `linux` job runs in the `mcc-ci` image (tests/ci/docker) and the qemu grid in
+# `mcc-qemu` (tests/qemu/docker) -- both reproducible off-CI via `docker build`
+# + `docker run`. Only macOS and Windows/MSVC cells remain host-native, since a
+# Linux container cannot host either toolchain.
 on:
   push:
   pull_request:
@@ -25,10 +31,15 @@ permissions:
 
 jobs:
   # ------------------------------------------------------------------ #
-  # Linux: gcc/clang x native/cross. Both compilers are always installed
-  # (the diff/preprocess suites need two distinct reference cc's), plus
-  # wine so the `wine` PE-runtime label runs on the cross rows. The qemu
-  # label is handled by the dedicated Docker jobs below (`-LE qemu`).
+  # Linux: gcc/clang x native/cross. Runs entirely inside the `mcc-ci`
+  # Docker image (tests/ci/docker), which bundles the toolchain (cmake,
+  # ninja, gcc, clang, wine64) and whose entrypoint does configure ->
+  # build -> `ctest -LE qemu`. The image is the single source of truth for
+  # a Linux CI cell, so `docker build && docker run` reproduces this job
+  # bit-for-bit off a GitHub runner. Both compilers ship in the image (the
+  # diff/preprocess suites need two distinct reference cc's); wine drives
+  # the `wine` PE-runtime label on the cross rows. The qemu label has its
+  # own Docker jobs below (`-LE qemu` here).
   # ------------------------------------------------------------------ #
   linux:
     name: linux ${{ matrix.cc }} / ${{ matrix.target }}
@@ -40,24 +51,18 @@ jobs:
         target: [native, cross]
     steps:
       - uses: actions/checkout@v5
-      - name: install toolchain
+      - name: build CI runner image
+        run: docker build -t mcc-ci tests/ci/docker
+      - name: run ${{ matrix.cc }} / ${{ matrix.target }}
+        # Pure docker-equivalent of the old inline install/configure/build/test:
+        # CC + TARGET select the matrix cell; the repo is mounted read-only and
+        # staged inside the container (out-of-source /build), nothing writes back.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build gcc clang wine64
-      - name: configure
-        run: >
-          cmake -S . -B build -G Ninja
-          -DCMAKE_BUILD_TYPE=Debug
-          -DCMAKE_C_COMPILER=${{ matrix.cc }}
-          ${{ matrix.target == 'cross' && '-DMCC_ENABLE_CROSS=ON' || '' }}
-      - name: build
-        run: cmake --build build -j"$(nproc)"
-      - name: test
-        # Everything except the qemu grid (that runs under Docker below). On the
-        # native rows wine/macho self-skip where their cross compilers are absent;
-        # on the cross rows they exercise the win32 (wine) and macho drivers.
-        run: ctest --test-dir build -j"$(nproc)" --output-on-failure -LE "qemu"
+          docker run --rm \
+            -e CC=${{ matrix.cc }} \
+            -e TARGET=${{ matrix.target }} \
+            -v "$PWD:/work:ro" \
+            mcc-ci
 
   # ------------------------------------------------------------------ #
   # macOS: Apple clang + a genuine Homebrew GNU gcc (the diff suites need
