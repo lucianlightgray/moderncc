@@ -237,17 +237,17 @@ extern long double strtold (const char *__nptr, char **__endptr);
 # define ALSO_TRIPLET(s) s
 #endif
 
-/* Standard ELF library / CRT-object search locations across distributions, in
-   arch-correct priority order. mcc searches the list first-match and silently
-   skips paths that do not exist, so listing them all is safe:
-     1. the Debian/Ubuntu multiarch <triplet> dir (/usr/lib/<triplet>);
-     2. the lib64 split used by Fedora/RHEL/Gentoo/SUSE/Arch (64-bit targets);
-        (or the lib32 split for 32-bit targets on a multilib host);
-     3. the plain lib dirs last -- on a 64-bit multilib host /usr/lib is the
-        32-bit tree, so it must rank below /usr/lib64 to avoid an ABI mismatch.
-   Ordering matters: whichever dir first contains crt1.o/libc.so wins, which is
-   the correct-ABI one on every layout (Debian: the triplet dir; lib64 distros:
-   /usr/lib64; unified/32-bit: /usr/lib). */
+ 
+
+
+
+
+
+
+
+
+
+
 #if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64 \
     || defined MCC_TARGET_RISCV64
 # define MCC_ELF_LIBDIRS \

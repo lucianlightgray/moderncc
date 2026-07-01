@@ -1,27 +1,27 @@
 name: CI
 
-# Full toolchain x target x test matrix.
-#
-#   Linux   : gcc, clang         x  native, cross   (portable + wine + macho)
-#   macOS   : clang, homebrew-gcc x  native, cross   (portable + macho-native)
-#   Windows : msvc, mingw        x  native           (portable + pe-native)
-#   qemu    : x86_64/i386/arm/arm64/riscv64 x glibc/musl via the Docker runner
-#
-# The qemu cross-conformance grid runs in its own per-arch jobs (each covers
-# both libcs). See tests/qemu/docker/ and TODO.md. Test labels: `qemu` is the
-# cross matrix, `wine` PE runtime conformance, `macho` the Mach-O drivers.
-#
-# Docker parity: every cell that CAN run under a Linux Docker host does. The
-# `linux` job runs in the `mcc-ci` image (tests/ci/docker) and the qemu grid in
-# `mcc-qemu` (tests/qemu/docker) -- both reproducible off-CI via `docker build`
-# + `docker run`. Only macOS and Windows/MSVC cells remain host-native, since a
-# Linux container cannot host either toolchain.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 on:
   push:
   pull_request:
   workflow_dispatch:
 
-# Cancel superseded runs on the same ref (keep tag/release runs intact).
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -30,17 +30,17 @@ permissions:
   contents: read
 
 jobs:
-  # ------------------------------------------------------------------ #
-  # Linux: gcc/clang x native/cross. Runs entirely inside the `mcc-ci`
-  # Docker image (tests/ci/docker), which bundles the toolchain (cmake,
-  # ninja, gcc, clang, wine64) and whose entrypoint does configure ->
-  # build -> `ctest -LE qemu`. The image is the single source of truth for
-  # a Linux CI cell, so `docker build && docker run` reproduces this job
-  # bit-for-bit off a GitHub runner. Both compilers ship in the image (the
-  # diff/preprocess suites need two distinct reference cc's); wine drives
-  # the `wine` PE-runtime label on the cross rows. The qemu label has its
-  # own Docker jobs below (`-LE qemu` here).
-  # ------------------------------------------------------------------ #
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
   linux:
     name: linux ${{ matrix.cc }} / ${{ matrix.target }}
     runs-on: ubuntu-latest
@@ -54,9 +54,9 @@ jobs:
       - name: build CI runner image
         run: docker build -t mcc-ci tests/ci/docker
       - name: run ${{ matrix.cc }} / ${{ matrix.target }}
-        # Pure docker-equivalent of the old inline install/configure/build/test:
-        # CC + TARGET select the matrix cell; the repo is mounted read-only and
-        # staged inside the container (out-of-source /build), nothing writes back.
+        
+        
+        
         run: |
           docker run --rm \
             -e CC=${{ matrix.cc }} \
@@ -64,15 +64,15 @@ jobs:
             -v "$PWD:/work:ro" \
             mcc-ci
 
-  # ------------------------------------------------------------------ #
-  # macOS: Apple clang + a genuine Homebrew GNU gcc (the diff suites need
-  # a second, non-clang reference; Apple `gcc` is a clang shim). The
-  # `macho` drivers run as real native Mach-O images here.
-  # ------------------------------------------------------------------ #
+  
+  
+  
+  
+  
   macos:
     name: macos ${{ matrix.cc }} / ${{ matrix.target }}
-    # Pinned (not macos-latest): avoids the unattended macOS-26 label migration
-    # and keeps the reference toolchain stable across runs.
+    
+    
     runs-on: macos-15
     strategy:
       fail-fast: false
@@ -82,15 +82,15 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: install toolchain
-        # Drop the runner image's pre-installed aws/tap: newer Homebrew now
-        # requires per-tap trust and otherwise prints a tap-trust warning on
-        # every brew invocation. We don't use it, so remove it.
+        
+        
+        
         run: |
           brew untap aws/tap 2>/dev/null || true
           brew install cmake ninja gcc
       - name: resolve compiler
         id: cc
-        # Homebrew installs the GNU compiler as gcc-<n>; pick the newest.
+        
         run: |
           if [ "${{ matrix.cc }}" = gcc ]; then
             g=$(ls "$(brew --prefix)"/bin/gcc-[0-9]* | sort -V | tail -1)
@@ -107,28 +107,28 @@ jobs:
       - name: build
         run: cmake --build build -j"$(sysctl -n hw.ncpu)"
       - name: test
-        # No qemu/wine on macOS; the native macho drivers do run here.
+        
         run: ctest --test-dir build -j"$(sysctl -n hw.ncpu)" --output-on-failure -LE "qemu|wine"
 
-  # ------------------------------------------------------------------ #
-  # Windows: msvc (Visual Studio generator, auto-detected via vswhere) and
-  # mingw (the build downloads a checksummed winlibs GCC and drives it as a
-  # superbuild cell). The mingw parent project still needs a host compiler
-  # for its own probe, so we enter an MSVC dev environment first and build
-  # the mingw cells under Ninja.
-  # ------------------------------------------------------------------ #
+  
+  
+  
+  
+  
+  
+  
   windows-msvc:
     name: windows msvc / native
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
-      # Auto-setup the diff3/preprocess reference compilers. Windows uses mingw
-      # gcc + LLVM clang (both preinstalled on windows-latest); we resolve their
-      # absolute paths and pin the suites to them via -DMCC_DIFF3_{GCC,CLANG} so
-      # the differential never silently depends on PATH order. The POSIX shell
-      # that drives the runner's plumbing (MCC_TEST_SH) is left to CMake's
-      # find_program(sh bash) -- it resolves Git's shell without risking WSL's
-      # System32\bash.exe.
+      
+      
+      
+      
+      
+      
+      
       - name: resolve diff3 reference compilers (mingw gcc + clang)
         id: refs
         shell: pwsh
@@ -156,27 +156,27 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
-      # Enter an MSVC dev environment so the parent probe finds `cl`. Using
-      # setup-msvc-dev (node24) rather than ilammy/msvc-dev-cmd (node20-only).
+      
+      
       - uses: TheMrMilchmann/setup-msvc-dev@v4
         with:
           arch: x64
       - name: install ninja
         run: choco install ninja -y
       - name: configure + build (superbuild fetches winlibs GCC)
-        # MCC_TOOLCHAIN_PROFILE=mingw always goes through the superbuild: the
-        # `mingw` cell configures with the downloaded GCC under Ninja while the
-        # parent probe uses the MSVC dev-cmd `cl`. The cell runs its own ctest.
+        
+        
+        
         run: |
           cmake -S . -B build -G Ninja -DMCC_TOOLCHAIN_PROFILE=mingw -DCMAKE_BUILD_TYPE=Release
           cmake --build build -j
 
-  # ------------------------------------------------------------------ #
-  # qemu-user cross matrix, one runner per architecture (each covers both
-  # glibc and musl). The Docker entrypoint stages a clean source copy,
-  # builds mcc + the cross compilers, fetches the per-(arch,libc) Gentoo
-  # sysroots, and runs `ctest -L qemu`.
-  # ------------------------------------------------------------------ #
+  
+  
+  
+  
+  
+  
   qemu-matrix:
     name: qemu ${{ matrix.arch }} (glibc+musl)
     runs-on: ubuntu-latest

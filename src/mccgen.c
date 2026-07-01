@@ -6858,13 +6858,13 @@ ST_FUNC void unary(void)
                             || btok == TOK_builtin_huge_valf);
             int is_ld = (btok == TOK_builtin_nanl || btok == TOK_builtin_infl
                          || btok == TOK_builtin_huge_vall);
-            /* nan() takes a (string) tag argument; inf()/huge_val() take () */
+             
             if (is_nan)
                 parse_builtin_params(1, "e");
             else
                 parse_builtin_params(0, "");
             if (is_nan)
-                vtop--;                 /* discard the tag-string operand */
+                vtop--;                  
             if (is_float) {
                 union { unsigned u; float f; } x;
                 x.u = is_nan ? 0x7fc00000U : 0x7f800000U;
@@ -9078,10 +9078,10 @@ static void write_ldouble(unsigned char *d, void *s)
     #elif (__aarch64__ || __riscv) && (defined MCC_TARGET_I386 || defined MCC_TARGET_X86_64)
         uint64_t m = read64le((unsigned char*)s + 6);
         int e = read16le((unsigned char*)s + 14);
-        /* round-half-up the dropped low mantissa bit; carry into the exponent
-           when the increment overflows the 64-bit mantissa. Same short-circuit
-           semantics as the old `&&` chain, but as a statement (gcc's
-           -Wunused-value rightly flags a discarded boolean expression). */
+         
+
+
+
         if ((e & 0x7fff) && (m & 1) && 0 == ++m)
             ++e;
         write64le(d, m >> 1 | ((e & 0x7fff) ? 1ULL<<63 : 0));

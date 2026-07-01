@@ -175,10 +175,10 @@
     #define __atomic_compare_exchange_n(p, e, d, w, s, f) \
         ({ __typeof__(*(p)) __d = (d); \
            __atomic_compare_exchange((p), (e), &__d, (w), (s), (f)); })
-/* __builtin_{nan,nanf,nanl,inf,inff,infl,huge_val,huge_valf,huge_vall} are
-   implemented as real, foldable, non-trapping constant builtins in mcc (a NaN
-   or infinity literal must not raise FE_INVALID/FE_OVERFLOW the way a runtime
-   0.0/0.0 or 1e200*1e200 would). Only the signaling-NaN helpers remain macros. */
+ 
+
+
+
 #if !defined __linux__ && !defined _WIN32
 # if defined __APPLE__
     #define __builtin_flt_rounds() 1

@@ -1,15 +1,15 @@
-# Load and RUN mcc-produced Mach-O *images* on a Linux/x86_64 host (no macOS,
-# no darling). CMake -P port of run_macho_image.sh (faithful, no POSIX shell).
-# Builds the minimal Mach-O loader (tests/qemu/macho/loader.c: maps segments,
-# seccomp-traps macOS syscalls, jumps to LC_MAIN), links each self-checking
-# conformance program for x86_64-osx as a freestanding Mach-O (custom entry that
-# exits via the macOS exit syscall), and executes it through the loader. Each
-# program self-checks and must exit 0.
-#
-# Usage: cmake -DSRC=<src-dir> -DXB=<cross-build-dir> -DWORK=<work-dir> \
-#              -P run_macho_image.cmake
-# Self-skips (EXIT 77, ctest SKIP_RETURN_CODE) unless host is x86_64 with the
-# x86_64-osx cross compiler + gcc.
+
+
+
+
+
+
+
+
+
+
+
+
 
 if(NOT DEFINED SRC OR NOT DEFINED XB OR NOT DEFINED WORK)
     message(FATAL_ERROR "usage: -DSRC= -DXB= -DWORK= -P run_macho_image.cmake")
@@ -19,7 +19,7 @@ set(CONF  "${SRC}/tests/qemu/conformance")
 set(MCC   "${XB}/x86_64-osx-mcc")
 set(OSXRT "${XB}/lib-x86_64-osx")
 
-# --- whole-test self-skips (exit 77) -----------------------------------------
+
 cmake_host_system_information(RESULT _arch QUERY OS_PLATFORM)
 if(NOT _arch STREQUAL "x86_64")
     message("SKIP: host is not x86_64")
@@ -41,7 +41,7 @@ endif()
 
 file(MAKE_DIRECTORY "${WORK}")
 
-# Build the in-repo Mach-O loader with the host gcc.
+
 execute_process(
     COMMAND "${GCC}" -O2 "${SRC}/tests/qemu/macho/loader.c" -o "${WORK}/machoload"
     RESULT_VARIABLE _rc
@@ -53,10 +53,10 @@ if(NOT _rc EQUAL 0)
     cmake_language(EXIT 77)
 endif()
 
-# Freestanding Mach-O entry: call the (renamed) conformance main, exit via the
-# macOS x86_64 exit syscall (BSD class 0x2000000 | 1).  Written verbatim (the
-# original heredoc was quoted, i.e. no expansion); a bracket argument keeps it
-# byte-for-byte.
+
+
+
+
 file(WRITE "${WORK}/wrap.c" [==[
 int cmain(void);
 static void osx_exit(int c){ __asm__ volatile("movl %0,%%edi; movl $0x2000001,%%eax; syscall"
@@ -103,19 +103,19 @@ int snprintf(char *b, unsigned long n, const char *f, ...){
 }
 ]==])
 
-# Compile the wrapper (stderr discarded, no error check -- matches the .sh).
+
 execute_process(
     COMMAND "${MCC}" -nostdlib -c "${WORK}/wrap.c" -o "${WORK}/wrap.o"
     OUTPUT_QUIET ERROR_QUIET)
 
 set(_status 0)
 
-# Every conformance program runs as a Mach-O image. The libc impl is a
-# freestanding shim (the real macOS libSystem needs a macOS/darling host); what
-# this verifies is mcc's *codegen* for the full call surface on Mach-O -- struct
-# ABI (aggregates), varargs (varargs, snprintf), and the libc-call ABI (libc).
+
+
+
+
 foreach(t atomics control integers floats lexical aggregates varargs libc)
-    # compile
+    
     execute_process(
         COMMAND "${MCC}" -nostdlib -Dmain=cmain "-I${SRC}/runtime/include"
                 -c "${CONF}/${t}.c" -o "${WORK}/c.o"
@@ -126,7 +126,7 @@ foreach(t atomics control integers floats lexical aggregates varargs libc)
         continue()
     endif()
 
-    # link
+    
     execute_process(
         COMMAND "${MCC}" -nostdlib "${WORK}/c.o" "${WORK}/wrap.o"
                 "${OSXRT}/atomic.o" "${OSXRT}/stdatomic.o"
@@ -134,7 +134,7 @@ foreach(t atomics control integers floats lexical aggregates varargs libc)
                 -o "${WORK}/${t}.macho"
         RESULT_VARIABLE _rc OUTPUT_QUIET ERROR_VARIABLE _err)
     if(NOT _rc EQUAL 0)
-        # first stderr line that isn't a stack/deprecation note (grep -vi)
+        
         set(_msg "")
         string(REPLACE "\r" "" _err "${_err}")
         string(REPLACE "\n" ";" _errlines "${_err}")
@@ -150,7 +150,7 @@ foreach(t atomics control integers floats lexical aggregates varargs libc)
         continue()
     endif()
 
-    # must actually be a Mach-O image
+    
     execute_process(
         COMMAND file -b "${WORK}/${t}.macho"
         RESULT_VARIABLE _frc OUTPUT_VARIABLE _ftype ERROR_QUIET)
@@ -161,7 +161,7 @@ foreach(t atomics control integers floats lexical aggregates varargs libc)
         continue()
     endif()
 
-    # load + execute through the in-repo loader; self-check must exit 0
+    
     execute_process(
         COMMAND "${WORK}/machoload" "${WORK}/${t}.macho"
         RESULT_VARIABLE _rrc OUTPUT_QUIET ERROR_QUIET)

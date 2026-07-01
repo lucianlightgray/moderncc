@@ -27,8 +27,8 @@
 #define popen  _popen
 #define pclose _pclose
 #endif
-/* Windows has no <sys/wait.h>; system()/pclose() return the child exit code
-   directly, so the POSIX wait-status accessors degenerate to the identity. */
+ 
+
 #ifndef WIFEXITED
 #define WIFEXITED(s)   1
 #define WEXITSTATUS(s) (s)
@@ -46,30 +46,30 @@
 
 static int verbose;
 
-/* True when a watchdog-wrapped invocation was cut short by the wall-clock hang
-   guard: GNU coreutils `timeout` exits 124 (137 if it escalated to SIGKILL);
-   the POSIX fallback SIGKILLs and reports 137. Either way the captured stdout
-   is only the partial prefix produced before the kill, so the result is
-   inconclusive and must NOT be diffed as a divergence. Without this, a golden
-   that is merely slow on a cold run (e.g. the cleanup torture test, which can
-   spin a compiler's codegen or loop at runtime for minutes) would intermittently
-   be miscounted as an mcc divergence -- a false failure that comes and goes with
-   machine load and disk-cache warmth. */
+ 
+
+
+
+
+
+
+
+
 static int timed_out(int raw_status){
     return WIFEXITED(raw_status) &&
            (WEXITSTATUS(raw_status) == 124 || WEXITSTATUS(raw_status) == 137);
 }
 
-/* True when a watchdog-wrapped invocation died from a fatal signal
-   (SIGSEGV/SIGABRT/SIGFPE/...) instead of exiting normally. A crashed process's
-   stdout holds only whatever it flushed before dying, so -- exactly like a
-   timeout -- it is NOT a valid result to diff. Critically, if BOTH reference
-   compilers' programs crash they emit identical (empty) output, which would
-   otherwise masquerade as a "gcc==clang consensus" that mcc's real output is
-   then failed against (observed on the CI Windows/MSVC runner, where the
-   mingw+clang-built cast_operator binaries segfault at startup). `timeout` and
-   the shell relay a signal death as exit 128+signum; the native POSIX path also
-   surfaces it via WIFSIGNALED. Exclude the watchdog's own 124/137 codes. */
+ 
+
+
+
+
+
+
+
+
+
 static int crashed(int raw_status){
     if (timed_out(raw_status)) return 0;
 #ifdef WIFSIGNALED
@@ -221,32 +221,32 @@ static int same_compiler(const char *a, const char *b){
     return same;
 }
 
-/* Goldens where mcc DELIBERATELY diverges from a gcc/clang reference because the
-   program probes mcc's own freestanding headers, predefined macros, or an
-   implementation-defined layout -- so a "gcc==clang consensus" is NOT the source
-   of truth for them. mcc's output for each is pinned exactly by the exec golden
-   suite (tests/exec/goldens.h, which the ctest run verifies separately); that is
-   the real guardrail. The three-way differential must therefore not mistake the
-   sanctioned divergence for a bug. These only reach this branch on hosts where
-   gcc and clang happen to AGREE against mcc (e.g. macOS: neither Apple clang nor
-   Homebrew gcc predefines __STDC_IEC_559__); elsewhere the gcc!=clang branch
-   already absorbs them as implementation-defined. */
+ 
+
+
+
+
+
+
+
+
+
 static int intentional_divergence(const char *name){
     static const char *const list[] = {
-        "c11_freestanding_headers", /* mcc predefines __STDC_IEC_559__ /
-                                       __STDC_IEC_559_COMPLEX__ / __STDC_ISO_10646__;
-                                       gcc & clang on Darwin define none of them. */
-        "predefined_macros",        /* mcc's default __STDC_VERSION__ is C99
-                                       (199901); gcc/clang default to a newer std. */
-        "bitfields_ms",             /* mcc selects MS bit-field layout (impl-defined). */
-        "cleanup",                  /* __attribute__((cleanup)) + goto ordering torture. */
+        "c11_freestanding_headers",  
+
+
+        "predefined_macros",         
+
+        "bitfields_ms",              
+        "cleanup",                   
     };
     for (size_t i = 0; i < sizeof list / sizeof *list; i++)
         if (!strcmp(name, list[i])) return 1;
     return 0;
 }
 
-/* substitute {SELF} -> src in a flags/args string */
+ 
 static void sub_self(const char *in, const char *src, char *out, size_t n){
     char *w = out; const char *a = in;
     while (*a && (size_t)(w-out) < n-1){
@@ -256,10 +256,10 @@ static void sub_self(const char *in, const char *src, char *out, size_t n){
     *w = 0;
 }
 
-/* Build with `cc` (NULL => mcc) and run; fills *out (stdout).
-   Returns 0 if the build failed, 1 if it built and ran to completion, or 2 if
-   the build or the run hit the wall-clock watchdog (inconclusive -- *out holds
-   only a partial prefix and the caller must skip rather than diff it). */
+ 
+
+
+
 static int build_run(const char *label, const char *cc, const char *mcc,
                      const char *bdir, const char *idir, const char *sup,
                      const char *work, const char *src, const char *flags,
@@ -277,9 +277,9 @@ static int build_run(const char *label, const char *cc, const char *mcc,
             mcc, bdir, idir, sup, flags, src, exe);
     if (verbose) fprintf(stderr, "  [%s build] %s\n", label, cmd);
     char gbuild[8448];
-    timeout_wrap(cmd, gbuild, sizeof gbuild);   /* a pathological source must
-        not be able to hang a compiler forever (cleanup.c can spin Apple clang's
-        codegen); the hang guard caps every build, not just the run. */
+    timeout_wrap(cmd, gbuild, sizeof gbuild);    
+
+
     int brc = RUN_SYSTEM(gbuild);
     if (timed_out(brc)){ *out = strdup(""); return 2; }
     if (brc != 0){ *out = strdup(""); return 0; }
@@ -346,9 +346,9 @@ int main(int argc, char **argv){
         int mok = build_run("mcc",   NULL, mcc,  bdir,idir,sup,work,src,flags,args,&mout);
 
         if (gok == 2 || cok == 2 || mok == 2){
-            /* A build or run hit the hang guard or died from a fatal signal:
-               the captured output is only a partial prefix (or empty), so this
-               row is inconclusive, not a divergence. */
+             
+
+
             if (verbose) printf("SKIP  %-28s -- build/run hit %ds watchdog or crashed (inconclusive)\n",
                                 g->name, DIFF3_RUN_TIMEOUT);
             skip++;

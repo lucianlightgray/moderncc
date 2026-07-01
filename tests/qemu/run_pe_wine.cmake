@@ -1,12 +1,12 @@
-# Runtime-verify mcc's PE (Windows) codegen under wine: for each win32 cross
-# target, assemble a -B tree (crt objects + libmcc1.a + the .def import libs),
-# link every tests/qemu/conformance/*.c into a PE executable, and run it under
-# wine. Each conformance program self-checks and must exit 0.
-#
-# CMake -P port of run_pe_wine.sh (no POSIX shell required).
-# Usage: cmake -DSRC=<src-dir> -DXB=<cross-build-dir> -DWORK=<work-dir> -P run_pe_wine.cmake
-# Whole-test skip -> EXIT 77 (wine or win32 cross compilers absent).
-# Any failure -> EXIT 1.  Else EXIT 0.
+
+
+
+
+
+
+
+
+
 
 if(NOT DEFINED SRC OR NOT DEFINED XB OR NOT DEFINED WORK)
     message(FATAL_ERROR "usage: cmake -DSRC=<src> -DXB=<cross-build> -DWORK=<work> -P run_pe_wine.cmake")
@@ -14,7 +14,7 @@ endif()
 
 set(CONF "${SRC}/tests/qemu/conformance")
 
-# pick a wine: prefer plain wine/wine64, fall back to a proton build
+
 function(pick out)
     foreach(c ${ARGN})
         find_program(_pick_${c} NAMES "${c}")
@@ -33,8 +33,8 @@ if(NOT WINE64 AND NOT WINE32)
     cmake_language(EXIT 77)
 endif()
 
-# env vars consumed by wine (execute_process has no ENVIRONMENT option, so
-# export them into this process's environment via $ENV{} like the .sh did)
+
+
 set(ENV{WINEDEBUG} "-all")
 set(ENV{WINEPREFIX} "${WORK}/.wineprefix")
 
@@ -60,7 +60,7 @@ foreach(tgt x86_64-win32 i386-win32)
     set(B "${WORK}/B-${tgt}")
     file(REMOVE_RECURSE "${B}")
     file(MAKE_DIRECTORY "${B}/lib")
-    # tolerate missing files (the .sh's `|| true`): glob then copy what exists
+    
     file(GLOB _defs "${SRC}/runtime/win32/lib/*.def")
     file(GLOB _objs "${XB}/lib-${tgt}/*.o")
     set(_a "${XB}/${tgt}-libmcc1.a")
@@ -93,11 +93,11 @@ foreach(tgt x86_64-win32 i386-win32)
             set(status 1)
             continue()
         endif()
-        # Redirect to a real file (not OUTPUT_QUIET, which drains a pipe): wine
-        # daemonizes wineserver, which inherits the captured-output pipe and keeps
-        # it open until its idle-kill timeout (~3s) — so a pipe makes each call
-        # block for seconds (×32 ≈ 100s). A file fd has no such reader to wait on,
-        # matching the shell's `>/dev/null 2>&1`.
+        
+        
+        
+        
+        
         execute_process(
             COMMAND "${WINE}" "${exe}"
             RESULT_VARIABLE rc

@@ -3,14 +3,14 @@ cmake_minimum_required(VERSION 3.22)
 set(MCC_VERSION "1.0.0")
 string(REGEX MATCH "^[0-9]+(\\.[0-9]+)*" MCC_VERSION_NUMERIC "${MCC_VERSION}")
 
-# A Homebrew GNU gcc on macOS defaults to an ancient -mmacosx-version-min (10.6)
-# when no deployment target is set; on current macOS that stale value makes gcc's
-# own linker spec emit a bogus `-l<garbage>` and EVERY link fails (a trivial
-# `int main(){}` included). So when mcc is built with such a gcc -- the `gcc`
-# matrix toolchain, or an explicit -DCMAKE_C_COMPILER=gcc-15 -- and no deployment
-# target was requested, pin one to the host's macOS version so it links. Apple
-# clang is unaffected (it is not GNU gcc and supplies its own default). This must
-# run before project()/compiler detection, hence the manual compiler probe.
+
+
+
+
+
+
+
+
 if(CMAKE_HOST_APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET
    AND NOT DEFINED ENV{MACOSX_DEPLOYMENT_TARGET})
     set(_mcc_sel_cc "${CMAKE_C_COMPILER}")
@@ -25,7 +25,7 @@ if(CMAKE_HOST_APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET
                 OUTPUT_VARIABLE _mcc_osver OUTPUT_STRIP_TRAILING_WHITESPACE
                 ERROR_QUIET RESULT_VARIABLE _mcc_osrc)
             if(NOT _mcc_osrc EQUAL 0 OR NOT _mcc_osver MATCHES "^[0-9]+")
-                set(_mcc_osver "11.0")   # safe arm64 floor if sw_vers is unavailable
+                set(_mcc_osver "11.0")   
             endif()
             set(CMAKE_OSX_DEPLOYMENT_TARGET "${_mcc_osver}" CACHE STRING
                 "macOS deployment target (pinned for a Homebrew GNU gcc host build)")
@@ -141,17 +141,17 @@ function(mcc_map_toolchain_cc tc outvar)
         return()
     endif()
     if(tc STREQUAL "mingw")
-        # The downloaded x86_64 gcc; returned even if not yet on disk -- the
-        # matrix cell DEPENDS on `mingw-toolchain`, which fetches it first.
+        
+        
         mcc_mingw_resolve()
         set(${outvar} "${_MCC_MINGW_X86_64_GCC}" PARENT_SCOPE)
         return()
     endif()
     if(tc STREQUAL "gcc")
-        # Prefer a *real* GNU gcc (gcc-<major>) over a `gcc` that is an alias for
-        # clang (macOS), so a gcc;clang matrix actually builds mcc with two
-        # distinct compilers instead of Apple clang twice. `setup-gcc` installs
-        # one; falls back to whatever answers to `gcc`/`cc` if none is found.
+        
+        
+        
+        
         mcc_find_gnu_gcc(_gnu_gcc)
         if(_gnu_gcc)
             set(${outvar} "${_gnu_gcc}" PARENT_SCOPE)
@@ -171,12 +171,12 @@ function(mcc_map_toolchain_cc tc outvar)
     endif()
 endfunction()
 
-# Locate a *real GNU* gcc distinct from the host clang, for the differential
-# suites (diff3 / preprocess). On macOS `gcc`/`cc` are the Apple clang shim, so
-# a three-way gcc-vs-clang-vs-mcc differential degenerates and the suites self-
-# skip; a Homebrew gcc (installed by `setup-gcc` as gcc-<major>, e.g. gcc-15)
-# restores a genuine second reference. Returns "" if none found. Honors an
-# explicit -DMCC_GNU_GCC=<path> override.
+
+
+
+
+
+
 function(mcc_find_gnu_gcc outvar)
     if(MCC_GNU_GCC)
         set(${outvar} "${MCC_GNU_GCC}" PARENT_SCOPE)
@@ -188,8 +188,8 @@ function(mcc_find_gnu_gcc outvar)
             execute_process(COMMAND "${MCC_GNUGCC_${_n}}" --version
                 OUTPUT_VARIABLE _v ERROR_QUIET RESULT_VARIABLE _rc
                 OUTPUT_STRIP_TRAILING_WHITESPACE)
-            # Real GNU gcc prints the FSF copyright line; the Apple/LLVM clang
-            # shim that answers to `gcc` does not (and says "clang").
+            
+            
             if(_rc EQUAL 0 AND _v MATCHES "Free Software Foundation"
                AND NOT _v MATCHES "clang")
                 set(${outvar} "${MCC_GNUGCC_${_n}}" PARENT_SCOPE)
@@ -224,9 +224,9 @@ function(mcc_autocorrect name value reason)
     message(STATUS "mcc config [autocorrect]: ${name} -> ${value} (${reason})")
 endfunction()
 
-# Apply the user-facing static/strip link controls to an mcc executable target.
-# MSVC's link.exe rejects -static/-s, so these GNU/Clang link flags are skipped
-# there (msvc statically links the CRT via /MT and drops symbols via /DEBUG:NONE).
+
+
+
 function(mcc_apply_exe_link_flags tgt)
     if(MCC_CC_NAME STREQUAL "msvc")
         return()
@@ -452,24 +452,24 @@ set(MCC_TARGETS "native" CACHE STRING
     "Cross-platform target(s) to build, as a list (native;cross;<custom>)")
 set_property(CACHE MCC_TARGETS PROPERTY STRINGS native cross)
 
-# ------------------------------------------------------------------ #
-# Downloadable, self-contained mingw toolchain ("cmake-mingw-*").
-# The `mingw-toolchain` target fetches a portable mingw-w64 GCC and unpacks it
-# under MCC_MINGW_DIR/cmake-mingw-* (gitignored). Two flavours:
-#   winlibs  (default) - current GCC, two NATIVE compilers (x86_64 + i686) from
-#                        checksummed GitHub release zips; gives both ABIs.
-#   multilib           - one gcc that does -m32 AND -m64. No stable checksummed
-#                        host, so its archive URL is user-supplied.
-# Once present it is auto-wired as the differential-test reference cc (MCC_REF_CC)
-# and is selectable as a build toolchain (MCC_TOOLCHAIN_PROFILE=mingw).
-# ------------------------------------------------------------------ #
+
+
+
+
+
+
+
+
+
+
+
 mcc_config_node(MCC_MINGW_SOURCE TYPE STRING DEFAULT winlibs GROUP "Build targets" ADVANCED
     HELP "Source for the `mingw-toolchain` download: winlibs (dual-arch, current) or multilib (single gcc -m32/-m64)"
     CHOICES winlibs multilib)
 set(MCC_MINGW_DIR "${CMAKE_SOURCE_DIR}" CACHE PATH
     "Parent directory the downloaded toolchain trees (cmake-mingw-*) live in")
-# WinLibs: pinned UCRT release assets (override to bump). SHA256 from the GitHub
-# release asset digests; file(DOWNLOAD) verifies them.
+
+
 set(_wl "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.1.0posix-14.0.0-ucrt-r3")
 set(MCC_MINGW_WINLIBS_X86_64_URL
     "${_wl}/winlibs-x86_64-posix-seh-gcc-16.1.0-mingw-w64ucrt-14.0.0-r3.zip"
@@ -484,21 +484,21 @@ set(MCC_MINGW_WINLIBS_I686_SHA256
     "c4c7419f2820ac2e169dc86f1397a07deff20297a107c7a1ca486643d8d435be"
     CACHE STRING "SHA256 of the WinLibs i686 zip")
 unset(_wl)
-# Multilib (opt-in): supply your own archive (e.g. a SourceForge mingw-w64
-# multilib build). SHA256 optional; SUBDIR is the dir inside the archive that
-# contains bin/gcc.
+
+
+
 set(MCC_MINGW_MULTILIB_URL "" CACHE STRING
     "Archive URL for a single-gcc multilib toolchain (required when MCC_MINGW_SOURCE=multilib)")
 set(MCC_MINGW_MULTILIB_SHA256 "" CACHE STRING "Optional SHA256 of the multilib archive")
 set(MCC_MINGW_MULTILIB_SUBDIR "mingw64" CACHE STRING
     "Subdirectory inside the multilib archive that holds bin/gcc")
 
-# Resolve the expected gcc paths for the selected source into the parent scope:
-#   _MCC_MINGW_X86_64_GCC  - 64-bit gcc (matrix cc + reference), or ""
-#   _MCC_MINGW_I686_GCC    - native 32-bit gcc (winlibs only), or ""
-#   _MCC_MINGW_MULTILIB_GCC- single multilib gcc (multilib only), or ""
-# Paths are computed whether or not the toolchain has been downloaded yet (the
-# `mingw-toolchain` target / matrix DEPENDS provide it); callers EXISTS-check.
+
+
+
+
+
+
 function(mcc_mingw_resolve)
     set(_x "")
     set(_i "")
@@ -508,15 +508,15 @@ function(mcc_mingw_resolve)
         set(_i "${MCC_MINGW_DIR}/cmake-mingw-i686/mingw32/bin/gcc.exe")
     elseif(MCC_MINGW_SOURCE STREQUAL "multilib")
         set(_m "${MCC_MINGW_DIR}/cmake-mingw-multilib/${MCC_MINGW_MULTILIB_SUBDIR}/bin/gcc.exe")
-        set(_x "${_m}")   # the one multilib gcc serves as the 64-bit cc too
+        set(_x "${_m}")   
     endif()
     set(_MCC_MINGW_X86_64_GCC   "${_x}" PARENT_SCOPE)
     set(_MCC_MINGW_I686_GCC     "${_i}" PARENT_SCOPE)
     set(_MCC_MINGW_MULTILIB_GCC "${_m}" PARENT_SCOPE)
 endfunction()
 
-# Build the (url|sha|dest) work-list for the selected source, then generate an
-# idempotent fetch driver and expose it as the `mingw-toolchain` target.
+
+
 set(_mingw_entries "")
 if(MCC_MINGW_SOURCE STREQUAL "winlibs")
     list(APPEND _mingw_entries
@@ -579,19 +579,19 @@ add_custom_target(mingw-toolchain
     COMMENT "Fetching self-contained mingw toolchain (${MCC_MINGW_SOURCE}) into cmake-mingw-*"
     USES_TERMINAL VERBATIM)
 
-# ------------------------------------------------------------------ #
-# Downloadable, self-contained LLVM/clang toolchain ("cmake-clang").
-# The `clang-toolchain` target fetches an official LLVM release and unpacks it
-# under MCC_CLANG_DIR/cmake-clang (gitignored). It is the SECOND independent
-# reference compiler the diff3 / preprocess differential suites need: with only
-# a host gcc those suites skip ("needs BOTH gcc and clang"). Once this tree is
-# present, a (re)configure auto-wires it as DIFF3_CLANG, so the suites run with
-# zero system clang. SHA256-verified, idempotent (per-tree .mcc-clang-stamp).
-#   build it:  cmake --build <bld> --target clang-toolchain
-# Pinned to an official llvm-project release asset; override the URL/SHA/SUBDIR
-# cache vars to bump. Only Windows x86_64 has a baked-in default (this is the
-# Windows enablement path); elsewhere set MCC_CLANG_URL to opt in.
-# ------------------------------------------------------------------ #
+
+
+
+
+
+
+
+
+
+
+
+
+
 set(MCC_CLANG_DIR "${CMAKE_SOURCE_DIR}" CACHE PATH
     "Parent directory the downloaded clang tree (cmake-clang) lives in")
 set(_clang_url "")
@@ -615,8 +615,8 @@ unset(_clang_url)
 unset(_clang_sha)
 unset(_clang_subdir)
 
-# Resolve the expected clang path (downloaded tree) into the parent scope as
-# _MCC_CLANG_EXE, whether or not it has been fetched yet (callers EXISTS-check).
+
+
 function(mcc_clang_resolve)
     set(_c "")
     if(NOT MCC_CLANG_SUBDIR STREQUAL "")
@@ -625,7 +625,7 @@ function(mcc_clang_resolve)
     set(_MCC_CLANG_EXE "${_c}" PARENT_SCOPE)
 endfunction()
 
-# Generate the idempotent fetch driver and expose it as `clang-toolchain`.
+
 set(_clang_fetch "${CMAKE_BINARY_DIR}/run_clang_fetch.cmake")
 file(WRITE "${_clang_fetch}"
     "set(URL \"${MCC_CLANG_URL}\")\n"
@@ -669,22 +669,22 @@ add_custom_target(clang-toolchain
     COMMENT "Fetching self-contained LLVM/clang toolchain into cmake-clang"
     USES_TERMINAL VERBATIM)
 
-# ----------------------------------------------------------------------------
-# Optional host-toolchain setup targets: `setup-gcc`, `setup-wine`,
-# `setup-mingw`, and the umbrella `setup-toolchains`. They install extra host
-# toolchains via the platform package manager (Homebrew on macOS; apt/dnf/
-# pacman/zypper on Linux) purely to WIDEN local test coverage -- nothing in the
-# normal build depends on them. After running one, re-run cmake so detection
-# picks the new tool up.
-#   * setup-gcc   -> a genuine GNU gcc reference, so the gcc-vs-clang-vs-mcc
-#                    differential suites (diff3 / preprocess) actually run where
-#                    `gcc` is otherwise an alias for clang (macOS). The build's
-#                    mcc_find_gnu_gcc() auto-wires the installed gcc-<major>.
-#   * setup-wine  -> runs mcc's PE/Windows output (pe-wine-conformance), paired
-#                    with the win32 cross compilers from `cmake --preset cross`.
-#   * setup-mingw -> a host-native mingw-w64 cross gcc (a PE reference compiler).
-#                    Distinct from `mingw-toolchain`, which fetches the Windows-
-#                    hosted winlibs gcc used as a *build* toolchain under wine.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 set(_toolchain_setup "${CMAKE_BINARY_DIR}/run_toolchain_setup.cmake")
 file(WRITE "${_toolchain_setup}" [==[
 # GENERATED by CMakeLists.txt -- installs an optional host toolchain to widen
@@ -792,10 +792,10 @@ add_dependencies(setup-toolchains setup-gcc setup-wine setup-mingw)
 list(LENGTH MCC_TOOLCHAIN_PROFILE _tc_count)
 list(LENGTH MCC_TARGETS _tg_count)
 set(_is_matrix FALSE)
-# `mingw` always goes through the matrix even as a single profile: a leaf build
-# never switches CMAKE_C_COMPILER, but a mingw cell must build with the
-# downloaded toolchain (and DEPENDS on its fetch). So treat any config that
-# names mingw as a matrix.
+
+
+
+
 if(_tc_count GREATER 1 OR _tg_count GREATER 1 OR NOT MCC_TARGETS STREQUAL "native"
    OR "mingw" IN_LIST MCC_TOOLCHAIN_PROFILE)
     set(_is_matrix TRUE)
@@ -809,11 +809,11 @@ if(_is_matrix AND NOT MCC_SUPERBUILD_CHILD)
     message(STATUS "mcc: superbuild matrix toolchains=[${MCC_TOOLCHAIN_PROFILE}] x "
                    "targets=[${MCC_TARGETS}] (${_order})")
 
-    # msvc cells build with the Visual Studio generator, not the parent's
-    # generator: cl.exe under Ninja needs an external vcvars environment and
-    # trips a CONFIGURE_DEPENDS glob-verify path bug on Windows, whereas the VS
-    # generator finds the toolset itself. Auto-detect the installed VS major via
-    # vswhere; override with -DMCC_MSVC_GENERATOR / -DMCC_MSVC_PLATFORM.
+    
+    
+    
+    
+    
     set(MCC_MSVC_GENERATOR "" CACHE STRING
         "CMake generator for 'msvc' toolchain cells (empty = auto-detect)")
     set(MCC_MSVC_PLATFORM "x64" CACHE STRING
@@ -858,7 +858,7 @@ if(_is_matrix AND NOT MCC_SUPERBUILD_CHILD)
         mcc_map_toolchain_cc("${_tc}" _cc)
         set(_cell_is_msvc OFF)
         if(_tc STREQUAL "msvc")
-            set(_cell_is_msvc ON)   # VS generator locates cl itself; no path needed
+            set(_cell_is_msvc ON)   
         endif()
         if(NOT _tc STREQUAL "auto" AND _cc STREQUAL "" AND NOT _cell_is_msvc)
             message(FATAL_ERROR
@@ -882,8 +882,8 @@ if(_is_matrix AND NOT MCC_SUPERBUILD_CHILD)
             if(NOT _cc STREQUAL "" AND NOT _cell_is_msvc)
                 list(APPEND _cargs "-DCMAKE_C_COMPILER=${_cc}")
             endif()
-            # msvc cells override the generator (see MCC_MSVC_GENERATOR above);
-            # every other cell inherits the parent generator.
+            
+            
             set(_cell_gen_args "")
             if(_cell_is_msvc AND NOT MCC_MSVC_GENERATOR STREQUAL "")
                 set(_cell_gen_args CMAKE_GENERATOR "${MCC_MSVC_GENERATOR}"
@@ -894,7 +894,7 @@ if(_is_matrix AND NOT MCC_SUPERBUILD_CHILD)
                 list(APPEND _dep_list ${_prev_stage})
             endif()
             if(_tc STREQUAL "mingw")
-                # Fetch/unpack the toolchain before this cell configures with it.
+                
                 list(APPEND _dep_list mingw-toolchain)
             endif()
             set(_dep "")
@@ -911,8 +911,8 @@ if(_is_matrix AND NOT MCC_SUPERBUILD_CHILD)
                 INSTALL_COMMAND ""
                 ${_dep})
             if(MCC_SUPERBUILD_TEST)
-                # Multi-config generators (the VS generator used for msvc cells)
-                # need ctest -C <config>; single-config ones ignore a -C.
+                
+                
                 set(_cell_ctest_cfg "")
                 if(_cell_is_msvc AND NOT MCC_MSVC_GENERATOR STREQUAL "")
                     if(CMAKE_BUILD_TYPE STREQUAL "")
@@ -936,18 +936,18 @@ endif()
 if(MCC_TOOLCHAIN_PROFILE STREQUAL "mcc")
     mcc_profile_seed(MCC_ONE_SOURCE ON)
 elseif(MCC_TOOLCHAIN_PROFILE STREQUAL "msvc")
-    # NB: do NOT force ONE_SOURCE here. With ONE_SOURCE the per-TU helpers in
-    # libmcc become `static` (ST_FUNC), but the separate mcc executable is built
-    # ONE_SOURCE=0 and links against libmcc — on a PE target it references e.g.
-    # pstrcpy from the Windows-only impdef tool, which then goes unresolved
-    # (LNK2019). The normal multi-TU build keeps those symbols external. Tests
-    # default ON so msvc participates in the build *and test* matrix.
+    
+    
+    
+    
+    
+    
 endif()
 
 mcc_config_node(MCC_ENABLE_CROSS  TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Build all cross compilers (Makefile: make cross)")
-# Deprecated single knob, split into *_LIB (libmcc archive vs .so) and *_EXE
-# (fully static executable link). Forward an explicitly-set legacy value.
+
+
 if(DEFINED MCC_BUILD_STATIC AND NOT DEFINED MCC_BUILD_STATIC_LIB)
     message(WARNING
         "mcc config: MCC_BUILD_STATIC is deprecated; use MCC_BUILD_STATIC_LIB "
@@ -971,34 +971,34 @@ mcc_config_node(MCC_BUILD_TESTS   TYPE BOOL DEFAULT ON  GROUP "Build targets"
 mcc_config_node(MCC_DIAGNOSTICS TYPE BOOL DEFAULT OFF GROUP "Diagnostics" ADVANCED
     HELP "Everything-on diagnostics: verbose warnings + debug info + build mcc_s/mcc_p/mcc_c")
 if(MCC_DIAGNOSTICS)
-    # The sanitize/coverage/profile variants (mcc_s/mcc_c/mcc_p) are built with
-    # -fsanitize/-fprofile/-pg, which only a GCC/Clang host understands. MSVC's
-    # cl.exe has no equivalent here, so seeding them aborts the configure
-    # (mcc_validate_config). On such a host, diagnostics still turns on the
-    # portable half: verbose warnings + debug info.
+    
+    
+    
+    
+    
     if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-        # mingw GCC ships no libasan/libubsan, so mcc_s (-fsanitize=address,
-        # undefined) cannot link on a PE target. MCC_TARGETOS is not derived yet
-        # here, so use the equivalent host signals (WIN32 host, or a forced
-        # mingw32 target). Coverage (--coverage) and profiling (-pg) do work on
-        # mingw, so they are still seeded.
+        
+        
+        
+        
+        
         if(WIN32 OR MCC_CONFIG_MINGW32)
             message(STATUS "mcc diagnostics: skipping mcc_s (-fsanitize) on a PE/mingw "
                            "target (mingw ships no libasan/libubsan)")
         elseif(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-            # A Homebrew GNU gcc on macOS emits `-lasan` but ships no linkable
-            # libasan/libubsan for Darwin, so mcc_s fails to link (`ld: library
-            # 'asan' not found`). Apple Clang on Darwin sanitizes fine and is
-            # unaffected. Coverage (mcc_c) still works, so it stays seeded.
+            
+            
+            
+            
             message(STATUS "mcc diagnostics: skipping mcc_s (-fsanitize) with GNU gcc on "
                            "macOS (Homebrew gcc ships no linkable libasan/libubsan here)")
         else()
             mcc_profile_seed(MCC_BUILD_SANITIZE ON)
         endif()
         mcc_profile_seed(MCC_BUILD_COVERAGE ON)
-        # mcc_p (-pg -static) needs a static crt0.o, which Darwin does not ship.
-        # Seed the profiling build only where it can actually link; diagnostics
-        # still turns on everything else the platform supports.
+        
+        
+        
         if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
             message(STATUS "mcc diagnostics: skipping mcc_p (-static profiling) on Darwin (no static crt0.o)")
         else()
@@ -1307,13 +1307,13 @@ if(NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT CMAKE_CROSSCOMPILING)
     if("${MCC_TRIPLET}" STREQUAL "")
         execute_process(COMMAND "${CMAKE_C_COMPILER}" -dumpmachine
             OUTPUT_VARIABLE _dumpmachine OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
-        # Candidate multiarch triplets, in order: the compiler's own -dumpmachine,
-        # then a vendor-normalized form. gcc on Debian/Ubuntu reports the vendorless
-        # x86_64-linux-gnu that names the multiarch dir, but clang reports a 4-field
-        # x86_64-pc-linux-gnu / x86_64-unknown-linux-gnu -- so /usr/lib/<triplet>
-        # and /usr/include/<triplet> don't exist under clang's spelling. Drop the
-        # pc/unknown vendor field and retry, else the multiarch /usr/include/<t>
-        # (where glibc keeps bits/libc-header-start.h) is left off the search path.
+        
+        
+        
+        
+        
+        
+        
         set(_triplet_cands "")
         if(_dumpmachine)
             list(APPEND _triplet_cands "${_dumpmachine}")
@@ -1328,15 +1328,15 @@ if(NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT CMAKE_CROSSCOMPILING)
             endif()
         endforeach()
     endif()
-    # Leave MCC_CRTPREFIX / MCC_LIBPATHS empty for a native ELF build: mcc's
-    # built-in CONFIG_MCC_CRTPREFIX / CONFIG_MCC_LIBPATHS defaults (see mcc.h,
-    # MCC_ELF_LIBDIRS) already search every standard distro lib location -- the
-    # multiarch <triplet> dir, the lib64 split, and the plain lib dirs -- in
-    # arch-correct first-match order, so an explicit lib64-only override here is
-    # both redundant and, when a <triplet> is set on a non-multiarch host (e.g.
-    # Gentoo's x86_64-pc-linux-gnu, whose CRT lives in /usr/lib64 not
-    # /usr/lib/<triplet>), actively harmful. MCC_TRIPLET is still used for the
-    # /usr/include/<triplet> search path.
+    
+    
+    
+    
+    
+    
+    
+    
+    
     message(STATUS "mcc paths: triplet='${MCC_TRIPLET}' libpaths='${MCC_LIBPATHS}' crtprefix='${MCC_CRTPREFIX}'")
     if("${MCC_CONFIG_LIBC}" STREQUAL "")
         if(EXISTS "/lib/ld-uClibc.so.0")
@@ -1365,10 +1365,10 @@ endif()
 set(MCC_DIAG_FLAGS "")
 if(MCC_DIAGNOSTICS)
     if(MSVC)
-        # cl.exe accepts the GNU spellings only by aliasing them to surprising
-        # things (-Wall => /Wall, which floods with system-header noise). Use the
-        # practical MSVC maximum: /W4 verbose warnings + /Zi debug info. No /WX —
-        # diagnostics surfaces warnings, it does not turn the build red.
+        
+        
+        
+        
         foreach(_f /W4 /Zi)
             string(MAKE_C_IDENTIFIER "MCC_HAS_DIAGFLAG_${_f}" _v)
             check_c_compiler_flag("${_f}" ${_v})
@@ -1377,13 +1377,13 @@ if(MCC_DIAGNOSTICS)
             endif()
         endforeach()
     else()
-        # -Wno-implicit-fallthrough: the FALLTHROUGH macro (src/mcc.h, commit
-        # 027c1060) annotates the intentional case-fallthroughs in the native
-        # build, but this all-backends diagnostics build also compiles the arm/
-        # arm64/riscv assemblers + codegen, which still carry ~30 un-annotated
-        # intentional fallthroughs (opcode-decode tables). Suppress the warning
-        # here until the macro is extended to those files; Apple clang (C mode)
-        # never raises it, so this only affects gcc.
+        
+        
+        
+        
+        
+        
+        
         foreach(_f -Wall -Wextra -Wnull-dereference
                    -Wno-sign-compare -Wno-unused-parameter -Wno-type-limits
                    -Wno-unterminated-string-initialization -Wno-implicit-fallthrough
@@ -1419,9 +1419,9 @@ if(MCC_TARGETOS STREQUAL "WIN32")
     endif()
     if(NOT MCC_CC_NAME STREQUAL "clang" AND NOT MCC_CC_NAME STREQUAL "msvc"
        AND NOT CMAKE_BUILD_TYPE MATCHES "Debug|RelWithDebInfo")
-        # GNU-style strip. MSVC's link.exe rejects -s (LNK4044 "unrecognized
-        # option /s"); it omits debug info via /DEBUG:NONE + no PDB instead,
-        # which CMake already arranges for non-debug configs.
+        
+        
+        
         add_link_options(-s)
     endif()
 endif()
@@ -1882,8 +1882,8 @@ function(mcc_build_libmcc1 tname mcctgt cpu os native archive objdir out_extra)
                     -I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include
                     -I${CMAKE_BINARY_DIR} ${_arch_incs})
     else()
-        # Build the runtime position-independent (like libgcc) so it links into
-        # PIEs without text relocations (musl rejects TEXTREL on i386).
+        
+        
         set(_xflags ${_mccdefs_flags} -fPIC
                     -B${CMAKE_CURRENT_SOURCE_DIR}/runtime
                     -I${CMAKE_BINARY_DIR} ${_arch_incs})
@@ -1967,9 +1967,9 @@ function(mcc_build_libmcc1 tname mcctgt cpu os native archive objdir out_extra)
     set(${out_extra} "${_extra}" PARENT_SCOPE)
 endfunction()
 
-# Where the in-tree mcc looks for libmcc1.a + support objects (runmain.o,
-# bt-*.o, bcheck.o). On a PE/Windows host the search path is {B}/lib
-# (CONFIG_MCC_LIBPATHS), so place them there; elsewhere it is {B} (top level).
+
+
+
 if(MCC_TARGETOS STREQUAL "WIN32")
     set(MCC_LIBMCC1_ARCHIVE "${CMAKE_BINARY_DIR}/lib/libmcc1.a")
 else()
@@ -1982,10 +1982,10 @@ mcc_build_libmcc1(libmcc1 mcc "${MCC_CPU}" "${MCC_TARGETOS}" ON
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/runtime/include/"
     DESTINATION "${CMAKE_BINARY_DIR}/include" FILES_MATCHING PATTERN "*.h")
 
-# A PE/Windows host resolves <stdio.h> etc. from {B}/include + the bundled
-# win32 headers, and links the CRT/libc stubs from {B}/lib/*.def. The install
-# tree gets these (below); mirror them into the build tree so the in-tree mcc
-# (driven by -B${CMAKE_BINARY_DIR}) works under ctest.
+
+
+
+
 if(MCC_TARGETOS STREQUAL "WIN32")
     file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/runtime/win32/include/"
         DESTINATION "${CMAKE_BINARY_DIR}/include")
@@ -2089,8 +2089,8 @@ if(MCC_ENABLE_CROSS)
         target_compile_definitions(${_t}-mcc PRIVATE ${_cdefs} ${_cpath_defs}
             "CONFIG_MCC_CROSSPREFIX=\"${_t}-\"")
         if(MCC_DIAGNOSTICS)
-            # Surface per-target backend warnings (arm-gen.c, riscv64-gen.c, …)
-            # that the host build never compiles.
+            
+            
             target_compile_options(${_t}-mcc PRIVATE ${MCC_DIAG_FLAGS})
         endif()
         if(_cos STREQUAL "WIN32")
@@ -2161,9 +2161,9 @@ install(FILES
     "${CMAKE_BINARY_DIR}/mccConfigVersion.cmake"
     DESTINATION "${_mcc_cmakedir}")
 
-# On WIN32 the search path is {B}/lib, so libmcc1.a + support objects install
-# into <mccdir>/lib alongside the .def import libs; elsewhere they sit at the
-# <mccdir> top level (search path {B}).
+
+
+
 if(MCC_TARGETOS STREQUAL "WIN32")
     install(FILES "${MCC_LIBMCC1_ARCHIVE}" ${LIBMCC1_EXTRA_OBJS}
         DESTINATION "${_mccdir}/lib")
@@ -2200,9 +2200,9 @@ if(MCC_BUILD_TESTS)
     set(_bdir "${CMAKE_BINARY_DIR}")
     set(_idir "${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
 
-    # Register a test that always reports "Skipped" (with a reason) in ctest,
-    # so platform-/config-inapplicable tests are visible instead of omitted.
-    # Extra args (e.g. LABELS qemu) are forwarded to set_tests_properties.
+    
+    
+    
     function(mcc_skip_test _name _reason)
         add_test(NAME ${_name} COMMAND "${CMAKE_COMMAND}" -E echo "SKIP: ${_reason}")
         set_tests_properties(${_name} PROPERTIES SKIP_REGULAR_EXPRESSION "SKIP:" ${ARGN})
@@ -2320,28 +2320,28 @@ endif()
     add_test(NAME exec-suite
         COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests" "${CMAKE_BINARY_DIR}")
-    # The runner reports its own per-test SKIP lines (host/config requirements);
-    # it returns 77 only when every test skipped, which ctest treats as Skipped.
+    
+    
     set_tests_properties(exec-suite PROPERTIES FIXTURES_REQUIRED MCC_BUILT
         SKIP_RETURN_CODE 77
         ENVIRONMENT "MCC_TEST_EMU=${MCC_EMULATOR};MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS};MCC_TEST_ASM=$<IF:$<BOOL:${MCC_CONFIG_ASM}>,1,0>;MCC_TEST_BCHECK=$<IF:$<BOOL:${MCC_CONFIG_BCHECK}>,1,0>;MCC_TEST_BACKTRACE=$<IF:$<BOOL:${MCC_CONFIG_BACKTRACE}>,1,0>")
 
-    # Structural CLI suite: compiles with mcc and inspects the result with
-    # readelf/nm (output structure, not just program stdout).  Native only --
-    # the readelf/nm assertions assume a host-readable ELF toolchain.  Its case
-    # commands are POSIX shell pipelines (printf/grep/sed/sort/{ } grouping)
-    # that the runner executes through a shell: directly via popen() on a POSIX
-    # host, or via an MSYS/Unix sh on Windows (see the WIN32 branch below).
+    
+    
+    
+    
+    
+    
     if(MCC_EMULATOR)
         mcc_skip_test(cli-suite "structural readelf/nm suite runs on native host only")
     else()
-        # On a Windows host the case pipelines (printf/grep/sed/awk/{ }/&&) can't
-        # run through popen()'s cmd.exe, but they can through an MSYS/Unix sh; the
-        # runner routes them there (via MCC_TEST_SH). The ELF-image cases gate
-        # themselves off with os=linux and skip; the ~100 OS-agnostic driver /
-        # preprocessor / diagnostics cases run. (binutils-reading cases inspect
-        # mcc's ELF *relocatable objects*, which mingw nm/readelf parse fine even
-        # on a PE host -- they just need to be on PATH at test time.)
+        
+        
+        
+        
+        
+        
+        
         set(_cli_sh "")
         if(MCC_TARGETOS STREQUAL "WIN32")
             find_program(MCC_TEST_SH NAMES sh bash
@@ -2366,19 +2366,19 @@ endif()
         endif()
     endif()
 
-    # Three-way differential suite: gcc vs clang vs mcc on every portable "run"
-    # golden, comparing program stdout (gcc/clang are the source of truth).
-    # Native only, and only when BOTH reference compilers are available.
-    # Reference-compiler policy (both are "locally provided/configured"):
-    #   Linux / macOS : gcc  + clang   (Apple `gcc` is a clang shim, so prefer a
-    #                                   genuine GNU gcc-<n> as the gcc reference)
-    #   Windows       : mingw gcc + clang
-    # Pin either reference explicitly with -DMCC_DIFF3_GCC=<path> /
-    # -DMCC_DIFF3_CLANG=<path>: an explicit path is authoritative and is NEVER
-    # overridden by the auto-detection below (the CI passes these). When unset we
-    # discover them on PATH and, failing that, fall back to the self-contained
-    # `mingw-toolchain` / `clang-toolchain` downloads -- build those targets, then
-    # reconfigure, to run the suite with zero system compilers.
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     set(MCC_DIFF3_GCC "" CACHE FILEPATH
         "Explicit gcc/mingw reference compiler for the diff3/preprocess suites (overrides auto-detect)")
     set(MCC_DIFF3_CLANG "" CACHE FILEPATH
@@ -2388,16 +2388,16 @@ endif()
         set(DIFF3_GCC "${MCC_DIFF3_GCC}")
     else()
         find_program(DIFF3_GCC NAMES gcc cc)
-        # Prefer a genuine GNU gcc as the gcc reference so the three-way
-        # differential does not degenerate where `gcc` aliases clang (e.g. macOS,
-        # where the suite would otherwise self-skip via same_compiler()).
+        
+        
+        
         mcc_find_gnu_gcc(_diff3_gnu_gcc)
         if(_diff3_gnu_gcc)
             set(DIFF3_GCC "${_diff3_gnu_gcc}")
         endif()
-        # On Windows the gcc reference is mingw's gcc. If none is on PATH, fall
-        # back to the self-contained `mingw-toolchain` download (cmake-mingw-*),
-        # mirroring the clang fallback below.
+        
+        
+        
         if(NOT DIFF3_GCC AND WIN32)
             mcc_mingw_resolve()
             if(EXISTS "${_MCC_MINGW_X86_64_GCC}")
@@ -2410,12 +2410,12 @@ endif()
         set(DIFF3_CLANG "${MCC_DIFF3_CLANG}")
     else()
         find_program(DIFF3_CLANG NAMES clang)
-        # No system clang? Fall back to the self-contained `clang-toolchain`
-        # download (cmake-clang/...): once that target has been built, a
-        # (re)configure finds it here and the suite runs with zero system clang.
-        # On Windows the suite also needs a POSIX shell (MCC_TEST_SH, resolved by
-        # the cli-suite block above) to drive the runner's timeout/watchdog/
-        # pipeline plumbing.
+        
+        
+        
+        
+        
+        
         if(NOT DIFF3_CLANG)
             mcc_clang_resolve()
             if(EXISTS "${_MCC_CLANG_EXE}")
@@ -2447,15 +2447,15 @@ endif()
         mcc_skip_test(diff3-suite "needs native host + both gcc and clang (build the clang-toolchain target for a self-contained clang)")
     endif()
 
-    # Preprocessor differential suite: `mcc -E` vs the gcc==clang consensus on
-    # every tests/preprocess case (token-stream diff for .c transformations,
-    # diagnostic-present check for diagnostics/, -E smoke for .S asm input).
-    # Pure `cmake -P` (execute_process, no shell), so it needs only the two
-    # reference compilers -- DIFF3_CLANG may be the downloaded clang-toolchain.
+    
+    
+    
+    
+    
     if(NOT MCC_EMULATOR AND DIFF3_GCC AND DIFF3_CLANG)
-        # The `cmake -P` driver is generated into the build tree from the literal
-        # below (formerly the standalone tests/preprocess/run_preprocess.cmake),
-        # so CMakeLists.txt is the single source of the preprocess-suite wiring.
+        
+        
+        
         set(_preprocess_driver "${CMAKE_BINARY_DIR}/run_preprocess.cmake")
         file(WRITE "${_preprocess_driver}" [==[
 # Preprocessor differential test suite -- GENERATED by CMakeLists.txt (the
@@ -2696,8 +2696,8 @@ cmake_language(EXIT 0)
                 "-I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
     set_tests_properties(libtest PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
-    # Extra API coverage: list_symbols, undefine_symbol, add_library,
-    # mcc_run argv/return-code, and mcc_output_file (MCC_OUTPUT_OBJ).
+    
+    
     add_executable(libmcc_test_extra tests/embed/api_extra.c)
     target_link_libraries(libmcc_test_extra PRIVATE libmcc)
     target_include_directories(libmcc_test_extra PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -2755,15 +2755,15 @@ cmake_language(EXIT 0)
         set_tests_properties(abitest-cc PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
-    # --- Reference compiler for the differential tests (mcctest/-bcheck) ---
-    # The differential test builds tests/diff/full_language.c with BOTH mcc and a
-    # reference cc, then diffs the two programs' output. The reference must be a
-    # GCC-compatible driver: it is fed mcc's runtime/include headers (which are
-    # __SIZE_TYPE__-based, gcc-style) and gcc-style flags (-std=gnu11 -O0
-    # -fno-omit-frame-pointer; see run_mcctest.cmake). cl.exe parses neither, so
-    # on an MSVC host we look for a separate gcc to use as the reference (mingw
-    # gcc produces native PE exes just like mcc, so the diff is valid). Override
-    # with -DMCC_REF_CC=<path-to-gcc> when gcc is not on PATH.
+    
+    
+    
+    
+    
+    
+    
+    
+    
     set(MCC_REF_CC "" CACHE FILEPATH
         "GCC-compatible reference compiler for the differential tests (mcctest/\
 -bcheck). Defaults to the host compiler; on an MSVC host, auto-detected from PATH.")
@@ -2772,9 +2772,9 @@ cmake_language(EXIT 0)
     set(_ref_cc_major "${MCC_GCC_MAJOR}")
     if(NOT _ref_cc)
         if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
-            # Prefer the self-contained downloaded mingw (version-pinned, CI-
-            # reproducible) if `mingw-toolchain` has established it; else a gcc
-            # already on PATH.
+            
+            
+            
             mcc_mingw_resolve()
             if(EXISTS "${_MCC_MINGW_X86_64_GCC}")
                 set(_ref_cc "${_MCC_MINGW_X86_64_GCC}")
@@ -2787,8 +2787,8 @@ cmake_language(EXIT 0)
         endif()
     endif()
     if(_ref_cc AND NOT "${_ref_cc}" STREQUAL "${CMAKE_C_COMPILER}")
-        # A reference distinct from the host compiler is, by construction, a gcc.
-        # Probe its major version (drives the GCC_MAJOR gates in full_language.c).
+        
+        
         execute_process(COMMAND "${_ref_cc}" -dumpversion
             OUTPUT_VARIABLE _ref_ver OUTPUT_STRIP_TRAILING_WHITESPACE
             ERROR_QUIET RESULT_VARIABLE _ref_rc)
@@ -2802,8 +2802,8 @@ cmake_language(EXIT 0)
 
     set(_mcctest_refflags "")
     if(MCC_TARGETOS STREQUAL "WIN32")
-        # The reference (a gcc) links straight against msvcrt.dll to match mcc's
-        # PE/msvcrt ABI, with no mingw CRT startup of its own (msvcrt_start.c).
+        
+        
         set(_msvcrt_start "${CMAKE_CURRENT_SOURCE_DIR}/tests/support/msvcrt_start.c")
         set(_mcctest_refflags
             "-nostdlib ${_msvcrt_start} -lgcc -lkernel32 c:/windows/system32/msvcrt.dll")
@@ -2816,17 +2816,17 @@ cmake_language(EXIT 0)
         mcc_skip_test(mcctest "needs a GCC-compatible reference cc (host cc is MSVC; set MCC_REF_CC or put gcc on PATH)")
         mcc_skip_test(mcctest-bcheck "needs a GCC-compatible reference cc (host cc is MSVC; set MCC_REF_CC or put gcc on PATH)")
     elseif(_ref_cc_name STREQUAL "gcc" AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-        # full_language.c is an aggressive single-file differential that probes
-        # implementation-defined / UB ABI corners -- e.g. a narrow return value
-        # fetched through a deliberately-mismatched function-pointer type
-        # (the `csf` macro), and `%lx` applied to a wchar_t/int arg. Its expected
-        # output is curated for each target's CANONICAL compiler: Apple clang on
-        # Darwin, and GNU gcc on Linux. A GNU gcc reference on Darwin/arm64 makes
-        # different (ABI-sanctioned) choices there than gcc-on-Linux does, so the
-        # three-way ceases to be a valid bug signal. mcc's behavior on these
-        # sections is already pinned against Apple clang by this same test in the
-        # default build, and against gcc by diff3-suite, so skip (don't fail) the
-        # foreign-reference combination rather than mistune the curated goldens.
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
         mcc_skip_test(mcctest
             "GNU gcc reference on Darwin/arm64 diverges from clang on impl-defined/UB ABI corners (covered by the Apple-clang mcctest + diff3-suite)")
         mcc_skip_test(mcctest-bcheck
@@ -2870,11 +2870,11 @@ cmake_language(EXIT 0)
             "requires x86 target with integrated assembler (host target: ${MCC_CPU})")
     endif()
 
-    # tests/asm/gas_directives.S is a GAS directive/instruction torture file for the
-    # integrated assembler (intended to be assembled and byte-compared against gas).
-    # mcc's assembler currently errors on the system-instruction encodings near EOF
-    # (sgdtq/sidtq/swapgs, gas_directives.S:811), so it cannot yet be assembled
-    # cleanly. Tracked as a documented skip until those encodings are supported.
+    
+    
+    
+    
+    
     mcc_skip_test(asm-gas-directives
         "blocked: integrated assembler lacks sgdtq/sidtq/swapgs encodings (gas_directives.S:811)")
 
@@ -3006,11 +3006,11 @@ else()
 endif()
 ]==])
     if(TARGET i386-mcc)
-        # Pick the 32-bit reference cc: a downloaded mingw i686 (native, no -m32),
-        # else a downloaded multilib gcc (-m32), else the driver's default system
-        # `gcc -m32`. NB: on a Windows host this still self-skips at run time --
-        # the test mixes mcc and reference-cc objects in one link, but mcc emits
-        # ELF and mingw gcc emits PE/COFF (see the driver's object-format probe).
+        
+        
+        
+        
+        
         mcc_mingw_resolve()
         set(_fc_gcc_args "")
         if(EXISTS "${_MCC_MINGW_I686_GCC}")
@@ -3288,12 +3288,12 @@ endif()
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/behavior/bounds_stress.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/behavior/floating_point.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/diagnostics/compile_errors.c")
-    # X11 examples need <X11/Xlib.h>, which isn't part of the C toolchain: the
-    # WIN32 target doesn't ship it, and many hosts (e.g. a stock macOS without
-    # XQuartz) lack it too. Probe the headers mcc would actually see so the
-    # example is skipped-with-reason rather than failing to compile.
-    # Probe only the dirs mcc itself searches (NO_DEFAULT_PATH avoids false hits
-    # like the SDK's Tk.framework/Headers/X11, which mcc never looks in).
+    
+    
+    
+    
+    
+    
     set(_x11_search "${MCC_SYSROOT}/usr/include" /usr/include /opt/X11/include
                     /usr/X11R6/include /usr/local/include)
     unset(MCC_X11_INCLUDE_DIR CACHE)
@@ -3325,13 +3325,13 @@ endif()
         mcc_skip_test(compile.win32 "requires WIN32 target (win32 runtime examples)")
     endif()
 
-    # ------------------------------------------------------------------ #
-    # PE (Windows) RUNTIME conformance under wine. The win32 cross compilers
-    # are built by the 'cross' preset; this links tests/qemu/conformance/*.c
-    # into PE executables and runs them under wine. The driver self-skips
-    # (exit 0) when wine or the win32 cross compilers are unavailable, so it is
-    # safe to register unconditionally. MCC_CROSS_DIR points at the cross build
-    # tree (default: <source>/cmake-build-cross).
+    
+    
+    
+    
+    
+    
+    
     find_program(MCC_WINE NAMES wine wine64 wine64-proton-10.0.4)
     set(MCC_CROSS_DIR "${CMAKE_SOURCE_DIR}/cmake-build-cross"
         CACHE PATH "cross-compiler build dir for the wine PE runtime test")
@@ -3348,19 +3348,19 @@ endif()
             "requires wine + the win32 cross compilers (cmake --preset cross)")
     endif()
 
-    # ------------------------------------------------------------------ #
-    # PE (Windows) RUNTIME conformance on a NATIVE Windows host. The default
-    # mcc already targets x86_64-win32 here, and its PE executables run
-    # directly on this host, so the same tests/qemu/conformance corpus that
-    # run_pe_wine.cmake exercises under wine can run natively — no wine, no
-    # separate win32 cross compiler. This makes the PE runtime conformance an
-    # actually-executed test on Windows instead of a skip.
+    
+    
+    
+    
+    
+    
+    
     if(MCC_TARGETOS STREQUAL "WIN32" AND NOT CMAKE_CROSSCOMPILING)
-        # The driver is generated into the build tree (rather than shipped as a
-        # separate file) so it lives with the test registration. MCC/B/SRC/WORK
-        # are supplied as -D args at ctest time — MCC is a generator expression
-        # ($<TARGET_FILE:mcc>), unknown at configure time — so the body is a pure
-        # bracket literal and its ${...} survive unexpanded into the script.
+        
+        
+        
+        
+        
         set(_pe_native_drv "${CMAKE_BINARY_DIR}/run_pe_native.cmake")
         file(WRITE "${_pe_native_drv}" [==[
 # Runtime-verify mcc's PE (Windows) codegen on a NATIVE Windows host: the default
@@ -3427,12 +3427,12 @@ cmake_language(EXIT 0)
             "native PE runtime conformance (only on a native WIN32 host)")
     endif()
 
-    # ------------------------------------------------------------------ #
-    # Mach-O (Darwin) structural validation. Executing Mach-O needs macOS or
-    # darling (absent off-Darwin), so this links the codegen-self-contained
-    # conformance programs into Mach-O executables and confirms a Mach-O parser
-    # (llvm-otool/otool) reads the header and all load commands. Self-skips
-    # when a parser or the osx cross compilers are unavailable.
+    
+    
+    
+    
+    
+    
     find_program(MCC_OTOOL NAMES llvm-otool otool)
     if(MCC_OTOOL AND EXISTS "${MCC_CROSS_DIR}/x86_64-osx-mcc")
         add_test(NAME macho-structural
@@ -3447,12 +3447,12 @@ cmake_language(EXIT 0)
             "requires llvm-otool/otool + the osx cross compilers (cmake --preset cross)")
     endif()
 
-    # Mach-O (Darwin) codegen RUNTIME execution. A Mach-O binary can't be loaded
-    # on Linux, but mcc's osx `-c` emits the Darwin-target machine code in an ELF
-    # object; on an x86_64 host (identical SysV ABI) we link the self-checking
-    # conformance programs into a Linux ELF (via a libc trampoline shim + mcc's
-    # osx runtime objects) and run them, executing the exact code mcc generates
-    # for Darwin. Self-skips off-x86_64 or when the osx compiler is absent.
+    
+    
+    
+    
+    
+    
     if(EXISTS "${MCC_CROSS_DIR}/x86_64-osx-mcc")
         add_test(NAME macho-codegen-run
             COMMAND ${CMAKE_COMMAND}
@@ -3466,11 +3466,11 @@ cmake_language(EXIT 0)
             "requires the x86_64-osx cross compiler (cmake --preset cross)")
     endif()
 
-    # Mach-O (Darwin) IMAGE execution. A minimal in-repo Mach-O loader
-    # (tests/qemu/macho/loader.c) maps an mcc-produced Mach-O executable's
-    # segments, seccomp-traps the macOS syscalls, and jumps to LC_MAIN — so the
-    # actual Mach-O binary is loaded and run on Linux/x86_64 (no macOS/darling).
-    # Self-skips off-x86_64 or when the osx compiler / seccomp are unavailable.
+    
+    
+    
+    
+    
     if(EXISTS "${MCC_CROSS_DIR}/x86_64-osx-mcc")
         add_test(NAME macho-image-run
             COMMAND ${CMAKE_COMMAND}
@@ -3484,14 +3484,14 @@ cmake_language(EXIT 0)
             "requires the x86_64-osx cross compiler (cmake --preset cross)")
     endif()
 
-    # Mach-O against Apple's REAL libc. tests/qemu/apple-libc/src/*.c are verbatim
-    # copies of the C library that ships in macOS's libSystem (apple-oss-
-    # distributions/Libc); this compiles them with mcc for x86_64 Darwin, links
-    # them into a Mach-O image, and executes that image through the in-repo loader
-    # on Linux/x86_64. It is the closest achievable approximation off-macOS to
-    # exercising Mach-O against its actual target libc (the kernel-fused remainder
-    # of libSystem — commpage asm, Mach-VM malloc, Darwin stdio — needs a
-    # macOS/darling host; see tests/qemu/apple-libc/PROVENANCE.md).
+    
+    
+    
+    
+    
+    
+    
+    
     if(EXISTS "${MCC_CROSS_DIR}/x86_64-osx-mcc")
         add_test(NAME macho-apple-libc
             COMMAND ${CMAKE_COMMAND}
@@ -3505,16 +3505,16 @@ cmake_language(EXIT 0)
             "requires the x86_64-osx cross compiler (cmake --preset cross)")
     endif()
 
-    # Mach-O (Darwin) NATIVE runtime conformance — for an actual macOS host.
-    # The codegen/image/apple-libc drivers above approximate, on Linux/x86_64,
-    # what a macOS host provides natively (a loader, dyld, real libSystem, TLV).
-    # On Darwin none of that scaffolding is needed: the native `mcc` emits a
-    # native Mach-O linked against the system libSystem, so each self-checking
-    # conformance program just compiles and runs. This covers a STRICT SUPERSET
-    # of the Linux approximations — the TLS programs (Darwin TLV) and the
-    # libc-dependent programs (real locale/stdio/malloc) run here too. The driver
-    # self-skips (exit 77) off a Darwin host or with a non-Mach-O mcc, so it is
-    # registered unconditionally and reported as Skipped where inapplicable.
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     add_test(NAME macho-conformance-native
         COMMAND ${CMAKE_COMMAND}
                 "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}" "-DMCC=$<TARGET_FILE:mcc>"
@@ -3523,31 +3523,31 @@ cmake_language(EXIT 0)
     set_tests_properties(macho-conformance-native PROPERTIES
         FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
 
-    # The kernel-fused remainder of libSystem (libmalloc, locale/FILE stdio,
-    # dyld, pthread, GCD, ObjC) cannot be exercised off-macOS: verified
-    # empirically — `mcc -c` of Apple's libmalloc stops at internal.h:32 with a
-    # hard #error and pulls ~34 Apple-private headers (mach/*, os/lock_private,
-    # os/tsd, mach-o/dyld_priv, corecrypto, machine/cpu_capabilities=commpage,
-    # ptrauth); Libc's locale stdio is bound to xlocale/__v2printf/__sFILE/gdtoa.
-    # Running these requires a macOS or darling host (see PROVENANCE.md). This
-    # permanent, reasoned skip keeps that boundary visible in ctest output rather
-    # than silent. Set MCC_DARWIN_HOST=ON on an actual macOS/darling host to wire
-    # the full-libSystem suite here.
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     option(MCC_DARWIN_HOST "Tests run on a macOS/darling host with real libSystem" OFF)
     if(NOT MCC_DARWIN_HOST)
         mcc_skip_test(macho-libsystem-kernel-fused
             "libmalloc/locale-stdio/dyld/pthread/GCD/ObjC need a macOS or darling host (-DMCC_DARWIN_HOST=ON); kernel-fused, no portable variant — see tests/qemu/apple-libc/PROVENANCE.md")
     endif()
 
-    # ------------------------------------------------------------------ #
-    # qemu-user cross-target conformance matrix (opt-in: -DMCC_QEMU_TESTS=ON)
-    #
-    # For each (arch x libc) it downloads a minimal Gentoo stage3 rootfs (glibc
-    # and musl variants), cross-compiles the self-checking tests/qemu/conformance
-    # programs against that sysroot, and runs them under qemu-<arch> -L <rootfs>.
-    # Everything is gated behind the cache flag and labelled "qemu" so the normal
-    # ctest run stays fast and offline. All sources/URLs are cache variables.
-    # ------------------------------------------------------------------ #
+    
+    
+    
+    
+    
+    
+    
+    
+    
     option(MCC_QEMU_TESTS
         "Download Gentoo stage3 rootfs and run cross conformance tests under qemu-user" OFF)
     if(MCC_QEMU_TESTS)
@@ -3653,7 +3653,7 @@ message(STATUS "qemu conformance: all programs passed")
 
         set(_qsrc "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/conformance")
         foreach(_arch IN LISTS MCC_QEMU_ARCHS)
-            # arch -> (gentoo autobuilds subdir, qemu binary, glibc ptr, musl ptr)
+            
             if(_arch STREQUAL "x86_64")
                 set(_gdir amd64)
                 set(_qbin qemu-x86_64)
@@ -3684,7 +3684,7 @@ message(STATUS "qemu conformance: all programs passed")
                 continue()
             endif()
 
-            # Pick the compiler: native mcc for the host arch, else <arch>-mcc.
+            
             if(_arch STREQUAL MCC_CPU)
                 set(_qcc "$<TARGET_FILE:mcc>")
             elseif(TARGET ${_arch}-mcc)
@@ -3735,18 +3735,18 @@ message(STATUS "qemu conformance: all programs passed")
             endforeach()
         endforeach()
 
-        # darwin/macho row of the qemu matrix: run arm64-osx (Mach-O target)
-        # codegen under qemu-aarch64. mcc's osx `-c` emits an aarch64 ELF object
-        # (AAPCS64, the base ABI shared with Linux), so we link it against the
-        # arm64 glibc sysroot (clang --target=aarch64 + lld) and run it under
-        # qemu-aarch64, reusing the arm64-glibc fetch fixture. The x86_64-osx
-        # target runs natively via the separate macho-codegen-run test; this row
-        # extends that darwin runtime coverage to aarch64 through qemu. (A subset
-        # — TLS + variadic-libc programs — self-skips: see run_macho_codegen.cmake.)
-        # NB: don't gate registration on EXISTS(arm64-osx-mcc) — in a clean build
-        # (e.g. the docker matrix) configure runs before the cross compiler is
-        # built, so it wouldn't exist yet. The script self-skips (exit 77) at run
-        # time when the compiler/sysroot/toolchain is absent.
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
         if((";${MCC_QEMU_ARCHS};" MATCHES ";arm64;")
            AND (";${MCC_QEMU_LIBCS};" MATCHES ";glibc;"))
             add_test(NAME qemu-arm64-osx COMMAND ${CMAKE_COMMAND}
@@ -3771,17 +3771,17 @@ message(STATUS "qemu conformance: all programs passed")
                    "+ hello/vla + orphan compile checks (ctest)")
 endif()
 
-# ------------------------------------------------------------------ #
-# qemu-docker: run the MCC_QEMU_TESTS cross matrix inside a Linux
-# container. The matrix needs user-mode qemu (qemu-x86_64, qemu-aarch64,
-# …), which only builds on a Linux host — so on macOS (and any non-Linux
-# host) it can't run natively. This target builds tests/qemu/docker and
-# runs the whole grid there:
-#     cmake --build <dir> --target qemu-docker
-# Sysroot downloads are cached in the `mcc-qemu-roots` Docker volume.
-# Narrow the grid with -DMCC_QEMU_DOCKER_ARCHS=... / _LIBCS=... (the same
-# values MCC_QEMU_ARCHS/_LIBCS accept); empty uses the image defaults.
-# ------------------------------------------------------------------ #
+
+
+
+
+
+
+
+
+
+
+
 find_program(DOCKER_EXE NAMES docker)
 if(DOCKER_EXE)
     set(MCC_QEMU_DOCKER_ARCHS "" CACHE STRING
@@ -3809,15 +3809,15 @@ else()
                    "(see tests/qemu/docker/README.md)")
 endif()
 
-# ctags over the whole source tree. NOTE: deliberately NO CONFIGURE_DEPENDS —
-# it makes the Ninja generator watch every directory under the source root for
-# the re-glob check, including in-source build dirs (build-*/, cmake-build-*/,
-# cmake-windows-*/).
-# Those hold generated .c/.h, so any incremental build trips a spurious "GLOB
-# mismatch" reconfigure, and on Windows ninja's directory restat mangles their
-# absolute paths (FindFirstFileExA "<src>/<abs-src>/..." -> syntax error). tags
-# is a dev-convenience target, so a configure-time snapshot is enough. The
-# EXCLUDE below also keeps generated build-tree files out of the tag set.
+
+
+
+
+
+
+
+
+
 file(GLOB_RECURSE MCC_TAGFILES
     "${CMAKE_CURRENT_SOURCE_DIR}/*.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/*.h"
