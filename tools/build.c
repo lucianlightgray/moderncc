@@ -42,7 +42,7 @@ int main(int argc, char **argv){
     snprintf(defs, sizeof defs,
         "-DMCC_TARGET_X86_64=1 -DCONFIG_MCC_PREDEFS=0 "
         "-DCONFIG_MCC_BACKTRACE=1 -DCONFIG_MCC_BCHECK=1 "
-        "-DMCC_VERSION='\"0.9.28rc\"' "
+        "-DMCC_VERSION='\"1.0.0\"' "
         "-DCONFIG_MCCDIR='\"%s\"' "
         "-DCONFIG_MCC_LIBPATHS='\"{B}:/usr/lib64:/usr/lib:/lib\"' "
         "-DCONFIG_MCC_CRTPREFIX='\"/usr/lib64:/usr/lib:/lib\"' "

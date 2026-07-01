@@ -867,7 +867,7 @@ LIBMCCAPI MCCState *mcc_new(void)
     s->mcc_ext = 1;
     s->nocommon = 1;
     s->dollars_in_identifiers = 1;
-    s->cversion = 199901;
+    s->cversion = 201112;
     s->pie = -1;
 #if defined CONFIG_MCC_PIC
     s->pic = 2;
