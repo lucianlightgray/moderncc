@@ -117,8 +117,30 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
+      # Auto-setup the diff3/preprocess reference compilers. Windows uses mingw
+      # gcc + LLVM clang (both preinstalled on windows-latest); we resolve their
+      # absolute paths and pin the suites to them via -DMCC_DIFF3_{GCC,CLANG} so
+      # the differential never silently depends on PATH order. The POSIX shell
+      # that drives the runner's plumbing (MCC_TEST_SH) is left to CMake's
+      # find_program(sh bash) -- it resolves Git's shell without risking WSL's
+      # System32\bash.exe.
+      - name: resolve diff3 reference compilers (mingw gcc + clang)
+        id: refs
+        shell: pwsh
+        run: |
+          # Normalize to forward slashes (what find_program yields) so the paths
+          # survive the sh-driven runner without backslash-escaping surprises.
+          $gcc   = (Get-Command gcc   -ErrorAction Stop).Source.Replace('\','/')
+          $clang = (Get-Command clang -ErrorAction Stop).Source.Replace('\','/')
+          "gcc=$gcc"     | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "clang=$clang" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "diff3 gcc  = $gcc"
+          Write-Host "diff3 clang= $clang"
       - name: configure
-        run: cmake -S . -B build -DMCC_TOOLCHAIN_PROFILE=msvc -DCMAKE_BUILD_TYPE=Release
+        run: >
+          cmake -S . -B build -DMCC_TOOLCHAIN_PROFILE=msvc -DCMAKE_BUILD_TYPE=Release
+          "-DMCC_DIFF3_GCC=${{ steps.refs.outputs.gcc }}"
+          "-DMCC_DIFF3_CLANG=${{ steps.refs.outputs.clang }}"
       - name: build
         run: cmake --build build --config Release -j
       - name: test

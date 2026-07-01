@@ -2369,24 +2369,58 @@ endif()
     # Three-way differential suite: gcc vs clang vs mcc on every portable "run"
     # golden, comparing program stdout (gcc/clang are the source of truth).
     # Native only, and only when BOTH reference compilers are available.
-    find_program(DIFF3_GCC NAMES gcc cc)
-    find_program(DIFF3_CLANG NAMES clang)
-    # Prefer a genuine GNU gcc as the gcc reference so the three-way differential
-    # does not degenerate where `gcc` aliases clang (e.g. macOS, where the suite
-    # would otherwise self-skip via same_compiler()). `setup-gcc` installs one.
-    mcc_find_gnu_gcc(_diff3_gnu_gcc)
-    if(_diff3_gnu_gcc)
-        set(DIFF3_GCC "${_diff3_gnu_gcc}")
+    # Reference-compiler policy (both are "locally provided/configured"):
+    #   Linux / macOS : gcc  + clang   (Apple `gcc` is a clang shim, so prefer a
+    #                                   genuine GNU gcc-<n> as the gcc reference)
+    #   Windows       : mingw gcc + clang
+    # Pin either reference explicitly with -DMCC_DIFF3_GCC=<path> /
+    # -DMCC_DIFF3_CLANG=<path>: an explicit path is authoritative and is NEVER
+    # overridden by the auto-detection below (the CI passes these). When unset we
+    # discover them on PATH and, failing that, fall back to the self-contained
+    # `mingw-toolchain` / `clang-toolchain` downloads -- build those targets, then
+    # reconfigure, to run the suite with zero system compilers.
+    set(MCC_DIFF3_GCC "" CACHE FILEPATH
+        "Explicit gcc/mingw reference compiler for the diff3/preprocess suites (overrides auto-detect)")
+    set(MCC_DIFF3_CLANG "" CACHE FILEPATH
+        "Explicit clang reference compiler for the diff3/preprocess suites (overrides auto-detect)")
+
+    if(MCC_DIFF3_GCC)
+        set(DIFF3_GCC "${MCC_DIFF3_GCC}")
+    else()
+        find_program(DIFF3_GCC NAMES gcc cc)
+        # Prefer a genuine GNU gcc as the gcc reference so the three-way
+        # differential does not degenerate where `gcc` aliases clang (e.g. macOS,
+        # where the suite would otherwise self-skip via same_compiler()).
+        mcc_find_gnu_gcc(_diff3_gnu_gcc)
+        if(_diff3_gnu_gcc)
+            set(DIFF3_GCC "${_diff3_gnu_gcc}")
+        endif()
+        # On Windows the gcc reference is mingw's gcc. If none is on PATH, fall
+        # back to the self-contained `mingw-toolchain` download (cmake-mingw-*),
+        # mirroring the clang fallback below.
+        if(NOT DIFF3_GCC AND WIN32)
+            mcc_mingw_resolve()
+            if(EXISTS "${_MCC_MINGW_X86_64_GCC}")
+                set(DIFF3_GCC "${_MCC_MINGW_X86_64_GCC}")
+            endif()
+        endif()
     endif()
-    # No system clang? Fall back to the self-contained `clang-toolchain` download
-    # (cmake-clang/...): once that target has been built, a (re)configure finds it
-    # here and the suite runs with zero system clang. On Windows the suite also
-    # needs a POSIX shell (MCC_TEST_SH, resolved by the cli-suite block above) to
-    # drive the runner's timeout/watchdog/pipeline plumbing.
-    if(NOT DIFF3_CLANG)
-        mcc_clang_resolve()
-        if(EXISTS "${_MCC_CLANG_EXE}")
-            set(DIFF3_CLANG "${_MCC_CLANG_EXE}")
+
+    if(MCC_DIFF3_CLANG)
+        set(DIFF3_CLANG "${MCC_DIFF3_CLANG}")
+    else()
+        find_program(DIFF3_CLANG NAMES clang)
+        # No system clang? Fall back to the self-contained `clang-toolchain`
+        # download (cmake-clang/...): once that target has been built, a
+        # (re)configure finds it here and the suite runs with zero system clang.
+        # On Windows the suite also needs a POSIX shell (MCC_TEST_SH, resolved by
+        # the cli-suite block above) to drive the runner's timeout/watchdog/
+        # pipeline plumbing.
+        if(NOT DIFF3_CLANG)
+            mcc_clang_resolve()
+            if(EXISTS "${_MCC_CLANG_EXE}")
+                set(DIFF3_CLANG "${_MCC_CLANG_EXE}")
+            endif()
         endif()
     endif()
     set(_diff3_sh_ok TRUE)
