@@ -1095,14 +1095,15 @@ if(NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT CMAKE_CROSSCOMPILING)
             endif()
         endforeach()
     endif()
-    if("${MCC_TRIPLET}" STREQUAL "" AND "${MCC_LIBPATHS}" STREQUAL ""
-       AND MCC_CPU MATCHES "^(x86_64|arm64|riscv64)$"
-       AND EXISTS "/usr/lib64/crti.o")
-        set(MCC_LIBPATHS "{B}:/usr/lib64")
-        if("${MCC_CRTPREFIX}" STREQUAL "")
-            set(MCC_CRTPREFIX "/usr/lib64")
-        endif()
-    endif()
+    # Leave MCC_CRTPREFIX / MCC_LIBPATHS empty for a native ELF build: mcc's
+    # built-in CONFIG_MCC_CRTPREFIX / CONFIG_MCC_LIBPATHS defaults (see mcc.h,
+    # MCC_ELF_LIBDIRS) already search every standard distro lib location -- the
+    # multiarch <triplet> dir, the lib64 split, and the plain lib dirs -- in
+    # arch-correct first-match order, so an explicit lib64-only override here is
+    # both redundant and, when a <triplet> is set on a non-multiarch host (e.g.
+    # Gentoo's x86_64-pc-linux-gnu, whose CRT lives in /usr/lib64 not
+    # /usr/lib/<triplet>), actively harmful. MCC_TRIPLET is still used for the
+    # /usr/include/<triplet> search path.
     message(STATUS "mcc paths: triplet='${MCC_TRIPLET}' libpaths='${MCC_LIBPATHS}' crtprefix='${MCC_CRTPREFIX}'")
     if("${MCC_CONFIG_LIBC}" STREQUAL "")
         if(EXISTS "/lib/ld-uClibc.so.0")
