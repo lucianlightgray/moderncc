@@ -26,13 +26,19 @@ void s7_13_setjmp_signal_align(void)
 
     /* §7.14.1.1p2/p6, §7.14.2.1p2: raise synchronously invokes the installed
        handler (sets flag) and returns 0; a second signal() returns the most
-       recent handler for that signal. */
+       recent handler for that signal. Gated off on Windows: msvcrt lacks
+       SIGUSR1, uses System-V (reset-on-delivery) signal() semantics unlike
+       glibc, and mcc's bounds-checking cannot instrument the async handler that
+       msvcrt invokes on raise() (it faults on PE). The differential is
+       per-platform, so both mcc and the reference simply omit these lines. */
+#if !defined(_WIN32)
     void (*prev)(int) = signal(SIGUSR1, s7_13_handler);
     s7_13_sigflag = 0;
     int rc = raise(SIGUSR1);
     printf("s7_13 signal flag=%d rc0=%d\n", (int)s7_13_sigflag, rc == 0);
     void (*prev2)(int) = signal(SIGUSR1, prev);
     printf("s7_13 signal prev_returned=%d\n", prev2 == s7_13_handler);
+#endif
 
     /* §7.15p4: stdalign macros expand to integer constant 1. */
     printf("s7_13 stdalign defs=%d\n",

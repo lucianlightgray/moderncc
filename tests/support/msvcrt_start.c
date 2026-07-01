@@ -162,3 +162,8 @@ int vprintf(const char *format, va_list ap)
 void __main() {}
 void _pei386_runtime_relocator(void) {}
 void __chkstk(unsigned n) {}
+
+/* mingwex math (lgamma, log, rint, ...) calls this to dispatch a domain/range
+   error to a user-registered matherr; with none registered it is a no-op. We
+   link bare msvcrt (no libmingw32 that would define it), so stub it here. */
+void __mingw_raise_matherr(int typ, const char *name, double a1, double a2, double rslt) {}

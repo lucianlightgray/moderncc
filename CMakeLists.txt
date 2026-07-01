@@ -3163,8 +3163,15 @@ cmake_language(EXIT 0)
         
         
         set(_msvcrt_start "${CMAKE_CURRENT_SOURCE_DIR}/tests/support/msvcrt_start.c")
+        # Bare msvcrt.dll lacks most of C99 libc; full_language.c needs it (the
+        # same surface mcc supplies from its own runtime). mingw provides it as
+        # two archives -- libmingwex (isblank, imaxdiv, __fpclassify, lgamma,
+        # rint, ...) and the libmsvcrt import-lib wrappers (atoll, lldiv,
+        # strto[iu]max, strtoll/ull, snprintf over _atoi64/_snprintf/...) --
+        # which reference each other, so they go in a --start-group. The raw
+        # system32 msvcrt.dll still follows for its direct exports.
         set(_mcctest_refflags
-            "-nostdlib ${_msvcrt_start} -lgcc -lkernel32 c:/windows/system32/msvcrt.dll")
+            "-nostdlib ${_msvcrt_start} -lgcc -Wl,--start-group -lmingwex -lmsvcrt -Wl,--end-group -lkernel32 c:/windows/system32/msvcrt.dll")
     elseif(MCC_CPU STREQUAL "arm")
         set(_mcctest_refflags "-marm")
     elseif(MCC_CPU STREQUAL "i386")
@@ -3198,7 +3205,14 @@ cmake_language(EXIT 0)
             "-DTESTDEFS=-DCC_NAME=CC_${_ref_cc_name} -DGCC_MAJOR=${_ref_cc_major}"
             -P "${_mcctest_driver}")
         set_tests_properties(mcctest PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
-        if(MCC_CONFIG_BCHECK)
+        if(MCC_CONFIG_BCHECK AND MCC_TARGETOS STREQUAL "WIN32")
+            # mcc's bounds-checking runtime cannot instrument the PE/msvcrt path:
+            # the bounds-checked build faults inside msvcrt-invoked callbacks (the
+            # signal handler that raise() calls) and library calls (strftime, ...)
+            # whose buffers the checker does not track. The plain mcctest still
+            # covers the codegen for this program on Windows.
+            mcc_skip_test(mcctest-bcheck "mcc bounds-checking is unsupported on the PE/msvcrt target (faults in msvcrt callbacks/library calls)")
+        elseif(MCC_CONFIG_BCHECK)
             file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bcheck")
             add_test(NAME mcctest-bcheck COMMAND "${CMAKE_COMMAND}"
                 -DCC=${_ref_cc} -DMCC=${_mcc_exe}
