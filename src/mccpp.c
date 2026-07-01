@@ -1919,12 +1919,11 @@ pragma_err:
 ST_FUNC void mccpp_putfile(const char *filename)
 {
     char buf[1024];
-    buf[0] = 0;
-    if (!IS_ABSPATH(filename)) {
-        pstrcpy(buf, sizeof buf, file->true_filename);
-        *mcc_basename(buf) = 0;
-    }
-    pstrcat(buf, sizeof buf, filename);
+    /* The presumed name from a #line directive (or a GNU line marker) becomes
+       __FILE__ verbatim, exactly as written, matching gcc/clang. Do NOT resolve
+       a relative name against the current file's directory here: the real path
+       for include caching/debug stays in file->true_filename below. */
+    pstrcpy(buf, sizeof buf, filename);
 #ifdef _WIN32
     normalize_slashes(buf);
 #endif
