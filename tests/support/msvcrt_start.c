@@ -167,3 +167,23 @@ void __chkstk(unsigned n) {}
    error to a user-registered matherr; with none registered it is a no-op. We
    link bare msvcrt (no libmingw32 that would define it), so stub it here. */
 void __mingw_raise_matherr(int typ, const char *name, double a1, double a2, double rslt) {}
+
+#if defined(__x86_64__) && !defined(__MCC__)
+/* Some mingw-w64 <setjmp.h> revisions reach SEH setjmp through the intrinsics
+   __intrinsic_setjmp/__intrinsic_setjmpex (extern-inline with no out-of-line
+   body), so an -O0 build emits unresolved calls to them. Their defining archive
+   is libmsvcrt, which we cannot link here (it would drag in ucrtbase's strict
+   printf and break the legacy-msvcrt output match). Provide them as bare tail
+   jumps to msvcrt.dll's own _setjmp/_setjmpex -- the one setjmp pair every
+   distro's msvcrt.dll exports -- so the reference links against bare msvcrt on
+   any mingw runtime. Tail-jump (not call) so _setjmp* captures the caller's
+   frame/return address, preserving setjmp/longjmp semantics. Unused (hence
+   inert) on runtimes whose header calls _setjmp/_setjmpex directly. */
+__asm__(
+".globl __intrinsic_setjmpex\n"
+"__intrinsic_setjmpex:\n"
+"\tjmp *__imp__setjmpex(%rip)\n"
+".globl __intrinsic_setjmp\n"
+"__intrinsic_setjmp:\n"
+"\tjmp *__imp__setjmp(%rip)\n");
+#endif
