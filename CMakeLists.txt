@@ -2792,7 +2792,20 @@ endif()
     # parts-suite: 3-way (gcc/clang/mcc) unit test of each tests/diff/parts/run_*.c
     # wrapper. The same parts/*.h units are #include-aggregated into full_language.c
     # (the all-in-one C11 test, run by mcctest); here each is exercised in isolation.
-    if(NOT MCC_EMULATOR AND DIFF3_GCC AND DIFF3_CLANG AND MCC_CONFIG_ASM
+    if(MCC_TARGETOS STREQUAL "WIN32")
+        # The parts-suite is a native 3-way differential that assumes gcc, clang
+        # and mcc share one C99 libc. On the PE target they do not: mcc links the
+        # legacy msvcrt (no C99 <complex.h>/<tgmath.h>/<fenv.h> libm entry points,
+        # and legacy printf -- "1.#IND00", 6-digit %a, ~17-digit %f) while the
+        # gcc/clang references target UCRT (strict C99 -- "nan(ind)", full
+        # precision, and clang cannot even compile <tgmath.h> against UCRT's
+        # struct _Fcomplex). Unlike mcctest, the parts wrappers carry no
+        # legacy-msvcrt reference flags, so the three legs cannot be byte-identical
+        # unit-by-unit. The same parts/*.h units are still exercised on Windows in
+        # aggregate by mcctest, whose reference flags force the msvcrt libc to
+        # match mcc (and which drops the libm/complex surface via MCC_HAS_C99_LIBM).
+        mcc_skip_test(parts-suite "native gcc/clang/mcc 3-way needs a shared C99 libc; the PE/msvcrt target has no msvcrt equivalent for the parts' complex/tgmath/libm surface (covered in aggregate by mcctest)")
+    elseif(NOT MCC_EMULATOR AND DIFF3_GCC AND DIFF3_CLANG AND MCC_CONFIG_ASM
        AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/run_parts.cmake")
         add_test(NAME parts-suite COMMAND "${CMAKE_COMMAND}"
             -DGCC=${DIFF3_GCC} -DCLANG=${DIFF3_CLANG} -DMCC=${_mcc_exe}
@@ -3163,15 +3176,23 @@ cmake_language(EXIT 0)
         
         
         set(_msvcrt_start "${CMAKE_CURRENT_SOURCE_DIR}/tests/support/msvcrt_start.c")
-        # Bare msvcrt.dll lacks most of C99 libc; full_language.c needs it (the
-        # same surface mcc supplies from its own runtime). mingw provides it as
-        # two archives -- libmingwex (isblank, imaxdiv, __fpclassify, lgamma,
-        # rint, ...) and the libmsvcrt import-lib wrappers (atoll, lldiv,
-        # strto[iu]max, strtoll/ull, snprintf over _atoi64/_snprintf/...) --
-        # which reference each other, so they go in a --start-group. The raw
-        # system32 msvcrt.dll still follows for its direct exports.
+        # mcc's PE target links the legacy system msvcrt.dll, whose printf is the
+        # old MSVC one: "1.#IND00"/"1.#INF00" for nan/inf, 6-digit %a mantissas,
+        # ~17-sig-digit %f, and lenient about odd conversions. To stay
+        # byte-identical, the reference cc must use that SAME legacy printf --
+        # which is subtle on a UCRT-based mingw (e.g. winlibs, the pinned CI
+        # toolchain). Two things there route printf to UCRT's strict C99
+        # implementation instead ("nan(ind)", full-precision %a/%f, and a
+        # 0xC0000409 fastfail on specifiers msvcrt tolerates): mingw's <stdio.h>
+        # inlines __mingw_printf by default, and its libmsvcrt import-lib binds
+        # printf to ucrtbase. So: -D__USE_MINGW_ANSI_STDIO=0 suppresses the
+        # inline, and we drop -lmsvcrt and resolve the C runtime straight from
+        # the legacy msvcrt.dll placed inside the group (so libmingwex's helpers
+        # -- isblank, imaxdiv, lgamma, rint, the atoll/lldiv/strto*/snprintf
+        # wrappers, ... -- back-reference the same DLL). On an msvcrt-based mingw
+        # this is a no-op (printf was already msvcrt's).
         set(_mcctest_refflags
-            "-nostdlib ${_msvcrt_start} -lgcc -Wl,--start-group -lmingwex -lmsvcrt -Wl,--end-group -lkernel32 c:/windows/system32/msvcrt.dll")
+            "-D__USE_MINGW_ANSI_STDIO=0 -nostdlib ${_msvcrt_start} -lgcc -Wl,--start-group -lmingwex c:/windows/system32/msvcrt.dll -Wl,--end-group -lkernel32")
     elseif(MCC_CPU STREQUAL "arm")
         set(_mcctest_refflags "-marm")
     elseif(MCC_CPU STREQUAL "i386")
