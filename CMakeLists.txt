@@ -2056,6 +2056,14 @@ foreach(_nt mcc mcc_dynamic libmcc libmcc_shared mcc_p mcc_s)
     endif()
 endforeach()
 
+if(MCC_BUILD_STATIC_EXE)
+    foreach(_st mcc libmcc mcc_musl libmcc_musl)
+        if(TARGET ${_st})
+            target_compile_definitions(${_st} PRIVATE CONFIG_MCC_STATIC)
+        endif()
+    endforeach()
+endif()
+
 
 set(MCC_LIBMCC1_EXTRA_O runmain bt-exe bt-dll bt-log bcheck)
 

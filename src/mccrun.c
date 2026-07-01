@@ -1445,11 +1445,35 @@ typedef struct MCCSyms {
 
 static MCCSyms mcc_syms[] = {
 #if !defined(CONFIG_MCCBOOT)
-#define MCCSYM(a) { #a, &a, },
-    MCCSYM(printf)
-    MCCSYM(fprintf)
-    MCCSYM(fopen)
-    MCCSYM(fclose)
+#define MCCSYM(a) { #a, (void *)&a, },
+    MCCSYM(stdin) MCCSYM(stdout) MCCSYM(stderr)
+    MCCSYM(printf) MCCSYM(fprintf) MCCSYM(sprintf) MCCSYM(snprintf)
+    MCCSYM(vprintf) MCCSYM(vfprintf) MCCSYM(vsnprintf)
+    MCCSYM(puts) MCCSYM(fputs) MCCSYM(putchar) MCCSYM(fputc) MCCSYM(putc)
+    MCCSYM(getchar) MCCSYM(fgetc) MCCSYM(getc) MCCSYM(fgets) MCCSYM(ungetc)
+    MCCSYM(scanf) MCCSYM(fscanf) MCCSYM(sscanf)
+    MCCSYM(fopen) MCCSYM(freopen) MCCSYM(fclose) MCCSYM(fflush)
+    MCCSYM(fread) MCCSYM(fwrite) MCCSYM(fseek) MCCSYM(ftell) MCCSYM(rewind)
+    MCCSYM(feof) MCCSYM(ferror) MCCSYM(clearerr) MCCSYM(fileno)
+    MCCSYM(perror) MCCSYM(remove) MCCSYM(rename) MCCSYM(setvbuf) MCCSYM(setbuf)
+    MCCSYM(malloc) MCCSYM(calloc) MCCSYM(realloc) MCCSYM(free)
+    MCCSYM(exit) MCCSYM(_Exit) MCCSYM(abort) MCCSYM(atexit)
+    MCCSYM(atoi) MCCSYM(atol) MCCSYM(atoll) MCCSYM(atof)
+    MCCSYM(strtol) MCCSYM(strtoll) MCCSYM(strtoul) MCCSYM(strtoull)
+    MCCSYM(strtod) MCCSYM(strtof) MCCSYM(strtold)
+    MCCSYM(rand) MCCSYM(srand) MCCSYM(qsort) MCCSYM(bsearch)
+    MCCSYM(abs) MCCSYM(labs) MCCSYM(llabs) MCCSYM(getenv) MCCSYM(system)
+    MCCSYM(memcpy) MCCSYM(memmove) MCCSYM(memset) MCCSYM(memcmp) MCCSYM(memchr)
+    MCCSYM(strlen) MCCSYM(strnlen) MCCSYM(strcmp) MCCSYM(strncmp)
+    MCCSYM(strcpy) MCCSYM(strncpy) MCCSYM(strcat) MCCSYM(strncat)
+    MCCSYM(strchr) MCCSYM(strrchr) MCCSYM(strstr) MCCSYM(strtok)
+    MCCSYM(strspn) MCCSYM(strcspn) MCCSYM(strpbrk) MCCSYM(strerror)
+    MCCSYM(sin) MCCSYM(cos) MCCSYM(tan) MCCSYM(asin) MCCSYM(acos) MCCSYM(atan)
+    MCCSYM(atan2) MCCSYM(sinh) MCCSYM(cosh) MCCSYM(tanh)
+    MCCSYM(exp) MCCSYM(log) MCCSYM(log10) MCCSYM(log2) MCCSYM(pow)
+    MCCSYM(sqrt) MCCSYM(cbrt) MCCSYM(ceil) MCCSYM(floor) MCCSYM(round)
+    MCCSYM(trunc) MCCSYM(fabs) MCCSYM(fmod) MCCSYM(fmin) MCCSYM(fmax)
+    MCCSYM(hypot) MCCSYM(ldexp) MCCSYM(frexp) MCCSYM(modf)
 #undef MCCSYM
 #endif
     { NULL, NULL },

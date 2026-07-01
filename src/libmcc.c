@@ -1089,11 +1089,15 @@ static int mcc_add_binary(MCCState *s1, int flags, const char *filename, int fd)
     case AFF_BINTYPE_DYN:
         if (s1->output_type == MCC_OUTPUT_MEMORY) {
 #ifdef MCC_IS_NATIVE
+#ifdef CONFIG_MCC_STATIC
+            (void)filename;
+#else
             void* dl = dlopen(filename, RTLD_GLOBAL | RTLD_LAZY);
             if (dl)
                 mcc_add_dllref(s1, filename, 0)->handle = dl;
             else
                 ret = FILE_NOT_RECOGNIZED;
+#endif
 #endif
         } else
             ret = mcc_load_dll(s1, fd, filename, (flags & AFF_REFERENCED_DLL) != 0);

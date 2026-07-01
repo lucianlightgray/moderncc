@@ -102,7 +102,7 @@ cmake --build cmake-build-release -j
 | `MCC_ENABLE_CROSS`     |   OFF   | Also build `mcc-<arch>` cross compilers    |
 | `MCC_BUILD_STATIC_LIB` |   ON    | Build static libmcc library                |
 | `MCC_BUILD_DYNAMIC_LIB`|   OFF   | Build shared libmcc library                |
-| `MCC_BUILD_STATIC_EXE` |   OFF   | Link executable(s) fully static (`-static`); disables `-run` |
+| `MCC_BUILD_STATIC_EXE` |   OFF   | Link executable(s) fully static (`-static`); enables `CONFIG_MCC_STATIC` so `-run` resolves libc via a built-in symbol table |
 | `MCC_BUILD_DYNAMIC_EXE`|   OFF   | Also build self-contained `mcc-dynamic`, linked only to libc |
 | `MCC_BUILD_MUSL`       |   OFF   | Also build musl-targeting variants (`*-musl`) |
 | `MCC_BUILD_STRIP`      |   OFF   | Strip symbols during link                  |
