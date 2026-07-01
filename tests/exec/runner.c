@@ -248,6 +248,19 @@ int main(int argc, char **argv){
             printf("SKIP  %-32s -- %s\n", g->name, reason);
             skipped++; continue;
         }
+        /* A test that drives the bounds checker -- via a `-b` compile flag or a
+           bounds/dual run mode (brun/run2) -- cannot build or produce its
+           expected output without MCC_CONFIG_BCHECK. Skip it when the checker is
+           absent even if the golden's `req` omits the `bcheck` token, so a
+           bcheck-off build (e.g. a stripped Release) never tries -- and fails --
+           to compile it. (Belt-and-suspenders with the `bcheck` req above.) */
+        if ((strstr(g->flags, "-b") || !strcmp(g->mode, "brun")
+             || !strcmp(g->mode, "run2"))
+            && strcmp(envv("MCC_TEST_BCHECK", "0"), "1")){
+            printf("SKIP  %-32s -- requires bounds checker (MCC_CONFIG_BCHECK)\n",
+                   g->name);
+            skipped++; continue;
+        }
         snprintf(path, sizeof path, "%s/%s", root, g->src);
 
         strcpy(srcdir, path);
