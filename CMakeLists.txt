@@ -3223,6 +3223,19 @@ cmake_language(EXIT 0)
             "GNU gcc reference on Darwin/arm64 diverges from clang on impl-defined/UB ABI corners (covered by the Apple-clang mcctest + diff3-suite)")
         mcc_skip_test(mcctest-bcheck
             "GNU gcc reference on Darwin/arm64 diverges from clang on impl-defined/UB ABI corners (covered by the Apple-clang mcctest + diff3-suite)")
+    elseif(MCC_TARGETOS STREQUAL "WIN32" AND MCC_CPU STREQUAL "arm64")
+        # The WIN32 differential forces the reference cc onto the legacy msvcrt
+        # printf by linking c:/windows/system32/msvcrt.dll directly (see the
+        # refflags above -- there is no other way to reach msvcrt's non-C99
+        # printf). On arm64 Windows the only gcc-compatible reference in the
+        # runner is an x86_64 mingw under emulation, whose bfd ld cannot parse
+        # that DLL ("msvcrt.dll: file format not recognized"), and no native
+        # arm64 mingw ships there -- so no reference both targets mcc's msvcrt
+        # ABI and links its runtime. mcc's arm64 codegen is covered by
+        # exec-suite + pe-native-conformance; the full_language differential
+        # runs on x86_64/i386 Windows.
+        mcc_skip_test(mcctest "no arm64-Windows gcc reference can link the legacy msvcrt.dll the PE differential needs (mcc arm64 codegen is covered by exec-suite + pe-native-conformance; full_language differential runs on x86/x64 Windows)")
+        mcc_skip_test(mcctest-bcheck "no arm64-Windows gcc reference can link the legacy msvcrt.dll the PE differential needs")
     elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c" AND MCC_CONFIG_ASM)
         add_test(NAME mcctest COMMAND "${CMAKE_COMMAND}"
             -DCC=${_ref_cc} -DMCC=${_mcc_exe}
