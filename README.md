@@ -19,6 +19,58 @@ Version: `0.9.28rc`.
 - `-run` to compile-and-execute in memory; `libmcc` C API for embedding.
 - Cross compilers (`<arch>-mcc`) buildable from one tree.
 
+## How `mcc` compares
+
+Where `mcc` sits next to the mainstream C toolchains. `mcc` trades an
+optimizer for speed, a tiny footprint, in-memory execution, embeddability, and
+multi-target codegen out of a single source tree — the TinyCC lineage — while
+`gcc`/`clang` remain the optimizing, standards-complete references.
+
+Legend: `Y` = built-in / supported, `~` = partial or via an add-on (a
+sanitizer, an external assembler, a separate per-target toolchain), `-` = not
+supported.
+
+**Targets and object formats**
+
+| Target / format | mcc | tcc¹ | gcc | clang | mingw² | msvc |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|
+| x86_64                       | Y | Y | Y | Y | Y  | Y |
+| i386                         | Y | Y | Y | Y | Y  | Y |
+| arm                          | Y | Y | Y | Y | ~  | Y |
+| arm64                        | Y | Y | Y | Y | Y  | Y |
+| riscv64                      | Y | Y | Y | Y | -  | - |
+| ELF output                   | Y | Y | Y | Y | -  | - |
+| PE/COFF output               | Y | Y | ~³| Y | Y  | Y |
+| Mach-O output                | Y | ~ | ~⁴| Y | -  | - |
+| Multi-target from one build  | Y | Y | - | Y | -  | - |
+
+¹ `tcc` = TinyCC, `mcc`'s upstream — shown for lineage.
+² `mingw` is GCC packaged to emit Windows PE; a GCC at heart.
+³ `gcc` emits PE only as a mingw/Cygwin build.
+⁴ a native Apple `gcc` can, but mainline `gcc` → Mach-O is rare.
+
+**Capabilities**
+
+| Capability | mcc | tcc | gcc | clang | mingw | msvc |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|
+| Compile + link in one step          | Y | Y | Y | Y | Y | Y  |
+| `-run` (execute in memory, no a.out)| Y | Y | - | - | - | -  |
+| Embeddable compiler library         | Y | Y | ~⁵| ~⁶| - | -  |
+| Integrated assembler (no external `as`)| Y | Y | - | Y | - | Y  |
+| Inline asm / `asm goto`             | Y | Y | Y | Y | Y | ~⁷ |
+| Built-in bounds checker (`-b`)      | Y | Y | ~⁸| ~⁸| ~⁸| ~⁸ |
+| Runtime backtraces (`-bt`)          | Y | Y | ~ | ~ | ~ | ~  |
+| glibc + musl via `--sysroot`        | Y | Y | Y | Y | - | -  |
+| Optimizing codegen                  | - | - | Y | Y | Y | Y  |
+| C99                                 | Y | Y | Y | Y | Y | Y  |
+| C11                                 | Y | ~ | Y | Y | ~ | Y  |
+| Single-pass / fast compile          | Y | Y | - | - | - | -  |
+| Tiny footprint (~1 MB class)        | Y | Y | - | - | - | -  |
+
+⁵ via `libgccjit`. ⁶ via the LLVM C API / `libclang` (a much larger dependency).
+⁷ MSVC dropped inline `asm` on x64 (intrinsics only). ⁸ via sanitizers
+(`-fsanitize=address,bounds`, `/RTC`), not a built-in `-b` flag.
+
 ## Building
 
 The project uses CMake (≥ 3.22) with presets:
@@ -83,6 +135,59 @@ Tests that don't apply to the host/config are reported as **Skipped with a
 reason** (e.g. `requires arm64 target`, `requires MCC_CONFIG_BCHECK`) rather
 than silently omitted, so coverage gaps are visible.
 
+### Per-toolchain results
+
+A standing scaffold of the `ctest` suites against each host/toolchain. The
+Windows columns and the Docker qemu matrix are filled from local runs; the
+Linux and macOS columns are **left blank for other machines to record** (drop
+in `P`/`S` as you run them).
+
+Legend: `P` = pass, `S` = skipped-with-reason here (environment/config-gated,
+not a failure), `—` = not applicable, blank = not yet recorded on that
+machine/toolchain.
+
+| `ctest` suite | Win mingw¹ | Win gcc¹ | Win msvc¹ | Lin gcc | Lin clang | mac clang | docker² |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| `exec-suite` (golden run/diff)        | P | P | P |   |   |   | — |
+| `mcctest` / `mcctest-bcheck`³         | P | P | P |   |   |   | — |
+| `preprocess-suite`⁴                   | P | P | P |   |   |   | — |
+| `diff3-suite`⁴                        | P | P | P |   |   |   | — |
+| `cli-suite` (readelf/nm structural)⁵  | P | P | P |   |   |   | — |
+| `libtest` / `-extra` / `-mt`, `abitest-cc` | P | P | P |   |   |   | — |
+| `hello-run` / `hello-exe`, `vla_test-run`  | P | P | P |   |   |   | — |
+| `compile.*` (orphan `-c`)⁶            | P | P | P |   |   |   | — |
+| `asm-c-connect-test`                  | P | P | P |   |   |   | — |
+| `asm-gas-directives`⁷                 | S | S | S |   |   |   | — |
+| `i386-fastcall-abi`⁸                  | S | S | S |   |   |   | — |
+| `compile.win32.*` / `pe-native-conformance` | P | P | P |   |   |   | — |
+| `pe-wine-conformance` (label `wine`)  | S | S | S |   |   |   | — |
+| `macho-*` (5 drivers, label `macho`)  | S | S | S |   |   |   | — |
+| qemu cross×libc matrix (label `qemu`)⁹| S | S | S |   |   |   | P |
+
+¹ **Win mingw** = CLion's bundled mingw GCC 13.1; **Win gcc** = winlibs
+mingw-w64 GCC 16.1 (the `mingw-toolchain` download); **Win msvc** = VS 2026
+`cl` 19.51 (Visual Studio generator). All three are green (`37/37` with
+`-DMCC_DIAGNOSTICS=ON`, 0 fail); every `S` below is environment-gated, not a
+Windows bug.
+² **docker** = the `tests/qemu/docker` runner, which builds the cross compilers
+and runs `ctest -L qemu` only — so it fills just the qemu row (per-cell grid in
+the table below). A native Windows host has no user-mode qemu, so that row is
+`S` there.
+³ Differential vs. a GCC-compatible reference cc (needs the integrated
+assembler); the MSVC host auto-detects a mingw/winlibs `gcc` reference
+(`MCC_REF_CC`). `-bcheck` variant also needs `MCC_CONFIG_BCHECK`.
+⁴ Needs a **second** reference compiler — build the self-contained
+`clang-toolchain` (and a POSIX `sh`/`MCC_TEST_SH` for `diff3`); reported
+`Skipped` without it.
+⁵ Needs a POSIX `sh` (`MCC_TEST_SH`) plus mingw `nm`/`readelf` on `PATH`; the
+~31 ELF-image cases self-skip on a PE target.
+⁶ The X11 example (`compile.ex4`) skips when `<X11/Xlib.h>` is absent.
+⁷ Unconditional skip everywhere: the integrated assembler lacks a few GAS
+encodings (`sgdtq`/`sidtq`/`swapgs`).
+⁸ Skips on Windows: the test mixes mcc objects (ELF) with reference-cc objects,
+but mingw `gcc` emits PE/COFF — needs an ELF-emitting 32-bit reference cc.
+⁹ See the per-cell grid below; on Windows the matrix runs via Docker.
+
 ## Cross-target × libc coverage (qemu-user matrix)
 
 `-DMCC_QEMU_TESTS=ON` exercises the compiler across every architecture and both
@@ -107,11 +212,11 @@ Covered combinations:
 
 | Arch | glibc | musl |
 |---|:---:|:---:|
-| x86_64  | ✅ | ✅ |
-| i386    | ✅ | ✅ |
-| arm     | ✅ | ✅ |
-| arm64   | ✅ | ✅ |
-| riscv64 | ✅ | ✅ |
+| x86_64  | Y | Y |
+| i386    | Y | Y |
+| arm     | Y | Y |
+| arm64   | Y | Y |
+| riscv64 | Y | Y |
 
 Each combo compiles and runs the self-checking programs in
 `tests/qemu/conformance/` (integers, floats, complex Annex-G multiply/divide,
