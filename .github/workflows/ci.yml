@@ -39,7 +39,7 @@ jobs:
         cc: [gcc, clang]
         target: [native, cross]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: install toolchain
         run: |
           sudo apt-get update
@@ -66,16 +66,23 @@ jobs:
   # ------------------------------------------------------------------ #
   macos:
     name: macos ${{ matrix.cc }} / ${{ matrix.target }}
-    runs-on: macos-latest
+    # Pinned (not macos-latest): avoids the unattended macOS-26 label migration
+    # and keeps the reference toolchain stable across runs.
+    runs-on: macos-15
     strategy:
       fail-fast: false
       matrix:
         cc: [clang, gcc]
         target: [native, cross]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: install toolchain
-        run: brew install cmake ninja gcc
+        # Drop the runner image's pre-installed aws/tap: newer Homebrew now
+        # requires per-tap trust and otherwise prints a tap-trust warning on
+        # every brew invocation. We don't use it, so remove it.
+        run: |
+          brew untap aws/tap 2>/dev/null || true
+          brew install cmake ninja gcc
       - name: resolve compiler
         id: cc
         # Homebrew installs the GNU compiler as gcc-<n>; pick the newest.
@@ -109,7 +116,7 @@ jobs:
     name: windows msvc / native
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: configure
         run: cmake -S . -B build -DMCC_TOOLCHAIN_PROFILE=msvc -DCMAKE_BUILD_TYPE=Release
       - name: build
@@ -121,8 +128,12 @@ jobs:
     name: windows mingw / native
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: ilammy/msvc-dev-cmd@v1
+      - uses: actions/checkout@v5
+      # Enter an MSVC dev environment so the parent probe finds `cl`. Using
+      # setup-msvc-dev (node24) rather than ilammy/msvc-dev-cmd (node20-only).
+      - uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: x64
       - name: install ninja
         run: choco install ninja -y
       - name: configure + build (superbuild fetches winlibs GCC)
@@ -147,7 +158,7 @@ jobs:
       matrix:
         arch: [x86_64, i386, arm, arm64, riscv64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: build runner image
         run: docker build -t mcc-qemu tests/qemu/docker
       - name: run ${{ matrix.arch }} x {glibc,musl}

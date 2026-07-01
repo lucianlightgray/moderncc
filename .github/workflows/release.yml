@@ -27,10 +27,10 @@ jobs:
       matrix:
         include:
           - { os: ubuntu-latest, plat: linux-x86_64, static_exe: 'ON'  }
-          - { os: macos-latest,  plat: macos-arm64,  static_exe: 'OFF' }  # no static libc on Darwin
+          - { os: macos-15,      plat: macos-arm64,  static_exe: 'OFF' }  # no static libc on Darwin
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: install toolchain (linux)
         if: runner.os == 'Linux'
         run: |
@@ -38,7 +38,11 @@ jobs:
           sudo apt-get install -y --no-install-recommends cmake ninja-build gcc
       - name: install toolchain (macos)
         if: runner.os == 'macOS'
-        run: brew install cmake ninja
+        # Drop the runner image's pre-installed aws/tap (newer Homebrew requires
+        # per-tap trust and warns on every invocation otherwise); we don't use it.
+        run: |
+          brew untap aws/tap 2>/dev/null || true
+          brew install cmake ninja
       - name: configure + build + install
         run: |
           set -eux
@@ -58,7 +62,7 @@ jobs:
           fi
       - name: package
         run: bash .github/scripts/package.sh "${{ github.ref_name }}" "${{ matrix.plat }}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.plat }}
           path: out/*
@@ -68,7 +72,7 @@ jobs:
     name: build windows-x86_64
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: configure + build + install
         # msvc leaf build: /MT static CRT + /DEBUG:NONE stripping are applied for
         # the static/strip flags. Cross compilers are Windows-host-fragile, so the
@@ -83,7 +87,7 @@ jobs:
       - name: package
         shell: pwsh
         run: .github/scripts/package.ps1 -Ref "${{ github.ref_name }}" -Plat "windows-x86_64"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-windows-x86_64
           path: out/*
@@ -95,7 +99,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           path: dl
       - name: collect + combine checksums
@@ -106,7 +110,7 @@ jobs:
           find dl -type f -name 'checksums-*.txt' -exec cat {} + > out/SHA256SUMS.txt
           ls -l out
       - name: publish GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: out/*
           generate_release_notes: true
