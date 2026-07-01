@@ -110,7 +110,8 @@ cmake --build cmake-build-release -j
 
 ¹ The `debug`/`asan`/`diagnostics` presets keep it OFF (dynamic) so the full
 test suite can `-run` the whole libc surface; auto-forced OFF on macOS (no
-fully-static libc). ² Linux only; a no-op on macOS/Windows.
+fully-static libc). ² Linux only (a no-op on macOS/Windows); the
+`debug`/`asan`/`diagnostics` presets keep it OFF for faster dev builds.
 
 Compiler binaries follow `mcc-<arch>[-dynamic][-musl]`: `<arch>` for cross
 targets, `-musl` for the musl-targeting variant. `mcc` is a fully static,

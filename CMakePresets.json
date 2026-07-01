@@ -10,6 +10,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "MCC_BUILD_STATIC_EXE": "OFF",
+        "MCC_BUILD_MUSL": "OFF",
         "MCC_CONFIG_BCHECK": "ON",
         "MCC_CONFIG_BACKTRACE": "ON",
         "MCC_BUILD_STRIP": "OFF"
@@ -22,6 +23,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "MCC_BUILD_STATIC_EXE": "ON",
+        "MCC_BUILD_MUSL": "ON",
         "MCC_BUILD_STRIP": "ON",
         "MCC_CONFIG_BCHECK": "OFF",
         "MCC_CONFIG_BACKTRACE": "OFF"
