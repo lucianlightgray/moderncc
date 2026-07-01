@@ -3191,8 +3191,19 @@ cmake_language(EXIT 0)
         # -- isblank, imaxdiv, lgamma, rint, the atoll/lldiv/strto*/snprintf
         # wrappers, ... -- back-reference the same DLL). On an msvcrt-based mingw
         # this is a no-op (printf was already msvcrt's).
+        #
+        # -D__USE_MINGW_SETJMP_NON_SEH steers mingw's <setjmp.h> to the plain
+        # `_setjmp((BUF), NULL)` path (a direct msvcrt.dll export) instead of the
+        # SEH `_setjmpex` variant. Since we can't link -lmsvcrt (it drags in
+        # ucrtbase's printf), and some mingw runtimes expose the SEH path only as
+        # `__intrinsic_setjmpex` -- an extern-inline intrinsic with no out-of-line
+        # definition, so an -O0 build emits an unresolved call to it (undefined
+        # reference at link) -- the non-SEH `_setjmp` is the one symbol resolvable
+        # from bare msvcrt.dll across every mingw distro. full_language.c only
+        # longjmps within a single frame, so _setjmp vs mcc's _setjmpex is
+        # output-identical.
         set(_mcctest_refflags
-            "-D__USE_MINGW_ANSI_STDIO=0 -nostdlib ${_msvcrt_start} -lgcc -Wl,--start-group -lmingwex c:/windows/system32/msvcrt.dll -Wl,--end-group -lkernel32")
+            "-D__USE_MINGW_ANSI_STDIO=0 -D__USE_MINGW_SETJMP_NON_SEH -nostdlib ${_msvcrt_start} -lgcc -Wl,--start-group -lmingwex c:/windows/system32/msvcrt.dll -Wl,--end-group -lkernel32")
     elseif(MCC_CPU STREQUAL "arm")
         set(_mcctest_refflags "-marm")
     elseif(MCC_CPU STREQUAL "i386")
