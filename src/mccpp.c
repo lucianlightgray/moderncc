@@ -3928,6 +3928,9 @@ static void mcc_predefs(MCCState *s1, CString *cs, int is_asm)
 {
     cstr_printf(cs, "#define __MCC__ 9%.2s\n", &MCC_VERSION[4]);
     cstr_printf(cs, "#define __TINYC__ 9%.2s\n", &MCC_VERSION[4]);
+    cstr_printf(cs, "#define __GNUC__ 4\n");
+    cstr_printf(cs, "#define __GNUC_MINOR__ 2\n");
+    cstr_printf(cs, "#define __GNUC_PATCHLEVEL__ 1\n");
     putdefs(cs, target_machine_defs);
     putdefs(cs, target_os_defs);
 
@@ -3959,6 +3962,10 @@ static void mcc_predefs(MCCState *s1, CString *cs, int is_asm)
       putdef(cs, "_REENTRANT");
     if (s1->leading_underscore)
       putdef(cs, "__leading_underscore");
+    if (s1->leading_underscore)
+      cstr_printf(cs, "#define __USER_LABEL_PREFIX__ _\n");
+    else
+      cstr_printf(cs, "#define __USER_LABEL_PREFIX__\n");
     cstr_printf(cs, "#define __SIZEOF_POINTER__ %d\n", PTR_SIZE);
     cstr_printf(cs, "#define __SIZEOF_LONG__ %d\n", LONG_SIZE);
     if (!is_asm) {

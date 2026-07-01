@@ -1,6 +1,9 @@
 #ifndef _MCC_LIMITS_H
 #define _MCC_LIMITS_H
 
+#ifndef _GCC_LIMITS_H_
+#define _GCC_LIMITS_H_ 1
+#endif
 #if defined __has_include_next && __has_include_next(<limits.h>)
 # include_next <limits.h>
 #endif
