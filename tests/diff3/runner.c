@@ -60,6 +60,24 @@ static int timed_out(int raw_status){
            (WEXITSTATUS(raw_status) == 124 || WEXITSTATUS(raw_status) == 137);
 }
 
+/* True when a watchdog-wrapped invocation died from a fatal signal
+   (SIGSEGV/SIGABRT/SIGFPE/...) instead of exiting normally. A crashed process's
+   stdout holds only whatever it flushed before dying, so -- exactly like a
+   timeout -- it is NOT a valid result to diff. Critically, if BOTH reference
+   compilers' programs crash they emit identical (empty) output, which would
+   otherwise masquerade as a "gcc==clang consensus" that mcc's real output is
+   then failed against (observed on the CI Windows/MSVC runner, where the
+   mingw+clang-built cast_operator binaries segfault at startup). `timeout` and
+   the shell relay a signal death as exit 128+signum; the native POSIX path also
+   surfaces it via WIFSIGNALED. Exclude the watchdog's own 124/137 codes. */
+static int crashed(int raw_status){
+    if (timed_out(raw_status)) return 0;
+#ifdef WIFSIGNALED
+    if (WIFSIGNALED(raw_status)) return 1;
+#endif
+    return WIFEXITED(raw_status) && WEXITSTATUS(raw_status) >= 128;
+}
+
 static const char *envv(const char *k, const char *d){
     const char *v = getenv(k); return (v && *v) ? v : d;
 }
@@ -272,7 +290,8 @@ static int build_run(const char *label, const char *cc, const char *mcc,
     snprintf(run, sizeof run, "cd \"%s\" && %s", work, guarded);
     *out = cap(run, &rrc);
     if (verbose) fprintf(stderr, "  [%s out] %s\n", label, *out);
-    return timed_out(rrc) ? 2 : 1;
+    if (timed_out(rrc) || crashed(rrc)){ free(*out); *out = strdup(""); return 2; }
+    return 1;
 }
 
 int main(int argc, char **argv){
@@ -327,9 +346,10 @@ int main(int argc, char **argv){
         int mok = build_run("mcc",   NULL, mcc,  bdir,idir,sup,work,src,flags,args,&mout);
 
         if (gok == 2 || cok == 2 || mok == 2){
-            /* A build or run hit the hang guard: the captured output is a
-               partial prefix, so this row is inconclusive, not a divergence. */
-            if (verbose) printf("SKIP  %-28s -- build/run hit %ds watchdog (inconclusive)\n",
+            /* A build or run hit the hang guard or died from a fatal signal:
+               the captured output is only a partial prefix (or empty), so this
+               row is inconclusive, not a divergence. */
+            if (verbose) printf("SKIP  %-28s -- build/run hit %ds watchdog or crashed (inconclusive)\n",
                                 g->name, DIFF3_RUN_TIMEOUT);
             skip++;
         } else if (!mok){
