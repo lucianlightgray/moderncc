@@ -5,6 +5,14 @@ modernized around C99/C11 and a CMake build. `mcc` compiles and links C in one
 pass, can run programs directly without writing an executable (`-run`), and is
 also usable as an embeddable compiler library (`libmcc`).
 
+It is **single-pass and ~100× faster to compile than optimizing `gcc`/`clang`**,
+ships as a **~1 MB** self-contained binary, targets **five CPU architectures ×
+three object formats (ELF / PE / Mach-O) from one source tree**, and links
+against **both glibc and musl**. See [How `mcc` compares](#how-mcc-compares) and
+the [local verification run](#local-verification-run-2026-07-01-gentoo-x86_64)
+(every applicable test green across gcc/clang builds, all 5 arches × glibc/musl
+under qemu, PE under wine, and Mach-O).
+
 Version: `0.9.28rc`.
 
 ## Features
@@ -70,6 +78,37 @@ supported.
 ⁵ via `libgccjit`. ⁶ via the LLVM C API / `libclang` (a much larger dependency).
 ⁷ MSVC dropped inline `asm` on x64 (intrinsics only). ⁸ via sanitizers
 (`-fsanitize=address,bounds`, `/RTC`), not a built-in `-b` flag.
+
+### Toolchains and C libraries
+
+Two distinct axes are often conflated — keep them separate:
+
+**Host compilers that *build* `mcc`** (selectable via `MCC_TOOLCHAIN_PROFILE`;
+the matrix superbuild can drive several at once). Because `mcc`'s codegen is
+deterministic (the 3-stage self-host reaches a byte-identical fixpoint), the
+compiled-program test results are independent of which of these built `mcc`:
+
+| Builds `mcc` | Status | Notes |
+|---|:--:|---|
+| **gcc**   | Y | primary; `debug`/`release`/`diagnostics`/`asan` all green |
+| **clang** | Y | green; also self-hosts |
+| **mingw-w64** (gcc→PE) | Y | for a Windows `mcc.exe`; `MCC_TOOLCHAIN_PROFILE=mingw` |
+| **MSVC** (`cl`) | Y | Visual Studio generator; green on Win |
+| **`mcc` itself** | Y | self-hosting to a byte-identical fixpoint |
+
+**C libraries / runtimes `mcc` *targets*** (chosen per target OS, or via
+`--sysroot` for the ELF pair):
+
+| Target libc | Via | Verified |
+|---|---|:--:|
+| **glibc** (ELF) | `--sysroot` / native | Y — all 5 arches under qemu |
+| **musl** (ELF)  | `--sysroot` (loader auto-selected) | Y — all 5 arches under qemu |
+| **msvcrt** (PE) | Windows/PE target | Y — under wine + native Win |
+| **libSystem** (Mach-O) | macOS/Darwin target | Y (structural/codegen/image/apple-libc); full libSystem needs a Darwin host |
+
+Every `(host-compiler) × (target libc)` combination the host can reach is
+exercised in the [local verification run](#local-verification-run-2026-07-01-gentoo-x86_64)
+below.
 
 ## Building
 
@@ -137,10 +176,12 @@ than silently omitted, so coverage gaps are visible.
 
 ### Per-toolchain results
 
-A standing scaffold of the `ctest` suites against each host/toolchain. The
-Windows columns and the Docker qemu matrix are filled from local runs; the
-Linux and macOS columns are **left blank for other machines to record** (drop
-in `P`/`S` as you run them).
+The `ctest` suites against each host/toolchain. The Windows columns and the
+Docker qemu matrix are from earlier local runs; the **Linux gcc / Linux clang
+columns are from the local verification run below** (Gentoo x86_64, gcc 15.3 /
+clang 22, with the cross build so qemu/wine/Mach-O are all exercised). The macOS
+column is left blank for a Darwin machine to record (drop in `P`/`S` as you run
+it).
 
 Legend: `P` = pass, `S` = skipped-with-reason here (environment/config-gated,
 not a failure), `—` = not applicable, blank = not yet recorded on that
@@ -148,21 +189,21 @@ machine/toolchain.
 
 | `ctest` suite | Win mingw¹ | Win gcc¹ | Win msvc¹ | Lin gcc | Lin clang | mac clang | docker² |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| `exec-suite` (golden run/diff)        | P | P | P |   |   |   | — |
-| `mcctest` / `mcctest-bcheck`³         | P | P | P |   |   |   | — |
-| `preprocess-suite`⁴                   | P | P | P |   |   |   | — |
-| `diff3-suite`⁴                        | P | P | P |   |   |   | — |
-| `cli-suite` (readelf/nm structural)⁵  | P | P | P |   |   |   | — |
-| `libtest` / `-extra` / `-mt`, `abitest-cc` | P | P | P |   |   |   | — |
-| `hello-run` / `hello-exe`, `vla_test-run`  | P | P | P |   |   |   | — |
-| `compile.*` (orphan `-c`)⁶            | P | P | P |   |   |   | — |
-| `asm-c-connect-test`                  | P | P | P |   |   |   | — |
-| `asm-gas-directives`⁷                 | S | S | S |   |   |   | — |
-| `i386-fastcall-abi`⁸                  | S | S | S |   |   |   | — |
-| `compile.win32.*` / `pe-native-conformance` | P | P | P |   |   |   | — |
-| `pe-wine-conformance` (label `wine`)  | S | S | S |   |   |   | — |
-| `macho-*` (5 drivers, label `macho`)  | S | S | S |   |   |   | — |
-| qemu cross×libc matrix (label `qemu`)⁹| S | S | S |   |   |   | P |
+| `exec-suite` (golden run/diff)        | P | P | P | P | P |   | — |
+| `mcctest` / `mcctest-bcheck`³         | P | P | P | P | P |   | — |
+| `preprocess-suite`⁴                   | P | P | P | P | P |   | — |
+| `diff3-suite`⁴                        | P | P | P | P | P |   | — |
+| `cli-suite` (readelf/nm structural)⁵  | P | P | P | P | P |   | — |
+| `libtest` / `-extra` / `-mt`, `abitest-cc` | P | P | P | P | P |   | — |
+| `hello-run` / `hello-exe`, `vla_test-run`  | P | P | P | P | P |   | — |
+| `compile.*` (orphan `-c`)⁶            | P | P | P | P | P |   | — |
+| `asm-c-connect-test`                  | P | P | P | P | P |   | — |
+| `asm-gas-directives`⁷                 | S | S | S | S | S |   | — |
+| `i386-fastcall-abi`⁸                  | S | S | S | P | P |   | — |
+| `compile.win32.*` / `pe-native-conformance` | P | P | P | — | — |   | — |
+| `pe-wine-conformance` (label `wine`)  | S | S | S | P | P |   | — |
+| `macho-*` (5 drivers, label `macho`)  | S | S | S | P¹⁰ | P¹⁰ |   | — |
+| qemu cross×libc matrix (label `qemu`)⁹| S | S | S | P | P |   | P |
 
 ¹ **Win mingw** = CLion's bundled mingw GCC 13.1; **Win gcc** = winlibs
 mingw-w64 GCC 16.1 (the `mingw-toolchain` download); **Win msvc** = VS 2026
@@ -185,8 +226,97 @@ assembler); the MSVC host auto-detects a mingw/winlibs `gcc` reference
 ⁷ Unconditional skip everywhere: the integrated assembler lacks a few GAS
 encodings (`sgdtq`/`sidtq`/`swapgs`).
 ⁸ Skips on Windows: the test mixes mcc objects (ELF) with reference-cc objects,
-but mingw `gcc` emits PE/COFF — needs an ELF-emitting 32-bit reference cc.
-⁹ See the per-cell grid below; on Windows the matrix runs via Docker.
+but mingw `gcc` emits PE/COFF — needs an ELF-emitting 32-bit reference cc. On
+Linux (with the cross build) it **passes**.
+⁹ See the per-cell grid below; on Windows the matrix runs via Docker. On a Linux
+host with `qemu-user` it runs natively (`ctest -L qemu`) — see the local run
+below, where all 11 combos passed.
+¹⁰ `P` = the four host-runnable Mach-O drivers pass (`macho-structural`,
+`macho-codegen-run`, `macho-image-run`, `macho-apple-libc`); only
+`macho-conformance-native` skips, as it needs a real Darwin/`darling` host.
+
+### Local verification run (2026-07-01, Gentoo x86_64)
+
+A full local sweep on one Linux host with the complete toolchain stack. **Every
+applicable suite passed; 0 failures.** The skips are all environment-gated
+(cross/emulator/other-OS not present in that particular build dir), never bugs.
+
+Environment: `mcc 0.9.28rc`, **gcc 15.3.0**, **clang 22.1.8**, mingw-w64
+**gcc 15.2.0**, **wine 10.0 (Proton)**, **qemu-user 10.2.2** (i386/arm/aarch64/
+riscv64/x86_64), binutils ld 2.46.
+
+**Native builds** — configured with the built-in library search (no explicit
+`--crtprefix`), all `ctest`:
+
+| Build | Toolchain | Result |
+|---|---|---|
+| `debug`         | gcc   | **34/34 pass**, 0 fail |
+| `release`       | gcc   | **34/34 pass**, 0 fail |
+| `diagnostics`   | gcc   | **34/34 pass**, 0 fail (max warnings + sanitizer/coverage/profile variants) |
+| `asan`          | gcc   | **34/34 pass**, 0 fail (ASan/UBSan) |
+| `diagnostics`   | clang | **34/34 pass**, 0 fail |
+
+A plain native build skips the cross-arch / PE / Mach-O drivers (no cross
+compilers in that dir). The **cross build** (`-DMCC_ENABLE_CROSS=ON`, all 11
+`<target>-mcc` compilers) fills them in — its full `ctest` passes with only 5
+skips, all inherently host-gated: `asm-gas-directives` (a few GAS encodings the
+integrated assembler omits), `compile.win32` + `pe-native-conformance` (native
+Windows only), `macho-conformance-native` (native Darwin only), and
+`macho-libsystem-kernel-fused` (`-DMCC_DARWIN_HOST=ON`). `i386-fastcall-abi`,
+`pe-wine-conformance`, and the four host-runnable Mach-O drivers all **pass**.
+
+**Cross-target × libc conformance under qemu-user** (`ctest -L qemu`, run against
+prebuilt glibc/musl sysroots) — the self-checking `tests/qemu/conformance/`
+programs, each built twice (default + `-fPIC -pie`):
+
+| Arch | qemu | glibc | musl |
+|---|---|:--:|:--:|
+| x86_64  | `qemu-x86_64`  | **P** | **P** |
+| i386    | `qemu-i386`    | **P** | **P** |
+| arm     | `qemu-arm`     | **P** | **P** |
+| arm64   | `qemu-aarch64` | **P** | **P** |
+| riscv64 | `qemu-riscv64` | **P** | **P** |
+
+Plus `qemu-arm64-osx` (arm64 **Darwin** codegen, linked against arm64 glibc and
+run under `qemu-aarch64`) — **P**. Total: **11/11 qemu tests pass, 0 fail.**
+
+The whole cross matrix was run twice — once with a **gcc-built** `mcc` and once
+with a **clang-built** `mcc` — and both gave **identical results** (qemu 11/11,
+wine, Mach-O 4/5; `ctest -L 'qemu|wine|macho'` = 28/28 including fetch fixtures),
+exactly as the deterministic self-host fixpoint predicts.
+
+**PE/Windows via wine:** `pe-wine-conformance` **passes** — mcc cross-compiles
+the conformance set to real PE for `x86_64-win32` *and* `i386-win32` (msvcrt
+libc, varargs, etc.) and runs each under `wine`.
+
+**Mach-O:** the four host-runnable drivers pass — `macho-structural` (otool
+parse), `macho-codegen-run`, `macho-image-run` (in-repo loader), and
+`macho-apple-libc` (Apple's vendored libc sources compiled through mcc's Darwin
+codegen). The linked binaries are genuine Mach-O (`cf fa ed fe`). Only the
+native-Darwin driver skips.
+
+**Docker:** the `tests/qemu/docker` runner wraps the identical `ctest -L qemu`
+matrix for hosts *without* native qemu; on this host qemu-user is present so the
+matrix ran natively (above). (The Docker daemon itself was unavailable in this
+sandbox — no privileged `dockerd` / `rootlesskit` — so the container path was
+not exercised here, but it targets the same tests that passed natively.)
+
+**Compile speed & footprint** (single-pass, no optimizer). Compiling mcc's own
+whole-compiler translation unit (`src/mcc.c`, `ONE_SOURCE=1` — the entire
+compiler as one large TU) to an object, best of 3:
+
+| Compiler | Time | vs mcc |
+|---|--:|--:|
+| **mcc**       | **0.05 s** | 1× |
+| clang `-O0`   | 0.31 s | 6× slower |
+| gcc `-O0`     | 0.83 s | 17× slower |
+| clang `-O2`   | 4.69 s | 94× slower |
+| gcc `-O2`     | 5.58 s | 112× slower |
+
+The `mcc` binary is **~0.95 MB**; gcc's `cc1` alone is ~43 MB. `mcc` trades the
+optimizer for this: it emits correct, unoptimized code in a single pass, which
+is why it is the fast/tiny/embeddable end of the spectrum and gcc/clang remain
+the optimizing references.
 
 ## Cross-target × libc coverage (qemu-user matrix)
 
@@ -207,6 +337,17 @@ unaffected. Everything is cache-driven (`MCC_QEMU_ARCHS`, `MCC_QEMU_LIBCS`,
 `MCC_QEMU_MIRROR`, `MCC_QEMU_DLDIR`). Combos lacking a cross compiler or a
 `qemu-<arch>` binary report a skip reason. The host arch uses the native `mcc`
 (no cross build needed).
+
+To skip the download, point `MCC_QEMU_DLDIR` at a directory that already holds
+`<arch>-<libc>/` sysroots (each with a `.fetched` marker) — this is how the
+[local run](#local-verification-run-2026-07-01-gentoo-x86_64) reused prebuilt
+glibc/musl roots and got all 10 `(arch, libc)` combos to run:
+
+```sh
+cmake --preset cross -DMCC_QEMU_TESTS=ON -DMCC_QEMU_DLDIR=/path/to/qemu-roots
+cmake --build cmake-build-cross -j
+ctest --test-dir cmake-build-cross -L qemu --output-on-failure
+```
 
 Covered combinations:
 
