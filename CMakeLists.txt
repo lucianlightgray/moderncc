@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-set(MCC_VERSION "0.9.28rc")
+set(MCC_VERSION "1.0.0")
 string(REGEX MATCH "^[0-9]+(\\.[0-9]+)*" MCC_VERSION_NUMERIC "${MCC_VERSION}")
 
 # A Homebrew GNU gcc on macOS defaults to an ancient -mmacosx-version-min (10.6)
@@ -224,6 +224,21 @@ function(mcc_autocorrect name value reason)
     message(STATUS "mcc config [autocorrect]: ${name} -> ${value} (${reason})")
 endfunction()
 
+# Apply the user-facing static/strip link controls to an mcc executable target.
+# MSVC's link.exe rejects -static/-s, so these GNU/Clang link flags are skipped
+# there (msvc statically links the CRT via /MT and drops symbols via /DEBUG:NONE).
+function(mcc_apply_exe_link_flags tgt)
+    if(MCC_CC_NAME STREQUAL "msvc")
+        return()
+    endif()
+    if(MCC_BUILD_STATIC_EXE)
+        target_link_options(${tgt} PRIVATE -static)
+    endif()
+    if(MCC_BUILD_STRIP)
+        target_link_options(${tgt} PRIVATE -s)
+    endif()
+endfunction()
+
 function(mcc_validate_config)
     get_property(_nodes GLOBAL PROPERTY MCC_NODES)
     foreach(_n IN LISTS _nodes)
@@ -281,12 +296,12 @@ function(mcc_validate_config)
                 mcc_autocorrect(MCC_BUILD_COVERAGE OFF
                     "no emulator: mcc_c is compiled by running the foreign mcc")
             endif()
-            if(MCC_TARGETOS STREQUAL "WIN32" AND NOT MCC_BUILD_STATIC)
+            if(MCC_TARGETOS STREQUAL "WIN32" AND NOT MCC_BUILD_STATIC_LIB)
                 message(FATAL_ERROR
                     "mcc config: even with MCC_CONFIG_AUTOCORRECT, a WIN32 *shared* "
                     "libmcc needs `mcc -impdef` to run on this host. Add "
                     "-DCMAKE_CROSSCOMPILING_EMULATOR=<run>, or build static with "
-                    "-DMCC_BUILD_STATIC=ON.")
+                    "-DMCC_BUILD_STATIC_LIB=ON.")
             endif()
         else()
             message(FATAL_ERROR
@@ -311,10 +326,16 @@ function(mcc_validate_config)
                 "Enable backtrace or disable bcheck (or set -DMCC_CONFIG_AUTOCORRECT=ON).")
         endif()
     endif()
-    if(MCC_DISABLE_RPATH AND MCC_BUILD_STATIC)
+    if(MCC_DISABLE_RPATH AND MCC_BUILD_STATIC_LIB)
         message(WARNING
             "mcc config: MCC_DISABLE_RPATH has no effect with a static libmcc "
-            "(MCC_BUILD_STATIC=ON); rpath is only baked for a shared libmcc.")
+            "(MCC_BUILD_STATIC_LIB=ON); rpath is only baked for a shared libmcc.")
+    endif()
+    if(MCC_BUILD_STATIC_EXE AND NOT MCC_BUILD_STATIC_LIB)
+        message(WARNING
+            "mcc config: MCC_BUILD_STATIC_EXE=ON links the mcc executable with "
+            "-static, but MCC_BUILD_STATIC_LIB=OFF builds a shared libmcc — the "
+            "static link cannot resolve libmcc.so. Enable MCC_BUILD_STATIC_LIB too.")
     endif()
     if(NOT MCC_CONFIG_ASM AND NOT MCC_LIBMCC1_USEGCC)
         mcc_autocorrect(MCC_LIBMCC1_USEGCC ON
@@ -925,11 +946,24 @@ endif()
 
 mcc_config_node(MCC_ENABLE_CROSS  TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Build all cross compilers (Makefile: make cross)")
-mcc_config_node(MCC_BUILD_STATIC  TYPE BOOL DEFAULT ON  GROUP "Build targets"
+# Deprecated single knob, split into *_LIB (libmcc archive vs .so) and *_EXE
+# (fully static executable link). Forward an explicitly-set legacy value.
+if(DEFINED MCC_BUILD_STATIC AND NOT DEFINED MCC_BUILD_STATIC_LIB)
+    message(WARNING
+        "mcc config: MCC_BUILD_STATIC is deprecated; use MCC_BUILD_STATIC_LIB "
+        "(libmcc.a vs .so) and/or MCC_BUILD_STATIC_EXE (static executable). "
+        "Forwarding MCC_BUILD_STATIC='${MCC_BUILD_STATIC}' to MCC_BUILD_STATIC_LIB.")
+    mcc_profile_seed(MCC_BUILD_STATIC_LIB "${MCC_BUILD_STATIC}")
+endif()
+mcc_config_node(MCC_BUILD_STATIC_LIB TYPE BOOL DEFAULT ON  GROUP "Build targets"
     HELP "Build libmcc.a (ON) instead of shared libmcc (OFF)")
+mcc_config_node(MCC_BUILD_STATIC_EXE TYPE BOOL DEFAULT OFF GROUP "Build targets"
+    HELP "Link the mcc executable(s) fully static (-static)")
+mcc_config_node(MCC_BUILD_STRIP      TYPE BOOL DEFAULT OFF GROUP "Build targets"
+    HELP "Strip symbols from the mcc executable(s) at link (-s)")
 mcc_config_node(MCC_DISABLE_RPATH TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Do not bake -rpath into binaries linking libmcc.so"
-    VISIBLE_WHEN "NOT MCC_BUILD_STATIC")
+    VISIBLE_WHEN "NOT MCC_BUILD_STATIC_LIB")
 mcc_config_node(MCC_ONE_SOURCE    TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Build libmcc from a single TU (Makefile: ONE_SOURCE)")
 mcc_config_node(MCC_BUILD_TESTS   TYPE BOOL DEFAULT ON  GROUP "Build targets"
@@ -1146,7 +1180,7 @@ elseif(MCC_TARGETOS STREQUAL "Android")
     if(NOT MCC_CPU STREQUAL "i386")
         set(MCC_CONFIG_PIE ON)
     endif()
-    set(MCC_BUILD_STATIC OFF)
+    set(MCC_BUILD_STATIC_LIB OFF)
     if("${MCC_TRIPLET}" STREQUAL "")
         if(MCC_CPU STREQUAL "arm")
             set(MCC_TRIPLET "arm-linux-androideabi")
@@ -1653,7 +1687,7 @@ else()
     set(LIBMCC_SRC ${LIBMCC_ALL_SRC})
 endif()
 
-if(MCC_BUILD_STATIC)
+if(MCC_BUILD_STATIC_LIB)
     add_library(libmcc STATIC ${LIBMCC_SRC})
     if(MCC_CC_NAME STREQUAL "clang" AND MCC_CPU STREQUAL "x86_64")
         set_target_properties(libmcc PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -1709,7 +1743,7 @@ target_link_libraries(mcc PRIVATE libmcc)
 if(MCC_GITHASH)
     target_compile_definitions(mcc PRIVATE "MCC_GITHASH=\"${MCC_GITHASH}\"")
 endif()
-if(NOT MCC_BUILD_STATIC AND NOT MCC_DISABLE_RPATH)
+if(NOT MCC_BUILD_STATIC_LIB AND NOT MCC_DISABLE_RPATH)
     if(APPLE)
         set_target_properties(mcc PROPERTIES
             INSTALL_RPATH "@executable_path/../${CMAKE_INSTALL_LIBDIR};${CMAKE_INSTALL_FULL_LIBDIR}")
@@ -1717,6 +1751,7 @@ if(NOT MCC_BUILD_STATIC AND NOT MCC_DISABLE_RPATH)
         set_target_properties(mcc PROPERTIES INSTALL_RPATH "${CMAKE_INSTALL_FULL_LIBDIR}")
     endif()
 endif()
+mcc_apply_exe_link_flags(mcc)
 if(MCC_DIAGNOSTICS)
     target_compile_options(mcc PRIVATE ${MCC_DIAG_FLAGS})
 endif()
@@ -2068,6 +2103,7 @@ if(MCC_ENABLE_CROSS)
         if(TARGET mcc_mccdefs)
             add_dependencies(${_t}-mcc mcc_mccdefs)
         endif()
+        mcc_apply_exe_link_flags(${_t}-mcc)
         install(TARGETS ${_t}-mcc RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 
         mcc_build_libmcc1(${_t}-libmcc1 ${_t}-mcc "${_ccpu}" "${_cos}" OFF
@@ -2078,7 +2114,7 @@ if(MCC_ENABLE_CROSS)
     endforeach()
 endif()
 
-if(MCC_TARGETOS STREQUAL "WIN32" AND NOT MCC_BUILD_STATIC)
+if(MCC_TARGETOS STREQUAL "WIN32" AND NOT MCC_BUILD_STATIC_LIB)
     add_custom_command(
         OUTPUT "${CMAKE_BINARY_DIR}/libmcc.def"
         COMMAND ${MCC_EMULATOR} "$<TARGET_FILE:mcc>" -impdef "$<TARGET_FILE:libmcc>"
@@ -2144,7 +2180,7 @@ if(MCC_TARGETOS STREQUAL "WIN32")
         DESTINATION "${_mccdir}/include")
     file(GLOB _win_defs "${CMAKE_CURRENT_SOURCE_DIR}/runtime/win32/lib/*.def")
     install(FILES ${_win_defs} DESTINATION "${_mccdir}/lib")
-    if(NOT MCC_BUILD_STATIC)
+    if(NOT MCC_BUILD_STATIC_LIB)
         install(FILES "${CMAKE_BINARY_DIR}/libmcc.def"
             DESTINATION "${CMAKE_INSTALL_LIBDIR}" OPTIONAL)
     endif()
@@ -2210,7 +2246,7 @@ separate_arguments(_refflags UNIX_COMMAND "${REFFLAGS}")
 separate_arguments(_tdefs UNIX_COMMAND "${TESTDEFS}")
 execute_process(
     COMMAND "${CC}" "${SRC}" -o "${_ref_exe}" "-I${IDIR}" "-I${SRCDIR}" "-I${BDIR}"
-            ${_tdefs} -w -O0 -std=gnu99 -fno-omit-frame-pointer ${_refflags}
+            ${_tdefs} -w -O0 -std=gnu11 -fno-omit-frame-pointer ${_refflags}
     RESULT_VARIABLE _rc OUTPUT_VARIABLE _o ERROR_VARIABLE _e)
 if(NOT _rc EQUAL 0)
     message(FATAL_ERROR "cc failed to build mcctest.c:\n${_o}${_e}")
@@ -2689,7 +2725,7 @@ cmake_language(EXIT 0)
     # The differential test builds tests/diff/full_language.c with BOTH mcc and a
     # reference cc, then diffs the two programs' output. The reference must be a
     # GCC-compatible driver: it is fed mcc's runtime/include headers (which are
-    # __SIZE_TYPE__-based, gcc-style) and gcc-style flags (-std=gnu99 -O0
+    # __SIZE_TYPE__-based, gcc-style) and gcc-style flags (-std=gnu11 -O0
     # -fno-omit-frame-pointer; see run_mcctest.cmake). cl.exe parses neither, so
     # on an MSVC host we look for a separate gcc to use as the reference (mingw
     # gcc produces native PE exes just like mcc, so the diff is valid). Override
