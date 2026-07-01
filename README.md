@@ -1,28 +1,24 @@
 # ModernCC (`mcc`)
 
-A small, fast C compiler derived from [TinyCC](https://repo.or.cz/tinycc.git),
-modernized around C99/C11 and a CMake build. `mcc` compiles and links C in one
-pass, can run programs directly without writing an executable (`-run`), and is
-also usable as an embeddable compiler library (`libmcc`).
+A small, fast, and portable C11 compiler (derived from [TinyCC](https://repo.or.cz/tinycc.git)),
+powered by cross-platform CMake/Docker builds. `mcc` compiles and links C in one
+pass, can run programs directly without writing an executable (`-run`), and can be used as an embeddable compiler library (`libmcc`).
 
-It is **single-pass and ~100× faster to compile than optimizing `gcc`/`clang`**,
-ships as a **~1 MB** self-contained binary, targets **five CPU architectures ×
-three object formats (ELF / PE / Mach-O) from one source tree**, and links
-against **both glibc and musl**.
-
-Version: `1.0.0`.
+It is up to **~100× faster to compile than optimizing `gcc`/`clang`**,
+ships as **~1 MB** self-contained binaries, targets **five CPU architectures ×
+three object formats (ELF / PE / Mach-O) all from this one source tree**, and can link
+against **either glibc or musl**.
 
 ## Features
 
 - Multi-target code generation: **x86_64, i386, ARM, AArch64, RISC-V 64**
-  (plus Windows/PE and macOS/Mach-O variants of several of these).
-- Both **glibc** and **musl** C libraries via `--sysroot`; the ELF interpreter
-  is derived from the sysroot (musl loader auto-selected).
-- Integrated assembler (`MCC_CONFIG_ASM`), inline asm, and `asm goto`.
+  (plus Windows/PE and macOS/Mach-O variants of several of these)
+- Both **glibc** and **musl** C libraries via `--sysroot`
+- Integrated assembler (`MCC_CONFIG_ASM`), inline asm, and `asm goto`
 - Optional runtime safety: bounds checking (`MCC_CONFIG_BCHECK`) and
-  backtraces (`MCC_CONFIG_BACKTRACE`).
-- `-run` to compile-and-execute in memory; `libmcc` C API for embedding.
-- Cross compilers (`<arch>-mcc`) buildable from one tree.
+  backtraces (`MCC_CONFIG_BACKTRACE`)
+- `-run` to execute-in-memory (JIT); `libmcc` C API for embedding.
+- Cross-compilers (`<arch>-mcc`) by enabling `MCC_ENABLE_CROSS`.
 
 ## How `mcc` compares
 
