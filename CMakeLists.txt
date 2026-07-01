@@ -3798,18 +3798,6 @@ set(status 0)
 file(GLOB _confs "${CONF}/*.c")
 foreach(f ${_confs})
     get_filename_component(n "${f}" NAME_WE)
-    # arm64 PE thread-local storage is not yet implemented: the codegen still
-    # emits the ELF `mrs x30, tpidr_el0` sequence for _Thread_local access, but
-    # Windows/arm64 has no thread pointer in TPIDR_EL0 -- TLS goes through the
-    # TEB (x18 + 0x58 -> ThreadLocalStoragePointer -> [_tls_index] -> block),
-    # the analogue of the x86_64 %gs:0x58 path. Until that codegen (plain
-    # gen: the x18 TEB sequence; link: TPREL = val - tls_start, no +16) lands,
-    # these two access-violate at runtime. mccpe.c's TLS directory/_tls_index
-    # setup is already arch-agnostic, so only the codegen sequence is missing.
-    if(CPU STREQUAL "arm64" AND (n STREQUAL "tls" OR n STREQUAL "tls_aggr"))
-        message("SKIP ${n} -- arm64 PE _Thread_local not implemented (codegen emits ELF tpidr_el0; needs the x18 TEB sequence)")
-        continue()
-    endif()
     set(exe "${WORK}/pe_native_${n}.exe")
     execute_process(
         COMMAND "${MCC}" "-B${B}" "-I${B}/include"
@@ -3843,7 +3831,6 @@ cmake_language(EXIT 0)
                     "-DMCC=${_mcc_exe}" "-DB=${_bdir}"
                     "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}"
                     "-DWORK=${CMAKE_BINARY_DIR}/pe-native-work"
-                    "-DCPU=${MCC_CPU}"
                     -P "${_pe_native_drv}")
         set_tests_properties(pe-native-conformance PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)

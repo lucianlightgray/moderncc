@@ -361,7 +361,15 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
                         tls_start = s->sh_addr;
                 }
             }
+#ifdef MCC_TARGET_PE
+            /* x30 already holds the module TLS block base (arm64_tls_base_x30),
+               so the variable sits at block + (val - tls_start). */
+            int64_t tp_offset = val - tls_start;
+#else
+            /* ELF: x30 is the thread pointer; the block follows the 16-byte
+               (two-pointer) TCB it points at. */
             int64_t tp_offset = val - tls_start + 16;
+#endif
             int64_t imm;
             if (type == R_AARCH64_TLSLE_ADD_TPREL_HI12)
                 imm = (tp_offset >> 12) & 0xfff;
