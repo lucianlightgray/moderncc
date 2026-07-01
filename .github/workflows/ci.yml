@@ -133,8 +133,8 @@ jobs:
         id: refs
         shell: pwsh
         run: |
-          # Normalize to forward slashes (what find_program yields) so the paths
-          # survive the sh-driven runner without backslash-escaping surprises.
+          
+          
           $gcc   = (Get-Command gcc   -ErrorAction Stop).Source.Replace('\','/')
           $clang = (Get-Command clang -ErrorAction Stop).Source.Replace('\','/')
           "gcc=$gcc"     | Out-File -FilePath $env:GITHUB_OUTPUT -Append

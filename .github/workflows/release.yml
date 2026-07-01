@@ -56,7 +56,7 @@ jobs:
             -DCMAKE_INSTALL_PREFIX="$PWD/stage"
           cmake --build build -j"$(getconf _NPROCESSORS_ONLN)"
           cmake --install build
-          # macOS: ld64 has no usable -s; strip the installed images directly.
+          
           if [ "${{ runner.os }}" = macOS ]; then
             strip -x stage/bin/mcc stage/bin/*-mcc 2>/dev/null || true
           fi
