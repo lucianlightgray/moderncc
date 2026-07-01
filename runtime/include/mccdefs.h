@@ -97,7 +97,19 @@
     #define __APPLE_CC__ 1
     #define __LITTLE_ENDIAN__ 1
     #define _DONT_USE_CTYPE_INLINE_ 1
-    #define __FINITE_MATH_ONLY__ 1
+    /* Must be 0 (as real compilers predefine it unless -ffast-math): Apple's
+       <math.h> selects the correct inline isinf/isnan/isnormal/etc. only when
+       0 == __FINITE_MATH_ONLY__; a nonzero value forces legacy libm entry
+       points whose __isnormald misclassifies subnormals. The inline branch
+       references __{FLT,DBL,LDBL}_MIN__, so predefine those too. */
+    #define __FINITE_MATH_ONLY__ 0
+    #define __FLT_MIN__ 1.17549435082228750797e-38F
+    #define __DBL_MIN__ 2.2250738585072014e-308
+    #if defined __aarch64__
+        #define __LDBL_MIN__ 2.2250738585072014e-308L
+    #else
+        #define __LDBL_MIN__ 3.36210314311209350626e-4932L
+    #endif
     #define _FORTIFY_SOURCE 0
     #define _Float16 short unsigned int
 

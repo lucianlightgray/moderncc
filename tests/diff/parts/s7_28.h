@@ -3,6 +3,7 @@
    via mcclib.h; parts/run_s7_28.c via <std_env.h>). Compiled 3-way
    (gcc/clang/mcc) as a unit by the parts-suite, and aggregated into
    full_language.c. */
+#ifdef PARTS_STD_HAVE_UCHAR
 void s7_28_uchar(void) {
     /* §7.28.1p2 char16_t/char32_t sizes; C11 u/U prefixes */
     printf("uchar sizes %d %d\n", (int)sizeof(char16_t), (int)sizeof(char32_t));
@@ -33,6 +34,7 @@ void s7_28_uchar(void) {
     size_t w16 = c16rtomb(o16, 0x43, &st16b);
     printf("c16rtomb %d %d\n", (int)w16, (int)o16[0]);
 }
+#endif /* PARTS_STD_HAVE_UCHAR */
 
 void s7_28_wconv(void) {
     /* §7.29.6.1 btowc/wctob; §7.29.6.2.1 mbsinit */

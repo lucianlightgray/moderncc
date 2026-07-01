@@ -4,7 +4,9 @@
 
 int main(void)
 {
+#ifdef PARTS_STD_HAVE_UCHAR
     s7_28_uchar();
+#endif
     s7_28_wconv();
     s7_28_wstr();
     s7_28_wmem();
