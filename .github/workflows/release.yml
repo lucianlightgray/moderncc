@@ -1,0 +1,113 @@
+name: Release
+
+# On a version tag (v1.2.3) build static + stripped mcc / libmcc / cross bundles
+# per host OS, checksum them, and publish a GitHub Release with the artifacts.
+# Uses only the built-in GITHUB_TOKEN — binaries are unsigned.
+#
+# Trigger a release:
+#   git tag v1.0.0 && git push origin v1.0.0
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch: {}   # dry-run: builds + uploads artifacts, no Release
+
+permissions:
+  contents: write   # create the Release and upload assets
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ---------------- Linux + macOS (bash, tar.gz) ---------------- #
+  build-unix:
+    name: build ${{ matrix.plat }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, plat: linux-x86_64, static_exe: 'ON'  }
+          - { os: macos-latest,  plat: macos-arm64,  static_exe: 'OFF' }  # no static libc on Darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: install toolchain (linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build gcc
+      - name: install toolchain (macos)
+        if: runner.os == 'macOS'
+        run: brew install cmake ninja
+      - name: configure + build + install
+        run: |
+          set -eux
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DMCC_BUILD_TESTS=OFF \
+            -DMCC_BUILD_STATIC_LIB=ON \
+            -DMCC_BUILD_STATIC_EXE=${{ matrix.static_exe }} \
+            -DMCC_BUILD_STRIP=${{ matrix.static_exe == 'ON' && 'ON' || 'OFF' }} \
+            -DMCC_ENABLE_CROSS=ON \
+            -DCMAKE_INSTALL_PREFIX="$PWD/stage"
+          cmake --build build -j"$(getconf _NPROCESSORS_ONLN)"
+          cmake --install build
+          # macOS: ld64 has no usable -s; strip the installed images directly.
+          if [ "${{ runner.os }}" = macOS ]; then
+            strip -x stage/bin/mcc stage/bin/*-mcc 2>/dev/null || true
+          fi
+      - name: package
+        run: bash .github/scripts/package.sh "${{ github.ref_name }}" "${{ matrix.plat }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.plat }}
+          path: out/*
+
+  # ---------------- Windows (msvc, zip) ---------------- #
+  build-windows:
+    name: build windows-x86_64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: configure + build + install
+        # msvc leaf build: /MT static CRT + /DEBUG:NONE stripping are applied for
+        # the static/strip flags. Cross compilers are Windows-host-fragile, so the
+        # Windows release ships native mcc + libmcc only (no cross bundle).
+        run: |
+          cmake -S . -B build -DMCC_TOOLCHAIN_PROFILE=msvc -DCMAKE_BUILD_TYPE=Release `
+            -DMCC_BUILD_TESTS=OFF -DMCC_BUILD_STATIC_LIB=ON `
+            -DMCC_BUILD_STATIC_EXE=ON -DMCC_BUILD_STRIP=ON `
+            -DCMAKE_INSTALL_PREFIX="$PWD/stage"
+          cmake --build build --config Release -j
+          cmake --install build --config Release
+      - name: package
+        shell: pwsh
+        run: .github/scripts/package.ps1 -Ref "${{ github.ref_name }}" -Plat "windows-x86_64"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows-x86_64
+          path: out/*
+
+  # ---------------- Publish ---------------- #
+  publish:
+    name: publish release
+    needs: [build-unix, build-windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dl
+      - name: collect + combine checksums
+        run: |
+          set -eux
+          mkdir -p out
+          find dl -type f ! -name 'checksums-*.txt' -exec cp {} out/ \;
+          find dl -type f -name 'checksums-*.txt' -exec cat {} + > out/SHA256SUMS.txt
+          ls -l out
+      - name: publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true

@@ -1,54 +1,160 @@
 name: CI
 
-# Runs the portable ctest suites on every push/PR, plus the qemu-user cross
-# matrix (x86_64/i386/arm/arm64/riscv64 x glibc/musl) via the repo's Docker
-# runner. See tests/qemu/docker/ and TODO.md.
+# Full toolchain x target x test matrix.
+#
+#   Linux   : gcc, clang         x  native, cross   (portable + wine + macho)
+#   macOS   : clang, homebrew-gcc x  native, cross   (portable + macho-native)
+#   Windows : msvc, mingw        x  native           (portable + pe-native)
+#   qemu    : x86_64/i386/arm/arm64/riscv64 x glibc/musl via the Docker runner
+#
+# The qemu cross-conformance grid runs in its own per-arch jobs (each covers
+# both libcs). See tests/qemu/docker/ and TODO.md. Test labels: `qemu` is the
+# cross matrix, `wine` PE runtime conformance, `macho` the Mach-O drivers.
 on:
   push:
   pull_request:
   workflow_dispatch:
 
+# Cancel superseded runs on the same ref (keep tag/release runs intact).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
 jobs:
-  portable:
-    name: portable suites (${{ matrix.cc }})
+  # ------------------------------------------------------------------ #
+  # Linux: gcc/clang x native/cross. Both compilers are always installed
+  # (the diff/preprocess suites need two distinct reference cc's), plus
+  # wine so the `wine` PE-runtime label runs on the cross rows. The qemu
+  # label is handled by the dedicated Docker jobs below (`-LE qemu`).
+  # ------------------------------------------------------------------ #
+  linux:
+    name: linux ${{ matrix.cc }} / ${{ matrix.target }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         cc: [gcc, clang]
+        target: [native, cross]
     steps:
       - uses: actions/checkout@v4
       - name: install toolchain
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build ${{ matrix.cc }}
+            cmake ninja-build gcc clang wine64
       - name: configure
         run: >
           cmake -S . -B build -G Ninja
           -DCMAKE_BUILD_TYPE=Debug
           -DCMAKE_C_COMPILER=${{ matrix.cc }}
+          ${{ matrix.target == 'cross' && '-DMCC_ENABLE_CROSS=ON' || '' }}
       - name: build
         run: cmake --build build -j"$(nproc)"
       - name: test
-        # macho/wine rows self-skip without their cross compilers; the qemu
-        # matrix is opt-in (MCC_QEMU_TESTS, off here) and covered by the job
-        # below. Exclude those labels so a red run means a real portable break.
-        run: ctest --test-dir build -j"$(nproc)" --output-on-failure -LE "qemu|macho|wine"
+        # Everything except the qemu grid (that runs under Docker below). On the
+        # native rows wine/macho self-skip where their cross compilers are absent;
+        # on the cross rows they exercise the win32 (wine) and macho drivers.
+        run: ctest --test-dir build -j"$(nproc)" --output-on-failure -LE "qemu"
 
+  # ------------------------------------------------------------------ #
+  # macOS: Apple clang + a genuine Homebrew GNU gcc (the diff suites need
+  # a second, non-clang reference; Apple `gcc` is a clang shim). The
+  # `macho` drivers run as real native Mach-O images here.
+  # ------------------------------------------------------------------ #
+  macos:
+    name: macos ${{ matrix.cc }} / ${{ matrix.target }}
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [clang, gcc]
+        target: [native, cross]
+    steps:
+      - uses: actions/checkout@v4
+      - name: install toolchain
+        run: brew install cmake ninja gcc
+      - name: resolve compiler
+        id: cc
+        # Homebrew installs the GNU compiler as gcc-<n>; pick the newest.
+        run: |
+          if [ "${{ matrix.cc }}" = gcc ]; then
+            g=$(ls "$(brew --prefix)"/bin/gcc-[0-9]* | sort -V | tail -1)
+            echo "path=$g" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=clang" >> "$GITHUB_OUTPUT"
+          fi
+      - name: configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_C_COMPILER=${{ steps.cc.outputs.path }}
+          ${{ matrix.target == 'cross' && '-DMCC_ENABLE_CROSS=ON' || '' }}
+      - name: build
+        run: cmake --build build -j"$(sysctl -n hw.ncpu)"
+      - name: test
+        # No qemu/wine on macOS; the native macho drivers do run here.
+        run: ctest --test-dir build -j"$(sysctl -n hw.ncpu)" --output-on-failure -LE "qemu|wine"
+
+  # ------------------------------------------------------------------ #
+  # Windows: msvc (Visual Studio generator, auto-detected via vswhere) and
+  # mingw (the build downloads a checksummed winlibs GCC and drives it as a
+  # superbuild cell). The mingw parent project still needs a host compiler
+  # for its own probe, so we enter an MSVC dev environment first and build
+  # the mingw cells under Ninja.
+  # ------------------------------------------------------------------ #
+  windows-msvc:
+    name: windows msvc / native
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: configure
+        run: cmake -S . -B build -DMCC_TOOLCHAIN_PROFILE=msvc -DCMAKE_BUILD_TYPE=Release
+      - name: build
+        run: cmake --build build --config Release -j
+      - name: test
+        run: ctest --test-dir build -C Release --output-on-failure -LE "qemu|wine|macho"
+
+  windows-mingw:
+    name: windows mingw / native
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: install ninja
+        run: choco install ninja -y
+      - name: configure + build (superbuild fetches winlibs GCC)
+        # MCC_TOOLCHAIN_PROFILE=mingw always goes through the superbuild: the
+        # `mingw` cell configures with the downloaded GCC under Ninja while the
+        # parent probe uses the MSVC dev-cmd `cl`. The cell runs its own ctest.
+        run: |
+          cmake -S . -B build -G Ninja -DMCC_TOOLCHAIN_PROFILE=mingw -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j
+
+  # ------------------------------------------------------------------ #
+  # qemu-user cross matrix, one runner per architecture (each covers both
+  # glibc and musl). The Docker entrypoint stages a clean source copy,
+  # builds mcc + the cross compilers, fetches the per-(arch,libc) Gentoo
+  # sysroots, and runs `ctest -L qemu`.
+  # ------------------------------------------------------------------ #
   qemu-matrix:
-    name: qemu-user cross matrix (docker)
+    name: qemu ${{ matrix.arch }} (glibc+musl)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, i386, arm, arm64, riscv64]
     steps:
       - uses: actions/checkout@v4
       - name: build runner image
         run: docker build -t mcc-qemu tests/qemu/docker
-      - name: run matrix
-        # The entrypoint stages a clean source copy, builds mcc + the cross
-        # compilers, fetches per-(arch,libc) Gentoo sysroots, and runs
-        # `ctest -L qemu`. Narrow with e.g. -e ARCHS=arm64 -e LIBCS=glibc.
+      - name: run ${{ matrix.arch }} x {glibc,musl}
         run: |
           docker run --rm \
+            -e ARCHS=${{ matrix.arch }} \
+            -e LIBCS='glibc;musl' \
             -v "$PWD:/work:ro" \
             -v mcc-qemu-roots:/qemu-roots \
             mcc-qemu
