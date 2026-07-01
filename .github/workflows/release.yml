@@ -1,25 +1,25 @@
 name: Release
 
-# On a version tag (v1.2.3) build static + stripped mcc / libmcc / cross bundles
-# per host OS, checksum them, and publish a GitHub Release with the artifacts.
-# Uses only the built-in GITHUB_TOKEN — binaries are unsigned.
-#
-# Trigger a release:
-#   git tag v1.0.0 && git push origin v1.0.0
+
+
+
+
+
+
 on:
   push:
     tags: ['v*']
-  workflow_dispatch: {}   # dry-run: builds + uploads artifacts, no Release
+  workflow_dispatch: {}   
 
 permissions:
-  contents: write   # create the Release and upload assets
+  contents: write   
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  # ---------------- Linux + macOS (bash, tar.gz) ---------------- #
+  
   build-unix:
     name: build ${{ matrix.plat }}
     strategy:
@@ -27,7 +27,7 @@ jobs:
       matrix:
         include:
           - { os: ubuntu-latest, plat: linux-x86_64, static_exe: 'ON'  }
-          - { os: macos-15,      plat: macos-arm64,  static_exe: 'OFF' }  # no static libc on Darwin
+          - { os: macos-15,      plat: macos-arm64,  static_exe: 'OFF' }  
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -38,8 +38,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends cmake ninja-build gcc
       - name: install toolchain (macos)
         if: runner.os == 'macOS'
-        # Drop the runner image's pre-installed aws/tap (newer Homebrew requires
-        # per-tap trust and warns on every invocation otherwise); we don't use it.
+        
+        
         run: |
           brew untap aws/tap 2>/dev/null || true
           brew install cmake ninja
@@ -67,16 +67,16 @@ jobs:
           name: release-${{ matrix.plat }}
           path: out/*
 
-  # ---------------- Windows (msvc, zip) ---------------- #
+  
   build-windows:
     name: build windows-x86_64
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
       - name: configure + build + install
-        # msvc leaf build: /MT static CRT + /DEBUG:NONE stripping are applied for
-        # the static/strip flags. Cross compilers are Windows-host-fragile, so the
-        # Windows release ships native mcc + libmcc only (no cross bundle).
+        
+        
+        
         run: |
           cmake -S . -B build -DMCC_TOOLCHAIN_PROFILE=msvc -DCMAKE_BUILD_TYPE=Release `
             -DMCC_BUILD_TESTS=OFF -DMCC_BUILD_STATIC_LIB=ON `
@@ -92,7 +92,7 @@ jobs:
           name: release-windows-x86_64
           path: out/*
 
-  # ---------------- Publish ---------------- #
+  
   publish:
     name: publish release
     needs: [build-unix, build-windows]

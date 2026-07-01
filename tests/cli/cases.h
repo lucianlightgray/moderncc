@@ -1898,10 +1898,10 @@ static const cli_case_t cli_cases[] = {
 
 
 { "tgmath_creal_cimag_precision", "",
-  /* Test the INVARIANT (creal/cimag yield the complex's real component type),
-     not literal byte counts: long double is 8 not 16 wherever long double ==
-     double (WIN32 LLP64, and Mach-O/arm64 via MCC_USING_DOUBLE_FOR_LDOUBLE), so
-     `sizeof(creal(l))==sizeof(long double)` reads 1 on every ABI. */
+   
+
+
+
   "printf '#include <tgmath.h>\\n#include <stdio.h>\\nint main(void){ long double complex l=1; float complex f=1; double complex d=1; printf(\"%%d %%d %%d\\\\n\",(int)(sizeof(creal(l))==sizeof(long double)),(int)(sizeof(cimag(f))==sizeof(float)),(int)(sizeof(creal(d))==sizeof(double))); return 0; }\\n' > {W}/cgt.c && "
   "{MCC} -B{B} -I{I} {W}/cgt.c -lm -o {W}/cgt && {W}/cgt",
   "1 1 1\n" },

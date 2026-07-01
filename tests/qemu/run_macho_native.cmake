@@ -1,20 +1,20 @@
-# Native Mach-O (Darwin) RUNTIME conformance — cmake -P port of run_macho_native.sh.
-#
-# Faithful port of run_macho_native.sh so the test no longer needs a POSIX shell.
-# The codegen-run / image-run / apple-libc drivers exist to approximate, on a
-# Linux/x86_64 host, what a real macOS host gives for free: a loader, a real
-# dyld, real libSystem, working TLV. On Darwin none of that scaffolding is
-# needed — the native `mcc` already emits a native Mach-O executable linked
-# against the system libSystem, so each self-checking conformance program just
-# compiles and runs. This therefore covers a STRICT SUPERSET of the Linux
-# approximations: the TLS programs (Darwin TLV thunks the ELF shortcut can't
-# provide) and the libc-dependent programs (real locale/stdio/malloc) all run
-# here, where target == host.
-#
-# Usage: cmake -DSRC=<src-dir> -DMCC=<mcc> -DBDIR=<bdir> -DWORK=<work-dir>
-#              -P run_macho_native.cmake
-# Self-skips (exit 77, ctest SKIP_RETURN_CODE) off a Darwin host or without a
-# Mach-O-targeting mcc.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 foreach(_req SRC MCC BDIR WORK)
     if(NOT DEFINED ${_req})
@@ -25,21 +25,21 @@ endforeach()
 set(CONF "${SRC}/tests/qemu/conformance")
 set(INC "${SRC}/runtime/include")
 
-# [ "$(uname -s)" = Darwin ] || skip
+
 if(NOT CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
     message("SKIP: host is not Darwin (native Mach-O needs a macOS host)")
     cmake_language(EXIT 77)
 endif()
 
-# [ -x "$MCC" ] || skip   (cmake has no -x test; EXISTS + not-a-directory is the
-# closest pure-CMake approximation of an executable mcc)
+
+
 if((NOT EXISTS "${MCC}") OR (IS_DIRECTORY "${MCC}"))
     message("SKIP: no native mcc (${MCC})")
     cmake_language(EXIT 77)
 endif()
 
-# Confirm this mcc actually targets Mach-O (a cross build on macOS could target
-# ELF/PE, in which case the produced binary won't run on the host).
+
+
 file(MAKE_DIRECTORY "${WORK}")
 file(WRITE "${WORK}/probe.c" "int main(void){return 0;}\n")
 
@@ -66,9 +66,9 @@ if(NOT _probe_type MATCHES "^Mach-O")
     cmake_language(EXIT 77)
 endif()
 
-# The full self-checking set. Unlike the Linux drivers, nothing here is excluded
-# for want of a loader/libc/TLV: tls* exercise Darwin TLV, and the *_libc / libc*
-# programs exercise the real macOS C library. Each returns 0 on success.
+
+
+
 set(PROGS
     atomics control integers floats lexical aggregates varargs complex_annexg
     control_libc floats_libc libc libc_struct varargs_fp vla tls tls_aggr)

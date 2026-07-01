@@ -1,4 +1,4 @@
-# gas comment with ``gnu'' style quotes
+
 
 
 
@@ -25,7 +25,7 @@
    .skip 8,0x90
 
 # 28 "asmtest.S"        # a line directive (and a line comment)
-        movl %eax, %ebx # some more asm comment
+        movl %eax, %ebx 
 
 L1:
         movl %eax, %ebx
@@ -593,8 +593,8 @@ int $0x10
     pusha
     popa
 #endif
-    clc # another comment
-    cld # a comment with embedded ' tick
+    clc 
+    cld 
     cli
     clts
     cmc

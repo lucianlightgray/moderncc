@@ -1,14 +1,14 @@
-# Line-ending policy.
-#
-# This repo is developed cross-platform with core.autocrlf often left on. A
-# number of shell scripts are executed *inside Linux* — the qemu-docker
-# entrypoint runs via its `#!/usr/bin/env bash` shebang, and the macho/wine
-# helpers run via `/bin/sh <script>`. A CRLF shebang makes the kernel look for
-# `bash\r` (exit 127), and `set -e\r` / quoted args break under sh. So force
-# LF on anything that must be Unix-executable, regardless of host checkout.
+
+
+
+
+
+
+
+
 *.sh    text eol=lf
 *.bash  text eol=lf
 
-# Docker build-context files are consumed by the Linux image builder.
+
 Dockerfile      text eol=lf
 *.dockerfile    text eol=lf

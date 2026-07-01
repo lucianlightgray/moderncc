@@ -1,30 +1,30 @@
-# Run Apple's *genuine* libc sources through mcc's Mach-O codegen on a
-# Linux/x86_64 host. Two vendored, verbatim source sets (see
-# tests/qemu/apple-libc/PROVENANCE.md):
-#   * src/             -- Apple Libc string/FreeBSD/*.c (strcspn/strpbrk/strsep/
-#                         memmem/strchrnul/strnstr)
-#   * src-libplatform/ -- Apple libplatform src/string/generic/*.c, the core
-#                         string/memory routines (strlen/strcmp/strncmp/strcpy/
-#                         strncpy/strlcpy/strlcat/strchr/strstr/strnlen/memmove/
-#                         memcpy/memcmp/memchr/memccpy/bzero/memset/memset_pattern)
-#                         -- the very functions that ship as commpage assembly on
-#                         macOS; the asm is only an optimization variant, Apple
-#                         ships this portable C as the functional equivalent.
-# Both sets are compiled by mcc for x86_64 Darwin and linked TOGETHER into a
-# Mach-O image with only a freestanding entry (no hand-written libc): the
-# FreeBSD funcs resolve strlen/memcmp/memchr/strncmp against Apple's real
-# libplatform code, so EVERY string/memory function under test is genuine Apple
-# source. Each self-checking image must exit 0, executed via the in-repo loader.
-#
-# This is the closest achievable approximation off-macOS to testing Mach-O
-# against its real target libc. The remainder of libSystem that is genuinely
-# kernel-fused (Mach-VM malloc, Darwin stdio/FILE, dyld) needs a macOS/darling
-# host; PROVENANCE.md documents that boundary.
-#
-# CMake -P port of run_macho_apple_libc.sh (no POSIX shell required).
-# Usage: cmake -DSRC=<src-dir> -DXB=<cross-build-dir> -DWORK=<work-dir> -P run_macho_apple_libc.cmake
-# Self-skips (EXIT 77, ctest SKIP_RETURN_CODE) unless host is x86_64 with the
-# x86_64-osx cross compiler + gcc.  Real failures -> EXIT 1.  Else EXIT 0.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 if(NOT DEFINED SRC OR NOT DEFINED XB OR NOT DEFINED WORK)
     message(FATAL_ERROR "usage: cmake -DSRC=<src> -DXB=<cross-build> -DWORK=<work> -P run_macho_apple_libc.cmake")
@@ -32,11 +32,11 @@ endif()
 
 set(AL    "${SRC}/tests/qemu/apple-libc")
 set(MCC   "${XB}/mcc-x86_64-osx")
-set(OSXRT "${XB}/lib-x86_64-osx")        # mcc's own Darwin runtime (__va_arg etc.)
+set(OSXRT "${XB}/lib-x86_64-osx")        
 
-# --- whole-test self-skips (exit 77) ----------------------------------------
-# `uname -m` equivalent in script mode (CMAKE_HOST_SYSTEM_PROCESSOR is unset by
-# `cmake -P`, so query the host directly).
+
+
+
 cmake_host_system_information(RESULT _hostarch QUERY OS_PLATFORM)
 if(NOT _hostarch STREQUAL "x86_64")
     message("SKIP: host is not x86_64")
@@ -58,7 +58,7 @@ endif()
 
 file(MAKE_DIRECTORY "${WORK}")
 
-# Build the in-repo Mach-O loader; if it cannot build (no seccomp?) -> skip.
+
 execute_process(
     COMMAND "${GCC}" -O2 "${SRC}/tests/qemu/macho/loader.c" -o "${WORK}/machoload"
     RESULT_VARIABLE _lrc
@@ -70,13 +70,13 @@ if(NOT _lrc EQUAL 0)
     cmake_language(EXIT 77)
 endif()
 
-# Freestanding entry only -- NO hand-written libc. Every str*/mem*/format symbol
-# is satisfied by Apple's vendored sources. The only extra definitions are stubs
-# for the Darwin kernel vm/io primitives that string_io.c references on its
-# growing-string paths (vm_allocate/vm_deallocate/mach_task_self/write/errno) --
-# the fixed-buffer _simple_vsnprintf under test never calls them; they exist
-# only to satisfy the linker. This is the kernel's role (page supply / byte
-# sink), which on a non-Darwin host is legitimately not provided.
+
+
+
+
+
+
+
 file(WRITE "${WORK}/wrap.c" "typedef unsigned long size_t;
 int cmain(void);
 static void osx_exit(int c){ __asm__ volatile(\"movl %0,%%edi; movl $0x2000001,%%eax; syscall\"
@@ -94,7 +94,7 @@ unsigned int mach_task_self(void){ return 0; }
 ")
 
 set(CFLAGS -nostdlib "-I${AL}/shim-include")
-# mcc's own osx runtime: __va_arg (varargs) is needed by string_io.c's printf.
+
 set(RTOBJS "")
 foreach(o va_list builtin)
     if(EXISTS "${OSXRT}/${o}.o")
@@ -104,9 +104,9 @@ endforeach()
 
 set(status 0)
 
-# compile_set: compile every .c in a dir, appending objects to OBJS.
-# Stops at the first failure in the set (mirrors the .sh `return 1`), but the
-# overall run continues to the next set (mirrors the .sh `|| true`).
+
+
+
 set(OBJS "")
 foreach(dir "${AL}/src" "${AL}/src-libplatform" "${AL}/src-simple")
     file(GLOB _cs "${dir}/*.c")
@@ -143,9 +143,9 @@ if(NOT _wrc EQUAL 0)
     cmake_language(EXIT 1)
 endif()
 
-# run_image(<test source> <label>): compile (main->cmain), link with the Apple
-# object sets + wrap + runtime, verify it's a Mach-O image, run it via the
-# in-repo loader (must exit 0).  Sets `status` to 1 on any failure.
+
+
+
 function(run_image src label)
     execute_process(
         COMMAND "${MCC}" ${CFLAGS} -Dmain=cmain -c "${src}" -o "${WORK}/test.o"
@@ -166,7 +166,7 @@ function(run_image src label)
         OUTPUT_QUIET
         ERROR_VARIABLE  _kerr)
     if(NOT _krc EQUAL 0)
-        # first line not matching 'stack' or 'deprecat' (case-insensitive)
+        
         string(REPLACE "\n" ";" _klines "${_kerr}")
         set(_kfirst "")
         foreach(_line ${_klines})
@@ -181,7 +181,7 @@ function(run_image src label)
         return()
     endif()
 
-    # Mach-O magic check (file -b ... starts with "Mach-O").
+    
     file(READ "${WORK}/${label}.macho" _magic LIMIT 4 HEX)
     set(_machomagics cffaedfe cefaedfe feedfacf feedface cafebabe bebafeca)
     if(NOT _magic IN_LIST _machomagics)

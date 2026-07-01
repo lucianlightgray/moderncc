@@ -1,18 +1,18 @@
-# Runtime-verify mcc's Mach-O (Darwin) *code generation* without a macOS host.
-# CMake -P port of run_macho_codegen.sh (no POSIX shell needed). See that
-# script's header for the full rationale; this driver mirrors it faithfully.
-#
-# Usage:
-#   cmake -DSRC=<src-dir> -DXB=<cross-build-dir> -DWORK=<work-dir> \
-#         [-DARCH=x86_64|arm64] [-DSYSROOT=<arm64-glibc-sysroot>] \
-#         -P run_macho_codegen.cmake
-#
-# Self-skips (EXIT 77, ctest SKIP_RETURN_CODE) when the toolchain for the
-# requested arch is unavailable. Real failures EXIT 1; otherwise EXIT 0.
+
+
+
+
+
+
+
+
+
+
+
 
 cmake_minimum_required(VERSION 3.20)
 
-# ---- inputs -----------------------------------------------------------------
+
 if(NOT DEFINED SRC OR NOT DEFINED XB OR NOT DEFINED WORK)
     message(FATAL_ERROR "run_macho_codegen.cmake: SRC, XB and WORK are required")
 endif()
@@ -24,14 +24,14 @@ if(NOT DEFINED SYSROOT)
 endif()
 set(CONF "${SRC}/tests/qemu/conformance")
 
-# ---- gcc is always needed to build the ELF harness --------------------------
+
 find_program(GCC NAMES gcc)
 if(NOT GCC)
     message("SKIP: no gcc to build the ELF harness")
     cmake_language(EXIT 77)
 endif()
 
-# ---- per-arch toolchain selection / skips -----------------------------------
+
 if(ARCH STREQUAL "x86_64")
     set(MCC "${XB}/mcc-x86_64-osx")
     set(OSXRT "${XB}/lib-x86_64-osx")
@@ -49,11 +49,11 @@ if(ARCH STREQUAL "x86_64")
         message("SKIP: no x86_64-osx runtime objects")
         cmake_language(EXIT 77)
     endif()
-    # native link + run; SysV varargs match Darwin's, so the full set runs.
+    
     set(RUNTIME "${OSXRT}/atomic.o" "${OSXRT}/stdatomic.o"
                 "${OSXRT}/va_list.o" "${OSXRT}/builtin.o")
-    # tls/tls_aggr use native Mach-O TLV descriptors the Linux ELF shortcut
-    # can't provide; covered on real Darwin per the §6.7.1 TLS work.
+    
+    
     set(SKIP_PROGS tls tls_aggr)
     set(BR "jmp")
     set(PLT "@PLT")
@@ -91,10 +91,10 @@ elseif(ARCH STREQUAL "arm64")
     endif()
     set(RUNTIME "${OSXRT}/atomic.o" "${OSXRT}/stdatomic.o"
                 "${OSXRT}/builtin.o" "${OSXRT}/lib-arm64.o")
-    # Skipped here (NOT mcc codegen bugs; covered on the x86_64-osx row):
-    #  - tls/tls_aggr: Darwin TLS relocation the ELF linker can't process.
-    #  - host-libc programs: glibc through Darwin-ABI codegen the ELF/glibc
-    #    shortcut can't bridge portably. On real macOS these bind to libSystem.
+    
+    
+    
+    
     set(SKIP_PROGS tls tls_aggr control_libc floats_libc libc libc_struct varargs_fp)
     set(BR "b")
     set(PLT "")
@@ -103,18 +103,18 @@ else()
     cmake_language(EXIT 77)
 endif()
 
-# _Complex multiply/divide helpers (__mcc_cmul/cdiv) — link when present.
+
 if(EXISTS "${OSXRT}/complex.o")
     list(APPEND RUNTIME "${OSXRT}/complex.o")
 endif()
 
 file(MAKE_DIRECTORY "${WORK}")
 
-# harness: real entry calls the Darwin-mangled _main of the osx-compiled program
+
 file(WRITE "${WORK}/harness.c"
 "extern int osx_main(void) __asm__(\"_main\");\nint main(void){ return osx_main(); }\n")
 
-# trampolines: Darwin _name -> host libc name (tail call/branch through the PLT)
+
 set(_shim "")
 string(APPEND _shim ".text\n")
 string(APPEND _shim ".macro tramp dar, nat\n")
@@ -131,7 +131,7 @@ string(APPEND _shim "tramp __setjmp, _setjmp\n")
 string(APPEND _shim ".section .note.GNU-stack,\"\",@progbits\n")
 file(WRITE "${WORK}/shim.S" "${_shim}")
 
-# ---- per-program compile / link / run ---------------------------------------
+
 file(GLOB _progs "${CONF}/*.c")
 list(SORT _progs)
 
@@ -143,7 +143,7 @@ foreach(f IN LISTS _progs)
         continue()
     endif()
 
-    # compile the conformance program for <arch>-osx
+    
     execute_process(
         COMMAND "${MCC}" "-I${SRC}/runtime/include" -c "${f}" -o "${WORK}/o.o"
         RESULT_VARIABLE _rc ERROR_VARIABLE _err OUTPUT_QUIET)
@@ -154,7 +154,7 @@ foreach(f IN LISTS _progs)
         continue()
     endif()
 
-    # link into a runnable ELF
+    
     if(ARCH STREQUAL "x86_64")
         execute_process(
             COMMAND "${GCC}" "${WORK}/harness.c" "${WORK}/o.o" "${WORK}/shim.S"
@@ -171,7 +171,7 @@ foreach(f IN LISTS _progs)
             RESULT_VARIABLE _rc ERROR_VARIABLE _err OUTPUT_QUIET)
     endif()
     if(NOT _rc EQUAL 0)
-        # grep -iE 'undefined reference|undefined symbol|error:' | head -1
+        
         set(_msg "")
         string(REGEX MATCHALL "[^\n]+" _lines "${_err}")
         foreach(_line IN LISTS _lines)
@@ -186,7 +186,7 @@ foreach(f IN LISTS _progs)
         continue()
     endif()
 
-    # run (x86_64 native; arm64 under qemu-aarch64); must exit 0
+    
     if(ARCH STREQUAL "x86_64")
         execute_process(COMMAND "${WORK}/run"
                         RESULT_VARIABLE _rc OUTPUT_QUIET ERROR_QUIET)

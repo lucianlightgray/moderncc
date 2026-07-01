@@ -385,8 +385,8 @@ static int ucn_disallowed_initial(unsigned int v)
         || (v >= 0xFE20 && v <= 0xFE2F);
 }
 
-/* Decode one UTF-8 sequence at *pp (bounded by end); advance *pp. Returns the
-   code point, or -1 on an ill-formed sequence (advancing one byte). */
+ 
+
 static int utf8_next_cp(const uint8_t **pp, const uint8_t *end)
 {
     const uint8_t *p = *pp;
@@ -408,8 +408,8 @@ static int utf8_next_cp(const uint8_t **pp, const uint8_t *end)
     return (int)cp;
 }
 
-/* Validate the raw (non-escaped) extended characters of an identifier against
-   the Annex D.1/D.2 ranges, matching what decode_ucn enforces for \u escapes. */
+ 
+
 static void validate_utf8_identifier(const char *s, int len)
 {
     const uint8_t *p = (const uint8_t *)s, *end = p + len;
@@ -3926,10 +3926,10 @@ static void putdefs(CString *cs, const char *p)
 
 static void mcc_predefs(MCCState *s1, CString *cs, int is_asm)
 {
-    /* __MCC__/__TINYC__ encode the version as major*10000 + minor*100 + patch
-       (e.g. 1.0.0 -> 10000), parsed from MCC_VERSION rather than assuming a
-       fixed "0.9.xx" shape. Consumers only test definedness, but the value
-       stays monotonic across releases. */
+     
+
+
+
     {
         int _maj = 0, _min = 0, _pat = 0;
         sscanf(MCC_VERSION, "%d.%d.%d", &_maj, &_min, &_pat);
