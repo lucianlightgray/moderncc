@@ -216,6 +216,15 @@ static char *subst(const char *cmd, const char *mcc, const char *b,
 
 int main(int argc, char **argv){
     if (argc < 6){ fprintf(stderr, "usage: %s <mcc> <bdir> <idir> <workdir> <clidir>\n", argv[0]); return 2; }
+    /* Force byte-order collation in child shells: several cases pipe through
+       `sort`, and the expected strings assume C-locale ordering. Without this,
+       macOS's default UTF-8 locale sorts case-insensitively and ignores leading
+       punctuation (e.g. "_Atomic" before "VALID_OK"), reordering the output. */
+#ifdef _WIN32
+    _putenv("LC_ALL=C");
+#else
+    setenv("LC_ALL", "C", 1);
+#endif
     const char *mcc = argv[1], *bdir = argv[2], *idir = argv[3], *work = argv[4], *cdir = argv[5];
 #ifdef _WIN32
     g_work = work;
