@@ -23,10 +23,14 @@
 #include <stdnoreturn.h>
 #include <time.h>
 #include <complex.h>
-/* Apple's <complex.h> defines the C11 CMPLX macros only for __clang__ (its
-   comment blames the gcc-4.2 frontend), so the parts-suite's gcc reference on
-   macOS lacks them. Modern gcc implements __builtin_complex; provide the
-   macros where the system header omits them so all three compilers agree. */
+/* The C11 §7.3.9.3 CMPLX macros aren't exposed by every <complex.h> we compile
+   against: Apple's defines them only for __clang__ (blaming the gcc-4.2
+   frontend), and glibc < 2.26 gates them behind __GNUC_PREREQ(4,7) which is
+   false under clang (it advertises __GNUC__ 4.2) -- so the parts-suite's gcc (on
+   macOS) or clang (on old glibc) reference lacks them, and a use becomes a hard
+   -Wimplicit-function-declaration error. gcc and clang both implement
+   __builtin_complex, so provide the macros where the system header omits them so
+   all three compilers agree. */
 #ifndef CMPLX
 #define CMPLX(r, i)  __builtin_complex((double)(r), (double)(i))
 #endif

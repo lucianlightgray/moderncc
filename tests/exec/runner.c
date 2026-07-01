@@ -229,7 +229,10 @@ int main(int argc, char **argv){
 
     char **skip = argv + 6; int nskip = argc - 6;
     int pass = 0, fail = 0, skipped = 0;
-    char cmd[8192], path[4096], srcdir[4096];
+    /* cmd holds a shell line built from up to four path-sized fields (run2 uses
+       path and sup twice each), so size it past the sum of those 4096-byte
+       buffers to keep -Wformat-truncation quiet. */
+    char cmd[32768], path[4096], srcdir[4096];
 
     if (MKDIR(work) != 0 && errno != EEXIST) {
         fprintf(stderr, "cannot create workdir %s\n", work); return 2; }
@@ -315,7 +318,7 @@ int main(int argc, char **argv){
             free(cerr); free(prog);
         }
 
-        char prefix[4096];
+        char prefix[8192];
         snprintf(prefix, sizeof prefix, "%s/", srcdir);
         strip_all(out, prefix);
 
