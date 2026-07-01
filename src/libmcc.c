@@ -1991,7 +1991,9 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
             s->do_strip = 1;
             break;
         case MCC_OPTION_bt:
+#ifdef CONFIG_MCC_BACKTRACE
             s->rt_num_callers = atoi(optarg);
+#endif
             goto enable_backtrace;
         enable_backtrace:
 #ifdef CONFIG_MCC_BACKTRACE
@@ -2000,7 +2002,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
                 s->do_debug = 1;
 	    s->dwarf = CONFIG_DWARF_VERSION;
 #else
-            mcc_error("backtrace (-bt) support was not built into this mcc");
+            return mcc_error_noabort("backtrace (-bt) support was not built into this mcc");
 #endif
             break;
         case MCC_OPTION_b:
@@ -2008,7 +2010,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
             s->do_bounds_check = 1;
             goto enable_backtrace;
 #else
-            mcc_error("the bounds checker (-b) was not built into this mcc");
+            return mcc_error_noabort("the bounds checker (-b) was not built into this mcc");
 #endif
             break;
         case MCC_OPTION_g:

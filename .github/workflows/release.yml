@@ -26,8 +26,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest, plat: linux-x86_64, static_exe: 'ON'  }
-          - { os: macos-15,      plat: macos-arm64,  static_exe: 'OFF' }  
+          - { os: ubuntu-latest,    plat: gcc-linux-x86_64,  cc: gcc,   static_exe: 'ON'  }
+          - { os: ubuntu-24.04-arm, plat: gcc-linux-arm64,   cc: gcc,   static_exe: 'ON'  }
+          - { os: macos-15,         plat: clang-macos-arm64, cc: clang, static_exe: 'OFF' }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -48,17 +49,21 @@ jobs:
           set -eux
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=${{ matrix.cc }} \
             -DMCC_BUILD_TESTS=OFF \
             -DMCC_BUILD_STATIC_LIB=ON \
             -DMCC_BUILD_STATIC_EXE=${{ matrix.static_exe }} \
             -DMCC_BUILD_STRIP=${{ matrix.static_exe == 'ON' && 'ON' || 'OFF' }} \
+            -DMCC_CONFIG_BCHECK=OFF \
+            -DMCC_CONFIG_BACKTRACE=OFF \
+            -DMCC_BUILD_MUSL=${{ runner.os == 'Linux' && 'ON' || 'OFF' }} \
             -DMCC_ENABLE_CROSS=ON \
             -DCMAKE_INSTALL_PREFIX="$PWD/stage"
           cmake --build build -j"$(getconf _NPROCESSORS_ONLN)"
           cmake --install build
           
           if [ "${{ runner.os }}" = macOS ]; then
-            strip -x stage/bin/mcc stage/bin/*-mcc 2>/dev/null || true
+            strip -x stage/bin/mcc stage/bin/mcc-* 2>/dev/null || true
           fi
       - name: package
         run: bash .github/scripts/package.sh "${{ github.ref_name }}" "${{ matrix.plat }}"
@@ -69,27 +74,31 @@ jobs:
 
   
   build-windows:
-    name: build windows-x86_64
-    runs-on: windows-latest
+    name: build ${{ matrix.plat }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: windows-latest, plat: msvc-windows-x86_64 }
+          - { runner: windows-11-arm, plat: msvc-windows-arm64 }
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v5
       - name: configure + build + install
-        
-        
-        
         run: |
           cmake -S . -B build -DMCC_TOOLCHAIN_PROFILE=msvc -DCMAKE_BUILD_TYPE=Release `
             -DMCC_BUILD_TESTS=OFF -DMCC_BUILD_STATIC_LIB=ON `
             -DMCC_BUILD_STATIC_EXE=ON -DMCC_BUILD_STRIP=ON `
+            -DMCC_CONFIG_BCHECK=OFF -DMCC_CONFIG_BACKTRACE=OFF `
             -DCMAKE_INSTALL_PREFIX="$PWD/stage"
           cmake --build build --config Release -j
           cmake --install build --config Release
       - name: package
         shell: pwsh
-        run: .github/scripts/package.ps1 -Ref "${{ github.ref_name }}" -Plat "windows-x86_64"
+        run: .github/scripts/package.ps1 -Ref "${{ github.ref_name }}" -Plat "${{ matrix.plat }}"
       - uses: actions/upload-artifact@v7
         with:
-          name: release-windows-x86_64
+          name: release-${{ matrix.plat }}
           path: out/*
 
   

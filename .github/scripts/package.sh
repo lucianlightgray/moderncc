@@ -43,7 +43,7 @@ tar czf "$out/$d.tar.gz" -C "$pkg" "$d"
 d="mcc-cross-$ver-$plat"
 mkdir -p "$pkg/$d/bin" "$pkg/$d/lib/mcc"
 found=0
-for f in "$stage"/bin/*-mcc; do
+for f in "$stage"/bin/mcc-*; do
   [ -e "$f" ] || continue
   cp "$f" "$pkg/$d/bin/"; found=1
 done

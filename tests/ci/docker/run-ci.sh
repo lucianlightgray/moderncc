@@ -64,11 +64,20 @@ fi
 cross_flag=""
 [ "$TARGET" = cross ] && cross_flag="-DMCC_ENABLE_CROSS=ON"
 
-echo "==> configuring (cc=$CC target=$TARGET type=$BUILD_TYPE)"
+MUSL="${MUSL:-OFF}"
+musl_flag=""
+[ "$MUSL" = ON ] && musl_flag="-DMCC_BUILD_MUSL=ON"
+
+release_flags=""
+if [ "$BUILD_TYPE" = Release ]; then
+    release_flags="-DMCC_BUILD_STRIP=ON -DMCC_CONFIG_BCHECK=OFF -DMCC_CONFIG_BACKTRACE=OFF"
+fi
+
+echo "==> configuring (cc=$CC target=$TARGET type=$BUILD_TYPE musl=$MUSL)"
 cmake -S "$SRC" -B "$BUILD" -G Ninja \
     -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
     -DCMAKE_C_COMPILER="$CC" \
-    $cross_flag
+    $cross_flag $musl_flag $release_flags
 
 echo "==> building (-j$JOBS)"
 cmake --build "$BUILD" -j"$JOBS"

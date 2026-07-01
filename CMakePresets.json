@@ -7,13 +7,25 @@
       "displayName": "Debug (Unix Makefiles)",
       "generator": "Unix Makefiles",
       "binaryDir": "${sourceDir}/cmake-build-${presetName}",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MCC_BUILD_STATIC_EXE": "OFF",
+        "MCC_CONFIG_BCHECK": "ON",
+        "MCC_CONFIG_BACKTRACE": "ON",
+        "MCC_BUILD_STRIP": "OFF"
+      }
     },
     {
       "name": "release",
-      "displayName": "Release",
+      "displayName": "Release (static, stripped, no bcheck/backtrace)",
       "inherits": "debug",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "MCC_BUILD_STATIC_EXE": "ON",
+        "MCC_BUILD_STRIP": "ON",
+        "MCC_CONFIG_BCHECK": "OFF",
+        "MCC_CONFIG_BACKTRACE": "OFF"
+      }
     },
     {
       "name": "asan",

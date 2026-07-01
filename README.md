@@ -102,16 +102,17 @@ cmake --build cmake-build-release -j
 | `MCC_ENABLE_CROSS`     |   OFF   | Also build `mcc-<arch>` cross compilers    |
 | `MCC_BUILD_STATIC_LIB` |   ON    | Build static libmcc library                |
 | `MCC_BUILD_DYNAMIC_LIB`|   OFF   | Build shared libmcc library                |
-| `MCC_BUILD_STATIC_EXE` |   OFF   | Build static executable(s)                 |
-| `MCC_BUILD_DYNAMIC_EXE`|   OFF   | Build dynamic executable(s)                |
+| `MCC_BUILD_STATIC_EXE` |   OFF   | Link executable(s) fully static (`-static`); disables `-run` |
+| `MCC_BUILD_DYNAMIC_EXE`|   OFF   | Also build self-contained `mcc-dynamic`, linked only to libc |
 | `MCC_BUILD_MUSL`       |   OFF   | Also build musl-targeting variants (`*-musl`) |
 | `MCC_BUILD_STRIP`      |   OFF   | Strip symbols during link                  |
 | `MCC_QEMU_TESTS`       |   OFF   | qemu-user cross-conformance matrix (below) |
 
 Compiler binaries follow `mcc-<arch>[-dynamic][-musl]`: `<arch>` for cross
-targets, `-dynamic` for the shared-libmcc executable (when both exe kinds are
-built), `-musl` for the musl-targeting variant. The default host build stays
-plain `mcc`. Examples: `mcc`, `mcc-dynamic`, `mcc-musl`, `mcc-arm64`,
+targets, `-musl` for the musl-targeting variant. `mcc` is a fully static,
+self-contained binary; `mcc-dynamic` is a self-contained (ONE_SOURCE) build
+dynamically linked only to libc (no `libmcc.so` dependency). The default host
+build is plain `mcc`. Examples: `mcc`, `mcc-dynamic`, `mcc-musl`, `mcc-arm64`,
 `mcc-arm64-musl`.
 
 ## Usage
