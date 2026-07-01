@@ -31,7 +31,7 @@ if(NOT DEFINED SRC OR NOT DEFINED XB OR NOT DEFINED WORK)
 endif()
 
 set(AL    "${SRC}/tests/qemu/apple-libc")
-set(MCC   "${XB}/x86_64-osx-mcc")
+set(MCC   "${XB}/mcc-x86_64-osx")
 set(OSXRT "${XB}/lib-x86_64-osx")        # mcc's own Darwin runtime (__va_arg etc.)
 
 # --- whole-test self-skips (exit 77) ----------------------------------------
@@ -43,7 +43,7 @@ if(NOT _hostarch STREQUAL "x86_64")
     cmake_language(EXIT 77)
 endif()
 if(NOT EXISTS "${MCC}")
-    message("SKIP: no x86_64-osx-mcc")
+    message("SKIP: no mcc-x86_64-osx")
     cmake_language(EXIT 77)
 endif()
 find_program(GCC NAMES gcc)

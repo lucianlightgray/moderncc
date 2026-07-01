@@ -16,7 +16,7 @@ from a single source tree. Trades an optimizer for speed, size, and portability;
 | **Size**      | ~1 MB self-contained binary                                     |
 | **Assembler** | integrated (`MCC_CONFIG_ASM`) · inline asm · `asm goto`         |
 | **Safety**    | optional bounds checker (`-b`) and backtraces (`-bt`)           |
-| **Cross**     | `<arch>-mcc` compilers via `MCC_ENABLE_CROSS`                   |
+| **Cross**     | `mcc-<arch>` compilers via `MCC_ENABLE_CROSS`                   |
 
 ## Comparisons
 
@@ -93,17 +93,26 @@ ccmake cmake-build-release
 cmake --build cmake-build-release -j
 ```
 
-| Option                 | Default | Meaning                                      |
-|------------------------|:-------:|----------------------------------------------|
-| `MCC_BUILD_TESTS`      |   ON    | Register the ctest suite                     |
-| `MCC_CONFIG_ASM`       |   ON    | Integrated assembler                         |
-| `MCC_CONFIG_BCHECK`    |   ON    | Bounds checker                               |
-| `MCC_CONFIG_BACKTRACE` |   ON    | Runtime backtraces                           |
-| `MCC_ENABLE_CROSS`     |   OFF   | Also build `<arch>-mcc` cross compilers      |
-| `MCC_BUILD_STATIC_LIB` |   ON    | `libmcc.a` (ON) vs. shared `libmcc` (OFF)    |
-| `MCC_BUILD_STATIC_EXE` |   OFF   | Fully static `mcc` executable(s) (`-static`) |
-| `MCC_BUILD_STRIP`      |   OFF   | Strip symbols at link (`-s`)                 |
-| `MCC_QEMU_TESTS`       |   OFF   | qemu-user cross-conformance matrix (below)   |
+| Option                 | Default | Meaning                                    |
+|------------------------|:-------:|--------------------------------------------|
+| `MCC_BUILD_TESTS`      |   ON    | Register the CTest suite                   |
+| `MCC_CONFIG_ASM`       |   ON    | Integrated assembler                       |
+| `MCC_CONFIG_BCHECK`    |   ON    | Bounds checker                             |
+| `MCC_CONFIG_BACKTRACE` |   ON    | Runtime backtraces                         |
+| `MCC_ENABLE_CROSS`     |   OFF   | Also build `mcc-<arch>` cross compilers    |
+| `MCC_BUILD_STATIC_LIB` |   ON    | Build static libmcc library                |
+| `MCC_BUILD_DYNAMIC_LIB`|   OFF   | Build shared libmcc library                |
+| `MCC_BUILD_STATIC_EXE` |   OFF   | Build static executable(s)                 |
+| `MCC_BUILD_DYNAMIC_EXE`|   OFF   | Build dynamic executable(s)                |
+| `MCC_BUILD_MUSL`       |   OFF   | Also build musl-targeting variants (`*-musl`) |
+| `MCC_BUILD_STRIP`      |   OFF   | Strip symbols during link                  |
+| `MCC_QEMU_TESTS`       |   OFF   | qemu-user cross-conformance matrix (below) |
+
+Compiler binaries follow `mcc-<arch>[-dynamic][-musl]`: `<arch>` for cross
+targets, `-dynamic` for the shared-libmcc executable (when both exe kinds are
+built), `-musl` for the musl-targeting variant. The default host build stays
+plain `mcc`. Examples: `mcc`, `mcc-dynamic`, `mcc-musl`, `mcc-arm64`,
+`mcc-arm64-musl`.
 
 ## Usage
 
@@ -113,7 +122,7 @@ mcc -run hello.c              # compile and run in memory
 mcc -c file.c -o file.o       # object only
 
 # cross-compile against a sysroot (glibc or musl), then run under qemu-user:
-arm64-mcc --sysroot=/path/to/rootfs hello.c -o hello
+mcc-arm64 --sysroot=/path/to/rootfs hello.c -o hello   # or mcc-arm64-musl
 qemu-aarch64 -L /path/to/rootfs ./hello
 ```
 

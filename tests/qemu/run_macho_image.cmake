@@ -16,7 +16,7 @@ if(NOT DEFINED SRC OR NOT DEFINED XB OR NOT DEFINED WORK)
 endif()
 
 set(CONF  "${SRC}/tests/qemu/conformance")
-set(MCC   "${XB}/x86_64-osx-mcc")
+set(MCC   "${XB}/mcc-x86_64-osx")
 set(OSXRT "${XB}/lib-x86_64-osx")
 
 # --- whole-test self-skips (exit 77) -----------------------------------------
@@ -26,7 +26,7 @@ if(NOT _arch STREQUAL "x86_64")
     cmake_language(EXIT 77)
 endif()
 if(NOT EXISTS "${MCC}")
-    message("SKIP: no x86_64-osx-mcc")
+    message("SKIP: no mcc-x86_64-osx")
     cmake_language(EXIT 77)
 endif()
 find_program(GCC gcc)

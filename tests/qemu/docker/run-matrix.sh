@@ -44,7 +44,7 @@ echo "==> configuring (archs=[$ARCHS] libcs=[$LIBCS])"
 # with an out-of-source build dir so the preset's in-tree binaryDir never lands
 # on the host mount. MCC_QEMU_DLDIR redirects sysroots to the cache volume.
 # MCC_CROSS_DIR points the darwin/macho row (qemu-arm64-osx) at this build's
-# cross compilers (arm64-osx-mcc + lib-arm64-osx live in $BUILD, not the default
+# cross compilers (mcc-arm64-osx + lib-arm64-osx live in $BUILD, not the default
 # in-source cmake-build-cross), so it runs here instead of self-skipping.
 cmake -S "$SRC" -B "$BUILD" -G "Unix Makefiles" \
     -DCMAKE_BUILD_TYPE=Debug \
@@ -60,7 +60,7 @@ cmake --build "$BUILD" -j"$JOBS"
 
 # --- multilib amd64 sysroot fixup -------------------------------------------
 # The Gentoo amd64 stage3 is multilib: usr/lib holds the 32-bit (i386) startup
-# objects, usr/lib64 the 64-bit ones. But x86_64-mcc is built with
+# objects, usr/lib64 the 64-bit ones. But mcc-x86_64 is built with
 # CRTPREFIX="{R}/lib", so it would pick the 32-bit crt1.o/crti.o and reject
 # them ("invalid object file"). On an x86_64 host the x86_64 row uses the
 # native mcc and never hits this; on a non-x86_64 host it goes through the
