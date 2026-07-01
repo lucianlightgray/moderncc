@@ -35,6 +35,10 @@ int main(void)
     int *p = &obj;
     unsigned long bits = (unsigned long)(void *)p;
     int *p2 = (int *)(void *)bits;
-    printf("ptrrt: %d\n", *p2);
+    (void)p2;   /* p2 is a size-truncated round-trip (the two casts above warn on
+                   LLP64, which is the point); dereferencing it is UB there -- it
+                   faults whenever &obj exceeds 32 bits, as on Windows/arm64. */
+    unsigned long long full = (unsigned long long)(void *)p;   /* lossless */
+    printf("ptrrt: %d\n", *(int *)(void *)full);
     return 0;
 }
