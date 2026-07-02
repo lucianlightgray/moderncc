@@ -2876,6 +2876,8 @@ LIBMCCAPI int mcc_output_file(MCCState *s, const char *filename)
     s->nb_errors = 0;
     if (s->test_coverage)
         mcc_tcov_add_file(s, filename);
+    if (s->output_type == MCC_OUTPUT_ASM)
+        return asm_output_file(s, filename);
     if (s->output_type == MCC_OUTPUT_OBJ)
         return elf_output_obj(s, filename);
 #ifdef MCC_TARGET_PE

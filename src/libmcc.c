@@ -979,7 +979,10 @@ LIBMCCAPI int mcc_set_output_type(MCCState *s, int output_type)
 
     mccelf_new(s);
 
-    if (output_type == MCC_OUTPUT_OBJ) {
+    if (output_type == MCC_OUTPUT_OBJ || output_type == MCC_OUTPUT_ASM) {
+        /* -S, like -c, only compiles: no startup files or library paths, and
+           relocations are kept symbolic (object-style).  The assembly listing
+           is produced by asm_output_file() instead of an ELF write. */
         s->output_format = MCC_OUTPUT_FORMAT_ELF;
         return 0;
     }
@@ -2272,9 +2275,8 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
             s->gen_phony_deps = 1;
             break;
         case MCC_OPTION_S:
-            return mcc_error_noabort(
-                "-S (assembly output) is not supported: mcc compiles directly to "
-                "object code; use -c for an object file");
+            x = MCC_OUTPUT_ASM;
+            goto set_output_type;
         case MCC_OPTION_MT:
         case MCC_OPTION_MQ:
             {

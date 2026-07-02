@@ -1547,6 +1547,41 @@ ST_FUNC int set_global_sym(MCCState *s1, const char *name, Section *sec, addr_t 
     for (elem = (type *) sec->data + startoff; \
          elem < (type *) (sec->data + sec->data_offset); elem++)
 
+/* ------------ mccdis.c : -S assembly (disassembly) output ------------ */
+
+/* State shared between the arch-independent listing driver (mccdis.c) and the
+   per-arch instruction decoder (<arch>-dis.c). */
+typedef struct disasm_ctx {
+    MCCState *s1;
+    Section *sec;             /* section being disassembled (usually .text) */
+    Section *symtab;          /* symbol table (names via symtab->link->data) */
+    unsigned char *data;      /* == sec->data */
+    unsigned long size;       /* == sec->data_offset */
+    addr_t pc;                /* byte offset of the instruction being decoded */
+    FILE *out;
+    int collect;              /* pass 1: gather local branch targets, no output */
+    addr_t *labels;           /* sorted set of intra-section branch targets */
+    int nlabels, labels_cap;
+} disasm_ctx;
+
+/* Emit an AT&T-syntax assembly listing for the compiled translation unit. */
+ST_FUNC int asm_output_file(MCCState *s1, const char *filename);
+
+/* If a relocation in dc->sec covers the field at [off, off+size), return the
+   symbolic operand text ("sym", "sym+8", "sym-4") and, via *ptype, the ELF
+   relocation type; else return NULL.  Used by the arch decoder to print
+   symbolic operands instead of raw immediates/displacements. */
+ST_FUNC const char *disasm_reloc(disasm_ctx *dc, addr_t off, int size, int *ptype);
+
+/* Register an intra-section relative branch target and return the local label
+   text (".L<off>") the arch decoder should print for it. */
+ST_FUNC const char *disasm_label(disasm_ctx *dc, addr_t target);
+
+/* Per-arch instruction disassembler.  Decodes the one instruction at dc->pc,
+   prints its AT&T-syntax text (no leading tab, no trailing newline) to dc->out,
+   and returns the instruction length in bytes (>= 1). */
+ST_FUNC int mcc_disasm_insn(disasm_ctx *dc);
+
 #ifndef ELF_OBJ_ONLY
 ST_FUNC int mcc_load_dll(MCCState *s1, int fd, const char *filename, int level);
 ST_FUNC int mcc_load_ldscript(MCCState *s1, int fd);

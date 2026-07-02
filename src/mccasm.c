@@ -743,9 +743,13 @@ static void asm_parse_directive(MCCState *s1, int global)
                 p = get_tok_str(tok, &tokc);
             } else {
                 skip_to_eol(0);
+                parse_flags |= PARSE_FLAG_TOK_STR;
                 break;
             }
             mccpp_putfile(p);
+            /* restore string tokenization for the rest of the file (e.g. the
+               flags operand of a following .section directive) */
+            parse_flags |= PARSE_FLAG_TOK_STR;
             next();
         }
         break;

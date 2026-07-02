@@ -47,6 +47,7 @@ LIBMCCAPI int mcc_set_output_type(MCCState *s, int output_type);
 #define MCC_OUTPUT_DLL      4
 #define MCC_OUTPUT_OBJ      3
 #define MCC_OUTPUT_PREPROCESS 5
+#define MCC_OUTPUT_ASM      6
 
 LIBMCCAPI int mcc_add_library_path(MCCState *s, const char *pathname);
 

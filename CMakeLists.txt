@@ -2652,6 +2652,52 @@ if(NOT _drc EQUAL 0)
 endif()
 ]==])
 
+    # -S (assembly output) round-trip: mcc -S <src> must produce an assembly
+    # listing that re-assembles (with mcc's own integrated assembler) and links
+    # into a program behaving identically to the directly-compiled one.
+    set(_dashS_driver "${CMAKE_BINARY_DIR}/run_dash_s_roundtrip.cmake")
+    file(WRITE "${_dashS_driver}" "set(EMU \"${MCC_EMULATOR}\")\n")
+    file(APPEND "${_dashS_driver}" [==[
+set(SRC "${SRCDIR}/asm/dash_s_roundtrip/prog.c")
+set(_flags "-B${BDIR}" "-I${IDIR}")
+# 1. direct compile + run -> reference output
+execute_process(COMMAND ${EMU} "${MCC}" ${_flags} "${SRC}" -o "${OUTDIR}/dashS-direct"
+        RESULT_VARIABLE _rc OUTPUT_VARIABLE _o ERROR_VARIABLE _e)
+if(NOT _rc EQUAL 0)
+    message(FATAL_ERROR "dash-S: direct build failed:\n${_o}${_e}")
+endif()
+execute_process(COMMAND ${EMU} "${OUTDIR}/dashS-direct"
+    OUTPUT_FILE "${OUTDIR}/dashS.out1" RESULT_VARIABLE _rr)
+# 2. emit assembly
+execute_process(COMMAND ${EMU} "${MCC}" ${_flags} -S "${SRC}" -o "${OUTDIR}/dashS.s"
+        RESULT_VARIABLE _rc OUTPUT_VARIABLE _o ERROR_VARIABLE _e)
+if(NOT _rc EQUAL 0)
+    message(FATAL_ERROR "dash-S: -S emit failed:\n${_o}${_e}")
+endif()
+# sanity: the listing must contain code directives, a function label and a size
+file(READ "${OUTDIR}/dashS.s" _asm)
+if(NOT _asm MATCHES "\n\t\\.text" OR NOT _asm MATCHES "\nmain:" OR NOT _asm MATCHES "\\.size\tmain")
+    message(FATAL_ERROR "dash-S: listing missing expected directives/labels:\n${_asm}")
+endif()
+# 3. re-assemble the listing and link, then run -> round-tripped output
+execute_process(COMMAND ${EMU} "${MCC}" ${_flags} "${OUTDIR}/dashS.s" -o "${OUTDIR}/dashS-via"
+        RESULT_VARIABLE _rc OUTPUT_VARIABLE _o ERROR_VARIABLE _e)
+if(NOT _rc EQUAL 0)
+    message(FATAL_ERROR "dash-S: re-assembling the -S listing failed:\n${_o}${_e}")
+endif()
+execute_process(COMMAND ${EMU} "${OUTDIR}/dashS-via"
+    OUTPUT_FILE "${OUTDIR}/dashS.out2" RESULT_VARIABLE _rr)
+# 4. behaviour must be identical
+execute_process(COMMAND "${CMAKE_COMMAND}" -E compare_files
+        "${OUTDIR}/dashS.out1" "${OUTDIR}/dashS.out2" RESULT_VARIABLE _drc)
+if(NOT _drc EQUAL 0)
+    file(READ "${OUTDIR}/dashS.out1" _d1)
+    file(READ "${OUTDIR}/dashS.out2" _d2)
+    message(FATAL_ERROR
+        "dash-S round-trip mismatch (direct vs via -S):\n--- direct ---\n${_d1}\n--- via -S ---\n${_d2}")
+endif()
+]==])
+
 
     add_test(NAME mcc_build
         COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}")
@@ -3285,6 +3331,18 @@ cmake_language(EXIT 0)
     else()
         mcc_skip_test(asm-c-connect-test
             "requires x86 target with integrated assembler (host target: ${MCC_CPU})")
+    endif()
+
+    if(MCC_CPU STREQUAL "x86_64" AND MCC_CONFIG_ASM
+       AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/asm/dash_s_roundtrip/prog.c")
+        add_test(NAME dash-s-roundtrip COMMAND "${CMAKE_COMMAND}"
+            -DMCC=${_mcc_exe} -DBDIR=${_bdir} -DIDIR=${_idir}
+            -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}/tests -DOUTDIR=${CMAKE_BINARY_DIR}
+            -P "${_dashS_driver}")
+        set_tests_properties(dash-s-roundtrip PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+    else()
+        mcc_skip_test(dash-s-roundtrip
+            "requires x86_64 target with integrated assembler (host target: ${MCC_CPU})")
     endif()
 
     

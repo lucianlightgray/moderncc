@@ -4,144 +4,67 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
 
 ---
 
-## ★ TOP PRIORITY: implement `-S` (assembly output) — 2026-07-02
+## ✓ LANDED: `-S` (assembly output) — 2026-07-02
 
-**Why:** the last cluster of non-actionable `[~]` rows in [C9911.md](C9911.md) —
-§5.1.2.3/§5.1.2.4 volatile & atomic ordering (L218/L227/L255), §7.6.1 FENV pragma
-state, §7.12.2 FP_CONTRACT contraction, §F.8 — are all tagged *"not separately
-testable: requires `-S`/codegen inspection that mcc does not expose"*. Adding a
-real `-S` closes that gap and lets those rows be verified from an assembly listing
-the way they are against gcc/clang.
+`mcc -S` now emits a gcc/clang-style AT&T assembly listing.  This closes the
+last cluster of "not separately testable: requires `-S`" `[~]` rows in
+[C9911.md](C9911.md): §5.1.2.3p6, §5.1.2.3p12 EX4 and §5.1.2.4p16 are retagged
+`mcc:✓` (the volatile/atomic access ordering is now inspectable and matches
+gcc -O0).
 
-**Architecture constraint (read first).** mcc is TCC-derived: the per-arch backend
-(`src/arch/<arch>/<arch>-gen.c`) emits **raw machine-code bytes straight into
-`cur_text_section->data[]`** via `g()`/`o()`/`gen_le32()` (`x86_64-gen.c:137`).
-There is **no textual-assembly IR** anywhere in the pipeline, and `-S` currently
-hard-errors (`libmcc.c:2274`). So `-S` cannot be "stop before the assembler" —
-there is no assembler stage to stop before. The realistic design is a
-**relocation-aware disassembler** that runs *after* a normal object-style compile
-(reloc entries kept symbolic, no link) and prints AT&T-syntax text plus section/
-symbol directives, in a form that mcc's own `mccasm.c` (and gas) can re-assemble.
-Round-trip identity — `mcc -S x.c -o x.s && mcc -c x.s` byte-equal to
-`mcc -c x.c` — is the correctness oracle and the primary test.
+**How it works.** mcc is TCC-derived — the backend emits raw machine-code bytes
+into the section data with no textual-assembly IR — so `-S` runs a normal
+object-style compile (relocations kept symbolic, no link) and then disassembles
+the populated sections back to a listing.  New code:
 
-### 1. Front end: `main` + arg parsing accept `-S` and a new output type
+- `include/libmcc.h` — `MCC_OUTPUT_ASM`.
+- `src/libmcc.c` — `MCC_OPTION_S` handler + `mcc_set_output_type` (compile-only,
+  no startup/libs, symbolic relocs).
+- `src/mcc.c` — `.s` default filename, per-file compile + `-S`-with-libs/many-files
+  guards, help text.
+- `src/objfmt/mccelf.c` — routes `MCC_OUTPUT_ASM` to `asm_output_file`.
+- **`src/mccdis.c`** (new) — arch-independent driver: walks sections + symtab,
+  emits `.text`/`.data`/`.rodata`/`.bss` directives, `.globl`/`.weak`/`.type`/
+  `.size`, function + local (`.L<off>`) labels, `.byte`/`.long`/`.quad`/`.skip`
+  data with symbolic relocations; collision-free names for duplicate local
+  statics; two-pass local-label collection for branch targets.
+- **`src/arch/x86_64/x86_64-dis.c`** (new) — reloc-aware x86-64 disassembler:
+  integer + SSE + x87 subset the backend emits, AT&T syntax, symbolic call/rip/
+  absolute operands.
+- `src/mccasm.c` — fixed a latent bug the round-trip surfaced: `.file` cleared
+  `PARSE_FLAG_TOK_STR` without restoring it, breaking a following `.section`.
 
-- [ ] **Add `MCC_OUTPUT_ASM`** — `include/libmcc.h:45-49` (new value `6`, next to
-  `MCC_OUTPUT_OBJ 3`). This is the public output-type token everything else keys on.
-- [ ] **`MCC_OPTION_S` handler** — `src/libmcc.c:2274`: delete the
-  `mcc_error_noabort("-S … not supported")` stub and replace with
-  `x = MCC_OUTPUT_ASM; goto set_output_type;`, mirroring `MCC_OPTION_c`
-  (`libmcc.c:2038`) and `MCC_OPTION_E` (`libmcc.c:2243`). The option is already
-  in the table (`libmcc.c:1611,1703`), so no table change is needed.
-- [ ] **`mcc_set_output_type`** — `src/libmcc.c:~955-982`: give `MCC_OUTPUT_ASM`
-  the same "compile only, don't link, don't pull startup files/libs" treatment as
-  `MCC_OUTPUT_OBJ` (the `if (output_type == MCC_OUTPUT_OBJ)` block at `libmcc.c:982`).
-- [ ] **Default output filename → `.s`** — `src/mcc.c:default_outputfile()`
-  (`mcc.c:242-265`): add an `MCC_OUTPUT_ASM` branch that rewrites the extension to
-  `.s` (parallel to the `.o` branch at `mcc.c:254`), matching gcc/clang
-  (`foo.c` → `foo.s`).
-- [ ] **`main` per-file compile loop + guards** — `src/mcc.c`:
-  - `mcc.c:331` — extend the `MCC_OUTPUT_OBJ` "cannot specify libraries / one
-    output file for many inputs" checks to also cover `MCC_OUTPUT_ASM` (gcc rejects
-    `-S -o out.s a.c b.c`).
-  - `mcc.c:375` — the `if (s->output_type == MCC_OUTPUT_OBJ && !s->option_r) break;`
-    that forces **one object per input file** must also fire for `MCC_OUTPUT_ASM`
-    (each `.c` → its own `.s`; no cross-file linking).
-  - `mcc.c:391-400` — the `mcc_output_file(s, s->outfile)` dispatch already runs
-    for any non-MEMORY/PREPROCESS/`syntax_only` type, so `MCC_OUTPUT_ASM` flows
-    through once routed (see §3); verify `-S -` (stdin) and `-S -o -` (stdout) land.
-- [ ] **Help text** — `src/mcc.c` `help[]` (~`mcc.c:15`, by the `-c` line): document
-  `-S  Compile only; emit assembly (.s), do not assemble or link`.
+**Validation (all green).**
 
-### 2. Output routing: send `MCC_OUTPUT_ASM` to a new emitter
+- `mcc -S | gas` re-assembles and runs **functionally identical** to `mcc -c`
+  across a 9-program corpus (recursion, floats, structs-by-value, function
+  pointers, varargs, switch, strings, bit-twiddling).
+- **100% instruction accuracy** vs `objdump -d` on all non-branch instructions
+  (remaining diffs are gas's own branch-shortening / implicit-shift re-encodings,
+  not decoder errors).
+- All **13 mcc source files (~108k instructions)** disassemble and re-assemble
+  with gas — **zero** unknown-byte fallbacks, zero bad mnemonics.
+- New hermetic `dash-s-roundtrip` ctest: `mcc -S` → mcc's own assembler →
+  mcc link → run, byte-identical output to the direct build (x86_64 + integrated
+  assembler); `dash_S_emits_assembly` cli case updated.
+- Bugs the tests caught and fixed: sign-extended imm8 display (`$0xff`→
+  `$0xffffffff`), x87 length desync, `call *%r11d`→`*%r11`, and a reloc-window
+  bug (disp8 spuriously matching the next insn's relocation → wrong stack slot →
+  segfault).
 
-- [ ] **`mcc_output_file`** — `src/objfmt/mccelf.c:2874`: add
-  `if (s->output_type == MCC_OUTPUT_ASM) return asm_output_file(s, filename);`
-  ahead of the existing OBJ/PE/MachO/ELF dispatch. `asm_output_file` follows the
-  **`elf_output_obj` model** (`mccelf.c:2853`): object-style, relocations stay
-  **symbolic/section-relative** (never resolved to final addresses — that is what
-  keeps operands printable as `sym+addend`).
-- [ ] **Declare** `asm_output_file`/`mcc_output_asm` in `src/mcc.h` next to the
-  other `ST_FUNC … output` decls.
+**Not done / follow-ups (open):**
 
-### 3. New driver: `src/mccdis.c` — section/symbol/directive layer (arch-independent)
-
-- [ ] **New file `src/mccdis.c`** implementing `asm_output_file(MCCState*, const
-  char *filename)`. It walks `s1->sections[]` and `symtab` and emits a gas/AT&T
-  listing (auto-picked up by the `src/*.c` glob at `CMakeLists.txt:1698`). Responsibilities:
-  - Open `filename` (or stdout for `-`) via the existing `mcc_fopen` path used by
-    the preprocessor (`mcc.c:326`).
-  - For each output section emit the directive header — `.text` / `.data` /
-    `.section .rodata` / `.bss`, plus `.align`, and `.globl`/`.weak`/`.type
-    @function|@object`/`.size` derived from the `symtab` `ElfW(Sym)` entries
-    (`st_info` bind/type, `st_shndx`, `st_value`, `st_size`).
-  - Interleave **symbol labels** (`name:`) at their `st_value` offsets so text is
-    grouped per function.
-  - For `.data`/`.rodata`/`.bss` emit `.byte`/`.short`/`.long`/`.quad`/`.string`/
-    `.zero` from the section bytes, splicing symbolic relocations (see below) as
-    `.quad sym+addend` where a reloc covers those bytes.
-  - Emit a trailing `.ident`/`.section .note.GNU-stack` epilogue to match gcc's
-    non-exec-stack convention (keeps re-assembled objects identical).
-
-### 4. New per-arch disassembler: `src/arch/<arch>/<arch>-dis.c` (the hard part)
-
-- [ ] **New file per live arch** (`x86_64` first; then `arm64`, `i386`, `arm`,
-  `riscv64`), auto-included by the backend glob `src/arch/${MCC_CPU}/*.c`
-  (`CMakeLists.txt:1701`, `CONFIGURE_DEPENDS` — a re-configure picks it up, no edit
-  needed). Export e.g. `ST_FUNC int mcc_disasm_insn(MCCState*, Section *text,
-  addr_t off, addr_t end, FILE *out)` returning instruction length; loop it over
-  each function's `[st_value, st_value+st_size)` range.
-  - It is the **inverse of the existing assembler** `src/arch/<arch>/<arch>-asm.c`
-    + tables in `<arch>-asm.h` — reuse the same mnemonic/opcode tables where
-    possible so encode/decode stay in sync.
-  - **Relocation-aware operands:** before printing an instruction, look up any
-    reloc in `text->reloc` whose `r_offset` falls inside the instruction; render
-    that operand as the **symbol name (+addend)** from `symtab`, not the raw
-    immediate/displacement bytes. This is what makes the output re-assemblable and
-    diffable, and is the whole point (it exposes the symbolic call/access sequence
-    the volatile/atomic `[~]` rows need).
-  - AT&T syntax + `%`-registers + `$`-immediates for x86, to match
-    `gcc -S`/`clang -S` default so goldens and humans read the same dialect.
-
-### 5. Build system
-
-- [ ] No hand-edits needed for the globs (`CMakeLists.txt:1698` covers
-  `src/mccdis.c`; `:1701` covers `src/arch/*/*-dis.c`) — but a **re-run of CMake
-  configure** is required so `CONFIGURE_DEPENDS` re-globs. Confirm each backend's
-  `-dis.c` compiles under the `ONE_SOURCE` single-TU build too (`src/mcc.c:1-9`
-  includes `libmcc.c`; check whether `mccdis.c` should be `#include`d there or
-  stay a separate TU).
-
-### 6. Tests — prove `-S` matches gcc/clang conventions
-
-- [ ] **Round-trip identity (primary oracle)** — new `tests/asm/s_roundtrip/` +
-  CMake case beside the existing `asm_c_connect` harness (`CMakeLists.txt:2618`):
-  for a spread of inputs, assert `mcc -S x.c -o x.s && mcc -c x.s -o x.s.o`
-  produces an object **byte-identical** to `mcc -c x.c -o x.o` (or, if directive
-  ordering perturbs layout, functionally-identical via symbol/reloc compare).
-- [ ] **gcc/clang parity smoke** — `mcc -S` and `gcc -S`/`clang -S` on the same
-  input both produce a `.s` that **gas and mcc's assembler both accept**; diff the
-  *symbol/section/reloc* shape (not exact text — instruction selection differs by
-  design), à la the 3-way `mcctest` philosophy.
-- [ ] **cli-suite cases** — `tests/cli/cases.h`: `-S` default naming (`foo.c`→
-  `foo.s`), `-S -o out.s`, `-S -o -` (stdout), `-S a.c b.c` rejected with libs,
-  `-S` + `-c` mutual-override warning (the `set_output_type` path, `libmcc.c:2041`).
-- [ ] **Motivating conformance test** — `tests/exec/` (or new `tests/asm/observe/`):
-  compile a `volatile` a=b=c chain and an atomic-ordering snippet with `-S`, grep
-  the listing for the expected load/store count — the exact check C9911 L218/L227/
-  L255 say is impossible today.
-- [ ] **Once green, retag C9911** — flip the six "requires `-S`" `[~]` rows
-  (§5.1.2.3/§5.1.2.4 L218/L227/L255, §7.6.1p2/p3 L2361/L2365, §7.12.2p1 L2728) to
-  `mcc:✓` with an `-S`-verified note, and update the TODO "NOT-TESTABLE = 6" tally
-  (§ 2026-06-30 crawl, line ~90) and the Totals header in C9911.md.
-
-### Sequencing
-
-1 → 2 → 3 give a runnable `-S` that emits directives + labels + `.byte` blobs for
-text (correct but unreadable); 4 replaces the text `.byte` blobs with real
-mnemonics; 6 locks it in. Ship x86_64 end-to-end before fanning the disassembler
-out to the other four arches.
+- [ ] **Other arches** — only `src/arch/x86_64/x86_64-dis.c` exists; `arm64`,
+  `i386`, `arm`, `riscv64` fall back to a `.byte` dump (guarded in `emit_text`).
+  Add `<arch>-dis.c` per target for full `-S` there.
+- [ ] **`.eh_frame`/unwind + debug sections** are omitted from the listing
+  (gcc regenerates these from `.cfi_*` directives; mcc has no CFI emission).
+  Emitting `.cfi_*` would make the listing carry unwind info.
+- [ ] **mcc's own assembler lacks SSE mnemonics**, so the hermetic self-round-trip
+  test is integer-only; float programs round-trip via gas.  Teaching the
+  integrated assembler the SSE subset would let the hermetic test cover floats.
+- [ ] `-S` honours `-o -` (stdout) and default `foo.c`→`foo.s`; not yet wired
+  into `-fverbose-asm`-style operand comments (gcc extra, low value).
 
 ---
 

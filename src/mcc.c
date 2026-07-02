@@ -13,6 +13,7 @@ static const char help[] =
     "       mcc [options] -run file [args...]\n"
     "Options:\n"
     "  -c                  Only compile and assemble, do not link\n"
+    "  -S                  Only compile; emit assembly (.s), do not assemble or link\n"
     "  -E                  Only run the preprocessor\n"
     "  -o <file>           Write output to <file>\n"
     "  -run                Compile, then run the program (passing it [args...])\n"
@@ -253,6 +254,8 @@ static char *default_outputfile(MCCState *s, const char *first_file)
     ext = mcc_fileextension(buf);
     if ((s->just_deps || s->output_type == MCC_OUTPUT_OBJ) && !s->option_r && *ext)
         strcpy(ext, ".o");
+    else if (s->output_type == MCC_OUTPUT_ASM && *ext)
+        strcpy(ext, ".s");
 #ifdef MCC_TARGET_PE
     else if (s->output_type == MCC_OUTPUT_DLL)
         strcpy(ext, ".dll");
@@ -328,11 +331,13 @@ redo:
                 if (!ppfp)
                     mcc_error_noabort("could not write '%s'", s->outfile);
             }
-        } else if (s->output_type == MCC_OUTPUT_OBJ && !s->option_r) {
+        } else if ((s->output_type == MCC_OUTPUT_OBJ && !s->option_r)
+                || s->output_type == MCC_OUTPUT_ASM) {
+            const char *act = s->output_type == MCC_OUTPUT_ASM ? "-S" : "-c";
             if (s->nb_libraries)
-                mcc_error_noabort("cannot specify libraries with -c");
+                mcc_error_noabort("cannot specify libraries with %s", act);
             else if (s->nb_files > 1 && s->outfile)
-                mcc_error_noabort("cannot specify output file with -c many files");
+                mcc_error_noabort("cannot specify output file with %s many files", act);
         }
         if (s->nb_errors)
             goto err;
@@ -372,7 +377,8 @@ redo:
         }
         if (++n == s->nb_files)
             break;
-        if (s->output_type == MCC_OUTPUT_OBJ && !s->option_r)
+        if ((s->output_type == MCC_OUTPUT_OBJ && !s->option_r)
+         || s->output_type == MCC_OUTPUT_ASM)
             break;
     }
 

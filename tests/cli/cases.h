@@ -1860,11 +1860,13 @@ static const cli_case_t cli_cases[] = {
 
 
 
-{ "dash_S_clear_diagnostic", "",
-  "printf 'int main(void){return 0;}\\n' > {W}/t.c && "
-  "echo \"$({MCC} -B{B} -I{I} -S {W}/t.c 2>&1 | grep -c 'assembly output) is not supported') diag\"; "
-  "{MCC} -B{B} -I{I} -c {W}/t.c -o /dev/null 2>&1 && echo C_OK",
-  "1 diag\nC_OK\n" },
+{ "dash_S_emits_assembly", "",
+  "printf 'int answer(void){return 42;}\\n' > {W}/t.c && "
+  "{MCC} -B{B} -I{I} -S {W}/t.c -o {W}/t.s && "
+  "grep -qE '^answer:' {W}/t.s && "
+  "grep -qE '[.]text' {W}/t.s && "
+  "grep -qE 'answer, @function' {W}/t.s && echo S_OK",
+  "S_OK\n" },
 
 
 
