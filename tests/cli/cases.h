@@ -80,7 +80,7 @@ static const cli_case_t cli_cases[] = {
   "0\n" },
 
 
-{ "debug_default_stabs", "cpu=x86_64,os=linux",
+{ "debug_default_stabs", "cpu=x86_64,os=linux,stabs",
   "{MCC} -B{B} -I{I} -g -c {D}/lib.c -o {W}/g.o && readelf -S {W}/g.o | grep -oE '\\.stab' | sort -u",
   ".stab\n" },
 
@@ -169,7 +169,7 @@ static const cli_case_t cli_cases[] = {
   "readelf -s {W}/ts.o | grep -E 'exported_fn|global_var' | awk '{print $4}' | sort -u",
   "FUNC\nOBJECT\n" },
 
-{ "assemble_dot_s_file", "cpu=x86_64,os=linux",
+{ "assemble_dot_s_file", "cpu=x86_64,os=linux,asm",
   "{MCC} -B{B} -I{I} {D}/asmadd.s {D}/asmmain.c -o {W}/ae && {W}/ae",
   "42\n" },
 

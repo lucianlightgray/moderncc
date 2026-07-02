@@ -122,6 +122,13 @@ static int req_met(const char *req, char *reason, size_t rn){
 
             if (os_eq(os, "Darwin") || os_eq(os, "WIN32")){
                 snprintf(reason, rn, "requires an ELF target (host: %s)", os); return 0; }
+        } else if (!strcmp(tok, "asm")){
+            if (strcmp(envv("MCC_TEST_ASM", "1"), "1")){
+                snprintf(reason, rn, "requires integrated assembler (MCC_CONFIG_ASM)"); return 0; }
+        } else if (!strcmp(tok, "stabs")){
+            /* nonempty MCC_TEST_DWARF = dwarf is the configured -g default */
+            if (envv("MCC_TEST_DWARF", "")[0]){
+                snprintf(reason, rn, "requires stabs as default -g format (MCC_CONFIG_DWARF set)"); return 0; }
         }
     }
     return 1;

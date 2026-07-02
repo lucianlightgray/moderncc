@@ -2835,7 +2835,7 @@ endif()
             add_test(NAME cli-suite
                 COMMAND cli_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
                         "${CMAKE_BINARY_DIR}/cli-work" "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli")
-            set(_cli_env "MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS}")
+            set(_cli_env "MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS};MCC_TEST_ASM=$<IF:$<BOOL:${MCC_CONFIG_ASM}>,1,0>;MCC_TEST_DWARF=${MCC_CONFIG_DWARF}")
             if(_cli_sh)
                 set(_cli_env "${_cli_env};MCC_TEST_SH=${_cli_sh}")
             endif()
