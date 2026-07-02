@@ -1860,7 +1860,7 @@ static const cli_case_t cli_cases[] = {
 
 
 
-{ "dash_S_emits_assembly", "",
+{ "dash_S_emits_assembly", "cpu=x86_64,os=linux",
   "printf 'int answer(void){return 42;}\\n' > {W}/t.c && "
   "{MCC} -B{B} -I{I} -S {W}/t.c -o {W}/t.s && "
   "grep -qE '^answer:' {W}/t.s && "

@@ -9,6 +9,7 @@
 #include "mccasm.c"
 #include "mccelf.c"
 #include "mccrun.c"
+#include "mccdis.c"
 #ifdef MCC_TARGET_I386
 #include "i386-gen.c"
 #include "i386-link.c"
@@ -24,6 +25,7 @@
 #elif defined(MCC_TARGET_X86_64)
 #include "x86_64-gen.c"
 #include "x86_64-link.c"
+#include "x86_64-dis.c"
 #include "i386-asm.c"
 #elif defined(MCC_TARGET_RISCV64)
 #include "riscv64-gen.c"
