@@ -227,18 +227,6 @@ endfunction()
 
 
 
-function(mcc_apply_exe_link_flags tgt)
-    if(MCC_CC_NAME STREQUAL "msvc")
-        return()
-    endif()
-    if(MCC_BUILD_STATIC_EXE)
-        target_link_options(${tgt} PRIVATE -static)
-    endif()
-    if(MCC_BUILD_STRIP)
-        target_link_options(${tgt} PRIVATE -s)
-    endif()
-endfunction()
-
 function(mcc_validate_config)
     get_property(_nodes GLOBAL PROPERTY MCC_NODES)
     foreach(_n IN LISTS _nodes)
@@ -331,11 +319,13 @@ function(mcc_validate_config)
             "mcc config: MCC_DISABLE_RPATH has no effect with a static libmcc "
             "(MCC_BUILD_STATIC_LIB=ON); rpath is only baked for a shared libmcc.")
     endif()
-    if(MCC_BUILD_STATIC_EXE AND NOT MCC_BUILD_STATIC_LIB)
+    if(MCC_BUILD_STATIC_EXE AND NOT MCC_ONE_SOURCE AND NOT MCC_BUILD_STATIC_LIB)
         message(WARNING
-            "mcc config: MCC_BUILD_STATIC_EXE=ON links the mcc executable with "
-            "-static, but MCC_BUILD_STATIC_LIB=OFF builds a shared libmcc — the "
-            "static link cannot resolve libmcc.so. Enable MCC_BUILD_STATIC_LIB too.")
+            "mcc config: MCC_BUILD_STATIC_EXE=ON with MCC_ONE_SOURCE=OFF links "
+            "mcc-static (-static) against the libmcc archive, but "
+            "MCC_BUILD_STATIC_LIB=OFF builds a shared libmcc — the static link "
+            "cannot resolve libmcc.so. Enable MCC_BUILD_STATIC_LIB, or keep "
+            "MCC_ONE_SOURCE=ON so mcc-static is self-contained.")
     endif()
     if(NOT MCC_CONFIG_ASM AND NOT MCC_LIBMCC1_USEGCC)
         mcc_autocorrect(MCC_LIBMCC1_USEGCC ON
@@ -955,13 +945,13 @@ if(DEFINED MCC_BUILD_STATIC AND NOT DEFINED MCC_BUILD_STATIC_LIB)
         "Forwarding MCC_BUILD_STATIC='${MCC_BUILD_STATIC}' to MCC_BUILD_STATIC_LIB.")
     mcc_profile_seed(MCC_BUILD_STATIC_LIB "${MCC_BUILD_STATIC}")
 endif()
-mcc_config_node(MCC_BUILD_STATIC_LIB TYPE BOOL DEFAULT ON  GROUP "Build targets"
+mcc_config_node(MCC_BUILD_STATIC_LIB TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Build libmcc.a (ON) instead of shared libmcc (OFF)")
-mcc_config_node(MCC_BUILD_STATIC_EXE TYPE BOOL DEFAULT ON  GROUP "Build targets"
+mcc_config_node(MCC_BUILD_STATIC_EXE TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Link the mcc executable(s) fully static (-static); -run resolves libc via the built-in table (common symbols only)")
 mcc_config_node(MCC_BUILD_DYNAMIC_LIB TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Also build a shared libmcc (libmcc.so) alongside the static libmcc.a")
-mcc_config_node(MCC_BUILD_DYNAMIC_EXE TYPE BOOL DEFAULT OFF GROUP "Build targets"
+mcc_config_node(MCC_BUILD_DYNAMIC_EXE TYPE BOOL DEFAULT ON  GROUP "Build targets"
     HELP "Also build a self-contained (ONE_SOURCE) mcc-dynamic, linked only to libc")
 mcc_config_node(MCC_BUILD_MUSL       TYPE BOOL DEFAULT ON  GROUP "Build targets"
     HELP "Also build musl-targeting compiler variants (mcc*-musl) beside the glibc ones")
@@ -974,7 +964,7 @@ mcc_config_node(MCC_BUILD_STRIP      TYPE BOOL DEFAULT OFF GROUP "Build targets"
 mcc_config_node(MCC_DISABLE_RPATH TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Do not bake -rpath into binaries linking libmcc.so"
     VISIBLE_WHEN "NOT MCC_BUILD_STATIC_LIB")
-mcc_config_node(MCC_ONE_SOURCE    TYPE BOOL DEFAULT OFF GROUP "Build targets"
+mcc_config_node(MCC_ONE_SOURCE    TYPE BOOL DEFAULT ON  GROUP "Build targets"
     HELP "Build libmcc from a single TU (Makefile: ONE_SOURCE)")
 mcc_config_node(MCC_BUILD_TESTS   TYPE BOOL DEFAULT ON  GROUP "Build targets"
     HELP "Build/enable the test suite (tests/Makefile)")
@@ -1747,7 +1737,28 @@ endfunction()
 
 
 
-function(mcc_add_libmcc tgt kind outname)
+# Library output-name convention, mirroring the executables:
+#   libmcc[-static|-dynamic][-musl]
+# The shape suffix is omitted for a lone shared lib (only DYNAMIC enabled), so the
+# default build keeps a plain `libmcc` — the same default convention as bare `mcc`.
+function(mcc_libmcc_output kind is_musl outvar)
+    set(_n "mcc")
+    if(kind STREQUAL "STATIC")
+        set(_n "${_n}-static")
+    elseif(MCC_BUILD_STATIC_LIB)   # SHARED and a static lib also exists -> disambiguate
+        set(_n "${_n}-dynamic")
+    endif()
+    if(is_musl)
+        set(_n "${_n}-musl")
+    endif()
+    set(${outvar} "${_n}" PARENT_SCOPE)
+endfunction()
+
+# Single recipe for every libmcc library (host + musl, static + shared): naming
+# convention, ONE_SOURCE rebuild deps, includes, libc/libm/pthread/dl + extra
+# libs, and diagnostics. `is_musl` is a bool; ARGN = extra compile definitions.
+# Reads the shared `_one_src_deps` / `_mcc_extra_libs` computed once below.
+function(mcc_add_libmcc tgt kind is_musl)
     add_library(${tgt} ${kind} ${LIBMCC_SRC})
     if(kind STREQUAL "SHARED")
         target_compile_definitions(${tgt} PRIVATE LIBMCC_AS_DLL)
@@ -1759,7 +1770,8 @@ function(mcc_add_libmcc tgt kind outname)
     elseif(MCC_CC_NAME STREQUAL "clang" AND MCC_CPU STREQUAL "x86_64")
         set_target_properties(${tgt} PROPERTIES POSITION_INDEPENDENT_CODE ON)
     endif()
-    set_target_properties(${tgt} PROPERTIES OUTPUT_NAME "${outname}" PREFIX "lib")
+    mcc_libmcc_output("${kind}" "${is_musl}" _oname)
+    set_target_properties(${tgt} PROPERTIES OUTPUT_NAME "${_oname}" PREFIX "lib")
     if(NOT MCC_ONE_SOURCE)
         target_compile_definitions(${tgt} PRIVATE ONE_SOURCE=0)
     else()
@@ -1778,9 +1790,8 @@ function(mcc_add_libmcc tgt kind outname)
             target_link_libraries(${tgt} PUBLIC Threads::Threads ${CMAKE_DL_LIBS})
         endif()
     endif()
-    if(NOT "${MCC_EXTRA_LIBS}" STREQUAL "")
-        separate_arguments(_xl NATIVE_COMMAND "${MCC_EXTRA_LIBS}")
-        target_link_libraries(${tgt} PUBLIC ${_xl})
+    if(_mcc_extra_libs)
+        target_link_libraries(${tgt} PUBLIC ${_mcc_extra_libs})
     endif()
     if(MCC_DIAGNOSTICS)
         target_compile_options(${tgt} PRIVATE ${MCC_DIAG_FLAGS})
@@ -1799,140 +1810,130 @@ else()
     set(LIBMCC_SRC ${LIBMCC_ALL_SRC})
 endif()
 
-if(MCC_BUILD_STATIC_LIB)
-    add_library(libmcc STATIC ${LIBMCC_SRC})
-    if(MCC_CC_NAME STREQUAL "clang" AND MCC_CPU STREQUAL "x86_64")
-        set_target_properties(libmcc PROPERTIES POSITION_INDEPENDENT_CODE ON)
-    endif()
-else()
-    add_library(libmcc SHARED ${LIBMCC_SRC})
-    target_compile_definitions(libmcc PRIVATE LIBMCC_AS_DLL)
-    set_target_properties(libmcc PROPERTIES POSITION_INDEPENDENT_CODE ON)
-    if(APPLE)
-        set_target_properties(libmcc PROPERTIES
-            MACOSX_RPATH ON VERSION "${MCC_VERSION_NUMERIC}")
-    endif()
-endif()
-set_target_properties(libmcc PROPERTIES OUTPUT_NAME mcc PREFIX "lib")
-if(NOT MCC_ONE_SOURCE)
-    target_compile_definitions(libmcc PRIVATE ONE_SOURCE=0)
-else()
-    set(_one_src_deps "")
+# Computed once, shared by every libmcc/exe target below:
+#   _one_src_deps  - amalgamation rebuild deps (libmcc.c #includes the rest)
+#   _mcc_extra_libs - parsed MCC_EXTRA_LIBS
+set(_one_src_deps "")
+if(MCC_ONE_SOURCE)
     foreach(_s IN LISTS LIBMCC_ALL_SRC)
-        if(NOT _s STREQUAL "libmcc.c")
-            list(APPEND _one_src_deps "${CMAKE_CURRENT_SOURCE_DIR}/${_s}")
+        if(NOT _s STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}/src/libmcc.c")
+            list(APPEND _one_src_deps "${_s}")
         endif()
     endforeach()
-    set_source_files_properties(src/libmcc.c PROPERTIES OBJECT_DEPENDS "${_one_src_deps}")
 endif()
-if(TARGET mcc_mccdefs)
-    add_dependencies(libmcc mcc_mccdefs)
-endif()
-target_include_directories(libmcc PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
-
-if(NOT MCC_TARGETOS STREQUAL "WIN32")
-    target_link_libraries(libmcc PUBLIC m)
-    find_package(Threads)
-    if(Threads_FOUND)
-        target_link_libraries(libmcc PUBLIC Threads::Threads ${CMAKE_DL_LIBS})
-    endif()
-endif()
+set(_mcc_extra_libs "")
 if(NOT "${MCC_EXTRA_LIBS}" STREQUAL "")
     separate_arguments(_mcc_extra_libs NATIVE_COMMAND "${MCC_EXTRA_LIBS}")
-    target_link_libraries(libmcc PUBLIC ${_mcc_extra_libs})
-endif()
-if(MCC_DIAGNOSTICS)
-    target_compile_options(libmcc PRIVATE ${MCC_DIAG_FLAGS})
 endif()
 
+# Primary libmcc: static (libmcc-static.a) or shared (libmcc.so when it is the
+# only lib, else libmcc-dynamic.so).  _mccdefs are applied via the foreach below.
+if(MCC_BUILD_STATIC_LIB)
+    mcc_add_libmcc(libmcc STATIC FALSE)
+else()
+    mcc_add_libmcc(libmcc SHARED FALSE)
+endif()
 
-
-
-
-
-
+# Optional companion shared libmcc-dynamic.so alongside the static one.
 if(MCC_BUILD_STATIC_LIB)
     set(_libmcc_shared "")
 else()
     set(_libmcc_shared libmcc)
 endif()
 if(MCC_BUILD_STATIC_LIB AND MCC_BUILD_DYNAMIC_LIB)
-    add_library(libmcc_shared SHARED ${LIBMCC_SRC})
-    target_compile_definitions(libmcc_shared PRIVATE LIBMCC_AS_DLL)
-    set_target_properties(libmcc_shared PROPERTIES
-        POSITION_INDEPENDENT_CODE ON OUTPUT_NAME mcc PREFIX "lib")
-    if(APPLE)
-        set_target_properties(libmcc_shared PROPERTIES
-            MACOSX_RPATH ON VERSION "${MCC_VERSION_NUMERIC}")
-    endif()
-    if(NOT MCC_ONE_SOURCE)
-        target_compile_definitions(libmcc_shared PRIVATE ONE_SOURCE=0)
-    else()
-        set_source_files_properties(src/libmcc.c PROPERTIES OBJECT_DEPENDS "${_one_src_deps}")
-    endif()
-    if(TARGET mcc_mccdefs)
-        add_dependencies(libmcc_shared mcc_mccdefs)
-    endif()
-    target_include_directories(libmcc_shared PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
-    if(NOT MCC_TARGETOS STREQUAL "WIN32")
-        target_link_libraries(libmcc_shared PUBLIC m)
-        find_package(Threads)
-        if(Threads_FOUND)
-            target_link_libraries(libmcc_shared PUBLIC Threads::Threads ${CMAKE_DL_LIBS})
-        endif()
-    endif()
-    if(NOT "${MCC_EXTRA_LIBS}" STREQUAL "")
-        target_link_libraries(libmcc_shared PUBLIC ${_mcc_extra_libs})
-    endif()
-    if(MCC_DIAGNOSTICS)
-        target_compile_options(libmcc_shared PRIVATE ${MCC_DIAG_FLAGS})
-    endif()
+    mcc_add_libmcc(libmcc_shared SHARED FALSE)
     set(_libmcc_shared libmcc_shared)
 endif()
 
+# ---- mcc: the canonical binary -- self-contained ONE_SOURCE, linked only to libc ----
+# src/mcc.c defaults to ONE_SOURCE=1, which #includes libmcc.c: the whole compiler
+# lives in this one TU, so mcc does NOT link the libmcc library (dynamic, one source).
 add_executable(mcc src/mcc.c)
 set_source_files_properties(src/mcc.c PROPERTIES OBJECT_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mcctools.c")
-target_compile_definitions(mcc PRIVATE ONE_SOURCE=0)
-target_link_libraries(mcc PRIVATE libmcc)
+target_include_directories(mcc PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+if(NOT MCC_TARGETOS STREQUAL "WIN32")
+    target_link_libraries(mcc PRIVATE m)
+    find_package(Threads)
+    if(Threads_FOUND)
+        target_link_libraries(mcc PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
+    endif()
+endif()
+if(NOT "${MCC_EXTRA_LIBS}" STREQUAL "")
+    target_link_libraries(mcc PRIVATE ${_mcc_extra_libs})
+endif()
 if(MCC_GITHASH)
     target_compile_definitions(mcc PRIVATE "MCC_GITHASH=\"${MCC_GITHASH}\"")
 endif()
-if(NOT MCC_BUILD_STATIC_LIB AND NOT MCC_DISABLE_RPATH)
-    if(APPLE)
-        set_target_properties(mcc PROPERTIES
-            INSTALL_RPATH "@executable_path/../${CMAKE_INSTALL_LIBDIR};${CMAKE_INSTALL_FULL_LIBDIR}")
-    else()
-        set_target_properties(mcc PROPERTIES INSTALL_RPATH "${CMAKE_INSTALL_FULL_LIBDIR}")
-    endif()
+if(TARGET mcc_mccdefs)
+    add_dependencies(mcc mcc_mccdefs)
 endif()
-mcc_apply_exe_link_flags(mcc)
+if(MCC_BUILD_STRIP AND NOT MCC_CC_NAME STREQUAL "msvc")
+    target_link_options(mcc PRIVATE -s)
+endif()
 if(MCC_DIAGNOSTICS)
     target_compile_options(mcc PRIVATE ${MCC_DIAG_FLAGS})
 endif()
 
+# ---- mcc-static: fully static (-static); MCC_ONE_SOURCE decides the compile+link path ----
+#   MCC_ONE_SOURCE=ON  -> self-contained single TU (like mcc), statically linked.
+#   MCC_ONE_SOURCE=OFF -> driver TU (ONE_SOURCE=0) linked against the libmcc archive.
+if(MCC_BUILD_STATIC_EXE)
+    add_executable(mcc_static src/mcc.c)
+    set_source_files_properties(src/mcc.c PROPERTIES OBJECT_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/mcctools.c")
+    set_target_properties(mcc_static PROPERTIES OUTPUT_NAME mcc-static)
+    target_include_directories(mcc_static PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    if(NOT MCC_ONE_SOURCE)
+        target_compile_definitions(mcc_static PRIVATE ONE_SOURCE=0)
+        target_link_libraries(mcc_static PRIVATE libmcc)
+    endif()
+    if(NOT MCC_TARGETOS STREQUAL "WIN32")
+        target_link_libraries(mcc_static PRIVATE m)
+        find_package(Threads)
+        if(Threads_FOUND)
+            target_link_libraries(mcc_static PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
+        endif()
+    endif()
+    if(NOT "${MCC_EXTRA_LIBS}" STREQUAL "")
+        target_link_libraries(mcc_static PRIVATE ${_mcc_extra_libs})
+    endif()
+    if(NOT MCC_CC_NAME STREQUAL "msvc")
+        target_link_options(mcc_static PRIVATE -static)
+        if(MCC_BUILD_STRIP)
+            target_link_options(mcc_static PRIVATE -s)
+        endif()
+    endif()
+    if(MCC_GITHASH)
+        target_compile_definitions(mcc_static PRIVATE "MCC_GITHASH=\"${MCC_GITHASH}\"")
+    endif()
+    if(TARGET mcc_mccdefs)
+        add_dependencies(mcc_static mcc_mccdefs)
+    endif()
+    if(MCC_DIAGNOSTICS)
+        target_compile_options(mcc_static PRIVATE ${MCC_DIAG_FLAGS})
+    endif()
+endif()
 
 
 
 
+
+# ---- mcc-dynamic: NOT one-source; driver TU linked against the (shared) libmcc ----
 if(MCC_BUILD_DYNAMIC_EXE)
     add_executable(mcc_dynamic src/mcc.c)
     set_source_files_properties(src/mcc.c PROPERTIES OBJECT_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/src/mcctools.c")
     set_target_properties(mcc_dynamic PROPERTIES OUTPUT_NAME mcc-dynamic)
-    if(NOT MCC_TARGETOS STREQUAL "WIN32")
-        target_link_libraries(mcc_dynamic PRIVATE m)
-        find_package(Threads)
-        if(Threads_FOUND)
-            target_link_libraries(mcc_dynamic PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
+    target_compile_definitions(mcc_dynamic PRIVATE ONE_SOURCE=0)
+    target_link_libraries(mcc_dynamic PRIVATE libmcc)
+    if(NOT MCC_BUILD_STATIC_LIB AND NOT MCC_DISABLE_RPATH)
+        if(APPLE)
+            set_target_properties(mcc_dynamic PROPERTIES
+                INSTALL_RPATH "@executable_path/../${CMAKE_INSTALL_LIBDIR};${CMAKE_INSTALL_FULL_LIBDIR}")
+        else()
+            set_target_properties(mcc_dynamic PROPERTIES INSTALL_RPATH "${CMAKE_INSTALL_FULL_LIBDIR}")
         endif()
-    endif()
-    if(NOT "${MCC_EXTRA_LIBS}" STREQUAL "")
-        target_link_libraries(mcc_dynamic PRIVATE ${_mcc_extra_libs})
     endif()
     if(MCC_GITHASH)
         target_compile_definitions(mcc_dynamic PRIVATE "MCC_GITHASH=\"${MCC_GITHASH}\"")
@@ -1975,9 +1976,9 @@ if(MCC_BUILD_MUSL AND NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT APPLE)
     
     
     if(MCC_BUILD_STATIC_LIB)
-        mcc_add_libmcc(libmcc_musl STATIC mcc-musl ${_mccdefs_musl})
+        mcc_add_libmcc(libmcc_musl STATIC TRUE ${_mccdefs_musl})
     else()
-        mcc_add_libmcc(libmcc_musl SHARED mcc-musl ${_mccdefs_musl})
+        mcc_add_libmcc(libmcc_musl SHARED TRUE ${_mccdefs_musl})
     endif()
     set(_libmcc_musl libmcc_musl)
     if(MCC_BUILD_STATIC_LIB)
@@ -1986,40 +1987,77 @@ if(MCC_BUILD_MUSL AND NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT APPLE)
         set(_libmcc_musl_shared libmcc_musl)
     endif()
     if(MCC_BUILD_STATIC_LIB AND MCC_BUILD_DYNAMIC_LIB)
-        mcc_add_libmcc(libmcc_musl_shared SHARED mcc-musl ${_mccdefs_musl})
+        mcc_add_libmcc(libmcc_musl_shared SHARED TRUE ${_mccdefs_musl})
         set(_libmcc_musl_shared libmcc_musl_shared)
     endif()
 
     
+    # mcc-musl: mirror of `mcc` -- self-contained ONE_SOURCE, dynamic, musl-targeting
     add_executable(mcc_musl src/mcc.c)
     set_source_files_properties(src/mcc.c PROPERTIES OBJECT_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/src/mcctools.c")
-    target_compile_definitions(mcc_musl PRIVATE ONE_SOURCE=0 ${_mccdefs_musl})
-    target_link_libraries(mcc_musl PRIVATE ${_libmcc_musl})
+    target_compile_definitions(mcc_musl PRIVATE ${_mccdefs_musl})
+    target_include_directories(mcc_musl PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
     set_target_properties(mcc_musl PROPERTIES OUTPUT_NAME mcc-musl)
+    target_link_libraries(mcc_musl PRIVATE m)
+    find_package(Threads)
+    if(Threads_FOUND)
+        target_link_libraries(mcc_musl PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
+    endif()
     if(MCC_GITHASH)
         target_compile_definitions(mcc_musl PRIVATE "MCC_GITHASH=\"${MCC_GITHASH}\"")
     endif()
     if(TARGET mcc_mccdefs)
         add_dependencies(mcc_musl mcc_mccdefs)
     endif()
-    if(NOT MCC_BUILD_STATIC_LIB AND NOT MCC_DISABLE_RPATH)
-        set_target_properties(mcc_musl PROPERTIES INSTALL_RPATH "${CMAKE_INSTALL_FULL_LIBDIR}")
+    if(MCC_BUILD_STRIP AND NOT MCC_CC_NAME STREQUAL "msvc")
+        target_link_options(mcc_musl PRIVATE -s)
     endif()
-    mcc_apply_exe_link_flags(mcc_musl)
     install(TARGETS mcc_musl RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 
+    # mcc-static-musl: mirror of `mcc-static` -- static; MCC_ONE_SOURCE decides the path
+    if(MCC_BUILD_STATIC_EXE)
+        add_executable(mcc_static_musl src/mcc.c)
+        set_source_files_properties(src/mcc.c PROPERTIES OBJECT_DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/mcctools.c")
+        target_compile_definitions(mcc_static_musl PRIVATE ${_mccdefs_musl})
+        target_include_directories(mcc_static_musl PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+        set_target_properties(mcc_static_musl PROPERTIES OUTPUT_NAME mcc-static-musl)
+        if(NOT MCC_ONE_SOURCE)
+            target_compile_definitions(mcc_static_musl PRIVATE ONE_SOURCE=0)
+            target_link_libraries(mcc_static_musl PRIVATE ${_libmcc_musl})
+        endif()
+        target_link_libraries(mcc_static_musl PRIVATE m)
+        find_package(Threads)
+        if(Threads_FOUND)
+            target_link_libraries(mcc_static_musl PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
+        endif()
+        if(NOT MCC_CC_NAME STREQUAL "msvc")
+            target_link_options(mcc_static_musl PRIVATE -static)
+            if(MCC_BUILD_STRIP)
+                target_link_options(mcc_static_musl PRIVATE -s)
+            endif()
+        endif()
+        if(MCC_GITHASH)
+            target_compile_definitions(mcc_static_musl PRIVATE "MCC_GITHASH=\"${MCC_GITHASH}\"")
+        endif()
+        if(TARGET mcc_mccdefs)
+            add_dependencies(mcc_static_musl mcc_mccdefs)
+        endif()
+        install(TARGETS mcc_static_musl RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+    endif()
+
     
+    # mcc-dynamic-musl: mirror of `mcc-dynamic` -- NOT one-source; links the (shared) libmcc-musl
     if(MCC_BUILD_DYNAMIC_EXE)
         add_executable(mcc_dynamic_musl src/mcc.c)
         set_source_files_properties(src/mcc.c PROPERTIES OBJECT_DEPENDS
             "${CMAKE_CURRENT_SOURCE_DIR}/src/mcctools.c")
-        target_compile_definitions(mcc_dynamic_musl PRIVATE ${_mccdefs_musl})
+        target_compile_definitions(mcc_dynamic_musl PRIVATE ONE_SOURCE=0 ${_mccdefs_musl})
         set_target_properties(mcc_dynamic_musl PROPERTIES OUTPUT_NAME mcc-dynamic-musl)
-        target_link_libraries(mcc_dynamic_musl PRIVATE m)
-        find_package(Threads)
-        if(Threads_FOUND)
-            target_link_libraries(mcc_dynamic_musl PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
+        target_link_libraries(mcc_dynamic_musl PRIVATE ${_libmcc_musl})
+        if(NOT MCC_BUILD_STATIC_LIB AND NOT MCC_DISABLE_RPATH)
+            set_target_properties(mcc_dynamic_musl PROPERTIES INSTALL_RPATH "${CMAKE_INSTALL_FULL_LIBDIR}")
         endif()
         if(MCC_GITHASH)
             target_compile_definitions(mcc_dynamic_musl PRIVATE "MCC_GITHASH=\"${MCC_GITHASH}\"")
@@ -2078,7 +2116,7 @@ if(MCC_BUILD_SANITIZE)
     endif()
 endif()
 
-foreach(_nt mcc mcc_dynamic libmcc libmcc_shared mcc_p mcc_s)
+foreach(_nt mcc mcc_static mcc_dynamic libmcc libmcc_shared mcc_p mcc_s)
     if(TARGET ${_nt})
         target_compile_definitions(${_nt} PRIVATE ${_mccdefs})
     endif()
@@ -2086,7 +2124,10 @@ endforeach()
 
 if(MCC_BUILD_STATIC_EXE AND NOT MSVC AND NOT APPLE
    AND NOT MCC_TARGETOS STREQUAL "WIN32")
-    foreach(_st mcc libmcc mcc_musl libmcc_musl)
+    # CONFIG_MCC_STATIC switches `-run` to the built-in symbol table (no dlsym).
+    # It must apply ONLY to the genuinely-static executables; the dynamic
+    # mcc / mcc-dynamic keep the dlsym path so `-run` can resolve arbitrary libc.
+    foreach(_st mcc_static mcc_static_musl)
         if(TARGET ${_st})
             target_compile_definitions(${_st} PRIVATE CONFIG_MCC_STATIC)
         endif()
@@ -2310,6 +2351,56 @@ if(MCC_BUILD_COVERAGE)
     add_custom_target(mcc_cov ALL DEPENDS "${CMAKE_BINARY_DIR}/mcc_c")
 endif()
 
+# Build a self-contained cross compiler `base_out` (dynamic) and, when
+# MCC_BUILD_STATIC_EXE is on, a `static_out` sibling (-static). `defs` is the
+# NAME of a list variable holding the target's compile definitions. This keeps
+# the naming convention uniform: mcc-<arch>[-static][-musl] (musl stays last).
+function(mcc_add_cross_mcc base_tgt base_out static_tgt static_out defs)
+    set(_variants "${base_tgt}|${base_out}|dynamic")
+    if(MCC_BUILD_STATIC_EXE AND NOT MCC_CC_NAME STREQUAL "msvc")
+        list(APPEND _variants "${static_tgt}|${static_out}|static")
+    endif()
+    foreach(_v IN LISTS _variants)
+        string(REPLACE "|" ";" _p "${_v}")
+        list(GET _p 0 _vt)
+        list(GET _p 1 _vo)
+        list(GET _p 2 _vk)
+        add_executable(${_vt} src/mcc.c)
+        set_source_files_properties(src/mcc.c PROPERTIES OBJECT_DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/mcctools.c")
+        set_target_properties(${_vt} PROPERTIES OUTPUT_NAME "${_vo}")
+        target_include_directories(${_vt} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+        target_compile_definitions(${_vt} PRIVATE ${${defs}})
+        # cross compilers run on this host, so link the host libc/libm/pthread/dl
+        # (the static built-in symbol table references libm etc.)
+        if(NOT MCC_TARGETOS STREQUAL "WIN32")
+            target_link_libraries(${_vt} PRIVATE m)
+            find_package(Threads)
+            if(Threads_FOUND)
+                target_link_libraries(${_vt} PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
+            endif()
+        endif()
+        if(_vk STREQUAL "static")
+            # static -> built-in `-run` symbol table (no dlsym), like host mcc-static
+            target_compile_definitions(${_vt} PRIVATE CONFIG_MCC_STATIC)
+            target_link_options(${_vt} PRIVATE -static)
+        endif()
+        if(MCC_DIAGNOSTICS)
+            target_compile_options(${_vt} PRIVATE ${MCC_DIAG_FLAGS})
+        endif()
+        if(MCC_GITHASH)
+            target_compile_definitions(${_vt} PRIVATE "MCC_GITHASH=\"${MCC_GITHASH}\"")
+        endif()
+        if(TARGET mcc_mccdefs)
+            add_dependencies(${_vt} mcc_mccdefs)
+        endif()
+        if(MCC_BUILD_STRIP AND NOT MCC_CC_NAME STREQUAL "msvc")
+            target_link_options(${_vt} PRIVATE -s)
+        endif()
+        install(TARGETS ${_vt} RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+    endforeach()
+endfunction()
+
 if(MCC_ENABLE_CROSS)
     if("${MCC_INSTALL_MCCDIR}" STREQUAL "")
         set(_mccdir_install "${CMAKE_INSTALL_FULL_LIBDIR}/mcc")
@@ -2384,29 +2475,14 @@ if(MCC_ENABLE_CROSS)
                 "CONFIG_MCC_SYSINCLUDEPATHS=\"{B}/include:{R}/include\"")
         endif()
 
-        add_executable(${_t}-mcc src/mcc.c)
-        
-        
-        set_target_properties(${_t}-mcc PROPERTIES OUTPUT_NAME "mcc-${_t}")
-        target_compile_definitions(${_t}-mcc PRIVATE ${_cdefs} ${_cpath_defs}
+        set(_cross_defs ${_cdefs} ${_cpath_defs}
             "CONFIG_MCC_CROSSPREFIX=\"${_t}-\"")
-        if(MCC_DIAGNOSTICS)
-            
-            
-            target_compile_options(${_t}-mcc PRIVATE ${MCC_DIAG_FLAGS})
-        endif()
         if(_cos STREQUAL "WIN32")
-            target_compile_definitions(${_t}-mcc PRIVATE
-                "CONFIG_MCCDIR=\"${_mccdir_install}/win32\"")
+            list(APPEND _cross_defs "CONFIG_MCCDIR=\"${_mccdir_install}/win32\"")
         endif()
-        if(MCC_GITHASH)
-            target_compile_definitions(${_t}-mcc PRIVATE "MCC_GITHASH=\"${MCC_GITHASH}\"")
-        endif()
-        if(TARGET mcc_mccdefs)
-            add_dependencies(${_t}-mcc mcc_mccdefs)
-        endif()
-        mcc_apply_exe_link_flags(${_t}-mcc)
-        install(TARGETS ${_t}-mcc RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+        # mcc-<arch> (dynamic, self-contained) + mcc-<arch>-static when enabled
+        mcc_add_cross_mcc(${_t}-mcc "mcc-${_t}"
+                          ${_t}-mcc-static "mcc-${_t}-static" _cross_defs)
 
         mcc_build_libmcc1(${_t}-libmcc1 ${_t}-mcc "${_ccpu}" "${_cos}" OFF
             "${CMAKE_BINARY_DIR}/${_t}-libmcc1.a"
@@ -2427,21 +2503,11 @@ if(MCC_ENABLE_CROSS)
             if(NOT _cmi STREQUAL "")
                 list(APPEND _cpath_defs_musl "CONFIG_MCC_ELFINTERP=\"${_cmi}\"")
             endif()
-            add_executable(${_t}-mcc-musl src/mcc.c)
-            set_target_properties(${_t}-mcc-musl PROPERTIES OUTPUT_NAME "mcc-${_t}-musl")
-            target_compile_definitions(${_t}-mcc-musl PRIVATE ${_cdefs} ${_cpath_defs_musl}
+            set(_cross_defs_musl ${_cdefs} ${_cpath_defs_musl}
                 "CONFIG_MCC_MUSL=1" "CONFIG_MCC_CROSSPREFIX=\"${_t}-\"")
-            if(MCC_DIAGNOSTICS)
-                target_compile_options(${_t}-mcc-musl PRIVATE ${MCC_DIAG_FLAGS})
-            endif()
-            if(MCC_GITHASH)
-                target_compile_definitions(${_t}-mcc-musl PRIVATE "MCC_GITHASH=\"${MCC_GITHASH}\"")
-            endif()
-            if(TARGET mcc_mccdefs)
-                add_dependencies(${_t}-mcc-musl mcc_mccdefs)
-            endif()
-            mcc_apply_exe_link_flags(${_t}-mcc-musl)
-            install(TARGETS ${_t}-mcc-musl RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+            # mcc-<arch>-musl (dynamic) + mcc-<arch>-static-musl when enabled (musl stays last)
+            mcc_add_cross_mcc(${_t}-mcc-musl "mcc-${_t}-musl"
+                              ${_t}-mcc-static-musl "mcc-${_t}-static-musl" _cross_defs_musl)
         endif()
     endforeach()
 endif()
@@ -2464,6 +2530,9 @@ else()
 endif()
 
 install(TARGETS mcc RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+if(TARGET mcc_static)
+    install(TARGETS mcc_static RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+endif()
 if(TARGET mcc_dynamic)
     install(TARGETS mcc_dynamic RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 endif()

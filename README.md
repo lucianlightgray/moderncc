@@ -100,25 +100,38 @@ cmake --build cmake-build-release -j
 | `MCC_CONFIG_BCHECK`    |   ON    | Bounds checker                             |
 | `MCC_CONFIG_BACKTRACE` |   ON    | Runtime backtraces                         |
 | `MCC_ENABLE_CROSS`     |   OFF   | Also build `mcc-<arch>` cross compilers    |
-| `MCC_BUILD_STATIC_LIB` |   ON    | Build static libmcc library                |
-| `MCC_BUILD_DYNAMIC_LIB`|   OFF   | Build shared libmcc library                |
-| `MCC_BUILD_STATIC_EXE` |   ON¹   | Link executable(s) fully static (`-static`); enables `CONFIG_MCC_STATIC` so `-run` resolves libc via a built-in symbol table |
-| `MCC_BUILD_DYNAMIC_EXE`|   OFF   | Also build self-contained `mcc-dynamic`, linked only to libc |
+| `MCC_BUILD_STATIC_LIB` |   OFF   | Build static `libmcc-static.a` instead of shared `libmcc.so` |
+| `MCC_BUILD_DYNAMIC_LIB`|   OFF   | Also build shared `libmcc-dynamic.so` alongside `libmcc-static.a` |
+| `MCC_ONE_SOURCE`       |   ON    | Amalgamate the compiler into one TU (`mcc` is self-contained) |
+| `MCC_BUILD_STATIC_EXE` |   OFF¹  | Also build `mcc-static` (fully static `-static`); enables `CONFIG_MCC_STATIC` so *its* `-run` resolves libc via a built-in symbol table |
+| `MCC_BUILD_DYNAMIC_EXE`|   ON    | Also build `mcc-dynamic` (not one-source; links the shared `libmcc.so`) |
 | `MCC_BUILD_MUSL`       |   ON²   | Also build musl-targeting variants (`*-musl`, Linux only) |
 | `MCC_BUILD_STRIP`      |   OFF   | Strip symbols during link                  |
 | `MCC_QEMU_TESTS`       |   OFF   | qemu-user cross-conformance matrix (below) |
 
-¹ The `debug`/`asan`/`diagnostics` presets keep it OFF (dynamic) so the full
-test suite can `-run` the whole libc surface; auto-forced OFF on macOS (no
-fully-static libc). ² Linux only (a no-op on macOS/Windows); the
+¹ Auto-forced OFF on macOS (no fully-static libc). The default `mcc` is a
+dynamic, self-contained binary whose `-run` resolves the full libc surface via
+`dlsym`; the opt-in `mcc-static` instead uses a built-in symbol table (common
+symbols only). ² Linux only (a no-op on macOS/Windows); the
 `debug`/`asan`/`diagnostics` presets keep it OFF for faster dev builds.
 
-Compiler binaries follow `mcc-<arch>[-dynamic][-musl]`: `<arch>` for cross
-targets, `-musl` for the musl-targeting variant. `mcc` is a fully static,
-self-contained binary; `mcc-dynamic` is a self-contained (ONE_SOURCE) build
-dynamically linked only to libc (no `libmcc.so` dependency). The default host
-build is plain `mcc`. Examples: `mcc`, `mcc-dynamic`, `mcc-musl`, `mcc-arm64`,
-`mcc-arm64-musl`.
+All compiler binaries follow one suffix convention:
+`mcc[-<arch>][-static|-dynamic][-musl]` — arch first (cross targets only),
+then the link/one-source shape, with `-musl` always last. `mcc` — the default,
+installed binary — is a self-contained ONE_SOURCE build linked only to libc,
+with no `libmcc.so` dependency. `mcc-static` is the same, statically linked
+(`-static`). `mcc-dynamic` is a non-amalgamated driver linked against the shared
+`libmcc.so`. Cross compilers (`MCC_ENABLE_CROSS`) are self-contained host
+binaries, so they take `-static` (with `MCC_BUILD_STATIC_EXE`) but not
+`-dynamic`. Each shape has a `-musl` sibling. Examples: `mcc`, `mcc-static`,
+`mcc-dynamic`, `mcc-musl`, `mcc-arm64`, `mcc-x86_64-static`,
+`mcc-arm64-musl`, `mcc-x86_64-static-musl`.
+
+The `libmcc` libraries follow the same convention
+(`libmcc[-static|-dynamic][-musl]`), except a lone shared library keeps the bare
+`libmcc` default: the default build produces `libmcc.so`; `MCC_BUILD_STATIC_LIB`
+gives `libmcc-static.a`; building both gives `libmcc-static.a` +
+`libmcc-dynamic.so` (each with a `-musl` sibling).
 
 ## Usage
 
