@@ -281,7 +281,7 @@ static uint64_t arm64_check_offset(int invert, int sz_, uint64_t off)
     else if (off & scaled_mask)
         return invert ? off & scaled_mask : off & ~scaled_mask;
     else if (off & 0x1fful)
-        return invert ? off & 0x1fful : off & ~0x1fful;
+        return invert ? off & 0x1fful : off & ~(uint64_t)0x1ff;
     else
         return invert ? 0ul : off;
 }
@@ -1808,9 +1808,13 @@ static int arm64_gen_opic(int op, uint32_t l, int rev, uint64_t val,
         uint32_t s = l ? val >> 63 : val >> 31;
         val = s ? -val : val;
         val = l ? val : (uint32_t)val;
-        if (!(val & ~0xffful))
+        /* Masks must be 64-bit: on an LLP64 host (e.g. Windows) `unsigned long`
+           is 32-bit, so `~0xffful` would zero-extend to 0x00000000fffff000 and
+           mask away the top 32 bits of a 64-bit `val`, wrongly making a large
+           constant look like a 12-bit immediate (e.g. 0x700000000042 -> #0x42). */
+        if (!(val & ~(uint64_t)0xfff))
             o(0x11000000 | l << 31 | s << 30 | x | a << 5 | val << 10);
-        else if (!(val & ~0xfff000ul))
+        else if (!(val & ~(uint64_t)0xfff000))
             o(0x11400000 | l << 31 | s << 30 | x | a << 5 | val >> 12 << 10);
         else {
             arm64_movimm(30, val);
