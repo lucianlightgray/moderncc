@@ -281,7 +281,7 @@ static uint64_t arm64_check_offset(int invert, int sz_, uint64_t off)
     else if (off & scaled_mask)
         return invert ? off & scaled_mask : off & ~scaled_mask;
     else if (off & 0x1fful)
-        return invert ? off & 0x1fful : off & ~0x1fful;
+        return invert ? off & 0x1fful : off & ~(uint64_t)0x1ff;
     else
         return invert ? 0ul : off;
 }
@@ -495,6 +495,43 @@ static void arm64_macho_tls_addr(Sym *sym, uint64_t addend)
 }
 #endif
 
+#ifdef MCC_TARGET_PE
+static Sym *arm64_pe_tls_index_sym(void)
+{
+    CType ct;
+    ct.t = VT_INT;
+    ct.ref = NULL;
+    return external_global_sym(tok_alloc_const("_tls_index"), &ct);
+}
+#endif
+
+#ifndef MCC_TARGET_MACHO
+/* Leave this module's thread-local base in x30, ready for the caller's
+   TPREL_{HI12,LO12} relocations to add the per-variable offset. On ELF that
+   base is the thread pointer (TPIDR_EL0). On Windows/arm64 PE there is no
+   thread pointer register -- TLS is reached through the TEB (reserved in x18):
+   [x18,#0x58] is the ThreadLocalStoragePointer, and [_tls_index] selects this
+   module's block, exactly mirroring the x86_64 %gs:0x58 sequence
+   (gen_pe_tls_base). x16 is value-allocatable, so save/restore it around the
+   _tls_index load (this stays correct even when the caller's value register is
+   x16 -- its live value is preserved across the sequence). */
+static void arm64_tls_base_x30(void)
+{
+#ifdef MCC_TARGET_PE
+    o(ARM64_STR_X_PRE | 0x001F0FE0U | 16);       /* str x16, [sp, #-16]!  */
+    arm64_ldrx(0, 3, 30, 18, 0x58);              /* ldr x30, [x18, #0x58] */
+    arm64_sym(16, arm64_pe_tls_index_sym(), 0);  /* x16 = &_tls_index     */
+    arm64_ldrx(0, 2, 16, 16, 0);                 /* ldr w16, [x16]        */
+    o(ARM64_ADD_REG | ARM64_SF(1) | ARM64_RM(16) |
+      ARM64_SHIFT_LSL(3) | ARM64_RN(30) | ARM64_RD(30)); /* add x30,x30,x16,lsl #3 */
+    arm64_ldrx(0, 3, 30, 30, 0);                 /* ldr x30, [x30]        */
+    o(ARM64_LDR_X_POST | 0x000107E0U | 16);      /* ldr x16, [sp], #16    */
+#else
+    o(0xd53bd05e);                               /* mrs x30, tpidr_el0    */
+#endif
+}
+#endif
+
 ST_FUNC void load(int r, SValue *sv)
 {
     int svtt = sv->type.t;
@@ -550,7 +587,7 @@ ST_FUNC void load(int r, SValue *sv)
                 arm64_ldrx(!(svtt&VT_UNSIGNED), arm64_type_size(svtt),
                            intr(r), 30, 0);
 #else
-            o(0xd53bd05e);
+            arm64_tls_base_x30();
             greloca(cur_text_section, sv->sym, ind,
                     R_AARCH64_TLSLE_ADD_TPREL_HI12, 0);
             o(ARM64_ADD_IMM | ARM64_SF(1) | ARM64_SH(1) |
@@ -584,7 +621,7 @@ ST_FUNC void load(int r, SValue *sv)
             arm64_macho_tls_addr(sv->sym, svcul);
             o(ARM64_MOV_REG | ARM64_SF(1) | ARM64_RM(30) | ARM64_RD(intr(r)));
 #else
-            o(0xd53bd05e);
+            arm64_tls_base_x30();
             greloca(cur_text_section, sv->sym, ind,
                     R_AARCH64_TLSLE_ADD_TPREL_HI12, svcul);
             o(ARM64_ADD_IMM | ARM64_SF(1) | ARM64_SH(1) |
@@ -684,7 +721,7 @@ ST_FUNC void store(int r, SValue *sv)
             else
                 arm64_strx(arm64_type_size(svtt), intr(r), 30, 0);
 #else
-            o(0xd53bd05e);
+            arm64_tls_base_x30();
             greloca(cur_text_section, sv->sym, ind,
                     R_AARCH64_TLSLE_ADD_TPREL_HI12, 0);
             o(ARM64_ADD_IMM | ARM64_SF(1) | ARM64_SH(1) |
@@ -731,7 +768,7 @@ ST_FUNC void store(int r, SValue *sv)
             else
                 arm64_strx(arm64_type_size(svtt), intr(r), 30, 0);
 #else
-            o(0xd53bd05e);
+            arm64_tls_base_x30();
             greloca(cur_text_section, sv->sym, ind,
                     R_AARCH64_TLSLE_ADD_TPREL_HI12, 0);
             o(ARM64_ADD_IMM | ARM64_SF(1) | ARM64_SH(1) |
@@ -1771,9 +1808,13 @@ static int arm64_gen_opic(int op, uint32_t l, int rev, uint64_t val,
         uint32_t s = l ? val >> 63 : val >> 31;
         val = s ? -val : val;
         val = l ? val : (uint32_t)val;
-        if (!(val & ~0xffful))
+        /* Masks must be 64-bit: on an LLP64 host (e.g. Windows) `unsigned long`
+           is 32-bit, so `~0xffful` would zero-extend to 0x00000000fffff000 and
+           mask away the top 32 bits of a 64-bit `val`, wrongly making a large
+           constant look like a 12-bit immediate (e.g. 0x700000000042 -> #0x42). */
+        if (!(val & ~(uint64_t)0xfff))
             o(0x11000000 | l << 31 | s << 30 | x | a << 5 | val << 10);
-        else if (!(val & ~0xfff000ul))
+        else if (!(val & ~(uint64_t)0xfff000))
             o(0x11400000 | l << 31 | s << 30 | x | a << 5 | val >> 12 << 10);
         else {
             arm64_movimm(30, val);

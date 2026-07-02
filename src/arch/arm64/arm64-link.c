@@ -356,12 +356,24 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
             addr_t tls_start = 0;
             for (int i = 1; i < s1->nb_sections; i++) {
                 Section *s = s1->sections[i];
-                if (s->sh_flags & SHF_TLS && s->sh_size) {
+                /* PE layout never sets sh_size; fall back to data_offset (as the
+                   x86_64 TPOFF path does), else the TLS section is skipped and
+                   tls_start stays 0 -- making the offset the whole .tls RVA. */
+                addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
+                if (s->sh_flags & SHF_TLS && ssz) {
                     if (!tls_start || s->sh_addr < tls_start)
                         tls_start = s->sh_addr;
                 }
             }
+#ifdef MCC_TARGET_PE
+            /* x30 already holds the module TLS block base (arm64_tls_base_x30),
+               so the variable sits at block + (val - tls_start). */
+            int64_t tp_offset = val - tls_start;
+#else
+            /* ELF: x30 is the thread pointer; the block follows the 16-byte
+               (two-pointer) TCB it points at. */
             int64_t tp_offset = val - tls_start + 16;
+#endif
             int64_t imm;
             if (type == R_AARCH64_TLSLE_ADD_TPREL_HI12)
                 imm = (tp_offset >> 12) & 0xfff;
