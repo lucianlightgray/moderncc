@@ -4,4 +4,9 @@
 /cmake-clang/
 /build-*/
 
+# release packaging scratch dirs (cmake/package.cmake: install prefix + bundles)
+/stage/
+/pkg/
+/out/
+
 /.idea/

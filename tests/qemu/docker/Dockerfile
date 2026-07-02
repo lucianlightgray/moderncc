@@ -26,6 +26,7 @@ FROM debian:stable-slim
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         build-essential \
         cmake \
+        ninja-build \
         make \
         git \
         ca-certificates \

@@ -14,11 +14,21 @@ of the node table can be emitted from the build itself via
 **Executable targets & default build shape.** On the host the compiler ships in
 three executable shapes, each with a musl sibling (`mcc-*-musl`):
 
-| Target        | Exe TU                      | libc link          | Links `libmcc`?              | Built when                           |
-|---------------|-----------------------------|--------------------|------------------------------|--------------------------------------|
-| `mcc`         | one-source (self-contained) | dynamic            | no (libc only)               | **always**                           |
-| `mcc-static`  | `MCC_ONE_SOURCE` decides    | static (`-static`) | only if `MCC_ONE_SOURCE=OFF` | `MCC_BUILD_STATIC_EXE=ON`            |
-| `mcc-dynamic` | not one-source              | dynamic            | yes → `libmcc.so`            | `MCC_BUILD_DYNAMIC_EXE=ON` (default) |
+| Target        | Exe TU                      | libc link          | Links `libmcc`?              | Built when                              |
+|---------------|-----------------------------|--------------------|------------------------------|-----------------------------------------|
+| `mcc`         | one-source (self-contained) | dynamic            | no (libc only)               | **always**                              |
+| `mcc-static`  | `MCC_ONE_SOURCE` decides    | static (`-static`) | only if `MCC_ONE_SOURCE=OFF` | `MCC_BUILD_STATIC_EXE=ON`               |
+| `mcc-dynamic` | not one-source              | dynamic            | yes → primary `libmcc`       | `MCC_BUILD_DYNAMIC_EXE=ON` **and** `MCC_ONE_SOURCE=OFF` |
+
+`mcc-dynamic` is a non-amalgamated driver TU whose `mcctools.c` references
+libmcc-internal `ST_FUNC` helpers (`pstrcpy`, …). Those have external linkage
+**only** in a multi-TU `libmcc` (`MCC_ONE_SOURCE=OFF`); an amalgamated libmcc
+keeps them `static`, and a *shared* libmcc never exports them on PE (no
+`dllexport`). So `mcc-dynamic` is built only under `MCC_ONE_SOURCE=OFF` and links
+the **primary** `libmcc` (the static archive when `MCC_BUILD_STATIC_LIB=ON`,
+which resolves the helpers on every platform; the shared `libmcc.so` on ELF).
+Under the default `MCC_ONE_SOURCE=ON` it is skipped with a status message. The
+`dist-*` presets set `MCC_ONE_SOURCE=OFF` so releases ship it.
 
 With `MCC_ENABLE_CROSS=ON` the same self-contained `mcc` shape is also built for
 every foreign target below (all are host binaries; the `-dynamic` shape is
@@ -93,19 +103,80 @@ so it stays plain `libmcc.so`. Otherwise the shape is explicit:
 
 ## 2. CMakePresets.json — ready-made configurations
 
-Configure/build/test presets already defined; each is a known-good combination:
+`CMakePresets.json` is the **single source of truth** for every build in the
+repo: the CI workflows (`.github/workflows/*.yml`) and the docker runners
+(`tests/*/docker/run-*.sh`) invoke `cmake --preset <name>` /
+`cmake --build --preset <name>` / `ctest --preset <name>` rather than
+hand-passing `-D` flags. A preset name is the canonical label for a scenario and
+is reused verbatim as the CI job / matrix cell name and, where applicable, the
+docker `PRESET` env — so `linux-gcc`, `msvc`, `qemu-arm64`, `dist-linux-gcc`
+name the same thing everywhere.
+
+**Conventions.** Generator is **Ninja** everywhere except the `msvc`/`dist-msvc`
+presets, which omit a generator so CMake picks the default Visual Studio
+generator (VS can't be driven by a fixed `-G` string across runner images).
+Every preset builds into `cmake-build-<presetName>/`. Names encode
+`platform[-compiler][-axis…]`; the compiler is baked in when it is a stable
+plain name (`gcc`/`clang`), and comes from `$env{CC}` only where the path is
+host-dynamic (macOS Homebrew gcc). Hidden bases are prefixed `_`
+(`_base`, `_ninja`, `_dist`, `_test*`).
+
+**Developer presets** — interactive use (`cmake --preset debug`):
 
 | Preset | CMAKE_BUILD_TYPE | Key overrides |
 |---|---|---|
 | `debug` | Debug | musl OFF, bcheck ON, backtrace ON, strip OFF |
-| `release` | Release | musl ON, strip ON, bcheck OFF, backtrace OFF (ONE_SOURCE dynamic exe, per new defaults) |
+| `release` | Release | musl ON, strip ON, bcheck OFF, backtrace OFF (ONE_SOURCE dynamic exe) |
 | `asan` | Debug | `MCC_BUILD_SANITIZE=ON` |
 | `diagnostics` | Debug | `MCC_DIAGNOSTICS=ON` (warnings + debug + mcc_s/mcc_p/mcc_c) |
 | `cross` | Debug | `MCC_ENABLE_CROSS=ON` |
 | `matrix` | Debug | `MCC_TOOLCHAIN_PROFILE=gcc;clang` × `MCC_TARGETS=native;cross` |
 
-Build/test presets exist for `debug`, `release`, `diagnostics` (+ build-only
-`cross`, `matrix`). `asan`/`cross` have no test preset by default.
+**CI presets** — one per workflow matrix cell (`ci.yml`):
+
+| Preset | Used by (job / runner) | Shape |
+|---|---|---|
+| `linux-gcc`, `linux-clang` | `linux` (docker) | Debug, native, `CMAKE_C_COMPILER` pinned |
+| `linux-gcc-cross`, `linux-clang-cross` | `linux` | + `MCC_ENABLE_CROSS=ON` |
+| `linux-gcc-musl` | `linux` | + `MCC_BUILD_MUSL=ON` |
+| `linux-gcc-release`, `linux-clang-release` | `linux` | Release, stripped, bcheck/backtrace off |
+| `linux-gcc-static` | `linux` | + `MCC_BUILD_STATIC_EXE=ON` (`mcc-static`, `CONFIG_MCC_STATIC`) |
+| `linux-gcc-onesource-off` | `linux` | + `MCC_ONE_SOURCE=OFF` (multi-TU; builds `mcc-dynamic`) |
+| `linux-gcc-asm-off` | `linux` | + `MCC_CONFIG_ASM=OFF` (libmcc1 via host cc) |
+| `linux-gcc-predefs-off` | `linux` | + `MCC_CONFIG_PREDEFS=OFF` (runtime mccdefs) |
+| `linux-gcc-pie` | `linux` | + `MCC_CONFIG_PIE=ON` `MCC_CONFIG_PIC=ON` |
+| `linux-gcc-dwarf` | `linux` | + `MCC_CONFIG_DWARF=5` |
+| `linux-gcc-asan` | `linux` | + `MCC_BUILD_SANITIZE=ON` (gcc libasan) |
+| `linux-gcc-diagnostics` | `linux` | + `MCC_DIAGNOSTICS=ON` (`mcc_s`/`mcc_p`/`mcc_c`) |
+| `macos`, `macos-cross` | `macos` | Debug, `CMAKE_C_COMPILER=$env{CC}` (clang / Homebrew gcc) |
+| `msvc` | `msvc` | Release, `MCC_TOOLCHAIN_PROFILE=msvc`, diff3 refs from `$env{}` |
+| `mingw` | `mingw` | Release, `MCC_TOOLCHAIN_PROFILE=mingw` (build-only) |
+
+**qemu presets** — the `qemu` job passes `PRESET=qemu-<arch>` to the docker
+runner; `qemu` alone is the full local matrix:
+
+| Preset | `MCC_QEMU_ARCHS` | Common |
+|---|---|---|
+| `qemu` | all (`x86_64;i386;arm;arm64;riscv64`) | Debug, `MCC_ENABLE_CROSS=ON`, `MCC_QEMU_TESTS=ON`, `MCC_QEMU_LIBCS=glibc;musl` |
+| `qemu-x86_64` … `qemu-riscv64` | that one arch | inherit `qemu` |
+
+**dist presets** — release artifacts (`ci.yml` `dist`, `release.yml`). Every dist
+build produces *all* permutations: Release, `MCC_BUILD_TESTS=OFF`,
+`MCC_ONE_SOURCE=OFF` (so `mcc-dynamic` builds), `MCC_BUILD_STATIC_LIB=ON` **and**
+`MCC_BUILD_DYNAMIC_LIB=ON` (both `libmcc-static.a` + `libmcc-dynamic.so`),
+`MCC_ENABLE_CROSS=ON` (all cross compilers), `CMAKE_INSTALL_PREFIX=${sourceDir}/stage`:
+
+| Preset | Compiler / profile | Extra |
+|---|---|---|
+| `dist-linux-gcc`, `dist-linux-clang` | `gcc` / `clang` | static exe, stripped, musl |
+| `dist-macos` | `clang` | dynamic, no musl (post-`strip -x`), no static exe |
+| `dist-mingw` | mingw profile | static exe, stripped (PE) |
+| `dist-msvc` | MSVC profile | static exe, stripped (PE) |
+
+Build presets exist for every configure preset; test presets exist for all
+except the build-only (`mingw`) and test-less (`dist-*`) ones, with the label
+filter baked in (`qemu`-excluded on ELF hosts, `qemu|wine` on macOS,
+`qemu|wine|macho` on MSVC, `qemu`-only for the qemu presets).
 
 ---
 
@@ -118,8 +189,8 @@ Build/test presets exist for `debug`, `release`, `diagnostics` (+ build-only
 | `MCC_BUILD_STATIC_LIB` | BOOL | OFF | | always | Static `libmcc-static.a` (ON) vs shared `libmcc.so` (OFF, default). |
 | `MCC_BUILD_STATIC_EXE` | BOOL | OFF | | always (forced OFF on macOS) | Build the `mcc-static` target (fully static `-static`). `MCC_ONE_SOURCE` decides its compile+link path: self-contained (ON) or linking `libmcc.a` (OFF, then also needs `MCC_BUILD_STATIC_LIB=ON`). macOS has no static libc → forced OFF. |
 | `MCC_BUILD_DYNAMIC_LIB` | BOOL | OFF | | always | Also build a shared `libmcc-dynamic.so` alongside the `libmcc-static.a` (only meaningful with `MCC_BUILD_STATIC_LIB=ON`). |
-| `MCC_BUILD_DYNAMIC_EXE` | BOOL | **ON** | | always | Build the `mcc-dynamic` target: NOT one-source, driver TU linked against the shared `libmcc.so`. |
-| `MCC_BUILD_MUSL` | BOOL | **ON** | | always | Also build musl-targeting variants (`mcc*-musl`). |
+| `MCC_BUILD_DYNAMIC_EXE` | BOOL | **ON** | | **MCC_ONE_SOURCE=OFF** | Build the `mcc-dynamic` target: NOT one-source, driver TU linked against the primary `libmcc`. Requires a multi-TU libmcc (`MCC_ONE_SOURCE=OFF`) so libmcc's internal helpers are linkable; under the default `MCC_ONE_SOURCE=ON` it is skipped with a status message. |
+| `MCC_BUILD_MUSL` | BOOL | OFF | | always | Also build musl-targeting variants (`mcc*-musl`). Opt-in — enabled only by the explicit `-musl` presets/targets (`release`, `linux-gcc-musl`, `dist-linux-*`). |
 | `MCC_BUILD_STRIP` | BOOL | OFF | | always | Strip symbols at link (`-s`). |
 | `MCC_DISABLE_RPATH` | BOOL | OFF | | **!static-lib** | Don't bake `-rpath` into binaries linking `libmcc.so` (relevant by default, since the lib is shared). |
 | `MCC_ONE_SOURCE` | BOOL | **ON** | | always | Build libmcc from a single TU (amalgamation). Also seeded ON by the `mcc` profile. Set OFF for a multi-TU library. |
@@ -292,6 +363,12 @@ auto-corrections instead.
   (a non-one-source `mcc-static` links the libmcc archive, but a static link
   can't resolve the shared `libmcc.so`; keep `MCC_ONE_SOURCE=ON` so `mcc-static`
   is self-contained, or set `MCC_BUILD_STATIC_LIB=ON`).
+- **`MCC_BUILD_DYNAMIC_EXE` + `MCC_ONE_SOURCE`** → `mcc-dynamic` skipped (status).
+  A non-one-source driver needs libmcc's internal `ST_FUNC` helpers with external
+  linkage, which only a multi-TU libmcc (`MCC_ONE_SOURCE=OFF`) provides; on PE a
+  *shared* libmcc never exports them, so `mcc-dynamic` links the primary libmcc
+  (static archive when `MCC_BUILD_STATIC_LIB=ON`). The `dist-*` presets set
+  `MCC_ONE_SOURCE=OFF`.
 - **`MCC_DISABLE_RPATH` + `MCC_BUILD_STATIC_LIB`** → warn (rpath only for shared lib).
 - **`!MCC_CONFIG_ASM`** → autocorrect `MCC_LIBMCC1_USEGCC=ON`.
 - **`MCC_TOOLCHAIN_PROFILE` ≠ detected `MCC_CC_NAME`** → warn (profile seeds

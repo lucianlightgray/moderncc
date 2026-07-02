@@ -953,7 +953,7 @@ mcc_config_node(MCC_BUILD_DYNAMIC_LIB TYPE BOOL DEFAULT OFF GROUP "Build targets
     HELP "Also build a shared libmcc (libmcc.so) alongside the static libmcc.a")
 mcc_config_node(MCC_BUILD_DYNAMIC_EXE TYPE BOOL DEFAULT ON  GROUP "Build targets"
     HELP "Also build a self-contained (ONE_SOURCE) mcc-dynamic, linked only to libc")
-mcc_config_node(MCC_BUILD_MUSL       TYPE BOOL DEFAULT ON  GROUP "Build targets"
+mcc_config_node(MCC_BUILD_MUSL       TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Also build musl-targeting compiler variants (mcc*-musl) beside the glibc ones")
 if(APPLE AND MCC_BUILD_STATIC_EXE)
     set(MCC_BUILD_STATIC_EXE OFF)
@@ -1919,8 +1919,14 @@ endif()
 
 
 
-# ---- mcc-dynamic: NOT one-source; driver TU linked against the (shared) libmcc ----
-if(MCC_BUILD_DYNAMIC_EXE)
+# ---- mcc-dynamic: NOT one-source; driver TU linked against libmcc ----
+# Requires a multi-TU libmcc (MCC_ONE_SOURCE=OFF): the driver's mcctools.c uses
+# libmcc-internal ST_FUNC helpers (pstrcpy, ...), which only have external
+# linkage in a multi-TU build. An amalgamated (ONE_SOURCE) libmcc keeps them
+# `static`, and a *shared* libmcc never exports them on PE (no dllexport) — so
+# mcc-dynamic links the primary `libmcc` (the static archive when
+# MCC_BUILD_STATIC_LIB=ON, which resolves the helpers on every platform).
+if(MCC_BUILD_DYNAMIC_EXE AND NOT MCC_ONE_SOURCE)
     add_executable(mcc_dynamic src/mcc.c)
     set_source_files_properties(src/mcc.c PROPERTIES OBJECT_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/src/mcctools.c")
@@ -1947,6 +1953,8 @@ if(MCC_BUILD_DYNAMIC_EXE)
     if(MCC_DIAGNOSTICS)
         target_compile_options(mcc_dynamic PRIVATE ${MCC_DIAG_FLAGS})
     endif()
+elseif(MCC_BUILD_DYNAMIC_EXE AND MCC_ONE_SOURCE)
+    message(STATUS "mcc: mcc-dynamic needs a multi-TU libmcc; skipped under MCC_ONE_SOURCE=ON")
 endif()
 
 
@@ -2048,8 +2056,10 @@ if(MCC_BUILD_MUSL AND NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT APPLE)
     endif()
 
     
-    # mcc-dynamic-musl: mirror of `mcc-dynamic` -- NOT one-source; links the (shared) libmcc-musl
-    if(MCC_BUILD_DYNAMIC_EXE)
+    # mcc-dynamic-musl: mirror of `mcc-dynamic` -- NOT one-source; links libmcc-musl
+    # (multi-TU only; see mcc-dynamic). ELF-only, so the shared musl lib would also
+    # resolve the internals, but link the primary for one uniform code path.
+    if(MCC_BUILD_DYNAMIC_EXE AND NOT MCC_ONE_SOURCE)
         add_executable(mcc_dynamic_musl src/mcc.c)
         set_source_files_properties(src/mcc.c PROPERTIES OBJECT_DEPENDS
             "${CMAKE_CURRENT_SOURCE_DIR}/src/mcctools.c")
@@ -2093,6 +2103,12 @@ if(MCC_BUILD_PROFILE)
     target_compile_options(mcc_p PRIVATE -pg)
     target_compile_definitions(mcc_p PRIVATE CONFIG_MCC_STATIC MCC_PROFILE)
     target_link_options(mcc_p PRIVATE -pg -static)
+    # mcc references libm (sin/cos/…); a -static link needs it explicitly, like mcc.
+    target_link_libraries(mcc_p PRIVATE m)
+    find_package(Threads)
+    if(Threads_FOUND)
+        target_link_libraries(mcc_p PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
+    endif()
     if(MCC_GITHASH)
         target_compile_definitions(mcc_p PRIVATE "MCC_GITHASH=\"${MCC_GITHASH}\"")
     endif()
@@ -2108,6 +2124,11 @@ if(MCC_BUILD_SANITIZE)
     target_include_directories(mcc_s PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
     target_compile_options(mcc_s PRIVATE -fsanitize=address,undefined)
     target_link_options(mcc_s PRIVATE -fsanitize=address,undefined)
+    target_link_libraries(mcc_s PRIVATE m)
+    find_package(Threads)
+    if(Threads_FOUND)
+        target_link_libraries(mcc_s PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
+    endif()
     if(MCC_GITHASH)
         target_compile_definitions(mcc_s PRIVATE "MCC_GITHASH=\"${MCC_GITHASH}\"")
     endif()
@@ -2480,11 +2501,12 @@ if(MCC_ENABLE_CROSS)
         if(_cos STREQUAL "WIN32")
             list(APPEND _cross_defs "CONFIG_MCCDIR=\"${_mccdir_install}/win32\"")
         endif()
-        # mcc-<arch> (dynamic, self-contained) + mcc-<arch>-static when enabled
-        mcc_add_cross_mcc(${_t}-mcc "mcc-${_t}"
-                          ${_t}-mcc-static "mcc-${_t}-static" _cross_defs)
+        # mcc-<arch> (dynamic, self-contained) + mcc-<arch>-static when enabled.
+        # Target ids match the output names (mcc-<arch>...), same as the host mcc.
+        mcc_add_cross_mcc(mcc-${_t} "mcc-${_t}"
+                          mcc-${_t}-static "mcc-${_t}-static" _cross_defs)
 
-        mcc_build_libmcc1(${_t}-libmcc1 ${_t}-mcc "${_ccpu}" "${_cos}" OFF
+        mcc_build_libmcc1(${_t}-libmcc1 mcc-${_t} "${_ccpu}" "${_cos}" OFF
             "${CMAKE_BINARY_DIR}/${_t}-libmcc1.a"
             "${CMAKE_BINARY_DIR}/lib-${_t}" _cross_extra)
         install(FILES "${CMAKE_BINARY_DIR}/${_t}-libmcc1.a"
@@ -2506,8 +2528,8 @@ if(MCC_ENABLE_CROSS)
             set(_cross_defs_musl ${_cdefs} ${_cpath_defs_musl}
                 "CONFIG_MCC_MUSL=1" "CONFIG_MCC_CROSSPREFIX=\"${_t}-\"")
             # mcc-<arch>-musl (dynamic) + mcc-<arch>-static-musl when enabled (musl stays last)
-            mcc_add_cross_mcc(${_t}-mcc-musl "mcc-${_t}-musl"
-                              ${_t}-mcc-static-musl "mcc-${_t}-static-musl" _cross_defs_musl)
+            mcc_add_cross_mcc(mcc-${_t}-musl "mcc-${_t}-musl"
+                              mcc-${_t}-static-musl "mcc-${_t}-static-musl" _cross_defs_musl)
         endif()
     endforeach()
 endif()
@@ -3549,7 +3571,7 @@ else()
     message(FATAL_ERROR "i386-fastcall-abi: FAILURES")
 endif()
 ]==])
-    if(TARGET i386-mcc)
+    if(TARGET mcc-i386)
         
         
         
@@ -3563,12 +3585,12 @@ endif()
             set(_fc_gcc_args "-DGCC=${_MCC_MINGW_MULTILIB_GCC}" "-DM32=-m32")
         endif()
         add_test(NAME i386-fastcall-abi COMMAND "${CMAKE_COMMAND}"
-            -DIMCC=$<TARGET_FILE:i386-mcc> ${_fc_gcc_args} -P "${_fastcall_drv}")
+            -DIMCC=$<TARGET_FILE:mcc-i386> ${_fc_gcc_args} -P "${_fastcall_drv}")
         set_tests_properties(i386-fastcall-abi PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_REGULAR_EXPRESSION "SKIP:")
     else()
         mcc_skip_test(i386-fastcall-abi
-            "requires an i386 cross-compiler (target i386-mcc is not configured)")
+            "requires an i386 cross-compiler (target mcc-i386 is not configured)")
     endif()
 
     set(_gccts_drv "${CMAKE_BINARY_DIR}/run_gcctestsuite.cmake")
@@ -3818,12 +3840,12 @@ if(NOT _st EQUAL 0)
     message(FATAL_ERROR "arm-asm-testsuite: FAILURES")
 endif()
 ]==])
-    if(TARGET arm-mcc)
+    if(TARGET mcc-arm)
         add_custom_target(arm-asm-testsuite
-            COMMAND "${CMAKE_COMMAND}" -DMCC=$<TARGET_FILE:arm-mcc>
+            COMMAND "${CMAKE_COMMAND}" -DMCC=$<TARGET_FILE:mcc-arm>
                     "-DCROSS_COMPILE=${MCC_ARM_CROSS_COMPILE}"
                     "-DTOKH=${CMAKE_CURRENT_SOURCE_DIR}/src/arch/arm/arm-tok.h" -P "${_armasm_drv}"
-            DEPENDS arm-mcc USES_TERMINAL
+            DEPENDS mcc-arm USES_TERMINAL
             COMMENT "arm-asm-testsuite: mcc vs GNU as over arm-tok.h")
     endif()
 
@@ -4244,8 +4266,8 @@ message(STATUS "qemu conformance: all programs passed")
             
             if(_arch STREQUAL MCC_CPU)
                 set(_qcc "$<TARGET_FILE:mcc>")
-            elseif(TARGET ${_arch}-mcc)
-                set(_qcc "$<TARGET_FILE:${_arch}-mcc>")
+            elseif(TARGET mcc-${_arch})
+                set(_qcc "$<TARGET_FILE:mcc-${_arch}>")
             else()
                 set(_qcc "")
             endif()
@@ -4263,7 +4285,7 @@ message(STATUS "qemu conformance: all programs passed")
                 endif()
                 if(_qcc STREQUAL "")
                     mcc_skip_test(${_tn}
-                        "no compiler for ${_arch} (native target is ${MCC_CPU}; build ${_arch}-mcc via -DMCC_ENABLE_CROSS=ON)"
+                        "no compiler for ${_arch} (native target is ${MCC_CPU}; build mcc-${_arch} via -DMCC_ENABLE_CROSS=ON)"
                         LABELS qemu)
                     continue()
                 endif()

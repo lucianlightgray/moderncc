@@ -1,34 +1,30 @@
 name: Release
 
-
-
-
-
-
-
 on:
   push:
     tags: ['v*']
-  workflow_dispatch: {}   
+  workflow_dispatch: {}
 
 permissions:
-  contents: write   
+  contents: write
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  
-  build-unix:
-    name: build ${{ matrix.plat }}
+
+  dist-unix:
+    name: ${{ matrix.plat }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest,    plat: gcc-linux-x86_64,  cc: gcc,   static_exe: 'ON'  }
-          - { os: ubuntu-24.04-arm, plat: gcc-linux-arm64,   cc: gcc,   static_exe: 'ON'  }
-          - { os: macos-15,         plat: clang-macos-arm64, cc: clang, static_exe: 'OFF' }
+          - { os: ubuntu-latest,    plat: gcc-linux-x86_64,    preset: dist-linux-gcc }
+          - { os: ubuntu-24.04-arm, plat: gcc-linux-arm64,     preset: dist-linux-gcc }
+          - { os: ubuntu-latest,    plat: clang-linux-x86_64,  preset: dist-linux-clang }
+          - { os: ubuntu-24.04-arm, plat: clang-linux-arm64,   preset: dist-linux-clang }
+          - { os: macos-15,         plat: clang-macos-arm64,   preset: dist-macos }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -36,45 +32,30 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends cmake ninja-build gcc
+          sudo apt-get install -y --no-install-recommends cmake ninja-build gcc clang
       - name: install toolchain (macos)
         if: runner.os == 'macOS'
-        
-        
         run: |
           brew untap aws/tap 2>/dev/null || true
           brew install cmake ninja
       - name: configure + build + install
         run: |
           set -eux
-          cmake -S . -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_COMPILER=${{ matrix.cc }} \
-            -DMCC_BUILD_TESTS=OFF \
-            -DMCC_BUILD_STATIC_LIB=ON \
-            -DMCC_BUILD_STATIC_EXE=${{ matrix.static_exe }} \
-            -DMCC_BUILD_STRIP=${{ matrix.static_exe == 'ON' && 'ON' || 'OFF' }} \
-            -DMCC_CONFIG_BCHECK=OFF \
-            -DMCC_CONFIG_BACKTRACE=OFF \
-            -DMCC_BUILD_MUSL=${{ runner.os == 'Linux' && 'ON' || 'OFF' }} \
-            -DMCC_ENABLE_CROSS=ON \
-            -DCMAKE_INSTALL_PREFIX="$PWD/stage"
-          cmake --build build -j"$(getconf _NPROCESSORS_ONLN)"
-          cmake --install build
-          
+          cmake --preset ${{ matrix.preset }}
+          cmake --build --preset ${{ matrix.preset }} -j"$(getconf _NPROCESSORS_ONLN)"
+          cmake --install cmake-build-${{ matrix.preset }}
           if [ "${{ runner.os }}" = macOS ]; then
             strip -x stage/bin/mcc stage/bin/mcc-* 2>/dev/null || true
           fi
       - name: package
-        run: bash .github/scripts/package.sh "${{ github.ref_name }}" "${{ matrix.plat }}"
+        run: cmake "-DVER=${{ github.ref_name }}" "-DPLAT=${{ matrix.plat }}" -P cmake/package.cmake
       - uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.plat }}
           path: out/*
 
-  
-  build-windows:
-    name: build ${{ matrix.plat }}
+  dist-windows:
+    name: ${{ matrix.plat }}
     strategy:
       fail-fast: false
       matrix:
@@ -86,25 +67,41 @@ jobs:
       - uses: actions/checkout@v5
       - name: configure + build + install
         run: |
-          cmake -S . -B build -DMCC_TOOLCHAIN_PROFILE=msvc -DCMAKE_BUILD_TYPE=Release `
-            -DMCC_BUILD_TESTS=OFF -DMCC_BUILD_STATIC_LIB=ON `
-            -DMCC_BUILD_STATIC_EXE=ON -DMCC_BUILD_STRIP=ON `
-            -DMCC_CONFIG_BCHECK=OFF -DMCC_CONFIG_BACKTRACE=OFF `
-            -DCMAKE_INSTALL_PREFIX="$PWD/stage"
-          cmake --build build --config Release -j
-          cmake --install build --config Release
+          cmake --preset dist-msvc
+          cmake --build --preset dist-msvc -j
+          cmake --install cmake-build-dist-msvc --config Release
       - name: package
-        shell: pwsh
-        run: .github/scripts/package.ps1 -Ref "${{ github.ref_name }}" -Plat "${{ matrix.plat }}"
+        run: cmake "-DVER=${{ github.ref_name }}" "-DPLAT=${{ matrix.plat }}" -P cmake/package.cmake
       - uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.plat }}
           path: out/*
 
-  
+  dist-mingw:
+    name: mingw-windows-x86_64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: x64
+      - name: install ninja
+        run: choco install ninja -y
+      - name: configure + build + install (superbuild fetches winlibs GCC)
+        run: |
+          cmake --preset dist-mingw
+          cmake --build --preset dist-mingw -j
+          cmake --install cmake-build-dist-mingw
+      - name: package
+        run: cmake "-DVER=${{ github.ref_name }}" "-DPLAT=mingw-windows-x86_64" -P cmake/package.cmake
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-mingw-windows-x86_64
+          path: out/*
+
   publish:
     name: publish release
-    needs: [build-unix, build-windows]
+    needs: [dist-unix, dist-windows, dist-mingw]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:

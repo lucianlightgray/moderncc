@@ -1,12 +1,24 @@
 {
   "version": 3,
   "cmakeMinimumRequired": { "major": 3, "minor": 22, "patch": 0 },
+
   "configurePresets": [
     {
+      "name": "_base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/cmake-build-${presetName}"
+    },
+    {
+      "name": "_ninja",
+      "hidden": true,
+      "inherits": "_base",
+      "generator": "Ninja"
+    },
+
+    {
       "name": "debug",
-      "displayName": "Debug (Unix Makefiles)",
-      "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/cmake-build-${presetName}",
+      "displayName": "Debug (Ninja)",
+      "inherits": "_ninja",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "MCC_BUILD_MUSL": "OFF",
@@ -17,7 +29,7 @@
     },
     {
       "name": "release",
-      "displayName": "Release (ONE_SOURCE dynamic exe, stripped, no bcheck/backtrace)",
+      "displayName": "Release (ONE_SOURCE dynamic exe, stripped, musl, no bcheck/backtrace)",
       "inherits": "debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
@@ -53,18 +65,370 @@
         "MCC_TOOLCHAIN_PROFILE": "gcc;clang",
         "MCC_TARGETS": "native;cross"
       }
+    },
+
+    {
+      "name": "linux-gcc",
+      "displayName": "CI linux / gcc / Debug",
+      "inherits": "debug",
+      "cacheVariables": { "CMAKE_C_COMPILER": "gcc" }
+    },
+    {
+      "name": "linux-gcc-cross",
+      "displayName": "CI linux / gcc / Debug / cross",
+      "inherits": "linux-gcc",
+      "cacheVariables": { "MCC_ENABLE_CROSS": "ON" }
+    },
+    {
+      "name": "linux-gcc-musl",
+      "displayName": "CI linux / gcc / Debug / musl",
+      "inherits": "linux-gcc",
+      "cacheVariables": { "MCC_BUILD_MUSL": "ON" }
+    },
+    {
+      "name": "linux-gcc-release",
+      "displayName": "CI linux / gcc / Release",
+      "inherits": "linux-gcc",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "MCC_BUILD_STRIP": "ON",
+        "MCC_CONFIG_BCHECK": "OFF",
+        "MCC_CONFIG_BACKTRACE": "OFF"
+      }
+    },
+    {
+      "name": "linux-gcc-static",
+      "displayName": "CI linux / gcc / static exe (CONFIG_MCC_STATIC)",
+      "inherits": "linux-gcc",
+      "cacheVariables": { "MCC_BUILD_STATIC_EXE": "ON" }
+    },
+    {
+      "name": "linux-gcc-onesource-off",
+      "displayName": "CI linux / gcc / multi-TU (MCC_ONE_SOURCE=OFF)",
+      "inherits": "linux-gcc",
+      "cacheVariables": { "MCC_ONE_SOURCE": "OFF" }
+    },
+    {
+      "name": "linux-gcc-asm-off",
+      "displayName": "CI linux / gcc / integrated asm off (libmcc1 via host cc)",
+      "inherits": "linux-gcc",
+      "cacheVariables": { "MCC_CONFIG_ASM": "OFF" }
+    },
+    {
+      "name": "linux-gcc-predefs-off",
+      "displayName": "CI linux / gcc / runtime mccdefs (MCC_CONFIG_PREDEFS=OFF)",
+      "inherits": "linux-gcc",
+      "cacheVariables": { "MCC_CONFIG_PREDEFS": "OFF" }
+    },
+    {
+      "name": "linux-gcc-pie",
+      "displayName": "CI linux / gcc / PIE + PIC codegen",
+      "inherits": "linux-gcc",
+      "cacheVariables": { "MCC_CONFIG_PIE": "ON", "MCC_CONFIG_PIC": "ON" }
+    },
+    {
+      "name": "linux-gcc-dwarf",
+      "displayName": "CI linux / gcc / DWARF-5 debug info",
+      "inherits": "linux-gcc",
+      "cacheVariables": { "MCC_CONFIG_DWARF": "5" }
+    },
+    {
+      "name": "linux-gcc-diagnostics",
+      "displayName": "CI linux / gcc / diagnostics (warnings + mcc_s/mcc_p/mcc_c)",
+      "inherits": "linux-gcc",
+      "cacheVariables": { "MCC_DIAGNOSTICS": "ON" }
+    },
+    {
+      "name": "linux-clang",
+      "displayName": "CI linux / clang / Debug",
+      "inherits": "debug",
+      "cacheVariables": { "CMAKE_C_COMPILER": "clang" }
+    },
+    {
+      "name": "linux-clang-cross",
+      "displayName": "CI linux / clang / Debug / cross",
+      "inherits": "linux-clang",
+      "cacheVariables": { "MCC_ENABLE_CROSS": "ON" }
+    },
+    {
+      "name": "linux-clang-release",
+      "displayName": "CI linux / clang / Release",
+      "inherits": "linux-clang",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "MCC_BUILD_STRIP": "ON",
+        "MCC_CONFIG_BCHECK": "OFF",
+        "MCC_CONFIG_BACKTRACE": "OFF"
+      }
+    },
+    {
+      "name": "linux-gcc-asan",
+      "displayName": "CI linux / gcc / sanitizer (mcc_s, -fsanitize=address,undefined)",
+      "inherits": "linux-gcc",
+      "cacheVariables": { "MCC_BUILD_SANITIZE": "ON" }
+    },
+
+    {
+      "name": "macos",
+      "displayName": "CI macos / Debug (compiler from $env{CC})",
+      "inherits": "_ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_COMPILER": "$env{CC}"
+      }
+    },
+    {
+      "name": "macos-cross",
+      "displayName": "CI macos / Debug / cross",
+      "inherits": "macos",
+      "cacheVariables": { "MCC_ENABLE_CROSS": "ON" }
+    },
+
+    {
+      "name": "msvc",
+      "displayName": "CI windows / MSVC / Release (default VS generator)",
+      "inherits": "_base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "MCC_TOOLCHAIN_PROFILE": "msvc",
+        "MCC_DIFF3_GCC": "$env{MCC_DIFF3_GCC}",
+        "MCC_DIFF3_CLANG": "$env{MCC_DIFF3_CLANG}"
+      }
+    },
+    {
+      "name": "mingw",
+      "displayName": "CI windows / mingw / Release (superbuild fetches winlibs GCC)",
+      "inherits": "_ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "MCC_TOOLCHAIN_PROFILE": "mingw"
+      }
+    },
+
+    {
+      "name": "qemu",
+      "displayName": "qemu-user cross matrix (all archs x glibc;musl)",
+      "inherits": "_ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MCC_ENABLE_CROSS": "ON",
+        "MCC_QEMU_TESTS": "ON",
+        "MCC_QEMU_LIBCS": "glibc;musl",
+        "MCC_CROSS_DIR": "${sourceDir}/cmake-build-${presetName}"
+      }
+    },
+    {
+      "name": "qemu-x86_64",
+      "displayName": "qemu-user / x86_64 (glibc;musl)",
+      "inherits": "qemu",
+      "cacheVariables": { "MCC_QEMU_ARCHS": "x86_64" }
+    },
+    {
+      "name": "qemu-i386",
+      "displayName": "qemu-user / i386 (glibc;musl)",
+      "inherits": "qemu",
+      "cacheVariables": { "MCC_QEMU_ARCHS": "i386" }
+    },
+    {
+      "name": "qemu-arm",
+      "displayName": "qemu-user / arm (glibc;musl)",
+      "inherits": "qemu",
+      "cacheVariables": { "MCC_QEMU_ARCHS": "arm" }
+    },
+    {
+      "name": "qemu-arm64",
+      "displayName": "qemu-user / arm64 (glibc;musl)",
+      "inherits": "qemu",
+      "cacheVariables": { "MCC_QEMU_ARCHS": "arm64" }
+    },
+    {
+      "name": "qemu-riscv64",
+      "displayName": "qemu-user / riscv64 (glibc;musl)",
+      "inherits": "qemu",
+      "cacheVariables": { "MCC_QEMU_ARCHS": "riscv64" }
+    },
+
+    {
+      "name": "_dist",
+      "hidden": true,
+      "inherits": "_base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "MCC_BUILD_TESTS": "OFF",
+        "MCC_ONE_SOURCE": "OFF",
+        "MCC_BUILD_STATIC_LIB": "ON",
+        "MCC_BUILD_DYNAMIC_LIB": "ON",
+        "MCC_CONFIG_BCHECK": "OFF",
+        "MCC_CONFIG_BACKTRACE": "OFF",
+        "MCC_ENABLE_CROSS": "ON",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/stage"
+      }
+    },
+    {
+      "name": "_dist-ninja",
+      "hidden": true,
+      "inherits": "_dist",
+      "generator": "Ninja"
+    },
+    {
+      "name": "dist-linux-gcc",
+      "displayName": "Release dist / linux / gcc (static+dynamic lib+exe, stripped, musl, cross)",
+      "inherits": "_dist-ninja",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "MCC_BUILD_STATIC_EXE": "ON",
+        "MCC_BUILD_STRIP": "ON",
+        "MCC_BUILD_MUSL": "ON"
+      }
+    },
+    {
+      "name": "dist-linux-clang",
+      "displayName": "Release dist / linux / clang (static+dynamic lib+exe, stripped, musl, cross)",
+      "inherits": "_dist-ninja",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "MCC_BUILD_STATIC_EXE": "ON",
+        "MCC_BUILD_STRIP": "ON",
+        "MCC_BUILD_MUSL": "ON"
+      }
+    },
+    {
+      "name": "dist-macos",
+      "displayName": "Release dist / macos / clang (dynamic, no musl, cross)",
+      "inherits": "_dist-ninja",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "MCC_BUILD_STATIC_EXE": "OFF",
+        "MCC_BUILD_STRIP": "OFF",
+        "MCC_BUILD_MUSL": "OFF"
+      }
+    },
+    {
+      "name": "dist-mingw",
+      "displayName": "Release dist / windows / mingw (static+dynamic lib+exe, stripped, cross)",
+      "inherits": "_dist-ninja",
+      "cacheVariables": {
+        "MCC_TOOLCHAIN_PROFILE": "mingw",
+        "MCC_BUILD_STATIC_EXE": "ON",
+        "MCC_BUILD_STRIP": "ON"
+      }
+    },
+    {
+      "name": "dist-msvc",
+      "displayName": "Release dist / windows / MSVC (static+dynamic lib, static exe, stripped, cross)",
+      "inherits": "_dist",
+      "cacheVariables": {
+        "MCC_TOOLCHAIN_PROFILE": "msvc",
+        "MCC_BUILD_STATIC_EXE": "ON",
+        "MCC_BUILD_STRIP": "ON"
+      }
     }
   ],
+
   "buildPresets": [
     { "name": "debug", "configurePreset": "debug" },
     { "name": "release", "configurePreset": "release" },
     { "name": "diagnostics", "configurePreset": "diagnostics" },
     { "name": "cross", "configurePreset": "cross" },
-    { "name": "matrix", "configurePreset": "matrix" }
+    { "name": "matrix", "configurePreset": "matrix" },
+
+    { "name": "linux-gcc", "configurePreset": "linux-gcc" },
+    { "name": "linux-gcc-cross", "configurePreset": "linux-gcc-cross" },
+    { "name": "linux-gcc-musl", "configurePreset": "linux-gcc-musl" },
+    { "name": "linux-gcc-release", "configurePreset": "linux-gcc-release" },
+    { "name": "linux-gcc-static", "configurePreset": "linux-gcc-static" },
+    { "name": "linux-gcc-onesource-off", "configurePreset": "linux-gcc-onesource-off" },
+    { "name": "linux-gcc-asm-off", "configurePreset": "linux-gcc-asm-off" },
+    { "name": "linux-gcc-predefs-off", "configurePreset": "linux-gcc-predefs-off" },
+    { "name": "linux-gcc-pie", "configurePreset": "linux-gcc-pie" },
+    { "name": "linux-gcc-dwarf", "configurePreset": "linux-gcc-dwarf" },
+    { "name": "linux-gcc-diagnostics", "configurePreset": "linux-gcc-diagnostics" },
+    { "name": "linux-clang", "configurePreset": "linux-clang" },
+    { "name": "linux-clang-cross", "configurePreset": "linux-clang-cross" },
+    { "name": "linux-clang-release", "configurePreset": "linux-clang-release" },
+    { "name": "linux-gcc-asan", "configurePreset": "linux-gcc-asan" },
+
+    { "name": "macos", "configurePreset": "macos" },
+    { "name": "macos-cross", "configurePreset": "macos-cross" },
+
+    { "name": "msvc", "configurePreset": "msvc", "configuration": "Release" },
+    { "name": "mingw", "configurePreset": "mingw" },
+
+    { "name": "qemu", "configurePreset": "qemu" },
+    { "name": "qemu-x86_64", "configurePreset": "qemu-x86_64" },
+    { "name": "qemu-i386", "configurePreset": "qemu-i386" },
+    { "name": "qemu-arm", "configurePreset": "qemu-arm" },
+    { "name": "qemu-arm64", "configurePreset": "qemu-arm64" },
+    { "name": "qemu-riscv64", "configurePreset": "qemu-riscv64" },
+
+    { "name": "dist-linux-gcc", "configurePreset": "dist-linux-gcc" },
+    { "name": "dist-linux-clang", "configurePreset": "dist-linux-clang" },
+    { "name": "dist-macos", "configurePreset": "dist-macos" },
+    { "name": "dist-mingw", "configurePreset": "dist-mingw" },
+    { "name": "dist-msvc", "configurePreset": "dist-msvc", "configuration": "Release" }
   ],
+
   "testPresets": [
-    { "name": "debug", "configurePreset": "debug", "output": { "outputOnFailure": true } },
-    { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
-    { "name": "diagnostics", "configurePreset": "diagnostics", "output": { "outputOnFailure": true } }
+    {
+      "name": "_test",
+      "hidden": true,
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "_test-elf",
+      "hidden": true,
+      "inherits": "_test",
+      "filter": { "exclude": { "label": "qemu" } }
+    },
+    {
+      "name": "_test-macos",
+      "hidden": true,
+      "inherits": "_test",
+      "filter": { "exclude": { "label": "qemu|wine" } }
+    },
+    {
+      "name": "_test-msvc",
+      "hidden": true,
+      "inherits": "_test",
+      "filter": { "exclude": { "label": "qemu|wine|macho" } }
+    },
+    {
+      "name": "_test-qemu",
+      "hidden": true,
+      "inherits": "_test",
+      "filter": { "include": { "label": "qemu" } }
+    },
+
+    { "name": "debug", "configurePreset": "debug", "inherits": "_test-elf" },
+    { "name": "release", "configurePreset": "release", "inherits": "_test-elf" },
+    { "name": "diagnostics", "configurePreset": "diagnostics", "inherits": "_test-elf" },
+
+    { "name": "linux-gcc", "configurePreset": "linux-gcc", "inherits": "_test-elf" },
+    { "name": "linux-gcc-cross", "configurePreset": "linux-gcc-cross", "inherits": "_test-elf" },
+    { "name": "linux-gcc-musl", "configurePreset": "linux-gcc-musl", "inherits": "_test-elf" },
+    { "name": "linux-gcc-release", "configurePreset": "linux-gcc-release", "inherits": "_test-elf" },
+    { "name": "linux-gcc-static", "configurePreset": "linux-gcc-static", "inherits": "_test-elf" },
+    { "name": "linux-gcc-onesource-off", "configurePreset": "linux-gcc-onesource-off", "inherits": "_test-elf" },
+    { "name": "linux-gcc-asm-off", "configurePreset": "linux-gcc-asm-off", "inherits": "_test-elf" },
+    { "name": "linux-gcc-predefs-off", "configurePreset": "linux-gcc-predefs-off", "inherits": "_test-elf" },
+    { "name": "linux-gcc-pie", "configurePreset": "linux-gcc-pie", "inherits": "_test-elf" },
+    { "name": "linux-gcc-dwarf", "configurePreset": "linux-gcc-dwarf", "inherits": "_test-elf" },
+    { "name": "linux-gcc-diagnostics", "configurePreset": "linux-gcc-diagnostics", "inherits": "_test-elf" },
+    { "name": "linux-clang", "configurePreset": "linux-clang", "inherits": "_test-elf" },
+    { "name": "linux-clang-cross", "configurePreset": "linux-clang-cross", "inherits": "_test-elf" },
+    { "name": "linux-clang-release", "configurePreset": "linux-clang-release", "inherits": "_test-elf" },
+    { "name": "linux-gcc-asan", "configurePreset": "linux-gcc-asan", "inherits": "_test-elf" },
+
+    { "name": "macos", "configurePreset": "macos", "inherits": "_test-macos" },
+    { "name": "macos-cross", "configurePreset": "macos-cross", "inherits": "_test-macos" },
+
+    { "name": "msvc", "configurePreset": "msvc", "configuration": "Release", "inherits": "_test-msvc" },
+
+    { "name": "qemu", "configurePreset": "qemu", "inherits": "_test-qemu" },
+    { "name": "qemu-x86_64", "configurePreset": "qemu-x86_64", "inherits": "_test-qemu" },
+    { "name": "qemu-i386", "configurePreset": "qemu-i386", "inherits": "_test-qemu" },
+    { "name": "qemu-arm", "configurePreset": "qemu-arm", "inherits": "_test-qemu" },
+    { "name": "qemu-arm64", "configurePreset": "qemu-arm64", "inherits": "_test-qemu" },
+    { "name": "qemu-riscv64", "configurePreset": "qemu-riscv64", "inherits": "_test-qemu" }
   ]
 }

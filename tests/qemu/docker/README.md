@@ -43,10 +43,17 @@ artifacts are written back into your macOS tree.
 
 ### Narrow the matrix
 
-`ARCHS` / `LIBCS` select the grid; trailing args pass through to `ctest`.
+Configuration is driven by a CMake preset (`PRESET`, default `qemu` = the full
+grid; the CI job passes the per-arch `qemu-<arch>`). `ARCHS` / `LIBCS` are
+optional overrides applied on top of the preset; trailing args pass through to
+`ctest`.
 
 ```sh
-# one cell, fast smoke test
+# one arch via its preset (what CI runs)
+docker run --rm -v "$PWD":/work -v mcc-qemu-roots:/qemu-roots \
+  -e PRESET=qemu-x86_64 mcc-qemu
+
+# one cell, fast smoke test (override the default preset's grid)
 docker run --rm -v "$PWD":/work -v mcc-qemu-roots:/qemu-roots \
   -e ARCHS=x86_64 -e LIBCS=glibc mcc-qemu
 
@@ -59,11 +66,12 @@ docker run --rm -v "$PWD":/work -v mcc-qemu-roots:/qemu-roots \
   mcc-qemu -R qemu-arm64-glibc
 ```
 
-| Env     | Default                          | Meaning                          |
-|---------|----------------------------------|----------------------------------|
-| `ARCHS` | `x86_64;i386;arm;arm64;riscv64`  | architectures to exercise        |
-| `LIBCS` | `glibc;musl`                     | C libraries to exercise          |
-| `JOBS`  | `$(nproc)`                       | build parallelism                |
+| Env      | Default                          | Meaning                          |
+|----------|----------------------------------|----------------------------------|
+| `PRESET` | `qemu`                           | CMake preset (`qemu`, `qemu-<arch>`) |
+| `ARCHS`  | *(preset)*                       | override architectures to exercise |
+| `LIBCS`  | *(preset: `glibc;musl`)*         | override C libraries to exercise |
+| `JOBS`   | `$(nproc)`                       | build parallelism                |
 
 First run downloads ~250 MB per cell; subsequent runs reuse `/qemu-roots`.
 This is the containerized form of the CI job in `TODO.md` ("10.6.2 CI workflow").

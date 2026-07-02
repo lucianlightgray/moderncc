@@ -1,39 +1,23 @@
 #!/usr/bin/env bash
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+#
+# CI runner: stage the mounted repo, then configure/build/test via a named
+# CMake preset (see CMakePresets.json). The workflow selects the scenario by
+# setting PRESET; this script owns only the container-side staging + EOL fixup.
+#
+#   docker run --rm -e PRESET=linux-gcc -v "$PWD:/work:ro" mcc-ci
+#
 set -euo pipefail
 
 SRC_MOUNT=/work
 SRC=/src
-BUILD=/build
 
-CC="${CC:-gcc}"
-TARGET="${TARGET:-native}"
-BUILD_TYPE="${BUILD_TYPE:-Debug}"
+PRESET="${PRESET:?set PRESET to a CMake preset name (e.g. linux-gcc); see CMakePresets.json}"
 JOBS="${JOBS:-$(nproc)}"
-LABEL_EXCLUDE="${LABEL_EXCLUDE:-qemu}"
 
 if [ ! -e "$SRC_MOUNT/CMakeLists.txt" ]; then
     echo "error: mount the mcc repo at $SRC_MOUNT (docker run -v \"\$PWD\":/work:ro ...)" >&2
     exit 2
 fi
-case "$TARGET" in
-    native|cross) ;;
-    *) echo "error: TARGET must be native|cross (got '$TARGET')" >&2; exit 2 ;;
-esac
 
 echo "==> staging $SRC_MOUNT -> $SRC"
 mkdir -p "$SRC"
@@ -46,13 +30,8 @@ rsync -a --delete \
     --exclude '.git' \
     "$SRC_MOUNT"/ "$SRC"/
 
-
-
-
-
-
-
-
+# A Windows (autocrlf) checkout otherwise feeds CRLF sources that break
+# LF-expecting tests; normalize on the staged copy.
 if [ "${NORMALIZE_EOL:-1}" = 1 ]; then
     echo "==> normalizing line endings (CRLF -> LF) in staged sources"
     find "$SRC" -type f \
@@ -61,30 +40,12 @@ if [ "${NORMALIZE_EOL:-1}" = 1 ]; then
         -exec sed -i 's/\r$//' {} +
 fi
 
-cross_flag=""
-[ "$TARGET" = cross ] && cross_flag="-DMCC_ENABLE_CROSS=ON"
-
-MUSL="${MUSL:-OFF}"
-musl_flag=""
-[ "$MUSL" = ON ] && musl_flag="-DMCC_BUILD_MUSL=ON"
-
-release_flags=""
-if [ "$BUILD_TYPE" = Release ]; then
-    release_flags="-DMCC_BUILD_STRIP=ON -DMCC_CONFIG_BCHECK=OFF -DMCC_CONFIG_BACKTRACE=OFF"
-fi
-
-echo "==> configuring (cc=$CC target=$TARGET type=$BUILD_TYPE musl=$MUSL)"
-cmake -S "$SRC" -B "$BUILD" -G Ninja \
-    -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
-    -DCMAKE_C_COMPILER="$CC" \
-    -DMCC_BUILD_STATIC_EXE=OFF \
-    $cross_flag $musl_flag $release_flags
+cd "$SRC"
+echo "==> configuring (preset=$PRESET)"
+cmake --preset "$PRESET"
 
 echo "==> building (-j$JOBS)"
-cmake --build "$BUILD" -j"$JOBS"
+cmake --build --preset "$PRESET" -j"$JOBS"
 
-
-
-
-echo "==> testing (ctest -LE \"$LABEL_EXCLUDE\")"
-ctest --test-dir "$BUILD" -j"$JOBS" --output-on-failure -LE "$LABEL_EXCLUDE" "$@"
+echo "==> testing (preset=$PRESET)"
+ctest --preset "$PRESET" -j"$JOBS" "$@"

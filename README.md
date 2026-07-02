@@ -82,8 +82,13 @@ CMake (≥ 3.22) with CMakePresets.json:
 
 ```sh
 cmake --preset debug # or: release, asan, diagnostics, cross, matrix
-cmake --build cmake-build-debug -j
+cmake --build --preset debug -j
 ```
+
+The developer presets above are the ones you'll use by hand; CI/dist presets
+(`linux-*`, `macos*`, `msvc`, `mingw`, `qemu*`, `dist-*`) are also defined and
+drive the workflows + docker runners. See [BUILD.md §2](BUILD.md) for the full
+preset catalog and naming conventions.
 
 or, CMake (without presets):
 
@@ -105,15 +110,15 @@ cmake --build cmake-build-release -j
 | `MCC_ONE_SOURCE`       |   ON    | Amalgamate the compiler into one TU (`mcc` is self-contained) |
 | `MCC_BUILD_STATIC_EXE` |   OFF¹  | Also build `mcc-static` (fully static `-static`); enables `CONFIG_MCC_STATIC` so *its* `-run` resolves libc via a built-in symbol table |
 | `MCC_BUILD_DYNAMIC_EXE`|   ON    | Also build `mcc-dynamic` (not one-source; links the shared `libmcc.so`) |
-| `MCC_BUILD_MUSL`       |   ON²   | Also build musl-targeting variants (`*-musl`, Linux only) |
+| `MCC_BUILD_MUSL`       |   OFF²  | Also build musl-targeting variants (`*-musl`, Linux only) |
 | `MCC_BUILD_STRIP`      |   OFF   | Strip symbols during link                  |
 | `MCC_QEMU_TESTS`       |   OFF   | qemu-user cross-conformance matrix (below) |
 
 ¹ Auto-forced OFF on macOS (no fully-static libc). The default `mcc` is a
 dynamic, self-contained binary whose `-run` resolves the full libc surface via
 `dlsym`; the opt-in `mcc-static` instead uses a built-in symbol table (common
-symbols only). ² Linux only (a no-op on macOS/Windows); the
-`debug`/`asan`/`diagnostics` presets keep it OFF for faster dev builds.
+symbols only). ² Linux only (a no-op on macOS/Windows); opt-in, enabled only by
+the explicit `-musl` presets/targets (`release`, `linux-gcc-musl`, `dist-linux-*`).
 
 All compiler binaries follow one suffix convention:
 `mcc[-<arch>][-static|-dynamic][-musl]` — arch first (cross targets only),
