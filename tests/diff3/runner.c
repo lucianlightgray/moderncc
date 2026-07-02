@@ -140,6 +140,8 @@ static int portable_req(const char *req){
         } else if (!strcmp(tok, "elf")){
 
             if (!strcmp(os, "Darwin") || !strcmp(os, "WIN32")) return 0;
+        } else if (!strcmp(tok, "asm")){
+            if (strcmp(envv("MCC_TEST_ASM", "1"), "1")) return 0;
         }
 
     }
