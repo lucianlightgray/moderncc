@@ -356,7 +356,11 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
             addr_t tls_start = 0;
             for (int i = 1; i < s1->nb_sections; i++) {
                 Section *s = s1->sections[i];
-                if (s->sh_flags & SHF_TLS && s->sh_size) {
+                /* PE layout never sets sh_size; fall back to data_offset (as the
+                   x86_64 TPOFF path does), else the TLS section is skipped and
+                   tls_start stays 0 -- making the offset the whole .tls RVA. */
+                addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
+                if (s->sh_flags & SHF_TLS && ssz) {
                     if (!tls_start || s->sh_addr < tls_start)
                         tls_start = s->sh_addr;
                 }
