@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <errno.h>
 #ifdef _WIN32
 #include <direct.h>
@@ -80,6 +81,13 @@ static const char *timeout_prefix(void){
 #endif
 }
 
+/* case-insensitive: cases say os=linux, cmake exports MCC_TEST_OS=Linux */
+static int os_eq(const char *a, const char *b){
+    for (; *a && *b; a++, b++)
+        if (tolower((unsigned char)*a) != tolower((unsigned char)*b)) return 0;
+    return *a == *b;
+}
+
 static int req_met(const char *req, char *reason, size_t rn){
     if (!req || !*req) return 1;
     char buf[256]; snprintf(buf, sizeof buf, "%s", req);
@@ -94,7 +102,7 @@ static int req_met(const char *req, char *reason, size_t rn){
             else ok = !strcmp(cpu, want);
             if (!ok){ snprintf(reason, rn, "requires %s target (host: %s)", want, cpu); return 0; }
         } else if (!strncmp(tok, "os=", 3)){
-            if (strcmp(os, tok + 3)){ snprintf(reason, rn, "requires %s OS (host: %s)", tok+3, os); return 0; }
+            if (!os_eq(os, tok + 3)){ snprintf(reason, rn, "requires %s OS (host: %s)", tok+3, os); return 0; }
         } else if (!strncmp(tok, "os!=", 4)){
 
 
@@ -104,7 +112,7 @@ static int req_met(const char *req, char *reason, size_t rn){
             size_t wl = colon ? (size_t)(colon - want) : strlen(want);
             if (wl >= sizeof wbuf) wl = sizeof wbuf - 1;
             memcpy(wbuf, want, wl); wbuf[wl] = 0;
-            if (!strcmp(os, wbuf)){
+            if (os_eq(os, wbuf)){
                 if (colon && colon[1]) snprintf(reason, rn, "%s", colon + 1);
                 else snprintf(reason, rn, "not applicable to the %s target", wbuf);
                 return 0;
@@ -112,7 +120,7 @@ static int req_met(const char *req, char *reason, size_t rn){
         } else if (!strcmp(tok, "elf")){
 
 
-            if (!strcmp(os, "Darwin") || !strcmp(os, "WIN32")){
+            if (os_eq(os, "Darwin") || os_eq(os, "WIN32")){
                 snprintf(reason, rn, "requires an ELF target (host: %s)", os); return 0; }
         }
     }

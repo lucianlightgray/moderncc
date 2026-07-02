@@ -250,6 +250,7 @@ static void skip_or_save_block(TokenString **str);
 static void gv_dup(void);
 static int get_temp_local_var(int size,int align,int *r2);
 static void cast_error(CType *st, CType *dt);
+static void write_ldouble(unsigned char *d, void *s);
 static void end_switch(void);
 static void do_Static_assert(void);
 
@@ -6880,6 +6881,52 @@ ST_FUNC void unary(void)
             type.t = fbt; type.ref = NULL;
             vsetc(&type, VT_CONST, &cv);
             (void)bits;
+        }
+        break;
+    case TOK_builtin_signbit: case TOK_builtin_signbitf:
+    case TOK_builtin_signbitl:
+        /* real builtin (gcc-compatible): inspects the sign bit only, never
+           raises FP exceptions -- an FP compare would trap on NaN input */
+        {
+            int btok = tok, bt;
+            parse_builtin_params(0, "e");
+            bt = vtop->type.t & VT_BTYPE;
+            if (bt != VT_FLOAT && bt != VT_DOUBLE && bt != VT_LDOUBLE)
+                mcc_error("non-floating-point argument in call to function '%s'",
+                          get_tok_str(btok, NULL));
+            if ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) {
+                int sb;
+                if (bt == VT_FLOAT) {
+                    uint32_t u;
+                    memcpy(&u, &vtop->c.f, 4);
+                    sb = u >> 31;
+                } else if (bt == VT_DOUBLE) {
+                    uint64_t u;
+                    memcpy(&u, &vtop->c.d, 8);
+                    sb = (int)(u >> 63);
+                } else {
+                    unsigned char lb[16];
+                    memset(lb, 0, sizeof lb);
+                    write_ldouble(lb, &vtop->c.ld);
+#if defined MCC_TARGET_I386 || defined MCC_TARGET_X86_64
+                    /* x87 80-bit: sign byte 9, above is padding */
+                    sb = lb[LDOUBLE_SIZE > 8 ? 9 : 7] >> 7;
+#else
+                    sb = lb[LDOUBLE_SIZE - 1] >> 7;
+#endif
+                }
+                vpop();
+                vpushi(sb);
+            } else {
+                vpush_helper_func(tok_alloc_const(
+                    bt == VT_FLOAT ? "__mcc_signbitf"
+                    : bt == VT_LDOUBLE ? "__mcc_signbitl" : "__mcc_signbit"));
+                vrott(2);
+                gfunc_call(1);
+                vpushi(0);
+                vtop->type.t = VT_INT;
+                PUT_R_RET(vtop, VT_INT);
+            }
         }
         break;
     case TOK_builtin_ffs:    case TOK_builtin_ffsl:    case TOK_builtin_ffsll:
