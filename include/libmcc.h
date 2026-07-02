@@ -47,7 +47,10 @@ LIBMCCAPI int mcc_set_output_type(MCCState *s, int output_type);
 #define MCC_OUTPUT_DLL      4
 #define MCC_OUTPUT_OBJ      3
 #define MCC_OUTPUT_PREPROCESS 5
-#define MCC_OUTPUT_ASM      6
+/* 6 and 7 are reserved: output_type is also used as a bitfield and a PIE
+   executable is MCC_OUTPUT_EXE(2) | MCC_OUTPUT_DYN(4) == 6.  Use a value with
+   no overlap with the MEMORY/EXE/DYN bits. */
+#define MCC_OUTPUT_ASM      8
 
 LIBMCCAPI int mcc_add_library_path(MCCState *s, const char *pathname);
 
