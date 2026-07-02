@@ -401,4 +401,5 @@ WARNING!!! DO NOT DO!!! ACHTUNG!!!
 • Database uses hierarchical incremental hashes to enable bidirectional lookups starting from any character index in the code
 • Hot reload by saving/loading CST snapshots on the fly and on run with --hotreload arg
 • Run hotreloads from reconcoliled CST snapshots
+• Search the entire codebase for all mac/macos/apple/darwin/mach related conditionals, build a MAC.md documenting where and why the code is gated. 
 ACHTUNG!!! DO NOT DO!!! WARNING!!!
