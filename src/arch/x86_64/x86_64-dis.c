@@ -27,7 +27,7 @@ typedef struct {
     const char *seg;  /* segment override, or NULL */
     /* result of the last modrm decode */
     int reg;          /* /r register number (0..15, REX.R applied) */
-    char rm[80];      /* r/m operand text (register or memory) */
+    char rm[352];     /* r/m operand text (a relocated symbol can be long) */
     int rm_is_mem;
 } Dis;
 
@@ -166,7 +166,7 @@ static void modrm(Dis *d, int size, int xmm_rm)
             int rtype = 0;
             const char *sym = (have_disp && disp_size == 4)
                             ? disasm_reloc(d->dc, disp_off, 4, &rtype) : NULL;
-            char dbuf[64];
+            char dbuf[288];
             if (sym)
                 snprintf(dbuf, sizeof dbuf, "%s", sym);
             else if (have_disp && disp)
@@ -266,7 +266,7 @@ static const char *cc[16] = {
 static int decode(Dis *d)
 {
     unsigned char op;
-    char i1[64], i2[64];
+    char i1[64];
     int size;
 
     /* prefixes */
@@ -452,7 +452,7 @@ static int decode(Dis *d)
         return d->len;
     }
     case 0xc2: /* ret imm16 */
-        i2[0] = 0; { int v = get16(d); P(d, "ret\t$0x%x", v); }
+        { int v = get16(d); P(d, "ret\t$0x%x", v); }
         return d->len;
     case 0xc3:
         P(d, "ret");
@@ -564,9 +564,9 @@ static int decode(Dis *d)
             case 0xdc:
                 if (mb <= 0xc7) P(d, "fadd\t%%st, %s", st[r]);
                 else if (mb <= 0xcf) P(d, "fmul\t%%st, %s", st[r]);
-                else if (mb <= 0xef) P(d, "fsubr\t%%st, %s", st[r]);
-                else if (mb <= 0xf7) P(d, "fsub\t%%st, %s", st[r]);
-                else if (mb <= 0xff) P(d, "fdivr\t%%st, %s", st[r]);
+                else if (mb >= 0xe0 && mb <= 0xe7) P(d, "fsubr\t%%st, %s", st[r]);
+                else if (mb >= 0xe8 && mb <= 0xef) P(d, "fsub\t%%st, %s", st[r]);
+                else if (mb >= 0xf0 && mb <= 0xf7) P(d, "fdivr\t%%st, %s", st[r]);
                 else P(d, "fdiv\t%%st, %s", st[r]);
                 break;
             case 0xdd:
@@ -578,9 +578,9 @@ static int decode(Dis *d)
                 if (mb <= 0xc7) P(d, "faddp\t%s", st[r]);
                 else if (mb <= 0xcf) P(d, "fmulp\t%s", st[r]);
                 else if (mb == 0xd9) P(d, "fcompp");
-                else if (mb <= 0xef) P(d, "fsubrp\t%s", st[r]);
-                else if (mb <= 0xf7) P(d, "fsubp\t%s", st[r]);
-                else if (mb <= 0xff) P(d, "fdivrp\t%s", st[r]);
+                else if (mb >= 0xe0 && mb <= 0xe7) P(d, "fsubrp\t%s", st[r]);
+                else if (mb >= 0xe8 && mb <= 0xef) P(d, "fsubp\t%s", st[r]);
+                else if (mb >= 0xf0 && mb <= 0xf7) P(d, "fdivrp\t%s", st[r]);
                 else P(d, "fdivp\t%s", st[r]);
                 break;
             case 0xda:

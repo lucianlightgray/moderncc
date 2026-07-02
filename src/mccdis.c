@@ -76,7 +76,8 @@ static const char *sym_name(MCCState *s1, int sym_index)
    patches), or 0 if unknown. */
 static int reloc_field_size(int type)
 {
-#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_I386)
+    (void)type;
+#if defined(MCC_TARGET_X86_64)
     switch (type) {
     case R_X86_64_64:
     case R_X86_64_TPOFF64:
@@ -113,7 +114,7 @@ ST_FUNC const char *disasm_reloc(disasm_ctx *dc, addr_t off, int size, int *ptyp
             addr_t addend = rel->r_addend;
             if (ptype)
                 *ptype = type;
-#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_I386)
+#if defined(MCC_TARGET_X86_64)
             /* PC-relative relocs (call/jmp/rip) carry -(size) as their addend
                to bias from the field to the insn end; gas re-derives that, so
                fold it out for a clean "sym" / "sym+disp". */
@@ -134,6 +135,7 @@ ST_FUNC const char *disasm_reloc(disasm_ctx *dc, addr_t off, int size, int *ptyp
     return NULL;
 }
 
+#ifdef MCC_HAVE_DISASM
 ST_FUNC const char *disasm_label(disasm_ctx *dc, addr_t target)
 {
     static char buf[32];
@@ -160,6 +162,7 @@ static int addr_cmp(const void *a, const void *b)
     addr_t x = *(const addr_t *)a, y = *(const addr_t *)b;
     return x < y ? -1 : x > y ? 1 : 0;
 }
+#endif /* MCC_HAVE_DISASM */
 
 /* ---- per-section symbol table --------------------------------------- */
 
@@ -266,7 +269,7 @@ static void emit_text(disasm_ctx *dc, struct secsym *syms, int nsym)
     addr_t pc, end = dc->size;
     int si, li;
 
-#if defined(MCC_TARGET_X86_64)
+#ifdef MCC_HAVE_DISASM
     /* pass 1: gather branch targets (no output) */
     dc->collect = 1;
     for (pc = 0; pc < end; ) {
@@ -293,7 +296,7 @@ static void emit_text(disasm_ctx *dc, struct secsym *syms, int nsym)
         }
         while (li < dc->nlabels && dc->labels[li] < pc)
             li++; /* target that fell mid-instruction: skip (shouldn't happen) */
-#if defined(MCC_TARGET_X86_64)
+#ifdef MCC_HAVE_DISASM
         {
             int len;
             dc->pc = pc;

@@ -1549,6 +1549,12 @@ ST_FUNC int set_global_sym(MCCState *s1, const char *name, Section *sec, addr_t 
 
 /* ------------ mccdis.c : -S assembly (disassembly) output ------------ */
 
+/* Targets with a per-arch instruction decoder (<arch>-dis.c).  Others still
+   get an assembly listing via mccdis.c, with .text emitted as a .byte dump. */
+#if defined(MCC_TARGET_X86_64)
+# define MCC_HAVE_DISASM 1
+#endif
+
 /* State shared between the arch-independent listing driver (mccdis.c) and the
    per-arch instruction decoder (<arch>-dis.c). */
 typedef struct disasm_ctx {
@@ -1573,6 +1579,7 @@ ST_FUNC int asm_output_file(MCCState *s1, const char *filename);
    symbolic operands instead of raw immediates/displacements. */
 ST_FUNC const char *disasm_reloc(disasm_ctx *dc, addr_t off, int size, int *ptype);
 
+#ifdef MCC_HAVE_DISASM
 /* Register an intra-section relative branch target and return the local label
    text (".L<off>") the arch decoder should print for it. */
 ST_FUNC const char *disasm_label(disasm_ctx *dc, addr_t target);
@@ -1581,6 +1588,7 @@ ST_FUNC const char *disasm_label(disasm_ctx *dc, addr_t target);
    prints its AT&T-syntax text (no leading tab, no trailing newline) to dc->out,
    and returns the instruction length in bytes (>= 1). */
 ST_FUNC int mcc_disasm_insn(disasm_ctx *dc);
+#endif
 
 #ifndef ELF_OBJ_ONLY
 ST_FUNC int mcc_load_dll(MCCState *s1, int fd, const char *filename, int level);
