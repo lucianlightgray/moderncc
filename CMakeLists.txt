@@ -3339,10 +3339,12 @@ cmake_language(EXIT 0)
     set(_ref_cc_name "${MCC_CC_NAME}")
     set(_ref_cc_major "${MCC_GCC_MAJOR}")
     if(NOT _ref_cc)
-        if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
-            
-            
-            
+        if(MCC_TARGETOS STREQUAL "WIN32" AND NOT CMAKE_C_COMPILER_ID STREQUAL "GNU")
+            # The WIN32 refflags below are mingw-gcc-specific (-lgcc/-lmingwex/
+            # legacy msvcrt.dll), so an MSVC or clang-msvc host compiler cannot
+            # be the reference (clang-msvc cannot even compile full_language.c
+            # against UCRT <fenv.h>). Resolve a mingw gcc instead: downloaded
+            # winlibs first, then PATH.
             mcc_mingw_resolve()
             if(EXISTS "${_MCC_MINGW_X86_64_GCC}")
                 set(_ref_cc "${_MCC_MINGW_X86_64_GCC}")
@@ -3401,9 +3403,9 @@ cmake_language(EXIT 0)
     elseif(MCC_CPU STREQUAL "i386")
         set(_mcctest_refflags "-fno-PIC -fno-PIE -Wl,-z,notext")
     endif()
-    if(CMAKE_C_COMPILER_ID STREQUAL "MSVC" AND NOT _ref_cc)
-        mcc_skip_test(mcctest "needs a GCC-compatible reference cc (host cc is MSVC; set MCC_REF_CC or put gcc on PATH)")
-        mcc_skip_test(mcctest-bcheck "needs a GCC-compatible reference cc (host cc is MSVC; set MCC_REF_CC or put gcc on PATH)")
+    if(NOT _ref_cc)
+        mcc_skip_test(mcctest "needs a GCC-compatible reference cc (host cc is ${CMAKE_C_COMPILER_ID}; set MCC_REF_CC or put gcc on PATH)")
+        mcc_skip_test(mcctest-bcheck "needs a GCC-compatible reference cc (host cc is ${CMAKE_C_COMPILER_ID}; set MCC_REF_CC or put gcc on PATH)")
     elseif(_ref_cc_name STREQUAL "gcc" AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
         
         
