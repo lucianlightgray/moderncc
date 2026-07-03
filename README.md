@@ -99,6 +99,22 @@ all 5 arches × glibc+musl + `qemu-arm64-osx`). With the `cross` toolchain
 built (`MCC_CROSS_DIR`, default `cmake-build-cross`), the wine PE-conformance
 and the four host-runnable Mach-O drivers run natively and pass too.
 
+**Windows status (2026-07, mingw gcc 13.1/16.1 / MSVC 19.51 / clang 22):**
+every Windows-runnable preset is green — `debug`, `release`, `diagnostics`,
+`cross` (40/40 each, mingw), `msvc` (VS generator), `mingw` (superbuild;
+fetches the pinned winlibs GCC and tests with it), `matrix` (gcc/clang ×
+native/cross — 4 cells × 40/40, clang resolved from the fetched
+`cmake-clang`), and both `dist-*` packagings (`dist-msvc`, `dist-mingw`:
+mcc + `-static`/`-dynamic` + `libmcc-static`/`-dynamic` + all 12 cross
+compilers). `asan` intentionally fails at configure — mingw ships no
+libasan/libubsan; use `diagnostics`, which builds the coverage + profile
+variants and skips sanitize. The PE target gets native-only extra coverage
+(`pe-native-conformance`, `compile.win32.*`); remaining skips are
+environment-gated with reasons (wine, macOS, X11, ELF-emitting 32-bit
+reference). The `linux-*` presets, `dist-linux-*` packagings, and the qemu
+grid all run from Windows too, via the Docker runners (`tests/ci/docker`,
+`tests/qemu/docker`) — verified 15/15 presets and 22/22 qemu combos.
+
 or, CMake (without presets):
 
 ```sh
