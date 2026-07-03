@@ -32,9 +32,9 @@ static void report_err(const char *tag, const char *name, const char *stderr_tex
 }
 
 /* small argv builder */
-typedef struct { const char *a[64]; int n; } Argv;
-static void A(Argv *v, const char *s) { v->a[v->n++] = s; }
-static const char *const *Z(Argv *v) { v->a[v->n] = 0; return v->a; }
+/* Argv + argv builder now live in toolsupport.h; A/Z are the local spelling. */
+static void A(Argv *v, const char *s) { ts_arg(v, s); }
+static const char *const *Z(Argv *v) { return ts_argz(v); }
 
 /* compile argv under optional launcher -> exit code; capture stderr into *err */
 static int compile_l(const char *const *argv, const char *const *launcher, char **err)
@@ -230,12 +230,12 @@ static int suite_parts(int argc, char **argv)
         char *err = NULL;
         int bad = 0;
         snprintf(name, sizeof name, "%.*s", (int)(strlen(base) - 2), base); /* strip .c */
-        snprintf(eg, sizeof eg, "%s/%s.gcc", work, name);
-        snprintf(ec, sizeof ec, "%s/%s.clang", work, name);
-        snprintf(em, sizeof em, "%s/%s.mcc", work, name);
-        snprintf(og, sizeof og, "%s/%s.out.gcc", work, name);
-        snprintf(oc, sizeof oc, "%s/%s.out.clang", work, name);
-        snprintf(om, sizeof om, "%s/%s.out.mcc", work, name);
+        ts_path(eg, sizeof eg, work, "%s.gcc", name);
+        ts_path(ec, sizeof ec, work, "%s.clang", name);
+        ts_path(em, sizeof em, work, "%s.mcc", name);
+        ts_path(og, sizeof og, work, "%s.out.gcc", name);
+        ts_path(oc, sizeof oc, work, "%s.out.clang", name);
+        ts_path(om, sizeof om, work, "%s.out.mcc", name);
         (void)outg; (void)outc; (void)outm;
 
         { Argv v = {{0},0};
@@ -299,10 +299,10 @@ static int suite_mcctest(int argc, char **argv)
     snprintf(Isrc, sizeof Isrc, "-I%s", srcdir);
     snprintf(Ibld, sizeof Ibld, "-I%s", bdir);
     snprintf(Bflag, sizeof Bflag, "-B%s", bdir);
-    snprintf(refexe, sizeof refexe, "%s/mcctest.gcc", work);
-    snprintf(refout, sizeof refout, "%s/mcctest.ref", work);
-    snprintf(mccexe, sizeof mccexe, "%s/mcctest.mcc", work);
-    snprintf(mccout, sizeof mccout, "%s/mcctest.out", work);
+    ts_path(refexe, sizeof refexe, work, "mcctest.gcc");
+    ts_path(refout, sizeof refout, work, "mcctest.ref");
+    ts_path(mccexe, sizeof mccexe, work, "mcctest.mcc");
+    ts_path(mccout, sizeof mccout, work, "mcctest.out");
 
     /* reference cc build (no launcher: native reference) */
     { Argv v = {{0},0};
@@ -398,14 +398,14 @@ static int suite_asmconnect(int argc, char **argv)
     host_mkdirs(work);
     snprintf(Iinc, sizeof Iinc, "-I%s", idir);
     snprintf(Bflag, sizeof Bflag, "-B%s", bdir);
-    snprintf(p1, sizeof p1, "%s/asm/asm_c_connect/part1.c", srcdir);
-    snprintf(p2, sizeof p2, "%s/asm/asm_c_connect/part2.c", srcdir);
-    snprintf(single, sizeof single, "%s/asm-c-connect", work);
-    snprintf(sep, sizeof sep, "%s/asm-c-connect-sep", work);
-    snprintf(o1, sizeof o1, "%s/asm-c-connect.out1", work);
-    snprintf(o2, sizeof o2, "%s/asm-c-connect.out2", work);
-    snprintf(a1, sizeof a1, "%s/acc1.o", work);
-    snprintf(a2, sizeof a2, "%s/acc2.o", work);
+    ts_path(p1, sizeof p1, srcdir, "asm/asm_c_connect/part1.c");
+    ts_path(p2, sizeof p2, srcdir, "asm/asm_c_connect/part2.c");
+    ts_path(single, sizeof single, work, "asm-c-connect");
+    ts_path(sep, sizeof sep, work, "asm-c-connect-sep");
+    ts_path(o1, sizeof o1, work, "asm-c-connect.out1");
+    ts_path(o2, sizeof o2, work, "asm-c-connect.out2");
+    ts_path(a1, sizeof a1, work, "acc1.o");
+    ts_path(a2, sizeof a2, work, "acc2.o");
 
     { Argv v={{0},0}; A(&v,mcc);A(&v,Bflag);A(&v,Iinc);A(&v,p1);A(&v,p2);A(&v,"-o");A(&v,single);
       if (compile_l(Z(&v),emu,&err)){report_err("single build","asm-c-connect",err);free(err);return 1;} free(err);err=NULL; }
@@ -446,12 +446,12 @@ static int suite_dashs(int argc, char **argv)
     host_mkdirs(work);
     snprintf(Iinc, sizeof Iinc, "-I%s", idir);
     snprintf(Bflag, sizeof Bflag, "-B%s", bdir);
-    snprintf(src, sizeof src, "%s/asm/dash_s_roundtrip/prog.c", srcdir);
-    snprintf(direct, sizeof direct, "%s/dashS-direct", work);
-    snprintf(out1, sizeof out1, "%s/dashS.out1", work);
-    snprintf(sfile, sizeof sfile, "%s/dashS.s", work);
-    snprintf(via, sizeof via, "%s/dashS-via", work);
-    snprintf(out2, sizeof out2, "%s/dashS.out2", work);
+    ts_path(src, sizeof src, srcdir, "asm/dash_s_roundtrip/prog.c");
+    ts_path(direct, sizeof direct, work, "dashS-direct");
+    ts_path(out1, sizeof out1, work, "dashS.out1");
+    ts_path(sfile, sizeof sfile, work, "dashS.s");
+    ts_path(via, sizeof via, work, "dashS-via");
+    ts_path(out2, sizeof out2, work, "dashS.out2");
 
     { Argv v={{0},0}; A(&v,mcc);A(&v,Bflag);A(&v,Iinc);A(&v,src);A(&v,"-o");A(&v,direct);
       if (compile_l(Z(&v),emu,&err)){report_err("direct build","dash-S",err);free(err);return 1;} free(err);err=NULL; }
@@ -627,15 +627,15 @@ static int suite_i386fastcall(int argc, char **argv)
     if (!imcc || !work) { fprintf(stderr, "usage: mccharness i386fastcall --imcc --work [--gcc --m32]\n"); return 2; }
     if (!host_find_tool(gcc, NULL, gpath, sizeof gpath)) return skip0("no gcc");
     host_mkdirs(work);
-#define P(v, name) snprintf(v, sizeof v, "%s/%s", work, name)
+#define P(v, name) ts_path(v, sizeof v, work, "%s", name)
     P(cC, "callee.c"); P(cR, "caller.c"); P(cU, "unsup.c");
     P(callee, "m32probe.c"); P(et, "e_t.o"); P(lt, "l_t.o"); P(eg, "e_g.o"); P(lg, "l_g.o");
     P(uo, "unsup.o"); P(run, "run");
 #undef P
     /* -m32 reference availability */
     { char probe[4096], probeexe[4096]; Argv v = {{0},0};
-      snprintf(probe, sizeof probe, "%s/m32probe.c", work);
-      snprintf(probeexe, sizeof probeexe, "%s/m32probe", work);
+      ts_path(probe, sizeof probe, work, "m32probe.c");
+      ts_path(probeexe, sizeof probeexe, work, "m32probe");
       write_file(probe, "int main(void){return 0;}\n");
       A(&v, gpath); split_append(&v, m32s); A(&v, probe); A(&v, "-o"); A(&v, probeexe);
       if (run_quiet(Z(&v))) return skip0("32-bit reference build unavailable (%s %s)", gpath, m32s); }
@@ -643,9 +643,9 @@ static int suite_i386fastcall(int argc, char **argv)
     { int isd; if (host_stat(imcc, &isd, NULL, NULL)) return skip0("i386 mcc not found at '%s'", imcc); }
     /* object-format compatibility between mcc and the reference cc */
     { char fp[4096], fm[4096], fmo[4096], fgo[4096], fpe[4096]; Argv a = {{0},0}, b = {{0},0}, c = {{0},0};
-      snprintf(fp, sizeof fp, "%s/fmtprobe.c", work); snprintf(fm, sizeof fm, "%s/fmtmain.c", work);
-      snprintf(fmo, sizeof fmo, "%s/fmt_mcc.o", work); snprintf(fgo, sizeof fgo, "%s/fmt_gcc.o", work);
-      snprintf(fpe, sizeof fpe, "%s/fmtprobe", work);
+      ts_path(fp, sizeof fp, work, "fmtprobe.c"); ts_path(fm, sizeof fm, work, "fmtmain.c");
+      ts_path(fmo, sizeof fmo, work, "fmt_mcc.o"); ts_path(fgo, sizeof fgo, work, "fmt_gcc.o");
+      ts_path(fpe, sizeof fpe, work, "fmtprobe");
       write_file(fp, "int probe_fn(void){return 0;}\n");
       write_file(fm, "int probe_fn(void); int main(void){return probe_fn();}\n");
       A(&a, imcc); A(&a, "-c"); A(&a, fp); A(&a, "-o"); A(&a, fmo);
@@ -721,17 +721,17 @@ static int suite_gcctestsuite(int argc, char **argv)
         return skip0("gcc testsuite not found (set MCC_GCCTESTSUITE_PATH)");
     if (!bdir) bdir = builddir;
     snprintf(Bflag, sizeof Bflag, "-B%s", bdir);
-    snprintf(rt, sizeof rt, "%s/gcctestsuite", builddir);
-    snprintf(sumpath, sizeof sumpath, "%s/mcc.sum", builddir);
-    snprintf(tsto, sizeof tsto, "%s/tst.o", rt);
-    snprintf(tstx, sizeof tstx, "%s/tst", rt);
+    ts_path(rt, sizeof rt, builddir, "gcctestsuite");
+    ts_path(sumpath, sizeof sumpath, builddir, "mcc.sum");
+    ts_path(tsto, sizeof tsto, rt, "tst.o");
+    ts_path(tstx, sizeof tstx, rt, "tst");
     host_mkdirs(rt);
     if (idir) { snprintf(Iinc, sizeof Iinc, "-I%s", idir); snprintf(Iinc2, sizeof Iinc2, "-I%s/include", idir); }
 
     if (!(sum = fopen(sumpath, "wb"))) { fprintf(stderr, "gcctestsuite: cannot write %s\n", sumpath); return 1; }
 
     /* compile-only tests */
-    snprintf(dir, sizeof dir, "%s/compile", path);
+    ts_path(dir, sizeof dir, path, "compile");
     nf = ts_glob(dir, "*.c", 0, files, 8192);
     for (i = 0; i < (nf < 0 ? 0 : nf); i++) {
         const char *s = files[i], *base = strrchr(s, '/'); base = base ? base + 1 : s;
@@ -751,7 +751,7 @@ static int suite_gcctestsuite(int argc, char **argv)
     /* execute tests (+ ieee) */
     { const char *subs[] = { "execute", "execute/ieee", 0 }; int si;
       for (si = 0; subs[si]; si++) {
-        snprintf(dir, sizeof dir, "%s/%s", path, subs[si]);
+        ts_path(dir, sizeof dir, path, "%s", subs[si]);
         nf = ts_glob(dir, "*.c", 0, files, 8192);
         for (i = 0; i < (nf < 0 ? 0 : nf); i++) {
             const char *s = files[i], *base = strrchr(s, '/'); base = base ? base + 1 : s;
@@ -795,14 +795,14 @@ static int suite_penative(int argc, char **argv)
 
     if (!mcc || !b || !src || !work) { fprintf(stderr, "usage: mccharness penative --mcc --b --src --work [--cpu]\n"); return 2; }
     if (host_stat(mcc, &isd, NULL, NULL)) ts_skip("no native mcc at %s", mcc);
-    snprintf(lib, sizeof lib, "%s/lib/libmcc1.a", b);
+    ts_path(lib, sizeof lib, b, "lib/libmcc1.a");
     if (host_stat(lib, &isd, NULL, NULL)) ts_skip("build tree %s has no lib/libmcc1.a", b);
-    snprintf(conf, sizeof conf, "%s/tests/qemu/conformance", src);
+    ts_path(conf, sizeof conf, src, "tests/qemu/conformance");
     snprintf(Ib, sizeof Ib, "-B%s", b);
     snprintf(Ibinc, sizeof Ibinc, "-I%s/include", b);
     snprintf(Iw32, sizeof Iw32, "-I%s/runtime/win32/include", src);
     snprintf(Irt, sizeof Irt, "-I%s/runtime/include", src);
-    snprintf(runout, sizeof runout, "%s/pe-native-run.out", work);
+    ts_path(runout, sizeof runout, work, "pe-native-run.out");
     host_mkdirs(work);
 
     nf = ts_glob(conf, "*.c", 0, files, 4096);
@@ -814,7 +814,7 @@ static int suite_penative(int argc, char **argv)
             printf("SKIP %s -- arm64 PE _Thread_local access-violates at runtime\n", n);
             free(files[i]); continue;
         }
-        snprintf(exe, sizeof exe, "%s/pe_native_%s.exe", work, n);
+        ts_path(exe, sizeof exe, work, "pe_native_%s.exe", n);
         { Argv v = {{0},0};
           A(&v, mcc); A(&v, Ib); A(&v, Ibinc); A(&v, Iw32); A(&v, Irt); A(&v, f); A(&v, "-o"); A(&v, exe);
           if (compile(Z(&v), &err)) {
@@ -855,7 +855,7 @@ static int suite_qemurun(int argc, char **argv)
     host_mkdirs(workdir);
     snprintf(Bf, sizeof Bf, "-B%s", mccbase);
     snprintf(sysf, sizeof sysf, "--sysroot=%s", sysroot);
-    snprintf(isysinc, sizeof isysinc, "%s/usr/include", sysroot);
+    ts_path(isysinc, sizeof isysinc, sysroot, "usr/include");
     snprintf(L1, sizeof L1, "-L%s/usr/lib64", sysroot);
     snprintf(L2, sizeof L2, "-L%s/lib64", sysroot);
     snprintf(L3, sizeof L3, "-L%s/usr/lib", sysroot);
@@ -869,7 +869,7 @@ static int suite_qemurun(int argc, char **argv)
         snprintf(n, sizeof n, "%.*s", (int)(strlen(base) - 2), base);
         for (m = 0; m < 2; m++) {              /* 0=default, 1=pic */
             char out[4200]; char *err = NULL; Argv v = {{0},0};
-            snprintf(out, sizeof out, "%s/%s.%s", workdir, n, m ? "pic" : "default");
+            ts_path(out, sizeof out, workdir, "%s.%s", n, m ? "pic" : "default");
             A(&v, mcc); A(&v, Bf); A(&v, sysf); A(&v, "-isystem"); A(&v, isysinc);
             A(&v, L1); A(&v, L2); A(&v, L3); A(&v, L4);
             if (m) { A(&v, "-fPIC"); A(&v, "-pie"); }
@@ -897,7 +897,7 @@ static void copy_glob(const char *dir, const char *pat, const char *dstdir)
     for (i = 0; i < (n < 0 ? 0 : n); i++) {
         const char *b = strrchr(files[i], '/'); char dst[4200];
         b = b ? b + 1 : files[i];
-        snprintf(dst, sizeof dst, "%s/%s", dstdir, b);
+        ts_path(dst, sizeof dst, dstdir, "%s", b);
         host_copy_file(files[i], dst, 0);
         free(files[i]);
     }
@@ -921,9 +921,9 @@ static int suite_pewine(int argc, char **argv)
     have32 = host_find_tool_any(W32, NULL, wine32, sizeof wine32);
     if (!have64 && !have32) ts_skip("no wine found");
 
-    snprintf(conf, sizeof conf, "%s/tests/qemu/conformance", src);
-    snprintf(prefix, sizeof prefix, "%s/.wineprefix", work);
-    snprintf(runout, sizeof runout, "%s/wine-run.out", work);
+    ts_path(conf, sizeof conf, src, "tests/qemu/conformance");
+    ts_path(prefix, sizeof prefix, work, ".wineprefix");
+    ts_path(runout, sizeof runout, work, "wine-run.out");
     snprintf(wenv_pfx, sizeof wenv_pfx, "WINEPREFIX=%s", prefix);
     extra[0] = wenv_dbg; extra[1] = wenv_pfx; extra[2] = 0;
     env = make_env_plus(extra);
@@ -932,24 +932,24 @@ static int suite_pewine(int argc, char **argv)
         const char *tgt = TGT[t], *wine;
         char mcc[4200], B[4096], Blib[4300], defs[4300], objs[4300], a[4300], Iw32[4300], Irt[4300];
         char *files[4096]; int nf, i;
-        snprintf(mcc, sizeof mcc, "%s/mcc-%s", xb, tgt);
+        ts_path(mcc, sizeof mcc, xb, "mcc-%s", tgt);
         if (host_stat(mcc, &isd, NULL, NULL)) { printf("SKIP %s: no mcc-%s\n", tgt, tgt); continue; }
         wine = !strcmp(tgt, "i386-win32") ? (have32 ? wine32 : NULL) : (have64 ? wine64 : NULL);
         if (!wine) { printf("SKIP %s: no matching wine\n", tgt); continue; }
         any = 1;
-        snprintf(B, sizeof B, "%s/B-%s", work, tgt);
-        snprintf(Blib, sizeof Blib, "%s/lib", B);
+        ts_path(B, sizeof B, work, "B-%s", tgt);
+        ts_path(Blib, sizeof Blib, B, "lib");
         host_mkdirs(Blib);
-        snprintf(defs, sizeof defs, "%s/runtime/win32/lib", src);
-        snprintf(objs, sizeof objs, "%s/lib-%s", xb, tgt);
-        snprintf(a, sizeof a, "%s/%s-libmcc1.a", xb, tgt);
+        ts_path(defs, sizeof defs, src, "runtime/win32/lib");
+        ts_path(objs, sizeof objs, xb, "lib-%s", tgt);
+        ts_path(a, sizeof a, xb, "%s-libmcc1.a", tgt);
         copy_glob(defs, "*.def", Blib);
         copy_glob(objs, "*.o", Blib);
         copy_glob(objs, "*.o", B);
         if (!host_stat(a, &isd, NULL, NULL)) {
             char d1[8192], d2[8192];
-            snprintf(d1, sizeof d1, "%s/%s-libmcc1.a", Blib, tgt);
-            snprintf(d2, sizeof d2, "%s/%s-libmcc1.a", B, tgt);
+            ts_path(d1, sizeof d1, Blib, "%s-libmcc1.a", tgt);
+            ts_path(d2, sizeof d2, B, "%s-libmcc1.a", tgt);
             host_copy_file(a, d1, 0); host_copy_file(a, d2, 0);
         }
         snprintf(Iw32, sizeof Iw32, "-I%s/runtime/win32/include", src);
@@ -960,7 +960,7 @@ static int suite_pewine(int argc, char **argv)
             const char *f = files[i], *base = strrchr(f, '/'); char n[256], exe[4300], Bf[4300], *err = NULL;
             base = base ? base + 1 : f;
             snprintf(n, sizeof n, "%.*s", (int)(strlen(base) - 2), base);
-            snprintf(exe, sizeof exe, "%s/pe_%s_%s.exe", work, tgt, n);
+            ts_path(exe, sizeof exe, work, "pe_%s_%s.exe", tgt, n);
             snprintf(Bf, sizeof Bf, "-B%s", B);
             { Argv v = {{0},0}; A(&v, mcc); A(&v, Bf); A(&v, Iw32); A(&v, Irt); A(&v, f); A(&v,"-o"); A(&v, exe);
               if (compile(Z(&v), &err)) { char *l = ts_first_error_line(err, NULL, NULL);
@@ -1009,12 +1009,12 @@ static int suite_machonative(int argc, char **argv)
     if (!src || !mcc || !bdir || !work || !objcheck) { fprintf(stderr, "usage: mccharness machonative --src --mcc --bdir --work --objcheck\n"); return 2; }
     if (!MCC_HOST_DARWIN) ts_skip("host is not Darwin (native Mach-O needs a macOS host)");
     if (host_stat(mcc, &isd, NULL, NULL) || isd) ts_skip("no native mcc (%s)", mcc);
-    snprintf(conf, sizeof conf, "%s/tests/qemu/conformance", src);
+    ts_path(conf, sizeof conf, src, "tests/qemu/conformance");
     snprintf(Iinc, sizeof Iinc, "-I%s/runtime/include", src);
     snprintf(Bf, sizeof Bf, "-B%s", bdir);
     host_mkdirs(work);
-    snprintf(probe, sizeof probe, "%s/probe.c", work);
-    snprintf(probeexe, sizeof probeexe, "%s/probe", work);
+    ts_path(probe, sizeof probe, work, "probe.c");
+    ts_path(probeexe, sizeof probeexe, work, "probe");
     write_file(probe, "int main(void){return 0;}\n");
     { Argv v = {{0},0}; char *err = NULL; A(&v, mcc); A(&v, Bf); A(&v, probe); A(&v,"-o"); A(&v, probeexe);
       if (compile(Z(&v), &err)) { char *l = ts_first_error_line(err, NULL, NULL); char m[256]; snprintf(m,sizeof m,"%s",l?l:""); free(l); free(err); ts_skip("native mcc cannot link an executable: %s", m); }
@@ -1024,8 +1024,8 @@ static int suite_machonative(int argc, char **argv)
     for (i = 0; MACHO_PROGS_NATIVE[i]; i++) {
         const char *t = MACHO_PROGS_NATIVE[i];
         char f[8192], out[8192], *err = NULL;
-        snprintf(f, sizeof f, "%s/%s.c", conf, t);
-        snprintf(out, sizeof out, "%s/%s", work, t);
+        ts_path(f, sizeof f, conf, "%s.c", t);
+        ts_path(out, sizeof out, work, "%s", t);
         if (host_stat(f, &isd, NULL, NULL)) { printf("FAIL %s (missing source)\n", t); status = 1; continue; }
         { Argv v = {{0},0}; A(&v, mcc); A(&v, Bf); A(&v, Iinc); A(&v, f); A(&v,"-o"); A(&v, out);
           if (compile(Z(&v), &err)) { char *l = ts_first_error_line(err, NULL, NULL); printf("FAIL osx/%s (compile): %s\n", t, l?l:""); free(l); free(err); status = 1; continue; }
@@ -1104,33 +1104,33 @@ static int suite_machoimage(int argc, char **argv)
 
     if (!src || !xb || !work || !objcheck) { fprintf(stderr, "usage: mccharness machoimage --src --xb --work --objcheck\n"); return 2; }
     if (!host_is_x86_64()) ts_skip("host is not x86_64");
-    snprintf(mcc, sizeof mcc, "%s/mcc-x86_64-osx", xb);
+    ts_path(mcc, sizeof mcc, xb, "mcc-x86_64-osx");
     if (host_stat(mcc, &isd, NULL, NULL)) ts_skip("no mcc-x86_64-osx");
     if (!host_find_tool("gcc", NULL, gcc, sizeof gcc)) ts_skip("no gcc for the loader");
-    snprintf(osxrt, sizeof osxrt, "%s/lib-x86_64-osx", xb);
-    snprintf(probe, sizeof probe, "%s/atomic.o", osxrt);
+    ts_path(osxrt, sizeof osxrt, xb, "lib-x86_64-osx");
+    ts_path(probe, sizeof probe, osxrt, "atomic.o");
     if (host_stat(probe, &isd, NULL, NULL)) ts_skip("no x86_64-osx runtime objects");
-    snprintf(conf, sizeof conf, "%s/tests/qemu/conformance", src);
+    ts_path(conf, sizeof conf, src, "tests/qemu/conformance");
     host_mkdirs(work);
-    snprintf(loader, sizeof loader, "%s/machoload", work);
-    snprintf(ldsrc, sizeof ldsrc, "%s/tests/qemu/macho/loader.c", src);
+    ts_path(loader, sizeof loader, work, "machoload");
+    ts_path(ldsrc, sizeof ldsrc, src, "tests/qemu/macho/loader.c");
     snprintf(Iinc, sizeof Iinc, "-I%s/runtime/include", src);
     { Argv v = {{0},0}; char *err = NULL; A(&v, gcc); A(&v,"-O2"); A(&v, ldsrc); A(&v,"-o"); A(&v, loader);
       if (compile(Z(&v), &err)) { char *l = ts_first_error_line(err, NULL, NULL); char m[256]; snprintf(m,sizeof m,"%s",l?l:""); free(l); free(err); ts_skip("cannot build Mach-O loader (no seccomp?): %s", m); }
       free(err); }
-    snprintf(wrapc, sizeof wrapc, "%s/wrap.c", work);
-    snprintf(wrapo, sizeof wrapo, "%s/wrap.o", work);
+    ts_path(wrapc, sizeof wrapc, work, "wrap.c");
+    ts_path(wrapo, sizeof wrapo, work, "wrap.o");
     write_file(wrapc, MACHO_WRAP_C);
     { const char *a[] = { mcc, "-nostdlib", "-c", wrapc, "-o", wrapo, 0 }; run_quiet(a); }
 
     for (i = 0; PROGS[i]; i++) {
         const char *t = PROGS[i];
         char f[8192], co[8192], macho[8192], o1[8192], o2[8192], o3[8192], o4[8192], *err = NULL;
-        snprintf(f, sizeof f, "%s/%s.c", conf, t);
-        snprintf(co, sizeof co, "%s/c.o", work);
-        snprintf(macho, sizeof macho, "%s/%s.macho", work, t);
-        snprintf(o1, sizeof o1, "%s/atomic.o", osxrt); snprintf(o2, sizeof o2, "%s/stdatomic.o", osxrt);
-        snprintf(o3, sizeof o3, "%s/va_list.o", osxrt); snprintf(o4, sizeof o4, "%s/builtin.o", osxrt);
+        ts_path(f, sizeof f, conf, "%s.c", t);
+        ts_path(co, sizeof co, work, "c.o");
+        ts_path(macho, sizeof macho, work, "%s.macho", t);
+        ts_path(o1, sizeof o1, osxrt, "atomic.o"); ts_path(o2, sizeof o2, osxrt, "stdatomic.o");
+        ts_path(o3, sizeof o3, osxrt, "va_list.o"); ts_path(o4, sizeof o4, osxrt, "builtin.o");
         { Argv v = {{0},0}; A(&v, mcc); A(&v,"-nostdlib"); A(&v,"-Dmain=cmain"); A(&v, Iinc); A(&v,"-c"); A(&v, f); A(&v,"-o"); A(&v, co);
           if (compile(Z(&v), &err)) { printf("FAIL osx/%s (compile)\n", t); free(err); status = 1; continue; } free(err); err = NULL; }
         { Argv v = {{0},0}; A(&v, mcc); A(&v,"-nostdlib"); A(&v, co); A(&v, wrapo); A(&v, o1); A(&v, o2); A(&v, o3); A(&v, o4); A(&v,"-o"); A(&v, macho);
@@ -1170,8 +1170,8 @@ static int al_run_image(const char *mcc, const char *shiminc, char **objs, int n
     static const char *SKIPS[] = { "stack", "deprecat", 0 };
     char testo[8192], macho[8192], *err = NULL;
     const char **a; int n = 0, i;
-    snprintf(testo, sizeof testo, "%s/test.o", work);
-    snprintf(macho, sizeof macho, "%s/%s.macho", work, label);
+    ts_path(testo, sizeof testo, work, "test.o");
+    ts_path(macho, sizeof macho, work, "%s.macho", label);
     { Argv v = {{0},0}; A(&v, mcc); A(&v,"-nostdlib"); A(&v, shiminc); A(&v,"-Dmain=cmain"); A(&v,"-c"); A(&v, src); A(&v,"-o"); A(&v, testo);
       if (compile(Z(&v), &err)) { char *l = ts_first_error_line(err, NULL, NULL); printf("FAIL %s (test compile): %s\n", label, l?l:""); free(l); free(err); return 1; }
       free(err); err = NULL; }
@@ -1185,7 +1185,7 @@ static int al_run_image(const char *mcc, const char *shiminc, char **objs, int n
       if (rc) { char *l = ts_first_error_line(err, NULL, SKIPS); printf("FAIL %s (link): %s\n", label, l?l:""); free(l); free(err); return 1; }
       free(err); }
     if (!obj_is_macho(objcheck, macho)) { printf("FAIL %s: not a Mach-O image\n", label); return 1; }
-    { const char *ldargv[3]; char loader[8192]; snprintf(loader, sizeof loader, "%s/machoload", work);
+    { const char *ldargv[3]; char loader[8192]; ts_path(loader, sizeof loader, work, "machoload");
       ldargv[0] = loader; ldargv[1] = macho; ldargv[2] = 0;
       { int rc = run_quiet(ldargv);
         if (rc == 0) { printf("PASS %s (Apple's genuine libc executed as a Mach-O image)\n", label); remove(macho); return 0; }
@@ -1206,38 +1206,38 @@ static int suite_machoapplelibc(int argc, char **argv)
 
     if (!src || !xb || !work || !objcheck) { fprintf(stderr, "usage: mccharness machoapplelibc --src --xb --work --objcheck\n"); return 2; }
     if (!host_is_x86_64()) ts_skip("host is not x86_64");
-    snprintf(mcc, sizeof mcc, "%s/mcc-x86_64-osx", xb);
+    ts_path(mcc, sizeof mcc, xb, "mcc-x86_64-osx");
     if (host_stat(mcc, &isd, NULL, NULL)) ts_skip("no mcc-x86_64-osx");
     if (!host_find_tool("gcc", NULL, gcc, sizeof gcc)) ts_skip("no gcc for the loader");
-    snprintf(AL, sizeof AL, "%s/tests/qemu/apple-libc", src);
-    snprintf(probe, sizeof probe, "%s/src/strcspn.c", AL);
+    ts_path(AL, sizeof AL, src, "tests/qemu/apple-libc");
+    ts_path(probe, sizeof probe, AL, "src/strcspn.c");
     if (host_stat(probe, &isd, NULL, NULL)) ts_skip("vendored Apple sources absent");
-    snprintf(osxrt, sizeof osxrt, "%s/lib-x86_64-osx", xb);
+    ts_path(osxrt, sizeof osxrt, xb, "lib-x86_64-osx");
     host_mkdirs(work);
-    snprintf(loader, sizeof loader, "%s/machoload", work);
-    snprintf(ldsrc, sizeof ldsrc, "%s/tests/qemu/macho/loader.c", src);
+    ts_path(loader, sizeof loader, work, "machoload");
+    ts_path(ldsrc, sizeof ldsrc, src, "tests/qemu/macho/loader.c");
     { Argv v = {{0},0}; char *err = NULL; A(&v, gcc); A(&v,"-O2"); A(&v, ldsrc); A(&v,"-o"); A(&v, loader);
       if (compile(Z(&v), &err)) { char *l = ts_first_error_line(err, NULL, NULL); char m[256]; snprintf(m,sizeof m,"%s",l?l:""); free(l); free(err); ts_skip("cannot build Mach-O loader (no seccomp?): %s", m); }
       free(err); }
-    snprintf(wrapc, sizeof wrapc, "%s/wrap.c", work);
-    snprintf(wrapo, sizeof wrapo, "%s/wrap.o", work);
+    ts_path(wrapc, sizeof wrapc, work, "wrap.c");
+    ts_path(wrapo, sizeof wrapo, work, "wrap.o");
     snprintf(shiminc, sizeof shiminc, "-I%s/shim-include", AL);
     write_file(wrapc, AL_WRAP_C);
 
     for (di = 0; RTNAMES[di]; di++) {
-        char o[4300]; snprintf(o, sizeof o, "%s/%s.o", osxrt, RTNAMES[di]);
+        char o[4300]; ts_path(o, sizeof o, osxrt, "%s.o", RTNAMES[di]);
         if (!host_stat(o, &isd, NULL, NULL)) rt[nrt++] = strdup(o);
     }
     /* compile every vendored source */
     for (di = 0; SUBDIRS[di] && !status; di++) {
         char dir[4300]; char *files[1024]; int nf, i;
-        snprintf(dir, sizeof dir, "%s/%s", AL, SUBDIRS[di]);
+        ts_path(dir, sizeof dir, AL, "%s", SUBDIRS[di]);
         nf = ts_glob(dir, "*.c", 0, files, 1024);
         for (i = 0; i < (nf < 0 ? 0 : nf); i++) {
             const char *f = files[i], *base = strrchr(f, '/'); char nm[256], oo[8192], *err = NULL;
             base = base ? base + 1 : f;
             snprintf(nm, sizeof nm, "%.*s", (int)(strlen(base) - 2), base);
-            snprintf(oo, sizeof oo, "%s/o_%s.o", work, nm);
+            ts_path(oo, sizeof oo, work, "o_%s.o", nm);
             { Argv v = {{0},0}; A(&v, mcc); A(&v,"-nostdlib"); A(&v, shiminc); A(&v,"-c"); A(&v, f); A(&v,"-o"); A(&v, oo);
               if (compile(Z(&v), &err)) { char *l = ts_first_error_line(err, NULL, NULL); printf("FAIL apple-libc/%s (compile): %s\n", nm, l?l:""); free(l); free(err); status = 1; free(files[i]); break; }
               free(err); }
@@ -1250,9 +1250,9 @@ static int suite_machoapplelibc(int argc, char **argv)
       if (compile(Z(&v), &err)) { char *l = ts_first_error_line(err, NULL, NULL); printf("FAIL apple-libc (wrap compile): %s\n", l?l:""); free(l); free(err); return 1; }
       free(err); }
     { char s1[4300], s2[4300], s3[4300];
-      snprintf(s1, sizeof s1, "%s/apple_string_conf.c", AL);
-      snprintf(s2, sizeof s2, "%s/apple_libplatform_conf.c", AL);
-      snprintf(s3, sizeof s3, "%s/apple_simple_conf.c", AL);
+      ts_path(s1, sizeof s1, AL, "apple_string_conf.c");
+      ts_path(s2, sizeof s2, AL, "apple_libplatform_conf.c");
+      ts_path(s3, sizeof s3, AL, "apple_simple_conf.c");
       status |= al_run_image(mcc, shiminc, objs, nobjs, wrapo, rt, nrt, objcheck, work, s1, "apple-libc-freebsd");
       status |= al_run_image(mcc, shiminc, objs, nobjs, wrapo, rt, nrt, objcheck, work, s2, "apple-libc-libplatform");
       status |= al_run_image(mcc, shiminc, objs, nobjs, wrapo, rt, nrt, objcheck, work, s3, "apple-libc-simple-printf"); }
@@ -1296,12 +1296,12 @@ static int suite_machocodegen(int argc, char **argv)
 
     if (!src || !xb || !work) { fprintf(stderr, "usage: mccharness machocodegen --src --xb --work [--arch --sysroot]\n"); return 2; }
     if (!host_find_tool("gcc", NULL, gcc, sizeof gcc)) ts_skip("no gcc to build the ELF harness");
-    snprintf(conf, sizeof conf, "%s/tests/qemu/conformance", src);
-    snprintf(mcc, sizeof mcc, "%s/mcc-%s-osx", xb, arch);
-    snprintf(osxrt, sizeof osxrt, "%s/lib-%s-osx", xb, arch);
+    ts_path(conf, sizeof conf, src, "tests/qemu/conformance");
+    ts_path(mcc, sizeof mcc, xb, "mcc-%s-osx", arch);
+    ts_path(osxrt, sizeof osxrt, xb, "lib-%s-osx", arch);
     if (!is_arm && !host_is_x86_64()) ts_skip("host is not x86_64");
     if (host_stat(mcc, &isd, NULL, NULL)) ts_skip("no mcc-%s-osx", arch);
-    snprintf(probe, sizeof probe, "%s/atomic.o", osxrt);
+    ts_path(probe, sizeof probe, osxrt, "atomic.o");
     if (host_stat(probe, &isd, NULL, NULL)) ts_skip("no %s-osx runtime objects", arch);
     if (is_arm) {
         char *tg = NULL, *e = NULL;
@@ -1316,12 +1316,12 @@ static int suite_machocodegen(int argc, char **argv)
     { const char *rx[] = { "atomic","stdatomic","va_list","builtin",0 };
       const char *ra[] = { "atomic","stdatomic","builtin","lib-arm64",0 };
       const char *const *rn = is_arm ? ra : rx; int k;
-      for (k = 0; rn[k]; k++) { char o[4300]; snprintf(o,sizeof o,"%s/%s.o",osxrt,rn[k]); rt[nrt++] = strdup(o); }
-      { char o[4300]; snprintf(o,sizeof o,"%s/complex.o",osxrt); if (!host_stat(o,&isd,NULL,NULL)) rt[nrt++] = strdup(o); } }
+      for (k = 0; rn[k]; k++) { char o[4300]; ts_path(o, sizeof o, osxrt, "%s.o",rn[k]); rt[nrt++] = strdup(o); }
+      { char o[4300]; ts_path(o, sizeof o, osxrt, "complex.o"); if (!host_stat(o,&isd,NULL,NULL)) rt[nrt++] = strdup(o); } }
 
     host_mkdirs(work);
-    snprintf(harness, sizeof harness, "%s/harness.c", work);
-    snprintf(shimS, sizeof shimS, "%s/shim.S", work);
+    ts_path(harness, sizeof harness, work, "harness.c");
+    ts_path(shimS, sizeof shimS, work, "shim.S");
     snprintf(Iinc, sizeof Iinc, "-I%s/runtime/include", src);
     write_file(harness, CG_HARNESS);
     /* generate the trampoline shim */
@@ -1336,8 +1336,8 @@ static int suite_machocodegen(int argc, char **argv)
         base = base ? base + 1 : f;
         snprintf(n, sizeof n, "%.*s", (int)(strlen(base) - 2), base);
         if (in_list(n, skipset)) { printf("SKIP osx-%s/%s (libc-variadic/TLS not ELF-linkable)\n", arch, n); free(progs[i]); continue; }
-        snprintf(oo, sizeof oo, "%s/o.o", work);
-        snprintf(run, sizeof run, "%s/run", work);
+        ts_path(oo, sizeof oo, work, "o.o");
+        ts_path(run, sizeof run, work, "run");
         { Argv v = {{0},0}; A(&v, mcc); A(&v, Iinc); A(&v,"-c"); A(&v, f); A(&v,"-o"); A(&v, oo);
           if (compile(Z(&v), &err)) { char *l = ts_first_error_line(err, NULL, NULL); printf("FAIL osx-%s/%s (compile): %s\n", arch, n, l?l:""); free(l); free(err); status = 1; free(progs[i]); continue; }
           free(err); err = NULL; }
@@ -1348,7 +1348,7 @@ static int suite_machocodegen(int argc, char **argv)
               a[m++] = "-o"; a[m++] = run;
           } else {
               snprintf(sysf, sizeof sysf, "--sysroot=%s", sysroot);
-              snprintf(isysf, sizeof isysf, "%s/usr/include", sysroot);
+              ts_path(isysf, sizeof isysf, sysroot, "usr/include");
               snprintf(Ls[0], sizeof Ls[0], "-L%s/usr/lib", sysroot); snprintf(Ls[1], sizeof Ls[1], "-L%s/lib", sysroot);
               snprintf(Ls[2], sizeof Ls[2], "-L%s/usr/lib64", sysroot); snprintf(Ls[3], sizeof Ls[3], "-L%s/lib64", sysroot);
               a[m++] = clang; a[m++] = "--target=aarch64-linux-gnu"; a[m++] = sysf; a[m++] = "-fuse-ld=lld";
@@ -1465,10 +1465,10 @@ static int suite_armasm(int argc, char **argv)
         return skip0("ARM binutils (%sas/objdump) not found", cross);
     if (host_stat(mcc, &isd, NULL, NULL)) return skip0("ARM mcc not found at '%s'", mcc);
     if (!(text = ts_read_file(tokh, NULL))) { fprintf(stderr, "arm-tok.h not found at '%s'\n", tokh); return 1; }
-    snprintf(w, sizeof w, "%s/arm-asm-testsuite", builddir);
+    ts_path(w, sizeof w, builddir, "arm-asm-testsuite");
     host_mkdirs(w);
-    snprintf(ins, sizeof ins, "%s/in.s", w); snprintf(inc, sizeof inc, "%s/in.c", w);
-    snprintf(aso, sizeof aso, "%s/as.o", w); snprintf(mo, sizeof mo, "%s/mcc.o", w);
+    ts_path(ins, sizeof ins, w, "in.s"); ts_path(inc, sizeof inc, w, "in.c");
+    ts_path(aso, sizeof aso, w, "as.o"); ts_path(mo, sizeof mo, w, "mcc.o");
 
     /* parse arm-tok.h for mnemonics */
     for (tok = strtok(text, "\n"); tok; tok = strtok(NULL, "\n")) {
@@ -1550,14 +1550,14 @@ static int suite_machostructural(int argc, char **argv)
     char conf[4300], Irt[4300]; int t, status = 0, any = 0, isd;
 
     if (!src || !xb || !objcheck || !work) { fprintf(stderr, "usage: mccharness machostructural --src --xb --objcheck --work\n"); return 2; }
-    snprintf(conf, sizeof conf, "%s/tests/qemu/conformance", src);
+    ts_path(conf, sizeof conf, src, "tests/qemu/conformance");
     snprintf(Irt, sizeof Irt, "-I%s/runtime/include", src);
     host_mkdirs(work);
 
     for (t = 0; TGT[t]; t++) {
         const char *tgt = TGT[t]; char mcc[4300]; char *files[4096]; int nf, i;
         char vsrc[4300], vexe[4300], *err = NULL;
-        snprintf(mcc, sizeof mcc, "%s/mcc-%s", xb, tgt);
+        ts_path(mcc, sizeof mcc, xb, "mcc-%s", tgt);
         if (host_stat(mcc, &isd, NULL, NULL)) { printf("SKIP %s: no mcc-%s\n", tgt, tgt); continue; }
         any = 1;
         nf = ts_glob(conf, "*.c", 0, files, 4096);
@@ -1566,7 +1566,7 @@ static int suite_machostructural(int argc, char **argv)
             base = base ? base + 1 : f;
             snprintf(n, sizeof n, "%.*s", (int)(strlen(base) - 2), base);
             if (in_list(n, SKIPN)) { printf("SKIP %s/%s (needs macOS libSystem)\n", tgt, n); free(files[i]); continue; }
-            snprintf(exe, sizeof exe, "%s/macho_%s_%s", work, tgt, n);
+            ts_path(exe, sizeof exe, work, "macho_%s_%s", tgt, n);
             err = NULL;
             { Argv v = {{0},0}; A(&v, mcc); A(&v, Irt); A(&v, f); A(&v,"-o"); A(&v, exe);
               if (compile(Z(&v), &err)) {
@@ -1582,8 +1582,8 @@ static int suite_machostructural(int argc, char **argv)
             free(files[i]);
         }
         /* -mmacosx-version-min must land in LC_BUILD_VERSION */
-        snprintf(vsrc, sizeof vsrc, "%s/macho_%s_versionmin.c", work, tgt);
-        snprintf(vexe, sizeof vexe, "%s/macho_%s_versionmin", work, tgt);
+        ts_path(vsrc, sizeof vsrc, work, "macho_%s_versionmin.c", tgt);
+        ts_path(vexe, sizeof vexe, work, "macho_%s_versionmin", tgt);
         write_file(vsrc, "int main(void){return 0;}\n");
         err = NULL;
         { Argv v = {{0},0}; A(&v, mcc); A(&v, Irt); A(&v,"-mmacosx-version-min=12.3.1"); A(&v, vsrc); A(&v,"-o"); A(&v, vexe);

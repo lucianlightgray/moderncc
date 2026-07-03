@@ -1071,6 +1071,8 @@ PUB_FUNC void mcc_free(void *ptr);
 PUB_FUNC void *mcc_malloc(unsigned long size);
 PUB_FUNC void *mcc_mallocz(unsigned long size);
 PUB_FUNC void *mcc_realloc(void *ptr, unsigned long size);
+ST_FUNC unsigned long mcc_grow_capacity(unsigned long cur, unsigned long need,
+                                        unsigned long min_cap);
 PUB_FUNC char *mcc_strdup(const char *str);
 
 #ifdef MEM_DEBUG
@@ -1602,6 +1604,7 @@ ST_FUNC void asm_global_instr(void);
 ST_FUNC int mcc_assemble(MCCState *s1, int do_preprocess);
 #ifdef CONFIG_MCC_ASM
 ST_FUNC int find_constraint(ASMOperand *operands, int nb_operands, const char *name, const char **pp);
+ST_FUNC const char *skip_constraint_modifiers(const char *p);
 ST_FUNC Sym* get_asm_sym(int name, Sym *csym);
 ST_FUNC void asm_expr(MCCState *s1, ExprValue *pe);
 ST_FUNC int asm_int_expr(MCCState *s1);

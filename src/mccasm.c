@@ -1290,6 +1290,16 @@ static void mcc_assemble_inline(MCCState *s1, const char *str, int len, int glob
     macro_ptr = saved_macro_ptr;
 }
 
+/* skip leading inline-asm constraint modifier chars ('=', '&', '+', '%').
+   Arch-independent; was duplicated verbatim in every backend's
+   asm_compute_constraints (i386/arm/arm64/riscv64). */
+ST_FUNC const char *skip_constraint_modifiers(const char *p)
+{
+    while (*p == '=' || *p == '&' || *p == '+' || *p == '%')
+        p++;
+    return p;
+}
+
 ST_FUNC int find_constraint(ASMOperand *operands, int nb_operands,
                            const char *name, const char **pp)
 {

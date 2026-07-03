@@ -289,11 +289,7 @@ static void cstr_realloc(CString *cstr, int new_size)
 {
     int size;
 
-    size = cstr->size_allocated;
-    if (size < 8)
-        size = 8;
-    while (size < new_size)
-        size = size * 2;
+    size = mcc_grow_capacity(cstr->size_allocated, new_size, 8);
     cstr->data = mcc_realloc(cstr->data, size);
     cstr->size_allocated = size;
 }

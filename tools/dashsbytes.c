@@ -26,9 +26,9 @@ int main(int argc, char **argv)
         fprintf(stderr, "dashsbytes: cannot create %s\n", work);
         return 2;
     }
-    snprintf(ref,  sizeof ref,  "%s/ref.o",  work);
-    snprintf(asmf, sizeof asmf, "%s/prog.s", work);
-    snprintf(rt,   sizeof rt,   "%s/rt.o",   work);
+    ts_path(ref, sizeof ref, work, "ref.o");
+    ts_path(asmf, sizeof asmf, work, "prog.s");
+    ts_path(rt, sizeof rt, work, "rt.o");
 
     {
         const char *c_ref[] = { mcc, "-c", src,  "-o", ref,  0 };

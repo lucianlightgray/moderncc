@@ -10,3 +10,6 @@
 /out/
 
 /.idea/
+
+# codebase statement-pattern analysis (generated DBs + scripts, kept for discussion)
+/analysis/

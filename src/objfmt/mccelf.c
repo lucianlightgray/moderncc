@@ -287,11 +287,7 @@ ST_FUNC void section_realloc(Section *sec, unsigned long new_size)
     unsigned long size;
     unsigned char *data;
 
-    size = sec->data_allocated;
-    if (size == 0)
-        size = 1;
-    while (size < new_size)
-        size = size * 2;
+    size = mcc_grow_capacity(sec->data_allocated, new_size, 1);
     data = mcc_realloc(sec->data, size);
     memset(data + sec->data_allocated, 0, size - sec->data_allocated);
     sec->data = data;

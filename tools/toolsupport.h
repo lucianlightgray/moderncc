@@ -26,6 +26,21 @@ int   ts_run(const char *const *argv);
 /* printf-style: split a command string on spaces is error-prone, so build
    argv explicitly; ts_runf is a convenience for the common echo+spawn. */
 
+/* argv builder: a fixed-capacity vector of string pointers, NUL-terminated on
+   finish.  One home for what was hand-rolled per tool (mccharness A/Z,
+   build.c arg/args/argz, ci.c inline a[n++]).  Grow via ts_arg/ts_args, then
+   ts_argz to NUL-terminate and get the array for ts_run/host_spawn. */
+#define TS_ARGV_MAX 256
+typedef struct { const char *a[TS_ARGV_MAX]; int n; } Argv;
+void  ts_arg(Argv *v, const char *s);              /* append one arg */
+void  ts_args(Argv *v, const char *const *set);    /* append a NULL-terminated set */
+const char *const *ts_argz(Argv *v);               /* NUL-terminate; return a[] */
+
+/* join a directory and a printf-style relative path into dst: writes
+   "<dir>/<fmt...>".  Replaces the snprintf(dst, sizeof dst, "%s/...", dir)
+   idiom repeated ~120x across the tools.  Returns as snprintf would. */
+int   ts_path(char *dst, size_t n, const char *dir, const char *fmt, ...);
+
 /* shell-style match of one path segment: '*', '?', '[...]' (no '/'). */
 int   ts_fnmatch(const char *pat, const char *str);
 
