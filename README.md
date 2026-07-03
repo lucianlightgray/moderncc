@@ -126,7 +126,9 @@ cmake --build cmake-build-release -j
 ¹ Auto-forced OFF on macOS (no fully-static libc). The default `mcc` is a
 dynamic, self-contained binary whose `-run` resolves the full libc surface via
 `dlsym`; the opt-in `mcc-static` instead uses a built-in symbol table (common
-symbols only). ² Linux only (a no-op on macOS/Windows); opt-in, enabled only by
+symbols only). On Windows even a `-static` exe still reaches msvcrt.dll via
+`LoadLibrary`, so `mcc-static` keeps the full dynamic `-run` resolution there
+(no built-in table). ² Linux only (a no-op on macOS/Windows); opt-in, enabled only by
 the explicit `-musl` presets/targets (`release`, `linux-gcc-musl`, `dist-linux-*`).
 
 All compiler binaries follow one suffix convention:
@@ -191,7 +193,8 @@ failure), `—` = not applicable.
 | `ctest` suite | Win mingw | Win gcc | Win msvc | Lin gcc | Lin clang | mac clang |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|
 | `exec-suite` (golden run/diff)        | P | P | P | P | P | P |
-| `mcctest` / `mcctest-bcheck`¹         | P | P | P | P | P | P |
+| `mcctest`¹                            | P | P | P | P | P | P |
+| `mcctest-bcheck`¹                     | S | S | S | P | P | P |
 | `preprocess-suite`²                   | P | P | P | P | P | P |
 | `diff3-suite`²                        | P | P | P | P | P | P |
 | `parts-suite`² (per-unit 3-way diff)⁹ | S | S | S | P | P | P |
@@ -210,10 +213,15 @@ failure), `—` = not applicable.
 
 ¹ Differential vs. a GCC-compatible reference cc (needs the integrated
 assembler); MSVC host auto-detects a mingw/winlibs `gcc` (`MCC_REF_CC`).
-`-bcheck` variant also needs `MCC_CONFIG_BCHECK`.
+`-bcheck` variant also needs `MCC_CONFIG_BCHECK`, and skips on the PE/msvcrt
+target, where mcc bounds-checking is unsupported (faults in msvcrt
+callbacks/library calls).
 ² Needs **two distinct** references (gcc *and* clang) or the three-way
 differential self-skips. On macOS `gcc`/`cc` are the Apple clang shim, so a
-genuine Homebrew `gcc-<n>` (installed by `setup-gcc`) is auto-detected.
+genuine Homebrew `gcc-<n>` (installed by `setup-gcc`) is auto-detected. On
+Windows no system clang is needed: `cmake --build <bld> --target
+clang-toolchain` fetches a pinned, SHA256-verified LLVM into `cmake-clang/`,
+auto-wired by the next reconfigure (both suites then run and pass).
 ³ Needs POSIX `sh` (`MCC_TEST_SH`) + `nm`/`readelf`; ~31 ELF-image cases
 self-skip on a PE target.
 ⁴ X11 example (`compile.ex4`) skips when `<X11/Xlib.h>` is absent.
