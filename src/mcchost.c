@@ -12,7 +12,14 @@
  *  only the fault section is compiled.
  */
 
-#include "mcc.h"
+/* Standalone build/test tools (tools/toolhost.h) amalgamate this file with a
+   minimal libc prelude instead of the full compiler header, so the host-axis
+   spawn/filesystem primitives live in exactly one place. */
+#ifdef CONFIG_MCC_TOOLHOST
+# include "mcchost.h"
+#else
+# include "mcc.h"
+#endif
 
 #ifndef CONFIG_MCC_BACKTRACE_ONLY
 
@@ -21,6 +28,7 @@
 #else
 # include <sys/stat.h>
 # include <sys/wait.h>
+# include <dirent.h>
 #endif
 
 /* ------------------------------------------------------------------- */
@@ -239,8 +247,403 @@ ST_FUNC MAYBE_UNUSED int host_find_tool(const char *name, const char *ext, char 
 #ifdef _WIN32
     return SearchPath(NULL, name, ext, size, buf, NULL) ? 1 : 0;
 #else
-    (void)name; (void)ext; (void)buf; (void)size;
+    const char *path, *p;
+    char cand[4096];
+    (void)ext;
+    /* an explicit path (contains a slash) is checked verbatim */
+    if (strchr(name, '/')) {
+        if (access(name, X_OK) == 0 && (int)strlen(name) < size) {
+            strcpy(buf, name);
+            return 1;
+        }
+        return 0;
+    }
+    path = getenv("PATH");
+    if (!path)
+        path = "/usr/local/bin:/usr/bin:/bin";
+    for (p = path; ; ) {
+        const char *e = p;
+        int dl;
+        while (*e && *e != ':')
+            ++e;
+        dl = (int)(e - p);
+        if (dl == 0)
+            snprintf(cand, sizeof cand, "%s", name);          /* empty = cwd */
+        else
+            snprintf(cand, sizeof cand, "%.*s/%s", dl, p, name);
+        if (access(cand, X_OK) == 0) {
+            if ((int)strlen(cand) >= size)
+                return 0;
+            strcpy(buf, cand);
+            return 1;
+        }
+        if (!*e)
+            break;
+        p = e + 1;
+    }
     return 0;
+#endif
+}
+
+/* locate the first of a NULL-terminated candidate name list on the host
+   search path; returns 1 and fills buf, else 0 */
+ST_FUNC MAYBE_UNUSED int host_find_tool_any(const char *const *names, const char *ext, char *buf, int size)
+{
+    int i;
+    for (i = 0; names[i]; ++i)
+        if (host_find_tool(names[i], ext, buf, size))
+            return 1;
+    return 0;
+}
+
+/* ------------------------------------------------------------------- */
+/* spawn with control + filesystem kit (build/test tool primitives) */
+
+/* capture-buffer alloc is genuine libc malloc in both compiler and tool
+   builds (callers free with free()); un-poison the compiler's overrides */
+#pragma push_macro("malloc")
+#pragma push_macro("realloc")
+#pragma push_macro("free")
+#undef malloc
+#undef realloc
+#undef free
+
+#ifndef _WIN32
+/* drain an fd fully into a malloc'd NUL-terminated buffer; NULL on error */
+static char *host_slurp_fd(int fd)
+{
+    size_t cap = 4096, len = 0;
+    char *buf = malloc(cap), *nb;
+    ssize_t r;
+    if (!buf)
+        return NULL;
+    for (;;) {
+        if (len + 1 >= cap) {
+            cap *= 2;
+            if (!(nb = realloc(buf, cap))) { free(buf); return NULL; }
+            buf = nb;
+        }
+        r = read(fd, buf + len, cap - len - 1);
+        if (r < 0) { if (errno == EINTR) continue; free(buf); return NULL; }
+        if (r == 0) break;
+        len += (size_t)r;
+    }
+    buf[len] = 0;
+    return buf;
+}
+#endif
+
+#pragma pop_macro("free")
+#pragma pop_macro("realloc")
+#pragma pop_macro("malloc")
+
+/* build launcher-prefixed argv (o->launcher ++ argv), NULL-terminated;
+   caller frees with mcc_free */
+static const char **host_build_argv(const char *const *argv, const HostSpawnOpts *o)
+{
+    int n = 0, l = 0, i, j = 0;
+    const char **out;
+    if (o && o->launcher)
+        while (o->launcher[l]) ++l;
+    while (argv[n]) ++n;
+    out = mcc_malloc((l + n + 1) * sizeof *out);
+    for (i = 0; i < l; ++i) out[j++] = o->launcher[i];
+    for (i = 0; i < n; ++i) out[j++] = argv[i];
+    out[j] = NULL;
+    return out;
+}
+
+ST_FUNC MAYBE_UNUSED int host_spawn_ex(const char *const *argv, const HostSpawnOpts *o)
+{
+    static const HostSpawnOpts nopts;
+    const char **full;
+    int ret = -1;
+    if (!o) o = &nopts;
+    full = host_build_argv(argv, o);
+#ifdef _WIN32
+    {
+        /* CreateProcess with optional handle redirection */
+        char *cmd, *p; int i, len = 1;
+        STARTUPINFOA si; PROCESS_INFORMATION pi;
+        SECURITY_ATTRIBUTES sa;
+        HANDLE hout = INVALID_HANDLE_VALUE, herr = INVALID_HANDLE_VALUE;
+        HANDLE rpo = NULL, wpo = NULL, rpe = NULL, wpe = NULL;
+        char *envblk = NULL;
+
+        for (i = 0; full[i]; ++i)
+            len += 2 * (int)strlen(full[i]) + 3;
+        cmd = mcc_malloc(len);
+        for (p = cmd, i = 0; full[i]; ++i) {
+            char *q = host_quote_w32(full[i]);
+            if (i) *p++ = ' ';
+            strcpy(p, q); p += strlen(q);
+            mcc_free(q);
+        }
+        *p = 0;
+
+        memset(&sa, 0, sizeof sa);
+        sa.nLength = sizeof sa;
+        sa.bInheritHandle = TRUE;
+        memset(&si, 0, sizeof si);
+        si.cb = sizeof si;
+        si.dwFlags = STARTF_USESTDHANDLES;
+        si.hStdInput  = GetStdHandle(STD_INPUT_HANDLE);
+        si.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
+        si.hStdError  = GetStdHandle(STD_ERROR_HANDLE);
+
+        if (o->stdout_buf) {
+            CreatePipe(&rpo, &wpo, &sa, 0);
+            SetHandleInformation(rpo, HANDLE_FLAG_INHERIT, 0);
+            si.hStdOutput = wpo;
+        } else if (o->stdout_file) {
+            hout = CreateFileA(o->stdout_file, GENERIC_WRITE, FILE_SHARE_READ,
+                               &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+            si.hStdOutput = hout;
+        }
+        if (o->stderr_buf) {
+            CreatePipe(&rpe, &wpe, &sa, 0);
+            SetHandleInformation(rpe, HANDLE_FLAG_INHERIT, 0);
+            si.hStdError = wpe;
+        } else if (o->stderr_file) {
+            if (o->stdout_file && !strcmp(o->stderr_file, o->stdout_file) && hout != INVALID_HANDLE_VALUE)
+                si.hStdError = hout;
+            else {
+                herr = CreateFileA(o->stderr_file, GENERIC_WRITE, FILE_SHARE_READ,
+                                   &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+                si.hStdError = herr;
+            }
+        }
+        if (o->env) {
+            int tot = 1, k;
+            for (k = 0; o->env[k]; ++k) tot += (int)strlen(o->env[k]) + 1;
+            envblk = mcc_malloc(tot);
+            for (p = envblk, k = 0; o->env[k]; ++k) {
+                strcpy(p, o->env[k]); p += strlen(o->env[k]) + 1;
+            }
+            *p = 0;
+        }
+        if (CreateProcessA(NULL, cmd, NULL, NULL, TRUE, 0, envblk,
+                           o->cwd, &si, &pi)) {
+            DWORD ec = 0;
+            if (wpo) { CloseHandle(wpo); wpo = NULL; }
+            if (wpe) { CloseHandle(wpe); wpe = NULL; }
+            if (o->stdout_buf) {
+                char *b = mcc_malloc(1); size_t cap = 1, ln = 0; DWORD rd;
+                char tmp[4096];
+                while (ReadFile(rpo, tmp, sizeof tmp, &rd, NULL) && rd) {
+                    char *nb = mcc_realloc(b, cap + rd); b = nb;
+                    memcpy(b + ln, tmp, rd); ln += rd; cap += rd;
+                }
+                b[ln] = 0; *o->stdout_buf = b;
+            }
+            if (o->stderr_buf) {
+                char *b = mcc_malloc(1); size_t cap = 1, ln = 0; DWORD rd;
+                char tmp[4096];
+                while (ReadFile(rpe, tmp, sizeof tmp, &rd, NULL) && rd) {
+                    char *nb = mcc_realloc(b, cap + rd); b = nb;
+                    memcpy(b + ln, tmp, rd); ln += rd; cap += rd;
+                }
+                b[ln] = 0; *o->stderr_buf = b;
+            }
+            WaitForSingleObject(pi.hProcess, INFINITE);
+            GetExitCodeProcess(pi.hProcess, &ec);
+            CloseHandle(pi.hProcess); CloseHandle(pi.hThread);
+            ret = (int)ec;
+        }
+        if (hout != INVALID_HANDLE_VALUE) CloseHandle(hout);
+        if (herr != INVALID_HANDLE_VALUE) CloseHandle(herr);
+        if (rpo) CloseHandle(rpo);
+        if (rpe) CloseHandle(rpe);
+        if (wpo) CloseHandle(wpo);
+        if (wpe) CloseHandle(wpe);
+        mcc_free(cmd);
+        mcc_free(envblk);
+    }
+#else
+    {
+        int po[2] = {-1,-1}, pe[2] = {-1,-1};
+        int want_po = o->stdout_buf != NULL, want_pe = o->stderr_buf != NULL;
+        pid_t pid;
+        if ((want_po && pipe(po)) || (want_pe && pipe(pe))) {
+            mcc_free(full);
+            return -1;
+        }
+        pid = fork();
+        if (pid == 0) {
+            int fo, fe;
+            if (o->cwd && chdir(o->cwd)) _exit(127);
+            if (want_po) { dup2(po[1], 1); close(po[0]); close(po[1]); }
+            else if (o->stdout_file &&
+                     (fo = open(o->stdout_file, O_WRONLY|O_CREAT|O_TRUNC, 0666)) >= 0) {
+                dup2(fo, 1); close(fo);
+            }
+            if (want_pe) { dup2(pe[1], 2); close(pe[0]); close(pe[1]); }
+            else if (o->stderr_file) {
+                if (o->stdout_file && !strcmp(o->stderr_file, o->stdout_file))
+                    dup2(1, 2);
+                else if ((fe = open(o->stderr_file, O_WRONLY|O_CREAT|O_TRUNC, 0666)) >= 0) {
+                    dup2(fe, 2); close(fe);
+                }
+            }
+            if (o->env) {
+                extern char **environ;
+                environ = (char **)o->env;   /* execvp reads the global environ */
+            }
+            execvp(full[0], (char *const *)full);
+            _exit(127);
+        }
+        if (pid < 0) {
+            if (want_po) { close(po[0]); close(po[1]); }
+            if (want_pe) { close(pe[0]); close(pe[1]); }
+            mcc_free(full);
+            return -1;
+        }
+        if (want_po) close(po[1]);
+        if (want_pe) close(pe[1]);
+        /* read stdout then stderr (each closed in the child on exit; small
+           captures do not deadlock, and callers redirect the bulk stream) */
+        if (want_po) *o->stdout_buf = host_slurp_fd(po[0]);
+        if (want_po) close(po[0]);
+        if (want_pe) *o->stderr_buf = host_slurp_fd(pe[0]);
+        if (want_pe) close(pe[0]);
+        {
+            int status;
+            if (waitpid(pid, &status, 0) == pid && WIFEXITED(status))
+                ret = WEXITSTATUS(status);
+        }
+    }
+#endif
+    mcc_free((void *)full);
+    return ret;
+}
+
+/* mkdir -p: create path and any missing parents; 0 on success */
+ST_FUNC MAYBE_UNUSED int host_mkdirs(const char *path)
+{
+    char buf[4096];
+    char *p;
+    size_t n = strlen(path);
+    if (n >= sizeof buf)
+        return -1;
+    memcpy(buf, path, n + 1);
+    host_path_normalize(buf);
+    for (p = buf + 1; *p; ++p) {
+        if (*p != '/')
+            continue;
+        *p = 0;
+#ifdef _WIN32
+        _mkdir(buf);
+#else
+        mkdir(buf, 0777);
+#endif
+        *p = '/';
+    }
+#ifdef _WIN32
+    if (_mkdir(buf) && errno != EEXIST)
+        return -1;
+#else
+    if (mkdir(buf, 0777) && errno != EEXIST)
+        return -1;
+#endif
+    return 0;
+}
+
+/* copy src -> dst byte-for-byte; when preserve_exec, carry the source's
+   permission bits (POSIX).  0 on success, -1 on error */
+ST_FUNC MAYBE_UNUSED int host_copy_file(const char *src, const char *dst, int preserve_exec)
+{
+    FILE *fi = fopen(src, "rb"), *fo;
+    char buf[65536];
+    size_t r;
+    int ok = 1;
+    if (!fi)
+        return -1;
+    if (!(fo = fopen(dst, "wb"))) { fclose(fi); return -1; }
+    while ((r = fread(buf, 1, sizeof buf, fi)) > 0)
+        if (fwrite(buf, 1, r, fo) != r) { ok = 0; break; }
+    if (ferror(fi))
+        ok = 0;
+    fclose(fi);
+    if (fclose(fo))
+        ok = 0;
+    if (!ok)
+        return -1;
+#ifndef _WIN32
+    if (preserve_exec) {
+        struct stat st;
+        if (!stat(src, &st))
+            chmod(dst, st.st_mode & 0777);
+    }
+#else
+    (void)preserve_exec;
+#endif
+    return 0;
+}
+
+/* stat a path; any of is_dir/size/mtime may be NULL.  0 on success */
+ST_FUNC MAYBE_UNUSED int host_stat(const char *path, int *is_dir, long long *size, long long *mtime)
+{
+#ifdef _WIN32
+    struct _stat64 st;
+    if (_stat64(path, &st))
+        return -1;
+#else
+    struct stat st;
+    if (stat(path, &st))
+        return -1;
+#endif
+    if (is_dir) *is_dir = (st.st_mode & S_IFMT) == S_IFDIR;
+    if (size)   *size   = (long long)st.st_size;
+    if (mtime)  *mtime  = (long long)st.st_mtime;
+    return 0;
+}
+
+/* walk directory entries (optionally recursive), invoking fn(path,is_dir,ud)
+   per entry.  A nonzero fn return stops the walk and is returned; else 0, or
+   -1 if the directory cannot be opened */
+ST_FUNC MAYBE_UNUSED int host_dir_walk(const char *dir, int recursive, host_walk_fn fn, void *ud)
+{
+#ifdef _WIN32
+    char pat[4096], child[4096];
+    WIN32_FIND_DATAA fd;
+    HANDLE h;
+    int rc = 0, is_dir;
+    snprintf(pat, sizeof pat, "%s/*", dir);
+    if ((h = FindFirstFileA(pat, &fd)) == INVALID_HANDLE_VALUE)
+        return -1;
+    do {
+        if (!strcmp(fd.cFileName, ".") || !strcmp(fd.cFileName, ".."))
+            continue;
+        snprintf(child, sizeof child, "%s/%s", dir, fd.cFileName);
+        host_path_normalize(child);
+        is_dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+        if ((rc = fn(child, is_dir, ud)))
+            break;
+        if (recursive && is_dir && (rc = host_dir_walk(child, 1, fn, ud)))
+            break;
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+    return rc;
+#else
+    DIR *d = opendir(dir);
+    struct dirent *e;
+    char child[4096];
+    int rc = 0, is_dir;
+    if (!d)
+        return -1;
+    while ((e = readdir(d))) {
+        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, ".."))
+            continue;
+        snprintf(child, sizeof child, "%s/%s", dir, e->d_name);
+        if (host_stat(child, &is_dir, NULL, NULL))
+            continue;
+        if ((rc = fn(child, is_dir, ud)))
+            break;
+        if (recursive && is_dir && (rc = host_dir_walk(child, 1, fn, ud)))
+            break;
+    }
+    closedir(d);
+    return rc;
 #endif
 }
 
@@ -268,6 +671,22 @@ ST_FUNC MAYBE_UNUSED unsigned host_clock_ms(void)
     struct timeval tv;
     gettimeofday(&tv, NULL);
     return tv.tv_sec*1000 + (tv.tv_usec+500)/1000;
+#endif
+}
+
+/* online CPU count - the single parallelism probe (replaces nproc /
+   sysctl -n hw.ncpu / getconf _NPROCESSORS_ONLN scattered across CI) */
+ST_FUNC MAYBE_UNUSED int host_nproc(void)
+{
+#ifdef _WIN32
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    return si.dwNumberOfProcessors > 0 ? (int)si.dwNumberOfProcessors : 1;
+#elif defined _SC_NPROCESSORS_ONLN
+    long n = sysconf(_SC_NPROCESSORS_ONLN);
+    return n > 0 ? (int)n : 1;
+#else
+    return 1;
 #endif
 }
 

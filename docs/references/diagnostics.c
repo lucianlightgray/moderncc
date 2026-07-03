@@ -1,4 +1,4 @@
-#include "diagnostics.h"
+#include "../diagnostics.h"
 #include "sourcefile.h"
 
 #ifdef _WIN32

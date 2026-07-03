@@ -184,17 +184,28 @@ jobs:
             -v mcc-qemu-roots:/qemu-roots \
             mcc-qemu
 
+  # Single-source the dist preset names from CMakePresets.json via tools/ci.c
+  # (PLAN 0.9 #2) instead of hand-listing them here and in release.yml.
+  dist-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      presets: ${{ steps.gen.outputs.presets }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: gen
+        run: |
+          cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl
+          echo "presets=$(/tmp/mcc-ci matrix --filter dist-linux --json)" >> "$GITHUB_OUTPUT"
+
   dist:
+    needs: dist-matrix
     name: ${{ matrix.preset }} / ${{ matrix.arch }}
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { preset: dist-linux-gcc,   arch: x86_64, runner: ubuntu-latest }
-          - { preset: dist-linux-clang, arch: x86_64, runner: ubuntu-latest }
-          - { preset: dist-linux-gcc,   arch: arm64,  runner: ubuntu-24.04-arm }
-          - { preset: dist-linux-clang, arch: arm64,  runner: ubuntu-24.04-arm }
+        preset: ${{ fromJSON(needs.dist-matrix.outputs.presets) }}
+        arch: [x86_64, arm64]
     steps:
       - uses: actions/checkout@v5
       - name: install toolchain

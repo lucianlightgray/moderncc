@@ -2,16 +2,19 @@
 #
 # CI runner: stage the mounted repo, then configure/build/test via a named
 # CMake preset (see CMakePresets.json). The workflow selects the scenario by
-# setting PRESET; this script owns only the container-side staging + EOL fixup.
+# setting PRESET; this script only bootstraps the in-tree CI tool.
 #
 #   docker run --rm -e PRESET=linux-gcc -v "$PWD:/work:ro" mcc-ci
 #
+# The staging (shared exclusion list + CRLF->LF fixup) and the
+# configure/build/test/install sequence now live in tools/ci.c (PLAN 0.9),
+# so this script only bootstrap-compiles that tool with the host cc (no cmake
+# has run yet, so no build target exists) and hands off to it.
+#
 # Optionally mount a writable dir at /out to export the build targets: the
 # tree is configured with CMAKE_INSTALL_PREFIX=/out and `cmake --install` runs
-# after the tests, leaving every built executable + library (bin/, lib*/,
-# include/) there for the workflow to upload as an artifact. The prefix must
-# be set at configure time — the mcc runtime dir install destination is an
-# absolute path baked into the install rules.
+# after the tests. The prefix must be set at configure time — the mcc runtime
+# dir install destination is an absolute path baked into the install rules.
 #
 set -euo pipefail
 
@@ -19,51 +22,24 @@ SRC_MOUNT=/work
 SRC=/src
 
 PRESET="${PRESET:?set PRESET to a CMake preset name (e.g. linux-gcc); see CMakePresets.json}"
-JOBS="${JOBS:-$(nproc)}"
 
 if [ ! -e "$SRC_MOUNT/CMakeLists.txt" ]; then
     echo "error: mount the mcc repo at $SRC_MOUNT (docker run -v \"\$PWD\":/work:ro ...)" >&2
     exit 2
 fi
 
-echo "==> staging $SRC_MOUNT -> $SRC"
-mkdir -p "$SRC"
-rsync -a --delete \
-    --exclude 'cmake-build*' \
-    --exclude 'cmake-windows-*' \
-    --exclude 'cmake-mingw-*' \
-    --exclude 'cmake-clang' \
-    --exclude 'build-*' \
-    --exclude '.git' \
-    "$SRC_MOUNT"/ "$SRC"/
+# Bootstrap the in-tree CI tool from the mounted sources (no cmake yet).
+CC="${CC:-cc}"
+"$CC" -O2 -o /tmp/mcc-ci \
+    "$SRC_MOUNT/tools/ci.c" "$SRC_MOUNT/tools/toolsupport.c" -ldl
 
-# A Windows (autocrlf) checkout otherwise feeds CRLF sources that break
-# LF-expecting tests; normalize on the staged copy.
-if [ "${NORMALIZE_EOL:-1}" = 1 ]; then
-    echo "==> normalizing line endings (CRLF -> LF) in staged sources"
-    find "$SRC" -type f \
-        \( -name '*.c' -o -name '*.h' -o -name '*.cmake' -o -name '*.txt' \
-           -o -name '*.S' -o -name '*.def' \) \
-        -exec sed -i 's/\r$//' {} +
-fi
-
-OUT=/out
-EXTRA_CONFIG=()
-if [ -d "$OUT" ] && [ -w "$OUT" ]; then
-    EXTRA_CONFIG+=("-DCMAKE_INSTALL_PREFIX=$OUT")
-fi
-
+# Stage /work -> /src (exclusions + line-ending normalization) then run the
+# preset. tools/ci owns the parallelism probe and the whole sequence.
+/tmp/mcc-ci stage "$SRC_MOUNT" "$SRC"
 cd "$SRC"
-echo "==> configuring (preset=$PRESET)"
-cmake --preset "$PRESET" "${EXTRA_CONFIG[@]}"
 
-echo "==> building (-j$JOBS)"
-cmake --build --preset "$PRESET" -j"$JOBS"
-
-echo "==> testing (preset=$PRESET)"
-ctest --preset "$PRESET" -j"$JOBS" "$@"
-
-if [ -d "$OUT" ] && [ -w "$OUT" ]; then
-    echo "==> exporting build targets -> $OUT"
-    cmake --install "cmake-build-$PRESET"
+if [ -d /out ] && [ -w /out ]; then
+    exec /tmp/mcc-ci run-preset "$PRESET" --out /out -- "$@"
+else
+    exec /tmp/mcc-ci run-preset "$PRESET" -- "$@"
 fi

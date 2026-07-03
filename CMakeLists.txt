@@ -431,6 +431,18 @@ function(mcc_generate_node_doc outfile)
     message(STATUS "mcc: generated ${outfile}")
 endfunction()
 
+# Machine-readable node manifest ("<name> <type>" per line) for the BUILD.md
+# drift check (tools/ckbuildmd.c, PLAN 0.6 #4).  Cheap; always emitted.
+function(mcc_write_node_manifest outfile)
+    set(_txt "")
+    get_property(_nodes GLOBAL PROPERTY MCC_NODES)
+    foreach(_n IN LISTS _nodes)
+        get_property(_t GLOBAL PROPERTY MCC_NODE_${_n}_TYPE)
+        string(APPEND _txt "${_n} ${_t}\n")
+    endforeach()
+    file(WRITE "${outfile}" "${_txt}")
+endfunction()
+
 
 set(_elf "NOT MCC_TARGETOS STREQUAL \"WIN32\" AND NOT MCC_TARGETOS STREQUAL \"Darwin\"")
 set(_darwin "MCC_TARGETOS STREQUAL \"Darwin\"")
@@ -1510,6 +1522,7 @@ mcc_report_config()
 if(MCC_REGEN_DOCS)
     mcc_generate_node_doc("${CMAKE_BINARY_DIR}/config-nodes.md")
 endif()
+mcc_write_node_manifest("${CMAKE_BINARY_DIR}/config-nodes.tsv")
 
 
 macro(mcc_def_str _var _name _val)
@@ -1633,6 +1646,13 @@ if(NOT MCC_TARGETOS STREQUAL "WIN32")
     endif()
     list(APPEND _mccdefs "CONFIG_MCCDIR=\"${_mccdir}\"")
 endif()
+set(MCC_RESOLVED_MCCDIR "${_mccdir}")
+
+# Emit the resolved _mccdefs list for the mccbuild --emit-defines drift check
+# (PLAN 0.8 catalog #8): the in-tree C port of this config->defines mapping must
+# stay in lockstep with CMake's generator (ctest config-defines).
+string(REPLACE ";" "\n" _mccdefs_text "${_mccdefs}")
+file(WRITE "${CMAKE_BINARY_DIR}/config-defines.txt" "${_mccdefs_text}\n")
 
 set(_mccdefs_common
     "MCC_VERSION=\"${MCC_VERSION}\""
@@ -2688,7 +2708,13 @@ if(MCC_TARGETOS STREQUAL "WIN32")
 endif()
 
 if(UNIX AND NOT CMAKE_CROSSCOMPILING)
-    add_executable(mccbuild tools/build.c)
+    # mccbuild links the shared tool-support layer (toolsupport.c amalgamates
+    # the host layer src/mcchost.c); no shell, no external cp/mkdir (PLAN 0.5)
+    add_executable(mccbuild tools/build.c tools/toolsupport.c)
+    target_link_libraries(mccbuild ${CMAKE_DL_LIBS})
+    # CI orchestration in C (PLAN 0.9): stage / run-preset / matrix / sha256sums
+    add_executable(ci tools/ci.c tools/toolsupport.c)
+    target_link_libraries(ci ${CMAKE_DL_LIBS})
 endif()
 
 if(MCC_BUILD_TESTS)
@@ -2705,153 +2731,16 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(${_name} PROPERTIES SKIP_REGULAR_EXPRESSION "SKIP:" ${ARGN})
     endfunction()
 
-
-    set(_exe_driver "${CMAKE_BINARY_DIR}/run_mcc_exe.cmake")
-    file(WRITE "${_exe_driver}" "set(EMU \"${MCC_EMULATOR}\")\n")
-    file(APPEND "${_exe_driver}" [==[
-separate_arguments(_srcs UNIX_COMMAND "${SRCS}")
-separate_arguments(_rargs UNIX_COMMAND "${RUNARGS}")
-execute_process(
-    COMMAND ${EMU} "${MCC}" "-B${BDIR}" "-I${IDIR}" ${_srcs} -o "${OUTFILE}"
-    RESULT_VARIABLE _crc OUTPUT_VARIABLE _o ERROR_VARIABLE _e)
-if(NOT _crc EQUAL 0)
-    message(FATAL_ERROR "mcc compile failed for ${SRCS}:\n${_o}${_e}")
-endif()
-execute_process(COMMAND ${EMU} "${OUTFILE}" ${_rargs} RESULT_VARIABLE _rrc)
-if(NOT _rrc EQUAL 0)
-    message(FATAL_ERROR "${OUTFILE} exited with ${_rrc}")
-endif()
-]==])
-
-    set(_mcctest_driver "${CMAKE_BINARY_DIR}/run_mcctest.cmake")
-    file(WRITE "${_mcctest_driver}" "set(EMU \"${MCC_EMULATOR}\")\n")
-    file(APPEND "${_mcctest_driver}" [==[
-set(_ref_exe "${OUTDIR}/mcctest.gcc")
-set(_ref_out "${OUTDIR}/mcctest.ref")
-
-
-
-get_filename_component(_ccdir "${CC}" DIRECTORY)
-if(_ccdir)
-    if(WIN32)
-        set(ENV{PATH} "${_ccdir};$ENV{PATH}")
-    else()
-        set(ENV{PATH} "${_ccdir}:$ENV{PATH}")
+    # One conformance/differential runner (PLAN 0.7) replacing the cmake -P
+    # drivers of catalog #3.  Migrated suites so far: parts, mcctest.
+    if(UNIX AND NOT CMAKE_CROSSCOMPILING)
+        add_executable(mccharness tools/mccharness.c tools/toolsupport.c)
+        target_link_libraries(mccharness ${CMAKE_DL_LIBS})
     endif()
-endif()
-separate_arguments(_refflags UNIX_COMMAND "${REFFLAGS}")
-separate_arguments(_tdefs UNIX_COMMAND "${TESTDEFS}")
-execute_process(
-    COMMAND "${CC}" "${SRC}" -o "${_ref_exe}" "-I${IDIR}" "-I${SRCDIR}" "-I${BDIR}"
-            ${_tdefs} -w -O0 -std=gnu11 -fno-omit-frame-pointer ${_refflags} -lm
-    RESULT_VARIABLE _rc OUTPUT_VARIABLE _o ERROR_VARIABLE _e)
-if(NOT _rc EQUAL 0)
-    message(FATAL_ERROR "cc failed to build mcctest.c:\n${_o}${_e}")
-endif()
-execute_process(COMMAND "${_ref_exe}" OUTPUT_FILE "${_ref_out}")
-separate_arguments(_targs UNIX_COMMAND "${MCCARGS}")
-set(_mcc_exe "${OUTDIR}/mcctest.mcc")
-set(_mcc_out "${OUTDIR}/mcctest.out")
-execute_process(
-    COMMAND ${EMU} "${MCC}" "-B${BDIR}" "-I${IDIR}" "-I${SRCDIR}" "-I${BDIR}"
-            ${_tdefs} ${_targs} "${SRC}" -o "${_mcc_exe}" -lm
-    RESULT_VARIABLE _rc OUTPUT_VARIABLE _o ERROR_VARIABLE _e)
-if(NOT _rc EQUAL 0)
-    message(FATAL_ERROR "mcc failed to build mcctest.c:\n${_o}${_e}")
-endif()
-execute_process(COMMAND ${EMU} "${_mcc_exe}" OUTPUT_FILE "${_mcc_out}")
-execute_process(COMMAND "${CMAKE_COMMAND}" -E compare_files "${_ref_out}" "${_mcc_out}"
-    RESULT_VARIABLE _drc)
-if(NOT _drc EQUAL 0)
-    file(READ "${_ref_out}" _dref)
-    file(READ "${_mcc_out}" _dmcc)
-    message(FATAL_ERROR
-        "mcctest mismatch (cc vs mcc):\n--- cc ---\n${_dref}\n--- mcc ---\n${_dmcc}")
-endif()
-]==])
-
-    set(_asmconnect_driver "${CMAKE_BINARY_DIR}/run_asm_c_connect.cmake")
-    file(WRITE "${_asmconnect_driver}" "set(EMU \"${MCC_EMULATOR}\")\n")
-    file(APPEND "${_asmconnect_driver}" [==[
-set(_1 "${SRCDIR}/asm/asm_c_connect/part1.c")
-set(_2 "${SRCDIR}/asm/asm_c_connect/part2.c")
-set(_flags "-B${BDIR}" "-I${IDIR}")
-execute_process(COMMAND ${EMU} "${MCC}" ${_flags} "${_1}" "${_2}"
-        -o "${OUTDIR}/asm-c-connect" RESULT_VARIABLE _rc
-        OUTPUT_VARIABLE _o ERROR_VARIABLE _e)
-if(NOT _rc EQUAL 0)
-    message(FATAL_ERROR "asm-c-connect single build failed:\n${_o}${_e}")
-endif()
-execute_process(COMMAND ${EMU} "${OUTDIR}/asm-c-connect"
-    OUTPUT_FILE "${OUTDIR}/asm-c-connect.out1")
-execute_process(COMMAND ${EMU} "${MCC}" ${_flags} -c "${_1}" -o "${OUTDIR}/acc1.o")
-execute_process(COMMAND ${EMU} "${MCC}" ${_flags} -c "${_2}" -o "${OUTDIR}/acc2.o")
-execute_process(COMMAND ${EMU} "${MCC}" ${_flags}
-        "${OUTDIR}/acc1.o" "${OUTDIR}/acc2.o" -o "${OUTDIR}/asm-c-connect-sep"
-        RESULT_VARIABLE _rc OUTPUT_VARIABLE _o ERROR_VARIABLE _e)
-if(NOT _rc EQUAL 0)
-    message(FATAL_ERROR "asm-c-connect separate link failed:\n${_o}${_e}")
-endif()
-execute_process(COMMAND ${EMU} "${OUTDIR}/asm-c-connect-sep"
-    OUTPUT_FILE "${OUTDIR}/asm-c-connect.out2")
 
 
-execute_process(COMMAND "${CMAKE_COMMAND}" -E compare_files
-        "${OUTDIR}/asm-c-connect.out1" "${OUTDIR}/asm-c-connect.out2"
-    RESULT_VARIABLE _drc)
-if(NOT _drc EQUAL 0)
-    file(READ "${OUTDIR}/asm-c-connect.out1" _d1)
-    file(READ "${OUTDIR}/asm-c-connect.out2" _d2)
-    message(FATAL_ERROR
-        "asm-c-connect single vs separate mismatch:\n--- single ---\n${_d1}\n--- separate ---\n${_d2}")
-endif()
-]==])
 
-    # -S (assembly output) round-trip: mcc -S <src> must produce an assembly
-    # listing that re-assembles (with mcc's own integrated assembler) and links
-    # into a program behaving identically to the directly-compiled one.
-    set(_dashS_driver "${CMAKE_BINARY_DIR}/run_dash_s_roundtrip.cmake")
-    file(WRITE "${_dashS_driver}" "set(EMU \"${MCC_EMULATOR}\")\n")
-    file(APPEND "${_dashS_driver}" [==[
-set(SRC "${SRCDIR}/asm/dash_s_roundtrip/prog.c")
-set(_flags "-B${BDIR}" "-I${IDIR}")
-# 1. direct compile + run -> reference output
-execute_process(COMMAND ${EMU} "${MCC}" ${_flags} "${SRC}" -o "${OUTDIR}/dashS-direct"
-        RESULT_VARIABLE _rc OUTPUT_VARIABLE _o ERROR_VARIABLE _e)
-if(NOT _rc EQUAL 0)
-    message(FATAL_ERROR "dash-S: direct build failed:\n${_o}${_e}")
-endif()
-execute_process(COMMAND ${EMU} "${OUTDIR}/dashS-direct"
-    OUTPUT_FILE "${OUTDIR}/dashS.out1" RESULT_VARIABLE _rr)
-# 2. emit assembly
-execute_process(COMMAND ${EMU} "${MCC}" ${_flags} -S "${SRC}" -o "${OUTDIR}/dashS.s"
-        RESULT_VARIABLE _rc OUTPUT_VARIABLE _o ERROR_VARIABLE _e)
-if(NOT _rc EQUAL 0)
-    message(FATAL_ERROR "dash-S: -S emit failed:\n${_o}${_e}")
-endif()
-# sanity: the listing must contain code directives, a function label and a size
-file(READ "${OUTDIR}/dashS.s" _asm)
-if(NOT _asm MATCHES "\n\t\\.text" OR NOT _asm MATCHES "\nmain:" OR NOT _asm MATCHES "\\.size\tmain")
-    message(FATAL_ERROR "dash-S: listing missing expected directives/labels:\n${_asm}")
-endif()
-# 3. re-assemble the listing and link, then run -> round-tripped output
-execute_process(COMMAND ${EMU} "${MCC}" ${_flags} "${OUTDIR}/dashS.s" -o "${OUTDIR}/dashS-via"
-        RESULT_VARIABLE _rc OUTPUT_VARIABLE _o ERROR_VARIABLE _e)
-if(NOT _rc EQUAL 0)
-    message(FATAL_ERROR "dash-S: re-assembling the -S listing failed:\n${_o}${_e}")
-endif()
-execute_process(COMMAND ${EMU} "${OUTDIR}/dashS-via"
-    OUTPUT_FILE "${OUTDIR}/dashS.out2" RESULT_VARIABLE _rr)
-# 4. behaviour must be identical
-execute_process(COMMAND "${CMAKE_COMMAND}" -E compare_files
-        "${OUTDIR}/dashS.out1" "${OUTDIR}/dashS.out2" RESULT_VARIABLE _drc)
-if(NOT _drc EQUAL 0)
-    file(READ "${OUTDIR}/dashS.out1" _d1)
-    file(READ "${OUTDIR}/dashS.out2" _d2)
-    message(FATAL_ERROR
-        "dash-S round-trip mismatch (direct vs via -S):\n--- direct ---\n${_d1}\n--- via -S ---\n${_d2}")
-endif()
-]==])
+
 
 
     add_test(NAME mcc_build
@@ -2860,12 +2749,17 @@ endif()
 
     # Host-gate invariant (TODO.md "Platform spec"): raw host macros (_WIN32,
     # __APPLE__, ...) may only be tested inside src/mcchost.{h,c}; everything
-    # else uses MCC_HOST_* or a host_* function.  Keeps mcchost the source of
-    # truth for the HOST axis.
-    add_test(NAME host-gate-invariant
-        COMMAND "${CMAKE_COMMAND}"
-            "-DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}/src"
-            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/host_gate_check.cmake")
+    # else (src/ and tools/) uses MCC_HOST_* or a host_* function.  Enforced by
+    # the in-tree tool tools/hostgate.c (PLAN 0.6 #2), which tokenizes the
+    # conditional so a macro named only in a string/comment never trips it.
+    if(UNIX AND NOT CMAKE_CROSSCOMPILING)
+        add_executable(hostgate tools/hostgate.c tools/toolsupport.c)
+        target_link_libraries(hostgate ${CMAKE_DL_LIBS})
+        add_test(NAME host-gate-invariant
+            COMMAND "$<TARGET_FILE:hostgate>" src tools
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+        set_tests_properties(host-gate-invariant PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+    endif()
 
     add_executable(exec_runner tests/exec/runner.c)
     target_include_directories(exec_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec")
@@ -3016,13 +2910,12 @@ endif()
         # match mcc (and which drops the libm/complex surface via MCC_HAS_C99_LIBM).
         mcc_skip_test(parts-suite "native gcc/clang/mcc 3-way needs a shared C99 libc; the PE/msvcrt target has no msvcrt equivalent for the parts' complex/tgmath/libm surface (covered in aggregate by mcctest)")
     elseif(NOT MCC_EMULATOR AND DIFF3_GCC AND DIFF3_CLANG AND MCC_CONFIG_ASM
-       AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/run_parts.cmake")
-        add_test(NAME parts-suite COMMAND "${CMAKE_COMMAND}"
-            -DGCC=${DIFF3_GCC} -DCLANG=${DIFF3_CLANG} -DMCC=${_mcc_exe}
-            -DBDIR=${_bdir} -DIDIR=${_idir}
-            -DPARTS=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/parts
-            -DWORK=${CMAKE_BINARY_DIR}/parts-work
-            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/run_parts.cmake")
+       AND TARGET mccharness)
+        add_test(NAME parts-suite COMMAND "$<TARGET_FILE:mccharness>" parts
+            --gcc ${DIFF3_GCC} --clang ${DIFF3_CLANG} --mcc ${_mcc_exe}
+            --bdir ${_bdir} --idir ${_idir}
+            --parts ${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/parts
+            --work ${CMAKE_BINARY_DIR}/parts-work)
         set_tests_properties(parts-suite PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     else()
         mcc_skip_test(parts-suite "needs native host + gcc + clang + integrated assembler")
@@ -3037,231 +2930,11 @@ endif()
         
         
         
-        set(_preprocess_driver "${CMAKE_BINARY_DIR}/run_preprocess.cmake")
-        file(WRITE "${_preprocess_driver}" [==[
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-cmake_minimum_required(VERSION 3.20)
-
-foreach(_req MCC BDIR IDIR TDIR)
-  if(NOT DEFINED ${_req})
-    message(FATAL_ERROR "run_preprocess.cmake: -D${_req}=... is required")
-  endif()
-endforeach()
-if(NOT DEFINED GCC)
-  set(GCC gcc)
-endif()
-if(NOT DEFINED CLANG)
-  set(CLANG clang)
-endif()
-if(NOT DEFINED V)
-  set(V 0)
-endif()
-
-
-find_program(PP_GCC   NAMES "${GCC}")
-find_program(PP_CLANG NAMES "${CLANG}")
-if(NOT PP_GCC)
-  message("SKIP: no gcc")
-  cmake_language(EXIT 77)
-endif()
-if(NOT PP_CLANG)
-  message("SKIP: no clang")
-  cmake_language(EXIT 77)
-endif()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-get_filename_component(_pp_g_real "${PP_GCC}"   REALPATH)
-get_filename_component(_pp_c_real "${PP_CLANG}" REALPATH)
-set(PP_SAME FALSE)
-if(_pp_g_real STREQUAL _pp_c_real)
-  set(PP_SAME TRUE)
-else()
-  execute_process(COMMAND "${PP_GCC}"   --version OUTPUT_VARIABLE _pp_gv ERROR_QUIET)
-  execute_process(COMMAND "${PP_CLANG}" --version OUTPUT_VARIABLE _pp_cv ERROR_QUIET)
-  if(NOT _pp_gv STREQUAL "" AND _pp_gv STREQUAL _pp_cv)
-    set(PP_SAME TRUE)
-  endif()
-endif()
-if(PP_SAME)
-  message("note: gcc and clang are the same compiler -- impl-defined transformation divergences will be SKIPPED, not FAILED")
-endif()
-
-
-
-
-function(pp_norm raw outvar)
-  
-  string(REPLACE "\\" "\\\\" s "${raw}")
-  string(REPLACE ";" "\\;" s "${s}")
-  string(REPLACE "\n" ";" s "${s}")
-  set(acc "")
-  foreach(line IN LISTS s)
-    if(line MATCHES "^#")            
-      continue()
-    endif()
-    string(REGEX REPLACE "[ \t\r]+" " " line "${line}")  
-    string(STRIP "${line}" line)                          
-    if(line STREQUAL "")             
-      continue()
-    endif()
-    string(APPEND acc "${line}\n")
-  endforeach()
-  set(${outvar} "${acc}" PARENT_SCOPE)
-endfunction()
-
-
-function(pp_diag compiler file outvar)
-  execute_process(
-    COMMAND "${compiler}" -E "${file}"
-    OUTPUT_QUIET
-    ERROR_VARIABLE err
-    RESULT_VARIABLE rc)
-  string(TOLOWER "${err}" errl)
-  if(errl MATCHES "error|warning")
-    set(${outvar} TRUE PARENT_SCOPE)
-  else()
-    set(${outvar} FALSE PARENT_SCOPE)
-  endif()
-endfunction()
-
-file(GLOB_RECURSE files "${TDIR}/*.c" "${TDIR}/*.S")
-list(SORT files)
-
-set(PASS 0)
-set(SKIP 0)
-set(FAIL 0)
-set(FAILED "")
-
-foreach(f IN LISTS files)
-  file(RELATIVE_PATH rel "${TDIR}" "${f}")
-
-  if(rel MATCHES "\\.S$")
-    
-    execute_process(
-      COMMAND "${MCC}" "-B${BDIR}" "-I${IDIR}" -E "${f}"
-      OUTPUT_QUIET ERROR_QUIET RESULT_VARIABLE rc TIMEOUT 10)
-    if(rc EQUAL 0)
-      math(EXPR PASS "${PASS}+1")
-      if(V)
-        message("ok   ${rel} (asm -E smoke)")
-      endif()
-    else()
-      math(EXPR FAIL "${FAIL}+1")
-      string(APPEND FAILED " ${rel}(asm-E-crash/hang)")
-      message("FAIL ${rel}: mcc -E crashed or hung on asm input")
-    endif()
-
-  elseif(rel MATCHES "^diagnostics/")
-    
-    pp_diag("${PP_GCC}"   "${f}" gdiag)
-    pp_diag("${PP_CLANG}" "${f}" cdiag)
-    if(gdiag OR cdiag)
-      execute_process(
-        COMMAND "${MCC}" "-B${BDIR}" "-I${IDIR}" -E "${f}"
-        OUTPUT_QUIET ERROR_VARIABLE merr RESULT_VARIABLE rc)
-      string(TOLOWER "${merr}" merrl)
-      if(merrl MATCHES "error|warning")
-        math(EXPR PASS "${PASS}+1")
-        if(V)
-          message("ok   ${rel} (diagnosed)")
-        endif()
-      else()
-        math(EXPR FAIL "${FAIL}+1")
-        string(APPEND FAILED " ${rel}(no-diagnostic)")
-        message("FAIL ${rel}: mcc emits no diagnostic (gcc/clang do)")
-      endif()
-    else()
-      math(EXPR SKIP "${SKIP}+1")
-      if(V)
-        message("skip ${rel} (gcc/clang do not diagnose)")
-      endif()
-    endif()
-
-  else()
-    
-    execute_process(COMMAND "${PP_GCC}"   -E "${f}"
-      OUTPUT_VARIABLE gout ERROR_QUIET RESULT_VARIABLE grc)
-    execute_process(COMMAND "${PP_CLANG}" -E "${f}"
-      OUTPUT_VARIABLE cout ERROR_QUIET RESULT_VARIABLE crc)
-    pp_norm("${gout}" g)
-    pp_norm("${cout}" c)
-    if(NOT g STREQUAL c)
-      math(EXPR SKIP "${SKIP}+1")
-      if(V)
-        message("skip ${rel} (no gcc==clang consensus)")
-      endif()
-    else()
-      execute_process(COMMAND "${MCC}" "-B${BDIR}" "-I${IDIR}" -E "${f}"
-        OUTPUT_VARIABLE mout ERROR_QUIET RESULT_VARIABLE mrc)
-      pp_norm("${mout}" m)
-      if(m STREQUAL g)
-        math(EXPR PASS "${PASS}+1")
-        if(V)
-          message("ok   ${rel}")
-        endif()
-      elseif(PP_SAME)
-        
-        
-        math(EXPR SKIP "${SKIP}+1")
-        message("skip ${rel} (mcc diverges, but gcc==clang is one compiler -- impl-defined, no independent consensus)")
-      else()
-        math(EXPR FAIL "${FAIL}+1")
-        string(APPEND FAILED " ${rel}")
-        message("FAIL ${rel}: mcc -E diverges from gcc==clang")
-      endif()
-    endif()
-  endif()
-endforeach()
-
-message("preprocess-suite: PASS=${PASS} SKIP=${SKIP} FAIL=${FAIL}")
-if(NOT FAIL EQUAL 0)
-  message("failed:${FAILED}")
-  cmake_language(EXIT 1)
-endif()
-cmake_language(EXIT 0)
-]==])
         add_test(NAME preprocess-suite
-            COMMAND ${CMAKE_COMMAND}
-                    "-DMCC=${_mcc_exe}" "-DBDIR=${_bdir}" "-DIDIR=${_idir}"
-                    "-DTDIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/preprocess"
-                    "-DGCC=${DIFF3_GCC}" "-DCLANG=${DIFF3_CLANG}"
-                    -P "${_preprocess_driver}")
+            COMMAND "$<TARGET_FILE:mccharness>" preprocess
+                    --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}
+                    --tdir ${CMAKE_CURRENT_SOURCE_DIR}/tests/preprocess
+                    --gcc ${DIFF3_GCC} --clang ${DIFF3_CLANG})
         set_tests_properties(preprocess-suite PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77)
     else()
@@ -3311,18 +2984,18 @@ cmake_language(EXIT 0)
                     "-I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include"
                     -run "${CMAKE_CURRENT_SOURCE_DIR}/examples/ex1.c")
         set_tests_properties(hello-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
-        add_test(NAME hello-exe COMMAND "${CMAKE_COMMAND}"
-            -DMCC=${_mcc_exe} -DBDIR=${_bdir} -DIDIR=${_idir}
-            -DSRCS=${CMAKE_CURRENT_SOURCE_DIR}/examples/ex1.c
-            -DOUTFILE=${CMAKE_BINARY_DIR}/hello${MCC_EXESUF} -P "${_exe_driver}")
+        add_test(NAME hello-exe COMMAND "$<TARGET_FILE:mccharness>" mccexe
+            --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}
+            --srcs ${CMAKE_CURRENT_SOURCE_DIR}/examples/ex1.c
+            --out ${CMAKE_BINARY_DIR}/hello${MCC_EXESUF} --emu "${MCC_EMULATOR}")
         set_tests_properties(hello-exe PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/behavior/vla.c")
-        add_test(NAME vla_test-run COMMAND "${CMAKE_COMMAND}"
-            -DMCC=${_mcc_exe} -DBDIR=${_bdir} -DIDIR=${_idir}
-            -DSRCS=${CMAKE_CURRENT_SOURCE_DIR}/tests/behavior/vla.c
-            -DOUTFILE=${CMAKE_BINARY_DIR}/vla_test${MCC_EXESUF} -P "${_exe_driver}")
+        add_test(NAME vla_test-run COMMAND "$<TARGET_FILE:mccharness>" mccexe
+            --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}
+            --srcs ${CMAKE_CURRENT_SOURCE_DIR}/tests/behavior/vla.c
+            --out ${CMAKE_BINARY_DIR}/vla_test${MCC_EXESUF} --emu "${MCC_EMULATOR}")
         set_tests_properties(vla_test-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
@@ -3454,13 +3127,14 @@ cmake_language(EXIT 0)
         mcc_skip_test(mcctest "no arm64-Windows gcc reference matches the PE differential: the only reference is an emulated x86_64 mingw (UCRT printf + x86-only asm_test), which cannot be byte-identical to native arm64 mcc on legacy msvcrt (mcc arm64 codegen is covered by exec-suite + pe-native-conformance; full_language differential runs on x86/x64 Windows)")
         mcc_skip_test(mcctest-bcheck "no arm64-Windows gcc reference matches the PE differential (emulated x86_64 mingw vs native arm64 mcc; see mcctest)")
     elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c" AND MCC_CONFIG_ASM)
-        add_test(NAME mcctest COMMAND "${CMAKE_COMMAND}"
-            -DCC=${_ref_cc} -DMCC=${_mcc_exe}
-            -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c
-            -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR} -DBDIR=${_bdir} -DIDIR=${_idir}
-            -DOUTDIR=${CMAKE_BINARY_DIR} "-DREFFLAGS=${_mcctest_refflags}"
-            "-DTESTDEFS=-DCC_NAME=CC_${_ref_cc_name} -DGCC_MAJOR=${_ref_cc_major}"
-            -P "${_mcctest_driver}")
+        add_test(NAME mcctest COMMAND "$<TARGET_FILE:mccharness>" mcctest
+            --cc ${_ref_cc} --mcc ${_mcc_exe}
+            --src ${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c
+            --srcdir ${CMAKE_CURRENT_SOURCE_DIR} --bdir ${_bdir} --idir ${_idir}
+            --work ${CMAKE_BINARY_DIR}
+            --refflags "${_mcctest_refflags}"
+            --testdefs "-DCC_NAME=CC_${_ref_cc_name} -DGCC_MAJOR=${_ref_cc_major}"
+            --emu "${MCC_EMULATOR}")
         set_tests_properties(mcctest PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         if(MCC_CONFIG_BCHECK AND MCC_TARGETOS STREQUAL "WIN32")
             # mcc's bounds-checking runtime cannot instrument the PE/msvcrt path:
@@ -3471,13 +3145,14 @@ cmake_language(EXIT 0)
             mcc_skip_test(mcctest-bcheck "mcc bounds-checking is unsupported on the PE/msvcrt target (faults in msvcrt callbacks/library calls)")
         elseif(MCC_CONFIG_BCHECK)
             file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bcheck")
-            add_test(NAME mcctest-bcheck COMMAND "${CMAKE_COMMAND}"
-                -DCC=${_ref_cc} -DMCC=${_mcc_exe}
-                -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c
-                -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR} -DBDIR=${_bdir} -DIDIR=${_idir}
-                -DOUTDIR=${CMAKE_BINARY_DIR}/bcheck "-DREFFLAGS=${_mcctest_refflags}"
-                "-DTESTDEFS=-DCC_NAME=CC_${_ref_cc_name} -DGCC_MAJOR=${_ref_cc_major}"
-                -DMCCARGS=-b -P "${_mcctest_driver}")
+            add_test(NAME mcctest-bcheck COMMAND "$<TARGET_FILE:mccharness>" mcctest
+                --cc ${_ref_cc} --mcc ${_mcc_exe}
+                --src ${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c
+                --srcdir ${CMAKE_CURRENT_SOURCE_DIR} --bdir ${_bdir} --idir ${_idir}
+                --work ${CMAKE_BINARY_DIR}/bcheck
+                --refflags "${_mcctest_refflags}"
+                --testdefs "-DCC_NAME=CC_${_ref_cc_name} -DGCC_MAJOR=${_ref_cc_major}"
+                --mccargs -b --emu "${MCC_EMULATOR}")
             set_tests_properties(mcctest-bcheck PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         else()
             mcc_skip_test(mcctest-bcheck "requires MCC_CONFIG_BCHECK (bounds-checked differential test)")
@@ -3489,10 +3164,10 @@ cmake_language(EXIT 0)
 
     if(MCC_CPU MATCHES "^(i386|x86_64)$" AND MCC_CONFIG_ASM
        AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/asm/asm_c_connect/part1.c")
-        add_test(NAME asm-c-connect-test COMMAND "${CMAKE_COMMAND}"
-            -DMCC=${_mcc_exe} -DBDIR=${_bdir} -DIDIR=${_idir}
-            -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}/tests -DOUTDIR=${CMAKE_BINARY_DIR}
-            -P "${_asmconnect_driver}")
+        add_test(NAME asm-c-connect-test COMMAND "$<TARGET_FILE:mccharness>" asmconnect
+            --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}
+            --srcdir ${CMAKE_CURRENT_SOURCE_DIR}/tests --work ${CMAKE_BINARY_DIR}
+            --emu "${MCC_EMULATOR}")
         set_tests_properties(asm-c-connect-test PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     else()
         mcc_skip_test(asm-c-connect-test
@@ -3501,10 +3176,10 @@ cmake_language(EXIT 0)
 
     if(MCC_CPU STREQUAL "x86_64" AND MCC_CONFIG_ASM
        AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/asm/dash_s_roundtrip/prog.c")
-        add_test(NAME dash-s-roundtrip COMMAND "${CMAKE_COMMAND}"
-            -DMCC=${_mcc_exe} -DBDIR=${_bdir} -DIDIR=${_idir}
-            -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}/tests -DOUTDIR=${CMAKE_BINARY_DIR}
-            -P "${_dashS_driver}")
+        add_test(NAME dash-s-roundtrip COMMAND "$<TARGET_FILE:mccharness>" dashs
+            --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}
+            --srcdir ${CMAKE_CURRENT_SOURCE_DIR}/tests --work ${CMAKE_BINARY_DIR}
+            --emu "${MCC_EMULATOR}")
         set_tests_properties(dash-s-roundtrip PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     else()
         mcc_skip_test(dash-s-roundtrip
@@ -3519,14 +3194,102 @@ cmake_language(EXIT 0)
     # imm24=-2 pipeline-bias convention on local-branch relocs where the
     # compiler leaves 0, and arm-link.c recomputes the field either way.)
     add_executable(seccmp tests/support/seccmp.c)
+    # The 3-spawn + seccmp roundtrip driver is the in-tree tool tools/dashsbytes.c
+    # (PLAN 0.6 #3), replacing tests/asm/run_dash_s_bytes.cmake.
+    if(UNIX AND NOT CMAKE_CROSSCOMPILING)
+        add_executable(dashsbytes tools/dashsbytes.c tools/toolsupport.c)
+        target_link_libraries(dashsbytes ${CMAKE_DL_LIBS})
+    endif()
+    # Object-structure validator (PLAN 0.6 #1): replaces otool/llvm-otool,
+    # file(1) and file(READ HEX) magic probes in the Mach-O / PE drivers.
+    # Standalone parser (no host layer), like seccmp.
+    add_executable(objcheck tools/objcheck.c)
+
+    # docs/BUILD.md node-table drift guard (PLAN 0.6 #4): the mcc_config_node()
+    # declarations are the source of truth; ckbuildmd fails if BUILD.md's tables
+    # omit or mistype any node (config-nodes.tsv emitted at configure time).
+    add_executable(ckbuildmd tools/ckbuildmd.c)
+    add_test(NAME build-md-nodes
+        COMMAND "$<TARGET_FILE:ckbuildmd>"
+                "${CMAKE_BINARY_DIR}/config-nodes.tsv"
+                "${CMAKE_CURRENT_SOURCE_DIR}/docs/BUILD.md")
+    set_tests_properties(build-md-nodes PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
+    # win32 import .def shape/dup guard (PLAN 0.6 #5): maintainers regenerate
+    # with `defcheck regen`, which unions fresh mcc -impdef output onto the
+    # historical set; CI runs the verify mode.
+    if(UNIX AND NOT CMAKE_CROSSCOMPILING)
+        add_executable(defcheck tools/defcheck.c tools/toolsupport.c)
+        target_link_libraries(defcheck ${CMAKE_DL_LIBS})
+        file(GLOB _win32_defs "${CMAKE_CURRENT_SOURCE_DIR}/runtime/win32/lib/*.def")
+        add_test(NAME def-verify COMMAND "$<TARGET_FILE:defcheck>" verify ${_win32_defs})
+        set_tests_properties(def-verify PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
+        # CI matrix single-source (PLAN 0.9 #2): the preset list comes from
+        # CMakePresets.json via tools/ci.c, not hand-copied into the workflows.
+        add_test(NAME ci-matrix
+            COMMAND "$<TARGET_FILE:ci>" matrix "${CMAKE_CURRENT_SOURCE_DIR}/CMakePresets.json")
+        set_tests_properties(ci-matrix PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "linux-gcc")
+
+        # git stamp helper (PLAN 0.8 catalog #7): mccbuild --githash reproduces
+        # the "<date> <branch>@<short>[*]" form the CMake githash define uses.
+        if(TARGET mccbuild AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
+            add_test(NAME git-stamp COMMAND "$<TARGET_FILE:mccbuild>" --githash)
+            set_tests_properties(git-stamp PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+                PASS_REGULAR_EXPRESSION "@")
+        endif()
+
+        # Host/target auto-detection (PLAN 0.8 catalog #1): mccbuild --detect must
+        # reproduce CMake's resolved CPU/OS/triplet for this native config.
+        if(TARGET mccbuild AND NOT CMAKE_CROSSCOMPILING AND NOT MCC_TARGETOS STREQUAL "WIN32")
+            add_test(NAME host-detect COMMAND "$<TARGET_FILE:mccbuild>" --detect
+                --cc "${CMAKE_C_COMPILER}"
+                --expect-cpu "${MCC_CPU}" --expect-os "${MCC_TARGETOS}"
+                --expect-triplet "${MCC_TRIPLET}")
+            set_tests_properties(host-detect PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+        endif()
+
+        # Cross factory (PLAN 0.8 catalog #3+#4): mccbuild builds a full cross
+        # compiler mcc-<t> + <t>-libmcc1.a for any of the 11 targets, shell-free.
+        # The smoke test exercises the whole recipe end-to-end for one target.
+        if(TARGET mccbuild AND UNIX)
+            add_test(NAME cross-factory COMMAND "$<TARGET_FILE:mccbuild>"
+                --cross x86_64 --cc "${CMAKE_C_COMPILER}"
+                --out "${CMAKE_BINARY_DIR}/cross-factory-smoke")
+            set_tests_properties(cross-factory PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+        endif()
+
+        # config->defines drift guard (PLAN 0.8 catalog #8): mccbuild's C port of
+        # _mccdefs must reproduce CMake's generated define set for this config.
+        if(TARGET mccbuild)
+            add_test(NAME config-defines COMMAND "$<TARGET_FILE:mccbuild>" --emit-defines
+                --check "${CMAKE_BINARY_DIR}/config-defines.txt"
+                --cpu "${MCC_CPU}" --targetos "${MCC_TARGETOS}" --libc "${MCC_CONFIG_LIBC}"
+                --cpuver "${MCC_CPUVER}" --arm-eabi "${MCC_ARM_EABI}" --arm-vfp "${MCC_ARM_VFP}"
+                --arm-hardfloat "${MCC_ARM_HARDFLOAT}" --arm-idiv "${MCC_ARM_IDIV}"
+                --selinux "${MCC_WITH_SELINUX}" --pie "${MCC_CONFIG_PIE}" --pic "${MCC_CONFIG_PIC}"
+                --new-dtags "${MCC_CONFIG_NEW_DTAGS}" --codesign "${MCC_CONFIG_CODESIGN}"
+                --bcheck "${MCC_CONFIG_BCHECK}" --asm "${MCC_CONFIG_ASM}" --backtrace "${MCC_CONFIG_BACKTRACE}"
+                --new-macho "${MCC_CONFIG_NEW_MACHO}" --dwarf "${MCC_CONFIG_DWARF}" --semlock "${MCC_CONFIG_SEMLOCK}"
+                --sysincludepaths "${MCC_SYSINCLUDEPATHS}" --libpaths "${MCC_LIBPATHS}"
+                --crtprefix "${MCC_CRTPREFIX}" --elfinterp "${MCC_ELFINTERP}" --switches "${MCC_SWITCHES}"
+                --triplet "${MCC_TRIPLET}" --os-release "${MCC_OS_RELEASE}" --sysroot "${MCC_SYSROOT}"
+                --mccdir "${MCC_RESOLVED_MCCDIR}")
+            set_tests_properties(config-defines PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+        endif()
+    endif()
     foreach(_dsb_arch arm64 riscv64)
-        if(TARGET mcc-${_dsb_arch})
-            add_test(NAME dash-s-bytes-${_dsb_arch} COMMAND "${CMAKE_COMMAND}"
-                -DMCC=$<TARGET_FILE:mcc-${_dsb_arch}>
-                -DSECCMP=$<TARGET_FILE:seccmp>
-                -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/asm/dash_s_roundtrip/prog.c
-                -DWORK=${CMAKE_BINARY_DIR}/dash-s-bytes-${_dsb_arch}
-                -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/asm/run_dash_s_bytes.cmake")
+        if(TARGET mcc-${_dsb_arch} AND TARGET dashsbytes)
+            add_test(NAME dash-s-bytes-${_dsb_arch}
+                COMMAND "$<TARGET_FILE:dashsbytes>"
+                "$<TARGET_FILE:mcc-${_dsb_arch}>"
+                "$<TARGET_FILE:seccmp>"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/asm/dash_s_roundtrip/prog.c"
+                "${CMAKE_BINARY_DIR}/dash-s-bytes-${_dsb_arch}")
             set_tests_properties(dash-s-bytes-${_dsb_arch} PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT)
         else()
@@ -3548,128 +3311,6 @@ cmake_language(EXIT 0)
     set(MCC_ARM_CROSS_COMPILE "" CACHE STRING
         "binutils prefix (e.g. arm-linux-gnueabi-) for `arm-asm-testsuite`")
 
-    set(_fastcall_drv "${CMAKE_BINARY_DIR}/run_i386_fastcall.cmake")
-    file(WRITE "${_fastcall_drv}" "set(BUILDDIR \"${CMAKE_BINARY_DIR}\")\n")
-    file(APPEND "${_fastcall_drv}" [==[
-if(NOT DEFINED GCC OR GCC STREQUAL "")
-    set(GCC gcc)
-endif()
-find_program(_gcc "${GCC}")
-if(NOT _gcc)
-    message(STATUS "SKIP: no gcc")
-    return()
-endif()
-
-
-
-if(NOT DEFINED M32)
-    set(M32 "-m32")
-endif()
-separate_arguments(_m32 UNIX_COMMAND "${M32}")
-set(_w "${BUILDDIR}/i386-fastcall-abi")
-file(REMOVE_RECURSE "${_w}")
-file(MAKE_DIRECTORY "${_w}")
-file(WRITE "${_w}/m32probe.c" "int main(void){return 0;}\n")
-execute_process(COMMAND "${_gcc}" ${_m32} "${_w}/m32probe.c" -o "${_w}/m32probe"
-    RESULT_VARIABLE _m32rc OUTPUT_QUIET ERROR_QUIET)
-if(NOT _m32rc EQUAL 0)
-    message(STATUS "SKIP: 32-bit reference build unavailable (${_gcc} ${M32})")
-    return()
-endif()
-if(NOT DEFINED IMCC OR NOT EXISTS "${IMCC}")
-    message(STATUS "SKIP: i386 mcc not found at '${IMCC}'")
-    return()
-endif()
-
-
-
-
-file(WRITE "${_w}/fmtprobe.c" "int probe_fn(void){return 0;}\n")
-execute_process(COMMAND "${IMCC}" -c "${_w}/fmtprobe.c" -o "${_w}/fmt_mcc.o"
-    RESULT_VARIABLE _fp1 OUTPUT_QUIET ERROR_QUIET)
-file(WRITE "${_w}/fmtmain.c" "int probe_fn(void); int main(void){return probe_fn();}\n")
-execute_process(COMMAND "${_gcc}" ${_m32} -c "${_w}/fmtmain.c" -o "${_w}/fmt_gcc.o"
-    RESULT_VARIABLE _fp2 OUTPUT_QUIET ERROR_QUIET)
-execute_process(COMMAND "${_gcc}" ${_m32} "${_w}/fmt_gcc.o" "${_w}/fmt_mcc.o" -o "${_w}/fmtprobe"
-    RESULT_VARIABLE _fprc OUTPUT_QUIET ERROR_QUIET)
-if(NOT _fp1 EQUAL 0 OR NOT _fp2 EQUAL 0 OR NOT _fprc EQUAL 0)
-    message(STATUS "SKIP: cannot link mcc + reference-cc objects together "
-                   "(object-format mismatch, e.g. mcc ELF vs mingw PE/COFF)")
-    return()
-endif()
-file(WRITE "${_w}/callee.c" "\
-struct P2 { int x, y; };
-int __attribute__((fastcall)) mix_ll(int a, long long b, int c){ return (int)(a+b+c); }
-int __attribute__((fastcall)) small(char a, short b, int c){ return a+b+c; }
-int __attribute__((fastcall)) ptr2(int *a, int *b){ return *a + *b; }
-int __attribute__((fastcall)) ll_first(long long a, int b){ return (int)(a+b); }
-int __attribute__((fastcall)) fs(int a, struct P2 p, int b){ return a*1000+p.x*100+p.y*10+b; }
-")
-file(WRITE "${_w}/caller.c" "\
-struct P2 { int x, y; };
-int __attribute__((fastcall)) mix_ll(int a, long long b, int c);
-int __attribute__((fastcall)) small(char a, short b, int c);
-int __attribute__((fastcall)) ptr2(int *a, int *b);
-int __attribute__((fastcall)) ll_first(long long a, int b);
-int __attribute__((fastcall)) fs(int a, struct P2 p, int b);
-int main(void){
-    int x=10, y=20, f=0; struct P2 p={2,3};
-    if (mix_ll(1,100,3)!=104) f|=1;
-    if (small(1,2,3)!=6) f|=2;
-    if (ptr2(&x,&y)!=30) f|=4;
-    if (ll_first(100,5)!=105) f|=8;
-    if (fs(1,p,4)!=1234) f|=16;
-    return f;
-}
-")
-set(_fail 0)
-macro(_cc cc out)
-    execute_process(COMMAND ${cc} ${ARGN} -o "${out}"
-        RESULT_VARIABLE _rc OUTPUT_VARIABLE _o ERROR_VARIABLE _e)
-    if(NOT _rc EQUAL 0)
-        message(WARNING "compile failed: ${cc} ${ARGN}\n${_o}${_e}")
-        set(_fail 1)
-    endif()
-endmacro()
-_cc("${IMCC}" "${_w}/e_t.o" -c "${_w}/callee.c")
-_cc("${IMCC}" "${_w}/l_t.o" -c "${_w}/caller.c")
-_cc("${_gcc}" "${_w}/e_g.o" ${_m32} -O0 -c "${_w}/callee.c")
-_cc("${_gcc}" "${_w}/l_g.o" ${_m32} -O0 -c "${_w}/caller.c")
-macro(_check name)
-    execute_process(COMMAND "${_gcc}" ${_m32} ${ARGN} -o "${_w}/run"
-        RESULT_VARIABLE _lrc OUTPUT_QUIET ERROR_QUIET)
-    if(NOT _lrc EQUAL 0)
-        message("FAIL  ${name} (link)")
-        set(_fail 1)
-    else()
-        execute_process(COMMAND "${_w}/run" RESULT_VARIABLE _rrc)
-        if(_rrc EQUAL 0)
-            message("PASS  ${name}")
-        else()
-            message("FAIL  ${name} (exit ${_rrc})")
-            set(_fail 1)
-        endif()
-    endif()
-endmacro()
-_check("mcc caller -> gcc callee" "${_w}/e_g.o" "${_w}/l_t.o")
-_check("gcc caller -> mcc callee" "${_w}/e_t.o" "${_w}/l_g.o")
-_check("mcc caller -> mcc callee" "${_w}/e_t.o" "${_w}/l_t.o")
-file(WRITE "${_w}/unsup.c"
-    "int __attribute__((fastcall)) f(double a,int b); int g(){ return f(1.0,2); }\n")
-execute_process(COMMAND "${IMCC}" -c "${_w}/unsup.c" -o "${_w}/unsup.o"
-    RESULT_VARIABLE _urc OUTPUT_QUIET ERROR_QUIET)
-if(_urc EQUAL 0)
-    message("FAIL  unsupported float-before-reg case should error")
-    set(_fail 1)
-else()
-    message("PASS  unsupported float-before-reg case errors cleanly")
-endif()
-if(_fail EQUAL 0)
-    message("ALL OK")
-else()
-    message(FATAL_ERROR "i386-fastcall-abi: FAILURES")
-endif()
-]==])
     if(TARGET mcc-i386)
         
         
@@ -3677,14 +3318,15 @@ endif()
         
         
         mcc_mingw_resolve()
-        set(_fc_gcc_args "")
+        set(_fc_harness_args "")
         if(EXISTS "${_MCC_MINGW_I686_GCC}")
-            set(_fc_gcc_args "-DGCC=${_MCC_MINGW_I686_GCC}" "-DM32=")
+            set(_fc_harness_args --gcc "${_MCC_MINGW_I686_GCC}" --m32 "")
         elseif(EXISTS "${_MCC_MINGW_MULTILIB_GCC}")
-            set(_fc_gcc_args "-DGCC=${_MCC_MINGW_MULTILIB_GCC}" "-DM32=-m32")
+            set(_fc_harness_args --gcc "${_MCC_MINGW_MULTILIB_GCC}" --m32 "-m32")
         endif()
-        add_test(NAME i386-fastcall-abi COMMAND "${CMAKE_COMMAND}"
-            -DIMCC=$<TARGET_FILE:mcc-i386> ${_fc_gcc_args} -P "${_fastcall_drv}")
+        add_test(NAME i386-fastcall-abi COMMAND "$<TARGET_FILE:mccharness>" i386fastcall
+            --imcc $<TARGET_FILE:mcc-i386> ${_fc_harness_args}
+            --work ${CMAKE_BINARY_DIR}/i386-fastcall-abi)
         set_tests_properties(i386-fastcall-abi PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_REGULAR_EXPRESSION "SKIP:")
     else()
@@ -3692,259 +3334,20 @@ endif()
             "requires an i386 cross-compiler (target mcc-i386 is not configured)")
     endif()
 
-    set(_gccts_drv "${CMAKE_BINARY_DIR}/run_gcctestsuite.cmake")
-    file(WRITE "${_gccts_drv}" "set(BUILDDIR \"${CMAKE_BINARY_DIR}\")\n")
-    file(APPEND "${_gccts_drv}" [==[
-if(NOT DEFINED TESTSUITE_PATH OR TESTSUITE_PATH STREQUAL "")
-    set(TESTSUITE_PATH "$ENV{TESTSUITE_PATH}")
-endif()
-if(TESTSUITE_PATH STREQUAL "" OR NOT IS_DIRECTORY "${TESTSUITE_PATH}")
-    message(STATUS "SKIP: gcc testsuite not found (set MCC_GCCTESTSUITE_PATH)")
-    return()
-endif()
-if(NOT DEFINED MCC OR NOT EXISTS "${MCC}")
-    message(FATAL_ERROR "gcctestsuite: -DMCC=<mcc binary> required")
-endif()
-if(NOT DEFINED BDIR OR BDIR STREQUAL "")
-    get_filename_component(BDIR "${MCC}" DIRECTORY)
-endif()
-set(_rt "${BUILDDIR}/gcctestsuite")
-file(MAKE_DIRECTORY "${_rt}")
-set(_flags "-B${BDIR}" -DNO_TRAMPOLINES)
-if(DEFINED IDIR AND NOT IDIR STREQUAL "")
-    list(APPEND _flags "-I${IDIR}" "-I${IDIR}/include")
-endif()
-file(GLOB _all "${TESTSUITE_PATH}/compile/*.c" "${TESTSUITE_PATH}/execute/*.c"
-               "${TESTSUITE_PATH}/execute/ieee/*.c")
-set(_skip "")
-foreach(_f IN LISTS _all)
-    file(READ "${_f}" _t)
-    if(_t MATCHES "_builtin_" OR _t MATCHES "[_a-zA-Z]?[Cc]omplex"
-       OR _t MATCHES "__u?int128_t" OR _t MATCHES "vector|vector_size|__vector_size__")
-        get_filename_component(_b "${_f}" NAME)
-        list(APPEND _skip "${_b}")
-    endif()
-endforeach()
-list(APPEND _skip 20000120-2.c mipscop-1.c mipscop-2.c mipscop-3.c mipscop-4.c
-     fp-cmp-4f.c fp-cmp-4l.c fp-cmp-8f.c fp-cmp-8l.c pr38016.c)
-set(_ok 0)
-set(_sk 0)
-set(_fa 0)
-set(_xf 0)
-set(_sum "")
-file(GLOB _csrc "${TESTSUITE_PATH}/compile/*.c")
-foreach(_s IN LISTS _csrc)
-    get_filename_component(_base "${_s}" NAME)
-    execute_process(COMMAND "${MCC}" ${_flags} -o "${_rt}/tst.o" -c "${_s}"
-        RESULT_VARIABLE _rc OUTPUT_VARIABLE _o ERROR_VARIABLE _e)
-    if("${_o}${_e}" MATCHES "cannot use local functions")
-        set(_r SKIP)
-        math(EXPR _sk "${_sk}+1")
-    elseif(_rc EQUAL 0)
-        set(_r PASS)
-        math(EXPR _ok "${_ok}+1")
-    elseif(_base IN_LIST _skip)
-        set(_r SKIP)
-        math(EXPR _sk "${_sk}+1")
-    else()
-        set(_r FAIL)
-        math(EXPR _fa "${_fa}+1")
-    endif()
-    string(APPEND _sum "${_r}: ${_s}\n")
-endforeach()
-file(GLOB _xsrc "${TESTSUITE_PATH}/execute/*.c" "${TESTSUITE_PATH}/execute/ieee/*.c")
-foreach(_s IN LISTS _xsrc)
-    get_filename_component(_base "${_s}" NAME)
-    execute_process(COMMAND "${MCC}" ${_flags} "${_s}" -o "${_rt}/tst" -lm
-        RESULT_VARIABLE _rc OUTPUT_VARIABLE _o ERROR_VARIABLE _e)
-    if("${_o}${_e}" MATCHES "cannot use local functions")
-        set(_r SKIP)
-        math(EXPR _sk "${_sk}+1")
-    elseif(_rc EQUAL 0)
-        execute_process(COMMAND "${_rt}/tst" RESULT_VARIABLE _xrc OUTPUT_QUIET ERROR_QUIET)
-        if(_xrc EQUAL 0)
-            set(_r PASS)
-            math(EXPR _ok "${_ok}+1")
-        else()
-            set(_r FAILEXE)
-            math(EXPR _xf "${_xf}+1")
-        endif()
-    elseif(_base IN_LIST _skip)
-        set(_r SKIP)
-        math(EXPR _sk "${_sk}+1")
-    else()
-        set(_r FAIL)
-        math(EXPR _fa "${_fa}+1")
-    endif()
-    string(APPEND _sum "${_r}: ${_s}\n")
-endforeach()
-file(WRITE "${BUILDDIR}/mcc.sum" "${_sum}${_ok} ok\n${_sk} skipped\n${_fa} failed\n${_xf} exe failed\n")
-message("${_ok} test(s) ok.")
-message("${_sk} test(s) skipped.")
-message("${_fa} test(s) failed.")
-message("${_xf} test(s) exe failed.")
-]==])
     add_custom_target(gcctestsuite
-        COMMAND "${CMAKE_COMMAND}" -DMCC=$<TARGET_FILE:mcc>
-                "-DBDIR=${CMAKE_BINARY_DIR}" "-DIDIR=${CMAKE_CURRENT_SOURCE_DIR}"
-                "-DTESTSUITE_PATH=${MCC_GCCTESTSUITE_PATH}" -P "${_gccts_drv}"
-        DEPENDS mcc USES_TERMINAL
+        COMMAND "$<TARGET_FILE:mccharness>" gcctestsuite --mcc $<TARGET_FILE:mcc>
+                --bdir "${CMAKE_BINARY_DIR}" --idir "${CMAKE_CURRENT_SOURCE_DIR}"
+                --builddir "${CMAKE_BINARY_DIR}" --path "${MCC_GCCTESTSUITE_PATH}"
+        DEPENDS mcc mccharness USES_TERMINAL
         COMMENT "gcctestsuite: gcc c-torture over mcc")
 
-    set(_armasm_drv "${CMAKE_BINARY_DIR}/run_arm_asm.cmake")
-    file(WRITE "${_armasm_drv}" "set(BUILDDIR \"${CMAKE_BINARY_DIR}\")\n")
-    file(APPEND "${_armasm_drv}" [==[
-if(NOT DEFINED CROSS_COMPILE)
-    set(CROSS_COMPILE "")
-endif()
-if(NOT DEFINED ARM_VFP)
-    set(ARM_VFP ON)
-endif()
-find_program(AS "${CROSS_COMPILE}as")
-find_program(OBJDUMP "${CROSS_COMPILE}objdump")
-if(NOT AS OR NOT OBJDUMP)
-    message(STATUS "SKIP: ARM binutils (${CROSS_COMPILE}as/objdump) not found")
-    return()
-endif()
-if(NOT DEFINED MCC OR NOT EXISTS "${MCC}")
-    message(STATUS "SKIP: ARM mcc not found at '${MCC}'")
-    return()
-endif()
-if(NOT EXISTS "${TOKH}")
-    message(FATAL_ERROR "arm-tok.h not found at '${TOKH}'")
-endif()
-set(_w "${BUILDDIR}/arm-asm-testsuite")
-file(REMOVE_RECURSE "${_w}")
-file(MAKE_DIRECTORY "${_w}")
-file(STRINGS "${TOKH}" _lines)
-set(_mnem "")
-foreach(_l IN LISTS _lines)
-    if(NOT _l MATCHES "DEF_ASM")
-        continue()
-    endif()
-    if(_l MATCHES "not useful" OR _l MATCHES "#define" OR _l MATCHES "/\\*"
-       OR _l MATCHES "DEF_ASM_CONDED_WITH_SUFFIX\\(x")
-        continue()
-    endif()
-    if(_l MATCHES "DEF_ASM_CONDED_VFP_F32_F64[^(]*\\((.*)\\)")
-        list(APPEND _mnem "${CMAKE_MATCH_1}.f32" "${CMAKE_MATCH_1}.f64")
-    elseif(_l MATCHES "DEF_ASM[^(]*\\((.*)\\)")
-        string(REPLACE ", " "." _name "${CMAKE_MATCH_1}")
-        list(APPEND _mnem "${_name}")
-    endif()
-endforeach()
-set(_f2 "")
-foreach(_s IN LISTS _mnem)
-    if(NOT _s MATCHES "^([rcpsd][0-9]+|fp|ip|sp|lr|pc|asl|apsr_nzcv|fpsid|fpscr|fpexc)$")
-        list(APPEND _f2 "${_s}")
-    endif()
-endforeach()
-set(_mnem "${_f2}")
-set(_combos
-    "r3, r4, r5, r6" "r3, r4, r5" "r3, r4, r5, asl #7" "r3, r4, r5, lsl #7"
-    "r3, r4, r5, asr #7" "r3, r4, r5, lsr #7" "r3, r4, r5, ror #7"
-    "r3, r4, r5, rrx" "r3, r4, r5, asl r6" "r3, r4, r5, lsl r6"
-    "r3, r4, r5, asr r6" "r3, r4, r5, lsr r6" "r3, r4, r5, ror r6"
-    "r3, r4, #5, asl #7" "r3, r4, #5, lsl #7" "r3, r4, #5, asr #7"
-    "r3, r4, #5, lsr #7" "r3, r4, #5, ror #7" "r3, r4, #5, rrx" "r3, #5, r4"
-    "r3, #4, #8" "r3, r4, asl #5" "r3, r4, lsl #5" "r3, r4, asr #5"
-    "r3, r4, lsr #5" "r3, r4, ror #5" "r3, r4, ror #8" "r3, r4, asl r5"
-    "r3, r4, lsl r5" "r3, r4, asr r5" "r3, r4, lsr r5" "r3, r4, ror r5"
-    "r3, r4, ror #8" "r3, r4, ror #16" "r3, r4, ror #24" "r3, r4, rrx"
-    "r3, #4, asl #5" "r3, #4, lsl #5" "r3, #4, asr #5" "r3, #4, lsr #5"
-    "r3, #4, ror #5" "r3, r4, rrx" "r3, r4" "r3" "{r3,r4,r5}" "{r3,r5,r4}"
-    "r2!, {r3,r4,r5}" "r2!, {r3,r5,r4}" "r2, {r3,r4,r5}" "r2, {r3,r5,r4}"
-    "r2, [r3, r4]" "r2, [r3, r4]!" "r2, [r3, -r4]" "r2, [r3, -r4]!"
-    "r2, [r3], r4" "r2, [r3], -r4" "r2, [r3]" "r2, r3, [r4, lsl# 2]"
-    "r2, [r3, r4, lsr# 1]" "r2, [r3, r4, lsr# 2]!" "r2, [r3, -r4, ror# 3]"
-    "r2, [r3, -r4, lsl# 1]!" "r2, [r3], r4, lsl# 3" "r2, [r3], -r4, asr# 31"
-    "r2, [r3], -r4, asl# 1" "r2, [r3], -r4, rrx" "r2, r3, [r4]"
-    "r2, [r3, #4]" "r2, [r3, #-4]" "r2, [r3, #0x45]" "r2, [r3, #-0x45]"
-    "r2, r3, #4" "r2, r3, #-4" "p10, #7, c2, c0, c1, #4"
-    "p10, #7, r2, c0, c1, #4" "p10, #0, c2, c0, c1, #4" "p10, #0, r2, c0, c1, #4"
-    "r2, #4" "r2, #-4" "r2, #0xEFFF" "r3, #0x0000" "r4, #0x0201"
-    "r4, #0xFFFFFF00" "#4" "#-4" "p5, c2, [r3]" "p5, c3, [r4]"
-    "p5, c2, [r3, #4]" "p5, c2, [r3, #-4]" "p5, c2, [r3, #0x45]"
-    "p5, c2, [r3, #-0x45]" "s2, [r3]" "s3, [r4]" "s2, [r3, #4]"
-    "s2, [r3, #-4]" "s2, [r3, #0x45]" "s2, [r3, #-0x45]" "r1, {d3-d4}"
-    "r1!, {d3-d4}" "r2, {d4-d15}" "r3!, {d4-d15}" "r3!, {d4}" "r2, {s4-s31}"
-    "r3!, {s4}" "{d3-d4}" "{d4-d15}" "{d4}" "{s4-s31}" "{s4}" "s2, s3, s4"
-    "s2, s3" "d2, d3, d4" "d2, d3" "s2, #0" "d2, #0" "s3, #0.0" "d3, #0.0"
-    "s4, #-0.1796875" "d4, #0.1796875" "r2, r3, d1" "d1, r2, r3" "s1, r2"
-    "r2, s1" "r2, fpexc" "r2, fpscr" "r2, fpsid" "apsr_nzcv, fpscr"
-    "fpexc, r2" "fpscr, r2" "fpsid, r2" "s3, d4" "d4, s3" "")
-function(_dump obj outvar)
-    execute_process(COMMAND "${OBJDUMP}" -S "${obj}"
-        OUTPUT_VARIABLE _od ERROR_QUIET)
-    set(_keep "")
-    string(REPLACE "\n" ";" _odl "${_od}")
-    foreach(_ln IN LISTS _odl)
-        if(_ln MATCHES "^[ \t]*0:")
-            string(APPEND _keep "${_ln}\n")
-        endif()
-    endforeach()
-    set(${outvar} "${_keep}" PARENT_SCOPE)
-endfunction()
-set(_total 0)
-set(_okc 0)
-set(_failed "")
-foreach(_s IN LISTS _mnem)
-    set(_as_opts "")
-    if(_s MATCHES "^v")
-        if(ARM_VFP)
-            set(_as_opts -mfpu=vfp)
-        else()
-            continue()
-        endif()
-    endif()
-    foreach(_args IN LISTS _combos)
-        set(_text "${_s} ${_args}")
-        file(WRITE "${_w}/in.s" "${_text}\n")
-        execute_process(COMMAND "${AS}" -mlittle-endian ${_as_opts}
-            -o "${_w}/as.o" "${_w}/in.s" RESULT_VARIABLE _arc OUTPUT_QUIET ERROR_QUIET)
-        if(NOT _arc EQUAL 0)
-            continue()
-        endif()
-        math(EXPR _total "${_total}+1")
-        _dump("${_w}/as.o" _expected)
-        file(WRITE "${_w}/in.c" "__asm__(\"${_text}\");\n")
-        execute_process(COMMAND "${MCC}" -o "${_w}/mcc.o" -c "${_w}/in.c"
-            RESULT_VARIABLE _trc OUTPUT_QUIET ERROR_QUIET)
-        if(NOT _trc EQUAL 0)
-            message("warning: '${_text}' did not work in mcc")
-            continue()
-        endif()
-        _dump("${_w}/mcc.o" _got)
-        if(_got STREQUAL _expected)
-            math(EXPR _okc "${_okc}+1")
-        else()
-            list(APPEND _failed "${_text}")
-            message("warning: '${_text}' did not match GNU as")
-        endif()
-    endforeach()
-endforeach()
-message("${_okc} of ${_total} tests succeeded.")
-set(_known "bl r3" "b r3" "mov r2, #0xEFFF" "mov r4, #0x0201"
-    "vmov.f32 r2, r3, d1" "vmov.f32 d1, r2, r3")
-set(_st 0)
-foreach(_t IN LISTS _failed)
-    if(_t IN_LIST _known)
-        message("Failed test: ${_t} (known failure)")
-    else()
-        message("Failed test: ${_t}")
-        set(_st 1)
-    endif()
-endforeach()
-if(NOT _st EQUAL 0)
-    message(FATAL_ERROR "arm-asm-testsuite: FAILURES")
-endif()
-]==])
     if(TARGET mcc-arm)
         add_custom_target(arm-asm-testsuite
-            COMMAND "${CMAKE_COMMAND}" -DMCC=$<TARGET_FILE:mcc-arm>
-                    "-DCROSS_COMPILE=${MCC_ARM_CROSS_COMPILE}"
-                    "-DTOKH=${CMAKE_CURRENT_SOURCE_DIR}/src/arch/arm/arm-tok.h" -P "${_armasm_drv}"
-            DEPENDS mcc-arm USES_TERMINAL
+            COMMAND "$<TARGET_FILE:mccharness>" armasm --mcc $<TARGET_FILE:mcc-arm>
+                    --cross-compile "${MCC_ARM_CROSS_COMPILE}"
+                    --tokh "${CMAKE_CURRENT_SOURCE_DIR}/src/arch/arm/arm-tok.h"
+                    --builddir "${CMAKE_BINARY_DIR}"
+            DEPENDS mcc-arm mccharness USES_TERMINAL
             COMMENT "arm-asm-testsuite: mcc vs GNU as over arm-tok.h")
     endif()
 
@@ -4014,10 +3417,9 @@ endif()
         CACHE PATH "cross-compiler build dir for the wine PE runtime test")
     if(MCC_WINE AND EXISTS "${MCC_CROSS_DIR}/mcc-x86_64-win32")
         add_test(NAME pe-wine-conformance
-            COMMAND ${CMAKE_COMMAND}
-                    "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}" "-DXB=${MCC_CROSS_DIR}"
-                    "-DWORK=${CMAKE_BINARY_DIR}/pe-wine-work"
-                    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/run_pe_wine.cmake")
+            COMMAND "$<TARGET_FILE:mccharness>" pewine
+                    --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"
+                    --work "${CMAKE_BINARY_DIR}/pe-wine-work")
         set_tests_properties(pe-wine-conformance PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT LABELS "wine" SKIP_RETURN_CODE 77)
     else()
@@ -4038,78 +3440,12 @@ endif()
         
         
         
-        set(_pe_native_drv "${CMAKE_BINARY_DIR}/run_pe_native.cmake")
-        file(WRITE "${_pe_native_drv}" [==[
-
-
-
-
-
-
-if(NOT DEFINED MCC OR NOT DEFINED B OR NOT DEFINED SRC OR NOT DEFINED WORK)
-    message(FATAL_ERROR "usage: -DMCC= -DB= -DSRC= -DWORK= -P run_pe_native.cmake")
-endif()
-set(CONF "${SRC}/tests/qemu/conformance")
-if(NOT EXISTS "${MCC}")
-    message("SKIP: no native mcc at ${MCC}")
-    cmake_language(EXIT 77)
-endif()
-if(NOT EXISTS "${B}/lib/libmcc1.a")
-    message("SKIP: build tree ${B} has no lib/libmcc1.a")
-    cmake_language(EXIT 77)
-endif()
-file(MAKE_DIRECTORY "${WORK}")
-set(status 0)
-file(GLOB _confs "${CONF}/*.c")
-foreach(f ${_confs})
-    get_filename_component(n "${f}" NAME_WE)
-    # arm64 PE thread-local storage still access-violates at runtime. The gen
-    # (arm64-gen.c arm64_tls_base_x30: the x18 TEB sequence) and link
-    # (arm64-link.c: TPREL = val - tls_start) are implemented and disassemble
-    # correctly against the arm64-win32 cross tools, but the built exe faults on
-    # the arm64 runner and the root cause cannot be reproduced without an arm64
-    # host. Skip tls/tls_aggr here until that runtime fault is diagnosed
-    # on-device; the other conformance programs still run, and both tls tests
-    # run+pass on x86_64/i386 where PE TLS is proven.
-    if(CPU STREQUAL "arm64" AND (n STREQUAL "tls" OR n STREQUAL "tls_aggr"))
-        message("SKIP ${n} -- arm64 PE _Thread_local access-violates at runtime (codegen implemented but unverified on-device)")
-        continue()
-    endif()
-    set(exe "${WORK}/pe_native_${n}.exe")
-    execute_process(
-        COMMAND "${MCC}" "-B${B}" "-I${B}/include"
-                "-I${SRC}/runtime/win32/include" "-I${SRC}/runtime/include"
-                "${f}" -o "${exe}"
-        RESULT_VARIABLE crc OUTPUT_VARIABLE cout ERROR_VARIABLE cerr)
-    if(NOT crc EQUAL 0)
-        string(REGEX REPLACE "\n.*" "" _firstline "${cerr}")
-        message("FAIL ${n} (compile): ${_firstline}")
-        set(status 1)
-        continue()
-    endif()
-    execute_process(
-        COMMAND "${exe}" RESULT_VARIABLE rc
-        OUTPUT_FILE "${WORK}/pe-native-run.out" ERROR_FILE "${WORK}/pe-native-run.out")
-    if(rc EQUAL 0)
-        message("PASS ${n}")
-    else()
-        message("FAIL ${n} (run, rc=${rc})")
-        set(status 1)
-    endif()
-    file(REMOVE "${exe}")
-endforeach()
-if(NOT status EQUAL 0)
-    cmake_language(EXIT 1)
-endif()
-cmake_language(EXIT 0)
-]==])
         add_test(NAME pe-native-conformance
-            COMMAND ${CMAKE_COMMAND}
-                    "-DMCC=${_mcc_exe}" "-DB=${_bdir}"
-                    "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}"
-                    "-DWORK=${CMAKE_BINARY_DIR}/pe-native-work"
-                    "-DCPU=${MCC_CPU}"
-                    -P "${_pe_native_drv}")
+            COMMAND "$<TARGET_FILE:mccharness>" penative
+                    --mcc "${_mcc_exe}" --b "${_bdir}"
+                    --src "${CMAKE_CURRENT_SOURCE_DIR}"
+                    --work "${CMAKE_BINARY_DIR}/pe-native-work"
+                    --cpu "${MCC_CPU}")
         set_tests_properties(pe-native-conformance PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
     else()
@@ -4123,18 +3459,17 @@ cmake_language(EXIT 0)
     
     
     
-    find_program(MCC_OTOOL NAMES llvm-otool otool)
-    if(MCC_OTOOL AND EXISTS "${MCC_CROSS_DIR}/mcc-x86_64-osx")
+    if(EXISTS "${MCC_CROSS_DIR}/mcc-x86_64-osx")
         add_test(NAME macho-structural
-            COMMAND ${CMAKE_COMMAND}
-                    "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}" "-DXB=${MCC_CROSS_DIR}"
-                    "-DWORK=${CMAKE_BINARY_DIR}/macho-work"
-                    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/validate_macho.cmake")
+            COMMAND "$<TARGET_FILE:mccharness>" machostructural
+                    --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"
+                    --objcheck "$<TARGET_FILE:objcheck>"
+                    --work "${CMAKE_BINARY_DIR}/macho-work")
         set_tests_properties(macho-structural PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
     else()
         mcc_skip_test(macho-structural
-            "requires llvm-otool/otool + the osx cross compilers (cmake --preset cross)")
+            "requires the osx cross compilers (cmake --preset cross)")
     endif()
 
     
@@ -4145,10 +3480,9 @@ cmake_language(EXIT 0)
     
     if(EXISTS "${MCC_CROSS_DIR}/mcc-x86_64-osx")
         add_test(NAME macho-codegen-run
-            COMMAND ${CMAKE_COMMAND}
-                    "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}" "-DXB=${MCC_CROSS_DIR}"
-                    "-DWORK=${CMAKE_BINARY_DIR}/macho-codegen-work"
-                    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/run_macho_codegen.cmake")
+            COMMAND "$<TARGET_FILE:mccharness>" machocodegen
+                    --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"
+                    --work "${CMAKE_BINARY_DIR}/macho-codegen-work")
         set_tests_properties(macho-codegen-run PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
     else()
@@ -4163,10 +3497,10 @@ cmake_language(EXIT 0)
     
     if(EXISTS "${MCC_CROSS_DIR}/mcc-x86_64-osx")
         add_test(NAME macho-image-run
-            COMMAND ${CMAKE_COMMAND}
-                    "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}" "-DXB=${MCC_CROSS_DIR}"
-                    "-DWORK=${CMAKE_BINARY_DIR}/macho-image-work"
-                    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/run_macho_image.cmake")
+            COMMAND "$<TARGET_FILE:mccharness>" machoimage
+                    --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"
+                    --objcheck "$<TARGET_FILE:objcheck>"
+                    --work "${CMAKE_BINARY_DIR}/macho-image-work")
         set_tests_properties(macho-image-run PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
     else()
@@ -4184,10 +3518,10 @@ cmake_language(EXIT 0)
     
     if(EXISTS "${MCC_CROSS_DIR}/mcc-x86_64-osx")
         add_test(NAME macho-apple-libc
-            COMMAND ${CMAKE_COMMAND}
-                    "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}" "-DXB=${MCC_CROSS_DIR}"
-                    "-DWORK=${CMAKE_BINARY_DIR}/macho-apple-libc-work"
-                    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/run_macho_apple_libc.cmake")
+            COMMAND "$<TARGET_FILE:mccharness>" machoapplelibc
+                    --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"
+                    --objcheck "$<TARGET_FILE:objcheck>"
+                    --work "${CMAKE_BINARY_DIR}/macho-apple-libc-work")
         set_tests_properties(macho-apple-libc PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
     else()
@@ -4206,10 +3540,10 @@ cmake_language(EXIT 0)
     
     
     add_test(NAME macho-conformance-native
-        COMMAND ${CMAKE_COMMAND}
-                "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}" "-DMCC=$<TARGET_FILE:mcc>"
-                "-DBDIR=${CMAKE_BINARY_DIR}" "-DWORK=${CMAKE_BINARY_DIR}/macho-native-work"
-                -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/run_macho_native.cmake")
+        COMMAND "$<TARGET_FILE:mccharness>" machonative
+                --src "${CMAKE_CURRENT_SOURCE_DIR}" --mcc "$<TARGET_FILE:mcc>"
+                --objcheck "$<TARGET_FILE:objcheck>"
+                --bdir "${CMAKE_BINARY_DIR}" --work "${CMAKE_BINARY_DIR}/macho-native-work")
     set_tests_properties(macho-conformance-native PROPERTIES
         FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
 
@@ -4300,46 +3634,6 @@ file(REMOVE "${DEST}.tar")
 file(WRITE "${MARKER}" "${_rel}\n")
 ]==])
 
-        set(_qrun "${CMAKE_BINARY_DIR}/run_qemu_run.cmake")
-        file(WRITE "${_qrun}" [==[
-
-
-
-file(MAKE_DIRECTORY "${WORKDIR}")
-file(GLOB _srcs "${SRCDIR}/*.c")
-set(_fails "")
-
-
-set(_common "-B${MCCBASE}" "--sysroot=${SYSROOT}" "-isystem" "${SYSROOT}/usr/include"
-    "-L${SYSROOT}/usr/lib64" "-L${SYSROOT}/lib64" "-L${SYSROOT}/usr/lib" "-L${SYSROOT}/lib")
-foreach(_src IN LISTS _srcs)
-    get_filename_component(_n "${_src}" NAME_WE)
-    foreach(_mode "default" "pic")
-        if(_mode STREQUAL "pic")
-            set(_modeflags -fPIC -pie)
-        else()
-            set(_modeflags "")
-        endif()
-        set(_out "${WORKDIR}/${_n}.${_mode}")
-        execute_process(
-            COMMAND "${MCC}" ${_common} ${_modeflags} "${_src}" -o "${_out}"
-            RESULT_VARIABLE _crc OUTPUT_VARIABLE _co ERROR_VARIABLE _ce)
-        if(NOT _crc EQUAL 0)
-            string(APPEND _fails "  ${_n} [${_mode}]: compile failed\n${_co}${_ce}\n")
-            continue()
-        endif()
-        execute_process(COMMAND "${QEMU}" -L "${SYSROOT}" "${_out}"
-            RESULT_VARIABLE _rrc OUTPUT_VARIABLE _ro ERROR_VARIABLE _re)
-        if(NOT _rrc EQUAL 0)
-            string(APPEND _fails "  ${_n} [${_mode}]: run exited ${_rrc}\n${_ro}${_re}\n")
-        endif()
-    endforeach()
-endforeach()
-if(NOT _fails STREQUAL "")
-    message(FATAL_ERROR "qemu conformance failures:\n${_fails}")
-endif()
-message(STATUS "qemu conformance: all programs passed")
-]==])
 
         set(_qsrc "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/conformance")
         foreach(_arch IN LISTS MCC_QEMU_ARCHS)
@@ -4414,12 +3708,11 @@ message(STATUS "qemu conformance: all programs passed")
                 set_tests_properties(${_tn}-fetch PROPERTIES
                     FIXTURES_SETUP FX_${_tn} LABELS qemu TIMEOUT 2000)
 
-                add_test(NAME ${_tn} COMMAND "${CMAKE_COMMAND}"
-                    "-DMCC=${_qcc}" "-DMCCBASE=${CMAKE_BINARY_DIR}"
-                    "-DSYSROOT=${_root}" "-DQEMU=${_QEMU_${_arch}}"
-                    "-DSRCDIR=${_qsrc}"
-                    "-DWORKDIR=${CMAKE_BINARY_DIR}/qemu-work/${_arch}-${_libc}"
-                    -P "${_qrun}")
+                add_test(NAME ${_tn} COMMAND "$<TARGET_FILE:mccharness>" qemurun
+                    --mcc "${_qcc}" --mccbase "${CMAKE_BINARY_DIR}"
+                    --sysroot "${_root}" --qemu "${_QEMU_${_arch}}"
+                    --srcdir "${_qsrc}"
+                    --workdir "${CMAKE_BINARY_DIR}/qemu-work/${_arch}-${_libc}")
                 set_tests_properties(${_tn} PROPERTIES
                     FIXTURES_REQUIRED "MCC_BUILT;FX_${_tn}" LABELS qemu TIMEOUT 600)
             endforeach()
@@ -4439,11 +3732,10 @@ message(STATUS "qemu conformance: all programs passed")
         
         if((";${MCC_QEMU_ARCHS};" MATCHES ";arm64;")
            AND (";${MCC_QEMU_LIBCS};" MATCHES ";glibc;"))
-            add_test(NAME qemu-arm64-osx COMMAND ${CMAKE_COMMAND}
-                "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}" "-DXB=${MCC_CROSS_DIR}"
-                "-DWORK=${CMAKE_BINARY_DIR}/macho-arm64-work" "-DARCH=arm64"
-                "-DSYSROOT=${MCC_QEMU_DLDIR}/arm64-glibc"
-                -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/run_macho_codegen.cmake")
+            add_test(NAME qemu-arm64-osx COMMAND "$<TARGET_FILE:mccharness>" machocodegen
+                --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"
+                --work "${CMAKE_BINARY_DIR}/macho-arm64-work" --arch arm64
+                --sysroot "${MCC_QEMU_DLDIR}/arm64-glibc")
             set_tests_properties(qemu-arm64-osx PROPERTIES
                 FIXTURES_REQUIRED "MCC_BUILT;FX_qemu-arm64-glibc"
                 LABELS "qemu;macho" SKIP_RETURN_CODE 77 TIMEOUT 600)

@@ -240,11 +240,39 @@ ST_FUNC int host_exec_replace(char **argv);
 ST_FUNC int host_find_tool(const char *name, const char *ext, char *buf, int size);
 ST_FUNC int host_codesign_adhoc(const char *file);
 
+/* spawn with control - the keystone for build/test tools.  All fields
+   optional (NULL/0 = inherit).  Returns the child exit code, or -1.
+   stdout_buf/stderr_buf, when non-NULL, receive libc-malloc'd,
+   NUL-terminated capture buffers the caller frees with free(). */
+typedef struct HostSpawnOpts {
+    const char *const *launcher;      /* emulator/wine/qemu prefix argv, NULL-term */
+    const char *cwd;                  /* run child in this directory */
+    const char *const *env;           /* full replacement environ, or NULL = inherit */
+    const char *stdout_file;          /* redirect stdout to this file (truncate) */
+    const char *stderr_file;          /* redirect stderr to this file (may equal stdout_file) */
+    char **stdout_buf, **stderr_buf;  /* capture into malloc'd buffers instead */
+} HostSpawnOpts;
+ST_FUNC int host_spawn_ex(const char *const *argv, const HostSpawnOpts *o);
+
+/* first of N candidate tool names found on the host PATH (Windows SearchPath);
+   returns 1 and fills buf with the resolved path, else 0 */
+ST_FUNC int host_find_tool_any(const char *const *names, const char *ext, char *buf, int size);
+
+/* filesystem kit (shared by the compiler recipes and the build tools) */
+ST_FUNC int host_mkdirs(const char *path);                 /* mkdir -p; 0 on success */
+ST_FUNC int host_copy_file(const char *src, const char *dst, int preserve_exec);
+ST_FUNC int host_stat(const char *path, int *is_dir, long long *size, long long *mtime);
+typedef int (*host_walk_fn)(const char *path, int is_dir, void *ud);
+/* walk dir entries (recursive optional), calling fn per entry; a nonzero fn
+   return stops the walk and is propagated.  Returns 0, fn's value, or -1 */
+ST_FUNC int host_dir_walk(const char *dir, int recursive, host_walk_fn fn, void *ud);
+
 /* ------------------------------------------------------------------- */
 /* time / env */
 
 ST_FUNC unsigned host_clock_ms(void);
 ST_FUNC char   **host_environ(void);
+ST_FUNC int      host_nproc(void);   /* online CPU count (>=1); the one probe */
 
 /* ------------------------------------------------------------------- */
 /* dynamic loading (CONFIG_MCC_STATIC builds get built-in-table stubs) */

@@ -105,15 +105,19 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v5
       - uses: actions/download-artifact@v7
         with:
           path: dl
       - name: collect + combine checksums
         run: |
           set -eux
+          # merge via the in-tree tool (PLAN 0.9 #3): recursive checksums-*.txt
+          # concatenation, single source of truth with the rest of the CI logic.
+          cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl
           mkdir -p out
           find dl -type f ! -name 'checksums-*.txt' -exec cp {} out/ \;
-          find dl -type f -name 'checksums-*.txt' -exec cat {} + > out/SHA256SUMS.txt
+          /tmp/mcc-ci sha256sums dl --out out/SHA256SUMS.txt
           ls -l out
       - name: publish GitHub Release
         uses: softprops/action-gh-release@v3
