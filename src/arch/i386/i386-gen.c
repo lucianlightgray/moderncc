@@ -74,30 +74,12 @@ static void gen_bounds_prolog(void);
 static void gen_bounds_epilog(void);
 #endif
 
-ST_FUNC void g(int c)
-{
-    int ind1;
-    if (nocode_wanted)
-        return;
-    ind1 = ind + 1;
-    if (ind1 > cur_text_section->data_allocated)
-        section_realloc(cur_text_section, ind1);
-    cur_text_section->data[ind] = c;
-    ind = ind1;
-}
-
 ST_FUNC void o(unsigned int c)
 {
     while (c) {
         g(c);
         c = c >> 8;
     }
-}
-
-ST_FUNC void gen_le16(int v)
-{
-    g(v);
-    g(v >> 8);
 }
 
 ST_FUNC void gen_le32(int c)
@@ -116,17 +98,6 @@ ST_FUNC void gsym_addr(int t, int a)
         write32le(ptr, a - t - 4);
         t = n;
     }
-}
-
-static int oad(int c, int s)
-{
-    int t;
-    if (nocode_wanted)
-        return s;
-    o(c);
-    t = ind;
-    gen_le32(s);
-    return t;
 }
 
 ST_FUNC void gen_fill_nops(int bytes)
@@ -232,14 +203,6 @@ static void gen_modrm(int opc, int op_r2, int r, Sym *sym, int c)
 }
 
 #ifdef MCC_TARGET_PE
-static Sym *pe_tls_index_sym(void)
-{
-    CType ct;
-    ct.t = VT_INT;
-    ct.ref = NULL;
-    return external_global_sym(tok_alloc_const("_tls_index"), &ct);
-}
-
 static void gen_pe_tls_base(int dst)
 {
     int sc = (dst == TREG_EAX) ? TREG_ECX : TREG_EAX;
@@ -839,19 +802,6 @@ ST_FUNC void gjmp_cond_addr(int a, int op)
         g(0x0f), gjmp2(op - 16, r - 4);
 }
 #endif
-
-ST_FUNC int gjmp_append(int n, int t)
-{
-    void *p;
-    if (n) {
-        uint32_t n1 = n, n2;
-        while ((n2 = read32le(p = cur_text_section->data + n1)))
-            n1 = n2;
-        write32le(p, t);
-        t = n;
-    }
-    return t;
-}
 
 ST_FUNC int gjmp_cond(int op, int t)
 {

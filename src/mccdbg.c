@@ -682,57 +682,16 @@ static void dwarf_file(MCCState *s1)
     return;
 }
 
-#if 0
-static int dwarf_uleb128_size (unsigned long long value)
-{
-    int size =  0;
-
-    do {
-        value >>= 7;
-        size++;
-    } while (value != 0);
-    return size;
-}
-#endif
-
-static int dwarf_sleb128_size (long long value)
-{
-    int size =  0;
-    long long end = value >> 63;
-    unsigned char last = end & 0x40;
-    unsigned char byte;
-
-    do {
-        byte = value & 0x7f;
-        value >>= 7;
-        size++;
-    } while (value != end || (byte & 0x40) != last);
-    return size;
-}
-
+/* Section-targeted LEB128 encoders live in libmcc.c (mcc_write_[us]leb128);
+   dwarf_data1 is exactly section_ptr_add, so these forward to the shared loop. */
 static void dwarf_uleb128 (Section *s, unsigned long long value)
 {
-    do {
-        unsigned char byte = value & 0x7f;
-
-        value >>= 7;
-        dwarf_data1(s, byte | (value ? 0x80 : 0));
-    } while (value != 0);
+    mcc_write_uleb128(s, value);
 }
 
 static void dwarf_sleb128 (Section *s, long long value)
 {
-    int more;
-    long long end = value >> 63;
-    unsigned char last = end & 0x40;
-
-    do {
-        unsigned char byte = value & 0x7f;
-
-        value >>= 7;
-	more = value != end || (byte & 0x40) != last;
-        dwarf_data1(s, byte | (0x80 * more));
-    } while (more);
+    mcc_write_sleb128(s, value);
 }
 
 static void dwarf_uleb128_op (MCCState *s1, unsigned long long value)
@@ -2193,7 +2152,7 @@ static void mcc_debug_finish (MCCState *s1, struct _debug_info *cur)
 #endif
 		}
 		else {
-                    dwarf_data1(dwarf_info_section, dwarf_sleb128_size((long)s->value) + 1);
+                    dwarf_data1(dwarf_info_section, mcc_sleb128_size((long)s->value) + 1);
                     dwarf_data1(dwarf_info_section, DW_OP_fbreg);
                     dwarf_sleb128(dwarf_info_section, (long)s->value);
 		}

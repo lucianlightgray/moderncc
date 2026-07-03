@@ -283,6 +283,87 @@ static int struct_has_flexible_member(CType *type)
         && type_size(&last->type, &align) < 0;
 }
 
+/* Append one byte to the current text section, growing it as needed. Identical
+   for every backend (operates only on shared globals), so it lives here rather
+   than being copied into each per-arch backend file. */
+ST_FUNC void g(int c)
+{
+    int ind1;
+    if (nocode_wanted)
+        return;
+    ind1 = ind + 1;
+    if (ind1 > cur_text_section->data_allocated)
+        section_realloc(cur_text_section, ind1);
+    cur_text_section->data[ind] = c;
+    ind = ind1;
+}
+
+/* Little-endian 16-bit emit — identical for every backend. (gen_le32 stays
+   per-arch: fixed-width ISAs write the 4 bytes directly rather than via g().) */
+ST_FUNC void gen_le16(int c)
+{
+    g(c);
+    g(c >> 8);
+}
+
+/* Thread a new target onto a jump chain. The generic read32le/write32le walk is
+   shared by every fixed-width backend; arm keeps its own (variable jump encoding
+   via decbranch), so exclude it here. */
+#ifndef MCC_TARGET_ARM
+ST_FUNC int gjmp_append(int n, int t)
+{
+    void *p;
+    if (n) {
+        uint32_t n1 = n, n2;
+        while ((n2 = read32le(p = cur_text_section->data + n1)))
+            n1 = n2;
+        write32le(p, t);
+        t = n;
+    }
+    return t;
+}
+#endif
+
+/* Emit opcode c followed by a 32-bit operand, returning the operand's offset.
+   x86 family only (uses the variable-length o()); shared by i386 and x86_64. */
+#if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
+ST_FUNC int oad(int c, int s)
+{
+    int t;
+    if (nocode_wanted)
+        return s;
+    o(c);
+    t = ind;
+    gen_le32(s);
+    return t;
+}
+#endif
+
+#ifdef CONFIG_MCC_BCHECK
+/* Shared prologue for every backend's gen_bounds_epilog: reserve the trailing
+   zero bounds slot and resolve the bounds-data symbol for this function's
+   offset (a per-arch static, so it is passed in). Returns 0 when no epilog is
+   needed — the caller returns too; otherwise fills *psym_data / *poffset_modified
+   and returns 1. The arch tail then emits the actual local-new/local-delete calls. */
+ST_FUNC int gen_bounds_epilog_head(addr_t func_bound_offset,
+                                   Sym **psym_data, int *poffset_modified)
+{
+    addr_t *bounds_ptr;
+    int offset_modified = func_bound_offset != lbounds_section->data_offset;
+
+    *poffset_modified = offset_modified;
+    if (!offset_modified && !func_bound_add_epilog)
+        return 0;
+
+    bounds_ptr = section_ptr_add(lbounds_section, sizeof(addr_t));
+    *bounds_ptr = 0;
+
+    *psym_data = get_sym_ref(&char_pointer_type, lbounds_section,
+                             func_bound_offset, PTR_SIZE);
+    return 1;
+}
+#endif
+
 ST_FUNC void gsym(int t)
 {
   if (t) {

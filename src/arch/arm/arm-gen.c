@@ -817,18 +817,11 @@ static void gen_bounds_prolog(void)
 static void gen_bounds_epilog(void)
 {
     addr_t saved_ind;
-    addr_t *bounds_ptr;
     Sym *sym_data;
-    int offset_modified = func_bound_offset != lbounds_section->data_offset;
+    int offset_modified;
 
-    if (!offset_modified && !func_bound_add_epilog)
+    if (!gen_bounds_epilog_head(func_bound_offset, &sym_data, &offset_modified))
         return;
-
-    bounds_ptr = section_ptr_add(lbounds_section, sizeof(addr_t));
-    *bounds_ptr = 0;
-
-    sym_data = get_sym_ref(&char_pointer_type, lbounds_section,
-                           func_bound_offset, PTR_SIZE);
 
     if (offset_modified) {
         saved_ind = ind;

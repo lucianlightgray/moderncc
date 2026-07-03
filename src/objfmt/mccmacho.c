@@ -502,27 +502,8 @@ static void * add_dylib(struct macho *mo, char *name)
     return lc;
 }
 
-static int uleb128_size (unsigned long long value)
-{
-    int size =  0;
-
-    do {
-        value >>= 7;
-        size++;
-    } while (value != 0);
-    return size;
-}
-
-static void write_uleb128(Section *section, uint64_t value)
-{
-    do {
-        unsigned char byte = value & 0x7f;
-	uint8_t *ptr = section_ptr_add(section, 1);
-
-        value >>= 7;
-        *ptr = byte | (value ? 0x80 : 0);
-    } while (value != 0);
-}
+/* uleb128 size + Section encoder are shared: mcc_uleb128_size /
+   mcc_write_uleb128 in libmcc.c. */
 
 static void mcc_macho_add_destructor(MCCState *s1)
 {
@@ -1260,7 +1241,7 @@ static void set_segment_and_offset(MCCState *s1, struct macho *mo, addr_t addr,
 	    break;
     }
     *ptr = opcode | i;
-    write_uleb128(sec, offset - seg->vmaddr);
+    mcc_write_uleb128(sec, offset - seg->vmaddr);
 }
 
 static void bind_rebase(MCCState *s1, struct macho *mo)
@@ -1505,7 +1486,7 @@ static void export_trie(MCCState *s1, struct macho *mo)
 	    trie[n_trie].flag = flag;
 	    trie[n_trie].addr = addr;
 	    trie[n_trie].str_size = strlen(name) + 1;
-	    trie[n_trie].term_size = uleb128_size(flag) + uleb128_size(addr);
+	    trie[n_trie].term_size = mcc_uleb128_size(flag) + mcc_uleb128_size(addr);
 	    n_trie++;
 	}
     }
@@ -1537,16 +1518,16 @@ static void export_trie(MCCState *s1, struct macho *mo)
             ptr = section_ptr_add(mo->exports, size + 1);
             memcpy(ptr, &p_trie->name[p_node->index_start], size);
             ptr[size] = 0;
-            write_uleb128(mo->exports, seq[i].nest_offset);
+            mcc_write_uleb128(mo->exports, seq[i].nest_offset);
         }
         section_ptr_add(mo->exports, save_offset - mo->exports->data_offset);
         for (int i = 0; i < n_seq; i++) {
             p_node = seq[i].node;
             if (p_node->n_child == 0) {
                 p_trie = &trie[p_node->start];
-                write_uleb128(mo->exports, p_trie->term_size);
-                write_uleb128(mo->exports, p_trie->flag);
-                write_uleb128(mo->exports, p_trie->addr);
+                mcc_write_uleb128(mo->exports, p_trie->term_size);
+                mcc_write_uleb128(mo->exports, p_trie->flag);
+                mcc_write_uleb128(mo->exports, p_trie->addr);
                 ptr = section_ptr_add(mo->exports, 1);
                 *ptr = 0;
             }

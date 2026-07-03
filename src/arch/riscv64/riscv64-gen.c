@@ -478,20 +478,12 @@ static void gen_bounds_prolog(void)
 static void gen_bounds_epilog(void)
 {
     addr_t saved_ind;
-    addr_t *bounds_ptr;
     Sym *sym_data;
+    int offset_modified;
     Sym label = {0};
 
-    int offset_modified = func_bound_offset != lbounds_section->data_offset;
-
-    if (!offset_modified && !func_bound_add_epilog)
+    if (!gen_bounds_epilog_head(func_bound_offset, &sym_data, &offset_modified))
         return;
-
-    bounds_ptr = section_ptr_add(lbounds_section, sizeof(addr_t));
-    *bounds_ptr = 0;
-
-    sym_data = get_sym_ref(&char_pointer_type, lbounds_section,
-                           func_bound_offset, PTR_SIZE);
 
     label.type.t = VT_VOID | VT_STATIC;
     if (offset_modified) {
@@ -990,19 +982,6 @@ ST_FUNC int gjmp_cond(int op, int t)
     }
     o(0x63 | (op ^ 1) << 12 | a << 15 | b << 20 | 8 << 7);
     return gjmp(t);
-}
-
-ST_FUNC int gjmp_append(int n, int t)
-{
-    void *p;
-    if (n) {
-        uint32_t n1 = n, n2;
-        while ((n2 = read32le(p = cur_text_section->data + n1)))
-            n1 = n2;
-        write32le(p, t);
-        t = n;
-    }
-    return t;
 }
 
 static void gen_opil(int op, int ll)

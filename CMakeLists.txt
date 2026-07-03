@@ -2790,7 +2790,7 @@ if(MCC_BUILD_TESTS)
     # cores.  Default OFF keeps the fast single-process aggregate for CI.  The
     # case list is derived from the source table, so a golden can never be left
     # untested by a stale hand-maintained count (cf. mcc_goldens_count).
-    option(MCC_GRANULAR_TESTS "Register exec goldens as one CTest per case (else the aggregate exec-suite)" OFF)
+    option(MCC_GRANULAR_TESTS "Register exec goldens as one CTest per case (else the aggregate exec-suite)" ON)
     if(MCC_GRANULAR_TESTS)
         file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/goldens.h" _exec_glines
              REGEX "^[ \t]*{[ \t]*\"[A-Za-z0-9_]+\"")

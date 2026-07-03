@@ -225,6 +225,60 @@ ST_FUNC unsigned long mcc_grow_capacity(unsigned long cur, unsigned long need,
     return cur;
 }
 
+/* LEB128 (DWARF debug info + Mach-O export trie): one source of truth for the
+   encoded size and for appending an encoded value to a Section. The DWARF
+   line-program variants (dwarf_uleb128_op/dwarf_sleb128_op) target a private
+   growable buffer rather than a Section, so they keep their own loop. */
+ST_FUNC int mcc_uleb128_size(unsigned long long value)
+{
+    int size = 0;
+    do {
+        value >>= 7;
+        size++;
+    } while (value != 0);
+    return size;
+}
+
+ST_FUNC int mcc_sleb128_size(long long value)
+{
+    int size = 0;
+    long long end = value >> 63;
+    unsigned char last = end & 0x40;
+    unsigned char byte;
+
+    do {
+        byte = value & 0x7f;
+        value >>= 7;
+        size++;
+    } while (value != end || (byte & 0x40) != last);
+    return size;
+}
+
+ST_FUNC void mcc_write_uleb128(Section *sec, unsigned long long value)
+{
+    do {
+        unsigned char byte = value & 0x7f;
+
+        value >>= 7;
+        *(uint8_t *)section_ptr_add(sec, 1) = byte | (value ? 0x80 : 0);
+    } while (value != 0);
+}
+
+ST_FUNC void mcc_write_sleb128(Section *sec, long long value)
+{
+    long long end = value >> 63;
+    unsigned char last = end & 0x40;
+    int more;
+
+    do {
+        unsigned char byte = value & 0x7f;
+
+        value >>= 7;
+        more = value != end || (byte & 0x40) != last;
+        *(uint8_t *)section_ptr_add(sec, 1) = byte | (0x80 * more);
+    } while (more);
+}
+
 PUB_FUNC void *mcc_mallocz(unsigned long size)
 {
     void *ptr;

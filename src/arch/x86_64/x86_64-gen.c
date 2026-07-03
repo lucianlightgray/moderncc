@@ -134,30 +134,12 @@ ST_DATA int func_bound_add_epilog;
 static int func_scratch, func_alloca;
 #endif
 
-ST_FUNC void g(int c)
-{
-    int ind1;
-    if (nocode_wanted)
-        return;
-    ind1 = ind + 1;
-    if (ind1 > cur_text_section->data_allocated)
-        section_realloc(cur_text_section, ind1);
-    cur_text_section->data[ind] = c;
-    ind = ind1;
-}
-
 ST_FUNC void o(unsigned int c)
 {
     while (c) {
         g(c);
         c = c >> 8;
     }
-}
-
-ST_FUNC void gen_le16(int v)
-{
-    g(v);
-    g(v >> 8);
 }
 
 ST_FUNC void gen_le32(int c)
@@ -206,17 +188,6 @@ static int is64_type(int t)
     return ((t & VT_BTYPE) == VT_PTR ||
             (t & VT_BTYPE) == VT_FUNC ||
             (t & VT_BTYPE) == VT_LLONG);
-}
-
-static int oad(int c, int s)
-{
-    int t;
-    if (nocode_wanted)
-        return s;
-    o(c);
-    t = ind;
-    gen_le32(s);
-    return t;
 }
 
 #define gjmp2(instr,lbl) oad(instr,lbl)
@@ -303,14 +274,6 @@ static void gen_modrm64(int opcode, int op_reg, int r, Sym *sym, int c)
 
 
 #ifdef MCC_TARGET_PE
-static Sym *pe_tls_index_sym(void)
-{
-    CType ct;
-    ct.t = VT_INT;
-    ct.ref = NULL;
-    return external_global_sym(tok_alloc_const("_tls_index"), &ct);
-}
-
 static void gen_pe_tls_base(int dst)
 {
     int sc = (REG_VALUE(dst) == TREG_RAX) ? TREG_RCX : TREG_RAX;
@@ -733,18 +696,11 @@ static void gen_bounds_prolog(void)
 static void gen_bounds_epilog(void)
 {
     addr_t saved_ind;
-    addr_t *bounds_ptr;
     Sym *sym_data;
-    int offset_modified = func_bound_offset != lbounds_section->data_offset;
+    int offset_modified;
 
-    if (!offset_modified && !func_bound_add_epilog)
+    if (!gen_bounds_epilog_head(func_bound_offset, &sym_data, &offset_modified))
         return;
-
-    bounds_ptr = section_ptr_add(lbounds_section, sizeof(addr_t));
-    *bounds_ptr = 0;
-
-    sym_data = get_sym_ref(&char_pointer_type, lbounds_section,
-                           func_bound_offset, PTR_SIZE);
 
     if (offset_modified) {
         saved_ind = ind;
@@ -1689,19 +1645,6 @@ void gjmp_addr(int a)
     } else {
         oad(0xe9, a - ind - 5);
     }
-}
-
-ST_FUNC int gjmp_append(int n, int t)
-{
-    void *p;
-    if (n) {
-        uint32_t n1 = n, n2;
-        while ((n2 = read32le(p = cur_text_section->data + n1)))
-            n1 = n2;
-        write32le(p, t);
-        t = n;
-    }
-    return t;
 }
 
 ST_FUNC int gjmp_cond(int op, int t)
