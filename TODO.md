@@ -319,7 +319,10 @@ the deliberate no-`__GNUC__` stance).
 
 ---
 
-WARNING!!! DO NOT DO!!! ACHTUNG!!! 
+WARNING!!! DO NOT DO!!! ACHTUNG!!!
+• Implement/finish `-g` debugging/debugger and flesh out gdb/etc test cases
+• Can a fully static build use a minimalistic `-run` to sidestep the dynamic linking limitations and use libc or musl in-memory?
+• Use only human friendly warnings/errors, backed by tests that check formatted output against terminal dimensions/configuration
 • CST Database for LSP and Optimization layer
 • Database uses hierarchical incremental hashes to enable bidirectional lookups starting from any character index in the code
 • Hot reload by saving/loading CST snapshots on the fly and on run with --hotreload arg
