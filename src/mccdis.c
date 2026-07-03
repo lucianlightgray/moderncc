@@ -397,7 +397,7 @@ ST_FUNC int asm_output_file(MCCState *s1, const char *filename)
 
     if (!filename || !strcmp(filename, "-"))
         f = stdout;
-    else if (!(f = mcc_fopen(filename, "wb")))
+    else if (!(f = host_fopen(filename, "wb")))
         return mcc_error_noabort("could not write '%s'", filename);
 
     fprintf(f, "\t.file\t\"%s\"\n",

@@ -46,67 +46,25 @@ static void rt_exit(rt_frame *f, int code);
 
 #ifndef CONFIG_MCC_BACKTRACE_ONLY
 
-#ifndef _WIN32
-# include <sys/mman.h>
-#endif
-
-static int protect_pages(void *ptr, unsigned long length, int mode);
 static int mcc_relocate_ex(MCCState *s1, void *ptr, unsigned ptr_diff);
 static void st_link(MCCState *s1);
 static void st_unlink(MCCState *s1);
 #ifdef CONFIG_MCC_BACKTRACE
 static int _mcc_backtrace(rt_frame *f, const char *fmt, va_list ap);
 #endif
-#ifdef _WIN64
-static void *win64_add_function_table(MCCState *s1);
-static void win64_del_function_table(void *);
-#endif
 
-#if !defined PAGESIZE
-# if defined _SC_PAGESIZE
-#  define PAGESIZE sysconf(_SC_PAGESIZE)
-# elif defined __APPLE__
-#  include <libkern/OSCacheControl.h>
-#  define PAGESIZE getpagesize()
-# else
-#  define PAGESIZE 4096
-# endif
-#endif
-
+#define PAGESIZE host_pagesize()
 #define PAGEALIGN(n) ((addr_t)n + (-(addr_t)n & (PAGESIZE-1)))
-
-#if !_WIN32 && !__APPLE__
-#endif
 
 static int rt_mem(MCCState *s1, int size)
 {
-    void *ptr;
+    unsigned sz = size;
     int ptr_diff = 0;
-#ifdef CONFIG_SELINUX
-    void *prw;
-    char tmpfname[] = "/tmp/.mccrunXXXXXX";
-    int fd = mkstemp(tmpfname);
-    unlink(tmpfname);
-    ftruncate(fd, size);
-
-    ptr = mmap(NULL, size * 2, PROT_READ|PROT_EXEC, MAP_SHARED, fd, 0);
-    prw = mmap((char*)ptr + size, size, PROT_READ|PROT_WRITE, MAP_SHARED|MAP_FIXED, fd, 0);
-    close(fd);
-    if (ptr == MAP_FAILED || prw == MAP_FAILED)
-	return mcc_error_noabort("mccrun: could not map memory");
-    ptr_diff = (char*)prw - (char*)ptr;
-    size *= 2;
-#else
-# ifdef _WIN32
-    ptr = VirtualAlloc(NULL, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-# else
-    ptr = mcc_malloc(size += PAGESIZE);
-# endif
-#endif
+    void *ptr = host_runmem_alloc(&sz, &ptr_diff);
     if (!ptr)
         return mcc_error_noabort("mccrun: could not allocate memory");
     s1->run_ptr = ptr;
-    s1->run_size = size;
+    s1->run_size = sz;
     return ptr_diff;
 }
 
@@ -141,34 +99,15 @@ ST_FUNC void mcc_run_free(MCCState *s1)
     for ( int i = 0; i < s1->nb_loaded_dlls; i++) {
         DLLReference *ref = s1->loaded_dlls[i];
         if ( ref->handle )
-#ifdef _WIN32
-            FreeLibrary((HMODULE)ref->handle);
-#else
-            dlclose(ref->handle);
-#endif
+            host_dlclose(ref->handle);
     }
     ptr = s1->run_ptr;
     if (NULL == ptr)
         return;
     st_unlink(s1);
     size = s1->run_size;
-#ifdef CONFIG_SELINUX
-    munmap(ptr, size);
-#else
-# ifdef _WIN32
-    (void)size;
-#  ifdef _WIN64
-    win64_del_function_table(s1->run_function_table);
-#  endif
-    VirtualFree(ptr, 0, MEM_RELEASE);
-# else
-    protect_pages((void*)PAGEALIGN(ptr), size - PAGESIZE, 2  );
-# ifdef _WIN64
-    win64_del_function_table(s1->run_function_table);
-# endif
-    mcc_free(ptr);
-# endif
-#endif
+    host_unwind_unregister(s1->run_function_table);
+    host_runmem_free(ptr, size);
 }
 
 #define RT_EXIT_ZERO 0xE0E00E0E
@@ -179,15 +118,7 @@ LIBMCCAPI int mcc_run(MCCState *s1, int argc, char **argv)
     const char *top_sym;
     jmp_buf main_jb;
 
-#if defined(__APPLE__)
-    extern char ***_NSGetEnviron(void);
-    char **envp = *_NSGetEnviron();
-#elif defined(__OpenBSD__) || defined(__NetBSD__)  || defined(__FreeBSD__)
-    extern char **environ;
-    char **envp = environ;
-#else
-    char **envp = environ;
-#endif
+    char **envp = host_environ();
 
     if ((s1->dflag & 16) && (addr_t)-1 == get_sym_addr(s1, "main", 0, 1))
         return 0;
@@ -259,14 +190,6 @@ static void cleanup_sections(MCCState *s1)
 
 
 
-#ifndef CONFIG_RUNMEM_RO
-# ifdef __APPLE__
-#   define CONFIG_RUNMEM_RO 1
-# else
-#   define CONFIG_RUNMEM_RO 0
-#  endif
-#endif
-
 static int mcc_relocate_ex(MCCState *s1, void *ptr, unsigned ptr_diff)
 {
     Section *s;
@@ -331,7 +254,7 @@ redo:
                 if (align < 64)
                     align = 64;
 #endif
-                if (k <= CONFIG_RUNMEM_RO)
+                if (k <= HOST_RUNMEM_RO)
                     align = PAGESIZE;
             }
             s->sh_addralign = align;
@@ -348,7 +271,7 @@ redo:
                 continue;
 #endif
             f = k;
-            if (f >= CONFIG_RUNMEM_RO) {
+            if (f >= HOST_RUNMEM_RO) {
                 if (f != 0)
                     continue;
                 f = 3;
@@ -358,13 +281,8 @@ redo:
                 printf("protect         %3s %p  len %05x\n",
                     &"rx\0ro\0rw\0rwx"[f*3], (void*)addr, (unsigned)n);
             }
-            if (protect_pages((void*)addr, n, f) < 0)
-                return mcc_error_noabort(
-#ifdef _WIN32
-                    "VirtualProtect failed");
-#else
-                    "mprotect failed (did you mean to configure --with-selinux?)");
-#endif
+            if (host_runmem_protect((void*)addr, n, f) < 0)
+                return mcc_error_noabort(HOST_MPROTECT_FAILMSG);
         }
     }
 
@@ -375,8 +293,16 @@ redo:
         goto redo;
     }
     if (copy == 3) {
-#ifdef _WIN64
-        s1->run_function_table = win64_add_function_table(s1);
+#if defined MCC_TARGET_PE && (defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64)
+        if (s1->uw_pdata) {
+            s1->run_function_table = host_unwind_register(
+                (void*)s1->uw_pdata->sh_addr,
+                (unsigned)s1->uw_pdata->data_offset,
+                s1->pe_imagebase);
+            if (!s1->run_function_table)
+                mcc_error_noabort("RtlAddFunctionTable failed");
+            s1->uw_pdata = NULL;
+        }
 #endif
         cleanup_symbols(s1);
         cleanup_sections(s1);
@@ -395,64 +321,6 @@ redo:
     goto redo;
 }
 
-
-static int protect_pages(void *ptr, unsigned long length, int mode)
-{
-#ifdef _WIN32
-    static const unsigned char protect[] = {
-        PAGE_EXECUTE_READ,
-        PAGE_READONLY,
-        PAGE_READWRITE,
-        PAGE_EXECUTE_READWRITE
-        };
-    DWORD old;
-    if (!VirtualProtect(ptr, length, protect[mode], &old))
-        return -1;
-#else
-    static const unsigned char protect[] = {
-        PROT_READ | PROT_EXEC,
-        PROT_READ,
-        PROT_READ | PROT_WRITE,
-        PROT_READ | PROT_WRITE | PROT_EXEC
-        };
-    if (mprotect(ptr, length, protect[mode]))
-        return -1;
-# if (defined MCC_TARGET_ARM && !TARGETOS_BSD) || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64
-    if (mode == 0 || mode == 3) {
-        void __clear_cache(void *beginning, void *end);
-        __clear_cache(ptr, (char *)ptr + length);
-    }
-# endif
-#endif
-    return 0;
-}
-
-#ifdef _WIN64
-static void *win64_add_function_table(MCCState *s1)
-{
-    void *p = NULL;
-    if (s1->uw_pdata) {
-        p = (void*)s1->uw_pdata->sh_addr;
-        if (!RtlAddFunctionTable(
-            (RUNTIME_FUNCTION*)p,
-            s1->uw_pdata->data_offset / sizeof (RUNTIME_FUNCTION),
-            s1->pe_imagebase
-            )) {
-            mcc_error_noabort("RtlAddFunctionTable failed");
-            p = NULL;
-        }
-        s1->uw_pdata = NULL;
-    }
-    return p;
-}
-
-static void win64_del_function_table(void *p)
-{
-    if (p) {
-        RtlDeleteFunctionTable((RUNTIME_FUNCTION*)p);
-    }
-}
-#endif
 
 static void bt_link(MCCState *s1)
 {
@@ -1115,218 +983,49 @@ static int rt_error(rt_frame *f, const char *fmt, ...)
 }
 
 
-#ifndef _WIN32
-# include <signal.h>
-# ifndef __OpenBSD__
-#  include <sys/ucontext.h>
-# endif
-#else
-# define ucontext_t CONTEXT
-#endif
-
-static void rt_getcontext(ucontext_t *uc, rt_frame *rc)
-{
-#if defined _WIN64 && defined __aarch64__
-    rc->ip = uc->Pc;
-    rc->fp = uc->Fp;
-    rc->sp = uc->Sp;
-#elif defined _WIN64
-    rc->ip = uc->Rip;
-    rc->fp = uc->Rbp;
-    rc->sp = uc->Rsp;
-#elif defined _WIN32
-    rc->ip = uc->Eip;
-    rc->fp = uc->Ebp;
-    rc->sp = uc->Esp;
-#elif defined __i386__
-# if defined(__APPLE__)
-    rc->ip = uc->uc_mcontext->__ss.__eip;
-    rc->fp = uc->uc_mcontext->__ss.__ebp;
-# elif defined(__FreeBSD__) || defined(__FreeBSD_kernel__) || defined(__DragonFly__)
-    rc->ip = uc->uc_mcontext.mc_eip;
-    rc->fp = uc->uc_mcontext.mc_ebp;
-# elif defined(__dietlibc__)
-    rc->ip = uc->uc_mcontext.eip;
-    rc->fp = uc->uc_mcontext.ebp;
-# elif defined(__NetBSD__)
-    rc->ip = uc->uc_mcontext.__gregs[_REG_EIP];
-    rc->fp = uc->uc_mcontext.__gregs[_REG_EBP];
-# elif defined(__OpenBSD__)
-    rc->ip = uc->sc_eip;
-    rc->fp = uc->sc_ebp;
-# elif !defined REG_EIP && defined EIP
-    rc->ip = uc->uc_mcontext.gregs[EIP];
-    rc->fp = uc->uc_mcontext.gregs[EBP];
-# else
-    rc->ip = uc->uc_mcontext.gregs[REG_EIP];
-    rc->fp = uc->uc_mcontext.gregs[REG_EBP];
-# endif
-#elif defined(__x86_64__)
-# if defined(__APPLE__)
-    rc->ip = uc->uc_mcontext->__ss.__rip;
-    rc->fp = uc->uc_mcontext->__ss.__rbp;
-# elif defined(__FreeBSD__) || defined(__FreeBSD_kernel__) || defined(__DragonFly__)
-    rc->ip = uc->uc_mcontext.mc_rip;
-    rc->fp = uc->uc_mcontext.mc_rbp;
-# elif defined(__NetBSD__)
-    rc->ip = uc->uc_mcontext.__gregs[_REG_RIP];
-    rc->fp = uc->uc_mcontext.__gregs[_REG_RBP];
-# elif defined(__OpenBSD__)
-    rc->ip = uc->sc_rip;
-    rc->fp = uc->sc_rbp;
-# else
-    rc->ip = uc->uc_mcontext.gregs[REG_RIP];
-    rc->fp = uc->uc_mcontext.gregs[REG_RBP];
-# endif
-#elif defined(__arm__) && defined(__NetBSD__)
-    rc->ip = uc->uc_mcontext.__gregs[_REG_PC];
-    rc->fp = uc->uc_mcontext.__gregs[_REG_FP];
-#elif defined(__arm__) && defined(__OpenBSD__)
-    rc->ip = uc->sc_pc;
-    rc->fp = uc->sc_r11;
-#elif defined(__arm__) && defined(__FreeBSD__)
-    rc->ip = uc->uc_mcontext.__gregs[_REG_PC];
-    rc->fp = uc->uc_mcontext.__gregs[_REG_FP];
-#elif defined(__arm__)
-    rc->ip = uc->uc_mcontext.arm_pc;
-    rc->fp = uc->uc_mcontext.arm_fp;
-#elif defined(__aarch64__) && defined(__APPLE__)
-    rc->ip = uc->uc_mcontext->__ss.__pc;
-    rc->fp = uc->uc_mcontext->__ss.__fp;
-#elif defined(__aarch64__) && defined(__FreeBSD__)
-    rc->ip = uc->uc_mcontext.mc_gpregs.gp_elr;
-    rc->fp = uc->uc_mcontext.mc_gpregs.gp_x[29];
-#elif defined(__aarch64__) && defined(__NetBSD__)
-    rc->ip = uc->uc_mcontext.__gregs[_REG_PC];
-    rc->fp = uc->uc_mcontext.__gregs[_REG_FP];
-#elif defined(__aarch64__) && defined(__OpenBSD__)
-    rc->ip = uc->sc_elr;
-    rc->fp = uc->sc_x[29];
-#elif defined(__aarch64__)
-    rc->ip = uc->uc_mcontext.pc;
-    rc->fp = uc->uc_mcontext.regs[29];
-#elif defined(__riscv) && defined(__OpenBSD__)
-    rc->ip = uc->sc_sepc;
-    rc->fp = uc->sc_s[0];
-#elif defined(__riscv)
-    rc->ip = uc->uc_mcontext.__gregs[REG_PC];
-    rc->fp = uc->uc_mcontext.__gregs[REG_S0];
-#endif
-}
-
-#ifndef _WIN32
-static void sig_error(int signum, siginfo_t *siginf, void *puc)
+/* normalized fault callback, installed via host_fault_install(); the
+   host layer owns signal/SEH mechanics and register extraction */
+static int rt_fault(int code, unsigned detail, HostFaultRegs *hr)
 {
     rt_frame f;
-    rt_getcontext(puc, &f);
 
-    switch(signum) {
-    case SIGFPE:
-        switch(siginf->si_code) {
-        case FPE_INTDIV:
-        case FPE_FLTDIV:
-            rt_error(&f, "division by zero");
-            break;
-        default:
-            rt_error(&f, "floating point exception");
-            break;
-        }
-        break;
-    case SIGBUS:
-    case SIGSEGV:
-        rt_error(&f, "invalid memory access");
-        break;
-    case SIGILL:
-        rt_error(&f, "illegal instruction");
-        break;
-    case SIGABRT:
-        rt_error(&f, "abort() called");
-        break;
-    default:
-        rt_error(&f, "caught signal %d", signum);
-        break;
-    }
-    {
-        sigset_t s;
-        sigemptyset(&s);
-        sigaddset(&s, signum);
-        sigprocmask(SIG_UNBLOCK, &s, NULL);
-    }
-    rt_exit(&f, 255);
-}
-
-#ifndef SA_SIGINFO
-# define SA_SIGINFO 0x00000004u
-#endif
-
-static void set_exception_handler(void)
-{
-    struct sigaction sigact;
-    sigemptyset (&sigact.sa_mask);
-    sigact.sa_flags = SA_SIGINFO;
-#if 0
-    sigact.sa_flags |= SA_ONSTACK;
-#endif
-    sigact.sa_sigaction = sig_error;
-    sigaction(SIGFPE, &sigact, NULL);
-    sigaction(SIGILL, &sigact, NULL);
-    sigaction(SIGSEGV, &sigact, NULL);
-    sigaction(SIGBUS, &sigact, NULL);
-    sigaction(SIGABRT, &sigact, NULL);
-#if 0
-    {
-        stack_t ss;
-        static unsigned char stack[SIGSTKSZ] __attribute__((aligned(16)));
-
-        ss.ss_sp = stack;
-        ss.ss_size = SIGSTKSZ;
-        ss.ss_flags = 0;
-        sigaltstack(&ss, NULL);
-    }
-#endif
-}
-
-#else
-
-static long __stdcall cpu_exception_handler(EXCEPTION_POINTERS *ex_info)
-{
-    rt_frame f;
-    unsigned code;
-    rt_getcontext(ex_info->ContextRecord, &f);
-
-    switch (code = ex_info->ExceptionRecord->ExceptionCode) {
-    case EXCEPTION_ACCESS_VIOLATION:
-	rt_error(&f, "invalid memory access");
-        break;
-    case EXCEPTION_STACK_OVERFLOW:
-        rt_error(&f, "stack overflow");
-        break;
-    case EXCEPTION_INT_DIVIDE_BY_ZERO:
+    f.ip = hr->pc, f.fp = hr->fp, f.sp = hr->sp;
+    switch (code) {
+    case HOST_FAULT_DIVZERO:
         rt_error(&f, "division by zero");
         break;
-    case EXCEPTION_BREAKPOINT:
-    case EXCEPTION_SINGLE_STEP:
+    case HOST_FAULT_FPE:
+        rt_error(&f, "floating point exception");
+        break;
+    case HOST_FAULT_MEM:
+        rt_error(&f, "invalid memory access");
+        break;
+    case HOST_FAULT_ILL:
+        rt_error(&f, "illegal instruction");
+        break;
+    case HOST_FAULT_ABORT:
+        rt_error(&f, "abort() called");
+        break;
+    case HOST_FAULT_STACK:
+        rt_error(&f, "stack overflow");
+        break;
+    case HOST_FAULT_TRAP:
         f.ip = *(addr_t*)f.sp;
         rt_error(&f, "breakpoint/single-step exception:");
-        return EXCEPTION_CONTINUE_SEARCH;
+        return 1; /* continue OS handler search */
     default:
-        rt_error(&f, "caught exception %08x", code);
+        rt_error(&f, HOST_FAULT_OTHER_FMT, detail);
         break;
     }
+    host_fault_unblock(detail);
     rt_exit(&f, 255);
-    return EXCEPTION_EXECUTE_HANDLER;
+    return 0;
 }
 
 static void set_exception_handler(void)
 {
-#ifdef _WIN64
-    AddVectoredExceptionHandler(1, cpu_exception_handler);
-#else
-    SetUnhandledExceptionFilter(cpu_exception_handler);
-#endif
+    host_fault_install(rt_fault);
 }
-
-#endif
 
 #if defined(__i386__) || defined(__x86_64__)
 static int rt_get_caller_pc(addr_t *paddr, rt_frame *rc, int level)
@@ -1347,7 +1046,7 @@ static int rt_get_caller_pc(addr_t *paddr, rt_frame *rc, int level)
     return 0;
 }
 
-#elif defined(__arm__) && !defined(_WIN32)
+#elif defined(__arm__) && !MCC_HOST_WIN32
 static int rt_get_caller_pc(addr_t *paddr, rt_frame *rc, int level)
 {
     if (level == 0) {
@@ -1420,76 +1119,5 @@ static int rt_get_caller_pc(addr_t *paddr, rt_frame *f, int level)
     *paddr = f->ip;
     return 0;
 }
-#endif
-#ifdef CONFIG_MCC_STATIC
-
-ST_FUNC void *dlopen(const char *filename, int flag)
-{
-    return NULL;
-}
-
-ST_FUNC void dlclose(void *p)
-{
-}
-
-ST_FUNC const char *dlerror(void)
-{
-    return "error";
-}
-
-typedef struct MCCSyms {
-    char *str;
-    void *ptr;
-} MCCSyms;
-
-
-static MCCSyms mcc_syms[] = {
-#if !defined(CONFIG_MCCBOOT)
-#define MCCSYM(a) { #a, (void *)&a, },
-    MCCSYM(stdin) MCCSYM(stdout) MCCSYM(stderr)
-    MCCSYM(printf) MCCSYM(fprintf) MCCSYM(sprintf) MCCSYM(snprintf)
-    MCCSYM(vprintf) MCCSYM(vfprintf) MCCSYM(vsnprintf)
-    MCCSYM(puts) MCCSYM(fputs) MCCSYM(putchar) MCCSYM(fputc) MCCSYM(putc)
-    MCCSYM(getchar) MCCSYM(fgetc) MCCSYM(getc) MCCSYM(fgets) MCCSYM(ungetc)
-    MCCSYM(scanf) MCCSYM(fscanf) MCCSYM(sscanf)
-    MCCSYM(fopen) MCCSYM(freopen) MCCSYM(fclose) MCCSYM(fflush)
-    MCCSYM(fread) MCCSYM(fwrite) MCCSYM(fseek) MCCSYM(ftell) MCCSYM(rewind)
-    MCCSYM(feof) MCCSYM(ferror) MCCSYM(clearerr) MCCSYM(fileno)
-    MCCSYM(perror) MCCSYM(remove) MCCSYM(rename) MCCSYM(setvbuf) MCCSYM(setbuf)
-    MCCSYM(malloc) MCCSYM(calloc) MCCSYM(realloc) MCCSYM(free)
-    MCCSYM(exit) MCCSYM(_Exit) MCCSYM(abort) MCCSYM(atexit)
-    MCCSYM(atoi) MCCSYM(atol) MCCSYM(atoll) MCCSYM(atof)
-    MCCSYM(strtol) MCCSYM(strtoll) MCCSYM(strtoul) MCCSYM(strtoull)
-    MCCSYM(strtod) MCCSYM(strtof) MCCSYM(strtold)
-    MCCSYM(rand) MCCSYM(srand) MCCSYM(qsort) MCCSYM(bsearch)
-    MCCSYM(abs) MCCSYM(labs) MCCSYM(llabs) MCCSYM(getenv) MCCSYM(system)
-    MCCSYM(memcpy) MCCSYM(memmove) MCCSYM(memset) MCCSYM(memcmp) MCCSYM(memchr)
-    MCCSYM(strlen) MCCSYM(strnlen) MCCSYM(strcmp) MCCSYM(strncmp)
-    MCCSYM(strcpy) MCCSYM(strncpy) MCCSYM(strcat) MCCSYM(strncat)
-    MCCSYM(strchr) MCCSYM(strrchr) MCCSYM(strstr) MCCSYM(strtok)
-    MCCSYM(strspn) MCCSYM(strcspn) MCCSYM(strpbrk) MCCSYM(strerror)
-    MCCSYM(sin) MCCSYM(cos) MCCSYM(tan) MCCSYM(asin) MCCSYM(acos) MCCSYM(atan)
-    MCCSYM(atan2) MCCSYM(sinh) MCCSYM(cosh) MCCSYM(tanh)
-    MCCSYM(exp) MCCSYM(log) MCCSYM(log10) MCCSYM(log2) MCCSYM(pow)
-    MCCSYM(sqrt) MCCSYM(cbrt) MCCSYM(ceil) MCCSYM(floor) MCCSYM(round)
-    MCCSYM(trunc) MCCSYM(fabs) MCCSYM(fmod) MCCSYM(fmin) MCCSYM(fmax)
-    MCCSYM(hypot) MCCSYM(ldexp) MCCSYM(frexp) MCCSYM(modf)
-#undef MCCSYM
-#endif
-    { NULL, NULL },
-};
-
-ST_FUNC void *dlsym(void *handle, const char *symbol)
-{
-    MCCSyms *p;
-    p = mcc_syms;
-    while (p->str != NULL) {
-        if (!strcmp(p->str, symbol))
-            return p->ptr;
-        p++;
-    }
-    return NULL;
-}
-
 #endif
 #endif

@@ -3,6 +3,7 @@
 #endif
 
 #if ONE_SOURCE
+#include "mcchost.c"
 #include "mccpp.c"
 #include "mccgen.c"
 #include "mccdbg.c"
@@ -51,55 +52,12 @@ ST_DATA void** stk_data;
 ST_DATA int nb_stk_data;
 ST_DATA int g_debug;
 
-#ifdef _WIN32
-ST_FUNC char *normalize_slashes(char *path)
-{
-    char *p;
-    for (p = path; *p; ++p)
-        if (*p == '\\')
-            *p = '/';
-    return path;
-}
-
-#if defined LIBMCC_AS_DLL && !defined CONFIG_MCCDIR
-static HMODULE mcc_module;
-BOOL WINAPI DllMain (HINSTANCE hDll, DWORD dwReason, LPVOID lpReserved)
-{
-    if (DLL_PROCESS_ATTACH == dwReason)
-        mcc_module = hDll;
-    return TRUE;
-}
-#else
-#define mcc_module NULL
-#endif
-
-#ifndef CONFIG_MCCDIR
-static inline char *config_mccdir_w32(char *path)
-{
-    char *p;
-    GetModuleFileNameA(mcc_module, path, MAX_PATH);
-    p = mcc_basename(normalize_slashes(strlwr(path)));
-    if (p > path)
-        --p;
-    *p = 0;
-    return path;
-}
-#define CONFIG_MCCDIR config_mccdir_w32(alloca(MAX_PATH))
-#endif
-
-#ifdef MCC_IS_NATIVE
+#if defined MCC_TARGET_PE && defined MCC_IS_NATIVE
 static void mcc_add_systemdir(MCCState *s)
 {
     char buf[1000];
-    GetSystemDirectoryA(buf, sizeof buf);
-    mcc_add_library_path(s, normalize_slashes(buf));
-}
-#endif
-PUB_FUNC FILE *mcc_fopen(const char *f, const char *m) {
-    return fopen(f, m);
-}
-PUB_FUNC int mcc_fclose(FILE *f) {
-    return fclose(f);
+    if (host_system_dir(buf, sizeof buf) == 0)
+        mcc_add_library_path(s, buf);
 }
 #endif
 
@@ -159,7 +117,7 @@ ST_FUNC char *pstrncpy(char *out, size_t buf_size, const char *s, size_t num)
 PUB_FUNC char *mcc_basename(const char *name)
 {
     char *p = (char *)strchr(name, 0);
-    while (p > name && !IS_DIRSEP(p[-1]))
+    while (p > name && !HOST_IS_DIRSEP(p[-1]))
         --p;
     return p;
 }
@@ -442,17 +400,13 @@ PUB_FUNC void mcc_memcheck(int d)
 
 #endif
 
-#ifdef _WIN32
-# define realpath(file, buf) _fullpath(buf, file, 260)
-#endif
-
 ST_FUNC int normalized_PATHCMP(const char *f1, const char *f2)
 {
     char *p1, *p2;
     int ret = 1;
-    if (!!(p1 = realpath(f1, NULL))) {
-        if (!!(p2 = realpath(f2, NULL))) {
-            ret = PATHCMP(p1, p2);
+    if (!!(p1 = host_path_canonical(f1))) {
+        if (!!(p2 = host_path_canonical(f2))) {
+            ret = HOST_PATHCMP(p1, p2);
             libc_free(p2);
         }
         libc_free(p1);
@@ -531,7 +485,7 @@ static void mcc_split_path(MCCState *s, void *p_ary, int *p_nb_ary, const char *
         CString str;
 
         cstr_new(&str);
-        for (p = in; c = *p, c != '\0' && c != PATHSEP[0]; ++p) {
+        for (p = in; c = *p, c != '\0' && c != HOST_PATHSEP[0]; ++p) {
             if (c == '{' && p[1] && p[2] == '}') {
                 c = p[1], p += 2;
                 if (c == 'B')
@@ -695,9 +649,7 @@ ST_FUNC void mcc_open_bf(MCCState *s1, const char *filename, int initlen)
     bf->buf_end = bf->buffer + initlen;
     bf->buf_end[0] = CH_EOB;
     pstrcpy(bf->filename, sizeof(bf->filename), filename);
-#ifdef _WIN32
-    normalize_slashes(bf->filename);
-#endif
+    host_path_normalize(bf->filename);
     bf->true_filename = bf->filename;
     bf->line_num = 1;
     bf->ifdef_stack_ptr = s1->ifdef_stack_ptr;
@@ -810,34 +762,16 @@ LIBMCCAPI void mcc_undefine_symbol(MCCState *s1, const char *sym)
     cstr_printf(&s1->cmdline_defs, "#undef %s\n", sym);
 }
 
-#if defined CONFIG_MCC_AUTO_MCCDIR && !defined _WIN32
+#if defined CONFIG_MCC_AUTO_MCCDIR && MCC_HOST_POSIX
 #include <sys/stat.h>
-#if defined __APPLE__
-extern int _NSGetExecutablePath(char *buf, unsigned int *bufsize);
-#endif
 static char auto_mccdir_buf[1024];
 static const char *mcc_auto_mccdir(void)
 {
     char exe[1024], probe[1024];
     struct stat st;
     char *p;
-    int n = -1;
-#if defined __linux__ || defined __CYGWIN__
-    n = readlink("/proc/self/exe", exe, sizeof exe - 1);
-#elif defined __NetBSD__
-    n = readlink("/proc/curproc/exe", exe, sizeof exe - 1);
-#elif defined __FreeBSD__ || defined __DragonFly__
-    n = readlink("/proc/curproc/file", exe, sizeof exe - 1);
-#elif defined __APPLE__
-    {
-        unsigned int sz = sizeof exe;
-        if (_NSGetExecutablePath(exe, &sz) == 0)
-            n = (int)strlen(exe);
-    }
-#endif
-    if (n <= 0 || n >= (int)sizeof exe)
+    if (host_exe_path(exe, sizeof exe) <= 0)
         return CONFIG_MCCDIR;
-    exe[n] = 0;
     p = mcc_basename(exe);
     if (p > exe)
         --p;
@@ -1097,7 +1031,7 @@ static int mcc_add_binary(MCCState *s1, int flags, const char *filename, int fd)
 #ifdef CONFIG_MCC_STATIC
             (void)filename;
 #else
-            void* dl = dlopen(filename, RTLD_GLOBAL | RTLD_LAZY);
+            void* dl = host_dlopen(filename);
             if (dl)
                 mcc_add_dllref(s1, filename, 0)->handle = dl;
             else
@@ -1125,7 +1059,7 @@ static int mcc_add_binary(MCCState *s1, int flags, const char *filename, int fd)
                 if (tmp)
                     soname = tmp;
             }
-            dl = dlopen(soname, RTLD_GLOBAL | RTLD_LAZY);
+            dl = host_dlopen(soname);
             if (dl)
                 mcc_add_dllref(s1, soname, 0)->handle = dl;
             else
@@ -1170,7 +1104,7 @@ static int mcc_add_binary(MCCState *s1, int flags, const char *filename, int fd)
     return ret;
 }
 
-#if defined TARGETOS_OpenBSD && !defined _WIN32
+#if defined TARGETOS_OpenBSD && MCC_HOST_POSIX
 #include <glob.h>
 static int mcc_glob_so(MCCState *s1, const char *pattern, char *buf, int size)
 {
@@ -1205,9 +1139,9 @@ static int guess_filetype(const char *filename)
                 filetype = AFF_TYPE_ASMPP;
             else if (!strcmp(ext, "s"))
                 filetype = AFF_TYPE_ASM;
-            else if (!PATHCMP(ext, "c")
-                     || !PATHCMP(ext, "h")
-                     || !PATHCMP(ext, "i"))
+            else if (!HOST_PATHCMP(ext, "c")
+                     || !HOST_PATHCMP(ext, "h")
+                     || !HOST_PATHCMP(ext, "i"))
                 filetype = AFF_TYPE_C;
             else
                 filetype |= AFF_TYPE_BIN;
@@ -1222,7 +1156,7 @@ ST_FUNC int mcc_add_file_internal(MCCState *s1, const char *filename, int flags)
 {
     int fd;
 
-#if defined TARGETOS_OpenBSD && !defined _WIN32
+#if defined TARGETOS_OpenBSD && MCC_HOST_POSIX
     char buf[1024];
     if (mcc_glob_so(s1, filename, buf, sizeof buf) >= 0)
         filename = buf;

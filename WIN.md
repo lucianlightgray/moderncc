@@ -4,6 +4,15 @@ This document catalogs every place the **moderncc (mcc)** source is gated on
 Windows, and explains *why*. It is a reference for anyone touching the Windows
 port, cross-compilation to Windows, or the PE/COFF backend.
 
+> **HOST rows centralized (see HOST.md).** Every HOST-axis gate below now
+> lives in `src/mcchost.h` / `src/mcchost.c`; the original sites call a
+> `host_*` function or test a normalized `MCC_HOST_*` predicate instead of
+> raw host macros. Raw host-macro tests outside `mcchost.{h,c}` are rejected
+> by the `host-gate-invariant` ctest. The HOST rows in the tables below
+> describe the *behavior* that moved; their file:line references are
+> historical. TARGET rows are unaffected.
+
+
 ## The two gating axes
 
 mcc separates *where it runs* from *what it emits*. Almost every Windows

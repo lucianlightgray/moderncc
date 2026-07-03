@@ -2266,17 +2266,8 @@ ST_FUNC int macho_output_file(MCCState *s1, const char *filename)
     fclose(fp);
     if (ret)
         unlink(filename);
-#ifdef CONFIG_CODESIGN
-    if (!ret) {
-	char command[1024];
-	int retval;
-
-	snprintf(command, sizeof(command), "codesign -f -s - %s", filename);
-	retval = system (command);
-	if (retval == -1 || !(WIFEXITED(retval) && WEXITSTATUS(retval) == 0))
-	    mcc_error ("command failed '%s'", command);
-    }
-#endif
+    if (!ret && host_codesign_adhoc(filename) != 0)
+        mcc_error("codesign failed for '%s'", filename);
     return ret;
 }
 
@@ -2294,32 +2285,13 @@ static uint32_t macho_swap32(uint32_t x)
 #define tbd_parse_trample *pos++=0
 
 #ifdef MCC_IS_NATIVE
-static int macos_sdkroot(CString *out)
-{
-    char *sdkroot = NULL, *pos = NULL;
-    void* xcs = dlopen("libxcselect.dylib", RTLD_GLOBAL | RTLD_LAZY);
-    int (*f)(unsigned int, char**) = xcs ? dlsym(xcs, "xcselect_host_sdk_path") : NULL;
-    int ok = 0;
-    if (f) f(1, &sdkroot);
-    if (sdkroot)
-        pos = strstr(sdkroot, "SDKs/MacOSX");
-    if (pos) {
-        cstr_printf(out, "%.*s.sdk", (int)(pos - sdkroot + 11), sdkroot);
-        ok = 1;
-    }
-#pragma push_macro("free")
-#undef free
-    free(sdkroot);
-#pragma pop_macro("free")
-    return ok;
-}
-
 ST_FUNC void mcc_add_macos_sdkpath(MCCState* s)
 {
+    const char *sdk = host_macos_sdk_root();
     CString path;
     cstr_new(&path);
-    if (macos_sdkroot(&path)) {
-        cstr_cat(&path, "/usr/lib", -1);
+    if (sdk) {
+        cstr_printf(&path, "%s/usr/lib", sdk);
         mcc_add_library_path(s, (char*)path.data);
     } else {
         mcc_add_library_path(s,
@@ -2332,10 +2304,11 @@ ST_FUNC void mcc_add_macos_sdkpath(MCCState* s)
 
 ST_FUNC void mcc_add_macos_sdkincludepath(MCCState* s)
 {
+    const char *sdk = host_macos_sdk_root();
     CString path;
     cstr_new(&path);
-    if (macos_sdkroot(&path)) {
-        cstr_cat(&path, "/usr/include", -1);
+    if (sdk) {
+        cstr_printf(&path, "%s/usr/include", sdk);
         mcc_add_sysinclude_path(s, (char*)path.data);
     } else {
         mcc_add_sysinclude_path(s,

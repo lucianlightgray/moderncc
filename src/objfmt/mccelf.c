@@ -54,7 +54,7 @@ static char *musl_elfinterp(MCCState *s)
 #endif
     snprintf(interp, sizeof interp, "/lib/ld-musl-%s.so.1", arch);
     snprintf(probe, sizeof probe, "%s%s", s->sysroot, interp);
-    f = mcc_fopen(probe, "rb");
+    f = host_fopen(probe, "rb");
     if (!f)
         return NULL;
     fclose(f);
@@ -118,7 +118,7 @@ ST_FUNC void mccelf_new(MCCState *s)
                 p = CONFIG_MCC_ELFINTERP_ARMHF;
 #endif
 #if defined MCC_IS_NATIVE && defined TARGETOS_BSD
-            { const char *e = getenv("LD_SO"); if (e) p = e; }
+            { const char *e = host_elf_interp_override(); if (e) p = e; }
 #endif
             s->elfint = mcc_strdup(p);
         }
@@ -1001,10 +1001,10 @@ ST_FUNC void relocate_syms(MCCState *s1, Section *symtab, int do_resolve)
                 const char *name_ud = &name[s1->leading_underscore];
                 void *addr = NULL;
                 if (!s1->nostdlib)
-                    addr = dlsym(RTLD_DEFAULT, name_ud);
+                    addr = host_dlsym_process(name_ud);
 		if (addr == NULL) {
 		    for (int i = 0; i < s1->nb_loaded_dlls; i++)
-                        if ((addr = dlsym(s1->loaded_dlls[i]->handle, name_ud)))
+                        if ((addr = host_dlsym(s1->loaded_dlls[i]->handle, name_ud)))
 			    break;
 		}
                 if (addr) {
@@ -1557,9 +1557,7 @@ static void mcc_tcov_add_file(MCCState *s1, const char *filename)
     ptr = section_ptr_add(tcov_section, cstr.size + 1);
     strcpy((char *)ptr, cstr.data);
     unlink((char *)ptr);
-#ifdef _WIN32
-    normalize_slashes((char *)ptr);
-#endif
+    host_path_normalize((char *)ptr);
     cstr_free (&cstr);
 
     cstr_new(&cstr);
@@ -3684,7 +3682,7 @@ static int ld_add_file(MCCState *s1, const char filename[])
     if (filename[0] == '-' && filename[1] == 'l')
         return mcc_add_library(s1, filename + 2);
     if ((s1->sysroot && s1->sysroot[0]) || CONFIG_SYSROOT[0] != '\0'
-            || !IS_ABSPATH(filename)) {
+            || !HOST_IS_ABSPATH(filename)) {
         int ret = mcc_add_dll(s1, mcc_basename(filename), 0);
         if (ret != FILE_NOT_FOUND)
             return ret;

@@ -2794,6 +2794,14 @@ endif()
         COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}")
     set_tests_properties(mcc_build PROPERTIES FIXTURES_SETUP MCC_BUILT)
 
+    # HOST.md invariant: raw host macros (_WIN32, __APPLE__, ...) may only be
+    # tested inside src/mcchost.{h,c}; everything else uses MCC_HOST_* or a
+    # host_* function.  Keeps mcchost the source of truth for the HOST axis.
+    add_test(NAME host-gate-invariant
+        COMMAND "${CMAKE_COMMAND}"
+            "-DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}/src"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/host_gate_check.cmake")
+
     add_executable(exec_runner tests/exec/runner.c)
     target_include_directories(exec_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec")
     add_test(NAME exec-suite

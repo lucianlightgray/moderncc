@@ -267,17 +267,6 @@ static char *default_outputfile(MCCState *s, const char *first_file)
     return mcc_strdup(buf);
 }
 
-static unsigned getclock_ms(void)
-{
-#ifdef _WIN32
-    return GetTickCount();
-#else
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return tv.tv_sec*1000 + (tv.tv_usec+500)/1000;
-#endif
-}
-
 int main(int argc, char **argv)
 {
     MCCState *s, *s1;
@@ -327,7 +316,7 @@ redo:
             mcc_error_noabort("no input files");
         } else if (s->output_type == MCC_OUTPUT_PREPROCESS) {
             if (s->outfile && 0!=strcmp("-",s->outfile)) {
-                ppfp = mcc_fopen(s->outfile, "wb");
+                ppfp = host_fopen(s->outfile, "wb");
                 if (!ppfp)
                     mcc_error_noabort("could not write '%s'", s->outfile);
             }
@@ -342,7 +331,7 @@ redo:
         if (s->nb_errors)
             goto err;
         if (s->do_bench)
-            start_time = getclock_ms();
+            start_time = host_clock_ms();
     }
 
     set_environment(s);
@@ -383,7 +372,7 @@ redo:
     }
 
     if (s->do_bench)
-        end_time = getclock_ms();
+        end_time = host_clock_ms();
 
     if (s->run_test) {
         t = 0;
@@ -421,6 +410,6 @@ redo:
     if (!done)
         goto redo;
     if (ppfp)
-        mcc_fclose(ppfp);
+        host_fclose(ppfp);
     return ret;
 }

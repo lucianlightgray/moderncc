@@ -307,10 +307,7 @@ ST_FUNC int mcc_tool_impdef(int argc, char **argv)
     const char *file;
     char *p, *q;
     FILE *fp, *op;
-
-#ifdef _WIN32
     char path[260];
-#endif
 
     infile[0] = outfile[0] = 0;
     fp = op = NULL;
@@ -353,10 +350,8 @@ usage:
     }
 
     file = infile;
-#ifdef _WIN32
-    if (SearchPath(NULL, file, ".dll", sizeof path, path, NULL))
+    if (host_find_tool(file, ".dll", path, sizeof path))
         file = path;
-#endif
     ret = mcc_get_dllexports(file, &p);
     if (ret || !p) {
         fprintf(stderr, "mcc: impdef: %s '%s'\n",
@@ -411,46 +406,6 @@ ST_FUNC int mcc_tool_cross(char **argv, int option)
 }
 
 #else
-#ifdef _WIN32
-#include <process.h>
-
-static char *quote_win32(const char *s)
-{
-    char *o, *r = mcc_malloc(2 * strlen(s) + 3);
-    int cbs = 0, quoted = !*s;
-
-    for (o = r; *s; *o++ = *s++) {
-        quoted |= *s == ' ' || *s == '\t';
-        if (*s == '\\' || *s == '"')
-            *o++ = '\\';
-        else
-            o -= cbs;
-        cbs = *s == '\\' ? cbs + 1 : 0;
-    }
-    if (quoted) {
-        memmove(r + 1, r, o++ - r);
-        *r = *o++ = '"';
-    } else {
-        o -= cbs;
-    }
-
-    *o = 0;
-    return r;
-}
-
-static int execvp_win32(const char *prog, char **argv)
-{
-    int ret; char **p;
-    for (p = argv; *p; ++p)
-        *p = quote_win32(*p);
-    ret = _spawnvp(P_NOWAIT, prog, (const char *const*)argv);
-    if (-1 == ret)
-        return ret;
-    _cwait(&ret, ret, WAIT_CHILD);
-    exit(ret);
-}
-#define execvp execvp_win32
-#endif
 
 ST_FUNC int mcc_tool_cross(char **argv, int target)
 {
@@ -463,21 +418,20 @@ ST_FUNC int mcc_tool_cross(char **argv, int target)
 #ifdef MCC_TARGET_PE
         "-win32"
 #endif
-        "-mcc"
-#ifdef _WIN32
-        ".exe"
-#endif
+        "-mcc" HOST_EXE_SUFFIX
         , prefix, a0, target == 64 ? "x86_64" : "i386");
 
-    if (strcmp(a0, program))
-        execvp(argv[0] = program, argv);
+    if (strcmp(a0, program)) {
+        argv[0] = program;
+        host_exec_replace(argv);
+    }
     fprintf(stderr, "mcc: could not run '%s'\n", program);
     return 1;
 }
 
 #endif
 
-#ifdef _WIN32
+#if MCC_HOST_WIN32
 const int _CRT_glob = 1;
 #ifndef _CRT_glob
 const int _dowildcard = 1;

@@ -1427,7 +1427,7 @@ static int parse_include(MCCState *s1, int do_next, int test)
         ++i;
         cand_sys = 0;
         if (i == 0) {
-            if (!IS_ABSPATH(name))
+            if (!HOST_IS_ABSPATH(name))
                 continue;
             buf[0] = '\0';
         } else if (i == 1) {
@@ -1707,11 +1707,7 @@ static CachedInclude *search_cached_include(MCCState *s1, const char *filename, 
     s = basename = mcc_basename(filename);
     h = TOK_HASH_INIT;
     while ((c = (unsigned char)*s) != 0) {
-#ifdef _WIN32
-        h = TOK_HASH_FUNC(h, toup(c));
-#else
-        h = TOK_HASH_FUNC(h, c);
-#endif
+        h = TOK_HASH_FUNC(h, host_path_hash_fold(c));
         s++;
     }
     h &= (CACHED_INCLUDES_HASH_SIZE - 1);
@@ -1721,10 +1717,10 @@ static CachedInclude *search_cached_include(MCCState *s1, const char *filename, 
         if (i == 0)
             break;
         e = s1->cached_includes[i - 1];
-        if (0 == PATHCMP(filename, e->filename))
+        if (0 == HOST_PATHCMP(filename, e->filename))
             return e;
         if (e->once
-            && 0 == PATHCMP(basename, mcc_basename(e->filename))
+            && 0 == HOST_PATHCMP(basename, mcc_basename(e->filename))
             && 0 == normalized_PATHCMP(filename, e->filename)
             )
             return e;
@@ -1924,9 +1920,7 @@ ST_FUNC void mccpp_putfile(const char *filename)
        a relative name against the current file's directory here: the real path
        for include caching/debug stays in file->true_filename below. */
     pstrcpy(buf, sizeof buf, filename);
-#ifdef _WIN32
-    normalize_slashes(buf);
-#endif
+    host_path_normalize(buf);
     if (0 == strcmp(file->filename, buf))
         return;
     if (file->true_filename == file->filename)

@@ -22,112 +22,7 @@
 #include <setjmp.h>
 #include <time.h>
 
-#ifndef _WIN32
-# include <unistd.h>
-# include <sys/time.h>
-# ifndef CONFIG_MCC_STATIC
-#  include <dlfcn.h>
-# endif
-extern float strtof (const char *__nptr, char **__endptr);
-extern long double strtold (const char *__nptr, char **__endptr);
-#endif
-
-#ifdef _WIN32
-# define WIN32_LEAN_AND_MEAN 1
-# ifndef _WIN32_WINNT
-#  define _WIN32_WINNT 0x502
-# endif
-# include <windows.h>
-# include <io.h>
-# include <direct.h>
-# include <malloc.h>
-# ifndef _MSC_VER
-#  include <stdint.h>
-# endif
-# define inline __inline
-# define snprintf _snprintf
-# define vsnprintf _vsnprintf
-# ifndef __GNUC__
-#  define strtold (long double)strtod
-#  define strtof (float)strtod
-#  define strtoll _strtoi64
-#  define strtoull _strtoui64
-# endif
-# ifdef LIBMCC_AS_DLL
-#  define LIBMCCAPI __declspec(dllexport)
-#  define PUB_FUNC LIBMCCAPI
-# endif
-# ifdef _MSC_VER
-#  pragma warning (disable : 4244)
-#  pragma warning (disable : 4267)
-#  pragma warning (disable : 4996)
-#  pragma warning (disable : 4018)
-#  pragma warning (disable : 4146)
-#  include <sys/types.h>
-#  define ssize_t intptr_t
-#  ifdef _X86_
-#   define __i386__ 1
-#  endif
-#  ifdef _AMD64_
-#   define __x86_64__ 1
-#  endif
-# endif
-# if defined(_M_ARM64) && !defined(__aarch64__)
-#  define __aarch64__ 1
-# endif
-# ifndef va_copy
-#  define va_copy(a,b) a = b
-# endif
-#endif
-
-#ifndef O_BINARY
-# define O_BINARY 0
-#endif
-
-#ifndef offsetof
-#ifdef __clang__
-#define offsetof(type, field) __builtin_offsetof(type, field)
-#else
-#define offsetof(type, field) ((size_t) &((type *)0)->field)
-#endif
-#endif
-
-#ifndef countof
-#define countof(tab) (sizeof(tab) / sizeof((tab)[0]))
-#endif
-
-#ifdef _MSC_VER
-# define NORETURN __declspec(noreturn)
-# define ALIGNED(x) __declspec(align(x))
-# define PRINTF_LIKE(x,y)
-#else
-# define NORETURN __attribute__((noreturn))
-# define ALIGNED(x) __attribute__((aligned(x)))
-# define PRINTF_LIKE(x,y) __attribute__ ((format (printf, (x), (y))))
-#endif
-
-#if defined(__GNUC__) && __GNUC__ >= 7
-# define FALLTHROUGH __attribute__((fallthrough))
-#elif defined(__clang__) && (__clang_major__ >= 10)
-# define FALLTHROUGH __attribute__((fallthrough))
-#else
-# define FALLTHROUGH ((void)0)
-#endif
-
-#ifdef _WIN32
-# define IS_DIRSEP(c) (c == '/' || c == '\\')
-# define IS_ABSPATH(p) (IS_DIRSEP(p[0]) || (p[0] && p[1] == ':' && IS_DIRSEP(p[2])))
-# define PATHCMP stricmp
-# define PATHSEP ";"
-#else
-# define IS_DIRSEP(c) (c == '/')
-# define IS_ABSPATH(p) IS_DIRSEP(p[0])
-# define PATHCMP strcmp
-# define PATHSEP ":"
-#endif
-
-
-
+#include "mcchost.h"
 
 #if !defined(MCC_TARGET_I386) && !defined(MCC_TARGET_ARM) && \
     !defined(MCC_TARGET_ARM64) && \
@@ -146,16 +41,16 @@ extern long double strtold (const char *__nptr, char **__endptr);
 # else
 #  define MCC_TARGET_I386
 # endif
-# ifdef _WIN32
+# if MCC_HOST_WIN32
 #  define MCC_TARGET_PE 1
 # endif
-# ifdef __APPLE__
+# if MCC_HOST_DARWIN
 #  define MCC_TARGET_MACHO 1
 # endif
 #endif
 
-#if defined _WIN32 == defined MCC_TARGET_PE \
-    && defined __APPLE__ == defined MCC_TARGET_MACHO
+#if MCC_HOST_WIN32 == defined MCC_TARGET_PE \
+    && MCC_HOST_DARWIN == defined MCC_TARGET_MACHO
 # if defined __i386__ && defined MCC_TARGET_I386
 #  define MCC_IS_NATIVE
 # elif defined __x86_64__ && defined MCC_TARGET_X86_64
@@ -216,22 +111,13 @@ extern long double strtold (const char *__nptr, char **__endptr);
 # define CONFIG_MCC_PIC 1
 #endif
 
-#ifndef CONFIG_MCC_SEMLOCK
-# define CONFIG_MCC_SEMLOCK 1
-#endif
-
-
 #ifndef CONFIG_SYSROOT
 # define CONFIG_SYSROOT ""
 #endif
 
-#if !defined CONFIG_MCCDIR && !defined _WIN32
-# define CONFIG_MCCDIR "/usr/local/lib/mcc"
-#endif
-
 #ifdef CONFIG_TRIPLET
 # define USE_TRIPLET(s) s "/" CONFIG_TRIPLET
-# define ALSO_TRIPLET(s) USE_TRIPLET(s) PATHSEP s
+# define ALSO_TRIPLET(s) USE_TRIPLET(s) HOST_PATHSEP s
 #else
 # define USE_TRIPLET(s) s
 # define ALSO_TRIPLET(s) s
@@ -251,14 +137,14 @@ extern long double strtold (const char *__nptr, char **__endptr);
 #if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64 \
     || defined MCC_TARGET_RISCV64
 # define MCC_ELF_LIBDIRS \
-    USE_TRIPLET("{R}/usr/lib") PATHSEP \
-    "{R}/usr/lib64" PATHSEP "{R}/lib64" PATHSEP "{R}/usr/local/lib64" PATHSEP \
-    "{R}/usr/lib" PATHSEP "{R}/lib" PATHSEP "{R}/usr/local/lib"
+    USE_TRIPLET("{R}/usr/lib") HOST_PATHSEP \
+    "{R}/usr/lib64" HOST_PATHSEP "{R}/lib64" HOST_PATHSEP "{R}/usr/local/lib64" HOST_PATHSEP \
+    "{R}/usr/lib" HOST_PATHSEP "{R}/lib" HOST_PATHSEP "{R}/usr/local/lib"
 #else
 # define MCC_ELF_LIBDIRS \
-    USE_TRIPLET("{R}/usr/lib") PATHSEP \
-    "{R}/usr/lib32" PATHSEP "{R}/lib32" PATHSEP \
-    "{R}/usr/lib" PATHSEP "{R}/lib" PATHSEP "{R}/usr/local/lib"
+    USE_TRIPLET("{R}/usr/lib") HOST_PATHSEP \
+    "{R}/usr/lib32" HOST_PATHSEP "{R}/lib32" HOST_PATHSEP \
+    "{R}/usr/lib" HOST_PATHSEP "{R}/lib" HOST_PATHSEP "{R}/usr/local/lib"
 #endif
 
 #ifndef CONFIG_MCC_CRTPREFIX
@@ -268,22 +154,22 @@ extern long double strtold (const char *__nptr, char **__endptr);
 
 
 #ifndef CONFIG_MCC_SYSINCLUDEPATHS
-# if defined MCC_TARGET_PE || defined _WIN32
+# if defined MCC_TARGET_PE || MCC_HOST_WIN32
 #  define CONFIG_MCC_SYSINCLUDEPATHS \
-    "{B}/include" PATHSEP "{B}/include/winapi"
+    "{B}/include" HOST_PATHSEP "{B}/include/winapi"
 # else
 #  define CONFIG_MCC_SYSINCLUDEPATHS \
-    "{B}/include" PATHSEP ALSO_TRIPLET("{R}/usr/include")
+    "{B}/include" HOST_PATHSEP ALSO_TRIPLET("{R}/usr/include")
 # endif
 #endif
 
 #ifndef CONFIG_MCC_LIBPATHS
-# if defined MCC_TARGET_PE || defined _WIN32
+# if defined MCC_TARGET_PE || MCC_HOST_WIN32
 #  define CONFIG_MCC_LIBPATHS \
     "{B}/lib"
 # else
 #  define CONFIG_MCC_LIBPATHS \
-    "{B}" PATHSEP MCC_ELF_LIBDIRS
+    "{B}" HOST_PATHSEP MCC_ELF_LIBDIRS
 # endif
 #endif
 
@@ -320,24 +206,6 @@ extern long double strtold (const char *__nptr, char **__endptr);
 #include "stab.h"
 #include "dwarf.h"
 
-
-#ifndef PUB_FUNC
-# define PUB_FUNC
-#endif
-
-#ifndef ONE_SOURCE
-# define ONE_SOURCE 0
-#endif
-
-#if ONE_SOURCE
-#define ST_INLN static inline
-#define ST_FUNC static
-#define ST_DATA static
-#else
-#define ST_INLN
-#define ST_FUNC
-#define ST_DATA extern
-#endif
 
 #ifdef MCC_PROFILE
 # define static
@@ -964,9 +832,7 @@ struct MCCState {
     void *run_ptr;
     unsigned run_size;
     const char *run_stdin;
-#ifdef _WIN64
-    void *run_function_table;
-#endif
+    void *run_function_table;   /* Win64 SEH unwind-table handle; NULL elsewhere */
     struct MCCState *next;
     struct rt_context *rc;
     void *run_lj, *run_jb;
@@ -1283,14 +1149,6 @@ ST_FUNC void mcc_add_pragma_libs(MCCState *s1);
 PUB_FUNC int mcc_add_library_err(MCCState *s, const char *f);
 PUB_FUNC void mcc_print_stats(MCCState *s, unsigned total_time);
 PUB_FUNC int mcc_parse_args(MCCState *s, int *argc, char ***argv);
-#ifdef _WIN32
-ST_FUNC char *normalize_slashes(char *path);
-PUB_FUNC FILE *mcc_fopen(const char *f, const char *m);
-PUB_FUNC int mcc_fclose(FILE *f);
-#else
-# define mcc_fopen fopen
-# define mcc_fclose fclose
-#endif
 ST_FUNC DLLReference *mcc_add_dllref(MCCState *s1, const char *dllname, int level);
 ST_FUNC char *mcc_load_text(int fd);
 ST_FUNC int normalized_PATHCMP(const char *f1, const char *f2);
@@ -1774,16 +1632,6 @@ ST_FUNC char* macho_tbd_soname(int fd);
 #endif
 #endif
 #ifdef MCC_IS_NATIVE
-#ifdef CONFIG_MCC_STATIC
-#define RTLD_LAZY       0x001
-#define RTLD_NOW        0x002
-#define RTLD_GLOBAL     0x100
-#define RTLD_DEFAULT    NULL
-ST_FUNC void *dlopen(const char *filename, int flag);
-ST_FUNC void dlclose(void *p);
-ST_FUNC const char *dlerror(void);
-ST_FUNC void *dlsym(void *handle, const char *symbol);
-#endif
 ST_FUNC void mcc_run_free(MCCState *s1);
 #endif
 
@@ -1898,54 +1746,6 @@ dwarf_read_sleb128(unsigned char **ln, unsigned char *end)
 # define R_DATA_32DW R_X86_64_32
 #else
 # define R_DATA_32DW R_DATA_32
-#endif
-
-#if CONFIG_MCC_SEMLOCK
-#if defined _WIN32
-typedef struct { volatile LONG init; CRITICAL_SECTION cs; } MCCSem;
-static inline void wait_sem(MCCSem *p) {
-    if (InterlockedCompareExchange(&p->init, 1, 0) == 0) {
-        InitializeCriticalSection(&p->cs);
-        InterlockedExchange(&p->init, 2);
-    } else {
-        while (InterlockedCompareExchange(&p->init, 2, 2) != 2)
-            Sleep(0);
-    }
-    EnterCriticalSection(&p->cs);
-}
-static inline void post_sem(MCCSem *p) {
-    LeaveCriticalSection(&p->cs);
-}
-#elif defined __APPLE__
-#include <dispatch/dispatch.h>
-typedef struct { int init; dispatch_semaphore_t sem; } MCCSem;
-static inline void wait_sem(MCCSem *p) {
-    if (!p->init)
-        p->sem = dispatch_semaphore_create(1), p->init = 1;
-    dispatch_semaphore_wait(p->sem, DISPATCH_TIME_FOREVER);
-}
-static inline void post_sem(MCCSem *p) {
-    dispatch_semaphore_signal(p->sem);
-}
-#else
-#include <semaphore.h>
-typedef struct { int init; sem_t sem; } MCCSem;
-static inline void wait_sem(MCCSem *p) {
-    if (!p->init)
-        sem_init(&p->sem, 0, 1), p->init = 1;
-    while (sem_wait(&p->sem) < 0 && errno == EINTR);
-}
-static inline void post_sem(MCCSem *p) {
-    sem_post(&p->sem);
-}
-#endif
-#define MCC_SEM(s) static MCCSem s
-#define WAIT_SEM wait_sem
-#define POST_SEM post_sem
-#else
-#define MCC_SEM(s)
-#define WAIT_SEM(p)
-#define POST_SEM(p)
 #endif
 
 #undef ST_DATA

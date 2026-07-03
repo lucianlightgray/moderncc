@@ -1,6 +1,7 @@
 #define CONFIG_MCC_BACKTRACE_ONLY
 #define ONE_SOURCE 1
 #define pstrcpy mcc_pstrcpy
+#include "../mcchost.c"
 #include "../mccrun.c"
 
 #ifndef _WIN32

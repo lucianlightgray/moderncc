@@ -3,13 +3,6 @@
 #define PE_MERGE_DATA 1
 #define PE_PRINT_SECTIONS 0
 
-#ifndef _WIN32
-#define stricmp strcasecmp
-#define strnicmp strncasecmp
-#include <sys/stat.h>
-#else
-#include <process.h>
-#endif
 
 #ifdef MCC_TARGET_X86_64
 # define ADDR3264 ULONGLONG
@@ -277,12 +270,12 @@ struct pe_header
     IMAGE_FILE_HEADER filehdr;
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
     IMAGE_OPTIONAL_HEADER64 opthdr;
-#else
-#ifdef _WIN64
+#elif MCC_HOST_WIN64
+    /* the host <windows.h> maps IMAGE_OPTIONAL_HEADER to the 64-bit
+       variant; a 32-bit PE target needs the explicit 32-bit header */
     IMAGE_OPTIONAL_HEADER32 opthdr;
 #else
     IMAGE_OPTIONAL_HEADER opthdr;
-#endif
 #endif
 };
 
@@ -594,38 +587,10 @@ static void pe_add_coffsym(struct pe_info *pe)
     write32le(pe->coffstr->data, pe->coffstr->data_offset);
 }
 
-#ifndef _WIN32
-static void pe_shell_quote(CString *cmd, const char *arg)
-{
-    cstr_cat(cmd, "'", 1);
-    while (*arg) {
-        if (*arg == '\'')
-            cstr_cat(cmd, "'\\''", 4);
-        else
-            cstr_cat(cmd, arg, 1);
-        ++arg;
-    }
-    cstr_cat(cmd, "'", 1);
-}
-#endif
-
 static intptr_t pe_run_cv2pdb(const char *exename)
 {
-#ifdef _WIN32
     const char *argv[] = { "cv2pdb.exe", exename, NULL };
-    return _spawnvp(_P_WAIT, "cv2pdb.exe", argv);
-#else
-    CString cmd;
-    intptr_t ret;
-
-    cstr_new(&cmd);
-    cstr_cat(&cmd, "cv2pdb.exe ", -1);
-    pe_shell_quote(&cmd, exename);
-    cstr_ccat(&cmd, 0);
-    ret = system(cmd.data);
-    cstr_free(&cmd);
-    return ret;
-#endif
+    return host_spawn_wait(argv);
 }
 
 static void pe_create_pdb(MCCState *s1, const char *exename)
@@ -912,9 +877,7 @@ static int pe_write(struct pe_info *pe)
     pe_fwrite(pe, &pe->sum, sizeof (DWORD));
 
     fclose (pe->op);
-#ifndef _WIN32
-    chmod(pe->filename, 0777);
-#endif
+    host_set_exec_bits(pe->filename);
 
     if (2 == s1->verbose)
         printf("-------------------------------\n");
@@ -1034,8 +997,8 @@ static void pe_build_imports(struct pe_info *pe)
                 if (pe->type == PE_RUN) {
                     if (dllref) {
                         if ( !dllref->handle )
-                            dllref->handle = LoadLibraryA(dllref->name);
-                        v = (ADDR3264)GetProcAddress(dllref->handle, ordinal?(char*)0+ordinal:name);
+                            dllref->handle = host_dlopen(dllref->name);
+                        v = (ADDR3264)host_dlsym(dllref->handle, ordinal?(char*)0+ordinal:name);
                     }
                     if (!v)
                         mcc_error_noabort("could not resolve symbol '%s'", name);

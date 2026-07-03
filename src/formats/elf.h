@@ -1,7 +1,8 @@
 #ifndef _ELF_H
 #define	_ELF_H 1
 
-#ifndef _WIN32
+/* included via mcc.h, after mcchost.h has defined the host predicates */
+#if !MCC_HOST_WIN32
 #include <inttypes.h>
 #else
 #ifndef __int8_t_defined

@@ -4,6 +4,15 @@ A catalog of every place the moderncc source, build, and test tree branches on
 Apple/Darwin/Mach-O, and **why**. Use this when porting, debugging macOS
 codegen, or deciding where a new Darwin behavior belongs.
 
+> **HOST rows centralized (see HOST.md).** Every HOST-axis gate below now
+> lives in `src/mcchost.h` / `src/mcchost.c`; the original sites call a
+> `host_*` function or test a normalized `MCC_HOST_*` predicate instead of
+> raw host macros. Raw host-macro tests outside `mcchost.{h,c}` are rejected
+> by the `host-gate-invariant` ctest. The HOST rows in the tables below
+> describe the *behavior* that moved; their file:line references are
+> historical. TARGET rows are unaffected.
+
+
 ## 1. The controlling macros
 
 There are three distinct axes. Keep them separate:

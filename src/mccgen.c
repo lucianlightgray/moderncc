@@ -2542,10 +2542,7 @@ static void gen_opif(int op)
 {
     int c1, c2, i, bt;
     SValue *v1, *v2;
-#if defined _MSC_VER && defined __x86_64__
-    volatile
-#endif
-    long double f1, f2;
+    HOST_VOLATILE_LDOUBLE long double f1, f2;
 
     v1 = vtop - 1;
     v2 = vtop;

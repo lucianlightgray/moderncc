@@ -1075,9 +1075,7 @@ ST_FUNC void mcc_debug_start(MCCState *s1)
         n_debug_forw_hash_local = 0;
 
         getcwd(buf, sizeof(buf));
-#ifdef _WIN32
-        normalize_slashes(buf);
-#endif
+        host_path_normalize(buf);
 
         if (s1->dwarf) {
             int start_abbrev;
@@ -2445,9 +2443,7 @@ ST_FUNC void mcc_tcov_block_begin(MCCState *s1)
 	}
 	ptr = section_ptr_add(tcov_section, cstr.size + 1);
 	strcpy((char *)ptr, cstr.data);
-#ifdef _WIN32
-        normalize_slashes((char *)ptr);
-#endif
+        host_path_normalize((char *)ptr);
 	cstr_free (&cstr);
     }
     if (tcov_data.last_func_name == 0 ||
