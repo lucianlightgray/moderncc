@@ -2101,7 +2101,13 @@ if(MCC_BUILD_PROFILE)
         "${CMAKE_CURRENT_SOURCE_DIR}/src/mcctools.c")
     target_include_directories(mcc_p PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
     target_compile_options(mcc_p PRIVATE -pg)
-    target_compile_definitions(mcc_p PRIVATE CONFIG_MCC_STATIC MCC_PROFILE)
+    target_compile_definitions(mcc_p PRIVATE MCC_PROFILE)
+    if(NOT MCC_TARGETOS STREQUAL "WIN32")
+        # CONFIG_MCC_STATIC switches `-run` to the built-in symbol table; on
+        # WIN32 even a -static exe resolves libc via LoadLibrary (msvcrt.dll),
+        # and mingw's stdin/stdout/stderr macros are not addressable lvalues.
+        target_compile_definitions(mcc_p PRIVATE CONFIG_MCC_STATIC)
+    endif()
     target_link_options(mcc_p PRIVATE -pg -static)
     # mcc references libm (sin/cos/…); a -static link needs it explicitly, like mcc.
     target_link_libraries(mcc_p PRIVATE m)
@@ -2402,8 +2408,12 @@ function(mcc_add_cross_mcc base_tgt base_out static_tgt static_out defs)
             endif()
         endif()
         if(_vk STREQUAL "static")
-            # static -> built-in `-run` symbol table (no dlsym), like host mcc-static
-            target_compile_definitions(${_vt} PRIVATE CONFIG_MCC_STATIC)
+            # static -> built-in `-run` symbol table (no dlsym), like host
+            # mcc-static; not on WIN32, where -run resolves via LoadLibrary
+            # even in a -static exe (and &stdin doesn't compile under mingw)
+            if(NOT MCC_TARGETOS STREQUAL "WIN32")
+                target_compile_definitions(${_vt} PRIVATE CONFIG_MCC_STATIC)
+            endif()
             target_link_options(${_vt} PRIVATE -static)
         endif()
         if(MCC_DIAGNOSTICS)
