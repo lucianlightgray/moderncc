@@ -499,16 +499,6 @@ static void arm64_macho_tls_addr(Sym *sym, uint64_t addend)
 }
 #endif
 
-#ifdef MCC_TARGET_PE
-static Sym *arm64_pe_tls_index_sym(void)
-{
-    CType ct;
-    ct.t = VT_INT;
-    ct.ref = NULL;
-    return external_global_sym(tok_alloc_const("_tls_index"), &ct);
-}
-#endif
-
 #ifndef MCC_TARGET_MACHO
 /* Leave this module's thread-local base in x30, ready for the caller's
    TPREL_{HI12,LO12} relocations to add the per-variable offset. On ELF that
@@ -524,7 +514,7 @@ static void arm64_tls_base_x30(void)
 #ifdef MCC_TARGET_PE
     o(ARM64_STR_X_PRE | 0x001F0FE0U | 16);       /* str x16, [sp, #-16]!  */
     arm64_ldrx(0, 3, 30, 18, 0x58);              /* ldr x30, [x18, #0x58] */
-    arm64_sym(16, arm64_pe_tls_index_sym(), 0);  /* x16 = &_tls_index     */
+    arm64_sym(16, pe_tls_index_sym(), 0);  /* x16 = &_tls_index     */
     arm64_ldrx(0, 2, 16, 16, 0);                 /* ldr w16, [x16]        */
     o(ARM64_ADD_REG | ARM64_SF(1) | ARM64_RM(16) |
       ARM64_SHIFT_LSL(3) | ARM64_RN(30) | ARM64_RD(30)); /* add x30,x30,x16,lsl #3 */
@@ -842,18 +832,11 @@ static void gen_bounds_prolog(void)
 static void gen_bounds_epilog(void)
 {
     addr_t saved_ind;
-    addr_t *bounds_ptr;
     Sym *sym_data;
-    int offset_modified = func_bound_offset != lbounds_section->data_offset;
+    int offset_modified;
 
-    if (!offset_modified && !func_bound_add_epilog)
+    if (!gen_bounds_epilog_head(func_bound_offset, &sym_data, &offset_modified))
         return;
-
-    bounds_ptr = section_ptr_add(lbounds_section, sizeof(addr_t));
-    *bounds_ptr = 0;
-
-    sym_data = get_sym_ref(&char_pointer_type, lbounds_section,
-                           func_bound_offset, PTR_SIZE);
 
     if (offset_modified) {
         saved_ind = ind;
@@ -1751,19 +1734,6 @@ ST_FUNC void gjmp_addr(int a)
 {
     assert(a - ind + 0x8000000 < 0x10000000);
     o(ARM64_B | (((a - ind) >> 2) & 0x3ffffff));
-}
-
-ST_FUNC int gjmp_append(int n, int t)
-{
-    void *p;
-    if (n) {
-        uint32_t n1 = n, n2;
-        while ((n2 = read32le(p = cur_text_section->data + n1)))
-            n1 = n2;
-        write32le(p, t);
-        t = n;
-    }
-    return t;
 }
 
 void arm64_vset_VT_CMP(int op)

@@ -109,24 +109,6 @@ enum {
 
 static void parse_addr_operand(MCCState *s1, Operand *op);
 
-ST_FUNC void g(int c)
-{
-    int ind1;
-    if (nocode_wanted)
-        return;
-    ind1 = ind + 1;
-    if (ind1 > cur_text_section->data_allocated)
-        section_realloc(cur_text_section, ind1);
-    cur_text_section->data[ind] = c;
-    ind = ind1;
-}
-
-ST_FUNC void gen_le16(int c)
-{
-    g(c);
-    g(c >> 8);
-}
-
 ST_FUNC void gen_le32(int c)
 {
     gen_le16(c);

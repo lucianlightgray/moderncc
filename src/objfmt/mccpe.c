@@ -239,6 +239,17 @@ typedef struct _IMAGE_BASE_RELOCATION {
 
 #endif
 
+/* The `_tls_index` symbol selecting this module's TLS block. Identical for every
+   PE backend (i386/x86_64/arm64), so it lives here rather than in each per-arch
+   generator. */
+ST_FUNC Sym *pe_tls_index_sym(void)
+{
+    CType ct;
+    ct.t = VT_INT;
+    ct.ref = NULL;
+    return external_global_sym(tok_alloc_const("_tls_index"), &ct);
+}
+
 static WORD pe_get_dll_characteristics(MCCState *s1)
 {
     unsigned v = 0;

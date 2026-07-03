@@ -1073,6 +1073,10 @@ PUB_FUNC void *mcc_mallocz(unsigned long size);
 PUB_FUNC void *mcc_realloc(void *ptr, unsigned long size);
 ST_FUNC unsigned long mcc_grow_capacity(unsigned long cur, unsigned long need,
                                         unsigned long min_cap);
+ST_FUNC int mcc_uleb128_size(unsigned long long value);
+ST_FUNC int mcc_sleb128_size(long long value);
+ST_FUNC void mcc_write_uleb128(Section *sec, unsigned long long value);
+ST_FUNC void mcc_write_sleb128(Section *sec, long long value);
 PUB_FUNC char *mcc_strdup(const char *str);
 
 #ifdef MEM_DEBUG
@@ -1349,6 +1353,8 @@ ST_FUNC int classify_x86_64_va_arg(CType *ty);
 #ifdef CONFIG_MCC_BCHECK
 ST_FUNC void gbound_args(int nb_args);
 ST_DATA int func_bound_add_epilog;
+ST_FUNC int gen_bounds_epilog_head(addr_t func_bound_offset,
+                                   Sym **psym_data, int *poffset_modified);
 #endif
 ST_FUNC Sym *gfunc_set_param(Sym *s, int c, int byref);
 
@@ -1545,12 +1551,13 @@ static inline void write64le(unsigned char *p, uint64_t x) {
 static inline void add64le(unsigned char *p, int64_t x) {
     write64le(p, read64le(p) + x);
 }
+ST_FUNC void g(int c);          /* defined once in mccgen.c (all backends) */
+ST_FUNC void gen_le16(int c);   /* defined once in mccgen.c (all backends) */
 #if defined MCC_TARGET_I386 || defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM
-ST_FUNC void g(int c);
-ST_FUNC void gen_le16(int c);
 ST_FUNC void gen_le32(int c);
 #endif
 #if defined MCC_TARGET_I386 || defined MCC_TARGET_X86_64
+ST_FUNC int oad(int c, int s);  /* defined once in mccgen.c (x86 family) */
 ST_FUNC void gen_addr32(int r, Sym *sym, int c);
 ST_FUNC void gen_addrpc32(int r, Sym *sym, int c);
 ST_FUNC void gen_cvt_csti(int t);
@@ -1625,6 +1632,7 @@ ST_FUNC int pe_load_file(struct MCCState *s1, int fd, const char *filename);
 ST_FUNC int pe_output_file(MCCState * s1, const char *filename);
 ST_FUNC int pe_putimport(MCCState *s1, int dllindex, const char *name, addr_t value);
 ST_FUNC int pe_setsubsy(MCCState *s1, const char *arg);
+ST_FUNC Sym *pe_tls_index_sym(void);  /* defined once in mccpe.c (all PE backends) */
 #if defined MCC_TARGET_I386 || defined MCC_TARGET_X86_64
 #endif
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
