@@ -158,6 +158,19 @@ function(mcc_map_toolchain_cc tc outvar)
             return()
         endif()
     endif()
+    if(tc STREQUAL "clang")
+        # No system clang: fall back to the fetched cmake-clang toolchain
+        # (cmake --build <bld> --target clang-toolchain), like 'mingw' does
+        # with its downloaded gcc.
+        find_program(MCC_TOOLCHAIN_CC_clang NAMES clang)
+        if(NOT MCC_TOOLCHAIN_CC_clang)
+            mcc_clang_resolve()
+            if(_MCC_CLANG_EXE AND EXISTS "${_MCC_CLANG_EXE}")
+                set(${outvar} "${_MCC_CLANG_EXE}" PARENT_SCOPE)
+                return()
+            endif()
+        endif()
+    endif()
     set(_names_auto "")
     set(_names_gcc gcc cc)
     set(_names_clang clang)
@@ -877,6 +890,15 @@ if(_is_matrix AND NOT MCC_SUPERBUILD_CHILD)
             endif()
             if(NOT _cc STREQUAL "" AND NOT _cell_is_msvc)
                 list(APPEND _cargs "-DCMAKE_C_COMPILER=${_cc}")
+                if(WIN32)
+                    # A GNU-like clang on Windows makes CMake demand a resource
+                    # compiler; the fetched cmake-clang ships llvm-rc next to
+                    # clang but neither is on PATH, so pass it explicitly.
+                    get_filename_component(_ccdir "${_cc}" DIRECTORY)
+                    if(EXISTS "${_ccdir}/llvm-rc.exe")
+                        list(APPEND _cargs "-DCMAKE_RC_COMPILER=${_ccdir}/llvm-rc.exe")
+                    endif()
+                endif()
             endif()
             
             
