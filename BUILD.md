@@ -152,6 +152,16 @@ host-dynamic (macOS Homebrew gcc). Hidden bases are prefixed `_`
 | `msvc` | `msvc` | Release, `MCC_TOOLCHAIN_PROFILE=msvc`, diff3 refs from `$env{}` |
 | `mingw` | `mingw` | Release, `MCC_TOOLCHAIN_PROFILE=mingw` (build-only) |
 
+Every `ci.yml` build job uploads its build targets (executables + libraries)
+as a `mcc-<preset>-<arch>` artifact: the job configures with
+`CMAKE_INSTALL_PREFIX` pointing at a `ci-out/` dir, runs `cmake --install`
+after the tests, and uploads the tree as a tar.gz (tar first — GitHub
+artifacts don't preserve the exec bit). The docker `linux` job does this by
+mounting that dir at `/out`; `tests/ci/docker/run-ci.sh` picks the prefix up
+from the mount. The prefix must be set at *configure* time: the mcc runtime
+dir (`lib*/mcc`) installs to an absolute path baked into the install rules,
+so an install-time `--prefix` cannot re-root it.
+
 **qemu presets** — the `qemu` job passes `PRESET=qemu-<arch>` to the docker
 runner; `qemu` alone is the full local matrix:
 

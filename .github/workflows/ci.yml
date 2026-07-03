@@ -40,16 +40,27 @@ jobs:
           - { preset: linux-gcc-dwarf,           arch: x86_64, runner: ubuntu-latest }
           - { preset: linux-gcc-diagnostics,     arch: x86_64, runner: ubuntu-latest }
           - { preset: linux-gcc-asan,            arch: x86_64, runner: ubuntu-latest }
+    env:
+      ART: mcc-${{ matrix.preset }}-${{ matrix.arch }}
     steps:
       - uses: actions/checkout@v5
       - name: build CI runner image
         run: docker build -t mcc-ci tests/ci/docker
       - name: run ${{ matrix.preset }}
         run: |
+          mkdir -p "ci-out/$ART"
+          chmod -R 777 ci-out
           docker run --rm \
             -e PRESET=${{ matrix.preset }} \
             -v "$PWD:/work:ro" \
+            -v "$PWD/ci-out/$ART:/out" \
             mcc-ci
+      - name: pack build targets
+        run: tar czf "$ART.tar.gz" -C ci-out "$ART"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.ART }}
+          path: ${{ env.ART }}.tar.gz
 
   macos:
     name: ${{ matrix.preset }} / ${{ matrix.cc }}
@@ -62,6 +73,8 @@ jobs:
           - { preset: macos-cross, cc: clang }
           - { preset: macos,       cc: gcc }
           - { preset: macos-cross, cc: gcc }
+    env:
+      ART: mcc-${{ matrix.preset }}-${{ matrix.cc }}-arm64
     steps:
       - uses: actions/checkout@v5
       - name: install toolchain
@@ -77,11 +90,19 @@ jobs:
             echo "CC=clang" >> "$GITHUB_ENV"
           fi
       - name: configure
-        run: cmake --preset ${{ matrix.preset }}
+        run: cmake --preset ${{ matrix.preset }} "-DCMAKE_INSTALL_PREFIX=$PWD/ci-out/$ART"
       - name: build
         run: cmake --build --preset ${{ matrix.preset }} -j"$(sysctl -n hw.ncpu)"
       - name: test
         run: ctest --preset ${{ matrix.preset }} -j"$(sysctl -n hw.ncpu)"
+      - name: install + pack build targets
+        run: |
+          cmake --install cmake-build-${{ matrix.preset }}
+          tar czf "$ART.tar.gz" -C ci-out "$ART"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.ART }}
+          path: ${{ env.ART }}.tar.gz
 
   msvc:
     name: msvc / ${{ matrix.arch }}
@@ -92,6 +113,8 @@ jobs:
         include:
           - { arch: x86_64, runner: windows-latest }
           - { arch: arm64,  runner: windows-11-arm }
+    env:
+      ART: mcc-msvc-${{ matrix.arch }}
     steps:
       - uses: actions/checkout@v5
       - name: resolve diff3 reference compilers (mingw gcc + clang)
@@ -103,15 +126,25 @@ jobs:
           if ($gcc)   { "MCC_DIFF3_GCC=$($gcc.Replace('\','/'))"     | Out-File -FilePath $env:GITHUB_ENV -Append }
           if ($clang) { "MCC_DIFF3_CLANG=$($clang.Replace('\','/'))" | Out-File -FilePath $env:GITHUB_ENV -Append }
       - name: configure
-        run: cmake --preset msvc
+        run: cmake --preset msvc "-DCMAKE_INSTALL_PREFIX=$($PWD.Path.Replace('\','/'))/ci-out/${env:ART}"
       - name: build
         run: cmake --build --preset msvc -j
       - name: test
         run: ctest --preset msvc
+      - name: install + pack build targets
+        run: |
+          cmake --install cmake-build-msvc --config Release
+          tar czf "${env:ART}.tar.gz" -C ci-out "${env:ART}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.ART }}
+          path: ${{ env.ART }}.tar.gz
 
   mingw:
     name: mingw / native
     runs-on: windows-latest
+    env:
+      ART: mcc-mingw-x86_64
     steps:
       - uses: actions/checkout@v5
       - uses: TheMrMilchmann/setup-msvc-dev@v4
@@ -121,8 +154,16 @@ jobs:
         run: choco install ninja -y
       - name: configure + build (superbuild fetches winlibs GCC)
         run: |
-          cmake --preset mingw
+          cmake --preset mingw "-DCMAKE_INSTALL_PREFIX=$($PWD.Path.Replace('\','/'))/ci-out/${env:ART}"
           cmake --build --preset mingw -j
+      - name: install + pack build targets
+        run: |
+          cmake --install cmake-build-mingw
+          tar czf "${env:ART}.tar.gz" -C ci-out "${env:ART}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.ART }}
+          path: ${{ env.ART }}.tar.gz
 
   qemu:
     name: qemu / ${{ matrix.arch }} (glibc+musl)
