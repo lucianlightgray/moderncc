@@ -3869,19 +3869,24 @@ endif()
     
     
     set(_x11_search "${MCC_SYSROOT}/usr/include" /usr/include /opt/X11/include
-                    /usr/X11R6/include /usr/local/include)
+                    /usr/X11R6/include /usr/local/include /opt/homebrew/include)
     unset(MCC_X11_INCLUDE_DIR CACHE)
     find_path(MCC_X11_INCLUDE_DIR NAMES X11/Xlib.h PATHS ${_x11_search} NO_DEFAULT_PATH)
     foreach(_f IN LISTS _orphan_srcs)
         get_filename_component(_n "${_f}" NAME_WE)
         file(READ "${_f}" _orphan_txt)
-        if(_orphan_txt MATCHES "X11/Xlib.h"
-           AND (MCC_TARGETOS STREQUAL "WIN32" OR NOT MCC_X11_INCLUDE_DIR))
-            mcc_skip_test(compile.${_n} "X11 example; <X11/Xlib.h> not available on this host/target")
-            continue()
+        set(_orphan_x11_inc "")
+        if(_orphan_txt MATCHES "X11/Xlib.h")
+            if(MCC_TARGETOS STREQUAL "WIN32" OR NOT MCC_X11_INCLUDE_DIR)
+                mcc_skip_test(compile.${_n} "X11 example; <X11/Xlib.h> not available on this host/target")
+                continue()
+            endif()
+            # X11 headers may live outside mcc's default search path
+            # (e.g. Homebrew's /opt/homebrew/include)
+            set(_orphan_x11_inc "-I${MCC_X11_INCLUDE_DIR}")
         endif()
         add_test(NAME compile.${_n} COMMAND ${MCC_EMULATOR} "${_mcc_exe}"
-            "-B${_bdir}" "-I${_idir}" -c "${_f}"
+            "-B${_bdir}" "-I${_idir}" ${_orphan_x11_inc} -c "${_f}"
             -o "${CMAKE_BINARY_DIR}/orphan_${_n}.o")
         set_tests_properties(compile.${_n} PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endforeach()
