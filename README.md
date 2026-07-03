@@ -11,10 +11,10 @@ from a single source tree. Trades an optimizer for speed, size, and portability;
 | **Targets**   | x86_64 · i386 · arm · arm64 · riscv64                           |
 | **Formats**   | ELF · PE/COFF · Mach-O                                          |
 | **Libc**      | glibc · musl (`--sysroot`) · msvcrt · libSystem                 |
-| **Modes**     | compile+link · `-c` · `-run` (JIT, no `a.out`) · `libmcc` C API |
+| **Modes**     | compile+link · `-c` · `-S` (asm listing) · `-run` (JIT, no `a.out`) · `libmcc` C API |
 | **Speed**     | single-pass (~100× faster to compile than `gcc -O2`)            |
-| **Size**      | ~1 MB self-contained binary                                     |
-| **Assembler** | integrated (`MCC_CONFIG_ASM`) · inline asm · `asm goto`         |
+| **Size**      | ~0.6 MB dynamic · ~1.3 MB static self-contained binary          |
+| **Assembler** | integrated (`MCC_CONFIG_ASM`) · inline asm · `asm goto` · `-S` via built-in disassembler (x86_64) |
 | **Safety**    | optional bounds checker (`-b`) and backtraces (`-bt`)           |
 | **Cross**     | `mcc-<arch>` compilers via `MCC_ENABLE_CROSS`                   |
 
@@ -90,6 +90,15 @@ The developer presets above are the ones you'll use by hand; CI/dist presets
 drive the workflows + docker runners. See [BUILD.md §2](BUILD.md) for the full
 preset catalog and naming conventions.
 
+**Linux status (2026-07, gcc 15.3 / clang 22):** every Linux preset is green —
+`debug`, `release`, `asan`, `diagnostics`, `cross`, `matrix` (gcc/clang ×
+native/cross superbuild), all 15 `linux-*` CI presets, both `dist-linux-*`
+packagings, and the full `qemu` cross×libc matrix. Each test-bearing preset
+passes its complete suite (37/37 portable tests; 22/22 in the qemu matrix,
+all 5 arches × glibc+musl + `qemu-arm64-osx`). With the `cross` toolchain
+built (`MCC_CROSS_DIR`, default `cmake-build-cross`), the wine PE-conformance
+and the four host-runnable Mach-O drivers run natively and pass too.
+
 or, CMake (without presets):
 
 ```sh
@@ -144,6 +153,7 @@ gives `libmcc-static.a`; building both gives `libmcc-static.a` +
 mcc hello.c -o hello          # compile + link
 mcc -run hello.c              # compile and run in memory
 mcc -c file.c -o file.o       # object only
+mcc -S file.c                 # AT&T assembly listing (file.s)
 
 # cross-compile against a sysroot (glibc or musl), then run under qemu-user:
 mcc-arm64 --sysroot=/path/to/rootfs hello.c -o hello   # or mcc-arm64-musl
@@ -164,7 +174,9 @@ ctest --test-dir cmake-build-debug
 |---|---|
 | `tests/exec/`        | Golden run-and-diff, by topic (statements, expressions, types, structs, preprocessor, …) |
 | `tests/preprocess/`  | `-E` preprocessor-only (expansion, pasting, variadic, …) |
-| `tests/diff/`        | Differential vs. a reference compiler (`full_language.c`) |
+| `tests/diff/`        | Differential vs. a reference compiler (`full_language.c` + per-unit `parts/` wrappers) |
+| `tests/diff3/`       | Three-way differential (mcc vs. gcc **and** clang) over the exec corpus |
+| `tests/cli/`         | Driver/CLI cases (`cases.h`): flags, diagnostics, `readelf`/`nm` structural checks |
 | `tests/embed/`       | `libmcc` embedding API (single- and multi-threaded) |
 | `tests/diagnostics/` | Expected errors/warnings |
 | `tests/asm/`         | Standalone assembler / asm↔C linkage |
@@ -182,16 +194,18 @@ failure), `—` = not applicable.
 | `mcctest` / `mcctest-bcheck`¹         | P | P | P | P | P | P |
 | `preprocess-suite`²                   | P | P | P | P | P | P |
 | `diff3-suite`²                        | P | P | P | P | P | P |
+| `parts-suite`² (per-unit 3-way diff)⁹ | S | S | S | P | P | P |
 | `cli-suite` (readelf/nm structural)³  | P | P | P | P | P | P |
 | `libtest` / `-extra` / `-mt`, `abitest-cc` | P | P | P | P | P | P |
 | `hello-run` / `hello-exe`, `vla_test-run`  | P | P | P | P | P | P |
 | `compile.*` (orphan `-c`)⁴            | P | P | P | P | P | P |
 | `asm-c-connect-test`                  | P | P | P | P | P | S |
+| `dash-s-roundtrip` (`-S` → asm → run)¹⁰ | P | P | P | P | P | S |
 | `asm-gas-directives`⁵                 | S | S | S | S | S | S |
 | `i386-fastcall-abi`⁶                  | S | S | S | P | P | S |
 | `compile.win32.*` / `pe-native-conformance` | P | P | P | — | — | S |
-| `pe-wine-conformance` (label `wine`)  | S | S | S | P | P | S |
-| `macho-*` (5 drivers, label `macho`)⁷ | S | S | S | P | P | P |
+| `pe-wine-conformance` (label `wine`)⁷ | S | S | S | P | P | S |
+| `macho-*` (6 drivers, label `macho`)⁷ | S | S | S | P | P | P |
 | qemu cross×libc matrix (label `qemu`)⁸| S | S | S | P | P | S |
 
 ¹ Differential vs. a GCC-compatible reference cc (needs the integrated
@@ -205,28 +219,39 @@ self-skip on a PE target.
 ⁴ X11 example (`compile.ex4`) skips when `<X11/Xlib.h>` is absent.
 ⁵ Always skipped: integrated assembler lacks a few GAS encodings
 (`sgdtq`/`sidtq`/`swapgs`).
-⁶ Needs an ELF-emitting 32-bit reference cc; skips on Windows (mingw `gcc`
-emits PE/COFF).
-⁷ Linux: four host-runnable drivers pass (`macho-structural`,
-`macho-codegen-run`, `macho-image-run`, `macho-apple-libc`),
-`macho-conformance-native` skips (needs Darwin/darling). macOS:
+⁶ Needs the i386 cross compiler (`mcc-i386`, preset `cross`) + an ELF-emitting
+32-bit reference cc; skips on Windows (mingw `gcc` emits PE/COFF).
+⁷ Both need the cross toolchain (preset `cross`, or a populated
+`MCC_CROSS_DIR` — default `cmake-build-cross`): wine + the win32 cross
+compilers for `pe-wine-conformance`; the osx cross compilers +
+`llvm-otool`/`otool` for the Mach-O drivers. Linux: four host-runnable drivers
+pass (`macho-structural`, `macho-codegen-run`, `macho-image-run`,
+`macho-apple-libc`); `macho-conformance-native` and
+`macho-libsystem-kernel-fused` skip (need Darwin/darling). macOS:
 `macho-structural` + `macho-conformance-native` are native; Linux-approximation
 drivers self-skip off x86_64.
 ⁸ Windows runs it via the Docker runner; a Linux host with `qemu-user` runs it
 natively (`ctest -L qemu`).
+⁹ Native 3-way per-unit differential of each `tests/diff/parts/run_*.c`
+wrapper; needs a shared C99 libc across gcc/clang/mcc, so the PE/msvcrt
+target skips (the same units are covered in aggregate by `mcctest`).
+¹⁰ Hermetic `mcc -S` → mcc's own assembler → mcc link → run, byte-identical
+to the direct build; needs x86_64 + the integrated assembler (skips on arm64
+macOS).
 
 ### Compile speed & footprint
 
 Compiling `mcc`'s own whole-compiler TU (`src/mcc.c`, `ONE_SOURCE=1`) to an
-object, best of 3. Static `mcc` binary ≈ **1.3 MB**.
+object, best of 3 (gcc 15.3 / clang 22, 2026-07). Stripped release binaries:
+dynamic `mcc` ≈ **0.6 MB**, `mcc-static` ≈ **1.3 MB**.
 
 | Compiler | Time | vs mcc |
 |---|--:|--:|
 | **mcc**       | **0.05 s** | 1× |
-| clang `-O0`   | 0.31 s | 6× slower |
-| gcc `-O0`     | 0.83 s | 17× slower |
-| clang `-O2`   | 4.69 s | 94× slower |
-| gcc `-O2`     | 5.58 s | 112× slower |
+| clang `-O0`   | 0.36 s | 7× slower |
+| gcc `-O0`     | 0.97 s | 19× slower |
+| clang `-O2`   | 5.40 s | 108× slower |
+| gcc `-O2`     | 7.03 s | 141× slower |
 
 ## Cross-target × libc matrix (qemu-user)
 
