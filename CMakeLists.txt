@@ -869,6 +869,12 @@ if(_is_matrix AND NOT MCC_SUPERBUILD_CHILD)
             if(NOT "${CMAKE_BUILD_TYPE}" STREQUAL "")
                 list(APPEND _cargs "-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}")
             endif()
+            if(NOT CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+                # Cells must bake the superbuild's install prefix at configure
+                # time (the mcc runtime dir installs to an absolute path);
+                # left alone each cell defaults to its private <cell>/install.
+                list(APPEND _cargs "-DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}")
+            endif()
             if(NOT _cc STREQUAL "" AND NOT _cell_is_msvc)
                 list(APPEND _cargs "-DCMAKE_C_COMPILER=${_cc}")
             endif()
@@ -916,6 +922,20 @@ if(_is_matrix AND NOT MCC_SUPERBUILD_CHILD)
                     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/${_cell}"
                     DEPENDEES build ALWAYS ON USES_TERMINAL ON)
             endif()
+            # `cmake --install <superbuild-dir>` dispatches into each cell
+            # (the ExternalProject install step itself is disabled). Cells
+            # install to the prefix baked at configure time; a --prefix given
+            # at install time cannot re-root the absolute destinations.
+            set(_cell_cfg "")
+            if(NOT "${CMAKE_BUILD_TYPE}" STREQUAL "")
+                set(_cell_cfg " --config ${CMAKE_BUILD_TYPE}")
+            endif()
+            install(CODE "
+                execute_process(COMMAND \"${CMAKE_COMMAND}\" --install \"${CMAKE_BINARY_DIR}/${_cell}\"${_cell_cfg}
+                                RESULT_VARIABLE _rc)
+                if(_rc)
+                    message(FATAL_ERROR \"mcc superbuild: install of cell ${_cell} failed (\${_rc})\")
+                endif()")
             list(APPEND _this_stage ${_cell})
         endforeach()
         set(_prev_stage "${_this_stage}")
