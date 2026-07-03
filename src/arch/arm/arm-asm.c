@@ -2589,14 +2589,6 @@ static inline int constraint_priority(const char *str)
     return priority;
 }
 
-static const char *skip_constraint_modifiers(const char *p)
-{
-
-    while (*p == '=' || *p == '&' || *p == '+' || *p == '%')
-        p++;
-    return p;
-}
-
 #define REG_OUT_MASK 0x01
 #define REG_IN_MASK  0x02
 

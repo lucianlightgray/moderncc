@@ -212,6 +212,19 @@ PUB_FUNC void *mcc_realloc(void *ptr, unsigned long size)
     return reallocator(ptr, size);
 }
 
+/* Doubling-growth capacity policy shared by the dynamic buffers (cstr_realloc,
+   section_realloc): return the smallest cur*2^k that is >= need, never below
+   min_cap. Pure computation — the caller does the actual realloc. */
+ST_FUNC unsigned long mcc_grow_capacity(unsigned long cur, unsigned long need,
+                                        unsigned long min_cap)
+{
+    if (cur < min_cap)
+        cur = min_cap;
+    while (cur < need)
+        cur = cur * 2;
+    return cur;
+}
+
 PUB_FUNC void *mcc_mallocz(unsigned long size)
 {
     void *ptr;

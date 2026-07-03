@@ -1144,13 +1144,6 @@ static inline int constraint_priority(const char *str)
     return priority;
 }
 
-static const char *skip_constraint_modifiers(const char *p)
-{
-    while (*p == '=' || *p == '&' || *p == '+' || *p == '%')
-        p++;
-    return p;
-}
-
 ST_FUNC int asm_parse_regvar (int t)
 {
     const char *s;

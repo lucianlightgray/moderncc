@@ -47,7 +47,7 @@ static int stage_cb(const char *path, int is_dir, void *ud)
     const char *base = strrchr(path, '/');
     char dstpath[8192];
     base = base ? base + 1 : path;
-    snprintf(dstpath, sizeof dstpath, "%s/%s", c->dst, base);
+    ts_path(dstpath, sizeof dstpath, c->dst, "%s", base);
     if (is_dir) {
         struct stagectx nc;
         if (excluded(base))
@@ -128,24 +128,22 @@ static int do_run_preset(int argc, char **argv)
     snprintf(jflag, sizeof jflag, "-j%d", jobs > 0 ? jobs : 1);
 
     /* configure */
-    { const char *a[8]; int n = 0;
-      a[n++] = "cmake"; a[n++] = "--preset"; a[n++] = preset;
-      if (out) { snprintf(prefix, sizeof prefix, "-DCMAKE_INSTALL_PREFIX=%s", out); a[n++] = prefix; }
-      a[n] = 0;
+    { Argv v = {{0}, 0};
+      ts_arg(&v, "cmake"); ts_arg(&v, "--preset"); ts_arg(&v, preset);
+      if (out) { snprintf(prefix, sizeof prefix, "-DCMAKE_INSTALL_PREFIX=%s", out); ts_arg(&v, prefix); }
       printf("==> configuring (preset=%s)\n", preset);
-      if (ts_run(a)) return 1;
+      if (ts_run(ts_argz(&v))) return 1;
     }
     /* build */
     { const char *a[] = { "cmake", "--build", "--preset", preset, jflag, 0 };
       printf("==> building (%s)\n", jflag);
       if (ts_run(a)) return 1; }
     /* test (+ any pass-through ctest args after --) */
-    { const char *a[64]; int n = 0;
-      a[n++] = "ctest"; a[n++] = "--preset"; a[n++] = preset; a[n++] = jflag;
-      for (i = extra_start; i < argc && n < 63; i++) a[n++] = argv[i];
-      a[n] = 0;
+    { Argv v = {{0}, 0};
+      ts_arg(&v, "ctest"); ts_arg(&v, "--preset"); ts_arg(&v, preset); ts_arg(&v, jflag);
+      for (i = extra_start; i < argc; i++) ts_arg(&v, argv[i]);
       printf("==> testing (preset=%s)\n", preset);
-      if (ts_run(a)) return 1; }
+      if (ts_run(ts_argz(&v))) return 1; }
     /* install */
     if (out) {
         snprintf(instdir, sizeof instdir, "cmake-build-%s", preset);

@@ -21,6 +21,44 @@ int ts_run(const char *const *argv)
     return host_spawn_wait(argv);
 }
 
+/* argv builder (shared; see toolsupport.h).  Overflow is a programming error in
+   these bounded build/test tools, so it aborts rather than silently truncating. */
+void ts_arg(Argv *v, const char *s)
+{
+    if (v->n >= TS_ARGV_MAX - 1) {
+        fprintf(stderr, "ts_arg: argv overflow (>%d)\n", TS_ARGV_MAX - 1);
+        exit(2);
+    }
+    v->a[v->n++] = s;
+}
+
+void ts_args(Argv *v, const char *const *set)
+{
+    int i;
+    for (i = 0; set[i]; ++i)
+        ts_arg(v, set[i]);
+}
+
+const char *const *ts_argz(Argv *v)
+{
+    v->a[v->n] = 0;
+    return v->a;
+}
+
+int ts_path(char *dst, size_t n, const char *dir, const char *fmt, ...)
+{
+    va_list ap;
+    int k;
+
+    k = snprintf(dst, n, "%s/", dir);
+    if (k < 0 || (size_t)k >= n)
+        return k;                       /* dir alone overflowed: leave as-is */
+    va_start(ap, fmt);
+    vsnprintf(dst + k, n - (size_t)k, fmt, ap);
+    va_end(ap);
+    return k;
+}
+
 /* shell-style match of one path segment (no '/'): '*', '?', '[...]' */
 int ts_fnmatch(const char *p, const char *s)
 {

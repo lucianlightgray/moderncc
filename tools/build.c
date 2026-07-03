@@ -27,10 +27,11 @@ static const char *ARCH_INCS[] = {
 };
 
 /* small fixed-capacity argv builder */
-typedef struct { const char *a[128]; int n; } Argv;
-static void arg(Argv *v, const char *s) { v->a[v->n++] = s; }
-static void args(Argv *v, const char *const *set) { int i; for (i = 0; set[i]; ++i) arg(v, set[i]); }
-static const char *const *argz(Argv *v) { v->a[v->n] = 0; return v->a; }
+/* Argv + argv builder now live in toolsupport.h; arg/args/argz are the local
+   spelling that build.c already used throughout. */
+static void arg(Argv *v, const char *s) { ts_arg(v, s); }
+static void args(Argv *v, const char *const *set) { ts_args(v, set); }
+static const char *const *argz(Argv *v) { return ts_argz(v); }
 
 /* config -> target define (the seed of _mccdefs' CPU map, catalog #8): the one
    place the CPU name becomes an MCC_TARGET_* define. */
@@ -221,10 +222,10 @@ static void obj_src(const char *obj, char *buf, int bsz)
 static int ensure_mccdefs(const char *out)
 {
     char hdr[4096], c2s[4096], src[4096]; int isd;
-    snprintf(hdr, sizeof hdr, "%s/mccdefs_.h", out);
+    ts_path(hdr, sizeof hdr, out, "mccdefs_.h");
     if (host_stat(hdr, &isd, NULL, NULL) == 0)
         return 0;                                  /* already generated */
-    snprintf(c2s, sizeof c2s, "%s/c2str_host", out);
+    ts_path(c2s, sizeof c2s, out, "c2str_host");
     { const char *a[] = { CC, "-O2", "-o", c2s, "tools/c2str.c", 0 };
       if (ts_run(a)) return 1; }
     snprintf(src, sizeof src, "runtime/include/mccdefs.h");
@@ -247,8 +248,8 @@ static int cmd_cross(const char *name, const char *out)
     if (host_mkdirs(out)) return 1;
     if (ensure_mccdefs(out)) return 1;
     snprintf(Iout, sizeof Iout, "-I%s", out);
-    snprintf(mccpath, sizeof mccpath, "%s/mcc-%s", out, name);
-    snprintf(archive, sizeof archive, "%s/%s-libmcc1.a", out, name);
+    ts_path(mccpath, sizeof mccpath, out, "mcc-%s", name);
+    ts_path(archive, sizeof archive, out, "%s-libmcc1.a", name);
 
     printf("[cross %s] cc src/mcc.c -> mcc-%s\n", name, name);
     v.n = 0;
@@ -287,7 +288,7 @@ static int cmd_cross(const char *name, const char *out)
         for (i = 0; i < nobj; ++i) {
             char Iout[4096];
             obj_src(objs[i], srcs[i], sizeof srcs[i]);
-            snprintf(objpaths[i], sizeof objpaths[i], "%s/%s-%s.o", out, name, objs[i]);
+            ts_path(objpaths[i], sizeof objpaths[i], out, "%s-%s.o", name, objs[i]);
             snprintf(Iout, sizeof Iout, "-I%s", out);
             v.n = 0;
             arg(&v, mccpath); arg(&v, barg);
@@ -483,7 +484,7 @@ int main(int argc, char **argv)
 
     {
         char inc[4096];
-        snprintf(inc, sizeof inc, "%s/include", OUTDIR);
+        ts_path(inc, sizeof inc, OUTDIR, "include");
         if (host_mkdirs(inc)) { fprintf(stderr, "build: mkdir %s failed\n", inc); return 1; }
     }
 
@@ -500,7 +501,7 @@ int main(int argc, char **argv)
     snprintf(defs[6], sizeof defs[6], "-DCONFIG_MCC_LIBPATHS=\"{B}:/usr/lib64:/usr/lib:/lib\"");
     snprintf(defs[7], sizeof defs[7], "-DCONFIG_MCC_CRTPREFIX=\"/usr/lib64:/usr/lib:/lib\"");
     snprintf(defs[8], sizeof defs[8], "-DCONFIG_OS_RELEASE=\"%s\"", osrel);
-    snprintf(mccpath, sizeof mccpath, "%s/mcc", OUTDIR);
+    ts_path(mccpath, sizeof mccpath, OUTDIR, "mcc");
 
     v.n = 0;
     arg(&v, CC); arg(&v, "-O2"); arg(&v, "-DONE_SOURCE=1");
@@ -521,7 +522,7 @@ int main(int argc, char **argv)
             char dst[4096];
             const char *b = strrchr(hdrs[i], '/');
             b = b ? b + 1 : hdrs[i];
-            snprintf(dst, sizeof dst, "%s/include/%s", OUTDIR, b);
+            ts_path(dst, sizeof dst, OUTDIR, "include/%s", b);
             if (host_copy_file(hdrs[i], dst, 0)) {
                 fprintf(stderr, "build: copy %s failed\n", hdrs[i]);
                 return 1;
@@ -539,11 +540,11 @@ int main(int argc, char **argv)
         ar.n = 0; arg(&ar, mccpath); arg(&ar, "-ar");
         {
             static char lib[4096];
-            snprintf(lib, sizeof lib, "%s/libmcc1.a", OUTDIR);
+            ts_path(lib, sizeof lib, OUTDIR, "libmcc1.a");
             arg(&ar, lib);
         }
         for (i = 0; RT_OBJS[i]; ++i) {
-            snprintf(objpaths[i], sizeof objpaths[i], "%s/%s.o", OUTDIR, RT_OBJS[i]);
+            ts_path(objpaths[i], sizeof objpaths[i], OUTDIR, "%s.o", RT_OBJS[i]);
             snprintf(srcpath, sizeof srcpath, "runtime/lib/%s.c", RT_OBJS[i]);
             v.n = 0;
             arg(&v, mccpath); arg(&v, barg); arg(&v, "-c"); arg(&v, srcpath);
@@ -559,7 +560,7 @@ int main(int argc, char **argv)
     {
         char barg[4096], bco[4096];
         snprintf(barg, sizeof barg, "-B%s", OUTDIR);
-        snprintf(bco, sizeof bco, "%s/bcheck.o", OUTDIR);
+        ts_path(bco, sizeof bco, OUTDIR, "bcheck.o");
         v.n = 0;
         arg(&v, mccpath); arg(&v, barg); arg(&v, "-c"); arg(&v, "runtime/lib/bcheck.c");
         arg(&v, "-o"); arg(&v, bco); arg(&v, "-bt"); arg(&v, "-Iruntime/include");
@@ -571,7 +572,7 @@ int main(int argc, char **argv)
             char src[3][4096], obj[3][4096];
             for (i = 0; bt[i]; ++i) {
                 snprintf(src[i], sizeof src[i], "runtime/lib/%s.c", bt[i]);
-                snprintf(obj[i], sizeof obj[i], "%s/%s.o", OUTDIR, bt[i]);
+                ts_path(obj[i], sizeof obj[i], OUTDIR, "%s.o", bt[i]);
                 v.n = 0;
                 arg(&v, mccpath); arg(&v, barg); arg(&v, "-c"); arg(&v, src[i]);
                 arg(&v, "-o"); arg(&v, obj[i]); arg(&v, "-Iruntime/include");
@@ -588,8 +589,8 @@ int main(int argc, char **argv)
         FILE *h;
         printf("\n[smoke] compile + run a hello program\n");
         snprintf(barg, sizeof barg, "-B%s", OUTDIR);
-        snprintf(hello, sizeof hello, "%s/_bld_hello.c", OUTDIR);
-        snprintf(helloexe, sizeof helloexe, "%s/_bld_hello", OUTDIR);
+        ts_path(hello, sizeof hello, OUTDIR, "_bld_hello.c");
+        ts_path(helloexe, sizeof helloexe, OUTDIR, "_bld_hello");
         h = fopen(hello, "w");
         if (!h) { fprintf(stderr, "build: cannot write %s\n", hello); return 1; }
         fputs("#include <stdio.h>\nint main(){printf(\"build.c ok: %d\\n\",6*7);return 0;}\n", h);

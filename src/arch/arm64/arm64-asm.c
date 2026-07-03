@@ -845,13 +845,6 @@ static inline int constraint_priority(const char *str)
     return priority;
 }
 
-static const char *skip_constraint_modifiers(const char *p)
-{
-    while (*p == '=' || *p == '&' || *p == '+' || *p == '%')
-        p++;
-    return p;
-}
-
 static int is_valid_add_imm(int64_t val)
 {
     return val >= 0 && val <= 4095;
