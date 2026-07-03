@@ -719,6 +719,9 @@ ST_FUNC MAYBE_UNUSED int host_nproc(void)
 }
 
 /* uname(2) facts, host-normalized (see mcchost.h) */
+#if defined _WIN32 && !defined PROCESSOR_ARCHITECTURE_ARM64
+# define PROCESSOR_ARCHITECTURE_ARM64 12   /* absent from older SDKs (and mcc's own winapi headers) */
+#endif
 ST_FUNC MAYBE_UNUSED void host_sys_info(char *sysname, int ssz, char *release, int rsz,
                                         char *machine, int msz)
 {
