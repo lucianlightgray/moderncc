@@ -10,10 +10,9 @@
  *  This is the seed for PLAN Phase 4 (generalize into a full mccbuild).
  */
 #include "toolsupport.h"
-#include <sys/utsname.h>
 
 static const char *CC  = "cc";
-static const char *OUT = "build-c";
+static const char *OUTDIR = "build-c";
 
 static const char *RT_OBJS[] = {
     "libmcc1", "alloca", "alloca-bt", "atomic", "stdatomic", "builtin",
@@ -126,7 +125,7 @@ static void detect_arm(char *eabi, char *vfp, char *hard, char *idiv, char *cpuv
 
 static int cmd_detect(int argc, char **argv)
 {
-    struct utsname u;
+    char sysname[64], machine[64];
     const char *cpu, *os;
     char triplet[256], dm[256] = "", *v = NULL, *e = NULL, *nl;
     char eabi = 0, vfp = 0, hard = 0, idiv = 0, cpuver[8] = "", libc[16] = "";
@@ -135,10 +134,10 @@ static int cmd_detect(int argc, char **argv)
     const char *xtri = fopt(argc, argv, "--expect-triplet", NULL);
     int bad = 0;
 
-    uname(&u);
-    cpu = map_cpu(u.machine);
-    if (!cpu) { fprintf(stderr, "detect: unsupported CPU '%s'\n", u.machine); return 2; }
-    os = u.sysname;                                   /* Linux/Darwin/FreeBSD/... */
+    host_sys_info(sysname, sizeof sysname, NULL, 0, machine, sizeof machine);
+    cpu = map_cpu(machine);
+    if (!cpu) { fprintf(stderr, "detect: unsupported CPU '%s'\n", machine); return 2; }
+    os = sysname;                                /* Linux/Darwin/WIN32/FreeBSD/... */
     detect_triplet(triplet, sizeof triplet);
     { const char *a[] = { CC, "-dumpmachine", 0 }; HostSpawnOpts o; memset(&o,0,sizeof o); o.stdout_buf=&v; o.stderr_buf=&e;
       if (host_spawn_ex(a,&o)==0 && v) { snprintf(dm,sizeof dm,"%s",v); if ((nl=strchr(dm,'\n')))*nl=0; } free(v); free(e); }
@@ -273,7 +272,9 @@ static int cmd_cross(const char *name, const char *out)
     }
     arg(&v, Iout); args(&v, ARCH_INCS);
     arg(&v, "-o"); arg(&v, mccpath); arg(&v, "src/mcc.c");
-    arg(&v, "-lm"); arg(&v, "-ldl"); arg(&v, "-lpthread");
+    if (MCC_HOST_POSIX) {   /* mingw: m is in the CRT, no libdl, no -lpthread needed */
+        arg(&v, "-lm"); arg(&v, "-ldl"); arg(&v, "-lpthread");
+    }
     if (ts_run(argz(&v))) return 1;
 
     printf("[cross %s] mcc-%s -> %s-libmcc1.a\n", name, name, name);
@@ -409,7 +410,7 @@ static int cmd_emit_defines(int argc, char **argv)
 int main(int argc, char **argv)
 {
     int do_run = 0, i;
-    struct utsname u;
+    char osrel[128];
     if (argc > 1 && !strcmp(argv[1], "--emit-defines")) return cmd_emit_defines(argc, argv);
     if (argc > 1 && !strcmp(argv[1], "--detect")) {
         const char *ecc = getenv("CC");
@@ -444,7 +445,7 @@ int main(int argc, char **argv)
     if (envcc && *envcc) CC = envcc;
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--cc") && i + 1 < argc) CC = argv[++i];
-        else if (!strcmp(argv[i], "--out") && i + 1 < argc) OUT = argv[++i];
+        else if (!strcmp(argv[i], "--out") && i + 1 < argc) OUTDIR = argv[++i];
         else if (!strcmp(argv[i], "--target") && i + 1 < argc) snprintf(target, sizeof target, "%s", argv[++i]);
         else if (!strcmp(argv[i], "--run")) do_run = 1;
         else if (!strcmp(argv[i], "--githash")) {
@@ -455,14 +456,14 @@ int main(int argc, char **argv)
         else { fprintf(stderr, "usage: build [--cc <cc>] [--out <dir>] [--target <cpu>] [--run] [--githash]\n"); return 2; }
     }
 
-    uname(&u);
+    host_sys_info(NULL, 0, osrel, sizeof osrel, NULL, 0);
     {   /* probe the toolchain (catalog #2) and stamp the tree (catalog #7) */
         char mach[128] = "?", stamp[256] = "";
         ts_cc_probe(CC, mach, sizeof mach, NULL, 0);
         if (!*target) cpu_from_machine(mach, target, sizeof target);   /* default: host CPU */
         ts_git_stamp(stamp, sizeof stamp);
         printf("build: cc=%s out=%s target=%s host=%s (%s) %s\n",
-               CC, OUT, target, mach, u.release, stamp);
+               CC, OUTDIR, target, mach, osrel, stamp);
     }
     if (!(tdef = target_define(target))) {
         fprintf(stderr, "build: unsupported target cpu '%s'\n", target);
@@ -482,7 +483,7 @@ int main(int argc, char **argv)
 
     {
         char inc[4096];
-        snprintf(inc, sizeof inc, "%s/include", OUT);
+        snprintf(inc, sizeof inc, "%s/include", OUTDIR);
         if (host_mkdirs(inc)) { fprintf(stderr, "build: mkdir %s failed\n", inc); return 1; }
     }
 
@@ -493,20 +494,22 @@ int main(int argc, char **argv)
     snprintf(defs[2], sizeof defs[2], "-DCONFIG_MCC_BACKTRACE=1");
     snprintf(defs[3], sizeof defs[3], "-DCONFIG_MCC_BCHECK=1");
     snprintf(defs[4], sizeof defs[4], "-DMCC_VERSION=\"1.0.0\"");
-    snprintf(defs[5], sizeof defs[5], "-DCONFIG_MCCDIR=\"%s\"", OUT);
+    snprintf(defs[5], sizeof defs[5], "-DCONFIG_MCCDIR=\"%s\"", OUTDIR);
     /* each -D is one argv element; the embedded quotes make the value a C
        string literal (the shell used to supply them, cf. the old '\"%s\"') */
     snprintf(defs[6], sizeof defs[6], "-DCONFIG_MCC_LIBPATHS=\"{B}:/usr/lib64:/usr/lib:/lib\"");
     snprintf(defs[7], sizeof defs[7], "-DCONFIG_MCC_CRTPREFIX=\"/usr/lib64:/usr/lib:/lib\"");
-    snprintf(defs[8], sizeof defs[8], "-DCONFIG_OS_RELEASE=\"%s\"", u.release);
-    snprintf(mccpath, sizeof mccpath, "%s/mcc", OUT);
+    snprintf(defs[8], sizeof defs[8], "-DCONFIG_OS_RELEASE=\"%s\"", osrel);
+    snprintf(mccpath, sizeof mccpath, "%s/mcc", OUTDIR);
 
     v.n = 0;
     arg(&v, CC); arg(&v, "-O2"); arg(&v, "-DONE_SOURCE=1");
     for (i = 0; i < 9; ++i) arg(&v, defs[i]);
     args(&v, ARCH_INCS);
     arg(&v, "-o"); arg(&v, mccpath); arg(&v, "src/mcc.c");
-    arg(&v, "-lm"); arg(&v, "-ldl"); arg(&v, "-lpthread");
+    if (MCC_HOST_POSIX) {   /* mingw: m is in the CRT, no libdl, no -lpthread needed */
+        arg(&v, "-lm"); arg(&v, "-ldl"); arg(&v, "-lpthread");
+    }
     if (ts_run(argz(&v))) return 1;
 
     /* [2/3] stage runtime headers */
@@ -518,7 +521,7 @@ int main(int argc, char **argv)
             char dst[4096];
             const char *b = strrchr(hdrs[i], '/');
             b = b ? b + 1 : hdrs[i];
-            snprintf(dst, sizeof dst, "%s/include/%s", OUT, b);
+            snprintf(dst, sizeof dst, "%s/include/%s", OUTDIR, b);
             if (host_copy_file(hdrs[i], dst, 0)) {
                 fprintf(stderr, "build: copy %s failed\n", hdrs[i]);
                 return 1;
@@ -532,15 +535,15 @@ int main(int argc, char **argv)
     {
         char barg[4096], objpaths[9][4096], srcpath[4096];
         Argv ar;
-        snprintf(barg, sizeof barg, "-B%s", OUT);
+        snprintf(barg, sizeof barg, "-B%s", OUTDIR);
         ar.n = 0; arg(&ar, mccpath); arg(&ar, "-ar");
         {
             static char lib[4096];
-            snprintf(lib, sizeof lib, "%s/libmcc1.a", OUT);
+            snprintf(lib, sizeof lib, "%s/libmcc1.a", OUTDIR);
             arg(&ar, lib);
         }
         for (i = 0; RT_OBJS[i]; ++i) {
-            snprintf(objpaths[i], sizeof objpaths[i], "%s/%s.o", OUT, RT_OBJS[i]);
+            snprintf(objpaths[i], sizeof objpaths[i], "%s/%s.o", OUTDIR, RT_OBJS[i]);
             snprintf(srcpath, sizeof srcpath, "runtime/lib/%s.c", RT_OBJS[i]);
             v.n = 0;
             arg(&v, mccpath); arg(&v, barg); arg(&v, "-c"); arg(&v, srcpath);
@@ -555,8 +558,8 @@ int main(int argc, char **argv)
     printf("      + bcheck/backtrace runtime objects\n");
     {
         char barg[4096], bco[4096];
-        snprintf(barg, sizeof barg, "-B%s", OUT);
-        snprintf(bco, sizeof bco, "%s/bcheck.o", OUT);
+        snprintf(barg, sizeof barg, "-B%s", OUTDIR);
+        snprintf(bco, sizeof bco, "%s/bcheck.o", OUTDIR);
         v.n = 0;
         arg(&v, mccpath); arg(&v, barg); arg(&v, "-c"); arg(&v, "runtime/lib/bcheck.c");
         arg(&v, "-o"); arg(&v, bco); arg(&v, "-bt"); arg(&v, "-Iruntime/include");
@@ -568,7 +571,7 @@ int main(int argc, char **argv)
             char src[3][4096], obj[3][4096];
             for (i = 0; bt[i]; ++i) {
                 snprintf(src[i], sizeof src[i], "runtime/lib/%s.c", bt[i]);
-                snprintf(obj[i], sizeof obj[i], "%s/%s.o", OUT, bt[i]);
+                snprintf(obj[i], sizeof obj[i], "%s/%s.o", OUTDIR, bt[i]);
                 v.n = 0;
                 arg(&v, mccpath); arg(&v, barg); arg(&v, "-c"); arg(&v, src[i]);
                 arg(&v, "-o"); arg(&v, obj[i]); arg(&v, "-Iruntime/include");
@@ -578,15 +581,15 @@ int main(int argc, char **argv)
         }
     }
 
-    printf("\nbuild: done -- %s/mcc (use: %s/mcc -B%s <file.c>)\n", OUT, OUT, OUT);
+    printf("\nbuild: done -- %s/mcc (use: %s/mcc -B%s <file.c>)\n", OUTDIR, OUTDIR, OUTDIR);
 
     if (do_run) {
         char barg[4096], hello[4096], helloexe[4096];
         FILE *h;
         printf("\n[smoke] compile + run a hello program\n");
-        snprintf(barg, sizeof barg, "-B%s", OUT);
-        snprintf(hello, sizeof hello, "%s/_bld_hello.c", OUT);
-        snprintf(helloexe, sizeof helloexe, "%s/_bld_hello", OUT);
+        snprintf(barg, sizeof barg, "-B%s", OUTDIR);
+        snprintf(hello, sizeof hello, "%s/_bld_hello.c", OUTDIR);
+        snprintf(helloexe, sizeof helloexe, "%s/_bld_hello", OUTDIR);
         h = fopen(hello, "w");
         if (!h) { fprintf(stderr, "build: cannot write %s\n", hello); return 1; }
         fputs("#include <stdio.h>\nint main(){printf(\"build.c ok: %d\\n\",6*7);return 0;}\n", h);

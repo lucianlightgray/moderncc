@@ -25,9 +25,12 @@
 
 #ifdef _WIN32
 # include <process.h>
+# include <sys/stat.h>   /* _stat64, S_IFMT/S_IFDIR (host_stat) */
+# include <direct.h>     /* _mkdir (host_mkdirs) */
 #else
 # include <sys/stat.h>
 # include <sys/wait.h>
+# include <sys/utsname.h>
 # include <dirent.h>
 #endif
 
@@ -337,6 +340,28 @@ static char *host_slurp_fd(int fd)
 #pragma pop_macro("realloc")
 #pragma pop_macro("malloc")
 
+#ifdef _WIN32
+/* pipe drain for host_spawn_ex: stderr is read on its own thread so a child
+   that fills one pipe while the parent blocks on the other cannot deadlock
+   (both capture pipes drain concurrently) */
+struct host_pipe_read { HANDLE h; char *buf; size_t len; };
+static DWORD WINAPI host_pipe_read_thread(LPVOID ud)
+{
+    struct host_pipe_read *pr = ud;
+    char tmp[4096]; DWORD rd;
+    pr->buf = mcc_malloc(1);
+    pr->len = 0;
+    while (ReadFile(pr->h, tmp, sizeof tmp, &rd, NULL) && rd) {
+        char *nb = mcc_realloc(pr->buf, pr->len + rd + 1);
+        pr->buf = nb;
+        memcpy(pr->buf + pr->len, tmp, rd);
+        pr->len += rd;
+    }
+    pr->buf[pr->len] = 0;
+    return 0;
+}
+#endif
+
 /* build launcher-prefixed argv (o->launcher ++ argv), NULL-terminated;
    caller frees with mcc_free */
 static const char **host_build_argv(const char *const *argv, const HostSpawnOpts *o)
@@ -425,25 +450,28 @@ ST_FUNC MAYBE_UNUSED int host_spawn_ex(const char *const *argv, const HostSpawnO
         if (CreateProcessA(NULL, cmd, NULL, NULL, TRUE, 0, envblk,
                            o->cwd, &si, &pi)) {
             DWORD ec = 0;
+            struct host_pipe_read pre;
+            HANDLE terr = NULL;
             if (wpo) { CloseHandle(wpo); wpo = NULL; }
             if (wpe) { CloseHandle(wpe); wpe = NULL; }
-            if (o->stdout_buf) {
-                char *b = mcc_malloc(1); size_t cap = 1, ln = 0; DWORD rd;
-                char tmp[4096];
-                while (ReadFile(rpo, tmp, sizeof tmp, &rd, NULL) && rd) {
-                    char *nb = mcc_realloc(b, cap + rd); b = nb;
-                    memcpy(b + ln, tmp, rd); ln += rd; cap += rd;
-                }
-                b[ln] = 0; *o->stdout_buf = b;
+            if (o->stderr_buf) {          /* drain stderr concurrently */
+                pre.h = rpe;
+                terr = CreateThread(NULL, 0, host_pipe_read_thread, &pre, 0, NULL);
             }
-            if (o->stderr_buf) {
-                char *b = mcc_malloc(1); size_t cap = 1, ln = 0; DWORD rd;
-                char tmp[4096];
-                while (ReadFile(rpe, tmp, sizeof tmp, &rd, NULL) && rd) {
-                    char *nb = mcc_realloc(b, cap + rd); b = nb;
-                    memcpy(b + ln, tmp, rd); ln += rd; cap += rd;
-                }
-                b[ln] = 0; *o->stderr_buf = b;
+            if (o->stdout_buf) {
+                struct host_pipe_read pro;
+                pro.h = rpo;
+                host_pipe_read_thread(&pro);
+                *o->stdout_buf = pro.buf;
+            }
+            if (terr) {
+                WaitForSingleObject(terr, INFINITE);
+                CloseHandle(terr);
+                *o->stderr_buf = pre.buf;
+            } else if (o->stderr_buf) {
+                pre.h = rpe;
+                host_pipe_read_thread(&pre);
+                *o->stderr_buf = pre.buf;
             }
             WaitForSingleObject(pi.hProcess, INFINITE);
             GetExitCodeProcess(pi.hProcess, &ec);
@@ -687,6 +715,52 @@ ST_FUNC MAYBE_UNUSED int host_nproc(void)
     return n > 0 ? (int)n : 1;
 #else
     return 1;
+#endif
+}
+
+/* uname(2) facts, host-normalized (see mcchost.h) */
+ST_FUNC MAYBE_UNUSED void host_sys_info(char *sysname, int ssz, char *release, int rsz,
+                                        char *machine, int msz)
+{
+#ifdef _WIN32
+    if (sysname && ssz)
+        snprintf(sysname, ssz, "WIN32");
+    if (release && rsz) {
+        OSVERSIONINFOA vi;
+        memset(&vi, 0, sizeof vi);
+        vi.dwOSVersionInfoSize = sizeof vi;
+        if (GetVersionExA(&vi))
+            snprintf(release, rsz, "%lu.%lu.%lu", (unsigned long)vi.dwMajorVersion,
+                     (unsigned long)vi.dwMinorVersion, (unsigned long)vi.dwBuildNumber);
+        else
+            release[0] = 0;
+    }
+    if (machine && msz) {
+        SYSTEM_INFO si;
+        const char *m;
+        GetNativeSystemInfo(&si);
+        switch (si.wProcessorArchitecture) {
+        case PROCESSOR_ARCHITECTURE_AMD64: m = "AMD64"; break;
+        case PROCESSOR_ARCHITECTURE_ARM64: m = "ARM64"; break;
+        case PROCESSOR_ARCHITECTURE_INTEL: m = "x86";   break;
+        default:                           m = "?";     break;
+        }
+        snprintf(machine, msz, "%s", m);
+    }
+#else
+    struct utsname u;
+    if (uname(&u)) {
+        if (sysname && ssz) sysname[0] = 0;
+        if (release && rsz) release[0] = 0;
+        if (machine && msz) machine[0] = 0;
+        return;
+    }
+    if (sysname && ssz)
+        snprintf(sysname, ssz, "%s", u.sysname);
+    if (release && rsz)
+        snprintf(release, rsz, "%s", u.release);
+    if (machine && msz)
+        snprintf(machine, msz, "%s", u.machine);
 #endif
 }
 

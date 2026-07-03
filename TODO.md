@@ -160,3 +160,37 @@ had only been skip-gated). Both native host compilers, **100% green**:
 _Complete & verified: Phase 1, Phase 2, **Phase 3 (all 17 suites)**, **Phase 4 (catalog #1/#2/#3/#4/#7
 + #8 config→defines — all verified against the real native + cross toolchains)**, Phase 5 (core +
 ci.yml dist single-sourcing). Phase 6 skipped per PLAN 0.10._
+
+---
+## Windows host port (2026-07-03) ✅ DONE
+The phases above were implemented and verified on a Linux host; the tools were
+left gated `if(UNIX AND NOT CMAKE_CROSSCOMPILING)`, which **broke every Windows
+configure** (the WIN32-only `penative` suite references `$<TARGET_FILE:mccharness>`).
+All gates are lifted and the whole tool set now builds and verifies on Windows
+(mingw gcc 13.1 and MSVC 19.51):
+
+- ☑ `mcchost.c` Windows includes: `<sys/stat.h>`/`<direct.h>` were missing, so
+  `host_stat`/`host_mkdirs` broke **the compiler build itself** on WIN32.
+- ☑ `toolhost.h` prelude now supplies `toup` + `mcc_basename`, which
+  `mcchost.c`'s WIN32-only branches reference (never compiled on Linux).
+- ☑ `host_spawn_ex` WIN32: stderr capture pipe drains on its own thread — the
+  sequential read deadlocked `preprocess-suite` (clang's stderr filled the pipe
+  while the parent blocked reading stdout to EOF). POSIX keeps the documented
+  sequential read.
+- ☑ New `host_sys_info(sysname, release, machine)` primitive replaces
+  `build.c`'s raw `<sys/utsname.h>`; on WIN32 it yields the mcc OS token
+  (`WIN32`), `GetVersionExA` release, and the `AMD64`/`ARM64`/`x86` machine.
+- ☑ `build.c`: `OUT` renamed `OUTDIR` (collides with windows.h's SAL macro);
+  `-lm -ldl -lpthread` now `MCC_HOST_POSIX`-only (mingw has no libdl).
+- ☑ `strtok_r` → `strtok_s` shim for MSVC in `mcchost.h`'s `_MSC_VER` block.
+- ☑ `host-detect` ungated on WIN32 (detects WIN32/x86_64/empty-triplet,
+  matching CMake). `cross-factory` ungated and rewired to the resolved
+  reference cc (`_ref_cc`), so it runs under an MSVC host via mingw gcc;
+  verified end-to-end (mcc-x86_64 + x86_64-libmcc1.a built shell-free on
+  Windows).
+- ☑ `ci stage` verified on Windows: exclusion list honored, CRLF→LF checked
+  byte-level (416 CRLFs → 0). `ci matrix` / `git-stamp` / `def-verify` /
+  `build-md-nodes` / `config-defines` pass as ctests.
+- ☑ Suite green: `debug` **49/49** (14 reasoned skips), `msvc` **48/48**,
+  `dist-msvc` builds; Linux presets re-verified green in Docker (45/45 each)
+  after the shared-code changes — no regression.

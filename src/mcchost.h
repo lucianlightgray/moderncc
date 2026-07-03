@@ -98,6 +98,7 @@ extern long double strtold (const char *__nptr, char **__endptr);
 #  pragma warning (disable : 4146)
 #  include <sys/types.h>
 #  define ssize_t intptr_t
+#  define strtok_r strtok_s   /* same contract, MSVC spelling */
 #  ifdef _X86_
 #   define __i386__ 1
 #  endif
@@ -273,6 +274,11 @@ ST_FUNC int host_dir_walk(const char *dir, int recursive, host_walk_fn fn, void 
 ST_FUNC unsigned host_clock_ms(void);
 ST_FUNC char   **host_environ(void);
 ST_FUNC int      host_nproc(void);   /* online CPU count (>=1); the one probe */
+/* uname(2) facts, host-normalized: sysname uses mcc's OS tokens ("WIN32" on
+   Windows, else the kernel name), release is the kernel/OS version string,
+   machine is the raw hardware token.  Any output may be NULL. */
+ST_FUNC void     host_sys_info(char *sysname, int ssz, char *release, int rsz,
+                               char *machine, int msz);
 
 /* ------------------------------------------------------------------- */
 /* dynamic loading (CONFIG_MCC_STATIC builds get built-in-table stubs) */

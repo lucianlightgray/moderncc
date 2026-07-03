@@ -2707,7 +2707,7 @@ if(MCC_TARGETOS STREQUAL "WIN32")
         DESTINATION examples)
 endif()
 
-if(UNIX AND NOT CMAKE_CROSSCOMPILING)
+if(NOT CMAKE_CROSSCOMPILING)
     # mccbuild links the shared tool-support layer (toolsupport.c amalgamates
     # the host layer src/mcchost.c); no shell, no external cp/mkdir (PLAN 0.5)
     add_executable(mccbuild tools/build.c tools/toolsupport.c)
@@ -2733,7 +2733,7 @@ if(MCC_BUILD_TESTS)
 
     # One conformance/differential runner (PLAN 0.7) replacing the cmake -P
     # drivers of catalog #3.  Migrated suites so far: parts, mcctest.
-    if(UNIX AND NOT CMAKE_CROSSCOMPILING)
+    if(NOT CMAKE_CROSSCOMPILING)
         add_executable(mccharness tools/mccharness.c tools/toolsupport.c)
         target_link_libraries(mccharness ${CMAKE_DL_LIBS})
     endif()
@@ -2752,7 +2752,7 @@ if(MCC_BUILD_TESTS)
     # else (src/ and tools/) uses MCC_HOST_* or a host_* function.  Enforced by
     # the in-tree tool tools/hostgate.c (PLAN 0.6 #2), which tokenizes the
     # conditional so a macro named only in a string/comment never trips it.
-    if(UNIX AND NOT CMAKE_CROSSCOMPILING)
+    if(NOT CMAKE_CROSSCOMPILING)
         add_executable(hostgate tools/hostgate.c tools/toolsupport.c)
         target_link_libraries(hostgate ${CMAKE_DL_LIBS})
         add_test(NAME host-gate-invariant
@@ -3196,7 +3196,7 @@ if(MCC_BUILD_TESTS)
     add_executable(seccmp tests/support/seccmp.c)
     # The 3-spawn + seccmp roundtrip driver is the in-tree tool tools/dashsbytes.c
     # (PLAN 0.6 #3), replacing tests/asm/run_dash_s_bytes.cmake.
-    if(UNIX AND NOT CMAKE_CROSSCOMPILING)
+    if(NOT CMAKE_CROSSCOMPILING)
         add_executable(dashsbytes tools/dashsbytes.c tools/toolsupport.c)
         target_link_libraries(dashsbytes ${CMAKE_DL_LIBS})
     endif()
@@ -3218,7 +3218,7 @@ if(MCC_BUILD_TESTS)
     # win32 import .def shape/dup guard (PLAN 0.6 #5): maintainers regenerate
     # with `defcheck regen`, which unions fresh mcc -impdef output onto the
     # historical set; CI runs the verify mode.
-    if(UNIX AND NOT CMAKE_CROSSCOMPILING)
+    if(NOT CMAKE_CROSSCOMPILING)
         add_executable(defcheck tools/defcheck.c tools/toolsupport.c)
         target_link_libraries(defcheck ${CMAKE_DL_LIBS})
         file(GLOB _win32_defs "${CMAKE_CURRENT_SOURCE_DIR}/runtime/win32/lib/*.def")
@@ -3242,8 +3242,9 @@ if(MCC_BUILD_TESTS)
         endif()
 
         # Host/target auto-detection (PLAN 0.8 catalog #1): mccbuild --detect must
-        # reproduce CMake's resolved CPU/OS/triplet for this native config.
-        if(TARGET mccbuild AND NOT CMAKE_CROSSCOMPILING AND NOT MCC_TARGETOS STREQUAL "WIN32")
+        # reproduce CMake's resolved CPU/OS/triplet for this native config
+        # (host_sys_info yields the mcc OS token, so WIN32 hosts verify too).
+        if(TARGET mccbuild AND NOT CMAKE_CROSSCOMPILING)
             add_test(NAME host-detect COMMAND "$<TARGET_FILE:mccbuild>" --detect
                 --cc "${CMAKE_C_COMPILER}"
                 --expect-cpu "${MCC_CPU}" --expect-os "${MCC_TARGETOS}"
@@ -3254,13 +3255,19 @@ if(MCC_BUILD_TESTS)
 
         # Cross factory (PLAN 0.8 catalog #3+#4): mccbuild builds a full cross
         # compiler mcc-<t> + <t>-libmcc1.a for any of the 11 targets, shell-free.
-        # The smoke test exercises the whole recipe end-to-end for one target.
-        if(TARGET mccbuild AND UNIX)
+        # The smoke test exercises the whole recipe end-to-end for one target
+        # (verified on POSIX and WIN32/mingw hosts alike).  The recipe drives a
+        # gcc-style cc, so it uses the resolved reference cc -- the host cc
+        # everywhere except an MSVC host, where that resolves a mingw gcc.
+        if(TARGET mccbuild AND _ref_cc)
             add_test(NAME cross-factory COMMAND "$<TARGET_FILE:mccbuild>"
-                --cross x86_64 --cc "${CMAKE_C_COMPILER}"
+                --cross x86_64 --cc "${_ref_cc}"
                 --out "${CMAKE_BINARY_DIR}/cross-factory-smoke")
             set_tests_properties(cross-factory PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+        elseif(TARGET mccbuild)
+            mcc_skip_test(cross-factory
+                "needs a GCC-compatible cc (set MCC_REF_CC or put gcc on PATH)")
         endif()
 
         # config->defines drift guard (PLAN 0.8 catalog #8): mccbuild's C port of
