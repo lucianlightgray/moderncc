@@ -6,6 +6,13 @@
 #
 #   docker run --rm -e PRESET=linux-gcc -v "$PWD:/work:ro" mcc-ci
 #
+# Optionally mount a writable dir at /out to export the build targets: the
+# tree is configured with CMAKE_INSTALL_PREFIX=/out and `cmake --install` runs
+# after the tests, leaving every built executable + library (bin/, lib*/,
+# include/) there for the workflow to upload as an artifact. The prefix must
+# be set at configure time — the mcc runtime dir install destination is an
+# absolute path baked into the install rules.
+#
 set -euo pipefail
 
 SRC_MOUNT=/work
@@ -40,12 +47,23 @@ if [ "${NORMALIZE_EOL:-1}" = 1 ]; then
         -exec sed -i 's/\r$//' {} +
 fi
 
+OUT=/out
+EXTRA_CONFIG=()
+if [ -d "$OUT" ] && [ -w "$OUT" ]; then
+    EXTRA_CONFIG+=("-DCMAKE_INSTALL_PREFIX=$OUT")
+fi
+
 cd "$SRC"
 echo "==> configuring (preset=$PRESET)"
-cmake --preset "$PRESET"
+cmake --preset "$PRESET" "${EXTRA_CONFIG[@]}"
 
 echo "==> building (-j$JOBS)"
 cmake --build --preset "$PRESET" -j"$JOBS"
 
 echo "==> testing (preset=$PRESET)"
 ctest --preset "$PRESET" -j"$JOBS" "$@"
+
+if [ -d "$OUT" ] && [ -w "$OUT" ]; then
+    echo "==> exporting build targets -> $OUT"
+    cmake --install "cmake-build-$PRESET"
+fi
