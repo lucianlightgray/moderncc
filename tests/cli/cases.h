@@ -1928,7 +1928,7 @@ static const cli_case_t cli_cases[] = {
 
 
 
-{ "ucn_identifier_range", "",
+{ "ucn_identifier_range2", "",
   "printf 'int a\\\\uFFFFb;\\n' > {W}/ucr_bad.c && "
   "printf 'int a\\\\u00C0b=1; int c\\\\u2460d=2;\\nint main(void){return a\\\\u00C0b + c\\\\u2460d;}\\n' > {W}/ucr_ok.c && "
   "{ {MCC} -B{B} -I{I} -c {W}/ucr_bad.c -o /dev/null 2>&1 | grep -c 'not valid in an identifier'; "

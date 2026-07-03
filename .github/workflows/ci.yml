@@ -215,10 +215,11 @@ jobs:
       - name: configure + build + install + package
         run: |
           set -eux
-          cmake --preset ${{ matrix.preset }}
+          cmake --preset ${{ matrix.preset }} \
+            "-DMCC_DIST_VERSION=ci-${GITHUB_SHA::12}" "-DMCC_DIST_PLAT=${{ matrix.preset }}-${{ matrix.arch }}"
           cmake --build --preset ${{ matrix.preset }} -j"$(nproc)"
           cmake --install cmake-build-${{ matrix.preset }}
-          cmake -DVER="ci-${GITHUB_SHA::12}" -DPLAT="${{ matrix.preset }}-${{ matrix.arch }}" -P cmake/package.cmake
+          cmake --build --preset ${{ matrix.preset }} --target package-dist
       - uses: actions/upload-artifact@v7
         with:
           name: mcc-${{ matrix.preset }}-${{ matrix.arch }}

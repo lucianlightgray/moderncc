@@ -165,7 +165,8 @@ picks the prefix up from the mount. The prefix must be set at *configure*
 time: the mcc runtime dir (`lib*/mcc`) installs to an absolute path baked
 into the install rules, so an install-time `--prefix` cannot re-root it.
 The `dist` jobs instead package their preset's `${sourceDir}/stage` prefix
-via `cmake -P cmake/package.cmake`; the `qemu` job is test-only and uploads
+via the `package-dist` build target (which drives `ci pkg`, the C port of the
+former `cmake/package.cmake`); the `qemu` job is test-only and uploads
 nothing.
 
 **qemu presets** — the `qemu` job passes `PRESET=qemu-<arch>` to the docker

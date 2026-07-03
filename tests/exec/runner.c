@@ -200,7 +200,21 @@ int main(int argc, char **argv){
 
     const char *emu = getenv("MCC_TEST_EMU"); if (!emu) emu = "";
 
-    char **skip = argv + 6; int nskip = argc - 6;
+    /* args 6+ are exclusion names, plus two options for per-case CTest use:
+       --list prints every golden name (one per line); --only <name> runs just
+       that case (exit 0 pass / 1 fail / 77 skipped) -- the granular mode. */
+    const char *only = NULL; int list_mode = 0;
+    char *skipbuf[512]; int nskip = 0;
+    for (int i = 6; i < argc; i++){
+        if (!strcmp(argv[i], "--list")) list_mode = 1;
+        else if (!strcmp(argv[i], "--only") && i + 1 < argc) only = argv[++i];
+        else if (nskip < 512) skipbuf[nskip++] = argv[i];
+    }
+    char **skip = skipbuf;
+    if (list_mode){
+        for (int i = 0; i < mcc_goldens_count; i++) printf("%s\n", mcc_goldens[i].name);
+        return 0;
+    }
     int pass = 0, fail = 0, skipped = 0;
     /* cmd holds a shell line built from up to four path-sized fields (run2 uses
        path and sup twice each), so size it past the sum of those 4096-byte
@@ -212,6 +226,7 @@ int main(int argc, char **argv){
 
     for (int i = 0; i < mcc_goldens_count; i++){
         const mcc_golden_t *g = &mcc_goldens[i];
+        if (only && strcmp(only, g->name)) continue;   /* granular: run one case */
         int do_skip = 0;
         for (int s = 0; s < nskip; s++) if (!strcmp(skip[s], g->name)){ do_skip = 1; break; }
         if (do_skip){ printf("SKIP  %-32s -- excluded on command line\n", g->name); skipped++; continue; }
@@ -324,6 +339,8 @@ int main(int argc, char **argv){
     }
     printf("exec runner: %d passed, %d failed, %d skipped (of %d)\n",
            pass, fail, skipped, mcc_goldens_count);
+    if (only && pass + fail + skipped == 0){        /* stale generated --only test */
+        fprintf(stderr, "exec runner: no golden named '%s'\n", only); return 2; }
     if (fail) return 1;
     if (pass == 0 && skipped > 0) return MCC_SKIP_RC;
     return 0;

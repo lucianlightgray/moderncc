@@ -838,6 +838,96 @@ static int suite_penative(int argc, char **argv)
 /* qemurun: cross conformance under qemu-user, {default,pic} variants      */
 /* (ports run_qemu_run.cmake)                                              */
 
+/* ------------------------------------------------------------------- */
+/* qemufetch: provision a Gentoo stage3 rootfs for the qemu-user matrix    */
+/* (the C port of the generated run_qemu_fetch.cmake): download the release */
+/* pointer, parse the stage3 path, download + extract the tarball, stamp a  */
+/* marker.  curl does the transfers (libcurl-free), tar the extraction.     */
+
+/* parse a stage3 ".ptr" pointer: the first line naming a .tar.(xz|bz2|gz)
+   yields its leading whitespace-delimited token (the release path).
+   Returns 1 (out filled) or 0 if no such line exists. */
+static int parse_stage3_rel(const char *text, char *out, int osz)
+{
+    const char *p = text;
+    while (p && *p) {
+        const char *nl = strchr(p, '\n');
+        int len = nl ? (int)(nl - p) : (int)strlen(p);
+        char line[1024];
+        if (len > (int)sizeof line - 1) len = (int)sizeof line - 1;
+        snprintf(line, sizeof line, "%.*s", len, p);
+        if (strstr(line, ".tar.xz") || strstr(line, ".tar.bz2") || strstr(line, ".tar.gz")) {
+            int i = 0;
+            while (line[i] && line[i] != ' ' && line[i] != '\t' && i < osz - 1) { out[i] = line[i]; i++; }
+            out[i] = 0;
+            if (i > 0) return 1;
+        }
+        p = nl ? nl + 1 : NULL;
+    }
+    return 0;
+}
+
+static int qemufetch_selftest(void)
+{
+    struct { const char *name, *text, *want; } cases[] = {
+        { "amd64-openrc",
+          "20240115T170328Z/stage3-amd64-openrc-20240115T170328Z.tar.xz 268435456 BLAKE2B abc\n",
+          "20240115T170328Z/stage3-amd64-openrc-20240115T170328Z.tar.xz" },
+        { "leading-comment",
+          "# Latest as of Mon\n20240115T170328Z/stage3-arm64-openrc-20240115T170328Z.tar.xz 1 SHA512 x\n",
+          "20240115T170328Z/stage3-arm64-openrc-20240115T170328Z.tar.xz" },
+        { "bz2",           "path/foo.tar.bz2 10\n",              "path/foo.tar.bz2" },
+        { "gz-tabbed",     "dir/bar.tar.gz\t42\n",               "dir/bar.tar.gz" },
+        { 0, 0, 0 }
+    };
+    int i, fails = 0; char got[1024];
+    for (i = 0; cases[i].name; i++) {
+        int ok = parse_stage3_rel(cases[i].text, got, sizeof got);
+        if (!ok || strcmp(got, cases[i].want)) { printf("FAIL %-16s got '%s' want '%s'\n", cases[i].name, ok ? got : "(none)", cases[i].want); fails++; }
+        else printf("ok   %-16s %s\n", cases[i].name, got);
+    }
+    if (parse_stage3_rel("# nothing here\nrandom text\n", got, sizeof got)) { printf("FAIL no-tarball parsed unexpectedly\n"); fails++; }
+    else printf("ok   no-tarball\n");
+    if (fails) { printf("qemufetch-selftest: %d case(s) FAILED\n", fails); return 1; }
+    printf("qemufetch-selftest: all cases faithful\n");
+    return 0;
+}
+
+static int suite_qemufetch(int argc, char **argv)
+{
+    const char *ptrurl, *mirrorbase, *dest, *marker;
+    char ptrfile[4300], tarfile[4300], rel[1024], url[8192]; char *ptxt; int isd, i;
+
+    for (i = 1; i < argc; i++) if (!strcmp(argv[i], "--selftest")) return qemufetch_selftest();
+    ptrurl = opt(argc, argv, "--ptrurl", NULL);
+    mirrorbase = opt(argc, argv, "--mirrorbase", NULL);
+    dest = opt(argc, argv, "--dest", NULL);
+    marker = opt(argc, argv, "--marker", NULL);
+    if (!ptrurl || !mirrorbase || !dest || !marker) {
+        fprintf(stderr, "usage: mccharness qemufetch --ptrurl U --mirrorbase U --dest D --marker F [--selftest]\n"); return 2;
+    }
+    if (host_stat(marker, &isd, NULL, NULL) == 0) return 0;   /* already provisioned */
+
+    snprintf(ptrfile, sizeof ptrfile, "%s.ptr", dest);        /* siblings of DEST, per the CMake original */
+    snprintf(tarfile, sizeof tarfile, "%s.tar", dest);
+    { const char *c[] = { "curl", "-fSL", "--retry", "3", "-o", ptrfile, ptrurl, 0 };
+      if (run_quiet(c)) { fprintf(stderr, "qemufetch: pointer download failed: %s\n", ptrurl); return 1; } }
+    ptxt = ts_read_file(ptrfile, NULL);
+    if (!ptxt || !parse_stage3_rel(ptxt, rel, sizeof rel)) {
+        fprintf(stderr, "qemufetch: could not parse stage3 path from %s\n", ptrurl); free(ptxt); return 1; }
+    free(ptxt);
+    host_mkdirs(dest);
+    snprintf(url, sizeof url, "%s/%s", mirrorbase, rel);
+    printf("qemufetch: downloading %s\n", url);
+    { const char *c[] = { "curl", "-fSL", "--retry", "3", "-o", tarfile, url, 0 };
+      if (run_quiet(c)) { fprintf(stderr, "qemufetch: stage3 download failed: %s\n", url); return 1; } }
+    { const char *c[] = { "tar", "--no-same-owner", "--exclude=./dev/*", "-xpf", tarfile, "-C", dest, 0 };
+      if (run_quiet(c)) { fprintf(stderr, "qemufetch: extract failed: %s\n", tarfile); return 1; } }
+    remove(tarfile);
+    { FILE *f = fopen(marker, "wb"); if (f) { fprintf(f, "%s\n", rel); fclose(f); } }
+    return 0;
+}
+
 static int suite_qemurun(int argc, char **argv)
 {
     const char *mcc = opt(argc, argv, "--mcc", NULL);
@@ -1036,6 +1126,73 @@ static int suite_machonative(int argc, char **argv)
           else { printf("FAIL osx/%s (run, rc=%d)\n", t, rc); status = 1; } }
         remove(out);
     }
+    return status ? 1 : 0;
+}
+
+/* ------------------------------------------------------------------- */
+/* stackguard: -fstack-protector on native Mach-O (arm64/x86_64).          */
+/* Proves the canary is wired (symbol differential vs a no-flag build),    */
+/* that protected code still runs clean, and that an overflow trips        */
+/* __stack_chk_fail (abort) before the smashed frame is returned into.     */
+
+/* whole-file byte search (the symbol table has embedded NULs, so a plain
+   strstr would stop early); needle is a C string, no NULs of its own */
+static int blob_has(const char *path, const char *needle)
+{
+    long len = 0; char *b = ts_read_file(path, &len);
+    size_t nl = strlen(needle), i; int found = 0;
+    if (!b) return 0;
+    if (len >= (long)nl)
+        for (i = 0; i + nl <= (size_t)len; i++)
+            if (!memcmp(b + i, needle, nl)) { found = 1; break; }
+    free(b);
+    return found;
+}
+
+static int suite_stackguard(int argc, char **argv)
+{
+    const char *mcc = opt(argc, argv, "--mcc", NULL);
+    const char *bdir = opt(argc, argv, "--bdir", NULL);
+    const char *work = opt(argc, argv, "--work", NULL);
+    const char *objcheck = opt(argc, argv, "--objcheck", NULL);
+    char Bf[4200], src[4200], plain[4200], prot[4200]; int isd, status = 0;
+    /* Mach-O prefixes C symbols with '_', so the guard appears as
+       "___stack_chk_guard"; searching for the two-underscore form still hits. */
+    static const char SRC[] =
+        "#include <string.h>\n#include <stdio.h>\n"
+        "static void frob(const char *s){ char buf[16]; strcpy(buf, s); printf(\"%s\\n\", buf); }\n"
+        "int main(int argc, char **argv){ frob(argc>1?argv[1]:\"ok\"); return 0; }\n";
+
+    if (!mcc || !bdir || !work || !objcheck) { fprintf(stderr, "usage: mccharness stackguard --mcc --bdir --work --objcheck\n"); return 2; }
+    if (!MCC_HOST_DARWIN) ts_skip("host is not Darwin (-fstack-protector Mach-O needs a macOS host)");
+    if (host_stat(mcc, &isd, NULL, NULL) || isd) ts_skip("no native mcc (%s)", mcc);
+    snprintf(Bf, sizeof Bf, "-B%s", bdir);
+    host_mkdirs(work);
+    ts_path(src, sizeof src, work, "sp.c");
+    ts_path(plain, sizeof plain, work, "sp_plain");
+    ts_path(prot, sizeof prot, work, "sp_prot");
+    write_file(src, SRC);
+
+    /* baseline (no flag): must link + run clean, and carry no canary symbol */
+    { Argv v = {{0},0}; char *err = NULL; A(&v, mcc); A(&v, Bf); A(&v, src); A(&v, "-o"); A(&v, plain);
+      if (compile(Z(&v), &err)) { char *l = ts_first_error_line(err, NULL, NULL); char m[256]; snprintf(m,sizeof m,"%s",l?l:""); free(l); free(err); ts_skip("native mcc cannot link an executable: %s", m); }
+      free(err); }
+    if (!obj_is_macho(objcheck, plain)) ts_skip("native mcc does not target Mach-O");
+    { const char *r[] = { plain, "ok", 0 }; if (run_quiet(r) != 0) { printf("FAIL baseline clean run\n"); status = 1; } }
+    if (blob_has(plain, "__stack_chk_guard")) { printf("FAIL baseline unexpectedly references __stack_chk_guard\n"); status = 1; }
+
+    /* protected: emits the canary symbols, runs clean, aborts on overflow */
+    { Argv v = {{0},0}; char *err = NULL; A(&v, mcc); A(&v, Bf); A(&v, "-fstack-protector-all"); A(&v, src); A(&v, "-o"); A(&v, prot);
+      if (compile(Z(&v), &err)) { char *l = ts_first_error_line(err, NULL, NULL); printf("FAIL protected compile: %s\n", l?l:""); free(l); free(err); return 1; }
+      free(err); }
+    if (!blob_has(prot, "__stack_chk_guard")) { printf("FAIL protected build missing __stack_chk_guard reference\n"); status = 1; }
+    if (!blob_has(prot, "__stack_chk_fail"))  { printf("FAIL protected build missing __stack_chk_fail reference\n"); status = 1; }
+    else printf("PASS canary symbols emitted under -fstack-protector-all\n");
+    { const char *r[] = { prot, "ok", 0 }; if (run_quiet(r) != 0) { printf("FAIL protected clean run\n"); status = 1; } else printf("PASS protected clean run\n"); }
+    { const char *r[] = { prot, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", 0 };
+      int rc = run_quiet(r);
+      if (rc == 0) { printf("FAIL overflow ran to completion (canary not checked)\n"); status = 1; }
+      else printf("PASS overflow tripped the canary (aborted, rc=%d)\n", rc); }
     return status ? 1 : 0;
 }
 
@@ -1602,17 +1759,77 @@ static int suite_machostructural(int argc, char **argv)
     return status ? 1 : 0;
 }
 
+/* ------------------------------------------------------------------- */
+/* pkgsmoke: exercise `ci pkg` (the C port of package.cmake) against a     */
+/* synthetic staged install, asserting the three bundles + checksums and   */
+/* the host-shape/cross-compiler partition of bin/ and lib/mcc.            */
+
+static int suite_pkgsmoke(int argc, char **argv)
+{
+    const char *ci = opt(argc, argv, "--ci", NULL);
+    const char *work = opt(argc, argv, "--work", NULL);
+    char stage[4200], out[4200], p[4400]; int status = 0, isd, i;
+    static const char *ARCH[] = { "mcc-1.2.3-test.tar.gz", "libmcc-1.2.3-test.tar.gz",
+                                  "mcc-cross-1.2.3-test.tar.gz", "checksums-test.txt", 0 };
+
+    if (!ci || !work) { fprintf(stderr, "usage: mccharness pkgsmoke --ci --work\n"); return 2; }
+    if (host_stat(ci, &isd, NULL, NULL) || isd) ts_skip("no ci tool (%s)", ci);
+
+    ts_path(stage, sizeof stage, work, "stage");
+    ts_path(out, sizeof out, work, "out");
+    { const char *rm[] = { "cmake", "-E", "rm", "-rf", stage, out, 0 }; run_quiet(rm); }
+    ts_path(p, sizeof p, stage, "bin");     host_mkdirs(p);
+    ts_path(p, sizeof p, stage, "lib/mcc"); host_mkdirs(p);
+    ts_path(p, sizeof p, stage, "include"); host_mkdirs(p);
+#define PUT(rel, txt) do { ts_path(p, sizeof p, stage, rel); write_file(p, txt); } while (0)
+    PUT("bin/mcc", "x");                    /* host shape -> mcc bundle */
+    PUT("bin/mcc-static", "x");             /* host shape -> NOT the cross bundle */
+    PUT("bin/mcc-arm64", "x");              /* cross compiler -> cross bundle */
+    PUT("bin/mcc-x86_64-win32", "x");       /* cross compiler -> cross bundle */
+    PUT("lib/mcc/libmcc1.a", "x");          /* native runtime -> NOT the cross bundle */
+    PUT("lib/mcc/arm64-libmcc1.a", "x");    /* cross runtime -> cross bundle */
+    PUT("lib/libmcc-static.a", "x");        /* libmcc bundle archive */
+    PUT("include/libmcc.h", "x");           /* libmcc bundle header */
+#undef PUT
+
+    { Argv v = {{0},0};
+      A(&v, ci); A(&v, "pkg"); A(&v, "--ver"); A(&v, "v1.2.3"); A(&v, "--plat"); A(&v, "test");
+      A(&v, "--stage"); A(&v, stage); A(&v, "--out"); A(&v, out); A(&v, "--format"); A(&v, "tgz");
+      if (run_quiet(Z(&v))) { printf("FAIL ci pkg returned nonzero\n"); return 1; } }
+
+    for (i = 0; ARCH[i]; i++) {
+        ts_path(p, sizeof p, out, "%s", ARCH[i]);
+        if (host_stat(p, &isd, NULL, NULL)) { printf("FAIL missing %s\n", ARCH[i]); status = 1; }
+    }
+    { char arc[4400], *o = NULL, *e = NULL;
+      ts_path(arc, sizeof arc, out, "mcc-cross-1.2.3-test.tar.gz");
+      const char *t[] = { "cmake", "-E", "tar", "tzf", arc, 0 };
+      if (run_cap(t, NULL, &o, &e) == 0 && o) {
+          if (!ci_contains(o, "bin/mcc-arm64"))           { printf("FAIL cross bundle missing mcc-arm64\n"); status = 1; }
+          if (!ci_contains(o, "lib/mcc/arm64-libmcc1.a")) { printf("FAIL cross bundle missing arm64 runtime\n"); status = 1; }
+          if (ci_contains(o, "bin/mcc-static"))           { printf("FAIL cross bundle leaked host shape mcc-static\n"); status = 1; }
+          if (ci_contains(o, "/mcc/libmcc1.a"))           { printf("FAIL cross bundle leaked native libmcc1.a\n"); status = 1; }
+      } else { printf("FAIL cannot list cross bundle\n"); status = 1; }
+      free(o); free(e); }
+    if (!status) printf("PASS ci pkg smoke (bundles, checksums, host/cross partition)\n");
+    return status ? 1 : 0;
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
         fprintf(stderr, "usage: mccharness <suite> ... (parts|mcctest|mccexe|asmconnect|dashs|"
                         "preprocess|i386fastcall|gcctestsuite|penative|qemurun|pewine|machonative|"
-                        "machoimage|machoapplelibc|machocodegen|armasm|machostructural)\n");
+                        "machoimage|machoapplelibc|machocodegen|armasm|machostructural|stackguard|pkgsmoke|"
+                        "qemufetch)\n");
         return 2;
     }
+    if (!strcmp(argv[1], "qemufetch"))     return suite_qemufetch(argc, argv);
     if (!strcmp(argv[1], "armasm"))        return suite_armasm(argc, argv);
     if (!strcmp(argv[1], "machostructural")) return suite_machostructural(argc, argv);
     if (!strcmp(argv[1], "machonative")) return suite_machonative(argc, argv);
+    if (!strcmp(argv[1], "stackguard"))  return suite_stackguard(argc, argv);
+    if (!strcmp(argv[1], "pkgsmoke"))    return suite_pkgsmoke(argc, argv);
     if (!strcmp(argv[1], "machoimage"))  return suite_machoimage(argc, argv);
     if (!strcmp(argv[1], "machoapplelibc")) return suite_machoapplelibc(argc, argv);
     if (!strcmp(argv[1], "machocodegen"))   return suite_machocodegen(argc, argv);

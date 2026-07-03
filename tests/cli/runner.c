@@ -190,6 +190,17 @@ int main(int argc, char **argv){
 
     hc_set_c_locale();
     const char *mcc = argv[1], *bdir = argv[2], *idir = argv[3], *work = argv[4], *cdir = argv[5];
+    /* --list prints every case name; --only <name> runs a single case (exit
+       0/1/77) -- the per-case CTest (granular) mode, mirroring exec_runner. */
+    const char *only = NULL; int list_mode = 0;
+    for (int i = 6; i < argc; i++){
+        if (!strcmp(argv[i], "--list")) list_mode = 1;
+        else if (!strcmp(argv[i], "--only") && i + 1 < argc) only = argv[++i];
+    }
+    if (list_mode){
+        for (int i = 0; i < cli_cases_count; i++) printf("%s\n", cli_cases[i].name);
+        return 0;
+    }
     hc_set_workdir(work);
     const char *tmo = timeout_prefix();
     if (HC_MKDIR(work) != 0 && errno != EEXIST) {
@@ -198,6 +209,7 @@ int main(int argc, char **argv){
     int pass = 0, fail = 0, skipped = 0;
     for (int i = 0; i < cli_cases_count; i++){
         const cli_case_t *c = &cli_cases[i];
+        if (only && strcmp(only, c->name)) continue;   /* granular: run one case */
         char reason[256];
         if (!req_met(c->req, reason, sizeof reason)){
             printf("SKIP  %-28s -- %s\n", c->name, reason); skipped++; continue;
@@ -215,6 +227,8 @@ int main(int argc, char **argv){
     }
     printf("cli runner: %d passed, %d failed, %d skipped (of %d)\n",
            pass, fail, skipped, cli_cases_count);
+    if (only && pass + fail + skipped == 0){        /* stale generated --only test */
+        fprintf(stderr, "cli runner: no case named '%s'\n", only); return 2; }
     if (fail) return 1;
     if (pass == 0 && skipped > 0) return MCC_SKIP_RC;
     return 0;

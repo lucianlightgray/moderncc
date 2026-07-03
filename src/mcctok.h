@@ -325,6 +325,7 @@
 
      DEF(TOK_alloca, "alloca")
      DEF(TOK___stack_chk_fail, "__stack_chk_fail")
+     DEF(TOK___stack_chk_guard, "__stack_chk_guard")
 
 #if defined MCC_TARGET_PE
      DEF(TOK___chkstk, "__chkstk")

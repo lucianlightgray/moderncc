@@ -84,6 +84,10 @@ static unsigned long func_bound_ind;
 ST_DATA int func_bound_add_epilog;
 #endif
 
+#ifdef MCC_TARGET_MACHO
+static int func_stack_chk_loc;
+#endif
+
 #define IS_FREG(x) ((x) >= TREG_F(0))
 
 static uint32_t intr(int r)
@@ -1321,6 +1325,37 @@ static unsigned long arm64_pe_param_off(unsigned long a)
 }
 #endif
 
+#ifdef MCC_TARGET_MACHO
+/* -fstack-protector for Darwin/arm64: the canary is the global
+   __stack_chk_guard (loaded via GOT), checked against a frame slot before
+   return; on mismatch we tail into __stack_chk_fail.  x16/x17 are the
+   intra-procedure scratch registers, free to clobber in prolog/epilog. */
+static void arm64_load_stack_guard(void)
+{
+    Sym *guard = external_helper_sym(TOK___stack_chk_guard);
+    arm64_sym(16, guard, 0);                /* x16 = &__stack_chk_guard (GOT) */
+    o(ARM64_LDR_X | ARM64_RN(16) | 16);     /* x16 = *x16  (guard value) */
+}
+
+static void gen_stack_chk_prolog(void)
+{
+    func_stack_chk_loc = (loc -= 8);
+    arm64_load_stack_guard();
+    arm64_strx(3, 16, 29, (uint64_t)func_stack_chk_loc); /* canary -> [x29,#loc] */
+}
+
+static void gen_stack_chk_epilog(void)
+{
+    Sym *fail = external_helper_sym(TOK___stack_chk_fail);
+    arm64_ldrx(0, 3, 17, 29, (uint64_t)func_stack_chk_loc); /* x17 = saved canary */
+    arm64_load_stack_guard();                               /* x16 = live guard */
+    o(0xeb11021f);                          /* cmp x16, x17  (subs xzr,x16,x17) */
+    o(0x54000040);                          /* b.eq .+8  (skip the call on match) */
+    greloca(cur_text_section, fail, ind, R_AARCH64_CALL26, 0);
+    o(ARM64_BL);                            /* bl __stack_chk_fail (noreturn) */
+}
+#endif
+
 ST_FUNC void gfunc_prolog(Sym *func_sym)
 {
     CType *func_type = &func_sym->type;
@@ -1439,6 +1474,11 @@ ST_FUNC void gfunc_prolog(Sym *func_sym)
 #ifdef CONFIG_MCC_BCHECK
     if (mcc_state->do_bounds_check)
         gen_bounds_prolog();
+#endif
+#ifdef MCC_TARGET_MACHO
+    func_stack_chk_loc = 0;
+    if (mcc_state->stack_protector)
+        gen_stack_chk_prolog();
 #endif
 }
 
@@ -1662,6 +1702,10 @@ ST_FUNC void gfunc_epilog(void)
 #ifdef CONFIG_MCC_BCHECK
     if (mcc_state->do_bounds_check)
         gen_bounds_epilog();
+#endif
+#ifdef MCC_TARGET_MACHO
+    if (func_stack_chk_loc)
+        gen_stack_chk_epilog();
 #endif
 
     if (loc) {

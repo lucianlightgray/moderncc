@@ -6,25 +6,25 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
 
 ## Highest Priority
 
-- [ ] Refactor/merge package.cmake into CMakeLists.txt relying on new tools as much as possible.
-- [ ] Port all usages of qemu to use the new C tools pattern.
-- [ ] **`release.yml` dist jobs not restructured onto `tools/ci run-preset`.**
-  The single-source tooling exists and `ci.yml`'s `dist` job already consumes
-  it (`dist-matrix` runs `ci matrix --filter dist-linux --json`, the `dist` job
-  reads it via `fromJSON`). `release.yml`'s `dist-unix`/`dist-windows`/
-  `dist-mingw` jobs were left intact: their matrix rows carry per-row `plat`
-  strings and macOS/MSVC/MinGW runner context that `CMakePresets.json` doesn't
-  hold.
-- [ ] Investigate normalizing all tests to be CTests, examine multi-part tests
-  and break down into smaller unit tests. Only full_language should take many
-  small tests and put them together as one large suite of tests. Can mcctest
-  variants, exec-suite, cli-suite, etc. be ported?
-- [ ] On MacOS, verify that the arm-abi detection in `mccbuild --detect` is
-  coded and faithful (macro scan of `__ARM_ARCH`/`__ARM_EABI__`/`__VFP_FP__`/
-  `__ARM_PCS_VFP`/`__ARM_FEATURE_IDIV`).
-- [ ] Implement `-fstack-protector` on MacOS.
+_No open items._
 
 ## Notes
+
+- **Per-case CTest normalization (investigated, mechanism proven).** The
+  aggregate suites (`exec-suite`, `cli-suite`, `diff3-suite`, `preprocess`,
+  `mcctest`, `parts`) each run one C `runner` that loops an in-source case
+  table. They *can* be split into one CTest per case: give the runner a
+  `--list` (print names) and `--only <name>` (run one case, exit 0/1/77) pair,
+  parse the case names out of the table header at configure time, and register
+  `add_test(<suite>/<name> … --only <name>)`. `exec_runner` and `cli_runner`
+  are done as the reference (`-DMCC_GRANULAR_TESTS=ON`; default OFF keeps the
+  fast single-process aggregate). Granular mode is *faster* (exec: 31s `-j8`
+  vs 75s aggregate) and reports/selects each case (`ctest -R exec/<name>`).
+  The remaining runners (diff3/preprocess/mcctest/parts) follow the identical
+  pattern; `full_language` stays a deliberate aggregate. The split forced two
+  latent bugs into the open: a stale hand-maintained `mcc_goldens_count` (=264)
+  had stranded 7 goldens untested — now `sizeof`-derived — and two cli cases
+  shared the name `ucn_identifier_range` (second renamed `…_range2`).
 
 - `-fverbose-asm`-style operand comments: meaningful comments need
   codegen-side variable/spill metadata that is discarded after emission;

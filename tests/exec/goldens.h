@@ -279,4 +279,6 @@ static const mcc_golden_t mcc_goldens[] = {
   { "char_unsigned","run","exec/types/char_signedness.c","255 0\n","-funsigned-char","","" },
   { "bound_test_b","brun","exec/bounds/bound_test.c","42000\n8\n","","","bcheck" },
 };
-static const int mcc_goldens_count = 264;
+/* Derived from the array so it can never drift from the entry count: a
+   hand-maintained literal had silently stranded the tail entries (untested). */
+static const int mcc_goldens_count = (int)(sizeof mcc_goldens / sizeof mcc_goldens[0]);

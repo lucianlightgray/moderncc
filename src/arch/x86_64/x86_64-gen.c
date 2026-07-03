@@ -120,7 +120,7 @@ ST_DATA const int reg_classes[NB_REGS] = {
 
 static unsigned long func_sub_sp_offset;
 static int func_ret_sub;
-#if !defined(MCC_TARGET_PE) && !defined(MCC_TARGET_MACHO)
+#ifndef MCC_TARGET_PE
 static int func_stack_chk_loc;
 #endif
 
@@ -1451,7 +1451,31 @@ static void push_arg_reg(int i) {
     gen_modrm64(0x89, arg_regs[i], VT_LOCAL, NULL, loc);
 }
 
-#ifndef MCC_TARGET_MACHO
+#if defined(MCC_TARGET_MACHO)
+/* Darwin reads the canary from the global __stack_chk_guard (via GOTPCREL),
+   not the ELF %fs:0x28 TLS slot. */
+static void gen_stack_chk_prolog(void)
+{
+    Sym *guard = external_helper_sym(TOK___stack_chk_guard);
+    func_stack_chk_loc = (loc -= 8);
+    o(0x058b48); gen_gotpcrel(TREG_RAX, guard, 0); /* mov guard@GOTPCREL(%rip),%rax */
+    g(0x48); g(0x8b); g(0x00);                     /* mov (%rax),%rax  (guard value) */
+    g(0x48); g(0x89); g(0x85); gen_le32(func_stack_chk_loc); /* mov %rax,loc(%rbp) */
+}
+
+static void gen_stack_chk_epilog(void)
+{
+    Sym *guard = external_helper_sym(TOK___stack_chk_guard);
+    /* keep %rax intact -- it holds the function return value at epilog time */
+    g(0x48); g(0x8b); g(0x8d); gen_le32(func_stack_chk_loc); /* mov loc(%rbp),%rcx */
+    o(0x158b48); gen_gotpcrel(TREG_RDX, guard, 0);           /* mov guard@GOTPCREL(%rip),%rdx */
+    g(0x48); g(0x33); g(0x0a);                               /* xor (%rdx),%rcx  (0 if match) */
+    g(0x74); g(0x05);                                        /* je .+5 (skip the 5-byte call) */
+    oad(0xe8, 0);
+    greloca(cur_text_section, external_helper_sym(TOK___stack_chk_fail),
+            ind - 4, R_X86_64_PLT32, -4);
+}
+#elif !defined(MCC_TARGET_PE)
 static void gen_stack_chk_prolog(void)
 {
     func_stack_chk_loc = (loc -= 8);
@@ -1606,7 +1630,7 @@ void gfunc_prolog(Sym *func_sym)
     if (mcc_state->do_bounds_check)
         gen_bounds_prolog();
 #endif
-#ifndef MCC_TARGET_MACHO
+#ifndef MCC_TARGET_PE
     func_stack_chk_loc = 0;
     if (mcc_state->stack_protector)
         gen_stack_chk_prolog();
@@ -1621,7 +1645,7 @@ void gfunc_epilog(void)
     if (mcc_state->do_bounds_check)
         gen_bounds_epilog();
 #endif
-#ifndef MCC_TARGET_MACHO
+#ifndef MCC_TARGET_PE
     if (func_stack_chk_loc)
         gen_stack_chk_epilog();
 #endif

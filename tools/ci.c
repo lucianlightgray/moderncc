@@ -6,14 +6,22 @@
  *                                  list (catalog #9) + CRLF->LF normalization
  *                                  over .c/.h/.cmake/.txt/.S/.def sources
  *                                  (replaces tests/ci/docker/run-ci.sh:29-48).
- *    ci run-preset <name> [--out D] [-- <ctest args>]
+ *    ci run-preset <name> [--out D] [--install] [--no-test] [--config C]
+ *                         [-- <ctest args>]
  *                                  configure -> build -> test -> (install),
  *                                  with one normalized parallelism probe
  *                                  (replaces the 7 duplicated configure/build/
- *                                  test/install blocks, catalog #11).
+ *                                  test/install blocks, catalog #11).  --out
+ *                                  re-roots the install prefix; --install keeps
+ *                                  the preset's prefix; --no-test skips ctest
+ *                                  (the dist jobs); --config picks a multi-
+ *                                  config build/install configuration.
  *    ci matrix [<presets.json>]    enumerate the non-hidden configure presets,
  *                                  one per line (single-sources the CI matrix,
  *                                  catalog #12; default CMakePresets.json).
+ *    ci pkg --ver V --plat P       assemble the release bundles from a staged
+ *      [--stage D] [--out D]       install (the C port of cmake/package.cmake):
+ *      [--format tgz|zip]          mcc / libmcc / mcc-cross archives + checksums.
  *    ci sha256sums <dir> [--out F] merge checksums-*.txt into SHA256SUMS.txt.
  *
  *  Every child (cmake/ctest) is spawned via the host layer - no shell.
@@ -114,17 +122,20 @@ static int do_stage(int argc, char **argv)
 
 static int do_run_preset(int argc, char **argv)
 {
-    const char *preset = NULL, *out = NULL;
+    const char *preset = NULL, *out = NULL, *config = NULL;
     char jflag[32], instdir[4096], prefix[4096];
-    int i, extra_start = argc;
+    int i, extra_start = argc, no_test = 0, do_install = 0;
     int jobs = host_nproc();
 
     for (i = 0; i < argc; i++) {
         if (!strcmp(argv[i], "--out") && i + 1 < argc) out = argv[++i];
+        else if (!strcmp(argv[i], "--config") && i + 1 < argc) config = argv[++i];
+        else if (!strcmp(argv[i], "--no-test")) no_test = 1;
+        else if (!strcmp(argv[i], "--install")) do_install = 1;
         else if (!strcmp(argv[i], "--")) { extra_start = i + 1; break; }
         else if (!preset && argv[i][0] != '-') preset = argv[i];
     }
-    if (!preset) { fprintf(stderr, "usage: ci run-preset <name> [--out DIR] [-- <ctest args>]\n"); return 2; }
+    if (!preset) { fprintf(stderr, "usage: ci run-preset <name> [--out DIR] [--install] [--no-test] [--config C] [-- <ctest args>]\n"); return 2; }
     snprintf(jflag, sizeof jflag, "-j%d", jobs > 0 ? jobs : 1);
 
     /* configure */
@@ -135,21 +146,27 @@ static int do_run_preset(int argc, char **argv)
       if (ts_run(ts_argz(&v))) return 1;
     }
     /* build */
-    { const char *a[] = { "cmake", "--build", "--preset", preset, jflag, 0 };
-      printf("==> building (%s)\n", jflag);
-      if (ts_run(a)) return 1; }
-    /* test (+ any pass-through ctest args after --) */
     { Argv v = {{0}, 0};
+      ts_arg(&v, "cmake"); ts_arg(&v, "--build"); ts_arg(&v, "--preset"); ts_arg(&v, preset); ts_arg(&v, jflag);
+      if (config) { ts_arg(&v, "--config"); ts_arg(&v, config); }
+      printf("==> building (%s)\n", jflag);
+      if (ts_run(ts_argz(&v))) return 1; }
+    /* test (+ any pass-through ctest args after --), unless --no-test */
+    if (!no_test) {
+      Argv v = {{0}, 0};
       ts_arg(&v, "ctest"); ts_arg(&v, "--preset"); ts_arg(&v, preset); ts_arg(&v, jflag);
+      if (config) { ts_arg(&v, "--build-config"); ts_arg(&v, config); }
       for (i = extra_start; i < argc; i++) ts_arg(&v, argv[i]);
       printf("==> testing (preset=%s)\n", preset);
       if (ts_run(ts_argz(&v))) return 1; }
-    /* install */
-    if (out) {
+    /* install: --out re-roots the prefix; --install uses the preset's prefix */
+    if (out || do_install) {
+        Argv v = {{0}, 0};
         snprintf(instdir, sizeof instdir, "cmake-build-%s", preset);
-        const char *a[] = { "cmake", "--install", instdir, 0 };
-        printf("==> exporting build targets -> %s\n", out);
-        if (ts_run(a)) return 1;
+        ts_arg(&v, "cmake"); ts_arg(&v, "--install"); ts_arg(&v, instdir);
+        if (config) { ts_arg(&v, "--config"); ts_arg(&v, config); }
+        printf("==> installing (preset=%s)%s%s\n", preset, out ? " -> " : "", out ? out : "");
+        if (ts_run(ts_argz(&v))) return 1;
     }
     return 0;
 }
@@ -256,15 +273,204 @@ static int do_sha256sums(int argc, char **argv)
     return 0;
 }
 
+/* ---- pkg (single-source port of cmake/package.cmake, PLAN 0.9) -------- */
+
+/* host compiler shapes (non-cross); also partitions bin/ for the cross
+   bundle (bin/mcc-* minus these).  Mirrors package.cmake's host_exes. */
+static const char *HOST_EXES[] = {
+    "mcc", "mcc-static", "mcc-dynamic", "mcc-musl", "mcc-static-musl", "mcc-dynamic-musl", 0
+};
+
+static int is_host_exe(const char *base)
+{
+    char nm[256]; size_t l = strlen(base); int i;
+    if (l > 4 && !strcmp(base + l - 4, ".exe")) {   /* strip a .exe for the match */
+        snprintf(nm, sizeof nm, "%.*s", (int)(l - 4), base); base = nm;
+    }
+    for (i = 0; HOST_EXES[i]; i++)
+        if (!strcmp(base, HOST_EXES[i])) return 1;
+    return 0;
+}
+
+/* recursive copy of a directory's contents into dst (dst is created) */
+struct pkgcopy { const char *dst; };
+static int pkg_copy_cb(const char *path, int is_dir, void *ud)
+{
+    struct pkgcopy *c = ud;
+    const char *base = strrchr(path, '/');
+    char dp[8192];
+    base = base ? base + 1 : path;
+    ts_path(dp, sizeof dp, c->dst, "%s", base);
+    if (is_dir) {
+        struct pkgcopy nc;
+        host_mkdirs(dp); nc.dst = dp;
+        host_dir_walk(path, 0, pkg_copy_cb, &nc);
+    } else if (host_copy_file(path, dp, 1)) {
+        fprintf(stderr, "ci pkg: copy failed: %s\n", path);
+    }
+    return 0;
+}
+
+/* copy <src> (file or dir) into <destdir> keeping src's basename -- the
+   file(COPY <src> DESTINATION <destdir>) semantics; a missing src is skipped
+   (matching the EXISTS guards in package.cmake). */
+static void pkg_copy_into(const char *src, const char *destdir)
+{
+    int isd; const char *base; char dp[8192];
+    if (host_stat(src, &isd, NULL, NULL)) return;
+    base = strrchr(src, '/'); base = base ? base + 1 : src;
+    ts_path(dp, sizeof dp, destdir, "%s", base);
+    if (isd) {
+        struct pkgcopy c;
+        host_mkdirs(dp); c.dst = dp;
+        host_dir_walk(src, 0, pkg_copy_cb, &c);
+    } else if (host_copy_file(src, dp, 1)) {
+        fprintf(stderr, "ci pkg: copy failed: %s\n", src);
+    }
+}
+
+/* copy every file under <dir> whose basename matches <pat> into <destdir> */
+static void pkg_copy_glob(const char *dir, const char *pat, const char *destdir)
+{
+    char *g[256]; int n, k;
+    n = ts_glob(dir, pat, 0, g, 256);
+    for (k = 0; k < n && k < 256; k++) { pkg_copy_into(g[k], destdir); free(g[k]); }
+}
+
+/* tar/zip <pkg>/<d> into <out>/<d>.<ext>, top-level dir <d>; record the name */
+static int pkg_archive(const char *pkg, const char *out, const char *d,
+                       const char *ext, Argv *names)
+{
+    Argv v = {{0}, 0};
+    char target[8192], *nm;
+    HostSpawnOpts o;
+    ts_path(target, sizeof target, out, "%s.%s", d, ext);
+    ts_arg(&v, "cmake"); ts_arg(&v, "-E"); ts_arg(&v, "tar");
+    if (!strcmp(ext, "zip")) { ts_arg(&v, "cf"); ts_arg(&v, target); ts_arg(&v, "--format=zip"); ts_arg(&v, d); }
+    else                     { ts_arg(&v, "czf"); ts_arg(&v, target); ts_arg(&v, d); }
+    memset(&o, 0, sizeof o); o.cwd = pkg;
+    printf("==> archiving %s.%s\n", d, ext);
+    if (host_spawn_ex(ts_argz(&v), &o)) { fprintf(stderr, "ci pkg: archiving %s failed\n", d); return 1; }
+    nm = malloc(strlen(d) + strlen(ext) + 2);
+    sprintf(nm, "%s.%s", d, ext);
+    ts_arg(names, nm);
+    return 0;
+}
+
+static int do_pkg(int argc, char **argv)
+{
+    const char *ver = NULL, *plat = NULL, *stage = "stage", *out = "out", *fmt = NULL;
+    const char *ext, *xsuf, *libdir, *pkg = "pkg";
+    char ver_s[128], probe[8192], src[8192], d[512], dd[8192], dstbin[8192], dstlib[8192];
+    char pkgbuf[4096], outbuf[4096];
+    int isd, i, iswin = MCC_HOST_WIN32;
+    Argv names = {{0}, 0};
+
+    for (i = 0; i < argc; i++) {
+        if (!strcmp(argv[i], "--ver") && i + 1 < argc) ver = argv[++i];
+        else if (!strcmp(argv[i], "--plat") && i + 1 < argc) plat = argv[++i];
+        else if (!strcmp(argv[i], "--stage") && i + 1 < argc) stage = argv[++i];
+        else if (!strcmp(argv[i], "--out") && i + 1 < argc) out = argv[++i];
+        else if (!strcmp(argv[i], "--format") && i + 1 < argc) fmt = argv[++i];
+    }
+    if (!ver || !plat) { fprintf(stderr, "usage: ci pkg --ver V --plat P [--stage D] [--out D] [--format tgz|zip]\n"); return 2; }
+
+    { const char *v = ver; if (*v == 'v') v++; snprintf(ver_s, sizeof ver_s, "%s", v); }   /* strip leading 'v' */
+    if (!fmt) fmt = iswin ? "zip" : "tgz";                       /* zip on Windows host */
+    ext  = !strcmp(fmt, "zip") ? "zip" : "tar.gz";
+    xsuf = iswin ? ".exe" : "";
+    { char lib64[8192]; ts_path(lib64, sizeof lib64, stage, "lib64");   /* lib64 (multilib) else lib */
+      libdir = (host_stat(lib64, &isd, NULL, NULL) == 0 && isd) ? "lib64" : "lib"; }
+
+    ts_path(probe, sizeof probe, stage, "bin/mcc%s", xsuf);
+    if (host_stat(probe, &isd, NULL, NULL)) {
+        fprintf(stderr, "ci pkg: no staged install at '%s' (run cmake --install first)\n", stage);
+        return 1;
+    }
+    { const char *rm[] = { "cmake", "-E", "rm", "-rf", pkg, out, 0 }; ts_run(rm); }
+    host_mkdirs(pkg); host_mkdirs(out);
+    /* archives run with cwd=pkg, so the out/ target must be absolute */
+    { char *ap = host_path_canonical(pkg), *ao = host_path_canonical(out);
+      if (ap) { snprintf(pkgbuf, sizeof pkgbuf, "%s", ap); free(ap); pkg = pkgbuf; }
+      if (ao) { snprintf(outbuf, sizeof outbuf, "%s", ao); free(ao); out = outbuf; } }
+
+    /* --- mcc: host compiler binaries + the mcc runtime dir --- */
+    snprintf(d, sizeof d, "mcc-%s-%s", ver_s, plat);
+    ts_path(dd, sizeof dd, pkg, "%s", d);
+    ts_path(dstbin, sizeof dstbin, dd, "bin"); host_mkdirs(dstbin);
+    ts_path(dstlib, sizeof dstlib, dd, "lib"); host_mkdirs(dstlib);
+    for (i = 0; HOST_EXES[i]; i++) {
+        ts_path(src, sizeof src, stage, "bin/%s%s", HOST_EXES[i], xsuf);
+        pkg_copy_into(src, dstbin);
+    }
+    if (iswin) {                                     /* ship runtime DLLs beside the exes */
+        char binstage[8192]; ts_path(binstage, sizeof binstage, stage, "bin");
+        pkg_copy_glob(binstage, "libmcc*.dll", dstbin);
+    }
+    ts_path(src, sizeof src, stage, "%s/mcc", libdir); pkg_copy_into(src, dstlib);
+    if (pkg_archive(pkg, out, d, ext, &names)) return 1;
+
+    /* --- libmcc: headers + libmcc archives/libs + cmake package --- */
+    snprintf(d, sizeof d, "libmcc-%s-%s", ver_s, plat);
+    ts_path(dd, sizeof dd, pkg, "%s", d);
+    ts_path(dstlib, sizeof dstlib, dd, "lib"); host_mkdirs(dstlib);
+    ts_path(src, sizeof src, stage, "include"); pkg_copy_into(src, dd);
+    { char libstage[8192], binstage[8192];
+      static const char *PATS[] = { "libmcc*.a", "libmcc*.so", "libmcc*.dylib", "libmcc*.lib", 0 };
+      int pi;
+      ts_path(libstage, sizeof libstage, stage, "%s", libdir);
+      for (pi = 0; PATS[pi]; pi++) pkg_copy_glob(libstage, PATS[pi], dstlib);
+      ts_path(binstage, sizeof binstage, stage, "bin");
+      pkg_copy_glob(binstage, "libmcc*.dll", dstlib); }
+    ts_path(src, sizeof src, stage, "%s/cmake", libdir); pkg_copy_into(src, dstlib);
+    ts_path(src, sizeof src, stage, "%s/mcc", libdir);   pkg_copy_into(src, dstlib);
+    if (pkg_archive(pkg, out, d, ext, &names)) return 1;
+
+    /* --- mcc-cross: the mcc-<arch> cross compilers + runtime archives --- */
+    snprintf(d, sizeof d, "mcc-cross-%s-%s", ver_s, plat);
+    ts_path(dd, sizeof dd, pkg, "%s", d);
+    ts_path(dstbin, sizeof dstbin, dd, "bin"); host_mkdirs(dstbin);
+    ts_path(dstlib, sizeof dstlib, dd, "lib/mcc"); host_mkdirs(dstlib);
+    { char binstage[8192], rtdir[8192]; char *g[256]; int n, k, found = 0;
+      ts_path(binstage, sizeof binstage, stage, "bin");
+      n = ts_glob(binstage, "mcc-*", 0, g, 256);
+      for (k = 0; k < n && k < 256; k++) {
+          const char *base = strrchr(g[k], '/'); base = base ? base + 1 : g[k];
+          if (!is_host_exe(base)) { pkg_copy_into(g[k], dstbin); found = 1; }   /* skip host shapes */
+          free(g[k]);
+      }
+      ts_path(rtdir, sizeof rtdir, stage, "%s/mcc", libdir);
+      pkg_copy_glob(rtdir, "*-libmcc1.a", dstlib);
+      if (found) { if (pkg_archive(pkg, out, d, ext, &names)) return 1; }
+      else printf("ci pkg: no cross compilers in stage/bin; skipping cross bundle\n"); }
+
+    /* --- checksums (sha256sum format over the archives) --- */
+    { Argv v = {{0}, 0}; HostSpawnOpts o; char *sout = NULL, csum[8192];
+      ts_arg(&v, "cmake"); ts_arg(&v, "-E"); ts_arg(&v, "sha256sum");
+      for (i = 0; i < names.n; i++) ts_arg(&v, names.a[i]);
+      memset(&o, 0, sizeof o); o.cwd = out; o.stdout_buf = &sout;
+      if (host_spawn_ex(ts_argz(&v), &o) == 0 && sout) {
+          FILE *f;
+          ts_path(csum, sizeof csum, out, "checksums-%s.txt", plat);
+          if ((f = fopen(csum, "wb"))) { fputs(sout, f); fclose(f); }
+      }
+      free(sout); }
+
+    printf("== packaged (%s) ==\n", ext);
+    for (i = 0; i < names.n; i++) { printf("  %s\n", names.a[i]); free((void *)names.a[i]); }
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
-        fprintf(stderr, "usage: ci <stage|run-preset|matrix|sha256sums> ...\n");
+        fprintf(stderr, "usage: ci <stage|run-preset|matrix|pkg|sha256sums> ...\n");
         return 2;
     }
     if (!strcmp(argv[1], "stage"))      return do_stage(argc - 2, argv + 2);
     if (!strcmp(argv[1], "run-preset")) return do_run_preset(argc - 2, argv + 2);
     if (!strcmp(argv[1], "matrix"))     return do_matrix(argc - 2, argv + 2);
+    if (!strcmp(argv[1], "pkg"))        return do_pkg(argc - 2, argv + 2);
     if (!strcmp(argv[1], "sha256sums")) return do_sha256sums(argc - 2, argv + 2);
     fprintf(stderr, "ci: unknown verb '%s'\n", argv[1]);
     return 2;

@@ -101,6 +101,25 @@ static void detect_triplet(char *out, int osz)
     }
 }
 
+/* parse a `cc -dM -E` predefine dump for the ARM ABI facts (pure/testable):
+   __ARM_ARCH -> cpuver, __ARM_EABI__ -> eabi, __VFP_FP__/__ARM_FP -> vfp,
+   __ARM_PCS_VFP -> hard (hardfloat PCS), __ARM_FEATURE_IDIV -> idiv.
+   The trailing space/tab on the __ARM_ARCH / __ARM_FP probes keeps them from
+   matching the longer __ARM_ARCH_*__ / __ARM_FP* family macros. */
+static void parse_arm_abi(const char *v, char *eabi, char *vfp, char *hard, char *idiv, char *cpuver)
+{
+    const char *p;
+    *eabi = *vfp = *hard = *idiv = 0; cpuver[0] = 0;
+    if (!v) return;
+    if ((p = strstr(v, "__ARM_ARCH ")) || (p = strstr(v, "__ARM_ARCH\t"))) {
+        int n = 0; p += 11; while (*p==' '||*p=='\t') p++; while (*p>='0'&&*p<='9'&&n<7) cpuver[n++]=*p++; cpuver[n]=0;
+    }
+    *eabi = strstr(v, "__ARM_EABI__") != 0;
+    *vfp = (strstr(v, "__VFP_FP__") || strstr(v, "__ARM_FP ") || strstr(v, "__ARM_FP\t")) != 0;
+    *hard = strstr(v, "__ARM_PCS_VFP") != 0;
+    *idiv = strstr(v, "__ARM_FEATURE_IDIV") != 0;
+}
+
 /* scan `cc -dM -E` predefines for the ARM ABI facts */
 static void detect_arm(char *eabi, char *vfp, char *hard, char *idiv, char *cpuver)
 {
@@ -108,20 +127,53 @@ static void detect_arm(char *eabi, char *vfp, char *hard, char *idiv, char *cpuv
     char tmp[] = "_mcc_detect_empty.c";
     const char *a[] = { CC, "-dM", "-E", tmp, 0 };
     HostSpawnOpts o; memset(&o, 0, sizeof o); o.stdout_buf = &v; o.stderr_buf = &e;
-    *eabi = *vfp = *hard = *idiv = 0; cpuver[0] = 0;
     { FILE *f = fopen(tmp, "w"); if (f) fclose(f); }
-    if (host_spawn_ex(a, &o) == 0 && v) {
-        char *p;
-        if ((p = strstr(v, "__ARM_ARCH ")) || (p = strstr(v, "__ARM_ARCH\t"))) {
-            int n = 0; p += 11; while (*p==' '||*p=='\t') p++; while (*p>='0'&&*p<='9'&&n<7) cpuver[n++]=*p++; cpuver[n]=0;
-        }
-        *eabi = strstr(v, "__ARM_EABI__") != 0;
-        *vfp = (strstr(v, "__VFP_FP__") || strstr(v, "__ARM_FP ") || strstr(v, "__ARM_FP\t")) != 0;
-        *hard = strstr(v, "__ARM_PCS_VFP") != 0;
-        *idiv = strstr(v, "__ARM_FEATURE_IDIV") != 0;
-    }
+    if (host_spawn_ex(a, &o) != 0) { free(v); v = NULL; }
+    parse_arm_abi(v, eabi, vfp, hard, idiv, cpuver);
     free(v); free(e);
     remove(tmp);
+}
+
+/* self-test parse_arm_abi against canned gcc/clang ARM predefine dumps, so the
+   macro scan stays faithful on every host -- including arm64/Darwin, where the
+   host cpu is arm64 and the 32-bit-arm path is never reached natively. */
+static int arm_abi_selftest(void)
+{
+    struct { const char *name, *dump; char eabi, vfp, hard, idiv; const char *cpuver; }
+    cases[] = {
+        { "armv7-hardfloat",
+          "#define __ARM_ARCH 7\n#define __ARM_EABI__ 1\n#define __ARM_FP 0xc\n"
+          "#define __ARM_PCS_VFP 1\n#define __VFP_FP__ 1\n", 1,1,1,0, "7" },
+        { "armv7-softfloat",
+          "#define __ARM_ARCH 7\n#define __ARM_EABI__ 1\n#define __VFP_FP__ 1\n", 1,1,0,0, "7" },
+        { "armv6-soft-nofp",
+          "#define __ARM_ARCH 6\n#define __ARM_EABI__ 1\n", 1,0,0,0, "6" },
+        { "armv7ve-idiv-hardfloat",
+          "#define __ARM_ARCH 7\n#define __ARM_ARCH_7VE__ 1\n#define __ARM_EABI__ 1\n"
+          "#define __ARM_FEATURE_IDIV 1\n#define __ARM_FP 0xe\n#define __ARM_PCS_VFP 1\n"
+          "#define __VFP_FP__ 1\n", 1,1,1,1, "7" },
+        { "aarch64-degrades",   /* arm64 dump: __ARM_ARCH 8, no EABI/PCS_VFP */
+          "#define __ARM_ARCH 8\n#define __ARM_FEATURE_IDIV 1\n#define __ARM_FP 0xe\n", 0,1,0,1, "8" },
+        { 0,0,0,0,0,0,0 }
+    };
+    int i, fails = 0;
+    for (i = 0; cases[i].name; i++) {
+        char eabi, vfp, hard, idiv, cpuver[8];
+        parse_arm_abi(cases[i].dump, &eabi, &vfp, &hard, &idiv, cpuver);
+        if (eabi != cases[i].eabi || vfp != cases[i].vfp || hard != cases[i].hard ||
+            idiv != cases[i].idiv || strcmp(cpuver, cases[i].cpuver)) {
+            printf("FAIL %-22s eabi=%d/%d vfp=%d/%d hard=%d/%d idiv=%d/%d cpuver=%s/%s\n",
+                   cases[i].name, eabi, cases[i].eabi, vfp, cases[i].vfp, hard, cases[i].hard,
+                   idiv, cases[i].idiv, cpuver, cases[i].cpuver);
+            fails++;
+        } else {
+            printf("ok   %-22s eabi=%d vfp=%d hard=%d idiv=%d cpuver=%s\n",
+                   cases[i].name, eabi, vfp, hard, idiv, cpuver);
+        }
+    }
+    if (fails) { printf("arm-abi-selftest: %d case(s) FAILED\n", fails); return 1; }
+    printf("arm-abi-selftest: all %d cases faithful\n", i);
+    return 0;
 }
 
 static int cmd_detect(int argc, char **argv)
@@ -416,6 +468,7 @@ int main(int argc, char **argv)
     if (argc > 1 && !strcmp(argv[1], "--detect")) {
         const char *ecc = getenv("CC");
         if (ecc && *ecc) CC = ecc;
+        for (i = 1; i < argc; i++) if (!strcmp(argv[i], "--arm-selftest")) return arm_abi_selftest();
         for (i = 1; i < argc - 1; i++) if (!strcmp(argv[i], "--cc")) CC = argv[i + 1];
         return cmd_detect(argc, argv);
     }

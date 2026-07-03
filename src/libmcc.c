@@ -2139,11 +2139,13 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
                 } else if (!strcmp(optarg, "stack-protector")
                         || !strcmp(optarg, "stack-protector-strong")
                         || !strcmp(optarg, "stack-protector-all")) {
-#if defined MCC_TARGET_X86_64 && !defined MCC_TARGET_MACHO
+#if (defined MCC_TARGET_X86_64 && !defined MCC_TARGET_PE) \
+    || (defined MCC_TARGET_ARM64 && defined MCC_TARGET_MACHO)
                     s->stack_protector = 1;
 #else
                     mcc_warning_c(warn_unsupported)(
-                        "-f%s: stack protection is only implemented on x86_64 ELF", optarg);
+                        "-f%s: stack protection is only implemented on x86_64 (ELF/Mach-O) "
+                        "and arm64 Mach-O", optarg);
 #endif
                 } else if (!strcmp(optarg, "no-stack-protector")) {
                     s->stack_protector = 0;

@@ -2712,9 +2712,27 @@ if(NOT CMAKE_CROSSCOMPILING)
     # the host layer src/mcchost.c); no shell, no external cp/mkdir (PLAN 0.5)
     add_executable(mccbuild tools/build.c tools/toolsupport.c)
     target_link_libraries(mccbuild ${CMAKE_DL_LIBS})
-    # CI orchestration in C (PLAN 0.9): stage / run-preset / matrix / sha256sums
+    # CI orchestration in C (PLAN 0.9): stage / run-preset / matrix / pkg / sha256sums
     add_executable(ci tools/ci.c tools/toolsupport.c)
     target_link_libraries(ci ${CMAKE_DL_LIBS})
+
+    # Release packaging is a first-class build target driven by the `ci` tool
+    # (the C port of the former cmake/package.cmake): after `cmake --install`
+    # populates the prefix, `cmake --build --target package-dist` assembles the
+    # mcc / libmcc / mcc-cross archives + checksums under ${sourceDir}/out.
+    # VER/PLAT come from cache vars so CI can stamp them at configure time.
+    set(MCC_DIST_VERSION "v0.0.0" CACHE STRING
+        "Version tag for the `package-dist` target (leading 'v' is stripped)")
+    set(MCC_DIST_PLAT "${MCC_CPU}-${MCC_TARGETOS}" CACHE STRING
+        "Platform tag embedded in release bundle names (mcc-<ver>-<plat>.<ext>)")
+    add_custom_target(package-dist
+        COMMAND "$<TARGET_FILE:ci>" pkg
+                --ver "${MCC_DIST_VERSION}" --plat "${MCC_DIST_PLAT}"
+                --stage "${CMAKE_INSTALL_PREFIX}" --out "${CMAKE_SOURCE_DIR}/out"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        VERBATIM USES_TERMINAL
+        COMMENT "Packaging release bundles (mcc/libmcc/mcc-cross) via `ci pkg`")
+    add_dependencies(package-dist ci)
 endif()
 
 if(MCC_BUILD_TESTS)
@@ -2763,14 +2781,36 @@ if(MCC_BUILD_TESTS)
 
     add_executable(exec_runner tests/exec/runner.c)
     target_include_directories(exec_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec")
-    add_test(NAME exec-suite
-        COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
-                "${CMAKE_CURRENT_SOURCE_DIR}/tests" "${CMAKE_BINARY_DIR}")
-    
-    
-    set_tests_properties(exec-suite PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-        SKIP_RETURN_CODE 77
-        ENVIRONMENT "MCC_TEST_EMU=${MCC_EMULATOR};MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS};MCC_TEST_ASM=$<IF:$<BOOL:${MCC_CONFIG_ASM}>,1,0>;MCC_TEST_BCHECK=$<IF:$<BOOL:${MCC_CONFIG_BCHECK}>,1,0>;MCC_TEST_BACKTRACE=$<IF:$<BOOL:${MCC_CONFIG_BACKTRACE}>,1,0>")
+    set(_exec_env "MCC_TEST_EMU=${MCC_EMULATOR};MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS};MCC_TEST_ASM=$<IF:$<BOOL:${MCC_CONFIG_ASM}>,1,0>;MCC_TEST_BCHECK=$<IF:$<BOOL:${MCC_CONFIG_BCHECK}>,1,0>;MCC_TEST_BACKTRACE=$<IF:$<BOOL:${MCC_CONFIG_BACKTRACE}>,1,0>")
+
+    # Normalizing aggregate suites into per-case CTests: MCC_GRANULAR_TESTS
+    # registers one test per exec golden (name parsed from goldens.h; the runner's
+    # --only runs a single case with exit 0/1/77), so `ctest -R exec/<name>`
+    # selects and reports each independently and `ctest -j` fans them across
+    # cores.  Default OFF keeps the fast single-process aggregate for CI.  The
+    # case list is derived from the source table, so a golden can never be left
+    # untested by a stale hand-maintained count (cf. mcc_goldens_count).
+    option(MCC_GRANULAR_TESTS "Register exec goldens as one CTest per case (else the aggregate exec-suite)" OFF)
+    if(MCC_GRANULAR_TESTS)
+        file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/goldens.h" _exec_glines
+             REGEX "^[ \t]*{[ \t]*\"[A-Za-z0-9_]+\"")
+        foreach(_gl IN LISTS _exec_glines)
+            string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
+            set(_gn "${CMAKE_MATCH_1}")
+            add_test(NAME "exec/${_gn}"
+                COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+                        "${CMAKE_BINARY_DIR}/exec-gran-${_gn}" --only "${_gn}")
+            set_tests_properties("exec/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env}")
+        endforeach()
+    else()
+        add_test(NAME exec-suite
+            COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests" "${CMAKE_BINARY_DIR}")
+        set_tests_properties(exec-suite PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env}")
+    endif()
 
     
     
@@ -2799,16 +2839,32 @@ if(MCC_BUILD_TESTS)
         else()
             add_executable(cli_runner tests/cli/runner.c)
             target_include_directories(cli_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli")
-            add_test(NAME cli-suite
-                COMMAND cli_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
-                        "${CMAKE_BINARY_DIR}/cli-work" "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli")
             set(_cli_env "MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS};MCC_TEST_ASM=$<IF:$<BOOL:${MCC_CONFIG_ASM}>,1,0>;MCC_TEST_DWARF=${MCC_CONFIG_DWARF}")
             if(_cli_sh)
                 set(_cli_env "${_cli_env};MCC_TEST_SH=${_cli_sh}")
             endif()
-            set_tests_properties(cli-suite PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77
-                ENVIRONMENT "${_cli_env}")
+            # MCC_GRANULAR_TESTS: one CTest per cli case (cf. the exec block).
+            if(MCC_GRANULAR_TESTS)
+                file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli/cases.h" _cli_clines
+                     REGEX "^[ \t]*{[ \t]*\"[A-Za-z0-9_]+\"[ \t]*,")
+                foreach(_cl IN LISTS _cli_clines)
+                    string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_cl}")
+                    set(_cn "${CMAKE_MATCH_1}")
+                    add_test(NAME "cli/${_cn}"
+                        COMMAND cli_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                                "${CMAKE_BINARY_DIR}/cli-gran-${_cn}"
+                                "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli" --only "${_cn}")
+                    set_tests_properties("cli/${_cn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                        SKIP_RETURN_CODE 77 ENVIRONMENT "${_cli_env}")
+                endforeach()
+            else()
+                add_test(NAME cli-suite
+                    COMMAND cli_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                            "${CMAKE_BINARY_DIR}/cli-work" "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli")
+                set_tests_properties(cli-suite PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                    SKIP_RETURN_CODE 77
+                    ENVIRONMENT "${_cli_env}")
+            endif()
         endif()
     endif()
 
@@ -3232,6 +3288,23 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(ci-matrix PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             PASS_REGULAR_EXPRESSION "linux-gcc")
 
+        # Release packaging (PLAN 0.9 #pkg): `ci pkg` (the C port of the former
+        # cmake/package.cmake, driven by the `package-dist` target) must produce
+        # the mcc/libmcc/mcc-cross bundles + checksums and correctly partition
+        # bin/ + lib/mcc into host shapes vs cross compilers.
+        if(TARGET mccharness)
+            add_test(NAME ci-pkg-smoke COMMAND "$<TARGET_FILE:mccharness>" pkgsmoke
+                --ci "$<TARGET_FILE:ci>" --work "${CMAKE_BINARY_DIR}/pkgsmoke-work")
+            set_tests_properties(ci-pkg-smoke PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77)
+
+            # qemu rootfs pointer parse (mccharness qemufetch, PLAN 0.9): the
+            # stage3 ".ptr" -> release-path parse must stay faithful; the network
+            # fetch itself is exercised by the qemu matrix (ctest -L qemu).
+            add_test(NAME qemu-fetch-parse COMMAND "$<TARGET_FILE:mccharness>" qemufetch --selftest)
+            set_tests_properties(qemu-fetch-parse PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+        endif()
+
         # git stamp helper (PLAN 0.8 catalog #7): mccbuild --githash reproduces
         # the "<date> <branch>@<short>[*]" form the CMake githash define uses.
         if(TARGET mccbuild AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
@@ -3251,6 +3324,15 @@ if(MCC_BUILD_TESTS)
                 --expect-triplet "${MCC_TRIPLET}")
             set_tests_properties(host-detect PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+        endif()
+
+        # arm-abi macro scan (mccbuild --detect, catalog #1): the __ARM_ARCH/
+        # __ARM_EABI__/__VFP_FP__/__ARM_PCS_VFP/__ARM_FEATURE_IDIV parse must
+        # stay faithful on every host -- notably arm64/Darwin, where the host
+        # cpu is arm64 and the 32-bit-arm path is never taken natively.
+        if(TARGET mccbuild)
+            add_test(NAME arm-abi-detect COMMAND "$<TARGET_FILE:mccbuild>" --detect --arm-selftest)
+            set_tests_properties(arm-abi-detect PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endif()
 
         # Cross factory (PLAN 0.8 catalog #3+#4): mccbuild builds a full cross
@@ -3554,6 +3636,16 @@ if(MCC_BUILD_TESTS)
     set_tests_properties(macho-conformance-native PROPERTIES
         FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
 
+    # -fstack-protector on native Mach-O (arm64/x86_64): the canary must be
+    # emitted (global __stack_chk_guard via GOT + __stack_chk_fail), leave clean
+    # code working, and trip on a stack-buffer overflow.
+    add_test(NAME macho-stack-protector
+        COMMAND "$<TARGET_FILE:mccharness>" stackguard
+                --mcc "$<TARGET_FILE:mcc>" --objcheck "$<TARGET_FILE:objcheck>"
+                --bdir "${CMAKE_BINARY_DIR}" --work "${CMAKE_BINARY_DIR}/stackguard-work")
+    set_tests_properties(macho-stack-protector PROPERTIES
+        FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
+
     
     
     
@@ -3591,57 +3683,9 @@ if(MCC_BUILD_TESTS)
         set(MCC_QEMU_DLDIR "${CMAKE_BINARY_DIR}/qemu-roots" CACHE PATH
             "Where downloaded rootfs trees are extracted")
 
-        set(_qfetch "${CMAKE_BINARY_DIR}/run_qemu_fetch.cmake")
-        file(WRITE "${_qfetch}" [==[
-
-
-if(EXISTS "${MARKER}")
-    return()
-endif()
-file(DOWNLOAD "${PTRURL}" "${DEST}.ptr" STATUS _st TIMEOUT 120)
-list(GET _st 0 _code)
-if(NOT _code EQUAL 0)
-    message(FATAL_ERROR "fetch pointer failed (${_st}): ${PTRURL}")
-endif()
-
-
-file(STRINGS "${DEST}.ptr" _lines)
-set(_rel "")
-foreach(_l IN LISTS _lines)
-    if(_l MATCHES "\\.tar\\.(xz|bz2|gz)")
-        string(REGEX MATCH "^[^ \t]+" _rel "${_l}")
-        break()
-    endif()
-endforeach()
-if(_rel STREQUAL "")
-    message(FATAL_ERROR "could not parse stage3 path from ${PTRURL}")
-endif()
-file(MAKE_DIRECTORY "${DEST}")
-message(STATUS "qemu-roots: downloading ${MIRRORBASE}/${_rel}")
-file(DOWNLOAD "${MIRRORBASE}/${_rel}" "${DEST}.tar" STATUS _st2 SHOW_PROGRESS TIMEOUT 1800)
-list(GET _st2 0 _code2)
-if(NOT _code2 EQUAL 0)
-    message(FATAL_ERROR "fetch stage3 failed (${_st2}): ${MIRRORBASE}/${_rel}")
-endif()
-
-
-
-find_program(_TAR NAMES tar)
-if(_TAR)
-    execute_process(COMMAND "${_TAR}" --no-same-owner --exclude=./dev/*
-        -xpf "${DEST}.tar" -C "${DEST}" RESULT_VARIABLE _xrc)
-else()
-    execute_process(COMMAND "${CMAKE_COMMAND}" -E tar xf "${DEST}.tar"
-        WORKING_DIRECTORY "${DEST}" RESULT_VARIABLE _xrc)
-endif()
-if(NOT _xrc EQUAL 0)
-    message(FATAL_ERROR "extract failed for ${DEST}.tar")
-endif()
-file(REMOVE "${DEST}.tar")
-file(WRITE "${MARKER}" "${_rel}\n")
-]==])
-
-
+        # Rootfs provisioning is the C tool `mccharness qemufetch` (PLAN 0.9):
+        # download the release pointer, parse the stage3 path, download + extract
+        # the tarball, stamp the marker -- no generated cmake -P download script.
         set(_qsrc "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/conformance")
         foreach(_arch IN LISTS MCC_QEMU_ARCHS)
             
@@ -3707,13 +3751,13 @@ file(WRITE "${MARKER}" "${_rel}\n")
                 endif()
 
                 set(_root "${MCC_QEMU_DLDIR}/${_arch}-${_libc}")
-                add_test(NAME ${_tn}-fetch COMMAND "${CMAKE_COMMAND}"
-                    "-DPTRURL=${MCC_QEMU_MIRROR}/${_gdir}/autobuilds/${_ptr}"
-                    "-DMIRRORBASE=${MCC_QEMU_MIRROR}/${_gdir}/autobuilds"
-                    "-DDEST=${_root}" "-DMARKER=${_root}/.fetched"
-                    -P "${_qfetch}")
+                add_test(NAME ${_tn}-fetch COMMAND "$<TARGET_FILE:mccharness>" qemufetch
+                    --ptrurl "${MCC_QEMU_MIRROR}/${_gdir}/autobuilds/${_ptr}"
+                    --mirrorbase "${MCC_QEMU_MIRROR}/${_gdir}/autobuilds"
+                    --dest "${_root}" --marker "${_root}/.fetched")
                 set_tests_properties(${_tn}-fetch PROPERTIES
-                    FIXTURES_SETUP FX_${_tn} LABELS qemu TIMEOUT 2000)
+                    FIXTURES_SETUP FX_${_tn} FIXTURES_REQUIRED MCC_BUILT
+                    LABELS qemu TIMEOUT 2000)
 
                 add_test(NAME ${_tn} COMMAND "$<TARGET_FILE:mccharness>" qemurun
                     --mcc "${_qcc}" --mccbase "${CMAKE_BINARY_DIR}"
