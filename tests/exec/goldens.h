@@ -271,7 +271,7 @@ static const mcc_golden_t mcc_goldens[] = {
   { "lex_extras","run","exec/lexical/lex_extras.c","27\n65\n5 240\n","","","" },
   { "asm_data_directives","run","exec/inline_asm/data_directives.c","rep: 7 7 7 7\nfill: 4660 4660\nskip: 170 187 187 187 204\nstr: ab|cd\ndelta: 4\nalias: 99\n","","","asm,elf" },
   { "asm_sections","run","exec/inline_asm/asm_sections.c","1111 2222 3333 4444\n","","","asm,elf" },
-  { "asm_operand_modifiers","run","exec/inline_asm/asm_operand_modifiers.c","k+b: 112233ff\nw: 1234abcd\nq: 123456789a\n","","","cpu=x86_64,asm" },
+  { "asm_operand_modifiers","run","exec/inline_asm/asm_operand_modifiers.c","k+b: 112233ff\nw: 1234abcd\nq: 123456789a\n","","","cpu=x86_64,asm","k+b: 112233ff\nw: 1234abcd\nq: 3456789a\n" },
   { "asm_constraints_x86","run","exec/inline_asm/asm_constraints_x86.c","cpuid: 1\nA: efef\nkeep: 1234\nhello\nreg: 5678\n","","","cpu=x86_64,asm" },
   { "pp_int_overflow","pp","preprocess/diagnostics/int_overflow.c","\nint_overflow.c:1: warning: integer constant overflow\nbig\n","","","" },
   { "lex_utf8_bom","run","exec/lexical/utf8_bom.c","bom-ok\n","","","" },

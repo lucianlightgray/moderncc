@@ -101,21 +101,26 @@ and the four host-runnable Mach-O drivers run natively and pass too.
 
 **Windows status (2026-07, mingw gcc 13.1/16.1 / MSVC 19.51 / clang 22):**
 every Windows-runnable preset is green — `debug`, `release`, `diagnostics`,
-`cross` (42/42 each, mingw), `msvc` (VS generator, 41/41), `mingw`
-(superbuild; fetches the pinned winlibs GCC and tests with it, 42/42),
-`matrix` (gcc/clang × native/cross — 4 cells × 42/42, clang resolved from the
-fetched `cmake-clang`), and both `dist-*` packagings (`dist-msvc`,
+`cross` (**53/53** each, mingw; 13–16 environment-gated skips), `msvc` (VS
+generator, **51/51** — two suites aren't registered on an MSVC host), `mingw`
+(superbuild; fetches the pinned winlibs GCC and tests with it, **53/53**),
+`matrix` (gcc/clang × native/cross — **4 cells × 53/53**, clang resolved from
+the fetched `cmake-clang`), and both `dist-*` packagings (`dist-msvc`,
 `dist-mingw`: mcc + `-static`/`-dynamic` + `libmcc-static`/`-dynamic` + all
-12 cross compilers). `asan` intentionally fails at configure — mingw ships no
-libasan/libubsan; use `diagnostics`, which builds the coverage + profile
-variants and skips sanitize. The PE target gets native-only extra coverage
+12 cross compilers, each also in a `-static` shape). The in-tree build/CI
+tools carry their own ctests that pass here too — `host-gate-invariant`,
+`git-stamp`, `def-verify`, `build-md-nodes`, `config-defines`, `host-detect`,
+`cross-factory`, `ci-matrix`, `ci-pkg-smoke`, `qemu-fetch-parse`. `asan`
+intentionally fails at configure — mingw ships no libasan/libubsan; use
+`diagnostics`, which builds the coverage + profile variants and skips
+sanitize. The PE target gets native-only extra coverage
 (`pe-native-conformance`, `compile.win32.*`); remaining skips are
 environment- or libc-gated with reasons (wine, macOS, X11, ELF-emitting
-32-bit reference, msvcrt's reduced libm/complex surface for `parts-suite`).
-The `linux-*` presets, `dist-linux-*` packagings, and the qemu grid all run
-from Windows too, via the Docker runners (`tests/ci/docker`,
-`tests/qemu/docker`) — verified 15/15 presets at 39/39 each and 22/22 qemu
-combos.
+32-bit reference, the osx/arm64/riscv64 cross drivers when the `cross`
+toolchain isn't built, msvcrt's reduced libm/complex surface for
+`parts-suite`, and PE bounds-checking for `mcctest-bcheck`). The `linux-*`
+presets, `dist-linux-*` packagings, and the qemu grid also run from Windows,
+via the Docker runners (`tests/ci/docker`, `tests/qemu/docker`).
 
 or, CMake (without presets):
 
@@ -226,7 +231,7 @@ failure), `—` = not applicable.
 | `i386-fastcall-abi`⁶                  | S | S | S | P | P | S |
 | `compile.win32.*` / `pe-native-conformance` | P | P | P | — | — | S |
 | `pe-wine-conformance` (label `wine`)⁷ | S | S | S | P | P | S |
-| `macho-*` (6 drivers, label `macho`)⁷ | S | S | S | P | P | P |
+| `macho-*` (7 drivers, label `macho`)⁷ | S | S | S | P | P | P |
 | qemu cross×libc matrix (label `qemu`)⁸| S | S | S | P | P | S |
 
 ¹ Differential vs. a GCC-compatible reference cc (needs the integrated

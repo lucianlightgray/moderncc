@@ -1781,16 +1781,20 @@ static int suite_pkgsmoke(int argc, char **argv)
     ts_path(p, sizeof p, stage, "bin");     host_mkdirs(p);
     ts_path(p, sizeof p, stage, "lib/mcc"); host_mkdirs(p);
     ts_path(p, sizeof p, stage, "include"); host_mkdirs(p);
-#define PUT(rel, txt) do { ts_path(p, sizeof p, stage, rel); write_file(p, txt); } while (0)
-    PUT("bin/mcc", "x");                    /* host shape -> mcc bundle */
-    PUT("bin/mcc-static", "x");             /* host shape -> NOT the cross bundle */
-    PUT("bin/mcc-arm64", "x");              /* cross compiler -> cross bundle */
-    PUT("bin/mcc-x86_64-win32", "x");       /* cross compiler -> cross bundle */
+    /* executables carry the host exe suffix (.exe on Windows), matching a real
+       `cmake --install` — `ci pkg` probes/copies bin/mcc<suffix> per host. */
+#define PUT(rel, txt)  do { ts_path(p, sizeof p, stage, rel); write_file(p, txt); } while (0)
+#define PUTX(rel, txt) do { ts_path(p, sizeof p, stage, rel "%s", HOST_EXE_SUFFIX); write_file(p, txt); } while (0)
+    PUTX("bin/mcc", "x");                   /* host shape -> mcc bundle */
+    PUTX("bin/mcc-static", "x");            /* host shape -> NOT the cross bundle */
+    PUTX("bin/mcc-arm64", "x");             /* cross compiler -> cross bundle */
+    PUTX("bin/mcc-x86_64-win32", "x");      /* cross compiler -> cross bundle */
     PUT("lib/mcc/libmcc1.a", "x");          /* native runtime -> NOT the cross bundle */
     PUT("lib/mcc/arm64-libmcc1.a", "x");    /* cross runtime -> cross bundle */
     PUT("lib/libmcc-static.a", "x");        /* libmcc bundle archive */
     PUT("include/libmcc.h", "x");           /* libmcc bundle header */
 #undef PUT
+#undef PUTX
 
     { Argv v = {{0},0};
       A(&v, ci); A(&v, "pkg"); A(&v, "--ver"); A(&v, "v1.2.3"); A(&v, "--plat"); A(&v, "test");
