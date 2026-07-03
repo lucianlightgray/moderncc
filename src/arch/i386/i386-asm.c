@@ -138,6 +138,7 @@ typedef struct Operand {
     int8_t  reg;
     int8_t  reg2;
     uint8_t shift;
+    uint8_t ntpoff; /* `sym@ntpoff` suffix parsed: field carries R_386_TLS_LE */
     ExprValue e;
 } Operand;
 
@@ -313,12 +314,33 @@ static int asm_parse_reg(unsigned int *type)
     return reg;
 }
 
+#ifndef MCC_TARGET_X86_64
+/* gas @-operator after a symbol, selecting a non-default relocation for the
+   field.  i386-gen.c reaches for exactly one: `sym@ntpoff` (TLS local-exec,
+   R_386_TLS_LE), which `-S` listings print, so parse it back.  Returns 1 if
+   the suffix was consumed. */
+static int asm_parse_ntpoff(void)
+{
+    if (tok != '@')
+        return 0;
+    next();
+    if (tok < TOK_IDENT || strcmp(get_tok_str(tok, NULL), "ntpoff"))
+        mcc_error("unsupported relocation operator '@%s'",
+                  get_tok_str(tok, &tokc));
+    next();
+    return 1;
+}
+#else
+#define asm_parse_ntpoff() 0
+#endif
+
 static void parse_operand(MCCState *s1, Operand *op)
 {
     ExprValue e;
     int reg, indir;
     const char *p;
 
+    op->ntpoff = 0;
     indir = 0;
     if (tok == '*') {
         next();
@@ -380,6 +402,8 @@ static void parse_operand(MCCState *s1, Operand *op)
         asm_expr(s1, &e);
         op->type = OP_IM32;
         op->e = e;
+        if (op->e.sym)
+            op->ntpoff = asm_parse_ntpoff();
         if (!op->e.sym) {
             if (op->e.v == (uint8_t)op->e.v)
                 op->type |= OP_IM8;
@@ -400,6 +424,8 @@ static void parse_operand(MCCState *s1, Operand *op)
         if (tok != '(') {
             asm_expr(s1, &e);
             op->e = e;
+            if (op->e.sym)
+                op->ntpoff = asm_parse_ntpoff();
         } else {
             next();
             if (tok == '%') {
@@ -471,6 +497,20 @@ static void gen_disp32(ExprValue *pe)
     }
 }
 
+/* Emit the 32-bit address/immediate field of an operand: a `sym@ntpoff`
+   operand carries the TLS local-exec relocation instead of the default. */
+static void gen_op32(Operand *op)
+{
+#ifndef MCC_TARGET_X86_64
+    if (op->ntpoff) {
+        greloc(cur_text_section, op->e.sym, ind, R_386_TLS_LE);
+        gen_le32(op->e.v);
+        return;
+    }
+#endif
+    gen_expr32(&op->e);
+}
+
 static inline int asm_modrm(int reg, Operand *op)
 {
     int mod, reg1, reg2, sib_reg1;
@@ -482,9 +522,16 @@ static inline int asm_modrm(int reg, Operand *op)
 	g(0x04 + (reg << 3));
 	g(0x25);
 #else
-	g(0x05 + (reg << 3));
+	if (op->ntpoff) {
+	    /* i386-gen.c spells __thread accesses with the (redundant)
+	       no-base SIB form; use the same encoding so a -S listing
+	       re-assembles byte-identically */
+	    g(0x04 + (reg << 3));
+	    g(0x25);
+	} else
+	    g(0x05 + (reg << 3));
 #endif
-	gen_expr32(&op->e);
+	gen_op32(op);
 #ifdef MCC_TARGET_X86_64
     } else if (op->reg == -2) {
         ExprValue *pe = &op->e;
@@ -517,7 +564,7 @@ static inline int asm_modrm(int reg, Operand *op)
         if (mod == 0x40) {
             g(op->e.v);
         } else if (mod == 0x80 || op->reg == -1) {
-	    gen_expr32(&op->e);
+	    gen_op32(op);
         }
     }
     return 0;
@@ -751,6 +798,16 @@ again:
                 goto next;
 	    alltypes |= ops[i].type;
         }
+#ifndef MCC_TARGET_X86_64
+        /* `sym@ntpoff` operands: skip the eAX short forms (a0-a3 moffs,
+           imm-to-eAX) so the ModRM row is selected — the encoding
+           i386-gen.c emits, keeping -S round-trips byte-identical */
+        if (!(pa->instr_type & OPC_MODRM)) {
+            for(i = 0; i < nb_ops; i++)
+                if (ops[i].ntpoff)
+                    goto next;
+        }
+#endif
         (void)alltypes;
         break;
     next: ;
@@ -1029,7 +1086,7 @@ again:
 	    } else if (pa->op_type[i] == OPT_DISP || pa->op_type[i] == OPT_DISP8) {
                 gen_disp32(&ops[i].e);
             } else {
-                gen_expr32(&ops[i].e);
+                gen_op32(&ops[i]);
             }
         }
     }

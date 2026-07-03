@@ -83,6 +83,7 @@ typedef struct Operand {
     uint8_t reg_type;
     uint8_t shift;
     uint8_t addr_mode;
+    uint8_t reloc_spec;
     int reg_tok;
     ExprValue e;
 } Operand;
@@ -91,6 +92,19 @@ enum {
     ADDR_OFF,
     ADDR_PRE,
     ADDR_POST,
+};
+
+/* GAS-style relocation specifiers on symbolic operands (":got:sym",
+   "#:lo12:sym", ...); the operand's value is left for the linker and the
+   symbol goes into a RELA relocation, mirroring arm64-gen.c */
+enum {
+    RS_NONE,       /* no specifier                                          */
+    RS_GOT,        /* :got:        adrp    R_AARCH64_ADR_GOT_PAGE           */
+    RS_LO12,       /* :lo12:       add     R_AARCH64_ADD_ABS_LO12_NC
+                                   ldr/str R_AARCH64_LDST<n>_ABS_LO12_NC    */
+    RS_GOT_LO12,   /* :got_lo12:   ldr     R_AARCH64_LD64_GOT_LO12_NC       */
+    RS_TPREL_HI12, /* :tprel_hi12: add     R_AARCH64_TLSLE_ADD_TPREL_HI12   */
+    RS_TPREL_LO12, /* :tprel_lo12: add     R_AARCH64_TLSLE_ADD_TPREL_LO12   */
 };
 
 static void parse_addr_operand(MCCState *s1, Operand *op);
@@ -245,6 +259,37 @@ static int arm64_parse_regvar(int t)
     return -1;
 }
 
+/* Parse a ":got:" / ":lo12:" style relocation specifier ahead of a symbol.
+   Consumes the prefix and returns an RS_* value; a bare ':' with no known
+   specifier behind it is consumed like the other immediate markers. */
+static int parse_reloc_spec(void)
+{
+    const char *name;
+    int spec = RS_NONE;
+
+    if (tok != ':')
+        return RS_NONE;
+    next();
+    if (tok < TOK_IDENT)
+        return RS_NONE;
+    name = get_tok_str(tok, NULL);
+    if (!strcmp(name, "got"))
+        spec = RS_GOT;
+    else if (!strcmp(name, "lo12"))
+        spec = RS_LO12;
+    else if (!strcmp(name, "got_lo12"))
+        spec = RS_GOT_LO12;
+    else if (!strcmp(name, "tprel_hi12"))
+        spec = RS_TPREL_HI12;
+    else if (!strcmp(name, "tprel_lo12"))
+        spec = RS_TPREL_LO12;
+    if (spec != RS_NONE) {
+        next();
+        skip(':');
+    }
+    return spec;
+}
+
 static void parse_operand(MCCState *s1, Operand *op)
 {
     int reg;
@@ -255,6 +300,7 @@ static void parse_operand(MCCState *s1, Operand *op)
     op->reg_type = 0;
     op->shift = 0;
     op->addr_mode = ADDR_OFF;
+    op->reloc_spec = RS_NONE;
     op->reg_tok = 0;
 
     if (tok == '[') {
@@ -281,7 +327,9 @@ static void parse_operand(MCCState *s1, Operand *op)
     }
 
     if (tok == '#' || tok == ':' || tok == '@' || tok == '$') {
-        next();
+        if (tok != ':')
+            next();
+        op->reloc_spec = parse_reloc_spec();
         asm_expr(s1, &op->e);
         op->type = OP_IM;
     } else if (tok >= TOK_IDENT) {
@@ -303,8 +351,9 @@ static void parse_expr_operand(MCCState *s1, Operand *op)
     op->addr_mode = ADDR_OFF;
     op->reg_tok = 0;
 
-    if (tok == '#' || tok == ':' || tok == '@' || tok == '$')
+    if (tok == '#' || tok == '@' || tok == '$')
         next();
+    op->reloc_spec = parse_reloc_spec();
     asm_expr(s1, &op->e);
 }
 
@@ -318,6 +367,7 @@ static void parse_addr_operand(MCCState *s1, Operand *op)
     op->e.v = 0;
     op->e.sym = NULL;
     op->addr_mode = ADDR_OFF;
+    op->reloc_spec = RS_NONE;
     op->reg_tok = 0;
 
     skip('[');
@@ -333,6 +383,7 @@ static void parse_addr_operand(MCCState *s1, Operand *op)
         next();
         if (tok == '#' || tok == '@' || tok == '$')
             next();
+        op->reloc_spec = parse_reloc_spec();
         asm_expr(s1, &op->e);
     }
     skip(']');
@@ -421,6 +472,39 @@ static void gen_sub_imm(int rd, int rn, uint32_t imm, int is_64bit, int setflags
     emit_instr32(instr);
 }
 
+/* add with a to-be-relocated low-part immediate ("add x0, x0, #:lo12:sym"
+   and the tprel forms): imm12 is left zero for the linker to patch and the
+   symbol/addend go into a RELA relocation, as arm64-gen.c emits them. */
+static void gen_add_reloc_imm(int rd, int rn, Operand *op, int is_64bit)
+{
+    uint32_t instr = ARM64_ADD_IMM | ARM64_RN(rn) | ARM64_RD(rd);
+    int rtype;
+
+    switch (op->reloc_spec) {
+    case RS_LO12:
+        rtype = R_AARCH64_ADD_ABS_LO12_NC;
+        break;
+    case RS_TPREL_HI12:
+        rtype = R_AARCH64_TLSLE_ADD_TPREL_HI12;
+        instr |= ARM64_SH(1); /* bits 23:12 of the TLS offset */
+        break;
+    case RS_TPREL_LO12:
+        rtype = R_AARCH64_TLSLE_ADD_TPREL_LO12;
+        break;
+    default:
+        mcc_error("invalid relocation specifier for add");
+        return;
+    }
+    if (!op->e.sym) {
+        mcc_error("relocated add requires a symbol");
+        return;
+    }
+    if (is_64bit)
+        instr |= ARM64_SF(1);
+    emit_instr32(instr);
+    greloca(cur_text_section, op->e.sym, ind - 4, rtype, op->e.v);
+}
+
 static void gen_dp_reg(uint32_t opcode, int rd, int rn, int rm, int is_64bit)
 {
     uint32_t instr = opcode;
@@ -474,6 +558,40 @@ static void gen_ldst_imm(uint32_t base_opcode, int rt, int rn,
     if (offset & ((1 << size_log2) - 1))
         mcc_error("invalid load/store offset");
     mcc_error("load/store offset out of range");
+}
+
+/* ldr/str with a to-be-relocated scaled offset ("ldr x0, [x0, #:got_lo12:sym]",
+   "ldrb w1, [x2, #:lo12:sym]"): imm12 is left zero for the linker. */
+static void gen_ldst_reloc_imm(uint32_t base_opcode, int rt, Operand *addr,
+                               int size_log2)
+{
+    static const int lo12_type[4] = {
+        R_AARCH64_LDST8_ABS_LO12_NC, R_AARCH64_LDST16_ABS_LO12_NC,
+        R_AARCH64_LDST32_ABS_LO12_NC, R_AARCH64_LDST64_ABS_LO12_NC
+    };
+    int rtype;
+
+    switch (addr->reloc_spec) {
+    case RS_LO12:
+        rtype = lo12_type[size_log2];
+        break;
+    case RS_GOT_LO12:
+        if (base_opcode != ARM64_LDR_X) {
+            mcc_error(":got_lo12: requires a 64-bit ldr");
+            return;
+        }
+        rtype = R_AARCH64_LD64_GOT_LO12_NC;
+        break;
+    default:
+        mcc_error("invalid relocation specifier for ldr/str");
+        return;
+    }
+    if (!addr->e.sym) {
+        mcc_error("relocated ldr/str requires a symbol");
+        return;
+    }
+    emit_instr32(base_opcode | ARM64_RN(addr->reg) | ARM64_RT(rt));
+    greloca(cur_text_section, addr->e.sym, ind - 4, rtype, addr->e.v);
 }
 
 static void gen_ldst_pair(uint32_t base_opcode, int rt, int rt2, int rn,
@@ -1245,7 +1363,12 @@ static void asm_data_proc(MCCState *s1, int token)
             return;
         }
         if (op3.type & OP_IM) {
-            if (token == TOK_ASM_add || token == TOK_ASM_adds)
+            if (op3.reloc_spec) {
+                if (token == TOK_ASM_add)
+                    gen_add_reloc_imm(rd, rn, &op3, is_64bit);
+                else
+                    mcc_error("relocated immediate only valid for add");
+            } else if (token == TOK_ASM_add || token == TOK_ASM_adds)
                 gen_add_imm(rd, rn, op3.e.v, is_64bit,
                             token == TOK_ASM_adds);
             else if (token == TOK_ASM_sub || token == TOK_ASM_subs)
@@ -1359,7 +1482,45 @@ static void asm_ldst(MCCState *s1, int token)
 
     if (op2.addr_mode != ADDR_OFF)
         mcc_error("only offset addressing is implemented for ldr/str");
+    if (op2.reloc_spec) {
+        gen_ldst_reloc_imm(base_opcode, rt, &op2, size_log2);
+        return;
+    }
     gen_ldst_imm(base_opcode, rt, rn, offset, size_log2);
+}
+
+/* adrp xN, sym / adrp xN, :got:sym - the immediate is left zero for the
+   linker (R_AARCH64_ADR_PREL_PG_HI21 / R_AARCH64_ADR_GOT_PAGE). */
+static void asm_adrp(MCCState *s1)
+{
+    Operand op1, op2;
+    int rtype;
+
+    parse_operand(s1, &op1);
+    if (tok == ',') next();
+    parse_expr_operand(s1, &op2);
+
+    if (!(op1.type & OP_REG) || !(op1.reg_type & REG_X)) {
+        mcc_error("adrp requires an x register destination");
+        return;
+    }
+    if (!op2.e.sym) {
+        mcc_error("adrp requires a symbolic operand");
+        return;
+    }
+    switch (op2.reloc_spec) {
+    case RS_NONE:
+        rtype = R_AARCH64_ADR_PREL_PG_HI21;
+        break;
+    case RS_GOT:
+        rtype = R_AARCH64_ADR_GOT_PAGE;
+        break;
+    default:
+        mcc_error("invalid relocation specifier for adrp");
+        return;
+    }
+    emit_instr32(ARM64_ADRP | ARM64_RD(op1.reg));
+    greloca(cur_text_section, op2.e.sym, ind - 4, rtype, op2.e.v);
 }
 
 static void asm_ldst_pair(MCCState *s1, int token)
@@ -1675,6 +1836,10 @@ ST_FUNC void asm_opcode(MCCState *s1, int opcode)
         case TOK_ASM_ldp:
         case TOK_ASM_stp:
             asm_ldst_pair(s1, opcode);
+            break;
+
+        case TOK_ASM_adrp:
+            asm_adrp(s1);
             break;
 
         case TOK_ASM_b:

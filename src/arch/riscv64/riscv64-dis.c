@@ -21,14 +21,20 @@
  *  - Calls (R_RISCV_CALL_PLT covering an auipc+jalr pair) also print as
  *    `auipc ra, sym` + plain `jalr ra, 0(ra)`: the regenerated
  *    PCREL_HI20+PCREL_LO12_I pair patches the two instructions exactly
- *    like CALL_PLT did.  mcc's own `call` pseudo would not match (it
- *    encodes jalr with rd=zero).  Callees already labelled earlier in the
+ *    like CALL_PLT did (mcc's own `call` pseudo pairs ra only and emits
+ *    R_RISCV_CALL).  Callees already labelled earlier in the
  *    listing are referenced through a `.set` alias, and symbols that
  *    collide with register/CSR names are spelled `0+sym`.
  *
- * Anything the integrated assembler cannot reproduce byte-exactly (flw/fsw,
- * fmv.[wxd].*, fcvt.d.s with rm=0, sraw/sraiw, PCREL_LO12_S store pairs,
- * PCREL_HI20 with addend, TLS) falls back to a length-correct `.long`
+ *  - Pairs the bare-symbol auipc spelling cannot express (a PCREL_HI20
+ *    carrying an addend, a store-form PCREL_LO12_S consumer, or a GOT pair
+ *    whose symbol was already labelled) use the explicit GAS modifiers
+ *    instead: a `.Lpc<off>:` label is emitted at the auipc, which prints
+ *    `%pcrel_hi(sym+addend)`/`%got_pcrel_hi(sym)`, and each dependent
+ *    load/store/addi prints `%pcrel_lo(.Lpc<off>)`.
+ *
+ * Anything the integrated assembler still cannot reproduce byte-exactly
+ * (TLS/TPREL pairs, stray relocs) falls back to a length-correct `.long`
  * (mcc's `.word` is 2 bytes, so `.long` is the 4-byte directive).
  */
 #include "mcc.h"
@@ -133,9 +139,48 @@ static ElfW(Sym) *reloc_sym_at(disasm_ctx *dc, addr_t off, int type)
 /* Symbols already labelled earlier in the listing have lost both VT_EXTERN
    (definition) and, if global, VT_STATIC (.globl): riscv64-asm.c's
    parse_operand() then rejects them as instruction operands. */
-static int defined_before(disasm_ctx *dc, ElfW(Sym) *s)
+static int defined_before(disasm_ctx *dc, ElfW(Sym) *s, addr_t pc)
 {
-    return s && s->st_shndx == dc->sec->sh_num && s->st_value < dc->pc;
+    return s && s->st_shndx == dc->sec->sh_num && s->st_value < pc;
+}
+
+/* section offset of the auipc a PCREL_LO12 reloc's anonymous label points
+   at, or (addr_t)-1 */
+static addr_t pcrel_lo_target(disasm_ctx *dc, addr_t off, int type)
+{
+    ElfW(Sym) *s = reloc_sym_at(dc, off, type);
+    if (!s || s->st_shndx != dc->sec->sh_num)
+        return (addr_t)-1;
+    return s->st_value;
+}
+
+/* How dis_auipc() will spell the pc-relative pair whose auipc sits at A:
+   0 = raw32 (relocs not expressible), 1 = legacy `auipc rd, sym` (the
+   assembler auto-pairs a PCREL_LO12_I at A+4; dependents print plain
+   operands), 2 = explicit `.Lpc<A>: auipc rd, %pcrel_hi(sym+addend)`
+   (dependents print %pcrel_lo(.Lpc<A>)).  Must mirror dis_auipc(). */
+static int auipc_spelling(disasm_ctx *dc, addr_t A)
+{
+    int rtype = 0, lotype = 0;
+    const char *rel, *lo;
+    char relbuf[256];
+
+    if (A == (addr_t)-1 || A + 4 > dc->size
+        || (read32le(dc->data + A) & 0x7f) != 0x17)
+        return 0;
+    rel = disasm_reloc(dc, A, 4, &rtype);
+    if (!rel)
+        return 0;
+    snprintf(relbuf, sizeof relbuf, "%s", rel);
+    lo = A + 4 < dc->size ? disasm_reloc(dc, A + 4, 4, &lotype) : NULL;
+    if (lo && lotype == R_RISCV_PCREL_LO12_I && plain_sym(relbuf)
+        && (rtype == R_RISCV_PCREL_HI20
+            || (rtype == R_RISCV_GOT_HI20
+                && !defined_before(dc, reloc_sym_at(dc, A, rtype), A))))
+        return 1;
+    if (rtype == R_RISCV_PCREL_HI20 || rtype == R_RISCV_GOT_HI20)
+        return 2;
+    return 0;
 }
 
 /* ---- auipc: reloc-carrying address formation -------------------------- */
@@ -167,11 +212,11 @@ static int dis_auipc(disasm_ctx *dc, uint32_t w)
         /* auipc tr + jalr tr, 0(tr): a CALL_PLT covering both insns links
            exactly like PCREL_HI20 @auipc + PCREL_LO12_I @jalr, which is
            what re-assembling `auipc tr, sym` regenerates (the jalr then
-           decodes as a plain instruction).  mcc's own `call` pseudo would
-           not match: it encodes jalr with rd=zero. */
+           decodes as a plain instruction).  mcc's own `call` pseudo pairs
+           ra only and emits R_RISCV_CALL, so this spelling stays. */
         ElfW(Sym) *s = reloc_sym_at(dc, dc->pc, rtype);
         if (plain_sym(rel)) {
-            if (defined_before(dc, s)
+            if (defined_before(dc, s, dc->pc)
                 && ELFW(ST_BIND)(s->st_info) != STB_LOCAL) {
                 /* already-.globl'd label: alias it via .set, which yields a
                    fresh assembler symbol at the same address that
@@ -188,7 +233,7 @@ static int dis_auipc(disasm_ctx *dc, uint32_t w)
     }
     if (rtype == R_RISCV_GOT_HI20 && plain_sym(rel)
         && lo && lotype == R_RISCV_PCREL_LO12_I
-        && !defined_before(dc, reloc_sym_at(dc, dc->pc, rtype))) {
+        && !defined_before(dc, reloc_sym_at(dc, dc->pc, rtype), dc->pc)) {
         /* parse_operand() picks GOT_HI20 only for non-VT_STATIC symbols;
            .globl (idempotent, valid for undefined syms too) clears the
            VT_STATIC every assembler-level symbol starts with. */
@@ -200,8 +245,17 @@ static int dis_auipc(disasm_ctx *dc, uint32_t w)
         P(dc, "auipc\t%s, %s%s", xrn[rd], sym_esc(rel), rel);
         return 4;
     }
-    /* PCREL_HI20 with addend, store pairs (PCREL_LO12_S: parse_operand can
-       only emit LO12_I), TPREL, or a stray reloc: not expressible. */
+    if (rtype == R_RISCV_PCREL_HI20 || rtype == R_RISCV_GOT_HI20) {
+        /* addend-carrying, store-form (PCREL_LO12_S), or already-labelled
+           GOT pair: explicit GAS modifier spelling; the dependent insns
+           print %pcrel_lo(.Lpc<addr>) against the label emitted here. */
+        P(dc, ".Lpc%llx:\n\tauipc\t%s, %s(%s%s)",
+          (unsigned long long)dc->pc, xrn[rd],
+          rtype == R_RISCV_GOT_HI20 ? "%got_pcrel_hi" : "%pcrel_hi",
+          sym_esc(rel), rel);
+        return 4;
+    }
+    /* TPREL or a stray reloc: not expressible. */
     return raw32(dc, w);
 }
 
@@ -242,16 +296,25 @@ static int dis_op_fp(disasm_ctx *dc, uint32_t w)
         P(dc, "%s.%c\t%s, %s, %s", rm ? "fmax" : "fmin", fc,
           frn[rd], frn[rs1], frn[rs2]);
         return 4;
-    case 0x20: /* fcvt.s.d / fcvt.d.s */
-        /* gen emits fcvt.d.s with rm=0 but the assembler hardcodes rm=dyn,
-           so only the rm=7 encodings round-trip */
-        if (rm == 7 && f7 == 0x20 && rs2 == 1)
-            P(dc, "fcvt.s.d\t%s, %s", frn[rd], frn[rs1]);
-        else if (rm == 7 && f7 == 0x21 && rs2 == 0)
-            P(dc, "fcvt.d.s\t%s, %s", frn[rd], frn[rs1]);
+    case 0x20: { /* fcvt.s.d / fcvt.d.s (rm printed as an explicit
+                    rounding-mode operand unless dyn) */
+        static const char * const rmn[5] =
+            { "rne", "rtz", "rdn", "rup", "rmm" };
+        const char *nm;
+        if (f7 == 0x20 && rs2 == 1)
+            nm = "fcvt.s.d";
+        else if (f7 == 0x21 && rs2 == 0)
+            nm = "fcvt.d.s";
+        else
+            break;
+        if (rm == 7)
+            P(dc, "%s\t%s, %s", nm, frn[rd], frn[rs1]);
+        else if (rm <= 4)
+            P(dc, "%s\t%s, %s, %s", nm, frn[rd], frn[rs1], rmn[rm]);
         else
             break;
         return 4;
+    }
     case 0x2c: /* fsqrt */
         if (rm != 7 || rs2 != 0)
             break;
@@ -276,13 +339,23 @@ static int dis_op_fp(disasm_ctx *dc, uint32_t w)
             break;
         P(dc, "fcvt.%c.%s\t%s, %s", fc, cvt[rs2], frn[rd], xrn[rs1]);
         return 4;
-    case 0x70: /* fmv.x.[wd] (rm 0: no assembler support) / fclass */
+    case 0x70: /* fmv.x.[wd] / fclass */
         if (rm == 1 && rs2 == 0) {
             P(dc, "fclass.%c\t%s, %s", fc, xrn[rd], frn[rs1]);
             return 4;
         }
+        if (rm == 0 && rs2 == 0) {
+            P(dc, "fmv.x.%c\t%s, %s", (f7 & 1) ? 'd' : 'w',
+              xrn[rd], frn[rs1]);
+            return 4;
+        }
         break;
-    case 0x78: /* fmv.[wd].x: no assembler support */
+    case 0x78: /* fmv.[wd].x */
+        if (rm == 0 && rs2 == 0) {
+            P(dc, "fmv.%c.x\t%s, %s", (f7 & 1) ? 'd' : 'w',
+              frn[rd], xrn[rs1]);
+            return 4;
+        }
         break;
     }
     return raw32(dc, w);
@@ -358,40 +431,75 @@ static int dis_insn(disasm_ctx *dc)
     case 0x03: { /* integer loads */
         static const char * const nm[8] =
             { "lb", "lh", "lw", "ld", "lbu", "lhu", "lwu", 0 };
-        /* a PCREL_LO12_I here belongs to the preceding auipc's pair and is
-           regenerated by it; print the raw (zero) immediate */
-        if (!nm[f3] || (disasm_reloc(dc, pc, 4, &rtype)
-                        && rtype != R_RISCV_PCREL_LO12_I))
+        /* a PCREL_LO12_I here pairs with an auipc: legacy-spelled auipcs
+           regenerate it themselves (print the raw zero immediate);
+           explicit ones need a %pcrel_lo operand against their label */
+        rel = disasm_reloc(dc, pc, 4, &rtype);
+        if (!nm[f3] || (rel && rtype != R_RISCV_PCREL_LO12_I))
             return raw32(dc, w);
+        if (rel) {
+            addr_t A = pcrel_lo_target(dc, pc, rtype);
+            if (auipc_spelling(dc, A) == 2) {
+                P(dc, "%s\t%s, %%pcrel_lo(.Lpc%llx)(%s)", nm[f3], xrn[rd],
+                  (unsigned long long)A, xrn[rs1]);
+                return 4;
+            }
+        }
         P(dc, "%s\t%s, %d(%s)", nm[f3], xrn[rd], imm_i(w), xrn[rs1]);
         return 4;
     }
 
     case 0x23: { /* integer stores */
         static const char * const nm[8] = { "sb", "sh", "sw", "sd" };
-        /* a PCREL_LO12_S here belongs to the preceding auipc, which had to
-           fall back (parse_operand only emits LO12_I): the pair's relocs
-           are lost either way, so keep the store itself readable */
-        if (f3 > 3 || (disasm_reloc(dc, pc, 4, &rtype)
-                       && rtype != R_RISCV_PCREL_LO12_S))
+        rel = disasm_reloc(dc, pc, 4, &rtype);
+        if (f3 > 3 || (rel && rtype != R_RISCV_PCREL_LO12_S))
             return raw32(dc, w);
+        if (rel) {
+            addr_t A = pcrel_lo_target(dc, pc, rtype);
+            if (auipc_spelling(dc, A) == 2) {
+                P(dc, "%s\t%s, %%pcrel_lo(.Lpc%llx)(%s)", nm[f3], xrn[rs2],
+                  (unsigned long long)A, xrn[rs1]);
+                return 4;
+            }
+            /* the auipc could not be spelled: relocs are lost either way,
+               keep the store itself readable */
+        }
         P(dc, "%s\t%s, %d(%s)", nm[f3], xrn[rs2], imm_s(w), xrn[rs1]);
         return 4;
     }
 
-    case 0x07: /* fp loads: flw exists as a token but is not dispatched by
-                  riscv64-asm.c, so only fld round-trips */
-        if (f3 != 3 || (disasm_reloc(dc, pc, 4, &rtype)
-                        && rtype != R_RISCV_PCREL_LO12_I))
+    case 0x07: /* fp loads */
+        rel = disasm_reloc(dc, pc, 4, &rtype);
+        if ((f3 != 2 && f3 != 3) || (rel && rtype != R_RISCV_PCREL_LO12_I))
             return raw32(dc, w);
-        P(dc, "fld\t%s, %d(%s)", frn[rd], imm_i(w), xrn[rs1]);
+        if (rel) {
+            addr_t A = pcrel_lo_target(dc, pc, rtype);
+            if (auipc_spelling(dc, A) == 2) {
+                P(dc, "%s\t%s, %%pcrel_lo(.Lpc%llx)(%s)",
+                  f3 == 3 ? "fld" : "flw", frn[rd],
+                  (unsigned long long)A, xrn[rs1]);
+                return 4;
+            }
+        }
+        P(dc, "%s\t%s, %d(%s)", f3 == 3 ? "fld" : "flw", frn[rd],
+          imm_i(w), xrn[rs1]);
         return 4;
 
-    case 0x27: /* fp stores: fsw not dispatched either */
-        if (f3 != 3 || (disasm_reloc(dc, pc, 4, &rtype)
-                        && rtype != R_RISCV_PCREL_LO12_S))
+    case 0x27: /* fp stores */
+        rel = disasm_reloc(dc, pc, 4, &rtype);
+        if ((f3 != 2 && f3 != 3) || (rel && rtype != R_RISCV_PCREL_LO12_S))
             return raw32(dc, w);
-        P(dc, "fsd\t%s, %d(%s)", frn[rs2], imm_s(w), xrn[rs1]);
+        if (rel) {
+            addr_t A = pcrel_lo_target(dc, pc, rtype);
+            if (auipc_spelling(dc, A) == 2) {
+                P(dc, "%s\t%s, %%pcrel_lo(.Lpc%llx)(%s)",
+                  f3 == 3 ? "fsd" : "fsw", frn[rs2],
+                  (unsigned long long)A, xrn[rs1]);
+                return 4;
+            }
+        }
+        P(dc, "%s\t%s, %d(%s)", f3 == 3 ? "fsd" : "fsw", frn[rs2],
+          imm_s(w), xrn[rs1]);
         return 4;
 
     case 0x13: { /* op-imm */
@@ -414,6 +522,14 @@ static int dis_insn(disasm_ctx *dc)
                 return raw32(dc, w);
             return 4;
         }
+        if (f3 == 0 && rel && rtype == R_RISCV_PCREL_LO12_I) {
+            addr_t A = pcrel_lo_target(dc, pc, rtype);
+            if (auipc_spelling(dc, A) == 2) {
+                P(dc, "addi\t%s, %s, %%pcrel_lo(.Lpc%llx)", xrn[rd],
+                  xrn[rs1], (unsigned long long)A);
+                return 4;
+            }
+        }
         if (f3 == 0 && w == 0x13)
             P(dc, "nop");
         else if (f3 == 0 && imm == 0 && !rel)
@@ -432,7 +548,9 @@ static int dis_insn(disasm_ctx *dc)
             P(dc, "slliw\t%s, %s, %d", xrn[rd], xrn[rs1], rs2);
         else if (f3 == 5 && (w >> 25) == 0)
             P(dc, "srliw\t%s, %s, %d", xrn[rd], xrn[rs1], rs2);
-        else /* incl. sraiw: riscv64-asm.c mis-encodes it as srliw */
+        else if (f3 == 5 && (w >> 25) == 0x20)
+            P(dc, "sraiw\t%s, %s, %d", xrn[rd], xrn[rs1], rs2);
+        else
             return raw32(dc, w);
         return 4;
 
@@ -455,11 +573,11 @@ static int dis_insn(disasm_ctx *dc)
         if (!nm)
             return raw32(dc, w);
         if (w32) {
-            /* only these have w-forms; riscv64-asm.c mis-encodes sraw */
+            /* only these have w-forms */
             if (strcmp(nm, "add") && strcmp(nm, "sub") && strcmp(nm, "sll")
-                && strcmp(nm, "srl") && strcmp(nm, "mul") && strcmp(nm, "div")
-                && strcmp(nm, "divu") && strcmp(nm, "rem")
-                && strcmp(nm, "remu"))
+                && strcmp(nm, "srl") && strcmp(nm, "sra") && strcmp(nm, "mul")
+                && strcmp(nm, "div") && strcmp(nm, "divu")
+                && strcmp(nm, "rem") && strcmp(nm, "remu"))
                 return raw32(dc, w);
             P(dc, "%sw\t%s, %s, %s", nm, xrn[rd], xrn[rs1], xrn[rs2]);
         } else {

@@ -435,24 +435,60 @@ the populated sections back to a listing.  New code:
   (invalid SBFM); arm/arm64 `gen_expr32` dropped the symbol reloc on
   `.long sym`.
 
-**Still open (documented gaps, not regressions):**
+**Follow-ups landed 2026-07-03 (second round) — the integrated-assembler
+syntax and riscv64 mnemonic gaps are closed:**
 
-- [ ] Integrated-assembler syntax gaps keep some reloc-carrying operands as
-  commented raw words: arm64 `:got:`/`:lo12:` operands (ADR_GOT_PAGE /
-  LD64_GOT_LO12_NC dropped on reassembly), riscv64 store-form
-  `%pcrel_lo`/addend-carrying operands (10 reloc fields on 2 corpus files),
-  i386 `sym@ntpoff` TLS, arm `vldr dN` parse bug + `[rn, #-0]` spelling
-  (67 `.long` sites). Each is enumerated with encodings in the respective
-  `<arch>-dis.c` header comment / agent-validated corpus.
-- [ ] riscv64-asm mnemonic gaps that force `.long` fallbacks: flw/fsw
-  dispatch missing (tokens exist), fmv.x.w/.d family, `fcvt.d.s` hardcodes
-  rm=7 where codegen emits rm=0 (both valid, bytes differ), `call`/`tail`
-  use rd=zero and leak a redundant reloc pair, `la` emits lw.
-  (The `sraw`/`sraiw`-encode-as-srlw/srliw latent bug was fixed 2026-07-03,
-  verified against spec encodings.)
-- [ ] `-fverbose-asm`-style operand comments: meaningful comments need
+- **arm64 `:got:`/`:lo12:` operands.** arm64-asm.c parses the GAS reloc
+  specifiers `:got:`, `:lo12:`, `:got_lo12:`, `:tprel_hi12:`, `:tprel_lo12:`
+  (new `adrp` mnemonic; add/ldr/str reloc-immediate forms; addends carried
+  into the RELA entries), and arm64-dis.c prints them instead of commented
+  raw words. Corpus fallbacks (mcc's own sources, ~80k insns) dropped
+  22.3% → 13.4% with byte-exact reassembly and entry-for-entry identical
+  reloc tables; the residue is literal-pool data, not reloc operands.
+- **riscv64 store-form/addend pc-relative pairs.** riscv64-asm.c parses
+  `%pcrel_hi(sym+addend)` / `%got_pcrel_hi(sym)` / `%pcrel_lo(label)`
+  (LO12_I vs LO12_S picked by instruction form), and riscv64-dis.c spells
+  the pairs the bare-symbol auipc form cannot express via a `.Lpc<off>:`
+  label + explicit modifiers. The full tests/exec corpus (54 files) now
+  round-trips byte-exact with **zero** `.long` fallbacks and identical
+  reloc tables (previously-dropped LO12_S/addend fields included).
+- **riscv64 mnemonic gaps.** flw/fsw dispatch added; fmv.x.w/x.d/w.x/d.x
+  encode (f7 0x70/0x71/0x78/0x79, spec-verified) and disassemble;
+  `fcvt.d.s`/`fcvt.s.d` take an optional rounding-mode operand (dis prints
+  `rne` for the rm=0 codegen form); sraw/sraiw now disassemble (their
+  encode fix landed earlier); `call` pairs `auipc ra`+`jalr ra` under a
+  single R_RISCV_CALL (was: jalr rd=zero plus a leaked redundant
+  PCREL_HI20/LO12_I pair from parse_operand), `tail` likewise emits one
+  reloc; `la` loads via `ld` (was `lw` — a 32-bit truncation on RV64).
+- **i386 `sym@ntpoff` TLS.** The x86 assembler parses the `@ntpoff` suffix
+  (R_386_TLS_LE + in-place addend) on immediates and memory operands, with
+  instruction selection pinned to the exact ModRM/SIB encodings the code
+  generator emits; i386-dis.c prints the suffix at the relocated-field
+  sites. Every TLS_LE site round-trips byte-identically with identical
+  `.rel.text` (previously all 29 corpus TLS relocs degraded to R_386_32).
+- **arm vldr dN + `[rn, #-0]`.** Fixed the vldr/vstr parse bug (stray
+  `next()` swallowed the comma after a `dN` operand) and the ±1020 offset
+  cap; `#-0` (U=0, imm=0) parses via the OP_IM8N negative-immediate class
+  across the word/byte, halfword, and coprocessor paths, and arm-dis.c
+  prints doubles + `#-0` forms. Also guarded dis_dp against printing
+  pc-regshift literal-pool words the assembler correctly refuses (5 of 15
+  corpus listings previously failed to re-assemble at all). 317k-insn
+  corpus round-trips with zero mismatches outside the documented
+  link-equivalent branch-bias fields.
+- Test-infra fix uncovered while validating: `MCC_CROSS_DIR` now defaults
+  to the build's own directory when `MCC_ENABLE_CROSS=ON`, so the
+  macho/wine suites test the freshly built cross compilers instead of a
+  stale sibling `cmake-build-cross` (previously they silently skipped in
+  the macos-cross CI job and validated outdated binaries locally), and
+  validate_macho.cmake's `versionmin` check gained the same
+  needs-libSystem SKIP guard as the conformance loop.
+
+**Classified — NOT actionable:**
+
+- `-fverbose-asm`-style operand comments: meaningful comments need
   codegen-side variable/spill metadata that is discarded after emission;
-  classified low-value (reloc symbol names are already printed).
+  classified low-value (reloc symbol names are already printed). Revisit
+  only if a debugging workflow materializes that needs it.
 
 ---
 

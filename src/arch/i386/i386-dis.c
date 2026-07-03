@@ -4,7 +4,9 @@
  * Decodes the integer + x87 instruction subset that i386-gen.c emits and
  * prints it in AT&T syntax the integrated assembler (i386-asm.c) accepts.
  * Relocated displacement/immediate fields are printed symbolically via
- * disasm_reloc(), so calls and absolute references re-assemble.
+ * disasm_reloc(), so calls and absolute references re-assemble.  TLS
+ * local-exec fields (R_386_TLS_LE) are printed with the gas @-operator,
+ * `sym@ntpoff`, which i386-asm.c parses back to the same relocation.
  *
  * This is the 32-bit trim of x86_64-dis.c: no REX prefixes, default operand
  * size 32, ModRM mod=0/rm=5 is an absolute disp32 (not RIP-relative), and the
@@ -76,6 +78,13 @@ static const char *gpr(int size, int n)
     return buf;
 }
 
+/* gas @-operator spelling for relocation types the plain symbol name would
+   lose on re-assembly (a bare `sym` operand re-assembles to R_386_32). */
+static const char *reloc_op(int rtype)
+{
+    return rtype == R_386_TLS_LE ? "@ntpoff" : "";
+}
+
 /* ---- ModRM / SIB ----------------------------------------------------- */
 
 /* Decode ModRM (and SIB/disp) for an operand of `size` bytes.  Fills d->reg
@@ -123,7 +132,8 @@ static void modrm(Dis *d, int size)
             disp = get32(d);
             sym = disasm_reloc(d->dc, disp_off, 4, &rtype);
             if (sym)
-                snprintf(d->rm, sizeof d->rm, "%s%s", seg, sym);
+                snprintf(d->rm, sizeof d->rm, "%s%s%s", seg, sym,
+                         reloc_op(rtype));
             else
                 snprintf(d->rm, sizeof d->rm, "%s0x%lx", seg, disp);
             return;
@@ -143,7 +153,7 @@ static void modrm(Dis *d, int size)
                             ? disasm_reloc(d->dc, disp_off, 4, &rtype) : NULL;
             char dbuf[288];
             if (sym)
-                snprintf(dbuf, sizeof dbuf, "%s", sym);
+                snprintf(dbuf, sizeof dbuf, "%s%s", sym, reloc_op(rtype));
             else if (have_disp && disp)
                 snprintf(dbuf, sizeof dbuf, disp < 0 ? "-0x%lx" : "0x%lx",
                          disp < 0 ? -disp : disp);
@@ -201,7 +211,7 @@ static void imm_ext(Dis *d, int size, int opsize, char *out, int outsz)
     else if (size == 2) v = (short)get16(d);
     else v = get32(d);
     if (sym) {
-        snprintf(out, outsz, "$%s", sym);
+        snprintf(out, outsz, "$%s%s", sym, reloc_op(rtype));
         return;
     }
     if (size < opsize && v < 0) {

@@ -7,9 +7,10 @@
  * much smaller than the generated subset; instructions (or reloc'd operands)
  * the assembler cannot reproduce are emitted as a raw `.long 0x%08x` with the
  * decoded text appended as a `//` comment, which keeps the listing valid,
- * length-correct and byte-exact.  Notable assembler gaps (see decode()):
- *   - adrp / lo12 / GOT-page relocation operands are not parseable, so those
- *     instructions round-trip as .long and their relocation is dropped;
+ * length-correct and byte-exact.  adrp / GOT-page / lo12 / tprel relocation
+ * operands (:got:, :lo12:, :got_lo12:, :tprel_hi12:, :tprel_lo12:) round-trip
+ * through arm64-asm.c's parse_reloc_spec().  Notable assembler gaps (see
+ * decode()):
  *   - b.cond/cbz/cbnz with numeric targets mis-place imm19 (gen_b_cond does
  *     not shift ARM64_OFFSET19 into bits 23:5), so local conditional branches
  *     are .long too (unconditional `b` is fine);
@@ -305,12 +306,18 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz)
         if (sym) {
             const char *pfx = rtype == R_AARCH64_ADR_GOT_PAGE ? ":got:" : "";
             snprintf(out, osz, "%s\t%s, %s%s", nm, ir(1, rd), pfx, sym);
-        } else {
-            snprintf(out, osz, "%s\t%s, 0x%llx", nm, ir(1, rd),
-                     (unsigned long long)(simm(w, 5, 19) << 2 |
-                                          (int)((w >> 29) & 3)));
+            /* arm64-asm.c re-emits adrp with a zero immediate field, as the
+               backend leaves it */
+            if ((w >> 31) && !(w & 0x60ffffe0)
+                && (rtype == R_AARCH64_ADR_GOT_PAGE
+                    || rtype == R_AARCH64_ADR_PREL_PG_HI21))
+                return D_ASM;
+            return D_CMT;
         }
-        return D_CMT; /* no adrp/adr support in arm64-asm.c */
+        snprintf(out, osz, "%s\t%s, 0x%llx", nm, ir(1, rd),
+                 (unsigned long long)(simm(w, 5, 19) << 2 |
+                                      (int)((w >> 29) & 3)));
+        return D_CMT; /* numeric adr/adrp: no assembler support */
     }
 
     /* --- move wide ------------------------------------------------------ */
@@ -337,13 +344,19 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz)
                                  << (sh ? 12 : 0);
         const char *nm = op ? (S ? "subs" : "sub") : (S ? "adds" : "add");
         const char *d = S ? ir(sf, rd) : irsp(sf, rd);
-        if (sym) { /* :lo12: / TPREL operands are not parseable */
+        if (sym) {
             const char *pfx =
                 rtype == R_AARCH64_ADD_ABS_LO12_NC ? ":lo12:" :
                 rtype == R_AARCH64_TLSLE_ADD_TPREL_HI12 ? ":tprel_hi12:" :
                 rtype == R_AARCH64_TLSLE_ADD_TPREL_LO12 ? ":tprel_lo12:" : "";
             snprintf(out, osz, "%s\t%s, %s, #%s%s", nm, d, irsp(sf, rn),
                      pfx, sym);
+            /* arm64-asm.c reproduces these with imm12 = 0 (sh set on the
+               tprel_hi12 half), exactly as the backend emits them */
+            if (*pfx && !op && !S && !((w >> 10) & 0xfff)
+                && sh == (rtype == R_AARCH64_TLSLE_ADD_TPREL_HI12)
+                && (sf || (rd != 31 && rn != 31)))
+                return D_ASM;
             return D_CMT;
         }
         if (!sf && (rd == 31 || rn == 31) && !S)
@@ -655,12 +668,22 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz)
                              ir(tsf, rd), irsp(1, rn));
                 return D_CMT;
             }
-            if (sym) { /* :lo12: / :got_lo12: operands are not parseable */
+            if (sym) {
+                static const int lo12_type[4] = {
+                    R_AARCH64_LDST8_ABS_LO12_NC, R_AARCH64_LDST16_ABS_LO12_NC,
+                    R_AARCH64_LDST32_ABS_LO12_NC, R_AARCH64_LDST64_ABS_LO12_NC
+                };
                 const char *pfx =
                     rtype == R_AARCH64_LD64_GOT_LO12_NC ? ":got_lo12:"
                                                         : ":lo12:";
                 snprintf(out, osz, "%s\t%s, [%s, #%s%s]", nm,
                          ir(tsf, rd), irsp(1, rn), pfx, sym);
+                /* arm64-asm.c reproduces these with imm12 = 0 */
+                if (!((w >> 10) & 0xfff)
+                    && (rtype == lo12_type[size]
+                        || (rtype == R_AARCH64_LD64_GOT_LO12_NC
+                            && size == 3 && opc == 1)))
+                    return D_ASM;
                 return D_CMT;
             }
             if (off)

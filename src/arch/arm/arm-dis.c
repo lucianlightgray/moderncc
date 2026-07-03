@@ -11,9 +11,11 @@
  * Every printed form is chosen so arm-asm.c re-encodes the SAME bits:
  *  - rotated immediates are only printed when the encoding uses the minimal
  *    rotation (both arm-gen.c's stuff_const() and arm-asm.c pick it);
- *  - vldr/vstr offsets beyond arm-asm.c's 8-bit operand classifier, and any
- *    other coprocessor encodings, fall back to the generic ldc/stc/cdp/
- *    mcr/mrc spellings which cover the whole coprocessor space byte-exactly;
+ *  - a zero offset with the U bit clear prints as `[rn, #-0]` (arm-asm.c's
+ *    operand parser keeps the sign of a literal "-0");
+ *  - coprocessor encodings beyond the vldr/vstr/vldm/vstm forms (d16-d31
+ *    operands, cp != 10/11) fall back to the generic ldc/stc/cdp/mcr/mrc
+ *    spellings which cover the whole coprocessor space byte-exactly;
  *  - anything not provably re-encodable is emitted as `.long 0x%08x`
  *    (mcc's assembler treats `.word` as 16-bit, so `.long` is the 32-bit
  *    data directive here).
@@ -217,6 +219,23 @@ static int dis_dp(uint32_t w, SB *b)
             return 0;
     }
 
+    /* arm-asm.c refuses pc as the shift count and pc in the operands it
+       checks on register-controlled shifts, so those forms (only literal-
+       pool data in practice) fall back */
+    if (!I && (w & 0x10)) {
+        int bad = ((w >> 8) & 15) == 15;
+        if (opc == 13)                  /* shift mnemonic: checks rd, rm */
+            bad |= rd == 15 || (w & 15) == 15;
+        else if (opc == 15)             /* mvn: checks rd */
+            bad |= rd == 15;
+        else if (opc >= 8 && opc <= 11) /* tst/teq/cmp/cmn: checks rn */
+            bad |= rn == 15;
+        else                            /* three-operand: checks rd, rn */
+            bad |= rd == 15 || rn == 15;
+        if (bad)
+            return 0;
+    }
+
     if (opc == 13 || opc == 15) { /* mov/mvn: no rn operand */
         if (rn)
             return 0;
@@ -336,7 +355,7 @@ static int dis_mem(uint32_t w, SB *b)
         if (imm)
             sb(&off, "#%s%u", U ? "" : "-", imm);
         else if (!U)
-            return 0; /* -0: re-assembles as +0 */
+            sb(&off, "#-0");
     }
     sb(b, "%s%s%s\t%s, ", L ? "ldr" : "str", B ? "b" : "", cc, regnm[rd]);
     return sb_addr(b, rn, offbuf, Pb, W);
@@ -366,7 +385,7 @@ static int dis_hmem(uint32_t w, SB *b)
         if (imm)
             sb(&off, "#%s%u", U ? "" : "-", imm);
         else if (!U)
-            return 0;
+            sb(&off, "#-0");
     } else {
         if (w & 0xf00)
             return 0;
@@ -430,20 +449,21 @@ static int dis_cpmem(uint32_t w, SB *b)
     int off = imm8 * 4;
     int vfp = (cp == 10 || cp == 11), dbl = (cp == 11);
 
-    if (vfp && Pb && !W && !dbl) {
-        /* vldr/vstr, single precision only: arm-asm.c's vldr/vstr parser
-           mis-consumes a token after a d<N> operand (extra next()), and only
-           accepts an 8-bit immediate operand (-255..255) -- so doubles and
-           offsets above 252 use the byte-identical ldc spelling below */
-        if (imm8 <= 63 && (imm8 || U)) {
-            sb(b, "%s%s\t", L ? "vldr" : "vstr", cc);
+    if (vfp && Pb && !W && !(dbl && D)) {
+        /* vldr/vstr; a set D bit on a double names d16-d31, which
+           arm-asm.c cannot spell, so those keep the ldc form below */
+        sb(b, "%s%s\t", L ? "vldr" : "vstr", cc);
+        if (dbl)
+            sb(b, "d%d", crd);
+        else
             sb_sreg(b, crd, D);
-            if (imm8)
-                sb(b, ", [%s, #%s%d]", regnm[rn], U ? "" : "-", off);
-            else
-                sb(b, ", [%s]", regnm[rn]);
-            return 1;
-        }
+        if (imm8)
+            sb(b, ", [%s, #%s%d]", regnm[rn], U ? "" : "-", off);
+        else if (!U)
+            sb(b, ", [%s, #-0]", regnm[rn]);
+        else
+            sb(b, ", [%s]", regnm[rn]);
+        return 1;
     } else if (vfp && imm8 && !(Pb && !W) && !(dbl && ((imm8 & 1) || D))) {
         int count = dbl ? imm8 >> 1 : imm8;
         int first = dbl ? crd : (crd << 1) | D;
@@ -475,7 +495,7 @@ static int dis_cpmem(uint32_t w, SB *b)
         if (imm8)
             sb(&ob, "#%s%d", U ? "" : "-", off);
         else if (!U)
-            return 0;
+            sb(&ob, "#-0");
         sb(b, "%s%s%s\tp%d, c%d, ", L ? "ldc" : "stc", D ? "l" : "", cc,
            cp, crd);
         return sb_addr(b, rn, offbuf, Pb, W);

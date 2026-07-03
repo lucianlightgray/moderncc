@@ -18,6 +18,7 @@ enum {
     OPT_REG,
     OPT_IM12S,
     OPT_IM32,
+    OPT_PCREL_LO,
 };
 #define REG_FLOAT_MASK 0x20
 #define REG_IS_FLOAT(register_index) ((register_index) & REG_FLOAT_MASK)
@@ -31,6 +32,7 @@ enum {
 #define OP_IM12S (1 << OPT_IM12S)
 #define OP_IM32 (1 << OPT_IM32)
 #define OP_REG (1 << OPT_REG)
+#define OP_PCREL_LO (1 << OPT_PCREL_LO)
 
 typedef struct Operand {
     uint32_t type;
@@ -172,6 +174,46 @@ static void parse_operand(MCCState *s1, Operand *op)
     int8_t reg;
 
     op->type = 0;
+
+    if (tok == '%') {
+        /* GAS-style operand modifiers.  %pcrel_hi(sym+addend) /
+           %got_pcrel_hi(sym+addend) emit their HI20 relocation here; the
+           paired LO12 comes from an explicit %pcrel_lo(label) operand on
+           the dependent instruction (asm_emit_i/asm_emit_s pick LO12_I vs
+           LO12_S by instruction form), unlike the bare-symbol auipc
+           spelling, which auto-pairs a LO12_I at the next instruction. */
+        const char *mod;
+        int rtype;
+        next();
+        mod = get_tok_str(tok, NULL);
+        if (!strcmp(mod, "pcrel_hi"))
+            rtype = R_RISCV_PCREL_HI20;
+        else if (!strcmp(mod, "got_pcrel_hi"))
+            rtype = R_RISCV_GOT_HI20;
+        else if (!strcmp(mod, "pcrel_lo"))
+            rtype = 0;
+        else {
+            expect("relocation modifier");
+            return;
+        }
+        next();
+        skip('(');
+        asm_expr(s1, &e);
+        skip(')');
+        if (!e.sym) {
+            expect("symbol");
+            return;
+        }
+        if (rtype) {
+            greloca(cur_text_section, e.sym, ind, rtype, e.v);
+            op->type = OP_IM32;
+            op->e.v = 0;
+        } else {
+            op->type = OP_PCREL_LO;
+            op->e = e;
+        }
+        return;
+    }
 
     if ((reg = asm_parse_regvar(tok)) != -1) {
         next();
@@ -333,6 +375,27 @@ static void asm_unary_opcode(MCCState *s1, int token)
     uint32_t opcode = (0x1C << 2) | 3 | (2 << 12);
     Operand op;
 
+    if (token == TOK_ASM_call || token == TOK_ASM_tail) {
+        /* auipc+jalr pair covered by a single R_RISCV_CALL: parse the
+           target as a bare expression so parse_operand() does not emit
+           its own PCREL_HI20/LO12_I pair on top of it */
+        ExprValue e = {0};
+        asm_expr(s1, &e);
+        if (!e.sym) {
+            expect("symbol");
+            return;
+        }
+        greloca(cur_text_section, e.sym, ind, R_RISCV_CALL, e.v);
+        if (token == TOK_ASM_call) {
+            asm_emit_opcode(3 | (5 << 2) | ENCODE_RD(1));         /* auipc ra */
+            asm_emit_opcode(0x67 | ENCODE_RD(1) | ENCODE_RS1(1)); /* jalr ra, 0(ra) */
+        } else {
+            asm_emit_opcode(3 | (5 << 2) | ENCODE_RD(6));         /* auipc t1 */
+            asm_emit_opcode(0x67 | ENCODE_RS1(6));                /* jalr zero, 0(t1) */
+        }
+        return;
+    }
+
     parse_operands(s1, &op, 1);
     opcode |= ENCODE_RD(op.reg);
 
@@ -368,17 +431,6 @@ static void asm_unary_opcode(MCCState *s1, int token)
     case TOK_ASM_jr:
         asm_emit_i(token, 0x67 | (0 << 12), &zero, &op, &zimm);
         return;
-    case TOK_ASM_call:
-        greloca(cur_text_section, op.e.sym, ind, R_RISCV_CALL, 0);
-        asm_emit_opcode(3 | (5 << 2) | ENCODE_RD(1));
-        asm_emit_opcode(0x67 | (0 << 12) | ENCODE_RS1(1));
-        return;
-    case TOK_ASM_tail:
-        greloca(cur_text_section, op.e.sym, ind, R_RISCV_CALL, 0);
-        asm_emit_opcode(3 | (5 << 2) | ENCODE_RD(6));
-        asm_emit_opcode(0x67 | (0 << 12) | ENCODE_RS1(6));
-        return;
-
     case TOK_ASM_c_j:
         asm_emit_cj(token, 1 | (5 << 13), &op);
         return;
@@ -552,7 +604,7 @@ static void asm_binary_opcode(MCCState* s1, int token)
 
     case TOK_ASM_la:
         asm_emit_u(token, 3 | (5 << 2), ops, ops + 1);
-        asm_emit_i(token, 3 | (2 << 12), ops, ops, ops + 1);
+        asm_emit_i(token, 3 | (3 << 12), ops, ops, ops + 1);
         return;
     case TOK_ASM_lla:
         asm_emit_u(token, 3 | (5 << 2), ops, ops + 1);
@@ -587,7 +639,7 @@ static void asm_binary_opcode(MCCState* s1, int token)
         asm_emit_i(token, 3 | (4 << 2), &ops[0], &ops[0], &imm);
         return;
     case TOK_ASM_mv:
-        asm_emit_i(token, 3 | (4 << 2), &ops[0], &ops[1], &imm);
+        asm_emit_i(token, 3 | (4 << 2), &ops[0], &ops[1], &zimm);
         return;
     case TOK_ASM_not:
         imm.e.v = -1;
@@ -736,6 +788,11 @@ static void asm_emit_i(int token, uint32_t opcode, const Operand* rd, const Oper
     if (rs1->type != OP_REG) {
         mcc_error("'%s': Expected first source operand that is a register", get_tok_str(token, NULL));
     }
+    if (rs2->type == OP_PCREL_LO) {
+        greloca(cur_text_section, rs2->e.sym, ind, R_RISCV_PCREL_LO12_I, rs2->e.v);
+        gen_le32(opcode | ENCODE_RD(rd->reg) | ENCODE_RS1(rs1->reg));
+        return;
+    }
     if (rs2->type != OP_IM12S) {
         mcc_error("'%s': Expected second source operand that is an immediate value between 0 and 8191", get_tok_str(token, NULL));
     }
@@ -804,6 +861,9 @@ static void asm_mem_access_opcode(MCCState *s1, int token)
     case TOK_ASM_fld:
          asm_emit_i(token, (0x1 << 2) | 3 | (3 << 12), &ops[0], &ops[1], &ops[2]);
          return;
+    case TOK_ASM_flw:
+         asm_emit_i(token, (0x1 << 2) | 3 | (2 << 12), &ops[0], &ops[1], &ops[2]);
+         return;
 
     case TOK_ASM_sb:
          asm_emit_s(token, (0x8 << 2) | 3 | (0 << 12), &ops[1], &ops[0], &ops[2]);
@@ -819,6 +879,9 @@ static void asm_mem_access_opcode(MCCState *s1, int token)
          return;
     case TOK_ASM_fsd:
          asm_emit_s(token, (0x9 << 2) | 3 | (3 << 12), &ops[1], &ops[0], &ops[2]);
+         return;
+    case TOK_ASM_fsw:
+         asm_emit_s(token, (0x9 << 2) | 3 | (2 << 12), &ops[1], &ops[0], &ops[2]);
          return;
     }
 }
@@ -1390,6 +1453,11 @@ static void asm_emit_s(int token, uint32_t opcode, const Operand* rs1, const Ope
     if (rs2->type != OP_REG) {
         mcc_error("'%s': Expected second source operand that is a register", get_tok_str(token, NULL));
     }
+    if (imm->type == OP_PCREL_LO) {
+        greloca(cur_text_section, imm->e.sym, ind, R_RISCV_PCREL_LO12_S, imm->e.v);
+        gen_le32(opcode | ENCODE_RS1(rs1->reg) | ENCODE_RS2(rs2->reg));
+        return;
+    }
     if (imm->type != OP_IM12S) {
         mcc_error("'%s': Expected third operand that is an immediate value between 0 and 8191", get_tok_str(token, NULL));
     }
@@ -1478,10 +1546,14 @@ static void asm_fcvt_opcode(MCCState *s1, int token)
         case TOK_ASM_fcvt_d_wu: enc = 0x53 | (0x69 << 25) | (7 << 12) | (1 << 20); break;
         case TOK_ASM_fcvt_d_l:  enc = 0x53 | (0x69 << 25) | (7 << 12) | (2 << 20); break;
         case TOK_ASM_fcvt_d_lu: enc = 0x53 | (0x69 << 25) | (7 << 12) | (3 << 20); break;
-        case TOK_ASM_fcvt_s_d:  enc = 0x53 | (0x20 << 25) | (7 << 12) | (1 << 20); break;
-        case TOK_ASM_fcvt_d_s:  enc = 0x53 | (0x21 << 25) | (7 << 12); break;
+        case TOK_ASM_fcvt_s_d:  rm = asm_fcvt_rm(s1); enc = 0x53 | (0x20 << 25) | (rm << 12) | (1 << 20); break;
+        case TOK_ASM_fcvt_d_s:  rm = asm_fcvt_rm(s1); enc = 0x53 | (0x21 << 25) | (rm << 12); break;
         case TOK_ASM_fclass_s:  enc = 0x53 | (0x70 << 25) | (1 << 12); break;
         case TOK_ASM_fclass_d:  enc = 0x53 | (0x71 << 25) | (1 << 12); break;
+        case TOK_ASM_fmv_x_w:   enc = 0x53 | (0x70 << 25); break;
+        case TOK_ASM_fmv_x_d:   enc = 0x53 | (0x71 << 25); break;
+        case TOK_ASM_fmv_w_x:   enc = 0x53 | (0x78 << 25); break;
+        case TOK_ASM_fmv_d_x:   enc = 0x53 | (0x79 << 25); break;
         default: expect("fcvt/fclass instruction"); return;
     }
     asm_emit_opcode(enc | ENCODE_RD(ops[0].reg) | ENCODE_RS1(ops[1].reg));
@@ -1540,6 +1612,10 @@ ST_FUNC void asm_opcode(MCCState *s1, int token)
     case TOK_ASM_fcvt_d_s:
     case TOK_ASM_fclass_s:
     case TOK_ASM_fclass_d:
+    case TOK_ASM_fmv_x_w:
+    case TOK_ASM_fmv_x_d:
+    case TOK_ASM_fmv_w_x:
+    case TOK_ASM_fmv_d_x:
         asm_fcvt_opcode(s1, token);
         return;
 
@@ -1548,6 +1624,7 @@ ST_FUNC void asm_opcode(MCCState *s1, int token)
     case TOK_ASM_lw:
     case TOK_ASM_ld:
     case TOK_ASM_fld:
+    case TOK_ASM_flw:
     case TOK_ASM_lbu:
     case TOK_ASM_lhu:
     case TOK_ASM_lwu:
@@ -1556,6 +1633,7 @@ ST_FUNC void asm_opcode(MCCState *s1, int token)
     case TOK_ASM_sw:
     case TOK_ASM_sd:
     case TOK_ASM_fsd:
+    case TOK_ASM_fsw:
         asm_mem_access_opcode(s1, token);
         break;
 

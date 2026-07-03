@@ -58,6 +58,7 @@ static void parse_operand(MCCState *s1, Operand *op)
 {
     ExprValue e;
     int8_t reg;
+    int minus_zero;
     uint16_t regset = 0;
 
     op->type = 0;
@@ -104,11 +105,17 @@ static void parse_operand(MCCState *s1, Operand *op)
     } else if (tok == '#' || tok == '$') {
         next();
     }
+    /* asm_expr folds the sign of "#-0" away, but a load/store offset
+       spelled with a minus must keep the U bit clear even when it is
+       zero, so remember whether the immediate started with '-' */
+    minus_zero = tok == '-';
     asm_expr(s1, &e);
     op->type = OP_IM32;
     op->e = e;
     if (!op->e.sym) {
         if ((int) op->e.v < 0 && (int) op->e.v >= -255)
+            op->type = OP_IM8N;
+        else if (op->e.v == 0 && minus_zero)
             op->type = OP_IM8N;
         else if (op->e.v == (uint8_t)op->e.v)
             op->type = OP_IM8;
@@ -1056,7 +1063,7 @@ static void asm_single_data_transfer_opcode(MCCState *s1, int token)
         int v = ops[2].e.v;
         if (op2_minus)
             mcc_error("minus before '#' not supported for immediate values");
-        if (v >= 0) {
+        if (v >= 0 && ops[2].type != OP_IM8N) {
             opcode |= 1 << 23;
             if (v >= 0x1000)
                 mcc_error("offset out of range for '%s'", get_tok_str(token, NULL));
@@ -1306,7 +1313,6 @@ static void asm_floating_point_single_data_transfer_opcode(MCCState *s1, int tok
     } else if (ops[0].type == OP_VREG64) {
         coprocessor = CP_DOUBLE_PRECISION_FLOAT;
         coprocessor_destination_register = ops[0].reg;
-        next();
     } else {
         expect("floating point register");
     }
@@ -1320,7 +1326,8 @@ static void asm_floating_point_single_data_transfer_opcode(MCCState *s1, int tok
     if (tok == ',') {
         next();
         parse_operand(s1, &ops[2]);
-        if (ops[2].type != OP_IM8 && ops[2].type != OP_IM8N) {
+        if (ops[2].type != OP_IM8 && ops[2].type != OP_IM8N
+            && ops[2].type != OP_IM32) {
             expect("immediate offset");
         }
     } else {
@@ -2063,7 +2070,7 @@ static void asm_misc_single_data_transfer_opcode(MCCState *s1, int token)
         int v = ops[2].e.v;
         if (op2_minus)
             mcc_error("minus before '#' not supported for immediate values");
-        if (v >= 0) {
+        if (v >= 0 && ops[2].type != OP_IM8N) {
             opcode |= 1 << 23;
             if (v >= 0x100)
                 mcc_error("offset out of range for '%s'", get_tok_str(token, NULL));

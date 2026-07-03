@@ -133,10 +133,15 @@ extern long double strtold (const char *__nptr, char **__endptr);
 # define NORETURN __declspec(noreturn)
 # define ALIGNED(x) __declspec(align(x))
 # define PRINTF_LIKE(x,y)
+# define MAYBE_UNUSED
 #else
 # define NORETURN __attribute__((noreturn))
 # define ALIGNED(x) __attribute__((aligned(x)))
 # define PRINTF_LIKE(x,y) __attribute__ ((format (printf, (x), (y))))
+/* the host API is deliberately complete: reduced configurations
+   (ONE_SOURCE, backtrace-only, non-native) leave some services
+   unreferenced in a TU where ST_FUNC is static */
+# define MAYBE_UNUSED __attribute__((unused))
 #endif
 
 #if defined(__GNUC__) && __GNUC__ >= 7

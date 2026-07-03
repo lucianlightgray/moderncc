@@ -65,13 +65,13 @@ ST_FUNC FILE *host_fopen(const char *path, const char *mode)
     return fopen(path, mode);
 }
 
-ST_FUNC int host_fclose(FILE *f)
+ST_FUNC MAYBE_UNUSED int host_fclose(FILE *f)
 {
     return fclose(f);
 }
 
 /* make an output file executable; no-op on Windows */
-ST_FUNC void host_set_exec_bits(const char *file)
+ST_FUNC MAYBE_UNUSED void host_set_exec_bits(const char *file)
 {
 #ifndef _WIN32
     chmod(file, 0777);
@@ -143,7 +143,7 @@ ST_FUNC char *host_w32_mccdir(char *path)
 }
 #endif
 
-ST_FUNC int host_system_dir(char *buf, int size)
+ST_FUNC MAYBE_UNUSED int host_system_dir(char *buf, int size)
 {
 #ifdef _WIN32
     GetSystemDirectoryA(buf, size);
@@ -216,7 +216,7 @@ ST_FUNC int host_spawn_wait(const char *const *argv)
 
 /* execvp semantics: only returns on failure (-1).  On Windows: quote,
    spawn, wait, and exit with the child's code */
-ST_FUNC int host_exec_replace(char **argv)
+ST_FUNC MAYBE_UNUSED int host_exec_replace(char **argv)
 {
 #ifdef _WIN32
     int ret; char **p;
@@ -234,7 +234,7 @@ ST_FUNC int host_exec_replace(char **argv)
 
 /* locate a tool/library on the host search path (Windows SearchPath);
    returns 1 and fills buf if found, else 0 */
-ST_FUNC int host_find_tool(const char *name, const char *ext, char *buf, int size)
+ST_FUNC MAYBE_UNUSED int host_find_tool(const char *name, const char *ext, char *buf, int size)
 {
 #ifdef _WIN32
     return SearchPath(NULL, name, ext, size, buf, NULL) ? 1 : 0;
@@ -260,7 +260,7 @@ ST_FUNC int host_codesign_adhoc(const char *file)
 /* ------------------------------------------------------------------- */
 /* time / env */
 
-ST_FUNC unsigned host_clock_ms(void)
+ST_FUNC MAYBE_UNUSED unsigned host_clock_ms(void)
 {
 #ifdef _WIN32
     return GetTickCount();
@@ -352,7 +352,7 @@ ST_FUNC void host_dlclose(void *h)
     (void)h;
 }
 
-ST_FUNC const char *host_dlerror(void)
+ST_FUNC MAYBE_UNUSED const char *host_dlerror(void)
 {
     return "error";
 }
@@ -388,7 +388,7 @@ ST_FUNC void host_dlclose(void *h)
 #endif
 }
 
-ST_FUNC const char *host_dlerror(void)
+ST_FUNC MAYBE_UNUSED const char *host_dlerror(void)
 {
 #ifdef _WIN32
     return "error";
@@ -456,7 +456,7 @@ ST_FUNC const char *host_macos_sdk_root(void)
 }
 
 /* BSD: the ELF interpreter can be overridden from the environment */
-ST_FUNC const char *host_elf_interp_override(void)
+ST_FUNC MAYBE_UNUSED const char *host_elf_interp_override(void)
 {
     return getenv("LD_SO");
 }
@@ -567,7 +567,7 @@ ST_FUNC int host_runmem_protect(void *ptr, unsigned long length, int mode)
     return 0;
 }
 
-ST_FUNC void *host_unwind_register(void *table, unsigned size_bytes, size_t base)
+ST_FUNC MAYBE_UNUSED void *host_unwind_register(void *table, unsigned size_bytes, size_t base)
 {
 #ifdef _WIN64
     if (!RtlAddFunctionTable((RUNTIME_FUNCTION*)table,
