@@ -4,6 +4,348 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
 
 ---
 
+## Platform spec — merged from HOST.md / MAC.md / WIN.md — 2026-07-03
+
+The three platform-gating reference docs were rewritten into this section and
+the files deleted (full prose: `git log -- HOST.md MAC.md WIN.md`). Every
+"holds" statement below was implementation-verified against the tree on
+2026-07-03 (see the verification sweep section) with the sweep's corrections
+already baked in; treat them as invariants — breaking one is a deliberate
+decision, not drift. The `[ ]` items are the open work the docs carried or
+implied.
+
+### Host axis (was HOST.md)
+
+**Holds:**
+
+- Two axes, kept strictly apart: **HOST** (`_WIN32`/`__APPLE__`/`__linux__`/
+  BSDs — the machine mcc *runs on*) vs **TARGET** (`MCC_TARGET_PE`/
+  `MCC_TARGET_MACHO`/`TARGETOS_*` — what it *emits*); `MCC_IS_NATIVE` = both
+  agree (enables `-run`/JIT/backtrace). All HOST-axis code lives in
+  `src/mcchost.{h,c}`; TARGET gates stay in the backends.
+- **The invariant** (enforced by the `host-gate-invariant` ctest,
+  `cmake/host_gate_check.cmake`): outside `mcchost.{h,c}`, no
+  `#if/#ifdef/#ifndef/#elif` under `src/` may test `_WIN32`, `_WIN64`,
+  `_MSC_VER`, `__MINGW*`, `__CYGWIN__`, `__APPLE__`, `__linux__`, the BSDs,
+  `__ANDROID__`, or `__dietlibc__`; code tests only `MCC_TARGET_*`,
+  `TARGETOS_*`, `MCC_IS_NATIVE`, `MCC_HOST_*`, `CONFIG_*`. Only directive
+  lines are scanned (string literals like mccpp.c's predefine table are
+  exempt by design).
+- `mcchost.h` owns the normalized predicates (`MCC_HOST_WIN32/WIN64/DARWIN/
+  LINUX/BSD/POSIX`), the host-compiler shims (system headers, MSVC
+  `inline`/`snprintf`/`strtoll` remaps, `NORETURN`/`ALIGNED`/`PRINTF_LIKE`/
+  `FALLTHROUGH`, `va_copy`, `O_BINARY`, `LIBMCCAPI`, `HOST_VOLATILE_LDOUBLE`
+  for the MSVC x64 long-double folding bug, POSIX `stricmp`/`strnicmp`), and
+  the path macros (`HOST_PATHSEP` `;`|`:`, `HOST_PATHCMP` `stricmp`|`strcmp`,
+  `HOST_IS_DIRSEP`, `HOST_IS_ABSPATH`, `HOST_EXE_SUFFIX`, `CONFIG_MCCDIR`
+  defaults incl. `host_w32_mccdir()` = exe-relative dir on Windows).
+- `mcchost.c` compiles for every triple (first in libmcc.c's ONE_SOURCE list;
+  in `MCC_CORE_SRC`) — cross compilers still need paths/spawn/clock/self-path.
+  The JIT and fault sections compile only under `MCC_IS_NATIVE` (faults also
+  `CONFIG_MCC_BACKTRACE`). `runtime/lib/bt-exe.c` includes `../mcchost.c`
+  before `../mccrun.c`; under `CONFIG_MCC_BACKTRACE_ONLY` only the fault
+  section compiles.
+- **API rule:** anything with runtime behavior is a real function in
+  `mcchost.c`; only textual/type shims and constant predicates are macros.
+  The families: paths (`host_path_normalize`, `host_path_canonical` —
+  libc-malloc'd, free with `libc_free` — `host_path_hash_fold`, `host_fopen`/
+  `host_fclose`, `host_set_exec_bits`); self-location (`host_exe_path`:
+  /proc/self/exe | /proc/curproc/{exe,file} | `_NSGetExecutablePath` |
+  `GetModuleFileNameA`; `host_system_dir`); spawn (`host_spawn_wait` — quotes
+  argv per host, fork/execvp on POSIX, **no shell** — `host_exec_replace`,
+  `host_find_tool(name, ext, buf, size)`→1/0, `host_codesign_adhoc` wrapping
+  the CONFIG_CODESIGN policy); time/env (`host_clock_ms`, `host_environ`);
+  dynamic loading (`host_dlopen/dlclose/dlerror/dlsym/dlsym_process` — the
+  `CONFIG_MCC_STATIC` stubs and built-in `mcc_syms` table live inside;
+  `RTLD_*` never leaks out); runnable memory (`host_pagesize`,
+  `host_runmem_alloc(&size, &ptr_diff)` owning the SELinux double-map /
+  VirtualAlloc / malloc+page-slack strategies, `host_runmem_free`,
+  `host_runmem_protect` with `HOST_PROT_RX/RO/RW/RWX` = 0–3 **load-bearing**
+  (`mcc_relocate_ex` maps its section class onto them) and icache flush on
+  RX/RWX, `host_unwind_register(table, .pdata byte size, base)` — the
+  RUNTIME_FUNCTION size division lives inside since x64 ≠ arm64 —
+  `HOST_RUNMEM_RO` Darwin W^X toggle honoring `CONFIG_RUNMEM_RO`); faults
+  (`host_fault_install/regs/unblock`, `HOST_FAULT_*` codes,
+  `HOST_FAULT_OTHER_FMT` — mcchost owns handler installation and the whole
+  OS×arch mcontext pc/fp/sp matrix; mccrun registers one `rt_fault` callback;
+  nonzero return = continue OS handler search, i.e. Windows trap); native
+  services (`host_macos_sdk_root` cached — the hardcoded
+  CommandLineTools/Xcode.app fallback *path lists* stay in mccmacho.c, plain
+  strings — and `host_elf_interp_override` = `LD_SO` on BSD).
+- Deliberate exceptions: `_CRT_glob`/`_dowildcard` stay in
+  `mcctools.c` (driver-only, not library) gated `MCC_HOST_WIN32`;
+  `MCC_IS_NATIVE` derivation stays in `mcc.h` testing `MCC_HOST_*` (no ctest
+  whitelist); `MCCState.run_function_table` lives in the `MCC_IS_NATIVE`
+  run-state block (NULL outside Win64).
+- Out of mcchost's scope (separate axes): `runtime/lib` + `runtime/include`
+  (gated on the OS the *compiled program* runs on — compiled by mcc for the
+  target, can never call the host layer); `tests/{cli,exec,diff3}/runner.c` +
+  `tests/embed/*.c` (standalone binaries, don't link libmcc internals); CMake
+  host probes; `tools/c2str.c`'s host→target substitution table.
+- Porting recipe: a new host OS/libc or a new native arch's signal context is
+  a diff to `mcchost.c` only; quoting, W^X, and case folding are all testable
+  through that one seam.
+
+The lock primitive follows the `host_` convention since 2026-07-03:
+`HostSem` with `HOST_SEM(s)`/`HOST_SEM_WAIT`/`HOST_SEM_POST` and inline
+`host_sem_wait`/`host_sem_post` (mcchost.h; the target-runtime `bcheck.c`
+keeps its own independent `WAIT_SEM`/`POST_SEM` — separate axis). The
+test-runner host glue is consolidated in `tests/support/hostcompat.h`
+(`HC_MKDIR`/`HC_RMDIR`, `HC_POPEN_SH`/`HC_SYSTEM_SH` sh-script emulation,
+`HC_POPEN_CMD` cmd requoting, `hc_envv`, `hc_set_c_locale`), used by
+`tests/{cli,exec,diff3}/runner.c` and `tests/embed/api_extra.c`.
+
+**Open items:** *(none — structural note: if `mcchost.c` ever outgrows one
+file (~820 lines today; threshold ~2000), split into per-OS pieces
+`#include`d from `mcchost.c` so the build interface never changes.)*
+
+### Darwin / Mach-O target (was MAC.md)
+
+**Holds — controlling macros:**
+
+- `MCC_TARGET_MACHO` comes from `MCC_HOST_DARWIN` when self-hosting, or from
+  CMake for the `x86_64-osx`/`arm64-osx` cross targets. `__MACH__` is never a
+  gate. `tools/c2str.c` maps `__APPLE__`→`MCC_TARGET_MACHO` for builtin defs.
+- `CONFIG_NEW_MACHO` (modern chained-fixups Mach-O, macOS 11+) defaults on;
+  CMake forces `no` when host `sw_vers` reports macOS < 11; `==0` selects the
+  legacy `LC_DYLD_INFO` bind/rebase tables.
+- `CONFIG_CODESIGN` (node `MCC_CONFIG_CODESIGN`, default `yes` on Darwin):
+  ad-hoc `codesign -f -s -` after link via `host_codesign_adhoc()` —
+  mandatory to exec on Apple Silicon.
+- `MCC_USING_DOUBLE_FOR_LDOUBLE` on PE **and Mach-O/arm64** (Apple AArch64:
+  `long double` == IEEE double, unlike Linux arm64's 128-bit quad).
+  `runtime/include/float.h` mirrors it: `_WIN32 || (__APPLE__ &&
+  __aarch64__)` ⇒ double limits; `(__aarch64__ && !__APPLE__) || __riscv` ⇒
+  quad limits.
+- PE or Mach-O ⇒ `ELF_OBJ_ONLY`. `DEFAULT_DWARF_VERSION` 2 on Mach-O
+  (dsymutil/Apple tooling) vs 5 elsewhere; CMake overrides Darwin host builds
+  to DWARF 4.
+
+**Holds — driver / front end:**
+
+- `leading_underscore = 1` on Mach-O (Darwin C ABI): mccgen prepends `_`,
+  mccasm skips its `_` logic when off, mccpp predefines
+  `__leading_underscore`, and it is a settable state field. mccpp also
+  predefines `__APPLE__` for the *target* program.
+- Native-only SDK borrow (mcc has no bundled Darwin libc):
+  `mcc_add_macos_sdkpath`/`mcc_add_macos_sdkincludepath` add host SDK
+  lib/include paths. Library search recognizes `.dylib` and the
+  `lib%s.dylib`/`lib%s.tbd` patterns; Mach-O-only CLI options:
+  `-compatibility_version`, `-current_version`, `-dynamiclib`,
+  `-flat_namespace`, `-install_name`; the dllref/sym struct carries
+  `install_name`/versions; triple component `apple-darwin`.
+- `-fstack-protector` accepted only on x86_64 ELF; warns "only implemented on
+  x86_64 ELF" otherwise (item below).
+
+**Holds — writer & backends:**
+
+- `mccmacho.c` (the whole Mach-O writer) is compiled only for Darwin targets.
+  `LC_BUILD_VERSION` hardcodes `PLATFORM_MACOS`, minos/sdk 10.6 (item below);
+  `LC_LOAD_DYLINKER` → `/usr/lib/dyld`. Mach-O links via stubs/chained
+  fixups, not ELF PLT (`create_plt_entry`/`relocate_plt` exposed only when
+  `!MCC_TARGET_MACHO || MCC_IS_NATIVE`).
+- `mccelf.c` carve-outs: Mach-O routes GOT/relocation handling differently;
+  the `#ifndef MCC_TARGET_MACHO` block skips **crtend/crtn addition** on
+  Mach-O (the libmcc1 `mcc_add_support` call just above it is unconditional
+  and runs on Mach-O too); `mcc_output_file` dispatches PE/Mach-O/ELF.
+- arm64 (Apple Silicon): predefines `__arm64__` (Apple's spelling) alongside
+  `__aarch64__`; Darwin TLS via the stack-based `arm64_macho_tls_addr`
+  sequence (Mach-O has no ELF TPREL thread-pointer relocs); Apple variadic
+  ABI puts **all** variadic args on the stack (`nx=nv=8`, unlike AAPCS64) —
+  the `va_list`/HFA register-save-area machinery is ELF-only; `char` is
+  signed on PE/Mach-O (`CHAR_IS_UNSIGNED` only on ELF arm64). x86_64: Mach-O
+  GOT/symbol addressing and call-reloc sequences differ from ELF; PLT/GOT
+  emission is ELF-only.
+- `mccrun.c`: on Mach-O add `prog_base` to DWARF line PCs (image is
+  slid/PIE).
+- Runtime tree: `mccdefs.h` Apple shims (`__GNUC__ 4`, `__APPLE_CC__`,
+  `__LITTLE_ENDIAN__`, builtin shims, `__builtin_va_list` struct,
+  `__MAYBE_REDIR` shared with Linux); `bcheck.c` Darwin carve-outs (no
+  `__malloc_hook` interposition, different mmap/region handling, different
+  constructor registration — item below).
+- CMake: Darwin sets `MCC_DLLSUF .dylib`; the NEW_MACHO/CODESIGN nodes are
+  visible only on Darwin and warn as inert elsewhere.
+- Tests/CI: Mach-O suites `macho-structural`, `macho-codegen-run` (+ qemu
+  arm64 variant), `macho-image-run`, `macho-conformance-native`,
+  `macho-apple-libc` — all label `macho`, `SKIP_RETURN_CODE 77`;
+  `tests/qemu/macho/loader.c` is the standalone loader;
+  `macho-libsystem-kernel-fused` requires a real macOS/darling host
+  (`-DMCC_DARWIN_HOST=ON`; see `tests/qemu/apple-libc/PROVENANCE.md`). Label
+  exclusions: only the **MSVC** test preset excludes `macho`
+  (`qemu|wine|macho`); macOS excludes `qemu|wine` and **does run** the macho
+  suites; Linux excludes only `qemu`. The `macos` CI job runs on `macos-15`;
+  `release.yml` ships `clang-macos-arm64`.
+
+Landed 2026-07-03: `-mmacosx-version-min=a.b.c` (alias `-mmacos-version-min=`)
+sets `LC_BUILD_VERSION` minos/sdk (`MCCState.macos_version_min`, parsed via
+`parse_version`, default 10.6 preserved; asserted by the new `versionmin`
+check in `tests/qemu/validate_macho.cmake` on both osx cross targets), and
+the `macos` preset now sets `MCC_DARWIN_HOST=ON` so the `macos-15` CI runner
+(a real Darwin host) exercises `macho-libsystem-kernel-fused`.
+
+**Classified (investigated 2026-07-03, not actionable):**
+
+- **`-fstack-protector` stays x86_64-ELF-only; the warning is the contract.**
+  The option is honored where implemented and warns "only implemented on
+  x86_64 ELF" elsewhere — an explicit, tested behavior (not silent
+  acceptance). Porting the canary prolog/epilog to arm64/Mach-O/PE is real
+  backend work with no current user demand and no way to link
+  `__stack_chk_fail` on the cross targets we can test (no target libc in
+  CI); revisit if a port request materializes.
+- **bcheck on Darwin: libSystem-internal allocations stay untracked by
+  design.** Investigation result: Darwin takes the same `MALLOC_REDIR`
+  define-`malloc`-in-image + `dlsym(RTLD_NEXT)` path as glibc
+  (`bcheck.c:87,130,919-931`), so *user-code and mcc-emitted* allocations
+  ARE tracked — mcc's Mach-O writer even binds imports flat-lookup
+  (`mccmacho.c:1288,1321`, no `MH_TWOLEVEL`), which makes the executable's
+  `malloc` authoritative for mcc-emitted code. What two-level namespace
+  makes impossible to intercept cheaply is libSystem's *internal* calls to
+  its own `malloc`; a miss is a silent pass-through (`bcheck.c:522-526`) —
+  **false negatives on library-originated pointers, never crashes or false
+  positives**. The two stronger mechanisms are disproportionate: a
+  `malloc_zone_t` swap means reimplementing a full zone vtable, and
+  `DYLD_INSERT_LIBRARIES`/`__DATA,__interpose` changes `-b` from a
+  linked-in runtime into an env-activated dylib (SIP-hostile) and needs
+  `S_INTERPOSING` section support the writer lacks. Optional hardening if
+  ever wanted: seed more Darwin ctype/rune regions (`bcheck.c:1016-1018`)
+  and add a structural Mach-O bcheck-link assertion under `tests/qemu`.
+
+### Windows / PE target (was WIN.md)
+
+**Holds — axes & configuration:**
+
+- A Windows host defaults its **target** to `MCC_TARGET_PE` (the bridge that
+  makes native builds produce PE); `MCC_IS_NATIVE` needs host+target OS *and*
+  arch to agree. PE system include/lib search: `{B}/include`,
+  `{B}/include/winapi`, `{B}/lib` (ELF uses the `/usr` triplet tree);
+  `CONFIG_MCC_ELFINTERP` is `"-"` (no ELF interpreter).
+- Driver: the whole PE backend enters via `#include "mccpe.c"`;
+  output-format dispatch defaults to PE; library search tries `.def`/`.dll`
+  patterns; `-lm` maps away (PE has no separate libm); the default
+  auto-linked libraries are `msvcrt, kernel32, user32, gdi32`
+  (`mccpe.c`, honors `-nostdlib`); the `-dumpmachine` triplet string ends
+  `-mingw32`. PE-only CLI: `-impdef`, `-g.pdb`, `-large-address-aware`
+  (`mcc_pe_set_dll_characteristics`), `-Wl,--oformat=pe-*`. `mcc.c`: PE help
+  text, `" Windows"` version suffix, `.exe`/`.dll`/`.o` default extensions.
+  `mcctools.c`: whole `mcc_tool_impdef()` (extract `.def` from a DLL),
+  `-win32` infix in cross-compiler names.
+- `mccrun.c`: PE targets relocate via `pe_output_file()`/`pe_imagebase`
+  instead of ELF runtime/PLT.
+- `mccpp.c`: wide-string literals encode UTF-16 with surrogate pairs;
+  `_WIN32`/`_WIN64` are predefined for the *target* program.
+
+**Holds — symbol/type model & codegen (`MCC_TARGET_PE`):**
+
+- mccgen/mcctok: `dllimport`/`dllexport` attributes + `pe_check_linkage`;
+  stdcall decoration `_func@N`; `__builtin_va_start` (PE x64) and `__chkstk`
+  builtins; `wchar_t` = `unsigned short` (UTF-16); `dllimport` indirects
+  through the IAT and is rejected in constant expressions; 8-byte
+  double/long-long alignment on PE i386; VLA result handling on PE x64;
+  `arch_transfer_ret_regs` runs only for RISCV64 / non-PE x86_64 — **PE
+  skips it**; `sigsetjmp`/`siglongjmp` builtins are non-PE only.
+- `mccpe.c` writer: entry points `pe_output_file`, `pe_load_file`,
+  `pe_putimport`, `pe_add_unwind_data`; PE reloc types per arch
+  (x86-64/x86/ARM/ARM64). Its host glue comes from mcchost
+  (`MCC_HOST_WIN64` `IMAGE_OPTIONAL_HEADER32` pick, `host_spawn_wait` for
+  cv2pdb, `host_set_exec_bits`).
+- `mccelf.c` PE carve-outs: `.rdata` vs `.data.ro`; explicit entry-point
+  symbol; x64 unwind symbol setup; skip STT_NOTYPE re-export normalization;
+  no `_`-prefix for symbols containing `@`; symbol adds routed through
+  `pe_putimport`; no `dlsym` (PE uses static import tables); DLL bounds-check
+  init; no `mcc_add_runtime` (PE links no ELF runtime); final dispatch to
+  `pe_output_file`.
+- ABI, per arch: **x86_64** — 4 arg regs RCX/RDX/R8/R9 + 32-byte shadow
+  space (vs SysV's 6); RSI/RDI callee-saved (struct-copy prologue saves
+  them, inline-asm clobber set includes them on i386 too); no GOT (all
+  RIP-relative; GOT relocs error); TLS via `_tls_index` +
+  `gen_pe_tls_base()` + `R_X86_64_TPOFF32` (TEB, not FS/GS SysV TLS);
+  alloca/VLA always through the page-probing helper; SysV stack canary off.
+  **i386** — structs ≤8 bytes returned in EAX/EDX; `__chkstk`/`__alloca`
+  probing for frames ≥4096; FS TEB TLS with `R_386_TLS_LE`. **arm64** — X18
+  platform register reserved; ADRP addressing, no GOT; TLS at `x18+0x58` via
+  `arm64_tls_base_x30()`; named args in regs / all variadic on stack with
+  `arm64_pe_param_off()`; `__chkstk` ≥4096; `pe_add_unwind_data()` emits
+  `.pdata`/`.xdata`; inline asm limited to X0–X17. Link-time: `RELATIVE`
+  relocs subtract the image base; PC32 tolerates undefined symbols
+  (imports); TLS offsets from the PE TLS base (no ELF TCB); arm64 emits NOP
+  stubs for out-of-range weak symbols.
+- `runtime/lib/` (gates mean "this object will run on Windows"): bt-exe.c
+  finds the PE image base via `VirtualQuery`; bt-dll.c is the Windows-only
+  backtrace DLL shim; bcheck.c uses CRITICAL_SECTION/TlsAlloc/
+  GetCurrentThreadId (no mmap/fork/siglongjmp); tcov.c locks via
+  `LockFileEx`; runmain.c iterates `.init_array` only off-Windows (PE enters
+  via `mainCRTStartup` from win32/lib/crt1.c); alloca*.c do guard-page
+  probing; atomic.c x64 uses the Win64 register convention.
+- `runtime/win32/`: lib/ has crt1.c/wincrt1.c (+ crt1w/wincrt1w unicode
+  variants — `__getmainargs`, `_controlfp`, ctors, main); **dllcrt1.c owns
+  `_dllstart` and the DLL_PROCESS_ATTACH/DETACH dispatch; dllmain.c is only
+  the overridable default `DllMain` stub**; crtinit.c shared init/fini
+  iteration; `.def` exports (gdi32/kernel32/msvcrt/user32/ws2_32). include/
+  is the bundled MinGW-derived target-header set: `winapi/` (including
+  `windows.h` — it lives under winapi/, not the include root), `sec_api/`,
+  `tchar.h`, `process.h`.
+- CMake: no sanitizers on PE (no mingw libasan); shared-libmcc cross-builds
+  require emulator or static; suffixes `.exe`/`.dll`/`.lib`;
+  `MCC_TARGET_PE=1`; PE backend selected; install stages libmcc1.a,
+  win32/include headers, `.def` files, examples; cross targets
+  `i386-win32`, `x86_64-win32`, `arm64-win32`, **and `arm-wince`**.
+- CI/tests: msvc job excludes `qemu|wine|macho` via the `_test-msvc` preset;
+  mingw job is build-only (winlibs GCC); `run_pe_wine.cmake` runs
+  x86_64/i386-win32 output under wine64/wine32 (skip 77, `-I
+  runtime/win32/include`); `tests/support/msvcrt_start.c` is the bare-msvcrt
+  PE startup (DLL import redirection, SEH setjmp intrinsics, mingw-w64 ctor/
+  dtor hooks); the cli/exec runners carry their own Windows shims (see the
+  hostcompat item above); the exec runner skips `elf`-labeled tests on
+  Windows/Darwin.
+
+**Open items:** none Windows-specific beyond the shared ones above
+(stack-protector covers PE; hostcompat covers the test runners).
+
+---
+
+## BUILD.md / HOST.md / MAC.md / WIN.md verification sweep — 2026-07-03
+
+Verified every substantive statement in the four docs against the tree
+(CMakeLists.txt, CMakePresets.json, ci.yml/release.yml, cmake/, src/, runtime/,
+tests/). Verdict: the described behavior is almost entirely implemented — the
+HOST.md §5 centralization is real (`src/mcchost.{h,c}` exist, the
+`host-gate-invariant` ctest passes by hand-reproduction, zero raw host macros
+remain outside mcchost), every MAC.md/WIN.md gate exists, and all §13
+validation rules are enforced. The open items below are the residue: a few
+small **code gaps** and a set of **doc statements that don't match the code**.
+
+*Follow-up landed same day:* HOST.md, MAC.md, and WIN.md were rewritten into
+the **Platform spec** section above (with this sweep's corrections baked into
+the statements — crtend vs libmcc1, the msvc-only `macho` label exclusion,
+the `-dumpmachine` mingw32 string vs the real msvcrt/kernel32/user32/gdi32
+auto-link list, the PE-skipped `arch_transfer_ret_regs`, winapi/windows.h
+location, dllcrt1.c owning `_dllstart`, the arm-wince cross target) and the
+three files were deleted; their per-file correction items were dropped as
+moot. BUILD.md remains a live doc, so its correction items below stand.
+
+### Code gaps (implementation work)
+
+*All landed 2026-07-03:* the `asan` build preset and `asan`/`cross` test
+presets exist (`matrix` deliberately has no test preset — the superbuild
+`return()`s before test registration and tests via `MCC_SUPERBUILD_TEST=ON`
+per sub-build); the `MCC_BUILD_DYNAMIC_EXE` HELP string matches the target;
+`MCC_GNU_GCC` (FILEPATH, advanced) and `MCC_SUPERBUILD_CHILD` (option,
+advanced) are declared cache variables; and the lock API was renamed to the
+`host_` convention (`HostSem`/`HOST_SEM_WAIT`/`HOST_SEM_POST`).
+
+### Doc corrections — BUILD.md
+
+*All landed 2026-07-03:* the cross-target table now shows the real
+`mcc-<arch>` target ids; the CI-artifact paragraph is scoped to the
+linux/macos/msvc/mingw jobs (with the dist `package.cmake` path, the
+test-only qemu job, and the macOS `-<cc>` artifact segment noted); wording
+fixes applied ("always set" compile-commands, no `cross` meta-target, §13
+notes the two rules enforced outside `mcc_validate_config()`); and the
+preset section reflects the new `asan`/`cross` test presets, the `matrix`
+exception, and `MCC_DARWIN_HOST=ON` on the macos preset.
+
+---
+
 ## ✓ LANDED: `-S` (assembly output) — 2026-07-02
 
 `mcc -S` now emits a gcc/clang-style AT&T assembly listing.  This closes the
@@ -52,19 +394,65 @@ the populated sections back to a listing.  New code:
   bug (disp8 spuriously matching the next insn's relocation → wrong stack slot →
   segfault).
 
-**Not done / follow-ups (open):**
+**Follow-ups — all landed 2026-07-03:**
 
-- [ ] **Other arches** — only `src/arch/x86_64/x86_64-dis.c` exists; `arm64`,
-  `i386`, `arm`, `riscv64` fall back to a `.byte` dump (guarded in `emit_text`).
-  Add `<arch>-dis.c` per target for full `-S` there.
-- [ ] **`.eh_frame`/unwind + debug sections** are omitted from the listing
-  (gcc regenerates these from `.cfi_*` directives; mcc has no CFI emission).
-  Emitting `.cfi_*` would make the listing carry unwind info.
-- [ ] **mcc's own assembler lacks SSE mnemonics**, so the hermetic self-round-trip
-  test is integer-only; float programs round-trip via gas.  Teaching the
-  integrated assembler the SSE subset would let the hermetic test cover floats.
-- [ ] `-S` honours `-o -` (stdout) and default `foo.c`→`foo.s`; not yet wired
-  into `-fverbose-asm`-style operand comments (gcc extra, low value).
+- **All five targets decode.** `<arch>-dis.c` exists for x86_64, i386, arm64,
+  riscv64, and arm; `MCC_HAVE_DISASM` covers every target and the `.byte`
+  dump fallback is gone. The driver grew per-arch reloc hooks
+  (`mcc_disasm_reloc_size` / `mcc_disasm_reloc_addend_bias`), REL-target
+  in-place addend reading, ARM `%function`/`%progbits` spellings, and skips
+  for non-reassemblable metadata labels (`<no name>` riscv anchors, `$a`-style
+  ARM mapping symbols). Fidelity tiers, each regression-tested:
+  - **arm64 / riscv64: byte-exact** — `mcc -c` vs reassembled `mcc -S`
+    section contents are identical (new `dash-s-bytes-<arch>` ctests via
+    `tests/support/seccmp.c` + `tests/asm/run_dash_s_bytes.cmake`).
+    Instructions the integrated assembler cannot express round-trip as
+    commented `.long`/`.word` words (arm64 ~12%, riscv64 ~3%).
+  - **x86_64 / i386: instruction-exact, behaviorally verified** — the
+    assembler legally re-encodes some widths (imm32→imm8, rel32→rel8, eAX
+    short forms), so equality is behavioral (`dash-s-roundtrip`) rather than
+    byte-wise; i386 was validated over a 12-file corpus (1568 insns, zero
+    unknown-encoding fallbacks) incl. an execution proof.
+  - **arm: link-equivalent** — 74/74 files instruction-exact (~475K insns);
+    local-branch imm24 fields differ by the gas −2 pipeline-bias convention
+    (the linker recomputes them), so it is excluded from the byte-exact test.
+- **`.cfi_*` unwind directives.** `-S` listings carry
+  `.cfi_startproc/endproc/def_cfa*/offset` (decoded from the FDE the compile
+  produced, emitted exactly when unwind tables are on), and the integrated
+  assembler parses them and regenerates an equivalent `.eh_frame` (byte-
+  identical on arm64/riscv64; on x86 identical whenever the text bytes are).
+  `mccdbg.c`'s FDE writer is now shared (`mcc_eh_frame_fde` + helpers).
+- **Scalar SSE in the integrated assembler.** ~30 mnemonic rows added to
+  `x86_64-asm.h`/`i386-asm.h` (movss/movsd, arith, conversions, compares,
+  unpck), byte-verified against binutils `as`; fixed the broken
+  `movaps %xmm,%xmm` operand mask; `dash_s_roundtrip/prog.c` now exercises
+  float/double/conversion paths hermetically.
+- **Latent assembler bugs found & fixed along the way:** x86_64-dis dc/de
+  x87 register-form naming used the legacy-AT&T swap (would re-assemble to
+  the reversed operation — real for `long double`); arm64 `ARM64_OFFSET19/14`
+  branch fields OR'd in unshifted (clobbering cond/rt); arm64 `mul` encoded
+  as `madd …,x0` instead of Ra=xzr; arm64 32-bit `asr #imm` left N=1
+  (invalid SBFM); arm/arm64 `gen_expr32` dropped the symbol reloc on
+  `.long sym`.
+
+**Still open (documented gaps, not regressions):**
+
+- [ ] Integrated-assembler syntax gaps keep some reloc-carrying operands as
+  commented raw words: arm64 `:got:`/`:lo12:` operands (ADR_GOT_PAGE /
+  LD64_GOT_LO12_NC dropped on reassembly), riscv64 store-form
+  `%pcrel_lo`/addend-carrying operands (10 reloc fields on 2 corpus files),
+  i386 `sym@ntpoff` TLS, arm `vldr dN` parse bug + `[rn, #-0]` spelling
+  (67 `.long` sites). Each is enumerated with encodings in the respective
+  `<arch>-dis.c` header comment / agent-validated corpus.
+- [ ] riscv64-asm mnemonic gaps that force `.long` fallbacks: flw/fsw
+  dispatch missing (tokens exist), fmv.x.w/.d family, `fcvt.d.s` hardcodes
+  rm=7 where codegen emits rm=0 (both valid, bytes differ), `call`/`tail`
+  use rd=zero and leak a redundant reloc pair, `la` emits lw.
+  (The `sraw`/`sraiw`-encode-as-srlw/srliw latent bug was fixed 2026-07-03,
+  verified against spec encodings.)
+- [ ] `-fverbose-asm`-style operand comments: meaningful comments need
+  codegen-side variable/spill metadata that is discarded after emission;
+  classified low-value (reloc symbol names are already printed).
 
 ---
 

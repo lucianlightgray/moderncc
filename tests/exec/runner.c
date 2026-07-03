@@ -16,18 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-#ifdef _WIN32
-#include <direct.h>
-#define MKDIR(p) _mkdir(p)
-#ifdef _MSC_VER
-
-#define popen  _popen
-#define pclose _pclose
-#endif
-#else
-#include <sys/stat.h>
-#define MKDIR(p) mkdir((p), 0777)
-#endif
+#include "../support/hostcompat.h"
 
 #include "goldens.h"
 
@@ -35,16 +24,12 @@ static char *xstrdup(const char *s){ char *p = malloc(strlen(s)+1); strcpy(p,s);
 
 #define MCC_SKIP_RC 77
 
-static const char *envv(const char *k, const char *d){
-    const char *v = getenv(k); return (v && *v) ? v : d;
-}
-
 
 static int req_met(const char *req, char *reason, size_t rn){
     if (!req || !*req) return 1;
     char buf[256]; snprintf(buf, sizeof buf, "%s", req);
-    const char *cpu = envv("MCC_TEST_CPU", "unknown");
-    const char *os  = envv("MCC_TEST_OS",  "unknown");
+    const char *cpu = hc_envv("MCC_TEST_CPU", "unknown");
+    const char *os  = hc_envv("MCC_TEST_OS",  "unknown");
     for (char *tok = strtok(buf, ","); tok; tok = strtok(NULL, ",")){
         while (*tok == ' ') tok++;
         if (!strncmp(tok, "note:", 5)){
@@ -78,13 +63,13 @@ static int req_met(const char *req, char *reason, size_t rn){
                 return 0;
             }
         } else if (!strcmp(tok, "asm")){
-            if (strcmp(envv("MCC_TEST_ASM","1"), "1")){
+            if (strcmp(hc_envv("MCC_TEST_ASM","1"), "1")){
                 snprintf(reason, rn, "requires integrated assembler (MCC_CONFIG_ASM)"); return 0; }
         } else if (!strcmp(tok, "bcheck")){
-            if (strcmp(envv("MCC_TEST_BCHECK","0"), "1")){
+            if (strcmp(hc_envv("MCC_TEST_BCHECK","0"), "1")){
                 snprintf(reason, rn, "requires bounds checker (MCC_CONFIG_BCHECK)"); return 0; }
         } else if (!strcmp(tok, "backtrace")){
-            if (strcmp(envv("MCC_TEST_BACKTRACE","0"), "1")){
+            if (strcmp(hc_envv("MCC_TEST_BACKTRACE","0"), "1")){
                 snprintf(reason, rn, "requires backtrace support (MCC_CONFIG_BACKTRACE)"); return 0; }
         }
     }
@@ -130,19 +115,7 @@ static char *slurp(FILE *f, size_t *outlen){
 }
 
 static char *run_capture(const char *cmd, int *status){
-#ifdef _WIN32
-
-
-
-
-
-    char *wrapped = malloc(strlen(cmd) + 3);
-    sprintf(wrapped, "\"%s\"", cmd);
-    FILE *f = popen(wrapped, "r");
-    free(wrapped);
-#else
-    FILE *f = popen(cmd, "r");
-#endif
+    FILE *f = HC_POPEN_CMD(cmd);
     if (!f){ if (status) *status = -1; return xstrdup(""); }
     char *out = slurp(f, NULL);
     int rc = pclose(f);
@@ -234,7 +207,7 @@ int main(int argc, char **argv){
        buffers to keep -Wformat-truncation quiet. */
     char cmd[32768], path[4096], srcdir[4096];
 
-    if (MKDIR(work) != 0 && errno != EEXIST) {
+    if (HC_MKDIR(work) != 0 && errno != EEXIST) {
         fprintf(stderr, "cannot create workdir %s\n", work); return 2; }
 
     for (int i = 0; i < mcc_goldens_count; i++){
@@ -256,7 +229,7 @@ int main(int argc, char **argv){
            to compile it. (Belt-and-suspenders with the `bcheck` req above.) */
         if ((strstr(g->flags, "-b") || !strcmp(g->mode, "brun")
              || !strcmp(g->mode, "run2"))
-            && strcmp(envv("MCC_TEST_BCHECK", "0"), "1")){
+            && strcmp(hc_envv("MCC_TEST_BCHECK", "0"), "1")){
             printf("SKIP  %-32s -- requires bounds checker (MCC_CONFIG_BCHECK)\n",
                    g->name);
             skipped++; continue;
@@ -338,7 +311,7 @@ int main(int argc, char **argv){
 
 
         const char *expect = g->expect;
-        if (g->expect_win32 && !strcmp(envv("MCC_TEST_OS", "unknown"), "WIN32"))
+        if (g->expect_win32 && !strcmp(hc_envv("MCC_TEST_OS", "unknown"), "WIN32"))
             expect = g->expect_win32;
         if (texts_equal(expect, out)){
             pass++;

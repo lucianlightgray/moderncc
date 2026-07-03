@@ -36,19 +36,21 @@ host-only, as there is no per-arch `libmcc`). Each takes a `-static` variant whe
 `MCC_BUILD_STATIC_EXE=ON` (non-MSVC host) and `-musl` siblings when
 `MCC_BUILD_MUSL=ON`; each also produces its runtime archive `<arch>-libmcc1.a`:
 
-| CMake target       | Base binary        | CPU     | Target OS | Extra variants                     |
-|--------------------|--------------------|---------|-----------|------------------------------------|
-| `i386-mcc`         | `mcc-i386`         | i386    | Linux     | `-static`, `-musl`, `-static-musl` |
-| `x86_64-mcc`       | `mcc-x86_64`       | x86_64  | Linux     | `-static`, `-musl`, `-static-musl` |
-| `arm-mcc`          | `mcc-arm`          | arm     | Linux     | `-static`, `-musl`, `-static-musl` |
-| `arm64-mcc`        | `mcc-arm64`        | arm64   | Linux     | `-static`, `-musl`, `-static-musl` |
-| `riscv64-mcc`      | `mcc-riscv64`      | riscv64 | Linux     | `-static`, `-musl`, `-static-musl` |
-| `i386-win32-mcc`   | `mcc-i386-win32`   | i386    | WIN32     | `-static`                          |
-| `x86_64-win32-mcc` | `mcc-x86_64-win32` | x86_64  | WIN32     | `-static`                          |
-| `arm64-win32-mcc`  | `mcc-arm64-win32`  | arm64   | WIN32     | `-static`                          |
-| `arm-wince-mcc`    | `mcc-arm-wince`    | arm     | WIN32     | `-static`                          |
-| `x86_64-osx-mcc`   | `mcc-x86_64-osx`   | x86_64  | Darwin    | `-static`                          |
-| `arm64-osx-mcc`    | `mcc-arm64-osx`    | arm64   | Darwin    | `-static`                          |
+The CMake target ids equal the output binary names (`mcc-<arch>`):
+
+| Binary / CMake target | CPU     | Target OS | Extra variants                     |
+|-----------------------|---------|-----------|------------------------------------|
+| `mcc-i386`            | i386    | Linux     | `-static`, `-musl`, `-static-musl` |
+| `mcc-x86_64`          | x86_64  | Linux     | `-static`, `-musl`, `-static-musl` |
+| `mcc-arm`             | arm     | Linux     | `-static`, `-musl`, `-static-musl` |
+| `mcc-arm64`           | arm64   | Linux     | `-static`, `-musl`, `-static-musl` |
+| `mcc-riscv64`         | riscv64 | Linux     | `-static`, `-musl`, `-static-musl` |
+| `mcc-i386-win32`      | i386    | WIN32     | `-static`                          |
+| `mcc-x86_64-win32`    | x86_64  | WIN32     | `-static`                          |
+| `mcc-arm64-win32`     | arm64   | WIN32     | `-static`                          |
+| `mcc-arm-wince`       | arm     | WIN32     | `-static`                          |
+| `mcc-x86_64-osx`      | x86_64  | Darwin    | `-static`                          |
+| `mcc-arm64-osx`       | arm64   | Darwin    | `-static`                          |
 
 `mcc` is the canonical, installed binary and the one the test suite drives; by
 default it is a self-contained ONE_SOURCE build linked only to libc. The
@@ -96,7 +98,7 @@ so it stays plain `libmcc.so`. Otherwise the shape is explicit:
 | `CMAKE_TOOLCHAIN_FILE` | FILEPATH | *(none)* | Selects a cross target; triggers the cross-compiling validation path. |
 | `CMAKE_INSTALL_PREFIX` | PATH | platform default | Base for `MCC_INSTALL_MCCDIR` default (`<prefix>/<libdir>/mcc`). |
 | `CMAKE_OSX_DEPLOYMENT_TARGET` | STRING | auto | Auto-pinned when a Homebrew GNU gcc host is detected on macOS (avoids the stale 10.6 default). |
-| `CMAKE_EXPORT_COMPILE_COMMANDS` | BOOL | ON (forced) | Always on. |
+| `CMAKE_EXPORT_COMPILE_COMMANDS` | BOOL | ON (always set) | Set unconditionally before `project()`. |
 | Generator (`-G`) / `-A` | — | platform default | Matters for the `msvc` matrix cells (see `MCC_MSVC_GENERATOR`). |
 
 ---
@@ -148,19 +150,23 @@ host-dynamic (macOS Homebrew gcc). Hidden bases are prefixed `_`
 | `linux-gcc-dwarf` | `linux` | + `MCC_CONFIG_DWARF=5` |
 | `linux-gcc-asan` | `linux` | + `MCC_BUILD_SANITIZE=ON` (gcc libasan) |
 | `linux-gcc-diagnostics` | `linux` | + `MCC_DIAGNOSTICS=ON` (`mcc_s`/`mcc_p`/`mcc_c`) |
-| `macos`, `macos-cross` | `macos` | Debug, `CMAKE_C_COMPILER=$env{CC}` (clang / Homebrew gcc) |
+| `macos`, `macos-cross` | `macos` | Debug, `CMAKE_C_COMPILER=$env{CC}` (clang / Homebrew gcc), `MCC_DARWIN_HOST=ON` |
 | `msvc` | `msvc` | Release, `MCC_TOOLCHAIN_PROFILE=msvc`, diff3 refs from `$env{}` |
 | `mingw` | `mingw` | Release, `MCC_TOOLCHAIN_PROFILE=mingw` (build-only) |
 
-Every `ci.yml` build job uploads its build targets (executables + libraries)
-as a `mcc-<preset>-<arch>` artifact: the job configures with
-`CMAKE_INSTALL_PREFIX` pointing at a `ci-out/` dir, runs `cmake --install`
-after the tests, and uploads the tree as a tar.gz (tar first — GitHub
-artifacts don't preserve the exec bit). The docker `linux` job does this by
-mounting that dir at `/out`; `tests/ci/docker/run-ci.sh` picks the prefix up
-from the mount. The prefix must be set at *configure* time: the mcc runtime
-dir (`lib*/mcc`) installs to an absolute path baked into the install rules,
-so an install-time `--prefix` cannot re-root it.
+The `linux`, `macos`, `msvc`, and `mingw` build jobs upload their build
+targets (executables + libraries) as artifacts — `mcc-<preset>-<arch>`
+(macOS inserts the compiler: `mcc-macos-<cc>-arm64`): the job configures
+with `CMAKE_INSTALL_PREFIX` pointing at a `ci-out/` dir, runs
+`cmake --install` after the tests, and uploads the tree as a tar.gz (tar
+first — GitHub artifacts don't preserve the exec bit). The docker `linux`
+job does this by mounting that dir at `/out`; `tests/ci/docker/run-ci.sh`
+picks the prefix up from the mount. The prefix must be set at *configure*
+time: the mcc runtime dir (`lib*/mcc`) installs to an absolute path baked
+into the install rules, so an install-time `--prefix` cannot re-root it.
+The `dist` jobs instead package their preset's `${sourceDir}/stage` prefix
+via `cmake -P cmake/package.cmake`; the `qemu` job is test-only and uploads
+nothing.
 
 **qemu presets** — the `qemu` job passes `PRESET=qemu-<arch>` to the docker
 runner; `qemu` alone is the full local matrix:
@@ -184,9 +190,13 @@ build produces *all* permutations: Release, `MCC_BUILD_TESTS=OFF`,
 | `dist-msvc` | MSVC profile | static exe, stripped (PE) |
 
 Build presets exist for every configure preset; test presets exist for all
-except the build-only (`mingw`) and test-less (`dist-*`) ones, with the label
-filter baked in (`qemu`-excluded on ELF hosts, `qemu|wine` on macOS,
-`qemu|wine|macho` on MSVC, `qemu`-only for the qemu presets).
+except the build-only (`mingw`), test-less (`dist-*`), and superbuild
+(`matrix`) ones — the superbuild registers no top-level tests and runs
+`ctest` per sub-build via `MCC_SUPERBUILD_TEST=ON` instead. The label
+filter is baked in (`qemu`-excluded on ELF hosts, `qemu|wine` on macOS,
+`qemu|wine|macho` on MSVC, `qemu`-only for the qemu presets). The `macos`
+preset also sets `MCC_DARWIN_HOST=ON` (the CI runner is a real Darwin
+host), enabling the kernel-fused apple-libc suite.
 
 ---
 
@@ -195,7 +205,7 @@ filter baked in (`qemu`-excluded on ELF hosts, `qemu|wine` on macOS,
 | Value | Type | Default | Choices | Gate | Purpose |
 |---|---|---|---|---|---|
 | `MCC_TOOLCHAIN_PROFILE` | STRING (list) | `auto` | auto, gcc, clang, mcc, msvc, mingw | always | Toolchain(s) to build with, in order. A single value seeds profile defaults; a list (or `mingw`) triggers the superbuild matrix. |
-| `MCC_ENABLE_CROSS` | BOOL | OFF | | always | Build all cross compilers `mcc-<arch>` (`make cross`); each also gets a `-static` variant when `MCC_BUILD_STATIC_EXE=ON` and a `-musl` sibling. |
+| `MCC_ENABLE_CROSS` | BOOL | OFF | | always | Build all cross compilers `mcc-<arch>` (ordinary targets, not a `cross` meta-target); each also gets a `-static` variant when `MCC_BUILD_STATIC_EXE=ON` and a `-musl` sibling. |
 | `MCC_BUILD_STATIC_LIB` | BOOL | OFF | | always | Static `libmcc-static.a` (ON) vs shared `libmcc.so` (OFF, default). |
 | `MCC_BUILD_STATIC_EXE` | BOOL | OFF | | always (forced OFF on macOS) | Build the `mcc-static` target (fully static `-static`). `MCC_ONE_SOURCE` decides its compile+link path: self-contained (ON) or linking `libmcc.a` (OFF, then also needs `MCC_BUILD_STATIC_LIB=ON`). macOS has no static libc → forced OFF. |
 | `MCC_BUILD_DYNAMIC_LIB` | BOOL | OFF | | always | Also build a shared `libmcc-dynamic.so` alongside the `libmcc-static.a` (only meaningful with `MCC_BUILD_STATIC_LIB=ON`). |
@@ -356,9 +366,11 @@ useful to assert in CI. They are computed, not user inputs.
 
 ## 13. Cross-value validation (combinations the configure step checks)
 
-`mcc_validate_config()` enforces these; test both the pass and the
-warn/fatal path. With `MCC_CONFIG_AUTOCORRECT=ON` several fatals become
-auto-corrections instead.
+`mcc_validate_config()` enforces these (two live elsewhere but still fire at
+configure time: the `mcc-dynamic`-skipped-under-ONE_SOURCE status is printed
+at the target definition, and the toolchain-profile-entry fatal at the node
+declaration); test both the pass and the warn/fatal path. With
+`MCC_CONFIG_AUTOCORRECT=ON` several fatals become auto-corrections instead.
 
 - **Sanitize/profile need GCC/Clang host** → fatal on MSVC host.
 - **`MCC_BUILD_SANITIZE` + WIN32** → fatal (mingw has no libasan/libubsan).

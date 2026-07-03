@@ -815,6 +815,7 @@ struct MCCState {
     char *install_name;
     uint32_t compatibility_version;
     uint32_t current_version;
+    uint32_t macos_version_min;  /* LC_BUILD_VERSION minos/sdk; 0 = default 10.6 */
 #endif
 
 #ifndef ELF_OBJ_ONLY
@@ -1409,7 +1410,9 @@ ST_FUNC int set_global_sym(MCCState *s1, const char *name, Section *sec, addr_t 
 
 /* Targets with a per-arch instruction decoder (<arch>-dis.c).  Others still
    get an assembly listing via mccdis.c, with .text emitted as a .byte dump. */
-#if defined(MCC_TARGET_X86_64)
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_I386) \
+ || defined(MCC_TARGET_ARM) || defined(MCC_TARGET_ARM64) \
+ || defined(MCC_TARGET_RISCV64)
 # define MCC_HAVE_DISASM 1
 #endif
 
@@ -1446,6 +1449,16 @@ ST_FUNC const char *disasm_label(disasm_ctx *dc, addr_t target);
    prints its AT&T-syntax text (no leading tab, no trailing newline) to dc->out,
    and returns the instruction length in bytes (>= 1). */
 ST_FUNC int mcc_disasm_insn(disasm_ctx *dc);
+
+/* Natural byte width of the field a relocation type patches (0 if unknown).
+   Sizes .long/.quad data emission and REL in-place addend reads. */
+ST_FUNC int mcc_disasm_reloc_size(int type);
+
+/* Extra addend disasm_reloc() folds into its symbolic operand text for this
+   relocation type (`size` = the caller's search window, i.e. the field size).
+   x86 returns +size for PC-relative types so gas re-derives the bias; return
+   0 where the raw addend already reads back correctly. */
+ST_FUNC int mcc_disasm_reloc_addend_bias(int type, int size);
 #endif
 
 #ifndef ELF_OBJ_ONLY

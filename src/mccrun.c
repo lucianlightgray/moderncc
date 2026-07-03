@@ -38,9 +38,9 @@ typedef struct rt_frame {
 } rt_frame;
 
 static MCCState *g_s1;
-MCC_SEM(rt_sem);
-static void rt_wait_sem(void) { WAIT_SEM(&rt_sem); }
-static void rt_post_sem(void) { POST_SEM(&rt_sem); }
+HOST_SEM(rt_sem);
+static void rt_wait_sem(void) { HOST_SEM_WAIT(&rt_sem); }
+static void rt_post_sem(void) { HOST_SEM_POST(&rt_sem); }
 static int rt_get_caller_pc(addr_t *paddr, rt_frame *f, int level);
 static void rt_exit(rt_frame *f, int code);
 

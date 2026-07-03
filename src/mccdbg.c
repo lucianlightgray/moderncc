@@ -831,14 +831,67 @@ ST_FUNC void mcc_eh_frame_start(MCCState *s1)
 	      eh_frame_section->data_offset - s1->eh_start - 4);
 }
 
-static void mcc_debug_frame_end(MCCState *s1, int size)
+/* ---- reusable CFI/FDE writing machinery -------------------------------
+   Shared between the compiler proper (mcc_debug_frame_end below, which
+   knows mcc's fixed frame layout) and the integrated assembler (mccasm.c),
+   which reconstructs an FDE program from `.cfi_*` directives found in an
+   assembly listing.  Both encode ops into a byte buffer with the helpers
+   here and then emit the FDE with mcc_eh_frame_fde(), so a `-S` round trip
+   regenerates a byte-identical .eh_frame. */
+
+/* Encode a ULEB128 into p; returns the number of bytes written. */
+ST_FUNC int mcc_cfi_uleb(unsigned char *p, unsigned long long value)
 {
-    int eh_section_sym;
+    int n = 0;
+    do {
+        unsigned char byte = value & 0x7f;
+
+        value >>= 7;
+        p[n++] = byte | (value ? 0x80 : 0);
+    } while (value != 0);
+    return n;
+}
+
+/* Encode a DW_CFA_advance_loc* op for `delta` code-alignment units into p,
+   using the smallest form; returns the number of bytes written (0 if the
+   delta is zero: the CFA rows are the same, no row transition needed). */
+ST_FUNC int mcc_cfi_advance(unsigned char *p, unsigned long delta)
+{
+    if (delta == 0)
+        return 0;
+    if (delta < 0x40) {
+        p[0] = DW_CFA_advance_loc + delta;
+        return 1;
+    }
+    if (delta < 0x100) {
+        p[0] = DW_CFA_advance_loc1;
+        p[1] = delta;
+        return 2;
+    }
+    if (delta < 0x10000) {
+        p[0] = DW_CFA_advance_loc2;
+        write16le(p + 1, delta);
+        return 3;
+    }
+    p[0] = DW_CFA_advance_loc4;
+    write32le(p + 1, delta);
+    return 5;
+}
+
+/* Append one FDE covering [func_start, func_start+func_size) of code_sec to
+   .eh_frame, referencing the CIE written by mcc_eh_frame_start().  ops/nops
+   is the already-encoded CFA instruction program (padded here with nops). */
+ST_FUNC void mcc_eh_frame_fde(MCCState *s1, Section *code_sec,
+                              unsigned long func_start,
+                              unsigned long func_size,
+                              const unsigned char *ops, int nops)
+{
+    int eh_section_sym, i;
     unsigned long fde_start;
 
     if (!eh_frame_section)
 	return;
-    eh_section_sym = dwarf_get_section_sym(text_section);
+    eh_section_sym = dwarf_get_section_sym(code_sec);
     fde_start = eh_frame_section->data_offset;
     dwarf_data4(eh_frame_section, 0);
     dwarf_data4(eh_frame_section,
@@ -854,100 +907,107 @@ static void mcc_debug_frame_end(MCCState *s1, int size)
 #elif defined MCC_TARGET_RISCV64
     dwarf_reloc(eh_frame_section, eh_section_sym, R_RISCV_32_PCREL);
 #endif
-    dwarf_data4(eh_frame_section, func_ind);
-    dwarf_data4(eh_frame_section, size);
+    dwarf_data4(eh_frame_section, func_start);
+    dwarf_data4(eh_frame_section, func_size);
     dwarf_data1(eh_frame_section, 0);
-#if defined MCC_TARGET_I386
-    dwarf_data1(eh_frame_section, DW_CFA_advance_loc + 1);
-    dwarf_data1(eh_frame_section, DW_CFA_def_cfa_offset);
-    dwarf_uleb128(eh_frame_section, 8);
-    dwarf_data1(eh_frame_section, DW_CFA_offset + 5);
-    dwarf_uleb128(eh_frame_section, 2);
-    dwarf_data1(eh_frame_section, DW_CFA_advance_loc + 2);
-    dwarf_data1(eh_frame_section, DW_CFA_def_cfa_register);
-    dwarf_uleb128(eh_frame_section, 5);
-    dwarf_data1(eh_frame_section, DW_CFA_advance_loc4);
-    dwarf_data4(eh_frame_section, size - 5);
-    dwarf_data1(eh_frame_section, DW_CFA_restore + 5);
-    dwarf_data1(eh_frame_section, DW_CFA_def_cfa);
-    dwarf_uleb128(eh_frame_section, 4);
-    dwarf_uleb128(eh_frame_section, 4);
-#elif defined MCC_TARGET_X86_64
-    dwarf_data1(eh_frame_section, DW_CFA_advance_loc + 1);
-    dwarf_data1(eh_frame_section, DW_CFA_def_cfa_offset);
-    dwarf_uleb128(eh_frame_section, 16);
-    dwarf_data1(eh_frame_section, DW_CFA_offset + 6);
-    dwarf_uleb128(eh_frame_section, 2);
-    dwarf_data1(eh_frame_section, DW_CFA_advance_loc + 3);
-    dwarf_data1(eh_frame_section, DW_CFA_def_cfa_register);
-    dwarf_uleb128(eh_frame_section, 6);
-    dwarf_data1(eh_frame_section, DW_CFA_advance_loc4);
-    dwarf_data4(eh_frame_section, size - 5);
-    dwarf_data1(eh_frame_section, DW_CFA_def_cfa);
-    dwarf_uleb128(eh_frame_section, 7);
-    dwarf_uleb128(eh_frame_section, 8);
-#elif defined MCC_TARGET_ARM
-    dwarf_data1(eh_frame_section, DW_CFA_advance_loc + 2);
-    dwarf_data1(eh_frame_section, DW_CFA_def_cfa_offset);
-    dwarf_uleb128(eh_frame_section, 8);
-    dwarf_data1(eh_frame_section, DW_CFA_offset + 14);
-    dwarf_uleb128(eh_frame_section, 1);
-    dwarf_data1(eh_frame_section, DW_CFA_offset + 11);
-    dwarf_uleb128(eh_frame_section, 2);
-    dwarf_data1(eh_frame_section, DW_CFA_advance_loc4);
-    dwarf_data4(eh_frame_section, size / 2 - 5);
-    dwarf_data1(eh_frame_section, DW_CFA_def_cfa_register);
-    dwarf_uleb128(eh_frame_section, 11);
-#elif defined MCC_TARGET_ARM64
-    dwarf_data1(eh_frame_section, DW_CFA_advance_loc + 1);
-    dwarf_data1(eh_frame_section, DW_CFA_def_cfa_offset);
-    dwarf_uleb128(eh_frame_section, 224);
-    dwarf_data1(eh_frame_section, DW_CFA_offset + 29);
-    dwarf_uleb128(eh_frame_section, 28);
-    dwarf_data1(eh_frame_section, DW_CFA_offset + 30);
-    dwarf_uleb128(eh_frame_section, 27);
-    dwarf_data1(eh_frame_section, DW_CFA_advance_loc + 3);
-    dwarf_data1(eh_frame_section, DW_CFA_def_cfa_offset);
-    dwarf_uleb128(eh_frame_section, 224 + ((-loc + 15) & ~15));
-    dwarf_data1(eh_frame_section, DW_CFA_advance_loc4);
-    dwarf_data4(eh_frame_section, size / 4 - 5);
-    dwarf_data1(eh_frame_section, DW_CFA_restore + 30);
-    dwarf_data1(eh_frame_section, DW_CFA_restore + 29);
-    dwarf_data1(eh_frame_section, DW_CFA_def_cfa_offset);
-    dwarf_uleb128(eh_frame_section, 0);
-#elif defined MCC_TARGET_RISCV64
-    dwarf_data1(eh_frame_section, DW_CFA_advance_loc + 4);
-    dwarf_data1(eh_frame_section, DW_CFA_def_cfa_offset);
-    dwarf_uleb128(eh_frame_section, 16);
-    dwarf_data1(eh_frame_section, DW_CFA_advance_loc + 8);
-    dwarf_data1(eh_frame_section, DW_CFA_offset + 1);
-    dwarf_uleb128(eh_frame_section, 2);
-    dwarf_data1(eh_frame_section, DW_CFA_offset + 8);
-    dwarf_uleb128(eh_frame_section, 4);
-    dwarf_data1(eh_frame_section, DW_CFA_advance_loc + 8);
-    dwarf_data1(eh_frame_section, DW_CFA_def_cfa);
-    dwarf_uleb128(eh_frame_section, 8);
-    dwarf_uleb128(eh_frame_section, 0);
-    dwarf_data1(eh_frame_section, DW_CFA_advance_loc4);
-    while (size >= 4 &&
-	   read32le(cur_text_section->data + func_ind + size - 4) != 0x00008067)
-	size -= 4;
-    dwarf_data4(eh_frame_section, size - 36);
-    dwarf_data1(eh_frame_section, DW_CFA_def_cfa);
-    dwarf_uleb128(eh_frame_section, 2);
-    dwarf_uleb128(eh_frame_section, 16);
-    dwarf_data1(eh_frame_section, DW_CFA_advance_loc + 4);
-    dwarf_data1(eh_frame_section, DW_CFA_restore + 1);
-    dwarf_data1(eh_frame_section, DW_CFA_advance_loc + 4);
-    dwarf_data1(eh_frame_section, DW_CFA_restore + 8);
-    dwarf_data1(eh_frame_section, DW_CFA_advance_loc + 4);
-    dwarf_data1(eh_frame_section, DW_CFA_def_cfa_offset);
-    dwarf_uleb128(eh_frame_section, 0);
-#endif
+    for (i = 0; i < nops; i++)
+	dwarf_data1(eh_frame_section, ops[i]);
     while ((eh_frame_section->data_offset - fde_start) & 3)
 	dwarf_data1(eh_frame_section, DW_CFA_nop);
     write32le(eh_frame_section->data + fde_start,
 	      eh_frame_section->data_offset - fde_start - 4);
+}
+
+static void mcc_debug_frame_end(MCCState *s1, int size)
+{
+    unsigned char cfi[64];
+    int n = 0, range = size;
+
+    if (!eh_frame_section)
+	return;
+#if defined MCC_TARGET_I386
+    n += mcc_cfi_advance(cfi + n, 1);
+    cfi[n++] = DW_CFA_def_cfa_offset;
+    n += mcc_cfi_uleb(cfi + n, 8);
+    cfi[n++] = DW_CFA_offset + 5;
+    n += mcc_cfi_uleb(cfi + n, 2);
+    n += mcc_cfi_advance(cfi + n, 2);
+    cfi[n++] = DW_CFA_def_cfa_register;
+    n += mcc_cfi_uleb(cfi + n, 5);
+    n += mcc_cfi_advance(cfi + n, (uint32_t)(size - 5));
+    cfi[n++] = DW_CFA_restore + 5;
+    cfi[n++] = DW_CFA_def_cfa;
+    n += mcc_cfi_uleb(cfi + n, 4);
+    n += mcc_cfi_uleb(cfi + n, 4);
+#elif defined MCC_TARGET_X86_64
+    n += mcc_cfi_advance(cfi + n, 1);
+    cfi[n++] = DW_CFA_def_cfa_offset;
+    n += mcc_cfi_uleb(cfi + n, 16);
+    cfi[n++] = DW_CFA_offset + 6;
+    n += mcc_cfi_uleb(cfi + n, 2);
+    n += mcc_cfi_advance(cfi + n, 3);
+    cfi[n++] = DW_CFA_def_cfa_register;
+    n += mcc_cfi_uleb(cfi + n, 6);
+    n += mcc_cfi_advance(cfi + n, (uint32_t)(size - 5));
+    cfi[n++] = DW_CFA_def_cfa;
+    n += mcc_cfi_uleb(cfi + n, 7);
+    n += mcc_cfi_uleb(cfi + n, 8);
+#elif defined MCC_TARGET_ARM
+    n += mcc_cfi_advance(cfi + n, 2);
+    cfi[n++] = DW_CFA_def_cfa_offset;
+    n += mcc_cfi_uleb(cfi + n, 8);
+    cfi[n++] = DW_CFA_offset + 14;
+    n += mcc_cfi_uleb(cfi + n, 1);
+    cfi[n++] = DW_CFA_offset + 11;
+    n += mcc_cfi_uleb(cfi + n, 2);
+    n += mcc_cfi_advance(cfi + n, (uint32_t)(size / 2 - 5));
+    cfi[n++] = DW_CFA_def_cfa_register;
+    n += mcc_cfi_uleb(cfi + n, 11);
+#elif defined MCC_TARGET_ARM64
+    n += mcc_cfi_advance(cfi + n, 1);
+    cfi[n++] = DW_CFA_def_cfa_offset;
+    n += mcc_cfi_uleb(cfi + n, 224);
+    cfi[n++] = DW_CFA_offset + 29;
+    n += mcc_cfi_uleb(cfi + n, 28);
+    cfi[n++] = DW_CFA_offset + 30;
+    n += mcc_cfi_uleb(cfi + n, 27);
+    n += mcc_cfi_advance(cfi + n, 3);
+    cfi[n++] = DW_CFA_def_cfa_offset;
+    n += mcc_cfi_uleb(cfi + n, 224 + ((-loc + 15) & ~15));
+    n += mcc_cfi_advance(cfi + n, (uint32_t)(size / 4 - 5));
+    cfi[n++] = DW_CFA_restore + 30;
+    cfi[n++] = DW_CFA_restore + 29;
+    cfi[n++] = DW_CFA_def_cfa_offset;
+    n += mcc_cfi_uleb(cfi + n, 0);
+#elif defined MCC_TARGET_RISCV64
+    n += mcc_cfi_advance(cfi + n, 4);
+    cfi[n++] = DW_CFA_def_cfa_offset;
+    n += mcc_cfi_uleb(cfi + n, 16);
+    n += mcc_cfi_advance(cfi + n, 8);
+    cfi[n++] = DW_CFA_offset + 1;
+    n += mcc_cfi_uleb(cfi + n, 2);
+    cfi[n++] = DW_CFA_offset + 8;
+    n += mcc_cfi_uleb(cfi + n, 4);
+    n += mcc_cfi_advance(cfi + n, 8);
+    cfi[n++] = DW_CFA_def_cfa;
+    n += mcc_cfi_uleb(cfi + n, 8);
+    n += mcc_cfi_uleb(cfi + n, 0);
+    while (size >= 4 &&
+	   read32le(cur_text_section->data + func_ind + size - 4) != 0x00008067)
+	size -= 4;
+    n += mcc_cfi_advance(cfi + n, (uint32_t)(size - 36));
+    cfi[n++] = DW_CFA_def_cfa;
+    n += mcc_cfi_uleb(cfi + n, 2);
+    n += mcc_cfi_uleb(cfi + n, 16);
+    n += mcc_cfi_advance(cfi + n, 4);
+    cfi[n++] = DW_CFA_restore + 1;
+    n += mcc_cfi_advance(cfi + n, 4);
+    cfi[n++] = DW_CFA_restore + 8;
+    n += mcc_cfi_advance(cfi + n, 4);
+    cfi[n++] = DW_CFA_def_cfa_offset;
+    n += mcc_cfi_uleb(cfi + n, 0);
+#endif
+    mcc_eh_frame_fde(s1, text_section, func_ind, range, cfi, n);
 }
 
 ST_FUNC void mcc_eh_frame_end(MCCState *s1)

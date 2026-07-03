@@ -534,7 +534,7 @@
 #define ARM64_ANDS_REG    0x6A000000U
 #define ARM64_ORR_REG     0x2A000000U
 #define ARM64_EOR_REG     0x4A000000U
-#define ARM64_MUL_REG     0x1B000000U
+#define ARM64_MUL_REG     0x1B007C00U  /* MADD rd, rn, rm, xzr (Ra=31) */
 
 #define ARM64_MOVZ        0x52800000U
 #define ARM64_MOVN        0x12800000U
@@ -690,8 +690,9 @@
 #define ARM64_COND(c)   ((uint32_t)(c) & 0xFU)
 
 #define ARM64_OFFSET26(v) (((uint32_t)(v) >> 2) & 0x3FFFFFFU)
-#define ARM64_OFFSET19(v) (((uint32_t)(v) >> 2) & 0x7FFFFU)
-#define ARM64_OFFSET14(v) (((uint32_t)(v) >> 2) & 0x3FFFU)
+/* imm19/imm14 fields live at bits 23:5 / 18:5 (b.cond, cbz/cbnz, tbz/tbnz) */
+#define ARM64_OFFSET19(v) ((((uint32_t)(v) >> 2) & 0x7FFFFU) << 5)
+#define ARM64_OFFSET14(v) ((((uint32_t)(v) >> 2) & 0x3FFFU) << 5)
 
 #undef ARM64_SYSREG
 #define ARM64_SYSREG(op0, op1, crn, crm, op2) \

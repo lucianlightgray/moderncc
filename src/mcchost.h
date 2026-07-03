@@ -2,8 +2,9 @@
  *  mcchost.h - HOST-axis platform layer for the mcc compiler
  *
  *  Everything that depends on the machine mcc *runs on* (the HOST) is
- *  interpreted here and in mcchost.c; see HOST.md for the complete map.
- *  TARGET selection (MCC_TARGET_*, TARGETOS_*) stays in the backends.
+ *  interpreted here and in mcchost.c; the complete map lives in TODO.md
+ *  ("Platform spec"). TARGET selection (MCC_TARGET_*, TARGETOS_*) stays in
+ *  the backends.
  *
  *  Invariant: outside mcchost.{h,c}, no file under src/ may test raw host
  *  macros (_WIN32, __APPLE__, __linux__, the BSDs, _MSC_VER, ...).  Code
@@ -326,7 +327,7 @@ ST_FUNC int  host_fault_regs(void *osctx, HostFaultRegs *r);
 ST_FUNC void host_fault_unblock(unsigned detail);  /* sigprocmask; no-op Win */
 
 /* ------------------------------------------------------------------- */
-/* locks: MCCSem - CRITICAL_SECTION | dispatch_semaphore_t | sem_t */
+/* locks: HostSem - CRITICAL_SECTION | dispatch_semaphore_t | sem_t */
 
 #ifndef CONFIG_MCC_SEMLOCK
 # define CONFIG_MCC_SEMLOCK 1
@@ -334,8 +335,8 @@ ST_FUNC void host_fault_unblock(unsigned detail);  /* sigprocmask; no-op Win */
 
 #if CONFIG_MCC_SEMLOCK
 #if defined _WIN32
-typedef struct { volatile LONG init; CRITICAL_SECTION cs; } MCCSem;
-static inline void wait_sem(MCCSem *p) {
+typedef struct { volatile LONG init; CRITICAL_SECTION cs; } HostSem;
+static inline void host_sem_wait(HostSem *p) {
     if (InterlockedCompareExchange(&p->init, 1, 0) == 0) {
         InitializeCriticalSection(&p->cs);
         InterlockedExchange(&p->init, 2);
@@ -345,39 +346,39 @@ static inline void wait_sem(MCCSem *p) {
     }
     EnterCriticalSection(&p->cs);
 }
-static inline void post_sem(MCCSem *p) {
+static inline void host_sem_post(HostSem *p) {
     LeaveCriticalSection(&p->cs);
 }
 #elif defined __APPLE__
 #include <dispatch/dispatch.h>
-typedef struct { int init; dispatch_semaphore_t sem; } MCCSem;
-static inline void wait_sem(MCCSem *p) {
+typedef struct { int init; dispatch_semaphore_t sem; } HostSem;
+static inline void host_sem_wait(HostSem *p) {
     if (!p->init)
         p->sem = dispatch_semaphore_create(1), p->init = 1;
     dispatch_semaphore_wait(p->sem, DISPATCH_TIME_FOREVER);
 }
-static inline void post_sem(MCCSem *p) {
+static inline void host_sem_post(HostSem *p) {
     dispatch_semaphore_signal(p->sem);
 }
 #else
 #include <semaphore.h>
-typedef struct { int init; sem_t sem; } MCCSem;
-static inline void wait_sem(MCCSem *p) {
+typedef struct { int init; sem_t sem; } HostSem;
+static inline void host_sem_wait(HostSem *p) {
     if (!p->init)
         sem_init(&p->sem, 0, 1), p->init = 1;
     while (sem_wait(&p->sem) < 0 && errno == EINTR);
 }
-static inline void post_sem(MCCSem *p) {
+static inline void host_sem_post(HostSem *p) {
     sem_post(&p->sem);
 }
 #endif
-#define MCC_SEM(s) static MCCSem s
-#define WAIT_SEM wait_sem
-#define POST_SEM post_sem
+#define HOST_SEM(s) static HostSem s
+#define HOST_SEM_WAIT host_sem_wait
+#define HOST_SEM_POST host_sem_post
 #else
-#define MCC_SEM(s)
-#define WAIT_SEM(p)
-#define POST_SEM(p)
+#define HOST_SEM(s)
+#define HOST_SEM_WAIT(p)
+#define HOST_SEM_POST(p)
 #endif
 
 #endif /* MCC_HOST_H */

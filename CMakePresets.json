@@ -170,11 +170,12 @@
 
     {
       "name": "macos",
-      "displayName": "CI macos / Debug (compiler from $env{CC})",
+      "displayName": "CI macos / Debug (compiler from $env{CC}, real Darwin host)",
       "inherits": "_ninja",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_C_COMPILER": "$env{CC}"
+        "CMAKE_C_COMPILER": "$env{CC}",
+        "MCC_DARWIN_HOST": "ON"
       }
     },
     {
@@ -328,6 +329,7 @@
   "buildPresets": [
     { "name": "debug", "configurePreset": "debug" },
     { "name": "release", "configurePreset": "release" },
+    { "name": "asan", "configurePreset": "asan" },
     { "name": "diagnostics", "configurePreset": "diagnostics" },
     { "name": "cross", "configurePreset": "cross" },
     { "name": "matrix", "configurePreset": "matrix" },
@@ -401,7 +403,9 @@
 
     { "name": "debug", "configurePreset": "debug", "inherits": "_test-elf" },
     { "name": "release", "configurePreset": "release", "inherits": "_test-elf" },
+    { "name": "asan", "configurePreset": "asan", "inherits": "_test-elf" },
     { "name": "diagnostics", "configurePreset": "diagnostics", "inherits": "_test-elf" },
+    { "name": "cross", "configurePreset": "cross", "inherits": "_test-elf" },
 
     { "name": "linux-gcc", "configurePreset": "linux-gcc", "inherits": "_test-elf" },
     { "name": "linux-gcc-cross", "configurePreset": "linux-gcc-cross", "inherits": "_test-elf" },

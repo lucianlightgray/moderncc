@@ -87,6 +87,29 @@ foreach(tgt x86_64-osx arm64-osx)
         endif()
         file(REMOVE "${exe}")
     endforeach()
+
+    # -mmacosx-version-min must land in LC_BUILD_VERSION (default is 10.6)
+    set(_vsrc "${WORK}/macho_${tgt}_versionmin.c")
+    set(_vexe "${WORK}/macho_${tgt}_versionmin")
+    file(WRITE "${_vsrc}" "int main(void){return 0;}\n")
+    execute_process(
+        COMMAND "${_mcc}" "-I${SRC}/runtime/include"
+                -mmacosx-version-min=12.3.1 "${_vsrc}" -o "${_vexe}"
+        RESULT_VARIABLE _rc ERROR_VARIABLE _err OUTPUT_QUIET)
+    if(NOT _rc EQUAL 0)
+        message("FAIL ${tgt}/versionmin (link): ${_err}")
+        set(_status 1)
+    else()
+        execute_process(COMMAND "${_otool}" -l "${_vexe}"
+            RESULT_VARIABLE _orc OUTPUT_VARIABLE _lcs ERROR_QUIET)
+        if(_orc EQUAL 0 AND _lcs MATCHES "minos 12\\.3\\.1")
+            message("PASS ${tgt}/versionmin (LC_BUILD_VERSION minos 12.3.1)")
+        else()
+            message("FAIL ${tgt}/versionmin: minos 12.3.1 not in load commands")
+            set(_status 1)
+        endif()
+    endif()
+    file(REMOVE "${_vexe}" "${_vsrc}")
 endforeach()
 
 if(NOT _ran_any)

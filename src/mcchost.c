@@ -3,7 +3,8 @@
  *
  *  The single home for everything that depends on the machine mcc runs on:
  *  path semantics, self-location, process spawning, runnable memory, fault
- *  handling, dynamic loading, and native toolchain discovery.  See HOST.md.
+ *  handling, dynamic loading, and native toolchain discovery.  See TODO.md
+ *  ("Platform spec") for the complete map.
  *
  *  Compiled for every target triple (cross compilers still need paths,
  *  spawn, clocks, self-path); the JIT/fault sections compile only under

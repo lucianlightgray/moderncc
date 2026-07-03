@@ -451,9 +451,14 @@ endforeach()
 
 option(MCC_SUPERBUILD_TEST "Run ctest after each matrix sub-build" ON)
 option(MCC_SUPERBUILD_SEQUENTIAL "Build toolchain stages in order (targets within a stage stay parallel)" ON)
+option(MCC_SUPERBUILD_CHILD "Internal: set on matrix child cells to suppress superbuild recursion" OFF)
+mark_as_advanced(MCC_SUPERBUILD_CHILD)
 set(MCC_TARGETS "native" CACHE STRING
     "Cross-platform target(s) to build, as a list (native;cross;<custom>)")
 set_property(CACHE MCC_TARGETS PROPERTY STRINGS native cross)
+set(MCC_GNU_GCC "" CACHE FILEPATH
+    "Pin the real GNU gcc used by the 'gcc' toolchain profile (empty = probe gcc-16..gcc-10, gcc, cc)")
+mark_as_advanced(MCC_GNU_GCC)
 
 
 
@@ -994,7 +999,7 @@ mcc_config_node(MCC_BUILD_STATIC_EXE TYPE BOOL DEFAULT OFF GROUP "Build targets"
 mcc_config_node(MCC_BUILD_DYNAMIC_LIB TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Also build a shared libmcc (libmcc.so) alongside the static libmcc.a")
 mcc_config_node(MCC_BUILD_DYNAMIC_EXE TYPE BOOL DEFAULT ON  GROUP "Build targets"
-    HELP "Also build a self-contained (ONE_SOURCE) mcc-dynamic, linked only to libc")
+    HELP "Build mcc-dynamic: a non-one-source driver TU linked against the primary libmcc (needs MCC_ONE_SOURCE=OFF; skipped otherwise)")
 mcc_config_node(MCC_BUILD_MUSL       TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Also build musl-targeting compiler variants (mcc*-musl) beside the glibc ones")
 if(APPLE AND MCC_BUILD_STATIC_EXE)
@@ -2846,9 +2851,10 @@ endif()
         COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}")
     set_tests_properties(mcc_build PROPERTIES FIXTURES_SETUP MCC_BUILT)
 
-    # HOST.md invariant: raw host macros (_WIN32, __APPLE__, ...) may only be
-    # tested inside src/mcchost.{h,c}; everything else uses MCC_HOST_* or a
-    # host_* function.  Keeps mcchost the source of truth for the HOST axis.
+    # Host-gate invariant (TODO.md "Platform spec"): raw host macros (_WIN32,
+    # __APPLE__, ...) may only be tested inside src/mcchost.{h,c}; everything
+    # else uses MCC_HOST_* or a host_* function.  Keeps mcchost the source of
+    # truth for the HOST axis.
     add_test(NAME host-gate-invariant
         COMMAND "${CMAKE_COMMAND}"
             "-DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}/src"
@@ -3497,6 +3503,30 @@ cmake_language(EXIT 0)
         mcc_skip_test(dash-s-roundtrip
             "requires x86_64 target with integrated assembler (host target: ${MCC_CPU})")
     endif()
+
+    # Byte-exact -S roundtrip on the fixed-width cross targets: their
+    # disassemblers guarantee `mcc -c` == reassembled `mcc -S` section bytes.
+    # (x86 targets are covered behaviorally by dash-s-roundtrip above — the
+    # assembler there legally re-encodes some immediate/branch widths; arm is
+    # link-equivalent but not object-byte-exact: its assembler uses the gas
+    # imm24=-2 pipeline-bias convention on local-branch relocs where the
+    # compiler leaves 0, and arm-link.c recomputes the field either way.)
+    add_executable(seccmp tests/support/seccmp.c)
+    foreach(_dsb_arch arm64 riscv64)
+        if(TARGET mcc-${_dsb_arch})
+            add_test(NAME dash-s-bytes-${_dsb_arch} COMMAND "${CMAKE_COMMAND}"
+                -DMCC=$<TARGET_FILE:mcc-${_dsb_arch}>
+                -DSECCMP=$<TARGET_FILE:seccmp>
+                -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/asm/dash_s_roundtrip/prog.c
+                -DWORK=${CMAKE_BINARY_DIR}/dash-s-bytes-${_dsb_arch}
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/asm/run_dash_s_bytes.cmake")
+            set_tests_properties(dash-s-bytes-${_dsb_arch} PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT)
+        else()
+            mcc_skip_test(dash-s-bytes-${_dsb_arch}
+                "requires the mcc-${_dsb_arch} cross compiler (cmake --preset cross)")
+        endif()
+    endforeach()
 
     
     

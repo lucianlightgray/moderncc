@@ -562,12 +562,15 @@ static int decode(Dis *d)
                 else P(d, "fdivr\t%s", st[r]);
                 break;
             case 0xdc:
+                /* Intel-order naming: mcc's assembler tables (and modern
+                   binutils) use it; the legacy-AT&T dc/de swap would
+                   re-assemble to the reversed operation. */
                 if (mb <= 0xc7) P(d, "fadd\t%%st, %s", st[r]);
                 else if (mb <= 0xcf) P(d, "fmul\t%%st, %s", st[r]);
-                else if (mb >= 0xe0 && mb <= 0xe7) P(d, "fsubr\t%%st, %s", st[r]);
-                else if (mb >= 0xe8 && mb <= 0xef) P(d, "fsub\t%%st, %s", st[r]);
-                else if (mb >= 0xf0 && mb <= 0xf7) P(d, "fdivr\t%%st, %s", st[r]);
-                else P(d, "fdiv\t%%st, %s", st[r]);
+                else if (mb >= 0xe0 && mb <= 0xe7) P(d, "fsub\t%%st, %s", st[r]);
+                else if (mb >= 0xe8 && mb <= 0xef) P(d, "fsubr\t%%st, %s", st[r]);
+                else if (mb >= 0xf0 && mb <= 0xf7) P(d, "fdiv\t%%st, %s", st[r]);
+                else P(d, "fdivr\t%%st, %s", st[r]);
                 break;
             case 0xdd:
                 if (mb >= 0xd8 && mb <= 0xdf) P(d, "fstp\t%s", st[r]);
@@ -578,10 +581,10 @@ static int decode(Dis *d)
                 if (mb <= 0xc7) P(d, "faddp\t%s", st[r]);
                 else if (mb <= 0xcf) P(d, "fmulp\t%s", st[r]);
                 else if (mb == 0xd9) P(d, "fcompp");
-                else if (mb >= 0xe0 && mb <= 0xe7) P(d, "fsubrp\t%s", st[r]);
-                else if (mb >= 0xe8 && mb <= 0xef) P(d, "fsubp\t%s", st[r]);
-                else if (mb >= 0xf0 && mb <= 0xf7) P(d, "fdivrp\t%s", st[r]);
-                else P(d, "fdivp\t%s", st[r]);
+                else if (mb >= 0xe0 && mb <= 0xe7) P(d, "fsubp\t%s", st[r]);
+                else if (mb >= 0xe8 && mb <= 0xef) P(d, "fsubrp\t%s", st[r]);
+                else if (mb >= 0xf0 && mb <= 0xf7) P(d, "fdivp\t%s", st[r]);
+                else P(d, "fdivrp\t%s", st[r]);
                 break;
             case 0xda:
                 if (mb == 0xe9) P(d, "fucompp");
@@ -825,6 +828,39 @@ ST_FUNC int mcc_disasm_insn(disasm_ctx *dc)
     d.dc = dc;
     d.pc0 = dc->pc;
     return decode(&d);
+}
+
+/* ---- reloc metadata for the arch-independent driver ------------------ */
+
+ST_FUNC int mcc_disasm_reloc_size(int type)
+{
+    switch (type) {
+    case R_X86_64_64:
+    case R_X86_64_TPOFF64:
+    case R_X86_64_GOTPCREL64:
+        return 8;
+    case R_X86_64_PC32:
+    case R_X86_64_PLT32:
+    case R_X86_64_GOTPCREL:
+    case R_X86_64_GOTPCRELX:
+    case R_X86_64_REX_GOTPCRELX:
+    case R_X86_64_32:
+    case R_X86_64_32S:
+    case R_X86_64_TPOFF32:
+        return 4;
+    }
+    return 0;
+}
+
+ST_FUNC int mcc_disasm_reloc_addend_bias(int type, int size)
+{
+    /* PC-relative relocs (call/jmp/rip) carry -(size) as their addend to
+       bias from the field to the insn end; gas re-derives that. */
+    if (type == R_X86_64_PC32 || type == R_X86_64_PLT32
+     || type == R_X86_64_GOTPCREL || type == R_X86_64_GOTPCRELX
+     || type == R_X86_64_REX_GOTPCRELX)
+        return size;
+    return 0;
 }
 
 #endif /* MCC_TARGET_X86_64 */

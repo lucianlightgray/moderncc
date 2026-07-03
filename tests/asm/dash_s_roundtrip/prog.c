@@ -1,10 +1,11 @@
-/* -S round-trip fixture: exercises a broad slice of the integer instruction
- * subset the x86_64 backend emits (arithmetic, shifts, comparisons, branches,
+/* -S round-trip fixture: exercises a broad slice of the instruction subset
+ * the x86_64 backend emits (arithmetic, shifts, comparisons, branches,
  * loops, recursion, switch, structs, globals, string constants, pointer
- * indexing, function pointers) so the disassembler is well covered.  Kept
- * integer/pointer only so mcc's own integrated assembler can re-assemble the
- * -S output (it has no SSE mnemonics).  The program prints a deterministic
- * line; the driver checks the -S round-tripped build prints the same thing.
+ * indexing, function pointers, plus float/double scalar-SSE arithmetic,
+ * int<->float conversions and comparisons) so the disassembler is well
+ * covered and mcc's own integrated assembler re-assembles the -S output.
+ * The program prints a deterministic line; the driver checks the -S
+ * round-tripped build prints the same thing.
  */
 extern int printf(const char *, ...);
 
@@ -37,6 +38,77 @@ static unsigned bits(unsigned v) { return (v & 0xff) | (v >> 4) ^ (v << 3); }
 static int add1(int x) { return x + 1; }
 static int neg(int x)  { return -x; }
 
+/* float/double paths: scalar SSE arithmetic (addsd/subss/mulsd/divss...),
+ * loads/stores (movss/movsd), conversions (cvtsi2sd/cvttsd2si/cvtsd2ss/
+ * cvtps2pd via float->double) and comparisons (ucomisd/comiss). */
+static double g_scale = 2.5;
+static float g_bias = 0.75f;
+
+static double dpoly(double x, double y)
+{
+    double q = x * y + x / y - (x - y);
+    return q * g_scale;
+}
+
+static float fpoly(float x, float y)
+{
+    float q = x * y - x / y + (x + y);
+    return q - g_bias;
+}
+
+static double weight(int i, long long n, float f)
+{
+    double d = i;          /* cvtsi2sd  */
+    d += (double)n;        /* cvtsi2sdq */
+    d *= (double)f;        /* float -> double */
+    return d;
+}
+
+static int quantize(double d, float f)
+{
+    int a = (int)d;              /* cvttsd2si  */
+    long long b = (long long)d;  /* cvttsd2siq */
+    int c = (int)f;              /* cvttss2si  */
+    float ff = (float)d;         /* double -> float */
+    return a + (int)b + c + (int)ff;
+}
+
+/* two-double struct passed/returned in xmm register pairs: exercises the
+ * movaps/movsd xmm-to-xmm shuffles the backend emits for SSE-class
+ * aggregates, and movss/movsd loads through the struct copy. */
+struct dp { double a, b; };
+
+static struct dp mkdp(double x)
+{
+    struct dp r;
+    r.a = x + 0.5;
+    r.b = x * 2.0;
+    return r;
+}
+
+static double dpdot(double w, struct dp p)
+{
+    return w * p.a - p.b / w;
+}
+
+/* result of the subtraction lands in xmm1 and must be shuffled back to
+ * xmm0 for the return: exercises movsd/movss xmm-to-xmm moves. */
+static double dfrac(double d) { return d - (int)d; }
+static float ffrac(float f)  { return f - (int)f; }
+
+static int fdcmp(double a, double b, float c, float d)
+{
+    int n = 0;
+    if (a < b)  n |= 1;
+    if (a >= b) n |= 2;
+    if (a == b) n |= 4;
+    if (a != b) n |= 8;
+    if (c > d)  n |= 16;
+    if (c <= d) n |= 32;
+    if (c == d) n |= 64;
+    return n;
+}
+
 int main(void)
 {
     int a[6] = { 3, 1, 4, 1, 5, 9 };
@@ -47,8 +119,15 @@ int main(void)
     for (int i = 0; i < 2; i++)
         acc = fp[i](acc);
 
-    printf("%s %d %ld %d %d %u %d\n",
+    double dv = dpoly(3.5, 1.25);
+    float fv = fpoly(2.0f, 0.5f);
+    double wv = weight(3, 1000000007LL, 1.5f);
+    double pv = dpdot(2.0, mkdp(1.5));
+
+    printf("%s %d %ld %d %d %u %d %.6f %.6f %.6f %.6f %.6f %.6f %d %d %d\n",
            msg, fact(6), sumarr(a, 6), classify(9), classify(5),
-           bits(0x1234u), acc);
+           bits(0x1234u), acc,
+           dv, (double)fv, wv, pv, dfrac(dv), (double)ffrac(fv),
+           quantize(dv, fv), fdcmp(dv, wv, fv, 0.5f), fdcmp(1.5, 1.5, 2.0f, 2.0f));
     return 0;
 }

@@ -18,59 +18,16 @@
 #include <string.h>
 #include <ctype.h>
 #include <errno.h>
-#ifdef _WIN32
-#include <direct.h>
-#define MKDIR(p) _mkdir(p)
-#ifdef _MSC_VER
-
-#define popen  _popen
-#define pclose _pclose
-#endif
-#else
-#include <sys/stat.h>
-#define MKDIR(p) mkdir((p), 0777)
-#endif
+#include "../support/hostcompat.h"
 
 #include "cases.h"
 
 #define MCC_SKIP_RC 77
 
-static const char *envv(const char *k, const char *d){
-    const char *v = getenv(k); return (v && *v) ? v : d;
-}
-
-#ifdef _WIN32
-
-
-
-
-
-
-static const char *g_work = ".";
-static FILE *shell_popen(const char *cmd){
-    char path[1024];
-    snprintf(path, sizeof path, "%s/_clicmd.sh", g_work);
-    FILE *sf = fopen(path, "wb");
-    if (sf){ fputs(cmd, sf); fputc('\n', sf); fclose(sf); }
-    const char *sh = envv("MCC_TEST_SH", "sh");
-
-
-
-    char line[1200];
-    snprintf(line, sizeof line, "\"\"%s\" \"%s\"\"", sh, path);
-    return popen(line, "r");
-}
-#endif
-
-
-
-
-
-
 static const char *timeout_prefix(void){
 #ifdef _WIN32
 
-    FILE *f = shell_popen("command -v timeout >/dev/null 2>&1 && echo y");
+    FILE *f = HC_POPEN_SH("command -v timeout >/dev/null 2>&1 && echo y");
     int ok = 0;
     if (f){ int c = fgetc(f); ok = (c == 'y'); pclose(f); }
     return ok ? "timeout 10 " : "";
@@ -91,8 +48,8 @@ static int os_eq(const char *a, const char *b){
 static int req_met(const char *req, char *reason, size_t rn){
     if (!req || !*req) return 1;
     char buf[256]; snprintf(buf, sizeof buf, "%s", req);
-    const char *cpu = envv("MCC_TEST_CPU", "unknown");
-    const char *os  = envv("MCC_TEST_OS",  "unknown");
+    const char *cpu = hc_envv("MCC_TEST_CPU", "unknown");
+    const char *os  = hc_envv("MCC_TEST_OS",  "unknown");
     for (char *tok = strtok(buf, ","); tok; tok = strtok(NULL, ",")){
         while (*tok == ' ') tok++;
         if (!strncmp(tok, "note:", 5)){ snprintf(reason, rn, "%s", tok + 5); return 0; }
@@ -123,11 +80,11 @@ static int req_met(const char *req, char *reason, size_t rn){
             if (os_eq(os, "Darwin") || os_eq(os, "WIN32")){
                 snprintf(reason, rn, "requires an ELF target (host: %s)", os); return 0; }
         } else if (!strcmp(tok, "asm")){
-            if (strcmp(envv("MCC_TEST_ASM", "1"), "1")){
+            if (strcmp(hc_envv("MCC_TEST_ASM", "1"), "1")){
                 snprintf(reason, rn, "requires integrated assembler (MCC_CONFIG_ASM)"); return 0; }
         } else if (!strcmp(tok, "stabs")){
             /* nonempty MCC_TEST_DWARF = dwarf is the configured -g default */
-            if (envv("MCC_TEST_DWARF", "")[0]){
+            if (hc_envv("MCC_TEST_DWARF", "")[0]){
                 snprintf(reason, rn, "requires stabs as default -g format (MCC_CONFIG_DWARF set)"); return 0; }
         }
     }
@@ -159,11 +116,7 @@ static char *slurp(FILE *f){
 }
 
 static char *run_capture(const char *cmd){
-#ifdef _WIN32
-    FILE *f = shell_popen(cmd);
-#else
-    FILE *f = popen(cmd, "r");
-#endif
+    FILE *f = HC_POPEN_SH(cmd);
     if (!f) return strdup("");
     char *out = slurp(f); pclose(f); return out;
 }
@@ -235,17 +188,11 @@ int main(int argc, char **argv){
 
 
 
-#ifdef _WIN32
-    _putenv("LC_ALL=C");
-#else
-    setenv("LC_ALL", "C", 1);
-#endif
+    hc_set_c_locale();
     const char *mcc = argv[1], *bdir = argv[2], *idir = argv[3], *work = argv[4], *cdir = argv[5];
-#ifdef _WIN32
-    g_work = work;
-#endif
+    hc_set_workdir(work);
     const char *tmo = timeout_prefix();
-    if (MKDIR(work) != 0 && errno != EEXIST) {
+    if (HC_MKDIR(work) != 0 && errno != EEXIST) {
         fprintf(stderr, "cannot create workdir %s\n", work); return 2; }
 
     int pass = 0, fail = 0, skipped = 0;

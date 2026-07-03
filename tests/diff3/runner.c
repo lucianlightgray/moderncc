@@ -19,24 +19,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "../support/hostcompat.h"
 #ifdef _WIN32
-#include <direct.h>
-#define MKDIR(p) _mkdir(p)
 #define EXE_SFX ".exe"
-#ifdef _MSC_VER
-#define popen  _popen
-#define pclose _pclose
-#endif
- 
-
 #ifndef WIFEXITED
 #define WIFEXITED(s)   1
 #define WEXITSTATUS(s) (s)
 #endif
 #else
-#include <sys/stat.h>
 #include <sys/wait.h>
-#define MKDIR(p) mkdir((p), 0777)
 #define EXE_SFX ".out"
 #endif
 
@@ -78,45 +69,16 @@ static int crashed(int raw_status){
     return WIFEXITED(raw_status) && WEXITSTATUS(raw_status) >= 128;
 }
 
-static const char *envv(const char *k, const char *d){
-    const char *v = getenv(k); return (v && *v) ? v : d;
-}
-
-#ifdef _WIN32
-static const char *g_work = ".";
-static void diff3_script(const char *cmd, char *path, size_t pn){
-    snprintf(path, pn, "%s/_diff3cmd.sh", g_work);
-    FILE *sf = fopen(path, "wb");
-    if (sf){ fputs(cmd, sf); fputc('\n', sf); fclose(sf); }
-}
-static FILE *shell_popen(const char *cmd){
-    char path[1024]; diff3_script(cmd, path, sizeof path);
-    const char *sh = envv("MCC_TEST_SH", "sh");
-    char line[1200];
-    snprintf(line, sizeof line, "\"\"%s\" \"%s\"\"", sh, path);
-    return popen(line, "r");
-}
-static int shell_system(const char *cmd){
-    char path[1024]; diff3_script(cmd, path, sizeof path);
-    const char *sh = envv("MCC_TEST_SH", "sh");
-    char line[1200];
-    snprintf(line, sizeof line, "\"\"%s\" \"%s\"\"", sh, path);
-    return system(line);
-}
-#define RUN_SYSTEM(c) shell_system(c)
-#define RUN_POPEN(c)  shell_popen(c)
-#else
-#define RUN_SYSTEM(c) system(c)
-#define RUN_POPEN(c)  popen((c), "r")
-#endif
+#define RUN_SYSTEM(c) HC_SYSTEM_SH(c)
+#define RUN_POPEN(c)  HC_POPEN_SH(c)
 
 static int portable_req(const char *req){
     if (!req || !*req) return 1;
     if (strstr(req, "note:") || strstr(req, "bcheck") || strstr(req, "backtrace"))
         return 0;
     char buf[256]; snprintf(buf, sizeof buf, "%s", req);
-    const char *cpu = envv("MCC_TEST_CPU", "unknown");
-    const char *os  = envv("MCC_TEST_OS",  "unknown");
+    const char *cpu = hc_envv("MCC_TEST_CPU", "unknown");
+    const char *os  = hc_envv("MCC_TEST_OS",  "unknown");
     for (char *tok = strtok(buf, ","); tok; tok = strtok(NULL, ",")){
         while (*tok == ' ') tok++;
         if (!strncmp(tok, "cpu=", 4)){
@@ -141,7 +103,7 @@ static int portable_req(const char *req){
 
             if (!strcmp(os, "Darwin") || !strcmp(os, "WIN32")) return 0;
         } else if (!strcmp(tok, "asm")){
-            if (strcmp(envv("MCC_TEST_ASM", "1"), "1")) return 0;
+            if (strcmp(hc_envv("MCC_TEST_ASM", "1"), "1")) return 0;
         }
 
     }
@@ -304,15 +266,13 @@ int main(int argc, char **argv){
     const char *mcc=argv[1], *bdir=argv[2], *idir=argv[3], *root=argv[4],
                *work=argv[5], *gcc=argv[6], *clang=argv[7];
     char sup[2048]; snprintf(sup, sizeof sup, "%s/support", root);
-    if (envv("MCC_DIFF3_VERBOSE", "")[0]) verbose = 1;
+    if (hc_envv("MCC_DIFF3_VERBOSE", "")[0]) verbose = 1;
 #ifdef DIFF3_VERBOSE
     verbose = 1;
 #endif
 
-#ifdef _WIN32
-    g_work = work;
-    MKDIR(work);
-#endif
+    hc_set_workdir(work);
+    HC_MKDIR(work);
 
     if (same_compiler(gcc, clang)){
         printf("diff3: SKIP -- '%s' and '%s' are the same compiler; a three-way "

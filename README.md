@@ -1,38 +1,38 @@
 # ModernCC (`mcc`)
 
-A small, fast, portable C11 compiler in the [TinyCC](https://repo.or.cz/tinycc.git)
-lineage. One-pass compile-and-link, in-memory execution (`-run`), embeddable as a
+An extremely small, fast, portable, one-pass compile-and-link C11 compiler.
+Features in-memory execution (`-run`), embeddable as a
 library (`libmcc`), and cross-compilation of 5 architectures × 3 object formats
 from a single source tree. Trades an optimizer for speed, size, and portability;
 `gcc`/`clang` remain the optimizing references.
 
-| Features      |                                                                 |
-|---------------|-----------------------------------------------------------------|
-| **Targets**   | x86_64 · i386 · arm · arm64 · riscv64                           |
-| **Formats**   | ELF · PE/COFF · Mach-O                                          |
-| **Libc**      | glibc · musl (`--sysroot`) · msvcrt · libSystem                 |
-| **Modes**     | compile+link · `-c` · `-S` (asm listing) · `-run` (JIT, no `a.out`) · `libmcc` C API |
-| **Speed**     | single-pass (~100× faster to compile than `gcc -O2`)            |
-| **Size**      | ~0.6 MB dynamic · ~1.3 MB static self-contained binary          |
-| **Assembler** | integrated (`MCC_CONFIG_ASM`) · inline asm · `asm goto` · `-S` via built-in disassembler (x86_64) |
-| **Safety**    | optional bounds checker (`-b`) and backtraces (`-bt`)           |
-| **Cross**     | `mcc-<arch>` compilers via `MCC_ENABLE_CROSS`                   |
+| Features      |                                                                                                                                       |
+|---------------|---------------------------------------------------------------------------------------------------------------------------------------|
+| **Targets**   | x86_64 · i386 · arm · arm64 · riscv64                                                                                                 |
+| **Formats**   | ELF · PE/COFF · Mach-O                                                                                                                |
+| **Libc**      | glibc · musl (`--sysroot`) · msvcrt · libSystem                                                                                       |
+| **Modes**     | compile+link · `-c` · `-S` (asm listing) · `-run` (JIT, no `a.out`) · `libmcc` C API                                                  |
+| **Speed**     | single-pass (~100× faster to compile than `gcc -O2`)                                                                                  |
+| **Size**      | ~0.6 MB dynamic · ~1.3 MB static self-contained binary                                                                                |
+| **Assembler** | integrated (`MCC_CONFIG_ASM`, incl. scalar SSE + `.cfi_*`) · inline asm · `asm goto` · `-S` via built-in disassembler (all 5 targets) |
+| **Safety**    | optional bounds checker (`-b`) and backtraces (`-bt`)                                                                                 |
+| **Cross**     | `mcc-<arch>` compilers via `MCC_ENABLE_CROSS`                                                                                         |
 
 ## Comparisons
 
 `Y` = supported, `~` = partially supported, `-` = not supported.
 
-| Target / format | mcc | gcc | clang | mingw | msvc |
-|---|:--:|:---:|:--:|:-----:|:--:|
-| x86_64                       | Y |  Y | Y |   Y   | Y |
-| i386                         | Y |  Y | Y |   Y   | Y |
-| arm                          | Y |  Y | Y |   ~   | Y |
-| arm64                        | Y |  Y | Y |   Y   | Y |
-| riscv64                      | Y |  Y | Y |   -   | - |
-| ELF output                   | Y |  Y | Y |   -   | - |
-| PE/COFF output               | Y |  Y | Y |   Y   | Y |
-| Mach-O output                | Y | ~¹ | Y |   -   | - |
-| Multi-target from one build  | Y |  Y | Y |   -   | - |
+| Target / Format             | mcc | gcc | clang | mingw | msvc |
+|-----------------------------|:---:|:----:|:-----:|:-----:|:---:|
+| x86_64                      |  Y  |  Y   |   Y   |   Y   |  Y  |
+| i386                        |  Y  |  Y   |   Y   |   Y   |  Y  |
+| arm                         |  Y  |  Y   |   Y   |   ~   |  Y  |
+| arm64                       |  Y  |  Y   |   Y   |   Y   |  Y  |
+| riscv64                     |  Y  |  Y   |   Y   |   -   |  -  |
+| ELF output                  |  Y  |  Y   |   Y   |   -   |  -  |
+| PE/COFF output              |  Y  |  Y   |   Y   |   Y   |  Y  |
+| Mach-O output               |  Y  |  ~¹  |   Y   |   -   |  -  |
+| Multi-target from one build |  Y  |  Y   |   Y   |   -   |  -  |
 
 ¹ `gcc` with Apple patches supports Mach-O
 
@@ -261,7 +261,10 @@ wrapper; needs a shared C99 libc across gcc/clang/mcc, so the PE/msvcrt
 target skips (the same units are covered in aggregate by `mcctest`).
 ¹⁰ Hermetic `mcc -S` → mcc's own assembler → mcc link → run, byte-identical
 to the direct build; needs x86_64 + the integrated assembler (skips on arm64
-macOS).
+macOS). With the cross compilers built, `dash-s-bytes-{arm64,riscv64}`
+additionally assert **object-byte-exact** `-S` roundtrips on the fixed-width
+targets (i386/arm are instruction-exact; their assemblers legally re-encode
+some widths/branch fields).
 
 ### Compile speed & footprint
 
@@ -359,8 +362,8 @@ programs). Linux/x86_64: structural, self-contained-image, codegen and
 apple-libc drivers approximate the same codegen via a loader/trampoline; off
 x86_64 they **Skip**, not hollow-pass. The remaining libSystem/dyld path
 (libmalloc, locale stdio, dyld, pthread/GCD, ObjC) is kernel-fused and needs a
-macOS or **darling** host (`-DMCC_DARWIN_HOST=ON`); intentionally outside the
-default matrix.
+macOS or **darling** host (`-DMCC_DARWIN_HOST=ON` — the `macos` preset sets it,
+so the macOS CI runner covers this); intentionally outside the ELF matrix.
 
 ## Repository layout
 
@@ -375,5 +378,5 @@ tools/      build/dev helpers
 
 ## License
 
-Derived from TinyCC by Fabrice Bellard and contributors; distributed under the
+Derived from [TinyCC](https://repo.or.cz/tinycc.git) by Fabrice Bellard and contributors; distributed under the
 **GNU Lesser General Public License v2.1** (LGPL-2.1).

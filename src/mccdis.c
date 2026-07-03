@@ -11,6 +11,14 @@
  */
 #include "mcc.h"
 
+/* On AArch32, `@` is the gas comment character; symbol/section types are
+   spelled `%function` / `%progbits` there. */
+#ifdef MCC_TARGET_ARM
+# define TYPE_PFX "%"
+#else
+# define TYPE_PFX "@"
+#endif
+
 /* ---- symbol / relocation helpers ------------------------------------- */
 
 /* Unique display name per symtab index.  Function-local `static` objects in
@@ -72,63 +80,56 @@ static const char *sym_name(MCCState *s1, int sym_index)
    Returns a static "sym", "sym+N" or "sym-N" string (with PC-relative
    addends normalised so a following (%rip) / call target re-assembles), and
    sets *ptype to the ELF relocation type.  NULL if no reloc covers the field. */
-/* Natural byte width of an x86-64 relocation type (the size of the field it
-   patches), or 0 if unknown. */
+/* Natural byte width of the field a relocation type patches, or 0 if
+   unknown.  Supplied per-arch by the instruction decoder (<arch>-dis.c). */
 static int reloc_field_size(int type)
 {
+#ifdef MCC_HAVE_DISASM
+    return mcc_disasm_reloc_size(type);
+#else
     (void)type;
-#if defined(MCC_TARGET_X86_64)
-    switch (type) {
-    case R_X86_64_64:
-    case R_X86_64_TPOFF64:
-    case R_X86_64_GOTPCREL64:
-        return 8;
-    case R_X86_64_PC32:
-    case R_X86_64_PLT32:
-    case R_X86_64_GOTPCREL:
-    case R_X86_64_GOTPCRELX:
-    case R_X86_64_REX_GOTPCRELX:
-    case R_X86_64_32:
-    case R_X86_64_32S:
-    case R_X86_64_TPOFF32:
-        return 4;
-    }
-#endif
     return 0;
+#endif
 }
 
 ST_FUNC const char *disasm_reloc(disasm_ctx *dc, addr_t off, int size, int *ptype)
 {
     static char buf[256];
     Section *sr = dc->sec->reloc;
-    ElfW(Rela) *rel;
+    ElfW_Rel *rel;
     if (!sr)
         return NULL;
-    for_each_elem(sr, 0, rel, ElfW(Rela)) {
+    for_each_elem(sr, 0, rel, ElfW_Rel) {
         if (rel->r_offset < off || rel->r_offset >= off + size)
             continue;
         {
             int type = ELFW(R_TYPE)(rel->r_info);
             int idx = ELFW(R_SYM)(rel->r_info);
             const char *name = sym_name(dc->s1, idx);
-            addr_t addend = rel->r_addend;
+            long long addend;
             if (ptype)
                 *ptype = type;
-#if defined(MCC_TARGET_X86_64)
-            /* PC-relative relocs (call/jmp/rip) carry -(size) as their addend
-               to bias from the field to the insn end; gas re-derives that, so
-               fold it out for a clean "sym" / "sym+disp". */
-            if (type == R_X86_64_PC32 || type == R_X86_64_PLT32
-             || type == R_X86_64_GOTPCREL || type == R_X86_64_GOTPCRELX
-             || type == R_X86_64_REX_GOTPCRELX)
-                addend += size;
+#if SHT_RELX == SHT_RELA
+            addend = rel->r_addend;
+#else
+            /* REL targets keep the addend in the patched field itself. */
+            addend = 0;
+            if (reloc_field_size(type) == 4
+             && rel->r_offset + 4 <= dc->size)
+                addend = (int32_t)read32le(dc->data + rel->r_offset);
+#endif
+#ifdef MCC_HAVE_DISASM
+            /* e.g. x86 PC-relative relocs carry -(field-to-insn-end) as
+               their addend; gas re-derives that, so fold it out for a
+               clean "sym" / "sym+disp". */
+            addend += mcc_disasm_reloc_addend_bias(type, size);
 #endif
             if (addend == 0)
                 snprintf(buf, sizeof buf, "%s", name);
             else if (addend > 0)
-                snprintf(buf, sizeof buf, "%s+%lld", name, (long long)addend);
+                snprintf(buf, sizeof buf, "%s+%lld", name, addend);
             else
-                snprintf(buf, sizeof buf, "%s-%lld", name, -(long long)addend);
+                snprintf(buf, sizeof buf, "%s-%lld", name, -addend);
             return buf;
         }
     }
@@ -195,6 +196,17 @@ static struct secsym *collect_syms(MCCState *s1, int shndx, int *pn)
         name = sym_name(s1, (int)(sym - sym0));
         if (!name || !name[0])
             continue;
+        /* riscv64-gen's PCREL_LO12 anchor labels are anonymous; emitting a
+           literal "<no name>:" label (or a uniquified "<no name>.N:") would
+           not re-assemble. */
+        if (!strncmp(name, "<no name>", 9))
+            continue;
+#if defined(MCC_TARGET_ARM) || defined(MCC_TARGET_ARM64)
+        /* ARM ELF mapping symbols ($a/$d/$t, emitted with -g) are metadata,
+           not re-assemblable labels. */
+        if (name[0] == '$')
+            continue;
+#endif
         if (n == cap) {
             cap = cap ? cap * 2 : 16;
             v = mcc_realloc(v, cap * sizeof *v);
@@ -220,9 +232,202 @@ static void emit_sym_decl(FILE *f, ElfW(Sym) *sym, const char *name)
     else if (bind == STB_WEAK)
         fprintf(f, "\t.weak\t%s\n", name);
     if (type == STT_FUNC)
-        fprintf(f, "\t.type\t%s, @function\n", name);
+        fprintf(f, "\t.type\t%s, %sfunction\n", name, TYPE_PFX);
     else if (type == STT_OBJECT)
-        fprintf(f, "\t.type\t%s, @object\n", name);
+        fprintf(f, "\t.type\t%s, %sobject\n", name, TYPE_PFX);
+}
+
+/* ---- .eh_frame -> .cfi_* directives ---------------------------------- */
+
+/* Raw FDE bytes are not expressible in a listing (their pc pointers are
+   PC-relative into .eh_frame itself), so, exactly like gcc -S, the unwind
+   info is carried as .cfi_* directives interleaved with the code and the
+   assembler regenerates the section (mccasm.c).  mccdbg.c is the only
+   producer of the data seen here, so a targeted decoder for the opcodes it
+   emits is sufficient; if anything unexpected is found the whole decode is
+   abandoned and no directives are emitted (the previous behavior). */
+
+#ifndef FDE_ENCODING
+# define FDE_ENCODING (DW_EH_PE_udata4 | DW_EH_PE_signed | DW_EH_PE_pcrel)
+#endif
+
+struct cfi_note { addr_t pc; char text[64]; };
+struct cfi_fde  { addr_t start, end; int shndx; int note0, nnotes; };
+struct cfi_info {
+    struct cfi_note *notes; int nnotes, notes_cap;
+    struct cfi_fde *fdes; int nfdes, fdes_cap;
+};
+
+static void cfi_add_note(struct cfi_info *ci, addr_t pc, const char *fmt, ...)
+{
+    struct cfi_note *n;
+    va_list ap;
+    if (ci->nnotes == ci->notes_cap) {
+        ci->notes_cap = ci->notes_cap ? ci->notes_cap * 2 : 32;
+        ci->notes = mcc_realloc(ci->notes, ci->notes_cap * sizeof *ci->notes);
+    }
+    n = &ci->notes[ci->nnotes++];
+    n->pc = pc;
+    va_start(ap, fmt);
+    vsnprintf(n->text, sizeof n->text, fmt, ap);
+    va_end(ap);
+}
+
+/* Section index the FDE's pc-begin field is relocated against (mccdbg
+   relocates it to the code section's section symbol). */
+static int cfi_fde_shndx(MCCState *s1, Section *eh, addr_t off)
+{
+    Section *sr = eh->reloc;
+    ElfW_Rel *rel;
+    if (!sr)
+        return 0;
+    for_each_elem(sr, 0, rel, ElfW_Rel) {
+        if (rel->r_offset == off) {
+            int idx = ELFW(R_SYM)(rel->r_info);
+            return ((ElfW(Sym) *)s1->symtab->data)[idx].st_shndx;
+        }
+    }
+    return 0;
+}
+
+static int cfi_parse(MCCState *s1, struct cfi_info *ci)
+{
+    Section *eh = eh_frame_section;  /* state macro: s1->eh_frame_section */
+    unsigned char *base, *end, *p;
+    unsigned long long code_align = 1;
+    long long data_align = -1;
+    int have_cie = 0;
+
+    if (!eh || !eh->data_offset || !eh->data)
+        return 0;
+    base = eh->data;
+    end = base + eh->data_offset;
+    p = base;
+    while (end - p >= 4) {
+        unsigned char *q = p;
+        unsigned int length = dwarf_read_4(q, end);
+        unsigned char *eend;
+        unsigned int id;
+
+        if (length == 0) {      /* per-input-file terminator */
+            p = q;
+            continue;
+        }
+        if (length > (size_t)(end - q))
+            return 0;
+        eend = q + length;
+        id = dwarf_read_4(q, eend);
+        if (id == 0) {
+            /* CIE: validate it is the one mcc_eh_frame_start() writes and
+               pick up the alignment factors used to (de)factor operands. */
+            unsigned int version = dwarf_read_1(q, eend);
+            if (version != 1 && version != 3)
+                return 0;
+            if (dwarf_read_1(q, eend) != 'z' || dwarf_read_1(q, eend) != 'R'
+                || dwarf_read_1(q, eend) != 0)
+                return 0;
+            code_align = dwarf_read_uleb128(&q, eend);
+            data_align = dwarf_read_sleb128(&q, eend);
+            dwarf_read_uleb128(&q, eend);       /* return address register */
+            if (dwarf_read_uleb128(&q, eend) != 1
+                || dwarf_read_1(q, eend) != FDE_ENCODING)
+                return 0;
+            if (!code_align || !data_align)
+                return 0;
+            have_cie = 1;
+        } else {
+            /* FDE: decode the CFA program into pc-placed directives */
+            addr_t start, off = 0;
+            unsigned int range;
+            unsigned long long auglen, u1, u2;
+            int shndx, note0 = ci->nnotes;
+
+            if (!have_cie)
+                return 0;
+            shndx = cfi_fde_shndx(s1, eh, q - base);
+            if (shndx <= 0)
+                return 0;
+            start = dwarf_read_4(q, eend);
+            range = dwarf_read_4(q, eend);
+            auglen = dwarf_read_uleb128(&q, eend);
+            if (auglen > (size_t)(eend - q))
+                return 0;
+            q += auglen;
+            while (q < eend) {
+                unsigned int op = dwarf_read_1(q, eend);
+                switch (op >> 6) {
+                case 1:                         /* DW_CFA_advance_loc */
+                    off += (addr_t)(op & 0x3f) * code_align;
+                    continue;
+                case 2:                         /* DW_CFA_offset */
+                    u1 = dwarf_read_uleb128(&q, eend);
+                    cfi_add_note(ci, start + off, ".cfi_offset %u, %lld",
+                                 op & 0x3f, (long long)u1 * data_align);
+                    continue;
+                case 3:                         /* DW_CFA_restore */
+                    cfi_add_note(ci, start + off, ".cfi_restore %u",
+                                 op & 0x3f);
+                    continue;
+                }
+                switch (op) {
+                case DW_CFA_nop:
+                    continue;
+                case DW_CFA_advance_loc1:
+                    off += (addr_t)dwarf_read_1(q, eend) * code_align;
+                    continue;
+                case DW_CFA_advance_loc2:
+                    off += (addr_t)dwarf_read_2(q, eend) * code_align;
+                    continue;
+                case DW_CFA_advance_loc4:
+                    off += (addr_t)dwarf_read_4(q, eend) * code_align;
+                    continue;
+                case DW_CFA_def_cfa:
+                    u1 = dwarf_read_uleb128(&q, eend);
+                    u2 = dwarf_read_uleb128(&q, eend);
+                    cfi_add_note(ci, start + off, ".cfi_def_cfa %llu, %llu",
+                                 u1, u2);
+                    continue;
+                case DW_CFA_def_cfa_offset:
+                    u1 = dwarf_read_uleb128(&q, eend);
+                    cfi_add_note(ci, start + off, ".cfi_def_cfa_offset %llu",
+                                 u1);
+                    continue;
+                case DW_CFA_def_cfa_register:
+                    u1 = dwarf_read_uleb128(&q, eend);
+                    cfi_add_note(ci, start + off,
+                                 ".cfi_def_cfa_register %llu", u1);
+                    continue;
+                case DW_CFA_offset_extended:
+                    u1 = dwarf_read_uleb128(&q, eend);
+                    u2 = dwarf_read_uleb128(&q, eend);
+                    cfi_add_note(ci, start + off, ".cfi_offset %llu, %lld",
+                                 u1, (long long)u2 * data_align);
+                    continue;
+                case DW_CFA_restore_extended:
+                    u1 = dwarf_read_uleb128(&q, eend);
+                    cfi_add_note(ci, start + off, ".cfi_restore %llu", u1);
+                    continue;
+                default:
+                    return 0;   /* not something mccdbg/mccasm produces */
+                }
+            }
+            if (off > range)
+                return 0;
+            if (ci->nfdes == ci->fdes_cap) {
+                ci->fdes_cap = ci->fdes_cap ? ci->fdes_cap * 2 : 16;
+                ci->fdes = mcc_realloc(ci->fdes,
+                                       ci->fdes_cap * sizeof *ci->fdes);
+            }
+            ci->fdes[ci->nfdes].start = start;
+            ci->fdes[ci->nfdes].end = start + range;
+            ci->fdes[ci->nfdes].shndx = shndx;
+            ci->fdes[ci->nfdes].note0 = note0;
+            ci->fdes[ci->nfdes].nnotes = ci->nnotes - note0;
+            ci->nfdes++;
+        }
+        p = eend;
+    }
+    return ci->nfdes > 0;
 }
 
 /* ---- section body emitters ------------------------------------------ */
@@ -242,18 +447,18 @@ static void emit_directive_header(FILE *f, Section *s)
     else if (!strcmp(n, ".bss"))
         fprintf(f, "\t.bss\n");
     else if (!strcmp(n, ".rodata"))
-        fprintf(f, "\t.section\t.rodata,\"a\",@progbits\n");
+        fprintf(f, "\t.section\t.rodata,\"a\",%sprogbits\n", TYPE_PFX);
     else {
         /* .rodata and any other named section: full .section directive. */
         fprintf(f, "\t.section\t%s", n);
         if (s->sh_type == SHT_NOBITS)
-            fprintf(f, ",\"aw\",@nobits");
+            fprintf(f, ",\"aw\",%snobits", TYPE_PFX);
         else if (s->sh_flags & SHF_EXECINSTR)
-            fprintf(f, ",\"ax\",@progbits");
+            fprintf(f, ",\"ax\",%sprogbits", TYPE_PFX);
         else if (s->sh_flags & SHF_WRITE)
-            fprintf(f, ",\"aw\",@progbits");
+            fprintf(f, ",\"aw\",%sprogbits", TYPE_PFX);
         else
-            fprintf(f, ",\"a\",@progbits");
+            fprintf(f, ",\"a\",%sprogbits", TYPE_PFX);
         fprintf(f, "\n");
     }
     if (s->sh_addralign > 1)
@@ -263,11 +468,13 @@ static void emit_directive_header(FILE *f, Section *s)
 /* .text: label each function, then disassemble its byte range.  A first pass
    collects intra-section branch targets so they can be emitted as local
    labels (.L<off>) that re-assemble, the way gcc -S does. */
-static void emit_text(disasm_ctx *dc, struct secsym *syms, int nsym)
+static void emit_text(disasm_ctx *dc, struct secsym *syms, int nsym,
+                      struct cfi_info *ci)
 {
     FILE *f = dc->out;
     addr_t pc, end = dc->size;
     int si, li;
+    int fi = 0, ni = 0, in_proc = 0;
 
 #ifdef MCC_HAVE_DISASM
     /* pass 1: gather branch targets (no output) */
@@ -285,6 +492,22 @@ static void emit_text(disasm_ctx *dc, struct secsym *syms, int nsym)
 
     si = li = 0;
     for (pc = 0; pc < end; ) {
+        if (ci) {
+            /* close the unwind region of a function that just ended (before
+               the next function's label) */
+            if (in_proc && pc >= ci->fdes[fi].end) {
+                while (ni < ci->fdes[fi].note0 + ci->fdes[fi].nnotes)
+                    fprintf(f, "\t%s\n", ci->notes[ni++].text);
+                fprintf(f, "\t.cfi_endproc\n");
+                in_proc = 0;
+                fi++;
+            }
+            if (!in_proc)
+                while (fi < ci->nfdes
+                    && (ci->fdes[fi].shndx != dc->sec->sh_num
+                        || ci->fdes[fi].start < pc))
+                    fi++;
+        }
         while (si < nsym && syms[si].value == pc) {
             emit_sym_decl(f, syms[si].sym, syms[si].name);
             fprintf(f, "%s:\n", syms[si].name);
@@ -296,6 +519,19 @@ static void emit_text(disasm_ctx *dc, struct secsym *syms, int nsym)
         }
         while (li < dc->nlabels && dc->labels[li] < pc)
             li++; /* target that fell mid-instruction: skip (shouldn't happen) */
+        if (ci) {
+            if (!in_proc && fi < ci->nfdes
+                && ci->fdes[fi].shndx == dc->sec->sh_num
+                && ci->fdes[fi].start == pc) {
+                fprintf(f, "\t.cfi_startproc\n");
+                in_proc = 1;
+                ni = ci->fdes[fi].note0;
+            }
+            if (in_proc)
+                while (ni < ci->fdes[fi].note0 + ci->fdes[fi].nnotes
+                    && ci->notes[ni].pc <= pc)
+                    fprintf(f, "\t%s\n", ci->notes[ni++].text);
+        }
 #ifdef MCC_HAVE_DISASM
         {
             int len;
@@ -309,6 +545,11 @@ static void emit_text(disasm_ctx *dc, struct secsym *syms, int nsym)
         fprintf(f, "\t.byte\t0x%02x\n", dc->data[pc]);
         pc++;
 #endif
+    }
+    if (ci && in_proc) {
+        while (ni < ci->fdes[fi].note0 + ci->fdes[fi].nnotes)
+            fprintf(f, "\t%s\n", ci->notes[ni++].text);
+        fprintf(f, "\t.cfi_endproc\n");
     }
 }
 
@@ -394,6 +635,7 @@ ST_FUNC int asm_output_file(MCCState *s1, const char *filename)
 {
     FILE *f;
     int i;
+    struct cfi_info ci_data = {0}, *ci = NULL;
 
     if (!filename || !strcmp(filename, "-"))
         f = stdout;
@@ -404,6 +646,13 @@ ST_FUNC int asm_output_file(MCCState *s1, const char *filename)
             s1->nb_files ? mcc_basename(s1->files[0]->name) : "mcc");
 
     build_unique_names(s1);
+
+    /* When unwind tables are enabled the compile populated .eh_frame; decode
+       it back into per-function .cfi_* directives (mccasm.c regenerates an
+       equivalent section from them).  If it does not decode as mccdbg-made
+       data, emit no directives, as before. */
+    if (cfi_parse(s1, &ci_data))
+        ci = &ci_data;
 
     for (i = 1; i < s1->nb_sections; i++) {
         Section *s = s1->sections[i];
@@ -442,7 +691,7 @@ ST_FUNC int asm_output_file(MCCState *s1, const char *filename)
             if (end > pc)
                 fprintf(f, "\t.skip\t%llu\n", (unsigned long long)(end - pc));
         } else if (s->sh_flags & SHF_EXECINSTR) {
-            emit_text(&dc, syms, nsym);
+            emit_text(&dc, syms, nsym, ci);
         } else {
             emit_data(&dc, syms, nsym);
         }
@@ -453,8 +702,10 @@ ST_FUNC int asm_output_file(MCCState *s1, const char *filename)
     }
 
     fprintf(f, "\t.ident\t\"mcc " MCC_VERSION "\"\n");
-    fprintf(f, "\t.section\t.note.GNU-stack,\"\",@progbits\n");
+    fprintf(f, "\t.section\t.note.GNU-stack,\"\",%sprogbits\n", TYPE_PFX);
 
+    mcc_free(ci_data.notes);
+    mcc_free(ci_data.fdes);
     free_unique_names(s1);
     if (f != stdout)
         fclose(f);

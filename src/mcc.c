@@ -153,6 +153,7 @@ static const char help2[] =
     "  -soname=                      Set the DT_SONAME ELF tag\n"
 #if defined(MCC_TARGET_MACHO)
     "  -install_name=                Set the install name (macOS soname alias)\n"
+    "  -mmacosx-version-min=a.b.c    Set the LC_BUILD_VERSION minos/sdk (default 10.6)\n"
 #else
     "  -dynamic-linker=<path>        Set the ELF interpreter to <path>\n"
 #endif

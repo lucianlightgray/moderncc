@@ -1706,8 +1706,10 @@ static void collect_sections(MCCState *s1, struct macho *mo, const char *filenam
 
     dyldbv = add_lc(mo, LC_BUILD_VERSION, sizeof(*dyldbv));
     dyldbv->platform = PLATFORM_MACOS;
-    dyldbv->minos = (10 << 16) + (6 << 8);
-    dyldbv->sdk = (10 << 16) + (6 << 8);
+    /* -mmacosx-version-min=a.b.c; conservative 10.6 baseline otherwise */
+    i = s1->macos_version_min ? s1->macos_version_min : (10 << 16) + (6 << 8);
+    dyldbv->minos = i;
+    dyldbv->sdk = i;
     dyldbv->ntools = 0;
 
     dyldsv = add_lc(mo, LC_SOURCE_VERSION, sizeof(*dyldsv));

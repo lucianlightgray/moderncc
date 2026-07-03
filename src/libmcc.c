@@ -14,14 +14,17 @@
 #ifdef MCC_TARGET_I386
 #include "i386-gen.c"
 #include "i386-link.c"
+#include "i386-dis.c"
 #include "i386-asm.c"
 #elif defined(MCC_TARGET_ARM)
 #include "arm-gen.c"
 #include "arm-link.c"
+#include "arm-dis.c"
 #include "arm-asm.c"
 #elif defined(MCC_TARGET_ARM64)
 #include "arm64-gen.c"
 #include "arm64-link.c"
+#include "arm64-dis.c"
 #include "arm64-asm.c"
 #elif defined(MCC_TARGET_X86_64)
 #include "x86_64-gen.c"
@@ -31,6 +34,7 @@
 #elif defined(MCC_TARGET_RISCV64)
 #include "riscv64-gen.c"
 #include "riscv64-link.c"
+#include "riscv64-dis.c"
 #include "riscv64-asm.c"
 #else
 #error unknown target
@@ -47,7 +51,7 @@
 
 
 ST_DATA struct MCCState *mcc_state;
-MCC_SEM(mcc_compile_sem);
+HOST_SEM(mcc_compile_sem);
 ST_DATA void** stk_data;
 ST_DATA int nb_stk_data;
 ST_DATA int g_debug;
@@ -65,7 +69,7 @@ PUB_FUNC void mcc_enter_state(MCCState *s1)
 {
     if (s1->error_set_jmp_enabled)
         return;
-    WAIT_SEM(&mcc_compile_sem);
+    HOST_SEM_WAIT(&mcc_compile_sem);
     mcc_state = s1;
 }
 
@@ -74,7 +78,7 @@ PUB_FUNC void mcc_exit_state(MCCState *s1)
     if (s1->error_set_jmp_enabled)
         return;
     mcc_state = NULL;
-    POST_SEM(&mcc_compile_sem);
+    HOST_SEM_POST(&mcc_compile_sem);
 }
 
 ST_FUNC char *pstrcpy(char *buf, size_t buf_size, const char *s)
@@ -251,7 +255,7 @@ struct mem_debug_header {
 
 typedef struct mem_debug_header mem_debug_header_t;
 
-MCC_SEM(mem_sem);
+HOST_SEM(mem_sem);
 static mem_debug_header_t *mem_debug_chain;
 static unsigned mem_cur_size;
 static unsigned mem_max_size;
@@ -287,7 +291,7 @@ PUB_FUNC void *mcc_malloc_debug(unsigned long size, const char *file, int line)
     header->line_num = line;
     ofs = strlen(file) + 1 - MEM_DEBUG_FILE_LEN;
     strcpy(header->file_name, file + (ofs > 0 ? ofs : 0));
-    WAIT_SEM(&mem_sem);
+    HOST_SEM_WAIT(&mem_sem);
     header->next = mem_debug_chain;
     header->prev = NULL;
     if (header->next)
@@ -296,7 +300,7 @@ PUB_FUNC void *mcc_malloc_debug(unsigned long size, const char *file, int line)
     mem_cur_size += size;
     if (mem_cur_size > mem_max_size)
         mem_max_size = mem_cur_size;
-    POST_SEM(&mem_sem);
+    HOST_SEM_POST(&mem_sem);
     return MEM_USER_PTR(header);
 }
 
@@ -306,7 +310,7 @@ PUB_FUNC void mcc_free_debug(void *ptr)
     if (!ptr)
         return;
     header = malloc_check(ptr, "mcc_free");
-    WAIT_SEM(&mem_sem);
+    HOST_SEM_WAIT(&mem_sem);
     mem_cur_size -= header->size;
     header->size = (unsigned)-1;
     if (header->next)
@@ -315,7 +319,7 @@ PUB_FUNC void mcc_free_debug(void *ptr)
         header->prev->next = header->next;
     if (header == mem_debug_chain)
         mem_debug_chain = header->next;
-    POST_SEM(&mem_sem);
+    HOST_SEM_POST(&mem_sem);
     mcc_free(header);
 }
 
@@ -340,7 +344,7 @@ PUB_FUNC void *mcc_realloc_debug(void *ptr, unsigned long size, const char *file
         return NULL;
     }
     header = malloc_check(ptr, "mcc_realloc");
-    WAIT_SEM(&mem_sem);
+    HOST_SEM_WAIT(&mem_sem);
     mem_cur_size -= header->size;
     mem_debug_chain_update = (header == mem_debug_chain);
     header = mcc_realloc(header, sizeof(mem_debug_header_t) + size);
@@ -355,7 +359,7 @@ PUB_FUNC void *mcc_realloc_debug(void *ptr, unsigned long size, const char *file
     mem_cur_size += size;
     if (mem_cur_size > mem_max_size)
         mem_max_size = mem_cur_size;
-    POST_SEM(&mem_sem);
+    HOST_SEM_POST(&mem_sem);
     return MEM_USER_PTR(header);
 }
 
@@ -369,7 +373,7 @@ PUB_FUNC char *mcc_strdup_debug(const char *str, const char *file, int line)
 
 PUB_FUNC void mcc_memcheck(int d)
 {
-    WAIT_SEM(&mem_sem);
+    HOST_SEM_WAIT(&mem_sem);
     nb_states += d;
     if (0 == nb_states && mem_cur_size) {
         mem_debug_header_t *header = mem_debug_chain;
@@ -389,7 +393,7 @@ PUB_FUNC void mcc_memcheck(int d)
         exit(2);
 #endif
     }
-    POST_SEM(&mem_sem);
+    HOST_SEM_POST(&mem_sem);
 }
 
 #define mcc_free(ptr)           mcc_free_debug(ptr)
@@ -1563,6 +1567,7 @@ enum {
     MCC_OPTION_install_name,
     MCC_OPTION_compatibility_version ,
     MCC_OPTION_current_version,
+    MCC_OPTION_mmacosx_version_min,
 };
 
 #define MCC_OPTION_HAS_ARG 0x0001
@@ -1592,6 +1597,8 @@ static const MCCOption mcc_options[] = {
     { "dynamiclib", MCC_OPTION_dynamiclib, 0 },
     { "flat_namespace", MCC_OPTION_flat_namespace, 0 },
     { "install_name", MCC_OPTION_install_name, MCC_OPTION_HAS_ARG },
+    { "mmacosx-version-min=", MCC_OPTION_mmacosx_version_min, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP },
+    { "mmacos-version-min=", MCC_OPTION_mmacosx_version_min, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP },
     { "two_levelnamespace", MCC_OPTION_two_levelnamespace, 0 },
     { "undefined", MCC_OPTION_undefined, MCC_OPTION_HAS_ARG },
 #endif
@@ -2294,6 +2301,9 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv)
             break;
         case MCC_OPTION_current_version:
 	    s->current_version = parse_version(s, optarg);;
+            break;
+        case MCC_OPTION_mmacosx_version_min:
+	    s->macos_version_min = parse_version(s, optarg);
             break;
 #endif
         case MCC_OPTION_HELP:

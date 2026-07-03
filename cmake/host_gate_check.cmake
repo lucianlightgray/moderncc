@@ -1,4 +1,4 @@
-# HOST.md invariant check (ctest: host-gate-invariant)
+# Host-gate invariant check (ctest: host-gate-invariant; spec in TODO.md "Platform spec")
 #
 # Outside src/mcchost.h / src/mcchost.c, no file under src/ may test raw
 # host macros (_WIN32, __APPLE__, __linux__, the BSDs, _MSC_VER, ...).
@@ -66,8 +66,8 @@ if(_violations)
     list(JOIN _violations "\n  " _msg)
     message(FATAL_ERROR
         "host-gate invariant violated - raw host macros tested outside "
-        "src/mcchost.{h,c} (see HOST.md; use MCC_HOST_* or a host_* "
-        "function from mcchost.h instead):\n  ${_msg}")
+        "src/mcchost.{h,c} (use MCC_HOST_* or a host_* function from "
+        "mcchost.h instead; spec in TODO.md \"Platform spec\"):\n  ${_msg}")
 endif()
 
 message(STATUS "host-gate invariant OK: no raw host-macro tests outside src/mcchost.{h,c}")

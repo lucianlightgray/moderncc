@@ -9,6 +9,17 @@ static int mcc_assemble_internal(MCCState *s1, int do_preprocess, int global);
 static Sym* asm_new_label(MCCState *s1, int label, int is_local);
 static Sym* asm_new_label1(MCCState *s1, int label, int is_local, int sh_num, int value);
 
+#if MCC_EH_FRAME
+/* FDE-writing machinery shared with the compiler proper; defined in
+   mccdbg.c (which precedes this file in the ONE_SOURCE amalgamation). */
+ST_FUNC int mcc_cfi_uleb(unsigned char *p, unsigned long long value);
+ST_FUNC int mcc_cfi_advance(unsigned char *p, unsigned long delta);
+ST_FUNC void mcc_eh_frame_fde(MCCState *s1, Section *code_sec,
+                              unsigned long func_start,
+                              unsigned long func_size,
+                              const unsigned char *ops, int nops);
+#endif
+
 #if PTR_SIZE == 8
 ST_FUNC void gen_addr64(int r, Sym *sym, int64_t c)
 {
@@ -988,6 +999,184 @@ static void asm_parse_directive(MCCState *s1, int global)
     }
 }
 
+#if MCC_EH_FRAME
+/* ---- .cfi_* directives ------------------------------------------------
+   `-S` listings carry the unwind info as .cfi_* directives (mccdis.c), the
+   raw .eh_frame bytes being unrepresentable in assembly.  Re-assemble them
+   here: accumulate the CFA instruction program of the current function and
+   write an FDE (against the CIE mcc_eh_frame_start() already emitted at
+   compile start) on .cfi_endproc, so the round-tripped object carries an
+   .eh_frame byte-identical to a direct compile's. */
+
+#define ASM_CFI_MAX 1024
+
+static struct {
+    int active;             /* between .cfi_startproc and .cfi_endproc */
+    Section *sec;           /* section the function is assembled into */
+    unsigned long start;    /* ind at .cfi_startproc */
+    unsigned long last;     /* pc the CFA program has advanced to */
+    int nfde;               /* FDEs written for the file being assembled */
+    int have_factors;
+    unsigned long code_align;   /* CIE factors, parsed from the CIE */
+    long long data_align;
+    int len;
+    unsigned char buf[ASM_CFI_MAX];
+} asm_cfi;
+
+/* Read the code/data alignment factors back out of the CIE written by
+   mcc_eh_frame_start(), so directive operands are (de)factored exactly
+   the way the compiler-side writer factors them. */
+static void asm_cfi_factors(MCCState *s1)
+{
+    unsigned char *p, *end;
+
+    if (asm_cfi.have_factors)
+        return;
+    asm_cfi.code_align = 1;
+    asm_cfi.data_align = -PTR_SIZE;
+    p = eh_frame_section->data + s1->eh_start;
+    end = eh_frame_section->data + eh_frame_section->data_offset;
+    p += 8;                     /* length, CIE id */
+    p += 1;                     /* version */
+    while (p < end && *p)       /* augmentation string */
+        p++;
+    p++;
+    asm_cfi.code_align = dwarf_read_uleb128(&p, end);
+    asm_cfi.data_align = dwarf_read_sleb128(&p, end);
+    if (!asm_cfi.code_align)
+        asm_cfi.code_align = 1;
+    if (!asm_cfi.data_align)
+        asm_cfi.data_align = -PTR_SIZE;
+    asm_cfi.have_factors = 1;
+}
+
+static void asm_cfi_room(int n)
+{
+    if (asm_cfi.len + n > ASM_CFI_MAX)
+        mcc_error("too many .cfi operations in one function");
+}
+
+/* Emit the DW_CFA_advance_loc for any code assembled since the last CFA op,
+   so the next op applies at the current pc. */
+static void asm_cfi_advance(MCCState *s1)
+{
+    unsigned long pc, delta;
+
+    if (cur_text_section != asm_cfi.sec)
+        mcc_error(".cfi directive outside its function's section");
+    pc = ind;
+    delta = pc - asm_cfi.last;
+    if (asm_cfi.code_align > 1) {
+        if (delta % asm_cfi.code_align)
+            mcc_error(".cfi advance not a multiple of the code alignment factor");
+        delta /= asm_cfi.code_align;
+    }
+    asm_cfi_room(5);
+    asm_cfi.len += mcc_cfi_advance(asm_cfi.buf + asm_cfi.len, delta);
+    asm_cfi.last = pc;
+}
+
+static void asm_parse_cfi_directive(MCCState *s1)
+{
+    char dir[32];
+    long long a, b;
+
+    pstrcpy(dir, sizeof(dir), get_tok_str(tok, NULL) + 5);
+    next();
+    if (!eh_frame_section) {
+        /* unwind tables disabled: accept and ignore the directives */
+        while (tok != ';' && tok != TOK_LINEFEED && tok != TOK_EOF)
+            next();
+        return;
+    }
+    if (!strcmp(dir, "startproc")) {
+        if (tok >= TOK_IDENT)   /* "simple" variant argument */
+            next();
+        if (asm_cfi.active)
+            mcc_error("previous .cfi_startproc not closed");
+        asm_cfi.active = 1;
+        asm_cfi.sec = cur_text_section;
+        asm_cfi.start = asm_cfi.last = ind;
+        asm_cfi.len = 0;
+        asm_cfi_factors(s1);
+        return;
+    }
+    if (!asm_cfi.active)
+        mcc_error(".cfi_%s without .cfi_startproc", dir);
+    if (!strcmp(dir, "endproc")) {
+        if (cur_text_section != asm_cfi.sec)
+            mcc_error(".cfi_endproc outside its function's section");
+        mcc_eh_frame_fde(s1, asm_cfi.sec, asm_cfi.start, ind - asm_cfi.start,
+                         asm_cfi.buf, asm_cfi.len);
+        asm_cfi.nfde++;
+        asm_cfi.active = 0;
+        return;
+    }
+    if (!strcmp(dir, "def_cfa")) {
+        a = asm_int_expr(s1);
+        skip(',');
+        b = asm_int_expr(s1);
+        if (a < 0 || b < 0)
+            mcc_error("unsupported .cfi_def_cfa operands");
+        asm_cfi_advance(s1);
+        asm_cfi_room(1 + 2 * DWARF_MAX_128);
+        asm_cfi.buf[asm_cfi.len++] = DW_CFA_def_cfa;
+        asm_cfi.len += mcc_cfi_uleb(asm_cfi.buf + asm_cfi.len, a);
+        asm_cfi.len += mcc_cfi_uleb(asm_cfi.buf + asm_cfi.len, b);
+    } else if (!strcmp(dir, "def_cfa_offset")) {
+        a = asm_int_expr(s1);
+        if (a < 0)
+            mcc_error("unsupported negative .cfi_def_cfa_offset");
+        asm_cfi_advance(s1);
+        asm_cfi_room(1 + DWARF_MAX_128);
+        asm_cfi.buf[asm_cfi.len++] = DW_CFA_def_cfa_offset;
+        asm_cfi.len += mcc_cfi_uleb(asm_cfi.buf + asm_cfi.len, a);
+    } else if (!strcmp(dir, "def_cfa_register")) {
+        a = asm_int_expr(s1);
+        if (a < 0)
+            mcc_error("bad .cfi_def_cfa_register operand");
+        asm_cfi_advance(s1);
+        asm_cfi_room(1 + DWARF_MAX_128);
+        asm_cfi.buf[asm_cfi.len++] = DW_CFA_def_cfa_register;
+        asm_cfi.len += mcc_cfi_uleb(asm_cfi.buf + asm_cfi.len, a);
+    } else if (!strcmp(dir, "offset")) {
+        a = asm_int_expr(s1);
+        skip(',');
+        b = asm_int_expr(s1);
+        if (a < 0 || b % asm_cfi.data_align || b / asm_cfi.data_align < 0)
+            mcc_error("unsupported .cfi_offset operands");
+        b /= asm_cfi.data_align;
+        asm_cfi_advance(s1);
+        asm_cfi_room(1 + 2 * DWARF_MAX_128);
+        if (a < 0x40) {
+            asm_cfi.buf[asm_cfi.len++] = DW_CFA_offset + a;
+        } else {
+            asm_cfi.buf[asm_cfi.len++] = DW_CFA_offset_extended;
+            asm_cfi.len += mcc_cfi_uleb(asm_cfi.buf + asm_cfi.len, a);
+        }
+        asm_cfi.len += mcc_cfi_uleb(asm_cfi.buf + asm_cfi.len, b);
+    } else if (!strcmp(dir, "restore")) {
+        a = asm_int_expr(s1);
+        if (a < 0)
+            mcc_error("bad .cfi_restore operand");
+        asm_cfi_advance(s1);
+        asm_cfi_room(1 + DWARF_MAX_128);
+        if (a < 0x40) {
+            asm_cfi.buf[asm_cfi.len++] = DW_CFA_restore + a;
+        } else {
+            asm_cfi.buf[asm_cfi.len++] = DW_CFA_restore_extended;
+            asm_cfi.len += mcc_cfi_uleb(asm_cfi.buf + asm_cfi.len, a);
+        }
+    } else {
+        /* other .cfi directives don't affect the frame program mcc can
+           represent; accept and ignore them (like other unsupported
+           directives) so foreign listings still assemble */
+        mcc_warning_c(warn_unsupported)("ignoring .cfi_%s", dir);
+        while (tok != ';' && tok != TOK_LINEFEED && tok != TOK_EOF)
+            next();
+    }
+}
+#endif /* MCC_EH_FRAME */
 
 static int mcc_assemble_internal(MCCState *s1, int do_preprocess, int global)
 {
@@ -1024,6 +1213,12 @@ static int mcc_assemble_internal(MCCState *s1, int do_preprocess, int global)
             skip(':');
             goto redo;
         } else if (tok >= TOK_IDENT) {
+#if MCC_EH_FRAME
+            if (!strncmp(get_tok_str(tok, NULL), ".cfi_", 5)) {
+                asm_parse_cfi_directive(s1);
+                goto cfi_done;
+            }
+#endif
             opcode = tok;
             next();
             if (tok == ':') {
@@ -1037,6 +1232,9 @@ static int mcc_assemble_internal(MCCState *s1, int do_preprocess, int global)
                 asm_opcode(s1, opcode);
             }
         }
+#if MCC_EH_FRAME
+    cfi_done:
+#endif
         if (tok != ';' && tok != TOK_LINEFEED)
             expect("end of line");
         parse_flags &= ~PARSE_FLAG_LINEFEED;
@@ -1053,8 +1251,19 @@ ST_FUNC int mcc_assemble(MCCState *s1, int do_preprocess)
     cur_text_section = text_section;
     ind = cur_text_section->data_offset;
     nocode_wanted = 0;
+#if MCC_EH_FRAME
+    asm_cfi.active = 0;
+    asm_cfi.nfde = 0;
+#endif
     ret = mcc_assemble_internal(s1, do_preprocess, 1);
     cur_text_section->data_offset = ind;
+#if MCC_EH_FRAME
+    if (asm_cfi.active)
+        mcc_error_noabort("open .cfi_startproc at end of file");
+    /* terminate .eh_frame the way the compiler proper does per file */
+    if (asm_cfi.nfde)
+        mcc_eh_frame_end(s1);
+#endif
     mcc_debug_end(s1);
     return ret;
 }

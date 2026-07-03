@@ -9,12 +9,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include "../support/hostcompat.h"
 #ifdef _WIN32
-#include <direct.h>
 #include <process.h>
 #else
-#include <unistd.h>
-#include <sys/stat.h>
 #include <sys/wait.h>
 #endif
 #include "libmcc.h"
@@ -157,11 +155,7 @@ static void test_add_sysinclude(void)
 {
     const char *dir = "api_extra_sysinc";
     const char *hdr = "api_extra_sysinc/sysapi.h";
-#ifdef _WIN32
-    _mkdir(dir);
-#else
-    mkdir(dir, 0777);
-#endif
+    HC_MKDIR(dir);
     FILE *hf = fopen(hdr, "wb");
     if (!hf) { check("add_sysinclude", 0); return; }
     fputs("#define SYSAPI 77\n", hf);
@@ -176,11 +170,7 @@ static void test_add_sysinclude(void)
     ok = ok && f && f() == 77;
     mcc_delete(s);
     remove(hdr);
-#ifdef _WIN32
-    _rmdir(dir);
-#else
-    rmdir(dir);
-#endif
+    HC_RMDIR(dir);
     check("add_sysinclude", ok);
 }
 

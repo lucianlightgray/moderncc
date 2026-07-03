@@ -121,7 +121,11 @@ ST_FUNC void gen_le32(int c)
 
 ST_FUNC void gen_expr32(ExprValue *pe)
 {
-    gen_le32(pe->v);
+    /* mirror mccasm.c's gen_addr64: field 0, value in the RELA addend */
+    uint32_t v = pe->v;
+    if (pe->sym)
+        greloca(cur_text_section, pe->sym, ind, R_DATA_32, v), v = 0;
+    gen_le32(v);
 }
 
 static void emit_instr32(uint32_t val)
@@ -951,7 +955,8 @@ static void gen_shift(int rd, int rn, int rm_or_imm, int shift_type, int is_imm,
                     mcc_error("shift immediate out of range");
                     return;
                 }
-                instr = is_64bit ? ARM64_ASR_IMM : (ARM64_ASR_IMM & ~(1U << 31));
+                /* 32-bit SBFM needs N=0 as well as sf=0 (0x13000000) */
+                instr = is_64bit ? ARM64_ASR_IMM : 0x13000000U;
                 instr |= ARM64_IMM_R(rm_or_imm);
                 instr |= ARM64_IMM_S(width - 1);
                 break;

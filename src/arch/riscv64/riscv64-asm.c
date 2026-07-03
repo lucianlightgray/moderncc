@@ -919,10 +919,10 @@ static void asm_ternary_opcode(MCCState *s1, int token)
         asm_emit_i(token, (0x6 << 2) | 3 | (5 << 12), &ops[0], &ops[1], &ops[2]);
         return;
     case TOK_ASM_sraw:
-        asm_emit_r(token, (0xE << 2) | 3 | (5 << 12), &ops[0], &ops[1], &ops[2]);
+        asm_emit_r(token, (0xE << 2) | 3 | (5 << 12) | (16 << 26), &ops[0], &ops[1], &ops[2]);
         return;
     case TOK_ASM_sraiw:
-        asm_emit_i(token, (0x6 << 2) | 3 | (5 << 12), &ops[0], &ops[1], &ops[2]);
+        asm_emit_i(token, (0x6 << 2) | 3 | (5 << 12) | (16 << 26), &ops[0], &ops[1], &ops[2]);
         return;
 
 

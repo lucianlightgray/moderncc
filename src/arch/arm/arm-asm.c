@@ -150,6 +150,9 @@ ST_FUNC void gen_le32 (int i)
 
 ST_FUNC void gen_expr32(ExprValue *pe)
 {
+    /* REL target: the addend stays in the field; don't drop the symbol */
+    if (pe->sym)
+        greloc(cur_text_section, pe->sym, ind, R_DATA_32);
     gen_le32(pe->v);
 }
 
