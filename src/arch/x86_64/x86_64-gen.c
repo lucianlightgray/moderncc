@@ -1360,6 +1360,9 @@ void gfunc_call(int nb_args)
                 o(0x7cdb);
                 g(0x24);
                 g(0x00);
+                /* fstpt popped st0: unmark so the vpop() below doesn't
+                   emit a second fstp (x87 stack underflow, FE_INVALID) */
+                vtop->r = VT_CONST;
 		break;
 
 	    case VT_FLOAT:

@@ -928,6 +928,10 @@ int _mcc_backtrace(rt_frame *f, const char *fmt, va_list ap)
         }
         if (skip[0] && strstr(bi.file, skip))
             continue;
+        /* a bounds-runtime built with the host cc has no mcc debug info,
+           so the file match above can't see it; skip by symbol prefix */
+        if (skip[0] && !bi.file[0] && !strncmp(bi.func, "__bound_", 8))
+            continue;
 #ifndef CONFIG_MCC_BACKTRACE_ONLY
         {
             MCCState *s = rt_find_state(f);

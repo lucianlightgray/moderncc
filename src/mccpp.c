@@ -1482,7 +1482,12 @@ static int parse_include(MCCState *s1, int do_next, int test)
 #ifdef INC_DEBUG
         printf("%s: including %s\n", file->prev->filename, file->filename);
 #endif
-        if (s1->gen_deps) {
+        if (s1->gen_deps
+            /* the internal predefs '#include <mccdefs.h>' (when built with
+               CONFIG_MCC_PREDEFS=0) is not a dependency of the source file:
+               a predefs-compiled-in build emits none for the same input */
+            && !(c == '<' && 0 == strcmp(name, "mccdefs.h")
+                 && 0 == strcmp(file->prev->filename, "<command line>"))) {
             BufferedFile *bf = file;
             while (i == 1 && (bf = bf->prev))
                 i = bf->include_next_index;

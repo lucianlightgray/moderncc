@@ -119,6 +119,33 @@ unsigned int BUILTIN(bswap32) (unsigned int x)
     return ((x & 0xff000000u) >> 24) | ((x & 0x00ff0000u) >> 8)
          | ((x & 0x0000ff00u) <<  8) | ((x & 0x000000ffu) << 24);
 }
+/* __builtin_signbit helpers: pure bit inspection, must not raise FP
+   exceptions (an FP compare would trap on NaN input) */
+int __mcc_signbitf(float x)
+{
+    union { float f; unsigned int u; } u;
+    u.f = x;
+    return (int)(u.u >> 31);
+}
+int __mcc_signbit(double x)
+{
+    union { double d; unsigned long long u; } u;
+    u.d = x;
+    return (int)(u.u >> 63);
+}
+int __mcc_signbitl(long double x)
+{
+    union { long double ld; unsigned char b[sizeof(long double)]; } u;
+    u.ld = x;
+#if defined __i386__ || defined __x86_64__
+    /* x87 80-bit: sign lives in byte 9 regardless of padded sizeof */
+    return sizeof(long double) > 8 ? u.b[9] >> 7 : u.b[7] >> 7;
+#else
+    /* little-endian: sign is the top bit of the highest byte */
+    return u.b[sizeof(long double) - 1] >> 7;
+#endif
+}
+
 unsigned long long BUILTIN(bswap64) (unsigned long long x)
 {
     return ((x & 0xff00000000000000ull) >> 56)

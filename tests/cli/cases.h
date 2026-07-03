@@ -80,7 +80,7 @@ static const cli_case_t cli_cases[] = {
   "0\n" },
 
 
-{ "debug_default_stabs", "cpu=x86_64,os=linux",
+{ "debug_default_stabs", "cpu=x86_64,os=linux,stabs",
   "{MCC} -B{B} -I{I} -g -c {D}/lib.c -o {W}/g.o && readelf -S {W}/g.o | grep -oE '\\.stab' | sort -u",
   ".stab\n" },
 
@@ -169,7 +169,7 @@ static const cli_case_t cli_cases[] = {
   "readelf -s {W}/ts.o | grep -E 'exported_fn|global_var' | awk '{print $4}' | sort -u",
   "FUNC\nOBJECT\n" },
 
-{ "assemble_dot_s_file", "cpu=x86_64,os=linux",
+{ "assemble_dot_s_file", "cpu=x86_64,os=linux,asm",
   "{MCC} -B{B} -I{I} {D}/asmadd.s {D}/asmmain.c -o {W}/ae && {W}/ae",
   "42\n" },
 
@@ -637,6 +637,23 @@ static const cli_case_t cli_cases[] = {
   "__builtin_signbit(n), fetestexcept(FE_INVALID)!=0); return 0; }\\n' > {W}/bni.c && "
   "{MCC} -B{B} -I{I} {W}/bni.c -o {W}/bni -lm && {W}/bni",
   "nan inf nan inf sb=0 inv=0\n" },
+
+{ "builtin_signbit_no_trap", "cpu=x86_64,os=linux",
+  /* __builtin_signbit{,f,l} must fold in static initializers, handle
+     NaN/-0.0/x87 sign bits, and never raise FP exceptions -- the long
+     double calls also guard the x86_64 gfunc_call double-fstp underflow */
+  "printf '#include <stdio.h>\\n#include <fenv.h>\\n"
+  "static int c1=__builtin_signbit(-0.0), c2=__builtin_signbitf(-2.5f),\\n"
+  "c3=__builtin_signbitl(-3.5L), c4=__builtin_signbit(-__builtin_nan(\"\"));\\n"
+  "int main(void){ volatile double dn=__builtin_nan(\"\"), dz=-0.0;\\n"
+  "volatile float f=-4.5f; volatile long double l=-6.5L, lz=0.0L;\\n"
+  "feclearexcept(FE_ALL_EXCEPT);\\n"
+  "printf(\"c=%%d%%d%%d%%d r=%%d%%d%%d%%d%%d%%d exc=%%d\\\\n\", c1,c2,c3,c4,\\n"
+  "__builtin_signbit(dn), __builtin_signbit(-dn), __builtin_signbit(dz),\\n"
+  "__builtin_signbitf(f), __builtin_signbitl(l), __builtin_signbitl(lz),\\n"
+  "fetestexcept(FE_ALL_EXCEPT)!=0); return 0; }\\n' > {W}/bsb.c && "
+  "{MCC} -B{B} -I{I} {W}/bsb.c -o {W}/bsb -lm && {W}/bsb",
+  "c=1111 r=011110 exc=0\n" },
 
 
 
