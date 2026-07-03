@@ -102,8 +102,35 @@ landable. Status legend: ☐ not started · ◐ in progress · ☑ done.
   codecs are added. (HTTPS download stays external regardless — never hand-roll TLS.)
 
 ---
+## Native macOS verification (2026-07-03, real Darwin 25.5 / arm64 / macOS 26.5 host)
+Ran the previously-pending MacOS tasks on an actual Apple-silicon Mac (prior Phase-3
+macho verification was against the Linux `cmake-build-cross`; the Darwin-gated suites
+had only been skip-gated). Both native host compilers, **100% green**:
+- **Apple clang** (`macos` preset, `cmake-build-macos`): **45/45 ctest pass** — incl.
+  `mcctest` + `mcctest-bcheck` (run natively; the Apple-clang reference does not trip the
+  GNU-gcc-on-Darwin divergence skip), `macho-structural`, and `macho-conformance-native`
+  (real Mach-O against system libSystem).
+- **Homebrew gcc-16** (`macos-cross` preset, `cmake-build-macos-cross`, all 11 cross
+  compilers incl. x86_64/arm64-osx + runtimes): **45/45 ctest pass**. `mcctest`/`-bcheck`
+  SKIP by design here (GNU gcc ref on Darwin/arm64 diverges from clang on impl-defined/UB
+  ABI corners — CMakeLists branch 2; coverage via the Apple-clang mcctest above).
+- **Legitimate skips confirmed, not infra gaps**: `macho-image-run`, `macho-apple-libc`,
+  `macho-codegen-run` skip with "host is not x86_64". Their oracle — `tests/qemu/macho/loader.c`
+  — is **Linux-only** (`<linux/seccomp.h>`, `<linux/filter.h>`, `REG_RAX`/`uc_mcontext.gregs`);
+  it is a no-Mac x86_64 Mach-O approximation. On a real Mac it is correctly superseded by
+  `macho-conformance-native` (native libSystem) + `macho-structural` (x86_64-osx structural),
+  both PASS. Other skips (`asm-c-connect`, `dash-s-roundtrip`, `asm-gas-directives`,
+  `i386-fastcall-abi`, `compile.win32`, `pe-native-conformance`) are x86/ELF/WIN32-only —
+  all legitimate. `pe-wine-conformance` PASSES (wine present).
+- **macOS packaging** (`dist-macos` preset, Apple clang, cross ON): CPack produces
+  `mcc-1.0.0-Darwin.tar.gz` (26 entries: host `mcc`/`mcc-dynamic` + all 12 `mcc-<target>`
+  cross drivers, `include/libmcc.h`, cmake package config). `tools/ci sha256sums` merge
+  emits `SHA256SUMS.txt` that verifies OK against system `shasum -a 256 -c`.
+- **Conclusion: all MacOS tasks in PLAN.md are verified and complete on native Darwin/arm64.**
+
+---
 ## Verification snapshot (2026-07-03)
-- Full CMake build clean; **46/46 ctests pass**; host-gate clean on `src`+`tools`;
+- Full CMake build clean; **46/46 ctests pass** (Linux); host-gate clean on `src`+`tools`;
   all 9 new tools compile `-Wall` clean; shell-free `mccbuild` verified end-to-end
   (native mcc byte-identical); compiler build intact after mcchost additions.
 - New tools: `toolhost.h`, `toolsupport.{c,h}`, `hostgate.c`, `objcheck.c`,
