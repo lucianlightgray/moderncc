@@ -270,7 +270,7 @@ static const struct CrossTarget CROSS[] = {
 	{"arm64-osx", "arm64", "Darwin", "MCC_TARGET_ARM64 MCC_TARGET_MACHO", ""},
 	{0, 0, 0, 0, 0}};
 
-static int rtlib_objs(const char *cpu, const char *os, const char **out, int max) {
+static int mccrt_objs(const char *cpu, const char *os, const char **out, int max) {
 	int n = 0;
 	int win = !strcmp(os, "WIN32"), osx = !strcmp(os, "Darwin");
 	static const char *COMMON[] = {"stdatomic", "atomic", "builtin", "alloca", "alloca-bt", "complex", 0};
@@ -383,7 +383,7 @@ static int cmd_cross(const char *name, const char *out) {
 	v.n = 0;
 	arg(&v, CC);
 	arg(&v, "-O2");
-	arg(&v, "-DONE_SOURCE=1");
+	arg(&v, "-DSINGLE_SOURCE=1");
 	{
 		static char cdefs[512];
 		snprintf(cdefs, sizeof cdefs, "%s", t->cdefs);
@@ -436,7 +436,7 @@ static int cmd_cross(const char *name, const char *out) {
 		return 1;
 
 	printf("[cross %s] mcc-%s -> %s-libmccrt.a\n", name, name, name);
-	nobj = rtlib_objs(t->cpu, t->os, objs, 64);
+	nobj = mccrt_objs(t->cpu, t->os, objs, 64);
 	snprintf(barg, sizeof barg, "-B%s", win ? "runtime/win32" : "runtime");
 	{
 		static char objpaths[64][4096], srcs[64][4096];
@@ -778,7 +778,7 @@ int main(int argc, char **argv) {
 	v.n = 0;
 	arg(&v, CC);
 	arg(&v, "-O2");
-	arg(&v, "-DONE_SOURCE=1");
+	arg(&v, "-DSINGLE_SOURCE=1");
 	for (i = 0; i < 9; ++i)
 		arg(&v, defs[i]);
 	args(&v, ARCH_INCS);

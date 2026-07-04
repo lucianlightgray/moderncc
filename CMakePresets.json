@@ -29,7 +29,7 @@
     },
     {
       "name": "release",
-      "displayName": "Release (ONE_SOURCE dynamic exe, stripped, musl, no bcheck/backtrace)",
+      "displayName": "Release (SINGLE_SOURCE dynamic exe, stripped, musl, no bcheck/backtrace)",
       "inherits": "debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
@@ -40,7 +40,7 @@
       }
     },
     {
-      "name": "asan",
+      "name": "sanitize",
       "displayName": "Sanitizer build (mcc_s)",
       "inherits": "debug",
       "cacheVariables": { "MCC_BUILD_SANITIZE": "ON" }
@@ -49,7 +49,7 @@
       "name": "diagnostics",
       "displayName": "Everything-on diagnostics (warnings + debug + mcc_s/mcc_p/mcc_c)",
       "inherits": "debug",
-      "cacheVariables": { "MCC_DIAGNOSTICS": "ON" }
+      "cacheVariables": { "MCC_ALL_DIAGNOSTICS": "ON" }
     },
     {
       "name": "cross",
@@ -103,10 +103,10 @@
       "cacheVariables": { "MCC_BUILD_STATIC_EXE": "ON" }
     },
     {
-      "name": "linux-gcc-onesource-off",
-      "displayName": "CI linux / gcc / multi-TU (MCC_ONE_SOURCE=OFF)",
+      "name": "linux-gcc-multisource",
+      "displayName": "CI linux / gcc / multi-TU (MCC_SINGLE_SOURCE=OFF)",
       "inherits": "linux-gcc",
-      "cacheVariables": { "MCC_ONE_SOURCE": "OFF" }
+      "cacheVariables": { "MCC_SINGLE_SOURCE": "OFF" }
     },
     {
       "name": "linux-gcc-asm-off",
@@ -136,7 +136,7 @@
       "name": "linux-gcc-diagnostics",
       "displayName": "CI linux / gcc / diagnostics (warnings + mcc_s/mcc_p/mcc_c)",
       "inherits": "linux-gcc",
-      "cacheVariables": { "MCC_DIAGNOSTICS": "ON" }
+      "cacheVariables": { "MCC_ALL_DIAGNOSTICS": "ON" }
     },
     {
       "name": "linux-clang",
@@ -162,7 +162,7 @@
       }
     },
     {
-      "name": "linux-gcc-asan",
+      "name": "linux-gcc-sanitize",
       "displayName": "CI linux / gcc / sanitizer (mcc_s, -fsanitize=address,undefined)",
       "inherits": "linux-gcc",
       "cacheVariables": { "MCC_BUILD_SANITIZE": "ON" }
@@ -256,7 +256,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "MCC_BUILD_TESTS": "OFF",
-        "MCC_ONE_SOURCE": "OFF",
+        "MCC_SINGLE_SOURCE": "OFF",
         "MCC_BUILD_STATIC_LIB": "ON",
         "MCC_BUILD_DYNAMIC_LIB": "ON",
         "MCC_CONFIG_BCHECK": "OFF",
@@ -329,7 +329,7 @@
   "buildPresets": [
     { "name": "debug", "configurePreset": "debug" },
     { "name": "release", "configurePreset": "release" },
-    { "name": "asan", "configurePreset": "asan" },
+    { "name": "sanitize", "configurePreset": "sanitize" },
     { "name": "diagnostics", "configurePreset": "diagnostics" },
     { "name": "cross", "configurePreset": "cross" },
     { "name": "matrix", "configurePreset": "matrix" },
@@ -339,7 +339,7 @@
     { "name": "linux-gcc-musl", "configurePreset": "linux-gcc-musl" },
     { "name": "linux-gcc-release", "configurePreset": "linux-gcc-release" },
     { "name": "linux-gcc-static", "configurePreset": "linux-gcc-static" },
-    { "name": "linux-gcc-onesource-off", "configurePreset": "linux-gcc-onesource-off" },
+    { "name": "linux-gcc-multisource", "configurePreset": "linux-gcc-multisource" },
     { "name": "linux-gcc-asm-off", "configurePreset": "linux-gcc-asm-off" },
     { "name": "linux-gcc-predefs-off", "configurePreset": "linux-gcc-predefs-off" },
     { "name": "linux-gcc-pie", "configurePreset": "linux-gcc-pie" },
@@ -348,7 +348,7 @@
     { "name": "linux-clang", "configurePreset": "linux-clang" },
     { "name": "linux-clang-cross", "configurePreset": "linux-clang-cross" },
     { "name": "linux-clang-release", "configurePreset": "linux-clang-release" },
-    { "name": "linux-gcc-asan", "configurePreset": "linux-gcc-asan" },
+    { "name": "linux-gcc-sanitize", "configurePreset": "linux-gcc-sanitize" },
 
     { "name": "macos", "configurePreset": "macos" },
     { "name": "macos-cross", "configurePreset": "macos-cross" },
@@ -403,7 +403,7 @@
 
     { "name": "debug", "configurePreset": "debug", "inherits": "_test-elf" },
     { "name": "release", "configurePreset": "release", "inherits": "_test-elf" },
-    { "name": "asan", "configurePreset": "asan", "inherits": "_test-elf" },
+    { "name": "sanitize", "configurePreset": "sanitize", "inherits": "_test-elf" },
     { "name": "diagnostics", "configurePreset": "diagnostics", "inherits": "_test-elf" },
     { "name": "cross", "configurePreset": "cross", "inherits": "_test-elf" },
 
@@ -412,7 +412,7 @@
     { "name": "linux-gcc-musl", "configurePreset": "linux-gcc-musl", "inherits": "_test-elf" },
     { "name": "linux-gcc-release", "configurePreset": "linux-gcc-release", "inherits": "_test-elf" },
     { "name": "linux-gcc-static", "configurePreset": "linux-gcc-static", "inherits": "_test-elf" },
-    { "name": "linux-gcc-onesource-off", "configurePreset": "linux-gcc-onesource-off", "inherits": "_test-elf" },
+    { "name": "linux-gcc-multisource", "configurePreset": "linux-gcc-multisource", "inherits": "_test-elf" },
     { "name": "linux-gcc-asm-off", "configurePreset": "linux-gcc-asm-off", "inherits": "_test-elf" },
     { "name": "linux-gcc-predefs-off", "configurePreset": "linux-gcc-predefs-off", "inherits": "_test-elf" },
     { "name": "linux-gcc-pie", "configurePreset": "linux-gcc-pie", "inherits": "_test-elf" },
@@ -421,7 +421,7 @@
     { "name": "linux-clang", "configurePreset": "linux-clang", "inherits": "_test-elf" },
     { "name": "linux-clang-cross", "configurePreset": "linux-clang-cross", "inherits": "_test-elf" },
     { "name": "linux-clang-release", "configurePreset": "linux-clang-release", "inherits": "_test-elf" },
-    { "name": "linux-gcc-asan", "configurePreset": "linux-gcc-asan", "inherits": "_test-elf" },
+    { "name": "linux-gcc-sanitize", "configurePreset": "linux-gcc-sanitize", "inherits": "_test-elf" },
 
     { "name": "macos", "configurePreset": "macos", "inherits": "_test-macos" },
     { "name": "macos-cross", "configurePreset": "macos-cross", "inherits": "_test-macos" },

@@ -2077,11 +2077,11 @@ static void pe_add_runtime(MCCState *s1, struct pe_info *pe) {
 		static const char *const libs[] = {
 			"msvcrt", "kernel32", "", "user32", "gdi32", NULL};
 		const char *const *pp, *p;
-#ifdef MCC_EMBED_RTLIB
-		mcc_add_rtlib_embedded(s1);
+#ifdef MCC_EMBED_MCCRT
+		mcc_add_mccrt_embedded(s1);
 #else
-		if (MCC_RTLIB[0])
-			mcc_add_support(s1, MCC_RTLIB);
+		if (MCC_MCCRT[0])
+			mcc_add_support(s1, MCC_MCCRT);
 #endif
 		s1->static_link = 0;
 		for (pp = libs; 0 != (p = *pp); ++pp) {

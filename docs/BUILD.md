@@ -16,19 +16,19 @@ three executable shapes, each with a musl sibling (`mcc-*-musl`):
 
 | Target        | Exe TU                      | libc link          | Links `libmcc`?              | Built when                              |
 |---------------|-----------------------------|--------------------|------------------------------|-----------------------------------------|
-| `mcc`         | one-source (self-contained) | dynamic            | no (libc only)               | **always**                              |
-| `mcc-static`  | `MCC_ONE_SOURCE` decides    | static (`-static`) | only if `MCC_ONE_SOURCE=OFF` | `MCC_BUILD_STATIC_EXE=ON`               |
-| `mcc-dynamic` | not one-source              | dynamic            | yes → primary `libmcc`       | `MCC_BUILD_DYNAMIC_EXE=ON` **and** `MCC_ONE_SOURCE=OFF` |
+| `mcc`         | single-source (self-contained) | dynamic            | no (libc only)               | **always**                              |
+| `mcc-static`  | `MCC_SINGLE_SOURCE` decides    | static (`-static`) | only if `MCC_SINGLE_SOURCE=OFF` | `MCC_BUILD_STATIC_EXE=ON`               |
+| `mcc-dynamic` | not single-source              | dynamic            | yes → primary `libmcc`       | `MCC_BUILD_DYNAMIC_EXE=ON` **and** `MCC_SINGLE_SOURCE=OFF` |
 
 `mcc-dynamic` is a non-amalgamated driver TU whose `mcctools.c` references
 libmcc-internal `ST_FUNC` helpers (`pstrcpy`, …). Those have external linkage
-**only** in a multi-TU `libmcc` (`MCC_ONE_SOURCE=OFF`); an amalgamated libmcc
+**only** in a multi-TU `libmcc` (`MCC_SINGLE_SOURCE=OFF`); an amalgamated libmcc
 keeps them `static`, and a *shared* libmcc never exports them on PE (no
-`dllexport`). So `mcc-dynamic` is built only under `MCC_ONE_SOURCE=OFF` and links
+`dllexport`). So `mcc-dynamic` is built only under `MCC_SINGLE_SOURCE=OFF` and links
 the **primary** `libmcc` (the static archive when `MCC_BUILD_STATIC_LIB=ON`,
 which resolves the helpers on every platform; the shared `libmcc.so` on ELF).
-Under the default `MCC_ONE_SOURCE=ON` it is skipped with a status message. The
-`dist-*` presets set `MCC_ONE_SOURCE=OFF` so releases ship it.
+Under the default `MCC_SINGLE_SOURCE=ON` it is skipped with a status message. The
+`dist-*` presets set `MCC_SINGLE_SOURCE=OFF` so releases ship it.
 
 With `MCC_ENABLE_CROSS=ON` the same self-contained `mcc` shape is also built for
 every foreign target below (all are host binaries; the `-dynamic` shape is
@@ -53,7 +53,7 @@ The CMake target ids equal the output binary names (`mcc-<arch>`):
 | `mcc-arm64-osx`       | arm64   | Darwin    | `-static`                          |
 
 `mcc` is the canonical, installed binary and the one the test suite drives; by
-default it is a self-contained ONE_SOURCE build linked only to libc. The
+default it is a self-contained SINGLE_SOURCE build linked only to libc. The
 `libmcc` library (shared `libmcc.so` by default, or static `libmcc.a` with
 `MCC_BUILD_STATIC_LIB=ON`) is still built — for the embed API and for
 `mcc-dynamic` to link against. One behavioral note: a **static** `mcc-static`
@@ -63,7 +63,7 @@ arbitrary libc symbols through `dlsym`.
 
 All binaries follow one **suffix convention**, appended in a fixed order:
 `mcc[-<arch>][-static|-dynamic][-musl]` — architecture first (cross compilers
-only, `MCC_ENABLE_CROSS`), then the link/one-source shape, `-musl` always last.
+only, `MCC_ENABLE_CROSS`), then the link/single-source shape, `-musl` always last.
 Cross compilers are self-contained host binaries, so they take `-static` (with
 `MCC_BUILD_STATIC_EXE=ON`) but never `-dynamic` (there is no per-arch `libmcc`
 to link). Examples: `mcc`, `mcc-static`, `mcc-dynamic`, `mcc-musl`,
@@ -128,9 +128,9 @@ host-dynamic (macOS Homebrew gcc). Hidden bases are prefixed `_`
 | Preset | CMAKE_BUILD_TYPE | Key overrides |
 |---|---|---|
 | `debug` | Debug | musl OFF, bcheck ON, backtrace ON, strip OFF |
-| `release` | Release | musl ON, strip ON, bcheck OFF, backtrace OFF (ONE_SOURCE dynamic exe) |
-| `asan` | Debug | `MCC_BUILD_SANITIZE=ON` |
-| `diagnostics` | Debug | `MCC_DIAGNOSTICS=ON` (warnings + debug + mcc_s/mcc_p/mcc_c) |
+| `release` | Release | musl ON, strip ON, bcheck OFF, backtrace OFF (SINGLE_SOURCE dynamic exe) |
+| `sanitize` | Debug | `MCC_BUILD_SANITIZE=ON` |
+| `diagnostics` | Debug | `MCC_ALL_DIAGNOSTICS=ON` (warnings + debug + mcc_s/mcc_p/mcc_c) |
 | `cross` | Debug | `MCC_ENABLE_CROSS=ON` |
 | `matrix` | Debug | `MCC_TOOLCHAIN_PROFILE=gcc;clang` × `MCC_TARGETS=native;cross` |
 
@@ -143,13 +143,13 @@ host-dynamic (macOS Homebrew gcc). Hidden bases are prefixed `_`
 | `linux-gcc-musl` | `linux` | + `MCC_BUILD_MUSL=ON` |
 | `linux-gcc-release`, `linux-clang-release` | `linux` | Release, stripped, bcheck/backtrace off |
 | `linux-gcc-static` | `linux` | + `MCC_BUILD_STATIC_EXE=ON` (`mcc-static`, `CONFIG_MCC_STATIC`) |
-| `linux-gcc-onesource-off` | `linux` | + `MCC_ONE_SOURCE=OFF` (multi-TU; builds `mcc-dynamic`) |
+| `linux-gcc-multisource` | `linux` | + `MCC_SINGLE_SOURCE=OFF` (multi-TU; builds `mcc-dynamic`) |
 | `linux-gcc-asm-off` | `linux` | + `MCC_CONFIG_ASM=OFF` (mccrt via host cc) |
 | `linux-gcc-predefs-off` | `linux` | + `MCC_CONFIG_PREDEFS=OFF` (runtime mccdefs) |
 | `linux-gcc-pie` | `linux` | + `MCC_CONFIG_PIE=ON` `MCC_CONFIG_PIC=ON` |
 | `linux-gcc-dwarf` | `linux` | + `MCC_CONFIG_DWARF=5` |
-| `linux-gcc-asan` | `linux` | + `MCC_BUILD_SANITIZE=ON` (gcc libasan) |
-| `linux-gcc-diagnostics` | `linux` | + `MCC_DIAGNOSTICS=ON` (`mcc_s`/`mcc_p`/`mcc_c`) |
+| `linux-gcc-sanitize` | `linux` | + `MCC_BUILD_SANITIZE=ON` (gcc libasan) |
+| `linux-gcc-diagnostics` | `linux` | + `MCC_ALL_DIAGNOSTICS=ON` (`mcc_s`/`mcc_p`/`mcc_c`) |
 | `macos`, `macos-cross` | `macos` | Debug, `CMAKE_C_COMPILER=$env{CC}` (clang / Homebrew gcc), `MCC_DARWIN_HOST=ON` |
 | `msvc` | `msvc` | Release, `MCC_TOOLCHAIN_PROFILE=msvc`, diff3 refs from `$env{}` |
 | `mingw` | `mingw` | Release, `MCC_TOOLCHAIN_PROFILE=mingw` (build-only) |
@@ -179,7 +179,7 @@ runner; `qemu` alone is the full local matrix:
 
 **dist presets** — release artifacts (`ci.yml` `dist`, `release.yml`). Every dist
 build produces *all* permutations: Release, `MCC_BUILD_TESTS=OFF`,
-`MCC_ONE_SOURCE=OFF` (so `mcc-dynamic` builds), `MCC_BUILD_STATIC_LIB=ON` **and**
+`MCC_SINGLE_SOURCE=OFF` (so `mcc-dynamic` builds), `MCC_BUILD_STATIC_LIB=ON` **and**
 `MCC_BUILD_DYNAMIC_LIB=ON` (both `libmcc-static.a` + `libmcc-dynamic.so`),
 `MCC_ENABLE_CROSS=ON` (all cross compilers), `CMAKE_INSTALL_PREFIX=${sourceDir}/stage`:
 
@@ -208,16 +208,16 @@ host), enabling the kernel-fused apple-libc suite.
 | `MCC_TOOLCHAIN_PROFILE` | STRING (list) | `auto` | auto, gcc, clang, mcc, msvc, mingw | always | Toolchain(s) to build with, in order. A single value seeds profile defaults; a list (or `mingw`) triggers the superbuild matrix. |
 | `MCC_ENABLE_CROSS` | BOOL | OFF | | always | Build all cross compilers `mcc-<arch>` (ordinary targets, not a `cross` meta-target); each also gets a `-static` variant when `MCC_BUILD_STATIC_EXE=ON` and a `-musl` sibling. |
 | `MCC_BUILD_STATIC_LIB` | BOOL | OFF | | always | Static `libmcc-static.a` (ON) vs shared `libmcc.so` (OFF, default). |
-| `MCC_BUILD_STATIC_EXE` | BOOL | OFF | | always (forced OFF on macOS) | Build the `mcc-static` target (fully static `-static`). `MCC_ONE_SOURCE` decides its compile+link path: self-contained (ON) or linking `libmcc.a` (OFF, then also needs `MCC_BUILD_STATIC_LIB=ON`). macOS has no static libc → forced OFF. |
+| `MCC_BUILD_STATIC_EXE` | BOOL | OFF | | always (forced OFF on macOS) | Build the `mcc-static` target (fully static `-static`). `MCC_SINGLE_SOURCE` decides its compile+link path: self-contained (ON) or linking `libmcc.a` (OFF, then also needs `MCC_BUILD_STATIC_LIB=ON`). macOS has no static libc → forced OFF. |
 | `MCC_BUILD_DYNAMIC_LIB` | BOOL | OFF | | always | Also build a shared `libmcc-dynamic.so` alongside the `libmcc-static.a` (only meaningful with `MCC_BUILD_STATIC_LIB=ON`). |
-| `MCC_BUILD_DYNAMIC_EXE` | BOOL | **ON** | | **MCC_ONE_SOURCE=OFF** | Build the `mcc-dynamic` target: NOT one-source, driver TU linked against the primary `libmcc`. Requires a multi-TU libmcc (`MCC_ONE_SOURCE=OFF`) so libmcc's internal helpers are linkable; under the default `MCC_ONE_SOURCE=ON` it is skipped with a status message. |
+| `MCC_BUILD_DYNAMIC_EXE` | BOOL | **ON** | | **MCC_SINGLE_SOURCE=OFF** | Build the `mcc-dynamic` target: NOT single-source, driver TU linked against the primary `libmcc`. Requires a multi-TU libmcc (`MCC_SINGLE_SOURCE=OFF`) so libmcc's internal helpers are linkable; under the default `MCC_SINGLE_SOURCE=ON` it is skipped with a status message. |
 | `MCC_BUILD_MUSL` | BOOL | OFF | | always | Also build musl-targeting variants (`mcc*-musl`). Opt-in — enabled only by the explicit `-musl` presets/targets (`release`, `linux-gcc-musl`, `dist-linux-*`). |
 | `MCC_BUILD_STRIP` | BOOL | OFF | | always | Strip symbols at link (`-s`). |
-| `MCC_DISABLE_RPATH` | BOOL | OFF | | **!static-lib** | Don't bake `-rpath` into binaries linking `libmcc.so` (relevant by default, since the lib is shared). |
-| `MCC_ONE_SOURCE` | BOOL | **ON** | | always | Build libmcc from a single TU (amalgamation). Also seeded ON by the `mcc` profile. Set OFF for a multi-TU library. |
+| `MCC_ENABLE_RPATH` | BOOL | **ON** | | **!static-lib** | Bake `-rpath` into binaries linking `libmcc.so` so they find the shared lib at runtime (relevant by default, since the lib is shared). |
+| `MCC_SINGLE_SOURCE` | BOOL | **ON** | | always | Build libmcc from a single TU (amalgamation). Also seeded ON by the `mcc` profile. Set OFF for a multi-TU library. |
 | `MCC_BUILD_TESTS` | BOOL | **ON** | | always | Build/enable the CTest suite. |
-| `MCC_RTLIB_USE_HOSTCC` | BOOL | OFF | | always | Build native `mccrt` with the host CC instead of `mcc` (faster bcheck). Auto-forced ON when no emulator / asm disabled. |
-| `MCC_EMBED_RTLIB` | BOOL | **ON** | | always (ELF/Mach-O; forced OFF on WIN32) | Bake `libmccrt.a` into the `mcc` binary (self-contained; no sidecar `.a` needed at link time). The embedded loader streams it through a temp fd to the ordinary alacarte archive loader. Forces the native `mccrt` to be host-CC built (like `MCC_RTLIB_USE_HOSTCC`) to break the mcc→archive→mcc build cycle. Only the primary `mcc` target embeds; static/musl/cross variants keep the sidecar. |
+| `MCC_MCCRT_USE_HOSTCC` | BOOL | OFF | | always | Build native `mccrt` with the host CC instead of `mcc` (faster bcheck). Auto-forced ON when no emulator / asm disabled. |
+| `MCC_EMBED_MCCRT` | BOOL | **ON** | | always (ELF/Mach-O; forced OFF on WIN32) | Bake `libmccrt.a` into the `mcc` binary (self-contained; no sidecar `.a` needed at link time). The embedded loader streams it through a temp fd to the ordinary alacarte archive loader. Forces the native `mccrt` to be host-CC built (like `MCC_MCCRT_USE_HOSTCC`) to break the mcc→archive→mcc build cycle. Only the primary `mcc` target embeds; static/musl/cross variants keep the sidecar. |
 | `MCC_CONFIG_AUTOCORRECT` | BOOL | OFF | | always (advanced) | Non-strict: auto-correct inert/non-runnable combos instead of only warning. |
 | `MCC_MINGW_SOURCE` | STRING | `winlibs` | winlibs, multilib | always (advanced) | Source for the `mingw-toolchain` download. |
 
@@ -227,7 +227,7 @@ host), enabling the kernel-fused apple-libc suite.
 
 | Value | Type | Default | Gate | Purpose |
 |---|---|---|---|---|
-| `MCC_DIAGNOSTICS` | BOOL | OFF | GNU/Clang host (advanced) | Everything-on: verbose warnings + debug info + build `mcc_s`/`mcc_p`/`mcc_c`. |
+| `MCC_ALL_DIAGNOSTICS` | BOOL | OFF | GNU/Clang host (advanced) | Everything-on: verbose warnings + debug info + build `mcc_s`/`mcc_p`/`mcc_c`. |
 | `MCC_BUILD_SANITIZE` | BOOL | OFF | GNU/Clang host; **not** WIN32/mingw | Build `mcc_s` (`-fsanitize=address,undefined`). Fatal on a PE target. |
 | `MCC_BUILD_PROFILE` | BOOL | OFF | GNU/Clang host; **not** Darwin | Build `mcc_p` (`-pg -static`). Fatal on Darwin (no static crt0). |
 | `MCC_BUILD_COVERAGE` | BOOL | OFF | GNU/Clang host; needs runnable mcc | Build `mcc_c` (coverage instrumentation). |
@@ -243,14 +243,14 @@ These bake `CONFIG_*` values into the compiler and change its runtime behavior.
 
 | Value | Type | Default | Choices | Gate | Purpose |
 |---|---|---|---|---|---|
-| `MCC_CONFIG_MINGW32` | BOOL | OFF | | always | Build a WIN32/mingw32 target (forces `MCC_TARGETOS=WIN32`). |
+| `MCC_CONFIG_MINGW` | BOOL | OFF | | always | Build a WIN32/mingw target (forces `MCC_TARGETOS=WIN32`). |
 | `MCC_CONFIG_BACKTRACE` | BOOL | **ON** | | always | Stack backtraces (`-bt` / `-run`). |
 | `MCC_CONFIG_BCHECK` | BOOL | **ON** | | **MCC_CONFIG_BACKTRACE** | Bounds checker (`-b`). Requires backtrace to link. |
-| `MCC_CONFIG_ASM` | BOOL | **ON** | | always | Integrated assembler (inline/global asm, `.s` files, asm labels). Disabling forces `MCC_RTLIB_USE_HOSTCC=ON`. |
+| `MCC_CONFIG_ASM` | BOOL | **ON** | | always | Integrated assembler (inline/global asm, `.s` files, asm labels). Disabling forces `MCC_MCCRT_USE_HOSTCC=ON`. |
 | `MCC_CONFIG_PREDEFS` | BOOL | **ON** | | always | Compile `mccdefs.h` into the binary (c2str). OFF ⇒ runtime dependency on `<mccdefs.h>`. |
 | `MCC_CONFIG_PIE` | BOOL | OFF | | **ELF** | mcc emits position-independent executables. |
 | `MCC_CONFIG_PIC` | BOOL | OFF | | **ELF** | Position-independent code. |
-| `MCC_WITH_SELINUX` | BOOL | OFF | | always | Use `mmap` for executable memory (`mcc -run`). |
+| `MCC_RUN_MMAP_EXEC` | BOOL | OFF | | always | Use `mmap` for executable memory (`mcc -run`). |
 | `MCC_CONFIG_NEW_DTAGS` | BOOL | OFF | | **ELF** | `DT_RUNPATH` instead of `DT_RPATH` (mcc-emitted). |
 | `MCC_AUTO_MCCDIR` | BOOL | **ON** | | always | Build-tree mcc auto-discovers `libmccrt.a` + headers locally, else system `CONFIG_MCCDIR`. |
 | `MCC_CONFIG_LIBC` | STRING | `''` | uClibc, musl, `''` | **ELF** | Target libc. `uClibc` is a legacy selector (warns). |
@@ -369,7 +369,7 @@ useful to assert in CI. They are computed, not user inputs.
 ## 13. Cross-value validation (combinations the configure step checks)
 
 `mcc_validate_config()` enforces these (two live elsewhere but still fire at
-configure time: the `mcc-dynamic`-skipped-under-ONE_SOURCE status is printed
+configure time: the `mcc-dynamic`-skipped-under-SINGLE_SOURCE status is printed
 at the target definition, and the toolchain-profile-entry fatal at the node
 declaration); test both the pass and the warn/fatal path. With
 `MCC_CONFIG_AUTOCORRECT=ON` several fatals become auto-corrections instead.
@@ -378,23 +378,23 @@ declaration); test both the pass and the warn/fatal path. With
 - **`MCC_BUILD_SANITIZE` + WIN32** → fatal (mingw has no libasan/libubsan).
 - **`MCC_BUILD_PROFILE` + Darwin** → fatal (no static crt0).
 - **Cross-compiling with empty `MCC_EMULATOR`** → fatal (can't run the foreign
-  `mcc` to build mccrt/tests/coverage). Autocorrect: force `MCC_RTLIB_USE_HOSTCC=ON`,
+  `mcc` to build mccrt/tests/coverage). Autocorrect: force `MCC_MCCRT_USE_HOSTCC=ON`,
   `MCC_BUILD_TESTS=OFF`, `MCC_BUILD_COVERAGE=OFF`. WIN32 shared lib still fatal
   (needs `mcc -impdef`).
 - **`MCC_CONFIG_BCHECK` + `!MCC_CONFIG_BACKTRACE`** → warn/autocorrect (bcheck is
   gated behind backtrace; `-b` won't link).
-- **`MCC_BUILD_STATIC_EXE` + `!MCC_ONE_SOURCE` + `!MCC_BUILD_STATIC_LIB`** → warn
-  (a non-one-source `mcc-static` links the libmcc archive, but a static link
-  can't resolve the shared `libmcc.so`; keep `MCC_ONE_SOURCE=ON` so `mcc-static`
+- **`MCC_BUILD_STATIC_EXE` + `!MCC_SINGLE_SOURCE` + `!MCC_BUILD_STATIC_LIB`** → warn
+  (a non-single-source `mcc-static` links the libmcc archive, but a static link
+  can't resolve the shared `libmcc.so`; keep `MCC_SINGLE_SOURCE=ON` so `mcc-static`
   is self-contained, or set `MCC_BUILD_STATIC_LIB=ON`).
-- **`MCC_BUILD_DYNAMIC_EXE` + `MCC_ONE_SOURCE`** → `mcc-dynamic` skipped (status).
-  A non-one-source driver needs libmcc's internal `ST_FUNC` helpers with external
-  linkage, which only a multi-TU libmcc (`MCC_ONE_SOURCE=OFF`) provides; on PE a
+- **`MCC_BUILD_DYNAMIC_EXE` + `MCC_SINGLE_SOURCE`** → `mcc-dynamic` skipped (status).
+  A non-single-source driver needs libmcc's internal `ST_FUNC` helpers with external
+  linkage, which only a multi-TU libmcc (`MCC_SINGLE_SOURCE=OFF`) provides; on PE a
   *shared* libmcc never exports them, so `mcc-dynamic` links the primary libmcc
   (static archive when `MCC_BUILD_STATIC_LIB=ON`). The `dist-*` presets set
-  `MCC_ONE_SOURCE=OFF`.
-- **`MCC_DISABLE_RPATH` + `MCC_BUILD_STATIC_LIB`** → warn (rpath only for shared lib).
-- **`!MCC_CONFIG_ASM`** → autocorrect `MCC_RTLIB_USE_HOSTCC=ON`.
+  `MCC_SINGLE_SOURCE=OFF`.
+- **`!MCC_ENABLE_RPATH` + `MCC_BUILD_STATIC_LIB`** → warn (rpath only for shared lib).
+- **`!MCC_CONFIG_ASM`** → autocorrect `MCC_MCCRT_USE_HOSTCC=ON`.
 - **`MCC_TOOLCHAIN_PROFILE` ≠ detected `MCC_CC_NAME`** → warn (profile seeds
   defaults, does not switch compilers).
 - **`!MCC_CONFIG_PREDEFS`** → warn (runtime `<mccdefs.h>` dependency).
@@ -413,13 +413,13 @@ several of these already (§2).
 
 **Per host (Linux/macOS/Windows) — core linkage/feature axes:**
 
-1. `debug` preset (baseline new defaults: self-contained one-source `mcc` +
+1. `debug` preset (baseline new defaults: self-contained single-source `mcc` +
    lib-linking `mcc-dynamic` against shared `libmcc.so`, bcheck+backtrace on, rpath path).
-2. `release` preset (ONE_SOURCE dynamic exe, stripped, musl, bcheck/backtrace off).
+2. `release` preset (SINGLE_SOURCE dynamic exe, stripped, musl, bcheck/backtrace off).
 3. `MCC_BUILD_STATIC_EXE=ON` → builds `mcc-static` (self-contained static by
    default; exercises `CONFIG_MCC_STATIC` / built-in `-run` table). Add
-   `MCC_ONE_SOURCE=OFF` + `MCC_BUILD_STATIC_LIB=ON` to cover the static-against-`libmcc.a` path.
-4. `MCC_ONE_SOURCE=OFF` (non-default multi-TU): `mcc`/`mcc-static` become
+   `MCC_SINGLE_SOURCE=OFF` + `MCC_BUILD_STATIC_LIB=ON` to cover the static-against-`libmcc.a` path.
+4. `MCC_SINGLE_SOURCE=OFF` (non-default multi-TU): `mcc`/`mcc-static` become
    driver-TU + `libmcc` builds; keeps the non-amalgamated compile path covered.
 5. `MCC_CONFIG_ASM=OFF` (forces mccrt via host CC).
 6. `MCC_CONFIG_PREDEFS=OFF` (runtime mccdefs path).
@@ -427,7 +427,7 @@ several of these already (§2).
 
 **Instrumentation (GCC/Clang hosts only):**
 
-8. `asan` preset (`MCC_BUILD_SANITIZE=ON`).
+8. `sanitize` preset (`MCC_BUILD_SANITIZE=ON`).
 9. `MCC_BUILD_COVERAGE=ON`, `MCC_BUILD_PROFILE=ON` (skip profile on Darwin),
    and `diagnostics` preset.
 
@@ -440,7 +440,7 @@ several of these already (§2).
 
 11. `cross` preset (`MCC_ENABLE_CROSS=ON`) — all cross compilers.
 12. `matrix` preset (`gcc;clang` × `native;cross`).
-13. WIN32 target: `MCC_CONFIG_MINGW32=ON` (verify sanitize is rejected).
+13. WIN32 target: `MCC_CONFIG_MINGW=ON` (verify sanitize is rejected).
 14. A real cross target with `CMAKE_TOOLCHAIN_FILE` + `CMAKE_CROSSCOMPILING_EMULATOR`
     (e.g. qemu-arm / wine), and the same without an emulator to hit the fatal /
     autocorrect path.

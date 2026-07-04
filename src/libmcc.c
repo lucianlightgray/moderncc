@@ -1,8 +1,8 @@
-#ifndef ONE_SOURCE
-#define ONE_SOURCE 1
+#ifndef SINGLE_SOURCE
+#define SINGLE_SOURCE 1
 #endif
 
-#if ONE_SOURCE
+#if SINGLE_SOURCE
 #include "mcchost.c"
 #include "mccpp.c"
 #include "mccgen.c"
@@ -1201,36 +1201,36 @@ ST_FUNC int mcc_add_support(MCCState *s1, const char *filename) {
 	return mcc_add_dll(s1, filename, AFF_PRINT_ERROR);
 }
 
-#ifdef MCC_EMBED_RTLIB
+#ifdef MCC_EMBED_MCCRT
 /* The runtime-support archive (libmccrt.a) is baked into the mcc binary at build
-   time (MCC_EMBED_RTLIB; see cmake/bin2c.cmake) as this byte blob, so mcc needs
+   time (MCC_EMBED_MCCRT; see cmake/bin2c.cmake) as this byte blob, so mcc needs
    no sidecar .a on disk. We stream it through an anonymous temp fd and hand it to
    the ordinary archive loader unchanged: identical alacarte member resolution,
    zero duplication of the ELF/ar reader. */
 extern const unsigned char mccrt_blob[];
 extern const unsigned int mccrt_blob_len;
 
-ST_FUNC int mcc_add_rtlib_embedded(MCCState *s1) {
+ST_FUNC int mcc_add_mccrt_embedded(MCCState *s1) {
 	char tmp[] = "/tmp/.mccrtXXXXXX";
 	size_t off;
 	int fd, ret;
 
 	fd = mkstemp(tmp);
 	if (fd < 0)
-		return mcc_error_noabort("embedded " MCC_RTLIB ": cannot create temp fd");
+		return mcc_error_noabort("embedded " MCC_MCCRT ": cannot create temp fd");
 	unlink(tmp);                 /* fd stays valid; file is gone once closed */
 	for (off = 0; off < mccrt_blob_len; ) {
 		ssize_t w = write(fd, mccrt_blob + off, mccrt_blob_len - off);
 		if (w <= 0) {
 			close(fd);
-			return mcc_error_noabort("embedded " MCC_RTLIB ": write failed");
+			return mcc_error_noabort("embedded " MCC_MCCRT ": write failed");
 		}
 		off += (size_t)w;
 	}
 	lseek(fd, 0, SEEK_SET);
 	/* No AFF_WHOLE_ARCHIVE => alacarte, exactly like the on-disk libmccrt.a.
 	   mcc_add_binary takes ownership of fd and closes it. */
-	ret = mcc_add_binary(s1, AFF_PRINT_ERROR, "<embedded " MCC_RTLIB ">", fd);
+	ret = mcc_add_binary(s1, AFF_PRINT_ERROR, "<embedded " MCC_MCCRT ">", fd);
 	return ret;
 }
 #endif

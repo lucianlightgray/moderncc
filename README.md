@@ -81,7 +81,7 @@ from a single source tree. Trades an optimizer for speed, size, and portability;
 CMake (≥ 3.22) with CMakePresets.json:
 
 ```sh
-cmake --preset debug # or: release, asan, diagnostics, cross, matrix
+cmake --preset debug # or: release, sanitize, diagnostics, cross, matrix
 cmake --build --preset debug -j
 ```
 
@@ -91,7 +91,7 @@ drive the workflows + docker runners. See [BUILD.md §2](BUILD.md) for the full
 preset catalog and naming conventions.
 
 **Linux status (2026-07, gcc 15.3 / clang 22):** every Linux preset is green —
-`debug`, `release`, `asan`, `diagnostics`, `cross`, `matrix` (gcc/clang ×
+`debug`, `release`, `sanitize`, `diagnostics`, `cross`, `matrix` (gcc/clang ×
 native/cross superbuild), all 15 `linux-*` CI presets, both `dist-linux-*`
 packagings, and the full `qemu` cross×libc matrix. Each test-bearing preset
 passes its complete suite (39/39 portable tests; 22/22 in the qemu matrix,
@@ -110,7 +110,7 @@ the fetched `cmake-clang`), and both `dist-*` packagings (`dist-msvc`,
 12 cross compilers, each also in a `-static` shape). The in-tree build/CI
 tools carry their own ctests that pass here too — `host-gate-invariant`,
 `git-stamp`, `def-verify`, `build-md-nodes`, `config-defines`, `host-detect`,
-`cross-factory`, `ci-matrix`, `ci-pkg-smoke`, `qemu-fetch-parse`. `asan`
+`cross-factory`, `ci-matrix`, `ci-pkg-smoke`, `qemu-fetch-parse`. `sanitize`
 intentionally fails at configure — mingw ships no libasan/libubsan; use
 `diagnostics`, which builds the coverage + profile variants and skips
 sanitize. The PE target gets native-only extra coverage
@@ -139,9 +139,9 @@ cmake --build cmake-release -j
 | `MCC_ENABLE_CROSS`     |   OFF   | Also build `mcc-<arch>` cross compilers    |
 | `MCC_BUILD_STATIC_LIB` |   OFF   | Build static `libmcc-static.a` instead of shared `libmcc.so` |
 | `MCC_BUILD_DYNAMIC_LIB`|   OFF   | Also build shared `libmcc-dynamic.so` alongside `libmcc-static.a` |
-| `MCC_ONE_SOURCE`       |   ON    | Amalgamate the compiler into one TU (`mcc` is self-contained) |
+| `MCC_SINGLE_SOURCE`       |   ON    | Amalgamate the compiler into one TU (`mcc` is self-contained) |
 | `MCC_BUILD_STATIC_EXE` |   OFF¹  | Also build `mcc-static` (fully static `-static`); enables `CONFIG_MCC_STATIC` so *its* `-run` resolves libc via a built-in symbol table |
-| `MCC_BUILD_DYNAMIC_EXE`|   ON    | Also build `mcc-dynamic` (not one-source; links the shared `libmcc.so`) |
+| `MCC_BUILD_DYNAMIC_EXE`|   ON    | Also build `mcc-dynamic` (not single-source; links the shared `libmcc.so`) |
 | `MCC_BUILD_MUSL`       |   OFF²  | Also build musl-targeting variants (`*-musl`, Linux only) |
 | `MCC_BUILD_STRIP`      |   OFF   | Strip symbols during link                  |
 | `MCC_QEMU_TESTS`       |   OFF   | qemu-user cross-conformance matrix (below) |
@@ -156,8 +156,8 @@ the explicit `-musl` presets/targets (`release`, `linux-gcc-musl`, `dist-linux-*
 
 All compiler binaries follow one suffix convention:
 `mcc[-<arch>][-static|-dynamic][-musl]` — arch first (cross targets only),
-then the link/one-source shape, with `-musl` always last. `mcc` — the default,
-installed binary — is a self-contained ONE_SOURCE build linked only to libc,
+then the link/single-source shape, with `-musl` always last. `mcc` — the default,
+installed binary — is a self-contained SINGLE_SOURCE build linked only to libc,
 with no `libmcc.so` dependency. `mcc-static` is the same, statically linked
 (`-static`). `mcc-dynamic` is a non-amalgamated driver linked against the shared
 `libmcc.so`. Cross compilers (`MCC_ENABLE_CROSS`) are self-contained host
@@ -278,7 +278,7 @@ some widths/branch fields).
 
 ### Compile speed & footprint
 
-Compiling `mcc`'s own whole-compiler TU (`src/mcc.c`, `ONE_SOURCE=1`) to an
+Compiling `mcc`'s own whole-compiler TU (`src/mcc.c`, `SINGLE_SOURCE=1`) to an
 object, best of 3 (gcc 15.3 / clang 22, 2026-07). Stripped release binaries:
 dynamic `mcc` ≈ **0.6 MB**, `mcc-static` ≈ **1.3 MB**.
 

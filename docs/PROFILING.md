@@ -17,7 +17,7 @@ kernel-tuned quiet system (§3).
     mirror that harness. **`-O0`-only:** its self-referential `__bug_table`
     inline-asm (`tests/diff/parts/legacy_meta.h:364`) miscompiles/traps under any
     optimizer, so it exercises the `-Ox` compilers at `-O0` and `-c` only (§4a).
-  - `src/mcc.c` — the one-source `mcc` amalgamation (the whole compiler in a
+  - `src/mcc.c` — the single-source `mcc` amalgamation (the whole compiler in a
     single TU, ~100 k preprocessed lines). Large; portable C that every compiler
     builds at `-O0` and `-O2 -g`, so it carries the release columns and is the
     self-host workload (§4b).
@@ -56,7 +56,7 @@ for cc in gcc clang; do
   cmake -S . -B cmake-prof-$cc -G Ninja \
     -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER=$cc \
     -DMCC_BUILD_STRIP=OFF -DMCC_CONFIG_BCHECK=OFF -DMCC_CONFIG_BACKTRACE=OFF \
-    -DMCC_BUILD_MUSL=OFF -DMCC_ONE_SOURCE=ON
+    -DMCC_BUILD_MUSL=OFF -DMCC_SINGLE_SOURCE=ON
   cmake --build cmake-prof-$cc --target mcc mccrt -j"$(nproc)"
 done
 
@@ -65,7 +65,7 @@ cmake -S . -B cmake-prof-mcc -G Ninja \
   -DCMAKE_C_COMPILER="$PWD/cmake-prof-gcc/mcc" -DMCC_TOOLCHAIN_PROFILE=mcc \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
   -DMCC_BUILD_STRIP=OFF -DMCC_CONFIG_BCHECK=OFF -DMCC_CONFIG_BACKTRACE=OFF \
-  -DMCC_BUILD_MUSL=OFF -DMCC_ONE_SOURCE=ON
+  -DMCC_BUILD_MUSL=OFF -DMCC_SINGLE_SOURCE=ON
 cmake --build cmake-prof-mcc --target mcc mccrt -j"$(nproc)"
 ```
 
@@ -395,10 +395,10 @@ Linux-runnable presets** before moving on (each is the full 804-test CTest suite
 idea #1, and at the final state:
 
 ```
-debug  asan  diagnostics  linux-gcc  linux-clang
-linux-gcc-onesource-off  linux-gcc-asm-off  linux-gcc-predefs-off
+debug  sanitize  diagnostics  linux-gcc  linux-clang
+linux-gcc-multisource  linux-gcc-asm-off  linux-gcc-predefs-off
 linux-gcc-pie  linux-gcc-dwarf  linux-gcc-diagnostics
-linux-gcc-release  linux-clang-release  linux-gcc-asan  linux-gcc-static
+linux-gcc-release  linux-clang-release  linux-gcc-sanitize  linux-gcc-static
 release  linux-gcc-musl  cross  linux-gcc-cross  linux-clang-cross
 ```
 

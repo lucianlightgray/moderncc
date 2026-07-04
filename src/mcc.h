@@ -176,8 +176,8 @@
 #endif
 #endif
 
-#ifndef MCC_RTLIB
-#define MCC_RTLIB "libmccrt.a"
+#ifndef MCC_MCCRT
+#define MCC_MCCRT "libmccrt.a"
 #endif
 
 #ifndef CONFIG_MCC_CROSSPREFIX
@@ -1582,8 +1582,8 @@ ST_FUNC void mccelf_add_crtend(MCCState *s1);
 #ifndef MCC_TARGET_PE
 ST_FUNC void mcc_add_runtime(MCCState *s1);
 #endif
-#ifdef MCC_EMBED_RTLIB
-ST_FUNC int mcc_add_rtlib_embedded(MCCState *s1);
+#ifdef MCC_EMBED_MCCRT
+ST_FUNC int mcc_add_mccrt_embedded(MCCState *s1);
 #endif
 
 #ifndef MCC_TARGET_PE
@@ -1879,7 +1879,7 @@ dwarf_read_sleb128(unsigned char **ln, unsigned char *end) {
 #endif
 
 #undef ST_DATA
-#if ONE_SOURCE
+#if SINGLE_SOURCE
 #define ST_DATA static
 #else
 #define ST_DATA

@@ -3,8 +3,8 @@
 
 #define CONFIG_MCC_TOOLHOST 1
 
-#ifndef ONE_SOURCE
-#define ONE_SOURCE 0
+#ifndef SINGLE_SOURCE
+#define SINGLE_SOURCE 0
 #endif
 
 #include <stdio.h>

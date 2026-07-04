@@ -101,7 +101,7 @@ static storage — genuine per-call scratch onto the **stack** (threaded through
 prototypes / owned by an already-stack-allocated context struct), and persistent
 per-instance state **rehomed into `MCCState`** (the codebase's existing
 `#define name mcc_state->name` redirect idiom, as already used for `qrel`). The two
-build shapes were verified after every increment: `debug` (host x86_64, ONE_SOURCE) and
+build shapes were verified after every increment: `debug` (host x86_64, SINGLE_SOURCE) and
 `cross` (all five backends) — **804/804 tests pass in both.**
 
 The handful that remain static are process-global *by nature* (async signal/fault

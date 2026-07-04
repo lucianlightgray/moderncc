@@ -259,8 +259,8 @@ function(mcc_validate_config)
     endif()
     if(CMAKE_CROSSCOMPILING AND "${MCC_EMULATOR}" STREQUAL "")
         if(MCC_CONFIG_AUTOCORRECT)
-            if(NOT MCC_RTLIB_USE_HOSTCC)
-                mcc_autocorrect(MCC_RTLIB_USE_HOSTCC ON
+            if(NOT MCC_MCCRT_USE_HOSTCC)
+                mcc_autocorrect(MCC_MCCRT_USE_HOSTCC ON
                     "no emulator: build mccrt with the host CC, not the foreign mcc")
             endif()
             if(MCC_BUILD_TESTS)
@@ -301,21 +301,21 @@ function(mcc_validate_config)
                 "Enable backtrace or disable bcheck (or set -DMCC_CONFIG_AUTOCORRECT=ON).")
         endif()
     endif()
-    if(MCC_DISABLE_RPATH AND MCC_BUILD_STATIC_LIB)
+    if(NOT MCC_ENABLE_RPATH AND MCC_BUILD_STATIC_LIB)
         message(WARNING
-            "mcc config: MCC_DISABLE_RPATH has no effect with a static libmcc "
+            "mcc config: MCC_ENABLE_RPATH=OFF has no effect with a static libmcc "
             "(MCC_BUILD_STATIC_LIB=ON); rpath is only baked for a shared libmcc.")
     endif()
-    if(MCC_BUILD_STATIC_EXE AND NOT MCC_ONE_SOURCE AND NOT MCC_BUILD_STATIC_LIB)
+    if(MCC_BUILD_STATIC_EXE AND NOT MCC_SINGLE_SOURCE AND NOT MCC_BUILD_STATIC_LIB)
         message(WARNING
-            "mcc config: MCC_BUILD_STATIC_EXE=ON with MCC_ONE_SOURCE=OFF links "
+            "mcc config: MCC_BUILD_STATIC_EXE=ON with MCC_SINGLE_SOURCE=OFF links "
             "mcc-static (-static) against the libmcc archive, but "
             "MCC_BUILD_STATIC_LIB=OFF builds a shared libmcc — the static link "
             "cannot resolve libmcc.so. Enable MCC_BUILD_STATIC_LIB, or keep "
-            "MCC_ONE_SOURCE=ON so mcc-static is self-contained.")
+            "MCC_SINGLE_SOURCE=ON so mcc-static is self-contained.")
     endif()
-    if(NOT MCC_CONFIG_ASM AND NOT MCC_RTLIB_USE_HOSTCC)
-        mcc_autocorrect(MCC_RTLIB_USE_HOSTCC ON
+    if(NOT MCC_CONFIG_ASM AND NOT MCC_MCCRT_USE_HOSTCC)
+        mcc_autocorrect(MCC_MCCRT_USE_HOSTCC ON
             "asm disabled: mccrt .S sources must be built with the host CC")
     endif()
     if(NOT MCC_TOOLCHAIN_PROFILE STREQUAL "auto"
@@ -975,7 +975,7 @@ if(_is_matrix AND NOT MCC_SUPERBUILD_CHILD)
 endif()
 
 if(MCC_TOOLCHAIN_PROFILE STREQUAL "mcc")
-    mcc_profile_seed(MCC_ONE_SOURCE ON)
+    mcc_profile_seed(MCC_SINGLE_SOURCE ON)
 elseif(MCC_TOOLCHAIN_PROFILE STREQUAL "msvc")
 
 endif()
@@ -983,13 +983,6 @@ endif()
 mcc_config_node(MCC_ENABLE_CROSS  TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Build all cross compilers (Makefile: make cross)")
 
-if(DEFINED MCC_BUILD_STATIC AND NOT DEFINED MCC_BUILD_STATIC_LIB)
-    message(WARNING
-        "mcc config: MCC_BUILD_STATIC is deprecated; use MCC_BUILD_STATIC_LIB "
-        "(libmcc.a vs .so) and/or MCC_BUILD_STATIC_EXE (static executable). "
-        "Forwarding MCC_BUILD_STATIC='${MCC_BUILD_STATIC}' to MCC_BUILD_STATIC_LIB.")
-    mcc_profile_seed(MCC_BUILD_STATIC_LIB "${MCC_BUILD_STATIC}")
-endif()
 mcc_config_node(MCC_BUILD_STATIC_LIB TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Build libmcc.a (ON) instead of shared libmcc (OFF)")
 mcc_config_node(MCC_BUILD_STATIC_EXE TYPE BOOL DEFAULT OFF GROUP "Build targets"
@@ -997,7 +990,7 @@ mcc_config_node(MCC_BUILD_STATIC_EXE TYPE BOOL DEFAULT OFF GROUP "Build targets"
 mcc_config_node(MCC_BUILD_DYNAMIC_LIB TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Also build a shared libmcc (libmcc.so) alongside the static libmcc.a")
 mcc_config_node(MCC_BUILD_DYNAMIC_EXE TYPE BOOL DEFAULT ON  GROUP "Build targets"
-    HELP "Build mcc-dynamic: a non-one-source driver TU linked against the primary libmcc (needs MCC_ONE_SOURCE=OFF; skipped otherwise)")
+    HELP "Build mcc-dynamic: a non-single-source driver TU linked against the primary libmcc (needs MCC_SINGLE_SOURCE=OFF; skipped otherwise)")
 mcc_config_node(MCC_BUILD_MUSL       TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Also build musl-targeting compiler variants (mcc*-musl) beside the glibc ones")
 if(APPLE AND MCC_BUILD_STATIC_EXE)
@@ -1006,20 +999,20 @@ if(APPLE AND MCC_BUILD_STATIC_EXE)
 endif()
 mcc_config_node(MCC_BUILD_STRIP      TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Strip symbols from the mcc executable(s) at link (-s)")
-mcc_config_node(MCC_DISABLE_RPATH TYPE BOOL DEFAULT OFF GROUP "Build targets"
-    HELP "Do not bake -rpath into binaries linking libmcc.so"
+mcc_config_node(MCC_ENABLE_RPATH TYPE BOOL DEFAULT ON GROUP "Build targets"
+    HELP "Bake -rpath into binaries linking libmcc.so so they find the shared lib at runtime"
     VISIBLE_WHEN "NOT MCC_BUILD_STATIC_LIB")
-mcc_config_node(MCC_ONE_SOURCE    TYPE BOOL DEFAULT ON  GROUP "Build targets"
-    HELP "Build libmcc from a single TU (Makefile: ONE_SOURCE)")
+mcc_config_node(MCC_SINGLE_SOURCE    TYPE BOOL DEFAULT ON  GROUP "Build targets"
+    HELP "Build libmcc from a single TU (Makefile: SINGLE_SOURCE)")
 mcc_config_node(MCC_BUILD_TESTS   TYPE BOOL DEFAULT ON  GROUP "Build targets"
     HELP "Build/enable the test suite (tests/Makefile)")
-mcc_config_node(MCC_DIAGNOSTICS TYPE BOOL DEFAULT OFF GROUP "Diagnostics" ADVANCED
+mcc_config_node(MCC_ALL_DIAGNOSTICS TYPE BOOL DEFAULT OFF GROUP "Diagnostics" ADVANCED
     HELP "Everything-on diagnostics: verbose warnings + debug info + build mcc_s/mcc_p/mcc_c")
-if(MCC_DIAGNOSTICS)
+if(MCC_ALL_DIAGNOSTICS)
 
     if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
 
-        if(WIN32 OR MCC_CONFIG_MINGW32)
+        if(WIN32 OR MCC_CONFIG_MINGW)
             message(STATUS "mcc diagnostics: skipping mcc_s (-fsanitize) on a PE/mingw "
                            "target (mingw ships no libasan/libubsan)")
         elseif(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
@@ -1048,15 +1041,15 @@ mcc_config_node(MCC_BUILD_COVERAGE TYPE BOOL DEFAULT OFF GROUP "Diagnostics"
     HELP "Also build mcc_c (coverage instrumentation)")
 mcc_config_node(MCC_BUILD_SANITIZE TYPE BOOL DEFAULT OFF GROUP "Diagnostics"
     HELP "Also build mcc_s (-fsanitize=address,undefined)")
-mcc_config_node(MCC_RTLIB_USE_HOSTCC TYPE BOOL DEFAULT OFF GROUP "Build targets"
+mcc_config_node(MCC_MCCRT_USE_HOSTCC TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Build the native mccrt with the host CC instead of mcc (faster bcheck)")
-mcc_config_node(MCC_EMBED_RTLIB TYPE BOOL DEFAULT ON GROUP "Build targets"
+mcc_config_node(MCC_EMBED_MCCRT TYPE BOOL DEFAULT ON GROUP "Build targets"
     HELP "Bake libmccrt.a into the mcc binary (self-contained; no sidecar .a needed). Forces the native mccrt to be host-CC built to break the build cycle. ELF/Mach-O only.")
 mcc_config_node(MCC_CONFIG_AUTOCORRECT TYPE BOOL DEFAULT OFF GROUP "Build targets" ADVANCED
     HELP "Non-strict mode: auto-correct inert/non-runnable config combinations instead of only warning")
 
-mcc_config_node(MCC_CONFIG_MINGW32  TYPE BOOL DEFAULT OFF GROUP "mcc features"
-    HELP "Build a WIN32/mingw32 target (input: forces MCC_TARGETOS=WIN32)")
+mcc_config_node(MCC_CONFIG_MINGW  TYPE BOOL DEFAULT OFF GROUP "mcc features"
+    HELP "Build a WIN32/mingw target (input: forces MCC_TARGETOS=WIN32)")
 mcc_config_node(MCC_CONFIG_BACKTRACE TYPE BOOL DEFAULT ON GROUP "mcc features"
     HELP "Enable stack backtraces (-bt / -run)")
 mcc_config_node(MCC_CONFIG_BCHECK   TYPE BOOL DEFAULT ON GROUP "mcc features"
@@ -1072,7 +1065,7 @@ mcc_config_node(MCC_CONFIG_PIE      TYPE BOOL DEFAULT OFF GROUP "mcc features"
 mcc_config_node(MCC_CONFIG_PIC      TYPE BOOL DEFAULT OFF GROUP "mcc features"
     HELP "Position independent code"
     VISIBLE_WHEN "${_elf}")
-mcc_config_node(MCC_WITH_SELINUX    TYPE BOOL DEFAULT OFF GROUP "mcc features"
+mcc_config_node(MCC_RUN_MMAP_EXEC    TYPE BOOL DEFAULT OFF GROUP "mcc features"
     HELP "Use mmap for executable memory (mcc -run)")
 mcc_config_node(MCC_CONFIG_NEW_DTAGS TYPE BOOL DEFAULT OFF GROUP "mcc features"
     HELP "Use DT_RUNPATH instead of DT_RPATH (mcc-emitted; always relevant on ELF)"
@@ -1142,7 +1135,7 @@ else()
     message(FATAL_ERROR "Unsupported CPU '${_proc}' (configure: Unsupported CPU)")
 endif()
 
-if(WIN32 OR CMAKE_SYSTEM_NAME MATCHES "Windows|MINGW|MSYS|CYGWIN" OR MCC_CONFIG_MINGW32)
+if(WIN32 OR CMAKE_SYSTEM_NAME MATCHES "Windows|MINGW|MSYS|CYGWIN" OR MCC_CONFIG_MINGW)
     set(MCC_TARGETOS "WIN32")
     set(MCC_LIBSUF ".lib")
     set(MCC_EXESUF ".exe")
@@ -1205,7 +1198,7 @@ elseif(MCC_TARGETOS STREQUAL "Android")
         set(MCC_SYSROOT "${_android_sysroot}")
     endif()
     set(MCC_CONFIG_NEW_DTAGS ON)
-    set(MCC_DISABLE_RPATH ON)
+    set(MCC_ENABLE_RPATH OFF)
     if("${MCC_CONFIG_DWARF}" STREQUAL "")
         set(MCC_CONFIG_DWARF 4)
     endif()
@@ -1379,7 +1372,7 @@ if(MCC_CC_NAME STREQUAL "gcc" AND MCC_GCC_MAJOR EQUAL 4
 endif()
 
 set(MCC_DIAG_FLAGS "")
-if(MCC_DIAGNOSTICS)
+if(MCC_ALL_DIAGNOSTICS)
     if(MSVC)
 
         foreach(_f /W4 /Zi)
@@ -1536,7 +1529,7 @@ elseif(MCC_CONFIG_LIBC STREQUAL "uClibc")
     list(APPEND _mccdefs "CONFIG_MCC_UCLIBC=1")
 endif()
 
-if(MCC_WITH_SELINUX)
+if(MCC_RUN_MMAP_EXEC)
     list(APPEND _mccdefs "CONFIG_SELINUX=1")
 endif()
 if(MCC_CONFIG_PIE)
@@ -1764,8 +1757,8 @@ function(mcc_add_libmcc tgt kind is_musl)
     endif()
     mcc_libmcc_output("${kind}" "${is_musl}" _oname)
     set_target_properties(${tgt} PROPERTIES OUTPUT_NAME "${_oname}" PREFIX "lib")
-    if(NOT MCC_ONE_SOURCE)
-        target_compile_definitions(${tgt} PRIVATE ONE_SOURCE=0)
+    if(NOT MCC_SINGLE_SOURCE)
+        target_compile_definitions(${tgt} PRIVATE SINGLE_SOURCE=0)
     else()
         set_source_files_properties(src/libmcc.c PROPERTIES OBJECT_DEPENDS "${_one_src_deps}")
     endif()
@@ -1785,7 +1778,7 @@ function(mcc_add_libmcc tgt kind is_musl)
     if(_mcc_extra_libs)
         target_link_libraries(${tgt} PUBLIC ${_mcc_extra_libs})
     endif()
-    if(MCC_DIAGNOSTICS)
+    if(MCC_ALL_DIAGNOSTICS)
         target_compile_options(${tgt} PRIVATE ${MCC_DIAG_FLAGS})
     endif()
     if(ARGN)
@@ -1796,14 +1789,14 @@ endfunction()
 set(LIBMCC_ALL_SRC ${MCC_CORE_SRC} ${MCC_BACKEND_SRC})
 list(REMOVE_ITEM LIBMCC_ALL_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/mcctools.c")
 
-if(MCC_ONE_SOURCE)
+if(MCC_SINGLE_SOURCE)
     set(LIBMCC_SRC src/libmcc.c)
 else()
     set(LIBMCC_SRC ${LIBMCC_ALL_SRC})
 endif()
 
 set(_one_src_deps "")
-if(MCC_ONE_SOURCE)
+if(MCC_SINGLE_SOURCE)
     foreach(_s IN LISTS LIBMCC_ALL_SRC)
         if(NOT _s STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}/src/libmcc.c")
             list(APPEND _one_src_deps "${_s}")
@@ -1859,7 +1852,7 @@ endif()
 if(MCC_BUILD_STRIP AND NOT MCC_CC_NAME STREQUAL "msvc")
     target_link_options(mcc PRIVATE ${MCC_STRIP_LDFLAG})
 endif()
-if(MCC_DIAGNOSTICS)
+if(MCC_ALL_DIAGNOSTICS)
     target_compile_options(mcc PRIVATE ${MCC_DIAG_FLAGS})
 endif()
 
@@ -1869,8 +1862,8 @@ if(MCC_BUILD_STATIC_EXE)
         "${CMAKE_CURRENT_SOURCE_DIR}/src/mcctools.c")
     set_target_properties(mcc_static PROPERTIES OUTPUT_NAME mcc-static)
     target_include_directories(mcc_static PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-    if(NOT MCC_ONE_SOURCE)
-        target_compile_definitions(mcc_static PRIVATE ONE_SOURCE=0)
+    if(NOT MCC_SINGLE_SOURCE)
+        target_compile_definitions(mcc_static PRIVATE SINGLE_SOURCE=0)
         target_link_libraries(mcc_static PRIVATE libmcc)
     endif()
     if(NOT MCC_TARGETOS STREQUAL "WIN32")
@@ -1895,19 +1888,19 @@ if(MCC_BUILD_STATIC_EXE)
     if(TARGET mcc_mccdefs)
         add_dependencies(mcc_static mcc_mccdefs)
     endif()
-    if(MCC_DIAGNOSTICS)
+    if(MCC_ALL_DIAGNOSTICS)
         target_compile_options(mcc_static PRIVATE ${MCC_DIAG_FLAGS})
     endif()
 endif()
 
-if(MCC_BUILD_DYNAMIC_EXE AND NOT MCC_ONE_SOURCE)
+if(MCC_BUILD_DYNAMIC_EXE AND NOT MCC_SINGLE_SOURCE)
     add_executable(mcc_dynamic src/mcc.c)
     set_source_files_properties(src/mcc.c PROPERTIES OBJECT_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/src/mcctools.c")
     set_target_properties(mcc_dynamic PROPERTIES OUTPUT_NAME mcc-dynamic)
-    target_compile_definitions(mcc_dynamic PRIVATE ONE_SOURCE=0)
+    target_compile_definitions(mcc_dynamic PRIVATE SINGLE_SOURCE=0)
     target_link_libraries(mcc_dynamic PRIVATE libmcc)
-    if(NOT MCC_BUILD_STATIC_LIB AND NOT MCC_DISABLE_RPATH)
+    if(NOT MCC_BUILD_STATIC_LIB AND MCC_ENABLE_RPATH)
         if(APPLE)
             set_target_properties(mcc_dynamic PROPERTIES
                 INSTALL_RPATH "@executable_path/../${CMAKE_INSTALL_LIBDIR};${CMAKE_INSTALL_FULL_LIBDIR}")
@@ -1924,11 +1917,11 @@ if(MCC_BUILD_DYNAMIC_EXE AND NOT MCC_ONE_SOURCE)
     if(MCC_BUILD_STRIP AND NOT MCC_CC_NAME STREQUAL "msvc")
         target_link_options(mcc_dynamic PRIVATE ${MCC_STRIP_LDFLAG})
     endif()
-    if(MCC_DIAGNOSTICS)
+    if(MCC_ALL_DIAGNOSTICS)
         target_compile_options(mcc_dynamic PRIVATE ${MCC_DIAG_FLAGS})
     endif()
-elseif(MCC_BUILD_DYNAMIC_EXE AND MCC_ONE_SOURCE)
-    message(STATUS "mcc: mcc-dynamic needs a multi-TU libmcc; skipped under MCC_ONE_SOURCE=ON")
+elseif(MCC_BUILD_DYNAMIC_EXE AND MCC_SINGLE_SOURCE)
+    message(STATUS "mcc: mcc-dynamic needs a multi-TU libmcc; skipped under MCC_SINGLE_SOURCE=ON")
 endif()
 
 if(MCC_BUILD_MUSL AND NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT APPLE)
@@ -2024,8 +2017,8 @@ if(MCC_BUILD_MUSL AND NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT APPLE)
         target_compile_definitions(mcc_static_musl PRIVATE ${_mccdefs_musl})
         target_include_directories(mcc_static_musl PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
         set_target_properties(mcc_static_musl PROPERTIES OUTPUT_NAME mcc-static-musl)
-        if(NOT MCC_ONE_SOURCE)
-            target_compile_definitions(mcc_static_musl PRIVATE ONE_SOURCE=0)
+        if(NOT MCC_SINGLE_SOURCE)
+            target_compile_definitions(mcc_static_musl PRIVATE SINGLE_SOURCE=0)
             target_link_libraries(mcc_static_musl PRIVATE ${_libmcc_musl})
         endif()
         target_link_libraries(mcc_static_musl PRIVATE m)
@@ -2051,14 +2044,14 @@ if(MCC_BUILD_MUSL AND NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT APPLE)
         endif()
     endif()
 
-    if(MCC_BUILD_DYNAMIC_EXE AND NOT MCC_ONE_SOURCE)
+    if(MCC_BUILD_DYNAMIC_EXE AND NOT MCC_SINGLE_SOURCE)
         add_executable(mcc_dynamic_musl src/mcc.c)
         set_source_files_properties(src/mcc.c PROPERTIES OBJECT_DEPENDS
             "${CMAKE_CURRENT_SOURCE_DIR}/src/mcctools.c")
-        target_compile_definitions(mcc_dynamic_musl PRIVATE ONE_SOURCE=0 ${_mccdefs_musl})
+        target_compile_definitions(mcc_dynamic_musl PRIVATE SINGLE_SOURCE=0 ${_mccdefs_musl})
         set_target_properties(mcc_dynamic_musl PROPERTIES OUTPUT_NAME mcc-dynamic-musl)
         target_link_libraries(mcc_dynamic_musl PRIVATE ${_libmcc_musl})
-        if(NOT MCC_BUILD_STATIC_LIB AND NOT MCC_DISABLE_RPATH)
+        if(NOT MCC_BUILD_STATIC_LIB AND MCC_ENABLE_RPATH)
             set_target_properties(mcc_dynamic_musl PROPERTIES INSTALL_RPATH "${CMAKE_INSTALL_FULL_LIBDIR}")
         endif()
         if(MCC_GITHASH)
@@ -2144,9 +2137,9 @@ if(MCC_BUILD_STATIC_EXE AND NOT MSVC AND NOT APPLE
     endforeach()
 endif()
 
-set(MCC_RTLIB_EXTRA_O runmain bt-exe bt-dll bt-log bcheck)
+set(MCC_MCCRT_EXTRA_O runmain bt-exe bt-dll bt-log bcheck)
 
-function(_mcc_rtlib_src obj outvar)
+function(_mcc_mccrt_src obj outvar)
     set(_lib "${CMAKE_CURRENT_SOURCE_DIR}/runtime/lib")
     set(_win "${CMAKE_CURRENT_SOURCE_DIR}/runtime/win32/lib")
     if(obj STREQUAL "crt1w")
@@ -2162,7 +2155,7 @@ function(_mcc_rtlib_src obj outvar)
     endif()
 endfunction()
 
-function(mcc_build_rtlib tname mcctgt cpu os native archive objdir out_extra)
+function(mcc_build_mccrt tname mcctgt cpu os native archive objdir out_extra)
     set(_common stdatomic atomic builtin alloca alloca-bt complex)
     if(cpu STREQUAL "i386" OR cpu STREQUAL "x86_64")
         set(_objs mccrt ${_common})
@@ -2171,7 +2164,7 @@ function(mcc_build_rtlib tname mcctgt cpu os native archive objdir out_extra)
     elseif(cpu STREQUAL "arm64" OR cpu STREQUAL "riscv64")
         set(_objs lib-arm64 ${_common})
     else()
-        message(FATAL_ERROR "mcc_build_rtlib: unknown cpu '${cpu}'")
+        message(FATAL_ERROR "mcc_build_mccrt: unknown cpu '${cpu}'")
     endif()
 
     set(_win OFF)
@@ -2244,7 +2237,7 @@ function(mcc_build_rtlib tname mcctgt cpu os native archive objdir out_extra)
     # Embedding bakes this archive INTO mcc, so the archive must not depend on the
     # mcc executable (that would be a build cycle). Building it with the host CC
     # breaks the cycle; the objects are portable C and fully equivalent.
-    if(native AND (MCC_RTLIB_USE_HOSTCC OR MCC_EMBED_RTLIB))
+    if(native AND (MCC_MCCRT_USE_HOSTCC OR MCC_EMBED_MCCRT))
         set(_use_gcc ON)
         set(_gccflags ${_mccdefs_flags}
                       -fPIC -fno-omit-frame-pointer -Wno-unused-function
@@ -2266,7 +2259,7 @@ function(mcc_build_rtlib tname mcctgt cpu os native archive objdir out_extra)
     set(_archived "")
     set(_extra "")
     foreach(obj IN LISTS _objs)
-        _mcc_rtlib_src("${obj}" _src)
+        _mcc_mccrt_src("${obj}" _src)
         if(_use_gcc)
             set(_cc "${CMAKE_C_COMPILER}")
             set(_flags ${_gccflags})
@@ -2284,7 +2277,7 @@ function(mcc_build_rtlib tname mcctgt cpu os native archive objdir out_extra)
                 list(APPEND _flags -bt)
             endif()
         endif()
-        if(obj IN_LIST MCC_RTLIB_EXTRA_O)
+        if(obj IN_LIST MCC_MCCRT_EXTRA_O)
             set(_out "${_extra_dir}/${obj}.o")
             list(APPEND _extra "${_out}")
         else()
@@ -2320,37 +2313,37 @@ endfunction()
 
 # Embedding streams the archive through a POSIX temp fd (mkstemp); not wired for
 # PE. Keep the on-disk sidecar there.
-if(MCC_EMBED_RTLIB AND MCC_TARGETOS STREQUAL "WIN32")
-    set(MCC_EMBED_RTLIB OFF)
-    message(STATUS "mcc: MCC_EMBED_RTLIB not supported on WIN32; using the sidecar libmccrt.a")
+if(MCC_EMBED_MCCRT AND MCC_TARGETOS STREQUAL "WIN32")
+    set(MCC_EMBED_MCCRT OFF)
+    message(STATUS "mcc: MCC_EMBED_MCCRT not supported on WIN32; using the sidecar libmccrt.a")
 endif()
 
 if(MCC_TARGETOS STREQUAL "WIN32")
-    set(MCC_RTLIB_ARCHIVE "${CMAKE_BINARY_DIR}/lib/libmccrt.a")
+    set(MCC_MCCRT_ARCHIVE "${CMAKE_BINARY_DIR}/lib/libmccrt.a")
 else()
-    set(MCC_RTLIB_ARCHIVE "${CMAKE_BINARY_DIR}/libmccrt.a")
+    set(MCC_MCCRT_ARCHIVE "${CMAKE_BINARY_DIR}/libmccrt.a")
 endif()
-mcc_build_rtlib(mccrt mcc "${MCC_CPU}" "${MCC_TARGETOS}" ON
-    "${MCC_RTLIB_ARCHIVE}" "${CMAKE_BINARY_DIR}/lib"
-    RTLIB_EXTRA_OBJS)
+mcc_build_mccrt(mccrt mcc "${MCC_CPU}" "${MCC_TARGETOS}" ON
+    "${MCC_MCCRT_ARCHIVE}" "${CMAKE_BINARY_DIR}/lib"
+    MCCRT_EXTRA_OBJS)
 
 # Bake libmccrt.a into the mcc binary: generate a byte-array TU from the archive
-# and link it into `mcc`, with MCC_EMBED_RTLIB=1 flipping mcc_add_runtime() over to
+# and link it into `mcc`, with MCC_EMBED_MCCRT=1 flipping mcc_add_runtime() over to
 # the embedded loader. Only the primary `mcc` target embeds; static/musl/cross
 # variants keep the on-disk sidecar. The archive is host-CC built (above), so this
 # introduces no build cycle.
-if(MCC_EMBED_RTLIB)
+if(MCC_EMBED_MCCRT)
     add_custom_command(
         OUTPUT "${CMAKE_BINARY_DIR}/mccrt_blob.c"
-        COMMAND "${CMAKE_COMMAND}" -DIN=${MCC_RTLIB_ARCHIVE}
+        COMMAND "${CMAKE_COMMAND}" -DIN=${MCC_MCCRT_ARCHIVE}
                 -DOUT=${CMAKE_BINARY_DIR}/mccrt_blob.c -DSYM=mccrt_blob
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/bin2c.cmake"
-        DEPENDS mccrt "${MCC_RTLIB_ARCHIVE}"
+        DEPENDS mccrt "${MCC_MCCRT_ARCHIVE}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/cmake/bin2c.cmake"
-        COMMENT "Embedding ${MCC_RTLIB_ARCHIVE} into mcc (mccrt_blob.c)"
+        COMMENT "Embedding ${MCC_MCCRT_ARCHIVE} into mcc (mccrt_blob.c)"
         VERBATIM)
     target_sources(mcc PRIVATE "${CMAKE_BINARY_DIR}/mccrt_blob.c")
-    target_compile_definitions(mcc PRIVATE MCC_EMBED_RTLIB=1)
+    target_compile_definitions(mcc PRIVATE MCC_EMBED_MCCRT=1)
 endif()
 
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/runtime/include/"
@@ -2410,7 +2403,7 @@ function(mcc_add_cross_mcc base_tgt base_out static_tgt static_out defs)
             endif()
             target_link_options(${_vt} PRIVATE -static)
         endif()
-        if(MCC_DIAGNOSTICS)
+        if(MCC_ALL_DIAGNOSTICS)
             target_compile_options(${_vt} PRIVATE ${MCC_DIAG_FLAGS})
         endif()
         if(MCC_GITHASH)
@@ -2508,7 +2501,7 @@ if(MCC_ENABLE_CROSS)
         mcc_add_cross_mcc(mcc-${_t} "mcc-${_t}"
                           mcc-${_t}-static "mcc-${_t}-static" _cross_defs)
 
-        mcc_build_rtlib(${_t}-mccrt mcc-${_t} "${_ccpu}" "${_cos}" OFF
+        mcc_build_mccrt(${_t}-mccrt mcc-${_t} "${_ccpu}" "${_cos}" OFF
             "${CMAKE_BINARY_DIR}/${_t}-libmccrt.a"
             "${CMAKE_BINARY_DIR}/lib-${_t}" _cross_extra)
         install(FILES "${CMAKE_BINARY_DIR}/${_t}-libmccrt.a"
@@ -2593,10 +2586,10 @@ install(FILES
     DESTINATION "${_mcc_cmakedir}")
 
 if(MCC_TARGETOS STREQUAL "WIN32")
-    install(FILES "${MCC_RTLIB_ARCHIVE}" ${RTLIB_EXTRA_OBJS}
+    install(FILES "${MCC_MCCRT_ARCHIVE}" ${MCCRT_EXTRA_OBJS}
         DESTINATION "${_mccdir}/lib")
 else()
-    install(FILES "${MCC_RTLIB_ARCHIVE}" ${RTLIB_EXTRA_OBJS}
+    install(FILES "${MCC_MCCRT_ARCHIVE}" ${MCCRT_EXTRA_OBJS}
         DESTINATION "${_mccdir}")
 endif()
 
@@ -3070,7 +3063,7 @@ if(MCC_BUILD_TESTS)
                 --cpu "${MCC_CPU}" --targetos "${MCC_TARGETOS}" --libc "${MCC_CONFIG_LIBC}"
                 --cpuver "${MCC_CPUVER}" --arm-eabi "${MCC_ARM_EABI}" --arm-vfp "${MCC_ARM_VFP}"
                 --arm-hardfloat "${MCC_ARM_HARDFLOAT}" --arm-idiv "${MCC_ARM_IDIV}"
-                --selinux "${MCC_WITH_SELINUX}" --pie "${MCC_CONFIG_PIE}" --pic "${MCC_CONFIG_PIC}"
+                --selinux "${MCC_RUN_MMAP_EXEC}" --pie "${MCC_CONFIG_PIE}" --pic "${MCC_CONFIG_PIC}"
                 --new-dtags "${MCC_CONFIG_NEW_DTAGS}" --codesign "${MCC_CONFIG_CODESIGN}"
                 --bcheck "${MCC_CONFIG_BCHECK}" --asm "${MCC_CONFIG_ASM}" --backtrace "${MCC_CONFIG_BACKTRACE}"
                 --new-macho "${MCC_CONFIG_NEW_MACHO}" --dwarf "${MCC_CONFIG_DWARF}" --semlock "${MCC_CONFIG_SEMLOCK}"

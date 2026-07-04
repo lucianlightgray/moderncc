@@ -31,13 +31,13 @@ jobs:
           - { preset: linux-clang-release,   arch: arm64,  runner: ubuntu-24.04-arm }
           - { preset: linux-gcc-musl,        arch: arm64,  runner: ubuntu-24.04-arm }
           - { preset: linux-gcc-static,          arch: x86_64, runner: ubuntu-latest }
-          - { preset: linux-gcc-onesource-off,   arch: x86_64, runner: ubuntu-latest }
+          - { preset: linux-gcc-multisource,   arch: x86_64, runner: ubuntu-latest }
           - { preset: linux-gcc-asm-off,         arch: x86_64, runner: ubuntu-latest }
           - { preset: linux-gcc-predefs-off,     arch: x86_64, runner: ubuntu-latest }
           - { preset: linux-gcc-pie,             arch: x86_64, runner: ubuntu-latest }
           - { preset: linux-gcc-dwarf,           arch: x86_64, runner: ubuntu-latest }
           - { preset: linux-gcc-diagnostics,     arch: x86_64, runner: ubuntu-latest }
-          - { preset: linux-gcc-asan,            arch: x86_64, runner: ubuntu-latest }
+          - { preset: linux-gcc-sanitize,            arch: x86_64, runner: ubuntu-latest }
     env:
       ART: mcc-${{ matrix.preset }}-${{ matrix.arch }}
     steps:

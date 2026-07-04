@@ -139,11 +139,11 @@ extern long double strtold(const char *__nptr, char **__endptr);
 #define PUB_FUNC
 #endif
 
-#ifndef ONE_SOURCE
-#define ONE_SOURCE 0
+#ifndef SINGLE_SOURCE
+#define SINGLE_SOURCE 0
 #endif
 
-#if ONE_SOURCE
+#if SINGLE_SOURCE
 #define ST_INLN static inline
 #define ST_FUNC static
 #define ST_DATA static
