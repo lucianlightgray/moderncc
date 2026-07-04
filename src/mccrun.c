@@ -262,7 +262,7 @@ redo:
 		if (copy == 2) {
 			if (n == 0)
 				continue;
-#ifdef CONFIG_SELINUX
+#ifdef CONFIG_RUN_MMAP_EXEC
 			if (k == 0)
 				continue;
 #endif

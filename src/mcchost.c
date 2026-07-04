@@ -945,7 +945,7 @@ ST_FUNC void *host_runmem_alloc(unsigned *psize, int *ptr_diff) {
 	unsigned size = *psize;
 	void *ptr;
 	*ptr_diff = 0;
-#ifdef CONFIG_SELINUX
+#ifdef CONFIG_RUN_MMAP_EXEC
 	{
 		void *prw;
 		char tmpfname[] = "/tmp/.mccrunXXXXXX";
@@ -971,7 +971,7 @@ ST_FUNC void *host_runmem_alloc(unsigned *psize, int *ptr_diff) {
 }
 
 ST_FUNC void host_runmem_free(void *ptr, unsigned size) {
-#ifdef CONFIG_SELINUX
+#ifdef CONFIG_RUN_MMAP_EXEC
 	munmap(ptr, size);
 #elif defined _WIN32
 	(void)size;

@@ -1066,7 +1066,7 @@ mcc_config_node(MCC_CONFIG_PIC      TYPE BOOL DEFAULT OFF GROUP "mcc features"
     HELP "Position independent code"
     VISIBLE_WHEN "${_elf}")
 mcc_config_node(MCC_RUN_MMAP_EXEC    TYPE BOOL DEFAULT OFF GROUP "mcc features"
-    HELP "Use mmap for executable memory (mcc -run)")
+    HELP "Allocate -run executable memory via mmap (separate RW/RX) instead of mprotect; needed on SELinux/PaX hardened (W^X) kernels")
 mcc_config_node(MCC_CONFIG_NEW_DTAGS TYPE BOOL DEFAULT OFF GROUP "mcc features"
     HELP "Use DT_RUNPATH instead of DT_RPATH (mcc-emitted; always relevant on ELF)"
     VISIBLE_WHEN "${_elf}")
@@ -1530,7 +1530,7 @@ elseif(MCC_CONFIG_LIBC STREQUAL "uClibc")
 endif()
 
 if(MCC_RUN_MMAP_EXEC)
-    list(APPEND _mccdefs "CONFIG_SELINUX=1")
+    list(APPEND _mccdefs "CONFIG_RUN_MMAP_EXEC=1")
 endif()
 if(MCC_CONFIG_PIE)
     list(APPEND _mccdefs "CONFIG_MCC_PIE=1")
@@ -3063,7 +3063,7 @@ if(MCC_BUILD_TESTS)
                 --cpu "${MCC_CPU}" --targetos "${MCC_TARGETOS}" --libc "${MCC_CONFIG_LIBC}"
                 --cpuver "${MCC_CPUVER}" --arm-eabi "${MCC_ARM_EABI}" --arm-vfp "${MCC_ARM_VFP}"
                 --arm-hardfloat "${MCC_ARM_HARDFLOAT}" --arm-idiv "${MCC_ARM_IDIV}"
-                --selinux "${MCC_RUN_MMAP_EXEC}" --pie "${MCC_CONFIG_PIE}" --pic "${MCC_CONFIG_PIC}"
+                --run-mmap-exec "${MCC_RUN_MMAP_EXEC}" --pie "${MCC_CONFIG_PIE}" --pic "${MCC_CONFIG_PIC}"
                 --new-dtags "${MCC_CONFIG_NEW_DTAGS}" --codesign "${MCC_CONFIG_CODESIGN}"
                 --bcheck "${MCC_CONFIG_BCHECK}" --asm "${MCC_CONFIG_ASM}" --backtrace "${MCC_CONFIG_BACKTRACE}"
                 --new-macho "${MCC_CONFIG_NEW_MACHO}" --dwarf "${MCC_CONFIG_DWARF}" --semlock "${MCC_CONFIG_SEMLOCK}"

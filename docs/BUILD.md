@@ -250,7 +250,7 @@ These bake `CONFIG_*` values into the compiler and change its runtime behavior.
 | `MCC_CONFIG_PREDEFS` | BOOL | **ON** | | always | Compile `mccdefs.h` into the binary (c2str). OFF ⇒ runtime dependency on `<mccdefs.h>`. |
 | `MCC_CONFIG_PIE` | BOOL | OFF | | **ELF** | mcc emits position-independent executables. |
 | `MCC_CONFIG_PIC` | BOOL | OFF | | **ELF** | Position-independent code. |
-| `MCC_RUN_MMAP_EXEC` | BOOL | OFF | | always | Use `mmap` for executable memory (`mcc -run`). |
+| `MCC_RUN_MMAP_EXEC` | BOOL | OFF | | always | Allocate `-run` executable memory via `mmap` (separate RW/RX) instead of `mprotect`; needed on SELinux/PaX hardened (W^X) kernels. |
 | `MCC_CONFIG_NEW_DTAGS` | BOOL | OFF | | **ELF** | `DT_RUNPATH` instead of `DT_RPATH` (mcc-emitted). |
 | `MCC_AUTO_MCCDIR` | BOOL | **ON** | | always | Build-tree mcc auto-discovers `libmccrt.a` + headers locally, else system `CONFIG_MCCDIR`. |
 | `MCC_CONFIG_LIBC` | STRING | `''` | uClibc, musl, `''` | **ELF** | Target libc. `uClibc` is a legacy selector (warns). |

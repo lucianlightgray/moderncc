@@ -530,8 +530,8 @@ static int cmd_emit_defines(int argc, char **argv) {
 		EMIT("CONFIG_MCC_MUSL=1");
 	else if (!strcmp(libc, "uClibc"))
 		EMIT("CONFIG_MCC_UCLIBC=1");
-	if (truthy(fopt(argc, argv, "--selinux", "")))
-		EMIT("CONFIG_SELINUX=1");
+	if (truthy(fopt(argc, argv, "--run-mmap-exec", "")))
+		EMIT("CONFIG_RUN_MMAP_EXEC=1");
 	if (truthy(fopt(argc, argv, "--pie", "")))
 		EMIT("CONFIG_MCC_PIE=1");
 	if (truthy(fopt(argc, argv, "--pic", "")))

@@ -247,7 +247,7 @@ ST_FUNC const char *host_elf_interp_override(void);
 #if MCC_HOST_WIN32
 #define HOST_MPROTECT_FAILMSG "VirtualProtect failed"
 #else
-#define HOST_MPROTECT_FAILMSG "mprotect failed (did you mean to configure --with-selinux?)"
+#define HOST_MPROTECT_FAILMSG "mprotect failed — on an SELinux/PaX hardened (W^X) kernel, rebuild with -DMCC_RUN_MMAP_EXEC=ON"
 #endif
 
 ST_FUNC size_t host_pagesize(void);
