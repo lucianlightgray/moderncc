@@ -655,6 +655,7 @@ struct MCCState {
 	unsigned char trigraphs;
 	unsigned char freestanding;
 	unsigned char syntax_only;
+	unsigned char diag_no_caret; /* -fno-diagnostics-show-caret: suppress source/caret context */
 	unsigned char visibility;
 	unsigned char stack_protector;
 	unsigned char do_strip;

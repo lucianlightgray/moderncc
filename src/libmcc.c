@@ -546,11 +546,95 @@ enum { ERROR_WARN,
 	   ERROR_NOABORT,
 	   ERROR_ERROR };
 
+/* Append a clang-style source line + caret under the current diagnostic, e.g.
+ *
+ *   foo.c:12: error: ';' expected
+ *      12 |     int x = 1
+ *         |              ^
+ *
+ * Rendered only when the offending line is fully recoverable from the file's
+ * in-memory buffer. Source is streamed in IO_BUF_SIZE chunks and reused, so a
+ * line that crossed a refill boundary is no longer scannable; in that case (and
+ * during macro expansion, explicit-line diagnostics, or when disabled via
+ * -fno-diagnostics-show-caret) this appends nothing and the one-line form stands.
+ * The caret marks the current lexer position (just past the token), which is
+ * approximate but points at the right line/region. */
+static void append_caret_context(MCCState *s1, CString *cs, BufferedFile *f,
+								  int line, int bol_adj) {
+	const unsigned char *start, *end, *p, *cpos, *ls, *le;
+	int col, n, i;
+	char numbuf[16];
+
+	if (s1->diag_no_caret || !f || line <= 0)
+		return;
+	start = f->buffer;
+	end = f->buf_end;
+	p = f->buf_ptr;
+	if (!start || !end || !p || end < start || p < start || p > end)
+		return;
+
+	cpos = p;
+	if (bol_adj) {
+		/* buf_ptr sits at the start of the line *after* the error line; step
+		   back onto the newline that terminates the error line itself */
+		if (cpos <= start || cpos[-1] != '\n')
+			return;
+		cpos--;
+	} else if (cpos == end) {
+		if (cpos <= start)
+			return;
+		cpos--;
+	}
+
+	/* line bounds around cpos, never crossing out of the live buffer */
+	ls = cpos;
+	while (ls > start && ls[-1] != '\n')
+		ls--;
+	le = cpos;
+	while (le < end && *le != '\n')
+		le++;
+
+	n = (int)(le - ls);
+	if (n > 0 && ls[n - 1] == '\r') /* drop a CRLF carriage return */
+		n--;
+	if (n <= 0 || n > 512) /* empty, or implausibly long (minified / refilled) */
+		return;
+
+	col = (int)(cpos - ls);
+	if (col < 0)
+		col = 0;
+	if (col > n)
+		col = n;
+
+	snprintf(numbuf, sizeof(numbuf), "%d", line);
+
+	/* "  NN | <source line>" */
+	cstr_ccat(cs, '\n');
+	cstr_cat(cs, numbuf, (int)strlen(numbuf));
+	cstr_cat(cs, " | ", 3);
+	cstr_cat(cs, (const char *)ls, n);
+
+	/* "     | <padding>^" — keep tabs so the caret stays column-aligned */
+	cstr_ccat(cs, '\n');
+	for (i = 0; numbuf[i]; i++)
+		cstr_ccat(cs, ' ');
+	cstr_cat(cs, " | ", 3);
+	for (i = 0; i < col; i++)
+		cstr_ccat(cs, ls[i] == '\t' ? '\t' : ' ');
+	cstr_ccat(cs, '^');
+
+	/* Restore the CString invariant the printf helpers maintain: data[size] is a
+	   NUL not counted in size, so error_func / fprintf("%s") stop here. */
+	cstr_ccat(cs, '\0');
+	cs->size--;
+}
+
 static void error1(int mode, const char *fmt, va_list ap) {
 	BufferedFile **pf, *f;
 	MCCState *s1 = mcc_state;
 	CString cs;
 	int line = 0;
+	int explicit_line = 0, bol_adj = 0;
 
 	mcc_exit_state(s1);
 
@@ -583,7 +667,7 @@ static void error1(int mode, const char *fmt, va_list ap) {
 
 	cstr_new(&cs);
 	if (fmt[0] == '%' && fmt[1] == 'i' && fmt[2] == ':')
-		line = va_arg(ap, int), fmt += 3;
+		line = va_arg(ap, int), fmt += 3, explicit_line = 1;
 	f = NULL;
 	if (s1->error_set_jmp_enabled) {
 		for (f = file; f && f->filename[0] == ':'; f = f->prev)
@@ -593,8 +677,10 @@ static void error1(int mode, const char *fmt, va_list ap) {
 		for (pf = s1->include_stack; pf < s1->include_stack_ptr; pf++)
 			cstr_printf(&cs, "In file included from %s:%d:\n",
 						(*pf)->filename, (*pf)->line_num - 1);
-		if (0 == line)
-			line = f->line_num - ((tok_flags & TOK_FLAG_BOL) && !macro_ptr);
+		if (0 == line) {
+			bol_adj = (tok_flags & TOK_FLAG_BOL) && !macro_ptr;
+			line = f->line_num - bol_adj;
+		}
 		cstr_printf(&cs, "%s:%d: ", f->filename, line);
 	} else if (s1->current_filename) {
 		cstr_printf(&cs, "%s: ", s1->current_filename);
@@ -606,6 +692,8 @@ static void error1(int mode, const char *fmt, va_list ap) {
 		pp_error(&cs);
 	else
 		cstr_vprintf(&cs, fmt, ap);
+	if (f && !explicit_line && !macro_ptr)
+		append_caret_context(s1, &cs, f, line, bol_adj);
 	if (!s1->error_func) {
 		if (s1 && s1->output_type == MCC_OUTPUT_PREPROCESS && s1->ppfp == stdout)
 			printf("\n");
@@ -1726,6 +1814,7 @@ static const FlagDef options_f[] = {
 	{offsetof(MCCState, freestanding), 0, "freestanding"},
 	{offsetof(MCCState, freestanding), FD_INVERT, "hosted"},
 	{offsetof(MCCState, syntax_only), 0, "syntax-only"},
+	{offsetof(MCCState, diag_no_caret), FD_INVERT, "diagnostics-show-caret"},
 	{0, 0, NULL}};
 
 static const FlagDef options_m[] = {
