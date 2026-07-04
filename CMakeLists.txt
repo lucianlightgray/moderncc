@@ -1277,24 +1277,6 @@ if(MCC_CC_NAME STREQUAL "gcc" AND MCC_GCC_MAJOR EQUAL 4
     add_compile_options(-D_FORTIFY_SOURCE=0)
 endif()
 
-# mcc is TCC-derived and pervasively type-puns through the CValue/SValue unions
-# and the `vtop` value stack, and relies on wrap-around signed arithmetic. Like
-# upstream TCC's own build, it must be compiled with strict aliasing and signed
-# overflow assumptions disabled -- otherwise an aggressive optimizer (observed
-# with GCC 16 at -O3 on the Windows/mingw Release preset) is free to miscompile
-# the lexer's line tracking, surfacing as bogus diagnostic line numbers. These
-# flags only *remove* optimizer assumptions, so they are safe on every compiler
-# that accepts them; MSVC (no equivalent, and not affected) is left untouched.
-if(NOT MCC_CC_NAME STREQUAL "mcc" AND NOT MSVC)
-    foreach(_f -fno-strict-aliasing -fwrapv)
-        string(MAKE_C_IDENTIFIER "MCC_HAS${_f}" _v)
-        check_c_compiler_flag("${_f}" ${_v})
-        if(${_v})
-            add_compile_options(${_f})
-        endif()
-    endforeach()
-endif()
-
 set(MCC_DIAG_FLAGS "")
 if(MCC_DIAGNOSTICS)
     if(MSVC)
