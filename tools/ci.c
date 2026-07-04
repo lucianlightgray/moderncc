@@ -442,7 +442,7 @@ static int do_pkg(int argc, char **argv) {
 	const char *ver = NULL, *plat = NULL, *stage = "stage", *out = "out", *fmt = NULL;
 	const char *ext, *xsuf, *libdir, *pkg = "pkg";
 	char ver_s[128], probe[8192], src[8192], d[512], dd[8192], dstbin[8192], dstlib[8192];
-	char pkgbuf[4096], outbuf[4096];
+	char pkgbuf[4096], outbuf[4096], pkgscratch[8192];
 	int isd, i, iswin = MCC_HOST_WIN32;
 	Argv names = {{0}, 0};
 
@@ -489,9 +489,13 @@ static int do_pkg(int argc, char **argv) {
 		fprintf(stderr, "ci pkg: no staged install at '%s' (run cmake --install first)\n", stage);
 		return 1;
 	}
-	/* Only wipe the private scratch tree; `out` may be the shared dist/ root
-	 * that also holds the staged install we are reading from (stage == out
-	 * when both default to MCC_DIST_DIR), so it must never be removed here. */
+	/* Stage into a private scratch tree *inside* `out` (dist/ is gitignored, so
+	 * this leaves no stray dir in the source root). Only that scratch tree is
+	 * wiped: `out` may be the shared dist/ root that also holds the staged
+	 * install we are reading from (stage == out when both default to
+	 * MCC_DIST_DIR), so it must never be removed here. */
+	ts_path(pkgscratch, sizeof pkgscratch, out, ".pkg");
+	pkg = pkgscratch;
 	{
 		const char *rm[] = {"cmake", "-E", "rm", "-rf", pkg, 0};
 		ts_run(rm);
@@ -624,6 +628,12 @@ static int do_pkg(int argc, char **argv) {
 			}
 		}
 		free(sout);
+	}
+
+	/* Drop the scratch staging tree; the finished archives live in `out`. */
+	{
+		const char *rm[] = {"cmake", "-E", "rm", "-rf", pkg, 0};
+		ts_run(rm);
 	}
 
 	printf("== packaged (%s) ==\n", ext);

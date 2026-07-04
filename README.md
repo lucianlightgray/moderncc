@@ -18,6 +18,23 @@ from a single source tree. Trades an optimizer for speed, size, and portability;
 | **Safety**    | optional bounds checker (`-b`) and backtraces (`-bt`)                                                                                 |
 | **Cross**     | `mcc-<arch>` compilers via `MCC_ENABLE_CROSS`                                                                                         |
 
+## Downloads
+
+Prebuilt archives are attached to each
+[release](https://github.com/lucianlightgray/moderncc/releases), named
+`<what>-<version>-<os>-<arch>[-<cc>]` — `.tar.xz` on Linux/macOS, `.zip` on
+Windows. Pick by what you need:
+
+| Archive       | Contains                                                   | Grab it to…                        |
+|---------------|------------------------------------------------------------|------------------------------------|
+| `mcc-…`       | the `mcc` compiler + `-static`/`-dynamic`/`-musl` variants  | just compile C — the usual choice  |
+| `libmcc-…`    | headers, `libmcc` static/shared libs, CMake package config  | embed mcc as a library             |
+| `mcc-cross-…` | the `mcc-<arch>` cross compilers + per-target runtime       | cross-compile to other targets     |
+| `bundle-…`    | **all three of the above**, in one archive                 | grab everything at once            |
+
+Each platform also ships `checksums-<os>-<arch>.txt`, and every release carries a
+combined `SHA256SUMS.txt`.
+
 ## Comparisons
 
 `Y` = supported, `~` = partially supported, `-` = not supported.

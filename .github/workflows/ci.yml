@@ -57,11 +57,11 @@ jobs:
             -v "$PWD/dist:/dist" \
             mcc-ci
       - name: pack build targets
-        run: tar czf "$ART.tar.gz" -C dist "$ART"
+        run: tar cJf "$ART.tar.xz" -C dist "$ART"
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ART }}
-          path: ${{ env.ART }}.tar.gz
+          path: ${{ env.ART }}.tar.xz
 
   macos:
     name: ${{ matrix.preset }} / ${{ matrix.cc }}
@@ -99,11 +99,11 @@ jobs:
       - name: install + pack build targets
         run: |
           cmake --install cmake-${{ matrix.preset }}
-          tar czf "$ART.tar.gz" -C dist "$ART"
+          tar cJf "$ART.tar.xz" -C dist "$ART"
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ART }}
-          path: ${{ env.ART }}.tar.gz
+          path: ${{ env.ART }}.tar.xz
 
   msvc:
     name: msvc / ${{ matrix.arch }}
@@ -135,11 +135,11 @@ jobs:
       - name: install + pack build targets
         run: |
           cmake --install cmake-msvc --config Release
-          tar czf "${env:ART}.tar.gz" -C dist "${env:ART}"
+          tar cJf "${env:ART}.tar.xz" -C dist "${env:ART}"
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ART }}
-          path: ${{ env.ART }}.tar.gz
+          path: ${{ env.ART }}.tar.xz
 
   mingw:
     name: mingw / native
@@ -160,11 +160,11 @@ jobs:
       - name: install + pack build targets
         run: |
           cmake --install cmake-mingw
-          tar czf "${env:ART}.tar.gz" -C dist "${env:ART}"
+          tar cJf "${env:ART}.tar.xz" -C dist "${env:ART}"
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ART }}
-          path: ${{ env.ART }}.tar.gz
+          path: ${{ env.ART }}.tar.xz
 
   qemu:
     name: qemu / ${{ matrix.arch }} (glibc+musl)

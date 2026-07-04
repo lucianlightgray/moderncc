@@ -20,12 +20,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest,    plat: gcc-linux-x86_64,    preset: dist-linux-gcc }
-          - { os: ubuntu-24.04-arm, plat: gcc-linux-arm64,     preset: dist-linux-gcc }
-          - { os: ubuntu-latest,    plat: clang-linux-x86_64,  preset: dist-linux-clang }
-          - { os: ubuntu-24.04-arm, plat: clang-linux-arm64,   preset: dist-linux-clang }
-          - { os: macos-15,         plat: clang-macos-arm64,   preset: dist-macos }
-          - { os: macos-13,         plat: clang-macos-x86_64,  preset: dist-macos }
+          - { os: ubuntu-latest,    plat: linux-x86_64-gcc,    preset: dist-linux-gcc }
+          - { os: ubuntu-24.04-arm, plat: linux-arm64-gcc,     preset: dist-linux-gcc }
+          - { os: ubuntu-latest,    plat: linux-x86_64-clang,  preset: dist-linux-clang }
+          - { os: ubuntu-24.04-arm, plat: linux-arm64-clang,   preset: dist-linux-clang }
+          - { os: macos-15,         plat: macos-arm64-clang,   preset: dist-macos }
+          - { os: macos-13,         plat: macos-x86_64-clang,  preset: dist-macos }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -64,8 +64,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { runner: windows-latest, plat: msvc-windows-x86_64 }
-          - { runner: windows-11-arm, plat: msvc-windows-arm64 }
+          - { runner: windows-latest, plat: windows-x86_64-msvc }
+          - { runner: windows-11-arm, plat: windows-arm64-msvc }
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v5
@@ -84,7 +84,7 @@ jobs:
             dist/checksums-*.txt
 
   dist-mingw:
-    name: mingw-windows-x86_64
+    name: windows-x86_64-mingw
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -95,14 +95,14 @@ jobs:
         run: choco install ninja -y
       - name: configure + build + install (superbuild fetches winlibs GCC)
         run: |
-          cmake --preset dist-mingw "-DMCC_DIST_VERSION=${{ github.ref_name }}" "-DMCC_DIST_PLAT=mingw-windows-x86_64"
+          cmake --preset dist-mingw "-DMCC_DIST_VERSION=${{ github.ref_name }}" "-DMCC_DIST_PLAT=windows-x86_64-mingw"
           cmake --build --preset dist-mingw -j
           cmake --install cmake-dist-mingw
       - name: package
         run: cmake --build --preset dist-mingw --target package-dist
       - uses: actions/upload-artifact@v7
         with:
-          name: release-mingw-windows-x86_64
+          name: release-windows-x86_64-mingw
           path: |
             dist/*.zip
             dist/checksums-*.txt
