@@ -9,6 +9,7 @@ ST_DATA int parse_flags;
 ST_DATA struct BufferedFile *file;
 ST_DATA int tok;
 ST_DATA CValue tokc;
+static TokenSym *tok_ts;
 ST_DATA int tok_imaginary;
 ST_DATA const int *macro_ptr;
 ST_DATA CString tokcstr;
@@ -2975,6 +2976,7 @@ redo_no_start:
 			}
 			ts = tok_alloc(tokcstr.data, tokcstr.size);
 		}
+		tok_ts = ts;
 		tok = ts->tok;
 		break;
 	case 'u':
@@ -3849,7 +3851,7 @@ ST_FUNC void next(void) {
 		return;
 	}
 	if (t >= TOK_IDENT && (parse_flags & PARSE_FLAG_PREPROCESS)) {
-		Sym *s = define_find(t);
+		Sym *s = tok_ts->sym_define;
 		if (s) {
 			Sym *nested_list = NULL;
 			macro_subst_tok(&tokstr_buf, &nested_list, s);
