@@ -250,7 +250,12 @@ int __builtin_parityl(unsigned long x) __attribute__((alias("__mcc_builtin_parit
 int __builtin_parityll(unsigned long long x) __attribute__((alias("__mcc_builtin_parityll")));
 unsigned short __builtin_bswap16(unsigned short x) __attribute__((alias("__mcc_builtin_bswap16")));
 unsigned int __builtin_bswap32(unsigned int x) __attribute__((alias("__mcc_builtin_bswap32")));
-unsigned long long __builtin_bswap64(unsigned long long x) __attribute__((alias("__mcc_builtin_bswap64")));
+/* Clang types __builtin_bswap64 as uint64_t (unsigned long on LP64), so a C
+ * alias prototype declared 'unsigned long long' conflicts ("conflicting types");
+ * export the symbol with an assembler .set instead — as the Apple and ffs
+ * exports above do — so there is no C prototype for Clang to type-check. GCC
+ * accepts the .set here as well. */
+__asm__(".globl __builtin_bswap64\n\t.set __builtin_bswap64,__mcc_builtin_bswap64");
 #endif
 #endif
 

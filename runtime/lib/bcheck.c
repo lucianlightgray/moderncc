@@ -341,7 +341,10 @@ static unsigned char print_heap;
 static unsigned char print_statistic;
 static unsigned char no_strdup;
 static unsigned char use_sem;
-static _Atomic int never_fatal;
+/* Plain int, not _Atomic: the GNU __atomic_fetch_add used by atomic_fetch_add()
+ * is atomic on a plain int and accepts an int* (Clang rejects an _Atomic(int)*
+ * pointee for the non-_c11 builtin); every other access here is a plain read. */
+static int never_fatal;
 #if HAVE_TLS_FUNC
 #if defined(_WIN32)
 static int no_checking = 0;

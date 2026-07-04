@@ -2270,8 +2270,8 @@ function(mcc_build_mccrt tname mcctgt cpu os native archive objdir out_extra)
                       -Wno-unused-variable
                       -I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include -I${CMAKE_BINARY_DIR}
                       ${_arch_incs})
-        if(MCC_CONFIG_DWARF STREQUAL "")
-            set(_bflags_gcc -gstabs)
+        if(MCC_CONFIG_DWARF STREQUAL "" AND NOT CMAKE_C_COMPILER_ID MATCHES "Clang")
+            set(_bflags_gcc -gstabs)   # stabs debug info: gcc only (clang rejects -gstabs)
         else()
             set(_bflags_gcc -gdwarf)
         endif()

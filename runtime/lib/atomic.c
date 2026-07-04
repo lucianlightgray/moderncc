@@ -2905,21 +2905,36 @@ static void __mcc_byte_copy(volatile void *dst, const volatile void *src, __mcc_
 		*d++ = *s++;
 }
 
-void __atomic_load(__mcc_usize size, const volatile void *mem, void *ret, int order) {
+/* These four generic libatomic entry points carry names that Clang treats as
+ * compiler builtins and refuses to see defined in C ("cannot redeclare builtin
+ * function"); GCC and mcc accept the plain definitions. Emit each public symbol
+ * through an asm label on a non-builtin C identifier so every host compiler
+ * that builds the runtime (gcc/clang/mcc) accepts it. */
+void __mcc_atomic_load_(__mcc_usize size, const volatile void *mem, void *ret,
+						int order) __asm__("__atomic_load");
+void __mcc_atomic_store_(__mcc_usize size, volatile void *mem, void *val,
+						 int order) __asm__("__atomic_store");
+void __mcc_atomic_exchange_(__mcc_usize size, volatile void *mem, void *val,
+							void *ret, int order) __asm__("__atomic_exchange");
+int __mcc_atomic_compare_exchange_(__mcc_usize size, volatile void *mem,
+								   void *expected, void *desired, int success,
+								   int failure) __asm__("__atomic_compare_exchange");
+
+void __mcc_atomic_load_(__mcc_usize size, const volatile void *mem, void *ret, int order) {
 	(void)order;
 	__mcc_atomic_lock(mem);
 	__mcc_byte_copy(ret, mem, size);
 	__mcc_atomic_unlock(mem);
 }
 
-void __atomic_store(__mcc_usize size, volatile void *mem, void *val, int order) {
+void __mcc_atomic_store_(__mcc_usize size, volatile void *mem, void *val, int order) {
 	(void)order;
 	__mcc_atomic_lock(mem);
 	__mcc_byte_copy(mem, val, size);
 	__mcc_atomic_unlock(mem);
 }
 
-void __atomic_exchange(__mcc_usize size, volatile void *mem, void *val,
+void __mcc_atomic_exchange_(__mcc_usize size, volatile void *mem, void *val,
 					   void *ret, int order) {
 	(void)order;
 	__mcc_atomic_lock(mem);
@@ -2928,7 +2943,7 @@ void __atomic_exchange(__mcc_usize size, volatile void *mem, void *val,
 	__mcc_atomic_unlock(mem);
 }
 
-int __atomic_compare_exchange(__mcc_usize size, volatile void *mem,
+int __mcc_atomic_compare_exchange_(__mcc_usize size, volatile void *mem,
 							  void *expected, void *desired,
 							  int success, int failure) {
 	int ok = 1;
