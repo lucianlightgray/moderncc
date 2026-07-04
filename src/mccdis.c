@@ -6,7 +6,7 @@
 #define TYPE_PFX "@"
 #endif
 
-static char **g_uniq;
+#define g_uniq (s1->disasm_uniq)
 
 static void build_unique_names(MCCState *s1) {
 	int n = s1->symtab->data_offset / sizeof(ElfW(Sym));
@@ -62,7 +62,7 @@ static int reloc_field_size(int type) {
 }
 
 ST_FUNC const char *disasm_reloc(disasm_ctx *dc, addr_t off, int size, int *ptype) {
-	static char buf[256];
+	char *buf = dc->relocbuf;
 	Section *sr = dc->sec->reloc;
 	ElfW_Rel *rel;
 	if (!sr)
@@ -90,11 +90,11 @@ ST_FUNC const char *disasm_reloc(disasm_ctx *dc, addr_t off, int size, int *ptyp
 			addend += mcc_disasm_reloc_addend_bias(type, size);
 #endif
 			if (addend == 0)
-				snprintf(buf, sizeof buf, "%s", name);
+				snprintf(buf, sizeof dc->relocbuf, "%s", name);
 			else if (addend > 0)
-				snprintf(buf, sizeof buf, "%s+%lld", name, addend);
+				snprintf(buf, sizeof dc->relocbuf, "%s+%lld", name, addend);
 			else
-				snprintf(buf, sizeof buf, "%s-%lld", name, -addend);
+				snprintf(buf, sizeof dc->relocbuf, "%s-%lld", name, -addend);
 			return buf;
 		}
 	}
@@ -103,7 +103,7 @@ ST_FUNC const char *disasm_reloc(disasm_ctx *dc, addr_t off, int size, int *ptyp
 
 #ifdef MCC_HAVE_DISASM
 ST_FUNC const char *disasm_label(disasm_ctx *dc, addr_t target) {
-	static char buf[32];
+	char *buf = dc->labelbuf;
 	if (dc->collect && target < dc->size) {
 		int i;
 		for (i = 0; i < dc->nlabels; i++)
@@ -118,7 +118,7 @@ ST_FUNC const char *disasm_label(disasm_ctx *dc, addr_t target) {
 			dc->labels[dc->nlabels++] = target;
 		}
 	}
-	snprintf(buf, sizeof buf, ".L%llx", (unsigned long long)target);
+	snprintf(buf, sizeof dc->labelbuf, ".L%llx", (unsigned long long)target);
 	return buf;
 }
 

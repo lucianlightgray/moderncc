@@ -17,7 +17,7 @@ ACHTUNG!!! DO NOT DO!!! WARNING!!!
 
 • Implement/finish `-g` debugging/debugger and flesh out gdb/etc test cases
 • Can a fully static build use a minimalistic `-run` to sidestep the dynamic linking limitations and use libc or musl in-memory?
-• What is the purpose of libmcc1.a ? Can it be replaced with ctests?
+• What is the purpose of libmccrt.a ? Can it be replaced with ctests?
 • Use only human friendly warnings/errors, backed by tests that check formatted output against terminal dimensions/configuration
 • CST Database for Debugging, LSP, and Optimization data/layers
 • CST Database uses hierarchical incremental hashes to enable bidirectional lookups starting from any character index in any file

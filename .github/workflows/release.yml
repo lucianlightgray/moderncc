@@ -44,7 +44,7 @@ jobs:
           cmake --preset ${{ matrix.preset }} \
             "-DMCC_DIST_VERSION=${{ github.ref_name }}" "-DMCC_DIST_PLAT=${{ matrix.plat }}"
           cmake --build --preset ${{ matrix.preset }} -j"$(getconf _NPROCESSORS_ONLN)"
-          cmake --install cmake-build-${{ matrix.preset }}
+          cmake --install cmake-${{ matrix.preset }}
           if [ "${{ runner.os }}" = macOS ]; then
             strip -x stage/bin/mcc stage/bin/mcc-* 2>/dev/null || true
           fi
@@ -70,7 +70,7 @@ jobs:
         run: |
           cmake --preset dist-msvc "-DMCC_DIST_VERSION=${{ github.ref_name }}" "-DMCC_DIST_PLAT=${{ matrix.plat }}"
           cmake --build --preset dist-msvc -j
-          cmake --install cmake-build-dist-msvc --config Release
+          cmake --install cmake-dist-msvc --config Release
       - name: package
         run: cmake --build --preset dist-msvc --target package-dist
       - uses: actions/upload-artifact@v7
@@ -92,7 +92,7 @@ jobs:
         run: |
           cmake --preset dist-mingw "-DMCC_DIST_VERSION=${{ github.ref_name }}" "-DMCC_DIST_PLAT=mingw-windows-x86_64"
           cmake --build --preset dist-mingw -j
-          cmake --install cmake-build-dist-mingw
+          cmake --install cmake-dist-mingw
       - name: package
         run: cmake --build --preset dist-mingw --target package-dist
       - uses: actions/upload-artifact@v7

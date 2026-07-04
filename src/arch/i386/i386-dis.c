@@ -13,6 +13,7 @@ typedef struct {
 	int reg;
 	char rm[352];
 	int rm_is_mem;
+	char regbuf[8]; /* scratch for gpr() (formerly a function-local static) */
 } Dis;
 
 static unsigned char peek(Dis *d, int i) {
@@ -43,8 +44,8 @@ static const char *reg16[8] = {
 	"ax", "cx", "dx", "bx", "sp", "bp", "si", "di"};
 static const char *reg8[8] = {"al", "cl", "dl", "bl", "ah", "ch", "dh", "bh"};
 
-static const char *gpr(int size, int n) {
-	static char buf[8];
+static const char *gpr(Dis *d, int size, int n) {
+	char *buf = d->regbuf;
 	const char *nm;
 	switch (size) {
 	case 4:
@@ -57,7 +58,7 @@ static const char *gpr(int size, int n) {
 		nm = reg8[n & 7];
 		break;
 	}
-	snprintf(buf, sizeof buf, "%%%s", nm);
+	snprintf(buf, sizeof d->regbuf, "%%%s", nm);
 	return buf;
 }
 
@@ -72,7 +73,7 @@ static void modrm(Dis *d, int size) {
 
 	if (mod == 3) {
 		d->rm_is_mem = 0;
-		snprintf(d->rm, sizeof d->rm, "%s", gpr(size, rm));
+		snprintf(d->rm, sizeof d->rm, "%s", gpr(d, size, rm));
 		return;
 	}
 	d->rm_is_mem = 1;
@@ -207,9 +208,9 @@ static const char *alu8[8] =
 static void alu_rm(Dis *d, const char *name, int size, int dbit) {
 	modrm(d, size);
 	if (dbit)
-		P(d, "%s\t%s, %s", name, d->rm, gpr(size, d->reg));
+		P(d, "%s\t%s, %s", name, d->rm, gpr(d, size, d->reg));
 	else
-		P(d, "%s\t%s, %s", name, gpr(size, d->reg), d->rm);
+		P(d, "%s\t%s, %s", name, gpr(d, size, d->reg), d->rm);
 }
 
 static const char *cc[16] = {
@@ -260,12 +261,12 @@ static int decode(Dis *d) {
 
 		size = (lo & 1) ? vsize(d) : 1;
 		imm_ext(d, size, size, i1, sizeof i1);
-		P(d, "%s\t%s, %s", alu8[grp], i1, gpr(size, 0));
+		P(d, "%s\t%s, %s", alu8[grp], i1, gpr(d, size, 0));
 		return d->len;
 	}
 
 	if (op >= 0x40 && op <= 0x4f) {
-		P(d, "%s\t%s", op < 0x48 ? "inc" : "dec", gpr(vsize(d), op & 7));
+		P(d, "%s\t%s", op < 0x48 ? "inc" : "dec", gpr(d, vsize(d), op & 7));
 		return d->len;
 	}
 
@@ -278,7 +279,7 @@ static int decode(Dis *d) {
 	case 0x55:
 	case 0x56:
 	case 0x57:
-		P(d, "push\t%s", gpr(4, op & 7));
+		P(d, "push\t%s", gpr(d, 4, op & 7));
 		return d->len;
 	case 0x58:
 	case 0x59:
@@ -288,7 +289,7 @@ static int decode(Dis *d) {
 	case 0x5d:
 	case 0x5e:
 	case 0x5f:
-		P(d, "pop\t%s", gpr(4, op & 7));
+		P(d, "pop\t%s", gpr(d, 4, op & 7));
 		return d->len;
 	case 0x68:
 		imm(d, 4, i1, sizeof i1);
@@ -301,12 +302,12 @@ static int decode(Dis *d) {
 	case 0x69:
 		modrm(d, vsize(d));
 		imm_ext(d, vsize(d), vsize(d), i1, sizeof i1);
-		P(d, "imul\t%s, %s, %s", i1, d->rm, gpr(vsize(d), d->reg));
+		P(d, "imul\t%s, %s, %s", i1, d->rm, gpr(d, vsize(d), d->reg));
 		return d->len;
 	case 0x6b:
 		modrm(d, vsize(d));
 		imm_ext(d, 1, vsize(d), i1, sizeof i1);
-		P(d, "imul\t%s, %s, %s", i1, d->rm, gpr(vsize(d), d->reg));
+		P(d, "imul\t%s, %s, %s", i1, d->rm, gpr(d, vsize(d), d->reg));
 		return d->len;
 	case 0x70:
 	case 0x71:
@@ -356,13 +357,13 @@ static int decode(Dis *d) {
 	case 0x85:
 		size = (op & 1) ? vsize(d) : 1;
 		modrm(d, size);
-		P(d, "test\t%s, %s", gpr(size, d->reg), d->rm);
+		P(d, "test\t%s, %s", gpr(d, size, d->reg), d->rm);
 		return d->len;
 	case 0x86:
 	case 0x87:
 		size = (op & 1) ? vsize(d) : 1;
 		modrm(d, size);
-		P(d, "xchg\t%s, %s", gpr(size, d->reg), d->rm);
+		P(d, "xchg\t%s, %s", gpr(d, size, d->reg), d->rm);
 		return d->len;
 	case 0x88:
 	case 0x89:
@@ -373,7 +374,7 @@ static int decode(Dis *d) {
 		return d->len;
 	case 0x8d:
 		modrm(d, vsize(d));
-		P(d, "lea\t%s, %s", d->rm, gpr(vsize(d), d->reg));
+		P(d, "lea\t%s, %s", d->rm, gpr(d, vsize(d), d->reg));
 		return d->len;
 	case 0x90:
 		if (d->rep) {
@@ -404,9 +405,9 @@ static int decode(Dis *d) {
 		else
 			snprintf(abuf, sizeof abuf, "%s0x%lx", d->seg ? d->seg : "", a);
 		if (op & 2)
-			P(d, "mov\t%s, %s", gpr(size, 0), abuf);
+			P(d, "mov\t%s, %s", gpr(d, size, 0), abuf);
 		else
-			P(d, "mov\t%s, %s", abuf, gpr(size, 0));
+			P(d, "mov\t%s, %s", abuf, gpr(d, size, 0));
 		return d->len;
 	}
 	case 0xa4:
@@ -436,7 +437,7 @@ static int decode(Dis *d) {
 	case 0xa9:
 		size = (op & 1) ? vsize(d) : 1;
 		imm_ext(d, size, size, i1, sizeof i1);
-		P(d, "test\t%s, %s", i1, gpr(size, 0));
+		P(d, "test\t%s, %s", i1, gpr(d, size, 0));
 		return d->len;
 	case 0xb0:
 	case 0xb1:
@@ -447,7 +448,7 @@ static int decode(Dis *d) {
 	case 0xb6:
 	case 0xb7:
 		imm(d, 1, i1, sizeof i1);
-		P(d, "mov\t%s, %s", i1, gpr(1, op & 7));
+		P(d, "mov\t%s, %s", i1, gpr(d, 1, op & 7));
 		return d->len;
 	case 0xb8:
 	case 0xb9:
@@ -459,7 +460,7 @@ static int decode(Dis *d) {
 	case 0xbf:
 		size = vsize(d);
 		imm(d, size, i1, sizeof i1);
-		P(d, "mov\t%s, %s", i1, gpr(size, op & 7));
+		P(d, "mov\t%s, %s", i1, gpr(d, size, op & 7));
 		return d->len;
 	case 0xc0:
 	case 0xc1:
@@ -794,7 +795,7 @@ static int decode(Dis *d) {
 	case 0x4e:
 	case 0x4f:
 		modrm(d, vsize(d));
-		P(d, "cmov%s\t%s, %s", cc[op & 15], d->rm, gpr(vsize(d), d->reg));
+		P(d, "cmov%s\t%s, %s", cc[op & 15], d->rm, gpr(d, vsize(d), d->reg));
 		return d->len;
 	case 0x80:
 	case 0x81:
@@ -848,35 +849,35 @@ static int decode(Dis *d) {
 		return d->len;
 	case 0xa3:
 		modrm(d, vsize(d));
-		P(d, "bt\t%s, %s", gpr(vsize(d), d->reg), d->rm);
+		P(d, "bt\t%s, %s", gpr(d, vsize(d), d->reg), d->rm);
 		return d->len;
 	case 0xaf:
 		modrm(d, vsize(d));
-		P(d, "imul\t%s, %s", d->rm, gpr(vsize(d), d->reg));
+		P(d, "imul\t%s, %s", d->rm, gpr(d, vsize(d), d->reg));
 		return d->len;
 	case 0xb0:
 	case 0xb1:
 		size = (op & 1) ? vsize(d) : 1;
 		modrm(d, size);
-		P(d, "cmpxchg\t%s, %s", gpr(size, d->reg), d->rm);
+		P(d, "cmpxchg\t%s, %s", gpr(d, size, d->reg), d->rm);
 		return d->len;
 	case 0xb6:
 	case 0xb7:
 		modrm(d, op == 0xb6 ? 1 : 2);
 		P(d, "movz%c%c\t%s, %s", op == 0xb6 ? 'b' : 'w', sfx(vsize(d)),
-		  d->rm, gpr(vsize(d), d->reg));
+		  d->rm, gpr(d, vsize(d), d->reg));
 		return d->len;
 	case 0xbe:
 	case 0xbf:
 		modrm(d, op == 0xbe ? 1 : 2);
 		P(d, "movs%c%c\t%s, %s", op == 0xbe ? 'b' : 'w', sfx(vsize(d)),
-		  d->rm, gpr(vsize(d), d->reg));
+		  d->rm, gpr(d, vsize(d), d->reg));
 		return d->len;
 	case 0xc0:
 	case 0xc1:
 		size = (op & 1) ? vsize(d) : 1;
 		modrm(d, size);
-		P(d, "xadd\t%s, %s", gpr(size, d->reg), d->rm);
+		P(d, "xadd\t%s, %s", gpr(d, size, d->reg), d->rm);
 		return d->len;
 	default:
 		P(d, ".byte\t0x0f, 0x%02x", op);

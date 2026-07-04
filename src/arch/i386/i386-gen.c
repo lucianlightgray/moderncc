@@ -62,11 +62,11 @@ ST_DATA const int reg_classes[NB_REGS] = {
 	RC_FLOAT | RC_ST0,
 };
 
-static unsigned long func_sub_sp_offset;
-static int func_ret_sub;
+#define func_sub_sp_offset (mcc_state->cg_func_sub_sp_offset)
+#define func_ret_sub (mcc_state->cg_func_ret_sub)
 #ifdef CONFIG_MCC_BCHECK
-static addr_t func_bound_offset;
-static unsigned long func_bound_ind;
+#define func_bound_offset (mcc_state->cg_func_bound_offset)
+#define func_bound_ind (mcc_state->cg_func_bound_ind)
 ST_DATA int func_bound_add_epilog;
 static void gen_bounds_prolog(void);
 static void gen_bounds_epilog(void);

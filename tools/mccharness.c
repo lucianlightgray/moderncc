@@ -1244,9 +1244,9 @@ static int suite_penative(int argc, char **argv) {
 	}
 	if (host_stat(mcc, &isd, NULL, NULL))
 		ts_skip("no native mcc at %s", mcc);
-	ts_path(lib, sizeof lib, b, "lib/libmcc1.a");
+	ts_path(lib, sizeof lib, b, "lib/libmccrt.a");
 	if (host_stat(lib, &isd, NULL, NULL))
-		ts_skip("build tree %s has no lib/libmcc1.a", b);
+		ts_skip("build tree %s has no lib/libmccrt.a", b);
 	ts_path(conf, sizeof conf, src, "tests/qemu/conformance");
 	snprintf(Ib, sizeof Ib, "-B%s", b);
 	snprintf(Ibinc, sizeof Ibinc, "-I%s/include", b);
@@ -1390,6 +1390,10 @@ static int suite_qemufetch(int argc, char **argv) {
 
 	snprintf(ptrfile, sizeof ptrfile, "%s.ptr", dest);
 	snprintf(tarfile, sizeof tarfile, "%s.tar", dest);
+	/* Create dest up front: ptrfile/tarfile live in its parent, so curl -o
+	   would otherwise fail to create its output file on a fresh tree (the CI
+	   docker volume masks this; a local `ctest --preset qemu` hit it). */
+	host_mkdirs(dest);
 	{
 		const char *c[] = {"curl", "-fSL", "--retry", "3", "-o", ptrfile, ptrurl, 0};
 		if (run_quiet(c)) {
@@ -1404,7 +1408,6 @@ static int suite_qemufetch(int argc, char **argv) {
 		return 1;
 	}
 	free(ptxt);
-	host_mkdirs(dest);
 	snprintf(url, sizeof url, "%s/%s", mirrorbase, rel);
 	printf("qemufetch: downloading %s\n", url);
 	{
@@ -1579,14 +1582,14 @@ static int suite_pewine(int argc, char **argv) {
 		host_mkdirs(Blib);
 		ts_path(defs, sizeof defs, src, "runtime/win32/lib");
 		ts_path(objs, sizeof objs, xb, "lib-%s", tgt);
-		ts_path(a, sizeof a, xb, "%s-libmcc1.a", tgt);
+		ts_path(a, sizeof a, xb, "%s-libmccrt.a", tgt);
 		copy_glob(defs, "*.def", Blib);
 		copy_glob(objs, "*.o", Blib);
 		copy_glob(objs, "*.o", B);
 		if (!host_stat(a, &isd, NULL, NULL)) {
 			char d1[8192], d2[8192];
-			ts_path(d1, sizeof d1, Blib, "%s-libmcc1.a", tgt);
-			ts_path(d2, sizeof d2, B, "%s-libmcc1.a", tgt);
+			ts_path(d1, sizeof d1, Blib, "%s-libmccrt.a", tgt);
+			ts_path(d2, sizeof d2, B, "%s-libmccrt.a", tgt);
 			host_copy_file(a, d1, 0);
 			host_copy_file(a, d2, 0);
 		}
@@ -2885,8 +2888,8 @@ static int suite_pkgsmoke(int argc, char **argv) {
 	PUTX("bin/mcc-static", "x");
 	PUTX("bin/mcc-arm64", "x");
 	PUTX("bin/mcc-x86_64-win32", "x");
-	PUT("lib/mcc/libmcc1.a", "x");
-	PUT("lib/mcc/arm64-libmcc1.a", "x");
+	PUT("lib/mcc/libmccrt.a", "x");
+	PUT("lib/mcc/arm64-libmccrt.a", "x");
 	PUT("lib/libmcc-static.a", "x");
 	PUT("include/libmcc.h", "x");
 #undef PUT
@@ -2928,7 +2931,7 @@ static int suite_pkgsmoke(int argc, char **argv) {
 				printf("FAIL cross bundle missing mcc-arm64\n");
 				status = 1;
 			}
-			if (!ci_contains(o, "lib/mcc/arm64-libmcc1.a")) {
+			if (!ci_contains(o, "lib/mcc/arm64-libmccrt.a")) {
 				printf("FAIL cross bundle missing arm64 runtime\n");
 				status = 1;
 			}
@@ -2936,8 +2939,8 @@ static int suite_pkgsmoke(int argc, char **argv) {
 				printf("FAIL cross bundle leaked host shape mcc-static\n");
 				status = 1;
 			}
-			if (ci_contains(o, "/mcc/libmcc1.a")) {
-				printf("FAIL cross bundle leaked native libmcc1.a\n");
+			if (ci_contains(o, "/mcc/libmccrt.a")) {
+				printf("FAIL cross bundle leaked native libmccrt.a\n");
 				status = 1;
 			}
 		} else {

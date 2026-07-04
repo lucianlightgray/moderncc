@@ -3,55 +3,91 @@
 How to profile the `mcc` front end, what the numbers look like today, and the
 record of an optimization pass on the lexer (`next` / `next_nomacro`). Everything
 here is reproducible from the commands given — no figure is quoted without the
-command that produced it.
+command that produced it. Timings are taken with [`hyperfine`][hf] on a
+kernel-tuned quiet system (§3).
 
-- **Workload:** the `mcctest` translation unit, `tests/diff/full_language.c`
-  (416 lines + its `tests/diff/parts/*` and `runtime/include` headers), compiled
-  and run by `mcc` vs `gcc -O0` vs `clang -O0`. This is the same source the
-  `mcctest` differential test drives (see `mccharness mcctest`,
-  `CMakeLists.txt` ~2783), so the compile flags below mirror that harness.
-- **Host of record:** Linux x86-64, 32 cores, gcc 15.3.0, clang 22.1.8,
-  `perf_event_paranoid=2` (user-space sampling works; no root needed).
-- **Reference date:** 2026-07-03.
+[hf]: https://github.com/sharkdp/hyperfine
+
+- **Workloads:** two translation units, timed across a full spread of compilers
+  (§4):
+  - `tests/diff/full_language.c` — the `mcctest` differential TU (416 lines +
+    its `tests/diff/parts/*` and `runtime/include` headers). Small; the
+    established lexer-optimization workload (§6). Same source the `mcctest` test
+    drives (`mccharness mcctest`, `CMakeLists.txt` ~2783), so the compile flags
+    mirror that harness. **`-O0`-only:** its self-referential `__bug_table`
+    inline-asm (`tests/diff/parts/legacy_meta.h:364`) miscompiles/traps under any
+    optimizer, so it exercises the `-Ox` compilers at `-O0` and `-c` only (§4a).
+  - `src/mcc.c` — the one-source `mcc` amalgamation (the whole compiler in a
+    single TU, ~100 k preprocessed lines). Large; portable C that every compiler
+    builds at `-O0` and `-O2 -g`, so it carries the release columns and is the
+    self-host workload (§4b).
+- **The spread (§4):** each workload is compiled by seven builds —
+  `gcc-debug` (`-O0 -g`), `gcc-release` (`-O2 -g`), `clang-debug`,
+  `clang-release`, and three builds of `mcc` itself: `mcc-gcc` (gcc-built),
+  `mcc-clang` (clang-built), and self-hosted **`mcc-self`** (mcc-built) as the
+  baseline. Three more self-hosted variants were attempted — `mcc-static`,
+  `mcc-musl`, `mcc-static-musl` — and are documented as environment-limited
+  n/a in §4e.
+- **Host of record:** Linux x86-64 (Gentoo, kernel 6.18), 32 cores, gcc 15.3.0,
+  clang 22.1.8. Measurements pinned to core 2 with ASLR off, turbo off, and the
+  `performance` governor (§3a); `perf_event_paranoid` lowered to 1 for §5.
+- **Reference date:** 2026-07-04.
 
 ---
 
-## 1. Two builds: one to time, one to attribute
+## 1. The builds: three to compare, all to attribute
 
-The release compiler is stripped and frame-pointer-omitting, so `perf` can time
-it but cannot symbolize it. Keep two builds:
+Each `mcc` in the spread is a `RelWithDebInfo` (`-O2 -g`, unstripped, no
+bcheck/backtrace) build — the same shape as the old `cmake-prof`, so `perf`
+can both time and symbolize it. The only variable is the compiler that built it:
 
-| Build dir                     | Flags                              | Use                          |
-|-------------------------------|------------------------------------|------------------------------|
-| `cmake-build-linux-gcc-release` | `-O2`, stripped (`MCC_BUILD_STRIP=ON`) | wall-clock timing + `run exe` (representative) |
-| `cmake-build-prof`            | `-O2 -g`, **unstripped**, no bcheck/backtrace | `perf` self% + `perf annotate` |
+| Build dir                | Compiler of `mcc`            | Role in §4        |
+|--------------------------|------------------------------|-------------------|
+| `cmake-prof-gcc`   | `gcc -O2 -g`                 | `mcc-gcc`; also the `perf` build (§5) |
+| `cmake-prof-clang` | `clang -O2 -g`               | `mcc-clang`       |
+| `cmake-prof-mcc`   | `mcc` itself (bootstrapped by `cmake-prof-gcc/mcc`) | **`mcc-self`** — baseline |
 
-Stripping and `-g` do not change codegen speed, so the symbolized build is a
-faithful stand-in for `perf` attribution.
+Stripping and `-g` do not change codegen speed, so any of these is a faithful
+`perf` stand-in; `cmake-prof-gcc` is used for the attribution in §5.
 
 ```sh
-# timing build (canonical release)
-cmake --build --preset linux-gcc-release -j"$(nproc)"
+# gcc- and clang-built mcc (mcc-gcc, mcc-clang)
+for cc in gcc clang; do
+  cmake -S . -B cmake-prof-$cc -G Ninja \
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER=$cc \
+    -DMCC_BUILD_STRIP=OFF -DMCC_CONFIG_BCHECK=OFF -DMCC_CONFIG_BACKTRACE=OFF \
+    -DMCC_BUILD_MUSL=OFF -DMCC_ONE_SOURCE=ON
+  cmake --build cmake-prof-$cc --target mcc mccrt -j"$(nproc)"
+done
 
-# symbolized profiling build
-cmake -S . -B cmake-build-prof -G Ninja \
-  -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER=gcc \
+# self-hosted mcc (mcc-self) — bootstrapped by the gcc-built mcc
+cmake -S . -B cmake-prof-mcc -G Ninja \
+  -DCMAKE_C_COMPILER="$PWD/cmake-prof-gcc/mcc" -DMCC_TOOLCHAIN_PROFILE=mcc \
+  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
   -DMCC_BUILD_STRIP=OFF -DMCC_CONFIG_BCHECK=OFF -DMCC_CONFIG_BACKTRACE=OFF \
   -DMCC_BUILD_MUSL=OFF -DMCC_ONE_SOURCE=ON
-cmake --build cmake-build-prof --target mcc -j"$(nproc)"
+cmake --build cmake-prof-mcc --target mcc mccrt -j"$(nproc)"
 ```
 
-## 2. The compile invocations (mirror `mccharness mcctest`)
+> **Codegen is identical across the three.** `mcc`'s backend is deterministic and
+> host-compiler-independent: `cmp` on the `-c` object of either workload is
+> byte-identical whether emitted by `mcc-gcc`, `mcc-clang`, or `mcc-self`. So the
+> three differ only in *how fast the `mcc` binary runs*, never in what it emits —
+> which is exactly what makes `mcc-self` a clean bootstrap-cost baseline.
+
+## 2. The compile invocations
+
+### 2a. `full_language.c` (mirror `mccharness mcctest`)
 
 ```sh
 SRC=tests/diff/full_language.c
 DEFS="-DCC_NAME=CC_gcc -DGCC_MAJOR=15"           # clang: -DCC_NAME=CC_clang
-R=cmake-build-linux-gcc-release
+R=cmake-prof-gcc
 MINC="-B$R -Iruntime/include -I. -I$R"           # mcc include/lib flags
 CINC="-Iruntime/include -I. -I$R"                # gcc/clang include flags
-CFLAGS="-w -O0 -std=gnu11 -fno-omit-frame-pointer"
+CFLAGS="-w -O0 -g -std=gnu11"                    # release variant: -O2 -g
 
-$R/mcc $MINC $DEFS      $SRC -o out.mcc   -lm    # mcc
+$R/mcc $MINC $DEFS      $SRC -o out.mcc   -lm    # mcc-gcc / -clang / -self swap $R
 gcc            $CINC $DEFS   $CFLAGS $SRC -o out.gcc   -lm
 clang          $CINC -DCC_NAME=CC_clang -DGCC_MAJOR=15 $CFLAGS $SRC -o out.clang -lm
 ```
@@ -60,47 +96,199 @@ clang          $CINC -DCC_NAME=CC_clang -DGCC_MAJOR=15 $CFLAGS $SRC -o out.clang
 > **must** be given `CC_NAME=CC_clang` or it fails on gcc-only constructs (mcc,
 > like the differential harness, compiles the `CC_gcc` path).
 
-## 3. Timing method
+### 2b. `src/mcc.c` (the amalgamation)
 
-No `hyperfine` on the host; a pinned loop over N iterations is enough. Pin to one
-core, discard stdio, report ms/iter:
+The amalgamation's `-D`/`-I` set is large and generated; the faithful way to get
+it is straight from the self-host build, then swap only the compiler and `-O`:
 
 ```sh
-pin() { taskset -c 2 "$@"; }
-time_loop() { local n=$1; shift; local t0 t1
-  t0=$(date +%s.%N); for ((i=0;i<n;i++)); do "$@" >/dev/null 2>&1; done; t1=$(date +%s.%N)
-  awk -v a=$t0 -v b=$t1 -v n=$n 'BEGIN{printf "%.3f ms/iter\n",(b-a)/n*1000}'; }
+# exact flags the self-host build used for this TU (the -D/-I salad)
+BASE=$(ninja -C cmake-prof-mcc -t commands CMakeFiles/mcc.dir/src/mcc.c.o | tail -1)
+ARGS=${BASE#*/mcc }                                       # drop the compiler token
+ARGS=${ARGS/-o CMakeFiles\/mcc.dir\/src\/mcc.c.o /}       # drop -o <obj>; keeps -c src/mcc.c
 
-pin bash -c "$(declare -f time_loop); time_loop 200 $R/mcc $MINC $DEFS -E $SRC -o /dev/null"   # preprocess
-pin bash -c "$(declare -f time_loop); time_loop 100 $R/mcc $MINC $DEFS -c $SRC -o /tmp/o.o"    # compile -c
+gcc   -O2 $ARGS -o /tmp/o.o          # gcc-release  (-O0 for gcc-debug)
+clang -O2 $ARGS -o /tmp/o.o          # clang-release
+cmake-prof-gcc/mcc  $ARGS -o /tmp/o.o     # mcc-gcc   (mcc ignores -O)
+cmake-prof-mcc/mcc  $ARGS -o /tmp/o.o     # mcc-self
+# preprocess: replace `-c` with `-E`, `-o /tmp/o.o` with `-o /dev/null`
 ```
 
-Three phases are measured: **preprocess** (`-E`, the purest lexer/PP signal),
-**compile** (`-c`), and **run** (execute the produced binary). `preprocess -E` is
-the metric to watch for lexer changes.
+`src/mcc.c` needs no `CC_NAME` guard and no `-lm` — it is a library TU compiled
+`-c`, never linked to an exe, so its phases are **preprocess `-E`** and
+**compile `-c`** only.
 
-## 4. Baseline results
+## 3. Timing method — `hyperfine`
 
-`mcc` vs `gcc -O0` vs `clang -O0`, ms/iter (lower is better), pinned to one core:
+`hyperfine` handles warmup, outlier detection, and mean ± σ; pin it to one core
+so a busy 32-way host does not skew the samples. Its `-N`/`--shell=none` mode
+removes shell-spawn overhead — important for the `-E` phase, which is single-digit
+ms. It exports JSON for post-processing.
 
-| workload        |    mcc | gcc -O0 | clang -O0 | mcc/gcc | mcc/clang |
-|-----------------|-------:|--------:|----------:|--------:|----------:|
-| preprocess `-E` |  6.75  |  15.98  |   19.60   |  0.42×  |   0.34×   |
-| compile `-c`    |  8.23  | 217.86  |  124.69   |  0.04×  |   0.07×   |
-| compile→exe     |  9.29  | 231.33  |  147.30   |  0.04×  |   0.06×   |
-| run exe         | 10.08  |   9.23  |    9.83   |  1.09×  |   1.03×   |
+```sh
+HF="taskset -c 2 hyperfine -N --warmup 10 --min-runs 50 --style none"
 
-`mcc` preprocesses ~2.4× faster than clang and ~2.4× faster than gcc; it compiles
-the TU 15–26× faster (it is a simple, near-`-O0` codegen with an integrated
-assembler/linker, so this is expected). Runtime of the produced binary is on par
-across compilers (all effectively `-O0`).
+$HF --export-json prep.json \
+  -n mcc-gcc  "cmake-prof-gcc/mcc  $MINC $DEFS -E $SRC -o /dev/null" \
+  -n mcc-self "cmake-prof-mcc/mcc  -Bcmake-prof-mcc -Iruntime/include -I. \
+                 -Icmake-prof-mcc $DEFS -E $SRC -o /dev/null" \
+  -n gcc-debug "gcc $CINC $DEFS -w -O0 -g -std=gnu11 -E $SRC -o /dev/null"      # …etc
+```
+
+Up to four phases are measured: **preprocess** (`-E`, the purest lexer/PP signal),
+**compile** (`-c`), **compile→exe** (full link), and **run exe** (execute the
+produced binary). `preprocess -E` is the metric to watch for lexer changes.
+`src/mcc.c` is compile-only, so it uses just `-E` and `-c`.
+
+### 3a. Quiet-system kernel tuning (`sudo`)
+
+`hyperfine`'s own outlier warning is the tell: on a stock system, turbo/boost
+clock drift and ASLR jitter widen σ enough to swamp a 1–2 % lexer change. Four
+root-only knobs pin the environment; run them once before a measurement session
+(all reversible):
+
+```sh
+sudo sysctl -w kernel.randomize_va_space=0        # ASLR off: stable RSS + timings
+echo 0 | sudo tee /sys/devices/system/cpu/cpufreq/boost   # turbo off: no clock drift
+sudo cpupower frequency-set -g performance        # lock the governor (no ramp-up lag)
+sudo sysctl -w kernel.perf_event_paranoid=1       # let §5's perf sample without root
+```
+
+Turbo-off trades a little absolute speed for a much tighter σ — every figure in
+§4 was taken with all four set, so absolute ms here run slightly higher than a
+turbo-on box but are far more reproducible run-to-run. To restore: set
+`randomize_va_space=2`, `boost` back to `1`, and `perf_event_paranoid` back to
+your distro default (often `2` or `4`).
+
+## 4. The spread — seven builds, two workloads
+
+All figures ms unless noted, mean ± σ over ≥50 runs (≥15 for the multi-second
+`-O2` amalgamation), pinned to core 2, quiet-system config (§3a). Lower is
+better. Baseline for every ratio is **`mcc-self`**.
+
+### 4a. `full_language.c` (small TU — the `-O0` differential fixture)
+
+| config        | preprocess `-E` |  compile `-c` |  compile→exe |     run exe |
+|---------------|----------------:|--------------:|-------------:|------------:|
+| gcc-debug     |    34.19 ± 0.63 |   502.4 ± 3.0 |  533.9 ± 8.4 | 19.39 ± 0.11|
+| gcc-release   |           n/a ¹ |         n/a ¹ |        n/a ¹ |       n/a ¹ |
+| clang-debug   |    40.18 ± 0.82 |  336.6 ± 12.8 |  380.3 ± 3.0 | 21.00 ± 0.21|
+| clang-release |    40.90 ± 0.96 |   833.9 ± 2.8 |  881.2 ± 2.4 |      trap ² |
+| mcc-gcc       |    14.15 ± 0.11 |  17.40 ± 0.18 | 19.90 ± 0.24 | 21.34 ± 0.14|
+| mcc-clang     |    13.64 ± 0.13 |  17.51 ± 0.42 | 19.90 ± 0.25 | 21.38 ± 0.48|
+| **mcc-self**  |    21.36 ± 0.45 |  29.00 ± 0.23 | 32.79 ± 0.36 | 21.36 ± 0.16|
+
+Ratio vs `mcc-self`, `compile→exe`: gcc-debug **16.3×**, clang-debug 11.6×,
+clang-release 26.9×, mcc-gcc/mcc-clang **0.61×**. `mcc-self` builds the TU end to
+end in 33 ms — 16× under gcc's `-O0` and 27× under clang's `-O2`.
+
+> ¹ `gcc -O2` cannot build `full_language.c`. Its `__bug_table` inline-asm
+> (`tests/diff/parts/legacy_meta.h:364`) defines a *global* symbol inside
+> `get_asm_string()`; at `-O2` gcc inlines that function into every caller and
+> emits the symbol once per copy → assembler `symbol 'some_symbol' is already
+> defined`. `-fno-inline` clears the assembler error but the resulting binary
+> then segfaults — the fixture is genuinely `-O0`-only. Preprocessing is
+> optimization-independent, so `gcc-release -E` would simply equal `gcc-debug`'s.
+> The optimized-compile spread lives on `src/mcc.c` instead (§4b).
+>
+> ² `clang -O2` *compiles* the TU (it takes the `#ifndef __clang__` branch and
+> never sees the asm), so its `-E`/`-c`/`→exe` numbers are real — but the
+> optimized binary aborts at runtime (`SIGABRT`) on the same `-O0`-only
+> assumptions. `run exe` is only valid for the `-O0` builds and the (`-O0`-codegen)
+> `mcc` binaries, which all land at ~19–21 ms.
+
+### 4b. `src/mcc.c` (large TU — the amalgamation, carries the release columns)
+
+| config          | preprocess `-E` |   compile `-c` | `-c` vs mcc-self |
+|-----------------|----------------:|---------------:|-----------------:|
+| gcc-debug       |     127.4 ± 1.1 |     2060 ± 6   |           16.5×  |
+| gcc-release     |     133.8 ± 2.7 |    14812 ± 48  |          118.3×  |
+| clang-debug     |      98.5 ± 0.6 |     1023 ± 18  |            8.2×  |
+| clang-release   |     102.4 ± 0.7 |    12546 ± 53  |          100.2×  |
+| mcc-gcc         |      62.2 ± 0.5 |   72.55 ± 0.42 |           0.58×  |
+| mcc-clang       |      60.1 ± 0.5 |   73.67 ± 0.48 |           0.59×  |
+| **mcc-self**    |      95.0 ± 0.9 |  125.21 ± 0.62 |           1.00×  |
+| mcc-static      |             —   |        n/a ³   |             —    |
+| mcc-musl        |             —   |        n/a ⁴   |             —    |
+| mcc-static-musl |             —   |      n/a ³ ⁴   |             —    |
+
+`mcc-gcc` compiles the entire ~100 k-line amalgamation to an object in **73 ms**;
+`gcc -O2` needs **14.8 s** for the same TU — a **204×** gap — and `clang -O2`
+12.5 s. Even against a plain `-O0` reference, `mcc` is 14–28× faster. This is the
+near-`-O0`, integrated-assembler design paying off, and the gap *widens* with TU
+size and opt level (cf. §4a's 12–27×).
+
+### 4c. The self-host cost, and compiler-of-mcc parity
+
+Reading down the three `mcc` rows in both tables:
+
+- **`mcc-gcc` ≈ `mcc-clang`.** A gcc `-O2` and a clang `-O2` build of `mcc` run
+  within ~2 % of each other (amalgamation `-c`: 72.6 vs 73.7 ms; `-E`: 62 vs
+  60 ms). Which optimizing compiler bootstraps `mcc` does not matter.
+- **`mcc-self` is the outlier — ~1.7× slower to compile, ~1.5× to preprocess.**
+  Self-hosted `mcc` compiles the amalgamation in 125 ms vs 73 ms for the
+  `-O2`-built ones (1.7×), and preprocesses in 95 vs 61 ms (1.5×; `full_language.c
+  -E`: 21.4 vs 13.9 ms, also 1.5×). The reason is exactly the §4b headline
+  turned inward: `mcc`'s own near-`-O0` codegen produces a slower `mcc` binary
+  than `gcc -O2`/`clang -O2` do. That 1.7× *is* the measured cost of bootstrapping
+  the compiler with itself — and since all three emit byte-identical code (§1),
+  it is purely a speed-of-the-driver effect, not a code-quality one.
+
+### 4d. Memory — peak RSS (`/usr/bin/time -v`, compile `-c`)
+
+```sh
+taskset -c 2 /usr/bin/time -v <compile -c cmd> 2>&1 | grep 'Maximum resident'
+```
+
+| config        | `src/mcc.c` | `full_language.c` |
+|---------------|------------:|------------------:|
+| gcc-debug     |    149 MB   |      61.7 MB      |
+| gcc-release   |    325 MB   |        — ¹        |
+| clang-debug   |    140 MB   |     101.7 MB      |
+| clang-release |    234 MB   |     119.1 MB      |
+| mcc-gcc       |   11.9 MB   |       5.2 MB      |
+| mcc-clang     |   12.0 MB   |       5.3 MB      |
+| **mcc-self**  |   12.3 MB   |       5.3 MB      |
+
+`mcc`'s footprint is ~**12 MB** on a TU where `gcc -O2` needs **325 MB** (27×) and
+`clang -O2` 234 MB — and it is flat across the three `mcc` builds (same allocator,
+same codegen), so the self-host slowdown in §4c costs *time*, not *memory*. On the
+small TU `mcc` holds ~5.3 MB against gcc/clang's 62–119 MB.
+
+### 4e. The static / musl self-host variants — environment-limited on this host
+
+The four extra self-hosted `mcc` builds requested for the table cannot be
+produced on this glibc-only dev host; the failures are reproducible and are what
+the `n/a` cells above record:
+
+- **³ `mcc-static`, `mcc-static-musl` don't self-link.** `mcc`'s internal
+  `-static` linker leaves the compiler-runtime and unwinder unresolved —
+  `__ehdr_start` (a linker-synthesized symbol `mcc` does not define for a static
+  image), plus `__multf3`/`__addtf3`/… (128-bit soft-float) and
+  `_Unwind_Resume`/`__gcc_personality_v0`. Supplying `libmccrt.a` and the host
+  `libgcc.a` on the link line does not clear them (`__ehdr_start` cannot come
+  from an archive). The gcc-driven `linux-gcc-static` preset builds `mcc-static`
+  fine — gcc adds those libraries — so this is a gap in `mcc`'s *own* static
+  self-link, not a missing object.
+- **⁴ `mcc-musl`, `mcc-static-musl` have no musl to target.** There is no
+  `/lib/ld-musl-x86_64.so.1` and no musl `libc.{a,so}` on this host. The
+  `mcc-musl` target still *builds*, but it silently links the **glibc** loader
+  (`readelf -l` → `/lib64/ld-linux-x86-64.so.2`), so it is not a genuine musl
+  binary and would only duplicate `mcc-self` — measuring it would be misleading.
+  A real musl row needs a musl sysroot (the CI host's `release`/`linux-gcc-musl`
+  presets have one; this box does not).
 
 ## 5. Where the time goes — `perf` self%
 
+With `perf_event_paranoid=1` (§3a), user-space sampling needs no root. Attribute
+against the gcc-built profiling compiler (`cmake-prof-gcc`, symbolized
+`-O2 -g`):
+
 ```sh
-pin perf record --call-graph=fp -o perf.data -- \
-  bash -c "for i in {1..300}; do cmake-build-prof/mcc -Bcmake-build-prof \
-    -Iruntime/include -I. -Icmake-build-prof $DEFS -c $SRC -o /tmp/pp.o >/dev/null 2>&1; done"
+P=cmake-prof-gcc
+taskset -c 2 perf record --call-graph=fp -o perf.data -- \
+  bash -c "for i in {1..300}; do $P/mcc -B$P \
+    -Iruntime/include -I. -I$P $DEFS -c $SRC -o /tmp/pp.o >/dev/null 2>&1; done"
 perf report -i perf.data --stdio --no-children | grep -E '\[\.\]|\[k\]' | head -12
 ```
 
@@ -126,7 +314,9 @@ the lexer feeds) and the front end is the clear majority.
 ### 5a. Which instructions inside `next_nomacro` (perf annotate)
 
 ```sh
-pin perf record -o ann.data -- bash -c "for i in {1..400}; do …mcc -c $SRC -o /tmp/a.o; done"
+taskset -c 2 perf record -o ann.data -- \
+  bash -c "for i in {1..400}; do $P/mcc -B$P -Iruntime/include -I. -I$P \
+    $DEFS -c $SRC -o /tmp/a.o; done"
 perf annotate -i ann.data --stdio -s next_nomacro | sort -rn -k1 | head
 ```
 
@@ -144,6 +334,13 @@ The whitespace-skip loop (mccpp.c ~2779) **does not appear** — it is cold on t
 TU.
 
 ## 6. Optimization pass on `next` / `next_nomacro`
+
+> The absolute ms in this section (e.g. `6.75` for `full_language.c -E`) predate
+> the §3a quiet-system config: they were taken **turbo-on**, where this CPU
+> clocks ~2× higher, so they run about half the §4a figure (`14.15` turbo-off)
+> for the same work. Turbo-off narrows σ but not the *ratios* this pass turns on,
+> which are all within-config, so the conclusions are unaffected. Re-run against
+> `mcc-gcc … -E src/mcc.c` (§8) for the tighter modern floor.
 
 Four "less work per token" ideas were implemented **one at a time**, each
 validated across the full preset matrix (§7) and re-profiled. Result: the lexer
@@ -230,6 +427,17 @@ ctest --preset debug -R 'integer|float|hex|literal|suffix|asm|imaginary|complex'
   per-char `TOK_HASH_FUNC` cost. Both are riskier than the ideas tried here and
   want a bigger benchmark to see signal.
 - **Measure on a larger input.** 416 lines is too small to separate a 1–2% lexer
-  change from noise. A preprocessed amalgamation (e.g. the one-source `mcc` TU
-  itself, or `full_language.c` concatenated with distinct macro guards) would
-  lift the signal above the ±1% floor.
+  change from noise. The amalgamation spread (§4b) does exactly this: `src/mcc.c`
+  preprocesses in ~62 ms (`mcc-gcc`) with σ ≈ 0.5 ms — a ~0.8 % floor vs
+  `full_language.c`'s ~1 %, and 4× the absolute signal — so a lexer change now
+  shows up there long before it clears noise on the small TU. Re-run idea #1–#4
+  style experiments against `mcc-gcc … -E src/mcc.c`, not `full_language.c`.
+
+- **The full spread (§4) reframes "fast" quantitatively.** `mcc` is not merely
+  "faster than `-O0`": on the amalgamation it beats `gcc -O2` by **204×** in time
+  and **27×** in peak RSS, and the gap grows with TU size and opt level. The one
+  place `mcc` pays is bootstrapping itself — `mcc-self` runs ~1.7× slower than a
+  `gcc`/`clang`-`-O2`-built `mcc` (§4c) because its own near-`-O0` codegen is the
+  compiler it just built. Shrinking that 1.7× is the same problem as making `mcc`
+  emit faster code in general — i.e. the codegen backend, a different project from
+  the lexer work above.

@@ -7,7 +7,7 @@ ROOTS=/qemu-roots
 
 PRESET="${PRESET:-qemu}"
 JOBS="${JOBS:-$(nproc)}"
-BUILD="$SRC/cmake-build-$PRESET"
+BUILD="$SRC/cmake-$PRESET"
 
 if [ ! -e "$SRC_MOUNT/CMakeLists.txt" ]; then
     echo "error: mount the mcc repo at $SRC_MOUNT (docker run -v \"\$PWD\":/work ...)" >&2
@@ -17,7 +17,7 @@ fi
 echo "==> staging source $SRC_MOUNT -> $SRC"
 mkdir -p "$SRC" "$ROOTS"
 rsync -a --delete \
-    --exclude 'cmake-build*' \
+    --exclude 'cmake-*' \
     --exclude 'cmake-windows-*' \
     --exclude 'cmake-mingw-*' \
     --exclude 'cmake-clang' \

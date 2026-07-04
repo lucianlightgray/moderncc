@@ -176,8 +176,8 @@
 #endif
 #endif
 
-#ifndef MCC_LIBMCC1
-#define MCC_LIBMCC1 "libmcc1.a"
+#ifndef MCC_RTLIB
+#define MCC_RTLIB "libmccrt.a"
 #endif
 
 #ifndef CONFIG_MCC_CROSSPREFIX
@@ -556,6 +556,69 @@ struct sym_attr {
 #define PE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE 0x8000
 #endif
 
+/* --- types for parser/generator state rehomed into MCCState (from mccgen.c) --- */
+struct TinyAlloc;
+
+#define VLA_TRACK_MAX 512
+#define MAX_TEMP_LOCAL_VARIABLE_NUMBER 8
+#define SEQP_MAX 64
+
+struct scope {
+	struct scope *prev;
+	struct {
+		int loc, locorig, num;
+	} vla;
+	int vla_diag;
+	struct {
+		Sym *s;
+		int n;
+	} cl;
+	int *bsym, *csym;
+	Sym *lstk, *llstk;
+	unsigned char stdc_fp_contract, stdc_fenv_access, stdc_cx_limited;
+};
+
+struct switch_t {
+	struct case_t {
+		int64_t v1, v2;
+		int ind, line;
+	} **p;
+	int n;
+	int def_sym;
+	int nocode_wanted;
+	int *bsym;
+	struct scope *scope;
+	struct switch_t *prev;
+	SValue sv;
+	int vla_gpp;
+};
+
+struct temp_local_variable {
+	int location;
+	short size;
+	short align;
+};
+
+struct seqp_event {
+	Sym *obj;
+	unsigned long long off;
+	unsigned char kind;
+};
+
+#define ASM_CFI_MAX 1024
+struct asm_cfi_state {
+	int active;
+	Section *sec;
+	unsigned long start;
+	unsigned long last;
+	int nfde;
+	int have_factors;
+	unsigned long code_align;
+	long long data_align;
+	int len;
+	unsigned char buf[ASM_CFI_MAX];
+};
+
 struct MCCState {
 	unsigned char verbose;
 	unsigned char nostdinc;
@@ -850,6 +913,87 @@ struct MCCState {
 	char **argv;
 	char **link_argv;
 	int link_argc, link_optind;
+
+	/* --- code-generator state (rehomed from mccgen.c file statics) --- */
+	int gen_sizeof_parsed_type;
+	int gen_complex_re_tok, gen_complex_im_tok;
+	CType gen_complex_type_cache[4];
+	unsigned char gen_prec[256];
+
+	/* --- parser/generator state (rehomed from mccgen.c file statics) --- */
+	Sym *sym_free_first;
+	void **sym_pools;
+	int nb_sym_pools;
+	Sym *all_cleanups, *pending_gotos;
+	int local_scope;
+	SValue gen_vstack[1 + VSTACK_SIZE];
+	int func_old;
+	int cur_func_noreturn;
+	int cur_func_last_param;
+	int expr_was_assign;
+	int expr_has_effect;
+	int cur_func_inline_extern;
+	int ice_float_op;
+	int ice_nonconst;
+	CString initstr;
+	struct switch_t *cur_switch;
+	int atomic_lowering;
+	int in_for_init;
+	int vla_seq;
+	int vla_open_birth[VLA_TRACK_MAX];
+	int nb_vla_open;
+	int vla_track_ovf;
+	struct temp_local_variable arr_temp_local_vars[MAX_TEMP_LOCAL_VARIABLE_NUMBER];
+	int nb_temp_local_vars;
+	struct scope *cur_scope, *loop_scope, *root_scope;
+	struct seqp_event seqp_ev[SEQP_MAX];
+	int nb_seqp;
+	int seqp_overflow;
+
+	/* --- preprocessor/lexer state (rehomed from mccpp.c file statics) --- */
+	TokenSym *tok_ts;
+	TokenSym *hash_ident[TOK_HASH_SIZE];
+	char token_buf[STRING_MAX_SIZE + 1];
+	CString cstr_buf;
+	TokenString tokstr_buf;
+	TokenString unget_buf;
+	unsigned char isidnum_table[256 - CH_EOF];
+	int pp_debug_tok, pp_debug_symv;
+	int pp_counter;
+	int pp_debug_indent;
+	struct TinyAlloc *toksym_alloc;
+	struct TinyAlloc *tokstr_alloc;
+	TokenString *macro_stack;
+
+	/* --- disassembler state (rehomed from mccdis.c file static) --- */
+	char **disasm_uniq;
+
+	/* --- assembler state (rehomed from mccasm.c file statics) --- */
+	Section *last_text_section;
+	int asmgoto_n;
+	struct asm_cfi_state asm_cfi;
+
+	/* --- per-function codegen state (rehomed from arch/*-gen.c file statics;
+	   only the active target's backend is compiled, so shared names collapse
+	   onto shared fields here) --- */
+	unsigned long cg_func_sub_sp_offset;
+	int cg_func_ret_sub;
+	int cg_func_stack_chk_loc;
+	addr_t cg_func_bound_offset;
+	unsigned long cg_func_bound_ind;
+	int cg_func_scratch, cg_func_alloca;
+	/* arm */
+	int cg_arm_float_abi;
+	int cg_last_itod_magic;
+	int cg_leaffunc;
+	CType cg_float_type, cg_double_type, cg_func_float_type, cg_func_double_type;
+	/* arm64 */
+	unsigned long cg_arm64_func_va_list_stack;
+	int cg_arm64_func_va_list_gr_offs, cg_arm64_func_va_list_vr_offs;
+	int cg_arm64_func_sub_sp_offset;
+	unsigned cg_arm64_func_start_offset;
+	/* riscv64 */
+	int cg_num_va_regs, cg_func_va_list_ofs;
 };
 
 static inline int stdc_cx_limited(MCCState *s1) {
@@ -1406,6 +1550,12 @@ typedef struct disasm_ctx {
 	int collect;
 	addr_t *labels;
 	int nlabels, labels_cap;
+	/* per-context scratch return buffers (formerly function-local statics) */
+	char relocbuf[256];
+	char labelbuf[32];
+	/* rotating register-name pool for arm64 disasm (formerly a file static) */
+	char dis_namepool[8][24];
+	int dis_namepool_i;
 } disasm_ctx;
 
 ST_FUNC int asm_output_file(MCCState *s1, const char *filename);
@@ -1431,6 +1581,9 @@ ST_FUNC void mccelf_add_crtend(MCCState *s1);
 #endif
 #ifndef MCC_TARGET_PE
 ST_FUNC void mcc_add_runtime(MCCState *s1);
+#endif
+#ifdef MCC_EMBED_RTLIB
+ST_FUNC int mcc_add_rtlib_embedded(MCCState *s1);
 #endif
 
 #ifndef MCC_TARGET_PE

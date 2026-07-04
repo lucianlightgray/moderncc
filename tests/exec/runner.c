@@ -261,6 +261,17 @@ int main(int argc, char **argv) {
 	const char *emu = getenv("MCC_TEST_EMU");
 	if (!emu)
 		emu = "";
+	/* Cross mode: MCC_TEST_RUNEMU launches the *compiled exe* under an emulator
+	   (e.g. "qemu-aarch64 -L <sysroot>"), while the compiler (a host cross
+	   compiler) runs natively with MCC_TEST_SYSROOT flags. Only "run"-mode
+	   goldens apply; the -run/JIT modes need a native/foreign compiler. */
+	const char *runemu = getenv("MCC_TEST_RUNEMU");
+	const char *xsysroot = getenv("MCC_TEST_SYSROOT");
+	int cross = runemu && runemu[0];
+	if (!runemu)
+		runemu = "";
+	if (!xsysroot)
+		xsysroot = "";
 
 	const char *only = NULL;
 	int list_mode = 0;
@@ -308,6 +319,13 @@ int main(int argc, char **argv) {
 		char reason[256];
 		if (!req_met(g->req, reason, sizeof reason)) {
 			printf("SKIP  %-32s -- %s\n", g->name, reason);
+			skipped++;
+			continue;
+		}
+
+		if (cross && strcmp(g->mode, "run")) {
+			printf("SKIP  %-32s -- cross run: only compile-and-execute goldens\n",
+				   g->name);
 			skipped++;
 			continue;
 		}
@@ -378,9 +396,15 @@ int main(int argc, char **argv) {
 		} else {
 			char exe[4096];
 			snprintf(exe, sizeof exe, "%s/t2_%s.exe", work, g->name);
+			char xflags[6144] = "";
+			if (cross)
+				snprintf(xflags, sizeof xflags,
+						 "\"--sysroot=%s\" \"-isystem\" \"%s/usr/include\" "
+						 "\"-L%s/usr/lib64\" \"-L%s/lib64\" \"-L%s/usr/lib\" \"-L%s/lib\" ",
+						 xsysroot, xsysroot, xsysroot, xsysroot, xsysroot, xsysroot);
 			snprintf(cmd, sizeof cmd,
-					 "%s \"%s\" \"-B%s\" \"-I%s\" \"-I%s\" \"%s\" %s -o \"%s\" 2>&1",
-					 emu, mcc, bdir, idir, sup, path, g->flags, exe);
+					 "%s \"%s\" \"-B%s\" \"-I%s\" \"-I%s\" %s\"%s\" %s -o \"%s\" 2>&1",
+					 cross ? "" : emu, mcc, bdir, idir, sup, xflags, path, g->flags, exe);
 			char *cerr = run_capture(cmd, &rc);
 			if (rc != 0) {
 				printf("FAIL  %-32s (compile)\n%s", g->name, cerr);
@@ -389,7 +413,8 @@ int main(int argc, char **argv) {
 				continue;
 			}
 
-			snprintf(cmd, sizeof cmd, "cd \"%s\" && %s \"%s\" %s", work, emu, exe, xargs);
+			snprintf(cmd, sizeof cmd, "cd \"%s\" && %s \"%s\" %s", work,
+					 cross ? runemu : emu, exe, xargs);
 			char *prog = run_capture(cmd, &rc);
 
 			out = malloc(strlen(cerr) + strlen(prog) + 1);

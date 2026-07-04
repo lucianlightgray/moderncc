@@ -34,7 +34,7 @@ With `MCC_ENABLE_CROSS=ON` the same self-contained `mcc` shape is also built for
 every foreign target below (all are host binaries; the `-dynamic` shape is
 host-only, as there is no per-arch `libmcc`). Each takes a `-static` variant when
 `MCC_BUILD_STATIC_EXE=ON` (non-MSVC host) and `-musl` siblings when
-`MCC_BUILD_MUSL=ON`; each also produces its runtime archive `<arch>-libmcc1.a`:
+`MCC_BUILD_MUSL=ON`; each also produces its runtime archive `<arch>-libmccrt.a`:
 
 The CMake target ids equal the output binary names (`mcc-<arch>`):
 
@@ -117,7 +117,7 @@ name the same thing everywhere.
 **Conventions.** Generator is **Ninja** everywhere except the `msvc`/`dist-msvc`
 presets, which omit a generator so CMake picks the default Visual Studio
 generator (VS can't be driven by a fixed `-G` string across runner images).
-Every preset builds into `cmake-build-<presetName>/`. Names encode
+Every preset builds into `cmake-<presetName>/`. Names encode
 `platform[-compiler][-axis…]`; the compiler is baked in when it is a stable
 plain name (`gcc`/`clang`), and comes from `$env{CC}` only where the path is
 host-dynamic (macOS Homebrew gcc). Hidden bases are prefixed `_`
@@ -144,7 +144,7 @@ host-dynamic (macOS Homebrew gcc). Hidden bases are prefixed `_`
 | `linux-gcc-release`, `linux-clang-release` | `linux` | Release, stripped, bcheck/backtrace off |
 | `linux-gcc-static` | `linux` | + `MCC_BUILD_STATIC_EXE=ON` (`mcc-static`, `CONFIG_MCC_STATIC`) |
 | `linux-gcc-onesource-off` | `linux` | + `MCC_ONE_SOURCE=OFF` (multi-TU; builds `mcc-dynamic`) |
-| `linux-gcc-asm-off` | `linux` | + `MCC_CONFIG_ASM=OFF` (libmcc1 via host cc) |
+| `linux-gcc-asm-off` | `linux` | + `MCC_CONFIG_ASM=OFF` (mccrt via host cc) |
 | `linux-gcc-predefs-off` | `linux` | + `MCC_CONFIG_PREDEFS=OFF` (runtime mccdefs) |
 | `linux-gcc-pie` | `linux` | + `MCC_CONFIG_PIE=ON` `MCC_CONFIG_PIC=ON` |
 | `linux-gcc-dwarf` | `linux` | + `MCC_CONFIG_DWARF=5` |
@@ -216,7 +216,8 @@ host), enabling the kernel-fused apple-libc suite.
 | `MCC_DISABLE_RPATH` | BOOL | OFF | | **!static-lib** | Don't bake `-rpath` into binaries linking `libmcc.so` (relevant by default, since the lib is shared). |
 | `MCC_ONE_SOURCE` | BOOL | **ON** | | always | Build libmcc from a single TU (amalgamation). Also seeded ON by the `mcc` profile. Set OFF for a multi-TU library. |
 | `MCC_BUILD_TESTS` | BOOL | **ON** | | always | Build/enable the CTest suite. |
-| `MCC_LIBMCC1_USEGCC` | BOOL | OFF | | always | Build native `libmcc1` with the host CC instead of `mcc` (faster bcheck). Auto-forced ON when no emulator / asm disabled. |
+| `MCC_RTLIB_USE_HOSTCC` | BOOL | OFF | | always | Build native `mccrt` with the host CC instead of `mcc` (faster bcheck). Auto-forced ON when no emulator / asm disabled. |
+| `MCC_EMBED_RTLIB` | BOOL | **ON** | | always (ELF/Mach-O; forced OFF on WIN32) | Bake `libmccrt.a` into the `mcc` binary (self-contained; no sidecar `.a` needed at link time). The embedded loader streams it through a temp fd to the ordinary alacarte archive loader. Forces the native `mccrt` to be host-CC built (like `MCC_RTLIB_USE_HOSTCC`) to break the mcc→archive→mcc build cycle. Only the primary `mcc` target embeds; static/musl/cross variants keep the sidecar. |
 | `MCC_CONFIG_AUTOCORRECT` | BOOL | OFF | | always (advanced) | Non-strict: auto-correct inert/non-runnable combos instead of only warning. |
 | `MCC_MINGW_SOURCE` | STRING | `winlibs` | winlibs, multilib | always (advanced) | Source for the `mingw-toolchain` download. |
 
@@ -245,13 +246,13 @@ These bake `CONFIG_*` values into the compiler and change its runtime behavior.
 | `MCC_CONFIG_MINGW32` | BOOL | OFF | | always | Build a WIN32/mingw32 target (forces `MCC_TARGETOS=WIN32`). |
 | `MCC_CONFIG_BACKTRACE` | BOOL | **ON** | | always | Stack backtraces (`-bt` / `-run`). |
 | `MCC_CONFIG_BCHECK` | BOOL | **ON** | | **MCC_CONFIG_BACKTRACE** | Bounds checker (`-b`). Requires backtrace to link. |
-| `MCC_CONFIG_ASM` | BOOL | **ON** | | always | Integrated assembler (inline/global asm, `.s` files, asm labels). Disabling forces `MCC_LIBMCC1_USEGCC=ON`. |
+| `MCC_CONFIG_ASM` | BOOL | **ON** | | always | Integrated assembler (inline/global asm, `.s` files, asm labels). Disabling forces `MCC_RTLIB_USE_HOSTCC=ON`. |
 | `MCC_CONFIG_PREDEFS` | BOOL | **ON** | | always | Compile `mccdefs.h` into the binary (c2str). OFF ⇒ runtime dependency on `<mccdefs.h>`. |
 | `MCC_CONFIG_PIE` | BOOL | OFF | | **ELF** | mcc emits position-independent executables. |
 | `MCC_CONFIG_PIC` | BOOL | OFF | | **ELF** | Position-independent code. |
 | `MCC_WITH_SELINUX` | BOOL | OFF | | always | Use `mmap` for executable memory (`mcc -run`). |
 | `MCC_CONFIG_NEW_DTAGS` | BOOL | OFF | | **ELF** | `DT_RUNPATH` instead of `DT_RPATH` (mcc-emitted). |
-| `MCC_AUTO_MCCDIR` | BOOL | **ON** | | always | Build-tree mcc auto-discovers `libmcc1.a` + headers locally, else system `CONFIG_MCCDIR`. |
+| `MCC_AUTO_MCCDIR` | BOOL | **ON** | | always | Build-tree mcc auto-discovers `libmccrt.a` + headers locally, else system `CONFIG_MCCDIR`. |
 | `MCC_CONFIG_LIBC` | STRING | `''` | uClibc, musl, `''` | **ELF** | Target libc. `uClibc` is a legacy selector (warns). |
 | `MCC_CONFIG_DWARF` | STRING | `''` | 0, 2, 3, 4, 5, `''` | always | DWARF debug version; empty = stabs. |
 | `MCC_CONFIG_SEMLOCK` | STRING | `''` | numeric | always | `CONFIG_MCC_SEMLOCK` value; empty = mcc.h default (1). Must be numeric (fatal otherwise). |
@@ -377,7 +378,7 @@ declaration); test both the pass and the warn/fatal path. With
 - **`MCC_BUILD_SANITIZE` + WIN32** → fatal (mingw has no libasan/libubsan).
 - **`MCC_BUILD_PROFILE` + Darwin** → fatal (no static crt0).
 - **Cross-compiling with empty `MCC_EMULATOR`** → fatal (can't run the foreign
-  `mcc` to build libmcc1/tests/coverage). Autocorrect: force `MCC_LIBMCC1_USEGCC=ON`,
+  `mcc` to build mccrt/tests/coverage). Autocorrect: force `MCC_RTLIB_USE_HOSTCC=ON`,
   `MCC_BUILD_TESTS=OFF`, `MCC_BUILD_COVERAGE=OFF`. WIN32 shared lib still fatal
   (needs `mcc -impdef`).
 - **`MCC_CONFIG_BCHECK` + `!MCC_CONFIG_BACKTRACE`** → warn/autocorrect (bcheck is
@@ -393,7 +394,7 @@ declaration); test both the pass and the warn/fatal path. With
   (static archive when `MCC_BUILD_STATIC_LIB=ON`). The `dist-*` presets set
   `MCC_ONE_SOURCE=OFF`.
 - **`MCC_DISABLE_RPATH` + `MCC_BUILD_STATIC_LIB`** → warn (rpath only for shared lib).
-- **`!MCC_CONFIG_ASM`** → autocorrect `MCC_LIBMCC1_USEGCC=ON`.
+- **`!MCC_CONFIG_ASM`** → autocorrect `MCC_RTLIB_USE_HOSTCC=ON`.
 - **`MCC_TOOLCHAIN_PROFILE` ≠ detected `MCC_CC_NAME`** → warn (profile seeds
   defaults, does not switch compilers).
 - **`!MCC_CONFIG_PREDEFS`** → warn (runtime `<mccdefs.h>` dependency).
@@ -420,7 +421,7 @@ several of these already (§2).
    `MCC_ONE_SOURCE=OFF` + `MCC_BUILD_STATIC_LIB=ON` to cover the static-against-`libmcc.a` path.
 4. `MCC_ONE_SOURCE=OFF` (non-default multi-TU): `mcc`/`mcc-static` become
    driver-TU + `libmcc` builds; keeps the non-amalgamated compile path covered.
-5. `MCC_CONFIG_ASM=OFF` (forces libmcc1 via host CC).
+5. `MCC_CONFIG_ASM=OFF` (forces mccrt via host CC).
 6. `MCC_CONFIG_PREDEFS=OFF` (runtime mccdefs path).
 7. `MCC_CONFIG_BACKTRACE=OFF` (implies bcheck off) vs default on.
 

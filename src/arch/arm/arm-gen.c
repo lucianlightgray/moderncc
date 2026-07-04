@@ -136,18 +136,25 @@ ST_DATA const int reg_classes[NB_REGS] = {
 #endif
 };
 
-static int float_abi;
-static int func_sub_sp_offset, last_itod_magic;
-static int leaffunc;
+/* Per-function copy of the ABI (temporarily forced to soft-float for variadic
+   calls). Rehomed to MCCState as cg_arm_float_abi and renamed cg_float_abi to
+   avoid colliding with the same-named assign_regs() parameter. */
+#define cg_float_abi (mcc_state->cg_arm_float_abi)
+#define func_sub_sp_offset (mcc_state->cg_func_sub_sp_offset)
+#define last_itod_magic (mcc_state->cg_last_itod_magic)
+#define leaffunc (mcc_state->cg_leaffunc)
 
 #if defined(CONFIG_MCC_BCHECK)
-static addr_t func_bound_offset;
-static unsigned long func_bound_ind;
+#define func_bound_offset (mcc_state->cg_func_bound_offset)
+#define func_bound_ind (mcc_state->cg_func_bound_ind)
 ST_DATA int func_bound_add_epilog;
 #endif
 
 #if defined(MCC_ARM_EABI) && defined(MCC_ARM_VFP)
-static CType float_type, double_type, func_float_type, func_double_type;
+#define float_type (mcc_state->cg_float_type)
+#define double_type (mcc_state->cg_double_type)
+#define func_float_type (mcc_state->cg_func_float_type)
+#define func_double_type (mcc_state->cg_func_double_type)
 ST_FUNC void arm_init(struct MCCState *s) {
 	float_type.t = VT_FLOAT;
 	double_type.t = VT_DOUBLE;
@@ -156,7 +163,7 @@ ST_FUNC void arm_init(struct MCCState *s) {
 	func_double_type.t = VT_FUNC;
 	func_double_type.ref = sym_push(SYM_FIELD, &double_type, FUNC_CDECL, FUNC_OLD);
 
-	float_abi = s->float_abi;
+	cg_float_abi = s->float_abi;
 #ifndef MCC_ARM_HARDFLOAT
 #endif
 }
@@ -895,7 +902,7 @@ ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int 
 #ifdef MCC_ARM_EABI
 	int size, align;
 	size = type_size(vt, &align);
-	if (float_abi == ARM_HARD_FLOAT && !variadic &&
+	if (cg_float_abi == ARM_HARD_FLOAT && !variadic &&
 		(is_float(vt->t) || is_hgen_float_aggr(vt))) {
 		*ret_align = 8;
 		*regsize = 8;
@@ -1139,7 +1146,7 @@ again:
 
 void gfunc_call(int nb_args) {
 	int args_size;
-	int def_float_abi = float_abi;
+	int def_float_abi = cg_float_abi;
 	int todo;
 	struct plan plan;
 #ifdef MCC_ARM_EABI
@@ -1154,10 +1161,10 @@ void gfunc_call(int nb_args) {
 	save_regs(nb_args + 1);
 
 #ifdef MCC_ARM_EABI
-	if (float_abi == ARM_HARD_FLOAT) {
+	if (cg_float_abi == ARM_HARD_FLOAT) {
 		variadic = (vtop[-nb_args].type.ref->f.func_type == FUNC_ELLIPSIS);
 		if (variadic || floats_in_core_regs(&vtop[-nb_args]))
-			float_abi = ARM_SOFTFP_FLOAT;
+			cg_float_abi = ARM_SOFTFP_FLOAT;
 	}
 #endif
 
@@ -1165,7 +1172,7 @@ void gfunc_call(int nb_args) {
 	if (nb_args)
 		plan.pplans = mcc_malloc(nb_args * sizeof(*plan.pplans));
 
-	args_size = assign_regs(nb_args, float_abi, &plan, &todo);
+	args_size = assign_regs(nb_args, cg_float_abi, &plan, &todo);
 
 #ifdef MCC_ARM_EABI
 	if (args_size & 7) {
@@ -1182,7 +1189,7 @@ void gfunc_call(int nb_args) {
 	if (args_size)
 		gadd_sp(args_size);
 #if defined(MCC_ARM_EABI) && defined(MCC_ARM_VFP)
-	if (float_abi == ARM_SOFTFP_FLOAT && is_float(vtop->type.ref->type.t)) {
+	if (cg_float_abi == ARM_SOFTFP_FLOAT && is_float(vtop->type.ref->type.t)) {
 		if ((vtop->type.ref->type.t & VT_BTYPE) == VT_FLOAT) {
 			o(0xEE000A10);
 		} else {
@@ -1193,7 +1200,7 @@ void gfunc_call(int nb_args) {
 #endif
 	vtop -= nb_args + 1;
 	leaffunc = 0;
-	float_abi = def_float_abi;
+	cg_float_abi = def_float_abi;
 }
 
 void gfunc_prolog(Sym *func_sym) {
@@ -1219,7 +1226,7 @@ void gfunc_prolog(Sym *func_sym) {
 	for (sym2 = sym->next; sym2 && (n < 4 || nf < 16); sym2 = sym2->next) {
 		size = type_size(&sym2->type, &align);
 #ifdef MCC_ARM_EABI
-		if (float_abi == ARM_HARD_FLOAT && !func_var &&
+		if (cg_float_abi == ARM_HARD_FLOAT && !func_var &&
 			(is_float(sym2->type.t) || is_hgen_float_aggr(&sym2->type))) {
 			int tmpnf = assign_vfpreg(&avregs, align, size);
 			tmpnf += (size + 3) / 4;
@@ -1252,7 +1259,7 @@ void gfunc_prolog(Sym *func_sym) {
 	o(0xE1A00000);
 
 #ifdef MCC_ARM_EABI
-	if (float_abi == ARM_HARD_FLOAT) {
+	if (cg_float_abi == ARM_HARD_FLOAT) {
 		func_vc += nf * 4;
 		memset(&avregs, 0, sizeof avregs);
 	}
@@ -1265,7 +1272,7 @@ void gfunc_prolog(Sym *func_sym) {
 		size = (size + 3) >> 2;
 		align = (align + 3) & ~3;
 #ifdef MCC_ARM_EABI
-		if (float_abi == ARM_HARD_FLOAT && !func_var && (is_float(sym->type.t) || is_hgen_float_aggr(&sym->type))) {
+		if (cg_float_abi == ARM_HARD_FLOAT && !func_var && (is_float(sym->type.t) || is_hgen_float_aggr(&sym->type))) {
 			int fpn = assign_vfpreg(&avregs, align, size << 2);
 			if (fpn >= 0)
 				addr = fpn * 4;
@@ -1309,7 +1316,7 @@ void gfunc_epilog(void) {
 		gen_bounds_epilog();
 #endif
 #if defined(MCC_ARM_EABI) && defined(MCC_ARM_VFP)
-	if ((float_abi == ARM_SOFTFP_FLOAT || func_var) && is_float(func_vt.t)) {
+	if ((cg_float_abi == ARM_SOFTFP_FLOAT || func_var) && is_float(func_vt.t)) {
 		if ((func_vt.t & VT_BTYPE) == VT_FLOAT)
 			o(0xEE100A10);
 		else {

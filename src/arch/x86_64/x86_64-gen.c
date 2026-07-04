@@ -116,20 +116,21 @@ ST_DATA const int reg_classes[NB_REGS] = {
 	RC_XMM7,
 	RC_ST0};
 
-static unsigned long func_sub_sp_offset;
-static int func_ret_sub;
+#define func_sub_sp_offset (mcc_state->cg_func_sub_sp_offset)
+#define func_ret_sub (mcc_state->cg_func_ret_sub)
 #ifndef MCC_TARGET_PE
-static int func_stack_chk_loc;
+#define func_stack_chk_loc (mcc_state->cg_func_stack_chk_loc)
 #endif
 
 #if defined(CONFIG_MCC_BCHECK)
-static addr_t func_bound_offset;
-static unsigned long func_bound_ind;
+#define func_bound_offset (mcc_state->cg_func_bound_offset)
+#define func_bound_ind (mcc_state->cg_func_bound_ind)
 ST_DATA int func_bound_add_epilog;
 #endif
 
 #ifdef MCC_TARGET_PE
-static int func_scratch, func_alloca;
+#define func_scratch (mcc_state->cg_func_scratch)
+#define func_alloca (mcc_state->cg_func_alloca)
 #endif
 
 ST_FUNC void o(unsigned int c) {

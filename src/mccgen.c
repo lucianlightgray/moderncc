@@ -9,17 +9,17 @@ ST_DATA Sym *define_stack;
 ST_DATA Sym *global_label_stack;
 ST_DATA Sym *local_label_stack;
 
-static Sym *sym_free_first;
-static void **sym_pools;
-static int nb_sym_pools;
+#define sym_free_first (mcc_state->sym_free_first)
+#define sym_pools (mcc_state->sym_pools)
+#define nb_sym_pools (mcc_state->nb_sym_pools)
 
-static Sym *all_cleanups, *pending_gotos;
-static int local_scope;
+#define all_cleanups (mcc_state->all_cleanups)
+#define pending_gotos (mcc_state->pending_gotos)
+#define local_scope (mcc_state->local_scope)
 ST_DATA char debug_modes;
 
 ST_DATA SValue *vtop;
-static SValue _vstack[1 + VSTACK_SIZE];
-#define vstack (_vstack + 1)
+#define vstack (mcc_state->gen_vstack + 1)
 
 ST_DATA int nocode_wanted;
 #define NODATA_WANTED (nocode_wanted > 0)
@@ -45,17 +45,17 @@ ST_DATA CType func_vt;
 ST_DATA int func_var;
 ST_DATA int func_vc;
 ST_DATA int func_ind;
-static int func_old;
-static int cur_func_noreturn;
-static int cur_func_last_param;
-static int expr_was_assign;
-static int expr_has_effect;
-static int cur_func_inline_extern;
-static int ice_float_op;
-static int ice_nonconst;
+#define func_old (mcc_state->func_old)
+#define cur_func_noreturn (mcc_state->cur_func_noreturn)
+#define cur_func_last_param (mcc_state->cur_func_last_param)
+#define expr_was_assign (mcc_state->expr_was_assign)
+#define expr_has_effect (mcc_state->expr_has_effect)
+#define cur_func_inline_extern (mcc_state->cur_func_inline_extern)
+#define ice_float_op (mcc_state->ice_float_op)
+#define ice_nonconst (mcc_state->ice_nonconst)
 ST_DATA const char *funcname;
 ST_DATA CType int_type, func_old_type, char_type, char_pointer_type;
-static CString initstr;
+#define initstr (mcc_state->initstr)
 
 #if PTR_SIZE == 4
 #define VT_SIZE_T (VT_INT | VT_UNSIGNED)
@@ -68,53 +68,23 @@ static CString initstr;
 #define VT_PTRDIFF_T (VT_LONG | VT_LLONG)
 #endif
 
-static struct switch_t {
-	struct case_t {
-		int64_t v1, v2;
-		int ind, line;
-	} **p;
-	int n;
-	int def_sym;
-	int nocode_wanted;
-	int *bsym;
-	struct scope *scope;
-	struct switch_t *prev;
-	SValue sv;
-	int vla_gpp;
-} *cur_switch;
+#define cur_switch (mcc_state->cur_switch)
 
-static int atomic_lowering;
+#define atomic_lowering (mcc_state->atomic_lowering)
 
-static int in_for_init;
+#define in_for_init (mcc_state->in_for_init)
 
-#define VLA_TRACK_MAX 512
-static int vla_seq;
-static int vla_open_birth[VLA_TRACK_MAX];
-static int nb_vla_open;
-static int vla_track_ovf;
+#define vla_seq (mcc_state->vla_seq)
+#define vla_open_birth (mcc_state->vla_open_birth)
+#define nb_vla_open (mcc_state->nb_vla_open)
+#define vla_track_ovf (mcc_state->vla_track_ovf)
 
-#define MAX_TEMP_LOCAL_VARIABLE_NUMBER 8
-static struct temp_local_variable {
-	int location;
-	short size;
-	short align;
-} arr_temp_local_vars[MAX_TEMP_LOCAL_VARIABLE_NUMBER];
-static int nb_temp_local_vars;
+#define arr_temp_local_vars (mcc_state->arr_temp_local_vars)
+#define nb_temp_local_vars (mcc_state->nb_temp_local_vars)
 
-static struct scope {
-	struct scope *prev;
-	struct {
-		int loc, locorig, num;
-	} vla;
-	int vla_diag;
-	struct {
-		Sym *s;
-		int n;
-	} cl;
-	int *bsym, *csym;
-	Sym *lstk, *llstk;
-	unsigned char stdc_fp_contract, stdc_fenv_access, stdc_cx_limited;
-} *cur_scope, *loop_scope, *root_scope;
+#define cur_scope (mcc_state->cur_scope)
+#define loop_scope (mcc_state->loop_scope)
+#define root_scope (mcc_state->root_scope)
 
 typedef struct {
 	Section *sec;
@@ -135,14 +105,9 @@ static void block(int flags);
 
 enum { SEQP_READ,
 	   SEQP_WRITE };
-#define SEQP_MAX 64
-static struct {
-	Sym *obj;
-	unsigned long long off;
-	unsigned char kind;
-} seqp_ev[SEQP_MAX];
-static int nb_seqp;
-static int seqp_overflow;
+#define seqp_ev (mcc_state->seqp_ev)
+#define nb_seqp (mcc_state->nb_seqp)
+#define seqp_overflow (mcc_state->seqp_overflow)
 
 static void seqp_reset(void) {
 	nb_seqp = 0;
@@ -675,6 +640,11 @@ ST_FUNC void mccgen_finish(MCCState *s1) {
 	mcc_debug_end(s1);
 	free_inline_functions(s1);
 	sym_pop(&global_stack, NULL, 0);
+	/* The complex-type memo caches CTypes whose .ref points into global_stack,
+	   just freed above. Clear it (and the __real/__imag token ids) so a second
+	   TU compiled with this same state does not reuse dangling syms. */
+	memset(s1->gen_complex_type_cache, 0, sizeof s1->gen_complex_type_cache);
+	s1->gen_complex_re_tok = s1->gen_complex_im_tok = 0;
 	sym_pop(&local_stack, NULL, 0);
 	free_defines(NULL);
 	dynarray_reset(&sym_pools, &nb_sym_pools);
@@ -4569,8 +4539,7 @@ static void parse_btype_qualify(CType *type, int qualifiers) {
 }
 
 static void mk_complex_type(CType *type, CType *base) {
-	static int re_tok, im_tok;
-	static CType cache[4];
+	CType *cache = mcc_state->gen_complex_type_cache;
 	int idx, bt = base->t & VT_BTYPE;
 	Sym *s, *f0, *f1;
 	AttributeDef ad;
@@ -4582,16 +4551,16 @@ static void mk_complex_type(CType *type, CType *base) {
 		*type = cache[idx];
 		return;
 	}
-	if (!re_tok) {
-		re_tok = tok_alloc_const("__real");
-		im_tok = tok_alloc_const("__imag");
+	if (!mcc_state->gen_complex_re_tok) {
+		mcc_state->gen_complex_re_tok = tok_alloc_const("__real");
+		mcc_state->gen_complex_im_tok = tok_alloc_const("__imag");
 	}
 	s = sym_push2(&global_stack, anon_sym++ | SYM_STRUCT, VT_STRUCT, -1);
 	s->r = 0;
 	s->a.is_complex = 1;
-	f0 = sym_push2(&global_stack, re_tok | SYM_FIELD, base->t, 0);
+	f0 = sym_push2(&global_stack, mcc_state->gen_complex_re_tok | SYM_FIELD, base->t, 0);
 	f0->type.ref = base->ref;
-	f1 = sym_push2(&global_stack, im_tok | SYM_FIELD, base->t, 0);
+	f1 = sym_push2(&global_stack, mcc_state->gen_complex_im_tok | SYM_FIELD, base->t, 0);
 	f1->type.ref = base->ref;
 	s->next = f0, f0->next = f1, f1->next = NULL;
 	type->t = VT_STRUCT;
@@ -5605,16 +5574,17 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td) {
 	return 1;
 }
 
-static Sym *restrict_ptr_pointee[8];
-static int nb_restrict_ptr;
-static int type_decl_depth;
+/* Per-outermost-call scratch for type_decl(), owned on the stack by the
+   type_decl() wrapper and threaded through the recursion via type_decl_1(). */
+struct restrict_ctx {
+	Sym *pointee[8];
+	int nb;
+};
 
-static CType *type_decl(CType *type, AttributeDef *ad, int *v, int td) {
+static CType *type_decl_1(CType *type, AttributeDef *ad, int *v, int td,
+						  struct restrict_ctx *rc) {
 	CType *post, *ret;
 	int qualifiers, restrict_q, storage, arr_nested = 0;
-
-	if (type_decl_depth++ == 0)
-		nb_restrict_ptr = 0;
 
 	storage = type->t & VT_STORAGE;
 	type->t &= ~VT_STORAGE;
@@ -5651,8 +5621,8 @@ static CType *type_decl(CType *type, AttributeDef *ad, int *v, int td) {
 		}
 		mk_pointer(type);
 		type->t |= qualifiers;
-		if (restrict_q && nb_restrict_ptr < 8)
-			restrict_ptr_pointee[nb_restrict_ptr++] = type->ref;
+		if (restrict_q && rc->nb < 8)
+			rc->pointee[rc->nb++] = type->ref;
 		if (ret == type)
 			ret = pointed_type(type);
 	}
@@ -5660,7 +5630,7 @@ static CType *type_decl(CType *type, AttributeDef *ad, int *v, int td) {
 	if (tok == '(') {
 		if (!post_type(type, ad, 0, td)) {
 			parse_attribute(ad);
-			post = type_decl(type, ad, v, td);
+			post = type_decl_1(type, ad, v, td, rc);
 			skip(')');
 			if (post != ret)
 				arr_nested = 1;
@@ -5679,15 +5649,22 @@ static CType *type_decl(CType *type, AttributeDef *ad, int *v, int td) {
 			  (td & ~(TYPE_DIRECT | TYPE_ABSTRACT)) | (arr_nested ? TYPE_NEST : 0));
 	parse_attribute(ad);
 	type->t |= storage;
-	if (--type_decl_depth == 0) {
-		int bad = 0;
-		while (nb_restrict_ptr)
-			if ((restrict_ptr_pointee[--nb_restrict_ptr]->type.t & VT_BTYPE) == VT_FUNC)
-				bad = 1;
-		if (bad)
-			mcc_error("pointer to function type may not be "
-					  "'restrict'-qualified");
-	}
+	return ret;
+}
+
+static CType *type_decl(CType *type, AttributeDef *ad, int *v, int td) {
+	struct restrict_ctx rc;
+	CType *ret;
+	int bad = 0;
+
+	rc.nb = 0;
+	ret = type_decl_1(type, ad, v, td, &rc);
+	while (rc.nb)
+		if ((rc.pointee[--rc.nb]->type.t & VT_BTYPE) == VT_FUNC)
+			bad = 1;
+	if (bad)
+		mcc_error("pointer to function type may not be "
+				  "'restrict'-qualified");
 	return ret;
 }
 
@@ -6471,7 +6448,7 @@ static void format_check(int is_scanf, const char *fmt, int favail,
 		mcc_warning_c(warn_format)("too many arguments for format string");
 }
 
-static int sizeof_parsed_type;
+#define sizeof_parsed_type (mcc_state->gen_sizeof_parsed_type)
 
 ST_FUNC void unary(void) {
 	int n, t, align, size, r;
@@ -7731,7 +7708,7 @@ static int precedence(int tok) {
 		return 0;
 	}
 }
-static unsigned char prec[256];
+#define prec (mcc_state->gen_prec)
 static void init_prec(void) {
 	for (int i = 0; i < 256; i++)
 		prec[i] = precedence(i);

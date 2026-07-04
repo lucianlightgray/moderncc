@@ -1603,8 +1603,12 @@ ST_FUNC void mcc_add_runtime(MCCState *s1) {
 #if defined MCC_TARGET_ARM && TARGETOS_FreeBSD
 		mcc_add_library(s1, "gcc_s");
 #endif
-		if (MCC_LIBMCC1[0])
-			mcc_add_support(s1, MCC_LIBMCC1);
+#ifdef MCC_EMBED_RTLIB
+		mcc_add_rtlib_embedded(s1);
+#else
+		if (MCC_RTLIB[0])
+			mcc_add_support(s1, MCC_RTLIB);
+#endif
 #ifndef MCC_TARGET_MACHO
 		if (s1->output_type != MCC_OUTPUT_MEMORY)
 			mccelf_add_crtend(s1);

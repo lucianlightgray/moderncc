@@ -15,6 +15,7 @@ typedef struct {
 	int reg;
 	char rm[352];
 	int rm_is_mem;
+	char regbuf[8]; /* scratch for gpr()/xmm() (formerly function-local statics) */
 } Dis;
 
 static unsigned char peek(Dis *d, int i) {
@@ -59,7 +60,7 @@ static const char *reg8rex[16] = {
 static const char *reg8[8] = {"al", "cl", "dl", "bl", "ah", "ch", "dh", "bh"};
 
 static const char *gpr(Dis *d, int size, int n) {
-	static char buf[8];
+	char *buf = d->regbuf;
 	const char *nm;
 	switch (size) {
 	case 8:
@@ -75,12 +76,12 @@ static const char *gpr(Dis *d, int size, int n) {
 		nm = d->rex ? reg8rex[n & 15] : reg8[n & 7];
 		break;
 	}
-	snprintf(buf, sizeof buf, "%%%s", nm);
+	snprintf(buf, sizeof d->regbuf, "%%%s", nm);
 	return buf;
 }
-static const char *xmm(int n) {
-	static char buf[8];
-	snprintf(buf, sizeof buf, "%%xmm%d", n & 15);
+static const char *xmm(Dis *d, int n) {
+	char *buf = d->regbuf;
+	snprintf(buf, sizeof d->regbuf, "%%xmm%d", n & 15);
 	return buf;
 }
 
@@ -92,7 +93,7 @@ static void modrm(Dis *d, int size, int xmm_rm) {
 	if (mod == 3) {
 		int r = rm | (d->rex_b ? 8 : 0);
 		d->rm_is_mem = 0;
-		snprintf(d->rm, sizeof d->rm, "%s", xmm_rm ? xmm(r) : gpr(d, size, r));
+		snprintf(d->rm, sizeof d->rm, "%s", xmm_rm ? xmm(d, r) : gpr(d, size, r));
 		return;
 	}
 	d->rm_is_mem = 1;
@@ -809,9 +810,9 @@ static int decode(Dis *d) {
 													 : "movups";
 		modrm(d, 8, 1);
 		if (op == 0x10)
-			P(d, "%s\t%s, %s", nm, d->rm, xmm(d->reg));
+			P(d, "%s\t%s, %s", nm, d->rm, xmm(d, d->reg));
 		else
-			P(d, "%s\t%s, %s", nm, xmm(d->reg), d->rm);
+			P(d, "%s\t%s, %s", nm, xmm(d, d->reg), d->rm);
 		return d->len;
 	}
 	case 0x12:
@@ -823,9 +824,9 @@ static int decode(Dis *d) {
 							 : (d->opsz ? "movhpd" : "movhps");
 		modrm(d, 8, 1);
 		if (op & 1)
-			P(d, "%s\t%s, %s", nm, xmm(d->reg), d->rm);
+			P(d, "%s\t%s, %s", nm, xmm(d, d->reg), d->rm);
 		else
-			P(d, "%s\t%s, %s", nm, d->rm, xmm(d->reg));
+			P(d, "%s\t%s, %s", nm, d->rm, xmm(d, d->reg));
 		return d->len;
 	}
 	case 0x14:
@@ -833,7 +834,7 @@ static int decode(Dis *d) {
 		const char *nm = op == 0x14 ? (d->opsz ? "unpcklpd" : "unpcklps")
 									: (d->opsz ? "unpckhpd" : "unpckhps");
 		modrm(d, 8, 1);
-		P(d, "%s\t%s, %s", nm, d->rm, xmm(d->reg));
+		P(d, "%s\t%s, %s", nm, d->rm, xmm(d, d->reg));
 		return d->len;
 	}
 	case 0x28:
@@ -841,9 +842,9 @@ static int decode(Dis *d) {
 		const char *nm = d->opsz ? "movapd" : "movaps";
 		modrm(d, 8, 1);
 		if (op == 0x28)
-			P(d, "%s\t%s, %s", nm, d->rm, xmm(d->reg));
+			P(d, "%s\t%s, %s", nm, d->rm, xmm(d, d->reg));
 		else
-			P(d, "%s\t%s, %s", nm, xmm(d->reg), d->rm);
+			P(d, "%s\t%s, %s", nm, xmm(d, d->reg), d->rm);
 		return d->len;
 	}
 	case 0x2a: {
@@ -851,7 +852,7 @@ static int decode(Dis *d) {
 														: "cvtpi2ps";
 		modrm(d, vsize(d), 0);
 		P(d, "%s%s\t%s, %s", nm, d->rm_is_mem ? (char[2]){sfx(vsize(d)), 0} : "",
-		  d->rm, xmm(d->reg));
+		  d->rm, xmm(d, d->reg));
 		return d->len;
 	}
 	case 0x2c:
@@ -870,7 +871,7 @@ static int decode(Dis *d) {
 		const char *nm = op == 0x2e ? (d->opsz ? "ucomisd" : "ucomiss")
 									: (d->opsz ? "comisd" : "comiss");
 		modrm(d, 8, 1);
-		P(d, "%s\t%s, %s", nm, d->rm, xmm(d->reg));
+		P(d, "%s\t%s, %s", nm, d->rm, xmm(d, d->reg));
 		return d->len;
 	}
 	case 0x40:
@@ -949,7 +950,7 @@ static int decode(Dis *d) {
 								 : d->opsz	  ? "pd"
 											  : "ps");
 		modrm(d, 8, 1);
-		P(d, "%s\t%s, %s", nm, d->rm, xmm(d->reg));
+		P(d, "%s\t%s, %s", nm, d->rm, xmm(d, d->reg));
 		return d->len;
 	}
 	case 0x5a: {
@@ -957,37 +958,37 @@ static int decode(Dis *d) {
 										   : d->opsz	? "cvtpd2ps"
 														: "cvtps2pd";
 		modrm(d, 8, 1);
-		P(d, "%s\t%s, %s", nm, d->rm, xmm(d->reg));
+		P(d, "%s\t%s, %s", nm, d->rm, xmm(d, d->reg));
 		return d->len;
 	}
 	case 0x6e:
 		modrm(d, vsize(d), 0);
-		P(d, "%s\t%s, %s", d->rex_w ? "movq" : "movd", d->rm, xmm(d->reg));
+		P(d, "%s\t%s, %s", d->rex_w ? "movq" : "movd", d->rm, xmm(d, d->reg));
 		return d->len;
 	case 0x6f:
 		modrm(d, 8, 1);
-		P(d, "%s\t%s, %s", d->rep ? "movdqu" : "movdqa", d->rm, xmm(d->reg));
+		P(d, "%s\t%s, %s", d->rep ? "movdqu" : "movdqa", d->rm, xmm(d, d->reg));
 		return d->len;
 	case 0x7e:
 		if (d->rep) {
 			modrm(d, 8, 1);
-			P(d, "movq\t%s, %s", d->rm, xmm(d->reg));
+			P(d, "movq\t%s, %s", d->rm, xmm(d, d->reg));
 			return d->len;
 		}
 		modrm(d, vsize(d), 0);
-		P(d, "%s\t%s, %s", d->rex_w ? "movq" : "movd", xmm(d->reg), d->rm);
+		P(d, "%s\t%s, %s", d->rex_w ? "movq" : "movd", xmm(d, d->reg), d->rm);
 		return d->len;
 	case 0x7f:
 		modrm(d, 8, 1);
-		P(d, "%s\t%s, %s", d->rep ? "movdqu" : "movdqa", xmm(d->reg), d->rm);
+		P(d, "%s\t%s, %s", d->rep ? "movdqu" : "movdqa", xmm(d, d->reg), d->rm);
 		return d->len;
 	case 0xd6:
 		modrm(d, 8, 1);
-		P(d, "movq\t%s, %s", xmm(d->reg), d->rm);
+		P(d, "movq\t%s, %s", xmm(d, d->reg), d->rm);
 		return d->len;
 	case 0xef:
 		modrm(d, 8, 1);
-		P(d, "pxor\t%s, %s", d->rm, xmm(d->reg));
+		P(d, "pxor\t%s, %s", d->rm, xmm(d, d->reg));
 		return d->len;
 	case 0x80:
 	case 0x81:

@@ -4,7 +4,7 @@ static const char *CC = "cc";
 static const char *OUTDIR = "build-c";
 
 static const char *RT_OBJS[] = {
-	"libmcc1", "alloca", "alloca-bt", "atomic", "stdatomic", "builtin",
+	"mccrt", "alloca", "alloca-bt", "atomic", "stdatomic", "builtin",
 	"va_list", "dsohandle", "tcov", 0};
 
 static const char *ARCH_INCS[] = {
@@ -270,7 +270,7 @@ static const struct CrossTarget CROSS[] = {
 	{"arm64-osx", "arm64", "Darwin", "MCC_TARGET_ARM64 MCC_TARGET_MACHO", ""},
 	{0, 0, 0, 0, 0}};
 
-static int libmcc1_objs(const char *cpu, const char *os, const char **out, int max) {
+static int rtlib_objs(const char *cpu, const char *os, const char **out, int max) {
 	int n = 0;
 	int win = !strcmp(os, "WIN32"), osx = !strcmp(os, "Darwin");
 	static const char *COMMON[] = {"stdatomic", "atomic", "builtin", "alloca", "alloca-bt", "complex", 0};
@@ -281,9 +281,9 @@ static int libmcc1_objs(const char *cpu, const char *os, const char **out, int m
 			out[n++] = (x); \
 	} while (0)
 	if (!strcmp(cpu, "i386") || !strcmp(cpu, "x86_64"))
-		ADD("libmcc1");
+		ADD("mccrt");
 	else if (!strcmp(cpu, "arm")) {
-		ADD("libmcc1");
+		ADD("mccrt");
 		ADD("armeabi");
 		ADD("armflush");
 	} else {
@@ -377,7 +377,7 @@ static int cmd_cross(const char *name, const char *out) {
 		return 1;
 	snprintf(Iout, sizeof Iout, "-I%s", out);
 	ts_path(mccpath, sizeof mccpath, out, "mcc-%s", name);
-	ts_path(archive, sizeof archive, out, "%s-libmcc1.a", name);
+	ts_path(archive, sizeof archive, out, "%s-libmccrt.a", name);
 
 	printf("[cross %s] cc src/mcc.c -> mcc-%s\n", name, name);
 	v.n = 0;
@@ -435,8 +435,8 @@ static int cmd_cross(const char *name, const char *out) {
 	if (ts_run(argz(&v)))
 		return 1;
 
-	printf("[cross %s] mcc-%s -> %s-libmcc1.a\n", name, name, name);
-	nobj = libmcc1_objs(t->cpu, t->os, objs, 64);
+	printf("[cross %s] mcc-%s -> %s-libmccrt.a\n", name, name, name);
+	nobj = rtlib_objs(t->cpu, t->os, objs, 64);
 	snprintf(barg, sizeof barg, "-B%s", win ? "runtime/win32" : "runtime");
 	{
 		static char objpaths[64][4096], srcs[64][4096];
@@ -810,7 +810,7 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	printf("[3/3] mcc -> libmcc1.a\n");
+	printf("[3/3] mcc -> libmccrt.a\n");
 	{
 		char barg[4096], objpaths[9][4096], srcpath[4096];
 		Argv ar;
@@ -820,7 +820,7 @@ int main(int argc, char **argv) {
 		arg(&ar, "-ar");
 		{
 			static char lib[4096];
-			ts_path(lib, sizeof lib, OUTDIR, "libmcc1.a");
+			ts_path(lib, sizeof lib, OUTDIR, "libmccrt.a");
 			arg(&ar, lib);
 		}
 		for (i = 0; RT_OBJS[i]; ++i) {

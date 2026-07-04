@@ -609,7 +609,7 @@ static void asm_rex(int width64, Operand *ops, int nb_ops, int *op_type,
 #endif
 
 static void maybe_print_stats(void) {
-	static int already;
+	int already = 0;
 
 	if (0 && !already) {
 		const struct ASMInstr *pa;

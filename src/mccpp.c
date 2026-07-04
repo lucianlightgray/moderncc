@@ -9,7 +9,7 @@ ST_DATA int parse_flags;
 ST_DATA struct BufferedFile *file;
 ST_DATA int tok;
 ST_DATA CValue tokc;
-static TokenSym *tok_ts;
+#define tok_ts (mcc_state->tok_ts)
 ST_DATA int tok_imaginary;
 ST_DATA const int *macro_ptr;
 ST_DATA CString tokcstr;
@@ -18,23 +18,24 @@ ST_DATA int tok_ident;
 ST_DATA TokenSym **table_ident;
 ST_DATA int pp_expr;
 
-static TokenSym *hash_ident[TOK_HASH_SIZE];
-static char token_buf[STRING_MAX_SIZE + 1];
-static CString cstr_buf;
-static TokenString tokstr_buf;
-static TokenString unget_buf;
-static unsigned char isidnum_table[256 - CH_EOF];
-static int pp_debug_tok, pp_debug_symv;
-static int pp_counter;
+#define hash_ident (mcc_state->hash_ident)
+#define token_buf (mcc_state->token_buf)
+#define cstr_buf (mcc_state->cstr_buf)
+#define tokstr_buf (mcc_state->tokstr_buf)
+#define unget_buf (mcc_state->unget_buf)
+#define isidnum_table (mcc_state->isidnum_table)
+#define pp_debug_tok (mcc_state->pp_debug_tok)
+#define pp_debug_symv (mcc_state->pp_debug_symv)
+#define pp_counter (mcc_state->pp_counter)
 static void tok_print(const int *str, const char *msg, ...);
 static void next_nomacro(void);
 static void parse_number(const char *p);
 static void parse_string(const char *p, int len);
 
-static struct TinyAlloc *toksym_alloc;
-static struct TinyAlloc *tokstr_alloc;
+#define toksym_alloc (mcc_state->toksym_alloc)
+#define tokstr_alloc (mcc_state->tokstr_alloc)
 
-static TokenString *macro_stack;
+#define macro_stack (mcc_state->macro_stack)
 
 static const char mcc_keywords[] =
 #define DEF(id, str) str "\0"
@@ -3278,7 +3279,7 @@ keep_tok_flags:
 }
 
 #ifdef PP_DEBUG
-static int indent;
+#define indent (mcc_state->pp_debug_indent)
 static void define_print(MCCState *s1, int v);
 static void pp_print(const char *msg, int v, const int *str) {
 	FILE *fp = mcc_state->ppfp;

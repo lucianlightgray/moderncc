@@ -77,13 +77,13 @@ ST_DATA const int reg_classes[NB_REGS] = {
 	RC_FLOAT | RC_F(7)};
 
 #if defined(CONFIG_MCC_BCHECK)
-static addr_t func_bound_offset;
-static unsigned long func_bound_ind;
+#define func_bound_offset (mcc_state->cg_func_bound_offset)
+#define func_bound_ind (mcc_state->cg_func_bound_ind)
 ST_DATA int func_bound_add_epilog;
 #endif
 
 #ifdef MCC_TARGET_MACHO
-static int func_stack_chk_loc;
+#define func_stack_chk_loc (mcc_state->cg_func_stack_chk_loc)
 #endif
 
 #define IS_FREG(x) ((x) >= TREG_F(0))
@@ -1261,12 +1261,12 @@ ST_FUNC void gfunc_call(int nb_args) {
 	mcc_free(t);
 }
 
-static unsigned long arm64_func_va_list_stack;
-static int arm64_func_va_list_gr_offs;
-static int arm64_func_va_list_vr_offs;
-static int arm64_func_sub_sp_offset;
+#define arm64_func_va_list_stack (mcc_state->cg_arm64_func_va_list_stack)
+#define arm64_func_va_list_gr_offs (mcc_state->cg_arm64_func_va_list_gr_offs)
+#define arm64_func_va_list_vr_offs (mcc_state->cg_arm64_func_va_list_vr_offs)
+#define arm64_func_sub_sp_offset (mcc_state->cg_arm64_func_sub_sp_offset)
 
-static unsigned arm64_func_start_offset;
+#define arm64_func_start_offset (mcc_state->cg_arm64_func_start_offset)
 #define ARM64_FUNC_STACK_SETUP_SLOTS 6
 
 #ifdef MCC_TARGET_PE

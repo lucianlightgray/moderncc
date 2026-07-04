@@ -79,8 +79,8 @@ ST_DATA const int reg_classes[NB_REGS] = {
 	1 << TREG_SP};
 
 #if defined(CONFIG_MCC_BCHECK)
-static addr_t func_bound_offset;
-static unsigned long func_bound_ind;
+#define func_bound_offset (mcc_state->cg_func_bound_offset)
+#define func_bound_ind (mcc_state->cg_func_bound_ind)
 ST_DATA int func_bound_add_epilog;
 #endif
 
@@ -746,7 +746,9 @@ ST_FUNC void gfunc_call(int nb_args) {
 	mcc_free(info);
 }
 
-static int func_sub_sp_offset, num_va_regs, func_va_list_ofs;
+#define func_sub_sp_offset (mcc_state->cg_func_sub_sp_offset)
+#define num_va_regs (mcc_state->cg_num_va_regs)
+#define func_va_list_ofs (mcc_state->cg_func_va_list_ofs)
 
 ST_FUNC void gfunc_prolog(Sym *func_sym) {
 	CType *func_type = &func_sym->type;

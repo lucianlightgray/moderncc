@@ -212,6 +212,29 @@ static void test_relocate_double_guard(void) {
 #endif
 }
 
+/* Regression: two TUs compiled on one state, both using _Complex. The complex
+   type memo caches struct syms allocated on global_stack, which is freed at the
+   end of each TU; without clearing it, the second TU reused dangling syms and
+   crashed. */
+static void test_multi_tu_complex(void) {
+	MCCState *s = fresh(MCC_OUTPUT_MEMORY);
+	int r1 = mcc_compile_string(s,
+							   "double _Complex first(void){\n"
+							   "  double _Complex z; __real__ z = 1.0; __imag__ z = 2.0;\n"
+							   "  return z; }\n");
+	int r2 = mcc_compile_string(s,
+							   "extern double _Complex first(void);\n"
+							   "int main(void){ double _Complex z = first();\n"
+							   "  return (int)(__real__ z + __imag__ z); }\n");
+	int rc = -1;
+	if (r1 == 0 && r2 == 0) {
+		char *av[] = {"prog", NULL};
+		rc = mcc_run(s, 1, av);
+	}
+	check("multi_tu_complex", r1 == 0 && r2 == 0 && rc == 3);
+	mcc_delete(s);
+}
+
 int main(int argc, char **argv) {
 	g_argc = argc;
 	g_argv = argv;
@@ -236,6 +259,7 @@ int main(int argc, char **argv) {
 	test_set_realloc();
 	test_add_sysinclude();
 	test_relocate_double_guard();
+	test_multi_tu_complex();
 	printf("api_extra: %s\n", failures ? "FAILURES" : "all passed");
 	return failures ? 1 : 0;
 }

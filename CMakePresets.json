@@ -6,7 +6,7 @@
     {
       "name": "_base",
       "hidden": true,
-      "binaryDir": "${sourceDir}/cmake-build-${presetName}"
+      "binaryDir": "${sourceDir}/cmake-${presetName}"
     },
     {
       "name": "_ninja",
@@ -110,7 +110,7 @@
     },
     {
       "name": "linux-gcc-asm-off",
-      "displayName": "CI linux / gcc / integrated asm off (libmcc1 via host cc)",
+      "displayName": "CI linux / gcc / integrated asm off (mccrt via host cc)",
       "inherits": "linux-gcc",
       "cacheVariables": { "MCC_CONFIG_ASM": "OFF" }
     },
@@ -215,7 +215,7 @@
         "MCC_ENABLE_CROSS": "ON",
         "MCC_QEMU_TESTS": "ON",
         "MCC_QEMU_LIBCS": "glibc;musl",
-        "MCC_CROSS_DIR": "${sourceDir}/cmake-build-${presetName}"
+        "MCC_CROSS_DIR": "${sourceDir}/cmake-${presetName}"
       }
     },
     {

@@ -1,6 +1,6 @@
 #include "toolsupport.h"
 
-static const char *EXCL_PREFIX[] = {"cmake-build", "cmake-windows-", "cmake-mingw-", "build-", 0};
+static const char *EXCL_PREFIX[] = {"cmake-", "build-", 0};
 static const char *EXCL_EXACT[] = {"cmake-clang", ".git", 0};
 
 static int excluded(const char *base) {
@@ -170,7 +170,7 @@ static int do_run_preset(int argc, char **argv) {
 
 	if (out || do_install) {
 		Argv v = {{0}, 0};
-		snprintf(instdir, sizeof instdir, "cmake-build-%s", preset);
+		snprintf(instdir, sizeof instdir, "cmake-%s", preset);
 		ts_arg(&v, "cmake");
 		ts_arg(&v, "--install");
 		ts_arg(&v, instdir);
@@ -569,7 +569,7 @@ static int do_pkg(int argc, char **argv) {
 			free(g[k]);
 		}
 		ts_path(rtdir, sizeof rtdir, stage, "%s/mcc", libdir);
-		pkg_copy_glob(rtdir, "*-libmcc1.a", dstlib);
+		pkg_copy_glob(rtdir, "*-libmccrt.a", dstlib);
 		if (found) {
 			if (pkg_archive(pkg, out, d, ext, &names))
 				return 1;

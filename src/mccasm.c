@@ -2,8 +2,8 @@
 #include "mcc.h"
 #ifdef CONFIG_MCC_ASM
 
-static Section *last_text_section;
-static int asmgoto_n;
+#define last_text_section (mcc_state->last_text_section)
+#define asmgoto_n (mcc_state->asmgoto_n)
 
 static int mcc_assemble_internal(MCCState *s1, int do_preprocess, int global);
 static Sym *asm_new_label(MCCState *s1, int label, int is_local);
@@ -944,20 +944,7 @@ static void asm_parse_directive(MCCState *s1, int global) {
 
 #if MCC_EH_FRAME
 
-#define ASM_CFI_MAX 1024
-
-static struct {
-	int active;
-	Section *sec;
-	unsigned long start;
-	unsigned long last;
-	int nfde;
-	int have_factors;
-	unsigned long code_align;
-	long long data_align;
-	int len;
-	unsigned char buf[ASM_CFI_MAX];
-} asm_cfi;
+#define asm_cfi (mcc_state->asm_cfi)
 
 static void asm_cfi_factors(MCCState *s1) {
 	unsigned char *p, *end;

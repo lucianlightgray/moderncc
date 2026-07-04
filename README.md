@@ -96,7 +96,7 @@ native/cross superbuild), all 15 `linux-*` CI presets, both `dist-linux-*`
 packagings, and the full `qemu` cross×libc matrix. Each test-bearing preset
 passes its complete suite (39/39 portable tests; 22/22 in the qemu matrix,
 all 5 arches × glibc+musl + `qemu-arm64-osx`). With the `cross` toolchain
-built (`MCC_CROSS_DIR`, default `cmake-build-cross`), the wine PE-conformance
+built (`MCC_CROSS_DIR`, default `cmake-cross`), the wine PE-conformance
 and the four host-runnable Mach-O drivers run natively and pass too.
 
 **Windows status (2026-07, mingw gcc 13.1/16.1 / MSVC 19.51 / clang 22):**
@@ -125,9 +125,9 @@ via the Docker runners (`tests/ci/docker`, `tests/qemu/docker`).
 or, CMake (without presets):
 
 ```sh
-cmake -S . -B cmake-build-release -DCMAKE_BUILD_TYPE=Release
-ccmake cmake-build-release
-cmake --build cmake-build-release -j
+cmake -S . -B cmake-release -DCMAKE_BUILD_TYPE=Release
+ccmake cmake-release
+cmake --build cmake-release -j
 ```
 
 | Option                 | Default | Meaning                                    |
@@ -195,7 +195,7 @@ Inapplicable tests report **Skipped with a reason** (e.g. `requires arm64
 target`) rather than silently omitting, so gaps stay visible.
 
 ```sh
-ctest --test-dir cmake-build-debug -j"$(nproc)"
+ctest --test-dir cmake-debug -j"$(nproc)"
 ```
 
 | Directory | Covers |
@@ -256,7 +256,7 @@ self-skip on a PE target.
 ⁶ Needs the i386 cross compiler (`mcc-i386`, preset `cross`) + an ELF-emitting
 32-bit reference cc; skips on Windows (mingw `gcc` emits PE/COFF).
 ⁷ Both need the cross toolchain (preset `cross`, or a populated
-`MCC_CROSS_DIR` — default `cmake-build-cross`): wine + the win32 cross
+`MCC_CROSS_DIR` — default `cmake-cross`): wine + the win32 cross
 compilers for `pe-wine-conformance`; the osx cross compilers +
 `llvm-otool`/`otool` for the Mach-O drivers. Linux: four host-runnable drivers
 pass (`macho-structural`, `macho-codegen-run`, `macho-image-run`,
@@ -300,9 +300,9 @@ is unaffected.
 
 ```sh
 cmake --preset cross                       # native + cross compilers
-cmake -DMCC_QEMU_TESTS=ON cmake-build-cross
-cmake --build cmake-build-cross -j
-ctest --test-dir cmake-build-cross -L qemu
+cmake -DMCC_QEMU_TESTS=ON cmake-cross
+cmake --build cmake-cross -j
+ctest --test-dir cmake-cross -L qemu
 ```
 
 | Arch | glibc | musl |
@@ -327,8 +327,8 @@ Point `MCC_QEMU_DLDIR` at prefetched `<arch>-<libc>/` sysroots (each with a
 
 ```sh
 cmake --preset cross -DMCC_QEMU_TESTS=ON -DMCC_QEMU_DLDIR=/path/to/qemu-roots
-cmake --build cmake-build-cross -j
-ctest --test-dir cmake-build-cross -L qemu --output-on-failure
+cmake --build cmake-cross -j
+ctest --test-dir cmake-cross -L qemu --output-on-failure
 ```
 
 ### Off-Linux (Docker)

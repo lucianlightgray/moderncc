@@ -259,9 +259,9 @@ function(mcc_validate_config)
     endif()
     if(CMAKE_CROSSCOMPILING AND "${MCC_EMULATOR}" STREQUAL "")
         if(MCC_CONFIG_AUTOCORRECT)
-            if(NOT MCC_LIBMCC1_USEGCC)
-                mcc_autocorrect(MCC_LIBMCC1_USEGCC ON
-                    "no emulator: build libmcc1 with the host CC, not the foreign mcc")
+            if(NOT MCC_RTLIB_USE_HOSTCC)
+                mcc_autocorrect(MCC_RTLIB_USE_HOSTCC ON
+                    "no emulator: build mccrt with the host CC, not the foreign mcc")
             endif()
             if(MCC_BUILD_TESTS)
                 mcc_autocorrect(MCC_BUILD_TESTS OFF
@@ -281,7 +281,7 @@ function(mcc_validate_config)
         else()
             message(FATAL_ERROR
                 "mcc config: CMAKE_CROSSCOMPILING is set, so the just-built `mcc` is a "
-                "foreign binary, but it must run on this host to build libmcc1.a (and the "
+                "foreign binary, but it must run on this host to build libmccrt.a (and the "
                 "tests/impdef/coverage steps). Set -DCMAKE_CROSSCOMPILING_EMULATOR=<run> "
                 "(e.g. wine for a WIN32 target, qemu-arm for arm) so it can be executed, "
                 "build host-runnable cross compilers instead with -DMCC_ENABLE_CROSS=ON "
@@ -314,9 +314,9 @@ function(mcc_validate_config)
             "cannot resolve libmcc.so. Enable MCC_BUILD_STATIC_LIB, or keep "
             "MCC_ONE_SOURCE=ON so mcc-static is self-contained.")
     endif()
-    if(NOT MCC_CONFIG_ASM AND NOT MCC_LIBMCC1_USEGCC)
-        mcc_autocorrect(MCC_LIBMCC1_USEGCC ON
-            "asm disabled: libmcc1 .S sources must be built with the host CC")
+    if(NOT MCC_CONFIG_ASM AND NOT MCC_RTLIB_USE_HOSTCC)
+        mcc_autocorrect(MCC_RTLIB_USE_HOSTCC ON
+            "asm disabled: mccrt .S sources must be built with the host CC")
     endif()
     if(NOT MCC_TOOLCHAIN_PROFILE STREQUAL "auto"
        AND NOT MCC_TOOLCHAIN_PROFILE STREQUAL "${MCC_CC_NAME}")
@@ -619,6 +619,105 @@ add_custom_target(clang-toolchain
     COMMAND "${CMAKE_COMMAND}" -P "${_clang_fetch}"
     COMMENT "Fetching self-contained LLVM/clang toolchain into cmake-clang"
     USES_TERMINAL VERBATIM)
+
+# `vendor-musl` — git-clone a copy of musl into vendor/musl (gitignored). Source
+# for MCC_BUILD_MUSL / a native musl sysroot on hosts without musl installed.
+# Idempotent: skips if the checkout already exists (delete it to re-clone).
+find_program(GIT_EXECUTABLE git)
+set(MCC_MUSL_URL "https://git.musl-libc.org/git/musl" CACHE STRING
+    "musl git repository URL for the `vendor-musl` target")
+set(MCC_MUSL_REF "v1.2.5" CACHE STRING
+    "musl git ref (tag/branch) to clone for `vendor-musl` (empty = default branch)")
+set(MCC_MUSL_DIR "${CMAKE_SOURCE_DIR}/vendor/musl" CACHE PATH
+    "Destination for the vendored musl checkout")
+
+set(_musl_fetch "${CMAKE_BINARY_DIR}/run_musl_fetch.cmake")
+file(WRITE "${_musl_fetch}"
+    "set(GIT \"${GIT_EXECUTABLE}\")\n"
+    "set(URL \"${MCC_MUSL_URL}\")\n"
+    "set(REF \"${MCC_MUSL_REF}\")\n"
+    "set(DEST \"${MCC_MUSL_DIR}\")\n")
+file(APPEND "${_musl_fetch}" [==[
+if(GIT STREQUAL "" OR NOT EXISTS "${GIT}")
+    message(FATAL_ERROR "vendor-musl: git not found. Install git or pass -DGIT_EXECUTABLE=<path>.")
+endif()
+if(EXISTS "${DEST}/.git")
+    message(STATUS "vendor-musl: ${DEST} already present "
+        "(delete it to re-clone, or update with: git -C ${DEST} pull)")
+    return()
+endif()
+get_filename_component(_parent "${DEST}" DIRECTORY)
+file(MAKE_DIRECTORY "${_parent}")
+set(_branchargs "")
+if(NOT REF STREQUAL "")
+    set(_branchargs --branch "${REF}")
+endif()
+message(STATUS "vendor-musl: cloning ${URL} (${REF}) into ${DEST}")
+execute_process(
+    COMMAND "${GIT}" clone --depth 1 ${_branchargs} "${URL}" "${DEST}"
+    RESULT_VARIABLE _rc)
+if(NOT _rc EQUAL 0)
+    file(REMOVE_RECURSE "${DEST}")
+    message(FATAL_ERROR "vendor-musl: git clone failed (${_rc}): ${URL}")
+endif()
+message(STATUS "vendor-musl: established ${DEST}")
+]==])
+
+add_custom_target(vendor-musl
+    COMMAND "${CMAKE_COMMAND}" -P "${_musl_fetch}"
+    COMMENT "Cloning musl (${MCC_MUSL_REF}) into vendor/musl"
+    USES_TERMINAL VERBATIM)
+
+# `musl-sysroot` — build the vendored musl source into a self-contained sysroot
+# (headers + crt*.o + libc.a/.so + the ld-musl-*.so.1 loader). This is what the
+# MCC_BUILD_MUSL variants target on a host without a system musl (see the
+# MCC_BUILD_MUSL block). Out-of-tree build so vendor/musl stays pristine.
+# Idempotent; depends on vendor-musl so a bare `--target musl-sysroot` clones first.
+set(MCC_MUSL_SYSROOT "${CMAKE_BINARY_DIR}/musl-sysroot" CACHE PATH
+    "Sysroot the mcc*-musl variants target (built by the `musl-sysroot` target from vendor/musl). Empty = use a system musl (/lib/ld-musl-*).")
+
+set(_musl_sysroot_build "${CMAKE_BINARY_DIR}/run_musl_sysroot.cmake")
+file(WRITE "${_musl_sysroot_build}"
+    "set(SRC \"${MCC_MUSL_DIR}\")\n"
+    "set(BLD \"${CMAKE_BINARY_DIR}/musl-build\")\n"
+    "set(SR  \"${MCC_MUSL_SYSROOT}\")\n")
+file(APPEND "${_musl_sysroot_build}" [==[
+if(SR STREQUAL "")
+    message(FATAL_ERROR "musl-sysroot: MCC_MUSL_SYSROOT is empty (system-musl mode); nothing to build.")
+endif()
+if(NOT EXISTS "${SRC}/configure")
+    message(FATAL_ERROR "musl-sysroot: no musl source at ${SRC}. Run the `vendor-musl` target first.")
+endif()
+if(EXISTS "${SR}/lib/libc.so")
+    message(STATUS "musl-sysroot: ${SR} already built (delete it to rebuild)")
+    return()
+endif()
+cmake_host_system_information(RESULT _np QUERY NUMBER_OF_LOGICAL_CORES)
+file(MAKE_DIRECTORY "${BLD}")
+file(MAKE_DIRECTORY "${SR}")
+message(STATUS "musl-sysroot: configuring musl (${SRC}) -> ${SR}")
+execute_process(COMMAND "${SRC}/configure" "--prefix=${SR}" "--syslibdir=${SR}/lib"
+    WORKING_DIRECTORY "${BLD}" RESULT_VARIABLE _rc)
+if(NOT _rc EQUAL 0)
+    message(FATAL_ERROR "musl-sysroot: configure failed (${_rc})")
+endif()
+message(STATUS "musl-sysroot: building (make -j${_np})")
+execute_process(COMMAND make -j${_np} WORKING_DIRECTORY "${BLD}" RESULT_VARIABLE _rc)
+if(NOT _rc EQUAL 0)
+    message(FATAL_ERROR "musl-sysroot: make failed (${_rc})")
+endif()
+execute_process(COMMAND make install WORKING_DIRECTORY "${BLD}" RESULT_VARIABLE _rc)
+if(NOT _rc EQUAL 0)
+    message(FATAL_ERROR "musl-sysroot: make install failed (${_rc})")
+endif()
+message(STATUS "musl-sysroot: established ${SR}")
+]==])
+
+add_custom_target(musl-sysroot
+    COMMAND "${CMAKE_COMMAND}" -P "${_musl_sysroot_build}"
+    COMMENT "Building musl sysroot -> ${MCC_MUSL_SYSROOT}"
+    USES_TERMINAL VERBATIM)
+add_dependencies(musl-sysroot vendor-musl)
 
 set(_toolchain_setup "${CMAKE_BINARY_DIR}/run_toolchain_setup.cmake")
 file(WRITE "${_toolchain_setup}" [==[
@@ -949,8 +1048,10 @@ mcc_config_node(MCC_BUILD_COVERAGE TYPE BOOL DEFAULT OFF GROUP "Diagnostics"
     HELP "Also build mcc_c (coverage instrumentation)")
 mcc_config_node(MCC_BUILD_SANITIZE TYPE BOOL DEFAULT OFF GROUP "Diagnostics"
     HELP "Also build mcc_s (-fsanitize=address,undefined)")
-mcc_config_node(MCC_LIBMCC1_USEGCC TYPE BOOL DEFAULT OFF GROUP "Build targets"
-    HELP "Build the native libmcc1 with the host CC instead of mcc (faster bcheck)")
+mcc_config_node(MCC_RTLIB_USE_HOSTCC TYPE BOOL DEFAULT OFF GROUP "Build targets"
+    HELP "Build the native mccrt with the host CC instead of mcc (faster bcheck)")
+mcc_config_node(MCC_EMBED_RTLIB TYPE BOOL DEFAULT ON GROUP "Build targets"
+    HELP "Bake libmccrt.a into the mcc binary (self-contained; no sidecar .a needed). Forces the native mccrt to be host-CC built to break the build cycle. ELF/Mach-O only.")
 mcc_config_node(MCC_CONFIG_AUTOCORRECT TYPE BOOL DEFAULT OFF GROUP "Build targets" ADVANCED
     HELP "Non-strict mode: auto-correct inert/non-runnable config combinations instead of only warning")
 
@@ -978,7 +1079,7 @@ mcc_config_node(MCC_CONFIG_NEW_DTAGS TYPE BOOL DEFAULT OFF GROUP "mcc features"
     VISIBLE_WHEN "${_elf}")
 
 mcc_config_node(MCC_AUTO_MCCDIR     TYPE BOOL DEFAULT ON GROUP "mcc features"
-    HELP "Build-tree mcc auto-discovers libmcc1.a + headers locally, falling back to system CONFIG_MCCDIR")
+    HELP "Build-tree mcc auto-discovers libmccrt.a + headers locally, falling back to system CONFIG_MCCDIR")
 
 mcc_config_node(MCC_CONFIG_LIBC    TYPE STRING DEFAULT "" GROUP "mcc features"
     HELP "Target libc: '', uClibc, or musl" CHOICES uClibc musl EMPTY_OK
@@ -1833,11 +1934,29 @@ endif()
 if(MCC_BUILD_MUSL AND NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT APPLE)
     mcc_musl_target("${MCC_CPU}" "${MCC_ARM_HARDFLOAT}" _mi _mt)
 
+    # Unless MCC_MUSL_SYSROOT was cleared (system-musl mode), target the vendored
+    # sysroot built by the `musl-sysroot` target: bake its absolute loader path as
+    # the interpreter (so output runs on a host without musl installed) and point
+    # {R} (CONFIG_SYSROOT) at it so headers/libs/crt resolve there too.
+    set(_musl_vendored OFF)
+    if(NOT MCC_MUSL_SYSROOT STREQUAL "" AND NOT _mi STREQUAL "")
+        set(_musl_vendored ON)
+        get_filename_component(_musl_loader "${_mi}" NAME)
+        set(_mi "${MCC_MUSL_SYSROOT}/lib/${_musl_loader}")
+    endif()
+
     set(_mccdefs_musl "")
     foreach(_d IN LISTS _mccdefs)
-        if(NOT _d MATCHES "^CONFIG_MCC_ELFINTERP="
-           AND NOT _d MATCHES "^CONFIG_TRIPLET="
-           AND NOT _d MATCHES "^CONFIG_MCC_MUSL=")
+        if(_d MATCHES "^CONFIG_MCC_ELFINTERP="
+           OR _d MATCHES "^CONFIG_TRIPLET="
+           OR _d MATCHES "^CONFIG_MCC_MUSL=")
+            # re-added below with musl values
+        elseif(_musl_vendored AND (_d MATCHES "^CONFIG_SYSROOT="
+               OR _d MATCHES "^CONFIG_MCC_SYSINCLUDEPATHS="
+               OR _d MATCHES "^CONFIG_MCC_LIBPATHS="
+               OR _d MATCHES "^CONFIG_MCC_CRTPREFIX="))
+            # re-pointed at the vendored sysroot below
+        else()
             list(APPEND _mccdefs_musl "${_d}")
         endif()
     endforeach()
@@ -1847,6 +1966,14 @@ if(MCC_BUILD_MUSL AND NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT APPLE)
     endif()
     if(NOT _mt STREQUAL "")
         list(APPEND _mccdefs_musl "CONFIG_TRIPLET=\"${_mt}\"")
+    endif()
+    if(_musl_vendored)
+        list(APPEND _mccdefs_musl
+            "CONFIG_SYSROOT=\"${MCC_MUSL_SYSROOT}\""
+            "CONFIG_MCC_SYSINCLUDEPATHS=\"{B}/include:{R}/include\""
+            "CONFIG_MCC_LIBPATHS=\"{B}:{R}/lib\""
+            "CONFIG_MCC_CRTPREFIX=\"{R}/lib\"")
+        message(STATUS "mcc: musl variants target vendored sysroot ${MCC_MUSL_SYSROOT} (build it: cmake --build . --target musl-sysroot)")
     endif()
 
     if(MCC_BUILD_STATIC_LIB)
@@ -1886,6 +2013,9 @@ if(MCC_BUILD_MUSL AND NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT APPLE)
         target_link_options(mcc_musl PRIVATE ${MCC_STRIP_LDFLAG})
     endif()
     install(TARGETS mcc_musl RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+    if(_musl_vendored)
+        add_dependencies(mcc_musl musl-sysroot)
+    endif()
 
     if(MCC_BUILD_STATIC_EXE)
         add_executable(mcc_static_musl src/mcc.c)
@@ -1916,6 +2046,9 @@ if(MCC_BUILD_MUSL AND NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT APPLE)
             add_dependencies(mcc_static_musl mcc_mccdefs)
         endif()
         install(TARGETS mcc_static_musl RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+        if(_musl_vendored)
+            add_dependencies(mcc_static_musl musl-sysroot)
+        endif()
     endif()
 
     if(MCC_BUILD_DYNAMIC_EXE AND NOT MCC_ONE_SOURCE)
@@ -2011,9 +2144,9 @@ if(MCC_BUILD_STATIC_EXE AND NOT MSVC AND NOT APPLE
     endforeach()
 endif()
 
-set(MCC_LIBMCC1_EXTRA_O runmain bt-exe bt-dll bt-log bcheck)
+set(MCC_RTLIB_EXTRA_O runmain bt-exe bt-dll bt-log bcheck)
 
-function(_mcc_libmcc1_src obj outvar)
+function(_mcc_rtlib_src obj outvar)
     set(_lib "${CMAKE_CURRENT_SOURCE_DIR}/runtime/lib")
     set(_win "${CMAKE_CURRENT_SOURCE_DIR}/runtime/win32/lib")
     if(obj STREQUAL "crt1w")
@@ -2029,16 +2162,16 @@ function(_mcc_libmcc1_src obj outvar)
     endif()
 endfunction()
 
-function(mcc_build_libmcc1 tname mcctgt cpu os native archive objdir out_extra)
+function(mcc_build_rtlib tname mcctgt cpu os native archive objdir out_extra)
     set(_common stdatomic atomic builtin alloca alloca-bt complex)
     if(cpu STREQUAL "i386" OR cpu STREQUAL "x86_64")
-        set(_objs libmcc1 ${_common})
+        set(_objs mccrt ${_common})
     elseif(cpu STREQUAL "arm")
-        set(_objs libmcc1 armeabi armflush ${_common})
+        set(_objs mccrt armeabi armflush ${_common})
     elseif(cpu STREQUAL "arm64" OR cpu STREQUAL "riscv64")
         set(_objs lib-arm64 ${_common})
     else()
-        message(FATAL_ERROR "mcc_build_libmcc1: unknown cpu '${cpu}'")
+        message(FATAL_ERROR "mcc_build_rtlib: unknown cpu '${cpu}'")
     endif()
 
     set(_win OFF)
@@ -2108,7 +2241,10 @@ function(mcc_build_libmcc1 tname mcctgt cpu os native archive objdir out_extra)
     file(MAKE_DIRECTORY "${objdir}")
 
     set(_use_gcc OFF)
-    if(native AND MCC_LIBMCC1_USEGCC)
+    # Embedding bakes this archive INTO mcc, so the archive must not depend on the
+    # mcc executable (that would be a build cycle). Building it with the host CC
+    # breaks the cycle; the objects are portable C and fully equivalent.
+    if(native AND (MCC_RTLIB_USE_HOSTCC OR MCC_EMBED_RTLIB))
         set(_use_gcc ON)
         set(_gccflags ${_mccdefs_flags}
                       -fPIC -fno-omit-frame-pointer -Wno-unused-function
@@ -2130,7 +2266,7 @@ function(mcc_build_libmcc1 tname mcctgt cpu os native archive objdir out_extra)
     set(_archived "")
     set(_extra "")
     foreach(obj IN LISTS _objs)
-        _mcc_libmcc1_src("${obj}" _src)
+        _mcc_rtlib_src("${obj}" _src)
         if(_use_gcc)
             set(_cc "${CMAKE_C_COMPILER}")
             set(_flags ${_gccflags})
@@ -2148,7 +2284,7 @@ function(mcc_build_libmcc1 tname mcctgt cpu os native archive objdir out_extra)
                 list(APPEND _flags -bt)
             endif()
         endif()
-        if(obj IN_LIST MCC_LIBMCC1_EXTRA_O)
+        if(obj IN_LIST MCC_RTLIB_EXTRA_O)
             set(_out "${_extra_dir}/${obj}.o")
             list(APPEND _extra "${_out}")
         else()
@@ -2182,14 +2318,40 @@ function(mcc_build_libmcc1 tname mcctgt cpu os native archive objdir out_extra)
     set(${out_extra} "${_extra}" PARENT_SCOPE)
 endfunction()
 
-if(MCC_TARGETOS STREQUAL "WIN32")
-    set(MCC_LIBMCC1_ARCHIVE "${CMAKE_BINARY_DIR}/lib/libmcc1.a")
-else()
-    set(MCC_LIBMCC1_ARCHIVE "${CMAKE_BINARY_DIR}/libmcc1.a")
+# Embedding streams the archive through a POSIX temp fd (mkstemp); not wired for
+# PE. Keep the on-disk sidecar there.
+if(MCC_EMBED_RTLIB AND MCC_TARGETOS STREQUAL "WIN32")
+    set(MCC_EMBED_RTLIB OFF)
+    message(STATUS "mcc: MCC_EMBED_RTLIB not supported on WIN32; using the sidecar libmccrt.a")
 endif()
-mcc_build_libmcc1(libmcc1 mcc "${MCC_CPU}" "${MCC_TARGETOS}" ON
-    "${MCC_LIBMCC1_ARCHIVE}" "${CMAKE_BINARY_DIR}/lib"
-    LIBMCC1_EXTRA_OBJS)
+
+if(MCC_TARGETOS STREQUAL "WIN32")
+    set(MCC_RTLIB_ARCHIVE "${CMAKE_BINARY_DIR}/lib/libmccrt.a")
+else()
+    set(MCC_RTLIB_ARCHIVE "${CMAKE_BINARY_DIR}/libmccrt.a")
+endif()
+mcc_build_rtlib(mccrt mcc "${MCC_CPU}" "${MCC_TARGETOS}" ON
+    "${MCC_RTLIB_ARCHIVE}" "${CMAKE_BINARY_DIR}/lib"
+    RTLIB_EXTRA_OBJS)
+
+# Bake libmccrt.a into the mcc binary: generate a byte-array TU from the archive
+# and link it into `mcc`, with MCC_EMBED_RTLIB=1 flipping mcc_add_runtime() over to
+# the embedded loader. Only the primary `mcc` target embeds; static/musl/cross
+# variants keep the on-disk sidecar. The archive is host-CC built (above), so this
+# introduces no build cycle.
+if(MCC_EMBED_RTLIB)
+    add_custom_command(
+        OUTPUT "${CMAKE_BINARY_DIR}/mccrt_blob.c"
+        COMMAND "${CMAKE_COMMAND}" -DIN=${MCC_RTLIB_ARCHIVE}
+                -DOUT=${CMAKE_BINARY_DIR}/mccrt_blob.c -DSYM=mccrt_blob
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/bin2c.cmake"
+        DEPENDS mccrt "${MCC_RTLIB_ARCHIVE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/cmake/bin2c.cmake"
+        COMMENT "Embedding ${MCC_RTLIB_ARCHIVE} into mcc (mccrt_blob.c)"
+        VERBATIM)
+    target_sources(mcc PRIVATE "${CMAKE_BINARY_DIR}/mccrt_blob.c")
+    target_compile_definitions(mcc PRIVATE MCC_EMBED_RTLIB=1)
+endif()
 
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/runtime/include/"
     DESTINATION "${CMAKE_BINARY_DIR}/include" FILES_MATCHING PATTERN "*.h")
@@ -2214,7 +2376,7 @@ if(MCC_BUILD_COVERAGE)
                 "-I${CMAKE_CURRENT_SOURCE_DIR}/src/arch/${MCC_CPU}"
                 "-I${CMAKE_CURRENT_SOURCE_DIR}/include"
                 "-B${CMAKE_CURRENT_SOURCE_DIR}" "-B${CMAKE_BINARY_DIR}"
-        DEPENDS mcc libmcc1 "${CMAKE_CURRENT_SOURCE_DIR}/src/mcc.c"
+        DEPENDS mcc mccrt "${CMAKE_CURRENT_SOURCE_DIR}/src/mcc.c"
         COMMENT "mcc -ftest-coverage mcc.c -> mcc_c" VERBATIM)
     add_custom_target(mcc_cov ALL DEPENDS "${CMAKE_BINARY_DIR}/mcc_c")
 endif()
@@ -2346,10 +2508,10 @@ if(MCC_ENABLE_CROSS)
         mcc_add_cross_mcc(mcc-${_t} "mcc-${_t}"
                           mcc-${_t}-static "mcc-${_t}-static" _cross_defs)
 
-        mcc_build_libmcc1(${_t}-libmcc1 mcc-${_t} "${_ccpu}" "${_cos}" OFF
-            "${CMAKE_BINARY_DIR}/${_t}-libmcc1.a"
+        mcc_build_rtlib(${_t}-mccrt mcc-${_t} "${_ccpu}" "${_cos}" OFF
+            "${CMAKE_BINARY_DIR}/${_t}-libmccrt.a"
             "${CMAKE_BINARY_DIR}/lib-${_t}" _cross_extra)
-        install(FILES "${CMAKE_BINARY_DIR}/${_t}-libmcc1.a"
+        install(FILES "${CMAKE_BINARY_DIR}/${_t}-libmccrt.a"
             DESTINATION "${_mccdir_install}")
 
         if(MCC_BUILD_MUSL AND NOT _ctriplet STREQUAL "" AND _cos STREQUAL "Linux")
@@ -2431,10 +2593,10 @@ install(FILES
     DESTINATION "${_mcc_cmakedir}")
 
 if(MCC_TARGETOS STREQUAL "WIN32")
-    install(FILES "${MCC_LIBMCC1_ARCHIVE}" ${LIBMCC1_EXTRA_OBJS}
+    install(FILES "${MCC_RTLIB_ARCHIVE}" ${RTLIB_EXTRA_OBJS}
         DESTINATION "${_mccdir}/lib")
 else()
-    install(FILES "${MCC_LIBMCC1_ARCHIVE}" ${LIBMCC1_EXTRA_OBJS}
+    install(FILES "${MCC_RTLIB_ARCHIVE}" ${RTLIB_EXTRA_OBJS}
         DESTINATION "${_mccdir}")
 endif()
 
@@ -3023,7 +3185,7 @@ if(MCC_BUILD_TESTS)
     if(MCC_ENABLE_CROSS)
         set(_mcc_cross_default "${CMAKE_BINARY_DIR}")
     else()
-        set(_mcc_cross_default "${CMAKE_SOURCE_DIR}/cmake-build-cross")
+        set(_mcc_cross_default "${CMAKE_SOURCE_DIR}/cmake-cross")
     endif()
     set(MCC_CROSS_DIR "${_mcc_cross_default}"
         CACHE PATH "cross-compiler build dir for the wine PE runtime test")
@@ -3217,6 +3379,30 @@ if(MCC_BUILD_TESTS)
                     --workdir "${CMAKE_BINARY_DIR}/qemu-work/${_arch}-${_libc}")
                 set_tests_properties(${_tn} PROPERTIES
                     FIXTURES_REQUIRED "MCC_BUILT;FX_${_tn}" LABELS qemu TIMEOUT 600)
+
+                # Full exec golden suite under qemu-user for foreign arches:
+                # cross-compile each "run" golden with mcc-<arch> against the
+                # stage3 sysroot and execute the ELF under qemu, comparing to the
+                # golden. The -run/JIT modes (need a native/foreign compiler) and
+                # the x86_64-calibrated / arch-gated goldens (32-bit long & ABI
+                # layout, quad long double, arch-specific asm) are excluded. The
+                # host arch is covered by the native exec suite (and its stage3
+                # crt0 is not mcc-loadable), so this runs on foreign arches only.
+                if(NOT _arch STREQUAL MCC_CPU)
+                    add_test(NAME ${_tn}-exec COMMAND exec_runner
+                        "${_qcc}" "${CMAKE_BINARY_DIR}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/runtime/include"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+                        "${CMAKE_BINARY_DIR}/exec-cross-${_arch}-${_libc}"
+                        integer_constants cast_operator struct_byval
+                        struct_packed_indirect bitfields bitfields_ms
+                        c11_freestanding_headers asm_outside_function riscv_asm
+                        atomic_counter)
+                    set_tests_properties(${_tn}-exec PROPERTIES
+                        FIXTURES_REQUIRED "MCC_BUILT;FX_${_tn}" LABELS qemu
+                        SKIP_RETURN_CODE 77 TIMEOUT 1200
+                        ENVIRONMENT "MCC_TEST_EMU=;MCC_TEST_RUNEMU=${_QEMU_${_arch}} -L ${_root};MCC_TEST_SYSROOT=${_root};MCC_TEST_CPU=${_arch};MCC_TEST_OS=${MCC_TARGETOS};MCC_TEST_ASM=$<IF:$<BOOL:${MCC_CONFIG_ASM}>,1,0>;MCC_TEST_BCHECK=0;MCC_TEST_BACKTRACE=$<IF:$<BOOL:${MCC_CONFIG_BACKTRACE}>,1,0>")
+                endif()
             endforeach()
         endforeach()
 
@@ -3274,7 +3460,7 @@ file(GLOB_RECURSE MCC_TAGFILES
     "${CMAKE_CURRENT_SOURCE_DIR}/*.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/*.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/*.S")
-list(FILTER MCC_TAGFILES EXCLUDE REGEX "/(cmake-build-[^/]*|cmake-windows-[^/]*|cmake-mingw-[^/]*|cmake-clang|build-[^/]*|\\.git|\\.idea|\\.cache)/")
+list(FILTER MCC_TAGFILES EXCLUDE REGEX "/(cmake-[^/]*|build-[^/]*|\\.git|\\.idea|\\.cache)/")
 find_program(CTAGS_EXE ctags)
 if(CTAGS_EXE)
     add_custom_target(tags
@@ -3320,6 +3506,5 @@ else()
 endif()
 set(CPACK_SOURCE_GENERATOR "TGZ;ZIP")
 set(CPACK_SOURCE_IGNORE_FILES
-    "/\\.git/" "/cmake-build-[^/]*/" "/cmake-windows-[^/]*/" "/cmake-mingw-[^/]*/"
-    "/cmake-clang/" "/build-[^/]*/" "/\\.idea/" "\\.o$" "\\.a$")
+    "/\\.git/" "/cmake-[^/]*/" "/build-[^/]*/" "/\\.idea/" "\\.o$" "\\.a$")
 include(CPack)

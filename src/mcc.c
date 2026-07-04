@@ -212,7 +212,7 @@ static void print_search_dirs(MCCState *s) {
 	printf("install: %s\n", s->mcc_lib_path);
 	print_dirs("include", s->sysinclude_paths, s->nb_sysinclude_paths);
 	print_dirs("libraries", s->library_paths, s->nb_library_paths);
-	printf("libmcc1:\n  %s/%s\n", s->library_paths[0], CONFIG_MCC_CROSSPREFIX MCC_LIBMCC1);
+	printf("mccrt:\n  %s/%s\n", s->library_paths[0], CONFIG_MCC_CROSSPREFIX MCC_RTLIB);
 #ifdef MCC_TARGET_UNIX
 	print_dirs("crt", s->crt_paths, s->nb_crt_paths);
 	printf("elfinterp:\n  %s\n", s->elfint);
