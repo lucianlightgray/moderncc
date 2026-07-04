@@ -2694,7 +2694,7 @@ if(NOT CMAKE_CROSSCOMPILING)
         add_executable(mccbench tools/bench.c tools/toolsupport.c)
         target_link_libraries(mccbench ${CMAKE_DL_LIBS})
         if(WIN32)
-            target_link_libraries(mccbench psapi)  # GetProcessMemoryInfo
+            target_link_libraries(mccbench psapi advapi32)  # GetProcessMemoryInfo + registry
         endif()
         # `bench` races mcc against the host compilers and writes a report to
         # the shared dist/ tree. --junit is optional: CI writes it beforehand

@@ -19,6 +19,16 @@
 #include <psapi.h>
 #endif
 
+#if MCC_HOST_DARWIN
+#include <sys/sysctl.h>
+#endif
+
+#if defined(__x86_64__) || defined(__i386__)
+#include <cpuid.h>
+#elif defined(_M_X64) || defined(_M_IX86)
+#include <intrin.h>
+#endif
+
 #define REPS_DEFAULT 3
 #define MAXCC 8
 #define MAXWL 8
@@ -398,12 +408,203 @@ static void write_tests(FILE *f, const char *junit) {
 	free(x);
 }
 
+/* ----- host machine details --------------------------------------------- */
+
+struct hostinfo {
+	char cpu_model[256];
+	int log_cores;      /* logical CPUs / hardware threads */
+	int phys_cores;     /* physical cores (0 = unknown) */
+	double cpu_mhz;     /* nominal/current clock (0 = unknown) */
+	long long mem_kb;   /* total physical RAM (0 = unknown) */
+	char virt[96];      /* virtualization / container guess */
+};
+
+/* CPUID leaf-1 ECX bit 31 => running under a hypervisor. */
+static int hypervisor_present(void) {
+#if defined(__x86_64__) || defined(__i386__)
+	unsigned a, b, c, d;
+	if (!__get_cpuid(1, &a, &b, &c, &d))
+		return -1;
+	return (c & (1u << 31)) ? 1 : 0;
+#elif defined(_M_X64) || defined(_M_IX86)
+	int r[4];
+	__cpuid(r, 1);
+	return (r[2] & (1 << 31)) ? 1 : 0;
+#else
+	return -1;
+#endif
+}
+
+#if MCC_HOST_LINUX
+/* Read a whole file via streaming I/O. Needed for /proc and /sys, whose
+ * virtual files report st_size == 0 and so read empty via stat-sized helpers. */
+static char *read_all(const char *path) {
+	FILE *fp = fopen(path, "rb");
+	char *buf = NULL;
+	size_t cap = 0, len = 0, n;
+	if (!fp)
+		return NULL;
+	do {
+		if (len + 4096 + 1 > cap) {
+			char *nb = realloc(buf, cap = len + 8192);
+			if (!nb) {
+				free(buf);
+				fclose(fp);
+				return NULL;
+			}
+			buf = nb;
+		}
+		n = fread(buf + len, 1, 4096, fp);
+		len += n;
+	} while (n == 4096);
+	fclose(fp);
+	buf[len] = 0;
+	return buf;
+}
+
+/* value of the first "key ... : <value>" line in text (proc-style) */
+static int proc_field(const char *text, const char *key, char *out, int n) {
+	size_t kl = strlen(key);
+	const char *p = text;
+	while (p && *p) {
+		if (!strncmp(p, key, kl)) {
+			const char *c = strchr(p, ':');
+			if (c) {
+				const char *e;
+				for (c++; *c == ' ' || *c == '\t'; c++)
+					;
+				e = strchr(c, '\n');
+				if (!e)
+					e = c + strlen(c);
+				snprintf(out, n, "%.*s", (int)(e - c), c);
+				return 1;
+			}
+		}
+		p = strchr(p, '\n');
+		if (p)
+			p++;
+	}
+	return 0;
+}
+
+static int file_has(const char *path, const char *needle, char *found, int fn) {
+	char *t = read_all(path);
+	int hit = 0;
+	if (t && (!needle || strstr(t, needle))) {
+		hit = 1;
+		if (found) {
+			int i = 0;
+			while (t[i] && t[i] != '\n' && i < fn - 1)
+				found[i] = t[i], i++;
+			found[i] = 0;
+		}
+	}
+	free(t);
+	return hit;
+}
+#endif
+
+static void fill_hostinfo(struct hostinfo *h) {
+	int hv;
+	memset(h, 0, sizeof *h);
+	snprintf(h->cpu_model, sizeof h->cpu_model, "%s", "?");
+	h->log_cores = host_nproc();
+	snprintf(h->virt, sizeof h->virt, "%s", "none detected");
+	hv = hypervisor_present();
+	if (hv == 1)
+		snprintf(h->virt, sizeof h->virt, "%s", "virtualized (hypervisor present)");
+
+#if MCC_HOST_LINUX
+	{
+		char v[256];
+		char *ci = read_all("/proc/cpuinfo");
+		char *mi = read_all("/proc/meminfo");
+		if (ci) {
+			if (proc_field(ci, "model name", v, sizeof v) ||
+				proc_field(ci, "Model", v, sizeof v) ||
+				proc_field(ci, "Hardware", v, sizeof v))
+				snprintf(h->cpu_model, sizeof h->cpu_model, "%s", v);
+			if (proc_field(ci, "cpu MHz", v, sizeof v))
+				h->cpu_mhz = atof(v);
+			if (proc_field(ci, "cpu cores", v, sizeof v))
+				h->phys_cores = atoi(v);
+		}
+		if (mi && proc_field(mi, "MemTotal", v, sizeof v))
+			h->mem_kb = atoll(v); /* "12345 kB" -> 12345 */
+		free(ci);
+		free(mi);
+	}
+	{ /* container / VM vendor hints refine the guess */
+		static const char *VM[] = {"QEMU", "KVM", "VMware", "VirtualBox", "Xen",
+								   "Bochs", "Parallels", "Hyper-V", "Virtual Machine",
+								   "Google Compute", "OpenStack", "Amazon EC2", 0};
+		char prod[128] = "";
+		int is_vm = 0, k;
+		file_has("/sys/class/dmi/id/product_name", NULL, prod, sizeof prod);
+		for (k = 0; VM[k]; k++)
+			if (strstr(prod, VM[k]))
+				is_vm = 1;
+		if (file_has("/.dockerenv", NULL, NULL, 0) ||
+			file_has("/run/.containerenv", NULL, NULL, 0))
+			snprintf(h->virt, sizeof h->virt, "%s", "container");
+		else if (hv == 1 || is_vm)
+			snprintf(h->virt, sizeof h->virt, "VM%s%s",
+					 prod[0] ? ": " : " (hypervisor present)", prod[0] ? prod : "");
+		else
+			snprintf(h->virt, sizeof h->virt, "%s", "none detected (bare metal)");
+	}
+#elif MCC_HOST_DARWIN
+	{
+		size_t sz;
+		long long ll;
+		int ci;
+		sz = sizeof h->cpu_model;
+		sysctlbyname("machdep.cpu.brand_string", h->cpu_model, &sz, NULL, 0);
+		sz = sizeof ll;
+		if (!sysctlbyname("hw.memsize", &ll, &sz, NULL, 0))
+			h->mem_kb = ll / 1024;
+		sz = sizeof ci;
+		if (!sysctlbyname("hw.physicalcpu", &ci, &sz, NULL, 0))
+			h->phys_cores = ci;
+		sz = sizeof ci;
+		if (!sysctlbyname("hw.logicalcpu", &ci, &sz, NULL, 0))
+			h->log_cores = ci;
+		sz = sizeof ll;
+		if (!sysctlbyname("hw.cpufrequency", &ll, &sz, NULL, 0))
+			h->cpu_mhz = (double)ll / 1e6;
+	}
+#elif MCC_HOST_WIN32
+	{
+		MEMORYSTATUSEX ms;
+		SYSTEM_INFO si;
+		HKEY k;
+		ms.dwLength = sizeof ms;
+		if (GlobalMemoryStatusEx(&ms))
+			h->mem_kb = (long long)(ms.ullTotalPhys / 1024);
+		GetSystemInfo(&si);
+		h->log_cores = (int)si.dwNumberOfProcessors;
+		if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
+						  "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", 0,
+						  KEY_READ, &k) == 0) {
+			DWORD sz = sizeof h->cpu_model, mhz = 0, msz = sizeof mhz;
+			RegQueryValueExA(k, "ProcessorNameString", NULL, NULL,
+							 (LPBYTE)h->cpu_model, &sz);
+			if (RegQueryValueExA(k, "~MHz", NULL, NULL, (LPBYTE)&mhz, &msz) == 0)
+				h->cpu_mhz = (double)mhz;
+			RegCloseKey(k);
+		}
+	}
+#endif
+}
+
 static void write_sysinfo(FILE *f, const char *plat, const struct compiler *ccs,
 						  int nccs) {
 	char sysname[128] = "?", release[128] = "?", machine[64] = "?";
+	struct hostinfo h;
 	int i;
 	host_sys_info(sysname, sizeof sysname, release, sizeof release, machine,
 				  sizeof machine);
+	fill_hostinfo(&h);
 	fprintf(f, "mcc benchmark report");
 	if (plat)
 		fprintf(f, " — %s", plat);
@@ -411,7 +612,18 @@ static void write_sysinfo(FILE *f, const char *plat, const struct compiler *ccs,
 	fprintf(f, "System\n");
 	fprintf(f, "  os      : %s %s\n", sysname, release);
 	fprintf(f, "  arch    : %s\n", machine);
-	fprintf(f, "  cpus    : %d\n", host_nproc());
+	fprintf(f, "  cpu     : %s\n", h.cpu_model[0] ? h.cpu_model : "?");
+	if (h.phys_cores)
+		fprintf(f, "  cores   : %d physical, %d logical\n", h.phys_cores,
+				h.log_cores);
+	else
+		fprintf(f, "  cores   : %d logical\n", h.log_cores);
+	if (h.cpu_mhz > 0)
+		fprintf(f, "  clock   : %.0f MHz\n", h.cpu_mhz);
+	if (h.mem_kb > 0)
+		fprintf(f, "  memory  : %.1f GiB (%lld kB)\n",
+				(double)h.mem_kb / (1024.0 * 1024.0), h.mem_kb);
+	fprintf(f, "  virt    : %s\n", h.virt);
 	fprintf(f, "  compilers:\n");
 	for (i = 0; i < nccs; i++)
 		fprintf(f, "    %-8s %s  (%s)\n", ccs[i].key,
