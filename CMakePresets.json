@@ -66,6 +66,12 @@
         "MCC_TARGETS": "native;cross"
       }
     },
+    {
+      "name": "local-ci",
+      "displayName": "Local CI driver: `ninja test` reproduces the whole CI + release matrix",
+      "inherits": "_ninja",
+      "cacheVariables": { "MCC_LOCAL_CI_AS_TEST": "ON" }
+    },
 
     {
       "name": "linux-gcc",
@@ -333,6 +339,7 @@
     { "name": "diagnostics", "configurePreset": "diagnostics" },
     { "name": "cross", "configurePreset": "cross" },
     { "name": "matrix", "configurePreset": "matrix" },
+    { "name": "local-ci", "configurePreset": "local-ci" },
 
     { "name": "linux-gcc", "configurePreset": "linux-gcc" },
     { "name": "linux-gcc-cross", "configurePreset": "linux-gcc-cross" },

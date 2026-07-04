@@ -237,6 +237,7 @@ host), enabling the kernel-fused apple-libc suite.
 | `MCC_ENABLE_RPATH` | BOOL | **ON** | | **!static-lib** | Bake `-rpath` into binaries linking `libmcc.so` so they find the shared lib at runtime (relevant by default, since the lib is shared). |
 | `MCC_SINGLE_SOURCE` | BOOL | **ON** | | always | Build libmcc from a single TU (amalgamation). Also seeded ON by the `mcc` profile. Set OFF for a multi-TU library. |
 | `MCC_BUILD_TESTS` | BOOL | **ON** | | always | Build/enable the CTest suite. |
+| `MCC_BENCH` | BOOL | OFF | | always | Build the `mccbench` tool and the `bench` target that races `mcc` against the host compilers and writes `dist/bench-<plat>.txt`. CI/release turn it on (see §benchmark). |
 | `MCC_MCCRT_USE_HOSTCC` | BOOL | OFF | | always | Build native `mccrt` with the host CC instead of `mcc` (faster bcheck). Auto-forced ON when no emulator / asm disabled. |
 | `MCC_EMBED_MCCRT` | BOOL | **ON** | | always (ELF/Mach-O; forced OFF on WIN32) | Bake `libmccrt.a` into the `mcc` binary (self-contained; no sidecar `.a` needed at link time). The embedded loader streams it through a temp fd to the ordinary alacarte archive loader. Forces the native `mccrt` to be host-CC built (like `MCC_MCCRT_USE_HOSTCC`) to break the mcc→archive→mcc build cycle. Only the primary `mcc` target embeds; static/musl/cross variants keep the sidecar. |
 | `MCC_CONFIG_AUTOCORRECT` | BOOL | OFF | | always (advanced) | Non-strict: auto-correct inert/non-runnable combos instead of only warning. |
