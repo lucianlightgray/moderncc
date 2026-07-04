@@ -16,6 +16,14 @@ CC="${CC:-cc}"
     "$SRC_MOUNT/tools/ci.c" "$SRC_MOUNT/tools/toolsupport.c" -ldl
 
 /tmp/mcc-ci stage "$SRC_MOUNT" "$SRC"
+
+# Download-once, share-everywhere: reuse the host's vendor toolchains when the
+# launcher bind-mounted them at /vendor (staging excludes vendor/ by design).
+if [ -d /vendor ]; then
+    ln -sfn /vendor "$SRC/vendor"
+    echo "==> sharing vendor toolchains from the /vendor mount"
+fi
+
 cd "$SRC"
 
 if [ -d /out ] && [ -w /out ]; then

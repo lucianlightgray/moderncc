@@ -320,15 +320,25 @@ Active when `MCC_TOOLCHAIN_PROFILE` is a list, `MCC_TARGETS` ≠ `native`, or
 
 ## 10. Self-contained toolchain downloads (opt-in targets)
 
-Only consumed by the `mingw-toolchain` / `clang-toolchain` fetch targets.
+Every automated download / vendored toolchain lands under one root,
+`MCC_VENDOR_DIR` (`<src>/vendor`, gitignored): `vendor/mingw-*`, `vendor/clang`,
+`vendor/musl`, `vendor/musl-sysroot`, and an optional drop-in `vendor/gcc`. The
+compiler-resolution functions check `vendor/` **first** (vendor-first), so a
+fetched toolchain is auto-detected on the next configure with no extra flags —
+download once, share across build dirs (and, via a bind mount, into the docker
+runners).
+
+Consumed by the `mingw-toolchain` / `clang-toolchain` / `vendor-musl` /
+`musl-sysroot` fetch targets.
 
 | Value | Type | Default | Purpose |
 |---|---|---|---|
-| `MCC_MINGW_DIR` | PATH | source dir | Parent dir for `cmake-mingw-*` trees. |
+| `MCC_VENDOR_DIR` | PATH | `<src>/vendor` | Root for all downloaded/vendored toolchains (gcc/clang/mingw/musl). Checked first by autodetect. |
+| `MCC_MINGW_DIR` | PATH | `vendor` | Parent dir for `mingw-*` trees. |
 | `MCC_MINGW_WINLIBS_X86_64_URL` / `_SHA256` | STRING | pinned | WinLibs x86_64 zip + hash. |
 | `MCC_MINGW_WINLIBS_I686_URL` / `_SHA256` | STRING | pinned | WinLibs i686 zip + hash. |
 | `MCC_MINGW_MULTILIB_URL` / `_SHA256` / `_SUBDIR` | STRING | `''` / `''` / `mingw64` | Single-gcc multilib archive (required when `MCC_MINGW_SOURCE=multilib`). |
-| `MCC_CLANG_DIR` | PATH | source dir | Parent dir for the `cmake-clang` tree. |
+| `MCC_CLANG_DIR` | PATH | `vendor` | Parent dir for the `clang` tree. |
 | `MCC_CLANG_URL` / `_SHA256` / `_SUBDIR` | STRING | host-dependent | LLVM release archive, hash, and top-level dir. |
 | `MCC_CONFIG_EXTRA` | FILEPATH | `config-extra.cmake` | Optional extra CMake config included before options. |
 

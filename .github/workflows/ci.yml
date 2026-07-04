@@ -48,9 +48,11 @@ jobs:
         run: |
           mkdir -p "ci-out/$ART"
           chmod -R 777 ci-out
+          mkdir -p "$PWD/vendor"
           docker run --rm \
             -e PRESET=${{ matrix.preset }} \
             -v "$PWD:/work:ro" \
+            -v "$PWD/vendor:/vendor" \
             -v "$PWD/ci-out/$ART:/out" \
             mcc-ci
       - name: pack build targets
@@ -176,9 +178,11 @@ jobs:
         run: docker build -t mcc-qemu tests/qemu/docker
       - name: run qemu-${{ matrix.arch }} x {glibc,musl}
         run: |
+          mkdir -p "$PWD/vendor"
           docker run --rm \
             -e PRESET=qemu-${{ matrix.arch }} \
             -v "$PWD:/work" \
+            -v "$PWD/vendor:/vendor" \
             -v mcc-qemu-roots:/qemu-roots \
             mcc-qemu
 

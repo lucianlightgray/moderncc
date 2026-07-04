@@ -110,7 +110,7 @@ totals assume the optional clang toolchain has been fetched (`cmake --build
 the ~260 three-way `diff3`/`preprocess` cases self-skip and the native suite is
 **513/513**. `mingw` (superbuild; fetches the pinned winlibs GCC and tests with
 it) and `matrix` (gcc/clang × native/cross — **4 cells × 775/775**, clang
-resolved from the fetched `cmake-clang`) are green too. Both `dist-*` packagings
+resolved from the fetched `vendor/clang`) are green too. Both `dist-*` packagings
 build the full artifact matrix — mcc + `-static`/`-dynamic` +
 `libmcc-static`/`-dynamic` + all 11 cross compilers; `dist-mingw` additionally
 ships each cross compiler in a fully-static (`-static`) shape, while `dist-msvc`
@@ -255,7 +255,7 @@ callbacks/library calls).
 differential self-skips. On macOS `gcc`/`cc` are the Apple clang shim, so a
 genuine Homebrew `gcc-<n>` (installed by `setup-gcc`) is auto-detected. On
 Windows no system clang is needed: `cmake --build <bld> --target
-clang-toolchain` fetches a pinned, SHA256-verified LLVM into `cmake-clang/`,
+clang-toolchain` fetches a pinned, SHA256-verified LLVM into `vendor/clang/`,
 auto-wired by the next reconfigure (both suites then run and pass).
 ³ Needs POSIX `sh` (`MCC_TEST_SH`) + `nm`/`readelf`; ~31 ELF-image cases
 self-skip on a PE target.

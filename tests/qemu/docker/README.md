@@ -28,18 +28,23 @@ docker build -t mcc-qemu tests/qemu/docker
 
 ## Run
 
-From the repo root. Mount the repo at `/work` and a named volume at
-`/qemu-roots` so the (large) Gentoo downloads are cached across runs:
+From the repo root. Mount the repo at `/work`, your `vendor/` tree at `/vendor`,
+and a named volume at `/qemu-roots` so the (large) Gentoo downloads are cached
+across runs:
 
 ```sh
 docker run --rm \
   -v "$PWD":/work \
+  -v "$PWD/vendor:/vendor" \
   -v mcc-qemu-roots:/qemu-roots \
   mcc-qemu
 ```
 
 The repo mount is staged to an internal `/src` copy, so no Linux build
-artifacts are written back into your macOS tree.
+artifacts are written back into your macOS tree. The separate `/vendor` mount is
+the exception on purpose: fetched toolchains (clang/mingw/musl) are shared from
+your host `vendor/` into the container — downloaded once, reused everywhere —
+and any new fetch persists back to the host tree.
 
 ### Narrow the matrix
 
@@ -50,19 +55,19 @@ optional overrides applied on top of the preset; trailing args pass through to
 
 ```sh
 # one arch via its preset (what CI runs)
-docker run --rm -v "$PWD":/work -v mcc-qemu-roots:/qemu-roots \
+docker run --rm -v "$PWD":/work -v "$PWD/vendor:/vendor" -v mcc-qemu-roots:/qemu-roots \
   -e PRESET=qemu-x86_64 mcc-qemu
 
 # one cell, fast smoke test (override the default preset's grid)
-docker run --rm -v "$PWD":/work -v mcc-qemu-roots:/qemu-roots \
+docker run --rm -v "$PWD":/work -v "$PWD/vendor:/vendor" -v mcc-qemu-roots:/qemu-roots \
   -e ARCHS=x86_64 -e LIBCS=glibc mcc-qemu
 
 # everything, but only the musl rows
-docker run --rm -v "$PWD":/work -v mcc-qemu-roots:/qemu-roots \
+docker run --rm -v "$PWD":/work -v "$PWD/vendor:/vendor" -v mcc-qemu-roots:/qemu-roots \
   -e LIBCS=musl mcc-qemu
 
 # pass ctest flags (e.g. a single test by name)
-docker run --rm -v "$PWD":/work -v mcc-qemu-roots:/qemu-roots \
+docker run --rm -v "$PWD":/work -v "$PWD/vendor:/vendor" -v mcc-qemu-roots:/qemu-roots \
   mcc-qemu -R qemu-arm64-glibc
 ```
 
