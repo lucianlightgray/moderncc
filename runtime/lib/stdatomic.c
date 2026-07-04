@@ -107,5 +107,15 @@ bool ATOMIC(is_lock_free)(unsigned long size, const volatile void *ptr) {
 }
 
 #ifndef __MCC__
+/* Mach-O rejects non-weak __attribute__((alias)) and gcc ICEs on weak,alias
+   there, so emit the alias with an assembler .set. */
+#if defined __APPLE__
+#define MCC_STR2(x) #x
+#define MCC_STR(x) MCC_STR2(x)
+#define MCC_ULP MCC_STR(__USER_LABEL_PREFIX__)
+__asm__(".globl " MCC_ULP "__atomic_is_lock_free"
+		"\n\t.set " MCC_ULP "__atomic_is_lock_free," MCC_ULP "__mcc_atomic_is_lock_free");
+#else
 bool __atomic_is_lock_free(unsigned long size, const volatile void *ptr) __attribute__((alias("__mcc_atomic_is_lock_free")));
+#endif
 #endif

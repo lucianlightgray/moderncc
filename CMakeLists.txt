@@ -2325,6 +2325,15 @@ if(MCC_EMBED_RTLIB AND MCC_TARGETOS STREQUAL "WIN32")
     message(STATUS "mcc: MCC_EMBED_RTLIB not supported on WIN32; using the sidecar libmccrt.a")
 endif()
 
+# Embedding forces the native mccrt to be host-CC built (see mcc_build_rtlib).
+# On Darwin the host CC emits Mach-O objects, but mcc's object loader reads only
+# ELF, so it cannot link a host-CC-built runtime. Fall back to the sidecar, which
+# is built by mcc itself (ELF, and therefore loadable).
+if(MCC_EMBED_RTLIB AND MCC_TARGETOS STREQUAL "Darwin" AND NOT MCC_RTLIB_USE_HOSTCC)
+    set(MCC_EMBED_RTLIB OFF)
+    message(STATUS "mcc: MCC_EMBED_RTLIB unsupported on Darwin (mcc reads ELF objects only); using the sidecar libmccrt.a")
+endif()
+
 if(MCC_TARGETOS STREQUAL "WIN32")
     set(MCC_RTLIB_ARCHIVE "${CMAKE_BINARY_DIR}/lib/libmccrt.a")
 else()

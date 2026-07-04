@@ -973,7 +973,7 @@ struct MCCState {
 	int asmgoto_n;
 	struct asm_cfi_state asm_cfi;
 
-	/* --- per-function codegen state (rehomed from arch/*-gen.c file statics;
+	/* --- per-function codegen state (rehomed from arch/<target>-gen.c file statics;
 	   only the active target's backend is compiled, so shared names collapse
 	   onto shared fields here) --- */
 	unsigned long cg_func_sub_sp_offset;
