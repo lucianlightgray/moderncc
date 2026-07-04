@@ -595,7 +595,8 @@ static int do_pkg(int argc, char **argv) {
 	 * release assets that this one file holds the others, so they can grab
 	 * everything at once instead of picking archives apart. */
 	if (names.n > 1) {
-		int ncomp = names.n, j;
+		int ncomp = names.n, j, isf;
+		char bench[8192];
 		snprintf(d, sizeof d, "bundle-%s-%s", ver_s, plat);
 		ts_path(dd, sizeof dd, pkg, "%s", d);
 		host_mkdirs(dd);
@@ -603,6 +604,11 @@ static int do_pkg(int argc, char **argv) {
 			ts_path(src, sizeof src, out, "%s", names.a[j]);
 			pkg_copy_into(src, dd);
 		}
+		/* fold in the benchmark report for this platform, if one was produced
+		 * (MCC_BENCH builds write out/bench-<plat>.txt); harmless if absent */
+		ts_path(bench, sizeof bench, out, "bench-%s.txt", plat);
+		if (host_stat(bench, &isf, NULL, NULL) == 0 && !isf)
+			pkg_copy_into(bench, dd);
 		if (pkg_archive(pkg, out, d, ext, &names))
 			return 1;
 	}

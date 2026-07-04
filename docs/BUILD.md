@@ -198,7 +198,18 @@ three component archives — `mcc-<ver>-<plat>` (compiler + variants + runtime),
 all-in-one archive whose contents are those three (the `bundle-` prefix signals
 "contains the other archives"), and a `checksums-<plat>.txt` covering all four.
 Because the install prefix and the packaging output are both `dist/`, `ci pkg`
-stages into a private `pkg/` scratch tree and never wipes `dist/`.
+stages into a private `.pkg/` scratch tree (inside `dist/`) and never wipes `dist/`.
+
+**Benchmark (`MCC_BENCH`, default OFF; CI turns it on).** Builds the `mccbench`
+host tool and a `bench` target that races mcc against the host compilers
+(gcc/clang/mingw/msvc) over three workloads — the portable `tests/bench/corpus.c`,
+`tests/diff/full_language.c`, and mcc's own single-source TU — measuring wall
+time, CPU, peak RSS, object size, and functions/second (function counts come
+from mcc's `-bench`). It writes `dist/bench-<plat>.txt`: system info, a
+per-workload compiler table, and a test-results table parsed from a ctest
+`--output-junit` file (pass `--junit`; skipped if absent). `ci pkg` folds the
+report into the release `bundle-`; CI also uploads it and posts it to the job
+summary.
 
 Build presets exist for every configure preset; test presets exist for all
 except the build-only (`mingw`), test-less (`dist-*`), and superbuild

@@ -91,11 +91,17 @@ jobs:
             echo "CC=clang" >> "$GITHUB_ENV"
           fi
       - name: configure
-        run: cmake --preset ${{ matrix.preset }} "-DCMAKE_INSTALL_PREFIX=$PWD/dist/$ART"
+        run: cmake --preset ${{ matrix.preset }} "-DCMAKE_INSTALL_PREFIX=$PWD/dist/$ART" -DMCC_BENCH=ON "-DMCC_DIST_PLAT=$ART"
       - name: build
         run: cmake --build --preset ${{ matrix.preset }} -j"$(sysctl -n hw.ncpu)"
       - name: test
-        run: ctest --preset ${{ matrix.preset }} -j"$(sysctl -n hw.ncpu)"
+        run: ctest --preset ${{ matrix.preset }} -j"$(sysctl -n hw.ncpu)" --output-junit "$PWD/cmake-${{ matrix.preset }}/bench-tests.xml"
+      - name: benchmark
+        if: always()
+        run: |
+          cmake --build --preset ${{ matrix.preset }} --target bench
+          echo "### benchmark — $ART" >> "$GITHUB_STEP_SUMMARY"
+          { echo '```'; cat dist/bench-*.txt 2>/dev/null || echo '(no report)'; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - name: install + pack build targets
         run: |
           cmake --install cmake-${{ matrix.preset }}
@@ -103,7 +109,9 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ART }}
-          path: ${{ env.ART }}.tar.xz
+          path: |
+            ${{ env.ART }}.tar.xz
+            dist/bench-*.txt
 
   msvc:
     name: msvc / ${{ matrix.arch }}
@@ -127,11 +135,19 @@ jobs:
           if ($gcc)   { "MCC_DIFF3_GCC=$($gcc.Replace('\','/'))"     | Out-File -FilePath $env:GITHUB_ENV -Append }
           if ($clang) { "MCC_DIFF3_CLANG=$($clang.Replace('\','/'))" | Out-File -FilePath $env:GITHUB_ENV -Append }
       - name: configure
-        run: cmake --preset msvc "-DCMAKE_INSTALL_PREFIX=$($PWD.Path.Replace('\','/'))/dist/${env:ART}"
+        run: cmake --preset msvc "-DCMAKE_INSTALL_PREFIX=$($PWD.Path.Replace('\','/'))/dist/${env:ART}" "-DMCC_BENCH=ON" "-DMCC_DIST_PLAT=${env:ART}"
       - name: build
         run: cmake --build --preset msvc -j
       - name: test
-        run: ctest --preset msvc -j ${env:NUMBER_OF_PROCESSORS}
+        run: ctest --preset msvc -j ${env:NUMBER_OF_PROCESSORS} --output-junit "cmake-msvc/bench-tests.xml"
+      - name: benchmark
+        if: always()
+        run: |
+          cmake --build --preset msvc --config Release --target bench
+          Add-Content $env:GITHUB_STEP_SUMMARY "### benchmark - ${env:ART}"
+          Add-Content $env:GITHUB_STEP_SUMMARY '```'
+          Get-Content dist/bench-*.txt | Add-Content $env:GITHUB_STEP_SUMMARY
+          Add-Content $env:GITHUB_STEP_SUMMARY '```'
       - name: install + pack build targets
         run: |
           cmake --install cmake-msvc --config Release
@@ -139,7 +155,9 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ART }}
-          path: ${{ env.ART }}.tar.xz
+          path: |
+            ${{ env.ART }}.tar.xz
+            dist/bench-*.txt
 
   mingw:
     name: mingw / native
@@ -155,8 +173,16 @@ jobs:
         run: choco install ninja -y
       - name: configure + build (superbuild fetches winlibs GCC)
         run: |
-          cmake --preset mingw "-DCMAKE_INSTALL_PREFIX=$($PWD.Path.Replace('\','/'))/dist/${env:ART}"
+          cmake --preset mingw "-DCMAKE_INSTALL_PREFIX=$($PWD.Path.Replace('\','/'))/dist/${env:ART}" "-DMCC_BENCH=ON" "-DMCC_DIST_PLAT=${env:ART}"
           cmake --build --preset mingw -j
+      - name: benchmark
+        if: always()
+        run: |
+          cmake --build --preset mingw --target bench
+          Add-Content $env:GITHUB_STEP_SUMMARY "### benchmark - ${env:ART}"
+          Add-Content $env:GITHUB_STEP_SUMMARY '```'
+          Get-Content dist/bench-*.txt | Add-Content $env:GITHUB_STEP_SUMMARY
+          Add-Content $env:GITHUB_STEP_SUMMARY '```'
       - name: install + pack build targets
         run: |
           cmake --install cmake-mingw
@@ -164,7 +190,9 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ART }}
-          path: ${{ env.ART }}.tar.xz
+          path: |
+            ${{ env.ART }}.tar.xz
+            dist/bench-*.txt
 
   qemu:
     name: qemu / ${{ matrix.arch }} (glibc+musl)
@@ -217,16 +245,24 @@ jobs:
         run: |
           set -eux
           cmake --preset ${{ matrix.preset }} \
-            "-DMCC_DIST_VERSION=ci-${GITHUB_SHA::12}" "-DMCC_DIST_PLAT=${{ matrix.preset }}-${{ matrix.arch }}"
+            "-DMCC_DIST_VERSION=ci-${GITHUB_SHA::12}" "-DMCC_DIST_PLAT=${{ matrix.preset }}-${{ matrix.arch }}" \
+            -DMCC_BENCH=ON
           cmake --build --preset ${{ matrix.preset }} -j"$(nproc)"
           cmake --install cmake-${{ matrix.preset }}
+          cmake --build --preset ${{ matrix.preset }} --target bench
           cmake --build --preset ${{ matrix.preset }} --target package-dist
+      - name: benchmark summary
+        if: always()
+        run: |
+          echo "### benchmark — ${{ matrix.preset }}-${{ matrix.arch }}" >> "$GITHUB_STEP_SUMMARY"
+          { echo '```'; cat dist/bench-*.txt 2>/dev/null || echo '(no report)'; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
         with:
           name: mcc-${{ matrix.preset }}-${{ matrix.arch }}
           path: |
             dist/*.tar.xz
             dist/checksums-*.txt
+            dist/bench-*.txt
 
   dist-macos:
     name: dist-macos / ${{ matrix.arch }}
@@ -245,13 +281,21 @@ jobs:
         run: |
           set -eux
           cmake --preset dist-macos \
-            "-DMCC_DIST_VERSION=ci-${GITHUB_SHA::12}" "-DMCC_DIST_PLAT=dist-macos-${{ matrix.arch }}"
+            "-DMCC_DIST_VERSION=ci-${GITHUB_SHA::12}" "-DMCC_DIST_PLAT=dist-macos-${{ matrix.arch }}" \
+            -DMCC_BENCH=ON
           cmake --build --preset dist-macos -j"$(sysctl -n hw.ncpu)"
           cmake --install cmake-dist-macos
+          cmake --build --preset dist-macos --target bench
           cmake --build --preset dist-macos --target package-dist
+      - name: benchmark summary
+        if: always()
+        run: |
+          echo "### benchmark — dist-macos-${{ matrix.arch }}" >> "$GITHUB_STEP_SUMMARY"
+          { echo '```'; cat dist/bench-*.txt 2>/dev/null || echo '(no report)'; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
         with:
           name: mcc-dist-macos-${{ matrix.arch }}
           path: |
             dist/*.tar.xz
             dist/checksums-*.txt
+            dist/bench-*.txt

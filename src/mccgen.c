@@ -9905,6 +9905,7 @@ static void sym_push_params(Sym *ref) {
 static void gen_function(Sym *sym) {
 	struct scope f = {0};
 
+	total_funcs++;
 	cur_scope = root_scope = &f;
 	nocode_wanted = 0;
 

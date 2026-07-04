@@ -2371,9 +2371,9 @@ LIBMCCAPI int mcc_set_options(MCCState *s, const char *r) {
 PUB_FUNC void mcc_print_stats(MCCState *s1, unsigned total_time) {
 	if (!total_time)
 		total_time = 1;
-	fprintf(stderr, "# %d idents, %d lines, %u bytes\n"
+	fprintf(stderr, "# %d idents, %d lines, %d functions, %u bytes\n"
 					"# %0.3f s, %u lines/s, %0.1f MB/s\n",
-			total_idents, total_lines, total_bytes,
+			total_idents, total_lines, total_funcs, total_bytes,
 			(double)total_time / 1000,
 			(unsigned)total_lines * 1000 / total_time,
 			(double)total_bytes / 1000 / total_time);

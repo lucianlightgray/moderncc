@@ -1030,6 +1030,8 @@ mcc_config_node(MCC_SINGLE_SOURCE    TYPE BOOL DEFAULT ON  GROUP "Build targets"
     HELP "Build libmcc from a single TU (Makefile: SINGLE_SOURCE)")
 mcc_config_node(MCC_BUILD_TESTS   TYPE BOOL DEFAULT ON  GROUP "Build targets"
     HELP "Build/enable the test suite (tests/Makefile)")
+mcc_config_node(MCC_BENCH         TYPE BOOL DEFAULT OFF GROUP "Build targets"
+    HELP "Build the mccbench tool and the `bench` target (compile-speed report). Off by default; CI enables it")
 mcc_config_node(MCC_ALL_DIAGNOSTICS TYPE BOOL DEFAULT OFF GROUP "Diagnostics" ADVANCED
     HELP "Everything-on diagnostics: verbose warnings + debug info + build mcc_s/mcc_p/mcc_c")
 if(MCC_ALL_DIAGNOSTICS)
@@ -2687,6 +2689,29 @@ if(NOT CMAKE_CROSSCOMPILING)
         VERBATIM USES_TERMINAL
         COMMENT "Packaging release bundles (mcc/libmcc/mcc-cross) via `ci pkg`")
     add_dependencies(package-dist ci)
+
+    if(MCC_BENCH)
+        add_executable(mccbench tools/bench.c tools/toolsupport.c)
+        target_link_libraries(mccbench ${CMAKE_DL_LIBS})
+        if(WIN32)
+            target_link_libraries(mccbench psapi)  # GetProcessMemoryInfo
+        endif()
+        # `bench` races mcc against the host compilers and writes a report to
+        # the shared dist/ tree. --junit is optional: CI writes it beforehand
+        # with `ctest --output-junit`; absent, the test table is skipped.
+        add_custom_target(bench
+            COMMAND "$<TARGET_FILE:mccbench>"
+                    --mcc "$<TARGET_FILE:mcc>"
+                    --srcroot "${CMAKE_SOURCE_DIR}"
+                    --builddir "${CMAKE_BINARY_DIR}"
+                    --plat "${MCC_DIST_PLAT}"
+                    --junit "${CMAKE_BINARY_DIR}/bench-tests.xml"
+                    --out "${MCC_DIST_DIR}/bench-${MCC_DIST_PLAT}.txt"
+            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+            VERBATIM USES_TERMINAL
+            COMMENT "Benchmarking compilers (mcc/gcc/clang/mingw/msvc) via mccbench")
+        add_dependencies(bench mccbench mcc)
+    endif()
 endif()
 
 if(MCC_BUILD_TESTS)
