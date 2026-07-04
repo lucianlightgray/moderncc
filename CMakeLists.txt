@@ -2366,13 +2366,38 @@ mcc_build_mccrt(mccrt mcc "${MCC_CPU}" "${MCC_TARGETOS}" ON
 # variants keep the on-disk sidecar. The archive is host-CC built (above), so this
 # introduces no build cycle.
 if(MCC_EMBED_MCCRT)
+    # The bin2c codegen tool must run on the build host, so under cross-compilation
+    # compile it with a host CC rather than the (target) project compiler — same
+    # treatment as c2str above.
+    if(CMAKE_CROSSCOMPILING)
+        find_program(MCC_HOSMCC
+            NAMES "$ENV{CC_FOR_BUILD}" "$ENV{HOSMCC}" cc gcc clang
+            DOC "Host C compiler used to build the codegen tools (c2str/bin2c)")
+        if(NOT MCC_HOSMCC)
+            message(FATAL_ERROR
+                "MCC_EMBED_MCCRT with CMAKE_CROSSCOMPILING needs a host C compiler "
+                "to build bin2c. Set -DMCC_HOSMCC=<cc> (or CC_FOR_BUILD), or pass "
+                "-DMCC_EMBED_MCCRT=OFF to keep the on-disk sidecar libmccrt.a.")
+        endif()
+        set(_bin2c_exe "${CMAKE_CURRENT_BINARY_DIR}/bin2c_host")
+        execute_process(
+            COMMAND "${MCC_HOSMCC}" -o "${_bin2c_exe}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tools/bin2c.c"
+            RESULT_VARIABLE _bin2c_rc)
+        if(NOT _bin2c_rc EQUAL 0)
+            message(FATAL_ERROR "Host compiler '${MCC_HOSMCC}' failed to build bin2c")
+        endif()
+        set(_bin2c_dep "${_bin2c_exe}")
+    else()
+        add_executable(bin2c tools/bin2c.c)
+        set(_bin2c_exe "$<TARGET_FILE:bin2c>")
+        set(_bin2c_dep bin2c)
+    endif()
     add_custom_command(
         OUTPUT "${CMAKE_BINARY_DIR}/mccrt_blob.c"
-        COMMAND "${CMAKE_COMMAND}" -DIN=${MCC_MCCRT_ARCHIVE}
-                -DOUT=${CMAKE_BINARY_DIR}/mccrt_blob.c -DSYM=mccrt_blob
-                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/bin2c.cmake"
-        DEPENDS mccrt "${MCC_MCCRT_ARCHIVE}"
-                "${CMAKE_CURRENT_SOURCE_DIR}/cmake/bin2c.cmake"
+        COMMAND "${_bin2c_exe}" "${MCC_MCCRT_ARCHIVE}"
+                "${CMAKE_BINARY_DIR}/mccrt_blob.c" mccrt_blob
+        DEPENDS ${_bin2c_dep} mccrt "${MCC_MCCRT_ARCHIVE}"
         COMMENT "Embedding ${MCC_MCCRT_ARCHIVE} into mcc (mccrt_blob.c)"
         VERBATIM)
     target_sources(mcc PRIVATE "${CMAKE_BINARY_DIR}/mccrt_blob.c")

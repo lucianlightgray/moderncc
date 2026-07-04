@@ -1203,7 +1203,7 @@ ST_FUNC int mcc_add_support(MCCState *s1, const char *filename) {
 
 #ifdef MCC_EMBED_MCCRT
 /* The runtime-support archive (libmccrt.a) is baked into the mcc binary at build
-   time (MCC_EMBED_MCCRT; see cmake/bin2c.cmake) as this byte blob, so mcc needs
+   time (MCC_EMBED_MCCRT; see tools/bin2c.c) as this byte blob, so mcc needs
    no sidecar .a on disk. We stream it through an anonymous temp fd and hand it to
    the ordinary archive loader unchanged: identical alacarte member resolution,
    zero duplication of the ELF/ar reader. */
