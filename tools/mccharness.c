@@ -67,6 +67,16 @@ static const char *opt(int argc, char **argv, const char *key, const char *dflt)
     return dflt;
 }
 
+/* presence test for a valueless flag (e.g. --list), skipping argv[0..1]        */
+static int has_flag(int argc, char **argv, const char *key)
+{
+    int i;
+    for (i = 2; i < argc; i++)
+        if (!strcmp(argv[i], key))
+            return 1;
+    return 0;
+}
+
 /* split a space-separated flag string (strdup'd) and append each token to v */
 static void split_append(Argv *v, const char *s)
 {
@@ -208,13 +218,28 @@ static int suite_parts(int argc, char **argv)
     const char *idir = opt(argc, argv, "--idir", NULL);
     const char *parts= opt(argc, argv, "--parts", NULL);
     const char *work = opt(argc, argv, "--work", NULL);
+    /* --list prints every unit name (run_*.c basename, .c stripped); --only
+       <name> compiles just that unit -- the per-case CTest (granular) mode. */
+    const char *only = opt(argc, argv, "--only", NULL);
+    int list_mode = has_flag(argc, argv, "--list");
     char *wraps[512];
     char Ipart[4096], Iinc[4096], Bflag[4096];
     int nw, i, ok = 0, fail = 0;
 
-    if (!gcc || !clang || !mcc || !bdir || !idir || !parts || !work) {
-        fprintf(stderr, "usage: mccharness parts --gcc --clang --mcc --bdir --idir --parts --work\n");
+    if (!list_mode && (!gcc || !clang || !mcc || !bdir || !idir || !parts || !work)) {
+        fprintf(stderr, "usage: mccharness parts --gcc --clang --mcc --bdir --idir --parts --work"
+                        " [--list] [--only NAME]\n");
         return 2;
+    }
+    if (list_mode) {
+        if (!parts) { fprintf(stderr, "usage: mccharness parts --list --parts DIR\n"); return 2; }
+        nw = ts_glob(parts, "run_*.c", 0, wraps, 512);
+        for (i = 0; i < nw; i++) {
+            const char *b = strrchr(wraps[i], '/'); b = b ? b + 1 : wraps[i];
+            printf("%.*s\n", (int)(strlen(b) - 2), b);
+            free(wraps[i]);
+        }
+        return 0;
     }
     host_mkdirs(work);
     snprintf(Ipart, sizeof Ipart, "-I%s", parts);
@@ -230,6 +255,7 @@ static int suite_parts(int argc, char **argv)
         char *err = NULL;
         int bad = 0;
         snprintf(name, sizeof name, "%.*s", (int)(strlen(base) - 2), base); /* strip .c */
+        if (only && strcmp(only, name)) { free(wraps[i]); continue; }  /* granular: one unit */
         ts_path(eg, sizeof eg, work, "%s.gcc", name);
         ts_path(ec, sizeof ec, work, "%s.clang", name);
         ts_path(em, sizeof em, work, "%s.mcc", name);
@@ -494,13 +520,27 @@ static int suite_preprocess(int argc, char **argv)
     const char *tdir = opt(argc, argv, "--tdir", NULL);
     const char *gcc  = opt(argc, argv, "--gcc", "gcc");
     const char *clang= opt(argc, argv, "--clang", "clang");
+    /* --list prints every case's relative path (subdir/name.c|.S); --only <rel>
+       runs just that case -- the per-case CTest (granular) mode. */
+    const char *only = opt(argc, argv, "--only", NULL);
+    int list_mode = has_flag(argc, argv, "--list");
     char gpath[4096], cpath[4096], Bflag[4096], Iinc[4096];
     char *files[4096];
     int nf, i, pass = 0, skip = 0, fail = 0, pp_same = 0;
 
-    if (!mcc || !bdir || !idir || !tdir) {
-        fprintf(stderr, "usage: mccharness preprocess --mcc --bdir --idir --tdir [--gcc --clang]\n");
+    if (!tdir || (!list_mode && (!mcc || !bdir || !idir))) {
+        fprintf(stderr, "usage: mccharness preprocess --mcc --bdir --idir --tdir"
+                        " [--gcc --clang] [--list] [--only REL]\n");
         return 2;
+    }
+    if (list_mode) {
+        nf = ts_glob(tdir, "*.c", 1, files, 4096);
+        if (nf >= 0 && nf < 4096)
+            nf += ts_glob(tdir, "*.S", 1, files + nf, 4096 - nf);
+        if (nf < 0) { fprintf(stderr, "preprocess: cannot walk %s\n", tdir); return 2; }
+        qsort(files, nf, sizeof files[0], cmp_str);
+        for (i = 0; i < nf; i++) { printf("%s\n", files[i] + strlen(tdir) + 1); free(files[i]); }
+        return 0;
     }
     if (!host_find_tool(gcc, NULL, gpath, sizeof gpath))   ts_skip("no gcc");
     if (!host_find_tool(clang, NULL, cpath, sizeof cpath)) ts_skip("no clang");
@@ -535,6 +575,8 @@ static int suite_preprocess(int argc, char **argv)
         const char *rel = f + strlen(tdir) + 1;   /* strip "<tdir>/" */
         size_t rl = strlen(f);
         char *e = NULL;
+
+        if (only && strcmp(only, rel)) { free(files[i]); continue; }  /* granular: one case */
 
         if (rl >= 2 && !strcmp(f + rl - 2, ".S")) {
             const char *av[] = { mcc, Bflag, Iinc, "-E", f, 0 };
@@ -581,7 +623,10 @@ static int suite_preprocess(int argc, char **argv)
         free(files[i]);
     }
     printf("preprocess-suite: PASS=%d SKIP=%d FAIL=%d\n", pass, skip, fail);
-    return fail ? 1 : 0;
+    if (fail) return 1;
+    /* granular: a lone impl-defined/skipped case reports skipped, not passed */
+    if (only && pass == 0) ts_skip("impl-defined divergence (gcc != clang) or no consensus");
+    return 0;
 }
 
 /* ------------------------------------------------------------------- */

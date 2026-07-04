@@ -2783,34 +2783,25 @@ if(MCC_BUILD_TESTS)
     target_include_directories(exec_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec")
     set(_exec_env "MCC_TEST_EMU=${MCC_EMULATOR};MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS};MCC_TEST_ASM=$<IF:$<BOOL:${MCC_CONFIG_ASM}>,1,0>;MCC_TEST_BCHECK=$<IF:$<BOOL:${MCC_CONFIG_BCHECK}>,1,0>;MCC_TEST_BACKTRACE=$<IF:$<BOOL:${MCC_CONFIG_BACKTRACE}>,1,0>")
 
-    # Normalizing aggregate suites into per-case CTests: MCC_GRANULAR_TESTS
-    # registers one test per exec golden (name parsed from goldens.h; the runner's
-    # --only runs a single case with exit 0/1/77), so `ctest -R exec/<name>`
-    # selects and reports each independently and `ctest -j` fans them across
-    # cores.  Default OFF keeps the fast single-process aggregate for CI.  The
-    # case list is derived from the source table, so a golden can never be left
-    # untested by a stale hand-maintained count (cf. mcc_goldens_count).
-    option(MCC_GRANULAR_TESTS "Register exec goldens as one CTest per case (else the aggregate exec-suite)" ON)
-    if(MCC_GRANULAR_TESTS)
-        file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/goldens.h" _exec_glines
-             REGEX "^[ \t]*{[ \t]*\"[A-Za-z0-9_]+\"")
-        foreach(_gl IN LISTS _exec_glines)
-            string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
-            set(_gn "${CMAKE_MATCH_1}")
-            add_test(NAME "exec/${_gn}"
-                COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
-                        "${CMAKE_CURRENT_SOURCE_DIR}/tests"
-                        "${CMAKE_BINARY_DIR}/exec-gran-${_gn}" --only "${_gn}")
-            set_tests_properties("exec/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env}")
-        endforeach()
-    else()
-        add_test(NAME exec-suite
+    # Every test corpus is registered as one CTest per case (the runner's --only
+    # runs a single case with exit 0/1/77), so `ctest -R exec/<name>` selects and
+    # reports each independently and `ctest -j` fans them across cores.  Only the
+    # full_language differential (mcctest) stays a single multi-case process --
+    # everything else, including the exec goldens here, is split.  The case list
+    # is derived from the source table, so a golden can never be left untested by
+    # a stale hand-maintained count (cf. mcc_goldens_count).
+    file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/goldens.h" _exec_glines
+         REGEX "^[ \t]*{[ \t]*\"[A-Za-z0-9_]+\"")
+    foreach(_gl IN LISTS _exec_glines)
+        string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
+        set(_gn "${CMAKE_MATCH_1}")
+        add_test(NAME "exec/${_gn}"
             COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
-                    "${CMAKE_CURRENT_SOURCE_DIR}/tests" "${CMAKE_BINARY_DIR}")
-        set_tests_properties(exec-suite PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+                    "${CMAKE_BINARY_DIR}/exec-gran-${_gn}" --only "${_gn}")
+        set_tests_properties("exec/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env}")
-    endif()
+    endforeach()
 
     
     
@@ -2831,7 +2822,7 @@ if(MCC_BUILD_TESTS)
         set(_cli_sh "")
         if(MCC_TARGETOS STREQUAL "WIN32")
             find_program(MCC_TEST_SH NAMES sh bash
-                DOC "POSIX shell used to run the cli-suite pipelines on Windows")
+                DOC "POSIX shell used to run the cli test pipelines on Windows")
             set(_cli_sh "${MCC_TEST_SH}")
         endif()
         if(MCC_TARGETOS STREQUAL "WIN32" AND NOT _cli_sh)
@@ -2843,28 +2834,19 @@ if(MCC_BUILD_TESTS)
             if(_cli_sh)
                 set(_cli_env "${_cli_env};MCC_TEST_SH=${_cli_sh}")
             endif()
-            # MCC_GRANULAR_TESTS: one CTest per cli case (cf. the exec block).
-            if(MCC_GRANULAR_TESTS)
-                file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli/cases.h" _cli_clines
-                     REGEX "^[ \t]*{[ \t]*\"[A-Za-z0-9_]+\"[ \t]*,")
-                foreach(_cl IN LISTS _cli_clines)
-                    string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_cl}")
-                    set(_cn "${CMAKE_MATCH_1}")
-                    add_test(NAME "cli/${_cn}"
-                        COMMAND cli_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
-                                "${CMAKE_BINARY_DIR}/cli-gran-${_cn}"
-                                "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli" --only "${_cn}")
-                    set_tests_properties("cli/${_cn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                        SKIP_RETURN_CODE 77 ENVIRONMENT "${_cli_env}")
-                endforeach()
-            else()
-                add_test(NAME cli-suite
+            # One CTest per cli case (cf. the exec block).
+            file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli/cases.h" _cli_clines
+                 REGEX "^[ \t]*{[ \t]*\"[A-Za-z0-9_]+\"[ \t]*,")
+            foreach(_cl IN LISTS _cli_clines)
+                string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_cl}")
+                set(_cn "${CMAKE_MATCH_1}")
+                add_test(NAME "cli/${_cn}"
                     COMMAND cli_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
-                            "${CMAKE_BINARY_DIR}/cli-work" "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli")
-                set_tests_properties(cli-suite PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                    SKIP_RETURN_CODE 77
-                    ENVIRONMENT "${_cli_env}")
-            endif()
+                            "${CMAKE_BINARY_DIR}/cli-gran-${_cn}"
+                            "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli" --only "${_cn}")
+                set_tests_properties("cli/${_cn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                    SKIP_RETURN_CODE 77 ENVIRONMENT "${_cli_env}")
+            endforeach()
         endif()
     endif()
 
@@ -2932,28 +2914,38 @@ if(MCC_BUILD_TESTS)
     if(NOT MCC_EMULATOR AND DIFF3_GCC AND DIFF3_CLANG AND _diff3_sh_ok)
         add_executable(diff3_runner tests/diff3/runner.c)
         target_include_directories(diff3_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec")
-        add_test(NAME diff3-suite
-            COMMAND diff3_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
-                    "${CMAKE_CURRENT_SOURCE_DIR}/tests" "${CMAKE_BINARY_DIR}/diff3-work"
-                    "${DIFF3_GCC}" "${DIFF3_CLANG}")
         set(_diff3_env "MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS};MCC_TEST_ASM=$<IF:$<BOOL:${MCC_CONFIG_ASM}>,1,0>")
         if(MCC_TEST_SH)
             set(_diff3_env "${_diff3_env};MCC_TEST_SH=${MCC_TEST_SH}")
         endif()
-        set_tests_properties(diff3-suite PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-            SKIP_RETURN_CODE 77
-            ENVIRONMENT "${_diff3_env}")
+        # One CTest per diff3-eligible golden (the run/run2 modes; --only runs a
+        # single case with a per-case work dir so `ctest -j` never has two cases
+        # racing on the shared gcc/clang/mcc scratch executables).
+        file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/goldens.h" _d3_glines
+             REGEX "^[ \t]*{[ \t]*\"[A-Za-z0-9_]+\"[ \t]*,[ \t]*\"run2?\"")
+        foreach(_d3l IN LISTS _d3_glines)
+            string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_d3l}")
+            set(_d3n "${CMAKE_MATCH_1}")
+            add_test(NAME "diff3/${_d3n}"
+                COMMAND diff3_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+                        "${CMAKE_BINARY_DIR}/diff3-gran-${_d3n}"
+                        "${DIFF3_GCC}" "${DIFF3_CLANG}" --only "${_d3n}")
+            set_tests_properties("diff3/${_d3n}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_diff3_env}")
+        endforeach()
     elseif(NOT _diff3_sh_ok)
         mcc_skip_test(diff3-suite "needs a POSIX shell on Windows (no sh/bash found; set MCC_TEST_SH)")
     else()
         mcc_skip_test(diff3-suite "needs native host + both gcc and clang (build the clang-toolchain target for a self-contained clang)")
     endif()
 
-    # parts-suite: 3-way (gcc/clang/mcc) unit test of each tests/diff/parts/run_*.c
-    # wrapper. The same parts/*.h units are #include-aggregated into full_language.c
-    # (the all-in-one C11 test, run by mcctest); here each is exercised in isolation.
+    # parts: 3-way (gcc/clang/mcc) unit test of each tests/diff/parts/run_*.c
+    # wrapper, one CTest per unit (parts/<name>). The same parts/*.h units are
+    # #include-aggregated into full_language.c (the all-in-one C11 test, run by
+    # mcctest); here each is exercised in isolation.
     if(MCC_TARGETOS STREQUAL "WIN32")
-        # The parts-suite is a native 3-way differential that assumes gcc, clang
+        # The parts 3-way differential assumes gcc, clang
         # and mcc share one C99 libc. On the PE target they do not: mcc links the
         # legacy msvcrt (no C99 <complex.h>/<tgmath.h>/<fenv.h> libm entry points,
         # and legacy printf -- "1.#IND00", 6-digit %a, ~17-digit %f) while the
@@ -2967,12 +2959,19 @@ if(MCC_BUILD_TESTS)
         mcc_skip_test(parts-suite "native gcc/clang/mcc 3-way needs a shared C99 libc; the PE/msvcrt target has no msvcrt equivalent for the parts' complex/tgmath/libm surface (covered in aggregate by mcctest)")
     elseif(NOT MCC_EMULATOR AND DIFF3_GCC AND DIFF3_CLANG AND MCC_CONFIG_ASM
        AND TARGET mccharness)
-        add_test(NAME parts-suite COMMAND "$<TARGET_FILE:mccharness>" parts
-            --gcc ${DIFF3_GCC} --clang ${DIFF3_CLANG} --mcc ${_mcc_exe}
-            --bdir ${_bdir} --idir ${_idir}
-            --parts ${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/parts
-            --work ${CMAKE_BINARY_DIR}/parts-work)
-        set_tests_properties(parts-suite PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+        # One CTest per run_*.c unit; --only compiles a single unit into a
+        # per-case work dir so `ctest -j` runs them concurrently without clashing.
+        file(GLOB _parts_wraps RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/parts"
+             "${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/parts/run_*.c")
+        foreach(_pw IN LISTS _parts_wraps)
+            string(REGEX REPLACE "\\.c$" "" _pn "${_pw}")
+            add_test(NAME "parts/${_pn}" COMMAND "$<TARGET_FILE:mccharness>" parts
+                --gcc ${DIFF3_GCC} --clang ${DIFF3_CLANG} --mcc ${_mcc_exe}
+                --bdir ${_bdir} --idir ${_idir}
+                --parts ${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/parts
+                --work ${CMAKE_BINARY_DIR}/parts-gran-${_pn} --only ${_pn})
+            set_tests_properties("parts/${_pn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+        endforeach()
     else()
         mcc_skip_test(parts-suite "needs native host + gcc + clang + integrated assembler")
     endif()
@@ -2983,16 +2982,22 @@ if(MCC_BUILD_TESTS)
     
     
     if(NOT MCC_EMULATOR AND DIFF3_GCC AND DIFF3_CLANG)
-        
-        
-        
-        add_test(NAME preprocess-suite
-            COMMAND "$<TARGET_FILE:mccharness>" preprocess
-                    --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}
-                    --tdir ${CMAKE_CURRENT_SOURCE_DIR}/tests/preprocess
-                    --gcc ${DIFF3_GCC} --clang ${DIFF3_CLANG})
-        set_tests_properties(preprocess-suite PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-            SKIP_RETURN_CODE 77)
+        # One CTest per preprocess case (preprocess/<subdir>/<name>). --only runs
+        # a single case; each case only reads via `mcc -E` (captured in memory,
+        # no scratch files), so `ctest -j` needs no per-case work dir.
+        file(GLOB_RECURSE _pp_cases RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}/tests/preprocess"
+             "${CMAKE_CURRENT_SOURCE_DIR}/tests/preprocess/*.c"
+             "${CMAKE_CURRENT_SOURCE_DIR}/tests/preprocess/*.S")
+        foreach(_ppc IN LISTS _pp_cases)
+            string(REGEX REPLACE "\\.[cS]$" "" _ppn "${_ppc}")
+            add_test(NAME "preprocess/${_ppn}"
+                COMMAND "$<TARGET_FILE:mccharness>" preprocess
+                        --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}
+                        --tdir ${CMAKE_CURRENT_SOURCE_DIR}/tests/preprocess
+                        --gcc ${DIFF3_GCC} --clang ${DIFF3_CLANG} --only ${_ppc})
+            set_tests_properties("preprocess/${_ppn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77)
+        endforeach()
     else()
         mcc_skip_test(preprocess-suite
             "needs native host + both gcc and clang (build the clang-toolchain target for a self-contained clang)")
@@ -3178,9 +3183,10 @@ if(MCC_BUILD_TESTS)
         #     -D__USE_MINGW_ANSI_STDIO=0 cannot switch a UCRT mingw to msvcrt
         #     without linking msvcrt.dll directly, which bfd ld can't do for the
         #     arm64 (ARM64X) DLL. No native arm64 mingw ships in the runner.
-        # mcc's arm64 codegen is covered by exec-suite + pe-native-conformance;
-        # the full_language differential runs on x86_64/i386 Windows.
-        mcc_skip_test(mcctest "no arm64-Windows gcc reference matches the PE differential: the only reference is an emulated x86_64 mingw (UCRT printf + x86-only asm_test), which cannot be byte-identical to native arm64 mcc on legacy msvcrt (mcc arm64 codegen is covered by exec-suite + pe-native-conformance; full_language differential runs on x86/x64 Windows)")
+        # mcc's arm64 codegen is covered by the exec/* goldens +
+        # pe-native-conformance; the full_language differential runs on
+        # x86_64/i386 Windows.
+        mcc_skip_test(mcctest "no arm64-Windows gcc reference matches the PE differential: the only reference is an emulated x86_64 mingw (UCRT printf + x86-only asm_test), which cannot be byte-identical to native arm64 mcc on legacy msvcrt (mcc arm64 codegen is covered by the exec/* goldens + pe-native-conformance; full_language differential runs on x86/x64 Windows)")
         mcc_skip_test(mcctest-bcheck "no arm64-Windows gcc reference matches the PE differential (emulated x86_64 mingw vs native arm64 mcc; see mcctest)")
     elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c" AND MCC_CONFIG_ASM)
         add_test(NAME mcctest COMMAND "$<TARGET_FILE:mccharness>" mcctest

@@ -118,7 +118,7 @@ sanitize. The PE target gets native-only extra coverage
 environment- or libc-gated with reasons (wine, macOS, X11, ELF-emitting
 32-bit reference, the osx/arm64/riscv64 cross drivers when the `cross`
 toolchain isn't built, msvcrt's reduced libm/complex surface for
-`parts-suite`, and PE bounds-checking for `mcctest-bcheck`). The `linux-*`
+`parts/*`, and PE bounds-checking for `mcctest-bcheck`). The `linux-*`
 presets, `dist-linux-*` packagings, and the qemu grid also run from Windows,
 via the Docker runners (`tests/ci/docker`, `tests/qemu/docker`).
 
@@ -187,12 +187,15 @@ qemu-aarch64 -L /path/to/rootfs ./hello
 
 ## Testing
 
-CTest, organized by mechanism. Inapplicable tests report **Skipped with a
-reason** (e.g. `requires arm64 target`) rather than silently omitting, so gaps
-stay visible.
+CTest, organized by mechanism. Every corpus is registered as one CTest per case
+(`exec/<name>`, `cli/<name>`, `diff3/<name>`, `parts/<name>`, `preprocess/<name>`),
+so `ctest -j` fans them across cores and each reports independently; only the
+`full_language` differential (`mcctest`) runs many cases in a single process.
+Inapplicable tests report **Skipped with a reason** (e.g. `requires arm64
+target`) rather than silently omitting, so gaps stay visible.
 
 ```sh
-ctest --test-dir cmake-build-debug
+ctest --test-dir cmake-build-debug -j"$(nproc)"
 ```
 
 | Directory | Covers |
@@ -215,13 +218,13 @@ failure), `—` = not applicable.
 
 | `ctest` suite | Win mingw | Win gcc | Win msvc | Lin gcc | Lin clang | mac clang |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|
-| `exec-suite` (golden run/diff)        | P | P | P | P | P | P |
+| `exec/*` (golden run/diff)            | P | P | P | P | P | P |
 | `mcctest`¹                            | P | P | P | P | P | P |
 | `mcctest-bcheck`¹                     | S | S | S | P | P | P |
-| `preprocess-suite`²                   | P | P | P | P | P | P |
-| `diff3-suite`²                        | P | P | P | P | P | P |
-| `parts-suite`² (per-unit 3-way diff)⁹ | S | S | S | P | P | P |
-| `cli-suite` (readelf/nm structural)³  | P | P | P | P | P | P |
+| `preprocess/*`²                       | P | P | P | P | P | P |
+| `diff3/*`²                            | P | P | P | P | P | P |
+| `parts/*`² (per-unit 3-way diff)⁹     | S | S | S | P | P | P |
+| `cli/*` (readelf/nm structural)³      | P | P | P | P | P | P |
 | `libtest` / `-extra` / `-mt`, `abitest-cc` | P | P | P | P | P | P |
 | `hello-run` / `hello-exe`, `vla_test-run`  | P | P | P | P | P | P |
 | `compile.*` (orphan `-c`)⁴            | P | P | P | P | P | P |

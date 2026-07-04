@@ -260,11 +260,30 @@ static int build_run(const char *label, const char *cc, const char *mcc,
 
 int main(int argc, char **argv){
     if (argc < 8){
-        fprintf(stderr, "usage: %s <mcc> <bdir> <idir> <root> <work> <gcc> <clang>\n", argv[0]);
+        fprintf(stderr, "usage: %s <mcc> <bdir> <idir> <root> <work> <gcc> <clang>"
+                        " [--list] [--only <name>]\n", argv[0]);
         return 2;
     }
     const char *mcc=argv[1], *bdir=argv[2], *idir=argv[3], *root=argv[4],
                *work=argv[5], *gcc=argv[6], *clang=argv[7];
+
+    /* args 8+ are the per-case CTest options, mirroring exec_runner: --list
+       prints every diff3-eligible golden name; --only <name> runs just that
+       case (exit 0 pass / 1 mcc-divergence / 77 inconclusive-or-skipped). */
+    const char *only = NULL; int list_mode = 0;
+    for (int i = 8; i < argc; i++){
+        if (!strcmp(argv[i], "--list")) list_mode = 1;
+        else if (!strcmp(argv[i], "--only") && i + 1 < argc) only = argv[++i];
+    }
+    if (list_mode){
+        for (int i = 0; i < mcc_goldens_count; i++){
+            const mcc_golden_t *g = &mcc_goldens[i];
+            if (strcmp(g->mode,"run") && strcmp(g->mode,"run2")) continue;
+            printf("%s\n", g->name);
+        }
+        return 0;
+    }
+
     char sup[2048]; snprintf(sup, sizeof sup, "%s/support", root);
     if (hc_envv("MCC_DIFF3_VERBOSE", "")[0]) verbose = 1;
 #ifdef DIFF3_VERBOSE
@@ -288,6 +307,7 @@ int main(int argc, char **argv){
     int pass=0, mcc_diff=0, impl=0, skip=0, mcc_build_fail=0, mcc_only=0, intent=0;
     for (int i=0;i<mcc_goldens_count;i++){
         const mcc_golden_t *g = &mcc_goldens[i];
+        if (only && strcmp(only, g->name)) continue;   /* granular: run one case */
         if (strcmp(g->mode,"run") && strcmp(g->mode,"run2")) continue;
         if (!portable_req(g->req)) { continue; }
 

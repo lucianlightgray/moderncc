@@ -130,7 +130,7 @@ jobs:
       - name: build
         run: cmake --build --preset msvc -j
       - name: test
-        run: ctest --preset msvc
+        run: ctest --preset msvc -j ${env:NUMBER_OF_PROCESSORS}
       - name: install + pack build targets
         run: |
           cmake --install cmake-build-msvc --config Release
