@@ -46,17 +46,18 @@ jobs:
         run: docker build -t mcc-ci tests/ci/docker
       - name: run ${{ matrix.preset }}
         run: |
-          mkdir -p "ci-out/$ART"
-          chmod -R 777 ci-out
+          mkdir -p "dist/$ART"
+          chmod -R 777 dist
           mkdir -p "$PWD/vendor"
           docker run --rm \
             -e PRESET=${{ matrix.preset }} \
+            -e ART="$ART" \
             -v "$PWD:/work:ro" \
             -v "$PWD/vendor:/vendor" \
-            -v "$PWD/ci-out/$ART:/out" \
+            -v "$PWD/dist:/dist" \
             mcc-ci
       - name: pack build targets
-        run: tar czf "$ART.tar.gz" -C ci-out "$ART"
+        run: tar czf "$ART.tar.gz" -C dist "$ART"
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ART }}
@@ -90,7 +91,7 @@ jobs:
             echo "CC=clang" >> "$GITHUB_ENV"
           fi
       - name: configure
-        run: cmake --preset ${{ matrix.preset }} "-DCMAKE_INSTALL_PREFIX=$PWD/ci-out/$ART"
+        run: cmake --preset ${{ matrix.preset }} "-DCMAKE_INSTALL_PREFIX=$PWD/dist/$ART"
       - name: build
         run: cmake --build --preset ${{ matrix.preset }} -j"$(sysctl -n hw.ncpu)"
       - name: test
@@ -98,7 +99,7 @@ jobs:
       - name: install + pack build targets
         run: |
           cmake --install cmake-${{ matrix.preset }}
-          tar czf "$ART.tar.gz" -C ci-out "$ART"
+          tar czf "$ART.tar.gz" -C dist "$ART"
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ART }}
@@ -126,7 +127,7 @@ jobs:
           if ($gcc)   { "MCC_DIFF3_GCC=$($gcc.Replace('\','/'))"     | Out-File -FilePath $env:GITHUB_ENV -Append }
           if ($clang) { "MCC_DIFF3_CLANG=$($clang.Replace('\','/'))" | Out-File -FilePath $env:GITHUB_ENV -Append }
       - name: configure
-        run: cmake --preset msvc "-DCMAKE_INSTALL_PREFIX=$($PWD.Path.Replace('\','/'))/ci-out/${env:ART}"
+        run: cmake --preset msvc "-DCMAKE_INSTALL_PREFIX=$($PWD.Path.Replace('\','/'))/dist/${env:ART}"
       - name: build
         run: cmake --build --preset msvc -j
       - name: test
@@ -134,7 +135,7 @@ jobs:
       - name: install + pack build targets
         run: |
           cmake --install cmake-msvc --config Release
-          tar czf "${env:ART}.tar.gz" -C ci-out "${env:ART}"
+          tar czf "${env:ART}.tar.gz" -C dist "${env:ART}"
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ART }}
@@ -154,12 +155,12 @@ jobs:
         run: choco install ninja -y
       - name: configure + build (superbuild fetches winlibs GCC)
         run: |
-          cmake --preset mingw "-DCMAKE_INSTALL_PREFIX=$($PWD.Path.Replace('\','/'))/ci-out/${env:ART}"
+          cmake --preset mingw "-DCMAKE_INSTALL_PREFIX=$($PWD.Path.Replace('\','/'))/dist/${env:ART}"
           cmake --build --preset mingw -j
       - name: install + pack build targets
         run: |
           cmake --install cmake-mingw
-          tar czf "${env:ART}.tar.gz" -C ci-out "${env:ART}"
+          tar czf "${env:ART}.tar.gz" -C dist "${env:ART}"
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ART }}
@@ -178,11 +179,12 @@ jobs:
         run: docker build -t mcc-qemu tests/qemu/docker
       - name: run qemu-${{ matrix.arch }} x {glibc,musl}
         run: |
-          mkdir -p "$PWD/vendor"
+          mkdir -p "$PWD/vendor" "$PWD/dist"
           docker run --rm \
             -e PRESET=qemu-${{ matrix.arch }} \
             -v "$PWD:/work" \
             -v "$PWD/vendor:/vendor" \
+            -v "$PWD/dist:/dist" \
             mcc-qemu
 
   dist-matrix:
@@ -222,4 +224,4 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: mcc-${{ matrix.preset }}-${{ matrix.arch }}
-          path: out/*
+          path: dist/mcc-*

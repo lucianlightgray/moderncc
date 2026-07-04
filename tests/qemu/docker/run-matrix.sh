@@ -23,18 +23,20 @@ rsync -a --delete \
     --exclude 'cmake-*' \
     --exclude 'cmake-windows-*' \
     --exclude 'vendor' \
+    --exclude 'dist' \
     --exclude 'build-*' \
     --exclude '.git' \
     "$SRC_MOUNT"/ "$SRC"/
 
-# Download-once, share-everywhere: if the launcher bind-mounted the host's
-# vendor tree at /vendor, point the staged source's vendor/ at it so fetched
-# toolchains (clang/mingw/musl) are reused across containers and persist back
-# to the host. Absent the mount, the build falls back to an ephemeral vendor/.
-if [ -d /vendor ]; then
-    ln -sfn /vendor "$SRC/vendor"
-    echo "==> sharing vendor toolchains from the /vendor mount"
-fi
+# Download-once, share-everywhere: point the staged tree's vendor/ (inputs) and
+# dist/ (outputs) at their bind mounts, so fetched toolchains and produced
+# artifacts are shared with the host and every container rather than staged.
+for shared in vendor dist; do
+    if [ -d "/$shared" ]; then
+        ln -sfn "/$shared" "$SRC/$shared"
+        echo "==> sharing /$shared mount into the staged tree"
+    fi
+done
 
 cd "$SRC"
 

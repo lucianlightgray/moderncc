@@ -26,8 +26,13 @@ fi
 
 cd "$SRC"
 
-if [ -d /out ] && [ -w /out ]; then
-    exec /tmp/mcc-ci run-preset "$PRESET" --out /out -- "$@"
+# Install/stage into the shared /dist mount (per-artifact subdir when ART is set),
+# so build outputs land in the host's dist/ tree — the output counterpart of the
+# /vendor input mount.
+DEST="/dist${ART:+/$ART}"
+if [ -d /dist ] && [ -w /dist ]; then
+    mkdir -p "$DEST"
+    exec /tmp/mcc-ci run-preset "$PRESET" --out "$DEST" -- "$@"
 else
     exec /tmp/mcc-ci run-preset "$PRESET" -- "$@"
 fi

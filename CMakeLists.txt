@@ -456,6 +456,13 @@ mark_as_advanced(MCC_GNU_GCC)
 set(MCC_VENDOR_DIR "${CMAKE_SOURCE_DIR}/vendor" CACHE PATH
     "Root directory for downloaded/vendored toolchains and externals (gcc/clang/mingw/musl)")
 
+# The output counterpart of vendor/: a single gitignored root that is the default
+# install prefix (staging tree) AND where release bundles are written. The docker
+# runners bind-mount it at /dist, so installs/artifacts are produced once and
+# shared with the host and CI — same download-once-share-everywhere model.
+set(MCC_DIST_DIR "${CMAKE_SOURCE_DIR}/dist" CACHE PATH
+    "Root directory for install staging and packaged release bundles (default CMAKE_INSTALL_PREFIX; docker-shared)")
+
 mcc_config_node(MCC_MINGW_SOURCE TYPE STRING DEFAULT winlibs GROUP "Build targets" ADVANCED
     HELP "Source for the `mingw-toolchain` download: winlibs (dual-arch, current) or multilib (single gcc -m32/-m64)"
     CHOICES winlibs multilib)
@@ -1442,9 +1449,9 @@ if(MCC_TARGETOS STREQUAL "WIN32")
 endif()
 
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-    set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/install"
-        CACHE PATH "Install prefix (default: project-local <build>/install)" FORCE)
-    message(STATUS "mcc install prefix: defaulted to local '${CMAKE_INSTALL_PREFIX}' "
+    set(CMAKE_INSTALL_PREFIX "${MCC_DIST_DIR}"
+        CACHE PATH "Install prefix (default: the shared dist/ staging tree)" FORCE)
+    message(STATUS "mcc install prefix: defaulted to the shared dist tree '${CMAKE_INSTALL_PREFIX}' "
                    "(pass -DCMAKE_INSTALL_PREFIX=/usr/local for a system install)")
 endif()
 
@@ -2650,7 +2657,7 @@ if(NOT CMAKE_CROSSCOMPILING)
     add_custom_target(package-dist
         COMMAND "$<TARGET_FILE:ci>" pkg
                 --ver "${MCC_DIST_VERSION}" --plat "${MCC_DIST_PLAT}"
-                --stage "${CMAKE_INSTALL_PREFIX}" --out "${CMAKE_SOURCE_DIR}/out"
+                --stage "${CMAKE_INSTALL_PREFIX}" --out "${MCC_DIST_DIR}"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         VERBATIM USES_TERMINAL
         COMMENT "Packaging release bundles (mcc/libmcc/mcc-cross) via `ci pkg`")
@@ -3467,6 +3474,7 @@ if(DOCKER_EXE)
         COMMAND "${DOCKER_EXE}" run --rm
                 -v "${CMAKE_CURRENT_SOURCE_DIR}:/work"
                 -v "${MCC_VENDOR_DIR}:/vendor"
+                -v "${MCC_DIST_DIR}:/dist"
                 ${_qd_env} mcc-qemu
         USES_TERMINAL VERBATIM
         COMMENT "qemu-user cross matrix in Docker (image mcc-qemu)")

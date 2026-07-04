@@ -262,7 +262,7 @@
         "MCC_CONFIG_BCHECK": "OFF",
         "MCC_CONFIG_BACKTRACE": "OFF",
         "MCC_ENABLE_CROSS": "ON",
-        "CMAKE_INSTALL_PREFIX": "${sourceDir}/stage"
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/dist"
       }
     },
     {

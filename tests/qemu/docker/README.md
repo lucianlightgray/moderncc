@@ -36,7 +36,7 @@ cache — download once, reuse everywhere:
 ```sh
 docker run --rm \
   -v "$PWD":/work \
-  -v "$PWD/vendor:/vendor" \
+  -v "$PWD/vendor:/vendor" -v "$PWD/dist:/dist" \
   mcc-qemu
 ```
 
@@ -55,19 +55,19 @@ optional overrides applied on top of the preset; trailing args pass through to
 
 ```sh
 # one arch via its preset (what CI runs)
-docker run --rm -v "$PWD":/work -v "$PWD/vendor:/vendor" \
+docker run --rm -v "$PWD":/work -v "$PWD/vendor:/vendor" -v "$PWD/dist:/dist" \
   -e PRESET=qemu-x86_64 mcc-qemu
 
 # one cell, fast smoke test (override the default preset's grid)
-docker run --rm -v "$PWD":/work -v "$PWD/vendor:/vendor" \
+docker run --rm -v "$PWD":/work -v "$PWD/vendor:/vendor" -v "$PWD/dist:/dist" \
   -e ARCHS=x86_64 -e LIBCS=glibc mcc-qemu
 
 # everything, but only the musl rows
-docker run --rm -v "$PWD":/work -v "$PWD/vendor:/vendor" \
+docker run --rm -v "$PWD":/work -v "$PWD/vendor:/vendor" -v "$PWD/dist:/dist" \
   -e LIBCS=musl mcc-qemu
 
 # pass ctest flags (e.g. a single test by name)
-docker run --rm -v "$PWD":/work -v "$PWD/vendor:/vendor" \
+docker run --rm -v "$PWD":/work -v "$PWD/vendor:/vendor" -v "$PWD/dist:/dist" \
   mcc-qemu -R qemu-arm64-glibc
 ```
 

@@ -1,7 +1,7 @@
 #include "toolsupport.h"
 
 static const char *EXCL_PREFIX[] = {"cmake-", "build-", 0};
-static const char *EXCL_EXACT[] = {"vendor", ".git", 0};
+static const char *EXCL_EXACT[] = {"vendor", "dist", ".git", 0};
 
 static int excluded(const char *base) {
 	int i;

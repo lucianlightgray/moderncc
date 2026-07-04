@@ -96,7 +96,7 @@ so it stays plain `libmcc.so`. Otherwise the shape is explicit:
 | `CMAKE_C_COMPILER` | FILEPATH | auto | The real compiler switch (gcc / clang / mcc / cl). `MCC_TOOLCHAIN_PROFILE` only seeds defaults — it does **not** pick the compiler. |
 | `CMAKE_CROSSCOMPILING_EMULATOR` | STRING | *(empty)* | Copied into `MCC_EMULATOR`. Required to run the just-built foreign `mcc` when `CMAKE_CROSSCOMPILING` is set (e.g. `wine`, `qemu-arm`). |
 | `CMAKE_TOOLCHAIN_FILE` | FILEPATH | *(none)* | Selects a cross target; triggers the cross-compiling validation path. |
-| `CMAKE_INSTALL_PREFIX` | PATH | platform default | Base for `MCC_INSTALL_MCCDIR` default (`<prefix>/<libdir>/mcc`). |
+| `CMAKE_INSTALL_PREFIX` | PATH | `MCC_DIST_DIR` (`<src>/dist`) | Install/staging prefix; when unset by the user it defaults to the shared `dist/` tree (see §10). Base for `MCC_INSTALL_MCCDIR` (`<prefix>/<libdir>/mcc`). |
 | `CMAKE_OSX_DEPLOYMENT_TARGET` | STRING | auto | Auto-pinned when a Homebrew GNU gcc host is detected on macOS (avoids the stale 10.6 default). |
 | `CMAKE_EXPORT_COMPILE_COMMANDS` | BOOL | ON (always set) | Set unconditionally before `project()`. |
 | Generator (`-G`) / `-A` | — | platform default | Matters for the `msvc` matrix cells (see `MCC_MSVC_GENERATOR`). |
@@ -157,14 +157,15 @@ host-dynamic (macOS Homebrew gcc). Hidden bases are prefixed `_`
 The `linux`, `macos`, `msvc`, and `mingw` build jobs upload their build
 targets (executables + libraries) as artifacts — `mcc-<preset>-<arch>`
 (macOS inserts the compiler: `mcc-macos-<cc>-arm64`): the job configures
-with `CMAKE_INSTALL_PREFIX` pointing at a `ci-out/` dir, runs
+with `CMAKE_INSTALL_PREFIX` pointing at a `dist/<artifact>` dir, runs
 `cmake --install` after the tests, and uploads the tree as a tar.gz (tar
 first — GitHub artifacts don't preserve the exec bit). The docker `linux`
-job does this by mounting that dir at `/out`; `tests/ci/docker/run-ci.sh`
-picks the prefix up from the mount. The prefix must be set at *configure*
-time: the mcc runtime dir (`lib*/mcc`) installs to an absolute path baked
-into the install rules, so an install-time `--prefix` cannot re-root it.
-The `dist` jobs instead package their preset's `${sourceDir}/stage` prefix
+job does this by bind-mounting the host `dist/` tree at `/dist`;
+`tests/ci/docker/run-ci.sh` installs into `/dist/<artifact>`. The prefix must
+be set at *configure* time: the mcc runtime dir (`lib*/mcc`) installs to an
+absolute path baked into the install rules, so an install-time `--prefix`
+cannot re-root it.
+The `dist` jobs instead package their preset's `${sourceDir}/dist` prefix
 via the `package-dist` build target (which drives `ci pkg`, the C port of the
 former `cmake/package.cmake`); the `qemu` job is test-only and uploads
 nothing.
@@ -181,7 +182,7 @@ runner; `qemu` alone is the full local matrix:
 build produces *all* permutations: Release, `MCC_BUILD_TESTS=OFF`,
 `MCC_SINGLE_SOURCE=OFF` (so `mcc-dynamic` builds), `MCC_BUILD_STATIC_LIB=ON` **and**
 `MCC_BUILD_DYNAMIC_LIB=ON` (both `libmcc-static.a` + `libmcc-dynamic.so`),
-`MCC_ENABLE_CROSS=ON` (all cross compilers), `CMAKE_INSTALL_PREFIX=${sourceDir}/stage`:
+`MCC_ENABLE_CROSS=ON` (all cross compilers), `CMAKE_INSTALL_PREFIX=${sourceDir}/dist`:
 
 | Preset | Compiler / profile | Extra |
 |---|---|---|
@@ -345,7 +346,8 @@ Consumed by the `mingw-toolchain` / `clang-toolchain` / `vendor-musl` /
 
 | Value | Type | Default | Purpose |
 |---|---|---|---|
-| `MCC_VENDOR_DIR` | PATH | `<src>/vendor` | Root for all downloaded/vendored toolchains (gcc/clang/mingw/musl) + qemu rootfs. Checked first by autodetect. |
+| `MCC_VENDOR_DIR` | PATH | `<src>/vendor` | **Input** root for all downloaded/vendored toolchains (gcc/clang/mingw/musl) + qemu rootfs. Checked first by autodetect. |
+| `MCC_DIST_DIR` | PATH | `<src>/dist` | **Output** root: default `CMAKE_INSTALL_PREFIX` (install staging) + `package-dist` bundle output. Gitignored; docker-mounted at `/dist` so CI/host share one artifact tree. |
 | `MCC_MINGW_DIR` | PATH | `vendor` | Parent dir for the `winlibs-mingw-w64-*` / `mingw-w64-multilib` trees. |
 | `MCC_MINGW_WINLIBS_VER` | STRING | `16.1.0-ucrt` | Version tag in the WinLibs vendor dir name (keep in sync with the URLs). |
 | `MCC_MINGW_WINLIBS_X86_64_URL` / `_SHA256` | STRING | pinned | WinLibs x86_64 zip + hash. |
