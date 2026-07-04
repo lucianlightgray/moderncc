@@ -331,11 +331,12 @@ arm64 **Darwin** codegen linked against arm64 glibc. Host arch uses native `mcc`
 `MCC_QEMU_MIRROR`, `MCC_QEMU_DLDIR`); combos lacking a cross compiler or
 `qemu-<arch>` report a skip reason.
 
-Point `MCC_QEMU_DLDIR` at prefetched `<arch>-<libc>/` sysroots (each with a
-`.fetched` marker) to skip the download:
+The rootfs trees are vendored under `vendor/gentoo-stage3-<arch>-<libc>/` (each
+with a `.fetched` marker); point `MCC_QEMU_DLDIR` at a directory of prefetched
+`gentoo-stage3-<arch>-<libc>/` sysroots to skip the download:
 
 ```sh
-cmake --preset cross -DMCC_QEMU_TESTS=ON -DMCC_QEMU_DLDIR=/path/to/qemu-roots
+cmake --preset cross -DMCC_QEMU_TESTS=ON            # roots land in vendor/gentoo-stage3-*
 cmake --build cmake-cross -j
 ctest --test-dir cmake-cross -L qemu --output-on-failure
 ```
@@ -344,17 +345,18 @@ ctest --test-dir cmake-cross -L qemu --output-on-failure
 
 macOS and any host without user-mode QEMU run the same matrix via the
 containerized runner in `tests/qemu/docker/` — it supplies the `qemu-<arch>`
-emulators and a Linux toolchain, caching sysroots in a named volume:
+emulators and a Linux toolchain, caching sysroots in your `vendor/` tree:
 
 ```sh
 docker build -t mcc-qemu tests/qemu/docker
-docker run --rm -v "$PWD":/work -v mcc-qemu-roots:/qemu-roots mcc-qemu
+docker run --rm -v "$PWD":/work -v "$PWD/vendor:/vendor" mcc-qemu
 # narrow the grid: -e ARCHS=x86_64 -e LIBCS=glibc, or pass ctest flags (-R …)
 ```
 
 It builds `mcc` + cross compilers from scratch, then runs `ctest -L qemu`
-against the mounted sysroots. Bind-mounting prebuilt `/qemu-roots` avoids
-re-downloading.
+against the sysroots in `vendor/gentoo-stage3-*`. The shared `/vendor` mount
+means the (large) rootfs downloads happen once and are reused by the host and
+every container.
 
 ### CI and labels
 

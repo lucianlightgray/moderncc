@@ -183,7 +183,6 @@ jobs:
             -e PRESET=qemu-${{ matrix.arch }} \
             -v "$PWD:/work" \
             -v "$PWD/vendor:/vendor" \
-            -v mcc-qemu-roots:/qemu-roots \
             mcc-qemu
 
   dist-matrix:

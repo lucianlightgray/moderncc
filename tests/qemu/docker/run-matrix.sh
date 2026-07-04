@@ -3,7 +3,10 @@ set -euo pipefail
 
 SRC_MOUNT=/work
 SRC=/src
-ROOTS=/qemu-roots
+# Gentoo stage3 rootfs trees are vendored: they land under vendor/, which the
+# launcher bind-mounts at /vendor (staged tree's vendor/ -> /vendor below), so
+# they are downloaded once and shared with the host and every container.
+DLDIR="$SRC/vendor"
 
 PRESET="${PRESET:-qemu}"
 JOBS="${JOBS:-$(nproc)}"
@@ -15,7 +18,7 @@ if [ ! -e "$SRC_MOUNT/CMakeLists.txt" ]; then
 fi
 
 echo "==> staging source $SRC_MOUNT -> $SRC"
-mkdir -p "$SRC" "$ROOTS"
+mkdir -p "$SRC"
 rsync -a --delete \
     --exclude 'cmake-*' \
     --exclude 'cmake-windows-*' \
@@ -35,7 +38,7 @@ fi
 
 cd "$SRC"
 
-overrides=( -DMCC_QEMU_DLDIR="$ROOTS" )
+overrides=( -DMCC_QEMU_DLDIR="$DLDIR" )
 [ -n "${ARCHS:-}" ] && overrides+=( -DMCC_QEMU_ARCHS="$ARCHS" )
 [ -n "${LIBCS:-}" ] && overrides+=( -DMCC_QEMU_LIBCS="$LIBCS" )
 
@@ -46,7 +49,7 @@ echo "==> building mcc + cross compilers (-j$JOBS)"
 cmake --build --preset "$PRESET" -j"$JOBS"
 
 fixup_multilib() {
-    for root in "$ROOTS"/x86_64-*; do
+    for root in "$DLDIR"/gentoo-stage3-x86_64-*; do
         [ -d "$root" ] || continue
         local lib="$root/usr/lib" lib64="$root/usr/lib64"
         [ -f "$lib64/crt1.o" ] || continue

@@ -28,15 +28,15 @@ docker build -t mcc-qemu tests/qemu/docker
 
 ## Run
 
-From the repo root. Mount the repo at `/work`, your `vendor/` tree at `/vendor`,
-and a named volume at `/qemu-roots` so the (large) Gentoo downloads are cached
-across runs:
+From the repo root. Mount the repo at `/work` and your `vendor/` tree at
+`/vendor`; the (large) Gentoo stage3 rootfs downloads are vendored under
+`vendor/gentoo-stage3-<arch>-<libc>`, so `/vendor` doubles as their cross-run
+cache — download once, reuse everywhere:
 
 ```sh
 docker run --rm \
   -v "$PWD":/work \
   -v "$PWD/vendor:/vendor" \
-  -v mcc-qemu-roots:/qemu-roots \
   mcc-qemu
 ```
 
@@ -55,19 +55,19 @@ optional overrides applied on top of the preset; trailing args pass through to
 
 ```sh
 # one arch via its preset (what CI runs)
-docker run --rm -v "$PWD":/work -v "$PWD/vendor:/vendor" -v mcc-qemu-roots:/qemu-roots \
+docker run --rm -v "$PWD":/work -v "$PWD/vendor:/vendor" \
   -e PRESET=qemu-x86_64 mcc-qemu
 
 # one cell, fast smoke test (override the default preset's grid)
-docker run --rm -v "$PWD":/work -v "$PWD/vendor:/vendor" -v mcc-qemu-roots:/qemu-roots \
+docker run --rm -v "$PWD":/work -v "$PWD/vendor:/vendor" \
   -e ARCHS=x86_64 -e LIBCS=glibc mcc-qemu
 
 # everything, but only the musl rows
-docker run --rm -v "$PWD":/work -v "$PWD/vendor:/vendor" -v mcc-qemu-roots:/qemu-roots \
+docker run --rm -v "$PWD":/work -v "$PWD/vendor:/vendor" \
   -e LIBCS=musl mcc-qemu
 
 # pass ctest flags (e.g. a single test by name)
-docker run --rm -v "$PWD":/work -v "$PWD/vendor:/vendor" -v mcc-qemu-roots:/qemu-roots \
+docker run --rm -v "$PWD":/work -v "$PWD/vendor:/vendor" \
   mcc-qemu -R qemu-arm64-glibc
 ```
 
@@ -78,5 +78,6 @@ docker run --rm -v "$PWD":/work -v "$PWD/vendor:/vendor" -v mcc-qemu-roots:/qemu
 | `LIBCS`  | *(preset: `glibc;musl`)*         | override C libraries to exercise |
 | `JOBS`   | `$(nproc)`                       | build parallelism                |
 
-First run downloads ~250 MB per cell; subsequent runs reuse `/qemu-roots`.
+First run downloads ~250 MB per cell into `vendor/gentoo-stage3-*`; subsequent
+runs (and your host) reuse them through the `/vendor` mount.
 This is the containerized form of the CI job in `TODO.md` ("10.6.2 CI workflow").

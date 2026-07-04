@@ -321,24 +321,37 @@ Active when `MCC_TOOLCHAIN_PROFILE` is a list, `MCC_TARGETS` ≠ `native`, or
 ## 10. Self-contained toolchain downloads (opt-in targets)
 
 Every automated download / vendored toolchain lands under one root,
-`MCC_VENDOR_DIR` (`<src>/vendor`, gitignored): `vendor/mingw-*`, `vendor/clang`,
-`vendor/musl`, `vendor/musl-sysroot`, and an optional drop-in `vendor/gcc`. The
-compiler-resolution functions check `vendor/` **first** (vendor-first), so a
+`MCC_VENDOR_DIR` (`<src>/vendor`, gitignored). Each subdir carries a fully
+specific `brand-version-arch` name so nothing collides and a version bump lands
+in a fresh directory:
+
+| Subdir | What |
+|---|---|
+| `winlibs-mingw-w64-<ver>-ucrt-x86_64` / `-i686` | WinLibs mingw-w64 toolchain (dual-arch) |
+| `mingw-w64-multilib` | user-supplied single-gcc multilib mingw |
+| `llvm-clang/<clang+llvm-ver-arch-os>` | fetched LLVM/clang release |
+| `musl-src` | musl libc git source checkout |
+| `musl-sysroot` | musl sysroot built from `musl-src` |
+| `gnu-gcc` | optional drop-in native GNU gcc (`gnu-gcc/bin`) |
+| `gentoo-stage3-<arch>-<libc>` | qemu-user cross-conformance rootfs |
+
+The compiler-resolution functions check `vendor/` **first** (vendor-first), so a
 fetched toolchain is auto-detected on the next configure with no extra flags —
 download once, share across build dirs (and, via a bind mount, into the docker
 runners).
 
 Consumed by the `mingw-toolchain` / `clang-toolchain` / `vendor-musl` /
-`musl-sysroot` fetch targets.
+`musl-sysroot` fetch targets and the `MCC_QEMU_TESTS` rootfs fetch.
 
 | Value | Type | Default | Purpose |
 |---|---|---|---|
-| `MCC_VENDOR_DIR` | PATH | `<src>/vendor` | Root for all downloaded/vendored toolchains (gcc/clang/mingw/musl). Checked first by autodetect. |
-| `MCC_MINGW_DIR` | PATH | `vendor` | Parent dir for `mingw-*` trees. |
+| `MCC_VENDOR_DIR` | PATH | `<src>/vendor` | Root for all downloaded/vendored toolchains (gcc/clang/mingw/musl) + qemu rootfs. Checked first by autodetect. |
+| `MCC_MINGW_DIR` | PATH | `vendor` | Parent dir for the `winlibs-mingw-w64-*` / `mingw-w64-multilib` trees. |
+| `MCC_MINGW_WINLIBS_VER` | STRING | `16.1.0-ucrt` | Version tag in the WinLibs vendor dir name (keep in sync with the URLs). |
 | `MCC_MINGW_WINLIBS_X86_64_URL` / `_SHA256` | STRING | pinned | WinLibs x86_64 zip + hash. |
 | `MCC_MINGW_WINLIBS_I686_URL` / `_SHA256` | STRING | pinned | WinLibs i686 zip + hash. |
 | `MCC_MINGW_MULTILIB_URL` / `_SHA256` / `_SUBDIR` | STRING | `''` / `''` / `mingw64` | Single-gcc multilib archive (required when `MCC_MINGW_SOURCE=multilib`). |
-| `MCC_CLANG_DIR` | PATH | `vendor` | Parent dir for the `clang` tree. |
+| `MCC_CLANG_DIR` | PATH | `vendor` | Parent dir for the `llvm-clang` tree. |
 | `MCC_CLANG_URL` / `_SHA256` / `_SUBDIR` | STRING | host-dependent | LLVM release archive, hash, and top-level dir. |
 | `MCC_CONFIG_EXTRA` | FILEPATH | `config-extra.cmake` | Optional extra CMake config included before options. |
 
@@ -355,7 +368,7 @@ Consumed by the `mingw-toolchain` / `clang-toolchain` / `vendor-musl` /
 | `MCC_QEMU_MIRROR` | STRING | Gentoo releases | Base URL for qemu-user rootfs downloads. |
 | `MCC_QEMU_ARCHS` | STRING (list) | `x86_64;i386;arm;arm64;riscv64` | Architectures to exercise under qemu-user. |
 | `MCC_QEMU_LIBCS` | STRING (list) | `glibc;musl` | C libraries to exercise. |
-| `MCC_QEMU_DLDIR` | PATH | `<build>/qemu-roots` | Where rootfs trees are extracted. |
+| `MCC_QEMU_DLDIR` | PATH | `vendor` | Parent dir for the Gentoo stage3 rootfs trees (`vendor/gentoo-stage3-<arch>-<libc>`). |
 | `MCC_QEMU_DOCKER_ARCHS` / `_LIBCS` | STRING | `''` | Passed to the `qemu-docker` matrix (empty = image default). |
 
 ---

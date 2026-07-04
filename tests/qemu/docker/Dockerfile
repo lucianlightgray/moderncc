@@ -24,7 +24,6 @@ RUN set -e; for q in qemu-x86_64 qemu-i386 qemu-arm qemu-aarch64 qemu-riscv64; d
         command -v "$cc" >/dev/null || { echo "missing diff3 reference $cc"; exit 1; }; \
     done; echo "diff3 reference compilers present (gcc + clang)"
 
-VOLUME /qemu-roots
 WORKDIR /work
 COPY run-matrix.sh /usr/local/bin/run-matrix
 RUN chmod +x /usr/local/bin/run-matrix

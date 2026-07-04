@@ -175,7 +175,7 @@ function(mcc_find_gnu_gcc outvar)
     endif()
     # vendor-first: a gcc dropped under vendor/gcc/bin wins over a system gcc.
     find_program(MCC_VENDOR_GCC NAMES gcc cc
-        PATHS "${MCC_VENDOR_DIR}/gcc/bin" NO_DEFAULT_PATH)
+        PATHS "${MCC_VENDOR_DIR}/gnu-gcc/bin" NO_DEFAULT_PATH)
     if(MCC_VENDOR_GCC)
         set(${outvar} "${MCC_VENDOR_GCC}" PARENT_SCOPE)
         return()
@@ -460,7 +460,11 @@ mcc_config_node(MCC_MINGW_SOURCE TYPE STRING DEFAULT winlibs GROUP "Build target
     HELP "Source for the `mingw-toolchain` download: winlibs (dual-arch, current) or multilib (single gcc -m32/-m64)"
     CHOICES winlibs multilib)
 set(MCC_MINGW_DIR "${MCC_VENDOR_DIR}" CACHE PATH
-    "Parent directory the downloaded mingw toolchain trees (mingw-*) live in")
+    "Parent directory the downloaded mingw toolchain trees live in")
+# Version tag baked into the vendor/ dir names so a version bump lands in a fresh
+# directory instead of mixing with an older toolchain. Keep in sync with the URLs.
+set(MCC_MINGW_WINLIBS_VER "16.1.0-ucrt" CACHE STRING
+    "WinLibs GCC version tag used in the vendor/winlibs-mingw-w64-<ver>-<arch> dir names")
 
 set(_wl "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.1.0posix-14.0.0-ucrt-r3")
 set(MCC_MINGW_WINLIBS_X86_64_URL
@@ -488,10 +492,10 @@ function(mcc_mingw_resolve)
     set(_i "")
     set(_m "")
     if(MCC_MINGW_SOURCE STREQUAL "winlibs")
-        set(_x "${MCC_MINGW_DIR}/mingw-x86_64/mingw64/bin/gcc.exe")
-        set(_i "${MCC_MINGW_DIR}/mingw-i686/mingw32/bin/gcc.exe")
+        set(_x "${MCC_MINGW_DIR}/winlibs-mingw-w64-${MCC_MINGW_WINLIBS_VER}-x86_64/mingw64/bin/gcc.exe")
+        set(_i "${MCC_MINGW_DIR}/winlibs-mingw-w64-${MCC_MINGW_WINLIBS_VER}-i686/mingw32/bin/gcc.exe")
     elseif(MCC_MINGW_SOURCE STREQUAL "multilib")
-        set(_m "${MCC_MINGW_DIR}/mingw-multilib/${MCC_MINGW_MULTILIB_SUBDIR}/bin/gcc.exe")
+        set(_m "${MCC_MINGW_DIR}/mingw-w64-multilib/${MCC_MINGW_MULTILIB_SUBDIR}/bin/gcc.exe")
         set(_x "${_m}")   
     endif()
     set(_MCC_MINGW_X86_64_GCC   "${_x}" PARENT_SCOPE)
@@ -502,12 +506,12 @@ endfunction()
 set(_mingw_entries "")
 if(MCC_MINGW_SOURCE STREQUAL "winlibs")
     list(APPEND _mingw_entries
-        "${MCC_MINGW_WINLIBS_X86_64_URL}|${MCC_MINGW_WINLIBS_X86_64_SHA256}|${MCC_MINGW_DIR}/mingw-x86_64")
+        "${MCC_MINGW_WINLIBS_X86_64_URL}|${MCC_MINGW_WINLIBS_X86_64_SHA256}|${MCC_MINGW_DIR}/winlibs-mingw-w64-${MCC_MINGW_WINLIBS_VER}-x86_64")
     list(APPEND _mingw_entries
-        "${MCC_MINGW_WINLIBS_I686_URL}|${MCC_MINGW_WINLIBS_I686_SHA256}|${MCC_MINGW_DIR}/mingw-i686")
+        "${MCC_MINGW_WINLIBS_I686_URL}|${MCC_MINGW_WINLIBS_I686_SHA256}|${MCC_MINGW_DIR}/winlibs-mingw-w64-${MCC_MINGW_WINLIBS_VER}-i686")
 elseif(MCC_MINGW_SOURCE STREQUAL "multilib")
     list(APPEND _mingw_entries
-        "${MCC_MINGW_MULTILIB_URL}|${MCC_MINGW_MULTILIB_SHA256}|${MCC_MINGW_DIR}/mingw-multilib")
+        "${MCC_MINGW_MULTILIB_URL}|${MCC_MINGW_MULTILIB_SHA256}|${MCC_MINGW_DIR}/mingw-w64-multilib")
 endif()
 
 set(_mingw_fetch "${CMAKE_BINARY_DIR}/run_mingw_fetch.cmake")
@@ -557,11 +561,11 @@ endforeach()
 
 add_custom_target(mingw-toolchain
     COMMAND "${CMAKE_COMMAND}" -P "${_mingw_fetch}"
-    COMMENT "Fetching self-contained mingw toolchain (${MCC_MINGW_SOURCE}) into vendor/mingw-*"
+    COMMENT "Fetching self-contained mingw toolchain (${MCC_MINGW_SOURCE}) into vendor/winlibs-mingw-w64-* (or mingw-w64-multilib)"
     USES_TERMINAL VERBATIM)
 
 set(MCC_CLANG_DIR "${MCC_VENDOR_DIR}" CACHE PATH
-    "Parent directory the downloaded clang tree (clang) lives in")
+    "Parent directory the downloaded LLVM/clang tree (llvm-clang) lives in")
 set(_clang_url "")
 set(_clang_sha "")
 set(_clang_subdir "")
@@ -586,7 +590,7 @@ unset(_clang_subdir)
 function(mcc_clang_resolve)
     set(_c "")
     if(NOT MCC_CLANG_SUBDIR STREQUAL "")
-        set(_c "${MCC_CLANG_DIR}/clang/${MCC_CLANG_SUBDIR}/bin/clang${CMAKE_EXECUTABLE_SUFFIX}")
+        set(_c "${MCC_CLANG_DIR}/llvm-clang/${MCC_CLANG_SUBDIR}/bin/clang${CMAKE_EXECUTABLE_SUFFIX}")
     endif()
     set(_MCC_CLANG_EXE "${_c}" PARENT_SCOPE)
 endfunction()
@@ -595,7 +599,7 @@ set(_clang_fetch "${CMAKE_BINARY_DIR}/run_clang_fetch.cmake")
 file(WRITE "${_clang_fetch}"
     "set(URL \"${MCC_CLANG_URL}\")\n"
     "set(SHA \"${MCC_CLANG_SHA256}\")\n"
-    "set(DEST \"${MCC_CLANG_DIR}/clang\")\n")
+    "set(DEST \"${MCC_CLANG_DIR}/llvm-clang\")\n")
 file(APPEND "${_clang_fetch}" [==[
 
 if(URL STREQUAL "")
@@ -630,10 +634,10 @@ message(STATUS "clang-toolchain: established ${DEST}")
 
 add_custom_target(clang-toolchain
     COMMAND "${CMAKE_COMMAND}" -P "${_clang_fetch}"
-    COMMENT "Fetching self-contained LLVM/clang toolchain into vendor/clang"
+    COMMENT "Fetching self-contained LLVM/clang toolchain into vendor/llvm-clang"
     USES_TERMINAL VERBATIM)
 
-# `vendor-musl` — git-clone a copy of musl into vendor/musl (gitignored). Source
+# `vendor-musl` — git-clone a copy of musl into vendor/musl-src (gitignored). Source
 # for MCC_BUILD_MUSL / a native musl sysroot on hosts without musl installed.
 # Idempotent: skips if the checkout already exists (delete it to re-clone).
 find_program(GIT_EXECUTABLE git)
@@ -641,8 +645,8 @@ set(MCC_MUSL_URL "https://git.musl-libc.org/git/musl" CACHE STRING
     "musl git repository URL for the `vendor-musl` target")
 set(MCC_MUSL_REF "v1.2.5" CACHE STRING
     "musl git ref (tag/branch) to clone for `vendor-musl` (empty = default branch)")
-set(MCC_MUSL_DIR "${MCC_VENDOR_DIR}/musl" CACHE PATH
-    "Destination for the vendored musl checkout")
+set(MCC_MUSL_DIR "${MCC_VENDOR_DIR}/musl-src" CACHE PATH
+    "Destination for the vendored musl source checkout")
 
 set(_musl_fetch "${CMAKE_BINARY_DIR}/run_musl_fetch.cmake")
 file(WRITE "${_musl_fetch}"
@@ -678,16 +682,16 @@ message(STATUS "vendor-musl: established ${DEST}")
 
 add_custom_target(vendor-musl
     COMMAND "${CMAKE_COMMAND}" -P "${_musl_fetch}"
-    COMMENT "Cloning musl (${MCC_MUSL_REF}) into vendor/musl"
+    COMMENT "Cloning musl (${MCC_MUSL_REF}) into vendor/musl-src"
     USES_TERMINAL VERBATIM)
 
 # `musl-sysroot` — build the vendored musl source into a self-contained sysroot
 # (headers + crt*.o + libc.a/.so + the ld-musl-*.so.1 loader). This is what the
 # MCC_BUILD_MUSL variants target on a host without a system musl (see the
-# MCC_BUILD_MUSL block). Out-of-tree build so vendor/musl stays pristine.
+# MCC_BUILD_MUSL block). Out-of-tree build so vendor/musl-src stays pristine.
 # Idempotent; depends on vendor-musl so a bare `--target musl-sysroot` clones first.
 set(MCC_MUSL_SYSROOT "${MCC_VENDOR_DIR}/musl-sysroot" CACHE PATH
-    "Sysroot the mcc*-musl variants target (built by the `musl-sysroot` target from vendor/musl; vendored so it is downloaded/built once and shared across build dirs). Empty = use a system musl (/lib/ld-musl-*).")
+    "Sysroot the mcc*-musl variants target (built by the `musl-sysroot` target from vendor/musl-src; vendored so it is downloaded/built once and shared across build dirs). Empty = use a system musl (/lib/ld-musl-*).")
 
 set(_musl_sysroot_build "${CMAKE_BINARY_DIR}/run_musl_sysroot.cmake")
 file(WRITE "${_musl_sysroot_build}"
@@ -3312,8 +3316,8 @@ if(MCC_BUILD_TESTS)
             "Architectures to exercise under qemu-user")
         set(MCC_QEMU_LIBCS "glibc;musl" CACHE STRING
             "C libraries to exercise (glibc;musl)")
-        set(MCC_QEMU_DLDIR "${CMAKE_BINARY_DIR}/qemu-roots" CACHE PATH
-            "Where downloaded rootfs trees are extracted")
+        set(MCC_QEMU_DLDIR "${MCC_VENDOR_DIR}" CACHE PATH
+            "Parent dir for the downloaded Gentoo stage3 rootfs trees (vendor/gentoo-stage3-<arch>-<libc>)")
 
         set(_qsrc "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/conformance")
         foreach(_arch IN LISTS MCC_QEMU_ARCHS)
@@ -3378,7 +3382,7 @@ if(MCC_BUILD_TESTS)
                     continue()
                 endif()
 
-                set(_root "${MCC_QEMU_DLDIR}/${_arch}-${_libc}")
+                set(_root "${MCC_QEMU_DLDIR}/gentoo-stage3-${_arch}-${_libc}")
                 add_test(NAME ${_tn}-fetch COMMAND "$<TARGET_FILE:mccharness>" qemufetch
                     --ptrurl "${MCC_QEMU_MIRROR}/${_gdir}/autobuilds/${_ptr}"
                     --mirrorbase "${MCC_QEMU_MIRROR}/${_gdir}/autobuilds"
@@ -3426,7 +3430,7 @@ if(MCC_BUILD_TESTS)
             add_test(NAME qemu-arm64-osx COMMAND "$<TARGET_FILE:mccharness>" machocodegen
                 --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"
                 --work "${CMAKE_BINARY_DIR}/macho-arm64-work" --arch arm64
-                --sysroot "${MCC_QEMU_DLDIR}/arm64-glibc")
+                --sysroot "${MCC_QEMU_DLDIR}/gentoo-stage3-arm64-glibc")
             set_tests_properties(qemu-arm64-osx PROPERTIES
                 FIXTURES_REQUIRED "MCC_BUILT;FX_qemu-arm64-glibc"
                 LABELS "qemu;macho" SKIP_RETURN_CODE 77 TIMEOUT 600)
@@ -3463,7 +3467,6 @@ if(DOCKER_EXE)
         COMMAND "${DOCKER_EXE}" run --rm
                 -v "${CMAKE_CURRENT_SOURCE_DIR}:/work"
                 -v "${MCC_VENDOR_DIR}:/vendor"
-                -v mcc-qemu-roots:/qemu-roots
                 ${_qd_env} mcc-qemu
         USES_TERMINAL VERBATIM
         COMMENT "qemu-user cross matrix in Docker (image mcc-qemu)")
