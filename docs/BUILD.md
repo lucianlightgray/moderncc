@@ -191,6 +191,15 @@ build produces *all* permutations: Release, `MCC_BUILD_TESTS=OFF`,
 | `dist-mingw` | mingw profile | static exe, stripped (PE) |
 | `dist-msvc` | MSVC profile | static exe, stripped (PE) |
 
+`package-dist` writes into `dist/` (`.tar.xz` on Unix/macOS, `.zip` on Windows)
+three component archives — `mcc-<ver>-<plat>` (compiler + variants + runtime),
+`libmcc-<ver>-<plat>` (headers, libs, CMake package), `mcc-cross-<ver>-<plat>`
+(cross compilers + per-target `libmccrt.a`) — plus `bundle-<ver>-<plat>`, an
+all-in-one archive whose contents are those three (the `bundle-` prefix signals
+"contains the other archives"), and a `checksums-<plat>.txt` covering all four.
+Because the install prefix and the packaging output are both `dist/`, `ci pkg`
+stages into a private `pkg/` scratch tree and never wipes `dist/`.
+
 Build presets exist for every configure preset; test presets exist for all
 except the build-only (`mingw`), test-less (`dist-*`), and superbuild
 (`matrix`) ones — the superbuild registers no top-level tests and runs

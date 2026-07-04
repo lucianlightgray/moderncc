@@ -420,7 +420,8 @@ static int pkg_archive(const char *pkg, const char *out, const char *d,
 		ts_arg(&v, "--format=zip");
 		ts_arg(&v, d);
 	} else {
-		ts_arg(&v, "czf");
+		/* tar.gz -> gzip (czf); tar.xz -> xz (cJf) */
+		ts_arg(&v, !strcmp(ext, "tar.gz") ? "czf" : "cJf");
 		ts_arg(&v, target);
 		ts_arg(&v, d);
 	}
@@ -458,7 +459,7 @@ static int do_pkg(int argc, char **argv) {
 			fmt = argv[++i];
 	}
 	if (!ver || !plat) {
-		fprintf(stderr, "usage: ci pkg --ver V --plat P [--stage D] [--out D] [--format tgz|zip]\n");
+		fprintf(stderr, "usage: ci pkg --ver V --plat P [--stage D] [--out D] [--format txz|tgz|zip]\n");
 		return 2;
 	}
 
@@ -469,8 +470,13 @@ static int do_pkg(int argc, char **argv) {
 		snprintf(ver_s, sizeof ver_s, "%s", v);
 	}
 	if (!fmt)
-		fmt = iswin ? "zip" : "tgz";
-	ext = !strcmp(fmt, "zip") ? "zip" : "tar.gz";
+		fmt = iswin ? "zip" : "txz";
+	if (!strcmp(fmt, "zip"))
+		ext = "zip";
+	else if (!strcmp(fmt, "tgz"))
+		ext = "tar.gz";
+	else
+		ext = "tar.xz";
 	xsuf = iswin ? ".exe" : "";
 	{
 		char lib64[8192];
@@ -483,8 +489,11 @@ static int do_pkg(int argc, char **argv) {
 		fprintf(stderr, "ci pkg: no staged install at '%s' (run cmake --install first)\n", stage);
 		return 1;
 	}
+	/* Only wipe the private scratch tree; `out` may be the shared dist/ root
+	 * that also holds the staged install we are reading from (stage == out
+	 * when both default to MCC_DIST_DIR), so it must never be removed here. */
 	{
-		const char *rm[] = {"cmake", "-E", "rm", "-rf", pkg, out, 0};
+		const char *rm[] = {"cmake", "-E", "rm", "-rf", pkg, 0};
 		ts_run(rm);
 	}
 	host_mkdirs(pkg);
@@ -575,6 +584,23 @@ static int do_pkg(int argc, char **argv) {
 				return 1;
 		} else
 			printf("ci pkg: no cross compilers in stage/bin; skipping cross bundle\n");
+	}
+
+	/* All-in-one convenience archive: its contents are the individual component
+	 * archives built above. The `bundle-` prefix tells a user browsing the
+	 * release assets that this one file holds the others, so they can grab
+	 * everything at once instead of picking archives apart. */
+	if (names.n > 1) {
+		int ncomp = names.n, j;
+		snprintf(d, sizeof d, "bundle-%s-%s", ver_s, plat);
+		ts_path(dd, sizeof dd, pkg, "%s", d);
+		host_mkdirs(dd);
+		for (j = 0; j < ncomp; j++) {
+			ts_path(src, sizeof src, out, "%s", names.a[j]);
+			pkg_copy_into(src, dd);
+		}
+		if (pkg_archive(pkg, out, d, ext, &names))
+			return 1;
 	}
 
 	{
