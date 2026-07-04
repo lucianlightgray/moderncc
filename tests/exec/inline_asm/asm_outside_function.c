@@ -9,7 +9,7 @@ extern void vide(void);
 __asm__(_ "vide: ret");
 
 int main() {
-    vide();
-    printf("okay\n");
-    return 0;
+	vide();
+	printf("okay\n");
+	return 0;
 }

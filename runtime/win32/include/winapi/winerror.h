@@ -1970,7 +1970,7 @@
 typedef long HRESULT;
 #endif
 __CRT_INLINE HRESULT HRESULT_FROM_WIN32(long x) {
-    return x <= 0 ? (HRESULT)x : (HRESULT)(((x) & 0x0000FFFF) | (FACILITY_WIN32 << 16) | 0x80000000);
+	return x <= 0 ? (HRESULT)x : (HRESULT)(((x) & 0x0000FFFF) | (FACILITY_WIN32 << 16) | 0x80000000);
 }
 #else
 #define HRESULT_FROM_WIN32(x) __HRESULT_FROM_WIN32(x)

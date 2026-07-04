@@ -21,39 +21,39 @@ typedef unsigned long _fsize_t;
 #ifndef _FINDDATA_T_DEFINED
 
 struct _finddata32_t {
-    unsigned attrib;
-    __time32_t time_create;
-    __time32_t time_access;
-    __time32_t time_write;
-    _fsize_t size;
-    char name[260];
+	unsigned attrib;
+	__time32_t time_create;
+	__time32_t time_access;
+	__time32_t time_write;
+	_fsize_t size;
+	char name[260];
 };
 
 struct _finddata32i64_t {
-    unsigned attrib;
-    __time32_t time_create;
-    __time32_t time_access;
-    __time32_t time_write;
-    __int64 size;
-    char name[260];
+	unsigned attrib;
+	__time32_t time_create;
+	__time32_t time_access;
+	__time32_t time_write;
+	__int64 size;
+	char name[260];
 };
 
 struct _finddata64i32_t {
-    unsigned attrib;
-    __time64_t time_create;
-    __time64_t time_access;
-    __time64_t time_write;
-    _fsize_t size;
-    char name[260];
+	unsigned attrib;
+	__time64_t time_create;
+	__time64_t time_access;
+	__time64_t time_write;
+	_fsize_t size;
+	char name[260];
 };
 
 struct __finddata64_t {
-    unsigned attrib;
-    __time64_t time_create;
-    __time64_t time_access;
-    __time64_t time_write;
-    __int64 size;
-    char name[260];
+	unsigned attrib;
+	__time64_t time_create;
+	__time64_t time_access;
+	__time64_t time_write;
+	__int64 size;
+	char name[260];
 };
 
 #ifdef _USE_32BIT_TIME_T
@@ -85,39 +85,39 @@ struct __finddata64_t {
 #ifndef _WFINDDATA_T_DEFINED
 
 struct _wfinddata32_t {
-    unsigned attrib;
-    __time32_t time_create;
-    __time32_t time_access;
-    __time32_t time_write;
-    _fsize_t size;
-    wchar_t name[260];
+	unsigned attrib;
+	__time32_t time_create;
+	__time32_t time_access;
+	__time32_t time_write;
+	_fsize_t size;
+	wchar_t name[260];
 };
 
 struct _wfinddata32i64_t {
-    unsigned attrib;
-    __time32_t time_create;
-    __time32_t time_access;
-    __time32_t time_write;
-    __int64 size;
-    wchar_t name[260];
+	unsigned attrib;
+	__time32_t time_create;
+	__time32_t time_access;
+	__time32_t time_write;
+	__int64 size;
+	wchar_t name[260];
 };
 
 struct _wfinddata64i32_t {
-    unsigned attrib;
-    __time64_t time_create;
-    __time64_t time_access;
-    __time64_t time_write;
-    _fsize_t size;
-    wchar_t name[260];
+	unsigned attrib;
+	__time64_t time_create;
+	__time64_t time_access;
+	__time64_t time_write;
+	_fsize_t size;
+	wchar_t name[260];
 };
 
 struct _wfinddata64_t {
-    unsigned attrib;
-    __time64_t time_create;
-    __time64_t time_access;
-    __time64_t time_write;
-    __int64 size;
-    wchar_t name[260];
+	unsigned attrib;
+	__time64_t time_create;
+	__time64_t time_access;
+	__time64_t time_write;
+	__int64 size;
+	wchar_t name[260];
 };
 
 #ifdef _USE_32BIT_TIME_T
@@ -252,29 +252,29 @@ _CRTIMP intptr_t __cdecl _findfirst64(const char *_Filename, struct __finddata64
 #endif
 intptr_t __cdecl _findfirst64i32(const char *_Filename, struct _finddata64i32_t *_FindData);
 __CRT_INLINE intptr_t __cdecl _findfirst64i32(const char *_Filename, struct _finddata64i32_t *_FindData) {
-    struct __finddata64_t fd;
-    intptr_t ret = _findfirst64(_Filename, &fd);
-    _FindData->attrib = fd.attrib;
-    _FindData->time_create = fd.time_create;
-    _FindData->time_access = fd.time_access;
-    _FindData->time_write = fd.time_write;
-    _FindData->size = (_fsize_t)fd.size;
-    strncpy(_FindData->name, fd.name, 260);
-    return ret;
+	struct __finddata64_t fd;
+	intptr_t ret = _findfirst64(_Filename, &fd);
+	_FindData->attrib = fd.attrib;
+	_FindData->time_create = fd.time_create;
+	_FindData->time_access = fd.time_access;
+	_FindData->time_write = fd.time_write;
+	_FindData->size = (_fsize_t)fd.size;
+	strncpy(_FindData->name, fd.name, 260);
+	return ret;
 }
 _CRTIMP int __cdecl _findnext32i64(intptr_t _FindHandle, struct _finddata32i64_t *_FindData);
 _CRTIMP int __cdecl _findnext64(intptr_t _FindHandle, struct __finddata64_t *_FindData);
 int __cdecl _findnext64i32(intptr_t _FindHandle, struct _finddata64i32_t *_FindData);
 __CRT_INLINE int __cdecl _findnext64i32(intptr_t _FindHandle, struct _finddata64i32_t *_FindData) {
-    struct __finddata64_t fd;
-    int ret = _findnext64(_FindHandle, &fd);
-    _FindData->attrib = fd.attrib;
-    _FindData->time_create = fd.time_create;
-    _FindData->time_access = fd.time_access;
-    _FindData->time_write = fd.time_write;
-    _FindData->size = (_fsize_t)fd.size;
-    strncpy(_FindData->name, fd.name, 260);
-    return ret;
+	struct __finddata64_t fd;
+	int ret = _findnext64(_FindHandle, &fd);
+	_FindData->attrib = fd.attrib;
+	_FindData->time_create = fd.time_create;
+	_FindData->time_access = fd.time_access;
+	_FindData->time_write = fd.time_write;
+	_FindData->size = (_fsize_t)fd.size;
+	strncpy(_FindData->name, fd.name, 260);
+	return ret;
 }
 __int64 __cdecl _lseeki64(int _FileHandle, __int64 _Offset, int _Origin);
 __int64 __cdecl _telli64(int _FileHandle);
@@ -378,7 +378,7 @@ unsigned int alarm(unsigned int seconds);
 
 #ifdef __USE_MINGW_ACCESS
 static inline int __mingw_access(const char *__fname, int __mode) {
-    return _access(__fname, __mode & ~X_OK);
+	return _access(__fname, __mode & ~X_OK);
 }
 
 #define access(__f, __m) __mingw_access(__f, __m)

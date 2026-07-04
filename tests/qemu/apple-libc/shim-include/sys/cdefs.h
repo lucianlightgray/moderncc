@@ -6,5 +6,5 @@
 #endif
 
 #define __weak_reference(sym, alias) \
-    __asm__(".globl _" #alias "\n.set _" #alias ", _" #sym)
+	__asm__(".globl _" #alias "\n.set _" #alias ", _" #sym)
 #endif

@@ -43,25 +43,25 @@ typedef ACCESS_MASK REGSAM;
 
 #define PROVIDER_KEEPS_VALUE_LENGTH 0x1
 struct val_context {
-    int valuelen;
-    LPVOID value_context;
-    LPVOID val_buff_ptr;
+	int valuelen;
+	LPVOID value_context;
+	LPVOID val_buff_ptr;
 };
 
 typedef struct val_context *PVALCONTEXT;
 
 typedef struct pvalueA {
-    LPSTR pv_valuename;
-    int pv_valuelen;
-    LPVOID pv_value_context;
-    DWORD pv_type;
+	LPSTR pv_valuename;
+	int pv_valuelen;
+	LPVOID pv_value_context;
+	DWORD pv_type;
 } PVALUEA, *PPVALUEA;
 
 typedef struct pvalueW {
-    LPWSTR pv_valuename;
-    int pv_valuelen;
-    LPVOID pv_value_context;
-    DWORD pv_type;
+	LPWSTR pv_valuename;
+	int pv_valuelen;
+	LPVOID pv_value_context;
+	DWORD pv_type;
 } PVALUEW, *PPVALUEW;
 
 #ifdef UNICODE
@@ -77,28 +77,28 @@ typedef DWORD __cdecl QUERYHANDLER(LPVOID keycontext, PVALCONTEXT val_list, DWOR
 typedef QUERYHANDLER *PQUERYHANDLER;
 
 typedef struct provider_info {
-    PQUERYHANDLER pi_R0_1val;
-    PQUERYHANDLER pi_R0_allvals;
-    PQUERYHANDLER pi_R3_1val;
-    PQUERYHANDLER pi_R3_allvals;
-    DWORD pi_flags;
-    LPVOID pi_key_context;
+	PQUERYHANDLER pi_R0_1val;
+	PQUERYHANDLER pi_R0_allvals;
+	PQUERYHANDLER pi_R3_1val;
+	PQUERYHANDLER pi_R3_allvals;
+	DWORD pi_flags;
+	LPVOID pi_key_context;
 } REG_PROVIDER;
 
 typedef struct provider_info *PPROVIDER;
 
 typedef struct value_entA {
-    LPSTR ve_valuename;
-    DWORD ve_valuelen;
-    DWORD_PTR ve_valueptr;
-    DWORD ve_type;
+	LPSTR ve_valuename;
+	DWORD ve_valuelen;
+	DWORD_PTR ve_valueptr;
+	DWORD ve_type;
 } VALENTA, *PVALENTA;
 
 typedef struct value_entW {
-    LPWSTR ve_valuename;
-    DWORD ve_valuelen;
-    DWORD_PTR ve_valueptr;
-    DWORD ve_type;
+	LPWSTR ve_valuename;
+	DWORD ve_valuelen;
+	DWORD_PTR ve_valueptr;
+	DWORD ve_type;
 } VALENTW, *PVALENTW;
 
 #ifdef UNICODE

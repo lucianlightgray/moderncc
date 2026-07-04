@@ -1,28 +1,28 @@
 #include <stdio.h>
 
 int myfunc(int x) {
-    return x * x;
+	return x * x;
 }
 
 void vfunc(int a) {
-    printf("a=%d\n", a);
+	printf("a=%d\n", a);
 }
 
 void qfunc() {
-    printf("qfunc()\n");
+	printf("qfunc()\n");
 }
 
 void zfunc() {
-    ((void (*)(void))0)();
+	((void (*)(void))0)();
 }
 
 int main() {
-    printf("%d\n", myfunc(3));
-    printf("%d\n", myfunc(4));
+	printf("%d\n", myfunc(3));
+	printf("%d\n", myfunc(4));
 
-    vfunc(1234);
+	vfunc(1234);
 
-    qfunc();
+	qfunc();
 
-    return 0;
+	return 0;
 }

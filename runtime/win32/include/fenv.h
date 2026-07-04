@@ -25,19 +25,19 @@ typedef unsigned short fexcept_t;
 
 typedef struct
 {
-    unsigned short __control_word;
-    unsigned short __unused0;
-    unsigned short __status_word;
-    unsigned short __unused1;
-    unsigned short __tag_word;
-    unsigned short __unused2;
-    unsigned int __ip_offset;
-    unsigned short __ip_selector;
-    unsigned short __opcode;
-    unsigned int __data_offset;
-    unsigned short __data_selector;
-    unsigned short __unused3;
-    unsigned int __mxcsr;
+	unsigned short __control_word;
+	unsigned short __unused0;
+	unsigned short __status_word;
+	unsigned short __unused1;
+	unsigned short __tag_word;
+	unsigned short __unused2;
+	unsigned int __ip_offset;
+	unsigned short __ip_selector;
+	unsigned short __opcode;
+	unsigned int __data_offset;
+	unsigned short __data_selector;
+	unsigned short __unused3;
+	unsigned int __mxcsr;
 } fenv_t;
 
 #define FE_PC64_ENV ((const fenv_t *)-1)

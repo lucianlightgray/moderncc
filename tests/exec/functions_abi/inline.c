@@ -154,18 +154,18 @@ void noinst_extern_inline_func(void) {
 }
 
 int main() {
-    inline_inline_undeclared();
-    inline_inline_predeclared();
-    inline_inline_postdeclared();
-    inline_inline_undeclared2();
-    inline_inline_predeclared2();
-    inline_inline_postdeclared2();
-    noinst_static_inline_predeclared();
-    noinst2_static_inline_predeclared();
-    noinst_static_inline_predeclared();
-    noinst2_static_inline_predeclared();
+	inline_inline_undeclared();
+	inline_inline_predeclared();
+	inline_inline_postdeclared();
+	inline_inline_undeclared2();
+	inline_inline_predeclared2();
+	inline_inline_postdeclared2();
+	noinst_static_inline_predeclared();
+	noinst2_static_inline_predeclared();
+	noinst_static_inline_predeclared();
+	noinst2_static_inline_predeclared();
 
-    void check_exports();
-    check_exports();
-    return 0;
+	void check_exports();
+	check_exports();
+	return 0;
 }

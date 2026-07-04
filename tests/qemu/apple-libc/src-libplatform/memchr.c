@@ -6,21 +6,21 @@
 
 void *
 _platform_memchr(const void *s, int c, size_t n) {
-    if (n != 0) {
-        const unsigned char *p = s;
+	if (n != 0) {
+		const unsigned char *p = s;
 
-        do {
-            if (*p++ == (unsigned char)c)
-                return ((void *)(p - 1));
-        } while (--n != 0);
-    }
-    return (NULL);
+		do {
+			if (*p++ == (unsigned char)c)
+				return ((void *)(p - 1));
+		} while (--n != 0);
+	}
+	return (NULL);
 }
 
 #if VARIANT_STATIC
 void *
 memchr(const void *s, int c, size_t n) {
-    return _platform_memchr(s, c, n);
+	return _platform_memchr(s, c, n);
 }
 #endif
 

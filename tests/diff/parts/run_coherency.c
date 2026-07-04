@@ -2,6 +2,6 @@
 #include "coherency.h"
 
 int main(void) {
-    coherency_test();
-    return 0;
+	coherency_test();
+	return 0;
 }

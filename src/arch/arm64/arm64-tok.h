@@ -694,8 +694,8 @@ DEF_ASM(st4)
 
 #undef ARM64_SYSREG
 #define ARM64_SYSREG(op0, op1, crn, crm, op2)    \
-    ((((op0) & 3) << 19) | (((op1) & 7) << 16) | \
-     (((crn) & 15) << 12) | (((crm) & 15) << 8) | (((op2) & 7) << 5))
+	((((op0) & 3) << 19) | (((op1) & 7) << 16) | \
+	 (((crn) & 15) << 12) | (((crm) & 15) << 8) | (((op2) & 7) << 5))
 
 #define ARM64_ISB_OPTION(opt) (((uint32_t)(opt) & 0xFU) << 8)
 #define ARM64_DSB_OPTION(opt) (((uint32_t)(opt) & 0xFU) << 8)

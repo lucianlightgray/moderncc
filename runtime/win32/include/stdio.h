@@ -17,14 +17,14 @@ extern "C" {
 
 #ifndef _FILE_DEFINED
 struct _iobuf {
-    char *_ptr;
-    int _cnt;
-    char *_base;
-    int _flag;
-    int _file;
-    int _charbuf;
-    int _bufsiz;
-    char *_tmpfname;
+	char *_ptr;
+	int _cnt;
+	char *_base;
+	int _flag;
+	int _file;
+	int _charbuf;
+	int _bufsiz;
+	char *_tmpfname;
 };
 typedef struct _iobuf FILE;
 #define _FILE_DEFINED
@@ -238,10 +238,10 @@ int __cdecl vprintf(const char *_Format, va_list _ArgList);
 #undef vsnprintf
 #undef snprintf
 extern
-    __attribute__((format(gnu_printf, 3, 0))) __attribute__((nonnull(3))) int __mingw_vsnprintf(char *_DstBuf, size_t _MaxCount, const char *_Format, va_list _ArgList);
+	__attribute__((format(gnu_printf, 3, 0))) __attribute__((nonnull(3))) int __mingw_vsnprintf(char *_DstBuf, size_t _MaxCount, const char *_Format, va_list _ArgList);
 extern
-    __attribute__((format(gnu_printf, 3, 4))) __attribute__((nonnull(3))) int
-    __mingw_snprintf(char *s, size_t n, const char *format, ...);
+	__attribute__((format(gnu_printf, 3, 4))) __attribute__((nonnull(3))) int
+	__mingw_snprintf(char *s, size_t n, const char *format, ...);
 int __cdecl vsnprintf(char *_DstBuf, size_t _MaxCount, const char *_Format, va_list _ArgList);
 _CRTIMP int __cdecl _snprintf(char *_Dest, size_t _Count, const char *_Format, ...);
 _CRTIMP int __cdecl _vsnprintf(char *_Dest, size_t _Count, const char *_Format, va_list _Args);
@@ -250,7 +250,7 @@ int __cdecl vsprintf(char *_Dest, const char *_Format, va_list _Args);
 #ifndef __NO_ISOCEXT
 int __cdecl snprintf(char *s, size_t n, const char *format, ...);
 __CRT_INLINE int __cdecl vsnprintf(char *s, size_t n, const char *format, va_list arg) {
-    return _vsnprintf(s, n, format, arg);
+	return _vsnprintf(s, n, format, arg);
 }
 int __cdecl vscanf(const char *Format, va_list argp);
 int __cdecl vfscanf(FILE *fp, const char *Format, va_list argp);
@@ -308,7 +308,7 @@ _CRTIMP int __cdecl _vsnwprintf(wchar_t *_Dest, size_t _Count, const wchar_t *_F
 #ifndef __NO_ISOCEXT
 int __cdecl snwprintf(wchar_t *s, size_t n, const wchar_t *format, ...);
 __CRT_INLINE int __cdecl vsnwprintf(wchar_t *s, size_t n, const wchar_t *format, va_list arg) {
-    return _vsnwprintf(s, n, format, arg);
+	return _vsnwprintf(s, n, format, arg);
 }
 int __cdecl vwscanf(const wchar_t *, va_list);
 int __cdecl vfwscanf(FILE *, const wchar_t *, va_list);
@@ -360,10 +360,10 @@ _CRTIMP wint_t __cdecl _ungetwc_nolock(wint_t _Ch, FILE *_File);
 #define putwchar(_c) fputwc((_c), stdout)
 #else
 __CRT_INLINE wint_t __cdecl getwchar() {
-    return (fgetwc(stdin));
+	return (fgetwc(stdin));
 }
 __CRT_INLINE wint_t __cdecl putwchar(wchar_t _C) {
-    return (fputwc(_C, stdout));
+	return (fputwc(_C, stdout));
 }
 #endif
 

@@ -11,26 +11,26 @@ __FBSDID("$FreeBSD: src/lib/libc/string/strstr.c,v 1.6 2009/02/03 17:58:20 dange
 
 char *
 _platform_strstr(const char *s, const char *find) {
-    char c, sc;
-    size_t len;
+	char c, sc;
+	size_t len;
 
-    if ((c = *find++) != '\0') {
-        len = _platform_strlen(find);
-        do {
-            do {
-                if ((sc = *s++) == '\0')
-                    return (NULL);
-            } while (sc != c);
-        } while (_platform_strncmp(s, find, len) != 0);
-        s--;
-    }
-    return ((char *)s);
+	if ((c = *find++) != '\0') {
+		len = _platform_strlen(find);
+		do {
+			do {
+				if ((sc = *s++) == '\0')
+					return (NULL);
+			} while (sc != c);
+		} while (_platform_strncmp(s, find, len) != 0);
+		s--;
+	}
+	return ((char *)s);
 }
 
 #if VARIANT_STATIC
 char *
 strstr(const char *s, const char *find) {
-    return _platform_strstr(s, find);
+	return _platform_strstr(s, find);
 }
 #endif
 

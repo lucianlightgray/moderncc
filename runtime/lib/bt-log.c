@@ -15,34 +15,34 @@
 #endif
 
 typedef struct rt_frame {
-    void *ip, *fp, *sp;
+	void *ip, *fp, *sp;
 } rt_frame;
 
 __attribute__((weak)) int _mcc_backtrace(rt_frame *f, const char *fmt, va_list ap);
 
 DLL_EXPORT int mcc_backtrace(const char *fmt, ...) {
-    va_list ap;
-    int ret;
+	va_list ap;
+	int ret;
 
-    if (_mcc_backtrace) {
-        rt_frame f;
-        f.fp = __builtin_frame_address(1);
-        f.ip = __builtin_return_address(0);
-        va_start(ap, fmt);
-        ret = _mcc_backtrace(&f, fmt, ap);
-        va_end(ap);
-    } else {
-        const char *p, *nl = "\n";
-        if (fmt[0] == '^' && (p = strchr(fmt + 1, fmt[0])))
-            fmt = p + 1;
-        if (fmt[0] == '\001')
-            ++fmt, nl = "";
-        va_start(ap, fmt);
-        ret = vfprintf(stderr, fmt, ap);
-        va_end(ap);
-        fprintf(stderr, "%s", nl), fflush(stderr);
-    }
-    return ret;
+	if (_mcc_backtrace) {
+		rt_frame f;
+		f.fp = __builtin_frame_address(1);
+		f.ip = __builtin_return_address(0);
+		va_start(ap, fmt);
+		ret = _mcc_backtrace(&f, fmt, ap);
+		va_end(ap);
+	} else {
+		const char *p, *nl = "\n";
+		if (fmt[0] == '^' && (p = strchr(fmt + 1, fmt[0])))
+			fmt = p + 1;
+		if (fmt[0] == '\001')
+			++fmt, nl = "";
+		va_start(ap, fmt);
+		ret = vfprintf(stderr, fmt, ap);
+		va_end(ap);
+		fprintf(stderr, "%s", nl), fflush(stderr);
+	}
+	return ret;
 }
 
 #if (defined(__GNUC__) && (__GNUC__ >= 6)) || defined(__clang__)

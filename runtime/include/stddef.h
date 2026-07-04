@@ -12,8 +12,8 @@ typedef __SIZE_TYPE__ uintptr_t;
 
 #if __STDC_VERSION__ >= 201112L
 typedef union {
-    long long __ll;
-    long double __ld;
+	long long __ll;
+	long double __ld;
 } max_align_t;
 #endif
 

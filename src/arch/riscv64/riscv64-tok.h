@@ -1,11 +1,11 @@
 #define DEF_ASM_WITH_SUFFIX(x, y) \
-    DEF(TOK_ASM_##x##_##y, #x "." #y)
+	DEF(TOK_ASM_##x##_##y, #x "." #y)
 
 #define DEF_ASM_WITH_SUFFIXES(x, y, z) \
-    DEF(TOK_ASM_##x##_##y##_##z, #x "." #y "." #z)
+	DEF(TOK_ASM_##x##_##y##_##z, #x "." #y "." #z)
 
 #define DEF_ASM_FENCE(x) \
-    DEF(TOK_ASM_##x##_fence, #x)
+	DEF(TOK_ASM_##x##_fence, #x)
 
 DEF_ASM(x0)
 DEF_ASM(x1)

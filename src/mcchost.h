@@ -200,12 +200,12 @@ ST_FUNC int host_find_tool(const char *name, const char *ext, char *buf, int siz
 ST_FUNC int host_codesign_adhoc(const char *file);
 
 typedef struct HostSpawnOpts {
-    const char *const *launcher;
-    const char *cwd;
-    const char *const *env;
-    const char *stdout_file;
-    const char *stderr_file;
-    char **stdout_buf, **stderr_buf;
+	const char *const *launcher;
+	const char *cwd;
+	const char *const *env;
+	const char *stdout_file;
+	const char *stderr_file;
+	char **stdout_buf, **stderr_buf;
 } HostSpawnOpts;
 ST_FUNC int host_spawn_ex(const char *const *argv, const HostSpawnOpts *o);
 
@@ -223,7 +223,7 @@ ST_FUNC char **host_environ(void);
 ST_FUNC int host_nproc(void);
 
 ST_FUNC void host_sys_info(char *sysname, int ssz, char *release, int rsz,
-                           char *machine, int msz);
+						   char *machine, int msz);
 
 ST_FUNC void *host_dlopen(const char *name);
 ST_FUNC void host_dlclose(void *h);
@@ -261,14 +261,14 @@ ST_FUNC void *host_unwind_register(void *table, unsigned size_bytes, size_t base
 ST_FUNC void host_unwind_unregister(void *table);
 
 enum {
-    HOST_FAULT_MEM,
-    HOST_FAULT_DIVZERO,
-    HOST_FAULT_FPE,
-    HOST_FAULT_ILL,
-    HOST_FAULT_ABORT,
-    HOST_FAULT_STACK,
-    HOST_FAULT_TRAP,
-    HOST_FAULT_OTHER
+	HOST_FAULT_MEM,
+	HOST_FAULT_DIVZERO,
+	HOST_FAULT_FPE,
+	HOST_FAULT_ILL,
+	HOST_FAULT_ABORT,
+	HOST_FAULT_STACK,
+	HOST_FAULT_TRAP,
+	HOST_FAULT_OTHER
 };
 
 #if MCC_HOST_WIN32
@@ -278,7 +278,7 @@ enum {
 #endif
 
 typedef struct HostFaultRegs {
-    size_t pc, fp, sp;
+	size_t pc, fp, sp;
 } HostFaultRegs;
 
 typedef int (*host_fault_fn)(int code, unsigned detail, HostFaultRegs *r);
@@ -294,50 +294,50 @@ ST_FUNC void host_fault_unblock(unsigned detail);
 #if CONFIG_MCC_SEMLOCK
 #if defined _WIN32
 typedef struct {
-    volatile LONG init;
-    CRITICAL_SECTION cs;
+	volatile LONG init;
+	CRITICAL_SECTION cs;
 } HostSem;
 static inline void host_sem_wait(HostSem *p) {
-    if (InterlockedCompareExchange(&p->init, 1, 0) == 0) {
-        InitializeCriticalSection(&p->cs);
-        InterlockedExchange(&p->init, 2);
-    } else {
-        while (InterlockedCompareExchange(&p->init, 2, 2) != 2)
-            Sleep(0);
-    }
-    EnterCriticalSection(&p->cs);
+	if (InterlockedCompareExchange(&p->init, 1, 0) == 0) {
+		InitializeCriticalSection(&p->cs);
+		InterlockedExchange(&p->init, 2);
+	} else {
+		while (InterlockedCompareExchange(&p->init, 2, 2) != 2)
+			Sleep(0);
+	}
+	EnterCriticalSection(&p->cs);
 }
 static inline void host_sem_post(HostSem *p) {
-    LeaveCriticalSection(&p->cs);
+	LeaveCriticalSection(&p->cs);
 }
 #elif defined __APPLE__
 #include <dispatch/dispatch.h>
 typedef struct {
-    int init;
-    dispatch_semaphore_t sem;
+	int init;
+	dispatch_semaphore_t sem;
 } HostSem;
 static inline void host_sem_wait(HostSem *p) {
-    if (!p->init)
-        p->sem = dispatch_semaphore_create(1), p->init = 1;
-    dispatch_semaphore_wait(p->sem, DISPATCH_TIME_FOREVER);
+	if (!p->init)
+		p->sem = dispatch_semaphore_create(1), p->init = 1;
+	dispatch_semaphore_wait(p->sem, DISPATCH_TIME_FOREVER);
 }
 static inline void host_sem_post(HostSem *p) {
-    dispatch_semaphore_signal(p->sem);
+	dispatch_semaphore_signal(p->sem);
 }
 #else
 #include <semaphore.h>
 typedef struct {
-    int init;
-    sem_t sem;
+	int init;
+	sem_t sem;
 } HostSem;
 static inline void host_sem_wait(HostSem *p) {
-    if (!p->init)
-        sem_init(&p->sem, 0, 1), p->init = 1;
-    while (sem_wait(&p->sem) < 0 && errno == EINTR)
-        ;
+	if (!p->init)
+		sem_init(&p->sem, 0, 1), p->init = 1;
+	while (sem_wait(&p->sem) < 0 && errno == EINTR)
+		;
 }
 static inline void host_sem_post(HostSem *p) {
-    sem_post(&p->sem);
+	sem_post(&p->sem);
 }
 #endif
 #define HOST_SEM(s) static HostSem s

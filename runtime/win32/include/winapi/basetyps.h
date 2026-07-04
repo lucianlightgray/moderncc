@@ -53,18 +53,18 @@
 #define THIS INTERFACE *This
 #ifdef CONST_VTABLE
 #define DECLARE_INTERFACE(iface)                  \
-    typedef struct iface {                        \
-        const struct iface##Vtbl *lpVtbl;         \
-    } iface;                                      \
-    typedef const struct iface##Vtbl iface##Vtbl; \
-    const struct iface##Vtbl
+	typedef struct iface {                        \
+		const struct iface##Vtbl *lpVtbl;         \
+	} iface;                                      \
+	typedef const struct iface##Vtbl iface##Vtbl; \
+	const struct iface##Vtbl
 #else
 #define DECLARE_INTERFACE(iface)            \
-    typedef struct iface {                  \
-        struct iface##Vtbl *lpVtbl;         \
-    } iface;                                \
-    typedef struct iface##Vtbl iface##Vtbl; \
-    struct iface##Vtbl
+	typedef struct iface {                  \
+		struct iface##Vtbl *lpVtbl;         \
+	} iface;                                \
+	typedef struct iface##Vtbl iface##Vtbl; \
+	struct iface##Vtbl
 #endif
 #define DECLARE_INTERFACE_(iface, baseiface) DECLARE_INTERFACE(iface)
 #endif

@@ -18,8 +18,8 @@ typedef __CHAR32_TYPE__ char32_t;
 #ifndef __mbstate_t_defined
 #define __mbstate_t_defined 1
 typedef struct {
-    unsigned __count;
-    unsigned __value;
+	unsigned __count;
+	unsigned __value;
 } mbstate_t;
 #endif
 

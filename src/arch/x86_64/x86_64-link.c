@@ -23,383 +23,383 @@
 
 #ifdef NEED_RELOC_TYPE
 ST_FUNC int code_reloc(int reloc_type) {
-    switch (reloc_type) {
-    case R_X86_64_32:
-    case R_X86_64_32S:
-    case R_X86_64_64:
-    case R_X86_64_GOTPC32:
-    case R_X86_64_GOTPC64:
-    case R_X86_64_GOTPCREL:
-    case R_X86_64_GOTPCRELX:
-    case R_X86_64_REX_GOTPCRELX:
-    case R_X86_64_GOTTPOFF:
-    case R_X86_64_GOT32:
-    case R_X86_64_GOT64:
-    case R_X86_64_GLOB_DAT:
-    case R_X86_64_COPY:
-    case R_X86_64_RELATIVE:
-    case R_X86_64_GOTOFF64:
-    case R_X86_64_TLSGD:
-    case R_X86_64_TLSLD:
-    case R_X86_64_DTPOFF32:
-    case R_X86_64_TPOFF32:
-    case R_X86_64_DTPOFF64:
-    case R_X86_64_TPOFF64:
-        return 0;
+	switch (reloc_type) {
+	case R_X86_64_32:
+	case R_X86_64_32S:
+	case R_X86_64_64:
+	case R_X86_64_GOTPC32:
+	case R_X86_64_GOTPC64:
+	case R_X86_64_GOTPCREL:
+	case R_X86_64_GOTPCRELX:
+	case R_X86_64_REX_GOTPCRELX:
+	case R_X86_64_GOTTPOFF:
+	case R_X86_64_GOT32:
+	case R_X86_64_GOT64:
+	case R_X86_64_GLOB_DAT:
+	case R_X86_64_COPY:
+	case R_X86_64_RELATIVE:
+	case R_X86_64_GOTOFF64:
+	case R_X86_64_TLSGD:
+	case R_X86_64_TLSLD:
+	case R_X86_64_DTPOFF32:
+	case R_X86_64_TPOFF32:
+	case R_X86_64_DTPOFF64:
+	case R_X86_64_TPOFF64:
+		return 0;
 
-    case R_X86_64_PC32:
-    case R_X86_64_PC64:
-    case R_X86_64_PLT32:
-    case R_X86_64_PLTOFF64:
-    case R_X86_64_JUMP_SLOT:
-        return 1;
-    }
-    return -1;
+	case R_X86_64_PC32:
+	case R_X86_64_PC64:
+	case R_X86_64_PLT32:
+	case R_X86_64_PLTOFF64:
+	case R_X86_64_JUMP_SLOT:
+		return 1;
+	}
+	return -1;
 }
 
 ST_FUNC int gotplt_entry_type(int reloc_type) {
-    switch (reloc_type) {
-    case R_X86_64_GLOB_DAT:
-    case R_X86_64_JUMP_SLOT:
-    case R_X86_64_COPY:
-    case R_X86_64_RELATIVE:
-        return NO_GOTPLT_ENTRY;
+	switch (reloc_type) {
+	case R_X86_64_GLOB_DAT:
+	case R_X86_64_JUMP_SLOT:
+	case R_X86_64_COPY:
+	case R_X86_64_RELATIVE:
+		return NO_GOTPLT_ENTRY;
 
-    case R_X86_64_32:
-    case R_X86_64_32S:
-    case R_X86_64_64:
-    case R_X86_64_PC32:
-    case R_X86_64_PC64:
-        return AUTO_GOTPLT_ENTRY;
+	case R_X86_64_32:
+	case R_X86_64_32S:
+	case R_X86_64_64:
+	case R_X86_64_PC32:
+	case R_X86_64_PC64:
+		return AUTO_GOTPLT_ENTRY;
 
-    case R_X86_64_GOTTPOFF:
-        return BUILD_GOT_ONLY;
+	case R_X86_64_GOTTPOFF:
+		return BUILD_GOT_ONLY;
 
-    case R_X86_64_GOT32:
-    case R_X86_64_GOT64:
-    case R_X86_64_GOTPC32:
-    case R_X86_64_GOTPC64:
-    case R_X86_64_GOTOFF64:
-    case R_X86_64_GOTPCREL:
-    case R_X86_64_GOTPCRELX:
-    case R_X86_64_TLSGD:
-    case R_X86_64_TLSLD:
-    case R_X86_64_DTPOFF32:
-    case R_X86_64_DTPOFF64:
-    case R_X86_64_REX_GOTPCRELX:
-    case R_X86_64_PLT32:
-    case R_X86_64_PLTOFF64:
-        return ALWAYS_GOTPLT_ENTRY;
+	case R_X86_64_GOT32:
+	case R_X86_64_GOT64:
+	case R_X86_64_GOTPC32:
+	case R_X86_64_GOTPC64:
+	case R_X86_64_GOTOFF64:
+	case R_X86_64_GOTPCREL:
+	case R_X86_64_GOTPCRELX:
+	case R_X86_64_TLSGD:
+	case R_X86_64_TLSLD:
+	case R_X86_64_DTPOFF32:
+	case R_X86_64_DTPOFF64:
+	case R_X86_64_REX_GOTPCRELX:
+	case R_X86_64_PLT32:
+	case R_X86_64_PLTOFF64:
+		return ALWAYS_GOTPLT_ENTRY;
 
-    case R_X86_64_TPOFF32:
-    case R_X86_64_TPOFF64:
-        return NO_GOTPLT_ENTRY;
-    }
+	case R_X86_64_TPOFF32:
+	case R_X86_64_TPOFF64:
+		return NO_GOTPLT_ENTRY;
+	}
 
-    return -1;
+	return -1;
 }
 
 #ifdef NEED_BUILD_GOT
 ST_FUNC unsigned create_plt_entry(MCCState *s1, unsigned got_offset, struct sym_attr *attr) {
-    Section *plt = s1->plt;
-    uint8_t *p;
-    int modrm;
-    unsigned plt_offset, relofs;
+	Section *plt = s1->plt;
+	uint8_t *p;
+	int modrm;
+	unsigned plt_offset, relofs;
 
-    modrm = 0x25;
+	modrm = 0x25;
 
-    if (plt->data_offset == 0) {
-        p = section_ptr_add(plt, 16);
-        p[0] = 0xff;
-        p[1] = modrm + 0x10;
-        write32le(p + 2, PTR_SIZE);
-        p[6] = 0xff;
-        p[7] = modrm;
-        write32le(p + 8, PTR_SIZE * 2);
-    }
-    plt_offset = plt->data_offset;
+	if (plt->data_offset == 0) {
+		p = section_ptr_add(plt, 16);
+		p[0] = 0xff;
+		p[1] = modrm + 0x10;
+		write32le(p + 2, PTR_SIZE);
+		p[6] = 0xff;
+		p[7] = modrm;
+		write32le(p + 8, PTR_SIZE * 2);
+	}
+	plt_offset = plt->data_offset;
 
-    relofs = s1->plt->reloc ? s1->plt->reloc->data_offset : 0;
+	relofs = s1->plt->reloc ? s1->plt->reloc->data_offset : 0;
 
-    p = section_ptr_add(plt, 16);
-    p[0] = 0xff;
-    p[1] = modrm;
-    write32le(p + 2, got_offset);
-    p[6] = 0x68;
-    write32le(p + 7, relofs / sizeof(ElfW_Rel) - 1);
-    p[11] = 0xe9;
-    write32le(p + 12, -(plt->data_offset));
-    return plt_offset;
+	p = section_ptr_add(plt, 16);
+	p[0] = 0xff;
+	p[1] = modrm;
+	write32le(p + 2, got_offset);
+	p[6] = 0x68;
+	write32le(p + 7, relofs / sizeof(ElfW_Rel) - 1);
+	p[11] = 0xe9;
+	write32le(p + 12, -(plt->data_offset));
+	return plt_offset;
 }
 
 ST_FUNC void relocate_plt(MCCState *s1) {
-    uint8_t *p, *p_end;
+	uint8_t *p, *p_end;
 
-    if (!s1->plt)
-        return;
+	if (!s1->plt)
+		return;
 
-    p = s1->plt->data;
-    p_end = p + s1->plt->data_offset;
+	p = s1->plt->data;
+	p_end = p + s1->plt->data_offset;
 
-    if (p < p_end) {
-        int x = s1->got->sh_addr - s1->plt->sh_addr - 6;
-        add32le(p + 2, x);
-        add32le(p + 8, x - 6);
-        p += 16;
-        while (p < p_end) {
-            add32le(p + 2, x + (s1->plt->data - p));
-            p += 16;
-        }
-    }
+	if (p < p_end) {
+		int x = s1->got->sh_addr - s1->plt->sh_addr - 6;
+		add32le(p + 2, x);
+		add32le(p + 8, x - 6);
+		p += 16;
+		while (p < p_end) {
+			add32le(p + 2, x + (s1->plt->data - p));
+			p += 16;
+		}
+	}
 
-    if (s1->plt->reloc) {
-        ElfW_Rel *rel;
-        int x = s1->plt->sh_addr + 16 + 6;
-        p = s1->got->data;
-        for_each_elem(s1->plt->reloc, 0, rel, ElfW_Rel) {
-            write64le(p + rel->r_offset, x);
-            x += 16;
-        }
-    }
+	if (s1->plt->reloc) {
+		ElfW_Rel *rel;
+		int x = s1->plt->sh_addr + 16 + 6;
+		p = s1->got->data;
+		for_each_elem(s1->plt->reloc, 0, rel, ElfW_Rel) {
+			write64le(p + rel->r_offset, x);
+			x += 16;
+		}
+	}
 }
 #endif
 #endif
 
 ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr, addr_t addr, addr_t val) {
-    int sym_index, esym_index;
+	int sym_index, esym_index;
 
-    sym_index = ELFW(R_SYM)(rel->r_info);
+	sym_index = ELFW(R_SYM)(rel->r_info);
 
-    switch (type) {
-    case R_X86_64_64:
-        if (s1->output_type & MCC_OUTPUT_DYN) {
-            esym_index = get_sym_attr(s1, sym_index, 0)->dyn_index;
-            qrel->r_offset = rel->r_offset;
-            if (esym_index) {
-                qrel->r_info = ELFW(R_INFO)(esym_index, R_X86_64_64);
-                qrel->r_addend = rel->r_addend;
-                qrel++;
-                break;
-            } else {
-                qrel->r_info = ELFW(R_INFO)(0, R_X86_64_RELATIVE);
-                qrel->r_addend = read64le(ptr) + val;
-                qrel++;
-            }
-        }
-        add64le(ptr, val);
-        break;
-    case R_X86_64_32:
-    case R_X86_64_32S:
-        if (s1->output_type & MCC_OUTPUT_DYN) {
-            qrel->r_offset = rel->r_offset;
-            qrel->r_info = ELFW(R_INFO)(0, R_X86_64_RELATIVE);
-            qrel->r_addend = (int)read32le(ptr) + val;
-            qrel++;
-        }
-        if ((type == R_X86_64_32 ? val != (unsigned)val : val != (int)val) && (stab_section == NULL ||
-                                                                               addr < stab_section->sh_addr ||
-                                                                               addr >= (stab_section->sh_addr + stab_section->data_offset))) {
-            mcc_error_noabort("relocation 'R_X86_64_32[S]' out of range");
-        }
-        add32le(ptr, val);
-        break;
+	switch (type) {
+	case R_X86_64_64:
+		if (s1->output_type & MCC_OUTPUT_DYN) {
+			esym_index = get_sym_attr(s1, sym_index, 0)->dyn_index;
+			qrel->r_offset = rel->r_offset;
+			if (esym_index) {
+				qrel->r_info = ELFW(R_INFO)(esym_index, R_X86_64_64);
+				qrel->r_addend = rel->r_addend;
+				qrel++;
+				break;
+			} else {
+				qrel->r_info = ELFW(R_INFO)(0, R_X86_64_RELATIVE);
+				qrel->r_addend = read64le(ptr) + val;
+				qrel++;
+			}
+		}
+		add64le(ptr, val);
+		break;
+	case R_X86_64_32:
+	case R_X86_64_32S:
+		if (s1->output_type & MCC_OUTPUT_DYN) {
+			qrel->r_offset = rel->r_offset;
+			qrel->r_info = ELFW(R_INFO)(0, R_X86_64_RELATIVE);
+			qrel->r_addend = (int)read32le(ptr) + val;
+			qrel++;
+		}
+		if ((type == R_X86_64_32 ? val != (unsigned)val : val != (int)val) && (stab_section == NULL ||
+																			   addr < stab_section->sh_addr ||
+																			   addr >= (stab_section->sh_addr + stab_section->data_offset))) {
+			mcc_error_noabort("relocation 'R_X86_64_32[S]' out of range");
+		}
+		add32le(ptr, val);
+		break;
 
-    case R_X86_64_PC32:
-        if (s1->output_type == MCC_OUTPUT_DLL) {
-            esym_index = get_sym_attr(s1, sym_index, 0)->dyn_index;
-            if (esym_index) {
-                qrel->r_offset = rel->r_offset;
-                qrel->r_info = ELFW(R_INFO)(esym_index, R_X86_64_PC32);
-                qrel->r_addend = (int)read32le(ptr) + rel->r_addend;
-                qrel++;
-                break;
-            }
-        }
-        goto plt32pc32;
+	case R_X86_64_PC32:
+		if (s1->output_type == MCC_OUTPUT_DLL) {
+			esym_index = get_sym_attr(s1, sym_index, 0)->dyn_index;
+			if (esym_index) {
+				qrel->r_offset = rel->r_offset;
+				qrel->r_info = ELFW(R_INFO)(esym_index, R_X86_64_PC32);
+				qrel->r_addend = (int)read32le(ptr) + rel->r_addend;
+				qrel++;
+				break;
+			}
+		}
+		goto plt32pc32;
 
-    case R_X86_64_PLT32:
+	case R_X86_64_PLT32:
 
-    plt32pc32: {
-        long long diff;
-        diff = (long long)val - addr;
-        if (diff < -2147483648LL || diff > 2147483647LL) {
+	plt32pc32: {
+		long long diff;
+		diff = (long long)val - addr;
+		if (diff < -2147483648LL || diff > 2147483647LL) {
 #ifdef MCC_TARGET_PE
-            if (((ElfW(Sym) *)symtab_section->data)[sym_index].st_shndx != SHN_UNDEF)
+			if (((ElfW(Sym) *)symtab_section->data)[sym_index].st_shndx != SHN_UNDEF)
 #endif
-                mcc_error_noabort("relocation '%d' out of range", type);
-        }
-        add32le(ptr, diff);
-    } break;
+				mcc_error_noabort("relocation '%d' out of range", type);
+		}
+		add32le(ptr, diff);
+	} break;
 
-    case R_X86_64_COPY:
-        break;
+	case R_X86_64_COPY:
+		break;
 
-    case R_X86_64_PLTOFF64:
-        add64le(ptr, val - s1->got->sh_addr + rel->r_addend);
-        break;
+	case R_X86_64_PLTOFF64:
+		add64le(ptr, val - s1->got->sh_addr + rel->r_addend);
+		break;
 
-    case R_X86_64_PC64:
-        if (s1->output_type == MCC_OUTPUT_DLL) {
-            esym_index = get_sym_attr(s1, sym_index, 0)->dyn_index;
-            if (esym_index) {
-                qrel->r_offset = rel->r_offset;
-                qrel->r_info = ELFW(R_INFO)(esym_index, R_X86_64_PC64);
-                qrel->r_addend = read64le(ptr) + rel->r_addend;
-                qrel++;
-                break;
-            }
-        }
-        add64le(ptr, val - addr);
-        break;
+	case R_X86_64_PC64:
+		if (s1->output_type == MCC_OUTPUT_DLL) {
+			esym_index = get_sym_attr(s1, sym_index, 0)->dyn_index;
+			if (esym_index) {
+				qrel->r_offset = rel->r_offset;
+				qrel->r_info = ELFW(R_INFO)(esym_index, R_X86_64_PC64);
+				qrel->r_addend = read64le(ptr) + rel->r_addend;
+				qrel++;
+				break;
+			}
+		}
+		add64le(ptr, val - addr);
+		break;
 
-    case R_X86_64_GLOB_DAT:
-    case R_X86_64_JUMP_SLOT:
-        write64le(ptr, val - rel->r_addend);
-        break;
-    case R_X86_64_GOTPCREL:
-    case R_X86_64_GOTPCRELX:
-    case R_X86_64_REX_GOTPCRELX:
-        add32le(ptr, s1->got->sh_addr - addr +
-                         get_sym_attr(s1, sym_index, 0)->got_offset - 4);
-        break;
-    case R_X86_64_GOTPC32:
-        add32le(ptr, s1->got->sh_addr - addr + rel->r_addend);
-        break;
-    case R_X86_64_GOTPC64:
-        add64le(ptr, s1->got->sh_addr - addr + rel->r_addend);
-        break;
-    case R_X86_64_GOTTPOFF:
-        add32le(ptr, val - s1->got->sh_addr);
-        break;
-    case R_X86_64_GOT32:
-        add32le(ptr, get_sym_attr(s1, sym_index, 0)->got_offset);
-        break;
-    case R_X86_64_GOT64:
-        add64le(ptr, get_sym_attr(s1, sym_index, 0)->got_offset);
-        break;
-    case R_X86_64_GOTOFF64:
-        add64le(ptr, val - s1->got->sh_addr);
-        break;
-    case R_X86_64_TLSGD: {
-        static const unsigned char expect[] = {
-            0x66, 0x48, 0x8d, 0x3d, 0x00, 0x00, 0x00, 0x00,
-            0x66, 0x66, 0x48, 0xe8, 0x00, 0x00, 0x00, 0x00};
-        static const unsigned char replace[] = {
-            0x64, 0x48, 0x8b, 0x04, 0x25, 0x00, 0x00, 0x00, 0x00,
-            0x48, 0x8d, 0x80, 0x00, 0x00, 0x00, 0x00};
+	case R_X86_64_GLOB_DAT:
+	case R_X86_64_JUMP_SLOT:
+		write64le(ptr, val - rel->r_addend);
+		break;
+	case R_X86_64_GOTPCREL:
+	case R_X86_64_GOTPCRELX:
+	case R_X86_64_REX_GOTPCRELX:
+		add32le(ptr, s1->got->sh_addr - addr +
+						 get_sym_attr(s1, sym_index, 0)->got_offset - 4);
+		break;
+	case R_X86_64_GOTPC32:
+		add32le(ptr, s1->got->sh_addr - addr + rel->r_addend);
+		break;
+	case R_X86_64_GOTPC64:
+		add64le(ptr, s1->got->sh_addr - addr + rel->r_addend);
+		break;
+	case R_X86_64_GOTTPOFF:
+		add32le(ptr, val - s1->got->sh_addr);
+		break;
+	case R_X86_64_GOT32:
+		add32le(ptr, get_sym_attr(s1, sym_index, 0)->got_offset);
+		break;
+	case R_X86_64_GOT64:
+		add64le(ptr, get_sym_attr(s1, sym_index, 0)->got_offset);
+		break;
+	case R_X86_64_GOTOFF64:
+		add64le(ptr, val - s1->got->sh_addr);
+		break;
+	case R_X86_64_TLSGD: {
+		static const unsigned char expect[] = {
+			0x66, 0x48, 0x8d, 0x3d, 0x00, 0x00, 0x00, 0x00,
+			0x66, 0x66, 0x48, 0xe8, 0x00, 0x00, 0x00, 0x00};
+		static const unsigned char replace[] = {
+			0x64, 0x48, 0x8b, 0x04, 0x25, 0x00, 0x00, 0x00, 0x00,
+			0x48, 0x8d, 0x80, 0x00, 0x00, 0x00, 0x00};
 
-        if (memcmp(ptr - 4, expect, sizeof(expect)) == 0) {
-            ElfW(Sym) * sym;
-            Section *sec;
-            int32_t x;
+		if (memcmp(ptr - 4, expect, sizeof(expect)) == 0) {
+			ElfW(Sym) * sym;
+			Section *sec;
+			int32_t x;
 
-            memcpy(ptr - 4, replace, sizeof(replace));
-            rel[1].r_info = ELFW(R_INFO)(0, R_X86_64_NONE);
-            sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
-            sec = s1->sections[sym->st_shndx];
-            x = sym->st_value - sec->sh_addr - sec->data_offset;
-            add32le(ptr + 8, x);
-        } else
-            mcc_error_noabort("unexpected R_X86_64_TLSGD pattern");
-    } break;
-    case R_X86_64_TLSLD: {
-        static const unsigned char expect[] = {
-            0x48, 0x8d, 0x3d, 0x00, 0x00, 0x00, 0x00,
-            0xe8, 0x00, 0x00, 0x00, 0x00};
-        static const unsigned char replace[] = {
-            0x66, 0x66, 0x66, 0x64, 0x48, 0x8b, 0x04, 0x25,
-            0x00, 0x00, 0x00, 0x00};
+			memcpy(ptr - 4, replace, sizeof(replace));
+			rel[1].r_info = ELFW(R_INFO)(0, R_X86_64_NONE);
+			sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
+			sec = s1->sections[sym->st_shndx];
+			x = sym->st_value - sec->sh_addr - sec->data_offset;
+			add32le(ptr + 8, x);
+		} else
+			mcc_error_noabort("unexpected R_X86_64_TLSGD pattern");
+	} break;
+	case R_X86_64_TLSLD: {
+		static const unsigned char expect[] = {
+			0x48, 0x8d, 0x3d, 0x00, 0x00, 0x00, 0x00,
+			0xe8, 0x00, 0x00, 0x00, 0x00};
+		static const unsigned char replace[] = {
+			0x66, 0x66, 0x66, 0x64, 0x48, 0x8b, 0x04, 0x25,
+			0x00, 0x00, 0x00, 0x00};
 
-        if (memcmp(ptr - 3, expect, sizeof(expect)) == 0) {
-            memcpy(ptr - 3, replace, sizeof(replace));
-            rel[1].r_info = ELFW(R_INFO)(0, R_X86_64_NONE);
-        } else
-            mcc_error_noabort("unexpected R_X86_64_TLSLD pattern");
-    } break;
-    case R_X86_64_DTPOFF32:
-    case R_X86_64_TPOFF32: {
-        ElfW(Sym) * sym;
-        Section *sec;
-        int32_t x;
-        addr_t tls_start = 0, tls_end = 0, tls_align = 1;
+		if (memcmp(ptr - 3, expect, sizeof(expect)) == 0) {
+			memcpy(ptr - 3, replace, sizeof(replace));
+			rel[1].r_info = ELFW(R_INFO)(0, R_X86_64_NONE);
+		} else
+			mcc_error_noabort("unexpected R_X86_64_TLSLD pattern");
+	} break;
+	case R_X86_64_DTPOFF32:
+	case R_X86_64_TPOFF32: {
+		ElfW(Sym) * sym;
+		Section *sec;
+		int32_t x;
+		addr_t tls_start = 0, tls_end = 0, tls_align = 1;
 
-        sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
-        sec = s1->sections[sym->st_shndx];
+		sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
+		sec = s1->sections[sym->st_shndx];
 
-        for (int i = 1; i < s1->nb_sections; i++) {
-            Section *s = s1->sections[i];
-            addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
-            if (s->sh_flags & SHF_TLS && ssz) {
-                if (!tls_start || s->sh_addr < tls_start)
-                    tls_start = s->sh_addr;
-                if (s->sh_addr + ssz > tls_end)
-                    tls_end = s->sh_addr + ssz;
-                if (s->sh_addralign > tls_align)
-                    tls_align = s->sh_addralign;
-            }
-        }
-        if (tls_end > tls_start) {
-            addr_t tls_size = tls_end - tls_start;
-            addr_t aligned_size = (tls_size + tls_align - 1) & ~(tls_align - 1);
+		for (int i = 1; i < s1->nb_sections; i++) {
+			Section *s = s1->sections[i];
+			addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
+			if (s->sh_flags & SHF_TLS && ssz) {
+				if (!tls_start || s->sh_addr < tls_start)
+					tls_start = s->sh_addr;
+				if (s->sh_addr + ssz > tls_end)
+					tls_end = s->sh_addr + ssz;
+				if (s->sh_addralign > tls_align)
+					tls_align = s->sh_addralign;
+			}
+		}
+		if (tls_end > tls_start) {
+			addr_t tls_size = tls_end - tls_start;
+			addr_t aligned_size = (tls_size + tls_align - 1) & ~(tls_align - 1);
 #ifdef MCC_TARGET_PE
-            (void)aligned_size;
-            x = val - tls_start;
+			(void)aligned_size;
+			x = val - tls_start;
 #else
-            x = val - (tls_start + aligned_size);
+			x = val - (tls_start + aligned_size);
 #endif
-        } else {
-            x = val - sec->sh_addr - sec->data_offset;
-        }
-        add32le(ptr, x);
-    } break;
-    case R_X86_64_DTPOFF64:
-    case R_X86_64_TPOFF64: {
-        ElfW(Sym) * sym;
-        Section *sec;
-        int32_t x;
-        addr_t tls_start = 0, tls_end = 0, tls_align = 1;
+		} else {
+			x = val - sec->sh_addr - sec->data_offset;
+		}
+		add32le(ptr, x);
+	} break;
+	case R_X86_64_DTPOFF64:
+	case R_X86_64_TPOFF64: {
+		ElfW(Sym) * sym;
+		Section *sec;
+		int32_t x;
+		addr_t tls_start = 0, tls_end = 0, tls_align = 1;
 
-        sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
-        sec = s1->sections[sym->st_shndx];
+		sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
+		sec = s1->sections[sym->st_shndx];
 
-        for (int i = 1; i < s1->nb_sections; i++) {
-            Section *s = s1->sections[i];
-            addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
-            if (s->sh_flags & SHF_TLS && ssz) {
-                if (!tls_start || s->sh_addr < tls_start)
-                    tls_start = s->sh_addr;
-                if (s->sh_addr + ssz > tls_end)
-                    tls_end = s->sh_addr + ssz;
-                if (s->sh_addralign > tls_align)
-                    tls_align = s->sh_addralign;
-            }
-        }
-        if (tls_end > tls_start) {
-            addr_t tls_size = tls_end - tls_start;
-            addr_t aligned_size = (tls_size + tls_align - 1) & ~(tls_align - 1);
+		for (int i = 1; i < s1->nb_sections; i++) {
+			Section *s = s1->sections[i];
+			addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
+			if (s->sh_flags & SHF_TLS && ssz) {
+				if (!tls_start || s->sh_addr < tls_start)
+					tls_start = s->sh_addr;
+				if (s->sh_addr + ssz > tls_end)
+					tls_end = s->sh_addr + ssz;
+				if (s->sh_addralign > tls_align)
+					tls_align = s->sh_addralign;
+			}
+		}
+		if (tls_end > tls_start) {
+			addr_t tls_size = tls_end - tls_start;
+			addr_t aligned_size = (tls_size + tls_align - 1) & ~(tls_align - 1);
 #ifdef MCC_TARGET_PE
-            (void)aligned_size;
-            x = val - tls_start;
+			(void)aligned_size;
+			x = val - tls_start;
 #else
-            x = val - (tls_start + aligned_size);
+			x = val - (tls_start + aligned_size);
 #endif
-        } else {
-            x = val - sec->sh_addr - sec->data_offset;
-        }
-        add64le(ptr, x);
-    } break;
-    case R_X86_64_NONE:
-        break;
-    case R_X86_64_RELATIVE:
+		} else {
+			x = val - sec->sh_addr - sec->data_offset;
+		}
+		add64le(ptr, x);
+	} break;
+	case R_X86_64_NONE:
+		break;
+	case R_X86_64_RELATIVE:
 #ifdef MCC_TARGET_PE
-        add32le(ptr, val - s1->pe_imagebase);
+		add32le(ptr, val - s1->pe_imagebase);
 #endif
-        break;
-    default:
-        fprintf(stderr, "FIXME: handle reloc type %d at %x [%p] to %x\n",
-                type, (unsigned)addr, ptr, (unsigned)val);
-        break;
-    }
+		break;
+	default:
+		fprintf(stderr, "FIXME: handle reloc type %d at %x [%p] to %x\n",
+				type, (unsigned)addr, ptr, (unsigned)val);
+		break;
+	}
 }
 
 #endif

@@ -13,11 +13,11 @@ int selfref = 5;
 #define INC(x) ((x) + 1)
 
 int main(void) {
-    printf("chain: %d\n", A);
-    printf("selfref: %d\n", selfref);
-    printf("rescan: %d\n", APPLY(DOUBLE, 9));
-    printf("space_paren: %d\n", INC(41));
+	printf("chain: %d\n", A);
+	printf("selfref: %d\n", selfref);
+	printf("rescan: %d\n", APPLY(DOUBLE, 9));
+	printf("space_paren: %d\n", INC(41));
 
-    printf("nested: %d\n", DOUBLE(DOUBLE(3)));
-    return 0;
+	printf("nested: %d\n", DOUBLE(DOUBLE(3)));
+	return 0;
 }

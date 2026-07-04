@@ -1,11 +1,11 @@
 #include <stdio.h>
 
 int main() {
-    int Count;
+	int Count;
 
-    for (Count = 1; Count <= 10; Count++) {
-        printf("%d\n", Count);
-    }
+	for (Count = 1; Count <= 10; Count++) {
+		printf("%d\n", Count);
+	}
 
-    return 0;
+	return 0;
 }

@@ -2,6 +2,6 @@
 #include "s_annCDE.h"
 
 int main(void) {
-    s_annCDE_seqpoint_test();
-    return 0;
+	s_annCDE_seqpoint_test();
+	return 0;
 }

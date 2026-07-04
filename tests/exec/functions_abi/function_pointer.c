@@ -1,8 +1,8 @@
 #include <stdio.h>
 
 int fred(int p) {
-    printf("yo %d\n", p);
-    return 42;
+	printf("yo %d\n", p);
+	return 42;
 }
 
 int (*f)(int) = &fred;
@@ -10,7 +10,7 @@ int (*f)(int) = &fred;
 int (*fprintfptr)(FILE *, const char *, ...) = &fprintf;
 
 int main() {
-    fprintfptr(stdout, "%d\n", (*f)(24));
+	fprintfptr(stdout, "%d\n", (*f)(24));
 
-    return 0;
+	return 0;
 }

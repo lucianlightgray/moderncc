@@ -26,7 +26,7 @@
 #endif
 
 typedef struct {
-    int newmode;
+	int newmode;
 } _startupinfo;
 int __cdecl __tgetmainargs(int *pargc, _TCHAR ***pargv, _TCHAR ***penv, int globb, _startupinfo *);
 void __cdecl __set_app_type(int apptype);
@@ -38,52 +38,52 @@ extern int _tmain(int argc, _TCHAR *argv[], _TCHAR *env[]);
 int _dowildcard;
 
 static LONG WINAPI catch_sig(EXCEPTION_POINTERS *ex) {
-    return _XcptFilter(ex->ExceptionRecord->ExceptionCode, ex);
+	return _XcptFilter(ex->ExceptionRecord->ExceptionCode, ex);
 }
 
 void _tstart(void) {
-    int ret;
+	int ret;
 
-    _startupinfo start_info = {0};
-    SetUnhandledExceptionFilter(catch_sig);
-    __set_app_type(_CONSOLE_APP);
+	_startupinfo start_info = {0};
+	SetUnhandledExceptionFilter(catch_sig);
+	__set_app_type(_CONSOLE_APP);
 
 #if defined __i386__ || defined __x86_64__
-    _controlfp(_PC_53, _MCW_PC);
+	_controlfp(_PC_53, _MCW_PC);
 #endif
 
-    __tgetmainargs(&__argc, &__targv, &_tenviron, _dowildcard, &start_info);
-    run_ctors(__argc, __targv, _tenviron);
-    ret = _tmain(__argc, __targv, _tenviron);
-    run_dtors();
-    exit(ret);
+	__tgetmainargs(&__argc, &__targv, &_tenviron, _dowildcard, &start_info);
+	run_ctors(__argc, __targv, _tenviron);
+	ret = _tmain(__argc, __targv, _tenviron);
+	run_dtors();
+	exit(ret);
 }
 
 __attribute__((weak)) extern int __run_on_exit();
 
 int _runtmain(int argc, char **argv) {
-    int ret;
+	int ret;
 #if defined UNICODE || defined __aarch64__
-    _startupinfo start_info = {0};
-    __tgetmainargs(&__argc, &__targv, &_tenviron, 0, &start_info);
+	_startupinfo start_info = {0};
+	__tgetmainargs(&__argc, &__targv, &_tenviron, 0, &start_info);
 #endif
 #ifdef UNICODE
-    if (argc < __argc) {
-        __targv += __argc - argc;
-        __argc = argc;
-    }
+	if (argc < __argc) {
+		__targv += __argc - argc;
+		__argc = argc;
+	}
 #else
-    __argc = argc;
-    __targv = argv;
+	__argc = argc;
+	__targv = argv;
 #endif
 #if defined __i386__ || defined __x86_64__
-    _controlfp(_PC_53, _MCW_PC);
+	_controlfp(_PC_53, _MCW_PC);
 #endif
-    run_ctors(__argc, __targv, _tenviron);
-    ret = _tmain(__argc, __targv, _tenviron);
-    fflush(stdout);
-    fflush(stderr);
-    run_dtors();
-    __run_on_exit(ret);
-    return ret;
+	run_ctors(__argc, __targv, _tenviron);
+	ret = _tmain(__argc, __targv, _tenviron);
+	fflush(stdout);
+	fflush(stderr);
+	run_dtors();
+	__run_on_exit(ret);
+	return ret;
 }

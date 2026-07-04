@@ -61,7 +61,7 @@ LIBMCCAPI int mcc_relocate(MCCState *s1);
 LIBMCCAPI void *mcc_get_symbol(MCCState *s, const char *name);
 
 LIBMCCAPI void mcc_list_symbols(MCCState *s, void *ctx,
-                                void (*symbol_cb)(void *ctx, const char *name, const void *val));
+								void (*symbol_cb)(void *ctx, const char *name, const void *val));
 
 LIBMCCAPI void *_mcc_setjmp(MCCState *s1, void *jmp_buf, void *top_func, void *longjmp);
 #define mcc_setjmp(s1, jb, f) setjmp(_mcc_setjmp(s1, jb, f, longjmp))

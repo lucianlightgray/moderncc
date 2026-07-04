@@ -19,7 +19,7 @@ _CRTIMP void __cdecl __MINGW_NOTHROW _exit(int _Code) __MINGW_ATTRIB_NORETURN;
 #if !defined __NO_ISOCEXT
 void __cdecl _Exit(int) __MINGW_ATTRIB_NORETURN;
 __CRT_INLINE __MINGW_ATTRIB_NORETURN void __cdecl _Exit(int status) {
-    _exit(status);
+	_exit(status);
 }
 #endif
 

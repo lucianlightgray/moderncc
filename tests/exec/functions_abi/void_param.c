@@ -1,11 +1,11 @@
 #include <stdio.h>
 
 void fred(void) {
-    printf("yo\n");
+	printf("yo\n");
 }
 
 int main() {
-    fred();
+	fred();
 
-    return 0;
+	return 0;
 }

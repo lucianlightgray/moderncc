@@ -1,6 +1,6 @@
 #include <stdio.h>
 int asm_add(int);
 int main(void) {
-    printf("%d\n", asm_add(41));
-    return 0;
+	printf("%d\n", asm_add(41));
+	return 0;
 }

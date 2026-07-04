@@ -15,17 +15,17 @@
 #endif
 
 #define VLOG(...)                                                         \
-    do {                                                                  \
-        fprintf(stderr, "[vlog %s %s:%d] ", VLOG_CC, __FILE__, __LINE__); \
-        fprintf(stderr, __VA_ARGS__);                                     \
-        fputc('\n', stderr);                                              \
-    } while (0)
+	do {                                                                  \
+		fprintf(stderr, "[vlog %s %s:%d] ", VLOG_CC, __FILE__, __LINE__); \
+		fprintf(stderr, __VA_ARGS__);                                     \
+		fputc('\n', stderr);                                              \
+	} while (0)
 
 #define VLOG_IF(cond, ...)     \
-    do {                       \
-        if (cond)              \
-            VLOG(__VA_ARGS__); \
-    } while (0)
+	do {                       \
+		if (cond)              \
+			VLOG(__VA_ARGS__); \
+	} while (0)
 
 #define VLOG_ENTER(name) VLOG("enter %s", (name))
 

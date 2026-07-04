@@ -236,8 +236,8 @@ DEF_ATOMIC(atomic_nand_fetch)
 
 DEF(TOK_pack, "pack")
 #if !defined(MCC_TARGET_I386) && !defined(MCC_TARGET_X86_64) && \
-    !defined(MCC_TARGET_ARM) && !defined(MCC_TARGET_ARM64) &&   \
-    !defined(MCC_TARGET_RISCV64)
+	!defined(MCC_TARGET_ARM) && !defined(MCC_TARGET_ARM64) &&   \
+	!defined(MCC_TARGET_RISCV64)
 DEF(TOK_ASM_push, "push")
 DEF(TOK_ASM_pop, "pop")
 #endif

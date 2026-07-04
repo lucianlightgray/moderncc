@@ -2,7 +2,7 @@
 #include "s_stddef.h"
 
 int main(void) {
-    s_stddef_offsetof();
-    s_stddef_stdint();
-    return 0;
+	s_stddef_offsetof();
+	s_stddef_stdint();
+	return 0;
 }

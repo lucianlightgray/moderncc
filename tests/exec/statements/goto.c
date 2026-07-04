@@ -1,50 +1,50 @@
 #include <stdio.h>
 
 void fred() {
-    printf("In fred()\n");
-    goto done;
-    printf("In middle\n");
+	printf("In fred()\n");
+	goto done;
+	printf("In middle\n");
 done:
-    printf("At end\n");
+	printf("At end\n");
 }
 
 void joe() {
-    int b = 5678;
+	int b = 5678;
 
-    printf("In joe()\n");
+	printf("In joe()\n");
 
-    {
-        int c = 1234;
-        printf("c = %d\n", c);
-        goto outer;
-        printf("uh-oh\n");
-    }
+	{
+		int c = 1234;
+		printf("c = %d\n", c);
+		goto outer;
+		printf("uh-oh\n");
+	}
 
 outer:
 
-    printf("done\n");
+	printf("done\n");
 }
 
 void henry() {
-    int a;
+	int a;
 
-    printf("In henry()\n");
-    goto inner;
+	printf("In henry()\n");
+	goto inner;
 
-    {
-        int b;
-    inner:
-        b = 1234;
-        printf("b = %d\n", b);
-    }
+	{
+		int b;
+	inner:
+		b = 1234;
+		printf("b = %d\n", b);
+	}
 
-    printf("done\n");
+	printf("done\n");
 }
 
 int main() {
-    fred();
-    joe();
-    henry();
+	fred();
+	joe();
+	henry();
 
-    return 0;
+	return 0;
 }

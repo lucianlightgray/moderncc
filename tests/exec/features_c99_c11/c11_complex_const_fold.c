@@ -16,25 +16,25 @@ double _Complex c_r = 3.0;
 double _Complex c_n = (1.0 + 1.0 * I) * (1.0 + 1.0 * I) + 1.0;
 
 static int eq(double _Complex z, double re, double im) {
-    return __real__ z == re && __imag__ z == im;
+	return __real__ z == re && __imag__ z == im;
 }
 
 int main(void) {
-    int ok = 1;
-    if (!eq(c_a, 1, 2))
-        ok = 0;
-    if (!eq(c_m, 1, 3))
-        ok = 0;
-    if (!eq(c_s, 4, 4))
-        ok = 0;
-    if (!eq(c_d, 2, 1))
-        ok = 0;
-    if (!((double)__real__ c_f == 1 && (double)__imag__ c_f == 2))
-        ok = 0;
-    if (!eq(c_r, 3, 0))
-        ok = 0;
-    if (!eq(c_n, 1, 2))
-        ok = 0;
-    printf(ok ? "OK\n" : "FAIL\n");
-    return ok ? 0 : 1;
+	int ok = 1;
+	if (!eq(c_a, 1, 2))
+		ok = 0;
+	if (!eq(c_m, 1, 3))
+		ok = 0;
+	if (!eq(c_s, 4, 4))
+		ok = 0;
+	if (!eq(c_d, 2, 1))
+		ok = 0;
+	if (!((double)__real__ c_f == 1 && (double)__imag__ c_f == 2))
+		ok = 0;
+	if (!eq(c_r, 3, 0))
+		ok = 0;
+	if (!eq(c_n, 1, 2))
+		ok = 0;
+	printf(ok ? "OK\n" : "FAIL\n");
+	return ok ? 0 : 1;
 }

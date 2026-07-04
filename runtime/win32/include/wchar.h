@@ -30,14 +30,14 @@ typedef __gnuc_va_list va_list;
 
 #ifndef _FILE_DEFINED
 struct _iobuf {
-    char *_ptr;
-    int _cnt;
-    char *_base;
-    int _flag;
-    int _file;
-    int _charbuf;
-    int _bufsiz;
-    char *_tmpfname;
+	char *_ptr;
+	int _cnt;
+	char *_base;
+	int _flag;
+	int _file;
+	int _charbuf;
+	int _bufsiz;
+	char *_tmpfname;
 };
 typedef struct _iobuf FILE;
 #define _FILE_DEFINED
@@ -74,39 +74,39 @@ typedef unsigned long _fsize_t;
 
 #ifndef _WFINDDATA_T_DEFINED
 struct _wfinddata32_t {
-    unsigned attrib;
-    __time32_t time_create;
-    __time32_t time_access;
-    __time32_t time_write;
-    _fsize_t size;
-    wchar_t name[260];
+	unsigned attrib;
+	__time32_t time_create;
+	__time32_t time_access;
+	__time32_t time_write;
+	_fsize_t size;
+	wchar_t name[260];
 };
 
 struct _wfinddata32i64_t {
-    unsigned attrib;
-    __time32_t time_create;
-    __time32_t time_access;
-    __time32_t time_write;
-    __int64 size;
-    wchar_t name[260];
+	unsigned attrib;
+	__time32_t time_create;
+	__time32_t time_access;
+	__time32_t time_write;
+	__int64 size;
+	wchar_t name[260];
 };
 
 struct _wfinddata64i32_t {
-    unsigned attrib;
-    __time64_t time_create;
-    __time64_t time_access;
-    __time64_t time_write;
-    _fsize_t size;
-    wchar_t name[260];
+	unsigned attrib;
+	__time64_t time_create;
+	__time64_t time_access;
+	__time64_t time_write;
+	_fsize_t size;
+	wchar_t name[260];
 };
 
 struct _wfinddata64_t {
-    unsigned attrib;
-    __time64_t time_create;
-    __time64_t time_access;
-    __time64_t time_write;
-    __int64 size;
-    wchar_t name[260];
+	unsigned attrib;
+	__time64_t time_create;
+	__time64_t time_access;
+	__time64_t time_write;
+	__int64 size;
+	wchar_t name[260];
 };
 
 #ifdef _USE_32BIT_TIME_T
@@ -418,77 +418,77 @@ typedef long long off64_t;
 #endif
 
 struct _stat32 {
-    _dev_t st_dev;
-    _ino_t st_ino;
-    unsigned short st_mode;
-    short st_nlink;
-    short st_uid;
-    short st_gid;
-    _dev_t st_rdev;
-    _off_t st_size;
-    __time32_t st_atime;
-    __time32_t st_mtime;
-    __time32_t st_ctime;
+	_dev_t st_dev;
+	_ino_t st_ino;
+	unsigned short st_mode;
+	short st_nlink;
+	short st_uid;
+	short st_gid;
+	_dev_t st_rdev;
+	_off_t st_size;
+	__time32_t st_atime;
+	__time32_t st_mtime;
+	__time32_t st_ctime;
 };
 
 #ifndef NO_OLDNAMES
 struct stat {
-    _dev_t st_dev;
-    _ino_t st_ino;
-    unsigned short st_mode;
-    short st_nlink;
-    short st_uid;
-    short st_gid;
-    _dev_t st_rdev;
-    _off_t st_size;
-    time_t st_atime;
-    time_t st_mtime;
-    time_t st_ctime;
+	_dev_t st_dev;
+	_ino_t st_ino;
+	unsigned short st_mode;
+	short st_nlink;
+	short st_uid;
+	short st_gid;
+	_dev_t st_rdev;
+	_off_t st_size;
+	time_t st_atime;
+	time_t st_mtime;
+	time_t st_ctime;
 };
 #endif
 
 #if _INTEGRAL_MAX_BITS >= 64
 
 struct _stat32i64 {
-    _dev_t st_dev;
-    _ino_t st_ino;
-    unsigned short st_mode;
-    short st_nlink;
-    short st_uid;
-    short st_gid;
-    _dev_t st_rdev;
-    __int64 st_size;
-    __time32_t st_atime;
-    __time32_t st_mtime;
-    __time32_t st_ctime;
+	_dev_t st_dev;
+	_ino_t st_ino;
+	unsigned short st_mode;
+	short st_nlink;
+	short st_uid;
+	short st_gid;
+	_dev_t st_rdev;
+	__int64 st_size;
+	__time32_t st_atime;
+	__time32_t st_mtime;
+	__time32_t st_ctime;
 };
 
 struct _stat64i32 {
-    _dev_t st_dev;
-    _ino_t st_ino;
-    unsigned short st_mode;
-    short st_nlink;
-    short st_uid;
-    short st_gid;
-    _dev_t st_rdev;
-    _off_t st_size;
-    __time64_t st_atime;
-    __time64_t st_mtime;
-    __time64_t st_ctime;
+	_dev_t st_dev;
+	_ino_t st_ino;
+	unsigned short st_mode;
+	short st_nlink;
+	short st_uid;
+	short st_gid;
+	_dev_t st_rdev;
+	_off_t st_size;
+	__time64_t st_atime;
+	__time64_t st_mtime;
+	__time64_t st_ctime;
 };
 
 struct _stat64 {
-    _dev_t st_dev;
-    _ino_t st_ino;
-    unsigned short st_mode;
-    short st_nlink;
-    short st_uid;
-    short st_gid;
-    _dev_t st_rdev;
-    __int64 st_size;
-    __time64_t st_atime;
-    __time64_t st_mtime;
-    __time64_t st_ctime;
+	_dev_t st_dev;
+	_ino_t st_ino;
+	unsigned short st_mode;
+	short st_nlink;
+	short st_uid;
+	short st_gid;
+	_dev_t st_rdev;
+	__int64 st_size;
+	__time64_t st_atime;
+	__time64_t st_mtime;
+	__time64_t st_ctime;
 };
 #endif
 
@@ -578,7 +578,7 @@ _CRTIMP int __cdecl _vsnwprintf(wchar_t *_Dest, size_t _Count, const wchar_t *_F
 #ifndef __NO_ISOCEXT
 int __cdecl snwprintf(wchar_t *s, size_t n, const wchar_t *format, ...);
 __CRT_INLINE int __cdecl vsnwprintf(wchar_t *s, size_t n, const wchar_t *format, va_list arg) {
-    return _vsnwprintf(s, n, format, arg);
+	return _vsnwprintf(s, n, format, arg);
 }
 int __cdecl vwscanf(const wchar_t *, va_list);
 int __cdecl vfwscanf(FILE *, const wchar_t *, va_list);
@@ -662,10 +662,10 @@ _CRTIMP wint_t __cdecl _ungetwc_nolock(wint_t _Ch, FILE *_File);
 #define putwchar(_c) fputwc((_c), stdout)
 #else
 __CRT_INLINE wint_t __cdecl getwchar() {
-    return (fgetwc(stdin));
+	return (fgetwc(stdin));
 }
 __CRT_INLINE wint_t __cdecl putwchar(wchar_t _C) {
-    return (fputwc(_C, stdout));
+	return (fputwc(_C, stdout));
 }
 #endif
 
@@ -790,15 +790,15 @@ int __cdecl wcsicoll(const wchar_t *_Str1, const wchar_t *_Str2);
 #ifndef _TM_DEFINED
 #define _TM_DEFINED
 struct tm {
-    int tm_sec;
-    int tm_min;
-    int tm_hour;
-    int tm_mday;
-    int tm_mon;
-    int tm_year;
-    int tm_wday;
-    int tm_yday;
-    int tm_isdst;
+	int tm_sec;
+	int tm_min;
+	int tm_hour;
+	int tm_mday;
+	int tm_mon;
+	int tm_year;
+	int tm_wday;
+	int tm_yday;
+	int tm_isdst;
 };
 #endif
 
@@ -819,11 +819,11 @@ _CRTIMP wchar_t *__cdecl _wctime64(const __time64_t *_Time);
 #define _INC_WTIME_INL
 #ifdef _USE_32BIT_TIME_T
 __CRT_INLINE wchar_t *__cdecl _wctime(const time_t *_Time) {
-    return _wctime32(_Time);
+	return _wctime32(_Time);
 }
 #else
 __CRT_INLINE wchar_t *__cdecl _wctime(const time_t *_Time) {
-    return _wctime64(_Time);
+	return _wctime64(_Time);
 }
 #endif
 #endif
@@ -853,36 +853,36 @@ unsigned long long __cdecl wcstoull(const wchar_t *nptr, wchar_t **endptr, int b
 void *__cdecl memmove(void *_Dst, const void *_Src, size_t _MaxCount);
 void *__cdecl memcpy(void *_Dst, const void *_Src, size_t _MaxCount);
 __CRT_INLINE int __cdecl fwide(FILE *_F, int _M) {
-    (void)_F;
-    return (_M);
+	(void)_F;
+	return (_M);
 }
 __CRT_INLINE int __cdecl mbsinit(const mbstate_t *_P) {
-    return (!_P || *_P == 0);
+	return (!_P || *_P == 0);
 }
 __CRT_INLINE _CONST_RETURN wchar_t *__cdecl wmemchr(const wchar_t *_S, wchar_t _C, size_t _N) {
-    for (; 0 < _N; ++_S, --_N)
-        if (*_S == _C)
-            return (_CONST_RETURN wchar_t *)(_S);
-    return (0);
+	for (; 0 < _N; ++_S, --_N)
+		if (*_S == _C)
+			return (_CONST_RETURN wchar_t *)(_S);
+	return (0);
 }
 __CRT_INLINE int __cdecl wmemcmp(const wchar_t *_S1, const wchar_t *_S2, size_t _N) {
-    for (; 0 < _N; ++_S1, ++_S2, --_N)
-        if (*_S1 != *_S2)
-            return (*_S1 < *_S2 ? -1 : +1);
-    return (0);
+	for (; 0 < _N; ++_S1, ++_S2, --_N)
+		if (*_S1 != *_S2)
+			return (*_S1 < *_S2 ? -1 : +1);
+	return (0);
 }
 __CRT_INLINE wchar_t *__cdecl wmemcpy(wchar_t *_S1, const wchar_t *_S2, size_t _N) {
-    return (wchar_t *)memcpy(_S1, _S2, _N * sizeof(wchar_t));
+	return (wchar_t *)memcpy(_S1, _S2, _N * sizeof(wchar_t));
 }
 __CRT_INLINE wchar_t *__cdecl wmemmove(wchar_t *_S1, const wchar_t *_S2, size_t _N) {
-    return (wchar_t *)memmove(_S1, _S2, _N * sizeof(wchar_t));
+	return (wchar_t *)memmove(_S1, _S2, _N * sizeof(wchar_t));
 }
 __CRT_INLINE wchar_t *__cdecl wmemset(wchar_t *_S, wchar_t _C, size_t _N) {
-    wchar_t *_Su = _S;
-    for (; 0 < _N; ++_Su, --_N) {
-        *_Su = _C;
-    }
-    return (_S);
+	wchar_t *_Su = _S;
+	for (; 0 < _N; ++_Su, --_N) {
+		*_Su = _C;
+	}
+	return (_S);
 }
 #ifdef __cplusplus
 }

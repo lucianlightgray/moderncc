@@ -68,18 +68,18 @@ extern "C" {
 #ifndef _EXCEPTION_DEFINED
 #define _EXCEPTION_DEFINED
 struct _exception {
-    int type;
-    char *name;
-    double arg1;
-    double arg2;
-    double retval;
+	int type;
+	char *name;
+	double arg1;
+	double arg2;
+	double retval;
 };
 #endif
 
 #ifndef _COMPLEX_DEFINED
 #define _COMPLEX_DEFINED
 struct _complex {
-    double x, y;
+	double x, y;
 };
 #endif
 
@@ -221,7 +221,7 @@ extern int __cdecl __fpclassify(double);
 extern int __cdecl __fpclassifyl(long double);
 
 #define fpclassify(x) \
-    _Generic(x, float: __fpclassifyf, double: __fpclassify, long double: __fpclassifyl)(x)
+	_Generic(x, float: __fpclassifyf, double: __fpclassify, long double: __fpclassifyl)(x)
 
 #define isfinite(x) ((fpclassify(x) & FP_NAN) == 0)
 
@@ -236,7 +236,7 @@ extern int __cdecl __signbit(double);
 extern int __cdecl __signbitl(long double);
 
 #define signbit(x) \
-    _Generic(x, float: __signbitf, double: __signbit, long double: __signbitl)(x)
+	_Generic(x, float: __signbitf, double: __signbit, long double: __signbitl)(x)
 
 extern double __cdecl exp2(double);
 extern float __cdecl exp2f(float);

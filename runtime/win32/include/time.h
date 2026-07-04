@@ -100,15 +100,15 @@ typedef int ssize_t;
 #ifndef _TM_DEFINED
 #define _TM_DEFINED
 struct tm {
-    int tm_sec;
-    int tm_min;
-    int tm_hour;
-    int tm_mday;
-    int tm_mon;
-    int tm_year;
-    int tm_wday;
-    int tm_yday;
-    int tm_isdst;
+	int tm_sec;
+	int tm_min;
+	int tm_hour;
+	int tm_mday;
+	int tm_mon;
+	int tm_year;
+	int tm_wday;
+	int tm_yday;
+	int tm_isdst;
 };
 #endif
 
@@ -194,11 +194,11 @@ _CRTIMP wchar_t *__cdecl _wctime64(const __time64_t *_Time);
 #define _INC_WTIME_INL
 #ifdef _USE_32BIT_TIME_T
 __CRT_INLINE wchar_t *__cdecl _wctime(const time_t *_Time) {
-    return _wctime32(_Time);
+	return _wctime32(_Time);
 }
 #else
 __CRT_INLINE wchar_t *__cdecl _wctime(const time_t *_Time) {
-    return _wctime64(_Time);
+	return _wctime64(_Time);
 }
 #endif
 #endif
@@ -229,25 +229,25 @@ __CRT_INLINE time_t __cdecl time(time_t *_Time) { return _time32(_Time); }
 #endif
 #else
 __CRT_INLINE double __cdecl difftime(time_t _Time1, time_t _Time2) {
-    return _difftime64(_Time1, _Time2);
+	return _difftime64(_Time1, _Time2);
 }
 __CRT_INLINE char *__cdecl ctime(const time_t *_Time) {
-    return _ctime64(_Time);
+	return _ctime64(_Time);
 }
 __CRT_INLINE struct tm *__cdecl gmtime(const time_t *_Time) {
-    return _gmtime64(_Time);
+	return _gmtime64(_Time);
 }
 __CRT_INLINE struct tm *__cdecl localtime(const time_t *_Time) {
-    return _localtime64(_Time);
+	return _localtime64(_Time);
 }
 __CRT_INLINE time_t __cdecl mktime(struct tm *_Tm) {
-    return _mktime64(_Tm);
+	return _mktime64(_Tm);
 }
 __CRT_INLINE time_t __cdecl _mkgmtime(struct tm *_Tm) {
-    return _mkgmtime64(_Tm);
+	return _mkgmtime64(_Tm);
 }
 __CRT_INLINE time_t __cdecl time(time_t *_Time) {
-    return _time64(_Time);
+	return _time64(_Time);
 }
 #endif
 #endif
@@ -265,8 +265,8 @@ void __cdecl tzset(void);
 #ifndef _TIMEVAL_DEFINED
 #define _TIMEVAL_DEFINED
 struct timeval {
-    long tv_sec;
-    long tv_usec;
+	long tv_sec;
+	long tv_usec;
 };
 #define timerisset(tvp) ((tvp)->tv_sec || (tvp)->tv_usec)
 #define timercmp(tvp, uvp, cmp) ((tvp)->tv_sec cmp(uvp)->tv_sec || (tvp)->tv_sec == (uvp)->tv_sec && (tvp)->tv_usec cmp(uvp)->tv_usec)
@@ -277,8 +277,8 @@ struct timeval {
 #ifndef _TIMEZONE_DEFINED
 #define _TIMEZONE_DEFINED
 struct timezone {
-    int tz_minuteswest;
-    int tz_dsttime;
+	int tz_minuteswest;
+	int tz_dsttime;
 };
 
 extern int __cdecl mingw_gettimeofday(struct timeval *p, struct timezone *z);

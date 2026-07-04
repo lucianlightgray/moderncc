@@ -35,13 +35,13 @@ typedef int(__cdecl *_onexit_t)(void);
 #define _DIV_T_DEFINED
 
 typedef struct _div_t {
-    int quot;
-    int rem;
+	int quot;
+	int rem;
 } div_t;
 
 typedef struct _ldiv_t {
-    long quot;
-    long rem;
+	long quot;
+	long rem;
 } ldiv_t;
 #endif
 
@@ -50,32 +50,32 @@ typedef struct _ldiv_t {
 
 #pragma pack(4)
 typedef struct {
-    unsigned char ld[10];
+	unsigned char ld[10];
 } _LDOUBLE;
 #pragma pack()
 
 #define _PTR_LD(x) ((unsigned char *)(&(x)->ld))
 
 typedef struct {
-    double x;
+	double x;
 } _CRT_DOUBLE;
 
 typedef struct {
-    float f;
+	float f;
 } _CRT_FLOAT;
 
 #pragma push_macro("long")
 #undef long
 
 typedef struct {
-    long double x;
+	long double x;
 } _LONGDOUBLE;
 
 #pragma pop_macro("long")
 
 #pragma pack(4)
 typedef struct {
-    unsigned char ld12[12];
+	unsigned char ld12[12];
 } _LDBL12;
 #pragma pack()
 #endif
@@ -315,7 +315,7 @@ _CRTIMP void __cdecl __MINGW_NOTHROW _exit(int _Code) __MINGW_ATTRIB_NORETURN;
 #if !defined __NO_ISOCEXT
 void __cdecl _Exit(int) __MINGW_ATTRIB_NORETURN;
 __CRT_INLINE __MINGW_ATTRIB_NORETURN void __cdecl _Exit(int status) {
-    _exit(status);
+	_exit(status);
 }
 #endif
 
@@ -388,10 +388,10 @@ double __cdecl strtod(const char *_Str, char **_EndPtr);
 #if !defined __NO_ISOCEXT
 #if __MCC__
 __CRT_INLINE float __cdecl strtof(const char *p, char **e) {
-    return strtod(p, e);
+	return strtod(p, e);
 }
 __CRT_INLINE long double __cdecl strtold(const char *p, char **e) {
-    return strtod(p, e);
+	return strtod(p, e);
 }
 #else
 float __cdecl strtof(const char *__restrict__, char **__restrict__);
@@ -557,13 +557,13 @@ onexit_t __cdecl onexit(onexit_t _Func);
 #if !defined __NO_ISOCEXT
 
 typedef struct {
-    long long quot, rem;
+	long long quot, rem;
 } lldiv_t;
 
 lldiv_t __cdecl lldiv(long long, long long);
 
 __CRT_INLINE long long __cdecl llabs(long long _j) {
-    return (_j >= 0 ? _j : -_j);
+	return (_j >= 0 ? _j : -_j);
 }
 
 #ifdef __MCC__
@@ -584,22 +584,22 @@ wchar_t *__cdecl lltow(long long, wchar_t *, int);
 wchar_t *__cdecl ulltow(unsigned long long, wchar_t *, int);
 
 __CRT_INLINE long long __cdecl atoll(const char *_c) {
-    return _atoi64(_c);
+	return _atoi64(_c);
 }
 __CRT_INLINE char *__cdecl lltoa(long long _n, char *_c, int _i) {
-    return _i64toa(_n, _c, _i);
+	return _i64toa(_n, _c, _i);
 }
 __CRT_INLINE char *__cdecl ulltoa(unsigned long long _n, char *_c, int _i) {
-    return _ui64toa(_n, _c, _i);
+	return _ui64toa(_n, _c, _i);
 }
 __CRT_INLINE long long __cdecl wtoll(const wchar_t *_w) {
-    return _wtoi64(_w);
+	return _wtoi64(_w);
 }
 __CRT_INLINE wchar_t *__cdecl lltow(long long _n, wchar_t *_w, int _i) {
-    return _i64tow(_n, _w, _i);
+	return _i64tow(_n, _w, _i);
 }
 __CRT_INLINE wchar_t *__cdecl ulltow(unsigned long long _n, wchar_t *_w, int _i) {
-    return _ui64tow(_n, _w, _i);
+	return _ui64tow(_n, _w, _i);
 }
 #endif
 

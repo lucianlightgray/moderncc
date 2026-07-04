@@ -3,372 +3,372 @@
 #define ARFMAG "`\n"
 
 typedef struct {
-    char ar_name[16];
-    char ar_date[12];
-    char ar_uid[6];
-    char ar_gid[6];
-    char ar_mode[8];
-    char ar_size[10];
-    char ar_fmag[2];
+	char ar_name[16];
+	char ar_date[12];
+	char ar_uid[6];
+	char ar_gid[6];
+	char ar_mode[8];
+	char ar_size[10];
+	char ar_fmag[2];
 } ArHdr;
 
 static unsigned long le2belong(unsigned long ul) {
-    return ((ul & 0xFF0000) >> 8) + ((ul & 0xFF000000) >> 24) +
-           ((ul & 0xFF) << 24) + ((ul & 0xFF00) << 8);
+	return ((ul & 0xFF0000) >> 8) + ((ul & 0xFF000000) >> 24) +
+		   ((ul & 0xFF) << 24) + ((ul & 0xFF00) << 8);
 }
 
 static int ar_usage(int ret) {
-    fprintf(stderr, "usage: mcc -ar [crstvx] lib [files]\n");
-    fprintf(stderr, "create library ([abdiopN] not supported).\n");
-    return ret;
+	fprintf(stderr, "usage: mcc -ar [crstvx] lib [files]\n");
+	fprintf(stderr, "create library ([abdiopN] not supported).\n");
+	return ret;
 }
 
 ST_FUNC int mcc_tool_ar(int argc, char **argv) {
-    static const ArHdr arhdr_init = {
-        "/               ",
-        "0           ",
-        "0     ",
-        "0     ",
-        "0       ",
-        "0         ",
-        ARFMAG};
+	static const ArHdr arhdr_init = {
+		"/               ",
+		"0           ",
+		"0     ",
+		"0     ",
+		"0       ",
+		"0         ",
+		ARFMAG};
 
-    ArHdr arhdr = arhdr_init;
-    ArHdr arhdro = arhdr_init;
+	ArHdr arhdr = arhdr_init;
+	ArHdr arhdro = arhdr_init;
 
-    FILE *fi, *fh = NULL, *fo = NULL;
-    const char *created_file = NULL;
-    ElfW(Ehdr) * ehdr;
-    ElfW(Shdr) * shdr;
-    ElfW(Sym) * sym;
-    int fsize, i_lib, i_obj;
-    char *buf, *shstr, *symtab, *strtab;
-    int symtabsize = 0;
-    char *anames = NULL;
-    int *afpos = NULL;
-    int istrlen, strpos = 0, fpos = 0, funccnt = 0, funcmax, hofs;
-    char tfile[260], stmp[20];
-    char *file, *name;
-    int ret = 2;
-    const char *ops_conflict = "habdiopN";
-    int extract = 0;
-    int table = 0;
-    int verbose = 0;
+	FILE *fi, *fh = NULL, *fo = NULL;
+	const char *created_file = NULL;
+	ElfW(Ehdr) * ehdr;
+	ElfW(Shdr) * shdr;
+	ElfW(Sym) * sym;
+	int fsize, i_lib, i_obj;
+	char *buf, *shstr, *symtab, *strtab;
+	int symtabsize = 0;
+	char *anames = NULL;
+	int *afpos = NULL;
+	int istrlen, strpos = 0, fpos = 0, funccnt = 0, funcmax, hofs;
+	char tfile[260], stmp[20];
+	char *file, *name;
+	int ret = 2;
+	const char *ops_conflict = "habdiopN";
+	int extract = 0;
+	int table = 0;
+	int verbose = 0;
 
-    i_lib = 0;
-    i_obj = 0;
-    for (int i = 1; i < argc; i++) {
-        const char *a = argv[i];
-        if (*a == '-' && strchr(a, '.'))
-            ret = 1;
-        if ((*a == '-') || (i == 1 && !strchr(a, '.'))) {
-            if (strpbrk(a, ops_conflict))
-                ret = 1;
-            if (strchr(a, 'x'))
-                extract = 1;
-            if (strchr(a, 't'))
-                table = 1;
-            if (strchr(a, 'v'))
-                verbose = 1;
-        } else {
-            if (!i_lib)
-                i_lib = i;
-            else if (!i_obj)
-                i_obj = i;
-        }
-    }
+	i_lib = 0;
+	i_obj = 0;
+	for (int i = 1; i < argc; i++) {
+		const char *a = argv[i];
+		if (*a == '-' && strchr(a, '.'))
+			ret = 1;
+		if ((*a == '-') || (i == 1 && !strchr(a, '.'))) {
+			if (strpbrk(a, ops_conflict))
+				ret = 1;
+			if (strchr(a, 'x'))
+				extract = 1;
+			if (strchr(a, 't'))
+				table = 1;
+			if (strchr(a, 'v'))
+				verbose = 1;
+		} else {
+			if (!i_lib)
+				i_lib = i;
+			else if (!i_obj)
+				i_obj = i;
+		}
+	}
 
-    if (!i_lib)
-        ret = 1;
-    i_obj = i_obj ? i_obj : argc;
+	if (!i_lib)
+		ret = 1;
+	i_obj = i_obj ? i_obj : argc;
 
-    if (ret == 1)
-        return ar_usage(ret);
+	if (ret == 1)
+		return ar_usage(ret);
 
-    if (extract || table) {
-        if ((fh = fopen(argv[i_lib], "rb")) == NULL) {
-            fprintf(stderr, "mcc: ar: can't open file %s\n", argv[i_lib]);
-            goto finish;
-        }
-        fread(stmp, 1, 8, fh);
-        if (memcmp(stmp, ARMAG, 8)) {
-        no_ar:
-            fprintf(stderr, "mcc: ar: not an ar archive %s\n", argv[i_lib]);
-            goto finish;
-        }
-        while (fread(&arhdr, 1, sizeof(arhdr), fh) == sizeof(arhdr)) {
-            char *p, *e;
+	if (extract || table) {
+		if ((fh = fopen(argv[i_lib], "rb")) == NULL) {
+			fprintf(stderr, "mcc: ar: can't open file %s\n", argv[i_lib]);
+			goto finish;
+		}
+		fread(stmp, 1, 8, fh);
+		if (memcmp(stmp, ARMAG, 8)) {
+		no_ar:
+			fprintf(stderr, "mcc: ar: not an ar archive %s\n", argv[i_lib]);
+			goto finish;
+		}
+		while (fread(&arhdr, 1, sizeof(arhdr), fh) == sizeof(arhdr)) {
+			char *p, *e;
 
-            if (memcmp(arhdr.ar_fmag, ARFMAG, 2))
-                goto no_ar;
-            p = arhdr.ar_name;
-            for (e = p + sizeof arhdr.ar_name; e > p && e[-1] == ' ';)
-                e--;
-            *e = '\0';
-            arhdr.ar_size[sizeof arhdr.ar_size - 1] = 0;
-            fsize = atoi(arhdr.ar_size);
-            buf = mcc_malloc(fsize + 1);
-            fread(buf, fsize, 1, fh);
-            if (strcmp(arhdr.ar_name, "/") && strcmp(arhdr.ar_name, "/SYM64/")) {
-                if (e > p && e[-1] == '/')
-                    e[-1] = '\0';
-                if (table || verbose)
-                    printf("%s%s\n", extract ? "x - " : "", arhdr.ar_name);
-                if (extract) {
-                    if ((fo = fopen(arhdr.ar_name, "wb")) == NULL) {
-                        fprintf(stderr, "mcc: ar: can't create file %s\n",
-                                arhdr.ar_name);
-                        mcc_free(buf);
-                        goto finish;
-                    }
-                    fwrite(buf, fsize, 1, fo);
-                    fclose(fo);
-                }
-            }
-            if (fsize & 1)
-                fgetc(fh);
-            mcc_free(buf);
-        }
-        ret = 0;
-    finish:
-        if (fh)
-            fclose(fh);
-        return ret;
-    }
+			if (memcmp(arhdr.ar_fmag, ARFMAG, 2))
+				goto no_ar;
+			p = arhdr.ar_name;
+			for (e = p + sizeof arhdr.ar_name; e > p && e[-1] == ' ';)
+				e--;
+			*e = '\0';
+			arhdr.ar_size[sizeof arhdr.ar_size - 1] = 0;
+			fsize = atoi(arhdr.ar_size);
+			buf = mcc_malloc(fsize + 1);
+			fread(buf, fsize, 1, fh);
+			if (strcmp(arhdr.ar_name, "/") && strcmp(arhdr.ar_name, "/SYM64/")) {
+				if (e > p && e[-1] == '/')
+					e[-1] = '\0';
+				if (table || verbose)
+					printf("%s%s\n", extract ? "x - " : "", arhdr.ar_name);
+				if (extract) {
+					if ((fo = fopen(arhdr.ar_name, "wb")) == NULL) {
+						fprintf(stderr, "mcc: ar: can't create file %s\n",
+								arhdr.ar_name);
+						mcc_free(buf);
+						goto finish;
+					}
+					fwrite(buf, fsize, 1, fo);
+					fclose(fo);
+				}
+			}
+			if (fsize & 1)
+				fgetc(fh);
+			mcc_free(buf);
+		}
+		ret = 0;
+	finish:
+		if (fh)
+			fclose(fh);
+		return ret;
+	}
 
-    if ((fh = fopen(argv[i_lib], "wb")) == NULL) {
-        fprintf(stderr, "mcc: ar: can't create file %s\n", argv[i_lib]);
-        goto the_end;
-    }
-    created_file = argv[i_lib];
+	if ((fh = fopen(argv[i_lib], "wb")) == NULL) {
+		fprintf(stderr, "mcc: ar: can't create file %s\n", argv[i_lib]);
+		goto the_end;
+	}
+	created_file = argv[i_lib];
 
-    snprintf(tfile, sizeof(tfile), "%s.tmp", argv[i_lib]);
-    if ((fo = fopen(tfile, "wb+")) == NULL) {
-        fprintf(stderr, "mcc: ar: can't create temporary file %s\n", tfile);
-        goto the_end;
-    }
+	snprintf(tfile, sizeof(tfile), "%s.tmp", argv[i_lib]);
+	if ((fo = fopen(tfile, "wb+")) == NULL) {
+		fprintf(stderr, "mcc: ar: can't create temporary file %s\n", tfile);
+		goto the_end;
+	}
 
-    funcmax = 250;
-    afpos = mcc_realloc(NULL, funcmax * sizeof *afpos);
-    memcpy(&arhdro.ar_mode, "100644", 6);
+	funcmax = 250;
+	afpos = mcc_realloc(NULL, funcmax * sizeof *afpos);
+	memcpy(&arhdro.ar_mode, "100644", 6);
 
-    while (i_obj < argc) {
-        if (*argv[i_obj] == '-') {
-            i_obj++;
-            continue;
-        }
-        if ((fi = fopen(argv[i_obj], "rb")) == NULL) {
-            fprintf(stderr, "mcc: ar: can't open file %s \n", argv[i_obj]);
-            goto the_end;
-        }
-        if (verbose)
-            printf("a - %s\n", argv[i_obj]);
+	while (i_obj < argc) {
+		if (*argv[i_obj] == '-') {
+			i_obj++;
+			continue;
+		}
+		if ((fi = fopen(argv[i_obj], "rb")) == NULL) {
+			fprintf(stderr, "mcc: ar: can't open file %s \n", argv[i_obj]);
+			goto the_end;
+		}
+		if (verbose)
+			printf("a - %s\n", argv[i_obj]);
 
-        fseek(fi, 0, SEEK_END);
-        fsize = ftell(fi);
-        fseek(fi, 0, SEEK_SET);
-        buf = mcc_malloc(fsize + 1);
-        fread(buf, fsize, 1, fi);
-        fclose(fi);
+		fseek(fi, 0, SEEK_END);
+		fsize = ftell(fi);
+		fseek(fi, 0, SEEK_SET);
+		buf = mcc_malloc(fsize + 1);
+		fread(buf, fsize, 1, fi);
+		fclose(fi);
 
-        ehdr = (ElfW(Ehdr) *)buf;
-        if (ehdr->e_ident[4] != ELFCLASSW) {
-            fprintf(stderr, "mcc: ar: Unsupported Elf Class: %s\n", argv[i_obj]);
-            goto the_end;
-        }
+		ehdr = (ElfW(Ehdr) *)buf;
+		if (ehdr->e_ident[4] != ELFCLASSW) {
+			fprintf(stderr, "mcc: ar: Unsupported Elf Class: %s\n", argv[i_obj]);
+			goto the_end;
+		}
 
-        shdr = (ElfW(Shdr) *)(buf + ehdr->e_shoff + ehdr->e_shstrndx * ehdr->e_shentsize);
-        shstr = (char *)(buf + shdr->sh_offset);
-        symtab = strtab = NULL;
-        for (int i = 0; i < ehdr->e_shnum; i++) {
-            shdr = (ElfW(Shdr) *)(buf + ehdr->e_shoff + i * ehdr->e_shentsize);
-            if (!shdr->sh_offset)
-                continue;
-            if (shdr->sh_type == SHT_SYMTAB) {
-                symtab = (char *)(buf + shdr->sh_offset);
-                symtabsize = shdr->sh_size;
-            }
-            if (shdr->sh_type == SHT_STRTAB) {
-                if (!strcmp(shstr + shdr->sh_name, ".strtab")) {
-                    strtab = (char *)(buf + shdr->sh_offset);
-                }
-            }
-        }
+		shdr = (ElfW(Shdr) *)(buf + ehdr->e_shoff + ehdr->e_shstrndx * ehdr->e_shentsize);
+		shstr = (char *)(buf + shdr->sh_offset);
+		symtab = strtab = NULL;
+		for (int i = 0; i < ehdr->e_shnum; i++) {
+			shdr = (ElfW(Shdr) *)(buf + ehdr->e_shoff + i * ehdr->e_shentsize);
+			if (!shdr->sh_offset)
+				continue;
+			if (shdr->sh_type == SHT_SYMTAB) {
+				symtab = (char *)(buf + shdr->sh_offset);
+				symtabsize = shdr->sh_size;
+			}
+			if (shdr->sh_type == SHT_STRTAB) {
+				if (!strcmp(shstr + shdr->sh_name, ".strtab")) {
+					strtab = (char *)(buf + shdr->sh_offset);
+				}
+			}
+		}
 
-        if (symtab && strtab) {
-            int nsym = symtabsize / sizeof(ElfW(Sym));
-            for (int i = 1; i < nsym; i++) {
-                sym = (ElfW(Sym) *)(symtab + i * sizeof(ElfW(Sym)));
-                if (sym->st_shndx &&
-                    (sym->st_info == 0x10 || sym->st_info == 0x11 || sym->st_info == 0x12 || sym->st_info == 0x20 || sym->st_info == 0x21 || sym->st_info == 0x22)) {
-                    istrlen = strlen(strtab + sym->st_name) + 1;
-                    anames = mcc_realloc(anames, strpos + istrlen);
-                    strcpy(anames + strpos, strtab + sym->st_name);
-                    strpos += istrlen;
-                    if (++funccnt >= funcmax) {
-                        funcmax += 250;
-                        afpos = mcc_realloc(afpos, funcmax * sizeof *afpos);
-                    }
-                    afpos[funccnt] = fpos;
-                }
-            }
-        }
+		if (symtab && strtab) {
+			int nsym = symtabsize / sizeof(ElfW(Sym));
+			for (int i = 1; i < nsym; i++) {
+				sym = (ElfW(Sym) *)(symtab + i * sizeof(ElfW(Sym)));
+				if (sym->st_shndx &&
+					(sym->st_info == 0x10 || sym->st_info == 0x11 || sym->st_info == 0x12 || sym->st_info == 0x20 || sym->st_info == 0x21 || sym->st_info == 0x22)) {
+					istrlen = strlen(strtab + sym->st_name) + 1;
+					anames = mcc_realloc(anames, strpos + istrlen);
+					strcpy(anames + strpos, strtab + sym->st_name);
+					strpos += istrlen;
+					if (++funccnt >= funcmax) {
+						funcmax += 250;
+						afpos = mcc_realloc(afpos, funcmax * sizeof *afpos);
+					}
+					afpos[funccnt] = fpos;
+				}
+			}
+		}
 
-        file = argv[i_obj];
-        for (name = strchr(file, 0);
-             name > file && name[-1] != '/' && name[-1] != '\\';
-             --name)
-            ;
-        istrlen = strlen(name);
-        if (istrlen >= sizeof(arhdro.ar_name))
-            istrlen = sizeof(arhdro.ar_name) - 1;
-        memset(arhdro.ar_name, ' ', sizeof(arhdro.ar_name));
-        memcpy(arhdro.ar_name, name, istrlen);
-        arhdro.ar_name[istrlen] = '/';
-        snprintf(stmp, sizeof(stmp), "%-10d", fsize);
-        memcpy(&arhdro.ar_size, stmp, 10);
-        fwrite(&arhdro, sizeof(arhdro), 1, fo);
-        fwrite(buf, fsize, 1, fo);
-        mcc_free(buf);
-        i_obj++;
-        fpos += (fsize + sizeof(arhdro));
-        if (fpos & 1)
-            fputc(0, fo), ++fpos;
-    }
-    hofs = 8 + sizeof(arhdr) + strpos + (funccnt + 1) * sizeof(int);
-    fpos = 0;
-    if ((hofs & 1))
-        hofs++, fpos = 1;
-    fwrite(ARMAG, 8, 1, fh);
-    if (!funccnt) {
-        ret = 0;
-        goto the_end;
-    }
-    snprintf(stmp, sizeof(stmp), "%-10d", (int)(strpos + (funccnt + 1) * sizeof(int)) + fpos);
-    memcpy(&arhdr.ar_size, stmp, 10);
-    fwrite(&arhdr, sizeof(arhdr), 1, fh);
-    afpos[0] = le2belong(funccnt);
-    for (int i = 1; i <= funccnt; i++)
-        afpos[i] = le2belong(afpos[i] + hofs);
-    fwrite(afpos, (funccnt + 1) * sizeof(int), 1, fh);
-    fwrite(anames, strpos, 1, fh);
-    if (fpos)
-        fwrite("", 1, 1, fh);
-    fseek(fo, 0, SEEK_END);
-    fsize = ftell(fo);
-    fseek(fo, 0, SEEK_SET);
-    buf = mcc_malloc(fsize + 1);
-    fread(buf, fsize, 1, fo);
-    fwrite(buf, fsize, 1, fh);
-    mcc_free(buf);
-    ret = 0;
+		file = argv[i_obj];
+		for (name = strchr(file, 0);
+			 name > file && name[-1] != '/' && name[-1] != '\\';
+			 --name)
+			;
+		istrlen = strlen(name);
+		if (istrlen >= sizeof(arhdro.ar_name))
+			istrlen = sizeof(arhdro.ar_name) - 1;
+		memset(arhdro.ar_name, ' ', sizeof(arhdro.ar_name));
+		memcpy(arhdro.ar_name, name, istrlen);
+		arhdro.ar_name[istrlen] = '/';
+		snprintf(stmp, sizeof(stmp), "%-10d", fsize);
+		memcpy(&arhdro.ar_size, stmp, 10);
+		fwrite(&arhdro, sizeof(arhdro), 1, fo);
+		fwrite(buf, fsize, 1, fo);
+		mcc_free(buf);
+		i_obj++;
+		fpos += (fsize + sizeof(arhdro));
+		if (fpos & 1)
+			fputc(0, fo), ++fpos;
+	}
+	hofs = 8 + sizeof(arhdr) + strpos + (funccnt + 1) * sizeof(int);
+	fpos = 0;
+	if ((hofs & 1))
+		hofs++, fpos = 1;
+	fwrite(ARMAG, 8, 1, fh);
+	if (!funccnt) {
+		ret = 0;
+		goto the_end;
+	}
+	snprintf(stmp, sizeof(stmp), "%-10d", (int)(strpos + (funccnt + 1) * sizeof(int)) + fpos);
+	memcpy(&arhdr.ar_size, stmp, 10);
+	fwrite(&arhdr, sizeof(arhdr), 1, fh);
+	afpos[0] = le2belong(funccnt);
+	for (int i = 1; i <= funccnt; i++)
+		afpos[i] = le2belong(afpos[i] + hofs);
+	fwrite(afpos, (funccnt + 1) * sizeof(int), 1, fh);
+	fwrite(anames, strpos, 1, fh);
+	if (fpos)
+		fwrite("", 1, 1, fh);
+	fseek(fo, 0, SEEK_END);
+	fsize = ftell(fo);
+	fseek(fo, 0, SEEK_SET);
+	buf = mcc_malloc(fsize + 1);
+	fread(buf, fsize, 1, fo);
+	fwrite(buf, fsize, 1, fh);
+	mcc_free(buf);
+	ret = 0;
 the_end:
-    if (anames)
-        mcc_free(anames);
-    if (afpos)
-        mcc_free(afpos);
-    if (fh)
-        fclose(fh);
-    if (created_file && ret != 0)
-        remove(created_file);
-    if (fo)
-        fclose(fo), remove(tfile);
-    return ret;
+	if (anames)
+		mcc_free(anames);
+	if (afpos)
+		mcc_free(afpos);
+	if (fh)
+		fclose(fh);
+	if (created_file && ret != 0)
+		remove(created_file);
+	if (fo)
+		fclose(fo), remove(tfile);
+	return ret;
 }
 
 #ifdef MCC_TARGET_PE
 
 ST_FUNC int mcc_tool_impdef(int argc, char **argv) {
-    int ret, v, i;
-    char infile[260];
-    char outfile[260];
+	int ret, v, i;
+	char infile[260];
+	char outfile[260];
 
-    const char *file;
-    char *p, *q;
-    FILE *fp, *op;
-    char path[260];
+	const char *file;
+	char *p, *q;
+	FILE *fp, *op;
+	char path[260];
 
-    infile[0] = outfile[0] = 0;
-    fp = op = NULL;
-    ret = 1;
-    p = NULL;
-    v = 0;
+	infile[0] = outfile[0] = 0;
+	fp = op = NULL;
+	ret = 1;
+	p = NULL;
+	v = 0;
 
-    for (i = 1; i < argc; ++i) {
-        const char *a = argv[i];
-        if ('-' == a[0]) {
-            if (0 == strcmp(a, "-v")) {
-                v = 1;
-            } else if (0 == strcmp(a, "-o")) {
-                if (++i == argc)
-                    goto usage;
-                pstrcpy(outfile, sizeof outfile, argv[i]);
-            } else
-                goto usage;
-        } else if (0 == infile[0])
-            pstrcpy(infile, sizeof infile, a);
-        else
-            goto usage;
-    }
+	for (i = 1; i < argc; ++i) {
+		const char *a = argv[i];
+		if ('-' == a[0]) {
+			if (0 == strcmp(a, "-v")) {
+				v = 1;
+			} else if (0 == strcmp(a, "-o")) {
+				if (++i == argc)
+					goto usage;
+				pstrcpy(outfile, sizeof outfile, argv[i]);
+			} else
+				goto usage;
+		} else if (0 == infile[0])
+			pstrcpy(infile, sizeof infile, a);
+		else
+			goto usage;
+	}
 
-    if (0 == infile[0]) {
-    usage:
-        fprintf(stderr,
-                "usage: mcc -impdef library.dll [-v] [-o outputfile]\n"
-                "create export definition file (.def) from dll\n");
-        goto the_end;
-    }
+	if (0 == infile[0]) {
+	usage:
+		fprintf(stderr,
+				"usage: mcc -impdef library.dll [-v] [-o outputfile]\n"
+				"create export definition file (.def) from dll\n");
+		goto the_end;
+	}
 
-    if (0 == outfile[0]) {
-        pstrcpy(outfile, sizeof outfile, mcc_basename(infile));
-        q = strrchr(outfile, '.');
-        if (NULL == q)
-            q = strchr(outfile, 0);
-        pstrcpy(q, sizeof outfile - (q - outfile), ".def");
-    }
+	if (0 == outfile[0]) {
+		pstrcpy(outfile, sizeof outfile, mcc_basename(infile));
+		q = strrchr(outfile, '.');
+		if (NULL == q)
+			q = strchr(outfile, 0);
+		pstrcpy(q, sizeof outfile - (q - outfile), ".def");
+	}
 
-    file = infile;
-    if (host_find_tool(file, ".dll", path, sizeof path))
-        file = path;
-    ret = mcc_get_dllexports(file, &p);
-    if (ret || !p) {
-        fprintf(stderr, "mcc: impdef: %s '%s'\n",
-                ret == -1 ? "can't find file" : ret == 1 ? "can't read symbols"
-                                            : ret == 0   ? "no symbols found in"
-                                                         : "unknown file type",
-                file);
-        ret = 1;
-        goto the_end;
-    }
+	file = infile;
+	if (host_find_tool(file, ".dll", path, sizeof path))
+		file = path;
+	ret = mcc_get_dllexports(file, &p);
+	if (ret || !p) {
+		fprintf(stderr, "mcc: impdef: %s '%s'\n",
+				ret == -1 ? "can't find file" : ret == 1 ? "can't read symbols"
+											: ret == 0	 ? "no symbols found in"
+														 : "unknown file type",
+				file);
+		ret = 1;
+		goto the_end;
+	}
 
-    if (v)
-        printf("-> %s\n", file);
+	if (v)
+		printf("-> %s\n", file);
 
-    op = fopen(outfile, "wb");
-    if (NULL == op) {
-        fprintf(stderr, "mcc: impdef: could not create output file: %s\n", outfile);
-        goto the_end;
-    }
+	op = fopen(outfile, "wb");
+	if (NULL == op) {
+		fprintf(stderr, "mcc: impdef: could not create output file: %s\n", outfile);
+		goto the_end;
+	}
 
-    fprintf(op, "LIBRARY %s\n\nEXPORTS\n", mcc_basename(file));
-    for (q = p, i = 0; *q; ++i) {
-        fprintf(op, "%s\n", q);
-        q += strlen(q) + 1;
-    }
+	fprintf(op, "LIBRARY %s\n\nEXPORTS\n", mcc_basename(file));
+	for (q = p, i = 0; *q; ++i) {
+		fprintf(op, "%s\n", q);
+		q += strlen(q) + 1;
+	}
 
-    if (v)
-        printf("<- %s (%d symbol%s)\n", outfile, i, &"s"[i < 2]);
+	if (v)
+		printf("<- %s (%d symbol%s)\n", outfile, i, &"s"[i < 2]);
 
-    ret = 0;
+	ret = 0;
 
 the_end:
-    if (p)
-        mcc_free(p);
-    if (fp)
-        fclose(fp);
-    if (op)
-        fclose(op);
-    return ret;
+	if (p)
+		mcc_free(p);
+	if (fp)
+		fclose(fp);
+	if (op)
+		fclose(op);
+	return ret;
 }
 
 #endif
@@ -376,31 +376,31 @@ the_end:
 #if !defined MCC_TARGET_I386 && !defined MCC_TARGET_X86_64
 
 ST_FUNC int mcc_tool_cross(char **argv, int option) {
-    fprintf(stderr, "mcc -m%d not implemented\n", option);
-    return 1;
+	fprintf(stderr, "mcc -m%d not implemented\n", option);
+	return 1;
 }
 
 #else
 
 ST_FUNC int mcc_tool_cross(char **argv, int target) {
-    char program[4096];
-    char *a0 = argv[0];
-    int prefix = mcc_basename(a0) - a0;
+	char program[4096];
+	char *a0 = argv[0];
+	int prefix = mcc_basename(a0) - a0;
 
-    snprintf(program, sizeof program,
-             "%.*s%s"
+	snprintf(program, sizeof program,
+			 "%.*s%s"
 #ifdef MCC_TARGET_PE
-             "-win32"
+			 "-win32"
 #endif
-             "-mcc" HOST_EXE_SUFFIX,
-             prefix, a0, target == 64 ? "x86_64" : "i386");
+			 "-mcc" HOST_EXE_SUFFIX,
+			 prefix, a0, target == 64 ? "x86_64" : "i386");
 
-    if (strcmp(a0, program)) {
-        argv[0] = program;
-        host_exec_replace(argv);
-    }
-    fprintf(stderr, "mcc: could not run '%s'\n", program);
-    return 1;
+	if (strcmp(a0, program)) {
+		argv[0] = program;
+		host_exec_replace(argv);
+	}
+	fprintf(stderr, "mcc: could not run '%s'\n", program);
+	return 1;
 }
 
 #endif
@@ -413,63 +413,63 @@ const int _dowildcard = 1;
 #endif
 
 static char *escape_target_dep(const char *s) {
-    char *res = mcc_malloc(strlen(s) * 2 + 1);
-    int j;
-    for (j = 0; *s; s++, j++) {
-        if (is_space(*s)) {
-            res[j++] = '\\';
-        }
-        res[j] = *s;
-    }
-    res[j] = '\0';
-    return res;
+	char *res = mcc_malloc(strlen(s) * 2 + 1);
+	int j;
+	for (j = 0; *s; s++, j++) {
+		if (is_space(*s)) {
+			res[j++] = '\\';
+		}
+		res[j] = *s;
+	}
+	res[j] = '\0';
+	return res;
 }
 
 ST_FUNC int gen_makedeps(MCCState *s1, const char *target, const char *filename) {
-    FILE *depout;
-    char buf[1024];
-    char **escaped_targets;
-    int num_targets;
+	FILE *depout;
+	char buf[1024];
+	char **escaped_targets;
+	int num_targets;
 
-    if (!filename) {
-        snprintf(buf, sizeof buf, "%.*s.d",
-                 (int)(mcc_fileextension(target) - target), target);
-        filename = buf;
-    }
+	if (!filename) {
+		snprintf(buf, sizeof buf, "%.*s.d",
+				 (int)(mcc_fileextension(target) - target), target);
+		filename = buf;
+	}
 
-    if (s1->dep_target)
-        target = s1->dep_target;
+	if (s1->dep_target)
+		target = s1->dep_target;
 
-    if (!strcmp(filename, "-"))
-        depout = fdopen(1, "w");
-    else
-        depout = fopen(filename, "w");
-    if (!depout)
-        return mcc_error_noabort("could not open '%s'", filename);
-    if (s1->verbose)
-        printf("<- %s\n", filename);
+	if (!strcmp(filename, "-"))
+		depout = fdopen(1, "w");
+	else
+		depout = fopen(filename, "w");
+	if (!depout)
+		return mcc_error_noabort("could not open '%s'", filename);
+	if (s1->verbose)
+		printf("<- %s\n", filename);
 
-    escaped_targets = mcc_malloc(s1->nb_target_deps * sizeof(*escaped_targets));
-    num_targets = 0;
-    for (int i = 0; i < s1->nb_target_deps; ++i) {
-        for (int k = 0; k < i; ++k)
-            if (0 == strcmp(s1->target_deps[i], s1->target_deps[k]))
-                goto next;
-        escaped_targets[num_targets++] = escape_target_dep(s1->target_deps[i]);
-    next:;
-    }
+	escaped_targets = mcc_malloc(s1->nb_target_deps * sizeof(*escaped_targets));
+	num_targets = 0;
+	for (int i = 0; i < s1->nb_target_deps; ++i) {
+		for (int k = 0; k < i; ++k)
+			if (0 == strcmp(s1->target_deps[i], s1->target_deps[k]))
+				goto next;
+		escaped_targets[num_targets++] = escape_target_dep(s1->target_deps[i]);
+	next:;
+	}
 
-    fprintf(depout, "%s:", target);
-    for (int i = 0; i < num_targets; ++i)
-        fprintf(depout, " \\\n  %s", escaped_targets[i]);
-    fprintf(depout, "\n");
-    if (s1->gen_phony_deps) {
-        for (int i = 1; i < num_targets; ++i)
-            fprintf(depout, "%s:\n", escaped_targets[i]);
-    }
-    for (int i = 0; i < num_targets; ++i)
-        mcc_free(escaped_targets[i]);
-    mcc_free(escaped_targets);
-    fclose(depout);
-    return 0;
+	fprintf(depout, "%s:", target);
+	for (int i = 0; i < num_targets; ++i)
+		fprintf(depout, " \\\n  %s", escaped_targets[i]);
+	fprintf(depout, "\n");
+	if (s1->gen_phony_deps) {
+		for (int i = 1; i < num_targets; ++i)
+			fprintf(depout, "%s:\n", escaped_targets[i]);
+	}
+	for (int i = 0; i < num_targets; ++i)
+		mcc_free(escaped_targets[i]);
+	mcc_free(escaped_targets);
+	fclose(depout);
+	return 0;
 }

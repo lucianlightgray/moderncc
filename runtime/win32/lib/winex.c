@@ -10,9 +10,9 @@ wchar_t **__wargv;
 #if __aarch64__ || __x86_64__
 void __faststorefence(void) {
 #if __aarch64__
-    __asm__("dmb ish");
+	__asm__("dmb ish");
 #elif __x86_64__
-    __asm__("lock; orl $0,(%%rsp)" ::: "memory");
+	__asm__("lock; orl $0,(%%rsp)" ::: "memory");
 #endif
 }
 #endif

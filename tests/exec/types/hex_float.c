@@ -6,5 +6,5 @@ int array[NUM_NS_TYPES];
 
 #define n 0xe
 int main() {
-    printf("n+1 = %d\n", n + 1);
+	printf("n+1 = %d\n", n + 1);
 }

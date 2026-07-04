@@ -36,9 +36,9 @@ extern "C" {
 #ifndef _HEAPINFO_DEFINED
 #define _HEAPINFO_DEFINED
 typedef struct _heapinfo {
-    int *_pentry;
-    size_t _size;
-    int _useflag;
+	int *_pentry;
+	size_t _size;
+	int _useflag;
 } _HEAPINFO;
 #endif
 
@@ -103,36 +103,36 @@ _CRTIMP intptr_t __cdecl _get_heap_handle(void);
 
 #if !defined(RC_INVOKED)
 static __inline void *_MarkAllocaS(void *_Ptr, unsigned int _Marker) {
-    if (_Ptr) {
-        *((unsigned int *)_Ptr) = _Marker;
-        _Ptr = (char *)_Ptr + _ALLOCA_S_MARKER_SIZE;
-    }
-    return _Ptr;
+	if (_Ptr) {
+		*((unsigned int *)_Ptr) = _Marker;
+		_Ptr = (char *)_Ptr + _ALLOCA_S_MARKER_SIZE;
+	}
+	return _Ptr;
 }
 #endif
 
 #undef _malloca
 #define _malloca(size) \
-    ((((size) + _ALLOCA_S_MARKER_SIZE) <= _ALLOCA_S_THRESHOLD) ? _MarkAllocaS(_alloca((size) + _ALLOCA_S_MARKER_SIZE), _ALLOCA_S_STACK_MARKER) : _MarkAllocaS(malloc((size) + _ALLOCA_S_MARKER_SIZE), _ALLOCA_S_HEAP_MARKER))
+	((((size) + _ALLOCA_S_MARKER_SIZE) <= _ALLOCA_S_THRESHOLD) ? _MarkAllocaS(_alloca((size) + _ALLOCA_S_MARKER_SIZE), _ALLOCA_S_STACK_MARKER) : _MarkAllocaS(malloc((size) + _ALLOCA_S_MARKER_SIZE), _ALLOCA_S_HEAP_MARKER))
 #undef _FREEA_INLINE
 #define _FREEA_INLINE
 
 #ifndef RC_INVOKED
 #undef _freea
 static __inline void __cdecl _freea(void *_Memory) {
-    unsigned int _Marker;
-    if (_Memory) {
-        _Memory = (char *)_Memory - _ALLOCA_S_MARKER_SIZE;
-        _Marker = *(unsigned int *)_Memory;
-        if (_Marker == _ALLOCA_S_HEAP_MARKER) {
-            free(_Memory);
-        }
+	unsigned int _Marker;
+	if (_Memory) {
+		_Memory = (char *)_Memory - _ALLOCA_S_MARKER_SIZE;
+		_Marker = *(unsigned int *)_Memory;
+		if (_Marker == _ALLOCA_S_HEAP_MARKER) {
+			free(_Memory);
+		}
 #ifdef _ASSERTE
-        else if (_Marker != _ALLOCA_S_STACK_MARKER) {
-            _ASSERTE(("Corrupted pointer passed to _freea", 0));
-        }
+		else if (_Marker != _ALLOCA_S_STACK_MARKER) {
+			_ASSERTE(("Corrupted pointer passed to _freea", 0));
+		}
 #endif
-    }
+	}
 }
 #endif
 

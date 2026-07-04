@@ -5,7 +5,7 @@
 #define AB(x) CAT(x, y)
 
 int main(void) {
-    int xy = 42;
-    printf("%d\n", CAT(A, B)(x));
-    return 0;
+	int xy = 42;
+	printf("%d\n", CAT(A, B)(x));
+	return 0;
 }

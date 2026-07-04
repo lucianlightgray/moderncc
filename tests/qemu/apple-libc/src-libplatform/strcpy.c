@@ -4,17 +4,17 @@
 
 char *
 _platform_strcpy(char *restrict dst, const char *restrict src) {
-    const size_t length = _platform_strlen(src);
+	const size_t length = _platform_strlen(src);
 
-    _platform_memmove(dst, src, length + 1);
+	_platform_memmove(dst, src, length + 1);
 
-    return dst;
+	return dst;
 }
 
 #if VARIANT_STATIC
 char *
 strcpy(char *restrict dst, const char *restrict src) {
-    return _platform_strcpy(dst, src);
+	return _platform_strcpy(dst, src);
 }
 #endif
 

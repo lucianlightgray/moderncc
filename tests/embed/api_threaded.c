@@ -14,16 +14,16 @@
 typedef TF_TYPE(ThreadFunc, x);
 HANDLE hh[M];
 void create_thread(ThreadFunc f, int n) {
-    DWORD tid;
-    hh[n] = CreateThread(NULL, 0, f, (void *)(size_t)n, 0, &tid);
+	DWORD tid;
+	hh[n] = CreateThread(NULL, 0, f, (void *)(size_t)n, 0, &tid);
 }
 void wait_threads(int n) {
-    WaitForMultipleObjects(n, hh, TRUE, INFINITE);
-    while (n)
-        CloseHandle(hh[--n]);
+	WaitForMultipleObjects(n, hh, TRUE, INFINITE);
+	while (n)
+		CloseHandle(hh[--n]);
 }
 void sleep_ms(unsigned n) {
-    Sleep(n);
+	Sleep(n);
 }
 #else
 #include <sys/time.h>
@@ -33,282 +33,282 @@ void sleep_ms(unsigned n) {
 typedef TF_TYPE(ThreadFunc, x);
 pthread_t hh[M];
 void create_thread(ThreadFunc f, int n) {
-    pthread_create(&hh[n], NULL, f, (void *)(size_t)n);
+	pthread_create(&hh[n], NULL, f, (void *)(size_t)n);
 }
 void wait_threads(int n) {
-    while (n)
-        pthread_join(hh[--n], NULL);
+	while (n)
+		pthread_join(hh[--n], NULL);
 }
 void sleep_ms(unsigned n) {
-    usleep(n * 1000);
+	usleep(n * 1000);
 }
 #endif
 
 void handle_error(void *opaque, const char *msg) {
-    fprintf(opaque, "%s\n", msg);
+	fprintf(opaque, "%s\n", msg);
 }
 
 int add(int a, int b) {
-    return a + b;
+	return a + b;
 }
 
 #define _str(s) #s
 #define str(s) _str(s)
 
 #define PROG(lbl) \
-    char lbl[] = "#line " str(__LINE__) " " str(__FILE__) "\n\n"
+	char lbl[] = "#line " str(__LINE__) " " str(__FILE__) "\n\n"
 
 PROG(my_program)
 "#include <mcclib.h>\n"
-    "int add(int a, int b);\n"
-    "int fib(int n)\n"
-    "{\n"
-    "    if (n <= 2)\n"
-    "        return 1;\n"
-    "    else\n"
-    "        return add(fib(n-1),fib(n-2));\n"
-    "}\n"
-    "\n"
-    "void bar(void) { *(void**)0 = 0; }\n"
-    "\n"
-    "int foo(int n)\n"
-    "{\n"
-    "    printf(\" %d\", fib(n));\n"
-    "    if (n >= N_CRASH && n < N_CRASH + 8)\n"
-    "       bar();\n"
-    "    return 0;\n"
-    "#  warning is this the correct file:line...\n"
-    "}\n";
+	"int add(int a, int b);\n"
+	"int fib(int n)\n"
+	"{\n"
+	"    if (n <= 2)\n"
+	"        return 1;\n"
+	"    else\n"
+	"        return add(fib(n-1),fib(n-2));\n"
+	"}\n"
+	"\n"
+	"void bar(void) { *(void**)0 = 0; }\n"
+	"\n"
+	"int foo(int n)\n"
+	"{\n"
+	"    printf(\" %d\", fib(n));\n"
+	"    if (n >= N_CRASH && n < N_CRASH + 8)\n"
+	"       bar();\n"
+	"    return 0;\n"
+	"#  warning is this the correct file:line...\n"
+	"}\n";
 
 int g_argc;
 char **g_argv;
 
 void parse_args(MCCState *s) {
-    int i;
+	int i;
 
-    for (i = 1; i < g_argc; ++i) {
-        char *a = g_argv[i];
-        if (a[0] == '-') {
-            if (a[1] == 'B')
-                mcc_set_lib_path(s, a + 2);
-            else if (a[1] == 'I')
-                mcc_add_include_path(s, a + 2);
-            else if (a[1] == 'L')
-                mcc_add_library_path(s, a + 2);
-            else if (a[1] == 'D')
-                mcc_define_symbol(s, a + 2, NULL);
-        }
-    }
+	for (i = 1; i < g_argc; ++i) {
+		char *a = g_argv[i];
+		if (a[0] == '-') {
+			if (a[1] == 'B')
+				mcc_set_lib_path(s, a + 2);
+			else if (a[1] == 'I')
+				mcc_add_include_path(s, a + 2);
+			else if (a[1] == 'L')
+				mcc_add_library_path(s, a + 2);
+			else if (a[1] == 'D')
+				mcc_define_symbol(s, a + 2, NULL);
+		}
+	}
 }
 
 int backtrace_func(
-    void *ud,
-    void *pc,
-    const char *file,
-    int line,
-    const char *func,
-    const char *msg) {
+	void *ud,
+	void *pc,
+	const char *file,
+	int line,
+	const char *func,
+	const char *msg) {
 #if 0
-    printf("\n  *** %p %s %s:%d in '%s'",
-        pc,
-        msg ? "at" : "by",
-        file ? file : "?",
-        line,
-        func ? func : "?");
-    return 1;
+	printf("\n  *** %p %s %s:%d in '%s'",
+		pc,
+		msg ? "at" : "by",
+		file ? file : "?",
+		line,
+		func ? func : "?");
+	return 1;
 #else
 
-    printf("!");
-    return 0;
+	printf("!");
+	return 0;
 #endif
 }
 
 MCCState *new_state(int w) {
-    MCCState *s = mcc_new();
-    if (!s) {
-        fprintf(stderr, __FILE__ ": could not create mcc state\n");
-        exit(1);
-    }
-    mcc_set_error_func(s, stdout, handle_error);
-    parse_args(s);
-    if (0 == (w & 1))
-        mcc_set_options(s, "-w");
-    if (w & 2) {
-        mcc_set_options(s, "-bt");
-        mcc_define_symbol(s, "N_CRASH", str(M / 2));
-    } else
-        mcc_define_symbol(s, "N_CRASH", "-1000");
-    mcc_set_output_type(s, MCC_OUTPUT_MEMORY);
-    return s;
+	MCCState *s = mcc_new();
+	if (!s) {
+		fprintf(stderr, __FILE__ ": could not create mcc state\n");
+		exit(1);
+	}
+	mcc_set_error_func(s, stdout, handle_error);
+	parse_args(s);
+	if (0 == (w & 1))
+		mcc_set_options(s, "-w");
+	if (w & 2) {
+		mcc_set_options(s, "-bt");
+		mcc_define_symbol(s, "N_CRASH", str(M / 2));
+	} else
+		mcc_define_symbol(s, "N_CRASH", "-1000");
+	mcc_set_output_type(s, MCC_OUTPUT_MEMORY);
+	return s;
 }
 
 void *reloc_state(MCCState *s, const char *entry) {
-    void *func;
-    mcc_add_symbol(s, "add", add);
-    mcc_add_symbol(s, "printf", printf);
-    if (mcc_relocate(s) < 0) {
-        fprintf(stderr, __FILE__ ": could not relocate mcc state.\n");
-        return NULL;
-    }
-    func = mcc_get_symbol(s, entry);
-    if (!func)
-        fprintf(stderr, __FILE__ ": could not get entry symbol.\n");
-    return func;
+	void *func;
+	mcc_add_symbol(s, "add", add);
+	mcc_add_symbol(s, "printf", printf);
+	if (mcc_relocate(s) < 0) {
+		fprintf(stderr, __FILE__ ": could not relocate mcc state.\n");
+		return NULL;
+	}
+	func = mcc_get_symbol(s, entry);
+	if (!func)
+		fprintf(stderr, __FILE__ ": could not get entry symbol.\n");
+	return func;
 }
 
 int state_test(int w) {
-    MCCState *s[M];
-    int (*funcs[M])(int);
-    int n;
-    jmp_buf jb;
+	MCCState *s[M];
+	int (*funcs[M])(int);
+	int n;
+	jmp_buf jb;
 
-    for (n = 0; n < M + 4; ++n) {
-        unsigned a = n, b = n - 1, c = n - 2, d = n - 3, e = n - 4;
-        if (a < M)
-            s[a] = new_state(w);
-        if (b < M)
-            if (mcc_compile_string(s[b], my_program) == -1)
-                break;
-        if (c < M)
-            funcs[c] = reloc_state(s[c], "foo");
-        if (d < M && funcs[d]) {
-            mcc_set_backtrace_func(s[d], &d, backtrace_func);
-            if (0 == mcc_setjmp(s[d], jb, funcs[d]))
-                funcs[d](F(d));
-        }
-        if (e < M)
-            mcc_delete(s[e]);
-    }
-    return 0;
+	for (n = 0; n < M + 4; ++n) {
+		unsigned a = n, b = n - 1, c = n - 2, d = n - 3, e = n - 4;
+		if (a < M)
+			s[a] = new_state(w);
+		if (b < M)
+			if (mcc_compile_string(s[b], my_program) == -1)
+				break;
+		if (c < M)
+			funcs[c] = reloc_state(s[c], "foo");
+		if (d < M && funcs[d]) {
+			mcc_set_backtrace_func(s[d], &d, backtrace_func);
+			if (0 == mcc_setjmp(s[d], jb, funcs[d]))
+				funcs[d](F(d));
+		}
+		if (e < M)
+			mcc_delete(s[e]);
+	}
+	return 0;
 }
 
 TF_TYPE(thread_test_simple, vn) {
-    MCCState *s;
-    int (*func)(int);
-    int ret;
-    int n = (size_t)vn;
-    jmp_buf jb;
+	MCCState *s;
+	int (*func)(int);
+	int ret;
+	int n = (size_t)vn;
+	jmp_buf jb;
 
-    s = new_state(0);
-    sleep_ms(1);
-    ret = mcc_compile_string(s, my_program);
-    sleep_ms(1);
-    if (ret >= 0) {
-        func = reloc_state(s, "foo");
-        mcc_set_backtrace_func(s, &n, backtrace_func);
-        if (func) {
-            if (0 == mcc_setjmp(s, jb, func))
-                func(F(n));
-        }
-    }
-    mcc_delete(s);
-    return 0;
+	s = new_state(0);
+	sleep_ms(1);
+	ret = mcc_compile_string(s, my_program);
+	sleep_ms(1);
+	if (ret >= 0) {
+		func = reloc_state(s, "foo");
+		mcc_set_backtrace_func(s, &n, backtrace_func);
+		if (func) {
+			if (0 == mcc_setjmp(s, jb, func))
+				func(F(n));
+		}
+	}
+	mcc_delete(s);
+	return 0;
 }
 
 TF_TYPE(thread_test_complex, vn) {
-    MCCState *s;
-    int ret;
-    int n = (size_t)vn;
-    char *argv[30], b[10];
-    int argc = 0, i;
+	MCCState *s;
+	int ret;
+	int n = (size_t)vn;
+	char *argv[30], b[10];
+	int argc = 0, i;
 
-    sprintf(b, "%d", F(n));
+	sprintf(b, "%d", F(n));
 
-    for (i = 1; i < g_argc; ++i)
-        argv[argc++] = g_argv[i];
+	for (i = 1; i < g_argc; ++i)
+		argv[argc++] = g_argv[i];
 #if 0
-    argv[argc++] = "-run";
-    for (i = 1; i < g_argc; ++i) argv[argc++] = g_argv[i];
+	argv[argc++] = "-run";
+	for (i = 1; i < g_argc; ++i) argv[argc++] = g_argv[i];
 #endif
-    argv[argc++] = "-DFIB";
-    argv[argc++] = "-run";
-    argv[argc++] = __FILE__;
-    argv[argc++] = b;
-    argv[argc] = NULL;
+	argv[argc++] = "-DFIB";
+	argv[argc++] = "-run";
+	argv[argc++] = __FILE__;
+	argv[argc++] = b;
+	argv[argc] = NULL;
 
-    s = new_state(1);
-    sleep_ms(2);
-    ret = mcc_add_file(s, argv[0]);
-    sleep_ms(3);
-    if (ret == 0)
-        mcc_run(s, argc, argv);
-    mcc_delete(s);
-    fflush(stdout);
-    return 0;
+	s = new_state(1);
+	sleep_ms(2);
+	ret = mcc_add_file(s, argv[0]);
+	sleep_ms(3);
+	if (ret == 0)
+		mcc_run(s, argc, argv);
+	mcc_delete(s);
+	fflush(stdout);
+	return 0;
 }
 
 void time_mcc(int n, const char *src) {
-    MCCState *s;
-    int ret, i = 0;
-    while (i++ < n) {
-        s = new_state(1);
-        printf(" %d", i), fflush(stdout);
-        ret = mcc_add_file(s, src);
-        mcc_delete(s);
-        if (ret < 0)
-            exit(1);
-    }
+	MCCState *s;
+	int ret, i = 0;
+	while (i++ < n) {
+		s = new_state(1);
+		printf(" %d", i), fflush(stdout);
+		ret = mcc_add_file(s, src);
+		mcc_delete(s);
+		if (ret < 0)
+			exit(1);
+	}
 }
 
 static unsigned getclock_ms(void) {
 #ifdef _WIN32
-    return GetTickCount();
+	return GetTickCount();
 #else
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return tv.tv_sec * 1000 + (tv.tv_usec + 500) / 1000;
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	return tv.tv_sec * 1000 + (tv.tv_usec + 500) / 1000;
 #endif
 }
 
 int main(int argc, char **argv) {
-    int n;
-    unsigned t;
+	int n;
+	unsigned t;
 
-    g_argc = argc;
-    g_argv = argv;
+	g_argc = argc;
+	g_argv = argv;
 
-    if (argc < 2) {
-        fprintf(stderr, "usage: libmcc_test_mt mcc.c <options>\n");
-        return 1;
-    }
+	if (argc < 2) {
+		fprintf(stderr, "usage: libmcc_test_mt mcc.c <options>\n");
+		return 1;
+	}
 
 #if 1
-    printf("running fib with mixed calls\n "), fflush(stdout);
-    t = getclock_ms();
-    state_test(0);
-    printf("\n (%u ms)\n", getclock_ms() - t);
+	printf("running fib with mixed calls\n "), fflush(stdout);
+	t = getclock_ms();
+	state_test(0);
+	printf("\n (%u ms)\n", getclock_ms() - t);
 #endif
 #if 1
-    printf("producing some exceptions (!)\n "), fflush(stdout);
-    t = getclock_ms();
-    state_test(2);
-    printf("\n (%u ms)\n", getclock_ms() - t);
+	printf("producing some exceptions (!)\n "), fflush(stdout);
+	t = getclock_ms();
+	state_test(2);
+	printf("\n (%u ms)\n", getclock_ms() - t);
 #endif
 #if 1
 
-    printf("running fib in threads\n "), fflush(stdout);
-    t = getclock_ms();
-    for (n = 0; n < M; ++n)
-        create_thread(thread_test_simple, n);
-    wait_threads(n);
-    printf("\n (%u ms)\n", getclock_ms() - t);
+	printf("running fib in threads\n "), fflush(stdout);
+	t = getclock_ms();
+	for (n = 0; n < M; ++n)
+		create_thread(thread_test_simple, n);
+	wait_threads(n);
+	printf("\n (%u ms)\n", getclock_ms() - t);
 
 #endif
 #if 1
-    printf("running mcc.c in threads to run fib\n "), fflush(stdout);
-    t = getclock_ms();
-    for (n = 0; n < M; ++n)
-        create_thread(thread_test_complex, n);
-    wait_threads(n);
-    printf("\n (%u ms)\n", getclock_ms() - t);
+	printf("running mcc.c in threads to run fib\n "), fflush(stdout);
+	t = getclock_ms();
+	for (n = 0; n < M; ++n)
+		create_thread(thread_test_complex, n);
+	wait_threads(n);
+	printf("\n (%u ms)\n", getclock_ms() - t);
 #endif
 #if 1
-    printf("compiling mcc.c 10 times\n "), fflush(stdout);
-    t = getclock_ms();
-    time_mcc(10, argv[1]);
-    printf("\n (%u ms)\n", getclock_ms() - t), fflush(stdout);
+	printf("compiling mcc.c 10 times\n "), fflush(stdout);
+	t = getclock_ms();
+	time_mcc(10, argv[1]);
+	printf("\n (%u ms)\n", getclock_ms() - t), fflush(stdout);
 #endif
-    return 0;
+	return 0;
 }
 
 #else
@@ -325,12 +325,12 @@ int usleep(unsigned long);
 #endif
 
 int fib(n) {
-    return (n <= 2) ? 1 : fib(n - 1) + fib(n - 2);
+	return (n <= 2) ? 1 : fib(n - 1) + fib(n - 2);
 }
 
 int main(int argc, char **argv) {
-    sleep_ms(333);
-    printf(" %d", fib(atoi(argv[1])));
-    return 0;
+	sleep_ms(333);
+	printf(" %d", fib(atoi(argv[1])));
+	return 0;
 }
 #endif

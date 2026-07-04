@@ -2,6 +2,6 @@
 #include "s6_9.h"
 
 int main(void) {
-    s6_9_extdef();
-    return 0;
+	s6_9_extdef();
+	return 0;
 }

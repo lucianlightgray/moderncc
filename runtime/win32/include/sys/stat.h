@@ -83,76 +83,76 @@ typedef unsigned short wchar_t;
 #endif
 
 struct _stat32 {
-    _dev_t st_dev;
-    _ino_t st_ino;
-    unsigned short st_mode;
-    short st_nlink;
-    short st_uid;
-    short st_gid;
-    _dev_t st_rdev;
-    _off_t st_size;
-    __time32_t st_atime;
-    __time32_t st_mtime;
-    __time32_t st_ctime;
+	_dev_t st_dev;
+	_ino_t st_ino;
+	unsigned short st_mode;
+	short st_nlink;
+	short st_uid;
+	short st_gid;
+	_dev_t st_rdev;
+	_off_t st_size;
+	__time32_t st_atime;
+	__time32_t st_mtime;
+	__time32_t st_ctime;
 };
 
 #ifndef NO_OLDNAMES
 struct stat {
-    _dev_t st_dev;
-    _ino_t st_ino;
-    unsigned short st_mode;
-    short st_nlink;
-    short st_uid;
-    short st_gid;
-    _dev_t st_rdev;
-    _off_t st_size;
-    time_t st_atime;
-    time_t st_mtime;
-    time_t st_ctime;
+	_dev_t st_dev;
+	_ino_t st_ino;
+	unsigned short st_mode;
+	short st_nlink;
+	short st_uid;
+	short st_gid;
+	_dev_t st_rdev;
+	_off_t st_size;
+	time_t st_atime;
+	time_t st_mtime;
+	time_t st_ctime;
 };
 #endif
 
 #if _INTEGRAL_MAX_BITS >= 64
 struct _stat32i64 {
-    _dev_t st_dev;
-    _ino_t st_ino;
-    unsigned short st_mode;
-    short st_nlink;
-    short st_uid;
-    short st_gid;
-    _dev_t st_rdev;
-    __int64 st_size;
-    __time32_t st_atime;
-    __time32_t st_mtime;
-    __time32_t st_ctime;
+	_dev_t st_dev;
+	_ino_t st_ino;
+	unsigned short st_mode;
+	short st_nlink;
+	short st_uid;
+	short st_gid;
+	_dev_t st_rdev;
+	__int64 st_size;
+	__time32_t st_atime;
+	__time32_t st_mtime;
+	__time32_t st_ctime;
 };
 
 struct _stat64i32 {
-    _dev_t st_dev;
-    _ino_t st_ino;
-    unsigned short st_mode;
-    short st_nlink;
-    short st_uid;
-    short st_gid;
-    _dev_t st_rdev;
-    _off_t st_size;
-    __time64_t st_atime;
-    __time64_t st_mtime;
-    __time64_t st_ctime;
+	_dev_t st_dev;
+	_ino_t st_ino;
+	unsigned short st_mode;
+	short st_nlink;
+	short st_uid;
+	short st_gid;
+	_dev_t st_rdev;
+	_off_t st_size;
+	__time64_t st_atime;
+	__time64_t st_mtime;
+	__time64_t st_ctime;
 };
 
 struct _stat64 {
-    _dev_t st_dev;
-    _ino_t st_ino;
-    unsigned short st_mode;
-    short st_nlink;
-    short st_uid;
-    short st_gid;
-    _dev_t st_rdev;
-    __int64 st_size;
-    __time64_t st_atime;
-    __time64_t st_mtime;
-    __time64_t st_ctime;
+	_dev_t st_dev;
+	_ino_t st_ino;
+	unsigned short st_mode;
+	short st_nlink;
+	short st_uid;
+	short st_gid;
+	_dev_t st_rdev;
+	__int64 st_size;
+	__time64_t st_atime;
+	__time64_t st_mtime;
+	__time64_t st_ctime;
 };
 #endif
 
@@ -177,39 +177,39 @@ _CRTIMP int __cdecl _fstat64(int _FileDes, struct _stat64 *_Stat);
 _CRTIMP int __cdecl _fstat32i64(int _FileDes, struct _stat32i64 *_Stat);
 int __cdecl _fstat64i32(int _FileDes, struct _stat64i32 *_Stat);
 __CRT_INLINE int __cdecl _fstat64i32(int _FileDes, struct _stat64i32 *_Stat) {
-    struct _stat64 st;
-    int ret = _fstat64(_FileDes, &st);
-    _Stat->st_dev = st.st_dev;
-    _Stat->st_ino = st.st_ino;
-    _Stat->st_mode = st.st_mode;
-    _Stat->st_nlink = st.st_nlink;
-    _Stat->st_uid = st.st_uid;
-    _Stat->st_gid = st.st_gid;
-    _Stat->st_rdev = st.st_rdev;
-    _Stat->st_size = (_off_t)st.st_size;
-    _Stat->st_atime = st.st_atime;
-    _Stat->st_mtime = st.st_mtime;
-    _Stat->st_ctime = st.st_ctime;
-    return ret;
+	struct _stat64 st;
+	int ret = _fstat64(_FileDes, &st);
+	_Stat->st_dev = st.st_dev;
+	_Stat->st_ino = st.st_ino;
+	_Stat->st_mode = st.st_mode;
+	_Stat->st_nlink = st.st_nlink;
+	_Stat->st_uid = st.st_uid;
+	_Stat->st_gid = st.st_gid;
+	_Stat->st_rdev = st.st_rdev;
+	_Stat->st_size = (_off_t)st.st_size;
+	_Stat->st_atime = st.st_atime;
+	_Stat->st_mtime = st.st_mtime;
+	_Stat->st_ctime = st.st_ctime;
+	return ret;
 }
 _CRTIMP int __cdecl _stat64(const char *_Name, struct _stat64 *_Stat);
 _CRTIMP int __cdecl _stat32i64(const char *_Name, struct _stat32i64 *_Stat);
 int __cdecl _stat64i32(const char *_Name, struct _stat64i32 *_Stat);
 __CRT_INLINE int __cdecl _stat64i32(const char *_Name, struct _stat64i32 *_Stat) {
-    struct _stat64 st;
-    int ret = _stat64(_Name, &st);
-    _Stat->st_dev = st.st_dev;
-    _Stat->st_ino = st.st_ino;
-    _Stat->st_mode = st.st_mode;
-    _Stat->st_nlink = st.st_nlink;
-    _Stat->st_uid = st.st_uid;
-    _Stat->st_gid = st.st_gid;
-    _Stat->st_rdev = st.st_rdev;
-    _Stat->st_size = (_off_t)st.st_size;
-    _Stat->st_atime = st.st_atime;
-    _Stat->st_mtime = st.st_mtime;
-    _Stat->st_ctime = st.st_ctime;
-    return ret;
+	struct _stat64 st;
+	int ret = _stat64(_Name, &st);
+	_Stat->st_dev = st.st_dev;
+	_Stat->st_ino = st.st_ino;
+	_Stat->st_mode = st.st_mode;
+	_Stat->st_nlink = st.st_nlink;
+	_Stat->st_uid = st.st_uid;
+	_Stat->st_gid = st.st_gid;
+	_Stat->st_rdev = st.st_rdev;
+	_Stat->st_size = (_off_t)st.st_size;
+	_Stat->st_atime = st.st_atime;
+	_Stat->st_mtime = st.st_mtime;
+	_Stat->st_ctime = st.st_ctime;
+	return ret;
 }
 #endif
 
@@ -260,17 +260,17 @@ int __cdecl fstat(int _Desc, struct stat *_Stat);
 int __cdecl wstat(const wchar_t *_Filename, struct stat *_Stat);
 #ifdef _USE_32BIT_TIME_T
 __CRT_INLINE int __cdecl fstat(int _Desc, struct stat *_Stat) {
-    return _fstat32(_Desc, (struct _stat32 *)_Stat);
+	return _fstat32(_Desc, (struct _stat32 *)_Stat);
 }
 __CRT_INLINE int __cdecl stat(const char *_Filename, struct stat *_Stat) {
-    return _stat32(_Filename, (struct _stat32 *)_Stat);
+	return _stat32(_Filename, (struct _stat32 *)_Stat);
 }
 #else
 __CRT_INLINE int __cdecl fstat(int _Desc, struct stat *_Stat) {
-    return _fstat64i32(_Desc, (struct _stat64i32 *)_Stat);
+	return _fstat64i32(_Desc, (struct _stat64i32 *)_Stat);
 }
 __CRT_INLINE int __cdecl stat(const char *_Filename, struct stat *_Stat) {
-    return _stat64i32(_Filename, (struct _stat64i32 *)_Stat);
+	return _stat64i32(_Filename, (struct _stat64i32 *)_Stat);
 }
 #endif
 #endif

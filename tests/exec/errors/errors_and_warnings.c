@@ -7,10 +7,10 @@ struct A {
 char int i;
 #elif defined test_58_function_redefinition
 int f(void) {
-    return 0;
+	return 0;
 }
 int f(void) {
-    return 1;
+	return 1;
 }
 
 #elif defined test_global_redefinition
@@ -23,35 +23,35 @@ int (*fct)[42](int x);
 
 #elif defined test_60_enum_redefinition
 enum color { RED,
-             GREEN,
-             BLUE };
+			 GREEN,
+			 BLUE };
 enum color { R,
-             G,
-             B };
+			 G,
+			 B };
 enum color c;
 
 #elif defined test_62_enumerator_redefinition
 enum color { RED,
-             GREEN,
-             BLUE };
+			 GREEN,
+			 BLUE };
 enum rgb { RED,
-           G,
-           B };
+		   G,
+		   B };
 enum color c = RED;
 
 #elif defined test_63_local_enumerator_redefinition
 enum {
-    FOO,
-    BAR
+	FOO,
+	BAR
 };
 
 int main(void) {
-    enum {
-        FOO = 2,
-        BAR
-    };
+	enum {
+		FOO = 2,
+		BAR
+	};
 
-    return BAR - FOO;
+	return BAR - FOO;
 }
 
 #elif defined test_61_undefined_enum
@@ -86,38 +86,38 @@ unsigned char **u1;
 
 int no_main() {
 
-    f1 = f2;
+	f1 = f2;
 
-    ps1 = ps2;
+	ps1 = ps2;
 
-    v1 = v3;
-    v2 = v3;
+	v1 = v3;
+	v2 = v3;
 
-    e11 = e12;
-    e11 = e21;
-    e11 = &e10;
-    ip = &e10;
-    ip = &e20;
-    up = &e10;
-    up = &e20;
-    up = &e30;
+	e11 = e12;
+	e11 = e21;
+	e11 = &e10;
+	ip = &e10;
+	ip = &e20;
+	up = &e10;
+	up = &e20;
+	up = &e30;
 
-    lp = ip;
-    lp = llp;
+	lp = ip;
+	lp = llp;
 
-    c1 = c2;
-    *c1 = *c2;
-    **c1 = **c2;
+	c1 = c2;
+	*c1 = *c2;
+	**c1 = **c2;
 
-    u1 = c2;
-    *u1 = *c2;
-    **u1 = **c2;
+	u1 = c2;
+	*u1 = *c2;
+	**u1 = **c2;
 
-    c2 = c1;
-    *c2 = *c1;
-    **c2 = **c1;
+	c2 = c1;
+	*c2 = *c1;
+	**c2 = **c1;
 
-    return 0;
+	return 0;
 }
 
 #elif defined test_enum_compat
@@ -128,7 +128,7 @@ void f3(enum e5 e);
 
 #elif defined test_enum_compat_2
 enum e6 { E1 = -1,
-          E0 };
+		  E0 };
 void f3(enum e6);
 void f3(int);
 void f4(enum e6 e);
@@ -136,72 +136,72 @@ void f4(unsigned e);
 
 #elif defined test_ptr_to_str
 void f() {
-    _Generic((int const *[]){0}, int: 0);
+	_Generic((int const *[]){0}, int: 0);
 }
 #elif defined test_fnptr_to_str
 void f() {
-    _Generic((int (*(*)(float, char))(double, int)){0}, int: 0);
+	_Generic((int (*(*)(float, char))(double, int)){0}, int: 0);
 }
 #elif defined test_array_to_str
 void f() {
-    _Generic((int (*)[3]){0}, int: 0);
+	_Generic((int (*)[3]){0}, int: 0);
 }
 #elif defined test_duplicate_def_1
 static enum myenum { L = -1 } L;
 #elif defined test_duplicate_def_2
 void foo(void) {
-    static enum myenum { L = -1 } L;
+	static enum myenum { L = -1 } L;
 }
 #elif defined test_abstract_decls
 int bar(const char *());
 int bar(const char *(*g)()) {
-    g();
-    return 42;
+	g();
+	return 42;
 }
 int foo(int()) {
-    return 0;
+	return 0;
 #elif defined test_invalid_1
 void f(char *);
 void g(void) {
-    f((char[]){
-        1,
-        ,
-    });
+	f((char[]){
+		1,
+		,
+	});
 }
 #elif defined test_invalid_2
 int ga = 0.42 {2};
 #elif defined test_invalid_3
 struct S {
-    int a, b;
+	int a, b;
 };
 struct T {
-    struct S x;
+	struct S x;
 };
 struct T gt = {42 a : 1, 43};
 #elif defined test_invalid_4
 enum E {
-    x = 1 / 0
+	x = 1 / 0
 };
 #elif defined test_conflicting_types
 int i;
 void foo(void) {
-    int i;
-    {
-        extern double i;
-        i = 42.2;
-    }
+	int i;
+	{
+		extern double i;
+		i = 42.2;
+	}
 }
 #elif defined test_nested_types
 union u {
-    union u {
-        int i;
-    } m;
+	union u {
+		int i;
+	} m;
 };
 #elif defined test_vla_1
 int X = 1;
 
 int main(void) {
-    int t[][][X];
+	int t[][][X];
 }
 #elif defined test_invalid_alignas
 
@@ -212,21 +212,21 @@ void *_Alignas(16) p1;
 #define ONE 0
 _Static_assert(ONE == 0, "don't show me this");
 struct x {
-    _Static_assert(ONE == 1, "ONE is not 1");
+	_Static_assert(ONE == 1, "ONE is not 1");
 };
 
 #elif defined test_static_assert_2
 _Static_assert(1, "1"
-                  " is 1");
+				  " is 1");
 struct y {
-    _Static_assert(0, "0"
-                      " is 0");
+	_Static_assert(0, "0"
+					  " is 0");
 };
 
 #elif defined test_static_assert_c2x
 _Static_assert(1);
 struct z {
-    _Static_assert(0);
+	_Static_assert(0);
 }
 
 #elif defined test_static_assert_empty_string
@@ -268,11 +268,11 @@ static int hello(int);
 #endif
 int main() {
 #if defined test_func_6
-    static
+	static
 #endif
-        int hello(int);
-    hello(123);
-    return 0;
+		int hello(int);
+	hello(123);
+	return 0;
 }
 
 #if defined test_func_3
@@ -283,8 +283,8 @@ int hello(int a, int b)
 int hello(int a)
 #endif
 {
-    printf("%s: a = %d\n", __FUNCTION__, a);
-    return 0;
+	printf("%s: a = %d\n", __FUNCTION__, a);
+	return 0;
 }
 
 #elif defined test_var_1 || defined test_var_2 || defined test_var_3
@@ -296,61 +296,61 @@ int bar();
 
 int main() {
 #if !defined test_var_3
-    int xxx = 2;
+	int xxx = 2;
 #endif
-    {
-        extern int xxx[
+	{
+		extern int xxx[
 #if defined test_var_3
-            2
+			2
 #endif
-        ];
-        P(1, xxx[0]);
-        xxx[0] += 2;
-    }
+		];
+		P(1, xxx[0]);
+		xxx[0] += 2;
+	}
 #if !defined test_var_3
-    P(2, xxx);
+	P(2, xxx);
 #endif
-    bar(123);
-    return 0;
+	bar(123);
+	return 0;
 }
 int xxx[1] = {1};
 int bar() {
-    P(3, xxx[0]);
-    return 0;
+	P(3, xxx[0]);
+	return 0;
 }
 
 #elif defined test_var_4
 struct yyy {
-    int y;
+	int y;
 };
 struct zzz;
 void f1() {
-    extern char *x;
-    extern char **xx;
-    extern struct yyy y;
-    extern struct yyy *yy;
-    extern struct zzz z;
-    extern struct zzz *zz;
+	extern char *x;
+	extern char **xx;
+	extern struct yyy y;
+	extern struct yyy *yy;
+	extern struct zzz z;
+	extern struct zzz *zz;
 }
 void f2() {
-    extern char *x;
-    extern char **xx;
-    extern struct yyy y;
-    extern struct yyy *yy;
-    extern struct zzz z;
-    extern struct zzz *zz;
+	extern char *x;
+	extern char **xx;
+	extern struct yyy y;
+	extern struct yyy *yy;
+	extern struct zzz z;
+	extern struct zzz *zz;
 }
 struct yyy y, *yy;
 struct zzz {
-    int z;
+	int z;
 } z, *zz;
 
 #elif defined test_long_double_type_for_win32
 
 int main() {
-    double *a = 0;
-    long double *b = a;
-    int n = _Generic(*a, double: 0, long double: 1);
+	double *a = 0;
+	long double *b = a;
+	int n = _Generic(*a, double: 0, long double: 1);
 }
 
 #elif defined test_stray_backslash
@@ -362,42 +362,42 @@ x
 int main() {
 #define _S(x) #x
 #define S(x) _S(x)
-    printf("%sn\n", S(\\));
+	printf("%sn\n", S(\\));
 }
 
 #elif defined test_var_array
 
 static struct var_len {
-    int i;
-    const char str[];
+	int i;
+	const char str[];
 } var_array[] =
-    {{1, "abcdefghijklmnopqrstuvwxyz"},
-     {2, "longlonglonglonglong"},
-     {3, "tst3"}};
+	{{1, "abcdefghijklmnopqrstuvwxyz"},
+	 {2, "longlonglonglonglong"},
+	 {3, "tst3"}};
 
 #elif defined test_var_array2
 
 struct c1 {
-    int a;
-    int b[];
+	int a;
+	int b[];
 };
 struct c1 c1 = {1, {2, 3, 4}};
 
 struct c2 {
-    int c;
-    struct c1 c1;
+	int c;
+	struct c1 c1;
 };
 struct c2 c2 = {1, {2, {3, 4, 5}}};
 
 #elif defined test_var_array3
 
 struct A {
-    int a;
-    char b[];
+	int a;
+	char b[];
 };
 struct A a = {1, "1"};
 struct B {
-    struct A a;
+	struct A a;
 };
 struct B b = {{1, "1"}};
 
@@ -410,25 +410,25 @@ n[sizeof({ 3; })];
 
 #elif defined test_invalid_tokckill
 f() {
-    "12" 3;
+	"12" 3;
 }
 
 #elif defined test_duplicate_member
 struct S {
-    int a, a;
+	int a, a;
 };
 #elif defined test_duplicate_member_anon
 struct S1 {
-    int b;
-    struct {
-        int b;
-    } c;
+	int b;
+	struct {
+		int b;
+	} c;
 };
 struct S2 {
-    int d;
-    struct {
-        int d;
-    };
+	int d;
+	struct {
+		int d;
+	};
 };
 
 #elif defined test_conflicting_array_definition
@@ -437,16 +437,16 @@ int array[] = {1, 2, 3};
 
 #elif defined test_incompatible_local_redef
 void foo(void) {
-    typedef int localfunctype(int);
-    extern localfunctype func2;
-    typedef void localfunctype(int, int);
+	typedef int localfunctype(int);
+	extern localfunctype func2;
+	typedef void localfunctype(int, int);
 }
 
 #elif defined test_cast_from_void
 void v() {
 }
 int f() {
-    return v();
+	return v();
 }
 
 #elif defined test_switch_W1 || defined test_switch_W2 || defined test_switch_W3 || defined test_switch_W4
@@ -460,11 +460,11 @@ int f() {
 #pragma comment(option, "-Wunsupported -Wno-error=implicit-function-declaration -Werror")
 #endif
 void func(void) {
-    char *ccp = "123";
-    fink();
+	char *ccp = "123";
+	fink();
 }
 __attribute__((stuff)) int fink() {
-    return 0;
+	return 0;
 }
 
 #elif defined test_invalid_funcparam_1
@@ -475,27 +475,27 @@ void func(int a, int if);
 
 #elif defined test_array_funcparam
 int amain(int argc, char *argv[static argc + 1]) {
-    int i;
+	int i;
 
-    for (i = 0; i < argc; ++i)
-        printf("arg[%d] = \"%s\"\n", i, argv[i]);
-    return 0;
+	for (i = 0; i < argc; ++i)
+		printf("arg[%d] = \"%s\"\n", i, argv[i]);
+	return 0;
 }
 int main() {
-    return amain(2, (char *[]){"X", "Y", 0});
+	return amain(2, (char *[]){"X", "Y", 0});
 }
 
 #elif defined test_return_from_statement_expr
 int f() {
-    ({ return 78; });
+	({ return 78; });
 }
 int main() {
-    return f();
+	return f();
 }
 
 #elif defined test_illegal_unicode
 int main() {
-    char *str = "\Uffffffff";
+	char *str = "\Uffffffff";
 }
 
 #elif defined test_error_string
@@ -507,11 +507,11 @@ struct A;
 void f(struct A *);
 
 int main() {
-    f(&(struct A){});
+	f(&(struct A){});
 }
 
 struct A {
-    int x;
+	int x;
 };
 
 #elif defined test_pp_error_1
@@ -524,22 +524,22 @@ struct A {
 #elif defined test_pointer_plus_double
 
 int *invalid_operation(int *p, double d) {
-    return p + d;
+	return p + d;
 }
 
 #elif defined test_duplicate_case
 
 int main() {
-    unsigned int x;
-    switch (x) {
-    case -1 ... 0:
-    case 3:
-    case 1:
-    case 2:
-    case 3:
-    case 4:
-    case 5:
-    }
+	unsigned int x;
+	switch (x) {
+	case -1 ... 0:
+	case 3:
+	case 1:
+	case 2:
+	case 3:
+	case 4:
+	case 5:
+	}
 }
 #elif defined test_normal_funcargs || defined test_reverse_funcargs
 
@@ -548,23 +548,23 @@ int main() {
 #endif
 
 int main() {
-    printf(" %d %d %d\n", printf("1"), printf("22"), printf("333"));
+	printf(" %d %d %d\n", printf("1"), printf("22"), printf("333"));
 }
 
 #elif defined test_scope_1 || defined test_scope_2 || defined test_scope_3
 
 struct xxx {
-    int x[4];
+	int x[4];
 };
 
 int bar(enum ee{a = 12, b = 34} i, int (*f)(int i)) {
-    printf("bar %d %d %d\n", i, a, b);
-    return 0;
+	printf("bar %d %d %d\n", i, a, b);
+	return 0;
 }
 
 int foo(struct xxx { int x[3]; } * p) {
-    printf("foo %d", sizeof *p);
-    return p->x[3];
+	printf("foo %d", sizeof *p);
+	return p->x[3];
 }
 #ifdef test_scope_2
 
@@ -572,137 +572,137 @@ int foo(struct xxx { int x[2]; } * p);
 #endif
 #ifndef test_scope_3
 enum ee { a = 1,
-          b };
+		  b };
 #endif
 
 struct xxx x = {11, 22, 33, 44};
 int main(int argc, char **argv) {
-    printf(" %d %d\n", foo(&x), sizeof(struct xxx));
-    enum ee e = b;
-    bar(13 + e, 0);
+	printf(" %d %d\n", foo(&x), sizeof(struct xxx));
+	enum ee e = b;
+	bar(13 + e, 0);
 }
 
 #elif defined test_const_array_member_addr_ok
 
 typedef int int_array[1];
 typedef struct {
-    int_array arr;
+	int_array arr;
 } my_struct;
 
 int_array const *get_array(const my_struct *s) {
-    return &(s->arr);
+	return &(s->arr);
 }
 
 #elif defined test_const_array_member_decay_ok
 
 typedef int int_array[1];
 typedef struct {
-    int_array arr;
+	int_array arr;
 } my_struct;
 
 const int *good_decay(const my_struct *s) {
-    return s->arr;
+	return s->arr;
 }
 
 #elif defined test_const_array_member_addr_bad
 
 typedef int int_array[1];
 typedef struct {
-    int_array arr;
+	int_array arr;
 } my_struct;
 
 int_array *bad_array_addr(const my_struct *s) {
-    return &(s->arr);
+	return &(s->arr);
 }
 
 #elif defined test_const_array_member_decay_bad
 
 typedef int int_array[1];
 typedef struct {
-    int_array arr;
+	int_array arr;
 } my_struct;
 
 int *bad_decay(const my_struct *s) {
-    return s->arr;
+	return s->arr;
 }
 
 #elif defined test_const_array_member_write_bad
 
 typedef int int_array[1];
 typedef struct {
-    int_array arr;
+	int_array arr;
 } my_struct;
 
 void bad_write(const my_struct *s) {
-    s->arr[0] = 1;
+	s->arr[0] = 1;
 }
 
 #elif defined test_const_struct_array_member_write_bad
 
 typedef struct {
-    int x;
+	int x;
 } inner;
 typedef struct {
-    inner arr[1];
+	inner arr[1];
 } outer;
 
 void bad_inner_write(const outer *s) {
-    s->arr[0].x = 1;
+	s->arr[0].x = 1;
 }
 
 #elif defined test_volatile_array_member_addr_ok
 
 typedef int int_array[1];
 typedef struct {
-    int_array arr;
+	int_array arr;
 } my_struct;
 
 int_array volatile *get_volatile_array(volatile my_struct *s) {
-    return &(s->arr);
+	return &(s->arr);
 }
 
 #elif defined test_volatile_array_member_decay_ok
 
 typedef int int_array[1];
 typedef struct {
-    int_array arr;
+	int_array arr;
 } my_struct;
 
 volatile int *good_volatile_decay(volatile my_struct *s) {
-    return s->arr;
+	return s->arr;
 }
 
 #elif defined test_volatile_array_member_addr_bad
 
 typedef int int_array[1];
 typedef struct {
-    int_array arr;
+	int_array arr;
 } my_struct;
 
 int_array *bad_volatile_array_addr(volatile my_struct *s) {
-    return &(s->arr);
+	return &(s->arr);
 }
 
 #elif defined test_volatile_array_member_decay_bad
 
 typedef int int_array[1];
 typedef struct {
-    int_array arr;
+	int_array arr;
 } my_struct;
 
 int *bad_volatile_decay(volatile my_struct *s) {
-    return s->arr;
+	return s->arr;
 }
 
 #elif defined test_volatile_array_member_write_ok
 
 typedef int int_array[1];
 typedef struct {
-    int_array arr;
+	int_array arr;
 } my_struct;
 
 void good_volatile_write(volatile my_struct *s) {
-    s->arr[0] = 1;
+	s->arr[0] = 1;
 }
 
 #endif

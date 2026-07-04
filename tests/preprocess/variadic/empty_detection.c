@@ -19,10 +19,10 @@ X183 usefnlike()
 #define B(a,b,c) A(a,b,c)
 #define C(a,b,c) a b c
 B(
-    C(A,C(,,),),
-    C(B(,,),B,B(,,)),
-    C(B(,,),B(,,),C)
-    ) (a b c)
+	C(A,C(,,),),
+	C(B(,,),B,B(,,)),
+	C(B(,,),B(,,),C)
+	) (a b c)
 
 #define TEST(x) TEST : x
 #define K(a,b) a ## b

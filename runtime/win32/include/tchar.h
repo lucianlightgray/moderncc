@@ -894,16 +894,16 @@ _CRTIMP void __cdecl _mccpy(char *_DstCh, const char *_SrcCh);
 #define _CPP_TCHAR_INLINES_DEFINED
 extern "C++" {
 extern inline char *__cdecl _tcschr(char *_S, unsigned int _C) {
-    return ((char *)_tcschr((const char *)_S, _C));
+	return ((char *)_tcschr((const char *)_S, _C));
 }
 extern inline char *__cdecl _tcspbrk(char *_S, const char *_P) {
-    return ((char *)_tcspbrk((const char *)_S, _P));
+	return ((char *)_tcspbrk((const char *)_S, _P));
 }
 extern inline char *__cdecl _tcsrchr(char *_S, unsigned int _C) {
-    return ((char *)_tcsrchr((const char *)_S, _C));
+	return ((char *)_tcsrchr((const char *)_S, _C));
 }
 extern inline char *__cdecl _tcsstr(char *_S, const char *_P) {
-    return ((char *)_tcsstr((const char *)_S, _P));
+	return ((char *)_tcsstr((const char *)_S, _P));
 }
 }
 #endif

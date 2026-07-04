@@ -201,10 +201,10 @@ extern "C" {
 #define META_CREATEREGION 0x06FF
 
 typedef struct _DRAWPATRECT {
-    POINT ptPosition;
-    POINT ptSize;
-    WORD wStyle;
-    WORD wPattern;
+	POINT ptPosition;
+	POINT ptSize;
+	WORD wStyle;
+	WORD wPattern;
 } DRAWPATRECT, *PDRAWPATRECT;
 #endif
 
@@ -302,9 +302,9 @@ typedef struct _DRAWPATRECT {
 #define PSIDENT_PSCENTRIC 1
 
 typedef struct _PSINJECTDATA {
-    DWORD DataBytes;
-    WORD InjectionPoint;
-    WORD PageNumber;
+	DWORD DataBytes;
+	WORD InjectionPoint;
+	WORD PageNumber;
 } PSINJECTDATA, *PPSINJECTDATA;
 
 #define PSINJECT_BEGINSTREAM 1
@@ -356,16 +356,16 @@ typedef struct _PSINJECTDATA {
 #define FEATURESETTING_PRIVATE_END 0x1FFF
 
 typedef struct _PSFEATURE_OUTPUT {
-    WINBOOL bPageIndependent;
-    WINBOOL bSetPageDevice;
+	WINBOOL bPageIndependent;
+	WINBOOL bSetPageDevice;
 } PSFEATURE_OUTPUT, *PPSFEATURE_OUTPUT;
 
 typedef struct _PSFEATURE_CUSTPAPER {
-    LONG lOrientation;
-    LONG lWidth;
-    LONG lHeight;
-    LONG lWidthOffset;
-    LONG lHeightOffset;
+	LONG lOrientation;
+	LONG lWidth;
+	LONG lHeight;
+	LONG lWidthOffset;
+	LONG lHeightOffset;
 } PSFEATURE_CUSTPAPER, *PPSFEATURE_CUSTPAPER;
 
 #define PSPROTOCOL_ASCII 0
@@ -411,37 +411,37 @@ typedef struct _PSFEATURE_CUSTPAPER {
 
 #define _XFORM_
 typedef struct tagXFORM {
-    FLOAT eM11;
-    FLOAT eM12;
-    FLOAT eM21;
-    FLOAT eM22;
-    FLOAT eDx;
-    FLOAT eDy;
+	FLOAT eM11;
+	FLOAT eM12;
+	FLOAT eM21;
+	FLOAT eM22;
+	FLOAT eDx;
+	FLOAT eDy;
 } XFORM, *PXFORM, *LPXFORM;
 
 typedef struct tagBITMAP {
-    LONG bmType;
-    LONG bmWidth;
-    LONG bmHeight;
-    LONG bmWidthBytes;
-    WORD bmPlanes;
-    WORD bmBitsPixel;
-    LPVOID bmBits;
+	LONG bmType;
+	LONG bmWidth;
+	LONG bmHeight;
+	LONG bmWidthBytes;
+	WORD bmPlanes;
+	WORD bmBitsPixel;
+	LPVOID bmBits;
 } BITMAP, *PBITMAP, *NPBITMAP, *LPBITMAP;
 
 #include <pshpack1.h>
 typedef struct tagRGBTRIPLE {
-    BYTE rgbtBlue;
-    BYTE rgbtGreen;
-    BYTE rgbtRed;
+	BYTE rgbtBlue;
+	BYTE rgbtGreen;
+	BYTE rgbtRed;
 } RGBTRIPLE;
 #include <poppack.h>
 
 typedef struct tagRGBQUAD {
-    BYTE rgbBlue;
-    BYTE rgbGreen;
-    BYTE rgbRed;
-    BYTE rgbReserved;
+	BYTE rgbBlue;
+	BYTE rgbGreen;
+	BYTE rgbRed;
+	BYTE rgbReserved;
 } RGBQUAD;
 typedef RGBQUAD *LPRGBQUAD;
 
@@ -480,44 +480,44 @@ typedef long FXPT16DOT16, *LPFXPT16DOT16;
 typedef long FXPT2DOT30, *LPFXPT2DOT30;
 
 typedef struct tagCIEXYZ {
-    FXPT2DOT30 ciexyzX;
-    FXPT2DOT30 ciexyzY;
-    FXPT2DOT30 ciexyzZ;
+	FXPT2DOT30 ciexyzX;
+	FXPT2DOT30 ciexyzY;
+	FXPT2DOT30 ciexyzZ;
 } CIEXYZ;
 typedef CIEXYZ *LPCIEXYZ;
 
 typedef struct tagICEXYZTRIPLE {
-    CIEXYZ ciexyzRed;
-    CIEXYZ ciexyzGreen;
-    CIEXYZ ciexyzBlue;
+	CIEXYZ ciexyzRed;
+	CIEXYZ ciexyzGreen;
+	CIEXYZ ciexyzBlue;
 } CIEXYZTRIPLE;
 
 typedef CIEXYZTRIPLE *LPCIEXYZTRIPLE;
 
 typedef struct tagLOGCOLORSPACEA {
-    DWORD lcsSignature;
-    DWORD lcsVersion;
-    DWORD lcsSize;
-    LCSCSTYPE lcsCSType;
-    LCSGAMUTMATCH lcsIntent;
-    CIEXYZTRIPLE lcsEndpoints;
-    DWORD lcsGammaRed;
-    DWORD lcsGammaGreen;
-    DWORD lcsGammaBlue;
-    CHAR lcsFilename[MAX_PATH];
+	DWORD lcsSignature;
+	DWORD lcsVersion;
+	DWORD lcsSize;
+	LCSCSTYPE lcsCSType;
+	LCSGAMUTMATCH lcsIntent;
+	CIEXYZTRIPLE lcsEndpoints;
+	DWORD lcsGammaRed;
+	DWORD lcsGammaGreen;
+	DWORD lcsGammaBlue;
+	CHAR lcsFilename[MAX_PATH];
 } LOGCOLORSPACEA, *LPLOGCOLORSPACEA;
 
 typedef struct tagLOGCOLORSPACEW {
-    DWORD lcsSignature;
-    DWORD lcsVersion;
-    DWORD lcsSize;
-    LCSCSTYPE lcsCSType;
-    LCSGAMUTMATCH lcsIntent;
-    CIEXYZTRIPLE lcsEndpoints;
-    DWORD lcsGammaRed;
-    DWORD lcsGammaGreen;
-    DWORD lcsGammaBlue;
-    WCHAR lcsFilename[MAX_PATH];
+	DWORD lcsSignature;
+	DWORD lcsVersion;
+	DWORD lcsSize;
+	LCSCSTYPE lcsCSType;
+	LCSGAMUTMATCH lcsIntent;
+	CIEXYZTRIPLE lcsEndpoints;
+	DWORD lcsGammaRed;
+	DWORD lcsGammaGreen;
+	DWORD lcsGammaBlue;
+	WCHAR lcsFilename[MAX_PATH];
 } LOGCOLORSPACEW, *LPLOGCOLORSPACEW;
 
 #ifdef UNICODE
@@ -529,75 +529,75 @@ typedef LPLOGCOLORSPACEA LPLOGCOLORSPACE;
 #endif
 
 typedef struct tagBITMAPCOREHEADER {
-    DWORD bcSize;
-    WORD bcWidth;
-    WORD bcHeight;
-    WORD bcPlanes;
-    WORD bcBitCount;
+	DWORD bcSize;
+	WORD bcWidth;
+	WORD bcHeight;
+	WORD bcPlanes;
+	WORD bcBitCount;
 } BITMAPCOREHEADER, *LPBITMAPCOREHEADER, *PBITMAPCOREHEADER;
 
 typedef struct tagBITMAPINFOHEADER {
-    DWORD biSize;
-    LONG biWidth;
-    LONG biHeight;
-    WORD biPlanes;
-    WORD biBitCount;
-    DWORD biCompression;
-    DWORD biSizeImage;
-    LONG biXPelsPerMeter;
-    LONG biYPelsPerMeter;
-    DWORD biClrUsed;
-    DWORD biClrImportant;
+	DWORD biSize;
+	LONG biWidth;
+	LONG biHeight;
+	WORD biPlanes;
+	WORD biBitCount;
+	DWORD biCompression;
+	DWORD biSizeImage;
+	LONG biXPelsPerMeter;
+	LONG biYPelsPerMeter;
+	DWORD biClrUsed;
+	DWORD biClrImportant;
 } BITMAPINFOHEADER, *LPBITMAPINFOHEADER, *PBITMAPINFOHEADER;
 
 typedef struct {
-    DWORD bV4Size;
-    LONG bV4Width;
-    LONG bV4Height;
-    WORD bV4Planes;
-    WORD bV4BitCount;
-    DWORD bV4V4Compression;
-    DWORD bV4SizeImage;
-    LONG bV4XPelsPerMeter;
-    LONG bV4YPelsPerMeter;
-    DWORD bV4ClrUsed;
-    DWORD bV4ClrImportant;
-    DWORD bV4RedMask;
-    DWORD bV4GreenMask;
-    DWORD bV4BlueMask;
-    DWORD bV4AlphaMask;
-    DWORD bV4CSType;
-    CIEXYZTRIPLE bV4Endpoints;
-    DWORD bV4GammaRed;
-    DWORD bV4GammaGreen;
-    DWORD bV4GammaBlue;
+	DWORD bV4Size;
+	LONG bV4Width;
+	LONG bV4Height;
+	WORD bV4Planes;
+	WORD bV4BitCount;
+	DWORD bV4V4Compression;
+	DWORD bV4SizeImage;
+	LONG bV4XPelsPerMeter;
+	LONG bV4YPelsPerMeter;
+	DWORD bV4ClrUsed;
+	DWORD bV4ClrImportant;
+	DWORD bV4RedMask;
+	DWORD bV4GreenMask;
+	DWORD bV4BlueMask;
+	DWORD bV4AlphaMask;
+	DWORD bV4CSType;
+	CIEXYZTRIPLE bV4Endpoints;
+	DWORD bV4GammaRed;
+	DWORD bV4GammaGreen;
+	DWORD bV4GammaBlue;
 } BITMAPV4HEADER, *LPBITMAPV4HEADER, *PBITMAPV4HEADER;
 
 typedef struct {
-    DWORD bV5Size;
-    LONG bV5Width;
-    LONG bV5Height;
-    WORD bV5Planes;
-    WORD bV5BitCount;
-    DWORD bV5Compression;
-    DWORD bV5SizeImage;
-    LONG bV5XPelsPerMeter;
-    LONG bV5YPelsPerMeter;
-    DWORD bV5ClrUsed;
-    DWORD bV5ClrImportant;
-    DWORD bV5RedMask;
-    DWORD bV5GreenMask;
-    DWORD bV5BlueMask;
-    DWORD bV5AlphaMask;
-    DWORD bV5CSType;
-    CIEXYZTRIPLE bV5Endpoints;
-    DWORD bV5GammaRed;
-    DWORD bV5GammaGreen;
-    DWORD bV5GammaBlue;
-    DWORD bV5Intent;
-    DWORD bV5ProfileData;
-    DWORD bV5ProfileSize;
-    DWORD bV5Reserved;
+	DWORD bV5Size;
+	LONG bV5Width;
+	LONG bV5Height;
+	WORD bV5Planes;
+	WORD bV5BitCount;
+	DWORD bV5Compression;
+	DWORD bV5SizeImage;
+	LONG bV5XPelsPerMeter;
+	LONG bV5YPelsPerMeter;
+	DWORD bV5ClrUsed;
+	DWORD bV5ClrImportant;
+	DWORD bV5RedMask;
+	DWORD bV5GreenMask;
+	DWORD bV5BlueMask;
+	DWORD bV5AlphaMask;
+	DWORD bV5CSType;
+	CIEXYZTRIPLE bV5Endpoints;
+	DWORD bV5GammaRed;
+	DWORD bV5GammaGreen;
+	DWORD bV5GammaBlue;
+	DWORD bV5Intent;
+	DWORD bV5ProfileData;
+	DWORD bV5ProfileSize;
+	DWORD bV5Reserved;
 } BITMAPV5HEADER, *LPBITMAPV5HEADER, *PBITMAPV5HEADER;
 
 #define BI_RGB 0L
@@ -608,22 +608,22 @@ typedef struct {
 #define BI_PNG 5L
 
 typedef struct tagBITMAPINFO {
-    BITMAPINFOHEADER bmiHeader;
-    RGBQUAD bmiColors[1];
+	BITMAPINFOHEADER bmiHeader;
+	RGBQUAD bmiColors[1];
 } BITMAPINFO, *LPBITMAPINFO, *PBITMAPINFO;
 
 typedef struct tagBITMAPCOREINFO {
-    BITMAPCOREHEADER bmciHeader;
-    RGBTRIPLE bmciColors[1];
+	BITMAPCOREHEADER bmciHeader;
+	RGBTRIPLE bmciColors[1];
 } BITMAPCOREINFO, *LPBITMAPCOREINFO, *PBITMAPCOREINFO;
 
 #include <pshpack2.h>
 typedef struct tagBITMAPFILEHEADER {
-    WORD bfType;
-    DWORD bfSize;
-    WORD bfReserved1;
-    WORD bfReserved2;
-    DWORD bfOffBits;
+	WORD bfType;
+	DWORD bfSize;
+	WORD bfReserved1;
+	WORD bfReserved2;
+	DWORD bfOffBits;
 } BITMAPFILEHEADER, *LPBITMAPFILEHEADER, *PBITMAPFILEHEADER;
 #include <poppack.h>
 
@@ -631,14 +631,14 @@ typedef struct tagBITMAPFILEHEADER {
 
 #ifndef NOFONTSIG
 typedef struct tagFONTSIGNATURE {
-    DWORD fsUsb[4];
-    DWORD fsCsb[2];
+	DWORD fsUsb[4];
+	DWORD fsCsb[2];
 } FONTSIGNATURE, *PFONTSIGNATURE, *LPFONTSIGNATURE;
 
 typedef struct tagCHARSETINFO {
-    UINT ciCharset;
-    UINT ciACP;
-    FONTSIGNATURE fs;
+	UINT ciCharset;
+	UINT ciACP;
+	FONTSIGNATURE fs;
 } CHARSETINFO, *PCHARSETINFO, *NPCHARSETINFO, *LPCHARSETINFO;
 
 #define TCI_SRCCHARSET 1
@@ -647,41 +647,41 @@ typedef struct tagCHARSETINFO {
 #define TCI_SRCLOCALE 0x1000
 
 typedef struct tagLOCALESIGNATURE {
-    DWORD lsUsb[4];
-    DWORD lsCsbDefault[2];
-    DWORD lsCsbSupported[2];
+	DWORD lsUsb[4];
+	DWORD lsCsbDefault[2];
+	DWORD lsCsbSupported[2];
 } LOCALESIGNATURE, *PLOCALESIGNATURE, *LPLOCALESIGNATURE;
 #endif
 
 #ifndef NOMETAFILE
 typedef struct tagHANDLETABLE {
-    HGDIOBJ objectHandle[1];
+	HGDIOBJ objectHandle[1];
 } HANDLETABLE, *PHANDLETABLE, *LPHANDLETABLE;
 
 typedef struct tagMETARECORD {
-    DWORD rdSize;
-    WORD rdFunction;
-    WORD rdParm[1];
+	DWORD rdSize;
+	WORD rdFunction;
+	WORD rdParm[1];
 } METARECORD;
 typedef struct tagMETARECORD UNALIGNED *PMETARECORD;
 typedef struct tagMETARECORD UNALIGNED *LPMETARECORD;
 
 typedef struct tagMETAFILEPICT {
-    LONG mm;
-    LONG xExt;
-    LONG yExt;
-    HMETAFILE hMF;
+	LONG mm;
+	LONG xExt;
+	LONG yExt;
+	HMETAFILE hMF;
 } METAFILEPICT, *LPMETAFILEPICT;
 
 #include <pshpack2.h>
 typedef struct tagMETAHEADER {
-    WORD mtType;
-    WORD mtHeaderSize;
-    WORD mtVersion;
-    DWORD mtSize;
-    WORD mtNoObjects;
-    DWORD mtMaxRecord;
-    WORD mtNoParameters;
+	WORD mtType;
+	WORD mtHeaderSize;
+	WORD mtVersion;
+	DWORD mtSize;
+	WORD mtNoObjects;
+	DWORD mtMaxRecord;
+	WORD mtNoParameters;
 } METAHEADER;
 typedef struct tagMETAHEADER UNALIGNED *PMETAHEADER;
 typedef struct tagMETAHEADER UNALIGNED *LPMETAHEADER;
@@ -689,31 +689,31 @@ typedef struct tagMETAHEADER UNALIGNED *LPMETAHEADER;
 #include <poppack.h>
 
 typedef struct tagENHMETARECORD {
-    DWORD iType;
-    DWORD nSize;
-    DWORD dParm[1];
+	DWORD iType;
+	DWORD nSize;
+	DWORD dParm[1];
 } ENHMETARECORD, *PENHMETARECORD, *LPENHMETARECORD;
 
 typedef struct tagENHMETAHEADER {
-    DWORD iType;
-    DWORD nSize;
-    RECTL rclBounds;
-    RECTL rclFrame;
-    DWORD dSignature;
-    DWORD nVersion;
-    DWORD nBytes;
-    DWORD nRecords;
-    WORD nHandles;
-    WORD sReserved;
-    DWORD nDescription;
-    DWORD offDescription;
-    DWORD nPalEntries;
-    SIZEL szlDevice;
-    SIZEL szlMillimeters;
-    DWORD cbPixelFormat;
-    DWORD offPixelFormat;
-    DWORD bOpenGL;
-    SIZEL szlMicrometers;
+	DWORD iType;
+	DWORD nSize;
+	RECTL rclBounds;
+	RECTL rclFrame;
+	DWORD dSignature;
+	DWORD nVersion;
+	DWORD nBytes;
+	DWORD nRecords;
+	WORD nHandles;
+	WORD sReserved;
+	DWORD nDescription;
+	DWORD offDescription;
+	DWORD nPalEntries;
+	SIZEL szlDevice;
+	SIZEL szlMillimeters;
+	DWORD cbPixelFormat;
+	DWORD offPixelFormat;
+	DWORD bOpenGL;
+	SIZEL szlMicrometers;
 } ENHMETAHEADER, *PENHMETAHEADER, *LPENHMETAHEADER;
 #endif
 
@@ -732,49 +732,49 @@ typedef BYTE BCHAR;
 #ifndef _TEXTMETRIC_DEFINED
 #define _TEXTMETRIC_DEFINED
 typedef struct tagTEXTMETRICA {
-    LONG tmHeight;
-    LONG tmAscent;
-    LONG tmDescent;
-    LONG tmInternalLeading;
-    LONG tmExternalLeading;
-    LONG tmAveCharWidth;
-    LONG tmMaxCharWidth;
-    LONG tmWeight;
-    LONG tmOverhang;
-    LONG tmDigitizedAspectX;
-    LONG tmDigitizedAspectY;
-    BYTE tmFirstChar;
-    BYTE tmLastChar;
-    BYTE tmDefaultChar;
-    BYTE tmBreakChar;
-    BYTE tmItalic;
-    BYTE tmUnderlined;
-    BYTE tmStruckOut;
-    BYTE tmPitchAndFamily;
-    BYTE tmCharSet;
+	LONG tmHeight;
+	LONG tmAscent;
+	LONG tmDescent;
+	LONG tmInternalLeading;
+	LONG tmExternalLeading;
+	LONG tmAveCharWidth;
+	LONG tmMaxCharWidth;
+	LONG tmWeight;
+	LONG tmOverhang;
+	LONG tmDigitizedAspectX;
+	LONG tmDigitizedAspectY;
+	BYTE tmFirstChar;
+	BYTE tmLastChar;
+	BYTE tmDefaultChar;
+	BYTE tmBreakChar;
+	BYTE tmItalic;
+	BYTE tmUnderlined;
+	BYTE tmStruckOut;
+	BYTE tmPitchAndFamily;
+	BYTE tmCharSet;
 } TEXTMETRICA, *PTEXTMETRICA, *NPTEXTMETRICA, *LPTEXTMETRICA;
 
 typedef struct tagTEXTMETRICW {
-    LONG tmHeight;
-    LONG tmAscent;
-    LONG tmDescent;
-    LONG tmInternalLeading;
-    LONG tmExternalLeading;
-    LONG tmAveCharWidth;
-    LONG tmMaxCharWidth;
-    LONG tmWeight;
-    LONG tmOverhang;
-    LONG tmDigitizedAspectX;
-    LONG tmDigitizedAspectY;
-    WCHAR tmFirstChar;
-    WCHAR tmLastChar;
-    WCHAR tmDefaultChar;
-    WCHAR tmBreakChar;
-    BYTE tmItalic;
-    BYTE tmUnderlined;
-    BYTE tmStruckOut;
-    BYTE tmPitchAndFamily;
-    BYTE tmCharSet;
+	LONG tmHeight;
+	LONG tmAscent;
+	LONG tmDescent;
+	LONG tmInternalLeading;
+	LONG tmExternalLeading;
+	LONG tmAveCharWidth;
+	LONG tmMaxCharWidth;
+	LONG tmWeight;
+	LONG tmOverhang;
+	LONG tmDigitizedAspectX;
+	LONG tmDigitizedAspectY;
+	WCHAR tmFirstChar;
+	WCHAR tmLastChar;
+	WCHAR tmDefaultChar;
+	WCHAR tmBreakChar;
+	BYTE tmItalic;
+	BYTE tmUnderlined;
+	BYTE tmStruckOut;
+	BYTE tmPitchAndFamily;
+	BYTE tmCharSet;
 } TEXTMETRICW, *PTEXTMETRICW, *NPTEXTMETRICW, *LPTEXTMETRICW;
 #ifdef UNICODE
 typedef TEXTMETRICW TEXTMETRIC;
@@ -802,57 +802,57 @@ typedef LPTEXTMETRICA LPTEXTMETRIC;
 
 #include <pshpack4.h>
 typedef struct tagNEWTEXTMETRICA {
-    LONG tmHeight;
-    LONG tmAscent;
-    LONG tmDescent;
-    LONG tmInternalLeading;
-    LONG tmExternalLeading;
-    LONG tmAveCharWidth;
-    LONG tmMaxCharWidth;
-    LONG tmWeight;
-    LONG tmOverhang;
-    LONG tmDigitizedAspectX;
-    LONG tmDigitizedAspectY;
-    BYTE tmFirstChar;
-    BYTE tmLastChar;
-    BYTE tmDefaultChar;
-    BYTE tmBreakChar;
-    BYTE tmItalic;
-    BYTE tmUnderlined;
-    BYTE tmStruckOut;
-    BYTE tmPitchAndFamily;
-    BYTE tmCharSet;
-    DWORD ntmFlags;
-    UINT ntmSizeEM;
-    UINT ntmCellHeight;
-    UINT ntmAvgWidth;
+	LONG tmHeight;
+	LONG tmAscent;
+	LONG tmDescent;
+	LONG tmInternalLeading;
+	LONG tmExternalLeading;
+	LONG tmAveCharWidth;
+	LONG tmMaxCharWidth;
+	LONG tmWeight;
+	LONG tmOverhang;
+	LONG tmDigitizedAspectX;
+	LONG tmDigitizedAspectY;
+	BYTE tmFirstChar;
+	BYTE tmLastChar;
+	BYTE tmDefaultChar;
+	BYTE tmBreakChar;
+	BYTE tmItalic;
+	BYTE tmUnderlined;
+	BYTE tmStruckOut;
+	BYTE tmPitchAndFamily;
+	BYTE tmCharSet;
+	DWORD ntmFlags;
+	UINT ntmSizeEM;
+	UINT ntmCellHeight;
+	UINT ntmAvgWidth;
 } NEWTEXTMETRICA, *PNEWTEXTMETRICA, *NPNEWTEXTMETRICA, *LPNEWTEXTMETRICA;
 
 typedef struct tagNEWTEXTMETRICW {
-    LONG tmHeight;
-    LONG tmAscent;
-    LONG tmDescent;
-    LONG tmInternalLeading;
-    LONG tmExternalLeading;
-    LONG tmAveCharWidth;
-    LONG tmMaxCharWidth;
-    LONG tmWeight;
-    LONG tmOverhang;
-    LONG tmDigitizedAspectX;
-    LONG tmDigitizedAspectY;
-    WCHAR tmFirstChar;
-    WCHAR tmLastChar;
-    WCHAR tmDefaultChar;
-    WCHAR tmBreakChar;
-    BYTE tmItalic;
-    BYTE tmUnderlined;
-    BYTE tmStruckOut;
-    BYTE tmPitchAndFamily;
-    BYTE tmCharSet;
-    DWORD ntmFlags;
-    UINT ntmSizeEM;
-    UINT ntmCellHeight;
-    UINT ntmAvgWidth;
+	LONG tmHeight;
+	LONG tmAscent;
+	LONG tmDescent;
+	LONG tmInternalLeading;
+	LONG tmExternalLeading;
+	LONG tmAveCharWidth;
+	LONG tmMaxCharWidth;
+	LONG tmWeight;
+	LONG tmOverhang;
+	LONG tmDigitizedAspectX;
+	LONG tmDigitizedAspectY;
+	WCHAR tmFirstChar;
+	WCHAR tmLastChar;
+	WCHAR tmDefaultChar;
+	WCHAR tmBreakChar;
+	BYTE tmItalic;
+	BYTE tmUnderlined;
+	BYTE tmStruckOut;
+	BYTE tmPitchAndFamily;
+	BYTE tmCharSet;
+	DWORD ntmFlags;
+	UINT ntmSizeEM;
+	UINT ntmCellHeight;
+	UINT ntmAvgWidth;
 } NEWTEXTMETRICW, *PNEWTEXTMETRICW, *NPNEWTEXTMETRICW, *LPNEWTEXTMETRICW;
 #ifdef UNICODE
 typedef NEWTEXTMETRICW NEWTEXTMETRIC;
@@ -868,13 +868,13 @@ typedef LPNEWTEXTMETRICA LPNEWTEXTMETRIC;
 #include <poppack.h>
 
 typedef struct tagNEWTEXTMETRICEXA {
-    NEWTEXTMETRICA ntmTm;
-    FONTSIGNATURE ntmFontSig;
+	NEWTEXTMETRICA ntmTm;
+	FONTSIGNATURE ntmFontSig;
 } NEWTEXTMETRICEXA;
 
 typedef struct tagNEWTEXTMETRICEXW {
-    NEWTEXTMETRICW ntmTm;
-    FONTSIGNATURE ntmFontSig;
+	NEWTEXTMETRICW ntmTm;
+	FONTSIGNATURE ntmFontSig;
 } NEWTEXTMETRICEXW;
 #ifdef UNICODE
 typedef NEWTEXTMETRICEXW NEWTEXTMETRICEX;
@@ -884,23 +884,23 @@ typedef NEWTEXTMETRICEXA NEWTEXTMETRICEX;
 #endif
 
 typedef struct tagPELARRAY {
-    LONG paXCount;
-    LONG paYCount;
-    LONG paXExt;
-    LONG paYExt;
-    BYTE paRGBs;
+	LONG paXCount;
+	LONG paYCount;
+	LONG paXExt;
+	LONG paYExt;
+	BYTE paRGBs;
 } PELARRAY, *PPELARRAY, *NPPELARRAY, *LPPELARRAY;
 
 typedef struct tagLOGBRUSH {
-    UINT lbStyle;
-    COLORREF lbColor;
-    ULONG_PTR lbHatch;
+	UINT lbStyle;
+	COLORREF lbColor;
+	ULONG_PTR lbHatch;
 } LOGBRUSH, *PLOGBRUSH, *NPLOGBRUSH, *LPLOGBRUSH;
 
 typedef struct tagLOGBRUSH32 {
-    UINT lbStyle;
-    COLORREF lbColor;
-    ULONG lbHatch;
+	UINT lbStyle;
+	COLORREF lbColor;
+	ULONG lbHatch;
 } LOGBRUSH32, *PLOGBRUSH32, *NPLOGBRUSH32, *LPLOGBRUSH32;
 
 typedef LOGBRUSH PATTERN;
@@ -909,28 +909,28 @@ typedef PATTERN *NPPATTERN;
 typedef PATTERN *LPPATTERN;
 
 typedef struct tagLOGPEN {
-    UINT lopnStyle;
-    POINT lopnWidth;
-    COLORREF lopnColor;
+	UINT lopnStyle;
+	POINT lopnWidth;
+	COLORREF lopnColor;
 } LOGPEN, *PLOGPEN, *NPLOGPEN, *LPLOGPEN;
 
 typedef struct tagEXTLOGPEN {
-    DWORD elpPenStyle;
-    DWORD elpWidth;
-    UINT elpBrushStyle;
-    COLORREF elpColor;
-    ULONG_PTR elpHatch;
-    DWORD elpNumEntries;
-    DWORD elpStyleEntry[1];
+	DWORD elpPenStyle;
+	DWORD elpWidth;
+	UINT elpBrushStyle;
+	COLORREF elpColor;
+	ULONG_PTR elpHatch;
+	DWORD elpNumEntries;
+	DWORD elpStyleEntry[1];
 } EXTLOGPEN, *PEXTLOGPEN, *NPEXTLOGPEN, *LPEXTLOGPEN;
 
 #ifndef _PALETTEENTRY_DEFINED
 #define _PALETTEENTRY_DEFINED
 typedef struct tagPALETTEENTRY {
-    BYTE peRed;
-    BYTE peGreen;
-    BYTE peBlue;
-    BYTE peFlags;
+	BYTE peRed;
+	BYTE peGreen;
+	BYTE peBlue;
+	BYTE peFlags;
 } PALETTEENTRY, *PPALETTEENTRY, *LPPALETTEENTRY;
 #endif
 
@@ -938,46 +938,46 @@ typedef struct tagPALETTEENTRY {
 #define _LOGPALETTE_DEFINED
 
 typedef struct tagLOGPALETTE {
-    WORD palVersion;
-    WORD palNumEntries;
-    PALETTEENTRY palPalEntry[1];
+	WORD palVersion;
+	WORD palNumEntries;
+	PALETTEENTRY palPalEntry[1];
 } LOGPALETTE, *PLOGPALETTE, *NPLOGPALETTE, *LPLOGPALETTE;
 #endif
 
 #define LF_FACESIZE 32
 
 typedef struct tagLOGFONTA {
-    LONG lfHeight;
-    LONG lfWidth;
-    LONG lfEscapement;
-    LONG lfOrientation;
-    LONG lfWeight;
-    BYTE lfItalic;
-    BYTE lfUnderline;
-    BYTE lfStrikeOut;
-    BYTE lfCharSet;
-    BYTE lfOutPrecision;
-    BYTE lfClipPrecision;
-    BYTE lfQuality;
-    BYTE lfPitchAndFamily;
-    CHAR lfFaceName[LF_FACESIZE];
+	LONG lfHeight;
+	LONG lfWidth;
+	LONG lfEscapement;
+	LONG lfOrientation;
+	LONG lfWeight;
+	BYTE lfItalic;
+	BYTE lfUnderline;
+	BYTE lfStrikeOut;
+	BYTE lfCharSet;
+	BYTE lfOutPrecision;
+	BYTE lfClipPrecision;
+	BYTE lfQuality;
+	BYTE lfPitchAndFamily;
+	CHAR lfFaceName[LF_FACESIZE];
 } LOGFONTA, *PLOGFONTA, *NPLOGFONTA, *LPLOGFONTA;
 
 typedef struct tagLOGFONTW {
-    LONG lfHeight;
-    LONG lfWidth;
-    LONG lfEscapement;
-    LONG lfOrientation;
-    LONG lfWeight;
-    BYTE lfItalic;
-    BYTE lfUnderline;
-    BYTE lfStrikeOut;
-    BYTE lfCharSet;
-    BYTE lfOutPrecision;
-    BYTE lfClipPrecision;
-    BYTE lfQuality;
-    BYTE lfPitchAndFamily;
-    WCHAR lfFaceName[LF_FACESIZE];
+	LONG lfHeight;
+	LONG lfWidth;
+	LONG lfEscapement;
+	LONG lfOrientation;
+	LONG lfWeight;
+	BYTE lfItalic;
+	BYTE lfUnderline;
+	BYTE lfStrikeOut;
+	BYTE lfCharSet;
+	BYTE lfOutPrecision;
+	BYTE lfClipPrecision;
+	BYTE lfQuality;
+	BYTE lfPitchAndFamily;
+	WCHAR lfFaceName[LF_FACESIZE];
 } LOGFONTW, *PLOGFONTW, *NPLOGFONTW, *LPLOGFONTW;
 #ifdef UNICODE
 typedef LOGFONTW LOGFONT;
@@ -994,15 +994,15 @@ typedef LPLOGFONTA LPLOGFONT;
 #define LF_FULLFACESIZE 64
 
 typedef struct tagENUMLOGFONTA {
-    LOGFONTA elfLogFont;
-    BYTE elfFullName[LF_FULLFACESIZE];
-    BYTE elfStyle[LF_FACESIZE];
+	LOGFONTA elfLogFont;
+	BYTE elfFullName[LF_FULLFACESIZE];
+	BYTE elfStyle[LF_FACESIZE];
 } ENUMLOGFONTA, *LPENUMLOGFONTA;
 
 typedef struct tagENUMLOGFONTW {
-    LOGFONTW elfLogFont;
-    WCHAR elfFullName[LF_FULLFACESIZE];
-    WCHAR elfStyle[LF_FACESIZE];
+	LOGFONTW elfLogFont;
+	WCHAR elfFullName[LF_FULLFACESIZE];
+	WCHAR elfStyle[LF_FACESIZE];
 } ENUMLOGFONTW, *LPENUMLOGFONTW;
 #ifdef UNICODE
 typedef ENUMLOGFONTW ENUMLOGFONT;
@@ -1013,17 +1013,17 @@ typedef LPENUMLOGFONTA LPENUMLOGFONT;
 #endif
 
 typedef struct tagENUMLOGFONTEXA {
-    LOGFONTA elfLogFont;
-    BYTE elfFullName[LF_FULLFACESIZE];
-    BYTE elfStyle[LF_FACESIZE];
-    BYTE elfScript[LF_FACESIZE];
+	LOGFONTA elfLogFont;
+	BYTE elfFullName[LF_FULLFACESIZE];
+	BYTE elfStyle[LF_FACESIZE];
+	BYTE elfScript[LF_FACESIZE];
 } ENUMLOGFONTEXA, *LPENUMLOGFONTEXA;
 
 typedef struct tagENUMLOGFONTEXW {
-    LOGFONTW elfLogFont;
-    WCHAR elfFullName[LF_FULLFACESIZE];
-    WCHAR elfStyle[LF_FACESIZE];
-    WCHAR elfScript[LF_FACESIZE];
+	LOGFONTW elfLogFont;
+	WCHAR elfFullName[LF_FULLFACESIZE];
+	WCHAR elfStyle[LF_FACESIZE];
+	WCHAR elfScript[LF_FACESIZE];
 } ENUMLOGFONTEXW, *LPENUMLOGFONTEXW;
 #ifdef UNICODE
 typedef ENUMLOGFONTEXW ENUMLOGFONTEX;
@@ -1149,16 +1149,16 @@ typedef LPENUMLOGFONTEXA LPENUMLOGFONTEX;
 #define PAN_CULTURE_LATIN 0
 
 typedef struct tagPANOSE {
-    BYTE bFamilyType;
-    BYTE bSerifStyle;
-    BYTE bWeight;
-    BYTE bProportion;
-    BYTE bContrast;
-    BYTE bStrokeVariation;
-    BYTE bArmStyle;
-    BYTE bLetterform;
-    BYTE bMidline;
-    BYTE bXHeight;
+	BYTE bFamilyType;
+	BYTE bSerifStyle;
+	BYTE bWeight;
+	BYTE bProportion;
+	BYTE bContrast;
+	BYTE bStrokeVariation;
+	BYTE bArmStyle;
+	BYTE bLetterform;
+	BYTE bMidline;
+	BYTE bXHeight;
 } PANOSE, *LPPANOSE;
 
 #define PAN_ANY 0
@@ -1270,29 +1270,29 @@ typedef struct tagPANOSE {
 #define ELF_VENDOR_SIZE 4
 
 typedef struct tagEXTLOGFONTA {
-    LOGFONTA elfLogFont;
-    BYTE elfFullName[LF_FULLFACESIZE];
-    BYTE elfStyle[LF_FACESIZE];
-    DWORD elfVersion;
-    DWORD elfStyleSize;
-    DWORD elfMatch;
-    DWORD elfReserved;
-    BYTE elfVendorId[ELF_VENDOR_SIZE];
-    DWORD elfCulture;
-    PANOSE elfPanose;
+	LOGFONTA elfLogFont;
+	BYTE elfFullName[LF_FULLFACESIZE];
+	BYTE elfStyle[LF_FACESIZE];
+	DWORD elfVersion;
+	DWORD elfStyleSize;
+	DWORD elfMatch;
+	DWORD elfReserved;
+	BYTE elfVendorId[ELF_VENDOR_SIZE];
+	DWORD elfCulture;
+	PANOSE elfPanose;
 } EXTLOGFONTA, *PEXTLOGFONTA, *NPEXTLOGFONTA, *LPEXTLOGFONTA;
 
 typedef struct tagEXTLOGFONTW {
-    LOGFONTW elfLogFont;
-    WCHAR elfFullName[LF_FULLFACESIZE];
-    WCHAR elfStyle[LF_FACESIZE];
-    DWORD elfVersion;
-    DWORD elfStyleSize;
-    DWORD elfMatch;
-    DWORD elfReserved;
-    BYTE elfVendorId[ELF_VENDOR_SIZE];
-    DWORD elfCulture;
-    PANOSE elfPanose;
+	LOGFONTW elfLogFont;
+	WCHAR elfFullName[LF_FULLFACESIZE];
+	WCHAR elfStyle[LF_FACESIZE];
+	DWORD elfVersion;
+	DWORD elfStyleSize;
+	DWORD elfMatch;
+	DWORD elfReserved;
+	BYTE elfVendorId[ELF_VENDOR_SIZE];
+	DWORD elfCulture;
+	PANOSE elfPanose;
 } EXTLOGFONTW, *PEXTLOGFONTW, *NPEXTLOGFONTW, *LPEXTLOGFONTW;
 #ifdef UNICODE
 typedef EXTLOGFONTW EXTLOGFONT;
@@ -1591,101 +1591,101 @@ typedef LPEXTLOGFONTA LPEXTLOGFONT;
 #define CCHFORMNAME 32
 
 typedef struct _devicemodeA {
-    BYTE dmDeviceName[CCHDEVICENAME];
-    WORD dmSpecVersion;
-    WORD dmDriverVersion;
-    WORD dmSize;
-    WORD dmDriverExtra;
-    DWORD dmFields;
-    union {
-        struct {
-            short dmOrientation;
-            short dmPaperSize;
-            short dmPaperLength;
-            short dmPaperWidth;
-            short dmScale;
-            short dmCopies;
-            short dmDefaultSource;
-            short dmPrintQuality;
-        };
-        struct {
-            POINTL dmPosition;
-            DWORD dmDisplayOrientation;
-            DWORD dmDisplayFixedOutput;
-        };
-    };
-    short dmColor;
-    short dmDuplex;
-    short dmYResolution;
-    short dmTTOption;
-    short dmCollate;
-    BYTE dmFormName[CCHFORMNAME];
-    WORD dmLogPixels;
-    DWORD dmBitsPerPel;
-    DWORD dmPelsWidth;
-    DWORD dmPelsHeight;
-    union {
-        DWORD dmDisplayFlags;
-        DWORD dmNup;
-    };
-    DWORD dmDisplayFrequency;
-    DWORD dmICMMethod;
-    DWORD dmICMIntent;
-    DWORD dmMediaType;
-    DWORD dmDitherType;
-    DWORD dmReserved1;
-    DWORD dmReserved2;
-    DWORD dmPanningWidth;
-    DWORD dmPanningHeight;
+	BYTE dmDeviceName[CCHDEVICENAME];
+	WORD dmSpecVersion;
+	WORD dmDriverVersion;
+	WORD dmSize;
+	WORD dmDriverExtra;
+	DWORD dmFields;
+	union {
+		struct {
+			short dmOrientation;
+			short dmPaperSize;
+			short dmPaperLength;
+			short dmPaperWidth;
+			short dmScale;
+			short dmCopies;
+			short dmDefaultSource;
+			short dmPrintQuality;
+		};
+		struct {
+			POINTL dmPosition;
+			DWORD dmDisplayOrientation;
+			DWORD dmDisplayFixedOutput;
+		};
+	};
+	short dmColor;
+	short dmDuplex;
+	short dmYResolution;
+	short dmTTOption;
+	short dmCollate;
+	BYTE dmFormName[CCHFORMNAME];
+	WORD dmLogPixels;
+	DWORD dmBitsPerPel;
+	DWORD dmPelsWidth;
+	DWORD dmPelsHeight;
+	union {
+		DWORD dmDisplayFlags;
+		DWORD dmNup;
+	};
+	DWORD dmDisplayFrequency;
+	DWORD dmICMMethod;
+	DWORD dmICMIntent;
+	DWORD dmMediaType;
+	DWORD dmDitherType;
+	DWORD dmReserved1;
+	DWORD dmReserved2;
+	DWORD dmPanningWidth;
+	DWORD dmPanningHeight;
 } DEVMODEA, *PDEVMODEA, *NPDEVMODEA, *LPDEVMODEA;
 
 typedef struct _devicemodeW {
-    WCHAR dmDeviceName[CCHDEVICENAME];
-    WORD dmSpecVersion;
-    WORD dmDriverVersion;
-    WORD dmSize;
-    WORD dmDriverExtra;
-    DWORD dmFields;
-    union {
-        struct {
-            short dmOrientation;
-            short dmPaperSize;
-            short dmPaperLength;
-            short dmPaperWidth;
-            short dmScale;
-            short dmCopies;
-            short dmDefaultSource;
-            short dmPrintQuality;
-        };
-        struct {
-            POINTL dmPosition;
-            DWORD dmDisplayOrientation;
-            DWORD dmDisplayFixedOutput;
-        };
-    };
-    short dmColor;
-    short dmDuplex;
-    short dmYResolution;
-    short dmTTOption;
-    short dmCollate;
-    WCHAR dmFormName[CCHFORMNAME];
-    WORD dmLogPixels;
-    DWORD dmBitsPerPel;
-    DWORD dmPelsWidth;
-    DWORD dmPelsHeight;
-    union {
-        DWORD dmDisplayFlags;
-        DWORD dmNup;
-    };
-    DWORD dmDisplayFrequency;
-    DWORD dmICMMethod;
-    DWORD dmICMIntent;
-    DWORD dmMediaType;
-    DWORD dmDitherType;
-    DWORD dmReserved1;
-    DWORD dmReserved2;
-    DWORD dmPanningWidth;
-    DWORD dmPanningHeight;
+	WCHAR dmDeviceName[CCHDEVICENAME];
+	WORD dmSpecVersion;
+	WORD dmDriverVersion;
+	WORD dmSize;
+	WORD dmDriverExtra;
+	DWORD dmFields;
+	union {
+		struct {
+			short dmOrientation;
+			short dmPaperSize;
+			short dmPaperLength;
+			short dmPaperWidth;
+			short dmScale;
+			short dmCopies;
+			short dmDefaultSource;
+			short dmPrintQuality;
+		};
+		struct {
+			POINTL dmPosition;
+			DWORD dmDisplayOrientation;
+			DWORD dmDisplayFixedOutput;
+		};
+	};
+	short dmColor;
+	short dmDuplex;
+	short dmYResolution;
+	short dmTTOption;
+	short dmCollate;
+	WCHAR dmFormName[CCHFORMNAME];
+	WORD dmLogPixels;
+	DWORD dmBitsPerPel;
+	DWORD dmPelsWidth;
+	DWORD dmPelsHeight;
+	union {
+		DWORD dmDisplayFlags;
+		DWORD dmNup;
+	};
+	DWORD dmDisplayFrequency;
+	DWORD dmICMMethod;
+	DWORD dmICMIntent;
+	DWORD dmMediaType;
+	DWORD dmDitherType;
+	DWORD dmReserved1;
+	DWORD dmReserved2;
+	DWORD dmPanningWidth;
+	DWORD dmPanningHeight;
 } DEVMODEW, *PDEVMODEW, *NPDEVMODEW, *LPDEVMODEW;
 #ifdef UNICODE
 typedef DEVMODEW DEVMODE;
@@ -1946,20 +1946,20 @@ typedef LPDEVMODEA LPDEVMODE;
 #define DMDITHER_USER 256
 
 typedef struct _DISPLAY_DEVICEA {
-    DWORD cb;
-    CHAR DeviceName[32];
-    CHAR DeviceString[128];
-    DWORD StateFlags;
-    CHAR DeviceID[128];
-    CHAR DeviceKey[128];
+	DWORD cb;
+	CHAR DeviceName[32];
+	CHAR DeviceString[128];
+	DWORD StateFlags;
+	CHAR DeviceID[128];
+	CHAR DeviceKey[128];
 } DISPLAY_DEVICEA, *PDISPLAY_DEVICEA, *LPDISPLAY_DEVICEA;
 typedef struct _DISPLAY_DEVICEW {
-    DWORD cb;
-    WCHAR DeviceName[32];
-    WCHAR DeviceString[128];
-    DWORD StateFlags;
-    WCHAR DeviceID[128];
-    WCHAR DeviceKey[128];
+	DWORD cb;
+	WCHAR DeviceName[32];
+	WCHAR DeviceString[128];
+	DWORD StateFlags;
+	WCHAR DeviceID[128];
+	WCHAR DeviceKey[128];
 } DISPLAY_DEVICEW, *PDISPLAY_DEVICEW, *LPDISPLAY_DEVICEW;
 #ifdef UNICODE
 typedef DISPLAY_DEVICEW DISPLAY_DEVICE;
@@ -1987,102 +1987,102 @@ typedef LPDISPLAY_DEVICEA LPDISPLAY_DEVICE;
 #define RDH_RECTANGLES 1
 
 typedef struct _RGNDATAHEADER {
-    DWORD dwSize;
-    DWORD iType;
-    DWORD nCount;
-    DWORD nRgnSize;
-    RECT rcBound;
+	DWORD dwSize;
+	DWORD iType;
+	DWORD nCount;
+	DWORD nRgnSize;
+	RECT rcBound;
 } RGNDATAHEADER, *PRGNDATAHEADER;
 
 typedef struct _RGNDATA {
-    RGNDATAHEADER rdh;
-    char Buffer[1];
+	RGNDATAHEADER rdh;
+	char Buffer[1];
 } RGNDATA, *PRGNDATA, *NPRGNDATA, *LPRGNDATA;
 
 #define SYSRGN 4
 
 typedef struct _ABC {
-    int abcA;
-    UINT abcB;
-    int abcC;
+	int abcA;
+	UINT abcB;
+	int abcC;
 } ABC, *PABC, *NPABC, *LPABC;
 
 typedef struct _ABCFLOAT {
-    FLOAT abcfA;
-    FLOAT abcfB;
-    FLOAT abcfC;
+	FLOAT abcfA;
+	FLOAT abcfB;
+	FLOAT abcfC;
 } ABCFLOAT, *PABCFLOAT, *NPABCFLOAT, *LPABCFLOAT;
 
 #ifndef NOTEXTMETRIC
 
 typedef struct _OUTLINETEXTMETRICA {
-    UINT otmSize;
-    TEXTMETRICA otmTextMetrics;
-    BYTE otmFiller;
-    PANOSE otmPanoseNumber;
-    UINT otmfsSelection;
-    UINT otmfsType;
-    int otmsCharSlopeRise;
-    int otmsCharSlopeRun;
-    int otmItalicAngle;
-    UINT otmEMSquare;
-    int otmAscent;
-    int otmDescent;
-    UINT otmLineGap;
-    UINT otmsCapEmHeight;
-    UINT otmsXHeight;
-    RECT otmrcFontBox;
-    int otmMacAscent;
-    int otmMacDescent;
-    UINT otmMacLineGap;
-    UINT otmusMinimumPPEM;
-    POINT otmptSubscriptSize;
-    POINT otmptSubscriptOffset;
-    POINT otmptSuperscriptSize;
-    POINT otmptSuperscriptOffset;
-    UINT otmsStrikeoutSize;
-    int otmsStrikeoutPosition;
-    int otmsUnderscoreSize;
-    int otmsUnderscorePosition;
-    PSTR otmpFamilyName;
-    PSTR otmpFaceName;
-    PSTR otmpStyleName;
-    PSTR otmpFullName;
+	UINT otmSize;
+	TEXTMETRICA otmTextMetrics;
+	BYTE otmFiller;
+	PANOSE otmPanoseNumber;
+	UINT otmfsSelection;
+	UINT otmfsType;
+	int otmsCharSlopeRise;
+	int otmsCharSlopeRun;
+	int otmItalicAngle;
+	UINT otmEMSquare;
+	int otmAscent;
+	int otmDescent;
+	UINT otmLineGap;
+	UINT otmsCapEmHeight;
+	UINT otmsXHeight;
+	RECT otmrcFontBox;
+	int otmMacAscent;
+	int otmMacDescent;
+	UINT otmMacLineGap;
+	UINT otmusMinimumPPEM;
+	POINT otmptSubscriptSize;
+	POINT otmptSubscriptOffset;
+	POINT otmptSuperscriptSize;
+	POINT otmptSuperscriptOffset;
+	UINT otmsStrikeoutSize;
+	int otmsStrikeoutPosition;
+	int otmsUnderscoreSize;
+	int otmsUnderscorePosition;
+	PSTR otmpFamilyName;
+	PSTR otmpFaceName;
+	PSTR otmpStyleName;
+	PSTR otmpFullName;
 } OUTLINETEXTMETRICA, *POUTLINETEXTMETRICA, *NPOUTLINETEXTMETRICA, *LPOUTLINETEXTMETRICA;
 
 typedef struct _OUTLINETEXTMETRICW {
-    UINT otmSize;
-    TEXTMETRICW otmTextMetrics;
-    BYTE otmFiller;
-    PANOSE otmPanoseNumber;
-    UINT otmfsSelection;
-    UINT otmfsType;
-    int otmsCharSlopeRise;
-    int otmsCharSlopeRun;
-    int otmItalicAngle;
-    UINT otmEMSquare;
-    int otmAscent;
-    int otmDescent;
-    UINT otmLineGap;
-    UINT otmsCapEmHeight;
-    UINT otmsXHeight;
-    RECT otmrcFontBox;
-    int otmMacAscent;
-    int otmMacDescent;
-    UINT otmMacLineGap;
-    UINT otmusMinimumPPEM;
-    POINT otmptSubscriptSize;
-    POINT otmptSubscriptOffset;
-    POINT otmptSuperscriptSize;
-    POINT otmptSuperscriptOffset;
-    UINT otmsStrikeoutSize;
-    int otmsStrikeoutPosition;
-    int otmsUnderscoreSize;
-    int otmsUnderscorePosition;
-    PSTR otmpFamilyName;
-    PSTR otmpFaceName;
-    PSTR otmpStyleName;
-    PSTR otmpFullName;
+	UINT otmSize;
+	TEXTMETRICW otmTextMetrics;
+	BYTE otmFiller;
+	PANOSE otmPanoseNumber;
+	UINT otmfsSelection;
+	UINT otmfsType;
+	int otmsCharSlopeRise;
+	int otmsCharSlopeRun;
+	int otmItalicAngle;
+	UINT otmEMSquare;
+	int otmAscent;
+	int otmDescent;
+	UINT otmLineGap;
+	UINT otmsCapEmHeight;
+	UINT otmsXHeight;
+	RECT otmrcFontBox;
+	int otmMacAscent;
+	int otmMacDescent;
+	UINT otmMacLineGap;
+	UINT otmusMinimumPPEM;
+	POINT otmptSubscriptSize;
+	POINT otmptSubscriptOffset;
+	POINT otmptSuperscriptSize;
+	POINT otmptSuperscriptOffset;
+	UINT otmsStrikeoutSize;
+	int otmsStrikeoutPosition;
+	int otmsUnderscoreSize;
+	int otmsUnderscorePosition;
+	PSTR otmpFamilyName;
+	PSTR otmpFaceName;
+	PSTR otmpStyleName;
+	PSTR otmpFullName;
 } OUTLINETEXTMETRICW, *POUTLINETEXTMETRICW, *NPOUTLINETEXTMETRICW, *LPOUTLINETEXTMETRICW;
 #ifdef UNICODE
 typedef OUTLINETEXTMETRICW OUTLINETEXTMETRIC;
@@ -2098,23 +2098,23 @@ typedef LPOUTLINETEXTMETRICA LPOUTLINETEXTMETRIC;
 #endif
 
 typedef struct tagPOLYTEXTA {
-    int x;
-    int y;
-    UINT n;
-    LPCSTR lpstr;
-    UINT uiFlags;
-    RECT rcl;
-    int *pdx;
+	int x;
+	int y;
+	UINT n;
+	LPCSTR lpstr;
+	UINT uiFlags;
+	RECT rcl;
+	int *pdx;
 } POLYTEXTA, *PPOLYTEXTA, *NPPOLYTEXTA, *LPPOLYTEXTA;
 
 typedef struct tagPOLYTEXTW {
-    int x;
-    int y;
-    UINT n;
-    LPCWSTR lpstr;
-    UINT uiFlags;
-    RECT rcl;
-    int *pdx;
+	int x;
+	int y;
+	UINT n;
+	LPCWSTR lpstr;
+	UINT uiFlags;
+	RECT rcl;
+	int *pdx;
 } POLYTEXTW, *PPOLYTEXTW, *NPPOLYTEXTW, *LPPOLYTEXTW;
 #ifdef UNICODE
 typedef POLYTEXTW POLYTEXT;
@@ -2129,23 +2129,23 @@ typedef LPPOLYTEXTA LPPOLYTEXT;
 #endif
 
 typedef struct _FIXED {
-    WORD fract;
-    short value;
+	WORD fract;
+	short value;
 } FIXED;
 
 typedef struct _MAT2 {
-    FIXED eM11;
-    FIXED eM12;
-    FIXED eM21;
-    FIXED eM22;
+	FIXED eM11;
+	FIXED eM12;
+	FIXED eM21;
+	FIXED eM22;
 } MAT2, *LPMAT2;
 
 typedef struct _GLYPHMETRICS {
-    UINT gmBlackBoxX;
-    UINT gmBlackBoxY;
-    POINT gmptGlyphOrigin;
-    short gmCellIncX;
-    short gmCellIncY;
+	UINT gmBlackBoxX;
+	UINT gmBlackBoxY;
+	POINT gmptGlyphOrigin;
+	short gmCellIncX;
+	short gmCellIncY;
 } GLYPHMETRICS, *LPGLYPHMETRICS;
 
 #define GGO_METRICS 0
@@ -2166,20 +2166,20 @@ typedef struct _GLYPHMETRICS {
 #define TT_PRIM_CSPLINE 3
 
 typedef struct tagPOINTFX {
-    FIXED x;
-    FIXED y;
+	FIXED x;
+	FIXED y;
 } POINTFX, *LPPOINTFX;
 
 typedef struct tagTTPOLYCURVE {
-    WORD wType;
-    WORD cpfx;
-    POINTFX apfx[1];
+	WORD wType;
+	WORD cpfx;
+	POINTFX apfx[1];
 } TTPOLYCURVE, *LPTTPOLYCURVE;
 
 typedef struct tagTTPOLYGONHEADER {
-    DWORD cb;
-    DWORD dwType;
-    POINTFX pfxStart;
+	DWORD cb;
+	DWORD dwType;
+	POINTFX pfxStart;
 } TTPOLYGONHEADER, *LPTTPOLYGONHEADER;
 
 #define GCP_DBCS 0x0001
@@ -2224,26 +2224,26 @@ typedef struct tagTTPOLYGONHEADER {
 #define GCPGLYPH_LINKAFTER 0x4000
 
 typedef struct tagGCP_RESULTSA {
-    DWORD lStructSize;
-    LPSTR lpOutString;
-    UINT *lpOrder;
-    int *lpDx;
-    int *lpCaretPos;
-    LPSTR lpClass;
-    LPWSTR lpGlyphs;
-    UINT nGlyphs;
-    int nMaxFit;
+	DWORD lStructSize;
+	LPSTR lpOutString;
+	UINT *lpOrder;
+	int *lpDx;
+	int *lpCaretPos;
+	LPSTR lpClass;
+	LPWSTR lpGlyphs;
+	UINT nGlyphs;
+	int nMaxFit;
 } GCP_RESULTSA, *LPGCP_RESULTSA;
 typedef struct tagGCP_RESULTSW {
-    DWORD lStructSize;
-    LPWSTR lpOutString;
-    UINT *lpOrder;
-    int *lpDx;
-    int *lpCaretPos;
-    LPSTR lpClass;
-    LPWSTR lpGlyphs;
-    UINT nGlyphs;
-    int nMaxFit;
+	DWORD lStructSize;
+	LPWSTR lpOutString;
+	UINT *lpOrder;
+	int *lpDx;
+	int *lpCaretPos;
+	LPSTR lpClass;
+	LPWSTR lpGlyphs;
+	UINT nGlyphs;
+	int nMaxFit;
 } GCP_RESULTSW, *LPGCP_RESULTSW;
 #ifdef UNICODE
 typedef GCP_RESULTSW GCP_RESULTS;
@@ -2254,41 +2254,41 @@ typedef LPGCP_RESULTSA LPGCP_RESULTS;
 #endif
 
 typedef struct _RASTERIZER_STATUS {
-    short nSize;
-    short wFlags;
-    short nLanguageID;
+	short nSize;
+	short wFlags;
+	short nLanguageID;
 } RASTERIZER_STATUS, *LPRASTERIZER_STATUS;
 
 #define TT_AVAILABLE 0x0001
 #define TT_ENABLED 0x0002
 
 typedef struct tagPIXELFORMATDESCRIPTOR {
-    WORD nSize;
-    WORD nVersion;
-    DWORD dwFlags;
-    BYTE iPixelType;
-    BYTE cColorBits;
-    BYTE cRedBits;
-    BYTE cRedShift;
-    BYTE cGreenBits;
-    BYTE cGreenShift;
-    BYTE cBlueBits;
-    BYTE cBlueShift;
-    BYTE cAlphaBits;
-    BYTE cAlphaShift;
-    BYTE cAccumBits;
-    BYTE cAccumRedBits;
-    BYTE cAccumGreenBits;
-    BYTE cAccumBlueBits;
-    BYTE cAccumAlphaBits;
-    BYTE cDepthBits;
-    BYTE cStencilBits;
-    BYTE cAuxBuffers;
-    BYTE iLayerType;
-    BYTE bReserved;
-    DWORD dwLayerMask;
-    DWORD dwVisibleMask;
-    DWORD dwDamageMask;
+	WORD nSize;
+	WORD nVersion;
+	DWORD dwFlags;
+	BYTE iPixelType;
+	BYTE cColorBits;
+	BYTE cRedBits;
+	BYTE cRedShift;
+	BYTE cGreenBits;
+	BYTE cGreenShift;
+	BYTE cBlueBits;
+	BYTE cBlueShift;
+	BYTE cAlphaBits;
+	BYTE cAlphaShift;
+	BYTE cAccumBits;
+	BYTE cAccumRedBits;
+	BYTE cAccumGreenBits;
+	BYTE cAccumBlueBits;
+	BYTE cAccumAlphaBits;
+	BYTE cDepthBits;
+	BYTE cStencilBits;
+	BYTE cAuxBuffers;
+	BYTE iLayerType;
+	BYTE bReserved;
+	DWORD dwLayerMask;
+	DWORD dwVisibleMask;
+	DWORD dwDamageMask;
 } PIXELFORMATDESCRIPTOR, *PPIXELFORMATDESCRIPTOR, *LPPIXELFORMATDESCRIPTOR;
 
 #define PFD_TYPE_RGBA 0
@@ -2620,16 +2620,16 @@ WINGDIAPI DWORD WINAPI GetCharacterPlacementA(HDC hdc, LPCSTR lpString, int nCou
 WINGDIAPI DWORD WINAPI GetCharacterPlacementW(HDC hdc, LPCWSTR lpString, int nCount, int nMexExtent, LPGCP_RESULTSW lpResults, DWORD dwFlags);
 
 typedef struct tagWCRANGE {
-    WCHAR wcLow;
-    USHORT cGlyphs;
+	WCHAR wcLow;
+	USHORT cGlyphs;
 } WCRANGE, *PWCRANGE, *LPWCRANGE;
 
 typedef struct tagGLYPHSET {
-    DWORD cbThis;
-    DWORD flAccel;
-    DWORD cGlyphsSupported;
-    DWORD cRanges;
-    WCRANGE ranges[1];
+	DWORD cbThis;
+	DWORD flAccel;
+	DWORD cGlyphsSupported;
+	DWORD cRanges;
+	WCRANGE ranges[1];
 } GLYPHSET, *PGLYPHSET, *LPGLYPHSET;
 
 #define GS_8BIT_INDICES 0x00000001
@@ -2655,9 +2655,9 @@ WINGDIAPI WINBOOL WINAPI GetCharABCWidthsI(HDC hdc, UINT giFirst, UINT cgi, LPWO
 #define MM_MAX_NUMAXES 16
 
 typedef struct tagDESIGNVECTOR {
-    DWORD dvReserved;
-    DWORD dvNumAxes;
-    LONG dvValues[MM_MAX_NUMAXES];
+	DWORD dvReserved;
+	DWORD dvNumAxes;
+	LONG dvValues[MM_MAX_NUMAXES];
 } DESIGNVECTOR, *PDESIGNVECTOR, *LPDESIGNVECTOR;
 
 #ifdef UNICODE
@@ -2681,15 +2681,15 @@ WINGDIAPI WINBOOL WINAPI RemoveFontMemResourceEx(HANDLE h);
 #define MM_MAX_AXES_NAMELEN 16
 
 typedef struct tagAXISINFOA {
-    LONG axMinValue;
-    LONG axMaxValue;
-    BYTE axAxisName[MM_MAX_AXES_NAMELEN];
+	LONG axMinValue;
+	LONG axMaxValue;
+	BYTE axAxisName[MM_MAX_AXES_NAMELEN];
 } AXISINFOA, *PAXISINFOA, *LPAXISINFOA;
 
 typedef struct tagAXISINFOW {
-    LONG axMinValue;
-    LONG axMaxValue;
-    WCHAR axAxisName[MM_MAX_AXES_NAMELEN];
+	LONG axMinValue;
+	LONG axMaxValue;
+	WCHAR axAxisName[MM_MAX_AXES_NAMELEN];
 } AXISINFOW, *PAXISINFOW, *LPAXISINFOW;
 #ifdef UNICODE
 typedef AXISINFOW AXISINFO;
@@ -2702,15 +2702,15 @@ typedef LPAXISINFOA LPAXISINFO;
 #endif
 
 typedef struct tagAXESLISTA {
-    DWORD axlReserved;
-    DWORD axlNumAxes;
-    AXISINFOA axlAxisInfo[MM_MAX_NUMAXES];
+	DWORD axlReserved;
+	DWORD axlNumAxes;
+	AXISINFOA axlAxisInfo[MM_MAX_NUMAXES];
 } AXESLISTA, *PAXESLISTA, *LPAXESLISTA;
 
 typedef struct tagAXESLISTW {
-    DWORD axlReserved;
-    DWORD axlNumAxes;
-    AXISINFOW axlAxisInfo[MM_MAX_NUMAXES];
+	DWORD axlReserved;
+	DWORD axlNumAxes;
+	AXISINFOW axlAxisInfo[MM_MAX_NUMAXES];
 } AXESLISTW, *PAXESLISTW, *LPAXESLISTW;
 #ifdef UNICODE
 typedef AXESLISTW AXESLIST;
@@ -2723,13 +2723,13 @@ typedef LPAXESLISTA LPAXESLIST;
 #endif
 
 typedef struct tagENUMLOGFONTEXDVA {
-    ENUMLOGFONTEXA elfEnumLogfontEx;
-    DESIGNVECTOR elfDesignVector;
+	ENUMLOGFONTEXA elfEnumLogfontEx;
+	DESIGNVECTOR elfDesignVector;
 } ENUMLOGFONTEXDVA, *PENUMLOGFONTEXDVA, *LPENUMLOGFONTEXDVA;
 
 typedef struct tagENUMLOGFONTEXDVW {
-    ENUMLOGFONTEXW elfEnumLogfontEx;
-    DESIGNVECTOR elfDesignVector;
+	ENUMLOGFONTEXW elfEnumLogfontEx;
+	DESIGNVECTOR elfDesignVector;
 } ENUMLOGFONTEXDVW, *PENUMLOGFONTEXDVW, *LPENUMLOGFONTEXDVW;
 #ifdef UNICODE
 typedef ENUMLOGFONTEXDVW ENUMLOGFONTEXDV;
@@ -2752,12 +2752,12 @@ WINGDIAPI HFONT WINAPI CreateFontIndirectExW(CONST ENUMLOGFONTEXDVW *);
 
 #ifndef NOTEXTMETRIC
 typedef struct tagENUMTEXTMETRICA {
-    NEWTEXTMETRICEXA etmNewTextMetricEx;
-    AXESLISTA etmAxesList;
+	NEWTEXTMETRICEXA etmNewTextMetricEx;
+	AXESLISTA etmAxesList;
 } ENUMTEXTMETRICA, *PENUMTEXTMETRICA, *LPENUMTEXTMETRICA;
 typedef struct tagENUMTEXTMETRICW {
-    NEWTEXTMETRICEXW etmNewTextMetricEx;
-    AXESLISTW etmAxesList;
+	NEWTEXTMETRICEXW etmNewTextMetricEx;
+	AXESLISTW etmAxesList;
 } ENUMTEXTMETRICW, *PENUMTEXTMETRICW, *LPENUMTEXTMETRICW;
 #ifdef UNICODE
 typedef ENUMTEXTMETRICW ENUMTEXTMETRIC;
@@ -2848,30 +2848,30 @@ WINGDIAPI WINBOOL WINAPI UpdateColors(HDC hdc);
 typedef USHORT COLOR16;
 
 typedef struct _TRIVERTEX {
-    LONG x;
-    LONG y;
-    COLOR16 Red;
-    COLOR16 Green;
-    COLOR16 Blue;
-    COLOR16 Alpha;
+	LONG x;
+	LONG y;
+	COLOR16 Red;
+	COLOR16 Green;
+	COLOR16 Blue;
+	COLOR16 Alpha;
 } TRIVERTEX, *PTRIVERTEX, *LPTRIVERTEX;
 
 typedef struct _GRADIENT_TRIANGLE {
-    ULONG Vertex1;
-    ULONG Vertex2;
-    ULONG Vertex3;
+	ULONG Vertex1;
+	ULONG Vertex2;
+	ULONG Vertex3;
 } GRADIENT_TRIANGLE, *PGRADIENT_TRIANGLE, *LPGRADIENT_TRIANGLE;
 
 typedef struct _GRADIENT_RECT {
-    ULONG UpperLeft;
-    ULONG LowerRight;
+	ULONG UpperLeft;
+	ULONG LowerRight;
 } GRADIENT_RECT, *PGRADIENT_RECT, *LPGRADIENT_RECT;
 
 typedef struct _BLENDFUNCTION {
-    BYTE BlendOp;
-    BYTE BlendFlags;
-    BYTE SourceConstantAlpha;
-    BYTE AlphaFormat;
+	BYTE BlendOp;
+	BYTE BlendFlags;
+	BYTE SourceConstantAlpha;
+	BYTE AlphaFormat;
 } BLENDFUNCTION, *PBLENDFUNCTION;
 
 #define AC_SRC_OVER 0x00
@@ -2944,11 +2944,11 @@ WINGDIAPI WINBOOL WINAPI GetTextMetricsW(HDC hdc, LPTEXTMETRICW lptm);
 #endif
 
 typedef struct tagDIBSECTION {
-    BITMAP dsBm;
-    BITMAPINFOHEADER dsBmih;
-    DWORD dsBitfields[3];
-    HANDLE dshSection;
-    DWORD dsOffset;
+	BITMAP dsBm;
+	BITMAPINFOHEADER dsBmih;
+	DWORD dsBitfields[3];
+	HANDLE dshSection;
+	DWORD dsOffset;
 } DIBSECTION, *LPDIBSECTION, *PDIBSECTION;
 
 WINGDIAPI WINBOOL WINAPI AngleArc(HDC hdc, int x, int y, DWORD r, FLOAT StartAngle, FLOAT SweepAngle);
@@ -2992,18 +2992,18 @@ WINGDIAPI UINT WINAPI SetDIBColorTable(HDC hdc, UINT iStart, UINT cEntries, CONS
 #define COLOR_ADJ_MAX (SHORT)100
 
 typedef struct tagCOLORADJUSTMENT {
-    WORD caSize;
-    WORD caFlags;
-    WORD caIlluminantIndex;
-    WORD caRedGamma;
-    WORD caGreenGamma;
-    WORD caBlueGamma;
-    WORD caReferenceBlack;
-    WORD caReferenceWhite;
-    SHORT caContrast;
-    SHORT caBrightness;
-    SHORT caColorfulness;
-    SHORT caRedGreenTint;
+	WORD caSize;
+	WORD caFlags;
+	WORD caIlluminantIndex;
+	WORD caRedGamma;
+	WORD caGreenGamma;
+	WORD caBlueGamma;
+	WORD caReferenceBlack;
+	WORD caReferenceWhite;
+	SHORT caContrast;
+	SHORT caBrightness;
+	SHORT caColorfulness;
+	SHORT caRedGreenTint;
 } COLORADJUSTMENT, *PCOLORADJUSTMENT, *LPCOLORADJUSTMENT;
 
 WINGDIAPI WINBOOL WINAPI SetColorAdjustment(HDC hdc, CONST COLORADJUSTMENT *lpca);
@@ -3013,19 +3013,19 @@ WINGDIAPI HPALETTE WINAPI CreateHalftonePalette(HDC hdc);
 typedef WINBOOL(CALLBACK *ABORTPROC)(HDC, int);
 
 typedef struct _DOCINFOA {
-    int cbSize;
-    LPCSTR lpszDocName;
-    LPCSTR lpszOutput;
-    LPCSTR lpszDatatype;
-    DWORD fwType;
+	int cbSize;
+	LPCSTR lpszDocName;
+	LPCSTR lpszOutput;
+	LPCSTR lpszDatatype;
+	DWORD fwType;
 } DOCINFOA, *LPDOCINFOA;
 
 typedef struct _DOCINFOW {
-    int cbSize;
-    LPCWSTR lpszDocName;
-    LPCWSTR lpszOutput;
-    LPCWSTR lpszDatatype;
-    DWORD fwType;
+	int cbSize;
+	LPCWSTR lpszDocName;
+	LPCWSTR lpszOutput;
+	LPCWSTR lpszDatatype;
+	DWORD fwType;
 } DOCINFOW, *LPDOCINFOW;
 
 #ifdef UNICODE
@@ -3114,9 +3114,9 @@ WINGDIAPI int WINAPI GetTextFaceW(HDC hdc, int c, LPWSTR lpName);
 #define FONTMAPPER_MAX 10
 
 typedef struct tagKERNINGPAIR {
-    WORD wFirst;
-    WORD wSecond;
-    int iKernAmount;
+	WORD wFirst;
+	WORD wSecond;
+	int iKernAmount;
 } KERNINGPAIR, *LPKERNINGPAIR;
 
 #ifdef UNICODE
@@ -3316,605 +3316,605 @@ WINGDIAPI WINBOOL WINAPI ColorCorrectPalette(HDC hdc, HPALETTE hPal, DWORD deFir
 #define EMR_MAX 122
 
 typedef struct tagEMR {
-    DWORD iType;
-    DWORD nSize;
+	DWORD iType;
+	DWORD nSize;
 } EMR, *PEMR;
 
 typedef struct tagEMRTEXT {
-    POINTL ptlReference;
-    DWORD nChars;
-    DWORD offString;
-    DWORD fOptions;
-    RECTL rcl;
-    DWORD offDx;
+	POINTL ptlReference;
+	DWORD nChars;
+	DWORD offString;
+	DWORD fOptions;
+	RECTL rcl;
+	DWORD offDx;
 } EMRTEXT, *PEMRTEXT;
 
 typedef struct tagABORTPATH {
-    EMR emr;
+	EMR emr;
 } EMRABORTPATH, *PEMRABORTPATH, EMRBEGINPATH, *PEMRBEGINPATH, EMRENDPATH, *PEMRENDPATH, EMRCLOSEFIGURE, *PEMRCLOSEFIGURE, EMRFLATTENPATH, *PEMRFLATTENPATH, EMRWIDENPATH, *PEMRWIDENPATH, EMRSETMETARGN, *PEMRSETMETARGN, EMRSAVEDC, *PEMRSAVEDC, EMRREALIZEPALETTE, *PEMRREALIZEPALETTE;
 
 typedef struct tagEMRSELECTCLIPPATH {
-    EMR emr;
-    DWORD iMode;
+	EMR emr;
+	DWORD iMode;
 } EMRSELECTCLIPPATH, *PEMRSELECTCLIPPATH, EMRSETBKMODE, *PEMRSETBKMODE, EMRSETMAPMODE, *PEMRSETMAPMODE, EMRSETLAYOUT, *PEMRSETLAYOUT,
-    EMRSETPOLYFILLMODE, *PEMRSETPOLYFILLMODE, EMRSETROP2, *PEMRSETROP2, EMRSETSTRETCHBLTMODE, *PEMRSETSTRETCHBLTMODE, EMRSETICMMODE,
-    *PEMRSETICMMODE, EMRSETTEXTALIGN, *PEMRSETTEXTALIGN;
+	EMRSETPOLYFILLMODE, *PEMRSETPOLYFILLMODE, EMRSETROP2, *PEMRSETROP2, EMRSETSTRETCHBLTMODE, *PEMRSETSTRETCHBLTMODE, EMRSETICMMODE,
+	*PEMRSETICMMODE, EMRSETTEXTALIGN, *PEMRSETTEXTALIGN;
 
 typedef struct tagEMRSETMITERLIMIT {
-    EMR emr;
-    FLOAT eMiterLimit;
+	EMR emr;
+	FLOAT eMiterLimit;
 } EMRSETMITERLIMIT, *PEMRSETMITERLIMIT;
 
 typedef struct tagEMRRESTOREDC {
-    EMR emr;
-    LONG iRelative;
+	EMR emr;
+	LONG iRelative;
 } EMRRESTOREDC, *PEMRRESTOREDC;
 
 typedef struct tagEMRSETARCDIRECTION {
-    EMR emr;
-    DWORD iArcDirection;
+	EMR emr;
+	DWORD iArcDirection;
 
 } EMRSETARCDIRECTION, *PEMRSETARCDIRECTION;
 
 typedef struct tagEMRSETMAPPERFLAGS {
-    EMR emr;
-    DWORD dwFlags;
+	EMR emr;
+	DWORD dwFlags;
 } EMRSETMAPPERFLAGS, *PEMRSETMAPPERFLAGS;
 
 typedef struct tagEMRSETTEXTCOLOR {
-    EMR emr;
-    COLORREF crColor;
+	EMR emr;
+	COLORREF crColor;
 } EMRSETBKCOLOR, *PEMRSETBKCOLOR, EMRSETTEXTCOLOR, *PEMRSETTEXTCOLOR;
 
 typedef struct tagEMRSELECTOBJECT {
-    EMR emr;
-    DWORD ihObject;
+	EMR emr;
+	DWORD ihObject;
 } EMRSELECTOBJECT, *PEMRSELECTOBJECT, EMRDELETEOBJECT, *PEMRDELETEOBJECT;
 
 typedef struct tagEMRSELECTPALETTE {
-    EMR emr;
-    DWORD ihPal;
+	EMR emr;
+	DWORD ihPal;
 } EMRSELECTPALETTE, *PEMRSELECTPALETTE;
 
 typedef struct tagEMRRESIZEPALETTE {
-    EMR emr;
-    DWORD ihPal;
-    DWORD cEntries;
+	EMR emr;
+	DWORD ihPal;
+	DWORD cEntries;
 } EMRRESIZEPALETTE, *PEMRRESIZEPALETTE;
 
 typedef struct tagEMRSETPALETTEENTRIES {
-    EMR emr;
-    DWORD ihPal;
-    DWORD iStart;
-    DWORD cEntries;
-    PALETTEENTRY aPalEntries[1];
+	EMR emr;
+	DWORD ihPal;
+	DWORD iStart;
+	DWORD cEntries;
+	PALETTEENTRY aPalEntries[1];
 } EMRSETPALETTEENTRIES, *PEMRSETPALETTEENTRIES;
 
 typedef struct tagEMRSETCOLORADJUSTMENT {
-    EMR emr;
-    COLORADJUSTMENT ColorAdjustment;
+	EMR emr;
+	COLORADJUSTMENT ColorAdjustment;
 } EMRSETCOLORADJUSTMENT, *PEMRSETCOLORADJUSTMENT;
 
 typedef struct tagEMRGDICOMMENT {
-    EMR emr;
-    DWORD cbData;
-    BYTE Data[1];
+	EMR emr;
+	DWORD cbData;
+	BYTE Data[1];
 } EMRGDICOMMENT, *PEMRGDICOMMENT;
 
 typedef struct tagEMREOF {
-    EMR emr;
-    DWORD nPalEntries;
-    DWORD offPalEntries;
-    DWORD nSizeLast;
+	EMR emr;
+	DWORD nPalEntries;
+	DWORD offPalEntries;
+	DWORD nSizeLast;
 } EMREOF, *PEMREOF;
 
 typedef struct tagEMRLINETO {
-    EMR emr;
-    POINTL ptl;
+	EMR emr;
+	POINTL ptl;
 } EMRLINETO, *PEMRLINETO, EMRMOVETOEX, *PEMRMOVETOEX;
 
 typedef struct tagEMROFFSETCLIPRGN {
-    EMR emr;
-    POINTL ptlOffset;
+	EMR emr;
+	POINTL ptlOffset;
 } EMROFFSETCLIPRGN, *PEMROFFSETCLIPRGN;
 
 typedef struct tagEMRFILLPATH {
-    EMR emr;
-    RECTL rclBounds;
+	EMR emr;
+	RECTL rclBounds;
 } EMRFILLPATH, *PEMRFILLPATH, EMRSTROKEANDFILLPATH, *PEMRSTROKEANDFILLPATH, EMRSTROKEPATH, *PEMRSTROKEPATH;
 
 typedef struct tagEMREXCLUDECLIPRECT {
-    EMR emr;
-    RECTL rclClip;
+	EMR emr;
+	RECTL rclClip;
 } EMREXCLUDECLIPRECT, *PEMREXCLUDECLIPRECT, EMRINTERSECTCLIPRECT, *PEMRINTERSECTCLIPRECT;
 
 typedef struct tagEMRSETVIEWPORTORGEX {
-    EMR emr;
-    POINTL ptlOrigin;
+	EMR emr;
+	POINTL ptlOrigin;
 } EMRSETVIEWPORTORGEX, *PEMRSETVIEWPORTORGEX, EMRSETWINDOWORGEX, *PEMRSETWINDOWORGEX, EMRSETBRUSHORGEX, *PEMRSETBRUSHORGEX;
 
 typedef struct tagEMRSETVIEWPORTEXTEX {
-    EMR emr;
-    SIZEL szlExtent;
+	EMR emr;
+	SIZEL szlExtent;
 } EMRSETVIEWPORTEXTEX, *PEMRSETVIEWPORTEXTEX, EMRSETWINDOWEXTEX, *PEMRSETWINDOWEXTEX;
 
 typedef struct tagEMRSCALEVIEWPORTEXTEX {
-    EMR emr;
-    LONG xNum;
-    LONG xDenom;
-    LONG yNum;
-    LONG yDenom;
+	EMR emr;
+	LONG xNum;
+	LONG xDenom;
+	LONG yNum;
+	LONG yDenom;
 } EMRSCALEVIEWPORTEXTEX, *PEMRSCALEVIEWPORTEXTEX, EMRSCALEWINDOWEXTEX, *PEMRSCALEWINDOWEXTEX;
 
 typedef struct tagEMRSETWORLDTRANSFORM {
-    EMR emr;
-    XFORM xform;
+	EMR emr;
+	XFORM xform;
 } EMRSETWORLDTRANSFORM, *PEMRSETWORLDTRANSFORM;
 
 typedef struct tagEMRMODIFYWORLDTRANSFORM {
-    EMR emr;
-    XFORM xform;
-    DWORD iMode;
+	EMR emr;
+	XFORM xform;
+	DWORD iMode;
 } EMRMODIFYWORLDTRANSFORM, *PEMRMODIFYWORLDTRANSFORM;
 
 typedef struct tagEMRSETPIXELV {
-    EMR emr;
-    POINTL ptlPixel;
-    COLORREF crColor;
+	EMR emr;
+	POINTL ptlPixel;
+	COLORREF crColor;
 } EMRSETPIXELV, *PEMRSETPIXELV;
 
 typedef struct tagEMREXTFLOODFILL {
-    EMR emr;
-    POINTL ptlStart;
-    COLORREF crColor;
-    DWORD iMode;
+	EMR emr;
+	POINTL ptlStart;
+	COLORREF crColor;
+	DWORD iMode;
 } EMREXTFLOODFILL, *PEMREXTFLOODFILL;
 
 typedef struct tagEMRELLIPSE {
-    EMR emr;
-    RECTL rclBox;
+	EMR emr;
+	RECTL rclBox;
 } EMRELLIPSE, *PEMRELLIPSE, EMRRECTANGLE, *PEMRRECTANGLE;
 
 typedef struct tagEMRROUNDRECT {
-    EMR emr;
-    RECTL rclBox;
-    SIZEL szlCorner;
+	EMR emr;
+	RECTL rclBox;
+	SIZEL szlCorner;
 } EMRROUNDRECT, *PEMRROUNDRECT;
 
 typedef struct tagEMRARC {
-    EMR emr;
-    RECTL rclBox;
-    POINTL ptlStart;
-    POINTL ptlEnd;
+	EMR emr;
+	RECTL rclBox;
+	POINTL ptlStart;
+	POINTL ptlEnd;
 } EMRARC, *PEMRARC, EMRARCTO, *PEMRARCTO, EMRCHORD, *PEMRCHORD, EMRPIE, *PEMRPIE;
 
 typedef struct tagEMRANGLEARC {
-    EMR emr;
-    POINTL ptlCenter;
-    DWORD nRadius;
-    FLOAT eStartAngle;
-    FLOAT eSweepAngle;
+	EMR emr;
+	POINTL ptlCenter;
+	DWORD nRadius;
+	FLOAT eStartAngle;
+	FLOAT eSweepAngle;
 } EMRANGLEARC, *PEMRANGLEARC;
 
 typedef struct tagEMRPOLYLINE {
-    EMR emr;
-    RECTL rclBounds;
-    DWORD cptl;
-    POINTL aptl[1];
+	EMR emr;
+	RECTL rclBounds;
+	DWORD cptl;
+	POINTL aptl[1];
 } EMRPOLYLINE, *PEMRPOLYLINE, EMRPOLYBEZIER, *PEMRPOLYBEZIER, EMRPOLYGON, *PEMRPOLYGON, EMRPOLYBEZIERTO, *PEMRPOLYBEZIERTO, EMRPOLYLINETO, *PEMRPOLYLINETO;
 
 typedef struct tagEMRPOLYLINE16 {
-    EMR emr;
-    RECTL rclBounds;
-    DWORD cpts;
-    POINTS apts[1];
+	EMR emr;
+	RECTL rclBounds;
+	DWORD cpts;
+	POINTS apts[1];
 } EMRPOLYLINE16, *PEMRPOLYLINE16, EMRPOLYBEZIER16, *PEMRPOLYBEZIER16, EMRPOLYGON16, *PEMRPOLYGON16, EMRPOLYBEZIERTO16, *PEMRPOLYBEZIERTO16, EMRPOLYLINETO16, *PEMRPOLYLINETO16;
 
 typedef struct tagEMRPOLYDRAW {
-    EMR emr;
-    RECTL rclBounds;
-    DWORD cptl;
-    POINTL aptl[1];
-    BYTE abTypes[1];
+	EMR emr;
+	RECTL rclBounds;
+	DWORD cptl;
+	POINTL aptl[1];
+	BYTE abTypes[1];
 } EMRPOLYDRAW, *PEMRPOLYDRAW;
 
 typedef struct tagEMRPOLYDRAW16 {
-    EMR emr;
-    RECTL rclBounds;
-    DWORD cpts;
-    POINTS apts[1];
-    BYTE abTypes[1];
+	EMR emr;
+	RECTL rclBounds;
+	DWORD cpts;
+	POINTS apts[1];
+	BYTE abTypes[1];
 } EMRPOLYDRAW16, *PEMRPOLYDRAW16;
 
 typedef struct tagEMRPOLYPOLYLINE {
-    EMR emr;
-    RECTL rclBounds;
-    DWORD nPolys;
-    DWORD cptl;
-    DWORD aPolyCounts[1];
-    POINTL aptl[1];
+	EMR emr;
+	RECTL rclBounds;
+	DWORD nPolys;
+	DWORD cptl;
+	DWORD aPolyCounts[1];
+	POINTL aptl[1];
 } EMRPOLYPOLYLINE, *PEMRPOLYPOLYLINE, EMRPOLYPOLYGON, *PEMRPOLYPOLYGON;
 
 typedef struct tagEMRPOLYPOLYLINE16 {
-    EMR emr;
-    RECTL rclBounds;
-    DWORD nPolys;
-    DWORD cpts;
-    DWORD aPolyCounts[1];
-    POINTS apts[1];
+	EMR emr;
+	RECTL rclBounds;
+	DWORD nPolys;
+	DWORD cpts;
+	DWORD aPolyCounts[1];
+	POINTS apts[1];
 } EMRPOLYPOLYLINE16, *PEMRPOLYPOLYLINE16, EMRPOLYPOLYGON16, *PEMRPOLYPOLYGON16;
 
 typedef struct tagEMRINVERTRGN {
-    EMR emr;
-    RECTL rclBounds;
-    DWORD cbRgnData;
-    BYTE RgnData[1];
+	EMR emr;
+	RECTL rclBounds;
+	DWORD cbRgnData;
+	BYTE RgnData[1];
 } EMRINVERTRGN, *PEMRINVERTRGN, EMRPAINTRGN, *PEMRPAINTRGN;
 
 typedef struct tagEMRFILLRGN {
-    EMR emr;
-    RECTL rclBounds;
-    DWORD cbRgnData;
-    DWORD ihBrush;
-    BYTE RgnData[1];
+	EMR emr;
+	RECTL rclBounds;
+	DWORD cbRgnData;
+	DWORD ihBrush;
+	BYTE RgnData[1];
 } EMRFILLRGN, *PEMRFILLRGN;
 
 typedef struct tagEMRFRAMERGN {
-    EMR emr;
-    RECTL rclBounds;
-    DWORD cbRgnData;
-    DWORD ihBrush;
-    SIZEL szlStroke;
-    BYTE RgnData[1];
+	EMR emr;
+	RECTL rclBounds;
+	DWORD cbRgnData;
+	DWORD ihBrush;
+	SIZEL szlStroke;
+	BYTE RgnData[1];
 } EMRFRAMERGN, *PEMRFRAMERGN;
 
 typedef struct tagEMREXTSELECTCLIPRGN {
-    EMR emr;
-    DWORD cbRgnData;
-    DWORD iMode;
-    BYTE RgnData[1];
+	EMR emr;
+	DWORD cbRgnData;
+	DWORD iMode;
+	BYTE RgnData[1];
 } EMREXTSELECTCLIPRGN, *PEMREXTSELECTCLIPRGN;
 
 typedef struct tagEMREXTTEXTOUTA {
-    EMR emr;
-    RECTL rclBounds;
-    DWORD iGraphicsMode;
-    FLOAT exScale;
-    FLOAT eyScale;
-    EMRTEXT emrtext;
+	EMR emr;
+	RECTL rclBounds;
+	DWORD iGraphicsMode;
+	FLOAT exScale;
+	FLOAT eyScale;
+	EMRTEXT emrtext;
 } EMREXTTEXTOUTA, *PEMREXTTEXTOUTA, EMREXTTEXTOUTW, *PEMREXTTEXTOUTW;
 
 typedef struct tagEMRPOLYTEXTOUTA {
-    EMR emr;
-    RECTL rclBounds;
-    DWORD iGraphicsMode;
-    FLOAT exScale;
-    FLOAT eyScale;
-    LONG cStrings;
-    EMRTEXT aemrtext[1];
+	EMR emr;
+	RECTL rclBounds;
+	DWORD iGraphicsMode;
+	FLOAT exScale;
+	FLOAT eyScale;
+	LONG cStrings;
+	EMRTEXT aemrtext[1];
 } EMRPOLYTEXTOUTA, *PEMRPOLYTEXTOUTA, EMRPOLYTEXTOUTW, *PEMRPOLYTEXTOUTW;
 
 typedef struct tagEMRBITBLT {
-    EMR emr;
-    RECTL rclBounds;
-    LONG xDest;
-    LONG yDest;
-    LONG cxDest;
-    LONG cyDest;
-    DWORD dwRop;
-    LONG xSrc;
-    LONG ySrc;
-    XFORM xformSrc;
-    COLORREF crBkColorSrc;
-    DWORD iUsageSrc;
-    DWORD offBmiSrc;
-    DWORD cbBmiSrc;
-    DWORD offBitsSrc;
-    DWORD cbBitsSrc;
+	EMR emr;
+	RECTL rclBounds;
+	LONG xDest;
+	LONG yDest;
+	LONG cxDest;
+	LONG cyDest;
+	DWORD dwRop;
+	LONG xSrc;
+	LONG ySrc;
+	XFORM xformSrc;
+	COLORREF crBkColorSrc;
+	DWORD iUsageSrc;
+	DWORD offBmiSrc;
+	DWORD cbBmiSrc;
+	DWORD offBitsSrc;
+	DWORD cbBitsSrc;
 } EMRBITBLT, *PEMRBITBLT;
 
 typedef struct tagEMRSTRETCHBLT {
-    EMR emr;
-    RECTL rclBounds;
-    LONG xDest;
-    LONG yDest;
-    LONG cxDest;
-    LONG cyDest;
-    DWORD dwRop;
-    LONG xSrc;
-    LONG ySrc;
-    XFORM xformSrc;
-    COLORREF crBkColorSrc;
-    DWORD iUsageSrc;
-    DWORD offBmiSrc;
-    DWORD cbBmiSrc;
-    DWORD offBitsSrc;
-    DWORD cbBitsSrc;
-    LONG cxSrc;
-    LONG cySrc;
+	EMR emr;
+	RECTL rclBounds;
+	LONG xDest;
+	LONG yDest;
+	LONG cxDest;
+	LONG cyDest;
+	DWORD dwRop;
+	LONG xSrc;
+	LONG ySrc;
+	XFORM xformSrc;
+	COLORREF crBkColorSrc;
+	DWORD iUsageSrc;
+	DWORD offBmiSrc;
+	DWORD cbBmiSrc;
+	DWORD offBitsSrc;
+	DWORD cbBitsSrc;
+	LONG cxSrc;
+	LONG cySrc;
 } EMRSTRETCHBLT, *PEMRSTRETCHBLT;
 
 typedef struct tagEMRMASKBLT {
-    EMR emr;
-    RECTL rclBounds;
-    LONG xDest;
-    LONG yDest;
-    LONG cxDest;
-    LONG cyDest;
-    DWORD dwRop;
-    LONG xSrc;
-    LONG ySrc;
-    XFORM xformSrc;
-    COLORREF crBkColorSrc;
-    DWORD iUsageSrc;
-    DWORD offBmiSrc;
-    DWORD cbBmiSrc;
-    DWORD offBitsSrc;
-    DWORD cbBitsSrc;
-    LONG xMask;
-    LONG yMask;
-    DWORD iUsageMask;
-    DWORD offBmiMask;
-    DWORD cbBmiMask;
-    DWORD offBitsMask;
-    DWORD cbBitsMask;
+	EMR emr;
+	RECTL rclBounds;
+	LONG xDest;
+	LONG yDest;
+	LONG cxDest;
+	LONG cyDest;
+	DWORD dwRop;
+	LONG xSrc;
+	LONG ySrc;
+	XFORM xformSrc;
+	COLORREF crBkColorSrc;
+	DWORD iUsageSrc;
+	DWORD offBmiSrc;
+	DWORD cbBmiSrc;
+	DWORD offBitsSrc;
+	DWORD cbBitsSrc;
+	LONG xMask;
+	LONG yMask;
+	DWORD iUsageMask;
+	DWORD offBmiMask;
+	DWORD cbBmiMask;
+	DWORD offBitsMask;
+	DWORD cbBitsMask;
 } EMRMASKBLT, *PEMRMASKBLT;
 
 typedef struct tagEMRPLGBLT {
-    EMR emr;
-    RECTL rclBounds;
-    POINTL aptlDest[3];
-    LONG xSrc;
-    LONG ySrc;
-    LONG cxSrc;
-    LONG cySrc;
-    XFORM xformSrc;
-    COLORREF crBkColorSrc;
-    DWORD iUsageSrc;
-    DWORD offBmiSrc;
-    DWORD cbBmiSrc;
-    DWORD offBitsSrc;
-    DWORD cbBitsSrc;
-    LONG xMask;
-    LONG yMask;
-    DWORD iUsageMask;
-    DWORD offBmiMask;
-    DWORD cbBmiMask;
-    DWORD offBitsMask;
-    DWORD cbBitsMask;
+	EMR emr;
+	RECTL rclBounds;
+	POINTL aptlDest[3];
+	LONG xSrc;
+	LONG ySrc;
+	LONG cxSrc;
+	LONG cySrc;
+	XFORM xformSrc;
+	COLORREF crBkColorSrc;
+	DWORD iUsageSrc;
+	DWORD offBmiSrc;
+	DWORD cbBmiSrc;
+	DWORD offBitsSrc;
+	DWORD cbBitsSrc;
+	LONG xMask;
+	LONG yMask;
+	DWORD iUsageMask;
+	DWORD offBmiMask;
+	DWORD cbBmiMask;
+	DWORD offBitsMask;
+	DWORD cbBitsMask;
 } EMRPLGBLT, *PEMRPLGBLT;
 
 typedef struct tagEMRSETDIBITSTODEVICE {
-    EMR emr;
-    RECTL rclBounds;
-    LONG xDest;
-    LONG yDest;
-    LONG xSrc;
-    LONG ySrc;
-    LONG cxSrc;
-    LONG cySrc;
-    DWORD offBmiSrc;
-    DWORD cbBmiSrc;
-    DWORD offBitsSrc;
-    DWORD cbBitsSrc;
-    DWORD iUsageSrc;
-    DWORD iStartScan;
-    DWORD cScans;
+	EMR emr;
+	RECTL rclBounds;
+	LONG xDest;
+	LONG yDest;
+	LONG xSrc;
+	LONG ySrc;
+	LONG cxSrc;
+	LONG cySrc;
+	DWORD offBmiSrc;
+	DWORD cbBmiSrc;
+	DWORD offBitsSrc;
+	DWORD cbBitsSrc;
+	DWORD iUsageSrc;
+	DWORD iStartScan;
+	DWORD cScans;
 } EMRSETDIBITSTODEVICE, *PEMRSETDIBITSTODEVICE;
 
 typedef struct tagEMRSTRETCHDIBITS {
-    EMR emr;
-    RECTL rclBounds;
-    LONG xDest;
-    LONG yDest;
-    LONG xSrc;
-    LONG ySrc;
-    LONG cxSrc;
-    LONG cySrc;
-    DWORD offBmiSrc;
-    DWORD cbBmiSrc;
-    DWORD offBitsSrc;
-    DWORD cbBitsSrc;
-    DWORD iUsageSrc;
-    DWORD dwRop;
-    LONG cxDest;
-    LONG cyDest;
+	EMR emr;
+	RECTL rclBounds;
+	LONG xDest;
+	LONG yDest;
+	LONG xSrc;
+	LONG ySrc;
+	LONG cxSrc;
+	LONG cySrc;
+	DWORD offBmiSrc;
+	DWORD cbBmiSrc;
+	DWORD offBitsSrc;
+	DWORD cbBitsSrc;
+	DWORD iUsageSrc;
+	DWORD dwRop;
+	LONG cxDest;
+	LONG cyDest;
 } EMRSTRETCHDIBITS, *PEMRSTRETCHDIBITS;
 
 typedef struct tagEMREXTCREATEFONTINDIRECTW {
-    EMR emr;
-    DWORD ihFont;
-    EXTLOGFONTW elfw;
+	EMR emr;
+	DWORD ihFont;
+	EXTLOGFONTW elfw;
 } EMREXTCREATEFONTINDIRECTW, *PEMREXTCREATEFONTINDIRECTW;
 
 typedef struct tagEMRCREATEPALETTE {
-    EMR emr;
-    DWORD ihPal;
-    LOGPALETTE lgpl;
+	EMR emr;
+	DWORD ihPal;
+	LOGPALETTE lgpl;
 } EMRCREATEPALETTE, *PEMRCREATEPALETTE;
 
 typedef struct tagEMRCREATEPEN {
-    EMR emr;
-    DWORD ihPen;
-    LOGPEN lopn;
+	EMR emr;
+	DWORD ihPen;
+	LOGPEN lopn;
 } EMRCREATEPEN, *PEMRCREATEPEN;
 
 typedef struct tagEMREXTCREATEPEN {
-    EMR emr;
-    DWORD ihPen;
-    DWORD offBmi;
-    DWORD cbBmi;
-    DWORD offBits;
-    DWORD cbBits;
-    EXTLOGPEN elp;
+	EMR emr;
+	DWORD ihPen;
+	DWORD offBmi;
+	DWORD cbBmi;
+	DWORD offBits;
+	DWORD cbBits;
+	EXTLOGPEN elp;
 } EMREXTCREATEPEN, *PEMREXTCREATEPEN;
 
 typedef struct tagEMRCREATEBRUSHINDIRECT {
-    EMR emr;
-    DWORD ihBrush;
-    LOGBRUSH32 lb;
+	EMR emr;
+	DWORD ihBrush;
+	LOGBRUSH32 lb;
 } EMRCREATEBRUSHINDIRECT, *PEMRCREATEBRUSHINDIRECT;
 
 typedef struct tagEMRCREATEMONOBRUSH {
-    EMR emr;
-    DWORD ihBrush;
-    DWORD iUsage;
-    DWORD offBmi;
-    DWORD cbBmi;
-    DWORD offBits;
-    DWORD cbBits;
+	EMR emr;
+	DWORD ihBrush;
+	DWORD iUsage;
+	DWORD offBmi;
+	DWORD cbBmi;
+	DWORD offBits;
+	DWORD cbBits;
 } EMRCREATEMONOBRUSH, *PEMRCREATEMONOBRUSH;
 
 typedef struct tagEMRCREATEDIBPATTERNBRUSHPT {
-    EMR emr;
-    DWORD ihBrush;
-    DWORD iUsage;
-    DWORD offBmi;
-    DWORD cbBmi;
-    DWORD offBits;
-    DWORD cbBits;
+	EMR emr;
+	DWORD ihBrush;
+	DWORD iUsage;
+	DWORD offBmi;
+	DWORD cbBmi;
+	DWORD offBits;
+	DWORD cbBits;
 } EMRCREATEDIBPATTERNBRUSHPT, *PEMRCREATEDIBPATTERNBRUSHPT;
 
 typedef struct tagEMRFORMAT {
-    DWORD dSignature;
-    DWORD nVersion;
-    DWORD cbData;
-    DWORD offData;
+	DWORD dSignature;
+	DWORD nVersion;
+	DWORD cbData;
+	DWORD offData;
 } EMRFORMAT, *PEMRFORMAT;
 
 typedef struct tagEMRGLSRECORD {
-    EMR emr;
-    DWORD cbData;
-    BYTE Data[1];
+	EMR emr;
+	DWORD cbData;
+	BYTE Data[1];
 } EMRGLSRECORD, *PEMRGLSRECORD;
 
 typedef struct tagEMRGLSBOUNDEDRECORD {
-    EMR emr;
-    RECTL rclBounds;
-    DWORD cbData;
-    BYTE Data[1];
+	EMR emr;
+	RECTL rclBounds;
+	DWORD cbData;
+	BYTE Data[1];
 } EMRGLSBOUNDEDRECORD, *PEMRGLSBOUNDEDRECORD;
 
 typedef struct tagEMRPIXELFORMAT {
-    EMR emr;
-    PIXELFORMATDESCRIPTOR pfd;
+	EMR emr;
+	PIXELFORMATDESCRIPTOR pfd;
 } EMRPIXELFORMAT, *PEMRPIXELFORMAT;
 
 typedef struct tagEMRCREATECOLORSPACE {
-    EMR emr;
-    DWORD ihCS;
-    LOGCOLORSPACEA lcs;
+	EMR emr;
+	DWORD ihCS;
+	LOGCOLORSPACEA lcs;
 } EMRCREATECOLORSPACE, *PEMRCREATECOLORSPACE;
 
 typedef struct tagEMRSETCOLORSPACE {
-    EMR emr;
-    DWORD ihCS;
+	EMR emr;
+	DWORD ihCS;
 } EMRSETCOLORSPACE, *PEMRSETCOLORSPACE, EMRSELECTCOLORSPACE, *PEMRSELECTCOLORSPACE, EMRDELETECOLORSPACE, *PEMRDELETECOLORSPACE;
 
 typedef struct tagEMREXTESCAPE {
-    EMR emr;
-    INT iEscape;
-    INT cbEscData;
-    BYTE EscData[1];
+	EMR emr;
+	INT iEscape;
+	INT cbEscData;
+	BYTE EscData[1];
 } EMREXTESCAPE, *PEMREXTESCAPE, EMRDRAWESCAPE, *PEMRDRAWESCAPE;
 
 typedef struct tagEMRNAMEDESCAPE {
-    EMR emr;
-    INT iEscape;
-    INT cbDriver;
-    INT cbEscData;
-    BYTE EscData[1];
+	EMR emr;
+	INT iEscape;
+	INT cbDriver;
+	INT cbEscData;
+	BYTE EscData[1];
 } EMRNAMEDESCAPE, *PEMRNAMEDESCAPE;
 
 #define SETICMPROFILE_EMBEDED 0x00000001
 
 typedef struct tagEMRSETICMPROFILE {
-    EMR emr;
-    DWORD dwFlags;
-    DWORD cbName;
-    DWORD cbData;
-    BYTE Data[1];
+	EMR emr;
+	DWORD dwFlags;
+	DWORD cbName;
+	DWORD cbData;
+	BYTE Data[1];
 } EMRSETICMPROFILE, *PEMRSETICMPROFILE, EMRSETICMPROFILEA, *PEMRSETICMPROFILEA, EMRSETICMPROFILEW, *PEMRSETICMPROFILEW;
 
 #define CREATECOLORSPACE_EMBEDED 0x00000001
 
 typedef struct tagEMRCREATECOLORSPACEW {
-    EMR emr;
-    DWORD ihCS;
-    LOGCOLORSPACEW lcs;
-    DWORD dwFlags;
-    DWORD cbData;
-    BYTE Data[1];
+	EMR emr;
+	DWORD ihCS;
+	LOGCOLORSPACEW lcs;
+	DWORD dwFlags;
+	DWORD cbData;
+	BYTE Data[1];
 } EMRCREATECOLORSPACEW, *PEMRCREATECOLORSPACEW;
 
 #define COLORMATCHTOTARGET_EMBEDED 0x00000001
 
 typedef struct tagCOLORMATCHTOTARGET {
-    EMR emr;
-    DWORD dwAction;
-    DWORD dwFlags;
-    DWORD cbName;
-    DWORD cbData;
-    BYTE Data[1];
+	EMR emr;
+	DWORD dwAction;
+	DWORD dwFlags;
+	DWORD cbName;
+	DWORD cbData;
+	BYTE Data[1];
 } EMRCOLORMATCHTOTARGET, *PEMRCOLORMATCHTOTARGET;
 
 typedef struct tagCOLORCORRECTPALETTE {
-    EMR emr;
-    DWORD ihPalette;
-    DWORD nFirstEntry;
-    DWORD nPalEntries;
-    DWORD nReserved;
+	EMR emr;
+	DWORD ihPalette;
+	DWORD nFirstEntry;
+	DWORD nPalEntries;
+	DWORD nReserved;
 } EMRCOLORCORRECTPALETTE, *PEMRCOLORCORRECTPALETTE;
 
 typedef struct tagEMRALPHABLEND {
-    EMR emr;
-    RECTL rclBounds;
-    LONG xDest;
-    LONG yDest;
-    LONG cxDest;
-    LONG cyDest;
-    DWORD dwRop;
-    LONG xSrc;
-    LONG ySrc;
-    XFORM xformSrc;
-    COLORREF crBkColorSrc;
-    DWORD iUsageSrc;
-    DWORD offBmiSrc;
-    DWORD cbBmiSrc;
-    DWORD offBitsSrc;
-    DWORD cbBitsSrc;
-    LONG cxSrc;
-    LONG cySrc;
+	EMR emr;
+	RECTL rclBounds;
+	LONG xDest;
+	LONG yDest;
+	LONG cxDest;
+	LONG cyDest;
+	DWORD dwRop;
+	LONG xSrc;
+	LONG ySrc;
+	XFORM xformSrc;
+	COLORREF crBkColorSrc;
+	DWORD iUsageSrc;
+	DWORD offBmiSrc;
+	DWORD cbBmiSrc;
+	DWORD offBitsSrc;
+	DWORD cbBitsSrc;
+	LONG cxSrc;
+	LONG cySrc;
 } EMRALPHABLEND, *PEMRALPHABLEND;
 
 typedef struct tagEMRGRADIENTFILL {
-    EMR emr;
-    RECTL rclBounds;
-    DWORD nVer;
-    DWORD nTri;
-    ULONG ulMode;
-    TRIVERTEX Ver[1];
+	EMR emr;
+	RECTL rclBounds;
+	DWORD nVer;
+	DWORD nTri;
+	ULONG ulMode;
+	TRIVERTEX Ver[1];
 } EMRGRADIENTFILL, *PEMRGRADIENTFILL;
 
 typedef struct tagEMRTRANSPARENTBLT {
-    EMR emr;
-    RECTL rclBounds;
-    LONG xDest;
-    LONG yDest;
-    LONG cxDest;
-    LONG cyDest;
-    DWORD dwRop;
-    LONG xSrc;
-    LONG ySrc;
-    XFORM xformSrc;
-    COLORREF crBkColorSrc;
-    DWORD iUsageSrc;
-    DWORD offBmiSrc;
-    DWORD cbBmiSrc;
-    DWORD offBitsSrc;
-    DWORD cbBitsSrc;
-    LONG cxSrc;
-    LONG cySrc;
+	EMR emr;
+	RECTL rclBounds;
+	LONG xDest;
+	LONG yDest;
+	LONG cxDest;
+	LONG cyDest;
+	DWORD dwRop;
+	LONG xSrc;
+	LONG ySrc;
+	XFORM xformSrc;
+	COLORREF crBkColorSrc;
+	DWORD iUsageSrc;
+	DWORD offBmiSrc;
+	DWORD cbBmiSrc;
+	DWORD offBitsSrc;
+	DWORD cbBitsSrc;
+	LONG cxSrc;
+	LONG cySrc;
 } EMRTRANSPARENTBLT, *PEMRTRANSPARENTBLT;
 
 #define GDICOMMENT_IDENTIFIER 0x43494447
@@ -3947,16 +3947,16 @@ WINGDIAPI WINBOOL WINAPI wglUseFontBitmapsW(HDC, DWORD, DWORD, DWORD);
 WINGDIAPI WINBOOL WINAPI SwapBuffers(HDC);
 
 typedef struct _POINTFLOAT {
-    FLOAT x;
-    FLOAT y;
+	FLOAT x;
+	FLOAT y;
 } POINTFLOAT, *PPOINTFLOAT;
 
 typedef struct _GLYPHMETRICSFLOAT {
-    FLOAT gmfBlackBoxX;
-    FLOAT gmfBlackBoxY;
-    POINTFLOAT gmfptGlyphOrigin;
-    FLOAT gmfCellIncX;
-    FLOAT gmfCellIncY;
+	FLOAT gmfBlackBoxX;
+	FLOAT gmfBlackBoxY;
+	POINTFLOAT gmfptGlyphOrigin;
+	FLOAT gmfCellIncX;
+	FLOAT gmfCellIncY;
 } GLYPHMETRICSFLOAT, *PGLYPHMETRICSFLOAT, *LPGLYPHMETRICSFLOAT;
 
 #define WGL_FONT_LINES 0
@@ -3972,30 +3972,30 @@ WINGDIAPI WINBOOL WINAPI wglUseFontOutlinesA(HDC, DWORD, DWORD, DWORD, FLOAT, FL
 WINGDIAPI WINBOOL WINAPI wglUseFontOutlinesW(HDC, DWORD, DWORD, DWORD, FLOAT, FLOAT, int, LPGLYPHMETRICSFLOAT);
 
 typedef struct tagLAYERPLANEDESCRIPTOR {
-    WORD nSize;
-    WORD nVersion;
-    DWORD dwFlags;
-    BYTE iPixelType;
-    BYTE cColorBits;
-    BYTE cRedBits;
-    BYTE cRedShift;
-    BYTE cGreenBits;
-    BYTE cGreenShift;
-    BYTE cBlueBits;
-    BYTE cBlueShift;
-    BYTE cAlphaBits;
-    BYTE cAlphaShift;
-    BYTE cAccumBits;
-    BYTE cAccumRedBits;
-    BYTE cAccumGreenBits;
-    BYTE cAccumBlueBits;
-    BYTE cAccumAlphaBits;
-    BYTE cDepthBits;
-    BYTE cStencilBits;
-    BYTE cAuxBuffers;
-    BYTE iLayerPlane;
-    BYTE bReserved;
-    COLORREF crTransparent;
+	WORD nSize;
+	WORD nVersion;
+	DWORD dwFlags;
+	BYTE iPixelType;
+	BYTE cColorBits;
+	BYTE cRedBits;
+	BYTE cRedShift;
+	BYTE cGreenBits;
+	BYTE cGreenShift;
+	BYTE cBlueBits;
+	BYTE cBlueShift;
+	BYTE cAlphaBits;
+	BYTE cAlphaShift;
+	BYTE cAccumBits;
+	BYTE cAccumRedBits;
+	BYTE cAccumGreenBits;
+	BYTE cAccumBlueBits;
+	BYTE cAccumAlphaBits;
+	BYTE cDepthBits;
+	BYTE cStencilBits;
+	BYTE cAuxBuffers;
+	BYTE iLayerPlane;
+	BYTE bReserved;
+	COLORREF crTransparent;
 } LAYERPLANEDESCRIPTOR, *PLAYERPLANEDESCRIPTOR, *LPLAYERPLANEDESCRIPTOR;
 
 #define LPD_DOUBLEBUFFER 0x00000001
@@ -4051,8 +4051,8 @@ WINGDIAPI WINBOOL WINAPI wglRealizeLayerPalette(HDC, int, WINBOOL);
 WINGDIAPI WINBOOL WINAPI wglSwapLayerBuffers(HDC, UINT);
 
 typedef struct _WGLSWAP {
-    HDC hdc;
-    UINT uiFlags;
+	HDC hdc;
+	UINT uiFlags;
 } WGLSWAP, *PWGLSWAP, *LPWGLSWAP;
 
 #define WGL_SWAPMULTIPLE_MAX 16

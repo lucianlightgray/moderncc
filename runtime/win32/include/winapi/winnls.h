@@ -465,27 +465,27 @@ typedef DWORD CALTYPE;
 typedef DWORD CALID;
 
 typedef struct _cpinfo {
-    UINT MaxCharSize;
-    BYTE DefaultChar[MAX_DEFAULTCHAR];
-    BYTE LeadByte[MAX_LEADBYTES];
+	UINT MaxCharSize;
+	BYTE DefaultChar[MAX_DEFAULTCHAR];
+	BYTE LeadByte[MAX_LEADBYTES];
 } CPINFO, *LPCPINFO;
 
 typedef struct _cpinfoexA {
-    UINT MaxCharSize;
-    BYTE DefaultChar[MAX_DEFAULTCHAR];
-    BYTE LeadByte[MAX_LEADBYTES];
-    WCHAR UnicodeDefaultChar;
-    UINT CodePage;
-    CHAR CodePageName[MAX_PATH];
+	UINT MaxCharSize;
+	BYTE DefaultChar[MAX_DEFAULTCHAR];
+	BYTE LeadByte[MAX_LEADBYTES];
+	WCHAR UnicodeDefaultChar;
+	UINT CodePage;
+	CHAR CodePageName[MAX_PATH];
 } CPINFOEXA, *LPCPINFOEXA;
 
 typedef struct _cpinfoexW {
-    UINT MaxCharSize;
-    BYTE DefaultChar[MAX_DEFAULTCHAR];
-    BYTE LeadByte[MAX_LEADBYTES];
-    WCHAR UnicodeDefaultChar;
-    UINT CodePage;
-    WCHAR CodePageName[MAX_PATH];
+	UINT MaxCharSize;
+	BYTE DefaultChar[MAX_DEFAULTCHAR];
+	BYTE LeadByte[MAX_LEADBYTES];
+	WCHAR UnicodeDefaultChar;
+	UINT CodePage;
+	WCHAR CodePageName[MAX_PATH];
 } CPINFOEXW, *LPCPINFOEXW;
 
 #ifdef UNICODE
@@ -497,21 +497,21 @@ typedef LPCPINFOEXA LPCPINFOEX;
 #endif
 
 typedef struct _numberfmtA {
-    UINT NumDigits;
-    UINT LeadingZero;
-    UINT Grouping;
-    LPSTR lpDecimalSep;
-    LPSTR lpThousandSep;
-    UINT NegativeOrder;
+	UINT NumDigits;
+	UINT LeadingZero;
+	UINT Grouping;
+	LPSTR lpDecimalSep;
+	LPSTR lpThousandSep;
+	UINT NegativeOrder;
 } NUMBERFMTA, *LPNUMBERFMTA;
 
 typedef struct _numberfmtW {
-    UINT NumDigits;
-    UINT LeadingZero;
-    UINT Grouping;
-    LPWSTR lpDecimalSep;
-    LPWSTR lpThousandSep;
-    UINT NegativeOrder;
+	UINT NumDigits;
+	UINT LeadingZero;
+	UINT Grouping;
+	LPWSTR lpDecimalSep;
+	LPWSTR lpThousandSep;
+	UINT NegativeOrder;
 } NUMBERFMTW, *LPNUMBERFMTW;
 
 #ifdef UNICODE
@@ -523,25 +523,25 @@ typedef LPNUMBERFMTA LPNUMBERFMT;
 #endif
 
 typedef struct _currencyfmtA {
-    UINT NumDigits;
-    UINT LeadingZero;
-    UINT Grouping;
-    LPSTR lpDecimalSep;
-    LPSTR lpThousandSep;
-    UINT NegativeOrder;
-    UINT PositiveOrder;
-    LPSTR lpCurrencySymbol;
+	UINT NumDigits;
+	UINT LeadingZero;
+	UINT Grouping;
+	LPSTR lpDecimalSep;
+	LPSTR lpThousandSep;
+	UINT NegativeOrder;
+	UINT PositiveOrder;
+	LPSTR lpCurrencySymbol;
 } CURRENCYFMTA, *LPCURRENCYFMTA;
 
 typedef struct _currencyfmtW {
-    UINT NumDigits;
-    UINT LeadingZero;
-    UINT Grouping;
-    LPWSTR lpDecimalSep;
-    LPWSTR lpThousandSep;
-    UINT NegativeOrder;
-    UINT PositiveOrder;
-    LPWSTR lpCurrencySymbol;
+	UINT NumDigits;
+	UINT LeadingZero;
+	UINT Grouping;
+	LPWSTR lpDecimalSep;
+	LPWSTR lpThousandSep;
+	UINT NegativeOrder;
+	UINT PositiveOrder;
+	LPWSTR lpCurrencySymbol;
 } CURRENCYFMTW, *LPCURRENCYFMTW;
 
 #ifdef UNICODE
@@ -553,15 +553,15 @@ typedef LPCURRENCYFMTA LPCURRENCYFMT;
 #endif
 
 enum SYSNLS_FUNCTION {
-    COMPARE_STRING = 0x0001
+	COMPARE_STRING = 0x0001
 };
 
 typedef DWORD NLS_FUNCTION;
 
 typedef struct _nlsversioninfo {
-    DWORD dwNLSVersionInfoSize;
-    DWORD dwNLSVersion;
-    DWORD dwDefinedVersion;
+	DWORD dwNLSVersionInfoSize;
+	DWORD dwNLSVersion;
+	DWORD dwDefinedVersion;
 } NLSVERSIONINFO, *LPNLSVERSIONINFO;
 
 typedef LONG GEOID;
@@ -571,30 +571,30 @@ typedef DWORD GEOCLASS;
 #define GEOID_NOT_AVAILABLE -1
 
 enum SYSGEOTYPE {
-    GEO_NATION = 0x0001,
-    GEO_LATITUDE = 0x0002,
-    GEO_LONGITUDE = 0x0003,
-    GEO_ISO2 = 0x0004,
-    GEO_ISO3 = 0x0005,
-    GEO_RFC1766 = 0x0006,
-    GEO_LCID = 0x0007,
-    GEO_FRIENDLYNAME = 0x0008,
-    GEO_OFFICIALNAME = 0x0009,
-    GEO_TIMEZONES = 0x000A,
-    GEO_OFFICIALLANGUAGES = 0x000B
+	GEO_NATION = 0x0001,
+	GEO_LATITUDE = 0x0002,
+	GEO_LONGITUDE = 0x0003,
+	GEO_ISO2 = 0x0004,
+	GEO_ISO3 = 0x0005,
+	GEO_RFC1766 = 0x0006,
+	GEO_LCID = 0x0007,
+	GEO_FRIENDLYNAME = 0x0008,
+	GEO_OFFICIALNAME = 0x0009,
+	GEO_TIMEZONES = 0x000A,
+	GEO_OFFICIALLANGUAGES = 0x000B
 };
 
 enum SYSGEOCLASS {
-    GEOCLASS_NATION = 16,
-    GEOCLASS_REGION = 14
+	GEOCLASS_NATION = 16,
+	GEOCLASS_REGION = 14
 };
 
 typedef enum _NORM_FORM {
-    NormalizationOther = 0,
-    NormalizationC = 0x1,
-    NormalizationD = 0x2,
-    NormalizationKC = 0x5,
-    NormalizationKD = 0x6
+	NormalizationOther = 0,
+	NormalizationC = 0x1,
+	NormalizationD = 0x2,
+	NormalizationKC = 0x5,
+	NormalizationKD = 0x6
 } NORM_FORM;
 
 typedef WINBOOL(CALLBACK *LANGUAGEGROUP_ENUMPROCA)(LGRPID, LPSTR, LPSTR, DWORD, LONG_PTR);

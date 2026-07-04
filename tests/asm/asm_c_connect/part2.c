@@ -14,8 +14,8 @@
 #endif
 
 int x3(void) {
-    printf(" x3");
-    return 3;
+	printf(" x3");
+	return 3;
 }
 
 void callx4(void);
@@ -26,7 +26,7 @@ __asm__(_ "callx4: call " _ "x4; ret;"
 __asm__(_ "callx4: sub $8,%rsp; call " _ "x4; add $8,%rsp; ret;"
 #endif
 #ifndef __MCC__
-          " .global " _ "callx4"
+		  " .global " _ "callx4"
 #endif
 );
 
@@ -34,10 +34,10 @@ extern void x5(void);
 
 void callx5_again(void);
 void callx5_again(void) {
-    x5();
-    asm("call " _ "x6");
+	x5();
+	asm("call " _ "x6");
 }
 
 static void __USED x6() {
-    printf(" x6-2");
+	printf(" x6-2");
 }

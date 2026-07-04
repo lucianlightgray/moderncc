@@ -1,21 +1,21 @@
 #if 0
 
 #define REDIR_ALL         \
-    REDIR(__set_app_type) \
-    REDIR(__getmainargs)  \
-    REDIR(_controlfp)     \
-    REDIR(_vsnprintf)     \
-    REDIR(exit)           \
-                          \
-    REDIR(puts)           \
-    REDIR(printf)         \
-    REDIR(putchar)        \
-    REDIR(strtod)         \
-    REDIR(memset)         \
-    REDIR(strcpy)         \
-    REDIR(strlen)         \
-    REDIR(malloc)         \
-    REDIR(free)
+	REDIR(__set_app_type) \
+	REDIR(__getmainargs)  \
+	REDIR(_controlfp)     \
+	REDIR(_vsnprintf)     \
+	REDIR(exit)           \
+						  \
+	REDIR(puts)           \
+	REDIR(printf)         \
+	REDIR(putchar)        \
+	REDIR(strtod)         \
+	REDIR(memset)         \
+	REDIR(strcpy)         \
+	REDIR(strlen)         \
+	REDIR(malloc)         \
+	REDIR(free)
 
 #if defined __i386__ && !defined __MCC__
 #define __leading_underscore 1
@@ -42,23 +42,23 @@ static const char all_names[] = REDIR_ALL;
 #define ALIGN ".align 3"
 #endif
 #define REDIR(s)                                              \
-    __asm__("\n" _(s) ":");                                   \
-    __asm__(".int 0x58000090");                               \
-    __asm__(".int 0xf9400210");                               \
-    __asm__(".int 0xd61f0200");                               \
-    __asm__(".int 0xd503201f");                               \
-    __asm__(".quad all_ptrs + (. - all_jmps - 16) / 24 * 8"); \
-    __asm__(".global " _(s));
+	__asm__("\n" _(s) ":");                                   \
+	__asm__(".int 0x58000090");                               \
+	__asm__(".int 0xf9400210");                               \
+	__asm__(".int 0xd61f0200");                               \
+	__asm__(".int 0xd503201f");                               \
+	__asm__(".quad all_ptrs + (. - all_jmps - 16) / 24 * 8"); \
+	__asm__(".global " _(s));
 
-    __asm__("\t.text\n\t"ALIGN"\nall_jmps:");
-    REDIR_ALL
+	__asm__("\t.text\n\t"ALIGN"\nall_jmps:");
+	REDIR_ALL
 #else
 #define REDIR(s)                          \
-    __asm__("\n" _(s) ":");               \
-    __asm__("jmp *%0" ::"m"(all_ptrs.s)); \
-    __asm__(".global " _(s));
+	__asm__("\n" _(s) ":");               \
+	__asm__("jmp *%0" ::"m"(all_ptrs.s)); \
+	__asm__(".global " _(s));
 
-    static void all_jmps() { REDIR_ALL }
+	static void all_jmps() { REDIR_ALL }
 #endif
 #undef REDIR
 
@@ -84,32 +84,32 @@ S TDCALL int FlushFileBuffers(HANDLE);
 
 static void eput(const char *s)
 {
-    DWORD n_out;
-    int n = 0;
-    while (s[n])
-        ++n;
-    WriteFile(GetStdHandle(STD_ERROR_HANDLE), s, n, &n_out, 0);
+	DWORD n_out;
+	int n = 0;
+	while (s[n])
+		++n;
+	WriteFile(GetStdHandle(STD_ERROR_HANDLE), s, n, &n_out, 0);
 }
 
 static void rt_reloc()
 {
-    const char *s = all_names;
-    void **p = (void**)&all_ptrs;
-    void *dll = LoadLibraryA("msvcrt.dll");
-    do {
-        char buf[100], *d = buf;
-        *p = (void*)GetProcAddress(dll, (char*)s);
-        *d++ = '_'; do *d++ = *s; while (*s++);
-        if (0 == *p)
-            *p = (void*)GetProcAddress(dll, buf);
-        if (0 == *p) {
-            eput("MSVCRT_START.C: RUNTIME RELOCATION ERROR: '");
-            eput(buf+1);
-            eput("'\n");
-            ExitProcess(-1);
-        }
-        ++p;
-    } while (*s);
+	const char *s = all_names;
+	void **p = (void**)&all_ptrs;
+	void *dll = LoadLibraryA("msvcrt.dll");
+	do {
+		char buf[100], *d = buf;
+		*p = (void*)GetProcAddress(dll, (char*)s);
+		*d++ = '_'; do *d++ = *s; while (*s++);
+		if (0 == *p)
+			*p = (void*)GetProcAddress(dll, buf);
+		if (0 == *p) {
+			eput("MSVCRT_START.C: RUNTIME RELOCATION ERROR: '");
+			eput(buf+1);
+			eput("'\n");
+			ExitProcess(-1);
+		}
+		++p;
+	} while (*s);
 }
 
 #else
@@ -121,7 +121,7 @@ void exit(int);
 void __set_app_type(int apptype);
 
 typedef struct {
-    int newmode;
+	int newmode;
 } _startupinfo;
 int __getmainargs(int *pargc, char ***pargv, char ***penv, int globb, _startupinfo *);
 
@@ -135,13 +135,13 @@ char **environ;
 _startupinfo start_info = {0};
 
 void mainCRTStartup(void) {
-    rt_reloc();
+	rt_reloc();
 #if defined __i386__ || defined __x86_64__
-    _controlfp(_PC_53, _MCW_PC);
+	_controlfp(_PC_53, _MCW_PC);
 #endif
-    __set_app_type(1);
-    __getmainargs(&__argc, &__argv, &environ, 0, &start_info);
-    exit(main(__argc, __argv, environ));
+	__set_app_type(1);
+	__getmainargs(&__argc, &__argv, &environ, 0, &start_info);
+	exit(main(__argc, __argv, environ));
 }
 
 #include <stdarg.h>
@@ -150,9 +150,9 @@ int printf(const char *, ...);
 int _vsnprintf(char *, size_t, const char *, va_list);
 
 int vprintf(const char *format, va_list ap) {
-    char buf[1000];
-    _vsnprintf(buf, sizeof buf, format, ap);
-    return printf("%s", buf);
+	char buf[1000];
+	_vsnprintf(buf, sizeof buf, format, ap);
+	return printf("%s", buf);
 }
 
 void __main() {
@@ -168,10 +168,10 @@ void __mingw_raise_matherr(int typ, const char *name, double a1, double a2, doub
 #if defined(__x86_64__) && !defined(__MCC__)
 
 __asm__(
-    ".globl __intrinsic_setjmpex\n"
-    "__intrinsic_setjmpex:\n"
-    "\tjmp *__imp__setjmpex(%rip)\n"
-    ".globl __intrinsic_setjmp\n"
-    "__intrinsic_setjmp:\n"
-    "\tjmp *__imp__setjmp(%rip)\n");
+	".globl __intrinsic_setjmpex\n"
+	"__intrinsic_setjmpex:\n"
+	"\tjmp *__imp__setjmpex(%rip)\n"
+	".globl __intrinsic_setjmp\n"
+	"__intrinsic_setjmp:\n"
+	"\tjmp *__imp__setjmp(%rip)\n");
 #endif

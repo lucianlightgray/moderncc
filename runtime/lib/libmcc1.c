@@ -8,12 +8,12 @@ typedef long long DWtype;
 typedef unsigned long long UDWtype;
 
 struct DWstruct {
-    Wtype low, high;
+	Wtype low, high;
 };
 
 typedef union {
-    struct DWstruct s;
-    DWtype ll;
+	struct DWstruct s;
+	DWtype ll;
 } DWunion;
 
 typedef long double XFtype;
@@ -33,7 +33,7 @@ typedef long double XFtype;
 #define EXPD(fp) (((fp.l.upper) >> 20) & 0x7FF)
 #define SIGND(fp) ((fp.l.upper) & SIGNBIT)
 #define MANTD(fp) (((((fp.l.upper) & 0xFFFFF) | HIDDEND) << 10) | \
-                   (fp.l.lower >> 22))
+				   (fp.l.lower >> 22))
 #define HIDDEND_LL ((long long)1 << 52)
 #define MANTD_LL(fp) ((fp.ll & (HIDDEND_LL - 1)) | HIDDEND_LL)
 #define PACKD_LL(s, e, m) (((long long)((s) + ((e) << 20)) << 32) | (m))
@@ -43,464 +43,464 @@ typedef long double XFtype;
 #define SIGNLD(fp) ((fp.l.upper) & 0x8000)
 
 union ldouble_long {
-    long double ld;
-    struct {
-        unsigned long long lower;
-        unsigned short upper;
-    } l;
+	long double ld;
+	struct {
+		unsigned long long lower;
+		unsigned short upper;
+	} l;
 };
 
 union double_long {
-    double d;
+	double d;
 #if 1
-    struct {
-        unsigned int lower;
-        int upper;
-    } l;
+	struct {
+		unsigned int lower;
+		int upper;
+	} l;
 #else
-    struct {
-        int upper;
-        unsigned int lower;
-    } l;
+	struct {
+		int upper;
+		unsigned int lower;
+	} l;
 #endif
-    long long ll;
+	long long ll;
 };
 
 union float_long {
-    float f;
-    unsigned int l;
+	float f;
+	unsigned int l;
 };
 
 #if defined __i386__
 
 #define sub_ddmmss(sh, sl, ah, al, bh, bl) \
-    __asm__("subl %5,%1\n\tsbbl %3,%0"     \
-            : "=r"((USItype)(sh)),         \
-              "=&r"((USItype)(sl))         \
-            : "0"((USItype)(ah)),          \
-              "g"((USItype)(bh)),          \
-              "1"((USItype)(al)),          \
-              "g"((USItype)(bl)))
+	__asm__("subl %5,%1\n\tsbbl %3,%0"     \
+			: "=r"((USItype)(sh)),         \
+			  "=&r"((USItype)(sl))         \
+			: "0"((USItype)(ah)),          \
+			  "g"((USItype)(bh)),          \
+			  "1"((USItype)(al)),          \
+			  "g"((USItype)(bl)))
 #define umul_ppmm(w1, w0, u, v)    \
-    __asm__("mull %3"              \
-            : "=a"((USItype)(w0)), \
-              "=d"((USItype)(w1))  \
-            : "%0"((USItype)(u)),  \
-              "rm"((USItype)(v)))
+	__asm__("mull %3"              \
+			: "=a"((USItype)(w0)), \
+			  "=d"((USItype)(w1))  \
+			: "%0"((USItype)(u)),  \
+			  "rm"((USItype)(v)))
 #define udiv_qrnnd(q, r, n1, n0, dv) \
-    __asm__("divl %4"                \
-            : "=a"((USItype)(q)),    \
-              "=d"((USItype)(r))     \
-            : "0"((USItype)(n0)),    \
-              "1"((USItype)(n1)),    \
-              "rm"((USItype)(dv)))
+	__asm__("divl %4"                \
+			: "=a"((USItype)(q)),    \
+			  "=d"((USItype)(r))     \
+			: "0"((USItype)(n0)),    \
+			  "1"((USItype)(n1)),    \
+			  "rm"((USItype)(dv)))
 #define count_leading_zeros(count, x)                  \
-    do {                                               \
-        USItype __cbtmp;                               \
-        __asm__("bsrl %1,%0"                           \
-                : "=r"(__cbtmp) : "rm"((USItype)(x))); \
-        (count) = __cbtmp ^ 31;                        \
-    } while (0)
+	do {                                               \
+		USItype __cbtmp;                               \
+		__asm__("bsrl %1,%0"                           \
+				: "=r"(__cbtmp) : "rm"((USItype)(x))); \
+		(count) = __cbtmp ^ 31;                        \
+	} while (0)
 
 static UDWtype __udivmoddi4(UDWtype n, UDWtype d, UDWtype *rp) {
-    DWunion ww;
-    DWunion nn, dd;
-    DWunion rr;
-    UWtype d0, d1, n0, n1, n2;
-    UWtype q0, q1;
-    UWtype b, bm;
+	DWunion ww;
+	DWunion nn, dd;
+	DWunion rr;
+	UWtype d0, d1, n0, n1, n2;
+	UWtype q0, q1;
+	UWtype b, bm;
 
-    nn.ll = n;
-    dd.ll = d;
+	nn.ll = n;
+	dd.ll = d;
 
-    d0 = dd.s.low;
-    d1 = dd.s.high;
-    n0 = nn.s.low;
-    n1 = nn.s.high;
+	d0 = dd.s.low;
+	d1 = dd.s.high;
+	n0 = nn.s.low;
+	n1 = nn.s.high;
 
 #if !defined(UDIV_NEEDS_NORMALIZATION)
-    if (d1 == 0) {
-        if (d0 > n1) {
+	if (d1 == 0) {
+		if (d0 > n1) {
 
-            udiv_qrnnd(q0, n0, n1, n0, d0);
-            q1 = 0;
+			udiv_qrnnd(q0, n0, n1, n0, d0);
+			q1 = 0;
 
-        } else {
+		} else {
 
-            if (d0 == 0)
-                d0 = 1 / d0;
+			if (d0 == 0)
+				d0 = 1 / d0;
 
-            udiv_qrnnd(q1, n1, 0, n1, d0);
-            udiv_qrnnd(q0, n0, n1, n0, d0);
-        }
+			udiv_qrnnd(q1, n1, 0, n1, d0);
+			udiv_qrnnd(q0, n0, n1, n0, d0);
+		}
 
-        if (rp != 0) {
-            rr.s.low = n0;
-            rr.s.high = 0;
-            *rp = rr.ll;
-        }
-    }
+		if (rp != 0) {
+			rr.s.low = n0;
+			rr.s.high = 0;
+			*rp = rr.ll;
+		}
+	}
 
 #else
 
-    if (d1 == 0) {
-        if (d0 > n1) {
+	if (d1 == 0) {
+		if (d0 > n1) {
 
-            count_leading_zeros(bm, d0);
+			count_leading_zeros(bm, d0);
 
-            if (bm != 0) {
+			if (bm != 0) {
 
-                d0 = d0 << bm;
-                n1 = (n1 << bm) | (n0 >> (W_TYPE_SIZE - bm));
-                n0 = n0 << bm;
-            }
+				d0 = d0 << bm;
+				n1 = (n1 << bm) | (n0 >> (W_TYPE_SIZE - bm));
+				n0 = n0 << bm;
+			}
 
-            udiv_qrnnd(q0, n0, n1, n0, d0);
-            q1 = 0;
+			udiv_qrnnd(q0, n0, n1, n0, d0);
+			q1 = 0;
 
-        } else {
+		} else {
 
-            if (d0 == 0)
-                d0 = 1 / d0;
+			if (d0 == 0)
+				d0 = 1 / d0;
 
-            count_leading_zeros(bm, d0);
+			count_leading_zeros(bm, d0);
 
-            if (bm == 0) {
+			if (bm == 0) {
 
-                n1 -= d0;
-                q1 = 1;
-            } else {
+				n1 -= d0;
+				q1 = 1;
+			} else {
 
-                b = W_TYPE_SIZE - bm;
+				b = W_TYPE_SIZE - bm;
 
-                d0 = d0 << bm;
-                n2 = n1 >> b;
-                n1 = (n1 << bm) | (n0 >> b);
-                n0 = n0 << bm;
+				d0 = d0 << bm;
+				n2 = n1 >> b;
+				n1 = (n1 << bm) | (n0 >> b);
+				n0 = n0 << bm;
 
-                udiv_qrnnd(q1, n1, n2, n1, d0);
-            }
+				udiv_qrnnd(q1, n1, n2, n1, d0);
+			}
 
-            udiv_qrnnd(q0, n0, n1, n0, d0);
-        }
+			udiv_qrnnd(q0, n0, n1, n0, d0);
+		}
 
-        if (rp != 0) {
-            rr.s.low = n0 >> bm;
-            rr.s.high = 0;
-            *rp = rr.ll;
-        }
-    }
+		if (rp != 0) {
+			rr.s.low = n0 >> bm;
+			rr.s.high = 0;
+			*rp = rr.ll;
+		}
+	}
 #endif
 
-    else {
-        if (d1 > n1) {
+	else {
+		if (d1 > n1) {
 
-            q0 = 0;
-            q1 = 0;
+			q0 = 0;
+			q1 = 0;
 
-            if (rp != 0) {
-                rr.s.low = n0;
-                rr.s.high = n1;
-                *rp = rr.ll;
-            }
-        } else {
+			if (rp != 0) {
+				rr.s.low = n0;
+				rr.s.high = n1;
+				*rp = rr.ll;
+			}
+		} else {
 
-            count_leading_zeros(bm, d1);
-            if (bm == 0) {
+			count_leading_zeros(bm, d1);
+			if (bm == 0) {
 
-                if (n1 > d1 || n0 >= d0) {
-                    q0 = 1;
-                    sub_ddmmss(n1, n0, n1, n0, d1, d0);
-                } else
-                    q0 = 0;
+				if (n1 > d1 || n0 >= d0) {
+					q0 = 1;
+					sub_ddmmss(n1, n0, n1, n0, d1, d0);
+				} else
+					q0 = 0;
 
-                q1 = 0;
+				q1 = 0;
 
-                if (rp != 0) {
-                    rr.s.low = n0;
-                    rr.s.high = n1;
-                    *rp = rr.ll;
-                }
-            } else {
-                UWtype m1, m0;
+				if (rp != 0) {
+					rr.s.low = n0;
+					rr.s.high = n1;
+					*rp = rr.ll;
+				}
+			} else {
+				UWtype m1, m0;
 
-                b = W_TYPE_SIZE - bm;
+				b = W_TYPE_SIZE - bm;
 
-                d1 = (d1 << bm) | (d0 >> b);
-                d0 = d0 << bm;
-                n2 = n1 >> b;
-                n1 = (n1 << bm) | (n0 >> b);
-                n0 = n0 << bm;
+				d1 = (d1 << bm) | (d0 >> b);
+				d0 = d0 << bm;
+				n2 = n1 >> b;
+				n1 = (n1 << bm) | (n0 >> b);
+				n0 = n0 << bm;
 
-                udiv_qrnnd(q0, n1, n2, n1, d1);
-                umul_ppmm(m1, m0, q0, d0);
+				udiv_qrnnd(q0, n1, n2, n1, d1);
+				umul_ppmm(m1, m0, q0, d0);
 
-                if (m1 > n1 || (m1 == n1 && m0 > n0)) {
-                    q0--;
-                    sub_ddmmss(m1, m0, m1, m0, d1, d0);
-                }
+				if (m1 > n1 || (m1 == n1 && m0 > n0)) {
+					q0--;
+					sub_ddmmss(m1, m0, m1, m0, d1, d0);
+				}
 
-                q1 = 0;
+				q1 = 0;
 
-                if (rp != 0) {
-                    sub_ddmmss(n1, n0, n1, n0, m1, m0);
-                    rr.s.low = (n1 << b) | (n0 >> bm);
-                    rr.s.high = n1 >> bm;
-                    *rp = rr.ll;
-                }
-            }
-        }
-    }
+				if (rp != 0) {
+					sub_ddmmss(n1, n0, n1, n0, m1, m0);
+					rr.s.low = (n1 << b) | (n0 >> bm);
+					rr.s.high = n1 >> bm;
+					*rp = rr.ll;
+				}
+			}
+		}
+	}
 
-    ww.s.low = q0;
-    ww.s.high = q1;
-    return ww.ll;
+	ww.s.low = q0;
+	ww.s.high = q1;
+	return ww.ll;
 }
 
 #define __negdi2(a) (-(a))
 
 long long __divdi3(long long u, long long v) {
-    int c = 0;
-    DWunion uu, vv;
-    DWtype w;
+	int c = 0;
+	DWunion uu, vv;
+	DWtype w;
 
-    uu.ll = u;
-    vv.ll = v;
+	uu.ll = u;
+	vv.ll = v;
 
-    if (uu.s.high < 0) {
-        c = ~c;
-        uu.ll = __negdi2(uu.ll);
-    }
-    if (vv.s.high < 0) {
-        c = ~c;
-        vv.ll = __negdi2(vv.ll);
-    }
-    w = __udivmoddi4(uu.ll, vv.ll, (UDWtype *)0);
-    if (c)
-        w = __negdi2(w);
-    return w;
+	if (uu.s.high < 0) {
+		c = ~c;
+		uu.ll = __negdi2(uu.ll);
+	}
+	if (vv.s.high < 0) {
+		c = ~c;
+		vv.ll = __negdi2(vv.ll);
+	}
+	w = __udivmoddi4(uu.ll, vv.ll, (UDWtype *)0);
+	if (c)
+		w = __negdi2(w);
+	return w;
 }
 
 long long __moddi3(long long u, long long v) {
-    int c = 0;
-    DWunion uu, vv;
-    DWtype w;
+	int c = 0;
+	DWunion uu, vv;
+	DWtype w;
 
-    uu.ll = u;
-    vv.ll = v;
+	uu.ll = u;
+	vv.ll = v;
 
-    if (uu.s.high < 0) {
-        c = ~c;
-        uu.ll = __negdi2(uu.ll);
-    }
-    if (vv.s.high < 0)
-        vv.ll = __negdi2(vv.ll);
+	if (uu.s.high < 0) {
+		c = ~c;
+		uu.ll = __negdi2(uu.ll);
+	}
+	if (vv.s.high < 0)
+		vv.ll = __negdi2(vv.ll);
 
-    __udivmoddi4(uu.ll, vv.ll, (UDWtype *)&w);
-    if (c)
-        w = __negdi2(w);
-    return w;
+	__udivmoddi4(uu.ll, vv.ll, (UDWtype *)&w);
+	if (c)
+		w = __negdi2(w);
+	return w;
 }
 
 unsigned long long __udivdi3(unsigned long long u, unsigned long long v) {
-    return __udivmoddi4(u, v, (UDWtype *)0);
+	return __udivmoddi4(u, v, (UDWtype *)0);
 }
 
 unsigned long long __umoddi3(unsigned long long u, unsigned long long v) {
-    UDWtype w;
+	UDWtype w;
 
-    __udivmoddi4(u, v, &w);
-    return w;
+	__udivmoddi4(u, v, &w);
+	return w;
 }
 
 long long __ashrdi3(long long a, int b) {
 #ifdef __MCC__
-    DWunion u;
-    u.ll = a;
-    if (b >= 32) {
-        u.s.low = u.s.high >> (b - 32);
-        u.s.high = u.s.high >> 31;
-    } else if (b != 0) {
-        u.s.low = ((unsigned)u.s.low >> b) | (u.s.high << (32 - b));
-        u.s.high = u.s.high >> b;
-    }
-    return u.ll;
+	DWunion u;
+	u.ll = a;
+	if (b >= 32) {
+		u.s.low = u.s.high >> (b - 32);
+		u.s.high = u.s.high >> 31;
+	} else if (b != 0) {
+		u.s.low = ((unsigned)u.s.low >> b) | (u.s.high << (32 - b));
+		u.s.high = u.s.high >> b;
+	}
+	return u.ll;
 #else
-    return a >> b;
+	return a >> b;
 #endif
 }
 
 unsigned long long __lshrdi3(unsigned long long a, int b) {
 #ifdef __MCC__
-    DWunion u;
-    u.ll = a;
-    if (b >= 32) {
-        u.s.low = (unsigned)u.s.high >> (b - 32);
-        u.s.high = 0;
-    } else if (b != 0) {
-        u.s.low = ((unsigned)u.s.low >> b) | (u.s.high << (32 - b));
-        u.s.high = (unsigned)u.s.high >> b;
-    }
-    return u.ll;
+	DWunion u;
+	u.ll = a;
+	if (b >= 32) {
+		u.s.low = (unsigned)u.s.high >> (b - 32);
+		u.s.high = 0;
+	} else if (b != 0) {
+		u.s.low = ((unsigned)u.s.low >> b) | (u.s.high << (32 - b));
+		u.s.high = (unsigned)u.s.high >> b;
+	}
+	return u.ll;
 #else
-    return a >> b;
+	return a >> b;
 #endif
 }
 
 long long __ashldi3(long long a, int b) {
 #ifdef __MCC__
-    DWunion u;
-    u.ll = a;
-    if (b >= 32) {
-        u.s.high = (unsigned)u.s.low << (b - 32);
-        u.s.low = 0;
-    } else if (b != 0) {
-        u.s.high = ((unsigned)u.s.high << b) | ((unsigned)u.s.low >> (32 - b));
-        u.s.low = (unsigned)u.s.low << b;
-    }
-    return u.ll;
+	DWunion u;
+	u.ll = a;
+	if (b >= 32) {
+		u.s.high = (unsigned)u.s.low << (b - 32);
+		u.s.low = 0;
+	} else if (b != 0) {
+		u.s.high = ((unsigned)u.s.high << b) | ((unsigned)u.s.low >> (32 - b));
+		u.s.low = (unsigned)u.s.low << b;
+	}
+	return u.ll;
 #else
-    return a << b;
+	return a << b;
 #endif
 }
 
 #endif
 
 float __floatundisf(unsigned long long a) {
-    DWunion uu;
-    XFtype r;
+	DWunion uu;
+	XFtype r;
 
-    uu.ll = a;
-    if (uu.s.high >= 0) {
-        return (float)uu.ll;
-    } else {
-        r = (XFtype)uu.ll;
-        r += 18446744073709551616.0;
-        return (float)r;
-    }
+	uu.ll = a;
+	if (uu.s.high >= 0) {
+		return (float)uu.ll;
+	} else {
+		r = (XFtype)uu.ll;
+		r += 18446744073709551616.0;
+		return (float)r;
+	}
 }
 
 double __floatundidf(unsigned long long a) {
-    DWunion uu;
-    XFtype r;
+	DWunion uu;
+	XFtype r;
 
-    uu.ll = a;
-    if (uu.s.high >= 0) {
-        return (double)uu.ll;
-    } else {
-        r = (XFtype)uu.ll;
-        r += 18446744073709551616.0;
-        return (double)r;
-    }
+	uu.ll = a;
+	if (uu.s.high >= 0) {
+		return (double)uu.ll;
+	} else {
+		r = (XFtype)uu.ll;
+		r += 18446744073709551616.0;
+		return (double)r;
+	}
 }
 
 long double __floatundixf(unsigned long long a) {
-    DWunion uu;
-    XFtype r;
+	DWunion uu;
+	XFtype r;
 
-    uu.ll = a;
-    if (uu.s.high >= 0) {
-        return (long double)uu.ll;
-    } else {
-        r = (XFtype)uu.ll;
-        r += 18446744073709551616.0;
-        return (long double)r;
-    }
+	uu.ll = a;
+	if (uu.s.high >= 0) {
+		return (long double)uu.ll;
+	} else {
+		r = (XFtype)uu.ll;
+		r += 18446744073709551616.0;
+		return (long double)r;
+	}
 }
 
 unsigned long long __fixunssfdi(float a1) {
-    register union float_long fl1;
-    register int exp;
-    register unsigned long long l;
+	register union float_long fl1;
+	register int exp;
+	register unsigned long long l;
 
-    fl1.f = a1;
+	fl1.f = a1;
 
-    if (fl1.l == 0)
-        return (0);
+	if (fl1.l == 0)
+		return (0);
 
-    exp = EXP(fl1.l) - EXCESS - 24;
-    l = MANT(fl1.l);
+	exp = EXP(fl1.l) - EXCESS - 24;
+	l = MANT(fl1.l);
 
-    if (exp >= 41)
-        return 1ULL << 63;
-    else if (exp >= 0)
-        l <<= exp;
-    else if (exp >= -23)
-        l >>= -exp;
-    else
-        return 0;
-    if (SIGN(fl1.l))
-        l = (unsigned long long)-l;
-    return l;
+	if (exp >= 41)
+		return 1ULL << 63;
+	else if (exp >= 0)
+		l <<= exp;
+	else if (exp >= -23)
+		l >>= -exp;
+	else
+		return 0;
+	if (SIGN(fl1.l))
+		l = (unsigned long long)-l;
+	return l;
 }
 
 long long __fixsfdi(float a1) {
-    long long ret;
-    int s;
-    ret = __fixunssfdi((s = a1 >= 0) ? a1 : -a1);
-    return s ? ret : -ret;
+	long long ret;
+	int s;
+	ret = __fixunssfdi((s = a1 >= 0) ? a1 : -a1);
+	return s ? ret : -ret;
 }
 
 unsigned long long __fixunsdfdi(double a1) {
-    register union double_long dl1;
-    register int exp;
-    register unsigned long long l;
+	register union double_long dl1;
+	register int exp;
+	register unsigned long long l;
 
-    dl1.d = a1;
+	dl1.d = a1;
 
-    if (dl1.ll == 0)
-        return (0);
+	if (dl1.ll == 0)
+		return (0);
 
-    exp = EXPD(dl1) - EXCESSD - 53;
-    l = MANTD_LL(dl1);
+	exp = EXPD(dl1) - EXCESSD - 53;
+	l = MANTD_LL(dl1);
 
-    if (exp >= 12)
-        return 1ULL << 63;
-    else if (exp >= 0)
-        l <<= exp;
-    else if (exp >= -52)
-        l >>= -exp;
-    else
-        return 0;
-    if (SIGND(dl1))
-        l = (unsigned long long)-l;
-    return l;
+	if (exp >= 12)
+		return 1ULL << 63;
+	else if (exp >= 0)
+		l <<= exp;
+	else if (exp >= -52)
+		l >>= -exp;
+	else
+		return 0;
+	if (SIGND(dl1))
+		l = (unsigned long long)-l;
+	return l;
 }
 
 long long __fixdfdi(double a1) {
-    long long ret;
-    int s;
-    ret = __fixunsdfdi((s = a1 >= 0) ? a1 : -a1);
-    return s ? ret : -ret;
+	long long ret;
+	int s;
+	ret = __fixunsdfdi((s = a1 >= 0) ? a1 : -a1);
+	return s ? ret : -ret;
 }
 
 #ifndef __arm__
 unsigned long long __fixunsxfdi(long double a1) {
-    register union ldouble_long dl1;
-    register int exp;
-    register unsigned long long l;
+	register union ldouble_long dl1;
+	register int exp;
+	register unsigned long long l;
 
-    dl1.ld = a1;
+	dl1.ld = a1;
 
-    if (dl1.l.lower == 0 && dl1.l.upper == 0)
-        return (0);
+	if (dl1.l.lower == 0 && dl1.l.upper == 0)
+		return (0);
 
-    exp = EXPLD(dl1) - EXCESSLD - 64;
-    l = dl1.l.lower;
-    if (exp > 0)
-        return 1ULL << 63;
-    if (exp < -63)
-        return 0;
-    l >>= -exp;
-    if (SIGNLD(dl1))
-        l = (unsigned long long)-l;
-    return l;
+	exp = EXPLD(dl1) - EXCESSLD - 64;
+	l = dl1.l.lower;
+	if (exp > 0)
+		return 1ULL << 63;
+	if (exp < -63)
+		return 0;
+	l >>= -exp;
+	if (SIGNLD(dl1))
+		l = (unsigned long long)-l;
+	return l;
 }
 
 long long __fixxfdi(long double a1) {
-    long long ret;
-    int s;
-    ret = __fixunsxfdi((s = a1 >= 0) ? a1 : -a1);
-    return s ? ret : -ret;
+	long long ret;
+	int s;
+	ret = __fixunsxfdi((s = a1 >= 0) ? a1 : -a1);
+	return s ? ret : -ret;
 }
 #endif

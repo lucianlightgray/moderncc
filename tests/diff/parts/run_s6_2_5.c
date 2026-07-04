@@ -2,6 +2,6 @@
 #include "s6_2_5.h"
 
 int main(void) {
-    s6_2_5_types();
-    return 0;
+	s6_2_5_types();
+	return 0;
 }

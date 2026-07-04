@@ -3,14 +3,14 @@
 
 int main(void) {
 #ifdef PARTS_STD_HAVE_UCHAR
-    s7_28_uchar();
+	s7_28_uchar();
 #endif
-    s7_28_wconv();
-    s7_28_wstr();
-    s7_28_wmem();
-    s7_28_wnum();
-    s7_28_wprintf();
-    s7_28_wctypef();
-    s7_28_wtok();
-    return 0;
+	s7_28_wconv();
+	s7_28_wstr();
+	s7_28_wmem();
+	s7_28_wnum();
+	s7_28_wprintf();
+	s7_28_wctypef();
+	s7_28_wtok();
+	return 0;
 }

@@ -13,10 +13,10 @@ extern "C" {
 #ifndef _DISKFREE_T_DEFINED
 #define _DISKFREE_T_DEFINED
 struct _diskfree_t {
-    unsigned total_clusters;
-    unsigned avail_clusters;
-    unsigned sectors_per_cluster;
-    unsigned bytes_per_sector;
+	unsigned total_clusters;
+	unsigned avail_clusters;
+	unsigned sectors_per_cluster;
+	unsigned bytes_per_sector;
 };
 #endif
 

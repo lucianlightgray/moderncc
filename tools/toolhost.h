@@ -24,13 +24,13 @@
 
 #include "../src/mcchost.h"
 static inline int toup(int c) {
-    return (c >= 'a' && c <= 'z') ? c - 'a' + 'A' : c;
+	return (c >= 'a' && c <= 'z') ? c - 'a' + 'A' : c;
 }
 static inline char *mcc_basename(const char *name) {
-    char *p = (char *)strchr(name, 0);
-    while (p > name && !HOST_IS_DIRSEP(p[-1]))
-        --p;
-    return p;
+	char *p = (char *)strchr(name, 0);
+	while (p > name && !HOST_IS_DIRSEP(p[-1]))
+		--p;
+	return p;
 }
 
 #include "../src/mcchost.c"

@@ -2,6 +2,6 @@
 #include "s6_10_1.h"
 
 int main(void) {
-    s6_10_1_preproc_test();
-    return 0;
+	s6_10_1_preproc_test();
+	return 0;
 }

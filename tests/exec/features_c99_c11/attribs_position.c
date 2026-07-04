@@ -2,13 +2,13 @@ typedef unsigned short uint16_t;
 typedef unsigned char uint8_t;
 
 typedef union Unaligned16a {
-    uint16_t u;
-    uint8_t b[2];
+	uint16_t u;
+	uint8_t b[2];
 } __attribute__((packed)) Unaligned16a;
 
 typedef union __attribute__((packed)) Unaligned16b {
-    uint16_t u;
-    uint8_t b[2];
+	uint16_t u;
+	uint8_t b[2];
 } Unaligned16b;
 
 extern void foo(void) __attribute__((stdcall));
@@ -19,41 +19,41 @@ void __attribute__((stdcall)) foo(void) {
 extern int some_stdcall_func(int, int, int) __stdcall;
 __stdcall int __stdcall some_stdcall_func(int foo, int bar, int baz) {
 
-    return 43;
+	return 43;
 }
 
 #define ATTR __attribute__((__noinline__))
 int ATTR actual_function() {
-    return 42;
+	return 42;
 }
 
 int label_attribute(void) {
 lab1:
-    __attribute__((__unused__));
-    return 0;
+	__attribute__((__unused__));
+	return 0;
 }
 
 extern int printf(const char *, ...);
 static int globalvar;
 int main() {
-    void *function_pointer = &actual_function;
-    int localvar = 42, i;
+	void *function_pointer = &actual_function;
+	int localvar = 42, i;
 
-    int a = ((ATTR int (*)(void))function_pointer)();
-    printf("%i\n", a);
+	int a = ((ATTR int (*)(void))function_pointer)();
+	printf("%i\n", a);
 
-    int b = ((int(ATTR *)(void))function_pointer)();
-    printf("%i\n", b);
+	int b = ((int(ATTR *)(void))function_pointer)();
+	printf("%i\n", b);
 
-    some_stdcall_func(1, 10, 100);
-    ((int __stdcall (*)(int, int, int))some_stdcall_func)(2, 20, 200);
-    ((int (*__stdcall)(int, int, int))some_stdcall_func)(3, 30, 300);
-    for (i = 0; i < 1024; i++) {
-        globalvar = i;
+	some_stdcall_func(1, 10, 100);
+	((int __stdcall (*)(int, int, int))some_stdcall_func)(2, 20, 200);
+	((int (*__stdcall)(int, int, int))some_stdcall_func)(3, 30, 300);
+	for (i = 0; i < 1024; i++) {
+		globalvar = i;
 
-        ((int(__stdcall *)(int, int, int))some_stdcall_func)(4, 40, 400);
-        if (localvar != 42 || globalvar != i)
-            printf("error, localvar=%d i=%d globalvar=%d\n", localvar, i, globalvar);
-    }
-    return 0;
+		((int(__stdcall *)(int, int, int))some_stdcall_func)(4, 40, 400);
+		if (localvar != 42 || globalvar != i)
+			printf("error, localvar=%d i=%d globalvar=%d\n", localvar, i, globalvar);
+	}
+	return 0;
 }

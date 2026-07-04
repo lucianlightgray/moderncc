@@ -6,27 +6,27 @@ extern "C" {
 #endif
 
 typedef struct _COORD {
-    SHORT X;
-    SHORT Y;
+	SHORT X;
+	SHORT Y;
 } COORD, *PCOORD;
 
 typedef struct _SMALL_RECT {
-    SHORT Left;
-    SHORT Top;
-    SHORT Right;
-    SHORT Bottom;
+	SHORT Left;
+	SHORT Top;
+	SHORT Right;
+	SHORT Bottom;
 } SMALL_RECT, *PSMALL_RECT;
 
 typedef struct _KEY_EVENT_RECORD {
-    WINBOOL bKeyDown;
-    WORD wRepeatCount;
-    WORD wVirtualKeyCode;
-    WORD wVirtualScanCode;
-    union {
-        WCHAR UnicodeChar;
-        CHAR AsciiChar;
-    } uChar;
-    DWORD dwControlKeyState;
+	WINBOOL bKeyDown;
+	WORD wRepeatCount;
+	WORD wVirtualKeyCode;
+	WORD wVirtualScanCode;
+	union {
+		WCHAR UnicodeChar;
+		CHAR AsciiChar;
+	} uChar;
+	DWORD dwControlKeyState;
 } KEY_EVENT_RECORD, *PKEY_EVENT_RECORD;
 
 #define RIGHT_ALT_PRESSED 0x1
@@ -47,10 +47,10 @@ typedef struct _KEY_EVENT_RECORD {
 #define NLS_IME_DISABLE 0x20000000
 
 typedef struct _MOUSE_EVENT_RECORD {
-    COORD dwMousePosition;
-    DWORD dwButtonState;
-    DWORD dwControlKeyState;
-    DWORD dwEventFlags;
+	COORD dwMousePosition;
+	DWORD dwButtonState;
+	DWORD dwControlKeyState;
+	DWORD dwEventFlags;
 } MOUSE_EVENT_RECORD, *PMOUSE_EVENT_RECORD;
 
 #define FROM_LEFT_1ST_BUTTON_PRESSED 0x1
@@ -64,26 +64,26 @@ typedef struct _MOUSE_EVENT_RECORD {
 #define MOUSE_WHEELED 0x4
 
 typedef struct _WINDOW_BUFFER_SIZE_RECORD {
-    COORD dwSize;
+	COORD dwSize;
 } WINDOW_BUFFER_SIZE_RECORD, *PWINDOW_BUFFER_SIZE_RECORD;
 
 typedef struct _MENU_EVENT_RECORD {
-    UINT dwCommandId;
+	UINT dwCommandId;
 } MENU_EVENT_RECORD, *PMENU_EVENT_RECORD;
 
 typedef struct _FOCUS_EVENT_RECORD {
-    WINBOOL bSetFocus;
+	WINBOOL bSetFocus;
 } FOCUS_EVENT_RECORD, *PFOCUS_EVENT_RECORD;
 
 typedef struct _INPUT_RECORD {
-    WORD EventType;
-    union {
-        KEY_EVENT_RECORD KeyEvent;
-        MOUSE_EVENT_RECORD MouseEvent;
-        WINDOW_BUFFER_SIZE_RECORD WindowBufferSizeEvent;
-        MENU_EVENT_RECORD MenuEvent;
-        FOCUS_EVENT_RECORD FocusEvent;
-    } Event;
+	WORD EventType;
+	union {
+		KEY_EVENT_RECORD KeyEvent;
+		MOUSE_EVENT_RECORD MouseEvent;
+		WINDOW_BUFFER_SIZE_RECORD WindowBufferSizeEvent;
+		MENU_EVENT_RECORD MenuEvent;
+		FOCUS_EVENT_RECORD FocusEvent;
+	} Event;
 } INPUT_RECORD, *PINPUT_RECORD;
 
 #define KEY_EVENT 0x1
@@ -93,11 +93,11 @@ typedef struct _INPUT_RECORD {
 #define FOCUS_EVENT 0x10
 
 typedef struct _CHAR_INFO {
-    union {
-        WCHAR UnicodeChar;
-        CHAR AsciiChar;
-    } Char;
-    WORD Attributes;
+	union {
+		WCHAR UnicodeChar;
+		CHAR AsciiChar;
+	} Char;
+	WORD Attributes;
 } CHAR_INFO, *PCHAR_INFO;
 
 #define FOREGROUND_BLUE 0x1
@@ -119,27 +119,27 @@ typedef struct _CHAR_INFO {
 #define COMMON_LVB_SBCSDBCS 0x300
 
 typedef struct _CONSOLE_SCREEN_BUFFER_INFO {
-    COORD dwSize;
-    COORD dwCursorPosition;
-    WORD wAttributes;
-    SMALL_RECT srWindow;
-    COORD dwMaximumWindowSize;
+	COORD dwSize;
+	COORD dwCursorPosition;
+	WORD wAttributes;
+	SMALL_RECT srWindow;
+	COORD dwMaximumWindowSize;
 } CONSOLE_SCREEN_BUFFER_INFO, *PCONSOLE_SCREEN_BUFFER_INFO;
 
 typedef struct _CONSOLE_CURSOR_INFO {
-    DWORD dwSize;
-    WINBOOL bVisible;
+	DWORD dwSize;
+	WINBOOL bVisible;
 } CONSOLE_CURSOR_INFO, *PCONSOLE_CURSOR_INFO;
 
 typedef struct _CONSOLE_FONT_INFO {
-    DWORD nFont;
-    COORD dwFontSize;
+	DWORD nFont;
+	COORD dwFontSize;
 } CONSOLE_FONT_INFO, *PCONSOLE_FONT_INFO;
 
 typedef struct _CONSOLE_SELECTION_INFO {
-    DWORD dwFlags;
-    COORD dwSelectionAnchor;
-    SMALL_RECT srSelection;
+	DWORD dwFlags;
+	COORD dwSelectionAnchor;
+	SMALL_RECT srSelection;
 } CONSOLE_SELECTION_INFO, *PCONSOLE_SELECTION_INFO;
 
 #define CONSOLE_NO_SELECTION 0x0

@@ -139,43 +139,43 @@ int __cdecl isblank(int _C);
 #define isleadbyte(c) (__pctype_func()[(unsigned char)(c)] & _LEADBYTE)
 #else
 __CRT_INLINE int __cdecl iswalpha(wint_t _C) {
-    return (iswctype(_C, _ALPHA));
+	return (iswctype(_C, _ALPHA));
 }
 __CRT_INLINE int __cdecl iswupper(wint_t _C) {
-    return (iswctype(_C, _UPPER));
+	return (iswctype(_C, _UPPER));
 }
 __CRT_INLINE int __cdecl iswlower(wint_t _C) {
-    return (iswctype(_C, _LOWER));
+	return (iswctype(_C, _LOWER));
 }
 __CRT_INLINE int __cdecl iswdigit(wint_t _C) {
-    return (iswctype(_C, _DIGIT));
+	return (iswctype(_C, _DIGIT));
 }
 __CRT_INLINE int __cdecl iswxdigit(wint_t _C) {
-    return (iswctype(_C, _HEX));
+	return (iswctype(_C, _HEX));
 }
 __CRT_INLINE int __cdecl iswspace(wint_t _C) {
-    return (iswctype(_C, _SPACE));
+	return (iswctype(_C, _SPACE));
 }
 __CRT_INLINE int __cdecl iswpunct(wint_t _C) {
-    return (iswctype(_C, _PUNCT));
+	return (iswctype(_C, _PUNCT));
 }
 __CRT_INLINE int __cdecl iswalnum(wint_t _C) {
-    return (iswctype(_C, _ALPHA | _DIGIT));
+	return (iswctype(_C, _ALPHA | _DIGIT));
 }
 __CRT_INLINE int __cdecl iswprint(wint_t _C) {
-    return (iswctype(_C, _BLANK | _PUNCT | _ALPHA | _DIGIT));
+	return (iswctype(_C, _BLANK | _PUNCT | _ALPHA | _DIGIT));
 }
 __CRT_INLINE int __cdecl iswgraph(wint_t _C) {
-    return (iswctype(_C, _PUNCT | _ALPHA | _DIGIT));
+	return (iswctype(_C, _PUNCT | _ALPHA | _DIGIT));
 }
 __CRT_INLINE int __cdecl iswcntrl(wint_t _C) {
-    return (iswctype(_C, _CONTROL));
+	return (iswctype(_C, _CONTROL));
 }
 __CRT_INLINE int __cdecl iswascii(wint_t _C) {
-    return ((unsigned)(_C) < 0x80);
+	return ((unsigned)(_C) < 0x80);
 }
 __CRT_INLINE int __cdecl isleadbyte(int _C) {
-    return (__pctype_func()[(unsigned char)(_C)] & _LEADBYTE);
+	return (__pctype_func()[(unsigned char)(_C)] & _LEADBYTE);
 }
 #endif
 #endif

@@ -1,28 +1,28 @@
 #include <stdio.h>
 struct wchar {
-    char *data;
-    char mem[];
+	char *data;
+	char mem[];
 };
 struct wint {
-    char *data;
-    int mem[];
+	char *data;
+	int mem[];
 };
 int f1char(void) {
-    char s[9] = "nonono";
-    struct wchar q = {"bugs"};
-    return !s[0];
+	char s[9] = "nonono";
+	struct wchar q = {"bugs"};
+	return !s[0];
 }
 int f1int(void) {
-    char s[9] = "nonono";
-    struct wint q = {"bugs"};
-    return !s[0];
+	char s[9] = "nonono";
+	struct wint q = {"bugs"};
+	return !s[0];
 }
 int empty[] = {};
 int main(void) {
-    char s[9] = "nonono";
-    static struct wchar q = {"bugs", {'c'}};
+	char s[9] = "nonono";
+	static struct wchar q = {"bugs", {'c'}};
 
-    if (f1char() || f1int())
-        printf("bla\n");
-    return !s[0];
+	if (f1char() || f1int())
+		printf("bla\n");
+	return !s[0];
 }

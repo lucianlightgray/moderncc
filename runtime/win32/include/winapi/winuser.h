@@ -413,13 +413,13 @@ WINUSERAPI int WINAPIV wsprintfW(LPWSTR, LPCWSTR, ...);
 #define HCBT_SETFOCUS 9
 
 typedef struct tagCBT_CREATEWNDA {
-    struct tagCREATESTRUCTA *lpcs;
-    HWND hwndInsertAfter;
+	struct tagCREATESTRUCTA *lpcs;
+	HWND hwndInsertAfter;
 } CBT_CREATEWNDA, *LPCBT_CREATEWNDA;
 
 typedef struct tagCBT_CREATEWNDW {
-    struct tagCREATESTRUCTW *lpcs;
-    HWND hwndInsertAfter;
+	struct tagCREATESTRUCTW *lpcs;
+	HWND hwndInsertAfter;
 } CBT_CREATEWNDW, *LPCBT_CREATEWNDW;
 #ifdef UNICODE
 typedef CBT_CREATEWNDW CBT_CREATEWND;
@@ -430,13 +430,13 @@ typedef LPCBT_CREATEWNDA LPCBT_CREATEWND;
 #endif
 
 typedef struct tagCBTACTIVATESTRUCT {
-    WINBOOL fMouse;
-    HWND hWndActive;
+	WINBOOL fMouse;
+	HWND hWndActive;
 } CBTACTIVATESTRUCT, *LPCBTACTIVATESTRUCT;
 
 typedef struct tagWTSSESSION_NOTIFICATION {
-    DWORD cbSize;
-    DWORD dwSessionId;
+	DWORD cbSize;
+	DWORD dwSessionId;
 
 } WTSSESSION_NOTIFICATION, *PWTSSESSION_NOTIFICATION;
 
@@ -546,33 +546,33 @@ typedef struct tagWTSSESSION_NOTIFICATION {
 #define GET_KEYSTATE_LPARAM(lParam) GET_FLAGS_LPARAM(lParam)
 
 typedef struct {
-    HWND hwnd;
-    RECT rc;
+	HWND hwnd;
+	RECT rc;
 } SHELLHOOKINFO, *LPSHELLHOOKINFO;
 
 typedef struct tagEVENTMSG {
-    UINT message;
-    UINT paramL;
-    UINT paramH;
-    DWORD time;
-    HWND hwnd;
+	UINT message;
+	UINT paramL;
+	UINT paramH;
+	DWORD time;
+	HWND hwnd;
 } EVENTMSG, *PEVENTMSGMSG, *NPEVENTMSGMSG, *LPEVENTMSGMSG;
 
 typedef struct tagEVENTMSG *PEVENTMSG, *NPEVENTMSG, *LPEVENTMSG;
 
 typedef struct tagCWPSTRUCT {
-    LPARAM lParam;
-    WPARAM wParam;
-    UINT message;
-    HWND hwnd;
+	LPARAM lParam;
+	WPARAM wParam;
+	UINT message;
+	HWND hwnd;
 } CWPSTRUCT, *PCWPSTRUCT, *NPCWPSTRUCT, *LPCWPSTRUCT;
 
 typedef struct tagCWPRETSTRUCT {
-    LRESULT lResult;
-    LPARAM lParam;
-    WPARAM wParam;
-    UINT message;
-    HWND hwnd;
+	LRESULT lResult;
+	LPARAM lParam;
+	WPARAM wParam;
+	UINT message;
+	HWND hwnd;
 } CWPRETSTRUCT, *PCWPRETSTRUCT, *NPCWPRETSTRUCT, *LPCWPRETSTRUCT;
 
 #define LLKHF_EXTENDED (KF_EXTENDED >> 8)
@@ -583,52 +583,52 @@ typedef struct tagCWPRETSTRUCT {
 #define LLMHF_INJECTED 0x00000001
 
 typedef struct tagKBDLLHOOKSTRUCT {
-    DWORD vkCode;
-    DWORD scanCode;
-    DWORD flags;
-    DWORD time;
-    ULONG_PTR dwExtraInfo;
+	DWORD vkCode;
+	DWORD scanCode;
+	DWORD flags;
+	DWORD time;
+	ULONG_PTR dwExtraInfo;
 } KBDLLHOOKSTRUCT, *LPKBDLLHOOKSTRUCT, *PKBDLLHOOKSTRUCT;
 
 typedef struct tagMSLLHOOKSTRUCT {
-    POINT pt;
-    DWORD mouseData;
-    DWORD flags;
-    DWORD time;
-    ULONG_PTR dwExtraInfo;
+	POINT pt;
+	DWORD mouseData;
+	DWORD flags;
+	DWORD time;
+	ULONG_PTR dwExtraInfo;
 } MSLLHOOKSTRUCT, *LPMSLLHOOKSTRUCT, *PMSLLHOOKSTRUCT;
 
 typedef struct tagDEBUGHOOKINFO {
-    DWORD idThread;
-    DWORD idThreadInstaller;
-    LPARAM lParam;
-    WPARAM wParam;
-    int code;
+	DWORD idThread;
+	DWORD idThreadInstaller;
+	LPARAM lParam;
+	WPARAM wParam;
+	int code;
 } DEBUGHOOKINFO, *PDEBUGHOOKINFO, *NPDEBUGHOOKINFO, *LPDEBUGHOOKINFO;
 
 typedef struct tagMOUSEHOOKSTRUCT {
-    POINT pt;
-    HWND hwnd;
-    UINT wHitTestCode;
-    ULONG_PTR dwExtraInfo;
+	POINT pt;
+	HWND hwnd;
+	UINT wHitTestCode;
+	ULONG_PTR dwExtraInfo;
 } MOUSEHOOKSTRUCT, *LPMOUSEHOOKSTRUCT, *PMOUSEHOOKSTRUCT;
 
 #ifdef __cplusplus
 typedef struct tagMOUSEHOOKSTRUCTEX : public tagMOUSEHOOKSTRUCT {
-    DWORD mouseData;
+	DWORD mouseData;
 } MOUSEHOOKSTRUCTEX, *LPMOUSEHOOKSTRUCTEX, *PMOUSEHOOKSTRUCTEX;
 #else
 typedef struct tagMOUSEHOOKSTRUCTEX {
-    MOUSEHOOKSTRUCT _unnamed;
-    DWORD mouseData;
+	MOUSEHOOKSTRUCT _unnamed;
+	DWORD mouseData;
 } MOUSEHOOKSTRUCTEX, *LPMOUSEHOOKSTRUCTEX, *PMOUSEHOOKSTRUCTEX;
 #endif
 
 typedef struct tagHARDWAREHOOKSTRUCT {
-    HWND hwnd;
-    UINT message;
-    WPARAM wParam;
-    LPARAM lParam;
+	HWND hwnd;
+	UINT message;
+	WPARAM wParam;
+	LPARAM lParam;
 } HARDWAREHOOKSTRUCT, *LPHARDWAREHOOKSTRUCT, *PHARDWAREHOOKSTRUCT;
 #endif
 
@@ -669,10 +669,10 @@ WINUSERAPI int WINAPI GetKeyboardLayoutList(int nBuff, HKL *lpList);
 WINUSERAPI HKL WINAPI GetKeyboardLayout(DWORD idThread);
 
 typedef struct tagMOUSEMOVEPOINT {
-    int x;
-    int y;
-    DWORD time;
-    ULONG_PTR dwExtraInfo;
+	int x;
+	int y;
+	DWORD time;
+	ULONG_PTR dwExtraInfo;
 } MOUSEMOVEPOINT, *PMOUSEMOVEPOINT, *LPMOUSEMOVEPOINT;
 
 #define GMMP_USE_DISPLAY_POINTS 1
@@ -774,9 +774,9 @@ WINUSERAPI WINBOOL WINAPI GetUserObjectSecurity(HANDLE hObj, PSECURITY_INFORMATI
 #define UOI_USER_SID 4
 
 typedef struct tagUSEROBJECTFLAGS {
-    WINBOOL fInherit;
-    WINBOOL fReserved;
-    DWORD dwFlags;
+	WINBOOL fInherit;
+	WINBOOL fReserved;
+	DWORD dwFlags;
 } USEROBJECTFLAGS, *PUSEROBJECTFLAGS;
 
 #ifdef UNICODE
@@ -794,34 +794,34 @@ WINUSERAPI WINBOOL WINAPI SetUserObjectInformationW(HANDLE hObj, int nIndex, PVO
 #endif
 
 typedef struct tagWNDCLASSEXA {
-    UINT cbSize;
-    UINT style;
-    WNDPROC lpfnWndProc;
-    int cbClsExtra;
-    int cbWndExtra;
-    HINSTANCE hInstance;
-    HICON hIcon;
-    HCURSOR hCursor;
-    HBRUSH hbrBackground;
-    LPCSTR lpszMenuName;
-    LPCSTR lpszClassName;
-    HICON hIconSm;
+	UINT cbSize;
+	UINT style;
+	WNDPROC lpfnWndProc;
+	int cbClsExtra;
+	int cbWndExtra;
+	HINSTANCE hInstance;
+	HICON hIcon;
+	HCURSOR hCursor;
+	HBRUSH hbrBackground;
+	LPCSTR lpszMenuName;
+	LPCSTR lpszClassName;
+	HICON hIconSm;
 } WNDCLASSEXA, *PWNDCLASSEXA, *NPWNDCLASSEXA, *LPWNDCLASSEXA;
 
 typedef struct tagWNDCLASSEXW {
-    UINT cbSize;
-    UINT style;
-    WNDPROC lpfnWndProc;
-    int cbClsExtra;
-    int cbWndExtra;
-    HINSTANCE hInstance;
-    HICON hIcon;
-    HCURSOR hCursor;
-    HBRUSH hbrBackground;
-    LPCWSTR lpszMenuName;
-    LPCWSTR lpszClassName;
+	UINT cbSize;
+	UINT style;
+	WNDPROC lpfnWndProc;
+	int cbClsExtra;
+	int cbWndExtra;
+	HINSTANCE hInstance;
+	HICON hIcon;
+	HCURSOR hCursor;
+	HBRUSH hbrBackground;
+	LPCWSTR lpszMenuName;
+	LPCWSTR lpszClassName;
 
-    HICON hIconSm;
+	HICON hIconSm;
 } WNDCLASSEXW, *PWNDCLASSEXW, *NPWNDCLASSEXW, *LPWNDCLASSEXW;
 
 #ifdef UNICODE
@@ -837,29 +837,29 @@ typedef LPWNDCLASSEXA LPWNDCLASSEX;
 #endif
 
 typedef struct tagWNDCLASSA {
-    UINT style;
-    WNDPROC lpfnWndProc;
-    int cbClsExtra;
-    int cbWndExtra;
-    HINSTANCE hInstance;
-    HICON hIcon;
-    HCURSOR hCursor;
-    HBRUSH hbrBackground;
-    LPCSTR lpszMenuName;
-    LPCSTR lpszClassName;
+	UINT style;
+	WNDPROC lpfnWndProc;
+	int cbClsExtra;
+	int cbWndExtra;
+	HINSTANCE hInstance;
+	HICON hIcon;
+	HCURSOR hCursor;
+	HBRUSH hbrBackground;
+	LPCSTR lpszMenuName;
+	LPCSTR lpszClassName;
 } WNDCLASSA, *PWNDCLASSA, *NPWNDCLASSA, *LPWNDCLASSA;
 
 typedef struct tagWNDCLASSW {
-    UINT style;
-    WNDPROC lpfnWndProc;
-    int cbClsExtra;
-    int cbWndExtra;
-    HINSTANCE hInstance;
-    HICON hIcon;
-    HCURSOR hCursor;
-    HBRUSH hbrBackground;
-    LPCWSTR lpszMenuName;
-    LPCWSTR lpszClassName;
+	UINT style;
+	WNDPROC lpfnWndProc;
+	int cbClsExtra;
+	int cbWndExtra;
+	HINSTANCE hInstance;
+	HICON hIcon;
+	HCURSOR hCursor;
+	HBRUSH hbrBackground;
+	LPCWSTR lpszMenuName;
+	LPCWSTR lpszClassName;
 } WNDCLASSW, *PWNDCLASSW, *NPWNDCLASSW, *LPWNDCLASSW;
 
 #ifdef UNICODE
@@ -879,19 +879,19 @@ WINUSERAPI VOID WINAPI DisableProcessWindowsGhosting(VOID);
 
 #ifndef NOMSG
 typedef struct tagMSG {
-    HWND hwnd;
-    UINT message;
-    WPARAM wParam;
-    LPARAM lParam;
-    DWORD time;
-    POINT pt;
+	HWND hwnd;
+	UINT message;
+	WPARAM wParam;
+	LPARAM lParam;
+	DWORD time;
+	POINT pt;
 } MSG, *PMSG, *NPMSG, *LPMSG;
 
 #define POINTSTOPOINT(pt, pts)                       \
-    {                                                \
-        (pt).x = (LONG)(SHORT)LOWORD(*(LONG *)&pts); \
-        (pt).y = (LONG)(SHORT)HIWORD(*(LONG *)&pts); \
-    }
+	{                                                \
+		(pt).x = (LONG)(SHORT)LOWORD(*(LONG *)&pts); \
+		(pt).y = (LONG)(SHORT)HIWORD(*(LONG *)&pts); \
+	}
 
 #define POINTTOPOINTS(pt) (MAKELONG((short)((pt).x), (short)((pt).y)))
 #define MAKEWPARAM(l, h) ((WPARAM)(DWORD)MAKELONG(l, h))
@@ -1000,11 +1000,11 @@ typedef struct tagMSG {
 #define WM_GETMINMAXINFO 0x0024
 
 typedef struct tagMINMAXINFO {
-    POINT ptReserved;
-    POINT ptMaxSize;
-    POINT ptMaxPosition;
-    POINT ptMinTrackSize;
-    POINT ptMaxTrackSize;
+	POINT ptReserved;
+	POINT ptMaxSize;
+	POINT ptMaxPosition;
+	POINT ptMinTrackSize;
+	POINT ptMaxTrackSize;
 } MINMAXINFO, *PMINMAXINFO, *LPMINMAXINFO;
 
 #define WM_PAINTICON 0x0026
@@ -1042,15 +1042,15 @@ typedef struct tagMINMAXINFO {
 #define WM_CANCELJOURNAL 0x004B
 
 typedef struct tagCOPYDATASTRUCT {
-    ULONG_PTR dwData;
-    DWORD cbData;
-    PVOID lpData;
+	ULONG_PTR dwData;
+	DWORD cbData;
+	PVOID lpData;
 } COPYDATASTRUCT, *PCOPYDATASTRUCT;
 
 typedef struct tagMDINEXTMENU {
-    HMENU hmenuIn;
-    HMENU hmenuNext;
-    HWND hwndNext;
+	HMENU hmenuIn;
+	HMENU hmenuNext;
+	HWND hwndNext;
 } MDINEXTMENU, *PMDINEXTMENU, *LPMDINEXTMENU;
 
 #define WM_NOTIFY 0x004E
@@ -1366,18 +1366,18 @@ WINUSERAPI UINT WINAPI RegisterWindowMessageW(LPCWSTR lpString);
 #define SIZEZOOMHIDE SIZE_MAXHIDE
 
 typedef struct tagWINDOWPOS {
-    HWND hwnd;
-    HWND hwndInsertAfter;
-    int x;
-    int y;
-    int cx;
-    int cy;
-    UINT flags;
+	HWND hwnd;
+	HWND hwndInsertAfter;
+	int x;
+	int y;
+	int cx;
+	int cy;
+	UINT flags;
 } WINDOWPOS, *LPWINDOWPOS, *PWINDOWPOS;
 
 typedef struct tagNCCALCSIZE_PARAMS {
-    RECT rgrc[3];
-    PWINDOWPOS lppos;
+	RECT rgrc[3];
+	PWINDOWPOS lppos;
 } NCCALCSIZE_PARAMS, *LPNCCALCSIZE_PARAMS;
 
 #define WVR_ALIGNTOP 0x0010
@@ -1411,10 +1411,10 @@ typedef struct tagNCCALCSIZE_PARAMS {
 #endif
 
 typedef struct tagTRACKMOUSEEVENT {
-    DWORD cbSize;
-    DWORD dwFlags;
-    HWND hwndTrack;
-    DWORD dwHoverTime;
+	DWORD cbSize;
+	DWORD dwFlags;
+	HWND hwndTrack;
+	DWORD dwHoverTime;
 } TRACKMOUSEEVENT, *LPTRACKMOUSEEVENT;
 
 WINUSERAPI WINBOOL WINAPI TrackMouseEvent(LPTRACKMOUSEEVENT lpEventTrack);
@@ -1640,48 +1640,48 @@ WINUSERAPI WINBOOL WINAPI DrawAnimatedRects(HWND hwnd, int idAni, CONST RECT *lp
 #define FALT 0x10
 
 typedef struct tagACCEL {
-    BYTE fVirt;
-    WORD key;
-    WORD cmd;
+	BYTE fVirt;
+	WORD key;
+	WORD cmd;
 } ACCEL, *LPACCEL;
 
 typedef struct tagPAINTSTRUCT {
-    HDC hdc;
-    WINBOOL fErase;
-    RECT rcPaint;
-    WINBOOL fRestore;
-    WINBOOL fIncUpdate;
-    BYTE rgbReserved[32];
+	HDC hdc;
+	WINBOOL fErase;
+	RECT rcPaint;
+	WINBOOL fRestore;
+	WINBOOL fIncUpdate;
+	BYTE rgbReserved[32];
 } PAINTSTRUCT, *PPAINTSTRUCT, *NPPAINTSTRUCT, *LPPAINTSTRUCT;
 
 typedef struct tagCREATESTRUCTA {
-    LPVOID lpCreateParams;
-    HINSTANCE hInstance;
-    HMENU hMenu;
-    HWND hwndParent;
-    int cy;
-    int cx;
-    int y;
-    int x;
-    LONG style;
-    LPCSTR lpszName;
-    LPCSTR lpszClass;
-    DWORD dwExStyle;
+	LPVOID lpCreateParams;
+	HINSTANCE hInstance;
+	HMENU hMenu;
+	HWND hwndParent;
+	int cy;
+	int cx;
+	int y;
+	int x;
+	LONG style;
+	LPCSTR lpszName;
+	LPCSTR lpszClass;
+	DWORD dwExStyle;
 } CREATESTRUCTA, *LPCREATESTRUCTA;
 
 typedef struct tagCREATESTRUCTW {
-    LPVOID lpCreateParams;
-    HINSTANCE hInstance;
-    HMENU hMenu;
-    HWND hwndParent;
-    int cy;
-    int cx;
-    int y;
-    int x;
-    LONG style;
-    LPCWSTR lpszName;
-    LPCWSTR lpszClass;
-    DWORD dwExStyle;
+	LPVOID lpCreateParams;
+	HINSTANCE hInstance;
+	HMENU hMenu;
+	HWND hwndParent;
+	int cy;
+	int cx;
+	int y;
+	int x;
+	LONG style;
+	LPCWSTR lpszName;
+	LPCWSTR lpszClass;
+	DWORD dwExStyle;
 } CREATESTRUCTW, *LPCREATESTRUCTW;
 
 #ifdef UNICODE
@@ -1693,12 +1693,12 @@ typedef LPCREATESTRUCTA LPCREATESTRUCT;
 #endif
 
 typedef struct tagWINDOWPLACEMENT {
-    UINT length;
-    UINT flags;
-    UINT showCmd;
-    POINT ptMinPosition;
-    POINT ptMaxPosition;
-    RECT rcNormalPosition;
+	UINT length;
+	UINT flags;
+	UINT showCmd;
+	POINT ptMinPosition;
+	POINT ptMaxPosition;
+	RECT rcNormalPosition;
 } WINDOWPLACEMENT;
 typedef WINDOWPLACEMENT *PWINDOWPLACEMENT, *LPWINDOWPLACEMENT;
 
@@ -1707,16 +1707,16 @@ typedef WINDOWPLACEMENT *PWINDOWPLACEMENT, *LPWINDOWPLACEMENT;
 #define WPF_ASYNCWINDOWPLACEMENT 0x0004
 
 typedef struct tagNMHDR {
-    HWND hwndFrom;
-    UINT_PTR idFrom;
-    UINT code;
+	HWND hwndFrom;
+	UINT_PTR idFrom;
+	UINT code;
 } NMHDR;
 
 typedef NMHDR *LPNMHDR;
 
 typedef struct tagSTYLESTRUCT {
-    DWORD styleOld;
-    DWORD styleNew;
+	DWORD styleOld;
+	DWORD styleNew;
 } STYLESTRUCT, *LPSTYLESTRUCT;
 
 #define ODT_MENU 1
@@ -1742,43 +1742,43 @@ typedef struct tagSTYLESTRUCT {
 #define ODS_NOFOCUSRECT 0x0200
 
 typedef struct tagMEASUREITEMSTRUCT {
-    UINT CtlType;
-    UINT CtlID;
-    UINT itemID;
-    UINT itemWidth;
-    UINT itemHeight;
-    ULONG_PTR itemData;
+	UINT CtlType;
+	UINT CtlID;
+	UINT itemID;
+	UINT itemWidth;
+	UINT itemHeight;
+	ULONG_PTR itemData;
 } MEASUREITEMSTRUCT, *PMEASUREITEMSTRUCT, *LPMEASUREITEMSTRUCT;
 
 typedef struct tagDRAWITEMSTRUCT {
-    UINT CtlType;
-    UINT CtlID;
-    UINT itemID;
-    UINT itemAction;
-    UINT itemState;
-    HWND hwndItem;
-    HDC hDC;
-    RECT rcItem;
-    ULONG_PTR itemData;
+	UINT CtlType;
+	UINT CtlID;
+	UINT itemID;
+	UINT itemAction;
+	UINT itemState;
+	HWND hwndItem;
+	HDC hDC;
+	RECT rcItem;
+	ULONG_PTR itemData;
 } DRAWITEMSTRUCT, *PDRAWITEMSTRUCT, *LPDRAWITEMSTRUCT;
 
 typedef struct tagDELETEITEMSTRUCT {
-    UINT CtlType;
-    UINT CtlID;
-    UINT itemID;
-    HWND hwndItem;
-    ULONG_PTR itemData;
+	UINT CtlType;
+	UINT CtlID;
+	UINT itemID;
+	HWND hwndItem;
+	ULONG_PTR itemData;
 } DELETEITEMSTRUCT, *PDELETEITEMSTRUCT, *LPDELETEITEMSTRUCT;
 
 typedef struct tagCOMPAREITEMSTRUCT {
-    UINT CtlType;
-    UINT CtlID;
-    HWND hwndItem;
-    UINT itemID1;
-    ULONG_PTR itemData1;
-    UINT itemID2;
-    ULONG_PTR itemData2;
-    DWORD dwLocaleId;
+	UINT CtlType;
+	UINT CtlID;
+	HWND hwndItem;
+	UINT itemID1;
+	ULONG_PTR itemData1;
+	UINT itemID2;
+	ULONG_PTR itemData2;
+	DWORD dwLocaleId;
 } COMPAREITEMSTRUCT, *PCOMPAREITEMSTRUCT, *LPCOMPAREITEMSTRUCT;
 
 #ifndef NOMSG
@@ -1870,10 +1870,10 @@ WINUSERAPI WINBOOL WINAPI SendMessageCallbackA(HWND hWnd, UINT Msg, WPARAM wPara
 WINUSERAPI WINBOOL WINAPI SendMessageCallbackW(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam, SENDASYNCPROC lpResultCallBack, ULONG_PTR dwData);
 
 typedef struct {
-    UINT cbSize;
-    HDESK hdesk;
-    HWND hwnd;
-    LUID luid;
+	UINT cbSize;
+	HDESK hdesk;
+	HWND hwnd;
+	LUID luid;
 } BSMINFO, *PBSMINFO;
 
 #ifdef UNICODE
@@ -2016,16 +2016,16 @@ WINUSERAPI WINBOOL WINAPI AnimateWindow(HWND hWnd, DWORD dwTime, DWORD dwFlags);
 WINUSERAPI WINBOOL WINAPI UpdateLayeredWindow(HWND hWnd, HDC hdcDst, POINT *pptDst, SIZE *psize, HDC hdcSrc, POINT *pptSrc, COLORREF crKey, BLENDFUNCTION *pblend, DWORD dwFlags);
 
 typedef struct tagUPDATELAYEREDWINDOWINFO {
-    DWORD cbSize;
-    HDC hdcDst;
-    POINT CONST *pptDst;
-    SIZE CONST *psize;
-    HDC hdcSrc;
-    POINT CONST *pptSrc;
-    COLORREF crKey;
-    BLENDFUNCTION CONST *pblend;
-    DWORD dwFlags;
-    RECT CONST *prcDirty;
+	DWORD cbSize;
+	HDC hdcDst;
+	POINT CONST *pptDst;
+	SIZE CONST *psize;
+	HDC hdcSrc;
+	POINT CONST *pptSrc;
+	COLORREF crKey;
+	BLENDFUNCTION CONST *pblend;
+	DWORD dwFlags;
+	RECT CONST *prcDirty;
 } UPDATELAYEREDWINDOWINFO, *PUPDATELAYEREDWINDOWINFO;
 
 WINUSERAPI WINBOOL WINAPI UpdateLayeredWindowIndirect(HWND hWnd, UPDATELAYEREDWINDOWINFO CONST *pULWInfo);
@@ -2049,11 +2049,11 @@ WINUSERAPI WINBOOL WINAPI ShowWindowAsync(HWND hWnd, int nCmdShow);
 WINUSERAPI WINBOOL WINAPI FlashWindow(HWND hWnd, WINBOOL bInvert);
 
 typedef struct {
-    UINT cbSize;
-    HWND hwnd;
-    DWORD dwFlags;
-    UINT uCount;
-    DWORD dwTimeout;
+	UINT cbSize;
+	HWND hwnd;
+	DWORD dwFlags;
+	UINT uCount;
+	DWORD dwTimeout;
 } FLASHWINFO, *PFLASHWINFO;
 
 WINUSERAPI WINBOOL WINAPI FlashWindowEx(PFLASHWINFO pfwi);
@@ -2112,13 +2112,13 @@ WINUSERAPI WINBOOL WINAPI IsZoomed(HWND hWnd);
 #include <pshpack2.h>
 
 typedef struct {
-    DWORD style;
-    DWORD dwExtendedStyle;
-    WORD cdit;
-    short x;
-    short y;
-    short cx;
-    short cy;
+	DWORD style;
+	DWORD dwExtendedStyle;
+	WORD cdit;
+	short x;
+	short y;
+	short cx;
+	short cy;
 } DLGTEMPLATE;
 
 typedef DLGTEMPLATE *LPDLGTEMPLATEA;
@@ -2140,13 +2140,13 @@ typedef LPCDLGTEMPLATEA LPCDLGTEMPLATE;
 #endif
 
 typedef struct {
-    DWORD style;
-    DWORD dwExtendedStyle;
-    short x;
-    short y;
-    short cx;
-    short cy;
-    WORD id;
+	DWORD style;
+	DWORD dwExtendedStyle;
+	short x;
+	short y;
+	short cx;
+	short cy;
+	WORD id;
 } DLGITEMTEMPLATE;
 
 typedef DLGITEMTEMPLATE *PDLGITEMTEMPLATEA;
@@ -2414,26 +2414,26 @@ WINUSERAPI VOID WINAPI keybd_event(BYTE bVk, BYTE bScan, DWORD dwFlags, ULONG_PT
 WINUSERAPI VOID WINAPI mouse_event(DWORD dwFlags, DWORD dx, DWORD dy, DWORD dwData, ULONG_PTR dwExtraInfo);
 
 typedef struct tagMOUSEINPUT {
-    LONG dx;
-    LONG dy;
-    DWORD mouseData;
-    DWORD dwFlags;
-    DWORD time;
-    ULONG_PTR dwExtraInfo;
+	LONG dx;
+	LONG dy;
+	DWORD mouseData;
+	DWORD dwFlags;
+	DWORD time;
+	ULONG_PTR dwExtraInfo;
 } MOUSEINPUT, *PMOUSEINPUT, *LPMOUSEINPUT;
 
 typedef struct tagKEYBDINPUT {
-    WORD wVk;
-    WORD wScan;
-    DWORD dwFlags;
-    DWORD time;
-    ULONG_PTR dwExtraInfo;
+	WORD wVk;
+	WORD wScan;
+	DWORD dwFlags;
+	DWORD time;
+	ULONG_PTR dwExtraInfo;
 } KEYBDINPUT, *PKEYBDINPUT, *LPKEYBDINPUT;
 
 typedef struct tagHARDWAREINPUT {
-    DWORD uMsg;
-    WORD wParamL;
-    WORD wParamH;
+	DWORD uMsg;
+	WORD wParamL;
+	WORD wParamH;
 } HARDWAREINPUT, *PHARDWAREINPUT, *LPHARDWAREINPUT;
 
 #define INPUT_MOUSE 0
@@ -2441,19 +2441,19 @@ typedef struct tagHARDWAREINPUT {
 #define INPUT_HARDWARE 2
 
 typedef struct tagINPUT {
-    DWORD type;
-    union {
-        MOUSEINPUT mi;
-        KEYBDINPUT ki;
-        HARDWAREINPUT hi;
-    };
+	DWORD type;
+	union {
+		MOUSEINPUT mi;
+		KEYBDINPUT ki;
+		HARDWAREINPUT hi;
+	};
 } INPUT, *PINPUT, *LPINPUT;
 
 WINUSERAPI UINT WINAPI SendInput(UINT cInputs, LPINPUT pInputs, int cbSize);
 
 typedef struct tagLASTINPUTINFO {
-    UINT cbSize;
-    DWORD dwTime;
+	UINT cbSize;
+	DWORD dwTime;
 } LASTINPUTINFO, *PLASTINPUTINFO;
 
 #ifdef UNICODE
@@ -2700,8 +2700,8 @@ WINUSERAPI WINBOOL WINAPI TrackPopupMenu(HMENU hMenu, UINT uFlags, int x, int y,
 #define MNC_SELECT 3
 
 typedef struct tagTPMPARAMS {
-    UINT cbSize;
-    RECT rcExclude;
+	UINT cbSize;
+	RECT rcExclude;
 } TPMPARAMS;
 
 typedef TPMPARAMS *LPTPMPARAMS;
@@ -2723,13 +2723,13 @@ WINUSERAPI WINBOOL WINAPI TrackPopupMenuEx(HMENU, UINT, int, int, HWND, LPTPMPAR
 #define MIM_APPLYTOSUBMENUS 0x80000000
 
 typedef struct tagMENUINFO {
-    DWORD cbSize;
-    DWORD fMask;
-    DWORD dwStyle;
-    UINT cyMax;
-    HBRUSH hbrBack;
-    DWORD dwContextHelpID;
-    ULONG_PTR dwMenuData;
+	DWORD cbSize;
+	DWORD fMask;
+	DWORD dwStyle;
+	UINT cyMax;
+	HBRUSH hbrBack;
+	DWORD dwContextHelpID;
+	ULONG_PTR dwMenuData;
 } MENUINFO, *LPMENUINFO;
 
 typedef MENUINFO CONST *LPCMENUINFO;
@@ -2742,11 +2742,11 @@ WINUSERAPI WINBOOL WINAPI EndMenu(VOID);
 #define MND_ENDMENU 1
 
 typedef struct tagMENUGETOBJECTINFO {
-    DWORD dwFlags;
-    UINT uPos;
-    HMENU hmenu;
-    PVOID riid;
-    PVOID pvObj;
+	DWORD dwFlags;
+	UINT uPos;
+	HMENU hmenu;
+	PVOID riid;
+	PVOID pvObj;
 } MENUGETOBJECTINFO, *PMENUGETOBJECTINFO;
 
 #define MNGOF_TOPGAP 0x00000001
@@ -2779,33 +2779,33 @@ typedef struct tagMENUGETOBJECTINFO {
 #define HBMMENU_POPUP_MINIMIZE ((HBITMAP)11)
 
 typedef struct tagMENUITEMINFOA {
-    UINT cbSize;
-    UINT fMask;
-    UINT fType;
-    UINT fState;
-    UINT wID;
-    HMENU hSubMenu;
-    HBITMAP hbmpChecked;
-    HBITMAP hbmpUnchecked;
-    ULONG_PTR dwItemData;
-    LPSTR dwTypeData;
-    UINT cch;
-    HBITMAP hbmpItem;
+	UINT cbSize;
+	UINT fMask;
+	UINT fType;
+	UINT fState;
+	UINT wID;
+	HMENU hSubMenu;
+	HBITMAP hbmpChecked;
+	HBITMAP hbmpUnchecked;
+	ULONG_PTR dwItemData;
+	LPSTR dwTypeData;
+	UINT cch;
+	HBITMAP hbmpItem;
 } MENUITEMINFOA, *LPMENUITEMINFOA;
 
 typedef struct tagMENUITEMINFOW {
-    UINT cbSize;
-    UINT fMask;
-    UINT fType;
-    UINT fState;
-    UINT wID;
-    HMENU hSubMenu;
-    HBITMAP hbmpChecked;
-    HBITMAP hbmpUnchecked;
-    ULONG_PTR dwItemData;
-    LPWSTR dwTypeData;
-    UINT cch;
-    HBITMAP hbmpItem;
+	UINT cbSize;
+	UINT fMask;
+	UINT fType;
+	UINT fState;
+	UINT wID;
+	HMENU hSubMenu;
+	HBITMAP hbmpChecked;
+	HBITMAP hbmpUnchecked;
+	ULONG_PTR dwItemData;
+	LPWSTR dwTypeData;
+	UINT cch;
+	HBITMAP hbmpItem;
 } MENUITEMINFOW, *LPMENUITEMINFOW;
 
 #ifdef UNICODE
@@ -2871,12 +2871,12 @@ WINUSERAPI int WINAPI MenuItemFromPoint(HWND hWnd, HMENU hMenu, POINT ptScreen);
 #endif
 
 typedef struct tagDROPSTRUCT {
-    HWND hwndSource;
-    HWND hwndSink;
-    DWORD wFmt;
-    ULONG_PTR dwData;
-    POINT ptDrop;
-    DWORD dwControlData;
+	HWND hwndSource;
+	HWND hwndSink;
+	DWORD wFmt;
+	ULONG_PTR dwData;
+	POINT ptDrop;
+	DWORD dwControlData;
 } DROPSTRUCT, *PDROPSTRUCT, *LPDROPSTRUCT;
 
 #define DOF_EXECUTABLE 0x8001
@@ -2922,11 +2922,11 @@ WINUSERAPI WINBOOL WINAPI DrawIcon(HDC hDC, int X, int Y, HICON hIcon);
 #define DT_PREFIXONLY 0x00200000
 
 typedef struct tagDRAWTEXTPARAMS {
-    UINT cbSize;
-    int iTabLength;
-    int iLeftMargin;
-    int iRightMargin;
-    UINT uiLengthDrawn;
+	UINT cbSize;
+	int iTabLength;
+	int iLeftMargin;
+	int iRightMargin;
+	UINT uiLengthDrawn;
 } DRAWTEXTPARAMS, *LPDRAWTEXTPARAMS;
 
 #ifdef UNICODE
@@ -3120,12 +3120,12 @@ WINUSERAPI WINBOOL WINAPI AdjustWindowRectEx(LPRECT lpRect, DWORD dwStyle, WINBO
 #define HELPINFO_MENUITEM 0x0002
 
 typedef struct tagHELPINFO {
-    UINT cbSize;
-    int iContextType;
-    int iCtrlId;
-    HANDLE hItemHandle;
-    DWORD_PTR dwContextId;
-    POINT MousePos;
+	UINT cbSize;
+	int iContextType;
+	int iCtrlId;
+	HANDLE hItemHandle;
+	DWORD_PTR dwContextId;
+	POINT MousePos;
 } HELPINFO, *LPHELPINFO;
 
 WINUSERAPI WINBOOL WINAPI SetWindowContextHelpId(HWND, DWORD);
@@ -3189,29 +3189,29 @@ WINUSERAPI int WINAPI MessageBoxExW(HWND hWnd, LPCWSTR lpText, LPCWSTR lpCaption
 typedef VOID(CALLBACK *MSGBOXCALLBACK)(LPHELPINFO lpHelpInfo);
 
 typedef struct tagMSGBOXPARAMSA {
-    UINT cbSize;
-    HWND hwndOwner;
-    HINSTANCE hInstance;
-    LPCSTR lpszText;
-    LPCSTR lpszCaption;
-    DWORD dwStyle;
-    LPCSTR lpszIcon;
-    DWORD_PTR dwContextHelpId;
-    MSGBOXCALLBACK lpfnMsgBoxCallback;
-    DWORD dwLanguageId;
+	UINT cbSize;
+	HWND hwndOwner;
+	HINSTANCE hInstance;
+	LPCSTR lpszText;
+	LPCSTR lpszCaption;
+	DWORD dwStyle;
+	LPCSTR lpszIcon;
+	DWORD_PTR dwContextHelpId;
+	MSGBOXCALLBACK lpfnMsgBoxCallback;
+	DWORD dwLanguageId;
 } MSGBOXPARAMSA, *PMSGBOXPARAMSA, *LPMSGBOXPARAMSA;
 
 typedef struct tagMSGBOXPARAMSW {
-    UINT cbSize;
-    HWND hwndOwner;
-    HINSTANCE hInstance;
-    LPCWSTR lpszText;
-    LPCWSTR lpszCaption;
-    DWORD dwStyle;
-    LPCWSTR lpszIcon;
-    DWORD_PTR dwContextHelpId;
-    MSGBOXCALLBACK lpfnMsgBoxCallback;
-    DWORD dwLanguageId;
+	UINT cbSize;
+	HWND hwndOwner;
+	HINSTANCE hInstance;
+	LPCWSTR lpszText;
+	LPCWSTR lpszCaption;
+	DWORD dwStyle;
+	LPCWSTR lpszIcon;
+	DWORD_PTR dwContextHelpId;
+	MSGBOXCALLBACK lpfnMsgBoxCallback;
+	DWORD dwLanguageId;
 } MSGBOXPARAMSW, *PMSGBOXPARAMSW, *LPMSGBOXPARAMSW;
 
 #ifdef UNICODE
@@ -3554,14 +3554,14 @@ WINUSERAPI LRESULT WINAPI CallNextHookEx(HHOOK hhk, int nCode, WPARAM wParam, LP
 WINUSERAPI WINBOOL WINAPI CheckMenuRadioItem(HMENU hmenu, UINT first, UINT last, UINT check, UINT flags);
 
 typedef struct {
-    WORD versionNumber;
-    WORD offset;
+	WORD versionNumber;
+	WORD offset;
 } MENUITEMTEMPLATEHEADER, *PMENUITEMTEMPLATEHEADER;
 
 typedef struct {
-    WORD mtOption;
-    WORD mtID;
-    WCHAR mtString[1];
+	WORD mtOption;
+	WORD mtID;
+	WCHAR mtString[1];
 } MENUITEMTEMPLATE, *PMENUITEMTEMPLATE;
 #define MF_END 0x00000080L
 #endif
@@ -3633,11 +3633,11 @@ WINUSERAPI WINBOOL WINAPI DestroyCursor(HCURSOR hCursor);
 WINUSERAPI WINBOOL WINAPI SetSystemCursor(HCURSOR hcur, DWORD id);
 
 typedef struct _ICONINFO {
-    WINBOOL fIcon;
-    DWORD xHotspot;
-    DWORD yHotspot;
-    HBITMAP hbmMask;
-    HBITMAP hbmColor;
+	WINBOOL fIcon;
+	DWORD xHotspot;
+	DWORD yHotspot;
+	HBITMAP hbmMask;
+	HBITMAP hbmColor;
 } ICONINFO;
 typedef ICONINFO *PICONINFO;
 
@@ -3661,13 +3661,13 @@ WINUSERAPI HICON WINAPI CreateIconFromResource(PBYTE presbits, DWORD dwResSize, 
 WINUSERAPI HICON WINAPI CreateIconFromResourceEx(PBYTE presbits, DWORD dwResSize, WINBOOL fIcon, DWORD dwVer, int cxDesired, int cyDesired, UINT Flags);
 
 typedef struct tagCURSORSHAPE {
-    int xHotSpot;
-    int yHotSpot;
-    int cx;
-    int cy;
-    int cbWidth;
-    BYTE Planes;
-    BYTE BitsPixel;
+	int xHotSpot;
+	int yHotSpot;
+	int cx;
+	int cy;
+	int cbWidth;
+	BYTE Planes;
+	BYTE BitsPixel;
 } CURSORSHAPE, *LPCURSORSHAPE;
 
 #define IMAGE_BITMAP 0
@@ -4314,13 +4314,13 @@ WINUSERAPI WINBOOL WINAPI DlgDirSelectComboBoxExW(HWND hwndDlg, LPWSTR lpString,
 #define SIF_ALL (SIF_RANGE | SIF_PAGE | SIF_POS | SIF_TRACKPOS)
 
 typedef struct tagSCROLLINFO {
-    UINT cbSize;
-    UINT fMask;
-    int nMin;
-    int nMax;
-    UINT nPage;
-    int nPos;
-    int nTrackPos;
+	UINT cbSize;
+	UINT fMask;
+	int nMin;
+	int nMax;
+	UINT nPage;
+	int nPos;
+	int nTrackPos;
 } SCROLLINFO, *LPSCROLLINFO;
 typedef SCROLLINFO CONST *LPCSCROLLINFO;
 
@@ -4339,27 +4339,27 @@ WINUSERAPI WINBOOL WINAPI GetScrollInfo(HWND hwnd, int nBar, LPSCROLLINFO lpsi);
 #define MDITILE_ZORDER 0x0004
 
 typedef struct tagMDICREATESTRUCTA {
-    LPCSTR szClass;
-    LPCSTR szTitle;
-    HANDLE hOwner;
-    int x;
-    int y;
-    int cx;
-    int cy;
-    DWORD style;
-    LPARAM lParam;
+	LPCSTR szClass;
+	LPCSTR szTitle;
+	HANDLE hOwner;
+	int x;
+	int y;
+	int cx;
+	int cy;
+	DWORD style;
+	LPARAM lParam;
 } MDICREATESTRUCTA, *LPMDICREATESTRUCTA;
 
 typedef struct tagMDICREATESTRUCTW {
-    LPCWSTR szClass;
-    LPCWSTR szTitle;
-    HANDLE hOwner;
-    int x;
-    int y;
-    int cx;
-    int cy;
-    DWORD style;
-    LPARAM lParam;
+	LPCWSTR szClass;
+	LPCWSTR szTitle;
+	HANDLE hOwner;
+	int x;
+	int y;
+	int cx;
+	int cy;
+	DWORD style;
+	LPARAM lParam;
 } MDICREATESTRUCTW, *LPMDICREATESTRUCTW;
 
 #ifdef UNICODE
@@ -4371,8 +4371,8 @@ typedef LPMDICREATESTRUCTA LPMDICREATESTRUCT;
 #endif
 
 typedef struct tagCLIENTCREATESTRUCT {
-    HANDLE hWindowMenu;
-    UINT idFirstChild;
+	HANDLE hWindowMenu;
+	UINT idFirstChild;
 } CLIENTCREATESTRUCT, *LPCLIENTCREATESTRUCT;
 
 #ifdef UNICODE
@@ -4406,15 +4406,15 @@ WINUSERAPI WORD WINAPI CascadeWindows(HWND hwndParent, UINT wHow, CONST RECT *lp
 
 typedef DWORD HELPPOLY;
 typedef struct tagMULTIKEYHELPA {
-    DWORD mkSize;
-    CHAR mkKeylist;
-    CHAR szKeyphrase[1];
+	DWORD mkSize;
+	CHAR mkKeylist;
+	CHAR szKeyphrase[1];
 } MULTIKEYHELPA, *PMULTIKEYHELPA, *LPMULTIKEYHELPA;
 
 typedef struct tagMULTIKEYHELPW {
-    DWORD mkSize;
-    WCHAR mkKeylist;
-    WCHAR szKeyphrase[1];
+	DWORD mkSize;
+	WCHAR mkKeylist;
+	WCHAR szKeyphrase[1];
 } MULTIKEYHELPW, *PMULTIKEYHELPW, *LPMULTIKEYHELPW;
 
 #ifdef UNICODE
@@ -4428,23 +4428,23 @@ typedef LPMULTIKEYHELPA LPMULTIKEYHELP;
 #endif
 
 typedef struct tagHELPWININFOA {
-    int wStructSize;
-    int x;
-    int y;
-    int dx;
-    int dy;
-    int wMax;
-    CHAR rgchMember[2];
+	int wStructSize;
+	int x;
+	int y;
+	int dx;
+	int dy;
+	int wMax;
+	CHAR rgchMember[2];
 } HELPWININFOA, *PHELPWININFOA, *LPHELPWININFOA;
 
 typedef struct tagHELPWININFOW {
-    int wStructSize;
-    int x;
-    int y;
-    int dx;
-    int dy;
-    int wMax;
-    WCHAR rgchMember[2];
+	int wStructSize;
+	int x;
+	int y;
+	int dx;
+	int dy;
+	int wMax;
+	WCHAR rgchMember[2];
 } HELPWININFOW, *PHELPWININFOW, *LPHELPWININFOW;
 
 #ifdef UNICODE
@@ -4694,39 +4694,39 @@ WINUSERAPI DWORD WINAPI GetGuiResources(HANDLE hProcess, DWORD uiFlags);
 #ifdef _WINGDI_
 #ifndef NOGDI
 typedef struct tagNONCLIENTMETRICSA {
-    UINT cbSize;
-    int iBorderWidth;
-    int iScrollWidth;
-    int iScrollHeight;
-    int iCaptionWidth;
-    int iCaptionHeight;
-    LOGFONTA lfCaptionFont;
-    int iSmCaptionWidth;
-    int iSmCaptionHeight;
-    LOGFONTA lfSmCaptionFont;
-    int iMenuWidth;
-    int iMenuHeight;
-    LOGFONTA lfMenuFont;
-    LOGFONTA lfStatusFont;
-    LOGFONTA lfMessageFont;
+	UINT cbSize;
+	int iBorderWidth;
+	int iScrollWidth;
+	int iScrollHeight;
+	int iCaptionWidth;
+	int iCaptionHeight;
+	LOGFONTA lfCaptionFont;
+	int iSmCaptionWidth;
+	int iSmCaptionHeight;
+	LOGFONTA lfSmCaptionFont;
+	int iMenuWidth;
+	int iMenuHeight;
+	LOGFONTA lfMenuFont;
+	LOGFONTA lfStatusFont;
+	LOGFONTA lfMessageFont;
 } NONCLIENTMETRICSA, *PNONCLIENTMETRICSA, *LPNONCLIENTMETRICSA;
 
 typedef struct tagNONCLIENTMETRICSW {
-    UINT cbSize;
-    int iBorderWidth;
-    int iScrollWidth;
-    int iScrollHeight;
-    int iCaptionWidth;
-    int iCaptionHeight;
-    LOGFONTW lfCaptionFont;
-    int iSmCaptionWidth;
-    int iSmCaptionHeight;
-    LOGFONTW lfSmCaptionFont;
-    int iMenuWidth;
-    int iMenuHeight;
-    LOGFONTW lfMenuFont;
-    LOGFONTW lfStatusFont;
-    LOGFONTW lfMessageFont;
+	UINT cbSize;
+	int iBorderWidth;
+	int iScrollWidth;
+	int iScrollHeight;
+	int iCaptionWidth;
+	int iCaptionHeight;
+	LOGFONTW lfCaptionFont;
+	int iSmCaptionWidth;
+	int iSmCaptionHeight;
+	LOGFONTW lfSmCaptionFont;
+	int iMenuWidth;
+	int iMenuHeight;
+	LOGFONTW lfMenuFont;
+	LOGFONTW lfStatusFont;
+	LOGFONTW lfMessageFont;
 } NONCLIENTMETRICSW, *PNONCLIENTMETRICSW, *LPNONCLIENTMETRICSW;
 
 #ifdef UNICODE
@@ -4756,29 +4756,29 @@ typedef LPNONCLIENTMETRICSA LPNONCLIENTMETRICS;
 #define ARW_HIDE 0x0008L
 
 typedef struct tagMINIMIZEDMETRICS {
-    UINT cbSize;
-    int iWidth;
-    int iHorzGap;
-    int iVertGap;
-    int iArrange;
+	UINT cbSize;
+	int iWidth;
+	int iHorzGap;
+	int iVertGap;
+	int iArrange;
 } MINIMIZEDMETRICS, *PMINIMIZEDMETRICS, *LPMINIMIZEDMETRICS;
 
 #ifdef _WINGDI_
 #ifndef NOGDI
 typedef struct tagICONMETRICSA {
-    UINT cbSize;
-    int iHorzSpacing;
-    int iVertSpacing;
-    int iTitleWrap;
-    LOGFONTA lfFont;
+	UINT cbSize;
+	int iHorzSpacing;
+	int iVertSpacing;
+	int iTitleWrap;
+	LOGFONTA lfFont;
 } ICONMETRICSA, *PICONMETRICSA, *LPICONMETRICSA;
 
 typedef struct tagICONMETRICSW {
-    UINT cbSize;
-    int iHorzSpacing;
-    int iVertSpacing;
-    int iTitleWrap;
-    LOGFONTW lfFont;
+	UINT cbSize;
+	int iHorzSpacing;
+	int iVertSpacing;
+	int iTitleWrap;
+	LOGFONTW lfFont;
 } ICONMETRICSW, *PICONMETRICSW, *LPICONMETRICSW;
 
 #ifdef UNICODE
@@ -4794,28 +4794,28 @@ typedef LPICONMETRICSA LPICONMETRICS;
 #endif
 
 typedef struct tagANIMATIONINFO {
-    UINT cbSize;
-    int iMinAnimate;
+	UINT cbSize;
+	int iMinAnimate;
 } ANIMATIONINFO, *LPANIMATIONINFO;
 
 typedef struct tagSERIALKEYSA {
-    UINT cbSize;
-    DWORD dwFlags;
-    LPSTR lpszActivePort;
-    LPSTR lpszPort;
-    UINT iBaudRate;
-    UINT iPortState;
-    UINT iActive;
+	UINT cbSize;
+	DWORD dwFlags;
+	LPSTR lpszActivePort;
+	LPSTR lpszPort;
+	UINT iBaudRate;
+	UINT iPortState;
+	UINT iActive;
 } SERIALKEYSA, *LPSERIALKEYSA;
 
 typedef struct tagSERIALKEYSW {
-    UINT cbSize;
-    DWORD dwFlags;
-    LPWSTR lpszActivePort;
-    LPWSTR lpszPort;
-    UINT iBaudRate;
-    UINT iPortState;
-    UINT iActive;
+	UINT cbSize;
+	DWORD dwFlags;
+	LPWSTR lpszActivePort;
+	LPWSTR lpszPort;
+	UINT iBaudRate;
+	UINT iPortState;
+	UINT iActive;
 } SERIALKEYSW, *LPSERIALKEYSW;
 
 #ifdef UNICODE
@@ -4831,15 +4831,15 @@ typedef LPSERIALKEYSA LPSERIALKEYS;
 #define SERKF_INDICATOR 0x00000004
 
 typedef struct tagHIGHCONTRASTA {
-    UINT cbSize;
-    DWORD dwFlags;
-    LPSTR lpszDefaultScheme;
+	UINT cbSize;
+	DWORD dwFlags;
+	LPSTR lpszDefaultScheme;
 } HIGHCONTRASTA, *LPHIGHCONTRASTA;
 
 typedef struct tagHIGHCONTRASTW {
-    UINT cbSize;
-    DWORD dwFlags;
-    LPWSTR lpszDefaultScheme;
+	UINT cbSize;
+	DWORD dwFlags;
+	LPWSTR lpszDefaultScheme;
 } HIGHCONTRASTW, *LPHIGHCONTRASTW;
 
 #ifdef UNICODE
@@ -4926,12 +4926,12 @@ WINUSERAPI WINBOOL WINAPI SystemParametersInfoW(UINT uiAction, UINT uiParam, PVO
 #endif
 
 typedef struct tagFILTERKEYS {
-    UINT cbSize;
-    DWORD dwFlags;
-    DWORD iWaitMSec;
-    DWORD iDelayMSec;
-    DWORD iRepeatMSec;
-    DWORD iBounceMSec;
+	UINT cbSize;
+	DWORD dwFlags;
+	DWORD iWaitMSec;
+	DWORD iDelayMSec;
+	DWORD iRepeatMSec;
+	DWORD iBounceMSec;
 } FILTERKEYS, *LPFILTERKEYS;
 
 #define FKF_FILTERKEYSON 0x00000001
@@ -4943,8 +4943,8 @@ typedef struct tagFILTERKEYS {
 #define FKF_CLICKON 0x00000040
 
 typedef struct tagSTICKYKEYS {
-    UINT cbSize;
-    DWORD dwFlags;
+	UINT cbSize;
+	DWORD dwFlags;
 } STICKYKEYS, *LPSTICKYKEYS;
 
 #define SKF_STICKYKEYSON 0x00000001
@@ -4974,13 +4974,13 @@ typedef struct tagSTICKYKEYS {
 #define SKF_RWINLOCKED 0x00800000
 
 typedef struct tagMOUSEKEYS {
-    UINT cbSize;
-    DWORD dwFlags;
-    DWORD iMaxSpeed;
-    DWORD iTimeToMaxSpeed;
-    DWORD iCtrlSpeed;
-    DWORD dwReserved1;
-    DWORD dwReserved2;
+	UINT cbSize;
+	DWORD dwFlags;
+	DWORD iMaxSpeed;
+	DWORD iTimeToMaxSpeed;
+	DWORD iCtrlSpeed;
+	DWORD dwReserved1;
+	DWORD dwReserved2;
 } MOUSEKEYS, *LPMOUSEKEYS;
 
 #define MKF_MOUSEKEYSON 0x00000001
@@ -4998,9 +4998,9 @@ typedef struct tagMOUSEKEYS {
 #define MKF_MOUSEMODE 0x80000000
 
 typedef struct tagACCESSTIMEOUT {
-    UINT cbSize;
-    DWORD dwFlags;
-    DWORD iTimeOutMSec;
+	UINT cbSize;
+	DWORD dwFlags;
+	DWORD iTimeOutMSec;
 } ACCESSTIMEOUT, *LPACCESSTIMEOUT;
 
 #define ATF_TIMEOUTON 0x00000001
@@ -5021,33 +5021,33 @@ typedef struct tagACCESSTIMEOUT {
 #define SSWF_CUSTOM 4
 
 typedef struct tagSOUNDSENTRYA {
-    UINT cbSize;
-    DWORD dwFlags;
-    DWORD iFSTextEffect;
-    DWORD iFSTextEffectMSec;
-    DWORD iFSTextEffectColorBits;
-    DWORD iFSGrafEffect;
-    DWORD iFSGrafEffectMSec;
-    DWORD iFSGrafEffectColor;
-    DWORD iWindowsEffect;
-    DWORD iWindowsEffectMSec;
-    LPSTR lpszWindowsEffectDLL;
-    DWORD iWindowsEffectOrdinal;
+	UINT cbSize;
+	DWORD dwFlags;
+	DWORD iFSTextEffect;
+	DWORD iFSTextEffectMSec;
+	DWORD iFSTextEffectColorBits;
+	DWORD iFSGrafEffect;
+	DWORD iFSGrafEffectMSec;
+	DWORD iFSGrafEffectColor;
+	DWORD iWindowsEffect;
+	DWORD iWindowsEffectMSec;
+	LPSTR lpszWindowsEffectDLL;
+	DWORD iWindowsEffectOrdinal;
 } SOUNDSENTRYA, *LPSOUNDSENTRYA;
 
 typedef struct tagSOUNDSENTRYW {
-    UINT cbSize;
-    DWORD dwFlags;
-    DWORD iFSTextEffect;
-    DWORD iFSTextEffectMSec;
-    DWORD iFSTextEffectColorBits;
-    DWORD iFSGrafEffect;
-    DWORD iFSGrafEffectMSec;
-    DWORD iFSGrafEffectColor;
-    DWORD iWindowsEffect;
-    DWORD iWindowsEffectMSec;
-    LPWSTR lpszWindowsEffectDLL;
-    DWORD iWindowsEffectOrdinal;
+	UINT cbSize;
+	DWORD dwFlags;
+	DWORD iFSTextEffect;
+	DWORD iFSTextEffectMSec;
+	DWORD iFSTextEffectColorBits;
+	DWORD iFSGrafEffect;
+	DWORD iFSGrafEffectMSec;
+	DWORD iFSGrafEffectColor;
+	DWORD iWindowsEffect;
+	DWORD iWindowsEffectMSec;
+	LPWSTR lpszWindowsEffectDLL;
+	DWORD iWindowsEffectOrdinal;
 } SOUNDSENTRYW, *LPSOUNDSENTRYW;
 
 #ifdef UNICODE
@@ -5063,8 +5063,8 @@ typedef LPSOUNDSENTRYA LPSOUNDSENTRY;
 #define SSF_INDICATOR 0x00000004
 
 typedef struct tagTOGGLEKEYS {
-    UINT cbSize;
-    DWORD dwFlags;
+	UINT cbSize;
+	DWORD dwFlags;
 } TOGGLEKEYS, *LPTOGGLEKEYS;
 
 #define TKF_TOGGLEKEYSON 0x00000001
@@ -5102,19 +5102,19 @@ WINUSERAPI HMONITOR WINAPI MonitorFromWindow(HWND hwnd, DWORD dwFlags);
 #endif
 
 typedef struct tagMONITORINFO {
-    DWORD cbSize;
-    RECT rcMonitor;
-    RECT rcWork;
-    DWORD dwFlags;
+	DWORD cbSize;
+	RECT rcMonitor;
+	RECT rcWork;
+	DWORD dwFlags;
 } MONITORINFO, *LPMONITORINFO;
 
 #ifdef __cplusplus
 typedef struct tagMONITORINFOEXA : public tagMONITORINFO {
-    CHAR szDevice[CCHDEVICENAME];
+	CHAR szDevice[CCHDEVICENAME];
 } MONITORINFOEXA, *LPMONITORINFOEXA;
 
 typedef struct tagMONITORINFOEXW : public tagMONITORINFO {
-    WCHAR szDevice[CCHDEVICENAME];
+	WCHAR szDevice[CCHDEVICENAME];
 } MONITORINFOEXW, *LPMONITORINFOEXW;
 
 #ifdef UNICODE
@@ -5126,13 +5126,13 @@ typedef LPMONITORINFOEXA LPMONITORINFOEX;
 #endif
 #else
 typedef struct tagMONITORINFOEXA {
-    MONITORINFO mi;
-    CHAR szDevice[CCHDEVICENAME];
+	MONITORINFO mi;
+	CHAR szDevice[CCHDEVICENAME];
 } MONITORINFOEXA, *LPMONITORINFOEXA;
 
 typedef struct tagMONITORINFOEXW {
-    MONITORINFO mi;
-    WCHAR szDevice[CCHDEVICENAME];
+	MONITORINFO mi;
+	WCHAR szDevice[CCHDEVICENAME];
 } MONITORINFOEXW, *LPMONITORINFOEXW;
 #ifdef UNICODE
 typedef MONITORINFOEXW MONITORINFOEX;
@@ -5280,15 +5280,15 @@ WINUSERAPI WINBOOL WINAPI UnhookWinEvent(HWINEVENTHOOK hWinEventHook);
 #define CALERT_SYSTEM 6
 
 typedef struct tagGUITHREADINFO {
-    DWORD cbSize;
-    DWORD flags;
-    HWND hwndActive;
-    HWND hwndFocus;
-    HWND hwndCapture;
-    HWND hwndMenuOwner;
-    HWND hwndMoveSize;
-    HWND hwndCaret;
-    RECT rcCaret;
+	DWORD cbSize;
+	DWORD flags;
+	HWND hwndActive;
+	HWND hwndFocus;
+	HWND hwndCapture;
+	HWND hwndMenuOwner;
+	HWND hwndMoveSize;
+	HWND hwndCaret;
+	RECT rcCaret;
 } GUITHREADINFO, *PGUITHREADINFO, *LPGUITHREADINFO;
 
 #define GUI_CARETBLINKING 0x00000001
@@ -5347,10 +5347,10 @@ WINUSERAPI UINT WINAPI GetWindowModuleFileNameW(HWND hwnd, LPWSTR pszFileName, U
 #define CCHILDREN_SCROLLBAR 5
 
 typedef struct tagCURSORINFO {
-    DWORD cbSize;
-    DWORD flags;
-    HCURSOR hCursor;
-    POINT ptScreenPos;
+	DWORD cbSize;
+	DWORD flags;
+	HCURSOR hCursor;
+	POINT ptScreenPos;
 } CURSORINFO, *PCURSORINFO, *LPCURSORINFO;
 
 #define CURSOR_SHOWING 0x00000001
@@ -5358,16 +5358,16 @@ typedef struct tagCURSORINFO {
 WINUSERAPI WINBOOL WINAPI GetCursorInfo(PCURSORINFO pci);
 
 typedef struct tagWINDOWINFO {
-    DWORD cbSize;
-    RECT rcWindow;
-    RECT rcClient;
-    DWORD dwStyle;
-    DWORD dwExStyle;
-    DWORD dwWindowStatus;
-    UINT cxWindowBorders;
-    UINT cyWindowBorders;
-    ATOM atomWindowType;
-    WORD wCreatorVersion;
+	DWORD cbSize;
+	RECT rcWindow;
+	RECT rcClient;
+	DWORD dwStyle;
+	DWORD dwExStyle;
+	DWORD dwWindowStatus;
+	UINT cxWindowBorders;
+	UINT cyWindowBorders;
+	ATOM atomWindowType;
+	WORD wCreatorVersion;
 } WINDOWINFO, *PWINDOWINFO, *LPWINDOWINFO;
 
 #define WS_ACTIVECAPTION 0x0001
@@ -5375,44 +5375,44 @@ typedef struct tagWINDOWINFO {
 WINUSERAPI WINBOOL WINAPI GetWindowInfo(HWND hwnd, PWINDOWINFO pwi);
 
 typedef struct tagTITLEBARINFO {
-    DWORD cbSize;
-    RECT rcTitleBar;
-    DWORD rgstate[CCHILDREN_TITLEBAR + 1];
+	DWORD cbSize;
+	RECT rcTitleBar;
+	DWORD rgstate[CCHILDREN_TITLEBAR + 1];
 } TITLEBARINFO, *PTITLEBARINFO, *LPTITLEBARINFO;
 
 WINUSERAPI WINBOOL WINAPI GetTitleBarInfo(HWND hwnd, PTITLEBARINFO pti);
 
 typedef struct tagMENUBARINFO {
-    DWORD cbSize;
-    RECT rcBar;
-    HMENU hMenu;
-    HWND hwndMenu;
-    WINBOOL fBarFocused : 1;
-    WINBOOL fFocused : 1;
+	DWORD cbSize;
+	RECT rcBar;
+	HMENU hMenu;
+	HWND hwndMenu;
+	WINBOOL fBarFocused : 1;
+	WINBOOL fFocused : 1;
 } MENUBARINFO, *PMENUBARINFO, *LPMENUBARINFO;
 
 WINUSERAPI WINBOOL WINAPI GetMenuBarInfo(HWND hwnd, LONG idObject, LONG idItem, PMENUBARINFO pmbi);
 
 typedef struct tagSCROLLBARINFO {
-    DWORD cbSize;
-    RECT rcScrollBar;
-    int dxyLineButton;
-    int xyThumbTop;
-    int xyThumbBottom;
-    int reserved;
-    DWORD rgstate[CCHILDREN_SCROLLBAR + 1];
+	DWORD cbSize;
+	RECT rcScrollBar;
+	int dxyLineButton;
+	int xyThumbTop;
+	int xyThumbBottom;
+	int reserved;
+	DWORD rgstate[CCHILDREN_SCROLLBAR + 1];
 } SCROLLBARINFO, *PSCROLLBARINFO, *LPSCROLLBARINFO;
 
 WINUSERAPI WINBOOL WINAPI GetScrollBarInfo(HWND hwnd, LONG idObject, PSCROLLBARINFO psbi);
 
 typedef struct tagCOMBOBOXINFO {
-    DWORD cbSize;
-    RECT rcItem;
-    RECT rcButton;
-    DWORD stateButton;
-    HWND hwndCombo;
-    HWND hwndItem;
-    HWND hwndList;
+	DWORD cbSize;
+	RECT rcItem;
+	RECT rcButton;
+	DWORD stateButton;
+	HWND hwndCombo;
+	HWND hwndItem;
+	HWND hwndList;
 } COMBOBOXINFO, *PCOMBOBOXINFO, *LPCOMBOBOXINFO;
 
 WINUSERAPI WINBOOL WINAPI GetComboBoxInfo(HWND hwndCombo, PCOMBOBOXINFO pcbi);
@@ -5432,15 +5432,15 @@ WINUSERAPI UINT WINAPI RealGetWindowClassW(HWND hwnd, LPWSTR ptszClassName, UINT
 #endif
 
 typedef struct tagALTTABINFO {
-    DWORD cbSize;
-    int cItems;
-    int cColumns;
-    int cRows;
-    int iColFocus;
-    int iRowFocus;
-    int cxItem;
-    int cyItem;
-    POINT ptStart;
+	DWORD cbSize;
+	int cItems;
+	int cColumns;
+	int cRows;
+	int iColFocus;
+	int iRowFocus;
+	int cxItem;
+	int cyItem;
+	POINT ptStart;
 } ALTTABINFO, *PALTTABINFO, *LPALTTABINFO;
 
 #ifdef UNICODE
@@ -5465,10 +5465,10 @@ DECLARE_HANDLE(HRAWINPUT);
 #define RIM_INPUTSINK 1
 
 typedef struct tagRAWINPUTHEADER {
-    DWORD dwType;
-    DWORD dwSize;
-    HANDLE hDevice;
-    WPARAM wParam;
+	DWORD dwType;
+	DWORD dwSize;
+	HANDLE hDevice;
+	WPARAM wParam;
 } RAWINPUTHEADER, *PRAWINPUTHEADER, *LPRAWINPUTHEADER;
 
 #define RIM_TYPEMOUSE 0
@@ -5476,18 +5476,18 @@ typedef struct tagRAWINPUTHEADER {
 #define RIM_TYPEHID 2
 
 typedef struct tagRAWMOUSE {
-    USHORT usFlags;
-    union {
-        ULONG ulButtons;
-        struct {
-            USHORT usButtonFlags;
-            USHORT usButtonData;
-        };
-    };
-    ULONG ulRawButtons;
-    LONG lLastX;
-    LONG lLastY;
-    ULONG ulExtraInformation;
+	USHORT usFlags;
+	union {
+		ULONG ulButtons;
+		struct {
+			USHORT usButtonFlags;
+			USHORT usButtonData;
+		};
+	};
+	ULONG ulRawButtons;
+	LONG lLastX;
+	LONG lLastY;
+	ULONG ulExtraInformation;
 } RAWMOUSE, *PRAWMOUSE, *LPRAWMOUSE;
 
 #define RI_MOUSE_LEFT_BUTTON_DOWN 0x0001
@@ -5517,12 +5517,12 @@ typedef struct tagRAWMOUSE {
 #define MOUSE_ATTRIBUTES_CHANGED 0x04
 
 typedef struct tagRAWKEYBOARD {
-    USHORT MakeCode;
-    USHORT Flags;
-    USHORT Reserved;
-    USHORT VKey;
-    UINT Message;
-    ULONG ExtraInformation;
+	USHORT MakeCode;
+	USHORT Flags;
+	USHORT Reserved;
+	USHORT VKey;
+	UINT Message;
+	ULONG ExtraInformation;
 } RAWKEYBOARD, *PRAWKEYBOARD, *LPRAWKEYBOARD;
 
 #define KEYBOARD_OVERRUN_MAKE_CODE 0xFF
@@ -5535,18 +5535,18 @@ typedef struct tagRAWKEYBOARD {
 #define RI_KEY_TERMSRV_SHADOW 0x10
 
 typedef struct tagRAWHID {
-    DWORD dwSizeHid;
-    DWORD dwCount;
-    BYTE bRawData[1];
+	DWORD dwSizeHid;
+	DWORD dwCount;
+	BYTE bRawData[1];
 } RAWHID, *PRAWHID, *LPRAWHID;
 
 typedef struct tagRAWINPUT {
-    RAWINPUTHEADER header;
-    union {
-        RAWMOUSE mouse;
-        RAWKEYBOARD keyboard;
-        RAWHID hid;
-    } data;
+	RAWINPUTHEADER header;
+	union {
+		RAWMOUSE mouse;
+		RAWKEYBOARD keyboard;
+		RAWHID hid;
+	} data;
 } RAWINPUT, *PRAWINPUT, *LPRAWINPUT;
 
 #ifdef _WIN64
@@ -5567,36 +5567,36 @@ WINUSERAPI UINT WINAPI GetRawInputData(HRAWINPUT hRawInput, UINT uiCommand, LPVO
 #define RIDI_DEVICEINFO 0x2000000b
 
 typedef struct tagRID_DEVICE_INFO_MOUSE {
-    DWORD dwId;
-    DWORD dwNumberOfButtons;
-    DWORD dwSampleRate;
+	DWORD dwId;
+	DWORD dwNumberOfButtons;
+	DWORD dwSampleRate;
 } RID_DEVICE_INFO_MOUSE, *PRID_DEVICE_INFO_MOUSE;
 
 typedef struct tagRID_DEVICE_INFO_KEYBOARD {
-    DWORD dwType;
-    DWORD dwSubType;
-    DWORD dwKeyboardMode;
-    DWORD dwNumberOfFunctionKeys;
-    DWORD dwNumberOfIndicators;
-    DWORD dwNumberOfKeysTotal;
+	DWORD dwType;
+	DWORD dwSubType;
+	DWORD dwKeyboardMode;
+	DWORD dwNumberOfFunctionKeys;
+	DWORD dwNumberOfIndicators;
+	DWORD dwNumberOfKeysTotal;
 } RID_DEVICE_INFO_KEYBOARD, *PRID_DEVICE_INFO_KEYBOARD;
 
 typedef struct tagRID_DEVICE_INFO_HID {
-    DWORD dwVendorId;
-    DWORD dwProductId;
-    DWORD dwVersionNumber;
-    USHORT usUsagePage;
-    USHORT usUsage;
+	DWORD dwVendorId;
+	DWORD dwProductId;
+	DWORD dwVersionNumber;
+	USHORT usUsagePage;
+	USHORT usUsage;
 } RID_DEVICE_INFO_HID, *PRID_DEVICE_INFO_HID;
 
 typedef struct tagRID_DEVICE_INFO {
-    DWORD cbSize;
-    DWORD dwType;
-    union {
-        RID_DEVICE_INFO_MOUSE mouse;
-        RID_DEVICE_INFO_KEYBOARD keyboard;
-        RID_DEVICE_INFO_HID hid;
-    };
+	DWORD cbSize;
+	DWORD dwType;
+	union {
+		RID_DEVICE_INFO_MOUSE mouse;
+		RID_DEVICE_INFO_KEYBOARD keyboard;
+		RID_DEVICE_INFO_HID hid;
+	};
 } RID_DEVICE_INFO, *PRID_DEVICE_INFO, *LPRID_DEVICE_INFO;
 
 #ifdef UNICODE
@@ -5610,10 +5610,10 @@ WINUSERAPI UINT WINAPI GetRawInputDeviceInfoW(HANDLE hDevice, UINT uiCommand, LP
 WINUSERAPI UINT WINAPI GetRawInputBuffer(PRAWINPUT pData, PUINT pcbSize, UINT cbSizeHeader);
 
 typedef struct tagRAWINPUTDEVICE {
-    USHORT usUsagePage;
-    USHORT usUsage;
-    DWORD dwFlags;
-    HWND hwndTarget;
+	USHORT usUsagePage;
+	USHORT usUsage;
+	DWORD dwFlags;
+	HWND hwndTarget;
 } RAWINPUTDEVICE, *PRAWINPUTDEVICE, *LPRAWINPUTDEVICE;
 
 typedef CONST RAWINPUTDEVICE *PCRAWINPUTDEVICE;
@@ -5633,8 +5633,8 @@ WINUSERAPI WINBOOL WINAPI RegisterRawInputDevices(PCRAWINPUTDEVICE pRawInputDevi
 WINUSERAPI UINT WINAPI GetRegisteredRawInputDevices(PRAWINPUTDEVICE pRawInputDevices, PUINT puiNumDevices, UINT cbSize);
 
 typedef struct tagRAWINPUTDEVICELIST {
-    HANDLE hDevice;
-    DWORD dwType;
+	HANDLE hDevice;
+	DWORD dwType;
 } RAWINPUTDEVICELIST, *PRAWINPUTDEVICELIST;
 
 WINUSERAPI UINT WINAPI GetRawInputDeviceList(PRAWINPUTDEVICELIST pRawInputDeviceList, PUINT puiNumDevices, UINT cbSize);

@@ -2,6 +2,6 @@
 #include "s6_3.h"
 
 int main(void) {
-    s6_3_conversions();
-    return 0;
+	s6_3_conversions();
+	return 0;
 }

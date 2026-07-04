@@ -127,48 +127,48 @@ extern "C" {
 #define SECURITY_VALID_SQOS_FLAGS 0x1f0000
 
 typedef struct _OVERLAPPED {
-    ULONG_PTR Internal;
-    ULONG_PTR InternalHigh;
-    union {
-        struct {
-            DWORD Offset;
-            DWORD OffsetHigh;
-        };
-        PVOID Pointer;
-    };
-    HANDLE hEvent;
+	ULONG_PTR Internal;
+	ULONG_PTR InternalHigh;
+	union {
+		struct {
+			DWORD Offset;
+			DWORD OffsetHigh;
+		};
+		PVOID Pointer;
+	};
+	HANDLE hEvent;
 } OVERLAPPED, *LPOVERLAPPED;
 
 typedef struct _SECURITY_ATTRIBUTES {
-    DWORD nLength;
-    LPVOID lpSecurityDescriptor;
-    WINBOOL bInheritHandle;
+	DWORD nLength;
+	LPVOID lpSecurityDescriptor;
+	WINBOOL bInheritHandle;
 } SECURITY_ATTRIBUTES, *PSECURITY_ATTRIBUTES, *LPSECURITY_ATTRIBUTES;
 
 typedef struct _PROCESS_INFORMATION {
-    HANDLE hProcess;
-    HANDLE hThread;
-    DWORD dwProcessId;
-    DWORD dwThreadId;
+	HANDLE hProcess;
+	HANDLE hThread;
+	DWORD dwProcessId;
+	DWORD dwThreadId;
 } PROCESS_INFORMATION, *PPROCESS_INFORMATION, *LPPROCESS_INFORMATION;
 
 #ifndef _FILETIME_
 #define _FILETIME_
 typedef struct _FILETIME {
-    DWORD dwLowDateTime;
-    DWORD dwHighDateTime;
+	DWORD dwLowDateTime;
+	DWORD dwHighDateTime;
 } FILETIME, *PFILETIME, *LPFILETIME;
 #endif
 
 typedef struct _SYSTEMTIME {
-    WORD wYear;
-    WORD wMonth;
-    WORD wDayOfWeek;
-    WORD wDay;
-    WORD wHour;
-    WORD wMinute;
-    WORD wSecond;
-    WORD wMilliseconds;
+	WORD wYear;
+	WORD wMonth;
+	WORD wDayOfWeek;
+	WORD wDay;
+	WORD wHour;
+	WORD wMinute;
+	WORD wSecond;
+	WORD wMilliseconds;
 } SYSTEMTIME, *PSYSTEMTIME, *LPSYSTEMTIME;
 
 typedef DWORD(WINAPI *PTHREAD_START_ROUTINE)(LPVOID lpThreadParameter);
@@ -270,39 +270,39 @@ typedef LPVOID LPLDT_ENTRY;
 #define PARITY_SPACE ((WORD)0x1000)
 
 typedef struct _COMMPROP {
-    WORD wPacketLength;
-    WORD wPacketVersion;
-    DWORD dwServiceMask;
-    DWORD dwReserved1;
-    DWORD dwMaxTxQueue;
-    DWORD dwMaxRxQueue;
-    DWORD dwMaxBaud;
-    DWORD dwProvSubType;
-    DWORD dwProvCapabilities;
-    DWORD dwSettableParams;
-    DWORD dwSettableBaud;
-    WORD wSettableData;
-    WORD wSettableStopParity;
-    DWORD dwCurrentTxQueue;
-    DWORD dwCurrentRxQueue;
-    DWORD dwProvSpec1;
-    DWORD dwProvSpec2;
-    WCHAR wcProvChar[1];
+	WORD wPacketLength;
+	WORD wPacketVersion;
+	DWORD dwServiceMask;
+	DWORD dwReserved1;
+	DWORD dwMaxTxQueue;
+	DWORD dwMaxRxQueue;
+	DWORD dwMaxBaud;
+	DWORD dwProvSubType;
+	DWORD dwProvCapabilities;
+	DWORD dwSettableParams;
+	DWORD dwSettableBaud;
+	WORD wSettableData;
+	WORD wSettableStopParity;
+	DWORD dwCurrentTxQueue;
+	DWORD dwCurrentRxQueue;
+	DWORD dwProvSpec1;
+	DWORD dwProvSpec2;
+	WCHAR wcProvChar[1];
 } COMMPROP, *LPCOMMPROP;
 
 #define COMMPROP_INITIALIZED ((DWORD)0xE73CF52E)
 
 typedef struct _COMSTAT {
-    DWORD fCtsHold : 1;
-    DWORD fDsrHold : 1;
-    DWORD fRlsdHold : 1;
-    DWORD fXoffHold : 1;
-    DWORD fXoffSent : 1;
-    DWORD fEof : 1;
-    DWORD fTxim : 1;
-    DWORD fReserved : 25;
-    DWORD cbInQue;
-    DWORD cbOutQue;
+	DWORD fCtsHold : 1;
+	DWORD fDsrHold : 1;
+	DWORD fRlsdHold : 1;
+	DWORD fXoffHold : 1;
+	DWORD fXoffSent : 1;
+	DWORD fEof : 1;
+	DWORD fTxim : 1;
+	DWORD fReserved : 25;
+	DWORD cbInQue;
+	DWORD cbOutQue;
 } COMSTAT, *LPCOMSTAT;
 
 #define DTR_CONTROL_DISABLE 0x0
@@ -315,72 +315,72 @@ typedef struct _COMSTAT {
 #define RTS_CONTROL_TOGGLE 0x3
 
 typedef struct _DCB {
-    DWORD DCBlength;
-    DWORD BaudRate;
-    DWORD fBinary : 1;
-    DWORD fParity : 1;
-    DWORD fOutxCtsFlow : 1;
-    DWORD fOutxDsrFlow : 1;
-    DWORD fDtrControl : 2;
-    DWORD fDsrSensitivity : 1;
-    DWORD fTXContinueOnXoff : 1;
-    DWORD fOutX : 1;
-    DWORD fInX : 1;
-    DWORD fErrorChar : 1;
-    DWORD fNull : 1;
-    DWORD fRtsControl : 2;
-    DWORD fAbortOnError : 1;
-    DWORD fDummy2 : 17;
-    WORD wReserved;
-    WORD XonLim;
-    WORD XoffLim;
-    BYTE ByteSize;
-    BYTE Parity;
-    BYTE StopBits;
-    char XonChar;
-    char XoffChar;
-    char ErrorChar;
-    char EofChar;
-    char EvtChar;
-    WORD wReserved1;
+	DWORD DCBlength;
+	DWORD BaudRate;
+	DWORD fBinary : 1;
+	DWORD fParity : 1;
+	DWORD fOutxCtsFlow : 1;
+	DWORD fOutxDsrFlow : 1;
+	DWORD fDtrControl : 2;
+	DWORD fDsrSensitivity : 1;
+	DWORD fTXContinueOnXoff : 1;
+	DWORD fOutX : 1;
+	DWORD fInX : 1;
+	DWORD fErrorChar : 1;
+	DWORD fNull : 1;
+	DWORD fRtsControl : 2;
+	DWORD fAbortOnError : 1;
+	DWORD fDummy2 : 17;
+	WORD wReserved;
+	WORD XonLim;
+	WORD XoffLim;
+	BYTE ByteSize;
+	BYTE Parity;
+	BYTE StopBits;
+	char XonChar;
+	char XoffChar;
+	char ErrorChar;
+	char EofChar;
+	char EvtChar;
+	WORD wReserved1;
 } DCB, *LPDCB;
 
 typedef struct _COMMTIMEOUTS {
-    DWORD ReadIntervalTimeout;
-    DWORD ReadTotalTimeoutMultiplier;
-    DWORD ReadTotalTimeoutConstant;
-    DWORD WriteTotalTimeoutMultiplier;
-    DWORD WriteTotalTimeoutConstant;
+	DWORD ReadIntervalTimeout;
+	DWORD ReadTotalTimeoutMultiplier;
+	DWORD ReadTotalTimeoutConstant;
+	DWORD WriteTotalTimeoutMultiplier;
+	DWORD WriteTotalTimeoutConstant;
 } COMMTIMEOUTS, *LPCOMMTIMEOUTS;
 
 typedef struct _COMMCONFIG {
-    DWORD dwSize;
-    WORD wVersion;
-    WORD wReserved;
-    DCB dcb;
-    DWORD dwProviderSubType;
-    DWORD dwProviderOffset;
-    DWORD dwProviderSize;
-    WCHAR wcProviderData[1];
+	DWORD dwSize;
+	WORD wVersion;
+	WORD wReserved;
+	DCB dcb;
+	DWORD dwProviderSubType;
+	DWORD dwProviderOffset;
+	DWORD dwProviderSize;
+	WCHAR wcProviderData[1];
 } COMMCONFIG, *LPCOMMCONFIG;
 
 typedef struct _SYSTEM_INFO {
-    union {
-        DWORD dwOemId;
-        struct {
-            WORD wProcessorArchitecture;
-            WORD wReserved;
-        };
-    };
-    DWORD dwPageSize;
-    LPVOID lpMinimumApplicationAddress;
-    LPVOID lpMaximumApplicationAddress;
-    DWORD_PTR dwActiveProcessorMask;
-    DWORD dwNumberOfProcessors;
-    DWORD dwProcessorType;
-    DWORD dwAllocationGranularity;
-    WORD wProcessorLevel;
-    WORD wProcessorRevision;
+	union {
+		DWORD dwOemId;
+		struct {
+			WORD wProcessorArchitecture;
+			WORD wReserved;
+		};
+	};
+	DWORD dwPageSize;
+	LPVOID lpMinimumApplicationAddress;
+	LPVOID lpMaximumApplicationAddress;
+	DWORD_PTR dwActiveProcessorMask;
+	DWORD dwNumberOfProcessors;
+	DWORD dwProcessorType;
+	DWORD dwAllocationGranularity;
+	WORD wProcessorLevel;
+	WORD wProcessorRevision;
 } SYSTEM_INFO, *LPSYSTEM_INFO;
 
 #define FreeModule(hLibModule) FreeLibrary((hLibModule))
@@ -413,14 +413,14 @@ typedef struct _SYSTEM_INFO {
 #define GMEM_LOCKCOUNT 0xff
 
 typedef struct _MEMORYSTATUS {
-    DWORD dwLength;
-    DWORD dwMemoryLoad;
-    SIZE_T dwTotalPhys;
-    SIZE_T dwAvailPhys;
-    SIZE_T dwTotalPageFile;
-    SIZE_T dwAvailPageFile;
-    SIZE_T dwTotalVirtual;
-    SIZE_T dwAvailVirtual;
+	DWORD dwLength;
+	DWORD dwMemoryLoad;
+	SIZE_T dwTotalPhys;
+	SIZE_T dwAvailPhys;
+	SIZE_T dwTotalPageFile;
+	SIZE_T dwAvailPageFile;
+	SIZE_T dwTotalVirtual;
+	SIZE_T dwAvailVirtual;
 } MEMORYSTATUS, *LPMEMORYSTATUS;
 
 #define LMEM_FIXED 0x0
@@ -495,76 +495,76 @@ typedef struct _MEMORYSTATUS {
 #define RIP_EVENT 9
 
 typedef struct _EXCEPTION_DEBUG_INFO {
-    EXCEPTION_RECORD ExceptionRecord;
-    DWORD dwFirstChance;
+	EXCEPTION_RECORD ExceptionRecord;
+	DWORD dwFirstChance;
 } EXCEPTION_DEBUG_INFO, *LPEXCEPTION_DEBUG_INFO;
 
 typedef struct _CREATE_THREAD_DEBUG_INFO {
-    HANDLE hThread;
-    LPVOID lpThreadLocalBase;
-    LPTHREAD_START_ROUTINE lpStartAddress;
+	HANDLE hThread;
+	LPVOID lpThreadLocalBase;
+	LPTHREAD_START_ROUTINE lpStartAddress;
 } CREATE_THREAD_DEBUG_INFO, *LPCREATE_THREAD_DEBUG_INFO;
 
 typedef struct _CREATE_PROCESS_DEBUG_INFO {
-    HANDLE hFile;
-    HANDLE hProcess;
-    HANDLE hThread;
-    LPVOID lpBaseOfImage;
-    DWORD dwDebugInfoFileOffset;
-    DWORD nDebugInfoSize;
-    LPVOID lpThreadLocalBase;
-    LPTHREAD_START_ROUTINE lpStartAddress;
-    LPVOID lpImageName;
-    WORD fUnicode;
+	HANDLE hFile;
+	HANDLE hProcess;
+	HANDLE hThread;
+	LPVOID lpBaseOfImage;
+	DWORD dwDebugInfoFileOffset;
+	DWORD nDebugInfoSize;
+	LPVOID lpThreadLocalBase;
+	LPTHREAD_START_ROUTINE lpStartAddress;
+	LPVOID lpImageName;
+	WORD fUnicode;
 } CREATE_PROCESS_DEBUG_INFO, *LPCREATE_PROCESS_DEBUG_INFO;
 
 typedef struct _EXIT_THREAD_DEBUG_INFO {
-    DWORD dwExitCode;
+	DWORD dwExitCode;
 } EXIT_THREAD_DEBUG_INFO, *LPEXIT_THREAD_DEBUG_INFO;
 
 typedef struct _EXIT_PROCESS_DEBUG_INFO {
-    DWORD dwExitCode;
+	DWORD dwExitCode;
 } EXIT_PROCESS_DEBUG_INFO, *LPEXIT_PROCESS_DEBUG_INFO;
 
 typedef struct _LOAD_DLL_DEBUG_INFO {
-    HANDLE hFile;
-    LPVOID lpBaseOfDll;
-    DWORD dwDebugInfoFileOffset;
-    DWORD nDebugInfoSize;
-    LPVOID lpImageName;
-    WORD fUnicode;
+	HANDLE hFile;
+	LPVOID lpBaseOfDll;
+	DWORD dwDebugInfoFileOffset;
+	DWORD nDebugInfoSize;
+	LPVOID lpImageName;
+	WORD fUnicode;
 } LOAD_DLL_DEBUG_INFO, *LPLOAD_DLL_DEBUG_INFO;
 
 typedef struct _UNLOAD_DLL_DEBUG_INFO {
-    LPVOID lpBaseOfDll;
+	LPVOID lpBaseOfDll;
 } UNLOAD_DLL_DEBUG_INFO, *LPUNLOAD_DLL_DEBUG_INFO;
 
 typedef struct _OUTPUT_DEBUG_STRING_INFO {
-    LPSTR lpDebugStringData;
-    WORD fUnicode;
-    WORD nDebugStringLength;
+	LPSTR lpDebugStringData;
+	WORD fUnicode;
+	WORD nDebugStringLength;
 } OUTPUT_DEBUG_STRING_INFO, *LPOUTPUT_DEBUG_STRING_INFO;
 
 typedef struct _RIP_INFO {
-    DWORD dwError;
-    DWORD dwType;
+	DWORD dwError;
+	DWORD dwType;
 } RIP_INFO, *LPRIP_INFO;
 
 typedef struct _DEBUG_EVENT {
-    DWORD dwDebugEventCode;
-    DWORD dwProcessId;
-    DWORD dwThreadId;
-    union {
-        EXCEPTION_DEBUG_INFO Exception;
-        CREATE_THREAD_DEBUG_INFO CreateThread;
-        CREATE_PROCESS_DEBUG_INFO CreateProcessInfo;
-        EXIT_THREAD_DEBUG_INFO ExitThread;
-        EXIT_PROCESS_DEBUG_INFO ExitProcess;
-        LOAD_DLL_DEBUG_INFO LoadDll;
-        UNLOAD_DLL_DEBUG_INFO UnloadDll;
-        OUTPUT_DEBUG_STRING_INFO DebugString;
-        RIP_INFO RipInfo;
-    } u;
+	DWORD dwDebugEventCode;
+	DWORD dwProcessId;
+	DWORD dwThreadId;
+	union {
+		EXCEPTION_DEBUG_INFO Exception;
+		CREATE_THREAD_DEBUG_INFO CreateThread;
+		CREATE_PROCESS_DEBUG_INFO CreateProcessInfo;
+		EXIT_THREAD_DEBUG_INFO ExitThread;
+		EXIT_PROCESS_DEBUG_INFO ExitProcess;
+		LOAD_DLL_DEBUG_INFO LoadDll;
+		UNLOAD_DLL_DEBUG_INFO UnloadDll;
+		OUTPUT_DEBUG_STRING_INFO DebugString;
+		RIP_INFO RipInfo;
+	} u;
 } DEBUG_EVENT, *LPDEBUG_EVENT;
 
 typedef PCONTEXT LPCONTEXT;
@@ -747,12 +747,12 @@ typedef PEXCEPTION_POINTERS LPEXCEPTION_POINTERS;
 
 #define OFS_MAXPATHNAME 128
 typedef struct _OFSTRUCT {
-    BYTE cBytes;
-    BYTE fFixedDisk;
-    WORD nErrCode;
-    WORD Reserved1;
-    WORD Reserved2;
-    CHAR szPathName[OFS_MAXPATHNAME];
+	BYTE cBytes;
+	BYTE fFixedDisk;
+	WORD nErrCode;
+	WORD Reserved1;
+	WORD Reserved2;
+	CHAR szPathName[OFS_MAXPATHNAME];
 } OFSTRUCT, *LPOFSTRUCT, *POFSTRUCT;
 
 #ifndef NOWINBASEINTERLOCK
@@ -813,14 +813,14 @@ PVOID __cdecl InterlockedCompareExchangePointerRelease(PVOID volatile *Destinati
 #ifndef InterlockedAnd
 #define InterlockedAnd InterlockedAnd_Inline
 __CRT_INLINE LONG InterlockedAnd_Inline(LONG volatile *Target, LONG Set) {
-    LONG i;
-    LONG j;
-    j = *Target;
-    do {
-        i = j;
-        j = InterlockedCompareExchange(Target, i & Set, i);
-    } while (i != j);
-    return j;
+	LONG i;
+	LONG j;
+	j = *Target;
+	do {
+		i = j;
+		j = InterlockedCompareExchange(Target, i & Set, i);
+	} while (i != j);
+	return j;
 }
 #endif
 
@@ -828,14 +828,14 @@ __CRT_INLINE LONG InterlockedAnd_Inline(LONG volatile *Target, LONG Set) {
 #define InterlockedOr InterlockedOr_Inline
 
 __CRT_INLINE LONG InterlockedOr_Inline(LONG volatile *Target, LONG Set) {
-    LONG i;
-    LONG j;
-    j = *Target;
-    do {
-        i = j;
-        j = InterlockedCompareExchange(Target, i | Set, i);
-    } while (i != j);
-    return j;
+	LONG i;
+	LONG j;
+	j = *Target;
+	do {
+		i = j;
+		j = InterlockedCompareExchange(Target, i | Set, i);
+	} while (i != j);
+	return j;
 }
 #endif
 
@@ -843,14 +843,14 @@ __CRT_INLINE LONG InterlockedOr_Inline(LONG volatile *Target, LONG Set) {
 #define InterlockedXor InterlockedXor_Inline
 
 __CRT_INLINE LONG InterlockedXor_Inline(LONG volatile *Target, LONG Set) {
-    LONG i;
-    LONG j;
-    j = *Target;
-    do {
-        i = j;
-        j = InterlockedCompareExchange(Target, i ^ Set, i);
-    } while (i != j);
-    return j;
+	LONG i;
+	LONG j;
+	j = *Target;
+	do {
+		i = j;
+		j = InterlockedCompareExchange(Target, i ^ Set, i);
+	} while (i != j);
+	return j;
 }
 #endif
 
@@ -858,11 +858,11 @@ __CRT_INLINE LONG InterlockedXor_Inline(LONG volatile *Target, LONG Set) {
 #define InterlockedAnd64 InterlockedAnd64_Inline
 
 __CRT_INLINE LONGLONG InterlockedAnd64_Inline(LONGLONG volatile *Destination, LONGLONG Value) {
-    LONGLONG Old;
-    do {
-        Old = *Destination;
-    } while (InterlockedCompareExchange64(Destination, Old & Value, Old) != Old);
-    return Old;
+	LONGLONG Old;
+	do {
+		Old = *Destination;
+	} while (InterlockedCompareExchange64(Destination, Old & Value, Old) != Old);
+	return Old;
 }
 #endif
 
@@ -870,11 +870,11 @@ __CRT_INLINE LONGLONG InterlockedAnd64_Inline(LONGLONG volatile *Destination, LO
 #define InterlockedOr64 InterlockedOr64_Inline
 
 __CRT_INLINE LONGLONG InterlockedOr64_Inline(LONGLONG volatile *Destination, LONGLONG Value) {
-    LONGLONG Old;
-    do {
-        Old = *Destination;
-    } while (InterlockedCompareExchange64(Destination, Old | Value, Old) != Old);
-    return Old;
+	LONGLONG Old;
+	do {
+		Old = *Destination;
+	} while (InterlockedCompareExchange64(Destination, Old | Value, Old) != Old);
+	return Old;
 }
 #endif
 
@@ -882,11 +882,11 @@ __CRT_INLINE LONGLONG InterlockedOr64_Inline(LONGLONG volatile *Destination, LON
 #define InterlockedXor64 InterlockedXor64_Inline
 
 __CRT_INLINE LONGLONG InterlockedXor64_Inline(LONGLONG volatile *Destination, LONGLONG Value) {
-    LONGLONG Old;
-    do {
-        Old = *Destination;
-    } while (InterlockedCompareExchange64(Destination, Old ^ Value, Old) != Old);
-    return Old;
+	LONGLONG Old;
+	do {
+		Old = *Destination;
+	} while (InterlockedCompareExchange64(Destination, Old ^ Value, Old) != Old);
+	return Old;
 }
 #endif
 
@@ -894,9 +894,9 @@ __CRT_INLINE LONGLONG InterlockedXor64_Inline(LONGLONG volatile *Destination, LO
 #define InterlockedBitTestAndSet InterlockedBitTestAndSet_Inline
 
 __CRT_INLINE BOOLEAN InterlockedBitTestAndSet_Inline(LONG *Base, LONG Bit) {
-    LONG tBit;
-    tBit = 1 << (Bit & (sizeof(*Base) * 8 - 1));
-    return (BOOLEAN)((InterlockedOr(&Base[Bit / (sizeof(*Base) * 8)], tBit) & tBit) != 0);
+	LONG tBit;
+	tBit = 1 << (Bit & (sizeof(*Base) * 8 - 1));
+	return (BOOLEAN)((InterlockedOr(&Base[Bit / (sizeof(*Base) * 8)], tBit) & tBit) != 0);
 }
 #endif
 
@@ -904,9 +904,9 @@ __CRT_INLINE BOOLEAN InterlockedBitTestAndSet_Inline(LONG *Base, LONG Bit) {
 #define InterlockedBitTestAndReset InterlockedBitTestAndReset_Inline
 
 __CRT_INLINE BOOLEAN InterlockedBitTestAndReset_Inline(LONG *Base, LONG Bit) {
-    LONG tBit;
-    tBit = 1 << (Bit & (sizeof(*Base) * 8 - 1));
-    return (BOOLEAN)((InterlockedAnd(&Base[Bit / (sizeof(*Base) * 8)], ~tBit) & tBit) != 0);
+	LONG tBit;
+	tBit = 1 << (Bit & (sizeof(*Base) * 8 - 1));
+	return (BOOLEAN)((InterlockedAnd(&Base[Bit / (sizeof(*Base) * 8)], ~tBit) & tBit) != 0);
 }
 #endif
 
@@ -914,9 +914,9 @@ __CRT_INLINE BOOLEAN InterlockedBitTestAndReset_Inline(LONG *Base, LONG Bit) {
 #define InterlockedBitTestAndComplement InterlockedBitTestAndComplement_Inline
 
 __CRT_INLINE BOOLEAN InterlockedBitTestAndComplement_Inline(LONG *Base, LONG Bit) {
-    LONG tBit;
-    tBit = 1 << (Bit & (sizeof(*Base) * 8 - 1));
-    return (BOOLEAN)((InterlockedXor(&Base[Bit / (sizeof(*Base) * 8)], tBit) & tBit) != 0);
+	LONG tBit;
+	tBit = 1 << (Bit & (sizeof(*Base) * 8 - 1));
+	return (BOOLEAN)((InterlockedXor(&Base[Bit / (sizeof(*Base) * 8)], tBit) & tBit) != 0);
 }
 #endif
 #elif defined(__x86_64) && !defined(RC_INVOKED)
@@ -976,66 +976,66 @@ LONG WINAPI InterlockedCompareExchange(LONG volatile *Destination, LONG Exchange
 LONGLONG WINAPI InterlockedCompareExchange64(LONGLONG volatile *Destination, LONGLONG Exchange, LONGLONG Comperand);
 
 __CRT_INLINE LONGLONG InterlockedAnd64(LONGLONG volatile *Destination, LONGLONG Value) {
-    LONGLONG Old;
-    do {
-        Old = *Destination;
-    } while (InterlockedCompareExchange64(Destination, Old & Value, Old) != Old);
-    return Old;
+	LONGLONG Old;
+	do {
+		Old = *Destination;
+	} while (InterlockedCompareExchange64(Destination, Old & Value, Old) != Old);
+	return Old;
 }
 
 __CRT_INLINE LONGLONG InterlockedOr64(LONGLONG volatile *Destination, LONGLONG Value) {
-    LONGLONG Old;
-    do {
-        Old = *Destination;
-    } while (InterlockedCompareExchange64(Destination, Old | Value, Old) != Old);
-    return Old;
+	LONGLONG Old;
+	do {
+		Old = *Destination;
+	} while (InterlockedCompareExchange64(Destination, Old | Value, Old) != Old);
+	return Old;
 }
 
 __CRT_INLINE LONGLONG InterlockedXor64(LONGLONG volatile *Destination, LONGLONG Value) {
-    LONGLONG Old;
-    do {
-        Old = *Destination;
-    } while (InterlockedCompareExchange64(Destination, Old ^ Value, Old) != Old);
+	LONGLONG Old;
+	do {
+		Old = *Destination;
+	} while (InterlockedCompareExchange64(Destination, Old ^ Value, Old) != Old);
 
-    return Old;
+	return Old;
 }
 
 __CRT_INLINE LONGLONG InterlockedIncrement64(LONGLONG volatile *Addend) {
-    LONGLONG Old;
-    do {
-        Old = *Addend;
-    } while (InterlockedCompareExchange64(Addend, Old + 1, Old) != Old);
-    return Old + 1;
+	LONGLONG Old;
+	do {
+		Old = *Addend;
+	} while (InterlockedCompareExchange64(Addend, Old + 1, Old) != Old);
+	return Old + 1;
 }
 
 __CRT_INLINE LONGLONG InterlockedDecrement64(LONGLONG volatile *Addend) {
-    LONGLONG Old;
-    do {
-        Old = *Addend;
-    } while (InterlockedCompareExchange64(Addend, Old - 1, Old) != Old);
-    return Old - 1;
+	LONGLONG Old;
+	do {
+		Old = *Addend;
+	} while (InterlockedCompareExchange64(Addend, Old - 1, Old) != Old);
+	return Old - 1;
 }
 
 __CRT_INLINE LONGLONG InterlockedExchange64(LONGLONG volatile *Target, LONGLONG Value) {
-    LONGLONG Old;
-    do {
-        Old = *Target;
-    } while (InterlockedCompareExchange64(Target, Value, Old) != Old);
-    return Old;
+	LONGLONG Old;
+	do {
+		Old = *Target;
+	} while (InterlockedCompareExchange64(Target, Value, Old) != Old);
+	return Old;
 }
 
 __CRT_INLINE LONGLONG InterlockedExchangeAdd64(LONGLONG volatile *Addend, LONGLONG Value) {
-    LONGLONG Old;
-    do {
-        Old = *Addend;
-    } while (InterlockedCompareExchange64(Addend, Old + Value, Old) != Old);
-    return Old;
+	LONGLONG Old;
+	do {
+		Old = *Addend;
+	} while (InterlockedCompareExchange64(Addend, Old + Value, Old) != Old);
+	return Old;
 }
 
 #ifndef InterlockedCompareExchangePointer
 #ifdef __cplusplus
 __CRT_INLINE PVOID __cdecl __InlineInterlockedCompareExchangePointer(PVOID volatile *Destination, PVOID ExChange, PVOID Comperand) {
-    return ((PVOID)(LONG_PTR)InterlockedCompareExchange((LONG volatile *)Destination, (LONG)(LONG_PTR)ExChange, (LONG)(LONG_PTR)Comperand));
+	return ((PVOID)(LONG_PTR)InterlockedCompareExchange((LONG volatile *)Destination, (LONG)(LONG_PTR)ExChange, (LONG)(LONG_PTR)Comperand));
 }
 #define InterlockedCompareExchangePointer __InlineInterlockedCompareExchangePointer
 #else
@@ -1101,15 +1101,15 @@ WINBASEAPI WINBOOL WINAPI GlobalUnWire(HGLOBAL hMem);
 WINBASEAPI VOID WINAPI GlobalMemoryStatus(LPMEMORYSTATUS lpBuffer);
 
 typedef struct _MEMORYSTATUSEX {
-    DWORD dwLength;
-    DWORD dwMemoryLoad;
-    DWORDLONG ullTotalPhys;
-    DWORDLONG ullAvailPhys;
-    DWORDLONG ullTotalPageFile;
-    DWORDLONG ullAvailPageFile;
-    DWORDLONG ullTotalVirtual;
-    DWORDLONG ullAvailVirtual;
-    DWORDLONG ullAvailExtendedVirtual;
+	DWORD dwLength;
+	DWORD dwMemoryLoad;
+	DWORDLONG ullTotalPhys;
+	DWORDLONG ullAvailPhys;
+	DWORDLONG ullTotalPageFile;
+	DWORDLONG ullAvailPageFile;
+	DWORDLONG ullTotalVirtual;
+	DWORDLONG ullAvailVirtual;
+	DWORDLONG ullAvailExtendedVirtual;
 } MEMORYSTATUSEX, *LPMEMORYSTATUSEX;
 
 WINBASEAPI WINBOOL WINAPI GlobalMemoryStatusEx(LPMEMORYSTATUSEX lpBuffer);
@@ -1149,23 +1149,23 @@ WINBASEAPI HANDLE WINAPI GetProcessHeap(VOID);
 WINBASEAPI DWORD WINAPI GetProcessHeaps(DWORD NumberOfHeaps, PHANDLE ProcessHeaps);
 
 typedef struct _PROCESS_HEAP_ENTRY {
-    PVOID lpData;
-    DWORD cbData;
-    BYTE cbOverhead;
-    BYTE iRegionIndex;
-    WORD wFlags;
-    union {
-        struct {
-            HANDLE hMem;
-            DWORD dwReserved[3];
-        } Block;
-        struct {
-            DWORD dwCommittedSize;
-            DWORD dwUnCommittedSize;
-            LPVOID lpFirstBlock;
-            LPVOID lpLastBlock;
-        } Region;
-    };
+	PVOID lpData;
+	DWORD cbData;
+	BYTE cbOverhead;
+	BYTE iRegionIndex;
+	WORD wFlags;
+	union {
+		struct {
+			HANDLE hMem;
+			DWORD dwReserved[3];
+		} Block;
+		struct {
+			DWORD dwCommittedSize;
+			DWORD dwUnCommittedSize;
+			LPVOID lpFirstBlock;
+			LPVOID lpLastBlock;
+		} Region;
+	};
 } PROCESS_HEAP_ENTRY, *LPPROCESS_HEAP_ENTRY, *PPROCESS_HEAP_ENTRY;
 
 #define PROCESS_HEAP_REGION 0x1
@@ -1361,16 +1361,16 @@ WINBASEAPI WINBOOL WINAPI LockFileEx(HANDLE hFile, DWORD dwFlags, DWORD dwReserv
 WINBASEAPI WINBOOL WINAPI UnlockFileEx(HANDLE hFile, DWORD dwReserved, DWORD nNumberOfBytesToUnlockLow, DWORD nNumberOfBytesToUnlockHigh, LPOVERLAPPED lpOverlapped);
 
 typedef struct _BY_HANDLE_FILE_INFORMATION {
-    DWORD dwFileAttributes;
-    FILETIME ftCreationTime;
-    FILETIME ftLastAccessTime;
-    FILETIME ftLastWriteTime;
-    DWORD dwVolumeSerialNumber;
-    DWORD nFileSizeHigh;
-    DWORD nFileSizeLow;
-    DWORD nNumberOfLinks;
-    DWORD nFileIndexHigh;
-    DWORD nFileIndexLow;
+	DWORD dwFileAttributes;
+	FILETIME ftCreationTime;
+	FILETIME ftLastAccessTime;
+	FILETIME ftLastWriteTime;
+	DWORD dwVolumeSerialNumber;
+	DWORD nFileSizeHigh;
+	DWORD nFileSizeLow;
+	DWORD nNumberOfLinks;
+	DWORD nFileIndexHigh;
+	DWORD nFileIndexLow;
 } BY_HANDLE_FILE_INFORMATION, *PBY_HANDLE_FILE_INFORMATION, *LPBY_HANDLE_FILE_INFORMATION;
 
 #ifdef UNICODE
@@ -1465,13 +1465,13 @@ WINBASEAPI VOID WINAPI GetNativeSystemInfo(LPSYSTEM_INFO lpSystemInfo);
 WINBASEAPI WINBOOL WINAPI IsProcessorFeaturePresent(DWORD ProcessorFeature);
 
 typedef struct _TIME_ZONE_INFORMATION {
-    LONG Bias;
-    WCHAR StandardName[32];
-    SYSTEMTIME StandardDate;
-    LONG StandardBias;
-    WCHAR DaylightName[32];
-    SYSTEMTIME DaylightDate;
-    LONG DaylightBias;
+	LONG Bias;
+	WCHAR StandardName[32];
+	SYSTEMTIME StandardDate;
+	LONG StandardBias;
+	WCHAR DaylightName[32];
+	SYSTEMTIME DaylightDate;
+	LONG DaylightBias;
 } TIME_ZONE_INFORMATION, *PTIME_ZONE_INFORMATION, *LPTIME_ZONE_INFORMATION;
 
 #ifdef UNICODE
@@ -1632,11 +1632,11 @@ WINBASEAPI WINBOOL WINAPI BackupSeek(HANDLE hFile, DWORD dwLowBytesToSeek, DWORD
 WINBASEAPI WINBOOL WINAPI BackupWrite(HANDLE hFile, LPBYTE lpBuffer, DWORD nNumberOfBytesToWrite, LPDWORD lpNumberOfBytesWritten, WINBOOL bAbort, WINBOOL bProcessSecurity, LPVOID *lpContext);
 
 typedef struct _WIN32_STREAM_ID {
-    DWORD dwStreamId;
-    DWORD dwStreamAttributes;
-    LARGE_INTEGER Size;
-    DWORD dwStreamNameSize;
-    WCHAR cStreamName[ANYSIZE_ARRAY];
+	DWORD dwStreamId;
+	DWORD dwStreamAttributes;
+	LARGE_INTEGER Size;
+	DWORD dwStreamNameSize;
+	WCHAR cStreamName[ANYSIZE_ARRAY];
 } WIN32_STREAM_ID, *LPWIN32_STREAM_ID;
 
 #define BACKUP_INVALID 0x0
@@ -1672,45 +1672,45 @@ WINBASEAPI WINBOOL WINAPI WriteFileGather(HANDLE hFile, FILE_SEGMENT_ELEMENT aSe
 #define STARTF_USEHOTKEY 0x200
 
 typedef struct _STARTUPINFOA {
-    DWORD cb;
-    LPSTR lpReserved;
-    LPSTR lpDesktop;
-    LPSTR lpTitle;
-    DWORD dwX;
-    DWORD dwY;
-    DWORD dwXSize;
-    DWORD dwYSize;
-    DWORD dwXCountChars;
-    DWORD dwYCountChars;
-    DWORD dwFillAttribute;
-    DWORD dwFlags;
-    WORD wShowWindow;
-    WORD cbReserved2;
-    LPBYTE lpReserved2;
-    HANDLE hStdInput;
-    HANDLE hStdOutput;
-    HANDLE hStdError;
+	DWORD cb;
+	LPSTR lpReserved;
+	LPSTR lpDesktop;
+	LPSTR lpTitle;
+	DWORD dwX;
+	DWORD dwY;
+	DWORD dwXSize;
+	DWORD dwYSize;
+	DWORD dwXCountChars;
+	DWORD dwYCountChars;
+	DWORD dwFillAttribute;
+	DWORD dwFlags;
+	WORD wShowWindow;
+	WORD cbReserved2;
+	LPBYTE lpReserved2;
+	HANDLE hStdInput;
+	HANDLE hStdOutput;
+	HANDLE hStdError;
 } STARTUPINFOA, *LPSTARTUPINFOA;
 
 typedef struct _STARTUPINFOW {
-    DWORD cb;
-    LPWSTR lpReserved;
-    LPWSTR lpDesktop;
-    LPWSTR lpTitle;
-    DWORD dwX;
-    DWORD dwY;
-    DWORD dwXSize;
-    DWORD dwYSize;
-    DWORD dwXCountChars;
-    DWORD dwYCountChars;
-    DWORD dwFillAttribute;
-    DWORD dwFlags;
-    WORD wShowWindow;
-    WORD cbReserved2;
-    LPBYTE lpReserved2;
-    HANDLE hStdInput;
-    HANDLE hStdOutput;
-    HANDLE hStdError;
+	DWORD cb;
+	LPWSTR lpReserved;
+	LPWSTR lpDesktop;
+	LPWSTR lpTitle;
+	DWORD dwX;
+	DWORD dwY;
+	DWORD dwXSize;
+	DWORD dwYSize;
+	DWORD dwXCountChars;
+	DWORD dwYCountChars;
+	DWORD dwFillAttribute;
+	DWORD dwFlags;
+	WORD wShowWindow;
+	WORD cbReserved2;
+	LPBYTE lpReserved2;
+	HANDLE hStdInput;
+	HANDLE hStdOutput;
+	HANDLE hStdError;
 } STARTUPINFOW, *LPSTARTUPINFOW;
 
 #ifdef UNICODE
@@ -1724,29 +1724,29 @@ typedef LPSTARTUPINFOA LPSTARTUPINFO;
 #define SHUTDOWN_NORETRY 0x1
 
 typedef struct _WIN32_FIND_DATAA {
-    DWORD dwFileAttributes;
-    FILETIME ftCreationTime;
-    FILETIME ftLastAccessTime;
-    FILETIME ftLastWriteTime;
-    DWORD nFileSizeHigh;
-    DWORD nFileSizeLow;
-    DWORD dwReserved0;
-    DWORD dwReserved1;
-    CHAR cFileName[MAX_PATH];
-    CHAR cAlternateFileName[14];
+	DWORD dwFileAttributes;
+	FILETIME ftCreationTime;
+	FILETIME ftLastAccessTime;
+	FILETIME ftLastWriteTime;
+	DWORD nFileSizeHigh;
+	DWORD nFileSizeLow;
+	DWORD dwReserved0;
+	DWORD dwReserved1;
+	CHAR cFileName[MAX_PATH];
+	CHAR cAlternateFileName[14];
 } WIN32_FIND_DATAA, *PWIN32_FIND_DATAA, *LPWIN32_FIND_DATAA;
 
 typedef struct _WIN32_FIND_DATAW {
-    DWORD dwFileAttributes;
-    FILETIME ftCreationTime;
-    FILETIME ftLastAccessTime;
-    FILETIME ftLastWriteTime;
-    DWORD nFileSizeHigh;
-    DWORD nFileSizeLow;
-    DWORD dwReserved0;
-    DWORD dwReserved1;
-    WCHAR cFileName[MAX_PATH];
-    WCHAR cAlternateFileName[14];
+	DWORD dwFileAttributes;
+	FILETIME ftCreationTime;
+	FILETIME ftLastAccessTime;
+	FILETIME ftLastWriteTime;
+	DWORD nFileSizeHigh;
+	DWORD nFileSizeLow;
+	DWORD dwReserved0;
+	DWORD dwReserved1;
+	WCHAR cFileName[MAX_PATH];
+	WCHAR cAlternateFileName[14];
 } WIN32_FIND_DATAW, *PWIN32_FIND_DATAW, *LPWIN32_FIND_DATAW;
 
 #ifdef UNICODE
@@ -1760,12 +1760,12 @@ typedef LPWIN32_FIND_DATAA LPWIN32_FIND_DATA;
 #endif
 
 typedef struct _WIN32_FILE_ATTRIBUTE_DATA {
-    DWORD dwFileAttributes;
-    FILETIME ftCreationTime;
-    FILETIME ftLastAccessTime;
-    FILETIME ftLastWriteTime;
-    DWORD nFileSizeHigh;
-    DWORD nFileSizeLow;
+	DWORD dwFileAttributes;
+	FILETIME ftCreationTime;
+	FILETIME ftLastAccessTime;
+	FILETIME ftLastWriteTime;
+	DWORD nFileSizeHigh;
+	DWORD nFileSizeLow;
 } WIN32_FILE_ATTRIBUTE_DATA, *LPWIN32_FILE_ATTRIBUTE_DATA;
 
 #ifdef UNICODE
@@ -1835,8 +1835,8 @@ WINBASEAPI DWORD WINAPI GetLogicalDriveStringsA(DWORD nBufferLength, LPSTR lpBuf
 WINBASEAPI DWORD WINAPI GetLogicalDriveStringsW(DWORD nBufferLength, LPWSTR lpBuffer);
 
 typedef enum _MEMORY_RESOURCE_NOTIFICATION_TYPE {
-    LowMemoryResourceNotification,
-    HighMemoryResourceNotification
+	LowMemoryResourceNotification,
+	HighMemoryResourceNotification
 } MEMORY_RESOURCE_NOTIFICATION_TYPE;
 
 WINBASEAPI HANDLE WINAPI CreateMemoryResourceNotification(MEMORY_RESOURCE_NOTIFICATION_TYPE NotificationType);
@@ -2202,8 +2202,8 @@ WINBASEAPI DWORD WINAPI GetFileAttributesA(LPCSTR lpFileName);
 WINBASEAPI DWORD WINAPI GetFileAttributesW(LPCWSTR lpFileName);
 
 typedef enum _GET_FILEEX_INFO_LEVELS {
-    GetFileExInfoStandard,
-    GetFileExMaxInfoLevel
+	GetFileExInfoStandard,
+	GetFileExMaxInfoLevel
 } GET_FILEEX_INFO_LEVELS;
 
 #ifdef UNICODE
@@ -2228,15 +2228,15 @@ WINBASEAPI WINBOOL WINAPI CheckNameLegalDOS8Dot3A(LPCSTR lpName, LPSTR lpOemName
 WINBASEAPI WINBOOL WINAPI CheckNameLegalDOS8Dot3W(LPCWSTR lpName, LPSTR lpOemName, DWORD OemNameSize, PBOOL pbNameContainsSpaces, PBOOL pbNameLegal);
 
 typedef enum _FINDEX_INFO_LEVELS {
-    FindExInfoStandard,
-    FindExInfoMaxInfoLevel
+	FindExInfoStandard,
+	FindExInfoMaxInfoLevel
 } FINDEX_INFO_LEVELS;
 
 typedef enum _FINDEX_SEARCH_OPS {
-    FindExSearchNameMatch,
-    FindExSearchLimitToDirectories,
-    FindExSearchLimitToDevices,
-    FindExSearchMaxSearchOp
+	FindExSearchNameMatch,
+	FindExSearchLimitToDirectories,
+	FindExSearchLimitToDevices,
+	FindExSearchMaxSearchOp
 } FINDEX_SEARCH_OPS;
 
 #define FIND_FIRST_EX_CASE_SENSITIVE 0x1
@@ -2386,13 +2386,13 @@ WINBASEAPI WINBOOL WINAPI CreateHardLinkA(LPCSTR lpFileName, LPCSTR lpExistingFi
 WINBASEAPI WINBOOL WINAPI CreateHardLinkW(LPCWSTR lpFileName, LPCWSTR lpExistingFileName, LPSECURITY_ATTRIBUTES lpSecurityAttributes);
 
 typedef enum _STREAM_INFO_LEVELS {
-    FindStreamInfoStandard,
-    FindStreamInfoMaxInfoLevel
+	FindStreamInfoStandard,
+	FindStreamInfoMaxInfoLevel
 } STREAM_INFO_LEVELS;
 
 typedef struct _WIN32_FIND_STREAM_DATA {
-    LARGE_INTEGER StreamSize;
-    WCHAR cStreamName[MAX_PATH + 36];
+	LARGE_INTEGER StreamSize;
+	WCHAR cStreamName[MAX_PATH + 36];
 } WIN32_FIND_STREAM_DATA, *PWIN32_FIND_STREAM_DATA;
 
 HANDLE WINAPI FindFirstStreamW(LPCWSTR lpFileName, STREAM_INFO_LEVELS InfoLevel, LPVOID lpFindStreamData, DWORD dwFlags);
@@ -2436,7 +2436,7 @@ WINADVAPI WINBOOL WINAPI ReportEventW(HANDLE hEventLog, WORD wType, WORD wCatego
 #define EVENTLOG_FULL_INFO 0
 
 typedef struct _EVENTLOG_FULL_INFORMATION {
-    DWORD dwFull;
+	DWORD dwFull;
 } EVENTLOG_FULL_INFORMATION, *LPEVENTLOG_FULL_INFORMATION;
 
 WINADVAPI WINBOOL WINAPI GetEventLogInformation(HANDLE hEventLog, DWORD dwInfoLevel, LPVOID lpBuffer, DWORD cbBufSize, LPDWORD pcbBytesNeeded);
@@ -2588,15 +2588,15 @@ WINBASEAPI WINBOOL WINAPI SetComputerNameA(LPCSTR lpComputerName);
 WINBASEAPI WINBOOL WINAPI SetComputerNameW(LPCWSTR lpComputerName);
 
 typedef enum _COMPUTER_NAME_FORMAT {
-    ComputerNameNetBIOS,
-    ComputerNameDnsHostname,
-    ComputerNameDnsDomain,
-    ComputerNameDnsFullyQualified,
-    ComputerNamePhysicalNetBIOS,
-    ComputerNamePhysicalDnsHostname,
-    ComputerNamePhysicalDnsDomain,
-    ComputerNamePhysicalDnsFullyQualified,
-    ComputerNameMax
+	ComputerNameNetBIOS,
+	ComputerNameDnsHostname,
+	ComputerNameDnsDomain,
+	ComputerNameDnsFullyQualified,
+	ComputerNamePhysicalNetBIOS,
+	ComputerNamePhysicalDnsHostname,
+	ComputerNamePhysicalDnsDomain,
+	ComputerNamePhysicalDnsFullyQualified,
+	ComputerNameMax
 } COMPUTER_NAME_FORMAT;
 
 WINBASEAPI WINBOOL WINAPI GetComputerNameExA(COMPUTER_NAME_FORMAT NameType, LPSTR lpBuffer, LPDWORD nSize);
@@ -2679,15 +2679,15 @@ WINBASEAPI WINBOOL WINAPI DeleteTimerQueue(HANDLE TimerQueue);
 #define DOCKINFO_USER_DOCKED (DOCKINFO_USER_SUPPLIED | DOCKINFO_DOCKED)
 
 typedef struct tagHW_PROFILE_INFOA {
-    DWORD dwDockInfo;
-    CHAR szHwProfileGuid[HW_PROFILE_GUIDLEN];
-    CHAR szHwProfileName[MAX_PROFILE_LEN];
+	DWORD dwDockInfo;
+	CHAR szHwProfileGuid[HW_PROFILE_GUIDLEN];
+	CHAR szHwProfileName[MAX_PROFILE_LEN];
 } HW_PROFILE_INFOA, *LPHW_PROFILE_INFOA;
 
 typedef struct tagHW_PROFILE_INFOW {
-    DWORD dwDockInfo;
-    WCHAR szHwProfileGuid[HW_PROFILE_GUIDLEN];
-    WCHAR szHwProfileName[MAX_PROFILE_LEN];
+	DWORD dwDockInfo;
+	WCHAR szHwProfileGuid[HW_PROFILE_GUIDLEN];
+	WCHAR szHwProfileName[MAX_PROFILE_LEN];
 } HW_PROFILE_INFOW, *LPHW_PROFILE_INFOW;
 
 #ifdef UNICODE
@@ -2741,12 +2741,12 @@ WINBASEAPI WINBOOL WINAPI VerifyVersionInfoW(LPOSVERSIONINFOEXW lpVersionInforma
 #define BATTERY_LIFE_UNKNOWN 0xffffffff
 
 typedef struct _SYSTEM_POWER_STATUS {
-    BYTE ACLineStatus;
-    BYTE BatteryFlag;
-    BYTE BatteryLifePercent;
-    BYTE Reserved1;
-    DWORD BatteryLifeTime;
-    DWORD BatteryFullLifeTime;
+	BYTE ACLineStatus;
+	BYTE BatteryFlag;
+	BYTE BatteryLifePercent;
+	BYTE Reserved1;
+	DWORD BatteryLifeTime;
+	DWORD BatteryFullLifeTime;
 } SYSTEM_POWER_STATUS, *LPSYSTEM_POWER_STATUS;
 
 #ifdef UNICODE
@@ -2826,27 +2826,27 @@ WINBASEAPI WINBOOL WINAPI GetVolumePathNamesForVolumeNameW(LPCWSTR lpszVolumeNam
 #define ACTCTX_FLAG_HMODULE_VALID 0x80
 
 typedef struct tagACTCTXA {
-    ULONG cbSize;
-    DWORD dwFlags;
-    LPCSTR lpSource;
-    USHORT wProcessorArchitecture;
-    LANGID wLangId;
-    LPCSTR lpAssemblyDirectory;
-    LPCSTR lpResourceName;
-    LPCSTR lpApplicationName;
-    HMODULE hModule;
+	ULONG cbSize;
+	DWORD dwFlags;
+	LPCSTR lpSource;
+	USHORT wProcessorArchitecture;
+	LANGID wLangId;
+	LPCSTR lpAssemblyDirectory;
+	LPCSTR lpResourceName;
+	LPCSTR lpApplicationName;
+	HMODULE hModule;
 } ACTCTXA, *PACTCTXA;
 
 typedef struct tagACTCTXW {
-    ULONG cbSize;
-    DWORD dwFlags;
-    LPCWSTR lpSource;
-    USHORT wProcessorArchitecture;
-    LANGID wLangId;
-    LPCWSTR lpAssemblyDirectory;
-    LPCWSTR lpResourceName;
-    LPCWSTR lpApplicationName;
-    HMODULE hModule;
+	ULONG cbSize;
+	DWORD dwFlags;
+	LPCWSTR lpSource;
+	USHORT wProcessorArchitecture;
+	LANGID wLangId;
+	LPCWSTR lpAssemblyDirectory;
+	LPCWSTR lpResourceName;
+	LPCWSTR lpApplicationName;
+	HMODULE hModule;
 } ACTCTXW, *PACTCTXW;
 
 typedef const ACTCTXA *PCACTCTXA;
@@ -2881,44 +2881,44 @@ WINBASEAPI WINBOOL WINAPI DeactivateActCtx(DWORD dwFlags, ULONG_PTR ulCookie);
 WINBASEAPI WINBOOL WINAPI GetCurrentActCtx(HANDLE *lphActCtx);
 
 typedef struct tagACTCTX_SECTION_KEYED_DATA_2600 {
-    ULONG cbSize;
-    ULONG ulDataFormatVersion;
-    PVOID lpData;
-    ULONG ulLength;
-    PVOID lpSectionGlobalData;
-    ULONG ulSectionGlobalDataLength;
-    PVOID lpSectionBase;
-    ULONG ulSectionTotalLength;
-    HANDLE hActCtx;
-    ULONG ulAssemblyRosterIndex;
+	ULONG cbSize;
+	ULONG ulDataFormatVersion;
+	PVOID lpData;
+	ULONG ulLength;
+	PVOID lpSectionGlobalData;
+	ULONG ulSectionGlobalDataLength;
+	PVOID lpSectionBase;
+	ULONG ulSectionTotalLength;
+	HANDLE hActCtx;
+	ULONG ulAssemblyRosterIndex;
 } ACTCTX_SECTION_KEYED_DATA_2600, *PACTCTX_SECTION_KEYED_DATA_2600;
 
 typedef const ACTCTX_SECTION_KEYED_DATA_2600 *PCACTCTX_SECTION_KEYED_DATA_2600;
 
 typedef struct tagACTCTX_SECTION_KEYED_DATA_ASSEMBLY_METADATA {
-    PVOID lpInformation;
-    PVOID lpSectionBase;
-    ULONG ulSectionLength;
-    PVOID lpSectionGlobalDataBase;
-    ULONG ulSectionGlobalDataLength;
+	PVOID lpInformation;
+	PVOID lpSectionBase;
+	ULONG ulSectionLength;
+	PVOID lpSectionGlobalDataBase;
+	ULONG ulSectionGlobalDataLength;
 } ACTCTX_SECTION_KEYED_DATA_ASSEMBLY_METADATA, *PACTCTX_SECTION_KEYED_DATA_ASSEMBLY_METADATA;
 
 typedef const ACTCTX_SECTION_KEYED_DATA_ASSEMBLY_METADATA *PCACTCTX_SECTION_KEYED_DATA_ASSEMBLY_METADATA;
 
 typedef struct tagACTCTX_SECTION_KEYED_DATA {
-    ULONG cbSize;
-    ULONG ulDataFormatVersion;
-    PVOID lpData;
-    ULONG ulLength;
-    PVOID lpSectionGlobalData;
-    ULONG ulSectionGlobalDataLength;
-    PVOID lpSectionBase;
-    ULONG ulSectionTotalLength;
-    HANDLE hActCtx;
-    ULONG ulAssemblyRosterIndex;
+	ULONG cbSize;
+	ULONG ulDataFormatVersion;
+	PVOID lpData;
+	ULONG ulLength;
+	PVOID lpSectionGlobalData;
+	ULONG ulSectionGlobalDataLength;
+	PVOID lpSectionBase;
+	ULONG ulSectionTotalLength;
+	HANDLE hActCtx;
+	ULONG ulAssemblyRosterIndex;
 
-    ULONG ulFlags;
-    ACTCTX_SECTION_KEYED_DATA_ASSEMBLY_METADATA AssemblyMetadata;
+	ULONG ulFlags;
+	ACTCTX_SECTION_KEYED_DATA_ASSEMBLY_METADATA AssemblyMetadata;
 } ACTCTX_SECTION_KEYED_DATA, *PACTCTX_SECTION_KEYED_DATA;
 
 typedef const ACTCTX_SECTION_KEYED_DATA *PCACTCTX_SECTION_KEYED_DATA;
@@ -2941,8 +2941,8 @@ WINBASEAPI WINBOOL WINAPI FindActCtxSectionGuid(DWORD dwFlags, const GUID *lpExt
 #ifndef ACTIVATION_CONTEXT_BASIC_INFORMATION_DEFINED
 
 typedef struct _ACTIVATION_CONTEXT_BASIC_INFORMATION {
-    HANDLE hActCtx;
-    DWORD dwFlags;
+	HANDLE hActCtx;
+	DWORD dwFlags;
 } ACTIVATION_CONTEXT_BASIC_INFORMATION, *PACTIVATION_CONTEXT_BASIC_INFORMATION;
 
 typedef const struct _ACTIVATION_CONTEXT_BASIC_INFORMATION *PCACTIVATION_CONTEXT_BASIC_INFORMATION;

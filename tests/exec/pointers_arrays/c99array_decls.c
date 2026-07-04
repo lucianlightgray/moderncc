@@ -12,9 +12,9 @@ void foos(int *x);
 void foov(int *volatile x);
 void foor(int *restrict x);
 void fooc(int x[volatile 5]) {
-    x[3] = 42;
+	x[3] = 42;
 #ifdef INVALID
-    x = 0;
+	x = 0;
 #endif
 }
 void foovm(int x[const * ]);
@@ -23,9 +23,9 @@ void foovm(int *const x);
 void wrongc(int x[3][const 4]);
 void wrongvm(int x[static * ]);
 void foovm(int x[const * ]) {
-    x[2] = 1;
+	x[2] = 1;
 }
 #endif
 int main() {
-    return 0;
+	return 0;
 }

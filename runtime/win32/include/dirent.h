@@ -16,23 +16,23 @@ extern "C" {
 #endif
 
 struct dirent {
-    long d_ino;
-    unsigned short d_reclen;
-    unsigned short d_namlen;
-    char *d_name;
+	long d_ino;
+	unsigned short d_reclen;
+	unsigned short d_namlen;
+	char *d_name;
 };
 
 typedef struct
 {
-    struct _finddata_t dd_dta;
+	struct _finddata_t dd_dta;
 
-    struct dirent dd_dir;
+	struct dirent dd_dir;
 
-    long dd_handle;
+	long dd_handle;
 
-    int dd_stat;
+	int dd_stat;
 
-    char dd_name[1];
+	char dd_name[1];
 } DIR;
 
 DIR *__cdecl opendir(const char *);
@@ -43,23 +43,23 @@ long __cdecl telldir(DIR *);
 void __cdecl seekdir(DIR *, long);
 
 struct _wdirent {
-    long d_ino;
-    unsigned short d_reclen;
-    unsigned short d_namlen;
-    wchar_t *d_name;
+	long d_ino;
+	unsigned short d_reclen;
+	unsigned short d_namlen;
+	wchar_t *d_name;
 };
 
 typedef struct
 {
-    struct _wfinddata_t dd_dta;
+	struct _wfinddata_t dd_dta;
 
-    struct _wdirent dd_dir;
+	struct _wdirent dd_dir;
 
-    long dd_handle;
+	long dd_handle;
 
-    int dd_stat;
+	int dd_stat;
 
-    wchar_t dd_name[1];
+	wchar_t dd_name[1];
 } _WDIR;
 
 _WDIR *__cdecl _wopendir(const wchar_t *);

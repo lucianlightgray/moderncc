@@ -2,6 +2,6 @@
 #include "s6_5_5.h"
 
 int main(void) {
-    s6_5_5_binary_ops();
-    return 0;
+	s6_5_5_binary_ops();
+	return 0;
 }

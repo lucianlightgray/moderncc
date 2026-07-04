@@ -44,49 +44,49 @@ typedef INT_PTR SOCKET;
 #endif
 
 typedef struct fd_set {
-    u_int fd_count;
-    SOCKET fd_array[FD_SETSIZE];
+	u_int fd_count;
+	SOCKET fd_array[FD_SETSIZE];
 } fd_set;
 
 extern int WINAPI __WSAFDIsSet(SOCKET, fd_set *);
 
 #define FD_CLR(fd, set)                                                                      \
-    do {                                                                                     \
-        u_int __i;                                                                           \
-        for (__i = 0; __i < ((fd_set *)(set))->fd_count; __i++) {                            \
-            if (((fd_set *)(set))->fd_array[__i] == fd) {                                    \
-                while (__i < ((fd_set *)(set))->fd_count - 1) {                              \
-                    ((fd_set *)(set))->fd_array[__i] = ((fd_set *)(set))->fd_array[__i + 1]; \
-                    __i++;                                                                   \
-                }                                                                            \
-                ((fd_set *)(set))->fd_count--;                                               \
-                break;                                                                       \
-            }                                                                                \
-        }                                                                                    \
-    } while (0)
+	do {                                                                                     \
+		u_int __i;                                                                           \
+		for (__i = 0; __i < ((fd_set *)(set))->fd_count; __i++) {                            \
+			if (((fd_set *)(set))->fd_array[__i] == fd) {                                    \
+				while (__i < ((fd_set *)(set))->fd_count - 1) {                              \
+					((fd_set *)(set))->fd_array[__i] = ((fd_set *)(set))->fd_array[__i + 1]; \
+					__i++;                                                                   \
+				}                                                                            \
+				((fd_set *)(set))->fd_count--;                                               \
+				break;                                                                       \
+			}                                                                                \
+		}                                                                                    \
+	} while (0)
 #define FD_SET(fd, set)                                           \
-    do {                                                          \
-        u_int __i;                                                \
-        for (__i = 0; __i < ((fd_set *)(set))->fd_count; __i++) { \
-            if (((fd_set *)(set))->fd_array[__i] == (fd)) {       \
-                break;                                            \
-            }                                                     \
-        }                                                         \
-        if (__i == ((fd_set *)(set))->fd_count) {                 \
-            if (((fd_set *)(set))->fd_count < FD_SETSIZE) {       \
-                ((fd_set *)(set))->fd_array[__i] = (fd);          \
-                ((fd_set *)(set))->fd_count++;                    \
-            }                                                     \
-        }                                                         \
-    } while (0)
+	do {                                                          \
+		u_int __i;                                                \
+		for (__i = 0; __i < ((fd_set *)(set))->fd_count; __i++) { \
+			if (((fd_set *)(set))->fd_array[__i] == (fd)) {       \
+				break;                                            \
+			}                                                     \
+		}                                                         \
+		if (__i == ((fd_set *)(set))->fd_count) {                 \
+			if (((fd_set *)(set))->fd_count < FD_SETSIZE) {       \
+				((fd_set *)(set))->fd_array[__i] = (fd);          \
+				((fd_set *)(set))->fd_count++;                    \
+			}                                                     \
+		}                                                         \
+	} while (0)
 #define FD_ZERO(set) (((fd_set *)(set))->fd_count = 0)
 #define FD_ISSET(fd, set) __WSAFDIsSet((SOCKET)(fd), (fd_set *)(set))
 
 #ifndef _TIMEVAL_DEFINED
 #define _TIMEVAL_DEFINED
 struct timeval {
-    long tv_sec;
-    long tv_usec;
+	long tv_sec;
+	long tv_usec;
 };
 
 #define timerisset(tvp) ((tvp)->tv_sec || (tvp)->tv_usec)
@@ -117,36 +117,36 @@ struct timeval {
 #define h_addr h_addr_list[0]
 
 struct hostent {
-    char *h_name;
-    char **h_aliases;
-    short h_addrtype;
-    short h_length;
-    char **h_addr_list;
+	char *h_name;
+	char **h_aliases;
+	short h_addrtype;
+	short h_length;
+	char **h_addr_list;
 };
 
 struct netent {
-    char *n_name;
-    char **n_aliases;
-    short n_addrtype;
-    u_long n_net;
+	char *n_name;
+	char **n_aliases;
+	short n_addrtype;
+	u_long n_net;
 };
 
 struct servent {
-    char *s_name;
-    char **s_aliases;
+	char *s_name;
+	char **s_aliases;
 #ifdef _WIN64
-    char *s_proto;
-    short s_port;
+	char *s_proto;
+	short s_port;
 #else
-    short s_port;
-    char *s_proto;
+	short s_port;
+	char *s_proto;
 #endif
 };
 
 struct protoent {
-    char *p_name;
-    char **p_aliases;
-    short p_proto;
+	char *p_name;
+	char **p_aliases;
+	short p_proto;
 };
 
 #define IPPROTO_IP 0
@@ -210,15 +210,15 @@ struct protoent {
 #ifndef s_addr
 
 struct in_addr {
-    union {
-        struct {
-            u_char s_b1, s_b2, s_b3, s_b4;
-        } S_un_b;
-        struct {
-            u_short s_w1, s_w2;
-        } S_un_w;
-        u_long S_addr;
-    } S_un;
+	union {
+		struct {
+			u_char s_b1, s_b2, s_b3, s_b4;
+		} S_un_b;
+		struct {
+			u_short s_w1, s_w2;
+		} S_un_w;
+		u_long S_addr;
+	} S_un;
 };
 
 #define s_addr S_un.S_addr
@@ -261,30 +261,30 @@ struct in_addr {
 #define ADDR_ANY INADDR_ANY
 
 struct sockaddr_in {
-    short sin_family;
-    u_short sin_port;
-    struct in_addr sin_addr;
-    char sin_zero[8];
+	short sin_family;
+	u_short sin_port;
+	struct in_addr sin_addr;
+	char sin_zero[8];
 };
 
 #define WSADESCRIPTION_LEN 256
 #define WSASYS_STATUS_LEN 128
 
 typedef struct WSAData {
-    WORD wVersion;
-    WORD wHighVersion;
+	WORD wVersion;
+	WORD wHighVersion;
 #ifdef _WIN64
-    unsigned short iMaxSockets;
-    unsigned short iMaxUdpDg;
-    char *lpVendorInfo;
-    char szDescription[WSADESCRIPTION_LEN + 1];
-    char szSystemStatus[WSASYS_STATUS_LEN + 1];
+	unsigned short iMaxSockets;
+	unsigned short iMaxUdpDg;
+	char *lpVendorInfo;
+	char szDescription[WSADESCRIPTION_LEN + 1];
+	char szSystemStatus[WSASYS_STATUS_LEN + 1];
 #else
-    char szDescription[WSADESCRIPTION_LEN + 1];
-    char szSystemStatus[WSASYS_STATUS_LEN + 1];
-    unsigned short iMaxSockets;
-    unsigned short iMaxUdpDg;
-    char *lpVendorInfo;
+	char szDescription[WSADESCRIPTION_LEN + 1];
+	char szSystemStatus[WSASYS_STATUS_LEN + 1];
+	unsigned short iMaxSockets;
+	unsigned short iMaxUdpDg;
+	char *lpVendorInfo;
 #endif
 } WSADATA, *LPWSADATA;
 
@@ -374,8 +374,8 @@ typedef struct WSAData {
 #define AF_MAX 32
 
 struct sockaddr {
-    u_short sa_family;
-    char sa_data[14];
+	u_short sa_family;
+	char sa_data[14];
 };
 
 #define _SS_MAXSIZE 128
@@ -385,16 +385,16 @@ struct sockaddr {
 #define _SS_PAD2SIZE (_SS_MAXSIZE - (sizeof(short) + _SS_PAD1SIZE + _SS_ALIGNSIZE))
 
 struct sockaddr_storage {
-    short ss_family;
-    char __ss_pad1[_SS_PAD1SIZE];
+	short ss_family;
+	char __ss_pad1[_SS_PAD1SIZE];
 
-    __MINGW_EXTENSION __int64 __ss_align;
-    char __ss_pad2[_SS_PAD2SIZE];
+	__MINGW_EXTENSION __int64 __ss_align;
+	char __ss_pad2[_SS_PAD2SIZE];
 };
 
 struct sockproto {
-    u_short sp_family;
-    u_short sp_protocol;
+	u_short sp_family;
+	u_short sp_protocol;
 };
 
 #define PF_UNSPEC AF_UNSPEC
@@ -426,8 +426,8 @@ struct sockproto {
 #define PF_MAX AF_MAX
 
 struct linger {
-    u_short l_onoff;
-    u_short l_linger;
+	u_short l_onoff;
+	u_short l_linger;
 };
 
 #define SOL_SOCKET 0xffff
@@ -689,16 +689,16 @@ typedef struct _OVERLAPPED *LPWSAOVERLAPPED;
 #define WSA_INFINITE (INFINITE)
 
 typedef struct _WSABUF {
-    u_long len;
-    char *buf;
+	u_long len;
+	char *buf;
 } WSABUF, *LPWSABUF;
 
 #include <qos.h>
 
 typedef struct _QualityOfService {
-    FLOWSPEC SendingFlowspec;
-    FLOWSPEC ReceivingFlowspec;
-    WSABUF ProviderSpecific;
+	FLOWSPEC SendingFlowspec;
+	FLOWSPEC ReceivingFlowspec;
+	WSABUF ProviderSpecific;
 } QOS, *LPQOS;
 
 #define CF_ACCEPT 0x0000
@@ -715,8 +715,8 @@ typedef unsigned int GROUP;
 #define SG_CONSTRAINED_GROUP 0x02
 
 typedef struct _WSANETWORKEVENTS {
-    long lNetworkEvents;
-    int iErrorCode[FD_MAX_EVENTS];
+	long lNetworkEvents;
+	int iErrorCode[FD_MAX_EVENTS];
 } WSANETWORKEVENTS, *LPWSANETWORKEVENTS;
 
 #ifndef GUID_DEFINED
@@ -729,56 +729,56 @@ typedef struct _WSANETWORKEVENTS {
 #define LAYERED_PROTOCOL 0
 
 typedef struct _WSAPROTOCOLCHAIN {
-    int ChainLen;
+	int ChainLen;
 
-    DWORD ChainEntries[MAX_PROTOCOL_CHAIN];
+	DWORD ChainEntries[MAX_PROTOCOL_CHAIN];
 } WSAPROTOCOLCHAIN, *LPWSAPROTOCOLCHAIN;
 
 #define WSAPROTOCOL_LEN 255
 
 typedef struct _WSAPROTOCOL_INFOA {
-    DWORD dwServiceFlags1;
-    DWORD dwServiceFlags2;
-    DWORD dwServiceFlags3;
-    DWORD dwServiceFlags4;
-    DWORD dwProviderFlags;
-    GUID ProviderId;
-    DWORD dwCatalogEntryId;
-    WSAPROTOCOLCHAIN ProtocolChain;
-    int iVersion;
-    int iAddressFamily;
-    int iMaxSockAddr;
-    int iMinSockAddr;
-    int iSocketType;
-    int iProtocol;
-    int iProtocolMaxOffset;
-    int iNetworkByteOrder;
-    int iSecurityScheme;
-    DWORD dwMessageSize;
-    DWORD dwProviderReserved;
-    CHAR szProtocol[WSAPROTOCOL_LEN + 1];
+	DWORD dwServiceFlags1;
+	DWORD dwServiceFlags2;
+	DWORD dwServiceFlags3;
+	DWORD dwServiceFlags4;
+	DWORD dwProviderFlags;
+	GUID ProviderId;
+	DWORD dwCatalogEntryId;
+	WSAPROTOCOLCHAIN ProtocolChain;
+	int iVersion;
+	int iAddressFamily;
+	int iMaxSockAddr;
+	int iMinSockAddr;
+	int iSocketType;
+	int iProtocol;
+	int iProtocolMaxOffset;
+	int iNetworkByteOrder;
+	int iSecurityScheme;
+	DWORD dwMessageSize;
+	DWORD dwProviderReserved;
+	CHAR szProtocol[WSAPROTOCOL_LEN + 1];
 } WSAPROTOCOL_INFOA, *LPWSAPROTOCOL_INFOA;
 typedef struct _WSAPROTOCOL_INFOW {
-    DWORD dwServiceFlags1;
-    DWORD dwServiceFlags2;
-    DWORD dwServiceFlags3;
-    DWORD dwServiceFlags4;
-    DWORD dwProviderFlags;
-    GUID ProviderId;
-    DWORD dwCatalogEntryId;
-    WSAPROTOCOLCHAIN ProtocolChain;
-    int iVersion;
-    int iAddressFamily;
-    int iMaxSockAddr;
-    int iMinSockAddr;
-    int iSocketType;
-    int iProtocol;
-    int iProtocolMaxOffset;
-    int iNetworkByteOrder;
-    int iSecurityScheme;
-    DWORD dwMessageSize;
-    DWORD dwProviderReserved;
-    WCHAR szProtocol[WSAPROTOCOL_LEN + 1];
+	DWORD dwServiceFlags1;
+	DWORD dwServiceFlags2;
+	DWORD dwServiceFlags3;
+	DWORD dwServiceFlags4;
+	DWORD dwProviderFlags;
+	GUID ProviderId;
+	DWORD dwCatalogEntryId;
+	WSAPROTOCOLCHAIN ProtocolChain;
+	int iVersion;
+	int iAddressFamily;
+	int iMaxSockAddr;
+	int iMinSockAddr;
+	int iSocketType;
+	int iProtocol;
+	int iProtocolMaxOffset;
+	int iNetworkByteOrder;
+	int iSecurityScheme;
+	DWORD dwMessageSize;
+	DWORD dwProviderReserved;
+	WCHAR szProtocol[WSAPROTOCOL_LEN + 1];
 } WSAPROTOCOL_INFOW, *LPWSAPROTOCOL_INFOW;
 #ifdef UNICODE
 typedef WSAPROTOCOL_INFOW WSAPROTOCOL_INFO;
@@ -864,35 +864,35 @@ typedef void(CALLBACK *LPWSAOVERLAPPED_COMPLETION_ROUTINE)(DWORD dwError, DWORD 
 #define SIO_NSP_NOTIFY_CHANGE _WSAIOW(IOC_WS2, 25)
 
 typedef enum _WSACOMPLETIONTYPE {
-    NSP_NOTIFY_IMMEDIATELY = 0,
-    NSP_NOTIFY_HWND,
-    NSP_NOTIFY_EVENT,
-    NSP_NOTIFY_PORT,
-    NSP_NOTIFY_APC
+	NSP_NOTIFY_IMMEDIATELY = 0,
+	NSP_NOTIFY_HWND,
+	NSP_NOTIFY_EVENT,
+	NSP_NOTIFY_PORT,
+	NSP_NOTIFY_APC
 } WSACOMPLETIONTYPE,
-    *PWSACOMPLETIONTYPE, *LPWSACOMPLETIONTYPE;
+	*PWSACOMPLETIONTYPE, *LPWSACOMPLETIONTYPE;
 
 typedef struct _WSACOMPLETION {
-    WSACOMPLETIONTYPE Type;
-    union {
-        struct {
-            HWND hWnd;
-            UINT uMsg;
-            WPARAM context;
-        } WindowMessage;
-        struct {
-            LPWSAOVERLAPPED lpOverlapped;
-        } Event;
-        struct {
-            LPWSAOVERLAPPED lpOverlapped;
-            LPWSAOVERLAPPED_COMPLETION_ROUTINE lpfnCompletionProc;
-        } Apc;
-        struct {
-            LPWSAOVERLAPPED lpOverlapped;
-            HANDLE hPort;
-            ULONG_PTR Key;
-        } Port;
-    } Parameters;
+	WSACOMPLETIONTYPE Type;
+	union {
+		struct {
+			HWND hWnd;
+			UINT uMsg;
+			WPARAM context;
+		} WindowMessage;
+		struct {
+			LPWSAOVERLAPPED lpOverlapped;
+		} Event;
+		struct {
+			LPWSAOVERLAPPED lpOverlapped;
+			LPWSAOVERLAPPED_COMPLETION_ROUTINE lpfnCompletionProc;
+		} Apc;
+		struct {
+			LPWSAOVERLAPPED lpOverlapped;
+			HANDLE hPort;
+			ULONG_PTR Key;
+		} Port;
+	} Parameters;
 } WSACOMPLETION, *PWSACOMPLETION, *LPWSACOMPLETION;
 
 #define TH_NETDEV 0x00000001
@@ -910,8 +910,8 @@ typedef struct sockaddr_storage *LPSOCKADDR_STORAGE;
 #define _BLOB_DEFINED
 #define _LPBLOB_DEFINED
 typedef struct _BLOB {
-    ULONG cbSize;
-    BYTE *pBlobData;
+	ULONG cbSize;
+	BYTE *pBlobData;
 } BLOB, *LPBLOB;
 #endif
 
@@ -984,73 +984,73 @@ typedef struct _BLOB {
 #define __CSADDR_DEFINED__
 
 typedef struct _SOCKET_ADDRESS {
-    LPSOCKADDR lpSockaddr;
-    INT iSockaddrLength;
+	LPSOCKADDR lpSockaddr;
+	INT iSockaddrLength;
 } SOCKET_ADDRESS, *PSOCKET_ADDRESS, *LPSOCKET_ADDRESS;
 
 typedef struct _CSADDR_INFO {
-    SOCKET_ADDRESS LocalAddr;
-    SOCKET_ADDRESS RemoteAddr;
-    INT iSocketType;
-    INT iProtocol;
+	SOCKET_ADDRESS LocalAddr;
+	SOCKET_ADDRESS RemoteAddr;
+	INT iSocketType;
+	INT iProtocol;
 } CSADDR_INFO, *PCSADDR_INFO, *LPCSADDR_INFO;
 #endif
 
 typedef struct _SOCKET_ADDRESS_LIST {
-    INT iAddressCount;
-    SOCKET_ADDRESS Address[1];
+	INT iAddressCount;
+	SOCKET_ADDRESS Address[1];
 } SOCKET_ADDRESS_LIST, *LPSOCKET_ADDRESS_LIST;
 
 typedef struct _AFPROTOCOLS {
-    INT iAddressFamily;
-    INT iProtocol;
+	INT iAddressFamily;
+	INT iProtocol;
 } AFPROTOCOLS, *PAFPROTOCOLS, *LPAFPROTOCOLS;
 
 typedef enum _WSAEcomparator {
-    COMP_EQUAL = 0,
-    COMP_NOTLESS
+	COMP_EQUAL = 0,
+	COMP_NOTLESS
 } WSAECOMPARATOR,
-    *PWSAECOMPARATOR, *LPWSAECOMPARATOR;
+	*PWSAECOMPARATOR, *LPWSAECOMPARATOR;
 
 typedef struct _WSAVersion {
-    DWORD dwVersion;
-    WSAECOMPARATOR ecHow;
+	DWORD dwVersion;
+	WSAECOMPARATOR ecHow;
 } WSAVERSION, *PWSAVERSION, *LPWSAVERSION;
 
 typedef struct _WSAQuerySetA {
-    DWORD dwSize;
-    LPSTR lpszServiceInstanceName;
-    LPGUID lpServiceClassId;
-    LPWSAVERSION lpVersion;
-    LPSTR lpszComment;
-    DWORD dwNameSpace;
-    LPGUID lpNSProviderId;
-    LPSTR lpszContext;
-    DWORD dwNumberOfProtocols;
-    LPAFPROTOCOLS lpafpProtocols;
-    LPSTR lpszQueryString;
-    DWORD dwNumberOfCsAddrs;
-    LPCSADDR_INFO lpcsaBuffer;
-    DWORD dwOutputFlags;
-    LPBLOB lpBlob;
+	DWORD dwSize;
+	LPSTR lpszServiceInstanceName;
+	LPGUID lpServiceClassId;
+	LPWSAVERSION lpVersion;
+	LPSTR lpszComment;
+	DWORD dwNameSpace;
+	LPGUID lpNSProviderId;
+	LPSTR lpszContext;
+	DWORD dwNumberOfProtocols;
+	LPAFPROTOCOLS lpafpProtocols;
+	LPSTR lpszQueryString;
+	DWORD dwNumberOfCsAddrs;
+	LPCSADDR_INFO lpcsaBuffer;
+	DWORD dwOutputFlags;
+	LPBLOB lpBlob;
 } WSAQUERYSETA, *PWSAQUERYSETA, *LPWSAQUERYSETA;
 
 typedef struct _WSAQuerySetW {
-    DWORD dwSize;
-    LPWSTR lpszServiceInstanceName;
-    LPGUID lpServiceClassId;
-    LPWSAVERSION lpVersion;
-    LPWSTR lpszComment;
-    DWORD dwNameSpace;
-    LPGUID lpNSProviderId;
-    LPWSTR lpszContext;
-    DWORD dwNumberOfProtocols;
-    LPAFPROTOCOLS lpafpProtocols;
-    LPWSTR lpszQueryString;
-    DWORD dwNumberOfCsAddrs;
-    LPCSADDR_INFO lpcsaBuffer;
-    DWORD dwOutputFlags;
-    LPBLOB lpBlob;
+	DWORD dwSize;
+	LPWSTR lpszServiceInstanceName;
+	LPGUID lpServiceClassId;
+	LPWSAVERSION lpVersion;
+	LPWSTR lpszComment;
+	DWORD dwNameSpace;
+	LPGUID lpNSProviderId;
+	LPWSTR lpszContext;
+	DWORD dwNumberOfProtocols;
+	LPAFPROTOCOLS lpafpProtocols;
+	LPWSTR lpszQueryString;
+	DWORD dwNumberOfCsAddrs;
+	LPCSADDR_INFO lpcsaBuffer;
+	DWORD dwOutputFlags;
+	LPBLOB lpBlob;
 } WSAQUERYSETW, *PWSAQUERYSETW, *LPWSAQUERYSETW;
 
 #ifdef UNICODE
@@ -1087,26 +1087,26 @@ typedef LPWSAQUERYSETA LPWSAQUERYSET;
 #define RESULT_IS_DELETED 0x0040
 
 typedef enum _WSAESETSERVICEOP {
-    RNRSERVICE_REGISTER = 0,
-    RNRSERVICE_DEREGISTER,
-    RNRSERVICE_DELETE
+	RNRSERVICE_REGISTER = 0,
+	RNRSERVICE_DEREGISTER,
+	RNRSERVICE_DELETE
 } WSAESETSERVICEOP,
-    *PWSAESETSERVICEOP, *LPWSAESETSERVICEOP;
+	*PWSAESETSERVICEOP, *LPWSAESETSERVICEOP;
 
 typedef struct _WSANSClassInfoA {
-    LPSTR lpszName;
-    DWORD dwNameSpace;
-    DWORD dwValueType;
-    DWORD dwValueSize;
-    LPVOID lpValue;
+	LPSTR lpszName;
+	DWORD dwNameSpace;
+	DWORD dwValueType;
+	DWORD dwValueSize;
+	LPVOID lpValue;
 } WSANSCLASSINFOA, *PWSANSCLASSINFOA, *LPWSANSCLASSINFOA;
 
 typedef struct _WSANSClassInfoW {
-    LPWSTR lpszName;
-    DWORD dwNameSpace;
-    DWORD dwValueType;
-    DWORD dwValueSize;
-    LPVOID lpValue;
+	LPWSTR lpszName;
+	DWORD dwNameSpace;
+	DWORD dwValueType;
+	DWORD dwValueSize;
+	LPVOID lpValue;
 } WSANSCLASSINFOW, *PWSANSCLASSINFOW, *LPWSANSCLASSINFOW;
 
 #ifdef UNICODE
@@ -1120,17 +1120,17 @@ typedef LPWSANSCLASSINFOA LPWSANSCLASSINFO;
 #endif
 
 typedef struct _WSAServiceClassInfoA {
-    LPGUID lpServiceClassId;
-    LPSTR lpszServiceClassName;
-    DWORD dwCount;
-    LPWSANSCLASSINFOA lpClassInfos;
+	LPGUID lpServiceClassId;
+	LPSTR lpszServiceClassName;
+	DWORD dwCount;
+	LPWSANSCLASSINFOA lpClassInfos;
 } WSASERVICECLASSINFOA, *PWSASERVICECLASSINFOA, *LPWSASERVICECLASSINFOA;
 
 typedef struct _WSAServiceClassInfoW {
-    LPGUID lpServiceClassId;
-    LPWSTR lpszServiceClassName;
-    DWORD dwCount;
-    LPWSANSCLASSINFOW lpClassInfos;
+	LPGUID lpServiceClassId;
+	LPWSTR lpszServiceClassName;
+	DWORD dwCount;
+	LPWSANSCLASSINFOW lpClassInfos;
 } WSASERVICECLASSINFOW, *PWSASERVICECLASSINFOW, *LPWSASERVICECLASSINFOW;
 
 #ifdef UNICODE
@@ -1144,19 +1144,19 @@ typedef LPWSASERVICECLASSINFOA LPWSASERVICECLASSINFO;
 #endif
 
 typedef struct _WSANAMESPACE_INFOA {
-    GUID NSProviderId;
-    DWORD dwNameSpace;
-    WINBOOL fActive;
-    DWORD dwVersion;
-    LPSTR lpszIdentifier;
+	GUID NSProviderId;
+	DWORD dwNameSpace;
+	WINBOOL fActive;
+	DWORD dwVersion;
+	LPSTR lpszIdentifier;
 } WSANAMESPACE_INFOA, *PWSANAMESPACE_INFOA, *LPWSANAMESPACE_INFOA;
 
 typedef struct _WSANAMESPACE_INFOW {
-    GUID NSProviderId;
-    DWORD dwNameSpace;
-    WINBOOL fActive;
-    DWORD dwVersion;
-    LPWSTR lpszIdentifier;
+	GUID NSProviderId;
+	DWORD dwNameSpace;
+	WINBOOL fActive;
+	DWORD dwVersion;
+	LPWSTR lpszIdentifier;
 } WSANAMESPACE_INFOW, *PWSANAMESPACE_INFOW, *LPWSANAMESPACE_INFOW;
 
 #ifdef UNICODE
@@ -1476,9 +1476,9 @@ typedef struct timeval *LPTIMEVAL;
 #define POLLNVAL 0x0004
 
 typedef struct pollfd {
-    SOCKET fd;
-    SHORT events;
-    SHORT revents;
+	SOCKET fd;
+	SHORT events;
+	SHORT revents;
 } WSAPOLLFD, *PWSAPOLLFD, FAR *LPWSAPOLLFD;
 
 WINSOCK_API_LINKAGE int WSAAPI WSAPoll(LPWSAPOLLFD fdArray, ULONG fds, INT timeout);

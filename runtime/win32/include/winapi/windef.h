@@ -205,49 +205,49 @@ typedef DWORD *LPCOLORREF;
 #define HFILE_ERROR ((HFILE) - 1)
 
 typedef struct tagRECT {
-    LONG left;
-    LONG top;
-    LONG right;
-    LONG bottom;
+	LONG left;
+	LONG top;
+	LONG right;
+	LONG bottom;
 } RECT, *PRECT, *NPRECT, *LPRECT;
 
 typedef const RECT *LPCRECT;
 
 typedef struct _RECTL {
-    LONG left;
-    LONG top;
-    LONG right;
-    LONG bottom;
+	LONG left;
+	LONG top;
+	LONG right;
+	LONG bottom;
 } RECTL, *PRECTL, *LPRECTL;
 
 typedef const RECTL *LPCRECTL;
 
 typedef struct tagPOINT {
-    LONG x;
-    LONG y;
+	LONG x;
+	LONG y;
 } POINT, *PPOINT, *NPPOINT, *LPPOINT;
 
 typedef struct _POINTL {
-    LONG x;
-    LONG y;
+	LONG x;
+	LONG y;
 } POINTL, *PPOINTL;
 
 typedef struct tagSIZE {
-    LONG cx;
-    LONG cy;
+	LONG cx;
+	LONG cy;
 } SIZE, *PSIZE, *LPSIZE;
 
 typedef SIZE SIZEL;
 typedef SIZE *PSIZEL, *LPSIZEL;
 
 typedef struct tagPOINTS {
-    SHORT x;
-    SHORT y;
+	SHORT x;
+	SHORT y;
 } POINTS, *PPOINTS, *LPPOINTS;
 
 typedef struct _FILETIME {
-    DWORD dwLowDateTime;
-    DWORD dwHighDateTime;
+	DWORD dwLowDateTime;
+	DWORD dwHighDateTime;
 } FILETIME, *PFILETIME, *LPFILETIME;
 #define _FILETIME_
 

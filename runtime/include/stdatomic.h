@@ -28,12 +28,12 @@
 #endif
 
 typedef enum {
-    memory_order_relaxed = __ATOMIC_RELAXED,
-    memory_order_consume = __ATOMIC_CONSUME,
-    memory_order_acquire = __ATOMIC_ACQUIRE,
-    memory_order_release = __ATOMIC_RELEASE,
-    memory_order_acq_rel = __ATOMIC_ACQ_REL,
-    memory_order_seq_cst = __ATOMIC_SEQ_CST,
+	memory_order_relaxed = __ATOMIC_RELAXED,
+	memory_order_consume = __ATOMIC_CONSUME,
+	memory_order_acquire = __ATOMIC_ACQUIRE,
+	memory_order_release = __ATOMIC_RELEASE,
+	memory_order_acq_rel = __ATOMIC_ACQ_REL,
+	memory_order_seq_cst = __ATOMIC_SEQ_CST,
 } memory_order;
 
 typedef _Atomic(_Bool) atomic_bool;
@@ -75,99 +75,99 @@ typedef _Atomic(intmax_t) atomic_intmax_t;
 typedef _Atomic(uintmax_t) atomic_uintmax_t;
 
 typedef struct {
-    atomic_bool value;
+	atomic_bool value;
 } atomic_flag;
 
 #define ATOMIC_FLAG_INIT {0}
 #define ATOMIC_VAR_INIT(value) (value)
 
 #define kill_dependency(y) \
-    ({ __typeof__(y) __mcc_kd_tmp = (y); __mcc_kd_tmp; })
+	({ __typeof__(y) __mcc_kd_tmp = (y); __mcc_kd_tmp; })
 
 #define atomic_init(object, desired) \
-    atomic_store_explicit(object, desired, __ATOMIC_RELAXED)
+	atomic_store_explicit(object, desired, __ATOMIC_RELAXED)
 
 #ifndef __atomic_store_n
 #define __atomic_store_n(ptr, val, order) \
-    (*(ptr) = (val), __atomic_store((ptr), &(typeof(*(ptr))){val}, (order)))
+	(*(ptr) = (val), __atomic_store((ptr), &(typeof(*(ptr))){val}, (order)))
 #endif
 #define atomic_store_explicit(object, desired, order) \
-    ({                                                \
-        __typeof__(object) ptr = (object);            \
-        __typeof__(*ptr) tmp = (desired);             \
-        __atomic_store(ptr, &tmp, (order));           \
-    })
+	({                                                \
+		__typeof__(object) ptr = (object);            \
+		__typeof__(*ptr) tmp = (desired);             \
+		__atomic_store(ptr, &tmp, (order));           \
+	})
 #define atomic_store(object, desired) \
-    atomic_store_explicit(object, desired, __ATOMIC_SEQ_CST)
+	atomic_store_explicit(object, desired, __ATOMIC_SEQ_CST)
 
 #ifndef __atomic_load_n
 #define __atomic_load_n(ptr, order) \
-    ({ typeof(*(ptr)) __val;                                              \
-       __atomic_load((ptr), &__val, (order));                             \
-       __val; })
+	({ typeof(*(ptr)) __val;                                              \
+	   __atomic_load((ptr), &__val, (order));                             \
+	   __val; })
 #endif
 #define atomic_load_explicit(object, order) \
-    ({                                      \
-        __typeof__(object) ptr = (object);  \
-        __typeof__((void)0, *ptr) tmp;      \
-        __atomic_load(ptr, &tmp, (order));  \
-        tmp;                                \
-    })
+	({                                      \
+		__typeof__(object) ptr = (object);  \
+		__typeof__((void)0, *ptr) tmp;      \
+		__atomic_load(ptr, &tmp, (order));  \
+		tmp;                                \
+	})
 #define atomic_load(object) atomic_load_explicit(object, __ATOMIC_SEQ_CST)
 
 #define atomic_exchange_explicit(object, desired, order) \
-    ({                                                   \
-        __typeof__(object) ptr = (object);               \
-        __typeof__(*ptr) val = (desired);                \
-        __typeof__(*ptr) tmp;                            \
-        __atomic_exchange(ptr, &val, &tmp, (order));     \
-        tmp;                                             \
-    })
+	({                                                   \
+		__typeof__(object) ptr = (object);               \
+		__typeof__(*ptr) val = (desired);                \
+		__typeof__(*ptr) tmp;                            \
+		__atomic_exchange(ptr, &val, &tmp, (order));     \
+		tmp;                                             \
+	})
 #define atomic_exchange(object, desired) \
-    atomic_exchange_explicit(object, desired, __ATOMIC_SEQ_CST)
+	atomic_exchange_explicit(object, desired, __ATOMIC_SEQ_CST)
 #ifndef __atomic_compare_exchange_n
 #define __atomic_compare_exchange_n(ptr, expected, desired, weak, success, failure) \
-    ({ typeof(*(ptr)) __desired = (desired);                              \
-       __atomic_compare_exchange((ptr), (expected), &__desired,          \
-         (weak), (success), (failure)); })
+	({ typeof(*(ptr)) __desired = (desired);                              \
+	   __atomic_compare_exchange((ptr), (expected), &__desired,          \
+		 (weak), (success), (failure)); })
 #endif
 #define atomic_compare_exchange_strong_explicit(object, expected, desired, success, failure) \
-    ({                                                                                       \
-        __typeof__(object) ptr = (object);                                                   \
-        __typeof__(*ptr) tmp = desired;                                                      \
-        __atomic_compare_exchange(ptr, expected, &tmp, 0, success, failure);                 \
-    })
+	({                                                                                       \
+		__typeof__(object) ptr = (object);                                                   \
+		__typeof__(*ptr) tmp = desired;                                                      \
+		__atomic_compare_exchange(ptr, expected, &tmp, 0, success, failure);                 \
+	})
 #define atomic_compare_exchange_strong(object, expected, desired)      \
-    atomic_compare_exchange_strong_explicit(object, expected, desired, \
-                                            __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)
+	atomic_compare_exchange_strong_explicit(object, expected, desired, \
+											__ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)
 #define atomic_compare_exchange_weak_explicit(object, expected, desired, success, failure) \
-    ({                                                                                     \
-        __typeof__(object) ptr = (object);                                                 \
-        __typeof__(*ptr) tmp = desired;                                                    \
-        __atomic_compare_exchange(ptr, expected, &tmp, 1, success, failure);               \
-    })
+	({                                                                                     \
+		__typeof__(object) ptr = (object);                                                 \
+		__typeof__(*ptr) tmp = desired;                                                    \
+		__atomic_compare_exchange(ptr, expected, &tmp, 1, success, failure);               \
+	})
 #define atomic_compare_exchange_weak(object, expected, desired)      \
-    atomic_compare_exchange_weak_explicit(object, expected, desired, \
-                                          __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)
+	atomic_compare_exchange_weak_explicit(object, expected, desired, \
+										  __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)
 
 #define atomic_fetch_add(object, operand) \
-    __atomic_fetch_add(object, operand, __ATOMIC_SEQ_CST)
+	__atomic_fetch_add(object, operand, __ATOMIC_SEQ_CST)
 #define atomic_fetch_add_explicit __atomic_fetch_add
 
 #define atomic_fetch_sub(object, operand) \
-    __atomic_fetch_sub(object, operand, __ATOMIC_SEQ_CST)
+	__atomic_fetch_sub(object, operand, __ATOMIC_SEQ_CST)
 #define atomic_fetch_sub_explicit __atomic_fetch_sub
 
 #define atomic_fetch_or(object, operand) \
-    __atomic_fetch_or(object, operand, __ATOMIC_SEQ_CST)
+	__atomic_fetch_or(object, operand, __ATOMIC_SEQ_CST)
 #define atomic_fetch_or_explicit __atomic_fetch_or
 
 #define atomic_fetch_xor(object, operand) \
-    __atomic_fetch_xor(object, operand, __ATOMIC_SEQ_CST)
+	__atomic_fetch_xor(object, operand, __ATOMIC_SEQ_CST)
 #define atomic_fetch_xor_explicit __atomic_fetch_xor
 
 #define atomic_fetch_and(object, operand) \
-    __atomic_fetch_and(object, operand, __ATOMIC_SEQ_CST)
+	__atomic_fetch_and(object, operand, __ATOMIC_SEQ_CST)
 #define atomic_fetch_and_explicit __atomic_fetch_and
 
 extern void atomic_thread_fence(memory_order);

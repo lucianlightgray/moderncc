@@ -8,11 +8,11 @@
 #include <ws2ipdef.h>
 
 struct ip_msfilter {
-    struct in_addr imsf_multiaddr;
-    struct in_addr imsf_interface;
-    u_long imsf_fmode;
-    u_long imsf_numsrc;
-    struct in_addr imsf_slist[1];
+	struct in_addr imsf_multiaddr;
+	struct in_addr imsf_interface;
+	u_long imsf_fmode;
+	u_long imsf_numsrc;
+	struct in_addr imsf_slist[1];
 };
 
 #define IP_MSFILTER_SIZE(numsrc) (sizeof(struct ip_msfilter) - sizeof(struct in_addr) + (numsrc) * sizeof(struct in_addr))
@@ -68,10 +68,10 @@ struct ip_msfilter {
 #ifndef s6_addr
 
 struct in6_addr {
-    __MINGW_EXTENSION union {
-        u_char Byte[16];
-        u_short Word[8];
-    } u;
+	__MINGW_EXTENSION union {
+		u_char Byte[16];
+		u_short Word[8];
+	} u;
 };
 
 #define in_addr6 in6_addr
@@ -85,23 +85,23 @@ struct in6_addr {
 #endif
 
 typedef struct ipv6_mreq {
-    struct in6_addr ipv6mr_multiaddr;
-    unsigned int ipv6mr_interface;
+	struct in6_addr ipv6mr_multiaddr;
+	unsigned int ipv6mr_interface;
 } IPV6_MREQ;
 
 struct sockaddr_in6_old {
-    short sin6_family;
-    u_short sin6_port;
-    u_long sin6_flowinfo;
-    struct in6_addr sin6_addr;
+	short sin6_family;
+	u_short sin6_port;
+	u_long sin6_flowinfo;
+	struct in6_addr sin6_addr;
 };
 
 struct sockaddr_in6 {
-    short sin6_family;
-    u_short sin6_port;
-    u_long sin6_flowinfo;
-    struct in6_addr sin6_addr;
-    u_long sin6_scope_id;
+	short sin6_family;
+	u_short sin6_port;
+	u_long sin6_flowinfo;
+	struct in6_addr sin6_addr;
+	u_long sin6_scope_id;
 };
 
 typedef struct in6_addr IN6_ADDR;
@@ -152,91 +152,91 @@ void IN6ADDR_SETLOOPBACK(struct sockaddr_in6 *);
 
 #ifndef __CRT__NO_INLINE
 WS2TCPIP_INLINE int IN6_ADDR_EQUAL(const struct in6_addr *a, const struct in6_addr *b) {
-    return (memcmp(a, b, sizeof(struct in6_addr)) == 0);
+	return (memcmp(a, b, sizeof(struct in6_addr)) == 0);
 }
 WS2TCPIP_INLINE int IN6_IS_ADDR_UNSPECIFIED(const struct in6_addr *a) {
-    return ((a->s6_words[0] == 0) && (a->s6_words[1] == 0) && (a->s6_words[2] == 0) && (a->s6_words[3] == 0) && (a->s6_words[4] == 0) && (a->s6_words[5] == 0) && (a->s6_words[6] == 0) && (a->s6_words[7] == 0));
+	return ((a->s6_words[0] == 0) && (a->s6_words[1] == 0) && (a->s6_words[2] == 0) && (a->s6_words[3] == 0) && (a->s6_words[4] == 0) && (a->s6_words[5] == 0) && (a->s6_words[6] == 0) && (a->s6_words[7] == 0));
 }
 WS2TCPIP_INLINE int IN6_IS_ADDR_LOOPBACK(const struct in6_addr *a) {
-    return ((a->s6_words[0] == 0) && (a->s6_words[1] == 0) && (a->s6_words[2] == 0) && (a->s6_words[3] == 0) && (a->s6_words[4] == 0) && (a->s6_words[5] == 0) && (a->s6_words[6] == 0) && (a->s6_words[7] == 0x0100));
+	return ((a->s6_words[0] == 0) && (a->s6_words[1] == 0) && (a->s6_words[2] == 0) && (a->s6_words[3] == 0) && (a->s6_words[4] == 0) && (a->s6_words[5] == 0) && (a->s6_words[6] == 0) && (a->s6_words[7] == 0x0100));
 }
 WS2TCPIP_INLINE int IN6_IS_ADDR_MULTICAST(const struct in6_addr *a) {
-    return (a->s6_bytes[0] == 0xff);
+	return (a->s6_bytes[0] == 0xff);
 }
 WS2TCPIP_INLINE int IN6_IS_ADDR_LINKLOCAL(const struct in6_addr *a) {
-    return ((a->s6_bytes[0] == 0xfe) && ((a->s6_bytes[1] & 0xc0) == 0x80));
+	return ((a->s6_bytes[0] == 0xfe) && ((a->s6_bytes[1] & 0xc0) == 0x80));
 }
 WS2TCPIP_INLINE int IN6_IS_ADDR_SITELOCAL(const struct in6_addr *a) {
-    return ((a->s6_bytes[0] == 0xfe) && ((a->s6_bytes[1] & 0xc0) == 0xc0));
+	return ((a->s6_bytes[0] == 0xfe) && ((a->s6_bytes[1] & 0xc0) == 0xc0));
 }
 WS2TCPIP_INLINE int IN6_IS_ADDR_V4MAPPED(const struct in6_addr *a) {
-    return ((a->s6_words[0] == 0) && (a->s6_words[1] == 0) && (a->s6_words[2] == 0) && (a->s6_words[3] == 0) && (a->s6_words[4] == 0) && (a->s6_words[5] == 0xffff));
+	return ((a->s6_words[0] == 0) && (a->s6_words[1] == 0) && (a->s6_words[2] == 0) && (a->s6_words[3] == 0) && (a->s6_words[4] == 0) && (a->s6_words[5] == 0xffff));
 }
 WS2TCPIP_INLINE int IN6_IS_ADDR_V4COMPAT(const struct in6_addr *a) {
-    return ((a->s6_words[0] == 0) && (a->s6_words[1] == 0) && (a->s6_words[2] == 0) && (a->s6_words[3] == 0) && (a->s6_words[4] == 0) && (a->s6_words[5] == 0) && !((a->s6_words[6] == 0) && (a->s6_addr[14] == 0) && ((a->s6_addr[15] == 0) || (a->s6_addr[15] == 1))));
+	return ((a->s6_words[0] == 0) && (a->s6_words[1] == 0) && (a->s6_words[2] == 0) && (a->s6_words[3] == 0) && (a->s6_words[4] == 0) && (a->s6_words[5] == 0) && !((a->s6_words[6] == 0) && (a->s6_addr[14] == 0) && ((a->s6_addr[15] == 0) || (a->s6_addr[15] == 1))));
 }
 WS2TCPIP_INLINE int IN6_IS_ADDR_MC_NODELOCAL(const struct in6_addr *a) {
-    return IN6_IS_ADDR_MULTICAST(a) && ((a->s6_bytes[1] & 0xf) == 1);
+	return IN6_IS_ADDR_MULTICAST(a) && ((a->s6_bytes[1] & 0xf) == 1);
 }
 WS2TCPIP_INLINE int IN6_IS_ADDR_MC_LINKLOCAL(const struct in6_addr *a) {
-    return IN6_IS_ADDR_MULTICAST(a) && ((a->s6_bytes[1] & 0xf) == 2);
+	return IN6_IS_ADDR_MULTICAST(a) && ((a->s6_bytes[1] & 0xf) == 2);
 }
 WS2TCPIP_INLINE int IN6_IS_ADDR_MC_SITELOCAL(const struct in6_addr *a) {
-    return IN6_IS_ADDR_MULTICAST(a) && ((a->s6_bytes[1] & 0xf) == 5);
+	return IN6_IS_ADDR_MULTICAST(a) && ((a->s6_bytes[1] & 0xf) == 5);
 }
 WS2TCPIP_INLINE int IN6_IS_ADDR_MC_ORGLOCAL(const struct in6_addr *a) {
-    return IN6_IS_ADDR_MULTICAST(a) && ((a->s6_bytes[1] & 0xf) == 8);
+	return IN6_IS_ADDR_MULTICAST(a) && ((a->s6_bytes[1] & 0xf) == 8);
 }
 WS2TCPIP_INLINE int IN6_IS_ADDR_MC_GLOBAL(const struct in6_addr *a) {
-    return IN6_IS_ADDR_MULTICAST(a) && ((a->s6_bytes[1] & 0xf) == 0xe);
+	return IN6_IS_ADDR_MULTICAST(a) && ((a->s6_bytes[1] & 0xf) == 0xe);
 }
 WS2TCPIP_INLINE int IN6ADDR_ISANY(const struct sockaddr_in6 *a) {
-    return ((a->sin6_family == AF_INET6) && IN6_IS_ADDR_UNSPECIFIED(&a->sin6_addr));
+	return ((a->sin6_family == AF_INET6) && IN6_IS_ADDR_UNSPECIFIED(&a->sin6_addr));
 }
 WS2TCPIP_INLINE int IN6ADDR_ISLOOPBACK(const struct sockaddr_in6 *a) {
-    return ((a->sin6_family == AF_INET6) && IN6_IS_ADDR_LOOPBACK(&a->sin6_addr));
+	return ((a->sin6_family == AF_INET6) && IN6_IS_ADDR_LOOPBACK(&a->sin6_addr));
 }
 WS2TCPIP_INLINE void IN6_SET_ADDR_UNSPECIFIED(struct in6_addr *a) {
-    memset(a->s6_bytes, 0, sizeof(struct in6_addr));
+	memset(a->s6_bytes, 0, sizeof(struct in6_addr));
 }
 WS2TCPIP_INLINE void IN6_SET_ADDR_LOOPBACK(struct in6_addr *a) {
-    memset(a->s6_bytes, 0, sizeof(struct in6_addr));
-    a->s6_bytes[15] = 1;
+	memset(a->s6_bytes, 0, sizeof(struct in6_addr));
+	a->s6_bytes[15] = 1;
 }
 WS2TCPIP_INLINE void IN6ADDR_SETANY(struct sockaddr_in6 *a) {
-    a->sin6_family = AF_INET6;
-    a->sin6_port = 0;
-    a->sin6_flowinfo = 0;
-    IN6_SET_ADDR_UNSPECIFIED(&a->sin6_addr);
-    a->sin6_scope_id = 0;
+	a->sin6_family = AF_INET6;
+	a->sin6_port = 0;
+	a->sin6_flowinfo = 0;
+	IN6_SET_ADDR_UNSPECIFIED(&a->sin6_addr);
+	a->sin6_scope_id = 0;
 }
 WS2TCPIP_INLINE void IN6ADDR_SETLOOPBACK(struct sockaddr_in6 *a) {
-    a->sin6_family = AF_INET6;
-    a->sin6_port = 0;
-    a->sin6_flowinfo = 0;
-    IN6_SET_ADDR_LOOPBACK(&a->sin6_addr);
-    a->sin6_scope_id = 0;
+	a->sin6_family = AF_INET6;
+	a->sin6_port = 0;
+	a->sin6_flowinfo = 0;
+	IN6_SET_ADDR_LOOPBACK(&a->sin6_addr);
+	a->sin6_scope_id = 0;
 }
 #endif
 
 typedef union sockaddr_gen {
-    struct sockaddr Address;
-    struct sockaddr_in AddressIn;
-    struct sockaddr_in6_old AddressIn6;
+	struct sockaddr Address;
+	struct sockaddr_in AddressIn;
+	struct sockaddr_in6_old AddressIn6;
 } sockaddr_gen;
 
 typedef struct _INTERFACE_INFO {
-    u_long iiFlags;
-    sockaddr_gen iiAddress;
-    sockaddr_gen iiBroadcastAddress;
-    sockaddr_gen iiNetmask;
+	u_long iiFlags;
+	sockaddr_gen iiAddress;
+	sockaddr_gen iiBroadcastAddress;
+	sockaddr_gen iiNetmask;
 } INTERFACE_INFO, *LPINTERFACE_INFO;
 
 typedef struct _INTERFACE_INFO_EX {
-    u_long iiFlags;
-    SOCKET_ADDRESS iiAddress;
-    SOCKET_ADDRESS iiBroadcastAddress;
-    SOCKET_ADDRESS iiNetmask;
+	u_long iiFlags;
+	SOCKET_ADDRESS iiAddress;
+	SOCKET_ADDRESS iiBroadcastAddress;
+	SOCKET_ADDRESS iiNetmask;
 } INTERFACE_INFO_EX, *LPINTERFACE_INFO_EX;
 
 #define IFF_UP 0x00000001
@@ -246,15 +246,15 @@ typedef struct _INTERFACE_INFO_EX {
 #define IFF_MULTICAST 0x00000010
 
 typedef struct in_pktinfo {
-    IN_ADDR ipi_addr;
-    UINT ipi_ifindex;
+	IN_ADDR ipi_addr;
+	UINT ipi_ifindex;
 } IN_PKTINFO;
 
 C_ASSERT(sizeof(IN_PKTINFO) == 8);
 
 typedef struct in6_pktinfo {
-    IN6_ADDR ipi6_addr;
-    UINT ipi6_ifindex;
+	IN6_ADDR ipi6_addr;
+	UINT ipi6_ifindex;
 } IN6_PKTINFO;
 
 C_ASSERT(sizeof(IN6_PKTINFO) == 20);
@@ -272,25 +272,25 @@ C_ASSERT(sizeof(IN6_PKTINFO) == 20);
 #define EAI_NODATA EAI_NONAME
 
 typedef struct addrinfo {
-    int ai_flags;
-    int ai_family;
-    int ai_socktype;
-    int ai_protocol;
-    size_t ai_addrlen;
-    char *ai_canonname;
-    struct sockaddr *ai_addr;
-    struct addrinfo *ai_next;
+	int ai_flags;
+	int ai_family;
+	int ai_socktype;
+	int ai_protocol;
+	size_t ai_addrlen;
+	char *ai_canonname;
+	struct sockaddr *ai_addr;
+	struct addrinfo *ai_next;
 } ADDRINFOA, *PADDRINFOA;
 
 typedef struct addrinfoW {
-    int ai_flags;
-    int ai_family;
-    int ai_socktype;
-    int ai_protocol;
-    size_t ai_addrlen;
-    PWSTR ai_canonname;
-    struct sockaddr *ai_addr;
-    struct addrinfoW *ai_next;
+	int ai_flags;
+	int ai_family;
+	int ai_socktype;
+	int ai_protocol;
+	size_t ai_addrlen;
+	PWSTR ai_canonname;
+	struct sockaddr *ai_addr;
+	struct addrinfoW *ai_next;
 } ADDRINFOW, *PADDRINFOW;
 
 #ifdef UNICODE

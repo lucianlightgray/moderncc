@@ -8,10 +8,10 @@
 
 int main(void) {
 
-    printf("answer: %d\n", INC188_ANSWER);
+	printf("answer: %d\n", INC188_ANSWER);
 
-    printf("triple: %d\n", inc188_triple(14));
+	printf("triple: %d\n", inc188_triple(14));
 
-    printf("combined: %d\n", inc188_triple(INC188_ANSWER) - 84);
-    return 0;
+	printf("combined: %d\n", inc188_triple(INC188_ANSWER) - 84);
+	return 0;
 }

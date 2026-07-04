@@ -54,27 +54,27 @@ typedef __time64_t time_t;
 #define _TIMEB_DEFINED
 
 struct __timeb32 {
-    __time32_t time;
-    unsigned short millitm;
-    short timezone;
-    short dstflag;
+	__time32_t time;
+	unsigned short millitm;
+	short timezone;
+	short dstflag;
 };
 
 #ifndef NO_OLDNAMES
 struct timeb {
-    time_t time;
-    unsigned short millitm;
-    short timezone;
-    short dstflag;
+	time_t time;
+	unsigned short millitm;
+	short timezone;
+	short dstflag;
 };
 #endif
 
 #if _INTEGRAL_MAX_BITS >= 64
 struct __timeb64 {
-    __time64_t time;
-    unsigned short millitm;
-    short timezone;
-    short dstflag;
+	__time64_t time;
+	unsigned short millitm;
+	short timezone;
+	short dstflag;
 };
 #endif
 
@@ -95,24 +95,24 @@ _CRTIMP void __cdecl _ftime64(struct __timeb64 *_Time);
 #ifndef _TIMESPEC_DEFINED
 #define _TIMESPEC_DEFINED
 struct timespec {
-    time_t tv_sec;
-    long tv_nsec;
+	time_t tv_sec;
+	long tv_nsec;
 };
 
 struct itimerspec {
-    struct timespec it_interval;
-    struct timespec it_value;
+	struct timespec it_interval;
+	struct timespec it_value;
 };
 #endif
 
 #if !defined(RC_INVOKED) && !defined(NO_OLDNAMES)
 #ifdef _USE_32BIT_TIME_T
 __CRT_INLINE void __cdecl ftime(struct timeb *_Tmb) {
-    _ftime32((struct __timeb32 *)_Tmb);
+	_ftime32((struct __timeb32 *)_Tmb);
 }
 #else
 __CRT_INLINE void __cdecl ftime(struct timeb *_Tmb) {
-    _ftime64((struct __timeb64 *)_Tmb);
+	_ftime64((struct __timeb64 *)_Tmb);
 }
 #endif
 #endif
