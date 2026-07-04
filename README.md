@@ -87,7 +87,7 @@ cmake --build --preset debug -j
 
 The developer presets above are the ones you'll use by hand; CI/dist presets
 (`linux-*`, `macos*`, `msvc`, `mingw`, `qemu*`, `dist-*`) are also defined and
-drive the workflows + docker runners. See [BUILD.md §2](BUILD.md) for the full
+drive the workflows + docker runners. See [BUILD.md §2](docs/BUILD.md) for the full
 preset catalog and naming conventions.
 
 **Linux status (2026-07, gcc 15.3 / clang 22):** every Linux preset is green —
@@ -99,18 +99,27 @@ all 5 arches × glibc+musl + `qemu-arm64-osx`). With the `cross` toolchain
 built (`MCC_CROSS_DIR`, default `cmake-cross`), the wine PE-conformance
 and the four host-runnable Mach-O drivers run natively and pass too.
 
-**Windows status (2026-07, mingw gcc 13.1/16.1 / MSVC 19.51 / clang 22):**
-every Windows-runnable preset is green — `debug`, `release`, `diagnostics`,
-`cross` (**53/53** each, mingw; 13–16 environment-gated skips), `msvc` (VS
-generator, **51/51** — two suites aren't registered on an MSVC host), `mingw`
-(superbuild; fetches the pinned winlibs GCC and tests with it, **53/53**),
-`matrix` (gcc/clang × native/cross — **4 cells × 53/53**, clang resolved from
-the fetched `cmake-clang`), and both `dist-*` packagings (`dist-msvc`,
-`dist-mingw`: mcc + `-static`/`-dynamic` + `libmcc-static`/`-dynamic` + all
-12 cross compilers, each also in a `-static` shape). The in-tree build/CI
-tools carry their own ctests that pass here too — `host-gate-invariant`,
-`git-stamp`, `def-verify`, `build-md-nodes`, `config-defines`, `host-detect`,
-`cross-factory`, `ci-matrix`, `ci-pkg-smoke`, `qemu-fetch-parse`. `sanitize`
+**Windows status (2026-07-04, mingw gcc 13.1/16.1 / MSVC 19.51 / clang 22):**
+every Windows-runnable preset is green. The suite is now registered one CTest
+per case (the `exec`/`cli`/`diff3`/`parts`/`preprocess` corpora fan out), so the
+counts are per-case: `debug`, `release`, `diagnostics`, `cross`
+(**775/775** each, mingw gcc; 123 environment-gated skips) and `msvc` (VS
+generator, **773/773** — two suites aren't registered on an MSVC host). Those
+totals assume the optional clang toolchain has been fetched (`cmake --build
+<bld> --target clang-toolchain`, auto-wired on the next reconfigure); without it
+the ~260 three-way `diff3`/`preprocess` cases self-skip and the native suite is
+**513/513**. `mingw` (superbuild; fetches the pinned winlibs GCC and tests with
+it) and `matrix` (gcc/clang × native/cross — **4 cells × 775/775**, clang
+resolved from the fetched `cmake-clang`) are green too. Both `dist-*` packagings
+build the full artifact matrix — mcc + `-static`/`-dynamic` +
+`libmcc-static`/`-dynamic` + all 11 cross compilers; `dist-mingw` additionally
+ships each cross compiler in a fully-static (`-static`) shape, while `dist-msvc`
+keeps only the host `mcc-static` (`-static` is a GNU-ld flag `link.exe` doesn't
+take, so the per-cross static shapes are intentionally skipped under MSVC). The
+in-tree build/CI tools carry their own ctests that pass here too —
+`host-gate-invariant`, `git-stamp`, `def-verify`, `build-md-nodes`,
+`config-defines`, `host-detect`, `cross-factory`, `ci-matrix`, `ci-pkg-smoke`,
+`qemu-fetch-parse`. `sanitize`
 intentionally fails at configure — mingw ships no libasan/libubsan; use
 `diagnostics`, which builds the coverage + profile variants and skips
 sanitize. The PE target gets native-only extra coverage

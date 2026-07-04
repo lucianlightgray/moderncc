@@ -6,6 +6,21 @@
 #define BUILTINN(x) "__mcc_builtin_" #x
 #endif
 
+/* Mach-O's assembler rejects non-weak __attribute__((alias)), and gcc ICEs on
+   __attribute__((weak, alias)) there, so emit the alias with an assembler .set
+   instead. __USER_LABEL_PREFIX__ supplies the leading underscore on Mach-O. */
+#define MCC_STR2(x) #x
+#define MCC_STR(x) MCC_STR2(x)
+#define MCC_ULP MCC_STR(__USER_LABEL_PREFIX__)
+/* mcc reads its own ELF objects and handles __attribute__((alias)) natively, so
+   only foreign (host-CC) Mach-O builds need the .set workaround. */
+#if defined __APPLE__ && !defined __MCC__
+#define MCC_ALIAS(decl, aliasnm, target) \
+	__asm__(".globl " MCC_ULP aliasnm "\n\t.set " MCC_ULP aliasnm "," MCC_ULP target)
+#else
+#define MCC_ALIAS(decl, aliasnm, target) decl __attribute__((alias(target)))
+#endif
+
 static const unsigned char table_1_32[] = {
 	0, 1, 28, 2, 29, 14, 24, 3, 30, 22, 20, 15, 25, 17, 4, 8,
 	31, 27, 13, 23, 21, 19, 16, 7, 26, 12, 18, 6, 11, 5, 10, 9};
@@ -64,9 +79,9 @@ int BUILTIN(ffsll)(long long x) {
 	FFSL(x)
 }
 #if __SIZEOF_LONG__ == 4
-int BUILTIN(ffsl)(long x) __attribute__((alias(BUILTINN(ffs))));
+MCC_ALIAS(int BUILTIN(ffsl)(long x), BUILTINN(ffsl), BUILTINN(ffs));
 #else
-int BUILTIN(ffsl)(long x) __attribute__((alias(BUILTINN(ffsll))));
+MCC_ALIAS(int BUILTIN(ffsl)(long x), BUILTINN(ffsl), BUILTINN(ffsll));
 #endif
 
 int BUILTIN(clz)(unsigned int x) {
@@ -76,9 +91,9 @@ int BUILTIN(clzll)(unsigned long long x) {
 	CLZL(x)
 }
 #if __SIZEOF_LONG__ == 4
-int BUILTIN(clzl)(unsigned long x) __attribute__((alias(BUILTINN(clz))));
+MCC_ALIAS(int BUILTIN(clzl)(unsigned long x), BUILTINN(clzl), BUILTINN(clz));
 #else
-int BUILTIN(clzl)(unsigned long x) __attribute__((alias(BUILTINN(clzll))));
+MCC_ALIAS(int BUILTIN(clzl)(unsigned long x), BUILTINN(clzl), BUILTINN(clzll));
 #endif
 
 int BUILTIN(ctz)(unsigned int x) {
@@ -88,9 +103,9 @@ int BUILTIN(ctzll)(unsigned long long x) {
 	CTZL(x)
 }
 #if __SIZEOF_LONG__ == 4
-int BUILTIN(ctzl)(unsigned long x) __attribute__((alias(BUILTINN(ctz))));
+MCC_ALIAS(int BUILTIN(ctzl)(unsigned long x), BUILTINN(ctzl), BUILTINN(ctz));
 #else
-int BUILTIN(ctzl)(unsigned long x) __attribute__((alias(BUILTINN(ctzll))));
+MCC_ALIAS(int BUILTIN(ctzl)(unsigned long x), BUILTINN(ctzl), BUILTINN(ctzll));
 #endif
 
 int BUILTIN(clrsb)(int x) {
@@ -106,9 +121,9 @@ int BUILTIN(clrsbll)(long long x) {
 	CLZL(x)
 }
 #if __SIZEOF_LONG__ == 4
-int BUILTIN(clrsbl)(long x) __attribute__((alias(BUILTINN(clrsb))));
+MCC_ALIAS(int BUILTIN(clrsbl)(long x), BUILTINN(clrsbl), BUILTINN(clrsb));
 #else
-int BUILTIN(clrsbl)(long x) __attribute__((alias(BUILTINN(clrsbll))));
+MCC_ALIAS(int BUILTIN(clrsbl)(long x), BUILTINN(clrsbl), BUILTINN(clrsbll));
 #endif
 
 int BUILTIN(popcount)(unsigned int x) {
@@ -118,9 +133,9 @@ int BUILTIN(popcountll)(unsigned long long x) {
 	POPCOUNTL(x, 0x7f)
 }
 #if __SIZEOF_LONG__ == 4
-int BUILTIN(popcountl)(unsigned long x) __attribute__((alias(BUILTINN(popcount))));
+MCC_ALIAS(int BUILTIN(popcountl)(unsigned long x), BUILTINN(popcountl), BUILTINN(popcount));
 #else
-int BUILTIN(popcountl)(unsigned long x) __attribute__((alias(BUILTINN(popcountll))));
+MCC_ALIAS(int BUILTIN(popcountl)(unsigned long x), BUILTINN(popcountl), BUILTINN(popcountll));
 #endif
 
 int BUILTIN(parity)(unsigned int x) {
@@ -130,9 +145,9 @@ int BUILTIN(parityll)(unsigned long long x) {
 	POPCOUNTL(x, 0x01)
 }
 #if __SIZEOF_LONG__ == 4
-int BUILTIN(parityl)(unsigned long x) __attribute__((alias(BUILTINN(parity))));
+MCC_ALIAS(int BUILTIN(parityl)(unsigned long x), BUILTINN(parityl), BUILTINN(parity));
 #else
-int BUILTIN(parityl)(unsigned long x) __attribute__((alias(BUILTINN(parityll))));
+MCC_ALIAS(int BUILTIN(parityl)(unsigned long x), BUILTINN(parityl), BUILTINN(parityll));
 #endif
 
 unsigned short BUILTIN(bswap16)(unsigned short x) {
@@ -178,6 +193,34 @@ unsigned long long BUILTIN(bswap64)(unsigned long long x) {
 }
 
 #ifndef __MCC__
+#if defined __APPLE__
+/* Export every __builtin_* under its public name via .set (see MCC_ALIAS). */
+#define MCC_EXPORT(sfx)                                                             \
+	__asm__(".globl " MCC_ULP "__builtin_" #sfx "\n\t.set " MCC_ULP "__builtin_" #sfx \
+			"," MCC_ULP "__mcc_builtin_" #sfx)
+MCC_EXPORT(ffs);
+MCC_EXPORT(ffsl);
+MCC_EXPORT(ffsll);
+MCC_EXPORT(clz);
+MCC_EXPORT(clzl);
+MCC_EXPORT(clzll);
+MCC_EXPORT(ctz);
+MCC_EXPORT(ctzl);
+MCC_EXPORT(ctzll);
+MCC_EXPORT(clrsb);
+MCC_EXPORT(clrsbl);
+MCC_EXPORT(clrsbll);
+MCC_EXPORT(popcount);
+MCC_EXPORT(popcountl);
+MCC_EXPORT(popcountll);
+MCC_EXPORT(parity);
+MCC_EXPORT(parityl);
+MCC_EXPORT(parityll);
+MCC_EXPORT(bswap16);
+MCC_EXPORT(bswap32);
+MCC_EXPORT(bswap64);
+#undef MCC_EXPORT
+#else
 #if defined(__GNUC__) && (__GNUC__ >= 6)
 __asm__(".globl  __builtin_ffs");
 __asm__(".set __builtin_ffs,__mcc_builtin_ffs");
@@ -208,6 +251,7 @@ int __builtin_parityll(unsigned long long x) __attribute__((alias("__mcc_builtin
 unsigned short __builtin_bswap16(unsigned short x) __attribute__((alias("__mcc_builtin_bswap16")));
 unsigned int __builtin_bswap32(unsigned int x) __attribute__((alias("__mcc_builtin_bswap32")));
 unsigned long long __builtin_bswap64(unsigned long long x) __attribute__((alias("__mcc_builtin_bswap64")));
+#endif
 #endif
 
 #define MCC_OV_SMALL(T, W, NM)            \
