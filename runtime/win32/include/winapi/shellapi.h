@@ -19,7 +19,6 @@
 #endif
 #endif
 
-
 #if !defined(_WIN64)
 #include <pshpack1.h>
 #endif
@@ -36,11 +35,16 @@ extern "C" {
 #define FindExecutable FindExecutableA
 #endif
 
-  SHSTDAPI_(HINSTANCE) ShellExecuteA(HWND hwnd,LPCSTR lpOperation,LPCSTR lpFile,LPCSTR lpParameters,LPCSTR lpDirectory,INT nShowCmd);
-  SHSTDAPI_(HINSTANCE) ShellExecuteW(HWND hwnd,LPCWSTR lpOperation,LPCWSTR lpFile,LPCWSTR lpParameters,LPCWSTR lpDirectory,INT nShowCmd);
-  SHSTDAPI_(HINSTANCE) FindExecutableA(LPCSTR lpFile,LPCSTR lpDirectory,LPSTR lpResult);
-  SHSTDAPI_(HINSTANCE) FindExecutableW(LPCWSTR lpFile,LPCWSTR lpDirectory,LPWSTR lpResult);
-  SHSTDAPI_(LPWSTR *) CommandLineToArgvW(LPCWSTR lpCmdLine,int*pNumArgs);
+SHSTDAPI_(HINSTANCE)
+ShellExecuteA(HWND hwnd, LPCSTR lpOperation, LPCSTR lpFile, LPCSTR lpParameters, LPCSTR lpDirectory, INT nShowCmd);
+SHSTDAPI_(HINSTANCE)
+ShellExecuteW(HWND hwnd, LPCWSTR lpOperation, LPCWSTR lpFile, LPCWSTR lpParameters, LPCWSTR lpDirectory, INT nShowCmd);
+SHSTDAPI_(HINSTANCE)
+FindExecutableA(LPCSTR lpFile, LPCSTR lpDirectory, LPSTR lpResult);
+SHSTDAPI_(HINSTANCE)
+FindExecutableW(LPCWSTR lpFile, LPCWSTR lpDirectory, LPWSTR lpResult);
+SHSTDAPI_(LPWSTR *)
+CommandLineToArgvW(LPCWSTR lpCmdLine, int *pNumArgs);
 
 #ifdef __cplusplus
 }

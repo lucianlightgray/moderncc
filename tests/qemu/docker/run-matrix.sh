@@ -1,15 +1,4 @@
 #!/usr/bin/env bash
-#
-# qemu-user cross matrix: stage the mounted repo, then configure/build/test via
-# a named CMake preset (qemu, or a per-arch qemu-<arch>; see CMakePresets.json).
-# This script owns only the container-side staging, the persistent rootfs cache
-# wiring, and the x86_64 multilib crt fixup.
-#
-#   docker run --rm -e PRESET=qemu-arm64 \
-#       -v "$PWD:/work" -v mcc-qemu-roots:/qemu-roots mcc-qemu
-#
-# Local subsetting without a per-arch preset: -e ARCHS=arm64 -e LIBCS=glibc.
-#
 set -euo pipefail
 
 SRC_MOUNT=/work
@@ -38,8 +27,6 @@ rsync -a --delete \
 
 cd "$SRC"
 
-# The rootfs cache dir is a container-mounted volume, so it can't live in the
-# preset; ARCHS/LIBCS are optional local overrides on top of the preset default.
 overrides=( -DMCC_QEMU_DLDIR="$ROOTS" )
 [ -n "${ARCHS:-}" ] && overrides+=( -DMCC_QEMU_ARCHS="$ARCHS" )
 [ -n "${LIBCS:-}" ] && overrides+=( -DMCC_QEMU_LIBCS="$LIBCS" )
@@ -50,7 +37,6 @@ cmake --preset "$PRESET" "${overrides[@]}"
 echo "==> building mcc + cross compilers (-j$JOBS)"
 cmake --build --preset "$PRESET" -j"$JOBS"
 
-# glibc x86_64 multilib rootfs ships crt objects under lib64/; mcc looks in lib/.
 fixup_multilib() {
     for root in "$ROOTS"/x86_64-*; do
         [ -d "$root" ] || continue
@@ -63,8 +49,6 @@ fixup_multilib() {
     done
 }
 
-# Fetch x86_64 sysroots first (if this matrix includes them) so the fixup runs
-# before the real conformance tests; no-op when no x86_64 roots are produced.
 echo "==> pre-fetching x86_64 sysroots for multilib fixup (if applicable)"
 ctest --test-dir "$BUILD" -R 'qemu-x86_64-.*-fetch' --output-on-failure || true
 fixup_multilib

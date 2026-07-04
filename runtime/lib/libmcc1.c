@@ -1,4 +1,4 @@
-#define W_TYPE_SIZE   32
+#define W_TYPE_SIZE 32
 #define BITS_PER_UNIT 8
 
 typedef int Wtype;
@@ -11,37 +11,36 @@ struct DWstruct {
     Wtype low, high;
 };
 
-typedef union
-{
-  struct DWstruct s;
-  DWtype ll;
+typedef union {
+    struct DWstruct s;
+    DWtype ll;
 } DWunion;
 
 typedef long double XFtype;
-#define WORD_SIZE (sizeof (Wtype) * BITS_PER_UNIT)
-#define HIGH_WORD_COEFF (((UDWtype) 1) << WORD_SIZE)
+#define WORD_SIZE (sizeof(Wtype) * BITS_PER_UNIT)
+#define HIGH_WORD_COEFF (((UDWtype)1) << WORD_SIZE)
 
-#define EXCESS		126
-#define SIGNBIT		0x80000000
-#define HIDDEN		(1 << 23)
-#define SIGN(fp)	((fp) & SIGNBIT)
-#define EXP(fp)		(((fp) >> 23) & 0xFF)
-#define MANT(fp)	(((fp) & 0x7FFFFF) | HIDDEN)
-#define PACK(s,e,m)	((s) | ((e) << 23) | (m))
+#define EXCESS 126
+#define SIGNBIT 0x80000000
+#define HIDDEN (1 << 23)
+#define SIGN(fp) ((fp) & SIGNBIT)
+#define EXP(fp) (((fp) >> 23) & 0xFF)
+#define MANT(fp) (((fp) & 0x7FFFFF) | HIDDEN)
+#define PACK(s, e, m) ((s) | ((e) << 23) | (m))
 
-#define EXCESSD		1022
-#define HIDDEND		(1 << 20)
-#define EXPD(fp)	(((fp.l.upper) >> 20) & 0x7FF)
-#define SIGND(fp)	((fp.l.upper) & SIGNBIT)
-#define MANTD(fp)	(((((fp.l.upper) & 0xFFFFF) | HIDDEND) << 10) | \
-				(fp.l.lower >> 22))
-#define HIDDEND_LL	((long long)1 << 52)
-#define MANTD_LL(fp)	((fp.ll & (HIDDEND_LL-1)) | HIDDEND_LL)
-#define PACKD_LL(s,e,m)	(((long long)((s)+((e)<<20))<<32)|(m))
+#define EXCESSD 1022
+#define HIDDEND (1 << 20)
+#define EXPD(fp) (((fp.l.upper) >> 20) & 0x7FF)
+#define SIGND(fp) ((fp.l.upper) & SIGNBIT)
+#define MANTD(fp) (((((fp.l.upper) & 0xFFFFF) | HIDDEND) << 10) | \
+                   (fp.l.lower >> 22))
+#define HIDDEND_LL ((long long)1 << 52)
+#define MANTD_LL(fp) ((fp.ll & (HIDDEND_LL - 1)) | HIDDEND_LL)
+#define PACKD_LL(s, e, m) (((long long)((s) + ((e) << 20)) << 32) | (m))
 
-#define EXCESSLD	16382
-#define EXPLD(fp)	(fp.l.upper & 0x7fff)
-#define SIGNLD(fp)	((fp.l.upper) & 0x8000)
+#define EXCESSLD 16382
+#define EXPLD(fp) (fp.l.upper & 0x7fff)
+#define SIGNLD(fp) ((fp.l.upper) & 0x8000)
 
 union ldouble_long {
     long double ld;
@@ -75,227 +74,192 @@ union float_long {
 #if defined __i386__
 
 #define sub_ddmmss(sh, sl, ah, al, bh, bl) \
-  __asm__ ("subl %5,%1\n\tsbbl %3,%0"					\
-	   : "=r" ((USItype) (sh)),					\
-	     "=&r" ((USItype) (sl))					\
-	   : "0" ((USItype) (ah)),					\
-	     "g" ((USItype) (bh)),					\
-	     "1" ((USItype) (al)),					\
-	     "g" ((USItype) (bl)))
-#define umul_ppmm(w1, w0, u, v) \
-  __asm__ ("mull %3"							\
-	   : "=a" ((USItype) (w0)),					\
-	     "=d" ((USItype) (w1))					\
-	   : "%0" ((USItype) (u)),					\
-	     "rm" ((USItype) (v)))
+    __asm__("subl %5,%1\n\tsbbl %3,%0"     \
+            : "=r"((USItype)(sh)),         \
+              "=&r"((USItype)(sl))         \
+            : "0"((USItype)(ah)),          \
+              "g"((USItype)(bh)),          \
+              "1"((USItype)(al)),          \
+              "g"((USItype)(bl)))
+#define umul_ppmm(w1, w0, u, v)    \
+    __asm__("mull %3"              \
+            : "=a"((USItype)(w0)), \
+              "=d"((USItype)(w1))  \
+            : "%0"((USItype)(u)),  \
+              "rm"((USItype)(v)))
 #define udiv_qrnnd(q, r, n1, n0, dv) \
-  __asm__ ("divl %4"							\
-	   : "=a" ((USItype) (q)),					\
-	     "=d" ((USItype) (r))					\
-	   : "0" ((USItype) (n0)),					\
-	     "1" ((USItype) (n1)),					\
-	     "rm" ((USItype) (dv)))
-#define count_leading_zeros(count, x) \
-  do {									\
-    USItype __cbtmp;							\
-    __asm__ ("bsrl %1,%0"						\
-	     : "=r" (__cbtmp) : "rm" ((USItype) (x)));			\
-    (count) = __cbtmp ^ 31;						\
-  } while (0)
+    __asm__("divl %4"                \
+            : "=a"((USItype)(q)),    \
+              "=d"((USItype)(r))     \
+            : "0"((USItype)(n0)),    \
+              "1"((USItype)(n1)),    \
+              "rm"((USItype)(dv)))
+#define count_leading_zeros(count, x)                  \
+    do {                                               \
+        USItype __cbtmp;                               \
+        __asm__("bsrl %1,%0"                           \
+                : "=r"(__cbtmp) : "rm"((USItype)(x))); \
+        (count) = __cbtmp ^ 31;                        \
+    } while (0)
 
+static UDWtype __udivmoddi4(UDWtype n, UDWtype d, UDWtype *rp) {
+    DWunion ww;
+    DWunion nn, dd;
+    DWunion rr;
+    UWtype d0, d1, n0, n1, n2;
+    UWtype q0, q1;
+    UWtype b, bm;
 
-static UDWtype __udivmoddi4 (UDWtype n, UDWtype d, UDWtype *rp)
-{
-  DWunion ww;
-  DWunion nn, dd;
-  DWunion rr;
-  UWtype d0, d1, n0, n1, n2;
-  UWtype q0, q1;
-  UWtype b, bm;
+    nn.ll = n;
+    dd.ll = d;
 
-  nn.ll = n;
-  dd.ll = d;
-
-  d0 = dd.s.low;
-  d1 = dd.s.high;
-  n0 = nn.s.low;
-  n1 = nn.s.high;
+    d0 = dd.s.low;
+    d1 = dd.s.high;
+    n0 = nn.s.low;
+    n1 = nn.s.high;
 
 #if !defined(UDIV_NEEDS_NORMALIZATION)
-  if (d1 == 0)
-    {
-      if (d0 > n1)
-	{
+    if (d1 == 0) {
+        if (d0 > n1) {
 
-	  udiv_qrnnd (q0, n0, n1, n0, d0);
-	  q1 = 0;
+            udiv_qrnnd(q0, n0, n1, n0, d0);
+            q1 = 0;
 
-	}
-      else
-	{
+        } else {
 
-	  if (d0 == 0)
-	    d0 = 1 / d0;
+            if (d0 == 0)
+                d0 = 1 / d0;
 
-	  udiv_qrnnd (q1, n1, 0, n1, d0);
-	  udiv_qrnnd (q0, n0, n1, n0, d0);
+            udiv_qrnnd(q1, n1, 0, n1, d0);
+            udiv_qrnnd(q0, n0, n1, n0, d0);
+        }
 
-	}
-
-      if (rp != 0)
-	{
-	  rr.s.low = n0;
-	  rr.s.high = 0;
-	  *rp = rr.ll;
-	}
+        if (rp != 0) {
+            rr.s.low = n0;
+            rr.s.high = 0;
+            *rp = rr.ll;
+        }
     }
 
 #else
 
-  if (d1 == 0)
-    {
-      if (d0 > n1)
-	{
+    if (d1 == 0) {
+        if (d0 > n1) {
 
-	  count_leading_zeros (bm, d0);
+            count_leading_zeros(bm, d0);
 
-	  if (bm != 0)
-	    {
+            if (bm != 0) {
 
-	      d0 = d0 << bm;
-	      n1 = (n1 << bm) | (n0 >> (W_TYPE_SIZE - bm));
-	      n0 = n0 << bm;
-	    }
+                d0 = d0 << bm;
+                n1 = (n1 << bm) | (n0 >> (W_TYPE_SIZE - bm));
+                n0 = n0 << bm;
+            }
 
-	  udiv_qrnnd (q0, n0, n1, n0, d0);
-	  q1 = 0;
+            udiv_qrnnd(q0, n0, n1, n0, d0);
+            q1 = 0;
 
-	}
-      else
-	{
+        } else {
 
-	  if (d0 == 0)
-	    d0 = 1 / d0;
+            if (d0 == 0)
+                d0 = 1 / d0;
 
-	  count_leading_zeros (bm, d0);
+            count_leading_zeros(bm, d0);
 
-	  if (bm == 0)
-	    {
+            if (bm == 0) {
 
+                n1 -= d0;
+                q1 = 1;
+            } else {
 
-	      n1 -= d0;
-	      q1 = 1;
-	    }
-	  else
-	    {
+                b = W_TYPE_SIZE - bm;
 
-	      b = W_TYPE_SIZE - bm;
+                d0 = d0 << bm;
+                n2 = n1 >> b;
+                n1 = (n1 << bm) | (n0 >> b);
+                n0 = n0 << bm;
 
-	      d0 = d0 << bm;
-	      n2 = n1 >> b;
-	      n1 = (n1 << bm) | (n0 >> b);
-	      n0 = n0 << bm;
+                udiv_qrnnd(q1, n1, n2, n1, d0);
+            }
 
-	      udiv_qrnnd (q1, n1, n2, n1, d0);
-	    }
+            udiv_qrnnd(q0, n0, n1, n0, d0);
+        }
 
-
-	  udiv_qrnnd (q0, n0, n1, n0, d0);
-
-	}
-
-      if (rp != 0)
-	{
-	  rr.s.low = n0 >> bm;
-	  rr.s.high = 0;
-	  *rp = rr.ll;
-	}
+        if (rp != 0) {
+            rr.s.low = n0 >> bm;
+            rr.s.high = 0;
+            *rp = rr.ll;
+        }
     }
 #endif
 
-  else
-    {
-      if (d1 > n1)
-	{
+    else {
+        if (d1 > n1) {
 
-	  q0 = 0;
-	  q1 = 0;
+            q0 = 0;
+            q1 = 0;
 
-	  if (rp != 0)
-	    {
-	      rr.s.low = n0;
-	      rr.s.high = n1;
-	      *rp = rr.ll;
-	    }
-	}
-      else
-	{
+            if (rp != 0) {
+                rr.s.low = n0;
+                rr.s.high = n1;
+                *rp = rr.ll;
+            }
+        } else {
 
-	  count_leading_zeros (bm, d1);
-	  if (bm == 0)
-	    {
+            count_leading_zeros(bm, d1);
+            if (bm == 0) {
 
+                if (n1 > d1 || n0 >= d0) {
+                    q0 = 1;
+                    sub_ddmmss(n1, n0, n1, n0, d1, d0);
+                } else
+                    q0 = 0;
 
-	      if (n1 > d1 || n0 >= d0)
-		{
-		  q0 = 1;
-		  sub_ddmmss (n1, n0, n1, n0, d1, d0);
-		}
-	      else
-		q0 = 0;
+                q1 = 0;
 
-	      q1 = 0;
+                if (rp != 0) {
+                    rr.s.low = n0;
+                    rr.s.high = n1;
+                    *rp = rr.ll;
+                }
+            } else {
+                UWtype m1, m0;
 
-	      if (rp != 0)
-		{
-		  rr.s.low = n0;
-		  rr.s.high = n1;
-		  *rp = rr.ll;
-		}
-	    }
-	  else
-	    {
-	      UWtype m1, m0;
+                b = W_TYPE_SIZE - bm;
 
-	      b = W_TYPE_SIZE - bm;
+                d1 = (d1 << bm) | (d0 >> b);
+                d0 = d0 << bm;
+                n2 = n1 >> b;
+                n1 = (n1 << bm) | (n0 >> b);
+                n0 = n0 << bm;
 
-	      d1 = (d1 << bm) | (d0 >> b);
-	      d0 = d0 << bm;
-	      n2 = n1 >> b;
-	      n1 = (n1 << bm) | (n0 >> b);
-	      n0 = n0 << bm;
+                udiv_qrnnd(q0, n1, n2, n1, d1);
+                umul_ppmm(m1, m0, q0, d0);
 
-	      udiv_qrnnd (q0, n1, n2, n1, d1);
-	      umul_ppmm (m1, m0, q0, d0);
+                if (m1 > n1 || (m1 == n1 && m0 > n0)) {
+                    q0--;
+                    sub_ddmmss(m1, m0, m1, m0, d1, d0);
+                }
 
-	      if (m1 > n1 || (m1 == n1 && m0 > n0))
-		{
-		  q0--;
-		  sub_ddmmss (m1, m0, m1, m0, d1, d0);
-		}
+                q1 = 0;
 
-	      q1 = 0;
-
-	      if (rp != 0)
-		{
-		  sub_ddmmss (n1, n0, n1, n0, m1, m0);
-		  rr.s.low = (n1 << b) | (n0 >> bm);
-		  rr.s.high = n1 >> bm;
-		  *rp = rr.ll;
-		}
-	    }
-	}
+                if (rp != 0) {
+                    sub_ddmmss(n1, n0, n1, n0, m1, m0);
+                    rr.s.low = (n1 << b) | (n0 >> bm);
+                    rr.s.high = n1 >> bm;
+                    *rp = rr.ll;
+                }
+            }
+        }
     }
 
-  ww.s.low = q0;
-  ww.s.high = q1;
-  return ww.ll;
+    ww.s.low = q0;
+    ww.s.high = q1;
+    return ww.ll;
 }
 
 #define __negdi2(a) (-(a))
 
-long long __divdi3(long long u, long long v)
-{
+long long __divdi3(long long u, long long v) {
     int c = 0;
     DWunion uu, vv;
     DWtype w;
@@ -305,20 +269,19 @@ long long __divdi3(long long u, long long v)
 
     if (uu.s.high < 0) {
         c = ~c;
-        uu.ll = __negdi2 (uu.ll);
+        uu.ll = __negdi2(uu.ll);
     }
     if (vv.s.high < 0) {
         c = ~c;
-        vv.ll = __negdi2 (vv.ll);
+        vv.ll = __negdi2(vv.ll);
     }
-    w = __udivmoddi4 (uu.ll, vv.ll, (UDWtype *) 0);
+    w = __udivmoddi4(uu.ll, vv.ll, (UDWtype *)0);
     if (c)
-        w = __negdi2 (w);
+        w = __negdi2(w);
     return w;
 }
 
-long long __moddi3(long long u, long long v)
-{
+long long __moddi3(long long u, long long v) {
     int c = 0;
     DWunion uu, vv;
     DWtype w;
@@ -328,32 +291,29 @@ long long __moddi3(long long u, long long v)
 
     if (uu.s.high < 0) {
         c = ~c;
-        uu.ll = __negdi2 (uu.ll);
+        uu.ll = __negdi2(uu.ll);
     }
     if (vv.s.high < 0)
-        vv.ll = __negdi2 (vv.ll);
+        vv.ll = __negdi2(vv.ll);
 
-    __udivmoddi4 (uu.ll, vv.ll, (UDWtype *) &w);
+    __udivmoddi4(uu.ll, vv.ll, (UDWtype *)&w);
     if (c)
-        w = __negdi2 (w);
+        w = __negdi2(w);
     return w;
 }
 
-unsigned long long __udivdi3(unsigned long long u, unsigned long long v)
-{
-    return __udivmoddi4 (u, v, (UDWtype *) 0);
+unsigned long long __udivdi3(unsigned long long u, unsigned long long v) {
+    return __udivmoddi4(u, v, (UDWtype *)0);
 }
 
-unsigned long long __umoddi3(unsigned long long u, unsigned long long v)
-{
+unsigned long long __umoddi3(unsigned long long u, unsigned long long v) {
     UDWtype w;
 
-    __udivmoddi4 (u, v, &w);
+    __udivmoddi4(u, v, &w);
     return w;
 }
 
-long long __ashrdi3(long long a, int b)
-{
+long long __ashrdi3(long long a, int b) {
 #ifdef __MCC__
     DWunion u;
     u.ll = a;
@@ -370,8 +330,7 @@ long long __ashrdi3(long long a, int b)
 #endif
 }
 
-unsigned long long __lshrdi3(unsigned long long a, int b)
-{
+unsigned long long __lshrdi3(unsigned long long a, int b) {
 #ifdef __MCC__
     DWunion u;
     u.ll = a;
@@ -388,8 +347,7 @@ unsigned long long __lshrdi3(unsigned long long a, int b)
 #endif
 }
 
-long long __ashldi3(long long a, int b)
-{
+long long __ashldi3(long long a, int b) {
 #ifdef __MCC__
     DWunion u;
     u.ll = a;
@@ -408,8 +366,7 @@ long long __ashldi3(long long a, int b)
 
 #endif
 
-float __floatundisf(unsigned long long a)
-{
+float __floatundisf(unsigned long long a) {
     DWunion uu;
     XFtype r;
 
@@ -423,8 +380,7 @@ float __floatundisf(unsigned long long a)
     }
 }
 
-double __floatundidf(unsigned long long a)
-{
+double __floatundidf(unsigned long long a) {
     DWunion uu;
     XFtype r;
 
@@ -438,8 +394,7 @@ double __floatundidf(unsigned long long a)
     }
 }
 
-long double __floatundixf(unsigned long long a)
-{
+long double __floatundixf(unsigned long long a) {
     DWunion uu;
     XFtype r;
 
@@ -453,8 +408,7 @@ long double __floatundixf(unsigned long long a)
     }
 }
 
-unsigned long long __fixunssfdi (float a1)
-{
+unsigned long long __fixunssfdi(float a1) {
     register union float_long fl1;
     register int exp;
     register unsigned long long l;
@@ -462,9 +416,9 @@ unsigned long long __fixunssfdi (float a1)
     fl1.f = a1;
 
     if (fl1.l == 0)
-	return (0);
+        return (0);
 
-    exp = EXP (fl1.l) - EXCESS - 24;
+    exp = EXP(fl1.l) - EXCESS - 24;
     l = MANT(fl1.l);
 
     if (exp >= 41)
@@ -474,21 +428,20 @@ unsigned long long __fixunssfdi (float a1)
     else if (exp >= -23)
         l >>= -exp;
     else
-	return 0;
+        return 0;
     if (SIGN(fl1.l))
         l = (unsigned long long)-l;
     return l;
 }
 
-long long __fixsfdi (float a1)
-{
-    long long ret; int s;
+long long __fixsfdi(float a1) {
+    long long ret;
+    int s;
     ret = __fixunssfdi((s = a1 >= 0) ? a1 : -a1);
     return s ? ret : -ret;
 }
 
-unsigned long long __fixunsdfdi (double a1)
-{
+unsigned long long __fixunsdfdi(double a1) {
     register union double_long dl1;
     register int exp;
     register unsigned long long l;
@@ -496,9 +449,9 @@ unsigned long long __fixunsdfdi (double a1)
     dl1.d = a1;
 
     if (dl1.ll == 0)
-	return (0);
+        return (0);
 
-    exp = EXPD (dl1) - EXCESSD - 53;
+    exp = EXPD(dl1) - EXCESSD - 53;
     l = MANTD_LL(dl1);
 
     if (exp >= 12)
@@ -514,16 +467,15 @@ unsigned long long __fixunsdfdi (double a1)
     return l;
 }
 
-long long __fixdfdi (double a1)
-{
-    long long ret; int s;
+long long __fixdfdi(double a1) {
+    long long ret;
+    int s;
     ret = __fixunsdfdi((s = a1 >= 0) ? a1 : -a1);
     return s ? ret : -ret;
 }
 
 #ifndef __arm__
-unsigned long long __fixunsxfdi (long double a1)
-{
+unsigned long long __fixunsxfdi(long double a1) {
     register union ldouble_long dl1;
     register int exp;
     register unsigned long long l;
@@ -531,12 +483,12 @@ unsigned long long __fixunsxfdi (long double a1)
     dl1.ld = a1;
 
     if (dl1.l.lower == 0 && dl1.l.upper == 0)
-	return (0);
+        return (0);
 
-    exp = EXPLD (dl1) - EXCESSLD - 64;
+    exp = EXPLD(dl1) - EXCESSLD - 64;
     l = dl1.l.lower;
     if (exp > 0)
-	return 1ULL << 63;
+        return 1ULL << 63;
     if (exp < -63)
         return 0;
     l >>= -exp;
@@ -545,9 +497,9 @@ unsigned long long __fixunsxfdi (long double a1)
     return l;
 }
 
-long long __fixxfdi (long double a1)
-{
-    long long ret; int s;
+long long __fixxfdi(long double a1) {
+    long long ret;
+    int s;
     ret = __fixunsxfdi((s = a1 >= 0) ? a1 : -a1);
     return s ? ret : -ret;
 }

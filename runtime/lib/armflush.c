@@ -13,16 +13,15 @@ __asm__(
     "mov     r1, r2\n\t"
     "mov     r2, r3\n\t"
     "svc     #0\n\t"
-    "pop     {r7, pc}"
-    );
+    "pop     {r7, pc}");
 
 #if defined(__thumb__) || defined(__ARM_EABI__)
-# define __NR_SYSCALL_BASE      0x0
+#define __NR_SYSCALL_BASE 0x0
 #else
-# define __NR_SYSCALL_BASE      0x900000
+#define __NR_SYSCALL_BASE 0x900000
 #endif
-#define __ARM_NR_BASE           (__NR_SYSCALL_BASE+0x0f0000)
-#define __ARM_NR_cacheflush     (__ARM_NR_BASE+2)
+#define __ARM_NR_BASE (__NR_SYSCALL_BASE + 0x0f0000)
+#define __ARM_NR_cacheflush (__ARM_NR_BASE + 2)
 
 #define syscall _mccsyscall
 
@@ -35,14 +34,12 @@ __asm__(
 
 #endif
 
-void __clear_cache(void *beginning, void *end)
-{
+void __clear_cache(void *beginning, void *end) {
     syscall(__ARM_NR_cacheflush, beginning, end, 0);
 }
 
 #elif defined __aarch64__
-void __clear_cache(void *beg, void *end)
-{
+void __clear_cache(void *beg, void *end) {
     __arm64_clear_cache(beg, end);
 }
 

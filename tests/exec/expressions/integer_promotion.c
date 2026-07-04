@@ -1,22 +1,19 @@
-
-
-int printf(const char*, ...);
+int printf(const char *, ...);
 #define promote(s) printf(" %ssigned : %s\n", (s) - 100 < 0 ? "  " : "un", #s);
 
-int main (void)
-{
+int main(void) {
     struct {
-        unsigned u3:3;
-        unsigned u31:31;
-        unsigned u32:32;
-        unsigned long ul31:31;
-        unsigned long ul32:32;
-        unsigned long long ull31:31;
-        unsigned long long ull32:32;
-        unsigned long long ull33:33;
-        unsigned long long ull64:64;
+        unsigned u3 : 3;
+        unsigned u31 : 31;
+        unsigned u32 : 32;
+        unsigned long ul31 : 31;
+        unsigned long ul32 : 32;
+        unsigned long long ull31 : 31;
+        unsigned long long ull32 : 32;
+        unsigned long long ull33 : 33;
+        unsigned long long ull64 : 64;
         unsigned char c;
-    } s = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
+    } s = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
 
     promote(s.u3);
     promote(s.u31);

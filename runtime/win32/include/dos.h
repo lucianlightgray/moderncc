@@ -4,7 +4,7 @@
 #include <_mingw.h>
 #include <io.h>
 
-#pragma pack(push,_CRT_PACKING)
+#pragma pack(push, _CRT_PACKING)
 
 #ifdef __cplusplus
 extern "C" {
@@ -13,12 +13,12 @@ extern "C" {
 #ifndef _DISKFREE_T_DEFINED
 #define _DISKFREE_T_DEFINED
 
-  struct _diskfree_t {
+struct _diskfree_t {
     unsigned total_clusters;
     unsigned avail_clusters;
     unsigned sectors_per_cluster;
     unsigned bytes_per_sector;
-  };
+};
 #endif
 
 #define _A_NORMAL 0x00
@@ -30,15 +30,15 @@ extern "C" {
 
 #ifndef _GETDISKFREE_DEFINED
 #define _GETDISKFREE_DEFINED
-  _CRTIMP unsigned __cdecl _getdiskfree(unsigned _Drive,struct _diskfree_t *_DiskFree);
+_CRTIMP unsigned __cdecl _getdiskfree(unsigned _Drive, struct _diskfree_t *_DiskFree);
 #endif
 
 #if (defined(_X86_) && !defined(__x86_64))
-  void __cdecl _disable(void);
-  void __cdecl _enable(void);
+void __cdecl _disable(void);
+void __cdecl _enable(void);
 #endif
 
-#ifndef	NO_OLDNAMES
+#ifndef NO_OLDNAMES
 #define diskfree_t _diskfree_t
 #endif
 

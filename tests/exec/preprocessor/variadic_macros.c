@@ -1,21 +1,16 @@
-
-
 #include <stdio.h>
 
-#define LOG(fmt, ...)      printf(fmt, __VA_ARGS__)
-#define LOG0(fmt, ...)     printf(fmt, ## __VA_ARGS__)
-#define STR(...)           #__VA_ARGS__
-#define FIRST(a, ...)      (a)
+#define LOG(fmt, ...) printf(fmt, __VA_ARGS__)
+#define LOG0(fmt, ...) printf(fmt, ##__VA_ARGS__)
+#define STR(...) #__VA_ARGS__
+#define FIRST(a, ...) (a)
 
+#define COUNT(...) COUNT_(__VA_ARGS__, 5, 4, 3, 2, 1, 0)
+#define COUNT_(a, b, c, d, e, n, ...) n
 
-#define COUNT(...)         COUNT_(__VA_ARGS__, 5, 4, 3, 2, 1, 0)
-#define COUNT_(a, b, c, d, e, n, ...)  n
+#define SUM(...) sum_impl(COUNT(__VA_ARGS__), __VA_ARGS__)
 
-
-#define SUM(...)           sum_impl(COUNT(__VA_ARGS__), __VA_ARGS__)
-
-static int sum_impl(int n, ...)
-{
+static int sum_impl(int n, ...) {
     __builtin_va_list ap;
     __builtin_va_start(ap, n);
     int s = 0;
@@ -25,8 +20,7 @@ static int sum_impl(int n, ...)
     return s;
 }
 
-int main(void)
-{
+int main(void) {
     LOG("one=%d two=%d\n", 1, 2);
     LOG0("none\n");
     LOG0("two=%d,%d\n", 10, 20);

@@ -13,16 +13,15 @@
 #define __ATOMIC_SEQ_CST 5
 typedef __SIZE_TYPE__ size_t;
 
-#define ATOMIC_GEN_OP(TYPE, MODE, NAME, OP, RET) \
-    TYPE __atomic_##NAME##_##MODE(volatile void *atom, TYPE value, int memorder) \
-    { \
-        TYPE xchg, cmp; \
-        __atomic_load((TYPE *)atom, (TYPE *)&cmp, __ATOMIC_RELAXED); \
-        do { \
-            xchg = (OP); \
-        } while (!__atomic_compare_exchange((TYPE *)atom, &cmp, &xchg, true, \
-                                            __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)); \
-        return RET; \
+#define ATOMIC_GEN_OP(TYPE, MODE, NAME, OP, RET)                                   \
+    TYPE __atomic_##NAME##_##MODE(volatile void *atom, TYPE value, int memorder) { \
+        TYPE xchg, cmp;                                                            \
+        __atomic_load((TYPE *)atom, (TYPE *)&cmp, __ATOMIC_RELAXED);               \
+        do {                                                                       \
+            xchg = (OP);                                                           \
+        } while (!__atomic_compare_exchange((TYPE *)atom, &cmp, &xchg, true,       \
+                                            __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST));  \
+        return RET;                                                                \
     }
 
 #define ATOMIC_EXCHANGE(TYPE, MODE) \
@@ -52,19 +51,19 @@ typedef __SIZE_TYPE__ size_t;
 #define ATOMIC_FETCH_NAND(TYPE, MODE) \
     ATOMIC_GEN_OP(TYPE, MODE, fetch_nand, ~(cmp & value), cmp)
 
-#define ATOMIC_GEN(TYPE, SIZE) \
-    ATOMIC_EXCHANGE(TYPE, SIZE) \
-    ATOMIC_ADD_FETCH(TYPE, SIZE) \
-    ATOMIC_SUB_FETCH(TYPE, SIZE) \
-    ATOMIC_AND_FETCH(TYPE, SIZE) \
-    ATOMIC_OR_FETCH(TYPE, SIZE) \
-    ATOMIC_XOR_FETCH(TYPE, SIZE) \
+#define ATOMIC_GEN(TYPE, SIZE)    \
+    ATOMIC_EXCHANGE(TYPE, SIZE)   \
+    ATOMIC_ADD_FETCH(TYPE, SIZE)  \
+    ATOMIC_SUB_FETCH(TYPE, SIZE)  \
+    ATOMIC_AND_FETCH(TYPE, SIZE)  \
+    ATOMIC_OR_FETCH(TYPE, SIZE)   \
+    ATOMIC_XOR_FETCH(TYPE, SIZE)  \
     ATOMIC_NAND_FETCH(TYPE, SIZE) \
-    ATOMIC_FETCH_ADD(TYPE, SIZE) \
-    ATOMIC_FETCH_SUB(TYPE, SIZE) \
-    ATOMIC_FETCH_AND(TYPE, SIZE) \
-    ATOMIC_FETCH_OR(TYPE, SIZE) \
-    ATOMIC_FETCH_XOR(TYPE, SIZE) \
+    ATOMIC_FETCH_ADD(TYPE, SIZE)  \
+    ATOMIC_FETCH_SUB(TYPE, SIZE)  \
+    ATOMIC_FETCH_AND(TYPE, SIZE)  \
+    ATOMIC_FETCH_OR(TYPE, SIZE)   \
+    ATOMIC_FETCH_XOR(TYPE, SIZE)  \
     ATOMIC_FETCH_NAND(TYPE, SIZE)
 
 ATOMIC_GEN(uint8_t, 1)
@@ -73,25 +72,36 @@ ATOMIC_GEN(uint32_t, 4)
 ATOMIC_GEN(uint64_t, 8)
 
 #ifdef __MCC__
-#define ATOMIC(x)      __atomic_##x
+#define ATOMIC(x) __atomic_##x
 #else
-#define ATOMIC(x)      __mcc_atomic_##x
+#define ATOMIC(x) __mcc_atomic_##x
 #endif
 
-bool ATOMIC(is_lock_free) (unsigned long size, const volatile void *ptr)
-{
+bool ATOMIC(is_lock_free)(unsigned long size, const volatile void *ptr) {
     bool ret;
 
     switch (size) {
-    case 1: ret = true; break;
-    case 2: ret = true; break;
-    case 4: ret = true; break;
+    case 1:
+        ret = true;
+        break;
+    case 2:
+        ret = true;
+        break;
+    case 4:
+        ret = true;
+        break;
 #if defined __x86_64__ || defined __aarch64__ || defined __riscv
-    case 8: ret = true; break;
+    case 8:
+        ret = true;
+        break;
 #else
-    case 8: ret = false; break;
+    case 8:
+        ret = false;
+        break;
 #endif
-    default: ret = false; break;
+    default:
+        ret = false;
+        break;
     }
     return ret;
 }

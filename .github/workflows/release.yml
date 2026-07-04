@@ -113,8 +113,6 @@ jobs:
       - name: collect + combine checksums
         run: |
           set -eux
-          # merge via the in-tree tool (PLAN 0.9 #3): recursive checksums-*.txt
-          # concatenation, single source of truth with the rest of the CI logic.
           cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl
           mkdir -p out
           find dl -type f ! -name 'checksums-*.txt' -exec cp {} out/ \;

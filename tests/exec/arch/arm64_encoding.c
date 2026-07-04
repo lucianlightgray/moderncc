@@ -1,21 +1,26 @@
-
-
-
-
 #include <stdio.h>
 #include <stdint.h>
 
+static uint32_t lsl32(uint32_t x, int n) {
+    return x << n;
+}
+static uint32_t lsr32(uint32_t x, int n) {
+    return x >> n;
+}
+static int32_t asr32(int32_t x, int n) {
+    return x >> n;
+}
+static uint64_t lsl64(uint64_t x, int n) {
+    return x << n;
+}
+static uint64_t lsr64(uint64_t x, int n) {
+    return x >> n;
+}
+static int64_t asr64(int64_t x, int n) {
+    return x >> n;
+}
 
-
-static uint32_t lsl32(uint32_t x, int n) { return x << n; }
-static uint32_t lsr32(uint32_t x, int n) { return x >> n; }
-static int32_t  asr32(int32_t  x, int n) { return x >> n; }
-static uint64_t lsl64(uint64_t x, int n) { return x << n; }
-static uint64_t lsr64(uint64_t x, int n) { return x >> n; }
-static int64_t  asr64(int64_t  x, int n) { return x >> n; }
-
-static void test_shifts(void)
-{
+static void test_shifts(void) {
     printf("shift-imm:\n");
     printf("%x\n", lsl32(1, 0));
     printf("%x\n", lsl32(1, 15));
@@ -32,33 +37,26 @@ static void test_shifts(void)
     printf("%llx\n", (unsigned long long)asr64(-256LL, 4));
 }
 
-
-
-static void test_ldr_str(void)
-{
-    int64_t buf[4] = { 0x1122334455667788LL, 0x99AABBCCDDEEFF00LL,
-                       0x0F1E2D3C4B5A6978LL, 0x0000000000000001LL };
+static void test_ldr_str(void) {
+    int64_t buf[4] = {0x1122334455667788LL, 0x99AABBCCDDEEFF00LL,
+                      0x0F1E2D3C4B5A6978LL, 0x0000000000000001LL};
     int64_t val;
     int32_t wval;
     int64_t *p;
 
     printf("ldr-str:\n");
 
-
     val = buf[0];
     printf("%llx\n", (unsigned long long)val);
     val = buf[1];
     printf("%llx\n", (unsigned long long)val);
 
-
-    wval = *(int32_t*)&buf[0];
+    wval = *(int32_t *)&buf[0];
     printf("%x\n", (unsigned)wval);
-
 
     p = &buf[0];
     val = *(p + 2);
     printf("%llx\n", (unsigned long long)val);
-
 
     p = &buf[0];
     val = *p;
@@ -67,13 +65,9 @@ static void test_ldr_str(void)
            (unsigned long long)*p);
 }
 
-
-
-static void test_ldp_stp(void)
-{
-    int64_t src[2] = { 0xAAAABBBBCCCCDDDDLL, 0x1111222233334444LL };
+static void test_ldp_stp(void) {
+    int64_t src[2] = {0xAAAABBBBCCCCDDDDLL, 0x1111222233334444LL};
     int64_t dst[2];
-
 
     dst[0] = src[0];
     dst[1] = src[1];
@@ -84,24 +78,19 @@ static void test_ldp_stp(void)
            (unsigned long long)dst[1]);
 }
 
-
-
-static const char *cbz_test(int x)
-{
+static const char *cbz_test(int x) {
     if (x == 0)
         return "zero";
     return "nonzero";
 }
 
-static const char *cbnz_test(int x)
-{
+static const char *cbnz_test(int x) {
     if (x != 0)
         return "nonzero";
     return "zero";
 }
 
-static void test_cond_branches(void)
-{
+static void test_cond_branches(void) {
     printf("cbz-cbnz:\n");
     printf("%s\n", cbz_test(0));
     printf("%s\n", cbz_test(42));
@@ -109,16 +98,12 @@ static void test_cond_branches(void)
     printf("%s\n", cbnz_test(42));
 }
 
-
-
-static int cond_select(int a, int b)
-{
+static int cond_select(int a, int b) {
 
     return a > b ? a : b;
 }
 
-static void test_cond_select(void)
-{
+static void test_cond_select(void) {
     printf("csel:\n");
     printf("%d\n", cond_select(5, 10));
     printf("%d\n", cond_select(10, 5));
@@ -126,89 +111,69 @@ static void test_cond_select(void)
     printf("%d\n", cond_select(-1, 1));
 }
 
-
-
-static void test_sysregs(void)
-{
+static void test_sysregs(void) {
     unsigned int fpcr, fpsr;
 
     printf("sysregs:\n");
 
-
-    __asm__ volatile ("mrs %0, fpcr" : "=r"(fpcr));
+    __asm__ volatile("mrs %0, fpcr" : "=r"(fpcr));
     printf("%u\n", fpcr & 0x0F);
 
-
-    __asm__ volatile ("mrs %0, fpsr" : "=r"(fpsr));
+    __asm__ volatile("mrs %0, fpsr" : "=r"(fpsr));
     printf("%u\n", fpsr);
 
-
-    __asm__ volatile ("msr fpcr, %0" : : "r"(fpcr));
-
+    __asm__ volatile("msr fpcr, %0" : : "r"(fpcr));
 
     {
         unsigned int check;
-        __asm__ volatile ("mrs %0, fpcr" : "=r"(check));
+        __asm__ volatile("mrs %0, fpcr" : "=r"(check));
         printf("%s\n", check == fpcr ? "ok" : "fail");
     }
 }
 
-
-
-static void test_nop(void)
-{
+static void test_nop(void) {
     printf("nop:\n");
-    __asm__ volatile ("nop");
-    __asm__ volatile ("nop");
-    __asm__ volatile ("nop");
+    __asm__ volatile("nop");
+    __asm__ volatile("nop");
+    __asm__ volatile("nop");
     printf("ok\n");
 }
 
-
-
-static void test_barriers(void)
-{
+static void test_barriers(void) {
     printf("barriers:\n");
-    __asm__ volatile ("dmb sy");
-    __asm__ volatile ("dsb sy");
-    __asm__ volatile ("isb");
+    __asm__ volatile("dmb sy");
+    __asm__ volatile("dsb sy");
+    __asm__ volatile("isb");
     printf("ok\n");
 }
 
-
-
-static int64_t mov_x0_x1(int64_t x)
-{
+static int64_t mov_x0_x1(int64_t x) {
     register int64_t r __asm__("x0") = x;
-    __asm__ volatile ("" : "=r"(r) : "0"(r));
+    __asm__ volatile("" : "=r"(r) : "0"(r));
     return r;
 }
 
-static void test_mov_reg(void)
-{
+static void test_mov_reg(void) {
     printf("mov-reg:\n");
     printf("%lld\n", (long long)mov_x0_x1(42));
     printf("%lld\n", (long long)mov_x0_x1(-1));
 }
 
+struct large {
+    int64_t a, b, c, d;
+};
 
-
-struct large { int64_t a, b, c, d; };
-
-static int64_t sum_large(struct large s)
-{
+static int64_t sum_large(struct large s) {
     return s.a + s.b + s.c + s.d;
 }
 
-static struct large make_large(int64_t a, int64_t b, int64_t c, int64_t d)
-{
-    struct large s = { a, b, c, d };
+static struct large make_large(int64_t a, int64_t b, int64_t c, int64_t d) {
+    struct large s = {a, b, c, d};
     return s;
 }
 
-static void test_large_structs(void)
-{
-    struct large s = { 1, 2, 3, 4 };
+static void test_large_structs(void) {
+    struct large s = {1, 2, 3, 4};
     struct large t;
 
     printf("large-struct:\n");
@@ -220,36 +185,42 @@ static void test_large_structs(void)
            (long long)t.c, (long long)t.d);
 }
 
+struct s18 {
+    char x[18];
+};
+struct s24 {
+    char x[24];
+};
+struct s32 {
+    char x[32];
+};
 
+static void print_s18(struct s18 s) {
+    printf("%.18s\n", s.x);
+}
+static void print_s24(struct s24 s) {
+    printf("%.24s\n", s.x);
+}
+static void print_s32(struct s32 s) {
+    printf("%.32s\n", s.x);
+}
 
-struct s18 { char x[18]; };
-struct s24 { char x[24]; };
-struct s32 { char x[32]; };
-
-static void print_s18(struct s18 s) { printf("%.18s\n", s.x); }
-static void print_s24(struct s24 s) { printf("%.24s\n", s.x); }
-static void print_s32(struct s32 s) { printf("%.32s\n", s.x); }
-
-static struct s18 ret_s18(void)
-{
-    struct s18 s = { "123456789012345678" };
+static struct s18 ret_s18(void) {
+    struct s18 s = {"123456789012345678"};
     return s;
 }
 
-static struct s24 ret_s24(void)
-{
-    struct s24 s = { "123456789012345678901234" };
+static struct s24 ret_s24(void) {
+    struct s24 s = {"123456789012345678901234"};
     return s;
 }
 
-static struct s32 ret_s32(void)
-{
-    struct s32 s = { "12345678901234567890123456789012" };
+static struct s32 ret_s32(void) {
+    struct s32 s = {"12345678901234567890123456789012"};
     return s;
 }
 
-static void test_boundary_structs(void)
-{
+static void test_boundary_structs(void) {
     struct s18 a;
     struct s24 b;
     struct s32 c;
@@ -263,8 +234,7 @@ static void test_boundary_structs(void)
     printf("%.32s\n", c.x);
 }
 
-int main(void)
-{
+int main(void) {
     test_shifts();
     test_ldr_str();
     test_ldp_stp();

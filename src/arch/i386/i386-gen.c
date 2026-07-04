@@ -1,22 +1,22 @@
 #ifdef TARGET_DEFS_ONLY
 
-#define NB_REGS         5
-#define NB_ASM_REGS     8
+#define NB_REGS 5
+#define NB_ASM_REGS 8
 #ifndef MCC_DISABLE_ASM
 #define CONFIG_MCC_ASM
 #endif
 
-#define RC_INT     0x0001
-#define RC_FLOAT   0x0002
-#define RC_EAX     0x0004
-#define RC_EDX     0x0008
-#define RC_ECX     0x0010
-#define RC_EBX     0x0020
-#define RC_ST0     0x0040
+#define RC_INT 0x0001
+#define RC_FLOAT 0x0002
+#define RC_EAX 0x0004
+#define RC_EDX 0x0008
+#define RC_ECX 0x0010
+#define RC_EBX 0x0020
+#define RC_ST0 0x0040
 
-#define RC_IRET    RC_EAX
-#define RC_IRE2    RC_EDX
-#define RC_FRET    RC_ST0
+#define RC_IRET RC_EAX
+#define RC_IRE2 RC_EDX
+#define RC_FRET RC_ST0
 
 enum {
     TREG_EAX = 0,
@@ -36,12 +36,11 @@ enum {
 
 #define INVERT_FUNC_PARAMS
 
-
 #define PTR_SIZE 4
 
-#define LDOUBLE_SIZE  12
+#define LDOUBLE_SIZE 12
 #define LDOUBLE_ALIGN 4
-#define MAX_ALIGN     8
+#define MAX_ALIGN 8
 
 #define PROMOTE_RET
 
@@ -49,19 +48,18 @@ enum {
 #define USING_GLOBALS
 #include "mcc.h"
 
-ST_DATA const char * const target_machine_defs =
+ST_DATA const char *const target_machine_defs =
     "__i386__\0"
-    "__i386\0"
-    ;
+    "__i386\0";
 
-# define USE_EBX 2
+#define USE_EBX 2
 
 ST_DATA const int reg_classes[NB_REGS] = {
-      RC_INT | RC_EAX,
-      RC_INT | RC_ECX,
-      RC_INT | RC_EDX,
-      (RC_INT | RC_EBX) * (USE_EBX == 1),
-      RC_FLOAT | RC_ST0,
+    RC_INT | RC_EAX,
+    RC_INT | RC_ECX,
+    RC_INT | RC_EDX,
+    (RC_INT | RC_EBX) * (USE_EBX == 1),
+    RC_FLOAT | RC_ST0,
 };
 
 static unsigned long func_sub_sp_offset;
@@ -74,24 +72,21 @@ static void gen_bounds_prolog(void);
 static void gen_bounds_epilog(void);
 #endif
 
-ST_FUNC void o(unsigned int c)
-{
+ST_FUNC void o(unsigned int c) {
     while (c) {
         g(c);
         c = c >> 8;
     }
 }
 
-ST_FUNC void gen_le32(int c)
-{
+ST_FUNC void gen_le32(int c) {
     g(c);
     g(c >> 8);
     g(c >> 16);
     g(c >> 24);
 }
 
-ST_FUNC void gsym_addr(int t, int a)
-{
+ST_FUNC void gsym_addr(int t, int a) {
     while (t) {
         unsigned char *ptr = cur_text_section->data + t;
         uint32_t n = read32le(ptr);
@@ -100,71 +95,64 @@ ST_FUNC void gsym_addr(int t, int a)
     }
 }
 
-ST_FUNC void gen_fill_nops(int bytes)
-{
+ST_FUNC void gen_fill_nops(int bytes) {
     while (bytes--)
-      g(0x90);
+        g(0x90);
 }
 
 static void gen_static_call(int v);
-static void get_pc_thunk(int r, int add)
-{
-    static const char * const pc_thunk_name[] = {
-	"__x86.get_pc_thunk.ax",
-	"__x86.get_pc_thunk.cx",
-	"__x86.get_pc_thunk.dx",
-	"__x86.get_pc_thunk.bx"
-    };
+static void get_pc_thunk(int r, int add) {
+    static const char *const pc_thunk_name[] = {
+        "__x86.get_pc_thunk.ax",
+        "__x86.get_pc_thunk.cx",
+        "__x86.get_pc_thunk.dx",
+        "__x86.get_pc_thunk.bx"};
     if (nocode_wanted)
         return;
     gen_static_call(tok_alloc_const(pc_thunk_name[r]));
     if (add) {
         Sym label = {0};
-        label.type.t = VT_VOID|VT_STATIC;
+        label.type.t = VT_VOID | VT_STATIC;
         put_extern_sym(&label, cur_text_section, ind, 0);
         r = REG_VALUE(r);
-	if (r == 0)
-	    oad(0x05, 1);
-	else
+        if (r == 0)
+            oad(0x05, 1);
+        else
             oad(0xc081 + r * 0x100, 2);
         greloc(cur_text_section, &label, ind - 4, R_386_GOTPC);
     }
 }
 
-ST_FUNC void gen_gotpcrel(int r, Sym *sym, int c)
-{
+ST_FUNC void gen_gotpcrel(int r, Sym *sym, int c) {
     greloc(cur_text_section, sym, ind, R_386_GOT32X);
     gen_le32(0);
     if (c) {
-	r = REG_VALUE(r);
-	if (r == 0)
+        r = REG_VALUE(r);
+        if (r == 0)
             oad(0x05, c);
-	else
+        else
             oad(0xc081 + r * 0x100, c);
     }
 }
 
-#define gjmp2(instr,lbl) oad(instr,lbl)
+#define gjmp2(instr, lbl) oad(instr, lbl)
 
-ST_FUNC void gen_addr32(int r, Sym *sym, int c)
-{
+ST_FUNC void gen_addr32(int r, Sym *sym, int c) {
     if (r & VT_SYM)
         greloc(cur_text_section, sym, ind, R_386_32);
     gen_le32(c);
 }
 
-ST_FUNC void gen_addrpc32(int r, Sym *sym, int c)
-{
+ST_FUNC void gen_addrpc32(int r, Sym *sym, int c) {
     if (r & VT_SYM)
         greloc(cur_text_section, sym, ind, R_386_PC32);
     gen_le32(c - 4);
 }
 
-static void gen_modrm(int opc, int op_r2, int r, Sym *sym, int c)
-{
+static void gen_modrm(int opc, int op_r2, int r, Sym *sym, int c) {
     int op_reg = REG_VALUE(op_r2) << 3;
 
-    if (mcc_state->pic && (r & (VT_VALMASK|VT_SYM)) == (VT_CONST|VT_SYM)) {
+    if (mcc_state->pic && (r & (VT_VALMASK | VT_SYM)) == (VT_CONST | VT_SYM)) {
         int is_got = (op_r2 & TREG_MEM) && !(sym->type.t & VT_STATIC);
         int here = ind;
         get_pc_thunk(TREG_EBX, is_got);
@@ -183,13 +171,12 @@ static void gen_modrm(int opc, int op_r2, int r, Sym *sym, int c)
         } else {
             g(0x00 | op_reg | REG_VALUE(r));
         }
-    } else
-    if ((r & VT_VALMASK) == VT_CONST) {
+    } else if ((r & VT_VALMASK) == VT_CONST) {
         o(opc);
         o(0x05 | op_reg);
         gen_addr32(r, sym, c);
     } else if ((r & VT_VALMASK) == VT_LOCAL) {
-	o(opc);
+        o(opc);
         if (c == (signed char)c) {
             o(0x45 | op_reg);
             g(c);
@@ -197,30 +184,32 @@ static void gen_modrm(int opc, int op_r2, int r, Sym *sym, int c)
             oad(0x85 | op_reg, c);
         }
     } else {
-	o(opc);
+        o(opc);
         g(0x00 | op_reg | (r & VT_VALMASK));
     }
 }
 
 #ifdef MCC_TARGET_PE
-static void gen_pe_tls_base(int dst)
-{
+static void gen_pe_tls_base(int dst) {
     int sc = (dst == TREG_EAX) ? TREG_ECX : TREG_EAX;
     o(0x50 + sc);
-    o(0x64); o(0x8b); o(0x05 | (dst << 3));
+    o(0x64);
+    o(0x8b);
+    o(0x05 | (dst << 3));
     gen_le32(0x2c);
-    o(0x8b); o(0x05 | (sc << 3));
+    o(0x8b);
+    o(0x05 | (sc << 3));
     greloca(cur_text_section, pe_tls_index_sym(), ind, R_386_32, 0);
     gen_le32(0);
-    o(0x8b); o(0x44 | (dst << 3));
+    o(0x8b);
+    o(0x44 | (dst << 3));
     o((2 << 6) | (sc << 3) | dst);
     g(0x00);
     o(0x58 + sc);
 }
 #endif
 
-ST_FUNC void load(int r, SValue *sv)
-{
+ST_FUNC void load(int r, SValue *sv) {
     int v, t, ft, fc, fr, opc;
     SValue v1;
 
@@ -230,9 +219,7 @@ ST_FUNC void load(int r, SValue *sv)
     ft &= ~VT_QUALIFY;
     v = fr & VT_VALMASK;
 
-    if (mcc_state->pic
-        && (fr & (VT_VALMASK|VT_SYM|VT_LVAL)) == (VT_CONST|VT_SYM|VT_LVAL)
-        && !(sv->sym->type.t & VT_STATIC)) {
+    if (mcc_state->pic && (fr & (VT_VALMASK | VT_SYM | VT_LVAL)) == (VT_CONST | VT_SYM | VT_LVAL) && !(sv->sym->type.t & VT_STATIC)) {
         int tr = r | TREG_MEM;
         if (is_float(ft)) {
             tr = get_reg(RC_INT) | TREG_MEM;
@@ -294,7 +281,7 @@ ST_FUNC void load(int r, SValue *sv)
         } else if ((ft & VT_TYPE) == VT_BYTE || (ft & VT_TYPE) == VT_BOOL) {
             opc = 0xbe0f;
         } else if ((ft & VT_TYPE) == (VT_BYTE | VT_UNSIGNED) ||
-		   (ft & VT_TYPE) == (VT_BOOL | VT_UNSIGNED)) {
+                   (ft & VT_TYPE) == (VT_BOOL | VT_UNSIGNED)) {
             opc = 0xb60f;
         } else if ((ft & VT_TYPE) == VT_SHORT) {
             opc = 0xbf0f;
@@ -305,8 +292,7 @@ ST_FUNC void load(int r, SValue *sv)
         }
         gen_modrm(opc, r, fr, sv->sym, fc);
     } else {
-        if ((fr & (VT_VALMASK|VT_SYM)) == (VT_CONST|VT_SYM)
-            && (sv->sym->type.t & VT_TLS)) {
+        if ((fr & (VT_VALMASK | VT_SYM)) == (VT_CONST | VT_SYM) && (sv->sym->type.t & VT_TLS)) {
             int dst = REG_VALUE(r);
 #ifdef MCC_TARGET_PE
             gen_pe_tls_base(dst);
@@ -324,8 +310,7 @@ ST_FUNC void load(int r, SValue *sv)
             greloca(cur_text_section, sv->sym, ind, R_386_TLS_LE, 0);
             gen_le32(fc);
 #endif
-        } else
-        if (mcc_state->pic && (fr & (VT_VALMASK|VT_SYM)) == (VT_CONST|VT_SYM)) {
+        } else if (mcc_state->pic && (fr & (VT_VALMASK | VT_SYM)) == (VT_CONST | VT_SYM)) {
             if (sv->sym->type.t & VT_STATIC) {
                 get_pc_thunk(r, 0);
                 o(0x808d | REG_VALUE(r) * 0x900);
@@ -335,8 +320,7 @@ ST_FUNC void load(int r, SValue *sv)
                 o(0x808b | REG_VALUE(r) * 0x900);
                 gen_gotpcrel(r, sv->sym, fc);
             }
-        } else
-        if (v == VT_CONST) {
+        } else if (v == VT_CONST) {
             o(0xb8 + r);
             gen_addr32(fr, sv->sym, fc);
         } else if (v == VT_LOCAL) {
@@ -364,8 +348,7 @@ ST_FUNC void load(int r, SValue *sv)
     }
 }
 
-ST_FUNC void store(int r, SValue *v)
-{
+ST_FUNC void store(int r, SValue *v) {
     int fr, bt, fc, opc;
 
     bt = v->type.t & VT_BTYPE;
@@ -390,17 +373,15 @@ ST_FUNC void store(int r, SValue *v)
     fc = v->c.i;
     fr = v->r & VT_VALMASK;
 
-    if (mcc_state->pic
-        && (v->r & (VT_VALMASK|VT_SYM)) == (VT_CONST|VT_SYM)
-        && !(v->sym->type.t & VT_STATIC)) {
-	get_pc_thunk(TREG_EBX, 1);
-	o(0x9b8b);
-	gen_gotpcrel(TREG_EBX, v->sym, v->c.i);
-	o(opc);
-	o(3 + (r << 3));
+    if (mcc_state->pic && (v->r & (VT_VALMASK | VT_SYM)) == (VT_CONST | VT_SYM) && !(v->sym->type.t & VT_STATIC)) {
+        get_pc_thunk(TREG_EBX, 1);
+        o(0x9b8b);
+        gen_gotpcrel(TREG_EBX, v->sym, v->c.i);
+        o(opc);
+        o(3 + (r << 3));
     } else
 
-    if ((v->r & VT_SYM) && v->sym->type.t & VT_TLS) {
+        if ((v->r & VT_SYM) && v->sym->type.t & VT_TLS) {
 #ifdef MCC_TARGET_PE
         {
             int base = (REG_VALUE(r) == TREG_EAX) ? TREG_ECX : TREG_EAX;
@@ -426,13 +407,12 @@ ST_FUNC void store(int r, SValue *v)
     if (fr == VT_CONST || fr == VT_LOCAL || (v->r & VT_LVAL)) {
         gen_modrm(opc, r, v->r, v->sym, fc);
     } else if (fr != r) {
-	o(opc);
+        o(opc);
         o(0xc0 + fr + r * 8);
     }
 }
 
-static void gadd_sp(int val)
-{
+static void gadd_sp(int val) {
     if (val == (signed char)val) {
         o(0xc483);
         g(val);
@@ -441,8 +421,7 @@ static void gadd_sp(int val)
     }
 }
 
-static void gen_static_call(int v)
-{
+static void gen_static_call(int v) {
     Sym *sym;
 
     sym = external_helper_sym(v);
@@ -450,16 +429,15 @@ static void gen_static_call(int v)
     greloc(cur_text_section, sym, ind - 4, R_386_PC32);
 }
 
-static void gcall_or_jmp(int is_jmp)
-{
+static void gcall_or_jmp(int is_jmp) {
     int r;
-    if ((vtop->r & (VT_VALMASK|VT_LVAL|VT_SYM)) == (VT_CONST|VT_SYM)) {
-	if (mcc_state->pic && !(vtop->sym->type.t & VT_STATIC)) {
-	    get_pc_thunk(TREG_EBX, 1);
+    if ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == (VT_CONST | VT_SYM)) {
+        if (mcc_state->pic && !(vtop->sym->type.t & VT_STATIC)) {
+            get_pc_thunk(TREG_EBX, 1);
             oad(0xe8 + is_jmp, vtop->c.i - 4);
             greloc(cur_text_section, vtop->sym, ind - 4, R_386_PLT32);
             return;
-	}
+        }
         oad(0xe8 + is_jmp, vtop->c.i - 4);
         greloc(cur_text_section, vtop->sym, ind - 4, R_386_PC32);
     } else {
@@ -469,18 +447,14 @@ static void gcall_or_jmp(int is_jmp)
     }
 }
 
-static const uint8_t fastcall_regs[3] = { TREG_EAX, TREG_EDX, TREG_ECX };
-static const uint8_t fastcallw_regs[2] = { TREG_ECX, TREG_EDX };
+static const uint8_t fastcall_regs[3] = {TREG_EAX, TREG_EDX, TREG_ECX};
+static const uint8_t fastcallw_regs[2] = {TREG_ECX, TREG_EDX};
 
-static int fastcall_arg_inreg(CType *type)
-{
+static int fastcall_arg_inreg(CType *type) {
     int align;
-    return !is_float(type->t)
-        && (type->t & VT_BTYPE) != VT_STRUCT
-        && type_size(type, &align) <= 4;
+    return !is_float(type->t) && (type->t & VT_BTYPE) != VT_STRUCT && type_size(type, &align) <= 4;
 }
-static int fastcall_arg_slots(CType *type)
-{
+static int fastcall_arg_slots(CType *type) {
     int align, words;
     if (is_float(type->t))
         return 0;
@@ -489,15 +463,12 @@ static int fastcall_arg_slots(CType *type)
 }
 
 #if !defined(MCC_TARGET_PE) && !TARGETOS_FreeBSD && !TARGETOS_OpenBSD
-static int sysv_struct_ret_in_regs(CType *vt)
-{
-    return (vt->t & VT_BTYPE) == VT_STRUCT && vt->ref->a.is_complex
-        && (vt->ref->next->type.t & VT_BTYPE) == VT_FLOAT;
+static int sysv_struct_ret_in_regs(CType *vt) {
+    return (vt->t & VT_BTYPE) == VT_STRUCT && vt->ref->a.is_complex && (vt->ref->next->type.t & VT_BTYPE) == VT_FLOAT;
 }
 #endif
 
-ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int *regsize)
-{
+ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int *regsize) {
 #if defined(MCC_TARGET_PE) || TARGETOS_FreeBSD || TARGETOS_OpenBSD
     int size, align, nregs;
     *ret_align = 1;
@@ -528,8 +499,7 @@ ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int 
 #endif
 }
 
-ST_FUNC void gfunc_call(int nb_args)
-{
+ST_FUNC void gfunc_call(int nb_args) {
     int size, align, r, args_size, func_call;
     int fastcall_nb_regs, n_reg_pop;
     const uint8_t *fastcall_regs_ptr;
@@ -573,7 +543,7 @@ ST_FUNC void gfunc_call(int nb_args)
     save_regs(nb_args + 1);
 
     args_size = 0;
-    for(int i = 0;i < nb_args; i++) {
+    for (int i = 0; i < nb_args; i++) {
         if ((vtop->type.t & VT_BTYPE) == VT_STRUCT) {
             size = type_size(&vtop->type, &align);
             size = (size + 3) & ~3;
@@ -651,8 +621,7 @@ ST_FUNC void gfunc_call(int nb_args)
 #define FUNC_PROLOG_SIZE (9 + !!USE_EBX)
 #endif
 
-ST_FUNC void gfunc_prolog(Sym *func_sym)
-{
+ST_FUNC void gfunc_prolog(Sym *func_sym) {
     CType *func_type = &func_sym->type;
     int addr, align, size, func_call, fastcall_nb_regs;
     int param_addr, fastcall_used;
@@ -684,12 +653,10 @@ ST_FUNC void gfunc_prolog(Sym *func_sym)
     ind += FUNC_PROLOG_SIZE;
     func_sub_sp_offset = ind;
 #if defined(MCC_TARGET_PE) || TARGETOS_FreeBSD || TARGETOS_OpenBSD
-    size = type_size(&func_vt,&align);
-    if (((func_vt.t & VT_BTYPE) == VT_STRUCT)
-        && (size > 8 || (size & (size - 1)))) {
+    size = type_size(&func_vt, &align);
+    if (((func_vt.t & VT_BTYPE) == VT_STRUCT) && (size > 8 || (size & (size - 1)))) {
 #else
-    if ((func_vt.t & VT_BTYPE) == VT_STRUCT
-        && !sysv_struct_ret_in_regs(&func_vt)) {
+    if ((func_vt.t & VT_BTYPE) == VT_STRUCT && !sysv_struct_ret_in_regs(&func_vt)) {
 #endif
         func_vc = addr;
         addr += 4;
@@ -733,8 +700,7 @@ ST_FUNC void gfunc_prolog(Sym *func_sym)
 #endif
 }
 
-ST_FUNC void gfunc_epilog(void)
-{
+ST_FUNC void gfunc_epilog(void) {
     addr_t v, saved_ind;
 
 #ifdef CONFIG_MCC_BCHECK
@@ -745,7 +711,7 @@ ST_FUNC void gfunc_epilog(void)
     v = (-loc + 3) & -4;
 
     if (mcc_state->pic)
-        gen_modrm(0x8b, TREG_EBX, VT_LOCAL, NULL, -(v+4));
+        gen_modrm(0x8b, TREG_EBX, VT_LOCAL, NULL, -(v + 4));
 
     o(0xc9);
     if (func_ret_sub == 0) {
@@ -775,13 +741,11 @@ ST_FUNC void gfunc_epilog(void)
     ind = saved_ind;
 }
 
-ST_FUNC int gjmp(int t)
-{
+ST_FUNC int gjmp(int t) {
     return gjmp2(0xe9, t);
 }
 
-ST_FUNC void gjmp_addr(int a)
-{
+ST_FUNC void gjmp_addr(int a) {
     int r;
     r = a - ind - 2;
     if (r == (signed char)r) {
@@ -803,18 +767,16 @@ ST_FUNC void gjmp_cond_addr(int a, int op)
 }
 #endif
 
-ST_FUNC int gjmp_cond(int op, int t)
-{
+ST_FUNC int gjmp_cond(int op, int t) {
     g(0x0f);
     t = gjmp2(op - 16, t);
     return t;
 }
 
-ST_FUNC void gen_opi(int op)
-{
+ST_FUNC void gen_opi(int op) {
     int r, fr, opc, c;
 
-    switch(op) {
+    switch (op) {
     case '+':
     case TOK_ADDC1:
         opc = 0;
@@ -827,7 +789,7 @@ ST_FUNC void gen_opi(int op)
             if (c == (signed char)c) {
                 if ((c == 1 || c == -1) && (op == '+' || op == '-')) {
                     opc = (c == 1) ^ (op == '+');
-                    o (0x40 | (opc << 3) | r);
+                    o(0x40 | (opc << 3) | r);
                 } else {
                     o(0x83);
                     o(0xc0 | (opc << 3) | r);
@@ -939,8 +901,7 @@ ST_FUNC void gen_opi(int op)
     }
 }
 
-ST_FUNC void gen_opf(int op)
-{
+ST_FUNC void gen_opf(int op) {
     int a, ft, fc, swapped, r;
 
     if (op == TOK_NEG) {
@@ -1004,7 +965,7 @@ ST_FUNC void gen_opf(int op)
             swapped = !swapped;
         }
 
-        switch(op) {
+        switch (op) {
         default:
         case '+':
             a = 0;
@@ -1042,14 +1003,13 @@ ST_FUNC void gen_opf(int op)
             }
 
             gen_modrm((ft & VT_BTYPE) == VT_DOUBLE ? 0xdc : 0xd8,
-		      a, r, vtop->sym, fc);
+                      a, r, vtop->sym, fc);
         }
         vtop--;
     }
 }
 
-ST_FUNC void gen_cvt_itof(int t)
-{
+ST_FUNC void gen_cvt_itof(int t) {
     save_reg(TREG_ST0);
     gv(RC_INT);
     if ((vtop->type.t & VT_BTYPE) == VT_LLONG) {
@@ -1074,8 +1034,7 @@ ST_FUNC void gen_cvt_itof(int t)
     vtop->r = TREG_ST0;
 }
 
-ST_FUNC void gen_cvt_ftoi(int t)
-{
+ST_FUNC void gen_cvt_ftoi(int t) {
     int bt = vtop->type.t & VT_BTYPE;
     if (bt == VT_FLOAT)
         vpush_helper_func(TOK___fixsfdi);
@@ -1091,58 +1050,50 @@ ST_FUNC void gen_cvt_ftoi(int t)
         vtop->r2 = REG_IRE2;
 }
 
-ST_FUNC void gen_cvt_ftof(int t)
-{
+ST_FUNC void gen_cvt_ftof(int t) {
     gv(RC_FLOAT);
 }
 
-ST_FUNC void gen_cvt_csti(int t)
-{
+ST_FUNC void gen_cvt_csti(int t) {
     int r, sz, xl;
     r = gv(RC_INT);
     sz = !(t & VT_UNSIGNED);
     xl = (t & VT_BTYPE) == VT_SHORT;
-    o(0xc0b60f
-        | (sz << 3 | xl) << 8
-        | (r << 3 | r) << 16
-        );
+    o(0xc0b60f | (sz << 3 | xl) << 8 | (r << 3 | r) << 16);
 }
 
-ST_FUNC void gen_increment_tcov (SValue *sv)
-{
-   int indir, rel, add1, add2;
-   if (mcc_state->pic) {
-       get_pc_thunk(TREG_EBX, 0);
-       indir = 0x8300;
-       rel = R_386_PC32;
-       add1 = 2;
-       add2 = 13;
-   } else {
-       indir = 0x0500;
-       rel = R_386_32;
-       add1 = 0;
-       add2 = 4;
-   }
-   o(0x0083 + indir);
-   greloc(cur_text_section, sv->sym, ind, rel);
-   gen_le32(add1);
-   o(1);
-   o(0x1083 + indir);
-   greloc(cur_text_section, sv->sym, ind, rel);
-   gen_le32(add2);
-   g(0);
+ST_FUNC void gen_increment_tcov(SValue *sv) {
+    int indir, rel, add1, add2;
+    if (mcc_state->pic) {
+        get_pc_thunk(TREG_EBX, 0);
+        indir = 0x8300;
+        rel = R_386_PC32;
+        add1 = 2;
+        add2 = 13;
+    } else {
+        indir = 0x0500;
+        rel = R_386_32;
+        add1 = 0;
+        add2 = 4;
+    }
+    o(0x0083 + indir);
+    greloc(cur_text_section, sv->sym, ind, rel);
+    gen_le32(add1);
+    o(1);
+    o(0x1083 + indir);
+    greloc(cur_text_section, sv->sym, ind, rel);
+    gen_le32(add2);
+    g(0);
 }
 
-ST_FUNC void ggoto(void)
-{
+ST_FUNC void ggoto(void) {
     gcall_or_jmp(1);
     vtop--;
 }
 
 #ifdef CONFIG_MCC_BCHECK
 
-static void gen_bound_call(int v)
-{
+static void gen_bound_call(int v) {
     Sym *sym;
 
     sym = external_helper_sym(v);
@@ -1156,8 +1107,7 @@ static void gen_bound_call(int v)
     }
 }
 
-static void gen_bounds_prolog(void)
-{
+static void gen_bounds_prolog(void) {
     func_bound_offset = lbounds_section->data_offset;
     func_bound_ind = ind;
     func_bound_add_epilog = 0;
@@ -1173,8 +1123,7 @@ static void gen_bounds_prolog(void)
     }
 }
 
-static void gen_bounds_epilog(void)
-{
+static void gen_bounds_epilog(void) {
     addr_t saved_ind;
     addr_t *bounds_ptr;
     Sym *sym_data;
@@ -1192,15 +1141,15 @@ static void gen_bounds_epilog(void)
     if (offset_modified) {
         saved_ind = ind;
         ind = func_bound_ind;
-	if (mcc_state->pic) {
-	    get_pc_thunk(TREG_EAX, 0);
-	    o(0x808d | TREG_EAX * 0x900);
-	    greloc(cur_text_section, sym_data, ind, R_386_PC32);
-	    gen_le32(2);
-	} else {
+        if (mcc_state->pic) {
+            get_pc_thunk(TREG_EAX, 0);
+            o(0x808d | TREG_EAX * 0x900);
+            greloc(cur_text_section, sym_data, ind, R_386_PC32);
+            gen_le32(2);
+        } else {
             greloc(cur_text_section, sym_data, ind + 1, R_386_32);
             ind = ind + 5;
-	}
+        }
         gen_bound_call(TOK___bound_local_new);
         ind = saved_ind;
     }
@@ -1237,13 +1186,11 @@ ST_FUNC void gen_vla_alloc(CType *type, int align) {
 #ifdef MCC_TARGET_PE
     use_call = 1;
 #endif
-    if (use_call)
-    {
+    if (use_call) {
         vpush_helper_func(TOK_alloca);
         vswap();
         gfunc_call(1);
-    }
-    else {
+    } else {
         int r;
         r = gv(RC_INT);
         o(0x2b);

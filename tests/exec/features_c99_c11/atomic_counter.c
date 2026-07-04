@@ -6,12 +6,12 @@
 #include <stdatomic.h>
 
 #define NR_THREADS 16
-#define NR_STEPS   ((uint32_t)UINT16_MAX)
+#define NR_STEPS ((uint32_t)UINT16_MAX)
 
-#define BUG_ON(COND) \
-    do { \
+#define BUG_ON(COND)  \
+    do {              \
         if (!!(COND)) \
-            abort(); \
+            abort();  \
     } while (0)
 
 typedef struct {
@@ -22,9 +22,7 @@ typedef struct {
     atomic_size_t ul;
 } counter_type;
 
-static
-void *adder_simple(void *arg)
-{
+static void *adder_simple(void *arg) {
     size_t step;
     counter_type *counter = arg;
 
@@ -38,9 +36,7 @@ void *adder_simple(void *arg)
     return NULL;
 }
 
-static
-void *adder_cmpxchg(void *arg)
-{
+static void *adder_cmpxchg(void *arg) {
     size_t step;
     counter_type *counter = arg;
 
@@ -57,32 +53,31 @@ void *adder_cmpxchg(void *arg)
         do {
             xchgc = (cmpc + 1);
         } while (!atomic_compare_exchange_strong_explicit(&counter->uc,
-            &cmpc, xchgc, memory_order_relaxed, memory_order_relaxed));
+                                                          &cmpc, xchgc, memory_order_relaxed, memory_order_relaxed));
         do {
             xchgs = (cmps + 1);
         } while (!atomic_compare_exchange_strong_explicit(&counter->us,
-            &cmps, xchgs, memory_order_relaxed, memory_order_relaxed));
+                                                          &cmps, xchgs, memory_order_relaxed, memory_order_relaxed));
         do {
             xchgi = (cmpi + 1);
         } while (!atomic_compare_exchange_strong_explicit(&counter->ui,
-            &cmpi, xchgi, memory_order_relaxed, memory_order_relaxed));
+                                                          &cmpi, xchgi, memory_order_relaxed, memory_order_relaxed));
         do {
             xchgl = (cmpl + 1);
         } while (!atomic_compare_exchange_strong_explicit(&counter->ul,
-            &cmpl, xchgl, memory_order_relaxed, memory_order_relaxed));
+                                                          &cmpl, xchgl, memory_order_relaxed, memory_order_relaxed));
     }
 
     return NULL;
 }
 
-static
-void *adder_test_and_set(void *arg)
-{
+static void *adder_test_and_set(void *arg) {
     size_t step;
     counter_type *counter = arg;
 
     for (step = 0; step < NR_STEPS; ++step) {
-        while (atomic_flag_test_and_set(&counter->flag));
+        while (atomic_flag_test_and_set(&counter->flag))
+            ;
         ++counter->uc;
         ++counter->us;
         ++counter->ui;
@@ -93,9 +88,7 @@ void *adder_test_and_set(void *arg)
     return NULL;
 }
 
-static
-void atomic_counter_test(void *(*adder)(void *arg))
-{
+static void atomic_counter_test(void *(*adder)(void *arg)) {
     size_t index;
     counter_type counter;
     pthread_t thread[NR_THREADS];
@@ -112,18 +105,13 @@ void atomic_counter_test(void *(*adder)(void *arg))
     for (index = 0; index < NR_THREADS; ++index)
         BUG_ON(pthread_join(thread[index], NULL));
 
-    if (atomic_load(&counter.uc) == ((NR_THREADS * NR_STEPS) & 0xffu)
-        && atomic_load(&counter.us) == ((NR_THREADS * NR_STEPS) & 0xffffu)
-        && atomic_load(&counter.ui) == (NR_THREADS * NR_STEPS)
-        && atomic_load(&counter.ul) == (NR_THREADS * NR_STEPS)
-        )
+    if (atomic_load(&counter.uc) == ((NR_THREADS * NR_STEPS) & 0xffu) && atomic_load(&counter.us) == ((NR_THREADS * NR_STEPS) & 0xffffu) && atomic_load(&counter.ui) == (NR_THREADS * NR_STEPS) && atomic_load(&counter.ul) == (NR_THREADS * NR_STEPS))
         printf("SUCCESS\n");
     else
         printf("FAILURE\n");
 }
 
-int main(void)
-{
+int main(void) {
     atomic_counter_test(adder_simple);
     atomic_counter_test(adder_cmpxchg);
     atomic_counter_test(adder_test_and_set);

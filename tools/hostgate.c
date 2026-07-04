@@ -1,32 +1,17 @@
-/*
- *  hostgate.c - host-gate invariant checker (ctest: host-gate-invariant)
- *
- *  Outside src/mcchost.{h,c}, no file under the scanned roots may test a raw
- *  host macro (_WIN32, __APPLE__, __linux__, the BSDs, _MSC_VER, ...) in a
- *  preprocessor conditional.  Code that needs a host branch tests the
- *  normalized MCC_HOST_* predicates or calls a host_* function.
- *
- *  This is the C port of cmake/host_gate_check.cmake (PLAN 0.6 #2).  Unlike
- *  the cmake regex, it tokenizes each #if/#ifdef/#ifndef/#elif expression -
- *  skipping string/char literals and comments - so a macro named only inside
- *  a string (e.g. the target-predefine table in mccpp.c) never false-positives.
- *
- *  Usage: hostgate <dir> [<dir> ...]   (default: src tools)
- */
 #include "toolsupport.h"
 
 static const char *BANNED[] = {
     "_WIN32", "_WIN64", "_MSC_VER", "__MINGW32__", "__MINGW64__", "__CYGWIN__",
     "__APPLE__", "__linux__", "__FreeBSD__", "__FreeBSD_kernel__", "__NetBSD__",
-    "__OpenBSD__", "__DragonFly__", "__ANDROID__", "__dietlibc__", 0
-};
+    "__OpenBSD__", "__DragonFly__", "__ANDROID__", "__dietlibc__", 0};
 
 static int g_violations;
 
-static int is_id(int c) { return isalnum((unsigned char)c) || c == '_'; }
+static int is_id(int c) {
+    return isalnum((unsigned char)c) || c == '_';
+}
 
-static int is_banned(const char *tok, int len)
-{
+static int is_banned(const char *tok, int len) {
     int i;
     for (i = 0; BANNED[i]; ++i)
         if ((int)strlen(BANNED[i]) == len && !strncmp(BANNED[i], tok, len))
@@ -34,42 +19,51 @@ static int is_banned(const char *tok, int len)
     return 0;
 }
 
-/* if `line` is a #if/#ifdef/#ifndef/#elif directive, return a pointer to the
-   start of its expression, else NULL */
-static const char *cond_expr(const char *line)
-{
+static const char *cond_expr(const char *line) {
     const char *s = line;
-    while (*s == ' ' || *s == '\t') ++s;
-    if (*s != '#') return NULL;
+    while (*s == ' ' || *s == '\t')
+        ++s;
+    if (*s != '#')
+        return NULL;
     ++s;
-    while (*s == ' ' || *s == '\t') ++s;
-    if (!strncmp(s, "ifdef", 5) && !is_id(s[5]))  return s + 5;
-    if (!strncmp(s, "ifndef", 6) && !is_id(s[6])) return s + 6;
-    if (!strncmp(s, "elif", 4) && !is_id(s[4]))   return s + 4;
-    if (!strncmp(s, "if", 2) && !is_id(s[2]))     return s + 2;
+    while (*s == ' ' || *s == '\t')
+        ++s;
+    if (!strncmp(s, "ifdef", 5) && !is_id(s[5]))
+        return s + 5;
+    if (!strncmp(s, "ifndef", 6) && !is_id(s[6]))
+        return s + 6;
+    if (!strncmp(s, "elif", 4) && !is_id(s[4]))
+        return s + 4;
+    if (!strncmp(s, "if", 2) && !is_id(s[2]))
+        return s + 2;
     return NULL;
 }
 
-/* scan one conditional expression for banned identifiers; returns 1 if any */
-static int expr_has_banned(const char *s)
-{
+static int expr_has_banned(const char *s) {
     while (*s) {
         if (*s == '"') {
             for (++s; *s && *s != '"'; ++s)
-                if (*s == '\\' && s[1]) ++s;
-            if (*s) ++s;
+                if (*s == '\\' && s[1])
+                    ++s;
+            if (*s)
+                ++s;
         } else if (*s == '\'') {
             for (++s; *s && *s != '\''; ++s)
-                if (*s == '\\' && s[1]) ++s;
-            if (*s) ++s;
+                if (*s == '\\' && s[1])
+                    ++s;
+            if (*s)
+                ++s;
         } else if (*s == '/' && s[1] == '/') {
             break;
         } else if (*s == '/' && s[1] == '*') {
-            for (s += 2; *s && !(*s == '*' && s[1] == '/'); ++s);
-            if (*s) s += 2;
+            for (s += 2; *s && !(*s == '*' && s[1] == '/'); ++s)
+                ;
+            if (*s)
+                s += 2;
         } else if (isalpha((unsigned char)*s) || *s == '_') {
             const char *b = s;
-            while (is_id(*s)) ++s;
+            while (is_id(*s))
+                ++s;
             if (is_banned(b, (int)(s - b)))
                 return 1;
         } else {
@@ -79,8 +73,7 @@ static int expr_has_banned(const char *s)
     return 0;
 }
 
-static int scan_file(const char *path, int is_dir, void *ud)
-{
+static int scan_file(const char *path, int is_dir, void *ud) {
     const char *base;
     char *text, *p;
     int ln = 0, elen;
@@ -97,29 +90,31 @@ static int scan_file(const char *path, int is_dir, void *ud)
         return 0;
     if (!(text = ts_read_file(path, NULL)))
         return 0;
-    for (p = text; *p; ) {
+    for (p = text; *p;) {
         char *e = strchr(p, '\n');
         int len = e ? (int)(e - p) : (int)strlen(p);
         const char *expr;
         ++ln;
-        if (len && p[len - 1] == '\r') --len;
-        p[len] = 0;                          /* NUL-terminate this line in place */
+        if (len && p[len - 1] == '\r')
+            --len;
+        p[len] = 0;
         if ((expr = cond_expr(p)) && expr_has_banned(expr)) {
             const char *t = p;
-            while (*t == ' ' || *t == '\t') ++t;
+            while (*t == ' ' || *t == '\t')
+                ++t;
             printf("  %s:%d: %s\n", path, ln, t);
             g_violations++;
         }
-        if (!e) break;
+        if (!e)
+            break;
         p = e + 1;
     }
     free(text);
     return 0;
 }
 
-int main(int argc, char **argv)
-{
-    static const char *defaults[] = { "src", "tools", 0 };
+int main(int argc, char **argv) {
+    static const char *defaults[] = {"src", "tools", 0};
     const char *const *roots = argc > 1 ? (const char *const *)(argv + 1) : defaults;
     int i, n = argc > 1 ? argc - 1 : 2;
 
@@ -134,9 +129,10 @@ int main(int argc, char **argv)
 
     if (g_violations) {
         fprintf(stderr,
-            "host-gate invariant violated - raw host macros tested outside\n"
-            "src/mcchost.{h,c} (use MCC_HOST_* or a host_* function from\n"
-            "mcchost.h instead): %d violation(s) above\n", g_violations);
+                "host-gate invariant violated - raw host macros tested outside\n"
+                "src/mcchost.{h,c} (use MCC_HOST_* or a host_* function from\n"
+                "mcchost.h instead): %d violation(s) above\n",
+                g_violations);
         return 1;
     }
     printf("host-gate invariant OK: no raw host-macro tests outside src/mcchost.{h,c}\n");

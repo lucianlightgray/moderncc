@@ -1953,30 +1953,32 @@
 #define SEVERITY_ERROR 1
 #define SUCCEEDED(hr) ((HRESULT)(hr) >= 0)
 #define FAILED(hr) ((HRESULT)(hr) < 0)
-#define IS_ERROR(Status) ((unsigned long)(Status) >> 31==SEVERITY_ERROR)
+#define IS_ERROR(Status) ((unsigned long)(Status) >> 31 == SEVERITY_ERROR)
 #define HRESULT_CODE(hr) ((hr) & 0xFFFF)
 #define SCODE_CODE(sc) ((sc) & 0xFFFF)
 #define HRESULT_FACILITY(hr) (((hr) >> 16) & 0x1fff)
 #define SCODE_FACILITY(sc) (((sc) >> 16) & 0x1fff)
 #define HRESULT_SEVERITY(hr) (((hr) >> 31) & 0x1)
 #define SCODE_SEVERITY(sc) (((sc) >> 31) & 0x1)
-#define MAKE_HRESULT(sev,fac,code) ((HRESULT) (((unsigned long)(sev)<<31) | ((unsigned long)(fac)<<16) | ((unsigned long)(code))))
-#define MAKE_SCODE(sev,fac,code) ((SCODE) (((unsigned long)(sev)<<31) | ((unsigned long)(fac)<<16) | ((unsigned long)(code))))
+#define MAKE_HRESULT(sev, fac, code) ((HRESULT)(((unsigned long)(sev) << 31) | ((unsigned long)(fac) << 16) | ((unsigned long)(code))))
+#define MAKE_SCODE(sev, fac, code) ((SCODE)(((unsigned long)(sev) << 31) | ((unsigned long)(fac) << 16) | ((unsigned long)(code))))
 #define FACILITY_NT_BIT 0x10000000
-#define __HRESULT_FROM_WIN32(x) ((HRESULT)(x) <= 0 ? ((HRESULT)(x)) : ((HRESULT) (((x) & 0x0000FFFF) | (FACILITY_WIN32 << 16) | 0x80000000)))
+#define __HRESULT_FROM_WIN32(x) ((HRESULT)(x) <= 0 ? ((HRESULT)(x)) : ((HRESULT)(((x) & 0x0000FFFF) | (FACILITY_WIN32 << 16) | 0x80000000)))
 #ifdef INLINE_HRESULT_FROM_WIN32
 #ifndef _HRESULT_DEFINED
 #define _HRESULT_DEFINED
 typedef long HRESULT;
 #endif
-__CRT_INLINE HRESULT HRESULT_FROM_WIN32(long x) { return x <= 0 ? (HRESULT)x : (HRESULT) (((x) & 0x0000FFFF) | (FACILITY_WIN32 << 16) | 0x80000000);}
+__CRT_INLINE HRESULT HRESULT_FROM_WIN32(long x) {
+    return x <= 0 ? (HRESULT)x : (HRESULT)(((x) & 0x0000FFFF) | (FACILITY_WIN32 << 16) | 0x80000000);
+}
 #else
 #define HRESULT_FROM_WIN32(x) __HRESULT_FROM_WIN32(x)
 #endif
-#define HRESULT_FROM_NT(x) ((HRESULT) ((x) | FACILITY_NT_BIT))
-#define GetScode(hr) ((SCODE) (hr))
-#define ResultFromScode(sc) ((HRESULT) (sc))
-#define PropagateResult(hrPrevious,scBase) ((HRESULT) scBase)
+#define HRESULT_FROM_NT(x) ((HRESULT)((x) | FACILITY_NT_BIT))
+#define GetScode(hr) ((SCODE)(hr))
+#define ResultFromScode(sc) ((HRESULT)(sc))
+#define PropagateResult(hrPrevious, scBase) ((HRESULT)scBase)
 #ifdef RC_INVOKED
 #define _HRESULT_TYPEDEF_(_sc) _sc
 #else
@@ -2903,7 +2905,7 @@ __CRT_INLINE HRESULT HRESULT_FROM_WIN32(long x) { return x <= 0 ? (HRESULT)x : (
 #define CERT_E_UNTRUSTEDCA _HRESULT_TYPEDEF_(0x800B0112L)
 #define CERT_E_INVALID_POLICY _HRESULT_TYPEDEF_(0x800B0113L)
 #define CERT_E_INVALID_NAME _HRESULT_TYPEDEF_(0x800B0114L)
-#define HRESULT_FROM_SETUPAPI(x) ((((x) & (APPLICATION_ERROR_MASK|ERROR_SEVERITY_ERROR))==(APPLICATION_ERROR_MASK|ERROR_SEVERITY_ERROR)) ? ((HRESULT) (((x) & 0x0000FFFF) | (FACILITY_SETUPAPI << 16) | 0x80000000)) : HRESULT_FROM_WIN32(x))
+#define HRESULT_FROM_SETUPAPI(x) ((((x) & (APPLICATION_ERROR_MASK | ERROR_SEVERITY_ERROR)) == (APPLICATION_ERROR_MASK | ERROR_SEVERITY_ERROR)) ? ((HRESULT)(((x) & 0x0000FFFF) | (FACILITY_SETUPAPI << 16) | 0x80000000)) : HRESULT_FROM_WIN32(x))
 #define SPAPI_E_EXPECTED_SECTION_NAME _HRESULT_TYPEDEF_(0x800F0000L)
 #define SPAPI_E_BAD_SECTION_NAME_LINE _HRESULT_TYPEDEF_(0x800F0001L)
 #define SPAPI_E_SECTION_NAME_TOO_LONG _HRESULT_TYPEDEF_(0x800F0002L)

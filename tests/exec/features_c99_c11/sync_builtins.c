@@ -1,8 +1,6 @@
-
 extern int printf(const char *, ...);
 
-int main(void)
-{
+int main(void) {
     int x = 10;
     int a = __sync_fetch_and_add(&x, 5);
     int b = __sync_add_and_fetch(&x, 5);
@@ -16,8 +14,7 @@ int main(void)
     __sync_synchronize();
     int y = ++x;
     __sync_synchronize();
-    int ok = a==10 && b==20 && c==20 && ok1==1 && v==100 && x==8
-          && prev==0 && held==1 && lock==0 && y==8;
+    int ok = a == 10 && b == 20 && c == 20 && ok1 == 1 && v == 100 && x == 8 && prev == 0 && held == 1 && lock == 0 && y == 8;
     printf(ok ? "OK\n" : "FAIL\n");
     return ok ? 0 : 1;
 }

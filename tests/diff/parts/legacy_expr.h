@@ -1,9 +1,4 @@
-/* Legacy tcctest body — legacy_expr. Aggregate-only unit: it shares file-scope
-   macros/globals with the other legacy_*.h parts and full_language.c's
-   prelude, so it is #included (in order) into full_language.c and is not a
-   standalone parts-suite unit. Extracted verbatim to keep gcc==mcc. */
-void if_test(void)
-{
+void if_test(void) {
     if1t(1, 0, 0, 0);
     if1t(2, 0, 3, 0);
     if1t(3, 2, 0, 0);
@@ -12,14 +7,13 @@ void if_test(void)
     if3t();
 }
 
-void loop_test()
-{
+void loop_test() {
     int i;
     i = 0;
     while (i < 10)
         printf("%d", i++);
     printf("\n");
-    for(i = 0; i < 10;i++)
+    for (i = 0; i < 10; i++)
         printf("%d", i);
     printf("\n");
     i = 0;
@@ -34,7 +28,6 @@ void loop_test()
         printf("count=%d\n", count);
     printf("count = %d\n", count);
 
-
     i = 0;
     while (1) {
         if (i == 6)
@@ -46,7 +39,6 @@ void loop_test()
     }
     printf("\n");
 
-
     i = 0;
     do {
         if (i == 6)
@@ -55,10 +47,10 @@ void loop_test()
         if (i == 3)
             continue;
         printf("%d", i);
-    } while(1);
+    } while (1);
     printf("\n");
 
-    for(i = 0;i < 10;i++) {
+    for (i = 0; i < 10; i++) {
         if (i == 3)
             continue;
         printf("%d", i);
@@ -68,10 +60,9 @@ void loop_test()
 
 typedef int typedef_and_label;
 
-void goto_test()
-{
+void goto_test() {
     int i;
-    static void *label_table[3] = { &&label1, &&label2, &&label3 };
+    static void *label_table[3] = {&&label1, &&label2, &&label3};
     struct {
         int bla;
 
@@ -83,18 +74,17 @@ void goto_test()
 
     typedef_and_label x;
 
- typedef_and_label:
- s_loop:
+typedef_and_label:
+s_loop:
     if (i >= 10)
         goto s_end;
     printf("%d", i);
     i++;
     goto s_loop;
- s_end:
+s_end:
     printf("\n");
 
-
-    for(i=0;i<3;i++) {
+    for (i = 0; i < 3; i++) {
         goto *label_table[i];
     label1:
         printf("label1\n");
@@ -104,7 +94,7 @@ void goto_test()
         goto next;
     label3:
         printf("label3\n");
-    next: ;
+    next:;
     }
 }
 
@@ -121,28 +111,27 @@ enum test {
 };
 
 struct S_enum {
-    enum {E6 = 42, E7, E8} e:8;
+    enum { E6 = 42,
+           E7,
+           E8 } e : 8;
 };
 
 enum ELong {
 
-
     EL_large = ((unsigned long)0xf000 << 31) << 1,
 };
 
-enum { BIASU = -1U<<31 };
+enum { BIASU = -1U << 31 };
 enum { BIASS = -1 << 31 };
 
-static int getint(int i)
-{
-  if (i)
-    return 0;
-  else
-    return (int)(-1U << 31);
+static int getint(int i) {
+    if (i)
+        return 0;
+    else
+        return (int)(-1U << 31);
 }
 
-void enum_test()
-{
+void enum_test() {
     enum test b1;
 
     unsigned *p = &b1;
@@ -154,13 +143,13 @@ void enum_test()
     printf("enum large: %ld\n", EL_large);
 
     if (getint(0) == BIASU)
-      printf("enum unsigned: ok\n");
+        printf("enum unsigned: ok\n");
     else
-      printf("enum unsigned: wrong\n");
+        printf("enum unsigned: wrong\n");
     if (getint(0) == BIASS)
-      printf("enum unsigned: ok\n");
+        printf("enum unsigned: ok\n");
     else
-      printf("enum unsigned: wrong\n");
+        printf("enum unsigned: wrong\n");
 }
 
 typedef int *my_ptr;
@@ -168,8 +157,7 @@ typedef int *my_ptr;
 typedef int mytype1;
 typedef int mytype2;
 
-void typedef_test()
-{
+void typedef_test() {
     my_ptr a;
     mytype1 mytype2;
     int b;
@@ -181,15 +169,12 @@ void typedef_test()
     printf("mytype2=%d\n", mytype2);
 }
 
-void forward_test()
-{
+void forward_test() {
     forward_ref();
     forward_ref();
 }
 
-
-void forward_ref(void)
-{
+void forward_ref(void) {
     printf("forward ok\n");
 }
 
@@ -216,7 +201,7 @@ union union2 {
 struct struct1 st1, st2;
 
 struct empty_mem {
-      ;
+    ;
     int x;
 };
 
@@ -225,13 +210,11 @@ int tab2[3][2];
 
 int g;
 
-void f1(int g)
-{
+void f1(int g) {
     printf("g1=%d\n", g);
 }
 
-void scope_test()
-{
+void scope_test() {
     g = 2;
     f1(1);
     printf("g2=%d\n", g);
@@ -250,8 +233,7 @@ void scope_test()
 
 int st2_i;
 int *st2_p = &st2_i;
-void scope2_test()
-{
+void scope2_test() {
     char a[50];
     st2_i = 42;
     for (int st2_i = 1; st2_i < 10; st2_i++) {
@@ -262,9 +244,8 @@ void scope2_test()
     printf("exloc: %d\n", *st2_p);
 }
 
-
 extern int st_global1;
-int st_global1=42;
+int st_global1 = 42;
 extern int st_global1;
 int st_global1;
 extern int st_global2;
@@ -272,8 +253,7 @@ int st_global2;
 extern int st_global2;
 int st_global2;
 
-void array_test()
-{
+void array_test() {
     int i, j, a[4];
 
     printf("sizeof(a) = %d\n", sizeof(a));
@@ -287,10 +267,10 @@ void array_test()
     tab[1] = 2;
     tab[2] = 3;
     printf("%d %d %d\n", tab[0], tab[1], tab[2]);
-    for(i=0;i<3;i++)
-        for(j=0;j<2;j++)
+    for (i = 0; i < 3; i++)
+        for (j = 0; j < 2; j++)
             tab2[i][j] = 10 * i + j;
-    for(i=0;i<3*2;i++) {
+    for (i = 0; i < 3 * 2; i++) {
         printf(" %3d", ((int *)tab2)[i]);
     }
     printf("\n");
@@ -298,8 +278,7 @@ void array_test()
     printf("sizeof(ptrdiff_t)=%d\n", sizeof(ptrdiff_t));
 }
 
-void expr_test()
-{
+void expr_test() {
     int a, b;
     a = 0;
     printf("%d\n", a += 1);
@@ -355,29 +334,23 @@ void expr_test()
            isid('('));
 }
 
-int isid(int c)
-{
+int isid(int c) {
     return (c >= 'a' & c <= 'z') | (c >= 'A' & c <= 'Z') | c == '_';
 }
 
-
-
 int vstack[10], *vstack_ptr;
 
-void vpush(int vt, int vc)
-{
+void vpush(int vt, int vc) {
     *vstack_ptr++ = vt;
     *vstack_ptr++ = vc;
 }
 
-void vpop(int *ft, int *fc)
-{
+void vpop(int *ft, int *fc) {
     *fc = *--vstack_ptr;
     *ft = *--vstack_ptr;
 }
 
-void expr2_test()
-{
+void expr2_test() {
     int a, b;
 
     vstack_ptr = vstack;
@@ -387,10 +360,9 @@ void expr2_test()
     printf("res= %d %d\n", a, b);
 }
 
-int const_len_ar[sizeof(1/0)];
+int const_len_ar[sizeof(1 / 0)];
 
-void constant_expr_test()
-{
+void constant_expr_test() {
     int a;
     a = 3;
     printf("%d\n", a * 16);
@@ -401,8 +373,7 @@ void constant_expr_test()
 
 int tab4[10];
 
-void expr_ptr_test()
-{
+void expr_ptr_test() {
     int arr[10], *p, *q;
     int i = -1;
 
@@ -420,25 +391,24 @@ void expr_ptr_test()
     printf("add=%d\n", p + 3 - tab4);
     printf("add=%d\n", 3 + p - tab4);
 
-
     q = p = 0;
     q += i;
-    printf("%p %p %ld\n", q, p, p-q);
+    printf("%p %p %ld\n", q, p, p - q);
     printf("%d %d %d %d %d %d\n",
-           p == q, p != q, p < q, p <= q, p >= q, p > q);
+           p == q, p != q, p<q, p <= q, p >= q, p> q);
     i = 0xf0000000;
     p += i;
-    printf("%p %p %ld\n", q, p, p-q);
+    printf("%p %p %ld\n", q, p, p - q);
     printf("%d %d %d %d %d %d\n",
-           p == q, p != q, p < q, p <= q, p >= q, p > q);
+           p == q, p != q, p<q, p <= q, p >= q, p> q);
     p = (int *)((char *)p + 0xf0000000);
-    printf("%p %p %ld\n", q, p, p-q);
+    printf("%p %p %ld\n", q, p, p - q);
     printf("%d %d %d %d %d %d\n",
-           p == q, p != q, p < q, p <= q, p >= q, p > q);
+           p == q, p != q, p<q, p <= q, p >= q, p> q);
     p += 0xf0000000;
-    printf("%p %p %ld\n", q, p, p-q);
+    printf("%p %p %ld\n", q, p, p - q);
     printf("%d %d %d %d %d %d\n",
-           p == q, p != q, p < q, p <= q, p >= q, p > q);
+           p == q, p != q, p<q, p <= q, p >= q, p> q);
     {
         struct size12 {
             int i, j, k;
@@ -452,17 +422,16 @@ void expr_ptr_test()
     }
 #ifdef __LP64__
     i = 1;
-    p = (int*)0x100000000UL + i;
+    p = (int *)0x100000000UL + i;
     i = ((long)p) >> 32;
     printf("largeptr: %p %d\n", p, i);
 #endif
     p = &arr[0];
     q = p + 3;
-    printf ("%d\n", (int)((p - q) / 3));
+    printf("%d\n", (int)((p - q) / 3));
 }
 
-void expr_cmp_test()
-{
+void expr_cmp_test() {
     int a, b;
     a = -1;
     b = 1;
@@ -504,64 +473,56 @@ struct aligntest4 {
     double a[0];
 };
 
-struct __attribute__((aligned(16))) aligntest5
-{
+struct __attribute__((aligned(16))) aligntest5 {
     int i;
 };
-struct aligntest6
-{
+struct aligntest6 {
     int i;
 } __attribute__((aligned(16)));
-struct aligntest7
-{
+struct aligntest7 {
     int i;
 };
 struct aligntest5 altest5[2];
 struct aligntest6 altest6[2];
 int pad1;
 
-
-
-
-
 struct aligntest7 altest7[2] __attribute__((aligned(16)));
 
-struct aligntest8
-{
-  int i;
+struct aligntest8 {
+    int i;
 } __attribute__((aligned(4096)));
 
 struct Large {
     unsigned long flags;
     union {
-	void *u1;
-	int *u2;
+        void *u1;
+        int *u2;
     };
 
     struct {
-	union {
-	    unsigned long index;
-	    void *freelist;
-	};
-	union {
-	    unsigned long counters;
-	    struct {
-		int bla;
-	    };
-	};
+        union {
+            unsigned long index;
+            void *freelist;
+        };
+        union {
+            unsigned long counters;
+            struct {
+                int bla;
+            };
+        };
     };
 
     union {
-	struct {
-	    long u3;
-	    long u4;
-	};
-	void *u5;
-	struct {
-	    unsigned long compound_head;
-	    unsigned int compound_dtor;
-	    unsigned int compound_order;
-	};
+        struct {
+            long u3;
+            long u4;
+        };
+        void *u5;
+        struct {
+            unsigned long compound_head;
+            unsigned int compound_dtor;
+            unsigned int compound_order;
+        };
     };
 } __attribute__((aligned(2 * sizeof(long))));
 
@@ -577,8 +538,7 @@ struct aligntest10 {
     unsigned long long start_lba;
 };
 
-void struct_test()
-{
+void struct_test() {
     struct1 *s;
     union union2 u;
     struct Large ls;
@@ -588,7 +548,7 @@ void struct_test()
            sizeof(struct struct2),
            sizeof(union union1),
            sizeof(union union2));
-    printf("offsets: %d\n", (int)((char*)&st1.u.v1 - (char*)&st1));
+    printf("offsets: %d\n", (int)((char *)&st1.u.v1 - (char *)&st1));
     st1.f1 = 1;
     st1.f2 = 2;
     st1.f3 = 3;
@@ -607,7 +567,6 @@ void struct_test()
     printf("st2: %d %d %d\n",
            s->f1, s->f2, s->f3);
     printf("str_addr=%x\n", (int)(uintptr_t)st1.str - (int)(uintptr_t)&st1.f1);
-
 
     printf("aligntest1 sizeof=%d alignof=%d\n",
            sizeof(struct aligntest1), __alignof__(struct aligntest1));
@@ -640,7 +599,6 @@ void struct_test()
     printf("altest7 sizeof=%d alignof=%d\n",
            sizeof(altest7), __alignof__(altest7));
 
-
 #if !(defined _WIN32 && CC_NAME == CC_clang)
     printf("sizeof(struct empty) = %d\n", sizeof(struct empty));
 #endif
@@ -649,17 +607,16 @@ void struct_test()
     printf("Large: sizeof=%d\n", sizeof(ls));
     memset(&ls, 0, sizeof(ls));
     ls.compound_head = 42;
-    printf("Large: offsetof(compound_head)=%d\n", (int)((char*)&ls.compound_head - (char*)&ls));
+    printf("Large: offsetof(compound_head)=%d\n", (int)((char *)&ls.compound_head - (char *)&ls));
 }
 
-
-static int __csf(int x) { return x; }
+static int __csf(int x) {
+    return x;
+}
 static void *_csf = __csf;
-#define csf(t,n) ((t(*)(int))_csf)(n)
+#define csf(t, n) ((t (*)(int))_csf)(n)
 
-
-void char_short_test()
-{
+void char_short_test() {
     int var1, var2;
     signed char var3;
     long long var4;
@@ -689,40 +646,37 @@ void char_short_test()
     var4 = 0x11223344aa998877ULL;
     var1 = var3 = var1 + 1;
     var4 = var3 = var4 + 1;
-    printf("promote char/short assign %d "LONG_LONG_FORMAT"\n", var1, var4);
+    printf("promote char/short assign %d " LONG_LONG_FORMAT "\n", var1, var4);
     var1 = 0x778899aa;
     var4 = 0x11223344aa998877ULL;
     printf("promote char/short assign VA %d %d\n", var3 = var1 + 1, var3 = var4 + 1);
     printf("promote char/short cast VA %d %d\n", (signed char)(var1 + 1), (signed char)(var4 + 1));
 #if !defined __arm__ && !defined __riscv
 
-
-    var1 = csf(unsigned char,0x89898989);
-    var4 = csf(signed char,0xabababab);
+    var1 = csf(unsigned char, 0x89898989);
+    var4 = csf(signed char, 0xabababab);
 #ifdef __clang__
 
     var1 &= 0xff;
 #endif
-    printf("promote char/short funcret %d "LONG_LONG_FORMAT"\n", var1, var4);
+    printf("promote char/short funcret %d " LONG_LONG_FORMAT "\n", var1, var4);
     printf("promote char/short fumcret VA %d %d %d %d\n",
-        csf(unsigned short,0xcdcdcdcd),
-        csf(short,0xefefefef),
-        csf(_Bool,0x33221100),
-        csf(_Bool,0x33221101));
+           csf(unsigned short, 0xcdcdcdcd),
+           csf(short, 0xefefefef),
+           csf(_Bool, 0x33221100),
+           csf(_Bool, 0x33221101));
 #endif
     var3 = -10;
     var1 = (signed char)(unsigned char)(var3 + 1);
     var4 = (signed char)(unsigned char)(var3 + 1);
-    printf("promote multicast (char)(unsigned char) %d "LONG_LONG_FORMAT"\n", var1, var4);
+    printf("promote multicast (char)(unsigned char) %d " LONG_LONG_FORMAT "\n", var1, var4);
     var4 = 0x11223344aa998877ULL;
     var4 = (unsigned)(int)(var4 + 1);
-    printf("promote multicast (unsigned)(int) "LONG_LONG_FORMAT"\n", var4);
+    printf("promote multicast (unsigned)(int) " LONG_LONG_FORMAT "\n", var4);
     var4 = 0x11223344bbaa9988ULL;
     var4 = (unsigned)(signed char)(var4 + 1);
-    printf("promote multicast (unsigned)(char) "LONG_LONG_FORMAT"\n", var4);
+    printf("promote multicast (unsigned)(char) " LONG_LONG_FORMAT "\n", var4);
 }
-
-
 
 typedef struct Sym {
     int v;
@@ -735,32 +689,30 @@ typedef struct Sym {
 #define ISLOWER(c) ('a' <= (c) && (c) <= 'z')
 #define TOUPPER(c) (ISLOWER(c) ? 'A' + ((c) - 'a') : (c))
 
-static int toupper1(int a)
-{
+static int toupper1(int a) {
     return TOUPPER(a);
 }
 
-static unsigned int calc_vm_flags(unsigned int prot)
-{
-  unsigned int prot_bits;
+static unsigned int calc_vm_flags(unsigned int prot) {
+    unsigned int prot_bits;
 
-  prot_bits = ((0x1==0x00000001)?(prot&0x1):(prot&0x1)?0x00000001:0);
-  return prot_bits;
+    prot_bits = ((0x1 == 0x00000001) ? (prot & 0x1) : (prot & 0x1) ? 0x00000001
+                                                                   : 0);
+    return prot_bits;
 }
 
-enum cast_enum { FIRST, LAST };
+enum cast_enum { FIRST,
+                 LAST };
 
-static void tst_cast(enum cast_enum ce)
-{
+static void tst_cast(enum cast_enum ce) {
     printf("%d\n", ce);
 }
 
-void bool_test()
-{
+void bool_test() {
     int *s, a, b, t, f, i;
 
     a = 0;
-    s = (void*)0;
+    s = (void *)0;
     printf("!s=%d\n", !s);
 
     if (!s || !s[0])
@@ -786,13 +738,10 @@ void bool_test()
     a = 4;
     printf("b=%d\n", a + (0 ? 1 : a / 2));
 
-
     a = 10;
     b = 10;
-    a = (a + b) * ((a < b) ?
-                   ((b - a) * (a - b)): a + b);
+    a = (a + b) * ((a < b) ? ((b - a) * (a - b)) : a + b);
     printf("a=%d\n", a);
-
 
     t = 1;
     f = 0;
@@ -800,51 +749,47 @@ void bool_test()
     printf("exp=%d\n", f == (32 <= a && a <= 3));
     printf("r=%d\n", (t || f) + (t && f));
 
-
     t = 1;
-    printf("type of bool: %d\n", (int) ( (~ ((unsigned int) (t && 1))) / 2) );
+    printf("type of bool: %d\n", (int)((~((unsigned int)(t && 1))) / 2));
     tst_cast(t >= 0 ? FIRST : LAST);
 
-    printf("type of cond: %d\n", (~(t ? 0U : (unsigned int)0)) / 2 );
+    printf("type of cond: %d\n", (~(t ? 0U : (unsigned int)0)) / 2);
 
     {
         int aspect_on;
         int aspect_native = 65536;
         double bfu_aspect = 1.0;
         int aspect;
-        for(aspect_on = 0; aspect_on < 2; aspect_on++) {
-            aspect=aspect_on?(aspect_native*bfu_aspect+0.5):65535UL;
+        for (aspect_on = 0; aspect_on < 2; aspect_on++) {
+            aspect = aspect_on ? (aspect_native * bfu_aspect + 0.5) : 65535UL;
             printf("aspect=%d\n", aspect);
         }
     }
 
-
     {
-        static int v1 = 34 ? : -1;
-        static int v2 = 0 ? : -1;
+        static int v1 = 34 ?: -1;
+        static int v2 = 0 ?: -1;
         int a = 30;
 
         printf("%d %d\n", v1, v2);
-        printf("%d %d\n", a - 30 ? : a * 2, a + 1 ? : a * 2);
+        printf("%d %d\n", a - 30 ?: a * 2, a + 1 ?: a * 2);
     }
 
-
-    for(i=0;i<256;i++) {
-        if (toupper1 (i) != TOUPPER (i))
+    for (i = 0; i < 256; i++) {
+        if (toupper1(i) != TOUPPER(i))
             printf("error %d\n", i);
     }
-    printf ("bits = 0x%x\n", calc_vm_flags (0x1));
+    printf("bits = 0x%x\n", calc_vm_flags(0x1));
 }
 
 extern int undefined_function(void);
 extern int defined_function(void);
 
 #ifdef __clang__
-int undefined_function(void) {}
+int undefined_function(void) {
+}
 #endif
 
-static inline void refer_to_undefined(void)
-{
-  undefined_function();
+static inline void refer_to_undefined(void) {
+    undefined_function();
 }
-

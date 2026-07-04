@@ -1,10 +1,4 @@
-/* C9911 §7.6/§7.3/§7.25 libm (fenv, complex, tgmath) (s7_libm) — main-free test unit.
-   No #includes: the includer provides the environment (full_language.c
-   via mcclib.h; parts/run_s7_libm.c via <std_env.h>). Compiled 3-way
-   (gcc/clang/mcc) as a unit by the parts-suite, and aggregated into
-   full_language.c. */
-void s7_6_fenv_test(void)
-{
+void s7_6_fenv_test(void) {
     feclearexcept(FE_ALL_EXCEPT);
     printf("fenv clear: %d\n", fetestexcept(FE_ALL_EXCEPT) == 0);
     feraiseexcept(FE_INVALID);
@@ -18,22 +12,21 @@ void s7_6_fenv_test(void)
     feclearexcept(FE_ALL_EXCEPT);
 }
 
-void s7_1_complex_libm_test(void)
-{
-    double complex z = 3.0 + 4.0*I;
+void s7_1_complex_libm_test(void) {
+    double complex z = 3.0 + 4.0 * I;
     printf("cabs: %d\n", cabs(z) == 5.0);
     printf("carg: %d\n", carg(I) > 1.57 && carg(I) < 1.58);
-    printf("cexp0: %d\n", creal(cexp(0.0*I)) == 1.0 && cimag(cexp(0.0*I)) == 0.0);
-    double complex s = csqrt(-1.0 + 0.0*I);
+    printf("cexp0: %d\n", creal(cexp(0.0 * I)) == 1.0 && cimag(cexp(0.0 * I)) == 0.0);
+    double complex s = csqrt(-1.0 + 0.0 * I);
     printf("csqrt-1: %d\n", creal(s) == 0.0 && cimag(s) == 1.0);
     printf("conj: %d\n", creal(conj(z)) == 3.0 && cimag(conj(z)) == -4.0);
     printf("cproj: %d\n", creal(cproj(z)) == 3.0);
 }
 
-void s7_23_tgmath_eval_test(void)
-{
-    double d = 4.0; float f = 4.0f;
-    double complex c = 3.0 + 4.0*I;
+void s7_23_tgmath_eval_test(void) {
+    double d = 4.0;
+    float f = 4.0f;
+    double complex c = 3.0 + 4.0 * I;
     printf("tg sqrt d: %d\n", sqrt(d) == 2.0);
     printf("tg sqrt f: %d\n", sqrt(f) == 2.0f);
     printf("tg pow: %d\n", pow(d, 3.0) == 64.0);

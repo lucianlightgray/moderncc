@@ -146,7 +146,7 @@ int qq(int x)
 #define wq_spin_lock spin_lock
 #define TEST2() wq_spin_lock(a)
 
-/* ===== legacy tcctest body, extracted into ordered parts (aggregate-only) ===== */
+
 #include "parts/legacy_preproc.h"
 #include "parts/legacy_expr.h"
 #include "parts/legacy_aggregates.h"
@@ -158,10 +158,10 @@ int qq(int x)
 
 
 
-/* ===== C9911 aggregate coverage: shared environment for the included parts.
-   Each parts/*.h is a main-free unit also compiled standalone 3-way by the
-   parts-suite (tests/diff/parts/run_*.c); here they are aggregated into the
-   all-in-one C11 differential test. ===== */
+
+
+
+
 #include <complex.h>
 #include <ctype.h>
 #include <errno.h>
@@ -212,17 +212,17 @@ void qsort(void *, size_t, size_t, int (*)(const void *, const void *));
 div_t div(int, int);
 ldiv_t ldiv(long, long);
 lldiv_t lldiv(long long, long long);
-/* drop macro_test artifact macros that clash with generated identifiers */
+
 #undef A
 #undef B
 #undef N
 #undef str
 
-/* mcc has no C99 libm on Windows: msvcrt lacks the complex, <fenv.h>, C99
-   <math.h> and C99 <stdlib.h>/<inttypes.h>/<stdio.h> entry points, and mcc
-   cannot link mingw's COFF libm (ELF/COFF mismatch). The parts that exercise
-   that surface are excluded there so the rest of the differential still runs on
-   Windows for both mcc and the reference cc. Lift this once mcc bundles a libm. */
+
+
+
+
+
 #if defined(_WIN32)
 # define MCC_HAS_C99_LIBM 0
 #else
@@ -329,7 +329,7 @@ int main(int argc, char **argv)
     RUN(func_arg_test);
 
 
-    /* ===== C9911 aggregate coverage tests (from parts/) ===== */
+
     RUN(s04_charset_test);
     RUN(s04_ident_significance_test);
     RUN(s04_limits_test);

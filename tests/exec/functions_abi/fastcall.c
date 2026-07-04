@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <assert.h>
 
-#if !(defined( _WIN32) || (defined(__FreeBSD__) && defined(__i386__)))
+#if !(defined(_WIN32) || (defined(__FreeBSD__) && defined(__i386__)))
 #define __fastcall __attribute((fastcall))
 #endif
 
@@ -11,19 +11,10 @@
 #define SYMBOL(x) x
 #endif
 
-
-
-
-
-
-
-
-
-
 void *SYMBOL(trap_handler);
 
 extern unsigned char SYMBOL(trap)[];
-asm (
+asm(
     ".text;"
     "_trap:;"
     "pushl %esp;"
@@ -36,13 +27,11 @@ asm (
     "movl %eax, 0x20(%esp);"
     "popa;"
     "popl %esp;"
-	"ret;"
-);
+    "ret;");
 
 struct trapframe {
     unsigned edi, esi, ebp, esp, ebx, edx, ecx, eax;
 };
-
 
 #define M_FLOAT(addr) (*(float *)(addr))
 #define M_DWORD(addr) (*(unsigned *)(addr))
@@ -59,40 +48,32 @@ struct trapframe {
 
 #define ARG(x) (M_DWORD(R_ESP + (x) * 4))
 
-#define RETN(x) do { \
-    M_DWORD(R_ESP + (x)) = M_DWORD(R_ESP); \
-    R_ESP += (x); \
-} while (0)
+#define RETN(x)                                \
+    do {                                       \
+        M_DWORD(R_ESP + (x)) = M_DWORD(R_ESP); \
+        R_ESP += (x);                          \
+    } while (0)
 
-#define DUMP() do { \
-    unsigned i; \
-    printf("EAX: %08X\n", R_EAX); \
-    printf("ECX: %08X\n", R_ECX); \
-    printf("EDX: %08X\n", R_EDX); \
-    printf("EBX: %08X\n", R_EBX); \
-    printf("ESP: %08X\n", R_ESP); \
-    printf("EBP: %08X\n", R_EBP); \
-    printf("ESI: %08X\n", R_ESI); \
-    printf("EDI: %08X\n", R_EDI); \
-    printf("\n"); \
-    printf("[RETADDR]: %08X\n", M_DWORD(R_ESP)); \
-    for (i = 1; i <= 8; i++) { \
-        printf("[ARG%4d]: %08X\n", i, ARG(i)); \
-    } \
-} while (0)
+#define DUMP()                                       \
+    do {                                             \
+        unsigned i;                                  \
+        printf("EAX: %08X\n", R_EAX);                \
+        printf("ECX: %08X\n", R_ECX);                \
+        printf("EDX: %08X\n", R_EDX);                \
+        printf("EBX: %08X\n", R_EBX);                \
+        printf("ESP: %08X\n", R_ESP);                \
+        printf("EBP: %08X\n", R_EBP);                \
+        printf("ESI: %08X\n", R_ESI);                \
+        printf("EDI: %08X\n", R_EDI);                \
+        printf("\n");                                \
+        printf("[RETADDR]: %08X\n", M_DWORD(R_ESP)); \
+        for (i = 1; i <= 8; i++) {                   \
+            printf("[ARG%4d]: %08X\n", i, ARG(i));   \
+        }                                            \
+    } while (0)
 
 #define SET_TRAP_HANDLER(x) ((SYMBOL(trap_handler)) = (x))
-#define TRAP ((void *) &SYMBOL(trap))
-
-
-
-
-
-
-
-
-
-
+#define TRAP ((void *)&SYMBOL(trap))
 
 void *SYMBOL(sc_call_target);
 unsigned SYMBOL(sc_retn_addr);
@@ -100,7 +81,7 @@ unsigned SYMBOL(sc_old_esp);
 unsigned SYMBOL(sc_new_esp);
 
 extern unsigned char SYMBOL(safecall)[];
-asm (
+asm(
     ".text;"
     "_safecall:;"
     "popl _sc_retn_addr;"
@@ -108,124 +89,99 @@ asm (
     "call *_sc_call_target;"
     "movl %esp, _sc_new_esp;"
     "movl _sc_old_esp, %esp;"
-	"jmp *_sc_retn_addr;"
-);
+    "jmp *_sc_retn_addr;");
 
 #define SET_SAFECALL_TARGET(x) ((SYMBOL(sc_call_target)) = (x))
-#define SAFECALL ((void *) &SYMBOL(safecall))
+#define SAFECALL ((void *)&SYMBOL(safecall))
 #define ESPDIFF (SYMBOL(sc_new_esp) - SYMBOL(sc_old_esp))
 
-
-
-
-
-
-void check_fastcall_invoke_0(struct trapframe *tf)
-{
+void check_fastcall_invoke_0(struct trapframe *tf) {
 
     RETN(0);
 }
 
-void check_fastcall_invoke_1(struct trapframe *tf)
-{
+void check_fastcall_invoke_1(struct trapframe *tf) {
 
     assert(R_ECX == 0x11111111);
     RETN(0);
 }
-void check_fastcall_invoke_2(struct trapframe *tf)
-{
+void check_fastcall_invoke_2(struct trapframe *tf) {
 
     assert(R_ECX == 0x11111111);
     assert(R_EDX == 0x22222222);
     RETN(0);
 }
-void check_fastcall_invoke_3(struct trapframe *tf)
-{
+void check_fastcall_invoke_3(struct trapframe *tf) {
 
     assert(R_ECX == 0x11111111);
     assert(R_EDX == 0x22222222);
     assert(ARG(1) == 0x33333333);
-    RETN(1*4);
+    RETN(1 * 4);
 }
-void check_fastcall_invoke_4(struct trapframe *tf)
-{
+void check_fastcall_invoke_4(struct trapframe *tf) {
 
     assert(R_ECX == 0x11111111);
     assert(R_EDX == 0x22222222);
     assert(ARG(1) == 0x33333333);
     assert(ARG(2) == 0x44444444);
-    RETN(2*4);
+    RETN(2 * 4);
 }
 
-void check_fastcall_invoke_5(struct trapframe *tf)
-{
+void check_fastcall_invoke_5(struct trapframe *tf) {
 
     assert(R_ECX == 0x11111111);
     assert(R_EDX == 0x22222222);
     assert(ARG(1) == 0x33333333);
     assert(ARG(2) == 0x44444444);
     assert(ARG(3) == 0x55555555);
-    RETN(3*4);
+    RETN(3 * 4);
 }
 
-void test_fastcall_invoke()
-{
+void test_fastcall_invoke() {
     SET_TRAP_HANDLER(check_fastcall_invoke_0);
-    ((void __fastcall (*)(void)) TRAP)();
+    ((void __fastcall (*)(void))TRAP)();
 
     SET_TRAP_HANDLER(check_fastcall_invoke_1);
-    ((void __fastcall (*)(unsigned)) TRAP)(0x11111111);
+    ((void __fastcall (*)(unsigned))TRAP)(0x11111111);
 
     SET_TRAP_HANDLER(check_fastcall_invoke_2);
-    ((void __fastcall (*)(unsigned, unsigned)) TRAP)(0x11111111, 0x22222222);
+    ((void __fastcall (*)(unsigned, unsigned))TRAP)(0x11111111, 0x22222222);
 
     SET_TRAP_HANDLER(check_fastcall_invoke_3);
-    ((void __fastcall (*)(unsigned, unsigned, unsigned)) TRAP)(0x11111111, 0x22222222, 0x33333333);
+    ((void __fastcall (*)(unsigned, unsigned, unsigned))TRAP)(0x11111111, 0x22222222, 0x33333333);
 
     SET_TRAP_HANDLER(check_fastcall_invoke_4);
-    ((void __fastcall (*)(unsigned, unsigned, unsigned, unsigned)) TRAP)(0x11111111, 0x22222222, 0x33333333, 0x44444444);
+    ((void __fastcall (*)(unsigned, unsigned, unsigned, unsigned))TRAP)(0x11111111, 0x22222222, 0x33333333, 0x44444444);
 
     SET_TRAP_HANDLER(check_fastcall_invoke_5);
-    ((void __fastcall (*)(unsigned, unsigned, unsigned, unsigned, unsigned)) TRAP)(0x11111111, 0x22222222, 0x33333333, 0x44444444, 0x55555555);
+    ((void __fastcall (*)(unsigned, unsigned, unsigned, unsigned, unsigned))TRAP)(0x11111111, 0x22222222, 0x33333333, 0x44444444, 0x55555555);
 }
 
-
-
-
-
-
-int __fastcall check_fastcall_espdiff_0(void)
-{
+int __fastcall check_fastcall_espdiff_0(void) {
     return 0;
 }
 
-int __fastcall check_fastcall_espdiff_1(int a)
-{
+int __fastcall check_fastcall_espdiff_1(int a) {
     return a;
 }
 
-int __fastcall check_fastcall_espdiff_2(int a, int b)
-{
+int __fastcall check_fastcall_espdiff_2(int a, int b) {
     return a + b;
 }
 
-int __fastcall check_fastcall_espdiff_3(int a, int b, int c)
-{
+int __fastcall check_fastcall_espdiff_3(int a, int b, int c) {
     return a + b + c;
 }
 
-int __fastcall check_fastcall_espdiff_4(int a, int b, int c, int d)
-{
+int __fastcall check_fastcall_espdiff_4(int a, int b, int c, int d) {
     return a + b + c + d;
 }
 
-int __fastcall check_fastcall_espdiff_5(int a, int b, int c, int d, int e)
-{
+int __fastcall check_fastcall_espdiff_5(int a, int b, int c, int d, int e) {
     return a + b + c + d + e;
 }
 
-void test_fastcall_espdiff()
-{
+void test_fastcall_espdiff() {
     int x;
     SET_SAFECALL_TARGET(check_fastcall_espdiff_0);
     x = ((typeof(&check_fastcall_espdiff_0))SAFECALL)();
@@ -245,21 +201,20 @@ void test_fastcall_espdiff()
     SET_SAFECALL_TARGET(check_fastcall_espdiff_3);
     x = ((typeof(&check_fastcall_espdiff_3))SAFECALL)(1, 2, 3);
     assert(x == 1 + 2 + 3);
-    assert(ESPDIFF == 1*4);
+    assert(ESPDIFF == 1 * 4);
 
     SET_SAFECALL_TARGET(check_fastcall_espdiff_4);
     x = ((typeof(&check_fastcall_espdiff_4))SAFECALL)(1, 2, 3, 4);
     assert(x == 1 + 2 + 3 + 4);
-    assert(ESPDIFF == 2*4);
+    assert(ESPDIFF == 2 * 4);
 
     SET_SAFECALL_TARGET(check_fastcall_espdiff_5);
     x = ((typeof(&check_fastcall_espdiff_5))SAFECALL)(1, 2, 3, 4, 5);
     assert(x == 1 + 2 + 3 + 4 + 5);
-    assert(ESPDIFF == 3*4);
+    assert(ESPDIFF == 3 * 4);
 }
 
-int main()
-{
+int main() {
 #define N 10000
     int i;
 

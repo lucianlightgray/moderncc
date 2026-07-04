@@ -13,7 +13,9 @@ typedef unsigned long long uint64_t;
 #endif
 
 typedef union {
-    struct { uint64_t x0, x1; };
+    struct {
+        uint64_t x0, x1;
+    };
     long double f;
 } u128_t;
 
@@ -27,35 +29,31 @@ typedef union {
     float f;
 } u32_t;
 
-static long double f3_zero(int sgn)
-{
-    u128_t x = { 0, (uint64_t)sgn << 63 };
+static long double f3_zero(int sgn) {
+    u128_t x = {0, (uint64_t)sgn << 63};
     return x.f;
 }
 
-static long double f3_infinity(int sgn)
-{
-    u128_t x = { 0, (uint64_t)sgn << 63 | 0x7fff000000000000 };
+static long double f3_infinity(int sgn) {
+    u128_t x = {0, (uint64_t)sgn << 63 | 0x7fff000000000000};
     return x.f;
 }
 
-static long double f3_NaN(void)
-{
+static long double f3_NaN(void) {
 #if 0
     u128_t x = {  0, 0x7fff800000000000 };
 #else
-    u128_t x = { -1, 0x7fffffffffffffff };
+    u128_t x = {-1, 0x7fffffffffffffff};
 #endif
     return x.f;
 }
 
-static int fp3_convert_NaN(long double *f, int sgn, u128_t *mnt)
-{
-    u128_t x = { mnt->x0,
-                 mnt->x1 | 0x7fff800000000000 | (uint64_t)sgn << 63 };
+static int fp3_convert_NaN(long double *f, int sgn, u128_t *mnt) {
+    u128_t x = {mnt->x0,
+                mnt->x1 | 0x7fff800000000000 | (uint64_t)sgn << 63};
     *f = x.f;
     return 1;
-#define fp3_convert_NaN(a,b,c) fp3_convert_NaN(a,b,&c)
+#define fp3_convert_NaN(a, b, c) fp3_convert_NaN(a, b, &c)
 }
 
 static int fp3_detect_NaNs(long double *f,
@@ -78,11 +76,10 @@ static int fp3_detect_NaNs(long double *f,
     return 0;
 #undef a
 #undef b
-#define fp3_detect_NaNs(a,b,c,d,e,f,g) fp3_detect_NaNs(a,b,c,&d,e,f,&g)
+#define fp3_detect_NaNs(a, b, c, d, e, f, g) fp3_detect_NaNs(a, b, c, &d, e, f, &g)
 }
 
-static void f3_unpack(int *sgn, int32_t *exp, u128_t *mnt, long double f)
-{
+static void f3_unpack(int *sgn, int32_t *exp, u128_t *mnt, long double f) {
     u128_t x;
 
     x.f = f;
@@ -96,8 +93,7 @@ static void f3_unpack(int *sgn, int32_t *exp, u128_t *mnt, long double f)
     mnt->f = x.f;
 }
 
-static void f3_normalise(int32_t *exp, u128_t *mnt)
-{
+static void f3_normalise(int32_t *exp, u128_t *mnt) {
     int sh;
     if (!(mnt->x0 | mnt->x1))
         return;
@@ -115,33 +111,30 @@ static void f3_normalise(int32_t *exp, u128_t *mnt)
     }
 }
 
-static void f3_sticky_shift(int32_t sh, u128_t *x)
-{
-  if (sh >= 128) {
-      x->x0 = !!(x->x0 | x->x1);
-      x->x1 = 0;
-      return;
-  }
-  if (sh >= 64) {
-      x->x0 = x->x1 | !!x->x0;
-      x->x1 = 0;
-      sh -= 64;
-  }
-  if (sh > 0) {
-      x->x0 = x->x0 >> sh | x->x1 << (64 - sh) | !!(x->x0 << (64 - sh));
-      x->x1 = x->x1 >> sh;
-  }
+static void f3_sticky_shift(int32_t sh, u128_t *x) {
+    if (sh >= 128) {
+        x->x0 = !!(x->x0 | x->x1);
+        x->x1 = 0;
+        return;
+    }
+    if (sh >= 64) {
+        x->x0 = x->x1 | !!x->x0;
+        x->x1 = 0;
+        sh -= 64;
+    }
+    if (sh > 0) {
+        x->x0 = x->x0 >> sh | x->x1 << (64 - sh) | !!(x->x0 << (64 - sh));
+        x->x1 = x->x1 >> sh;
+    }
 }
 
-static long double f3_round(int sgn, int32_t exp, u128_t *x)
-{
+static long double f3_round(int sgn, int32_t exp, u128_t *x) {
     long double f;
     int error;
 
     if (exp > 0) {
         f3_sticky_shift(13, x);
-    }
-    else {
+    } else {
         f3_sticky_shift(14 - exp, x);
         exp = 0;
     }
@@ -170,8 +163,7 @@ static long double f3_round(int sgn, int32_t exp, u128_t *x)
     return x->f;
 }
 
-static long double f3_add(long double fa, long double fb, int neg)
-{
+static long double f3_add(long double fa, long double fb, int neg) {
     u128_t a, b, x;
     int32_t a_exp, b_exp, x_exp;
     int a_sgn, b_sgn, x_sgn;
@@ -202,8 +194,7 @@ static long double f3_add(long double fa, long double fb, int neg)
     if (a_exp <= b_exp) {
         f3_sticky_shift(b_exp - a_exp, &a);
         a_exp = b_exp;
-    }
-    else {
+    } else {
         f3_sticky_shift(a_exp - b_exp, &b);
         b_exp = a_exp;
     }
@@ -213,8 +204,7 @@ static long double f3_add(long double fa, long double fb, int neg)
     if (a_sgn == b_sgn) {
         x.x0 = a.x0 + b.x0;
         x.x1 = a.x1 + b.x1 + (x.x0 < a.x0);
-    }
-    else {
+    } else {
         x.x0 = a.x0 - b.x0;
         x.x1 = a.x1 - b.x1 - (x.x0 > a.x0);
         if (x.x1 >> 63) {
@@ -232,18 +222,15 @@ static long double f3_add(long double fa, long double fb, int neg)
     return f3_round(x_sgn, x_exp + 12, &x);
 }
 
-long double __addtf3(long double a, long double b)
-{
+long double __addtf3(long double a, long double b) {
     return f3_add(a, b, 0);
 }
 
-long double __subtf3(long double a, long double b)
-{
+long double __subtf3(long double a, long double b) {
     return f3_add(a, b, 1);
 }
 
-long double __multf3(long double fa, long double fb)
-{
+long double __multf3(long double fa, long double fb) {
     u128_t a, b, x;
     int32_t a_exp, b_exp, x_exp;
     int a_sgn, b_sgn, x_sgn;
@@ -300,8 +287,7 @@ long double __multf3(long double fa, long double fb)
     return f3_round(x_sgn, x_exp, &x);
 }
 
-long double __divtf3(long double fa, long double fb)
-{
+long double __divtf3(long double fa, long double fb) {
     u128_t a, b, x;
     int32_t a_exp, b_exp, x_exp;
     int a_sgn, b_sgn, x_sgn, i;
@@ -351,14 +337,12 @@ long double __divtf3(long double fa, long double fb)
     return f3_round(x_sgn, x_exp, &x);
 }
 
-long double __negtf2(long double f)
-{
-    ((u128_t*)&f)->x1 ^= 1UL << 63;
+long double __negtf2(long double f) {
+    ((u128_t *)&f)->x1 ^= 1UL << 63;
     return f;
 }
 
-long double __extendsftf2(float f)
-{
+long double __extendsftf2(float f) {
     u128_t x;
     u32_t u;
     uint32_t a;
@@ -376,7 +360,7 @@ long double __extendsftf2(float f)
     else if (a << 1 >> 24 == 0) {
         uint64_t adj = 0;
         while (!(a << 1 >> 1 >> (23 - adj)))
-          adj++;
+            adj++;
         x.x1 = aa >> 31 << 63 | (16256 - adj + 1) << 48 | aa << adj << 41 >> 16;
     } else
         x.x1 = (aa >> 31 << 63 | ((aa >> 23 & 255) + 16256) << 48 |
@@ -384,8 +368,7 @@ long double __extendsftf2(float f)
     return x.f;
 }
 
-long double __extenddftf2(double f)
-{
+long double __extenddftf2(double f) {
     u128_t x;
     u64_t u;
     uint64_t a;
@@ -401,7 +384,7 @@ long double __extenddftf2(double f)
     else if (a << 1 >> 53 == 0) {
         uint64_t adj = 0;
         while (!(a << 1 >> 1 >> (52 - adj)))
-          adj++;
+            adj++;
         x.x0 <<= adj;
         x.x1 = a >> 63 << 63 | (15360 - adj + 1) << 48 | a << adj << 12 >> 16;
     } else
@@ -409,8 +392,7 @@ long double __extenddftf2(double f)
     return x.f;
 }
 
-float __trunctfsf2(long double f)
-{
+float __trunctfsf2(long double f) {
     u128_t mnt;
     int32_t exp;
     int sgn;
@@ -439,8 +421,7 @@ float __trunctfsf2(long double f)
     return x.f;
 }
 
-double __trunctfdf2(long double f)
-{
+double __trunctfdf2(long double f) {
     u128_t mnt;
     int32_t exp;
     int sgn;
@@ -470,8 +451,7 @@ double __trunctfdf2(long double f)
     return x.f;
 }
 
-int32_t __fixtfsi(long double fa)
-{
+int32_t __fixtfsi(long double fa) {
     u128_t a;
     int32_t a_exp;
     int a_sgn;
@@ -485,8 +465,7 @@ int32_t __fixtfsi(long double fa)
     return a_sgn ? -x : x;
 }
 
-int64_t __fixtfdi(long double fa)
-{
+int64_t __fixtfdi(long double fa) {
     u128_t a;
     int32_t a_exp;
     int a_sgn;
@@ -500,8 +479,7 @@ int64_t __fixtfdi(long double fa)
     return a_sgn ? -x : x;
 }
 
-uint32_t __fixunstfsi(long double fa)
-{
+uint32_t __fixunstfsi(long double fa) {
     u128_t a;
     int32_t a_exp;
     int a_sgn;
@@ -513,8 +491,7 @@ uint32_t __fixunstfsi(long double fa)
     return a.x1 >> (16431 - a_exp);
 }
 
-uint64_t __fixunstfdi(long double fa)
-{
+uint64_t __fixunstfdi(long double fa) {
     u128_t a;
     int32_t a_exp;
     int a_sgn;
@@ -526,12 +503,11 @@ uint64_t __fixunstfdi(long double fa)
     return (a.x1 << 15 | a.x0 >> 49) >> (16446 - a_exp);
 }
 
-long double __floatsitf(int32_t a)
-{
+long double __floatsitf(int32_t a) {
     int sgn = 0;
     int exp = 16414;
     uint32_t mnt = a;
-    u128_t x = { 0, 0 };
+    u128_t x = {0, 0};
     int i;
     if (a) {
         if (a < 0) {
@@ -549,12 +525,11 @@ long double __floatsitf(int32_t a)
     return x.f;
 }
 
-long double __floatditf(int64_t a)
-{
+long double __floatditf(int64_t a) {
     int sgn = 0;
     int exp = 16446;
     uint64_t mnt = a;
-    u128_t x = { 0, 0 };
+    u128_t x = {0, 0};
     int i;
     if (a) {
         if (a < 0) {
@@ -572,11 +547,10 @@ long double __floatditf(int64_t a)
     return x.f;
 }
 
-long double __floatunsitf(uint32_t a)
-{
+long double __floatunsitf(uint32_t a) {
     int exp = 16414;
     uint32_t mnt = a;
-    u128_t x = { 0, 0 };
+    u128_t x = {0, 0};
     int i;
     if (a) {
         for (i = 16; i; i >>= 1)
@@ -589,11 +563,10 @@ long double __floatunsitf(uint32_t a)
     return x.f;
 }
 
-long double __floatunditf(uint64_t a)
-{
+long double __floatunditf(uint64_t a) {
     int exp = 16446;
     uint64_t mnt = a;
-    u128_t x = { 0, 0 };
+    u128_t x = {0, 0};
     long double f;
     int i;
     if (a) {
@@ -608,47 +581,39 @@ long double __floatunditf(uint64_t a)
     return x.f;
 }
 
-static int f3_cmp(long double fa, long double fb)
-{
+static int f3_cmp(long double fa, long double fb) {
     u128_t a, b;
     a.f = fa;
     b.f = fb;
-    return (!(a.x0 | a.x1 << 1 | b.x0 | b.x1 << 1) ? 0 :
-            ((a.x1 << 1 >> 49 == 0x7fff && (a.x0 | a.x1 << 16)) ||
-             (b.x1 << 1 >> 49 == 0x7fff && (b.x0 | b.x1 << 16))) ? 2 :
-            a.x1 >> 63 != b.x1 >> 63 ? (int)(b.x1 >> 63) - (int)(a.x1 >> 63) :
-            a.x1 < b.x1 ? (int)(a.x1 >> 63 << 1) - 1 :
-            a.x1 > b.x1 ? 1 - (int)(a.x1 >> 63 << 1) :
-            a.x0 < b.x0 ? (int)(a.x1 >> 63 << 1) - 1 :
-            b.x0 < a.x0 ? 1 - (int)(a.x1 >> 63 << 1) : 0);
+    return (!(a.x0 | a.x1 << 1 | b.x0 | b.x1 << 1) ? 0 : ((a.x1 << 1 >> 49 == 0x7fff && (a.x0 | a.x1 << 16)) || (b.x1 << 1 >> 49 == 0x7fff && (b.x0 | b.x1 << 16))) ? 2
+                                                     : a.x1 >> 63 != b.x1 >> 63                                                                                     ? (int)(b.x1 >> 63) - (int)(a.x1 >> 63)
+                                                     : a.x1 < b.x1                                                                                                  ? (int)(a.x1 >> 63 << 1) - 1
+                                                     : a.x1 > b.x1                                                                                                  ? 1 - (int)(a.x1 >> 63 << 1)
+                                                     : a.x0 < b.x0                                                                                                  ? (int)(a.x1 >> 63 << 1) - 1
+                                                     : b.x0 < a.x0                                                                                                  ? 1 - (int)(a.x1 >> 63 << 1)
+                                                                                                                                                                    : 0);
 }
 
-int __eqtf2(long double a, long double b)
-{
+int __eqtf2(long double a, long double b) {
     return !!f3_cmp(a, b);
 }
 
-int __netf2(long double a, long double b)
-{
+int __netf2(long double a, long double b) {
     return !!f3_cmp(a, b);
 }
 
-int __lttf2(long double a, long double b)
-{
+int __lttf2(long double a, long double b) {
     return f3_cmp(a, b);
 }
 
-int __letf2(long double a, long double b)
-{
+int __letf2(long double a, long double b) {
     return f3_cmp(a, b);
 }
 
-int __gttf2(long double a, long double b)
-{
+int __gttf2(long double a, long double b) {
     return -f3_cmp(b, a);
 }
 
-int __getf2(long double a, long double b)
-{
+int __getf2(long double a, long double b) {
     return -f3_cmp(b, a);
 }

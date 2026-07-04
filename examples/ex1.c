@@ -1,8 +1,7 @@
-#!/usr/local/bin/mcc -run
+#!/ usr / local / bin / mcc - run
 #include <mcclib.h>
 
-int main()
-{
+int main() {
     printf("Hello World\n");
     return 0;
 }

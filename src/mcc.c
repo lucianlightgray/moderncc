@@ -1,10 +1,10 @@
 #ifndef ONE_SOURCE
-# define ONE_SOURCE 1
+#define ONE_SOURCE 1
 #endif
 
 #include "mcc.h"
 #if ONE_SOURCE
-# include "libmcc.c"
+#include "libmcc.c"
 #endif
 #include "mcctools.c"
 
@@ -75,8 +75,7 @@ static const char help[] =
     "  -impdef <lib>.dll [-o <def>]    Create an import .def file\n"
 #endif
     "For bug reporting instructions, see:\n"
-    "  https://github.com/lucianlightgray/moderncc\n"
-    ;
+    "  https://github.com/lucianlightgray/moderncc\n";
 
 static const char help2[] =
     "More options:\n"
@@ -166,83 +165,78 @@ static const char help2[] =
     ;
 
 static const char version[] =
-    "mcc version "MCC_VERSION
+    "mcc version " MCC_VERSION
 #ifdef MCC_GITHASH
-    " "MCC_GITHASH
+    " " MCC_GITHASH
 #endif
     " ("
 #ifdef MCC_TARGET_I386
-        "i386"
+    "i386"
 #elif defined MCC_TARGET_X86_64
-        "x86_64"
+    "x86_64"
 #elif defined MCC_TARGET_ARM
-        "ARM"
-# ifdef MCC_ARM_EABI
-        " eabi"
-#  ifdef MCC_ARM_HARDFLOAT
-        "hf"
-#  endif
-# endif
+    "ARM"
+#ifdef MCC_ARM_EABI
+    " eabi"
+#ifdef MCC_ARM_HARDFLOAT
+    "hf"
+#endif
+#endif
 #elif defined MCC_TARGET_ARM64
-        "AArch64"
+    "AArch64"
 #elif defined MCC_TARGET_RISCV64
-        "riscv64"
+    "riscv64"
 #endif
 #ifdef MCC_TARGET_PE
-        " Windows"
+    " Windows"
 #elif defined(MCC_TARGET_MACHO)
-        " Darwin"
+    " Darwin"
 #elif TARGETOS_FreeBSD || TARGETOS_FreeBSD_kernel
-        " FreeBSD"
+    " FreeBSD"
 #elif TARGETOS_OpenBSD
-        " OpenBSD"
+    " OpenBSD"
 #elif TARGETOS_NetBSD
-        " NetBSD"
+    " NetBSD"
 #else
-        " Linux"
+    " Linux"
 #endif
-    ")\n"
-    ;
+    ")\n";
 
-static void print_dirs(const char *msg, char **paths, int nb_paths)
-{
+static void print_dirs(const char *msg, char **paths, int nb_paths) {
     printf("%s:\n%s", msg, nb_paths ? "" : "  -\n");
-    for(int i = 0; i < nb_paths; i++)
+    for (int i = 0; i < nb_paths; i++)
         printf("  %s\n", paths[i]);
 }
 
-static void print_search_dirs(MCCState *s)
-{
+static void print_search_dirs(MCCState *s) {
     printf("install: %s\n", s->mcc_lib_path);
     print_dirs("include", s->sysinclude_paths, s->nb_sysinclude_paths);
     print_dirs("libraries", s->library_paths, s->nb_library_paths);
     printf("libmcc1:\n  %s/%s\n", s->library_paths[0], CONFIG_MCC_CROSSPREFIX MCC_LIBMCC1);
 #ifdef MCC_TARGET_UNIX
     print_dirs("crt", s->crt_paths, s->nb_crt_paths);
-    printf("elfinterp:\n  %s\n",  s->elfint);
+    printf("elfinterp:\n  %s\n", s->elfint);
 #endif
 }
 
-static void set_environment(MCCState *s)
-{
-    char * path;
+static void set_environment(MCCState *s) {
+    char *path;
 
     path = getenv("C_INCLUDE_PATH");
-    if(path != NULL) {
+    if (path != NULL) {
         mcc_add_sysinclude_path(s, path);
     }
     path = getenv("CPATH");
-    if(path != NULL) {
+    if (path != NULL) {
         mcc_add_include_path(s, path);
     }
     path = getenv("LIBRARY_PATH");
-    if(path != NULL) {
+    if (path != NULL) {
         mcc_add_library_path(s, path);
     }
 }
 
-static char *default_outputfile(MCCState *s, const char *first_file)
-{
+static char *default_outputfile(MCCState *s, const char *first_file) {
     char buf[1024];
     char *ext;
     const char *name = "a";
@@ -268,8 +262,7 @@ static char *default_outputfile(MCCState *s, const char *first_file)
     return mcc_strdup(buf);
 }
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
     MCCState *s, *s1;
     int ret, opt, n = 0, t = 0, done;
     unsigned start_time = 0, end_time = 0;
@@ -290,7 +283,8 @@ redo:
             if (s->verbose)
                 goto help2;
         } else if (opt == OPT_HELP2) {
-            help2: fputs(help2, stdout);
+        help2:
+            fputs(help2, stdout);
         } else if (opt == OPT_M32 || opt == OPT_M64) {
             ret = mcc_tool_cross(argv, opt);
         } else if (s->verbose)
@@ -308,7 +302,8 @@ redo:
             print_search_dirs(s);
         }
         if (opt) {
-            if (opt < 0) err:
+            if (opt < 0)
+            err:
                 ret = 1;
             mcc_delete(s);
             return ret;
@@ -316,13 +311,12 @@ redo:
         if (s->nb_files == 0) {
             mcc_error_noabort("no input files");
         } else if (s->output_type == MCC_OUTPUT_PREPROCESS) {
-            if (s->outfile && 0!=strcmp("-",s->outfile)) {
+            if (s->outfile && 0 != strcmp("-", s->outfile)) {
                 ppfp = host_fopen(s->outfile, "wb");
                 if (!ppfp)
                     mcc_error_noabort("could not write '%s'", s->outfile);
             }
-        } else if ((s->output_type == MCC_OUTPUT_OBJ && !s->option_r)
-                || s->output_type == MCC_OUTPUT_ASM) {
+        } else if ((s->output_type == MCC_OUTPUT_OBJ && !s->option_r) || s->output_type == MCC_OUTPUT_ASM) {
             const char *act = s->output_type == MCC_OUTPUT_ASM ? "-S" : "-c";
             if (s->nb_libraries)
                 mcc_error_noabort("cannot specify libraries with %s", act);
@@ -342,9 +336,7 @@ redo:
     if (ppfp)
         s->ppfp = ppfp;
 
-    if ((s->output_type == MCC_OUTPUT_MEMORY
-      || s->output_type == MCC_OUTPUT_PREPROCESS)
-        && (s->dflag & 16)) {
+    if ((s->output_type == MCC_OUTPUT_MEMORY || s->output_type == MCC_OUTPUT_PREPROCESS) && (s->dflag & 16)) {
         if (t)
             s->dflag |= 32;
         s->run_test = ++t;
@@ -367,8 +359,7 @@ redo:
         }
         if (++n == s->nb_files)
             break;
-        if ((s->output_type == MCC_OUTPUT_OBJ && !s->option_r)
-         || s->output_type == MCC_OUTPUT_ASM)
+        if ((s->output_type == MCC_OUTPUT_OBJ && !s->option_r) || s->output_type == MCC_OUTPUT_ASM)
             break;
     }
 

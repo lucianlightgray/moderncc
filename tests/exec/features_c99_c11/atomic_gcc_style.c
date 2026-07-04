@@ -2,7 +2,6 @@
 #include <stdbool.h>
 #include <stdio.h>
 
-
 #define assert(x) \
     printf("assert \"%s\" : %s\n", #x, (x) ? "yes" : "no");
 
@@ -15,57 +14,49 @@ int main() {
         assert(loaded == 42);
     }
 
-
     {
         int atomic_var = 100;
         int expected = 100;
         bool success = __atomic_compare_exchange_n(
             &atomic_var, &expected, 200,
-            false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST
-        );
+            false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
         assert(success);
         assert(atomic_var == 200);
         assert(expected == 100);
     }
-
 
     {
         int atomic_var = 100;
         int expected = 99;
         bool success = __atomic_compare_exchange_n(
             &atomic_var, &expected, 200,
-            false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST
-        );
+            false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
         assert(!success);
         assert(atomic_var == 100);
         assert(expected == 100);
     }
-
 
     {
         int atomic_var = 50;
         int expected = 50;
         for (int i = 0; i < 10; i++) {
             if (__atomic_compare_exchange_n(
-                &atomic_var, &expected, 60,
-                true, __ATOMIC_RELAXED, __ATOMIC_RELAXED
-            )) {
+                    &atomic_var, &expected, 60,
+                    true, __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
                 break;
             }
         }
         assert(atomic_var == 60);
     }
 
-
     {
         int value = 100;
-        int* atomic_ptr = &value;
-        int* new_ptr = NULL;
+        int *atomic_ptr = &value;
+        int *new_ptr = NULL;
         __atomic_store_n(&atomic_ptr, new_ptr, __ATOMIC_RELEASE);
-        int* loaded_ptr = __atomic_load_n(&atomic_ptr, __ATOMIC_ACQUIRE);
+        int *loaded_ptr = __atomic_load_n(&atomic_ptr, __ATOMIC_ACQUIRE);
         assert(loaded_ptr == NULL);
     }
-
 
     {
         int atomic_var = 0;

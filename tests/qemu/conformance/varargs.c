@@ -1,10 +1,6 @@
-
-
-
 #include <stdarg.h>
 
-static long isum(int n, ...)
-{
+static long isum(int n, ...) {
     va_list ap;
     long s = 0;
     int i;
@@ -15,8 +11,7 @@ static long isum(int n, ...)
     return s;
 }
 
-static double dsum(int n, ...)
-{
+static double dsum(int n, ...) {
     va_list ap;
     double s = 0;
     int i;
@@ -27,8 +22,7 @@ static double dsum(int n, ...)
     return s;
 }
 
-static long long mix(int n, ...)
-{
+static long long mix(int n, ...) {
     va_list ap;
     long long s = 0;
     int i;
@@ -39,10 +33,12 @@ static long long mix(int n, ...)
     return s;
 }
 
-int main(void)
-{
-    if (isum(5, 1, 2, 3, 4, 5) != 15) return 1;
-    if (dsum(3, 1.5, 2.5, 3.0) != 7.0) return 2;
-    if (mix(2, 0x100000000LL, 0x200000000LL) != 0x300000000LL) return 3;
+int main(void) {
+    if (isum(5, 1, 2, 3, 4, 5) != 15)
+        return 1;
+    if (dsum(3, 1.5, 2.5, 3.0) != 7.0)
+        return 2;
+    if (mix(2, 0x100000000LL, 0x200000000LL) != 0x300000000LL)
+        return 3;
     return 0;
 }

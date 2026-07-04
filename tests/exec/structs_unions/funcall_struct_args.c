@@ -1,9 +1,8 @@
 #include <stdio.h>
 
-
 struct vec {
-        float x;
-        float y;
+    float x;
+    float y;
 };
 
 void bug(float x, float y) {
@@ -15,9 +14,8 @@ float dot(struct vec v) {
 }
 
 void main(void) {
-        struct vec a;
-        a.x = 33.0f;
-        a.y = 77.0f;
-        bug(dot(a), dot(a));
+    struct vec a;
+    a.x = 33.0f;
+    a.y = 77.0f;
+    bug(dot(a), dot(a));
 }
-

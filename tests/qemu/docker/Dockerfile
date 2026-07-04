@@ -1,27 +1,4 @@
-
-
-
-
-
-
-
-
-
-
 FROM debian:stable-slim
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         build-essential \
@@ -39,9 +16,6 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
         clang \
         lld \
     && rm -rf /var/lib/apt/lists/*
-
-
-
 
 RUN set -e; for q in qemu-x86_64 qemu-i386 qemu-arm qemu-aarch64 qemu-riscv64; do \
         command -v "$q" >/dev/null || { echo "missing $q"; exit 1; }; \

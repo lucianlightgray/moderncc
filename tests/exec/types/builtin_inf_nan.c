@@ -1,8 +1,6 @@
-
 #include <stdio.h>
 
-int main(void)
-{
+int main(void) {
     float inf = __inf__;
     float nan = __nan__;
     printf("%d %d %d\n",

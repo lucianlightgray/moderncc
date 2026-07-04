@@ -1,6 +1,3 @@
-
-
-
 #include <stdio.h>
 
 extern int in_custom;
@@ -25,11 +22,9 @@ asm(
     ".data\n"
     ".previous\n"
     ".globl after_previous\n"
-    "after_previous: .long 0x4444\n"
-);
+    "after_previous: .long 0x4444\n");
 
-int main(void)
-{
+int main(void) {
     printf("%x %x %x %x\n",
            in_custom, appended_custom, in_data_after_pop, after_previous);
     return 0;

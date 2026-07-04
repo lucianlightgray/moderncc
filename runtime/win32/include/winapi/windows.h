@@ -98,7 +98,6 @@
 #endif
 #endif
 
-
 #ifdef INC_OLE2
 #include <ole2.h>
 #endif

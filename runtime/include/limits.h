@@ -5,7 +5,7 @@
 #define _GCC_LIMITS_H_ 1
 #endif
 #if defined __has_include_next && __has_include_next(<limits.h>)
-# include_next <limits.h>
+#include_next <limits.h>
 #endif
 
 #ifndef CHAR_BIT
@@ -26,18 +26,18 @@
 #endif
 
 #ifndef CHAR_MIN
-# if ('\xff' > 0)
-#  define CHAR_MIN 0
-# else
-#  define CHAR_MIN (-128)
-# endif
+#if ('\xff' > 0)
+#define CHAR_MIN 0
+#else
+#define CHAR_MIN (-128)
+#endif
 #endif
 #ifndef CHAR_MAX
-# if ('\xff' > 0)
-#  define CHAR_MAX 255
-# else
-#  define CHAR_MAX 127
-# endif
+#if ('\xff' > 0)
+#define CHAR_MAX 255
+#else
+#define CHAR_MAX 127
+#endif
 #endif
 
 #ifndef SHRT_MIN

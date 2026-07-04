@@ -24,13 +24,12 @@ void dummy(Node self) {
 }
 
 void print_data(Node data) {
-    printf ("%d %d %d %d %g %g\n",
-            data.data[0], data.data[1], data.data[2], data.data[3],
-            data.d1, data.d2);
+    printf("%d %d %d %d %g %g\n",
+           data.data[0], data.data[1], data.data[2], data.data[3],
+           data.d1, data.d2);
 }
 
-A test(void)
-{
+A test(void) {
     int i;
     A arr[30];
 
@@ -43,9 +42,9 @@ int main(void) {
 
     Node data;
     A a;
-    dummy (data);
+    dummy(data);
     char val;
-    data = init (data);
+    data = init(data);
     print_data(data);
     a = test();
     printf("%d\n", a.b);

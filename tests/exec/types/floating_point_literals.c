@@ -1,7 +1,6 @@
 #include <stdio.h>
 
-int main()
-{
+int main() {
 
     float fa0 = .123f;
     float fa1 = .123E12F;
@@ -27,7 +26,6 @@ int main()
     printf("%f\n%f\n%f\n\n", fd0, fd1, fd2);
     printf("\n");
 
-
     double da0 = 0X.1ACP12;
     double da1 = 0x.1acp-12;
     double da2 = 0x.1acp+12;
@@ -52,7 +50,6 @@ int main()
     printf("\n");
 
 #ifdef __MCC__
-
 
     long double la0 = 0B.110101100P12L;
     long double la1 = 0b.110101100p-12l;

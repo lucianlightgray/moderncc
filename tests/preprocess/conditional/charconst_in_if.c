@@ -2,5 +2,5 @@
 yes_narrow
 #endif
 #if L'A' == 65
-yes_wide
+    yes_wide
 #endif

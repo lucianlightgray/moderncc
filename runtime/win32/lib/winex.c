@@ -8,8 +8,7 @@ wchar_t **__wargv;
 #endif
 
 #if __aarch64__ || __x86_64__
-void __faststorefence(void)
-{
+void __faststorefence(void) {
 #if __aarch64__
     __asm__("dmb ish");
 #elif __x86_64__

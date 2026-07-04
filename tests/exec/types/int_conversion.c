@@ -1,23 +1,24 @@
 #include <stdio.h>
 
+unsigned char get_uc(void) {
+    return 0x80;
+}
+signed char get_sc(void) {
+    return 0x80;
+}
+unsigned short get_us(void) {
+    return 0x8000;
+}
+signed short get_ss(void) {
+    return 0x8000;
+}
 
+unsigned char (*volatile fp_uc)(void) = get_uc;
+signed char (*volatile fp_sc)(void) = get_sc;
+unsigned short (*volatile fp_us)(void) = get_us;
+signed short (*volatile fp_ss)(void) = get_ss;
 
-
-
-
-unsigned char get_uc(void) { return 0x80; }
-signed char get_sc(void) { return 0x80; }
-unsigned short get_us(void) { return 0x8000; }
-signed short get_ss(void) { return 0x8000; }
-
-
-unsigned char (* volatile fp_uc)(void) = get_uc;
-signed char (* volatile fp_sc)(void) = get_sc;
-unsigned short (* volatile fp_us)(void) = get_us;
-signed short (* volatile fp_ss)(void) = get_ss;
-
-int promote_main(void)
-{
+int promote_main(void) {
     int ok = 1;
     unsigned long long uc = fp_uc();
     signed long long sc = fp_sc();
@@ -51,16 +52,9 @@ int promote_main(void)
     return ok ? 0 : 1;
 }
 
-
-
-
-
-
-int cast_main(void)
-{
+int cast_main(void) {
     int ok = 1;
     int x = 0x12345678;
-
 
     char c = (char)x + 1;
     unsigned char uc = (unsigned char)x + 1;
@@ -92,13 +86,7 @@ int cast_main(void)
     return ok ? 0 : 1;
 }
 
-
-
-
-
-
-int sign_main(void)
-{
+int sign_main(void) {
     int ok = 1;
     int x = 0x80000000;
     long long y = (long long)x;
@@ -110,7 +98,6 @@ int sign_main(void)
         ok = 0;
     }
 
-
     x = 0x40000000;
     y = (long long)x;
     printf("y=%llx\n", (unsigned long long)y);
@@ -119,7 +106,6 @@ int sign_main(void)
         printf("FAIL: int→long long positive value\n");
         ok = 0;
     }
-
 
     unsigned int ux = 0x80000000;
     long long uy = (long long)(int)ux;
@@ -134,10 +120,6 @@ int sign_main(void)
     return ok ? 0 : 1;
 }
 
-int main()
-{
-    return
-        promote_main()
-        | cast_main()
-        | sign_main();
+int main() {
+    return promote_main() | cast_main() | sign_main();
 }

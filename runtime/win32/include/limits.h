@@ -3,7 +3,7 @@
 #ifndef _INC_LIMITS
 #define _INC_LIMITS
 
-#define PATH_MAX	(259)
+#define PATH_MAX (259)
 
 #define CHAR_BIT 8
 #define SCHAR_MIN (-128)
@@ -54,7 +54,7 @@
 #undef LONG_LONG_MAX
 #define LONG_LONG_MAX 9223372036854775807ll
 #undef LONG_LONG_MIN
-#define LONG_LONG_MIN (-LONG_LONG_MAX-1)
+#define LONG_LONG_MIN (-LONG_LONG_MAX - 1)
 #undef ULONG_LONG_MAX
 #define ULONG_LONG_MAX (2ull * LONG_LONG_MAX + 1ull)
 #endif

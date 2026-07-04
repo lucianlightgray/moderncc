@@ -1,13 +1,6 @@
-/* C9911 §7.6-§7.8 fenv, float, inttypes (s7_6) — main-free test unit.
-   No #includes: the includer provides the environment (full_language.c
-   via mcclib.h; parts/run_s7_6.c via <std_env.h>). Compiled 3-way
-   (gcc/clang/mcc) as a unit by the parts-suite, and aggregated into
-   full_language.c. */
 int sscanf(const char *str, const char *format, ...);
 
-/* C9911 section 7.7 float.h and 5.2.4.2.2 characteristics of floating types */
-void s7_6_float_test(void)
-{
+void s7_6_float_test(void) {
     printf("s7_6 radix=%d\n", FLT_RADIX);
     printf("s7_6 radix_ge2=%d\n", FLT_RADIX >= 2);
     printf("s7_6 mant=%d\n", FLT_MANT_DIG > 0 && DBL_MANT_DIG >= FLT_MANT_DIG && LDBL_MANT_DIG >= DBL_MANT_DIG);
@@ -42,9 +35,7 @@ void s7_6_float_test(void)
     printf("s7_6 ppconst=%d\n", 1);
 }
 
-/* C9911 section 7.8 inttypes.h: PRI and SCN format macros + imax/strtoNmax functions */
-void s7_6_inttypes_test(void)
-{
+void s7_6_inttypes_test(void) {
     printf("s7_6 imaxabs=%d\n", (int)(imaxabs((intmax_t)-42) == 42));
     imaxdiv_t dv = imaxdiv((intmax_t)17, (intmax_t)5);
     printf("s7_6 imaxdiv=%d\n", (int)(dv.quot == 3 && dv.rem == 2));
@@ -54,7 +45,7 @@ void s7_6_inttypes_test(void)
     char *end;
     intmax_t si = strtoimax("  -ff", &end, 16);
     printf("s7_6 strtoimax=%d\n", (int)(si == -255 && *end == 0));
-    uintmax_t ui = strtoumax("100", (char**)0, 10);
+    uintmax_t ui = strtoumax("100", (char **)0, 10);
     printf("s7_6 strtoumax=%d\n", (int)(ui == 100));
 
     printf("s7_6 stdint=%d\n", (int)(INT32_MAX == 2147483647));

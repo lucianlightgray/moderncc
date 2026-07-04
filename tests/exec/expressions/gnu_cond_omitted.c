@@ -1,13 +1,13 @@
-
-
 #include <stdio.h>
 
 static int side_effect_count;
 
-static int eval(int v) { side_effect_count++; return v; }
+static int eval(int v) {
+    side_effect_count++;
+    return v;
+}
 
-int main(void)
-{
+int main(void) {
     int v = eval(5) ?: eval(99);
     printf("%d %d\n", v, side_effect_count);
 

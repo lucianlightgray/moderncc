@@ -3,13 +3,13 @@
 #define NB_REGS 28
 
 #define TREG_R(x) (x)
-#define TREG_R30  19
+#define TREG_R30 19
 #define TREG_F(x) (x + 20)
 
 #define RC_INT (1 << 0)
 #define RC_FLOAT (1 << 1)
 #define RC_R(x) (1 << (2 + (x)))
-#define RC_R30  (1 << 21)
+#define RC_R30 (1 << 21)
 #define RC_F(x) (1 << (22 + (x)))
 
 #define RC_IRET (RC_R(0))
@@ -35,48 +35,46 @@
 #include "mcc.h"
 #include <assert.h>
 
-ST_DATA const char * const target_machine_defs =
+ST_DATA const char *const target_machine_defs =
     "__aarch64__\0"
 #if defined(MCC_TARGET_MACHO)
     "__arm64__\0"
 #endif
-    "__AARCH64EL__\0"
-    ;
+    "__AARCH64EL__\0";
 
 ST_DATA const int reg_classes[NB_REGS] = {
-  RC_INT | RC_R(0),
-  RC_INT | RC_R(1),
-  RC_INT | RC_R(2),
-  RC_INT | RC_R(3),
-  RC_INT | RC_R(4),
-  RC_INT | RC_R(5),
-  RC_INT | RC_R(6),
-  RC_INT | RC_R(7),
-  RC_INT | RC_R(8),
-  RC_INT | RC_R(9),
-  RC_INT | RC_R(10),
-  RC_INT | RC_R(11),
-  RC_INT | RC_R(12),
-  RC_INT | RC_R(13),
-  RC_INT | RC_R(14),
-  RC_INT | RC_R(15),
-  RC_INT | RC_R(16),
-  RC_INT | RC_R(17),
+    RC_INT | RC_R(0),
+    RC_INT | RC_R(1),
+    RC_INT | RC_R(2),
+    RC_INT | RC_R(3),
+    RC_INT | RC_R(4),
+    RC_INT | RC_R(5),
+    RC_INT | RC_R(6),
+    RC_INT | RC_R(7),
+    RC_INT | RC_R(8),
+    RC_INT | RC_R(9),
+    RC_INT | RC_R(10),
+    RC_INT | RC_R(11),
+    RC_INT | RC_R(12),
+    RC_INT | RC_R(13),
+    RC_INT | RC_R(14),
+    RC_INT | RC_R(15),
+    RC_INT | RC_R(16),
+    RC_INT | RC_R(17),
 #ifdef MCC_TARGET_PE
-  RC_R(18),
+    RC_R(18),
 #else
-  RC_INT | RC_R(18),
+    RC_INT | RC_R(18),
 #endif
-  RC_R30,
-  RC_FLOAT | RC_F(0),
-  RC_FLOAT | RC_F(1),
-  RC_FLOAT | RC_F(2),
-  RC_FLOAT | RC_F(3),
-  RC_FLOAT | RC_F(4),
-  RC_FLOAT | RC_F(5),
-  RC_FLOAT | RC_F(6),
-  RC_FLOAT | RC_F(7)
-};
+    RC_R30,
+    RC_FLOAT | RC_F(0),
+    RC_FLOAT | RC_F(1),
+    RC_FLOAT | RC_F(2),
+    RC_FLOAT | RC_F(3),
+    RC_FLOAT | RC_F(4),
+    RC_FLOAT | RC_F(5),
+    RC_FLOAT | RC_F(6),
+    RC_FLOAT | RC_F(7)};
 
 #if defined(CONFIG_MCC_BCHECK)
 static addr_t func_bound_offset;
@@ -90,20 +88,17 @@ static int func_stack_chk_loc;
 
 #define IS_FREG(x) ((x) >= TREG_F(0))
 
-static uint32_t intr(int r)
-{
+static uint32_t intr(int r) {
     assert(TREG_R(0) <= r && r <= TREG_R30);
     return r < TREG_R30 ? r : 30;
 }
 
-static uint32_t fltr(int r)
-{
+static uint32_t fltr(int r) {
     assert(TREG_F(0) <= r && r <= TREG_F(7));
     return r - TREG_F(0);
 }
 
-ST_FUNC void o(unsigned int c)
-{
+ST_FUNC void o(unsigned int c) {
     int ind1 = ind + 4;
     if (nocode_wanted)
         return;
@@ -113,8 +108,7 @@ ST_FUNC void o(unsigned int c)
     ind = ind1;
 }
 
-static int arm64_encode_bimm64(uint64_t x)
-{
+static int arm64_encode_bimm64(uint64_t x) {
     int neg = x & 1;
     int rep, pos, len;
 
@@ -126,9 +120,9 @@ static int arm64_encode_bimm64(uint64_t x)
     if (x >> 2 == (x & (((uint64_t)1 << (64 - 2)) - 1)))
         rep = 2, x &= ((uint64_t)1 << 2) - 1;
     else if (x >> 4 == (x & (((uint64_t)1 << (64 - 4)) - 1)))
-        rep = 4, x &= ((uint64_t)1 <<  4) - 1;
+        rep = 4, x &= ((uint64_t)1 << 4) - 1;
     else if (x >> 8 == (x & (((uint64_t)1 << (64 - 8)) - 1)))
-        rep = 8, x &= ((uint64_t)1 <<  8) - 1;
+        rep = 8, x &= ((uint64_t)1 << 8) - 1;
     else if (x >> 16 == (x & (((uint64_t)1 << (64 - 16)) - 1)))
         rep = 16, x &= ((uint64_t)1 << 16) - 1;
     else if (x >> 32 == (x & (((uint64_t)1 << (64 - 32)) - 1)))
@@ -137,20 +131,32 @@ static int arm64_encode_bimm64(uint64_t x)
         rep = 64;
 
     pos = 0;
-    if (!(x & (((uint64_t)1 << 32) - 1))) x >>= 32, pos += 32;
-    if (!(x & (((uint64_t)1 << 16) - 1))) x >>= 16, pos += 16;
-    if (!(x & (((uint64_t)1 <<  8) - 1))) x >>= 8, pos += 8;
-    if (!(x & (((uint64_t)1 <<  4) - 1))) x >>= 4, pos += 4;
-    if (!(x & (((uint64_t)1 <<  2) - 1))) x >>= 2, pos += 2;
-    if (!(x & (((uint64_t)1 <<  1) - 1))) x >>= 1, pos += 1;
+    if (!(x & (((uint64_t)1 << 32) - 1)))
+        x >>= 32, pos += 32;
+    if (!(x & (((uint64_t)1 << 16) - 1)))
+        x >>= 16, pos += 16;
+    if (!(x & (((uint64_t)1 << 8) - 1)))
+        x >>= 8, pos += 8;
+    if (!(x & (((uint64_t)1 << 4) - 1)))
+        x >>= 4, pos += 4;
+    if (!(x & (((uint64_t)1 << 2) - 1)))
+        x >>= 2, pos += 2;
+    if (!(x & (((uint64_t)1 << 1) - 1)))
+        x >>= 1, pos += 1;
 
     len = 0;
-    if (!(~x & (((uint64_t)1 << 32) - 1))) x >>= 32, len += 32;
-    if (!(~x & (((uint64_t)1 << 16) - 1))) x >>= 16, len += 16;
-    if (!(~x & (((uint64_t)1 << 8) - 1))) x >>= 8, len += 8;
-    if (!(~x & (((uint64_t)1 << 4) - 1))) x >>= 4, len += 4;
-    if (!(~x & (((uint64_t)1 << 2) - 1))) x >>= 2, len += 2;
-    if (!(~x & (((uint64_t)1 << 1) - 1))) x >>= 1, len += 1;
+    if (!(~x & (((uint64_t)1 << 32) - 1)))
+        x >>= 32, len += 32;
+    if (!(~x & (((uint64_t)1 << 16) - 1)))
+        x >>= 16, len += 16;
+    if (!(~x & (((uint64_t)1 << 8) - 1)))
+        x >>= 8, len += 8;
+    if (!(~x & (((uint64_t)1 << 4) - 1)))
+        x >>= 4, len += 4;
+    if (!(~x & (((uint64_t)1 << 2) - 1)))
+        x >>= 2, len += 2;
+    if (!(~x & (((uint64_t)1 << 1) - 1)))
+        x >>= 1, len += 1;
 
     if (x)
         return -1;
@@ -162,8 +168,7 @@ static int arm64_encode_bimm64(uint64_t x)
             ((rep - pos) & (rep - 1)) << 6 | (len - 1));
 }
 
-static uint32_t arm64_movi(int r, uint64_t x)
-{
+static uint32_t arm64_movi(int r, uint64_t x) {
     uint64_t m = 0xffff;
     int e;
     if (!(x & ~m))
@@ -199,8 +204,7 @@ static uint32_t arm64_movi(int r, uint64_t x)
     return 0;
 }
 
-static void arm64_movimm(int r, uint64_t x)
-{
+static void arm64_movimm(int r, uint64_t x) {
     uint32_t i;
     if ((i = arm64_movi(r, x)))
         o(i);
@@ -227,8 +231,7 @@ static void arm64_movimm(int r, uint64_t x)
     }
 }
 
-ST_FUNC void gsym_addr(int t_, int a_)
-{
+ST_FUNC void gsym_addr(int t_, int a_) {
     uint32_t t = t_;
     uint32_t a = a_;
     while (t) {
@@ -236,33 +239,41 @@ ST_FUNC void gsym_addr(int t_, int a_)
         uint32_t next = read32le(ptr);
         if (a - t + 0x8000000 >= 0x10000000)
             mcc_error("branch out of range");
-        write32le(ptr, (a - t == 4 ? ARM64_NOP :
-                        ARM64_B | ((a - t) >> 2 & 0x3ffffff)));
+        write32le(ptr, (a - t == 4 ? ARM64_NOP : ARM64_B | ((a - t) >> 2 & 0x3ffffff)));
         t = next;
     }
 }
 
-static int arm64_type_size(int t)
-{
+static int arm64_type_size(int t) {
     switch (t & VT_BTYPE) {
-    case VT_BYTE: return 0;
-    case VT_SHORT: return 1;
-    case VT_INT: return 2;
-    case VT_LLONG: return 3;
-    case VT_PTR: return 3;
-    case VT_FUNC: return 3;
-    case VT_STRUCT: return 3;
-    case VT_FLOAT: return 2;
-    case VT_DOUBLE: return 3;
-    case VT_LDOUBLE: return 4;
-    case VT_BOOL: return 0;
+    case VT_BYTE:
+        return 0;
+    case VT_SHORT:
+        return 1;
+    case VT_INT:
+        return 2;
+    case VT_LLONG:
+        return 3;
+    case VT_PTR:
+        return 3;
+    case VT_FUNC:
+        return 3;
+    case VT_STRUCT:
+        return 3;
+    case VT_FLOAT:
+        return 2;
+    case VT_DOUBLE:
+        return 3;
+    case VT_LDOUBLE:
+        return 4;
+    case VT_BOOL:
+        return 0;
     }
     assert(0);
     return 0;
 }
 
-static void arm64_spoff(int reg, uint64_t off)
-{
+static void arm64_spoff(int reg, uint64_t off) {
     uint32_t sub = off >> 63;
     if (sub)
         off = -off;
@@ -274,8 +285,7 @@ static void arm64_spoff(int reg, uint64_t off)
     }
 }
 
-static uint64_t arm64_check_offset(int invert, int sz_, uint64_t off)
-{
+static uint64_t arm64_check_offset(int invert, int sz_, uint64_t off) {
     uint32_t sz = sz_;
     uint64_t scaled_mask = 0xffful << sz;
 
@@ -290,8 +300,7 @@ static uint64_t arm64_check_offset(int invert, int sz_, uint64_t off)
         return invert ? 0ul : off;
 }
 
-static void arm64_ldrx(int sg, int sz_, int dst, int bas, uint64_t off)
-{
+static void arm64_ldrx(int sg, int sz_, int dst, int bas, uint64_t off) {
     uint32_t sz = sz_;
     uint64_t scaled_mask = 0xffful << sz;
     if (sz >= 2)
@@ -309,8 +318,7 @@ static void arm64_ldrx(int sg, int sz_, int dst, int bas, uint64_t off)
     }
 }
 
-static void arm64_ldrv(int sz_, int dst, int bas, uint64_t off)
-{
+static void arm64_ldrv(int sz_, int dst, int bas, uint64_t off) {
     uint32_t sz = sz_;
     uint64_t scaled_mask = 0xffful << sz;
 
@@ -327,11 +335,12 @@ static void arm64_ldrv(int sz_, int dst, int bas, uint64_t off)
     }
 }
 
-static void arm64_ldrs(int reg_, int size)
-{
+static void arm64_ldrs(int reg_, int size) {
     uint32_t reg = reg_;
     switch (size) {
-    default: assert(0); break;
+    default:
+        assert(0);
+        break;
     case 0:
         break;
     case 1:
@@ -377,7 +386,7 @@ static void arm64_ldrs(int reg_, int size)
         break;
     case 11:
         arm64_ldrx(0, 2, reg + 1, reg, 7);
-        o(0x53087c00 | (reg+1) | (reg+1) << 5);
+        o(0x53087c00 | (reg + 1) | (reg + 1) << 5);
         arm64_ldrx(0, 3, reg, reg, 0);
         break;
     case 12:
@@ -386,27 +395,26 @@ static void arm64_ldrs(int reg_, int size)
         break;
     case 13:
         arm64_ldrx(0, 3, reg + 1, reg, 5);
-        o(0xd358fc00 | (reg+1) | (reg+1) << 5);
+        o(0xd358fc00 | (reg + 1) | (reg + 1) << 5);
         arm64_ldrx(0, 3, reg, reg, 0);
         break;
     case 14:
         arm64_ldrx(0, 3, reg + 1, reg, 6);
-        o(0xd350fc00 | (reg+1) | (reg+1) << 5);
+        o(0xd350fc00 | (reg + 1) | (reg + 1) << 5);
         arm64_ldrx(0, 3, reg, reg, 0);
         break;
     case 15:
         arm64_ldrx(0, 3, reg + 1, reg, 7);
-        o(0xd348fc00 | (reg+1) | (reg+1) << 5);
+        o(0xd348fc00 | (reg + 1) | (reg + 1) << 5);
         arm64_ldrx(0, 3, reg, reg, 0);
         break;
     case 16:
-        o(0xa9400000 | reg | (reg+1) << 10 | reg << 5);
+        o(0xa9400000 | reg | (reg + 1) << 10 | reg << 5);
         break;
     }
 }
 
-static void arm64_strx(int sz_, int dst, int bas, uint64_t off)
-{
+static void arm64_strx(int sz_, int dst, int bas, uint64_t off) {
     uint32_t sz = sz_;
     uint64_t scaled_mask = 0xffful << sz;
 
@@ -420,8 +428,7 @@ static void arm64_strx(int sz_, int dst, int bas, uint64_t off)
     }
 }
 
-static void arm64_strv(int sz_, int dst, int bas, uint64_t off)
-{
+static void arm64_strv(int sz_, int dst, int bas, uint64_t off) {
     uint32_t sz = sz_;
     uint64_t scaled_mask = 0xffful << sz;
 
@@ -438,8 +445,7 @@ static void arm64_strv(int sz_, int dst, int bas, uint64_t off)
     }
 }
 
-static void arm64_sym(int r, Sym *sym, unsigned long addend)
-{
+static void arm64_sym(int r, Sym *sym, unsigned long addend) {
 #ifdef MCC_TARGET_PE
     greloca(cur_text_section, sym, ind, R_AARCH64_ADR_PREL_PG_HI21, 0);
     o(ARM64_ADRP | r);
@@ -452,20 +458,20 @@ static void arm64_sym(int r, Sym *sym, unsigned long addend)
     o(ARM64_LDR_X | ARM64_RN(r) | r);
 #endif
     if (addend) {
-	if (addend & 0xffful)
-           o(ARM64_ADD_IMM | ARM64_SF(1) | ARM64_RN(r) | r |
-             (addend & 0xfff) << 10);
+        if (addend & 0xffful)
+            o(ARM64_ADD_IMM | ARM64_SF(1) | ARM64_RN(r) | r |
+              (addend & 0xfff) << 10);
         if (addend > 0xffful) {
-	    if (addend & 0xfff000ul)
+            if (addend & 0xfff000ul)
                 o(ARM64_ADD_IMM | ARM64_SF(1) | ARM64_SH(1) |
                   ARM64_RN(r) | r | ((addend >> 12) & 0xfff) << 10);
             if (addend > 0xfffffful) {
-		int t = r ? 0 : 1;
-		o(ARM64_STR_X_PRE | 0x001F0FE0U | t);
-		arm64_movimm(t, addend & ~0xfffffful);
-		o(ARM64_ADD_REG | ARM64_SF(1) | ARM64_RM(t) | ARM64_RN(r) | r);
-		o(ARM64_LDR_X_POST | 0x000107E0U | t);
-	    }
+                int t = r ? 0 : 1;
+                o(ARM64_STR_X_PRE | 0x001F0FE0U | t);
+                arm64_movimm(t, addend & ~0xfffffful);
+                o(ARM64_ADD_REG | ARM64_SF(1) | ARM64_RM(t) | ARM64_RN(r) | r);
+                o(ARM64_LDR_X_POST | 0x000107E0U | t);
+            }
         }
     }
 }
@@ -473,8 +479,7 @@ static void arm64_sym(int r, Sym *sym, unsigned long addend)
 static void arm64_load_cmp(int r, SValue *sv);
 
 #ifdef MCC_TARGET_MACHO
-static void arm64_macho_tls_addr(Sym *sym, uint64_t addend)
-{
+static void arm64_macho_tls_addr(Sym *sym, uint64_t addend) {
     o(ARM64_SUB_IMM | ARM64_SF(1) | ARM64_RN(31) | ARM64_RD(31) | ARM64_IMM12(32));
     arm64_strx(3, 0, 31, 0);
     arm64_strx(3, 16, 31, 8);
@@ -500,34 +505,24 @@ static void arm64_macho_tls_addr(Sym *sym, uint64_t addend)
 #endif
 
 #ifndef MCC_TARGET_MACHO
-/* Leave this module's thread-local base in x30, ready for the caller's
-   TPREL_{HI12,LO12} relocations to add the per-variable offset. On ELF that
-   base is the thread pointer (TPIDR_EL0). On Windows/arm64 PE there is no
-   thread pointer register -- TLS is reached through the TEB (reserved in x18):
-   [x18,#0x58] is the ThreadLocalStoragePointer, and [_tls_index] selects this
-   module's block, exactly mirroring the x86_64 %gs:0x58 sequence
-   (gen_pe_tls_base). x16 is value-allocatable, so save/restore it around the
-   _tls_index load (this stays correct even when the caller's value register is
-   x16 -- its live value is preserved across the sequence). */
-static void arm64_tls_base_x30(void)
-{
+
+static void arm64_tls_base_x30(void) {
 #ifdef MCC_TARGET_PE
-    o(ARM64_STR_X_PRE | 0x001F0FE0U | 16);       /* str x16, [sp, #-16]!  */
-    arm64_ldrx(0, 3, 30, 18, 0x58);              /* ldr x30, [x18, #0x58] */
-    arm64_sym(16, pe_tls_index_sym(), 0);  /* x16 = &_tls_index     */
-    arm64_ldrx(0, 2, 16, 16, 0);                 /* ldr w16, [x16]        */
+    o(ARM64_STR_X_PRE | 0x001F0FE0U | 16);
+    arm64_ldrx(0, 3, 30, 18, 0x58);
+    arm64_sym(16, pe_tls_index_sym(), 0);
+    arm64_ldrx(0, 2, 16, 16, 0);
     o(ARM64_ADD_REG | ARM64_SF(1) | ARM64_RM(16) |
-      ARM64_SHIFT_LSL(3) | ARM64_RN(30) | ARM64_RD(30)); /* add x30,x30,x16,lsl #3 */
-    arm64_ldrx(0, 3, 30, 30, 0);                 /* ldr x30, [x30]        */
-    o(ARM64_LDR_X_POST | 0x000107E0U | 16);      /* ldr x16, [sp], #16    */
+      ARM64_SHIFT_LSL(3) | ARM64_RN(30) | ARM64_RD(30));
+    arm64_ldrx(0, 3, 30, 30, 0);
+    o(ARM64_LDR_X_POST | 0x000107E0U | 16);
 #else
-    o(0xd53bd05e);                               /* mrs x30, tpidr_el0    */
+    o(0xd53bd05e);
 #endif
 }
 #endif
 
-ST_FUNC void load(int r, SValue *sv)
-{
+ST_FUNC void load(int r, SValue *sv) {
     int svtt = sv->type.t;
     int svr = sv->r & ~(VT_BOUNDED | VT_NONCONST | VT_NONLVAL);
     int svrv = svr & VT_VALMASK;
@@ -544,19 +539,19 @@ ST_FUNC void load(int r, SValue *sv)
     }
 
     if (svr == (VT_CONST | VT_LVAL)) {
-	uint64_t i = sv->c.i;
+        uint64_t i = sv->c.i;
 
-	if (sv->sym)
+        if (sv->sym)
             arm64_sym(30, sv->sym,
-	              arm64_check_offset(0, arm64_type_size(svtt), i));
-	else
-	    arm64_movimm (30, i), i = 0;
+                      arm64_check_offset(0, arm64_type_size(svtt), i));
+        else
+            arm64_movimm(30, i), i = 0;
         if (IS_FREG(r))
             arm64_ldrv(arm64_type_size(svtt), fltr(r), 30,
-		       arm64_check_offset(1, arm64_type_size(svtt), i));
+                       arm64_check_offset(1, arm64_type_size(svtt), i));
         else
-            arm64_ldrx(!(svtt&VT_UNSIGNED), arm64_type_size(svtt), intr(r), 30,
-		       arm64_check_offset(1, arm64_type_size(svtt), i));
+            arm64_ldrx(!(svtt & VT_UNSIGNED), arm64_type_size(svtt), intr(r), 30,
+                       arm64_check_offset(1, arm64_type_size(svtt), i));
         return;
     }
 
@@ -578,7 +573,7 @@ ST_FUNC void load(int r, SValue *sv)
             if (IS_FREG(r))
                 arm64_ldrv(arm64_type_size(svtt), fltr(r), 30, 0);
             else
-                arm64_ldrx(!(svtt&VT_UNSIGNED), arm64_type_size(svtt),
+                arm64_ldrx(!(svtt & VT_UNSIGNED), arm64_type_size(svtt),
                            intr(r), 30, 0);
 #else
             arm64_tls_base_x30();
@@ -593,19 +588,19 @@ ST_FUNC void load(int r, SValue *sv)
             if (IS_FREG(r))
                 arm64_ldrv(arm64_type_size(svtt), fltr(r), 30, svcoff);
             else
-                arm64_ldrx(!(svtt&VT_UNSIGNED), arm64_type_size(svtt),
+                arm64_ldrx(!(svtt & VT_UNSIGNED), arm64_type_size(svtt),
                            intr(r), 30, svcoff);
 #endif
             return;
         }
         arm64_sym(30, sv->sym,
-		  arm64_check_offset(0, arm64_type_size(svtt), svcoff));
+                  arm64_check_offset(0, arm64_type_size(svtt), svcoff));
         if (IS_FREG(r))
             arm64_ldrv(arm64_type_size(svtt), fltr(r), 30,
-		       arm64_check_offset(1, arm64_type_size(svtt), svcoff));
+                       arm64_check_offset(1, arm64_type_size(svtt), svcoff));
         else
-            arm64_ldrx(!(svtt&VT_UNSIGNED), arm64_type_size(svtt), intr(r), 30,
-		       arm64_check_offset(1, arm64_type_size(svtt), svcoff));
+            arm64_ldrx(!(svtt & VT_UNSIGNED), arm64_type_size(svtt), intr(r), 30,
+                       arm64_check_offset(1, arm64_type_size(svtt), svcoff));
         return;
     }
 
@@ -633,8 +628,7 @@ ST_FUNC void load(int r, SValue *sv)
 
     if (svr == VT_CONST) {
         if ((svtt & VT_BTYPE) != VT_VOID)
-            arm64_movimm(intr(r), arm64_type_size(svtt) == 3 ?
-                         sv->c.i : (uint32_t)svcul);
+            arm64_movimm(intr(r), arm64_type_size(svtt) == 3 ? sv->c.i : (uint32_t)svcul);
         return;
     }
 
@@ -648,7 +642,7 @@ ST_FUNC void load(int r, SValue *sv)
             o(ARM64_MOV_REG | ARM64_SF(1) | intr(r) | intr(svr) << 16);
         else
             assert(0);
-      return;
+        return;
     }
 
     if (svr == VT_LOCAL) {
@@ -689,8 +683,7 @@ ST_FUNC void load(int r, SValue *sv)
     assert(0);
 }
 
-ST_FUNC void store(int r, SValue *sv)
-{
+ST_FUNC void store(int r, SValue *sv) {
     int svtt = sv->type.t;
     int svr = sv->r & ~VT_BOUNDED;
     int svrv = svr & VT_VALMASK;
@@ -705,9 +698,9 @@ ST_FUNC void store(int r, SValue *sv)
     }
 
     if (svr == (VT_CONST | VT_LVAL)) {
-	uint64_t i = sv->c.i;
+        uint64_t i = sv->c.i;
 
-	if (sv->sym && (sv->sym->type.t & VT_TLS)) {
+        if (sv->sym && (sv->sym->type.t & VT_TLS)) {
 #ifdef MCC_TARGET_MACHO
             arm64_macho_tls_addr(sv->sym, i);
             if (IS_FREG(r))
@@ -731,17 +724,17 @@ ST_FUNC void store(int r, SValue *sv)
 #endif
             return;
         }
-	if (sv->sym)
+        if (sv->sym)
             arm64_sym(30, sv->sym,
-		      arm64_check_offset(0, arm64_type_size(svtt), i));
-	else
-	    arm64_movimm (30, i), i = 0;
+                      arm64_check_offset(0, arm64_type_size(svtt), i));
+        else
+            arm64_movimm(30, i), i = 0;
         if (IS_FREG(r))
             arm64_strv(arm64_type_size(svtt), fltr(r), 30,
-		       arm64_check_offset(1, arm64_type_size(svtt), i));
+                       arm64_check_offset(1, arm64_type_size(svtt), i));
         else
             arm64_strx(arm64_type_size(svtt), intr(r), 30,
-		       arm64_check_offset(1, arm64_type_size(svtt), i));
+                       arm64_check_offset(1, arm64_type_size(svtt), i));
         return;
     }
 
@@ -779,13 +772,13 @@ ST_FUNC void store(int r, SValue *sv)
             return;
         }
         arm64_sym(30, sv->sym,
-		  arm64_check_offset(0, arm64_type_size(svtt), svcoff));
+                  arm64_check_offset(0, arm64_type_size(svtt), svcoff));
         if (IS_FREG(r))
             arm64_strv(arm64_type_size(svtt), fltr(r), 30,
-		       arm64_check_offset(1, arm64_type_size(svtt), svcoff));
+                       arm64_check_offset(1, arm64_type_size(svtt), svcoff));
         else
             arm64_strx(arm64_type_size(svtt), intr(r), 30,
-		       arm64_check_offset(1, arm64_type_size(svtt), svcoff));
+                       arm64_check_offset(1, arm64_type_size(svtt), svcoff));
         return;
     }
 
@@ -793,14 +786,12 @@ ST_FUNC void store(int r, SValue *sv)
     assert(0);
 }
 
-static void arm64_gen_bl_or_b(int b)
-{
+static void arm64_gen_bl_or_b(int b) {
     if ((vtop->r & (VT_VALMASK | VT_LVAL)) == VT_CONST && (vtop->r & VT_SYM)) {
-	greloca(cur_text_section, vtop->sym, ind,
-                b ? R_AARCH64_JUMP26 :  R_AARCH64_CALL26, 0);
-	o(b ? ARM64_B : ARM64_BL);
-    }
-    else {
+        greloca(cur_text_section, vtop->sym, ind,
+                b ? R_AARCH64_JUMP26 : R_AARCH64_CALL26, 0);
+        o(b ? ARM64_B : ARM64_BL);
+    } else {
 #ifdef CONFIG_MCC_BCHECK
         vtop->r &= ~VT_MUSTBOUND;
 #endif
@@ -810,16 +801,14 @@ static void arm64_gen_bl_or_b(int b)
 
 #if defined(CONFIG_MCC_BCHECK)
 
-static void gen_bounds_call(int v)
-{
+static void gen_bounds_call(int v) {
     Sym *sym = external_helper_sym(v);
 
     greloca(cur_text_section, sym, ind, R_AARCH64_CALL26, 0);
     o(ARM64_BL);
 }
 
-static void gen_bounds_prolog(void)
-{
+static void gen_bounds_prolog(void) {
     func_bound_offset = lbounds_section->data_offset;
     func_bound_ind = ind;
     func_bound_add_epilog = 0;
@@ -829,8 +818,7 @@ static void gen_bounds_prolog(void)
     o(ARM64_NOP);
 }
 
-static void gen_bounds_epilog(void)
-{
+static void gen_bounds_epilog(void) {
     addr_t saved_ind;
     Sym *sym_data;
     int offset_modified;
@@ -855,16 +843,14 @@ static void gen_bounds_epilog(void)
 }
 #endif
 
-static int arm64_hfa_aux(CType *type, int *fsize, int num)
-{
+static int arm64_hfa_aux(CType *type, int *fsize, int num) {
     if (is_float(type->t)) {
         int a, n = type_size(type, &a);
         if (num >= 4 || (*fsize && *fsize != n))
             return -1;
         *fsize = n;
         return num + 1;
-    }
-    else if ((type->t & VT_BTYPE) == VT_STRUCT) {
+    } else if ((type->t & VT_BTYPE) == VT_STRUCT) {
         Sym *field;
         if (!IS_UNION(type->t)) {
             int num0 = num;
@@ -878,8 +864,7 @@ static int arm64_hfa_aux(CType *type, int *fsize, int num)
             if (type->ref->c != (num - num0) * *fsize)
                 return -1;
             return num;
-        }
-        else {
+        } else {
             int num0 = num;
             for (field = type->ref->next; field; field = field->next) {
                 int num1 = arm64_hfa_aux(&field->type, fsize, num0);
@@ -891,8 +876,7 @@ static int arm64_hfa_aux(CType *type, int *fsize, int num)
                 return -1;
             return num;
         }
-    }
-    else if (type->t & VT_ARRAY) {
+    } else if (type->t & VT_ARRAY) {
         int num1;
         if (!type->ref->c)
             return num;
@@ -907,8 +891,7 @@ static int arm64_hfa_aux(CType *type, int *fsize, int num)
     return -1;
 }
 
-static int arm64_hfa(CType *type, unsigned *fsize)
-{
+static int arm64_hfa(CType *type, unsigned *fsize) {
     if ((type->t & VT_BTYPE) == VT_STRUCT) {
         int sz = 0;
         int n = arm64_hfa_aux(type, &sz, 0);
@@ -921,8 +904,7 @@ static int arm64_hfa(CType *type, unsigned *fsize)
     return 0;
 }
 
-static unsigned long arm64_pcs_aux(int variadic, int n, CType **type, unsigned long *a)
-{
+static unsigned long arm64_pcs_aux(int variadic, int n, CType **type, unsigned long *a) {
     int nx = 0;
     int nv = 0;
     unsigned long ns = 32;
@@ -940,7 +922,7 @@ static unsigned long arm64_pcs_aux(int variadic, int n, CType **type, unsigned l
         if (variadic && i == variadic) {
             nx = 8;
             nv = 8;
-	}
+        }
 
 #elif defined(MCC_TARGET_PE)
         if (variadic && i >= variadic) {
@@ -960,8 +942,7 @@ static unsigned long arm64_pcs_aux(int variadic, int n, CType **type, unsigned l
                 ns += 8;
             }
             continue;
-        }
-        else if (bt == VT_STRUCT)
+        } else if (bt == VT_STRUCT)
             size = (size + 7) & ~7;
 
         if (is_float(bt) && nv < 8) {
@@ -1035,8 +1016,7 @@ static unsigned long arm64_pcs_aux(int variadic, int n, CType **type, unsigned l
     return ns - 32;
 }
 
-static unsigned long arm64_pcs(int variadic, int n, CType **type, unsigned long *a)
-{
+static unsigned long arm64_pcs(int variadic, int n, CType **type, unsigned long *a) {
     unsigned long stack;
 
     if ((type[0]->t & VT_BTYPE) == VT_VOID)
@@ -1071,8 +1051,7 @@ static unsigned long arm64_pcs(int variadic, int n, CType **type, unsigned long 
     return stack;
 }
 
-static int n_func_args(CType *type)
-{
+static int n_func_args(CType *type) {
     int n_args = 0;
     Sym *arg;
 
@@ -1081,8 +1060,7 @@ static int n_func_args(CType *type)
     return n_args;
 }
 
-static void arm64_sub_sp(uint64_t diff)
-{
+static void arm64_sub_sp(uint64_t diff) {
     if (!diff)
         return;
 #ifdef MCC_TARGET_PE
@@ -1098,7 +1076,7 @@ static void arm64_sub_sp(uint64_t diff)
 #endif
     if (!(diff >> 24)) {
         if (diff & 0xffful)
-            o(ARM64_SUB_IMM | ARM64_SF(1) | 0           | ARM64_RN(31) | ARM64_RD(31) | ARM64_IMM12(diff & 0xfff));
+            o(ARM64_SUB_IMM | ARM64_SF(1) | 0 | ARM64_RN(31) | ARM64_RD(31) | ARM64_IMM12(diff & 0xfff));
         if (diff >> 12)
             o(ARM64_SUB_IMM | ARM64_SF(1) | ARM64_SH(1) | ARM64_RN(31) | ARM64_RD(31) | ARM64_IMM12((diff >> 12) & 0xfff));
     } else {
@@ -1107,15 +1085,13 @@ static void arm64_sub_sp(uint64_t diff)
     }
 }
 
-static int gv_addr(int r)
-{
+static int gv_addr(int r) {
     gaddrof();
     vtop->type.t = VT_PTR;
     return gv(r);
 }
 
-ST_FUNC void gfunc_call(int nb_args)
-{
+ST_FUNC void gfunc_call(int nb_args) {
     CType *return_type;
     CType **t;
     unsigned long *a, *a1;
@@ -1146,9 +1122,10 @@ ST_FUNC void gfunc_call(int nb_args)
 
     stack = arm64_pcs(
 #ifdef MCC_TARGET_PE
-        old_style ?   -1 :
+        old_style ? -1 :
 #endif
-        var_nb_arg, nb_args + 1, t, a);
+                  var_nb_arg,
+        nb_args + 1, t, a);
 
     for (int i = nb_args; i; i--)
         if (a[i] & 1) {
@@ -1180,21 +1157,18 @@ ST_FUNC void gfunc_call(int nb_args)
                 arm64_spoff(intr(r), a1[i]);
                 arm64_strx(3, intr(r), 31, (a[i] - 32) >> 1 << 1);
             }
-        }
-        else if (a[i] >= 32) {
+        } else if (a[i] >= 32) {
             if ((vtop->type.t & VT_BTYPE) == VT_STRUCT) {
                 int r = get_reg(RC_INT);
                 arm64_spoff(intr(r), a[i] - 32);
                 vset(&vtop->type, r | VT_LVAL, 0);
                 vswap();
                 vstore();
-            }
-            else if (is_float(vtop->type.t)) {
+            } else if (is_float(vtop->type.t)) {
                 gv(RC_FLOAT);
                 arm64_strv(arm64_type_size(vtop[0].type.t),
                            fltr(vtop[0].r), 31, a[i] - 32);
-            }
-            else {
+            } else {
                 gv(RC_INT);
                 arm64_strx(3,
                            intr(vtop[0].r), 31, a[i] - 32);
@@ -1212,18 +1186,15 @@ ST_FUNC void gfunc_call(int nb_args)
                     o(ARM64_FMOV_XD | intr(a[i] / 2) | fltr(vtop->r) << 5);
                 else
                     o(ARM64_FMOV_WS | intr(a[i] / 2) | fltr(vtop->r) << 5);
-            }
-            else if ((vtop->type.t & VT_BTYPE) == VT_STRUCT) {
+            } else if ((vtop->type.t & VT_BTYPE) == VT_STRUCT) {
                 int align, size = type_size(&vtop->type, &align);
                 if (size) {
                     gv_addr(RC_R(a[i] / 2));
                     arm64_ldrs(a[i] / 2, size);
                 }
-            }
-            else
+            } else
                 gv(RC_R(a[i] / 2));
-        }
-        else if (a[i] < 16)
+        } else if (a[i] < 16)
             arm64_spoff(a[i] / 2, a1[i]);
         else if (a[i] < 32) {
             if ((vtop->type.t & VT_BTYPE) == VT_STRUCT) {
@@ -1238,8 +1209,7 @@ ST_FUNC void gfunc_call(int nb_args)
                 } else {
                     gv(RC_F(a[i] / 2 - 8));
                 }
-            }
-            else
+            } else
                 gv(RC_F(a[i] / 2 - 8));
         }
     }
@@ -1248,8 +1218,7 @@ ST_FUNC void gfunc_call(int nb_args)
         if (a[0] == 1) {
             gv_addr(RC_R(8));
             --vtop;
-        }
-        else
+        } else
             vswap();
     }
 
@@ -1272,10 +1241,11 @@ ST_FUNC void gfunc_call(int nb_args)
                 if (size > 8)
                     o(0xa9000500);
                 else if (size)
-                    arm64_strx(size > 4 ? 3 : size > 2 ? 2 : size > 1, 0, 8, 0);
+                    arm64_strx(size > 4 ? 3 : size > 2 ? 2
+                                                       : size > 1,
+                               0, 8, 0);
 
-            }
-            else if (a[0] == 16) {
+            } else if (a[0] == 16) {
                 uint32_t sz, n = arm64_hfa(return_type, &sz);
                 for (uint32_t j = 0; j < n; j++)
                     o(0x3d000100 |
@@ -1300,47 +1270,38 @@ static unsigned arm64_func_start_offset;
 #define ARM64_FUNC_STACK_SETUP_SLOTS 6
 
 #ifdef MCC_TARGET_PE
-static unsigned long arm64_pe_param_off(unsigned long a)
-{
-    return a < 16 ? 160 + a / 2 * 8 :
-           a < 32 ? 16 + (a - 16) / 2 * 16 :
-           224 + ((a - 32) >> 1 << 1);
+static unsigned long arm64_pe_param_off(unsigned long a) {
+    return a < 16 ? 160 + a / 2 * 8 : a < 32 ? 16 + (a - 16) / 2 * 16
+                                             : 224 + ((a - 32) >> 1 << 1);
 }
 #endif
 
 #ifdef MCC_TARGET_MACHO
-/* -fstack-protector for Darwin/arm64: the canary is the global
-   __stack_chk_guard (loaded via GOT), checked against a frame slot before
-   return; on mismatch we tail into __stack_chk_fail.  x16/x17 are the
-   intra-procedure scratch registers, free to clobber in prolog/epilog. */
-static void arm64_load_stack_guard(void)
-{
+
+static void arm64_load_stack_guard(void) {
     Sym *guard = external_helper_sym(TOK___stack_chk_guard);
-    arm64_sym(16, guard, 0);                /* x16 = &__stack_chk_guard (GOT) */
-    o(ARM64_LDR_X | ARM64_RN(16) | 16);     /* x16 = *x16  (guard value) */
+    arm64_sym(16, guard, 0);
+    o(ARM64_LDR_X | ARM64_RN(16) | 16);
 }
 
-static void gen_stack_chk_prolog(void)
-{
+static void gen_stack_chk_prolog(void) {
     func_stack_chk_loc = (loc -= 8);
     arm64_load_stack_guard();
-    arm64_strx(3, 16, 29, (uint64_t)func_stack_chk_loc); /* canary -> [x29,#loc] */
+    arm64_strx(3, 16, 29, (uint64_t)func_stack_chk_loc);
 }
 
-static void gen_stack_chk_epilog(void)
-{
+static void gen_stack_chk_epilog(void) {
     Sym *fail = external_helper_sym(TOK___stack_chk_fail);
-    arm64_ldrx(0, 3, 17, 29, (uint64_t)func_stack_chk_loc); /* x17 = saved canary */
-    arm64_load_stack_guard();                               /* x16 = live guard */
-    o(0xeb11021f);                          /* cmp x16, x17  (subs xzr,x16,x17) */
-    o(0x54000040);                          /* b.eq .+8  (skip the call on match) */
+    arm64_ldrx(0, 3, 17, 29, (uint64_t)func_stack_chk_loc);
+    arm64_load_stack_guard();
+    o(0xeb11021f);
+    o(0x54000040);
     greloca(cur_text_section, fail, ind, R_AARCH64_CALL26, 0);
-    o(ARM64_BL);                            /* bl __stack_chk_fail (noreturn) */
+    o(ARM64_BL);
 }
 #endif
 
-ST_FUNC void gfunc_prolog(Sym *func_sym)
-{
+ST_FUNC void gfunc_prolog(Sym *func_sym) {
     CType *func_type = &func_sym->type;
     int n = 0;
     int i = 0;
@@ -1392,14 +1353,13 @@ ST_FUNC void gfunc_prolog(Sym *func_sym)
     for (i = 1, sym = func_type->ref->next; sym; i++, sym = sym->next) {
         if (a[i] < 16) {
             int last, align, size = type_size(&sym->type, &align);
-	    last = a[i] / 4 + 1 + (size - 1) / 8;
-	    last_int = last > last_int ? last : last_int;
-	}
-        else if (a[i] < 32) {
+            last = a[i] / 4 + 1 + (size - 1) / 8;
+            last_int = last > last_int ? last : last_int;
+        } else if (a[i] < 32) {
             int last, hfa = arm64_hfa(&sym->type, 0);
-	    last = a[i] / 4 - 3 + (hfa ? hfa - 1 : 0);
-	    last_float = last > last_float ? last : last_float;
-	}
+            last = a[i] / 4 - 3 + (hfa ? hfa - 1 : 0);
+            last_float = last > last_float ? last : last_float;
+        }
     }
 
     last_int = last_int > 4 ? 4 : last_int;
@@ -1420,21 +1380,21 @@ ST_FUNC void gfunc_prolog(Sym *func_sym)
     arm64_func_va_list_vr_offs = -128;
 
     for (i = 1, sym = func_type->ref->next; sym; i++, sym = sym->next) {
-        int off = (a[i] < 16 ? 160 + a[i] / 2 * 8 :
-                   a[i] < 32 ? 16 + (a[i] - 16) / 2 * 16 :
-                   224 + ((a[i] - 32) >> 1 << 1));
+        int off = (a[i] < 16 ? 160 + a[i] / 2 * 8 : a[i] < 32 ? 16 + (a[i] - 16) / 2 * 16
+                                                              : 224 + ((a[i] - 32) >> 1 << 1));
 
         gfunc_set_param(sym, off, a[i] & 1);
 
         if (a[i] < 16) {
             int align, size = type_size(&sym->type, &align);
             arm64_func_va_list_gr_offs = (a[i] / 2 - 7 +
-                                          (!(a[i] & 1) && size > 8)) * 8;
-        }
-        else if (a[i] < 32) {
+                                          (!(a[i] & 1) && size > 8)) *
+                                         8;
+        } else if (a[i] < 32) {
             uint32_t hfa = arm64_hfa(&sym->type, 0);
             arm64_func_va_list_vr_offs = (a[i] / 2 - 16 +
-                                          (hfa ? hfa : 1)) * 16;
+                                          (hfa ? hfa : 1)) *
+                                         16;
         }
 
         if (16 <= a[i] && a[i] < 32 && (sym->type.t & VT_BTYPE) == VT_STRUCT) {
@@ -1465,8 +1425,7 @@ ST_FUNC void gfunc_prolog(Sym *func_sym)
 #endif
 }
 
-ST_FUNC void gen_va_start(void)
-{
+ST_FUNC void gen_va_start(void) {
     int r;
     --vtop;
     r = intr(gv_addr(RC_INT));
@@ -1482,8 +1441,7 @@ ST_FUNC void gen_va_start(void)
     if (arm64_func_va_list_stack) {
         arm64_movimm(30, arm64_func_va_list_stack + 224);
         o(0x8b1e03be);
-    }
-    else
+    } else
         o(0x910383be);
     o(0xf900001e | r << 5);
 
@@ -1510,8 +1468,7 @@ ST_FUNC void gen_va_start(void)
     --vtop;
 }
 
-ST_FUNC void gen_va_arg(CType *t)
-{
+ST_FUNC void gen_va_arg(CType *t) {
     int align, size = type_size(t, &align);
     uint32_t r0, r1;
 
@@ -1586,15 +1543,15 @@ ST_FUNC void gen_va_arg(CType *t)
 
         if (size > 16)
             o(ARM64_LDR_X | ARM64_RN(r1) | r1);
-    }
-    else {
+    } else {
         uint32_t ssz = (size + 7) & -(uint32_t)8;
 #if !defined(MCC_TARGET_MACHO)
         uint32_t rsz = hfa << 4;
         uint32_t b1, b2;
         o(0xb9401c1e | r0 << 5);
         o(0x310003c0 | r1 | rsz << 10);
-        b1 = ind; o(0x5400000d);
+        b1 = ind;
+        o(0x5400000d);
 #endif
         o(ARM64_LDR_X | ARM64_RN(r0) | r1);
         if (fsize == 16) {
@@ -1604,7 +1561,8 @@ ST_FUNC void gen_va_arg(CType *t)
         o(0x9100001e | r1 << 5 | ssz << 10);
         o(0xf900001e | r0 << 5);
 #if !defined(MCC_TARGET_MACHO)
-        b2 = ind; o(ARM64_B);
+        b2 = ind;
+        o(ARM64_B);
         write32le(cur_text_section->data + b1, 0x5400000d | (ind - b1) << 3);
         o(0xb9001c00 | r1 | r0 << 5);
         o(0xf9400800 | r1 | r0 << 5);
@@ -1629,13 +1587,11 @@ ST_FUNC void gen_va_arg(CType *t)
 }
 
 ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret,
-                       int *align, int *regsize)
-{
+                       int *align, int *regsize) {
     return 0;
 }
 
-ST_FUNC void gfunc_return(CType *func_type)
-{
+ST_FUNC void gfunc_return(CType *func_type) {
     CType *t = func_type;
     unsigned long a;
 
@@ -1649,8 +1605,7 @@ ST_FUNC void gfunc_return(CType *func_type)
             int align, size = type_size(func_type, &align);
             gv_addr(RC_R(0));
             arm64_ldrs(0, size);
-        }
-        else
+        } else
             gv(RC_IRET);
         break;
     case 1: {
@@ -1664,24 +1619,22 @@ ST_FUNC void gfunc_return(CType *func_type)
     }
     case 16:
         if ((func_type->t & VT_BTYPE) == VT_STRUCT) {
-          uint32_t sz, n = arm64_hfa(func_type, &sz);
-          gv_addr(RC_R(0));
-          for (uint32_t j = 0; j < n; j++)
-              o(0x3d400000 |
-                (sz & 16) << 19 | -(sz & 8) << 27 | (sz & 4) << 29 |
-                (fltr(REG_FRET) + j) | j << 10);
-        }
-        else
+            uint32_t sz, n = arm64_hfa(func_type, &sz);
+            gv_addr(RC_R(0));
+            for (uint32_t j = 0; j < n; j++)
+                o(0x3d400000 |
+                  (sz & 16) << 19 | -(sz & 8) << 27 | (sz & 4) << 29 |
+                  (fltr(REG_FRET) + j) | j << 10);
+        } else
             gv(RC_FRET);
         break;
     default:
-      assert(0);
+        assert(0);
     }
     vtop--;
 }
 
-ST_FUNC void gfunc_epilog(void)
-{
+ST_FUNC void gfunc_epilog(void) {
 #ifdef CONFIG_MCC_BCHECK
     if (mcc_state->do_bounds_check)
         gen_bounds_epilog();
@@ -1711,18 +1664,16 @@ ST_FUNC void gfunc_epilog(void)
 #endif
 }
 
-ST_FUNC void gen_fill_nops(int bytes)
-{
+ST_FUNC void gen_fill_nops(int bytes) {
     if ((bytes & 3))
-      mcc_error("alignment of code section not multiple of 4");
+        mcc_error("alignment of code section not multiple of 4");
     while (bytes > 0) {
-	o(ARM64_NOP);
-	bytes -= 4;
+        o(ARM64_NOP);
+        bytes -= 4;
     }
 }
 
-ST_FUNC int gjmp(int t)
-{
+ST_FUNC int gjmp(int t) {
     int r = ind;
     if (nocode_wanted)
         return t;
@@ -1730,14 +1681,12 @@ ST_FUNC int gjmp(int t)
     return r;
 }
 
-ST_FUNC void gjmp_addr(int a)
-{
+ST_FUNC void gjmp_addr(int a) {
     assert(a - ind + 0x8000000 < 0x10000000);
     o(ARM64_B | (((a - ind) >> 2) & 0x3ffffff));
 }
 
-void arm64_vset_VT_CMP(int op)
-{
+void arm64_vset_VT_CMP(int op) {
     if (op >= TOK_ULT && op <= TOK_GT) {
         vtop->cmp_r = vtop->r;
         vset_VT_CMP(0x80);
@@ -1746,8 +1695,7 @@ void arm64_vset_VT_CMP(int op)
 
 static void arm64_gen_opil(int op, uint32_t l);
 
-static void arm64_load_cmp(int r, SValue *sv)
-{
+static void arm64_load_cmp(int r, SValue *sv) {
     sv->r = sv->cmp_r;
     if (sv->c.i & 1) {
         vpushi(1);
@@ -1759,8 +1707,7 @@ static void arm64_load_cmp(int r, SValue *sv)
     }
 }
 
-ST_FUNC int gjmp_cond(int op, int t)
-{
+ST_FUNC int gjmp_cond(int op, int t) {
     int bt = vtop->type.t & VT_BTYPE;
 
     int inv = op & 1;
@@ -1779,13 +1726,11 @@ ST_FUNC int gjmp_cond(int op, int t)
         o(0xaa000400 | a | a << 5 | b << 16);
         o(0xb4000040 | a | !!inv << 24);
         --vtop;
-    }
-    else if (bt == VT_FLOAT || bt == VT_DOUBLE) {
+    } else if (bt == VT_FLOAT || bt == VT_DOUBLE) {
         uint32_t a = fltr(gv(RC_FLOAT));
         o(0x1e202008 | a << 5 | (bt != VT_FLOAT) << 22);
         o(0x54000040 | !!inv);
-    }
-    else {
+    } else {
         uint32_t ll = (bt == VT_PTR || bt == VT_LLONG);
         uint32_t a = intr(gv(RC_INT));
         o(0x34000040 | a | !!inv << 24 | ll << 31);
@@ -1793,23 +1738,19 @@ ST_FUNC int gjmp_cond(int op, int t)
     return gjmp(t);
 }
 
-static int arm64_iconst(uint64_t *val, SValue *sv)
-{
+static int arm64_iconst(uint64_t *val, SValue *sv) {
     if ((sv->r & (VT_VALMASK | VT_LVAL | VT_SYM)) != VT_CONST)
         return 0;
     if (val) {
         int t = sv->type.t;
-	int bt = t & VT_BTYPE;
-        *val = ((bt == VT_LLONG || bt == VT_PTR) ? sv->c.i :
-                (uint32_t)sv->c.i |
-                (t & VT_UNSIGNED ? 0 : -(sv->c.i & 0x80000000)));
+        int bt = t & VT_BTYPE;
+        *val = ((bt == VT_LLONG || bt == VT_PTR) ? sv->c.i : (uint32_t)sv->c.i | (t & VT_UNSIGNED ? 0 : -(sv->c.i & 0x80000000)));
     }
     return 1;
 }
 
 static int arm64_gen_opic(int op, uint32_t l, int rev, uint64_t val,
-                          uint32_t x, uint32_t a)
-{
+                          uint32_t x, uint32_t a) {
     if (op == '-' && !rev) {
         val = -val;
         op = '+';
@@ -1822,10 +1763,7 @@ static int arm64_gen_opic(int op, uint32_t l, int rev, uint64_t val,
         uint32_t s = l ? val >> 63 : val >> 31;
         val = s ? -val : val;
         val = l ? val : (uint32_t)val;
-        /* Masks must be 64-bit: on an LLP64 host (e.g. Windows) `unsigned long`
-           is 32-bit, so `~0xffful` would zero-extend to 0x00000000fffff000 and
-           mask away the top 32 bits of a 64-bit `val`, wrongly making a large
-           constant look like a 12-bit immediate (e.g. 0x700000000042 -> #0x42). */
+
         if (!(val & ~(uint64_t)0xfff))
             o(0x11000000 | l << 31 | s << 30 | x | a << 5 | val << 10);
         else if (!(val & ~(uint64_t)0xfff000))
@@ -1835,7 +1773,7 @@ static int arm64_gen_opic(int op, uint32_t l, int rev, uint64_t val,
             o(0x0b1e0000 | l << 31 | s << 30 | x | a << 5);
         }
         return 1;
-      }
+    }
 
     case '-':
         if (!val)
@@ -1858,8 +1796,8 @@ static int arm64_gen_opic(int op, uint32_t l, int rev, uint64_t val,
         int e = arm64_encode_bimm64(l ? val : val | val << 32);
         if (e < 0)
             return 0;
-        o((op == '&' ? 0x12000000 :
-           op == '|' ? 0x32000000 : 0x52000000) |
+        o((op == '&' ? 0x12000000 : op == '|' ? 0x32000000
+                                              : 0x52000000) |
           l << 31 | x | a << 5 | (uint32_t)e << 10);
         return 1;
     }
@@ -1874,8 +1812,7 @@ static int arm64_gen_opic(int op, uint32_t l, int rev, uint64_t val,
         if (!val) {
             o(0x2a0003e0 | l << 31 | a << 16);
             return 1;
-        }
-        else if (op == TOK_SHL)
+        } else if (op == TOK_SHL)
             o(0x53000000 | l << 31 | l << 22 | x | a << 5 |
               (n - val) << 16 | (n - 1 - val) << 10);
         else
@@ -1883,13 +1820,11 @@ static int arm64_gen_opic(int op, uint32_t l, int rev, uint64_t val,
               x | a << 5 | val << 16 | (n - 1) << 10);
         return 1;
     }
-
     }
     return 0;
 }
 
-static void arm64_gen_opil(int op, uint32_t l)
-{
+static void arm64_gen_opil(int op, uint32_t l) {
     uint32_t x, a, b;
 
     {
@@ -2017,20 +1952,17 @@ static void arm64_gen_opil(int op, uint32_t l)
     }
 }
 
-ST_FUNC void gen_opi(int op)
-{
+ST_FUNC void gen_opi(int op) {
     arm64_gen_opil(op, 0);
     arm64_vset_VT_CMP(op);
 }
 
-ST_FUNC void gen_opl(int op)
-{
+ST_FUNC void gen_opl(int op) {
     arm64_gen_opil(op, 1);
     arm64_vset_VT_CMP(op);
 }
 
-ST_FUNC void gen_opf(int op)
-{
+ST_FUNC void gen_opf(int op) {
     uint32_t x, a, b, dbl;
     int bt = vtop[0].type.t & VT_BTYPE;
 
@@ -2056,17 +1988,45 @@ ST_FUNC void gen_opf(int op)
         int func = 0;
         int cond = -1;
         switch (op) {
-        case '*': func = TOK___multf3; break;
-        case '+': func = TOK___addtf3; break;
-        case '-': func = TOK___subtf3; break;
-        case '/': func = TOK___divtf3; break;
-        case TOK_EQ: func = TOK___eqtf2; cond = 1; break;
-        case TOK_NE: func = TOK___netf2; cond = 0; break;
-        case TOK_LT: func = TOK___lttf2; cond = 10; break;
-        case TOK_GE: func = TOK___getf2; cond = 11; break;
-        case TOK_LE: func = TOK___letf2; cond = 12; break;
-        case TOK_GT: func = TOK___gttf2; cond = 13; break;
-        default: assert(0); break;
+        case '*':
+            func = TOK___multf3;
+            break;
+        case '+':
+            func = TOK___addtf3;
+            break;
+        case '-':
+            func = TOK___subtf3;
+            break;
+        case '/':
+            func = TOK___divtf3;
+            break;
+        case TOK_EQ:
+            func = TOK___eqtf2;
+            cond = 1;
+            break;
+        case TOK_NE:
+            func = TOK___netf2;
+            cond = 0;
+            break;
+        case TOK_LT:
+            func = TOK___lttf2;
+            cond = 10;
+            break;
+        case TOK_GE:
+            func = TOK___getf2;
+            cond = 11;
+            break;
+        case TOK_LE:
+            func = TOK___letf2;
+            cond = 12;
+            break;
+        case TOK_GT:
+            func = TOK___gttf2;
+            cond = 13;
+            break;
+        default:
+            assert(0);
+            break;
         }
         vpush_helper_func(func);
         vrott(3);
@@ -2090,8 +2050,12 @@ ST_FUNC void gen_opf(int op)
     b = fltr(vtop[0].r);
     vtop -= 2;
     switch (op) {
-    case TOK_EQ: case TOK_NE:
-    case TOK_LT: case TOK_GE: case TOK_LE: case TOK_GT:
+    case TOK_EQ:
+    case TOK_NE:
+    case TOK_LT:
+    case TOK_GE:
+    case TOK_LE:
+    case TOK_GT:
         x = get_reg(RC_INT);
         ++vtop;
         vtop[0].r = x;
@@ -2148,28 +2112,20 @@ ST_FUNC void gen_opf(int op)
     arm64_vset_VT_CMP(op);
 }
 
-ST_FUNC void gen_cvt_sxtw(void)
-{
+ST_FUNC void gen_cvt_sxtw(void) {
     uint32_t r = intr(gv(RC_INT));
     o(0x93407c00 | r | r << 5);
 }
 
-ST_FUNC void gen_cvt_csti(int t)
-{
+ST_FUNC void gen_cvt_csti(int t) {
     int r = intr(gv(RC_INT));
-    o(0x13001c00
-        | ((t & VT_BTYPE) == VT_SHORT) << 13
-        | (uint32_t)!!(t & VT_UNSIGNED) << 30
-        | r | r << 5);
+    o(0x13001c00 | ((t & VT_BTYPE) == VT_SHORT) << 13 | (uint32_t)!!(t & VT_UNSIGNED) << 30 | r | r << 5);
 }
 
-ST_FUNC void gen_cvt_itof(int t)
-{
+ST_FUNC void gen_cvt_itof(int t) {
     if (t == VT_LDOUBLE) {
         int f = vtop->type.t;
-        int func = (f & VT_BTYPE) == VT_LLONG ?
-          (f & VT_UNSIGNED ? TOK___floatunditf : TOK___floatditf) :
-          (f & VT_UNSIGNED ? TOK___floatunsitf : TOK___floatsitf);
+        int func = (f & VT_BTYPE) == VT_LLONG ? (f & VT_UNSIGNED ? TOK___floatunditf : TOK___floatditf) : (f & VT_UNSIGNED ? TOK___floatunsitf : TOK___floatsitf);
         vpush_helper_func(func);
         vrott(2);
         gfunc_call(1);
@@ -2177,8 +2133,7 @@ ST_FUNC void gen_cvt_itof(int t)
         vtop->type.t = t;
         vtop->r = REG_FRET;
         return;
-    }
-    else {
+    } else {
         int d, n = intr(gv(RC_INT));
         int s = !(vtop->type.t & VT_UNSIGNED);
         uint32_t l = ((vtop->type.t & VT_BTYPE) == VT_LLONG);
@@ -2192,12 +2147,9 @@ ST_FUNC void gen_cvt_itof(int t)
     }
 }
 
-ST_FUNC void gen_cvt_ftoi(int t)
-{
+ST_FUNC void gen_cvt_ftoi(int t) {
     if ((vtop->type.t & VT_BTYPE) == VT_LDOUBLE) {
-        int func = (t & VT_BTYPE) == VT_LLONG ?
-          (t & VT_UNSIGNED ? TOK___fixunstfdi : TOK___fixtfdi) :
-          (t & VT_UNSIGNED ? TOK___fixunstfsi : TOK___fixtfsi);
+        int func = (t & VT_BTYPE) == VT_LLONG ? (t & VT_UNSIGNED ? TOK___fixunstfdi : TOK___fixtfdi) : (t & VT_UNSIGNED ? TOK___fixunstfsi : TOK___fixtfsi);
         vpush_helper_func(func);
         vrott(2);
         gfunc_call(1);
@@ -2205,8 +2157,7 @@ ST_FUNC void gen_cvt_ftoi(int t)
         vtop->type.t = t;
         vtop->r = REG_IRET;
         return;
-    }
-    else {
+    } else {
         int d, n = fltr(gv(RC_FLOAT));
         uint32_t l = ((vtop->type.t & VT_BTYPE) != VT_FLOAT);
         --vtop;
@@ -2220,8 +2171,7 @@ ST_FUNC void gen_cvt_ftoi(int t)
     }
 }
 
-ST_FUNC void gen_cvt_ftof(int t)
-{
+ST_FUNC void gen_cvt_ftof(int t) {
     int f = vtop[0].type.t & VT_BTYPE;
     assert(t == VT_FLOAT || t == VT_DOUBLE || t == VT_LDOUBLE);
     assert(f == VT_FLOAT || f == VT_DOUBLE || f == VT_LDOUBLE);
@@ -2229,17 +2179,14 @@ ST_FUNC void gen_cvt_ftof(int t)
         return;
 
     if (t == VT_LDOUBLE || f == VT_LDOUBLE) {
-        int func = (t == VT_LDOUBLE) ?
-            (f == VT_FLOAT ? TOK___extendsftf2 : TOK___extenddftf2) :
-            (t == VT_FLOAT ? TOK___trunctfsf2 : TOK___trunctfdf2);
+        int func = (t == VT_LDOUBLE) ? (f == VT_FLOAT ? TOK___extendsftf2 : TOK___extenddftf2) : (t == VT_FLOAT ? TOK___trunctfsf2 : TOK___trunctfdf2);
         vpush_helper_func(func);
         vrott(2);
         gfunc_call(1);
         vpushi(0);
         vtop->type.t = t;
         vtop->r = REG_FRET;
-    }
-    else {
+    } else {
         int x, a;
         gv(RC_FLOAT);
         assert(vtop[0].r < VT_CONST);
@@ -2252,8 +2199,7 @@ ST_FUNC void gen_cvt_ftof(int t)
     }
 }
 
-ST_FUNC void gen_increment_tcov (SValue *sv)
-{
+ST_FUNC void gen_increment_tcov(SValue *sv) {
     int r1, r2;
 
     vpushv(sv);
@@ -2261,19 +2207,17 @@ ST_FUNC void gen_increment_tcov (SValue *sv)
     r2 = get_reg(RC_INT);
     arm64_sym(r1, sv->sym, 0);
     o(ARM64_LDR_X | ARM64_RN(intr(r1)) | intr(r2));
-    o(0x91000400 | (intr(r2)<<5) | intr(r2));
-    o(0xf9000000 | (intr(r1)<<5) | intr(r2));
+    o(0x91000400 | (intr(r2) << 5) | intr(r2));
+    o(0xf9000000 | (intr(r1) << 5) | intr(r2));
     vpop();
 }
 
-ST_FUNC void ggoto(void)
-{
+ST_FUNC void ggoto(void) {
     arm64_gen_bl_or_b(1);
     --vtop;
 }
 
-ST_FUNC void gen_clear_cache(void)
-{
+ST_FUNC void gen_clear_cache(void) {
     uint32_t beg, end, dsz, isz, p, lab1, b1;
     gv2(RC_INT, RC_INT);
     vpushi(0);
@@ -2297,7 +2241,8 @@ ST_FUNC void gen_clear_cache(void)
     o(0x1ac02000 | isz | p << 5 | isz << 16);
     o(0x51000400 | p | dsz << 5);
     o(0x8a240004 | p | beg << 5 | p << 16);
-    b1 = ind; o(ARM64_B);
+    b1 = ind;
+    o(ARM64_B);
     lab1 = ind;
     o(0xd50b7b20 | p);
     o(0x8b000000 | p | p << 5 | dsz << 16);
@@ -2307,7 +2252,8 @@ ST_FUNC void gen_clear_cache(void)
     o(0xd5033b9f);
     o(0x51000400 | p | isz << 5);
     o(0x8a240004 | p | beg << 5 | p << 16);
-    b1 = ind; o(ARM64_B);
+    b1 = ind;
+    o(ARM64_B);
     lab1 = ind;
     o(0xd50b7520 | p);
     o(0x8b000000 | p | p << 5 | isz << 16);
@@ -2342,7 +2288,7 @@ ST_FUNC void gen_vla_alloc(CType *type, int align) {
         o(0x91004000 | r | r << 5);
     else
 #endif
-    o(0x91003c00 | r | r << 5);
+        o(0x91003c00 | r | r << 5);
     o(0x927cec00 | r | r << 5);
     o(0xcb2063ff | r << 16);
     vpop();

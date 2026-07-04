@@ -1,42 +1,36 @@
-
 #if TEST == 1
 {
-    struct M P A __s
-    {
+    struct M P A __s {
         unsigned x : 12;
         unsigned char y : 7;
         unsigned z : 28;
-        unsigned a: 4;
-        unsigned b: 5;
+        unsigned a : 4;
+        unsigned b : 5;
     };
-    TEST_STRUCT(0x333,0x44,0x555555,6,7);
+    TEST_STRUCT(0x333, 0x44, 0x555555, 6, 7);
 }
-
 
 #elif TEST == 2
 {
-    struct M P __s
-    {
-        int x: 12;
-        char y: 6;
-        long long z:63;
-        A char a:4;
-        long long b:2;
-
+    struct M P __s {
+        int x : 12;
+        char y : 6;
+        long long z : 63;
+        A char a : 4;
+        long long b : 2;
     };
-    TEST_STRUCT(3,30,0x123456789abcdef0LL,5,2);
+    TEST_STRUCT(3, 30, 0x123456789abcdef0LL, 5, 2);
 }
-
 
 #elif TEST == 3
 {
-    struct M P __s
-    {
-        unsigned x:5, y:5, :0, z:5; char a:5; A short b:5;
+    struct M P __s {
+        unsigned x : 5, y : 5, : 0, z : 5;
+        char a : 5;
+        A short b : 5;
     };
-    TEST_STRUCT(21,23,25,6,14);
+    TEST_STRUCT(21, 23, 25, 6, 14);
 }
-
 
 #elif TEST == 4
 {
@@ -49,9 +43,8 @@
         int a : 7;
         unsigned int b : 7;
     };
-    TEST_STRUCT(3,1,15,120,120);
+    TEST_STRUCT(3, 1, 15, 120, 120);
 }
-
 
 #elif TEST == 5
 {
@@ -60,23 +53,22 @@
         long long : 2;
         long long y : 30;
         unsigned long long z : 38;
-        char a; short b;
+        char a;
+        short b;
     };
-    TEST_STRUCT(0x123456789ULL, 120<<25, 120, 0x44, 0x77);
+    TEST_STRUCT(0x123456789ULL, 120 << 25, 120, 0x44, 0x77);
 }
-
 
 #elif TEST == 6
 {
     struct M P __s {
-	int a;
-	signed char b;
-	int x : 12, y : 4, : 0, : 4, z : 3;
-	char d;
+        int a;
+        signed char b;
+        int x : 12, y : 4, : 0, : 4, z : 3;
+        char d;
     };
-    TEST_STRUCT(1,2,3,4,-3);
+    TEST_STRUCT(1, 2, 3, 4, -3);
 }
-
 
 #elif TEST == 7
 {
@@ -95,20 +87,19 @@
         ll e : 1;
         ll f : 1;
     };
-    TEST_STRUCT(1,2,3,4,5);
+    TEST_STRUCT(1, 2, 3, 4, 5);
 }
-
 
 #elif defined PACK
 
 #if PACK
-# pragma pack(push,1)
-# define P
+#pragma pack(push, 1)
+#define P
 #else
-# define P
+#define P
 #endif
 
-printf("\n\n" + 2*top);
+printf("\n\n" + 2 * top);
 #define TEST 1
 #include SELF
 top = 0;
@@ -126,19 +117,18 @@ top = 0;
 #include SELF
 
 #if PACK
-# pragma pack(pop)
+#pragma pack(pop)
 #endif
 
 #undef P
 #undef PACK
 
-
 #elif defined ALIGN
 
 #if ALIGN
-# define A _A(16)
+#define A _A(16)
 #else
-# define A
+#define A
 #endif
 
 #define PACK 0
@@ -149,24 +139,23 @@ top = 0;
 #undef A
 #undef ALIGN
 
-
 #elif defined MS_BF
 
 #if MS_BF
-# ifdef __MCC__
-#  pragma comment(option, "-mms-bitfields")
-# elif defined __GNUC__
-#  define M __attribute__((ms_struct))
-# endif
+#ifdef __MCC__
+#pragma comment(option, "-mms-bitfields")
+#elif defined __GNUC__
+#define M __attribute__((ms_struct))
+#endif
 #else
-# ifdef __MCC__
-#  pragma comment(option, "-mno-ms-bitfields")
-# elif defined __GNUC__
-#  define M __attribute__((gcc_struct))
-# endif
+#ifdef __MCC__
+#pragma comment(option, "-mno-ms-bitfields")
+#elif defined __GNUC__
+#define M __attribute__((gcc_struct))
+#endif
 #endif
 #ifndef M
-# define M
+#define M
 #endif
 
 #define ALIGN 0
@@ -177,7 +166,6 @@ top = 0;
 #undef M
 #undef MS_BF
 
-
 #else
 
 #include <stdio.h>
@@ -185,57 +173,55 @@ top = 0;
 
 #undef __attribute__
 
-void dump(void *p, int s)
-{
+void dump(void *p, int s) {
     int i;
     for (i = s; --i >= 0;)
-        printf("%02X", ((unsigned char*)p)[i]);
+        printf("%02X", ((unsigned char *)p)[i]);
     printf("\n");
 }
 
 #define pv(m) \
-    printf(sizeof (s->m + 0) == 8 ? " %016llx" : " %02x", s->m)
+    printf(sizeof(s->m + 0) == 8 ? " %016llx" : " %02x", s->m)
 
-#define TEST_STRUCT(v1,v2,v3,v4,v5) { \
-        struct __s _s, *s = & _s; \
-        printf("\n---- TEST %d%s%s%s ----\n" + top, \
-            TEST, MS_BF?" - MS-BITFIELDS":"", \
-            PACK?" - PACKED":"", \
-            ALIGN?" - WITH ALIGN":""); \
-        memset(s, 0, sizeof *s); \
-        s->x = -1, s->y = -1, s->z = -1, s->a = -1, s->b = -1; \
-        printf("bits in use : "), dump(s, sizeof *s); \
-        s->x = v1, s->y = v2, s->z = v3, s->a += v4, ++s->a, s->b = v5; \
-        printf("bits as set : "), dump(s, sizeof *s); \
+#define TEST_STRUCT(v1, v2, v3, v4, v5)                                           \
+    {                                                                             \
+        struct __s _s, *s = &_s;                                                  \
+        printf("\n---- TEST %d%s%s%s ----\n" + top,                               \
+               TEST, MS_BF ? " - MS-BITFIELDS" : "",                              \
+               PACK ? " - PACKED" : "",                                           \
+               ALIGN ? " - WITH ALIGN" : "");                                     \
+        memset(s, 0, sizeof *s);                                                  \
+        s->x = -1, s->y = -1, s->z = -1, s->a = -1, s->b = -1;                    \
+        printf("bits in use : "), dump(s, sizeof *s);                             \
+        s->x = v1, s->y = v2, s->z = v3, s->a += v4, ++s->a, s->b = v5;           \
+        printf("bits as set : "), dump(s, sizeof *s);                             \
         printf("values      :"), pv(x), pv(y), pv(z), pv(a), pv(b), printf("\n"); \
-        printf("align/size  : %d %d\n", alignof(struct __s),sizeof(struct __s)); \
+        printf("align/size  : %d %d\n", alignof(struct __s), sizeof(struct __s)); \
     }
 
 #ifdef _MSC_VER
-# define _A(n) __declspec(align(n))
-# define _P
-# define alignof(x) __alignof(x)
+#define _A(n) __declspec(align(n))
+#define _P
+#define alignof(x) __alignof(x)
 #else
-# define _A(n) __attribute__((aligned(n)))
-# define _P __attribute__((packed))
-# define alignof(x) __alignof__(x)
+#define _A(n) __attribute__((aligned(n)))
+#define _P __attribute__((packed))
+#define alignof(x) __alignof__(x)
 #endif
 
 #ifndef MS_BITFIELDS
-# define MS_BITFIELDS 0
+#define MS_BITFIELDS 0
 #endif
 
 #define SELF "bitfields.c"
 
 int top = 1;
 
-int main()
-{
+int main() {
 #define MS_BF MS_BITFIELDS
 #include SELF
     return 0;
 }
-
 
 #endif
 #undef TEST

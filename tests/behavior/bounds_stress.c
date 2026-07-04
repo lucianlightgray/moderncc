@@ -10,48 +10,41 @@ int tab[TAB_SIZE];
 int ret_sum;
 char tab3[256];
 
-int test1(void)
-{
+int test1(void) {
     int i, sum = 0;
-    for(i=0;i<TAB_SIZE;i++) {
+    for (i = 0; i < TAB_SIZE; i++) {
         sum += tab[i];
     }
     return sum;
 }
 
-
-int test2(void)
-{
+int test2(void) {
     int i, sum = 0;
-    for(i=0;i<TAB_SIZE + 1;i++) {
+    for (i = 0; i < TAB_SIZE + 1; i++) {
         sum += tab[i];
     }
     return sum;
 }
 
-
-int test3(void)
-{
+int test3(void) {
     int sum;
     int i, it;
 
     sum = 0;
-    for(it=0;it<NB_ITS;it++) {
-        for(i=0;i<TAB_SIZE;i++) {
+    for (it = 0; it < NB_ITS; it++) {
+        for (i = 0; i < TAB_SIZE; i++) {
             sum += tab[i];
         }
     }
     return sum;
 }
 
-
-int test4(void)
-{
+int test4(void) {
     int i, sum = 0;
     int *tab4;
 
     tab4 = malloc(20 * sizeof(int));
-    for(i=0;i<20;i++) {
+    for (i = 0; i < 20; i++) {
         sum += tab4[i];
     }
     free(tab4);
@@ -59,14 +52,12 @@ int test4(void)
     return sum;
 }
 
-
-int test5(void)
-{
+int test5(void) {
     int i, sum = 0;
     int *tab4;
 
     tab4 = malloc(20 * sizeof(int));
-    for(i=0;i<21;i++) {
+    for (i = 0; i < 21; i++) {
         sum += tab4[i];
     }
     free(tab4);
@@ -74,28 +65,24 @@ int test5(void)
     return sum;
 }
 
-
-int test6(void)
-{
+int test6(void) {
     int i, sum = 0;
     int *tab4;
 
     tab4 = malloc(20 * sizeof(int));
     free(tab4);
-    for(i=0;i<21;i++) {
+    for (i = 0; i < 21; i++) {
         sum += tab4[i];
     }
 
     return sum;
 }
 
-
-int test7(void)
-{
+int test7(void) {
     int i, sum = 0;
     int *p;
 
-    for(i=0;i<TAB_SIZE + 1;i++) {
+    for (i = 0; i < TAB_SIZE + 1; i++) {
         p = &tab[i];
         if (i == TAB_SIZE)
             printf("i=%d %x\n", i, p);
@@ -104,33 +91,27 @@ int test7(void)
     return sum;
 }
 
-
-int test8(void)
-{
+int test8(void) {
     int i, sum = 0;
     int tab[10];
 
-    for(i=0;i<10;i++) {
+    for (i = 0; i < 10; i++) {
         sum += tab[i];
     }
     return sum;
 }
 
-
-int test9(void)
-{
+int test9(void) {
     int i, sum = 0;
     char tab[10];
 
-    for(i=0;i<11;i++) {
+    for (i = 0; i < 11; i++) {
         sum += tab[i];
     }
     return sum;
 }
 
-
-int test10(void)
-{
+int test10(void) {
     char tab[10];
     char tab1[10];
 
@@ -140,18 +121,14 @@ int test10(void)
     return 0;
 }
 
-
-int test11(void)
-{
+int test11(void) {
     char tab[10];
 
     memset(tab, 0, 11);
     return 0;
 }
 
-
-int test12(void)
-{
+int test12(void) {
     void *ptr;
     ptr = malloc(10);
     free(ptr);
@@ -159,9 +136,7 @@ int test12(void)
     return 0;
 }
 
-
-int test13(void)
-{
+int test13(void) {
     char pad1 = 0;
     char tab[10];
     char pad2 = 0;
@@ -169,62 +144,52 @@ int test13(void)
     return strlen(tab);
 }
 
-int test14(void)
-{
+int test14(void) {
     char *p = alloca(TAB_SIZE);
     size_t ret;
     memset(p, 'a', TAB_SIZE);
-    p[TAB_SIZE-1] = 0;
+    p[TAB_SIZE - 1] = 0;
     ret = strlen(p);
     return ret;
 }
 
-
-int test15(void)
-{
-    char *p = alloca(TAB_SIZE-1);
+int test15(void) {
+    char *p = alloca(TAB_SIZE - 1);
     size_t ret;
     memset(p, 'a', TAB_SIZE);
-    p[TAB_SIZE-1] = 0;
+    p[TAB_SIZE - 1] = 0;
     ret = strlen(p);
     return ret;
 }
 
-
-int test16()
-{
+int test16() {
     char *demo = "This is only a test.";
     char *p, *q;
 
     p = alloca(16);
-    strcpy(p,"12345678901234");
+    strcpy(p, "12345678901234");
 
-
-    printf("alloca : %s : %s\n", p, strcpy(q=alloca(strlen(demo)+1),demo) );
+    printf("alloca : %s : %s\n", p, strcpy(q = alloca(strlen(demo) + 1), demo));
 
     return 0;
 }
 
-
-int test17()
-{
+int test17() {
     char *demo = "This is only a test.";
     char *p, *q;
 
     p = alloca(16);
-    strcpy(p,"12345678901234");
+    strcpy(p, "12345678901234");
 
-
-    printf("alloca : %s : %s\n", p, strcpy(q=alloca(strlen(demo)),demo) );
+    printf("alloca : %s : %s\n", p, strcpy(q = alloca(strlen(demo)), demo));
 
     return 0;
 }
 
-int test18(void)
-{
+int test18(void) {
     int i, sum = 0, n = TAB_SIZE;
     int tab[n];
-    for(i=0;i<TAB_SIZE+1;i++) {
+    for (i = 0; i < TAB_SIZE + 1; i++) {
         sum += tab[i];
     }
     return sum;
@@ -248,17 +213,14 @@ int (*table_test[])(void) = {
     test15,
     test16,
     test17,
-    test18
-};
+    test18};
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
     int i;
     char *cp;
     int index;
     int (*ftest)(void);
-    int index_max = sizeof(table_test)/sizeof(table_test[0]);
-
+    int index_max = sizeof(table_test) / sizeof(table_test[0]);
 
     for (i = 0; i < argc; i++) {
         cp = argv[i];
@@ -269,9 +231,10 @@ int main(int argc, char **argv)
 
     if (argc < 2) {
         printf(
-    	    "test MCC bound checking system\n"
-	    "usage: boundtest N\n"
-            "  1 <= N <= %d\n", index_max);
+            "test MCC bound checking system\n"
+            "usage: boundtest N\n"
+            "  1 <= N <= %d\n",
+            index_max);
         exit(1);
     }
 
@@ -284,14 +247,8 @@ int main(int argc, char **argv)
         exit(2);
     }
 
-
     ftest = table_test[index];
     ftest();
 
     return 0;
 }
-
-
-
-
-

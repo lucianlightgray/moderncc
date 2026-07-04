@@ -1,9 +1,7 @@
-/* Standalone unit test for s7_12 — compiled 3-way by the parts-suite. */
 #include "std_env.h"
 #include "s7_12.h"
 
-int main(void)
-{
+int main(void) {
     s7_12_classify();
     s7_12_trig_hyp();
     s7_12_explog();

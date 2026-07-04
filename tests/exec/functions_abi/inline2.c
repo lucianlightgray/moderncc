@@ -1,12 +1,10 @@
-
-#define GOT(f) \
+#define GOT(f)                          \
     __attribute__((weak)) void f(void); \
     printf("%d %s\n", !!((__SIZE_TYPE__)f & ~0u), #f);
 
-int printf(const char*, ...);
+int printf(const char *, ...);
 
-void check_exports()
-{
+void check_exports() {
 
     GOT(inline_inline_2decl_only)
     GOT(inline_inline_undeclared)
@@ -17,7 +15,6 @@ void check_exports()
     GOT(inline_inline_predeclared2)
     GOT(inline_inline_postdeclared2)
     GOT(inline_inline_prepostdeclared2)
-
 
     GOT(extern_extern_postdeclared)
     GOT(extern_extern_postdeclared2)
@@ -44,7 +41,6 @@ void check_exports()
     GOT(noinst_extern_inline_postdeclared)
     GOT(noinst_extern_inline_postdeclared2)
     GOT(noinst_extern_inline_undeclared)
-
 
     GOT(noinst_static_inline_postdeclared)
     GOT(noinst2_static_inline_postdeclared)

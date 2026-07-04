@@ -7,7 +7,7 @@
 #error Only Win32 target is supported!
 #endif
 
-#pragma pack(push,_CRT_PACKING)
+#pragma pack(push, _CRT_PACKING)
 
 #ifdef __cplusplus
 extern "C" {
@@ -30,22 +30,22 @@ extern "C" {
 #endif
 
 #ifndef _TIME32_T_DEFINED
-  typedef long __time32_t;
+typedef long __time32_t;
 #define _TIME32_T_DEFINED
 #endif
 
 #ifndef _TIME64_T_DEFINED
 #if _INTEGRAL_MAX_BITS >= 64
-  typedef __int64 __time64_t;
+typedef __int64 __time64_t;
 #endif
 #define _TIME64_T_DEFINED
 #endif
 
 #ifndef _TIME_T_DEFINED
 #ifdef _USE_32BIT_TIME_T
-  typedef __time32_t time_t;
+typedef __time32_t time_t;
 #else
-  typedef __time64_t time_t;
+typedef __time64_t time_t;
 #endif
 #define _TIME_T_DEFINED
 #endif
@@ -53,29 +53,29 @@ extern "C" {
 #ifndef _TIMEB_DEFINED
 #define _TIMEB_DEFINED
 
-  struct __timeb32 {
+struct __timeb32 {
     __time32_t time;
     unsigned short millitm;
     short timezone;
     short dstflag;
-  };
+};
 
-#ifndef	NO_OLDNAMES
-  struct timeb {
+#ifndef NO_OLDNAMES
+struct timeb {
     time_t time;
     unsigned short millitm;
     short timezone;
     short dstflag;
-  };
+};
 #endif
 
 #if _INTEGRAL_MAX_BITS >= 64
-  struct __timeb64 {
+struct __timeb64 {
     __time64_t time;
     unsigned short millitm;
     short timezone;
     short dstflag;
-  };
+};
 #endif
 
 #ifdef _USE_32BIT_TIME_T
@@ -87,32 +87,32 @@ extern "C" {
 #endif
 #endif
 
-  _CRTIMP void __cdecl _ftime32(struct __timeb32 *_Time);
+_CRTIMP void __cdecl _ftime32(struct __timeb32 *_Time);
 #if _INTEGRAL_MAX_BITS >= 64
-  _CRTIMP void __cdecl _ftime64(struct __timeb64 *_Time);
+_CRTIMP void __cdecl _ftime64(struct __timeb64 *_Time);
 #endif
 
 #ifndef _TIMESPEC_DEFINED
 #define _TIMESPEC_DEFINED
 struct timespec {
-  time_t  tv_sec;
-  long    tv_nsec;
+    time_t tv_sec;
+    long tv_nsec;
 };
 
 struct itimerspec {
-  struct timespec  it_interval;
-  struct timespec  it_value;
+    struct timespec it_interval;
+    struct timespec it_value;
 };
 #endif
 
-#if !defined (RC_INVOKED) && !defined (NO_OLDNAMES)
+#if !defined(RC_INVOKED) && !defined(NO_OLDNAMES)
 #ifdef _USE_32BIT_TIME_T
 __CRT_INLINE void __cdecl ftime(struct timeb *_Tmb) {
-  _ftime32((struct __timeb32 *)_Tmb);
+    _ftime32((struct __timeb32 *)_Tmb);
 }
 #else
 __CRT_INLINE void __cdecl ftime(struct timeb *_Tmb) {
-  _ftime64((struct __timeb64 *)_Tmb);
+    _ftime64((struct __timeb64 *)_Tmb);
 }
 #endif
 #endif

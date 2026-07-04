@@ -1,9 +1,7 @@
-/* Standalone unit test for s6_7_7 — compiled 3-way by the parts-suite. */
 #include "std_env.h"
 #include "s6_7_7.h"
 
-int main(void)
-{
+int main(void) {
     s6_7_7_init_both_ends();
     s6_7_7_init_inconsistent();
     s6_7_7_init_mixed();

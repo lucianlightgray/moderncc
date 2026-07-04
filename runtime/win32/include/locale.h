@@ -3,7 +3,7 @@
 
 #include <_mingw.h>
 
-#pragma pack(push,_CRT_PACKING)
+#pragma pack(push, _CRT_PACKING)
 
 #ifdef __cplusplus
 extern "C" {
@@ -29,7 +29,7 @@ extern "C" {
 
 #ifndef _LCONV_DEFINED
 #define _LCONV_DEFINED
-  struct lconv {
+struct lconv {
     char *decimal_point;
     char *thousands_sep;
     char *grouping;
@@ -48,7 +48,7 @@ extern "C" {
     char n_sep_by_space;
     char p_sign_posn;
     char n_sign_posn;
-  };
+};
 #endif
 
 #ifndef _CONFIG_LOCALE_SWT
@@ -63,19 +63,19 @@ extern "C" {
 
 #endif
 
-  int __cdecl _configthreadlocale(int _Flag);
-  char *__cdecl setlocale(int _Category,const char *_Locale);
-  _CRTIMP struct lconv *__cdecl localeconv(void);
-  _locale_t __cdecl _get_current_locale(void);
-  _locale_t __cdecl _create_locale(int _Category,const char *_Locale);
-  void __cdecl _free_locale(_locale_t _Locale);
-  _locale_t __cdecl __get_current_locale(void);
-  _locale_t __cdecl __create_locale(int _Category,const char *_Locale);
-  void __cdecl __free_locale(_locale_t _Locale);
+int __cdecl _configthreadlocale(int _Flag);
+char *__cdecl setlocale(int _Category, const char *_Locale);
+_CRTIMP struct lconv *__cdecl localeconv(void);
+_locale_t __cdecl _get_current_locale(void);
+_locale_t __cdecl _create_locale(int _Category, const char *_Locale);
+void __cdecl _free_locale(_locale_t _Locale);
+_locale_t __cdecl __get_current_locale(void);
+_locale_t __cdecl __create_locale(int _Category, const char *_Locale);
+void __cdecl __free_locale(_locale_t _Locale);
 
 #ifndef _WLOCALE_DEFINED
 #define _WLOCALE_DEFINED
-  _CRTIMP wchar_t *__cdecl _wsetlocale(int _Category,const wchar_t *_Locale);
+_CRTIMP wchar_t *__cdecl _wsetlocale(int _Category, const wchar_t *_Locale);
 #endif
 
 #ifdef __cplusplus

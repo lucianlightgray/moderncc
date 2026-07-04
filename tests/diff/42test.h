@@ -1,6 +1,3 @@
-
-
-
 #ifndef INC42_FIRST
 int have_included_42test_h;
 #define INC42_FIRST

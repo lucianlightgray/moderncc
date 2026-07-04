@@ -1,2 +1,2 @@
-#define J(a,b) a##b
-J(+,-)
+#define J(a, b) a##b
+J(+, -)

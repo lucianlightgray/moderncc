@@ -1,16 +1,11 @@
-/* Legacy tcctest body — legacy_numeric. Aggregate-only unit: it shares file-scope
-   macros/globals with the other legacy_*.h parts and full_language.c's
-   prelude, so it is #included (in order) into full_language.c and is not a
-   standalone parts-suite unit. Extracted verbatim to keep gcc==mcc. */
-void float_test(void)
-{
+void float_test(void) {
 #if !defined(__arm__) || defined(__ARM_PCS_VFP) || defined __ANDROID__
     volatile float fa, fb;
     volatile double da, db;
     int a;
     unsigned int b;
-    static double nan2 = 0.0/0.0;
-    static double inf1 = 1.0/0.0;
+    static double nan2 = 0.0 / 0.0;
+    static double inf1 = 1.0 / 0.0;
     static double inf2 = 1e5000;
     volatile LONG_DOUBLE la;
 
@@ -36,47 +31,46 @@ void float_test(void)
     printf("nan != nan = %d, inf1 = %f, inf2 = %f\n", nan2 != nan2, inf1, inf2);
     da = 0x0.88p-1022;
     la = da;
-    printf ("da subnormal = %a\n", da);
-    printf ("da subnormal = %.40g\n", da);
-    printf ("la subnormal = %La\n", la);
-    printf ("la subnormal = %.40Lg\n", la);
+    printf("da subnormal = %a\n", da);
+    printf("da subnormal = %.40g\n", da);
+    printf("la subnormal = %La\n", la);
+    printf("la subnormal = %.40Lg\n", la);
     da /= 2;
     la = da;
-    printf ("da/2 subnormal = %a\n", da);
-    printf ("da/2 subnormal = %.40g\n", da);
-    printf ("la/2 subnormal = %La\n", la);
-    printf ("la/2 subnormal = %.40Lg\n", la);
+    printf("da/2 subnormal = %a\n", da);
+    printf("da/2 subnormal = %.40g\n", da);
+    printf("la/2 subnormal = %La\n", la);
+    printf("la/2 subnormal = %.40Lg\n", la);
     fa = 0x0.88p-126f;
     la = fa;
-    printf ("fa subnormal = %a\n", fa);
-    printf ("fa subnormal = %.40g\n", fa);
-    printf ("la subnormal = %La\n", la);
-    printf ("la subnormal = %.40Lg\n", la);
+    printf("fa subnormal = %a\n", fa);
+    printf("fa subnormal = %.40g\n", fa);
+    printf("la subnormal = %La\n", la);
+    printf("la subnormal = %.40Lg\n", la);
     fa /= 2;
     la = fa;
-    printf ("fa/2 subnormal = %a\n", fa);
-    printf ("fa/2 subnormal = %.40g\n", fa);
-    printf ("la/2 subnormal = %La\n", la);
-    printf ("la/2 subnormal = %.40Lg\n", la);
+    printf("fa/2 subnormal = %a\n", fa);
+    printf("fa/2 subnormal = %.40g\n", fa);
+    printf("la/2 subnormal = %La\n", la);
+    printf("la/2 subnormal = %.40Lg\n", la);
 #endif
 }
 
-int fib(int n)
-{
+int fib(int n) {
     if (n <= 2)
         return 1;
     else
-        return fib(n-1) + fib(n-2);
+        return fib(n - 1) + fib(n - 2);
 }
 
 #if __GNUC__ == 3 || __GNUC__ == 4
-# define aligned_function 0
+#define aligned_function 0
 #else
-void __attribute__((aligned(16))) aligned_function(int i) {}
+void __attribute__((aligned(16))) aligned_function(int i) {
+}
 #endif
 
-void funcptr_test()
-{
+void funcptr_test() {
     void (*func)(int);
     int a;
     struct {
@@ -105,13 +99,11 @@ void funcptr_test()
     (func + diff)(42);
     (num + a)(43);
 
-
     func = aligned_function;
     printf("aligned_function (should be zero): %d\n", ((int)(uintptr_t)func) & 15);
 }
 
-void lloptest(long long a, long long b)
-{
+void lloptest(long long a, long long b) {
     unsigned long long ua, ub;
 
     ua = a;
@@ -124,33 +116,32 @@ void lloptest(long long a, long long b)
 
     if (b != 0) {
         printf("arith1: " LONG_LONG_FORMAT " " LONG_LONG_FORMAT "\n",
-           a / b,
-           a % b);
+               a / b,
+               a % b);
     }
-
 
     printf("bin: " LONG_LONG_FORMAT " " LONG_LONG_FORMAT " " LONG_LONG_FORMAT "\n",
            a & b,
            a | b,
            a ^ b);
 
-
     printf("test: %d %d %d %d %d %d\n",
            a == b,
            a != b,
-           a < b,
-           a > b,
+           a<b,
+             a>
+               b,
            a >= b,
            a <= b);
 
     printf("utest: %d %d %d %d %d %d\n",
            ua == ub,
            ua != ub,
-           ua < ub,
-           ua > ub,
+           ua<ub,
+              ua>
+               ub,
            ua >= ub,
            ua <= ub);
-
 
     a++;
     b++;
@@ -162,8 +153,7 @@ void lloptest(long long a, long long b)
     printf("not: %d %d %d %d\n", !a, !ua, !b, !ub);
 }
 
-void llshift(long long a, int b)
-{
+void llshift(long long a, int b) {
     printf("shift: " LONG_LONG_FORMAT " " LONG_LONG_FORMAT " " LONG_LONG_FORMAT "\n",
            (unsigned long long)a >> b,
            a >> b,
@@ -178,8 +168,7 @@ void llshift(long long a, int b)
            a << 35);
 }
 
-void llfloat(void)
-{
+void llfloat(void) {
     float fa;
     double da;
     LONG_DOUBLE lda;
@@ -212,8 +201,7 @@ void llfloat(void)
     printf("ftoull: " ULONG_LONG_FORMAT " " ULONG_LONG_FORMAT " " ULONG_LONG_FORMAT "\n", ula, ulb, ulc);
 }
 
-long long llfunc1(int a)
-{
+long long llfunc1(int a) {
     return a * 2;
 }
 
@@ -222,23 +210,19 @@ struct S {
     char item;
 };
 
-long long int value(struct S *v)
-{
+long long int value(struct S *v) {
     return ((long long int)v->item);
 }
 
-long long llfunc2(long long x, long long y, int z)
-{
+long long llfunc2(long long x, long long y, int z) {
     return x * y * z;
 }
 
-void check_opl_save_regs(char *a, long long b, int c)
-{
+void check_opl_save_regs(char *a, long long b, int c) {
     *a = b < 0 && !c;
 }
 
-void longlong_test(void)
-{
+void longlong_test(void) {
     long long a, b, c;
     int ia;
     unsigned int ua;
@@ -248,7 +232,7 @@ void longlong_test(void)
     a = ia;
     b = ua;
     printf(LONG_LONG_FORMAT " " LONG_LONG_FORMAT "\n", a, b);
-    printf(LONG_LONG_FORMAT " " LONG_LONG_FORMAT " " LONG_LONG_FORMAT " "XLONG_LONG_FORMAT"\n",
+    printf(LONG_LONG_FORMAT " " LONG_LONG_FORMAT " " LONG_LONG_FORMAT " " XLONG_LONG_FORMAT "\n",
            (long long)1,
            (long long)-2,
            1LL,
@@ -270,15 +254,14 @@ void longlong_test(void)
     b = 0x12345678;
     a = -1;
     c = a + b;
-    printf(XLONG_LONG_FORMAT"\n", c);
+    printf(XLONG_LONG_FORMAT "\n", c);
 #endif
 
-
     {
-          struct S a;
+        struct S a;
 
-          a.item = 3;
-          printf("%lld\n", value(&a));
+        a.item = 3;
+        printf("%lld\n", value(&a));
     }
     lloptest(0x80000000, 0);
 
@@ -299,11 +282,9 @@ void longlong_test(void)
 
     printf(LONG_LONG_FORMAT "\n", 0x123456789LLU);
 
-
     a = 0x123;
     long long *p = &a;
     llshift(*p, 5);
-
 
     unsigned long long u = 0x8000000000000001ULL;
     u = (unsigned)(u + 1);
@@ -312,9 +293,7 @@ void longlong_test(void)
     u = (unsigned)(int)(u + 1);
     printf("long long u=" ULONG_LONG_FORMAT "\n", u);
 
-
     char cc = 78;
     check_opl_save_regs(&cc, -1, 0);
     printf("check_opl_save_regs: %d\n", cc);
 }
-

@@ -1,7 +1,5 @@
-
 #include <stdio.h>
-int main(void)
-{
+int main(void) {
     printf("%d\n", '\e');
     printf("%d\n", L'A');
 

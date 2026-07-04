@@ -1,2 +1,2 @@
-#define F(a,b) a b
-F(1,2,3)
+#define F(a, b) a b
+F(1, 2, 3)

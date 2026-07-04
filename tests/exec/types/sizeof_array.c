@@ -1,7 +1,6 @@
-int printf(const char*, ...);
+int printf(const char *, ...);
 
-int main()
-{
+int main() {
     char a;
     short b;
 
@@ -11,7 +10,7 @@ int main()
     int ii[] = {};
     printf("sizeof ii : %d\n", sizeof ii);
 
-    int kk[] = { 1 };
+    int kk[] = {1};
     printf("sizeof kk : %d\n", sizeof kk);
 
     char cc[] = "12";
@@ -21,9 +20,9 @@ int main()
     printf("len-of ll : %d\n", sizeof ll / sizeof ll[0]);
 
     static struct {
-        int a,b,c;
+        int a, b, c;
         int d[];
-    } ss[] = {{ 1, 2, 3, {} }};
+    } ss[] = {{1, 2, 3, {}}};
     printf("sizeof ss : %d\n", sizeof ss);
 
     return 0;

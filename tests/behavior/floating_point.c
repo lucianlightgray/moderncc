@@ -1,15 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,8 +5,7 @@
 
 #define check(x) ((x) ? (void)0 : check_fail(#x, __FILE__, __LINE__))
 
-void check_fail(const char *assertion, const char *file, unsigned int line)
-{
+void check_fail(const char *assertion, const char *file, unsigned int line) {
     printf("%s:%d: Check (%s) failed.", file, line, assertion);
     exit(1);
 }
@@ -27,59 +14,51 @@ typedef struct {
     unsigned long long x0, x1;
 } u128_t;
 
-float copy_fi(uint32_t x)
-{
+float copy_fi(uint32_t x) {
     float f;
     memcpy(&f, &x, 4);
     return f;
 }
 
-double copy_di(uint64_t x)
-{
+double copy_di(uint64_t x) {
     double f;
     memcpy(&f, &x, 8);
     return f;
 }
 
-long double copy_ldi(u128_t x)
-{
+long double copy_ldi(u128_t x) {
     long double f;
     memcpy(&f, &x, 16);
     return f;
 }
 
-uint32_t copy_if(float f)
-{
+uint32_t copy_if(float f) {
     uint32_t x;
     memcpy(&x, &f, 4);
     return x;
 }
 
-uint64_t copy_id(double f)
-{
+uint64_t copy_id(double f) {
     uint64_t x;
     memcpy(&x, &f, 8);
     return x;
 }
 
-u128_t copy_ild(long double f)
-{
+u128_t copy_ild(long double f) {
     u128_t x;
     memcpy(&x, &f, 16);
     return x;
 }
 
-long double make(int sgn, int exp, uint64_t high, uint64_t low)
-{
-    u128_t x = { low,
-                 (0x0000ffffffffffff & high) |
-                 (0x7fff000000000000 & (uint64_t)exp << 48) |
-                 (0x8000000000000000 & (uint64_t)sgn << 63) };
+long double make(int sgn, int exp, uint64_t high, uint64_t low) {
+    u128_t x = {low,
+                (0x0000ffffffffffff & high) |
+                    (0x7fff000000000000 & (uint64_t)exp << 48) |
+                    (0x8000000000000000 & (uint64_t)sgn << 63)};
     return copy_ldi(x);
 }
 
-void cmp(long double a, long double b)
-{
+void cmp(long double a, long double b) {
     u128_t ax = copy_ild(a);
     u128_t bx = copy_ild(b);
     int eq = (a == b);
@@ -99,8 +78,7 @@ void cmp(long double a, long double b)
            ax.x1, ax.x0, bx.x1, bx.x0, lt, eq, gt);
 }
 
-void cmps(void)
-{
+void cmps(void) {
     int i, j;
 
     for (i = 0; i < 2; i++)
@@ -136,8 +114,7 @@ void cmps(void)
     }
 }
 
-void xop(const char *name, long double a, long double b, long double c)
-{
+void xop(const char *name, long double a, long double b, long double c) {
     u128_t ax = copy_ild(a);
     u128_t bx = copy_ild(b);
     u128_t cx = copy_ild(c);
@@ -145,28 +122,23 @@ void xop(const char *name, long double a, long double b, long double c)
            name, ax.x1, ax.x0, bx.x1, bx.x0, cx.x1, cx.x0);
 }
 
-void fadd(long double a, long double b)
-{
+void fadd(long double a, long double b) {
     xop("add", a, b, a + b);
 }
 
-void fsub(long double a, long double b)
-{
+void fsub(long double a, long double b) {
     xop("sub", a, b, a - b);
 }
 
-void fmul(long double a, long double b)
-{
+void fmul(long double a, long double b) {
     xop("mul", a, b, a * b);
 }
 
-void fdiv(long double a, long double b)
-{
+void fdiv(long double a, long double b) {
     xop("div", a, b, a / b);
 }
 
-void nanz(void)
-{
+void nanz(void) {
 
     {
         long double x[7];
@@ -189,7 +161,6 @@ void nanz(void)
         }
     }
 
-
     {
         long double x[6];
         int i, j, n = 0;
@@ -211,24 +182,22 @@ void nanz(void)
     }
 }
 
-void adds(void)
-{
+void adds(void) {
 
     {
         int i;
         for (i = -130; i <= 130; i++) {
             int s1 = (uint32_t)i % 3 < 1;
             int s2 = (uint32_t)i % 5 < 2;
-            fadd(make(s1, 16384    , 0x502c065e4f71a65d, 0xd2f9bdb031f4f031),
+            fadd(make(s1, 16384, 0x502c065e4f71a65d, 0xd2f9bdb031f4f031),
                  make(s2, 16384 + i, 0xae267395a9bc1033, 0xb56b5800da1ba448));
         }
     }
 
-
     {
         uint64_t a0 = 0xc6bab0a6afbef5ed;
         uint64_t a1 = 0x4f84136c4a2e9b52;
-        int ee[] = { 0, 1, 10000 };
+        int ee[] = {0, 1, 10000};
         int e, i;
         for (e = 0; e < sizeof(ee) / sizeof(*ee); e++) {
             int exp = ee[e];
@@ -236,12 +205,11 @@ void adds(void)
             for (i = 63; i >= 0; i--)
                 fsub(make(0, exp, a1 | (uint64_t)1 << i >> 1, a0),
                      make(0, exp, a1 >> i << i, 0));
-            for (i = 63; i >=0; i--)
+            for (i = 63; i >= 0; i--)
                 fsub(make(0, exp, a1, a0 | (uint64_t)1 << i >> 1),
                      make(0, exp, a1, a0 >> i << i));
         }
     }
-
 
     {
         fadd(make(0, 114, -1, -1), make(0, 1, 0, 0));
@@ -250,8 +218,7 @@ void adds(void)
     }
 }
 
-void muls(void)
-{
+void muls(void) {
     int i, j;
 
     {
@@ -280,8 +247,7 @@ void muls(void)
                       j < 64 ? (uint64_t)1 << j : 0));
 }
 
-void divs(void)
-{
+void divs(void) {
     int i;
 
     {
@@ -299,37 +265,32 @@ void divs(void)
         fdiv(make(0, 16383, -1, -1), make(0, 16383, -(uint64_t)1 << i, 0));
 }
 
-void cvtlsw(int32_t a)
-{
+void cvtlsw(int32_t a) {
     long double f = a;
     u128_t x = copy_ild(f);
     printf("cvtlsw %08lx %016llx%016llx\n", (long)(uint32_t)a, x.x1, x.x0);
 }
 
-void cvtlsx(int64_t a)
-{
+void cvtlsx(int64_t a) {
     long double f = a;
     u128_t x = copy_ild(f);
     printf("cvtlsx %016llx %016llx%016llx\n",
            (long long)(uint64_t)a, x.x1, x.x0);
 }
 
-void cvtluw(uint32_t a)
-{
+void cvtluw(uint32_t a) {
     long double f = a;
     u128_t x = copy_ild(f);
     printf("cvtluw %08lx %016llx%016llx\n", (long)a, x.x1, x.x0);
 }
 
-void cvtlux(uint64_t a)
-{
+void cvtlux(uint64_t a) {
     long double f = a;
     u128_t x = copy_ild(f);
     printf("cvtlux %016llx %016llx%016llx\n", (long long)a, x.x1, x.x0);
 }
 
-void cvtil(long double a)
-{
+void cvtil(long double a) {
     u128_t x = copy_ild(a);
     int32_t b1 = a;
     int64_t b2 = a;
@@ -345,40 +306,35 @@ void cvtil(long double a)
            x.x1, x.x0, (long long)b4);
 }
 
-void cvtlf(float a)
-{
+void cvtlf(float a) {
     uint32_t ax = copy_if(a);
     long double b = a;
     u128_t bx = copy_ild(b);
     printf("cvtlf %08lx %016llx%016llx\n", (long)ax, bx.x1, bx.x0);
 }
 
-void cvtld(double a)
-{
+void cvtld(double a) {
     uint64_t ax = copy_id(a);
     long double b = a;
     u128_t bx = copy_ild(b);
     printf("cvtld %016llx %016llx%016llx\n", (long long)ax, bx.x1, bx.x0);
 }
 
-void cvtfl(long double a)
-{
+void cvtfl(long double a) {
     u128_t ax = copy_ild(a);
     float b = a;
     uint32_t bx = copy_if(b);
     printf("cvtfl %016llx%016llx %08lx\n", ax.x1, ax.x0, (long)bx);
 }
 
-void cvtdl(long double a)
-{
+void cvtdl(long double a) {
     u128_t ax = copy_ild(a);
     double b = a;
     uint64_t bx = copy_id(b);
     printf("cvtdl %016llx%016llx %016llx\n", ax.x1, ax.x0, (long long)bx);
 }
 
-void cvts(void)
-{
+void cvts(void) {
     int i, j;
 
     {
@@ -447,7 +403,7 @@ void cvts(void)
     cvtld(copy_di(0xfff123456789abcd));
     cvtld(copy_di(0xfffabcdef1234567));
 
-    for (i = 0; i < 2; i++) {                   \
+    for (i = 0; i < 2; i++) {
         cvtfl(make(i, 0, 0, 0));
         cvtfl(make(i, 16232, -1, -1));
         cvtfl(make(i, 16233, 0, 0));
@@ -488,8 +444,7 @@ void cvts(void)
     }
 }
 
-void tests(void)
-{
+void tests(void) {
     cmps();
     nanz();
     adds();
@@ -498,8 +453,7 @@ void tests(void)
     cvts();
 }
 
-int main()
-{
+int main() {
 #ifdef __aarch64__
     tests();
 #else

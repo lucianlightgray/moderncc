@@ -1,12 +1,3 @@
-/*
- * seccmp.c - compare the loadable section contents of two relocatable ELF
- * objects (.text/.data/.rodata/.data.ro bytes, .bss sizes).
- *
- * Used by the dash-s-bytes-<arch> tests: `mcc -c` output vs `mcc -S` output
- * re-assembled by mcc's integrated assembler must be byte-identical on the
- * fixed-width targets.  Exit 0 identical, 1 different, 2 usage/parse error.
- * Host tool: parses both ELFCLASS32 and ELFCLASS64, little-endian only.
- */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,22 +15,24 @@ typedef struct {
     unsigned type;
 } sec;
 
-static blob slurp(const char *fn)
-{
+static blob slurp(const char *fn) {
     blob b = {0, 0};
     FILE *f = fopen(fn, "rb");
-    if (!f) { fprintf(stderr, "seccmp: cannot open %s\n", fn); exit(2); }
+    if (!f) {
+        fprintf(stderr, "seccmp: cannot open %s\n", fn);
+        exit(2);
+    }
     fseek(f, 0, SEEK_END);
     b.size = ftell(f);
     fseek(f, 0, SEEK_SET);
     b.data = malloc(b.size);
-    if (fread(b.data, 1, b.size, f) != (size_t)b.size) exit(2);
+    if (fread(b.data, 1, b.size, f) != (size_t)b.size)
+        exit(2);
     fclose(f);
     return b;
 }
 
-static u64 rd(const unsigned char *p, int n)
-{
+static u64 rd(const unsigned char *p, int n) {
     u64 v = 0;
     int i;
     for (i = n - 1; i >= 0; i--)
@@ -47,9 +40,7 @@ static u64 rd(const unsigned char *p, int n)
     return v;
 }
 
-/* Load section headers; returns count. */
-static int sections(blob *b, sec *out, int max)
-{
+static int sections(blob *b, sec *out, int max) {
     int is64, shentsize, shnum, shstrndx, i, n = 0;
     u64 shoff, stroff;
     if (b->size < 64 || memcmp(b->data, "\177ELF", 4)) {
@@ -75,8 +66,7 @@ static int sections(blob *b, sec *out, int max)
         u64 nameoff = rd(sh, 4);
         const char *nm = (const char *)b->data + stroff + nameoff;
         sec *s = &out[n];
-        /* the -S listing renames mcc's internal ".data.ro" to the
-           conventional ".rodata"; compare them as one section */
+
         snprintf(s->name, sizeof s->name, "%s",
                  strcmp(nm, ".data.ro") ? nm : ".rodata");
         s->type = (unsigned)rd(sh + 4, 4);
@@ -87,17 +77,15 @@ static int sections(blob *b, sec *out, int max)
             s->off = rd(sh + 0x10, 4);
             s->size = rd(sh + 0x14, 4);
         }
-        /* skip inert empty sections (mcc pre-creates e.g. an empty
-           .data.ro even when the assembler input only fills .rodata) */
-        if (s->size == 0 && s->type != 8 /* SHT_NOBITS */)
+
+        if (s->size == 0 && s->type != 8)
             continue;
         n++;
     }
     return n;
 }
 
-static sec *find(sec *v, int n, const char *name)
-{
+static sec *find(sec *v, int n, const char *name) {
     int i;
     for (i = 0; i < n; i++)
         if (!strcmp(v[i].name, name))
@@ -105,9 +93,8 @@ static sec *find(sec *v, int n, const char *name)
     return NULL;
 }
 
-int main(int argc, char **argv)
-{
-    static const char *cmp[] = { ".text", ".data", ".rodata", 0 };
+int main(int argc, char **argv) {
+    static const char *cmp[] = {".text", ".data", ".rodata", 0};
     blob a, b;
     sec sa[128], sb[128];
     int na, nb, i, rc = 0;
@@ -130,8 +117,7 @@ int main(int argc, char **argv)
             rc = 1;
             continue;
         }
-        if (x->size != y->size
-         || memcmp(a.data + x->off, b.data + y->off, x->size)) {
+        if (x->size != y->size || memcmp(a.data + x->off, b.data + y->off, x->size)) {
             u64 j;
             printf("DIFF %s: %llu vs %llu bytes\n", cmp[i], x->size, y->size);
             for (j = 0; j < x->size && j < y->size; j++)

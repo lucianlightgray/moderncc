@@ -22,10 +22,10 @@ enum {
 };
 #define REG_FLOAT_MASK 0x20
 #define REG_IS_FLOAT(register_index) ((register_index) & REG_FLOAT_MASK)
-#define REG_VALUE(register_index)    ((register_index) & (REG_FLOAT_MASK-1))
+#define REG_VALUE(register_index) ((register_index) & (REG_FLOAT_MASK - 1))
 #define C_ENCODE_RS1(register_index) (REG_VALUE(register_index) << 7)
 #define C_ENCODE_RS2(register_index) (REG_VALUE(register_index) << 2)
-#define ENCODE_RD(register_index)  (REG_VALUE(register_index) << 7)
+#define ENCODE_RD(register_index) (REG_VALUE(register_index) << 7)
 #define ENCODE_RS1(register_index) (REG_VALUE(register_index) << 15)
 #define ENCODE_RS2(register_index) (REG_VALUE(register_index) << 20)
 #define NTH_BIT(b, n) ((b >> n) & 1)
@@ -43,11 +43,11 @@ typedef struct Operand {
     };
 } Operand;
 
-static const Operand zero = { OP_REG, { 0 }};
-static const Operand ra = { OP_REG, { 1 }};
-static const Operand zimm = { OP_IM12S, { 0 }};
+static const Operand zero = {OP_REG, {0}};
+static const Operand ra = {OP_REG, {1}};
+static const Operand zimm = {OP_IM12S, {0}};
 
-static void asm_binary_opcode(MCCState* s1, int token);
+static void asm_binary_opcode(MCCState *s1, int token);
 ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str);
 ST_FUNC void asm_compute_constraints(ASMOperand *operands, int nb_operands, int nb_outputs, const uint8_t *clobber_regs, int *pout_reg);
 static void asm_emit_a(int token, uint32_t opcode, const Operand *rs1, const Operand *rs2, const Operand *rd1, int aq, int rl);
@@ -73,7 +73,7 @@ ST_FUNC void gen_expr32(ExprValue *pe);
 static void parse_operand(MCCState *s1, Operand *op);
 static void parse_branch_offset_operand(MCCState *s1, Operand *op);
 static void parse_operands(MCCState *s1, Operand *ops, int count);
-static void parse_mem_access_operands(MCCState *s1, Operand* ops);
+static void parse_mem_access_operands(MCCState *s1, Operand *ops);
 ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier);
 static void asm_emit_ca(int token, uint16_t opcode, const Operand *rd, const Operand *rs2);
 static void asm_emit_cb(int token, uint16_t opcode, const Operand *rs1, const Operand *imm);
@@ -85,8 +85,7 @@ static void asm_emit_cr(int token, uint16_t opcode, const Operand *rd, const Ope
 static void asm_emit_cs(int token, uint16_t opcode, const Operand *rs2, const Operand *rs1, const Operand *imm);
 static void asm_emit_css(int token, uint16_t opcode, const Operand *rs2, const Operand *imm);
 
-ST_FUNC void gen_le32 (int i)
-{
+ST_FUNC void gen_le32(int i) {
     int ind1;
     if (nocode_wanted)
         return;
@@ -99,8 +98,7 @@ ST_FUNC void gen_le32 (int i)
     cur_text_section->data[ind++] = (i >> 24) & 0xFF;
 }
 
-ST_FUNC void gen_expr32(ExprValue *pe)
-{
+ST_FUNC void gen_expr32(ExprValue *pe) {
     gen_le32(pe->v);
 }
 
@@ -108,14 +106,12 @@ static void asm_emit_opcode(uint32_t opcode) {
     gen_le32(opcode);
 }
 
-static void asm_nullary_opcode(MCCState *s1, int token)
-{
+static void asm_nullary_opcode(MCCState *s1, int token) {
     switch (token) {
 
     case TOK_ASM_fence_i:
-        asm_emit_opcode((0x3 << 2) | 3| (1 << 12));
+        asm_emit_opcode((0x3 << 2) | 3 | (1 << 12));
         return;
-
 
     case TOK_ASM_ecall:
         asm_emit_opcode((0x1C << 2) | 3 | (0 << 12));
@@ -123,7 +119,6 @@ static void asm_nullary_opcode(MCCState *s1, int token)
     case TOK_ASM_ebreak:
         asm_emit_opcode((0x1C << 2) | 3 | (0 << 12) | (1 << 20));
         return;
-
 
     case TOK_ASM_nop:
         asm_emit_i(token, (4 << 2) | 3, &zero, &zero, &zimm);
@@ -134,7 +129,7 @@ static void asm_nullary_opcode(MCCState *s1, int token)
         return;
 
     case TOK_ASM_ret:
-        asm_emit_opcode( 0x67 | (0 << 12) | ENCODE_RS1(1) );
+        asm_emit_opcode(0x67 | (0 << 12) | ENCODE_RS1(1));
         return;
 
     case TOK_ASM_c_ebreak:
@@ -149,8 +144,7 @@ static void asm_nullary_opcode(MCCState *s1, int token)
     }
 }
 
-static void parse_operand(MCCState *s1, Operand *op)
-{
+static void parse_operand(MCCState *s1, Operand *op) {
     ExprValue e = {0};
     Sym label = {0};
     int8_t reg;
@@ -158,12 +152,7 @@ static void parse_operand(MCCState *s1, Operand *op)
     op->type = 0;
 
     if (tok == '%') {
-        /* GAS-style operand modifiers.  %pcrel_hi(sym+addend) /
-           %got_pcrel_hi(sym+addend) emit their HI20 relocation here; the
-           paired LO12 comes from an explicit %pcrel_lo(label) operand on
-           the dependent instruction (asm_emit_i/asm_emit_s pick LO12_I vs
-           LO12_S by instruction form), unlike the bare-symbol auipc
-           spelling, which auto-pairs a LO12_I at the next instruction. */
+
         const char *mod;
         int rtype;
         next();
@@ -200,7 +189,7 @@ static void parse_operand(MCCState *s1, Operand *op)
     if ((reg = asm_parse_regvar(tok)) != -1) {
         next();
         op->type = OP_REG;
-        op->reg = (uint8_t) reg;
+        op->reg = (uint8_t)reg;
         return;
     } else if (tok == '$') {
         next();
@@ -212,11 +201,9 @@ static void parse_operand(MCCState *s1, Operand *op)
     op->type = OP_IM32;
     op->e = e;
     if (!op->e.sym) {
-        if ((int) op->e.v >= -0x1000 && (int) op->e.v < 0x1000)
+        if ((int)op->e.v >= -0x1000 && (int)op->e.v < 0x1000)
             op->type = OP_IM12S;
     } else if (op->e.sym->type.t & (VT_EXTERN | VT_STATIC)) {
-
-
 
         label.type.t = VT_VOID | VT_STATIC;
 
@@ -225,7 +212,7 @@ static void parse_operand(MCCState *s1, Operand *op)
         else
             greloca(cur_text_section, op->e.sym, ind, R_RISCV_GOT_HI20, 0);
         put_extern_sym(&label, cur_text_section, ind, 0);
-        greloca(cur_text_section, &label, ind+4, R_RISCV_PCREL_LO12_I, 0);
+        greloca(cur_text_section, &label, ind + 4, R_RISCV_PCREL_LO12_I, 0);
 
         op->type = OP_IM12S;
         op->e.v = 0;
@@ -234,14 +221,14 @@ static void parse_operand(MCCState *s1, Operand *op)
     }
 }
 
-static void parse_branch_offset_operand(MCCState *s1, Operand *op){
+static void parse_branch_offset_operand(MCCState *s1, Operand *op) {
     ExprValue e = {0};
 
     asm_expr(s1, &e);
     op->type = OP_IM32;
     op->e = e;
     if (!op->e.sym) {
-        if ((int) op->e.v >= -0x1000 && (int) op->e.v < 0x1000)
+        if ((int)op->e.v >= -0x1000 && (int)op->e.v < 0x1000)
             op->type = OP_IM12S;
     } else if (op->e.sym->type.t & (VT_EXTERN | VT_STATIC)) {
         op->type = OP_IM32;
@@ -251,14 +238,14 @@ static void parse_branch_offset_operand(MCCState *s1, Operand *op){
     }
 }
 
-static void parse_jump_offset_operand(MCCState *s1, Operand *op){
+static void parse_jump_offset_operand(MCCState *s1, Operand *op) {
     ExprValue e = {0};
 
     asm_expr(s1, &e);
     op->type = OP_IM32;
     op->e = e;
     if (!op->e.sym) {
-        if ((int) op->e.v >= -0x1000 && (int) op->e.v < 0x1000)
+        if ((int)op->e.v >= -0x1000 && (int)op->e.v < 0x1000)
             op->type = OP_IM12S;
     } else if (op->e.sym->type.t & (VT_EXTERN | VT_STATIC)) {
         greloca(cur_text_section, op->e.sym, ind, R_RISCV_JAL, 0);
@@ -269,28 +256,28 @@ static void parse_jump_offset_operand(MCCState *s1, Operand *op){
     }
 }
 
-static void parse_operands(MCCState *s1, Operand* ops, int count){
+static void parse_operands(MCCState *s1, Operand *ops, int count) {
     for (int i = 0; i < count; i++) {
-        if ( i != 0 )
+        if (i != 0)
             skip(',');
         parse_operand(s1, &ops[i]);
     }
 }
 
-static void parse_mem_access_operands(MCCState *s1, Operand* ops){
+static void parse_mem_access_operands(MCCState *s1, Operand *ops) {
 
     Operand op;
 
     parse_operand(s1, &ops[0]);
     skip(',');
-    if ( tok == '(') {
+    if (tok == '(') {
         next();
         parse_operand(s1, &ops[1]);
         skip(')');
         ops[2] = zimm;
     } else {
         parse_operand(s1, &ops[2]);
-        if ( tok == '('){
+        if (tok == '(') {
             next();
             parse_operand(s1, &ops[1]);
             skip(')');
@@ -303,41 +290,44 @@ static void parse_mem_access_operands(MCCState *s1, Operand* ops){
     }
 }
 
-static void asm_jal_opcode(MCCState *s1, int token){
+static void asm_jal_opcode(MCCState *s1, int token) {
     Operand ops[2];
 
-    if (token == TOK_ASM_j ){
+    if (token == TOK_ASM_j) {
         ops[0] = zero;
     } else if (asm_parse_regvar(tok) == -1) {
         ops[0] = ra;
     } else {
         parse_operand(s1, &ops[0]);
-        if ( tok == ',') next(); else expect("','");
+        if (tok == ',')
+            next();
+        else
+            expect("','");
     }
     parse_jump_offset_operand(s1, &ops[1]);
     asm_emit_j(token, 0x6f, &ops[0], &ops[1]);
 }
 
-static void asm_jalr_opcode(MCCState *s1, int token){
+static void asm_jalr_opcode(MCCState *s1, int token) {
     Operand ops[3];
     Operand op;
 
     parse_operand(s1, &ops[0]);
-    if ( tok == ',')
+    if (tok == ',')
         next();
     else {
         asm_emit_i(token, 0x67 | (0 << 12), &ra, &ops[0], &zimm);
         return;
     }
 
-    if ( tok == '(') {
+    if (tok == '(') {
         next();
         parse_operand(s1, &ops[1]);
         skip(')');
         ops[2] = zimm;
     } else {
         parse_operand(s1, &ops[2]);
-        if ( tok == '('){
+        if (tok == '(') {
             next();
             parse_operand(s1, &ops[1]);
             skip(')');
@@ -351,16 +341,12 @@ static void asm_jalr_opcode(MCCState *s1, int token){
     asm_emit_i(token, 0x67 | (0 << 12), &ops[0], &ops[1], &ops[2]);
 }
 
-
-static void asm_unary_opcode(MCCState *s1, int token)
-{
+static void asm_unary_opcode(MCCState *s1, int token) {
     uint32_t opcode = (0x1C << 2) | 3 | (2 << 12);
     Operand op;
 
     if (token == TOK_ASM_call || token == TOK_ASM_tail) {
-        /* auipc+jalr pair covered by a single R_RISCV_CALL: parse the
-           target as a bare expression so parse_operand() does not emit
-           its own PCREL_HI20/LO12_I pair on top of it */
+
         ExprValue e = {0};
         asm_expr(s1, &e);
         if (!e.sym) {
@@ -369,11 +355,11 @@ static void asm_unary_opcode(MCCState *s1, int token)
         }
         greloca(cur_text_section, e.sym, ind, R_RISCV_CALL, e.v);
         if (token == TOK_ASM_call) {
-            asm_emit_opcode(3 | (5 << 2) | ENCODE_RD(1));         /* auipc ra */
-            asm_emit_opcode(0x67 | ENCODE_RD(1) | ENCODE_RS1(1)); /* jalr ra, 0(ra) */
+            asm_emit_opcode(3 | (5 << 2) | ENCODE_RD(1));
+            asm_emit_opcode(0x67 | ENCODE_RD(1) | ENCODE_RS1(1));
         } else {
-            asm_emit_opcode(3 | (5 << 2) | ENCODE_RD(6));         /* auipc t1 */
-            asm_emit_opcode(0x67 | ENCODE_RS1(6));                /* jalr zero, 0(t1) */
+            asm_emit_opcode(3 | (5 << 2) | ENCODE_RD(6));
+            asm_emit_opcode(0x67 | ENCODE_RS1(6));
         }
         return;
     }
@@ -431,8 +417,7 @@ static void asm_unary_opcode(MCCState *s1, int token)
     }
 }
 
-static void asm_emit_u(int token, uint32_t opcode, const Operand* rd, const Operand* rs2)
-{
+static void asm_emit_u(int token, uint32_t opcode, const Operand *rd, const Operand *rs2) {
     if (rd->type != OP_REG) {
         mcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
     }
@@ -444,34 +429,33 @@ static void asm_emit_u(int token, uint32_t opcode, const Operand* rd, const Oper
     gen_le32(opcode | ENCODE_RD(rd->reg) | (rs2->e.v << 12));
 }
 
-static int parse_fence_operand(){
+static int parse_fence_operand() {
     int t = tok;
-    if ( tok == TOK_ASM_or ){
+    if (tok == TOK_ASM_or) {
         t = TOK_ASM_or_fence;
     }
     next();
     return t - (TOK_ASM_w_fence - 1);
 }
 
-static void asm_fence_opcode(MCCState *s1, int token){
+static void asm_fence_opcode(MCCState *s1, int token) {
     int succ = 0xF, pred = 0xF;
-    if (tok != TOK_LINEFEED && tok != ';' && tok != CH_EOF){
+    if (tok != TOK_LINEFEED && tok != ';' && tok != CH_EOF) {
         pred = parse_fence_operand();
-        if ( pred > 0xF || pred < 0) {
+        if (pred > 0xF || pred < 0) {
             mcc_error("'%s': Expected first operand that is a valid predecessor operand", get_tok_str(token, NULL));
         }
         skip(',');
         succ = parse_fence_operand();
-        if ( succ > 0xF || succ < 0) {
+        if (succ > 0xF || succ < 0) {
             mcc_error("'%s': Expected second operand that is a valid successor operand", get_tok_str(token, NULL));
         }
     }
-    asm_emit_opcode((0x3 << 2) | 3 | (0 << 12) | succ<<20 | pred<<24);
+    asm_emit_opcode((0x3 << 2) | 3 | (0 << 12) | succ << 20 | pred << 24);
 }
 
-static void asm_binary_opcode(MCCState* s1, int token)
-{
-    Operand imm = { OP_IM12S, { 0 }};
+static void asm_binary_opcode(MCCState *s1, int token) {
+    Operand imm = {OP_IM12S, {0}};
     Operand ops[2];
     int32_t lo;
     uint32_t hi;
@@ -593,21 +577,21 @@ static void asm_binary_opcode(MCCState* s1, int token)
         asm_emit_i(token, 3 | (4 << 2), ops, ops, ops + 1);
         return;
     case TOK_ASM_li:
-        if(ops[1].type != OP_IM32 && ops[1].type != OP_IM12S){
+        if (ops[1].type != OP_IM32 && ops[1].type != OP_IM12S) {
             mcc_error("'%s': Expected first source operand that is an immediate value between 0 and 0xFFFFFFFFFFFFFFFF", get_tok_str(token, NULL));
         }
         lo = ops[1].e.v;
         hi = (int64_t)ops[1].e.v >> 32;
-        if(lo < 0){
+        if (lo < 0) {
             hi += 1;
         }
         imm.e.v = ((hi + 0x800) & 0xfffff000) >> 12;
         asm_emit_u(token, (0xD << 2) | 3, &ops[0], &imm);
-        imm.e.v = (int32_t)hi<<20>>20;
+        imm.e.v = (int32_t)hi << 20 >> 20;
         asm_emit_i(token, 3 | (4 << 2), &ops[0], &ops[0], &imm);
         imm.e.v = 12;
         asm_emit_i(token, (4 << 2) | 3 | (1 << 12), &ops[0], &ops[0], &imm);
-        imm.e.v = (lo + (1<<19)) >> 20;
+        imm.e.v = (lo + (1 << 19)) >> 20;
         asm_emit_i(token, 3 | (4 << 2), &ops[0], &ops[0], &imm);
         imm.e.v = 12;
         asm_emit_i(token, (4 << 2) | 3 | (1 << 12), &ops[0], &ops[0], &imm);
@@ -708,8 +692,7 @@ static void asm_binary_opcode(MCCState* s1, int token)
     }
 }
 
-static void asm_emit_r(int token, uint32_t opcode, const Operand* rd, const Operand* rs1, const Operand* rs2)
-{
+static void asm_emit_r(int token, uint32_t opcode, const Operand *rd, const Operand *rs1, const Operand *rs2) {
     if (rd->type != OP_REG) {
         mcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
     }
@@ -722,8 +705,7 @@ static void asm_emit_r(int token, uint32_t opcode, const Operand* rd, const Oper
     gen_le32(opcode | ENCODE_RD(rd->reg) | ENCODE_RS1(rs1->reg) | ENCODE_RS2(rs2->reg));
 }
 
-static void asm_emit_f(int token, uint32_t opcode, const Operand* rd, const Operand* rs1, const Operand* rs2)
-{
+static void asm_emit_f(int token, uint32_t opcode, const Operand *rd, const Operand *rs1, const Operand *rs2) {
     if (rd->type != OP_REG || !REG_IS_FLOAT(rd->reg)) {
         mcc_error("'%s': Expected destination operand that is a floating-point register", get_tok_str(token, NULL));
     }
@@ -735,8 +717,7 @@ static void asm_emit_f(int token, uint32_t opcode, const Operand* rd, const Oper
     }
     gen_le32(opcode | ENCODE_RD(rd->reg) | ENCODE_RS1(rs1->reg) | ENCODE_RS2(rs2->reg));
 }
-static void asm_emit_fb(int token, uint32_t opcode, const Operand* rd, const Operand* rs)
-{
+static void asm_emit_fb(int token, uint32_t opcode, const Operand *rd, const Operand *rs) {
     if (rd->type != OP_REG || !REG_IS_FLOAT(rd->reg)) {
         mcc_error("'%s': Expected destination operand that is a floating-point register", get_tok_str(token, NULL));
     }
@@ -745,8 +726,7 @@ static void asm_emit_fb(int token, uint32_t opcode, const Operand* rd, const Ope
     }
     gen_le32(opcode | ENCODE_RD(rd->reg) | ENCODE_RS1(rs->reg) | ENCODE_RS2(0));
 }
-static void asm_emit_fq(int token, uint32_t opcode, const Operand* rd, const Operand* rs1, const Operand* rs2, const Operand* rs3)
-{
+static void asm_emit_fq(int token, uint32_t opcode, const Operand *rd, const Operand *rs1, const Operand *rs2, const Operand *rs3) {
     if (rd->type != OP_REG || !REG_IS_FLOAT(rd->reg)) {
         mcc_error("'%s': Expected destination operand that is a floating-point register", get_tok_str(token, NULL));
     }
@@ -762,8 +742,7 @@ static void asm_emit_fq(int token, uint32_t opcode, const Operand* rd, const Ope
     gen_le32(opcode | ENCODE_RD(rd->reg) | ENCODE_RS1(rs1->reg) | ENCODE_RS2(rs2->reg) | (REG_VALUE(rs3->reg) << 27));
 }
 
-static void asm_emit_i(int token, uint32_t opcode, const Operand* rd, const Operand* rs1, const Operand* rs2)
-{
+static void asm_emit_i(int token, uint32_t opcode, const Operand *rd, const Operand *rs1, const Operand *rs2) {
     if (rd->type != OP_REG) {
         mcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
     }
@@ -782,8 +761,7 @@ static void asm_emit_i(int token, uint32_t opcode, const Operand* rd, const Oper
     gen_le32(opcode | ENCODE_RD(rd->reg) | ENCODE_RS1(rs1->reg) | (rs2->e.v << 20));
 }
 
-static void asm_emit_j(int token, uint32_t opcode, const Operand* rd, const Operand* rs2)
-{
+static void asm_emit_j(int token, uint32_t opcode, const Operand *rd, const Operand *rs2) {
     uint32_t imm;
 
     if (rd->type != OP_REG) {
@@ -795,7 +773,7 @@ static void asm_emit_j(int token, uint32_t opcode, const Operand* rd, const Oper
 
     imm = rs2->e.v;
 
-    if ((int)imm > (1 << 20) -1 || (int)imm <= -1 * ((1 << 20) -1)) {
+    if ((int)imm > (1 << 20) - 1 || (int)imm <= -1 * ((1 << 20) - 1)) {
         mcc_error("'%s': Expected second source operand that is an immediate value between 0 and 0x1fffff", get_tok_str(token, NULL));
     }
 
@@ -805,77 +783,75 @@ static void asm_emit_j(int token, uint32_t opcode, const Operand* rd, const Oper
     gen_le32(opcode | ENCODE_RD(rd->reg) | (((imm >> 20) & 1) << 31) | (((imm >> 1) & 0x3ff) << 21) | (((imm >> 11) & 1) << 20) | (((imm >> 12) & 0xff) << 12));
 }
 
-static void asm_mem_access_opcode(MCCState *s1, int token)
-{
+static void asm_mem_access_opcode(MCCState *s1, int token) {
 
     Operand ops[3];
     parse_mem_access_operands(s1, &ops[0]);
 
-    if (ops[1].type == OP_IM32 && ops[1].e.sym && ops[1].e.sym->type.t & VT_STATIC){
+    if (ops[1].type == OP_IM32 && ops[1].e.sym && ops[1].e.sym->type.t & VT_STATIC) {
         ops[1] = ops[0];
         ops[2].type = OP_IM12S;
-        ops[2].e.v  = 0;
+        ops[2].e.v = 0;
         asm_emit_u(token, (0x05 << 2) | 3, &ops[0], &ops[2]);
     }
 
     switch (token) {
     case TOK_ASM_lb:
-         asm_emit_i(token, (0x0 << 2) | 3, &ops[0], &ops[1], &ops[2]);
-         return;
+        asm_emit_i(token, (0x0 << 2) | 3, &ops[0], &ops[1], &ops[2]);
+        return;
     case TOK_ASM_lh:
-         asm_emit_i(token, (0x0 << 2) | 3 | (1 << 12), &ops[0], &ops[1], &ops[2]);
-         return;
+        asm_emit_i(token, (0x0 << 2) | 3 | (1 << 12), &ops[0], &ops[1], &ops[2]);
+        return;
     case TOK_ASM_lw:
-         asm_emit_i(token, (0x0 << 2) | 3 | (2 << 12), &ops[0], &ops[1], &ops[2]);
-         return;
+        asm_emit_i(token, (0x0 << 2) | 3 | (2 << 12), &ops[0], &ops[1], &ops[2]);
+        return;
     case TOK_ASM_ld:
-         asm_emit_i(token, (0x0 << 2) | 3 | (3 << 12), &ops[0], &ops[1], &ops[2]);
-         return;
+        asm_emit_i(token, (0x0 << 2) | 3 | (3 << 12), &ops[0], &ops[1], &ops[2]);
+        return;
     case TOK_ASM_lbu:
-         asm_emit_i(token, (0x0 << 2) | 3 | (4 << 12), &ops[0], &ops[1], &ops[2]);
-         return;
+        asm_emit_i(token, (0x0 << 2) | 3 | (4 << 12), &ops[0], &ops[1], &ops[2]);
+        return;
     case TOK_ASM_lhu:
-         asm_emit_i(token, (0x0 << 2) | 3 | (5 << 12), &ops[0], &ops[1], &ops[2]);
-         return;
+        asm_emit_i(token, (0x0 << 2) | 3 | (5 << 12), &ops[0], &ops[1], &ops[2]);
+        return;
     case TOK_ASM_lwu:
-         asm_emit_i(token, (0x0 << 2) | 3 | (6 << 12), &ops[0], &ops[1], &ops[2]);
-         return;
+        asm_emit_i(token, (0x0 << 2) | 3 | (6 << 12), &ops[0], &ops[1], &ops[2]);
+        return;
     case TOK_ASM_fld:
-         asm_emit_i(token, (0x1 << 2) | 3 | (3 << 12), &ops[0], &ops[1], &ops[2]);
-         return;
+        asm_emit_i(token, (0x1 << 2) | 3 | (3 << 12), &ops[0], &ops[1], &ops[2]);
+        return;
     case TOK_ASM_flw:
-         asm_emit_i(token, (0x1 << 2) | 3 | (2 << 12), &ops[0], &ops[1], &ops[2]);
-         return;
+        asm_emit_i(token, (0x1 << 2) | 3 | (2 << 12), &ops[0], &ops[1], &ops[2]);
+        return;
 
     case TOK_ASM_sb:
-         asm_emit_s(token, (0x8 << 2) | 3 | (0 << 12), &ops[1], &ops[0], &ops[2]);
-         return;
+        asm_emit_s(token, (0x8 << 2) | 3 | (0 << 12), &ops[1], &ops[0], &ops[2]);
+        return;
     case TOK_ASM_sh:
-         asm_emit_s(token, (0x8 << 2) | 3 | (1 << 12), &ops[1], &ops[0], &ops[2]);
-         return;
+        asm_emit_s(token, (0x8 << 2) | 3 | (1 << 12), &ops[1], &ops[0], &ops[2]);
+        return;
     case TOK_ASM_sw:
-         asm_emit_s(token, (0x8 << 2) | 3 | (2 << 12), &ops[1], &ops[0], &ops[2]);
-         return;
+        asm_emit_s(token, (0x8 << 2) | 3 | (2 << 12), &ops[1], &ops[0], &ops[2]);
+        return;
     case TOK_ASM_sd:
-         asm_emit_s(token, (0x8 << 2) | 3 | (3 << 12), &ops[1], &ops[0], &ops[2]);
-         return;
+        asm_emit_s(token, (0x8 << 2) | 3 | (3 << 12), &ops[1], &ops[0], &ops[2]);
+        return;
     case TOK_ASM_fsd:
-         asm_emit_s(token, (0x9 << 2) | 3 | (3 << 12), &ops[1], &ops[0], &ops[2]);
-         return;
+        asm_emit_s(token, (0x9 << 2) | 3 | (3 << 12), &ops[1], &ops[0], &ops[2]);
+        return;
     case TOK_ASM_fsw:
-         asm_emit_s(token, (0x9 << 2) | 3 | (2 << 12), &ops[1], &ops[0], &ops[2]);
-         return;
+        asm_emit_s(token, (0x9 << 2) | 3 | (2 << 12), &ops[1], &ops[0], &ops[2]);
+        return;
     }
 }
 
-static void asm_branch_opcode(MCCState *s1, int token, int argc)
-{
+static void asm_branch_opcode(MCCState *s1, int token, int argc) {
     Operand ops[3];
-    parse_operands(s1, &ops[0], argc-1);
+    parse_operands(s1, &ops[0], argc - 1);
     skip(',');
-    parse_branch_offset_operand(s1, &ops[argc-1]);
+    parse_branch_offset_operand(s1, &ops[argc - 1]);
 
-    switch(token){
+    switch (token) {
     case TOK_ASM_beq:
         asm_emit_b(token, 0x63 | (0 << 12), ops, ops + 1, ops + 2);
         return;
@@ -927,8 +903,7 @@ static void asm_branch_opcode(MCCState *s1, int token, int argc)
     }
 }
 
-static void asm_ternary_opcode(MCCState *s1, int token)
-{
+static void asm_ternary_opcode(MCCState *s1, int token) {
     Operand ops[3];
     parse_operands(s1, &ops[0], 3);
 
@@ -970,59 +945,56 @@ static void asm_ternary_opcode(MCCState *s1, int token)
         asm_emit_i(token, (0x6 << 2) | 3 | (5 << 12) | (16 << 26), &ops[0], &ops[1], &ops[2]);
         return;
 
-
     case TOK_ASM_add:
-         asm_emit_r(token, (0xC << 2) | 3, &ops[0], &ops[1], &ops[2]);
-         return;
+        asm_emit_r(token, (0xC << 2) | 3, &ops[0], &ops[1], &ops[2]);
+        return;
     case TOK_ASM_addi:
-         asm_emit_i(token, (4 << 2) | 3, &ops[0], &ops[1], &ops[2]);
-         return;
+        asm_emit_i(token, (4 << 2) | 3, &ops[0], &ops[1], &ops[2]);
+        return;
     case TOK_ASM_sub:
-         asm_emit_r(token, (0xC << 2) | 3 | (32 << 25), &ops[0], &ops[1], &ops[2]);
-         return;
+        asm_emit_r(token, (0xC << 2) | 3 | (32 << 25), &ops[0], &ops[1], &ops[2]);
+        return;
     case TOK_ASM_addw:
-         asm_emit_r(token, (0xE << 2) | 3 | (0 << 12), &ops[0], &ops[1], &ops[2]);
-         return;
+        asm_emit_r(token, (0xE << 2) | 3 | (0 << 12), &ops[0], &ops[1], &ops[2]);
+        return;
     case TOK_ASM_addiw:
-         asm_emit_i(token, (0x6 << 2) | 3 | (0 << 12), &ops[0], &ops[1], &ops[2]);
-         return;
+        asm_emit_i(token, (0x6 << 2) | 3 | (0 << 12), &ops[0], &ops[1], &ops[2]);
+        return;
     case TOK_ASM_subw:
-         asm_emit_r(token, (0xE << 2) | 3 | (0 << 12) | (32 << 25), &ops[0], &ops[1], &ops[2]);
-         return;
-
+        asm_emit_r(token, (0xE << 2) | 3 | (0 << 12) | (32 << 25), &ops[0], &ops[1], &ops[2]);
+        return;
 
     case TOK_ASM_xor:
-         asm_emit_r(token, (0xC << 2) | 3 | (4 << 12), &ops[0], &ops[1], &ops[2]);
-         return;
+        asm_emit_r(token, (0xC << 2) | 3 | (4 << 12), &ops[0], &ops[1], &ops[2]);
+        return;
     case TOK_ASM_xori:
-         asm_emit_i(token, (0x4 << 2) | 3 | (4 << 12), &ops[0], &ops[1], &ops[2]);
-         return;
+        asm_emit_i(token, (0x4 << 2) | 3 | (4 << 12), &ops[0], &ops[1], &ops[2]);
+        return;
     case TOK_ASM_or:
-         asm_emit_r(token, (0xC << 2) | 3 | (6 << 12), &ops[0], &ops[1], &ops[2]);
-         return;
+        asm_emit_r(token, (0xC << 2) | 3 | (6 << 12), &ops[0], &ops[1], &ops[2]);
+        return;
     case TOK_ASM_ori:
-         asm_emit_i(token, (0x4 << 2) | 3 | (6 << 12), &ops[0], &ops[1], &ops[2]);
-         return;
+        asm_emit_i(token, (0x4 << 2) | 3 | (6 << 12), &ops[0], &ops[1], &ops[2]);
+        return;
     case TOK_ASM_and:
-         asm_emit_r(token, (0xC << 2) | 3 | (7 << 12), &ops[0], &ops[1], &ops[2]);
-         return;
+        asm_emit_r(token, (0xC << 2) | 3 | (7 << 12), &ops[0], &ops[1], &ops[2]);
+        return;
     case TOK_ASM_andi:
-         asm_emit_i(token, (0x4 << 2) | 3 | (7 << 12), &ops[0], &ops[1], &ops[2]);
-         return;
-
+        asm_emit_i(token, (0x4 << 2) | 3 | (7 << 12), &ops[0], &ops[1], &ops[2]);
+        return;
 
     case TOK_ASM_slt:
-         asm_emit_r(token, (0xC << 2) | 3 | (2 << 12), &ops[0], &ops[1], &ops[2]);
-         return;
+        asm_emit_r(token, (0xC << 2) | 3 | (2 << 12), &ops[0], &ops[1], &ops[2]);
+        return;
     case TOK_ASM_slti:
-         asm_emit_i(token, (0x4 << 2) | 3 | (2 << 12), &ops[0], &ops[1], &ops[2]);
-         return;
+        asm_emit_i(token, (0x4 << 2) | 3 | (2 << 12), &ops[0], &ops[1], &ops[2]);
+        return;
     case TOK_ASM_sltu:
-         asm_emit_r(token, (0xC << 2) | 3 | (3 << 12), &ops[0], &ops[1], &ops[2]);
-         return;
+        asm_emit_r(token, (0xC << 2) | 3 | (3 << 12), &ops[0], &ops[1], &ops[2]);
+        return;
     case TOK_ASM_sltiu:
-         asm_emit_i(token, (0x4 << 2) | 3 | (3 << 12), &ops[0], &ops[1], &ops[2]);
-         return;
+        asm_emit_i(token, (0x4 << 2) | 3 | (3 << 12), &ops[0], &ops[1], &ops[2]);
+        return;
 
     case TOK_ASM_div:
         asm_emit_r(token, 0x33 | (4 << 12) | (1 << 25), ops, ops + 1, ops + 2);
@@ -1178,8 +1150,7 @@ static void asm_ternary_opcode(MCCState *s1, int token)
     }
 }
 
-static void asm_quaternary_opcode(MCCState *s1, int token)
-{
+static void asm_quaternary_opcode(MCCState *s1, int token) {
     Operand ops[4];
     parse_operands(s1, &ops[0], 4);
 
@@ -1196,14 +1167,13 @@ static void asm_quaternary_opcode(MCCState *s1, int token)
     }
 }
 
-static void asm_atomic_opcode(MCCState *s1, int token)
-{
+static void asm_atomic_opcode(MCCState *s1, int token) {
     Operand ops[3];
 
     parse_operand(s1, &ops[0]);
     skip(',');
 
-    if ( token <= TOK_ASM_lr_d_aqrl && token >= TOK_ASM_lr_w ) {
+    if (token <= TOK_ASM_lr_d_aqrl && token >= TOK_ASM_lr_w) {
         ops[1] = zero;
     } else {
         parse_operand(s1, &ops[1]);
@@ -1214,210 +1184,281 @@ static void asm_atomic_opcode(MCCState *s1, int token)
     parse_operand(s1, &ops[2]);
     skip(')');
 
-    switch(token){
-        case TOK_ASM_lr_w:
-            asm_emit_a(token, 0x2F | 0x2<<12 | 0xC<<27, &ops[0], &ops[1], &ops[2], 0, 0);
-            break;
-        case TOK_ASM_lr_w_aq:
-            asm_emit_a(token, 0x2F | 0x2<<12 | 0xC<<27, &ops[0], &ops[1], &ops[2], 1, 0);
-            break;
-        case TOK_ASM_lr_w_rl:
-            asm_emit_a(token, 0x2F | 0x2<<12 | 0xC<<27, &ops[0], &ops[1], &ops[2], 0, 1);
-            break;
-        case TOK_ASM_lr_w_aqrl:
-            asm_emit_a(token, 0x2F | 0x2<<12 | 0xC<<27, &ops[0], &ops[1], &ops[2], 1, 1);
-            break;
+    switch (token) {
+    case TOK_ASM_lr_w:
+        asm_emit_a(token, 0x2F | 0x2 << 12 | 0xC << 27, &ops[0], &ops[1], &ops[2], 0, 0);
+        break;
+    case TOK_ASM_lr_w_aq:
+        asm_emit_a(token, 0x2F | 0x2 << 12 | 0xC << 27, &ops[0], &ops[1], &ops[2], 1, 0);
+        break;
+    case TOK_ASM_lr_w_rl:
+        asm_emit_a(token, 0x2F | 0x2 << 12 | 0xC << 27, &ops[0], &ops[1], &ops[2], 0, 1);
+        break;
+    case TOK_ASM_lr_w_aqrl:
+        asm_emit_a(token, 0x2F | 0x2 << 12 | 0xC << 27, &ops[0], &ops[1], &ops[2], 1, 1);
+        break;
 
-        case TOK_ASM_lr_d:
-            asm_emit_a(token, 0x2F | 0x3<<12 | 0xC<<27, &ops[0], &ops[1], &ops[2], 0, 0);
-            break;
-        case TOK_ASM_lr_d_aq:
-            asm_emit_a(token, 0x2F | 0x3<<12 | 0xC<<27, &ops[0], &ops[1], &ops[2], 1, 0);
-            break;
-        case TOK_ASM_lr_d_rl:
-            asm_emit_a(token, 0x2F | 0x3<<12 | 0xC<<27, &ops[0], &ops[1], &ops[2], 0, 1);
-            break;
-        case TOK_ASM_lr_d_aqrl:
-            asm_emit_a(token, 0x2F | 0x3<<12 | 0xC<<27, &ops[0], &ops[1], &ops[2], 1, 1);
-            break;
+    case TOK_ASM_lr_d:
+        asm_emit_a(token, 0x2F | 0x3 << 12 | 0xC << 27, &ops[0], &ops[1], &ops[2], 0, 0);
+        break;
+    case TOK_ASM_lr_d_aq:
+        asm_emit_a(token, 0x2F | 0x3 << 12 | 0xC << 27, &ops[0], &ops[1], &ops[2], 1, 0);
+        break;
+    case TOK_ASM_lr_d_rl:
+        asm_emit_a(token, 0x2F | 0x3 << 12 | 0xC << 27, &ops[0], &ops[1], &ops[2], 0, 1);
+        break;
+    case TOK_ASM_lr_d_aqrl:
+        asm_emit_a(token, 0x2F | 0x3 << 12 | 0xC << 27, &ops[0], &ops[1], &ops[2], 1, 1);
+        break;
 
-        case TOK_ASM_sc_w:
-            asm_emit_a(token, 0x2F | 0x2<<12 | 0x18<<27, &ops[0], &ops[1], &ops[2], 0, 0);
-            break;
-        case TOK_ASM_sc_w_aq:
-            asm_emit_a(token, 0x2F | 0x2<<12 | 0x18<<27, &ops[0], &ops[1], &ops[2], 1, 0);
-            break;
-        case TOK_ASM_sc_w_rl:
-            asm_emit_a(token, 0x2F | 0x2<<12 | 0x18<<27, &ops[0], &ops[1], &ops[2], 0, 1);
-            break;
-        case TOK_ASM_sc_w_aqrl:
-            asm_emit_a(token, 0x2F | 0x2<<12 | 0x18<<27, &ops[0], &ops[1], &ops[2], 1, 1);
-            break;
+    case TOK_ASM_sc_w:
+        asm_emit_a(token, 0x2F | 0x2 << 12 | 0x18 << 27, &ops[0], &ops[1], &ops[2], 0, 0);
+        break;
+    case TOK_ASM_sc_w_aq:
+        asm_emit_a(token, 0x2F | 0x2 << 12 | 0x18 << 27, &ops[0], &ops[1], &ops[2], 1, 0);
+        break;
+    case TOK_ASM_sc_w_rl:
+        asm_emit_a(token, 0x2F | 0x2 << 12 | 0x18 << 27, &ops[0], &ops[1], &ops[2], 0, 1);
+        break;
+    case TOK_ASM_sc_w_aqrl:
+        asm_emit_a(token, 0x2F | 0x2 << 12 | 0x18 << 27, &ops[0], &ops[1], &ops[2], 1, 1);
+        break;
 
-        case TOK_ASM_sc_d:
-            asm_emit_a(token, 0x2F | 0x3<<12 | 0x18<<27, &ops[0], &ops[1], &ops[2], 0, 0);
-            break;
-        case TOK_ASM_sc_d_aq:
-            asm_emit_a(token, 0x2F | 0x3<<12 | 0x18<<27, &ops[0], &ops[1], &ops[2], 1, 0);
-            break;
-        case TOK_ASM_sc_d_rl:
-            asm_emit_a(token, 0x2F | 0x3<<12 | 0x18<<27, &ops[0], &ops[1], &ops[2], 0, 1);
-            break;
-        case TOK_ASM_sc_d_aqrl:
-            asm_emit_a(token, 0x2F | 0x3<<12 | 0x18<<27, &ops[0], &ops[1], &ops[2], 1, 1);
-            break;
+    case TOK_ASM_sc_d:
+        asm_emit_a(token, 0x2F | 0x3 << 12 | 0x18 << 27, &ops[0], &ops[1], &ops[2], 0, 0);
+        break;
+    case TOK_ASM_sc_d_aq:
+        asm_emit_a(token, 0x2F | 0x3 << 12 | 0x18 << 27, &ops[0], &ops[1], &ops[2], 1, 0);
+        break;
+    case TOK_ASM_sc_d_rl:
+        asm_emit_a(token, 0x2F | 0x3 << 12 | 0x18 << 27, &ops[0], &ops[1], &ops[2], 0, 1);
+        break;
+    case TOK_ASM_sc_d_aqrl:
+        asm_emit_a(token, 0x2F | 0x3 << 12 | 0x18 << 27, &ops[0], &ops[1], &ops[2], 1, 1);
+        break;
 
-        case TOK_ASM_amoadd_w:
-            asm_emit_a(token, 0x2F | 0x2<<12 | 0x0<<27, &ops[0], &ops[1], &ops[2], 0, 0); break;
-        case TOK_ASM_amoadd_d:
-            asm_emit_a(token, 0x2F | 0x3<<12 | 0x0<<27, &ops[0], &ops[1], &ops[2], 0, 0); break;
-        case TOK_ASM_amoswap_w:
-            asm_emit_a(token, 0x2F | 0x2<<12 | 0x1<<27, &ops[0], &ops[1], &ops[2], 0, 0); break;
-        case TOK_ASM_amoswap_d:
-            asm_emit_a(token, 0x2F | 0x3<<12 | 0x1<<27, &ops[0], &ops[1], &ops[2], 0, 0); break;
-        case TOK_ASM_amoand_w:
-            asm_emit_a(token, 0x2F | 0x2<<12 | 0xC<<27, &ops[0], &ops[1], &ops[2], 0, 0); break;
-        case TOK_ASM_amoand_d:
-            asm_emit_a(token, 0x2F | 0x3<<12 | 0xC<<27, &ops[0], &ops[1], &ops[2], 0, 0); break;
-        case TOK_ASM_amoor_w:
-            asm_emit_a(token, 0x2F | 0x2<<12 | 0x18<<27, &ops[0], &ops[1], &ops[2], 0, 0); break;
-        case TOK_ASM_amoor_d:
-            asm_emit_a(token, 0x2F | 0x3<<12 | 0x18<<27, &ops[0], &ops[1], &ops[2], 0, 0); break;
-        case TOK_ASM_amoxor_w:
-            asm_emit_a(token, 0x2F | 0x2<<12 | 0x4<<27, &ops[0], &ops[1], &ops[2], 0, 0); break;
-        case TOK_ASM_amoxor_d:
-            asm_emit_a(token, 0x2F | 0x3<<12 | 0x4<<27, &ops[0], &ops[1], &ops[2], 0, 0); break;
-        case TOK_ASM_amomax_w:
-            asm_emit_a(token, 0x2F | 0x2<<12 | 0x14<<27, &ops[0], &ops[1], &ops[2], 0, 0); break;
-        case TOK_ASM_amomax_d:
-            asm_emit_a(token, 0x2F | 0x3<<12 | 0x14<<27, &ops[0], &ops[1], &ops[2], 0, 0); break;
-        case TOK_ASM_amomaxu_w:
-            asm_emit_a(token, 0x2F | 0x2<<12 | 0x1C<<27, &ops[0], &ops[1], &ops[2], 0, 0); break;
-        case TOK_ASM_amomaxu_d:
-            asm_emit_a(token, 0x2F | 0x3<<12 | 0x1C<<27, &ops[0], &ops[1], &ops[2], 0, 0); break;
-        case TOK_ASM_amomin_w:
-            asm_emit_a(token, 0x2F | 0x2<<12 | 0x10<<27, &ops[0], &ops[1], &ops[2], 0, 0); break;
-        case TOK_ASM_amomin_d:
-            asm_emit_a(token, 0x2F | 0x3<<12 | 0x10<<27, &ops[0], &ops[1], &ops[2], 0, 0); break;
-        case TOK_ASM_amominu_w:
-            asm_emit_a(token, 0x2F | 0x2<<12 | 0x18<<27, &ops[0], &ops[1], &ops[2], 0, 0); break;
-        case TOK_ASM_amominu_d:
-            asm_emit_a(token, 0x2F | 0x3<<12 | 0x18<<27, &ops[0], &ops[1], &ops[2], 0, 0); break;
+    case TOK_ASM_amoadd_w:
+        asm_emit_a(token, 0x2F | 0x2 << 12 | 0x0 << 27, &ops[0], &ops[1], &ops[2], 0, 0);
+        break;
+    case TOK_ASM_amoadd_d:
+        asm_emit_a(token, 0x2F | 0x3 << 12 | 0x0 << 27, &ops[0], &ops[1], &ops[2], 0, 0);
+        break;
+    case TOK_ASM_amoswap_w:
+        asm_emit_a(token, 0x2F | 0x2 << 12 | 0x1 << 27, &ops[0], &ops[1], &ops[2], 0, 0);
+        break;
+    case TOK_ASM_amoswap_d:
+        asm_emit_a(token, 0x2F | 0x3 << 12 | 0x1 << 27, &ops[0], &ops[1], &ops[2], 0, 0);
+        break;
+    case TOK_ASM_amoand_w:
+        asm_emit_a(token, 0x2F | 0x2 << 12 | 0xC << 27, &ops[0], &ops[1], &ops[2], 0, 0);
+        break;
+    case TOK_ASM_amoand_d:
+        asm_emit_a(token, 0x2F | 0x3 << 12 | 0xC << 27, &ops[0], &ops[1], &ops[2], 0, 0);
+        break;
+    case TOK_ASM_amoor_w:
+        asm_emit_a(token, 0x2F | 0x2 << 12 | 0x18 << 27, &ops[0], &ops[1], &ops[2], 0, 0);
+        break;
+    case TOK_ASM_amoor_d:
+        asm_emit_a(token, 0x2F | 0x3 << 12 | 0x18 << 27, &ops[0], &ops[1], &ops[2], 0, 0);
+        break;
+    case TOK_ASM_amoxor_w:
+        asm_emit_a(token, 0x2F | 0x2 << 12 | 0x4 << 27, &ops[0], &ops[1], &ops[2], 0, 0);
+        break;
+    case TOK_ASM_amoxor_d:
+        asm_emit_a(token, 0x2F | 0x3 << 12 | 0x4 << 27, &ops[0], &ops[1], &ops[2], 0, 0);
+        break;
+    case TOK_ASM_amomax_w:
+        asm_emit_a(token, 0x2F | 0x2 << 12 | 0x14 << 27, &ops[0], &ops[1], &ops[2], 0, 0);
+        break;
+    case TOK_ASM_amomax_d:
+        asm_emit_a(token, 0x2F | 0x3 << 12 | 0x14 << 27, &ops[0], &ops[1], &ops[2], 0, 0);
+        break;
+    case TOK_ASM_amomaxu_w:
+        asm_emit_a(token, 0x2F | 0x2 << 12 | 0x1C << 27, &ops[0], &ops[1], &ops[2], 0, 0);
+        break;
+    case TOK_ASM_amomaxu_d:
+        asm_emit_a(token, 0x2F | 0x3 << 12 | 0x1C << 27, &ops[0], &ops[1], &ops[2], 0, 0);
+        break;
+    case TOK_ASM_amomin_w:
+        asm_emit_a(token, 0x2F | 0x2 << 12 | 0x10 << 27, &ops[0], &ops[1], &ops[2], 0, 0);
+        break;
+    case TOK_ASM_amomin_d:
+        asm_emit_a(token, 0x2F | 0x3 << 12 | 0x10 << 27, &ops[0], &ops[1], &ops[2], 0, 0);
+        break;
+    case TOK_ASM_amominu_w:
+        asm_emit_a(token, 0x2F | 0x2 << 12 | 0x18 << 27, &ops[0], &ops[1], &ops[2], 0, 0);
+        break;
+    case TOK_ASM_amominu_d:
+        asm_emit_a(token, 0x2F | 0x3 << 12 | 0x18 << 27, &ops[0], &ops[1], &ops[2], 0, 0);
+        break;
 
-        case TOK_ASM_amoadd_w_aq:
-            asm_emit_a(token, 0x2F | 0x2<<12 | 0x0<<27, &ops[0], &ops[1], &ops[2], 1, 0); break;
-        case TOK_ASM_amoadd_w_rl:
-            asm_emit_a(token, 0x2F | 0x2<<12 | 0x0<<27, &ops[0], &ops[1], &ops[2], 0, 1); break;
-        case TOK_ASM_amoadd_w_aqrl:
-            asm_emit_a(token, 0x2F | 0x2<<12 | 0x0<<27, &ops[0], &ops[1], &ops[2], 1, 1); break;
-        case TOK_ASM_amoadd_d_aq:
-            asm_emit_a(token, 0x2F | 0x3<<12 | 0x0<<27, &ops[0], &ops[1], &ops[2], 1, 0); break;
-        case TOK_ASM_amoadd_d_rl:
-            asm_emit_a(token, 0x2F | 0x3<<12 | 0x0<<27, &ops[0], &ops[1], &ops[2], 0, 1); break;
-        case TOK_ASM_amoadd_d_aqrl:
-            asm_emit_a(token, 0x2F | 0x3<<12 | 0x0<<27, &ops[0], &ops[1], &ops[2], 1, 1); break;
+    case TOK_ASM_amoadd_w_aq:
+        asm_emit_a(token, 0x2F | 0x2 << 12 | 0x0 << 27, &ops[0], &ops[1], &ops[2], 1, 0);
+        break;
+    case TOK_ASM_amoadd_w_rl:
+        asm_emit_a(token, 0x2F | 0x2 << 12 | 0x0 << 27, &ops[0], &ops[1], &ops[2], 0, 1);
+        break;
+    case TOK_ASM_amoadd_w_aqrl:
+        asm_emit_a(token, 0x2F | 0x2 << 12 | 0x0 << 27, &ops[0], &ops[1], &ops[2], 1, 1);
+        break;
+    case TOK_ASM_amoadd_d_aq:
+        asm_emit_a(token, 0x2F | 0x3 << 12 | 0x0 << 27, &ops[0], &ops[1], &ops[2], 1, 0);
+        break;
+    case TOK_ASM_amoadd_d_rl:
+        asm_emit_a(token, 0x2F | 0x3 << 12 | 0x0 << 27, &ops[0], &ops[1], &ops[2], 0, 1);
+        break;
+    case TOK_ASM_amoadd_d_aqrl:
+        asm_emit_a(token, 0x2F | 0x3 << 12 | 0x0 << 27, &ops[0], &ops[1], &ops[2], 1, 1);
+        break;
 
-        case TOK_ASM_amoswap_w_aq:
-            asm_emit_a(token, 0x2F | 2<<12 | 0x1<<27, &ops[0], &ops[1], &ops[2], 1, 0); break;
-        case TOK_ASM_amoswap_w_rl:
-            asm_emit_a(token, 0x2F | 2<<12 | 0x1<<27, &ops[0], &ops[1], &ops[2], 0, 1); break;
-        case TOK_ASM_amoswap_w_aqrl:
-            asm_emit_a(token, 0x2F | 2<<12 | 0x1<<27, &ops[0], &ops[1], &ops[2], 1, 1); break;
-        case TOK_ASM_amoswap_d_aq:
-            asm_emit_a(token, 0x2F | 3<<12 | 0x1<<27, &ops[0], &ops[1], &ops[2], 1, 0); break;
-        case TOK_ASM_amoswap_d_rl:
-            asm_emit_a(token, 0x2F | 3<<12 | 0x1<<27, &ops[0], &ops[1], &ops[2], 0, 1); break;
-        case TOK_ASM_amoswap_d_aqrl:
-            asm_emit_a(token, 0x2F | 3<<12 | 0x1<<27, &ops[0], &ops[1], &ops[2], 1, 1); break;
-        case TOK_ASM_amoand_w_aq:
-            asm_emit_a(token, 0x2F | 2<<12 | 0xc<<27, &ops[0], &ops[1], &ops[2], 1, 0); break;
-        case TOK_ASM_amoand_w_rl:
-            asm_emit_a(token, 0x2F | 2<<12 | 0xc<<27, &ops[0], &ops[1], &ops[2], 0, 1); break;
-        case TOK_ASM_amoand_w_aqrl:
-            asm_emit_a(token, 0x2F | 2<<12 | 0xc<<27, &ops[0], &ops[1], &ops[2], 1, 1); break;
-        case TOK_ASM_amoand_d_aq:
-            asm_emit_a(token, 0x2F | 3<<12 | 0xc<<27, &ops[0], &ops[1], &ops[2], 1, 0); break;
-        case TOK_ASM_amoand_d_rl:
-            asm_emit_a(token, 0x2F | 3<<12 | 0xc<<27, &ops[0], &ops[1], &ops[2], 0, 1); break;
-        case TOK_ASM_amoand_d_aqrl:
-            asm_emit_a(token, 0x2F | 3<<12 | 0xc<<27, &ops[0], &ops[1], &ops[2], 1, 1); break;
-        case TOK_ASM_amoor_w_aq:
-            asm_emit_a(token, 0x2F | 2<<12 | 0x8<<27, &ops[0], &ops[1], &ops[2], 1, 0); break;
-        case TOK_ASM_amoor_w_rl:
-            asm_emit_a(token, 0x2F | 2<<12 | 0x8<<27, &ops[0], &ops[1], &ops[2], 0, 1); break;
-        case TOK_ASM_amoor_w_aqrl:
-            asm_emit_a(token, 0x2F | 2<<12 | 0x8<<27, &ops[0], &ops[1], &ops[2], 1, 1); break;
-        case TOK_ASM_amoor_d_aq:
-            asm_emit_a(token, 0x2F | 3<<12 | 0x8<<27, &ops[0], &ops[1], &ops[2], 1, 0); break;
-        case TOK_ASM_amoor_d_rl:
-            asm_emit_a(token, 0x2F | 3<<12 | 0x8<<27, &ops[0], &ops[1], &ops[2], 0, 1); break;
-        case TOK_ASM_amoor_d_aqrl:
-            asm_emit_a(token, 0x2F | 3<<12 | 0x8<<27, &ops[0], &ops[1], &ops[2], 1, 1); break;
-        case TOK_ASM_amoxor_w_aq:
-            asm_emit_a(token, 0x2F | 2<<12 | 0x4<<27, &ops[0], &ops[1], &ops[2], 1, 0); break;
-        case TOK_ASM_amoxor_w_rl:
-            asm_emit_a(token, 0x2F | 2<<12 | 0x4<<27, &ops[0], &ops[1], &ops[2], 0, 1); break;
-        case TOK_ASM_amoxor_w_aqrl:
-            asm_emit_a(token, 0x2F | 2<<12 | 0x4<<27, &ops[0], &ops[1], &ops[2], 1, 1); break;
-        case TOK_ASM_amoxor_d_aq:
-            asm_emit_a(token, 0x2F | 3<<12 | 0x4<<27, &ops[0], &ops[1], &ops[2], 1, 0); break;
-        case TOK_ASM_amoxor_d_rl:
-            asm_emit_a(token, 0x2F | 3<<12 | 0x4<<27, &ops[0], &ops[1], &ops[2], 0, 1); break;
-        case TOK_ASM_amoxor_d_aqrl:
-            asm_emit_a(token, 0x2F | 3<<12 | 0x4<<27, &ops[0], &ops[1], &ops[2], 1, 1); break;
-        case TOK_ASM_amomax_w_aq:
-            asm_emit_a(token, 0x2F | 2<<12 | 0x14<<27, &ops[0], &ops[1], &ops[2], 1, 0); break;
-        case TOK_ASM_amomax_w_rl:
-            asm_emit_a(token, 0x2F | 2<<12 | 0x14<<27, &ops[0], &ops[1], &ops[2], 0, 1); break;
-        case TOK_ASM_amomax_w_aqrl:
-            asm_emit_a(token, 0x2F | 2<<12 | 0x14<<27, &ops[0], &ops[1], &ops[2], 1, 1); break;
-        case TOK_ASM_amomax_d_aq:
-            asm_emit_a(token, 0x2F | 3<<12 | 0x14<<27, &ops[0], &ops[1], &ops[2], 1, 0); break;
-        case TOK_ASM_amomax_d_rl:
-            asm_emit_a(token, 0x2F | 3<<12 | 0x14<<27, &ops[0], &ops[1], &ops[2], 0, 1); break;
-        case TOK_ASM_amomax_d_aqrl:
-            asm_emit_a(token, 0x2F | 3<<12 | 0x14<<27, &ops[0], &ops[1], &ops[2], 1, 1); break;
-        case TOK_ASM_amomaxu_w_aq:
-            asm_emit_a(token, 0x2F | 2<<12 | 0x1c<<27, &ops[0], &ops[1], &ops[2], 1, 0); break;
-        case TOK_ASM_amomaxu_w_rl:
-            asm_emit_a(token, 0x2F | 2<<12 | 0x1c<<27, &ops[0], &ops[1], &ops[2], 0, 1); break;
-        case TOK_ASM_amomaxu_w_aqrl:
-            asm_emit_a(token, 0x2F | 2<<12 | 0x1c<<27, &ops[0], &ops[1], &ops[2], 1, 1); break;
-        case TOK_ASM_amomaxu_d_aq:
-            asm_emit_a(token, 0x2F | 3<<12 | 0x1c<<27, &ops[0], &ops[1], &ops[2], 1, 0); break;
-        case TOK_ASM_amomaxu_d_rl:
-            asm_emit_a(token, 0x2F | 3<<12 | 0x1c<<27, &ops[0], &ops[1], &ops[2], 0, 1); break;
-        case TOK_ASM_amomaxu_d_aqrl:
-            asm_emit_a(token, 0x2F | 3<<12 | 0x1c<<27, &ops[0], &ops[1], &ops[2], 1, 1); break;
-        case TOK_ASM_amomin_w_aq:
-            asm_emit_a(token, 0x2F | 2<<12 | 0x10<<27, &ops[0], &ops[1], &ops[2], 1, 0); break;
-        case TOK_ASM_amomin_w_rl:
-            asm_emit_a(token, 0x2F | 2<<12 | 0x10<<27, &ops[0], &ops[1], &ops[2], 0, 1); break;
-        case TOK_ASM_amomin_w_aqrl:
-            asm_emit_a(token, 0x2F | 2<<12 | 0x10<<27, &ops[0], &ops[1], &ops[2], 1, 1); break;
-        case TOK_ASM_amomin_d_aq:
-            asm_emit_a(token, 0x2F | 3<<12 | 0x10<<27, &ops[0], &ops[1], &ops[2], 1, 0); break;
-        case TOK_ASM_amomin_d_rl:
-            asm_emit_a(token, 0x2F | 3<<12 | 0x10<<27, &ops[0], &ops[1], &ops[2], 0, 1); break;
-        case TOK_ASM_amomin_d_aqrl:
-            asm_emit_a(token, 0x2F | 3<<12 | 0x10<<27, &ops[0], &ops[1], &ops[2], 1, 1); break;
-        case TOK_ASM_amominu_w_aq:
-            asm_emit_a(token, 0x2F | 2<<12 | 0x18<<27, &ops[0], &ops[1], &ops[2], 1, 0); break;
-        case TOK_ASM_amominu_w_rl:
-            asm_emit_a(token, 0x2F | 2<<12 | 0x18<<27, &ops[0], &ops[1], &ops[2], 0, 1); break;
-        case TOK_ASM_amominu_w_aqrl:
-            asm_emit_a(token, 0x2F | 2<<12 | 0x18<<27, &ops[0], &ops[1], &ops[2], 1, 1); break;
-        case TOK_ASM_amominu_d_aq:
-            asm_emit_a(token, 0x2F | 3<<12 | 0x18<<27, &ops[0], &ops[1], &ops[2], 1, 0); break;
-        case TOK_ASM_amominu_d_rl:
-            asm_emit_a(token, 0x2F | 3<<12 | 0x18<<27, &ops[0], &ops[1], &ops[2], 0, 1); break;
-        case TOK_ASM_amominu_d_aqrl:
-            asm_emit_a(token, 0x2F | 3<<12 | 0x18<<27, &ops[0], &ops[1], &ops[2], 1, 1); break;
+    case TOK_ASM_amoswap_w_aq:
+        asm_emit_a(token, 0x2F | 2 << 12 | 0x1 << 27, &ops[0], &ops[1], &ops[2], 1, 0);
+        break;
+    case TOK_ASM_amoswap_w_rl:
+        asm_emit_a(token, 0x2F | 2 << 12 | 0x1 << 27, &ops[0], &ops[1], &ops[2], 0, 1);
+        break;
+    case TOK_ASM_amoswap_w_aqrl:
+        asm_emit_a(token, 0x2F | 2 << 12 | 0x1 << 27, &ops[0], &ops[1], &ops[2], 1, 1);
+        break;
+    case TOK_ASM_amoswap_d_aq:
+        asm_emit_a(token, 0x2F | 3 << 12 | 0x1 << 27, &ops[0], &ops[1], &ops[2], 1, 0);
+        break;
+    case TOK_ASM_amoswap_d_rl:
+        asm_emit_a(token, 0x2F | 3 << 12 | 0x1 << 27, &ops[0], &ops[1], &ops[2], 0, 1);
+        break;
+    case TOK_ASM_amoswap_d_aqrl:
+        asm_emit_a(token, 0x2F | 3 << 12 | 0x1 << 27, &ops[0], &ops[1], &ops[2], 1, 1);
+        break;
+    case TOK_ASM_amoand_w_aq:
+        asm_emit_a(token, 0x2F | 2 << 12 | 0xc << 27, &ops[0], &ops[1], &ops[2], 1, 0);
+        break;
+    case TOK_ASM_amoand_w_rl:
+        asm_emit_a(token, 0x2F | 2 << 12 | 0xc << 27, &ops[0], &ops[1], &ops[2], 0, 1);
+        break;
+    case TOK_ASM_amoand_w_aqrl:
+        asm_emit_a(token, 0x2F | 2 << 12 | 0xc << 27, &ops[0], &ops[1], &ops[2], 1, 1);
+        break;
+    case TOK_ASM_amoand_d_aq:
+        asm_emit_a(token, 0x2F | 3 << 12 | 0xc << 27, &ops[0], &ops[1], &ops[2], 1, 0);
+        break;
+    case TOK_ASM_amoand_d_rl:
+        asm_emit_a(token, 0x2F | 3 << 12 | 0xc << 27, &ops[0], &ops[1], &ops[2], 0, 1);
+        break;
+    case TOK_ASM_amoand_d_aqrl:
+        asm_emit_a(token, 0x2F | 3 << 12 | 0xc << 27, &ops[0], &ops[1], &ops[2], 1, 1);
+        break;
+    case TOK_ASM_amoor_w_aq:
+        asm_emit_a(token, 0x2F | 2 << 12 | 0x8 << 27, &ops[0], &ops[1], &ops[2], 1, 0);
+        break;
+    case TOK_ASM_amoor_w_rl:
+        asm_emit_a(token, 0x2F | 2 << 12 | 0x8 << 27, &ops[0], &ops[1], &ops[2], 0, 1);
+        break;
+    case TOK_ASM_amoor_w_aqrl:
+        asm_emit_a(token, 0x2F | 2 << 12 | 0x8 << 27, &ops[0], &ops[1], &ops[2], 1, 1);
+        break;
+    case TOK_ASM_amoor_d_aq:
+        asm_emit_a(token, 0x2F | 3 << 12 | 0x8 << 27, &ops[0], &ops[1], &ops[2], 1, 0);
+        break;
+    case TOK_ASM_amoor_d_rl:
+        asm_emit_a(token, 0x2F | 3 << 12 | 0x8 << 27, &ops[0], &ops[1], &ops[2], 0, 1);
+        break;
+    case TOK_ASM_amoor_d_aqrl:
+        asm_emit_a(token, 0x2F | 3 << 12 | 0x8 << 27, &ops[0], &ops[1], &ops[2], 1, 1);
+        break;
+    case TOK_ASM_amoxor_w_aq:
+        asm_emit_a(token, 0x2F | 2 << 12 | 0x4 << 27, &ops[0], &ops[1], &ops[2], 1, 0);
+        break;
+    case TOK_ASM_amoxor_w_rl:
+        asm_emit_a(token, 0x2F | 2 << 12 | 0x4 << 27, &ops[0], &ops[1], &ops[2], 0, 1);
+        break;
+    case TOK_ASM_amoxor_w_aqrl:
+        asm_emit_a(token, 0x2F | 2 << 12 | 0x4 << 27, &ops[0], &ops[1], &ops[2], 1, 1);
+        break;
+    case TOK_ASM_amoxor_d_aq:
+        asm_emit_a(token, 0x2F | 3 << 12 | 0x4 << 27, &ops[0], &ops[1], &ops[2], 1, 0);
+        break;
+    case TOK_ASM_amoxor_d_rl:
+        asm_emit_a(token, 0x2F | 3 << 12 | 0x4 << 27, &ops[0], &ops[1], &ops[2], 0, 1);
+        break;
+    case TOK_ASM_amoxor_d_aqrl:
+        asm_emit_a(token, 0x2F | 3 << 12 | 0x4 << 27, &ops[0], &ops[1], &ops[2], 1, 1);
+        break;
+    case TOK_ASM_amomax_w_aq:
+        asm_emit_a(token, 0x2F | 2 << 12 | 0x14 << 27, &ops[0], &ops[1], &ops[2], 1, 0);
+        break;
+    case TOK_ASM_amomax_w_rl:
+        asm_emit_a(token, 0x2F | 2 << 12 | 0x14 << 27, &ops[0], &ops[1], &ops[2], 0, 1);
+        break;
+    case TOK_ASM_amomax_w_aqrl:
+        asm_emit_a(token, 0x2F | 2 << 12 | 0x14 << 27, &ops[0], &ops[1], &ops[2], 1, 1);
+        break;
+    case TOK_ASM_amomax_d_aq:
+        asm_emit_a(token, 0x2F | 3 << 12 | 0x14 << 27, &ops[0], &ops[1], &ops[2], 1, 0);
+        break;
+    case TOK_ASM_amomax_d_rl:
+        asm_emit_a(token, 0x2F | 3 << 12 | 0x14 << 27, &ops[0], &ops[1], &ops[2], 0, 1);
+        break;
+    case TOK_ASM_amomax_d_aqrl:
+        asm_emit_a(token, 0x2F | 3 << 12 | 0x14 << 27, &ops[0], &ops[1], &ops[2], 1, 1);
+        break;
+    case TOK_ASM_amomaxu_w_aq:
+        asm_emit_a(token, 0x2F | 2 << 12 | 0x1c << 27, &ops[0], &ops[1], &ops[2], 1, 0);
+        break;
+    case TOK_ASM_amomaxu_w_rl:
+        asm_emit_a(token, 0x2F | 2 << 12 | 0x1c << 27, &ops[0], &ops[1], &ops[2], 0, 1);
+        break;
+    case TOK_ASM_amomaxu_w_aqrl:
+        asm_emit_a(token, 0x2F | 2 << 12 | 0x1c << 27, &ops[0], &ops[1], &ops[2], 1, 1);
+        break;
+    case TOK_ASM_amomaxu_d_aq:
+        asm_emit_a(token, 0x2F | 3 << 12 | 0x1c << 27, &ops[0], &ops[1], &ops[2], 1, 0);
+        break;
+    case TOK_ASM_amomaxu_d_rl:
+        asm_emit_a(token, 0x2F | 3 << 12 | 0x1c << 27, &ops[0], &ops[1], &ops[2], 0, 1);
+        break;
+    case TOK_ASM_amomaxu_d_aqrl:
+        asm_emit_a(token, 0x2F | 3 << 12 | 0x1c << 27, &ops[0], &ops[1], &ops[2], 1, 1);
+        break;
+    case TOK_ASM_amomin_w_aq:
+        asm_emit_a(token, 0x2F | 2 << 12 | 0x10 << 27, &ops[0], &ops[1], &ops[2], 1, 0);
+        break;
+    case TOK_ASM_amomin_w_rl:
+        asm_emit_a(token, 0x2F | 2 << 12 | 0x10 << 27, &ops[0], &ops[1], &ops[2], 0, 1);
+        break;
+    case TOK_ASM_amomin_w_aqrl:
+        asm_emit_a(token, 0x2F | 2 << 12 | 0x10 << 27, &ops[0], &ops[1], &ops[2], 1, 1);
+        break;
+    case TOK_ASM_amomin_d_aq:
+        asm_emit_a(token, 0x2F | 3 << 12 | 0x10 << 27, &ops[0], &ops[1], &ops[2], 1, 0);
+        break;
+    case TOK_ASM_amomin_d_rl:
+        asm_emit_a(token, 0x2F | 3 << 12 | 0x10 << 27, &ops[0], &ops[1], &ops[2], 0, 1);
+        break;
+    case TOK_ASM_amomin_d_aqrl:
+        asm_emit_a(token, 0x2F | 3 << 12 | 0x10 << 27, &ops[0], &ops[1], &ops[2], 1, 1);
+        break;
+    case TOK_ASM_amominu_w_aq:
+        asm_emit_a(token, 0x2F | 2 << 12 | 0x18 << 27, &ops[0], &ops[1], &ops[2], 1, 0);
+        break;
+    case TOK_ASM_amominu_w_rl:
+        asm_emit_a(token, 0x2F | 2 << 12 | 0x18 << 27, &ops[0], &ops[1], &ops[2], 0, 1);
+        break;
+    case TOK_ASM_amominu_w_aqrl:
+        asm_emit_a(token, 0x2F | 2 << 12 | 0x18 << 27, &ops[0], &ops[1], &ops[2], 1, 1);
+        break;
+    case TOK_ASM_amominu_d_aq:
+        asm_emit_a(token, 0x2F | 3 << 12 | 0x18 << 27, &ops[0], &ops[1], &ops[2], 1, 0);
+        break;
+    case TOK_ASM_amominu_d_rl:
+        asm_emit_a(token, 0x2F | 3 << 12 | 0x18 << 27, &ops[0], &ops[1], &ops[2], 0, 1);
+        break;
+    case TOK_ASM_amominu_d_aqrl:
+        asm_emit_a(token, 0x2F | 3 << 12 | 0x18 << 27, &ops[0], &ops[1], &ops[2], 1, 1);
+        break;
     }
 }
 
-static void asm_emit_a(int token, uint32_t opcode, const Operand *rd1, const Operand *rs2, const Operand *rs1, int aq, int rl)
-{
+static void asm_emit_a(int token, uint32_t opcode, const Operand *rd1, const Operand *rs2, const Operand *rs1, int aq, int rl) {
     if (rd1->type != OP_REG)
         mcc_error("'%s': Expected first destination operand that is a register", get_tok_str(token, NULL));
     if (rs2->type != OP_REG)
@@ -1427,8 +1468,7 @@ static void asm_emit_a(int token, uint32_t opcode, const Operand *rd1, const Ope
     gen_le32(opcode | ENCODE_RS1(rs1->reg) | ENCODE_RS2(rs2->reg) | ENCODE_RD(rd1->reg) | aq << 26 | rl << 25);
 }
 
-static void asm_emit_s(int token, uint32_t opcode, const Operand* rs1, const Operand* rs2, const Operand* imm)
-{
+static void asm_emit_s(int token, uint32_t opcode, const Operand *rs1, const Operand *rs2, const Operand *imm) {
     if (rs1->type != OP_REG) {
         mcc_error("'%s': Expected first source operand that is a register", get_tok_str(token, NULL));
     }
@@ -1449,8 +1489,7 @@ static void asm_emit_s(int token, uint32_t opcode, const Operand* rs1, const Ope
     }
 }
 
-static void asm_emit_b(int token, uint32_t opcode, const Operand *rs1, const Operand *rs2, const Operand *imm)
-{
+static void asm_emit_b(int token, uint32_t opcode, const Operand *rs1, const Operand *rs2, const Operand *imm) {
     uint32_t offset;
 
     if (rs1->type != OP_REG) {
@@ -1463,16 +1502,11 @@ static void asm_emit_b(int token, uint32_t opcode, const Operand *rs1, const Ope
         int b_ofs = ind;
         uint32_t inv_func3 = ((opcode >> 12) & 7) ^ 1;
         uint32_t inv_opcode = (opcode & ~(7 << 12)) | (inv_func3 << 12);
-        asm_emit_opcode(inv_opcode | ENCODE_RS1(rs1->reg)
-                        | ENCODE_RS2(rs2->reg) | (1 << 8));
+        asm_emit_opcode(inv_opcode | ENCODE_RS1(rs1->reg) | ENCODE_RS2(rs2->reg) | (1 << 8));
         greloca(cur_text_section, imm->e.sym, ind, R_RISCV_CALL, 0);
         asm_emit_opcode(0x17 | ENCODE_RD(5));
         write32le(cur_text_section->data + b_ofs,
-                  read32le(cur_text_section->data + b_ofs)
-                  | (((ind - b_ofs) >> 1) & 0xf) << 8
-                  | (((ind - b_ofs) >> 5) & 0x3f) << 25
-                  | (((ind - b_ofs) >> 11) & 1) << 7
-                  | (((ind - b_ofs) >> 12) & 1) << 31);
+                  read32le(cur_text_section->data + b_ofs) | (((ind - b_ofs) >> 1) & 0xf) << 8 | (((ind - b_ofs) >> 5) & 0x3f) << 25 | (((ind - b_ofs) >> 11) & 1) << 7 | (((ind - b_ofs) >> 12) & 1) << 31);
         return;
     }
     if (imm->type != OP_IM12S) {
@@ -1484,25 +1518,40 @@ static void asm_emit_b(int token, uint32_t opcode, const Operand *rs1, const Ope
     asm_emit_opcode(opcode | ENCODE_RS1(rs1->reg) | ENCODE_RS2(rs2->reg) | (((offset >> 1) & 0xF) << 8) | (((offset >> 5) & 0x1f) << 25) | (((offset >> 11) & 1) << 7) | (((offset >> 12) & 1) << 31));
 }
 
-static int asm_fcvt_rm(MCCState *s1)
-{
+static int asm_fcvt_rm(MCCState *s1) {
     int rm = 7;
     if (tok == ',') {
         next();
         switch (tok) {
-            case TOK_ASM_rne: rm = 0; next(); break;
-            case TOK_ASM_rtz: rm = 1; next(); break;
-            case TOK_ASM_rdn: rm = 2; next(); break;
-            case TOK_ASM_rup: rm = 3; next(); break;
-            case TOK_ASM_rmm: rm = 4; next(); break;
-            default: expect("rounding mode"); break;
+        case TOK_ASM_rne:
+            rm = 0;
+            next();
+            break;
+        case TOK_ASM_rtz:
+            rm = 1;
+            next();
+            break;
+        case TOK_ASM_rdn:
+            rm = 2;
+            next();
+            break;
+        case TOK_ASM_rup:
+            rm = 3;
+            next();
+            break;
+        case TOK_ASM_rmm:
+            rm = 4;
+            next();
+            break;
+        default:
+            expect("rounding mode");
+            break;
         }
     }
     return rm;
 }
 
-static void asm_fcvt_opcode(MCCState *s1, int token)
-{
+static void asm_fcvt_opcode(MCCState *s1, int token) {
     Operand ops[2];
     int rm;
     uint32_t enc = 0;
@@ -1512,37 +1561,96 @@ static void asm_fcvt_opcode(MCCState *s1, int token)
     parse_operand(s1, &ops[1]);
 
     switch (token) {
-        case TOK_ASM_fcvt_w_s:  rm = asm_fcvt_rm(s1); enc = 0x53 | (0x60 << 25) | (rm << 12); break;
-        case TOK_ASM_fcvt_wu_s: rm = asm_fcvt_rm(s1); enc = 0x53 | (0x60 << 25) | (rm << 12) | (1 << 20); break;
-        case TOK_ASM_fcvt_l_s:  rm = asm_fcvt_rm(s1); enc = 0x53 | (0x60 << 25) | (rm << 12) | (2 << 20); break;
-        case TOK_ASM_fcvt_lu_s: rm = asm_fcvt_rm(s1); enc = 0x53 | (0x60 << 25) | (rm << 12) | (3 << 20); break;
-        case TOK_ASM_fcvt_s_w:  enc = 0x53 | (0x68 << 25) | (7 << 12); break;
-        case TOK_ASM_fcvt_s_wu: enc = 0x53 | (0x68 << 25) | (7 << 12) | (1 << 20); break;
-        case TOK_ASM_fcvt_s_l:  enc = 0x53 | (0x68 << 25) | (7 << 12) | (2 << 20); break;
-        case TOK_ASM_fcvt_s_lu: enc = 0x53 | (0x68 << 25) | (7 << 12) | (3 << 20); break;
-        case TOK_ASM_fcvt_w_d:  rm = asm_fcvt_rm(s1); enc = 0x53 | (0x61 << 25) | (rm << 12); break;
-        case TOK_ASM_fcvt_wu_d: rm = asm_fcvt_rm(s1); enc = 0x53 | (0x61 << 25) | (rm << 12) | (1 << 20); break;
-        case TOK_ASM_fcvt_l_d:  rm = asm_fcvt_rm(s1); enc = 0x53 | (0x61 << 25) | (rm << 12) | (2 << 20); break;
-        case TOK_ASM_fcvt_lu_d: rm = asm_fcvt_rm(s1); enc = 0x53 | (0x61 << 25) | (rm << 12) | (3 << 20); break;
-        case TOK_ASM_fcvt_d_w:  enc = 0x53 | (0x69 << 25) | (7 << 12); break;
-        case TOK_ASM_fcvt_d_wu: enc = 0x53 | (0x69 << 25) | (7 << 12) | (1 << 20); break;
-        case TOK_ASM_fcvt_d_l:  enc = 0x53 | (0x69 << 25) | (7 << 12) | (2 << 20); break;
-        case TOK_ASM_fcvt_d_lu: enc = 0x53 | (0x69 << 25) | (7 << 12) | (3 << 20); break;
-        case TOK_ASM_fcvt_s_d:  rm = asm_fcvt_rm(s1); enc = 0x53 | (0x20 << 25) | (rm << 12) | (1 << 20); break;
-        case TOK_ASM_fcvt_d_s:  rm = asm_fcvt_rm(s1); enc = 0x53 | (0x21 << 25) | (rm << 12); break;
-        case TOK_ASM_fclass_s:  enc = 0x53 | (0x70 << 25) | (1 << 12); break;
-        case TOK_ASM_fclass_d:  enc = 0x53 | (0x71 << 25) | (1 << 12); break;
-        case TOK_ASM_fmv_x_w:   enc = 0x53 | (0x70 << 25); break;
-        case TOK_ASM_fmv_x_d:   enc = 0x53 | (0x71 << 25); break;
-        case TOK_ASM_fmv_w_x:   enc = 0x53 | (0x78 << 25); break;
-        case TOK_ASM_fmv_d_x:   enc = 0x53 | (0x79 << 25); break;
-        default: expect("fcvt/fclass instruction"); return;
+    case TOK_ASM_fcvt_w_s:
+        rm = asm_fcvt_rm(s1);
+        enc = 0x53 | (0x60 << 25) | (rm << 12);
+        break;
+    case TOK_ASM_fcvt_wu_s:
+        rm = asm_fcvt_rm(s1);
+        enc = 0x53 | (0x60 << 25) | (rm << 12) | (1 << 20);
+        break;
+    case TOK_ASM_fcvt_l_s:
+        rm = asm_fcvt_rm(s1);
+        enc = 0x53 | (0x60 << 25) | (rm << 12) | (2 << 20);
+        break;
+    case TOK_ASM_fcvt_lu_s:
+        rm = asm_fcvt_rm(s1);
+        enc = 0x53 | (0x60 << 25) | (rm << 12) | (3 << 20);
+        break;
+    case TOK_ASM_fcvt_s_w:
+        enc = 0x53 | (0x68 << 25) | (7 << 12);
+        break;
+    case TOK_ASM_fcvt_s_wu:
+        enc = 0x53 | (0x68 << 25) | (7 << 12) | (1 << 20);
+        break;
+    case TOK_ASM_fcvt_s_l:
+        enc = 0x53 | (0x68 << 25) | (7 << 12) | (2 << 20);
+        break;
+    case TOK_ASM_fcvt_s_lu:
+        enc = 0x53 | (0x68 << 25) | (7 << 12) | (3 << 20);
+        break;
+    case TOK_ASM_fcvt_w_d:
+        rm = asm_fcvt_rm(s1);
+        enc = 0x53 | (0x61 << 25) | (rm << 12);
+        break;
+    case TOK_ASM_fcvt_wu_d:
+        rm = asm_fcvt_rm(s1);
+        enc = 0x53 | (0x61 << 25) | (rm << 12) | (1 << 20);
+        break;
+    case TOK_ASM_fcvt_l_d:
+        rm = asm_fcvt_rm(s1);
+        enc = 0x53 | (0x61 << 25) | (rm << 12) | (2 << 20);
+        break;
+    case TOK_ASM_fcvt_lu_d:
+        rm = asm_fcvt_rm(s1);
+        enc = 0x53 | (0x61 << 25) | (rm << 12) | (3 << 20);
+        break;
+    case TOK_ASM_fcvt_d_w:
+        enc = 0x53 | (0x69 << 25) | (7 << 12);
+        break;
+    case TOK_ASM_fcvt_d_wu:
+        enc = 0x53 | (0x69 << 25) | (7 << 12) | (1 << 20);
+        break;
+    case TOK_ASM_fcvt_d_l:
+        enc = 0x53 | (0x69 << 25) | (7 << 12) | (2 << 20);
+        break;
+    case TOK_ASM_fcvt_d_lu:
+        enc = 0x53 | (0x69 << 25) | (7 << 12) | (3 << 20);
+        break;
+    case TOK_ASM_fcvt_s_d:
+        rm = asm_fcvt_rm(s1);
+        enc = 0x53 | (0x20 << 25) | (rm << 12) | (1 << 20);
+        break;
+    case TOK_ASM_fcvt_d_s:
+        rm = asm_fcvt_rm(s1);
+        enc = 0x53 | (0x21 << 25) | (rm << 12);
+        break;
+    case TOK_ASM_fclass_s:
+        enc = 0x53 | (0x70 << 25) | (1 << 12);
+        break;
+    case TOK_ASM_fclass_d:
+        enc = 0x53 | (0x71 << 25) | (1 << 12);
+        break;
+    case TOK_ASM_fmv_x_w:
+        enc = 0x53 | (0x70 << 25);
+        break;
+    case TOK_ASM_fmv_x_d:
+        enc = 0x53 | (0x71 << 25);
+        break;
+    case TOK_ASM_fmv_w_x:
+        enc = 0x53 | (0x78 << 25);
+        break;
+    case TOK_ASM_fmv_d_x:
+        enc = 0x53 | (0x79 << 25);
+        break;
+    default:
+        expect("fcvt/fclass instruction");
+        return;
     }
     asm_emit_opcode(enc | ENCODE_RD(ops[0].reg) | ENCODE_RS1(ops[1].reg));
 }
 
-ST_FUNC void asm_opcode(MCCState *s1, int token)
-{
+ST_FUNC void asm_opcode(MCCState *s1, int token) {
     switch (token) {
     case TOK_ASM_ebreak:
     case TOK_ASM_ecall:
@@ -1916,7 +2024,7 @@ ST_FUNC void asm_opcode(MCCState *s1, int token)
     case TOK_ASM_amominu_d_aq:
     case TOK_ASM_amominu_d_rl:
     case TOK_ASM_amominu_d_aqrl:
-asm_atomic_opcode(s1, token);
+        asm_atomic_opcode(s1, token);
         break;
 
     default:
@@ -1924,8 +2032,7 @@ asm_atomic_opcode(s1, token);
     }
 }
 
-static int asm_parse_csrvar(int t)
-{
+static int asm_parse_csrvar(int t) {
     switch (t) {
     case TOK_ASM_cycle:
         return 0xc00;
@@ -1950,8 +2057,7 @@ static int asm_parse_csrvar(int t)
     }
 }
 
-ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier)
-{
+ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier) {
     int r, reg, val;
 
     r = sv->r;
@@ -1967,7 +2073,7 @@ ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier)
             if (mcc_state->leading_underscore)
                 cstr_ccat(add_str, '_');
             cstr_cat(add_str, name, -1);
-            if ((uint32_t) sv->c.i == 0)
+            if ((uint32_t)sv->c.i == 0)
                 goto no_offset;
             cstr_ccat(add_str, '+');
         }
@@ -1977,11 +2083,11 @@ ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier)
         if (modifier == 'z' && sv->c.i == 0) {
             cstr_cat(add_str, "zero", -1);
         } else {
-            cstr_printf(add_str, "%d", (int) sv->c.i);
+            cstr_printf(add_str, "%d", (int)sv->c.i);
         }
-      no_offset:;
+    no_offset:;
     } else if ((r & VT_VALMASK) == VT_LOCAL) {
-        cstr_printf(add_str, "%d", (int) sv->c.i);
+        cstr_printf(add_str, "%d", (int)sv->c.i);
     } else if (r & VT_LVAL) {
         reg = r & VT_VALMASK;
         if (reg >= VT_CONST)
@@ -2007,52 +2113,50 @@ ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier)
     }
 }
 
-static int mcc_ireg(int r){
+static int mcc_ireg(int r) {
     return REG_VALUE(r) - 10;
 }
-static int mcc_freg(int r){
+static int mcc_freg(int r) {
     return REG_VALUE(r) - 10 + 8;
 }
 
 ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
-                         int nb_outputs, int is_output,
-                         uint8_t *clobber_regs,
-                         int out_reg)
-{
+                          int nb_outputs, int is_output,
+                          uint8_t *clobber_regs,
+                          int out_reg) {
     uint8_t regs_allocated[NB_ASM_REGS];
     ASMOperand *op;
     int reg;
 
     static const uint8_t reg_saved[] = {
         8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
-        40, 41, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59
-    };
+        40, 41, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59};
 
     memcpy(regs_allocated, clobber_regs, sizeof(regs_allocated));
-    for(int i = 0; i < nb_operands; i++) {
+    for (int i = 0; i < nb_operands; i++) {
         op = &operands[i];
         if (op->reg >= 0) {
             regs_allocated[op->reg] = 1;
         }
     }
 
-    if(!is_output) {
-        for(int i = 0; i < sizeof(reg_saved)/sizeof(reg_saved[0]); i++) {
+    if (!is_output) {
+        for (int i = 0; i < sizeof(reg_saved) / sizeof(reg_saved[0]); i++) {
             reg = reg_saved[i];
             if (regs_allocated[reg]) {
                 gen_le32((4 << 2) | 3 |
-                        ENCODE_RD(2) | ENCODE_RS1(2) | (unsigned)-8 << 20);
-                if (REG_IS_FLOAT(reg)){
-                    gen_le32( 0x27 | (3 << 12) |
-                            ENCODE_RS2(reg) | ENCODE_RS1(2) );
+                         ENCODE_RD(2) | ENCODE_RS1(2) | (unsigned)-8 << 20);
+                if (REG_IS_FLOAT(reg)) {
+                    gen_le32(0x27 | (3 << 12) |
+                             ENCODE_RS2(reg) | ENCODE_RS1(2));
                 } else {
                     gen_le32((0x8 << 2) | 3 | (3 << 12) |
-                            ENCODE_RS2(reg) | ENCODE_RS1(2) );
+                             ENCODE_RS2(reg) | ENCODE_RS1(2));
                 }
             }
         }
 
-        for(int i = 0; i < nb_operands; i++) {
+        for (int i = 0; i < nb_operands; i++) {
             op = &operands[i];
             if (op->reg >= 0) {
                 if ((op->vt->r & VT_VALMASK) == VT_LLOCAL &&
@@ -2073,7 +2177,7 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
             }
         }
     } else {
-        for(int i = 0 ; i < nb_outputs; i++) {
+        for (int i = 0; i < nb_outputs; i++) {
             op = &operands[i];
             if (op->reg >= 0) {
                 if ((op->vt->r & VT_VALMASK) == VT_LLOCAL) {
@@ -2098,34 +2202,33 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
                 }
             }
         }
-        for(int i = sizeof(reg_saved)/sizeof(reg_saved[0]) - 1; i >= 0; i--) {
+        for (int i = sizeof(reg_saved) / sizeof(reg_saved[0]) - 1; i >= 0; i--) {
             reg = reg_saved[i];
             if (regs_allocated[reg]) {
-                if (REG_IS_FLOAT(reg)){
+                if (REG_IS_FLOAT(reg)) {
                     gen_le32(7 | (3 << 12) |
-                            ENCODE_RD(reg) | ENCODE_RS1(2) | 0);
+                             ENCODE_RD(reg) | ENCODE_RS1(2) | 0);
                 } else {
                     gen_le32(3 | (3 << 12) |
-                            ENCODE_RD(reg) | ENCODE_RS1(2) | 0);
+                             ENCODE_RD(reg) | ENCODE_RS1(2) | 0);
                 }
                 gen_le32((4 << 2) | 3 |
-                        ENCODE_RD(2) | ENCODE_RS1(2) | 8 << 20);
+                         ENCODE_RD(2) | ENCODE_RS1(2) | 8 << 20);
             }
         }
     }
 }
 
-static inline int constraint_priority(const char *str)
-{
+static inline int constraint_priority(const char *str) {
     int priority, c, pr;
 
     priority = 0;
-    for(;;) {
+    for (;;) {
         c = *str;
         if (c == '\0')
             break;
         str++;
-        switch(c) {
+        switch (c) {
         case 'A':
         case 'S':
         case 'f':
@@ -2151,17 +2254,16 @@ static inline int constraint_priority(const char *str)
 }
 
 #define REG_OUT_MASK 0x01
-#define REG_IN_MASK  0x02
+#define REG_IN_MASK 0x02
 
 #define is_reg_allocated(reg) (regs_allocated[reg] & reg_mask)
 
 #include "arch/asm-constraints.inc.c"
 
 ST_FUNC void asm_compute_constraints(ASMOperand *operands,
-                                    int nb_operands, int nb_outputs,
-                                    const uint8_t *clobber_regs,
-                                    int *pout_reg)
-{
+                                     int nb_operands, int nb_outputs,
+                                     const uint8_t *clobber_regs,
+                                     int *pout_reg) {
 
     ASMOperand *op;
     int sorted_op[MAX_ASM_OPERANDS];
@@ -2187,11 +2289,10 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
         }
         if (op->reg >= 0) {
             if (is_reg_allocated(op->reg))
-                mcc_error
-                    ("asm regvar requests register that's taken already");
+                mcc_error("asm regvar requests register that's taken already");
             reg = op->reg;
         }
-      try_next:
+    try_next:
         c = *str++;
         switch (c) {
         case '=':
@@ -2207,12 +2308,13 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
         case 'p':
             if ((reg = op->reg) >= 0)
                 goto reg_found;
-            else for (reg = 10; reg <= 18; reg++) {
-                if (!is_reg_allocated(reg))
-                    goto reg_found;
-            }
+            else
+                for (reg = 10; reg <= 18; reg++) {
+                    if (!is_reg_allocated(reg))
+                        goto reg_found;
+                }
             goto try_next;
-          reg_found:
+        reg_found:
             op->is_llong = 0;
             op->reg = reg;
             regs_allocated[reg] |= reg_mask;
@@ -2220,10 +2322,11 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
         case 'f':
             if ((reg = op->reg) >= 0)
                 goto reg_found;
-            else for (reg = 42; reg <= 50; reg++) {
-                if (!is_reg_allocated(reg))
-                    goto reg_found;
-            }
+            else
+                for (reg = 42; reg <= 50; reg++) {
+                    if (!is_reg_allocated(reg))
+                        goto reg_found;
+                }
             goto try_next;
         case 'I':
         case 'i':
@@ -2239,7 +2342,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
                             goto reg_found1;
                     }
                     goto try_next;
-                  reg_found1:
+                reg_found1:
                     regs_allocated[reg] |= REG_IN_MASK;
                     op->reg = reg;
                     op->is_memory = 1;
@@ -2262,7 +2365,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
         op = &operands[i];
         if (op->reg >= 0 &&
             (op->vt->r & VT_VALMASK) == VT_LLOCAL && !op->is_memory) {
-            if (REG_IS_FLOAT(op->reg)){
+            if (REG_IS_FLOAT(op->reg)) {
                 for (reg = 42; reg <= 50; reg++) {
                     if (!(regs_allocated[reg] & REG_OUT_MASK))
                         goto reg_found2;
@@ -2274,7 +2377,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
                 }
             }
             mcc_error("could not find free output register for reloading");
-          reg_found2:
+        reg_found2:
             *pout_reg = reg;
             break;
         }
@@ -2294,8 +2397,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 #endif
 }
 
-ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str)
-{
+ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str) {
     int reg;
     TokenSym *ts;
 
@@ -2311,8 +2413,7 @@ ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str)
     clobber_regs[reg] = 1;
 }
 
-ST_FUNC int asm_parse_regvar (int t)
-{
+ST_FUNC int asm_parse_regvar(int t) {
     if (t >= TOK_ASM_pc || t < TOK_ASM_x0)
         return -1;
 
@@ -2328,9 +2429,7 @@ ST_FUNC int asm_parse_regvar (int t)
     return t - TOK_ASM_ft0 + 32;
 }
 
-
-static void asm_emit_ca(int token, uint16_t opcode, const Operand *rd, const Operand *rs2)
-{
+static void asm_emit_ca(int token, uint16_t opcode, const Operand *rd, const Operand *rs2) {
     uint8_t dst, src;
 
     if (rd->type != OP_REG) {
@@ -2352,12 +2451,10 @@ static void asm_emit_ca(int token, uint16_t opcode, const Operand *rd, const Ope
         mcc_error("'%s': Expected source operand that is a valid C-extension register", get_tok_str(token, NULL));
     }
 
-
     gen_le16(opcode | C_ENCODE_RS2(src) | C_ENCODE_RS1(dst));
 }
 
-static void asm_emit_cb(int token, uint16_t opcode, const Operand *rs1, const Operand *imm)
-{
+static void asm_emit_cb(int token, uint16_t opcode, const Operand *rs1, const Operand *imm) {
     uint32_t offset;
     uint8_t src;
 
@@ -2381,8 +2478,6 @@ static void asm_emit_cb(int token, uint16_t opcode, const Operand *rs1, const Op
         mcc_error("'%s': Expected source operand that is a valid C-extension register", get_tok_str(token, NULL));
     }
 
-
-
     switch (token) {
     case TOK_ASM_c_beqz:
     case TOK_ASM_c_bnez:
@@ -2394,8 +2489,7 @@ static void asm_emit_cb(int token, uint16_t opcode, const Operand *rs1, const Op
     }
 }
 
-static void asm_emit_ci(int token, uint16_t opcode, const Operand *rd, const Operand *imm)
-{
+static void asm_emit_ci(int token, uint16_t opcode, const Operand *rd, const Operand *imm) {
     uint32_t immediate;
 
     if (rd->type != OP_REG) {
@@ -2407,7 +2501,6 @@ static void asm_emit_ci(int token, uint16_t opcode, const Operand *rd, const Ope
     }
 
     immediate = imm->e.v;
-
 
     switch (token) {
     case TOK_ASM_c_addi:
@@ -2438,8 +2531,7 @@ static void asm_emit_ci(int token, uint16_t opcode, const Operand *rd, const Ope
     }
 }
 
-static void asm_emit_ciw(int token, uint16_t opcode, const Operand *rd, const Operand *imm)
-{
+static void asm_emit_ciw(int token, uint16_t opcode, const Operand *rd, const Operand *imm) {
     uint32_t nzuimm;
     uint8_t dst;
 
@@ -2467,12 +2559,10 @@ static void asm_emit_ciw(int token, uint16_t opcode, const Operand *rd, const Op
         mcc_error("'%s': Expected source operand that is a non-zero immediate value divisible by 4", get_tok_str(token, NULL));
     }
 
-
     gen_le16(opcode | ENCODE_RS2(rd->reg) | ((NTH_BIT(nzuimm, 3) | (NTH_BIT(nzuimm, 2) << 1) | (((nzuimm >> 6) & 0xf) << 2) | (((nzuimm >> 4) & 3) << 6)) << 5));
 }
 
-static void asm_emit_cj(int token, uint16_t opcode, const Operand *imm)
-{
+static void asm_emit_cj(int token, uint16_t opcode, const Operand *imm) {
     uint32_t offset;
 
     if (imm->type != OP_IM12S) {
@@ -2485,12 +2575,10 @@ static void asm_emit_cj(int token, uint16_t opcode, const Operand *imm)
         mcc_error("'%s': Expected source operand that is an even immediate value", get_tok_str(token, NULL));
     }
 
-
     gen_le16(opcode | (NTH_BIT(offset, 5) << 2) | (((offset >> 1) & 7) << 3) | (NTH_BIT(offset, 7) << 6) | (NTH_BIT(offset, 6) << 7) | (NTH_BIT(offset, 10) << 8) | (((offset >> 8) & 3) << 9) | (NTH_BIT(offset, 4) << 11) | (NTH_BIT(offset, 11) << 12));
 }
 
-static void asm_emit_cl(int token, uint16_t opcode, const Operand *rd, const Operand *rs1, const Operand *imm)
-{
+static void asm_emit_cl(int token, uint16_t opcode, const Operand *rd, const Operand *rs1, const Operand *imm) {
     uint32_t offset;
     uint8_t dst, src;
 
@@ -2527,7 +2615,6 @@ static void asm_emit_cl(int token, uint16_t opcode, const Operand *rd, const Ope
         mcc_error("'%s': Expected source operand that is an immediate value divisible by 4", get_tok_str(token, NULL));
     }
 
-
     switch (token) {
     case TOK_ASM_c_flw:
     case TOK_ASM_c_lw:
@@ -2542,8 +2629,7 @@ static void asm_emit_cl(int token, uint16_t opcode, const Operand *rd, const Ope
     }
 }
 
-static void asm_emit_cr(int token, uint16_t opcode, const Operand *rd, const Operand *rs2)
-{
+static void asm_emit_cr(int token, uint16_t opcode, const Operand *rd, const Operand *rs2) {
     if (rd->type != OP_REG) {
         mcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
     }
@@ -2552,12 +2638,10 @@ static void asm_emit_cr(int token, uint16_t opcode, const Operand *rd, const Ope
         mcc_error("'%s': Expected source operand that is a register", get_tok_str(token, NULL));
     }
 
-
     gen_le16(opcode | C_ENCODE_RS1(rd->reg) | C_ENCODE_RS2(rs2->reg));
 }
 
-static void asm_emit_cs(int token, uint16_t opcode, const Operand *rs2, const Operand *rs1, const Operand *imm)
-{
+static void asm_emit_cs(int token, uint16_t opcode, const Operand *rs2, const Operand *rs1, const Operand *imm) {
     uint32_t offset;
     uint8_t base, src;
 
@@ -2608,8 +2692,7 @@ static void asm_emit_cs(int token, uint16_t opcode, const Operand *rs2, const Op
     }
 }
 
-static void asm_emit_css(int token, uint16_t opcode, const Operand *rs2, const Operand *imm)
-{
+static void asm_emit_css(int token, uint16_t opcode, const Operand *rs2, const Operand *imm) {
     uint32_t offset;
 
     if (rs2->type != OP_REG) {
@@ -2629,7 +2712,6 @@ static void asm_emit_css(int token, uint16_t opcode, const Operand *rs2, const O
     if (offset & 3) {
         mcc_error("'%s': Expected source operand that is an immediate value divisible by 4", get_tok_str(token, NULL));
     }
-
 
     switch (token) {
     case TOK_ASM_c_fswsp:

@@ -1,8 +1,3 @@
-
-
-
-
-
 #include <stdio.h>
 #include <pthread.h>
 
@@ -12,12 +7,11 @@ _Atomic long long ll;
 _Atomic long counter;
 
 #define NTHREAD 8
-#define NSTEP   100000
+#define NSTEP 100000
 
 _Atomic int casbox;
 
-static void *worker(void *arg)
-{
+static void *worker(void *arg) {
     (void)arg;
     for (int i = 0; i < NSTEP; i++) {
         counter++;
@@ -26,10 +20,8 @@ static void *worker(void *arg)
     return 0;
 }
 
-int main(void)
-{
+int main(void) {
     int ok = 1;
-
 
     g = 10;
     int a = g++;
@@ -49,7 +41,6 @@ int main(void)
     ll += 0x100000000LL;
     ok &= (ll == 0x100000001LL);
 
-
     static int vec[20];
     _Atomic(int *) p = vec;
     p++;
@@ -57,7 +48,6 @@ int main(void)
     int *q = p--;
     p -= 2;
     ok &= (p - vec == 1 && q - vec == 4);
-
 
     _Atomic int c = 7;
     c *= 3;
@@ -69,15 +59,12 @@ int main(void)
     cu /= 3;
     ok &= (cu == 20);
 
-
     _Atomic double ad2 = 2.0;
     ad2 *= 2.5;
     ad2 += 1.0;
     ad2 /= 2.0;
     double adp = ++ad2;
     ok &= (ad2 == 4.0 && adp == 4.0);
-
-
 
     counter = 0;
     casbox = 12345;

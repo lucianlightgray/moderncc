@@ -1,30 +1,28 @@
 #include <stdio.h>
 
-int main()
-{
+int main() {
 
-    #define pop_macro foobar1
+#define pop_macro foobar1
 
+#define push_macro foobar2
 
-    #define push_macro foobar2
-
-    #undef abort
-    #define abort "111"
+#undef abort
+#define abort "111"
     printf("abort = %s\n", abort);
 
-    #pragma push_macro("abort")
-    #undef abort
-    #define abort "222"
+#pragma push_macro("abort")
+#undef abort
+#define abort "222"
     printf("abort = %s\n", abort);
 
-    #pragma push_macro("abort")
-    #undef abort
-    #define abort "333"
+#pragma push_macro("abort")
+#undef abort
+#define abort "333"
     printf("abort = %s\n", abort);
 
-    #pragma pop_macro("abort")
+#pragma pop_macro("abort")
     printf("abort = %s\n", abort);
 
-    #pragma pop_macro("abort")
+#pragma pop_macro("abort")
     printf("abort = %s\n", abort);
 }

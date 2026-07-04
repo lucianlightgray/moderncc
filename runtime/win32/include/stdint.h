@@ -10,42 +10,42 @@
 #ifndef __int8_t_defined
 #define __int8_t_defined
 typedef signed char int8_t;
-typedef unsigned char   uint8_t;
-typedef short  int16_t;
-typedef unsigned short  uint16_t;
-typedef int  int32_t;
-typedef unsigned   uint32_t;
-typedef long long  int64_t;
-typedef unsigned long long   uint64_t;
+typedef unsigned char uint8_t;
+typedef short int16_t;
+typedef unsigned short uint16_t;
+typedef int int32_t;
+typedef unsigned uint32_t;
+typedef long long int64_t;
+typedef unsigned long long uint64_t;
 #endif
 
 typedef signed char int_least8_t;
-typedef unsigned char   uint_least8_t;
-typedef short  int_least16_t;
-typedef unsigned short  uint_least16_t;
-typedef int  int_least32_t;
-typedef unsigned   uint_least32_t;
-typedef long long  int_least64_t;
-typedef unsigned long long   uint_least64_t;
+typedef unsigned char uint_least8_t;
+typedef short int_least16_t;
+typedef unsigned short uint_least16_t;
+typedef int int_least32_t;
+typedef unsigned uint_least32_t;
+typedef long long int_least64_t;
+typedef unsigned long long uint_least64_t;
 
 typedef char int_fast8_t;
 typedef unsigned char uint_fast8_t;
-typedef short  int_fast16_t;
-typedef unsigned short  uint_fast16_t;
-typedef int  int_fast32_t;
-typedef unsigned  int  uint_fast32_t;
-typedef long long  int_fast64_t;
-typedef unsigned long long   uint_fast64_t;
+typedef short int_fast16_t;
+typedef unsigned short uint_fast16_t;
+typedef int int_fast32_t;
+typedef unsigned int uint_fast32_t;
+typedef long long int_fast64_t;
+typedef unsigned long long uint_fast64_t;
 
-typedef long long  intmax_t;
-typedef unsigned long long   uintmax_t;
+typedef long long intmax_t;
+typedef unsigned long long uintmax_t;
 
-#if !defined ( __cplusplus) || defined (__STDC_LIMIT_MACROS)
+#if !defined(__cplusplus) || defined(__STDC_LIMIT_MACROS)
 
 #define INT8_MIN (-128)
 #define INT16_MIN (-32768)
 #define INT32_MIN (-2147483647 - 1)
-#define INT64_MIN  (-9223372036854775807LL - 1)
+#define INT64_MIN (-9223372036854775807LL - 1)
 
 #define INT8_MAX 127
 #define INT16_MAX 32767
@@ -122,28 +122,24 @@ typedef unsigned long long   uintmax_t;
 
 #ifndef WCHAR_MIN
 #define WCHAR_MIN 0
-#define WCHAR_MAX ((wchar_t)-1)
+#define WCHAR_MAX ((wchar_t) - 1)
 #endif
 
 #define WINT_MIN 0
-#define WINT_MAX ((wint_t)-1)
+#define WINT_MAX ((wint_t) - 1)
 
 #endif
 
+#if !defined(__cplusplus) || defined(__STDC_CONSTANT_MACROS)
 
-#if !defined ( __cplusplus) || defined (__STDC_CONSTANT_MACROS)
-
-
-
-
-#define INT8_C(val) (INT_LEAST8_MAX-INT_LEAST8_MAX+(val))
-#define INT16_C(val) (INT_LEAST16_MAX-INT_LEAST16_MAX+(val))
-#define INT32_C(val) (INT_LEAST32_MAX-INT_LEAST32_MAX+(val))
+#define INT8_C(val) (INT_LEAST8_MAX - INT_LEAST8_MAX + (val))
+#define INT16_C(val) (INT_LEAST16_MAX - INT_LEAST16_MAX + (val))
+#define INT32_C(val) (INT_LEAST32_MAX - INT_LEAST32_MAX + (val))
 #define INT64_C(val) val##LL
 
-#define UINT8_C(val) (UINT_LEAST8_MAX-UINT_LEAST8_MAX+(val))
-#define UINT16_C(val) (UINT_LEAST16_MAX-UINT_LEAST16_MAX+(val))
-#define UINT32_C(val) (UINT_LEAST32_MAX-UINT_LEAST32_MAX+(val))
+#define UINT8_C(val) (UINT_LEAST8_MAX - UINT_LEAST8_MAX + (val))
+#define UINT16_C(val) (UINT_LEAST16_MAX - UINT_LEAST16_MAX + (val))
+#define UINT32_C(val) (UINT_LEAST32_MAX - UINT_LEAST32_MAX + (val))
 #define UINT64_C(val) val##ULL
 
 #define INTMAX_C(val) val##LL

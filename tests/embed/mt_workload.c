@@ -1,25 +1,23 @@
-
-
-
-
-
-
 #include <stdio.h>
 
-int mt_add(int a, int b) { return a + b; }
-int mt_sub(int a, int b) { return a - b; }
-int mt_mul(int a, int b) { return a * b; }
+int mt_add(int a, int b) {
+    return a + b;
+}
+int mt_sub(int a, int b) {
+    return a - b;
+}
+int mt_mul(int a, int b) {
+    return a * b;
+}
 
-long mt_factorial(int n)
-{
+long mt_factorial(int n) {
     long acc = 1;
     while (n > 1)
         acc *= n--;
     return acc;
 }
 
-int mt_gcd(int a, int b)
-{
+int mt_gcd(int a, int b) {
     while (b) {
         int t = a % b;
         a = b;
@@ -30,15 +28,13 @@ int mt_gcd(int a, int b)
 
 static int mt_table[64];
 
-void mt_fill(int seed)
-{
+void mt_fill(int seed) {
     int i;
     for (i = 0; i < 64; i++)
         mt_table[i] = mt_mul(i, seed) + mt_gcd(i, seed);
 }
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
     int seed = argc > 1 ? (int)argv[1][0] : 7;
     long sum = 0;
     int i;

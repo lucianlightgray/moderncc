@@ -1,9 +1,7 @@
-/* Standalone unit test for s6_5_15 — compiled 3-way by the parts-suite. */
 #include "std_env.h"
 #include "s6_5_15.h"
 
-int main(void)
-{
+int main(void) {
     s6_5_15_cond_test();
     s6_5_16_assign_test();
     s6_5_17_comma_test();

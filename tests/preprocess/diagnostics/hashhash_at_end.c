@@ -1,2 +1,2 @@
-#define BAD(x) ## x
+#define BAD(x) ##x
 BAD(1)

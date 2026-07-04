@@ -1,1 +1,3 @@
-int wsym(void){ return 1; }
+int wsym(void) {
+    return 1;
+}

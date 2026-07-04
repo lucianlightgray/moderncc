@@ -1,23 +1,4 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 FROM ubuntu:24.04
-
-
-
-
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         ca-certificates gpg wget \
@@ -26,10 +7,6 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
     && echo "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ noble main" \
         > /etc/apt/sources.list.d/kitware.list \
     && rm -rf /var/lib/apt/lists/*
-
-
-
-
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         cmake \
@@ -42,25 +19,14 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
         rsync \
     && rm -rf /var/lib/apt/lists/*
 
-
-
 RUN set -e; for cc in gcc clang; do \
         command -v "$cc" >/dev/null || { echo "missing reference compiler $cc"; exit 1; }; \
     done; echo "reference compilers present (gcc + clang)"; \
     cmake --version | head -1
 
-
-
-
-
-
-
-
 RUN useradd --create-home ci \
     && mkdir -p /src /build \
     && chown ci:ci /src /build
-
-
 
 ENV WINEDEBUG=-all \
     WINEPREFIX=/home/ci/.wine

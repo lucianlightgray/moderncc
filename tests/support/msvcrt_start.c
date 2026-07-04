@@ -1,88 +1,85 @@
-
-
-
 #if 0
 
-#define REDIR_ALL \
- REDIR(__set_app_type)\
- REDIR(__getmainargs)\
- REDIR(_controlfp)\
- REDIR(_vsnprintf)\
- REDIR(exit)\
- \
- REDIR(puts)\
- REDIR(printf)\
- REDIR(putchar)\
- REDIR(strtod)\
- REDIR(memset)\
- REDIR(strcpy)\
- REDIR(strlen)\
- REDIR(malloc)\
- REDIR(free)\
+#define REDIR_ALL         \
+    REDIR(__set_app_type) \
+    REDIR(__getmainargs)  \
+    REDIR(_controlfp)     \
+    REDIR(_vsnprintf)     \
+    REDIR(exit)           \
+                          \
+    REDIR(puts)           \
+    REDIR(printf)         \
+    REDIR(putchar)        \
+    REDIR(strtod)         \
+    REDIR(memset)         \
+    REDIR(strcpy)         \
+    REDIR(strlen)         \
+    REDIR(malloc)         \
+    REDIR(free)
 
 #if defined __i386__ && !defined __MCC__
-# define __leading_underscore 1
+#define __leading_underscore 1
 #endif
 
 #ifdef __leading_underscore
-# define _(s) "_"#s
+#define _(s) "_" #s
 #else
-# define _(s) #s
+#define _(s) #s
 #endif
 
 #define REDIR(s) void *s;
 static struct { REDIR_ALL } all_ptrs;
 #undef REDIR
 
-#define REDIR(s) #s"\0"
+#define REDIR(s) #s "\0"
 static const char all_names[] = REDIR_ALL;
 #undef REDIR
 
 #if __aarch64__
-  #if defined __MCC__
-  # define ALIGN ".align 8"
-  #else
-  # define ALIGN ".align 3"
-  #endif
-# define REDIR(s) \
-    __asm__("\n"_(s)":"); \
-    __asm__(".int 0x58000090");   \
-    __asm__(".int 0xf9400210");   \
-    __asm__(".int 0xd61f0200");   \
-    __asm__(".int 0xd503201f");   \
+#if defined __MCC__
+#define ALIGN ".align 8"
+#else
+#define ALIGN ".align 3"
+#endif
+#define REDIR(s)                                              \
+    __asm__("\n" _(s) ":");                                   \
+    __asm__(".int 0x58000090");                               \
+    __asm__(".int 0xf9400210");                               \
+    __asm__(".int 0xd61f0200");                               \
+    __asm__(".int 0xd503201f");                               \
     __asm__(".quad all_ptrs + (. - all_jmps - 16) / 24 * 8"); \
-    __asm__(".global "_(s));
+    __asm__(".global " _(s));
 
     __asm__("\t.text\n\t"ALIGN"\nall_jmps:");
     REDIR_ALL
 #else
-# define REDIR(s) \
-    __asm__("\n"_(s)":");\
-    __asm__("jmp *%0"::"m"(all_ptrs.s));\
-    __asm__(".global "_(s));
+#define REDIR(s)                          \
+    __asm__("\n" _(s) ":");               \
+    __asm__("jmp *%0" ::"m"(all_ptrs.s)); \
+    __asm__(".global " _(s));
 
     static void all_jmps() { REDIR_ALL }
 #endif
 #undef REDIR
 
 #if 0
-# include <windows.h>
+#include <windows.h>
 #else
-# if __i386__
-#  define STDCALL __declspec(stdcall)
-# else
-#  define STDCALL
-# endif
-# define DWORD long unsigned
-# define HMODULE void*
-# define HANDLE void*
+#if __i386__
+#define STDCALL __declspec(stdcall)
+#else
+#define STDCALL
+#endif
+#define DWORD long unsigned
+#define HMODULE void *
+#define HANDLE void *
 S TDCALL HMODULE LoadLibraryA(const char *);
 S TDCALL HMODULE GetProcAddress(HMODULE , char*);
 S TDCALL void ExitProcess(int);
 S TDCALL int WriteFile(HANDLE, const void*, DWORD, DWORD*, void*);
 S TDCALL HANDLE GetStdHandle(DWORD);
 S TDCALL int FlushFileBuffers(HANDLE);
-# define STD_ERROR_HANDLE -12
+#define STD_ERROR_HANDLE -12
 #endif
 
 static void eput(const char *s)
@@ -116,15 +113,17 @@ static void rt_reloc()
 }
 
 #else
-# define rt_reloc()
+#define rt_reloc()
 #endif
 
 int main(int argc, char **argv, char **env);
 void exit(int);
 void __set_app_type(int apptype);
 
-typedef struct { int newmode; } _startupinfo;
-int __getmainargs(int *pargc, char ***pargv, char ***penv, int globb, _startupinfo*);
+typedef struct {
+    int newmode;
+} _startupinfo;
+int __getmainargs(int *pargc, char ***pargv, char ***penv, int globb, _startupinfo *);
 
 void _controlfp(unsigned a, unsigned b);
 #define _MCW_PC 0x00030000
@@ -135,8 +134,7 @@ char **__argv;
 char **environ;
 _startupinfo start_info = {0};
 
-void mainCRTStartup(void)
-{
+void mainCRTStartup(void) {
     rt_reloc();
 #if defined __i386__ || defined __x86_64__
     _controlfp(_PC_53, _MCW_PC);
@@ -151,39 +149,29 @@ void mainCRTStartup(void)
 int printf(const char *, ...);
 int _vsnprintf(char *, size_t, const char *, va_list);
 
-
-int vprintf(const char *format, va_list ap)
-{
+int vprintf(const char *format, va_list ap) {
     char buf[1000];
     _vsnprintf(buf, sizeof buf, format, ap);
     return printf("%s", buf);
 }
 
-void __main() {}
-void _pei386_runtime_relocator(void) {}
-void __chkstk(unsigned n) {}
+void __main() {
+}
+void _pei386_runtime_relocator(void) {
+}
+void __chkstk(unsigned n) {
+}
 
-/* mingwex math (lgamma, log, rint, ...) calls this to dispatch a domain/range
-   error to a user-registered matherr; with none registered it is a no-op. We
-   link bare msvcrt (no libmingw32 that would define it), so stub it here. */
-void __mingw_raise_matherr(int typ, const char *name, double a1, double a2, double rslt) {}
+void __mingw_raise_matherr(int typ, const char *name, double a1, double a2, double rslt) {
+}
 
 #if defined(__x86_64__) && !defined(__MCC__)
-/* Some mingw-w64 <setjmp.h> revisions reach SEH setjmp through the intrinsics
-   __intrinsic_setjmp/__intrinsic_setjmpex (extern-inline with no out-of-line
-   body), so an -O0 build emits unresolved calls to them. Their defining archive
-   is libmsvcrt, which we cannot link here (it would drag in ucrtbase's strict
-   printf and break the legacy-msvcrt output match). Provide them as bare tail
-   jumps to msvcrt.dll's own _setjmp/_setjmpex -- the one setjmp pair every
-   distro's msvcrt.dll exports -- so the reference links against bare msvcrt on
-   any mingw runtime. Tail-jump (not call) so _setjmp* captures the caller's
-   frame/return address, preserving setjmp/longjmp semantics. Unused (hence
-   inert) on runtimes whose header calls _setjmp/_setjmpex directly. */
+
 __asm__(
-".globl __intrinsic_setjmpex\n"
-"__intrinsic_setjmpex:\n"
-"\tjmp *__imp__setjmpex(%rip)\n"
-".globl __intrinsic_setjmp\n"
-"__intrinsic_setjmp:\n"
-"\tjmp *__imp__setjmp(%rip)\n");
+    ".globl __intrinsic_setjmpex\n"
+    "__intrinsic_setjmpex:\n"
+    "\tjmp *__imp__setjmpex(%rip)\n"
+    ".globl __intrinsic_setjmp\n"
+    "__intrinsic_setjmp:\n"
+    "\tjmp *__imp__setjmp(%rip)\n");
 #endif

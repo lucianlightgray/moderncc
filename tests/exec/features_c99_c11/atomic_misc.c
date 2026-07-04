@@ -1,9 +1,8 @@
 #include <stdatomic.h>
-int printf(const char*,...);
+int printf(const char *, ...);
 
 #if defined test_atomic_compare_exchange
-int main()
-{
+int main() {
     _Atomic int a = 12;
     int b = 77;
     int r;
@@ -17,7 +16,7 @@ int main()
     printf("%d %d %d\n", r, a, b);
 
     atomic_store(&a, b + 5);
-    r = atomic_exchange(&a,  33);
+    r = atomic_exchange(&a, 33);
     printf("%d %d %d\n", r, a, b);
 
     atomic_store(&a, b + 10);
@@ -28,8 +27,7 @@ int main()
 }
 
 #elif defined test_atomic_store
-int main()
-{
+int main() {
     int _Atomic i;
     int r;
     atomic_store(&i, 12);
@@ -38,9 +36,10 @@ int main()
 }
 
 #elif defined test_atomic_store_pointer
-typedef struct { char c[4]; } c4;
-int main()
-{
+typedef struct {
+    char c[4];
+} c4;
+int main() {
     int i = 1;
     int _Atomic *p = &i;
     int k = 2;
@@ -49,29 +48,30 @@ int main()
 }
 
 #elif defined test_atomic_store_struct
-typedef struct { char c[4]; } c4;
-int main()
-{
+typedef struct {
+    char c[4];
+} c4;
+int main() {
     c4 _Atomic p;
-    c4 v = { 1,2,3,4 };
+    c4 v = {1, 2, 3, 4};
     atomic_store(&p, v);
     printf("%d %d %d %d\n", p.c[0], p.c[1], p.c[2], p.c[3]);
 }
 
 #elif defined test_atomic_op
 
-#define OP1(func, v, e1, e2) atomic_##func(&c, v) == e1 && c == e2
-#define OP2(func, v, e1, e2) atomic_##func(&s, v) == e1 && s == e2
-#define OP4(func, v, e1, e2) atomic_##func(&i, v) == e1 && i == e2
-#define OP8(func, v, e1, e2) atomic_##func(&l, v) == e1 && l == e2
+#define OP1(func, v, e1, e2) atomic_##func(&c, v) == e1 &&c == e2
+#define OP2(func, v, e1, e2) atomic_##func(&s, v) == e1 &&s == e2
+#define OP4(func, v, e1, e2) atomic_##func(&i, v) == e1 &&i == e2
+#define OP8(func, v, e1, e2) atomic_##func(&l, v) == e1 &&l == e2
 
-#define OP(func, v, e1, e2) printf ("%s: %s\n", #func,                        \
-                                    OP1(func,v,e1,e2) && OP2(func,v,e1,e2) && \
-                                    OP4(func,v,e1,e2) && OP8(func,v,e1,e2)    \
-                                    ? "SUCCESS" : "FAIL");
+#define OP(func, v, e1, e2) printf("%s: %s\n", #func,                                   \
+                                   OP1(func, v, e1, e2) && OP2(func, v, e1, e2) &&      \
+                                           OP4(func, v, e1, e2) && OP8(func, v, e1, e2) \
+                                       ? "SUCCESS"                                      \
+                                       : "FAIL");
 
-int main()
-{
+int main() {
     atomic_char c;
     atomic_short s;
     atomic_int i;
@@ -94,21 +94,21 @@ int main()
 typedef __SIZE_TYPE__ size64_t;
 
 #define OP1(func, v, e1, e2) \
-    __atomic_##func(&c, v, __ATOMIC_SEQ_CST) == e1 && c == e2
-#define OP2(func, v, e1, e2)\
-    __atomic_##func(&s, v, __ATOMIC_SEQ_CST) == e1 && s == e2
-#define OP4(func, v, e1, e2)\
-    __atomic_##func(&i, v, __ATOMIC_SEQ_CST) == e1 && i == e2
-#define OP8(func, v, e1, e2)\
-    __atomic_##func(&l, v, __ATOMIC_SEQ_CST) == e1 && l == e2
+    __atomic_##func(&c, v, __ATOMIC_SEQ_CST) == e1 &&c == e2
+#define OP2(func, v, e1, e2) \
+    __atomic_##func(&s, v, __ATOMIC_SEQ_CST) == e1 &&s == e2
+#define OP4(func, v, e1, e2) \
+    __atomic_##func(&i, v, __ATOMIC_SEQ_CST) == e1 &&i == e2
+#define OP8(func, v, e1, e2) \
+    __atomic_##func(&l, v, __ATOMIC_SEQ_CST) == e1 &&l == e2
 
-#define OP(func, v, e1, e2) printf ("%s: %s\n", #func,                        \
-                                    OP1(func,v,e1,e2) && OP2(func,v,e1,e2) && \
-                                    OP4(func,v,e1,e2) && OP8(func,v,e1,e2)    \
-                                    ? "SUCCESS" : "FAIL");
+#define OP(func, v, e1, e2) printf("%s: %s\n", #func,                                   \
+                                   OP1(func, v, e1, e2) && OP2(func, v, e1, e2) &&      \
+                                           OP4(func, v, e1, e2) && OP8(func, v, e1, e2) \
+                                       ? "SUCCESS"                                      \
+                                       : "FAIL");
 
-int main()
-{
+int main() {
     signed char c;
     short s;
     int i;
@@ -140,55 +140,50 @@ int main()
 }
 
 #elif defined test_atomic_thread_signal
-int main()
-{
+int main() {
     int c;
 
     atomic_thread_fence(__ATOMIC_SEQ_CST);
     atomic_signal_fence(__ATOMIC_SEQ_CST);
-    printf ("%d\n", atomic_is_lock_free(&c));
+    printf("%d\n", atomic_is_lock_free(&c));
 }
 
 #elif defined test_atomic_error_1
-int main()
-{
+int main() {
     int _Atomic i;
     atomic_load(i);
 }
 
 #elif defined test_atomic_error_2
-int main()
-{
-    struct { char c[3]; } _Atomic c3;
+int main() {
+    struct {
+        char c[3];
+    } _Atomic c3;
     atomic_fetch_add(&c3, 1);
 }
 
 #elif defined test_atomic_error_3
-int main()
-{
+int main() {
     _Atomic int *p = 0;
     atomic_fetch_add(&p, 1);
 }
 
 #elif defined test_atomic_error_4
-int main()
-{
+int main() {
     int _Atomic i = 1;
     char c = 2;
     atomic_compare_exchange_strong(&i, &c, 0);
 }
 
 #elif defined test_atomic_warn_1
-int main()
-{
+int main() {
     size_t _Atomic i = 1;
 
     atomic_store(&i, &i);
 }
 
 #elif defined test_atomic_warn_2
-int main()
-{
+int main() {
     int i = 1;
     char c = 2;
     int _Atomic *p = &i;
@@ -197,8 +192,7 @@ int main()
 }
 
 #elif defined test_atomic_warn_3
-int main()
-{
+int main() {
     int const i = 1;
 
     atomic_fetch_add(&i, 2);

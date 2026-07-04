@@ -1,8 +1,7 @@
 #ifndef _DWARF_H
-#define	_DWARF_H 1
+#define _DWARF_H 1
 
-enum
-  {
+enum {
     DW_UT_compile = 0x01,
     DW_UT_type = 0x02,
     DW_UT_partial = 0x03,
@@ -12,10 +11,9 @@ enum
 
     DW_UT_lo_user = 0x80,
     DW_UT_hi_user = 0xff
-  };
+};
 
-enum
-  {
+enum {
     DW_TAG_array_type = 0x01,
     DW_TAG_class_type = 0x02,
     DW_TAG_entry_point = 0x03,
@@ -102,18 +100,14 @@ enum
     DW_TAG_GNU_call_site_parameter = 0x410a,
 
     DW_TAG_hi_user = 0xffff
-  };
+};
 
-
-enum
-  {
+enum {
     DW_CHILDREN_no = 0,
     DW_CHILDREN_yes = 1
-  };
+};
 
-
-enum
-  {
+enum {
     DW_AT_sibling = 0x01,
     DW_AT_location = 0x02,
     DW_AT_name = 0x03,
@@ -296,15 +290,13 @@ enum
     DW_AT_GNU_bias = 0x2305,
 
     DW_AT_hi_user = 0x3fff
-  };
+};
 
+#define DW_AT_subscr_data 0x0a
+#define DW_AT_element_list 0x0f
+#define DW_AT_member 0x14
 
-#define DW_AT_subscr_data	0x0a
-#define DW_AT_element_list	0x0f
-#define DW_AT_member		0x14
-
-enum
-  {
+enum {
     DW_FORM_addr = 0x01,
     DW_FORM_block2 = 0x03,
     DW_FORM_block4 = 0x04,
@@ -354,11 +346,9 @@ enum
 
     DW_FORM_GNU_ref_alt = 0x1f20,
     DW_FORM_GNU_strp_alt = 0x1f21
-  };
+};
 
-
-enum
-  {
+enum {
     DW_OP_addr = 0x03,
     DW_OP_deref = 0x06,
     DW_OP_const1u = 0x08,
@@ -544,11 +534,9 @@ enum
 
     DW_OP_lo_user = 0xe0,
     DW_OP_hi_user = 0xff
-  };
+};
 
-
-enum
-  {
+enum {
     DW_ATE_void = 0x0,
     DW_ATE_address = 0x1,
     DW_ATE_boolean = 0x2,
@@ -571,60 +559,48 @@ enum
 
     DW_ATE_lo_user = 0x80,
     DW_ATE_hi_user = 0xff
-  };
+};
 
-
-enum
-  {
+enum {
     DW_DS_unsigned = 1,
     DW_DS_leading_overpunch = 2,
     DW_DS_trailing_overpunch = 3,
     DW_DS_leading_separate = 4,
     DW_DS_trailing_separate = 5,
-  };
+};
 
-
-enum
-  {
+enum {
     DW_END_default = 0,
     DW_END_big = 1,
     DW_END_little = 2,
 
     DW_END_lo_user = 0x40,
     DW_END_hi_user = 0xff
-  };
+};
 
-
-enum
-  {
+enum {
     DW_ACCESS_public = 1,
     DW_ACCESS_protected = 2,
     DW_ACCESS_private = 3
-  };
+};
 
-
-enum
-  {
+enum {
     DW_VIS_local = 1,
     DW_VIS_exported = 2,
     DW_VIS_qualified = 3
-  };
+};
 
-
-enum
-  {
+enum {
     DW_VIRTUALITY_none = 0,
     DW_VIRTUALITY_virtual = 1,
     DW_VIRTUALITY_pure_virtual = 2
-  };
+};
 
-
-enum
-  {
+enum {
     DW_LANG_C89 = 0x0001,
     DW_LANG_C = 0x0002,
     DW_LANG_Ada83 = 0x0003,
-    DW_LANG_C_plus_plus	= 0x0004,
+    DW_LANG_C_plus_plus = 0x0004,
     DW_LANG_Cobol74 = 0x0005,
     DW_LANG_Cobol85 = 0x0006,
     DW_LANG_Fortran77 = 0x0007,
@@ -662,21 +638,18 @@ enum
     DW_LANG_lo_user = 0x8000,
     DW_LANG_Mips_Assembler = 0x8001,
     DW_LANG_hi_user = 0xffff
-  };
+};
 
 #define DW_LANG_PL1 DW_LANG_PLI
 
-enum
-  {
+enum {
     DW_ID_case_sensitive = 0,
     DW_ID_up_case = 1,
     DW_ID_down_case = 2,
     DW_ID_case_insensitive = 3
-  };
+};
 
-
-enum
-  {
+enum {
     DW_CC_normal = 0x1,
     DW_CC_program = 0x2,
     DW_CC_nocall = 0x3,
@@ -684,40 +657,32 @@ enum
     DW_CC_pass_by_value = 0x5,
     DW_CC_lo_user = 0x40,
     DW_CC_hi_user = 0xff
-  };
+};
 
-
-enum
-  {
+enum {
     DW_INL_not_inlined = 0,
     DW_INL_inlined = 1,
     DW_INL_declared_not_inlined = 2,
     DW_INL_declared_inlined = 3
-  };
+};
 
-
-enum
-  {
+enum {
     DW_ORD_row_major = 0,
     DW_ORD_col_major = 1
-  };
+};
 
-
-enum
-  {
+enum {
     DW_DSC_label = 0,
     DW_DSC_range = 1
-  };
+};
 
-enum
-  {
+enum {
     DW_DEFAULTED_no = 0,
     DW_DEFAULTED_in_class = 1,
     DW_DEFAULTED_out_of_class = 2
-  };
+};
 
-enum
-  {
+enum {
     DW_LNCT_path = 0x1,
     DW_LNCT_directory_index = 0x2,
     DW_LNCT_timestamp = 0x3,
@@ -725,10 +690,9 @@ enum
     DW_LNCT_MD5 = 0x5,
     DW_LNCT_lo_user = 0x2000,
     DW_LNCT_hi_user = 0x3fff
-  };
+};
 
-enum
-  {
+enum {
     DW_LNS_copy = 1,
     DW_LNS_advance_pc = 2,
     DW_LNS_advance_line = 3,
@@ -741,11 +705,9 @@ enum
     DW_LNS_set_prologue_end = 10,
     DW_LNS_set_epilogue_begin = 11,
     DW_LNS_set_isa = 12
-  };
+};
 
-
-enum
-  {
+enum {
     DW_LNE_end_sequence = 1,
     DW_LNE_set_address = 2,
     DW_LNE_define_file = 3,
@@ -757,21 +719,17 @@ enum
     DW_LNE_NVIDIA_set_function_name = 145,
 
     DW_LNE_hi_user = 255
-  };
+};
 
-
-enum
-  {
+enum {
     DW_MACINFO_define = 1,
     DW_MACINFO_undef = 2,
     DW_MACINFO_start_file = 3,
     DW_MACINFO_end_file = 4,
     DW_MACINFO_vendor_ext = 255
-  };
+};
 
-
-enum
-  {
+enum {
     DW_MACRO_define = 0x01,
     DW_MACRO_undef = 0x02,
     DW_MACRO_start_file = 0x03,
@@ -786,21 +744,19 @@ enum
     DW_MACRO_undef_strx = 0x0c,
     DW_MACRO_lo_user = 0xe0,
     DW_MACRO_hi_user = 0xff
-  };
+};
 
-#define DW_MACRO_GNU_define		 DW_MACRO_define
-#define DW_MACRO_GNU_undef		 DW_MACRO_undef
-#define DW_MACRO_GNU_start_file		 DW_MACRO_start_file
-#define DW_MACRO_GNU_end_file		 DW_MACRO_end_file
-#define DW_MACRO_GNU_define_indirect	 DW_MACRO_define_strp
-#define DW_MACRO_GNU_undef_indirect	 DW_MACRO_undef_strp
+#define DW_MACRO_GNU_define DW_MACRO_define
+#define DW_MACRO_GNU_undef DW_MACRO_undef
+#define DW_MACRO_GNU_start_file DW_MACRO_start_file
+#define DW_MACRO_GNU_end_file DW_MACRO_end_file
+#define DW_MACRO_GNU_define_indirect DW_MACRO_define_strp
+#define DW_MACRO_GNU_undef_indirect DW_MACRO_undef_strp
 #define DW_MACRO_GNU_transparent_include DW_MACRO_import
-#define DW_MACRO_GNU_lo_user		 DW_MACRO_lo_user
-#define DW_MACRO_GNU_hi_user		 DW_MACRO_hi_user
+#define DW_MACRO_GNU_lo_user DW_MACRO_lo_user
+#define DW_MACRO_GNU_hi_user DW_MACRO_hi_user
 
-
-enum
-  {
+enum {
     DW_RLE_end_of_list = 0x0,
     DW_RLE_base_addressx = 0x1,
     DW_RLE_startx_endx = 0x2,
@@ -809,11 +765,9 @@ enum
     DW_RLE_base_address = 0x5,
     DW_RLE_start_end = 0x6,
     DW_RLE_start_length = 0x7
-  };
+};
 
-
-enum
-  {
+enum {
     DW_LLE_end_of_list = 0x0,
     DW_LLE_base_addressx = 0x1,
     DW_LLE_startx_endx = 0x2,
@@ -823,19 +777,16 @@ enum
     DW_LLE_base_address = 0x6,
     DW_LLE_start_end = 0x7,
     DW_LLE_start_length = 0x8
-  };
+};
 
-
-enum
-  {
+enum {
     DW_LLE_GNU_end_of_list_entry = 0x0,
     DW_LLE_GNU_base_address_selection_entry = 0x1,
     DW_LLE_GNU_start_end_entry = 0x2,
     DW_LLE_GNU_start_length_entry = 0x3
-  };
+};
 
-enum
-  {
+enum {
     DW_SECT_INFO = 1,
     DW_SECT_ABBREV = 3,
     DW_SECT_LINE = 4,
@@ -843,11 +794,9 @@ enum
     DW_SECT_STR_OFFSETS = 6,
     DW_SECT_MACRO = 7,
     DW_SECT_RNGLISTS = 8,
-  };
+};
 
-
-enum
-  {
+enum {
     DW_CFA_advance_loc = 0x40,
     DW_CFA_offset = 0x80,
     DW_CFA_restore = 0xc0,
@@ -884,17 +833,14 @@ enum
     DW_CFA_GNU_args_size = 0x2e,
     DW_CFA_GNU_negative_offset_extended = 0x2f,
     DW_CFA_high_user = 0x3f
-  };
+};
 
-enum
-  {
+enum {
     DW_CIE_ID_32 = 0xffffffffU,
     DW_CIE_ID_64 = 0xffffffffffffffffULL
-  };
+};
 
-
-enum
-  {
+enum {
     DW_EH_PE_absptr = 0x00,
     DW_EH_PE_omit = 0xff,
 
@@ -915,15 +861,12 @@ enum
     DW_EH_PE_aligned = 0x50,
 
     DW_EH_PE_indirect = 0x80
-  };
+};
 
-
-#define DW_ADDR_none	0
-
-
+#define DW_ADDR_none 0
 
 #define DWARF3_LENGTH_MIN_ESCAPE_CODE 0xfffffff0u
 #define DWARF3_LENGTH_MAX_ESCAPE_CODE 0xffffffffu
-#define DWARF3_LENGTH_64_BIT          DWARF3_LENGTH_MAX_ESCAPE_CODE
+#define DWARF3_LENGTH_64_BIT DWARF3_LENGTH_MAX_ESCAPE_CODE
 
 #endif

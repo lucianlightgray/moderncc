@@ -43,7 +43,7 @@ typedef __time64_t time_t;
 #ifndef _INO_T_DEFINED
 #define _INO_T_DEFINED
 typedef unsigned short _ino_t;
-#ifndef	NO_OLDNAMES
+#ifndef NO_OLDNAMES
 typedef unsigned short ino_t;
 #endif
 #endif
@@ -51,30 +51,30 @@ typedef unsigned short ino_t;
 #ifndef _DEV_T_DEFINED
 #define _DEV_T_DEFINED
 typedef unsigned int _dev_t;
-#ifndef	NO_OLDNAMES
+#ifndef NO_OLDNAMES
 typedef unsigned int dev_t;
 #endif
 #endif
 
 #ifndef _PID_T_
-#define	_PID_T_
+#define _PID_T_
 #ifndef _WIN64
-typedef int	_pid_t;
+typedef int _pid_t;
 #else
-typedef __int64	_pid_t;
+typedef __int64 _pid_t;
 #endif
 
-#ifndef	NO_OLDNAMES
-typedef _pid_t	pid_t;
+#ifndef NO_OLDNAMES
+typedef _pid_t pid_t;
 #endif
 #endif
 
 #ifndef _MODE_T_
-#define	_MODE_T_
+#define _MODE_T_
 typedef unsigned short _mode_t;
 
-#ifndef	NO_OLDNAMES
-typedef _mode_t	mode_t;
+#ifndef NO_OLDNAMES
+typedef _mode_t mode_t;
 #endif
 #endif
 
@@ -82,18 +82,18 @@ typedef _mode_t	mode_t;
 #define _OFF_T_DEFINED
 #ifndef _OFF_T_
 #define _OFF_T_
-  typedef long _off_t;
+typedef long _off_t;
 #if !defined(NO_OLDNAMES) || defined(_POSIX)
-  typedef long off_t;
+typedef long off_t;
 #endif
 #endif
 #endif
 
 #ifndef _OFF64_T_DEFINED
 #define _OFF64_T_DEFINED
-  typedef long long _off64_t;
+typedef long long _off64_t;
 #if !defined(NO_OLDNAMES) || defined(_POSIX)
-  typedef long long off64_t;
+typedef long long off64_t;
 #endif
 #endif
 
@@ -104,13 +104,13 @@ typedef unsigned int useconds_t;
 #ifndef _TIMESPEC_DEFINED
 #define _TIMESPEC_DEFINED
 struct timespec {
-  time_t  tv_sec;
-  long    tv_nsec;
+    time_t tv_sec;
+    long tv_nsec;
 };
 
 struct itimerspec {
-  struct timespec  it_interval;
-  struct timespec  it_value;
+    struct timespec it_interval;
+    struct timespec it_value;
 };
 #endif
 

@@ -1,9 +1,9 @@
 #include <stdio.h>
 
 #if (defined _WIN32 || defined __APPLE__) && (!defined __MCC__ || defined __leading_underscore)
-# define _ "_"
+#define _ "_"
 #else
-# define _
+#define _
 #endif
 
 #ifdef __clang__
@@ -13,36 +13,31 @@
 #define __USED
 #endif
 
-int x3(void)
-{
+int x3(void) {
     printf(" x3");
     return 3;
 }
 
-
-
 void callx4(void);
 #if __i386__
-__asm__(_"callx4: call "_"x4; ret;"
+__asm__(_ "callx4: call " _ "x4; ret;"
 #else
 
-__asm__(_"callx4: sub $8,%rsp; call "_"x4; add $8,%rsp; ret;"
+__asm__(_ "callx4: sub $8,%rsp; call " _ "x4; add $8,%rsp; ret;"
 #endif
 #ifndef __MCC__
-    " .global "_"callx4"
+          " .global " _ "callx4"
 #endif
 );
 
 extern void x5(void);
 
 void callx5_again(void);
-void callx5_again(void)
-{
+void callx5_again(void) {
     x5();
-    asm("call "_"x6");
+    asm("call " _ "x6");
 }
 
-static void __USED x6()
-{
+static void __USED x6() {
     printf(" x6-2");
 }

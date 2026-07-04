@@ -2,60 +2,49 @@
 
 #ifdef __riscv
 
-
-
-
-int test_neg(int x)
-{
+int test_neg(int x) {
     int r;
     asm("neg %0, %1" : "=r"(r) : "r"(x));
     return r;
 }
 
-long long test_negw(long long x)
-{
+long long test_negw(long long x) {
     int r;
     asm("negw %0, %1" : "=r"(r) : "r"((int)x));
     return (long long)r;
 }
 
-long long test_sextw(int x)
-{
+long long test_sextw(int x) {
     long long r;
     asm("sext.w %0, %1" : "=r"(r) : "r"(x));
     return r;
 }
 
-float test_fmv_s(float a)
-{
+float test_fmv_s(float a) {
     float r;
     asm("fmv.s %0, %1" : "=f"(r) : "f"(a));
     return r;
 }
 
-float test_fneg_s(float a)
-{
+float test_fneg_s(float a) {
     float r;
     asm("fneg.s %0, %1" : "=f"(r) : "f"(a));
     return r;
 }
 
-double test_fmv_d(double a)
-{
+double test_fmv_d(double a) {
     double r;
     asm("fmv.d %0, %1" : "=f"(r) : "f"(a));
     return r;
 }
 
-double test_fneg_d(double a)
-{
+double test_fneg_d(double a) {
     double r;
     asm("fneg.d %0, %1" : "=f"(r) : "f"(a));
     return r;
 }
 
-int test_pseudo(void)
-{
+int test_pseudo(void) {
     int ok = 1;
 
     if (test_neg(42) != -42) {
@@ -89,33 +78,25 @@ int test_pseudo(void)
     return ok;
 }
 
-
-
-
-
-long long test_li_small(void)
-{
+long long test_li_small(void) {
     long long r;
     asm("li %0, 42" : "=r"(r));
     return r;
 }
 
-long long test_li_large(void)
-{
+long long test_li_large(void) {
     long long r;
     asm("li %0, 0x123456789ABCDEF0" : "=r"(r));
     return r;
 }
 
-long long test_li_negative(void)
-{
+long long test_li_negative(void) {
     long long r;
     asm("li %0, -1" : "=r"(r));
     return r;
 }
 
-int test_ll(void)
-{
+int test_ll(void) {
     int ok = 1;
 
     if (test_li_small() != 42) {
@@ -133,67 +114,55 @@ int test_ll(void)
     return ok;
 }
 
-
-
-
-float test_fadd_s(float a, float b)
-{
+float test_fadd_s(float a, float b) {
     float r;
     asm("fadd.s %0, %1, %2" : "=f"(r) : "f"(a), "f"(b));
     return r;
 }
 
-float test_fsub_s(float a, float b)
-{
+float test_fsub_s(float a, float b) {
     float r;
     asm("fsub.s %0, %1, %2" : "=f"(r) : "f"(a), "f"(b));
     return r;
 }
 
-float test_fmul_s(float a, float b)
-{
+float test_fmul_s(float a, float b) {
     float r;
     asm("fmul.s %0, %1, %2" : "=f"(r) : "f"(a), "f"(b));
     return r;
 }
 
-float test_fdiv_s(float a, float b)
-{
+float test_fdiv_s(float a, float b) {
     float r;
     asm("fdiv.s %0, %1, %2" : "=f"(r) : "f"(a), "f"(b));
     return r;
 }
 
-double test_fadd_d(double a, double b)
-{
+double test_fadd_d(double a, double b) {
     double r;
     asm("fadd.d %0, %1, %2" : "=f"(r) : "f"(a), "f"(b));
     return r;
 }
 
-double test_fsub_d(double a, double b)
-{
+double test_fsub_d(double a, double b) {
     double r;
     asm("fsub.d %0, %1, %2" : "=f"(r) : "f"(a), "f"(b));
     return r;
 }
 
-double test_fmul_d(double a, double b)
-{
+double test_fmul_d(double a, double b) {
     double r;
     asm("fmul.d %0, %1, %2" : "=f"(r) : "f"(a), "f"(b));
     return r;
 }
 
-double test_fdiv_d(double a, double b)
-{
+double test_fdiv_d(double a, double b) {
     double r;
     asm("fdiv.d %0, %1, %2" : "=f"(r) : "f"(a), "f"(b));
     return r;
 }
 
-int test_farith(void)
-{
+int test_farith(void) {
     int ok = 1;
 
     if (test_fadd_s(1.5f, 2.5f) != 4.0f) {
@@ -232,8 +201,7 @@ int test_farith(void)
     return ok;
 }
 
-int csr_pseudo_main(void)
-{
+int csr_pseudo_main(void) {
     int ok = 1;
     int old, tmp;
 
@@ -245,32 +213,43 @@ int csr_pseudo_main(void)
     asm volatile("csrw 0x003, %0" : : "r"(0xE0));
     asm volatile("csrr %0, 0x003" : "=r"(tmp));
     printf("csrw: wrote e0 got %x\n", (unsigned)tmp);
-    if (tmp != 0xE0) { printf("FAIL: csrw\n"); ok = 0; }
+    if (tmp != 0xE0) {
+        printf("FAIL: csrw\n");
+        ok = 0;
+    }
     asm volatile("csrw 0x003, %0" : : "r"(old));
 
     asm volatile("csrwi 0x003, 0x10");
     asm volatile("csrr %0, 0x003" : "=r"(tmp));
     printf("csrwi: wrote 0x10 got %x\n", (unsigned)tmp);
-    if (tmp != 0x10) { printf("FAIL: csrwi\n"); ok = 0; }
+    if (tmp != 0x10) {
+        printf("FAIL: csrwi\n");
+        ok = 0;
+    }
     asm volatile("csrw 0x003, %0" : : "r"(old));
 
     asm volatile("csrsi 0x003, 0x03");
     asm volatile("csrr %0, 0x003" : "=r"(tmp));
     printf("csrsi: old|3=%x\n", (unsigned)tmp);
-    if ((old | 0x03) != tmp) { printf("FAIL: csrsi\n"); ok = 0; }
+    if ((old | 0x03) != tmp) {
+        printf("FAIL: csrsi\n");
+        ok = 0;
+    }
     asm volatile("csrw 0x003, %0" : : "r"(old));
 
     asm volatile("csrci 0x003, 0x03");
     asm volatile("csrr %0, 0x003" : "=r"(tmp));
     printf("csrci: old&~3=%x\n", (unsigned)tmp);
-    if ((old & ~0x03) != tmp) { printf("FAIL: csrci\n"); ok = 0; }
+    if ((old & ~0x03) != tmp) {
+        printf("FAIL: csrci\n");
+        ok = 0;
+    }
     asm volatile("csrw 0x003, %0" : : "r"(old));
 
     return ok;
 }
 
-int fp_cmp_cvt_main(void)
-{
+int fp_cmp_cvt_main(void) {
 
     asm volatile("feq.s a0, fa0, fa1");
     asm volatile("feq.d a0, fa0, fa1");
@@ -278,7 +257,6 @@ int fp_cmp_cvt_main(void)
     asm volatile("flt.d a0, fa0, fa1");
     asm volatile("fle.s a0, fa0, fa1");
     asm volatile("fle.d a0, fa0, fa1");
-
 
     asm volatile("fcvt.w.s a0, fa0");
     asm volatile("fcvt.wu.s a0, fa0");
@@ -288,15 +266,13 @@ int fp_cmp_cvt_main(void)
     asm volatile("fcvt.d.s fa0, fa0");
     asm volatile("fcvt.s.d fa0, fa0");
 
-
     asm volatile("fclass.s a0, fa0");
     asm volatile("fclass.d a0, fa0");
 
     return 1;
 }
 
-int amo_main(void)
-{
+int amo_main(void) {
     int x = 0, r;
     long long xd = 0xCAFEBABECAFEBABELL, rd, val = 0xDEADBEEFDEADBEEFLL;
     asm("amoadd.w %0, %2, (%1)" : "=r"(r) : "r"(&x), "r"(val));
@@ -324,8 +300,7 @@ int amo_main(void)
     return 1;
 }
 
-int fcvt_round_main(void)
-{
+int fcvt_round_main(void) {
     asm volatile("fcvt.w.s a0, fa0, rne");
     asm volatile("fcvt.w.s a0, fa0, rtz");
     asm volatile("fcvt.w.s a0, fa0, rup");
@@ -334,8 +309,7 @@ int fcvt_round_main(void)
     return 1;
 }
 
-int main()
-{
+int main() {
     int ok = 1;
     ok &= test_pseudo();
     ok &= test_ll();
@@ -349,8 +323,7 @@ int main()
 }
 
 #else
-int main()
-{
+int main() {
     printf("SKIP\n");
 }
 #endif

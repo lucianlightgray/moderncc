@@ -1,15 +1,11 @@
 #include <stdio.h>
 
-void fred(void)
-{
-   printf("yo\n");
+void fred(void) {
+    printf("yo\n");
 }
 
-int main()
-{
-   fred();
+int main() {
+    fred();
 
-   return 0;
+    return 0;
 }
-
-

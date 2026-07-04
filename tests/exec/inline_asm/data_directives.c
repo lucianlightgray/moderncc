@@ -1,15 +1,12 @@
-
-
-
 #include <stdio.h>
 
-extern unsigned char  rep[4];
+extern unsigned char rep[4];
 extern unsigned short fillv[4];
-extern unsigned char  skipd[5];
-extern char           asciz_s[];
-extern char           ascii_s[];
-extern unsigned int   delta;
-extern int            aliased;
+extern unsigned char skipd[5];
+extern char asciz_s[];
+extern char ascii_s[];
+extern unsigned int delta;
+extern int aliased;
 
 asm(
     ".data\n"
@@ -29,11 +26,9 @@ asm(
     "delta: .long 2b-1b\n"
     ".globl realsym\n"
     "realsym: .long 99\n"
-    ".set aliased, realsym\n"
-);
+    ".set aliased, realsym\n");
 
-int main(void)
-{
+int main(void) {
     printf("rep: %d %d %d %d\n", rep[0], rep[1], rep[2], rep[3]);
     printf("fill: %d %d\n", fillv[0], fillv[3]);
     printf("skip: %d %d %d %d %d\n",

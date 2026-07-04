@@ -1,2 +1,2 @@
-#define S(x) # y
+#define S(x) #y
 S(1)

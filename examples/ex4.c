@@ -1,11 +1,9 @@
-#!/usr/local/bin/mcc -run -L/usr/X11R6/lib -lX11
+#!/ usr / local / bin / mcc - run - L / usr / X11R6 / lib - lX11
 #include <stdlib.h>
 #include <stdio.h>
 #include <X11/Xlib.h>
 
-
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
     Display *display;
     Screen *screen;
 

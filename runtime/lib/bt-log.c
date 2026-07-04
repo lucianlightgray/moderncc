@@ -4,9 +4,9 @@
 #undef __attribute__
 
 #ifdef _WIN32
-# define DLL_EXPORT __declspec(dllexport)
+#define DLL_EXPORT __declspec(dllexport)
 #else
-# define DLL_EXPORT
+#define DLL_EXPORT
 #endif
 
 #if (defined(__GNUC__) && (__GNUC__ >= 6)) || defined(__clang__)
@@ -18,11 +18,9 @@ typedef struct rt_frame {
     void *ip, *fp, *sp;
 } rt_frame;
 
-__attribute__((weak))
-int _mcc_backtrace(rt_frame *f, const char *fmt, va_list ap);
+__attribute__((weak)) int _mcc_backtrace(rt_frame *f, const char *fmt, va_list ap);
 
-DLL_EXPORT int mcc_backtrace(const char *fmt, ...)
-{
+DLL_EXPORT int mcc_backtrace(const char *fmt, ...) {
     va_list ap;
     int ret;
 

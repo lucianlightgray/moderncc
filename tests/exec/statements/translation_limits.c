@@ -1,4 +1,3 @@
-
 extern int printf(const char *, ...);
 struct Big {
     int m0;
@@ -1028,1030 +1027,3078 @@ struct Big {
 static int classify(int x) {
     int r = 0;
     switch (x) {
-    case 0: r = 0; break;
-    case 1: r = 1; break;
-    case 2: r = 2; break;
-    case 3: r = 3; break;
-    case 4: r = 4; break;
-    case 5: r = 5; break;
-    case 6: r = 6; break;
-    case 7: r = 7; break;
-    case 8: r = 8; break;
-    case 9: r = 9; break;
-    case 10: r = 10; break;
-    case 11: r = 11; break;
-    case 12: r = 12; break;
-    case 13: r = 13; break;
-    case 14: r = 14; break;
-    case 15: r = 15; break;
-    case 16: r = 16; break;
-    case 17: r = 17; break;
-    case 18: r = 18; break;
-    case 19: r = 19; break;
-    case 20: r = 20; break;
-    case 21: r = 21; break;
-    case 22: r = 22; break;
-    case 23: r = 23; break;
-    case 24: r = 24; break;
-    case 25: r = 25; break;
-    case 26: r = 26; break;
-    case 27: r = 27; break;
-    case 28: r = 28; break;
-    case 29: r = 29; break;
-    case 30: r = 30; break;
-    case 31: r = 31; break;
-    case 32: r = 32; break;
-    case 33: r = 33; break;
-    case 34: r = 34; break;
-    case 35: r = 35; break;
-    case 36: r = 36; break;
-    case 37: r = 37; break;
-    case 38: r = 38; break;
-    case 39: r = 39; break;
-    case 40: r = 40; break;
-    case 41: r = 41; break;
-    case 42: r = 42; break;
-    case 43: r = 43; break;
-    case 44: r = 44; break;
-    case 45: r = 45; break;
-    case 46: r = 46; break;
-    case 47: r = 47; break;
-    case 48: r = 48; break;
-    case 49: r = 49; break;
-    case 50: r = 50; break;
-    case 51: r = 51; break;
-    case 52: r = 52; break;
-    case 53: r = 53; break;
-    case 54: r = 54; break;
-    case 55: r = 55; break;
-    case 56: r = 56; break;
-    case 57: r = 57; break;
-    case 58: r = 58; break;
-    case 59: r = 59; break;
-    case 60: r = 60; break;
-    case 61: r = 61; break;
-    case 62: r = 62; break;
-    case 63: r = 63; break;
-    case 64: r = 64; break;
-    case 65: r = 65; break;
-    case 66: r = 66; break;
-    case 67: r = 67; break;
-    case 68: r = 68; break;
-    case 69: r = 69; break;
-    case 70: r = 70; break;
-    case 71: r = 71; break;
-    case 72: r = 72; break;
-    case 73: r = 73; break;
-    case 74: r = 74; break;
-    case 75: r = 75; break;
-    case 76: r = 76; break;
-    case 77: r = 77; break;
-    case 78: r = 78; break;
-    case 79: r = 79; break;
-    case 80: r = 80; break;
-    case 81: r = 81; break;
-    case 82: r = 82; break;
-    case 83: r = 83; break;
-    case 84: r = 84; break;
-    case 85: r = 85; break;
-    case 86: r = 86; break;
-    case 87: r = 87; break;
-    case 88: r = 88; break;
-    case 89: r = 89; break;
-    case 90: r = 90; break;
-    case 91: r = 91; break;
-    case 92: r = 92; break;
-    case 93: r = 93; break;
-    case 94: r = 94; break;
-    case 95: r = 95; break;
-    case 96: r = 96; break;
-    case 97: r = 97; break;
-    case 98: r = 98; break;
-    case 99: r = 99; break;
-    case 100: r = 100; break;
-    case 101: r = 101; break;
-    case 102: r = 102; break;
-    case 103: r = 103; break;
-    case 104: r = 104; break;
-    case 105: r = 105; break;
-    case 106: r = 106; break;
-    case 107: r = 107; break;
-    case 108: r = 108; break;
-    case 109: r = 109; break;
-    case 110: r = 110; break;
-    case 111: r = 111; break;
-    case 112: r = 112; break;
-    case 113: r = 113; break;
-    case 114: r = 114; break;
-    case 115: r = 115; break;
-    case 116: r = 116; break;
-    case 117: r = 117; break;
-    case 118: r = 118; break;
-    case 119: r = 119; break;
-    case 120: r = 120; break;
-    case 121: r = 121; break;
-    case 122: r = 122; break;
-    case 123: r = 123; break;
-    case 124: r = 124; break;
-    case 125: r = 125; break;
-    case 126: r = 126; break;
-    case 127: r = 127; break;
-    case 128: r = 128; break;
-    case 129: r = 129; break;
-    case 130: r = 130; break;
-    case 131: r = 131; break;
-    case 132: r = 132; break;
-    case 133: r = 133; break;
-    case 134: r = 134; break;
-    case 135: r = 135; break;
-    case 136: r = 136; break;
-    case 137: r = 137; break;
-    case 138: r = 138; break;
-    case 139: r = 139; break;
-    case 140: r = 140; break;
-    case 141: r = 141; break;
-    case 142: r = 142; break;
-    case 143: r = 143; break;
-    case 144: r = 144; break;
-    case 145: r = 145; break;
-    case 146: r = 146; break;
-    case 147: r = 147; break;
-    case 148: r = 148; break;
-    case 149: r = 149; break;
-    case 150: r = 150; break;
-    case 151: r = 151; break;
-    case 152: r = 152; break;
-    case 153: r = 153; break;
-    case 154: r = 154; break;
-    case 155: r = 155; break;
-    case 156: r = 156; break;
-    case 157: r = 157; break;
-    case 158: r = 158; break;
-    case 159: r = 159; break;
-    case 160: r = 160; break;
-    case 161: r = 161; break;
-    case 162: r = 162; break;
-    case 163: r = 163; break;
-    case 164: r = 164; break;
-    case 165: r = 165; break;
-    case 166: r = 166; break;
-    case 167: r = 167; break;
-    case 168: r = 168; break;
-    case 169: r = 169; break;
-    case 170: r = 170; break;
-    case 171: r = 171; break;
-    case 172: r = 172; break;
-    case 173: r = 173; break;
-    case 174: r = 174; break;
-    case 175: r = 175; break;
-    case 176: r = 176; break;
-    case 177: r = 177; break;
-    case 178: r = 178; break;
-    case 179: r = 179; break;
-    case 180: r = 180; break;
-    case 181: r = 181; break;
-    case 182: r = 182; break;
-    case 183: r = 183; break;
-    case 184: r = 184; break;
-    case 185: r = 185; break;
-    case 186: r = 186; break;
-    case 187: r = 187; break;
-    case 188: r = 188; break;
-    case 189: r = 189; break;
-    case 190: r = 190; break;
-    case 191: r = 191; break;
-    case 192: r = 192; break;
-    case 193: r = 193; break;
-    case 194: r = 194; break;
-    case 195: r = 195; break;
-    case 196: r = 196; break;
-    case 197: r = 197; break;
-    case 198: r = 198; break;
-    case 199: r = 199; break;
-    case 200: r = 200; break;
-    case 201: r = 201; break;
-    case 202: r = 202; break;
-    case 203: r = 203; break;
-    case 204: r = 204; break;
-    case 205: r = 205; break;
-    case 206: r = 206; break;
-    case 207: r = 207; break;
-    case 208: r = 208; break;
-    case 209: r = 209; break;
-    case 210: r = 210; break;
-    case 211: r = 211; break;
-    case 212: r = 212; break;
-    case 213: r = 213; break;
-    case 214: r = 214; break;
-    case 215: r = 215; break;
-    case 216: r = 216; break;
-    case 217: r = 217; break;
-    case 218: r = 218; break;
-    case 219: r = 219; break;
-    case 220: r = 220; break;
-    case 221: r = 221; break;
-    case 222: r = 222; break;
-    case 223: r = 223; break;
-    case 224: r = 224; break;
-    case 225: r = 225; break;
-    case 226: r = 226; break;
-    case 227: r = 227; break;
-    case 228: r = 228; break;
-    case 229: r = 229; break;
-    case 230: r = 230; break;
-    case 231: r = 231; break;
-    case 232: r = 232; break;
-    case 233: r = 233; break;
-    case 234: r = 234; break;
-    case 235: r = 235; break;
-    case 236: r = 236; break;
-    case 237: r = 237; break;
-    case 238: r = 238; break;
-    case 239: r = 239; break;
-    case 240: r = 240; break;
-    case 241: r = 241; break;
-    case 242: r = 242; break;
-    case 243: r = 243; break;
-    case 244: r = 244; break;
-    case 245: r = 245; break;
-    case 246: r = 246; break;
-    case 247: r = 247; break;
-    case 248: r = 248; break;
-    case 249: r = 249; break;
-    case 250: r = 250; break;
-    case 251: r = 251; break;
-    case 252: r = 252; break;
-    case 253: r = 253; break;
-    case 254: r = 254; break;
-    case 255: r = 255; break;
-    case 256: r = 256; break;
-    case 257: r = 257; break;
-    case 258: r = 258; break;
-    case 259: r = 259; break;
-    case 260: r = 260; break;
-    case 261: r = 261; break;
-    case 262: r = 262; break;
-    case 263: r = 263; break;
-    case 264: r = 264; break;
-    case 265: r = 265; break;
-    case 266: r = 266; break;
-    case 267: r = 267; break;
-    case 268: r = 268; break;
-    case 269: r = 269; break;
-    case 270: r = 270; break;
-    case 271: r = 271; break;
-    case 272: r = 272; break;
-    case 273: r = 273; break;
-    case 274: r = 274; break;
-    case 275: r = 275; break;
-    case 276: r = 276; break;
-    case 277: r = 277; break;
-    case 278: r = 278; break;
-    case 279: r = 279; break;
-    case 280: r = 280; break;
-    case 281: r = 281; break;
-    case 282: r = 282; break;
-    case 283: r = 283; break;
-    case 284: r = 284; break;
-    case 285: r = 285; break;
-    case 286: r = 286; break;
-    case 287: r = 287; break;
-    case 288: r = 288; break;
-    case 289: r = 289; break;
-    case 290: r = 290; break;
-    case 291: r = 291; break;
-    case 292: r = 292; break;
-    case 293: r = 293; break;
-    case 294: r = 294; break;
-    case 295: r = 295; break;
-    case 296: r = 296; break;
-    case 297: r = 297; break;
-    case 298: r = 298; break;
-    case 299: r = 299; break;
-    case 300: r = 300; break;
-    case 301: r = 301; break;
-    case 302: r = 302; break;
-    case 303: r = 303; break;
-    case 304: r = 304; break;
-    case 305: r = 305; break;
-    case 306: r = 306; break;
-    case 307: r = 307; break;
-    case 308: r = 308; break;
-    case 309: r = 309; break;
-    case 310: r = 310; break;
-    case 311: r = 311; break;
-    case 312: r = 312; break;
-    case 313: r = 313; break;
-    case 314: r = 314; break;
-    case 315: r = 315; break;
-    case 316: r = 316; break;
-    case 317: r = 317; break;
-    case 318: r = 318; break;
-    case 319: r = 319; break;
-    case 320: r = 320; break;
-    case 321: r = 321; break;
-    case 322: r = 322; break;
-    case 323: r = 323; break;
-    case 324: r = 324; break;
-    case 325: r = 325; break;
-    case 326: r = 326; break;
-    case 327: r = 327; break;
-    case 328: r = 328; break;
-    case 329: r = 329; break;
-    case 330: r = 330; break;
-    case 331: r = 331; break;
-    case 332: r = 332; break;
-    case 333: r = 333; break;
-    case 334: r = 334; break;
-    case 335: r = 335; break;
-    case 336: r = 336; break;
-    case 337: r = 337; break;
-    case 338: r = 338; break;
-    case 339: r = 339; break;
-    case 340: r = 340; break;
-    case 341: r = 341; break;
-    case 342: r = 342; break;
-    case 343: r = 343; break;
-    case 344: r = 344; break;
-    case 345: r = 345; break;
-    case 346: r = 346; break;
-    case 347: r = 347; break;
-    case 348: r = 348; break;
-    case 349: r = 349; break;
-    case 350: r = 350; break;
-    case 351: r = 351; break;
-    case 352: r = 352; break;
-    case 353: r = 353; break;
-    case 354: r = 354; break;
-    case 355: r = 355; break;
-    case 356: r = 356; break;
-    case 357: r = 357; break;
-    case 358: r = 358; break;
-    case 359: r = 359; break;
-    case 360: r = 360; break;
-    case 361: r = 361; break;
-    case 362: r = 362; break;
-    case 363: r = 363; break;
-    case 364: r = 364; break;
-    case 365: r = 365; break;
-    case 366: r = 366; break;
-    case 367: r = 367; break;
-    case 368: r = 368; break;
-    case 369: r = 369; break;
-    case 370: r = 370; break;
-    case 371: r = 371; break;
-    case 372: r = 372; break;
-    case 373: r = 373; break;
-    case 374: r = 374; break;
-    case 375: r = 375; break;
-    case 376: r = 376; break;
-    case 377: r = 377; break;
-    case 378: r = 378; break;
-    case 379: r = 379; break;
-    case 380: r = 380; break;
-    case 381: r = 381; break;
-    case 382: r = 382; break;
-    case 383: r = 383; break;
-    case 384: r = 384; break;
-    case 385: r = 385; break;
-    case 386: r = 386; break;
-    case 387: r = 387; break;
-    case 388: r = 388; break;
-    case 389: r = 389; break;
-    case 390: r = 390; break;
-    case 391: r = 391; break;
-    case 392: r = 392; break;
-    case 393: r = 393; break;
-    case 394: r = 394; break;
-    case 395: r = 395; break;
-    case 396: r = 396; break;
-    case 397: r = 397; break;
-    case 398: r = 398; break;
-    case 399: r = 399; break;
-    case 400: r = 400; break;
-    case 401: r = 401; break;
-    case 402: r = 402; break;
-    case 403: r = 403; break;
-    case 404: r = 404; break;
-    case 405: r = 405; break;
-    case 406: r = 406; break;
-    case 407: r = 407; break;
-    case 408: r = 408; break;
-    case 409: r = 409; break;
-    case 410: r = 410; break;
-    case 411: r = 411; break;
-    case 412: r = 412; break;
-    case 413: r = 413; break;
-    case 414: r = 414; break;
-    case 415: r = 415; break;
-    case 416: r = 416; break;
-    case 417: r = 417; break;
-    case 418: r = 418; break;
-    case 419: r = 419; break;
-    case 420: r = 420; break;
-    case 421: r = 421; break;
-    case 422: r = 422; break;
-    case 423: r = 423; break;
-    case 424: r = 424; break;
-    case 425: r = 425; break;
-    case 426: r = 426; break;
-    case 427: r = 427; break;
-    case 428: r = 428; break;
-    case 429: r = 429; break;
-    case 430: r = 430; break;
-    case 431: r = 431; break;
-    case 432: r = 432; break;
-    case 433: r = 433; break;
-    case 434: r = 434; break;
-    case 435: r = 435; break;
-    case 436: r = 436; break;
-    case 437: r = 437; break;
-    case 438: r = 438; break;
-    case 439: r = 439; break;
-    case 440: r = 440; break;
-    case 441: r = 441; break;
-    case 442: r = 442; break;
-    case 443: r = 443; break;
-    case 444: r = 444; break;
-    case 445: r = 445; break;
-    case 446: r = 446; break;
-    case 447: r = 447; break;
-    case 448: r = 448; break;
-    case 449: r = 449; break;
-    case 450: r = 450; break;
-    case 451: r = 451; break;
-    case 452: r = 452; break;
-    case 453: r = 453; break;
-    case 454: r = 454; break;
-    case 455: r = 455; break;
-    case 456: r = 456; break;
-    case 457: r = 457; break;
-    case 458: r = 458; break;
-    case 459: r = 459; break;
-    case 460: r = 460; break;
-    case 461: r = 461; break;
-    case 462: r = 462; break;
-    case 463: r = 463; break;
-    case 464: r = 464; break;
-    case 465: r = 465; break;
-    case 466: r = 466; break;
-    case 467: r = 467; break;
-    case 468: r = 468; break;
-    case 469: r = 469; break;
-    case 470: r = 470; break;
-    case 471: r = 471; break;
-    case 472: r = 472; break;
-    case 473: r = 473; break;
-    case 474: r = 474; break;
-    case 475: r = 475; break;
-    case 476: r = 476; break;
-    case 477: r = 477; break;
-    case 478: r = 478; break;
-    case 479: r = 479; break;
-    case 480: r = 480; break;
-    case 481: r = 481; break;
-    case 482: r = 482; break;
-    case 483: r = 483; break;
-    case 484: r = 484; break;
-    case 485: r = 485; break;
-    case 486: r = 486; break;
-    case 487: r = 487; break;
-    case 488: r = 488; break;
-    case 489: r = 489; break;
-    case 490: r = 490; break;
-    case 491: r = 491; break;
-    case 492: r = 492; break;
-    case 493: r = 493; break;
-    case 494: r = 494; break;
-    case 495: r = 495; break;
-    case 496: r = 496; break;
-    case 497: r = 497; break;
-    case 498: r = 498; break;
-    case 499: r = 499; break;
-    case 500: r = 500; break;
-    case 501: r = 501; break;
-    case 502: r = 502; break;
-    case 503: r = 503; break;
-    case 504: r = 504; break;
-    case 505: r = 505; break;
-    case 506: r = 506; break;
-    case 507: r = 507; break;
-    case 508: r = 508; break;
-    case 509: r = 509; break;
-    case 510: r = 510; break;
-    case 511: r = 511; break;
-    case 512: r = 512; break;
-    case 513: r = 513; break;
-    case 514: r = 514; break;
-    case 515: r = 515; break;
-    case 516: r = 516; break;
-    case 517: r = 517; break;
-    case 518: r = 518; break;
-    case 519: r = 519; break;
-    case 520: r = 520; break;
-    case 521: r = 521; break;
-    case 522: r = 522; break;
-    case 523: r = 523; break;
-    case 524: r = 524; break;
-    case 525: r = 525; break;
-    case 526: r = 526; break;
-    case 527: r = 527; break;
-    case 528: r = 528; break;
-    case 529: r = 529; break;
-    case 530: r = 530; break;
-    case 531: r = 531; break;
-    case 532: r = 532; break;
-    case 533: r = 533; break;
-    case 534: r = 534; break;
-    case 535: r = 535; break;
-    case 536: r = 536; break;
-    case 537: r = 537; break;
-    case 538: r = 538; break;
-    case 539: r = 539; break;
-    case 540: r = 540; break;
-    case 541: r = 541; break;
-    case 542: r = 542; break;
-    case 543: r = 543; break;
-    case 544: r = 544; break;
-    case 545: r = 545; break;
-    case 546: r = 546; break;
-    case 547: r = 547; break;
-    case 548: r = 548; break;
-    case 549: r = 549; break;
-    case 550: r = 550; break;
-    case 551: r = 551; break;
-    case 552: r = 552; break;
-    case 553: r = 553; break;
-    case 554: r = 554; break;
-    case 555: r = 555; break;
-    case 556: r = 556; break;
-    case 557: r = 557; break;
-    case 558: r = 558; break;
-    case 559: r = 559; break;
-    case 560: r = 560; break;
-    case 561: r = 561; break;
-    case 562: r = 562; break;
-    case 563: r = 563; break;
-    case 564: r = 564; break;
-    case 565: r = 565; break;
-    case 566: r = 566; break;
-    case 567: r = 567; break;
-    case 568: r = 568; break;
-    case 569: r = 569; break;
-    case 570: r = 570; break;
-    case 571: r = 571; break;
-    case 572: r = 572; break;
-    case 573: r = 573; break;
-    case 574: r = 574; break;
-    case 575: r = 575; break;
-    case 576: r = 576; break;
-    case 577: r = 577; break;
-    case 578: r = 578; break;
-    case 579: r = 579; break;
-    case 580: r = 580; break;
-    case 581: r = 581; break;
-    case 582: r = 582; break;
-    case 583: r = 583; break;
-    case 584: r = 584; break;
-    case 585: r = 585; break;
-    case 586: r = 586; break;
-    case 587: r = 587; break;
-    case 588: r = 588; break;
-    case 589: r = 589; break;
-    case 590: r = 590; break;
-    case 591: r = 591; break;
-    case 592: r = 592; break;
-    case 593: r = 593; break;
-    case 594: r = 594; break;
-    case 595: r = 595; break;
-    case 596: r = 596; break;
-    case 597: r = 597; break;
-    case 598: r = 598; break;
-    case 599: r = 599; break;
-    case 600: r = 600; break;
-    case 601: r = 601; break;
-    case 602: r = 602; break;
-    case 603: r = 603; break;
-    case 604: r = 604; break;
-    case 605: r = 605; break;
-    case 606: r = 606; break;
-    case 607: r = 607; break;
-    case 608: r = 608; break;
-    case 609: r = 609; break;
-    case 610: r = 610; break;
-    case 611: r = 611; break;
-    case 612: r = 612; break;
-    case 613: r = 613; break;
-    case 614: r = 614; break;
-    case 615: r = 615; break;
-    case 616: r = 616; break;
-    case 617: r = 617; break;
-    case 618: r = 618; break;
-    case 619: r = 619; break;
-    case 620: r = 620; break;
-    case 621: r = 621; break;
-    case 622: r = 622; break;
-    case 623: r = 623; break;
-    case 624: r = 624; break;
-    case 625: r = 625; break;
-    case 626: r = 626; break;
-    case 627: r = 627; break;
-    case 628: r = 628; break;
-    case 629: r = 629; break;
-    case 630: r = 630; break;
-    case 631: r = 631; break;
-    case 632: r = 632; break;
-    case 633: r = 633; break;
-    case 634: r = 634; break;
-    case 635: r = 635; break;
-    case 636: r = 636; break;
-    case 637: r = 637; break;
-    case 638: r = 638; break;
-    case 639: r = 639; break;
-    case 640: r = 640; break;
-    case 641: r = 641; break;
-    case 642: r = 642; break;
-    case 643: r = 643; break;
-    case 644: r = 644; break;
-    case 645: r = 645; break;
-    case 646: r = 646; break;
-    case 647: r = 647; break;
-    case 648: r = 648; break;
-    case 649: r = 649; break;
-    case 650: r = 650; break;
-    case 651: r = 651; break;
-    case 652: r = 652; break;
-    case 653: r = 653; break;
-    case 654: r = 654; break;
-    case 655: r = 655; break;
-    case 656: r = 656; break;
-    case 657: r = 657; break;
-    case 658: r = 658; break;
-    case 659: r = 659; break;
-    case 660: r = 660; break;
-    case 661: r = 661; break;
-    case 662: r = 662; break;
-    case 663: r = 663; break;
-    case 664: r = 664; break;
-    case 665: r = 665; break;
-    case 666: r = 666; break;
-    case 667: r = 667; break;
-    case 668: r = 668; break;
-    case 669: r = 669; break;
-    case 670: r = 670; break;
-    case 671: r = 671; break;
-    case 672: r = 672; break;
-    case 673: r = 673; break;
-    case 674: r = 674; break;
-    case 675: r = 675; break;
-    case 676: r = 676; break;
-    case 677: r = 677; break;
-    case 678: r = 678; break;
-    case 679: r = 679; break;
-    case 680: r = 680; break;
-    case 681: r = 681; break;
-    case 682: r = 682; break;
-    case 683: r = 683; break;
-    case 684: r = 684; break;
-    case 685: r = 685; break;
-    case 686: r = 686; break;
-    case 687: r = 687; break;
-    case 688: r = 688; break;
-    case 689: r = 689; break;
-    case 690: r = 690; break;
-    case 691: r = 691; break;
-    case 692: r = 692; break;
-    case 693: r = 693; break;
-    case 694: r = 694; break;
-    case 695: r = 695; break;
-    case 696: r = 696; break;
-    case 697: r = 697; break;
-    case 698: r = 698; break;
-    case 699: r = 699; break;
-    case 700: r = 700; break;
-    case 701: r = 701; break;
-    case 702: r = 702; break;
-    case 703: r = 703; break;
-    case 704: r = 704; break;
-    case 705: r = 705; break;
-    case 706: r = 706; break;
-    case 707: r = 707; break;
-    case 708: r = 708; break;
-    case 709: r = 709; break;
-    case 710: r = 710; break;
-    case 711: r = 711; break;
-    case 712: r = 712; break;
-    case 713: r = 713; break;
-    case 714: r = 714; break;
-    case 715: r = 715; break;
-    case 716: r = 716; break;
-    case 717: r = 717; break;
-    case 718: r = 718; break;
-    case 719: r = 719; break;
-    case 720: r = 720; break;
-    case 721: r = 721; break;
-    case 722: r = 722; break;
-    case 723: r = 723; break;
-    case 724: r = 724; break;
-    case 725: r = 725; break;
-    case 726: r = 726; break;
-    case 727: r = 727; break;
-    case 728: r = 728; break;
-    case 729: r = 729; break;
-    case 730: r = 730; break;
-    case 731: r = 731; break;
-    case 732: r = 732; break;
-    case 733: r = 733; break;
-    case 734: r = 734; break;
-    case 735: r = 735; break;
-    case 736: r = 736; break;
-    case 737: r = 737; break;
-    case 738: r = 738; break;
-    case 739: r = 739; break;
-    case 740: r = 740; break;
-    case 741: r = 741; break;
-    case 742: r = 742; break;
-    case 743: r = 743; break;
-    case 744: r = 744; break;
-    case 745: r = 745; break;
-    case 746: r = 746; break;
-    case 747: r = 747; break;
-    case 748: r = 748; break;
-    case 749: r = 749; break;
-    case 750: r = 750; break;
-    case 751: r = 751; break;
-    case 752: r = 752; break;
-    case 753: r = 753; break;
-    case 754: r = 754; break;
-    case 755: r = 755; break;
-    case 756: r = 756; break;
-    case 757: r = 757; break;
-    case 758: r = 758; break;
-    case 759: r = 759; break;
-    case 760: r = 760; break;
-    case 761: r = 761; break;
-    case 762: r = 762; break;
-    case 763: r = 763; break;
-    case 764: r = 764; break;
-    case 765: r = 765; break;
-    case 766: r = 766; break;
-    case 767: r = 767; break;
-    case 768: r = 768; break;
-    case 769: r = 769; break;
-    case 770: r = 770; break;
-    case 771: r = 771; break;
-    case 772: r = 772; break;
-    case 773: r = 773; break;
-    case 774: r = 774; break;
-    case 775: r = 775; break;
-    case 776: r = 776; break;
-    case 777: r = 777; break;
-    case 778: r = 778; break;
-    case 779: r = 779; break;
-    case 780: r = 780; break;
-    case 781: r = 781; break;
-    case 782: r = 782; break;
-    case 783: r = 783; break;
-    case 784: r = 784; break;
-    case 785: r = 785; break;
-    case 786: r = 786; break;
-    case 787: r = 787; break;
-    case 788: r = 788; break;
-    case 789: r = 789; break;
-    case 790: r = 790; break;
-    case 791: r = 791; break;
-    case 792: r = 792; break;
-    case 793: r = 793; break;
-    case 794: r = 794; break;
-    case 795: r = 795; break;
-    case 796: r = 796; break;
-    case 797: r = 797; break;
-    case 798: r = 798; break;
-    case 799: r = 799; break;
-    case 800: r = 800; break;
-    case 801: r = 801; break;
-    case 802: r = 802; break;
-    case 803: r = 803; break;
-    case 804: r = 804; break;
-    case 805: r = 805; break;
-    case 806: r = 806; break;
-    case 807: r = 807; break;
-    case 808: r = 808; break;
-    case 809: r = 809; break;
-    case 810: r = 810; break;
-    case 811: r = 811; break;
-    case 812: r = 812; break;
-    case 813: r = 813; break;
-    case 814: r = 814; break;
-    case 815: r = 815; break;
-    case 816: r = 816; break;
-    case 817: r = 817; break;
-    case 818: r = 818; break;
-    case 819: r = 819; break;
-    case 820: r = 820; break;
-    case 821: r = 821; break;
-    case 822: r = 822; break;
-    case 823: r = 823; break;
-    case 824: r = 824; break;
-    case 825: r = 825; break;
-    case 826: r = 826; break;
-    case 827: r = 827; break;
-    case 828: r = 828; break;
-    case 829: r = 829; break;
-    case 830: r = 830; break;
-    case 831: r = 831; break;
-    case 832: r = 832; break;
-    case 833: r = 833; break;
-    case 834: r = 834; break;
-    case 835: r = 835; break;
-    case 836: r = 836; break;
-    case 837: r = 837; break;
-    case 838: r = 838; break;
-    case 839: r = 839; break;
-    case 840: r = 840; break;
-    case 841: r = 841; break;
-    case 842: r = 842; break;
-    case 843: r = 843; break;
-    case 844: r = 844; break;
-    case 845: r = 845; break;
-    case 846: r = 846; break;
-    case 847: r = 847; break;
-    case 848: r = 848; break;
-    case 849: r = 849; break;
-    case 850: r = 850; break;
-    case 851: r = 851; break;
-    case 852: r = 852; break;
-    case 853: r = 853; break;
-    case 854: r = 854; break;
-    case 855: r = 855; break;
-    case 856: r = 856; break;
-    case 857: r = 857; break;
-    case 858: r = 858; break;
-    case 859: r = 859; break;
-    case 860: r = 860; break;
-    case 861: r = 861; break;
-    case 862: r = 862; break;
-    case 863: r = 863; break;
-    case 864: r = 864; break;
-    case 865: r = 865; break;
-    case 866: r = 866; break;
-    case 867: r = 867; break;
-    case 868: r = 868; break;
-    case 869: r = 869; break;
-    case 870: r = 870; break;
-    case 871: r = 871; break;
-    case 872: r = 872; break;
-    case 873: r = 873; break;
-    case 874: r = 874; break;
-    case 875: r = 875; break;
-    case 876: r = 876; break;
-    case 877: r = 877; break;
-    case 878: r = 878; break;
-    case 879: r = 879; break;
-    case 880: r = 880; break;
-    case 881: r = 881; break;
-    case 882: r = 882; break;
-    case 883: r = 883; break;
-    case 884: r = 884; break;
-    case 885: r = 885; break;
-    case 886: r = 886; break;
-    case 887: r = 887; break;
-    case 888: r = 888; break;
-    case 889: r = 889; break;
-    case 890: r = 890; break;
-    case 891: r = 891; break;
-    case 892: r = 892; break;
-    case 893: r = 893; break;
-    case 894: r = 894; break;
-    case 895: r = 895; break;
-    case 896: r = 896; break;
-    case 897: r = 897; break;
-    case 898: r = 898; break;
-    case 899: r = 899; break;
-    case 900: r = 900; break;
-    case 901: r = 901; break;
-    case 902: r = 902; break;
-    case 903: r = 903; break;
-    case 904: r = 904; break;
-    case 905: r = 905; break;
-    case 906: r = 906; break;
-    case 907: r = 907; break;
-    case 908: r = 908; break;
-    case 909: r = 909; break;
-    case 910: r = 910; break;
-    case 911: r = 911; break;
-    case 912: r = 912; break;
-    case 913: r = 913; break;
-    case 914: r = 914; break;
-    case 915: r = 915; break;
-    case 916: r = 916; break;
-    case 917: r = 917; break;
-    case 918: r = 918; break;
-    case 919: r = 919; break;
-    case 920: r = 920; break;
-    case 921: r = 921; break;
-    case 922: r = 922; break;
-    case 923: r = 923; break;
-    case 924: r = 924; break;
-    case 925: r = 925; break;
-    case 926: r = 926; break;
-    case 927: r = 927; break;
-    case 928: r = 928; break;
-    case 929: r = 929; break;
-    case 930: r = 930; break;
-    case 931: r = 931; break;
-    case 932: r = 932; break;
-    case 933: r = 933; break;
-    case 934: r = 934; break;
-    case 935: r = 935; break;
-    case 936: r = 936; break;
-    case 937: r = 937; break;
-    case 938: r = 938; break;
-    case 939: r = 939; break;
-    case 940: r = 940; break;
-    case 941: r = 941; break;
-    case 942: r = 942; break;
-    case 943: r = 943; break;
-    case 944: r = 944; break;
-    case 945: r = 945; break;
-    case 946: r = 946; break;
-    case 947: r = 947; break;
-    case 948: r = 948; break;
-    case 949: r = 949; break;
-    case 950: r = 950; break;
-    case 951: r = 951; break;
-    case 952: r = 952; break;
-    case 953: r = 953; break;
-    case 954: r = 954; break;
-    case 955: r = 955; break;
-    case 956: r = 956; break;
-    case 957: r = 957; break;
-    case 958: r = 958; break;
-    case 959: r = 959; break;
-    case 960: r = 960; break;
-    case 961: r = 961; break;
-    case 962: r = 962; break;
-    case 963: r = 963; break;
-    case 964: r = 964; break;
-    case 965: r = 965; break;
-    case 966: r = 966; break;
-    case 967: r = 967; break;
-    case 968: r = 968; break;
-    case 969: r = 969; break;
-    case 970: r = 970; break;
-    case 971: r = 971; break;
-    case 972: r = 972; break;
-    case 973: r = 973; break;
-    case 974: r = 974; break;
-    case 975: r = 975; break;
-    case 976: r = 976; break;
-    case 977: r = 977; break;
-    case 978: r = 978; break;
-    case 979: r = 979; break;
-    case 980: r = 980; break;
-    case 981: r = 981; break;
-    case 982: r = 982; break;
-    case 983: r = 983; break;
-    case 984: r = 984; break;
-    case 985: r = 985; break;
-    case 986: r = 986; break;
-    case 987: r = 987; break;
-    case 988: r = 988; break;
-    case 989: r = 989; break;
-    case 990: r = 990; break;
-    case 991: r = 991; break;
-    case 992: r = 992; break;
-    case 993: r = 993; break;
-    case 994: r = 994; break;
-    case 995: r = 995; break;
-    case 996: r = 996; break;
-    case 997: r = 997; break;
-    case 998: r = 998; break;
-    case 999: r = 999; break;
-    case 1000: r = 1000; break;
-    case 1001: r = 1001; break;
-    case 1002: r = 1002; break;
-    case 1003: r = 1003; break;
-    case 1004: r = 1004; break;
-    case 1005: r = 1005; break;
-    case 1006: r = 1006; break;
-    case 1007: r = 1007; break;
-    case 1008: r = 1008; break;
-    case 1009: r = 1009; break;
-    case 1010: r = 1010; break;
-    case 1011: r = 1011; break;
-    case 1012: r = 1012; break;
-    case 1013: r = 1013; break;
-    case 1014: r = 1014; break;
-    case 1015: r = 1015; break;
-    case 1016: r = 1016; break;
-    case 1017: r = 1017; break;
-    case 1018: r = 1018; break;
-    case 1019: r = 1019; break;
-    case 1020: r = 1020; break;
-    case 1021: r = 1021; break;
-    case 1022: r = 1022; break;
-    default: r = -1; break;
+    case 0:
+        r = 0;
+        break;
+    case 1:
+        r = 1;
+        break;
+    case 2:
+        r = 2;
+        break;
+    case 3:
+        r = 3;
+        break;
+    case 4:
+        r = 4;
+        break;
+    case 5:
+        r = 5;
+        break;
+    case 6:
+        r = 6;
+        break;
+    case 7:
+        r = 7;
+        break;
+    case 8:
+        r = 8;
+        break;
+    case 9:
+        r = 9;
+        break;
+    case 10:
+        r = 10;
+        break;
+    case 11:
+        r = 11;
+        break;
+    case 12:
+        r = 12;
+        break;
+    case 13:
+        r = 13;
+        break;
+    case 14:
+        r = 14;
+        break;
+    case 15:
+        r = 15;
+        break;
+    case 16:
+        r = 16;
+        break;
+    case 17:
+        r = 17;
+        break;
+    case 18:
+        r = 18;
+        break;
+    case 19:
+        r = 19;
+        break;
+    case 20:
+        r = 20;
+        break;
+    case 21:
+        r = 21;
+        break;
+    case 22:
+        r = 22;
+        break;
+    case 23:
+        r = 23;
+        break;
+    case 24:
+        r = 24;
+        break;
+    case 25:
+        r = 25;
+        break;
+    case 26:
+        r = 26;
+        break;
+    case 27:
+        r = 27;
+        break;
+    case 28:
+        r = 28;
+        break;
+    case 29:
+        r = 29;
+        break;
+    case 30:
+        r = 30;
+        break;
+    case 31:
+        r = 31;
+        break;
+    case 32:
+        r = 32;
+        break;
+    case 33:
+        r = 33;
+        break;
+    case 34:
+        r = 34;
+        break;
+    case 35:
+        r = 35;
+        break;
+    case 36:
+        r = 36;
+        break;
+    case 37:
+        r = 37;
+        break;
+    case 38:
+        r = 38;
+        break;
+    case 39:
+        r = 39;
+        break;
+    case 40:
+        r = 40;
+        break;
+    case 41:
+        r = 41;
+        break;
+    case 42:
+        r = 42;
+        break;
+    case 43:
+        r = 43;
+        break;
+    case 44:
+        r = 44;
+        break;
+    case 45:
+        r = 45;
+        break;
+    case 46:
+        r = 46;
+        break;
+    case 47:
+        r = 47;
+        break;
+    case 48:
+        r = 48;
+        break;
+    case 49:
+        r = 49;
+        break;
+    case 50:
+        r = 50;
+        break;
+    case 51:
+        r = 51;
+        break;
+    case 52:
+        r = 52;
+        break;
+    case 53:
+        r = 53;
+        break;
+    case 54:
+        r = 54;
+        break;
+    case 55:
+        r = 55;
+        break;
+    case 56:
+        r = 56;
+        break;
+    case 57:
+        r = 57;
+        break;
+    case 58:
+        r = 58;
+        break;
+    case 59:
+        r = 59;
+        break;
+    case 60:
+        r = 60;
+        break;
+    case 61:
+        r = 61;
+        break;
+    case 62:
+        r = 62;
+        break;
+    case 63:
+        r = 63;
+        break;
+    case 64:
+        r = 64;
+        break;
+    case 65:
+        r = 65;
+        break;
+    case 66:
+        r = 66;
+        break;
+    case 67:
+        r = 67;
+        break;
+    case 68:
+        r = 68;
+        break;
+    case 69:
+        r = 69;
+        break;
+    case 70:
+        r = 70;
+        break;
+    case 71:
+        r = 71;
+        break;
+    case 72:
+        r = 72;
+        break;
+    case 73:
+        r = 73;
+        break;
+    case 74:
+        r = 74;
+        break;
+    case 75:
+        r = 75;
+        break;
+    case 76:
+        r = 76;
+        break;
+    case 77:
+        r = 77;
+        break;
+    case 78:
+        r = 78;
+        break;
+    case 79:
+        r = 79;
+        break;
+    case 80:
+        r = 80;
+        break;
+    case 81:
+        r = 81;
+        break;
+    case 82:
+        r = 82;
+        break;
+    case 83:
+        r = 83;
+        break;
+    case 84:
+        r = 84;
+        break;
+    case 85:
+        r = 85;
+        break;
+    case 86:
+        r = 86;
+        break;
+    case 87:
+        r = 87;
+        break;
+    case 88:
+        r = 88;
+        break;
+    case 89:
+        r = 89;
+        break;
+    case 90:
+        r = 90;
+        break;
+    case 91:
+        r = 91;
+        break;
+    case 92:
+        r = 92;
+        break;
+    case 93:
+        r = 93;
+        break;
+    case 94:
+        r = 94;
+        break;
+    case 95:
+        r = 95;
+        break;
+    case 96:
+        r = 96;
+        break;
+    case 97:
+        r = 97;
+        break;
+    case 98:
+        r = 98;
+        break;
+    case 99:
+        r = 99;
+        break;
+    case 100:
+        r = 100;
+        break;
+    case 101:
+        r = 101;
+        break;
+    case 102:
+        r = 102;
+        break;
+    case 103:
+        r = 103;
+        break;
+    case 104:
+        r = 104;
+        break;
+    case 105:
+        r = 105;
+        break;
+    case 106:
+        r = 106;
+        break;
+    case 107:
+        r = 107;
+        break;
+    case 108:
+        r = 108;
+        break;
+    case 109:
+        r = 109;
+        break;
+    case 110:
+        r = 110;
+        break;
+    case 111:
+        r = 111;
+        break;
+    case 112:
+        r = 112;
+        break;
+    case 113:
+        r = 113;
+        break;
+    case 114:
+        r = 114;
+        break;
+    case 115:
+        r = 115;
+        break;
+    case 116:
+        r = 116;
+        break;
+    case 117:
+        r = 117;
+        break;
+    case 118:
+        r = 118;
+        break;
+    case 119:
+        r = 119;
+        break;
+    case 120:
+        r = 120;
+        break;
+    case 121:
+        r = 121;
+        break;
+    case 122:
+        r = 122;
+        break;
+    case 123:
+        r = 123;
+        break;
+    case 124:
+        r = 124;
+        break;
+    case 125:
+        r = 125;
+        break;
+    case 126:
+        r = 126;
+        break;
+    case 127:
+        r = 127;
+        break;
+    case 128:
+        r = 128;
+        break;
+    case 129:
+        r = 129;
+        break;
+    case 130:
+        r = 130;
+        break;
+    case 131:
+        r = 131;
+        break;
+    case 132:
+        r = 132;
+        break;
+    case 133:
+        r = 133;
+        break;
+    case 134:
+        r = 134;
+        break;
+    case 135:
+        r = 135;
+        break;
+    case 136:
+        r = 136;
+        break;
+    case 137:
+        r = 137;
+        break;
+    case 138:
+        r = 138;
+        break;
+    case 139:
+        r = 139;
+        break;
+    case 140:
+        r = 140;
+        break;
+    case 141:
+        r = 141;
+        break;
+    case 142:
+        r = 142;
+        break;
+    case 143:
+        r = 143;
+        break;
+    case 144:
+        r = 144;
+        break;
+    case 145:
+        r = 145;
+        break;
+    case 146:
+        r = 146;
+        break;
+    case 147:
+        r = 147;
+        break;
+    case 148:
+        r = 148;
+        break;
+    case 149:
+        r = 149;
+        break;
+    case 150:
+        r = 150;
+        break;
+    case 151:
+        r = 151;
+        break;
+    case 152:
+        r = 152;
+        break;
+    case 153:
+        r = 153;
+        break;
+    case 154:
+        r = 154;
+        break;
+    case 155:
+        r = 155;
+        break;
+    case 156:
+        r = 156;
+        break;
+    case 157:
+        r = 157;
+        break;
+    case 158:
+        r = 158;
+        break;
+    case 159:
+        r = 159;
+        break;
+    case 160:
+        r = 160;
+        break;
+    case 161:
+        r = 161;
+        break;
+    case 162:
+        r = 162;
+        break;
+    case 163:
+        r = 163;
+        break;
+    case 164:
+        r = 164;
+        break;
+    case 165:
+        r = 165;
+        break;
+    case 166:
+        r = 166;
+        break;
+    case 167:
+        r = 167;
+        break;
+    case 168:
+        r = 168;
+        break;
+    case 169:
+        r = 169;
+        break;
+    case 170:
+        r = 170;
+        break;
+    case 171:
+        r = 171;
+        break;
+    case 172:
+        r = 172;
+        break;
+    case 173:
+        r = 173;
+        break;
+    case 174:
+        r = 174;
+        break;
+    case 175:
+        r = 175;
+        break;
+    case 176:
+        r = 176;
+        break;
+    case 177:
+        r = 177;
+        break;
+    case 178:
+        r = 178;
+        break;
+    case 179:
+        r = 179;
+        break;
+    case 180:
+        r = 180;
+        break;
+    case 181:
+        r = 181;
+        break;
+    case 182:
+        r = 182;
+        break;
+    case 183:
+        r = 183;
+        break;
+    case 184:
+        r = 184;
+        break;
+    case 185:
+        r = 185;
+        break;
+    case 186:
+        r = 186;
+        break;
+    case 187:
+        r = 187;
+        break;
+    case 188:
+        r = 188;
+        break;
+    case 189:
+        r = 189;
+        break;
+    case 190:
+        r = 190;
+        break;
+    case 191:
+        r = 191;
+        break;
+    case 192:
+        r = 192;
+        break;
+    case 193:
+        r = 193;
+        break;
+    case 194:
+        r = 194;
+        break;
+    case 195:
+        r = 195;
+        break;
+    case 196:
+        r = 196;
+        break;
+    case 197:
+        r = 197;
+        break;
+    case 198:
+        r = 198;
+        break;
+    case 199:
+        r = 199;
+        break;
+    case 200:
+        r = 200;
+        break;
+    case 201:
+        r = 201;
+        break;
+    case 202:
+        r = 202;
+        break;
+    case 203:
+        r = 203;
+        break;
+    case 204:
+        r = 204;
+        break;
+    case 205:
+        r = 205;
+        break;
+    case 206:
+        r = 206;
+        break;
+    case 207:
+        r = 207;
+        break;
+    case 208:
+        r = 208;
+        break;
+    case 209:
+        r = 209;
+        break;
+    case 210:
+        r = 210;
+        break;
+    case 211:
+        r = 211;
+        break;
+    case 212:
+        r = 212;
+        break;
+    case 213:
+        r = 213;
+        break;
+    case 214:
+        r = 214;
+        break;
+    case 215:
+        r = 215;
+        break;
+    case 216:
+        r = 216;
+        break;
+    case 217:
+        r = 217;
+        break;
+    case 218:
+        r = 218;
+        break;
+    case 219:
+        r = 219;
+        break;
+    case 220:
+        r = 220;
+        break;
+    case 221:
+        r = 221;
+        break;
+    case 222:
+        r = 222;
+        break;
+    case 223:
+        r = 223;
+        break;
+    case 224:
+        r = 224;
+        break;
+    case 225:
+        r = 225;
+        break;
+    case 226:
+        r = 226;
+        break;
+    case 227:
+        r = 227;
+        break;
+    case 228:
+        r = 228;
+        break;
+    case 229:
+        r = 229;
+        break;
+    case 230:
+        r = 230;
+        break;
+    case 231:
+        r = 231;
+        break;
+    case 232:
+        r = 232;
+        break;
+    case 233:
+        r = 233;
+        break;
+    case 234:
+        r = 234;
+        break;
+    case 235:
+        r = 235;
+        break;
+    case 236:
+        r = 236;
+        break;
+    case 237:
+        r = 237;
+        break;
+    case 238:
+        r = 238;
+        break;
+    case 239:
+        r = 239;
+        break;
+    case 240:
+        r = 240;
+        break;
+    case 241:
+        r = 241;
+        break;
+    case 242:
+        r = 242;
+        break;
+    case 243:
+        r = 243;
+        break;
+    case 244:
+        r = 244;
+        break;
+    case 245:
+        r = 245;
+        break;
+    case 246:
+        r = 246;
+        break;
+    case 247:
+        r = 247;
+        break;
+    case 248:
+        r = 248;
+        break;
+    case 249:
+        r = 249;
+        break;
+    case 250:
+        r = 250;
+        break;
+    case 251:
+        r = 251;
+        break;
+    case 252:
+        r = 252;
+        break;
+    case 253:
+        r = 253;
+        break;
+    case 254:
+        r = 254;
+        break;
+    case 255:
+        r = 255;
+        break;
+    case 256:
+        r = 256;
+        break;
+    case 257:
+        r = 257;
+        break;
+    case 258:
+        r = 258;
+        break;
+    case 259:
+        r = 259;
+        break;
+    case 260:
+        r = 260;
+        break;
+    case 261:
+        r = 261;
+        break;
+    case 262:
+        r = 262;
+        break;
+    case 263:
+        r = 263;
+        break;
+    case 264:
+        r = 264;
+        break;
+    case 265:
+        r = 265;
+        break;
+    case 266:
+        r = 266;
+        break;
+    case 267:
+        r = 267;
+        break;
+    case 268:
+        r = 268;
+        break;
+    case 269:
+        r = 269;
+        break;
+    case 270:
+        r = 270;
+        break;
+    case 271:
+        r = 271;
+        break;
+    case 272:
+        r = 272;
+        break;
+    case 273:
+        r = 273;
+        break;
+    case 274:
+        r = 274;
+        break;
+    case 275:
+        r = 275;
+        break;
+    case 276:
+        r = 276;
+        break;
+    case 277:
+        r = 277;
+        break;
+    case 278:
+        r = 278;
+        break;
+    case 279:
+        r = 279;
+        break;
+    case 280:
+        r = 280;
+        break;
+    case 281:
+        r = 281;
+        break;
+    case 282:
+        r = 282;
+        break;
+    case 283:
+        r = 283;
+        break;
+    case 284:
+        r = 284;
+        break;
+    case 285:
+        r = 285;
+        break;
+    case 286:
+        r = 286;
+        break;
+    case 287:
+        r = 287;
+        break;
+    case 288:
+        r = 288;
+        break;
+    case 289:
+        r = 289;
+        break;
+    case 290:
+        r = 290;
+        break;
+    case 291:
+        r = 291;
+        break;
+    case 292:
+        r = 292;
+        break;
+    case 293:
+        r = 293;
+        break;
+    case 294:
+        r = 294;
+        break;
+    case 295:
+        r = 295;
+        break;
+    case 296:
+        r = 296;
+        break;
+    case 297:
+        r = 297;
+        break;
+    case 298:
+        r = 298;
+        break;
+    case 299:
+        r = 299;
+        break;
+    case 300:
+        r = 300;
+        break;
+    case 301:
+        r = 301;
+        break;
+    case 302:
+        r = 302;
+        break;
+    case 303:
+        r = 303;
+        break;
+    case 304:
+        r = 304;
+        break;
+    case 305:
+        r = 305;
+        break;
+    case 306:
+        r = 306;
+        break;
+    case 307:
+        r = 307;
+        break;
+    case 308:
+        r = 308;
+        break;
+    case 309:
+        r = 309;
+        break;
+    case 310:
+        r = 310;
+        break;
+    case 311:
+        r = 311;
+        break;
+    case 312:
+        r = 312;
+        break;
+    case 313:
+        r = 313;
+        break;
+    case 314:
+        r = 314;
+        break;
+    case 315:
+        r = 315;
+        break;
+    case 316:
+        r = 316;
+        break;
+    case 317:
+        r = 317;
+        break;
+    case 318:
+        r = 318;
+        break;
+    case 319:
+        r = 319;
+        break;
+    case 320:
+        r = 320;
+        break;
+    case 321:
+        r = 321;
+        break;
+    case 322:
+        r = 322;
+        break;
+    case 323:
+        r = 323;
+        break;
+    case 324:
+        r = 324;
+        break;
+    case 325:
+        r = 325;
+        break;
+    case 326:
+        r = 326;
+        break;
+    case 327:
+        r = 327;
+        break;
+    case 328:
+        r = 328;
+        break;
+    case 329:
+        r = 329;
+        break;
+    case 330:
+        r = 330;
+        break;
+    case 331:
+        r = 331;
+        break;
+    case 332:
+        r = 332;
+        break;
+    case 333:
+        r = 333;
+        break;
+    case 334:
+        r = 334;
+        break;
+    case 335:
+        r = 335;
+        break;
+    case 336:
+        r = 336;
+        break;
+    case 337:
+        r = 337;
+        break;
+    case 338:
+        r = 338;
+        break;
+    case 339:
+        r = 339;
+        break;
+    case 340:
+        r = 340;
+        break;
+    case 341:
+        r = 341;
+        break;
+    case 342:
+        r = 342;
+        break;
+    case 343:
+        r = 343;
+        break;
+    case 344:
+        r = 344;
+        break;
+    case 345:
+        r = 345;
+        break;
+    case 346:
+        r = 346;
+        break;
+    case 347:
+        r = 347;
+        break;
+    case 348:
+        r = 348;
+        break;
+    case 349:
+        r = 349;
+        break;
+    case 350:
+        r = 350;
+        break;
+    case 351:
+        r = 351;
+        break;
+    case 352:
+        r = 352;
+        break;
+    case 353:
+        r = 353;
+        break;
+    case 354:
+        r = 354;
+        break;
+    case 355:
+        r = 355;
+        break;
+    case 356:
+        r = 356;
+        break;
+    case 357:
+        r = 357;
+        break;
+    case 358:
+        r = 358;
+        break;
+    case 359:
+        r = 359;
+        break;
+    case 360:
+        r = 360;
+        break;
+    case 361:
+        r = 361;
+        break;
+    case 362:
+        r = 362;
+        break;
+    case 363:
+        r = 363;
+        break;
+    case 364:
+        r = 364;
+        break;
+    case 365:
+        r = 365;
+        break;
+    case 366:
+        r = 366;
+        break;
+    case 367:
+        r = 367;
+        break;
+    case 368:
+        r = 368;
+        break;
+    case 369:
+        r = 369;
+        break;
+    case 370:
+        r = 370;
+        break;
+    case 371:
+        r = 371;
+        break;
+    case 372:
+        r = 372;
+        break;
+    case 373:
+        r = 373;
+        break;
+    case 374:
+        r = 374;
+        break;
+    case 375:
+        r = 375;
+        break;
+    case 376:
+        r = 376;
+        break;
+    case 377:
+        r = 377;
+        break;
+    case 378:
+        r = 378;
+        break;
+    case 379:
+        r = 379;
+        break;
+    case 380:
+        r = 380;
+        break;
+    case 381:
+        r = 381;
+        break;
+    case 382:
+        r = 382;
+        break;
+    case 383:
+        r = 383;
+        break;
+    case 384:
+        r = 384;
+        break;
+    case 385:
+        r = 385;
+        break;
+    case 386:
+        r = 386;
+        break;
+    case 387:
+        r = 387;
+        break;
+    case 388:
+        r = 388;
+        break;
+    case 389:
+        r = 389;
+        break;
+    case 390:
+        r = 390;
+        break;
+    case 391:
+        r = 391;
+        break;
+    case 392:
+        r = 392;
+        break;
+    case 393:
+        r = 393;
+        break;
+    case 394:
+        r = 394;
+        break;
+    case 395:
+        r = 395;
+        break;
+    case 396:
+        r = 396;
+        break;
+    case 397:
+        r = 397;
+        break;
+    case 398:
+        r = 398;
+        break;
+    case 399:
+        r = 399;
+        break;
+    case 400:
+        r = 400;
+        break;
+    case 401:
+        r = 401;
+        break;
+    case 402:
+        r = 402;
+        break;
+    case 403:
+        r = 403;
+        break;
+    case 404:
+        r = 404;
+        break;
+    case 405:
+        r = 405;
+        break;
+    case 406:
+        r = 406;
+        break;
+    case 407:
+        r = 407;
+        break;
+    case 408:
+        r = 408;
+        break;
+    case 409:
+        r = 409;
+        break;
+    case 410:
+        r = 410;
+        break;
+    case 411:
+        r = 411;
+        break;
+    case 412:
+        r = 412;
+        break;
+    case 413:
+        r = 413;
+        break;
+    case 414:
+        r = 414;
+        break;
+    case 415:
+        r = 415;
+        break;
+    case 416:
+        r = 416;
+        break;
+    case 417:
+        r = 417;
+        break;
+    case 418:
+        r = 418;
+        break;
+    case 419:
+        r = 419;
+        break;
+    case 420:
+        r = 420;
+        break;
+    case 421:
+        r = 421;
+        break;
+    case 422:
+        r = 422;
+        break;
+    case 423:
+        r = 423;
+        break;
+    case 424:
+        r = 424;
+        break;
+    case 425:
+        r = 425;
+        break;
+    case 426:
+        r = 426;
+        break;
+    case 427:
+        r = 427;
+        break;
+    case 428:
+        r = 428;
+        break;
+    case 429:
+        r = 429;
+        break;
+    case 430:
+        r = 430;
+        break;
+    case 431:
+        r = 431;
+        break;
+    case 432:
+        r = 432;
+        break;
+    case 433:
+        r = 433;
+        break;
+    case 434:
+        r = 434;
+        break;
+    case 435:
+        r = 435;
+        break;
+    case 436:
+        r = 436;
+        break;
+    case 437:
+        r = 437;
+        break;
+    case 438:
+        r = 438;
+        break;
+    case 439:
+        r = 439;
+        break;
+    case 440:
+        r = 440;
+        break;
+    case 441:
+        r = 441;
+        break;
+    case 442:
+        r = 442;
+        break;
+    case 443:
+        r = 443;
+        break;
+    case 444:
+        r = 444;
+        break;
+    case 445:
+        r = 445;
+        break;
+    case 446:
+        r = 446;
+        break;
+    case 447:
+        r = 447;
+        break;
+    case 448:
+        r = 448;
+        break;
+    case 449:
+        r = 449;
+        break;
+    case 450:
+        r = 450;
+        break;
+    case 451:
+        r = 451;
+        break;
+    case 452:
+        r = 452;
+        break;
+    case 453:
+        r = 453;
+        break;
+    case 454:
+        r = 454;
+        break;
+    case 455:
+        r = 455;
+        break;
+    case 456:
+        r = 456;
+        break;
+    case 457:
+        r = 457;
+        break;
+    case 458:
+        r = 458;
+        break;
+    case 459:
+        r = 459;
+        break;
+    case 460:
+        r = 460;
+        break;
+    case 461:
+        r = 461;
+        break;
+    case 462:
+        r = 462;
+        break;
+    case 463:
+        r = 463;
+        break;
+    case 464:
+        r = 464;
+        break;
+    case 465:
+        r = 465;
+        break;
+    case 466:
+        r = 466;
+        break;
+    case 467:
+        r = 467;
+        break;
+    case 468:
+        r = 468;
+        break;
+    case 469:
+        r = 469;
+        break;
+    case 470:
+        r = 470;
+        break;
+    case 471:
+        r = 471;
+        break;
+    case 472:
+        r = 472;
+        break;
+    case 473:
+        r = 473;
+        break;
+    case 474:
+        r = 474;
+        break;
+    case 475:
+        r = 475;
+        break;
+    case 476:
+        r = 476;
+        break;
+    case 477:
+        r = 477;
+        break;
+    case 478:
+        r = 478;
+        break;
+    case 479:
+        r = 479;
+        break;
+    case 480:
+        r = 480;
+        break;
+    case 481:
+        r = 481;
+        break;
+    case 482:
+        r = 482;
+        break;
+    case 483:
+        r = 483;
+        break;
+    case 484:
+        r = 484;
+        break;
+    case 485:
+        r = 485;
+        break;
+    case 486:
+        r = 486;
+        break;
+    case 487:
+        r = 487;
+        break;
+    case 488:
+        r = 488;
+        break;
+    case 489:
+        r = 489;
+        break;
+    case 490:
+        r = 490;
+        break;
+    case 491:
+        r = 491;
+        break;
+    case 492:
+        r = 492;
+        break;
+    case 493:
+        r = 493;
+        break;
+    case 494:
+        r = 494;
+        break;
+    case 495:
+        r = 495;
+        break;
+    case 496:
+        r = 496;
+        break;
+    case 497:
+        r = 497;
+        break;
+    case 498:
+        r = 498;
+        break;
+    case 499:
+        r = 499;
+        break;
+    case 500:
+        r = 500;
+        break;
+    case 501:
+        r = 501;
+        break;
+    case 502:
+        r = 502;
+        break;
+    case 503:
+        r = 503;
+        break;
+    case 504:
+        r = 504;
+        break;
+    case 505:
+        r = 505;
+        break;
+    case 506:
+        r = 506;
+        break;
+    case 507:
+        r = 507;
+        break;
+    case 508:
+        r = 508;
+        break;
+    case 509:
+        r = 509;
+        break;
+    case 510:
+        r = 510;
+        break;
+    case 511:
+        r = 511;
+        break;
+    case 512:
+        r = 512;
+        break;
+    case 513:
+        r = 513;
+        break;
+    case 514:
+        r = 514;
+        break;
+    case 515:
+        r = 515;
+        break;
+    case 516:
+        r = 516;
+        break;
+    case 517:
+        r = 517;
+        break;
+    case 518:
+        r = 518;
+        break;
+    case 519:
+        r = 519;
+        break;
+    case 520:
+        r = 520;
+        break;
+    case 521:
+        r = 521;
+        break;
+    case 522:
+        r = 522;
+        break;
+    case 523:
+        r = 523;
+        break;
+    case 524:
+        r = 524;
+        break;
+    case 525:
+        r = 525;
+        break;
+    case 526:
+        r = 526;
+        break;
+    case 527:
+        r = 527;
+        break;
+    case 528:
+        r = 528;
+        break;
+    case 529:
+        r = 529;
+        break;
+    case 530:
+        r = 530;
+        break;
+    case 531:
+        r = 531;
+        break;
+    case 532:
+        r = 532;
+        break;
+    case 533:
+        r = 533;
+        break;
+    case 534:
+        r = 534;
+        break;
+    case 535:
+        r = 535;
+        break;
+    case 536:
+        r = 536;
+        break;
+    case 537:
+        r = 537;
+        break;
+    case 538:
+        r = 538;
+        break;
+    case 539:
+        r = 539;
+        break;
+    case 540:
+        r = 540;
+        break;
+    case 541:
+        r = 541;
+        break;
+    case 542:
+        r = 542;
+        break;
+    case 543:
+        r = 543;
+        break;
+    case 544:
+        r = 544;
+        break;
+    case 545:
+        r = 545;
+        break;
+    case 546:
+        r = 546;
+        break;
+    case 547:
+        r = 547;
+        break;
+    case 548:
+        r = 548;
+        break;
+    case 549:
+        r = 549;
+        break;
+    case 550:
+        r = 550;
+        break;
+    case 551:
+        r = 551;
+        break;
+    case 552:
+        r = 552;
+        break;
+    case 553:
+        r = 553;
+        break;
+    case 554:
+        r = 554;
+        break;
+    case 555:
+        r = 555;
+        break;
+    case 556:
+        r = 556;
+        break;
+    case 557:
+        r = 557;
+        break;
+    case 558:
+        r = 558;
+        break;
+    case 559:
+        r = 559;
+        break;
+    case 560:
+        r = 560;
+        break;
+    case 561:
+        r = 561;
+        break;
+    case 562:
+        r = 562;
+        break;
+    case 563:
+        r = 563;
+        break;
+    case 564:
+        r = 564;
+        break;
+    case 565:
+        r = 565;
+        break;
+    case 566:
+        r = 566;
+        break;
+    case 567:
+        r = 567;
+        break;
+    case 568:
+        r = 568;
+        break;
+    case 569:
+        r = 569;
+        break;
+    case 570:
+        r = 570;
+        break;
+    case 571:
+        r = 571;
+        break;
+    case 572:
+        r = 572;
+        break;
+    case 573:
+        r = 573;
+        break;
+    case 574:
+        r = 574;
+        break;
+    case 575:
+        r = 575;
+        break;
+    case 576:
+        r = 576;
+        break;
+    case 577:
+        r = 577;
+        break;
+    case 578:
+        r = 578;
+        break;
+    case 579:
+        r = 579;
+        break;
+    case 580:
+        r = 580;
+        break;
+    case 581:
+        r = 581;
+        break;
+    case 582:
+        r = 582;
+        break;
+    case 583:
+        r = 583;
+        break;
+    case 584:
+        r = 584;
+        break;
+    case 585:
+        r = 585;
+        break;
+    case 586:
+        r = 586;
+        break;
+    case 587:
+        r = 587;
+        break;
+    case 588:
+        r = 588;
+        break;
+    case 589:
+        r = 589;
+        break;
+    case 590:
+        r = 590;
+        break;
+    case 591:
+        r = 591;
+        break;
+    case 592:
+        r = 592;
+        break;
+    case 593:
+        r = 593;
+        break;
+    case 594:
+        r = 594;
+        break;
+    case 595:
+        r = 595;
+        break;
+    case 596:
+        r = 596;
+        break;
+    case 597:
+        r = 597;
+        break;
+    case 598:
+        r = 598;
+        break;
+    case 599:
+        r = 599;
+        break;
+    case 600:
+        r = 600;
+        break;
+    case 601:
+        r = 601;
+        break;
+    case 602:
+        r = 602;
+        break;
+    case 603:
+        r = 603;
+        break;
+    case 604:
+        r = 604;
+        break;
+    case 605:
+        r = 605;
+        break;
+    case 606:
+        r = 606;
+        break;
+    case 607:
+        r = 607;
+        break;
+    case 608:
+        r = 608;
+        break;
+    case 609:
+        r = 609;
+        break;
+    case 610:
+        r = 610;
+        break;
+    case 611:
+        r = 611;
+        break;
+    case 612:
+        r = 612;
+        break;
+    case 613:
+        r = 613;
+        break;
+    case 614:
+        r = 614;
+        break;
+    case 615:
+        r = 615;
+        break;
+    case 616:
+        r = 616;
+        break;
+    case 617:
+        r = 617;
+        break;
+    case 618:
+        r = 618;
+        break;
+    case 619:
+        r = 619;
+        break;
+    case 620:
+        r = 620;
+        break;
+    case 621:
+        r = 621;
+        break;
+    case 622:
+        r = 622;
+        break;
+    case 623:
+        r = 623;
+        break;
+    case 624:
+        r = 624;
+        break;
+    case 625:
+        r = 625;
+        break;
+    case 626:
+        r = 626;
+        break;
+    case 627:
+        r = 627;
+        break;
+    case 628:
+        r = 628;
+        break;
+    case 629:
+        r = 629;
+        break;
+    case 630:
+        r = 630;
+        break;
+    case 631:
+        r = 631;
+        break;
+    case 632:
+        r = 632;
+        break;
+    case 633:
+        r = 633;
+        break;
+    case 634:
+        r = 634;
+        break;
+    case 635:
+        r = 635;
+        break;
+    case 636:
+        r = 636;
+        break;
+    case 637:
+        r = 637;
+        break;
+    case 638:
+        r = 638;
+        break;
+    case 639:
+        r = 639;
+        break;
+    case 640:
+        r = 640;
+        break;
+    case 641:
+        r = 641;
+        break;
+    case 642:
+        r = 642;
+        break;
+    case 643:
+        r = 643;
+        break;
+    case 644:
+        r = 644;
+        break;
+    case 645:
+        r = 645;
+        break;
+    case 646:
+        r = 646;
+        break;
+    case 647:
+        r = 647;
+        break;
+    case 648:
+        r = 648;
+        break;
+    case 649:
+        r = 649;
+        break;
+    case 650:
+        r = 650;
+        break;
+    case 651:
+        r = 651;
+        break;
+    case 652:
+        r = 652;
+        break;
+    case 653:
+        r = 653;
+        break;
+    case 654:
+        r = 654;
+        break;
+    case 655:
+        r = 655;
+        break;
+    case 656:
+        r = 656;
+        break;
+    case 657:
+        r = 657;
+        break;
+    case 658:
+        r = 658;
+        break;
+    case 659:
+        r = 659;
+        break;
+    case 660:
+        r = 660;
+        break;
+    case 661:
+        r = 661;
+        break;
+    case 662:
+        r = 662;
+        break;
+    case 663:
+        r = 663;
+        break;
+    case 664:
+        r = 664;
+        break;
+    case 665:
+        r = 665;
+        break;
+    case 666:
+        r = 666;
+        break;
+    case 667:
+        r = 667;
+        break;
+    case 668:
+        r = 668;
+        break;
+    case 669:
+        r = 669;
+        break;
+    case 670:
+        r = 670;
+        break;
+    case 671:
+        r = 671;
+        break;
+    case 672:
+        r = 672;
+        break;
+    case 673:
+        r = 673;
+        break;
+    case 674:
+        r = 674;
+        break;
+    case 675:
+        r = 675;
+        break;
+    case 676:
+        r = 676;
+        break;
+    case 677:
+        r = 677;
+        break;
+    case 678:
+        r = 678;
+        break;
+    case 679:
+        r = 679;
+        break;
+    case 680:
+        r = 680;
+        break;
+    case 681:
+        r = 681;
+        break;
+    case 682:
+        r = 682;
+        break;
+    case 683:
+        r = 683;
+        break;
+    case 684:
+        r = 684;
+        break;
+    case 685:
+        r = 685;
+        break;
+    case 686:
+        r = 686;
+        break;
+    case 687:
+        r = 687;
+        break;
+    case 688:
+        r = 688;
+        break;
+    case 689:
+        r = 689;
+        break;
+    case 690:
+        r = 690;
+        break;
+    case 691:
+        r = 691;
+        break;
+    case 692:
+        r = 692;
+        break;
+    case 693:
+        r = 693;
+        break;
+    case 694:
+        r = 694;
+        break;
+    case 695:
+        r = 695;
+        break;
+    case 696:
+        r = 696;
+        break;
+    case 697:
+        r = 697;
+        break;
+    case 698:
+        r = 698;
+        break;
+    case 699:
+        r = 699;
+        break;
+    case 700:
+        r = 700;
+        break;
+    case 701:
+        r = 701;
+        break;
+    case 702:
+        r = 702;
+        break;
+    case 703:
+        r = 703;
+        break;
+    case 704:
+        r = 704;
+        break;
+    case 705:
+        r = 705;
+        break;
+    case 706:
+        r = 706;
+        break;
+    case 707:
+        r = 707;
+        break;
+    case 708:
+        r = 708;
+        break;
+    case 709:
+        r = 709;
+        break;
+    case 710:
+        r = 710;
+        break;
+    case 711:
+        r = 711;
+        break;
+    case 712:
+        r = 712;
+        break;
+    case 713:
+        r = 713;
+        break;
+    case 714:
+        r = 714;
+        break;
+    case 715:
+        r = 715;
+        break;
+    case 716:
+        r = 716;
+        break;
+    case 717:
+        r = 717;
+        break;
+    case 718:
+        r = 718;
+        break;
+    case 719:
+        r = 719;
+        break;
+    case 720:
+        r = 720;
+        break;
+    case 721:
+        r = 721;
+        break;
+    case 722:
+        r = 722;
+        break;
+    case 723:
+        r = 723;
+        break;
+    case 724:
+        r = 724;
+        break;
+    case 725:
+        r = 725;
+        break;
+    case 726:
+        r = 726;
+        break;
+    case 727:
+        r = 727;
+        break;
+    case 728:
+        r = 728;
+        break;
+    case 729:
+        r = 729;
+        break;
+    case 730:
+        r = 730;
+        break;
+    case 731:
+        r = 731;
+        break;
+    case 732:
+        r = 732;
+        break;
+    case 733:
+        r = 733;
+        break;
+    case 734:
+        r = 734;
+        break;
+    case 735:
+        r = 735;
+        break;
+    case 736:
+        r = 736;
+        break;
+    case 737:
+        r = 737;
+        break;
+    case 738:
+        r = 738;
+        break;
+    case 739:
+        r = 739;
+        break;
+    case 740:
+        r = 740;
+        break;
+    case 741:
+        r = 741;
+        break;
+    case 742:
+        r = 742;
+        break;
+    case 743:
+        r = 743;
+        break;
+    case 744:
+        r = 744;
+        break;
+    case 745:
+        r = 745;
+        break;
+    case 746:
+        r = 746;
+        break;
+    case 747:
+        r = 747;
+        break;
+    case 748:
+        r = 748;
+        break;
+    case 749:
+        r = 749;
+        break;
+    case 750:
+        r = 750;
+        break;
+    case 751:
+        r = 751;
+        break;
+    case 752:
+        r = 752;
+        break;
+    case 753:
+        r = 753;
+        break;
+    case 754:
+        r = 754;
+        break;
+    case 755:
+        r = 755;
+        break;
+    case 756:
+        r = 756;
+        break;
+    case 757:
+        r = 757;
+        break;
+    case 758:
+        r = 758;
+        break;
+    case 759:
+        r = 759;
+        break;
+    case 760:
+        r = 760;
+        break;
+    case 761:
+        r = 761;
+        break;
+    case 762:
+        r = 762;
+        break;
+    case 763:
+        r = 763;
+        break;
+    case 764:
+        r = 764;
+        break;
+    case 765:
+        r = 765;
+        break;
+    case 766:
+        r = 766;
+        break;
+    case 767:
+        r = 767;
+        break;
+    case 768:
+        r = 768;
+        break;
+    case 769:
+        r = 769;
+        break;
+    case 770:
+        r = 770;
+        break;
+    case 771:
+        r = 771;
+        break;
+    case 772:
+        r = 772;
+        break;
+    case 773:
+        r = 773;
+        break;
+    case 774:
+        r = 774;
+        break;
+    case 775:
+        r = 775;
+        break;
+    case 776:
+        r = 776;
+        break;
+    case 777:
+        r = 777;
+        break;
+    case 778:
+        r = 778;
+        break;
+    case 779:
+        r = 779;
+        break;
+    case 780:
+        r = 780;
+        break;
+    case 781:
+        r = 781;
+        break;
+    case 782:
+        r = 782;
+        break;
+    case 783:
+        r = 783;
+        break;
+    case 784:
+        r = 784;
+        break;
+    case 785:
+        r = 785;
+        break;
+    case 786:
+        r = 786;
+        break;
+    case 787:
+        r = 787;
+        break;
+    case 788:
+        r = 788;
+        break;
+    case 789:
+        r = 789;
+        break;
+    case 790:
+        r = 790;
+        break;
+    case 791:
+        r = 791;
+        break;
+    case 792:
+        r = 792;
+        break;
+    case 793:
+        r = 793;
+        break;
+    case 794:
+        r = 794;
+        break;
+    case 795:
+        r = 795;
+        break;
+    case 796:
+        r = 796;
+        break;
+    case 797:
+        r = 797;
+        break;
+    case 798:
+        r = 798;
+        break;
+    case 799:
+        r = 799;
+        break;
+    case 800:
+        r = 800;
+        break;
+    case 801:
+        r = 801;
+        break;
+    case 802:
+        r = 802;
+        break;
+    case 803:
+        r = 803;
+        break;
+    case 804:
+        r = 804;
+        break;
+    case 805:
+        r = 805;
+        break;
+    case 806:
+        r = 806;
+        break;
+    case 807:
+        r = 807;
+        break;
+    case 808:
+        r = 808;
+        break;
+    case 809:
+        r = 809;
+        break;
+    case 810:
+        r = 810;
+        break;
+    case 811:
+        r = 811;
+        break;
+    case 812:
+        r = 812;
+        break;
+    case 813:
+        r = 813;
+        break;
+    case 814:
+        r = 814;
+        break;
+    case 815:
+        r = 815;
+        break;
+    case 816:
+        r = 816;
+        break;
+    case 817:
+        r = 817;
+        break;
+    case 818:
+        r = 818;
+        break;
+    case 819:
+        r = 819;
+        break;
+    case 820:
+        r = 820;
+        break;
+    case 821:
+        r = 821;
+        break;
+    case 822:
+        r = 822;
+        break;
+    case 823:
+        r = 823;
+        break;
+    case 824:
+        r = 824;
+        break;
+    case 825:
+        r = 825;
+        break;
+    case 826:
+        r = 826;
+        break;
+    case 827:
+        r = 827;
+        break;
+    case 828:
+        r = 828;
+        break;
+    case 829:
+        r = 829;
+        break;
+    case 830:
+        r = 830;
+        break;
+    case 831:
+        r = 831;
+        break;
+    case 832:
+        r = 832;
+        break;
+    case 833:
+        r = 833;
+        break;
+    case 834:
+        r = 834;
+        break;
+    case 835:
+        r = 835;
+        break;
+    case 836:
+        r = 836;
+        break;
+    case 837:
+        r = 837;
+        break;
+    case 838:
+        r = 838;
+        break;
+    case 839:
+        r = 839;
+        break;
+    case 840:
+        r = 840;
+        break;
+    case 841:
+        r = 841;
+        break;
+    case 842:
+        r = 842;
+        break;
+    case 843:
+        r = 843;
+        break;
+    case 844:
+        r = 844;
+        break;
+    case 845:
+        r = 845;
+        break;
+    case 846:
+        r = 846;
+        break;
+    case 847:
+        r = 847;
+        break;
+    case 848:
+        r = 848;
+        break;
+    case 849:
+        r = 849;
+        break;
+    case 850:
+        r = 850;
+        break;
+    case 851:
+        r = 851;
+        break;
+    case 852:
+        r = 852;
+        break;
+    case 853:
+        r = 853;
+        break;
+    case 854:
+        r = 854;
+        break;
+    case 855:
+        r = 855;
+        break;
+    case 856:
+        r = 856;
+        break;
+    case 857:
+        r = 857;
+        break;
+    case 858:
+        r = 858;
+        break;
+    case 859:
+        r = 859;
+        break;
+    case 860:
+        r = 860;
+        break;
+    case 861:
+        r = 861;
+        break;
+    case 862:
+        r = 862;
+        break;
+    case 863:
+        r = 863;
+        break;
+    case 864:
+        r = 864;
+        break;
+    case 865:
+        r = 865;
+        break;
+    case 866:
+        r = 866;
+        break;
+    case 867:
+        r = 867;
+        break;
+    case 868:
+        r = 868;
+        break;
+    case 869:
+        r = 869;
+        break;
+    case 870:
+        r = 870;
+        break;
+    case 871:
+        r = 871;
+        break;
+    case 872:
+        r = 872;
+        break;
+    case 873:
+        r = 873;
+        break;
+    case 874:
+        r = 874;
+        break;
+    case 875:
+        r = 875;
+        break;
+    case 876:
+        r = 876;
+        break;
+    case 877:
+        r = 877;
+        break;
+    case 878:
+        r = 878;
+        break;
+    case 879:
+        r = 879;
+        break;
+    case 880:
+        r = 880;
+        break;
+    case 881:
+        r = 881;
+        break;
+    case 882:
+        r = 882;
+        break;
+    case 883:
+        r = 883;
+        break;
+    case 884:
+        r = 884;
+        break;
+    case 885:
+        r = 885;
+        break;
+    case 886:
+        r = 886;
+        break;
+    case 887:
+        r = 887;
+        break;
+    case 888:
+        r = 888;
+        break;
+    case 889:
+        r = 889;
+        break;
+    case 890:
+        r = 890;
+        break;
+    case 891:
+        r = 891;
+        break;
+    case 892:
+        r = 892;
+        break;
+    case 893:
+        r = 893;
+        break;
+    case 894:
+        r = 894;
+        break;
+    case 895:
+        r = 895;
+        break;
+    case 896:
+        r = 896;
+        break;
+    case 897:
+        r = 897;
+        break;
+    case 898:
+        r = 898;
+        break;
+    case 899:
+        r = 899;
+        break;
+    case 900:
+        r = 900;
+        break;
+    case 901:
+        r = 901;
+        break;
+    case 902:
+        r = 902;
+        break;
+    case 903:
+        r = 903;
+        break;
+    case 904:
+        r = 904;
+        break;
+    case 905:
+        r = 905;
+        break;
+    case 906:
+        r = 906;
+        break;
+    case 907:
+        r = 907;
+        break;
+    case 908:
+        r = 908;
+        break;
+    case 909:
+        r = 909;
+        break;
+    case 910:
+        r = 910;
+        break;
+    case 911:
+        r = 911;
+        break;
+    case 912:
+        r = 912;
+        break;
+    case 913:
+        r = 913;
+        break;
+    case 914:
+        r = 914;
+        break;
+    case 915:
+        r = 915;
+        break;
+    case 916:
+        r = 916;
+        break;
+    case 917:
+        r = 917;
+        break;
+    case 918:
+        r = 918;
+        break;
+    case 919:
+        r = 919;
+        break;
+    case 920:
+        r = 920;
+        break;
+    case 921:
+        r = 921;
+        break;
+    case 922:
+        r = 922;
+        break;
+    case 923:
+        r = 923;
+        break;
+    case 924:
+        r = 924;
+        break;
+    case 925:
+        r = 925;
+        break;
+    case 926:
+        r = 926;
+        break;
+    case 927:
+        r = 927;
+        break;
+    case 928:
+        r = 928;
+        break;
+    case 929:
+        r = 929;
+        break;
+    case 930:
+        r = 930;
+        break;
+    case 931:
+        r = 931;
+        break;
+    case 932:
+        r = 932;
+        break;
+    case 933:
+        r = 933;
+        break;
+    case 934:
+        r = 934;
+        break;
+    case 935:
+        r = 935;
+        break;
+    case 936:
+        r = 936;
+        break;
+    case 937:
+        r = 937;
+        break;
+    case 938:
+        r = 938;
+        break;
+    case 939:
+        r = 939;
+        break;
+    case 940:
+        r = 940;
+        break;
+    case 941:
+        r = 941;
+        break;
+    case 942:
+        r = 942;
+        break;
+    case 943:
+        r = 943;
+        break;
+    case 944:
+        r = 944;
+        break;
+    case 945:
+        r = 945;
+        break;
+    case 946:
+        r = 946;
+        break;
+    case 947:
+        r = 947;
+        break;
+    case 948:
+        r = 948;
+        break;
+    case 949:
+        r = 949;
+        break;
+    case 950:
+        r = 950;
+        break;
+    case 951:
+        r = 951;
+        break;
+    case 952:
+        r = 952;
+        break;
+    case 953:
+        r = 953;
+        break;
+    case 954:
+        r = 954;
+        break;
+    case 955:
+        r = 955;
+        break;
+    case 956:
+        r = 956;
+        break;
+    case 957:
+        r = 957;
+        break;
+    case 958:
+        r = 958;
+        break;
+    case 959:
+        r = 959;
+        break;
+    case 960:
+        r = 960;
+        break;
+    case 961:
+        r = 961;
+        break;
+    case 962:
+        r = 962;
+        break;
+    case 963:
+        r = 963;
+        break;
+    case 964:
+        r = 964;
+        break;
+    case 965:
+        r = 965;
+        break;
+    case 966:
+        r = 966;
+        break;
+    case 967:
+        r = 967;
+        break;
+    case 968:
+        r = 968;
+        break;
+    case 969:
+        r = 969;
+        break;
+    case 970:
+        r = 970;
+        break;
+    case 971:
+        r = 971;
+        break;
+    case 972:
+        r = 972;
+        break;
+    case 973:
+        r = 973;
+        break;
+    case 974:
+        r = 974;
+        break;
+    case 975:
+        r = 975;
+        break;
+    case 976:
+        r = 976;
+        break;
+    case 977:
+        r = 977;
+        break;
+    case 978:
+        r = 978;
+        break;
+    case 979:
+        r = 979;
+        break;
+    case 980:
+        r = 980;
+        break;
+    case 981:
+        r = 981;
+        break;
+    case 982:
+        r = 982;
+        break;
+    case 983:
+        r = 983;
+        break;
+    case 984:
+        r = 984;
+        break;
+    case 985:
+        r = 985;
+        break;
+    case 986:
+        r = 986;
+        break;
+    case 987:
+        r = 987;
+        break;
+    case 988:
+        r = 988;
+        break;
+    case 989:
+        r = 989;
+        break;
+    case 990:
+        r = 990;
+        break;
+    case 991:
+        r = 991;
+        break;
+    case 992:
+        r = 992;
+        break;
+    case 993:
+        r = 993;
+        break;
+    case 994:
+        r = 994;
+        break;
+    case 995:
+        r = 995;
+        break;
+    case 996:
+        r = 996;
+        break;
+    case 997:
+        r = 997;
+        break;
+    case 998:
+        r = 998;
+        break;
+    case 999:
+        r = 999;
+        break;
+    case 1000:
+        r = 1000;
+        break;
+    case 1001:
+        r = 1001;
+        break;
+    case 1002:
+        r = 1002;
+        break;
+    case 1003:
+        r = 1003;
+        break;
+    case 1004:
+        r = 1004;
+        break;
+    case 1005:
+        r = 1005;
+        break;
+    case 1006:
+        r = 1006;
+        break;
+    case 1007:
+        r = 1007;
+        break;
+    case 1008:
+        r = 1008;
+        break;
+    case 1009:
+        r = 1009;
+        break;
+    case 1010:
+        r = 1010;
+        break;
+    case 1011:
+        r = 1011;
+        break;
+    case 1012:
+        r = 1012;
+        break;
+    case 1013:
+        r = 1013;
+        break;
+    case 1014:
+        r = 1014;
+        break;
+    case 1015:
+        r = 1015;
+        break;
+    case 1016:
+        r = 1016;
+        break;
+    case 1017:
+        r = 1017;
+        break;
+    case 1018:
+        r = 1018;
+        break;
+    case 1019:
+        r = 1019;
+        break;
+    case 1020:
+        r = 1020;
+        break;
+    case 1021:
+        r = 1021;
+        break;
+    case 1022:
+        r = 1022;
+        break;
+    default:
+        r = -1;
+        break;
     }
     return r;
 }
@@ -3081,14 +5128,265 @@ enum E {
     EC1022
 };
 int main(void) {
-    struct Big b; b.m0 = 1; b.m1022 = 7;
+    struct Big b;
+    b.m0 = 1;
+    b.m1022 = 7;
     int deep = 0;
-    {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{ deep = 1; }}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}
+    {
+        {
+            {
+                {
+                    {
+                        {
+                            {
+                                {
+                                    {
+                                        {
+                                            {
+                                                {
+                                                    {
+                                                        {
+                                                            {
+                                                                {
+                                                                    {
+                                                                        {
+                                                                            {
+                                                                                {
+                                                                                    {
+                                                                                        {
+                                                                                            {
+                                                                                                {
+                                                                                                    {
+                                                                                                        {
+                                                                                                            {
+                                                                                                                {
+                                                                                                                    {
+                                                                                                                        {
+                                                                                                                            {
+                                                                                                                                {
+                                                                                                                                    {
+                                                                                                                                        {
+                                                                                                                                            {
+                                                                                                                                                {
+                                                                                                                                                    {
+                                                                                                                                                        {
+                                                                                                                                                            {
+                                                                                                                                                                {
+                                                                                                                                                                    {
+                                                                                                                                                                        {
+                                                                                                                                                                            {
+                                                                                                                                                                                {
+                                                                                                                                                                                    {
+                                                                                                                                                                                        {
+                                                                                                                                                                                            {
+                                                                                                                                                                                                {
+                                                                                                                                                                                                    {
+                                                                                                                                                                                                        {
+                                                                                                                                                                                                            {
+                                                                                                                                                                                                                {
+                                                                                                                                                                                                                    {
+                                                                                                                                                                                                                        {
+                                                                                                                                                                                                                            {
+                                                                                                                                                                                                                                {
+                                                                                                                                                                                                                                    {
+                                                                                                                                                                                                                                        {
+                                                                                                                                                                                                                                            {
+                                                                                                                                                                                                                                                {
+                                                                                                                                                                                                                                                    {
+                                                                                                                                                                                                                                                        {
+                                                                                                                                                                                                                                                            {
+                                                                                                                                                                                                                                                                {
+                                                                                                                                                                                                                                                                    {
+                                                                                                                                                                                                                                                                        {
+                                                                                                                                                                                                                                                                            {
+                                                                                                                                                                                                                                                                                {
+                                                                                                                                                                                                                                                                                    {
+                                                                                                                                                                                                                                                                                        {
+                                                                                                                                                                                                                                                                                            {
+                                                                                                                                                                                                                                                                                                {
+                                                                                                                                                                                                                                                                                                    {
+                                                                                                                                                                                                                                                                                                        {
+                                                                                                                                                                                                                                                                                                            {
+                                                                                                                                                                                                                                                                                                                {
+                                                                                                                                                                                                                                                                                                                    {
+                                                                                                                                                                                                                                                                                                                        {
+                                                                                                                                                                                                                                                                                                                            {
+                                                                                                                                                                                                                                                                                                                                {
+                                                                                                                                                                                                                                                                                                                                    {
+                                                                                                                                                                                                                                                                                                                                        {
+                                                                                                                                                                                                                                                                                                                                            {
+                                                                                                                                                                                                                                                                                                                                                {
+                                                                                                                                                                                                                                                                                                                                                    {
+                                                                                                                                                                                                                                                                                                                                                        {
+                                                                                                                                                                                                                                                                                                                                                            {
+                                                                                                                                                                                                                                                                                                                                                                {
+                                                                                                                                                                                                                                                                                                                                                                    {
+                                                                                                                                                                                                                                                                                                                                                                        {
+                                                                                                                                                                                                                                                                                                                                                                            {
+                                                                                                                                                                                                                                                                                                                                                                                {
+                                                                                                                                                                                                                                                                                                                                                                                    {
+                                                                                                                                                                                                                                                                                                                                                                                        {
+                                                                                                                                                                                                                                                                                                                                                                                            {
+                                                                                                                                                                                                                                                                                                                                                                                                {
+                                                                                                                                                                                                                                                                                                                                                                                                    {
+                                                                                                                                                                                                                                                                                                                                                                                                        {
+                                                                                                                                                                                                                                                                                                                                                                                                            {
+                                                                                                                                                                                                                                                                                                                                                                                                                {
+                                                                                                                                                                                                                                                                                                                                                                                                                    {
+                                                                                                                                                                                                                                                                                                                                                                                                                        {
+                                                                                                                                                                                                                                                                                                                                                                                                                            {
+                                                                                                                                                                                                                                                                                                                                                                                                                                {
+                                                                                                                                                                                                                                                                                                                                                                                                                                    {
+                                                                                                                                                                                                                                                                                                                                                                                                                                        {
+                                                                                                                                                                                                                                                                                                                                                                                                                                            {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                    {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                        {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                            {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                    {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                        {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                            {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            { deep = 1; }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                }
+                                                                                                                                                                                                            }
+                                                                                                                                                                                                        }
+                                                                                                                                                                                                    }
+                                                                                                                                                                                                }
+                                                                                                                                                                                            }
+                                                                                                                                                                                        }
+                                                                                                                                                                                    }
+                                                                                                                                                                                }
+                                                                                                                                                                            }
+                                                                                                                                                                        }
+                                                                                                                                                                    }
+                                                                                                                                                                }
+                                                                                                                                                            }
+                                                                                                                                                        }
+                                                                                                                                                    }
+                                                                                                                                                }
+                                                                                                                                            }
+                                                                                                                                        }
+                                                                                                                                    }
+                                                                                                                                }
+                                                                                                                            }
+                                                                                                                        }
+                                                                                                                    }
+                                                                                                                }
+                                                                                                            }
+                                                                                                        }
+                                                                                                    }
+                                                                                                }
+                                                                                            }
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
     int paren = (((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((42)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))));
-    int ok = sizeof(struct Big) == 1023 * sizeof(int)
-          && classify(1022) == 1022 && classify(2000) == -1
-          && (int)EC1022 == 1022 && deep == 1 && paren == 42
-          && b.m0 == 1 && b.m1022 == 7;
+    int ok = sizeof(struct Big) == 1023 * sizeof(int) && classify(1022) == 1022 && classify(2000) == -1 && (int)EC1022 == 1022 && deep == 1 && paren == 42 && b.m0 == 1 && b.m1022 == 7;
     printf(ok ? "OK\n" : "FAIL\n");
     return ok ? 0 : 1;
 }

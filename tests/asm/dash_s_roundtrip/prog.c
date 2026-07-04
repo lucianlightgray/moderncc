@@ -1,119 +1,119 @@
-/* -S round-trip fixture: exercises a broad slice of the instruction subset
- * the x86_64 backend emits (arithmetic, shifts, comparisons, branches,
- * loops, recursion, switch, structs, globals, string constants, pointer
- * indexing, function pointers, plus float/double scalar-SSE arithmetic,
- * int<->float conversions and comparisons) so the disassembler is well
- * covered and mcc's own integrated assembler re-assembles the -S output.
- * The program prints a deterministic line; the driver checks the -S
- * round-tripped build prints the same thing.
- */
 extern int printf(const char *, ...);
 
-struct pt { int x, y; };
+struct pt {
+    int x, y;
+};
 static int g_counter = 41;
 static const char *msg = "rt";
 
-static int fact(int n) { return n <= 1 ? 1 : n * fact(n - 1); }
+static int fact(int n) {
+    return n <= 1 ? 1 : n * fact(n - 1);
+}
 
-static long sumarr(const int *a, int n)
-{
+static long sumarr(const int *a, int n) {
     long s = 0;
     for (int i = 0; i < n; i++)
         s += a[i] << 1;
     return s;
 }
 
-static int classify(int x)
-{
+static int classify(int x) {
     switch (x) {
-    case 0:  return 100;
-    case 3:  return 300;
-    case 9:  return 900;
-    default: return x * 2 - 1;
+    case 0:
+        return 100;
+    case 3:
+        return 300;
+    case 9:
+        return 900;
+    default:
+        return x * 2 - 1;
     }
 }
 
-static unsigned bits(unsigned v) { return (v & 0xff) | (v >> 4) ^ (v << 3); }
+static unsigned bits(unsigned v) {
+    return (v & 0xff) | (v >> 4) ^ (v << 3);
+}
 
-static int add1(int x) { return x + 1; }
-static int neg(int x)  { return -x; }
+static int add1(int x) {
+    return x + 1;
+}
+static int neg(int x) {
+    return -x;
+}
 
-/* float/double paths: scalar SSE arithmetic (addsd/subss/mulsd/divss...),
- * loads/stores (movss/movsd), conversions (cvtsi2sd/cvttsd2si/cvtsd2ss/
- * cvtps2pd via float->double) and comparisons (ucomisd/comiss). */
 static double g_scale = 2.5;
 static float g_bias = 0.75f;
 
-static double dpoly(double x, double y)
-{
+static double dpoly(double x, double y) {
     double q = x * y + x / y - (x - y);
     return q * g_scale;
 }
 
-static float fpoly(float x, float y)
-{
+static float fpoly(float x, float y) {
     float q = x * y - x / y + (x + y);
     return q - g_bias;
 }
 
-static double weight(int i, long long n, float f)
-{
-    double d = i;          /* cvtsi2sd  */
-    d += (double)n;        /* cvtsi2sdq */
-    d *= (double)f;        /* float -> double */
+static double weight(int i, long long n, float f) {
+    double d = i;
+    d += (double)n;
+    d *= (double)f;
     return d;
 }
 
-static int quantize(double d, float f)
-{
-    int a = (int)d;              /* cvttsd2si  */
-    long long b = (long long)d;  /* cvttsd2siq */
-    int c = (int)f;              /* cvttss2si  */
-    float ff = (float)d;         /* double -> float */
+static int quantize(double d, float f) {
+    int a = (int)d;
+    long long b = (long long)d;
+    int c = (int)f;
+    float ff = (float)d;
     return a + (int)b + c + (int)ff;
 }
 
-/* two-double struct passed/returned in xmm register pairs: exercises the
- * movaps/movsd xmm-to-xmm shuffles the backend emits for SSE-class
- * aggregates, and movss/movsd loads through the struct copy. */
-struct dp { double a, b; };
+struct dp {
+    double a, b;
+};
 
-static struct dp mkdp(double x)
-{
+static struct dp mkdp(double x) {
     struct dp r;
     r.a = x + 0.5;
     r.b = x * 2.0;
     return r;
 }
 
-static double dpdot(double w, struct dp p)
-{
+static double dpdot(double w, struct dp p) {
     return w * p.a - p.b / w;
 }
 
-/* result of the subtraction lands in xmm1 and must be shuffled back to
- * xmm0 for the return: exercises movsd/movss xmm-to-xmm moves. */
-static double dfrac(double d) { return d - (int)d; }
-static float ffrac(float f)  { return f - (int)f; }
+static double dfrac(double d) {
+    return d - (int)d;
+}
+static float ffrac(float f) {
+    return f - (int)f;
+}
 
-static int fdcmp(double a, double b, float c, float d)
-{
+static int fdcmp(double a, double b, float c, float d) {
     int n = 0;
-    if (a < b)  n |= 1;
-    if (a >= b) n |= 2;
-    if (a == b) n |= 4;
-    if (a != b) n |= 8;
-    if (c > d)  n |= 16;
-    if (c <= d) n |= 32;
-    if (c == d) n |= 64;
+    if (a < b)
+        n |= 1;
+    if (a >= b)
+        n |= 2;
+    if (a == b)
+        n |= 4;
+    if (a != b)
+        n |= 8;
+    if (c > d)
+        n |= 16;
+    if (c <= d)
+        n |= 32;
+    if (c == d)
+        n |= 64;
     return n;
 }
 
-int main(void)
-{
-    int a[6] = { 3, 1, 4, 1, 5, 9 };
-    struct pt p = { 7, 35 };
-    int (*fp[2])(int) = { add1, neg };
+int main(void) {
+    int a[6] = {3, 1, 4, 1, 5, 9};
+    struct pt p = {7, 35};
+    int (*fp[2])(int) = {add1, neg};
     int acc = g_counter + p.x + p.y;
 
     for (int i = 0; i < 2; i++)

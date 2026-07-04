@@ -3,16 +3,16 @@
 extern void abort(void);
 
 enum __va_arg_type {
-    __va_gen_reg, __va_float_reg, __va_stack
+    __va_gen_reg,
+    __va_float_reg,
+    __va_stack
 };
-
 
 extern void *memcpy(void *dest, const void *src, unsigned long n);
 
 void *__va_arg(__builtin_va_list ap,
                int arg_type,
-               int size, int align)
-{
+               int size, int align) {
     size = (size + 7) & ~7;
     align = (align + 7) & ~7;
     switch ((enum __va_arg_type)arg_type) {
@@ -40,7 +40,7 @@ void *__va_arg(__builtin_va_list ap,
     case __va_stack:
     use_overflow_area:
         ap->overflow_arg_area += size;
-        ap->overflow_arg_area = (char*)((long long)(ap->overflow_arg_area + align - 1) & -align);
+        ap->overflow_arg_area = (char *)((long long)(ap->overflow_arg_area + align - 1) & -align);
         return ap->overflow_arg_area - size;
 
     default:

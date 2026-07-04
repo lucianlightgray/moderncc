@@ -1,15 +1,13 @@
 #ifndef _MCC_COMPLEX_H
 #define _MCC_COMPLEX_H
 
+#define complex _Complex
+#define _Complex_I __builtin_complex(0.0f, 1.0f)
+#define I _Complex_I
 
-#define complex         _Complex
-#define _Complex_I      __builtin_complex(0.0f, 1.0f)
-#define I               _Complex_I
-
-
-#define CMPLX(x, y)     __builtin_complex((double)(x), (double)(y))
-#define CMPLXF(x, y)    __builtin_complex((float)(x), (float)(y))
-#define CMPLXL(x, y)    __builtin_complex((long double)(x), (long double)(y))
+#define CMPLX(x, y) __builtin_complex((double)(x), (double)(y))
+#define CMPLXF(x, y) __builtin_complex((float)(x), (float)(y))
+#define CMPLXL(x, y) __builtin_complex((long double)(x), (long double)(y))
 
 double creal(double _Complex);
 float crealf(float _Complex);
@@ -18,12 +16,12 @@ double cimag(double _Complex);
 float cimagf(float _Complex);
 long double cimagl(long double _Complex);
 
-#define creal(z)        (__real__ (double _Complex)(z))
-#define crealf(z)       (__real__ (float _Complex)(z))
-#define creall(z)       (__real__ (long double _Complex)(z))
-#define cimag(z)        (__imag__ (double _Complex)(z))
-#define cimagf(z)       (__imag__ (float _Complex)(z))
-#define cimagl(z)       (__imag__ (long double _Complex)(z))
+#define creal(z) (__real__(double _Complex)(z))
+#define crealf(z) (__real__(float _Complex)(z))
+#define creall(z) (__real__(long double _Complex)(z))
+#define cimag(z) (__imag__(double _Complex)(z))
+#define cimagf(z) (__imag__(float _Complex)(z))
+#define cimagl(z) (__imag__(long double _Complex)(z))
 
 double cabs(double _Complex);
 float cabsf(float _Complex);

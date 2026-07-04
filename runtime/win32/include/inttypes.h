@@ -6,17 +6,16 @@
 #define __need_wchar_t
 #include <stddef.h>
 
-#ifdef	__cplusplus
-extern	"C"	{
+#ifdef __cplusplus
+extern "C" {
 #endif
 
 typedef struct {
-	intmax_t quot;
-	intmax_t rem;
-	} imaxdiv_t;
+    intmax_t quot;
+    intmax_t rem;
+} imaxdiv_t;
 
 #if !defined(__cplusplus) || defined(__STDC_FORMAT_MACROS)
-
 
 #define PRId8 "d"
 #define PRId16 "d"
@@ -74,7 +73,6 @@ typedef struct {
 #define PRIu32 "u"
 #define PRIu64 "I64u"
 
-
 #define PRIuLEAST8 "u"
 #define PRIuLEAST16 "u"
 #define PRIuLEAST32 "u"
@@ -120,7 +118,6 @@ typedef struct {
 #define PRIXFAST64 "I64X"
 
 #define PRIXMAX "I64X"
-
 
 #define SCNd16 "hd"
 #define SCNd32 "d"
@@ -178,7 +175,6 @@ typedef struct {
 
 #define SCNxMAX "I64x"
 
-
 #define SCNu16 "hu"
 #define SCNu32 "u"
 #define SCNu64 "I64u"
@@ -219,7 +215,7 @@ typedef struct {
 #define SCNuPTR "u"
 #endif
 
-#if defined (__STDC_VERSION__) && __STDC_VERSION__ >= 199901L
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L
 
 #define SCNd8 "hhd"
 #define SCNdLEAST8 "hhd"
@@ -244,23 +240,23 @@ typedef struct {
 
 #endif
 
-intmax_t __cdecl imaxabs (intmax_t j);
-__CRT_INLINE intmax_t __cdecl imaxabs (intmax_t j)
-	{return	(j >= 0 ? j : -j);}
-imaxdiv_t __cdecl imaxdiv (intmax_t numer, intmax_t denom);
+intmax_t __cdecl imaxabs(intmax_t j);
+__CRT_INLINE intmax_t __cdecl imaxabs(intmax_t j) {
+    return (j >= 0 ? j : -j);
+}
+imaxdiv_t __cdecl imaxdiv(intmax_t numer, intmax_t denom);
 
+intmax_t __cdecl strtoimax(const char *__restrict__ nptr,
+                           char **__restrict__ endptr, int base);
+uintmax_t __cdecl strtoumax(const char *__restrict__ nptr,
+                            char **__restrict__ endptr, int base);
 
-intmax_t __cdecl strtoimax (const char* __restrict__ nptr,
-                            char** __restrict__ endptr, int base);
-uintmax_t __cdecl strtoumax (const char* __restrict__ nptr,
-			     char** __restrict__ endptr, int base);
+intmax_t __cdecl wcstoimax(const wchar_t *__restrict__ nptr,
+                           wchar_t **__restrict__ endptr, int base);
+uintmax_t __cdecl wcstoumax(const wchar_t *__restrict__ nptr,
+                            wchar_t **__restrict__ endptr, int base);
 
-intmax_t __cdecl wcstoimax (const wchar_t* __restrict__ nptr,
-                            wchar_t** __restrict__ endptr, int base);
-uintmax_t __cdecl wcstoumax (const wchar_t* __restrict__ nptr,
-			     wchar_t** __restrict__ endptr, int base);
-
-#ifdef	__cplusplus
+#ifdef __cplusplus
 }
 #endif
 

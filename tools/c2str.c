@@ -2,39 +2,34 @@
 #include <string.h>
 
 const char *platform_macros[] = {
-    "__i386__",             "MCC_TARGET_I386",
-    "__x86_64__",           "MCC_TARGET_X86_64",
-    "_WIN32",               "MCC_TARGET_PE",
-    "__arm__",              "MCC_TARGET_ARM",
-    "__ARM_EABI__",         "MCC_ARM_EABI",
-    "__aarch64__",          "MCC_TARGET_ARM64",
-    "__riscv",              "MCC_TARGET_RISCV64",
-    "__APPLE__",            "MCC_TARGET_MACHO",
-    "__FreeBSD__",          "TARGETOS_FreeBSD",
-    "__FreeBSD_kernel__",   "TARGETOS_FreeBSD_kernel",
-    "__OpenBSD__",          "TARGETOS_OpenBSD",
-    "__NetBSD__",           "TARGETOS_NetBSD",
-    "__linux__",            "TARGETOS_Linux",
-    "__ANDROID__",          "TARGETOS_ANDROID",
+    "__i386__", "MCC_TARGET_I386",
+    "__x86_64__", "MCC_TARGET_X86_64",
+    "_WIN32", "MCC_TARGET_PE",
+    "__arm__", "MCC_TARGET_ARM",
+    "__ARM_EABI__", "MCC_ARM_EABI",
+    "__aarch64__", "MCC_TARGET_ARM64",
+    "__riscv", "MCC_TARGET_RISCV64",
+    "__APPLE__", "MCC_TARGET_MACHO",
+    "__FreeBSD__", "TARGETOS_FreeBSD",
+    "__FreeBSD_kernel__", "TARGETOS_FreeBSD_kernel",
+    "__OpenBSD__", "TARGETOS_OpenBSD",
+    "__NetBSD__", "TARGETOS_NetBSD",
+    "__linux__", "TARGETOS_Linux",
+    "__ANDROID__", "TARGETOS_ANDROID",
 
-    "__SIZEOF_POINTER__",   "PTR_SIZE",
-    "__SIZEOF_LONG__",      "LONG_SIZE",
-    0
-};
+    "__SIZEOF_POINTER__", "PTR_SIZE",
+    "__SIZEOF_LONG__", "LONG_SIZE",
+    0};
 
-int isid(int c)
-{
-    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-        || (c >= '0' && c <= '9') || c == '_';
+int isid(int c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
 }
 
-int isspc(int c)
-{
+int isspc(int c) {
     return (unsigned char)c <= ' ' && c != 0;
 }
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
     char l[1000], l2[1000], *p, *q, *p0;
     FILE *fp, *op;
     int c, e, f, s, cmt, cmt_n;
@@ -101,7 +96,6 @@ int main(int argc, char **argv)
                         q = strchr(strcpy(q, platform_macros[f + 1]), 0);
                         break;
                     }
-
                 }
                 if (r)
                     continue;
@@ -120,13 +114,7 @@ int main(int argc, char **argv)
                 }
                 if (c == '/' && (p[0] == '/' || p[0] == '*'))
                     c = 0;
-                else if (s && q > l2
-                    && ((isid(q[-1]) && isid(c))
-                        || (q >= l2 + 2
-                            && l2[0] == '#'
-                            && l2[1] == 'd'
-                            && f < 2 && !e
-                            )))
+                else if (s && q > l2 && ((isid(q[-1]) && isid(c)) || (q >= l2 + 2 && l2[0] == '#' && l2[1] == 'd' && f < 2 && !e)))
                     *q++ = ' ', ++f;
                 s = 0;
 

@@ -8,37 +8,37 @@
 #define TOK_ASM_last TOK_ASM_emms
 #define TOK_ASM_alllast TOK_ASM_subps
 
-#define OPC_B          0x01
-#define OPC_WL         0x02
-#define OPC_BWL        (OPC_B | OPC_WL)
-#define OPC_REG        0x04
-#define OPC_MODRM      0x08
+#define OPC_B 0x01
+#define OPC_WL 0x02
+#define OPC_BWL (OPC_B | OPC_WL)
+#define OPC_REG 0x04
+#define OPC_MODRM 0x08
 
-#define OPCT_MASK      0x70
-#define OPC_FWAIT      0x10
-#define OPC_SHIFT      0x20
-#define OPC_ARITH      0x30
-#define OPC_FARITH     0x40
-#define OPC_TEST       0x50
-#define OPC_0F01       0x60
-#define OPCT_IS(v,i) (((v) & OPCT_MASK) == (i))
+#define OPCT_MASK 0x70
+#define OPC_FWAIT 0x10
+#define OPC_SHIFT 0x20
+#define OPC_ARITH 0x30
+#define OPC_FARITH 0x40
+#define OPC_TEST 0x50
+#define OPC_0F01 0x60
+#define OPCT_IS(v, i) (((v) & OPCT_MASK) == (i))
 
-#define OPC_0F        0x100
-#define OPC_48        0x200
+#define OPC_0F 0x100
+#define OPC_48 0x200
 #ifdef MCC_TARGET_X86_64
-# define OPC_WLQ     0x1000
-# define OPC_BWLQ    (OPC_B | OPC_WLQ)
-# define OPC_WLX     OPC_WLQ
-# define OPC_BWLX    OPC_BWLQ
+#define OPC_WLQ 0x1000
+#define OPC_BWLQ (OPC_B | OPC_WLQ)
+#define OPC_WLX OPC_WLQ
+#define OPC_BWLX OPC_BWLQ
 #else
-# define OPC_WLX     OPC_WL
-# define OPC_BWLX    OPC_BWL
+#define OPC_WLX OPC_WL
+#define OPC_BWLX OPC_BWL
 #endif
 
 #define OPC_GROUP_SHIFT 13
 
 enum {
-    OPT_REG8=0,
+    OPT_REG8 = 0,
     OPT_REG16,
     OPT_REG32,
 #ifdef MCC_TARGET_X86_64
@@ -78,51 +78,51 @@ enum {
     OPT_EA = 0x80
 };
 
-#define OP_REG8   (1 << OPT_REG8)
-#define OP_REG16  (1 << OPT_REG16)
-#define OP_REG32  (1 << OPT_REG32)
-#define OP_MMX    (1 << OPT_MMX)
-#define OP_SSE    (1 << OPT_SSE)
-#define OP_CR     (1 << OPT_CR)
-#define OP_TR     (1 << OPT_TR)
-#define OP_DB     (1 << OPT_DB)
-#define OP_SEG    (1 << OPT_SEG)
-#define OP_ST     (1 << OPT_ST)
-#define OP_IM8    (1 << OPT_IM8)
-#define OP_IM8S   (1 << OPT_IM8S)
-#define OP_IM16   (1 << OPT_IM16)
-#define OP_IM32   (1 << OPT_IM32)
-#define OP_EAX    (1 << OPT_EAX)
-#define OP_ST0    (1 << OPT_ST0)
-#define OP_CL     (1 << OPT_CL)
-#define OP_DX     (1 << OPT_DX)
-#define OP_ADDR   (1 << OPT_ADDR)
-#define OP_INDIR  (1 << OPT_INDIR)
+#define OP_REG8 (1 << OPT_REG8)
+#define OP_REG16 (1 << OPT_REG16)
+#define OP_REG32 (1 << OPT_REG32)
+#define OP_MMX (1 << OPT_MMX)
+#define OP_SSE (1 << OPT_SSE)
+#define OP_CR (1 << OPT_CR)
+#define OP_TR (1 << OPT_TR)
+#define OP_DB (1 << OPT_DB)
+#define OP_SEG (1 << OPT_SEG)
+#define OP_ST (1 << OPT_ST)
+#define OP_IM8 (1 << OPT_IM8)
+#define OP_IM8S (1 << OPT_IM8S)
+#define OP_IM16 (1 << OPT_IM16)
+#define OP_IM32 (1 << OPT_IM32)
+#define OP_EAX (1 << OPT_EAX)
+#define OP_ST0 (1 << OPT_ST0)
+#define OP_CL (1 << OPT_CL)
+#define OP_DX (1 << OPT_DX)
+#define OP_ADDR (1 << OPT_ADDR)
+#define OP_INDIR (1 << OPT_INDIR)
 #ifdef MCC_TARGET_X86_64
-# define OP_REG64 (1 << OPT_REG64)
-# define OP_REG8_LOW (1 << OPT_REG8_LOW)
-# define OP_IM64  (1 << OPT_IM64)
-# define OP_EA32  (OP_EA << 1)
+#define OP_REG64 (1 << OPT_REG64)
+#define OP_REG8_LOW (1 << OPT_REG8_LOW)
+#define OP_IM64 (1 << OPT_IM64)
+#define OP_EA32 (OP_EA << 1)
 #else
-# define OP_REG64 0
-# define OP_REG8_LOW 0
-# define OP_IM64  0
-# define OP_EA32  0
+#define OP_REG64 0
+#define OP_REG8_LOW 0
+#define OP_IM64 0
+#define OP_EA32 0
 #endif
 
-#define OP_EA     0x40000000u
-#define OP_REG    (OP_REG8 | OP_REG16 | OP_REG32 | OP_REG64)
+#define OP_EA 0x40000000u
+#define OP_REG (OP_REG8 | OP_REG16 | OP_REG32 | OP_REG64)
 
 #ifdef MCC_TARGET_X86_64
-# define TREG_XAX   TREG_RAX
-# define TREG_XCX   TREG_RCX
-# define TREG_XDX   TREG_RDX
-# define TOK_ASM_xax TOK_ASM_rax
+#define TREG_XAX TREG_RAX
+#define TREG_XCX TREG_RCX
+#define TREG_XDX TREG_RDX
+#define TOK_ASM_xax TOK_ASM_rax
 #else
-# define TREG_XAX   TREG_EAX
-# define TREG_XCX   TREG_ECX
-# define TREG_XDX   TREG_EDX
-# define TOK_ASM_xax TOK_ASM_eax
+#define TREG_XAX TREG_EAX
+#define TREG_XCX TREG_ECX
+#define TREG_XDX TREG_EDX
+#define TOK_ASM_xax TOK_ASM_eax
 #endif
 
 typedef struct ASMInstr {
@@ -135,76 +135,76 @@ typedef struct ASMInstr {
 
 typedef struct Operand {
     uint32_t type;
-    int8_t  reg;
-    int8_t  reg2;
+    int8_t reg;
+    int8_t reg2;
     uint8_t shift;
-    uint8_t ntpoff; /* `sym@ntpoff` suffix parsed: field carries R_386_TLS_LE */
+    uint8_t ntpoff;
     ExprValue e;
 } Operand;
 
 static const uint8_t reg_to_size[9] = {
-    0, 0, 1, 0, 2, 0, 0, 0, 3
-};
+    0, 0, 1, 0, 2, 0, 0, 0, 3};
 
 #define NB_TEST_OPCODES 30
 
 static const uint8_t test_bits[NB_TEST_OPCODES] = {
- 0x00,
- 0x01,
- 0x02,
- 0x02,
- 0x02,
- 0x03,
- 0x03,
- 0x03,
- 0x04,
- 0x04,
- 0x05,
- 0x05,
- 0x06,
- 0x06,
- 0x07,
- 0x07,
- 0x08,
- 0x09,
- 0x0a,
- 0x0a,
- 0x0b,
- 0x0b,
- 0x0c,
- 0x0c,
- 0x0d,
- 0x0d,
- 0x0e,
- 0x0e,
- 0x0f,
- 0x0f,
+    0x00,
+    0x01,
+    0x02,
+    0x02,
+    0x02,
+    0x03,
+    0x03,
+    0x03,
+    0x04,
+    0x04,
+    0x05,
+    0x05,
+    0x06,
+    0x06,
+    0x07,
+    0x07,
+    0x08,
+    0x09,
+    0x0a,
+    0x0a,
+    0x0b,
+    0x0b,
+    0x0c,
+    0x0c,
+    0x0d,
+    0x0d,
+    0x0e,
+    0x0e,
+    0x0f,
+    0x0f,
 };
 
 static const uint8_t segment_prefixes[] = {
- 0x26,
- 0x2e,
- 0x36,
- 0x3e,
- 0x64,
- 0x65
-};
+    0x26,
+    0x2e,
+    0x36,
+    0x3e,
+    0x64,
+    0x65};
 
 static const ASMInstr asm_instrs[] = {
 #define ALT(x) x
-#define O(o) ((uint64_t) ((((o) & 0xff00) == 0x0f00) ? ((((o) >> 8) & ~0xff) | ((o) & 0xff)) : (o)))
-#define T(o,i,g) ((i) | ((g) << OPC_GROUP_SHIFT) | ((((o) & 0xff00) == 0x0f00) ? OPC_0F : 0))
+#define O(o) ((uint64_t)((((o) & 0xff00) == 0x0f00) ? ((((o) >> 8) & ~0xff) | ((o) & 0xff)) : (o)))
+#define T(o, i, g) ((i) | ((g) << OPC_GROUP_SHIFT) | ((((o) & 0xff00) == 0x0f00) ? OPC_0F : 0))
 #define DEF_ASM_OP0(name, opcode)
-#define DEF_ASM_OP0L(name, opcode, group, instr_type) { TOK_ASM_ ## name, O(opcode), T(opcode, instr_type, group), 0, { 0 } },
-#define DEF_ASM_OP1(name, opcode, group, instr_type, op0) { TOK_ASM_ ## name, O(opcode), T(opcode, instr_type, group), 1, { op0 }},
-#define DEF_ASM_OP2(name, opcode, group, instr_type, op0, op1) { TOK_ASM_ ## name, O(opcode), T(opcode, instr_type, group), 2, { op0, op1 }},
-#define DEF_ASM_OP3(name, opcode, group, instr_type, op0, op1, op2) { TOK_ASM_ ## name, O(opcode), T(opcode, instr_type, group), 3, { op0, op1, op2 }},
+#define DEF_ASM_OP0L(name, opcode, group, instr_type) {TOK_ASM_##name, O(opcode), T(opcode, instr_type, group), 0, {0}},
+#define DEF_ASM_OP1(name, opcode, group, instr_type, op0) {TOK_ASM_##name, O(opcode), T(opcode, instr_type, group), 1, {op0}},
+#define DEF_ASM_OP2(name, opcode, group, instr_type, op0, op1) {TOK_ASM_##name, O(opcode), T(opcode, instr_type, group), 2, {op0, op1}},
+#define DEF_ASM_OP3(name, opcode, group, instr_type, op0, op1, op2) {TOK_ASM_##name, O(opcode), T(opcode, instr_type, group), 3, {op0, op1, op2}},
 #ifdef MCC_TARGET_X86_64
-# include "x86_64-asm.h"
+#include "x86_64-asm.h"
 #else
-# include "i386-asm.h"
+#include "i386-asm.h"
 #endif
-    { 0, },
+    {
+        0,
+    },
 };
 
 static const uint16_t op0_codes[] = {
@@ -215,17 +215,16 @@ static const uint16_t op0_codes[] = {
 #define DEF_ASM_OP2(name, opcode, group, instr_type, op0, op1)
 #define DEF_ASM_OP3(name, opcode, group, instr_type, op0, op1, op2)
 #ifdef MCC_TARGET_X86_64
-# include "x86_64-asm.h"
+#include "x86_64-asm.h"
 #else
-# include "i386-asm.h"
+#include "i386-asm.h"
 #endif
 };
 
-static inline int get_reg_shift(MCCState *s1)
-{
+static inline int get_reg_shift(MCCState *s1) {
     int shift, v;
     v = asm_int_expr(s1);
-    switch(v) {
+    switch (v) {
     case 1:
         shift = 0;
         break;
@@ -247,46 +246,44 @@ static inline int get_reg_shift(MCCState *s1)
 }
 
 #ifdef MCC_TARGET_X86_64
-static int asm_parse_numeric_reg(int t, unsigned int *type)
-{
+static int asm_parse_numeric_reg(int t, unsigned int *type) {
     int reg = -1;
     if (t >= TOK_IDENT && t < tok_ident) {
-	const char *s = table_ident[t - TOK_IDENT]->str;
-	char c;
-	*type = OP_REG64;
-	if (*s == 'c') {
-	    s++;
-	    *type = OP_CR;
-	}
-	if (*s++ != 'r')
-	  return -1;
-	if ((c = *s++) >= '1' && c <= '9')
-	  reg = c - '0';
-	else
-	  return -1;
-	if ((c = *s) >= '0' && c <= '5')
-	  s++, reg = reg * 10 + c - '0';
-	if (reg > 15)
-	  return -1;
-	if ((c = *s) == 0)
-	  ;
-	else if (*type != OP_REG64)
-	  return -1;
-	else if (c == 'b' && !s[1])
-	  *type = OP_REG8;
-	else if (c == 'w' && !s[1])
-	  *type = OP_REG16;
-	else if (c == 'd' && !s[1])
-	  *type = OP_REG32;
-	else
-	  return -1;
+        const char *s = table_ident[t - TOK_IDENT]->str;
+        char c;
+        *type = OP_REG64;
+        if (*s == 'c') {
+            s++;
+            *type = OP_CR;
+        }
+        if (*s++ != 'r')
+            return -1;
+        if ((c = *s++) >= '1' && c <= '9')
+            reg = c - '0';
+        else
+            return -1;
+        if ((c = *s) >= '0' && c <= '5')
+            s++, reg = reg * 10 + c - '0';
+        if (reg > 15)
+            return -1;
+        if ((c = *s) == 0)
+            ;
+        else if (*type != OP_REG64)
+            return -1;
+        else if (c == 'b' && !s[1])
+            *type = OP_REG8;
+        else if (c == 'w' && !s[1])
+            *type = OP_REG16;
+        else if (c == 'd' && !s[1])
+            *type = OP_REG32;
+        else
+            return -1;
     }
     return reg;
 }
 #endif
 
-static int asm_parse_reg(unsigned int *type)
-{
+static int asm_parse_reg(unsigned int *type) {
     int reg = 0;
     *type = 0;
     if (tok != '%')
@@ -294,17 +291,16 @@ static int asm_parse_reg(unsigned int *type)
     next();
     if (tok >= TOK_ASM_eax && tok <= TOK_ASM_edi) {
         reg = tok - TOK_ASM_eax;
-	*type = OP_REG32;
+        *type = OP_REG32;
 #ifdef MCC_TARGET_X86_64
     } else if (tok >= TOK_ASM_rax && tok <= TOK_ASM_rdi) {
         reg = tok - TOK_ASM_rax;
-	*type = OP_REG64;
+        *type = OP_REG64;
     } else if (tok == TOK_ASM_rip) {
         reg = -2;
-	*type = OP_REG64;
-    } else if ((reg = asm_parse_numeric_reg(tok, type)) >= 0
-	       && (*type == OP_REG32 || *type == OP_REG64)) {
-	;
+        *type = OP_REG64;
+    } else if ((reg = asm_parse_numeric_reg(tok, type)) >= 0 && (*type == OP_REG32 || *type == OP_REG64)) {
+        ;
 #endif
     } else {
     error_32:
@@ -315,12 +311,8 @@ static int asm_parse_reg(unsigned int *type)
 }
 
 #ifndef MCC_TARGET_X86_64
-/* gas @-operator after a symbol, selecting a non-default relocation for the
-   field.  i386-gen.c reaches for exactly one: `sym@ntpoff` (TLS local-exec,
-   R_386_TLS_LE), which `-S` listings print, so parse it back.  Returns 1 if
-   the suffix was consumed. */
-static int asm_parse_ntpoff(void)
-{
+
+static int asm_parse_ntpoff(void) {
     if (tok != '@')
         return 0;
     next();
@@ -334,8 +326,7 @@ static int asm_parse_ntpoff(void)
 #define asm_parse_ntpoff() 0
 #endif
 
-static void parse_operand(MCCState *s1, Operand *op)
-{
+static void parse_operand(MCCState *s1, Operand *op) {
     ExprValue e;
     int reg, indir;
     const char *p;
@@ -385,18 +376,18 @@ static void parse_operand(MCCState *s1, Operand *op)
                 op->type |= OP_ST0;
             goto no_skip;
 #ifdef MCC_TARGET_X86_64
-	} else if (tok >= TOK_ASM_spl && tok <= TOK_ASM_dil) {
-	    op->type = OP_REG8 | OP_REG8_LOW;
-	    op->reg = 4 + tok - TOK_ASM_spl;
+        } else if (tok >= TOK_ASM_spl && tok <= TOK_ASM_dil) {
+            op->type = OP_REG8 | OP_REG8_LOW;
+            op->reg = 4 + tok - TOK_ASM_spl;
         } else if ((op->reg = asm_parse_numeric_reg(tok, &op->type)) >= 0) {
-	    ;
+            ;
 #endif
         } else {
         reg_error:
             mcc_error("unknown register %%%s", get_tok_str(tok, &tokc));
         }
         next();
-    no_skip: ;
+    no_skip:;
     } else if (tok == '$') {
         next();
         asm_expr(s1, &e);
@@ -440,10 +431,10 @@ static void parse_operand(MCCState *s1, Operand *op)
                 op->e.v = e.v;
                 op->e.sym = e.sym;
             }
-	    op->e.pcrel = 0;
+            op->e.pcrel = 0;
         }
         if (tok == '(') {
-	    unsigned int type = 0;
+            unsigned int type = 0;
             next();
             if (tok != ',') {
                 op->reg = asm_parse_reg(&type);
@@ -458,8 +449,8 @@ static void parse_operand(MCCState *s1, Operand *op)
                     op->shift = get_reg_shift(s1);
                 }
             }
-	    if (type & OP_REG32)
-	        op->type |= OP_EA32;
+            if (type & OP_REG32)
+                op->type |= OP_EA32;
             skip(')');
         }
         if (op->reg == -1 && op->reg2 == -1)
@@ -468,16 +459,14 @@ static void parse_operand(MCCState *s1, Operand *op)
     op->type |= indir;
 }
 
-ST_FUNC void gen_expr32(ExprValue *pe)
-{
+ST_FUNC void gen_expr32(ExprValue *pe) {
     if (pe->pcrel)
-	gen_addrpc32(VT_SYM, pe->sym, pe->v + (ind + 4));
+        gen_addrpc32(VT_SYM, pe->sym, pe->v + (ind + 4));
     else
-	gen_addr32(pe->sym ? VT_SYM : 0, pe->sym, pe->v);
+        gen_addr32(pe->sym ? VT_SYM : 0, pe->sym, pe->v);
 }
 
-static void gen_disp32(ExprValue *pe)
-{
+static void gen_disp32(ExprValue *pe) {
     Sym *sym = pe->sym;
     ElfSym *esym = elfsym(sym);
     if (esym && esym->st_shndx == cur_text_section->sh_num) {
@@ -493,14 +482,10 @@ static void gen_disp32(ExprValue *pe)
 #else
         gen_addrpc32(VT_SYM, sym, pe->v);
 #endif
-
     }
 }
 
-/* Emit the 32-bit address/immediate field of an operand: a `sym@ntpoff`
-   operand carries the TLS local-exec relocation instead of the default. */
-static void gen_op32(Operand *op)
-{
+static void gen_op32(Operand *op) {
 #ifndef MCC_TARGET_X86_64
     if (op->ntpoff) {
         greloc(cur_text_section, op->e.sym, ind, R_386_TLS_LE);
@@ -511,27 +496,24 @@ static void gen_op32(Operand *op)
     gen_expr32(&op->e);
 }
 
-static inline int asm_modrm(int reg, Operand *op)
-{
+static inline int asm_modrm(int reg, Operand *op) {
     int mod, reg1, reg2, sib_reg1;
 
     if (op->type & (OP_REG | OP_MMX | OP_SSE)) {
         g(0xc0 + (reg << 3) + op->reg);
     } else if (op->reg == -1 && op->reg2 == -1) {
 #ifdef MCC_TARGET_X86_64
-	g(0x04 + (reg << 3));
-	g(0x25);
+        g(0x04 + (reg << 3));
+        g(0x25);
 #else
-	if (op->ntpoff) {
-	    /* i386-gen.c spells __thread accesses with the (redundant)
-	       no-base SIB form; use the same encoding so a -S listing
-	       re-assembles byte-identically */
-	    g(0x04 + (reg << 3));
-	    g(0x25);
-	} else
-	    g(0x05 + (reg << 3));
+        if (op->ntpoff) {
+
+            g(0x04 + (reg << 3));
+            g(0x25);
+        } else
+            g(0x05 + (reg << 3));
 #endif
-	gen_op32(op);
+        gen_op32(op);
 #ifdef MCC_TARGET_X86_64
     } else if (op->reg == -2) {
         ExprValue *pe = &op->e;
@@ -564,7 +546,7 @@ static inline int asm_modrm(int reg, Operand *op)
         if (mod == 0x40) {
             g(op->e.v);
         } else if (mod == 0x80 || op->reg == -1) {
-	    gen_op32(op);
+            gen_op32(op);
         }
     }
     return 0;
@@ -577,93 +559,88 @@ static inline int asm_modrm(int reg, Operand *op)
 #define REX_B 0x41
 
 static void asm_rex(int width64, Operand *ops, int nb_ops, int *op_type,
-		    int regi, int rmi)
-{
-  unsigned char rex = width64 ? 0x48 : 0;
-  int saw_high_8bit = 0;
-  if (rmi == -1) {
-      for(int i = 0; i < nb_ops; i++) {
-	  if (op_type[i] & (OP_REG | OP_ST)) {
-	      if (ops[i].reg >= 8) {
-		  rex |= REX_B;
-		  ops[i].reg -= 8;
-	      } else if (ops[i].type & OP_REG8_LOW)
-		  rex |= 0x40;
-	      else if (ops[i].type & OP_REG8 && ops[i].reg >= 4)
-		  saw_high_8bit = ops[i].reg;
-	      break;
-	  }
-      }
-  } else {
-      if (regi != -1) {
-	  if (ops[regi].reg >= 8) {
-	      rex |= REX_R;
-	      ops[regi].reg -= 8;
-	  } else if (ops[regi].type & OP_REG8_LOW)
-	      rex |= 0x40;
-	  else if (ops[regi].type & OP_REG8 && ops[regi].reg >= 4)
-	      saw_high_8bit = ops[regi].reg;
-      }
-      if (ops[rmi].type & (OP_REG | OP_MMX | OP_SSE | OP_CR | OP_EA)) {
-	  if (ops[rmi].reg >= 8) {
-	      rex |= REX_B;
-	      ops[rmi].reg -= 8;
-	  } else if (ops[rmi].type & OP_REG8_LOW)
-	      rex |= 0x40;
-	  else if (ops[rmi].type & OP_REG8 && ops[rmi].reg >= 4)
-	      saw_high_8bit = ops[rmi].reg;
-      }
-      if (ops[rmi].type & OP_EA && ops[rmi].reg2 >= 8) {
-	  rex |= REX_X;
-	  ops[rmi].reg2 -= 8;
-      }
-  }
-  if (rex) {
-      if (saw_high_8bit)
-	  mcc_error("can't encode register %%%ch when REX prefix is required",
-		    "acdb"[saw_high_8bit-4]);
-      g(rex);
-  }
+                    int regi, int rmi) {
+    unsigned char rex = width64 ? 0x48 : 0;
+    int saw_high_8bit = 0;
+    if (rmi == -1) {
+        for (int i = 0; i < nb_ops; i++) {
+            if (op_type[i] & (OP_REG | OP_ST)) {
+                if (ops[i].reg >= 8) {
+                    rex |= REX_B;
+                    ops[i].reg -= 8;
+                } else if (ops[i].type & OP_REG8_LOW)
+                    rex |= 0x40;
+                else if (ops[i].type & OP_REG8 && ops[i].reg >= 4)
+                    saw_high_8bit = ops[i].reg;
+                break;
+            }
+        }
+    } else {
+        if (regi != -1) {
+            if (ops[regi].reg >= 8) {
+                rex |= REX_R;
+                ops[regi].reg -= 8;
+            } else if (ops[regi].type & OP_REG8_LOW)
+                rex |= 0x40;
+            else if (ops[regi].type & OP_REG8 && ops[regi].reg >= 4)
+                saw_high_8bit = ops[regi].reg;
+        }
+        if (ops[rmi].type & (OP_REG | OP_MMX | OP_SSE | OP_CR | OP_EA)) {
+            if (ops[rmi].reg >= 8) {
+                rex |= REX_B;
+                ops[rmi].reg -= 8;
+            } else if (ops[rmi].type & OP_REG8_LOW)
+                rex |= 0x40;
+            else if (ops[rmi].type & OP_REG8 && ops[rmi].reg >= 4)
+                saw_high_8bit = ops[rmi].reg;
+        }
+        if (ops[rmi].type & OP_EA && ops[rmi].reg2 >= 8) {
+            rex |= REX_X;
+            ops[rmi].reg2 -= 8;
+        }
+    }
+    if (rex) {
+        if (saw_high_8bit)
+            mcc_error("can't encode register %%%ch when REX prefix is required",
+                      "acdb"[saw_high_8bit - 4]);
+        g(rex);
+    }
 }
 #endif
 
-
-static void maybe_print_stats (void)
-{
+static void maybe_print_stats(void) {
     static int already;
 
-    if (0 && !already)
-    {
+    if (0 && !already) {
         const struct ASMInstr *pa;
         int freq[4];
         int op_vals[500];
         int nb_op_vals, i, j;
 
-	already = 1;
+        already = 1;
         nb_op_vals = 0;
         memset(freq, 0, sizeof(freq));
-        for(pa = asm_instrs; pa->sym != 0; pa++) {
+        for (pa = asm_instrs; pa->sym != 0; pa++) {
             freq[pa->nb_ops]++;
-                for(j=0;j<nb_op_vals;j++) {
-                    if (pa->instr_type == op_vals[j])
-                        goto found;
-                }
-                op_vals[nb_op_vals++] = pa->instr_type;
-            found: ;
+            for (j = 0; j < nb_op_vals; j++) {
+                if (pa->instr_type == op_vals[j])
+                    goto found;
+            }
+            op_vals[nb_op_vals++] = pa->instr_type;
+        found:;
         }
-        for(i=0;i<nb_op_vals;i++) {
+        for (i = 0; i < nb_op_vals; i++) {
             int v = op_vals[i];
-                printf("%3d: %08x\n", i, v);
+            printf("%3d: %08x\n", i, v);
         }
         printf("size=%d nb=%d f0=%d f1=%d f2=%d f3=%d\n",
                (int)sizeof(asm_instrs),
-	       (int)sizeof(asm_instrs) / (int)sizeof(ASMInstr),
+               (int)sizeof(asm_instrs) / (int)sizeof(ASMInstr),
                freq[0], freq[1], freq[2], freq[3]);
     }
 }
 
-ST_FUNC void asm_opcode(MCCState *s1, int opcode)
-{
+ST_FUNC void asm_opcode(MCCState *s1, int opcode) {
     const ASMInstr *pa;
     int i, modrm_index, modreg_index, reg, v, op1, seg_prefix, pc, p;
     int nb_ops, s;
@@ -684,7 +661,7 @@ ST_FUNC void asm_opcode(MCCState *s1, int opcode)
     nb_ops = 0;
     seg_prefix = 0;
     alltypes = 0;
-    for(;;) {
+    for (;;) {
         if (tok == ';' || tok == TOK_LINEFEED)
             break;
         if (nb_ops >= MAX_OPERANDS) {
@@ -692,14 +669,14 @@ ST_FUNC void asm_opcode(MCCState *s1, int opcode)
         }
         parse_operand(s1, pop);
         if (tok == ':') {
-           if (!(pop->type & OP_SEG) || seg_prefix)
-               mcc_error("incorrect prefix");
-           seg_prefix = segment_prefixes[pop->reg];
-           next();
-           parse_operand(s1, pop);
-           if (!(pop->type & OP_EA)) {
-               mcc_error("segment prefix must be followed by memory reference");
-           }
+            if (!(pop->type & OP_SEG) || seg_prefix)
+                mcc_error("incorrect prefix");
+            seg_prefix = segment_prefixes[pop->reg];
+            next();
+            parse_operand(s1, pop);
+            if (!(pop->type & OP_EA)) {
+                mcc_error("segment prefix must be followed by memory reference");
+            }
         }
         pop++;
         nb_ops++;
@@ -711,43 +688,41 @@ ST_FUNC void asm_opcode(MCCState *s1, int opcode)
     s = 0;
 
 again:
-    for(pa = asm_instrs; pa->sym != 0; pa++) {
-	int it = pa->instr_type & OPCT_MASK;
+    for (pa = asm_instrs; pa->sym != 0; pa++) {
+        int it = pa->instr_type & OPCT_MASK;
         s = 0;
         if (it == OPC_FARITH) {
             v = opcode - pa->sym;
             if (!((unsigned)v < 8 * 6 && (v % 6) == 0))
                 continue;
         } else if (it == OPC_ARITH) {
-            if (!(opcode >= pa->sym && opcode < pa->sym + 8*NBWLX))
+            if (!(opcode >= pa->sym && opcode < pa->sym + 8 * NBWLX))
                 continue;
             s = (opcode - pa->sym) % NBWLX;
-	    if ((pa->instr_type & OPC_BWLX) == OPC_WLX)
-	      {
-		if (((opcode - pa->sym + 1) % NBWLX) == 0)
-		    continue;
-	        s++;
-	      }
+            if ((pa->instr_type & OPC_BWLX) == OPC_WLX) {
+                if (((opcode - pa->sym + 1) % NBWLX) == 0)
+                    continue;
+                s++;
+            }
         } else if (it == OPC_SHIFT) {
-            if (!(opcode >= pa->sym && opcode < pa->sym + 7*NBWLX))
+            if (!(opcode >= pa->sym && opcode < pa->sym + 7 * NBWLX))
                 continue;
             s = (opcode - pa->sym) % NBWLX;
         } else if (it == OPC_TEST) {
             if (!(opcode >= pa->sym && opcode < pa->sym + NB_TEST_OPCODES))
                 continue;
-	    if (pa->instr_type & OPC_WLX)
-	        s = NBWLX - 1;
+            if (pa->instr_type & OPC_WLX)
+                s = NBWLX - 1;
         } else if (pa->instr_type & OPC_B) {
 #ifdef MCC_TARGET_X86_64
-	    if ((pa->instr_type & OPC_WLQ) != OPC_WLQ
-		&& !(opcode >= pa->sym && opcode < pa->sym + NBWLX-1))
-	        continue;
+            if ((pa->instr_type & OPC_WLQ) != OPC_WLQ && !(opcode >= pa->sym && opcode < pa->sym + NBWLX - 1))
+                continue;
 #endif
             if (!(opcode >= pa->sym && opcode < pa->sym + NBWLX))
                 continue;
             s = opcode - pa->sym;
         } else if (pa->instr_type & OPC_WLX) {
-            if (!(opcode >= pa->sym && opcode < pa->sym + NBWLX-1))
+            if (!(opcode >= pa->sym && opcode < pa->sym + NBWLX - 1))
                 continue;
             s = opcode - pa->sym + 1;
         } else {
@@ -757,17 +732,15 @@ again:
         if (pa->nb_ops != nb_ops)
             continue;
 #ifdef MCC_TARGET_X86_64
-	if (pa->opcode == 0xb0 && ops[0].type != OP_IM64
-	    && (ops[1].type & OP_REG) == OP_REG64
-	    && !(pa->instr_type & OPC_0F))
-	    continue;
+        if (pa->opcode == 0xb0 && ops[0].type != OP_IM64 && (ops[1].type & OP_REG) == OP_REG64 && !(pa->instr_type & OPC_0F))
+            continue;
 #endif
-	alltypes = 0;
-        for(i = 0; i < nb_ops; i++) {
+        alltypes = 0;
+        for (i = 0; i < nb_ops; i++) {
             int op1, op2;
             op1 = pa->op_type[i];
             op2 = op1 & 0x1f;
-            switch(op2) {
+            switch (op2) {
             case OPT_IM:
                 v = OP_IM8 | OP_IM16 | OP_IM32;
                 break;
@@ -780,37 +753,35 @@ again:
             case OPT_IMW:
                 v = OP_IM16 | OP_IM32;
                 break;
-	    case OPT_MMXSSE:
-		v = OP_MMX | OP_SSE;
-		break;
-	    case OPT_DISP:
-	    case OPT_DISP8:
-		v = OP_ADDR;
-		break;
+            case OPT_MMXSSE:
+                v = OP_MMX | OP_SSE;
+                break;
+            case OPT_DISP:
+            case OPT_DISP8:
+                v = OP_ADDR;
+                break;
             default:
                 v = 1 << op2;
                 break;
             }
             if (op1 & OPT_EA)
                 v |= OP_EA;
-	    op_type[i] = v;
+            op_type[i] = v;
             if ((ops[i].type & v) == 0)
                 goto next;
-	    alltypes |= ops[i].type;
+            alltypes |= ops[i].type;
         }
 #ifndef MCC_TARGET_X86_64
-        /* `sym@ntpoff` operands: skip the eAX short forms (a0-a3 moffs,
-           imm-to-eAX) so the ModRM row is selected — the encoding
-           i386-gen.c emits, keeping -S round-trips byte-identical */
+
         if (!(pa->instr_type & OPC_MODRM)) {
-            for(i = 0; i < nb_ops; i++)
+            for (i = 0; i < nb_ops; i++)
                 if (ops[i].ntpoff)
                     goto next;
         }
 #endif
         (void)alltypes;
         break;
-    next: ;
+    next:;
     }
     if (pa->sym == 0) {
         if (opcode >= TOK_ASM_first && opcode <= TOK_ASM_last) {
@@ -822,25 +793,23 @@ again:
             return;
         } else if (opcode <= TOK_ASM_alllast) {
             mcc_error("bad operand with opcode '%s'",
-                  get_tok_str(opcode, NULL));
+                      get_tok_str(opcode, NULL));
         } else {
-	    TokenSym *ts = table_ident[opcode - TOK_IDENT];
-	    if (ts->len >= 6
-		&& strchr("wlq", ts->str[ts->len-1])
-		&& !memcmp(ts->str, "cmov", 4)) {
-		opcode = tok_alloc(ts->str, ts->len-1)->tok;
-		goto again;
-	    }
+            TokenSym *ts = table_ident[opcode - TOK_IDENT];
+            if (ts->len >= 6 && strchr("wlq", ts->str[ts->len - 1]) && !memcmp(ts->str, "cmov", 4)) {
+                opcode = tok_alloc(ts->str, ts->len - 1)->tok;
+                goto again;
+            }
             mcc_error("unknown opcode '%s'", ts->str);
         }
     }
-    autosize = NBWLX-1;
+    autosize = NBWLX - 1;
 #ifdef MCC_TARGET_X86_64
     if ((pa->instr_type & OPC_BWLQ) == OPC_B)
-        autosize = NBWLX-2;
+        autosize = NBWLX - 2;
 #endif
     if (s == autosize) {
-        for(i = nb_ops - 1; s == autosize && i >= 0; i--) {
+        for (i = nb_ops - 1; s == autosize && i >= 0; i--) {
             if ((ops[i].type & OP_REG) && !(op_type[i] & (OP_CL | OP_DX)))
                 s = reg_to_size[ops[i].type & OP_REG];
         }
@@ -848,9 +817,9 @@ again:
             if ((opcode == TOK_ASM_push || opcode == TOK_ASM_pop) &&
                 (ops[0].type & (OP_SEG | OP_IM8S | OP_IM32)))
                 s = 2;
-	    else if ((opcode == TOK_ASM_push || opcode == TOK_ASM_pop) &&
-		     (ops[0].type & OP_EA))
-	        s = NBWLX - 2;
+            else if ((opcode == TOK_ASM_push || opcode == TOK_ASM_pop) &&
+                     (ops[0].type & OP_EA))
+                s = NBWLX - 2;
             else
                 mcc_error("cannot infer opcode suffix");
         }
@@ -861,19 +830,14 @@ again:
     if (pa->instr_type & OPC_48)
         rex64 = 1;
     else if (s == 3 || (alltypes & OP_REG64)) {
-	int default64 = 0;
-	for(i = 0; i < nb_ops; i++) {
-	    if (op_type[i] == OP_REG64 && pa->opcode != 0xb8) {
-		default64 = 1;
-		break;
-	    }
-	}
-        if (((opcode != TOK_ASM_push && opcode != TOK_ASM_pop
-	      && opcode != TOK_ASM_pushw && opcode != TOK_ASM_pushl
-	      && opcode != TOK_ASM_pushq && opcode != TOK_ASM_popw
-	      && opcode != TOK_ASM_popl && opcode != TOK_ASM_popq
-	      && opcode != TOK_ASM_call && opcode != TOK_ASM_jmp))
-	    && !default64)
+        int default64 = 0;
+        for (i = 0; i < nb_ops; i++) {
+            if (op_type[i] == OP_REG64 && pa->opcode != 0xb8) {
+                default64 = 1;
+                break;
+            }
+        }
+        if (((opcode != TOK_ASM_push && opcode != TOK_ASM_pop && opcode != TOK_ASM_pushw && opcode != TOK_ASM_pushl && opcode != TOK_ASM_pushq && opcode != TOK_ASM_popw && opcode != TOK_ASM_popl && opcode != TOK_ASM_popq && opcode != TOK_ASM_call && opcode != TOK_ASM_jmp)) && !default64)
             rex64 = 1;
     }
 #endif
@@ -883,10 +847,10 @@ again:
     if (seg_prefix)
         g(seg_prefix);
 #ifdef MCC_TARGET_X86_64
-    for(i = 0; i < nb_ops; i++) {
+    for (i = 0; i < nb_ops; i++) {
         if (ops[i].type & OP_EA32) {
-	    g(0x67);
-	    break;
+            g(0x67);
+            break;
         }
     }
 #endif
@@ -895,9 +859,8 @@ again:
         p66 = 1;
     else {
         for (i = 0; i < nb_ops; i++)
-            if ((op_type[i] & (OP_MMX | OP_SSE)) == (OP_MMX | OP_SSE)
-	        && ops[i].type & OP_SSE)
-	        p66 = 1;
+            if ((op_type[i] & (OP_MMX | OP_SSE)) == (OP_MMX | OP_SSE) && ops[i].type & OP_SSE)
+                p66 = 1;
     }
     if (p66)
         g(0x66);
@@ -905,16 +868,32 @@ again:
     v = pa->opcode;
     p = v >> 8;
     switch (p) {
-        case 0: break;
-        case 0x48: break;
-        case 0x66:
-        case 0x67:
-        case 0xf2:
-        case 0xf3: v = v & 0xff; g(p); break;
-        case 0xd4: case 0xd5: break;
-        case 0xd8: case 0xd9: case 0xda: case 0xdb:
-        case 0xdc: case 0xdd: case 0xde: case 0xdf: break;
-        default: mcc_error("bad prefix 0x%2x in opcode table", p); break;
+    case 0:
+        break;
+    case 0x48:
+        break;
+    case 0x66:
+    case 0x67:
+    case 0xf2:
+    case 0xf3:
+        v = v & 0xff;
+        g(p);
+        break;
+    case 0xd4:
+    case 0xd5:
+        break;
+    case 0xd8:
+    case 0xd9:
+    case 0xda:
+    case 0xdb:
+    case 0xdc:
+    case 0xdd:
+    case 0xde:
+    case 0xdf:
+        break;
+    default:
+        mcc_error("bad prefix 0x%2x in opcode table", p);
+        break;
     }
     if (pa->instr_type & OPC_0F)
         v = ((v & ~0xff) << 8) | 0x0f00 | (v & 0xff);
@@ -941,27 +920,27 @@ again:
     modrm_index = -1;
     modreg_index = -1;
     if (pa->instr_type & OPC_MODRM) {
-	if (!nb_ops) {
-	    i = 0;
-	    ops[i].type = OP_REG;
+        if (!nb_ops) {
+            i = 0;
+            ops[i].type = OP_REG;
 #ifdef MCC_TARGET_X86_64
-	    if (pa->sym == TOK_ASM_endbr64)
-	      ops[i].reg = 2;
-	    else if (pa->sym >= TOK_ASM_lfence && pa->sym <= TOK_ASM_sfence)
-  	      ops[i].reg = 0;
+            if (pa->sym == TOK_ASM_endbr64)
+                ops[i].reg = 2;
+            else if (pa->sym >= TOK_ASM_lfence && pa->sym <= TOK_ASM_sfence)
+                ops[i].reg = 0;
 #else
-	    if (pa->sym == TOK_ASM_endbr32)
-	      ops[i].reg = 3;
+            if (pa->sym == TOK_ASM_endbr32)
+                ops[i].reg = 3;
 #endif
-	    else
-	      mcc_error("bad MODR/M opcode without operands");
-	    goto modrm_found;
-	}
-        for(i = 0;i < nb_ops; i++) {
+            else
+                mcc_error("bad MODR/M opcode without operands");
+            goto modrm_found;
+        }
+        for (i = 0; i < nb_ops; i++) {
             if (op_type[i] & OP_EA)
                 goto modrm_found;
         }
-        for(i = 0;i < nb_ops; i++) {
+        for (i = 0; i < nb_ops; i++) {
             if (op_type[i] & (OP_REG | OP_MMX | OP_SSE | OP_INDIR))
                 goto modrm_found;
         }
@@ -970,7 +949,7 @@ again:
 #endif
     modrm_found:
         modrm_index = i;
-        for(i = 0;i < nb_ops; i++) {
+        for (i = 0; i < nb_ops; i++) {
             int t = op_type[i];
             if (i != modrm_index &&
                 (t & (OP_REG | OP_MMX | OP_SSE | OP_CR | OP_TR | OP_DB | OP_SEG))) {
@@ -980,13 +959,13 @@ again:
         }
     }
 #ifdef MCC_TARGET_X86_64
-    asm_rex (rex64, ops, nb_ops, op_type, modreg_index, modrm_index);
+    asm_rex(rex64, ops, nb_ops, op_type, modreg_index, modrm_index);
 #endif
 
     if (pa->instr_type & OPC_REG) {
         if (v == 0xb0 && s >= 1)
             v += 7;
-        for(i = 0; i < nb_ops; i++) {
+        for (i = 0; i < nb_ops; i++) {
             if (op_type[i] & (OP_REG | OP_ST)) {
                 v += ops[i].reg;
                 break;
@@ -996,25 +975,25 @@ again:
     if (pa->instr_type & OPC_B)
         v += s >= 1;
     if (nb_ops == 1 && pa->op_type[0] == OPT_DISP8) {
-	ElfSym *esym;
+        ElfSym *esym;
         int jmp_disp;
 
-	esym = elfsym(ops[0].e.sym);
+        esym = elfsym(ops[0].e.sym);
         if (!esym || esym->st_shndx != cur_text_section->sh_num)
             goto no_short_jump;
         jmp_disp = ops[0].e.v + esym->st_value - ind - 2 - (v >= 0xff);
         if (jmp_disp == (int8_t)jmp_disp) {
-	    ops[0].e.sym = 0;
+            ops[0].e.sym = 0;
             ops[0].e.v = jmp_disp;
-	    op_type[0] = OP_IM8S;
+            op_type[0] = OP_IM8S;
         } else {
         no_short_jump:
-	    if (v == 0xeb)
-	        v = 0xe9;
-	    else if (v == 0x70)
-	        v += 0x0f10;
-	    else
-	        mcc_error("invalid displacement");
+            if (v == 0xeb)
+                v = 0xe9;
+            else if (v == 0x70)
+                v += 0x0f10;
+            else
+                mcc_error("invalid displacement");
         }
     }
     if (OPCT_IS(pa->instr_type, OPC_TEST))
@@ -1043,22 +1022,21 @@ again:
 
     pc = 0;
     if (pa->instr_type & OPC_MODRM) {
-	if (modreg_index >= 0)
-	    reg = ops[modreg_index].reg;
+        if (modreg_index >= 0)
+            reg = ops[modreg_index].reg;
         pc = asm_modrm(reg, &ops[modrm_index]);
     }
 
 #ifndef MCC_TARGET_X86_64
-    if (!(pa->instr_type & OPC_0F)
-	&& (pa->opcode == 0x9a || pa->opcode == 0xea)) {
-	gen_expr32(&ops[1].e);
+    if (!(pa->instr_type & OPC_0F) && (pa->opcode == 0x9a || pa->opcode == 0xea)) {
+        gen_expr32(&ops[1].e);
         if (ops[0].e.sym)
             mcc_error("cannot relocate");
         gen_le16(ops[0].e.v);
         return;
     }
 #endif
-    for(i = 0;i < nb_ops; i++) {
+    for (i = 0; i < nb_ops; i++) {
         v = op_type[i];
         if (v & (OP_IM8 | OP_IM16 | OP_IM32 | OP_IM64 | OP_IM8S | OP_ADDR)) {
             if ((v | OP_IM8 | OP_IM64) == (OP_IM8 | OP_IM16 | OP_IM32 | OP_IM64)) {
@@ -1083,7 +1061,7 @@ again:
             } else if (v & OP_IM64) {
                 gen_expr64(&ops[i].e);
 #endif
-	    } else if (pa->op_type[i] == OPT_DISP || pa->op_type[i] == OPT_DISP8) {
+            } else if (pa->op_type[i] == OPT_DISP || pa->op_type[i] == OPT_DISP8) {
                 gen_disp32(&ops[i].e);
             } else {
                 gen_op32(&ops[i]);
@@ -1095,17 +1073,16 @@ again:
         add32le(cur_text_section->data + pc - 4, pc - ind);
 }
 
-static inline int constraint_priority(const char *str)
-{
+static inline int constraint_priority(const char *str) {
     int priority, c, pr;
 
     priority = 0;
-    for(;;) {
+    for (;;) {
         c = *str;
         if (c == '\0')
             break;
         str++;
-        switch(c) {
+        switch (c) {
         case 'A':
             pr = 0;
             break;
@@ -1121,14 +1098,14 @@ static inline int constraint_priority(const char *str)
             pr = 2;
             break;
         case 'r':
-	case 'R':
-	case 'p':
+        case 'R':
+        case 'p':
             pr = 3;
             break;
         case 'N':
         case 'M':
         case 'I':
-	case 'e':
+        case 'e':
         case 'i':
         case 'm':
         case 'g':
@@ -1144,8 +1121,7 @@ static inline int constraint_priority(const char *str)
     return priority;
 }
 
-ST_FUNC int asm_parse_regvar (int t)
-{
+ST_FUNC int asm_parse_regvar(int t) {
     const char *s;
     Operand op;
     if (t < TOK_IDENT || (t & SYM_FIELD))
@@ -1164,17 +1140,16 @@ ST_FUNC int asm_parse_regvar (int t)
 }
 
 #define REG_OUT_MASK 0x01
-#define REG_IN_MASK  0x02
+#define REG_IN_MASK 0x02
 
 #define is_reg_allocated(reg) (regs_allocated[reg] & reg_mask)
 
 #include "arch/asm-constraints.inc.c"
 
 ST_FUNC void asm_compute_constraints(ASMOperand *operands,
-                                    int nb_operands, int nb_outputs,
-                                    const uint8_t *clobber_regs,
-                                    int *pout_reg)
-{
+                                     int nb_operands, int nb_outputs,
+                                     const uint8_t *clobber_regs,
+                                     int *pout_reg) {
     ASMOperand *op;
     int sorted_op[MAX_ASM_OPERANDS];
     int j, reg, c, reg_mask;
@@ -1186,7 +1161,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
     regs_allocated[4] = REG_IN_MASK | REG_OUT_MASK;
     regs_allocated[5] = REG_IN_MASK | REG_OUT_MASK;
 
-    for(int i=0;i<nb_operands;i++) {
+    for (int i = 0; i < nb_operands; i++) {
         j = sorted_op[i];
         op = &operands[j];
         str = op->constraint;
@@ -1199,14 +1174,14 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
         } else {
             reg_mask = REG_IN_MASK;
         }
-	if (op->reg >= 0) {
-	    if (is_reg_allocated(op->reg))
-	        mcc_error("asm regvar requests register that's taken already");
-	    reg = op->reg;
-	}
+        if (op->reg >= 0) {
+            if (is_reg_allocated(op->reg))
+                mcc_error("asm regvar requests register that's taken already");
+            reg = op->reg;
+        }
     try_next:
         c = *str++;
-        switch(c) {
+        switch (c) {
         case '=':
             goto try_next;
         case '+':
@@ -1261,27 +1236,29 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
             if (op->reg >= 0) {
                 if ((reg = op->reg) < 4)
                     goto reg_found;
-            } else for(reg = 0; reg < 4; reg++) {
-                if (!is_reg_allocated(reg))
-                    goto reg_found;
-            }
+            } else
+                for (reg = 0; reg < 4; reg++) {
+                    if (!is_reg_allocated(reg))
+                        goto reg_found;
+                }
             goto try_next;
         case 'r':
-	case 'R':
-	case 'p':
+        case 'R':
+        case 'p':
             if ((reg = op->reg) >= 0)
                 goto reg_found;
-            else for(reg = 0; reg < NB_ASM_REGS; reg++) {
-                if (!is_reg_allocated(reg))
-                    goto reg_found;
-            }
+            else
+                for (reg = 0; reg < NB_ASM_REGS; reg++) {
+                    if (!is_reg_allocated(reg))
+                        goto reg_found;
+                }
             goto try_next;
         reg_found:
             op->is_llong = 0;
             op->reg = reg;
             regs_allocated[reg] |= reg_mask;
             break;
-	case 'e':
+        case 'e':
         case 'i':
             if (!((op->vt->r & (VT_VALMASK | VT_LVAL)) == VT_CONST))
                 goto try_next;
@@ -1296,7 +1273,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
         case 'g':
             if (j < nb_outputs || c == 'm') {
                 if ((op->vt->r & VT_VALMASK) == VT_LLOCAL) {
-                    for(reg = 0; reg < NB_ASM_REGS; reg++) {
+                    for (reg = 0; reg < NB_ASM_REGS; reg++) {
                         if (!(regs_allocated[reg] & REG_IN_MASK))
                             goto reg_found1;
                     }
@@ -1310,7 +1287,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
             break;
         default:
             mcc_error("asm constraint %d ('%s') could not be satisfied",
-                  j, op->constraint);
+                      j, op->constraint);
             break;
         }
         if (op->input_index >= 0) {
@@ -1320,12 +1297,12 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
     }
 
     *pout_reg = -1;
-    for(int i=0;i<nb_operands;i++) {
+    for (int i = 0; i < nb_operands; i++) {
         op = &operands[i];
         if (op->reg >= 0 &&
-            (op->vt->r & VT_VALMASK) == VT_LLOCAL  &&
+            (op->vt->r & VT_VALMASK) == VT_LLOCAL &&
             !op->is_memory) {
-            for(reg = 0; reg < NB_ASM_REGS; reg++) {
+            for (reg = 0; reg < NB_ASM_REGS; reg++) {
                 if (!(regs_allocated[reg] & REG_OUT_MASK))
                     goto reg_found2;
             }
@@ -1337,7 +1314,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
     }
 
 #ifdef ASM_DEBUG
-    for(int i=0;i<nb_operands;i++) {
+    for (int i = 0; i < nb_operands; i++) {
         j = sorted_op[i];
         op = &operands[j];
         printf("%%%d [%s]: \"%s\" r=0x%04x reg=%d\n",
@@ -1353,26 +1330,25 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 }
 
 ST_FUNC void subst_asm_operand(CString *add_str,
-                              SValue *sv, int modifier)
-{
+                               SValue *sv, int modifier) {
     int r, reg, size, val;
 
     r = sv->r;
     if ((r & VT_VALMASK) == VT_CONST) {
         if (!(r & VT_LVAL) && modifier != 'c' && modifier != 'n' &&
-	    modifier != 'P')
+            modifier != 'P')
             cstr_ccat(add_str, '$');
         if (r & VT_SYM) {
-	    const char *name = get_tok_str(sv->sym->v, NULL);
-	    if (sv->sym->v >= SYM_FIRST_ANOM) {
-		get_asm_sym(tok_alloc_const(name), sv->sym);
-	    }
+            const char *name = get_tok_str(sv->sym->v, NULL);
+            if (sv->sym->v >= SYM_FIRST_ANOM) {
+                get_asm_sym(tok_alloc_const(name), sv->sym);
+            }
             if (mcc_state->leading_underscore)
-              cstr_ccat(add_str, '_');
+                cstr_ccat(add_str, '_');
             cstr_cat(add_str, name, -1);
             if ((uint32_t)sv->c.i == 0)
                 goto no_offset;
-	    cstr_ccat(add_str, '+');
+            cstr_ccat(add_str, '+');
         }
         val = sv->c.i;
         if (modifier == 'n')
@@ -1396,13 +1372,13 @@ ST_FUNC void subst_asm_operand(CString *add_str,
             mcc_internal_error("");
 
         if ((sv->type.t & VT_BTYPE) == VT_BYTE ||
-	    (sv->type.t & VT_BTYPE) == VT_BOOL)
+            (sv->type.t & VT_BTYPE) == VT_BOOL)
             size = 1;
         else if ((sv->type.t & VT_BTYPE) == VT_SHORT)
             size = 2;
 #ifdef MCC_TARGET_X86_64
         else if ((sv->type.t & VT_BTYPE) == VT_LLONG ||
-		 (sv->type.t & VT_BTYPE) == VT_PTR)
+                 (sv->type.t & VT_BTYPE) == VT_PTR)
             size = 8;
 #endif
         else
@@ -1432,7 +1408,7 @@ ST_FUNC void subst_asm_operand(CString *add_str,
             cstr_printf(add_str, "%%r%d%c", reg, (size == 1) ? 'b' : ((size == 2) ? 'w' : ((size == 4) ? 'd' : ' ')));
             return;
         }
-        switch(size) {
+        switch (size) {
         case -1:
             reg = TOK_ASM_ah + reg;
             break;
@@ -1456,41 +1432,40 @@ ST_FUNC void subst_asm_operand(CString *add_str,
 }
 
 ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
-                         int nb_outputs, int is_output,
-                         uint8_t *clobber_regs,
-                         int out_reg)
-{
+                          int nb_outputs, int is_output,
+                          uint8_t *clobber_regs,
+                          int out_reg) {
     uint8_t regs_allocated[NB_ASM_REGS];
     ASMOperand *op;
     int reg;
 
 #ifdef MCC_TARGET_X86_64
 #ifdef MCC_TARGET_PE
-    static const uint8_t reg_saved[] = { 3, 6, 7, 12, 13, 14, 15 };
+    static const uint8_t reg_saved[] = {3, 6, 7, 12, 13, 14, 15};
 #else
-    static const uint8_t reg_saved[] = { 3, 12, 13, 14, 15 };
+    static const uint8_t reg_saved[] = {3, 12, 13, 14, 15};
 #endif
 #else
-    static const uint8_t reg_saved[] = { 3, 6, 7 };
+    static const uint8_t reg_saved[] = {3, 6, 7};
 #endif
 
     memcpy(regs_allocated, clobber_regs, sizeof(regs_allocated));
-    for(int i = 0; i < nb_operands;i++) {
+    for (int i = 0; i < nb_operands; i++) {
         op = &operands[i];
         if (op->reg >= 0)
             regs_allocated[op->reg] = 1;
     }
     if (!is_output) {
-        for(int i = 0; i < sizeof(reg_saved)/sizeof(reg_saved[0]); i++) {
+        for (int i = 0; i < sizeof(reg_saved) / sizeof(reg_saved[0]); i++) {
             reg = reg_saved[i];
             if (regs_allocated[reg]) {
-		if (reg >= 8)
-		  g(0x41), reg-=8;
+                if (reg >= 8)
+                    g(0x41), reg -= 8;
                 g(0x50 + reg);
             }
         }
 
-        for(int i = 0; i < nb_operands; i++) {
+        for (int i = 0; i < nb_operands; i++) {
             op = &operands[i];
             if (op->reg >= 0) {
                 if ((op->vt->r & VT_VALMASK) == VT_LLOCAL &&
@@ -1512,7 +1487,7 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
             }
         }
     } else {
-        for(int i = 0 ; i < nb_outputs; i++) {
+        for (int i = 0; i < nb_outputs; i++) {
             op = &operands[i];
             if (op->reg >= 0) {
                 if ((op->vt->r & VT_VALMASK) == VT_LLOCAL) {
@@ -1520,10 +1495,10 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
                         SValue sv;
                         sv = *op->vt;
                         sv.r = (sv.r & ~VT_VALMASK) | VT_LOCAL;
-			sv.type.t = VT_PTR;
+                        sv.type.t = VT_PTR;
                         load(out_reg, &sv);
 
-			sv = *op->vt;
+                        sv = *op->vt;
                         sv.r = (sv.r & ~VT_VALMASK) | out_reg;
                         store(op->reg, &sv);
                     }
@@ -1538,19 +1513,18 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
                 }
             }
         }
-        for(int i = sizeof(reg_saved)/sizeof(reg_saved[0]) - 1; i >= 0; i--) {
+        for (int i = sizeof(reg_saved) / sizeof(reg_saved[0]) - 1; i >= 0; i--) {
             reg = reg_saved[i];
             if (regs_allocated[reg]) {
-		if (reg >= 8)
-		  g(0x41), reg-=8;
+                if (reg >= 8)
+                    g(0x41), reg -= 8;
                 g(0x58 + reg);
             }
         }
     }
 }
 
-ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str)
-{
+ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str) {
     int reg;
 #ifdef MCC_TARGET_X86_64
     unsigned int type;
@@ -1558,7 +1532,7 @@ ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str)
 
     if (!strcmp(str, "memory") ||
         !strcmp(str, "cc") ||
-	!strcmp(str, "flags"))
+        !strcmp(str, "flags"))
         return;
     reg = tok_alloc_const(str);
     if (reg >= TOK_ASM_eax && reg <= TOK_ASM_edi) {
@@ -1569,7 +1543,7 @@ ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str)
     } else if (reg >= TOK_ASM_rax && reg <= TOK_ASM_rdi) {
         reg -= TOK_ASM_rax;
     } else if ((reg = asm_parse_numeric_reg(reg, &type)) >= 0) {
-	;
+        ;
 #endif
     } else {
         mcc_error("invalid clobber register '%s'", str);

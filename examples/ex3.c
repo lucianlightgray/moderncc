@@ -1,15 +1,13 @@
 #include <mcclib.h>
 
-int fib(int n)
-{
+int fib(int n) {
     if (n <= 2)
         return 1;
     else
-        return fib(n-1) + fib(n-2);
+        return fib(n - 1) + fib(n - 2);
 }
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
     int n;
     if (argc < 2) {
         printf("usage: fib n\n"

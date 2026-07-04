@@ -1,9 +1,6 @@
-
-
 #include <stdio.h>
 
-int main(void)
-{
+int main(void) {
     double r = 3.5;
     int i = 42;
     printf("%g %g\n", __real__ r, __imag__ r);

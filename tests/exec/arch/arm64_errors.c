@@ -1,79 +1,65 @@
-
-
-
-
 #include <stdio.h>
 
 #if defined test_unknown_instruction
-int main(void)
-{
+int main(void) {
     __asm__("fubar x0, x1, x2");
     return 0;
 }
 
 #elif defined test_shift_imm_range_32
-int main(void)
-{
+int main(void) {
 
     __asm__("lsl w0, w1, #32");
     return 0;
 }
 
 #elif defined test_shift_imm_range_64
-int main(void)
-{
+int main(void) {
 
     __asm__("lsl x0, x1, #64");
     return 0;
 }
 
 #elif defined test_invalid_sysreg
-int main(void)
-{
+int main(void) {
 
     __asm__("mrs x0, bogusreg");
     return 0;
 }
 
 #elif defined test_invalid_barrier_option
-int main(void)
-{
+int main(void) {
 
     __asm__("dmb xyz");
     return 0;
 }
 
 #elif defined test_missing_third_operand
-int main(void)
-{
+int main(void) {
     __asm__("add x0, x1");
     return 0;
 }
 
 #elif defined test_movz_imm_range
-int main(void)
-{
+int main(void) {
     __asm__("movz x0, #0x10000");
     return 0;
 }
 
 #elif defined test_movz_shift_range
-int main(void)
-{
+int main(void) {
     __asm__("movz x0, #1, lsl #8");
     return 0;
 }
 
 #elif defined test_invalid_muls
-int main(void)
-{
+int main(void) {
     __asm__("muls x0, x1, x2");
     return 0;
 }
 
 #elif defined test_extended_inline_asm
-int main(void)
-{
+int main(void) {
     int x = 1;
 
     __asm__("add %0, %1, #1" : "=r"(x) : "2"(x));
@@ -81,10 +67,9 @@ int main(void)
 }
 
 #elif defined test_extended_inline_clobber
-int main(void)
-{
+int main(void) {
 
-    __asm__ volatile ("nop" : : : "bogus");
+    __asm__ volatile("nop" : : : "bogus");
     return 0;
 }
 

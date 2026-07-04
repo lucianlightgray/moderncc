@@ -4,8 +4,7 @@
 #define PTR(x) ((PVOID)(ULONG_PTR)(x))
 #define CHECK(name, expr) printf("%s: %s\n", name, (expr) ? "yes" : "no")
 
-int main(void)
-{
+int main(void) {
     PVOID volatile slot = PTR(0x1111222233334444ULL);
     PVOID old;
 

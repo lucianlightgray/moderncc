@@ -1,15 +1,2 @@
-/cmake-build-*/
-/cmake-windows-*/
-/cmake-mingw-*/
-/cmake-clang/
-/build-*/
-
-# release packaging scratch dirs (cmake/package.cmake: install prefix + bundles)
-/stage/
-/pkg/
-/out/
-
+/cmake-*/
 /.idea/
-
-# codebase statement-pattern analysis (generated DBs + scripts, kept for discussion)
-/analysis/

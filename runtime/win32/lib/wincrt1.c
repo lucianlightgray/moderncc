@@ -3,9 +3,9 @@
 #include <windows.h>
 #include <stdlib.h>
 
-#define __UNKNOWN_APP    0
-#define __CONSOLE_APP    1
-#define __GUI_APP        2
+#define __UNKNOWN_APP 0
+#define __CONSOLE_APP 1
+#define __GUI_APP 2
 void __set_app_type(int);
 void _controlfp(unsigned a, unsigned b);
 
@@ -20,13 +20,14 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int);
 #define _runtwinmain _runwinmain
 #endif
 
-typedef struct { int newmode; } _startupinfo;
-int __cdecl __tgetmainargs(int *pargc, _TCHAR ***pargv, _TCHAR ***penv, int globb, _startupinfo*);
+typedef struct {
+    int newmode;
+} _startupinfo;
+int __cdecl __tgetmainargs(int *pargc, _TCHAR ***pargv, _TCHAR ***penv, int globb, _startupinfo *);
 
 #include "crtinit.c"
 
-static int go_winmain(TCHAR *arg1)
-{
+static int go_winmain(TCHAR *arg1) {
     STARTUPINFO si;
     _TCHAR *szCmd, *p;
     int fShow;
@@ -54,13 +55,11 @@ static int go_winmain(TCHAR *arg1)
     return retval;
 }
 
-static LONG WINAPI catch_sig(EXCEPTION_POINTERS *ex)
-{
-  return _XcptFilter(ex->ExceptionRecord->ExceptionCode, ex);
+static LONG WINAPI catch_sig(EXCEPTION_POINTERS *ex) {
+    return _XcptFilter(ex->ExceptionRecord->ExceptionCode, ex);
 }
 
-int _twinstart(void)
-{
+int _twinstart(void) {
     _startupinfo start_info_con = {0};
     SetUnhandledExceptionFilter(catch_sig);
     __set_app_type(__GUI_APP);
@@ -68,8 +67,7 @@ int _twinstart(void)
     exit(go_winmain(__argc > 1 ? __targv[1] : NULL));
 }
 
-int _runtwinmain(int argc,   char **argv)
-{
+int _runtwinmain(int argc, char **argv) {
 #ifdef UNICODE
     _startupinfo start_info = {0};
     __tgetmainargs(&__argc, &__targv, &_tenviron, 0, &start_info);

@@ -3,77 +3,71 @@
 #define APPNAME "HELLO_WIN"
 
 char szAppName[] = APPNAME;
-char szTitle[]   = APPNAME;
+char szTitle[] = APPNAME;
 const char *pWindowText;
 
 void CenterWindow(HWND hWnd);
 
-
-LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
-{
+LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
 
-        case WM_CREATE:
-            CenterWindow(hwnd);
-            break;
+    case WM_CREATE:
+        CenterWindow(hwnd);
+        break;
 
-        case WM_DESTROY:
-            PostQuitMessage(0);
-            break;
+    case WM_DESTROY:
+        PostQuitMessage(0);
+        break;
 
-        case WM_RBUTTONUP:
+    case WM_RBUTTONUP:
+        DestroyWindow(hwnd);
+        break;
+
+    case WM_KEYDOWN:
+        if (VK_ESCAPE == wParam)
             DestroyWindow(hwnd);
-            break;
+        break;
 
-        case WM_KEYDOWN:
-            if (VK_ESCAPE == wParam)
-                DestroyWindow(hwnd);
-            break;
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC hdc;
+        RECT rc;
+        hdc = BeginPaint(hwnd, &ps);
 
-        case WM_PAINT:
-        {
-            PAINTSTRUCT ps;
-            HDC         hdc;
-            RECT        rc;
-            hdc = BeginPaint(hwnd, &ps);
+        GetClientRect(hwnd, &rc);
+        SetTextColor(hdc, RGB(240, 240, 96));
+        SetBkMode(hdc, TRANSPARENT);
+        DrawText(hdc, pWindowText, -1, &rc, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
 
-            GetClientRect(hwnd, &rc);
-            SetTextColor(hdc, RGB(240,240,96));
-            SetBkMode(hdc, TRANSPARENT);
-            DrawText(hdc, pWindowText, -1, &rc, DT_CENTER|DT_SINGLELINE|DT_VCENTER);
+        EndPaint(hwnd, &ps);
+        break;
+    }
 
-            EndPaint(hwnd, &ps);
-            break;
-        }
-
-        default:
-            return DefWindowProc(hwnd, message, wParam, lParam);
+    default:
+        return DefWindowProc(hwnd, message, wParam, lParam);
     }
     return 0;
 }
 
 int APIENTRY WinMain(
-        HINSTANCE hInstance,
-        HINSTANCE hPrevInstance,
-        LPSTR lpCmdLine,
-        int nCmdShow
-        )
-{
+    HINSTANCE hInstance,
+    HINSTANCE hPrevInstance,
+    LPSTR lpCmdLine,
+    int nCmdShow) {
     MSG msg;
     WNDCLASS wc;
     HWND hwnd;
 
     pWindowText = lpCmdLine[0] ? lpCmdLine : "Hello Windows!";
 
-
     ZeroMemory(&wc, sizeof wc);
-    wc.hInstance     = hInstance;
+    wc.hInstance = hInstance;
     wc.lpszClassName = szAppName;
-    wc.lpfnWndProc   = (WNDPROC)WndProc;
-    wc.style         = CS_DBLCLKS|CS_VREDRAW|CS_HREDRAW;
+    wc.lpfnWndProc = (WNDPROC)WndProc;
+    wc.style = CS_DBLCLKS | CS_VREDRAW | CS_HREDRAW;
     wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
-    wc.hIcon         = LoadIcon(NULL, IDI_APPLICATION);
-    wc.hCursor       = LoadCursor(NULL, IDC_ARROW);
+    wc.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
 
     if (FALSE == RegisterClass(&wc))
         return 0;
@@ -81,7 +75,7 @@ int APIENTRY WinMain(
     hwnd = CreateWindow(
         szAppName,
         szTitle,
-        WS_OVERLAPPEDWINDOW|WS_VISIBLE,
+        WS_OVERLAPPEDWINDOW | WS_VISIBLE,
         CW_USEDEFAULT,
         CW_USEDEFAULT,
         360,
@@ -102,10 +96,7 @@ int APIENTRY WinMain(
     return msg.wParam;
 }
 
-
-
-void CenterWindow(HWND hwnd_self)
-{
+void CenterWindow(HWND hwnd_self) {
     HWND hwnd_parent;
     RECT rw_self, rc_parent, rw_parent;
     int xpos, ypos;
@@ -124,7 +115,5 @@ void CenterWindow(HWND hwnd_self)
     SetWindowPos(
         hwnd_self, NULL,
         xpos, ypos, 0, 0,
-        SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE
-        );
+        SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
-
