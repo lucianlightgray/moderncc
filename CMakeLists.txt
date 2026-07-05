@@ -2270,8 +2270,8 @@ function(mcc_build_mccrt tname mcctgt cpu os native archive objdir out_extra)
                       -Wno-unused-variable
                       -I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include -I${CMAKE_BINARY_DIR}
                       ${_arch_incs})
-        if(MCC_CONFIG_DWARF STREQUAL "")
-            set(_bflags_gcc -gstabs)
+        if(MCC_CONFIG_DWARF STREQUAL "" AND NOT CMAKE_C_COMPILER_ID MATCHES "Clang")
+            set(_bflags_gcc -gstabs)   # stabs debug info: gcc only (clang rejects -gstabs)
         else()
             set(_bflags_gcc -gdwarf)
         endif()
@@ -2712,6 +2712,46 @@ if(NOT CMAKE_CROSSCOMPILING)
             COMMENT "Benchmarking compilers (mcc/gcc/clang/mingw/msvc) via mccbench")
         add_dependencies(bench mccbench mcc)
     endif()
+
+    # ---- Local CI: reproduce the whole CI + release matrix on this machine ---
+    # `cmake/ci-local.cmake` probes the host for every toolchain/emulator the
+    # workflows use (native cc, host-runnable cross, qemu-user per arch, wine,
+    # mingw) and runs each preset this OS can run — via the same `ci run-preset`
+    # tool CI uses — then builds the dist/ release bundles. See that script's
+    # header for the environment knobs (LOCAL_CI_ONLY / _SKIP_QEMU / _SKIP_RELEASE
+    # / _LIST / _KEEP_GOING).
+    # CMake hard-reserves the `test` name whenever this build registers ctest
+    # tests, so `test` can only become the orchestrator in a build that isn't
+    # itself running ctest. MCC_LOCAL_CI_AS_TEST=ON turns this into that build:
+    # it drops this build's own test suite (the orchestrator drives fresh
+    # per-preset builds that keep theirs) and binds the orchestrator to `test`,
+    # so `ninja test` runs the whole matrix. The `local-ci` preset sets it. When
+    # OFF (default) the orchestrator is the `ci-local` target and plain ctest is
+    # untouched — CI and every normal build behave exactly as before.
+    option(MCC_LOCAL_CI_AS_TEST
+        "Make `test` run the full local-CI matrix (disables this build's own ctest suite; see the `local-ci` preset)." OFF)
+    if(MCC_LOCAL_CI_AS_TEST)
+        # Transient (non-cache) override: shadows the cached MCC_BUILD_TESTS for
+        # the rest of this configure so the ctest suite below is skipped and the
+        # reserved `test` name is free — without persisting OFF into the cache
+        # (flipping MCC_LOCAL_CI_AS_TEST back would otherwise leave tests dead).
+        set(MCC_BUILD_TESTS OFF)
+        set(_local_ci_name test)
+    else()
+        set(_local_ci_name ci-local)
+    endif()
+    add_custom_target(${_local_ci_name}
+        COMMAND "${CMAKE_COMMAND}"
+            "-DCI_TOOL=$<TARGET_FILE:ci>"
+            "-DSRCDIR=${CMAKE_SOURCE_DIR}"
+            "-DDIST_VERSION=${MCC_DIST_VERSION}"
+            "-DDIST_DIR=${MCC_DIST_DIR}"
+            "-DHOST_CPU=${MCC_CPU}"
+            -P "${CMAKE_SOURCE_DIR}/cmake/ci-local.cmake"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        USES_TERMINAL VERBATIM
+        COMMENT "Local CI: probe host + run every applicable CI/release preset")
+    add_dependencies(${_local_ci_name} ci)
 endif()
 
 if(MCC_BUILD_TESTS)

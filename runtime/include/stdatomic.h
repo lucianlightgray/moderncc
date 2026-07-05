@@ -175,7 +175,11 @@ extern void atomic_thread_fence(memory_order);
 extern void atomic_signal_fence(memory_order);
 #define __atomic_signal_fence(order) atomic_signal_fence(order)
 #define atomic_signal_fence(order) __atomic_signal_fence(order)
-extern bool __atomic_is_lock_free(size_t size, void *ptr);
+/* Match the real gcc/clang builtin (and mcc's own impl in stdatomic.c): a plain
+ * `void *` pointee conflicts with Clang's builtin prototype ("conflicting types
+ * for '__atomic_is_lock_free'") when a host clang compiles a TU that includes
+ * this header (e.g. the bounds-check runtime). */
+extern bool __atomic_is_lock_free(size_t size, const volatile void *ptr);
 #define atomic_is_lock_free(OBJ) __atomic_is_lock_free(sizeof(*(OBJ)), (OBJ))
 
 extern bool atomic_flag_test_and_set(volatile atomic_flag *object);

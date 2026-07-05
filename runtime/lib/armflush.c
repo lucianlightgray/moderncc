@@ -40,7 +40,15 @@ void __clear_cache(void *beginning, void *end) {
 
 #elif defined __aarch64__
 void __clear_cache(void *beg, void *end) {
+#ifdef __MCC__
+	/* mcc intrinsic (TOK___arm64_clear_cache): emits the inline cache-flush. */
 	__arm64_clear_cache(beg, end);
+#else
+	/* Host cc builds the native runtime for the embed/host-cc path; gcc and
+	 * clang provide the cache-flush as a builtin (there is no __arm64_clear_cache
+	 * symbol outside mcc). */
+	__builtin___clear_cache(beg, end);
+#endif
 }
 
 #endif
