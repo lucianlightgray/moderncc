@@ -128,7 +128,7 @@ skipping the whole test. 106 unique skipped tests observed across the 4 macOS jo
     (tagged `elf`), `assemble_dot_s_file` (x86 `.s`), `leading_underscore`
     (ELF-specific flag semantics; Mach-O leads with `_` by default).
 
-- [~] **preprocess 3-way cases — 2-way fallback landed (2026-07-05).**
+- [x] **preprocess 3-way cases — RESOLVED (2026-07-05).**
   `suite_preprocess` (tools/mccharness.c) required a gcc==clang *consensus* before
   checking mcc, so cases where the references diverge (brew gcc-16 vs Apple clang on
   Darwin) were dropped. Added a 2-way fallback: when gcc≠clang, mcc PASSES if it
@@ -138,10 +138,17 @@ skipping the whole test. 106 unique skipped tests observed across the 4 macOS jo
   `directives_in_args`, `variadic/gnu_comma_paste`) SKIP→PASS.
   - [x] `preprocess/conditional/directives_in_args`
   - [x] `preprocess/variadic/gnu_comma_paste`
-  - [ ] `preprocess/expansion/standard_example` — mcc's macro expansion matches
-    *neither* gcc-16 nor Apple clang here; correctly stays a SKIP (a genuine
-    impl-defined 3-way divergence, not a harness gap). Revisit as a conformance
-    question in `docs/C9911.md`, not a skip-audit item.
+  - [x] `preprocess/expansion/standard_example` — **CONFIRMED mcc-CORRECT, not a gap
+    (2026-07-05).** This is the canonical C standard §6.10.3.4 macro-expansion
+    example. Diffing all three: the *only* difference is one cosmetic space — mcc
+    emits `f(2 * (2+(3,4)-0,1))`, while gcc-16 **and** clang emit `2 +(3,4)` (a space
+    after the object-like `x`→`2` expansion). **mcc matches the C standard's own
+    printed example** (`2+`, no space); gcc/clang add impl-defined whitespace around
+    the expansion. Inter-token whitespace in `-E` output is impl-defined (§6.10p1),
+    so all three are conforming — and mcc is if anything the closest to the standard
+    text. The harness correctly SKIPs (verified `FAIL=0`); changing mcc to match
+    gcc/clang would diverge it from the standard and risk the other preprocess
+    goldens. No action.
 
 - [x] **standalone / cross-target tests — AUDITED (2026-07-05).** Each confirmed
   either correctly gated or already covered elsewhere:
