@@ -11,65 +11,34 @@ _From CI run [28741671440](https://github.com/lucianlightgray/moderncc/actions/r
 macos×4, msvc×2, mingw, qemu×10, dist×9). These are the warnings / skips / matrix
 open questions that green run left standing._
 
-- [ ] **CI: Node.js 20 deprecation (all 10 qemu jobs).** The run's only annotations
-  are 10 identical warnings: `actions/cache@v4` targets Node.js 20 and is being
-  force-run on Node.js 24 (GitHub is
-  [removing Node 20](https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/)).
-  Bump `actions/cache` (and audit any other `@v*` actions still on Node 20) to a
-  Node-24-native release before the forced fallback is withdrawn.
-
-- [ ] **bench: CPU model unresolved on aarch64 Linux.** The benchmark "System"
-  block prints `cpu : ?` on both `dist-linux-gcc-arm64` and `dist-linux-clang-arm64`,
-  while every other target (x86_64 Linux `AMD EPYC`, Windows-arm64 `Cobalt 100`,
-  macOS `Apple M1`) resolves correctly. The host probe in the benchmark tool
-  doesn't parse arm64 `/proc/cpuinfo` (no `model name` field there). Add an
-  aarch64 fallback (`CPU implementer`/`CPU part`, or `/sys/.../midr_el1`).
-
-- [ ] **bench: "no JUnit file bench-tests.xml" in 12/16 benchmark jobs.** Every
-  msvc / mingw / windows-dist / macos-dist / linux-dist benchmark report ends with
-  `Test results: (no JUnit file at .../bench-tests.xml)`; only the 4 native macOS
-  jobs populate it. Either wire the benchmark ctest invocation to emit
-  `--output-junit bench-tests.xml` so the "Test results" section is real on those
-  jobs, or drop the dead lookup from the report so it stops implying a missing file.
-
-- [ ] **test: `mcctest` / `mcctest-bcheck` skipped when the host cc is invoked as
-  `gcc` on macOS.** `macos-gcc` and `macos-cross-gcc` SKIP both; `macos-clang` /
-  `macos-cross-clang` PASS them — the only coverage delta between the two host
-  compilers (clang 707 pass / gcc 705 pass). On macOS "gcc" *is* Apple clang, so
-  the gate that skips the bounds-checker under a gcc host leaves it unexercised on
-  that runner for no real reason. Confirm intended, else loosen the gate so the
-  bcheck suite runs regardless of the host-compiler alias on Darwin.
-
-- [ ] **CI coverage: native linux jobs surface no test/benchmark summary — enable it.**
-  In the run page only macos/msvc/mingw/dist jobs emit a ctest table and benchmark
-  report; the 18-job linux matrix contributes neither, so its skips/timings are
-  invisible on the run summary (this report can only confirm linux is green, not
-  *what* it ran). Investigate why the linux jobs don't attach the job-summary,
-  then enable/implement the same ctest-table + benchmark job-summary the macOS
-  jobs produce (`--output-junit`, benchmark report step) for every linux matrix cell.
-
-- [ ] **CI coverage: qemu jobs surface no test/benchmark summary — enable it.**
-  Same as above for the 10 qemu jobs (x86_64/i386/arm/arm64/riscv64 × glibc/musl):
-  they contribute neither a ctest table nor a benchmark report to the run summary,
-  so per-arch skips and cross-run regressions are invisible here. Investigate
-  whether the benchmark tool even runs under qemu-user (timing under emulation is
-  noisy — decide correctness-only vs. timed), then enable/implement a qemu
-  job-summary: at minimum the ctest PASS/SKIP table, and a benchmark report if
-  emulated timings are meaningful enough to track.
-
 ### macho-* on native macOS
 
-- [ ] **Investigate how much of the `macho-*` suite can run natively on macOS.**
-  The four `macho-apple-libc`, `macho-codegen-run`, `macho-image-run`,
-  `macho-structural` tests SKIP on the native macos-arm64 jobs — today they are the
-  *Linux-hosted* Darwin cross-codegen tests (mcc emits Mach-O on Linux, validated
-  without a real Apple linker/loader; see the Mach-O real-Apple-libc harness). On a
-  genuine macOS runner far more is available: the real `ld`, `dyld`, and system
-  libSystem. Determine, per test, how much can execute end-to-end natively
-  (structural checks → link → run) instead of skipping, and use **`mcchost`** as the
-  Linux↔macOS bridge/abstraction so the same test body runs the emulated Mach-O
-  path on Linux and the native path on macOS. Goal: the macos jobs stop skipping
-  the Mach-O suite outright and cover whatever the native toolchain makes runnable.
+- [~] **`macho-*` native macOS — partially enabled (2026-07-05).**
+  Root cause found and fixed for the structural test: the four tests gated on
+  `EXISTS "${MCC_CROSS_DIR}/mcc-x86_64-osx"`, a **configure-time** file check that is
+  always false during a self-contained `MCC_ENABLE_CROSS` build (the cross compiler
+  is built later, by that same build). Changed the gate to accept the in-tree
+  `TARGET mcc-x86_64-osx` too — **scoped to Darwin** (`_have_osx_cross` in
+  CMakeLists.txt) so Linux/`cross` behaviour is left exactly as before (the
+  exec-based macho harnesses run x86_64 code via a custom loader and I could not
+  verify them on an x86_64-Linux runner from this host). On the `macos-cross` jobs
+  (which build `mcc-x86_64-osx` in `all`) the tests are now registered instead of
+  dropped at configure.
+  - **`macho-structural` now RUNS natively on macos-cross** (verified: PASS on
+    macos-arm64) — it is structural-only (parses the emitted Mach-O with `objcheck`,
+    host-independent), so no x86_64 execution is needed.
+  - **`macho-codegen-run` / `macho-image-run` / `macho-apple-libc` still SKIP**, now
+    at runtime with `SKIP: host is not x86_64`: each *executes* the emitted
+    **x86_64** Mach-O and is hard-gated by `host_is_x86_64()` (compile-time
+    `__x86_64__`) in `tools/mccharness.c`. On the Apple-Silicon `macos` runners
+    (arm64, Rosetta not installed on the non-dist jobs) this is correct. Remaining
+    work to cover them natively: either (a) install Rosetta 2 on the macos-cross
+    jobs and relax `host_is_x86_64()` to a runtime "can we exec an x86_64 Mach-O"
+    probe, or (b) add native **arm64-osx** variants (`mcc-arm64-osx` +
+    `--arch arm64`) so the run path exercises the native slice with no emulation.
+    The plain (non-cross) `macos` jobs still cover native Mach-O end-to-end via the
+    unconditional `macho-conformance-native` + `macho-stack-protector` +
+    `macho-universal` tests (all PASS).
 
 ## CI skip-validation audit (2026-07-05, run 28741671440)
 
@@ -104,17 +73,22 @@ skipping the whole test. 106 unique skipped tests observed across the 4 macOS jo
   - [ ] `diff3/scopes`  - [ ] `diff3/struct_init`  - [ ] `diff3/ternary_op`
   - [ ] `diff3/types`  - [ ] `diff3/weak_undef`  - [ ] `diff3/winarm64_interlocked`
 
-- [ ] **exec suite — per-test runner gates (arch-specific asm, backtrace config, x86 ABI).**
-  These are the `exec/` cases skipped on macos-arm64. Some are legitimately
-  arch/feature-specific (`riscv_asm`, `winarm64_interlocked`, `asm_constraints_x86`,
-  `al_ax_extend`/`fastcall` = x86 ABI); others (`inline`, `alias`, `array_assignment`,
-  `backtrace`, `btdll`) may only need a config knob (e.g. `MCC_CONFIG_BACKTRACE`) or
-  may be runnable on Darwin/arm64 as-is. Verify each gate; enable where a subset runs:
-  - [ ] `exec/al_ax_extend`  - [ ] `exec/alias`  - [ ] `exec/array_assignment`
-  - [ ] `exec/asm_constraints_x86`  - [ ] `exec/asm_data_directives`  - [ ] `exec/asm_goto`
-  - [ ] `exec/asm_lvalue_cast`  - [ ] `exec/asm_operand_modifiers`  - [ ] `exec/asm_sections`
-  - [ ] `exec/backtrace`  - [ ] `exec/btdll`  - [ ] `exec/fastcall`  - [ ] `exec/inline`
-  - [ ] `exec/riscv_asm`  - [ ] `exec/winarm64_interlocked`
+- [x] **exec suite — per-test runner gates: CONFIRMED INTENDED (2026-07-05).**
+  Audited every `exec/` case that SKIPs on macos-arm64 against the golden `flags`
+  field in `tests/exec/goldens.h` and the gate in `tests/exec/runner.c`. All are
+  correctly gated, none is a macOS-specific miss:
+  - Arch/ISA-specific inline asm — `flags` carries `cpu=x86` / `cpu=x86_64` /
+    `cpu=i386` / `cpu=riscv64` / `cpu=arm64,os=WIN32`: `asm_goto`, `asm_lvalue_cast`,
+    `asm_operand_modifiers`, `asm_constraints_x86`, `al_ax_extend`, `fastcall`,
+    `riscv_asm`, `winarm64_interlocked`. Cannot run on Darwin/arm64 by construction.
+  - ELF-only GAS features — `flags` carries `asm,elf`: `asm_data_directives`,
+    `asm_sections` (Mach-O has no equivalent for those `.section`/data directives).
+  - Reference-harness placeholder goldens — `flags` carries `note:…`, which the
+    runner skips on **every** platform (they also SKIP on x86_64 Linux):
+    `inline` (multi-unit symbol-export harness), `alias` (multi-unit alias harness),
+    `backtrace`/`btdll` (backtrace reference harness), `array_assignment` (xfail
+    whole-array assignment). Not a Darwin gap — they need a reference harness that
+    does not exist on any target yet.
 
 - [ ] **cli suite — gated by `cli-suite "structural readelf/nm suite runs on native host only"` / ELF-isms.**
   Many are genuinely ELF/Linux-only (`shared_dyn_soname`, `rpath_new_dtags_runpath`,
@@ -128,6 +102,16 @@ skipping the whole test. 106 unique skipped tests observed across the 4 macOS jo
   `dash_S_emits_assembly`, `common_symbol_merge`, `weak_override_multi_tu`,
   `atomic_*`, `nostdinc_drops_system`. Validate each; port the format-agnostic ones
   to run on Darwin:
+  - _Port mechanism (2026-07-05):_ each case in `tests/cli/cases.h` skips via its
+    requirement string (`"cpu=x86_64,os=linux"` → `os_eq(os,"linux")` in
+    `tests/cli/runner.c`). A port is **two** edits per case, not one: (1) loosen the
+    requirement (drop `os=linux`/`cpu=x86_64` where truly format-agnostic), **and**
+    (2) make the `expect` shell pipeline target-adaptive — today they grep for ELF/
+    x86_64 literals (e.g. `dumpmachine` greps `x86_64`; the readelf/nm probes assume
+    ELF). The runner already exports `MCC_TEST_CPU`/`MCC_TEST_OS`, so pipelines can
+    branch on those and use `otool`/`nm` on Darwin. This must not regress x86_64
+    Linux, so each ported case needs both a Mach-O/arm64 and an ELF/x86_64
+    expectation — do it per-case with local `macos` + a Linux/Docker cross-check.
   - [ ] `cli/assemble_dot_s_file`  - [ ] `cli/atomic_inlang_aggregate`
   - [ ] `cli/atomic_rmw_unsupported`  - [ ] `cli/builtin_nan_inf_const`
   - [ ] `cli/builtin_signbit_no_trap`  - [ ] `cli/common_symbol_merge`
@@ -159,7 +143,14 @@ skipping the whole test. 106 unique skipped tests observed across the 4 macOS jo
   - [ ] `asm-c-connect-test`  - [ ] `asm-gas-directives`  - [ ] `compile.win32` (PE — x-target)
   - [ ] `dash-s-bytes-arm64`  - [ ] `dash-s-bytes-riscv64`  - [ ] `dash-s-roundtrip`
   - [ ] `i386-fastcall-abi` (x86-only)  - [ ] `pe-native-conformance`  - [ ] `pe-wine-conformance`
-  - [ ] `mcctest` / `mcctest-bcheck` — see the macos-gcc host-cc item above.
+  - [x] `mcctest` / `mcctest-bcheck` — **CONFIRMED INTENDED (2026-07-05).** The
+    macos-gcc / macos-cross-gcc jobs resolve `CC` to a real Homebrew **GNU gcc**
+    (not Apple clang — the job does `gcc-<N>` off `brew --prefix`), and the
+    `mcctest` differential compares mcc byte-for-byte against that reference.
+    `CMakeLists.txt` skips it on Darwin because a GNU gcc reference diverges from
+    mcc (which matches the Apple/clang ABI + impl-defined choices) on
+    impl-defined / UB corners; the Apple-clang `mcctest` (macos-clang jobs) plus
+    the diff3-suite already cover that surface. Decision, not a gap.
 
 - [ ] **Larger-input lexer benchmarking.** Re-run the idea #1–#4 style per-token
   lexer micro-optimization experiments against the amalgamation TU
@@ -172,6 +163,20 @@ skipping the whole test. 106 unique skipped tests observed across the 4 macOS jo
   those — e.g. hash-table load factor / chain length (`TOK_HASH_SIZE`) or the
   per-char `TOK_HASH_FUNC` cost. Riskier than the applied micro-optimizations, and
   wants a bigger benchmark to see signal.
+
+Resolved 2026-07-05 (run 28741671440 follow-ups): **CI Node.js 20 deprecation**
+(`actions/cache@v4` → `@v5`, Node-24 native; every other action already on
+checkout@v5 / artifact@v7); **bench aarch64 CPU model** (`decode_arm_midr` in
+`tools/bench.c` maps `/proc/cpuinfo` `CPU implementer`+`CPU part` → friendly name,
+e.g. `ARM Neoverse-N1`, with vendor/hex fallback); **bench dead JUnit lookup**
+(`write_tests` now emits nothing when no XML is present instead of the misleading
+"no JUnit file at …" line); **linux + qemu job summaries** (new
+`ci junit-summary <xml>` verb renders a PASS/FAIL/SKIP markdown table into
+`$GITHUB_STEP_SUMMARY`; `ci run-preset`/`ci qemu` now pass `--output-junit` so the
+18-cell linux matrix and 10 qemu cells surface their ctest results — benchmark
+report intentionally omitted under qemu-user, where emulated timings are noise);
+**exec-suite skip audit** and **macos-gcc `mcctest` skip** confirmed intended
+(above).
 
 Resolved 2026-07-04: arm64 atomics/bounds/complex link
 failures (outline-atomics + `__unordtf2`), Rosetta x86_64 macOS (validated

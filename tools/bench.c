@@ -369,10 +369,10 @@ static void attr(char *dst, int n, const char *p, const char *lim,
 static void write_tests(FILE *f, const char *junit) {
 	char *x = ts_read_file(junit, NULL), *p;
 	int total = 0, fail = 0, skip = 0;
-	if (!x) {
-		fprintf(f, "\nTest results: (no JUnit file at %s)\n", junit);
+	if (!x)
+		/* No JUnit XML present: this job didn't run ctest (mingw/dist only
+		 * build + bench). Emit nothing rather than implying a missing file. */
 		return;
-	}
 	fprintf(f, "\nTest results (%s)\n", junit);
 	fprintf(f, "  %-7s %-48s %8s\n", "status", "name", "time(s)");
 	for (p = x; (p = strstr(p, "<testcase")); ) {
@@ -504,6 +504,50 @@ static int file_has(const char *path, const char *needle, char *found, int fn) {
 	free(t);
 	return hit;
 }
+
+/* aarch64 /proc/cpuinfo has no "model name"; it exposes the MIDR fields
+ * "CPU implementer" and "CPU part" (hex). Decode the common (implementer,part)
+ * pairs into a friendly name; fall back to "<vendor> part 0x###" so the bench
+ * "System" block prints something better than "?" on arm64 Linux. */
+static int decode_arm_midr(const char *ci, char *out, int n) {
+	static const struct { unsigned impl, part; const char *name; } P[] = {
+		{0x41, 0xd03, "ARM Cortex-A53"},   {0x41, 0xd05, "ARM Cortex-A55"},
+		{0x41, 0xd07, "ARM Cortex-A57"},   {0x41, 0xd08, "ARM Cortex-A72"},
+		{0x41, 0xd09, "ARM Cortex-A73"},   {0x41, 0xd0a, "ARM Cortex-A75"},
+		{0x41, 0xd0b, "ARM Cortex-A76"},   {0x41, 0xd0c, "ARM Neoverse-N1"},
+		{0x41, 0xd40, "ARM Neoverse-V1"},  {0x41, 0xd49, "ARM Neoverse-N2"},
+		{0x41, 0xd4f, "ARM Neoverse-V2"},  {0x41, 0xd46, "ARM Cortex-A510"},
+		{0x41, 0xd47, "ARM Cortex-A710"},  {0x41, 0xd4d, "ARM Cortex-A715"},
+		{0xc0, 0xac3, "Ampere-1"},         {0xc0, 0xac4, "Ampere-1a"},
+		{0x48, 0xd01, "HiSilicon TSV110"}, {0x51, 0x800, "Qualcomm Falkor"},
+		{0x4e, 0x004, "NVIDIA Carmel"},    {0x61, 0x000, "Apple"},
+		{0, 0, 0}};
+	static const struct { unsigned impl; const char *vendor; } V[] = {
+		{0x41, "ARM"}, {0x42, "Broadcom"}, {0x43, "Cavium"}, {0x48, "HiSilicon"},
+		{0x4e, "NVIDIA"}, {0x50, "APM"}, {0x51, "Qualcomm"}, {0x53, "Samsung"},
+		{0x61, "Apple"}, {0xc0, "Ampere"}, {0, 0}};
+	char v[64];
+	unsigned impl, part;
+	int k;
+	if (!proc_field(ci, "CPU implementer", v, sizeof v))
+		return 0;
+	impl = (unsigned)strtoul(v, NULL, 0);
+	if (!proc_field(ci, "CPU part", v, sizeof v))
+		return 0;
+	part = (unsigned)strtoul(v, NULL, 0);
+	for (k = 0; P[k].name; k++)
+		if (P[k].impl == impl && P[k].part == part) {
+			snprintf(out, n, "%s", P[k].name);
+			return 1;
+		}
+	for (k = 0; V[k].vendor; k++)
+		if (V[k].impl == impl) {
+			snprintf(out, n, "%s part 0x%x", V[k].vendor, part);
+			return 1;
+		}
+	snprintf(out, n, "aarch64 impl 0x%x part 0x%x", impl, part);
+	return 1;
+}
 #endif
 
 static void fill_hostinfo(struct hostinfo *h) {
@@ -524,7 +568,8 @@ static void fill_hostinfo(struct hostinfo *h) {
 		if (ci) {
 			if (proc_field(ci, "model name", v, sizeof v) ||
 				proc_field(ci, "Model", v, sizeof v) ||
-				proc_field(ci, "Hardware", v, sizeof v))
+				proc_field(ci, "Hardware", v, sizeof v) ||
+				decode_arm_midr(ci, v, sizeof v))
 				snprintf(h->cpu_model, sizeof h->cpu_model, "%s", v);
 			if (proc_field(ci, "cpu MHz", v, sizeof v))
 				h->cpu_mhz = atof(v);

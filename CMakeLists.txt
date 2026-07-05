@@ -3379,6 +3379,20 @@ if(MCC_BUILD_TESTS)
     endif()
     set(MCC_CROSS_DIR "${_mcc_cross_default}"
         CACHE PATH "cross-compiler build dir for the wine PE runtime test")
+
+    # The macho-* structural/codegen tests consume the x86_64-osx cross compiler.
+    # A pre-built external cross tree is found by EXISTS; but in a self-contained
+    # MCC_ENABLE_CROSS build the compiler is a `all` TARGET not yet on disk at
+    # configure time, so EXISTS is spuriously false. Accept the in-tree target too
+    # -- scoped to Darwin, where `macho-structural` runs natively (structural only,
+    # host-independent). The exec-based macho harnesses still self-skip off-x86_64
+    # via host_is_x86_64(); Linux behaviour is left exactly as before (EXISTS only).
+    set(_have_osx_cross FALSE)
+    if(EXISTS "${MCC_CROSS_DIR}/mcc-x86_64-osx")
+        set(_have_osx_cross TRUE)
+    elseif(TARGET mcc-x86_64-osx AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+        set(_have_osx_cross TRUE)
+    endif()
     if(MCC_WINE AND EXISTS "${MCC_CROSS_DIR}/mcc-x86_64-win32")
         add_test(NAME pe-wine-conformance
             COMMAND "$<TARGET_FILE:mccharness>" pewine
@@ -3406,7 +3420,7 @@ if(MCC_BUILD_TESTS)
             "native PE runtime conformance (only on a native WIN32 host)")
     endif()
 
-    if(EXISTS "${MCC_CROSS_DIR}/mcc-x86_64-osx")
+    if(_have_osx_cross)
         add_test(NAME macho-structural
             COMMAND "$<TARGET_FILE:mccharness>" machostructural
                     --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"
@@ -3419,7 +3433,7 @@ if(MCC_BUILD_TESTS)
             "requires the osx cross compilers (cmake --preset cross)")
     endif()
 
-    if(EXISTS "${MCC_CROSS_DIR}/mcc-x86_64-osx")
+    if(_have_osx_cross)
         add_test(NAME macho-codegen-run
             COMMAND "$<TARGET_FILE:mccharness>" machocodegen
                     --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"
@@ -3431,7 +3445,7 @@ if(MCC_BUILD_TESTS)
             "requires the x86_64-osx cross compiler (cmake --preset cross)")
     endif()
 
-    if(EXISTS "${MCC_CROSS_DIR}/mcc-x86_64-osx")
+    if(_have_osx_cross)
         add_test(NAME macho-image-run
             COMMAND "$<TARGET_FILE:mccharness>" machoimage
                     --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"
@@ -3444,7 +3458,7 @@ if(MCC_BUILD_TESTS)
             "requires the x86_64-osx cross compiler (cmake --preset cross)")
     endif()
 
-    if(EXISTS "${MCC_CROSS_DIR}/mcc-x86_64-osx")
+    if(_have_osx_cross)
         add_test(NAME macho-apple-libc
             COMMAND "$<TARGET_FILE:mccharness>" machoapplelibc
                     --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"

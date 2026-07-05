@@ -153,6 +153,7 @@ static int do_run_preset(int argc, char **argv) {
 
 	if (!no_test) {
 		Argv v = {{0}, 0};
+		char junit[4096];
 		ts_arg(&v, "ctest");
 		ts_arg(&v, "--preset");
 		ts_arg(&v, preset);
@@ -161,6 +162,11 @@ static int do_run_preset(int argc, char **argv) {
 			ts_arg(&v, "--build-config");
 			ts_arg(&v, config);
 		}
+		/* Emit a JUnit XML so the workflow can render a job-summary table
+		   (ci junit-summary) the same way the macOS/msvc jobs do. */
+		snprintf(junit, sizeof junit, "--output-junit=cmake-%s/ctest-junit.xml",
+		         preset);
+		ts_arg(&v, junit);
 		for (i = extra_start; i < argc; i++)
 			ts_arg(&v, argv[i]);
 		printf("==> testing (preset=%s)\n", preset);
@@ -278,9 +284,12 @@ static int do_qemu(int argc, char **argv) {
 	qemu_fixup_multilib((dldir && *dldir) ? dldir : "vendor");
 	{
 		Argv v = {{0}, 0};
+		char junit[4096];
 		ts_arg(&v, "ctest");
 		ts_arg(&v, "--preset");
 		ts_arg(&v, preset);
+		snprintf(junit, sizeof junit, "--output-junit=%s/ctest-junit.xml", build);
+		ts_arg(&v, junit);
 		for (i = 0; i < argc; i++)
 			ts_arg(&v, argv[i]);
 		printf("==> running qemu matrix (preset=%s)\n", preset);
@@ -1135,6 +1144,93 @@ static int do_pkg(int argc, char **argv) {
 	return 0;
 }
 
+/* Render a ctest JUnit XML into a GitHub-flavoured markdown job summary on
+   stdout (the caller redirects into $GITHUB_STEP_SUMMARY). Self-contained so
+   the linux/qemu jobs -- which only build this `ci` tool, not mccbench -- can
+   surface a PASS/FAIL/SKIP table the same way the macOS/msvc jobs do. */
+static void js_attr(char *out, int n, const char *p, const char *end,
+                    const char *key) {
+	const char *a = p, *kl = 0;
+	size_t klen = strlen(key);
+	out[0] = 0;
+	while (a && a < end && (a = strstr(a, key)) && a < end) {
+		kl = a + klen;
+		break;
+	}
+	if (!kl || kl >= end)
+		return;
+	{
+		const char *q = strchr(kl, '"');
+		if (q && q < end)
+			snprintf(out, n, "%.*s", (int)(q - kl), kl);
+	}
+}
+
+static int do_junit_summary(int argc, char **argv) {
+	const char *xml = argc > 0 ? argv[0] : NULL;
+	const char *title = argc > 1 ? argv[1] : "tests";
+	char *x, *p;
+	int total = 0, fail = 0, skip = 0;
+	char fails[8192] = "", skips[16384] = "";
+	if (!xml) {
+		fprintf(stderr, "usage: ci junit-summary <xml> [title]\n");
+		return 2;
+	}
+	x = ts_read_file(xml, NULL);
+	if (!x) {
+		/* No JUnit written (e.g. the job ran no ctest): emit nothing. */
+		return 0;
+	}
+	for (p = x; (p = strstr(p, "<testcase")); ) {
+		const char *gt = strchr(p, '>');
+		const char *tagend, *extent;
+		char name[256] = "?", st[32] = "";
+		int skipped, failed;
+		if (!gt)
+			break;
+		tagend = gt + 1;
+		if (gt > p && gt[-1] == '/')
+			extent = tagend;
+		else {
+			const char *c = strstr(tagend, "</testcase>");
+			extent = c ? c + 11 : x + strlen(x);
+		}
+		js_attr(name, sizeof name, p, gt, "name=\"");
+		js_attr(st, sizeof st, p, gt, "status=\"");
+		skipped = (strstr(tagend, "<skipped") &&
+		           strstr(tagend, "<skipped") < extent) || !strcmp(st, "notrun");
+		failed = (strstr(tagend, "<failure") &&
+		          strstr(tagend, "<failure") < extent) || !strcmp(st, "fail");
+		total++;
+		if (skipped) {
+			skip++;
+			if (strlen(skips) + strlen(name) + 8 < sizeof skips) {
+				strncat(skips, "`", sizeof skips - strlen(skips) - 1);
+				strncat(skips, name, sizeof skips - strlen(skips) - 1);
+				strncat(skips, "` ", sizeof skips - strlen(skips) - 1);
+			}
+		} else if (failed) {
+			fail++;
+			if (strlen(fails) + strlen(name) + 8 < sizeof fails) {
+				strncat(fails, "`", sizeof fails - strlen(fails) - 1);
+				strncat(fails, name, sizeof fails - strlen(fails) - 1);
+				strncat(fails, "` ", sizeof fails - strlen(fails) - 1);
+			}
+		}
+		p = (char *)extent;
+	}
+	printf("### tests — %s\n\n", title);
+	printf("**%d tests · %d passed · %d failed · %d skipped**\n\n",
+	       total, total - fail - skip, fail, skip);
+	if (fail)
+		printf("Failed: %s\n\n", fails);
+	if (skip)
+		printf("<details><summary>%d skipped</summary>\n\n%s\n\n</details>\n\n",
+		       skip, skips);
+	free(x);
+	return 0;
+}
+
 int main(int argc, char **argv) {
 	if (argc < 2) {
 		fprintf(stderr, "usage: ci <stage|run-preset|qemu|local|dist|matrix|pkg|sha256sums> ...\n");
@@ -1156,6 +1252,8 @@ int main(int argc, char **argv) {
 		return do_pkg(argc - 2, argv + 2);
 	if (!strcmp(argv[1], "sha256sums"))
 		return do_sha256sums(argc - 2, argv + 2);
+	if (!strcmp(argv[1], "junit-summary"))
+		return do_junit_summary(argc - 2, argv + 2);
 	fprintf(stderr, "ci: unknown verb '%s'\n", argv[1]);
 	return 2;
 }

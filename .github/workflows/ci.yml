@@ -52,6 +52,11 @@ jobs:
           cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl
           mkdir -p "dist/$ART"
           /tmp/mcc-ci run-preset ${{ matrix.preset }} --out "dist/$ART"
+      - name: test summary
+        if: always()
+        run: |
+          /tmp/mcc-ci junit-summary "cmake-${{ matrix.preset }}/ctest-junit.xml" \
+            "${{ matrix.preset }} / ${{ matrix.arch }}" >> "$GITHUB_STEP_SUMMARY" || true
       - name: pack build targets
         run: tar cJf "$ART.tar.xz" -C dist "$ART"
       - uses: actions/upload-artifact@v7
@@ -210,7 +215,7 @@ jobs:
             build-essential cmake ninja-build make git ca-certificates curl \
             qemu-user qemu-user-static tar xz-utils bzip2 rsync clang lld
       - name: cache stage3 sysroot
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: vendor/gentoo-stage3-*
           key: gentoo-stage3-${{ matrix.arch }}-${{ matrix.libc }}
@@ -221,6 +226,11 @@ jobs:
         run: |
           cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl
           /tmp/mcc-ci qemu
+      - name: test summary
+        if: always()
+        run: |
+          /tmp/mcc-ci junit-summary "cmake-qemu-${{ matrix.arch }}/ctest-junit.xml" \
+            "qemu / ${{ matrix.arch }} / ${{ matrix.libc }}" >> "$GITHUB_STEP_SUMMARY" || true
 
   dist-matrix:
     runs-on: ubuntu-latest
