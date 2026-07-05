@@ -134,6 +134,19 @@ jobs:
         run: cmake --preset msvc "-DCMAKE_INSTALL_PREFIX=$($PWD.Path.Replace('\','/'))/dist/${env:ART}" "-DMCC_BENCH=ON" "-DMCC_DIST_PLAT=${env:ART}"
       - name: build
         run: cmake --build --preset msvc -j
+      - name: dump native tls.s (arm64 __thread codegen diagnostic)
+        continue-on-error: true
+        run: |
+          $mcc = (Get-ChildItem -Recurse -Filter mcc.exe cmake-msvc | Select-Object -First 1).FullName
+          Write-Host "mcc: $mcc"
+          & $mcc -Bcmake-msvc -fno-diagnostics-show-caret -Iruntime/include -Itests/support -pthread -S tests/exec/features_c99_c11/tls.c -o "tls-native-${env:ART}.s"
+          Write-Host "===== tls-native-${env:ART}.s ====="
+          Get-Content "tls-native-${env:ART}.s"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: tls-native-${{ matrix.arch }}
+          path: tls-native-*.s
       - name: test
         # --timeout caps any single test: a hung test (e.g. a thread-contention
         # deadlock that only manifests on real arm64 silicon) is killed and named
