@@ -11,6 +11,31 @@ _From CI run [28741671440](https://github.com/lucianlightgray/moderncc/actions/r
 macos×4, msvc×2, mingw, qemu×10, dist×9). These are the warnings / skips / matrix
 open questions that green run left standing._
 
+### exec/tls — MSVC arm64 backend miscompiles mcc (known issue)
+
+- [ ] **`exec/tls` skipped on arm64+WIN32 (`skipon=arm64/WIN32`, 2026-07-05).**
+  On the `msvc / arm64` runner, `exec/tls` intermittently hung (ctest 63 min,
+  manual cancel). Root cause is **not** in mcc: **MSVC's arm64 code generator
+  miscompiles mcc itself** on the static-`__thread` emission path. The
+  MSVC-arm64-built `mcc.exe` nondeterministically drops functions when it
+  compiles a `__thread` TU (`tls.c`): some builds/runs lose `main`, others
+  truncate a trampoline → the linked exe hangs. Isolation was exhaustive and
+  conclusive:
+  - mcc's arm64 codegen is **correct** — the same mcc source built by **gcc**
+    (x86_64 *and* arm64 Linux) and by **MSVC-x64 cross-targeting arm64-win32**
+    all emit a byte-identical, deterministic, correct `tls.s` (50×/30× runs).
+  - No mcc source UB: Valgrind clean; `-ftrivial-auto-var-init=pattern` clean.
+  - Only **MSVC's arm64 backend building mcc** fails, and it is build/run
+    nondeterministic (a later CI build was 0/30 corrupt), so it cannot be
+    reproduced or bisected without an arm64 Windows + MSVC box.
+  - `exec/tls` still runs (and passes) on **x86_64 WIN32** and on every gcc/clang
+    arm64 target, so `__thread` codegen stays covered. The `msvc` ctest step also
+    carries `--timeout 300` so any future flaky hang fails fast instead of
+    stalling the job.
+  - _Next:_ re-enable once on an arm64 Windows + MSVC host (or a newer MSVC);
+    then bisect the miscompiled mcc construct and, if it is `/O2`-specific, wrap
+    just that function in `#pragma optimize("",off)`.
+
 ### macho-* on native macOS
 
 - [~] **`macho-*` native macOS — partially enabled (2026-07-05).**

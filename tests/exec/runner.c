@@ -67,6 +67,34 @@ static int req_met(const char *req, char *reason, size_t rn) {
 					snprintf(reason, rn, "not applicable to the %s target", wbuf);
 				return 0;
 			}
+		} else if (!strncmp(tok, "skipon=", 7)) {
+			/* Skip only on an exact cpu/os combination, e.g.
+			   "skipon=arm64/WIN32:reason" -- unlike the require-style gates
+			   above, this excludes one platform while running everywhere else. */
+			const char *spec = tok + 7;
+			const char *slash = strchr(spec, '/');
+			const char *colon = strchr(spec, ':');
+			if (slash) {
+				char wcpu[32], wos[32];
+				const char *oend = colon ? colon : spec + strlen(spec);
+				size_t cl = (size_t)(slash - spec);
+				size_t ol = (size_t)(oend - (slash + 1));
+				if (cl >= sizeof wcpu)
+					cl = sizeof wcpu - 1;
+				if (ol >= sizeof wos)
+					ol = sizeof wos - 1;
+				memcpy(wcpu, spec, cl);
+				wcpu[cl] = 0;
+				memcpy(wos, slash + 1, ol);
+				wos[ol] = 0;
+				if (!strcmp(cpu, wcpu) && !strcmp(os, wos)) {
+					if (colon && colon[1])
+						snprintf(reason, rn, "%s", colon + 1);
+					else
+						snprintf(reason, rn, "not run on %s/%s", wcpu, wos);
+					return 0;
+				}
+			}
 		} else if (!strcmp(tok, "asm")) {
 			if (strcmp(hc_envv("MCC_TEST_ASM", "1"), "1")) {
 				snprintf(reason, rn, "requires integrated assembler (MCC_CONFIG_ASM)");
