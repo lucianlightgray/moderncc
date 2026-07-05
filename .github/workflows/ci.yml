@@ -143,12 +143,19 @@ jobs:
         if: matrix.arch == 'arm64'
         continue-on-error: true
         run: |
+          # A correct arm64-win32 tls.s has exactly 6 `ret` and all four function
+          # labels. The MSVC-arm64 miscompile truncates/drops functions nondet-
+          # erministically (some runs lose main, some lose a trampoline's ret), so
+          # verdict on ret-count + labels, not just "main present".
           function Dump-Tls($mcc, $bdir, $tag) {
             $out = "tls-native-$tag-${env:ART}.s"
             & $mcc "-B$bdir" -fno-diagnostics-show-caret -Iruntime/include -Itests/support -pthread -S tests/exec/features_c99_c11/tls.c -o $out
-            $hasMain = [bool](Select-String -Path $out -Pattern '^main:' -Quiet)
+            $rets = (Select-String -Path $out -Pattern '^\s*ret\s*$').Count
+            $labels = @('__mcc_pthread_trampoline','__mcc_once_tramp','thread_func','main')
+            $missing = @($labels | Where-Object { -not (Select-String -Path $out -Pattern ('^' + [regex]::Escape($_) + ':') -Quiet) })
             $lines = (Get-Content $out | Measure-Object -Line).Lines
-            Write-Host "===== $tag : main present = $hasMain, $lines lines ($mcc) ====="
+            $verdict = if (($rets -eq 6) -and ($missing.Count -eq 0)) { 'CLEAN' } else { 'CORRUPT' }
+            Write-Host "===== $tag : $verdict (ret=$rets/6, missing=[$($missing -join ',')], $lines lines) ($mcc) ====="
             Get-Content $out
           }
           # /O2 baseline (the normal Release build) -- expected corrupt (main dropped)
