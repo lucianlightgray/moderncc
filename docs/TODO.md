@@ -173,17 +173,26 @@ skipping the whole test. 106 unique skipped tests observed across the 4 macOS jo
     impl-defined / UB corners; the Apple-clang `mcctest` (macos-clang jobs) plus
     the diff3-suite already cover that surface. Decision, not a gap.
 
-- [ ] **Larger-input lexer benchmarking.** Re-run the idea #1–#4 style per-token
-  lexer micro-optimization experiments against the amalgamation TU
-  (`mcc-gcc … -E src/mcc.c`) instead of the 416-line `full_language.c`, where a
-  1–2% change sits below the noise floor. `src/mcc.c` gives a ~0.8% floor
-  (σ ≈ 0.5 ms) with 4× the absolute signal (see `docs/PROFILING.md` §4b, §8).
-- [ ] **Attack the hot lexer clusters.** The two genuinely hot instruction
-  clusters in `next_nomacro` are the identifier-interning hash-chain walk and the
-  per-byte hash computation (`docs/PROFILING.md` §5a). A measurable win targets
-  those — e.g. hash-table load factor / chain length (`TOK_HASH_SIZE`) or the
-  per-char `TOK_HASH_FUNC` cost. Riskier than the applied micro-optimizations, and
-  wants a bigger benchmark to see signal.
+- [x] **Larger-input lexer benchmarking + hot-cluster attack — DONE (2026-07-05).**
+  Set up a large-TU lexer benchmark with `hyperfine` (release mcc built by
+  `clang -O2`) on identifier-dense 2 MB / 60k-line TUs — σ ≈ 1.5–2 %, enough signal
+  to separate a small lexer change from noise (the 416-line `full_language.c`
+  couldn't). (The amalgamation `-E src/mcc.c` hit a nested-quoted-include
+  resolution quirk when >2 `-I` dirs are passed on the command line; the synthetic
+  identifier-heavy TU is a cleaner, more direct stress of the §5a intern-hash
+  cluster anyway.)
+  - **Attacked the intern-hash cluster via `TOK_HASH_SIZE` (the §5a lever) and
+    applied it:** raised `TOK_HASH_SIZE` 16384 → 65536 in `src/mcc.h`. Rigorous
+    `hyperfine` A/B: **1.06 ± 0.04× faster** at high load factor (pathological, 60k
+    unique idents) and a consistent **1.03 ± 0.02× faster** at a realistic load
+    factor (3k unique, heavily reused) — statistically significant, with lower σ.
+    Intermediate 32768 gave no realistic-density gain (a threshold effect), so 65536
+    is the right step. The cost is a **fixed** +384 KB hash table (128 KB → 512 KB)
+    that does *not* scale with input, so it leaves mcc's low-RSS profile intact.
+    Correctness is unaffected (65536 is still a power of two for the
+    `h & (TOK_HASH_SIZE-1)` mask); full `macos` suite 811/811 after the change.
+  - `TOK_HASH_FUNC` (per-byte hash cost) left as-is: it is already a cheap
+    shift-add-mix; changing it risks worse distribution for no measured gain.
 
 Resolved 2026-07-05 (run 28741671440 follow-ups): **CI Node.js 20 deprecation**
 (`actions/cache@v4` → `@v5`, Node-24 native; every other action already on

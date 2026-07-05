@@ -254,7 +254,7 @@
 #define STDC_ON 1
 #define STDC_OFF 2
 
-#define TOK_HASH_SIZE 16384
+#define TOK_HASH_SIZE 65536
 #define TOK_ALLOC_INCR 512
 #define TOK_MAX_SIZE 4
 

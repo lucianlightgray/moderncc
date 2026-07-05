@@ -412,8 +412,15 @@ ctest --preset debug -R 'integer|float|hex|literal|suffix|asm|imaginary|complex'
 - The two genuinely hot instruction clusters are the **identifier interning hash
   chain walk** and the **per-byte hash computation** — not whitespace, not
   number scanning, not the `define_find` lookup. A measurable win has to come
-  from those, not from more per-token dispatch micro-tuning (tracked in
-  `docs/TODO.md`).
+  from those, not from more per-token dispatch micro-tuning.
+  - **Applied (2026-07-05): `TOK_HASH_SIZE` 16384 → 65536.** A `hyperfine` A/B on
+    identifier-dense 2 MB TUs measured a consistent **1.03–1.06× faster** `mcc -E`
+    (statistically significant, ±0.02–0.04) by lowering the intern-hash load factor
+    so the chain walk shortens. The intermediate 32768 showed no realistic-density
+    gain (threshold effect). Cost is a *fixed* +384 KB hash table that does not
+    scale with input, so the low-RSS profile is preserved; correctness is unaffected
+    (still a power of two for the `& (TOK_HASH_SIZE-1)` mask; full suite green).
+    `TOK_HASH_FUNC` itself was left alone — it is already a cheap shift-add-mix.
 - **The larger input separates signal from noise.** 416 lines is too small to
   separate a 1–2% lexer change from noise. The amalgamation spread (§4b) does
   better: `src/mcc.c` preprocesses in ~62 ms (`mcc-gcc`) with σ ≈ 0.5 ms — a
