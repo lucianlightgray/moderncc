@@ -19,6 +19,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #define FAT_MAGIC 0xcafebabeu /* on disk, big-endian */
 #define MH_MAGIC 0xfeedfaceu
@@ -177,8 +179,23 @@ int main(int argc, char **argv) {
 		off += sl[i].size;
 	}
 	rc = fclose(out) ? 1 : 0;
-	if (rc == 0)
+	if (rc == 0) {
 		chmod(argv[1], 0755); /* a universal binary is an executable */
+		/* Ad-hoc re-sign so the fat container + every slice carry a coherent
+		   signature. Apple silicon rejects an executable whose signature does not
+		   match its bytes at this path (the per-slice signatures mcc embedded are
+		   preserved by the copy, but re-signing avoids a stale kernel AMFI-cache
+		   rejection when the output path is reused). Best-effort: skip silently if
+		   codesign is unavailable (e.g. a non-Darwin combine). */
+		pid_t pid = fork();
+		if (pid == 0) {
+			execlp("codesign", "codesign", "-f", "-s", "-", argv[1], (char *)NULL);
+			_exit(127);
+		} else if (pid > 0) {
+			int st;
+			(void)waitpid(pid, &st, 0);
+		}
+	}
 
 done:
 	for (i = 0; i < nin; i++)
