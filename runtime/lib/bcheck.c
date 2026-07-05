@@ -29,7 +29,16 @@
 #ifdef __attribute__
 #undef __attribute__
 #endif
+/* regparm is an x86-only calling-convention attribute: gcc silently ignores it
+ * off-x86, but clang errors ("'regparm' is not valid on this platform"), which
+ * breaks building the native runtime with host clang on e.g. aarch64. Apply it
+ * only where it is meaningful; elsewhere FASTCALL is a no-op (same macro on both
+ * the declaration and definition, so there is no calling-convention mismatch). */
+#if defined(__i386__) || defined(__x86_64__)
 #define FASTCALL __attribute__((regparm(3)))
+#else
+#define FASTCALL
+#endif
 
 #ifdef _WIN32
 #define DLL_EXPORT __declspec(dllexport)
