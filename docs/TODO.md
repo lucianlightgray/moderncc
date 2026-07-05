@@ -210,12 +210,15 @@ run-preset`/`ci qemu` path CI uses (also exercising the new `--output-junit` /
   0 in any changed file) — aarch64 ELF
 - `qemu-arm64`/glibc 4/4 (qemu-user cross-conformance; validates the qemu
   `--output-junit` + `ci junit-summary` path)
+- `dist-macos` (native, configure+build rc=0), `dist-linux-gcc` (Docker aarch64,
+  build rc=0) — the release-packaging presets
 - `cli` (11 ports) + `preprocess` (42) re-run on both aarch64 and x86_64 Linux
-- _Environment-limited, not code:_ `linux-gcc-musl` needs to `git clone`
-  git.musl-libc.org (TLS/CA in the barebones container); the other qemu arches
-  (x86_64/i386/arm/riscv64) run under nested emulation; the remaining linux config
-  variants + dist×9 are packaging/config permutations; **msvc/mingw need a Windows
-  host**. These are the CI matrix's job.
+- _Environment-limited, not code:_ `linux-gcc-musl` and the first `dist-linux-gcc`
+  attempt failed only because the barebones container lacked `ca-certificates` for
+  the TLS `git clone` of musl/vendor sources — installing it makes both succeed
+  (root cause confirmed). The other qemu arches (x86_64/i386/arm/riscv64) run under
+  nested emulation; the remaining linux config variants are permutations; **msvc /
+  mingw / dist-msvc / dist-mingw need a Windows host**. These are the CI matrix's job.
 
 Two errors surfaced by this local preset testing were fixed: a
 `-Wformat-truncation` in `ci.c`'s junit buffers, and `bcheck.c`'s unconditional
