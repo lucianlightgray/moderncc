@@ -18,7 +18,15 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
   weakness is in mcc's own emission around atomics, not the outline funcs. **To
   fix, need an arm64 host OR the `ctest --output-on-failure` assertion diffs** —
   the *kind* of wrongness (wrong value vs crash vs bcheck-msg vs timeout) picks
-  the cause.
+  the cause. **Update 2026-07-04 (native arm64 macOS):** the "missing barrier in
+  mcc emission" hypothesis is *disproved for the scalar load/store path* — `mcc -S`
+  shows `_Atomic` seq-cst load/store emit `bl __atomic_load_N` / `__atomic_store_N`
+  with order `0x5`, i.e. ordering is delegated to the host-cc-built runtime helpers
+  (which carry the barriers), not plain `ldr`/`str`. So load/store codegen is
+  correct; remaining suspects are the RMW/CAS path, the `-b` bounds runtime, or the
+  `-O2` complex outline funcs. The **full 809-test suite passes on macOS/arm64**, so
+  the failure is specific to the Linux-arm64 hardware+glibc runtime and still needs
+  that repro.
 
 - [ ] **Next conformance wins** (ranked; `docs/C9911.md`). Return-mismatch
   (§6.8.6.4p1) is now done (default error). Remaining mcc-specific gaps by
@@ -27,22 +35,19 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
   autoconf feature detection), low effort, **but high risk** (legacy C trips it
   constantly; needs a full corpus + self-host pass before flipping). (2) §6.9.1p6
   implicit-int on K&R params → error. (3) §7.16.1.4p3 `va_start` non-last-param
-  warning. (4) §6.7.4p6 inline-only linkage (mcc inlines+links where gcc/clang
-  fail to link at `-O0`; arguably more useful — decide intent before changing).
+  warning — **already implemented** (`check_va_start_last_param` +
+  `check_va_start_register`, `src/mccgen.c`; gated by `-Wvarargs`). (4) §6.7.4p6
+  inline-only linkage (mcc inlines+links where gcc/clang fail to link at `-O0`;
+  arguably more useful — decide intent before changing).
 
 - [ ] **Rosetta macOS x86_64 CI needs a real CI run to validate.** `ci.yml` +
-  `release.yml` now build the x86_64 macOS artifact on the arm64 `macos-15`
-  runner (universal clang `-arch x86_64` + `MCC_TARGET_ARCH=x86_64`, Rosetta 2
-  runs the x86_64 test/host binaries). Verified locally only that the
-  `MCC_TARGET_ARCH` override flips `MCC_CPU`; the end-to-end build+test under
-  Rosetta is unverified off-macOS.
-
-- [ ] **`mccharness.c` Mach-O fat suite is not in this tree.** The CI
-  `uint32_t`/`suite_machofat`/`mf_rd_be32` build error (linux-gcc-cross-x86_64)
-  references code absent from every branch/commit here — that runner builds a
-  revision ahead of this checkout. Defensive `#include <stdint.h>` added to
-  `tools/toolsupport.h` to kill the error class, but the real fix has to land on
-  whatever branch actually carries the Mach-O fat-binary suite.
+  `release.yml` build the x86_64 macOS artifact on the arm64 `macos-15` runner
+  (universal clang `-arch x86_64` + `MCC_TARGET_ARCH=x86_64`, Rosetta 2 runs the
+  x86_64 test/host binaries). **Validated locally 2026-07-04 on an Apple-silicon
+  host:** the `-DCMAKE_OSX_ARCHITECTURES=x86_64 -DMCC_TARGET_ARCH=x86_64` build
+  produces an x86_64 Mach-O `mcc`; under Rosetta it compiles+links+runs a program
+  and `-run` (JIT), and a ctest subset (hello/exec/framework) passes 10/10. Only
+  the actual CI run on the runner remains unconfirmed.
 
 ## Notes
 
