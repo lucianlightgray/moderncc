@@ -310,7 +310,7 @@ static int loc_have(const char *name) {
 }
 
 static void loc_setcc(const char *cc) {
-#ifdef _WIN32
+#if MCC_HOST_WIN32
 	char buf[80];
 	snprintf(buf, sizeof buf, "CC=%s", (cc && *cc) ? cc : "");
 	_putenv(buf);
@@ -367,7 +367,7 @@ static int run_dist(const char *preset, const char *plat, const char *ver,
 		if (ts_run(a))
 			return 1;
 	}
-#ifdef __APPLE__
+#if MCC_HOST_DARWIN
 	/* MCC_BUILD_STRIP is off for dist-macos (a full strip trips codesigning),
 	   so strip only local symbols post-install, as release.yml did. */
 	{
@@ -407,9 +407,9 @@ static int do_local(int argc, char **argv) {
 	                             "qemu-aarch64", "qemu-riscv64", 0};
 	int have_gcc, have_clang, have_cl, have_wine, have_mingw, have_docker;
 	int qfound[8], n_qemu = 0;
-#if defined(_WIN32)
+#if MCC_HOST_WIN32
 	const char *os = "Windows";
-#elif defined(__APPLE__)
+#elif MCC_HOST_DARWIN
 	const char *os = "Darwin";
 #else
 	const char *os = "Linux";
