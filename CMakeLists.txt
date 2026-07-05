@@ -903,6 +903,7 @@ if(_is_matrix AND NOT MCC_SUPERBUILD_CHILD)
     endforeach()
     set(_prev_stage "")
     set(_bench_cmds "")
+    set(_pkg_cmds "")
     foreach(_tc IN LISTS MCC_TOOLCHAIN_PROFILE)
         mcc_map_toolchain_cc("${_tc}" _cc)
         set(_cell_is_msvc OFF)
@@ -1008,6 +1009,24 @@ if(_is_matrix AND NOT MCC_SUPERBUILD_CHILD)
                      COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}/${_cell}"
                              ${_cellbench_cfg} --target bench)
             endif()
+            # Likewise forward `package-dist`: the leaf cell owns the `ci pkg`
+            # target (always defined for a non-cross host build) and packages the
+            # shared dist/ tree the superbuild install step populated. CI's `ci
+            # dist` flow runs `--target package-dist` on the superbuild.
+            set(_cellpkg_cfg "")
+            if(_cell_is_msvc AND NOT MCC_MSVC_GENERATOR STREQUAL "")
+                if(CMAKE_BUILD_TYPE STREQUAL "")
+                    set(_cellpkg_cfg --config Debug)
+                else()
+                    set(_cellpkg_cfg --config "${CMAKE_BUILD_TYPE}")
+                endif()
+            endif()
+            # One package pass suffices: the dist/ tree is shared and fully
+            # populated by the superbuild install step, so overwrite rather than
+            # accumulate (a multi-cell matrix would otherwise repackage N times).
+            set(_pkg_cmds
+                COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}/${_cell}"
+                        ${_cellpkg_cfg} --target package-dist)
             list(APPEND _this_stage ${_cell})
         endforeach()
         set(_prev_stage "${_this_stage}")
@@ -1019,6 +1038,14 @@ if(_is_matrix AND NOT MCC_SUPERBUILD_CHILD)
         add_custom_target(bench ${_bench_cmds}
             USES_TERMINAL VERBATIM
             COMMENT "Benchmarking (superbuild: forwarding `bench` to each leaf cell)")
+    endif()
+    # Forward `package-dist` too so `ci dist` / release.yml can run it on the
+    # superbuild (the mingw dist preset is a superbuild). Packages the shared
+    # dist/ tree via the leaf cell's `ci pkg` target after install.
+    if(_pkg_cmds)
+        add_custom_target(package-dist ${_pkg_cmds}
+            USES_TERMINAL VERBATIM
+            COMMENT "Packaging dist bundle (superbuild: forwarding `package-dist` to a leaf cell)")
     endif()
     return()
 endif()
