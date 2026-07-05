@@ -77,7 +77,7 @@ static const cli_case_t cli_cases[] = {
 	 "{MCC} -B{B} -I{I} -rdynamic {D}/hello.c -o {W}/hr && readelf --dyn-syms {W}/hr | grep -cE ' main$'",
 	 "1\n"},
 
-	{"function_data_sections_accepted", "cpu=x86_64,os=linux",
+	{"function_data_sections_accepted", "os!=WIN32",
 	 "{MCC} -B{B} -I{I} -ffunction-sections -fdata-sections -c {D}/lib.c -o {W}/fsd.o && echo OK",
 	 "OK\n"},
 
@@ -136,13 +136,13 @@ static const cli_case_t cli_cases[] = {
 	 "printf '\\n' > {W}/utf.c && {MCC} -B{B} -E -dM {W}/utf.c | grep -cE '^#define __STDC_UTF_(16|32)__ 1$'",
 	 "2\n"},
 
-	{"nostdinc_drops_system", "os=linux",
+	{"nostdinc_drops_system", "os!=WIN32",
 	 "printf '#include <stdio.h>\\n' > {W}/ns.c && {MCC} -B{B} -nostdinc -E {W}/ns.c 2>&1 | grep -coE 'not found|No such'",
 	 "1\n"},
 
-	{"dumpmachine", "cpu=x86_64,os=linux",
-	 "{MCC} -dumpmachine | grep -oE 'x86_64'",
-	 "x86_64\n"},
+	{"dumpmachine", "os!=WIN32",
+	 "{MCC} -dumpmachine | grep -qE '^(x86_64|i386|i686|aarch64|arm64|arm|riscv64)-' && echo TRIPLE_OK",
+	 "TRIPLE_OK\n"},
 
 	{"dumpversion_format", "",
 	 "{MCC} -dumpversion | grep -cE '^[0-9]+\\.[0-9]+'",
@@ -162,16 +162,19 @@ static const cli_case_t cli_cases[] = {
 	 "nm {W}/resp.o | grep -oE 'exported_fn'",
 	 "exported_fn\n"},
 
-	{"symbol_type_func_object", "cpu=x86_64,os=linux",
+	{"symbol_type_func_object", "os!=WIN32",
 	 "{MCC} -B{B} -I{I} -c {D}/lib.c -o {W}/ts.o && "
-	 "readelf -s {W}/ts.o | grep -E 'exported_fn|global_var' | awk '{print $4}' | sort -u",
+	 "if [ \"$MCC_TEST_OS\" = Darwin ]; then "
+	 "nm {W}/ts.o | grep -E '_exported_fn|_global_var' | "
+	 "awk '{print ($(NF-1)==\"T\"||$(NF-1)==\"t\")?\"FUNC\":\"OBJECT\"}' | sort -u; "
+	 "else readelf -s {W}/ts.o | grep -E 'exported_fn|global_var' | awk '{print $4}' | sort -u; fi",
 	 "FUNC\nOBJECT\n"},
 
 	{"assemble_dot_s_file", "cpu=x86_64,os=linux,asm",
 	 "{MCC} -B{B} -I{I} {D}/asmadd.s {D}/asmmain.c -o {W}/ae && {W}/ae",
 	 "42\n"},
 
-	{"weak_override_multi_tu", "cpu=x86_64,os=linux",
+	{"weak_override_multi_tu", "os!=WIN32",
 	 "{MCC} -B{B} -I{I} -c {D}/wstrong.c -o {W}/wstrong.o && "
 	 "{MCC} -B{B} -I{I} {D}/wmain.c {W}/wstrong.o -o {W}/we && {W}/we",
 	 "1\n"},
@@ -550,7 +553,7 @@ static const cli_case_t cli_cases[] = {
 	 "{MCC} -B{B} -I{I} -c {W}/ui3.c -o {W}/ui3.o 2>&1 | grep -oE 'not valid as the first character'; echo END",
 	 "valid=0\nnot valid in an identifier\nnot valid as the first character\nEND\n"},
 
-	{"builtin_nan_inf_const", "cpu=x86_64,os=linux",
+	{"builtin_nan_inf_const", "os!=WIN32",
 	 "printf '#include <stdio.h>\\n#include <fenv.h>\\n"
 	 "static double sn=__builtin_nan(\"\"); static double si=__builtin_inf();\\n"
 	 "int main(void){ feclearexcept(FE_ALL_EXCEPT);\\n"
@@ -560,7 +563,7 @@ static const cli_case_t cli_cases[] = {
 	 "{MCC} -B{B} -I{I} {W}/bni.c -o {W}/bni -lm && {W}/bni",
 	 "nan inf nan inf sb=0 inv=0\n"},
 
-	{"builtin_signbit_no_trap", "cpu=x86_64,os=linux",
+	{"builtin_signbit_no_trap", "os!=WIN32",
 
 	 "printf '#include <stdio.h>\\n#include <fenv.h>\\n"
 	 "static int c1=__builtin_signbit(-0.0), c2=__builtin_signbitf(-2.5f),\\n"
@@ -734,7 +737,7 @@ static const cli_case_t cli_cases[] = {
 	 "grep -oE \"cannot break|cannot continue|duplicate case value|switch expected|CLEAN_OK\" | sort | uniq -c | sed 's/^ *//'",
 	 "1 CLEAN_OK\n1 cannot break\n1 cannot continue\n1 duplicate case value\n1 switch expected\n"},
 
-	{"common_symbol_merge", "cpu=x86_64,os=linux",
+	{"common_symbol_merge", "os!=WIN32",
 	 "printf 'int shared_g;\\nvoid set_it(void){ shared_g = 5; }\\n' > {W}/cm1.c && "
 	 "printf '#include <stdio.h>\\nint shared_g; void set_it(void);\\n"
 	 "int main(void){ set_it(); printf(\"%%d\\\\n\", shared_g); return 0; }\\n' > {W}/cm2.c && "
@@ -808,14 +811,14 @@ static const cli_case_t cli_cases[] = {
 	 "grep -oE 'ignoring final|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
 	 "1 CLEAN_OK\n1 ignoring final\n"},
 
-	{"complex_creal_function", "cpu=x86_64,os=linux",
+	{"complex_creal_function", "os!=WIN32",
 	 "printf '#include <complex.h>\\n#include <stdio.h>\\n"
 	 "int main(void){ double _Complex z=3.0+4.0*I; double(*p)(double _Complex)=creal;\\n"
 	 "if((int)(creal)(z)==3 && (int)cimag(z)==4 && (int)p(z)==3) puts(\"OK\"); return 0; }\\n' > {W}/cf.c && "
 	 "{MCC} -B{B} -I{I} {W}/cf.c -lm -o {W}/cf && {W}/cf",
 	 "OK\n"},
 
-	{"uchar_header", "cpu=x86_64,os=linux",
+	{"uchar_header", "os!=WIN32",
 	 "printf '#include <uchar.h>\\nint main(void){char16_t a=0; char32_t b=0; mbstate_t s;\\n"
 	 "(void)a;(void)b;(void)s; return (sizeof(char16_t)==2 && sizeof(char32_t)==4)?0:1;}\\n' > {W}/uh.c && "
 	 "{MCC} -B{B} -I{I} {W}/uh.c -o {W}/uh && {W}/uh && echo HOSTED_OK && "
@@ -1482,12 +1485,12 @@ static const cli_case_t cli_cases[] = {
 	 "{MCC} -B{B} -I{I} -c {W}/uvv.c -o /dev/null 2>&1 && echo DEFAULT_SILENT",
 	 "2 warn\nOK_CLEAN\nDEFAULT_SILENT\n"},
 
-	{"dash_S_emits_assembly", "cpu=x86_64,os=linux",
+	{"dash_S_emits_assembly", "os!=WIN32",
 	 "printf 'int answer(void){return 42;}\\n' > {W}/t.c && "
 	 "{MCC} -B{B} -I{I} -S {W}/t.c -o {W}/t.s && "
-	 "grep -qE '^answer:' {W}/t.s && "
+	 "grep -qE '^_?answer:' {W}/t.s && "
 	 "grep -qE '[.]text' {W}/t.s && "
-	 "grep -qE 'answer, @function' {W}/t.s && echo S_OK",
+	 "grep -qE '_?answer, @function' {W}/t.s && echo S_OK",
 	 "S_OK\n"},
 
 	{"imacros_macro_header", "",

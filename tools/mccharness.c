@@ -839,7 +839,24 @@ static int suite_preprocess(int argc, char **argv) {
 			free(go);
 			free(co);
 			if (strcmp(gn, cn)) {
-				skip++;
+				/* No gcc/clang consensus (impl-defined divergence -- e.g. a
+				   Homebrew GNU gcc vs Apple clang on Darwin). Fall back to a
+				   2-way check: mcc is acceptable if it matches EITHER reference,
+				   i.e. it is conformant with at least one mainstream compiler on
+				   the impl-defined point. This only recovers a SKIP as a PASS --
+				   matching neither stays a SKIP, so it never introduces a FAIL. */
+				char *mo2 = NULL, *mn2;
+				const char *am2[] = {mcc, Bflag, Iinc, "-E", f, 0};
+				run_cap(am2, NULL, &mo2, &e);
+				free(e);
+				e = NULL;
+				mn2 = pp_norm(mo2);
+				free(mo2);
+				if (!strcmp(mn2, gn) || !strcmp(mn2, cn))
+					pass++;
+				else
+					skip++;
+				free(mn2);
 			} else {
 				const char *am[] = {mcc, Bflag, Iinc, "-E", f, 0};
 				run_cap(am, NULL, &mo, &e);
