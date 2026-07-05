@@ -456,20 +456,37 @@ static void pe_set_tls(struct pe_info *pe, struct pe_header *hdr) {
 	if (!raw_end)
 		raw_end = tls_start;
 
+	/*
+	 * Fold the .tbss (zero-initialised) span into the raw template and emit
+	 * SizeOfZeroFill = 0, mirroring what gcc/ld produce for a PE image.
+	 *
+	 * The Windows loader's static-TLS setup for the primary thread does not
+	 * reliably honour SizeOfZeroFill here: it copies only [Start,End) and
+	 * leaves the trailing zero-fill span holding uninitialised heap, so a
+	 * zero-initialised __thread variable reads garbage.  The .tbss region of
+	 * the image is already zero-backed (NOBITS folded into .data as zeros, and
+	 * the loader zero-pads a section's virtual size past its raw size), so
+	 * extending EndAddressOfRawData over it makes the loader copy those zeros
+	 * as part of the template -- correct on every thread with no dependence on
+	 * the zero-fill path.
+	 */
+	if (mem_end > raw_end)
+		raw_end = mem_end;
+
 	p = ds->data + pe->tls_dir_offset;
 	if (sizeof(ADDR3264) == 8) {
 		write64le(p + 0, tls_start);
 		write64le(p + 8, raw_end);
 		write64le(p + 16, ds->sh_addr + pe->tls_index_offset);
 		write64le(p + 24, ds->sh_addr + pe->tls_cb_offset);
-		write32le(p + 32, (DWORD)(mem_end - raw_end));
+		write32le(p + 32, 0);
 		write32le(p + 36, 0);
 	} else {
 		write32le(p + 0, (DWORD)tls_start);
 		write32le(p + 4, (DWORD)raw_end);
 		write32le(p + 8, (DWORD)(ds->sh_addr + pe->tls_index_offset));
 		write32le(p + 12, (DWORD)(ds->sh_addr + pe->tls_cb_offset));
-		write32le(p + 16, (DWORD)(mem_end - raw_end));
+		write32le(p + 16, 0);
 		write32le(p + 20, 0);
 	}
 	pe_set_datadir(hdr, IMAGE_DIRECTORY_ENTRY_TLS,
