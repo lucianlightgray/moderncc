@@ -2302,6 +2302,19 @@ function(mcc_build_mccrt tname mcctgt cpu os native archive objdir out_extra)
                       -Wno-unused-variable
                       -I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include -I${CMAKE_BINARY_DIR}
                       ${_arch_incs})
+        # On aarch64 gcc/clang default to -moutline-atomics, lowering atomics to
+        # libgcc's __aarch64_{cas,swp,ldadd,...}_* helpers. mcc links libc only,
+        # not libgcc, so a gcc-built runtime (EMBED_MCCRT / USE_HOSTCC) would leave
+        # those unresolved. Emit self-contained inline atomics instead. (macOS
+        # arm64 dodges this because EMBED is forced off there, so mcc builds the
+        # runtime and lowers atomics to its own __atomic_*_N helpers.)
+        if(MCC_CPU STREQUAL "arm64")
+            include(CheckCCompilerFlag)
+            check_c_compiler_flag("-mno-outline-atomics" MCC_HAVE_NO_OUTLINE_ATOMICS)
+            if(MCC_HAVE_NO_OUTLINE_ATOMICS)
+                list(APPEND _gccflags -mno-outline-atomics)
+            endif()
+        endif()
         if(MCC_CONFIG_DWARF STREQUAL "" AND NOT CMAKE_C_COMPILER_ID MATCHES "Clang")
             set(_bflags_gcc -gstabs)   # stabs debug info: gcc only (clang rejects -gstabs)
         else()

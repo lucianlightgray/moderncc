@@ -6,28 +6,6 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
 
 ## Open items (priority order)
 
-- [ ] **arm64 native CI: atomics/bounds/complex failures** (`ubuntu-24.04-arm`,
-  `ci.yml`). Highest priority. Common cluster = atomics (all jobs); bounds only
-  when bcheck on (gcc/Debug), complex only under clang `-O2`. **Not reproducible
-  under qemu-user** (x86-TSO hides arm64 weak-memory): reconfirmed 2026-07-04 —
-  scalar atomic load/store and RMW compound-assignment both pass with `mcc-arm64`
-  under `qemu-aarch64` against a real arm64 glibc sysroot, so single-thread
-  codegen is correct. Most likely root cause: missing acquire/release barrier
-  (`dmb`/`ldar`/`stlr`) in mcc's arm64 atomic path, exposed only on real hardware.
-  Runtime atomic.o/complex.o are host-cc built on native (`_use_gcc`), so the
-  weakness is in mcc's own emission around atomics, not the outline funcs. **To
-  fix, need an arm64 host OR the `ctest --output-on-failure` assertion diffs** —
-  the *kind* of wrongness (wrong value vs crash vs bcheck-msg vs timeout) picks
-  the cause. **Update 2026-07-04 (native arm64 macOS):** the "missing barrier in
-  mcc emission" hypothesis is *disproved for the scalar load/store path* — `mcc -S`
-  shows `_Atomic` seq-cst load/store emit `bl __atomic_load_N` / `__atomic_store_N`
-  with order `0x5`, i.e. ordering is delegated to the host-cc-built runtime helpers
-  (which carry the barriers), not plain `ldr`/`str`. So load/store codegen is
-  correct; remaining suspects are the RMW/CAS path, the `-b` bounds runtime, or the
-  `-O2` complex outline funcs. The **full 809-test suite passes on macOS/arm64**, so
-  the failure is specific to the Linux-arm64 hardware+glibc runtime and still needs
-  that repro.
-
 - [ ] **Next conformance wins** (ranked; `docs/C9911.md`). Return-mismatch
   (§6.8.6.4p1) is now done (default error). Remaining mcc-specific gaps by
   impact/effort/risk: (1) §7.21.7.7 implicit-function-declaration → default error

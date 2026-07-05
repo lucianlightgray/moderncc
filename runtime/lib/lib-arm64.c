@@ -617,3 +617,12 @@ int __gttf2(long double a, long double b) {
 int __getf2(long double a, long double b) {
 	return -f3_cmp(b, a);
 }
+
+/* clang -O2 (unlike gcc) emits __unordtf2 for the NaN/unordered checks in the
+   128-bit `long double _Complex` routines; mcc's own codegen only emits the
+   ordered comparisons above, so this helper was never needed until a clang-built
+   runtime referenced it. f3_cmp already returns its unordered sentinel (2) when
+   either operand is a NaN. */
+int __unordtf2(long double a, long double b) {
+	return f3_cmp(a, b) == 2;
+}
