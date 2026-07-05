@@ -116,19 +116,19 @@ all 5 arches × glibc+musl + `qemu-arm64-osx`). With the `cross` toolchain
 built (`MCC_CROSS_DIR`, default `cmake-cross`), the wine PE-conformance
 and the four host-runnable Mach-O drivers run natively and pass too.
 
-**Windows status (2026-07-04, mingw gcc 13.1/16.1 / MSVC 19.51 / clang 22):**
+**Windows status (2026-07-05, mingw gcc 13.1/16.1 / MSVC 19.51 / clang 22):**
 every Windows-runnable preset is green. The suite is now registered one CTest
 per case (the `exec`/`cli`/`diff3`/`parts`/`preprocess` corpora fan out), so the
 counts are per-case: `debug`, `release`, `diagnostics`, `cross` and `msvc`
-(VS generator) all run **775/775** (123 environment-gated skips). On the MSVC
+(VS generator) all run **782/782** (126 environment-gated skips). On the MSVC
 host `mcctest` still registers and passes — its gcc reference auto-resolves to
 the vendored winlibs GCC (`MCC_REF_CC`) — so the MSVC total matches the mingw
 hosts. Those totals assume the vendored clang toolchain is present (`cmake
 --build <bld> --target clang-toolchain`, or drop it under `vendor/llvm-clang`;
 auto-wired on the next reconfigure); without it the ~260 three-way
-`diff3`/`preprocess` cases self-skip and the native suite is **513/513**.
+`diff3`/`preprocess` cases self-skip and the native suite is **520/520**.
 `mingw` (superbuild; fetches the pinned winlibs GCC and tests with
-it) and `matrix` (gcc/clang × native/cross — **4 cells × 775/775**, clang
+it) and `matrix` (gcc/clang × native/cross — **4 cells × 782/782**, clang
 resolved from the fetched `vendor/llvm-clang`) are green too. Both `dist-*` packagings
 build the full artifact matrix — mcc + `-static`/`-dynamic` +
 `libmcc-static`/`-dynamic` + all 11 cross compilers; `dist-mingw` additionally

@@ -133,6 +133,7 @@ host-dynamic (macOS Homebrew gcc). Hidden bases are prefixed `_`
 | `diagnostics` | Debug | `MCC_ALL_DIAGNOSTICS=ON` (warnings + debug + mcc_s/mcc_p/mcc_c) |
 | `cross` | Debug | `MCC_ENABLE_CROSS=ON` |
 | `matrix` | Debug | `MCC_TOOLCHAIN_PROFILE=gcc;clang` × `MCC_TARGETS=native;cross` |
+| `local-ci` | Debug | `MCC_LOCAL_CI_AS_TEST=ON` — the `test` target reproduces the whole CI + release matrix this host can run (see `cmake/ci-local.cmake`) |
 
 **CI presets** — one per workflow matrix cell (`ci.yml`):
 
