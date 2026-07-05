@@ -546,6 +546,21 @@ enum { ERROR_WARN,
 	   ERROR_NOABORT,
 	   ERROR_ERROR };
 
+/* Whether to emit ANSI color on this diagnostic. Never colorizes the embed
+   callback path (error_func) — embedders want plain text. auto follows the tty. */
+static int diag_want_color(MCCState *s1) {
+	if (s1->error_func)
+		return 0;
+	switch (s1->diag_color) {
+	case 1:
+		return 1; /* always */
+	case 2:
+		return 0; /* never */
+	default:
+		return host_stderr_isatty(); /* auto */
+	}
+}
+
 /* Append a clang-style source line + caret under the current diagnostic, e.g.
  *
  *   foo.c:12: error: ';' expected
@@ -560,7 +575,7 @@ enum { ERROR_WARN,
  * The caret marks the current lexer position (just past the token), which is
  * approximate but points at the right line/region. */
 static void append_caret_context(MCCState *s1, CString *cs, BufferedFile *f,
-								  int line, int bol_adj) {
+								  int line, int bol_adj, int use_color) {
 	const unsigned char *start, *end, *p, *cpos, *ls, *le;
 	int col, n, i;
 	char numbuf[16];
@@ -621,7 +636,10 @@ static void append_caret_context(MCCState *s1, CString *cs, BufferedFile *f,
 	cstr_cat(cs, " | ", 3);
 	for (i = 0; i < col; i++)
 		cstr_ccat(cs, ls[i] == '\t' ? '\t' : ' ');
-	cstr_ccat(cs, '^');
+	if (use_color)
+		cstr_cat(cs, "\033[1;32m^\033[0m", 12); /* bold green caret */
+	else
+		cstr_ccat(cs, '^');
 
 	/* Restore the CString invariant the printf helpers maintain: data[size] is a
 	   NUL not counted in size, so error_func / fprintf("%s") stop here. */
@@ -687,13 +705,17 @@ static void error1(int mode, const char *fmt, va_list ap) {
 	} else {
 		cstr_printf(&cs, "mcc: ");
 	}
-	cstr_printf(&cs, mode == ERROR_WARN ? "warning: " : "error: ");
+	int use_color = diag_want_color(s1);
+	if (use_color)
+		cstr_printf(&cs, mode == ERROR_WARN ? "\033[1;35mwarning:\033[0m " : "\033[1;31merror:\033[0m ");
+	else
+		cstr_printf(&cs, mode == ERROR_WARN ? "warning: " : "error: ");
 	if (pp_expr > 1)
 		pp_error(&cs);
 	else
 		cstr_vprintf(&cs, fmt, ap);
 	if (f && !explicit_line && !macro_ptr)
-		append_caret_context(s1, &cs, f, line, bol_adj);
+		append_caret_context(s1, &cs, f, line, bol_adj, use_color);
 	if (!s1->error_func) {
 		if (s1 && s1->output_type == MCC_OUTPUT_PREPROCESS && s1->ppfp == stdout)
 			printf("\n");
@@ -2226,6 +2248,12 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) {
 #endif
 			} else if (!strcmp(optarg, "no-stack-protector")) {
 				s->stack_protector = 0;
+			} else if (!strcmp(optarg, "diagnostics-color") || !strcmp(optarg, "diagnostics-color=always") || !strcmp(optarg, "color-diagnostics")) {
+				s->diag_color = 1; /* always */
+			} else if (!strcmp(optarg, "diagnostics-color=never") || !strcmp(optarg, "no-diagnostics-color") || !strcmp(optarg, "no-color-diagnostics")) {
+				s->diag_color = 2; /* never */
+			} else if (!strcmp(optarg, "diagnostics-color=auto")) {
+				s->diag_color = 0; /* auto (tty) */
 			} else if (set_flag(s, options_f, optarg) < 0)
 				goto unsupported_option;
 		} break;

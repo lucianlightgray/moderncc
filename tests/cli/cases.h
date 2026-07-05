@@ -1508,6 +1508,15 @@ static const cli_case_t cli_cases[] = {
 	 "echo \"off:$({MCC} -fno-diagnostics-show-caret -c {W}/caret.c -o /dev/null 2>&1 | grep -cF '^')\"",
 	 "on:1\noff:0\n"},
 
+	/* -fdiagnostics-color=always emits ANSI (the '[1;3x' bodies are plain ASCII);
+	   =never (and auto, since the pipe is not a tty) stays plain. */
+	{"diagnostics_color", "",
+	 "printf 'int main(void){\\n\\tint x = 1\\n\\treturn x;\\n}\\n' > {W}/color.c; "
+	 "echo \"always:$({MCC} -fdiagnostics-color=always -c {W}/color.c -o /dev/null 2>&1 | grep -c '\\[1;3')\"; "
+	 "echo \"never:$({MCC} -fdiagnostics-color=never -c {W}/color.c -o /dev/null 2>&1 | grep -c '\\[1;3')\"; "
+	 "echo \"auto:$({MCC} -c {W}/color.c -o /dev/null 2>&1 | grep -c '\\[1;3')\"",
+	 "always:2\nnever:0\nauto:0\n"},
+
 	{"switch_duplicate_case", "",
 	 "printf 'int f(int a){switch(a){case 1: return 1; case 1: return 2;} return 0;}\\n' > {W}/switch_duplicate_case.c && {MCC} -c {W}/switch_duplicate_case.c -o {W}/switch_duplicate_case.o 2>&1 | grep -oE 'duplicate case value' || echo FIXED_OK",
 	 "duplicate case value\n"},

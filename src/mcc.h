@@ -656,6 +656,7 @@ struct MCCState {
 	unsigned char freestanding;
 	unsigned char syntax_only;
 	unsigned char diag_no_caret; /* -fno-diagnostics-show-caret: suppress source/caret context */
+	unsigned char diag_color;	 /* -fdiagnostics-color: 0=auto (tty), 1=always, 2=never */
 	unsigned char visibility;
 	unsigned char stack_protector;
 	unsigned char do_strip;
