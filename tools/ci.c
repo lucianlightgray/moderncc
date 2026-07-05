@@ -153,7 +153,7 @@ static int do_run_preset(int argc, char **argv) {
 
 	if (!no_test) {
 		Argv v = {{0}, 0};
-		char junit[4096];
+		char junit[4200]; /* > build[4096] + "--output-junit=…/ctest-junit.xml" */
 		ts_arg(&v, "ctest");
 		ts_arg(&v, "--preset");
 		ts_arg(&v, preset);
@@ -284,7 +284,7 @@ static int do_qemu(int argc, char **argv) {
 	qemu_fixup_multilib((dldir && *dldir) ? dldir : "vendor");
 	{
 		Argv v = {{0}, 0};
-		char junit[4096];
+		char junit[4200]; /* > build[4096] + "--output-junit=…/ctest-junit.xml" */
 		ts_arg(&v, "ctest");
 		ts_arg(&v, "--preset");
 		ts_arg(&v, preset);
