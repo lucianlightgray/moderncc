@@ -42,25 +42,19 @@ jobs:
         run: |
           brew untap aws/tap 2>/dev/null || true
           brew install cmake ninja
-      - name: configure + build + install
+      - name: build ci tool
+        run: cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c $([ "$RUNNER_OS" = Linux ] && echo -ldl)
+      - name: dist (configure + build + install + strip + bench + package)
+        # `ci dist` runs the whole release.yml dist flow (the macOS local-symbol
+        # strip is folded in); Rosetta's cross flags pass through after `--`.
         run: |
           set -eux
           extra=""
           if [ "${{ matrix.rosetta }}" = "true" ]; then
-            extra="-DCMAKE_OSX_ARCHITECTURES=x86_64 -DMCC_TARGET_ARCH=x86_64"
+            extra="-- -DCMAKE_OSX_ARCHITECTURES=x86_64 -DMCC_TARGET_ARCH=x86_64"
           fi
-          cmake --preset ${{ matrix.preset }} \
-            "-DMCC_DIST_VERSION=${{ github.ref_name }}" "-DMCC_DIST_PLAT=${{ matrix.plat }}" \
-            -DMCC_BENCH=ON $extra
-          cmake --build --preset ${{ matrix.preset }} -j"$(getconf _NPROCESSORS_ONLN)"
-          cmake --install cmake-${{ matrix.preset }}
-          if [ "${{ runner.os }}" = macOS ]; then
-            strip -x dist/bin/mcc dist/bin/mcc-* 2>/dev/null || true
-          fi
-      - name: benchmark
-        run: cmake --build --preset ${{ matrix.preset }} --target bench
-      - name: package
-        run: cmake --build --preset ${{ matrix.preset }} --target package-dist
+          /tmp/mcc-ci dist --preset ${{ matrix.preset }} \
+            --plat ${{ matrix.plat }} --version ${{ github.ref_name }} $extra
       - uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.plat }}
