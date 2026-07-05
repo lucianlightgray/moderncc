@@ -207,7 +207,9 @@ e.g. `ARM Neoverse-N1`, with vendor/hex fallback); **bench dead JUnit lookup**
 report intentionally omitted under qemu-user, where emulated timings are noise);
 **exec-suite skip audit** and **macos-gcc `mcctest` skip** confirmed intended
 (above); **macho-structural native**, **11 cli-case ports**, **preprocess 2-way
-fallback**, and the **diff3 / standalone / exec skip audits** (above).
+fallback**, the **diff3 / standalone / exec skip audits**, and the **lexer
+`TOK_HASH_SIZE` optimization** (16384→65536; measured 1.03–1.06× faster `-E`)
+(above).
 
 Presets exercised locally (beyond CI), all 0 failures unless noted — `macos` and
 `macos-cross` natively, the rest via Docker `ubuntu:24.04` on the same `ci
