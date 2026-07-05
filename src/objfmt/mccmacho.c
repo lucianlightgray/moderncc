@@ -2242,11 +2242,18 @@ ST_FUNC void mcc_add_macos_sdkpath(MCCState *s) {
 	if (sdk) {
 		cstr_printf(&path, "%s/usr/lib", sdk);
 		mcc_add_library_path(s, (char *)path.data);
+		cstr_reset(&path);
+		cstr_printf(&path, "%s/System/Library/Frameworks", sdk);
+		mcc_add_framework_path(s, (char *)path.data);
 	} else {
 		mcc_add_library_path(s,
 							 "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib"
 							 ":"
 							 "/Applications/Xcode.app/Developer/SDKs/MacOSX.sdk/usr/lib");
+		mcc_add_framework_path(s,
+							 "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/System/Library/Frameworks"
+							 ":"
+							 "/Applications/Xcode.app/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks");
 	}
 	cstr_free(&path);
 }

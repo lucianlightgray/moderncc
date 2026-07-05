@@ -1,4 +1,5 @@
 #include "toolsupport.h"
+#include <stdint.h> /* uint32_t, used by the Mach-O fat-header suite below */
 
 static const char *ERR_NEEDLES[] = {"error:", "undefined reference", "undefined symbol", 0};
 static const char *ERR_SKIPS[] = {"warning", "note:", 0};
@@ -2955,14 +2956,153 @@ static int suite_pkgsmoke(int argc, char **argv) {
 	return status ? 1 : 0;
 }
 
+#define MF_CPU_ARM64 0x0100000cu
+#define MF_CPU_X86_64 0x01000007u
+
+static uint32_t mf_rd_be32(const unsigned char *p) {
+	return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3];
+}
+
+/* Parse a fat (universal) Mach-O header, filling cts[] with the slice cputypes.
+   Returns 0 on success (with *pn set), negative on a malformed/absent header. */
+static int mf_fat_arches(const char *path, uint32_t *cts, int max, int *pn) {
+	long len = 0;
+	unsigned char *d = (unsigned char *)ts_read_file(path, &len);
+	uint32_t n, i;
+	if (!d)
+		return -1;
+	if (len < 8 || mf_rd_be32(d) != 0xcafebabeu) {
+		free(d);
+		return -2;
+	}
+	n = mf_rd_be32(d + 4);
+	if ((long)(8u + n * 20u) > len || (int)n > max) {
+		free(d);
+		return -3;
+	}
+	for (i = 0; i < n; i++)
+		cts[i] = mf_rd_be32(d + 8 + i * 20);
+	*pn = (int)n;
+	free(d);
+	return 0;
+}
+
+static int mf_has(const uint32_t *a, int n, uint32_t v) {
+	for (int i = 0; i < n; i++)
+		if (a[i] == v)
+			return 1;
+	return 0;
+}
+
+/* machofat: combine thin Mach-O slices into a universal binary and verify the
+   fat header + that the arm64 slice still runs. The native 1-slice case is the
+   hard guarantee; the 2-slice case additionally needs the x86_64-osx cross and
+   an SDK (to link a thin x86_64), and self-skips otherwise. */
+static int suite_machofat(int argc, char **argv) {
+	const char *mcc = opt(argc, argv, "--mcc", NULL);
+	const char *xmcc = opt(argc, argv, "--xmcc", NULL);
+	const char *fat = opt(argc, argv, "--fat", NULL);
+	const char *bdir = opt(argc, argv, "--bdir", NULL);
+	const char *work = opt(argc, argv, "--work", NULL);
+	const char *sdk = opt(argc, argv, "--sdk", NULL);
+	char Bf[4200], src[4200], a64[4200], x64[4200], u1[4200], u2[4200];
+	uint32_t cts[8];
+	int n = 0, isd, status = 0;
+
+	if (!mcc || !fat || !bdir || !work) {
+		fprintf(stderr, "usage: mccharness machofat --mcc --fat --bdir --work [--xmcc --sdk]\n");
+		return 2;
+	}
+	if (!MCC_HOST_DARWIN)
+		ts_skip("host is not Darwin (universal Mach-O needs a macOS host)");
+	if (host_stat(mcc, &isd, NULL, NULL) || isd)
+		ts_skip("no native mcc (%s)", mcc);
+	if (host_stat(fat, &isd, NULL, NULL) || isd)
+		ts_skip("machofat tool not built (%s)", fat);
+
+	host_mkdirs(work);
+	snprintf(Bf, sizeof Bf, "-B%s", bdir);
+	ts_path(src, sizeof src, work, "u.c");
+	ts_path(a64, sizeof a64, work, "u.arm64");
+	ts_path(u1, sizeof u1, work, "u.1");
+	write_file(src, "int main(void){return 7;}\n");
+
+	/* native arm64 thin exe (hard requirement) */
+	{
+		Argv v = {{0}, 0};
+		char *err = NULL;
+		A(&v, mcc), A(&v, Bf), A(&v, src), A(&v, "-o"), A(&v, a64);
+		if (compile(Z(&v), &err))
+			ts_skip("native mcc cannot link an executable");
+		free(err);
+	}
+	{ /* 1-slice universal: header + alignment + slice copy + runs */
+		const char *comb[] = {fat, u1, a64, 0};
+		const char *exe[] = {u1, 0};
+		int rc;
+		if (run_quiet(comb)) {
+			printf("FAIL machofat (combine 1 slice)\n");
+			return 1;
+		}
+		if (mf_fat_arches(u1, cts, 8, &n) || n != 1 || !mf_has(cts, n, MF_CPU_ARM64)) {
+			printf("FAIL machofat (1-slice fat header wrong)\n");
+			return 1;
+		}
+		if ((rc = run_quiet(exe)) != 7) {
+			printf("FAIL machofat (1-slice run rc=%d, want 7)\n", rc);
+			return 1;
+		}
+		printf("PASS machofat 1-slice universal (arm64, runs)\n");
+	}
+
+	/* optional 2-slice: needs the x86_64-osx cross + SDK to link a thin x86_64 */
+	if (xmcc && sdk && !host_stat(xmcc, &isd, NULL, NULL) && !isd) {
+		Argv v = {{0}, 0};
+		char *err = NULL, Lp[4300];
+		int built;
+		ts_path(x64, sizeof x64, work, "u.x86_64");
+		ts_path(u2, sizeof u2, work, "u.2");
+		snprintf(Lp, sizeof Lp, "-L%s/usr/lib", sdk);
+		A(&v, xmcc), A(&v, Bf), A(&v, "-isysroot"), A(&v, sdk), A(&v, Lp);
+		A(&v, src), A(&v, "-o"), A(&v, x64);
+		built = compile(Z(&v), &err) == 0;
+		free(err);
+		if (!built) {
+			printf("SKIP machofat 2-slice (x86_64-osx cross cannot link an exe here)\n");
+		} else {
+			const char *comb[] = {fat, u2, a64, x64, 0};
+			const char *exe[] = {u2, 0};
+			int rc;
+			if (run_quiet(comb)) {
+				printf("FAIL machofat (combine 2 slices)\n");
+				status = 1;
+			} else if (mf_fat_arches(u2, cts, 8, &n) || n != 2 ||
+					   !mf_has(cts, n, MF_CPU_ARM64) || !mf_has(cts, n, MF_CPU_X86_64)) {
+				printf("FAIL machofat (2-slice fat header wrong)\n");
+				status = 1;
+			} else if ((rc = run_quiet(exe)) != 7) {
+				printf("FAIL machofat (2-slice arm64 run rc=%d, want 7)\n", rc);
+				status = 1;
+			} else {
+				printf("PASS machofat 2-slice universal (arm64+x86_64, arm64 runs)\n");
+			}
+		}
+	} else {
+		printf("SKIP machofat 2-slice (no x86_64-osx cross / SDK)\n");
+	}
+	return status;
+}
+
 int main(int argc, char **argv) {
 	if (argc < 2) {
 		fprintf(stderr, "usage: mccharness <suite> ... (parts|mcctest|mccexe|asmconnect|dashs|"
 						"preprocess|i386fastcall|gcctestsuite|penative|qemurun|pewine|machonative|"
 						"machoimage|machoapplelibc|machocodegen|armasm|machostructural|stackguard|pkgsmoke|"
-						"qemufetch)\n");
+						"machofat|qemufetch)\n");
 		return 2;
 	}
+	if (!strcmp(argv[1], "machofat"))
+		return suite_machofat(argc, argv);
 	if (!strcmp(argv[1], "qemufetch"))
 		return suite_qemufetch(argc, argv);
 	if (!strcmp(argv[1], "armasm"))

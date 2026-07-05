@@ -189,6 +189,7 @@ ST_FUNC int host_path_hash_fold(int c);
 ST_FUNC FILE *host_fopen(const char *path, const char *mode);
 ST_FUNC int host_fclose(FILE *f);
 ST_FUNC void host_set_exec_bits(const char *file);
+ST_FUNC int host_stderr_isatty(void);
 
 ST_FUNC int host_exe_path(char *buf, int size);
 

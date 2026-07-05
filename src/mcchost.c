@@ -15,7 +15,19 @@
 #include <sys/wait.h>
 #include <sys/utsname.h>
 #include <dirent.h>
+#include <unistd.h>
 #endif
+
+/* Is stderr a terminal? Drives -fdiagnostics-color=auto. On Windows this stays
+   conservative (off) — colorizing legacy consoles risks emitting raw ANSI; a
+   user who knows their terminal handles it can force -fdiagnostics-color=always. */
+ST_FUNC int host_stderr_isatty(void) {
+#ifdef _WIN32
+	return 0;
+#else
+	return isatty(2);
+#endif
+}
 
 ST_FUNC char *host_path_normalize(char *path) {
 #ifdef _WIN32

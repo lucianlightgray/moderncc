@@ -32,6 +32,29 @@ static const cli_case_t cli_cases[] = {
 	 "{MCC} -B{B} -I{I} -fno-pic -no-pie {W}/np.c -o {W}/np && readelf -h {W}/np | grep -oE 'EXEC'",
 	 "EXEC\n"},
 
+	/* macOS: -framework links a system framework (header search resolves
+	   the CoreFoundation umbrella header under Foo.framework/Headers, and
+	   Apple's TargetConditionals.h exercises the clang has-feature and
+	   is-target preprocessor builtins). */
+	{"macho_framework_link", "os=Darwin",
+	 "printf '#include <CoreFoundation/CoreFoundation.h>\\nint main(void){ CFStringRef s=CFStringCreateWithCString(0,\"ok\",0x08000100); long n=CFStringGetLength(s); CFRelease(s); return n==2?0:1; }\\n' > {W}/fw.c && "
+	 "{MCC} -B{B} -I{I} -framework CoreFoundation {W}/fw.c -o {W}/fw && {W}/fw && echo RAN",
+	 "RAN\n"},
+
+	{"macho_framework_run", "os=Darwin",
+	 "printf '#include <CoreFoundation/CoreFoundation.h>\\nint main(void){ CFStringRef s=CFStringCreateWithCString(0,\"ok\",0x08000100); long n=CFStringGetLength(s); CFRelease(s); return n==2?0:1; }\\n' > {W}/fwr.c && "
+	 "{MCC} -B{B} -I{I} -framework CoreFoundation -run {W}/fwr.c && echo RAN",
+	 "RAN\n"},
+
+	/* macOS: -F adds a framework search path; <Foo/Bar.h> then resolves under
+	   Foo.framework/Headers (self-contained, no SDK framework needed). */
+	{"macho_framework_dashF", "os=Darwin",
+	 "mkdir -p {W}/fw/MyKit.framework/Headers && "
+	 "printf '#define MYKIT_OK 1\\n' > {W}/fw/MyKit.framework/Headers/MyKit.h && "
+	 "printf '#include <MyKit/MyKit.h>\\nint main(void){ return MYKIT_OK?0:1; }\\n' > {W}/mk.c && "
+	 "{MCC} -B{B} -I{I} -F{W}/fw {W}/mk.c -o {W}/mk && {W}/mk && echo RAN",
+	 "RAN\n"},
+
 	{"visibility_attribute", "cpu=x86_64,os=linux",
 	 "{MCC} -B{B} -I{I} -c {D}/vis.c -o {W}/v.o && "
 	 "readelf -s {W}/v.o | grep -E 'hidden_att|shown_one|plain_one' | awk '{print $6, $8}' | sort",
@@ -1209,10 +1232,10 @@ static const cli_case_t cli_cases[] = {
 	 "printf 'static _Thread_local int x;\\n' > {W}/ct.c && "
 	 "printf '_Atomic(int) a;\\n' > {W}/ca.c && "
 	 "printf 'const void*p=u\"hi\"; static _Thread_local int x; _Atomic(int) a; const void*q=L\"w\";\\nint main(void){return 0;}\\n' > {W}/cok.c && "
-	 "{ {MCC} -B{B} -I{I} -std=c99 -pedantic-errors -c {W}/cu.c -o /dev/null 2>&1; "
-	 "{MCC} -B{B} -I{I} -std=c99 -pedantic-errors -c {W}/ct.c -o /dev/null 2>&1; "
-	 "{MCC} -B{B} -I{I} -std=c99 -pedantic-errors -c {W}/ca.c -o /dev/null 2>&1; "
-	 "{MCC} -B{B} -I{I} -std=c11 -Werror -c {W}/cok.c -o /dev/null 2>&1 && echo CLEAN_OK; } | "
+	 "{ {MCC} -fno-diagnostics-show-caret -B{B} -I{I} -std=c99 -pedantic-errors -c {W}/cu.c -o /dev/null 2>&1; "
+	 "{MCC} -fno-diagnostics-show-caret -B{B} -I{I} -std=c99 -pedantic-errors -c {W}/ct.c -o /dev/null 2>&1; "
+	 "{MCC} -fno-diagnostics-show-caret -B{B} -I{I} -std=c99 -pedantic-errors -c {W}/ca.c -o /dev/null 2>&1; "
+	 "{MCC} -fno-diagnostics-show-caret -B{B} -I{I} -std=c11 -Werror -c {W}/cok.c -o /dev/null 2>&1 && echo CLEAN_OK; } | "
 	 "grep -oE 'character/string prefix|_Thread_local|_Atomic|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
 	 "1 CLEAN_OK\n1 _Atomic\n1 _Thread_local\n1 character/string prefix\n"},
 
@@ -1493,12 +1516,29 @@ static const cli_case_t cli_cases[] = {
 	 "CLEAN\n"},
 
 	{"static_assert_fail", "",
-	 "printf '_Static_assert(1==2, \"sizes differ\");\\n' > {W}/static_assert_fail.c && {MCC} -c {W}/static_assert_fail.c -o {W}/static_assert_fail.o 2>&1 | grep -oE 'sizes differ' || echo FIXED_OK",
+	 "printf '_Static_assert(1==2, \"sizes differ\");\\n' > {W}/static_assert_fail.c && {MCC} -fno-diagnostics-show-caret -c {W}/static_assert_fail.c -o {W}/static_assert_fail.o 2>&1 | grep -oE 'sizes differ' || echo FIXED_OK",
 	 "sizes differ\n"},
 
 	{"static_assert_nonconst", "",
 	 "printf 'int x; _Static_assert(x, \"bad\");\\n' > {W}/static_assert_nonconst.c && {MCC} -c {W}/static_assert_nonconst.c -o {W}/static_assert_nonconst.o 2>&1 | grep -oE 'constant expression expected' || echo FIXED_OK",
 	 "constant expression expected\n"},
+
+	/* Caret/source-context diagnostics: a source line + '^' is shown by default
+	   and suppressed by -fno-diagnostics-show-caret. */
+	{"diagnostics_caret", "",
+	 "printf 'int main(void){\\n\\tint x = 1\\n\\treturn x;\\n}\\n' > {W}/caret.c; "
+	 "echo \"on:$({MCC} -c {W}/caret.c -o /dev/null 2>&1 | grep -cF '^')\"; "
+	 "echo \"off:$({MCC} -fno-diagnostics-show-caret -c {W}/caret.c -o /dev/null 2>&1 | grep -cF '^')\"",
+	 "on:1\noff:0\n"},
+
+	/* -fdiagnostics-color=always emits ANSI (the '[1;3x' bodies are plain ASCII);
+	   =never (and auto, since the pipe is not a tty) stays plain. */
+	{"diagnostics_color", "",
+	 "printf 'int main(void){\\n\\tint x = 1\\n\\treturn x;\\n}\\n' > {W}/color.c; "
+	 "echo \"always:$({MCC} -fdiagnostics-color=always -c {W}/color.c -o /dev/null 2>&1 | grep -c '\\[1;3')\"; "
+	 "echo \"never:$({MCC} -fdiagnostics-color=never -c {W}/color.c -o /dev/null 2>&1 | grep -c '\\[1;3')\"; "
+	 "echo \"auto:$({MCC} -c {W}/color.c -o /dev/null 2>&1 | grep -c '\\[1;3')\"",
+	 "always:2\nnever:0\nauto:0\n"},
 
 	{"switch_duplicate_case", "",
 	 "printf 'int f(int a){switch(a){case 1: return 1; case 1: return 2;} return 0;}\\n' > {W}/switch_duplicate_case.c && {MCC} -c {W}/switch_duplicate_case.c -o {W}/switch_duplicate_case.o 2>&1 | grep -oE 'duplicate case value' || echo FIXED_OK",

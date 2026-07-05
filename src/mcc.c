@@ -235,6 +235,12 @@ static void set_environment(MCCState *s) {
 	if (path != NULL) {
 		mcc_add_library_path(s, path);
 	}
+#ifdef MCC_TARGET_MACHO
+	path = getenv("DYLD_FRAMEWORK_PATH");
+	if (path != NULL) {
+		mcc_add_framework_path(s, path);
+	}
+#endif
 }
 
 static char *default_outputfile(MCCState *s, const char *first_file) {
@@ -349,6 +355,11 @@ redo:
 	while (0 == ret) {
 		struct filespec *f = s->files[n];
 		s->filetype = f->type;
+#ifdef MCC_TARGET_MACHO
+		if (f->type & AFF_TYPE_FRAMEWORK) {
+			ret = mcc_add_framework(s, f->name);
+		} else
+#endif
 		if (f->type & AFF_TYPE_LIB) {
 			ret = mcc_add_library(s, f->name);
 		} else {

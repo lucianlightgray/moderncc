@@ -655,6 +655,8 @@ struct MCCState {
 	unsigned char trigraphs;
 	unsigned char freestanding;
 	unsigned char syntax_only;
+	unsigned char diag_no_caret; /* -fno-diagnostics-show-caret: suppress source/caret context */
+	unsigned char diag_color;	 /* -fdiagnostics-color: 0=auto (tty), 1=always, 2=never */
 	unsigned char visibility;
 	unsigned char stack_protector;
 	unsigned char do_strip;
@@ -757,6 +759,10 @@ struct MCCState {
 
 	char **library_paths;
 	int nb_library_paths;
+
+	/* macOS framework search paths (-framework / SDK System/Library/Frameworks) */
+	char **framework_paths;
+	int nb_framework_paths;
 
 	char **crt_paths;
 	int nb_crt_paths;
@@ -1260,6 +1266,7 @@ ST_FUNC int mcc_add_file_internal(MCCState *s1, const char *filename, int flags)
 #define AFF_TYPE_ASM 2
 #define AFF_TYPE_ASMPP 4
 #define AFF_TYPE_LIB 8
+#define AFF_TYPE_FRAMEWORK 0x10 /* macOS: link -framework <name> */
 #define AFF_TYPE_MASK (7 | AFF_TYPE_BIN)
 #define AFF_BINTYPE_REL 1
 #define AFF_BINTYPE_DYN 2

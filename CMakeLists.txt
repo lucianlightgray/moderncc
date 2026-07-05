@@ -902,6 +902,7 @@ if(_is_matrix AND NOT MCC_SUPERBUILD_CHILD)
         list(APPEND _forward "-D${_v}=${${_v}}")
     endforeach()
     set(_prev_stage "")
+    set(_bench_cmds "")
     foreach(_tc IN LISTS MCC_TOOLCHAIN_PROFILE)
         mcc_map_toolchain_cc("${_tc}" _cc)
         set(_cell_is_msvc OFF)
@@ -991,10 +992,34 @@ if(_is_matrix AND NOT MCC_SUPERBUILD_CHILD)
                 if(_rc)
                     message(FATAL_ERROR \"mcc superbuild: install of cell ${_cell} failed (\${_rc})\")
                 endif()")
+            # The real `bench` target is defined inside each leaf cell (guarded by
+            # MCC_BENCH). Collect a forwarding command per cell so the superbuild
+            # can expose a top-level `bench` (CI runs `--target bench` on the super).
+            if(MCC_BENCH)
+                set(_cellbench_cfg "")
+                if(_cell_is_msvc AND NOT MCC_MSVC_GENERATOR STREQUAL "")
+                    if(CMAKE_BUILD_TYPE STREQUAL "")
+                        set(_cellbench_cfg --config Debug)
+                    else()
+                        set(_cellbench_cfg --config "${CMAKE_BUILD_TYPE}")
+                    endif()
+                endif()
+                list(APPEND _bench_cmds
+                     COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}/${_cell}"
+                             ${_cellbench_cfg} --target bench)
+            endif()
             list(APPEND _this_stage ${_cell})
         endforeach()
         set(_prev_stage "${_this_stage}")
     endforeach()
+    # Forward `bench` to the leaf cell(s) so `cmake --build <super> --target bench`
+    # produces the report just like on a non-superbuild (leaf) configuration. Not
+    # part of ALL; run on demand after the normal build (matches CI's flow).
+    if(MCC_BENCH AND _bench_cmds)
+        add_custom_target(bench ${_bench_cmds}
+            USES_TERMINAL VERBATIM
+            COMMENT "Benchmarking (superbuild: forwarding `bench` to each leaf cell)")
+    endif()
     return()
 endif()
 
@@ -2775,6 +2800,12 @@ if(MCC_BUILD_TESTS)
     if(NOT CMAKE_CROSSCOMPILING)
         add_executable(mccharness tools/mccharness.c tools/toolsupport.c)
         target_link_libraries(mccharness ${CMAKE_DL_LIBS})
+
+        # machofat — self-contained universal/fat Mach-O combiner (macOS only,
+        # a lipo replacement); a pure host tool with no mcc dependency.
+        if(MCC_TARGETOS STREQUAL "Darwin")
+            add_executable(machofat tools/machofat.c)
+        endif()
     endif()
 
     add_test(NAME mcc_build
@@ -3404,6 +3435,27 @@ if(MCC_BUILD_TESTS)
                 --bdir "${CMAKE_BINARY_DIR}" --work "${CMAKE_BINARY_DIR}/stackguard-work")
     set_tests_properties(macho-stack-protector PROPERTIES
         FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
+
+    # Universal (fat) binary combiner. Native 1-slice is the hard guarantee; the
+    # 2-slice case additionally uses the x86_64-osx cross + SDK (self-skips else).
+    if(TARGET machofat)
+        set(_mf_xargs "")
+        if(TARGET mcc-x86_64-osx)
+            set(_mf_xargs --xmcc "$<TARGET_FILE:mcc-x86_64-osx>")
+        endif()
+        execute_process(COMMAND xcrun --show-sdk-path
+            OUTPUT_VARIABLE _mf_sdk OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+        if(_mf_sdk)
+            list(APPEND _mf_xargs --sdk "${_mf_sdk}")
+        endif()
+        add_test(NAME macho-universal
+            COMMAND "$<TARGET_FILE:mccharness>" machofat
+                    --mcc "$<TARGET_FILE:mcc>" --fat "$<TARGET_FILE:machofat>"
+                    --bdir "${CMAKE_BINARY_DIR}" --work "${CMAKE_BINARY_DIR}/machofat-work"
+                    ${_mf_xargs})
+        set_tests_properties(macho-universal PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
+    endif()
 
     option(MCC_DARWIN_HOST "Tests run on a macOS/darling host with real libSystem" OFF)
     if(NOT MCC_DARWIN_HOST)
