@@ -193,17 +193,29 @@ report intentionally omitted under qemu-user, where emulated timings are noise);
 (above); **macho-structural native**, **11 cli-case ports**, **preprocess 2-way
 fallback**, and the **diff3 / standalone / exec skip audits** (above).
 
-Presets exercised locally (beyond CI): `macos`, `macos-cross` natively; and via
-Docker `ubuntu:24.04`, `linux-gcc` + `linux-gcc-release` (aarch64, 811/811) plus
-`linux-gcc-diagnostics` (everything-on warnings) — the same `ci run-preset` path CI
-uses, which also exercised the new `--output-junit` / `ci junit-summary` wiring.
-The full linux×18 / qemu×10 / dist×9 matrix and the Windows msvc/mingw cells remain
-CI's to run (msvc/mingw need a Windows host). Two errors surfaced by this local
-preset testing were fixed: a `-Wformat-truncation` in `ci.c`'s junit buffers, and
-`bcheck.c`'s unconditional `regparm` `FASTCALL` (x86-only; broke host-clang builds
-off-x86 — now guarded to i386/x86_64). `decode_arm_midr` validated against a real
-aarch64 `/proc/cpuinfo` (`CPU implementer 0x61` → "Apple"; no `model name` field,
-confirming the original `cpu : ?`).
+Presets exercised locally (beyond CI), all 0 failures unless noted — `macos` and
+`macos-cross` natively, the rest via Docker `ubuntu:24.04` on the same `ci
+run-preset`/`ci qemu` path CI uses (also exercising the new `--output-junit` /
+`ci junit-summary` wiring):
+- `macos` 811/811, `macos-cross` 810/810 (Mach-O/arm64)
+- `linux-gcc` (rc=0), `linux-gcc-release` 811/811, `linux-gcc-sanitize` 811/811
+  (no UB in the changed harness), `linux-gcc-diagnostics` (everything-on warnings:
+  0 in any changed file) — aarch64 ELF
+- `qemu-arm64`/glibc 4/4 (qemu-user cross-conformance; validates the qemu
+  `--output-junit` + `ci junit-summary` path)
+- `cli` (11 ports) + `preprocess` (42) re-run on both aarch64 and x86_64 Linux
+- _Environment-limited, not code:_ `linux-gcc-musl` needs to `git clone`
+  git.musl-libc.org (TLS/CA in the barebones container); the other qemu arches
+  (x86_64/i386/arm/riscv64) run under nested emulation; the remaining linux config
+  variants + dist×9 are packaging/config permutations; **msvc/mingw need a Windows
+  host**. These are the CI matrix's job.
+
+Two errors surfaced by this local preset testing were fixed: a
+`-Wformat-truncation` in `ci.c`'s junit buffers, and `bcheck.c`'s unconditional
+`regparm` `FASTCALL` (x86-only; broke host-clang builds off-x86 — now guarded to
+i386/x86_64). `decode_arm_midr` validated against a real aarch64 `/proc/cpuinfo`
+(`CPU implementer 0x61` → "Apple"; no `model name` field, confirming the original
+`cpu : ?`).
 
 Verification for the test-enablement batch, on **three platforms** (0 failures):
 `macos` 811/811 and `macos-cross` 810/810 locally (Mach-O/arm64); the 11 cli ports
