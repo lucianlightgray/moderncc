@@ -139,34 +139,39 @@ jobs:
         run: cmake --preset msvc "-DCMAKE_INSTALL_PREFIX=$($PWD.Path.Replace('\','/'))/dist/${env:ART}" "-DMCC_BENCH=ON" "-DMCC_DIST_PLAT=${env:ART}"
       - name: build
         run: cmake --build --preset msvc -j
-      - name: localize MSVC-arm64 mcc miscompile (O2 vs Od tls.s)
+      - name: localize MSVC-arm64 mcc miscompile (O2 vs Od corruption rate)
         if: matrix.arch == 'arm64'
         continue-on-error: true
         run: |
-          # A correct arm64-win32 tls.s has exactly 6 `ret` and all four function
-          # labels. The MSVC-arm64 miscompile truncates/drops functions nondet-
-          # erministically (some runs lose main, some lose a trampoline's ret), so
-          # verdict on ret-count + labels, not just "main present".
-          function Dump-Tls($mcc, $bdir, $tag) {
-            $out = "tls-native-$tag-${env:ART}.s"
-            & $mcc "-B$bdir" -fno-diagnostics-show-caret -Iruntime/include -Itests/support -pthread -S tests/exec/features_c99_c11/tls.c -o $out
+          # The MSVC-arm64 miscompile of mcc's __thread emission is INTERMITTENT:
+          # the same binary sometimes drops main / truncates a trampoline. A correct
+          # arm64-win32 tls.s has exactly 6 `ret` and all four function labels, so
+          # verdict per-compile on that, and loop N to get a corruption RATE. If /Od
+          # drops the rate to 0, it is an MSVC optimizer bug -> targeted workaround.
+          $N = 30
+          $labels = @('__mcc_pthread_trampoline','__mcc_once_tramp','thread_func','main')
+          function Is-Corrupt($out) {
             $rets = (Select-String -Path $out -Pattern '^\s*ret\s*$').Count
-            $labels = @('__mcc_pthread_trampoline','__mcc_once_tramp','thread_func','main')
             $missing = @($labels | Where-Object { -not (Select-String -Path $out -Pattern ('^' + [regex]::Escape($_) + ':') -Quiet) })
-            $lines = (Get-Content $out | Measure-Object -Line).Lines
-            $verdict = if (($rets -eq 6) -and ($missing.Count -eq 0)) { 'CLEAN' } else { 'CORRUPT' }
-            Write-Host "===== $tag : $verdict (ret=$rets/6, missing=[$($missing -join ',')], $lines lines) ($mcc) ====="
-            Get-Content $out
+            return (($rets -ne 6) -or ($missing.Count -ne 0))
           }
-          # /O2 baseline (the normal Release build) -- expected corrupt (main dropped)
+          function Corrupt-Rate($mcc, $bdir, $tag) {
+            $corrupt = 0
+            for ($i = 0; $i -lt $N; $i++) {
+              $out = "tls-native-$tag-${env:ART}.s"   # keep the last one as artifact
+              & $mcc "-B$bdir" -fno-diagnostics-show-caret -Iruntime/include -Itests/support -pthread -S tests/exec/features_c99_c11/tls.c -o $out 2>$null
+              if (Is-Corrupt $out) { $corrupt++ }
+            }
+            Write-Host "===== $tag : $corrupt/$N CORRUPT ($mcc) ====="
+          }
+          # /O2 baseline (the normal Release build)
           $mccO2 = (Get-ChildItem -Recurse -Filter mcc.exe cmake-msvc | Where-Object { $_.FullName -notlike '*noopt*' } | Select-Object -First 1).FullName
-          Dump-Tls $mccO2 cmake-msvc "O2"
-          # /Od experiment: same source/toolchain, optimization off. If this restores
-          # `main`, the miscompile is an MSVC optimizer bug on the __thread path.
+          Corrupt-Rate $mccO2 cmake-msvc "O2"
+          # /Od experiment: same source/toolchain, optimization off.
           cmake -S . -B cmake-msvc-noopt -DCMAKE_BUILD_TYPE=Release -DMCC_TOOLCHAIN_PROFILE=msvc -DMCC_NOOPT=ON "-DMCC_DIFF3_GCC=$env:MCC_DIFF3_GCC" "-DMCC_DIFF3_CLANG=$env:MCC_DIFF3_CLANG"
           cmake --build cmake-msvc-noopt --config Release --target mcc
           $mccOd = (Get-ChildItem -Recurse -Filter mcc.exe cmake-msvc-noopt | Select-Object -First 1).FullName
-          Dump-Tls $mccOd cmake-msvc-noopt "Od"
+          Corrupt-Rate $mccOd cmake-msvc-noopt "Od"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
