@@ -205,9 +205,12 @@ Presets exercised locally (beyond CI), all 0 failures unless noted — `macos` a
 run-preset`/`ci qemu` path CI uses (also exercising the new `--output-junit` /
 `ci junit-summary` wiring):
 - `macos` 811/811, `macos-cross` 810/810 (Mach-O/arm64)
-- `linux-gcc` (rc=0), `linux-gcc-release` 811/811, `linux-gcc-sanitize` 811/811
-  (no UB in the changed harness), `linux-gcc-diagnostics` (everything-on warnings:
-  0 in any changed file) — aarch64 ELF
+- the full linux config matrix on aarch64 ELF, all 0 failures: `linux-gcc`,
+  `linux-gcc-release` 811/811, `linux-gcc-sanitize` 811/811 (no UB in the changed
+  harness), `linux-gcc-diagnostics` (everything-on warnings: 0 in any changed
+  file), `linux-gcc-static`, `linux-gcc-multisource`, `linux-gcc-predefs-off`,
+  `linux-gcc-pie`, `linux-gcc-dwarf`, `linux-clang-cross` (all 811/811), and
+  `linux-gcc-asm-off` (779/779 after the arm64-asm gating fix below)
 - **the full 10-cell qemu-user matrix** — all 5 arches × both libcs
   (x86_64, i386, arm, arm64, riscv64 × glibc, musl), every cell 0 failures
   (the 32-bit and x86 cells run under nested emulation on the arm64 host);
@@ -222,10 +225,12 @@ run-preset`/`ci qemu` path CI uses (also exercising the new `--output-junit` /
   nested emulation; the remaining linux config variants are permutations; **msvc /
   mingw / dist-msvc / dist-mingw need a Windows host**. These are the CI matrix's job.
 
-Two errors surfaced by this local preset testing were fixed: a
-`-Wformat-truncation` in `ci.c`'s junit buffers, and `bcheck.c`'s unconditional
+Three errors surfaced by this local preset testing were fixed: a
+`-Wformat-truncation` in `ci.c`'s junit buffers; `bcheck.c`'s unconditional
 `regparm` `FASTCALL` (x86-only; broke host-clang builds off-x86 — now guarded to
-i386/x86_64). `decode_arm_midr` validated against a real aarch64 `/proc/cpuinfo`
+i386/x86_64); and the arm64 inline-asm goldens (`arm64_encoding`/`_errors`/
+`_extasm`) which declared only `cpu=arm64` and so failed on an arm64 host with the
+integrated assembler off instead of skipping — now gated `cpu=arm64,asm`. `decode_arm_midr` validated against a real aarch64 `/proc/cpuinfo`
 (`CPU implementer 0x61` → "Apple"; no `model name` field, confirming the original
 `cpu : ?`).
 
