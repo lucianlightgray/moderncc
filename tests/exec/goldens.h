@@ -26,7 +26,7 @@ static const mcc_golden_t mcc_goldens[] = {
 	{"atomic_aggregate", "run", "exec/features_c99_c11/atomic_aggregate.c", "OK\n", "", "", ""},
 	{"fp_builtins", "run", "exec/features_c99_c11/fp_builtins.c", "OK\n", "", "", ""},
 	{"complex_annexg", "run", "exec/features_c99_c11/complex_annexg.c", "OK\n", "", "", ""},
-	{"fenv_access_fold", "run", "exec/features_c99_c11/fenv_access_fold.c", "OK\n", "-lm", "", "os!=WIN32:needs fesetround, not exported by msvcrt"},
+	{"fenv_access_fold", "run", "exec/features_c99_c11/fenv_access_fold.c", "OK\n", "-lm", "", ""},
 	{"tgmath_dispatch", "run", "exec/features_c99_c11/tgmath_dispatch.c", "OK\n", "-lm", "", "os!=WIN32:needs complex libm (cexp/cabs), absent on the WIN32 target"},
 	{"builtin_bswap", "run", "exec/features_c99_c11/builtin_bswap.c", "OK\n", "", "", ""},
 	{"sync_builtins", "run", "exec/features_c99_c11/sync_builtins.c", "OK\n", "", "", ""},
