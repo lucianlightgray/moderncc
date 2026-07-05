@@ -634,6 +634,29 @@ static void write_sysinfo(FILE *f, const char *plat, const struct compiler *ccs,
 
 /* ----- main ------------------------------------------------------------- */
 
+/* MSVC's cl rejects the GNU probe flags (-dumpmachine/--version) with a
+ * "cl : Command line error D8003" line. Under the VS generator that line
+ * matches MSBuild's canonical error format, so the CustomBuild step running
+ * `bench` is reported as failed (MSB8066, exit -1) even though mccbench itself
+ * succeeds. Probe cl's version from the banner it prints to stderr when run
+ * with no arguments (exit 0, no error line), captured so nothing leaks. */
+static void probe_cl_version(const char *cc, char *version, int vsz) {
+	const char *argv[] = {cc, NULL};
+	char *err = NULL;
+	HostSpawnOpts o;
+	memset(&o, 0, sizeof o);
+	o.stderr_buf = &err;
+	version[0] = 0;
+	if (host_spawn_ex(argv, &o) == 0 && err) {
+		char *nl = strchr(err, '\n');
+		if (nl)
+			*nl = 0;
+		snprintf(version, vsz, "%s", err);
+	}
+	free(err);
+	version[vsz - 1] = 0;
+}
+
 static int detect(struct compiler *cc, const char *key, const char *const *names,
 				  int style, const char *ccmacro) {
 	char m[128];
@@ -645,7 +668,10 @@ static int detect(struct compiler *cc, const char *key, const char *const *names
 	cc->style = style;
 	cc->ccmacro = ccmacro;
 	cc->version[0] = 0;
-	ts_cc_probe(cc->path, m, sizeof m, cc->version, sizeof cc->version);
+	if (style == STYLE_CL)
+		probe_cl_version(cc->path, cc->version, sizeof cc->version);
+	else
+		ts_cc_probe(cc->path, m, sizeof m, cc->version, sizeof cc->version);
 	return 1;
 }
 
