@@ -153,7 +153,7 @@ static int do_run_preset(int argc, char **argv) {
 
 	if (!no_test) {
 		Argv v = {{0}, 0};
-		char junit[4200]; /* > build[4096] + "--output-junit=…/ctest-junit.xml" */
+		char junit[4200]; /* > build[4096] + "cmake-…/ctest-junit.xml" */
 		ts_arg(&v, "ctest");
 		ts_arg(&v, "--preset");
 		ts_arg(&v, preset);
@@ -163,9 +163,10 @@ static int do_run_preset(int argc, char **argv) {
 			ts_arg(&v, config);
 		}
 		/* Emit a JUnit XML so the workflow can render a job-summary table
-		   (ci junit-summary) the same way the macOS/msvc jobs do. */
-		snprintf(junit, sizeof junit, "--output-junit=cmake-%s/ctest-junit.xml",
-		         preset);
+		   (ci junit-summary) the same way the macOS/msvc jobs do. ctest wants
+		   the path as a separate token; the "--output-junit=…" form is rejected. */
+		snprintf(junit, sizeof junit, "cmake-%s/ctest-junit.xml", preset);
+		ts_arg(&v, "--output-junit");
 		ts_arg(&v, junit);
 		for (i = extra_start; i < argc; i++)
 			ts_arg(&v, argv[i]);
@@ -284,11 +285,12 @@ static int do_qemu(int argc, char **argv) {
 	qemu_fixup_multilib((dldir && *dldir) ? dldir : "vendor");
 	{
 		Argv v = {{0}, 0};
-		char junit[4200]; /* > build[4096] + "--output-junit=…/ctest-junit.xml" */
+		char junit[4200]; /* > build[4096] + "/ctest-junit.xml" */
 		ts_arg(&v, "ctest");
 		ts_arg(&v, "--preset");
 		ts_arg(&v, preset);
-		snprintf(junit, sizeof junit, "--output-junit=%s/ctest-junit.xml", build);
+		snprintf(junit, sizeof junit, "%s/ctest-junit.xml", build);
+		ts_arg(&v, "--output-junit");
 		ts_arg(&v, junit);
 		for (i = 0; i < argc; i++)
 			ts_arg(&v, argv[i]);
