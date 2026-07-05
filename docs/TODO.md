@@ -11,10 +11,9 @@ _From CI run [28741671440](https://github.com/lucianlightgray/moderncc/actions/r
 macos×4, msvc×2, mingw, qemu×10, dist×9). These are the warnings / skips / matrix
 open questions that green run left standing._
 
-### exec/tls — MSVC arm64 backend miscompiles mcc (worked around)
+### exec/tls — MSVC arm64 backend miscompiles mcc (skipped on arm64+WIN32)
 
-- [~] **`exec/tls`: MSVC-arm64 `__thread`-codegen miscompile — `#pragma optimize`
-  workaround, re-enabled (2026-07-05).**
+- [ ] **`exec/tls` skipped on arm64+WIN32 (`skipon=arm64/WIN32`, 2026-07-05).**
   On the `msvc / arm64` runner, `exec/tls` intermittently hung (ctest 63 min,
   manual cancel). Root cause is **not** in mcc: **MSVC's arm64 code generator
   miscompiles mcc itself** on the static-`__thread` emission path. The
@@ -29,17 +28,20 @@ open questions that green run left standing._
   - Only **MSVC's arm64 backend building mcc** fails, and it is build/run
     nondeterministic (a later CI build was 0/30 corrupt), so it cannot be
     reproduced or bisected without an arm64 Windows + MSVC box.
-  - **Workaround:** `#pragma optimize("", off)` around the arm64 TLS-access
-    codegen (`arm64_tls_base_x30` + its only callers `load`/`store` in
-    `src/arch/arm64/arm64-gen.c`), scoped to `_MSC_VER && _M_ARM64` so every
-    other build/target is untouched. `exec/tls` re-enabled everywhere. The
-    `msvc` ctest step keeps `--timeout 300` so if the workaround is incomplete
-    (the miscompile is nondeterministic and unverifiable locally), a future
-    flake fails fast instead of hanging the job.
-  - _If it still flakes:_ the miscompiled construct is outside that region —
-    widen the `#pragma optimize` scope (up to the whole mcc TU on
-    `_MSC_VER && _M_ARM64`), or re-gate with `skipon=arm64/WIN32` (the runner
-    gate is still in place) until an arm64 Windows + MSVC host can bisect it.
+  - `exec/tls` still runs (and passes) on **x86_64 WIN32** and on every gcc/clang
+    arm64 target, so `__thread` codegen stays covered. The `msvc` ctest step also
+    carries `--timeout 300` so any future flaky hang fails fast instead of
+    stalling the job.
+  - **Tried and reverted (435087ee):** a scoped `#pragma optimize("", off)` around
+    the arm64 TLS-access codegen (`arm64_tls_base_x30` + `load`/`store`) did **not**
+    fix the hang (`exec/tls` still timed out), so the miscompiled construct is
+    *outside* that region. It also used raw `_MSC_VER`/`_M_ARM64`, which the
+    `host-gate-invariant` test forbids outside `src/mcchost.{h,c}` — any future
+    host-conditional must route through an `MCC_HOST_*` macro defined there.
+  - _Next (needs arm64 Windows + MSVC):_ bisect the miscompiled mcc construct.
+    A whole-mcc-TU `/Od` on that build is the last-resort blunt workaround, but
+    the earlier `MCC_NOOPT` `/Od`-vs-`/O2` probe was inconclusive (the intermittent
+    corruption did not reproduce that run), so even that is unverified.
 
 ### macho-* on native macOS
 

@@ -506,20 +506,6 @@ static void arm64_macho_tls_addr(Sym *sym, uint64_t addend) {
 
 #ifndef MCC_TARGET_MACHO
 
-/*
- * MSVC's arm64 code generator miscompiles mcc's static-__thread emission path:
- * an MSVC-arm64-built mcc.exe nondeterministically drops/truncates functions
- * when it compiles a TU with __thread variables (exec/tls hung on msvc/arm64).
- * mcc's own codegen is correct -- gcc (x86_64 and arm64) and MSVC-x64 builds all
- * emit identical, correct output. Disabling optimization for just the arm64
- * TLS-access codegen (arm64_tls_base_x30 + its only callers load/store) on the
- * MSVC-arm64 build sidesteps the miscompile. Scoped to _MSC_VER && _M_ARM64 so
- * every other build is untouched. See docs/TODO.md.
- */
-#if defined(_MSC_VER) && defined(_M_ARM64)
-#pragma optimize("", off)
-#endif
-
 static void arm64_tls_base_x30(void) {
 #ifdef MCC_TARGET_PE
 	o(ARM64_STR_X_PRE | 0x001F0FE0U | 16);
@@ -799,11 +785,6 @@ ST_FUNC void store(int r, SValue *sv) {
 	printf("store(%x, (%x, %x, %lx))\n", r, svtt, sv->r, (long)svcoff);
 	assert(0);
 }
-
-/* end of the MSVC-arm64 __thread-codegen miscompile workaround (see above). */
-#if defined(_MSC_VER) && defined(_M_ARM64)
-#pragma optimize("", on)
-#endif
 
 static void arm64_gen_bl_or_b(int b) {
 	if ((vtop->r & (VT_VALMASK | VT_LVAL)) == VT_CONST && (vtop->r & VT_SYM)) {
