@@ -167,9 +167,8 @@ be set at *configure* time: the mcc runtime dir (`lib*/mcc`) installs to an
 absolute path baked into the install rules, so an install-time `--prefix`
 cannot re-root it.
 The `dist` jobs instead package their preset's `${sourceDir}/dist` prefix
-via the `package-dist` build target (which drives `ci pkg`, the C port of the
-former `cmake/package.cmake`); the `qemu` job is test-only and uploads
-nothing.
+via the `package-dist` build target (which drives `ci pkg`); the `qemu` job is
+test-only and uploads nothing.
 
 **qemu presets** — CI runs one job per `(arch × libc)` cell natively on the
 Linux runner (`PRESET=qemu-<arch>`, `LIBCS=<one>`, via `ci qemu`, no Docker);

@@ -161,6 +161,18 @@ skipping the whole test. 106 unique skipped tests observed across the 4 macOS jo
   - [ ] `i386-fastcall-abi` (x86-only)  - [ ] `pe-native-conformance`  - [ ] `pe-wine-conformance`
   - [ ] `mcctest` / `mcctest-bcheck` — see the macos-gcc host-cc item above.
 
+- [ ] **Larger-input lexer benchmarking.** Re-run the idea #1–#4 style per-token
+  lexer micro-optimization experiments against the amalgamation TU
+  (`mcc-gcc … -E src/mcc.c`) instead of the 416-line `full_language.c`, where a
+  1–2% change sits below the noise floor. `src/mcc.c` gives a ~0.8% floor
+  (σ ≈ 0.5 ms) with 4× the absolute signal (see `docs/PROFILING.md` §4b, §8).
+- [ ] **Attack the hot lexer clusters.** The two genuinely hot instruction
+  clusters in `next_nomacro` are the identifier-interning hash-chain walk and the
+  per-byte hash computation (`docs/PROFILING.md` §5a). A measurable win targets
+  those — e.g. hash-table load factor / chain length (`TOK_HASH_SIZE`) or the
+  per-char `TOK_HASH_FUNC` cost. Riskier than the applied micro-optimizations, and
+  wants a bigger benchmark to see signal.
+
 Resolved 2026-07-04: arm64 atomics/bounds/complex link
 failures (outline-atomics + `__unordtf2`), Rosetta x86_64 macOS (validated
 end-to-end locally under Rosetta — build, `-run`, ctest subset; CI confirms on

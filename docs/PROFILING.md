@@ -1,10 +1,10 @@
 # PROFILING — where `mcc` spends its time, and how to measure it
 
-How to profile the `mcc` front end, what the numbers look like today, and the
-record of an optimization pass on the lexer (`next` / `next_nomacro`). Everything
-here is reproducible from the commands given — no figure is quoted without the
-command that produced it. Timings are taken with [`hyperfine`][hf] on a
-kernel-tuned quiet system (§3).
+How to profile the `mcc` front end, what the numbers look like, and where the
+lexer (`next` / `next_nomacro`) optimization stands. Everything here is
+reproducible from the commands given — no figure is quoted without the command
+that produced it. Timings are taken with [`hyperfine`][hf] on a kernel-tuned
+quiet system (§3).
 
 [hf]: https://github.com/sharkdp/hyperfine
 
@@ -25,9 +25,8 @@ kernel-tuned quiet system (§3).
   `gcc-debug` (`-O0 -g`), `gcc-release` (`-O2 -g`), `clang-debug`,
   `clang-release`, and three builds of `mcc` itself: `mcc-gcc` (gcc-built),
   `mcc-clang` (clang-built), and self-hosted **`mcc-self`** (mcc-built) as the
-  baseline. Three more self-hosted variants were attempted — `mcc-static`,
-  `mcc-musl`, `mcc-static-musl` — and are documented as environment-limited
-  n/a in §4e.
+  baseline. Three more self-hosted variants — `mcc-static`, `mcc-musl`,
+  `mcc-static-musl` — are environment-limited n/a (§4e).
 - **Host of record:** Linux x86-64 (Gentoo, kernel 6.18), 32 cores, gcc 15.3.0,
   clang 22.1.8. Measurements pinned to core 2 with ASLR off, turbo off, and the
   `performance` governor (§3a); `perf_event_paranoid` lowered to 1 for §5.
@@ -38,8 +37,8 @@ kernel-tuned quiet system (§3).
 ## 1. The builds: three to compare, all to attribute
 
 Each `mcc` in the spread is a `RelWithDebInfo` (`-O2 -g`, unstripped, no
-bcheck/backtrace) build — the same shape as the old `cmake-prof`, so `perf`
-can both time and symbolize it. The only variable is the compiler that built it:
+bcheck/backtrace) build, so `perf` can both time and symbolize it. The only
+variable is the compiler that built it:
 
 | Build dir                | Compiler of `mcc`            | Role in §4        |
 |--------------------------|------------------------------|-------------------|
@@ -102,7 +101,7 @@ The amalgamation's `-D`/`-I` set is large and generated; the faithful way to get
 it is straight from the self-host build, then swap only the compiler and `-O`:
 
 ```sh
-# exact flags the self-host build used for this TU (the -D/-I salad)
+# exact flags the self-host build uses for this TU (the -D/-I salad)
 BASE=$(ninja -C cmake-prof-mcc -t commands CMakeFiles/mcc.dir/src/mcc.c.o | tail -1)
 ARGS=${BASE#*/mcc }                                       # drop the compiler token
 ARGS=${ARGS/-o CMakeFiles\/mcc.dir\/src\/mcc.c.o /}       # drop -o <obj>; keeps -c src/mcc.c
@@ -155,7 +154,7 @@ sudo sysctl -w kernel.perf_event_paranoid=1       # let §5's perf sample withou
 ```
 
 Turbo-off trades a little absolute speed for a much tighter σ — every figure in
-§4 was taken with all four set, so absolute ms here run slightly higher than a
+§4 is taken with all four set, so absolute ms here run slightly higher than a
 turbo-on box but are far more reproducible run-to-run. To restore: set
 `randomize_va_space=2`, `boost` back to `1`, and `perf_event_paranoid` back to
 your distro default (often `2` or `4`).
@@ -257,9 +256,9 @@ small TU `mcc` holds ~5.3 MB against gcc/clang's 62–119 MB.
 
 ### 4e. The static / musl self-host variants — environment-limited on this host
 
-The four extra self-hosted `mcc` builds requested for the table cannot be
-produced on this glibc-only dev host; the failures are reproducible and are what
-the `n/a` cells above record:
+The four extra self-hosted `mcc` builds cannot be produced on this glibc-only
+dev host; the failures are reproducible and are what the `n/a` cells above
+record:
 
 - **³ `mcc-static`, `mcc-static-musl` don't self-link.** `mcc`'s internal
   `-static` linker leaves the compiler-runtime and unwinder unresolved —
@@ -333,29 +332,21 @@ The hot instructions cluster in two places:
 The whitespace-skip loop (mccpp.c ~2779) **does not appear** — it is cold on this
 TU.
 
-## 6. Optimization pass on `next` / `next_nomacro`
+## 6. Lexer optimization — what's applied, and what doesn't fit
 
-> The absolute ms in this section (e.g. `6.75` for `full_language.c -E`) predate
-> the §3a quiet-system config: they were taken **turbo-on**, where this CPU
-> clocks ~2× higher, so they run about half the §4a figure (`14.15` turbo-off)
-> for the same work. Turbo-off narrows σ but not the *ratios* this pass turns on,
-> which are all within-config, so the conclusions are unaffected. Re-run against
-> `mcc-gcc … -E src/mcc.c` (§8) for the tighter modern floor.
+The lexer is already tight enough that per-token dispatch micro-optimizations
+land within the ±1% measurement noise on this TU, and `perf annotate` shows why —
+they do not touch the two hot instruction clusters in §5a. Of four "less work per
+token" changes considered, only idea #1 is applied:
 
-Four "less work per token" ideas were implemented **one at a time**, each
-validated across the full preset matrix (§7) and re-profiled. Result: the lexer
-is already tight enough that three of four land within the ±1% measurement noise
-on this TU, and `perf annotate` shows why — they do not touch the two hot
-instruction clusters above.
+| # | Idea | Effect (preprocess `-E`) | Status |
+|---|------|--------------------------|--------|
+| 1 | Cache the interned `TokenSym` in `next_nomacro`; read `ts->sym_define` in `next()` instead of re-deriving via `define_find(t)` | neutral, but strictly fewer ops/identifier, no downside | **applied** |
+| 2 | SWAR word-at-a-time scanning | whitespace SWAR **slightly negative** (single-space gaps dominate → SWAR preamble is pure overhead on a cold path); identifier SWAR unfit (below) | **not applied** |
+| 3 | Fold `hi\|=c` UTF-8 high-bit detect into an `IS_UTF8` char-class bit | neutral; adds one first-char table load (the original has the char free in-register) → marginally *more* work | **not applied** |
+| 4 | Hoist `parse_flags & PARSE_FLAG_ASM_FILE` out of the number-scan loop | neutral; the term is already short-circuited off the hot digit path and numbers are cold | **not applied** |
 
-| # | Idea | Measured effect (preprocess `-E`) | Disposition |
-|---|------|-----------------------------------|-------------|
-| 1 | Cache the interned `TokenSym` in `next_nomacro`; read `ts->sym_define` in `next()` instead of re-deriving via `define_find(t)` | neutral (6.77 vs 6.75) but strictly fewer ops/identifier, no downside | **Kept** |
-| 2 | SWAR word-at-a-time scanning | whitespace SWAR **slightly negative** (single-space gaps dominate → SWAR preamble is pure overhead on a cold path); identifier SWAR declined | **Reverted** |
-| 3 | Fold `hi\|=c` UTF-8 high-bit detect into an `IS_UTF8` char-class bit | neutral; adds one first-char table load (original had the char free in-register) → marginally *more* work | **Reverted** |
-| 4 | Hoist `parse_flags & PARSE_FLAG_ASM_FILE` out of the number-scan loop | neutral; the term is already short-circuited off the hot digit path and numbers are cold | **Reverted** |
-
-**Why #2's identifier variant was declined (not just measured):** the
+**Why #2's identifier variant does not fit (beyond the measurement):** the
 id-continue predicate `isidnum_table[c] & (IS_ID|IS_NUM)` covers multiple
 disjoint ranges *and* two entries (`$`, `.`) that `set_idnum()` toggles at
 runtime (mccpp.c ~4004) — so a hardcoded SWAR predicate would be wrong under
@@ -389,10 +380,8 @@ return — minus the subtract, bounds-check and array load.
 
 ## 7. Validation matrix
 
-Every implementation was configured + built + tested across the **20
-Linux-runnable presets** before moving on (each is the full 804-test CTest suite;
-`asm-off` legitimately runs 772). All 20 stayed **100% green** at baseline, after
-idea #1, and at the final state:
+The change is validated across the **20 Linux-runnable presets** (each the full
+804-test CTest suite; `asm-off` legitimately runs 772), all **100% green**:
 
 ```
 debug  sanitize  diagnostics  linux-gcc  linux-clang
@@ -407,7 +396,7 @@ because their `*-fetch` steps download target glibc/musl sysroots, which needs
 network the host lacks (environmental, not a code failure). macOS / MSVC / mingw
 presets do not run on a Linux host.
 
-Per-implementation smoke sets used between full sweeps:
+Per-implementation smoke sets for the affected lexer areas:
 
 ```sh
 ctest --preset debug -R 'mcctest|preprocess|lex|ident|whitespace|comment|string'   # lexer
@@ -422,16 +411,16 @@ ctest --preset debug -R 'integer|float|hex|literal|suffix|asm|imaginary|complex'
   below the noise floor on a 416-line TU.
 - The two genuinely hot instruction clusters are the **identifier interning hash
   chain walk** and the **per-byte hash computation** — not whitespace, not
-  number scanning, not the `define_find` lookup. A real improvement would attack
-  those: e.g. hash-table load factor / chain length (`TOK_HASH_SIZE`), or the
-  per-char `TOK_HASH_FUNC` cost. Both are riskier than the ideas tried here and
-  want a bigger benchmark to see signal.
-- **Measure on a larger input.** 416 lines is too small to separate a 1–2% lexer
-  change from noise. The amalgamation spread (§4b) does exactly this: `src/mcc.c`
-  preprocesses in ~62 ms (`mcc-gcc`) with σ ≈ 0.5 ms — a ~0.8 % floor vs
-  `full_language.c`'s ~1 %, and 4× the absolute signal — so a lexer change now
-  shows up there long before it clears noise on the small TU. Re-run idea #1–#4
-  style experiments against `mcc-gcc … -E src/mcc.c`, not `full_language.c`.
+  number scanning, not the `define_find` lookup. A measurable win has to come
+  from those, not from more per-token dispatch micro-tuning (tracked in
+  `docs/TODO.md`).
+- **The larger input separates signal from noise.** 416 lines is too small to
+  separate a 1–2% lexer change from noise. The amalgamation spread (§4b) does
+  better: `src/mcc.c` preprocesses in ~62 ms (`mcc-gcc`) with σ ≈ 0.5 ms — a
+  ~0.8 % floor vs `full_language.c`'s ~1 %, and 4× the absolute signal — so a
+  lexer change shows up there long before it clears noise on the small TU. Lexer
+  experiments belong on `-E src/mcc.c`, not `full_language.c` (tracked in
+  `docs/TODO.md`).
 
 - **The full spread (§4) reframes "fast" quantitatively.** `mcc` is not merely
   "faster than `-O0`": on the amalgamation it beats `gcc -O2` by **204×** in time

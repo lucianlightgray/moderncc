@@ -11,11 +11,11 @@ grounded in a query or grep you can re-run.
   mines contiguous groups that recur. Two databases are kept for exploration:
   `analysis/statements.db` (per-function patterns) and `analysis/inlined.db`
   (call-inlined streams + cross-function patterns). See `analysis/README.md`.
-  Findings below were then confirmed with a raw-text function-body hash
+  Findings below are confirmed with a raw-text function-body hash
   (`/tmp/dupfn.py`-style: exact-identical bodies across files) and a token-multiset
   Jaccard near-dup pass — the ranking tool over-counts (it renames enum constants,
-  so same-shaped `switch`es collide), so **every item here was read in source.**
-- **Corpus** (re-analyzed at commit `22f4049c`): 77 files · 1,929 functions ·
+  so same-shaped `switch`es collide), so **every item here is read in source.**
+- **Corpus** (at commit `22f4049c`): 77 files · 1,929 functions ·
   38,114 statements → 10,817 recurring per-function patterns (n = 3…12) and
   31,380 cross-boundary patterns.
 - **Reproduce:** `python3 analysis/query.py {candidates,sweep,xfunc,show,xshow}`;
