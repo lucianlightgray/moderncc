@@ -643,7 +643,15 @@ static int detect(struct compiler *cc, const char *key, const char *const *names
 	cc->style = style;
 	cc->ccmacro = ccmacro;
 	cc->version[0] = 0;
-	ts_cc_probe(cc->path, m, sizeof m, cc->version, sizeof cc->version);
+	/* MSVC's cl understands neither -dumpmachine nor --version: it prints
+	   D9002/D8003 to stderr and exits non-zero. That stderr leaks to the build
+	   console, where MSBuild scans it and fails the whole custom-build step even
+	   though mccbench itself succeeds. cl's version isn't needed for the run, so
+	   skip the GCC-style probe for it (the report just shows "?"). */
+	if (style != STYLE_CL)
+		ts_cc_probe(cc->path, m, sizeof m, cc->version, sizeof cc->version);
+	else
+		(void)m;
 	return 1;
 }
 
