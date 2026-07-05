@@ -1913,6 +1913,16 @@ add_executable(mcc src/mcc.c)
 set_source_files_properties(src/mcc.c PROPERTIES OBJECT_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mcctools.c")
 target_include_directories(mcc PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+# MCC_NOOPT (diagnostic): force optimization off for the mcc TU. Used to test
+# whether the MSVC-arm64 miscompile of mcc's static-__thread emission path is an
+# optimizer bug (exec/tls corrupts under /O2, see docs/TODO.md). Not for normal use.
+if(MCC_NOOPT)
+    if(MSVC)
+        target_compile_options(mcc PRIVATE /Od)
+    else()
+        target_compile_options(mcc PRIVATE -O0)
+    endif()
+endif()
 if(NOT MCC_TARGETOS STREQUAL "WIN32")
     target_link_libraries(mcc PRIVATE m)
     find_package(Threads)

@@ -139,8 +139,37 @@ jobs:
         run: cmake --preset msvc "-DCMAKE_INSTALL_PREFIX=$($PWD.Path.Replace('\','/'))/dist/${env:ART}" "-DMCC_BENCH=ON" "-DMCC_DIST_PLAT=${env:ART}"
       - name: build
         run: cmake --build --preset msvc -j
+      - name: localize MSVC-arm64 mcc miscompile (O2 vs Od tls.s)
+        if: matrix.arch == 'arm64'
+        continue-on-error: true
+        run: |
+          function Dump-Tls($mcc, $bdir, $tag) {
+            $out = "tls-native-$tag-${env:ART}.s"
+            & $mcc "-B$bdir" -fno-diagnostics-show-caret -Iruntime/include -Itests/support -pthread -S tests/exec/features_c99_c11/tls.c -o $out
+            $hasMain = [bool](Select-String -Path $out -Pattern '^main:' -Quiet)
+            $lines = (Get-Content $out | Measure-Object -Line).Lines
+            Write-Host "===== $tag : main present = $hasMain, $lines lines ($mcc) ====="
+            Get-Content $out
+          }
+          # /O2 baseline (the normal Release build) -- expected corrupt (main dropped)
+          $mccO2 = (Get-ChildItem -Recurse -Filter mcc.exe cmake-msvc | Where-Object { $_.FullName -notlike '*noopt*' } | Select-Object -First 1).FullName
+          Dump-Tls $mccO2 cmake-msvc "O2"
+          # /Od experiment: same source/toolchain, optimization off. If this restores
+          # `main`, the miscompile is an MSVC optimizer bug on the __thread path.
+          cmake -S . -B cmake-msvc-noopt -DCMAKE_BUILD_TYPE=Release -DMCC_TOOLCHAIN_PROFILE=msvc -DMCC_NOOPT=ON "-DMCC_DIFF3_GCC=$env:MCC_DIFF3_GCC" "-DMCC_DIFF3_CLANG=$env:MCC_DIFF3_CLANG"
+          cmake --build cmake-msvc-noopt --config Release --target mcc
+          $mccOd = (Get-ChildItem -Recurse -Filter mcc.exe cmake-msvc-noopt | Select-Object -First 1).FullName
+          Dump-Tls $mccOd cmake-msvc-noopt "Od"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: tls-native-${{ matrix.arch }}
+          path: tls-native-*.s
       - name: test
-        run: ctest --preset msvc -j ${env:NUMBER_OF_PROCESSORS} --output-junit "cmake-msvc/bench-tests.xml"
+        # --timeout caps any single test: a hung test (e.g. a thread-contention
+        # deadlock that only manifests on real arm64 silicon) is killed and named
+        # in the log instead of stalling the whole job until it is cancelled.
+        run: ctest --preset msvc -j ${env:NUMBER_OF_PROCESSORS} --timeout 300 --output-junit "cmake-msvc/bench-tests.xml"
       - name: benchmark
         if: always()
         run: |
