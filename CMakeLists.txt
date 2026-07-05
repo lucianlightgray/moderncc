@@ -2759,12 +2759,12 @@ if(NOT CMAKE_CROSSCOMPILING)
     endif()
 
     # ---- Local CI: reproduce the whole CI + release matrix on this machine ---
-    # `cmake/ci-local.cmake` probes the host for every toolchain/emulator the
-    # workflows use (native cc, host-runnable cross, qemu-user per arch, wine,
-    # mingw) and runs each preset this OS can run — via the same `ci run-preset`
-    # tool CI uses — then builds the dist/ release bundles. See that script's
-    # header for the environment knobs (LOCAL_CI_ONLY / _SKIP_QEMU / _SKIP_RELEASE
-    # / _LIST / _KEEP_GOING).
+    # The `ci local` verb (tools/ci.c) probes the host for every toolchain/
+    # emulator the workflows use (native cc, host-runnable cross, qemu-user per
+    # arch, wine, mingw) and runs each preset this OS can run — via the same
+    # do_run_preset() path CI uses — then builds the dist/ release bundles. It
+    # reads its runtime knobs from the environment (LOCAL_CI_ONLY / _SKIP_QEMU /
+    # _SKIP_RELEASE / _LIST / _KEEP_GOING); see the verb's header comment.
     # CMake hard-reserves the `test` name whenever this build registers ctest
     # tests, so `test` can only become the orchestrator in a build that isn't
     # itself running ctest. MCC_LOCAL_CI_AS_TEST=ON turns this into that build:
@@ -2786,13 +2786,9 @@ if(NOT CMAKE_CROSSCOMPILING)
         set(_local_ci_name ci-local)
     endif()
     add_custom_target(${_local_ci_name}
-        COMMAND "${CMAKE_COMMAND}"
-            "-DCI_TOOL=$<TARGET_FILE:ci>"
-            "-DSRCDIR=${CMAKE_SOURCE_DIR}"
-            "-DDIST_VERSION=${MCC_DIST_VERSION}"
-            "-DDIST_DIR=${MCC_DIST_DIR}"
-            "-DHOST_CPU=${MCC_CPU}"
-            -P "${CMAKE_SOURCE_DIR}/cmake/ci-local.cmake"
+        COMMAND "$<TARGET_FILE:ci>" local
+            --version "${MCC_DIST_VERSION}"
+            --host-cpu "${MCC_CPU}"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         USES_TERMINAL VERBATIM
         COMMENT "Local CI: probe host + run every applicable CI/release preset")

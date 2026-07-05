@@ -185,6 +185,491 @@ static int do_run_preset(int argc, char **argv) {
 	return 0;
 }
 
+/* The x86_64 Gentoo stage3 keeps its CRT objects in usr/lib64, but the
+   multilib x86_64 driver looks in usr/lib; mirror them across for each fetched
+   x86_64 sysroot so the qemu-user link step finds crt1.o etc. */
+static void qemu_fixup_multilib(const char *dldir) {
+	static const char *libcs[] = {"glibc", "musl", 0};
+	static const char *objs[] = {"crt1.o",  "crti.o",  "crtn.o",
+	                             "Scrt1.o", "gcrt1.o", "Mcrt1.o", 0};
+	char root[4096], src[4096], dst[4096];
+	int i, j, isd;
+
+	for (i = 0; libcs[i]; i++) {
+		ts_path(root, sizeof root, dldir, "gentoo-stage3-x86_64-%s", libcs[i]);
+		if (host_stat(root, &isd, NULL, NULL) || !isd)
+			continue;
+		ts_path(src, sizeof src, root, "usr/lib64/crt1.o");
+		if (host_stat(src, NULL, NULL, NULL))
+			continue; /* no lib64 CRT here -> nothing to mirror */
+		for (j = 0; objs[j]; j++) {
+			ts_path(src, sizeof src, root, "usr/lib64/%s", objs[j]);
+			ts_path(dst, sizeof dst, root, "usr/lib/%s", objs[j]);
+			if (host_stat(src, NULL, NULL, NULL) == 0)
+				host_copy_file(src, dst, 0);
+		}
+		printf("==> fixed multilib crt in gentoo-stage3-x86_64-%s\n", libcs[i]);
+	}
+}
+
+/* qemu-user cross-conformance matrix, run in-tree (no Docker). Env-driven so it
+   is a drop-in for the old run-matrix.sh: PRESET (default qemu), ARCHS / LIBCS
+   override MCC_QEMU_ARCHS/_LIBCS, MCC_QEMU_DLDIR overrides the sysroot dir
+   (defaults to <repo>/vendor in CMake). Trailing args pass through to ctest. */
+static int do_qemu(int argc, char **argv) {
+	const char *preset = getenv("PRESET");
+	const char *archs = getenv("ARCHS");
+	const char *libcs = getenv("LIBCS");
+	const char *dldir = getenv("MCC_QEMU_DLDIR");
+	char build[4096], dover[4096], aover[4096], lover[4096], jflag[32];
+	int jobs = host_nproc(), i;
+
+	if (!preset || !*preset)
+		preset = "qemu";
+	snprintf(jflag, sizeof jflag, "-j%d", jobs > 0 ? jobs : 1);
+	snprintf(build, sizeof build, "cmake-%s", preset);
+
+	{
+		Argv v = {{0}, 0};
+		ts_arg(&v, "cmake");
+		ts_arg(&v, "--preset");
+		ts_arg(&v, preset);
+		if (dldir && *dldir) {
+			snprintf(dover, sizeof dover, "-DMCC_QEMU_DLDIR=%s", dldir);
+			ts_arg(&v, dover);
+		}
+		if (archs && *archs) {
+			snprintf(aover, sizeof aover, "-DMCC_QEMU_ARCHS=%s", archs);
+			ts_arg(&v, aover);
+		}
+		if (libcs && *libcs) {
+			snprintf(lover, sizeof lover, "-DMCC_QEMU_LIBCS=%s", libcs);
+			ts_arg(&v, lover);
+		}
+		printf("==> configuring (preset=%s)\n", preset);
+		if (ts_run(ts_argz(&v)))
+			return 1;
+	}
+	{
+		Argv v = {{0}, 0};
+		ts_arg(&v, "cmake");
+		ts_arg(&v, "--build");
+		ts_arg(&v, "--preset");
+		ts_arg(&v, preset);
+		ts_arg(&v, jflag);
+		printf("==> building (%s)\n", jflag);
+		if (ts_run(ts_argz(&v)))
+			return 1;
+	}
+	/* Pre-fetch the x86_64 sysroots (a no-op for other presets) so the CRT
+	   fixup can run before the final ctest exercises them; the fetch is
+	   idempotent (marker file), so ctest --preset re-runs it harmlessly. */
+	{
+		Argv v = {{0}, 0};
+		ts_arg(&v, "ctest");
+		ts_arg(&v, "--test-dir");
+		ts_arg(&v, build);
+		ts_arg(&v, "-R");
+		ts_arg(&v, "qemu-x86_64-.*-fetch");
+		ts_arg(&v, "--output-on-failure");
+		printf("==> pre-fetching x86_64 sysroots for multilib fixup\n");
+		ts_run(ts_argz(&v)); /* best-effort */
+	}
+	qemu_fixup_multilib((dldir && *dldir) ? dldir : "vendor");
+	{
+		Argv v = {{0}, 0};
+		ts_arg(&v, "ctest");
+		ts_arg(&v, "--preset");
+		ts_arg(&v, preset);
+		for (i = 0; i < argc; i++)
+			ts_arg(&v, argv[i]);
+		printf("==> running qemu matrix (preset=%s)\n", preset);
+		if (ts_run(ts_argz(&v)))
+			return 1;
+	}
+	return 0;
+}
+
+/* ---- Local CI: reproduce the whole CI + release matrix on this machine -----
+   Port of the former cmake/ci-local.cmake. Probes the host for every toolchain
+   and emulator the workflows use, plans the presets this OS can actually run,
+   then drives each through the same code paths CI uses: do_run_preset() for the
+   test matrix, and a configure->build->install->bench->package-dist cmake
+   sequence for the dist bundles (== release.yml). Runtime knobs come from the
+   environment (LOCAL_CI_ONLY substring filter / _SKIP_QEMU / _SKIP_RELEASE /
+   _LIST / _KEEP_GOING), so the same target can be scoped ad hoc. */
+
+#define LOC_MAX 64
+typedef struct {
+	char preset[64], cc[16], plat[64];
+} LocJob;
+
+static int loc_have(const char *name) {
+	char buf[4096];
+	return host_find_tool(name, ".exe", buf, sizeof buf);
+}
+
+static void loc_setcc(const char *cc) {
+#ifdef _WIN32
+	char buf[80];
+	snprintf(buf, sizeof buf, "CC=%s", (cc && *cc) ? cc : "");
+	_putenv(buf);
+#else
+	if (cc && *cc)
+		setenv("CC", cc, 1);
+	else
+		unsetenv("CC");
+#endif
+}
+
+static int loc_env_on(const char *var) {
+	const char *v = getenv(var);
+	return v && *v && strcmp(v, "0");
+}
+
+/* configure -> build -> install -> bench -> package-dist (mirrors release.yml). */
+/* configure -> build -> install -> (macOS: strip -x) -> bench -> package-dist:
+   the exact release.yml dist flow, in one place so `ci dist` (release.yml) and
+   `ci local` share it. The dist presets pin their own compiler, so no CC is
+   needed. extra[] are additional -D configure args (e.g. the Rosetta cross
+   flags for the x86_64-on-arm64 macOS bundle). */
+static int run_dist(const char *preset, const char *plat, const char *ver,
+                    char **extra, int n_extra) {
+	char pdv[256], pdp[256], bdir[128];
+	int msvc = strstr(preset, "msvc") != NULL, i;
+
+	snprintf(pdv, sizeof pdv, "-DMCC_DIST_VERSION=%.200s", ver);
+	snprintf(pdp, sizeof pdp, "-DMCC_DIST_PLAT=%.63s", plat);
+	snprintf(bdir, sizeof bdir, "cmake-%.63s", preset);
+	{
+		Argv v = {{0}, 0};
+		ts_arg(&v, "cmake");
+		ts_arg(&v, "--preset");
+		ts_arg(&v, preset);
+		ts_arg(&v, pdv);
+		ts_arg(&v, pdp);
+		ts_arg(&v, "-DMCC_BENCH=ON");
+		for (i = 0; i < n_extra; i++)
+			ts_arg(&v, extra[i]);
+		if (ts_run(ts_argz(&v)))
+			return 1;
+	}
+	{
+		const char *a[] = {"cmake", "--build", "--preset", preset, "-j", 0};
+		if (ts_run(a))
+			return 1;
+	}
+	{
+		const char *a[] = {"cmake",  "--install", bdir,
+		                   "--config", "Release",  0};
+		if (!msvc) /* single-config generators reject --config at install */
+			a[3] = 0;
+		if (ts_run(a))
+			return 1;
+	}
+#ifdef __APPLE__
+	/* MCC_BUILD_STRIP is off for dist-macos (a full strip trips codesigning),
+	   so strip only local symbols post-install, as release.yml did. */
+	{
+		char *g[64];
+		int ng = ts_glob("dist/bin", "mcc*", 0, g, 64), k;
+		for (k = 0; k < ng && k < 64; k++) {
+			const char *a[] = {"strip", "-x", g[k], 0};
+			ts_run(a); /* best-effort */
+			free(g[k]);
+		}
+	}
+#endif
+	{
+		const char *a[] = {"cmake", "--build",       "--preset",
+		                   preset, "--target", "bench", 0};
+		if (ts_run(a))
+			return 1;
+	}
+	{
+		const char *a[] = {"cmake", "--build",         "--preset",
+		                   preset, "--target", "package-dist", 0};
+		if (ts_run(a))
+			return 1;
+	}
+	return 0;
+}
+
+static int do_local(int argc, char **argv) {
+	const char *ver = "v0.0.0-local", *host_cpu = "unknown";
+	const char *only = getenv("LOCAL_CI_ONLY");
+	LocJob test[LOC_MAX], dist[LOC_MAX];
+	char skip[LOC_MAX][160], results[LOC_MAX * 2][192];
+	int n_test = 0, n_dist = 0, n_skip = 0, n_res = 0, n_fail = 0;
+	int keep_going = 1, i, stop = 0;
+	static const char *QARCH[] = {"x86_64", "i386", "arm", "arm64", "riscv64", 0};
+	static const char *QBIN[] = {"qemu-x86_64", "qemu-i386",  "qemu-arm",
+	                             "qemu-aarch64", "qemu-riscv64", 0};
+	int have_gcc, have_clang, have_cl, have_wine, have_mingw, have_docker;
+	int qfound[8], n_qemu = 0;
+#if defined(_WIN32)
+	const char *os = "Windows";
+#elif defined(__APPLE__)
+	const char *os = "Darwin";
+#else
+	const char *os = "Linux";
+#endif
+
+	for (i = 0; i < argc; i++) {
+		if (!strcmp(argv[i], "--version") && i + 1 < argc)
+			ver = argv[++i];
+		else if (!strcmp(argv[i], "--host-cpu") && i + 1 < argc)
+			host_cpu = argv[++i];
+	}
+	/* LOCAL_CI_KEEP_GOING: default 1 (run all, like CI fail-fast:false); "0"
+	   stops at the first failure. */
+	{
+		const char *k = getenv("LOCAL_CI_KEEP_GOING");
+		keep_going = (k && !strcmp(k, "0")) ? 0 : 1;
+	}
+
+	have_gcc = loc_have("gcc");
+	have_clang = loc_have("clang");
+	have_cl = loc_have("cl");
+	have_wine = loc_have("wine") || loc_have("wine64");
+	have_mingw = loc_have("x86_64-w64-mingw32-gcc");
+	have_docker = loc_have("docker");
+	for (i = 0; QARCH[i]; i++) {
+		qfound[i] = loc_have(QBIN[i]);
+		if (qfound[i])
+			n_qemu++;
+	}
+
+#define LOC_TEST(P, CC)                                                        \
+	do {                                                                   \
+		if (n_test < LOC_MAX) {                                        \
+			snprintf(test[n_test].preset, 64, "%s", (P));         \
+			snprintf(test[n_test].cc, 16, "%s", (CC));            \
+			n_test++;                                             \
+		}                                                             \
+	} while (0)
+#define LOC_SKIP(FMT, ...)                                                     \
+	do {                                                                   \
+		if (n_skip < LOC_MAX)                                          \
+			snprintf(skip[n_skip++], 160, FMT, __VA_ARGS__);      \
+	} while (0)
+#define LOC_DIST(P, CC, PLAT)                                                  \
+	do {                                                                   \
+		if (n_dist < LOC_MAX) {                                        \
+			snprintf(dist[n_dist].preset, 64, "%s", (P));         \
+			snprintf(dist[n_dist].cc, 16, "%s", (CC));            \
+			snprintf(dist[n_dist].plat, 64, "%s", (PLAT));        \
+			n_dist++;                                             \
+		}                                                             \
+	} while (0)
+
+	if (!strcmp(os, "Linux")) {
+		static const char *G[] = {
+		    "linux-gcc",           "linux-gcc-cross",
+		    "linux-gcc-release",   "linux-gcc-musl",
+		    "linux-gcc-static",    "linux-gcc-multisource",
+		    "linux-gcc-asm-off",   "linux-gcc-predefs-off",
+		    "linux-gcc-pie",       "linux-gcc-dwarf",
+		    "linux-gcc-diagnostics", "linux-gcc-sanitize", 0};
+		static const char *C[] = {"linux-clang", "linux-clang-cross",
+		                          "linux-clang-release", 0};
+		for (i = 0; G[i]; i++) {
+			if (have_gcc)
+				LOC_TEST(G[i], "");
+			else
+				LOC_SKIP("%s - gcc not found", G[i]);
+		}
+		for (i = 0; C[i]; i++) {
+			if (have_clang)
+				LOC_TEST(C[i], "");
+			else
+				LOC_SKIP("%s - clang not found", C[i]);
+		}
+	} else if (!strcmp(os, "Darwin")) {
+		static const char *M[] = {"macos", "macos-cross", 0};
+		for (i = 0; M[i]; i++) {
+			if (have_clang)
+				LOC_TEST(M[i], "clang");
+			if (have_gcc)
+				LOC_TEST(M[i], "gcc");
+			if (!have_clang && !have_gcc)
+				LOC_SKIP("%s - no C compiler (need clang or gcc)", M[i]);
+		}
+	} else if (!strcmp(os, "Windows")) {
+		if (have_cl)
+			LOC_TEST("msvc", "");
+		else
+			LOC_SKIP("%s - cl (MSVC) not found (run from a VS dev shell)", "msvc");
+		/* mingw fetches its own winlibs GCC via the superbuild; always attempt. */
+		LOC_TEST("mingw", "");
+	}
+
+	if (!loc_env_on("LOCAL_CI_SKIP_QEMU")) {
+		for (i = 0; QARCH[i]; i++) {
+			char p[64];
+			if (qfound[i]) {
+				snprintf(p, sizeof p, "qemu-%s", QARCH[i]);
+				LOC_TEST(p, "");
+			} else {
+				LOC_SKIP("qemu-%s - %s not found (install qemu-user)",
+				         QARCH[i], QBIN[i]);
+			}
+		}
+	} else {
+		LOC_SKIP("%s", "qemu-* - skipped (LOCAL_CI_SKIP_QEMU)");
+	}
+
+	if (!loc_env_on("LOCAL_CI_SKIP_RELEASE")) {
+		char plat[64];
+		if (!strcmp(os, "Linux")) {
+			if (have_gcc) {
+				snprintf(plat, sizeof plat, "linux-%s-gcc", host_cpu);
+				LOC_DIST("dist-linux-gcc", "", plat);
+			}
+			if (have_clang) {
+				snprintf(plat, sizeof plat, "linux-%s-clang", host_cpu);
+				LOC_DIST("dist-linux-clang", "", plat);
+			}
+		} else if (!strcmp(os, "Darwin")) {
+			snprintf(plat, sizeof plat, "macos-%s-clang", host_cpu);
+			LOC_DIST("dist-macos", "clang", plat);
+		} else if (!strcmp(os, "Windows")) {
+			if (have_cl) {
+				snprintf(plat, sizeof plat, "windows-%s-msvc", host_cpu);
+				LOC_DIST("dist-msvc", "", plat);
+			}
+			snprintf(plat, sizeof plat, "windows-%s-mingw", host_cpu);
+			LOC_DIST("dist-mingw", "", plat);
+		}
+	} else {
+		LOC_SKIP("%s", "dist-* - skipped (LOCAL_CI_SKIP_RELEASE)");
+	}
+
+	/* Optional substring filter over both plans (LOCAL_CI_ONLY). */
+	if (only && *only) {
+		int k = 0;
+		for (i = 0; i < n_test; i++)
+			if (strstr(test[i].preset, only))
+				test[k++] = test[i];
+		n_test = k;
+		k = 0;
+		for (i = 0; i < n_dist; i++)
+			if (strstr(dist[i].preset, only))
+				dist[k++] = dist[i];
+		n_dist = k;
+	}
+
+	printf("\n==================== local CI: host probe ====================\n");
+	printf("  host            : %s / %s\n", os, host_cpu);
+	printf("  gcc             : %s\n", have_gcc ? "yes" : "no");
+	printf("  clang           : %s\n", have_clang ? "yes" : "no");
+	printf("  msvc (cl)       : %s\n", have_cl ? "yes" : "no");
+	printf("  wine            : %s   (drives pe-wine-conformance in *-cross)\n",
+	       have_wine ? "yes" : "no");
+	printf("  mingw cross gcc : %s\n", have_mingw ? "yes" : "no");
+	printf("  docker          : %s\n", have_docker ? "yes" : "no");
+	printf("  qemu-user       : %d arch(es)\n", n_qemu);
+	printf("  --------------------------------------------------------\n");
+	printf("  test presets    : %d\n", n_test);
+	for (i = 0; i < n_test; i++)
+		printf("      run   %s%s%s\n", test[i].preset,
+		       *test[i].cc ? " CC=" : "", test[i].cc);
+	printf("  release bundles : %d\n", n_dist);
+	for (i = 0; i < n_dist; i++)
+		printf("      dist  %s -> %s\n", dist[i].preset, dist[i].plat);
+	printf("  skipped         : %d\n", n_skip);
+	for (i = 0; i < n_skip; i++)
+		printf("      skip  %s\n", skip[i]);
+	printf("==============================================================\n\n");
+
+	if (loc_env_on("LOCAL_CI_LIST")) {
+		printf("LOCAL_CI_LIST set - plan only, nothing run.\n");
+		return 0;
+	}
+
+	for (i = 0; i < n_test && !stop; i++) {
+		char *a[1];
+		int rc;
+		loc_setcc(test[i].cc);
+		printf("\n>>>> [test] %s%s%s\n", test[i].preset,
+		       *test[i].cc ? " CC=" : "", test[i].cc);
+		a[0] = test[i].preset;
+		rc = do_run_preset(1, a);
+		if (rc == 0) {
+			snprintf(results[n_res++], 192, "PASS  test %.63s", test[i].preset);
+		} else {
+			snprintf(results[n_res++], 192, "FAIL  test %.63s (exit %d)",
+			         test[i].preset, rc);
+			n_fail++;
+			if (!keep_going)
+				stop = 1;
+		}
+	}
+	for (i = 0; i < n_dist && !stop; i++) {
+		int rc;
+		printf("\n>>>> [dist] %s -> %s\n", dist[i].preset, dist[i].plat);
+		rc = run_dist(dist[i].preset, dist[i].plat, ver, NULL, 0);
+		if (rc == 0) {
+			snprintf(results[n_res++], 192, "PASS  dist %.63s -> %.63s",
+			         dist[i].preset, dist[i].plat);
+		} else {
+			snprintf(results[n_res++], 192, "FAIL  dist %.63s -> %.63s (exit %d)",
+			         dist[i].preset, dist[i].plat, rc);
+			n_fail++;
+			if (!keep_going)
+				stop = 1;
+		}
+	}
+
+	printf("\n==================== local CI: summary =======================\n");
+	for (i = 0; i < n_res; i++)
+		printf("  %s\n", results[i]);
+	for (i = 0; i < n_skip; i++)
+		printf("  SKIP  %s\n", skip[i]);
+	printf("==============================================================\n");
+	if (stop)
+		printf("  (stopped early: LOCAL_CI_KEEP_GOING=0)\n");
+	if (n_fail > 0) {
+		fprintf(stderr, "local CI: %d/%d job(s) FAILED\n", n_fail, n_res);
+		return 1;
+	}
+	printf("local CI: all %d job(s) passed.\n", n_res);
+	return 0;
+}
+
+#undef LOC_TEST
+#undef LOC_SKIP
+#undef LOC_DIST
+
+/* Single dist bundle: configure+build+install+bench+package-dist for one preset
+   (the release.yml dist flow), via the shared run_dist(). Args after `--` are
+   extra -D configure flags (e.g. Rosetta's -DCMAKE_OSX_ARCHITECTURES=x86_64). */
+static int do_dist(int argc, char **argv) {
+	const char *preset = NULL, *plat = NULL, *ver = "v0.0.0-local";
+	char **extra = NULL;
+	int n_extra = 0, i;
+
+	for (i = 0; i < argc; i++) {
+		if (!strcmp(argv[i], "--preset") && i + 1 < argc)
+			preset = argv[++i];
+		else if (!strcmp(argv[i], "--plat") && i + 1 < argc)
+			plat = argv[++i];
+		else if (!strcmp(argv[i], "--version") && i + 1 < argc)
+			ver = argv[++i];
+		else if (!strcmp(argv[i], "--")) {
+			extra = &argv[i + 1];
+			n_extra = argc - (i + 1);
+			break;
+		}
+	}
+	if (!preset || !plat) {
+		fprintf(stderr, "usage: ci dist --preset P --plat PLAT [--version V] "
+		                "[-- <extra -D configure args>]\n");
+		return 2;
+	}
+	return run_dist(preset, plat, ver, extra, n_extra);
+}
+
 static const char *g_filter;
 static int g_json, g_json_first = 1;
 static void emit_preset(const char *b, const char *e) {
@@ -652,13 +1137,19 @@ static int do_pkg(int argc, char **argv) {
 
 int main(int argc, char **argv) {
 	if (argc < 2) {
-		fprintf(stderr, "usage: ci <stage|run-preset|matrix|pkg|sha256sums> ...\n");
+		fprintf(stderr, "usage: ci <stage|run-preset|qemu|local|dist|matrix|pkg|sha256sums> ...\n");
 		return 2;
 	}
 	if (!strcmp(argv[1], "stage"))
 		return do_stage(argc - 2, argv + 2);
 	if (!strcmp(argv[1], "run-preset"))
 		return do_run_preset(argc - 2, argv + 2);
+	if (!strcmp(argv[1], "qemu"))
+		return do_qemu(argc - 2, argv + 2);
+	if (!strcmp(argv[1], "local"))
+		return do_local(argc - 2, argv + 2);
+	if (!strcmp(argv[1], "dist"))
+		return do_dist(argc - 2, argv + 2);
 	if (!strcmp(argv[1], "matrix"))
 		return do_matrix(argc - 2, argv + 2);
 	if (!strcmp(argv[1], "pkg"))

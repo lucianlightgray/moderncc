@@ -42,20 +42,16 @@ jobs:
       ART: mcc-${{ matrix.preset }}-${{ matrix.arch }}
     steps:
       - uses: actions/checkout@v5
-      - name: build CI runner image
-        run: docker build -t mcc-ci tests/ci/docker
+      - name: install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build build-essential gcc clang lld wine64 git rsync
       - name: run ${{ matrix.preset }}
         run: |
+          cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl
           mkdir -p "dist/$ART"
-          chmod -R 777 dist
-          mkdir -p "$PWD/vendor"
-          docker run --rm \
-            -e PRESET=${{ matrix.preset }} \
-            -e ART="$ART" \
-            -v "$PWD:/work:ro" \
-            -v "$PWD/vendor:/vendor" \
-            -v "$PWD/dist:/dist" \
-            mcc-ci
+          /tmp/mcc-ci run-preset ${{ matrix.preset }} --out "dist/$ART"
       - name: pack build targets
         run: tar cJf "$ART.tar.xz" -C dist "$ART"
       - uses: actions/upload-artifact@v7
@@ -195,25 +191,36 @@ jobs:
             dist/bench-*.txt
 
   qemu:
-    name: qemu / ${{ matrix.arch }} (glibc+musl)
+    # user-mode qemu exists only on Linux, so this runs natively on the ubuntu
+    # runner (no Docker). One job per (arch x libc) cell keeps each run small
+    # and fetches only that cell's Gentoo stage3 sysroot.
+    name: qemu / ${{ matrix.arch }} / ${{ matrix.libc }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         arch: [x86_64, i386, arm, arm64, riscv64]
+        libc: [glibc, musl]
     steps:
       - uses: actions/checkout@v5
-      - name: build runner image
-        run: docker build -t mcc-qemu tests/qemu/docker
-      - name: run qemu-${{ matrix.arch }} x {glibc,musl}
+      - name: install qemu-user + toolchain
         run: |
-          mkdir -p "$PWD/vendor" "$PWD/dist"
-          docker run --rm \
-            -e PRESET=qemu-${{ matrix.arch }} \
-            -v "$PWD:/work" \
-            -v "$PWD/vendor:/vendor" \
-            -v "$PWD/dist:/dist" \
-            mcc-qemu
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build make git ca-certificates curl \
+            qemu-user qemu-user-static tar xz-utils bzip2 rsync clang lld
+      - name: cache stage3 sysroot
+        uses: actions/cache@v4
+        with:
+          path: vendor/gentoo-stage3-*
+          key: gentoo-stage3-${{ matrix.arch }}-${{ matrix.libc }}
+      - name: run qemu-${{ matrix.arch }} / ${{ matrix.libc }}
+        env:
+          PRESET: qemu-${{ matrix.arch }}
+          LIBCS: ${{ matrix.libc }}
+        run: |
+          cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl
+          /tmp/mcc-ci qemu
 
   dist-matrix:
     runs-on: ubuntu-latest
@@ -307,5 +314,53 @@ jobs:
           name: mcc-dist-macos-${{ matrix.arch }}
           path: |
             dist/*.tar.xz
+            dist/checksums-*.txt
+            dist/bench-*.txt
+
+  dist-windows:
+    # Release dist packaging for Windows, both toolchains: MSVC (x86_64 + arm64,
+    # VS generator) and mingw (x86_64, superbuild fetches winlibs GCC).
+    name: dist-windows / ${{ matrix.plat }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { toolchain: msvc,  runner: windows-latest, plat: windows-x86_64-msvc,  preset: dist-msvc }
+          - { toolchain: msvc,  runner: windows-11-arm, plat: windows-arm64-msvc,   preset: dist-msvc }
+          - { toolchain: mingw, runner: windows-latest, plat: windows-x86_64-mingw, preset: dist-mingw }
+    steps:
+      - uses: actions/checkout@v5
+      - name: set up MSVC dev shell (mingw superbuild driver)
+        if: matrix.toolchain == 'mingw'
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: x64
+      - name: install ninja
+        if: matrix.toolchain == 'mingw'
+        run: choco install ninja -y
+      - name: configure + build + install + package
+        run: |
+          cmake --preset ${{ matrix.preset }} "-DMCC_DIST_VERSION=ci-$($env:GITHUB_SHA.Substring(0,12))" "-DMCC_DIST_PLAT=${{ matrix.plat }}" "-DMCC_BENCH=ON"
+          cmake --build --preset ${{ matrix.preset }} -j
+          if ('${{ matrix.toolchain }}' -eq 'msvc') {
+            cmake --install cmake-${{ matrix.preset }} --config Release
+          } else {
+            cmake --install cmake-${{ matrix.preset }}
+          }
+          cmake --build --preset ${{ matrix.preset }} --target bench
+          cmake --build --preset ${{ matrix.preset }} --target package-dist
+      - name: benchmark summary
+        if: always()
+        run: |
+          Add-Content $env:GITHUB_STEP_SUMMARY "### benchmark - ${{ matrix.plat }}"
+          Add-Content $env:GITHUB_STEP_SUMMARY '```'
+          Get-Content dist/bench-*.txt | Add-Content $env:GITHUB_STEP_SUMMARY
+          Add-Content $env:GITHUB_STEP_SUMMARY '```'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mcc-${{ matrix.plat }}
+          path: |
+            dist/*.zip
             dist/checksums-*.txt
             dist/bench-*.txt

@@ -80,4 +80,9 @@ docker run --rm -v "$PWD":/work -v "$PWD/vendor:/vendor" -v "$PWD/dist:/dist" \
 
 First run downloads ~250 MB per cell into `vendor/gentoo-stage3-*`; subsequent
 runs (and your host) reuse them through the `/vendor` mount.
-This is the containerized form of the CI job in `TODO.md` ("10.6.2 CI workflow").
+
+This image is the macOS-friendly wrapper: it stages the tree and execs
+`ci qemu` (the `qemu` verb of `tools/ci.c`), which owns the
+configure/build/fixup/test steps. Linux CI has user-mode qemu already, so it
+skips Docker and runs `ci qemu` directly on the runner, one job per
+`(arch × libc)` cell (see `.github/workflows/ci.yml`).

@@ -170,8 +170,9 @@ via the `package-dist` build target (which drives `ci pkg`, the C port of the
 former `cmake/package.cmake`); the `qemu` job is test-only and uploads
 nothing.
 
-**qemu presets** — the `qemu` job passes `PRESET=qemu-<arch>` to the docker
-runner; `qemu` alone is the full local matrix:
+**qemu presets** — CI runs one job per `(arch × libc)` cell natively on the
+Linux runner (`PRESET=qemu-<arch>`, `LIBCS=<one>`, via `ci qemu`, no Docker);
+`qemu` alone is the full local matrix:
 
 | Preset | `MCC_QEMU_ARCHS` | Common |
 |---|---|---|
