@@ -140,7 +140,7 @@ jobs:
           $mcc = (Get-ChildItem -Recurse -Filter mcc.exe cmake-msvc | Select-Object -First 1).FullName
           Write-Host "mcc: $mcc"
           & $mcc -Bcmake-msvc -fno-diagnostics-show-caret -Iruntime/include -Itests/support -pthread -S tests/exec/features_c99_c11/tls.c -o "tls-native-${env:ART}.s"
-          Write-Host "===== tls-native-${env:ART}.s ====="
+          Write-Host "===== tls-native-${env:ART}.s (arm64 __thread codegen) ====="
           Get-Content "tls-native-${env:ART}.s"
       - uses: actions/upload-artifact@v7
         if: always()
