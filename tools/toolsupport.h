@@ -7,6 +7,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <errno.h>
+#include <stdint.h>
 #include "../src/mcchost.h"
 
 #define TS_SKIP_CODE 77

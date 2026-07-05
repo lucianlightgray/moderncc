@@ -25,7 +25,7 @@ jobs:
           - { os: ubuntu-latest,    plat: linux-x86_64-clang,  preset: dist-linux-clang }
           - { os: ubuntu-24.04-arm, plat: linux-arm64-clang,   preset: dist-linux-clang }
           - { os: macos-15,         plat: macos-arm64-clang,   preset: dist-macos }
-          - { os: macos-13,         plat: macos-x86_64-clang,  preset: dist-macos }
+          - { os: macos-15,         plat: macos-x86_64-clang,  preset: dist-macos, rosetta: true }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -34,6 +34,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends cmake ninja-build gcc clang
+      - name: install Rosetta 2 (run x86_64 binaries on Apple silicon)
+        if: matrix.rosetta
+        run: sudo softwareupdate --install-rosetta --agree-to-license
       - name: install toolchain (macos)
         if: runner.os == 'macOS'
         run: |
@@ -42,9 +45,13 @@ jobs:
       - name: configure + build + install
         run: |
           set -eux
+          extra=""
+          if [ "${{ matrix.rosetta }}" = "true" ]; then
+            extra="-DCMAKE_OSX_ARCHITECTURES=x86_64 -DMCC_TARGET_ARCH=x86_64"
+          fi
           cmake --preset ${{ matrix.preset }} \
             "-DMCC_DIST_VERSION=${{ github.ref_name }}" "-DMCC_DIST_PLAT=${{ matrix.plat }}" \
-            -DMCC_BENCH=ON
+            -DMCC_BENCH=ON $extra
           cmake --build --preset ${{ matrix.preset }} -j"$(getconf _NPROCESSORS_ONLN)"
           cmake --install cmake-${{ matrix.preset }}
           if [ "${{ runner.os }}" = macOS ]; then

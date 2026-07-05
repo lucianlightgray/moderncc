@@ -266,13 +266,19 @@ jobs:
 
   dist-macos:
     name: dist-macos / ${{ matrix.arch }}
-    runs-on: ${{ matrix.arch == 'arm64' && 'macos-15' || 'macos-13' }}
+    # Both arches run on the Apple-silicon runner: arm64 natively, x86_64
+    # cross-produced by the universal clang (-arch x86_64) and executed under
+    # Rosetta 2 -- GitHub's Intel macos-13 image is being retired.
+    runs-on: macos-15
     strategy:
       fail-fast: false
       matrix:
         arch: [x86_64, arm64]
     steps:
       - uses: actions/checkout@v5
+      - name: install Rosetta 2 (run x86_64 binaries on Apple silicon)
+        if: matrix.arch == 'x86_64'
+        run: sudo softwareupdate --install-rosetta --agree-to-license
       - name: install toolchain
         run: |
           brew untap aws/tap 2>/dev/null || true
@@ -280,9 +286,13 @@ jobs:
       - name: configure + build + install + package
         run: |
           set -eux
+          extra=""
+          if [ "${{ matrix.arch }}" = x86_64 ]; then
+            extra="-DCMAKE_OSX_ARCHITECTURES=x86_64 -DMCC_TARGET_ARCH=x86_64"
+          fi
           cmake --preset dist-macos \
             "-DMCC_DIST_VERSION=ci-${GITHUB_SHA::12}" "-DMCC_DIST_PLAT=dist-macos-${{ matrix.arch }}" \
-            -DMCC_BENCH=ON
+            -DMCC_BENCH=ON $extra
           cmake --build --preset dist-macos -j"$(sysctl -n hw.ncpu)"
           cmake --install cmake-dist-macos
           cmake --build --preset dist-macos --target bench

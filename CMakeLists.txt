@@ -1146,6 +1146,13 @@ if(NOT "${MCC_EXTRA_LDFLAGS}" STREQUAL "")
 endif()
 
 set(_proc "${CMAKE_SYSTEM_PROCESSOR}")
+# Explicit target-CPU override. CMAKE_SYSTEM_PROCESSOR is re-derived from the
+# host during project() and cannot be forced for a native build, so an override
+# is needed to target a non-host CPU with a host (or Rosetta-translated) clang --
+# e.g. producing the x86_64 macOS release on an Apple-silicon runner.
+if(MCC_TARGET_ARCH)
+    set(_proc "${MCC_TARGET_ARCH}")
+endif()
 set(_arm_cpuver "")
 if(_proc MATCHES "^(x86|i[3-6]86|i86pc|BePC)$")
     set(MCC_CPU "i386")
