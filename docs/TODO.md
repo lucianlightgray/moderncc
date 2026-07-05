@@ -143,12 +143,20 @@ skipping the whole test. 106 unique skipped tests observed across the 4 macOS jo
     impl-defined 3-way divergence, not a harness gap). Revisit as a conformance
     question in `docs/C9911.md`, not a skip-audit item.
 
-- [ ] **standalone / cross-target tests skipped on macos-arm64.** Confirm each is
-  truly inapplicable natively; where a subset applies (e.g. `dash-s-roundtrip`,
-  `asm-gas-directives`, `asm-c-connect-test` are not obviously Linux-only), enable it:
-  - [ ] `asm-c-connect-test`  - [ ] `asm-gas-directives`  - [ ] `compile.win32` (PE — x-target)
-  - [ ] `dash-s-bytes-arm64`  - [ ] `dash-s-bytes-riscv64`  - [ ] `dash-s-roundtrip`
-  - [ ] `i386-fastcall-abi` (x86-only)  - [ ] `pe-native-conformance`  - [ ] `pe-wine-conformance`
+- [x] **standalone / cross-target tests — AUDITED (2026-07-05).** Each confirmed
+  either correctly gated or already covered elsewhere:
+  - **Already run on `macos-cross`** (skip only on the *non-cross* `macos` job,
+    which has no cross compilers — correct): `dash-s-bytes-arm64`,
+    `dash-s-bytes-riscv64` (verified PASS on macos-cross; gated on `TARGET
+    mcc-<arch>`, i.e. the byte-exact `-S` output of the arch cross compiler).
+  - **x86-specific integrated-assembler tests** (correct to skip on arm64):
+    `asm-c-connect-test` ("requires x86 target"), `dash-s-roundtrip` ("requires
+    x86_64 target"), `asm-gas-directives` (blocked even on x86 — the integrated
+    assembler lacks `sgdtq`/`sidtq`/`swapgs` privileged encodings),
+    `i386-fastcall-abi` (i386 ABI).
+  - **PE / cross-target** (correct to skip on a non-Windows host): `compile.win32`,
+    `pe-native-conformance` (native WIN32 host only), `pe-wine-conformance` (needs
+    wine + the win32 cross compilers).
   - [x] `mcctest` / `mcctest-bcheck` — **CONFIRMED INTENDED (2026-07-05).** The
     macos-gcc / macos-cross-gcc jobs resolve `CC` to a real Homebrew **GNU gcc**
     (not Apple clang — the job does `gcc-<N>` off `brew --prefix`), and the
