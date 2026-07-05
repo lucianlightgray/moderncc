@@ -208,10 +208,10 @@ run-preset`/`ci qemu` path CI uses (also exercising the new `--output-junit` /
 - `linux-gcc` (rc=0), `linux-gcc-release` 811/811, `linux-gcc-sanitize` 811/811
   (no UB in the changed harness), `linux-gcc-diagnostics` (everything-on warnings:
   0 in any changed file) — aarch64 ELF
-- qemu-user cross-conformance across 3 arches × both libcs, all pass (validates
-  the qemu `--output-junit` + `ci junit-summary` path): `qemu-arm64`/glibc 4/4,
-  `qemu-arm64`/musl 4/4, `qemu-riscv64`/glibc 5/5, `qemu-x86_64`/glibc 5/5
-  (x86_64 under nested emulation on the arm64 host)
+- **the full 10-cell qemu-user matrix** — all 5 arches × both libcs
+  (x86_64, i386, arm, arm64, riscv64 × glibc, musl), every cell 0 failures
+  (the 32-bit and x86 cells run under nested emulation on the arm64 host);
+  validates the qemu `--output-junit` + `ci junit-summary` path
 - `dist-macos` (native, build rc=0), `dist-linux-gcc` + `dist-linux-clang` (Docker
   aarch64, build rc=0) — the release-packaging presets
 - `cli` (11 ports) + `preprocess` (42) re-run on both aarch64 and x86_64 Linux
