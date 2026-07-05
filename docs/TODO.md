@@ -29,6 +29,27 @@ the conformance batch (see Notes). Broader conformance tracking continues in
   standard *permits*; strictly more useful than gcc/clang's `-O0` link failure, so
   it stays.
 
+- **`static` reentrancy sweep (done; from the former `STATIC.md`).** Every
+  per-compilation mutable static in `src/` was moved off static storage —
+  per-call scratch onto the stack, persistent per-instance state rehomed into
+  `MCCState` (the `#define name mcc_state->name` idiom). `mccgen.c` and `mccpp.c`
+  now have **zero** mutable statics; per-function backend state (`arch/*-gen.c`)
+  collapsed onto shared `cg_*` fields since only the active target compiles.
+  Verified `debug` + `cross` (all five backends), 804/804.
+  - *Deliberately retained as process-global* (moving into `MCCState` would only
+    relocate a global — the async/loader contexts reach them with no `MCCState`):
+    async signal/fault handler state (`mccrun.c` `g_rc`/`g_s1`/`signal_set`,
+    `mcchost.c` `host_fault_cb`); the Windows DLL loader `mcc_module`;
+    process-wide allocator accounting (`libmcc.c` `mem_debug_chain`/`mem_cur_size`/
+    `mem_max_size`/`nb_states`/`reallocator`); immutable cached singletons
+    (`libmcc.c` `auto_mccdir_buf`, `mcchost.c` `host_macos_sdk_root`, `mcc_syms[]`).
+    Do not "fix" these in a future sweep.
+  - *Bugs fixed along the way* (both covered by tests, in git history): complex-type
+    cache use-after-free across TUs on one `MCCState` (now cleared in
+    `mccgen_finish`; `tests/embed/api_extra.c` `test_multi_tu_complex`); qemufetch
+    dir-ordering (`host_mkdirs(dest)` hoisted before the `curl -o` download in
+    `tools/mccharness.c`).
+
 - `-fverbose-asm`-style operand comments: meaningful comments need
   codegen-side variable/spill metadata that is discarded after emission;
   classified low-value (reloc symbol names are already printed). Revisit
