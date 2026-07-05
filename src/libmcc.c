@@ -817,6 +817,11 @@ LIBMCCAPI MCCState *mcc_new(void) {
 	s->warn_discarded_qualifiers = 1;
 	s->warn_sequence_point = 1;
 	s->warn_implicit_int = 1;
+	/* A return-with-value in a void function, or a value-less return in a
+	   non-void function, is a §6.8.6.4 constraint violation; gcc 15 and clang 22
+	   both reject it by default. Match them: on by default and promoted to an
+	   error (still downgradable via -Wno-error=return-type / -Wno-return-type). */
+	s->warn_return_type = WARN_ON | WARN_ERR;
 	s->warn_varargs = 1;
 	s->ms_extensions = 1;
 	s->unwind_tables = 1;
@@ -1702,6 +1707,8 @@ static const FlagDef options_W[] = {
 	{offsetof(MCCState, warn_uninitialized), WD_ALL, "uninitialized"},
 	{offsetof(MCCState, warn_varargs), 0, "varargs"},
 	{offsetof(MCCState, warn_strict_prototypes), 0, "strict-prototypes"},
+	{offsetof(MCCState, warn_return_type), WD_ALL, "return-type"},
+	{offsetof(MCCState, warn_return_type), WD_ALL, "return-mismatch"},
 	{0, 0, NULL}};
 
 static const FlagDef options_f[] = {

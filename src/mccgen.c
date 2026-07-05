@@ -8504,13 +8504,13 @@ again:
 				gen_assign_cast(&func_vt);
 			} else {
 				if (vtop->type.t != VT_VOID)
-					mcc_warning("void function returns a value");
+					mcc_warning_c(warn_return_type)("void function returns a value");
 				vtop--;
 			}
 		} else if (b && func_old && (func_vt.t & VT_BTYPE) == VT_INT) {
 			vpushi(0);
 		} else if (b) {
-			mcc_warning("'return' with no value");
+			mcc_warning_c(warn_return_type)("'return' with no value");
 			b = 0;
 		}
 		leave_scope(root_scope);

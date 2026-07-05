@@ -105,6 +105,7 @@ static const char help2[] =
 	"  write-strings                 Make string literals const\n"
 	"  unsupported                   Warn about ignored options, pragmas, etc.\n"
 	"  implicit-function-declaration Warn about calls to undeclared functions (*)\n"
+	"  return-type                   Diagnose return-value/type mismatches (*, error by default)\n"
 	"  discarded-qualifiers          Warn when a type qualifier is discarded (*)\n"
 	"Flags (-f[no-]...):\n"
 	"  unsigned-char                 Make plain 'char' unsigned\n"
