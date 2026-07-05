@@ -119,15 +119,17 @@ and the four host-runnable Mach-O drivers run natively and pass too.
 **Windows status (2026-07-04, mingw gcc 13.1/16.1 / MSVC 19.51 / clang 22):**
 every Windows-runnable preset is green. The suite is now registered one CTest
 per case (the `exec`/`cli`/`diff3`/`parts`/`preprocess` corpora fan out), so the
-counts are per-case: `debug`, `release`, `diagnostics`, `cross`
-(**775/775** each, mingw gcc; 123 environment-gated skips) and `msvc` (VS
-generator, **773/773** — two suites aren't registered on an MSVC host). Those
-totals assume the optional clang toolchain has been fetched (`cmake --build
-<bld> --target clang-toolchain`, auto-wired on the next reconfigure); without it
-the ~260 three-way `diff3`/`preprocess` cases self-skip and the native suite is
-**513/513**. `mingw` (superbuild; fetches the pinned winlibs GCC and tests with
+counts are per-case: `debug`, `release`, `diagnostics`, `cross` and `msvc`
+(VS generator) all run **775/775** (123 environment-gated skips). On the MSVC
+host `mcctest` still registers and passes — its gcc reference auto-resolves to
+the vendored winlibs GCC (`MCC_REF_CC`) — so the MSVC total matches the mingw
+hosts. Those totals assume the vendored clang toolchain is present (`cmake
+--build <bld> --target clang-toolchain`, or drop it under `vendor/llvm-clang`;
+auto-wired on the next reconfigure); without it the ~260 three-way
+`diff3`/`preprocess` cases self-skip and the native suite is **513/513**.
+`mingw` (superbuild; fetches the pinned winlibs GCC and tests with
 it) and `matrix` (gcc/clang × native/cross — **4 cells × 775/775**, clang
-resolved from the fetched `vendor/clang`) are green too. Both `dist-*` packagings
+resolved from the fetched `vendor/llvm-clang`) are green too. Both `dist-*` packagings
 build the full artifact matrix — mcc + `-static`/`-dynamic` +
 `libmcc-static`/`-dynamic` + all 11 cross compilers; `dist-mingw` additionally
 ships each cross compiler in a fully-static (`-static`) shape, while `dist-msvc`
@@ -281,7 +283,7 @@ callbacks/library calls).
 differential self-skips. On macOS `gcc`/`cc` are the Apple clang shim, so a
 genuine Homebrew `gcc-<n>` (installed by `setup-gcc`) is auto-detected. On
 Windows no system clang is needed: `cmake --build <bld> --target
-clang-toolchain` fetches a pinned, SHA256-verified LLVM into `vendor/clang/`,
+clang-toolchain` fetches a pinned, SHA256-verified LLVM into `vendor/llvm-clang/`,
 auto-wired by the next reconfigure (both suites then run and pass).
 ³ Needs POSIX `sh` (`MCC_TEST_SH`) + `nm`/`readelf`; ~31 ELF-image cases
 self-skip on a PE target.

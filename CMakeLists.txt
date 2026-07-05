@@ -147,7 +147,7 @@ function(mcc_map_toolchain_cc tc outvar)
         endif()
     endif()
     if(tc STREQUAL "clang")
-        # vendor-first: a fetched clang under vendor/clang wins over system clang.
+        # vendor-first: a fetched clang under vendor/llvm-clang wins over system clang.
         mcc_clang_resolve()
         if(_MCC_CLANG_EXE AND EXISTS "${_MCC_CLANG_EXE}")
             set(${outvar} "${_MCC_CLANG_EXE}" PARENT_SCOPE)
@@ -173,7 +173,7 @@ function(mcc_find_gnu_gcc outvar)
         set(${outvar} "${MCC_GNU_GCC}" PARENT_SCOPE)
         return()
     endif()
-    # vendor-first: a gcc dropped under vendor/gcc/bin wins over a system gcc.
+    # vendor-first: a gcc dropped under vendor/gnu-gcc/bin wins over a system gcc.
     find_program(MCC_VENDOR_GCC NAMES gcc cc
         PATHS "${MCC_VENDOR_DIR}/gnu-gcc/bin" NO_DEFAULT_PATH)
     if(MCC_VENDOR_GCC)
