@@ -206,6 +206,15 @@ mcc -run hello.c              # compile and run in memory
 mcc -c file.c -o file.o       # object only
 mcc -S file.c                 # AT&T assembly listing (file.s)
 
+# macOS: link Apple frameworks (headers + SDK stub auto-resolved), e.g.
+mcc app.c -framework CoreFoundation -o app     # also works with -run
+mcc app.c -F/opt/Frameworks -framework MyKit -o app   # -F adds a search dir
+
+# macOS: fuse per-arch builds into one universal binary (self-contained, no lipo):
+mcc            app.c -o app.arm64
+mcc-x86_64-osx --sysroot="$(xcrun --show-sdk-path)" app.c -o app.x86_64
+machofat app app.arm64 app.x86_64              # -> universal (arm64 + x86_64)
+
 # cross-compile against a sysroot (glibc or musl), then run under qemu-user:
 mcc-arm64 --sysroot=/path/to/rootfs hello.c -o hello   # or mcc-arm64-musl
 qemu-aarch64 -L /path/to/rootfs ./hello

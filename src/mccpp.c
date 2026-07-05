@@ -1417,11 +1417,12 @@ static int parse_include(MCCState *s1, int do_next, int test) {
 	if (!test)
 		skip_to_eol(1);
 
-	int parent_sys = file ? file->system_header : 0, cand_sys = 0;
+	int parent_sys = file ? file->system_header : 0, cand_sys = 0, fw = 0;
 	i = do_next ? file->include_next_index : -1;
 	for (;;) {
 		++i;
 		cand_sys = 0;
+		fw = 0;
 		if (i == 0) {
 			if (!HOST_IS_ABSPATH(name))
 				continue;
@@ -1445,14 +1446,38 @@ static int parse_include(MCCState *s1, int do_next, int test) {
 			} else if ((j -= s1->nb_sysinclude_paths) < s1->nb_afterinc_paths) {
 				p = s1->afterinc_paths[j];
 				cand_sys = 1;
+#ifdef MCC_TARGET_MACHO
+			} else if ((j -= s1->nb_afterinc_paths) < s1->nb_framework_paths) {
+				/* macOS framework header: <Foo/Bar.h> resolves under
+				   <framework-path>/Foo.framework/Headers/Bar.h. */
+				const char *slash = strchr(name, '/');
+				char comp[256];
+				size_t cl;
+				if (c == '\"' || !slash)
+					continue;
+				cl = (size_t)(slash - name);
+				if (cl >= sizeof comp)
+					continue;
+				memcpy(comp, name, cl), comp[cl] = 0;
+				pstrcpy(buf, sizeof buf, s1->framework_paths[j]);
+				pstrcat(buf, sizeof buf, "/");
+				pstrcat(buf, sizeof buf, comp);
+				pstrcat(buf, sizeof buf, ".framework/Headers/");
+				pstrcat(buf, sizeof buf, slash + 1);
+				cand_sys = 1;
+				fw = 1;
+#endif
 			} else if (test)
 				return 0;
 			else
 				mcc_error("include file '%s' not found", name);
-			pstrcpy(buf, sizeof buf, p);
-			pstrcat(buf, sizeof buf, "/");
+			if (!fw) {
+				pstrcpy(buf, sizeof buf, p);
+				pstrcat(buf, sizeof buf, "/");
+			}
 		}
-		pstrcat(buf, sizeof buf, name);
+		if (!fw)
+			pstrcat(buf, sizeof buf, name);
 		e = search_cached_include(s1, buf, 0);
 		if (e && (define_find(e->ifndef_macro) || e->once)) {
 #ifdef INC_DEBUG
@@ -1491,6 +1516,24 @@ static int parse_include(MCCState *s1, int do_next, int test) {
 		mcc_debug_bincl(s1);
 	}
 	return 1;
+}
+
+/* clang function-like preprocessor builtins that mcc does not implement. When
+   used bare (not shadowed by a user `#define … 0` fallback) they must still parse:
+   consume the parenthesized argument and evaluate to 0 ("not supported"). Apple
+   SDK headers (TargetConditionals.h, Availability.h, …) rely on this. */
+static int pp_builtin_func(int v) {
+	const char *n;
+	if (v < TOK_IDENT)
+		return 0;
+	n = get_tok_str(v, NULL);
+	return !strcmp(n, "__has_feature") || !strcmp(n, "__has_extension") ||
+		   !strcmp(n, "__has_builtin") || !strcmp(n, "__has_attribute") ||
+		   !strcmp(n, "__has_cpp_attribute") || !strcmp(n, "__has_c_attribute") ||
+		   !strcmp(n, "__has_declspec_attribute") || !strcmp(n, "__has_warning") ||
+		   !strcmp(n, "__building_module") || !strcmp(n, "__is_target_arch") ||
+		   !strcmp(n, "__is_target_os") || !strcmp(n, "__is_target_vendor") ||
+		   !strcmp(n, "__is_target_environment");
 }
 
 static int expr_preprocess(MCCState *s1) {
@@ -1538,6 +1581,22 @@ static int expr_preprocess(MCCState *s1) {
 			c = parse_include(s1, t - TOK___HAS_INCLUDE, 1);
 			if (tok != ')')
 				expect("')'");
+			goto c_number;
+		} else if (pp_builtin_func(tok)) {
+			int depth = 1;
+			next();
+			if (tok != '(')
+				expect("'('");
+			while (depth) {
+				next();
+				if (tok == TOK_EOF || tok == TOK_LINEFEED)
+					expect("')'");
+				if (tok == '(')
+					depth++;
+				else if (tok == ')')
+					depth--;
+			}
+			c = 0;
 			goto c_number;
 		} else {
 			mcc_warning_c(warn_undef)("\"%s\" is not defined, evaluates to 0",

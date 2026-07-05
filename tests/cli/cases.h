@@ -32,6 +32,29 @@ static const cli_case_t cli_cases[] = {
 	 "{MCC} -B{B} -I{I} -fno-pic -no-pie {W}/np.c -o {W}/np && readelf -h {W}/np | grep -oE 'EXEC'",
 	 "EXEC\n"},
 
+	/* macOS: -framework links a system framework (header search resolves
+	   the CoreFoundation umbrella header under Foo.framework/Headers, and
+	   Apple's TargetConditionals.h exercises the clang has-feature and
+	   is-target preprocessor builtins). */
+	{"macho_framework_link", "os=Darwin",
+	 "printf '#include <CoreFoundation/CoreFoundation.h>\\nint main(void){ CFStringRef s=CFStringCreateWithCString(0,\"ok\",0x08000100); long n=CFStringGetLength(s); CFRelease(s); return n==2?0:1; }\\n' > {W}/fw.c && "
+	 "{MCC} -B{B} -I{I} -framework CoreFoundation {W}/fw.c -o {W}/fw && {W}/fw && echo RAN",
+	 "RAN\n"},
+
+	{"macho_framework_run", "os=Darwin",
+	 "printf '#include <CoreFoundation/CoreFoundation.h>\\nint main(void){ CFStringRef s=CFStringCreateWithCString(0,\"ok\",0x08000100); long n=CFStringGetLength(s); CFRelease(s); return n==2?0:1; }\\n' > {W}/fwr.c && "
+	 "{MCC} -B{B} -I{I} -framework CoreFoundation -run {W}/fwr.c && echo RAN",
+	 "RAN\n"},
+
+	/* macOS: -F adds a framework search path; <Foo/Bar.h> then resolves under
+	   Foo.framework/Headers (self-contained, no SDK framework needed). */
+	{"macho_framework_dashF", "os=Darwin",
+	 "mkdir -p {W}/fw/MyKit.framework/Headers && "
+	 "printf '#define MYKIT_OK 1\\n' > {W}/fw/MyKit.framework/Headers/MyKit.h && "
+	 "printf '#include <MyKit/MyKit.h>\\nint main(void){ return MYKIT_OK?0:1; }\\n' > {W}/mk.c && "
+	 "{MCC} -B{B} -I{I} -F{W}/fw {W}/mk.c -o {W}/mk && {W}/mk && echo RAN",
+	 "RAN\n"},
+
 	{"visibility_attribute", "cpu=x86_64,os=linux",
 	 "{MCC} -B{B} -I{I} -c {D}/vis.c -o {W}/v.o && "
 	 "readelf -s {W}/v.o | grep -E 'hidden_att|shown_one|plain_one' | awk '{print $6, $8}' | sort",

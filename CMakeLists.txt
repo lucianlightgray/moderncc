@@ -2728,6 +2728,12 @@ if(MCC_BUILD_TESTS)
     if(NOT CMAKE_CROSSCOMPILING)
         add_executable(mccharness tools/mccharness.c tools/toolsupport.c)
         target_link_libraries(mccharness ${CMAKE_DL_LIBS})
+
+        # machofat — self-contained universal/fat Mach-O combiner (macOS only,
+        # a lipo replacement); a pure host tool with no mcc dependency.
+        if(MCC_TARGETOS STREQUAL "Darwin")
+            add_executable(machofat tools/machofat.c)
+        endif()
     endif()
 
     add_test(NAME mcc_build
@@ -3357,6 +3363,27 @@ if(MCC_BUILD_TESTS)
                 --bdir "${CMAKE_BINARY_DIR}" --work "${CMAKE_BINARY_DIR}/stackguard-work")
     set_tests_properties(macho-stack-protector PROPERTIES
         FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
+
+    # Universal (fat) binary combiner. Native 1-slice is the hard guarantee; the
+    # 2-slice case additionally uses the x86_64-osx cross + SDK (self-skips else).
+    if(TARGET machofat)
+        set(_mf_xargs "")
+        if(TARGET mcc-x86_64-osx)
+            set(_mf_xargs --xmcc "$<TARGET_FILE:mcc-x86_64-osx>")
+        endif()
+        execute_process(COMMAND xcrun --show-sdk-path
+            OUTPUT_VARIABLE _mf_sdk OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+        if(_mf_sdk)
+            list(APPEND _mf_xargs --sdk "${_mf_sdk}")
+        endif()
+        add_test(NAME macho-universal
+            COMMAND "$<TARGET_FILE:mccharness>" machofat
+                    --mcc "$<TARGET_FILE:mcc>" --fat "$<TARGET_FILE:machofat>"
+                    --bdir "${CMAKE_BINARY_DIR}" --work "${CMAKE_BINARY_DIR}/machofat-work"
+                    ${_mf_xargs})
+        set_tests_properties(macho-universal PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
+    endif()
 
     option(MCC_DARWIN_HOST "Tests run on a macOS/darling host with real libSystem" OFF)
     if(NOT MCC_DARWIN_HOST)

@@ -850,6 +850,7 @@ LIBMCCAPI void mcc_delete(MCCState *s1) {
 	mccelf_delete(s1);
 
 	dynarray_reset(&s1->library_paths, &s1->nb_library_paths);
+	dynarray_reset(&s1->framework_paths, &s1->nb_framework_paths);
 	dynarray_reset(&s1->crt_paths, &s1->nb_crt_paths);
 
 	dynarray_reset(&s1->include_paths, &s1->nb_include_paths);
@@ -967,6 +968,11 @@ LIBMCCAPI int mcc_add_afterinc_path(MCCState *s, const char *pathname) {
 
 LIBMCCAPI int mcc_add_library_path(MCCState *s, const char *pathname) {
 	mcc_split_path(s, &s->library_paths, &s->nb_library_paths, pathname);
+	return 0;
+}
+
+LIBMCCAPI int mcc_add_framework_path(MCCState *s, const char *pathname) {
+	mcc_split_path(s, &s->framework_paths, &s->nb_framework_paths, pathname);
 	return 0;
 }
 
@@ -1281,6 +1287,37 @@ LIBMCCAPI int mcc_add_library(MCCState *s, const char *libraryname) {
 	return mcc_add_dll(s, libraryname, flags | AFF_PRINT_ERROR);
 }
 
+/* Resolve `-framework Foo` to a linkable stub/dylib. Each framework search path
+   is probed for `Foo.framework/Foo.tbd` (the SDK ships text-based stubs) then a
+   bare `Foo.framework/Foo` Mach-O dylib. The found file is handed to the ordinary
+   binary loader, which routes a .tbd to macho_load_tbd and a dylib to
+   macho_load_dll. A bare (extensionless) Mach-O dylib additionally needs the
+   Mach-O object reader to be recognized; system frameworks resolve via the .tbd.
+   Only Mach-O targets have frameworks; other targets report an error. */
+LIBMCCAPI int mcc_add_framework(MCCState *s1, const char *name) {
+#ifdef MCC_TARGET_MACHO
+	static const char *const pat[] = {
+		"%s/%s.framework/%s.tbd",
+		"%s/%s.framework/%s",
+		NULL};
+	char buf[1024];
+	int whole = s1->filetype & AFF_WHOLE_ARCHIVE;
+
+	for (int i = 0; i < s1->nb_framework_paths; i++) {
+		for (const char *const *pp = pat; *pp; ++pp) {
+			int ret;
+			snprintf(buf, sizeof(buf), *pp, s1->framework_paths[i], name, name);
+			ret = mcc_add_file_internal(s1, buf, AFF_TYPE_BIN | whole);
+			if (ret != FILE_NOT_FOUND)
+				return ret;
+		}
+	}
+	return mcc_error_noabort("framework '%s' not found", name);
+#else
+	return mcc_error_noabort("-framework '%s' is only supported on macOS targets", name);
+#endif
+}
+
 ST_FUNC void mcc_add_pragma_libs(MCCState *s1) {
 	for (int i = 0; i < s1->nb_pragma_libs; i++)
 		mcc_add_library(s1, s1->pragma_libs[i]);
@@ -1569,6 +1606,8 @@ enum {
 	MCC_OPTION_compatibility_version,
 	MCC_OPTION_current_version,
 	MCC_OPTION_mmacosx_version_min,
+	MCC_OPTION_framework,
+	MCC_OPTION_F,
 };
 
 #define MCC_OPTION_HAS_ARG 0x0001
@@ -1597,6 +1636,8 @@ static const MCCOption mcc_options[] = {
 	{"current_version", MCC_OPTION_current_version, MCC_OPTION_HAS_ARG},
 	{"dynamiclib", MCC_OPTION_dynamiclib, 0},
 	{"flat_namespace", MCC_OPTION_flat_namespace, 0},
+	{"framework", MCC_OPTION_framework, MCC_OPTION_HAS_ARG},
+	{"F", MCC_OPTION_F, MCC_OPTION_HAS_ARG},
 	{"install_name", MCC_OPTION_install_name, MCC_OPTION_HAS_ARG},
 	{"mmacosx-version-min=", MCC_OPTION_mmacosx_version_min, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
 	{"mmacos-version-min=", MCC_OPTION_mmacosx_version_min, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
@@ -1834,7 +1875,7 @@ static void args_parser_add_file(MCCState *s, const char *filename, int filetype
 	f->type = filetype;
 	strcpy(f->name, filename);
 	dynarray_add(&s->files, &s->nb_files, f);
-	if (filetype & AFF_TYPE_LIB)
+	if (filetype & (AFF_TYPE_LIB | AFF_TYPE_FRAMEWORK))
 		++s->nb_libraries;
 }
 
@@ -2309,6 +2350,12 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) {
 			break;
 		case MCC_OPTION_mmacosx_version_min:
 			s->macos_version_min = parse_version(s, optarg);
+			break;
+		case MCC_OPTION_framework:
+			args_parser_add_file(s, optarg, AFF_TYPE_FRAMEWORK | (s->filetype & ~AFF_TYPE_MASK));
+			break;
+		case MCC_OPTION_F:
+			mcc_add_framework_path(s, optarg);
 			break;
 #endif
 		case MCC_OPTION_HELP:
