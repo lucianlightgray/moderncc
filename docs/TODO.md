@@ -4,14 +4,13 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
 
 ---
 
-- [~] **`objcheck minos` ignored `LC_VERSION_MIN_MACOSX` — FIXED; fat-slice
-  selector still open (2026-07-05).** `macho_slice` now also reads the legacy
-  `LC_VERSION_MIN_{MACOSX,IPHONEOS,TVOS,WATCHOS}` load commands (version at +8),
-  with `LC_BUILD_VERSION` (+12) taking precedence when both are present — so a
-  Mach-O using only the legacy command no longer reports `minos 0.0.0`.
-  _Remaining:_ for a fat binary `macho_parse` still validates the first slice that
-  parses; add an optional `--arch` selector (or iterate all slices) so a per-slice
-  minos mismatch on a later slice is detected.
+# Now
+
+- [ ] CST Database for Debugging, LSP, and Optimization data/layers
+- [ ] CST Database uses hierarchical incremental hashes to enable bidirectional lookups starting from any character index in any file
+
+# Later
+
 - [ ] **`exec/tls` skipped on arm64+WIN32 (`skipon=arm64/WIN32`, 2026-07-05).**
   On the `msvc / arm64` runner, `exec/tls` intermittently hung (ctest 63 min,
   manual cancel). Root cause is **not** in mcc: **MSVC's arm64 code generator
@@ -206,10 +205,7 @@ ACHTUNG!!! DO NOT DO!!! WARNING!!!
 
 • Implement/finish `-g` debugging/debugger and flesh out gdb/etc test cases
 • Can a fully static build use a minimalistic `-run` to sidestep the dynamic linking limitations and use libc or musl in-memory?
-• What is the purpose of libmccrt.a ? Can it be replaced with ctests?
 • Use only human friendly warnings/errors, backed by tests that check formatted output against terminal dimensions/configuration
-• CST Database for Debugging, LSP, and Optimization data/layers
-• CST Database uses hierarchical incremental hashes to enable bidirectional lookups starting from any character index in any file
 • Hot reload by saving/loading CST snapshots on the fly and on run with --hotreload arg
 • Run hotreloads from reconcoliled CST snapshots
 

@@ -107,21 +107,24 @@ static int macho_slice(const unsigned char *p, long n, u32 *ct, u32 *ft, u32 *mi
 	return 0;
 }
 
-static int macho_parse(const unsigned char *d, long n, u32 *ct, u32 *ft, u32 *minos) {
+/* Enumerate the byte offsets of the thin Mach-O header(s) within the file: one
+   per sub-arch for a fat binary, or a single offset 0 for a thin one. Returns the
+   count (capped at max), so callers can inspect every slice rather than only the
+   first that parses. */
+static int macho_slices(const unsigned char *d, long n, u32 *offs, int max) {
 	if (n >= 8 && d[0] == 0xca && d[1] == 0xfe && d[2] == 0xba && d[3] == 0xbe) {
 		u32 nfat = be32(d + 4), i;
-		for (i = 0; i < nfat; i++) {
+		int c = 0;
+		for (i = 0; i < nfat && c < max; i++) {
 			const unsigned char *fa = d + 8 + (u64)i * 20;
-			u32 off;
 			if (fa + 20 > d + n)
 				break;
-			off = be32(fa + 8);
-			if (off < (u32)n && macho_slice(d + off, n - off, ct, ft, minos) == 0)
-				return 0;
+			offs[c++] = be32(fa + 8);
 		}
-		return -1;
+		return c;
 	}
-	return macho_slice(d, n, ct, ft, minos);
+	offs[0] = 0;
+	return 1;
 }
 
 static int pe_parse(const unsigned char *d, long n, u32 *machine, u32 *subsystem) {
@@ -151,20 +154,23 @@ static int is_pe(const unsigned char *d, long n) {
 }
 
 int main(int argc, char **argv) {
-	const char *mode, *file, *expect = NULL;
+	const char *mode, *file, *expect = NULL, *arch = NULL;
 	unsigned char *d;
 	long n;
 	int i;
 
 	if (argc < 3) {
-		fprintf(stderr, "usage: objcheck <type|macho|minos|pe> <file> [--expect X.Y.Z]\n");
+		fprintf(stderr, "usage: objcheck <type|macho|minos|pe> <file> [--expect X.Y.Z] [--arch NAME]\n");
 		return 2;
 	}
 	mode = argv[1];
 	file = argv[2];
-	for (i = 3; i < argc; i++)
+	for (i = 3; i < argc; i++) {
 		if (!strcmp(argv[i], "--expect") && i + 1 < argc)
 			expect = argv[++i];
+		else if (!strcmp(argv[i], "--arch") && i + 1 < argc)
+			arch = argv[++i];
+	}
 	d = slurp(file, &n);
 
 	if (!strcmp(mode, "type")) {
@@ -175,22 +181,36 @@ int main(int argc, char **argv) {
 		return strcmp(t, "unknown") ? 0 : 1;
 	}
 	if (!strcmp(mode, "macho") || !strcmp(mode, "minos")) {
-		u32 ct = 0, ft = 0, minos = 0;
-		if (macho_parse(d, n, &ct, &ft, &minos) != 0) {
-			printf("FAIL %s: not a valid Mach-O\n", file);
-			return 1;
-		}
-		printf("Mach-O %s %s\n", macho_arch(ct), macho_type(ft));
-		if (!strcmp(mode, "minos")) {
-			char v[32];
-			snprintf(v, sizeof v, "%u.%u.%u", minos >> 16, (minos >> 8) & 0xff, minos & 0xff);
-			printf("minos %s\n", v);
-			if (expect && strcmp(expect, v)) {
-				printf("FAIL %s: minos %s != expected %s\n", file, v, expect);
-				return 1;
+		u32 offs[64];
+		int ns = macho_slices(d, n, offs, 64), si, matched = 0, rc = 0;
+		for (si = 0; si < ns; si++) {
+			u32 ct = 0, ft = 0, minos = 0;
+			if (offs[si] >= (u32)n ||
+				macho_slice(d + offs[si], n - offs[si], &ct, &ft, &minos) != 0)
+				continue;
+			/* With --arch, restrict to the named sub-arch; without it, every
+			   slice is inspected so a mismatch on a later slice still fails. */
+			if (arch && strcmp(arch, macho_arch(ct)))
+				continue;
+			matched++;
+			printf("Mach-O %s %s\n", macho_arch(ct), macho_type(ft));
+			if (!strcmp(mode, "minos")) {
+				char v[32];
+				snprintf(v, sizeof v, "%u.%u.%u", minos >> 16, (minos >> 8) & 0xff,
+						 minos & 0xff);
+				printf("minos %s\n", v);
+				if (expect && strcmp(expect, v)) {
+					printf("FAIL %s: minos %s != expected %s\n", file, v, expect);
+					rc = 1;
+				}
 			}
 		}
-		return 0;
+		if (!matched) {
+			printf("FAIL %s: not a valid Mach-O%s%s\n", file,
+				   arch ? " for arch " : "", arch ? arch : "");
+			return 1;
+		}
+		return rc;
 	}
 	if (!strcmp(mode, "pe")) {
 		u32 machine = 0, subsystem = 0;
