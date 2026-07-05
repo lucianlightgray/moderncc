@@ -190,7 +190,17 @@ e.g. `ARM Neoverse-N1`, with vendor/hex fallback); **bench dead JUnit lookup**
 18-cell linux matrix and 10 qemu cells surface their ctest results — benchmark
 report intentionally omitted under qemu-user, where emulated timings are noise);
 **exec-suite skip audit** and **macos-gcc `mcctest` skip** confirmed intended
-(above).
+(above); **macho-structural native**, **11 cli-case ports**, **preprocess 2-way
+fallback**, and the **diff3 / standalone / exec skip audits** (above).
+
+Verification for the test-enablement batch, on **three platforms** (0 failures):
+`macos` 811/811 and `macos-cross` 810/810 locally (Mach-O/arm64); the 11 cli ports
++ full 42-case preprocess suite re-run under Docker `ubuntu:24.04` on **native
+arm64 Linux** *and* **x86_64 Linux** (ELF) — 12/12 cli, 42/42 preprocess on each.
+So the widened `os!=WIN32` gate and the preprocess 2-way fallback are confirmed on
+both POSIX arches and both object formats, and the original x86_64-Linux ELF path
+does not regress. (The amd64 gcc occasionally segfaults under QEMU on this arm64
+host — a `ninja -k 0` retry cleared the transient crash.)
 
 Resolved 2026-07-04: arm64 atomics/bounds/complex link
 failures (outline-atomics + `__unordtf2`), Rosetta x86_64 macOS (validated
