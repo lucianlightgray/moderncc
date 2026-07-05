@@ -923,7 +923,12 @@ LIBMCCAPI MCCState *mcc_new(void) {
 #if defined CONFIG_MCC_PIC
 	s->pic = 2;
 #endif
-	s->warn_implicit_function_declaration = 1;
+	/* Calling an undeclared function is a §6.9.1/§7.1.4 constraint violation (no
+	   implicit declarations since C99); gcc 14 and clang 16+ reject it by default.
+	   Match them: on and promoted to an error (downgradable via
+	   -Wno-error=implicit-function-declaration). Prevents 64-bit-return
+	   truncation miscompiles and fixes autoconf-style feature detection. */
+	s->warn_implicit_function_declaration = WARN_ON | WARN_ERR;
 	s->warn_discarded_qualifiers = 1;
 	s->warn_sequence_point = 1;
 	s->warn_implicit_int = 1;

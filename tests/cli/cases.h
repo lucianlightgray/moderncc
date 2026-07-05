@@ -666,6 +666,18 @@ static const cli_case_t cli_cases[] = {
 	 "grep -oE \"implicit declaration of function 'foo'\"",
 	 "implicit declaration of function 'foo'\n"},
 
+	/* Calling an undeclared function is a hard error by default (matches gcc 14 /
+	   clang 16), and is downgradable to a warning via -Wno-error=. */
+	{"implicit_decl_default_error", "",
+	 "printf 'int main(void){ return baz(); }\\n' > {W}/ide.c && "
+	 "{MCC} -B{B} -I{I} -c {W}/ide.c -o {W}/ide.o 2>&1 | grep -oE 'error: implicit declaration' | head -1",
+	 "error: implicit declaration\n"},
+
+	{"implicit_decl_downgradable", "",
+	 "printf 'int main(void){ return baz(); }\\n' > {W}/idd.c && "
+	 "{MCC} -B{B} -I{I} -Wno-error=implicit-function-declaration -c {W}/idd.c -o {W}/idd.o 2>&1 | grep -oE 'warning: implicit declaration' | head -1",
+	 "warning: implicit declaration\n"},
+
 	{"bool_bitfield_width", "",
 	 "printf 'struct S{_Bool b:2;};\\n' > {W}/bb.c && "
 	 "printf 'struct T{_Bool b:1; int d:8;}; int main(void){return 0;}\\n' > {W}/bg.c && "

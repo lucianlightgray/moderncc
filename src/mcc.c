@@ -104,7 +104,7 @@ static const char help2[] =
 	"  error[=<warn>]                Treat warnings as errors (all, or the named one)\n"
 	"  write-strings                 Make string literals const\n"
 	"  unsupported                   Warn about ignored options, pragmas, etc.\n"
-	"  implicit-function-declaration Warn about calls to undeclared functions (*)\n"
+	"  implicit-function-declaration Diagnose calls to undeclared functions (*, error by default)\n"
 	"  return-type                   Diagnose return-value/type mismatches (*, error by default)\n"
 	"  discarded-qualifiers          Warn when a type qualifier is discarded (*)\n"
 	"Flags (-f[no-]...):\n"
