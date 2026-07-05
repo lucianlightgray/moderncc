@@ -63,25 +63,31 @@ jobs:
             dist/checksums-*.txt
 
   dist-windows:
+    # Both Windows toolchains via `ci dist`: MSVC (x86_64 + arm64) and mingw
+    # (x86_64, superbuild fetches winlibs GCC). The tool is bootstrapped with cl
+    # (the same two sources the `ci` CMake target builds).
     name: ${{ matrix.plat }}
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { runner: windows-latest, plat: windows-x86_64-msvc }
-          - { runner: windows-11-arm, plat: windows-arm64-msvc }
-    runs-on: ${{ matrix.runner }}
+          - { toolchain: msvc,  runner: windows-latest, arch: x64,   plat: windows-x86_64-msvc,  preset: dist-msvc }
+          - { toolchain: msvc,  runner: windows-11-arm, arch: arm64, plat: windows-arm64-msvc,   preset: dist-msvc }
+          - { toolchain: mingw, runner: windows-latest, arch: x64,   plat: windows-x86_64-mingw, preset: dist-mingw }
     steps:
       - uses: actions/checkout@v5
-      - name: configure + build + install
-        run: |
-          cmake --preset dist-msvc "-DMCC_DIST_VERSION=${{ github.ref_name }}" "-DMCC_DIST_PLAT=${{ matrix.plat }}" "-DMCC_BENCH=ON"
-          cmake --build --preset dist-msvc -j
-          cmake --install cmake-dist-msvc --config Release
-      - name: benchmark
-        run: cmake --build --preset dist-msvc --config Release --target bench
-      - name: package
-        run: cmake --build --preset dist-msvc --target package-dist
+      - name: set up MSVC dev shell (cl for the ci bootstrap + mingw driver)
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: ${{ matrix.arch }}
+      - name: install ninja
+        if: matrix.toolchain == 'mingw'
+        run: choco install ninja -y
+      - name: build ci tool
+        run: cl /nologo /O2 /Fe:ci.exe tools\ci.c tools\toolsupport.c
+      - name: dist (configure + build + install + bench + package)
+        run: .\ci.exe dist --preset ${{ matrix.preset }} --plat ${{ matrix.plat }} --version ${{ github.ref_name }}
       - uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.plat }}
@@ -89,35 +95,9 @@ jobs:
             dist/*.zip
             dist/checksums-*.txt
 
-  dist-mingw:
-    name: windows-x86_64-mingw
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: TheMrMilchmann/setup-msvc-dev@v4
-        with:
-          arch: x64
-      - name: install ninja
-        run: choco install ninja -y
-      - name: configure + build + install (superbuild fetches winlibs GCC)
-        run: |
-          cmake --preset dist-mingw "-DMCC_DIST_VERSION=${{ github.ref_name }}" "-DMCC_DIST_PLAT=windows-x86_64-mingw" "-DMCC_BENCH=ON"
-          cmake --build --preset dist-mingw -j
-          cmake --install cmake-dist-mingw
-      - name: benchmark
-        run: cmake --build --preset dist-mingw --target bench
-      - name: package
-        run: cmake --build --preset dist-mingw --target package-dist
-      - uses: actions/upload-artifact@v7
-        with:
-          name: release-windows-x86_64-mingw
-          path: |
-            dist/*.zip
-            dist/checksums-*.txt
-
   publish:
     name: publish release
-    needs: [dist-unix, dist-windows, dist-mingw]
+    needs: [dist-unix, dist-windows]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:

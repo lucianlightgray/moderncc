@@ -318,38 +318,32 @@ jobs:
             dist/bench-*.txt
 
   dist-windows:
-    # Release dist packaging for Windows, both toolchains: MSVC (x86_64 + arm64,
-    # VS generator) and mingw (x86_64, superbuild fetches winlibs GCC).
+    # Release dist packaging for Windows via the `ci dist` tool, both toolchains:
+    # MSVC (x86_64 + arm64) and mingw (x86_64, superbuild fetches winlibs GCC).
+    # The tool is bootstrapped with cl — the same two sources the `ci` CMake
+    # target builds — so the whole dist flow lives in one place across platforms.
     name: dist-windows / ${{ matrix.plat }}
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { toolchain: msvc,  runner: windows-latest, plat: windows-x86_64-msvc,  preset: dist-msvc }
-          - { toolchain: msvc,  runner: windows-11-arm, plat: windows-arm64-msvc,   preset: dist-msvc }
-          - { toolchain: mingw, runner: windows-latest, plat: windows-x86_64-mingw, preset: dist-mingw }
+          - { toolchain: msvc,  runner: windows-latest, arch: x64,   plat: windows-x86_64-msvc,  preset: dist-msvc }
+          - { toolchain: msvc,  runner: windows-11-arm, arch: arm64, plat: windows-arm64-msvc,   preset: dist-msvc }
+          - { toolchain: mingw, runner: windows-latest, arch: x64,   plat: windows-x86_64-mingw, preset: dist-mingw }
     steps:
       - uses: actions/checkout@v5
-      - name: set up MSVC dev shell (mingw superbuild driver)
-        if: matrix.toolchain == 'mingw'
+      - name: set up MSVC dev shell (cl for the ci bootstrap + mingw driver)
         uses: TheMrMilchmann/setup-msvc-dev@v4
         with:
-          arch: x64
+          arch: ${{ matrix.arch }}
       - name: install ninja
         if: matrix.toolchain == 'mingw'
         run: choco install ninja -y
-      - name: configure + build + install + package
-        run: |
-          cmake --preset ${{ matrix.preset }} "-DMCC_DIST_VERSION=ci-$($env:GITHUB_SHA.Substring(0,12))" "-DMCC_DIST_PLAT=${{ matrix.plat }}" "-DMCC_BENCH=ON"
-          cmake --build --preset ${{ matrix.preset }} -j
-          if ('${{ matrix.toolchain }}' -eq 'msvc') {
-            cmake --install cmake-${{ matrix.preset }} --config Release
-          } else {
-            cmake --install cmake-${{ matrix.preset }}
-          }
-          cmake --build --preset ${{ matrix.preset }} --target bench
-          cmake --build --preset ${{ matrix.preset }} --target package-dist
+      - name: build ci tool
+        run: cl /nologo /O2 /Fe:ci.exe tools\ci.c tools\toolsupport.c
+      - name: dist (configure + build + install + bench + package)
+        run: .\ci.exe dist --preset ${{ matrix.preset }} --plat ${{ matrix.plat }} --version "ci-$($env:GITHUB_SHA.Substring(0,12))"
       - name: benchmark summary
         if: always()
         run: |
