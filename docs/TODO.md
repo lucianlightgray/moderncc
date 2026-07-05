@@ -11,9 +11,10 @@ _From CI run [28741671440](https://github.com/lucianlightgray/moderncc/actions/r
 macos×4, msvc×2, mingw, qemu×10, dist×9). These are the warnings / skips / matrix
 open questions that green run left standing._
 
-### exec/tls — MSVC arm64 backend miscompiles mcc (known issue)
+### exec/tls — MSVC arm64 backend miscompiles mcc (worked around)
 
-- [ ] **`exec/tls` skipped on arm64+WIN32 (`skipon=arm64/WIN32`, 2026-07-05).**
+- [~] **`exec/tls`: MSVC-arm64 `__thread`-codegen miscompile — `#pragma optimize`
+  workaround, re-enabled (2026-07-05).**
   On the `msvc / arm64` runner, `exec/tls` intermittently hung (ctest 63 min,
   manual cancel). Root cause is **not** in mcc: **MSVC's arm64 code generator
   miscompiles mcc itself** on the static-`__thread` emission path. The
@@ -28,13 +29,17 @@ open questions that green run left standing._
   - Only **MSVC's arm64 backend building mcc** fails, and it is build/run
     nondeterministic (a later CI build was 0/30 corrupt), so it cannot be
     reproduced or bisected without an arm64 Windows + MSVC box.
-  - `exec/tls` still runs (and passes) on **x86_64 WIN32** and on every gcc/clang
-    arm64 target, so `__thread` codegen stays covered. The `msvc` ctest step also
-    carries `--timeout 300` so any future flaky hang fails fast instead of
-    stalling the job.
-  - _Next:_ re-enable once on an arm64 Windows + MSVC host (or a newer MSVC);
-    then bisect the miscompiled mcc construct and, if it is `/O2`-specific, wrap
-    just that function in `#pragma optimize("",off)`.
+  - **Workaround:** `#pragma optimize("", off)` around the arm64 TLS-access
+    codegen (`arm64_tls_base_x30` + its only callers `load`/`store` in
+    `src/arch/arm64/arm64-gen.c`), scoped to `_MSC_VER && _M_ARM64` so every
+    other build/target is untouched. `exec/tls` re-enabled everywhere. The
+    `msvc` ctest step keeps `--timeout 300` so if the workaround is incomplete
+    (the miscompile is nondeterministic and unverifiable locally), a future
+    flake fails fast instead of hanging the job.
+  - _If it still flakes:_ the miscompiled construct is outside that region —
+    widen the `#pragma optimize` scope (up to the whole mcc TU on
+    `_MSC_VER && _M_ARM64`), or re-gate with `skipon=arm64/WIN32` (the runner
+    gate is still in place) until an arm64 Windows + MSVC host can bisect it.
 
 ### macho-* on native macOS
 
