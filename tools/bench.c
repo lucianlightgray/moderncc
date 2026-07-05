@@ -23,10 +23,12 @@
 #include <sys/sysctl.h>
 #endif
 
-#if defined(__x86_64__) || defined(__i386__)
-#include <cpuid.h>
-#elif defined(_M_X64) || defined(_M_IX86)
+/* Test the MSVC-only target macros first: mcchost.h aliases __x86_64__/__i386__
+ * on cl (for mcc's own sources), which would otherwise pull in GCC's <cpuid.h>. */
+#if defined(_M_X64) || defined(_M_IX86)
 #include <intrin.h>
+#elif defined(__x86_64__) || defined(__i386__)
+#include <cpuid.h>
 #endif
 
 #define REPS_DEFAULT 3
@@ -421,15 +423,15 @@ struct hostinfo {
 
 /* CPUID leaf-1 ECX bit 31 => running under a hypervisor. */
 static int hypervisor_present(void) {
-#if defined(__x86_64__) || defined(__i386__)
+#if defined(_M_X64) || defined(_M_IX86)
+	int r[4];
+	__cpuid(r, 1);
+	return (r[2] & (1 << 31)) ? 1 : 0;
+#elif defined(__x86_64__) || defined(__i386__)
 	unsigned a, b, c, d;
 	if (!__get_cpuid(1, &a, &b, &c, &d))
 		return -1;
 	return (c & (1u << 31)) ? 1 : 0;
-#elif defined(_M_X64) || defined(_M_IX86)
-	int r[4];
-	__cpuid(r, 1);
-	return (r[2] & (1 << 31)) ? 1 : 0;
 #else
 	return -1;
 #endif
