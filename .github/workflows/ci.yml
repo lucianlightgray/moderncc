@@ -135,7 +135,10 @@ jobs:
       - name: build
         run: cmake --build --preset msvc -j
       - name: test
-        run: ctest --preset msvc -j ${env:NUMBER_OF_PROCESSORS} --output-junit "cmake-msvc/bench-tests.xml"
+        # --timeout caps any single test: a hung test (e.g. a thread-contention
+        # deadlock that only manifests on real arm64 silicon) is killed and named
+        # in the log instead of stalling the whole job until it is cancelled.
+        run: ctest --preset msvc -j ${env:NUMBER_OF_PROCESSORS} --timeout 300 --output-junit "cmake-msvc/bench-tests.xml"
       - name: benchmark
         if: always()
         run: |
