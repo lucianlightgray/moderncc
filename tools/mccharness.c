@@ -1,4 +1,5 @@
 #include "toolsupport.h"
+#include <stdint.h> /* uint32_t, used by the Mach-O fat-header suite below */
 
 static const char *ERR_NEEDLES[] = {"error:", "undefined reference", "undefined symbol", 0};
 static const char *ERR_SKIPS[] = {"warning", "note:", 0};
