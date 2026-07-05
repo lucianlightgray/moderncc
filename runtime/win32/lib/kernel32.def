@@ -775,3 +775,11 @@ lstrcpynW
 lstrlen
 lstrlenA
 lstrlenW
+AcquireSRWLockExclusive
+ReleaseSRWLockExclusive
+TryAcquireSRWLockExclusive
+InitializeConditionVariable
+WakeConditionVariable
+WakeAllConditionVariable
+SleepConditionVariableSRW
+InitOnceExecuteOnce

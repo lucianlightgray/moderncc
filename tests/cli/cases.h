@@ -1504,7 +1504,7 @@ static const cli_case_t cli_cases[] = {
 	 "{MCC} -B{B} -I{I} -c {W}/un.c -o /dev/null 2>&1 && echo DEFAULT_SILENT",
 	 "2 warn\nOK_CLEAN\nDEFAULT_SILENT\n"},
 
-	{"tss_dtor_iterations_ice", "os!=WIN32:<threads.h> (C11 threads) not provided on the WIN32 target",
+	{"tss_dtor_iterations_ice", "",
 	 "printf '#include <threads.h>\\n_Static_assert(TSS_DTOR_ITERATIONS>=1,\"ice\");\\nint a[TSS_DTOR_ITERATIONS];\\nint main(void){return (int)(sizeof a/sizeof a[0])==4 ? 0 : 1;}\\n' > {W}/tss.c && "
 	 "{MCC} -B{B} -I{I} -c {W}/tss.c -o /dev/null 2>&1 && echo ICE_OK",
 	 "ICE_OK\n"},
