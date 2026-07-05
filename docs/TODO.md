@@ -257,11 +257,13 @@ suite is green — but each is a real, actionable thread._
 
 ### A. Documentation integrity & headline claims
 
-- [ ] **`docs/OPTIMIZE.md` is a stub with dead tooling refs (fix).** The intro
-  promises a DRY/helper-extraction findings table "grounded in a query or grep",
-  but the file ends at the SQL with **zero findings**, and it points at an
-  `analysis/` dir + `/tmp/dupfn.py` that **do not exist in the repo** (confirmed).
-  → Either restore the `analysis/` harness + findings or trim the doc to what runs.
+- [x] **`docs/OPTIMIZE.md` stub with dead tooling refs — FIXED (2026-07-05).** The
+  intro promised a DRY findings table but ended at the SQL with zero findings and
+  pointed at an `analysis/` dir + `/tmp/dupfn.py` that do not exist in-tree.
+  Reframed the doc as a **methodology/reproducible-query** note with an explicit
+  "Status" banner clarifying the harness is a not-vendored scratch tool and no
+  findings are currently recorded. (A future improvement is to actually vendor the
+  `analysis/` harness and record concrete DRY findings.)
 - [ ] **Reconcile divergent test-count claims across docs (validate).**
   `README.md:116` (39/39, 22/22) vs `README.md:127-129` (782/782, 520/520) vs
   `docs/PROFILING.md:384` (804/772) cite different totals with no stated basis.
@@ -318,13 +320,17 @@ suite is green — but each is a real, actionable thread._
 
 ### C. Codegen / backend correctness & hardening
 
-- [ ] **Unhandled reloc types silently miscompile instead of failing (fix,
-  high-value).** Every backend's `relocate()` `default:` just
-  `fprintf(stderr,"FIXME: handle reloc type …")` and continues, leaving bytes
-  unrelocated but still emitting output — `x86_64-link.c:398`, `arm64-link.c:384`,
-  `riscv64-link.c:378`, `arm-link.c:416`, `i386-link.c:309` (all confirmed). →
-  Route the default through an error flag so an unknown reloc fails the link;
-  audit per-arch which reloc types the `gen` paths can actually emit (reachability).
+- [x] **Unhandled reloc types silently miscompile instead of failing — FIXED
+  (2026-07-05).** Every backend's `relocate()` `default:` used to
+  `fprintf(stderr,"FIXME: handle reloc type …")` and continue, leaving bytes
+  unrelocated but still emitting output. Now routed through `mcc_error_noabort`
+  (the primitive already used throughout those files) in all five backends —
+  `x86_64/arm64/riscv64/arm/i386-link.c` — so an unknown reloc records an error
+  and fails the link instead of producing a silent miscompile. Verified the
+  default is genuinely unreachable for supported code (macos-cross 810/810 still
+  green: the full cross-codegen + dash-s-bytes + conformance surface links clean).
+  _Remaining (lower value):_ a positive per-arch audit enumerating exactly which
+  reloc types each `gen` path can emit vs. what `relocate()` handles.
 - [ ] **Cross-check the three divergent TLS-offset conventions per psABI
   (validate).** x86_64 subtracts the aligned block (`x86_64-link.c:377`), arm64
   adds a bare `+16` TCB magic constant (`arm64-link.c:369`), riscv64 uses raw
@@ -392,10 +398,14 @@ suite is green — but each is a real, actionable thread._
   tools/mccharness.c:841 — the 2-way fallback assumes any gcc/clang divergence is
   impl-defined; a case where mcc coincidentally matches the wrong reference scores
   PASS. → Log which cases take this branch so divergences can be reviewed.
-- [ ] **`objcheck minos` ignores `LC_VERSION_MIN_MACOSX`; fat picks first slice
-  (fix).** tools/objcheck.c:39,90 (only `LC_BUILD_VERSION`) and :97 (first slice
-  parsed). → Also parse the legacy load command (or assert mcc always emits
-  `LC_BUILD_VERSION`); add `--arch` for fat inputs or iterate all slices.
+- [~] **`objcheck minos` ignored `LC_VERSION_MIN_MACOSX` — FIXED; fat-slice
+  selector still open (2026-07-05).** `macho_slice` now also reads the legacy
+  `LC_VERSION_MIN_{MACOSX,IPHONEOS,TVOS,WATCHOS}` load commands (version at +8),
+  with `LC_BUILD_VERSION` (+12) taking precedence when both are present — so a
+  Mach-O using only the legacy command no longer reports `minos 0.0.0`.
+  _Remaining:_ for a fat binary `macho_parse` still validates the first slice that
+  parses; add an optional `--arch` selector (or iterate all slices) so a per-slice
+  minos mismatch on a later slice is detected.
 - [ ] **`ckbuildmd` type-drift check is presence-only + prefix-matched (fix).**
   tools/ckbuildmd.c:98 only checks type when the cell starts with a TYPEKW, and
   `strncmp` lets `INT` match `INTEGER`. → Treat documented-but-mistyped as drift;
@@ -422,10 +432,18 @@ suite is green — but each is a real, actionable thread._
 
 ### F. Runtime / tooling robustness & smaller diagnostics
 
-- [ ] **`machofat` re-sign is silently best-effort (fix).** tools/machofat.c:184 —
-  if `codesign` is absent/fails the error is swallowed, so it reports success while
-  producing an AMFI-rejectable binary. → Warn on Darwin when codesign is missing or
-  nonzero.
+- [x] **`-gstabs` build warning on modern gcc — FIXED (2026-07-05, found during
+  this preset validation).** `CMakeLists.txt:2356` fed gcc `-gstabs` when building
+  the bcheck runtime object (DWARF-off config), but GCC 12 dropped stabs support,
+  so ubuntu-24.04 gcc warned `switch '-gstabs' is no longer supported` on every
+  linux-gcc build. Now gated `CMAKE_C_COMPILER_VERSION VERSION_LESS 12`, falling
+  back to `-gdwarf` on gcc ≥ 12 (functionally equivalent debug info for that
+  object). linux-gcc build warnings 1→0.
+- [x] **`machofat` re-sign silently best-effort — FIXED (2026-07-05).**
+  tools/machofat.c now inspects codesign's exit status: exit 127 (codesign not
+  found, e.g. a non-Darwin combine) is still skipped silently as documented, but
+  any other nonzero exit emits a `machofat: warning: codesign failed …` to stderr
+  so an AMFI-rejectable output is surfaced rather than reported as success.
 - [ ] **`__has_builtin`/`__has_feature`/… hard-coded to 0 (validate).**
   src/mccpp.c:1521 — SDK headers may mis-detect features mcc actually provides. →
   Answer truthfully where cheap (e.g. `__has_attribute` for honored attributes);
@@ -446,6 +464,46 @@ suite is green — but each is a real, actionable thread._
   `src/mcc.h:984` collapses per-function backend state onto shared `cg_*` fields
   "because only the active target is compiled". → Add a build-time check guarding
   that assumption.
+
+### G. Warnings surfaced by the arm64-Linux preset validation (2026-07-05)
+
+_Found by running the `linux-gcc-diagnostics` (everything-on) preset under Docker
+`ubuntu:24.04` on a native **arm64** host — CI runs that preset on **x86_64**,
+where `arch/arm64/*` isn't the native backend and single-source `static`-unused
+functions differ, so these were latent. All are pre-existing (not from the audit
+changes) and non-fatal (diagnostics has no `-Werror`); tests stayed 811/811._
+
+- [x] **arm64 disassembler dead LD1/ST1 comparisons — FIXED (2026-07-05).**
+  `arm64-dis.c:829` OR'd four masked compares; two (`== 0x0c400000` /
+  `== 0x0d400000`) required bit 22 that their masks (`0xbfbf0000`/`0xbf9f0000`)
+  clear, so they were always false (`-Wtautological-compare`). The bit-22-agnostic
+  1st/3rd compares already match both load and store forms (the `?"ld1":"st1"`
+  picks from bit 22), so the two dead alternatives were removed — no behavior change.
+- [x] **`-Wunused-function` on Mach-O-only helpers in single-source ELF builds —
+  FIXED (2026-07-05).** `mcc_uleb128_size` (libmcc.c) and `host_macos_sdk_root`
+  (mcchost.c) are used only by `objfmt/mccmacho.c`, absent from an ELF target, so
+  as single-source `static` they warned unused. Tagged both `MAYBE_UNUSED` (the
+  existing idiom used across `mcchost.c`). (`multisource` never warned — `ST_FUNC`
+  is extern there.)
+- [x] **Swept the remaining `linux-gcc-diagnostics` / `-release` warnings on arm64
+  — FIXED (2026-07-05).** Two more Mach-O/host-only helpers (`host_spawn_wait`,
+  `host_codesign_adhoc` in mcchost.c) tagged `MAYBE_UNUSED`; and three
+  `-Wformat-truncation` warnings in `tools/build.c` (`detect_triplet`) silenced by
+  bounding each `%s` with a precision that fits the destination (`cand[i]` is
+  `[256]`, paths are `[512]`) — zero behavior change. Result: `linux-gcc-diagnostics`
+  and `linux-gcc-release` now build **warning-clean on arm64** too (were 12 / 3),
+  tests still 811/811.
+
+Presets exercised locally for this change (0 failures, 0 warnings unless noted) —
+`macos` 811/811 and `macos-cross` 810/810 natively (Mach-O/arm64); and, under
+Docker `ubuntu:24.04` on a native **arm64** host (ELF), the linux config matrix:
+`linux-gcc`, `linux-clang`, `linux-gcc-release` (3 pre-existing warns),
+`linux-gcc-sanitize`, `linux-gcc-static`, `linux-gcc-pie`, `linux-gcc-dwarf`,
+`linux-gcc-predefs-off`, `linux-gcc-multisource`, `linux-clang-release` all
+811/811; `linux-gcc-asm-off` 779/779; `linux-gcc-diagnostics` 811/811 (12→**0**
+warnings after the §G fixes; `-release` 3→**0**). The qemu-user matrix, msvc, mingw, and
+the `dist-{msvc,mingw}` packaging presets need heavier infra (a qemu image +
+Gentoo stage3 downloads, or a Windows host) — the CI matrix's job.
 
 Resolved 2026-07-05 (run 28741671440 follow-ups): **CI Node.js 20 deprecation**
 (`actions/cache@v4` → `@v5`, Node-24 native; every other action already on

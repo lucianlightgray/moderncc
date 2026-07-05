@@ -1,9 +1,16 @@
-# OPTIMIZE — DRY / helper-extraction findings
+# OPTIMIZE — DRY / helper-extraction methodology
 
-Duplication and helper-extraction candidates for the mcc codebase, mined
+> **Status (2026-07-05):** this file records the *methodology and reproducible
+> query* for mining duplication/helper-extraction candidates — it does **not**
+> currently carry a findings list, and the `analysis/` harness described below is
+> a scratch tool that is **not vendored in-tree** (rebuild it from the steps here
+> when you want to re-run the pass). Treat the sections below as "how to look",
+> not "what was found". When a concrete DRY finding is acted on, record it here.
+
+Duplication and helper-extraction candidates for the mcc codebase are mined
 mechanically from a statement-pattern analysis of the C we own (`src/`, `tools/`,
-`runtime/`) and cross-checked with a raw-body hash/similarity pass. Every item is
-grounded in a query or grep you can re-run.
+`runtime/`) and cross-checked with a raw-body hash/similarity pass. Every item
+should be grounded in a query or grep you can re-run.
 
 - **How this was produced:** `python3 analysis/build.py` tokenizes the tree,
   splits every function into linear *statement units*, normalizes them (locals →

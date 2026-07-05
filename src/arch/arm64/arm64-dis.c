@@ -826,8 +826,12 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) {
 					 fr(dc, 'v', rn), fr(dc, 'v', rm));
 		return D_CMT;
 	}
-	if ((w & 0xbfbf0000) == 0x0c000000 || (w & 0xbfbf0000) == 0x0c400000 || (w & 0xbf9f0000) == 0x0d000000 || (w & 0xbf9f0000) == 0x0d400000) {
-
+	/* AdvSIMD LD1/ST1 (multiple structures). The masks deliberately clear the
+	   L bit (0x00400000), so each comparison matches both the load and store
+	   forms; line below selects ld1/st1 from that bit. (Two extra `== 0x..40..`
+	   alternatives were removed: with the L bit masked out they could never be
+	   true — dead code that gcc -Wtautological-compare flagged.) */
+	if ((w & 0xbfbf0000) == 0x0c000000 || (w & 0xbf9f0000) == 0x0d000000) {
 		snprintf(out, osz, "%s\t{...}, [%s]",
 				 (w & 0x400000) ? "ld1" : "st1", irsp(dc, 1, rn));
 		return D_CMT;

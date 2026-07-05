@@ -193,7 +193,18 @@ int main(int argc, char **argv) {
 			_exit(127);
 		} else if (pid > 0) {
 			int st;
-			(void)waitpid(pid, &st, 0);
+			if (waitpid(pid, &st, 0) > 0 && WIFEXITED(st)) {
+				int cs = WEXITSTATUS(st);
+				/* 127 = codesign not found (e.g. a non-Darwin combine): skip
+				   silently, as documented. Any other nonzero means codesign ran
+				   and failed, so the output may be AMFI-rejected on Apple silicon
+				   — surface it rather than reporting a false success. */
+				if (cs != 0 && cs != 127)
+					fprintf(stderr,
+						"machofat: warning: codesign failed (exit %d); '%s' "
+						"may be rejected by AMFI on Apple silicon\n",
+						cs, argv[1]);
+			}
 		}
 	}
 

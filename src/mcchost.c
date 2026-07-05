@@ -166,7 +166,7 @@ static char *host_quote_w32(const char *s) {
 }
 #endif
 
-ST_FUNC int host_spawn_wait(const char *const *argv) {
+ST_FUNC MAYBE_UNUSED int host_spawn_wait(const char *const *argv) {
 #ifdef _WIN32
 	int i, n, ret;
 	char **qv;
@@ -678,7 +678,7 @@ ST_FUNC MAYBE_UNUSED int host_dir_walk(const char *dir, int recursive, host_walk
 #endif
 }
 
-ST_FUNC int host_codesign_adhoc(const char *file) {
+ST_FUNC MAYBE_UNUSED int host_codesign_adhoc(const char *file) {
 #ifdef CONFIG_CODESIGN
 	const char *argv[] = {"codesign", "-f", "-s", "-", file, NULL};
 	return host_spawn_wait(argv);
@@ -902,7 +902,7 @@ ST_FUNC void *host_dlsym_process(const char *symbol) {
 
 #endif
 
-ST_FUNC const char *host_macos_sdk_root(void) {
+ST_FUNC MAYBE_UNUSED const char *host_macos_sdk_root(void) {
 #ifdef __APPLE__
 	static char buf[1024];
 	static int done;

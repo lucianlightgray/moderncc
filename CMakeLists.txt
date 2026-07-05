@@ -2342,10 +2342,13 @@ function(mcc_build_mccrt tname mcctgt cpu os native archive objdir out_extra)
                 list(APPEND _gccflags -mno-outline-atomics)
             endif()
         endif()
-        if(MCC_CONFIG_DWARF STREQUAL "" AND NOT CMAKE_C_COMPILER_ID MATCHES "Clang")
-            set(_bflags_gcc -gstabs)   # stabs debug info: gcc only (clang rejects -gstabs)
+        if(MCC_CONFIG_DWARF STREQUAL "" AND NOT CMAKE_C_COMPILER_ID MATCHES "Clang"
+           AND CMAKE_C_COMPILER_VERSION VERSION_LESS 12)
+            # stabs debug info: gcc-only, and only gcc < 12 — GCC 12 dropped stabs
+            # support, so newer gcc warns "switch '-gstabs' is no longer supported".
+            set(_bflags_gcc -gstabs)
         else()
-            set(_bflags_gcc -gdwarf)
+            set(_bflags_gcc -gdwarf)   # clang, or gcc >= 12 (no stabs): use DWARF
         endif()
     endif()
 

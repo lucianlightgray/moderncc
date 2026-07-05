@@ -37,6 +37,12 @@ static u32 le16(const unsigned char *p) {
 
 #define MH_MAGIC_64 0xfeedfacfu
 #define LC_BUILD_VERSION 0x32u
+/* Legacy minimum-version load commands (pre-LC_BUILD_VERSION). The packed
+   X.Y.Z version lives at a different offset (8) than LC_BUILD_VERSION's minos (12). */
+#define LC_VERSION_MIN_MACOSX 0x24u
+#define LC_VERSION_MIN_IPHONEOS 0x25u
+#define LC_VERSION_MIN_TVOS 0x2fu
+#define LC_VERSION_MIN_WATCHOS 0x30u
 
 static const char *macho_arch(u32 ct) {
 	switch (ct) {
@@ -68,6 +74,7 @@ static const char *macho_type(u32 ft) {
 static int macho_slice(const unsigned char *p, long n, u32 *ct, u32 *ft, u32 *minos) {
 	u32 ncmds, sizeofcmds, i;
 	const unsigned char *lc, *end;
+	int have_build = 0;
 	if (n < 32 || le32(p) != MH_MAGIC_64)
 		return -1;
 	*ct = le32(p + 4);
@@ -87,8 +94,14 @@ static int macho_slice(const unsigned char *p, long n, u32 *ct, u32 *ft, u32 *mi
 		cmdsize = le32(lc + 4);
 		if (cmdsize < 8 || lc + cmdsize > end)
 			return -1;
-		if (cmd == LC_BUILD_VERSION && cmdsize >= 16)
-			*minos = le32(lc + 12);
+		if (cmd == LC_BUILD_VERSION && cmdsize >= 16) {
+			*minos = le32(lc + 12); /* LC_BUILD_VERSION wins when both present */
+			have_build = 1;
+		} else if (!have_build && cmdsize >= 12 &&
+			   (cmd == LC_VERSION_MIN_MACOSX || cmd == LC_VERSION_MIN_IPHONEOS ||
+			    cmd == LC_VERSION_MIN_TVOS || cmd == LC_VERSION_MIN_WATCHOS)) {
+			*minos = le32(lc + 8); /* legacy version_min_command: version at +8 */
+		}
 		lc += cmdsize;
 	}
 	return 0;

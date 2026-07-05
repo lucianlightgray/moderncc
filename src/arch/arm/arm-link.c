@@ -413,8 +413,8 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 	}
 		return;
 	default:
-		fprintf(stderr, "FIXME: handle reloc type %d at %x [%p] to %x\n",
-				type, (unsigned)addr, ptr, (unsigned)val);
+		mcc_error_noabort("unhandled relocation type %d at 0x%x (value 0x%x)",
+				type, (unsigned)addr, (unsigned)val);
 		return;
 	}
 }

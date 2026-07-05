@@ -202,7 +202,7 @@ ST_FUNC unsigned long mcc_grow_capacity(unsigned long cur, unsigned long need,
 	return cur;
 }
 
-ST_FUNC int mcc_uleb128_size(unsigned long long value) {
+ST_FUNC MAYBE_UNUSED int mcc_uleb128_size(unsigned long long value) {
 	int size = 0;
 	do {
 		value >>= 7;
