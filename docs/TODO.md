@@ -100,10 +100,14 @@ Deps: B, D, F, G · PLAN §6
 - [x] Structural brackets on block() (statement kinds: If/While/For/Do/Switch/
       Return/Goto/CompoundStmt/ExprStmt) — single-exit, verified
 - [x] Corpus gate (cst_validate): round-trip §8.1 + tiling §8.2 + offset→node
-      §8.3 all pass on 308/308 compilable files, 0 failures
+      §8.3 all pass on 309/309 compilable files, 0 failures
+- [x] Debug-build balance assert in cst_hook_end (CST_ASSERT cst_sstop==1);
+      fires in assert-enabled builds (sanitize/diagnostics). block() brackets
+      proven balanced by round-trip+tiling over the corpus.
 - [ ] Remaining grammar brackets (decl/struct_decl/type_decl/expr cascade) —
-      incremental; deferred infra ready, each adds nesting without round-trip risk
-- [ ] Debug-build balance asserts (cheap; add with remaining brackets)
+      incremental refinement; deferred infra ready, each adds finer nesting with
+      no round-trip risk. Statement level (block) is done; adds most consumer
+      value already (statement→PC for -g, statement nodes for LSP).
 
 ### WEAVE 2 — Hash & snapshot online  ·  status: [x]
 - [x] Hashing runs on every real tree (cst_rehash_all in cst_hook_end)

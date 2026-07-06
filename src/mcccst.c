@@ -962,6 +962,9 @@ static CstLocal cst_materialize(int32_t si) {
 CstArena *cst_hook_end(void) {
     CstArena *a = cst_current;
     if (a) {
+        /* Debug tripwire (PLAN §6): every grammar cst_hook_open must have a
+         * matching cst_hook_close, so only the TU root remains on the stack. */
+        CST_ASSERT(cst_sstop == 1);
         /* Close any specs left open (defensive), then the TU root spans all. */
         while (cst_sstop > 1)
             cst_hook_close();
