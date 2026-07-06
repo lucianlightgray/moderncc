@@ -13,6 +13,33 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done.
 
 ---
 
+## Implementation status (2026-07-06)
+
+Progress against the sequenced plan below (tracker: [docs/TODO.md](TODO.md)):
+
+- [x] **D4 scaffolding** — coverage gates (`cst/kinds-*`) + the headline template
+  gate (`cst/template`); driver `tests/cst/kinds.cmake`.
+- [x] **D1a** Expression fill-in — `Unary`/`Cast`/`Paren`/`Primary`.
+- [x] **D1b** Declaration structure (D2 range-wrap) — `Declaration`/`FunctionDef`/
+  `ParamList`/`Enum`/`TypeName`/`Initializer`/`Label`.
+- [x] **D1c** PP-concrete — `IncludeDirective`/`PPDirective`/`PPConditional`
+  (per directive line; gated on the main captured file). Surfaced + fixed a
+  partial-overlap round-trip hazard in `cst_nest_specs`.
+- [x] **D1d** `Comment` promotion — line/inline/block `CST_Comment` leaf nodes,
+  excluded from `H_s`, folded into `H_t` (§8.4 held).
+- [~] **D3+D5** — the template/binding/render **model is complete and gated**
+  (content-addressed store with pure-`H_s` hash-consing + **debug collision
+  tripwire**, recursive per-instance bindings, the `render(template, binding)`
+  fold with a threaded environment, and `cst_render_identity` as the round-trip
+  oracle). The **headline recursive re-include branch-selection gate** passes
+  all five assertions. *Remaining:* live capture of real included files as
+  `SourceFile` templates (dead-branch full-concrete capture past
+  `preprocess_skip`; store threading through the single-pass preprocessor).
+- [x] **FINAL** — every gate re-run over the corpus; §0.1/§0.2 re-confirmed
+  (CST-on 828/828, CST-off 811/811, codegen byte-identical on/off).
+
+---
+
 ## Decision summary (2026-07-06)
 
 | # | Axis | Decision |
