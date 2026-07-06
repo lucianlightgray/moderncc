@@ -160,6 +160,17 @@ static const cli_case_t cli_cases[] = {
 	 "{MCC} -B{B} -pedantic -c {W}/si.c -o {W}/si.o 2>&1 | grep -c 'internal linkage'",
 	 "1\n"},
 
+	{"const_modify_is_error", "",
+	 "printf 'int main(void){const int x=3; x=4; return x;}\\n' > {W}/cm.c && "
+	 "{MCC} -B{B} -c {W}/cm.c -o {W}/cm.o 2>&1 | grep -c 'error: assignment of read-only'",
+	 "1\n"},
+
+	{"nonscalar_same_type_cast_pedantic", "",
+	 "printf 'struct S{int a;}; int main(void){struct S s={1}; struct S t=(struct S)s; return t.a;}\\n' > {W}/nc.c && "
+	 "{MCC} -B{B} -c {W}/nc.c -o {W}/nc0.o 2>&1 | grep -c forbids; "
+	 "{MCC} -B{B} -pedantic -c {W}/nc.c -o {W}/nc.o 2>&1 | grep -c 'forbids casting nonscalar'",
+	 "0\n1\n"},
+
 	{"print_search_dirs", "",
 	 "{MCC} -B{B} -print-search-dirs | grep -oE '^(install|include|libraries):'",
 	 "install:\ninclude:\nlibraries:\n"},

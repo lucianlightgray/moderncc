@@ -21,6 +21,8 @@
 
 #include "mcc.h"
 
+#define AARCH64_TLS_TCB_SIZE 16
+
 #ifdef NEED_RELOC_TYPE
 ST_FUNC int code_reloc(int reloc_type) {
 	switch (reloc_type) {
@@ -366,7 +368,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		int64_t tp_offset = val - tls_start;
 #else
 
-		int64_t tp_offset = val - tls_start + 16;
+		int64_t tp_offset = val - tls_start + AARCH64_TLS_TCB_SIZE;
 #endif
 		int64_t imm;
 		if (type == R_AARCH64_TLSLE_ADD_TPREL_HI12)

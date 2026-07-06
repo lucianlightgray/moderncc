@@ -3456,9 +3456,9 @@ static void verify_assign_cast(CType *dt) {
 	dbt = dt->t & VT_BTYPE;
 	sbt = st->t & VT_BTYPE;
 	if (dt->t & VT_CONSTANT)
-		mcc_warning("assignment of read-only location");
+		mcc_error("assignment of read-only location");
 	else if (dbt == VT_STRUCT && aggr_has_const_member(dt))
-		mcc_warning("assignment of read-only location");
+		mcc_error("assignment of read-only location");
 	switch (dbt) {
 	case VT_VOID:
 		if (sbt != dbt)
@@ -6642,8 +6642,12 @@ tok_next:
 				unary();
 				if (type.t & (VT_ARRAY | VT_VLA))
 					mcc_error("conversion to non-scalar type requested");
-				if ((type.t & VT_BTYPE) == VT_STRUCT && type.ref->type.t != VT_UNION && !is_complex_type(&type) && !is_compatible_unqualified_types(&type, &vtop->type))
-					mcc_error("conversion to non-scalar type requested");
+				if ((type.t & VT_BTYPE) == VT_STRUCT && type.ref->type.t != VT_UNION && !is_complex_type(&type)) {
+					if (!is_compatible_unqualified_types(&type, &vtop->type))
+						mcc_error("conversion to non-scalar type requested");
+					else
+						mcc_pedantic("ISO C forbids casting nonscalar to the same type");
+				}
 				gen_cast(&type);
 				if ((type.t & VT_BTYPE) == VT_VOID)
 					expr_has_effect = 1;
