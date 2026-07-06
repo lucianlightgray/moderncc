@@ -209,16 +209,22 @@ uint32_t  cst_cur_tok_off(void);
 void      cst_hook_def(int tok_value, uint32_t off);
 void      cst_hook_use(int tok_value, uint32_t off);
 void      cst_hook_open(uint16_t kind);
+uint32_t  cst_mark(void);
+void      cst_hook_open_at(uint16_t kind, uint32_t first_leaf);
 void      cst_hook_close(void);
 void      cst_hook_leaf(uint16_t tok_kind, uint32_t byte_off, uint32_t len);
 
 #define CST_OPEN(k)          cst_hook_open((uint16_t)(k))
+#define CST_OPEN_AT(k, m)    cst_hook_open_at((uint16_t)(k), (m))
+#define CST_MARK()           cst_mark()
 #define CST_CLOSE()          cst_hook_close()
 #define CST_LEAF(tk, off, n) cst_hook_leaf((uint16_t)(tk), (uint32_t)(off), (uint32_t)(n))
 
 #else
 
 #define CST_OPEN(k)          ((void)0)
+#define CST_OPEN_AT(k, m)    ((void)0)
+#define CST_MARK()           0u
 #define CST_CLOSE()          ((void)0)
 #define CST_LEAF(tk, off, n) ((void)0)
 

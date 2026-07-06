@@ -6460,6 +6460,11 @@ static void format_check(int is_scanf, const char *fmt, int favail,
 ST_FUNC void unary(void) {
 	int n, t, align, size, r;
 	CType type;
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+	/* Mark the primary's start so postfix .  ->  []  () can wrap retroactively
+	 * into Member/Index/Call nodes (range-nested by cst_nest_specs). */
+	uint32_t cst_um = CST_MARK();
+#endif
 	Sym *s;
 	AttributeDef ad;
 
@@ -7389,12 +7394,20 @@ tok_next:
 #endif
 			}
 			next();
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+			CST_OPEN_AT(CST_Member, cst_um);
+			CST_CLOSE();
+#endif
 		} else if (tok == '[') {
 			next();
 			gexpr();
 			gen_op('+');
 			indir();
 			skip(']');
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+			CST_OPEN_AT(CST_Index, cst_um);
+			CST_CLOSE();
+#endif
 		} else if (tok == '(') {
 			SValue ret;
 			Sym *sa;
@@ -7573,6 +7586,10 @@ tok_next:
 					mcc_tcov_block_end(mcc_state, -1);
 				CODE_OFF();
 			}
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+			CST_OPEN_AT(CST_Call, cst_um);
+			CST_CLOSE();
+#endif
 		} else {
 			break;
 		}
@@ -7797,7 +7814,22 @@ static void expr_cond(void) {
 	SValue sv;
 	CType type;
 
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+	/* Retroactively wrap a binary expression in one flat CST_Binary node (only
+	 * when an infix operator is actually present), faithful to concrete syntax
+	 * without degenerate single-child chains (PLAN §2). Range-based nesting
+	 * (cst_nest_specs) places it correctly relative to sub-expressions. */
+	uint32_t cst_m = CST_MARK();
+	unary();
+	int cst_has_binop = precedence(tok) >= 1;
+	expr_infix(1);
+	if (cst_has_binop) {
+		CST_OPEN_AT(CST_Binary, cst_m);
+		CST_CLOSE();
+	}
+#else
 	expr_lor();
+#endif
 	if (tok == '?') {
 		next();
 		c = condition_3way();
@@ -7841,6 +7873,10 @@ static void expr_cond(void) {
 			nocode_wanted++;
 		skip(':');
 		expr_cond();
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+		CST_OPEN_AT(CST_Cond, cst_m); /* wrap the whole ?: (retroactive) */
+		CST_CLOSE();
+#endif
 
 		if ((vtop->type.t & VT_BTYPE) == VT_FUNC)
 			mk_pointer(&vtop->type);
@@ -7920,6 +7956,9 @@ static void expr_cond(void) {
 static void expr_eq(void) {
 	int t;
 	int was_assign = 0;
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+	uint32_t cst_m = CST_MARK();
+#endif
 
 	expr_cond();
 	if ((t = tok) == '=' || TOK_ASSIGN(t)) {
@@ -7964,12 +8003,21 @@ static void expr_eq(void) {
 		}
 		vstore();
 	}
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+	if (was_assign) {
+		CST_OPEN_AT(CST_Binary, cst_m); /* assignment as a flat Binary node */
+		CST_CLOSE();
+	}
+#endif
 	expr_was_assign = was_assign;
 	if (was_assign)
 		expr_has_effect = 1;
 }
 
 ST_FUNC void gexpr(void) {
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+	uint32_t cst_m = CST_MARK();
+#endif
 	expr_eq();
 	if (tok == ',') {
 		if (CONST_WANTED && !NOEVAL_WANTED)
@@ -7981,6 +8029,10 @@ ST_FUNC void gexpr(void) {
 			seqp_flush();
 			expr_eq();
 		} while (tok == ',');
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+		CST_OPEN_AT(CST_Comma, cst_m); /* comma operator sequence */
+		CST_CLOSE();
+#endif
 
 		convert_parameter_type(&vtop->type);
 

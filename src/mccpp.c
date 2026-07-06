@@ -2854,6 +2854,45 @@ ST_FUNC CstArena *cst_capture_end(void) {
 			rc == 0 ? "round-trip OK" : "MISMATCH", slen, nn, nrefs,
 			rc == 0 ? "" : ": ", rc == 0 ? "" : msg);
 	}
+	if (a && getenv("MCC_CST_TREE")) {
+		static const char *kn[] = {"TU", "Decl", "Func", "Declarator",
+			"ParamList", "Struct", "Enum", "TypeName", "Init", "Compound",
+			"If", "While", "For", "Do", "Switch", "Return", "Goto", "Label",
+			"ExprStmt", "Binary", "Unary", "Call", "Member", "Index", "Cast",
+			"Cond", "Comma", "Paren", "Primary", "MacroInv", "Include",
+			"PPDirective", "PPCond", "Token", "Comment", "Error", "Missing"};
+		uint32_t slen;
+		const uint8_t *src = cst_source(a, &slen);
+		CstLocal stackn[256], depthn[256];
+		int sp = 0;
+		stackn[sp] = cst_root(a);
+		depthn[sp] = 0;
+		sp++;
+		while (sp > 0) {
+			CstLocal n = stackn[--sp];
+			int d = depthn[sp];
+			uint16_t k = cst_kind(a, n);
+			uint32_t o = cst_abs_offset(a, n), w = cst_width(a, n);
+			if (k == CST_Token)
+				fprintf(stderr, "%*sToken '%.*s'\n", d * 2, "",
+					w > 24 ? 24 : (int)w, src + o);
+			else
+				fprintf(stderr, "%*s%s [%u,%u)\n", d * 2, "",
+					k < CST_KIND_COUNT ? kn[k] : "?", o, o + w);
+			/* push children in reverse so they print in order */
+			CstLocal kids[256];
+			int nk = 0;
+			for (CstLocal c = cst_first_child(a, n); c != CST_NONE;
+			     c = cst_next_sib(a, c))
+				if (nk < 256)
+					kids[nk++] = c;
+			while (nk-- > 0 && sp < 256) {
+				stackn[sp] = kids[nk];
+				depthn[sp] = d + 1;
+				sp++;
+			}
+		}
+	}
 	if (a && getenv("MCC_CST_HASHDUMP")) {
 		CstHash h = cst_struct_hash(a, cst_root(a));
 		fprintf(stderr, "CST roothash: %016llx%016llx\n",

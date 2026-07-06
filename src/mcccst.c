@@ -892,6 +892,17 @@ void cst_hook_open(uint16_t kind) {
     cst_spec_push(kind, first);
 }
 
+/* Mark the current leaf position, for a node whose start is only known to be a
+ * node later (left-recursive expressions, PLAN §2). */
+uint32_t cst_mark(void) { return cst_lcount ? cst_lcount - 1 : 0; }
+
+/* Open a node retroactively spanning from a previously-taken mark. */
+void cst_hook_open_at(uint16_t kind, uint32_t first_leaf) {
+    if (!cst_current)
+        return;
+    cst_spec_push(kind, first_leaf);
+}
+
 void cst_hook_close(void) {
     if (!cst_current || cst_sstop <= 1) /* never pop the TU root here */
         return;
@@ -937,6 +948,61 @@ static void cst_emit_leaf(uint32_t i) {
     cst_leaf(cst_current, cst_lbuf[i].kind, off, len, tr ? &tv : NULL, tr ? 1 : 0);
 }
 
+/* Order specs for range-based nesting: first_leaf asc, then wider range first
+ * (last_leaf desc), then earlier-opened first (id asc). */
+static int cst_spec_cmp(const void *pa, const void *pb) {
+    uint32_t a = *(const uint32_t *)pa, b = *(const uint32_t *)pb;
+    if (cst_sbuf[a].first_leaf != cst_sbuf[b].first_leaf)
+        return cst_sbuf[a].first_leaf < cst_sbuf[b].first_leaf ? -1 : 1;
+    if (cst_sbuf[a].last_leaf != cst_sbuf[b].last_leaf)
+        return cst_sbuf[a].last_leaf > cst_sbuf[b].last_leaf ? -1 : 1;
+    return a < b ? -1 : (a > b ? 1 : 0);
+}
+
+/* Rebuild spec parent/child links purely from [first_leaf,last_leaf) containment
+ * (not the open-time parent), so retroactively-opened expression nodes nest
+ * correctly. All grammar constructs are either disjoint or nested, never partial-
+ * overlapping, so a stack over the sorted specs yields the true tree. */
+static void cst_nest_specs(void) {
+    uint32_t n = cst_scount, k, m = 0;
+    uint32_t *order = cst_xrealloc(NULL, (n ? n : 1) * sizeof *order);
+    int32_t *stk = cst_xrealloc(NULL, (n ? n : 1) * sizeof *stk);
+    for (k = 0; k < n; k++) {
+        cst_sbuf[k].parent = -1;
+        cst_sbuf[k].child_head = cst_sbuf[k].child_tail = cst_sbuf[k].sib = -1;
+        /* Drop empty specs (first==last): retroactive wraps around macro-
+         * expanded expressions capture no source leaves and would otherwise
+         * pile up into a pathological linear chain. Keep the root always. */
+        if (k == 0 || cst_sbuf[k].last_leaf > cst_sbuf[k].first_leaf)
+            order[m++] = k;
+    }
+    n = m;
+    qsort(order, n, sizeof *order, cst_spec_cmp);
+    uint32_t top = 0;
+    for (k = 0; k < n; k++) {
+        int32_t si = (int32_t)order[k];
+        while (top > 0) {
+            int32_t tp = stk[top - 1];
+            if (cst_sbuf[tp].first_leaf <= cst_sbuf[si].first_leaf &&
+                cst_sbuf[si].last_leaf <= cst_sbuf[tp].last_leaf)
+                break;
+            top--;
+        }
+        int32_t parent = top > 0 ? stk[top - 1] : -1;
+        cst_sbuf[si].parent = parent;
+        if (parent >= 0) {
+            if (cst_sbuf[parent].child_head < 0)
+                cst_sbuf[parent].child_head = si;
+            else
+                cst_sbuf[cst_sbuf[parent].child_tail].sib = si;
+            cst_sbuf[parent].child_tail = si;
+        }
+        stk[top++] = si;
+    }
+    free(order);
+    free(stk);
+}
+
 /* Materialize spec `si` into the live SoA arena, interleaving its own leaves
  * with descendant specs in source order. Returns the created node id. */
 static CstLocal cst_materialize(int32_t si) {
@@ -979,18 +1045,8 @@ CstArena *cst_hook_end(void) {
             cst_hook_token(tail, a->src_len);
             cst_sbuf[0].last_leaf = cst_lcount;
         }
-        /* Link specs into child lists (preorder = source order). */
-        uint32_t k;
-        for (k = 1; k < cst_scount; k++) {
-            int32_t p = cst_sbuf[k].parent;
-            if (p < 0)
-                continue;
-            if (cst_sbuf[p].child_head < 0)
-                cst_sbuf[p].child_head = (int32_t)k;
-            else
-                cst_sbuf[cst_sbuf[p].child_tail].sib = (int32_t)k;
-            cst_sbuf[p].child_tail = (int32_t)k;
-        }
+        /* Nest specs by leaf-range containment (handles retroactive wraps). */
+        cst_nest_specs();
         cst_materialize(0);
         cst_rehash_all(a);
         cst_index_build(a);
