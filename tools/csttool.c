@@ -302,6 +302,61 @@ static void suite_sym(void) {
     cst_arena_free(a);
 }
 
+/* ================================================================== *
+ * D1d — Comment promotion. A CST_Comment leaf tiles the source and is found
+ * by offset lookup, but is excluded from H_s (so a comment-only edit keeps the
+ * structural hash) while its bytes feed H_t (PLAN §8.4 / docs/CST.md §D1d).
+ * ================================================================== */
+static void suite_comment(void) {
+    /* Tree A is `int x;`; tree B inserts a block comment between int and x,
+     * with the same three tokens. Their H_s must match; their H_t must not. */
+    const char *a_src = "int x;";
+    CstArena *A = cst_arena_new(0);
+    cst_own_file(A, "a", (const uint8_t *)a_src, 6);
+    cst_node_open(A, CST_TranslationUnit);
+    cst_leaf(A, 1, 0, 4, NULL, 0); /* "int " */
+    cst_leaf(A, 2, 4, 1, NULL, 0); /* "x"    */
+    cst_leaf(A, 3, 5, 1, NULL, 0); /* ";"    */
+    cst_node_close(A, cst_root(A));
+    cst_rehash_all(A);
+
+    const char *b_src = "int /*c*/x;";
+    CstArena *B = cst_arena_new(0);
+    cst_own_file(B, "b", (const uint8_t *)b_src, 11);
+    cst_node_open(B, CST_TranslationUnit);
+    cst_leaf(B, 1, 0, 4, NULL, 0);                     /* the "int " token   */
+    cst_leaf_kinded(B, CST_Comment, 0, 4, 5, NULL, 0); /* the 5-byte comment */
+    cst_leaf(B, 2, 9, 1, NULL, 0);                     /* the "x" token      */
+    cst_leaf(B, 3, 10, 1, NULL, 0);                    /* the ";" token      */
+    cst_node_close(B, cst_root(B));
+    cst_rehash_all(B);
+    cst_index_build(B);
+
+    CHECK(cst_hash_eq(cst_struct_hash(A, cst_root(A)),
+                      cst_struct_hash(B, cst_root(B))),
+          "H_s excludes the comment node (comment-invariant)");
+    CHECK(!cst_hash_eq(cst_trivia_hash(A, cst_root(A)),
+                       cst_trivia_hash(B, cst_root(B))),
+          "H_t includes the comment bytes");
+
+    /* Round-trip: the comment bytes are reflected verbatim. */
+    uint8_t buf[32];
+    size_t w = cst_reflect(B, cst_root(B), buf, sizeof buf);
+    CHECK(w == 11 && memcmp(buf, b_src, 11) == 0, "comment round-trips");
+
+    /* Tiling holds with the comment as a leaf. */
+    char msg[64];
+    CHECK(cst_validate(B, msg, sizeof msg) == 0, "comment tree validates");
+
+    /* Offset lookup lands on the comment node for a byte inside it. */
+    CstLocal cn = cst_node_at(B, 6); /* a byte inside the comment span */
+    CHECK(cn != CST_NONE && cst_kind(B, cn) == CST_Comment,
+          "offset inside a comment maps to the Comment node");
+
+    cst_arena_free(A);
+    cst_arena_free(B);
+}
+
 int main(int argc, char **argv) {
     const char *only = argc > 1 ? argv[1] : NULL;
     if (!only || !strcmp(only, "store"))
@@ -314,6 +369,8 @@ int main(int argc, char **argv) {
         suite_serial();
     if (!only || !strcmp(only, "sym"))
         suite_sym();
+    if (!only || !strcmp(only, "comment"))
+        suite_comment();
 
     fprintf(stderr, "csttool: %d checks, %d failures\n", g_checks, g_failures);
     return g_failures ? 1 : 0;

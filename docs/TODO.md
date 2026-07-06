@@ -34,7 +34,7 @@ by the `cst/*` ctest suite. Driving the [docs/CST.md](CST.md) decision plan:
     byte-identical to the string just hashed. On mismatch, `abort()` with a fatal
     error stating the hash algorithm has produced a collision and the formula
     (`cst_hash_*`) must be fixed — never silently dedup two different strings.
-- [ ] **D1d — `Comment` promotion** (line/inline/block), `H_t`-only so §8.4 holds.
+- [x] **D1d — `Comment` promotion** (line/inline/block), `H_t`-only so §8.4 holds.
 - [ ] **FINAL** — re-run every gate over the corpus; re-confirm §0.1/§0.2.
 
 ---

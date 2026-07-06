@@ -231,10 +231,18 @@ void cst_node_close(CstArena *a, CstLocal node) {
         a->width[parent] += a->width[node];
 }
 
-CstLocal cst_leaf(CstArena *a, uint16_t tok_kind, uint32_t off, uint32_t len,
-                  const CstTrivia *trivia, uint32_t ntrivia) {
+/* Leaf-kind nodes (byte-owning, no children): CST_Token and, since D1d, the
+ * promoted CST_Comment. Both tile the source and are found by offset lookup;
+ * they differ in the hash channels (a Comment is excluded from H_s, §8.4). */
+static int cst_is_leaf_kind(uint16_t k) {
+    return k == CST_Token || k == CST_Comment;
+}
+
+static CstLocal cst_leaf_kinded(CstArena *a, uint16_t node_kind, uint16_t tok_kind,
+                                uint32_t off, uint32_t len, const CstTrivia *trivia,
+                                uint32_t ntrivia) {
     CstLocal parent = a->stack_top ? a->stack[a->stack_top - 1] : CST_NONE;
-    CstLocal n = cst_alloc_node(a, CST_Token);
+    CstLocal n = cst_alloc_node(a, node_kind);
     cst_link_child(a, parent, n);
 
     uint32_t tok_rel = 0, i;
@@ -259,6 +267,11 @@ CstLocal cst_leaf(CstArena *a, uint16_t tok_kind, uint32_t off, uint32_t len,
         a->width[parent] += len;
     a->index_valid = 0;
     return n;
+}
+
+CstLocal cst_leaf(CstArena *a, uint16_t tok_kind, uint32_t off, uint32_t len,
+                  const CstTrivia *trivia, uint32_t ntrivia) {
+    return cst_leaf_kinded(a, CST_Token, tok_kind, off, len, trivia, ntrivia);
 }
 
 uint16_t cst_kind(const CstArena *a, CstLocal n) { return a->kind[n]; }
@@ -357,12 +370,18 @@ static CstHash cst_compute_struct(CstArena *a, CstLocal n) {
         a->struct_hash[n] = h;
         return h;
     }
-    /* Gather children hashes (post-order: recurse first). */
+    /* Gather children hashes (post-order: recurse first). CST_Comment children
+     * are excluded from H_s so a comment-only edit leaves the structural hash
+     * fixed (D1d / PLAN §8.4); their bytes live in the trivia channel H_t. */
     CstHash stackbuf[16];
     CstHash *ch = stackbuf;
     uint32_t cap = 16, cnt = 0;
     CstLocal c;
     for (c = a->first_child[n]; c != CST_NONE; c = a->next_sib[c]) {
+        if (a->kind[c] == CST_Comment) {
+            a->struct_hash[c].lo = a->struct_hash[c].hi = 0;
+            continue;
+        }
         if (cnt >= cap) {
             cap *= 2;
             CstHash *nw = cst_xrealloc(ch == stackbuf ? NULL : ch,
@@ -393,6 +412,10 @@ static CstHash cst_compute_trivia(CstArena *a, CstLocal n) {
             const uint8_t *tb = a->src + a->leaf_off[n] + t->offset;
             h.hi = cst_hash_bytes(h.hi, tb, t->length);
         }
+    } else if (a->kind[n] == CST_Comment) {
+        /* A promoted comment node carries its bytes in the trivia channel (D1d). */
+        h.lo = cst_mix64(h.lo, ((uint64_t)CST_TRIV_BLOCK_COMMENT << 32) | a->leaf_len[n]);
+        h.hi = cst_hash_bytes(h.hi, a->src + a->leaf_off[n], a->leaf_len[n]);
     }
     CstLocal c;
     for (c = a->first_child[n]; c != CST_NONE; c = a->next_sib[c]) {
@@ -423,6 +446,10 @@ static void cst_rehash_dirty(CstArena *a, CstLocal n, const uint8_t *dirty) {
         cst_rehash_dirty(a, c, dirty);
     if (!dirty[n])
         return;
+    if (a->kind[n] == CST_Comment) {
+        a->struct_hash[n].lo = a->struct_hash[n].hi = 0; /* excluded from H_s */
+        return;
+    }
     if (a->kind[n] == CST_Token) {
         uint32_t tl;
         const uint8_t *tb = cst_leaf_tok_bytes(a, n, &tl);
@@ -433,6 +460,8 @@ static void cst_rehash_dirty(CstArena *a, CstLocal n, const uint8_t *dirty) {
     CstHash *ch = stackbuf;
     uint32_t cap = 16, cnt = 0;
     for (c = a->first_child[n]; c != CST_NONE; c = a->next_sib[c]) {
+        if (a->kind[c] == CST_Comment)
+            continue; /* comment excluded from H_s (§8.4) */
         if (cnt >= cap) {
             cap *= 2;
             CstHash *nw = cst_xrealloc(ch == stackbuf ? NULL : ch, cap * sizeof *nw);
@@ -484,7 +513,7 @@ uint32_t cst_abs_offset(const CstArena *a, CstLocal n) {
 
 static void cst_index_walk(CstArena *a, CstLocal n, uint32_t base,
                            uint32_t *pos) {
-    if (a->kind[n] == CST_Token) {
+    if (cst_is_leaf_kind(a->kind[n])) {
         a->index[*pos].start = base;
         a->index[*pos].node = n;
         (*pos)++;
@@ -502,7 +531,7 @@ void cst_index_build(CstArena *a) {
     /* Count leaves. */
     uint32_t leaves = 0, i;
     for (i = 0; i < a->count; i++)
-        if (a->kind[i] == CST_Token)
+        if (cst_is_leaf_kind(a->kind[i]))
             leaves++;
     a->index = cst_xrealloc(a->index, (leaves ? leaves : 1) * sizeof *a->index);
     uint32_t pos = 0;
@@ -546,7 +575,7 @@ CstId cst_sym_ref(const CstArena *a, CstLocal use) { return a->sym_ref[use]; }
 
 static size_t cst_reflect_walk(const CstArena *a, CstLocal n, uint8_t *out,
                                size_t cap, size_t pos) {
-    if (a->kind[n] == CST_Token) {
+    if (cst_is_leaf_kind(a->kind[n])) {
         uint32_t len = a->leaf_len[n];
         if (out && pos + len <= cap)
             memcpy(out + pos, a->src + a->leaf_off[n], len);
@@ -692,7 +721,7 @@ CstArena *cst_snapshot_load(const char *path) {
  * Returns 0 on success; else writes a short reason into msg.
  * ================================================================== */
 static int cst_check_tiling(const CstArena *a, CstLocal n) {
-    if (a->kind[n] == CST_Token)
+    if (cst_is_leaf_kind(a->kind[n]))
         return a->width[n] == a->leaf_len[n];
     uint32_t sum = 0;
     CstLocal c;
@@ -954,12 +983,45 @@ static uint32_t cst_leading_trivia(const uint8_t *src, uint32_t off, uint32_t le
 
 static void cst_emit_leaf(uint32_t i) {
     uint32_t off = cst_lbuf[i].off, len = cst_lbuf[i].len;
-    uint32_t tr = cst_leading_trivia(cst_current->src, off, len);
+    const uint8_t *src = cst_current->src;
+    uint32_t tr = cst_leading_trivia(src, off, len);
+
+    /* D1d: promote each comment in the leading trivia to its own CST_Comment
+     * leaf node so comments are first-class (LSP hover, comment-preserving
+     * refactors). A comment node spans its preceding whitespace + the comment
+     * text; the token keeps only the whitespace after the last comment as its
+     * trivia. Bytes still tile exactly, so round-trip (§8.1) is unchanged; the
+     * Comment node is excluded from H_s but folded into H_t (§8.4). */
+    uint32_t seg = off;         /* start of the not-yet-emitted trivia run     */
+    uint32_t p = off, end = off + tr;
+    while (p < end) {
+        uint8_t c = src[p];
+        if (c == '/' && p + 1 < end && src[p + 1] == '/') {
+            p += 2;
+            while (p < end && src[p] != '\n')
+                p++;
+            cst_leaf_kinded(cst_current, CST_Comment, 0, seg, p - seg, NULL, 0);
+            seg = p;
+        } else if (c == '/' && p + 1 < end && src[p + 1] == '*') {
+            p += 2;
+            while (p + 1 < end && !(src[p] == '*' && src[p + 1] == '/'))
+                p++;
+            if (p + 1 < end)
+                p += 2;
+            cst_leaf_kinded(cst_current, CST_Comment, 0, seg, p - seg, NULL, 0);
+            seg = p;
+        } else {
+            p++; /* whitespace — accumulate into the current segment */
+        }
+    }
+    /* Remaining [seg, off+len) = trailing whitespace + the token itself. */
+    uint32_t tail = end - seg; /* whitespace between last comment and token */
     CstTrivia tv;
     tv.kind = CST_TRIV_WS;
     tv.offset = 0;
-    tv.length = tr;
-    cst_leaf(cst_current, cst_lbuf[i].kind, off, len, tr ? &tv : NULL, tr ? 1 : 0);
+    tv.length = tail;
+    cst_leaf_kinded(cst_current, CST_Token, cst_lbuf[i].kind, seg,
+                    (off + len) - seg, tail ? &tv : NULL, tail ? 1 : 0);
 }
 
 /* Order specs for range-based nesting: first_leaf asc, then wider range first
