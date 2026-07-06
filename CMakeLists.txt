@@ -3194,6 +3194,33 @@ if(MCC_BUILD_TESTS)
         endif()
     endif()
 
+    # TLS model coverage: link objects compiled in all four x86-64 TLS models
+    # (GD/LD/IE/LE) through mcc's linker, dynamic and (if a static libc exists)
+    # static. Pins the GD->LE / LD->LE / IE->LE relaxation + pattern-match paths
+    # in x86_64-link.c that only fire on external gcc/clang objects. x86_64-only
+    # (i386's R_386_TLS_* patterns need an i386 cross build to exercise).
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/tls/models.c")
+        if(NOT MCC_EMULATOR AND MCC_TARGETOS STREQUAL "Linux"
+           AND MCC_CPU STREQUAL "x86_64")
+            set(_tls_static 0)
+            if(NOT MCC_BUILD_MUSL)
+                execute_process(COMMAND "${CMAKE_C_COMPILER}" -print-file-name=libc.a
+                    OUTPUT_VARIABLE _tls_libc OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+                if(_tls_libc AND EXISTS "${_tls_libc}")
+                    set(_tls_static 1)
+                endif()
+            endif()
+            add_test(NAME tls-models COMMAND "${CMAKE_COMMAND}"
+                "-DMCC=${_mcc_exe}" "-DCC=${CMAKE_C_COMPILER}" "-DBDIR=${_bdir}"
+                "-DIDIR=${_idir}" "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/tls/models.c"
+                "-DOUTDIR=${CMAKE_BINARY_DIR}" "-DSTATIC=${_tls_static}"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/tls/run_models.cmake")
+            set_tests_properties(tls-models PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+        else()
+            mcc_skip_test(tls-models "tls-models gate: native x86_64 Linux only")
+        endif()
+    endif()
+
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/behavior/vla.c")
         add_test(NAME vla_test-run COMMAND "$<TARGET_FILE:mccharness>" mccexe
             --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}

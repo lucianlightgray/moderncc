@@ -81,11 +81,16 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
 - [ ] **i386 fastcall/thiscall: non-register arg before a register arg
   unsupported (impl).** `src/arch/i386/i386-gen.c:530`. → Handle the
   spilled-then-register ordering, or document the accepted ABI limitation.
-- [ ] **Validate the x86_64/i386 TLS GD/LD and 32[S] pattern-match assumptions
-  (validate).** `x86_64-link.c:303/317/202` and `i386-link.c:201/240` abort on
-  "unexpected …pattern" / out-of-range — tight codegen↔linker coupling. → Add
-  regression tests covering GD/LD/IE/LE forms and a large-address case; pin the
-  expected code sequences with a comment so a codegen change is caught.
+- [ ] **Validate the remaining i386 TLS + x86_64 32[S] large-address pattern
+  assumptions (validate).** x86_64 GD/LD/IE/LE is now covered by the `tls-models`
+  ctest (`tests/tls/`, links gcc/clang objects in all four models, dynamic +
+  static) — that push fixed real bugs: TLSGD→LE used only the symbol's own
+  section size for the TP offset (wrong with a 2nd TLS section), and static GD/LD
+  links failed on `__tls_get_addr` (relaxed away, now resolved to 0). STILL OPEN:
+  (a) the i386 `R_386_TLS_GD/LDM` pattern paths (`i386-link.c`) need an i386 cross
+  build to exercise; (b) the `R_X86_64_32[S] out of range` check (`x86_64-link.c`)
+  has no positive test — needs a >2 GB text/data layout to trigger. → Add an i386
+  TLS gate under the cross preset, and a forced-high-address link case.
 - [ ] **ARM inline-asm `long long` operands unimplemented (impl).**
   `src/arch/arm/arm-asm.c:2465` hard-errors — handle the 64-bit register-pair case.
 - [ ] **arm64 inline assembler errors on unmodeled mnemonics (impl).**

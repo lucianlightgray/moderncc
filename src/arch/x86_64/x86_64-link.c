@@ -335,16 +335,15 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 			0x48, 0x8d, 0x80, 0x00, 0x00, 0x00, 0x00};
 
 		if (memcmp(ptr - 4, expect, sizeof(expect)) == 0) {
-			ElfW(Sym) * sym;
-			Section *sec;
-			int32_t x;
-
 			memcpy(ptr - 4, replace, sizeof(replace));
 			rel[1].r_info = ELFW(R_INFO)(0, R_X86_64_NONE);
-			sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
-			sec = s1->sections[sym->st_shndx];
-			x = sym->st_value - sec->sh_addr - sec->data_offset;
-			add32le(ptr + 8, x);
+			/* GD->LE: write the symbol's local-exec TP offset. Use the same
+			   whole-TLS-block computation as R_X86_64_TPOFF32 (x86_64_tpoff);
+			   the old `st_value - sec->sh_addr - sec->data_offset` counted
+			   only the symbol's own section size and was wrong whenever a
+			   second TLS section (e.g. a .tbss) exists. Strip rel->r_addend
+			   like the GOTTPOFF IE->LE case — the result is an immediate. */
+			add32le(ptr + 8, (int32_t)x86_64_tpoff(s1, val - rel->r_addend));
 		} else
 			mcc_error_noabort("unexpected R_X86_64_TLSGD pattern");
 	} break;

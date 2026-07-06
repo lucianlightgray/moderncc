@@ -975,6 +975,19 @@ ST_FUNC void relocate_syms(MCCState *s1, Section *symtab, int do_resolve) {
 				goto found;
 			if (!strcmp(name, "_fp_hw"))
 				goto found;
+			/* GD/LD TLS: gcc -fPIC emits a strong call to __tls_get_addr.
+			   Linking into an executable, mcc always relaxes GD/LD to LE/IE
+			   (the R_X86_64_TLSGD/TLSLD and R_386_TLS_GD/LDM cases in
+			   relocate()), which rewrites that call away — so the reference
+			   is spurious. glibc's static libc.a does not define
+			   __tls_get_addr and GNU ld drops it too; resolve to 0 rather
+			   than failing the static link (harmless: no call survives). */
+			if (s1->static_link &&
+				(!strcmp(name, "__tls_get_addr") ||
+				 !strcmp(name, "___tls_get_addr"))) {
+				sym->st_value = 0;
+				goto found;
+			}
 			sym_bind = ELFW(ST_BIND)(sym->st_info);
 			if (sym_bind == STB_WEAK)
 				sym->st_value = 0;
