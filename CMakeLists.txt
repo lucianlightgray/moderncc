@@ -3171,6 +3171,29 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(hello-exe PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
+    # Fully-static glibc link+run gate: covers the IFUNC-iplt, GOTPCREL-addend,
+    # GOTTPOFF IE->LE relaxation and .tdata TLS-layout paths that only fire on a
+    # real static libc.a. Native x86_64 Linux glibc only; skipped elsewhere.
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/static/smoke.c")
+        if(NOT MCC_EMULATOR AND NOT MCC_BUILD_MUSL
+           AND MCC_TARGETOS STREQUAL "Linux" AND MCC_CPU STREQUAL "x86_64")
+            execute_process(COMMAND "${CMAKE_C_COMPILER}" -print-file-name=libc.a
+                OUTPUT_VARIABLE _static_libc OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+            if(_static_libc AND EXISTS "${_static_libc}")
+                add_test(NAME static-glibc-run COMMAND "${CMAKE_COMMAND}"
+                    "-DMCC=${_mcc_exe}" "-DBDIR=${_bdir}" "-DIDIR=${_idir}"
+                    "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/static/smoke.c"
+                    "-DOUT=${CMAKE_BINARY_DIR}/static-smoke${MCC_EXESUF}"
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/static/run_static.cmake")
+                set_tests_properties(static-glibc-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+            else()
+                mcc_skip_test(static-glibc-run "no static glibc libc.a on host")
+            endif()
+        else()
+            mcc_skip_test(static-glibc-run "static-glibc gate: native x86_64 Linux glibc only")
+        endif()
+    endif()
+
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/behavior/vla.c")
         add_test(NAME vla_test-run COMMAND "$<TARGET_FILE:mccharness>" mccexe
             --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}

@@ -1776,8 +1776,11 @@ static void mcc_prepare_static_ifunc(MCCState *s1) {
 				p[0] = 0xff;
 				p[1] = 0x25;
 				write32le(p + 2, 0);
+				/* `jmp *sym@GOTPCREL(%rip)`: disp32 ends the 6-byte insn, so
+				   the PC-relative addend is -4 (now that the GOTPCREL reloc
+				   honors rel->r_addend rather than a hardcoded -4). */
 				put_elf_reloca(symtab_section, iplt, stub + 2,
-							   R_X86_64_GOTPCREL, sym_index, 0);
+							   R_X86_64_GOTPCREL, sym_index, -4);
 				snprintf(name, sizeof name, "%s@iplt", sname);
 				attr->plt_sym =
 					put_elf_sym(symtab_section, stub, 0,
@@ -1998,15 +2001,22 @@ static int sort_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) {
 			j = 0x100;
 			if (s->sh_flags & SHF_WRITE)
 				j = 0x200;
-			if (s->sh_flags & SHF_TLS)
-				j += 0x200;
 		} else {
 			j = 0x700;
 		}
 		if (j >= 0x700 && s1->output_format != MCC_OUTPUT_FORMAT_ELF)
 			s->sh_size = 0, j = 0x900;
 
-		if (s->sh_type == SHT_SYMTAB || s->sh_type == SHT_DYNSYM) {
+		if (s->sh_flags & SHF_TLS) {
+			/* .tdata (PROGBITS) and .tbss (NOBITS) must sit at the very end
+			   of their PT_LOAD's file-backed / bss regions respectively, and
+			   stay vaddr-adjacent so PT_TLS covers exactly [.tdata, .tbss].
+			   Placing .tdata *before* .bss is mandatory: a NOBITS section
+			   before a PROGBITS one in the same segment skews vaddr vs file
+			   offset, dropping .tdata's init image into the zero-fill gap
+			   (glibc's _nl_current_LC_CTYPE et al. then read as NULL). */
+			k = (s->sh_type == SHT_NOBITS) ? 0x6f : 0x6e;
+		} else if (s->sh_type == SHT_SYMTAB || s->sh_type == SHT_DYNSYM) {
 			k = 0x10;
 		} else if (s->sh_type == SHT_STRTAB && strcmp(s->name, ".stabstr")) {
 			k = 0x11;

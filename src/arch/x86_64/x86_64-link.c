@@ -280,8 +280,14 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 	case R_X86_64_GOTPCREL:
 	case R_X86_64_GOTPCRELX:
 	case R_X86_64_REX_GOTPCRELX:
+		/* value = G + GOT + A - P (x86-64 psABI). Use the real RELA addend,
+		   not a hardcoded -4: instructions with a trailing immediate after
+		   the disp32 (e.g. glibc's `cmpq $imm8,foo@GOTPCREL(%rip)`) carry
+		   addend -5, and a fixed -4 lands the reference one byte past the
+		   8-aligned GOT slot. mcc's own gen emits addend -4 (unchanged). */
 		add32le(ptr, s1->got->sh_addr - addr +
-						 get_sym_attr(s1, sym_index, 0)->got_offset - 4);
+						 get_sym_attr(s1, sym_index, 0)->got_offset +
+						 rel->r_addend);
 		break;
 	case R_X86_64_GOTPC32:
 		add32le(ptr, s1->got->sh_addr - addr + rel->r_addend);
@@ -302,7 +308,11 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 				ptr[-2] = 0x81;
 			else
 				mcc_error_noabort("unexpected R_X86_64_GOTTPOFF instruction");
-			write32le(ptr, (int32_t)x86_64_tpoff(s1, val));
+			/* IE->LE: the result is a local-exec immediate, not a PC-relative
+			   reference, so strip the GOTTPOFF reloc's -4 addend (folded into
+			   `val`) before converting to a TPOFF — otherwise the offset lands
+			   4 bytes below the real TLS slot. */
+			write32le(ptr, (int32_t)x86_64_tpoff(s1, val - rel->r_addend));
 		} else {
 			add32le(ptr, val - s1->got->sh_addr);
 		}
