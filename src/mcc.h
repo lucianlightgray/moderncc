@@ -188,6 +188,7 @@
 #include "elf.h"
 #include "stab.h"
 #include "dwarf.h"
+#include "mcccst.h"
 
 #ifdef MCC_PROFILE
 #define static

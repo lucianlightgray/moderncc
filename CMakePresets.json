@@ -52,6 +52,12 @@
       "cacheVariables": { "MCC_ALL_DIAGNOSTICS": "ON" }
     },
     {
+      "name": "cst",
+      "displayName": "CST database subsystem (side-recorded concrete syntax tree)",
+      "inherits": "debug",
+      "cacheVariables": { "MCC_CST": "ON" }
+    },
+    {
       "name": "cross",
       "displayName": "Native + all cross compilers",
       "inherits": "debug",
@@ -337,6 +343,7 @@
     { "name": "release", "configurePreset": "release" },
     { "name": "sanitize", "configurePreset": "sanitize" },
     { "name": "diagnostics", "configurePreset": "diagnostics" },
+    { "name": "cst", "configurePreset": "cst" },
     { "name": "cross", "configurePreset": "cross" },
     { "name": "matrix", "configurePreset": "matrix" },
     { "name": "local-ci", "configurePreset": "local-ci" },
@@ -412,6 +419,7 @@
     { "name": "release", "configurePreset": "release", "inherits": "_test-elf" },
     { "name": "sanitize", "configurePreset": "sanitize", "inherits": "_test-elf" },
     { "name": "diagnostics", "configurePreset": "diagnostics", "inherits": "_test-elf" },
+    { "name": "cst", "configurePreset": "cst", "inherits": "_test-elf" },
     { "name": "cross", "configurePreset": "cross", "inherits": "_test-elf" },
 
     { "name": "linux-gcc", "configurePreset": "linux-gcc", "inherits": "_test-elf" },

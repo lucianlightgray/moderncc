@@ -1084,6 +1084,9 @@ mcc_config_node(MCC_BUILD_TESTS   TYPE BOOL DEFAULT ON  GROUP "Build targets"
     HELP "Build/enable the test suite (tests/Makefile)")
 mcc_config_node(MCC_BENCH         TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Build the mccbench tool and the `bench` target (compile-speed report). Off by default; CI enables it")
+mcc_config_node(MCC_CST TYPE BOOL DEFAULT OFF GROUP "Experimental" ADVANCED
+    HELP "Build the CST database subsystem (side-recorded concrete syntax tree; \
+LSP/-g/opt substrate). Off by default; codegen is byte-identical either way.")
 mcc_config_node(MCC_ALL_DIAGNOSTICS TYPE BOOL DEFAULT OFF GROUP "Diagnostics" ADVANCED
     HELP "Everything-on diagnostics: verbose warnings + debug info + build mcc_s/mcc_p/mcc_c")
 if(MCC_ALL_DIAGNOSTICS)
@@ -1638,6 +1641,9 @@ if(NOT MCC_CONFIG_ASM)
 endif()
 if(NOT MCC_CONFIG_BACKTRACE)
     list(APPEND _mccdefs "CONFIG_MCC_BACKTRACE=0")
+endif()
+if(MCC_CST)
+    list(APPEND _mccdefs "CONFIG_MCC_CST=1")
 endif()
 if(MCC_CONFIG_NEW_MACHO STREQUAL "no")
     list(APPEND _mccdefs "CONFIG_NEW_MACHO=0")
@@ -2858,6 +2864,19 @@ if(MCC_BUILD_TESTS)
             COMMAND "$<TARGET_FILE:hostgate>" src tools
             WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
         set_tests_properties(host-gate-invariant PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+    endif()
+
+    # CST database pure-library test harness (docs/IMPLEMENTATION.md §0/§6).
+    # Self-contained: csttool #includes src/mcccst.c and links nothing from mcc,
+    # so slices B/C/D/E are proven against synthetic trees before Weave 1.
+    if(MCC_CST AND NOT CMAKE_CROSSCOMPILING)
+        add_executable(csttool tools/csttool.c)
+        target_include_directories(csttool PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+        target_compile_definitions(csttool PRIVATE CONFIG_MCC_CST=1)
+        foreach(_cn store hash geom serial)
+            add_test(NAME "cst/${_cn}" COMMAND csttool "${_cn}")
+            set_tests_properties("cst/${_cn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+        endforeach()
     endif()
 
     add_executable(exec_runner tests/exec/runner.c)

@@ -6,8 +6,122 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
 
 # Now
 
+## CST Database (see `docs/PLAN.md` + `docs/IMPLEMENTATION.md`)
+
+Two headline deliverables, implemented via the vertical slices below:
 - [ ] CST Database for Debugging, LSP, and Optimization data/layers
 - [ ] CST Database uses hierarchical incremental hashes to enable bidirectional lookups starting from any character index in any file
+
+Legend for slices: each has a status line. `[ ]` open · `[~]` in progress ·
+`[x]` done. Slice IDs and dependencies per `IMPLEMENTATION.md §1`.
+
+### S0 — Gating & harness skeleton  ·  status: [x]
+Deps: — · Kind: build · PLAN §7, §8
+- [x] `MCC_CST` config node in CMakeLists.txt (mirror diagnostics node) → `CONFIG_MCC_CST`
+- [x] `cst` preset in CMakePresets.json (configure/build/test, mirrors diagnostics)
+- [x] `src/mcccst.{c,h}` present, self-guarded; `#include "mcccst.c"` in libmcc.c
+- [x] `CONFIG_MCC_CST` source guards + no-op hook macros in mcccst.h
+- [x] `tools/csttool` self-contained harness (#includes mcccst.c, links no compiler)
+- [x] `tests/cst/{store,hash,geom,serial}` registered; 4/4 green via ctest
+- [x] Codegen-identity gate (§8.5): mcc CST-on vs CST-off byte-identical over 42 files
+- Notes: define appended to `_mccdefs` (CMakeLists.txt ~1642); mcccst.c un-poisons
+  malloc/realloc/free (mcc.h:1230) via push/pop_macro for self-containment. mcc
+  binary grows (~26KB, dead code until Weave 1) but its *output* is identical.
+
+### B — Node store core (pure)  ·  status: [x]
+Deps: S0 · PLAN §1, §2
+- [x] `CstArena` growable SoA store + free/reset
+- [x] SoA columns incl. reserved `slot_key`; linked `first_child`/`next_sib`
+- [x] Tagged id scheme: `u32` local index + 64-bit `(file,local)` cross-file
+- [x] `cst_node_open/close`, `cst_leaf`, append_child, column accessors
+- [x] Synthetic-tree builder in harness + topology/id round-trip tests (cst/store)
+- Notes: width accumulates bottom-up (leaf sets own len; close bubbles into parent).
+
+### C — Hashing library (pure)  ·  status: [x]
+Deps: S0 · PLAN §3, §3.1
+- [x] 128-bit non-crypto hash (two lanes, splitmix-style finalizer)
+- [x] `cst_hash_leaf` (kind salt + token bytes, trivia carved out)
+- [x] `cst_hash_internal` (salt(kind,count) + Merkle fold)
+- [x] `cst_hash_eq`, frontier-scoped `cst_rehash_frontier`; epoch-hash seam reserved
+- [x] Invariance property tests (cst/hash): ws-invariance, token-sensitivity,
+      identical-subtree equality, child-count salt, frontier==full
+- Notes: leaf token bytes = owned span minus leading-trivia prefix (`tok_rel`).
+
+### D — Geometry & offset→node index (pure)  ·  status: [x]
+Deps: B · PLAN §1, §2, §5
+- [x] Relative-width finalize on close; `cst_abs_offset` prefix-sum
+- [x] Mandatory `offset→node` index build + `cst_node_at` (binary search)
+- [x] Tiling invariant test (§8.2) + per-offset round-trip (§8.3) (cst/geom)
+- Notes:
+
+### E — Serialization (pure)  ·  status: [x]
+Deps: B (+G stub) · PLAN §1, §8.1, §8.6
+- [x] Versioned snapshot header (magic+version+endian) save/load, all columns
+- [x] `cst_reflect` CST→source emitter (emits owned leaf spans in DFS order)
+- [x] Save/load equality + version-skew rejection + reflect round-trip (cst/serial)
+- Notes:
+
+### F — Byte-offset facility (compiler)  ·  status: [ ]
+Deps: — · PLAN §5
+- [ ] Monotonic byte cursor in mccpp.c advance path (under CONFIG_MCC_CST)
+- [ ] Correct across handle_eob refills, includes, macro pushback
+- [ ] Debug probe: cursor == known char position on fixtures
+- Notes:
+
+### G — Owned source & trivia (compiler)  ·  status: [ ]
+Deps: B, F · PLAN §4, §1
+- [ ] Per-file byte copy into arena + string pool (LSP doc model)
+- [ ] Trivia as `(kind, rel-span)[]` on leaves, excluded from H_s
+- [ ] Per-file subtree ownership for include stitching
+- [ ] Owned-buffer survives recycle + trivia classification tests
+- Notes:
+
+### H — Recording hooks (WEAVE 1)  ·  status: [ ]
+Deps: B, D, F, G · PLAN §6
+- [ ] `cst_open`/`cst_close` node stack + hook macros
+- [ ] Hook sites across mccgen.c grammar (decl/struct_decl/post_type/type_decl/block/lblock/gexpr_decl/expr family)
+- [ ] Leaf capture at next/skip; debug-build balance asserts
+- [ ] WEAVE-1 gate: round-trip (§8.1) + span-coverage (§8.2) over full corpus
+- Notes (verified 2026-07-05 against source):
+  - PLAN's `expr`/`cond_expr`/`binary` DO NOT EXIST. Real expr cascade:
+    `gexpr`(7962)→`expr_eq`(7910)→`expr_cond`(7785)→`expr_lor`(7665)→
+    `expr_land`(7659)→`expr_or`(7648)→`expr_xor`(7639)→`expr_and`(7630)→
+    `expr_cmpeq`(7619)→`expr_cmp`(7607)→`expr_shift`(7596)→`expr_sum`(7585)→
+    `expr_prod`(7574)→`unary`(6453). `expr_const`(8007). Each cascade level is
+    single-exit fall-through — trivial to bracket.
+  - `decl(int l)`@10074 has MULTIPLE returns (10089/10128/10386/10394) — needs a
+    goto-epilogue or wrap at the caller for `cst_close`.
+  - `block(int flags)`@8402 single-exit (converges at 8817) but has `again:`@8408
+    loop + gotos — place `cst_open` AFTER the `again:` label or guard re-entry.
+  - Token consumption = direct `next()`(mccpp.c:3874)/`skip()`(mccpp.c:71) calls;
+    hook leaves either by wrapping those or reading `tok` at boundaries.
+  - Add `#include "mcccst.h"` after mcc.h:190; hook prototypes near mcc.h:1477;
+    mirror `CONFIG_MCC_ASM` #ifdef style (mccgen.c:10103).
+
+### WEAVE 2 — Hash & snapshot online  ·  status: [ ]
+- [ ] Attach C at cst_node_close (bottom-up H_s/H_t)
+- [ ] Attach E at end-of-parse; snapshot save/load of real trees
+- [ ] Gate: hash invariance (§8.4) + snapshot round-trip (§8.6)
+- Notes:
+
+### I — Symbol refs (WEAVE 3)  ·  status: [ ]
+Deps: H, B · PLAN §1(Symbols), §4
+- [ ] Consult live Sym → def node-id; store tagged `sym_ref`
+- [ ] `name→def` / `def→uses` indices
+- [ ] def↔use id round-trip (§8.3)
+- Notes:
+
+### J — Macro fidelity / Mμ (WEAVE 3)  ·  status: [ ]
+Deps: H, F · PLAN §4, §11
+- [ ] `MacroInvocation` nodes: use-text span + expansion children
+- [ ] Grown case-by-case; round-trip stays byte-identical
+- Notes:
+
+### FINAL — corpus & hardening  ·  status: [ ]
+- [ ] All gates over full tests/exec + tests2 corpus
+- [ ] Re-confirm §0.1/§0.2 via codegen-identity gate
+- [ ] §11 risk items each pinned to a tripwire test
+- Notes:
 
 # Later
 

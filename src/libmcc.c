@@ -6,6 +6,7 @@
 #include "mcchost.c"
 #include "mccpp.c"
 #include "mccgen.c"
+#include "mcccst.c"
 #include "mccdbg.c"
 #include "mccasm.c"
 #include "mccelf.c"
