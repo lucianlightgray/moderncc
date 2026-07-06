@@ -6,58 +6,9 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
 
 # Now
 
-## CST database — next-phase gap closure (docs/CST.md D1–D5)
-
-All original vertical slices (S0, B–J, WEAVE 2, FINAL) landed and are gated in
-CTest; the record lives in
-[docs/NOTES.md § Completed work](NOTES.md#completed-work--cst-database-all-vertical-slices-landed).
-`MCC_CST` is built **on by default** (`CMakeLists.txt:1087`); codegen is
-byte-identical CST-on vs CST-off. The CST hooks are pure side-effect recording —
-the compiler never reads the CST — so the §8.5 codegen-identity invariant holds
-for *any* hook change; the live risk is CST round-trip/tiling correctness, gated
-by the `cst/*` ctest suite. Driving the [docs/CST.md](CST.md) decision plan:
-
-- [x] **D1a — Expression fill-in (`Unary`/`Cast`/`Paren`/`Primary`).** Retroactive
-  range-wrap in `unary()` (mccgen.c): prefix-op → `Unary`, `(type)e` → `Cast`,
-  `(e)` → `Paren`, atoms → `Primary`. Gated `cst/kinds-expr`.
-- [x] **D1b — Declaration structure via D2 range-wrap** (`Declaration`,
-  `FunctionDef`, `ParamList`, `Enum`, `TypeName`, `Initializer`, `Label`).
-- [x] **D1c — PP-concrete** (`IncludeDirective`, `PPDirective`, `PPConditional`),
-  full-concrete: capture *all* `#if`/`#else` branches as concrete nodes. Prereq
-  for D3.
-- [x] **D3+D5 — `SourceFile` template + renderer.** The full template/binding/
-  render model (mcccst.{c,h}): full-concrete branch tagging
-  (`cst_mark_branch`/`slot_key`), a content-addressed store with pure-`H_s(body)`
-  hash-consing + dedup (`cst_store_*`), per-instance recursive bindings
-  (`cst_binding_*`), and the `render(template, binding)` fold with a threaded PP
-  environment (`cst_render`) — plus `cst_render_identity` as the round-trip
-  oracle. The **headline recursive re-include branch-selection gate**
-  (`cst/template`) passes all five assertions. **Live capture wired** (`cst/incstore`):
-  every real `#include` during a compile interns its file as a hash-consed
-  `SourceFile` template (`cst_hook_include`, mccpp `parse_include`) and binds the
-  `IncludeDirective` node to it — two `#include`s of one header (incl. via a
-  nested header and guard-skipped repeats) collapse to a single template id.
-  - [x] **DEBUG-build hash-collision tripwire.** `cst_store_intern` verifies, in
-    a debug build, that an existing same-`H_s` entry reflects byte-identically
-    to the interned body; on mismatch it `abort()`s with a fatal "hash collision
-    … cst_hash_* must be fixed" — never silently deduping two different bodies.
-  - [x] *Full-concrete live templates.* `cst_build_sourcefile` lexes each
-    captured file line-by-line into a real tree: every line a leaf, each
-    `#if/#else/#endif` a `PPConditional` whose branch bodies (dead branches
-    included) are tagged `CompoundStmt` groups (`cst_mark_branch`) a binding can
-    select among. Verified via the `MCC_CST_STORE` dump: increment.h → 2
-    `PPConditional`, leaf.h → 1 (its guard), all `render_identity` round-trip
-    exactly (`cst/incstore`, `cst/increment`).
-- [x] **D1d — `Comment` promotion** (line/inline/block), `H_t`-only so §8.4 holds.
-- [x] **FINAL** — every `cst/*` gate green over the corpus; §0.1/§0.2 re-confirmed:
-  CST-on ctest **830/830**, CST-off **811/811**, object output **byte-identical**
-  CST-on vs CST-off across the sampled corpus, and the CST-off build compiles the
-  now-empty `mcccst.c` (zero-cost-off). docs/CST.md D1–D5 plan complete.
-
----
-
-# Later
-
+- [ ] Change MCC_VERSION everywhere to be `long` YYYYMMDDHHMMSS (use two int's in code for major YYYYMMDD and minor HHMMSS where major/minor are used)
+- [ ] Normalize as much of the CMake code as possible: 1) minimize gating instead preferring autodetecting the existence of tools and enabling as many tests/targets/configs as are available on the host, 2) reduce CMake usage by relying on `tools` where advantageous, 3) fold in separate .cmake files into CMakeLists.txt
+- [ ] Can a fully static build use an internal minimalistic `-run`/JIT to sidestep the dynamic linking limitations of static (and use libc/musl in-memory?)
 - [ ] **`exec/tls` skipped on arm64+WIN32 (`skipon=arm64/WIN32`, 2026-07-05).**
   On the `msvc / arm64` runner, `exec/tls` intermittently hung (ctest 63 min,
   manual cancel). Root cause is **not** in mcc: **MSVC's arm64 code generator
@@ -250,15 +201,42 @@ by the `cst/*` ctest suite. Driving the [docs/CST.md](CST.md) decision plan:
   codegen-side variable/spill metadata that is discarded after emission;
   classified low-value (reloc symbol names are already printed). Revisit
   only if a debugging workflow materializes that needs it.
+- [ ] **CST slice-I symbol resolution is last-declaration-wins (validate/decide).**
+  NOTES CST slice I: no scope stack, so a name shadowed across scopes can
+  mis-resolve `use→def`. the CST D4 gap analysis flagged this for a failing `sym_ref` shadowing
+  fixture to force the decision. → Add the shadowing test; either build a scope
+  stack or record the limitation as intentional with the test as the boundary.
+- [ ] **CST slice-J macro-invocation v1 imprecisions (validate/decide).**
+  NOTES CST slice J: function-like invocations may drop the trailing `)`, and
+  object-like macros used inside another macro's args stay plain tokens. Round-trip
+  still holds. the CST D4 gap analysis flagged failing tests to decide fix-vs-keep. → Add the
+  fixtures; fix or record as accepted v1 with the test pinning the boundary.
+- [ ] **CST 5B incremental splice + `H_e` epoch hash are designed, not built (impl).**
+  NOTES CST §3.1/§10: the invertible epoch hash + tombstone sweep (O(1)-per-level
+  incremental rehash for live edits) and the 5B splice are reserved (slot-key field
+  + frontier-scoped `H_s`-recompute ship) but unbuilt; they're LSP/5B-era and gated
+  on 4B rolling-hash + error-recovery + `Error`/`Missing` nodes. → Build when the
+  LSP consumer lands. Note: D3 repurposed `slot_key` for branch tags, so an `H_e`
+  build must reconcile that column's dual use.
+- [ ] **Write `docs/CONFIG.md` reconciling code preprocessor names vs. CMake
+  config (doc/tooling).** Enumerate every unique preprocessor name in the codebase
+  — `#define`/`#ifdef`/`#if defined` macros, especially the `CONFIG_MCC_*` family
+  (~30 in `src/`) and any `MCC_*` build/host gates — and cross-check them against
+  the CMake config surface (the 55 `mcc_config_node` declarations in
+  `CMakeLists.txt`, the `target_compile_definitions`, and preset/cache flags).
+  Flag: (a) `CONFIG_MCC_*`/`MCC_*` macros the code reads but no `mcc_config_node`
+  defines (undocumented/implicit), (b) config nodes defined but never read,
+  (c) name-drift between the CMake option and the emitted `-D`. Prefer a `tools/`
+  checker (mirror `tools/hostgate.c` / `ckbuildmd.c`) that greps both sides and
+  fails on divergence, so CONFIG.md can't rot. → Then update `docs/BUILD.md` (which
+  already tables the CMake nodes, §3–§14) to become the ongoing source of truth for
+  in-code flags, cross-linked to CONFIG.md, and wire the checker into ctest.
 
 ---
 
 ACHTUNG!!! DO NOT DO!!! WARNING!!!
 
-* Change MCC_VERSION everywhere to be YYYYMMDDHHMMSS (use two int's in code for major YYYYMMDD and minor HHMMSS)
-* Normalize as much of the CMake code as possible: minimize gating instead preferring autodetecting the existence of tools and enabling as many tests/targets/configs as are available on the host
 * Use only human friendly warnings/errors, backed by tests that check formatted output against terminal dimensions/configuration
-* Can a fully static build use a minimalistic `-run` to sidestep the dynamic linking limitations and use libc or musl in-memory?
 * Implement/finish `-g` debugging/debugger and flesh out gdb/etc test cases, check against gcc and clang sources of truth
 * Optimization -O1...100 levels measured in max seconds to spend optimizing?
 * Hot reload by saving/loading CST snapshots on the fly and on run with --hotreload arg

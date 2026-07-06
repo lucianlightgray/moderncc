@@ -7875,7 +7875,7 @@ static void expr_cond(void) {
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
 	/* Retroactively wrap a binary expression in one flat CST_Binary node (only
 	 * when an infix operator is actually present), faithful to concrete syntax
-	 * without degenerate single-child chains (PLAN §2). Range-based nesting
+	 * without degenerate single-child chains (NOTES CST §2). Range-based nesting
 	 * (cst_nest_specs) places it correctly relative to sub-expressions. */
 	uint32_t cst_m = CST_MARK();
 	unary();
@@ -10233,7 +10233,7 @@ static int decl(int l) {
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
 		/* D1b/D2: mark this declaration's first token; a full declarator group
 		 * or a function definition is range-wrapped retroactively at its end,
-		 * sidestepping decl()'s many exit points (docs/CST.md §D2). */
+		 * sidestepping decl()'s many exit points (NOTES CST gap-closure D2). */
 		uint32_t cst_dm = CST_MARK();
 #endif
 

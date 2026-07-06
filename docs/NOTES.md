@@ -658,24 +658,208 @@ deliberate, tested difference from a reference compiler (not a defect).
   predefines `__GNUC__ 4`, so glibc's `<math.h>` takes its GCC path — `NAN` prints
   `nan` and `signbit` returns a normalized `0`/`1` (§7.12p5, §7.12.3.6p3).
 
+## CST database — design record (frozen spec §0–§11)
+
+The authoritative CST design, folded in from the former `docs/PLAN.md` (frozen
+spec) + `docs/IMPLEMENTATION.md` (build order) + `docs/CST.md` (post-completion
+decisions) when those files were consolidated (2026-07-06). Section numbers are
+preserved so the `NOTES CST §N` citations throughout `src/mcccst.{c,h}`,
+`src/mcc.h`, `src/mccpp.c`, `src/mccgen.c` still resolve here. The subsystem is
+**complete and gated** (see the slice-by-slice completion record + the D1–D5
+gap-closure record below); this section is the *why*, those are the *what
+landed*. Everything here is verified against the shipped source unless flagged.
+
+### §0 — North-star invariants (hold at every commit; each is a *tested* gate)
+1. **Byte-identical codegen** CST-in or CST-out — the CST is a pure side-effect,
+   never feeds a codegen decision (gate §8.5). 2. **Zero-cost when off** — one
+   CMake node → PP define; off ⇒ every hook compiles to nothing and `mcccst.c` is
+   an empty TU. 3. **Total self-containment** — the CST shares no memory with the
+   compiler: own arena, own copy of each file's bytes, own interned strings, all
+   cross-refs as CST-internal node-ids (never `Sym*`, never `BufferedFile.buffer`
+   pointers). The compiler is an oracle consulted during construction, never a
+   backing store. 4. **Pure reflection** — round-trips to byte-identical source;
+   every datum derivable from source text alone. 5. **No new external deps.**
+
+### §1 — Frozen design decisions
+- **Representation:** flat data-oriented SoA — `kind[] parent[] first_child[]
+  next_sib[] width[] struct_hash[] trivia_hash[] sym_ref[]` + reserved
+  `slot_key[]` + a `Token` leaf side-table. Index-addressed, mmap-serializable
+  1:1. Children **linked** (`first_child`/`next_sib`), not contiguous ranges, so a
+  future 5B splice is a pointer patch, no array shift.
+- **Node identity:** tagged 64-bit `(u32 file : u32 local)`. SoA indexed by bare
+  `u32` local; any cross-file ref (sym use→def, `IncludeDirective` target, dedup
+  entry) stores the full 64-bit id. Reserves multi-file + dedup room so id width
+  never migrates.
+- **Construction:** side-recording from the existing `mccgen.c` recursive descent;
+  oracle-only. **Positioning:** relative widths (green-node style); absolute char
+  offset never stored/hashed; a **mandatory** `offset→node` index is a rebuildable
+  accelerator over the canonical widths (LSP hits it per keystroke).
+- **Hashing:** non-crypto 128-bit Merkle, two channels — position-independent
+  **structural** `H_s` (identity/reuse/dedup/TDD) + separate **trivia/layout**
+  `H_t` (comment/whitespace edits).
+- **Persistence:** v1 = mmap-able arena snapshot behind a versioned header
+  (magic + format-version + endianness + section table) — never a raw dump.
+- **Symbols:** consult the live `Sym` at build to learn a use's def-site, store
+  only `use-node → def-node` ids (8A). **Includes:** per-file subtrees stitched by
+  id — each file its own `TranslationUnit`/`SourceFile` over its own owned buffer;
+  `IncludeDirective` holds a cross-file node-id (the LSP document model; one edited
+  header reparses without rebuilding every includer).
+- **Trivia:** `(kind, rel-span)[]` on leaves, excluded from `H_s`. **Resilience:**
+  `Error`/`Missing` node kinds reserved now (recovery is an LSP-era addition) so
+  adding recovery never reshapes the node format.
+- **Consumer order (each a later milestone):** TDD "pure reflection" harness
+  (done) → `-g` debugging → LSP → optimization layer.
+
+### §2 — Node schema (all reserved kinds now *produced* after D1)
+Structural: `TranslationUnit Declaration FunctionDef Declarator ParamList
+StructOrUnion Enum TypeName Initializer CompoundStmt If/While/For/Do/Switch/
+Return/Goto/Label/ExprStmt Binary Unary Call Member Index Cast Cond Comma Paren
+Primary`. Preprocessor (concrete): `MacroInvocation IncludeDirective PPDirective
+PPConditional`. Leaf: `Token` (token-kind + owned byte span + trivia pieces).
+Still reserved-only: `Error`, `Missing` (LSP resilience). `Comment` was reserved
+in the frozen plan but is now produced (D1d). Width is **relative** = children +
+own leaf bytes + attached trivia; absolute offset = prefix-sum of preceding
+siblings' widths + parent offset, served by the mandatory `offset→node` index.
+
+### §3 — Hashing specification
+`H_s(leaf) = mix(salt(token_kind), bytes(leaf_span))` (trivia excluded);
+`H_s(internal): h = salt(kind, child_count); for c: h = mix(h, H_s(c))` — order-
+and kind-sensitive, child-count salt disambiguates `a+b` vs `a+(b)`. `H_t` folds
+comment/whitespace bytes + widths so format-only edits localize without dirtying
+`H_s`. Incremental update rehashes only root-path nodes whose child-hash multiset
+changed — O(depth); this *is* the hierarchical incremental hash.
+
+**§3.1 — Invertible epoch hash `H_e` + tombstone sweep (5B-era, DESIGNED / NOT
+BUILT).** The deferred incremental-rehash layer for live edits. Canonical `H_s`
+is non-invertible, so a changed child forces an O(fanout) sibling re-scan; in C
+the trees are wide-and-shallow so fanout dominates. Design: a dual-hash where the
+combine is a slot-keyed group op `H_e(parent) = Σ_i M(key_i)·H_e(child_i) (mod
+2^128)`, `M(key)` odd — subtractable in O(1) per level (`H_e += M(key_i)·(new −
+old)`; a removed child becomes a Null **tombstone** with `H_e = 0`, dropping its
+term exactly). Edits do O(1) algebraic patches into a dirty-set with no ancestor
+walk; an explicit later **sweep** compacts tombstones, renormalizes slot keys, and
+reconciles `H_s` over the touched frontier only. Changes the cost model (per-level
+O(fanout)→O(1)), not the O(depth) bound. Four caveats to design around: slot-bind
+via `M(key_i)` never a bare sum (order-collisions); use **stable/fractional keys**
+so inserts don't renumber siblings; linear combiner is weaker collision-resistance
+so `H_e` never replaces `H_s` as the content address; Null must be true group
+identity **and** zero-width until swept or offset arithmetic drifts. Reserved for
+now: the per-node slot-key field + frontier-scoped `H_s`-recompute (both shipped).
+**Drift note:** the frozen plan said `slot_key` stays *unused/0 in v1*; D3 now
+**repurposes `slot_key`** to hold the 1-based branch-body tag
+(`cst_mark_branch`, `src/mcccst.c:577`). It is still 0 for the epoch-hash purpose,
+but no longer universally zero — a future `H_e` build must account for that.
+
+### §4 — Memory & preprocessor model
+CST owns the source (per-file owned buffer copied on first read; leaf spans point
+into that copy, survives `BufferedFile` recycle, serializes fixup-free). Owned
+`CstArena` bump allocator, `free`/`snapshot`/`load` as a unit. Symbol refs are
+node-ids (no `Sym*` in CST memory). **Preprocessor/macros** (highest-risk, §11):
+parser sees post-expansion tokens (`next()`), but pure-reflection needs *written*
+source — so leaf spans are captured at the lexer/source boundary and a macro use
+becomes a `MacroInvocation` node whose span covers the use-text (round-trip/LSP)
+and whose children hold the expansion (for future `-g`/opt). Phased: M1 handled
+the expansion-transparent subset, full fidelity landed as dedicated milestone Mμ.
+
+### §5 — Byte-offset facility
+As shipped: a per-file base `cst_base` (`src/mcc.h:465`), maintained in
+`handle_eob`, combined with buffer-pointer arithmetic so `abs_off(p) == cst_base
++ (p - buffer)`. `cst_base` advances by the discarded-window length at each chunk
+refill; offsets captured as absolute values at token start/end so they survive
+mid-token refills. (The frozen plan's earlier "monotonic per-byte counter" phrasing
+was never built — this base-offset model is the shipped one.) Zero-cost off.
+
+### §6 — Integration points (hooks)
+Recording driven from the existing descent; hook macros expand to nothing when
+off. Primary `mccgen.c` sites: `decl()` (Declaration/FunctionDef), `struct_decl()`
+/`post_type()`/`type_decl()` (type structure), `block()`/`gexpr_decl()`/`lblock()`
+(statements), the `unary`/`expr`/`gexpr` expression family, `next`/`skip` (leaf
+capture). Pattern: a small explicit node stack; each grammar fn brackets with
+`cst_open(kind)`/`cst_close()`. Debug builds assert stack balance (each open
+closed once; empty at `decl()` end) — catches hook-coverage drift directly.
+
+### §7 — CMake gating
+`mcc_config_node(MCC_CST TYPE BOOL DEFAULT ON GROUP "Advanced" ADVANCED)`
+(`CMakeLists.txt:1087`) — default **ON**; codegen byte-identical on/off, guarded
+by §8.5. ON ⇒ `PRIVATE CONFIG_MCC_CST=1` + `src/mcccst.c` in sources; a `cst`
+preset in `CMakePresets.json`; `#if CONFIG_MCC_CST` guards every hook + new file.
+
+### §8 — TDD "pure reflection" gates (`tools/csttool` + `tests/cst/`)
+1. **Round-trip:** CST→source byte-identical over the corpus (strongest
+   proof). 2. **Span coverage:** child spans tile the parent, sum-of-widths ==
+   parent, every source byte covered once. 3. **Bidirectional lookup:**
+   offset→node→span round-trips; def↔use ids round-trip. 4. **Hash invariance:**
+   `H_s` unchanged by whitespace/comment edits, changes iff token structure does;
+   identical subtrees share a hash. 5. **Codegen-identity:** mcc with/without
+   `CONFIG_MCC_CST` emits identical output over the corpus (protects §0.1).
+   6. **Snapshot round-trip:** dump→reload identical tree+hashes; version/endian
+   skew rejected cleanly.
+
+### §9 — Milestones (all landed) & consumers (future)
+M0 scaffolding · M1 leaf+owned-source+round-trip · M2 structure+widths+lookup ·
+M3 hashing+snapshot ("CST complete for source-of-truth") · Mμ macro fidelity ·
+M4 symbol refs — **all done** (slice records below). **M5+ consumers are separate
+future plans** (see TODO Later): `-g` (span↔PC via `mccdbg.c`) → LSP (8C lazy
+resolution + `Error`/`Missing` resilience + 5B incremental splice + 6B store) →
+optimization layer.
+
+### §10 — Deferred / reserved (roadmap; status as of 2026-07-06)
+- **5B incremental splice** — DEFERRED. Needs 4B rolling-hash re-lex-window
+  finder, parser error-recovery (LSP-era), `Error`/`Missing` nodes. Batch rebuild
+  is the same code minus the splice.
+- **`H_e` epoch hash + tombstone sweep** (§3.1) — DEFERRED (designed; slot-key
+  field + frontier-scoped recompute reserved/shipped).
+- **4C hash-consing** (physical subtree dedup keyed by `H_s`) — **now BUILT**,
+  pulled forward by D3 as the content-addressed `SourceFile` template store
+  (`cst_store_intern`).
+- **6B content-addressed store** — PARTIAL: the in-memory `H_s`-keyed store ships
+  (D3); the on-disk archival format layered over the 6A working image (backbone
+  for hot-reload / reconciled-CST snapshots — see TODO Later) is still deferred.
+- **9B trivia-as-nodes** (`Comment`) — **now DONE** (D1d).
+- **6C embedded KV** — REJECTED (dependency conflict); LSP queries synthesized
+  from hand-rolled `offset→node`/`name→def`/`def→uses` indices over the flat
+  arrays.
+
+### §11 — Risk register (each pinned to a tripwire test)
+Macro-fidelity vs pure reflection (grown under the round-trip corpus, not up
+front) · hook-coverage drift (span-coverage/tiling §8.2 + debug balance assert) ·
+zero-cost-off regressions (codegen-identity §8.5 in CI) · width/offset arithmetic
+bugs (tiling invariant §8.2).
+
+### The seam (as-shipped interface contract, from the former IMPLEMENTATION.md §3)
+Pure slices (B store, C hashing, D geometry, E serialization) publish plain
+functions in `src/mcccst.h`; compiler-side slices drive them mostly through the
+`CST_*` hook macros (`CST_OPEN`/`CST_OPEN_AT`/`CST_MARK`/`CST_CLOSE`/`CST_LEAF`,
+all `((void)0)` when off). The deferred-capture model (slice H) also calls a few
+hook functions directly under `#if CONFIG_MCC_CST` — `cst_hook_token` (leaf
+capture; the `CST_LEAF`/`cst_hook_leaf` pair ended up **vestigial**, 0 uses),
+`cst_hook_def`/`cst_hook_use` (slice I), `cst_hook_wrap` (slice J), `cst_cur_tok_off`.
+All structure/hashing/geometry/IO stays inside `src/mcccst.c` behind those
+functions, so §0.2 stays mechanical. The per-slice `mcccst_{hash,geom,io}.c` split
+sketched in the original build order was **not taken** — all slices live in the
+single `src/mcccst.c`; the harness is the single file `tools/csttool.c`.
+
+---
+
 ## Completed work — CST database (all vertical slices landed)
 
 The CST (Concrete Syntax Tree) database subsystem is complete — every
 vertical slice (S0, B–J, the weaves, FINAL) landed and is gated in CTest.
 This is the folded completion record moved out of `docs/TODO.md`; the design
-lives in [PLAN.md](PLAN.md) + [IMPLEMENTATION.md](IMPLEMENTATION.md), the
+lives in [§ CST database — design record](#cst-database--design-record-frozen-spec-011) above, the
 implementation in `src/mcccst.{c,h}` (+ `tools/csttool`, `tests/cst/`).
 `MCC_CST` is now built **on by default** (CMakeLists.txt:1087), codegen
-byte-identical either way. Two non-blocking follow-ups stay open in
-`docs/TODO.md` (per-file include-stitching ownership in slice G; top-level
-Declaration/FunctionDef grouping + ParamList in slice H).
+byte-identical either way. The slice-H/G follow-ups noted here originally
+(Declaration/FunctionDef grouping + ParamList; per-file include stitching) were
+subsequently closed by the D1b/D3 gap-closure work (see the next section);
+what remains open is the future-consumer / 5B roadmap in `docs/TODO.md`.
 
 Two headline deliverables, implemented via the vertical slices below:
 - [x] CST Database for Debugging, LSP, and Optimization data/layers — the
   side-recorded, self-contained CST substrate is built, populated from real
   compilation, round-trips byte-identically, hashes, serializes, and carries
   symbol refs. The *consumer* layers (-g/LSP/opt) are separate future plans
-  (PLAN §9 M5+); this delivers the data layer they build on.
+  (NOTES CST §9 M5+); this delivers the data layer they build on.
 - [x] CST Database uses hierarchical incremental hashes to enable bidirectional
   lookups starting from any character index in any file — 128-bit hierarchical
   Merkle hashing (struct + trivia channels, frontier-scoped incremental rehash,
@@ -683,7 +867,7 @@ Two headline deliverables, implemented via the vertical slices below:
   lookup verified (§8.3) on 308 corpus files.
 
 Legend for slices: each has a status line. `[ ]` open · `[~]` in progress ·
-`[x]` done. Slice IDs and dependencies per `IMPLEMENTATION.md §1`.
+`[x]` done. Slice IDs + dependencies are given per-slice below (the `Deps:` lines).
 
 ### S0 — Gating & harness skeleton  ·  status: [x]
 Deps: — · Kind: build · PLAN §7, §8
@@ -840,6 +1024,57 @@ Deps: H, F · PLAN §4, §11
 - [x] Risk items pinned: hook-coverage→cst_validate tiling; zero-cost-off→codegen
       gate; width arithmetic→tiling invariant; macro→round-trip corpus
 - Notes: "tests2" corpus not present in this tree; used tests/** (379 files).
+
+## Completed — CST next-phase gap closure (docs/CST.md D1–D5, 2026-07-06)
+
+The CST D1–D5 decision plan (recorded in the design record above, folded from the
+former `docs/CST.md`) is fully landed on top of the
+vertical slices above: node-kind fill-in, PP-concrete capture, and the
+`SourceFile` template/binding/render model. Migrated here from `docs/TODO.md`.
+`MCC_CST` stays **on by default** (`CMakeLists.txt:1087`); codegen is
+byte-identical CST-on vs CST-off. The CST hooks are pure side-effect recording —
+the compiler never reads the CST — so the §8.5 codegen-identity invariant holds
+for *any* hook change; the live risk is CST round-trip/tiling correctness, gated
+by the `cst/*` ctest suite (20/20 green in the `cst`-on build; verified 2026-07-06).
+
+- [x] **D1a — Expression fill-in (`Unary`/`Cast`/`Paren`/`Primary`).** Retroactive
+  range-wrap in `unary()` (mccgen.c): prefix-op → `Unary`, `(type)e` → `Cast`,
+  `(e)` → `Paren`, atoms → `Primary`. Gated `cst/kinds-expr`.
+- [x] **D1b — Declaration structure via D2 range-wrap** (`Declaration`,
+  `FunctionDef`, `ParamList`, `Enum`, `TypeName`, `Initializer`, `Label`). Gated
+  `cst/kinds-decl`.
+- [x] **D1c — PP-concrete** (`IncludeDirective`, `PPDirective`, `PPConditional`),
+  full-concrete: capture *all* `#if`/`#else` branches as concrete nodes. Prereq
+  for D3. Gated `cst/kinds-pp`.
+- [x] **D1d — `Comment` promotion** (line/inline/block), `H_t`-only so §8.4 holds.
+  Gated `cst/kinds-comment`.
+- [x] **D3+D5 — `SourceFile` template + renderer.** The full template/binding/
+  render model (mcccst.{c,h}): full-concrete branch tagging
+  (`cst_mark_branch`/`slot_key`), a content-addressed store with pure-`H_s(body)`
+  hash-consing + dedup (`cst_store_*`), per-instance recursive bindings
+  (`cst_binding_*`), and the `render(template, binding)` fold with a threaded PP
+  environment (`cst_render`) — plus `cst_render_identity` as the round-trip
+  oracle. The **headline recursive re-include branch-selection gate**
+  (`cst/template`) passes all five assertions. **Live capture wired** (`cst/incstore`):
+  every real `#include` during a compile interns its file as a hash-consed
+  `SourceFile` template (`cst_hook_include`, mccpp `parse_include`) and binds the
+  `IncludeDirective` node to it — two `#include`s of one header (incl. via a
+  nested header and guard-skipped repeats) collapse to a single template id.
+  - [x] **DEBUG-build hash-collision tripwire.** `cst_store_intern` verifies, in
+    a debug build, that an existing same-`H_s` entry reflects byte-identically
+    to the interned body; on mismatch it `abort()`s with a fatal "hash collision
+    … cst_hash_* must be fixed" — never silently deduping two different bodies.
+  - [x] *Full-concrete live templates.* `cst_build_sourcefile` lexes each
+    captured file line-by-line into a real tree: every line a leaf, each
+    `#if/#else/#endif` a `PPConditional` whose branch bodies (dead branches
+    included) are tagged `CompoundStmt` groups (`cst_mark_branch`) a binding can
+    select among. Verified via the `MCC_CST_STORE` dump: increment.h → 2
+    `PPConditional`, leaf.h → 1 (its guard), all `render_identity` round-trip
+    exactly (`cst/incstore`, `cst/increment`).
+- [x] **FINAL** — every `cst/*` gate green over the corpus; §0.1/§0.2 re-confirmed:
+  CST-on ctest **830/830**, CST-off **811/811**, object output **byte-identical**
+  CST-on vs CST-off across the sampled corpus, and the CST-off build compiles the
+  now-empty `mcccst.c` (zero-cost-off). CST D1–D5 plan complete.
 
 ## Completed — docs-accuracy reconciliation (2026-07-06)
 

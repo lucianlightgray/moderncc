@@ -1,10 +1,10 @@
 /*
  * mcccst.h — Concrete Syntax Tree (CST) database public seam.
  *
- * See docs/PLAN.md (design) and docs/IMPLEMENTATION.md (build order, §3 seam).
+ * See docs/NOTES.md "CST database — design record" (design + as-shipped seam).
  *
  * The CST is a side-recorded, self-contained reflection of the *written* source.
- * It shares no memory with the compiler (invariant PLAN §0.3): its own arena, its
+ * It shares no memory with the compiler (invariant NOTES CST §0.3): its own arena, its
  * own copy of each file's bytes, and all cross-references expressed as CST node
  * ids — never Sym*, never pointers into compiler buffers.
  *
@@ -12,7 +12,7 @@
  * and then only through the CST_* hook macros at the bottom. All structure,
  * hashing, geometry and IO live behind the functions declared here, inside
  * mcccst*.c. When CONFIG_MCC_CST is unset every hook compiles to nothing, so the
- * feature is provably zero-cost-off (PLAN §0.2).
+ * feature is provably zero-cost-off (NOTES CST §0.2).
  */
 #ifndef MCCCST_H
 #define MCCCST_H
@@ -21,7 +21,7 @@
 #include <stdint.h>
 
 /* ------------------------------------------------------------------ *
- * Node kinds (PLAN §2). Flat enum, grouped. Reserve kinds now even if
+ * Node kinds (NOTES CST §2). Flat enum, grouped. Reserve kinds now even if
  * unused until a later milestone so adding them never reshapes the node
  * format.
  * ------------------------------------------------------------------ */
@@ -75,7 +75,7 @@ typedef enum CstKind {
 } CstKind;
 
 /* ------------------------------------------------------------------ *
- * Ids (PLAN §1 "Node identity"). SoA arrays are indexed by a bare u32
+ * Ids (NOTES CST §1 "Node identity"). SoA arrays are indexed by a bare u32
  * *local* id; anything that crosses a file boundary (sym refs, include
  * targets, future 4C dedup entries) carries the full 64-bit (file,local).
  * High bits reserved now so multi-file + hash-consing never force a
@@ -92,12 +92,12 @@ static inline CstId    cst_id(uint32_t file, CstLocal local) {
 static inline uint32_t cst_id_file(CstId id) { return (uint32_t)(id >> 32); }
 static inline CstLocal cst_id_local(CstId id) { return (CstLocal)id; }
 
-/* 128-bit non-crypto hash value (PLAN §3). Two 64-bit lanes. */
+/* 128-bit non-crypto hash value (NOTES CST §3). Two 64-bit lanes. */
 typedef struct CstHash {
     uint64_t lo, hi;
 } CstHash;
 
-/* Trivia piece attached to a leaf token (PLAN §1 "Trivia"): a classified
+/* Trivia piece attached to a leaf token (NOTES CST §1 "Trivia"): a classified
  * (kind, relative span) excluded from the structural hash. */
 typedef enum CstTriviaKind {
     CST_TRIV_WS = 0,        /* horizontal/vertical whitespace   */
@@ -112,7 +112,7 @@ typedef struct CstTrivia {
     uint32_t length;
 } CstTrivia;
 
-/* Opaque arena / node store (one per file; PLAN §1 Includes stitches them). */
+/* Opaque arena / node store (one per file; NOTES CST §1 Includes stitches them). */
 typedef struct CstArena CstArena;
 
 #ifdef __cplusplus
@@ -147,7 +147,7 @@ CstLocal  cst_node_count(const CstArena *a);
 CstLocal  cst_root(const CstArena *a);
 
 /* ==================================================================== *
- * Slice C — hashing (PLAN §3). Pure; usable without a tree.
+ * Slice C — hashing (NOTES CST §3). Pure; usable without a tree.
  * ==================================================================== */
 CstHash   cst_hash_leaf(uint16_t tok_kind, const uint8_t *bytes, uint32_t len);
 CstHash   cst_hash_internal(uint16_t kind, const CstHash *child, uint32_t n);
@@ -160,39 +160,39 @@ void      cst_rehash_frontier(CstArena *a, const CstLocal *touched, uint32_t n);
 void      cst_rehash_all(CstArena *a);
 
 /* ==================================================================== *
- * Slice D — geometry & offset->node index (PLAN §1, §2, §5)
+ * Slice D — geometry & offset->node index (NOTES CST §1, §2, §5)
  * ==================================================================== */
 uint32_t  cst_abs_offset(const CstArena *a, CstLocal n);
 void      cst_index_build(CstArena *a);
 CstLocal  cst_node_at(const CstArena *a, uint32_t abs_off);
 
 /* ==================================================================== *
- * Slice E — serialization (PLAN §1 Persistence, §8.1, §8.6)
+ * Slice E — serialization (NOTES CST §1 Persistence, §8.1, §8.6)
  * ==================================================================== */
 int       cst_snapshot_save(const CstArena *a, const char *path);
 CstArena *cst_snapshot_load(const char *path); /* NULL on version/endian skew */
 /* Emit the source this (sub)tree reflects; returns bytes written (or the
- * required size if out==NULL). The round-trip oracle (PLAN §8.1). */
+ * required size if out==NULL). The round-trip oracle (NOTES CST §8.1). */
 size_t    cst_reflect(const CstArena *a, CstLocal root, uint8_t *out, size_t cap);
-/* Validate round-trip + tiling + offset lookup (PLAN §8.1/§8.2/§8.3). 0 = ok. */
+/* Validate round-trip + tiling + offset lookup (NOTES CST §8.1/§8.2/§8.3). 0 = ok. */
 int       cst_validate(const CstArena *a, char *msg, size_t msgcap);
 
 /* ==================================================================== *
- * Slice G — owned source & trivia (PLAN §4)
+ * Slice G — owned source & trivia (NOTES CST §4)
  * ==================================================================== */
 uint32_t  cst_own_file(CstArena *a, const char *name,
                        const uint8_t *bytes, size_t n);
 const uint8_t *cst_source(const CstArena *a, uint32_t *len_out);
 
 /* ==================================================================== *
- * Slice I — symbol refs (PLAN §1 Symbols)
+ * Slice I — symbol refs (NOTES CST §1 Symbols)
  * ==================================================================== */
 void      cst_set_sym_ref(CstArena *a, CstLocal use, CstId def);
 CstId     cst_sym_ref(const CstArena *a, CstLocal use);
 
 /* ==================================================================== *
  * D3/D5 — SourceFile template + content-addressed store + renderer
- * (docs/CST.md §D3/§D5). A file's *bytes* are fixed, so its *structure* is
+ * (NOTES CST gap-closure D3/D5). A file's *bytes* are fixed, so its *structure* is
  * fixed: each file is a static full-concrete template (all #if/#else branches
  * captured), hash-consed by pure H_s(body) so identical headers — regardless
  * of include context — share one physical subtree. Per-include variation lives
@@ -201,7 +201,7 @@ CstId     cst_sym_ref(const CstArena *a, CstLocal use);
 
 /* A PPConditional's branch-body children are tagged with a 1-based ordinal so
  * a binding can pick the live one (0 = not a branch body, e.g. a directive
- * line). Uses the reserved slot_key column (PLAN §3.1). */
+ * line). Uses the reserved slot_key column (NOTES CST §3.1). */
 void      cst_mark_branch(CstArena *a, CstLocal node, uint32_t branch_ord);
 uint32_t  cst_branch_ord(const CstArena *a, CstLocal node);
 
@@ -210,7 +210,7 @@ uint32_t  cst_branch_ord(const CstArena *a, CstLocal node);
 void      cst_set_include_target(CstArena *a, CstLocal node, uint32_t template_id);
 uint32_t  cst_include_target(const CstArena *a, CstLocal node);
 
-/* Content-addressed template store (PLAN §10 4C hash-consing / 6B store). */
+/* Content-addressed template store (NOTES CST §10 4C hash-consing / 6B store). */
 typedef struct CstStore CstStore;
 CstStore *cst_store_new(void);
 void      cst_store_free(CstStore *s); /* also frees every interned template */
@@ -243,7 +243,7 @@ size_t      cst_render(const CstStore *s, const CstBinding *b, uint8_t *out,
                        size_t cap);
 /* Round-trip oracle: render with the identity binding — every branch, no
  * include expansion — i.e. the written source of one template. Shares the
- * leaf-emission path with cst_render (PLAN §8.1). */
+ * leaf-emission path with cst_render (NOTES CST §8.1). */
 size_t      cst_render_identity(const CstArena *tmpl, uint8_t *out, size_t cap);
 
 #ifdef __cplusplus
@@ -252,7 +252,7 @@ size_t      cst_render_identity(const CstArena *tmpl, uint8_t *out, size_t cap);
 
 /* ==================================================================== *
  * Slice H — recording hooks. The ONLY surface the compiler references.
- * When CONFIG_MCC_CST is unset these expand to nothing (PLAN §0.2).
+ * When CONFIG_MCC_CST is unset these expand to nothing (NOTES CST §0.2).
  * The hook_* functions are thin wrappers over a per-parse current arena +
  * build stack, defined in mcccst.c; the compiler never sees the arena.
  * ==================================================================== */

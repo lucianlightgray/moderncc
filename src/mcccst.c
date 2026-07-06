@@ -1,16 +1,16 @@
 /*
  * mcccst.c — Concrete Syntax Tree (CST) database implementation.
  *
- * See docs/PLAN.md, docs/IMPLEMENTATION.md, and src/mcccst.h.
+ * See docs/NOTES.md "CST database — design record" and src/mcccst.h.
  *
- * Self-contained (invariant PLAN §0.3): uses only the C library (malloc/free),
+ * Self-contained (invariant NOTES CST §0.3): uses only the C library (malloc/free),
  * never mcc's allocators or globals, so the pure-library test harness
  * (tools/csttool.c) can link this file alone with no compiler.
  *
  * Everything is wrapped in the CONFIG_MCC_CST guard so that when the feature is
- * off this translation unit is empty — provable zero-cost-off (PLAN §0.2).
+ * off this translation unit is empty — provable zero-cost-off (NOTES CST §0.2).
  *
- * Slices implemented here (IMPLEMENTATION.md §1):
+ * Slices implemented here (NOTES CST slice records):
  *   B  node store core        C  hashing        D  geometry / offset index
  *   E  serialization          G  owned source   I  symbol refs
  *   H  recording-hook skeleton (current-arena + build stack)
@@ -28,7 +28,7 @@
 #define CST_ASSERT(x) assert(x)
 #endif
 
-/* The CST owns its memory via the raw C library (invariant PLAN §0.3), never
+/* The CST owns its memory via the raw C library (invariant NOTES CST §0.3), never
  * mcc's arena. In the amalgamated build mcc.h poisons malloc/realloc/free to
  * force use of its own allocators; un-poison them for this self-contained unit
  * (harmless no-op in the standalone csttool build where the poison is absent). */
@@ -48,7 +48,7 @@
 struct CstArena {
     uint32_t file_id;
 
-    /* SoA columns, parallel arrays indexed by CstLocal (PLAN §2). */
+    /* SoA columns, parallel arrays indexed by CstLocal (NOTES CST §2). */
     uint16_t *kind;
     CstLocal *parent;
     CstLocal *first_child;
@@ -307,7 +307,7 @@ const uint8_t *cst_source(const CstArena *a, uint32_t *len_out) {
 }
 
 /* ================================================================== *
- * Hashing (slice C, PLAN §3). 128-bit non-crypto, two 64-bit lanes.
+ * Hashing (slice C, NOTES CST §3). 128-bit non-crypto, two 64-bit lanes.
  * ================================================================== */
 
 static uint64_t cst_mix64(uint64_t h, uint64_t x) {
@@ -329,7 +329,7 @@ static uint64_t cst_hash_bytes(uint64_t seed, const uint8_t *p, uint32_t len) {
 
 CstHash cst_hash_leaf(uint16_t tok_kind, const uint8_t *bytes, uint32_t len) {
     CstHash h;
-    /* Two independently-seeded lanes; salt with the token kind (PLAN §3). */
+    /* Two independently-seeded lanes; salt with the token kind (NOTES CST §3). */
     h.lo = cst_hash_bytes(0xC0FFEEull ^ ((uint64_t)tok_kind << 1), bytes, len);
     h.hi = cst_hash_bytes(0x5EED1234ull ^ ((uint64_t)tok_kind << 7 | 1), bytes, len);
     return h;
@@ -337,7 +337,7 @@ CstHash cst_hash_leaf(uint16_t tok_kind, const uint8_t *bytes, uint32_t len) {
 
 CstHash cst_hash_internal(uint16_t kind, const CstHash *child, uint32_t n) {
     CstHash h;
-    /* salt(kind, child_count) disambiguates a+b vs a+(b) (PLAN §3). */
+    /* salt(kind, child_count) disambiguates a+b vs a+(b) (NOTES CST §3). */
     h.lo = cst_mix64(0xA5A5A5A5ull ^ ((uint64_t)kind << 1), n);
     h.hi = cst_mix64(0x3C3C3C3Cull ^ ((uint64_t)kind << 3 | 1), n);
     uint32_t i;
@@ -372,7 +372,7 @@ static CstHash cst_compute_struct(CstArena *a, CstLocal n) {
     }
     /* Gather children hashes (post-order: recurse first). CST_Comment children
      * are excluded from H_s so a comment-only edit leaves the structural hash
-     * fixed (D1d / PLAN §8.4); their bytes live in the trivia channel H_t. */
+     * fixed (D1d / NOTES CST §8.4); their bytes live in the trivia channel H_t. */
     CstHash stackbuf[16];
     CstHash *ch = stackbuf;
     uint32_t cap = 16, cnt = 0;
@@ -399,7 +399,7 @@ static CstHash cst_compute_struct(CstArena *a, CstLocal n) {
     return h;
 }
 
-/* Trivia hash: folds trivia bytes + kinds + widths (PLAN §3). */
+/* Trivia hash: folds trivia bytes + kinds + widths (NOTES CST §3). */
 static CstHash cst_compute_trivia(CstArena *a, CstLocal n) {
     CstHash h;
     h.lo = 0xDEADBEEFull;
@@ -437,7 +437,7 @@ void cst_rehash_all(CstArena *a) {
 CstHash cst_struct_hash(const CstArena *a, CstLocal n) { return a->struct_hash[n]; }
 CstHash cst_trivia_hash(const CstArena *a, CstLocal n) { return a->trivia_hash[n]; }
 
-/* Frontier-scoped rehash (PLAN §3.1). v1: mark touched + ancestors dirty, then a
+/* Frontier-scoped rehash (NOTES CST §3.1). v1: mark touched + ancestors dirty, then a
  * single post-order pass recomputes only dirty nodes from children's current
  * hashes. Correct; the O(frontier) cost model is a 5B concern. */
 static void cst_rehash_dirty(CstArena *a, CstLocal n, const uint8_t *dirty) {
@@ -494,7 +494,7 @@ void cst_rehash_frontier(CstArena *a, const CstLocal *touched, uint32_t n) {
 }
 
 /* ================================================================== *
- * Geometry & offset->node index (slice D, PLAN §1/§2/§5)
+ * Geometry & offset->node index (slice D, NOTES CST §1/§2/§5)
  * ================================================================== */
 
 uint32_t cst_abs_offset(const CstArena *a, CstLocal n) {
@@ -561,7 +561,7 @@ CstLocal cst_node_at(const CstArena *a, uint32_t abs_off) {
 }
 
 /* ================================================================== *
- * Symbol refs (slice I, PLAN §1 Symbols)
+ * Symbol refs (slice I, NOTES CST §1 Symbols)
  * ================================================================== */
 
 void cst_set_sym_ref(CstArena *a, CstLocal use, CstId def) {
@@ -571,7 +571,7 @@ CstId cst_sym_ref(const CstArena *a, CstLocal use) { return a->sym_ref[use]; }
 
 /* ================================================================== *
  * D3/D5 — SourceFile template metadata, content-addressed store, renderer
- * (docs/CST.md §D3/§D5).
+ * (NOTES CST gap-closure D3/D5).
  * ================================================================== */
 
 /* Branch-body tag (1-based) lives in the reserved slot_key column. */
@@ -798,7 +798,7 @@ size_t cst_render_identity(const CstArena *tmpl, uint8_t *out, size_t cap) {
 }
 
 /* ================================================================== *
- * Reflection + serialization (slice E, PLAN §8.1/§8.6)
+ * Reflection + serialization (slice E, NOTES CST §8.1/§8.6)
  * ================================================================== */
 
 static size_t cst_reflect_walk(const CstArena *a, CstLocal n, uint8_t *out,
@@ -821,7 +821,7 @@ size_t cst_reflect(const CstArena *a, CstLocal root, uint8_t *out, size_t cap) {
     return cst_reflect_walk(a, root, out, cap, 0);
 }
 
-/* Snapshot format (PLAN §1 Persistence): versioned header + section columns.
+/* Snapshot format (NOTES CST §1 Persistence): versioned header + section columns.
  * Never a raw dump — magic + version + endianness guard cross-version reads. */
 #define CST_MAGIC 0x5453434Du /* 'MCST' little-endian */
 #define CST_VERSION 1u
@@ -892,7 +892,7 @@ CstArena *cst_snapshot_load(const char *path) {
     if (!cst_rd(f, &h, sizeof h) || h.magic != CST_MAGIC ||
         h.version != CST_VERSION || h.endian != CST_ENDIAN_TAG) {
         fclose(f);
-        return NULL; /* version/endian skew rejected cleanly (PLAN §8.6) */
+        return NULL; /* version/endian skew rejected cleanly (NOTES CST §8.6) */
     }
     CstArena *a = cst_arena_new(h.file_id);
     cst_grow(a, h.node_count ? h.node_count : 1);
@@ -938,13 +938,13 @@ CstArena *cst_snapshot_load(const char *path) {
 }
 
 /* ================================================================== *
- * Recording-hook skeleton (slice H, PLAN §6)
+ * Recording-hook skeleton (slice H, NOTES CST §6)
  * A single current arena + build stack; the compiler never sees the arena.
  * Fleshed out during Weave 1. Provided here so mccgen.c/mccpp.c can link.
  * ================================================================== */
 
 /* ================================================================== *
- * Whole-tree validation (PLAN §8.1/§8.2/§8.3) — used by the corpus gate.
+ * Whole-tree validation (NOTES CST §8.1/§8.2/§8.3) — used by the corpus gate.
  * Checks round-trip reflection, width tiling, and offset->node lookup.
  * Returns 0 on success; else writes a short reason into msg.
  * ================================================================== */
@@ -1014,7 +1014,7 @@ int cst_validate(const CstArena *a, char *msg, size_t msgcap) {
  * function brackets a construct with cst_hook_open/close its first token has
  * ALREADY been lexed and captured. We therefore DON'T build the tree live.
  * Instead we record a flat, source-ordered leaf list (which alone gives the
- * round-trip, PLAN §8.1) plus structural specs as leaf-index ranges, and
+ * round-trip, NOTES CST §8.1) plus structural specs as leaf-index ranges, and
  * materialize the nested tree in cst_hook_end — resolving the lookahead by the
  * rule: a node opened while `tok` is its first token spans leaves
  * [open_leaf_count - 1, close_leaf_count - 1). */
@@ -1283,7 +1283,7 @@ void cst_hook_open(uint16_t kind) {
 }
 
 /* Mark the current leaf position, for a node whose start is only known to be a
- * node later (left-recursive expressions, PLAN §2). */
+ * node later (left-recursive expressions, NOTES CST §2). */
 uint32_t cst_mark(void) { return cst_lcount ? cst_lcount - 1 : 0; }
 
 /* Open a node retroactively spanning from a previously-taken mark. */
@@ -1298,7 +1298,7 @@ uint32_t cst_leafcount(void) { return cst_lcount; }
 
 /* Record a node with an explicit half-open leaf range [first,last) — used for a
  * macro invocation, whose written name/args span is known only after expansion
- * (slice J, PLAN §4). Empty ranges are dropped by cst_nest_specs. */
+ * (slice J, NOTES CST §4). Empty ranges are dropped by cst_nest_specs. */
 void cst_hook_wrap(uint16_t kind, uint32_t first_leaf, uint32_t last_leaf) {
     if (!cst_current || last_leaf <= first_leaf)
         return;
@@ -1316,7 +1316,7 @@ void cst_hook_close(void) {
 }
 
 /* Leading-trivia length of a leaf span: the run of whitespace and comments
- * before the token (slice G). Excluded from the structural hash (PLAN §3) so
+ * before the token (slice G). Excluded from the structural hash (NOTES CST §3) so
  * whitespace/comment-only edits don't perturb H_s. */
 static uint32_t cst_leading_trivia(const uint8_t *src, uint32_t off, uint32_t len) {
     uint32_t i = 0;
@@ -1484,7 +1484,7 @@ static CstLocal cst_materialize(int32_t si) {
 CstArena *cst_hook_end(void) {
     CstArena *a = cst_current;
     if (a) {
-        /* Debug tripwire (PLAN §6): every grammar cst_hook_open must have a
+        /* Debug tripwire (NOTES CST §6): every grammar cst_hook_open must have a
          * matching cst_hook_close, so only the TU root remains on the stack.
          * Verified balanced across the corpus for the bracketed single-exit
          * functions (block/type_decl/struct_decl). */

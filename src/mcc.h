@@ -461,7 +461,7 @@ typedef struct BufferedFile {
 	int line_num;
 	int line_ref;
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
-	/* CST byte cursor (PLAN §5): absolute file offset of buffer[0], maintained
+	/* CST byte cursor (NOTES CST §5): absolute file offset of buffer[0], maintained
 	 * across refills so abs_off(p) == cst_base + (p - buffer). */
 	unsigned long cst_base;
 #endif

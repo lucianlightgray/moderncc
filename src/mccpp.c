@@ -2894,7 +2894,7 @@ static void parse_number(const char *p) {
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
 /* CST leaf capture (slice F/G/H, Weave 1). The top-level source file is mirrored
  * into the CST as leaves whose spans [prev_end, buf_ptr) tile every byte, so the
- * tree round-trips to byte-identical source (PLAN §8.1). Included files and
+ * tree round-trips to byte-identical source (NOTES CST §8.1). Included files and
  * macro-injected tokens carry no written bytes here and are handled later. */
 /* cst_main_bf is forward-declared above (near preprocess) so the D1c directive
  * hooks can gate on the main file; this is its defining tentative declaration. */
@@ -2981,7 +2981,7 @@ ST_FUNC CstArena *cst_capture_end(void) {
 	}
 	if (a && getenv("MCC_CST_SNAPSHOT")) {
 		/* WEAVE 2: dump a real compiled tree, reload it, and prove the reload
-		 * validates and carries the identical structural hash (PLAN §8.6). */
+		 * validates and carries the identical structural hash (NOTES CST §8.6). */
 		const char *path = getenv("MCC_CST_SNAPSHOT");
 		char m2[128];
 		int ok = 0;
@@ -4152,7 +4152,7 @@ ST_FUNC void next(void) {
 				 * never overruns into the next construct (which would break
 				 * range nesting). Object-like uses span just the name. This can
 				 * exclude the closing ')' in some cases — an accepted v1 macro-
-				 * fidelity imprecision (PLAN §11, grow later). */
+				 * fidelity imprecision (NOTES CST §11, grow later). */
 				uint32_t cst_mafter = cst_leafcount();
 				uint32_t cst_mlast = cst_mafter > cst_mbefore
 							 ? cst_mafter - 1
