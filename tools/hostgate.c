@@ -81,10 +81,6 @@ static int scan_file(const char *path, int is_dir, void *ud) {
 	if (is_dir)
 		return 0;
 	elen = (int)strlen(path);
-	/* Scan C sources/headers and assembly (.s/.S) and .inc includes: any of
-	 * these can carry a raw host-macro #if. Assembly/.inc appears only under
-	 * tests/ today (deliberate preprocessor fixtures, not a scanned root), so
-	 * this is future-proofing for src/tools should an .S/.inc ever land there. */
 	if (!(elen >= 2 && path[elen - 2] == '.' &&
 		  (path[elen - 1] == 'c' || path[elen - 1] == 'h' ||
 		   path[elen - 1] == 's' || path[elen - 1] == 'S')) &&

@@ -361,9 +361,6 @@ static void write_tests(FILE *f, const char *junit) {
 		attr(name, sizeof name, p, gt, "name=\"");
 		attr(tm, sizeof tm, p, gt, "time=\"");
 		attr(st, sizeof st, p, gt, "status=\"");
-		/* notrun/<skipped> as a skip is safe: a failed FIXTURES_SETUP is emitted
-		 * as its own status="fail" <failure> testcase (see ci.c junit-summary),
-		 * so a setup failure lands in the failed bucket, not here. */
 		skipped = find_lim(tagend, extent, "<skipped") != NULL ||
 				  !strcmp(st, "notrun");
 		failed = find_lim(tagend, extent, "<failure") != NULL ||

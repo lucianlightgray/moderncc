@@ -1,9 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
 
-# MCC_VERSION is a YYYYMMDDHHMMSS datestamp compiled into mcc as a long integer
-# (src reads it as MCC_VERSION_STR and splits it into MCC_VERSION_MAJOR=YYYYMMDD /
-# MCC_VERSION_MINOR=HHMMSS). MCC_SOVERSION stays a plain semver for the shared
-# library / package version, which must fit the platform SONAME/dylib scheme.
 set(MCC_VERSION "20260706135200")
 set(MCC_SOVERSION "1.0.0")
 string(REGEX MATCH "^[0-9]+(\\.[0-9]+)*" MCC_VERSION_NUMERIC "${MCC_SOVERSION}")

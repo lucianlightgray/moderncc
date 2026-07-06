@@ -944,7 +944,7 @@ static void asm_parse_directive(MCCState *s1, int global) {
 
 #if MCC_EH_FRAME
 
-#define asm_cfi (mcc_state->asm_cfi)
+#define asm_cfi (mcc_state->asm_cfi_st)
 
 static void asm_cfi_factors(MCCState *s1) {
 	unsigned char *p, *end;

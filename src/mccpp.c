@@ -1533,18 +1533,6 @@ static int parse_include(MCCState *s1, int do_next, int test) {
 	return 1;
 }
 
-/*
- * Clang's __has_* preprocessor builtins.  Any of these that appears in a
- * conditional expression has its argument list consumed and evaluates to 0
- * (see the pp_builtin_func branch in expr_preprocess).  The all-zero answer is
- * deliberate and conservative: a header that guards an optimized path on, say,
- * __has_builtin(__builtin_foo) or __has_attribute(bar) then falls back to the
- * portable implementation, which is always safe.  Answering truthfully would
- * require a complete, always-in-sync inventory of the builtins/attributes mcc
- * fully honors; an incomplete "yes" is worse than a blanket "no" because it
- * steers headers onto a path mcc cannot actually support.  __has_attribute /
- * __has_builtin therefore report 0 by design, not by oversight.
- */
 static int pp_builtin_func(int v) {
 	const char *n;
 	if (v < TOK_IDENT)

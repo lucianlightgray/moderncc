@@ -54,6 +54,12 @@
 #endif
 #endif
 
+#if (defined(MCC_TARGET_I386) + defined(MCC_TARGET_X86_64) +   \
+	 defined(MCC_TARGET_ARM) + defined(MCC_TARGET_ARM64) +     \
+	 defined(MCC_TARGET_RISCV64)) != 1
+#error "exactly one MCC_TARGET_* backend CPU (I386/X86_64/ARM/ARM64/RISCV64) must be defined"
+#endif
+
 #if MCC_HOST_WIN32 == defined MCC_TARGET_PE && MCC_HOST_DARWIN == defined MCC_TARGET_MACHO
 #if defined __i386__ && defined MCC_TARGET_I386
 #define MCC_IS_NATIVE
@@ -981,7 +987,7 @@ struct MCCState {
 
 	Section *last_text_section;
 	int asmgoto_n;
-	struct asm_cfi_state asm_cfi;
+	struct asm_cfi_state asm_cfi_st;
 
 	unsigned long cg_func_sub_sp_offset;
 	int cg_func_ret_sub;

@@ -1145,15 +1145,6 @@ static int do_junit_summary(int argc, char **argv) {
 		}
 		js_attr(name, sizeof name, p, gt, "name=\"");
 		js_attr(st, sizeof st, p, gt, "status=\"");
-		/*
-		 * Counting `notrun` / <skipped> as a skip does NOT hide a fixture-setup
-		 * failure: verified against ctest --output-junit, a failed FIXTURES_SETUP
-		 * test is emitted as its own testcase with status="fail" AND a <failure>
-		 * child (so it lands in the failed bucket below); only its dependents
-		 * become status="notrun" with <skipped>. A `notrun` therefore always
-		 * means "a prerequisite that is itself separately reported failed or was
-		 * skipped", never a silently-dropped failure.
-		 */
 		skipped = (strstr(tagend, "<skipped") &&
 		           strstr(tagend, "<skipped") < extent) || !strcmp(st, "notrun");
 		failed = (strstr(tagend, "<failure") &&
