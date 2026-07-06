@@ -821,8 +821,6 @@ void bitfield_test(void) {
 	st2.f2++;
 	printf("%lld %lld %lld\n", st2.f1, st2.f2, st2.f3);
 
-#if 0
-	Disabled for now until further clarification re GCC compatibility
 	struct sbf3 {
 		int f1 : 7;
 		int f2 : 1;
@@ -831,8 +829,15 @@ void bitfield_test(void) {
 		int f5 : 1;
 		int f6 : 16;
 	} st3;
-	printf("sizeof(st3) = %d\n", sizeof(st3));
-#endif
+	printf("sizeof(st3) = %d\n", (int)sizeof(st3));
+
+	struct sbf7 {
+		char c;
+		unsigned long long x : 64;
+	} __attribute__((packed)) st7;
+	st7.c = 5;
+	st7.x = 0x1122334455667788ULL;
+	printf("sbf7 sz=%d x=%llx\n", (int)sizeof(st7), st7.x);
 
 	struct sbf4 {
 		int x : 31;

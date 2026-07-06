@@ -148,6 +148,18 @@ static const cli_case_t cli_cases[] = {
 	 "{MCC} -dumpversion | grep -cE '^[0-9]+\\.[0-9]+'",
 	 "1\n"},
 
+	{"inline_main_diag", "",
+	 "printf 'inline int main(void){return 0;}\\n' > {W}/im.c && "
+	 "{MCC} -B{B} -c {W}/im.c -o {W}/im.o 2>&1 | "
+	 "grep -c 'not allowed to be declared inline'",
+	 "1\n"},
+
+	{"static_in_inline_pedantic", "",
+	 "printf 'static void s(void){}\\ninline int f(void){s();return 0;}\\n"
+	 "int g(void){return f();}\\n' > {W}/si.c && "
+	 "{MCC} -B{B} -pedantic -c {W}/si.c -o {W}/si.o 2>&1 | grep -c 'internal linkage'",
+	 "1\n"},
+
 	{"print_search_dirs", "",
 	 "{MCC} -B{B} -print-search-dirs | grep -oE '^(install|include|libraries):'",
 	 "install:\ninclude:\nlibraries:\n"},

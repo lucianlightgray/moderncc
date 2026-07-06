@@ -3936,6 +3936,16 @@ redo:
 			case TOK_MODE_word:
 				ad->attr_mode = VT_INT + 1;
 				break;
+			case TOK_MODE_SF:
+				ad->attr_mode = VT_FLOAT + 1;
+				break;
+			case TOK_MODE_DF:
+				ad->attr_mode = VT_DOUBLE + 1;
+				break;
+			case TOK_MODE_TI:
+				mcc_error("__mode__(TI) requires 128-bit integers, "
+						  "which mcc does not support");
+				break;
 			default:
 				mcc_warning("__mode__(%s) not supported\n", get_tok_str(tok, NULL));
 				break;
@@ -4480,7 +4490,7 @@ do_decl:
 						} else if (bit_size == bsize && bt != VT_BOOL && !*mcc_state->pack_stack_ptr && !ad.a.packed && !ad1.a.packed) {
 							;
 						} else if (bit_size == 64) {
-							mcc_error("field width 64 not implemented");
+							;
 						} else {
 							type1.t = (type1.t & ~VT_STRUCT_MASK) | VT_BITFIELD | ((unsigned)bit_size << (VT_STRUCT_SHIFT + 6));
 						}
@@ -7373,6 +7383,16 @@ tok_next:
 		}
 
 		s->a.used = 1;
+
+		if (cur_func_inline_extern &&
+			(s->type.t & (VT_BTYPE | VT_STATIC | VT_INLINE)) == (VT_FUNC | VT_STATIC)) {
+			char pbuf[256];
+			snprintf(pbuf, sizeof pbuf,
+					 "'%s' has internal linkage but is referenced in an "
+					 "inline function with external linkage",
+					 get_tok_str(s->v, NULL));
+			mcc_pedantic(pbuf);
+		}
 
 		r = s->r;
 		if ((r & VT_VALMASK) < VT_CONST)
@@ -10357,6 +10377,9 @@ static int decl(int l) {
 					mcc_error("function definition declared with a typedef'd function type");
 				merge_funcattr(&type.ref->f, &ad.f);
 				type.t &= ~VT_EXTERN;
+				if ((type.t & VT_INLINE) && !mcc_state->freestanding &&
+					v >= TOK_IDENT && !strcmp(get_tok_str(v, NULL), "main"))
+					mcc_warning("'main' is not allowed to be declared inline");
 				sym = external_sym(v, &type, 0, &ad);
 
 				{

@@ -243,7 +243,7 @@ static const mcc_golden_t mcc_goldens[] = {
 	{"builtins_extra", "run", "exec/features_c99_c11/builtins_extra.c", "cp: 1 0 1\nce: 7 1\ntc: 1 0\nfa: 1\nur: 1 -1 0\n", "", "", ""},
 	{"gnu_cond_omitted", "run", "exec/expressions/gnu_cond_omitted.c", "5 1\n7 2\n5 1\n", "", "", ""},
 	{"enum_fixed_type", "run", "exec/types/enum_fixed_type.c", "1 8\n1 200 1099511627776\n", "", "", ""},
-	{"attr_mode", "run", "exec/types/attr_mode.c", "1 2 4 8\n1099511627776\n", "", "", ""},
+	{"attr_mode", "run", "exec/types/attr_mode.c", "1 2 4 8\n4 8\n1099511627776\n", "", "", ""},
 	{"realimag_scalar", "run", "exec/features_c99_c11/realimag_scalar.c", "3.5 0\n42 0\n", "", "", ""},
 	{"builtin_inf_nan", "run", "exec/types/builtin_inf_nan.c", "1 1 1\n", "", "", ""},
 	{"alias_single_tu", "run", "exec/features_c99_c11/alias_single_tu.c", "34 1\n", "", "", ""},
