@@ -997,12 +997,20 @@ LIBMCCAPI void mcc_delete(MCCState *s1) {
 LIBMCCAPI int mcc_set_output_type(MCCState *s, int output_type) {
 	if (output_type == MCC_OUTPUT_EXE) {
 		int pie = s->pie;
-		if (pie < 0)
+		if (pie < 0) {
 #ifdef CONFIG_MCC_PIE
 			pie = 1;
 #else
 			pie = 0;
 #endif
+			/* -static disables the *implicit* PIE default, matching gcc: a
+			   plain static link is a position-dependent EXEC, not a
+			   static-PIE (a DYN image that needs startup self-relocation mcc
+			   does not emit — it would segfault at entry). An explicit -pie
+			   still opts in. */
+			if (s->static_link)
+				pie = 0;
+		}
 		if (pie)
 			output_type |= MCC_OUTPUT_DYN;
 	}
