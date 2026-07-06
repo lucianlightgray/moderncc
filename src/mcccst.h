@@ -210,7 +210,9 @@ void      cst_hook_def(int tok_value, uint32_t off);
 void      cst_hook_use(int tok_value, uint32_t off);
 void      cst_hook_open(uint16_t kind);
 uint32_t  cst_mark(void);
+uint32_t  cst_leafcount(void);
 void      cst_hook_open_at(uint16_t kind, uint32_t first_leaf);
+void      cst_hook_wrap(uint16_t kind, uint32_t first_leaf, uint32_t last_leaf);
 void      cst_hook_close(void);
 void      cst_hook_leaf(uint16_t tok_kind, uint32_t byte_off, uint32_t len);
 

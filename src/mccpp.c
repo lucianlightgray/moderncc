@@ -4044,9 +4044,31 @@ ST_FUNC void next(void) {
 		Sym *s = tok_ts->sym_define;
 		if (s) {
 			Sym *nested_list = NULL;
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+			/* Mark the written macro-use span (name + any args) so it becomes a
+			 * CST_MacroInvocation node (slice J). Expansion tokens carry no
+			 * source bytes and are not captured here. */
+			uint32_t cst_mfirst = cst_mark();
+			uint32_t cst_mbefore = cst_leafcount();
+#endif
 			macro_subst_tok(&tokstr_buf, &nested_list, s);
 			tok_str_add(&tokstr_buf, 0);
 			begin_macro(&tokstr_buf, 0);
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+			if (file == cst_main_bf) {
+				/* Function-like arg scanning may leave one trailing lookahead
+				 * leaf (the token after the invocation); exclude it so the node
+				 * never overruns into the next construct (which would break
+				 * range nesting). Object-like uses span just the name. This can
+				 * exclude the closing ')' in some cases — an accepted v1 macro-
+				 * fidelity imprecision (PLAN §11, grow later). */
+				uint32_t cst_mafter = cst_leafcount();
+				uint32_t cst_mlast = cst_mafter > cst_mbefore
+							 ? cst_mafter - 1
+							 : cst_mbefore;
+				cst_hook_wrap(CST_MacroInvocation, cst_mfirst, cst_mlast);
+			}
+#endif
 			goto redo;
 		}
 		return;

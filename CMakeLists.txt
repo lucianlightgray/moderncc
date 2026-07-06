@@ -2910,6 +2910,15 @@ if(MCC_BUILD_TESTS)
             "-DIDIR=${_idir}"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/hashinv.cmake")
         set_tests_properties("cst/hashinv" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
+        # Macro fidelity (slice J): MacroInvocation nodes + round-trip.
+        add_test(NAME "cst/macro" COMMAND "${CMAKE_COMMAND}"
+            "-DMCC=${_mcc_exe}"
+            "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/macro/macros.c"
+            "-DOUT=${CMAKE_BINARY_DIR}/cst-macro.o"
+            "-DIDIR=${_idir}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/macro.cmake")
+        set_tests_properties("cst/macro" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
     add_executable(exec_runner tests/exec/runner.c)

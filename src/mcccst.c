@@ -903,6 +903,20 @@ void cst_hook_open_at(uint16_t kind, uint32_t first_leaf) {
     cst_spec_push(kind, first_leaf);
 }
 
+/* Number of source leaves captured so far. */
+uint32_t cst_leafcount(void) { return cst_lcount; }
+
+/* Record a node with an explicit half-open leaf range [first,last) — used for a
+ * macro invocation, whose written name/args span is known only after expansion
+ * (slice J, PLAN §4). Empty ranges are dropped by cst_nest_specs. */
+void cst_hook_wrap(uint16_t kind, uint32_t first_leaf, uint32_t last_leaf) {
+    if (!cst_current || last_leaf <= first_leaf)
+        return;
+    int32_t si = cst_spec_push(kind, first_leaf);
+    cst_sbuf[si].last_leaf = last_leaf;
+    cst_sstop--; /* not a stack bracket; its range is fully specified */
+}
+
 void cst_hook_close(void) {
     if (!cst_current || cst_sstop <= 1) /* never pop the TU root here */
         return;

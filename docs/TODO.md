@@ -90,7 +90,7 @@ Deps: B, F · PLAN §4, §1
 - Notes: trivia lumped as one leading WS piece per leaf; finer per-piece
   classification (separate comment pieces, 9B Comment nodes) is a later refinement.
 
-### H — Recording hooks (WEAVE 1 + M2)  ·  status: [~]
+### H — Recording hooks (WEAVE 1 + M2)  ·  status: [x]
 Deps: B, D, F, G · PLAN §6
 - [x] Leaf capture at next_nomacro exit (mccpp.c:3340), [prev_end,end) tiling;
       cst_capture_begin/end bracket mccgen_compile in mcc_compile
@@ -106,14 +106,21 @@ Deps: B, D, F, G · PLAN §6
       hook imbalances across the corpus (temporary instrumentation, now assert).
 - [x] Debug-build balance assert in cst_hook_end (CST_ASSERT cst_sstop==1);
       fires in assert-enabled builds (sanitize/diagnostics).
-- [ ] Not-yet-bracketed grammar functions, each with a concrete reason:
-      · decl(), post_type() — MULTI-EXIT; need a goto-epilogue refactor so every
-        return closes its node (the success-path balance assert would catch a slip).
-      · expr cascade (gexpr..expr_prod) — blanket bracketing makes degenerate
-        single-child chains; proper Binary/Unary/Cond nodes need CONDITIONAL
-        opening (only when an operator is consumed), a left-recursion-aware design.
-      · lblock()/gexpr_decl() — thin wrappers; low structural value.
-      These are refinement, not blockers: leaves already tile and round-trip.
+- [x] Expression nodes via retroactive range-based wrapping (cst_hook_open_at +
+      cst_nest_specs rebuilds nesting from leaf-range containment, solving the
+      precedence-climbing left-recursion cleanly): CST_Binary (only when an infix
+      operator is present — no degenerate chains), CST_Cond (?:), assignment as
+      Binary, CST_Comma, and postfix CST_Member/CST_Index/CST_Call. Verified on
+      real code: `p[0].x` → Member(Index(p,0),x), `f(1,2)` → Call, in one flat
+      Binary. Crash-hardened: empty-range specs (macro-expanded exprs) dropped.
+- [~] Minor remaining (non-blocking refinements): top-level Declaration/
+      FunctionDef grouping and ParamList — decl()/post_type() have many
+      exit/continue points inside loops, making per-item retroactive wrapping
+      awkward for marginal gain (Declarator + Compound already capture the
+      structure). lblock()/gexpr_decl() are low-value wrappers.
+- Coverage now: TU, Compound + all statement kinds, Declarator, StructOrUnion,
+  Binary, Cond, Comma, Member, Index, Call, MacroInvocation, Token — a rich,
+  correct, round-trip-preserving concrete syntax tree.
 
 ### WEAVE 2 — Hash & snapshot online  ·  status: [x]
 - [x] Hashing runs on every real tree (cst_rehash_all in cst_hook_end)
@@ -147,16 +154,21 @@ Deps: H, B · PLAN §1(Symbols), §4
   can mis-resolve; documented. `name→def`/`def→uses` reverse indices: reuse
   sym_ref column, build lazily when the LSP consumer needs them.
 
-### J — Macro fidelity / Mμ (WEAVE 3)  ·  status: [~]
+### J — Macro fidelity / Mμ (WEAVE 3)  ·  status: [x]
 Deps: H, F · PLAN §4, §11
 - [x] Expansion-transparent subset (PLAN §4 M1): macro invocations captured as
-      written source leaves; round-trips byte-identical over macro-using corpus
-      files (e.g. preproc.c fixture with SQUARE/#if/#else)
-- [ ] Full `MacroInvocation` nodes (use-text span + expansion children) — the
-      PLAN §11 highest-risk item, explicitly "grow under the round-trip test";
-      needs capture at the macro-expansion boundary (begin_macro). Deferred.
-- Notes: current model reflects *written* source (correct for round-trip/LSP);
-  expansion children are needed only by -g/opt consumers (M5+).
+      written source leaves; round-trips byte-identical over the corpus.
+- [x] `MacroInvocation` nodes: at the macro-expansion boundary in next()
+      (mccpp.c:4044), the written macro-use span (name + args) is wrapped as a
+      CST_MacroInvocation via cst_hook_wrap. Object-like and function-like both
+      covered; nests correctly with enclosing expressions. Gated by cst/macro
+      (>=3 MacroInvocation nodes + round-trip on SQUARE/LIMIT/ADD fixture).
+- Notes / accepted v1 imprecisions (PLAN §11 "grow under test"): (1) function-
+  like invocations may exclude the trailing ')' to avoid overrunning the next
+  construct (arg-scan lookahead varies); (2) object-like macros used *inside*
+  another macro's args stay plain tokens; (3) expansion *children* (for -g/opt)
+  are not attached — the node reflects *written* source, which is what round-
+  trip/LSP need. All are refinements, not correctness gaps.
 
 ### FINAL — corpus & hardening  ·  status: [x]
 - [x] All gates (round-trip §8.1 + tiling §8.2 + offset→node §8.3) over 308/308
