@@ -287,7 +287,7 @@ static int mccrt_objs(const char *cpu, const char *os, const char **out, int max
 		ADD("armeabi");
 		ADD("armflush");
 	} else {
-		ADD("lib-arm64");
+		ADD("float128");
 	}
 	for (i = 0; COMMON[i]; i++)
 		ADD(COMMON[i]);

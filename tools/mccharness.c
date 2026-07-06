@@ -2362,7 +2362,7 @@ static int suite_machocodegen(int argc, char **argv) {
 
 	{
 		const char *rx[] = {"atomic", "stdatomic", "va_list", "builtin", 0};
-		const char *ra[] = {"atomic", "stdatomic", "builtin", "lib-arm64", 0};
+		const char *ra[] = {"atomic", "stdatomic", "builtin", "float128", 0};
 		const char *const *rn = is_arm ? ra : rx;
 		int k;
 		for (k = 0; rn[k]; k++) {
