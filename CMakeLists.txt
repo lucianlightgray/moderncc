@@ -2901,6 +2901,15 @@ if(MCC_BUILD_TESTS)
             "-DIDIR=${_idir}"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/symref.cmake")
         set_tests_properties("cst/symref" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
+        # Structural-hash invariance on real trees (slice C/G, §8.4).
+        add_test(NAME "cst/hashinv" COMMAND "${CMAKE_COMMAND}"
+            "-DMCC=${_mcc_exe}"
+            "-DDIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/hashinv"
+            "-DOUT=${CMAKE_BINARY_DIR}/cst-hashinv.o"
+            "-DIDIR=${_idir}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/hashinv.cmake")
+        set_tests_properties("cst/hashinv" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
     add_executable(exec_runner tests/exec/runner.c)

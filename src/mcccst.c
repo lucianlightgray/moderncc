@@ -900,6 +900,43 @@ void cst_hook_close(void) {
     cst_sbuf[si].last_leaf = cst_lcount ? cst_lcount - 1 : 0;
 }
 
+/* Leading-trivia length of a leaf span: the run of whitespace and comments
+ * before the token (slice G). Excluded from the structural hash (PLAN §3) so
+ * whitespace/comment-only edits don't perturb H_s. */
+static uint32_t cst_leading_trivia(const uint8_t *src, uint32_t off, uint32_t len) {
+    uint32_t i = 0;
+    while (i < len) {
+        uint8_t c = src[off + i];
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' ||
+            c == '\v') {
+            i++;
+        } else if (c == '/' && i + 1 < len && src[off + i + 1] == '/') {
+            i += 2;
+            while (i < len && src[off + i] != '\n')
+                i++;
+        } else if (c == '/' && i + 1 < len && src[off + i + 1] == '*') {
+            i += 2;
+            while (i + 1 < len && !(src[off + i] == '*' && src[off + i + 1] == '/'))
+                i++;
+            if (i + 1 < len)
+                i += 2;
+        } else {
+            break;
+        }
+    }
+    return i;
+}
+
+static void cst_emit_leaf(uint32_t i) {
+    uint32_t off = cst_lbuf[i].off, len = cst_lbuf[i].len;
+    uint32_t tr = cst_leading_trivia(cst_current->src, off, len);
+    CstTrivia tv;
+    tv.kind = CST_TRIV_WS;
+    tv.offset = 0;
+    tv.length = tr;
+    cst_leaf(cst_current, cst_lbuf[i].kind, off, len, tr ? &tv : NULL, tr ? 1 : 0);
+}
+
 /* Materialize spec `si` into the live SoA arena, interleaving its own leaves
  * with descendant specs in source order. Returns the created node id. */
 static CstLocal cst_materialize(int32_t si) {
@@ -910,16 +947,14 @@ static CstLocal cst_materialize(int32_t si) {
     while (cj >= 0) {
         uint32_t cfirst = cst_sbuf[cj].first_leaf;
         for (; i < cfirst && i < s->last_leaf; i++)
-            cst_leaf(cst_current, cst_lbuf[i].kind, cst_lbuf[i].off,
-                     cst_lbuf[i].len, NULL, 0);
+            cst_emit_leaf(i);
         cst_materialize(cj);
         if (cst_sbuf[cj].last_leaf > i)
             i = cst_sbuf[cj].last_leaf;
         cj = cst_sbuf[cj].sib;
     }
     for (; i < s->last_leaf; i++)
-        cst_leaf(cst_current, cst_lbuf[i].kind, cst_lbuf[i].off,
-                 cst_lbuf[i].len, NULL, 0);
+        cst_emit_leaf(i);
     cst_node_close(cst_current, node);
     return node;
 }

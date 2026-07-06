@@ -78,15 +78,17 @@ Deps: — · PLAN §5
 - Notes: cursor advances by discarded-window length at each refill; captured as
   absolute values at token start/end so it survives mid-token refills.
 
-### G — Owned source & trivia (compiler)  ·  status: [~]
+### G — Owned source & trivia (compiler)  ·  status: [x]
 Deps: B, F · PLAN §4, §1
 - [x] Per-file byte copy into arena (cst_slurp of the main file) = LSP doc model
-- [ ] Trivia as `(kind, rel-span)[]` on leaves, excluded from H_s
-      (v1: leaves own leading trivia in-span, tok_rel=0; classification TODO — M3)
-- [ ] Per-file subtree ownership for include stitching (M1 = main file only)
-- [x] Round-trip proves owned buffer + spans correct over corpus
-- Notes: trivia currently folded into leaf spans (round-trip-correct); structured
-  trivia pieces + hashing refinement deferred to M3 (slice C on real trees).
+- [x] Trivia classified on real leaves (cst_leading_trivia: whitespace + line/
+      block comments) → tok_rel set → excluded from H_s. Verified: whitespace/
+      comment-only edits leave H_s unchanged, token edits change it (cst/hashinv)
+- [x] Round-trip proves owned buffer + spans correct over corpus (309/0)
+- [ ] Per-file subtree ownership for include stitching (main file only; multi-
+      file include stitching is an LSP-era refinement, PLAN §1 Includes)
+- Notes: trivia lumped as one leading WS piece per leaf; finer per-piece
+  classification (separate comment pieces, 9B Comment nodes) is a later refinement.
 
 ### H — Recording hooks (WEAVE 1 + M2)  ·  status: [~]
 Deps: B, D, F, G · PLAN §6

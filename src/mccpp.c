@@ -2854,6 +2854,11 @@ ST_FUNC CstArena *cst_capture_end(void) {
 			rc == 0 ? "round-trip OK" : "MISMATCH", slen, nn, nrefs,
 			rc == 0 ? "" : ": ", rc == 0 ? "" : msg);
 	}
+	if (a && getenv("MCC_CST_HASHDUMP")) {
+		CstHash h = cst_struct_hash(a, cst_root(a));
+		fprintf(stderr, "CST roothash: %016llx%016llx\n",
+			(unsigned long long)h.hi, (unsigned long long)h.lo);
+	}
 	if (a && getenv("MCC_CST_SYMDUMP")) {
 		uint32_t slen, n, nn = cst_node_count(a);
 		const uint8_t *src = cst_source(a, &slen);
