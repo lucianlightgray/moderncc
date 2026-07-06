@@ -519,6 +519,11 @@ typedef struct InlineFunc {
 	char filename[1];
 } InlineFunc;
 
+typedef struct AliasFixup {
+	int alias_v;
+	int target_v;
+} AliasFixup;
+
 typedef struct CachedInclude {
 	int ifndef_macro;
 	int once;
@@ -817,6 +822,8 @@ struct MCCState {
 
 	struct InlineFunc **inline_fns;
 	int nb_inline_fns;
+	struct AliasFixup **alias_fixups;
+	int nb_alias_fixups;
 
 	Section **sections;
 	int nb_sections;

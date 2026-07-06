@@ -160,6 +160,10 @@ static const cli_case_t cli_cases[] = {
 	 "{MCC} -B{B} -pedantic -c {W}/si.c -o {W}/si.o 2>&1 | grep -c 'internal linkage'",
 	 "1\n"},
 
+	{"forward_alias", "",
+	 "{MCC} -B{B} -run {D}/fwdalias.c",
+	 "back\nfwd\n"},
+
 	{"const_modify_is_error", "",
 	 "printf 'int main(void){const int x=3; x=4; return x;}\\n' > {W}/cm.c && "
 	 "{MCC} -B{B} -c {W}/cm.c -o {W}/cm.o 2>&1 | grep -c 'error: assignment of read-only'",

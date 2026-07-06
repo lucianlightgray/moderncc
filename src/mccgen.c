@@ -211,6 +211,7 @@ static void vpush64(int ty, unsigned long long v);
 static void vpush(CType *type);
 static int gvtst(int inv, int t);
 static void gen_inline_functions(MCCState *s);
+static void resolve_alias_fixups(MCCState *s);
 static void free_inline_functions(MCCState *s);
 static void finalize_tentative_arrays(void);
 static void skip_or_save_block(TokenString **str);
@@ -579,6 +580,7 @@ ST_FUNC int mccgen_compile(MCCState *s1) {
 	decl(VT_CONST);
 	finalize_tentative_arrays();
 	gen_inline_functions(s1);
+	resolve_alias_fixups(s1);
 	if (mcc_state->warn_unused_function & WARN_ON) {
 		Sym *fs;
 		for (fs = global_stack; fs; fs = fs->prev) {
@@ -5853,6 +5855,7 @@ static void parse_builtin_params(int nc, const char *args) {
 
 static void parse_atomic(int atok) {
 	int size, align, arg, t, save = 0, use_generic = 0;
+	int is_add_sub = atok == TOK___atomic_fetch_add || atok == TOK___atomic_fetch_sub || atok == TOK___atomic_add_fetch || atok == TOK___atomic_sub_fetch;
 	CType *atom, *atom_ptr, ct = {0};
 	SValue store;
 	char buf[40];
@@ -5892,8 +5895,16 @@ static void parse_atomic(int atok) {
 			size = type_size(atom, &align);
 			if (atok <= TOK___atomic_compare_exchange && (size > 8 || ((atom->t & VT_BTYPE) == VT_STRUCT && (atok == TOK___atomic_load || atok == TOK___atomic_exchange))))
 				use_generic = 1;
-			else if (size > 8 || (size & (size - 1)) || (atok > TOK___atomic_compare_exchange && (0 == btype_size(atom->t & VT_BTYPE) || (atom->t & VT_BTYPE) == VT_PTR)))
+			else if (size > 8 || (size & (size - 1)))
 				expect("integral or integer-sized pointer target type");
+			else if (atok > TOK___atomic_compare_exchange) {
+				int abt = atom->t & VT_BTYPE;
+				if (abt == VT_PTR) {
+					if (!is_add_sub || !(atom->t & VT_ATOMIC_BIT))
+						expect("integral or integer-sized pointer target type");
+				} else if (0 == btype_size(abt))
+					expect("integral or integer-sized pointer target type");
+			}
 			break;
 
 		case 'p':
@@ -5907,7 +5918,12 @@ static void parse_atomic(int atok) {
 			gen_assign_cast(atom_ptr);
 			break;
 		case 'v':
-			gen_assign_cast(atom);
+			if (is_add_sub && (atom->t & VT_BTYPE) == VT_PTR) {
+				int al;
+				vpush_type_size(pointed_type(atom), &al);
+				gen_op('*');
+			} else
+				gen_assign_cast(atom);
 			break;
 		case 'l':
 			if (use_generic)
@@ -10173,6 +10189,19 @@ static void gen_inline_functions(MCCState *s) {
 	mcc_close();
 }
 
+static void resolve_alias_fixups(MCCState *s) {
+	for (int i = 0; i < s->nb_alias_fixups; i++) {
+		AliasFixup *af = s->alias_fixups[i];
+		ElfSym *esym = elfsym(sym_find(af->target_v));
+		if (!esym || esym->st_shndx == SHN_UNDEF)
+			mcc_error("undefined alias target '%s'",
+					  get_tok_str(af->target_v, NULL));
+		put_extern_sym2(sym_find(af->alias_v), esym->st_shndx,
+						esym->st_value, esym->st_size, 1);
+	}
+	dynarray_reset(&s->alias_fixups, &s->nb_alias_fixups);
+}
+
 static void free_inline_functions(MCCState *s) {
 	for (int i = 0; i < s->nb_inline_fns; ++i) {
 		struct InlineFunc *fn = s->inline_fns[i];
@@ -10545,10 +10574,16 @@ static int decl(int l) {
 
 					if (ad.alias_target && l == VT_CONST) {
 						esym = elfsym(sym_find(ad.alias_target));
-						if (!esym)
-							mcc_error("unsupported forward __alias__ attribute");
-						put_extern_sym2(sym_find(v), esym->st_shndx,
-										esym->st_value, esym->st_size, 1);
+						if (esym && esym->st_shndx != SHN_UNDEF) {
+							put_extern_sym2(sym_find(v), esym->st_shndx,
+											esym->st_value, esym->st_size, 1);
+						} else {
+							AliasFixup *af = mcc_malloc(sizeof *af);
+							af->alias_v = v;
+							af->target_v = ad.alias_target;
+							dynarray_add(&mcc_state->alias_fixups,
+										 &mcc_state->nb_alias_fixups, af);
+						}
 					}
 				}
 				if (tok != ',') {
