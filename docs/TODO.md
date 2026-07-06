@@ -49,7 +49,10 @@ by the `cst/*` ctest suite. Driving the [docs/CST.md](CST.md) decision plan:
     `PPConditional`, leaf.h → 1 (its guard), all `render_identity` round-trip
     exactly (`cst/incstore`, `cst/increment`).
 - [x] **D1d — `Comment` promotion** (line/inline/block), `H_t`-only so §8.4 holds.
-- [ ] **FINAL** — re-run every gate over the corpus; re-confirm §0.1/§0.2.
+- [x] **FINAL** — every `cst/*` gate green over the corpus; §0.1/§0.2 re-confirmed:
+  CST-on ctest **830/830**, CST-off **811/811**, object output **byte-identical**
+  CST-on vs CST-off across the sampled corpus, and the CST-off build compiles the
+  now-empty `mcccst.c` (zero-cost-off). docs/CST.md D1–D5 plan complete.
 
 ---
 
