@@ -1000,12 +1000,26 @@ static void cst_nest_specs(void) {
     uint32_t top = 0;
     for (k = 0; k < n; k++) {
         int32_t si = (int32_t)order[k];
+        int overlap = 0;
         while (top > 0) {
             int32_t tp = stk[top - 1];
             if (cst_sbuf[tp].first_leaf <= cst_sbuf[si].first_leaf &&
                 cst_sbuf[si].last_leaf <= cst_sbuf[tp].last_leaf)
                 break;
+            /* tp does not contain si. If tp still extends past si's start, si
+             * is neither disjoint-after tp nor nested in it — a *partial*
+             * overlap, which the disjoint-or-nested invariant forbids. This
+             * arises when an independently-recorded span (e.g. a parser
+             * Declaration whose start mark is stale across an #include) straddles
+             * a PP-boundary node. Drop si rather than let cst_materialize tile a
+             * leaf under two siblings (which would break round-trip §8.1). */
+            if (cst_sbuf[tp].last_leaf > cst_sbuf[si].first_leaf)
+                overlap = 1;
             top--;
+        }
+        if (overlap) {
+            cst_sbuf[si].parent = -1; /* not linked → never materialized */
+            continue;
         }
         int32_t parent = top > 0 ? stk[top - 1] : -1;
         cst_sbuf[si].parent = parent;

@@ -2935,6 +2935,8 @@ if(MCC_BUILD_TESTS)
         cst_kinds_test(expr "expr.c" "Unary;Cast;Paren;Primary")
         # (dump abbreviations: Declaration->Decl, FunctionDef->Func, Initializer->Init)
         cst_kinds_test(decl "decl.c" "Decl;Func;ParamList;Enum;TypeName;Init;Label")
+        # (dump abbreviations: IncludeDirective->Include, PPConditional->PPCond)
+        cst_kinds_test(pp "pp.c" "Include;PPDirective;PPCond")
     endif()
 
     add_executable(exec_runner tests/exec/runner.c)

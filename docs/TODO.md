@@ -22,12 +22,18 @@ by the `cst/*` ctest suite. Driving the [docs/CST.md](CST.md) decision plan:
   `(e)` → `Paren`, atoms → `Primary`. Gated `cst/kinds-expr`.
 - [x] **D1b — Declaration structure via D2 range-wrap** (`Declaration`,
   `FunctionDef`, `ParamList`, `Enum`, `TypeName`, `Initializer`, `Label`).
-- [ ] **D1c — PP-concrete** (`IncludeDirective`, `PPDirective`, `PPConditional`),
+- [x] **D1c — PP-concrete** (`IncludeDirective`, `PPDirective`, `PPConditional`),
   full-concrete: capture *all* `#if`/`#else` branches as concrete nodes. Prereq
   for D3.
 - [ ] **D3+D5 — `SourceFile` template + renderer.** Content-addressed pure-`H_s`
   hash-consing, per-instance binding, `render(template, binding)` fold with
   threaded PP environment. Headline gate: recursive re-include branch selection.
+  - [ ] **DEBUG-build hash-collision tripwire.** In a debug build, after hashing
+    a string (leaf/subtree) and using that hash as a content-addressed key,
+    sanity-check that the bytes behind an *existing* entry with the same hash are
+    byte-identical to the string just hashed. On mismatch, `abort()` with a fatal
+    error stating the hash algorithm has produced a collision and the formula
+    (`cst_hash_*`) must be fixed — never silently dedup two different strings.
 - [ ] **D1d — `Comment` promotion** (line/inline/block), `H_t`-only so §8.4 holds.
 - [ ] **FINAL** — re-run every gate over the corpus; re-confirm §0.1/§0.2.
 

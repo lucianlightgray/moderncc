@@ -1977,17 +1977,56 @@ ST_FUNC void mccpp_putfile(const char *filename) {
 	mcc_debug_newfile(mcc_state);
 }
 
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+static BufferedFile *cst_main_bf; /* fwd (defined with the leaf-capture state) */
+
+/* D1c: map a directive keyword to its concrete-PP CST node kind. The directive
+ * line never reaches the post-expansion parser, so it is captured at the PP
+ * boundary here (the same way slice J wrapped MacroInvocation). Only directives
+ * in the main captured file get nodes — a directive inside an included header
+ * (file != cst_main_bf) captures no main-file leaves and must not wrap. */
+static uint16_t cst_pp_dir_kind(int t) {
+	switch (t) {
+	case TOK_INCLUDE:
+	case TOK_INCLUDE_NEXT:
+		return CST_IncludeDirective;
+	case TOK_IF:
+	case TOK_IFDEF:
+	case TOK_IFNDEF:
+	case TOK_ELSE:
+	case TOK_ELIF:
+	case TOK_ENDIF:
+		return CST_PPConditional;
+	case TOK_LINEFEED:
+		return 0; /* a bare '#' line — no node */
+	default:
+		return CST_PPDirective; /* define/undef/line/error/warning/pragma/... */
+	}
+}
+#endif
+
 ST_FUNC void preprocess(int is_bof) {
 	MCCState *s1 = mcc_state;
 	int c, n, saved_parse_flags;
 	char buf[1024], *q;
 	Sym *s;
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+	uint32_t cst_pp_first = 0;
+	uint16_t cst_pp_kind = 0;
+#endif
 
 	saved_parse_flags = parse_flags;
 	parse_flags = PARSE_FLAG_PREPROCESS | PARSE_FLAG_TOK_NUM | PARSE_FLAG_TOK_STR | PARSE_FLAG_LINEFEED | (parse_flags & PARSE_FLAG_ASM_FILE);
 
 	next_nomacro();
 redo:
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+	/* The directive keyword ('#if', '#include', …) has just been captured as a
+	 * leaf; bracket this line from it (D1c). Re-taken at each `goto redo` so a
+	 * #else/#endif reached after an inactive-branch skip gets its own node. */
+	cst_pp_first = cst_leafcount() ? cst_leafcount() - 1 : 0;
+	cst_pp_kind = (file == cst_main_bf) ? cst_pp_dir_kind(tok) : 0;
+#endif
 	switch (tok) {
 	case TOK_DEFINE:
 		pp_debug_tok = tok;
@@ -2066,6 +2105,13 @@ redo:
 			file->ifndef_macro = 0;
 	test_skip:
 		if (!(c & 1)) {
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+			/* Wrap this #if/#elif/#else line before skipping the inactive
+			 * branch (whose bytes become their own leaves); the next directive
+			 * is wrapped when its own `goto redo` re-enters. */
+			if (cst_pp_kind && cst_leafcount() > cst_pp_first)
+				cst_hook_wrap(cst_pp_kind, cst_pp_first, cst_leafcount());
+#endif
 			skip_to_eol(1);
 			preprocess_skip();
 			is_bof = 0;
@@ -2171,6 +2217,11 @@ redo:
 	}
 	skip_to_eol(1);
 the_end:
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+	/* One concrete node per directive line, spanning its captured leaves (D1c). */
+	if (cst_pp_kind && cst_leafcount() > cst_pp_first)
+		cst_hook_wrap(cst_pp_kind, cst_pp_first, cst_leafcount());
+#endif
 	parse_flags = saved_parse_flags;
 }
 
@@ -2830,7 +2881,8 @@ static void parse_number(const char *p) {
  * into the CST as leaves whose spans [prev_end, buf_ptr) tile every byte, so the
  * tree round-trips to byte-identical source (PLAN §8.1). Included files and
  * macro-injected tokens carry no written bytes here and are handled later. */
-static BufferedFile *cst_main_bf;
+/* cst_main_bf is forward-declared above (near preprocess) so the D1c directive
+ * hooks can gate on the main file; this is its defining tentative declaration. */
 static unsigned long cst_prev_end;
 
 ST_FUNC void cst_capture_begin(const char *filename) {
