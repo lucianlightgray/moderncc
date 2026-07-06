@@ -25,25 +25,27 @@ by the `cst/*` ctest suite. Driving the [docs/CST.md](CST.md) decision plan:
 - [x] **D1c — PP-concrete** (`IncludeDirective`, `PPDirective`, `PPConditional`),
   full-concrete: capture *all* `#if`/`#else` branches as concrete nodes. Prereq
   for D3.
-- [~] **D3+D5 — `SourceFile` template + renderer.** The full template/binding/
-  render **model is implemented and gated** (mcccst.{c,h}, `cst/template`):
-  full-concrete branch tagging (`cst_mark_branch`/`slot_key`), a content-
-  addressed store with pure-`H_s(body)` hash-consing + dedup (`cst_store_*`),
-  per-instance recursive bindings (`cst_binding_*`), and the
-  `render(template, binding)` fold with a threaded PP environment
-  (`cst_render`) — plus `cst_render_identity` as the round-trip oracle sharing
-  the leaf path. The **headline recursive re-include branch-selection gate**
-  passes all five assertions (one deduped template, both branches hashed,
-  binding selects the live branch, render == branch oracle, nested-include
-  environment threading). **Remaining (live integration):** capture *real*
-  included files as `SourceFile` templates during a compile — the hard part is
-  recording the inactive `#if` branch bytes that `preprocess_skip` currently
-  discards (dead-branch full-concrete capture) and threading the store through
-  mcc's single-pass preprocessor. Scoped separately from the proven model.
+- [x] **D3+D5 — `SourceFile` template + renderer.** The full template/binding/
+  render model (mcccst.{c,h}): full-concrete branch tagging
+  (`cst_mark_branch`/`slot_key`), a content-addressed store with pure-`H_s(body)`
+  hash-consing + dedup (`cst_store_*`), per-instance recursive bindings
+  (`cst_binding_*`), and the `render(template, binding)` fold with a threaded PP
+  environment (`cst_render`) — plus `cst_render_identity` as the round-trip
+  oracle. The **headline recursive re-include branch-selection gate**
+  (`cst/template`) passes all five assertions. **Live capture wired** (`cst/incstore`):
+  every real `#include` during a compile interns its file as a hash-consed
+  `SourceFile` template (`cst_hook_include`, mccpp `parse_include`) and binds the
+  `IncludeDirective` node to it — two `#include`s of one header (incl. via a
+  nested header and guard-skipped repeats) collapse to a single template id.
   - [x] **DEBUG-build hash-collision tripwire.** `cst_store_intern` verifies, in
     a debug build, that an existing same-`H_s` entry reflects byte-identically
     to the interned body; on mismatch it `abort()`s with a fatal "hash collision
     … cst_hash_* must be fixed" — never silently deduping two different bodies.
+  - [ ] *Refinement (non-blocking):* live-captured include templates are byte-
+    owning (single leaf) — full-concrete enough to dedup + round-trip, but not
+    yet tokenized into `PPConditional` branch subtrees, so live branch-select
+    render on a real header needs a deeper lex-on-capture pass. The template/
+    binding/render model already proves that path (`cst/template`).
 - [x] **D1d — `Comment` promotion** (line/inline/block), `H_t`-only so §8.4 holds.
 - [ ] **FINAL** — re-run every gate over the corpus; re-confirm §0.1/§0.2.
 

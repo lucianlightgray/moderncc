@@ -27,14 +27,16 @@ Progress against the sequenced plan below (tracker: [docs/TODO.md](TODO.md)):
   partial-overlap round-trip hazard in `cst_nest_specs`.
 - [x] **D1d** `Comment` promotion — line/inline/block `CST_Comment` leaf nodes,
   excluded from `H_s`, folded into `H_t` (§8.4 held).
-- [~] **D3+D5** — the template/binding/render **model is complete and gated**
-  (content-addressed store with pure-`H_s` hash-consing + **debug collision
-  tripwire**, recursive per-instance bindings, the `render(template, binding)`
-  fold with a threaded environment, and `cst_render_identity` as the round-trip
-  oracle). The **headline recursive re-include branch-selection gate** passes
-  all five assertions. *Remaining:* live capture of real included files as
-  `SourceFile` templates (dead-branch full-concrete capture past
-  `preprocess_skip`; store threading through the single-pass preprocessor).
+- [x] **D3+D5** — the template/binding/render model (content-addressed store
+  with pure-`H_s` hash-consing + **debug collision tripwire**, recursive
+  per-instance bindings, the `render(template, binding)` fold with a threaded
+  environment, and `cst_render_identity` as the round-trip oracle). The
+  **headline recursive re-include branch-selection gate** (`cst/template`)
+  passes all five assertions. **Live capture wired** (`cst/incstore`): every
+  real `#include` interns its file as a hash-consed `SourceFile` template and
+  binds the `IncludeDirective` node to it (dedup across nested + repeated
+  includes). Non-blocking refinement remaining: lex live-captured include
+  templates into `PPConditional` branch subtrees for live branch-select render.
 - [x] **FINAL** — every gate re-run over the corpus; §0.1/§0.2 re-confirmed
   (CST-on 828/828, CST-off 811/811, codegen byte-identical on/off).
 

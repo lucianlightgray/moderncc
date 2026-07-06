@@ -1096,6 +1096,46 @@ static int cst_slurp(CstArena *a, const char *filename) {
     return 0;
 }
 
+/* D3 live capture: a content-addressed store of the real included files seen
+ * during this capture, plus the template id bound to each main-file
+ * IncludeDirective (in source order), applied in cst_hook_end. */
+static CstStore *cst_session_store;
+static uint32_t *cst_inc_tmpl; /* template id per main-file include, in order */
+static uint32_t cst_inc_count, cst_inc_cap;
+
+CstStore *cst_hook_store(void) { return cst_session_store; }
+
+void cst_hook_include(const char *path, int from_main_file) {
+    if (!cst_current)
+        return;
+    if (!cst_session_store)
+        cst_session_store = cst_store_new();
+    /* Build a full-file SourceFile template (byte-owning; a single leaf tiles
+     * the whole file, so all #if/#else branch bytes are present and the file
+     * round-trips) and hash-cons it: two #includes of the same header — any
+     * context — collapse to one physical template keyed by pure H_s. */
+    CstArena *t = cst_arena_new(0);
+    if (cst_slurp(t, path) != 0) {
+        cst_arena_free(t);
+        return;
+    }
+    uint32_t len = 0;
+    cst_source(t, &len);
+    cst_node_open(t, CST_TranslationUnit);
+    cst_leaf(t, 0, 0, len, NULL, 0);
+    cst_node_close(t, cst_root(t));
+    cst_rehash_all(t);
+    uint32_t id = cst_store_intern(cst_session_store, t); /* dedup; may free t */
+    if (from_main_file) {
+        if (cst_inc_count >= cst_inc_cap) {
+            cst_inc_cap = cst_inc_cap ? cst_inc_cap * 2 : 16;
+            cst_inc_tmpl = cst_xrealloc(cst_inc_tmpl,
+                                        cst_inc_cap * sizeof *cst_inc_tmpl);
+        }
+        cst_inc_tmpl[cst_inc_count++] = id;
+    }
+}
+
 static int32_t cst_spec_push(uint16_t kind, uint32_t first_leaf) {
     if (cst_scount >= cst_scap) {
         cst_scap = cst_scap ? cst_scap * 2 : 256;
@@ -1123,6 +1163,11 @@ void cst_hook_begin(const char *filename) {
     cst_slurp(cst_current, filename);
     cst_lcount = cst_scount = cst_sstop = 0;
     cst_uses_count = 0;
+    if (cst_session_store) {
+        cst_store_free(cst_session_store);
+        cst_session_store = NULL;
+    }
+    cst_inc_count = 0;
     for (uint32_t i = 0; i < cst_defoff_cap; i++)
         cst_defoff[i] = CST_OFF_NONE;
     cst_spec_push(CST_TranslationUnit, 0); /* root */
@@ -1381,6 +1426,13 @@ CstArena *cst_hook_end(void) {
             if (un != CST_NONE && dn != CST_NONE && un != dn)
                 cst_set_sym_ref(a, un, cst_id(a->file_id, dn));
         }
+        /* D3 live capture: bind each main-file IncludeDirective node to the
+         * SourceFile template interned for it (source order — nodes are
+         * materialized depth-first, i.e. in written order). */
+        uint32_t ki = 0, nn;
+        for (nn = 0; nn < a->count && ki < cst_inc_count; nn++)
+            if (a->kind[nn] == CST_IncludeDirective)
+                cst_set_include_target(a, nn, cst_inc_tmpl[ki++]);
     }
     cst_current = NULL;
     return a;

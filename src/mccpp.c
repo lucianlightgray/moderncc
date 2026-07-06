@@ -1392,6 +1392,10 @@ ST_FUNC void skip_to_eol(int warn) {
 static CachedInclude *
 search_cached_include(MCCState *s1, const char *filename, int add);
 
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+static BufferedFile *cst_main_bf; /* fwd (defined with the leaf-capture state) */
+#endif
+
 static int parse_include(MCCState *s1, int do_next, int test) {
 	int c, i;
 	char name[1024], buf[1024], *p;
@@ -1492,6 +1496,13 @@ static int parse_include(MCCState *s1, int do_next, int test) {
 			if ((s1->verbose | 1) == 3)
 				printf("=> %*s%s\n",
 					   (int)(s1->include_stack_ptr - s1->include_stack), "", buf);
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+			/* Guard-skipped (already-included) header: still bind this written
+			 * IncludeDirective to the file's SourceFile template (hash-consed),
+			 * even though the file is not re-opened this time. */
+			if (!test)
+				cst_hook_include(buf, file == cst_main_bf);
+#endif
 			return 1;
 		}
 		if (mcc_open(s1, buf) >= 0)
@@ -1520,6 +1531,12 @@ static int parse_include(MCCState *s1, int do_next, int test) {
 							 mcc_strdup(buf));
 		}
 		mcc_debug_bincl(s1);
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+		/* D3 live capture: intern the just-opened real file as a hash-consed
+		 * SourceFile template; bind it to its IncludeDirective node when the
+		 * include was written in the main captured file. */
+		cst_hook_include(buf, file->prev == cst_main_bf);
+#endif
 	}
 	return 1;
 }
@@ -1978,8 +1995,6 @@ ST_FUNC void mccpp_putfile(const char *filename) {
 }
 
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
-static BufferedFile *cst_main_bf; /* fwd (defined with the leaf-capture state) */
-
 /* D1c: map a directive keyword to its concrete-PP CST node kind. The directive
  * line never reaches the post-expansion parser, so it is captured at the PP
  * boundary here (the same way slice J wrapped MacroInvocation). Only directives
@@ -2980,6 +2995,19 @@ ST_FUNC CstArena *cst_capture_end(void) {
 			}
 		}
 		fprintf(stderr, "CST snapshot: %s\n", ok ? "reload OK" : "reload FAIL");
+	}
+	if (a && getenv("MCC_CST_STORE")) {
+		/* D3 live capture: the content-addressed SourceFile store + the
+		 * template each main-file IncludeDirective was bound to. Two #includes
+		 * of the same header share one template id (hash-consed by H_s). */
+		CstStore *st = cst_hook_store();
+		uint32_t nn = cst_node_count(a), n;
+		fprintf(stderr, "CST store: %u templates\n",
+			st ? cst_store_count(st) : 0);
+		for (n = 0; n < nn; n++)
+			if (cst_kind(a, n) == CST_IncludeDirective)
+				fprintf(stderr, "  include node %u -> template %u\n", n,
+					cst_include_target(a, n));
 	}
 	if (a)
 		cst_arena_free(a);

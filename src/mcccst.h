@@ -270,6 +270,12 @@ uint32_t  cst_leafcount(void);
 void      cst_hook_open_at(uint16_t kind, uint32_t first_leaf);
 void      cst_hook_wrap(uint16_t kind, uint32_t first_leaf, uint32_t last_leaf);
 void      cst_hook_close(void);
+/* D3 live capture: intern a real included file as a hash-consed SourceFile
+ * template in the current capture's session store (dedup by pure H_s). When
+ * from_main_file, the template is bound to the next main-file IncludeDirective
+ * node (in source order) at cst_hook_end. */
+void      cst_hook_include(const char *path, int from_main_file);
+CstStore *cst_hook_store(void); /* the session store, valid until cst_hook_end */
 void      cst_hook_leaf(uint16_t tok_kind, uint32_t byte_off, uint32_t len);
 
 #define CST_OPEN(k)          cst_hook_open((uint16_t)(k))
