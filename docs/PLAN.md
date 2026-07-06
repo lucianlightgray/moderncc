@@ -204,14 +204,16 @@ mirroring the 4B/4A (rolling/Merkle) split:
 
 ## 5. Byte-offset facility (prerequisite)
 
-`BufferedFile` tracks `line_num` only. Add a monotonic **byte cursor** updated
-alongside `line_num` in the lexer's advance path (`mccpp.c` `handle_eob`/inbuf
-and the newline bumps around `mccpp.c:800–1000`). **Decision: a monotonic
-counter (one increment per consumed byte), not `buf_ptr - buffer` arithmetic** —
-the counter stays correct across `handle_eob` chunk refills and macro pushback,
-where the pointer-difference form silently drifts; the per-byte increment cost is
-negligible. Exposed only when the CST define is on (zero-cost otherwise). This
-gives every recorded leaf an exact `(file, byte-offset, length)`.
+`BufferedFile` tracks `line_num` only. Add a **byte cursor** to the lexer's
+advance path (`mccpp.c` `handle_eob`/inbuf, around `mccpp.c:800–1000`).
+**Decision (as shipped): a per-file base offset `cst_base`, maintained in
+`handle_eob`, combined with buffer-pointer arithmetic — `abs_off(p) == cst_base +
+(p - buffer)`** (`src/mcc.h:465`). `cst_base` advances by the discarded-window
+length at each chunk refill, so the absolute offset stays correct across
+`handle_eob` refills and macro pushback (a bare `buf_ptr - buffer` without the
+base would drift); offsets are captured as absolute values at token start/end so
+they survive mid-token refills. Exposed only when the CST define is on (zero-cost
+otherwise). This gives every recorded leaf an exact `(file, byte-offset, length)`.
 
 ---
 
@@ -239,12 +241,13 @@ directly rather than only via the span-coverage test (§8.2).
 
 ## 7. CMake gating
 
-Add a config node next to the diagnostics ones (`CMakeLists.txt:1087` pattern):
+The config node, as shipped (`CMakeLists.txt:1087`) — default **ON**, so the CST
+subsystem builds by default; codegen stays byte-identical CST-on vs CST-off,
+guarded by the §8.5 identity gate:
 
 ```cmake
-mcc_config_node(MCC_CST TYPE BOOL DEFAULT OFF GROUP "Experimental"
-    HELP "Build the CST database subsystem (side-recorded concrete syntax tree; \
-LSP/-g/opt substrate). Off by default; codegen is byte-identical either way.")
+mcc_config_node(MCC_CST TYPE BOOL DEFAULT ON GROUP "Advanced" ADVANCED
+    HELP "Build the concrete syntax tree subsystem")
 ```
 
 - When `ON`: `target_compile_definitions(... PRIVATE CONFIG_MCC_CST=1)` and add

@@ -134,6 +134,7 @@ host-dynamic (macOS Homebrew gcc). Hidden bases are prefixed `_`
 | `cross` | Debug | `MCC_ENABLE_CROSS=ON` |
 | `matrix` | Debug | `MCC_TOOLCHAIN_PROFILE=gcc;clang` × `MCC_TARGETS=native;cross` |
 | `local-ci` | Debug | `MCC_LOCAL_CI_AS_TEST=ON` — the `test` target reproduces the whole CI + release matrix this host can run (see `cmake/ci-local.cmake`) |
+| `cst` | Debug | `MCC_CST=ON` (explicit — now the build-wide default, so effectively `debug`): the named scenario for the CST subsystem + its `tests/cst` suite |
 
 **CI presets** — one per workflow matrix cell (`ci.yml`):
 
@@ -213,8 +214,9 @@ report into the release `bundle-`; CI also uploads it and posts it to the job
 summary.
 
 Build presets exist for every configure preset; test presets exist for all
-except the build-only (`mingw`), test-less (`dist-*`), and superbuild
-(`matrix`) ones — the superbuild registers no top-level tests and runs
+except the build-only (`mingw`), test-less (`dist-*`), superbuild
+(`matrix`), and `local-ci` (whose own build `test` target reproduces CI) ones —
+the superbuild registers no top-level tests and runs
 `ctest` per sub-build via `MCC_SUPERBUILD_TEST=ON` instead. The label
 filter is baked in (`qemu`-excluded on ELF hosts, `qemu|wine` on macOS,
 `qemu|wine|macho` on MSVC, `qemu`-only for the qemu presets). The `macos`
@@ -251,7 +253,6 @@ host), enabling the kernel-fused apple-libc suite.
 | Value | Type | Default | Gate | Purpose |
 |---|---|---|---|---|
 | `MCC_ALL_DIAGNOSTICS` | BOOL | OFF | GNU/Clang host (advanced) | Everything-on: verbose warnings + debug info + build `mcc_s`/`mcc_p`/`mcc_c`. |
-| `MCC_CST` | BOOL | OFF | advanced (experimental) | Build the CST database subsystem (side-recorded concrete syntax tree; LSP/`-g`/opt substrate). `CONFIG_MCC_CST=1`. Codegen is byte-identical either way; adds the `cst` preset + `tests/cst` suite. |
 | `MCC_BUILD_SANITIZE` | BOOL | OFF | GNU/Clang host; **not** WIN32/mingw | Build `mcc_s` (`-fsanitize=address,undefined`). Fatal on a PE target. |
 | `MCC_BUILD_PROFILE` | BOOL | OFF | GNU/Clang host; **not** Darwin | Build `mcc_p` (`-pg -static`). Fatal on Darwin (no static crt0). |
 | `MCC_BUILD_COVERAGE` | BOOL | OFF | GNU/Clang host; needs runnable mcc | Build `mcc_c` (coverage instrumentation). |
@@ -280,6 +281,7 @@ These bake `CONFIG_*` values into the compiler and change its runtime behavior.
 | `MCC_CONFIG_LIBC` | STRING | `''` | uClibc, musl, `''` | **ELF** | Target libc. `uClibc` is a legacy selector (warns). |
 | `MCC_CONFIG_DWARF` | STRING | `''` | 0, 2, 3, 4, 5, `''` | always | DWARF debug version; empty = stabs. |
 | `MCC_CONFIG_SEMLOCK` | STRING | `''` | numeric | always | `CONFIG_MCC_SEMLOCK` value; empty = mcc.h default (1). Must be numeric (fatal otherwise). |
+| `MCC_CST` | BOOL | **ON** | | always (`GROUP "Advanced"`) | Build the CST database subsystem (side-recorded concrete syntax tree; LSP/`-g`/opt substrate) → `CONFIG_MCC_CST=1`. On by default; codegen is byte-identical either way (guarded by the codegen-identity gate). The `cst` preset builds/runs the `tests/cst` suite explicitly. |
 | `MCC_CONFIG_NEW_MACHO` | STRING | `''` | yes, no, auto, `''` | **Darwin** | Force apple object format. |
 | `MCC_CONFIG_CODESIGN` | STRING | `''` | yes, no, auto, `''` | **Darwin** | Use `codesign` to sign executables. |
 

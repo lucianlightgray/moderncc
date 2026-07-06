@@ -1084,9 +1084,8 @@ mcc_config_node(MCC_BUILD_TESTS   TYPE BOOL DEFAULT ON  GROUP "Build targets"
     HELP "Build/enable the test suite (tests/Makefile)")
 mcc_config_node(MCC_BENCH         TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Build the mccbench tool and the `bench` target (compile-speed report). Off by default; CI enables it")
-mcc_config_node(MCC_CST TYPE BOOL DEFAULT OFF GROUP "Experimental" ADVANCED
-    HELP "Build the CST database subsystem (side-recorded concrete syntax tree; \
-LSP/-g/opt substrate). Off by default; codegen is byte-identical either way.")
+mcc_config_node(MCC_CST TYPE BOOL DEFAULT ON GROUP "Advanced" ADVANCED
+    HELP "Build the concrete syntax tree subsystem")
 mcc_config_node(MCC_ALL_DIAGNOSTICS TYPE BOOL DEFAULT OFF GROUP "Diagnostics" ADVANCED
     HELP "Everything-on diagnostics: verbose warnings + debug info + build mcc_s/mcc_p/mcc_c")
 if(MCC_ALL_DIAGNOSTICS)

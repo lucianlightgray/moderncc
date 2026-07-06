@@ -1,0 +1,883 @@
+# ModernCC — Notes & Detailed Overview
+
+Supplementary reference material moved out of the top-level
+[README](../README.md) to keep it focused on getting started. This file
+collects the non-essential overview information: toolchain comparisons,
+build-status reports, per-toolchain test coverage, and performance benchmarks.
+
+## Comparisons
+
+`Y` = supported, `~` = partially supported, `-` = not supported.
+
+| Target / Format             | mcc | gcc | clang | mingw | msvc |
+|-----------------------------|:---:|:----:|:-----:|:-----:|:---:|
+| x86_64                      |  Y  |  Y   |   Y   |   Y   |  Y  |
+| i386                        |  Y  |  Y   |   Y   |   Y   |  Y  |
+| arm                         |  Y  |  Y   |   Y   |   ~   |  Y  |
+| arm64                       |  Y  |  Y   |   Y   |   Y   |  Y  |
+| riscv64                     |  Y  |  Y   |   Y   |   -   |  -  |
+| ELF output                  |  Y  |  Y   |   Y   |   -   |  -  |
+| PE/COFF output              |  Y  |  Y   |   Y   |   Y   |  Y  |
+| Mach-O output               |  Y  |  ~¹  |   Y   |   -   |  -  |
+| Multi-target from one build |  Y  |  Y   |   Y   |   -   |  -  |
+
+¹ `gcc` with Apple patches supports Mach-O
+
+---
+
+| Capability                              | mcc | gcc | clang | mingw | msvc |
+|-----------------------------------------|:---:|:---:|:-----:|:-----:|:----:|
+| Compile + link in one step              |  Y  |  Y  |   Y   |   Y   |  Y   |
+| `-run` (execute in memory, no a.out)    |  Y  |  -  |   -   |   -   |  -   |
+| Embeddable compiler library             |  Y  | ~²  |  ~³   |   -   |  -   |
+| Integrated assembler (no external `as`) |  Y  |  -  |   Y   |   -   |  Y   |
+| Inline asm / `asm goto`                 |  Y  |  Y  |   Y   |   Y   |  ~⁴  |
+| Runtime backtraces (`-bt`)              |  Y  |  ~  |   ~   |   ~   |  ~   |
+| glibc + musl via `--sysroot`            |  Y  |  Y  |   Y   |   -   |  -   |
+| Optimizing codegen                      |  -  |  Y  |   Y   |   Y   |  Y   |
+| C99                                     |  Y  |  Y  |   Y   |   Y   |  Y   |
+| C11                                     |  Y  |  Y  |   Y   |   ~   |  Y   |
+| Single-pass / fast compile              |  Y  |  -  |   -   |   -   |  -   |
+| Tiny footprint (~1 MB)                  |  Y  |  -  |   -   |   -   |  -   |
+
+² via `libgccjit`
+³ via `libclang`
+⁴ MSVC has no inline `asm` on x64 (intrinsics only)
+
+---
+
+| Toolchain  | Notes                                          |
+|------------|------------------------------------------------|
+| **clang**  |                                                |
+| **gcc**    | requires cross-compilers to target multi-archs |
+| **mingw**  | same as gcc                                    |
+| **MSVC**   | breaks C99/C11 standards; quirky               |
+| **mcc**    | self-hosts and cross-compiles                  |
+
+---
+
+| libc                   | Via                                  | Coverage              |
+|------------------------|--------------------------------------|-----------------------|
+| **glibc** (ELF)        | `--sysroot` / default                | full                  |
+| **musl** (ELF)         | `--sysroot` / auto-detected fallback | full                  |
+| **msvcrt** (PE)        | Windows/PE target                    | wine + native Windows |
+| **libSystem** (Mach-O) | macOS/Darwin target                  | qemu + native MacOS   |
+
+## Build status
+
+**Linux status (2026-07, gcc 15.3 / clang 22):** every Linux preset is green —
+`debug`, `release`, `sanitize`, `diagnostics`, `cross`, `matrix` (gcc/clang ×
+native/cross superbuild), all 15 `linux-*` CI presets, both `dist-linux-*`
+packagings, and the full `qemu` cross×libc matrix. Each test-bearing preset
+passes its complete suite (39/39 portable tests; 22/22 in the qemu matrix,
+all 5 arches × glibc+musl + `qemu-arm64-osx`). With the `cross` toolchain
+built (`MCC_CROSS_DIR`, default `cmake-cross`), the wine PE-conformance
+and the four host-runnable Mach-O drivers run natively and pass too.
+
+**Windows status (2026-07-05, mingw gcc 13.1/16.1 / MSVC 19.51 / clang 22):**
+every Windows-runnable preset is green. The suite is now registered one CTest
+per case (the `exec`/`cli`/`diff3`/`parts`/`preprocess` corpora fan out), so the
+counts are per-case: `debug`, `release`, `diagnostics`, `cross` and `msvc`
+(VS generator) all run **782/782** (120 environment-gated skips). On the MSVC
+host `mcctest` still registers and passes — its gcc reference auto-resolves to
+the vendored winlibs GCC (`MCC_REF_CC`) — so the MSVC total matches the mingw
+hosts. Those totals assume the vendored clang toolchain is present (`cmake
+--build <bld> --target clang-toolchain`, or drop it under `vendor/llvm-clang`;
+auto-wired on the next reconfigure); without it the ~260 three-way
+`diff3`/`preprocess` cases self-skip and the native suite is **520/520**.
+`mingw` (superbuild; fetches the pinned winlibs GCC and tests with
+it) and `matrix` (gcc/clang × native/cross — **4 cells × 782/782**, clang
+resolved from the fetched `vendor/llvm-clang`) are green too. Both `dist-*` packagings
+build the full artifact matrix — mcc + `-static`/`-dynamic` +
+`libmcc-static`/`-dynamic` + all 11 cross compilers; `dist-mingw` additionally
+ships each cross compiler in a fully-static (`-static`) shape, while `dist-msvc`
+keeps only the host `mcc-static` (`-static` is a GNU-ld flag `link.exe` doesn't
+take, so the per-cross static shapes are intentionally skipped under MSVC). The
+in-tree build/CI tools carry their own ctests that pass here too —
+`host-gate-invariant`, `git-stamp`, `def-verify`, `build-md-nodes`,
+`config-defines`, `host-detect`, `cross-factory`, `ci-matrix`, `ci-pkg-smoke`,
+`qemu-fetch-parse`. `sanitize`
+intentionally fails at configure — mingw ships no libasan/libubsan; use
+`diagnostics`, which builds the coverage + profile variants and skips
+sanitize. The PE target gets native-only extra coverage
+(`pe-native-conformance`, `compile.win32.*`); remaining skips are
+environment- or libc-gated with reasons (wine, macOS, X11, ELF-emitting
+32-bit reference, the osx/arm64/riscv64 cross drivers when the `cross`
+toolchain isn't built, msvcrt's reduced libm/complex surface for
+`parts/*`, and PE bounds-checking for `mcctest-bcheck`). The `linux-*`
+presets, `dist-linux-*` packagings, and the qemu grid also run from Windows,
+via the Docker runners (`tests/ci/docker`, `tests/qemu/docker`).
+
+## Per-toolchain test coverage
+
+`P` = passes, `S` = skipped-with-reason (environment/config-gated, not a
+failure), `—` = not applicable.
+
+| `ctest` suite | Win mingw | Win gcc | Win msvc | Lin gcc | Lin clang | mac clang |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|
+| `exec/*` (golden run/diff)            | P | P | P | P | P | P |
+| `mcctest`¹                            | P | P | P | P | P | P |
+| `mcctest-bcheck`¹                     | S | S | S | P | P | P |
+| `preprocess/*`²                       | P | P | P | P | P | P |
+| `diff3/*`²                            | P | P | P | P | P | P |
+| `parts/*`² (per-unit 3-way diff)⁹     | S | S | S | P | P | P |
+| `cli/*` (readelf/nm structural)³      | P | P | P | P | P | P |
+| `libtest` / `-extra` / `-mt`, `abitest-cc` | P | P | P | P | P | P |
+| `hello-run` / `hello-exe`, `vla_test-run`  | P | P | P | P | P | P |
+| `compile.*` (orphan `-c`)⁴            | P | P | P | P | P | P |
+| `asm-c-connect-test`                  | P | P | P | P | P | S |
+| `dash-s-roundtrip` (`-S` → asm → run)¹⁰ | P | P | P | P | P | S |
+| `asm-gas-directives`⁵                 | S | S | S | S | S | S |
+| `i386-fastcall-abi`⁶                  | S | S | S | P | P | S |
+| `compile.win32.*` / `pe-native-conformance` | P | P | P | — | — | S |
+| `pe-wine-conformance` (label `wine`)⁷ | S | S | S | P | P | S |
+| `macho-*` (7 drivers, label `macho`)⁷ | S | S | S | P | P | P |
+| qemu cross×libc matrix (label `qemu`)⁸| S | S | S | P | P | S |
+
+¹ Differential vs. a GCC-compatible reference cc (needs the integrated
+assembler); MSVC host auto-detects a mingw/winlibs `gcc` (`MCC_REF_CC`).
+`-bcheck` variant also needs `MCC_CONFIG_BCHECK`, and skips on the PE/msvcrt
+target, where mcc bounds-checking is unsupported (faults in msvcrt
+callbacks/library calls).
+² Needs **two distinct** references (gcc *and* clang) or the three-way
+differential self-skips. On macOS `gcc`/`cc` are the Apple clang shim, so a
+genuine Homebrew `gcc-<n>` (installed by `setup-gcc`) is auto-detected. On
+Windows no system clang is needed: `cmake --build <bld> --target
+clang-toolchain` fetches a pinned, SHA256-verified LLVM into `vendor/llvm-clang/`,
+auto-wired by the next reconfigure (both suites then run and pass).
+³ Needs POSIX `sh` (`MCC_TEST_SH`) + `nm`/`readelf`; ~31 ELF-image cases
+self-skip on a PE target.
+⁴ X11 example (`compile.ex4`) skips when `<X11/Xlib.h>` is absent.
+⁵ Always skipped: integrated assembler lacks a few GAS encodings
+(`sgdtq`/`sidtq`/`swapgs`).
+⁶ Needs the i386 cross compiler (`mcc-i386`, preset `cross`) + an ELF-emitting
+32-bit reference cc; skips on Windows (mingw `gcc` emits PE/COFF).
+⁷ Both need the cross toolchain (preset `cross`, or a populated
+`MCC_CROSS_DIR` — default `cmake-cross`): wine + the win32 cross
+compilers for `pe-wine-conformance`; the osx cross compilers +
+`llvm-otool`/`otool` for the Mach-O drivers. Linux: four host-runnable drivers
+pass (`macho-structural`, `macho-codegen-run`, `macho-image-run`,
+`macho-apple-libc`); `macho-conformance-native` and
+`macho-libsystem-kernel-fused` skip (need Darwin/darling). macOS:
+`macho-structural` + `macho-conformance-native` are native; Linux-approximation
+drivers self-skip off x86_64.
+⁸ Windows runs it via the Docker runner; a Linux host with `qemu-user` runs it
+natively (`ctest -L qemu`).
+⁹ Native 3-way per-unit differential of each `tests/diff/parts/run_*.c`
+wrapper; needs a shared C99 libc across gcc/clang/mcc, so the PE/msvcrt
+target skips (the same units are covered in aggregate by `mcctest`).
+¹⁰ Hermetic `mcc -S` → mcc's own assembler → mcc link → run, byte-identical
+to the direct build; needs x86_64 + the integrated assembler (skips on arm64
+macOS). With the cross compilers built, `dash-s-bytes-{arm64,riscv64}`
+additionally assert **object-byte-exact** `-S` roundtrips on the fixed-width
+targets (i386/arm are instruction-exact; their assemblers legally re-encode
+some widths/branch fields).
+
+## Compile speed & footprint
+
+Compiling `mcc`'s own whole-compiler TU (`src/mcc.c`, `SINGLE_SOURCE=1`) to an
+object, best of 3 (gcc 15.3 / clang 22, 2026-07). Stripped release binaries:
+dynamic `mcc` ≈ **0.6 MB**, `mcc-static` ≈ **1.3 MB**.
+
+| Compiler | Time | vs mcc |
+|---|--:|--:|
+| **mcc**       | **0.05 s** | 1× |
+| clang `-O0`   | 0.36 s | 7× slower |
+| gcc `-O0`     | 0.97 s | 19× slower |
+| clang `-O2`   | 5.40 s | 108× slower |
+| gcc `-O2`     | 7.03 s | 141× slower |
+
+## Profiling — measured results & lexer-optimization findings
+
+Moved from [PROFILING.md](PROFILING.md), which keeps the reproducible *method*
+(§1 the builds, §2 the compile invocations, §3 the timing method). These are the
+results and analysis: the seven-build spread, `perf` attribution, the applied
+lexer optimization, its validation, and the conclusions. Section numbers (§4–§8)
+and cross-references are preserved from `PROFILING.md`. Host of record: Linux
+x86-64 (Gentoo, kernel 6.18), 32 cores, gcc 15.3.0, clang 22.1.8; reference date
+2026-07-04.
+
+### 4. The spread — seven builds, two workloads
+
+All figures ms unless noted, mean ± σ over ≥50 runs (≥15 for the multi-second
+`-O2` amalgamation), pinned to core 2, quiet-system config (§3a). Lower is
+better. Baseline for every ratio is **`mcc-self`**.
+
+#### 4a. `full_language.c` (small TU — the `-O0` differential fixture)
+
+| config        | preprocess `-E` |  compile `-c` |  compile→exe |     run exe |
+|---------------|----------------:|--------------:|-------------:|------------:|
+| gcc-debug     |    34.19 ± 0.63 |   502.4 ± 3.0 |  533.9 ± 8.4 | 19.39 ± 0.11|
+| gcc-release   |           n/a ¹ |         n/a ¹ |        n/a ¹ |       n/a ¹ |
+| clang-debug   |    40.18 ± 0.82 |  336.6 ± 12.8 |  380.3 ± 3.0 | 21.00 ± 0.21|
+| clang-release |    40.90 ± 0.96 |   833.9 ± 2.8 |  881.2 ± 2.4 |      trap ² |
+| mcc-gcc       |    14.15 ± 0.11 |  17.40 ± 0.18 | 19.90 ± 0.24 | 21.34 ± 0.14|
+| mcc-clang     |    13.64 ± 0.13 |  17.51 ± 0.42 | 19.90 ± 0.25 | 21.38 ± 0.48|
+| **mcc-self**  |    21.36 ± 0.45 |  29.00 ± 0.23 | 32.79 ± 0.36 | 21.36 ± 0.16|
+
+Ratio vs `mcc-self`, `compile→exe`: gcc-debug **16.3×**, clang-debug 11.6×,
+clang-release 26.9×, mcc-gcc/mcc-clang **0.61×**. `mcc-self` builds the TU end to
+end in 33 ms — 16× under gcc's `-O0` and 27× under clang's `-O2`.
+
+> ¹ `gcc -O2` cannot build `full_language.c`. Its `__bug_table` inline-asm
+> (`tests/diff/parts/legacy_meta.h:364`) defines a *global* symbol inside
+> `get_asm_string()`; at `-O2` gcc inlines that function into every caller and
+> emits the symbol once per copy → assembler `symbol 'some_symbol' is already
+> defined`. `-fno-inline` clears the assembler error but the resulting binary
+> then segfaults — the fixture is genuinely `-O0`-only. Preprocessing is
+> optimization-independent, so `gcc-release -E` would simply equal `gcc-debug`'s.
+> The optimized-compile spread lives on `src/mcc.c` instead (§4b).
+>
+> ² `clang -O2` *compiles* the TU (it takes the `#ifndef __clang__` branch and
+> never sees the asm), so its `-E`/`-c`/`→exe` numbers are real — but the
+> optimized binary aborts at runtime (`SIGABRT`) on the same `-O0`-only
+> assumptions. `run exe` is only valid for the `-O0` builds and the (`-O0`-codegen)
+> `mcc` binaries, which all land at ~19–21 ms.
+
+#### 4b. `src/mcc.c` (large TU — the amalgamation, carries the release columns)
+
+| config          | preprocess `-E` |   compile `-c` | `-c` vs mcc-self |
+|-----------------|----------------:|---------------:|-----------------:|
+| gcc-debug       |     127.4 ± 1.1 |     2060 ± 6   |           16.5×  |
+| gcc-release     |     133.8 ± 2.7 |    14812 ± 48  |          118.3×  |
+| clang-debug     |      98.5 ± 0.6 |     1023 ± 18  |            8.2×  |
+| clang-release   |     102.4 ± 0.7 |    12546 ± 53  |          100.2×  |
+| mcc-gcc         |      62.2 ± 0.5 |   72.55 ± 0.42 |           0.58×  |
+| mcc-clang       |      60.1 ± 0.5 |   73.67 ± 0.48 |           0.59×  |
+| **mcc-self**    |      95.0 ± 0.9 |  125.21 ± 0.62 |           1.00×  |
+| mcc-static      |             —   |        n/a ³   |             —    |
+| mcc-musl        |             —   |        n/a ⁴   |             —    |
+| mcc-static-musl |             —   |      n/a ³ ⁴   |             —    |
+
+`mcc-gcc` compiles the entire ~100 k-line amalgamation to an object in **73 ms**;
+`gcc -O2` needs **14.8 s** for the same TU — a **204×** gap — and `clang -O2`
+12.5 s. Even against a plain `-O0` reference, `mcc` is 14–28× faster. This is the
+near-`-O0`, integrated-assembler design paying off, and the gap *widens* with TU
+size and opt level (cf. §4a's 12–27×).
+
+#### 4c. The self-host cost, and compiler-of-mcc parity
+
+Reading down the three `mcc` rows in both tables:
+
+- **`mcc-gcc` ≈ `mcc-clang`.** A gcc `-O2` and a clang `-O2` build of `mcc` run
+  within ~2 % of each other (amalgamation `-c`: 72.6 vs 73.7 ms; `-E`: 62 vs
+  60 ms). Which optimizing compiler bootstraps `mcc` does not matter.
+- **`mcc-self` is the outlier — ~1.7× slower to compile, ~1.5× to preprocess.**
+  Self-hosted `mcc` compiles the amalgamation in 125 ms vs 73 ms for the
+  `-O2`-built ones (1.7×), and preprocesses in 95 vs 61 ms (1.5×; `full_language.c
+  -E`: 21.4 vs 13.9 ms, also 1.5×). The reason is exactly the §4b headline
+  turned inward: `mcc`'s own near-`-O0` codegen produces a slower `mcc` binary
+  than `gcc -O2`/`clang -O2` do. That 1.7× *is* the measured cost of bootstrapping
+  the compiler with itself — and since all three emit byte-identical code (§1),
+  it is purely a speed-of-the-driver effect, not a code-quality one.
+
+#### 4d. Memory — peak RSS (`/usr/bin/time -v`, compile `-c`)
+
+```sh
+taskset -c 2 /usr/bin/time -v <compile -c cmd> 2>&1 | grep 'Maximum resident'
+```
+
+| config        | `src/mcc.c` | `full_language.c` |
+|---------------|------------:|------------------:|
+| gcc-debug     |    149 MB   |      61.7 MB      |
+| gcc-release   |    325 MB   |        — ¹        |
+| clang-debug   |    140 MB   |     101.7 MB      |
+| clang-release |    234 MB   |     119.1 MB      |
+| mcc-gcc       |   11.9 MB   |       5.2 MB      |
+| mcc-clang     |   12.0 MB   |       5.3 MB      |
+| **mcc-self**  |   12.3 MB   |       5.3 MB      |
+
+`mcc`'s footprint is ~**12 MB** on a TU where `gcc -O2` needs **325 MB** (27×) and
+`clang -O2` 234 MB — and it is flat across the three `mcc` builds (same allocator,
+same codegen), so the self-host slowdown in §4c costs *time*, not *memory*. On the
+small TU `mcc` holds ~5.3 MB against gcc/clang's 62–119 MB.
+
+#### 4e. The static / musl self-host variants — environment-limited on this host
+
+The four extra self-hosted `mcc` builds cannot be produced on this glibc-only
+dev host; the failures are reproducible and are what the `n/a` cells above
+record:
+
+- **³ `mcc-static`, `mcc-static-musl` don't self-link.** `mcc`'s internal
+  `-static` linker leaves the compiler-runtime and unwinder unresolved —
+  `__ehdr_start` (a linker-synthesized symbol `mcc` does not define for a static
+  image), plus `__multf3`/`__addtf3`/… (128-bit soft-float) and
+  `_Unwind_Resume`/`__gcc_personality_v0`. Supplying `libmccrt.a` and the host
+  `libgcc.a` on the link line does not clear them (`__ehdr_start` cannot come
+  from an archive). The gcc-driven `linux-gcc-static` preset builds `mcc-static`
+  fine — gcc adds those libraries — so this is a gap in `mcc`'s *own* static
+  self-link, not a missing object.
+- **⁴ `mcc-musl`, `mcc-static-musl` have no musl to target.** There is no
+  `/lib/ld-musl-x86_64.so.1` and no musl `libc.{a,so}` on this host. The
+  `mcc-musl` target still *builds*, but it silently links the **glibc** loader
+  (`readelf -l` → `/lib64/ld-linux-x86-64.so.2`), so it is not a genuine musl
+  binary and would only duplicate `mcc-self` — measuring it would be misleading.
+  A real musl row needs a musl sysroot (the CI host's `release`/`linux-gcc-musl`
+  presets have one; this box does not).
+
+### 5. Where the time goes — `perf` self%
+
+With `perf_event_paranoid=1` (§3a), user-space sampling needs no root. Attribute
+against the gcc-built profiling compiler (`cmake-prof-gcc`, symbolized
+`-O2 -g`):
+
+```sh
+P=cmake-prof-gcc
+taskset -c 2 perf record --call-graph=fp -o perf.data -- \
+  bash -c "for i in {1..300}; do $P/mcc -B$P \
+    -Iruntime/include -I. -I$P $DEFS -c $SRC -o /tmp/pp.o >/dev/null 2>&1; done"
+perf report -i perf.data --stdio --no-children | grep -E '\[\.\]|\[k\]' | head -12
+```
+
+Top self% during a `-c` loop (symbolized `-O2 -g` build):
+
+```
+   13.4%  next_nomacro        <- the lexer core (hottest function)
+    5.2%  vsetc
+    5.2%  macro_subst_tok
+    4.9%  next                <- lexer/PP entry
+    4.6%  tok_str_add2
+    3.5%  gen_cast
+    2.7%  __memmove_avx512…   (libc; identifier memcmp/copy)
+    2.6%  preprocess
+    2.5%  gfunc_call
+    2.4%  macro_subst
+```
+
+**The lexer dominates.** `next_nomacro` + `next` alone are ~18% of self-time;
+add `preprocess`, `macro_subst*`, and `tok_str_add*` (the token-stream plumbing
+the lexer feeds) and the front end is the clear majority.
+
+#### 5a. Which instructions inside `next_nomacro` (perf annotate)
+
+```sh
+taskset -c 2 perf record -o ann.data -- \
+  bash -c "for i in {1..400}; do $P/mcc -B$P -Iruntime/include -I. -I$P \
+    $DEFS -c $SRC -o /tmp/a.o; done"
+perf annotate -i ann.data --stdio -s next_nomacro | sort -rn -k1 | head
+```
+
+The hot instructions cluster in two places:
+
+- **Hash-bucket chain walk** (`testq %r12,%r12; jne …` ≈ **14.6%** combined) —
+  chasing the interning hash chain plus the `memcmp` in `tok_alloc`
+  (`hash_ident[]` lookup, mccpp.c ~2942).
+- **Identifier char-scan loop** (`orl` = `hi|=c`, plus the `TOK_HASH_FUNC`
+  shifts/adds ≈ **13%**) — the per-byte hash + high-bit accumulation at
+  mccpp.c ~2930.
+- switch dispatch (jump-table `jmpq *%rdx`) ≈ 8%.
+
+The whitespace-skip loop (mccpp.c ~2779) **does not appear** — it is cold on this
+TU.
+
+### 6. Lexer optimization — what's applied, and what doesn't fit
+
+The lexer is already tight enough that per-token dispatch micro-optimizations
+land within the ±1% measurement noise on this TU, and `perf annotate` shows why —
+they do not touch the two hot instruction clusters in §5a. Of four "less work per
+token" changes considered, only idea #1 is applied:
+
+| # | Idea | Effect (preprocess `-E`) | Status |
+|---|------|--------------------------|--------|
+| 1 | Cache the interned `TokenSym` in `next_nomacro`; read `ts->sym_define` in `next()` instead of re-deriving via `define_find(t)` | neutral, but strictly fewer ops/identifier, no downside | **applied** |
+| 2 | SWAR word-at-a-time scanning | whitespace SWAR **slightly negative** (single-space gaps dominate → SWAR preamble is pure overhead on a cold path); identifier SWAR unfit (below) | **not applied** |
+| 3 | Fold `hi\|=c` UTF-8 high-bit detect into an `IS_UTF8` char-class bit | neutral; adds one first-char table load (the original has the char free in-register) → marginally *more* work | **not applied** |
+| 4 | Hoist `parse_flags & PARSE_FLAG_ASM_FILE` out of the number-scan loop | neutral; the term is already short-circuited off the hot digit path and numbers are cold | **not applied** |
+
+**Why #2's identifier variant does not fit (beyond the measurement):** the
+id-continue predicate `isidnum_table[c] & (IS_ID|IS_NUM)` covers multiple
+disjoint ranges *and* two entries (`$`, `.`) that `set_idnum()` toggles at
+runtime (mccpp.c ~4004) — so a hardcoded SWAR predicate would be wrong under
+`#pragma`/asm-mode. And because short identifiers dominate, a separate SWAR
+boundary pass + separate hash pass is two passes where there is now one → a
+likely regression. SWAR is the textbook lever but it does not fit this lexer.
+
+#### The kept change (idea #1)
+
+`src/mccpp.c`, +3/−1:
+
+```c
+#define tok_ts (mcc_state->tok_ts)           // MCCState member (embeddable/thread-safe)
+
+/* in next_nomacro(), where both identifier paths converge: */
+tok_ts = ts;
+tok = ts->tok;
+
+/* in next(): */
+if (t >= TOK_IDENT && (parse_flags & PARSE_FLAG_PREPROCESS)) {
+        Sym *s = tok_ts->sym_define;         // was: define_find(t)
+```
+
+**Correctness:** every token value `>= TOK_IDENT` (256) is produced by the
+identifier path in `next_nomacro`, which always sets `ts` — the special tokens
+(`TOK_PPNUM=0xcd`, `TOK_PPSTR=0xce`, `TOK_TWOSHARPS=0xa3`, `TOK_EOF=-1`, …) are
+all `< 256`. So whenever `next()` takes the `t >= TOK_IDENT` branch, `tok_ts` is
+the freshly-interned symbol and `tok_ts->sym_define` is exactly what
+`define_find(t)` (`table_ident[t-TOK_IDENT]->sym_define`, mccpp.c ~1343) would
+return — minus the subtract, bounds-check and array load.
+
+### 7. Validation matrix
+
+The change is validated across the **20 Linux-runnable presets** (each the full
+804-test CTest suite; `asm-off` legitimately runs 772), all **100% green**:
+
+```
+debug  sanitize  diagnostics  linux-gcc  linux-clang
+linux-gcc-multisource  linux-gcc-asm-off  linux-gcc-predefs-off
+linux-gcc-pie  linux-gcc-dwarf  linux-gcc-diagnostics
+linux-gcc-release  linux-clang-release  linux-gcc-sanitize  linux-gcc-static
+release  linux-gcc-musl  cross  linux-gcc-cross  linux-clang-cross
+```
+
+The 5 `qemu-*` presets are **excluded**: they fail identically at baseline
+because their `*-fetch` steps download target glibc/musl sysroots, which needs
+network the host lacks (environmental, not a code failure). macOS / MSVC / mingw
+presets do not run on a Linux host.
+
+Per-implementation smoke sets for the affected lexer areas:
+
+```sh
+ctest --preset debug -R 'mcctest|preprocess|lex|ident|whitespace|comment|string'   # lexer
+ctest --preset debug -R 'utf8|ucn|ident|raw_utf8'                                    # idea #3
+ctest --preset debug -R 'integer|float|hex|literal|suffix|asm|imaginary|complex'     # idea #4
+```
+
+### 8. Conclusions — where a *measurable* win would come from
+
+- The lexer is the right place to look (`next_nomacro` is #1 by a wide margin),
+  but the per-token dispatch micro-costs targeted by ideas #1–#4 are already
+  below the noise floor on a 416-line TU.
+- The two genuinely hot instruction clusters are the **identifier interning hash
+  chain walk** and the **per-byte hash computation** — not whitespace, not
+  number scanning, not the `define_find` lookup. A measurable win has to come
+  from those, not from more per-token dispatch micro-tuning.
+  - **Applied (2026-07-05): `TOK_HASH_SIZE` 16384 → 65536.** A `hyperfine` A/B on
+    identifier-dense 2 MB TUs measured a consistent **1.03–1.06× faster** `mcc -E`
+    (statistically significant, ±0.02–0.04) by lowering the intern-hash load factor
+    so the chain walk shortens. The intermediate 32768 showed no realistic-density
+    gain (threshold effect). Cost is a *fixed* +384 KB hash table that does not
+    scale with input, so the low-RSS profile is preserved; correctness is unaffected
+    (still a power of two for the `& (TOK_HASH_SIZE-1)` mask; full suite green).
+    `TOK_HASH_FUNC` itself was left alone — it is already a cheap shift-add-mix.
+- **The larger input separates signal from noise.** 416 lines is too small to
+  separate a 1–2% lexer change from noise. The amalgamation spread (§4b) does
+  better: `src/mcc.c` preprocesses in ~62 ms (`mcc-gcc`) with σ ≈ 0.5 ms — a
+  ~0.8 % floor vs `full_language.c`'s ~1 %, and 4× the absolute signal — so a
+  lexer change shows up there long before it clears noise on the small TU. Lexer
+  experiments belong on `-E src/mcc.c`, not `full_language.c` (tracked in
+  `docs/TODO.md`).
+
+- **The full spread (§4) reframes "fast" quantitatively.** `mcc` is not merely
+  "faster than `-O0`": on the amalgamation it beats `gcc -O2` by **204×** in time
+  and **27×** in peak RSS, and the gap grows with TU size and opt level. The one
+  place `mcc` pays is bootstrapping itself — `mcc-self` runs ~1.7× slower than a
+  `gcc`/`clang`-`-O2`-built `mcc` (§4c) because its own near-`-O0` codegen is the
+  compiler it just built. Shrinking that 1.7× is the same problem as making `mcc`
+  emit faster code in general — i.e. the codegen backend, a different project from
+  the lexer work above.
+
+## C99/C11 conformance — mcc project status: deliberate differences & limitations
+
+Moved from the appendix of [C9911.md](C9911.md), whose clause-by-clause map
+remains the source of truth for *what the standards require* and *the
+per-compiler status*. This records the things that are mcc-project-specific
+rather than standard-derived: mcc's conformance philosophy, host/platform
+limitations, and its **deliberate** documented differences from gcc/clang (`[~]`
+items kept on purpose). Marker legend: `[ ]` open · `[~]` partial/deliberate-DIFF.
+
+### Conformance philosophy & severity tags
+
+Goal: implement every detail of C99 (N1256) and C11 (N1570), backed by regression
+tests across all targets (x86_64, i386, ARM, AArch64, RISC-V 64), platforms
+(ELF/PE/Mach-O), and both glibc and musl. The default standard is **C11**
+(`cversion=201112`, set in `mcc_new()` at `src/libmcc.c:935`, and predefined as
+`__STDC_VERSION__`); `-std=c99` selects C99, `-std=c17`/`-std=c23` the later ones.
+
+mcc's stance on constraint violations is **permissive-by-default**: many
+constraint violations are emitted as a *warning* (a diagnostic of any severity
+satisfies the standard's "shall ... a diagnostic" requirement) and are upgraded
+to hard errors under `-Werror`; `-pedantic`/`-pedantic-errors` add the ISO
+pedantic diagnostics. gcc/clang choosing to make some of these hard errors by
+default is their policy, not a standard mandate — hence several `[~]`/`[DIFF]`
+entries below are *conformant* differences, not defects.
+
+Test discipline: every fix ships with a cli/exec/diff regression test; the suite
+(`ctest`, the cli+exec suites, the diff3 differential suite, the macho/wine/qemu
+matrices) and the byte-identical 3-stage self-host fixpoint stay green. The
+project has a history of false-positive audit entries — re-verify any candidate
+gap 3-way against the live binary before acting on it.
+
+Severity tags used below: **[BUG]** wrong codegen/crash/hang/rejects-valid ·
+**[FEATURE]** absent standard feature · **[DIAG]** undiagnosed or
+wrong/misleading diagnostic · **[OPT]** standards-optional · **[TASK]**
+test/infra · **[LIMITATION]** host/platform constraint outside mcc · **[DIFF]**
+deliberate, tested difference from a reference compiler (not a defect).
+
+### Platform / host limitations
+
+- [ ] **[LIMITATION] The kernel-fused Mach-O / libSystem path needs a macOS or darling host.**
+  The self-contained Mach-O tests run on any host: structural validation
+  (`macho-structural`), Darwin-codegen execution against host glibc
+  (`macho-codegen-run`), Mach-O image execution via the in-repo loader
+  (`macho-image-run`), and Apple's own string/memory + self-contained printf
+  sources run as Mach-O images (`macho-apple-libc`). The remainder of
+  `libSystem` is kernel-fused and unrunnable off Darwin: `libmalloc`
+  (magazine/nano/xzone zones on `os_unfair_lock`/Mach VM), FILE-backed/locale
+  `stdio` (`xlocale`/`__sFILE`/gdtoa), and `dyld`/`pthread`/GCD/ObjC/Mach IPC.
+  These require `-DMCC_DARWIN_HOST=ON` (a macOS or darling host); the boundary
+  is documented in `tests/qemu/apple-libc/PROVENANCE.md`.
+
+- [ ] **[TASK] Systematic diagnostic-coverage sweep.**
+  Each `[DIAG]`/`[FEATURE]` item ships with a cli/exec test that asserts the
+  diagnostic fires and that the valid forms still compile. A full mechanical
+  parity sweep across all ~312 `mcc_error`/`mcc_warning`/`mcc_pedantic` call
+  sites in `src/` — to confirm the diagnostics that predate this tracker each
+  have a regression test — remains an ongoing audit.
+
+- [ ] **[DIFF] diff3 differential divergences on macOS.**
+  The `diff3` suite compiles each golden with `mcc`, gcc, and clang and flags
+  cases where `mcc` differs from a gcc==clang consensus. Four such divergences
+  remain on macOS, none of which is an `mcc` defect (`predefined_macros`
+  __STDC_VERSION__ default; `bitfields_ms` implementation-defined layout;
+  `cleanup` teardown ordering; `c11_freestanding_headers` where `mcc` is the
+  most conformant of the three). The suite returns non-zero on any divergence
+  by design; these four are the expected residual on a macOS host.
+
+---
+
+### §6.5–6.6 Expressions & constant expressions
+
+- [ ] **[DIAG] §6.5.16.1 — assignment to a const-qualified struct/union is diagnosed (as a warning).**
+  Audit re-check correction: `a = b` where `a` is `const struct S` *does* warn
+  "assignment of read-only location" — `vstore` calls `verify_assign_cast`
+  (`src/mccgen.c:3557`) whose const check (`:3456`) fires for aggregates too,
+  exactly as for the scalar case. mcc's long-standing stance is to *warn* on
+  assignment-to-const (scalar and aggregate alike); gcc/clang *error*. Only the
+  severity differs. Promoting to a default-on error would be more conformant but
+  is a broad change to a long-standing lenient warning — deferred.
+  3-way: mcc=warns | gcc=error | clang=error.
+
+- [ ] **[DIAG] §6.6p3 — comma operator in an integer constant expression diagnosed only under -pedantic.**
+  A required constant expression "shall not contain ... comma operators" outside
+  an unevaluated subexpression. `int a[(1,2)];` is `mcc_pedantic`
+  (`src/mccgen.c` in `gexpr`, ~`:8024`): silent at default level, but `-pedantic` warns and
+  `-pedantic-errors` hard-errors. clang is also lenient at default; gcc rejects
+  the file-scope case by default via its VLA-at-file-scope path. Effectively
+  handled — consider whether to promote to a default-on warning. Low priority.
+
+---
+
+### §6.7 Declarations
+
+- [ ] **[DIAG] §6.7.4p2 — `_Noreturn` on a non-function object diagnosed only under -pedantic.**
+  Function specifiers shall declare only functions. `_Noreturn int x;` is
+  diagnosed via `mcc_pedantic` (`src/mccgen.c` declarator storage-class check, ~`:10274`, gated on bit 128 = the
+  `_Noreturn` keyword vs `__attribute__((noreturn))`): silent at default,
+  `-pedantic` warns, `-pedantic-errors` errors. gcc warns by default; clang
+  errors by default. Effectively handled under `-pedantic`; consider promoting
+  to a default-on warning to match gcc. (The parallel `inline int x;` is a
+  default-on hard error at `src/mccgen.c` ~`:10270` — intentionally asymmetric since
+  gcc treats `_Noreturn` on an object as an extension.)
+
+---
+
+### §6.10 / §5 Preprocessor & environment
+
+- [ ] **[DIFF] §6.10.3.3p3 — invalid token paste is warn-and-continue (deliberate leniency).**
+  `C(+,-)` / `C(*,/)` emit a warning and continue (rc=0, output `+ -` / `* /`).
+  The result is UB (no diagnostic strictly mandated); mcc deliberately recovers
+  rather than aborting, and this is locked in by the `pp_invalid_paste` exec
+  golden. gcc/clang hard-error; this is an intentional, tested difference, kept.
+  (The genuinely-broken comment-introducer case `//`/`/*` IS a hard error now.)
+  3-way: mcc=warn(rc=0) | gcc=error | clang=error.
+
+---
+
+### Additional deliberate differences & gaps
+
+#### §6.4 / §6.10 lexical & preprocessor
+
+- [ ] **[BUG] §5.1.1.2 / §6.10 — `\`+whitespace+newline not spliced (now terminates, still not gcc-compat).**
+  The earlier hang is fixed; the residual is behavioral: `-c` hard-errors "stray
+  '\'" and `-E` emits a stray `\` token, whereas gcc/clang treat `\`+ws+NL as a
+  line-continuation splice with a `-Wbackslash-newline-escape` warning. Making
+  `handle_stray` consume `\`+whitespace+newline as a warned splice would match
+  the references. Low priority (extension; mcc's strict-ISO rejection is
+  defensible).
+  3-way: mcc=stray-`\`/no-splice | gcc/clang=splice+warn.
+
+#### §6.7 / §6.2 / §6.9 declarations
+
+- [ ] **[DIFF] §6.7.2.1 — no-declarator tagged struct *member*: mcc matches gcc `-fms-extensions` (silent).**
+  `struct S { struct T { int x; }; };` — re-verified 3-way: gcc *default* (no
+  `-fms-extensions`) warns "declaration does not declare anything"; but gcc
+  **`-fms-extensions` is silent even under `-pedantic`**, and clang
+  `-fms-extensions -pedantic` instead warns "anonymous structs are a Microsoft
+  extension". mcc enables MS extensions by default (so the nested tag becomes an
+  anonymous member), which matches gcc `-fms-extensions` exactly — silent. The two
+  references disagree once MS extensions are on, and mcc tracks gcc; adopting
+  clang's MS-extension warning would diverge from gcc. Left as a defensible DIFF.
+  (`src/mccgen.c` already warns when `ms_extensions == 0`.)
+
+- [ ] **[DIFF] §6.8.6.4p1 — `return <expr>;` in `void` / `return;` in non-`void`: CONFORMANT (diagnosed as a default-on warning).**
+  §6.8.6.4 is a *constraint*, which requires only that a conforming implementation
+  issue **a diagnostic** — it does not mandate an error. mcc emits a default-on
+  warning ("void function returns a value" / "'return' with no value") and
+  upgrades it to an error under `-Werror`, so the standard's requirement is met.
+  This is mcc's deliberate, **consistent** lenient-warning stance for constraint
+  violations — verified identical to the const-assignment §6.5.16.1 case (both
+  warn by default, both become errors under `-Werror`). gcc/clang choosing to make
+  it a hard error by default is their policy, not a standard requirement. Left as a
+  conformant DIFF (forcing an error would diverge from mcc's coherent
+  permissive-by-default / `-Werror`-enforces philosophy for no conformance gain).
+
+#### §7 library / floating-point builtins
+
+- [ ] **[FEATURE] §F/§7.12 — GCC/Clang floating-point builtins (constants + classification done).**
+  Added to `runtime/include/mccdefs.h` as constant-foldable macros (`#ifndef`-
+  guarded so the BSD/Apple defines win where present): `__builtin_inf`/`inff`/
+  `infl`, `huge_val`/`valf`/`vall`, `nan`/`nanf`/`nanl`/`nans*` (inf = folded
+  overflow product, nan = `0.0/0.0`), and the `isnan`/`isinf`/`isfinite`/
+  `isunordered`/`isgreater`/`isgreaterequal`/`isless`/`islessequal`/`islessgreater`
+  classification + comparison builtins. Direct use compiles, links, and folds in
+  a constant expression (`static int a=__builtin_isnan(0.0/0.0)`), matching gcc on
+  all 5 arches. exec `fp_builtins`. Also added `fabs`/`fabsf`/`fabsl`,
+  `signbit`/`signbitf`/`signbitl` (incl. `-0.0` detection via `1/x`), and
+  `copysign`/`copysignf`/`copysignl` as constant-foldable macros — verified 3-way.
+  `fpclassify`/`isnormal`: **work correctly via glibc + `-lm`** (verified:
+  `fpclassify` returns `FP_ZERO`/`FP_NORMAL`/`FP_INFINITE`/`FP_NAN`/`FP_SUBNORMAL`
+  and `isnormal` is correct for normal/zero/subnormal/inf). They route to glibc's
+  `__fpclassify` function (not the gcc builtin) because mcc's predefined
+  `__GNUC__ 4` (4.2.1) is below glibc's `__GNUC_PREREQ(4,4)` threshold for the
+  type-aware `__builtin_fpclassify`, so they need `-lm` where gcc's builtin does
+  not — a usability DIFF, not a correctness gap. They cannot be replaced by clean
+  constant-foldable macros: the subnormal test needs the *per-type* smallest-normal
+  threshold, which a type-agnostic macro can't know (gcc uses a type-aware
+  builtin). The macro builtins above also multi-evaluate their argument (intrinsics
+  don't). The `NAN`-sign and `signbit`-return behavior matches gcc/clang: mcc
+  predefines `__GNUC__ 4`, so glibc's `<math.h>` takes its GCC path — `NAN` prints
+  `nan` and `signbit` returns a normalized `0`/`1` (§7.12p5, §7.12.3.6p3).
+
+## Completed work — CST database (all vertical slices landed)
+
+The CST (Concrete Syntax Tree) database subsystem is complete — every
+vertical slice (S0, B–J, the weaves, FINAL) landed and is gated in CTest.
+This is the folded completion record moved out of `docs/TODO.md`; the design
+lives in [PLAN.md](PLAN.md) + [IMPLEMENTATION.md](IMPLEMENTATION.md), the
+implementation in `src/mcccst.{c,h}` (+ `tools/csttool`, `tests/cst/`).
+`MCC_CST` is now built **on by default** (CMakeLists.txt:1087), codegen
+byte-identical either way. Two non-blocking follow-ups stay open in
+`docs/TODO.md` (per-file include-stitching ownership in slice G; top-level
+Declaration/FunctionDef grouping + ParamList in slice H).
+
+Two headline deliverables, implemented via the vertical slices below:
+- [x] CST Database for Debugging, LSP, and Optimization data/layers — the
+  side-recorded, self-contained CST substrate is built, populated from real
+  compilation, round-trips byte-identically, hashes, serializes, and carries
+  symbol refs. The *consumer* layers (-g/LSP/opt) are separate future plans
+  (PLAN §9 M5+); this delivers the data layer they build on.
+- [x] CST Database uses hierarchical incremental hashes to enable bidirectional
+  lookups starting from any character index in any file — 128-bit hierarchical
+  Merkle hashing (struct + trivia channels, frontier-scoped incremental rehash,
+  epoch-hash seam reserved) + mandatory offset→node index; bidirectional
+  lookup verified (§8.3) on 308 corpus files.
+
+Legend for slices: each has a status line. `[ ]` open · `[~]` in progress ·
+`[x]` done. Slice IDs and dependencies per `IMPLEMENTATION.md §1`.
+
+### S0 — Gating & harness skeleton  ·  status: [x]
+Deps: — · Kind: build · PLAN §7, §8
+- [x] `MCC_CST` config node in CMakeLists.txt (mirror diagnostics node) → `CONFIG_MCC_CST`
+- [x] `cst` preset in CMakePresets.json (configure/build/test, mirrors diagnostics)
+- [x] `src/mcccst.{c,h}` present, self-guarded; `#include "mcccst.c"` in libmcc.c
+- [x] `CONFIG_MCC_CST` source guards + no-op hook macros in mcccst.h
+- [x] `tools/csttool` self-contained harness (#includes mcccst.c, links no compiler)
+- [x] `tests/cst/{store,hash,geom,serial}` registered; 4/4 green via ctest
+- [x] Codegen-identity gate (§8.5): mcc CST-on vs CST-off byte-identical over 42 files
+- Notes: define appended to `_mccdefs` (CMakeLists.txt ~1642); mcccst.c un-poisons
+  malloc/realloc/free (mcc.h:1230) via push/pop_macro for self-containment. mcc
+  binary grows (~26KB, dead code until Weave 1) but its *output* is identical.
+
+### B — Node store core (pure)  ·  status: [x]
+Deps: S0 · PLAN §1, §2
+- [x] `CstArena` growable SoA store + free/reset
+- [x] SoA columns incl. reserved `slot_key`; linked `first_child`/`next_sib`
+- [x] Tagged id scheme: `u32` local index + 64-bit `(file,local)` cross-file
+- [x] `cst_node_open/close`, `cst_leaf`, append_child, column accessors
+- [x] Synthetic-tree builder in harness + topology/id round-trip tests (cst/store)
+- Notes: width accumulates bottom-up (leaf sets own len; close bubbles into parent).
+
+### C — Hashing library (pure)  ·  status: [x]
+Deps: S0 · PLAN §3, §3.1
+- [x] 128-bit non-crypto hash (two lanes, splitmix-style finalizer)
+- [x] `cst_hash_leaf` (kind salt + token bytes, trivia carved out)
+- [x] `cst_hash_internal` (salt(kind,count) + Merkle fold)
+- [x] `cst_hash_eq`, frontier-scoped `cst_rehash_frontier`; epoch-hash seam reserved
+- [x] Invariance property tests (cst/hash): ws-invariance, token-sensitivity,
+      identical-subtree equality, child-count salt, frontier==full
+- Notes: leaf token bytes = owned span minus leading-trivia prefix (`tok_rel`).
+
+### D — Geometry & offset→node index (pure)  ·  status: [x]
+Deps: B · PLAN §1, §2, §5
+- [x] Relative-width finalize on close; `cst_abs_offset` prefix-sum
+- [x] Mandatory `offset→node` index build + `cst_node_at` (binary search)
+- [x] Tiling invariant test (§8.2) + per-offset round-trip (§8.3) (cst/geom)
+- Notes:
+
+### E — Serialization (pure)  ·  status: [x]
+Deps: B (+G stub) · PLAN §1, §8.1, §8.6
+- [x] Versioned snapshot header (magic+version+endian) save/load, all columns
+- [x] `cst_reflect` CST→source emitter (emits owned leaf spans in DFS order)
+- [x] Save/load equality + version-skew rejection + reflect round-trip (cst/serial)
+- Notes:
+
+### F — Byte-offset facility (compiler)  ·  status: [x]
+Deps: — · PLAN §5
+- [x] Monotonic byte cursor `BufferedFile.cst_base` (guarded), maintained in
+      handle_eob so abs_off(p) == cst_base + (p - buffer)
+- [x] Correct across handle_eob refills (validated: 12KB file round-trips)
+- [x] Validated via round-trip over 305 corpus files (offset model exercised)
+- Notes: cursor advances by discarded-window length at each refill; captured as
+  absolute values at token start/end so it survives mid-token refills.
+
+### G — Owned source & trivia (compiler)  ·  status: [x]
+Deps: B, F · PLAN §4, §1
+- [x] Per-file byte copy into arena (cst_slurp of the main file) = LSP doc model
+- [x] Trivia classified on real leaves (cst_leading_trivia: whitespace + line/
+      block comments) → tok_rel set → excluded from H_s. Verified: whitespace/
+      comment-only edits leave H_s unchanged, token edits change it (cst/hashinv)
+- [x] Round-trip proves owned buffer + spans correct over corpus (309/0)
+- [ ] Per-file subtree ownership for include stitching (main file only; multi-
+      file include stitching is an LSP-era refinement, PLAN §1 Includes)
+- Notes: trivia lumped as one leading WS piece per leaf; finer per-piece
+  classification (separate comment pieces, 9B Comment nodes) is a later refinement.
+
+### H — Recording hooks (WEAVE 1 + M2)  ·  status: [x]
+Deps: B, D, F, G · PLAN §6
+- [x] Leaf capture at next_nomacro exit (mccpp.c:3340), [prev_end,end) tiling;
+      cst_capture_begin/end bracket mccgen_compile in mcc_compile
+- [x] Deferred-capture model resolves single-pass lookahead skew: flat leaves
+      (round-trip) + structural specs as leaf-index ranges materialized in
+      cst_hook_end (node spans [open_count-1, close_count-1))
+- [x] Structural brackets on the single-exit grammar functions: block()
+      (statement kinds If/While/For/Do/Switch/Return/Goto/CompoundStmt/ExprStmt),
+      type_decl() (Declarator), struct_decl() (StructOrUnion). basic.c: 33 flat →
+      357 nodes; round-trip stays exact.
+- [x] Corpus gate (cst_validate): round-trip §8.1 + tiling §8.2 + offset→node
+      §8.3 all pass on 312/312 compilable files, 0 failures. Balance verified: 0
+      hook imbalances across the corpus (temporary instrumentation, now assert).
+- [x] Debug-build balance assert in cst_hook_end (CST_ASSERT cst_sstop==1);
+      fires in assert-enabled builds (sanitize/diagnostics).
+- [x] Expression nodes via retroactive range-based wrapping (cst_hook_open_at +
+      cst_nest_specs rebuilds nesting from leaf-range containment, solving the
+      precedence-climbing left-recursion cleanly): CST_Binary (only when an infix
+      operator is present — no degenerate chains), CST_Cond (?:), assignment as
+      Binary, CST_Comma, and postfix CST_Member/CST_Index/CST_Call. Verified on
+      real code: `p[0].x` → Member(Index(p,0),x), `f(1,2)` → Call, in one flat
+      Binary. Crash-hardened: empty-range specs (macro-expanded exprs) dropped.
+- [~] Minor remaining (non-blocking refinements): top-level Declaration/
+      FunctionDef grouping and ParamList — decl()/post_type() have many
+      exit/continue points inside loops, making per-item retroactive wrapping
+      awkward for marginal gain (Declarator + Compound already capture the
+      structure). lblock()/gexpr_decl() are low-value wrappers.
+- Coverage now: TU, Compound + all statement kinds, Declarator, StructOrUnion,
+  Binary, Cond, Comma, Member, Index, Call, MacroInvocation, Token — a rich,
+  correct, round-trip-preserving concrete syntax tree.
+
+### WEAVE 2 — Hash & snapshot online  ·  status: [x]
+- [x] Hashing runs on every real tree (cst_rehash_all in cst_hook_end)
+- [x] Snapshot save/load of real compiled trees: reload validates + identical
+      struct hash (MCC_CST_SNAPSHOT), gated in ctest via roundtrip.cmake (§8.6)
+- Notes: moved up from the milestone list — landed together with M2.
+- Notes (verified 2026-07-05 against source):
+  - PLAN's `expr`/`cond_expr`/`binary` DO NOT EXIST. Real expr cascade:
+    `gexpr`(7962)→`expr_eq`(7910)→`expr_cond`(7785)→`expr_lor`(7665)→
+    `expr_land`(7659)→`expr_or`(7648)→`expr_xor`(7639)→`expr_and`(7630)→
+    `expr_cmpeq`(7619)→`expr_cmp`(7607)→`expr_shift`(7596)→`expr_sum`(7585)→
+    `expr_prod`(7574)→`unary`(6453). `expr_const`(8007). Each cascade level is
+    single-exit fall-through — trivial to bracket.
+  - `decl(int l)`@10074 has MULTIPLE returns (10089/10128/10386/10394) — needs a
+    goto-epilogue or wrap at the caller for `cst_close`.
+  - `block(int flags)`@8402 single-exit (converges at 8817) but has `again:`@8408
+    loop + gotos — place `cst_open` AFTER the `again:` label or guard re-entry.
+  - Token consumption = direct `next()`(mccpp.c:3874)/`skip()`(mccpp.c:71) calls;
+    hook leaves either by wrapping those or reading `tok` at boundaries.
+  - Add `#include "mcccst.h"` after mcc.h:190; hook prototypes near mcc.h:1477;
+    mirror `CONFIG_MCC_ASM` #ifdef style (mccgen.c:10103).
+
+### I — Symbol refs (WEAVE 3)  ·  status: [x]
+Deps: H, B · PLAN §1(Symbols), §4
+- [x] Def hook at type_decl_1 (declarator name) + use hook at unary() identifier;
+      token-value→def-offset side table, resolved to node-ids in cst_hook_end
+- [x] Stored as tagged `(file,local)` sym_ref; survives snapshot (cst/sym)
+- [x] def↔use correctness verified on real code (cst/symref): p→param,
+      myglobal→global, helper→function, local→local all correct
+- Notes: v1 is last-declaration-wins (no scope stack) — shadowing across scopes
+  can mis-resolve; documented. `name→def`/`def→uses` reverse indices: reuse
+  sym_ref column, build lazily when the LSP consumer needs them.
+
+### J — Macro fidelity / Mμ (WEAVE 3)  ·  status: [x]
+Deps: H, F · PLAN §4, §11
+- [x] Expansion-transparent subset (PLAN §4 M1): macro invocations captured as
+      written source leaves; round-trips byte-identical over the corpus.
+- [x] `MacroInvocation` nodes: at the macro-expansion boundary in next()
+      (mccpp.c:4044), the written macro-use span (name + args) is wrapped as a
+      CST_MacroInvocation via cst_hook_wrap. Object-like and function-like both
+      covered; nests correctly with enclosing expressions. Gated by cst/macro
+      (>=3 MacroInvocation nodes + round-trip on SQUARE/LIMIT/ADD fixture).
+- Notes / accepted v1 imprecisions (PLAN §11 "grow under test"): (1) function-
+  like invocations may exclude the trailing ')' to avoid overrunning the next
+  construct (arg-scan lookahead varies); (2) object-like macros used *inside*
+  another macro's args stay plain tokens; (3) expansion *children* (for -g/opt)
+  are not attached — the node reflects *written* source, which is what round-
+  trip/LSP need. All are refinements, not correctness gaps.
+
+### FINAL — corpus & hardening  ·  status: [x]
+- [x] All gates (round-trip §8.1 + tiling §8.2 + offset→node §8.3) over 308/308
+      compilable corpus files; snapshot §8.6 + hash §8.4 gated in ctest
+- [x] §0.1/§0.2 codegen-identity gate holds; full ctest CST-ON 819/819 and
+      CST-OFF 811/811 (shared-file edits inert when off)
+- [x] Risk items pinned: hook-coverage→cst_validate tiling; zero-cost-off→codegen
+      gate; width arithmetic→tiling invariant; macro→round-trip corpus
+- Notes: "tests2" corpus not present in this tree; used tests/** (379 files).
+
+## Completed — docs-accuracy reconciliation (2026-07-06)
+
+A validation pass over `docs/*.md` against the codebase (three agents + spot
+checks) found the rest accurate and these items stale; all were fixed in the docs
+and re-verified against the source. Migrated here from `docs/TODO.md`.
+
+- **`MCC_CST` default OFF→ON.** `BUILD.md` (row moved out of the §4 Diagnostics
+  table into §5 with `DEFAULT ON` / `GROUP "Advanced"`, "(experimental)" dropped)
+  and `PLAN.md §7` (snippet now `DEFAULT ON GROUP "Advanced" ADVANCED`) matched to
+  `CMakeLists.txt:1087`.
+- **`cst` preset documented.** Added the `cst` developer preset to `BUILD.md §2`
+  and named `local-ci` in the "no test preset" exception list.
+- **Default C standard corrected C99→C11.** The `NOTES.md` conformance section now
+  says the default is C11 (`cversion=201112`, set in `mcc_new()` at
+  `src/libmcc.c:935`, predefined as `__STDC_VERSION__`); `-std=c99` selects C99.
+  (Was wrongly "C99, `cversion=199901`, `src/libmcc.c:860`" — `:860` is unrelated
+  `#else` code and `199901` is only the `-std=c99` value.)
+- **PLAN §5 byte-cursor rewritten.** Now describes the shipped `cst_base +
+  (p - buffer)` model (`src/mcc.h:465`; `cst_base` bumped in `handle_eob`) instead
+  of the never-built "monotonic per-byte counter"; `IMPLEMENTATION.md §2-F` matched.
+- **IMPLEMENTATION.md §3 seam refreshed.** Relabelled as the original design
+  sketch plus an as-shipped correction: `CST_LEAF(tk, off, n)`, added `CST_OPEN_AT`
+  / `CST_MARK`, and the rule now notes the direct `cst_hook_*` calls and that
+  `CST_LEAF`/`cst_hook_leaf` are vestigial (0 uses; leaves captured via
+  `cst_hook_token`). The §0 "only the hook macros" line was softened to match.
+- **IMPLEMENTATION.md §2 file names fixed.** The per-slice
+  `src/mcccst_{hash,geom,io}.c` (never created) → the single `src/mcccst.c`;
+  `tools/csttool/` directory → the single file `tools/csttool.c`.
+- **NOTES.md Profiling snippet fixed.** `static TokenSym *tok_ts; // file-scope` →
+  the real `#define tok_ts (mcc_state->tok_ts)` (`src/mccpp.c:12`), an `MCCState`
+  member.
+- **Drifted conformance refs re-anchored.** `src/mccgen.c` comma-in-ICE
+  `:7448`→~`:8024`, `_Noreturn`-on-object `:9509`→~`:10274`, `inline`-on-object
+  `:9504`→~`:10270` (now symbol-anchored; the `:3557`/`:3456` const-assignment refs
+  were already accurate).
+
+Still open in `docs/TODO.md` (these need a measurement/CI run, not a doc edit):
+the test-count reconcile, the "~100×" headline, the speed/size table re-measure,
+the PROFILING §4–§5 pre-`TOK_HASH_SIZE` baselines, and the "all green" status
+prose regeneration.

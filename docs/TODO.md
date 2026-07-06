@@ -6,178 +6,27 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
 
 # Now
 
-## CST Database (see `docs/PLAN.md` + `docs/IMPLEMENTATION.md`)
+## CST database — COMPLETE (full record folded into docs/NOTES.md)
 
-Two headline deliverables, implemented via the vertical slices below:
-- [x] CST Database for Debugging, LSP, and Optimization data/layers — the
-  side-recorded, self-contained CST substrate is built, populated from real
-  compilation, round-trips byte-identically, hashes, serializes, and carries
-  symbol refs. The *consumer* layers (-g/LSP/opt) are separate future plans
-  (PLAN §9 M5+); this delivers the data layer they build on.
-- [x] CST Database uses hierarchical incremental hashes to enable bidirectional
-  lookups starting from any character index in any file — 128-bit hierarchical
-  Merkle hashing (struct + trivia channels, frontier-scoped incremental rehash,
-  epoch-hash seam reserved) + mandatory offset→node index; bidirectional
-  lookup verified (§8.3) on 308 corpus files.
+All vertical slices (S0, B–J, WEAVE 2, FINAL) landed and are gated in CTest; the
+complete record — the two headline deliverables, per-slice detail, and notes —
+now lives in
+[docs/NOTES.md § Completed work](NOTES.md#completed-work--cst-database-all-vertical-slices-landed).
+`MCC_CST` is built **on by default** (`CMakeLists.txt:1087`); codegen is
+byte-identical CST-on vs CST-off. Residual non-blocking follow-ups:
 
-Legend for slices: each has a status line. `[ ]` open · `[~]` in progress ·
-`[x]` done. Slice IDs and dependencies per `IMPLEMENTATION.md §1`.
+- [ ] **CST slice G — per-file subtree ownership for include stitching.** Only
+  the main file is slurped/owned today; multi-file include stitching is the
+  LSP-era refinement (PLAN §1 "Includes").
+- [~] **CST slice H — top-level Declaration/FunctionDef grouping + ParamList not
+  bracketed.** `decl()`/`post_type()` have many exit/continue points, making
+  per-item retroactive wrapping awkward for marginal gain (Declarator + Compound
+  already capture the structure). ~14 reserved node kinds (Declaration,
+  FunctionDef, ParamList, Enum, TypeName, Initializer, Label, Unary, Cast, Paren,
+  Primary, IncludeDirective, PPDirective, PPConditional) are declared in the enum
+  but not yet produced (PLAN §2 "reserve now even if unused").
 
-### S0 — Gating & harness skeleton  ·  status: [x]
-Deps: — · Kind: build · PLAN §7, §8
-- [x] `MCC_CST` config node in CMakeLists.txt (mirror diagnostics node) → `CONFIG_MCC_CST`
-- [x] `cst` preset in CMakePresets.json (configure/build/test, mirrors diagnostics)
-- [x] `src/mcccst.{c,h}` present, self-guarded; `#include "mcccst.c"` in libmcc.c
-- [x] `CONFIG_MCC_CST` source guards + no-op hook macros in mcccst.h
-- [x] `tools/csttool` self-contained harness (#includes mcccst.c, links no compiler)
-- [x] `tests/cst/{store,hash,geom,serial}` registered; 4/4 green via ctest
-- [x] Codegen-identity gate (§8.5): mcc CST-on vs CST-off byte-identical over 42 files
-- Notes: define appended to `_mccdefs` (CMakeLists.txt ~1642); mcccst.c un-poisons
-  malloc/realloc/free (mcc.h:1230) via push/pop_macro for self-containment. mcc
-  binary grows (~26KB, dead code until Weave 1) but its *output* is identical.
-
-### B — Node store core (pure)  ·  status: [x]
-Deps: S0 · PLAN §1, §2
-- [x] `CstArena` growable SoA store + free/reset
-- [x] SoA columns incl. reserved `slot_key`; linked `first_child`/`next_sib`
-- [x] Tagged id scheme: `u32` local index + 64-bit `(file,local)` cross-file
-- [x] `cst_node_open/close`, `cst_leaf`, append_child, column accessors
-- [x] Synthetic-tree builder in harness + topology/id round-trip tests (cst/store)
-- Notes: width accumulates bottom-up (leaf sets own len; close bubbles into parent).
-
-### C — Hashing library (pure)  ·  status: [x]
-Deps: S0 · PLAN §3, §3.1
-- [x] 128-bit non-crypto hash (two lanes, splitmix-style finalizer)
-- [x] `cst_hash_leaf` (kind salt + token bytes, trivia carved out)
-- [x] `cst_hash_internal` (salt(kind,count) + Merkle fold)
-- [x] `cst_hash_eq`, frontier-scoped `cst_rehash_frontier`; epoch-hash seam reserved
-- [x] Invariance property tests (cst/hash): ws-invariance, token-sensitivity,
-      identical-subtree equality, child-count salt, frontier==full
-- Notes: leaf token bytes = owned span minus leading-trivia prefix (`tok_rel`).
-
-### D — Geometry & offset→node index (pure)  ·  status: [x]
-Deps: B · PLAN §1, §2, §5
-- [x] Relative-width finalize on close; `cst_abs_offset` prefix-sum
-- [x] Mandatory `offset→node` index build + `cst_node_at` (binary search)
-- [x] Tiling invariant test (§8.2) + per-offset round-trip (§8.3) (cst/geom)
-- Notes:
-
-### E — Serialization (pure)  ·  status: [x]
-Deps: B (+G stub) · PLAN §1, §8.1, §8.6
-- [x] Versioned snapshot header (magic+version+endian) save/load, all columns
-- [x] `cst_reflect` CST→source emitter (emits owned leaf spans in DFS order)
-- [x] Save/load equality + version-skew rejection + reflect round-trip (cst/serial)
-- Notes:
-
-### F — Byte-offset facility (compiler)  ·  status: [x]
-Deps: — · PLAN §5
-- [x] Monotonic byte cursor `BufferedFile.cst_base` (guarded), maintained in
-      handle_eob so abs_off(p) == cst_base + (p - buffer)
-- [x] Correct across handle_eob refills (validated: 12KB file round-trips)
-- [x] Validated via round-trip over 305 corpus files (offset model exercised)
-- Notes: cursor advances by discarded-window length at each refill; captured as
-  absolute values at token start/end so it survives mid-token refills.
-
-### G — Owned source & trivia (compiler)  ·  status: [x]
-Deps: B, F · PLAN §4, §1
-- [x] Per-file byte copy into arena (cst_slurp of the main file) = LSP doc model
-- [x] Trivia classified on real leaves (cst_leading_trivia: whitespace + line/
-      block comments) → tok_rel set → excluded from H_s. Verified: whitespace/
-      comment-only edits leave H_s unchanged, token edits change it (cst/hashinv)
-- [x] Round-trip proves owned buffer + spans correct over corpus (309/0)
-- [ ] Per-file subtree ownership for include stitching (main file only; multi-
-      file include stitching is an LSP-era refinement, PLAN §1 Includes)
-- Notes: trivia lumped as one leading WS piece per leaf; finer per-piece
-  classification (separate comment pieces, 9B Comment nodes) is a later refinement.
-
-### H — Recording hooks (WEAVE 1 + M2)  ·  status: [x]
-Deps: B, D, F, G · PLAN §6
-- [x] Leaf capture at next_nomacro exit (mccpp.c:3340), [prev_end,end) tiling;
-      cst_capture_begin/end bracket mccgen_compile in mcc_compile
-- [x] Deferred-capture model resolves single-pass lookahead skew: flat leaves
-      (round-trip) + structural specs as leaf-index ranges materialized in
-      cst_hook_end (node spans [open_count-1, close_count-1))
-- [x] Structural brackets on the single-exit grammar functions: block()
-      (statement kinds If/While/For/Do/Switch/Return/Goto/CompoundStmt/ExprStmt),
-      type_decl() (Declarator), struct_decl() (StructOrUnion). basic.c: 33 flat →
-      357 nodes; round-trip stays exact.
-- [x] Corpus gate (cst_validate): round-trip §8.1 + tiling §8.2 + offset→node
-      §8.3 all pass on 312/312 compilable files, 0 failures. Balance verified: 0
-      hook imbalances across the corpus (temporary instrumentation, now assert).
-- [x] Debug-build balance assert in cst_hook_end (CST_ASSERT cst_sstop==1);
-      fires in assert-enabled builds (sanitize/diagnostics).
-- [x] Expression nodes via retroactive range-based wrapping (cst_hook_open_at +
-      cst_nest_specs rebuilds nesting from leaf-range containment, solving the
-      precedence-climbing left-recursion cleanly): CST_Binary (only when an infix
-      operator is present — no degenerate chains), CST_Cond (?:), assignment as
-      Binary, CST_Comma, and postfix CST_Member/CST_Index/CST_Call. Verified on
-      real code: `p[0].x` → Member(Index(p,0),x), `f(1,2)` → Call, in one flat
-      Binary. Crash-hardened: empty-range specs (macro-expanded exprs) dropped.
-- [~] Minor remaining (non-blocking refinements): top-level Declaration/
-      FunctionDef grouping and ParamList — decl()/post_type() have many
-      exit/continue points inside loops, making per-item retroactive wrapping
-      awkward for marginal gain (Declarator + Compound already capture the
-      structure). lblock()/gexpr_decl() are low-value wrappers.
-- Coverage now: TU, Compound + all statement kinds, Declarator, StructOrUnion,
-  Binary, Cond, Comma, Member, Index, Call, MacroInvocation, Token — a rich,
-  correct, round-trip-preserving concrete syntax tree.
-
-### WEAVE 2 — Hash & snapshot online  ·  status: [x]
-- [x] Hashing runs on every real tree (cst_rehash_all in cst_hook_end)
-- [x] Snapshot save/load of real compiled trees: reload validates + identical
-      struct hash (MCC_CST_SNAPSHOT), gated in ctest via roundtrip.cmake (§8.6)
-- Notes: moved up from the milestone list — landed together with M2.
-- Notes (verified 2026-07-05 against source):
-  - PLAN's `expr`/`cond_expr`/`binary` DO NOT EXIST. Real expr cascade:
-    `gexpr`(7962)→`expr_eq`(7910)→`expr_cond`(7785)→`expr_lor`(7665)→
-    `expr_land`(7659)→`expr_or`(7648)→`expr_xor`(7639)→`expr_and`(7630)→
-    `expr_cmpeq`(7619)→`expr_cmp`(7607)→`expr_shift`(7596)→`expr_sum`(7585)→
-    `expr_prod`(7574)→`unary`(6453). `expr_const`(8007). Each cascade level is
-    single-exit fall-through — trivial to bracket.
-  - `decl(int l)`@10074 has MULTIPLE returns (10089/10128/10386/10394) — needs a
-    goto-epilogue or wrap at the caller for `cst_close`.
-  - `block(int flags)`@8402 single-exit (converges at 8817) but has `again:`@8408
-    loop + gotos — place `cst_open` AFTER the `again:` label or guard re-entry.
-  - Token consumption = direct `next()`(mccpp.c:3874)/`skip()`(mccpp.c:71) calls;
-    hook leaves either by wrapping those or reading `tok` at boundaries.
-  - Add `#include "mcccst.h"` after mcc.h:190; hook prototypes near mcc.h:1477;
-    mirror `CONFIG_MCC_ASM` #ifdef style (mccgen.c:10103).
-
-### I — Symbol refs (WEAVE 3)  ·  status: [x]
-Deps: H, B · PLAN §1(Symbols), §4
-- [x] Def hook at type_decl_1 (declarator name) + use hook at unary() identifier;
-      token-value→def-offset side table, resolved to node-ids in cst_hook_end
-- [x] Stored as tagged `(file,local)` sym_ref; survives snapshot (cst/sym)
-- [x] def↔use correctness verified on real code (cst/symref): p→param,
-      myglobal→global, helper→function, local→local all correct
-- Notes: v1 is last-declaration-wins (no scope stack) — shadowing across scopes
-  can mis-resolve; documented. `name→def`/`def→uses` reverse indices: reuse
-  sym_ref column, build lazily when the LSP consumer needs them.
-
-### J — Macro fidelity / Mμ (WEAVE 3)  ·  status: [x]
-Deps: H, F · PLAN §4, §11
-- [x] Expansion-transparent subset (PLAN §4 M1): macro invocations captured as
-      written source leaves; round-trips byte-identical over the corpus.
-- [x] `MacroInvocation` nodes: at the macro-expansion boundary in next()
-      (mccpp.c:4044), the written macro-use span (name + args) is wrapped as a
-      CST_MacroInvocation via cst_hook_wrap. Object-like and function-like both
-      covered; nests correctly with enclosing expressions. Gated by cst/macro
-      (>=3 MacroInvocation nodes + round-trip on SQUARE/LIMIT/ADD fixture).
-- Notes / accepted v1 imprecisions (PLAN §11 "grow under test"): (1) function-
-  like invocations may exclude the trailing ')' to avoid overrunning the next
-  construct (arg-scan lookahead varies); (2) object-like macros used *inside*
-  another macro's args stay plain tokens; (3) expansion *children* (for -g/opt)
-  are not attached — the node reflects *written* source, which is what round-
-  trip/LSP need. All are refinements, not correctness gaps.
-
-### FINAL — corpus & hardening  ·  status: [x]
-- [x] All gates (round-trip §8.1 + tiling §8.2 + offset→node §8.3) over 308/308
-      compilable corpus files; snapshot §8.6 + hash §8.4 gated in ctest
-- [x] §0.1/§0.2 codegen-identity gate holds; full ctest CST-ON 819/819 and
-      CST-OFF 811/811 (shared-file edits inert when off)
-- [x] Risk items pinned: hook-coverage→cst_validate tiling; zero-cost-off→codegen
-      gate; width arithmetic→tiling invariant; macro→round-trip corpus
-- Notes: "tests2" corpus not present in this tree; used tests/** (379 files).
+---
 
 # Later
 
@@ -211,27 +60,32 @@ Deps: H, F · PLAN §4, §11
     the earlier `MCC_NOOPT` `/Od`-vs-`/O2` probe was inconclusive (the intermittent
     corruption did not reproduce that run), so even that is unverified.
 - [ ] **Reconcile divergent test-count claims across docs (validate).**
-  `README.md:116` (39/39, 22/22) vs `README.md:127-129` (782/782, 520/520) vs
-  `docs/PROFILING.md:384` (804/772) cite different totals with no stated basis.
+  `docs/NOTES.md` "Build status" (39/39, 22/22 and 782/782 / 520/520) vs its
+  Profiling §7 validation matrix (804/772) cite different totals with no stated
+  basis (all three moved out of README/PROFILING in the 2026-07-06 reorg).
   → Regenerate from one `ctest -N` per host/preset and state the per-case vs
   aggregate counting basis; make the docs cite the same source of truth.
 - [ ] **Trace the "~100× faster than gcc -O2" headline to a measurement (validate).**
-  `README.md:15` says "~100×"; `docs/PROFILING.md:204-217` measures 118–204×
-  (TU/opt dependent); the `README.md:318-328` table shows 108–141×. → Pick the
-  documented benchmark and make the headline a measured range, not a round number.
+  `README.md:15` says "~100×"; `docs/NOTES.md` Profiling §4b measures 118–204×
+  (TU/opt dependent); the NOTES.md "Compile speed & footprint" table shows
+  108–141×. → Pick the documented benchmark and make the headline a measured
+  range, not a round number.
 - [ ] **Re-measure & date-stamp the README speed/size table post-lexer-change
-  (validate).** `README.md:318-328` (0.05 s; 7/19/108/141×) and the ~0.6 MB /
-  ~1.3 MB size claims (`README.md:16,320`) predate the `TOK_HASH_SIZE` change and
-  are toolchain/host-sensitive. → Re-run `mccbench` + `size`/`strip` a `dist-*`
-  build; refresh, noting the host as PROFILING does.
+  (validate).** The `docs/NOTES.md` "Compile speed & footprint" table (0.05 s;
+  7/19/108/141×) and the ~0.6 MB / ~1.3 MB size claims (`README.md:16` + that
+  table) predate the `TOK_HASH_SIZE` change and are toolchain/host-sensitive. →
+  Re-run `mccbench` + `size`/`strip` a `dist-*` build; refresh, noting the host
+  as PROFILING does.
 - [ ] **PROFILING §4–§5 hot-path %/timings predate the `TOK_HASH_SIZE`
   16384→65536 change (validate).** §8 (dated one day later) changed the lexer, so
-  the `next_nomacro` self-% and `-E` timings in §4–§5 may be stale. → Re-run §3–§5
-  or annotate them as pre-change baselines.
+  the `next_nomacro` self-% and `-E` timings now in `docs/NOTES.md` Profiling
+  §4–§5 may be stale. → Re-run the PROFILING §3 method + §4–§5, or annotate them
+  as pre-change baselines.
 - [ ] **Regenerate the dated "all green" status prose from CI (validate).**
-  `README.md:110-151` narrates per-preset pass/skip counts across ~35 presets;
-  this rots silently. → Derive from the latest workflow run, or add a check that
-  fails when the prose diverges from actual CTest output.
+  `docs/NOTES.md` "Build status" (moved from README) narrates per-preset
+  pass/skip counts across ~35 presets; this rots silently. → Derive from the
+  latest workflow run, or add a check that fails when the prose diverges from
+  actual CTest output.
 - [ ] **`atomic_fetch_add/sub` on `_Atomic` pointer types is rejected (impl).**
   `C9911.md:3460` §7.17.7.5p2: mcc errors ("integral or integer-sized pointer
   target type expected"); clang scales by pointee size. → Add pointer-operand
@@ -373,11 +227,14 @@ Deps: H, F · PLAN §4, §11
 
 ACHTUNG!!! DO NOT DO!!! WARNING!!!
 
-• Implement/finish `-g` debugging/debugger and flesh out gdb/etc test cases
-• Can a fully static build use a minimalistic `-run` to sidestep the dynamic linking limitations and use libc or musl in-memory?
-• Use only human friendly warnings/errors, backed by tests that check formatted output against terminal dimensions/configuration
-• Hot reload by saving/loading CST snapshots on the fly and on run with --hotreload arg
-• Run hotreloads from reconcoliled CST snapshots
+* Change MCC_VERSION everywhere to be YYYYMMDDHHMMSS (use two int's in code for major YYYYMMDD and minor HHMMSS)
+* Normalize as much of the CMake code as possible: minimize gating instead preferring autodetecting the existence of tools and enabling as many tests/targets/configs as are available on the host
+* Use only human friendly warnings/errors, backed by tests that check formatted output against terminal dimensions/configuration
+* Can a fully static build use a minimalistic `-run` to sidestep the dynamic linking limitations and use libc or musl in-memory?
+* Implement/finish `-g` debugging/debugger and flesh out gdb/etc test cases, check against gcc and clang sources of truth
+* Optimization -O1...100 levels measured in max seconds to spend optimizing?
+* Hot reload by saving/loading CST snapshots on the fly and on run with --hotreload arg
+* Run hot-reloads from reconciled CST snapshots
 
 ACHTUNG!!! DO NOT DO!!! WARNING!!!
 

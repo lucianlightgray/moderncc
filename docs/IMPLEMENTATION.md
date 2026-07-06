@@ -33,8 +33,9 @@ serialization correct. Real source only enters at the first weave — by which
 point the libraries it flows into are already trusted.
 
 The seam that makes this possible is the header contract in §3: pure slices
-publish functions; compiler-side slices call only the hook macros. Neither side
-reaches across.
+publish functions; compiler-side slices drive them through the hook macros (plus,
+as shipped, a few direct `cst_hook_*` calls under `#if CONFIG_MCC_CST` — see §3).
+Neither side reaches across into the other's internals.
 
 ---
 
@@ -62,7 +63,7 @@ into the harness alone.
 
 ### S0 — Gating & harness skeleton
 **Files:** `CMakeLists.txt` (config node + `add_test`), `CMakePresets.json`,
-`src/mcccst.{c,h}` (empty but present), `tools/csttool/` skeleton,
+`src/mcccst.{c,h}` (empty but present), `tools/csttool.c` (single file),
 `tests/cst/`.
 **Delivers:** `MCC_CST` config node (`PLAN §7`), `CONFIG_MCC_CST` guards, the
 `cst` preset, and the **codegen-identity gate** (`§8.5`) wired into CI so it runs
@@ -83,7 +84,8 @@ asserts parent/child/sibling topology, id encode/decode round-trip, arena
 free/reset, and reserved columns default to zero.
 
 ### C — Hashing library *(pure)*
-**Files:** `src/mcccst_hash.c` (or a section of `mcccst.c`).
+**Files:** `src/mcccst.c` (hashing section — the per-slice `mcccst_*.c` split
+sketched in this plan was not taken; all slices live in one `src/mcccst.c`).
 **Delivers:** the 128-bit non-crypto hash (two 64-bit lanes + finalizer, `§3`);
 `cst_hash_leaf` (kind-salt + leaf bytes, trivia excluded), `cst_hash_internal`
 (`salt(kind, child_count)` then Merkle-fold over child hashes), `cst_hash_eq`,
@@ -96,7 +98,7 @@ hash equal (`§8.4`). All on synthetic byte strings and child-hash arrays; no tr
 required.
 
 ### D — Geometry & offset→node index *(pure)*
-**Files:** `src/mcccst_geom.c`.
+**Files:** `src/mcccst.c` (geometry section).
 **Delivers:** relative-width finalization on `cst_node_close`; `cst_abs_offset`
 (prefix-sum walk); and the **mandatory** `offset→node` index (`§1` Positioning,
 `§2`) — built once, queried O(log n) or better, a rebuildable accelerator over
@@ -106,7 +108,7 @@ the canonical widths.
 `cst_node_at` → span → offset round-trip (`§8.3`).
 
 ### E — Serialization *(pure)*
-**Files:** `src/mcccst_io.c`.
+**Files:** `src/mcccst.c` (serialization section).
 **Delivers:** the **versioned snapshot** (magic + format-version + endianness +
 section table, `§1` Persistence) `save`/`load`; and `cst_reflect` — the CST→source
 emitter for the round-trip oracle (`§8.1`). `reflect` consumes owned-source spans;
@@ -117,9 +119,9 @@ deliberate version/endianness mismatch is rejected cleanly (`§8.6`);
 
 ### F — Byte-offset facility *(compiler-side, isolated)*
 **Files:** `src/mccpp.c` (advance path near `handle_eob`, `mccpp.c:800–1000`).
-**Delivers:** the monotonic **byte cursor** (`§5`) — one increment per consumed
-byte, robust across chunk refills and macro pushback; exposed only under
-`CONFIG_MCC_CST`.
+**Delivers:** the **byte cursor** (`§5`) — a per-file `cst_base` bumped in
+`handle_eob` so `abs_off(p) == cst_base + (p - buffer)`, robust across chunk
+refills and macro pushback; exposed only under `CONFIG_MCC_CST`.
 **Isolation test:** a debug probe that, for a fixture file, asserts the cursor at
 each token boundary equals the known character position — across an `#include`, a
 multi-chunk file, and a macro expansion. **No CST needed** to validate this.
@@ -163,9 +165,10 @@ transparent subset to full fidelity.
 
 ## 3. The seam (interface contract)
 
-Pure slices publish these; compiler-side slices call **only** the hook macros.
-This is the whole contract that lets the two sides be built apart. Sketch — exact
-signatures firm up in S0/B, but the shape is fixed:
+Pure slices publish these; compiler-side slices drive them. This is the contract
+that lets the two sides be built apart. The block below is the **original design
+sketch**; the **as-shipped** seam (`src/mcccst.h`) matches its shape with a few
+additions — corrected inline in the hooks section and the rule after it:
 
 ```c
 /* ---- ids (B) ---- */
@@ -200,22 +203,31 @@ size_t    cst_reflect(const CstArena*, CstLocal root, uint8_t* out, size_t cap);
 /* ---- owned source (G) ---- */
 uint32_t  cst_own_file(CstArena*, const char* name, const uint8_t*, size_t);
 
-/* ---- hooks (H) — the ONLY surface the compiler sees ---- */
+/* ---- hooks (H) — as shipped (src/mcccst.h) ---- */
 #if CONFIG_MCC_CST
-#  define CST_OPEN(k)   cst_hook_open(k)
-#  define CST_CLOSE()   cst_hook_close()
-#  define CST_LEAF(tk)  cst_hook_leaf(tk)          /* pulls cursor from F     */
+#  define CST_OPEN(k)          cst_hook_open((uint16_t)(k))
+#  define CST_OPEN_AT(k, m)    cst_hook_open_at((uint16_t)(k), (m)) /* retroactive wrap from a mark */
+#  define CST_MARK()           cst_mark()                          /* current leaf index          */
+#  define CST_CLOSE()          cst_hook_close()
+#  define CST_LEAF(tk, off, n) cst_hook_leaf((uint16_t)(tk), (off), (n))
 #else
-#  define CST_OPEN(k)   ((void)0)
-#  define CST_CLOSE()   ((void)0)
-#  define CST_LEAF(tk)  ((void)0)
+#  define CST_OPEN(k)          ((void)0)
+#  define CST_OPEN_AT(k, m)    ((void)0)
+#  define CST_MARK()           0u
+#  define CST_CLOSE()          ((void)0)
+#  define CST_LEAF(tk, off, n) ((void)0)
 #endif
 ```
 
-Rule: `mccgen.c`/`mccpp.c` reference **only** `CST_*` macros and the byte cursor.
-All structure, hashing, geometry, and IO stay inside `mcccst*.c` behind the
-functions above. This keeps `§0.2` (zero-cost off) mechanical and lets any pure
-slice be swapped or rebuilt without touching the compiler.
+Rule (as shipped): the compiler mostly drives the `CST_*` macros, but the
+deferred-capture model (slice H) also calls a few hook functions directly under
+`#if CONFIG_MCC_CST` — `cst_hook_token` (leaf capture; the `CST_LEAF`/
+`cst_hook_leaf` pair ended up vestigial), `cst_hook_def`/`cst_hook_use` (symbol
+refs, slice I), `cst_hook_wrap` (macro invocations, slice J), and
+`cst_cur_tok_off`. All structure, hashing, geometry, and IO still stay inside
+`src/mcccst.c` behind the functions above, so `§0.2` (zero-cost off) stays
+mechanical (guarded by the codegen-identity gate) and any pure slice can be
+rebuilt without touching the compiler.
 
 ---
 
