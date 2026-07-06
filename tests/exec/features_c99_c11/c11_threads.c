@@ -62,14 +62,14 @@ int main(void) {
 	}
 
 	struct timespec ts = {0, 1000000};
-	thrd_sleep(&ts, NULL);
+	int slept = thrd_sleep(&ts, NULL);
 	thrd_t self = thrd_current();
 
 	mtx_destroy(&mtx);
 	cnd_destroy(&cnd);
 	tss_delete(key);
 
-	int ok = once_count == 1 && shared == (long)NT * STEPS * 2 && sum_res == 10 && thrd_equal(self, self);
+	int ok = once_count == 1 && shared == (long)NT * STEPS * 2 && sum_res == 10 && thrd_equal(self, self) && slept == 0;
 	printf(ok ? "OK\n" : "FAIL\n");
 	return ok ? 0 : 1;
 }

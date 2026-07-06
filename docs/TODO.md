@@ -59,10 +59,6 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
   pass/skip counts across ~35 presets; this rots silently. → Derive from the
   latest workflow run, or add a check that fails when the prose diverges from
   actual CTest output.
-- [ ] **`<threads.h>` resolves to the bundled pthread shim, not the host header
-  (fix).** `C9911.md:4900` §7.26.1p3 — root cause of the C11-threads divergences
-  (`_Noreturn thrd_exit`, `thrd_sleep` return contract, `TIME_UTC` gating). →
-  Prefer the host `<threads.h>` when present, or align the shim's decls; add tests.
 - [ ] **`va_start` non-last / `register` param check never fires on x86_64
   (impl).** `C9911.md:3215` §7.16.1.4p3 — the SysV macro (`__builtin_va_start` in
   `runtime/include/mccdefs.h`) reads the reg-save area from the frame and never
@@ -106,10 +102,6 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
 - [ ] **i386 fastcall/thiscall: non-register arg before a register arg
   unsupported (impl).** `src/arch/i386/i386-gen.c:530`. → Handle the
   spilled-then-register ordering, or document the accepted ABI limitation.
-- [ ] **Unify + extend mixed-encoding-prefix string concatenation (fix).**
-  `src/mccgen.c:9443` and `:9681` duplicate the "different encoding prefixes"
-  error. → Deduplicate into one helper; decide which C11 §6.4.5p5 combinations to
-  accept (gcc/clang accept more).
 - [ ] **Validate the x86_64/i386 TLS GD/LD and 32[S] pattern-match assumptions
   (validate).** `x86_64-link.c:303/317/202` and `i386-link.c:201/240` abort on
   "unexpected …pattern" / out-of-range — tight codegen↔linker coupling. → Add

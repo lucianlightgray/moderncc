@@ -79,14 +79,16 @@ static inline thrd_t thrd_current(void) {
 }
 
 static inline int thrd_sleep(const struct timespec *__dur, struct timespec *__rem) {
-	return nanosleep(__dur, __rem);
+	if (nanosleep(__dur, __rem) == 0)
+		return 0;
+	return errno == EINTR ? -1 : -2;
 }
 
 static inline void thrd_yield(void) {
 	(void)sched_yield();
 }
 
-static inline void thrd_exit(int __res) {
+_Noreturn static inline void thrd_exit(int __res) {
 	pthread_exit((void *)(__INTPTR_TYPE__)__res);
 }
 

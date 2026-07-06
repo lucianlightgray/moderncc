@@ -9423,6 +9423,16 @@ static void init_putv(init_params *p, CType *type, unsigned long c) {
 	}
 }
 
+static int merge_str_kind(int merge_kind, int tk) {
+	if (tk != TOK_STR) {
+		if (merge_kind && merge_kind != tk)
+			mcc_error("unsupported concatenation of string literals "
+					  "with different encoding prefixes");
+		merge_kind = tk;
+	}
+	return merge_kind;
+}
+
 static void decl_initializer(init_params *p, CType *type, unsigned long c, int flags) {
 	int len, n, no_oblock;
 	int size1, align1;
@@ -9477,12 +9487,7 @@ static void decl_initializer(init_params *p, CType *type, unsigned long c, int f
 								: tok == TOK_U32STR				   ? 4
 																   : sizeof(nwchar_t);
 					int nch = tokc.str.size / toksz, i;
-					if (tok != TOK_STR) {
-						if (merge_kind && merge_kind != tok)
-							mcc_error("unsupported concatenation of string literals "
-									  "with different encoding prefixes");
-						merge_kind = tok;
-					}
+					merge_kind = merge_str_kind(merge_kind, tok);
 					if (toksz > size1)
 						mcc_error("a wide string literal cannot follow a narrower "
 								  "string literal in a concatenation");
@@ -9715,12 +9720,7 @@ static TokenString *gather_string_run(CType *type, int has_init) {
 		for (j = 0; j < nparts; j++) {
 			int tk = pkinds[j], toksz = MCC_STRSZ(tk);
 			int nch = parts[j].size / toksz;
-			if (tk != TOK_STR) {
-				if (merge_kind && merge_kind != tk)
-					mcc_error("unsupported concatenation of string "
-							  "literals with different encoding prefixes");
-				merge_kind = tk;
-			}
+			merge_kind = merge_str_kind(merge_kind, tk);
 			for (i = 0; i < nch - 1; i++) {
 				unsigned int ch =
 					toksz == 1	 ? ((unsigned char *)parts[j].data)[i]
