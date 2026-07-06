@@ -55,11 +55,16 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
   table) predate the `TOK_HASH_SIZE` change and are toolchain/host-sensitive. →
   Re-run `mccbench` + `size`/`strip` a `dist-*` build; refresh, noting the host
   as PROFILING does.
-- [ ] **PROFILING §4–§5 hot-path %/timings predate the `TOK_HASH_SIZE`
-  16384→65536 change (validate).** §8 (dated one day later) changed the lexer, so
-  the `next_nomacro` self-% and `-E` timings now in `docs/NOTES.md` Profiling
-  §4–§5 may be stale. → Re-run the PROFILING §3 method + §4–§5, or annotate them
-  as pre-change baselines.
+- [ ] **Optimize the CST hash-consing hot path (perf).** PROFILING §5 (re-measured
+  2026-07-06) makes `cst_mix64` + `cst_hash_bytes` **~30%** of compile-`-c`
+  self-time on the include-heavy amalgamation — now the #1 hot spot, ahead of the
+  lexer (`next_nomacro` ~6%). `perf annotate` (§5a) shows the cost is the mix
+  itself (imul + two xor folds ~23%, plus the `retq` call overhead ~10% at `-O0`),
+  and `cst_mix64` is called once per interned CST node — so the win is **fewer
+  calls** (coarser hashing granularity / caching the per-node hash), not a cheaper
+  mix. `docs/NOTES.md` §5/§8 already point here as the higher-value target. →
+  Reduce `cst_mix64` call frequency; re-run PROFILING §5 to confirm the self-%
+  drops. Front-end perf, separate from the codegen-backend work.
 - [ ] **Regenerate the dated "all green" status prose from CI (validate).**
   `docs/NOTES.md` "Build status" (moved from README) narrates per-preset
   pass/skip counts across ~35 presets; this rots silently. → Derive from the
