@@ -2948,6 +2948,16 @@ if(MCC_BUILD_TESTS)
             "-DIDIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/incstore"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/incstore.cmake")
         set_tests_properties("cst/incstore" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
+        # D3 recursive dynamic-value re-include: a header that re-includes itself
+        # under an incrementing, depth-gated macro collapses to one template.
+        add_test(NAME "cst/increment" COMMAND "${CMAKE_COMMAND}"
+            "-DMCC=${_mcc_exe}"
+            "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/incstore/increment_driver.c"
+            "-DOUT=${CMAKE_BINARY_DIR}/cst-increment.o"
+            "-DIDIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/incstore"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/increment.cmake")
+        set_tests_properties("cst/increment" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
     add_executable(exec_runner tests/exec/runner.c)
