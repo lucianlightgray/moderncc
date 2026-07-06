@@ -168,6 +168,15 @@ static const cli_case_t cli_cases[] = {
 	 "{MCC} -B{B} -run {D}/appleldouble.c",
 	 "1\n"},
 
+	{"macho_fat64_dylib", "os=Darwin",
+	 "printf 'int ff(int x){return x+100;}\\n' > {W}/ffl.c && "
+	 "clang -arch arm64 -dynamiclib {W}/ffl.c -o {W}/fa.dylib && "
+	 "clang -arch x86_64 -dynamiclib {W}/ffl.c -o {W}/fx.dylib && "
+	 "lipo -create -fat64 {W}/fa.dylib {W}/fx.dylib -o {W}/ffat.dylib && "
+	 "printf 'extern int ff(int); int main(void){return ff(-100);}\\n' > {W}/ffm.c && "
+	 "{MCC} -B{B} {W}/ffm.c {W}/ffat.dylib -o {W}/ffm && {W}/ffm; echo $?",
+	 "0\n"},
+
 	{"const_modify_is_error", "",
 	 "printf 'int main(void){const int x=3; x=4; return x;}\\n' > {W}/cm.c && "
 	 "{MCC} -B{B} -c {W}/cm.c -o {W}/cm.o 2>&1 | grep -c 'error: assignment of read-only'",

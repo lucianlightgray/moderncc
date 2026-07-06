@@ -93,9 +93,6 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
 - [ ] **External (SHN_UNDEF) thread-local symbols hard-error on Mach-O (impl).**
   `src/objfmt/mccmacho.c:2085` "unsupported". → Implement TLV import descriptors, or
   document as an intentional limitation.
-- [ ] **Parse 64-bit Mach-O fat archives (impl).** `src/objfmt/mccmacho.c:2380`
-  rejects `FAT_MAGIC_64`/`FAT_CIGAM_64` (only 32-bit fat headers parsed); modern
-  toolchains emit 64-bit fat. → Parse `fat_arch_64` entries.
 - [ ] **ARM far-branch has no veneer — errors past ±32 MB (fix).**
   `src/arch/arm/arm-gen.c:326` `"FIXME: function bigger than 32MB"`. → Emit a
   long-branch trampoline/island, or downgrade to a documented diagnostic (not FIXME).

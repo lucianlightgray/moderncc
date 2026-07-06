@@ -41,6 +41,15 @@ struct fat_arch {
 	uint32_t align;
 };
 
+struct fat_arch_64 {
+	int cputype;
+	int cpusubtype;
+	uint64_t offset;
+	uint64_t size;
+	uint32_t align;
+	uint32_t reserved;
+};
+
 #define FAT_MAGIC 0xcafebabe
 #define FAT_CIGAM 0xbebafeca
 #define FAT_MAGIC_64 0xcafebabf
@@ -2219,7 +2228,11 @@ do_ret:
 static uint32_t macho_swap32(uint32_t x) {
 	return (x >> 24) | (x << 24) | ((x >> 8) & 0xff00) | ((x & 0xff00) << 8);
 }
+static uint64_t macho_swap64(uint64_t x) {
+	return ((uint64_t)macho_swap32((uint32_t)x) << 32) | macho_swap32((uint32_t)(x >> 32));
+}
 #define SWAP(x) (swap ? macho_swap32(x) : (x))
+#define SWAP64(x) (swap ? macho_swap64(x) : (x))
 #define tbd_parse_movepast(s) \
 	(pos = (pos = strstr(pos, s)) ? pos + strlen(s) : NULL)
 #define tbd_parse_movetoany(cs) (pos = strpbrk(pos, cs))
@@ -2378,9 +2391,24 @@ again:
 		lseek(fd, machofs, SEEK_SET);
 		goto again;
 	} else if (fh.magic == FAT_MAGIC_64 || fh.magic == FAT_CIGAM_64) {
-		mcc_warning("%s: Mach-O fat 64bit files of type 0x%x not handled",
-					filename, fh.magic);
-		return -1;
+		struct fat_arch_64 *fa;
+		swap = fh.magic == FAT_CIGAM_64;
+		fa = load_data(fd, sizeof(fh), SWAP(fh.nfat_arch) * sizeof(*fa));
+		for (i = 0; i < SWAP(fh.nfat_arch); i++)
+#ifdef MCC_TARGET_X86_64
+			if (SWAP(fa[i].cputype) == CPU_TYPE_X86_64 && SWAP(fa[i].cpusubtype) == CPU_SUBTYPE_X86_ALL)
+#elif defined MCC_TARGET_ARM64
+			if (SWAP(fa[i].cputype) == CPU_TYPE_ARM64 && SWAP(fa[i].cpusubtype) == CPU_SUBTYPE_ARM64_ALL)
+#endif
+				break;
+		if (i == SWAP(fh.nfat_arch)) {
+			mcc_free(fa);
+			return -1;
+		}
+		machofs = (uint32_t)SWAP64(fa[i].offset);
+		mcc_free(fa);
+		lseek(fd, machofs, SEEK_SET);
+		goto again;
 	}
 
 	memcpy(&mh, buf, sizeof(mh));
