@@ -944,7 +944,7 @@ static void asm_parse_directive(MCCState *s1, int global) {
 
 #if MCC_EH_FRAME
 
-#define asm_cfi (mcc_state->asm_cfi)
+#define asm_cfi (mcc_state->asm_cfi_st)
 
 static void asm_cfi_factors(MCCState *s1) {
 	unsigned char *p, *end;
@@ -970,8 +970,13 @@ static void asm_cfi_factors(MCCState *s1) {
 }
 
 static void asm_cfi_room(int n) {
-	if (asm_cfi.len + n > ASM_CFI_MAX)
-		mcc_error("too many .cfi operations in one function");
+	if (asm_cfi.len + n > asm_cfi.cap) {
+		int newcap = asm_cfi.cap ? asm_cfi.cap * 2 : 1024;
+		while (asm_cfi.len + n > newcap)
+			newcap *= 2;
+		asm_cfi.buf = mcc_realloc(asm_cfi.buf, newcap);
+		asm_cfi.cap = newcap;
+	}
 }
 
 static void asm_cfi_advance(MCCState *s1) {

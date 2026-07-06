@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 3.22)
 
-set(MCC_VERSION "1.0.0")
-string(REGEX MATCH "^[0-9]+(\\.[0-9]+)*" MCC_VERSION_NUMERIC "${MCC_VERSION}")
+set(MCC_VERSION "20260706135200")
+set(MCC_SOVERSION "1.0.0")
+string(REGEX MATCH "^[0-9]+(\\.[0-9]+)*" MCC_VERSION_NUMERIC "${MCC_SOVERSION}")
 
 if(CMAKE_HOST_APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET
    AND NOT DEFINED ENV{MACOSX_DEPLOYMENT_TARGET})
@@ -1680,7 +1681,7 @@ string(REPLACE ";" "\n" _mccdefs_text "${_mccdefs}")
 file(WRITE "${CMAKE_BINARY_DIR}/config-defines.txt" "${_mccdefs_text}\n")
 
 set(_mccdefs_common
-    "MCC_VERSION=\"${MCC_VERSION}\""
+    "MCC_VERSION=${MCC_VERSION}"
     "CC_NAME=CC_${MCC_CC_NAME}"
     "GCC_MAJOR=${MCC_GCC_MAJOR}"
     "GCC_MINOR=${MCC_GCC_MINOR}"

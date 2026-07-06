@@ -81,8 +81,10 @@ static int scan_file(const char *path, int is_dir, void *ud) {
 	if (is_dir)
 		return 0;
 	elen = (int)strlen(path);
-	if (elen < 2 || path[elen - 2] != '.' ||
-		(path[elen - 1] != 'c' && path[elen - 1] != 'h'))
+	if (!(elen >= 2 && path[elen - 2] == '.' &&
+		  (path[elen - 1] == 'c' || path[elen - 1] == 'h' ||
+		   path[elen - 1] == 's' || path[elen - 1] == 'S')) &&
+		!(elen >= 4 && !strcmp(path + elen - 4, ".inc")))
 		return 0;
 	base = strrchr(path, '/');
 	base = base ? base + 1 : path;

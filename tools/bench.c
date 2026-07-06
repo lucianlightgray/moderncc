@@ -772,7 +772,7 @@ int main(int argc, char **argv) {
 		w->defs[1] = "MCC_TARGET_X86_64=1";
 		w->defs[2] = "MCC_EMBED_MCCRT=0";
 		w->defs[3] = "CONFIG_MCC_PREDEFS=1";
-		w->defs[4] = "MCC_VERSION=\"bench\"";
+		w->defs[4] = "MCC_VERSION=20260706135200";
 		w->needs_ccmacro = 1;
 	}
 

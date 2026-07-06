@@ -4183,10 +4183,11 @@ static void putdefs(CString *cs, const char *p) {
 static void mcc_predefs(MCCState *s1, CString *cs, int is_asm) {
 
 	{
-		int _maj = 0, _min = 0, _pat = 0;
-		sscanf(MCC_VERSION, "%d.%d.%d", &_maj, &_min, &_pat);
-		cstr_printf(cs, "#define __MCC__ %d\n", _maj * 10000 + _min * 100 + _pat);
-		cstr_printf(cs, "#define __TINYC__ %d\n", _maj * 10000 + _min * 100 + _pat);
+		int _maj = MCC_VERSION_MAJOR;
+		int _min = MCC_VERSION_MINOR;
+		cstr_printf(cs, "#define __MCC__ %d\n", _maj);
+		cstr_printf(cs, "#define __MCC_MINOR__ %d\n", _min);
+		cstr_printf(cs, "#define __TINYC__ %d\n", _maj);
 	}
 	cstr_printf(cs, "#define __GNUC__ 4\n");
 	cstr_printf(cs, "#define __GNUC_MINOR__ 2\n");

@@ -846,9 +846,13 @@ static int suite_preprocess(int argc, char **argv) {
 				e = NULL;
 				mn2 = pp_norm(mo2);
 				free(mo2);
-				if (!strcmp(mn2, gn) || !strcmp(mn2, cn))
+				if (!strcmp(mn2, gn)) {
 					pass++;
-				else
+					fprintf(stderr, "NOTE %s: gcc/clang -E differ; mcc matches gcc\n", rel);
+				} else if (!strcmp(mn2, cn)) {
+					pass++;
+					fprintf(stderr, "NOTE %s: gcc/clang -E differ; mcc matches clang\n", rel);
+				} else
 					skip++;
 				free(mn2);
 			} else {
@@ -2362,7 +2366,7 @@ static int suite_machocodegen(int argc, char **argv) {
 
 	{
 		const char *rx[] = {"atomic", "stdatomic", "va_list", "builtin", 0};
-		const char *ra[] = {"atomic", "stdatomic", "builtin", "lib-arm64", 0};
+		const char *ra[] = {"atomic", "stdatomic", "builtin", "float128", 0};
 		const char *const *rn = is_arm ? ra : rx;
 		int k;
 		for (k = 0; rn[k]; k++) {

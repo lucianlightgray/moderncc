@@ -981,6 +981,7 @@ LIBMCCAPI void mcc_delete(MCCState *s1) {
 	dynarray_reset(&s1->link_argv, &s1->link_argc);
 	cstr_free(&s1->cmdline_defs);
 	cstr_free(&s1->cmdline_incl);
+	mcc_free(s1->asm_cfi_st.buf);
 	mcc_free(s1->dState);
 #ifdef MCC_IS_NATIVE
 	mcc_run_free(s1);
@@ -2389,7 +2390,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) {
 			printf("%s\n", dumpmachine_str);
 			exit(0);
 		case MCC_OPTION_dumpversion:
-			printf("%s\n", MCC_VERSION);
+			printf("%d.%d\n", MCC_VERSION_MAJOR, MCC_VERSION_MINOR);
 			exit(0);
 
 		case MCC_OPTION_x:

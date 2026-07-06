@@ -166,7 +166,7 @@ static const char help2[] =
 	;
 
 static const char version[] =
-	"mcc version " MCC_VERSION
+	"mcc version " MCC_VERSION_STR
 #ifdef MCC_GITHASH
 	" " MCC_GITHASH
 #endif

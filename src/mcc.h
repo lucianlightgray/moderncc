@@ -5,8 +5,13 @@
 #define _DARWIN_C_SOURCE
 
 #ifndef MCC_VERSION
-#define MCC_VERSION "1.0.0"
+#define MCC_VERSION 20260706135200
 #endif
+#define MCC_STRINGIFY_(x) #x
+#define MCC_STRINGIFY(x) MCC_STRINGIFY_(x)
+#define MCC_VERSION_STR MCC_STRINGIFY(MCC_VERSION)
+#define MCC_VERSION_MAJOR ((int)((MCC_VERSION) / 1000000))
+#define MCC_VERSION_MINOR ((int)((MCC_VERSION) % 1000000))
 
 #include <stdarg.h>
 #include <stdlib.h>
@@ -47,6 +52,12 @@
 #if MCC_HOST_DARWIN
 #define MCC_TARGET_MACHO 1
 #endif
+#endif
+
+#if (defined(MCC_TARGET_I386) + defined(MCC_TARGET_X86_64) +   \
+	 defined(MCC_TARGET_ARM) + defined(MCC_TARGET_ARM64) +     \
+	 defined(MCC_TARGET_RISCV64)) != 1
+#error "exactly one MCC_TARGET_* backend CPU (I386/X86_64/ARM/ARM64/RISCV64) must be defined"
 #endif
 
 #if MCC_HOST_WIN32 == defined MCC_TARGET_PE && MCC_HOST_DARWIN == defined MCC_TARGET_MACHO
@@ -608,7 +619,6 @@ struct seqp_event {
 	unsigned char kind;
 };
 
-#define ASM_CFI_MAX 1024
 struct asm_cfi_state {
 	int active;
 	Section *sec;
@@ -619,7 +629,8 @@ struct asm_cfi_state {
 	unsigned long code_align;
 	long long data_align;
 	int len;
-	unsigned char buf[ASM_CFI_MAX];
+	int cap;
+	unsigned char *buf;
 };
 
 struct MCCState {
@@ -976,7 +987,7 @@ struct MCCState {
 
 	Section *last_text_section;
 	int asmgoto_n;
-	struct asm_cfi_state asm_cfi;
+	struct asm_cfi_state asm_cfi_st;
 
 	unsigned long cg_func_sub_sp_offset;
 	int cg_func_ret_sub;

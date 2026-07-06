@@ -95,17 +95,23 @@ int main(int argc, char **argv) {
 				continue;
 			found[i] = 1;
 
-			if (cell(line, 1, c1, sizeof c1)) {
+			if (types[i][0] && cell(line, 1, c1, sizeof c1)) {
 				char *ty = trim(c1);
-				int k, is_type = 0;
+				char tok[32];
+				int k, j = 0, is_type = 0;
+				while (ty[j] && !isspace((unsigned char)ty[j]) && j < (int)sizeof tok - 1) {
+					tok[j] = ty[j];
+					j++;
+				}
+				tok[j] = 0;
 				for (k = 0; TYPEKW[k]; k++)
-					if (!strncmp(ty, TYPEKW[k], strlen(TYPEKW[k]))) {
+					if (!strcmp(tok, TYPEKW[k])) {
 						is_type = 1;
 						break;
 					}
 				if (is_type) {
 					typed[i] = 1;
-					if (!strncmp(ty, types[i], strlen(types[i])))
+					if (!strcmp(tok, types[i]))
 						typeok[i] = 1;
 				}
 			}
