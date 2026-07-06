@@ -33,10 +33,11 @@ Progress against the sequenced plan below (tracker: [docs/TODO.md](TODO.md)):
   environment, and `cst_render_identity` as the round-trip oracle). The
   **headline recursive re-include branch-selection gate** (`cst/template`)
   passes all five assertions. **Live capture wired** (`cst/incstore`): every
-  real `#include` interns its file as a hash-consed `SourceFile` template and
-  binds the `IncludeDirective` node to it (dedup across nested + repeated
-  includes). Non-blocking refinement remaining: lex live-captured include
-  templates into `PPConditional` branch subtrees for live branch-select render.
+  real `#include` interns its file as a hash-consed **full-concrete**
+  `SourceFile` template (`cst_build_sourcefile`: every line a leaf, each
+  `#if/#else/#endif` a `PPConditional` with tagged branch bodies incl. dead
+  branches) and binds the `IncludeDirective` node to it (dedup across nested +
+  repeated includes; every template `render_identity`-round-trips).
 - [x] **FINAL** — every gate re-run over the corpus; §0.1/§0.2 re-confirmed
   (CST-on 828/828, CST-off 811/811, codegen byte-identical on/off).
 

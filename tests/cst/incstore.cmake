@@ -23,6 +23,14 @@ endif()
 if(NOT _all MATCHES "CST store: 2 templates")
     message(FATAL_ERROR "expected 2 hash-consed templates:\n${_all}")
 endif()
+# leaf.h's template is full-concrete (its #ifndef guard is a PPConditional) and
+# every template renders back to its exact bytes.
+if(NOT _all MATCHES "[1-9][0-9]* PPConditional")
+    message(FATAL_ERROR "leaf.h's include guard was not captured full-concrete:\n${_all}")
+endif()
+if(_all MATCHES "render_identity [0-9]+/[0-9]+ MISMATCH")
+    message(FATAL_ERROR "a SourceFile template did not round-trip:\n${_all}")
+endif()
 
 # The two direct `#include \"leaf.h\"` nodes must bind to the SAME template id.
 string(REGEX MATCHALL "include node [0-9]+ -> template ([0-9]+)" _binds "${_all}")

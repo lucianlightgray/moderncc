@@ -3001,9 +3001,20 @@ ST_FUNC CstArena *cst_capture_end(void) {
 		 * template each main-file IncludeDirective was bound to. Two #includes
 		 * of the same header share one template id (hash-consed by H_s). */
 		CstStore *st = cst_hook_store();
-		uint32_t nn = cst_node_count(a), n;
-		fprintf(stderr, "CST store: %u templates\n",
-			st ? cst_store_count(st) : 0);
+		uint32_t nn = cst_node_count(a), n, nt = st ? cst_store_count(st) : 0, ti;
+		fprintf(stderr, "CST store: %u templates\n", nt);
+		for (ti = 0; ti < nt; ti++) {
+			CstArena *tmpl = cst_store_get(st, ti);
+			uint32_t tn = cst_node_count(tmpl), k, cc = 0, slen = 0;
+			for (k = 0; k < tn; k++)
+				if (cst_kind(tmpl, k) == CST_PPConditional)
+					cc++;
+			cst_source(tmpl, &slen);
+			size_t rid = cst_render_identity(tmpl, NULL, 0);
+			fprintf(stderr,
+				"  template %u: %u nodes, %u PPConditional, render_identity %zu/%u %s\n",
+				ti, tn, cc, rid, slen, rid == slen ? "OK" : "MISMATCH");
+		}
 		for (n = 0; n < nn; n++)
 			if (cst_kind(a, n) == CST_IncludeDirective)
 				fprintf(stderr, "  include node %u -> template %u\n", n,

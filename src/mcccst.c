@@ -1105,25 +1105,113 @@ static uint32_t cst_inc_count, cst_inc_cap;
 
 CstStore *cst_hook_store(void) { return cst_session_store; }
 
+/* Classify a physical line for full-concrete capture: 1 = #if/#ifdef/#ifndef,
+ * 2 = #else/#elif, 3 = #endif, 0 = ordinary. Leading whitespace and a space
+ * after '#' are allowed (`#  if`). */
+static int cst_line_cond(const uint8_t *s, uint32_t a, uint32_t b) {
+    uint32_t i = a;
+    while (i < b && (s[i] == ' ' || s[i] == '\t'))
+        i++;
+    if (i >= b || s[i] != '#')
+        return 0;
+    i++;
+    while (i < b && (s[i] == ' ' || s[i] == '\t'))
+        i++;
+    uint32_t w = i;
+    while (i < b && s[i] >= 'a' && s[i] <= 'z')
+        i++;
+    uint32_t n = i - w;
+#define CST_KW(str) (n == sizeof(str) - 1 && memcmp(s + w, str, n) == 0)
+    if (CST_KW("if") || CST_KW("ifdef") || CST_KW("ifndef"))
+        return 1;
+    if (CST_KW("else") || CST_KW("elif"))
+        return 2;
+    if (CST_KW("endif"))
+        return 3;
+#undef CST_KW
+    return 0;
+}
+
+/* Build a full-concrete SourceFile tree (D3 Table A): every physical line is a
+ * leaf, and each #if/#else/#endif region becomes a PPConditional whose branch
+ * bodies — INCLUDING dead branches — are tagged CompoundStmt groups a binding
+ * can select among. Tiles the bytes exactly, so cst_render_identity == the file
+ * and pure-H_s hash-consing keys on the whole structure. */
+static void cst_build_sourcefile(CstArena *a, const uint8_t *src, uint32_t len) {
+    cst_node_open(a, CST_TranslationUnit);
+    struct {
+        CstLocal cond;   /* the PPConditional node                    */
+        uint32_t brno;   /* current branch ordinal                    */
+        CstLocal branch; /* open branch-body node, or CST_NONE        */
+    } st[64];
+    int sp = 0;
+    uint32_t p = 0;
+    while (p < len) {
+        uint32_t ls = p;
+        while (p < len && src[p] != '\n')
+            p++;
+        if (p < len)
+            p++; /* take the newline into the line */
+        uint32_t n = p - ls;
+        int dir = cst_line_cond(src, ls, p);
+        if (dir == 1) { /* open a (possibly nested) conditional */
+            CstLocal cond = cst_node_open(a, CST_PPConditional);
+            cst_leaf(a, 0, ls, n, NULL, 0); /* the #if directive line */
+            if (sp < 64) {
+                st[sp].cond = cond;
+                st[sp].brno = 0;
+                st[sp].branch = CST_NONE;
+                sp++;
+            }
+        } else if (dir == 2 && sp > 0) { /* #else / #elif: next branch */
+            if (st[sp - 1].branch != CST_NONE) {
+                cst_node_close(a, st[sp - 1].branch);
+                st[sp - 1].branch = CST_NONE;
+            }
+            cst_leaf(a, 0, ls, n, NULL, 0);
+            st[sp - 1].brno++;
+        } else if (dir == 3 && sp > 0) { /* #endif: close the conditional */
+            if (st[sp - 1].branch != CST_NONE) {
+                cst_node_close(a, st[sp - 1].branch);
+                st[sp - 1].branch = CST_NONE;
+            }
+            cst_leaf(a, 0, ls, n, NULL, 0);
+            cst_node_close(a, st[sp - 1].cond);
+            sp--;
+        } else { /* ordinary line: goes in the current branch body (if any) */
+            if (sp > 0 && st[sp - 1].branch == CST_NONE) {
+                CstLocal bn = cst_node_open(a, CST_CompoundStmt);
+                cst_mark_branch(a, bn, st[sp - 1].brno);
+                st[sp - 1].branch = bn;
+            }
+            cst_leaf(a, 0, ls, n, NULL, 0);
+        }
+    }
+    while (sp > 0) { /* defensive: unterminated #if */
+        if (st[sp - 1].branch != CST_NONE)
+            cst_node_close(a, st[sp - 1].branch);
+        cst_node_close(a, st[sp - 1].cond);
+        sp--;
+    }
+    cst_node_close(a, cst_root(a));
+}
+
 void cst_hook_include(const char *path, int from_main_file) {
     if (!cst_current)
         return;
     if (!cst_session_store)
         cst_session_store = cst_store_new();
-    /* Build a full-file SourceFile template (byte-owning; a single leaf tiles
-     * the whole file, so all #if/#else branch bytes are present and the file
-     * round-trips) and hash-cons it: two #includes of the same header — any
-     * context — collapse to one physical template keyed by pure H_s. */
+    /* Build a full-concrete SourceFile template (all #if/#else branches as
+     * concrete nodes) and hash-cons it: two #includes of the same header — any
+     * context — collapse to one physical template keyed by pure H_s(body). */
     CstArena *t = cst_arena_new(0);
     if (cst_slurp(t, path) != 0) {
         cst_arena_free(t);
         return;
     }
     uint32_t len = 0;
-    cst_source(t, &len);
-    cst_node_open(t, CST_TranslationUnit);
-    cst_leaf(t, 0, 0, len, NULL, 0);
-    cst_node_close(t, cst_root(t));
+    const uint8_t *bytes = cst_source(t, &len);
+    cst_build_sourcefile(t, bytes, len);
     cst_rehash_all(t);
     uint32_t id = cst_store_intern(cst_session_store, t); /* dedup; may free t */
     if (from_main_file) {

@@ -24,4 +24,9 @@ endif()
 if(NOT _all MATCHES "CST store: 1 templates")
     message(FATAL_ERROR "recursive re-include did not hash-cons to ONE template:\n${_all}")
 endif()
-message(STATUS "increment OK: recursive re-include deduped to 1 SourceFile template")
+# That template is full-concrete: its #if depth-gate + successor table are
+# captured as PPConditional nodes, and it renders back to its exact bytes.
+if(NOT _all MATCHES "template 0: [0-9]+ nodes, [1-9][0-9]* PPConditional, render_identity [0-9]+/[0-9]+ OK")
+    message(FATAL_ERROR "template is not full-concrete / does not round-trip:\n${_all}")
+endif()
+message(STATUS "increment OK: recursive re-include -> 1 full-concrete SourceFile template")

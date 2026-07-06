@@ -41,11 +41,13 @@ by the `cst/*` ctest suite. Driving the [docs/CST.md](CST.md) decision plan:
     a debug build, that an existing same-`H_s` entry reflects byte-identically
     to the interned body; on mismatch it `abort()`s with a fatal "hash collision
     … cst_hash_* must be fixed" — never silently deduping two different bodies.
-  - [ ] *Refinement (non-blocking):* live-captured include templates are byte-
-    owning (single leaf) — full-concrete enough to dedup + round-trip, but not
-    yet tokenized into `PPConditional` branch subtrees, so live branch-select
-    render on a real header needs a deeper lex-on-capture pass. The template/
-    binding/render model already proves that path (`cst/template`).
+  - [x] *Full-concrete live templates.* `cst_build_sourcefile` lexes each
+    captured file line-by-line into a real tree: every line a leaf, each
+    `#if/#else/#endif` a `PPConditional` whose branch bodies (dead branches
+    included) are tagged `CompoundStmt` groups (`cst_mark_branch`) a binding can
+    select among. Verified via the `MCC_CST_STORE` dump: increment.h → 2
+    `PPConditional`, leaf.h → 1 (its guard), all `render_identity` round-trip
+    exactly (`cst/incstore`, `cst/increment`).
 - [x] **D1d — `Comment` promotion** (line/inline/block), `H_t`-only so §8.4 holds.
 - [ ] **FINAL** — re-run every gate over the corpus; re-confirm §0.1/§0.2.
 
