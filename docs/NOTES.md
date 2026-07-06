@@ -211,15 +211,15 @@ every gap below.
 
 | config        | preprocess `-E` |  compile `-c` |  compile→exe |     run exe |
 |---------------|----------------:|--------------:|-------------:|------------:|
-| gcc-debug     |    33.86 ± 0.35 |  501.2 ± 11.3 |  530.1 ± 2.6 | 19.47 ± 0.14|
+| gcc-debug     |    34.67 ± 0.41 |  500.0 ± 1.7  |  530.2 ± 1.9 | 19.56 ± 0.12|
 | gcc-release   |           n/a ¹ |         n/a ¹ |        n/a ¹ |       n/a ¹ |
-| clang-debug   |    39.54 ± 0.96 |   332.0 ± 1.8 |  380.0 ± 2.1 | 20.98 ± 0.23|
-| mcc-gcc       |    25.38 ± 2.59 |  72.21 ± 0.65 | 75.70 ± 0.39 |           — |
-| mcc-clang     |    22.80 ± 2.35 |  92.99 ± 0.44 |           —  |           — |
-| **mcc-self**  |    22.10 ± 0.48 |  70.97 ± 4.22 | 73.14 ± 0.44 | 21.50 ± 0.50|
+| clang-debug   |    41.49 ± 3.99 |  331.7 ± 1.3  |  379.7 ± 1.6 | 20.99 ± 0.22|
+| mcc-gcc       |    24.08 ± 0.29 |  71.43 ± 0.81 | 75.38 ± 0.46 |           — |
+| mcc-clang     |    21.91 ± 0.34 |  92.44 ± 0.42 | 97.53 ± 0.91 |           — |
+| **mcc-self**  |    22.14 ± 0.26 |  68.78 ± 0.43 | 72.67 ± 0.23 | 21.47 ± 0.22|
 
-`run exe` is codegen-identical across the three compilers (§1): mcc 21.50, gcc
-19.47, clang 20.98. Ratio vs `mcc-self`, `compile→exe`: gcc-debug **7.3×**,
+`run exe` is codegen-identical across the three compilers (§1): mcc 21.47, gcc
+19.56, clang 20.99. Ratio vs `mcc-self`, `compile→exe`: gcc-debug **7.3×**,
 clang-debug **5.2×**. `mcc-self` builds the TU end to end in 73 ms — 7.3× under
 gcc's `-O0` and 5.2× under clang's `-O0`. (The old RelWithDebInfo spread put
 `mcc-self` at 33 ms / 16×; the mcc binary is now `-O0`-built, hence slower, but
@@ -238,19 +238,19 @@ the reference compilers are unchanged so the *shape* holds.)
 
 | config          | preprocess `-E` |   compile `-c` | `-c` vs mcc-self |
 |-----------------|----------------:|---------------:|-----------------:|
-| gcc-debug       |     131.0 ± 4.2 |    2261.8 ± 17 |            8.0×  |
-| gcc-release     |       = debug ³ |   16203 ± 59   |           57.3×  |
-| clang-debug     |     101.4 ± 2.1 |    1099.6 ± 16 |            3.9×  |
-| clang-release   |       = debug ³ |   13463 ± 151  |           47.6×  |
-| mcc-gcc         |     112.5 ± 1.2 |   296.5 ± 6.3  |            1.05× |
-| mcc-clang       |      98.7 ± 2.1 |   372.5 ± 2.1  |            1.32× |
-| **mcc-self**    |      98.0 ± 0.5 |   282.7 ± 1.1  |            1.00× |
-| mcc-musl        |     112.0 ± 0.6 |   320.3 ± 1.3  |            1.13× |
-| mcc-static      |     111.9 ± 1.2 |   324.8 ± 4.5  |            1.15× |
+| gcc-debug       |     129.0 ± 1.3 |    2245.0 ± 6.7 |           8.0×  |
+| gcc-release     |       = debug ³ |   16058 ± 25   |           57.4×  |
+| clang-debug     |     99.0 ± 0.6  |    1108.3 ± 2.5 |           4.0×  |
+| clang-release   |       = debug ³ |   13395 ± 118  |           47.9×  |
+| mcc-gcc         |     106.7 ± 0.6 |   290.5 ± 7.8  |            1.04× |
+| mcc-clang       |      96.5 ± 0.5 |   369.0 ± 1.0  |            1.32× |
+| **mcc-self**    |      97.3 ± 1.0 |   279.9 ± 0.8  |            1.00× |
+| mcc-musl        |     114.0 ± 0.5 |   307.4 ± 6.9  |            1.10× |
+| mcc-static      |     113.5 ± 1.0 |   304.9 ± 0.8  |            1.09× |
 
-`mcc-self` compiles the entire ~100 k-line amalgamation to an object in **283 ms**;
-`gcc -O2` needs **16.2 s** for the same TU — a **57×** gap — and `clang -O2`
-13.5 s (48×). Even against a plain `-O0` reference, a *debug* `mcc` is 3.9–8.0×
+`mcc-self` compiles the entire ~100 k-line amalgamation to an object in **280 ms**;
+`gcc -O2` needs **16.1 s** for the same TU — a **57×** gap — and `clang -O2`
+13.4 s (48×). Even against a plain `-O0` reference, a *debug* `mcc` is 4.0–8.0×
 faster; a release `mcc` (the shipped build) widens that severalfold. This is the
 near-`-O0`, integrated-assembler design paying off, and the gap grows with TU
 size and opt level.
@@ -260,9 +260,9 @@ size and opt level.
 
 The three new libc rows — **`mcc-musl`** (musl-linked, dynamic), **`mcc-static`**
 (musl, fully static), and their `mcc-gcc`/`mcc-clang`/`mcc-self` glibc siblings —
-are all now producible (§4e); the musl-linked `mcc` binary runs ~13 % slower than
-its glibc twin (`320` vs `283` ms `-c`; the musl allocator on this workload), and
-static vs dynamic musl is within noise (`325` vs `320`).
+are all now producible (§4e); the musl-linked `mcc` binary runs ~10 % slower than
+its glibc twin (`307` vs `280` ms `-c`; the musl allocator on this workload), and
+static vs dynamic musl is within noise (`305` vs `307`).
 
 #### 4c. The self-host cost inverts at `-O0`
 
@@ -270,10 +270,10 @@ With every `mcc` built `-O0` (not RelWithDebInfo), the "which compiler built
 `mcc`" comparison flips from the old RelWithDebInfo result:
 
 - **`mcc-self` is now the *fastest* glibc `mcc`.** It compiles the amalgamation in
-  **283 ms** and preprocesses in **98 ms** — beating the gcc-`-O0`-built `mcc-gcc`
-  (297 / 112 ms) and the clang-`-O0`-built `mcc-clang` (373 / 99 ms). `mcc`'s own
+  **280 ms** and preprocesses in **97 ms** — beating the gcc-`-O0`-built `mcc-gcc`
+  (290 / 107 ms) and the clang-`-O0`-built `mcc-clang` (369 / 96 ms). `mcc`'s own
   near-`-O0` codegen produces a *faster* `mcc` binary than `gcc -O0` or `clang -O0`
-  do; `clang -O0` is the worst of the three (373 ms `-c`).
+  do; `clang -O0` is the worst of the three (369 ms `-c`).
 - **The old "~1.7× bootstrap cost" was an artifact of the RelWithDebInfo baseline.**
   When `mcc-gcc`/`mcc-clang` were `-O2` builds they beat `mcc-self` 1.7×; at an
   even `-O0` footing the direction reverses — `mcc`'s codegen is competitive with,
@@ -289,17 +289,17 @@ taskset -c 2 /usr/bin/time -v <compile -c cmd> 2>&1 | grep 'Maximum resident'
 
 | config        | peak RSS |
 |---------------|---------:|
-| gcc-debug     |  155 MB  |
-| gcc-release   |  327 MB  |
-| clang-debug   |  143 MB  |
-| clang-release |  240 MB  |
-| mcc-gcc       | 29.3 MB  |
-| **mcc-self**  | 29.5 MB  |
-| mcc-musl      | 29.0 MB  |
-| mcc-static    | 28.5 MB  |
+| gcc-debug     |  157 MB  |
+| gcc-release   |  329 MB  |
+| clang-debug   |  144 MB  |
+| clang-release |  242 MB  |
+| mcc-gcc       | 29.4 MB  |
+| **mcc-self**  | 29.7 MB  |
+| mcc-musl      | 29.3 MB  |
+| mcc-static    | 28.7 MB  |
 
-`mcc`'s footprint is ~**29 MB** where `gcc -O2` needs **327 MB** (11×) and
-`clang -O2` 240 MB — flat across all `mcc` builds (same allocator, same codegen),
+`mcc`'s footprint is ~**29 MB** where `gcc -O2` needs **329 MB** (11×) and
+`clang -O2` 242 MB — flat across all `mcc` builds (same allocator, same codegen),
 so the libc/link choice in §4b costs *time*, not *memory*. (This is up from the
 prior ~12 MB figure: the CST subsystem is now on by default and the `-O0` `mcc`
 binary is larger; the relative story is unchanged.)
@@ -348,18 +348,18 @@ not in bare preprocessing:
 
 ```
 compile -c (src/mcc.c):            preprocess -E (src/mcc.c):
-  21.9%  cst_mix64      <- CST        18.5%  next_nomacro   <- lexer core
-   8.6%  cst_hash_bytes    hash        8.7%  get_tok_str
-   6.2%  next_nomacro                  4.6%  mcc_preprocess
-   2.9%  cst_build_sourcefile          4.4%  tok_str_add2
-   2.0%  tok_str_add2                  4.2%  _IO_fputs (libc; -E output)
-   1.3%  preprocess_skip               4.1%  next
-   1.2%  unary                         3.5%  preprocess_skip
-   ~1%   cst_node_at / cst_alloc_node / cst_render_node …
+  21.8%  cst_mix64      <- CST        18.2%  next_nomacro   <- lexer core
+   8.5%  cst_hash_bytes    hash        9.4%  get_tok_str
+   6.2%  next_nomacro                  4.5%  tok_str_add2
+   3.0%  cst_build_sourcefile          4.4%  _IO_fputs (libc; -E output)
+   2.1%  tok_str_add2                  4.2%  mcc_preprocess
+   1.4%  preprocess_skip               3.7%  preprocess_skip
+   1.3%  unary / cst_node_at           2.7%  next
+   ~1%   cst_render_node / cst_alloc_node / cst_leaf_kinded …
 ```
 
 **Two different hot spots depending on phase.** In `-E`, the lexer still dominates
-(`next_nomacro` + `next` ≈ 22%) exactly as before — the §6/§8 lexer story holds
+(`next_nomacro` + `next` ≈ 21%) exactly as before — the §6/§8 lexer story holds
 for preprocessing. But in a full `-c`, **CST hash-consing is now #1**:
 `cst_mix64` + `cst_hash_bytes` are **~30%** of self-time (the amalgamation
 `#include`s every `src/*.c`, and each file is interned into a hash-consed
@@ -374,8 +374,8 @@ perf annotate -i perf.data --stdio -s cst_mix64 | sort -rn | head
 ```
 
 `cst_mix64` is a multiply-xor hash finalizer; its cost is exactly the mix itself —
-the `imulq %rdx,%rax` and the two `xorq %rax,-8(%rbp)` fold steps are ~25%
-combined, with the trailing `retq` (call overhead, `-O0`) another ~9%. It is
+the `imulq %rdx,%rax` and the two `xorq %rax,-8(%rbp)` fold steps are ~23%
+combined, with the trailing `retq` (call overhead, `-O0`) another ~10%. It is
 called once per interned CST node, so the win is *fewer calls* (coarser hashing
 granularity / caching) rather than a cheaper mix.
 
@@ -475,8 +475,8 @@ ctest --preset debug -R 'integer|float|hex|literal|suffix|asm|imaginary|complex'
     `TOK_HASH_FUNC` itself was left alone — it is already a cheap shift-add-mix.
 - **The larger input separates signal from noise.** 416 lines is too small to
   separate a 1–2% lexer change from noise. The amalgamation spread (§4b) does
-  better: `src/mcc.c` preprocesses in ~62 ms (`mcc-gcc`) with σ ≈ 0.5 ms — a
-  ~0.8 % floor vs `full_language.c`'s ~1 %, and 4× the absolute signal — so a
+  better: `src/mcc.c` preprocesses in ~107 ms (`mcc-gcc`) with σ ≈ 0.6 ms — a
+  ~0.6 % floor vs `full_language.c`'s ~1 %, and 4× the absolute signal — so a
   lexer change shows up there long before it clears noise on the small TU. Lexer
   experiments belong on `-E src/mcc.c`, not `full_language.c` (tracked in
   `docs/TODO.md`).
