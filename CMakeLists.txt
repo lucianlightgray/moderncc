@@ -3237,7 +3237,7 @@ if(MCC_BUILD_TESTS)
 
         set(_msvcrt_start "${CMAKE_CURRENT_SOURCE_DIR}/tests/support/msvcrt_start.c")
         set(_mcctest_refflags
-            "-D__USE_MINGW_ANSI_STDIO=0 -nostdlib ${_msvcrt_start} -lgcc -Wl,--start-group -lmingwex c:/windows/system32/msvcrt.dll -Wl,--end-group -lkernel32")
+            "-mno-ms-bitfields -D__USE_MINGW_ANSI_STDIO=0 -nostdlib ${_msvcrt_start} -lgcc -Wl,--start-group -lmingwex c:/windows/system32/msvcrt.dll -Wl,--end-group -lkernel32")
     elseif(MCC_CPU STREQUAL "arm")
         set(_mcctest_refflags "-marm")
     elseif(MCC_CPU STREQUAL "i386")
