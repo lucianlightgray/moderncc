@@ -846,9 +846,20 @@ static int suite_preprocess(int argc, char **argv) {
 				e = NULL;
 				mn2 = pp_norm(mo2);
 				free(mo2);
-				if (!strcmp(mn2, gn) || !strcmp(mn2, cn))
+				/*
+				 * gcc and clang preprocess this case differently (impl-defined
+				 * territory), so matching EITHER counts as a pass. Log which
+				 * reference mcc lined up with: a case that coincidentally
+				 * matches the "wrong" one still scores PASS, and the note is the
+				 * only way to spot that for review.
+				 */
+				if (!strcmp(mn2, gn)) {
 					pass++;
-				else
+					fprintf(stderr, "NOTE %s: gcc/clang -E differ; mcc matches gcc\n", rel);
+				} else if (!strcmp(mn2, cn)) {
+					pass++;
+					fprintf(stderr, "NOTE %s: gcc/clang -E differ; mcc matches clang\n", rel);
+				} else
 					skip++;
 				free(mn2);
 			} else {
@@ -1097,6 +1108,16 @@ static const char *GCCTS_FIXED_SKIP[] = {
 	"20000120-2.c", "mipscop-1.c", "mipscop-2.c", "mipscop-3.c", "mipscop-4.c",
 	"fp-cmp-4f.c", "fp-cmp-4l.c", "fp-cmp-8f.c", "fp-cmp-8l.c", "pr38016.c", 0};
 
+/*
+ * Skip a gcc.c-torture case either by exact filename (GCCTS_FIXED_SKIP) or when
+ * its text mentions a feature mcc does not implement. This is a deliberately
+ * conservative whole-file substring filter: because gcctestsuite is a manual,
+ * non-gating exploratory sweep (see suite_gcctestsuite's return), over-skipping
+ * a file whose comment merely says "complex" is preferable to a torrent of
+ * known-unsupported-feature failures drowning the genuinely interesting ones.
+ * A false skip costs coverage in a report-only sweep, never a false CI failure.
+ * Tighten to token/decl matching only if this sweep is ever promoted to a gate.
+ */
 static int gccts_skiplisted(const char *base, const char *content) {
 	int i;
 	for (i = 0; GCCTS_FIXED_SKIP[i]; i++)
@@ -1237,6 +1258,15 @@ static int suite_gcctestsuite(int argc, char **argv) {
 	fprintf(sum, "%d ok\n%d skipped\n%d failed\n%d exe failed\n", ok, sk, fa, xf);
 	fclose(sum);
 	printf("%d test(s) ok.\n%d test(s) skipped.\n%d test(s) failed.\n%d test(s) exe failed.\n", ok, sk, fa, xf);
+	/*
+	 * Always return success: gcctestsuite is a manual, opt-in `add_custom_target`
+	 * (not a ctest / CI gate) that sweeps an external gcc.c-torture checkout
+	 * pointed to by MCC_GCCTESTSUITE_PATH. The corpus contains many cases mcc
+	 * legitimately cannot compile (GNU extensions, __int128, vectors, ...), so
+	 * there is no stable expected-failure baseline to gate on; the ok/skipped/
+	 * failed tallies above are the report. Read the printed summary rather than
+	 * the exit status.
+	 */
 	return 0;
 }
 

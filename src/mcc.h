@@ -613,7 +613,6 @@ struct seqp_event {
 	unsigned char kind;
 };
 
-#define ASM_CFI_MAX 1024
 struct asm_cfi_state {
 	int active;
 	Section *sec;
@@ -624,7 +623,8 @@ struct asm_cfi_state {
 	unsigned long code_align;
 	long long data_align;
 	int len;
-	unsigned char buf[ASM_CFI_MAX];
+	int cap;
+	unsigned char *buf;
 };
 
 struct MCCState {

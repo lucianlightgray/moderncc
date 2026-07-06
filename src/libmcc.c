@@ -981,6 +981,7 @@ LIBMCCAPI void mcc_delete(MCCState *s1) {
 	dynarray_reset(&s1->link_argv, &s1->link_argc);
 	cstr_free(&s1->cmdline_defs);
 	cstr_free(&s1->cmdline_incl);
+	mcc_free(s1->asm_cfi.buf);
 	mcc_free(s1->dState);
 #ifdef MCC_IS_NATIVE
 	mcc_run_free(s1);

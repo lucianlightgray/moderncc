@@ -95,17 +95,30 @@ int main(int argc, char **argv) {
 				continue;
 			found[i] = 1;
 
-			if (cell(line, 1, c1, sizeof c1)) {
+			if (types[i][0] && cell(line, 1, c1, sizeof c1)) {
 				char *ty = trim(c1);
-				int k, is_type = 0;
+				char tok[32];
+				int k, j = 0, is_type = 0;
+				/* First whitespace-delimited token of the cell, so an annotation
+				 * like "STRING (list)" is compared as "STRING". BUILD.md has
+				 * several node-table shapes; only some put the CMake type in
+				 * column 1 (others put a flag mapping), so gate on the token
+				 * being a known type keyword before treating it as the type. */
+				while (ty[j] && !isspace((unsigned char)ty[j]) && j < (int)sizeof tok - 1) {
+					tok[j] = ty[j];
+					j++;
+				}
+				tok[j] = 0;
 				for (k = 0; TYPEKW[k]; k++)
-					if (!strncmp(ty, TYPEKW[k], strlen(TYPEKW[k]))) {
+					if (!strcmp(tok, TYPEKW[k])) {
 						is_type = 1;
 						break;
 					}
 				if (is_type) {
+					/* Exact match: a short type must not prefix-match a longer
+					 * one (INT vs INTERNAL) or a wrong-but-related keyword. */
 					typed[i] = 1;
-					if (!strncmp(ty, types[i], strlen(types[i])))
+					if (!strcmp(tok, types[i]))
 						typeok[i] = 1;
 				}
 			}
