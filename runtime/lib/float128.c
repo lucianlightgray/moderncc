@@ -13,7 +13,7 @@ typedef unsigned long long uint64_t;
 #endif
 
 #if defined(__x86_64__)
-typedef _Float128 f128_t;
+typedef __float128 f128_t;
 #else
 typedef long double f128_t;
 #endif

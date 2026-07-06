@@ -1525,7 +1525,9 @@ static int parse_include(MCCState *s1, int do_next, int test) {
 		}
 		mcc_debug_bincl(s1);
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
-		cst_hook_include(buf, file->prev == cst_main_bf);
+		if (!(c == '<' && 0 == strcmp(name, "mccdefs.h") &&
+		      0 == strcmp(file->prev->filename, "<command line>")))
+			cst_hook_include(buf, file->prev == cst_main_bf);
 #endif
 	}
 	return 1;
