@@ -6,14 +6,9 @@
 #define BUILTINN(x) "__mcc_builtin_" #x
 #endif
 
-/* Mach-O's assembler rejects non-weak __attribute__((alias)), and gcc ICEs on
-   __attribute__((weak, alias)) there, so emit the alias with an assembler .set
-   instead. __USER_LABEL_PREFIX__ supplies the leading underscore on Mach-O. */
 #define MCC_STR2(x) #x
 #define MCC_STR(x) MCC_STR2(x)
 #define MCC_ULP MCC_STR(__USER_LABEL_PREFIX__)
-/* mcc reads its own ELF objects and handles __attribute__((alias)) natively, so
-   only foreign (host-CC) Mach-O builds need the .set workaround. */
 #if defined __APPLE__ && !defined __MCC__
 #define MCC_ALIAS(decl, aliasnm, target) \
 	__asm__(".globl " MCC_ULP aliasnm "\n\t.set " MCC_ULP aliasnm "," MCC_ULP target)
@@ -194,8 +189,7 @@ unsigned long long BUILTIN(bswap64)(unsigned long long x) {
 
 #ifndef __MCC__
 #if defined __APPLE__
-/* Export every __builtin_* under its public name via .set (see MCC_ALIAS). */
-#define MCC_EXPORT(sfx)                                                             \
+#define MCC_EXPORT(sfx)                                                           \
 	__asm__(".globl " MCC_ULP "__builtin_" #sfx "\n\t.set " MCC_ULP "__builtin_" #sfx \
 			"," MCC_ULP "__mcc_builtin_" #sfx)
 MCC_EXPORT(ffs);
@@ -250,11 +244,6 @@ int __builtin_parityl(unsigned long x) __attribute__((alias("__mcc_builtin_parit
 int __builtin_parityll(unsigned long long x) __attribute__((alias("__mcc_builtin_parityll")));
 unsigned short __builtin_bswap16(unsigned short x) __attribute__((alias("__mcc_builtin_bswap16")));
 unsigned int __builtin_bswap32(unsigned int x) __attribute__((alias("__mcc_builtin_bswap32")));
-/* Clang types __builtin_bswap64 as uint64_t (unsigned long on LP64), so a C
- * alias prototype declared 'unsigned long long' conflicts ("conflicting types");
- * export the symbol with an assembler .set instead — as the Apple and ffs
- * exports above do — so there is no C prototype for Clang to type-check. GCC
- * accepts the .set here as well. */
 __asm__(".globl __builtin_bswap64\n\t.set __builtin_bswap64,__mcc_builtin_bswap64");
 #endif
 #endif

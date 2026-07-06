@@ -93,13 +93,10 @@ static void detect_triplet(char *out, int osz) {
 	}
 	for (i = 0; i < nc; i++) {
 		char p1[512], p2[512];
-		/* Bound the %s so gcc -Wformat-truncation can see it fits (cand[i] is
-		   [256], the paths are 512): the precision leaves room for the fixed
-		   prefix/suffix + NUL. */
 		snprintf(p1, sizeof p1, "/usr/lib/%.495s/crti.o", cand[i]);
 		snprintf(p2, sizeof p2, "/usr/include/%.498s", cand[i]);
 		if (host_stat(p1, &isd, NULL, NULL) == 0 || (host_stat(p2, &isd, NULL, NULL) == 0 && isd)) {
-			snprintf(out, osz, "%.255s", cand[i]); /* cand[i] is [256]; bound %s to match */
+			snprintf(out, osz, "%.255s", cand[i]);
 			return;
 		}
 	}

@@ -456,20 +456,6 @@ static void pe_set_tls(struct pe_info *pe, struct pe_header *hdr) {
 	if (!raw_end)
 		raw_end = tls_start;
 
-	/*
-	 * Fold the .tbss (zero-initialised) span into the raw template and emit
-	 * SizeOfZeroFill = 0, mirroring what gcc/ld produce for a PE image.
-	 *
-	 * The Windows loader's static-TLS setup for the primary thread does not
-	 * reliably honour SizeOfZeroFill here: it copies only [Start,End) and
-	 * leaves the trailing zero-fill span holding uninitialised heap, so a
-	 * zero-initialised __thread variable reads garbage.  The .tbss region of
-	 * the image is already zero-backed (NOBITS folded into .data as zeros, and
-	 * the loader zero-pads a section's virtual size past its raw size), so
-	 * extending EndAddressOfRawData over it makes the loader copy those zeros
-	 * as part of the template -- correct on every thread with no dependence on
-	 * the zero-fill path.
-	 */
 	if (mem_end > raw_end)
 		raw_end = mem_end;
 

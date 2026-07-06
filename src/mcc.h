@@ -461,8 +461,6 @@ typedef struct BufferedFile {
 	int line_num;
 	int line_ref;
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
-	/* CST byte cursor (NOTES CST §5): absolute file offset of buffer[0], maintained
-	 * across refills so abs_off(p) == cst_base + (p - buffer). */
 	unsigned long cst_base;
 #endif
 	int ifndef_macro;
@@ -562,7 +560,6 @@ struct sym_attr {
 #define PE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE 0x8000
 #endif
 
-/* --- types for parser/generator state rehomed into MCCState (from mccgen.c) --- */
 struct TinyAlloc;
 
 #define VLA_TRACK_MAX 512
@@ -661,8 +658,8 @@ struct MCCState {
 	unsigned char trigraphs;
 	unsigned char freestanding;
 	unsigned char syntax_only;
-	unsigned char diag_no_caret; /* -fno-diagnostics-show-caret: suppress source/caret context */
-	unsigned char diag_color;	 /* -fdiagnostics-color: 0=auto (tty), 1=always, 2=never */
+	unsigned char diag_no_caret;
+	unsigned char diag_color;
 	unsigned char visibility;
 	unsigned char stack_protector;
 	unsigned char do_strip;
@@ -766,7 +763,6 @@ struct MCCState {
 	char **library_paths;
 	int nb_library_paths;
 
-	/* macOS framework search paths (-framework / SDK System/Library/Frameworks) */
 	char **framework_paths;
 	int nb_framework_paths;
 
@@ -928,13 +924,11 @@ struct MCCState {
 	char **link_argv;
 	int link_argc, link_optind;
 
-	/* --- code-generator state (rehomed from mccgen.c file statics) --- */
 	int gen_sizeof_parsed_type;
 	int gen_complex_re_tok, gen_complex_im_tok;
 	CType gen_complex_type_cache[4];
 	unsigned char gen_prec[256];
 
-	/* --- parser/generator state (rehomed from mccgen.c file statics) --- */
 	Sym *sym_free_first;
 	void **sym_pools;
 	int nb_sym_pools;
@@ -964,7 +958,6 @@ struct MCCState {
 	int nb_seqp;
 	int seqp_overflow;
 
-	/* --- preprocessor/lexer state (rehomed from mccpp.c file statics) --- */
 	TokenSym *tok_ts;
 	TokenSym *hash_ident[TOK_HASH_SIZE];
 	char token_buf[STRING_MAX_SIZE + 1];
@@ -979,34 +972,26 @@ struct MCCState {
 	struct TinyAlloc *tokstr_alloc;
 	TokenString *macro_stack;
 
-	/* --- disassembler state (rehomed from mccdis.c file static) --- */
 	char **disasm_uniq;
 
-	/* --- assembler state (rehomed from mccasm.c file statics) --- */
 	Section *last_text_section;
 	int asmgoto_n;
 	struct asm_cfi_state asm_cfi;
 
-	/* --- per-function codegen state (rehomed from arch/<target>-gen.c file statics;
-	   only the active target's backend is compiled, so shared names collapse
-	   onto shared fields here) --- */
 	unsigned long cg_func_sub_sp_offset;
 	int cg_func_ret_sub;
 	int cg_func_stack_chk_loc;
 	addr_t cg_func_bound_offset;
 	unsigned long cg_func_bound_ind;
 	int cg_func_scratch, cg_func_alloca;
-	/* arm */
 	int cg_arm_float_abi;
 	int cg_last_itod_magic;
 	int cg_leaffunc;
 	CType cg_float_type, cg_double_type, cg_func_float_type, cg_func_double_type;
-	/* arm64 */
 	unsigned long cg_arm64_func_va_list_stack;
 	int cg_arm64_func_va_list_gr_offs, cg_arm64_func_va_list_vr_offs;
 	int cg_arm64_func_sub_sp_offset;
 	unsigned cg_arm64_func_start_offset;
-	/* riscv64 */
 	int cg_num_va_regs, cg_func_va_list_ofs;
 };
 
@@ -1272,7 +1257,7 @@ ST_FUNC int mcc_add_file_internal(MCCState *s1, const char *filename, int flags)
 #define AFF_TYPE_ASM 2
 #define AFF_TYPE_ASMPP 4
 #define AFF_TYPE_LIB 8
-#define AFF_TYPE_FRAMEWORK 0x10 /* macOS: link -framework <name> */
+#define AFF_TYPE_FRAMEWORK 0x10
 #define AFF_TYPE_MASK (7 | AFF_TYPE_BIN)
 #define AFF_BINTYPE_REL 1
 #define AFF_BINTYPE_DYN 2
@@ -1569,10 +1554,8 @@ typedef struct disasm_ctx {
 	int collect;
 	addr_t *labels;
 	int nlabels, labels_cap;
-	/* per-context scratch return buffers (formerly function-local statics) */
 	char relocbuf[256];
 	char labelbuf[32];
-	/* rotating register-name pool for arm64 disasm (formerly a file static) */
 	char dis_namepool[8][24];
 	int dis_namepool_i;
 } disasm_ctx;

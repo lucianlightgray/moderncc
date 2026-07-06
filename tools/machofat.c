@@ -1,19 +1,3 @@
-/* machofat — combine thin Mach-O files into a universal ("fat") binary.
- *
- *   machofat <out> <in1> [<in2> ...]
- *
- * mcc targets one CPU per binary — the Mach-O writer's cputype is a compile-time
- * choice (MCC_TARGET_ARM64 vs MCC_TARGET_X86_64), baked into separate
- * mcc-<arch>-osx binaries — so a single mcc invocation cannot emit a fat binary.
- * This host tool is the post-link combiner: it reads N already-linked thin
- * Mach-O files (each from a different mcc-<arch>-osx) and wraps them in a
- * big-endian fat header. A self-contained `lipo -create` needing no Apple tools.
- *
- * Slices are page-aligned (2^14 for arm64, 2^12 for x86_64/i386/arm) so any
- * ad-hoc code signature mcc already embedded in a slice stays valid — dyld maps
- * each slice from its aligned start. Offsets/sizes are 32-bit (FAT_MAGIC, not
- * FAT_MAGIC_64), which is ample for mcc's ~1 MB outputs.
- */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,7 +6,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#define FAT_MAGIC 0xcafebabeu /* on disk, big-endian */
+#define FAT_MAGIC 0xcafebabeu
 #define MH_MAGIC 0xfeedfaceu
 #define MH_CIGAM 0xcefaedfeu
 #define MH_MAGIC_64 0xfeedfacfu
@@ -43,8 +27,6 @@ static uint32_t bswap32(uint32_t x) {
 	return (x >> 24) | ((x >> 8) & 0xff00u) | ((x << 8) & 0xff0000u) | (x << 24);
 }
 
-/* Page-alignment exponent per CPU: arm64 pages are 16 KiB, the rest 4 KiB.
-   Using at least the arch page size keeps embedded signatures/segments valid. */
 static uint32_t align_exp(uint32_t cputype) {
 	switch (cputype) {
 	case CPU_TYPE_ARM64:
@@ -140,8 +122,6 @@ int main(int argc, char **argv) {
 		sl[i].align = align_exp(ct);
 	}
 
-	/* Layout: fat_header (8 bytes) + nfat_arch * fat_arch (20 bytes), then
-	   each slice at its page-aligned offset. */
 	hdr = 8u + (uint32_t)nin * 20u;
 	off = hdr;
 	for (i = 0; i < nin; i++) {
@@ -180,13 +160,7 @@ int main(int argc, char **argv) {
 	}
 	rc = fclose(out) ? 1 : 0;
 	if (rc == 0) {
-		chmod(argv[1], 0755); /* a universal binary is an executable */
-		/* Ad-hoc re-sign so the fat container + every slice carry a coherent
-		   signature. Apple silicon rejects an executable whose signature does not
-		   match its bytes at this path (the per-slice signatures mcc embedded are
-		   preserved by the copy, but re-signing avoids a stale kernel AMFI-cache
-		   rejection when the output path is reused). Best-effort: skip silently if
-		   codesign is unavailable (e.g. a non-Darwin combine). */
+		chmod(argv[1], 0755);
 		pid_t pid = fork();
 		if (pid == 0) {
 			execlp("codesign", "codesign", "-f", "-s", "-", argv[1], (char *)NULL);
@@ -195,10 +169,6 @@ int main(int argc, char **argv) {
 			int st;
 			if (waitpid(pid, &st, 0) > 0 && WIFEXITED(st)) {
 				int cs = WEXITSTATUS(st);
-				/* 127 = codesign not found (e.g. a non-Darwin combine): skip
-				   silently, as documented. Any other nonzero means codesign ran
-				   and failed, so the output may be AMFI-rejected on Apple silicon
-				   — surface it rather than reporting a false success. */
 				if (cs != 0 && cs != 127)
 					fprintf(stderr,
 						"machofat: warning: codesign failed (exit %d); '%s' "

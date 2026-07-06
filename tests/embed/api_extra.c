@@ -212,10 +212,6 @@ static void test_relocate_double_guard(void) {
 #endif
 }
 
-/* Regression: two TUs compiled on one state, both using _Complex. The complex
-   type memo caches struct syms allocated on global_stack, which is freed at the
-   end of each TU; without clearing it, the second TU reused dangling syms and
-   crashed. */
 static void test_multi_tu_complex(void) {
 	MCCState *s = fresh(MCC_OUTPUT_MEMORY);
 	int r1 = mcc_compile_string(s,

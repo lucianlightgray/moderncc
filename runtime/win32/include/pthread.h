@@ -1,37 +1,15 @@
 #ifndef _PTHREAD_H
 #define _PTHREAD_H
 
-/*
- * <pthread.h> for the mcc WIN32/PE target.
- *
- * msvcrt ships no POSIX threads, so this maps the pthread subset needed by the
- * mcc runtime's <threads.h> (C11 threads are layered on pthread) and by
- * thread-using conformance programs onto the Win32 API:
- *
- *   - threads      : msvcrt _beginthreadex (per-thread CRT init, so printf/
- *                    malloc are safe in the thread) + WaitForSingleObject
- *   - mutexes      : SRWLOCK (exclusive)
- *   - cond vars    : CONDITION_VARIABLE + SleepConditionVariableSRW
- *   - run-once     : INIT_ONCE / InitOnceExecuteOnce
- *   - thread keys  : the Tls* slots
- *
- * Scope limits: mutexes are non-recursive (PTHREAD_MUTEX_RECURSIVE is accepted
- * but behaves as a normal mutex -- SRWLOCK has no recursion), thread keys carry
- * no destructor (a NULL dtor is honoured), and there is no cancellation. This
- * is enough to run the C11-threads and pthread conformance programs on PE.
- */
+#include <process.h>
+#include <stdlib.h>
+#include <errno.h>
+#include <time.h>
 
-#include <process.h> /* _beginthreadex / _endthreadex */
-#include <stdlib.h>  /* malloc / free */
-#include <errno.h>   /* EBUSY / EAGAIN / ETIMEDOUT */
-#include <time.h>    /* struct timespec, clock_gettime, CLOCK_REALTIME */
-
-/* SRWLOCK / CONDITION_VARIABLE / INIT_ONCE are each one opaque pointer slot. */
 typedef struct { void *__ptr; } __mcc_srwlock;
 typedef struct { void *__ptr; } __mcc_condvar;
 typedef struct { void *__ptr; } __mcc_initonce;
 
-/* kernel32 imports, declared here to avoid pulling in all of <windows.h>. */
 unsigned long __stdcall WaitForSingleObject(void *__h, unsigned long __ms);
 int __stdcall CloseHandle(void *__h);
 unsigned long __stdcall GetCurrentThreadId(void);
@@ -52,13 +30,6 @@ int __stdcall TlsSetValue(unsigned long, void *);
 int __stdcall TlsFree(unsigned long);
 void __stdcall Sleep(unsigned long);
 
-/*
- * POSIX clock/sleep helpers <threads.h> needs but msvcrt lacks. Kept here (not
- * in <time.h>, which mcc's own runtime sources include alongside <windows.h>)
- * to avoid clashing with the winapi prototypes. clock_gettime uses the CRT
- * time() (whole-second resolution), which is only consulted by the timed
- * variants (mtx_timedlock / cnd_timedwait).
- */
 #ifndef CLOCK_REALTIME
 #define CLOCK_REALTIME 0
 #define CLOCK_MONOTONIC 1
@@ -77,7 +48,6 @@ static inline int clock_gettime(int __clk, struct timespec *__ts)
 	return 0;
 }
 
-/* ---------------------------------------------------------------- threads */
 typedef struct __mcc_pthread {
 	void *__handle;
 	void *(*__start)(void *);
@@ -117,7 +87,7 @@ static inline int pthread_create(pthread_t *__t, const pthread_attr_t *__attr,
 
 static inline int pthread_join(pthread_t __t, void **__retval)
 {
-	WaitForSingleObject(__t->__handle, 0xffffffffu /* INFINITE */);
+	WaitForSingleObject(__t->__handle, 0xffffffffu);
 	if (__retval)
 		*__retval = __t->__ret;
 	CloseHandle(__t->__handle);
@@ -127,8 +97,6 @@ static inline int pthread_join(pthread_t __t, void **__retval)
 
 static inline int pthread_detach(pthread_t __t)
 {
-	/* Release the OS handle; the control block is intentionally leaked
-	   rather than freed under the still-running thread. */
 	CloseHandle(__t->__handle);
 	return 0;
 }
@@ -138,15 +106,12 @@ static inline void pthread_exit(void *__ret)
 	_endthreadex((unsigned)(__UINTPTR_TYPE__)__ret);
 }
 
-/* pthread_self()/equal only need to be self-consistent for identity checks;
-   the thread id serves as a stable per-thread token. */
 static inline pthread_t pthread_self(void)
 {
 	return (pthread_t)(__UINTPTR_TYPE__)GetCurrentThreadId();
 }
 static inline int pthread_equal(pthread_t __a, pthread_t __b) { return __a == __b; }
 
-/* ---------------------------------------------------------------- mutexes */
 typedef __mcc_srwlock pthread_mutex_t;
 typedef struct { int __type; } pthread_mutexattr_t;
 
@@ -162,7 +127,7 @@ static inline int pthread_mutexattr_settype(pthread_mutexattr_t *__a, int __t) {
 static inline int pthread_mutex_init(pthread_mutex_t *__m, const pthread_mutexattr_t *__a)
 {
 	(void)__a;
-	__m->__ptr = 0; /* SRWLOCK_INIT */
+	__m->__ptr = 0;
 	return 0;
 }
 static inline int pthread_mutex_lock(pthread_mutex_t *__m) { AcquireSRWLockExclusive(__m); return 0; }
@@ -173,7 +138,6 @@ static inline int pthread_mutex_trylock(pthread_mutex_t *__m)
 }
 static inline int pthread_mutex_destroy(pthread_mutex_t *__m) { (void)__m; return 0; }
 
-/* ------------------------------------------------------- condition variables */
 typedef __mcc_condvar pthread_cond_t;
 typedef struct { int __unused; } pthread_condattr_t;
 
@@ -208,12 +172,11 @@ static inline int pthread_cond_timedwait(pthread_cond_t *__c, pthread_mutex_t *_
 }
 static inline int pthread_cond_destroy(pthread_cond_t *__c) { (void)__c; return 0; }
 
-/* ----------------------------------------------------- thread-specific keys */
 typedef unsigned long pthread_key_t;
 
 static inline int pthread_key_create(pthread_key_t *__k, void (*__dtor)(void *))
 {
-	(void)__dtor; /* destructors are not run by this shim */
+	(void)__dtor;
 	*__k = TlsAlloc();
 	return *__k == 0xffffffffu ? EAGAIN : 0;
 }
@@ -224,7 +187,6 @@ static inline int pthread_setspecific(pthread_key_t __k, const void *__v)
 	return TlsSetValue(__k, (void *)__v) ? 0 : ENOMEM;
 }
 
-/* ----------------------------------------------------------------- once */
 typedef __mcc_initonce pthread_once_t;
 #define PTHREAD_ONCE_INIT {0}
 
@@ -241,4 +203,4 @@ static inline int pthread_once(pthread_once_t *__once, void (*__func)(void))
 	return 0;
 }
 
-#endif /* _PTHREAD_H */
+#endif

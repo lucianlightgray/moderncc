@@ -64,8 +64,6 @@ errno_t __cdecl _get_errno(int *_Value);
 
 #define EDEADLOCK EDEADLK
 
-/* POSIX threads codes not in msvcrt's set; used by the <pthread.h>/<threads.h>
-   shims (mingw uses the same value). */
 #ifndef ETIMEDOUT
 #define ETIMEDOUT 138
 #endif

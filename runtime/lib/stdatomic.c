@@ -107,8 +107,6 @@ bool ATOMIC(is_lock_free)(unsigned long size, const volatile void *ptr) {
 }
 
 #ifndef __MCC__
-/* Mach-O rejects non-weak __attribute__((alias)) and gcc ICEs on weak,alias
-   there, so emit the alias with an assembler .set. */
 #if defined __APPLE__
 #define MCC_STR2(x) #x
 #define MCC_STR(x) MCC_STR2(x)

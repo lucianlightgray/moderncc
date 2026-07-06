@@ -1,9 +1,11 @@
 
 
 
+#define CC_unknown 0
 #define CC_gcc 1
 #define CC_clang 2
 #define CC_mcc 3
+#define CC_msvc 4
 
 
 #define ALL_ISOC99

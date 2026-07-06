@@ -1,20 +1,3 @@
-/*
- * mcccst.c — Concrete Syntax Tree (CST) database implementation.
- *
- * See docs/NOTES.md "CST database — design record" and src/mcccst.h.
- *
- * Self-contained (invariant NOTES CST §0.3): uses only the C library (malloc/free),
- * never mcc's allocators or globals, so the pure-library test harness
- * (tools/csttool.c) can link this file alone with no compiler.
- *
- * Everything is wrapped in the CONFIG_MCC_CST guard so that when the feature is
- * off this translation unit is empty — provable zero-cost-off (NOTES CST §0.2).
- *
- * Slices implemented here (NOTES CST slice records):
- *   B  node store core        C  hashing        D  geometry / offset index
- *   E  serialization          G  owned source   I  symbol refs
- *   H  recording-hook skeleton (current-arena + build stack)
- */
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
 
 #include "mcccst.h"
@@ -28,10 +11,6 @@
 #define CST_ASSERT(x) assert(x)
 #endif
 
-/* The CST owns its memory via the raw C library (invariant NOTES CST §0.3), never
- * mcc's arena. In the amalgamated build mcc.h poisons malloc/realloc/free to
- * force use of its own allocators; un-poison them for this self-contained unit
- * (harmless no-op in the standalone csttool build where the poison is absent). */
 #pragma push_macro("malloc")
 #pragma push_macro("realloc")
 #pragma push_macro("free")
@@ -41,49 +20,40 @@
 
 #define CST_ID_NONE ((CstId)0xffffffffffffffffull)
 
-/* ================================================================== *
- * Arena / SoA node store (slice B)
- * ================================================================== */
 
 struct CstArena {
     uint32_t file_id;
 
-    /* SoA columns, parallel arrays indexed by CstLocal (NOTES CST §2). */
     uint16_t *kind;
     CstLocal *parent;
     CstLocal *first_child;
-    CstLocal *last_child; /* build-time O(1) append; also serialized */
+    CstLocal *last_child;
     CstLocal *next_sib;
-    uint32_t *width;      /* relative bytes this node spans */
+    uint32_t *width;
     CstHash  *struct_hash;
     CstHash  *trivia_hash;
-    uint64_t *sym_ref;    /* CstId of def-site, or CST_ID_NONE */
-    uint32_t *slot_key;   /* reserved for 5B epoch hash (§3.1); 0 in v1 */
+    uint64_t *sym_ref;
+    uint32_t *slot_key;
 
-    /* Leaf side-columns, valid where kind == CST_Token. */
     uint16_t *tok_kind;
-    uint32_t *leaf_off;   /* start of owned span (leading trivia + token) */
-    uint32_t *leaf_len;   /* full span length; == width for a leaf */
-    uint32_t *tok_rel;    /* token start within the span (leading trivia len) */
-    uint32_t *triv_start; /* index into trivia pool */
+    uint32_t *leaf_off;
+    uint32_t *leaf_len;
+    uint32_t *tok_rel;
+    uint32_t *triv_start;
     uint32_t *triv_count;
 
     CstLocal count;
     CstLocal cap;
 
-    /* Trivia pool (relative offsets within the owning leaf). */
     CstTrivia *trivia;
     uint32_t trivia_count, trivia_cap;
 
-    /* Owned source bytes (slice G). */
     uint8_t *src;
     uint32_t src_len, src_cap;
 
-    /* Build stack (slice H). */
     CstLocal *stack;
     uint32_t stack_top, stack_cap;
 
-    /* offset->node index (slice D): leaf starts in source order. */
     struct {
         uint32_t start;
         CstLocal node;
@@ -172,7 +142,6 @@ void cst_arena_free(CstArena *a) {
     free(a);
 }
 
-/* Allocate a fresh node, default-initialize every column. */
 static CstLocal cst_alloc_node(CstArena *a, uint16_t kind) {
     CstLocal n = a->count;
     cst_grow(a, n + 1);
@@ -196,7 +165,6 @@ static CstLocal cst_alloc_node(CstArena *a, uint16_t kind) {
     return n;
 }
 
-/* Append `child` as the last child of `parent`, preserving order. */
 static void cst_link_child(CstArena *a, CstLocal parent, CstLocal child) {
     a->parent[child] = parent;
     if (parent == CST_NONE)
@@ -225,15 +193,11 @@ CstLocal cst_node_open(CstArena *a, uint16_t kind) {
 void cst_node_close(CstArena *a, CstLocal node) {
     CST_ASSERT(a->stack_top > 0 && a->stack[a->stack_top - 1] == node);
     a->stack_top--;
-    /* Bubble finalized width into the parent (bottom-up accumulation). */
     CstLocal parent = a->parent[node];
     if (parent != CST_NONE)
         a->width[parent] += a->width[node];
 }
 
-/* Leaf-kind nodes (byte-owning, no children): CST_Token and, since D1d, the
- * promoted CST_Comment. Both tile the source and are found by offset lookup;
- * they differ in the hash channels (a Comment is excluded from H_s, §8.4). */
 static int cst_is_leaf_kind(uint16_t k) {
     return k == CST_Token || k == CST_Comment;
 }
@@ -253,7 +217,7 @@ static CstLocal cst_leaf_kinded(CstArena *a, uint16_t node_kind, uint16_t tok_ki
             a->trivia = cst_xrealloc(a->trivia, a->trivia_cap * sizeof *a->trivia);
         }
         a->trivia[a->trivia_count++] = trivia[i];
-        tok_rel += trivia[i].length; /* leading trivia is a contiguous prefix */
+        tok_rel += trivia[i].length;
     }
     a->tok_kind[n] = tok_kind;
     a->leaf_off[n] = off;
@@ -282,13 +246,10 @@ uint32_t cst_width(const CstArena *a, CstLocal n) { return a->width[n]; }
 CstLocal cst_node_count(const CstArena *a) { return a->count; }
 CstLocal cst_root(const CstArena *a) { return a->count ? 0 : CST_NONE; }
 
-/* ================================================================== *
- * Owned source (slice G)
- * ================================================================== */
 
 uint32_t cst_own_file(CstArena *a, const char *name, const uint8_t *bytes,
                       size_t n) {
-    (void)name; /* v1: one file per arena; name reserved for multi-file stitch */
+    (void)name;
     if (a->src_len + n > a->src_cap) {
         a->src_cap = a->src_cap ? a->src_cap : 1024;
         while (a->src_len + n > a->src_cap)
@@ -306,9 +267,6 @@ const uint8_t *cst_source(const CstArena *a, uint32_t *len_out) {
     return a->src;
 }
 
-/* ================================================================== *
- * Hashing (slice C, NOTES CST §3). 128-bit non-crypto, two 64-bit lanes.
- * ================================================================== */
 
 static uint64_t cst_mix64(uint64_t h, uint64_t x) {
     h ^= x;
@@ -329,7 +287,6 @@ static uint64_t cst_hash_bytes(uint64_t seed, const uint8_t *p, uint32_t len) {
 
 CstHash cst_hash_leaf(uint16_t tok_kind, const uint8_t *bytes, uint32_t len) {
     CstHash h;
-    /* Two independently-seeded lanes; salt with the token kind (NOTES CST §3). */
     h.lo = cst_hash_bytes(0xC0FFEEull ^ ((uint64_t)tok_kind << 1), bytes, len);
     h.hi = cst_hash_bytes(0x5EED1234ull ^ ((uint64_t)tok_kind << 7 | 1), bytes, len);
     return h;
@@ -337,7 +294,6 @@ CstHash cst_hash_leaf(uint16_t tok_kind, const uint8_t *bytes, uint32_t len) {
 
 CstHash cst_hash_internal(uint16_t kind, const CstHash *child, uint32_t n) {
     CstHash h;
-    /* salt(kind, child_count) disambiguates a+b vs a+(b) (NOTES CST §3). */
     h.lo = cst_mix64(0xA5A5A5A5ull ^ ((uint64_t)kind << 1), n);
     h.hi = cst_mix64(0x3C3C3C3Cull ^ ((uint64_t)kind << 3 | 1), n);
     uint32_t i;
@@ -352,7 +308,6 @@ CstHash cst_hash_internal(uint16_t kind, const CstHash *child, uint32_t n) {
 
 int cst_hash_eq(CstHash x, CstHash y) { return x.lo == y.lo && x.hi == y.hi; }
 
-/* Token bytes of a leaf = its owned span minus the leading trivia prefix. */
 static const uint8_t *cst_leaf_tok_bytes(const CstArena *a, CstLocal n,
                                          uint32_t *len_out) {
     uint32_t off = a->leaf_off[n] + a->tok_rel[n];
@@ -370,9 +325,6 @@ static CstHash cst_compute_struct(CstArena *a, CstLocal n) {
         a->struct_hash[n] = h;
         return h;
     }
-    /* Gather children hashes (post-order: recurse first). CST_Comment children
-     * are excluded from H_s so a comment-only edit leaves the structural hash
-     * fixed (D1d / NOTES CST §8.4); their bytes live in the trivia channel H_t. */
     CstHash stackbuf[16];
     CstHash *ch = stackbuf;
     uint32_t cap = 16, cnt = 0;
@@ -399,7 +351,6 @@ static CstHash cst_compute_struct(CstArena *a, CstLocal n) {
     return h;
 }
 
-/* Trivia hash: folds trivia bytes + kinds + widths (NOTES CST §3). */
 static CstHash cst_compute_trivia(CstArena *a, CstLocal n) {
     CstHash h;
     h.lo = 0xDEADBEEFull;
@@ -413,7 +364,6 @@ static CstHash cst_compute_trivia(CstArena *a, CstLocal n) {
             h.hi = cst_hash_bytes(h.hi, tb, t->length);
         }
     } else if (a->kind[n] == CST_Comment) {
-        /* A promoted comment node carries its bytes in the trivia channel (D1d). */
         h.lo = cst_mix64(h.lo, ((uint64_t)CST_TRIV_BLOCK_COMMENT << 32) | a->leaf_len[n]);
         h.hi = cst_hash_bytes(h.hi, a->src + a->leaf_off[n], a->leaf_len[n]);
     }
@@ -437,9 +387,6 @@ void cst_rehash_all(CstArena *a) {
 CstHash cst_struct_hash(const CstArena *a, CstLocal n) { return a->struct_hash[n]; }
 CstHash cst_trivia_hash(const CstArena *a, CstLocal n) { return a->trivia_hash[n]; }
 
-/* Frontier-scoped rehash (NOTES CST §3.1). v1: mark touched + ancestors dirty, then a
- * single post-order pass recomputes only dirty nodes from children's current
- * hashes. Correct; the O(frontier) cost model is a 5B concern. */
 static void cst_rehash_dirty(CstArena *a, CstLocal n, const uint8_t *dirty) {
     CstLocal c;
     for (c = a->first_child[n]; c != CST_NONE; c = a->next_sib[c])
@@ -447,7 +394,7 @@ static void cst_rehash_dirty(CstArena *a, CstLocal n, const uint8_t *dirty) {
     if (!dirty[n])
         return;
     if (a->kind[n] == CST_Comment) {
-        a->struct_hash[n].lo = a->struct_hash[n].hi = 0; /* excluded from H_s */
+        a->struct_hash[n].lo = a->struct_hash[n].hi = 0;
         return;
     }
     if (a->kind[n] == CST_Token) {
@@ -461,7 +408,7 @@ static void cst_rehash_dirty(CstArena *a, CstLocal n, const uint8_t *dirty) {
     uint32_t cap = 16, cnt = 0;
     for (c = a->first_child[n]; c != CST_NONE; c = a->next_sib[c]) {
         if (a->kind[c] == CST_Comment)
-            continue; /* comment excluded from H_s (§8.4) */
+            continue;
         if (cnt >= cap) {
             cap *= 2;
             CstHash *nw = cst_xrealloc(ch == stackbuf ? NULL : ch, cap * sizeof *nw);
@@ -493,9 +440,6 @@ void cst_rehash_frontier(CstArena *a, const CstLocal *touched, uint32_t n) {
     free(dirty);
 }
 
-/* ================================================================== *
- * Geometry & offset->node index (slice D, NOTES CST §1/§2/§5)
- * ================================================================== */
 
 uint32_t cst_abs_offset(const CstArena *a, CstLocal n) {
     uint32_t off = 0;
@@ -528,7 +472,6 @@ static void cst_index_walk(CstArena *a, CstLocal n, uint32_t base,
 }
 
 void cst_index_build(CstArena *a) {
-    /* Count leaves. */
     uint32_t leaves = 0, i;
     for (i = 0; i < a->count; i++)
         if (cst_is_leaf_kind(a->kind[i]))
@@ -544,7 +487,6 @@ void cst_index_build(CstArena *a) {
 CstLocal cst_node_at(const CstArena *a, uint32_t abs_off) {
     if (!a->index_valid || a->index_count == 0)
         return CST_NONE;
-    /* Binary search for the leaf whose [start, start+width) contains abs_off. */
     uint32_t lo = 0, hi = a->index_count;
     while (lo < hi) {
         uint32_t mid = lo + (hi - lo) / 2;
@@ -560,21 +502,13 @@ CstLocal cst_node_at(const CstArena *a, uint32_t abs_off) {
     return CST_NONE;
 }
 
-/* ================================================================== *
- * Symbol refs (slice I, NOTES CST §1 Symbols)
- * ================================================================== */
 
 void cst_set_sym_ref(CstArena *a, CstLocal use, CstId def) {
     a->sym_ref[use] = def;
 }
 CstId cst_sym_ref(const CstArena *a, CstLocal use) { return a->sym_ref[use]; }
 
-/* ================================================================== *
- * D3/D5 — SourceFile template metadata, content-addressed store, renderer
- * (NOTES CST gap-closure D3/D5).
- * ================================================================== */
 
-/* Branch-body tag (1-based) lives in the reserved slot_key column. */
 void cst_mark_branch(CstArena *a, CstLocal node, uint32_t branch_ord) {
     a->slot_key[node] = branch_ord + 1;
 }
@@ -582,12 +516,10 @@ uint32_t cst_branch_ord(const CstArena *a, CstLocal node) {
     uint32_t s = a->slot_key[node];
     return s ? s - 1 : 0;
 }
-/* Is `node` a branch body (vs a directive line / ordinary child)? */
 static int cst_is_branch(const CstArena *a, CstLocal node) {
     return a->slot_key[node] != 0;
 }
 
-/* IncludeDirective cross-file target = template id, stored in sym_ref. */
 void cst_set_include_target(CstArena *a, CstLocal node, uint32_t template_id) {
     a->sym_ref[node] = cst_id(template_id, 0);
 }
@@ -595,10 +527,9 @@ uint32_t cst_include_target(const CstArena *a, CstLocal node) {
     return cst_id_file(a->sym_ref[node]);
 }
 
-/* --- content-addressed template store (4C hash-consing / 6B store) ------- */
 struct CstStore {
     struct {
-        CstHash key;   /* H_s(body) of the template's root */
+        CstHash key;
         CstArena *tmpl;
     } *ent;
     uint32_t count, cap;
@@ -630,10 +561,6 @@ uint32_t cst_store_intern(CstStore *s, CstArena *tmpl) {
     for (uint32_t i = 0; i < s->count; i++) {
         if (!cst_hash_eq(s->ent[i].key, key))
             continue;
-        /* Same content-address: dedup. A file's bytes fix its structure, so two
-         * entries under one H_s MUST reflect identically — otherwise the hash
-         * has collided and any dedup here would silently fuse two different
-         * headers. Verify in a debug build (docs/TODO.md tripwire). */
 #if !defined(NDEBUG)
         {
             CstArena *ex = s->ent[i].tmpl;
@@ -658,7 +585,7 @@ uint32_t cst_store_intern(CstStore *s, CstArena *tmpl) {
             }
         }
 #endif
-        cst_arena_free(tmpl); /* redundant copy; keep the canonical one */
+        cst_arena_free(tmpl);
         return i;
     }
     if (s->count >= s->cap) {
@@ -670,7 +597,6 @@ uint32_t cst_store_intern(CstStore *s, CstArena *tmpl) {
     return s->count++;
 }
 
-/* --- per-include binding (the template's holes for one instance) --------- */
 struct CstBinding {
     uint32_t template_id;
     struct {
@@ -678,7 +604,7 @@ struct CstBinding {
         uint32_t which;
     } *sel;
     uint32_t nsel, selcap;
-    CstBinding **inc; /* child bindings, one per IncludeDirective, in order */
+    CstBinding **inc;
     uint32_t ninc, inccap;
 };
 
@@ -731,7 +657,6 @@ void cst_binding_add_include(CstBinding *b, CstBinding *child) {
     b->inc[b->ninc++] = child;
 }
 
-/* --- the renderer: a fold over the template with a threaded environment --- */
 static size_t cst_emit_bytes(const CstArena *a, CstLocal n, uint8_t *out,
                              size_t cap, size_t pos) {
     uint32_t len = a->leaf_len[n];
@@ -740,10 +665,6 @@ static size_t cst_emit_bytes(const CstArena *a, CstLocal n, uint8_t *out,
     return pos + len;
 }
 
-/* Render one node. binding==NULL renders the identity (every branch, no include
- * expansion = the written source). Otherwise a PPConditional emits only its
- * live branch body and an IncludeDirective is replaced by its child binding's
- * expansion (the threaded environment picks up each include's own branches). */
 static size_t cst_render_node(const CstStore *s, const CstArena *a, CstLocal n,
                               const CstBinding *b, uint32_t *inc_cursor,
                               uint8_t *out, size_t cap, size_t pos) {
@@ -752,9 +673,6 @@ static size_t cst_render_node(const CstStore *s, const CstArena *a, CstLocal n,
         return cst_emit_bytes(a, n, out, cap, pos);
 
     if (b && k == CST_IncludeDirective) {
-        /* Expand: splice in the included template's live render (its own
-         * binding threads that file's environment). Falls back to the written
-         * directive text if no child binding was supplied. */
         if (*inc_cursor < b->ninc) {
             const CstBinding *child = b->inc[(*inc_cursor)++];
             const CstArena *ct = cst_store_get(s, child->template_id);
@@ -767,9 +685,9 @@ static size_t cst_render_node(const CstStore *s, const CstArena *a, CstLocal n,
         uint32_t sel = cst_binding_selected(b, n);
         for (CstLocal c = a->first_child[n]; c != CST_NONE; c = a->next_sib[c]) {
             if (!cst_is_branch(a, c))
-                continue; /* directive line (#if/#else/#endif) — not emitted */
+                continue;
             if (cst_branch_ord(a, c) != sel)
-                continue; /* a dead branch */
+                continue;
             pos = cst_render_node(s, a, c, b, inc_cursor, out, cap, pos);
         }
         return pos;
@@ -793,13 +711,9 @@ size_t cst_render_identity(const CstArena *tmpl, uint8_t *out, size_t cap) {
     if (tmpl->count == 0)
         return 0;
     uint32_t cursor = 0;
-    /* NULL binding → identity: every branch, no expansion (== the source). */
     return cst_render_node(NULL, tmpl, cst_root(tmpl), NULL, &cursor, out, cap, 0);
 }
 
-/* ================================================================== *
- * Reflection + serialization (slice E, NOTES CST §8.1/§8.6)
- * ================================================================== */
 
 static size_t cst_reflect_walk(const CstArena *a, CstLocal n, uint8_t *out,
                                size_t cap, size_t pos) {
@@ -821,9 +735,7 @@ size_t cst_reflect(const CstArena *a, CstLocal root, uint8_t *out, size_t cap) {
     return cst_reflect_walk(a, root, out, cap, 0);
 }
 
-/* Snapshot format (NOTES CST §1 Persistence): versioned header + section columns.
- * Never a raw dump — magic + version + endianness guard cross-version reads. */
-#define CST_MAGIC 0x5453434Du /* 'MCST' little-endian */
+#define CST_MAGIC 0x5453434Du
 #define CST_VERSION 1u
 #define CST_ENDIAN_TAG 0x01020304u
 
@@ -892,7 +804,7 @@ CstArena *cst_snapshot_load(const char *path) {
     if (!cst_rd(f, &h, sizeof h) || h.magic != CST_MAGIC ||
         h.version != CST_VERSION || h.endian != CST_ENDIAN_TAG) {
         fclose(f);
-        return NULL; /* version/endian skew rejected cleanly (NOTES CST §8.6) */
+        return NULL;
     }
     CstArena *a = cst_arena_new(h.file_id);
     cst_grow(a, h.node_count ? h.node_count : 1);
@@ -937,17 +849,7 @@ CstArena *cst_snapshot_load(const char *path) {
     return a;
 }
 
-/* ================================================================== *
- * Recording-hook skeleton (slice H, NOTES CST §6)
- * A single current arena + build stack; the compiler never sees the arena.
- * Fleshed out during Weave 1. Provided here so mccgen.c/mccpp.c can link.
- * ================================================================== */
 
-/* ================================================================== *
- * Whole-tree validation (NOTES CST §8.1/§8.2/§8.3) — used by the corpus gate.
- * Checks round-trip reflection, width tiling, and offset->node lookup.
- * Returns 0 on success; else writes a short reason into msg.
- * ================================================================== */
 static int cst_check_tiling(const CstArena *a, CstLocal n) {
     if (cst_is_leaf_kind(a->kind[n]))
         return a->width[n] == a->leaf_len[n];
@@ -967,7 +869,6 @@ int cst_validate(const CstArena *a, char *msg, size_t msgcap) {
         return 1;
     }
     CstLocal root = cst_root(a);
-    /* 1. Round-trip (§8.1). */
     size_t need = cst_reflect(a, root, NULL, 0);
     if (need != a->src_len) {
         snprintf(msg, msgcap, "reflect size %zu != src %u", need, a->src_len);
@@ -981,7 +882,6 @@ int cst_validate(const CstArena *a, char *msg, size_t msgcap) {
         snprintf(msg, msgcap, "reflect bytes differ");
         return 1;
     }
-    /* 2. Tiling / span coverage (§8.2). */
     if (a->width[root] != a->src_len) {
         snprintf(msg, msgcap, "root width %u != src %u", a->width[root],
                  a->src_len);
@@ -991,7 +891,6 @@ int cst_validate(const CstArena *a, char *msg, size_t msgcap) {
         snprintf(msg, msgcap, "width tiling violated");
         return 1;
     }
-    /* 3. Bidirectional offset->node lookup (§8.3), sampled. */
     uint32_t step = a->src_len / 256 + 1, off;
     for (off = 0; off < a->src_len; off += step) {
         CstLocal n = cst_node_at(a, off);
@@ -1009,15 +908,6 @@ int cst_validate(const CstArena *a, char *msg, size_t msgcap) {
     return 0;
 }
 
-/* --- deferred capture state (slice H) -----------------------------------
- * mcc is a single-pass parser with one token of lookahead, so when a grammar
- * function brackets a construct with cst_hook_open/close its first token has
- * ALREADY been lexed and captured. We therefore DON'T build the tree live.
- * Instead we record a flat, source-ordered leaf list (which alone gives the
- * round-trip, NOTES CST §8.1) plus structural specs as leaf-index ranges, and
- * materialize the nested tree in cst_hook_end — resolving the lookahead by the
- * rule: a node opened while `tok` is its first token spans leaves
- * [open_leaf_count - 1, close_leaf_count - 1). */
 static CstArena *cst_current;
 
 typedef struct CstLeafSpec {
@@ -1029,7 +919,7 @@ typedef struct CstNodeSpec {
     uint16_t kind;
     uint32_t first_leaf, last_leaf;
     int32_t parent;
-    int32_t child_head, child_tail, sib; /* materialization links */
+    int32_t child_head, child_tail, sib;
 } CstNodeSpec;
 
 static CstLeafSpec *cst_lbuf;
@@ -1039,9 +929,6 @@ static uint32_t cst_scount, cst_scap;
 static int32_t *cst_sstack;
 static uint32_t cst_sstop, cst_sscap;
 
-/* Symbol refs (slice I): last-seen def offset per identifier token value, plus a
- * buffer of (use,def) source-offset pairs resolved to node-ids at end. v1 is
- * last-declaration-wins (no scope stack); shadowing is a documented limitation. */
 static uint32_t *cst_defoff;
 static uint32_t cst_defoff_cap;
 static struct CstUse {
@@ -1096,18 +983,12 @@ static int cst_slurp(CstArena *a, const char *filename) {
     return 0;
 }
 
-/* D3 live capture: a content-addressed store of the real included files seen
- * during this capture, plus the template id bound to each main-file
- * IncludeDirective (in source order), applied in cst_hook_end. */
 static CstStore *cst_session_store;
-static uint32_t *cst_inc_tmpl; /* template id per main-file include, in order */
+static uint32_t *cst_inc_tmpl;
 static uint32_t cst_inc_count, cst_inc_cap;
 
 CstStore *cst_hook_store(void) { return cst_session_store; }
 
-/* Classify a physical line for full-concrete capture: 1 = #if/#ifdef/#ifndef,
- * 2 = #else/#elif, 3 = #endif, 0 = ordinary. Leading whitespace and a space
- * after '#' are allowed (`#  if`). */
 static int cst_line_cond(const uint8_t *s, uint32_t a, uint32_t b) {
     uint32_t i = a;
     while (i < b && (s[i] == ' ' || s[i] == '\t'))
@@ -1132,17 +1013,12 @@ static int cst_line_cond(const uint8_t *s, uint32_t a, uint32_t b) {
     return 0;
 }
 
-/* Build a full-concrete SourceFile tree (D3 Table A): every physical line is a
- * leaf, and each #if/#else/#endif region becomes a PPConditional whose branch
- * bodies — INCLUDING dead branches — are tagged CompoundStmt groups a binding
- * can select among. Tiles the bytes exactly, so cst_render_identity == the file
- * and pure-H_s hash-consing keys on the whole structure. */
 static void cst_build_sourcefile(CstArena *a, const uint8_t *src, uint32_t len) {
     cst_node_open(a, CST_TranslationUnit);
     struct {
-        CstLocal cond;   /* the PPConditional node                    */
-        uint32_t brno;   /* current branch ordinal                    */
-        CstLocal branch; /* open branch-body node, or CST_NONE        */
+        CstLocal cond;
+        uint32_t brno;
+        CstLocal branch;
     } st[64];
     int sp = 0;
     uint32_t p = 0;
@@ -1151,26 +1027,26 @@ static void cst_build_sourcefile(CstArena *a, const uint8_t *src, uint32_t len) 
         while (p < len && src[p] != '\n')
             p++;
         if (p < len)
-            p++; /* take the newline into the line */
+            p++;
         uint32_t n = p - ls;
         int dir = cst_line_cond(src, ls, p);
-        if (dir == 1) { /* open a (possibly nested) conditional */
+        if (dir == 1) {
             CstLocal cond = cst_node_open(a, CST_PPConditional);
-            cst_leaf(a, 0, ls, n, NULL, 0); /* the #if directive line */
+            cst_leaf(a, 0, ls, n, NULL, 0);
             if (sp < 64) {
                 st[sp].cond = cond;
                 st[sp].brno = 0;
                 st[sp].branch = CST_NONE;
                 sp++;
             }
-        } else if (dir == 2 && sp > 0) { /* #else / #elif: next branch */
+        } else if (dir == 2 && sp > 0) {
             if (st[sp - 1].branch != CST_NONE) {
                 cst_node_close(a, st[sp - 1].branch);
                 st[sp - 1].branch = CST_NONE;
             }
             cst_leaf(a, 0, ls, n, NULL, 0);
             st[sp - 1].brno++;
-        } else if (dir == 3 && sp > 0) { /* #endif: close the conditional */
+        } else if (dir == 3 && sp > 0) {
             if (st[sp - 1].branch != CST_NONE) {
                 cst_node_close(a, st[sp - 1].branch);
                 st[sp - 1].branch = CST_NONE;
@@ -1178,7 +1054,7 @@ static void cst_build_sourcefile(CstArena *a, const uint8_t *src, uint32_t len) 
             cst_leaf(a, 0, ls, n, NULL, 0);
             cst_node_close(a, st[sp - 1].cond);
             sp--;
-        } else { /* ordinary line: goes in the current branch body (if any) */
+        } else {
             if (sp > 0 && st[sp - 1].branch == CST_NONE) {
                 CstLocal bn = cst_node_open(a, CST_CompoundStmt);
                 cst_mark_branch(a, bn, st[sp - 1].brno);
@@ -1187,7 +1063,7 @@ static void cst_build_sourcefile(CstArena *a, const uint8_t *src, uint32_t len) 
             cst_leaf(a, 0, ls, n, NULL, 0);
         }
     }
-    while (sp > 0) { /* defensive: unterminated #if */
+    while (sp > 0) {
         if (st[sp - 1].branch != CST_NONE)
             cst_node_close(a, st[sp - 1].branch);
         cst_node_close(a, st[sp - 1].cond);
@@ -1201,9 +1077,6 @@ void cst_hook_include(const char *path, int from_main_file) {
         return;
     if (!cst_session_store)
         cst_session_store = cst_store_new();
-    /* Build a full-concrete SourceFile template (all #if/#else branches as
-     * concrete nodes) and hash-cons it: two #includes of the same header — any
-     * context — collapse to one physical template keyed by pure H_s(body). */
     CstArena *t = cst_arena_new(0);
     if (cst_slurp(t, path) != 0) {
         cst_arena_free(t);
@@ -1213,7 +1086,7 @@ void cst_hook_include(const char *path, int from_main_file) {
     const uint8_t *bytes = cst_source(t, &len);
     cst_build_sourcefile(t, bytes, len);
     cst_rehash_all(t);
-    uint32_t id = cst_store_intern(cst_session_store, t); /* dedup; may free t */
+    uint32_t id = cst_store_intern(cst_session_store, t);
     if (from_main_file) {
         if (cst_inc_count >= cst_inc_cap) {
             cst_inc_cap = cst_inc_cap ? cst_inc_cap * 2 : 16;
@@ -1258,7 +1131,7 @@ void cst_hook_begin(const char *filename) {
     cst_inc_count = 0;
     for (uint32_t i = 0; i < cst_defoff_cap; i++)
         cst_defoff[i] = CST_OFF_NONE;
-    cst_spec_push(CST_TranslationUnit, 0); /* root */
+    cst_spec_push(CST_TranslationUnit, 0);
 }
 
 void cst_hook_token(uint32_t start, uint32_t end) {
@@ -1277,47 +1150,35 @@ void cst_hook_token(uint32_t start, uint32_t end) {
 void cst_hook_open(uint16_t kind) {
     if (!cst_current)
         return;
-    /* The current lookahead token is this construct's first token. */
     uint32_t first = cst_lcount ? cst_lcount - 1 : 0;
     cst_spec_push(kind, first);
 }
 
-/* Mark the current leaf position, for a node whose start is only known to be a
- * node later (left-recursive expressions, NOTES CST §2). */
 uint32_t cst_mark(void) { return cst_lcount ? cst_lcount - 1 : 0; }
 
-/* Open a node retroactively spanning from a previously-taken mark. */
 void cst_hook_open_at(uint16_t kind, uint32_t first_leaf) {
     if (!cst_current)
         return;
     cst_spec_push(kind, first_leaf);
 }
 
-/* Number of source leaves captured so far. */
 uint32_t cst_leafcount(void) { return cst_lcount; }
 
-/* Record a node with an explicit half-open leaf range [first,last) — used for a
- * macro invocation, whose written name/args span is known only after expansion
- * (slice J, NOTES CST §4). Empty ranges are dropped by cst_nest_specs. */
 void cst_hook_wrap(uint16_t kind, uint32_t first_leaf, uint32_t last_leaf) {
     if (!cst_current || last_leaf <= first_leaf)
         return;
     int32_t si = cst_spec_push(kind, first_leaf);
     cst_sbuf[si].last_leaf = last_leaf;
-    cst_sstop--; /* not a stack bracket; its range is fully specified */
+    cst_sstop--;
 }
 
 void cst_hook_close(void) {
-    if (!cst_current || cst_sstop <= 1) /* never pop the TU root here */
+    if (!cst_current || cst_sstop <= 1)
         return;
     int32_t si = cst_sstack[--cst_sstop];
-    /* Exclude the lookahead token belonging to the next construct. */
     cst_sbuf[si].last_leaf = cst_lcount ? cst_lcount - 1 : 0;
 }
 
-/* Leading-trivia length of a leaf span: the run of whitespace and comments
- * before the token (slice G). Excluded from the structural hash (NOTES CST §3) so
- * whitespace/comment-only edits don't perturb H_s. */
 static uint32_t cst_leading_trivia(const uint8_t *src, uint32_t off, uint32_t len) {
     uint32_t i = 0;
     while (i < len) {
@@ -1347,13 +1208,7 @@ static void cst_emit_leaf(uint32_t i) {
     const uint8_t *src = cst_current->src;
     uint32_t tr = cst_leading_trivia(src, off, len);
 
-    /* D1d: promote each comment in the leading trivia to its own CST_Comment
-     * leaf node so comments are first-class (LSP hover, comment-preserving
-     * refactors). A comment node spans its preceding whitespace + the comment
-     * text; the token keeps only the whitespace after the last comment as its
-     * trivia. Bytes still tile exactly, so round-trip (§8.1) is unchanged; the
-     * Comment node is excluded from H_s but folded into H_t (§8.4). */
-    uint32_t seg = off;         /* start of the not-yet-emitted trivia run     */
+    uint32_t seg = off;
     uint32_t p = off, end = off + tr;
     while (p < end) {
         uint8_t c = src[p];
@@ -1372,11 +1227,10 @@ static void cst_emit_leaf(uint32_t i) {
             cst_leaf_kinded(cst_current, CST_Comment, 0, seg, p - seg, NULL, 0);
             seg = p;
         } else {
-            p++; /* whitespace — accumulate into the current segment */
+            p++;
         }
     }
-    /* Remaining [seg, off+len) = trailing whitespace + the token itself. */
-    uint32_t tail = end - seg; /* whitespace between last comment and token */
+    uint32_t tail = end - seg;
     CstTrivia tv;
     tv.kind = CST_TRIV_WS;
     tv.offset = 0;
@@ -1385,13 +1239,6 @@ static void cst_emit_leaf(uint32_t i) {
                     (off + len) - seg, tail ? &tv : NULL, tail ? 1 : 0);
 }
 
-/* Order specs for range-based nesting: first_leaf asc, then wider range first
- * (last_leaf desc), then — for exactly-coincident ranges — later-opened first
- * (id desc). A grouping wrapper (Initializer/Declaration/…) is opened *after*
- * the sub-expression it contains (retroactive range-wrap), so when a wrapper's
- * span coincides byte-for-byte with its single child (e.g. `int c = (int)a;`
- * where the Initializer equals the Cast) the higher id is the semantic parent
- * and must sort first so the containment stack makes it the parent. */
 static int cst_spec_cmp(const void *pa, const void *pb) {
     uint32_t a = *(const uint32_t *)pa, b = *(const uint32_t *)pb;
     if (cst_sbuf[a].first_leaf != cst_sbuf[b].first_leaf)
@@ -1401,10 +1248,6 @@ static int cst_spec_cmp(const void *pa, const void *pb) {
     return a > b ? -1 : (a < b ? 1 : 0);
 }
 
-/* Rebuild spec parent/child links purely from [first_leaf,last_leaf) containment
- * (not the open-time parent), so retroactively-opened expression nodes nest
- * correctly. All grammar constructs are either disjoint or nested, never partial-
- * overlapping, so a stack over the sorted specs yields the true tree. */
 static void cst_nest_specs(void) {
     uint32_t n = cst_scount, k, m = 0;
     uint32_t *order = cst_xrealloc(NULL, (n ? n : 1) * sizeof *order);
@@ -1412,9 +1255,6 @@ static void cst_nest_specs(void) {
     for (k = 0; k < n; k++) {
         cst_sbuf[k].parent = -1;
         cst_sbuf[k].child_head = cst_sbuf[k].child_tail = cst_sbuf[k].sib = -1;
-        /* Drop empty specs (first==last): retroactive wraps around macro-
-         * expanded expressions capture no source leaves and would otherwise
-         * pile up into a pathological linear chain. Keep the root always. */
         if (k == 0 || cst_sbuf[k].last_leaf > cst_sbuf[k].first_leaf)
             order[m++] = k;
     }
@@ -1429,19 +1269,12 @@ static void cst_nest_specs(void) {
             if (cst_sbuf[tp].first_leaf <= cst_sbuf[si].first_leaf &&
                 cst_sbuf[si].last_leaf <= cst_sbuf[tp].last_leaf)
                 break;
-            /* tp does not contain si. If tp still extends past si's start, si
-             * is neither disjoint-after tp nor nested in it — a *partial*
-             * overlap, which the disjoint-or-nested invariant forbids. This
-             * arises when an independently-recorded span (e.g. a parser
-             * Declaration whose start mark is stale across an #include) straddles
-             * a PP-boundary node. Drop si rather than let cst_materialize tile a
-             * leaf under two siblings (which would break round-trip §8.1). */
             if (cst_sbuf[tp].last_leaf > cst_sbuf[si].first_leaf)
                 overlap = 1;
             top--;
         }
         if (overlap) {
-            cst_sbuf[si].parent = -1; /* not linked → never materialized */
+            cst_sbuf[si].parent = -1;
             continue;
         }
         int32_t parent = top > 0 ? stk[top - 1] : -1;
@@ -1459,8 +1292,6 @@ static void cst_nest_specs(void) {
     free(stk);
 }
 
-/* Materialize spec `si` into the live SoA arena, interleaving its own leaves
- * with descendant specs in source order. Returns the created node id. */
 static CstLocal cst_materialize(int32_t si) {
     CstNodeSpec *s = &cst_sbuf[si];
     CstLocal node = cst_node_open(cst_current, s->kind);
@@ -1484,16 +1315,10 @@ static CstLocal cst_materialize(int32_t si) {
 CstArena *cst_hook_end(void) {
     CstArena *a = cst_current;
     if (a) {
-        /* Debug tripwire (NOTES CST §6): every grammar cst_hook_open must have a
-         * matching cst_hook_close, so only the TU root remains on the stack.
-         * Verified balanced across the corpus for the bracketed single-exit
-         * functions (block/type_decl/struct_decl). */
         CST_ASSERT(cst_sstop == 1);
-        /* Close any specs left open (defensive), then the TU root spans all. */
         while (cst_sstop > 1)
             cst_hook_close();
         cst_sbuf[0].last_leaf = cst_lcount;
-        /* Pad an uncaptured tail leaf so the tree tiles the whole source. */
         uint32_t tail = cst_lcount ? cst_lbuf[cst_lcount - 1].off +
                                          cst_lbuf[cst_lcount - 1].len
                                    : 0;
@@ -1501,12 +1326,10 @@ CstArena *cst_hook_end(void) {
             cst_hook_token(tail, a->src_len);
             cst_sbuf[0].last_leaf = cst_lcount;
         }
-        /* Nest specs by leaf-range containment (handles retroactive wraps). */
         cst_nest_specs();
         cst_materialize(0);
         cst_rehash_all(a);
         cst_index_build(a);
-        /* Resolve buffered use->def source offsets into node-ids (slice I). */
         uint32_t u;
         for (u = 0; u < cst_uses_count; u++) {
             CstLocal un = cst_node_at(a, cst_uses[u].use_off);
@@ -1514,9 +1337,6 @@ CstArena *cst_hook_end(void) {
             if (un != CST_NONE && dn != CST_NONE && un != dn)
                 cst_set_sym_ref(a, un, cst_id(a->file_id, dn));
         }
-        /* D3 live capture: bind each main-file IncludeDirective node to the
-         * SourceFile template interned for it (source order — nodes are
-         * materialized depth-first, i.e. in written order). */
         uint32_t ki = 0, nn;
         for (nn = 0; nn < a->count && ki < cst_inc_count; nn++)
             if (a->kind[nn] == CST_IncludeDirective)
@@ -1535,4 +1355,4 @@ void cst_hook_leaf(uint16_t tok_kind, uint32_t byte_off, uint32_t len) {
 #pragma pop_macro("realloc")
 #pragma pop_macro("malloc")
 
-#endif /* CONFIG_MCC_CST */
+#endif

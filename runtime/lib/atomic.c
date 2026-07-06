@@ -6,9 +6,6 @@
 #define _(s) s
 #endif
 
-/* A foreign (host-CC) Mach-O assembler has no .type/.size directives and needs
-   assembler-local labels to start with "L", not ".L". mcc emits ELF objects even
-   when targeting Mach-O, so it keeps the ELF spelling. */
 #if defined __APPLE__ && !defined __MCC__
 #define TYPE(s)
 #define SIZE(s)
@@ -2905,11 +2902,6 @@ static void __mcc_byte_copy(volatile void *dst, const volatile void *src, __mcc_
 		*d++ = *s++;
 }
 
-/* These four generic libatomic entry points carry names that Clang treats as
- * compiler builtins and refuses to see defined in C ("cannot redeclare builtin
- * function"); GCC and mcc accept the plain definitions. Emit each public symbol
- * through an asm label on a non-builtin C identifier so every host compiler
- * that builds the runtime (gcc/clang/mcc) accepts it. */
 void __mcc_atomic_load_(__mcc_usize size, const volatile void *mem, void *ret,
 						int order) __asm__("__atomic_load");
 void __mcc_atomic_store_(__mcc_usize size, volatile void *mem, void *val,

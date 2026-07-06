@@ -1,5 +1,5 @@
 #include "toolsupport.h"
-#include <stdint.h> /* uint32_t, used by the Mach-O fat-header suite below */
+#include <stdint.h>
 
 static const char *ERR_NEEDLES[] = {"error:", "undefined reference", "undefined symbol", 0};
 static const char *ERR_SKIPS[] = {"warning", "note:", 0};
@@ -839,12 +839,6 @@ static int suite_preprocess(int argc, char **argv) {
 			free(go);
 			free(co);
 			if (strcmp(gn, cn)) {
-				/* No gcc/clang consensus (impl-defined divergence -- e.g. a
-				   Homebrew GNU gcc vs Apple clang on Darwin). Fall back to a
-				   2-way check: mcc is acceptable if it matches EITHER reference,
-				   i.e. it is conformant with at least one mainstream compiler on
-				   the impl-defined point. This only recovers a SKIP as a PASS --
-				   matching neither stays a SKIP, so it never introduces a FAIL. */
 				char *mo2 = NULL, *mn2;
 				const char *am2[] = {mcc, Bflag, Iinc, "-E", f, 0};
 				run_cap(am2, NULL, &mo2, &e);
@@ -1408,9 +1402,6 @@ static int suite_qemufetch(int argc, char **argv) {
 
 	snprintf(ptrfile, sizeof ptrfile, "%s.ptr", dest);
 	snprintf(tarfile, sizeof tarfile, "%s.tar", dest);
-	/* Create dest up front: ptrfile/tarfile live in its parent, so curl -o
-	   would otherwise fail to create its output file on a fresh tree (the CI
-	   docker volume masks this; a local `ctest --preset qemu` hit it). */
 	host_mkdirs(dest);
 	{
 		const char *c[] = {"curl", "-fSL", "--retry", "3", "-o", ptrfile, ptrurl, 0};
@@ -2980,8 +2971,6 @@ static uint32_t mf_rd_be32(const unsigned char *p) {
 	return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3];
 }
 
-/* Parse a fat (universal) Mach-O header, filling cts[] with the slice cputypes.
-   Returns 0 on success (with *pn set), negative on a malformed/absent header. */
 static int mf_fat_arches(const char *path, uint32_t *cts, int max, int *pn) {
 	long len = 0;
 	unsigned char *d = (unsigned char *)ts_read_file(path, &len);
@@ -3011,10 +3000,6 @@ static int mf_has(const uint32_t *a, int n, uint32_t v) {
 	return 0;
 }
 
-/* machofat: combine thin Mach-O slices into a universal binary and verify the
-   fat header + that the arm64 slice still runs. The native 1-slice case is the
-   hard guarantee; the 2-slice case additionally needs the x86_64-osx cross and
-   an SDK (to link a thin x86_64), and self-skips otherwise. */
 static int suite_machofat(int argc, char **argv) {
 	const char *mcc = opt(argc, argv, "--mcc", NULL);
 	const char *xmcc = opt(argc, argv, "--xmcc", NULL);
@@ -3044,7 +3029,6 @@ static int suite_machofat(int argc, char **argv) {
 	ts_path(u1, sizeof u1, work, "u.1");
 	write_file(src, "int main(void){return 7;}\n");
 
-	/* native arm64 thin exe (hard requirement) */
 	{
 		Argv v = {{0}, 0};
 		char *err = NULL;
@@ -3053,7 +3037,7 @@ static int suite_machofat(int argc, char **argv) {
 			ts_skip("native mcc cannot link an executable");
 		free(err);
 	}
-	{ /* 1-slice universal: header + alignment + slice copy + runs */
+	{
 		const char *comb[] = {fat, u1, a64, 0};
 		const char *exe[] = {u1, 0};
 		int rc;
@@ -3072,7 +3056,6 @@ static int suite_machofat(int argc, char **argv) {
 		printf("PASS machofat 1-slice universal (arm64, runs)\n");
 	}
 
-	/* optional 2-slice: needs the x86_64-osx cross + SDK to link a thin x86_64 */
 	if (xmcc && sdk && !host_stat(xmcc, &isd, NULL, NULL) && !isd) {
 		Argv v = {{0}, 0};
 		char *err = NULL, Lp[4300];

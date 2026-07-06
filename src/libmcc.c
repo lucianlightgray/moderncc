@@ -547,34 +547,19 @@ enum { ERROR_WARN,
 	   ERROR_NOABORT,
 	   ERROR_ERROR };
 
-/* Whether to emit ANSI color on this diagnostic. Never colorizes the embed
-   callback path (error_func) — embedders want plain text. auto follows the tty. */
 static int diag_want_color(MCCState *s1) {
 	if (s1->error_func)
 		return 0;
 	switch (s1->diag_color) {
 	case 1:
-		return 1; /* always */
+		return 1;
 	case 2:
-		return 0; /* never */
+		return 0;
 	default:
-		return host_stderr_isatty(); /* auto */
+		return host_stderr_isatty();
 	}
 }
 
-/* Append a clang-style source line + caret under the current diagnostic, e.g.
- *
- *   foo.c:12: error: ';' expected
- *      12 |     int x = 1
- *         |              ^
- *
- * Rendered only when the offending line is fully recoverable from the file's
- * in-memory buffer. Source is streamed in IO_BUF_SIZE chunks and reused, so a
- * line that crossed a refill boundary is no longer scannable; in that case (and
- * during macro expansion, explicit-line diagnostics, or when disabled via
- * -fno-diagnostics-show-caret) this appends nothing and the one-line form stands.
- * The caret marks the current lexer position (just past the token), which is
- * approximate but points at the right line/region. */
 static void append_caret_context(MCCState *s1, CString *cs, BufferedFile *f,
 								  int line, int bol_adj, int use_color) {
 	const unsigned char *start, *end, *p, *cpos, *ls, *le;
@@ -591,8 +576,6 @@ static void append_caret_context(MCCState *s1, CString *cs, BufferedFile *f,
 
 	cpos = p;
 	if (bol_adj) {
-		/* buf_ptr sits at the start of the line *after* the error line; step
-		   back onto the newline that terminates the error line itself */
 		if (cpos <= start || cpos[-1] != '\n')
 			return;
 		cpos--;
@@ -602,7 +585,6 @@ static void append_caret_context(MCCState *s1, CString *cs, BufferedFile *f,
 		cpos--;
 	}
 
-	/* line bounds around cpos, never crossing out of the live buffer */
 	ls = cpos;
 	while (ls > start && ls[-1] != '\n')
 		ls--;
@@ -611,9 +593,9 @@ static void append_caret_context(MCCState *s1, CString *cs, BufferedFile *f,
 		le++;
 
 	n = (int)(le - ls);
-	if (n > 0 && ls[n - 1] == '\r') /* drop a CRLF carriage return */
+	if (n > 0 && ls[n - 1] == '\r')
 		n--;
-	if (n <= 0 || n > 512) /* empty, or implausibly long (minified / refilled) */
+	if (n <= 0 || n > 512)
 		return;
 
 	col = (int)(cpos - ls);
@@ -624,13 +606,11 @@ static void append_caret_context(MCCState *s1, CString *cs, BufferedFile *f,
 
 	snprintf(numbuf, sizeof(numbuf), "%d", line);
 
-	/* "  NN | <source line>" */
 	cstr_ccat(cs, '\n');
 	cstr_cat(cs, numbuf, (int)strlen(numbuf));
 	cstr_cat(cs, " | ", 3);
 	cstr_cat(cs, (const char *)ls, n);
 
-	/* "     | <padding>^" — keep tabs so the caret stays column-aligned */
 	cstr_ccat(cs, '\n');
 	for (i = 0; numbuf[i]; i++)
 		cstr_ccat(cs, ' ');
@@ -638,12 +618,10 @@ static void append_caret_context(MCCState *s1, CString *cs, BufferedFile *f,
 	for (i = 0; i < col; i++)
 		cstr_ccat(cs, ls[i] == '\t' ? '\t' : ' ');
 	if (use_color)
-		cstr_cat(cs, "\033[1;32m^\033[0m", 12); /* bold green caret */
+		cstr_cat(cs, "\033[1;32m^\033[0m", 12);
 	else
 		cstr_ccat(cs, '^');
 
-	/* Restore the CString invariant the printf helpers maintain: data[size] is a
-	   NUL not counted in size, so error_func / fprintf("%s") stop here. */
 	cstr_ccat(cs, '\0');
 	cs->size--;
 }
@@ -839,8 +817,6 @@ static int mcc_compile(MCCState *s1, int filetype, const char *str, int fd) {
 		}
 
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
-		/* Latch the CST onto the user file BEFORE preprocess_start pushes the
-		 * <command line> predefs buffer and makes it the current file. */
 		int cst_on = (fd != -1 && s1->output_type != MCC_OUTPUT_PREPROCESS &&
 			      !(filetype & (AFF_TYPE_ASM | AFF_TYPE_ASMPP)));
 		if (cst_on)
@@ -937,19 +913,10 @@ LIBMCCAPI MCCState *mcc_new(void) {
 #if defined CONFIG_MCC_PIC
 	s->pic = 2;
 #endif
-	/* Calling an undeclared function is a §6.9.1/§7.1.4 constraint violation (no
-	   implicit declarations since C99); gcc 14 and clang 16+ reject it by default.
-	   Match them: on and promoted to an error (downgradable via
-	   -Wno-error=implicit-function-declaration). Prevents 64-bit-return
-	   truncation miscompiles and fixes autoconf-style feature detection. */
 	s->warn_implicit_function_declaration = WARN_ON | WARN_ERR;
 	s->warn_discarded_qualifiers = 1;
 	s->warn_sequence_point = 1;
 	s->warn_implicit_int = 1;
-	/* A return-with-value in a void function, or a value-less return in a
-	   non-void function, is a §6.8.6.4 constraint violation; gcc 15 and clang 22
-	   both reject it by default. Match them: on by default and promoted to an
-	   error (still downgradable via -Wno-error=return-type / -Wno-return-type). */
 	s->warn_return_type = WARN_ON | WARN_ERR;
 	s->warn_varargs = 1;
 	s->ms_extensions = 1;
@@ -1342,11 +1309,6 @@ ST_FUNC int mcc_add_support(MCCState *s1, const char *filename) {
 }
 
 #ifdef MCC_EMBED_MCCRT
-/* The runtime-support archive (libmccrt.a) is baked into the mcc binary at build
-   time (MCC_EMBED_MCCRT; see tools/bin2c.c) as this byte blob, so mcc needs
-   no sidecar .a on disk. We stream it through an anonymous temp fd and hand it to
-   the ordinary archive loader unchanged: identical alacarte member resolution,
-   zero duplication of the ELF/ar reader. */
 extern const unsigned char mccrt_blob[];
 extern const unsigned int mccrt_blob_len;
 
@@ -1358,7 +1320,7 @@ ST_FUNC int mcc_add_mccrt_embedded(MCCState *s1) {
 	fd = mkstemp(tmp);
 	if (fd < 0)
 		return mcc_error_noabort("embedded " MCC_MCCRT ": cannot create temp fd");
-	unlink(tmp);                 /* fd stays valid; file is gone once closed */
+	unlink(tmp);
 	for (off = 0; off < mccrt_blob_len; ) {
 		ssize_t w = write(fd, mccrt_blob + off, mccrt_blob_len - off);
 		if (w <= 0) {
@@ -1368,8 +1330,6 @@ ST_FUNC int mcc_add_mccrt_embedded(MCCState *s1) {
 		off += (size_t)w;
 	}
 	lseek(fd, 0, SEEK_SET);
-	/* No AFF_WHOLE_ARCHIVE => alacarte, exactly like the on-disk libmccrt.a.
-	   mcc_add_binary takes ownership of fd and closes it. */
 	ret = mcc_add_binary(s1, AFF_PRINT_ERROR, "<embedded " MCC_MCCRT ">", fd);
 	return ret;
 }
@@ -1421,13 +1381,6 @@ LIBMCCAPI int mcc_add_library(MCCState *s, const char *libraryname) {
 	return mcc_add_dll(s, libraryname, flags | AFF_PRINT_ERROR);
 }
 
-/* Resolve `-framework Foo` to a linkable stub/dylib. Each framework search path
-   is probed for `Foo.framework/Foo.tbd` (the SDK ships text-based stubs) then a
-   bare `Foo.framework/Foo` Mach-O dylib. The found file is handed to the ordinary
-   binary loader, which routes a .tbd to macho_load_tbd and a dylib to
-   macho_load_dll. A bare (extensionless) Mach-O dylib additionally needs the
-   Mach-O object reader to be recognized; system frameworks resolve via the .tbd.
-   Only Mach-O targets have frameworks; other targets report an error. */
 LIBMCCAPI int mcc_add_framework(MCCState *s1, const char *name) {
 #ifdef MCC_TARGET_MACHO
 	static const char *const pat[] = {
@@ -2316,11 +2269,11 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) {
 			} else if (!strcmp(optarg, "no-stack-protector")) {
 				s->stack_protector = 0;
 			} else if (!strcmp(optarg, "diagnostics-color") || !strcmp(optarg, "diagnostics-color=always") || !strcmp(optarg, "color-diagnostics")) {
-				s->diag_color = 1; /* always */
+				s->diag_color = 1;
 			} else if (!strcmp(optarg, "diagnostics-color=never") || !strcmp(optarg, "no-diagnostics-color") || !strcmp(optarg, "no-color-diagnostics")) {
-				s->diag_color = 2; /* never */
+				s->diag_color = 2;
 			} else if (!strcmp(optarg, "diagnostics-color=auto")) {
-				s->diag_color = 0; /* auto (tty) */
+				s->diag_color = 0;
 			} else if (set_flag(s, options_f, optarg) < 0)
 				goto unsupported_option;
 		} break;

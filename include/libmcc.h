@@ -50,8 +50,6 @@ LIBMCCAPI int mcc_add_library_path(MCCState *s, const char *pathname);
 
 LIBMCCAPI int mcc_add_library(MCCState *s, const char *libraryname);
 
-/* macOS: add a framework search path / link a framework by name. On non-Mach-O
-   targets mcc_add_framework reports an error (frameworks are macOS-only). */
 LIBMCCAPI int mcc_add_framework_path(MCCState *s, const char *pathname);
 
 LIBMCCAPI int mcc_add_framework(MCCState *s, const char *name);

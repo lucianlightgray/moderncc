@@ -29,11 +29,6 @@
 #ifdef __attribute__
 #undef __attribute__
 #endif
-/* regparm is an x86-only calling-convention attribute: gcc silently ignores it
- * off-x86, but clang errors ("'regparm' is not valid on this platform"), which
- * breaks building the native runtime with host clang on e.g. aarch64. Apply it
- * only where it is meaningful; elsewhere FASTCALL is a no-op (same macro on both
- * the declaration and definition, so there is no calling-convention mismatch). */
 #if defined(__i386__) || defined(__x86_64__)
 #define FASTCALL __attribute__((regparm(3)))
 #else
@@ -350,9 +345,6 @@ static unsigned char print_heap;
 static unsigned char print_statistic;
 static unsigned char no_strdup;
 static unsigned char use_sem;
-/* Plain int, not _Atomic: the GNU __atomic_fetch_add used by atomic_fetch_add()
- * is atomic on a plain int and accepts an int* (Clang rejects an _Atomic(int)*
- * pointee for the non-_c11 builtin); every other access here is a plain read. */
 static int never_fatal;
 #if HAVE_TLS_FUNC
 #if defined(_WIN32)

@@ -79,7 +79,7 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
   target. → Move the check into the semantic layer so it fires target-independently.
 - [ ] **`const`-lvalue `++`/`--` and same-type nonscalar casts only warn (fix).**
   `C9911.md:1032/1063` (§6.5.2.4/§6.5.3.1) and `:1104` (§6.5.4p2). Mirrors the core
-  comment at `src/mccgen.c:3462` ("assignment of read-only location" is a
+  comment at `src/mccgen.c:3459` ("assignment of read-only location" is a
   warning). gcc/clang error. → Promote read-only-modify to a constraint error;
   honor `-pedantic-errors` for the nonscalar cast.
 - [ ] **Add `inline int main` / internal-linkage-in-inline diagnostics (impl).**
@@ -99,14 +99,14 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
   `val - tls_start` with **no** bias (`riscv64-link.c:355`). → Confirm each matches
   its psABI variant; add a `__thread` (zero- and nonzero-init) correctness test per
   arch, esp. riscv64; name the arm64 constant.
-- [ ] **Implement 64-bit bit-field width (impl).** `src/mccgen.c:4485`
+- [ ] **Implement 64-bit bit-field width (impl).** `src/mccgen.c:4483`
   `mcc_error("field width 64 not implemented")` rejects a valid `:64` bit-field on
   an LP64 base type (appears in real headers). → Implement, or document as a hard
   limit.
-- [ ] **Support forward `__alias__` targets (impl).** `src/mccgen.c:10379`
+- [ ] **Support forward `__alias__` targets (impl).** `src/mccgen.c:10522`
   "unsupported forward __alias__ attribute" — gcc allows aliasing a not-yet-defined
   symbol. → Defer alias resolution to an end-of-TU fixup pass.
-- [ ] **Widen or hard-error `__mode__(...)` coverage (fix).** `src/mccgen.c:3943`
+- [ ] **Widen or hard-error `__mode__(...)` coverage (fix).** `src/mccgen.c:3940`
   warns and **ignores** unlisted modes, silently mistyping (e.g. `DI`/`TI`). →
   Confirm the supported set covers the SDK/runtime headers; add `DI` (and `TI`
   where the ABI has 128-bit) or promote unknown modes to an error.
@@ -117,13 +117,13 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
   rejects `FAT_MAGIC_64`/`FAT_CIGAM_64` (only 32-bit fat headers parsed); modern
   toolchains emit 64-bit fat. → Parse `fat_arch_64` entries.
 - [ ] **ARM far-branch has no veneer — errors past ±32 MB (fix).**
-  `src/arch/arm/arm-gen.c:329` `"FIXME: function bigger than 32MB"`. → Emit a
+  `src/arch/arm/arm-gen.c:326` `"FIXME: function bigger than 32MB"`. → Emit a
   long-branch trampoline/island, or downgrade to a documented diagnostic (not FIXME).
 - [ ] **i386 fastcall/thiscall: non-register arg before a register arg
   unsupported (impl).** `src/arch/i386/i386-gen.c:530`. → Handle the
   spilled-then-register ordering, or document the accepted ABI limitation.
 - [ ] **Unify + extend mixed-encoding-prefix string concatenation (fix).**
-  `src/mccgen.c:9315` and `:9553` duplicate the "different encoding prefixes"
+  `src/mccgen.c:9443` and `:9681` duplicate the "different encoding prefixes"
   error. → Deduplicate into one helper; decide which C11 §6.4.5p5 combinations to
   accept (gcc/clang accept more).
 - [ ] **Validate the x86_64/i386 TLS GD/LD and 32[S] pattern-match assumptions
@@ -137,17 +137,17 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
   `src/arch/arm64/arm64-asm.c:1877` (+ `:1298/:1441/:1651`). → Enumerate the common
   missing mnemonics; expand the table or document the supported subset.
 - [ ] **Resolve/remove the 6 permanently-masked ARM asm encodings (fix).**
-  `ARM_KNOWN_FAIL` (tools/mccharness.c:2549) never fails on `bl r3`, `b r3`,
+  `ARM_KNOWN_FAIL` (tools/mccharness.c:2540) never fails on `bl r3`, `b r3`,
   `mov #0xEFFF`, `mov #0x0201`, two `vmov.f32` forms — real encoding defects. → Fix
   the `mov #imm`/`vmov.f32` cases and drop the entries.
 - [ ] **`.cfi` ops per function are a fixed cap (fix).** `src/mccasm.c:974`
   `ASM_CFI_MAX` hard-errors on large hand-written/generated unwind tables. →
   Validate headroom or make the buffer growable.
 - [ ] **`gcctestsuite` tallies failures but always returns 0 (validate).**
-  tools/mccharness.c:1243 — the GCC-testsuite sweep cannot gate CI. → Confirm it is
+  tools/mccharness.c:1237 — the GCC-testsuite sweep cannot gate CI. → Confirm it is
   intentionally non-gating (document it) or return nonzero past a baseline budget.
 - [ ] **`gcctestsuite` skip heuristic is a whole-file substring match (fix).**
-  `gccts_skiplisted` (tools/mccharness.c:1111) drops any file whose *contents*
+  `gccts_skiplisted` (tools/mccharness.c:1105) drops any file whose *contents*
   mention `complex`/`vector`/`__int128`/`_builtin_` anywhere (comments/strings
   included). → Tighten to token/decl matching or an explicit skip list.
 - [ ] **Log the preprocess "matches EITHER reference" cases (validate).**
@@ -159,7 +159,7 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
   `strncmp` lets `INT` match `INTEGER`. → Treat documented-but-mistyped as drift;
   use exact type equality.
 - [ ] **JUnit summarizers count `notrun`/`<skipped>` as skips (validate).**
-  tools/ci.c:1200, tools/bench.c:395 — a fixture-setup failure surfacing as
+  tools/ci.c:1146, tools/bench.c:364 — a fixture-setup failure surfacing as
   `notrun` would be under-reported as a benign skip. → Confirm ctest emits
   `<failure>` for setup failures.
 - [ ] **`hostgate` scans only `.c`/`.h` (validate).** tools/hostgate.c:84 — the
@@ -178,7 +178,7 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
   waiting behind `note:unsupported`. Cross-refs the exec-suite audit above. →
   Implement and activate the golden, or record as intentionally unsupported.
 - [ ] **`__has_builtin`/`__has_feature`/… hard-coded to 0 (validate).**
-  src/mccpp.c:1521 — SDK headers may mis-detect features mcc actually provides. →
+  src/mccpp.c:1539 — SDK headers may mis-detect features mcc actually provides. →
   Answer truthfully where cheap (e.g. `__has_attribute` for honored attributes);
   document the 0-default.
 - [ ] **`mcc -ar` rejects `[abdiopN]` positional flags (impl/doc).**
@@ -194,7 +194,7 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
   one persisted `MCCState`. → Compile two `_Complex`-using TUs through one
   embedder `MCCState` under ASan.
 - [ ] **Static-assert exactly one backend is compiled (validate).**
-  `src/mcc.h:984` collapses per-function backend state onto shared `cg_*` fields
+  `src/mcc.h:981` collapses per-function backend state onto shared `cg_*` fields
   "because only the active target is compiled". → Add a build-time check guarding
   that assumption.
 - [ ] `-fverbose-asm`-style operand comments: meaningful comments need
@@ -231,6 +231,20 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
   fails on divergence, so CONFIG.md can't rot. → Then update `docs/BUILD.md` (which
   already tables the CMake nodes, §3–§14) to become the ongoing source of truth for
   in-code flags, cross-linked to CONFIG.md, and wire the checker into ctest.
+- [ ] **win32 `<pthread.h>` shim has documented scope limits (impl/doc).**
+  `runtime/win32/include/pthread.h` — mutexes are non-recursive
+  (`PTHREAD_MUTEX_RECURSIVE` is accepted but behaves as a normal mutex; `SRWLOCK`
+  has no recursion), thread keys carry **no destructors** (not run at thread
+  exit), and there is **no cancellation**. → Implement recursive mutexes / key
+  destructors / cancellation, or keep as an intentional subset and state it in
+  BUILD/README so callers don't rely on the missing semantics.
+- [ ] **win32 `<sched.h>` is not a full POSIX scheduling interface (impl/doc).**
+  `runtime/win32/include/sched.h` — minimal shim. → Document the supported subset
+  or extend it.
+- [ ] **win32 `fenv` has no control-register access on non-x86/arm64 PE arches
+  (impl).** `runtime/win32/lib/fenv.c` (arm/wince and other PE targets) accepts
+  only the default rounding mode. → Implement `FPSCR`/equivalent access, or
+  hard-error on a non-default `fesetround` there.
 
 ---
 

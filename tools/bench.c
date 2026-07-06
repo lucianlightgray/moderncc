@@ -1,12 +1,3 @@
-/* mccbench — compile-speed / footprint benchmark and report generator.
- *
- * Races the self-hosted mcc against whatever host compilers are present
- * (gcc, clang, mingw, msvc) over a set of workloads, measuring wall time,
- * CPU time, peak memory, emitted-object size, and functions/second, then
- * writes a plain-text report: system info + a per-workload compiler table +
- * a table of test results parsed from a ctest JUnit XML file.
- *
- * Default-off; CI turns it on (see MCC_BENCH). Runs on the host only. */
 #include "toolsupport.h"
 
 #if MCC_HOST_POSIX
@@ -23,8 +14,6 @@
 #include <sys/sysctl.h>
 #endif
 
-/* Test the MSVC-only target macros first: mcchost.h aliases __x86_64__/__i386__
- * on cl (for mcc's own sources), which would otherwise pull in GCC's <cpuid.h>. */
 #if defined(_M_X64) || defined(_M_IX86)
 #include <intrin.h>
 #elif defined(__x86_64__) || defined(__i386__)
@@ -35,42 +24,38 @@
 #define MAXCC 8
 #define MAXWL 8
 
-/* ----- compilers -------------------------------------------------------- */
 
 enum { STYLE_GCC, STYLE_CL };
 
 struct compiler {
-	const char *key;     /* short name shown in the table */
-	char path[4096];     /* resolved executable */
-	int style;           /* command-line dialect */
-	const char *ccmacro; /* value for full_language's CC_NAME (NULL => n/a) */
+	const char *key;
+	char path[4096];
+	int style;
+	const char *ccmacro;
 	char version[128];
 };
 
-/* ----- workloads -------------------------------------------------------- */
 
 struct workload {
 	const char *key;
-	char src[4096];             /* absolute source path */
-	const char *incs[16];       /* include dirs (absolute), NULL-terminated */
-	const char *defs[16];       /* extra -D defines, NULL-terminated */
-	int needs_ccmacro;          /* append -DCC_NAME=<compiler->ccmacro> */
-	int funcs;                  /* function count (from mcc -bench), 0 if unknown */
-	int lines;                  /* preprocessed line count (from mcc -bench) */
+	char src[4096];
+	const char *incs[16];
+	const char *defs[16];
+	int needs_ccmacro;
+	int funcs;
+	int lines;
 	int have_counts;
 };
 
-/* ----- one measurement -------------------------------------------------- */
 
 struct meas {
 	int ok;
-	unsigned wall_ms;   /* best (min) wall time */
-	long cpu_ms;        /* user+sys CPU of the compiler process (-1 = n/a) */
-	long peak_kb;       /* peak RSS in KiB (-1 = n/a) */
-	long long objsize;  /* emitted object size in bytes (-1 = n/a) */
+	unsigned wall_ms;
+	long cpu_ms;
+	long peak_kb;
+	long long objsize;
 };
 
-/* Run argv once, redirecting its output to the void, and measure it. */
 static struct meas measure_once(const char *const *argv) {
 	struct meas m;
 	unsigned t0;
@@ -102,13 +87,10 @@ static struct meas measure_once(const char *const *argv) {
 		m.wall_ms = host_clock_ms() - t0;
 		m.cpu_ms = (long)ru.ru_utime.tv_sec * 1000 + ru.ru_utime.tv_usec / 1000 +
 				   (long)ru.ru_stime.tv_sec * 1000 + ru.ru_stime.tv_usec / 1000;
-		/* ru_maxrss: KiB on Linux, bytes on Darwin. */
 		m.peak_kb = MCC_HOST_DARWIN ? ru.ru_maxrss / 1024 : ru.ru_maxrss;
 		m.ok = WIFEXITED(st) && WEXITSTATUS(st) == 0;
 	}
 #else
-	/* Windows: spawn via CreateProcess so we can read the child's CPU time
-	 * (GetProcessTimes) and peak working set (GetProcessMemoryInfo). */
 	{
 		char cmd[32768];
 		STARTUPINFOA si;
@@ -163,7 +145,7 @@ static struct meas measure_once(const char *const *argv) {
 									   kt.dwLowDateTime;
 				unsigned long long u = ((unsigned long long)ut.dwHighDateTime << 32) |
 									   ut.dwLowDateTime;
-				m.cpu_ms = (long)((k + u) / 10000); /* 100ns units -> ms */
+				m.cpu_ms = (long)((k + u) / 10000);
 			}
 		}
 		{
@@ -182,7 +164,6 @@ static struct meas measure_once(const char *const *argv) {
 	return m;
 }
 
-/* Render the compile command for (cc, wl) into v, output object at obj. */
 static void build_cmd(Argv *v, const struct compiler *cc,
 					  const struct workload *wl, const char *obj) {
 	int i;
@@ -226,7 +207,6 @@ static void build_cmd(Argv *v, const struct compiler *cc,
 	}
 }
 
-/* Best-of-reps measurement of (cc, wl). */
 static struct meas bench_one(const struct compiler *cc,
 							 const struct workload *wl, int reps) {
 	struct meas best;
@@ -239,14 +219,14 @@ static struct meas bench_one(const struct compiler *cc,
 	best.objsize = -1;
 	ts_path(obj, sizeof obj, ".", "mccbench-%s-%s.o", cc->key, wl->key);
 	if (wl->needs_ccmacro && !cc->ccmacro)
-		return best; /* workload not applicable to this compiler */
+		return best;
 	for (r = 0; r < reps; r++) {
 		Argv v = {{0}, 0};
 		struct meas m;
 		build_cmd(&v, cc, wl, obj);
 		m = measure_once(ts_argz(&v));
 		if (!m.ok)
-			return m; /* a failing compile => not applicable; report n/a */
+			return m;
 		if (!best.ok || m.wall_ms < best.wall_ms)
 			best = m;
 	}
@@ -260,7 +240,6 @@ static struct meas bench_one(const struct compiler *cc,
 	return best;
 }
 
-/* Ask mcc how many functions / lines a workload has (for funcs/sec). */
 static void count_with_mcc(const struct compiler *mcc, struct workload *wl) {
 	Argv v = {{0}, 0};
 	char obj[4096], *err = NULL;
@@ -269,7 +248,6 @@ static void count_with_mcc(const struct compiler *mcc, struct workload *wl) {
 	wl->have_counts = 0;
 	ts_path(obj, sizeof obj, ".", "mccbench-count-%s.o", wl->key);
 	build_cmd(&v, mcc, wl, obj);
-	/* insert -bench right after the program name */
 	{
 		Argv v2 = {{0}, 0};
 		int i;
@@ -282,7 +260,6 @@ static void count_with_mcc(const struct compiler *mcc, struct workload *wl) {
 	memset(&o, 0, sizeof o);
 	o.stderr_buf = &err;
 	if (host_spawn_ex(ts_argz(&v), &o) == 0 && err) {
-		/* line: "# <idents> idents, <lines> lines, <funcs> functions, ..." */
 		if ((p = strstr(err, " functions"))) {
 			const char *q = p;
 			while (q > err && q[-1] != ',')
@@ -301,7 +278,6 @@ static void count_with_mcc(const struct compiler *mcc, struct workload *wl) {
 	remove(obj);
 }
 
-/* ----- report ----------------------------------------------------------- */
 
 static void fmt_secs(char *b, int n, long ms) {
 	if (ms < 0)
@@ -347,7 +323,6 @@ static void write_table(FILE *f, const struct compiler *ccs, int nccs,
 	}
 }
 
-/* attribute/substring search bounded to [p, lim) */
 static const char *find_lim(const char *p, const char *lim, const char *needle) {
 	const char *r = strstr(p, needle);
 	return (r && r < lim) ? r : NULL;
@@ -362,16 +337,10 @@ static void attr(char *dst, int n, const char *p, const char *lim,
 	}
 }
 
-/* Minimal JUnit XML summary: count testcases, failures, skips, list them.
- * Each <testcase> is either self-closing (<testcase .../>) or wraps
- * <failure>/<skipped> children; child/attribute lookups are bounded to the
- * single testcase's extent so a later case's <skipped> can't leak in. */
 static void write_tests(FILE *f, const char *junit) {
 	char *x = ts_read_file(junit, NULL), *p;
 	int total = 0, fail = 0, skip = 0;
 	if (!x)
-		/* No JUnit XML present: this job didn't run ctest (mingw/dist only
-		 * build + bench). Emit nothing rather than implying a missing file. */
 		return;
 	fprintf(f, "\nTest results (%s)\n", junit);
 	fprintf(f, "  %-7s %-48s %8s\n", "status", "name", "time(s)");
@@ -382,9 +351,9 @@ static void write_tests(FILE *f, const char *junit) {
 		int failed, skipped;
 		if (!gt)
 			break;
-		tagend = gt + 1;                       /* end of the opening tag */
+		tagend = gt + 1;
 		if (gt > p && gt[-1] == '/') {
-			extent = tagend;                   /* self-closing: no children */
+			extent = tagend;
 		} else {
 			const char *c = strstr(tagend, "</testcase>");
 			extent = c ? c + 11 : x + strlen(x);
@@ -410,18 +379,16 @@ static void write_tests(FILE *f, const char *junit) {
 	free(x);
 }
 
-/* ----- host machine details --------------------------------------------- */
 
 struct hostinfo {
 	char cpu_model[256];
-	int log_cores;      /* logical CPUs / hardware threads */
-	int phys_cores;     /* physical cores (0 = unknown) */
-	double cpu_mhz;     /* nominal/current clock (0 = unknown) */
-	long long mem_kb;   /* total physical RAM (0 = unknown) */
-	char virt[96];      /* virtualization / container guess */
+	int log_cores;
+	int phys_cores;
+	double cpu_mhz;
+	long long mem_kb;
+	char virt[96];
 };
 
-/* CPUID leaf-1 ECX bit 31 => running under a hypervisor. */
 static int hypervisor_present(void) {
 #if defined(_M_X64) || defined(_M_IX86)
 	int r[4];
@@ -438,8 +405,6 @@ static int hypervisor_present(void) {
 }
 
 #if MCC_HOST_LINUX
-/* Read a whole file via streaming I/O. Needed for /proc and /sys, whose
- * virtual files report st_size == 0 and so read empty via stat-sized helpers. */
 static char *read_all(const char *path) {
 	FILE *fp = fopen(path, "rb");
 	char *buf = NULL;
@@ -464,7 +429,6 @@ static char *read_all(const char *path) {
 	return buf;
 }
 
-/* value of the first "key ... : <value>" line in text (proc-style) */
 static int proc_field(const char *text, const char *key, char *out, int n) {
 	size_t kl = strlen(key);
 	const char *p = text;
@@ -505,10 +469,6 @@ static int file_has(const char *path, const char *needle, char *found, int fn) {
 	return hit;
 }
 
-/* aarch64 /proc/cpuinfo has no "model name"; it exposes the MIDR fields
- * "CPU implementer" and "CPU part" (hex). Decode the common (implementer,part)
- * pairs into a friendly name; fall back to "<vendor> part 0x###" so the bench
- * "System" block prints something better than "?" on arm64 Linux. */
 static int decode_arm_midr(const char *ci, char *out, int n) {
 	static const struct { unsigned impl, part; const char *name; } P[] = {
 		{0x41, 0xd03, "ARM Cortex-A53"},   {0x41, 0xd05, "ARM Cortex-A55"},
@@ -577,11 +537,11 @@ static void fill_hostinfo(struct hostinfo *h) {
 				h->phys_cores = atoi(v);
 		}
 		if (mi && proc_field(mi, "MemTotal", v, sizeof v))
-			h->mem_kb = atoll(v); /* "12345 kB" -> 12345 */
+			h->mem_kb = atoll(v);
 		free(ci);
 		free(mi);
 	}
-	{ /* container / VM vendor hints refine the guess */
+	{
 		static const char *VM[] = {"QEMU", "KVM", "VMware", "VirtualBox", "Xen",
 								   "Bochs", "Parallels", "Hyper-V", "Virtual Machine",
 								   "Google Compute", "OpenStack", "Amazon EC2", 0};
@@ -677,14 +637,7 @@ static void write_sysinfo(FILE *f, const char *plat, const struct compiler *ccs,
 				ccs[i].version[0] ? ccs[i].version : "?", ccs[i].path);
 }
 
-/* ----- main ------------------------------------------------------------- */
 
-/* MSVC's cl rejects the GNU probe flags (-dumpmachine/--version) with a
- * "cl : Command line error D8003" line. Under the VS generator that line
- * matches MSBuild's canonical error format, so the CustomBuild step running
- * `bench` is reported as failed (MSB8066, exit -1) even though mccbench itself
- * succeeds. Probe cl's version from the banner it prints to stderr when run
- * with no arguments (exit 0, no error line), captured so nothing leaks. */
 static void probe_cl_version(const char *cc, char *version, int vsz) {
 	const char *argv[] = {cc, NULL};
 	char *err = NULL;
@@ -752,7 +705,6 @@ int main(int argc, char **argv) {
 	if (reps < 1)
 		reps = 1;
 
-	/* the self-hosted compiler first, then whatever else is on the host */
 	ccs[nccs].key = "mcc";
 	snprintf(ccs[nccs].path, sizeof ccs[nccs].path, "%s", mccpath);
 	ccs[nccs].style = STYLE_GCC;
@@ -773,21 +725,18 @@ int main(int argc, char **argv) {
 			nccs++;
 		if (nccs < MAXCC && detect(&ccs[nccs], "mingw", mingw, STYLE_GCC, "CC_gcc"))
 			nccs++;
-		if (nccs < MAXCC && detect(&ccs[nccs], "msvc", cl, STYLE_CL, NULL))
+		if (nccs < MAXCC && detect(&ccs[nccs], "msvc", cl, STYLE_CL, "CC_msvc"))
 			nccs++;
 	}
 
-	/* workloads (paths built against srcroot / builddir) */
 	{
 		struct workload *w;
 
-		/* 1. portable corpus — self-contained, every compiler */
 		w = &wls[nwl++];
 		memset(w, 0, sizeof *w);
 		w->key = "portable-corpus";
 		ts_path(w->src, sizeof w->src, srcroot, "tests/bench/corpus.c");
 
-		/* 2. full_language differential test (needs CC_NAME; msvc n/a) */
 		w = &wls[nwl++];
 		memset(w, 0, sizeof *w);
 		w->key = "full-language";
@@ -800,7 +749,6 @@ int main(int argc, char **argv) {
 		}
 		w->needs_ccmacro = 1;
 
-		/* 3. mcc's own whole-compiler TU (single source; msvc n/a) */
 		w = &wls[nwl++];
 		memset(w, 0, sizeof *w);
 		w->key = "mcc-self";
@@ -828,7 +776,7 @@ int main(int argc, char **argv) {
 		w->needs_ccmacro = 1;
 	}
 
-	{ /* ensure the output directory exists (dist/ may be freshly created) */
+	{
 		char dir[4096];
 		const char *slash = strrchr(out, '/');
 #if MCC_HOST_WIN32

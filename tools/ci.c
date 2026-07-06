@@ -153,7 +153,7 @@ static int do_run_preset(int argc, char **argv) {
 
 	if (!no_test) {
 		Argv v = {{0}, 0};
-		char junit[4200]; /* > build[4096] + "cmake-…/ctest-junit.xml" */
+		char junit[4200];
 		ts_arg(&v, "ctest");
 		ts_arg(&v, "--preset");
 		ts_arg(&v, preset);
@@ -162,9 +162,6 @@ static int do_run_preset(int argc, char **argv) {
 			ts_arg(&v, "--build-config");
 			ts_arg(&v, config);
 		}
-		/* Emit a JUnit XML so the workflow can render a job-summary table
-		   (ci junit-summary) the same way the macOS/msvc jobs do. ctest wants
-		   the path as a separate token; the "--output-junit=…" form is rejected. */
 		snprintf(junit, sizeof junit, "cmake-%s/ctest-junit.xml", preset);
 		ts_arg(&v, "--output-junit");
 		ts_arg(&v, junit);
@@ -192,9 +189,6 @@ static int do_run_preset(int argc, char **argv) {
 	return 0;
 }
 
-/* The x86_64 Gentoo stage3 keeps its CRT objects in usr/lib64, but the
-   multilib x86_64 driver looks in usr/lib; mirror them across for each fetched
-   x86_64 sysroot so the qemu-user link step finds crt1.o etc. */
 static void qemu_fixup_multilib(const char *dldir) {
 	static const char *libcs[] = {"glibc", "musl", 0};
 	static const char *objs[] = {"crt1.o",  "crti.o",  "crtn.o",
@@ -208,7 +202,7 @@ static void qemu_fixup_multilib(const char *dldir) {
 			continue;
 		ts_path(src, sizeof src, root, "usr/lib64/crt1.o");
 		if (host_stat(src, NULL, NULL, NULL))
-			continue; /* no lib64 CRT here -> nothing to mirror */
+			continue;
 		for (j = 0; objs[j]; j++) {
 			ts_path(src, sizeof src, root, "usr/lib64/%s", objs[j]);
 			ts_path(dst, sizeof dst, root, "usr/lib/%s", objs[j]);
@@ -219,10 +213,6 @@ static void qemu_fixup_multilib(const char *dldir) {
 	}
 }
 
-/* qemu-user cross-conformance matrix, run in-tree (no Docker). Env-driven so it
-   is a drop-in for the old run-matrix.sh: PRESET (default qemu), ARCHS / LIBCS
-   override MCC_QEMU_ARCHS/_LIBCS, MCC_QEMU_DLDIR overrides the sysroot dir
-   (defaults to <repo>/vendor in CMake). Trailing args pass through to ctest. */
 static int do_qemu(int argc, char **argv) {
 	const char *preset = getenv("PRESET");
 	const char *archs = getenv("ARCHS");
@@ -268,9 +258,6 @@ static int do_qemu(int argc, char **argv) {
 		if (ts_run(ts_argz(&v)))
 			return 1;
 	}
-	/* Pre-fetch the x86_64 sysroots (a no-op for other presets) so the CRT
-	   fixup can run before the final ctest exercises them; the fetch is
-	   idempotent (marker file), so ctest --preset re-runs it harmlessly. */
 	{
 		Argv v = {{0}, 0};
 		ts_arg(&v, "ctest");
@@ -280,12 +267,12 @@ static int do_qemu(int argc, char **argv) {
 		ts_arg(&v, "qemu-x86_64-.*-fetch");
 		ts_arg(&v, "--output-on-failure");
 		printf("==> pre-fetching x86_64 sysroots for multilib fixup\n");
-		ts_run(ts_argz(&v)); /* best-effort */
+		ts_run(ts_argz(&v));
 	}
 	qemu_fixup_multilib((dldir && *dldir) ? dldir : "vendor");
 	{
 		Argv v = {{0}, 0};
-		char junit[4200]; /* > build[4096] + "/ctest-junit.xml" */
+		char junit[4200];
 		ts_arg(&v, "ctest");
 		ts_arg(&v, "--preset");
 		ts_arg(&v, preset);
@@ -301,14 +288,6 @@ static int do_qemu(int argc, char **argv) {
 	return 0;
 }
 
-/* ---- Local CI: reproduce the whole CI + release matrix on this machine -----
-   Port of the former cmake/ci-local.cmake. Probes the host for every toolchain
-   and emulator the workflows use, plans the presets this OS can actually run,
-   then drives each through the same code paths CI uses: do_run_preset() for the
-   test matrix, and a configure->build->install->bench->package-dist cmake
-   sequence for the dist bundles (== release.yml). Runtime knobs come from the
-   environment (LOCAL_CI_ONLY substring filter / _SKIP_QEMU / _SKIP_RELEASE /
-   _LIST / _KEEP_GOING), so the same target can be scoped ad hoc. */
 
 #define LOC_MAX 64
 typedef struct {
@@ -338,12 +317,6 @@ static int loc_env_on(const char *var) {
 	return v && *v && strcmp(v, "0");
 }
 
-/* configure -> build -> install -> bench -> package-dist (mirrors release.yml). */
-/* configure -> build -> install -> (macOS: strip -x) -> bench -> package-dist:
-   the exact release.yml dist flow, in one place so `ci dist` (release.yml) and
-   `ci local` share it. The dist presets pin their own compiler, so no CC is
-   needed. extra[] are additional -D configure args (e.g. the Rosetta cross
-   flags for the x86_64-on-arm64 macOS bundle). */
 static int run_dist(const char *preset, const char *plat, const char *ver,
                     char **extra, int n_extra) {
 	char pdv[256], pdp[256], bdir[128];
@@ -373,20 +346,18 @@ static int run_dist(const char *preset, const char *plat, const char *ver,
 	{
 		const char *a[] = {"cmake",  "--install", bdir,
 		                   "--config", "Release",  0};
-		if (!msvc) /* single-config generators reject --config at install */
+		if (!msvc)
 			a[3] = 0;
 		if (ts_run(a))
 			return 1;
 	}
 #if MCC_HOST_DARWIN
-	/* MCC_BUILD_STRIP is off for dist-macos (a full strip trips codesigning),
-	   so strip only local symbols post-install, as release.yml did. */
 	{
 		char *g[64];
 		int ng = ts_glob("dist/bin", "mcc*", 0, g, 64), k;
 		for (k = 0; k < ng && k < 64; k++) {
 			const char *a[] = {"strip", "-x", g[k], 0};
-			ts_run(a); /* best-effort */
+			ts_run(a);
 			free(g[k]);
 		}
 	}
@@ -432,8 +403,6 @@ static int do_local(int argc, char **argv) {
 		else if (!strcmp(argv[i], "--host-cpu") && i + 1 < argc)
 			host_cpu = argv[++i];
 	}
-	/* LOCAL_CI_KEEP_GOING: default 1 (run all, like CI fail-fast:false); "0"
-	   stops at the first failure. */
 	{
 		const char *k = getenv("LOCAL_CI_KEEP_GOING");
 		keep_going = (k && !strcmp(k, "0")) ? 0 : 1;
@@ -511,7 +480,6 @@ static int do_local(int argc, char **argv) {
 			LOC_TEST("msvc", "");
 		else
 			LOC_SKIP("%s - cl (MSVC) not found (run from a VS dev shell)", "msvc");
-		/* mingw fetches its own winlibs GCC via the superbuild; always attempt. */
 		LOC_TEST("mingw", "");
 	}
 
@@ -556,7 +524,6 @@ static int do_local(int argc, char **argv) {
 		LOC_SKIP("%s", "dist-* - skipped (LOCAL_CI_SKIP_RELEASE)");
 	}
 
-	/* Optional substring filter over both plans (LOCAL_CI_ONLY). */
 	if (only && *only) {
 		int k = 0;
 		for (i = 0; i < n_test; i++)
@@ -652,9 +619,6 @@ static int do_local(int argc, char **argv) {
 #undef LOC_SKIP
 #undef LOC_DIST
 
-/* Single dist bundle: configure+build+install+bench+package-dist for one preset
-   (the release.yml dist flow), via the shared run_dist(). Args after `--` are
-   extra -D configure flags (e.g. Rosetta's -DCMAKE_OSX_ARCHITECTURES=x86_64). */
 static int do_dist(int argc, char **argv) {
 	const char *preset = NULL, *plat = NULL, *ver = "v0.0.0-local";
 	char **extra = NULL;
@@ -916,7 +880,6 @@ static int pkg_archive(const char *pkg, const char *out, const char *d,
 		ts_arg(&v, "--format=zip");
 		ts_arg(&v, d);
 	} else {
-		/* tar.gz -> gzip (czf); tar.xz -> xz (cJf) */
 		ts_arg(&v, !strcmp(ext, "tar.gz") ? "czf" : "cJf");
 		ts_arg(&v, target);
 		ts_arg(&v, d);
@@ -985,11 +948,6 @@ static int do_pkg(int argc, char **argv) {
 		fprintf(stderr, "ci pkg: no staged install at '%s' (run cmake --install first)\n", stage);
 		return 1;
 	}
-	/* Stage into a private scratch tree *inside* `out` (dist/ is gitignored, so
-	 * this leaves no stray dir in the source root). Only that scratch tree is
-	 * wiped: `out` may be the shared dist/ root that also holds the staged
-	 * install we are reading from (stage == out when both default to
-	 * MCC_DIST_DIR), so it must never be removed here. */
 	ts_path(pkgscratch, sizeof pkgscratch, out, ".pkg");
 	pkg = pkgscratch;
 	{
@@ -1086,10 +1044,6 @@ static int do_pkg(int argc, char **argv) {
 			printf("ci pkg: no cross compilers in stage/bin; skipping cross bundle\n");
 	}
 
-	/* All-in-one convenience archive: its contents are the individual component
-	 * archives built above. The `bundle-` prefix tells a user browsing the
-	 * release assets that this one file holds the others, so they can grab
-	 * everything at once instead of picking archives apart. */
 	if (names.n > 1) {
 		int ncomp = names.n, j, isf;
 		char bench[8192];
@@ -1100,8 +1054,6 @@ static int do_pkg(int argc, char **argv) {
 			ts_path(src, sizeof src, out, "%s", names.a[j]);
 			pkg_copy_into(src, dd);
 		}
-		/* fold in the benchmark report for this platform, if one was produced
-		 * (MCC_BENCH builds write out/bench-<plat>.txt); harmless if absent */
 		ts_path(bench, sizeof bench, out, "bench-%s.txt", plat);
 		if (host_stat(bench, &isf, NULL, NULL) == 0 && !isf)
 			pkg_copy_into(bench, dd);
@@ -1132,7 +1084,6 @@ static int do_pkg(int argc, char **argv) {
 		free(sout);
 	}
 
-	/* Drop the scratch staging tree; the finished archives live in `out`. */
 	{
 		const char *rm[] = {"cmake", "-E", "rm", "-rf", pkg, 0};
 		ts_run(rm);
@@ -1146,10 +1097,6 @@ static int do_pkg(int argc, char **argv) {
 	return 0;
 }
 
-/* Render a ctest JUnit XML into a GitHub-flavoured markdown job summary on
-   stdout (the caller redirects into $GITHUB_STEP_SUMMARY). Self-contained so
-   the linux/qemu jobs -- which only build this `ci` tool, not mccbench -- can
-   surface a PASS/FAIL/SKIP table the same way the macOS/msvc jobs do. */
 static void js_attr(char *out, int n, const char *p, const char *end,
                     const char *key) {
 	const char *a = p, *kl = 0;
@@ -1180,7 +1127,6 @@ static int do_junit_summary(int argc, char **argv) {
 	}
 	x = ts_read_file(xml, NULL);
 	if (!x) {
-		/* No JUnit written (e.g. the job ran no ctest): emit nothing. */
 		return 0;
 	}
 	for (p = x; (p = strstr(p, "<testcase")); ) {

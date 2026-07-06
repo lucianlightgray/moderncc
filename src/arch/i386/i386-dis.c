@@ -13,7 +13,7 @@ typedef struct {
 	int reg;
 	char rm[352];
 	int rm_is_mem;
-	char regbuf[8]; /* scratch for gpr() (formerly a function-local static) */
+	char regbuf[8];
 } Dis;
 
 static unsigned char peek(Dis *d, int i) {

@@ -776,8 +776,6 @@ static int handle_eob(void) {
 		}
 		total_bytes += len;
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
-		/* Advance the byte cursor by the window being discarded (fully
-		 * consumed), so cst_base stays the absolute offset of buffer[0]. */
 		if (bf->fd >= 0)
 			bf->cst_base += (unsigned long)(bf->buf_end - bf->buffer);
 #endif
@@ -1393,7 +1391,7 @@ static CachedInclude *
 search_cached_include(MCCState *s1, const char *filename, int add);
 
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
-static BufferedFile *cst_main_bf; /* fwd (defined with the leaf-capture state) */
+static BufferedFile *cst_main_bf;
 #endif
 
 static int parse_include(MCCState *s1, int do_next, int test) {
@@ -1458,8 +1456,6 @@ static int parse_include(MCCState *s1, int do_next, int test) {
 				cand_sys = 1;
 #ifdef MCC_TARGET_MACHO
 			} else if ((j -= s1->nb_afterinc_paths) < s1->nb_framework_paths) {
-				/* macOS framework header: <Foo/Bar.h> resolves under
-				   <framework-path>/Foo.framework/Headers/Bar.h. */
 				const char *slash = strchr(name, '/');
 				char comp[256];
 				size_t cl;
@@ -1497,9 +1493,6 @@ static int parse_include(MCCState *s1, int do_next, int test) {
 				printf("=> %*s%s\n",
 					   (int)(s1->include_stack_ptr - s1->include_stack), "", buf);
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
-			/* Guard-skipped (already-included) header: still bind this written
-			 * IncludeDirective to the file's SourceFile template (hash-consed),
-			 * even though the file is not re-opened this time. */
 			if (!test)
 				cst_hook_include(buf, file == cst_main_bf);
 #endif
@@ -1532,19 +1525,12 @@ static int parse_include(MCCState *s1, int do_next, int test) {
 		}
 		mcc_debug_bincl(s1);
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
-		/* D3 live capture: intern the just-opened real file as a hash-consed
-		 * SourceFile template; bind it to its IncludeDirective node when the
-		 * include was written in the main captured file. */
 		cst_hook_include(buf, file->prev == cst_main_bf);
 #endif
 	}
 	return 1;
 }
 
-/* clang function-like preprocessor builtins that mcc does not implement. When
-   used bare (not shadowed by a user `#define … 0` fallback) they must still parse:
-   consume the parenthesized argument and evaluate to 0 ("not supported"). Apple
-   SDK headers (TargetConditionals.h, Availability.h, …) rely on this. */
 static int pp_builtin_func(int v) {
 	const char *n;
 	if (v < TOK_IDENT)
@@ -1995,11 +1981,6 @@ ST_FUNC void mccpp_putfile(const char *filename) {
 }
 
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
-/* D1c: map a directive keyword to its concrete-PP CST node kind. The directive
- * line never reaches the post-expansion parser, so it is captured at the PP
- * boundary here (the same way slice J wrapped MacroInvocation). Only directives
- * in the main captured file get nodes — a directive inside an included header
- * (file != cst_main_bf) captures no main-file leaves and must not wrap. */
 static uint16_t cst_pp_dir_kind(int t) {
 	switch (t) {
 	case TOK_INCLUDE:
@@ -2013,9 +1994,9 @@ static uint16_t cst_pp_dir_kind(int t) {
 	case TOK_ENDIF:
 		return CST_PPConditional;
 	case TOK_LINEFEED:
-		return 0; /* a bare '#' line — no node */
+		return 0;
 	default:
-		return CST_PPDirective; /* define/undef/line/error/warning/pragma/... */
+		return CST_PPDirective;
 	}
 }
 #endif
@@ -2036,9 +2017,6 @@ ST_FUNC void preprocess(int is_bof) {
 	next_nomacro();
 redo:
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
-	/* The directive keyword ('#if', '#include', …) has just been captured as a
-	 * leaf; bracket this line from it (D1c). Re-taken at each `goto redo` so a
-	 * #else/#endif reached after an inactive-branch skip gets its own node. */
 	cst_pp_first = cst_leafcount() ? cst_leafcount() - 1 : 0;
 	cst_pp_kind = (file == cst_main_bf) ? cst_pp_dir_kind(tok) : 0;
 #endif
@@ -2121,9 +2099,6 @@ redo:
 	test_skip:
 		if (!(c & 1)) {
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
-			/* Wrap this #if/#elif/#else line before skipping the inactive
-			 * branch (whose bytes become their own leaves); the next directive
-			 * is wrapped when its own `goto redo` re-enters. */
 			if (cst_pp_kind && cst_leafcount() > cst_pp_first)
 				cst_hook_wrap(cst_pp_kind, cst_pp_first, cst_leafcount());
 #endif
@@ -2233,7 +2208,6 @@ redo:
 	skip_to_eol(1);
 the_end:
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
-	/* One concrete node per directive line, spanning its captured leaves (D1c). */
 	if (cst_pp_kind && cst_leafcount() > cst_pp_first)
 		cst_hook_wrap(cst_pp_kind, cst_pp_first, cst_leafcount());
 #endif
@@ -2892,12 +2866,6 @@ static void parse_number(const char *p) {
 		break;
 
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
-/* CST leaf capture (slice F/G/H, Weave 1). The top-level source file is mirrored
- * into the CST as leaves whose spans [prev_end, buf_ptr) tile every byte, so the
- * tree round-trips to byte-identical source (NOTES CST §8.1). Included files and
- * macro-injected tokens carry no written bytes here and are handled later. */
-/* cst_main_bf is forward-declared above (near preprocess) so the D1c directive
- * hooks can gate on the main file; this is its defining tentative declaration. */
 static unsigned long cst_prev_end;
 
 ST_FUNC void cst_capture_begin(const char *filename) {
@@ -2946,7 +2914,6 @@ ST_FUNC CstArena *cst_capture_end(void) {
 			else
 				fprintf(stderr, "%*s%s [%u,%u)\n", d * 2, "",
 					k < CST_KIND_COUNT ? kn[k] : "?", o, o + w);
-			/* push children in reverse so they print in order */
 			CstLocal kids[256];
 			int nk = 0;
 			for (CstLocal c = cst_first_child(a, n); c != CST_NONE;
@@ -2980,8 +2947,6 @@ ST_FUNC CstArena *cst_capture_end(void) {
 		}
 	}
 	if (a && getenv("MCC_CST_SNAPSHOT")) {
-		/* WEAVE 2: dump a real compiled tree, reload it, and prove the reload
-		 * validates and carries the identical structural hash (NOTES CST §8.6). */
 		const char *path = getenv("MCC_CST_SNAPSHOT");
 		char m2[128];
 		int ok = 0;
@@ -2997,9 +2962,6 @@ ST_FUNC CstArena *cst_capture_end(void) {
 		fprintf(stderr, "CST snapshot: %s\n", ok ? "reload OK" : "reload FAIL");
 	}
 	if (a && getenv("MCC_CST_STORE")) {
-		/* D3 live capture: the content-addressed SourceFile store + the
-		 * template each main-file IncludeDirective was bound to. Two #includes
-		 * of the same header share one template id (hash-consed by H_s). */
 		CstStore *st = cst_hook_store();
 		uint32_t nn = cst_node_count(a), n, nt = st ? cst_store_count(st) : 0, ti;
 		fprintf(stderr, "CST store: %u templates\n", nt);
@@ -4136,9 +4098,6 @@ ST_FUNC void next(void) {
 		if (s) {
 			Sym *nested_list = NULL;
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
-			/* Mark the written macro-use span (name + any args) so it becomes a
-			 * CST_MacroInvocation node (slice J). Expansion tokens carry no
-			 * source bytes and are not captured here. */
 			uint32_t cst_mfirst = cst_mark();
 			uint32_t cst_mbefore = cst_leafcount();
 #endif
@@ -4147,12 +4106,6 @@ ST_FUNC void next(void) {
 			begin_macro(&tokstr_buf, 0);
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
 			if (file == cst_main_bf) {
-				/* Function-like arg scanning may leave one trailing lookahead
-				 * leaf (the token after the invocation); exclude it so the node
-				 * never overruns into the next construct (which would break
-				 * range nesting). Object-like uses span just the name. This can
-				 * exclude the closing ')' in some cases — an accepted v1 macro-
-				 * fidelity imprecision (NOTES CST §11, grow later). */
 				uint32_t cst_mafter = cst_leafcount();
 				uint32_t cst_mlast = cst_mafter > cst_mbefore
 							 ? cst_mafter - 1

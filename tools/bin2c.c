@@ -1,9 +1,3 @@
-/* bin2c — emit a binary file as a C byte array.
- * Usage: bin2c <in> <out.c> <sym>
- * Produces:  const unsigned char <sym>[]   = { 0x.., ... };
- *            const unsigned int  <sym>_len = <n>u;
- * Runs at build time, so <in> may be a build product (e.g. libmccrt.a).
- */
 #include <stdio.h>
 
 int main(int argc, char **argv) {

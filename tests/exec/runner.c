@@ -68,9 +68,6 @@ static int req_met(const char *req, char *reason, size_t rn) {
 				return 0;
 			}
 		} else if (!strncmp(tok, "skipon=", 7)) {
-			/* Skip only on an exact cpu/os combination, e.g.
-			   "skipon=arm64/WIN32:reason" -- unlike the require-style gates
-			   above, this excludes one platform while running everywhere else. */
 			const char *spec = tok + 7;
 			const char *slash = strchr(spec, '/');
 			const char *colon = strchr(spec, ':');
@@ -289,10 +286,6 @@ int main(int argc, char **argv) {
 	const char *emu = getenv("MCC_TEST_EMU");
 	if (!emu)
 		emu = "";
-	/* Cross mode: MCC_TEST_RUNEMU launches the *compiled exe* under an emulator
-	   (e.g. "qemu-aarch64 -L <sysroot>"), while the compiler (a host cross
-	   compiler) runs natively with MCC_TEST_SYSROOT flags. Only "run"-mode
-	   goldens apply; the -run/JIT modes need a native/foreign compiler. */
 	const char *runemu = getenv("MCC_TEST_RUNEMU");
 	const char *xsysroot = getenv("MCC_TEST_SYSROOT");
 	int cross = runemu && runemu[0];

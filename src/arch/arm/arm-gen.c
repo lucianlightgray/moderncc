@@ -136,9 +136,6 @@ ST_DATA const int reg_classes[NB_REGS] = {
 #endif
 };
 
-/* Per-function copy of the ABI (temporarily forced to soft-float for variadic
-   calls). Rehomed to MCCState as cg_arm_float_abi and renamed cg_float_abi to
-   avoid colliding with the same-named assign_regs() parameter. */
 #define cg_float_abi (mcc_state->cg_arm_float_abi)
 #define func_sub_sp_offset (mcc_state->cg_func_sub_sp_offset)
 #define last_itod_magic (mcc_state->cg_last_itod_magic)

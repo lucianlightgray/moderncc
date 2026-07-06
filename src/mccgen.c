@@ -640,9 +640,6 @@ ST_FUNC void mccgen_finish(MCCState *s1) {
 	mcc_debug_end(s1);
 	free_inline_functions(s1);
 	sym_pop(&global_stack, NULL, 0);
-	/* The complex-type memo caches CTypes whose .ref points into global_stack,
-	   just freed above. Clear it (and the __real/__imag token ids) so a second
-	   TU compiled with this same state does not reuse dangling syms. */
 	memset(s1->gen_complex_type_cache, 0, sizeof s1->gen_complex_type_cache);
 	s1->gen_complex_re_tok = s1->gen_complex_im_tok = 0;
 	sym_pop(&local_stack, NULL, 0);
@@ -4252,7 +4249,7 @@ static void struct_decl(CType *type, int u) {
 	AttributeDef ad, ad1;
 	CType type1, btype;
 
-	CST_OPEN(u == VT_ENUM ? CST_Enum : CST_StructOrUnion); /* D1b: Enum kind */
+	CST_OPEN(u == VT_ENUM ? CST_Enum : CST_StructOrUnion);
 	memset(&ad, 0, sizeof ad);
 	next();
 	parse_attribute(&ad);
@@ -5358,7 +5355,7 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td) {
 
 	if (tok == '(') {
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
-		uint32_t cst_pm = CST_MARK(); /* D1b: '(' of a parameter list */
+		uint32_t cst_pm = CST_MARK();
 #endif
 		next();
 		if (TYPE_DIRECT == (td & (TYPE_DIRECT | TYPE_ABSTRACT)))
@@ -5439,7 +5436,7 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td) {
 				"function declaration isn't a prototype");
 		skip(')');
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
-		CST_OPEN_AT(CST_ParamList, cst_pm); /* D1b: (params) group */
+		CST_OPEN_AT(CST_ParamList, cst_pm);
 		CST_CLOSE();
 #endif
 		type->t &= ~VT_CONSTANT;
@@ -5583,8 +5580,6 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td) {
 	return 1;
 }
 
-/* Per-outermost-call scratch for type_decl(), owned on the stack by the
-   type_decl() wrapper and threaded through the recursion via type_decl_1(). */
 struct restrict_ctx {
 	Sym *pointee[8];
 	int nb;
@@ -6468,12 +6463,7 @@ ST_FUNC void unary(void) {
 	int n, t, align, size, r;
 	CType type;
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
-	/* Mark the primary's start so postfix .  ->  []  () can wrap retroactively
-	 * into Member/Index/Call nodes (range-nested by cst_nest_specs). */
 	uint32_t cst_um = CST_MARK();
-	/* Kind to wrap [cst_um, end) with once the whole unary (incl. postfix) is
-	 * parsed: CST_Unary for a prefix operator, 0 for a bare primary/cast/paren
-	 * that brackets itself in-branch (D1a). */
 	uint16_t cst_nk = 0;
 #define CST_PRIMARY() do { CST_OPEN_AT(CST_Primary, cst_um); CST_CLOSE(); } while (0)
 #else
@@ -6488,10 +6478,6 @@ ST_FUNC void unary(void) {
 	type.ref = NULL;
 tok_next:
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
-	/* Classify a prefix-operator unary so the whole operand is wrapped in one
-	 * CST_Unary at function exit (D1a). Type-operand sizeof/_Alignof returns
-	 * early (SOTYPE) and casts/parens bracket themselves, so this only tags the
-	 * genuine prefix-operator forms. */
 	switch (tok) {
 	case '*': case '&': case '!': case '~': case '+': case '-':
 	case TOK_INC: case TOK_DEC:
@@ -6618,12 +6604,12 @@ tok_next:
 		t = tok;
 		next();
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
-		uint32_t cst_tm = CST_MARK(); /* first token after '(' (D1b TypeName) */
+		uint32_t cst_tm = CST_MARK();
 #endif
 		if (parse_btype(&type, &ad, 0)) {
 			type_decl(&type, &ad, &n, TYPE_ABSTRACT);
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
-			CST_OPEN_AT(CST_TypeName, cst_tm); /* the (type-name) in a cast etc. */
+			CST_OPEN_AT(CST_TypeName, cst_tm);
 			CST_CLOSE();
 #endif
 			skip(')');
@@ -6656,7 +6642,6 @@ tok_next:
 					if (bt != VT_STRUCT && bt != VT_VOID && !is_complex_type(&vtop->type))
 						gv(RC_TYPE(vtop->type.t));
 				}
-				/* (type)operand — a cast expression (D1a). */
 				CST_OPEN_AT(CST_Cast, cst_um);
 				CST_CLOSE();
 			}
@@ -6675,8 +6660,6 @@ tok_next:
 		} else {
 			gexpr();
 			skip(')');
-			/* ( expr ) — a parenthesized primary (D1a). Wrap just the
-			 * paren group; trailing postfix nests outside via cst_um. */
 			CST_OPEN_AT(CST_Paren, cst_um);
 			CST_CLOSE();
 		}
@@ -7644,8 +7627,6 @@ tok_next:
 		}
 	}
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
-	/* A prefix operator wraps its whole operand (incl. any postfix the operand
-	 * absorbed via recursion) in one Unary node (D1a). */
 	if (cst_nk) {
 		CST_OPEN_AT(cst_nk, cst_um);
 		CST_CLOSE();
@@ -7873,10 +7854,6 @@ static void expr_cond(void) {
 	CType type;
 
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
-	/* Retroactively wrap a binary expression in one flat CST_Binary node (only
-	 * when an infix operator is actually present), faithful to concrete syntax
-	 * without degenerate single-child chains (NOTES CST §2). Range-based nesting
-	 * (cst_nest_specs) places it correctly relative to sub-expressions. */
 	uint32_t cst_m = CST_MARK();
 	unary();
 	int cst_has_binop = precedence(tok) >= 1;
@@ -7932,7 +7909,7 @@ static void expr_cond(void) {
 		skip(':');
 		expr_cond();
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
-		CST_OPEN_AT(CST_Cond, cst_m); /* wrap the whole ?: (retroactive) */
+		CST_OPEN_AT(CST_Cond, cst_m);
 		CST_CLOSE();
 #endif
 
@@ -8063,7 +8040,7 @@ static void expr_eq(void) {
 	}
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
 	if (was_assign) {
-		CST_OPEN_AT(CST_Binary, cst_m); /* assignment as a flat Binary node */
+		CST_OPEN_AT(CST_Binary, cst_m);
 		CST_CLOSE();
 	}
 #endif
@@ -8088,7 +8065,7 @@ ST_FUNC void gexpr(void) {
 			expr_eq();
 		} while (tok == ',');
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
-		CST_OPEN_AT(CST_Comma, cst_m); /* comma operator sequence */
+		CST_OPEN_AT(CST_Comma, cst_m);
 		CST_CLOSE();
 #endif
 
@@ -8520,7 +8497,6 @@ static int tok_starts_declspec(void) {
 }
 
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
-/* Map a statement's leading token to its CST node kind (slice H). */
 static uint16_t cst_stmt_kind(int t) {
 	switch (t) {
 	case '{': return CST_CompoundStmt;
@@ -8544,7 +8520,7 @@ static void block(int flags) {
 
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
 	CST_OPEN(cst_stmt_kind(tok));
-	uint32_t cst_lm = 0; /* mark of the current dispatch token (for D1b Label) */
+	uint32_t cst_lm = 0;
 #endif
 again:
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
@@ -8892,7 +8868,7 @@ again:
 		if (tok == ':' && t >= TOK_UIDENT) {
 			next();
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
-			CST_OPEN_AT(CST_Label, cst_lm); /* D1b: 'name :' label */
+			CST_OPEN_AT(CST_Label, cst_lm);
 			CST_CLOSE();
 #endif
 			s = label_find(t);
@@ -10231,9 +10207,6 @@ static int decl(int l) {
 
 	while (1) {
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
-		/* D1b/D2: mark this declaration's first token; a full declarator group
-		 * or a function definition is range-wrapped retroactively at its end,
-		 * sidestepping decl()'s many exit points (NOTES CST gap-closure D2). */
 		uint32_t cst_dm = CST_MARK();
 #endif
 
@@ -10526,9 +10499,6 @@ static int decl(int l) {
 							type.t |= VT_EXTERN;
 						}
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
-						/* D1b: wrap the written initializer (RHS of '=', incl.
-						 * brace lists). '=' already consumed above; mark its
-						 * first token so the range excludes the '='. */
 						uint32_t cst_im = has_init ? CST_MARK() : 0;
 #endif
 						decl_initializer_alloc(&type, &ad, r, has_init, v, l);

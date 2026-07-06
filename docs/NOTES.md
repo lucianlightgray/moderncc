@@ -490,7 +490,7 @@ items kept on purpose). Marker legend: `[ ]` open · `[~]` partial/deliberate-DI
 Goal: implement every detail of C99 (N1256) and C11 (N1570), backed by regression
 tests across all targets (x86_64, i386, ARM, AArch64, RISC-V 64), platforms
 (ELF/PE/Mach-O), and both glibc and musl. The default standard is **C11**
-(`cversion=201112`, set in `mcc_new()` at `src/libmcc.c:935`, and predefined as
+(`cversion=201112`, set in `mcc_new()` at `src/libmcc.c:911`, and predefined as
 `__STDC_VERSION__`); `-std=c99` selects C99, `-std=c17`/`-std=c23` the later ones.
 
 mcc's stance on constraint violations is **permissive-by-default**: many
@@ -550,7 +550,7 @@ deliberate, tested difference from a reference compiler (not a defect).
 - [ ] **[DIAG] §6.5.16.1 — assignment to a const-qualified struct/union is diagnosed (as a warning).**
   Audit re-check correction: `a = b` where `a` is `const struct S` *does* warn
   "assignment of read-only location" — `vstore` calls `verify_assign_cast`
-  (`src/mccgen.c:3557`) whose const check (`:3456`) fires for aggregates too,
+  (`src/mccgen.c:3555`) whose const check (`:3458`) fires for aggregates too,
   exactly as for the scalar case. mcc's long-standing stance is to *warn* on
   assignment-to-const (scalar and aggregate alike); gcc/clang *error*. Only the
   severity differs. Promoting to a default-on error would be more conformant but
@@ -747,7 +747,7 @@ identity **and** zero-width until swept or offset arithmetic drifts. Reserved fo
 now: the per-node slot-key field + frontier-scoped `H_s`-recompute (both shipped).
 **Drift note:** the frozen plan said `slot_key` stays *unused/0 in v1*; D3 now
 **repurposes `slot_key`** to hold the 1-based branch-body tag
-(`cst_mark_branch`, `src/mcccst.c:577`). It is still 0 for the epoch-hash purpose,
+(`cst_mark_branch`, `src/mcccst.c:512`). It is still 0 for the epoch-hash purpose,
 but no longer universally zero — a future `H_e` build must account for that.
 
 ### §4 — Memory & preprocessor model
@@ -762,7 +762,7 @@ and whose children hold the expansion (for future `-g`/opt). Phased: M1 handled
 the expansion-transparent subset, full fidelity landed as dedicated milestone Mμ.
 
 ### §5 — Byte-offset facility
-As shipped: a per-file base `cst_base` (`src/mcc.h:465`), maintained in
+As shipped: a per-file base `cst_base` (`src/mcc.h:464`), maintained in
 `handle_eob`, combined with buffer-pointer arithmetic so `abs_off(p) == cst_base
 + (p - buffer)`. `cst_base` advances by the discarded-window length at each chunk
 refill; offsets captured as absolute values at token start/end so they survive
@@ -879,7 +879,7 @@ Deps: — · Kind: build · PLAN §7, §8
 - [x] `tests/cst/{store,hash,geom,serial}` registered; 4/4 green via ctest
 - [x] Codegen-identity gate (§8.5): mcc CST-on vs CST-off byte-identical over 42 files
 - Notes: define appended to `_mccdefs` (CMakeLists.txt ~1642); mcccst.c un-poisons
-  malloc/realloc/free (mcc.h:1230) via push/pop_macro for self-containment. mcc
+  malloc/realloc/free (mcc.h:1215) via push/pop_macro for self-containment. mcc
   binary grows (~26KB, dead code until Weave 1) but its *output* is identical.
 
 ### B — Node store core (pure)  ·  status: [x]
@@ -938,7 +938,7 @@ Deps: B, F · PLAN §4, §1
 
 ### H — Recording hooks (WEAVE 1 + M2)  ·  status: [x]
 Deps: B, D, F, G · PLAN §6
-- [x] Leaf capture at next_nomacro exit (mccpp.c:3340), [prev_end,end) tiling;
+- [x] Leaf capture at next_nomacro exit (mccpp.c:2996), [prev_end,end) tiling;
       cst_capture_begin/end bracket mccgen_compile in mcc_compile
 - [x] Deferred-capture model resolves single-pass lookahead skew: flat leaves
       (round-trip) + structural specs as leaf-index ranges materialized in
@@ -982,12 +982,12 @@ Deps: B, D, F, G · PLAN §6
     single-exit fall-through — trivial to bracket.
   - `decl(int l)`@10074 has MULTIPLE returns (10089/10128/10386/10394) — needs a
     goto-epilogue or wrap at the caller for `cst_close`.
-  - `block(int flags)`@8402 single-exit (converges at 8817) but has `again:`@8408
+  - `block(int flags)`@8515 single-exit (converges at 8942) but has `again:`@8525
     loop + gotos — place `cst_open` AFTER the `again:` label or guard re-entry.
-  - Token consumption = direct `next()`(mccpp.c:3874)/`skip()`(mccpp.c:71) calls;
+  - Token consumption = direct `next()`(mccpp.c:4057)/`skip()`(mccpp.c:71) calls;
     hook leaves either by wrapping those or reading `tok` at boundaries.
-  - Add `#include "mcccst.h"` after mcc.h:190; hook prototypes near mcc.h:1477;
-    mirror `CONFIG_MCC_ASM` #ifdef style (mccgen.c:10103).
+  - Add `#include "mcccst.h"` after mcc.h:190; hook prototypes near mcc.h:1462;
+    mirror `CONFIG_MCC_ASM` #ifdef style (mccgen.c:10233).
 
 ### I — Symbol refs (WEAVE 3)  ·  status: [x]
 Deps: H, B · PLAN §1(Symbols), §4
@@ -1005,7 +1005,7 @@ Deps: H, F · PLAN §4, §11
 - [x] Expansion-transparent subset (PLAN §4 M1): macro invocations captured as
       written source leaves; round-trips byte-identical over the corpus.
 - [x] `MacroInvocation` nodes: at the macro-expansion boundary in next()
-      (mccpp.c:4044), the written macro-use span (name + args) is wrapped as a
+      (mccpp.c:4113), the written macro-use span (name + args) is wrapped as a
       CST_MacroInvocation via cst_hook_wrap. Object-like and function-like both
       covered; nests correctly with enclosing expressions. Gated by cst/macro
       (>=3 MacroInvocation nodes + round-trip on SQUARE/LIMIT/ADD fixture).
@@ -1090,11 +1090,11 @@ and re-verified against the source. Migrated here from `docs/TODO.md`.
   and named `local-ci` in the "no test preset" exception list.
 - **Default C standard corrected C99→C11.** The `NOTES.md` conformance section now
   says the default is C11 (`cversion=201112`, set in `mcc_new()` at
-  `src/libmcc.c:935`, predefined as `__STDC_VERSION__`); `-std=c99` selects C99.
-  (Was wrongly "C99, `cversion=199901`, `src/libmcc.c:860`" — `:860` is unrelated
+  `src/libmcc.c:911`, predefined as `__STDC_VERSION__`); `-std=c99` selects C99.
+  (Was wrongly "C99, `cversion=199901`, `src/libmcc.c:836`" — `:836` is unrelated
   `#else` code and `199901` is only the `-std=c99` value.)
 - **PLAN §5 byte-cursor rewritten.** Now describes the shipped `cst_base +
-  (p - buffer)` model (`src/mcc.h:465`; `cst_base` bumped in `handle_eob`) instead
+  (p - buffer)` model (`src/mcc.h:464`; `cst_base` bumped in `handle_eob`) instead
   of the never-built "monotonic per-byte counter"; `IMPLEMENTATION.md §2-F` matched.
 - **IMPLEMENTATION.md §3 seam refreshed.** Relabelled as the original design
   sketch plus an as-shipped correction: `CST_LEAF(tk, off, n)`, added `CST_OPEN_AT`
@@ -1108,11 +1108,162 @@ and re-verified against the source. Migrated here from `docs/TODO.md`.
   the real `#define tok_ts (mcc_state->tok_ts)` (`src/mccpp.c:12`), an `MCCState`
   member.
 - **Drifted conformance refs re-anchored.** `src/mccgen.c` comma-in-ICE
-  `:7448`→~`:8024`, `_Noreturn`-on-object `:9509`→~`:10274`, `inline`-on-object
-  `:9504`→~`:10270` (now symbol-anchored; the `:3557`/`:3456` const-assignment refs
+  `:7448`→~`:8059`, `_Noreturn`-on-object `:9509`→~`:10319`, `inline`-on-object
+  `:9504`→~`:10315` (now symbol-anchored; the `:3557`/`:3456` const-assignment refs
   were already accurate).
 
 Still open in `docs/TODO.md` (these need a measurement/CI run, not a doc edit):
 the test-count reconcile, the "~100×" headline, the speed/size table re-measure,
 the PROFILING §4–§5 pre-`TOK_HASH_SIZE` baselines, and the "all green" status
 prose regeneration.
+
+## Migrated from code comments (2026-07-06 comment-strip)
+
+The codebase's inline comments were removed in favour of self-documenting code;
+the non-obvious *why* — design rationale, cross-compiler/ABI gotchas, and
+deliberate decisions — was moved here. Open-work items went to `docs/TODO.md`.
+
+### CST recording — deferred-capture implementation (`src/mcccst.c`)
+
+§6 above describes the hook *API* (`cst_open`/`cst_close` bracketing). The
+*implementation* does not build the tree live: mcc is a single-pass parser with
+one token of lookahead, so when a grammar function brackets a construct its first
+token has **already** been lexed and captured. Capture therefore records a flat,
+source-ordered **leaf list** plus structural **specs** as leaf-index ranges, and
+materializes the nested tree in `cst_hook_end`.
+
+- **Lookahead rule.** A node opened while `tok` is its first token spans leaves
+  `[open_leafcount - 1, close_leafcount - 1)` — `cst_hook_close` excludes the
+  lookahead token that belongs to the next construct.
+- **Spec nesting (`cst_nest_specs`).** Parent/child links are rebuilt purely from
+  `[first_leaf, last_leaf)` containment (not the open-time parent) so
+  retroactively-opened expression nodes nest correctly. All grammar constructs
+  are disjoint-or-nested, so a stack over the sorted specs yields the true tree.
+  *Partial-overlap* specs (e.g. a `Declaration` whose start-mark is stale across
+  an `#include` that straddles a PP-boundary node) are **dropped**, not tiled
+  under two siblings — tiling them would break the round-trip oracle (§8.1).
+  *Empty* specs (`first == last`, i.e. retroactive wraps around macro-expanded
+  expressions that captured no source leaves) are also dropped, except the root.
+- **Sort tie-break (`cst_spec_cmp`).** Order is `first_leaf` asc, then wider range
+  first (`last_leaf` desc), then later-opened first (id desc). A grouping wrapper
+  (`Initializer`/`Declaration`/…) is opened *after* the sub-expression it contains
+  (retroactive range-wrap); when its span coincides byte-for-byte with its single
+  child (e.g. `int c = (int)a;` where the `Initializer` equals the `Cast`) the
+  higher id must sort first so the containment stack makes it the parent.
+- **Self-contained memory.** `src/mcccst.c` uses only the C library so
+  `tools/csttool.c` can link it alone (invariant §0.3). `mcc.h` poisons
+  `malloc`/`realloc`/`free` to force mcc's allocators, so the file `push_macro`s
+  and `#undef`s them (a no-op in the standalone `csttool` build).
+- **Column reuse.** An `IncludeDirective`'s cross-file target (the interned
+  `SourceFile` template id) is stored in the `sym_ref` column as `(template_id, 0)`;
+  a `PPConditional` branch ordinal is stored in the reserved `slot_key` column
+  (the D3 `slot_key` dual-use is also noted in §10 / TODO). `cst_store_intern`
+  dedups by pure `H_s(root)`; a non-`NDEBUG` build verifies the two entries reflect
+  byte-identically as a hash-collision tripwire before fusing them.
+
+### Diagnostics — deliberate error-vs-warning choices (`src/libmcc.c`)
+
+- **Calling an undeclared function is a hard error** (C99 §6.9.1/§7.1.4 constraint
+  violation, not a warning). This prevents implicit-`int`/pointer-truncation
+  miscompiles and makes autoconf-style feature detection behave. See
+  `docs/C9911.md` §6.5.1p2 (undeclared identifier).
+- **Return-type mismatch is an error**, downgradable via
+  `-Wno-error=return-type` / `-Wno-return-type`: a `return <value>;` in a `void`
+  function, or a value-less `return;` in a non-`void` function.
+- **Caret rendering** never colorizes the embedder callback path (`error_func`)
+  — embedders want plain text; `auto` follows the tty. The `CString` printf
+  helpers keep `data[size]` a NUL not counted in `size`, so `"%s"` stops there.
+
+### Runtime library — cross-compiler & ABI notes (`runtime/`)
+
+The runtime is built by the *host* cc (gcc/clang/MSVC) as well as by mcc, so many
+constructs exist to satisfy a foreign toolchain's type checker or assembler:
+
+- **Builtin-name conflicts → assembler `.set` / asm labels.** Clang refuses to
+  see several libcall names *defined* in C because it types them as builtins
+  (`__atomic_*`, `__builtin_bswap64` as `uint64_t`, the four generic `libatomic`
+  entry points). Mach-O also rejects non-weak `__attribute__((alias))` and gcc
+  ICEs on `weak,alias` there. The runtime therefore exports those symbols through
+  an assembler `.set` / asm label rather than a C alias
+  (`builtin.c`, `stdatomic.c`, `atomic.c`).
+- **`stdatomic.h` pointee types** must match Clang's builtin prototypes: a plain
+  `void *` pointee conflicts with `__atomic_is_lock_free`; `bcheck.c`'s
+  `never_fatal` is a plain `int` (not `_Atomic`) because the non-`_c11`
+  `__atomic_fetch_add` rejects an `_Atomic(int)*` pointee under Clang.
+- **Mach-O assembler quirks.** A foreign (host-CC) Mach-O assembler has no
+  `.type`/`.size` directives and needs assembler-local labels to start with `L`,
+  not `.L` (`atomic.c`).
+- **`regparm`** is x86-only: gcc silently ignores it off-x86, clang errors — apply
+  it only where meaningful (`bcheck.c`).
+- **Cache-flush builtins.** `armflush.c` / `lib-riscv.c` exist only for the mcc
+  build; gcc and clang provide the cache flush as a builtin (there is no
+  `__arm64_clear_cache` / `__riscv64_clear_cache` symbol outside mcc).
+- **`__unordtf2`** helper: clang `-O2` (unlike gcc) emits it for the
+  NaN/unordered checks in the 128-bit `long double _Complex` routines;
+  `f3_cmp` already returns the unordered sentinel `2` (`lib-arm64.c`).
+- **win32 `fenv`.** The rounding-mode value is the C99 `FE_*` encoding, which
+  matches the x87 control-word field (bits 10-11): `FE_TONEAREST` 0x000,
+  `FE_DOWNWARD` 0x400, etc. On x86 set both the x87 CW and the SSE `MXCSR`
+  (bits 13-14 == the x87 field `<< 3`) since scalar FP uses SSE while `long
+  double` uses x87. On arm64 the mode is `FPCR` bits 23:22 (00 RN, 01 RP, 10 RM,
+  11 RZ).
+- **win32 `errno`.** The POSIX thread codes are not in msvcrt's set; the
+  `<pthread.h>`/`<threads.h>` shims use the same values mingw does.
+- **win32 `pthread`.** The control block is intentionally *leaked* rather than
+  freed under the still-running thread; `pthread_self`/`equal` only need to be
+  self-consistent for identity checks, so the thread id serves as the token.
+
+### Tooling (`tools/`) — design & portability notes
+
+- **`csttool.c`** is a pure-library harness proving slices B–E against synthetic
+  trees before Weave 1; it links nothing from the compiler (invariant §0.3).
+  Gates: hashing invariance (struct hash matches, trivia hash differs), symbol
+  refs as node-ids (def↔use round-trip), D1d comment promotion (excluded from
+  `H_s`, feeds `H_t`), and the D3/D5 template + content-addressed store dedup.
+- **`bench.c`** (default-off; CI enables via `MCC_BENCH`; host-only): `ru_maxrss`
+  is KiB on Linux but bytes on Darwin; `/proc` and `/sys` files report
+  `st_size == 0` so they must be streamed; aarch64 has no model name so the CPU
+  name is decoded from `MIDR` (implementer, part); CPUID leaf-1 ECX bit 31 means
+  running under a hypervisor; `cl` rejects GNU probe flags (MSB8066) so its
+  version is parsed from the banner; the JUnit parse is bounded so a later case's
+  `<skipped>` can't leak in.
+- **`ci.c`**: stage3 CRT lands in `usr/lib64` but the multilib driver looks in
+  `usr/lib`, so it is mirrored; x86_64 sysroots are pre-fetched idempotently via
+  a marker file; the dist flow is exactly `configure→build→install→(strip)→
+  bench→package-dist` from `release.yml`; `MCC_BUILD_STRIP` is off for
+  `dist-macos` (a full strip trips codesigning); `ctest` wants the JUnit path as
+  a separate token (`--output-junit=…` is rejected); in the scratch/out cleanup,
+  `stage == out` so `out` must never be removed; the `bundle-` asset prefix
+  signals the archive that holds the others; the JUnit summarizer is
+  self-contained so linux/qemu jobs still emit PASS/FAIL/SKIP.
+- **`mccharness.c`**: with no gcc/clang consensus it does a 2-way check that
+  matches *either* reference and never introduces a FAIL (impl-defined
+  divergence); `curl -o` fails on a fresh tree (a docker volume masks this, local
+  ctest hit it) so the dir is created first; the 1-slice arm64 suite is the hard
+  guarantee, 2-slice needs cross+SDK and self-skips.
+- **`machofat.c`** is a post-link combiner (a single mcc can't emit fat):
+  page-alignment (arm64 16 KiB, others 4 KiB; `≥` the arch page size) keeps
+  signatures/segments valid; it ad-hoc re-signs because Apple silicon rejects a
+  mismatched signature / stale AMFI cache; `codesign` exit 127 means absent
+  (skip), other nonzero means it ran and failed (surface it).
+- **`objcheck.c`**: legacy `version_min` packs X.Y.Z at offset 8 vs
+  `LC_BUILD_VERSION` `minos` at 12; slice offsets are per sub-arch for fat, single
+  0 for thin; `--arch` restricts to the named sub-arch, else a later-slice
+  mismatch still fails.
+- **`build.c` / `bin2c.c`**: `build.c` bounds a `%s` so gcc
+  `-Wformat-truncation` sees it fits; `bin2c.c` runs at build time so its input
+  may be a build product (e.g. `libmccrt.a`).
+
+### Test harness — directive & runner semantics (`tests/`)
+
+- **`skipon=<cpu>/<os>[:reason]`** excludes exactly one cpu/os combination while
+  running everywhere else — unlike the require-style gates, which are inclusive
+  (`tests/exec/runner.c`).
+- **`MCC_TEST_RUNEMU`** launches the *compiled exe* under an emulator (e.g.
+  `qemu-aarch64 -L <sysroot>`) while the cross compiler itself runs natively with
+  `MCC_TEST_SYSROOT` flags; only `run`-mode goldens apply (the `-run`/JIT modes
+  need a native/foreign compiler).
+- **CST fixtures keep their comments on purpose.** `tests/cst/**` and
+  `tests/exec/preprocessor/comment.c` treat comments as parsed input (captured as
+  trivia, folded into `H_t`, or the literal subject of the test), so those
+  comments are payload, not decoration, and were left in place.

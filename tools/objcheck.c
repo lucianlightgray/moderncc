@@ -37,8 +37,6 @@ static u32 le16(const unsigned char *p) {
 
 #define MH_MAGIC_64 0xfeedfacfu
 #define LC_BUILD_VERSION 0x32u
-/* Legacy minimum-version load commands (pre-LC_BUILD_VERSION). The packed
-   X.Y.Z version lives at a different offset (8) than LC_BUILD_VERSION's minos (12). */
 #define LC_VERSION_MIN_MACOSX 0x24u
 #define LC_VERSION_MIN_IPHONEOS 0x25u
 #define LC_VERSION_MIN_TVOS 0x2fu
@@ -95,22 +93,18 @@ static int macho_slice(const unsigned char *p, long n, u32 *ct, u32 *ft, u32 *mi
 		if (cmdsize < 8 || lc + cmdsize > end)
 			return -1;
 		if (cmd == LC_BUILD_VERSION && cmdsize >= 16) {
-			*minos = le32(lc + 12); /* LC_BUILD_VERSION wins when both present */
+			*minos = le32(lc + 12);
 			have_build = 1;
 		} else if (!have_build && cmdsize >= 12 &&
 			   (cmd == LC_VERSION_MIN_MACOSX || cmd == LC_VERSION_MIN_IPHONEOS ||
 			    cmd == LC_VERSION_MIN_TVOS || cmd == LC_VERSION_MIN_WATCHOS)) {
-			*minos = le32(lc + 8); /* legacy version_min_command: version at +8 */
+			*minos = le32(lc + 8);
 		}
 		lc += cmdsize;
 	}
 	return 0;
 }
 
-/* Enumerate the byte offsets of the thin Mach-O header(s) within the file: one
-   per sub-arch for a fat binary, or a single offset 0 for a thin one. Returns the
-   count (capped at max), so callers can inspect every slice rather than only the
-   first that parses. */
 static int macho_slices(const unsigned char *d, long n, u32 *offs, int max) {
 	if (n >= 8 && d[0] == 0xca && d[1] == 0xfe && d[2] == 0xba && d[3] == 0xbe) {
 		u32 nfat = be32(d + 4), i;
@@ -188,8 +182,6 @@ int main(int argc, char **argv) {
 			if (offs[si] >= (u32)n ||
 				macho_slice(d + offs[si], n - offs[si], &ct, &ft, &minos) != 0)
 				continue;
-			/* With --arch, restrict to the named sub-arch; without it, every
-			   slice is inspected so a mismatch on a later slice still fails. */
 			if (arch && strcmp(arch, macho_arch(ct)))
 				continue;
 			matched++;
