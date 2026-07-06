@@ -190,6 +190,62 @@ const uint8_t *cst_source(const CstArena *a, uint32_t *len_out);
 void      cst_set_sym_ref(CstArena *a, CstLocal use, CstId def);
 CstId     cst_sym_ref(const CstArena *a, CstLocal use);
 
+/* ==================================================================== *
+ * D3/D5 — SourceFile template + content-addressed store + renderer
+ * (docs/CST.md §D3/§D5). A file's *bytes* are fixed, so its *structure* is
+ * fixed: each file is a static full-concrete template (all #if/#else branches
+ * captured), hash-consed by pure H_s(body) so identical headers — regardless
+ * of include context — share one physical subtree. Per-include variation lives
+ * in a small binding; the live token stream is render(template, binding).
+ * ==================================================================== */
+
+/* A PPConditional's branch-body children are tagged with a 1-based ordinal so
+ * a binding can pick the live one (0 = not a branch body, e.g. a directive
+ * line). Uses the reserved slot_key column (PLAN §3.1). */
+void      cst_mark_branch(CstArena *a, CstLocal node, uint32_t branch_ord);
+uint32_t  cst_branch_ord(const CstArena *a, CstLocal node);
+
+/* An IncludeDirective's cross-file target: the template id of the included
+ * SourceFile (stored in the sym_ref column as (template_id, 0)). */
+void      cst_set_include_target(CstArena *a, CstLocal node, uint32_t template_id);
+uint32_t  cst_include_target(const CstArena *a, CstLocal node);
+
+/* Content-addressed template store (PLAN §10 4C hash-consing / 6B store). */
+typedef struct CstStore CstStore;
+CstStore *cst_store_new(void);
+void      cst_store_free(CstStore *s); /* also frees every interned template */
+/* Intern `tmpl` (whose tree must be hashed) keyed by H_s(root). If an entry
+ * with that key already exists it is returned (dedup) and `tmpl` is freed; a
+ * debug build first verifies the two reflect byte-identically (hash-collision
+ * tripwire — see docs/TODO.md). Otherwise `tmpl` is adopted and a fresh id
+ * returned. Returns the canonical template id. */
+uint32_t  cst_store_intern(CstStore *s, CstArena *tmpl);
+uint32_t  cst_store_count(const CstStore *s);
+CstArena *cst_store_get(const CstStore *s, uint32_t template_id);
+
+/* Per-include binding: the "holes" in a template for one include instance —
+ * which branch of each captured PPConditional is live, plus (in encounter
+ * order) a child binding for each IncludeDirective. Recursive: the include
+ * tree's threaded PP environment is modelled by the binding tree. */
+typedef struct CstBinding CstBinding;
+CstBinding *cst_binding_new(uint32_t template_id);
+void        cst_binding_free(CstBinding *b); /* frees child bindings too */
+uint32_t    cst_binding_template(const CstBinding *b);
+void        cst_binding_select(CstBinding *b, CstLocal cond, uint32_t which);
+uint32_t    cst_binding_selected(const CstBinding *b, CstLocal cond); /* def 0 */
+/* Append a child binding for the next IncludeDirective (encounter order). */
+void        cst_binding_add_include(CstBinding *b, CstBinding *child);
+
+/* Render the live token stream of a binding's template (branch selection +
+ * include expansion), threading the environment through nested includes.
+ * Returns bytes written, or the required size when out==NULL. */
+size_t      cst_render(const CstStore *s, const CstBinding *b, uint8_t *out,
+                       size_t cap);
+/* Round-trip oracle: render with the identity binding — every branch, no
+ * include expansion — i.e. the written source of one template. Shares the
+ * leaf-emission path with cst_render (PLAN §8.1). */
+size_t      cst_render_identity(const CstArena *tmpl, uint8_t *out, size_t cap);
+
 #ifdef __cplusplus
 }
 #endif

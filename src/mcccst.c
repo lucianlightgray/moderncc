@@ -570,6 +570,234 @@ void cst_set_sym_ref(CstArena *a, CstLocal use, CstId def) {
 CstId cst_sym_ref(const CstArena *a, CstLocal use) { return a->sym_ref[use]; }
 
 /* ================================================================== *
+ * D3/D5 — SourceFile template metadata, content-addressed store, renderer
+ * (docs/CST.md §D3/§D5).
+ * ================================================================== */
+
+/* Branch-body tag (1-based) lives in the reserved slot_key column. */
+void cst_mark_branch(CstArena *a, CstLocal node, uint32_t branch_ord) {
+    a->slot_key[node] = branch_ord + 1;
+}
+uint32_t cst_branch_ord(const CstArena *a, CstLocal node) {
+    uint32_t s = a->slot_key[node];
+    return s ? s - 1 : 0;
+}
+/* Is `node` a branch body (vs a directive line / ordinary child)? */
+static int cst_is_branch(const CstArena *a, CstLocal node) {
+    return a->slot_key[node] != 0;
+}
+
+/* IncludeDirective cross-file target = template id, stored in sym_ref. */
+void cst_set_include_target(CstArena *a, CstLocal node, uint32_t template_id) {
+    a->sym_ref[node] = cst_id(template_id, 0);
+}
+uint32_t cst_include_target(const CstArena *a, CstLocal node) {
+    return cst_id_file(a->sym_ref[node]);
+}
+
+/* --- content-addressed template store (4C hash-consing / 6B store) ------- */
+struct CstStore {
+    struct {
+        CstHash key;   /* H_s(body) of the template's root */
+        CstArena *tmpl;
+    } *ent;
+    uint32_t count, cap;
+};
+
+CstStore *cst_store_new(void) {
+    CstStore *s = cst_xrealloc(NULL, sizeof *s);
+    memset(s, 0, sizeof *s);
+    return s;
+}
+
+void cst_store_free(CstStore *s) {
+    if (!s)
+        return;
+    for (uint32_t i = 0; i < s->count; i++)
+        cst_arena_free(s->ent[i].tmpl);
+    free(s->ent);
+    free(s);
+}
+
+uint32_t cst_store_count(const CstStore *s) { return s->count; }
+
+CstArena *cst_store_get(const CstStore *s, uint32_t id) {
+    return id < s->count ? s->ent[id].tmpl : NULL;
+}
+
+uint32_t cst_store_intern(CstStore *s, CstArena *tmpl) {
+    CstHash key = cst_struct_hash(tmpl, cst_root(tmpl));
+    for (uint32_t i = 0; i < s->count; i++) {
+        if (!cst_hash_eq(s->ent[i].key, key))
+            continue;
+        /* Same content-address: dedup. A file's bytes fix its structure, so two
+         * entries under one H_s MUST reflect identically — otherwise the hash
+         * has collided and any dedup here would silently fuse two different
+         * headers. Verify in a debug build (docs/TODO.md tripwire). */
+#if !defined(NDEBUG)
+        {
+            CstArena *ex = s->ent[i].tmpl;
+            size_t na = cst_render_identity(ex, NULL, 0);
+            size_t nb = cst_render_identity(tmpl, NULL, 0);
+            int bad = na != nb;
+            if (!bad && na) {
+                uint8_t *ba = cst_xrealloc(NULL, na), *bb = cst_xrealloc(NULL, nb);
+                cst_render_identity(ex, ba, na);
+                cst_render_identity(tmpl, bb, nb);
+                bad = memcmp(ba, bb, na) != 0;
+                free(ba);
+                free(bb);
+            }
+            if (bad) {
+                fprintf(stderr,
+                        "mcccst: FATAL hash collision in the content-addressed "
+                        "store: two distinct file bodies share H_s "
+                        "%016llx%016llx. The cst_hash_* formula must be fixed.\n",
+                        (unsigned long long)key.hi, (unsigned long long)key.lo);
+                abort();
+            }
+        }
+#endif
+        cst_arena_free(tmpl); /* redundant copy; keep the canonical one */
+        return i;
+    }
+    if (s->count >= s->cap) {
+        s->cap = s->cap ? s->cap * 2 : 16;
+        s->ent = cst_xrealloc(s->ent, s->cap * sizeof *s->ent);
+    }
+    s->ent[s->count].key = key;
+    s->ent[s->count].tmpl = tmpl;
+    return s->count++;
+}
+
+/* --- per-include binding (the template's holes for one instance) --------- */
+struct CstBinding {
+    uint32_t template_id;
+    struct {
+        CstLocal cond;
+        uint32_t which;
+    } *sel;
+    uint32_t nsel, selcap;
+    CstBinding **inc; /* child bindings, one per IncludeDirective, in order */
+    uint32_t ninc, inccap;
+};
+
+CstBinding *cst_binding_new(uint32_t template_id) {
+    CstBinding *b = cst_xrealloc(NULL, sizeof *b);
+    memset(b, 0, sizeof *b);
+    b->template_id = template_id;
+    return b;
+}
+
+void cst_binding_free(CstBinding *b) {
+    if (!b)
+        return;
+    for (uint32_t i = 0; i < b->ninc; i++)
+        cst_binding_free(b->inc[i]);
+    free(b->inc);
+    free(b->sel);
+    free(b);
+}
+
+uint32_t cst_binding_template(const CstBinding *b) { return b->template_id; }
+
+void cst_binding_select(CstBinding *b, CstLocal cond, uint32_t which) {
+    for (uint32_t i = 0; i < b->nsel; i++)
+        if (b->sel[i].cond == cond) {
+            b->sel[i].which = which;
+            return;
+        }
+    if (b->nsel >= b->selcap) {
+        b->selcap = b->selcap ? b->selcap * 2 : 8;
+        b->sel = cst_xrealloc(b->sel, b->selcap * sizeof *b->sel);
+    }
+    b->sel[b->nsel].cond = cond;
+    b->sel[b->nsel].which = which;
+    b->nsel++;
+}
+
+uint32_t cst_binding_selected(const CstBinding *b, CstLocal cond) {
+    for (uint32_t i = 0; i < b->nsel; i++)
+        if (b->sel[i].cond == cond)
+            return b->sel[i].which;
+    return 0;
+}
+
+void cst_binding_add_include(CstBinding *b, CstBinding *child) {
+    if (b->ninc >= b->inccap) {
+        b->inccap = b->inccap ? b->inccap * 2 : 4;
+        b->inc = cst_xrealloc(b->inc, b->inccap * sizeof *b->inc);
+    }
+    b->inc[b->ninc++] = child;
+}
+
+/* --- the renderer: a fold over the template with a threaded environment --- */
+static size_t cst_emit_bytes(const CstArena *a, CstLocal n, uint8_t *out,
+                             size_t cap, size_t pos) {
+    uint32_t len = a->leaf_len[n];
+    if (out && pos + len <= cap)
+        memcpy(out + pos, a->src + a->leaf_off[n], len);
+    return pos + len;
+}
+
+/* Render one node. binding==NULL renders the identity (every branch, no include
+ * expansion = the written source). Otherwise a PPConditional emits only its
+ * live branch body and an IncludeDirective is replaced by its child binding's
+ * expansion (the threaded environment picks up each include's own branches). */
+static size_t cst_render_node(const CstStore *s, const CstArena *a, CstLocal n,
+                              const CstBinding *b, uint32_t *inc_cursor,
+                              uint8_t *out, size_t cap, size_t pos) {
+    uint16_t k = a->kind[n];
+    if (cst_is_leaf_kind(k))
+        return cst_emit_bytes(a, n, out, cap, pos);
+
+    if (b && k == CST_IncludeDirective) {
+        /* Expand: splice in the included template's live render (its own
+         * binding threads that file's environment). Falls back to the written
+         * directive text if no child binding was supplied. */
+        if (*inc_cursor < b->ninc) {
+            const CstBinding *child = b->inc[(*inc_cursor)++];
+            const CstArena *ct = cst_store_get(s, child->template_id);
+            uint32_t cc = 0;
+            return cst_render_node(s, ct, cst_root(ct), child, &cc, out, cap, pos);
+        }
+    }
+
+    if (b && k == CST_PPConditional) {
+        uint32_t sel = cst_binding_selected(b, n);
+        for (CstLocal c = a->first_child[n]; c != CST_NONE; c = a->next_sib[c]) {
+            if (!cst_is_branch(a, c))
+                continue; /* directive line (#if/#else/#endif) — not emitted */
+            if (cst_branch_ord(a, c) != sel)
+                continue; /* a dead branch */
+            pos = cst_render_node(s, a, c, b, inc_cursor, out, cap, pos);
+        }
+        return pos;
+    }
+
+    for (CstLocal c = a->first_child[n]; c != CST_NONE; c = a->next_sib[c])
+        pos = cst_render_node(s, a, c, b, inc_cursor, out, cap, pos);
+    return pos;
+}
+
+size_t cst_render(const CstStore *s, const CstBinding *b, uint8_t *out,
+                  size_t cap) {
+    const CstArena *t = cst_store_get(s, b->template_id);
+    if (!t || t->count == 0)
+        return 0;
+    uint32_t cursor = 0;
+    return cst_render_node(s, t, cst_root(t), b, &cursor, out, cap, 0);
+}
+
+size_t cst_render_identity(const CstArena *tmpl, uint8_t *out, size_t cap) {
+    if (tmpl->count == 0)
+        return 0;
+    uint32_t cursor = 0;
+    /* NULL binding → identity: every branch, no expansion (== the source). */
+    return cst_render_node(NULL, tmpl, cst_root(tmpl), NULL, &cursor, out, cap, 0);
+}
+
+/* ================================================================== *
  * Reflection + serialization (slice E, PLAN §8.1/§8.6)
  * ================================================================== */
 

@@ -357,6 +357,193 @@ static void suite_comment(void) {
     cst_arena_free(B);
 }
 
+/* ================================================================== *
+ * D3/D5 — SourceFile template + content-addressed store + renderer.
+ * The headline gate (docs/CST.md §D4): the recursive re-include branch-
+ * selection scenario, built as full-concrete templates and rendered under
+ * per-instance bindings. Proves: one deduped template, both branches present,
+ * the binding selects the live branch, render == the branch oracle, and the
+ * fold threads the environment through a nested include.
+ * ================================================================== */
+
+/* Build a full-concrete "toggle" template:  #ifdef GUARD / <a> / #else / <b> /
+ * #endif  as one PPConditional whose two branch bodies are tagged leaves.
+ * Returns the arena; *cond_out receives the PPConditional node id. */
+static CstArena *build_toggle(const char *ifdef_line, const char *a_branch,
+                              const char *else_line, const char *b_branch,
+                              const char *endif_line, CstLocal *cond_out) {
+    char src[256];
+    uint32_t o0 = 0, l0 = strlen(ifdef_line);
+    uint32_t o1 = l0, l1 = strlen(a_branch);
+    uint32_t o2 = o1 + l1, l2 = strlen(else_line);
+    uint32_t o3 = o2 + l2, l3 = strlen(b_branch);
+    uint32_t o4 = o3 + l3, l4 = strlen(endif_line);
+    uint32_t total = o4 + l4;
+    memcpy(src + o0, ifdef_line, l0);
+    memcpy(src + o1, a_branch, l1);
+    memcpy(src + o2, else_line, l2);
+    memcpy(src + o3, b_branch, l3);
+    memcpy(src + o4, endif_line, l4);
+
+    CstArena *a = cst_arena_new(0);
+    cst_own_file(a, "toggle", (const uint8_t *)src, total);
+    cst_node_open(a, CST_TranslationUnit);
+    CstLocal cond = cst_node_open(a, CST_PPConditional);
+    cst_leaf(a, 1, o0, l0, NULL, 0);                        /* #ifdef line   */
+    CstLocal ab = cst_leaf(a, 1, o1, l1, NULL, 0);          /* #if branch    */
+    cst_mark_branch(a, ab, 0);
+    cst_leaf(a, 1, o2, l2, NULL, 0);                        /* #else line    */
+    CstLocal bb = cst_leaf(a, 1, o3, l3, NULL, 0);          /* #else branch  */
+    cst_mark_branch(a, bb, 1);
+    cst_leaf(a, 1, o4, l4, NULL, 0);                        /* #endif line   */
+    cst_node_close(a, cond);
+    cst_node_close(a, cst_root(a));
+    cst_rehash_all(a);
+    if (cond_out)
+        *cond_out = cond;
+    return a;
+}
+
+static size_t render_to(const CstStore *s, const CstBinding *b, char *out,
+                        size_t cap) {
+    size_t n = cst_render(s, b, (uint8_t *)out, cap);
+    if (n < cap)
+        out[n] = '\0';
+    return n;
+}
+
+static void suite_template(void) {
+    CstStore *store = cst_store_new();
+
+    /* file.h — the header both driver sites include. */
+    CstLocal cond;
+    CstArena *f1 = build_toggle("#ifdef FEATURE_FLAG_TOGGLE\n", "  int chosen = 1;\n",
+                                "#else\n", "  int chosen = 0;\n", "#endif\n", &cond);
+    /* A second, independent capture of the *same bytes* (a second #include). */
+    CstLocal cond2;
+    CstArena *f2 = build_toggle("#ifdef FEATURE_FLAG_TOGGLE\n", "  int chosen = 1;\n",
+                                "#else\n", "  int chosen = 0;\n", "#endif\n", &cond2);
+
+    /* Assertion 2 (part): both branches are concrete and *hashed* in the
+     * template, including the branch that a given instance will not render. */
+    CstLocal ifb = cst_first_child(f1, cond);
+    ifb = cst_next_sib(f1, ifb);            /* #if branch leaf  */
+    CstLocal elb = cst_next_sib(f1, cst_next_sib(f1, ifb)); /* #else branch leaf */
+    CstHash zero = {0, 0};
+    CHECK(!cst_hash_eq(cst_struct_hash(f1, ifb), zero), "#if branch is hashed");
+    CHECK(!cst_hash_eq(cst_struct_hash(f1, elb), zero), "#else branch is hashed");
+
+    uint32_t t1 = cst_store_intern(store, f1);
+    uint32_t t2 = cst_store_intern(store, f2); /* same H_s → dedup, frees f2 */
+
+    /* Assertion 1: one template, deduped — both includes reference one id. */
+    CHECK(t1 == t2, "both includes reference the same SourceFile template id");
+    CHECK(cst_store_count(store) == 1, "the header is stored exactly once");
+
+    /* Assertions 3 & 4: each instance's binding selects the live branch, and
+     * the render is byte-identical to that branch's written text (the oracle). */
+    CstArena *tmpl = cst_store_get(store, t1);
+    CstLocal tcond = cst_first_child(tmpl, cst_root(tmpl)); /* the PPConditional */
+
+    CstBinding *inst1 = cst_binding_new(t1); /* FEATURE undefined → #else (1) */
+    cst_binding_select(inst1, tcond, 1);
+    CstBinding *inst2 = cst_binding_new(t1); /* FEATURE defined   → #if   (0) */
+    cst_binding_select(inst2, tcond, 0);
+
+    char buf[256];
+    render_to(store, inst1, buf, sizeof buf);
+    CHECK(strcmp(buf, "  int chosen = 0;\n") == 0,
+          "instance 1 (undefined) renders the #else branch");
+    render_to(store, inst2, buf, sizeof buf);
+    CHECK(strcmp(buf, "  int chosen = 1;\n") == 0,
+          "instance 2 (defined) renders the #if branch");
+
+    /* Round-trip: identity render == the written source (all branches). */
+    char rt[256];
+    size_t rn = cst_render_identity(tmpl, (uint8_t *)rt, sizeof rt);
+    rt[rn] = '\0';
+    CHECK(strcmp(rt, "#ifdef FEATURE_FLAG_TOGGLE\n  int chosen = 1;\n#else\n"
+                     "  int chosen = 0;\n#endif\n") == 0,
+          "identity render reproduces the written source");
+
+    /* Assertion 5: recursive. outer.h #includes inner.h; each has its own
+     * toggle. The fold threads the environment so each level renders its own
+     * live branch, and the shared inner template is deduped. */
+    CstArena *inner = build_toggle("#ifdef T\n", "IA\n", "#else\n", "IB\n",
+                                   "#endif\n", NULL);
+    uint32_t tin = cst_store_intern(store, inner);
+
+    /* outer.h: an IncludeDirective (→ inner) followed by its own toggle. */
+    const char *osrc = "#include \"inner.h\"\n#ifdef U\nOA\n#else\nOB\n#endif\n";
+    CstArena *outer = cst_arena_new(0);
+    cst_own_file(outer, "outer", (const uint8_t *)osrc, strlen(osrc));
+    cst_node_open(outer, CST_TranslationUnit);
+    CstLocal inc = cst_node_open(outer, CST_IncludeDirective);
+    cst_leaf(outer, 1, 0, 19, NULL, 0); /* #include "inner.h"\n */
+    cst_node_close(outer, inc);
+    cst_set_include_target(outer, inc, tin);
+    CstLocal ocond = cst_node_open(outer, CST_PPConditional);
+    cst_leaf(outer, 1, 19, 9, NULL, 0);              /* #ifdef U\n */
+    CstLocal oa = cst_leaf(outer, 1, 28, 3, NULL, 0);/* OA\n       */
+    cst_mark_branch(outer, oa, 0);
+    cst_leaf(outer, 1, 31, 6, NULL, 0);              /* #else\n    */
+    CstLocal ob = cst_leaf(outer, 1, 37, 3, NULL, 0);/* OB\n       */
+    cst_mark_branch(outer, ob, 1);
+    cst_leaf(outer, 1, 40, 7, NULL, 0);              /* #endif\n   */
+    cst_node_close(outer, ocond);
+    cst_node_close(outer, cst_root(outer));
+    cst_rehash_all(outer);
+    uint32_t tout = cst_store_intern(store, outer);
+
+    CHECK(cst_include_target(cst_store_get(store, tout),
+                             cst_first_child(cst_store_get(store, tout),
+                                             cst_root(cst_store_get(store, tout)))) == tin,
+          "the IncludeDirective targets the inner template id");
+
+    /* Build the instance tree: outer binding with a nested inner binding. */
+    CstArena *ot = cst_store_get(store, tout);
+    CstLocal otcond = cst_next_sib(ot, cst_first_child(ot, cst_root(ot))); /* PPCond */
+
+    /* Case A: inner=IA (0), outer=OA (0) → "IA\nOA\n". */
+    CstBinding *ob_a = cst_binding_new(tout);
+    cst_binding_select(ob_a, otcond, 0);
+    CstBinding *ib_a = cst_binding_new(tin);
+    cst_binding_select(ib_a, cst_first_child(cst_store_get(store, tin),
+                                             cst_root(cst_store_get(store, tin))), 0);
+    cst_binding_add_include(ob_a, ib_a);
+    render_to(store, ob_a, buf, sizeof buf);
+    CHECK(strcmp(buf, "IA\nOA\n") == 0, "recursive: inner #if + outer #if");
+
+    /* Case B: toggle the *inner* branch only → "IB\nOA\n". */
+    CstBinding *ob_b = cst_binding_new(tout);
+    cst_binding_select(ob_b, otcond, 0);
+    CstBinding *ib_b = cst_binding_new(tin);
+    cst_binding_select(ib_b, cst_first_child(cst_store_get(store, tin),
+                                             cst_root(cst_store_get(store, tin))), 1);
+    cst_binding_add_include(ob_b, ib_b);
+    render_to(store, ob_b, buf, sizeof buf);
+    CHECK(strcmp(buf, "IB\nOA\n") == 0,
+          "recursive: toggling the nested header flips only its branch");
+
+    /* Case C: toggle the *outer* branch only → "IA\nOB\n". */
+    CstBinding *ob_c = cst_binding_new(tout);
+    cst_binding_select(ob_c, otcond, 1);
+    CstBinding *ib_c = cst_binding_new(tin);
+    cst_binding_select(ib_c, cst_first_child(cst_store_get(store, tin),
+                                             cst_root(cst_store_get(store, tin))), 0);
+    cst_binding_add_include(ob_c, ib_c);
+    render_to(store, ob_c, buf, sizeof buf);
+    CHECK(strcmp(buf, "IA\nOB\n") == 0,
+          "recursive: toggling the outer header flips only its branch");
+
+    cst_binding_free(inst1);
+    cst_binding_free(inst2);
+    cst_binding_free(ob_a);
+    cst_binding_free(ob_b);
+    cst_binding_free(ob_c);
+    cst_store_free(store);
+}
+
 int main(int argc, char **argv) {
     const char *only = argc > 1 ? argv[1] : NULL;
     if (!only || !strcmp(only, "store"))
@@ -371,6 +558,8 @@ int main(int argc, char **argv) {
         suite_sym();
     if (!only || !strcmp(only, "comment"))
         suite_comment();
+    if (!only || !strcmp(only, "template"))
+        suite_template();
 
     fprintf(stderr, "csttool: %d checks, %d failures\n", g_checks, g_failures);
     return g_failures ? 1 : 0;

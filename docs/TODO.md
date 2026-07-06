@@ -25,15 +25,25 @@ by the `cst/*` ctest suite. Driving the [docs/CST.md](CST.md) decision plan:
 - [x] **D1c — PP-concrete** (`IncludeDirective`, `PPDirective`, `PPConditional`),
   full-concrete: capture *all* `#if`/`#else` branches as concrete nodes. Prereq
   for D3.
-- [ ] **D3+D5 — `SourceFile` template + renderer.** Content-addressed pure-`H_s`
-  hash-consing, per-instance binding, `render(template, binding)` fold with
-  threaded PP environment. Headline gate: recursive re-include branch selection.
-  - [ ] **DEBUG-build hash-collision tripwire.** In a debug build, after hashing
-    a string (leaf/subtree) and using that hash as a content-addressed key,
-    sanity-check that the bytes behind an *existing* entry with the same hash are
-    byte-identical to the string just hashed. On mismatch, `abort()` with a fatal
-    error stating the hash algorithm has produced a collision and the formula
-    (`cst_hash_*`) must be fixed — never silently dedup two different strings.
+- [~] **D3+D5 — `SourceFile` template + renderer.** The full template/binding/
+  render **model is implemented and gated** (mcccst.{c,h}, `cst/template`):
+  full-concrete branch tagging (`cst_mark_branch`/`slot_key`), a content-
+  addressed store with pure-`H_s(body)` hash-consing + dedup (`cst_store_*`),
+  per-instance recursive bindings (`cst_binding_*`), and the
+  `render(template, binding)` fold with a threaded PP environment
+  (`cst_render`) — plus `cst_render_identity` as the round-trip oracle sharing
+  the leaf path. The **headline recursive re-include branch-selection gate**
+  passes all five assertions (one deduped template, both branches hashed,
+  binding selects the live branch, render == branch oracle, nested-include
+  environment threading). **Remaining (live integration):** capture *real*
+  included files as `SourceFile` templates during a compile — the hard part is
+  recording the inactive `#if` branch bytes that `preprocess_skip` currently
+  discards (dead-branch full-concrete capture) and threading the store through
+  mcc's single-pass preprocessor. Scoped separately from the proven model.
+  - [x] **DEBUG-build hash-collision tripwire.** `cst_store_intern` verifies, in
+    a debug build, that an existing same-`H_s` entry reflects byte-identically
+    to the interned body; on mismatch it `abort()`s with a fatal "hash collision
+    … cst_hash_* must be fixed" — never silently deduping two different bodies.
 - [x] **D1d — `Comment` promotion** (line/inline/block), `H_t`-only so §8.4 holds.
 - [ ] **FINAL** — re-run every gate over the corpus; re-confirm §0.1/§0.2.
 
