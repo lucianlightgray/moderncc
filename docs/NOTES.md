@@ -86,6 +86,13 @@ functions link against the host `libm` (glibc/musl `-lm`, Apple libSystem, or
 msvcrt). A non-glibc *freestanding* host with no `<math.h>` must supply one;
 mcc does not synthesize the header or the transcendental functions.
 
+**Mach-O thread-local storage.** A `__thread` variable *defined* in the module
+compiles to a proper TLV descriptor (`__tlv_bootstrap`) and works. Referencing an
+`extern __thread` variable *defined in another module/dylib* is an intentional
+limitation — mcc errors "Mach-O: external thread-local '<x>' is unsupported"
+rather than emitting a TLV import descriptor. Keep cross-module thread-locals
+inside one TU on Darwin, or expose them through an accessor function.
+
 **win32 runtime shims are intentional subsets** (`runtime/win32/include`):
 `<pthread.h>` mutexes are non-recursive (`PTHREAD_MUTEX_RECURSIVE` is accepted
 but behaves as a plain `SRWLOCK`), thread-key destructors are not run at thread

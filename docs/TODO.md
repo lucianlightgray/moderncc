@@ -90,9 +90,13 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
   per layer; add a `static/*` ctest gate for the new IFUNC-iplt + GOTTPOFF-relax
   paths (currently exercised only ad hoc). Decide whether full glibc-static is
   worth pursuing vs steering users to musl-static / gcc-driven static.
-- [ ] **External (SHN_UNDEF) thread-local symbols hard-error on Mach-O (impl).**
-  `src/objfmt/mccmacho.c:2085` "unsupported". → Implement TLV import descriptors, or
-  document as an intentional limitation.
+- [ ] **External (SHN_UNDEF) thread-local symbols hard-error on Mach-O — TLV
+  imports unimplemented (impl).** `src/objfmt/mccmacho.c:2099`. Locally-defined
+  `__thread` works (TLV descriptors via `__tlv_bootstrap`); cross-module
+  `extern __thread` errors. Documented as an intentional limitation in
+  `docs/NOTES.md` (Platform ABI & runtime notes) — revisit only if a real
+  cross-module-TLS-on-Darwin need appears; the fix is emitting TLV *import*
+  descriptors.
 - [ ] **ARM far-branch has no veneer — errors past ±32 MB (fix).**
   `src/arch/arm/arm-gen.c:326` `"FIXME: function bigger than 32MB"`. → Emit a
   long-branch trampoline/island, or downgrade to a documented diagnostic (not FIXME).
