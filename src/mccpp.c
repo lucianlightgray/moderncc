@@ -775,6 +775,12 @@ static int handle_eob(void) {
 			len = 0;
 		}
 		total_bytes += len;
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+		/* Advance the byte cursor by the window being discarded (fully
+		 * consumed), so cst_base stays the absolute offset of buffer[0]. */
+		if (bf->fd >= 0)
+			bf->cst_base += (unsigned long)(bf->buf_end - bf->buffer);
+#endif
 		bf->buf_ptr = bf->buffer;
 		bf->buf_end = bf->buffer + len;
 		*bf->buf_end = CH_EOB;
@@ -2819,6 +2825,50 @@ static void parse_number(const char *p) {
 		}                          \
 		break;
 
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+/* CST leaf capture (slice F/G/H, Weave 1). The top-level source file is mirrored
+ * into the CST as leaves whose spans [prev_end, buf_ptr) tile every byte, so the
+ * tree round-trips to byte-identical source (PLAN §8.1). Included files and
+ * macro-injected tokens carry no written bytes here and are handled later. */
+static BufferedFile *cst_main_bf;
+static unsigned long cst_prev_end;
+
+ST_FUNC void cst_capture_begin(const char *filename) {
+	cst_hook_begin(filename);
+	cst_main_bf = file;
+	cst_prev_end = 0;
+}
+
+ST_FUNC CstArena *cst_capture_end(void) {
+	cst_main_bf = NULL;
+	CstArena *a = cst_hook_end();
+	if (a && getenv("MCC_CST_SELFCHECK")) {
+		uint32_t slen;
+		const uint8_t *src = cst_source(a, &slen);
+		uint8_t *buf = mcc_malloc(slen ? slen : 1);
+		size_t w = cst_reflect(a, cst_root(a), buf, slen);
+		int ok = (w == slen && (slen == 0 || memcmp(buf, src, slen) == 0));
+		fprintf(stderr, "CST selfcheck: %s (%u bytes, %u nodes)\n",
+			ok ? "round-trip OK" : "MISMATCH", slen, cst_node_count(a));
+		mcc_free(buf);
+	}
+	if (a)
+		cst_arena_free(a);
+	return NULL;
+}
+
+static void cst_capture_tok(void) {
+	if (file != cst_main_bf)
+		return;
+	unsigned long end =
+		file->cst_base + (unsigned long)(file->buf_ptr - file->buffer);
+	if (end > cst_prev_end) {
+		cst_hook_token((uint32_t)cst_prev_end, (uint32_t)end);
+		cst_prev_end = end;
+	}
+}
+#endif
+
 static void next_nomacro(void) {
 	int t, c, str_prefix, len, uc;
 	TokenSym *ts;
@@ -3332,6 +3382,9 @@ redo_no_start:
 	tok_flags = 0;
 keep_tok_flags:
 	file->buf_ptr = p;
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+	cst_capture_tok();
+#endif
 #if defined(PARSE_DEBUG)
 	printf("token = %d %s\n", tok, get_tok_str(tok, &tokc));
 #endif

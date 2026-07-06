@@ -460,6 +460,11 @@ typedef struct BufferedFile {
 	struct BufferedFile *prev;
 	int line_num;
 	int line_ref;
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+	/* CST byte cursor (PLAN §5): absolute file offset of buffer[0], maintained
+	 * across refills so abs_off(p) == cst_base + (p - buffer). */
+	unsigned long cst_base;
+#endif
 	int ifndef_macro;
 	int ifndef_macro_saved;
 	int *ifdef_stack_ptr;
@@ -1476,6 +1481,10 @@ ST_FUNC void indir(void);
 ST_FUNC void unary(void);
 ST_FUNC void gexpr(void);
 ST_FUNC int expr_const(void);
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+ST_FUNC void cst_capture_begin(const char *filename);
+ST_FUNC CstArena *cst_capture_end(void);
+#endif
 #ifdef CONFIG_MCC_BCHECK
 ST_FUNC Sym *get_sym_ref(CType *type, Section *sec, unsigned long offset, unsigned long size);
 #endif

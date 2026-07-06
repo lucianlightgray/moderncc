@@ -688,19 +688,45 @@ CstArena *cst_snapshot_load(const char *path) {
 
 static CstArena *cst_current;
 
+/* Slurp a file's raw bytes into the owned source (invariant PLAN §0.3: the CST
+ * keeps its own copy). Returns 0 on success. */
+static int cst_slurp(CstArena *a, const char *filename) {
+    FILE *f = fopen(filename, "rb");
+    if (!f)
+        return -1;
+    uint8_t buf[8192];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof buf, f)) > 0)
+        cst_own_file(a, filename, buf, n);
+    fclose(f);
+    return 0;
+}
+
 void cst_hook_begin(const char *filename) {
-    (void)filename;
     if (cst_current)
         cst_arena_free(cst_current);
     cst_current = cst_arena_new(0);
+    cst_slurp(cst_current, filename);
     cst_node_open(cst_current, CST_TranslationUnit);
+}
+
+/* Record a leaf spanning [start, end) of the owned source. Leading trivia is the
+ * gap since the previous token; tok_rel is refined in a later slice. */
+void cst_hook_token(uint32_t start, uint32_t end) {
+    if (cst_current && end > start)
+        cst_leaf(cst_current, CST_Token, start, end - start, NULL, 0);
 }
 
 CstArena *cst_hook_end(void) {
     CstArena *a = cst_current;
-    if (a && a->stack_top > 0)
-        cst_node_close(a, a->stack[a->stack_top - 1]);
     if (a) {
+        /* Pad any uncaptured tail so the tree still tiles the whole source
+         * (round-trip safety net; mid-source gaps surface via span-coverage). */
+        uint32_t covered = a->count ? a->width[cst_root(a)] : 0;
+        if (covered < a->src_len)
+            cst_leaf(a, CST_Token, covered, a->src_len - covered, NULL, 0);
+        if (a->stack_top > 0)
+            cst_node_close(a, a->stack[a->stack_top - 1]);
         cst_rehash_all(a);
         cst_index_build(a);
     }

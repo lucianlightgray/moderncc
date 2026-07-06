@@ -2877,6 +2877,21 @@ if(MCC_BUILD_TESTS)
             add_test(NAME "cst/${_cn}" COMMAND csttool "${_cn}")
             set_tests_properties("cst/${_cn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endforeach()
+
+        # Round-trip "pure reflection" gate (PLAN §8.1): compile each fixture
+        # with the CST self-check on and assert byte-identical reflection.
+        file(GLOB _cst_fx RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/fixtures"
+             "${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/fixtures/*.c")
+        foreach(_fx IN LISTS _cst_fx)
+            string(REGEX REPLACE "\\.c$" "" _fn "${_fx}")
+            add_test(NAME "cst/roundtrip-${_fn}" COMMAND "${CMAKE_COMMAND}"
+                "-DMCC=${_mcc_exe}"
+                "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/fixtures/${_fx}"
+                "-DOUT=${CMAKE_BINARY_DIR}/cst-rt-${_fn}.o"
+                "-DIDIR=${_idir}"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/roundtrip.cmake")
+            set_tests_properties("cst/roundtrip-${_fn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+        endforeach()
     endif()
 
     add_executable(exec_runner tests/exec/runner.c)

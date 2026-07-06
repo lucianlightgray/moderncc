@@ -838,6 +838,15 @@ static int mcc_compile(MCCState *s1, int filetype, const char *str, int fd) {
 			file->fd = fd;
 		}
 
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+		/* Latch the CST onto the user file BEFORE preprocess_start pushes the
+		 * <command line> predefs buffer and makes it the current file. */
+		int cst_on = (fd != -1 && s1->output_type != MCC_OUTPUT_PREPROCESS &&
+			      !(filetype & (AFF_TYPE_ASM | AFF_TYPE_ASMPP)));
+		if (cst_on)
+			cst_capture_begin(str);
+#endif
+
 		preprocess_start(s1, filetype);
 		mccgen_init(s1);
 
@@ -853,6 +862,10 @@ static int mcc_compile(MCCState *s1, int filetype, const char *str, int fd) {
 #endif
 			} else {
 				mccgen_compile(s1);
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+				if (cst_on)
+					cst_capture_end();
+#endif
 			}
 			mccelf_end_file(s1);
 		}

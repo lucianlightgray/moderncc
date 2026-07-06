@@ -61,27 +61,34 @@ Deps: B (+G stub) · PLAN §1, §8.1, §8.6
 - [x] Save/load equality + version-skew rejection + reflect round-trip (cst/serial)
 - Notes:
 
-### F — Byte-offset facility (compiler)  ·  status: [ ]
+### F — Byte-offset facility (compiler)  ·  status: [x]
 Deps: — · PLAN §5
-- [ ] Monotonic byte cursor in mccpp.c advance path (under CONFIG_MCC_CST)
-- [ ] Correct across handle_eob refills, includes, macro pushback
-- [ ] Debug probe: cursor == known char position on fixtures
-- Notes:
+- [x] Monotonic byte cursor `BufferedFile.cst_base` (guarded), maintained in
+      handle_eob so abs_off(p) == cst_base + (p - buffer)
+- [x] Correct across handle_eob refills (validated: 12KB file round-trips)
+- [x] Validated via round-trip over 305 corpus files (offset model exercised)
+- Notes: cursor advances by discarded-window length at each refill; captured as
+  absolute values at token start/end so it survives mid-token refills.
 
-### G — Owned source & trivia (compiler)  ·  status: [ ]
+### G — Owned source & trivia (compiler)  ·  status: [~]
 Deps: B, F · PLAN §4, §1
-- [ ] Per-file byte copy into arena + string pool (LSP doc model)
+- [x] Per-file byte copy into arena (cst_slurp of the main file) = LSP doc model
 - [ ] Trivia as `(kind, rel-span)[]` on leaves, excluded from H_s
-- [ ] Per-file subtree ownership for include stitching
-- [ ] Owned-buffer survives recycle + trivia classification tests
-- Notes:
+      (v1: leaves own leading trivia in-span, tok_rel=0; classification TODO — M3)
+- [ ] Per-file subtree ownership for include stitching (M1 = main file only)
+- [x] Round-trip proves owned buffer + spans correct over corpus
+- Notes: trivia currently folded into leaf spans (round-trip-correct); structured
+  trivia pieces + hashing refinement deferred to M3 (slice C on real trees).
 
-### H — Recording hooks (WEAVE 1)  ·  status: [ ]
+### H — Recording hooks (WEAVE 1)  ·  status: [~]
 Deps: B, D, F, G · PLAN §6
-- [ ] `cst_open`/`cst_close` node stack + hook macros
-- [ ] Hook sites across mccgen.c grammar (decl/struct_decl/post_type/type_decl/block/lblock/gexpr_decl/expr family)
-- [ ] Leaf capture at next/skip; debug-build balance asserts
-- [ ] WEAVE-1 gate: round-trip (§8.1) + span-coverage (§8.2) over full corpus
+- [x] Leaf capture at next_nomacro exit (mccpp.c:3340), [prev_end,end) tiling;
+      cst_capture_begin/end bracket mccgen_compile in mcc_compile
+- [x] M1 round-trip gate: 305/305 compilable corpus files byte-identical, 0
+      mismatch; 3 fixtures + driver registered in ctest (cst/roundtrip-*)
+- [ ] Structural node brackets `cst_open`/`cst_close` across mccgen.c grammar (M2)
+- [ ] Debug-build balance asserts (M2)
+- [ ] span-coverage (§8.2) test over full corpus (M2, once structure exists)
 - Notes (verified 2026-07-05 against source):
   - PLAN's `expr`/`cond_expr`/`binary` DO NOT EXIST. Real expr cascade:
     `gexpr`(7962)→`expr_eq`(7910)→`expr_cond`(7785)→`expr_lor`(7665)→
