@@ -399,7 +399,7 @@ static int cmd_cross(const char *name, const char *out) {
 	{
 		static char d[6][256];
 		int k = 0;
-		snprintf(d[k], sizeof d[0], "-DMCC_VERSION=\"1.0.0\"");
+		snprintf(d[k], sizeof d[0], "-DMCC_VERSION=20260706135200");
 		arg(&v, d[k++]);
 
 		snprintf(d[k], sizeof d[0], "-DCONFIG_MCC_PREDEFS=1");
@@ -769,7 +769,7 @@ int main(int argc, char **argv) {
 	snprintf(defs[1], sizeof defs[1], "-DCONFIG_MCC_PREDEFS=0");
 	snprintf(defs[2], sizeof defs[2], "-DCONFIG_MCC_BACKTRACE=1");
 	snprintf(defs[3], sizeof defs[3], "-DCONFIG_MCC_BCHECK=1");
-	snprintf(defs[4], sizeof defs[4], "-DMCC_VERSION=\"1.0.0\"");
+	snprintf(defs[4], sizeof defs[4], "-DMCC_VERSION=20260706135200");
 	snprintf(defs[5], sizeof defs[5], "-DCONFIG_MCCDIR=\"%s\"", OUTDIR);
 
 	snprintf(defs[6], sizeof defs[6], "-DCONFIG_MCC_LIBPATHS=\"{B}:/usr/lib64:/usr/lib:/lib\"");

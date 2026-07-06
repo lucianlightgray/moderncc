@@ -5,8 +5,13 @@
 #define _DARWIN_C_SOURCE
 
 #ifndef MCC_VERSION
-#define MCC_VERSION "1.0.0"
+#define MCC_VERSION 20260706135200
 #endif
+#define MCC_STRINGIFY_(x) #x
+#define MCC_STRINGIFY(x) MCC_STRINGIFY_(x)
+#define MCC_VERSION_STR MCC_STRINGIFY(MCC_VERSION)
+#define MCC_VERSION_MAJOR ((int)((MCC_VERSION) / 1000000))
+#define MCC_VERSION_MINOR ((int)((MCC_VERSION) % 1000000))
 
 #include <stdarg.h>
 #include <stdlib.h>

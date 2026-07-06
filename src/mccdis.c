@@ -621,7 +621,7 @@ ST_FUNC int asm_output_file(MCCState *s1, const char *filename) {
 		mcc_free(dc.labels);
 	}
 
-	fprintf(f, "\t.ident\t\"mcc " MCC_VERSION "\"\n");
+	fprintf(f, "\t.ident\t\"mcc " MCC_VERSION_STR "\"\n");
 	fprintf(f, "\t.section\t.note.GNU-stack,\"\",%sprogbits\n", TYPE_PFX);
 
 	mcc_free(ci_data.notes);

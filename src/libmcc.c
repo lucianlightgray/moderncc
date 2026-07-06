@@ -2389,7 +2389,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) {
 			printf("%s\n", dumpmachine_str);
 			exit(0);
 		case MCC_OPTION_dumpversion:
-			printf("%s\n", MCC_VERSION);
+			printf("%d.%d\n", MCC_VERSION_MAJOR, MCC_VERSION_MINOR);
 			exit(0);
 
 		case MCC_OPTION_x:
