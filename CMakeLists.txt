@@ -2918,6 +2918,21 @@ if(MCC_BUILD_TESTS)
             "-DIDIR=${_idir}"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/macro.cmake")
         set_tests_properties("cst/macro" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
+        # Node-kind coverage gates (D4, docs/CST.md): each fixture asserts a set
+        # of previously reserved-but-unproduced kinds is now emitted. Registered
+        # per slice as the kinds land (D1a expr, D1b decl, D1c pp, D1d comment).
+        function(cst_kinds_test name src kinds)
+            add_test(NAME "cst/kinds-${name}" COMMAND "${CMAKE_COMMAND}"
+                "-DMCC=${_mcc_exe}"
+                "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/kinds/${src}"
+                "-DOUT=${CMAKE_BINARY_DIR}/cst-kinds-${name}.o"
+                "-DIDIR=${_idir}"
+                "-DKINDS=${kinds}"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/kinds.cmake")
+            set_tests_properties("cst/kinds-${name}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+        endfunction()
+        cst_kinds_test(expr "expr.c" "Unary;Cast;Paren;Primary")
     endif()
 
     add_executable(exec_runner tests/exec/runner.c)

@@ -6,25 +6,30 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
 
 # Now
 
-## CST database — COMPLETE (full record folded into docs/NOTES.md)
+## CST database — next-phase gap closure (docs/CST.md D1–D5)
 
-All vertical slices (S0, B–J, WEAVE 2, FINAL) landed and are gated in CTest; the
-complete record — the two headline deliverables, per-slice detail, and notes —
-now lives in
+All original vertical slices (S0, B–J, WEAVE 2, FINAL) landed and are gated in
+CTest; the record lives in
 [docs/NOTES.md § Completed work](NOTES.md#completed-work--cst-database-all-vertical-slices-landed).
 `MCC_CST` is built **on by default** (`CMakeLists.txt:1087`); codegen is
-byte-identical CST-on vs CST-off. Residual non-blocking follow-ups:
+byte-identical CST-on vs CST-off. The CST hooks are pure side-effect recording —
+the compiler never reads the CST — so the §8.5 codegen-identity invariant holds
+for *any* hook change; the live risk is CST round-trip/tiling correctness, gated
+by the `cst/*` ctest suite. Driving the [docs/CST.md](CST.md) decision plan:
 
-- [ ] **CST slice G — per-file subtree ownership for include stitching.** Only
-  the main file is slurped/owned today; multi-file include stitching is the
-  LSP-era refinement (PLAN §1 "Includes").
-- [~] **CST slice H — top-level Declaration/FunctionDef grouping + ParamList not
-  bracketed.** `decl()`/`post_type()` have many exit/continue points, making
-  per-item retroactive wrapping awkward for marginal gain (Declarator + Compound
-  already capture the structure). ~14 reserved node kinds (Declaration,
-  FunctionDef, ParamList, Enum, TypeName, Initializer, Label, Unary, Cast, Paren,
-  Primary, IncludeDirective, PPDirective, PPConditional) are declared in the enum
-  but not yet produced (PLAN §2 "reserve now even if unused").
+- [x] **D1a — Expression fill-in (`Unary`/`Cast`/`Paren`/`Primary`).** Retroactive
+  range-wrap in `unary()` (mccgen.c): prefix-op → `Unary`, `(type)e` → `Cast`,
+  `(e)` → `Paren`, atoms → `Primary`. Gated `cst/kinds-expr`.
+- [ ] **D1b — Declaration structure via D2 range-wrap** (`Declaration`,
+  `FunctionDef`, `ParamList`, `Enum`, `TypeName`, `Initializer`, `Label`).
+- [ ] **D1c — PP-concrete** (`IncludeDirective`, `PPDirective`, `PPConditional`),
+  full-concrete: capture *all* `#if`/`#else` branches as concrete nodes. Prereq
+  for D3.
+- [ ] **D3+D5 — `SourceFile` template + renderer.** Content-addressed pure-`H_s`
+  hash-consing, per-instance binding, `render(template, binding)` fold with
+  threaded PP environment. Headline gate: recursive re-include branch selection.
+- [ ] **D1d — `Comment` promotion** (line/inline/block), `H_t`-only so §8.4 holds.
+- [ ] **FINAL** — re-run every gate over the corpus; re-confirm §0.1/§0.2.
 
 ---
 

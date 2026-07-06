@@ -6464,6 +6464,13 @@ ST_FUNC void unary(void) {
 	/* Mark the primary's start so postfix .  ->  []  () can wrap retroactively
 	 * into Member/Index/Call nodes (range-nested by cst_nest_specs). */
 	uint32_t cst_um = CST_MARK();
+	/* Kind to wrap [cst_um, end) with once the whole unary (incl. postfix) is
+	 * parsed: CST_Unary for a prefix operator, 0 for a bare primary/cast/paren
+	 * that brackets itself in-branch (D1a). */
+	uint16_t cst_nk = 0;
+#define CST_PRIMARY() do { CST_OPEN_AT(CST_Primary, cst_um); CST_CLOSE(); } while (0)
+#else
+#define CST_PRIMARY() ((void)0)
 #endif
 	Sym *s;
 	AttributeDef ad;
@@ -6473,6 +6480,23 @@ ST_FUNC void unary(void) {
 
 	type.ref = NULL;
 tok_next:
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+	/* Classify a prefix-operator unary so the whole operand is wrapped in one
+	 * CST_Unary at function exit (D1a). Type-operand sizeof/_Alignof returns
+	 * early (SOTYPE) and casts/parens bracket themselves, so this only tags the
+	 * genuine prefix-operator forms. */
+	switch (tok) {
+	case '*': case '&': case '!': case '~': case '+': case '-':
+	case TOK_INC: case TOK_DEC:
+	case TOK_REALPART1: case TOK_REALPART2:
+	case TOK_IMAGPART1: case TOK_IMAGPART2:
+	case TOK_SIZEOF: case TOK_ALIGNOF1: case TOK_ALIGNOF2: case TOK_ALIGNOF3:
+		cst_nk = CST_Unary;
+		break;
+	default:
+		break;
+	}
+#endif
 	switch (tok) {
 	case TOK_EXTENSION:
 		next();
@@ -6508,6 +6532,7 @@ tok_next:
 			vpushv(&r);
 		}
 		next();
+		CST_PRIMARY();
 		break;
 	case TOK_CUINT:
 		t = VT_INT | VT_UNSIGNED;
@@ -6579,6 +6604,7 @@ tok_next:
 		memset(&ad, 0, sizeof(AttributeDef));
 		ad.section = rodata_section;
 		decl_initializer_alloc(&type, &ad, VT_CONST, 2, 0, 0);
+		CST_PRIMARY();
 		break;
 	case TOK_SOTYPE:
 	case '(':
@@ -6616,6 +6642,9 @@ tok_next:
 					if (bt != VT_STRUCT && bt != VT_VOID && !is_complex_type(&vtop->type))
 						gv(RC_TYPE(vtop->type.t));
 				}
+				/* (type)operand — a cast expression (D1a). */
+				CST_OPEN_AT(CST_Cast, cst_um);
+				CST_CLOSE();
 			}
 		} else if (tok == '{') {
 			int saved_nocode_wanted = nocode_wanted;
@@ -6632,6 +6661,10 @@ tok_next:
 		} else {
 			gexpr();
 			skip(')');
+			/* ( expr ) — a parenthesized primary (D1a). Wrap just the
+			 * paren group; trailing postfix nests outside via cst_um. */
+			CST_OPEN_AT(CST_Paren, cst_um);
+			CST_CLOSE();
 		}
 		break;
 	case '*':
@@ -7314,6 +7347,7 @@ tok_next:
 		vpushi(n);
 		vtop->type.t = VT_FLOAT;
 		next();
+		CST_PRIMARY();
 		break;
 	case TOK___SNAN__:
 		n = 0x7f800001;
@@ -7362,6 +7396,7 @@ tok_next:
 		} else if (r == VT_CONST && IS_ENUM_VAL(s->type.t)) {
 			vtop->c.i = s->enum_val;
 		}
+		CST_PRIMARY();
 		break;
 	}
 
@@ -7594,7 +7629,16 @@ tok_next:
 			break;
 		}
 	}
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+	/* A prefix operator wraps its whole operand (incl. any postfix the operand
+	 * absorbed via recursion) in one Unary node (D1a). */
+	if (cst_nk) {
+		CST_OPEN_AT(cst_nk, cst_um);
+		CST_CLOSE();
+	}
+#endif
 }
+#undef CST_PRIMARY
 
 #ifndef precedence_parser
 
