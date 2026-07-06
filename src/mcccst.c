@@ -686,10 +686,102 @@ CstArena *cst_snapshot_load(const char *path) {
  * Fleshed out during Weave 1. Provided here so mccgen.c/mccpp.c can link.
  * ================================================================== */
 
+/* ================================================================== *
+ * Whole-tree validation (PLAN §8.1/§8.2/§8.3) — used by the corpus gate.
+ * Checks round-trip reflection, width tiling, and offset->node lookup.
+ * Returns 0 on success; else writes a short reason into msg.
+ * ================================================================== */
+static int cst_check_tiling(const CstArena *a, CstLocal n) {
+    if (a->kind[n] == CST_Token)
+        return a->width[n] == a->leaf_len[n];
+    uint32_t sum = 0;
+    CstLocal c;
+    for (c = a->first_child[n]; c != CST_NONE; c = a->next_sib[c]) {
+        if (!cst_check_tiling(a, c))
+            return 0;
+        sum += a->width[c];
+    }
+    return sum == a->width[n];
+}
+
+int cst_validate(const CstArena *a, char *msg, size_t msgcap) {
+    if (!a || a->count == 0) {
+        snprintf(msg, msgcap, "empty tree");
+        return 1;
+    }
+    CstLocal root = cst_root(a);
+    /* 1. Round-trip (§8.1). */
+    size_t need = cst_reflect(a, root, NULL, 0);
+    if (need != a->src_len) {
+        snprintf(msg, msgcap, "reflect size %zu != src %u", need, a->src_len);
+        return 1;
+    }
+    uint8_t *buf = cst_xrealloc(NULL, need ? need : 1);
+    cst_reflect(a, root, buf, need);
+    int bad = (need && memcmp(buf, a->src, need) != 0);
+    free(buf);
+    if (bad) {
+        snprintf(msg, msgcap, "reflect bytes differ");
+        return 1;
+    }
+    /* 2. Tiling / span coverage (§8.2). */
+    if (a->width[root] != a->src_len) {
+        snprintf(msg, msgcap, "root width %u != src %u", a->width[root],
+                 a->src_len);
+        return 1;
+    }
+    if (!cst_check_tiling(a, root)) {
+        snprintf(msg, msgcap, "width tiling violated");
+        return 1;
+    }
+    /* 3. Bidirectional offset->node lookup (§8.3), sampled. */
+    uint32_t step = a->src_len / 256 + 1, off;
+    for (off = 0; off < a->src_len; off += step) {
+        CstLocal n = cst_node_at(a, off);
+        if (n == CST_NONE) {
+            snprintf(msg, msgcap, "offset %u -> no node", off);
+            return 1;
+        }
+        uint32_t start = cst_abs_offset(a, n);
+        if (off < start || off >= start + a->width[n]) {
+            snprintf(msg, msgcap, "offset %u outside its node span", off);
+            return 1;
+        }
+    }
+    snprintf(msg, msgcap, "ok");
+    return 0;
+}
+
+/* --- deferred capture state (slice H) -----------------------------------
+ * mcc is a single-pass parser with one token of lookahead, so when a grammar
+ * function brackets a construct with cst_hook_open/close its first token has
+ * ALREADY been lexed and captured. We therefore DON'T build the tree live.
+ * Instead we record a flat, source-ordered leaf list (which alone gives the
+ * round-trip, PLAN §8.1) plus structural specs as leaf-index ranges, and
+ * materialize the nested tree in cst_hook_end — resolving the lookahead by the
+ * rule: a node opened while `tok` is its first token spans leaves
+ * [open_leaf_count - 1, close_leaf_count - 1). */
 static CstArena *cst_current;
 
-/* Slurp a file's raw bytes into the owned source (invariant PLAN §0.3: the CST
- * keeps its own copy). Returns 0 on success. */
+typedef struct CstLeafSpec {
+    uint16_t kind;
+    uint32_t off, len;
+} CstLeafSpec;
+
+typedef struct CstNodeSpec {
+    uint16_t kind;
+    uint32_t first_leaf, last_leaf;
+    int32_t parent;
+    int32_t child_head, child_tail, sib; /* materialization links */
+} CstNodeSpec;
+
+static CstLeafSpec *cst_lbuf;
+static uint32_t cst_lcount, cst_lcap;
+static CstNodeSpec *cst_sbuf;
+static uint32_t cst_scount, cst_scap;
+static int32_t *cst_sstack;
+static uint32_t cst_sstop, cst_sscap;
+
 static int cst_slurp(CstArena *a, const char *filename) {
     FILE *f = fopen(filename, "rb");
     if (!f)
@@ -702,31 +794,116 @@ static int cst_slurp(CstArena *a, const char *filename) {
     return 0;
 }
 
+static int32_t cst_spec_push(uint16_t kind, uint32_t first_leaf) {
+    if (cst_scount >= cst_scap) {
+        cst_scap = cst_scap ? cst_scap * 2 : 256;
+        cst_sbuf = cst_xrealloc(cst_sbuf, cst_scap * sizeof *cst_sbuf);
+    }
+    int32_t si = (int32_t)cst_scount++;
+    CstNodeSpec *s = &cst_sbuf[si];
+    s->kind = kind;
+    s->first_leaf = first_leaf;
+    s->last_leaf = first_leaf;
+    s->parent = cst_sstop ? cst_sstack[cst_sstop - 1] : -1;
+    s->child_head = s->child_tail = s->sib = -1;
+    if (cst_sstop >= cst_sscap) {
+        cst_sscap = cst_sscap ? cst_sscap * 2 : 256;
+        cst_sstack = cst_xrealloc(cst_sstack, cst_sscap * sizeof *cst_sstack);
+    }
+    cst_sstack[cst_sstop++] = si;
+    return si;
+}
+
 void cst_hook_begin(const char *filename) {
     if (cst_current)
         cst_arena_free(cst_current);
     cst_current = cst_arena_new(0);
     cst_slurp(cst_current, filename);
-    cst_node_open(cst_current, CST_TranslationUnit);
+    cst_lcount = cst_scount = cst_sstop = 0;
+    cst_spec_push(CST_TranslationUnit, 0); /* root */
 }
 
-/* Record a leaf spanning [start, end) of the owned source. Leading trivia is the
- * gap since the previous token; tok_rel is refined in a later slice. */
 void cst_hook_token(uint32_t start, uint32_t end) {
-    if (cst_current && end > start)
-        cst_leaf(cst_current, CST_Token, start, end - start, NULL, 0);
+    if (!cst_current || end <= start)
+        return;
+    if (cst_lcount >= cst_lcap) {
+        cst_lcap = cst_lcap ? cst_lcap * 2 : 1024;
+        cst_lbuf = cst_xrealloc(cst_lbuf, cst_lcap * sizeof *cst_lbuf);
+    }
+    cst_lbuf[cst_lcount].kind = CST_Token;
+    cst_lbuf[cst_lcount].off = start;
+    cst_lbuf[cst_lcount].len = end - start;
+    cst_lcount++;
+}
+
+void cst_hook_open(uint16_t kind) {
+    if (!cst_current)
+        return;
+    /* The current lookahead token is this construct's first token. */
+    uint32_t first = cst_lcount ? cst_lcount - 1 : 0;
+    cst_spec_push(kind, first);
+}
+
+void cst_hook_close(void) {
+    if (!cst_current || cst_sstop <= 1) /* never pop the TU root here */
+        return;
+    int32_t si = cst_sstack[--cst_sstop];
+    /* Exclude the lookahead token belonging to the next construct. */
+    cst_sbuf[si].last_leaf = cst_lcount ? cst_lcount - 1 : 0;
+}
+
+/* Materialize spec `si` into the live SoA arena, interleaving its own leaves
+ * with descendant specs in source order. Returns the created node id. */
+static CstLocal cst_materialize(int32_t si) {
+    CstNodeSpec *s = &cst_sbuf[si];
+    CstLocal node = cst_node_open(cst_current, s->kind);
+    uint32_t i = s->first_leaf;
+    int32_t cj = s->child_head;
+    while (cj >= 0) {
+        uint32_t cfirst = cst_sbuf[cj].first_leaf;
+        for (; i < cfirst && i < s->last_leaf; i++)
+            cst_leaf(cst_current, cst_lbuf[i].kind, cst_lbuf[i].off,
+                     cst_lbuf[i].len, NULL, 0);
+        cst_materialize(cj);
+        if (cst_sbuf[cj].last_leaf > i)
+            i = cst_sbuf[cj].last_leaf;
+        cj = cst_sbuf[cj].sib;
+    }
+    for (; i < s->last_leaf; i++)
+        cst_leaf(cst_current, cst_lbuf[i].kind, cst_lbuf[i].off,
+                 cst_lbuf[i].len, NULL, 0);
+    cst_node_close(cst_current, node);
+    return node;
 }
 
 CstArena *cst_hook_end(void) {
     CstArena *a = cst_current;
     if (a) {
-        /* Pad any uncaptured tail so the tree still tiles the whole source
-         * (round-trip safety net; mid-source gaps surface via span-coverage). */
-        uint32_t covered = a->count ? a->width[cst_root(a)] : 0;
-        if (covered < a->src_len)
-            cst_leaf(a, CST_Token, covered, a->src_len - covered, NULL, 0);
-        if (a->stack_top > 0)
-            cst_node_close(a, a->stack[a->stack_top - 1]);
+        /* Close any specs left open (defensive), then the TU root spans all. */
+        while (cst_sstop > 1)
+            cst_hook_close();
+        cst_sbuf[0].last_leaf = cst_lcount;
+        /* Pad an uncaptured tail leaf so the tree tiles the whole source. */
+        uint32_t tail = cst_lcount ? cst_lbuf[cst_lcount - 1].off +
+                                         cst_lbuf[cst_lcount - 1].len
+                                   : 0;
+        if (tail < a->src_len) {
+            cst_hook_token(tail, a->src_len);
+            cst_sbuf[0].last_leaf = cst_lcount;
+        }
+        /* Link specs into child lists (preorder = source order). */
+        uint32_t k;
+        for (k = 1; k < cst_scount; k++) {
+            int32_t p = cst_sbuf[k].parent;
+            if (p < 0)
+                continue;
+            if (cst_sbuf[p].child_head < 0)
+                cst_sbuf[p].child_head = (int32_t)k;
+            else
+                cst_sbuf[cst_sbuf[p].child_tail].sib = (int32_t)k;
+            cst_sbuf[p].child_tail = (int32_t)k;
+        }
+        cst_materialize(0);
         cst_rehash_all(a);
         cst_index_build(a);
     }
@@ -734,19 +911,9 @@ CstArena *cst_hook_end(void) {
     return a;
 }
 
-void cst_hook_open(uint16_t kind) {
-    if (cst_current)
-        cst_node_open(cst_current, kind);
-}
-
-void cst_hook_close(void) {
-    if (cst_current && cst_current->stack_top > 0)
-        cst_node_close(cst_current, cst_current->stack[cst_current->stack_top - 1]);
-}
-
 void cst_hook_leaf(uint16_t tok_kind, uint32_t byte_off, uint32_t len) {
-    if (cst_current)
-        cst_leaf(cst_current, tok_kind, byte_off, len, NULL, 0);
+    (void)tok_kind;
+    cst_hook_token(byte_off, byte_off + len);
 }
 
 #pragma pop_macro("free")

@@ -2843,14 +2843,30 @@ ST_FUNC CstArena *cst_capture_end(void) {
 	cst_main_bf = NULL;
 	CstArena *a = cst_hook_end();
 	if (a && getenv("MCC_CST_SELFCHECK")) {
+		char msg[128];
+		int rc = cst_validate(a, msg, sizeof msg);
 		uint32_t slen;
-		const uint8_t *src = cst_source(a, &slen);
-		uint8_t *buf = mcc_malloc(slen ? slen : 1);
-		size_t w = cst_reflect(a, cst_root(a), buf, slen);
-		int ok = (w == slen && (slen == 0 || memcmp(buf, src, slen) == 0));
-		fprintf(stderr, "CST selfcheck: %s (%u bytes, %u nodes)\n",
-			ok ? "round-trip OK" : "MISMATCH", slen, cst_node_count(a));
-		mcc_free(buf);
+		cst_source(a, &slen);
+		fprintf(stderr, "CST selfcheck: %s (%u bytes, %u nodes)%s%s\n",
+			rc == 0 ? "round-trip OK" : "MISMATCH", slen,
+			cst_node_count(a), rc == 0 ? "" : ": ", rc == 0 ? "" : msg);
+	}
+	if (a && getenv("MCC_CST_SNAPSHOT")) {
+		/* WEAVE 2: dump a real compiled tree, reload it, and prove the reload
+		 * validates and carries the identical structural hash (PLAN §8.6). */
+		const char *path = getenv("MCC_CST_SNAPSHOT");
+		char m2[128];
+		int ok = 0;
+		if (cst_snapshot_save(a, path) == 0) {
+			CstArena *b = cst_snapshot_load(path);
+			if (b) {
+				ok = (cst_validate(b, m2, sizeof m2) == 0) &&
+				     cst_hash_eq(cst_struct_hash(a, cst_root(a)),
+						 cst_struct_hash(b, cst_root(b)));
+				cst_arena_free(b);
+			}
+		}
+		fprintf(stderr, "CST snapshot: %s\n", ok ? "reload OK" : "reload FAIL");
 	}
 	if (a)
 		cst_arena_free(a);

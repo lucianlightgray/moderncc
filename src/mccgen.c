@@ -8399,12 +8399,32 @@ static int tok_starts_declspec(void) {
 	}
 }
 
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+/* Map a statement's leading token to its CST node kind (slice H). */
+static uint16_t cst_stmt_kind(int t) {
+	switch (t) {
+	case '{': return CST_CompoundStmt;
+	case TOK_IF: return CST_If;
+	case TOK_WHILE: return CST_While;
+	case TOK_FOR: return CST_For;
+	case TOK_DO: return CST_Do;
+	case TOK_SWITCH: return CST_Switch;
+	case TOK_RETURN: return CST_Return;
+	case TOK_GOTO: return CST_Goto;
+	default: return CST_ExprStmt;
+	}
+}
+#endif
+
 static void block(int flags) {
 	int a, b, c, d, e, t;
 	struct scope o;
 	Sym *s;
 	unsigned char stdc_save_fp, stdc_save_fenv, stdc_save_cx;
 
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+	CST_OPEN(cst_stmt_kind(tok));
+#endif
 again:
 	t = tok;
 	if (TOK_HAS_VALUE(t))
@@ -8814,6 +8834,9 @@ again:
 
 	if (debug_modes)
 		mcc_tcov_check_line(mcc_state, 0), mcc_tcov_block_end(mcc_state, 0);
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+	CST_CLOSE();
+#endif
 }
 
 static void skip_or_save_block(TokenString **str) {

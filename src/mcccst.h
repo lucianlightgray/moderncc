@@ -174,6 +174,8 @@ CstArena *cst_snapshot_load(const char *path); /* NULL on version/endian skew */
 /* Emit the source this (sub)tree reflects; returns bytes written (or the
  * required size if out==NULL). The round-trip oracle (PLAN §8.1). */
 size_t    cst_reflect(const CstArena *a, CstLocal root, uint8_t *out, size_t cap);
+/* Validate round-trip + tiling + offset lookup (PLAN §8.1/§8.2/§8.3). 0 = ok. */
+int       cst_validate(const CstArena *a, char *msg, size_t msgcap);
 
 /* ==================================================================== *
  * Slice G — owned source & trivia (PLAN §4)

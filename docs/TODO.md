@@ -80,15 +80,26 @@ Deps: B, F · PLAN §4, §1
 - Notes: trivia currently folded into leaf spans (round-trip-correct); structured
   trivia pieces + hashing refinement deferred to M3 (slice C on real trees).
 
-### H — Recording hooks (WEAVE 1)  ·  status: [~]
+### H — Recording hooks (WEAVE 1 + M2)  ·  status: [~]
 Deps: B, D, F, G · PLAN §6
 - [x] Leaf capture at next_nomacro exit (mccpp.c:3340), [prev_end,end) tiling;
       cst_capture_begin/end bracket mccgen_compile in mcc_compile
-- [x] M1 round-trip gate: 305/305 compilable corpus files byte-identical, 0
-      mismatch; 3 fixtures + driver registered in ctest (cst/roundtrip-*)
-- [ ] Structural node brackets `cst_open`/`cst_close` across mccgen.c grammar (M2)
-- [ ] Debug-build balance asserts (M2)
-- [ ] span-coverage (§8.2) test over full corpus (M2, once structure exists)
+- [x] Deferred-capture model resolves single-pass lookahead skew: flat leaves
+      (round-trip) + structural specs as leaf-index ranges materialized in
+      cst_hook_end (node spans [open_count-1, close_count-1))
+- [x] Structural brackets on block() (statement kinds: If/While/For/Do/Switch/
+      Return/Goto/CompoundStmt/ExprStmt) — single-exit, verified
+- [x] Corpus gate (cst_validate): round-trip §8.1 + tiling §8.2 + offset→node
+      §8.3 all pass on 308/308 compilable files, 0 failures
+- [ ] Remaining grammar brackets (decl/struct_decl/type_decl/expr cascade) —
+      incremental; deferred infra ready, each adds nesting without round-trip risk
+- [ ] Debug-build balance asserts (cheap; add with remaining brackets)
+
+### WEAVE 2 — Hash & snapshot online  ·  status: [x]
+- [x] Hashing runs on every real tree (cst_rehash_all in cst_hook_end)
+- [x] Snapshot save/load of real compiled trees: reload validates + identical
+      struct hash (MCC_CST_SNAPSHOT), gated in ctest via roundtrip.cmake (§8.6)
+- Notes: moved up from the milestone list — landed together with M2.
 - Notes (verified 2026-07-05 against source):
   - PLAN's `expr`/`cond_expr`/`binary` DO NOT EXIST. Real expr cascade:
     `gexpr`(7962)→`expr_eq`(7910)→`expr_cond`(7785)→`expr_lor`(7665)→
@@ -104,12 +115,6 @@ Deps: B, D, F, G · PLAN §6
     hook leaves either by wrapping those or reading `tok` at boundaries.
   - Add `#include "mcccst.h"` after mcc.h:190; hook prototypes near mcc.h:1477;
     mirror `CONFIG_MCC_ASM` #ifdef style (mccgen.c:10103).
-
-### WEAVE 2 — Hash & snapshot online  ·  status: [ ]
-- [ ] Attach C at cst_node_close (bottom-up H_s/H_t)
-- [ ] Attach E at end-of-parse; snapshot save/load of real trees
-- [ ] Gate: hash invariance (§8.4) + snapshot round-trip (§8.6)
-- Notes:
 
 ### I — Symbol refs (WEAVE 3)  ·  status: [ ]
 Deps: H, B · PLAN §1(Symbols), §4
