@@ -97,17 +97,23 @@ Deps: B, D, F, G · PLAN §6
 - [x] Deferred-capture model resolves single-pass lookahead skew: flat leaves
       (round-trip) + structural specs as leaf-index ranges materialized in
       cst_hook_end (node spans [open_count-1, close_count-1))
-- [x] Structural brackets on block() (statement kinds: If/While/For/Do/Switch/
-      Return/Goto/CompoundStmt/ExprStmt) — single-exit, verified
+- [x] Structural brackets on the single-exit grammar functions: block()
+      (statement kinds If/While/For/Do/Switch/Return/Goto/CompoundStmt/ExprStmt),
+      type_decl() (Declarator), struct_decl() (StructOrUnion). basic.c: 33 flat →
+      357 nodes; round-trip stays exact.
 - [x] Corpus gate (cst_validate): round-trip §8.1 + tiling §8.2 + offset→node
-      §8.3 all pass on 309/309 compilable files, 0 failures
+      §8.3 all pass on 312/312 compilable files, 0 failures. Balance verified: 0
+      hook imbalances across the corpus (temporary instrumentation, now assert).
 - [x] Debug-build balance assert in cst_hook_end (CST_ASSERT cst_sstop==1);
-      fires in assert-enabled builds (sanitize/diagnostics). block() brackets
-      proven balanced by round-trip+tiling over the corpus.
-- [ ] Remaining grammar brackets (decl/struct_decl/type_decl/expr cascade) —
-      incremental refinement; deferred infra ready, each adds finer nesting with
-      no round-trip risk. Statement level (block) is done; adds most consumer
-      value already (statement→PC for -g, statement nodes for LSP).
+      fires in assert-enabled builds (sanitize/diagnostics).
+- [ ] Not-yet-bracketed grammar functions, each with a concrete reason:
+      · decl(), post_type() — MULTI-EXIT; need a goto-epilogue refactor so every
+        return closes its node (the success-path balance assert would catch a slip).
+      · expr cascade (gexpr..expr_prod) — blanket bracketing makes degenerate
+        single-child chains; proper Binary/Unary/Cond nodes need CONDITIONAL
+        opening (only when an operator is consumed), a left-recursion-aware design.
+      · lblock()/gexpr_decl() — thin wrappers; low structural value.
+      These are refinement, not blockers: leaves already tile and round-trip.
 
 ### WEAVE 2 — Hash & snapshot online  ·  status: [x]
 - [x] Hashing runs on every real tree (cst_rehash_all in cst_hook_end)

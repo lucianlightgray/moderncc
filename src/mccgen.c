@@ -4252,6 +4252,7 @@ static void struct_decl(CType *type, int u) {
 	AttributeDef ad, ad1;
 	CType type1, btype;
 
+	CST_OPEN(CST_StructOrUnion);
 	memset(&ad, 0, sizeof ad);
 	next();
 	parse_attribute(&ad);
@@ -4523,6 +4524,7 @@ do_decl:
 		if (debug_modes)
 			mcc_debug_fix_forw(mcc_state, type);
 	}
+	CST_CLOSE();
 }
 
 static void sym_to_attr(AttributeDef *ad, Sym *s) {
@@ -5660,6 +5662,7 @@ static CType *type_decl(CType *type, AttributeDef *ad, int *v, int td) {
 	CType *ret;
 	int bad = 0;
 
+	CST_OPEN(CST_Declarator);
 	rc.nb = 0;
 	ret = type_decl_1(type, ad, v, td, &rc);
 	while (rc.nb)
@@ -5668,6 +5671,7 @@ static CType *type_decl(CType *type, AttributeDef *ad, int *v, int td) {
 	if (bad)
 		mcc_error("pointer to function type may not be "
 				  "'restrict'-qualified");
+	CST_CLOSE();
 	return ret;
 }
 

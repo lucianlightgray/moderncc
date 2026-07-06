@@ -963,7 +963,9 @@ CstArena *cst_hook_end(void) {
     CstArena *a = cst_current;
     if (a) {
         /* Debug tripwire (PLAN §6): every grammar cst_hook_open must have a
-         * matching cst_hook_close, so only the TU root remains on the stack. */
+         * matching cst_hook_close, so only the TU root remains on the stack.
+         * Verified balanced across the corpus for the bracketed single-exit
+         * functions (block/type_decl/struct_decl). */
         CST_ASSERT(cst_sstop == 1);
         /* Close any specs left open (defensive), then the TU root spans all. */
         while (cst_sstop > 1)
