@@ -20,7 +20,7 @@ by the `cst/*` ctest suite. Driving the [docs/CST.md](CST.md) decision plan:
 - [x] **D1a — Expression fill-in (`Unary`/`Cast`/`Paren`/`Primary`).** Retroactive
   range-wrap in `unary()` (mccgen.c): prefix-op → `Unary`, `(type)e` → `Cast`,
   `(e)` → `Paren`, atoms → `Primary`. Gated `cst/kinds-expr`.
-- [ ] **D1b — Declaration structure via D2 range-wrap** (`Declaration`,
+- [x] **D1b — Declaration structure via D2 range-wrap** (`Declaration`,
   `FunctionDef`, `ParamList`, `Enum`, `TypeName`, `Initializer`, `Label`).
 - [ ] **D1c — PP-concrete** (`IncludeDirective`, `PPDirective`, `PPConditional`),
   full-concrete: capture *all* `#if`/`#else` branches as concrete nodes. Prereq

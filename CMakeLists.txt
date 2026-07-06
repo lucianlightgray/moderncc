@@ -2933,6 +2933,8 @@ if(MCC_BUILD_TESTS)
             set_tests_properties("cst/kinds-${name}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endfunction()
         cst_kinds_test(expr "expr.c" "Unary;Cast;Paren;Primary")
+        # (dump abbreviations: Declaration->Decl, FunctionDef->Func, Initializer->Init)
+        cst_kinds_test(decl "decl.c" "Decl;Func;ParamList;Enum;TypeName;Init;Label")
     endif()
 
     add_executable(exec_runner tests/exec/runner.c)

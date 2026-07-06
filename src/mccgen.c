@@ -4252,7 +4252,7 @@ static void struct_decl(CType *type, int u) {
 	AttributeDef ad, ad1;
 	CType type1, btype;
 
-	CST_OPEN(CST_StructOrUnion);
+	CST_OPEN(u == VT_ENUM ? CST_Enum : CST_StructOrUnion); /* D1b: Enum kind */
 	memset(&ad, 0, sizeof ad);
 	next();
 	parse_attribute(&ad);
@@ -5357,6 +5357,9 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td) {
 	int *vla_array_str = NULL;
 
 	if (tok == '(') {
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+		uint32_t cst_pm = CST_MARK(); /* D1b: '(' of a parameter list */
+#endif
 		next();
 		if (TYPE_DIRECT == (td & (TYPE_DIRECT | TYPE_ABSTRACT)))
 			return 0;
@@ -5435,6 +5438,10 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td) {
 			mcc_warning_c(warn_strict_prototypes)(
 				"function declaration isn't a prototype");
 		skip(')');
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+		CST_OPEN_AT(CST_ParamList, cst_pm); /* D1b: (params) group */
+		CST_CLOSE();
+#endif
 		type->t &= ~VT_CONSTANT;
 		if (tok == '[') {
 			next();
@@ -6610,8 +6617,15 @@ tok_next:
 	case '(':
 		t = tok;
 		next();
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+		uint32_t cst_tm = CST_MARK(); /* first token after '(' (D1b TypeName) */
+#endif
 		if (parse_btype(&type, &ad, 0)) {
 			type_decl(&type, &ad, &n, TYPE_ABSTRACT);
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+			CST_OPEN_AT(CST_TypeName, cst_tm); /* the (type-name) in a cast etc. */
+			CST_CLOSE();
+#endif
 			skip(')');
 			if (tok == '{') {
 				if (global_expr) {
@@ -8530,8 +8544,12 @@ static void block(int flags) {
 
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
 	CST_OPEN(cst_stmt_kind(tok));
+	uint32_t cst_lm = 0; /* mark of the current dispatch token (for D1b Label) */
 #endif
 again:
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+	cst_lm = CST_MARK();
+#endif
 	t = tok;
 	if (TOK_HAS_VALUE(t))
 		goto expr;
@@ -8873,6 +8891,10 @@ again:
 	} else {
 		if (tok == ':' && t >= TOK_UIDENT) {
 			next();
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+			CST_OPEN_AT(CST_Label, cst_lm); /* D1b: 'name :' label */
+			CST_CLOSE();
+#endif
 			s = label_find(t);
 			if (s) {
 				if (s->r == LABEL_DEFINED)
@@ -10208,6 +10230,12 @@ static int decl(int l) {
 	ElfSym *esym;
 
 	while (1) {
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+		/* D1b/D2: mark this declaration's first token; a full declarator group
+		 * or a function definition is range-wrapped retroactively at its end,
+		 * sidestepping decl()'s many exit points (docs/CST.md §D2). */
+		uint32_t cst_dm = CST_MARK();
+#endif
 
 		oldint = 0;
 		if (parse_btype(&btype, &adbase, l == VT_LOCAL)) {
@@ -10395,6 +10423,10 @@ static int decl(int l) {
 						cur_text_section->sh_flags = text_section->sh_flags;
 					gen_function(sym);
 				}
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+				CST_OPEN_AT(CST_FunctionDef, cst_dm);
+				CST_CLOSE();
+#endif
 				break;
 			} else {
 				has_init = 0;
@@ -10493,7 +10525,19 @@ static int decl(int l) {
 							}
 							type.t |= VT_EXTERN;
 						}
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+						/* D1b: wrap the written initializer (RHS of '=', incl.
+						 * brace lists). '=' already consumed above; mark its
+						 * first token so the range excludes the '='. */
+						uint32_t cst_im = has_init ? CST_MARK() : 0;
+#endif
 						decl_initializer_alloc(&type, &ad, r, has_init, v, l);
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+						if (has_init) {
+							CST_OPEN_AT(CST_Initializer, cst_im);
+							CST_CLOSE();
+						}
+#endif
 					}
 
 					if ((ad.storage_class & 2) && v) {
@@ -10514,6 +10558,10 @@ static int decl(int l) {
 					if (l == VT_JMP)
 						return has_init ? v : 1;
 					skip(';');
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+					CST_OPEN_AT(CST_Declaration, cst_dm);
+					CST_CLOSE();
+#endif
 					break;
 				}
 				next();

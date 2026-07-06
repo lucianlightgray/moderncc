@@ -963,14 +963,19 @@ static void cst_emit_leaf(uint32_t i) {
 }
 
 /* Order specs for range-based nesting: first_leaf asc, then wider range first
- * (last_leaf desc), then earlier-opened first (id asc). */
+ * (last_leaf desc), then — for exactly-coincident ranges — later-opened first
+ * (id desc). A grouping wrapper (Initializer/Declaration/…) is opened *after*
+ * the sub-expression it contains (retroactive range-wrap), so when a wrapper's
+ * span coincides byte-for-byte with its single child (e.g. `int c = (int)a;`
+ * where the Initializer equals the Cast) the higher id is the semantic parent
+ * and must sort first so the containment stack makes it the parent. */
 static int cst_spec_cmp(const void *pa, const void *pb) {
     uint32_t a = *(const uint32_t *)pa, b = *(const uint32_t *)pb;
     if (cst_sbuf[a].first_leaf != cst_sbuf[b].first_leaf)
         return cst_sbuf[a].first_leaf < cst_sbuf[b].first_leaf ? -1 : 1;
     if (cst_sbuf[a].last_leaf != cst_sbuf[b].last_leaf)
         return cst_sbuf[a].last_leaf > cst_sbuf[b].last_leaf ? -1 : 1;
-    return a < b ? -1 : (a > b ? 1 : 0);
+    return a > b ? -1 : (a < b ? 1 : 0);
 }
 
 /* Rebuild spec parent/child links purely from [first_leaf,last_leaf) containment
