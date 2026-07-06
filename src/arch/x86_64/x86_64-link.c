@@ -165,6 +165,27 @@ ST_FUNC void relocate_plt(MCCState *s1) {
 #endif
 #endif
 
+static addr_t x86_64_tpoff(MCCState *s1, addr_t val) {
+	addr_t tls_start = 0, tls_end = 0, tls_align = 1, aligned;
+
+	for (int i = 1; i < s1->nb_sections; i++) {
+		Section *s = s1->sections[i];
+		addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
+		if (s->sh_flags & SHF_TLS && ssz) {
+			if (!tls_start || s->sh_addr < tls_start)
+				tls_start = s->sh_addr;
+			if (s->sh_addr + ssz > tls_end)
+				tls_end = s->sh_addr + ssz;
+			if (s->sh_addralign > tls_align)
+				tls_align = s->sh_addralign;
+		}
+	}
+	if (tls_end <= tls_start)
+		return val;
+	aligned = (tls_end - tls_start + tls_align - 1) & ~(tls_align - 1);
+	return val - (tls_start + aligned);
+}
+
 ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr, addr_t addr, addr_t val) {
 	int sym_index, esym_index;
 
@@ -268,9 +289,24 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 	case R_X86_64_GOTPC64:
 		add64le(ptr, s1->got->sh_addr - addr + rel->r_addend);
 		break;
-	case R_X86_64_GOTTPOFF:
-		add32le(ptr, val - s1->got->sh_addr);
-		break;
+	case R_X86_64_GOTTPOFF: {
+		ElfW(Sym) *tsym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
+		if ((s1->output_type & MCC_OUTPUT_EXE) && tsym->st_shndx != SHN_UNDEF) {
+			uint8_t rex = ptr[-3], op = ptr[-2], modrm = ptr[-1];
+			int reg = ((rex & 4) ? 8 : 0) | ((modrm >> 3) & 7);
+			ptr[-3] = (rex & ~4) | (reg >= 8 ? 1 : 0);
+			ptr[-1] = 0xc0 | (reg & 7);
+			if (op == 0x8b)
+				ptr[-2] = 0xc7;
+			else if (op == 0x03)
+				ptr[-2] = 0x81;
+			else
+				mcc_error_noabort("unexpected R_X86_64_GOTTPOFF instruction");
+			write32le(ptr, (int32_t)x86_64_tpoff(s1, val));
+		} else {
+			add32le(ptr, val - s1->got->sh_addr);
+		}
+	} break;
 	case R_X86_64_GOT32:
 		add32le(ptr, get_sym_attr(s1, sym_index, 0)->got_offset);
 		break;
@@ -389,6 +425,8 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		add64le(ptr, x);
 	} break;
 	case R_X86_64_NONE:
+		break;
+	case R_X86_64_IRELATIVE:
 		break;
 	case R_X86_64_RELATIVE:
 #ifdef MCC_TARGET_PE

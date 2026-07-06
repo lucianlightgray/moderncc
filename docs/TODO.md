@@ -99,6 +99,28 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
   `val - tls_start` with **no** bias (`riscv64-link.c:355`). → Confirm each matches
   its psABI variant; add a `__thread` (zero- and nonzero-init) correctness test per
   arch, esp. riscv64; name the arm64 constant.
+- [ ] **glibc fully-static self-link: close the libc.a archive-member gap
+  (investigate).** The static-linker fixes landed 2026-07-06 — IFUNC/IRELATIVE
+  iplt (`mcc_prepare_static_ifunc`/`mcc_fill_static_ifunc`, `mccelf.c`), GOTTPOFF
+  IE→LE relaxation (`x86_64-link.c`), PT_TLS `p_filesz` excluding `.tbss`
+  (`mccelf.c`), and weak-undef-func→addr-0 (`build_got_entries`) — take a glibc
+  `-static` link from link-failure through IFUNC resolution + TLS setup into glibc
+  early init, where it then crashes: `__pthread_initialize_minimal` is left
+  `SHN_UNDEF` WEAK (its defining `libc.a` member is never pulled) yet
+  `__libc_start_main` calls it unconditionally → call to 0. Suspect single-pass
+  archive extraction vs GNU ld's repeat-until-stable (`--start-group`) member
+  selection. → Audit mcc's `.a` member-pull loop (does it rescan until no new
+  undefs?); diff the member set GNU ld pulls from the same `libc.a`. musl-static
+  already self-links and runs (no IFUNCs); gcc-driven `mcc-static` works (gcc's ld).
+- [ ] **glibc fully-static: enumerate + gate the remaining startup layers
+  (investigate).** glibc static linking is a deep stack — each fix above exposed
+  the next. Past the archive-member gap, expect more glibc-internal requirements
+  (`__libc_setup_tls`/TCB details, `_dl_relocate_static_pie`, further IFUNC/TLS
+  forms). → Once a hello links+runs, sweep a torture corpus
+  (printf/float/malloc/locale/`__thread`) and triage each new crash, fix-vs-document
+  per layer; add a `static/*` ctest gate for the new IFUNC-iplt + GOTTPOFF-relax
+  paths (currently exercised only ad hoc). Decide whether full glibc-static is
+  worth pursuing vs steering users to musl-static / gcc-driven static.
 - [ ] **Implement 64-bit bit-field width (impl).** `src/mccgen.c:4483`
   `mcc_error("field width 64 not implemented")` rejects a valid `:64` bit-field on
   an LP64 base type (appears in real headers). → Implement, or document as a hard

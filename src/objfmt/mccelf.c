@@ -1045,6 +1045,8 @@ ST_FUNC void relocate_sections(MCCState *s1) {
 		if (sr->sh_type != SHT_RELX)
 			continue;
 		s = s1->sections[sr->sh_info];
+		if (!s)
+			continue;
 #ifndef MCC_TARGET_MACHO
 		if (s != s1->got || s1->static_link || s1->output_type == MCC_OUTPUT_MEMORY)
 #endif
@@ -1273,6 +1275,14 @@ redo:
 				(ELFW(ST_VISIBILITY)(sym->st_other) != STV_DEFAULT ||
 				 ELFW(ST_BIND)(sym->st_info) == STB_LOCAL ||
 				 s1->output_type & MCC_OUTPUT_EXE)) {
+				if (pass != 0)
+					continue;
+				rel->r_info = ELFW(R_INFO)(sym_index, R_X86_64_PC32);
+				continue;
+			}
+			if ((type == R_X86_64_PLT32 || type == R_X86_64_PC32) &&
+				sym->st_shndx == SHN_UNDEF && s1->static_link &&
+				ELFW(ST_BIND)(sym->st_info) == STB_WEAK) {
 				if (pass != 0)
 					continue;
 				rel->r_info = ELFW(R_INFO)(sym_index, R_X86_64_PC32);
@@ -1627,6 +1637,11 @@ static void mcc_add_linker_symbols(MCCState *s1) {
 #if TARGETOS_OpenBSD
 	set_global_sym(s1, "__executable_start", NULL, ELF_START_ADDR);
 #endif
+#ifndef MCC_TARGET_MACHO
+	if (s1->output_type & MCC_OUTPUT_EXE)
+		set_global_sym(s1, "__ehdr_start", NULL,
+					   s1->has_text_addr ? s1->text_addr : ELF_START_ADDR);
+#endif
 #ifdef MCC_TARGET_RISCV64
 	set_global_sym(s1, "__global_pointer$", data_section, 0x800);
 #endif
@@ -1712,6 +1727,96 @@ ST_FUNC void fill_got(MCCState *s1) {
 		}
 	}
 }
+
+#if defined MCC_TARGET_X86_64
+static void mcc_prepare_static_ifunc(MCCState *s1) {
+	Section *iplt = NULL, *relaplt = NULL;
+	int nb = s1->nb_sections;
+
+	if (!(s1->static_link && (s1->output_type & MCC_OUTPUT_EXE)))
+		return;
+
+	for (int i = 1; i < nb; i++) {
+		Section *sr = s1->sections[i];
+		ElfW_Rel *rel;
+		if (sr->sh_type != SHT_RELX || sr->link != symtab_section)
+			continue;
+		for_each_elem(sr, 0, rel, ElfW_Rel) {
+			int type = ELFW(R_TYPE)(rel->r_info);
+			int sym_index = ELFW(R_SYM)(rel->r_info);
+			ElfW(Sym) *sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
+			struct sym_attr *attr;
+
+			if (ELFW(ST_TYPE)(sym->st_info) != STT_GNU_IFUNC ||
+				sym->st_shndx == SHN_UNDEF)
+				continue;
+			if (type != R_X86_64_PLT32 && type != R_X86_64_PC32)
+				continue;
+
+			if (!iplt) {
+				iplt = new_section(s1, ".iplt", SHT_PROGBITS,
+								   SHF_ALLOC | SHF_EXECINSTR);
+				iplt->sh_addralign = 1;
+				relaplt = new_section(s1, ".rela.plt", SHT_RELX, SHF_ALLOC);
+				relaplt->sh_entsize = sizeof(ElfW_Rel);
+				relaplt->sh_addralign = PTR_SIZE;
+				relaplt->link = NULL;
+				relaplt->sh_info = 0;
+			}
+
+			attr = get_sym_attr(s1, sym_index, 1);
+			if (!attr->plt_sym) {
+				const char *sname =
+					(char *)symtab_section->link->data + sym->st_name;
+				unsigned stub = iplt->data_offset;
+				uint8_t *p = section_ptr_add(iplt, 6);
+				ElfW_Rel *ir;
+				char name[256];
+
+				p[0] = 0xff;
+				p[1] = 0x25;
+				write32le(p + 2, 0);
+				put_elf_reloca(symtab_section, iplt, stub + 2,
+							   R_X86_64_GOTPCREL, sym_index, 0);
+				snprintf(name, sizeof name, "%s@iplt", sname);
+				attr->plt_sym =
+					put_elf_sym(symtab_section, stub, 0,
+								ELFW(ST_INFO)(STB_GLOBAL, STT_FUNC), 0,
+								iplt->sh_num, name);
+				ir = section_ptr_add(relaplt, sizeof(ElfW_Rel));
+				ir->r_offset = 0;
+				ir->r_info = ELFW(R_INFO)(sym_index, R_X86_64_IRELATIVE);
+				ir->r_addend = 0;
+			}
+			rel->r_info = ELFW(R_INFO)(attr->plt_sym, type);
+		}
+	}
+
+	if (relaplt && relaplt->data_offset) {
+		set_global_sym(s1, "__rela_iplt_start", relaplt, 0);
+		set_global_sym(s1, "__rela_iplt_end", relaplt, relaplt->data_offset);
+	}
+}
+
+static void mcc_fill_static_ifunc(MCCState *s1) {
+	Section *relaplt;
+	ElfW_Rel *rel;
+
+	if (!(s1->static_link && (s1->output_type & MCC_OUTPUT_EXE)))
+		return;
+	relaplt = have_section(s1, ".rela.plt");
+	if (!relaplt)
+		return;
+	for_each_elem(relaplt, 0, rel, ElfW_Rel) {
+		int sym_index = ELFW(R_SYM)(rel->r_info);
+		struct sym_attr *attr = get_sym_attr(s1, sym_index, 0);
+		ElfW(Sym) *sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
+		rel->r_offset = s1->got->sh_addr + attr->got_offset;
+		rel->r_addend = sym->st_value;
+		rel->r_info = ELFW(R_INFO)(0, R_X86_64_IRELATIVE);
+	}
+}
+#endif
 
 static void fill_local_got_entries(MCCState *s1) {
 	ElfW_Rel *rel;
@@ -2130,7 +2235,7 @@ static int layout_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) {
 		fill_phdr(++ph, PT_GNU_RELRO, d->roinf)->p_flags |= PF_W;
 	{
 		Section *tls_start_sec = NULL;
-		addr_t tls_start = 0, tls_end = 0;
+		addr_t tls_start = 0, tls_end = 0, tls_file_end = 0;
 		for (int i = 1; i < s1->nb_sections; i++) {
 			s = s1->sections[i];
 			if (s->sh_flags & SHF_TLS && s->sh_size) {
@@ -2144,14 +2249,17 @@ static int layout_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) {
 					if (s->sh_addr + s->sh_size > tls_end)
 						tls_end = s->sh_addr + s->sh_size;
 				}
+				if (s->sh_type != SHT_NOBITS &&
+					s->sh_addr + s->sh_size > tls_file_end)
+					tls_file_end = s->sh_addr + s->sh_size;
 			}
 		}
 		if (tls_start_sec) {
 			ph = fill_phdr(++ph, PT_TLS, tls_start_sec);
 			ph->p_vaddr = tls_start;
 			ph->p_paddr = tls_start;
-			ph->p_filesz = tls_end - tls_start;
-			ph->p_memsz = ph->p_filesz;
+			ph->p_filesz = tls_file_end > tls_start ? tls_file_end - tls_start : 0;
+			ph->p_memsz = tls_end - tls_start;
 			ph->p_align = tls_start_sec->sh_addralign;
 		}
 	}
@@ -2707,6 +2815,9 @@ static int elf_output_file(MCCState *s1, const char *filename) {
 #endif
 		dyninf.gnu_hash = create_gnu_hash(s1);
 	} else {
+#if defined MCC_TARGET_X86_64
+		mcc_prepare_static_ifunc(s1);
+#endif
 		build_got_entries(s1, 0);
 	}
 	version_add(s1);
@@ -2768,9 +2879,12 @@ static int elf_output_file(MCCState *s1, const char *filename) {
 		dynamic->data_offset = dyninf.data_offset;
 		fill_dynamic(s1, &dyninf);
 	}
-	if (file_type == MCC_OUTPUT_EXE && s1->static_link)
+	if (file_type == MCC_OUTPUT_EXE && s1->static_link) {
 		fill_got(s1);
-	else if (s1->got)
+#if defined MCC_TARGET_X86_64
+		mcc_fill_static_ifunc(s1);
+#endif
+	} else if (s1->got)
 		fill_local_got_entries(s1);
 
 	if (dyninf.gnu_hash)

@@ -21,40 +21,43 @@ quiet system (§3).
     single TU, ~100 k preprocessed lines). Large; portable C that every compiler
     builds at `-O0` and `-O2 -g`, so it carries the release columns and is the
     self-host workload (§4b).
-- **The spread (§4):** each workload is compiled by seven builds —
-  `gcc-debug` (`-O0 -g`), `gcc-release` (`-O2 -g`), `clang-debug`,
-  `clang-release`, and three builds of `mcc` itself: `mcc-gcc` (gcc-built),
-  `mcc-clang` (clang-built), and self-hosted **`mcc-self`** (mcc-built) as the
-  baseline. Three more self-hosted variants — `mcc-static`, `mcc-musl`,
-  `mcc-static-musl` — are environment-limited n/a (§4e).
+- **The spread (§4):** each workload is compiled by nine builds — four reference
+  compilers `gcc-debug` (`-O0 -g`), `gcc-release` (`-O2 -g`), `clang-debug`,
+  `clang-release`, and five builds of `mcc` itself, **all `-O0 -g` debug builds**
+  (§1): `mcc-gcc` (gcc-built), `mcc-clang` (clang-built), self-hosted **`mcc-self`**
+  (mcc-built, the baseline), **`mcc-musl`** (self-hosted, musl-linked), and
+  **`mcc-static`** (self-hosted, fully-static musl). The `mcc` builds are `-O0`, so
+  they measure a *debug* compiler; a release `mcc` runs ~3–4× faster still.
 - **Host of record:** Linux x86-64 (Gentoo, kernel 6.18), 32 cores, gcc 15.3.0,
   clang 22.1.8. Measurements pinned to core 2 with ASLR off, turbo off, and the
   `performance` governor (§3a); `perf_event_paranoid` lowered to 1 for §5.
-- **Reference date:** 2026-07-04.
+- **Reference date:** 2026-07-06.
 
 ---
 
-## 1. The builds: three to compare, all to attribute
+## 1. The builds: five to compare, all to attribute
 
-Each `mcc` in the spread is a `RelWithDebInfo` (`-O2 -g`, unstripped, no
-bcheck/backtrace) build, so `perf` can both time and symbolize it. The only
-variable is the compiler that built it:
+Each `mcc` in the spread is a **plain `Debug` (`-O0 -g`) build with sanitizers
+off** (`MCC_BUILD_SANITIZE=OFF`; the default, and never on the primary `mcc`
+target — it only ever builds a separate `mcc_s`), unstripped, no bcheck/backtrace.
+`-O0 -g` symbolizes cleanly for `perf` (no inlining). `mcc` ignores `-O`, so
+`mcc-self` codegen is unaffected by the build type; only the gcc/clang-built rows
+change (their `mcc` binary is now `-O0`, hence slower than the old `-O2` build).
 
-| Build dir                | Compiler of `mcc`            | Role in §4        |
-|--------------------------|------------------------------|-------------------|
-| `cmake-prof-gcc`   | `gcc -O2 -g`                 | `mcc-gcc`; also the `perf` build (§5) |
-| `cmake-prof-clang` | `clang -O2 -g`               | `mcc-clang`       |
-| `cmake-prof-mcc`   | `mcc` itself (bootstrapped by `cmake-prof-gcc/mcc`) | **`mcc-self`** — baseline |
-
-Stripping and `-g` do not change codegen speed, so any of these is a faithful
-`perf` stand-in; `cmake-prof-gcc` is used for the attribution in §5.
+| Build dir             | Compiler of `mcc`          | Row(s) in §4                       |
+|-----------------------|----------------------------|------------------------------------|
+| `cmake-prof-gcc`      | `gcc -O0 -g`               | `mcc-gcc`; also the `perf` build (§5); glibc `mcc-static` via gcc |
+| `cmake-prof-clang`    | `clang -O0 -g`             | `mcc-clang`                        |
+| `cmake-prof-mcc`      | `mcc` (bootstrapped by `cmake-prof-gcc/mcc`) | **`mcc-self`** — baseline (glibc) |
+| `cmake-prof-mcc-musl` | `mcc-musl` (musl-targeting) | `mcc-musl`, `mcc-static` (musl)   |
 
 ```sh
-# gcc- and clang-built mcc (mcc-gcc, mcc-clang)
+# gcc- and clang-built mcc (mcc-gcc, mcc-clang) — plain -O0, sanitizers off
 for cc in gcc clang; do
   cmake -S . -B cmake-prof-$cc -G Ninja \
-    -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER=$cc \
-    -DMCC_BUILD_STRIP=OFF -DMCC_CONFIG_BCHECK=OFF -DMCC_CONFIG_BACKTRACE=OFF \
+    -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=$cc \
+    -DMCC_BUILD_SANITIZE=OFF -DMCC_BUILD_STRIP=OFF \
+    -DMCC_CONFIG_BCHECK=OFF -DMCC_CONFIG_BACKTRACE=OFF \
     -DMCC_BUILD_MUSL=OFF -DMCC_SINGLE_SOURCE=ON
   cmake --build cmake-prof-$cc --target mcc mccrt -j"$(nproc)"
 done
@@ -62,17 +65,44 @@ done
 # self-hosted mcc (mcc-self) — bootstrapped by the gcc-built mcc
 cmake -S . -B cmake-prof-mcc -G Ninja \
   -DCMAKE_C_COMPILER="$PWD/cmake-prof-gcc/mcc" -DMCC_TOOLCHAIN_PROFILE=mcc \
-  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-  -DMCC_BUILD_STRIP=OFF -DMCC_CONFIG_BCHECK=OFF -DMCC_CONFIG_BACKTRACE=OFF \
+  -DCMAKE_BUILD_TYPE=Debug -DMCC_BUILD_SANITIZE=OFF -DMCC_BUILD_STRIP=OFF \
+  -DMCC_CONFIG_BCHECK=OFF -DMCC_CONFIG_BACKTRACE=OFF \
   -DMCC_BUILD_MUSL=OFF -DMCC_SINGLE_SOURCE=ON
 cmake --build cmake-prof-mcc --target mcc mccrt -j"$(nproc)"
 ```
 
-> **Codegen is identical across the three.** `mcc`'s backend is deterministic and
-> host-compiler-independent: `cmp` on the `-c` object of either workload is
-> byte-identical whether emitted by `mcc-gcc`, `mcc-clang`, or `mcc-self`. So the
-> three differ only in *how fast the `mcc` binary runs*, never in what it emits —
-> which is exactly what makes `mcc-self` a clean bootstrap-cost baseline.
+**The musl and static self-host rows** need a musl sysroot (built once from
+vendored source) and a musl-targeting `mcc` to bootstrap with:
+
+```sh
+# 1. vendored musl sysroot (headers + crt + libc + ld-musl loader), any host
+cmake --build cmake-prof-gcc --target vendor-musl musl-sysroot -j"$(nproc)"
+
+# 2. a musl-targeting mcc (its OWN binary is still glibc, but it emits musl) +
+#    the fully-static musl mcc, both compiled by the gcc-built bootstrap mcc
+cmake -S . -B cmake-prof-mcc-var -G Ninja \
+  -DCMAKE_C_COMPILER="$PWD/cmake-prof-gcc/mcc" -DMCC_TOOLCHAIN_PROFILE=mcc \
+  -DCMAKE_BUILD_TYPE=Debug -DMCC_BUILD_SANITIZE=OFF -DMCC_SINGLE_SOURCE=ON \
+  -DMCC_CONFIG_BCHECK=OFF -DMCC_CONFIG_BACKTRACE=OFF \
+  -DMCC_BUILD_MUSL=ON -DMCC_BUILD_STATIC_EXE=ON
+cmake --build cmake-prof-mcc-var --target mcc_musl mccrt -j"$(nproc)"
+
+# 3. genuine musl-LINKED self-host mcc (mcc-musl) + its fully-static twin
+#    (mcc-static), both compiled AND linked by the musl-targeting mcc above
+cmake -S . -B cmake-prof-mcc-musl -G Ninja \
+  -DCMAKE_C_COMPILER="$PWD/cmake-prof-mcc-var/mcc-musl" -DMCC_TOOLCHAIN_PROFILE=mcc \
+  -DCMAKE_BUILD_TYPE=Debug -DMCC_BUILD_SANITIZE=OFF -DMCC_SINGLE_SOURCE=ON \
+  -DMCC_CONFIG_BCHECK=OFF -DMCC_CONFIG_BACKTRACE=OFF -DMCC_BUILD_STATIC_EXE=ON
+cmake --build cmake-prof-mcc-musl --target mcc mcc_static mccrt -j"$(nproc)"
+# cmake-prof-mcc-musl/mcc        -> mcc-musl   (interp = vendored ld-musl)
+# cmake-prof-mcc-musl/mcc-static -> mcc-static (fully static, no interpreter)
+```
+
+> **Codegen is identical across all `mcc` rows.** `mcc`'s backend is deterministic
+> and host-compiler-independent: the `-c` object of the amalgamation is
+> byte-identical whether emitted by `mcc-gcc`, `mcc-clang`, or `mcc-self` (the
+> musl rows differ only where musl vs glibc *headers* change preprocessing). So the
+> builds differ only in *how fast the `mcc` binary runs*, never in what it emits.
 
 ## 2. The compile invocations
 
@@ -120,12 +150,20 @@ cmake-prof-mcc/mcc  $ARGS -o /tmp/o.o     # mcc-self
 ## 3. Timing method — `hyperfine`
 
 `hyperfine` handles warmup, outlier detection, and mean ± σ; pin it to one core
-so a busy 32-way host does not skew the samples. Its `-N`/`--shell=none` mode
-removes shell-spawn overhead — important for the `-E` phase, which is single-digit
-ms. It exports JSON for post-processing.
+so a busy 32-way host does not skew the samples. It exports JSON for
+post-processing.
+
+> **Do not use `-N`/`--shell=none` for the amalgamation.** The `src/mcc.c` `$ARGS`
+> from §2b carry shell-escaped string defines (`-DCONFIG_MCCDIR=\"…\"`); `-N` splits
+> the command itself without a shell and passes the backslash-quotes literally, so
+> some compiles error and hyperfine drops those rows. Run through the default shell
+> (drop `-N`) — the ~1 ms shell-spawn overhead is constant across configs and
+> negligible even for the `-E` phase. `-N` is fine for the `full_language.c`
+> commands, whose flags are un-escaped. If a row still drops, measure it alone
+> (a one-line wrapper script that `exec`s the command, timed with `-N`).
 
 ```sh
-HF="taskset -c 2 hyperfine -N --warmup 10 --min-runs 50 --style none"
+HF="taskset -c 2 hyperfine --warmup 10 --min-runs 40 --style none"
 
 $HF --export-json prep.json \
   -n mcc-gcc  "cmake-prof-gcc/mcc  $MINC $DEFS -E $SRC -o /dev/null" \
