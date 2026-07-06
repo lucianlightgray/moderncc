@@ -2873,7 +2873,7 @@ if(MCC_BUILD_TESTS)
         add_executable(csttool tools/csttool.c)
         target_include_directories(csttool PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
         target_compile_definitions(csttool PRIVATE CONFIG_MCC_CST=1)
-        foreach(_cn store hash geom serial)
+        foreach(_cn store hash geom serial sym)
             add_test(NAME "cst/${_cn}" COMMAND csttool "${_cn}")
             set_tests_properties("cst/${_cn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endforeach()
@@ -3300,6 +3300,7 @@ if(MCC_BUILD_TESTS)
                 --run-mmap-exec "${MCC_RUN_MMAP_EXEC}" --pie "${MCC_CONFIG_PIE}" --pic "${MCC_CONFIG_PIC}"
                 --new-dtags "${MCC_CONFIG_NEW_DTAGS}" --codesign "${MCC_CONFIG_CODESIGN}"
                 --bcheck "${MCC_CONFIG_BCHECK}" --asm "${MCC_CONFIG_ASM}" --backtrace "${MCC_CONFIG_BACKTRACE}"
+                --cst "${MCC_CST}"
                 --new-macho "${MCC_CONFIG_NEW_MACHO}" --dwarf "${MCC_CONFIG_DWARF}" --semlock "${MCC_CONFIG_SEMLOCK}"
                 --sysincludepaths "${MCC_SYSINCLUDEPATHS}" --libpaths "${MCC_LIBPATHS}"
                 --crtprefix "${MCC_CRTPREFIX}" --elfinterp "${MCC_ELFINTERP}" --switches "${MCC_SWITCHES}"

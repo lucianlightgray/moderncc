@@ -262,6 +262,46 @@ static void suite_serial(void) {
     cst_arena_free(a);
 }
 
+/* ================================================================== *
+ * Slice I — symbol refs stored as node-ids (PLAN §1 Symbols).
+ * Proves def<->use node-ids round-trip (the CST-side storage contract);
+ * the parser-side def-site tracking is Weave-3 work over this mechanism.
+ * ================================================================== */
+static void suite_sym(void) {
+    /* Model: `int def; ... def;` — a use node referencing a def node by id. */
+    CstArena *a = cst_arena_new(3);
+    cst_own_file(a, "s", (const uint8_t *)"int def; use=def;", 17);
+    CstLocal tu = cst_node_open(a, CST_TranslationUnit);
+    CstLocal d = cst_node_open(a, CST_Declaration);
+    CstLocal defname = cst_leaf(a, 1, 0, 8, NULL, 0); /* "int def;" */
+    cst_node_close(a, d);
+    CstLocal u = cst_node_open(a, CST_ExprStmt);
+    CstLocal usename = cst_leaf(a, 1, 8, 9, NULL, 0);
+    cst_node_close(a, u);
+    cst_node_close(a, tu);
+
+    /* Record the use->def cross-reference as a tagged (file,local) id. */
+    cst_set_sym_ref(a, usename, cst_id(3, defname));
+    CstId got = cst_sym_ref(a, usename);
+    CHECK(cst_id_file(got) == 3, "sym_ref file id round-trips");
+    CHECK(cst_id_local(got) == defname, "sym_ref def node-id round-trips");
+    CHECK(cst_sym_ref(a, defname) == (CstId)0xffffffffffffffffull,
+          "unset sym_ref is NONE");
+
+    /* Survives a snapshot round-trip (sym_ref is a serialized column). */
+    const char *path = "csttool_sym.tmp";
+    CHECK(cst_snapshot_save(a, path) == 0, "sym snapshot save");
+    CstArena *b = cst_snapshot_load(path);
+    CHECK(b != NULL, "sym snapshot load");
+    if (b) {
+        CstId g2 = cst_sym_ref(b, usename);
+        CHECK(cst_id_local(g2) == defname, "sym_ref survives snapshot");
+        cst_arena_free(b);
+    }
+    remove(path);
+    cst_arena_free(a);
+}
+
 int main(int argc, char **argv) {
     const char *only = argc > 1 ? argv[1] : NULL;
     if (!only || !strcmp(only, "store"))
@@ -272,6 +312,8 @@ int main(int argc, char **argv) {
         suite_geom();
     if (!only || !strcmp(only, "serial"))
         suite_serial();
+    if (!only || !strcmp(only, "sym"))
+        suite_sym();
 
     fprintf(stderr, "csttool: %d checks, %d failures\n", g_checks, g_failures);
     return g_failures ? 1 : 0;

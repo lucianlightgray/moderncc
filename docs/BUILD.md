@@ -251,6 +251,7 @@ host), enabling the kernel-fused apple-libc suite.
 | Value | Type | Default | Gate | Purpose |
 |---|---|---|---|---|
 | `MCC_ALL_DIAGNOSTICS` | BOOL | OFF | GNU/Clang host (advanced) | Everything-on: verbose warnings + debug info + build `mcc_s`/`mcc_p`/`mcc_c`. |
+| `MCC_CST` | BOOL | OFF | advanced (experimental) | Build the CST database subsystem (side-recorded concrete syntax tree; LSP/`-g`/opt substrate). `CONFIG_MCC_CST=1`. Codegen is byte-identical either way; adds the `cst` preset + `tests/cst` suite. |
 | `MCC_BUILD_SANITIZE` | BOOL | OFF | GNU/Clang host; **not** WIN32/mingw | Build `mcc_s` (`-fsanitize=address,undefined`). Fatal on a PE target. |
 | `MCC_BUILD_PROFILE` | BOOL | OFF | GNU/Clang host; **not** Darwin | Build `mcc_p` (`-pg -static`). Fatal on Darwin (no static crt0). |
 | `MCC_BUILD_COVERAGE` | BOOL | OFF | GNU/Clang host; needs runnable mcc | Build `mcc_c` (coverage instrumentation). |
