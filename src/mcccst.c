@@ -782,6 +782,51 @@ static uint32_t cst_scount, cst_scap;
 static int32_t *cst_sstack;
 static uint32_t cst_sstop, cst_sscap;
 
+/* Symbol refs (slice I): last-seen def offset per identifier token value, plus a
+ * buffer of (use,def) source-offset pairs resolved to node-ids at end. v1 is
+ * last-declaration-wins (no scope stack); shadowing is a documented limitation. */
+static uint32_t *cst_defoff;
+static uint32_t cst_defoff_cap;
+static struct CstUse {
+    uint32_t use_off, def_off;
+} *cst_uses;
+static uint32_t cst_uses_count, cst_uses_cap;
+#define CST_OFF_NONE 0xffffffffu
+
+uint32_t cst_cur_tok_off(void) {
+    return cst_lcount ? cst_lbuf[cst_lcount - 1].off : 0;
+}
+
+void cst_hook_def(int v, uint32_t off) {
+    if (!cst_current || v < 0)
+        return;
+    if ((uint32_t)v >= cst_defoff_cap) {
+        uint32_t nc = cst_defoff_cap ? cst_defoff_cap : 1024;
+        while ((uint32_t)v >= nc)
+            nc *= 2;
+        cst_defoff = cst_xrealloc(cst_defoff, nc * sizeof *cst_defoff);
+        for (uint32_t i = cst_defoff_cap; i < nc; i++)
+            cst_defoff[i] = CST_OFF_NONE;
+        cst_defoff_cap = nc;
+    }
+    cst_defoff[v] = off;
+}
+
+void cst_hook_use(int v, uint32_t off) {
+    if (!cst_current || v < 0 || (uint32_t)v >= cst_defoff_cap)
+        return;
+    uint32_t d = cst_defoff[v];
+    if (d == CST_OFF_NONE)
+        return;
+    if (cst_uses_count >= cst_uses_cap) {
+        cst_uses_cap = cst_uses_cap ? cst_uses_cap * 2 : 512;
+        cst_uses = cst_xrealloc(cst_uses, cst_uses_cap * sizeof *cst_uses);
+    }
+    cst_uses[cst_uses_count].use_off = off;
+    cst_uses[cst_uses_count].def_off = d;
+    cst_uses_count++;
+}
+
 static int cst_slurp(CstArena *a, const char *filename) {
     FILE *f = fopen(filename, "rb");
     if (!f)
@@ -820,6 +865,9 @@ void cst_hook_begin(const char *filename) {
     cst_current = cst_arena_new(0);
     cst_slurp(cst_current, filename);
     cst_lcount = cst_scount = cst_sstop = 0;
+    cst_uses_count = 0;
+    for (uint32_t i = 0; i < cst_defoff_cap; i++)
+        cst_defoff[i] = CST_OFF_NONE;
     cst_spec_push(CST_TranslationUnit, 0); /* root */
 }
 
@@ -906,6 +954,14 @@ CstArena *cst_hook_end(void) {
         cst_materialize(0);
         cst_rehash_all(a);
         cst_index_build(a);
+        /* Resolve buffered use->def source offsets into node-ids (slice I). */
+        uint32_t u;
+        for (u = 0; u < cst_uses_count; u++) {
+            CstLocal un = cst_node_at(a, cst_uses[u].use_off);
+            CstLocal dn = cst_node_at(a, cst_uses[u].def_off);
+            if (un != CST_NONE && dn != CST_NONE && un != dn)
+                cst_set_sym_ref(a, un, cst_id(a->file_id, dn));
+        }
     }
     cst_current = NULL;
     return a;

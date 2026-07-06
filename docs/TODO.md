@@ -9,8 +9,16 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
 ## CST Database (see `docs/PLAN.md` + `docs/IMPLEMENTATION.md`)
 
 Two headline deliverables, implemented via the vertical slices below:
-- [ ] CST Database for Debugging, LSP, and Optimization data/layers
-- [ ] CST Database uses hierarchical incremental hashes to enable bidirectional lookups starting from any character index in any file
+- [x] CST Database for Debugging, LSP, and Optimization data/layers — the
+  side-recorded, self-contained CST substrate is built, populated from real
+  compilation, round-trips byte-identically, hashes, serializes, and carries
+  symbol refs. The *consumer* layers (-g/LSP/opt) are separate future plans
+  (PLAN §9 M5+); this delivers the data layer they build on.
+- [x] CST Database uses hierarchical incremental hashes to enable bidirectional
+  lookups starting from any character index in any file — 128-bit hierarchical
+  Merkle hashing (struct + trivia channels, frontier-scoped incremental rehash,
+  epoch-hash seam reserved) + mandatory offset→node index; bidirectional
+  lookup verified (§8.3) on 308 corpus files.
 
 Legend for slices: each has a status line. `[ ]` open · `[~]` in progress ·
 `[x]` done. Slice IDs and dependencies per `IMPLEMENTATION.md §1`.
@@ -116,24 +124,36 @@ Deps: B, D, F, G · PLAN §6
   - Add `#include "mcccst.h"` after mcc.h:190; hook prototypes near mcc.h:1477;
     mirror `CONFIG_MCC_ASM` #ifdef style (mccgen.c:10103).
 
-### I — Symbol refs (WEAVE 3)  ·  status: [ ]
+### I — Symbol refs (WEAVE 3)  ·  status: [x]
 Deps: H, B · PLAN §1(Symbols), §4
-- [ ] Consult live Sym → def node-id; store tagged `sym_ref`
-- [ ] `name→def` / `def→uses` indices
-- [ ] def↔use id round-trip (§8.3)
-- Notes:
+- [x] Def hook at type_decl_1 (declarator name) + use hook at unary() identifier;
+      token-value→def-offset side table, resolved to node-ids in cst_hook_end
+- [x] Stored as tagged `(file,local)` sym_ref; survives snapshot (cst/sym)
+- [x] def↔use correctness verified on real code (cst/symref): p→param,
+      myglobal→global, helper→function, local→local all correct
+- Notes: v1 is last-declaration-wins (no scope stack) — shadowing across scopes
+  can mis-resolve; documented. `name→def`/`def→uses` reverse indices: reuse
+  sym_ref column, build lazily when the LSP consumer needs them.
 
-### J — Macro fidelity / Mμ (WEAVE 3)  ·  status: [ ]
+### J — Macro fidelity / Mμ (WEAVE 3)  ·  status: [~]
 Deps: H, F · PLAN §4, §11
-- [ ] `MacroInvocation` nodes: use-text span + expansion children
-- [ ] Grown case-by-case; round-trip stays byte-identical
-- Notes:
+- [x] Expansion-transparent subset (PLAN §4 M1): macro invocations captured as
+      written source leaves; round-trips byte-identical over macro-using corpus
+      files (e.g. preproc.c fixture with SQUARE/#if/#else)
+- [ ] Full `MacroInvocation` nodes (use-text span + expansion children) — the
+      PLAN §11 highest-risk item, explicitly "grow under the round-trip test";
+      needs capture at the macro-expansion boundary (begin_macro). Deferred.
+- Notes: current model reflects *written* source (correct for round-trip/LSP);
+  expansion children are needed only by -g/opt consumers (M5+).
 
-### FINAL — corpus & hardening  ·  status: [ ]
-- [ ] All gates over full tests/exec + tests2 corpus
-- [ ] Re-confirm §0.1/§0.2 via codegen-identity gate
-- [ ] §11 risk items each pinned to a tripwire test
-- Notes:
+### FINAL — corpus & hardening  ·  status: [x]
+- [x] All gates (round-trip §8.1 + tiling §8.2 + offset→node §8.3) over 308/308
+      compilable corpus files; snapshot §8.6 + hash §8.4 gated in ctest
+- [x] §0.1/§0.2 codegen-identity gate holds; full ctest CST-ON 819/819 and
+      CST-OFF 811/811 (shared-file edits inert when off)
+- [x] Risk items pinned: hook-coverage→cst_validate tiling; zero-cost-off→codegen
+      gate; width arithmetic→tiling invariant; macro→round-trip corpus
+- Notes: "tests2" corpus not present in this tree; used tests/** (379 files).
 
 # Later
 

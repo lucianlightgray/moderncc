@@ -5638,6 +5638,9 @@ static CType *type_decl_1(CType *type, AttributeDef *ad, int *v, int td,
 			goto abstract;
 	} else if (tok >= TOK_IDENT && (td & TYPE_DIRECT)) {
 		*v = tok;
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+		cst_hook_def(tok, cst_cur_tok_off());
+#endif
 		next();
 	} else {
 	abstract:
@@ -7315,6 +7318,9 @@ tok_next:
 		if (tok < TOK_UIDENT)
 			mcc_error("expression expected before '%s'", get_tok_str(tok, &tokc));
 		t = tok;
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+		cst_hook_use(t, cst_cur_tok_off());
+#endif
 		next();
 		s = sym_find(t);
 		if (!s || IS_ASM_SYM(s)) {

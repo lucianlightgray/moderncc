@@ -2892,6 +2892,15 @@ if(MCC_BUILD_TESTS)
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/roundtrip.cmake")
             set_tests_properties("cst/roundtrip-${_fn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endforeach()
+
+        # Symbol-ref correctness (slice I): use->def node-id resolution.
+        add_test(NAME "cst/symref" COMMAND "${CMAKE_COMMAND}"
+            "-DMCC=${_mcc_exe}"
+            "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/symref/refs.c"
+            "-DOUT=${CMAKE_BINARY_DIR}/cst-symref.o"
+            "-DIDIR=${_idir}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/symref.cmake")
+        set_tests_properties("cst/symref" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
     add_executable(exec_runner tests/exec/runner.c)

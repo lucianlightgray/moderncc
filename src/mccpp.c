@@ -2845,11 +2845,28 @@ ST_FUNC CstArena *cst_capture_end(void) {
 	if (a && getenv("MCC_CST_SELFCHECK")) {
 		char msg[128];
 		int rc = cst_validate(a, msg, sizeof msg);
-		uint32_t slen;
+		uint32_t slen, n, nrefs = 0, nn = cst_node_count(a);
 		cst_source(a, &slen);
-		fprintf(stderr, "CST selfcheck: %s (%u bytes, %u nodes)%s%s\n",
-			rc == 0 ? "round-trip OK" : "MISMATCH", slen,
-			cst_node_count(a), rc == 0 ? "" : ": ", rc == 0 ? "" : msg);
+		for (n = 0; n < nn; n++)
+			if (cst_sym_ref(a, n) != (CstId)0xffffffffffffffffull)
+				nrefs++;
+		fprintf(stderr, "CST selfcheck: %s (%u bytes, %u nodes, %u sym-refs)%s%s\n",
+			rc == 0 ? "round-trip OK" : "MISMATCH", slen, nn, nrefs,
+			rc == 0 ? "" : ": ", rc == 0 ? "" : msg);
+	}
+	if (a && getenv("MCC_CST_SYMDUMP")) {
+		uint32_t slen, n, nn = cst_node_count(a);
+		const uint8_t *src = cst_source(a, &slen);
+		for (n = 0; n < nn; n++) {
+			CstId d = cst_sym_ref(a, n);
+			if (d == (CstId)0xffffffffffffffffull)
+				continue;
+			CstLocal dn = cst_id_local(d);
+			uint32_t uo = cst_abs_offset(a, n), uw = cst_width(a, n);
+			uint32_t vo = cst_abs_offset(a, dn), vw = cst_width(a, dn);
+			fprintf(stderr, "  use[%u] '%.*s' -> def[%u] '%.*s'\n", n,
+				(int)uw, src + uo, dn, (int)vw, src + vo);
+		}
 	}
 	if (a && getenv("MCC_CST_SNAPSHOT")) {
 		/* WEAVE 2: dump a real compiled tree, reload it, and prove the reload
