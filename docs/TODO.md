@@ -6,7 +6,6 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
 
 # Now
 
-- [ ] Change MCC_VERSION everywhere to be `long` YYYYMMDDHHMMSS (use two int's in code for major YYYYMMDD and minor HHMMSS where major/minor are used)
 - [ ] Normalize as much of the CMake code as possible: 1) minimize gating instead preferring autodetecting the existence of tools and enabling as many tests/targets/configs as are available on the host, 2) reduce CMake usage by relying on `tools` where advantageous, 3) fold in separate .cmake files into CMakeLists.txt
 - [ ] Can a fully static build use an internal minimalistic `-run`/JIT to sidestep the dynamic linking limitations of static (and use libc/musl in-memory?)
 - [ ] **`exec/tls` skipped on arm64+WIN32 (`skipon=arm64/WIN32`, 2026-07-05).**
@@ -55,55 +54,24 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
   table) predate the `TOK_HASH_SIZE` change and are toolchain/host-sensitive. →
   Re-run `mccbench` + `size`/`strip` a `dist-*` build; refresh, noting the host
   as PROFILING does.
-- [ ] **Optimize the CST hash-consing hot path (perf).** PROFILING §5 (re-measured
-  2026-07-06) makes `cst_mix64` + `cst_hash_bytes` **~30%** of compile-`-c`
-  self-time on the include-heavy amalgamation — now the #1 hot spot, ahead of the
-  lexer (`next_nomacro` ~6%). `perf annotate` (§5a) shows the cost is the mix
-  itself (imul + two xor folds ~23%, plus the `retq` call overhead ~10% at `-O0`),
-  and `cst_mix64` is called once per interned CST node — so the win is **fewer
-  calls** (coarser hashing granularity / caching the per-node hash), not a cheaper
-  mix. `docs/NOTES.md` §5/§8 already point here as the higher-value target. →
-  Reduce `cst_mix64` call frequency; re-run PROFILING §5 to confirm the self-%
-  drops. Front-end perf, separate from the codegen-backend work.
 - [ ] **Regenerate the dated "all green" status prose from CI (validate).**
   `docs/NOTES.md` "Build status" (moved from README) narrates per-preset
   pass/skip counts across ~35 presets; this rots silently. → Derive from the
   latest workflow run, or add a check that fails when the prose diverges from
   actual CTest output.
-- [ ] **`atomic_fetch_add/sub` on `_Atomic` pointer types is rejected (impl).**
-  `C9911.md:3460` §7.17.7.5p2: mcc errors ("integral or integer-sized pointer
-  target type expected"); clang scales by pointee size. → Add pointer-operand
-  handling (ptrdiff_t semantics); test vs clang's element-scaled result.
 - [ ] **`<threads.h>` resolves to the bundled pthread shim, not the host header
   (fix).** `C9911.md:4900` §7.26.1p3 — root cause of the C11-threads divergences
   (`_Noreturn thrd_exit`, `thrd_sleep` return contract, `TIME_UTC` gating). →
   Prefer the host `<threads.h>` when present, or align the shim's decls; add tests.
 - [ ] **`va_start` non-last / `register` param check never fires on x86_64
-  (impl).** `C9911.md:3215` §7.16.1.4p3 — the SysV macro never references `parmN`,
-  so the (already-warned elsewhere) misuse diagnostic is absent on the primary
-  target. → Move the check into the semantic layer so it fires target-independently.
-- [ ] **`const`-lvalue `++`/`--` and same-type nonscalar casts only warn (fix).**
-  `C9911.md:1032/1063` (§6.5.2.4/§6.5.3.1) and `:1104` (§6.5.4p2). Mirrors the core
-  comment at `src/mccgen.c:3459` ("assignment of read-only location" is a
-  warning). gcc/clang error. → Promote read-only-modify to a constraint error;
-  honor `-pedantic-errors` for the nonscalar cast.
-- [ ] **Add `inline int main` / internal-linkage-in-inline diagnostics (impl).**
-  `C9911.md:1524-1525` §6.7.4p2/p3 — low-risk diagnostic-only additions.
-- [ ] **Document (or bundle) the missing freestanding `<math.h>` (fix).**
-  `C9911.md:2708` §7.12 — no `runtime/include/math.h` (confirmed); relies wholly
-  on host libm, so a non-glibc/freestanding host has no `<math.h>`. → Note the
-  host-libm dependency in README/BUILD, or ship a minimal header.
-- [ ] **Surface the arm64-Darwin `long double == double` quirk in public docs
-  (validate).** `README.md:356-358` presents arm64 Darwin as fully covered; the
-  `MCC_USING_DOUBLE_FOR_LDOUBLE` aliasing (maintainer memory only) is a real
-  conformance caveat. → Document where arm64-Darwin support is claimed; assert the
-  intended `long double` behavior in a test.
-- [ ] **Cross-check the three divergent TLS-offset conventions per psABI
-  (validate).** x86_64 subtracts the aligned block (`x86_64-link.c:377`), arm64
-  adds a bare `+16` TCB magic constant (`arm64-link.c:369`), riscv64 uses raw
-  `val - tls_start` with **no** bias (`riscv64-link.c:355`). → Confirm each matches
-  its psABI variant; add a `__thread` (zero- and nonzero-init) correctness test per
-  arch, esp. riscv64; name the arm64 constant.
+  (impl).** `C9911.md:3215` §7.16.1.4p3 — the SysV macro (`__builtin_va_start` in
+  `runtime/include/mccdefs.h`) reads the reg-save area from the frame and never
+  references `parmN`, so the misuse diagnostic (present on arm64/riscv64/PE via
+  the real `TOK_builtin_va_start` case) is absent on x86_64-SysV and i386.
+  → _Deferred:_ making the check target-independent needs x86_64-SysV to lower
+  `va_start` through the real builtin (implement `gen_va_start` for SysV) instead
+  of the frame-address macro — a codegen rework of the primary target's varargs
+  for a diagnostic-only gain; not worth the risk without a driving need.
 - [ ] **glibc fully-static self-link: close the libc.a archive-member gap
   (investigate).** The static-linker fixes landed 2026-07-06 — IFUNC/IRELATIVE
   iplt (`mcc_prepare_static_ifunc`/`mcc_fill_static_ifunc`, `mccelf.c`), GOTTPOFF
@@ -126,17 +94,6 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
   per layer; add a `static/*` ctest gate for the new IFUNC-iplt + GOTTPOFF-relax
   paths (currently exercised only ad hoc). Decide whether full glibc-static is
   worth pursuing vs steering users to musl-static / gcc-driven static.
-- [ ] **Implement 64-bit bit-field width (impl).** `src/mccgen.c:4483`
-  `mcc_error("field width 64 not implemented")` rejects a valid `:64` bit-field on
-  an LP64 base type (appears in real headers). → Implement, or document as a hard
-  limit.
-- [ ] **Support forward `__alias__` targets (impl).** `src/mccgen.c:10522`
-  "unsupported forward __alias__ attribute" — gcc allows aliasing a not-yet-defined
-  symbol. → Defer alias resolution to an end-of-TU fixup pass.
-- [ ] **Widen or hard-error `__mode__(...)` coverage (fix).** `src/mccgen.c:3940`
-  warns and **ignores** unlisted modes, silently mistyping (e.g. `DI`/`TI`). →
-  Confirm the supported set covers the SDK/runtime headers; add `DI` (and `TI`
-  where the ABI has 128-bit) or promote unknown modes to an error.
 - [ ] **External (SHN_UNDEF) thread-local symbols hard-error on Mach-O (impl).**
   `src/objfmt/mccmacho.c:2085` "unsupported". → Implement TLV import descriptors, or
   document as an intentional limitation.
@@ -167,63 +124,14 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
   `ARM_KNOWN_FAIL` (tools/mccharness.c:2540) never fails on `bl r3`, `b r3`,
   `mov #0xEFFF`, `mov #0x0201`, two `vmov.f32` forms — real encoding defects. → Fix
   the `mov #imm`/`vmov.f32` cases and drop the entries.
-- [ ] **`.cfi` ops per function are a fixed cap (fix).** `src/mccasm.c:974`
-  `ASM_CFI_MAX` hard-errors on large hand-written/generated unwind tables. →
-  Validate headroom or make the buffer growable.
-- [ ] **`gcctestsuite` tallies failures but always returns 0 (validate).**
-  tools/mccharness.c:1237 — the GCC-testsuite sweep cannot gate CI. → Confirm it is
-  intentionally non-gating (document it) or return nonzero past a baseline budget.
-- [ ] **`gcctestsuite` skip heuristic is a whole-file substring match (fix).**
-  `gccts_skiplisted` (tools/mccharness.c:1105) drops any file whose *contents*
-  mention `complex`/`vector`/`__int128`/`_builtin_` anywhere (comments/strings
-  included). → Tighten to token/decl matching or an explicit skip list.
-- [ ] **Log the preprocess "matches EITHER reference" cases (validate).**
-  tools/mccharness.c:841 — the 2-way fallback assumes any gcc/clang divergence is
-  impl-defined; a case where mcc coincidentally matches the wrong reference scores
-  PASS. → Log which cases take this branch so divergences can be reviewed.
-- [ ] **`ckbuildmd` type-drift check is presence-only + prefix-matched (fix).**
-  tools/ckbuildmd.c:98 only checks type when the cell starts with a TYPEKW, and
-  `strncmp` lets `INT` match `INTEGER`. → Treat documented-but-mistyped as drift;
-  use exact type equality.
-- [ ] **JUnit summarizers count `notrun`/`<skipped>` as skips (validate).**
-  tools/ci.c:1146, tools/bench.c:364 — a fixture-setup failure surfacing as
-  `notrun` would be under-reported as a benign skip. → Confirm ctest emits
-  `<failure>` for setup failures.
-- [ ] **`hostgate` scans only `.c`/`.h` (validate).** tools/hostgate.c:84 — the
-  "no raw host macros outside mcchost.{c,h}" invariant misses `.S`/`.inc`/generated
-  sources. → Confirm none use raw host macros, or extend the walk.
 - [ ] **Reference-harness `exec`/`diff3` goldens are effectively dead (validate).**
   `tests/exec/goldens.h:19/53/54/62` (inline multi-unit, backtrace, btdll, alias)
   carry full expected output but SKIP for lack of a reference harness. → Confirm
   each is exercised elsewhere (mcctest/diff); otherwise wire up the harness.
-- [ ] **Re-enable or delete the disabled bit-field-layout struct test (impl).**
-  `tests/diff/parts/legacy_aggregates.h:824` `#if 0` "until further clarification
-  re GCC compatibility" — mcc's layout for that mixed int/char bit-field shape is
-  untested. → Resolve the GCC-compat question and re-enable, or remove with rationale.
-- [ ] **Whole-array assignment: decide implement vs. keep xfail (impl).**
-  `tests/exec/goldens.h:161` `array_assignment` (GNU extension) has a ready golden
-  waiting behind `note:unsupported`. Cross-refs the exec-suite audit above. →
-  Implement and activate the golden, or record as intentionally unsupported.
-- [ ] **`__has_builtin`/`__has_feature`/… hard-coded to 0 (validate).**
-  src/mccpp.c:1539 — SDK headers may mis-detect features mcc actually provides. →
-  Answer truthfully where cheap (e.g. `__has_attribute` for honored attributes);
-  document the 0-default.
-- [ ] **`mcc -ar` rejects `[abdiopN]` positional flags (impl/doc).**
-  src/mcctools.c:22 handles only `[crstvx]`; build systems using insert modes
-  break. → Implement `a`/`b`/`i`, or document the supported subset clearly.
 - [ ] **Windows keeps diagnostic color off unconditionally (validate).**
   src/mcchost.c:21 — suppresses color even on VT-enabled Windows Terminal. →
   Probe `ENABLE_VIRTUAL_TERMINAL_PROCESSING`; confirm `-fdiagnostics-color=always`
   still forces it. Low priority.
-- [ ] **Add a regression test for cross-TU `_Complex` memo dangling-sym clearing
-  (validate).** src/mccgen.c:643 asserts the complex-type cache is cleared in
-  `mccgen_finish` to avoid reusing syms into a freed `global_stack` across TUs on
-  one persisted `MCCState`. → Compile two `_Complex`-using TUs through one
-  embedder `MCCState` under ASan.
-- [ ] **Static-assert exactly one backend is compiled (validate).**
-  `src/mcc.h:981` collapses per-function backend state onto shared `cg_*` fields
-  "because only the active target is compiled". → Add a build-time check guarding
-  that assumption.
 - [ ] `-fverbose-asm`-style operand comments: meaningful comments need
   codegen-side variable/spill metadata that is discarded after emission;
   classified low-value (reloc symbol names are already printed). Revisit
@@ -258,20 +166,6 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
   fails on divergence, so CONFIG.md can't rot. → Then update `docs/BUILD.md` (which
   already tables the CMake nodes, §3–§14) to become the ongoing source of truth for
   in-code flags, cross-linked to CONFIG.md, and wire the checker into ctest.
-- [ ] **win32 `<pthread.h>` shim has documented scope limits (impl/doc).**
-  `runtime/win32/include/pthread.h` — mutexes are non-recursive
-  (`PTHREAD_MUTEX_RECURSIVE` is accepted but behaves as a normal mutex; `SRWLOCK`
-  has no recursion), thread keys carry **no destructors** (not run at thread
-  exit), and there is **no cancellation**. → Implement recursive mutexes / key
-  destructors / cancellation, or keep as an intentional subset and state it in
-  BUILD/README so callers don't rely on the missing semantics.
-- [ ] **win32 `<sched.h>` is not a full POSIX scheduling interface (impl/doc).**
-  `runtime/win32/include/sched.h` — minimal shim. → Document the supported subset
-  or extend it.
-- [ ] **win32 `fenv` has no control-register access on non-x86/arm64 PE arches
-  (impl).** `runtime/win32/lib/fenv.c` (arm/wince and other PE targets) accepts
-  only the default rounding mode. → Implement `FPSCR`/equivalent access, or
-  hard-error on a non-default `fesetround` there.
 
 ---
 

@@ -63,6 +63,37 @@ build-status reports, per-toolchain test coverage, and performance benchmarks.
 | **msvcrt** (PE)        | Windows/PE target                    | wine + native Windows |
 | **libSystem** (Mach-O) | macOS/Darwin target                  | qemu + native MacOS   |
 
+## Platform ABI & runtime notes
+
+**`long double`.** mcc follows each target's platform ABI, matching the native
+compiler byte-for-byte:
+
+| Target                              | `long double`            |
+|-------------------------------------|--------------------------|
+| x86_64 / i386 (ELF)                 | 80-bit x87 extended      |
+| arm64 / riscv64 (Linux ELF)         | 128-bit IEEE quad        |
+| **arm64 Darwin (Apple)**            | **64-bit — same as `double`** |
+| **any PE / Windows target (MSVC ABI)** | **64-bit — same as `double`** |
+
+On Apple arm64 and on all PE targets, `long double` is `double`
+(`MCC_USING_DOUBLE_FOR_LDOUBLE`), which is the Apple / MSVC ABI, not an mcc
+limitation — `sizeof(long double) == 8` there, agreeing with clang / MSVC.
+The `cli/apple_arm64_long_double_is_double` test pins this on macOS arm64.
+
+**`<math.h>` is host-provided.** mcc ships no freestanding `runtime/include/math.h`;
+math declarations come from the host/target libc's `<math.h>`, and the math
+functions link against the host `libm` (glibc/musl `-lm`, Apple libSystem, or
+msvcrt). A non-glibc *freestanding* host with no `<math.h>` must supply one;
+mcc does not synthesize the header or the transcendental functions.
+
+**win32 runtime shims are intentional subsets** (`runtime/win32/include`):
+`<pthread.h>` mutexes are non-recursive (`PTHREAD_MUTEX_RECURSIVE` is accepted
+but behaves as a plain `SRWLOCK`), thread-key destructors are not run at thread
+exit, and there is no cancellation; `<sched.h>` is a minimal shim, not a full
+POSIX scheduling interface; `<fenv.h>` has no rounding-control-register access
+on non-x86/arm64 PE arches (only the default rounding mode). Callers targeting
+win32 should not rely on the missing semantics.
+
 ## Build status
 
 **Linux status (2026-07, gcc 15.3 / clang 22):** every Linux preset is green —
