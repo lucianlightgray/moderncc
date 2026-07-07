@@ -2909,14 +2909,19 @@ if(MCC_BUILD_TESTS)
         # go through replay (not silently fall back). Brought up one construct
         # at a time; ret42 is the smallest rung (return of an integer constant).
         if(NOT CMAKE_CROSSCOMPILING AND NOT MCC_TARGETOS STREQUAL "WIN32")
-            add_test(NAME "ast/replay-ret42" COMMAND "${CMAKE_COMMAND}"
-                "-DMCC=$<TARGET_FILE:mcc>"
-                "-DBDIR=${CMAKE_BINARY_DIR}"
-                "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/ret42.c"
-                "-DOUT=${CMAKE_BINARY_DIR}/ast-replay"
-                "-DEXPECT_RC=42" "-DREPLAYED=main"
-                -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
-            set_tests_properties("ast/replay-ret42" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+            # fixture;expected-exit-code pairs (return of an integer constant).
+            foreach(_case "ret42;42" "ret0;0" "retexpr;14")
+                list(GET _case 0 _rn)
+                list(GET _case 1 _rc)
+                add_test(NAME "ast/replay-${_rn}" COMMAND "${CMAKE_COMMAND}"
+                    "-DMCC=$<TARGET_FILE:mcc>"
+                    "-DBDIR=${CMAKE_BINARY_DIR}"
+                    "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/${_rn}.c"
+                    "-DOUT=${CMAKE_BINARY_DIR}/ast-replay"
+                    "-DEXPECT_RC=${_rc}" "-DREPLAYED=main"
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
+                set_tests_properties("ast/replay-${_rn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+            endforeach()
         endif()
     endif()
 

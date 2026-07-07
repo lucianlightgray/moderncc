@@ -10219,9 +10219,13 @@ static void ast_hook_return(int has_val) {
 	AstLocal bb = ast_root(ast_cur);
 	AstLocal ret = ast_node(ast_cur, AST_Return);
 	if (has_val) {
+		/* Rung 1: a plain int-sized integer constant (folds to a 32-bit value,
+		 * so `vpushi` at replay is exact and no relocation is emitted — the
+		 * discard-and-re-emit stays safe). Wider/float/non-constant returns bail
+		 * and keep the parser's emission until later rungs own them. */
 		int is_int_const =
 				(vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST &&
-				!is_float(vtop->type.t);
+				(vtop->type.t & VT_BTYPE) == VT_INT;
 		if (!is_int_const) {
 			ast_bail = 1;
 		} else {
