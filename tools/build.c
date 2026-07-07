@@ -550,6 +550,8 @@ static int cmd_emit_defines(int argc, char **argv) {
 		EMIT("CONFIG_CODESIGN=1");
 	if (truthy(fopt(argc, argv, "--cst", "")))
 		EMIT("CONFIG_MCC_CST=1");
+	if (truthy(fopt(argc, argv, "--ast", "")))
+		EMIT("CONFIG_AST=1");
 	if (!truthy(fopt(argc, argv, "--bcheck", "1")))
 		EMIT("CONFIG_MCC_BCHECK=0");
 	if (!truthy(fopt(argc, argv, "--asm", "1")))

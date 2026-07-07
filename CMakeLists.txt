@@ -1093,6 +1093,8 @@ mcc_config_node(MCC_BENCH         TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Build the mccbench tool and the `bench` target (compile-speed report). Off by default; CI enables it")
 mcc_config_node(MCC_CST TYPE BOOL DEFAULT ON GROUP "Advanced" ADVANCED
     HELP "Build the concrete syntax tree subsystem")
+mcc_config_node(MCC_AST TYPE BOOL DEFAULT ON GROUP "Advanced" ADVANCED
+    HELP "Build the AST intention-IR subsystem (side-channel; -O1 replay driver)")
 mcc_config_node(MCC_ALL_DIAGNOSTICS TYPE BOOL DEFAULT OFF GROUP "Diagnostics" ADVANCED
     HELP "Everything-on diagnostics: verbose warnings + debug info + build mcc_s/mcc_p/mcc_c")
 if(MCC_ALL_DIAGNOSTICS)
@@ -1650,6 +1652,9 @@ if(NOT MCC_CONFIG_BACKTRACE)
 endif()
 if(MCC_CST)
     list(APPEND _mccdefs "CONFIG_MCC_CST=1")
+endif()
+if(MCC_AST)
+    list(APPEND _mccdefs "CONFIG_AST=1")
 endif()
 if(MCC_CONFIG_NEW_MACHO STREQUAL "no")
     list(APPEND _mccdefs "CONFIG_NEW_MACHO=0")
@@ -2885,6 +2890,20 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(host-gate-invariant PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
+    # AST intention-IR pure-library test harness (docs/AST.md §16/§17, D-c).
+    # Self-contained: asttool #includes src/mccast.c and links nothing from mcc,
+    # so the arena / builder / dump / provenance invariants are proven against
+    # synthetic intention trees before the replay driver lands.
+    if(MCC_AST AND NOT CMAKE_CROSSCOMPILING)
+        add_executable(asttool tools/asttool.c)
+        target_include_directories(asttool PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+        target_compile_definitions(asttool PRIVATE CONFIG_AST=1)
+        foreach(_an arena validate dump cfg provenance)
+            add_test(NAME "ast/${_an}" COMMAND asttool "${_an}")
+            set_tests_properties("ast/${_an}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+        endforeach()
+    endif()
+
     # CST database pure-library test harness (docs/IMPLEMENTATION.md §0/§6).
     # Self-contained: csttool #includes src/mcccst.c and links nothing from mcc,
     # so slices B/C/D/E are proven against synthetic trees before Weave 1.
@@ -3475,7 +3494,7 @@ if(MCC_BUILD_TESTS)
                 --run-mmap-exec "${MCC_RUN_MMAP_EXEC}" --pie "${MCC_CONFIG_PIE}" --pic "${MCC_CONFIG_PIC}"
                 --new-dtags "${MCC_CONFIG_NEW_DTAGS}" --codesign "${MCC_CONFIG_CODESIGN}"
                 --bcheck "${MCC_CONFIG_BCHECK}" --asm "${MCC_CONFIG_ASM}" --backtrace "${MCC_CONFIG_BACKTRACE}"
-                --cst "${MCC_CST}"
+                --cst "${MCC_CST}" --ast "${MCC_AST}"
                 --new-macho "${MCC_CONFIG_NEW_MACHO}" --dwarf "${MCC_CONFIG_DWARF}" --semlock "${MCC_CONFIG_SEMLOCK}"
                 --sysincludepaths "${MCC_SYSINCLUDEPATHS}" --libpaths "${MCC_LIBPATHS}"
                 --crtprefix "${MCC_CRTPREFIX}" --elfinterp "${MCC_ELFINTERP}" --switches "${MCC_SWITCHES}"

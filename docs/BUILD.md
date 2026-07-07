@@ -135,6 +135,7 @@ host-dynamic (macOS Homebrew gcc). Hidden bases are prefixed `_`
 | `matrix` | Debug | `MCC_TOOLCHAIN_PROFILE=gcc;clang` × `MCC_TARGETS=native;cross` |
 | `local-ci` | Debug | `MCC_LOCAL_CI_AS_TEST=ON` — the `test` target reproduces the whole CI + release matrix this host can run (see `cmake/ci-local.cmake`) |
 | `cst` | Debug | `MCC_CST=ON` (explicit — now the build-wide default, so effectively `debug`): the named scenario for the CST subsystem + its `tests/cst` suite |
+| `ast` | Debug | `MCC_AST=ON` + `MCC_CST=ON`: the named scenario for the AST intention-IR subsystem + its `asttool` pure-lib suite and the `tests/exec` `-O1-replay` column |
 
 **CI presets** — one per workflow matrix cell (`ci.yml`):
 
@@ -282,6 +283,7 @@ These bake `CONFIG_*` values into the compiler and change its runtime behavior.
 | `MCC_CONFIG_DWARF` | STRING | `''` | 0, 2, 3, 4, 5, `''` | always | DWARF debug version; empty = stabs. |
 | `MCC_CONFIG_SEMLOCK` | STRING | `''` | numeric | always | `CONFIG_MCC_SEMLOCK` value; empty = mcc.h default (1). Must be numeric (fatal otherwise). |
 | `MCC_CST` | BOOL | **ON** | | always (`GROUP "Advanced"`) | Build the CST database subsystem (side-recorded concrete syntax tree; LSP/`-g`/opt substrate) → `CONFIG_MCC_CST=1`. On by default; codegen is byte-identical either way (guarded by the codegen-identity gate). The `cst` preset builds/runs the `tests/cst` suite explicitly. |
+| `MCC_AST` | BOOL | **ON** | | always (`GROUP "Advanced"`) | Build the AST intention-IR subsystem (docs/AST.md) → `CONFIG_AST=1`. A pure side-channel like the CST: `-O0` never builds it and stays byte-identical; `-O1` lowers it and replays through the vstack API. The `ast` preset builds/runs the `tests/exec` `-O1-replay` column + the `asttool` pure-lib suite. |
 | `MCC_CONFIG_NEW_MACHO` | STRING | `''` | yes, no, auto, `''` | **Darwin** | Force apple object format. |
 | `MCC_CONFIG_CODESIGN` | STRING | `''` | yes, no, auto, `''` | **Darwin** | Use `codesign` to sign executables. |
 

@@ -7,6 +7,7 @@
 #include "mccpp.c"
 #include "mccgen.c"
 #include "mcccst.c"
+#include "mccast.c"
 #include "mccdbg.c"
 #include "mccasm.c"
 #include "mccelf.c"

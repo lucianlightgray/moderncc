@@ -4,6 +4,42 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
 
 ---
 
+# AST first phase (docs/AST.md §16 "Short" + §17 replay-driver bring-up)
+
+The intention IR alongside the CST. Gated by CMake `CONFIG_AST` (ON by default),
+built as a pure side-channel like the CST — `-O0` stays a one-pass parse+compile
+flow and byte-identical; `-O1` builds the AST and replays it through the existing
+vstack API (`vpushi`/`gen_op`/`gv`/`vstore`/`gsym`/`gjmp`). The gate is the existing
+`tests/exec` goldens re-run as an `-O1-replay` column asserting the same `expect`,
+brought up one §17 category at a time.
+
+- [x] **A1 — `CONFIG_AST` scaffolding.** CMake `MCC_AST` option (ON), `CONFIG_AST=1`
+  define, `ast` preset, `libmcc.c` includes `src/mccast.c` (guarded); mccbuild
+  `--ast` + BUILD.md node/preset rows so the config-drift gates stay green.
+- [x] **A2 — `src/mccast.{c,h}` intention-IR library.** The 15 node kinds; per-function
+  SoA arena (D-c: minimal, no hash-cons yet); builder API; textual `ast_dump`;
+  CST-provenance id per node (§14); `ast_validate`. Self-contained (malloc un-poison).
+- [x] **A3 — `tools/asttool.c` pure-lib TDD harness + `ast/*` ctests.** 5 suites
+  (arena/validate/dump/cfg/provenance), 30 checks. Full `ast`-preset ctest 865/865.
+- [ ] **A4 — replay driver (`mccast_replay`) over the vstack API.** Walk a built AST
+  and emit via `vpushi`/`gen_op`/`gv`/`vstore`; start with a `main` returning a
+  constant, then tree expressions (Literal/Binary/Convert/Ref/Load). Lives in mccgen
+  where the vstack API is visible; driven by an `-O1`/`ast_replay` path in
+  `gen_function`, off by default so `-O0` is untouched.
+- [ ] **A5 — parser AST-build hooks (expressions).** Capture Literal/Binary/Convert/
+  Ref/Load intention nodes from the same parse positions as the CST hooks, gated by
+  `CONFIG_AST` + the runtime `ast_replay` flag.
+- [ ] **A6 — `-O1-replay` runner column over `tests/exec`.** New runner column that
+  re-runs the goldens with the replay path on, asserting the same `expect`. Bring up
+  §17 category 1 `expressions` (14) first, then 2 `types`, 3 `pointers_arrays`/
+  `structs_unions`, 4 `statements` (the CFG milestone, D-b), 5 `functions_abi`, 6 the
+  long tail. Each green category = one checklist item.
+- [ ] **A7 — first template = const-fold**, sequenced *after* the corpus is green
+  under zero-template replay, with its own §15 per-template differential test. (Deferred
+  to the end of the first phase.)
+
+---
+
 # Now
 
 - [ ] Normalize as much of the CMake code as possible: 1) minimize gating instead preferring autodetecting the existence of tools and enabling as many tests/targets/configs as are available on the host, 2) reduce CMake usage by relying on `tools` where advantageous, 3) fold in separate .cmake files into CMakeLists.txt

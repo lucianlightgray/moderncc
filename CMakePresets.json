@@ -58,6 +58,12 @@
       "cacheVariables": { "MCC_CST": "ON" }
     },
     {
+      "name": "ast",
+      "displayName": "AST intention-IR subsystem (-O1 replay driver side-channel)",
+      "inherits": "debug",
+      "cacheVariables": { "MCC_AST": "ON", "MCC_CST": "ON" }
+    },
+    {
       "name": "cross",
       "displayName": "Native + all cross compilers",
       "inherits": "debug",
@@ -344,6 +350,7 @@
     { "name": "sanitize", "configurePreset": "sanitize" },
     { "name": "diagnostics", "configurePreset": "diagnostics" },
     { "name": "cst", "configurePreset": "cst" },
+    { "name": "ast", "configurePreset": "ast" },
     { "name": "cross", "configurePreset": "cross" },
     { "name": "matrix", "configurePreset": "matrix" },
     { "name": "local-ci", "configurePreset": "local-ci" },
@@ -420,6 +427,7 @@
     { "name": "sanitize", "configurePreset": "sanitize", "inherits": "_test-elf" },
     { "name": "diagnostics", "configurePreset": "diagnostics", "inherits": "_test-elf" },
     { "name": "cst", "configurePreset": "cst", "inherits": "_test-elf" },
+    { "name": "ast", "configurePreset": "ast", "inherits": "_test-elf" },
     { "name": "cross", "configurePreset": "cross", "inherits": "_test-elf" },
 
     { "name": "linux-gcc", "configurePreset": "linux-gcc", "inherits": "_test-elf" },
