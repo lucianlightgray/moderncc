@@ -1,6 +1,7 @@
 static int isnan_(double x) {
 	return x != x;
 }
+
 static int isinf_(double x) {
 	return !isnan_(x) && ((x - x) != (x - x));
 }
@@ -11,17 +12,23 @@ int main(void) {
 
 	double _Complex a = {1, 2}, b = {3, 4}, r;
 	r = a * b;
-	if (__real__ r != -5 || __imag__ r != 10)
+	if (__real__ r !=
+					-5 ||
+			__imag__ r != 10)
 		return 1;
 
 	double _Complex c = {11, -2};
 	r = c / b;
-	if (__real__ r != 1 || __imag__ r != -2)
+	if (__real__ r !=
+					1 ||
+			__imag__ r != -2)
 		return 2;
 
 	double _Complex one = {1, 0}, infc = {inf, inf};
 	r = one / infc;
-	if (__real__ r != 0 || __imag__ r != 0)
+	if (__real__ r !=
+					0 ||
+			__imag__ r != 0)
 		return 3;
 
 	double _Complex inf0 = {inf, 0};

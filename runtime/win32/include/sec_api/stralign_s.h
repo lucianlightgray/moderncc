@@ -7,6 +7,7 @@
 
 #ifdef __cplusplus
 extern "C" {
+
 #endif
 
 #if !defined(I_X86_) && defined(_WSTRING_S_DEFINED)

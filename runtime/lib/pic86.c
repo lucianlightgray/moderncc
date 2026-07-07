@@ -8,28 +8,28 @@
 
 #if defined __i386__
 __asm__(
-	"        .text\n"
-	"        .weak " STR(_(__x86.get_pc_thunk.ax)) "\n"
-												   "        .hidden " STR(_(__x86.get_pc_thunk.ax)) "\n" STR(_(__x86.get_pc_thunk.ax)) ":\n"
-																																	   "        mov (%esp),%eax\n"
-																																	   "        ret\n"
-																																	   "        .size " STR(_(__x86.get_pc_thunk.ax)) ", .-" STR(_(__x86.get_pc_thunk.ax)) "\n"
+		"        .text\n"
+		"        .weak " STR(_(__x86.get_pc_thunk.ax)) "\n"
+																									 "        .hidden " STR(_(__x86.get_pc_thunk.ax)) "\n" STR(_(__x86.get_pc_thunk.ax)) ":\n"
+																																																																			 "        mov (%esp),%eax\n"
+																																																																			 "        ret\n"
+																																																																			 "        .size " STR(_(__x86.get_pc_thunk.ax)) ", .-" STR(_(__x86.get_pc_thunk.ax)) "\n"
 
-																																																						   "        .weak " STR(_(__x86.get_pc_thunk.bx)) "\n"
-																																																																		  "        .hidden " STR(_(__x86.get_pc_thunk.bx)) "\n" STR(_(__x86.get_pc_thunk.bx)) ":\n"
-																																																																																							  "        mov (%esp),%ebx\n"
-																																																																																							  "        ret\n"
-																																																																																							  "        .size " STR(_(__x86.get_pc_thunk.bx)) ", .-" STR(_(__x86.get_pc_thunk.bx)) "\n"
+																																																																																																													 "        .weak " STR(_(__x86.get_pc_thunk.bx)) "\n"
+																																																																																																																																					"        .hidden " STR(_(__x86.get_pc_thunk.bx)) "\n" STR(_(__x86.get_pc_thunk.bx)) ":\n"
+																																																																																																																																																																															"        mov (%esp),%ebx\n"
+																																																																																																																																																																															"        ret\n"
+																																																																																																																																																																															"        .size " STR(_(__x86.get_pc_thunk.bx)) ", .-" STR(_(__x86.get_pc_thunk.bx)) "\n"
 
-																																																																																																												  "        .weak " STR(_(__x86.get_pc_thunk.cx)) "\n"
-																																																																																																																								 "        .hidden " STR(_(__x86.get_pc_thunk.cx)) "\n" STR(_(__x86.get_pc_thunk.cx)) ":\n"
-																																																																																																																																													 "        mov (%esp),%ecx\n"
-																																																																																																																																													 "        ret\n"
-																																																																																																																																													 "        .size " STR(_(__x86.get_pc_thunk.cx)) ", .-" STR(_(__x86.get_pc_thunk.cx)) "\n"
+																																																																																																																																																																																																																									"        .weak " STR(_(__x86.get_pc_thunk.cx)) "\n"
+																																																																																																																																																																																																																																																 "        .hidden " STR(_(__x86.get_pc_thunk.cx)) "\n" STR(_(__x86.get_pc_thunk.cx)) ":\n"
+																																																																																																																																																																																																																																																																																										 "        mov (%esp),%ecx\n"
+																																																																																																																																																																																																																																																																																										 "        ret\n"
+																																																																																																																																																																																																																																																																																										 "        .size " STR(_(__x86.get_pc_thunk.cx)) ", .-" STR(_(__x86.get_pc_thunk.cx)) "\n"
 
-																																																																																																																																																																		 "        .weak " STR(_(__x86.get_pc_thunk.dx)) "\n"
-																																																																																																																																																																														"        .hidden " STR(_(__x86.get_pc_thunk.dx)) "\n" STR(_(__x86.get_pc_thunk.dx)) ":\n"
-																																																																																																																																																																																																			"        mov (%esp),%edx\n"
-																																																																																																																																																																																																			"        ret\n"
-																																																																																																																																																																																																			"        .size " STR(_(__x86.get_pc_thunk.dx)) ", .-" STR(_(__x86.get_pc_thunk.dx)) "\n");
+																																																																																																																																																																																																																																																																																																																																				 "        .weak " STR(_(__x86.get_pc_thunk.dx)) "\n"
+																																																																																																																																																																																																																																																																																																																																																												"        .hidden " STR(_(__x86.get_pc_thunk.dx)) "\n" STR(_(__x86.get_pc_thunk.dx)) ":\n"
+																																																																																																																																																																																																																																																																																																																																																																																																						"        mov (%esp),%edx\n"
+																																																																																																																																																																																																																																																																																																																																																																																																						"        ret\n"
+																																																																																																																																																																																																																																																																																																																																																																																																						"        .size " STR(_(__x86.get_pc_thunk.dx)) ", .-" STR(_(__x86.get_pc_thunk.dx)) "\n");
 #endif

@@ -7,6 +7,7 @@
 
 #ifdef __cplusplus
 extern "C" {
+
 #endif
 
 _CRTIMP errno_t __cdecl _ctime32_s(char *_Buf, size_t _SizeInBytes, const __time32_t *_Time);

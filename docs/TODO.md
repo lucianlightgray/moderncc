@@ -143,6 +143,18 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
   fails on divergence, so CONFIG.md can't rot. → Then update `docs/BUILD.md` (which
   already tables the CMake nodes, §3–§14) to become the ongoing source of truth for
   in-code flags, cross-linked to CONFIG.md, and wire the checker into ctest.
+- [ ] **ARM (32-bit) direct branch can't reach past ±32MB — no veneers (impl).**
+  `encbranch` in `src/arch/arm/arm-gen.c` encodes `B`/`BL` with the 24-bit signed
+  word displacement (±32MB reach); a target farther than that is currently a hard
+  `mcc_error("branch target out of range ...")` (formerly a `FIXME:` inline
+  comment, moved here 2026-07-07). Real toolchains instead synthesize a *veneer*
+  (a long-branch trampoline island: load the absolute target into a scratch reg
+  and `BX`, or an inline literal-pool `LDR pc,[pc,#-4]`) so arbitrarily large
+  images link. → When an image that large actually surfaces, emit a veneer for
+  out-of-reach `B`/`BL` instead of erroring; until then the error is the pinned
+  boundary. The arm64 backend has the same limit as a plain
+  `mcc_error("branch out of range")` (`src/arch/arm64/arm64-gen.c:241`) and would
+  want the matching treatment.
 
 ---
 

@@ -28,9 +28,11 @@ static unsigned char *slurp(const char *fn, long *n) {
 static u32 le32(const unsigned char *p) {
 	return p[0] | p[1] << 8 | p[2] << 16 | (u32)p[3] << 24;
 }
+
 static u32 be32(const unsigned char *p) {
 	return (u32)p[0] << 24 | p[1] << 16 | p[2] << 8 | p[3];
 }
+
 static u32 le16(const unsigned char *p) {
 	return p[0] | p[1] << 8;
 }
@@ -56,6 +58,7 @@ static const char *macho_arch(u32 ct) {
 		return "?";
 	}
 }
+
 static const char *macho_type(u32 ft) {
 	switch (ft) {
 	case 1:
@@ -96,8 +99,8 @@ static int macho_slice(const unsigned char *p, long n, u32 *ct, u32 *ft, u32 *mi
 			*minos = le32(lc + 12);
 			have_build = 1;
 		} else if (!have_build && cmdsize >= 12 &&
-			   (cmd == LC_VERSION_MIN_MACOSX || cmd == LC_VERSION_MIN_IPHONEOS ||
-			    cmd == LC_VERSION_MIN_TVOS || cmd == LC_VERSION_MIN_WATCHOS)) {
+							 (cmd == LC_VERSION_MIN_MACOSX || cmd == LC_VERSION_MIN_IPHONEOS ||
+								cmd == LC_VERSION_MIN_TVOS || cmd == LC_VERSION_MIN_WATCHOS)) {
 			*minos = le32(lc + 8);
 		}
 		lc += cmdsize;
@@ -139,10 +142,12 @@ static int pe_parse(const unsigned char *d, long n, u32 *machine, u32 *subsystem
 static int is_elf(const unsigned char *d, long n) {
 	return n >= 4 && !memcmp(d, "\177ELF", 4);
 }
+
 static int is_macho(const unsigned char *d, long n) {
 	return n >= 4 && ((le32(d) == MH_MAGIC_64) ||
-					  (d[0] == 0xca && d[1] == 0xfe && d[2] == 0xba && d[3] == 0xbe));
+										(d[0] == 0xca && d[1] == 0xfe && d[2] == 0xba && d[3] == 0xbe));
 }
+
 static int is_pe(const unsigned char *d, long n) {
 	return n >= 2 && d[0] == 'M' && d[1] == 'Z';
 }
@@ -168,9 +173,13 @@ int main(int argc, char **argv) {
 	d = slurp(file, &n);
 
 	if (!strcmp(mode, "type")) {
-		const char *t = is_elf(d, n) ? "elf" : is_macho(d, n) ? "mach-o"
-										   : is_pe(d, n)	  ? "pe"
-															  : "unknown";
+		const char *t = is_elf(d, n)
+												? "elf"
+										: is_macho(d, n)
+												? "mach-o"
+										: is_pe(d, n)
+												? "pe"
+												: "unknown";
 		printf("%s\n", t);
 		return strcmp(t, "unknown") ? 0 : 1;
 	}
@@ -180,7 +189,7 @@ int main(int argc, char **argv) {
 		for (si = 0; si < ns; si++) {
 			u32 ct = 0, ft = 0, minos = 0;
 			if (offs[si] >= (u32)n ||
-				macho_slice(d + offs[si], n - offs[si], &ct, &ft, &minos) != 0)
+					macho_slice(d + offs[si], n - offs[si], &ct, &ft, &minos) != 0)
 				continue;
 			if (arch && strcmp(arch, macho_arch(ct)))
 				continue;
@@ -189,7 +198,7 @@ int main(int argc, char **argv) {
 			if (!strcmp(mode, "minos")) {
 				char v[32];
 				snprintf(v, sizeof v, "%u.%u.%u", minos >> 16, (minos >> 8) & 0xff,
-						 minos & 0xff);
+								 minos & 0xff);
 				printf("minos %s\n", v);
 				if (expect && strcmp(expect, v)) {
 					printf("FAIL %s: minos %s != expected %s\n", file, v, expect);
@@ -199,7 +208,7 @@ int main(int argc, char **argv) {
 		}
 		if (!matched) {
 			printf("FAIL %s: not a valid Mach-O%s%s\n", file,
-				   arch ? " for arch " : "", arch ? arch : "");
+						 arch ? " for arch " : "", arch ? arch : "");
 			return 1;
 		}
 		return rc;

@@ -3,6 +3,7 @@ extern int printf(const char *, ...);
 struct pt {
 	int x, y;
 };
+
 static int g_counter = 41;
 static const char *msg = "rt";
 
@@ -37,6 +38,7 @@ static unsigned bits(unsigned v) {
 static int add1(int x) {
 	return x + 1;
 }
+
 static int neg(int x) {
 	return -x;
 }
@@ -87,6 +89,7 @@ static double dpdot(double w, struct dp p) {
 static double dfrac(double d) {
 	return d - (int)d;
 }
+
 static float ffrac(float f) {
 	return f - (int)f;
 }
@@ -125,9 +128,9 @@ int main(void) {
 	double pv = dpdot(2.0, mkdp(1.5));
 
 	printf("%s %d %ld %d %d %u %d %.6f %.6f %.6f %.6f %.6f %.6f %d %d %d\n",
-		   msg, fact(6), sumarr(a, 6), classify(9), classify(5),
-		   bits(0x1234u), acc,
-		   dv, (double)fv, wv, pv, dfrac(dv), (double)ffrac(fv),
-		   quantize(dv, fv), fdcmp(dv, wv, fv, 0.5f), fdcmp(1.5, 1.5, 2.0f, 2.0f));
+				 msg, fact(6), sumarr(a, 6), classify(9), classify(5),
+				 bits(0x1234u), acc,
+				 dv, (double)fv, wv, pv, dfrac(dv), (double)ffrac(fv),
+				 quantize(dv, fv), fdcmp(dv, wv, fv, 0.5f), fdcmp(1.5, 1.5, 2.0f, 2.0f));
 	return 0;
 }

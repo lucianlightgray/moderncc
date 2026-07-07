@@ -2,7 +2,8 @@
 
 #define ARFMAG "`\n"
 
-typedef struct {
+typedef struct
+{
 	char ar_name[16];
 	char ar_date[12];
 	char ar_uid[6];
@@ -14,7 +15,7 @@ typedef struct {
 
 static unsigned long le2belong(unsigned long ul) {
 	return ((ul & 0xFF0000) >> 8) + ((ul & 0xFF000000) >> 24) +
-		   ((ul & 0xFF) << 24) + ((ul & 0xFF00) << 8);
+				 ((ul & 0xFF) << 24) + ((ul & 0xFF00) << 8);
 }
 
 static int ar_usage(int ret) {
@@ -25,13 +26,13 @@ static int ar_usage(int ret) {
 
 ST_FUNC int mcc_tool_ar(int argc, char **argv) {
 	static const ArHdr arhdr_init = {
-		"/               ",
-		"0           ",
-		"0     ",
-		"0     ",
-		"0       ",
-		"0         ",
-		ARFMAG};
+			"/               ",
+			"0           ",
+			"0     ",
+			"0     ",
+			"0       ",
+			"0         ",
+			ARFMAG};
 
 	ArHdr arhdr = arhdr_init;
 	ArHdr arhdro = arhdr_init;
@@ -117,7 +118,7 @@ ST_FUNC int mcc_tool_ar(int argc, char **argv) {
 				if (extract) {
 					if ((fo = fopen(arhdr.ar_name, "wb")) == NULL) {
 						fprintf(stderr, "mcc: ar: can't create file %s\n",
-								arhdr.ar_name);
+										arhdr.ar_name);
 						mcc_free(buf);
 						goto finish;
 					}
@@ -200,7 +201,7 @@ ST_FUNC int mcc_tool_ar(int argc, char **argv) {
 			for (int i = 1; i < nsym; i++) {
 				sym = (ElfW(Sym) *)(symtab + i * sizeof(ElfW(Sym)));
 				if (sym->st_shndx &&
-					(sym->st_info == 0x10 || sym->st_info == 0x11 || sym->st_info == 0x12 || sym->st_info == 0x20 || sym->st_info == 0x21 || sym->st_info == 0x22)) {
+						(sym->st_info == 0x10 || sym->st_info == 0x11 || sym->st_info == 0x12 || sym->st_info == 0x20 || sym->st_info == 0x21 || sym->st_info == 0x22)) {
 					istrlen = strlen(strtab + sym->st_name) + 1;
 					anames = mcc_realloc(anames, strpos + istrlen);
 					strcpy(anames + strpos, strtab + sym->st_name);
@@ -216,8 +217,8 @@ ST_FUNC int mcc_tool_ar(int argc, char **argv) {
 
 		file = argv[i_obj];
 		for (name = strchr(file, 0);
-			 name > file && name[-1] != '/' && name[-1] != '\\';
-			 --name)
+				 name > file && name[-1] != '/' && name[-1] != '\\';
+				 --name)
 			;
 		istrlen = strlen(name);
 		if (istrlen >= sizeof(arhdro.ar_name))
@@ -314,8 +315,8 @@ ST_FUNC int mcc_tool_impdef(int argc, char **argv) {
 	if (0 == infile[0]) {
 	usage:
 		fprintf(stderr,
-				"usage: mcc -impdef library.dll [-v] [-o outputfile]\n"
-				"create export definition file (.def) from dll\n");
+						"usage: mcc -impdef library.dll [-v] [-o outputfile]\n"
+						"create export definition file (.def) from dll\n");
 		goto the_end;
 	}
 
@@ -333,10 +334,14 @@ ST_FUNC int mcc_tool_impdef(int argc, char **argv) {
 	ret = mcc_get_dllexports(file, &p);
 	if (ret || !p) {
 		fprintf(stderr, "mcc: impdef: %s '%s'\n",
-				ret == -1 ? "can't find file" : ret == 1 ? "can't read symbols"
-											: ret == 0	 ? "no symbols found in"
-														 : "unknown file type",
-				file);
+						ret == -1
+								? "can't find file"
+						: ret == 1
+								? "can't read symbols"
+						: ret == 0
+								? "no symbols found in"
+								: "unknown file type",
+						file);
 		ret = 1;
 		goto the_end;
 	}
@@ -388,12 +393,12 @@ ST_FUNC int mcc_tool_cross(char **argv, int target) {
 	int prefix = mcc_basename(a0) - a0;
 
 	snprintf(program, sizeof program,
-			 "%.*s%s"
+					 "%.*s%s"
 #ifdef MCC_TARGET_PE
-			 "-win32"
+					 "-win32"
 #endif
-			 "-mcc" HOST_EXE_SUFFIX,
-			 prefix, a0, target == 64 ? "x86_64" : "i386");
+					 "-mcc" HOST_EXE_SUFFIX,
+					 prefix, a0, target == 64 ? "x86_64" : "i386");
 
 	if (strcmp(a0, program)) {
 		argv[0] = program;
@@ -433,7 +438,7 @@ ST_FUNC int gen_makedeps(MCCState *s1, const char *target, const char *filename)
 
 	if (!filename) {
 		snprintf(buf, sizeof buf, "%.*s.d",
-				 (int)(mcc_fileextension(target) - target), target);
+						 (int)(mcc_fileextension(target) - target), target);
 		filename = buf;
 	}
 

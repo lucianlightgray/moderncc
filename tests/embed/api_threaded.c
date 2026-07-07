@@ -32,13 +32,16 @@ void sleep_ms(unsigned n) {
 #define TF_TYPE(func, param) void *func(void *param)
 typedef TF_TYPE(ThreadFunc, x);
 pthread_t hh[M];
+
 void create_thread(ThreadFunc f, int n) {
 	pthread_create(&hh[n], NULL, f, (void *)(size_t)n);
 }
+
 void wait_threads(int n) {
 	while (n)
 		pthread_join(hh[--n], NULL);
 }
+
 void sleep_ms(unsigned n) {
 	usleep(n * 1000);
 }
@@ -60,25 +63,25 @@ int add(int a, int b) {
 
 PROG(my_program)
 "#include <mcclib.h>\n"
-	"int add(int a, int b);\n"
-	"int fib(int n)\n"
-	"{\n"
-	"    if (n <= 2)\n"
-	"        return 1;\n"
-	"    else\n"
-	"        return add(fib(n-1),fib(n-2));\n"
-	"}\n"
-	"\n"
-	"void bar(void) { *(void**)0 = 0; }\n"
-	"\n"
-	"int foo(int n)\n"
-	"{\n"
-	"    printf(\" %d\", fib(n));\n"
-	"    if (n >= N_CRASH && n < N_CRASH + 8)\n"
-	"       bar();\n"
-	"    return 0;\n"
-	"#  warning is this the correct file:line...\n"
-	"}\n";
+		"int add(int a, int b);\n"
+		"int fib(int n)\n"
+		"{\n"
+		"    if (n <= 2)\n"
+		"        return 1;\n"
+		"    else\n"
+		"        return add(fib(n-1),fib(n-2));\n"
+		"}\n"
+		"\n"
+		"void bar(void) { *(void**)0 = 0; }\n"
+		"\n"
+		"int foo(int n)\n"
+		"{\n"
+		"    printf(\" %d\", fib(n));\n"
+		"    if (n >= N_CRASH && n < N_CRASH + 8)\n"
+		"       bar();\n"
+		"    return 0;\n"
+		"#  warning is this the correct file:line...\n"
+		"}\n";
 
 int g_argc;
 char **g_argv;
@@ -102,20 +105,20 @@ void parse_args(MCCState *s) {
 }
 
 int backtrace_func(
-	void *ud,
-	void *pc,
-	const char *file,
-	int line,
-	const char *func,
-	const char *msg) {
+		void *ud,
+		void *pc,
+		const char *file,
+		int line,
+		const char *func,
+		const char *msg) {
 #if 0
-	printf("\n  *** %p %s %s:%d in '%s'",
-		pc,
-		msg ? "at" : "by",
-		file ? file : "?",
-		line,
-		func ? func : "?");
-	return 1;
+    printf("\n  *** %p %s %s:%d in '%s'",
+           pc,
+           msg ? "at" : "by",
+           file ? file : "?",
+           line,
+           func ? func : "?");
+    return 1;
 #else
 
 	printf("!");
@@ -217,8 +220,8 @@ TF_TYPE(thread_test_complex, vn) {
 	for (i = 1; i < g_argc; ++i)
 		argv[argc++] = g_argv[i];
 #if 0
-	argv[argc++] = "-run";
-	for (i = 1; i < g_argc; ++i) argv[argc++] = g_argv[i];
+    argv[argc++] = "-run";
+    for (i = 1; i < g_argc; ++i) argv[argc++] = g_argv[i];
 #endif
 	argv[argc++] = "-DFIB";
 	argv[argc++] = "-run";

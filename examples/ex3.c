@@ -11,7 +11,7 @@ int main(int argc, char **argv) {
 	int n;
 	if (argc < 2) {
 		printf("usage: fib n\n"
-			   "Compute nth Fibonacci number\n");
+					 "Compute nth Fibonacci number\n");
 		return 1;
 	}
 

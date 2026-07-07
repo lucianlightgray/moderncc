@@ -113,7 +113,7 @@ ST_FUNC const char *disasm_label(disasm_ctx *dc, addr_t target) {
 			if (dc->nlabels == dc->labels_cap) {
 				dc->labels_cap = dc->labels_cap ? dc->labels_cap * 2 : 16;
 				dc->labels = mcc_realloc(dc->labels,
-										 dc->labels_cap * sizeof *dc->labels);
+																 dc->labels_cap * sizeof *dc->labels);
 			}
 			dc->labels[dc->nlabels++] = target;
 		}
@@ -124,8 +124,11 @@ ST_FUNC const char *disasm_label(disasm_ctx *dc, addr_t target) {
 
 static int addr_cmp(const void *a, const void *b) {
 	addr_t x = *(const addr_t *)a, y = *(const addr_t *)b;
-	return x < y ? -1 : x > y ? 1
-							  : 0;
+	return x < y
+						 ? -1
+				 : x > y
+						 ? 1
+						 : 0;
 }
 #endif
 
@@ -203,11 +206,13 @@ struct cfi_note {
 	addr_t pc;
 	char text[64];
 };
+
 struct cfi_fde {
 	addr_t start, end;
 	int shndx;
 	int note0, nnotes;
 };
+
 struct cfi_info {
 	struct cfi_note *notes;
 	int nnotes, notes_cap;
@@ -270,7 +275,6 @@ static int cfi_parse(MCCState *s1, struct cfi_info *ci) {
 		eend = q + length;
 		id = dwarf_read_4(q, eend);
 		if (id == 0) {
-
 			unsigned int version = dwarf_read_1(q, eend);
 			if (version != 1 && version != 3)
 				return 0;
@@ -285,7 +289,6 @@ static int cfi_parse(MCCState *s1, struct cfi_info *ci) {
 				return 0;
 			have_cie = 1;
 		} else {
-
 			addr_t start, off = 0;
 			unsigned int range;
 			unsigned long long auglen, u1, u2;
@@ -311,11 +314,11 @@ static int cfi_parse(MCCState *s1, struct cfi_info *ci) {
 				case 2:
 					u1 = dwarf_read_uleb128(&q, eend);
 					cfi_add_note(ci, start + off, ".cfi_offset %u, %lld",
-								 op & 0x3f, (long long)u1 * data_align);
+											 op & 0x3f, (long long)u1 * data_align);
 					continue;
 				case 3:
 					cfi_add_note(ci, start + off, ".cfi_restore %u",
-								 op & 0x3f);
+											 op & 0x3f);
 					continue;
 				}
 				switch (op) {
@@ -334,23 +337,23 @@ static int cfi_parse(MCCState *s1, struct cfi_info *ci) {
 					u1 = dwarf_read_uleb128(&q, eend);
 					u2 = dwarf_read_uleb128(&q, eend);
 					cfi_add_note(ci, start + off, ".cfi_def_cfa %llu, %llu",
-								 u1, u2);
+											 u1, u2);
 					continue;
 				case DW_CFA_def_cfa_offset:
 					u1 = dwarf_read_uleb128(&q, eend);
 					cfi_add_note(ci, start + off, ".cfi_def_cfa_offset %llu",
-								 u1);
+											 u1);
 					continue;
 				case DW_CFA_def_cfa_register:
 					u1 = dwarf_read_uleb128(&q, eend);
 					cfi_add_note(ci, start + off,
-								 ".cfi_def_cfa_register %llu", u1);
+											 ".cfi_def_cfa_register %llu", u1);
 					continue;
 				case DW_CFA_offset_extended:
 					u1 = dwarf_read_uleb128(&q, eend);
 					u2 = dwarf_read_uleb128(&q, eend);
 					cfi_add_note(ci, start + off, ".cfi_offset %llu, %lld",
-								 u1, (long long)u2 * data_align);
+											 u1, (long long)u2 * data_align);
 					continue;
 				case DW_CFA_restore_extended:
 					u1 = dwarf_read_uleb128(&q, eend);
@@ -365,7 +368,7 @@ static int cfi_parse(MCCState *s1, struct cfi_info *ci) {
 			if (ci->nfdes == ci->fdes_cap) {
 				ci->fdes_cap = ci->fdes_cap ? ci->fdes_cap * 2 : 16;
 				ci->fdes = mcc_realloc(ci->fdes,
-									   ci->fdes_cap * sizeof *ci->fdes);
+															 ci->fdes_cap * sizeof *ci->fdes);
 			}
 			ci->fdes[ci->nfdes].start = start;
 			ci->fdes[ci->nfdes].end = start + range;
@@ -393,7 +396,6 @@ static void emit_directive_header(FILE *f, Section *s) {
 	else if (!strcmp(n, ".rodata"))
 		fprintf(f, "\t.section\t.rodata,\"a\",%sprogbits\n", TYPE_PFX);
 	else {
-
 		fprintf(f, "\t.section\t%s", n);
 		if (s->sh_type == SHT_NOBITS)
 			fprintf(f, ",\"aw\",%snobits", TYPE_PFX);
@@ -410,7 +412,7 @@ static void emit_directive_header(FILE *f, Section *s) {
 }
 
 static void emit_text(disasm_ctx *dc, struct secsym *syms, int nsym,
-					  struct cfi_info *ci) {
+											struct cfi_info *ci) {
 	FILE *f = dc->out;
 	addr_t pc, end = dc->size;
 	int si, li;
@@ -433,7 +435,6 @@ static void emit_text(disasm_ctx *dc, struct secsym *syms, int nsym,
 	si = li = 0;
 	for (pc = 0; pc < end;) {
 		if (ci) {
-
 			if (in_proc && pc >= ci->fdes[fi].end) {
 				while (ni < ci->fdes[fi].note0 + ci->fdes[fi].nnotes)
 					fprintf(f, "\t%s\n", ci->notes[ni++].text);
@@ -535,14 +536,14 @@ static void emit_sizes(FILE *f, struct secsym *syms, int nsym) {
 		int type = ELFW(ST_TYPE)(syms[i].sym->st_info);
 		if ((type == STT_FUNC || type == STT_OBJECT) && syms[i].sym->st_size)
 			fprintf(f, "\t.size\t%s, %llu\n", syms[i].name,
-					(unsigned long long)syms[i].sym->st_size);
+							(unsigned long long)syms[i].sym->st_size);
 	}
 }
 
 static int section_is_output(Section *s) {
 	static const char *skip[] = {
 
-		".eh_frame", ".note", ".comment", ".debug", ".stab", ".gnu", 0};
+			".eh_frame", ".note", ".comment", ".debug", ".stab", ".gnu", 0};
 	int i;
 	if (!(s->sh_flags & SHF_ALLOC))
 		return 0;
@@ -567,7 +568,7 @@ ST_FUNC int asm_output_file(MCCState *s1, const char *filename) {
 		return mcc_error_noabort("could not write '%s'", filename);
 
 	fprintf(f, "\t.file\t\"%s\"\n",
-			s1->nb_files ? mcc_basename(s1->files[0]->name) : "mcc");
+					s1->nb_files ? mcc_basename(s1->files[0]->name) : "mcc");
 
 	build_unique_names(s1);
 
@@ -595,13 +596,12 @@ ST_FUNC int asm_output_file(MCCState *s1, const char *filename) {
 		dc.out = f;
 
 		if (s->sh_type == SHT_NOBITS) {
-
 			int si = 0;
 			addr_t pc = 0, end = s->data_offset;
 			while (si < nsym) {
 				if (syms[si].value > pc && syms[si].value <= end) {
 					fprintf(f, "\t.skip\t%llu\n",
-							(unsigned long long)(syms[si].value - pc));
+									(unsigned long long)(syms[si].value - pc));
 					pc = syms[si].value;
 				}
 				emit_sym_decl(f, syms[si].sym, syms[si].name);

@@ -7,6 +7,7 @@
 #ifndef _WIN32
 extern void (*_(_init_array_start)[])(int argc, char **argv, char **envp);
 extern void (*_(_init_array_end)[])(int argc, char **argv, char **envp);
+
 static void run_ctors(int argc, char **argv, char **env) {
 	int i = 0;
 	while (&_(_init_array_start)[i] != _(_init_array_end))
@@ -16,6 +17,7 @@ static void run_ctors(int argc, char **argv, char **env) {
 
 extern void (*_(_fini_array_start)[])(void);
 extern void (*_(_fini_array_end)[])(void);
+
 static void run_dtors(void) {
 	int i = 0;
 	while (&_(_fini_array_end)[i] != _(_fini_array_start))

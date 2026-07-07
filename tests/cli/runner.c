@@ -66,7 +66,6 @@ static int req_met(const char *req, char *reason, size_t rn) {
 				return 0;
 			}
 		} else if (!strncmp(tok, "os!=", 4)) {
-
 			const char *want = tok + 4;
 			const char *colon = strchr(want, ':');
 			char wbuf[64];
@@ -83,7 +82,6 @@ static int req_met(const char *req, char *reason, size_t rn) {
 				return 0;
 			}
 		} else if (!strcmp(tok, "elf")) {
-
 			if (os_eq(os, "Darwin") || os_eq(os, "WIN32")) {
 				snprintf(reason, rn, "requires an ELF target (host: %s)", os);
 				return 0;
@@ -94,7 +92,6 @@ static int req_met(const char *req, char *reason, size_t rn) {
 				return 0;
 			}
 		} else if (!strcmp(tok, "stabs")) {
-
 			if (hc_envv("MCC_TEST_DWARF", "")[0]) {
 				snprintf(reason, rn, "requires stabs as default -g format (MCC_CONFIG_DWARF set)");
 				return 0;
@@ -236,7 +233,7 @@ static int texts_equal(const char *a, const char *b) {
 }
 
 static char *subst(const char *cmd, const char *mcc, const char *b,
-				   const char *i, const char *w, const char *d, const char *t) {
+									 const char *i, const char *w, const char *d, const char *t) {
 	size_t cap = strlen(cmd) * 4 + 256, o = 0;
 	char *out = malloc(cap);
 	for (const char *p = cmd; *p;) {
@@ -328,13 +325,13 @@ int main(int argc, char **argv) {
 		} else {
 			fail++;
 			printf("FAIL  %-28s\n  cmd: %s\n  --- expected ---\n%s\n  --- got ---\n%s\n",
-				   c->name, full, c->expect, out);
+						 c->name, full, c->expect, out);
 		}
 		free(full);
 		free(out);
 	}
 	printf("cli runner: %d passed, %d failed, %d skipped (of %d)\n",
-		   pass, fail, skipped, cli_cases_count);
+				 pass, fail, skipped, cli_cases_count);
 	if (only && pass + fail + skipped == 0) {
 		fprintf(stderr, "cli runner: no case named '%s'\n", only);
 		return 2;

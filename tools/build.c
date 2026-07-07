@@ -4,28 +4,32 @@ static const char *CC = "cc";
 static const char *OUTDIR = "build-c";
 
 static const char *RT_OBJS[] = {
-	"mccrt", "alloca", "alloca-bt", "atomic", "stdatomic", "builtin",
-	"va_list", "dsohandle", "tcov", 0};
+		"mccrt", "alloca", "alloca-bt", "atomic", "stdatomic", "builtin",
+		"va_list", "dsohandle", "tcov", 0};
 
 static const char *ARCH_INCS[] = {
-	"-Isrc", "-Iinclude", "-Isrc/formats", "-Isrc/objfmt",
-	"-Isrc/arch/i386", "-Isrc/arch/x86_64", "-Isrc/arch/arm",
-	"-Isrc/arch/arm64", "-Isrc/arch/riscv64", 0};
+		"-Isrc", "-Iinclude", "-Isrc/formats", "-Isrc/objfmt",
+		"-Isrc/arch/i386", "-Isrc/arch/x86_64", "-Isrc/arch/arm",
+		"-Isrc/arch/arm64", "-Isrc/arch/riscv64", 0};
 
 static void arg(Argv *v, const char *s) {
 	ts_arg(v, s);
 }
+
 static void args(Argv *v, const char *const *set) {
 	ts_args(v, set);
 }
+
 static const char *const *argz(Argv *v) {
 	return ts_argz(v);
 }
 
-static const struct {
+static const struct
+{
 	const char *cpu, *define;
 } CPU_DEFS[] = {
-	{"x86_64", "MCC_TARGET_X86_64"}, {"amd64", "MCC_TARGET_X86_64"}, {"i386", "MCC_TARGET_I386"}, {"i686", "MCC_TARGET_I386"}, {"arm64", "MCC_TARGET_ARM64"}, {"aarch64", "MCC_TARGET_ARM64"}, {"arm", "MCC_TARGET_ARM"}, {"riscv64", "MCC_TARGET_RISCV64"}, {0, 0}};
+		{"x86_64", "MCC_TARGET_X86_64"}, {"amd64", "MCC_TARGET_X86_64"}, {"i386", "MCC_TARGET_I386"}, {"i686", "MCC_TARGET_I386"}, {"arm64", "MCC_TARGET_ARM64"}, {"aarch64", "MCC_TARGET_ARM64"}, {"arm", "MCC_TARGET_ARM"}, {"riscv64", "MCC_TARGET_RISCV64"}, {0, 0}};
+
 static const char *target_define(const char *cpu) {
 	int i;
 	for (i = 0; CPU_DEFS[i].cpu; ++i)
@@ -47,7 +51,7 @@ static const char *fopt(int argc, char **argv, const char *k, const char *d);
 
 static const char *map_cpu(const char *m) {
 	if (!strcmp(m, "x86") || !strcmp(m, "i86pc") || !strcmp(m, "BePC") ||
-		(m[0] == 'i' && m[1] >= '3' && m[1] <= '6' && !strcmp(m + 2, "86")))
+			(m[0] == 'i' && m[1] >= '3' && m[1] <= '6' && !strcmp(m + 2, "86")))
 		return "i386";
 	if (!strcmp(m, "x86_64") || !strcmp(m, "amd64") || !strcmp(m, "x86-64") || !strcmp(m, "AMD64"))
 		return "x86_64";
@@ -147,40 +151,41 @@ static void detect_arm(char *eabi, char *vfp, char *hard, char *idiv, char *cpuv
 }
 
 static int arm_abi_selftest(void) {
-	struct {
+	struct
+	{
 		const char *name, *dump;
 		char eabi, vfp, hard, idiv;
 		const char *cpuver;
 	} cases[] = {
-		{"armv7-hardfloat",
-		 "#define __ARM_ARCH 7\n#define __ARM_EABI__ 1\n#define __ARM_FP 0xc\n"
-		 "#define __ARM_PCS_VFP 1\n#define __VFP_FP__ 1\n",
-		 1, 1, 1, 0, "7"},
-		{"armv7-softfloat",
-		 "#define __ARM_ARCH 7\n#define __ARM_EABI__ 1\n#define __VFP_FP__ 1\n", 1, 1, 0, 0, "7"},
-		{"armv6-soft-nofp",
-		 "#define __ARM_ARCH 6\n#define __ARM_EABI__ 1\n", 1, 0, 0, 0, "6"},
-		{"armv7ve-idiv-hardfloat",
-		 "#define __ARM_ARCH 7\n#define __ARM_ARCH_7VE__ 1\n#define __ARM_EABI__ 1\n"
-		 "#define __ARM_FEATURE_IDIV 1\n#define __ARM_FP 0xe\n#define __ARM_PCS_VFP 1\n"
-		 "#define __VFP_FP__ 1\n",
-		 1, 1, 1, 1, "7"},
-		{"aarch64-degrades",
-		 "#define __ARM_ARCH 8\n#define __ARM_FEATURE_IDIV 1\n#define __ARM_FP 0xe\n", 0, 1, 0, 1, "8"},
-		{0, 0, 0, 0, 0, 0, 0}};
+			{"armv7-hardfloat",
+			 "#define __ARM_ARCH 7\n#define __ARM_EABI__ 1\n#define __ARM_FP 0xc\n"
+			 "#define __ARM_PCS_VFP 1\n#define __VFP_FP__ 1\n",
+			 1, 1, 1, 0, "7"},
+			{"armv7-softfloat",
+			 "#define __ARM_ARCH 7\n#define __ARM_EABI__ 1\n#define __VFP_FP__ 1\n", 1, 1, 0, 0, "7"},
+			{"armv6-soft-nofp",
+			 "#define __ARM_ARCH 6\n#define __ARM_EABI__ 1\n", 1, 0, 0, 0, "6"},
+			{"armv7ve-idiv-hardfloat",
+			 "#define __ARM_ARCH 7\n#define __ARM_ARCH_7VE__ 1\n#define __ARM_EABI__ 1\n"
+			 "#define __ARM_FEATURE_IDIV 1\n#define __ARM_FP 0xe\n#define __ARM_PCS_VFP 1\n"
+			 "#define __VFP_FP__ 1\n",
+			 1, 1, 1, 1, "7"},
+			{"aarch64-degrades",
+			 "#define __ARM_ARCH 8\n#define __ARM_FEATURE_IDIV 1\n#define __ARM_FP 0xe\n", 0, 1, 0, 1, "8"},
+			{0, 0, 0, 0, 0, 0, 0}};
 	int i, fails = 0;
 	for (i = 0; cases[i].name; i++) {
 		char eabi, vfp, hard, idiv, cpuver[8];
 		parse_arm_abi(cases[i].dump, &eabi, &vfp, &hard, &idiv, cpuver);
 		if (eabi != cases[i].eabi || vfp != cases[i].vfp || hard != cases[i].hard ||
-			idiv != cases[i].idiv || strcmp(cpuver, cases[i].cpuver)) {
+				idiv != cases[i].idiv || strcmp(cpuver, cases[i].cpuver)) {
 			printf("FAIL %-22s eabi=%d/%d vfp=%d/%d hard=%d/%d idiv=%d/%d cpuver=%s/%s\n",
-				   cases[i].name, eabi, cases[i].eabi, vfp, cases[i].vfp, hard, cases[i].hard,
-				   idiv, cases[i].idiv, cpuver, cases[i].cpuver);
+						 cases[i].name, eabi, cases[i].eabi, vfp, cases[i].vfp, hard, cases[i].hard,
+						 idiv, cases[i].idiv, cpuver, cases[i].cpuver);
 			fails++;
 		} else {
 			printf("ok   %-22s eabi=%d vfp=%d hard=%d idiv=%d cpuver=%s\n",
-				   cases[i].name, eabi, vfp, hard, idiv, cpuver);
+						 cases[i].name, eabi, vfp, hard, idiv, cpuver);
 		}
 	}
 	if (fails) {
@@ -232,7 +237,7 @@ static int cmd_detect(int argc, char **argv) {
 		printf("MCC_CPU=%s\nMCC_OS=%s\nMCC_TRIPLET=%s\nMCC_LIBC=%s\n", cpu, os, triplet, libc);
 		if (!strcmp(cpu, "arm"))
 			printf("MCC_ARM_EABI=%d\nMCC_ARM_VFP=%d\nMCC_ARM_HARDFLOAT=%d\nMCC_ARM_IDIV=%d\nMCC_CPUVER=%s\n",
-				   eabi, vfp, hard, idiv, cpuver);
+						 eabi, vfp, hard, idiv, cpuver);
 		return 0;
 	}
 	if (xcpu && strcmp(xcpu, cpu)) {
@@ -256,28 +261,29 @@ static int cmd_detect(int argc, char **argv) {
 struct CrossTarget {
 	const char *name, *cpu, *os, *cdefs, *triplet;
 };
+
 static const struct CrossTarget CROSS[] = {
-	{"i386", "i386", "Linux", "MCC_TARGET_I386", "i686-linux-gnu"},
-	{"x86_64", "x86_64", "Linux", "MCC_TARGET_X86_64", "x86_64-linux-gnu"},
-	{"i386-win32", "i386", "WIN32", "MCC_TARGET_I386 MCC_TARGET_PE", ""},
-	{"x86_64-win32", "x86_64", "WIN32", "MCC_TARGET_X86_64 MCC_TARGET_PE", ""},
-	{"x86_64-osx", "x86_64", "Darwin", "MCC_TARGET_X86_64 MCC_TARGET_MACHO", ""},
-	{"arm", "arm", "Linux", "MCC_TARGET_ARM MCC_ARM_VFP MCC_ARM_EABI MCC_ARM_HARDFLOAT", "arm-linux-gnueabihf"},
-	{"arm64", "arm64", "Linux", "MCC_TARGET_ARM64", "aarch64-linux-gnu"},
-	{"arm64-win32", "arm64", "WIN32", "MCC_TARGET_ARM64 MCC_TARGET_PE", ""},
-	{"arm-wince", "arm", "WIN32", "MCC_TARGET_ARM MCC_ARM_VFP MCC_ARM_EABI MCC_ARM_HARDFLOAT MCC_TARGET_PE", ""},
-	{"riscv64", "riscv64", "Linux", "MCC_TARGET_RISCV64", "riscv64-linux-gnu"},
-	{"arm64-osx", "arm64", "Darwin", "MCC_TARGET_ARM64 MCC_TARGET_MACHO", ""},
-	{0, 0, 0, 0, 0}};
+		{"i386", "i386", "Linux", "MCC_TARGET_I386", "i686-linux-gnu"},
+		{"x86_64", "x86_64", "Linux", "MCC_TARGET_X86_64", "x86_64-linux-gnu"},
+		{"i386-win32", "i386", "WIN32", "MCC_TARGET_I386 MCC_TARGET_PE", ""},
+		{"x86_64-win32", "x86_64", "WIN32", "MCC_TARGET_X86_64 MCC_TARGET_PE", ""},
+		{"x86_64-osx", "x86_64", "Darwin", "MCC_TARGET_X86_64 MCC_TARGET_MACHO", ""},
+		{"arm", "arm", "Linux", "MCC_TARGET_ARM MCC_ARM_VFP MCC_ARM_EABI MCC_ARM_HARDFLOAT", "arm-linux-gnueabihf"},
+		{"arm64", "arm64", "Linux", "MCC_TARGET_ARM64", "aarch64-linux-gnu"},
+		{"arm64-win32", "arm64", "WIN32", "MCC_TARGET_ARM64 MCC_TARGET_PE", ""},
+		{"arm-wince", "arm", "WIN32", "MCC_TARGET_ARM MCC_ARM_VFP MCC_ARM_EABI MCC_ARM_HARDFLOAT MCC_TARGET_PE", ""},
+		{"riscv64", "riscv64", "Linux", "MCC_TARGET_RISCV64", "riscv64-linux-gnu"},
+		{"arm64-osx", "arm64", "Darwin", "MCC_TARGET_ARM64 MCC_TARGET_MACHO", ""},
+		{0, 0, 0, 0, 0}};
 
 static int mccrt_objs(const char *cpu, const char *os, const char **out, int max) {
 	int n = 0;
 	int win = !strcmp(os, "WIN32"), osx = !strcmp(os, "Darwin");
 	static const char *COMMON[] = {"stdatomic", "atomic", "builtin", "alloca", "alloca-bt", "complex", 0};
 	int i;
-#define ADD(x)              \
-	do {                    \
-		if (n < max)        \
+#define ADD(x)        \
+	do {                \
+		if (n < max)      \
 			out[n++] = (x); \
 	} while (0)
 	if (!strcmp(cpu, "i386") || !strcmp(cpu, "x86_64"))
@@ -325,7 +331,7 @@ static void obj_src(const char *obj, char *buf, int bsz) {
 	else if (!strcmp(obj, "wincrt1w"))
 		snprintf(buf, bsz, "runtime/win32/lib/wincrt1.c");
 	else if (!strcmp(obj, "crt1") || !strcmp(obj, "wincrt1") || !strcmp(obj, "dllcrt1") ||
-			 !strcmp(obj, "dllmain") || !strcmp(obj, "winex") || !strcmp(obj, "chkstk"))
+					 !strcmp(obj, "dllmain") || !strcmp(obj, "winex") || !strcmp(obj, "chkstk"))
 		snprintf(buf, bsz, "runtime/win32/lib/%s.c", obj);
 	else
 		snprintf(buf, bsz, "runtime/lib/%s.c", obj);
@@ -478,6 +484,7 @@ static int cmd_cross(const char *name, const char *out) {
 static int truthy(const char *v) {
 	return v && *v && strcmp(v, "OFF") && strcmp(v, "0") && strcmp(v, "FALSE") && strcmp(v, "NO");
 }
+
 static const char *fopt(int argc, char **argv, const char *k, const char *d) {
 	int i;
 	for (i = 2; i < argc - 1; i++)
@@ -485,6 +492,7 @@ static const char *fopt(int argc, char **argv, const char *k, const char *d) {
 			return argv[i + 1];
 	return d;
 }
+
 static int defcmp(const void *a, const void *b) {
 	return strcmp(*(char *const *)a, *(char *const *)b);
 }
@@ -561,10 +569,11 @@ static int cmd_emit_defines(int argc, char **argv) {
 			EMIT("CONFIG_MCC_SEMLOCK=%s", sl);
 	}
 	{
-		struct {
+		struct
+		{
 			const char *flag, *name;
 		} sd[] = {
-			{"--sysincludepaths", "CONFIG_MCC_SYSINCLUDEPATHS"}, {"--libpaths", "CONFIG_MCC_LIBPATHS"}, {"--crtprefix", "CONFIG_MCC_CRTPREFIX"}, {"--elfinterp", "CONFIG_MCC_ELFINTERP"}, {"--switches", "CONFIG_MCC_SWITCHES"}, {"--triplet", "CONFIG_TRIPLET"}, {"--os-release", "CONFIG_OS_RELEASE"}};
+				{"--sysincludepaths", "CONFIG_MCC_SYSINCLUDEPATHS"}, {"--libpaths", "CONFIG_MCC_LIBPATHS"}, {"--crtprefix", "CONFIG_MCC_CRTPREFIX"}, {"--elfinterp", "CONFIG_MCC_ELFINTERP"}, {"--switches", "CONFIG_MCC_SWITCHES"}, {"--triplet", "CONFIG_TRIPLET"}, {"--os-release", "CONFIG_OS_RELEASE"}};
 		unsigned k;
 		for (k = 0; k < sizeof sd / sizeof sd[0]; k++) {
 			const char *v = fopt(argc, argv, sd[k].flag, "");
@@ -738,7 +747,7 @@ int main(int argc, char **argv) {
 			cpu_from_machine(mach, target, sizeof target);
 		ts_git_stamp(stamp, sizeof stamp);
 		printf("build: cc=%s out=%s target=%s host=%s (%s) %s\n",
-			   CC, OUTDIR, target, mach, osrel, stamp);
+					 CC, OUTDIR, target, mach, osrel, stamp);
 	}
 	if (!(tdef = target_define(target))) {
 		fprintf(stderr, "build: unsupported target cpu '%s'\n", target);
@@ -750,7 +759,8 @@ int main(int argc, char **argv) {
 		ts_cc_probe(CC, hostmach, sizeof hostmach, NULL, 0);
 		cpu_from_machine(hostmach, hostcpu, sizeof hostcpu);
 		if (target_define(hostcpu) != tdef) {
-			fprintf(stderr, "build: --target %s != host %s; cross runtime staging needs the CMake cross factory\n", target, hostcpu);
+			fprintf(stderr, "build: --target %s != host %s; cross runtime staging needs the CMake cross factory\n",
+							target, hostcpu);
 			return 2;
 		}
 	}

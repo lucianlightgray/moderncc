@@ -1,7 +1,6 @@
 #include <stdatomic.h>
 
 int main(void) {
-
 	_Atomic int i = 7;
 	int o = i++;
 	if (o != 7 || i != 8)

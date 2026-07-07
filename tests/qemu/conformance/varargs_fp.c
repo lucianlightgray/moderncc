@@ -13,8 +13,8 @@ int main(void) {
 		return 2;
 
 	snprintf(buf, sizeof buf,
-			 "%.1f %.1f %.1f %.1f %.1f %.1f %.1f %.1f %.1f %.1f",
-			 0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5);
+					 "%.1f %.1f %.1f %.1f %.1f %.1f %.1f %.1f %.1f %.1f",
+					 0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5);
 	if (strcmp(buf, "0.5 1.5 2.5 3.5 4.5 5.5 6.5 7.5 8.5 9.5"))
 		return 3;
 
@@ -32,7 +32,7 @@ int main(void) {
 		return 6;
 
 	snprintf(buf, sizeof buf, "%.1f %d %.1f %d %.1f",
-			 0.5, 7, 1.5, 8, 2.5);
+					 0.5, 7, 1.5, 8, 2.5);
 	if (strcmp(buf, "0.5 7 1.5 8 2.5"))
 		return 7;
 

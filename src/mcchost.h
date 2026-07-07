@@ -208,6 +208,7 @@ typedef struct HostSpawnOpts {
 	const char *stderr_file;
 	char **stdout_buf, **stderr_buf;
 } HostSpawnOpts;
+
 ST_FUNC int host_spawn_ex(const char *const *argv, const HostSpawnOpts *o);
 
 ST_FUNC int host_find_tool_any(const char *const *names, const char *ext, char *buf, int size);
@@ -224,7 +225,7 @@ ST_FUNC char **host_environ(void);
 ST_FUNC int host_nproc(void);
 
 ST_FUNC void host_sys_info(char *sysname, int ssz, char *release, int rsz,
-						   char *machine, int msz);
+													 char *machine, int msz);
 
 ST_FUNC void *host_dlopen(const char *name);
 ST_FUNC void host_dlclose(void *h);
@@ -294,7 +295,8 @@ ST_FUNC void host_fault_unblock(unsigned detail);
 
 #if CONFIG_MCC_SEMLOCK
 #if defined _WIN32
-typedef struct {
+typedef struct
+{
 	volatile LONG init;
 	CRITICAL_SECTION cs;
 } HostSem;
@@ -313,7 +315,8 @@ static inline void host_sem_post(HostSem *p) {
 }
 #elif defined __APPLE__
 #include <dispatch/dispatch.h>
-typedef struct {
+typedef struct
+{
 	int init;
 	dispatch_semaphore_t sem;
 } HostSem;
@@ -327,16 +330,20 @@ static inline void host_sem_post(HostSem *p) {
 }
 #else
 #include <semaphore.h>
-typedef struct {
+
+typedef struct
+{
 	int init;
 	sem_t sem;
 } HostSem;
+
 static inline void host_sem_wait(HostSem *p) {
 	if (!p->init)
 		sem_init(&p->sem, 0, 1), p->init = 1;
 	while (sem_wait(&p->sem) < 0 && errno == EINTR)
 		;
 }
+
 static inline void host_sem_post(HostSem *p) {
 	sem_post(&p->sem);
 }

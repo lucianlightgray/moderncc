@@ -4,12 +4,14 @@
 
 typedef unsigned long long u64;
 
-typedef struct {
+typedef struct
+{
 	unsigned char *data;
 	long size;
 } blob;
 
-typedef struct {
+typedef struct
+{
 	char name[64];
 	u64 off, size;
 	unsigned type;
@@ -59,8 +61,9 @@ static int sections(blob *b, sec *out, int max) {
 		shnum = (int)rd(b->data + 0x30, 2);
 		shstrndx = (int)rd(b->data + 0x32, 2);
 	}
-	stroff = is64 ? rd(b->data + shoff + (u64)shstrndx * shentsize + 0x18, 8)
-				  : rd(b->data + shoff + (u64)shstrndx * shentsize + 0x10, 4);
+	stroff = is64
+							 ? rd(b->data + shoff + (u64)shstrndx * shentsize + 0x18, 8)
+							 : rd(b->data + shoff + (u64)shstrndx * shentsize + 0x10, 4);
 	for (i = 0; i < shnum && n < max; i++) {
 		const unsigned char *sh = b->data + shoff + (u64)i * shentsize;
 		u64 nameoff = rd(sh, 4);
@@ -68,7 +71,7 @@ static int sections(blob *b, sec *out, int max) {
 		sec *s = &out[n];
 
 		snprintf(s->name, sizeof s->name, "%s",
-				 strcmp(nm, ".data.ro") ? nm : ".rodata");
+						 strcmp(nm, ".data.ro") ? nm : ".rodata");
 		s->type = (unsigned)rd(sh + 4, 4);
 		if (is64) {
 			s->off = rd(sh + 0x18, 8);
@@ -123,7 +126,7 @@ int main(int argc, char **argv) {
 			for (j = 0; j < x->size && j < y->size; j++)
 				if (a.data[x->off + j] != b.data[y->off + j]) {
 					printf("  first diff at +0x%llx: 0x%02x vs 0x%02x\n", j,
-						   a.data[x->off + j], b.data[y->off + j]);
+								 a.data[x->off + j], b.data[y->off + j]);
 					break;
 				}
 			rc = 1;

@@ -69,7 +69,7 @@ int ts_fnmatch(const char *p, const char *s) {
 		for (; *q && *q != ']'; ++q) {
 			if (q[1] == '-' && q[2] && q[2] != ']') {
 				if ((unsigned char)*s >= (unsigned char)q[0] &&
-					(unsigned char)*s <= (unsigned char)q[2])
+						(unsigned char)*s <= (unsigned char)q[2])
 					matched = 1;
 				q += 2;
 			} else if (*q == *s) {
@@ -176,8 +176,8 @@ static int ts_contains_any(const char *line, const char *const *set) {
 }
 
 char *ts_first_error_line(const char *text,
-						  const char *const *needles,
-						  const char *const *skips) {
+													const char *const *needles,
+													const char *const *skips) {
 	const char *p = text;
 	char *fallback = NULL;
 	if (!text)

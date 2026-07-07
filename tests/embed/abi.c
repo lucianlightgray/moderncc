@@ -63,15 +63,15 @@ static int run_callback(const char *src, callback_type callback) {
 #define STR2(x) #x
 #define STR(x) STR2(x)
 
-#define RET_PRIMITIVE_TEST(name, type, val)                              \
-	static int ret_##name##_test_callback(void *ptr) {                   \
+#define RET_PRIMITIVE_TEST(name, type, val)                          \
+	static int ret_##name##_test_callback(void *ptr) {                 \
 		type (*callback)(type) = (type (*)(type))ptr;                    \
 		type x = val;                                                    \
 		type y = callback(x);                                            \
 		return (y == x + x) ? 0 : -1;                                    \
-	}                                                                    \
-																		 \
-	static int ret_##name##_test(void) {                                 \
+	}                                                                  \
+                                                                     \
+	static int ret_##name##_test(void) {                               \
 		const char *src = STR(type) " f(" STR(type) " x) {return x+x;}"; \
 		return run_callback(src, ret_##name##_test_callback);            \
 	}
@@ -85,6 +85,7 @@ RET_PRIMITIVE_TEST(longdouble, LONG_DOUBLE, LONG_DOUBLE_LITERAL(378943892.0))
 typedef struct ret_2float_test_type_s {
 	float x, y;
 } ret_2float_test_type;
+
 typedef ret_2float_test_type (*ret_2float_test_function_type)(ret_2float_test_type);
 
 static int ret_2float_test_callback(void *ptr) {
@@ -97,11 +98,11 @@ static int ret_2float_test_callback(void *ptr) {
 
 static int ret_2float_test(void) {
 	const char *src =
-		"typedef struct ret_2float_test_type_s {float x, y;} ret_2float_test_type;"
-		"ret_2float_test_type f(ret_2float_test_type a) {\n"
-		"  ret_2float_test_type r = {a.x*5, a.y*3};\n"
-		"  return r;\n"
-		"}\n";
+			"typedef struct ret_2float_test_type_s {float x, y;} ret_2float_test_type;"
+			"ret_2float_test_type f(ret_2float_test_type a) {\n"
+			"  ret_2float_test_type r = {a.x*5, a.y*3};\n"
+			"  return r;\n"
+			"}\n";
 
 	return run_callback(src, ret_2float_test_callback);
 }
@@ -109,6 +110,7 @@ static int ret_2float_test(void) {
 typedef struct ret_2double_test_type_s {
 	double x, y;
 } ret_2double_test_type;
+
 typedef ret_2double_test_type (*ret_2double_test_function_type)(ret_2double_test_type);
 
 static int ret_2double_test_callback(void *ptr) {
@@ -121,16 +123,17 @@ static int ret_2double_test_callback(void *ptr) {
 
 static int ret_2double_test(void) {
 	const char *src =
-		"typedef struct ret_2double_test_type_s {double x, y;} ret_2double_test_type;"
-		"ret_2double_test_type f(ret_2double_test_type a) {\n"
-		"  ret_2double_test_type r = {a.x*5, a.y*3};\n"
-		"  return r;\n"
-		"}\n";
+			"typedef struct ret_2double_test_type_s {double x, y;} ret_2double_test_type;"
+			"ret_2double_test_type f(ret_2double_test_type a) {\n"
+			"  ret_2double_test_type r = {a.x*5, a.y*3};\n"
+			"  return r;\n"
+			"}\n";
 
 	return run_callback(src, ret_2double_test_callback);
 }
 
-typedef ret_2double_test_type (*ret_8plus2double_test_function_type)(double, double, double, double, double, double, double, ret_2double_test_type, double, double);
+typedef ret_2double_test_type (*ret_8plus2double_test_function_type)(double, double, double, double, double, double,
+																																		 double, ret_2double_test_type, double, double);
 
 static int ret_8plus2double_test_callback(void *ptr) {
 	ret_8plus2double_test_function_type f = (ret_8plus2double_test_function_type)ptr;
@@ -142,11 +145,11 @@ static int ret_8plus2double_test_callback(void *ptr) {
 
 static int ret_8plus2double_test(void) {
 	const char *src =
-		"typedef struct ret_2double_test_type_s {double x, y;} ret_2double_test_type;"
-		"ret_2double_test_type f(double x1, double x2, double x3, double x4, double x5, double x6, double x7, ret_2double_test_type a, double x8, double x9) {\n"
-		"  ret_2double_test_type r = { x8, x8 };\n"
-		"  return r;\n"
-		"}\n";
+			"typedef struct ret_2double_test_type_s {double x, y;} ret_2double_test_type;"
+			"ret_2double_test_type f(double x1, double x2, double x3, double x4, double x5, double x6, double x7, ret_2double_test_type a, double x8, double x9) {\n"
+			"  ret_2double_test_type r = { x8, x8 };\n"
+			"  return r;\n"
+			"}\n";
 
 	return run_callback(src, ret_8plus2double_test_callback);
 }
@@ -155,6 +158,7 @@ typedef struct ret_mixed_test_type_s {
 	double x;
 	long long y;
 } ret_mixed_test_type;
+
 typedef ret_mixed_test_type (*ret_mixed_test_function_type)(ret_mixed_test_type);
 
 static int ret_mixed_test_callback(void *ptr) {
@@ -167,11 +171,11 @@ static int ret_mixed_test_callback(void *ptr) {
 
 static int ret_mixed_test(void) {
 	const char *src =
-		"typedef struct ret_mixed_test_type_s {double x; long long y;} ret_mixed_test_type;"
-		"ret_mixed_test_type f(ret_mixed_test_type a) {\n"
-		"  ret_mixed_test_type r = {a.x*5, a.y*3};\n"
-		"  return r;\n"
-		"}\n";
+			"typedef struct ret_mixed_test_type_s {double x; long long y;} ret_mixed_test_type;"
+			"ret_mixed_test_type f(ret_mixed_test_type a) {\n"
+			"  ret_mixed_test_type r = {a.x*5, a.y*3};\n"
+			"  return r;\n"
+			"}\n";
 
 	return run_callback(src, ret_mixed_test_callback);
 }
@@ -180,6 +184,7 @@ typedef struct ret_mixed2_test_type_s {
 	float x, x2;
 	int y, y2;
 } ret_mixed2_test_type;
+
 typedef ret_mixed2_test_type (*ret_mixed2_test_function_type)(ret_mixed2_test_type);
 
 static int ret_mixed2_test_callback(void *ptr) {
@@ -192,11 +197,11 @@ static int ret_mixed2_test_callback(void *ptr) {
 
 static int ret_mixed2_test(void) {
 	const char *src =
-		"typedef struct ret_mixed2_test_type_s {float x, x2; int y,y2;} ret_mixed2_test_type;"
-		"ret_mixed2_test_type f(ret_mixed2_test_type a) {\n"
-		"  ret_mixed2_test_type r = {a.x*5, 0, a.y*3, 0};\n"
-		"  return r;\n"
-		"}\n";
+			"typedef struct ret_mixed2_test_type_s {float x, x2; int y,y2;} ret_mixed2_test_type;"
+			"ret_mixed2_test_type f(ret_mixed2_test_type a) {\n"
+			"  ret_mixed2_test_type r = {a.x*5, 0, a.y*3, 0};\n"
+			"  return r;\n"
+			"}\n";
 
 	return run_callback(src, ret_mixed2_test_callback);
 }
@@ -207,6 +212,7 @@ typedef struct ret_mixed3_test_type_s {
 	float x2;
 	int y2;
 } ret_mixed3_test_type;
+
 typedef ret_mixed3_test_type (*ret_mixed3_test_function_type)(ret_mixed3_test_type);
 
 static int ret_mixed3_test_callback(void *ptr) {
@@ -219,11 +225,11 @@ static int ret_mixed3_test_callback(void *ptr) {
 
 static int ret_mixed3_test(void) {
 	const char *src =
-		"typedef struct ret_mixed3_test_type_s {float x; int y; float x2; int y2;} ret_mixed3_test_type;"
-		"ret_mixed3_test_type f(ret_mixed3_test_type a) {\n"
-		"  ret_mixed3_test_type r = {a.x*5, 0, 0, a.y*3};\n"
-		"  return r;\n"
-		"}\n";
+			"typedef struct ret_mixed3_test_type_s {float x; int y; float x2; int y2;} ret_mixed3_test_type;"
+			"ret_mixed3_test_type f(ret_mixed3_test_type a) {\n"
+			"  ret_mixed3_test_type r = {a.x*5, 0, 0, a.y*3};\n"
+			"  return r;\n"
+			"}\n";
 
 	return run_callback(src, ret_mixed3_test_callback);
 }
@@ -231,6 +237,7 @@ static int ret_mixed3_test(void) {
 typedef struct reg_pack_test_type_s {
 	int x, y;
 } reg_pack_test_type;
+
 typedef reg_pack_test_type (*reg_pack_test_function_type)(reg_pack_test_type);
 
 static int reg_pack_test_callback(void *ptr) {
@@ -243,11 +250,11 @@ static int reg_pack_test_callback(void *ptr) {
 
 static int reg_pack_test(void) {
 	const char *src =
-		"typedef struct reg_pack_test_type_s {int x, y;} reg_pack_test_type;"
-		"reg_pack_test_type f(reg_pack_test_type a) {\n"
-		"  reg_pack_test_type r = {a.x*5, a.y*3};\n"
-		"  return r;\n"
-		"}\n";
+			"typedef struct reg_pack_test_type_s {int x, y;} reg_pack_test_type;"
+			"reg_pack_test_type f(reg_pack_test_type a) {\n"
+			"  reg_pack_test_type r = {a.x*5, a.y*3};\n"
+			"  return r;\n"
+			"}\n";
 
 	return run_callback(src, reg_pack_test_callback);
 }
@@ -255,6 +262,7 @@ static int reg_pack_test(void) {
 typedef struct reg_pack_longlong_test_type_s {
 	long long x, y;
 } reg_pack_longlong_test_type;
+
 typedef reg_pack_longlong_test_type (*reg_pack_longlong_test_function_type)(reg_pack_longlong_test_type);
 
 static int reg_pack_longlong_test_callback(void *ptr) {
@@ -267,16 +275,17 @@ static int reg_pack_longlong_test_callback(void *ptr) {
 
 static int reg_pack_longlong_test(void) {
 	const char *src =
-		"typedef struct reg_pack_longlong_test_type_s {long long x, y;} reg_pack_longlong_test_type;"
-		"reg_pack_longlong_test_type f(reg_pack_longlong_test_type a) {\n"
-		"  reg_pack_longlong_test_type r = {a.x*5, a.y*3};\n"
-		"  return r;\n"
-		"}\n";
+			"typedef struct reg_pack_longlong_test_type_s {long long x, y;} reg_pack_longlong_test_type;"
+			"reg_pack_longlong_test_type f(reg_pack_longlong_test_type a) {\n"
+			"  reg_pack_longlong_test_type r = {a.x*5, a.y*3};\n"
+			"  return r;\n"
+			"}\n";
 
 	return run_callback(src, reg_pack_longlong_test_callback);
 }
 
-typedef reg_pack_longlong_test_type (*ret_6plus2longlong_test_function_type)(long long, long long, long long, long long, long long, reg_pack_longlong_test_type, long long, long long);
+typedef reg_pack_longlong_test_type (*ret_6plus2longlong_test_function_type)(
+		long long, long long, long long, long long, long long, reg_pack_longlong_test_type, long long, long long);
 
 static int ret_6plus2longlong_test_callback(void *ptr) {
 	ret_6plus2longlong_test_function_type f = (ret_6plus2longlong_test_function_type)ptr;
@@ -288,11 +297,11 @@ static int ret_6plus2longlong_test_callback(void *ptr) {
 
 static int ret_6plus2longlong_test(void) {
 	const char *src =
-		"typedef struct reg_pack_longlong_test_type_s {long long x, y;} reg_pack_longlong_test_type;"
-		"reg_pack_longlong_test_type f(long long x1, long long x2, long long x3, long long x4, long long x5, reg_pack_longlong_test_type a, long long x8, long long x9) {\n"
-		"  reg_pack_longlong_test_type r = { x8, x8 };\n"
-		"  return r;\n"
-		"}\n";
+			"typedef struct reg_pack_longlong_test_type_s {long long x, y;} reg_pack_longlong_test_type;"
+			"reg_pack_longlong_test_type f(long long x1, long long x2, long long x3, long long x4, long long x5, reg_pack_longlong_test_type a, long long x8, long long x9) {\n"
+			"  reg_pack_longlong_test_type r = { x8, x8 };\n"
+			"  return r;\n"
+			"}\n";
 
 	return run_callback(src, ret_6plus2longlong_test_callback);
 }
@@ -300,6 +309,7 @@ static int ret_6plus2longlong_test(void) {
 typedef struct sret_test_type_s {
 	long long a, b, c;
 } sret_test_type;
+
 typedef sret_test_type (*sret_test_function_type)(sret_test_type);
 
 static int sret_test_callback(void *ptr) {
@@ -311,11 +321,11 @@ static int sret_test_callback(void *ptr) {
 
 static int sret_test(void) {
 	const char *src =
-		"typedef struct sret_test_type_s {long long a, b, c;} sret_test_type;\n"
-		"sret_test_type f(sret_test_type x) {\n"
-		"  sret_test_type r = {x.a*35, x.b*19, x.c*21};\n"
-		"  return r;\n"
-		"}\n";
+			"typedef struct sret_test_type_s {long long a, b, c;} sret_test_type;\n"
+			"sret_test_type f(sret_test_type x) {\n"
+			"  sret_test_type r = {x.a*35, x.b*19, x.c*21};\n"
+			"  return r;\n"
+			"}\n";
 
 	return run_callback(src, sret_test_callback);
 }
@@ -323,6 +333,7 @@ static int sret_test(void) {
 typedef union one_member_union_test_type_u {
 	int x;
 } one_member_union_test_type;
+
 typedef one_member_union_test_type (*one_member_union_test_function_type)(one_member_union_test_type);
 
 static int one_member_union_test_callback(void *ptr) {
@@ -335,12 +346,12 @@ static int one_member_union_test_callback(void *ptr) {
 
 static int one_member_union_test(void) {
 	const char *src =
-		"typedef union one_member_union_test_type_u {int x;} one_member_union_test_type;\n"
-		"one_member_union_test_type f(one_member_union_test_type a) {\n"
-		"  one_member_union_test_type b;\n"
-		"  b.x = a.x * 2;\n"
-		"  return b;\n"
-		"}\n";
+			"typedef union one_member_union_test_type_u {int x;} one_member_union_test_type;\n"
+			"one_member_union_test_type f(one_member_union_test_type a) {\n"
+			"  one_member_union_test_type b;\n"
+			"  b.x = a.x * 2;\n"
+			"  return b;\n"
+			"}\n";
 	return run_callback(src, one_member_union_test_callback);
 }
 
@@ -348,6 +359,7 @@ typedef union two_member_union_test_type_u {
 	int x;
 	long y;
 } two_member_union_test_type;
+
 typedef two_member_union_test_type (*two_member_union_test_function_type)(two_member_union_test_type);
 
 static int two_member_union_test_callback(void *ptr) {
@@ -360,19 +372,22 @@ static int two_member_union_test_callback(void *ptr) {
 
 static int two_member_union_test(void) {
 	const char *src =
-		"typedef union two_member_union_test_type_u {int x; long y;} two_member_union_test_type;\n"
-		"two_member_union_test_type f(two_member_union_test_type a) {\n"
-		"  two_member_union_test_type b;\n"
-		"  b.x = a.x * 2;\n"
-		"  return b;\n"
-		"}\n";
+			"typedef union two_member_union_test_type_u {int x; long y;} two_member_union_test_type;\n"
+			"two_member_union_test_type f(two_member_union_test_type a) {\n"
+			"  two_member_union_test_type b;\n"
+			"  b.x = a.x * 2;\n"
+			"  return b;\n"
+			"}\n";
 	return run_callback(src, two_member_union_test_callback);
 }
 
 typedef struct many_struct_test_type_s {
 	long long a, b, c;
 } many_struct_test_type;
-typedef many_struct_test_type (*many_struct_test_function_type)(many_struct_test_type, many_struct_test_type, many_struct_test_type, many_struct_test_type, many_struct_test_type, many_struct_test_type);
+
+typedef many_struct_test_type (*many_struct_test_function_type)(many_struct_test_type, many_struct_test_type,
+																																many_struct_test_type, many_struct_test_type,
+																																many_struct_test_type, many_struct_test_type);
 
 static int many_struct_test_callback(void *ptr) {
 	many_struct_test_function_type f = (many_struct_test_function_type)ptr;
@@ -383,21 +398,24 @@ static int many_struct_test_callback(void *ptr) {
 
 static int many_struct_test(void) {
 	const char *src =
-		"typedef struct many_struct_test_type_s {long long a, b, c;} many_struct_test_type;\n"
-		"many_struct_test_type f(many_struct_test_type x1, many_struct_test_type x2, many_struct_test_type x3, many_struct_test_type x4, many_struct_test_type x5, many_struct_test_type x6) {\n"
-		"  many_struct_test_type y;\n"
-		"  y.a = x1.a + x2.a + x3.a + x4.a + x5.a + x6.a;\n"
-		"  y.b = x1.b + x2.b + x3.b + x4.b + x5.b + x6.b;\n"
-		"  y.c = x1.c + x2.c + x3.c + x4.c + x5.c + x6.c;\n"
-		"  return y;\n"
-		"}\n";
+			"typedef struct many_struct_test_type_s {long long a, b, c;} many_struct_test_type;\n"
+			"many_struct_test_type f(many_struct_test_type x1, many_struct_test_type x2, many_struct_test_type x3, many_struct_test_type x4, many_struct_test_type x5, many_struct_test_type x6) {\n"
+			"  many_struct_test_type y;\n"
+			"  y.a = x1.a + x2.a + x3.a + x4.a + x5.a + x6.a;\n"
+			"  y.b = x1.b + x2.b + x3.b + x4.b + x5.b + x6.b;\n"
+			"  y.c = x1.c + x2.c + x3.c + x4.c + x5.c + x6.c;\n"
+			"  return y;\n"
+			"}\n";
 	return run_callback(src, many_struct_test_callback);
 }
 
 typedef struct many_struct_test_2_type_s {
 	int a, b;
 } many_struct_test_2_type;
-typedef many_struct_test_2_type (*many_struct_test_2_function_type)(many_struct_test_2_type, many_struct_test_2_type, many_struct_test_2_type, many_struct_test_2_type, many_struct_test_2_type, many_struct_test_2_type);
+
+typedef many_struct_test_2_type (*many_struct_test_2_function_type)(many_struct_test_2_type, many_struct_test_2_type,
+																																		many_struct_test_2_type, many_struct_test_2_type,
+																																		many_struct_test_2_type, many_struct_test_2_type);
 
 static int many_struct_test_2_callback(void *ptr) {
 	many_struct_test_2_function_type f = (many_struct_test_2_function_type)ptr;
@@ -408,20 +426,25 @@ static int many_struct_test_2_callback(void *ptr) {
 
 static int many_struct_test_2(void) {
 	const char *src =
-		"typedef struct many_struct_test_2_type_s {int a, b;} many_struct_test_2_type;\n"
-		"many_struct_test_2_type f(many_struct_test_2_type x1, many_struct_test_2_type x2, many_struct_test_2_type x3, many_struct_test_2_type x4, many_struct_test_2_type x5, many_struct_test_2_type x6) {\n"
-		"  many_struct_test_2_type y;\n"
-		"  y.a = x1.a + x2.a + x3.a + x4.a + x5.a + x6.a;\n"
-		"  y.b = x1.b + x2.b + x3.b + x4.b + x5.b + x6.b;\n"
-		"  return y;\n"
-		"}\n";
+			"typedef struct many_struct_test_2_type_s {int a, b;} many_struct_test_2_type;\n"
+			"many_struct_test_2_type f(many_struct_test_2_type x1, many_struct_test_2_type x2, many_struct_test_2_type x3, many_struct_test_2_type x4, many_struct_test_2_type x5, many_struct_test_2_type x6) {\n"
+			"  many_struct_test_2_type y;\n"
+			"  y.a = x1.a + x2.a + x3.a + x4.a + x5.a + x6.a;\n"
+			"  y.b = x1.b + x2.b + x3.b + x4.b + x5.b + x6.b;\n"
+			"  return y;\n"
+			"}\n";
 	return run_callback(src, many_struct_test_2_callback);
 }
 
 typedef struct many_struct_test_3_type_s {
 	int a, b;
 } many_struct_test_3_type;
-typedef many_struct_test_3_type (*many_struct_test_3_function_type)(many_struct_test_3_type, many_struct_test_3_type, many_struct_test_3_type, many_struct_test_3_type, many_struct_test_3_type, many_struct_test_3_type, ...);
+
+typedef many_struct_test_3_type (*many_struct_test_3_function_type)(many_struct_test_3_type, many_struct_test_3_type,
+																																		many_struct_test_3_type, many_struct_test_3_type,
+																																		many_struct_test_3_type, many_struct_test_3_type,
+																																		...);
+
 typedef struct many_struct_test_3_struct_type {
 	many_struct_test_3_function_type f;
 	many_struct_test_3_function_type *f2;
@@ -433,7 +456,7 @@ static void many_struct_test_3_dummy(double d, ...) {
 
 static int many_struct_test_3_callback(void *ptr) {
 	many_struct_test_3_struct_type s = {
-		ptr,
+			ptr,
 	};
 	many_struct_test_3_struct_type *s2 = &s;
 	s2->f2 = &s2->f;
@@ -446,19 +469,21 @@ static int many_struct_test_3_callback(void *ptr) {
 
 static int many_struct_test_3(void) {
 	const char *src =
-		"typedef struct many_struct_test_3_type_s {int a, b;} many_struct_test_3_type;\n"
-		"many_struct_test_3_type f(many_struct_test_3_type x1, many_struct_test_3_type x2, many_struct_test_3_type x3, many_struct_test_3_type x4, many_struct_test_3_type x5, many_struct_test_3_type x6, ...) {\n"
-		"  many_struct_test_3_type y;\n"
-		"  y.a = x1.a + x2.a + x3.a + x4.a + x5.a + x6.a;\n"
-		"  y.b = x1.b + x2.b + x3.b + x4.b + x5.b + x6.b;\n"
-		"  return y;\n"
-		"}\n";
+			"typedef struct many_struct_test_3_type_s {int a, b;} many_struct_test_3_type;\n"
+			"many_struct_test_3_type f(many_struct_test_3_type x1, many_struct_test_3_type x2, many_struct_test_3_type x3, many_struct_test_3_type x4, many_struct_test_3_type x5, many_struct_test_3_type x6, ...) {\n"
+			"  many_struct_test_3_type y;\n"
+			"  y.a = x1.a + x2.a + x3.a + x4.a + x5.a + x6.a;\n"
+			"  y.b = x1.b + x2.b + x3.b + x4.b + x5.b + x6.b;\n"
+			"  return y;\n"
+			"}\n";
 	return run_callback(src, many_struct_test_3_callback);
 }
 
-typedef struct {
+typedef struct
+{
 	long long a, b, c;
 } stdarg_test_struct_type;
+
 typedef void (*stdarg_test_function_type)(int, int, int, ...);
 
 static int stdarg_test_callback(void *ptr) {
@@ -467,44 +492,46 @@ static int stdarg_test_callback(void *ptr) {
 	double y;
 	stdarg_test_struct_type z = {1, 2, 3}, w;
 	f(10, 10, 5,
-	  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, &x,
-	  1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, &y,
-	  z, z, z, z, z, &w);
+		1, 2, 3, 4, 5, 6, 7, 8, 9, 10, &x,
+		1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, &y,
+		z, z, z, z, z, &w);
 	return ((x == 55) && (y == 55) && (w.a == 5) && (w.b == 10) && (w.c == 15)) ? 0 : -1;
 }
 
 static int stdarg_test(void) {
 	const char *src =
-		"#include <stdarg.h>\n"
-		"typedef struct {long long a, b, c;} stdarg_test_struct_type;\n"
-		"void f(int n_int, int n_float, int n_struct, ...) {\n"
-		"  int i, ti = 0;\n"
-		"  double td = 0.0;\n"
-		"  stdarg_test_struct_type ts = {0,0,0}, tmp;\n"
-		"  va_list ap;\n"
-		"  va_start(ap, n_struct);\n"
-		"  for (i = 0, ti = 0; i < n_int; ++i)\n"
-		"    ti += va_arg(ap, int);\n"
-		"  *va_arg(ap, int*) = ti;\n"
-		"  for (i = 0, td = 0; i < n_float; ++i)\n"
-		"    td += va_arg(ap, double);\n"
-		"  *va_arg(ap, double*) = td;\n"
-		"  for (i = 0; i < n_struct; ++i) {\n"
-		"    tmp = va_arg(ap, stdarg_test_struct_type);\n"
-		"    ts.a += tmp.a; ts.b += tmp.b; ts.c += tmp.c;"
-		"  }\n"
-		"  *va_arg(ap, stdarg_test_struct_type*) = ts;\n"
-		"  va_end(ap);"
-		"}\n";
+			"#include <stdarg.h>\n"
+			"typedef struct {long long a, b, c;} stdarg_test_struct_type;\n"
+			"void f(int n_int, int n_float, int n_struct, ...) {\n"
+			"  int i, ti = 0;\n"
+			"  double td = 0.0;\n"
+			"  stdarg_test_struct_type ts = {0,0,0}, tmp;\n"
+			"  va_list ap;\n"
+			"  va_start(ap, n_struct);\n"
+			"  for (i = 0, ti = 0; i < n_int; ++i)\n"
+			"    ti += va_arg(ap, int);\n"
+			"  *va_arg(ap, int*) = ti;\n"
+			"  for (i = 0, td = 0; i < n_float; ++i)\n"
+			"    td += va_arg(ap, double);\n"
+			"  *va_arg(ap, double*) = td;\n"
+			"  for (i = 0; i < n_struct; ++i) {\n"
+			"    tmp = va_arg(ap, stdarg_test_struct_type);\n"
+			"    ts.a += tmp.a; ts.b += tmp.b; ts.c += tmp.c;"
+			"  }\n"
+			"  *va_arg(ap, stdarg_test_struct_type*) = ts;\n"
+			"  va_end(ap);"
+			"}\n";
 	return run_callback(src, stdarg_test_callback);
 }
 
-typedef struct {
+typedef struct
+{
 	long long a, b;
 } stdarg_many_test_struct_type;
+
 typedef void (*stdarg_many_test_function_type)(int, int, int, int, int,
-											   stdarg_many_test_struct_type,
-											   int, int, ...);
+																							 stdarg_many_test_struct_type,
+																							 int, int, ...);
 
 static int stdarg_many_test_callback(void *ptr) {
 	stdarg_many_test_function_type f = (stdarg_many_test_function_type)ptr;
@@ -516,22 +543,24 @@ static int stdarg_many_test_callback(void *ptr) {
 
 static int stdarg_many_test(void) {
 	const char *src =
-		"#include <stdarg.h>\n"
-		"typedef struct {long long a, b;} stdarg_many_test_struct_type;\n"
-		"void f (int a, int b, int c, int d, int e, stdarg_many_test_struct_type l, int f, int g, ...){\n"
-		"  va_list ap;\n"
-		"  int *p;\n"
-		"  va_start (ap, g);\n"
-		"  p = va_arg(ap, int*);\n"
-		"  *p = va_arg(ap, int);\n"
-		"  va_end (ap);\n"
-		"}\n";
+			"#include <stdarg.h>\n"
+			"typedef struct {long long a, b;} stdarg_many_test_struct_type;\n"
+			"void f (int a, int b, int c, int d, int e, stdarg_many_test_struct_type l, int f, int g, ...){\n"
+			"  va_list ap;\n"
+			"  int *p;\n"
+			"  va_start (ap, g);\n"
+			"  p = va_arg(ap, int*);\n"
+			"  *p = va_arg(ap, int);\n"
+			"  va_end (ap);\n"
+			"}\n";
 	return run_callback(src, stdarg_many_test_callback);
 }
 
-typedef struct {
+typedef struct
+{
 	long long a, b, c;
 } stdarg_struct_test_struct_type;
+
 typedef int (*stdarg_struct_test_function_type)(stdarg_struct_test_struct_type a, ...);
 
 static int stdarg_struct_test_callback(void *ptr) {
@@ -543,15 +572,15 @@ static int stdarg_struct_test_callback(void *ptr) {
 
 static int stdarg_struct_test(void) {
 	const char *src =
-		"#include <stdarg.h>\n"
-		"typedef struct {long long a, b, c;} stdarg_struct_test_struct_type;\n"
-		"int f(stdarg_struct_test_struct_type a, ...) {\n"
-		"  va_list ap;\n"
-		"  va_start(ap, a);\n"
-		"  int z = va_arg(ap, int);\n"
-		"  va_end(ap);\n"
-		"  return z + a.a + a.b + a.c;\n"
-		"}\n";
+			"#include <stdarg.h>\n"
+			"typedef struct {long long a, b, c;} stdarg_struct_test_struct_type;\n"
+			"int f(stdarg_struct_test_struct_type a, ...) {\n"
+			"  va_list ap;\n"
+			"  va_start(ap, a);\n"
+			"  int z = va_arg(ap, int);\n"
+			"  va_end(ap);\n"
+			"  return z + a.a + a.b + a.c;\n"
+			"}\n";
 	return run_callback(src, stdarg_struct_test_callback);
 }
 
@@ -565,22 +594,22 @@ static int arg_align_test_callback(void *ptr) {
 
 static int arg_align_test(void) {
 	const char *src =
-		"long double f(long double a, int b, long double c, int d, long double e) {\n"
-		"  return a + c + e;\n"
-		"}\n";
+			"long double f(long double a, int b, long double c, int d, long double e) {\n"
+			"  return a + c + e;\n"
+			"}\n";
 	return run_callback(src, arg_align_test_callback);
 }
 
-#define RUN_TEST(t)                                 \
+#define RUN_TEST(t)                               \
 	if (!testname || (strcmp(#t, testname) == 0)) { \
-		fputs(#t "... ", stdout);                   \
-		fflush(stdout);                             \
-		if (t() == 0) {                             \
-			fputs("success\n", stdout);             \
-		} else {                                    \
-			fputs("failure\n", stdout);             \
-			retval = EXIT_FAILURE;                  \
-		}                                           \
+		fputs(#t "... ", stdout);                     \
+		fflush(stdout);                               \
+		if (t() == 0) {                               \
+			fputs("success\n", stdout);                 \
+		} else {                                      \
+			fputs("failure\n", stdout);                 \
+			retval = EXIT_FAILURE;                      \
+		}                                             \
 	}
 
 int main(int argc, char **argv) {

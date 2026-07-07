@@ -350,7 +350,6 @@ ST_FUNC MAYBE_UNUSED int host_spawn_ex(const char *const *argv, const HostSpawnO
 	full = host_build_argv(argv, o);
 #ifdef _WIN32
 	{
-
 		char *cmd, *p;
 		int i, len = 1;
 		STARTUPINFOA si;
@@ -389,7 +388,7 @@ ST_FUNC MAYBE_UNUSED int host_spawn_ex(const char *const *argv, const HostSpawnO
 			si.hStdOutput = wpo;
 		} else if (o->stdout_file) {
 			hout = CreateFileA(o->stdout_file, GENERIC_WRITE, FILE_SHARE_READ,
-							   &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+												 &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 			si.hStdOutput = hout;
 		}
 		if (o->stderr_buf) {
@@ -401,7 +400,7 @@ ST_FUNC MAYBE_UNUSED int host_spawn_ex(const char *const *argv, const HostSpawnO
 				si.hStdError = hout;
 			else {
 				herr = CreateFileA(o->stderr_file, GENERIC_WRITE, FILE_SHARE_READ,
-								   &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+													 &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 				si.hStdError = herr;
 			}
 		}
@@ -417,7 +416,7 @@ ST_FUNC MAYBE_UNUSED int host_spawn_ex(const char *const *argv, const HostSpawnO
 			*p = 0;
 		}
 		if (CreateProcessA(NULL, cmd, NULL, NULL, TRUE, 0, envblk,
-						   o->cwd, &si, &pi)) {
+											 o->cwd, &si, &pi)) {
 			DWORD ec = 0;
 			struct host_pipe_read pre;
 			HANDLE terr = NULL;
@@ -488,7 +487,7 @@ ST_FUNC MAYBE_UNUSED int host_spawn_ex(const char *const *argv, const HostSpawnO
 				close(po[0]);
 				close(po[1]);
 			} else if (o->stdout_file &&
-					   (fo = open(o->stdout_file, O_WRONLY | O_CREAT | O_TRUNC, 0666)) >= 0) {
+								 (fo = open(o->stdout_file, O_WRONLY | O_CREAT | O_TRUNC, 0666)) >= 0) {
 				dup2(fo, 1);
 				close(fo);
 			}
@@ -712,7 +711,7 @@ ST_FUNC MAYBE_UNUSED int host_nproc(void) {
 #define PROCESSOR_ARCHITECTURE_ARM64 12
 #endif
 ST_FUNC MAYBE_UNUSED void host_sys_info(char *sysname, int ssz, char *release, int rsz,
-										char *machine, int msz) {
+																				char *machine, int msz) {
 #ifdef _WIN32
 	if (sysname && ssz)
 		snprintf(sysname, ssz, "WIN32");
@@ -722,7 +721,7 @@ ST_FUNC MAYBE_UNUSED void host_sys_info(char *sysname, int ssz, char *release, i
 		vi.dwOSVersionInfoSize = sizeof vi;
 		if (GetVersionExA(&vi))
 			snprintf(release, rsz, "%lu.%lu.%lu", (unsigned long)vi.dwMajorVersion,
-					 (unsigned long)vi.dwMinorVersion, (unsigned long)vi.dwBuildNumber);
+							 (unsigned long)vi.dwMinorVersion, (unsigned long)vi.dwBuildNumber);
 		else
 			release[0] = 0;
 	}
@@ -786,40 +785,40 @@ typedef struct MCCSyms {
 static MCCSyms mcc_syms[] = {
 #if !defined(CONFIG_MCCBOOT)
 #define MCCSYM(a) {               \
-					  #a,         \
-					  (void *)&a, \
-				  },
-	MCCSYM(stdin) MCCSYM(stdout) MCCSYM(stderr)
-		MCCSYM(printf) MCCSYM(fprintf) MCCSYM(sprintf) MCCSYM(snprintf)
-			MCCSYM(vprintf) MCCSYM(vfprintf) MCCSYM(vsnprintf)
-				MCCSYM(puts) MCCSYM(fputs) MCCSYM(putchar) MCCSYM(fputc) MCCSYM(putc)
-					MCCSYM(getchar) MCCSYM(fgetc) MCCSYM(getc) MCCSYM(fgets) MCCSYM(ungetc)
-						MCCSYM(scanf) MCCSYM(fscanf) MCCSYM(sscanf)
-							MCCSYM(fopen) MCCSYM(freopen) MCCSYM(fclose) MCCSYM(fflush)
-								MCCSYM(fread) MCCSYM(fwrite) MCCSYM(fseek) MCCSYM(ftell) MCCSYM(rewind)
-									MCCSYM(feof) MCCSYM(ferror) MCCSYM(clearerr) MCCSYM(fileno)
-										MCCSYM(perror) MCCSYM(remove) MCCSYM(rename) MCCSYM(setvbuf) MCCSYM(setbuf)
-											MCCSYM(malloc) MCCSYM(calloc) MCCSYM(realloc) MCCSYM(free)
-												MCCSYM(exit) MCCSYM(_Exit) MCCSYM(abort) MCCSYM(atexit)
-													MCCSYM(atoi) MCCSYM(atol) MCCSYM(atoll) MCCSYM(atof)
-														MCCSYM(strtol) MCCSYM(strtoll) MCCSYM(strtoul) MCCSYM(strtoull)
-															MCCSYM(strtod) MCCSYM(strtof) MCCSYM(strtold)
-																MCCSYM(rand) MCCSYM(srand) MCCSYM(qsort) MCCSYM(bsearch)
-																	MCCSYM(abs) MCCSYM(labs) MCCSYM(llabs) MCCSYM(getenv) MCCSYM(system)
-																		MCCSYM(memcpy) MCCSYM(memmove) MCCSYM(memset) MCCSYM(memcmp) MCCSYM(memchr)
-																			MCCSYM(strlen) MCCSYM(strnlen) MCCSYM(strcmp) MCCSYM(strncmp)
-																				MCCSYM(strcpy) MCCSYM(strncpy) MCCSYM(strcat) MCCSYM(strncat)
-																					MCCSYM(strchr) MCCSYM(strrchr) MCCSYM(strstr) MCCSYM(strtok)
-																						MCCSYM(strspn) MCCSYM(strcspn) MCCSYM(strpbrk) MCCSYM(strerror)
-																							MCCSYM(sin) MCCSYM(cos) MCCSYM(tan) MCCSYM(asin) MCCSYM(acos) MCCSYM(atan)
-																								MCCSYM(atan2) MCCSYM(sinh) MCCSYM(cosh) MCCSYM(tanh)
-																									MCCSYM(exp) MCCSYM(log) MCCSYM(log10) MCCSYM(log2) MCCSYM(pow)
-																										MCCSYM(sqrt) MCCSYM(cbrt) MCCSYM(ceil) MCCSYM(floor) MCCSYM(round)
-																											MCCSYM(trunc) MCCSYM(fabs) MCCSYM(fmod) MCCSYM(fmin) MCCSYM(fmax)
-																												MCCSYM(hypot) MCCSYM(ldexp) MCCSYM(frexp) MCCSYM(modf)
+											#a,         \
+											(void *)&a, \
+									},
+		MCCSYM(stdin) MCCSYM(stdout) MCCSYM(stderr)
+				MCCSYM(printf) MCCSYM(fprintf) MCCSYM(sprintf) MCCSYM(snprintf)
+						MCCSYM(vprintf) MCCSYM(vfprintf) MCCSYM(vsnprintf)
+								MCCSYM(puts) MCCSYM(fputs) MCCSYM(putchar) MCCSYM(fputc) MCCSYM(putc)
+										MCCSYM(getchar) MCCSYM(fgetc) MCCSYM(getc) MCCSYM(fgets) MCCSYM(ungetc)
+												MCCSYM(scanf) MCCSYM(fscanf) MCCSYM(sscanf)
+														MCCSYM(fopen) MCCSYM(freopen) MCCSYM(fclose) MCCSYM(fflush)
+																MCCSYM(fread) MCCSYM(fwrite) MCCSYM(fseek) MCCSYM(ftell) MCCSYM(rewind)
+																		MCCSYM(feof) MCCSYM(ferror) MCCSYM(clearerr) MCCSYM(fileno)
+																				MCCSYM(perror) MCCSYM(remove) MCCSYM(rename) MCCSYM(setvbuf) MCCSYM(setbuf)
+																						MCCSYM(malloc) MCCSYM(calloc) MCCSYM(realloc) MCCSYM(free)
+																								MCCSYM(exit) MCCSYM(_Exit) MCCSYM(abort) MCCSYM(atexit)
+																										MCCSYM(atoi) MCCSYM(atol) MCCSYM(atoll) MCCSYM(atof)
+																												MCCSYM(strtol) MCCSYM(strtoll) MCCSYM(strtoul) MCCSYM(strtoull)
+																														MCCSYM(strtod) MCCSYM(strtof) MCCSYM(strtold)
+																																MCCSYM(rand) MCCSYM(srand) MCCSYM(qsort) MCCSYM(bsearch)
+																																		MCCSYM(abs) MCCSYM(labs) MCCSYM(llabs) MCCSYM(getenv) MCCSYM(system)
+																																				MCCSYM(memcpy) MCCSYM(memmove) MCCSYM(memset) MCCSYM(memcmp) MCCSYM(memchr)
+																																						MCCSYM(strlen) MCCSYM(strnlen) MCCSYM(strcmp) MCCSYM(strncmp)
+																																								MCCSYM(strcpy) MCCSYM(strncpy) MCCSYM(strcat) MCCSYM(strncat)
+																																										MCCSYM(strchr) MCCSYM(strrchr) MCCSYM(strstr) MCCSYM(strtok)
+																																												MCCSYM(strspn) MCCSYM(strcspn) MCCSYM(strpbrk) MCCSYM(strerror)
+																																														MCCSYM(sin) MCCSYM(cos) MCCSYM(tan) MCCSYM(asin) MCCSYM(acos) MCCSYM(atan)
+																																																MCCSYM(atan2) MCCSYM(sinh) MCCSYM(cosh) MCCSYM(tanh)
+																																																		MCCSYM(exp) MCCSYM(log) MCCSYM(log10) MCCSYM(log2) MCCSYM(pow)
+																																																				MCCSYM(sqrt) MCCSYM(cbrt) MCCSYM(ceil) MCCSYM(floor) MCCSYM(round)
+																																																						MCCSYM(trunc) MCCSYM(fabs) MCCSYM(fmod) MCCSYM(fmin) MCCSYM(fmax)
+																																																								MCCSYM(hypot) MCCSYM(ldexp) MCCSYM(frexp) MCCSYM(modf)
 #undef MCCSYM
 #endif
-																													{NULL, NULL},
+																																																										{NULL, NULL},
 };
 
 static void *host_static_sym(const char *symbol) {
@@ -988,14 +987,14 @@ ST_FUNC void host_runmem_free(void *ptr, unsigned size) {
 #else
 	size_t page = host_pagesize();
 	host_runmem_protect((void *)((size_t)ptr + (-(size_t)ptr & (page - 1))),
-						size - page, HOST_PROT_RW);
+											size - page, HOST_PROT_RW);
 	mcc_free(ptr);
 #endif
 }
 
 ST_FUNC void host_icache_flush(void *ptr, unsigned long length) {
 #if !defined _WIN32 && \
-	((defined MCC_TARGET_ARM && !TARGETOS_BSD) || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64)
+		((defined MCC_TARGET_ARM && !TARGETOS_BSD) || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64)
 	void __clear_cache(void *beginning, void *end);
 	__clear_cache(ptr, (char *)ptr + length);
 #else
@@ -1007,19 +1006,19 @@ ST_FUNC void host_icache_flush(void *ptr, unsigned long length) {
 ST_FUNC int host_runmem_protect(void *ptr, unsigned long length, int mode) {
 #ifdef _WIN32
 	static const unsigned char protect[] = {
-		PAGE_EXECUTE_READ,
-		PAGE_READONLY,
-		PAGE_READWRITE,
-		PAGE_EXECUTE_READWRITE};
+			PAGE_EXECUTE_READ,
+			PAGE_READONLY,
+			PAGE_READWRITE,
+			PAGE_EXECUTE_READWRITE};
 	DWORD old;
 	if (!VirtualProtect(ptr, length, protect[mode], &old))
 		return -1;
 #else
 	static const unsigned char protect[] = {
-		PROT_READ | PROT_EXEC,
-		PROT_READ,
-		PROT_READ | PROT_WRITE,
-		PROT_READ | PROT_WRITE | PROT_EXEC};
+			PROT_READ | PROT_EXEC,
+			PROT_READ,
+			PROT_READ | PROT_WRITE,
+			PROT_READ | PROT_WRITE | PROT_EXEC};
 	if (mprotect(ptr, length, protect[mode]))
 		return -1;
 	if (mode == HOST_PROT_RX || mode == HOST_PROT_RWX)
@@ -1031,7 +1030,7 @@ ST_FUNC int host_runmem_protect(void *ptr, unsigned long length, int mode) {
 ST_FUNC MAYBE_UNUSED void *host_unwind_register(void *table, unsigned size_bytes, size_t base) {
 #ifdef _WIN64
 	if (!RtlAddFunctionTable((RUNTIME_FUNCTION *)table,
-							 size_bytes / sizeof(RUNTIME_FUNCTION), base))
+													 size_bytes / sizeof(RUNTIME_FUNCTION), base))
 		return NULL;
 	return table;
 #else

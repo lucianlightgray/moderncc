@@ -8,9 +8,11 @@
 
 #ifdef __cplusplus
 extern "C" {
+
 #endif
 
-typedef struct {
+typedef struct
+{
 	intmax_t quot;
 	intmax_t rem;
 } imaxdiv_t;
@@ -241,20 +243,22 @@ typedef struct {
 #endif
 
 intmax_t __cdecl imaxabs(intmax_t j);
+
 __CRT_INLINE intmax_t __cdecl imaxabs(intmax_t j) {
 	return (j >= 0 ? j : -j);
 }
+
 imaxdiv_t __cdecl imaxdiv(intmax_t numer, intmax_t denom);
 
 intmax_t __cdecl strtoimax(const char *__restrict__ nptr,
-						   char **__restrict__ endptr, int base);
+													 char **__restrict__ endptr, int base);
 uintmax_t __cdecl strtoumax(const char *__restrict__ nptr,
-							char **__restrict__ endptr, int base);
+														char **__restrict__ endptr, int base);
 
 intmax_t __cdecl wcstoimax(const wchar_t *__restrict__ nptr,
-						   wchar_t **__restrict__ endptr, int base);
+													 wchar_t **__restrict__ endptr, int base);
 uintmax_t __cdecl wcstoumax(const wchar_t *__restrict__ nptr,
-							wchar_t **__restrict__ endptr, int base);
+														wchar_t **__restrict__ endptr, int base);
 
 #ifdef __cplusplus
 }

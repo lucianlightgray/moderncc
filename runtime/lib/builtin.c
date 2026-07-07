@@ -17,21 +17,21 @@
 #endif
 
 static const unsigned char table_1_32[] = {
-	0, 1, 28, 2, 29, 14, 24, 3, 30, 22, 20, 15, 25, 17, 4, 8,
-	31, 27, 13, 23, 21, 19, 16, 7, 26, 12, 18, 6, 11, 5, 10, 9};
+		0, 1, 28, 2, 29, 14, 24, 3, 30, 22, 20, 15, 25, 17, 4, 8,
+		31, 27, 13, 23, 21, 19, 16, 7, 26, 12, 18, 6, 11, 5, 10, 9};
 static const unsigned char table_2_32[32] = {
-	31, 22, 30, 21, 18, 10, 29, 2, 20, 17, 15, 13, 9, 6, 28, 1,
-	23, 19, 11, 3, 16, 14, 7, 24, 12, 4, 8, 25, 5, 26, 27, 0};
+		31, 22, 30, 21, 18, 10, 29, 2, 20, 17, 15, 13, 9, 6, 28, 1,
+		23, 19, 11, 3, 16, 14, 7, 24, 12, 4, 8, 25, 5, 26, 27, 0};
 static const unsigned char table_1_64[] = {
-	0, 1, 2, 53, 3, 7, 54, 27, 4, 38, 41, 8, 34, 55, 48, 28,
-	62, 5, 39, 46, 44, 42, 22, 9, 24, 35, 59, 56, 49, 18, 29, 11,
-	63, 52, 6, 26, 37, 40, 33, 47, 61, 45, 43, 21, 23, 58, 17, 10,
-	51, 25, 36, 32, 60, 20, 57, 16, 50, 31, 19, 15, 30, 14, 13, 12};
+		0, 1, 2, 53, 3, 7, 54, 27, 4, 38, 41, 8, 34, 55, 48, 28,
+		62, 5, 39, 46, 44, 42, 22, 9, 24, 35, 59, 56, 49, 18, 29, 11,
+		63, 52, 6, 26, 37, 40, 33, 47, 61, 45, 43, 21, 23, 58, 17, 10,
+		51, 25, 36, 32, 60, 20, 57, 16, 50, 31, 19, 15, 30, 14, 13, 12};
 static const unsigned char table_2_64[] = {
-	63, 16, 62, 7, 15, 36, 61, 3, 6, 14, 22, 26, 35, 47, 60, 2,
-	9, 5, 28, 11, 13, 21, 42, 19, 25, 31, 34, 40, 46, 52, 59, 1,
-	17, 8, 37, 4, 23, 27, 48, 10, 29, 12, 43, 20, 32, 41, 53, 18,
-	38, 24, 49, 30, 44, 33, 54, 39, 50, 45, 55, 51, 56, 57, 58, 0};
+		63, 16, 62, 7, 15, 36, 61, 3, 6, 14, 22, 26, 35, 47, 60, 2,
+		9, 5, 28, 11, 13, 21, 42, 19, 25, 31, 34, 40, 46, 52, 59, 1,
+		17, 8, 37, 4, 23, 27, 48, 10, 29, 12, 43, 20, 32, 41, 53, 18,
+		38, 24, 49, 30, 44, 33, 54, 39, 50, 45, 55, 51, 56, 57, 58, 0};
 
 #define FFSI(x) \
 	return table_1_32[((x & -x) * 0x077cb531u) >> 27] + (x != 0);
@@ -41,14 +41,14 @@ static const unsigned char table_2_64[] = {
 	return table_1_32[((x & -x) * 0x077cb531u) >> 27];
 #define CTZL(x) \
 	return table_1_64[((x & -x) * 0x022fdd63cc95386dull) >> 58];
-#define CLZI(x)   \
+#define CLZI(x) \
 	x |= x >> 1;  \
 	x |= x >> 2;  \
 	x |= x >> 4;  \
 	x |= x >> 8;  \
 	x |= x >> 16; \
 	return table_2_32[(x * 0x07c4acddu) >> 27];
-#define CLZL(x)   \
+#define CLZL(x) \
 	x |= x >> 1;  \
 	x |= x >> 2;  \
 	x |= x >> 4;  \
@@ -56,12 +56,12 @@ static const unsigned char table_2_64[] = {
 	x |= x >> 16; \
 	x |= x >> 32; \
 	return table_2_64[x * 0x03f79d71b4cb0a89ull >> 58];
-#define POPCOUNTI(x, m)                             \
+#define POPCOUNTI(x, m)                           \
 	x = x - ((x >> 1) & 0x55555555);                \
 	x = (x & 0x33333333) + ((x >> 2) & 0x33333333); \
 	x = (x + (x >> 4)) & 0xf0f0f0f;                 \
 	return ((x * 0x01010101) >> 24) & m;
-#define POPCOUNTL(x, m)                                                   \
+#define POPCOUNTL(x, m)                                                 \
 	x = x - ((x >> 1) & 0x5555555555555555ull);                           \
 	x = (x & 0x3333333333333333ull) + ((x >> 2) & 0x3333333333333333ull); \
 	x = (x + (x >> 4)) & 0xf0f0f0f0f0f0f0full;                            \
@@ -70,9 +70,9 @@ static const unsigned char table_2_64[] = {
 int BUILTIN(ffs)(int x) {
 	FFSI(x)
 }
-int BUILTIN(ffsll)(long long x) {
-	FFSL(x)
-}
+
+int BUILTIN(ffsll)(long long x){
+		FFSL(x)}
 #if __SIZEOF_LONG__ == 4
 MCC_ALIAS(int BUILTIN(ffsl)(long x), BUILTINN(ffsl), BUILTINN(ffs));
 #else
@@ -82,9 +82,9 @@ MCC_ALIAS(int BUILTIN(ffsl)(long x), BUILTINN(ffsl), BUILTINN(ffsll));
 int BUILTIN(clz)(unsigned int x) {
 	CLZI(x)
 }
-int BUILTIN(clzll)(unsigned long long x) {
-	CLZL(x)
-}
+
+int BUILTIN(clzll)(unsigned long long x){
+		CLZL(x)}
 #if __SIZEOF_LONG__ == 4
 MCC_ALIAS(int BUILTIN(clzl)(unsigned long x), BUILTINN(clzl), BUILTINN(clz));
 #else
@@ -94,9 +94,9 @@ MCC_ALIAS(int BUILTIN(clzl)(unsigned long x), BUILTINN(clzl), BUILTINN(clzll));
 int BUILTIN(ctz)(unsigned int x) {
 	CTZI(x)
 }
-int BUILTIN(ctzll)(unsigned long long x) {
-	CTZL(x)
-}
+
+int BUILTIN(ctzll)(unsigned long long x){
+		CTZL(x)}
 #if __SIZEOF_LONG__ == 4
 MCC_ALIAS(int BUILTIN(ctzl)(unsigned long x), BUILTINN(ctzl), BUILTINN(ctz));
 #else
@@ -109,6 +109,7 @@ int BUILTIN(clrsb)(int x) {
 	x <<= 1;
 	CLZI(x)
 }
+
 int BUILTIN(clrsbll)(long long x) {
 	if (x < 0)
 		x = ~x;
@@ -124,9 +125,9 @@ MCC_ALIAS(int BUILTIN(clrsbl)(long x), BUILTINN(clrsbl), BUILTINN(clrsbll));
 int BUILTIN(popcount)(unsigned int x) {
 	POPCOUNTI(x, 0x3f)
 }
-int BUILTIN(popcountll)(unsigned long long x) {
-	POPCOUNTL(x, 0x7f)
-}
+
+int BUILTIN(popcountll)(unsigned long long x){
+		POPCOUNTL(x, 0x7f)}
 #if __SIZEOF_LONG__ == 4
 MCC_ALIAS(int BUILTIN(popcountl)(unsigned long x), BUILTINN(popcountl), BUILTINN(popcount));
 #else
@@ -136,9 +137,9 @@ MCC_ALIAS(int BUILTIN(popcountl)(unsigned long x), BUILTINN(popcountl), BUILTINN
 int BUILTIN(parity)(unsigned int x) {
 	POPCOUNTI(x, 0x01)
 }
-int BUILTIN(parityll)(unsigned long long x) {
-	POPCOUNTL(x, 0x01)
-}
+
+int BUILTIN(parityll)(unsigned long long x){
+		POPCOUNTL(x, 0x01)}
 #if __SIZEOF_LONG__ == 4
 MCC_ALIAS(int BUILTIN(parityl)(unsigned long x), BUILTINN(parityl), BUILTINN(parity));
 #else
@@ -148,6 +149,7 @@ MCC_ALIAS(int BUILTIN(parityl)(unsigned long x), BUILTINN(parityl), BUILTINN(par
 unsigned short BUILTIN(bswap16)(unsigned short x) {
 	return (unsigned short)((x >> 8) | (x << 8));
 }
+
 unsigned int BUILTIN(bswap32)(unsigned int x) {
 	return ((x & 0xff000000u) >> 24) | ((x & 0x00ff0000u) >> 8) | ((x & 0x0000ff00u) << 8) | ((x & 0x000000ffu) << 24);
 }
@@ -160,6 +162,7 @@ int __mcc_signbitf(float x) {
 	u.f = x;
 	return (int)(u.u >> 31);
 }
+
 int __mcc_signbit(double x) {
 	union {
 		double d;
@@ -168,6 +171,7 @@ int __mcc_signbit(double x) {
 	u.d = x;
 	return (int)(u.u >> 63);
 }
+
 int __mcc_signbitl(long double x) {
 	union {
 		long double ld;
@@ -189,9 +193,9 @@ unsigned long long BUILTIN(bswap64)(unsigned long long x) {
 
 #ifndef __MCC__
 #if defined __APPLE__
-#define MCC_EXPORT(sfx)                                                           \
+#define MCC_EXPORT(sfx)                                                             \
 	__asm__(".globl " MCC_ULP "__builtin_" #sfx "\n\t.set " MCC_ULP "__builtin_" #sfx \
-			"," MCC_ULP "__mcc_builtin_" #sfx)
+					"," MCC_ULP "__mcc_builtin_" #sfx)
 MCC_EXPORT(ffs);
 MCC_EXPORT(ffsl);
 MCC_EXPORT(ffsll);
@@ -248,58 +252,58 @@ __asm__(".globl __builtin_bswap64\n\t.set __builtin_bswap64,__mcc_builtin_bswap6
 #endif
 #endif
 
-#define MCC_OV_SMALL(T, W, NM)            \
+#define MCC_OV_SMALL(T, W, NM)          \
 	int __mcc_addo_##NM(T a, T b, T *r) { \
-		W s = (W)a + (W)b;                \
-		*r = (T)s;                        \
-		return (T)s != s;                 \
+		W s = (W)a + (W)b;                  \
+		*r = (T)s;                          \
+		return (T)s != s;                   \
 	}                                     \
 	int __mcc_subo_##NM(T a, T b, T *r) { \
-		W s = (W)a - (W)b;                \
-		*r = (T)s;                        \
-		return (T)s != s;                 \
+		W s = (W)a - (W)b;                  \
+		*r = (T)s;                          \
+		return (T)s != s;                   \
 	}                                     \
 	int __mcc_mulo_##NM(T a, T b, T *r) { \
-		W s = (W)a * (W)b;                \
-		*r = (T)s;                        \
-		return (T)s != s;                 \
+		W s = (W)a * (W)b;                  \
+		*r = (T)s;                          \
+		return (T)s != s;                   \
 	}
 
-#define MCC_OV_BIG_S(T, TMIN, NM)                                             \
-	int __mcc_addo_##NM(T a, T b, T *r) {                                     \
+#define MCC_OV_BIG_S(T, TMIN, NM)                                         \
+	int __mcc_addo_##NM(T a, T b, T *r) {                                   \
 		unsigned long long u = (unsigned long long)a + (unsigned long long)b; \
 		*r = (T)u;                                                            \
 		return (~(a ^ b) & (a ^ (T)u)) < 0;                                   \
-	}                                                                         \
-	int __mcc_subo_##NM(T a, T b, T *r) {                                     \
+	}                                                                       \
+	int __mcc_subo_##NM(T a, T b, T *r) {                                   \
 		unsigned long long u = (unsigned long long)a - (unsigned long long)b; \
 		*r = (T)u;                                                            \
 		return ((a ^ b) & (a ^ (T)u)) < 0;                                    \
-	}                                                                         \
-	int __mcc_mulo_##NM(T a, T b, T *r) {                                     \
+	}                                                                       \
+	int __mcc_mulo_##NM(T a, T b, T *r) {                                   \
 		unsigned long long u = (unsigned long long)a * (unsigned long long)b; \
 		*r = (T)u;                                                            \
 		if (a == 0 || b == 0)                                                 \
-			return 0;                                                         \
+			return 0;                                                           \
 		if (a == -1)                                                          \
-			return b == (TMIN);                                               \
+			return b == (TMIN);                                                 \
 		if (b == -1)                                                          \
-			return a == (TMIN);                                               \
+			return a == (TMIN);                                                 \
 		return (T)u / a != b;                                                 \
 	}
 
-#define MCC_OV_BIG_U(T, NM)               \
+#define MCC_OV_BIG_U(T, NM)             \
 	int __mcc_addo_##NM(T a, T b, T *r) { \
-		*r = a + b;                       \
-		return *r < a;                    \
+		*r = a + b;                         \
+		return *r < a;                      \
 	}                                     \
 	int __mcc_subo_##NM(T a, T b, T *r) { \
-		*r = a - b;                       \
-		return a < b;                     \
+		*r = a - b;                         \
+		return a < b;                       \
 	}                                     \
 	int __mcc_mulo_##NM(T a, T b, T *r) { \
-		*r = a * b;                       \
-		return a != 0 && *r / a != b;     \
+		*r = a * b;                         \
+		return a != 0 && *r / a != b;       \
 	}
 
 MCC_OV_SMALL(signed char, long long, sc)

@@ -85,36 +85,36 @@ ST_FUNC void gen_struct_copy(int size);
 #include <assert.h>
 
 ST_DATA const char *const target_machine_defs =
-	"__x86_64__\0"
-	"__x86_64\0"
-	"__amd64__\0";
+		"__x86_64__\0"
+		"__x86_64\0"
+		"__amd64__\0";
 
 ST_DATA const int reg_classes[NB_REGS] = {
-	RC_INT | RC_RAX,
-	RC_INT | RC_RCX,
-	RC_INT | RC_RDX,
-	0,
-	0,
-	0,
-	RC_RSI,
-	RC_RDI,
-	RC_R8,
-	RC_R9,
-	RC_R10,
-	RC_R11,
-	0,
-	0,
-	0,
-	0,
-	RC_FLOAT | RC_XMM0,
-	RC_FLOAT | RC_XMM1,
-	RC_FLOAT | RC_XMM2,
-	RC_FLOAT | RC_XMM3,
-	RC_FLOAT | RC_XMM4,
-	RC_FLOAT | RC_XMM5,
-	RC_XMM6,
-	RC_XMM7,
-	RC_ST0};
+		RC_INT | RC_RAX,
+		RC_INT | RC_RCX,
+		RC_INT | RC_RDX,
+		0,
+		0,
+		0,
+		RC_RSI,
+		RC_RDI,
+		RC_R8,
+		RC_R9,
+		RC_R10,
+		RC_R11,
+		0,
+		0,
+		0,
+		0,
+		RC_FLOAT | RC_XMM0,
+		RC_FLOAT | RC_XMM1,
+		RC_FLOAT | RC_XMM2,
+		RC_FLOAT | RC_XMM3,
+		RC_FLOAT | RC_XMM4,
+		RC_FLOAT | RC_XMM5,
+		RC_XMM6,
+		RC_XMM7,
+		RC_ST0};
 
 #define func_sub_sp_offset (mcc_state->cg_func_sub_sp_offset)
 #define func_ret_sub (mcc_state->cg_func_ret_sub)
@@ -179,8 +179,8 @@ ST_FUNC void gsym_addr(int t, int a) {
 
 static int is64_type(int t) {
 	return ((t & VT_BTYPE) == VT_PTR ||
-			(t & VT_BTYPE) == VT_FUNC ||
-			(t & VT_BTYPE) == VT_LLONG);
+					(t & VT_BTYPE) == VT_FUNC ||
+					(t & VT_BTYPE) == VT_LLONG);
 }
 
 #define gjmp2(instr, lbl) oad(instr, lbl)
@@ -198,12 +198,13 @@ ST_FUNC void gen_addrpc32(int r, Sym *sym, int c) {
 }
 
 static void gen_gotpcrel(int r, Sym *sym, int c) {
+
 #ifdef MCC_TARGET_PE
 	mcc_error("internal error: no GOT on PE: %s %x %x | %02x %02x %02x\n",
-			  get_tok_str(sym->v, NULL), c, r,
-			  cur_text_section->data[ind - 3],
-			  cur_text_section->data[ind - 2],
-			  cur_text_section->data[ind - 1]);
+						get_tok_str(sym->v, NULL), c, r,
+						cur_text_section->data[ind - 3],
+						cur_text_section->data[ind - 2],
+						cur_text_section->data[ind - 1]);
 #endif
 	greloca(cur_text_section, sym, ind, R_X86_64_GOTPCREL, -4);
 	gen_le32(0);
@@ -307,7 +308,7 @@ void load(int r, SValue *sv) {
 
 #ifndef MCC_TARGET_PE
 	if ((fr & VT_VALMASK) == VT_CONST && (fr & VT_SYM) &&
-		(fr & VT_LVAL) && !(sv->sym->type.t & VT_STATIC) && !(sv->sym->type.t & VT_TLS)) {
+			(fr & VT_LVAL) && !(sv->sym->type.t & VT_STATIC) && !(sv->sym->type.t & VT_TLS)) {
 		int tr = r | TREG_MEM;
 		if (is_float(ft)) {
 			tr = get_reg(RC_INT) | TREG_MEM;
@@ -319,7 +320,7 @@ void load(int r, SValue *sv) {
 #endif
 
 	if ((fr & VT_VALMASK) == VT_CONST && (fr & VT_SYM) &&
-		(fr & VT_LVAL) && (sv->sym->type.t & VT_TLS)) {
+			(fr & VT_LVAL) && (sv->sym->type.t & VT_TLS)) {
 		int tr = r | TREG_MEM;
 		if (is_float(ft))
 			tr = get_reg(RC_INT) | TREG_MEM;
@@ -460,7 +461,7 @@ void load(int r, SValue *sv) {
 					o(0x81);
 					o(0xc0 | dst);
 					greloca(cur_text_section, sv->sym, ind,
-							R_X86_64_TPOFF32, fc);
+									R_X86_64_TPOFF32, fc);
 					gen_le32(0);
 #endif
 				} else if (sv->sym->type.t & VT_STATIC) {
@@ -645,7 +646,7 @@ void store(int r, SValue *v) {
 static void gcall_or_jmp(int is_jmp) {
 	int r;
 	if ((vtop->r & (VT_VALMASK | VT_LVAL)) == VT_CONST &&
-		((vtop->r & VT_SYM) && (vtop->c.i - 4) == (int)(vtop->c.i - 4))) {
+			((vtop->r & VT_SYM) && (vtop->c.i - 4) == (int)(vtop->c.i - 4))) {
 		greloca(cur_text_section, vtop->sym, ind + 1, R_X86_64_PLT32, (int)(vtop->c.i - 4));
 		oad(0xe8 + is_jmp, 0);
 	} else {
@@ -718,7 +719,7 @@ static void gen_bounds_epilog(void) {
 
 #define REGN 4
 static const uint8_t arg_regs[REGN] = {
-	TREG_RCX, TREG_RDX, TREG_R8, TREG_R9};
+		TREG_RCX, TREG_RDX, TREG_R8, TREG_R9};
 
 static int arg_prepare_reg(int idx) {
 	if (idx == 0 || idx == 1)
@@ -857,8 +858,8 @@ void gfunc_call(int nb_args) {
 				if (bt == VT_STRUCT) {
 					vtop->type.ref = NULL;
 					vtop->type.t = size > 4 ? VT_LLONG : size > 2 ? VT_INT
-													 : size > 1	  ? VT_SHORT
-																  : VT_BYTE;
+																					 : size > 1		? VT_SHORT
+																												: VT_BYTE;
 				}
 
 				r = gv(RC_INT);
@@ -1202,7 +1203,7 @@ ST_FUNC void arch_transfer_ret_regs(int aftercall) {
 
 #define REGN 6
 static const uint8_t arg_regs[REGN] = {
-	TREG_RDI, TREG_RSI, TREG_RDX, TREG_RCX, TREG_R8, TREG_R9};
+		TREG_RDI, TREG_RSI, TREG_RDX, TREG_RCX, TREG_R8, TREG_R9};
 
 static int arg_prepare_reg(int idx) {
 	if (idx == 2 || idx == 3)
@@ -1422,7 +1423,7 @@ static void gen_stack_chk_epilog(void) {
 	g(0x05);
 	oad(0xe8, 0);
 	greloca(cur_text_section, external_helper_sym(TOK___stack_chk_fail),
-			ind - 4, R_X86_64_PLT32, -4);
+					ind - 4, R_X86_64_PLT32, -4);
 }
 #elif !defined(MCC_TARGET_PE)
 static void gen_stack_chk_prolog(void) {
@@ -1454,7 +1455,7 @@ static void gen_stack_chk_epilog(void) {
 	g(0x05);
 	oad(0xe8, 0);
 	greloca(cur_text_section, external_helper_sym(TOK___stack_chk_fail),
-			ind - 4, R_X86_64_PLT32, -4);
+					ind - 4, R_X86_64_PLT32, -4);
 }
 #endif
 
@@ -1817,10 +1818,10 @@ void gen_opf(int op) {
 
 	if (float_type == RC_FLOAT) {
 		if ((vtop[0].r & (VT_LVAL | VT_SYM)) == (VT_LVAL | VT_SYM) &&
-			vtop[0].sym && (vtop[0].sym->type.t & VT_TLS))
+				vtop[0].sym && (vtop[0].sym->type.t & VT_TLS))
 			gv(float_type);
 		if ((vtop[-1].r & (VT_LVAL | VT_SYM)) == (VT_LVAL | VT_SYM) &&
-			vtop[-1].sym && (vtop[-1].sym->type.t & VT_TLS)) {
+				vtop[-1].sym && (vtop[-1].sym->type.t & VT_TLS)) {
 			vswap();
 			gv(float_type);
 			vswap();
@@ -1828,7 +1829,7 @@ void gen_opf(int op) {
 	}
 
 	if ((vtop[-1].r & VT_LVAL) &&
-		(vtop[0].r & VT_LVAL)) {
+			(vtop[0].r & VT_LVAL)) {
 		vswap();
 		gv(float_type);
 		vswap();
@@ -2019,7 +2020,7 @@ void gen_cvt_itof(int t) {
 			o(0x242cdf);
 			o(0x08c48348);
 		} else if ((vtop->type.t & (VT_BTYPE | VT_UNSIGNED)) ==
-				   (VT_INT | VT_UNSIGNED)) {
+							 (VT_INT | VT_UNSIGNED)) {
 			o(0x6a);
 			g(0x00);
 			o(0x50 + (vtop->r & VT_VALMASK));
@@ -2036,8 +2037,8 @@ void gen_cvt_itof(int t) {
 		gv(RC_INT);
 		o(0xf2 + ((t & VT_BTYPE) == VT_FLOAT ? 1 : 0));
 		if ((vtop->type.t & (VT_BTYPE | VT_UNSIGNED)) ==
-				(VT_INT | VT_UNSIGNED) ||
-			(vtop->type.t & VT_BTYPE) == VT_LLONG) {
+						(VT_INT | VT_UNSIGNED) ||
+				(vtop->type.t & VT_BTYPE) == VT_LLONG) {
 			o(0x48);
 		}
 		o(0x2a0f);

@@ -5,6 +5,7 @@
 
 #ifdef __cplusplus
 extern "C" {
+
 #endif
 
 #if defined(MINGW_HAS_SECURE_API)

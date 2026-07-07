@@ -1,7 +1,7 @@
 static void asm_constraints_prologue(ASMOperand *operands, int nb_operands,
-									 int nb_outputs,
-									 const uint8_t *clobber_regs,
-									 int *sorted_op, uint8_t *regs_allocated) {
+																		 int nb_outputs,
+																		 const uint8_t *clobber_regs,
+																		 int *sorted_op, uint8_t *regs_allocated) {
 	ASMOperand *op;
 	const char *str;
 	int j, k, p1, p2, tmp, reg;

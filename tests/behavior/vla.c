@@ -53,16 +53,16 @@ label:
 	return (test - test2 >= n) ? 0 : 1;
 }
 
-#define RUN_TEST(t)                                 \
+#define RUN_TEST(t)                               \
 	if (!testname || (strcmp(#t, testname) == 0)) { \
-		fputs(#t "... ", stdout);                   \
-		fflush(stdout);                             \
-		if (t(ARRAY_SIZE) == 0) {                   \
-			fputs("success\n", stdout);             \
-		} else {                                    \
-			fputs("failure\n", stdout);             \
-			retval = EXIT_FAILURE;                  \
-		}                                           \
+		fputs(#t "... ", stdout);                     \
+		fflush(stdout);                               \
+		if (t(ARRAY_SIZE) == 0) {                     \
+			fputs("success\n", stdout);                 \
+		} else {                                      \
+			fputs("failure\n", stdout);                 \
+			retval = EXIT_FAILURE;                      \
+		}                                             \
 	}
 
 int main(int argc, char **argv) {

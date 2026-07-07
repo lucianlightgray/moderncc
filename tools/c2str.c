@@ -2,24 +2,24 @@
 #include <string.h>
 
 const char *platform_macros[] = {
-	"__i386__", "MCC_TARGET_I386",
-	"__x86_64__", "MCC_TARGET_X86_64",
-	"_WIN32", "MCC_TARGET_PE",
-	"__arm__", "MCC_TARGET_ARM",
-	"__ARM_EABI__", "MCC_ARM_EABI",
-	"__aarch64__", "MCC_TARGET_ARM64",
-	"__riscv", "MCC_TARGET_RISCV64",
-	"__APPLE__", "MCC_TARGET_MACHO",
-	"__FreeBSD__", "TARGETOS_FreeBSD",
-	"__FreeBSD_kernel__", "TARGETOS_FreeBSD_kernel",
-	"__OpenBSD__", "TARGETOS_OpenBSD",
-	"__NetBSD__", "TARGETOS_NetBSD",
-	"__linux__", "TARGETOS_Linux",
-	"__ANDROID__", "TARGETOS_ANDROID",
+		"__i386__", "MCC_TARGET_I386",
+		"__x86_64__", "MCC_TARGET_X86_64",
+		"_WIN32", "MCC_TARGET_PE",
+		"__arm__", "MCC_TARGET_ARM",
+		"__ARM_EABI__", "MCC_ARM_EABI",
+		"__aarch64__", "MCC_TARGET_ARM64",
+		"__riscv", "MCC_TARGET_RISCV64",
+		"__APPLE__", "MCC_TARGET_MACHO",
+		"__FreeBSD__", "TARGETOS_FreeBSD",
+		"__FreeBSD_kernel__", "TARGETOS_FreeBSD_kernel",
+		"__OpenBSD__", "TARGETOS_OpenBSD",
+		"__NetBSD__", "TARGETOS_NetBSD",
+		"__linux__", "TARGETOS_Linux",
+		"__ANDROID__", "TARGETOS_ANDROID",
 
-	"__SIZEOF_POINTER__", "PTR_SIZE",
-	"__SIZEOF_LONG__", "LONG_SIZE",
-	0};
+		"__SIZEOF_POINTER__", "PTR_SIZE",
+		"__SIZEOF_LONG__", "LONG_SIZE",
+		0};
 
 int isid(int c) {
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
@@ -102,7 +102,6 @@ int main(int argc, char **argv) {
 			} while (!!(*q++ = *p++));
 			fprintf(op, "%s\n", l2);
 			continue;
-
 		} else {
 			s = e = f = 0, p0 = p;
 			for (;;) {

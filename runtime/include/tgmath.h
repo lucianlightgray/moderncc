@@ -19,18 +19,18 @@
 #define __tgmath_real_3(x, y, z, F) \
 	_Generic((x) + (y) + (z), float: F##f, default: F)(x, y, z)
 #define __tgmath_rc(x, F, C) _Generic((x), \
-	float _Complex: C##f,                  \
-	double _Complex: C,                    \
-	float: F##f,                           \
-	default: F)(x)
+		float _Complex: C##f,                  \
+		double _Complex: C,                    \
+		float: F##f,                           \
+		default: F)(x)
 #define __tgmath_rc2(x, y, F, C) _Generic((x) + (y), \
-	float _Complex: C##f,                            \
-	double _Complex: C,                              \
-	float: F##f,                                     \
-	default: F)(x, y)
+		float _Complex: C##f,                            \
+		double _Complex: C,                              \
+		float: F##f,                                     \
+		default: F)(x, y)
 #define __tgmath_cx(x, C) _Generic((x), \
-	float _Complex: C##f,               \
-	default: C)(x)
+		float _Complex: C##f,               \
+		default: C)(x)
 #else
 #define __tgmath_real(x, F) \
 	_Generic((x), float: F##f, long double: F##l, default: F)(x)
@@ -44,23 +44,23 @@
 	_Generic((x) + (y) + (z), float: F##f, long double: F##l, default: F)(x, y, z)
 
 #define __tgmath_rc(x, F, C) _Generic((x), \
-	float _Complex: C##f,                  \
-	double _Complex: C,                    \
-	long double _Complex: C##l,            \
-	float: F##f,                           \
-	long double: F##l,                     \
-	default: F)(x)
+		float _Complex: C##f,                  \
+		double _Complex: C,                    \
+		long double _Complex: C##l,            \
+		float: F##f,                           \
+		long double: F##l,                     \
+		default: F)(x)
 #define __tgmath_rc2(x, y, F, C) _Generic((x) + (y), \
-	float _Complex: C##f,                            \
-	double _Complex: C,                              \
-	long double _Complex: C##l,                      \
-	float: F##f,                                     \
-	long double: F##l,                               \
-	default: F)(x, y)
+		float _Complex: C##f,                            \
+		double _Complex: C,                              \
+		long double _Complex: C##l,                      \
+		float: F##f,                                     \
+		long double: F##l,                               \
+		default: F)(x, y)
 #define __tgmath_cx(x, C) _Generic((x), \
-	float _Complex: C##f,               \
-	long double _Complex: C##l,         \
-	default: C)(x)
+		float _Complex: C##f,               \
+		long double _Complex: C##l,         \
+		default: C)(x)
 #endif
 
 #define acos(z) __tgmath_rc(z, acos, cacos)

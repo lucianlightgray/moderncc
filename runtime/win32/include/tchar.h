@@ -9,6 +9,7 @@
 
 #ifdef __cplusplus
 extern "C" {
+
 #endif
 
 #define _ftcscat _tcscat
@@ -84,6 +85,7 @@ extern "C" {
 
 #ifdef __cplusplus
 extern "C" {
+
 #endif
 
 #ifndef _WCTYPE_T_DEFINED
@@ -473,6 +475,7 @@ _CRTIMP size_t __cdecl __wcsncnt(const wchar_t *_Str, size_t _MaxCount);
 
 #ifdef __cplusplus
 extern "C" {
+
 #endif
 
 #define _TEOF EOF
@@ -738,6 +741,7 @@ extern "C" {
 
 #ifdef __cplusplus
 extern "C" {
+
 #endif
 
 #ifndef __TCHAR_DEFINED
@@ -896,12 +900,15 @@ extern "C++" {
 extern inline char *__cdecl _tcschr(char *_S, unsigned int _C) {
 	return ((char *)_tcschr((const char *)_S, _C));
 }
+
 extern inline char *__cdecl _tcspbrk(char *_S, const char *_P) {
 	return ((char *)_tcspbrk((const char *)_S, _P));
 }
+
 extern inline char *__cdecl _tcsrchr(char *_S, unsigned int _C) {
 	return ((char *)_tcsrchr((const char *)_S, _C));
 }
+
 extern inline char *__cdecl _tcsstr(char *_S, const char *_P) {
 	return ((char *)_tcsstr((const char *)_S, _P));
 }

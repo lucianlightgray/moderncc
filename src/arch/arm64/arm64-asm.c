@@ -112,7 +112,6 @@ ST_FUNC void gen_le32(int c) {
 }
 
 ST_FUNC void gen_expr32(ExprValue *pe) {
-
 	uint32_t v = pe->v;
 	if (pe->sym)
 		greloca(cur_text_section, pe->sym, ind, R_DATA_32, v), v = 0;
@@ -392,7 +391,7 @@ static void parse_addr_operand(MCCState *s1, Operand *op) {
 }
 
 static void gen_mov_with_base(int rd, uint16_t imm, int shift,
-							  int is_64bit, uint32_t base_opcode) {
+															int is_64bit, uint32_t base_opcode) {
 	uint32_t instr = base_opcode;
 	if (is_64bit)
 		instr |= ARM64_SF(1);
@@ -503,7 +502,7 @@ static void gen_dp_reg(uint32_t opcode, int rd, int rn, int rm, int is_64bit) {
 }
 
 static void gen_ldst_imm(uint32_t base_opcode, int rt, int rn,
-						 int32_t offset, int size_log2) {
+												 int32_t offset, int size_log2) {
 	uint32_t instr = base_opcode;
 	uint32_t unscaled_opcode = 0;
 	uint32_t imm12;
@@ -567,10 +566,10 @@ static void gen_ldst_imm(uint32_t base_opcode, int rt, int rn,
 }
 
 static void gen_ldst_reloc_imm(uint32_t base_opcode, int rt, Operand *addr,
-							   int size_log2) {
+															 int size_log2) {
 	static const int lo12_type[4] = {
-		R_AARCH64_LDST8_ABS_LO12_NC, R_AARCH64_LDST16_ABS_LO12_NC,
-		R_AARCH64_LDST32_ABS_LO12_NC, R_AARCH64_LDST64_ABS_LO12_NC};
+			R_AARCH64_LDST8_ABS_LO12_NC, R_AARCH64_LDST16_ABS_LO12_NC,
+			R_AARCH64_LDST32_ABS_LO12_NC, R_AARCH64_LDST64_ABS_LO12_NC};
 	int rtype;
 
 	switch (addr->reloc_spec) {
@@ -597,7 +596,7 @@ static void gen_ldst_reloc_imm(uint32_t base_opcode, int rt, Operand *addr,
 }
 
 static void gen_ldst_pair(uint32_t base_opcode, int rt, int rt2, int rn,
-						  int32_t offset, int size_log2) {
+													int32_t offset, int size_log2) {
 	int32_t imm7;
 	uint32_t instr = base_opcode;
 
@@ -736,11 +735,11 @@ static int arm64_asm_encode_bimm64(uint64_t x) {
 		len = rep - len;
 	}
 	return ((0x1000 & rep << 6) | (((rep - 1) ^ 31) << 1 & 63) |
-			((rep - pos) & (rep - 1)) << 6 | (len - 1));
+					((rep - pos) & (rep - 1)) << 6 | (len - 1));
 }
 
 static void gen_logical_imm(uint32_t opcode, int rd, int rn,
-							uint64_t imm, int is_64bit) {
+														uint64_t imm, int is_64bit) {
 	uint32_t instr;
 	uint64_t val;
 	int enc;
@@ -1332,10 +1331,10 @@ static void asm_data_proc(MCCState *s1, int token) {
 					mcc_error("relocated immediate only valid for add");
 			} else if (token == TOK_ASM_add || token == TOK_ASM_adds)
 				gen_add_imm(rd, rn, op3.e.v, is_64bit,
-							token == TOK_ASM_adds);
+										token == TOK_ASM_adds);
 			else if (token == TOK_ASM_sub || token == TOK_ASM_subs)
 				gen_sub_imm(rd, rn, op3.e.v, is_64bit,
-							token == TOK_ASM_subs);
+										token == TOK_ASM_subs);
 			else if (token == TOK_ASM_and)
 				gen_logical_imm(ARM64_AND_IMM, rd, rn, op3.e.v, is_64bit);
 			else if (token == TOK_ASM_ands)
@@ -1509,19 +1508,31 @@ static void asm_ldst_pair(MCCState *s1, int token) {
 
 	if ((op1.reg_type & REG_X) && (op2.reg_type & REG_X)) {
 		if (token == TOK_ASM_stp) {
-			base_opcode = op3.addr_mode == ADDR_PRE ? ARM64_STP_X_PRE : op3.addr_mode == ADDR_POST ? ARM64_STP_X_POST
-																								   : ARM64_STP_X;
+			base_opcode = op3.addr_mode == ADDR_PRE
+												? ARM64_STP_X_PRE
+										: op3.addr_mode == ADDR_POST
+												? ARM64_STP_X_POST
+												: ARM64_STP_X;
 		} else {
-			base_opcode = op3.addr_mode == ADDR_PRE ? ARM64_LDP_X_PRE : op3.addr_mode == ADDR_POST ? ARM64_LDP_X_POST
-																								   : ARM64_LDP_X;
+			base_opcode = op3.addr_mode == ADDR_PRE
+												? ARM64_LDP_X_PRE
+										: op3.addr_mode == ADDR_POST
+												? ARM64_LDP_X_POST
+												: ARM64_LDP_X;
 		}
 	} else if ((op1.reg_type & REG_D) && (op2.reg_type & REG_D)) {
 		if (token == TOK_ASM_stp) {
-			base_opcode = op3.addr_mode == ADDR_PRE ? ARM64_STP_D_PRE : op3.addr_mode == ADDR_POST ? ARM64_STP_D_POST
-																								   : ARM64_STP_D;
+			base_opcode = op3.addr_mode == ADDR_PRE
+												? ARM64_STP_D_PRE
+										: op3.addr_mode == ADDR_POST
+												? ARM64_STP_D_POST
+												: ARM64_STP_D;
 		} else {
-			base_opcode = op3.addr_mode == ADDR_PRE ? ARM64_LDP_D_PRE : op3.addr_mode == ADDR_POST ? ARM64_LDP_D_POST
-																								   : ARM64_LDP_D;
+			base_opcode = op3.addr_mode == ADDR_PRE
+												? ARM64_LDP_D_PRE
+										: op3.addr_mode == ADDR_POST
+												? ARM64_LDP_D_POST
+												: ARM64_LDP_D;
 		}
 	} else {
 		mcc_error("stp/ldp requires matching x or d registers");
@@ -1875,7 +1886,7 @@ ST_FUNC void asm_opcode(MCCState *s1, int opcode) {
 
 	default:
 		mcc_error("ARM64 instruction '%s' not implemented",
-				  get_tok_str(opcode, NULL));
+							get_tok_str(opcode, NULL));
 		break;
 	}
 }
@@ -1892,7 +1903,7 @@ ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier) {
 			return;
 		}
 		if (!(r & VT_LVAL) && modifier != 'c' && modifier != 'n' &&
-			modifier != 'P')
+				modifier != 'P')
 			cstr_ccat(add_str, '#');
 		if (r & VT_SYM) {
 			const char *name = get_tok_str(sv->sym->v, NULL);
@@ -1933,9 +1944,11 @@ ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier) {
 			size = type_size(&sv->type, &align);
 
 			if (modifier == 0)
-				modifier = size <= 4   ? 's'
-						   : size == 8 ? 'd'
-									   : 'q';
+				modifier = size <= 4
+											 ? 's'
+									 : size == 8
+											 ? 'd'
+											 : 'q';
 
 			switch (modifier) {
 			case 'b':
@@ -1945,7 +1958,7 @@ ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier) {
 			case 'q':
 			case 'Z':
 				cstr_printf(add_str, "%c%d", modifier == 'Z' ? 'z' : modifier,
-							fp_reg);
+										fp_reg);
 				return;
 			default:
 				mcc_error("invalid operand modifier for SIMD/FP register");
@@ -1954,12 +1967,12 @@ ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier) {
 		}
 
 		if ((sv->type.t & VT_BTYPE) == VT_BYTE ||
-			(sv->type.t & VT_BTYPE) == VT_BOOL)
+				(sv->type.t & VT_BTYPE) == VT_BOOL)
 			size = 1;
 		else if ((sv->type.t & VT_BTYPE) == VT_SHORT)
 			size = 2;
 		else if ((sv->type.t & VT_BTYPE) == VT_LLONG ||
-				 (sv->type.t & VT_BTYPE) == VT_PTR)
+						 (sv->type.t & VT_BTYPE) == VT_PTR)
 			size = 8;
 		else
 			size = 4;
@@ -1985,16 +1998,16 @@ ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier) {
 }
 
 ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
-						  int nb_outputs, int is_output,
-						  uint8_t *clobber_regs,
-						  int out_reg) {
+													int nb_outputs, int is_output,
+													uint8_t *clobber_regs,
+													int out_reg) {
 	uint8_t regs_allocated[NB_ASM_REGS];
 	ASMOperand *op;
 	int reg, saved_count, stack_size, stack_off;
 	int saved_regs[12];
 	static const uint8_t reg_saved[] = {
-		19, 20, 21, 22, 23, 24, 25, 26, 27, 28,
-		29, 30};
+			19, 20, 21, 22, 23, 24, 25, 26, 27, 28,
+			29, 30};
 
 	memcpy(regs_allocated, clobber_regs, sizeof(regs_allocated));
 	for (int i = 0; i < nb_operands; i++) {
@@ -2018,12 +2031,12 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
 			for (int i = stack_off = 0; i < saved_count;) {
 				if (i + 1 < saved_count) {
 					gen_ldst_pair(ARM64_STP_X, saved_regs[i], saved_regs[i + 1],
-								  TREG_SP, stack_off, 3);
+												TREG_SP, stack_off, 3);
 					stack_off += 16;
 					i += 2;
 				} else {
 					gen_ldst_imm(ARM64_STR_X, saved_regs[i], TREG_SP,
-								 stack_off, 3);
+											 stack_off, 3);
 					i++;
 				}
 			}
@@ -2067,12 +2080,12 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
 			for (int i = stack_off = 0; i < saved_count;) {
 				if (i + 1 < saved_count) {
 					gen_ldst_pair(ARM64_LDP_X, saved_regs[i], saved_regs[i + 1],
-								  TREG_SP, stack_off, 3);
+												TREG_SP, stack_off, 3);
 					stack_off += 16;
 					i += 2;
 				} else {
 					gen_ldst_imm(ARM64_LDR_X, saved_regs[i], TREG_SP,
-								 stack_off, 3);
+											 stack_off, 3);
 					i++;
 				}
 			}
@@ -2084,9 +2097,9 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
 #include "arch/asm-constraints.inc.c"
 
 ST_FUNC void asm_compute_constraints(ASMOperand *operands,
-									 int nb_operands, int nb_outputs,
-									 const uint8_t *clobber_regs,
-									 int *pout_reg) {
+																		 int nb_operands, int nb_outputs,
+																		 const uint8_t *clobber_regs,
+																		 int *pout_reg) {
 	ASMOperand *op;
 	int sorted_op[MAX_ASM_OPERANDS];
 	int j, reg, c, reg_mask;
@@ -2094,7 +2107,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 	uint8_t regs_allocated[NB_ASM_REGS];
 
 	asm_constraints_prologue(operands, nb_operands, nb_outputs,
-							 clobber_regs, sorted_op, regs_allocated);
+													 clobber_regs, sorted_op, regs_allocated);
 
 	for (int i = 0; i < nb_operands; i++) {
 		j = sorted_op[i];
@@ -2220,7 +2233,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 			break;
 		default:
 			mcc_error("asm constraint %d ('%s') could not be satisfied",
-					  j, op->constraint);
+								j, op->constraint);
 			break;
 		}
 		if (op->input_index >= 0) {
@@ -2242,8 +2255,8 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 	for (int i = 0; i < nb_operands; i++) {
 		op = &operands[i];
 		if (op->reg >= 0 &&
-			(op->vt->r & VT_VALMASK) == VT_LLOCAL &&
-			!op->is_memory) {
+				(op->vt->r & VT_VALMASK) == VT_LLOCAL &&
+				!op->is_memory) {
 			for (reg = 0; reg < 31; reg++) {
 				if (!(regs_allocated[reg] & REG_OUT_MASK))
 					goto reg_found2;
@@ -2260,8 +2273,8 @@ ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str) {
 	int reg;
 
 	if (!strcmp(str, "memory") ||
-		!strcmp(str, "cc") ||
-		!strcmp(str, "flags"))
+			!strcmp(str, "cc") ||
+			!strcmp(str, "flags"))
 		return;
 
 	reg = arm64_parse_regvar(tok_alloc_const(str));

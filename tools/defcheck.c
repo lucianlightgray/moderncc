@@ -1,6 +1,7 @@
 #include "toolsupport.h"
 
-typedef struct {
+typedef struct
+{
 	char **v;
 	int n, cap;
 } Syms;
@@ -12,6 +13,7 @@ static void syms_add(Syms *s, const char *name) {
 	}
 	s->v[s->n++] = strdup(name);
 }
+
 static int syms_has(const Syms *s, const char *name) {
 	int i;
 	for (i = 0; i < s->n; i++)
@@ -54,7 +56,6 @@ static int def_parse(const char *path, char *lib, int libsz, Syms *out, const ch
 			}
 			seen_exports = 1;
 		} else {
-
 			if (strpbrk(line, " \t=")) {
 				fprintf(stderr, "%s: %s: symbol '%s' has ordinal/alias/DATA syntax\n", who, path, line);
 				rc = -1;

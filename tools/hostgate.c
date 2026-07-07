@@ -1,9 +1,9 @@
 #include "toolsupport.h"
 
 static const char *BANNED[] = {
-	"_WIN32", "_WIN64", "_MSC_VER", "__MINGW32__", "__MINGW64__", "__CYGWIN__",
-	"__APPLE__", "__linux__", "__FreeBSD__", "__FreeBSD_kernel__", "__NetBSD__",
-	"__OpenBSD__", "__DragonFly__", "__ANDROID__", "__dietlibc__", 0};
+		"_WIN32", "_WIN64", "_MSC_VER", "__MINGW32__", "__MINGW64__", "__CYGWIN__",
+		"__APPLE__", "__linux__", "__FreeBSD__", "__FreeBSD_kernel__", "__NetBSD__",
+		"__OpenBSD__", "__DragonFly__", "__ANDROID__", "__dietlibc__", 0};
 
 static int g_violations;
 
@@ -82,9 +82,9 @@ static int scan_file(const char *path, int is_dir, void *ud) {
 		return 0;
 	elen = (int)strlen(path);
 	if (!(elen >= 2 && path[elen - 2] == '.' &&
-		  (path[elen - 1] == 'c' || path[elen - 1] == 'h' ||
-		   path[elen - 1] == 's' || path[elen - 1] == 'S')) &&
-		!(elen >= 4 && !strcmp(path + elen - 4, ".inc")))
+				(path[elen - 1] == 'c' || path[elen - 1] == 'h' ||
+				 path[elen - 1] == 's' || path[elen - 1] == 'S')) &&
+			!(elen >= 4 && !strcmp(path + elen - 4, ".inc")))
 		return 0;
 	base = strrchr(path, '/');
 	base = base ? base + 1 : path;
@@ -131,10 +131,10 @@ int main(int argc, char **argv) {
 
 	if (g_violations) {
 		fprintf(stderr,
-				"host-gate invariant violated - raw host macros tested outside\n"
-				"src/mcchost.{h,c} (use MCC_HOST_* or a host_* function from\n"
-				"mcchost.h instead): %d violation(s) above\n",
-				g_violations);
+						"host-gate invariant violated - raw host macros tested outside\n"
+						"src/mcchost.{h,c} (use MCC_HOST_* or a host_* function from\n"
+						"mcchost.h instead): %d violation(s) above\n",
+						g_violations);
 		return 1;
 	}
 	printf("host-gate invariant OK: no raw host-macro tests outside src/mcchost.{h,c}\n");

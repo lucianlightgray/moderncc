@@ -1,7 +1,6 @@
 #include <string.h>
 
 int main(void) {
-
 	if (strcspn("hello, world", ",") != 5)
 		return 1;
 	if (strcspn("abcdef", "xyz") != 6)

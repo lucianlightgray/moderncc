@@ -186,7 +186,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		x += val - addr;
 #ifdef DEBUG_RELOC
 		printf(" newx=0x%x name=%s\n", x,
-			   (char *)symtab_section->link->data + sym->st_name);
+					 (char *)symtab_section->link->data + sym->st_name);
 #endif
 		h = x & 2;
 		th_ko = (x & 3) && (!blx_avail || !is_call);
@@ -208,7 +208,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		Section *plt;
 
 		if (sym->st_shndx == SHN_UNDEF &&
-			ELFW(ST_BIND)(sym->st_info) == STB_WEAK)
+				ELFW(ST_BIND)(sym->st_info) == STB_WEAK)
 			return;
 
 		hi = read16le(ptr);
@@ -221,14 +221,14 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		imm10 = hi & 0x3ff;
 		imm11 = lo & 0x7ff;
 		x = (s << 24) | (i1 << 23) | (i2 << 22) |
-			(imm10 << 12) | (imm11 << 1);
+				(imm10 << 12) | (imm11 << 1);
 		if (x & 0x01000000)
 			x -= 0x02000000;
 
 		to_thumb = val & 1;
 		plt = s1->plt;
 		to_plt = (val >= plt->sh_addr) &&
-				 (val < plt->sh_addr + plt->data_offset);
+						 (val < plt->sh_addr + plt->data_offset);
 		is_call = (type == R_ARM_THM_PC22);
 
 		if (!to_thumb && !to_plt && !is_call) {
@@ -241,15 +241,15 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 			text = s1->sections[sym->st_shndx];
 			snprintf(buf, sizeof(buf), "%s_from_thumb", name);
 			index = put_elf_sym(symtab_section,
-								text->data_offset + 1,
-								sym->st_size, sym->st_info, 0,
-								sym->st_shndx, buf);
+													text->data_offset + 1,
+													sym->st_size, sym->st_info, 0,
+													sym->st_shndx, buf);
 			to_thumb = 1;
 			val = text->data_offset + 1;
 			rel->r_info = ELFW(R_INFO)(index, type);
 			put_elf_reloc(symtab_section, text,
-						  text->data_offset + 4, R_ARM_JUMP24,
-						  sym_index);
+										text->data_offset + 4, R_ARM_JUMP24,
+										sym_index);
 			p = section_ptr_add(text, 8);
 			write32le(p, 0x4778);
 			write32le(p + 2, 0x46c0);
@@ -274,10 +274,10 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		imm10 = (x >> 12) & 0x3ff;
 		imm11 = (x >> 1) & 0x7ff;
 		write16le(ptr, (hi & 0xf800) |
-						   (s << 10) | imm10);
+											 (s << 10) | imm10);
 		write16le(ptr + 2, (lo & 0xc000) |
-							   (j1 << 13) | blx_bit | (j2 << 11) |
-							   imm11);
+													 (j1 << 13) | blx_bit | (j2 << 11) |
+													 imm11);
 	}
 		return;
 	case R_ARM_MOVT_ABS:
@@ -304,7 +304,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		if (type == R_ARM_MOVT_PREL)
 			val >>= 16;
 		write32le(ptr, (insn & 0xfff0f000) |
-						   ((val & 0xf000) << 4) | (val & 0xfff));
+											 ((val & 0xf000) << 4) | (val & 0xfff));
 	}
 		return;
 	case R_ARM_THM_MOVT_ABS:
@@ -364,8 +364,8 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		return;
 	case R_ARM_GOT_PREL:
 		add32le(ptr, s1->got->sh_addr +
-						 get_sym_attr(s1, sym_index, 0)->got_offset -
-						 addr);
+										 get_sym_attr(s1, sym_index, 0)->got_offset -
+										 addr);
 		return;
 	case R_ARM_COPY:
 		return;
@@ -414,7 +414,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		return;
 	default:
 		mcc_error_noabort("unhandled relocation type %d at 0x%x (value 0x%x)",
-				type, (unsigned)addr, (unsigned)val);
+											type, (unsigned)addr, (unsigned)val);
 		return;
 	}
 }

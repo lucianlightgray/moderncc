@@ -3,8 +3,7 @@
 
 int __stdcall SwitchToThread(void);
 
-static inline int sched_yield(void)
-{
+static inline int sched_yield(void) {
 	SwitchToThread();
 	return 0;
 }

@@ -20,32 +20,32 @@ _Noreturn void panic(const char *fmt, ...) {
 }
 
 static const char *diagnosticKindStrings[] = {
-	[DK_ERROR] = "error",
-	[DK_SYNTAX_ERROR] = "syntax error",
-	[DK_TYPE_MISMATCH] = "type mismatch",
-	[DK_UNDEFINED_VARIABLE] = "undefined variable",
-	[DK_FLOW_ERROR] = "control flow error",
-	[DK_REDECLARATION] = "redeclaration",
-	[DK_TYPE_CYCLE] = "recursive type",
-	[DK_NON_EXHAUSTIVE_MATCH] = "non-exhaustive match",
-	[DK_INVALID_TYPE] = "invalid type",
-	[DK_MISSING_RETURN] = "missing return",
-	[DK_CONDITION_ERROR] = "condition error",
-	[DK_ITERATION_ERROR] = "iteration error",
-	[DK_FFI_ERROR] = "FFI error",
-	[DK_INFERENCE_ERROR] = "inference error",
-	[DK_UNINITIALIZED] = "uninitialized value",
-	[DK_OVERLOAD_ERROR] = "overload error",
-	[DK_LINKER_ERROR] = "linker error",
-	[DK_VARIANT_ERROR] = "variant error",
-	[DK_COMPTIME_ERROR] = "compile-time evaluation error",
-	[DK_NOGC_VIOLATION] = "allocation in a @nogc function",
-	[DK_WARNING] = "warning",
-	[DK_DEPRECATED] = "deprecated code",
-	[DK_UNUSED] = "unused code",
-	[DK_UNREACHABLE] = "unreachable code",
-	[DK_REDUNDANT] = "redundant modifier",
-	[DK_INFO] = "info",
+		[DK_ERROR] = "error",
+		[DK_SYNTAX_ERROR] = "syntax error",
+		[DK_TYPE_MISMATCH] = "type mismatch",
+		[DK_UNDEFINED_VARIABLE] = "undefined variable",
+		[DK_FLOW_ERROR] = "control flow error",
+		[DK_REDECLARATION] = "redeclaration",
+		[DK_TYPE_CYCLE] = "recursive type",
+		[DK_NON_EXHAUSTIVE_MATCH] = "non-exhaustive match",
+		[DK_INVALID_TYPE] = "invalid type",
+		[DK_MISSING_RETURN] = "missing return",
+		[DK_CONDITION_ERROR] = "condition error",
+		[DK_ITERATION_ERROR] = "iteration error",
+		[DK_FFI_ERROR] = "FFI error",
+		[DK_INFERENCE_ERROR] = "inference error",
+		[DK_UNINITIALIZED] = "uninitialized value",
+		[DK_OVERLOAD_ERROR] = "overload error",
+		[DK_LINKER_ERROR] = "linker error",
+		[DK_VARIANT_ERROR] = "variant error",
+		[DK_COMPTIME_ERROR] = "compile-time evaluation error",
+		[DK_NOGC_VIOLATION] = "allocation in a @nogc function",
+		[DK_WARNING] = "warning",
+		[DK_DEPRECATED] = "deprecated code",
+		[DK_UNUSED] = "unused code",
+		[DK_UNREACHABLE] = "unreachable code",
+		[DK_REDUNDANT] = "redundant modifier",
+		[DK_INFO] = "info",
 };
 
 static int termWidth(void) {
@@ -75,7 +75,7 @@ bool diagnosticKindIsError(DiagnosticKind kind) {
 }
 
 static void getSourceLine(SourceFile *file, u32 lineIdx, const char **out,
-						  u32 *outLen) {
+													u32 *outLen) {
 	u32 start = file->lineStarts.items[lineIdx];
 	u32 end;
 	if (lineIdx + 1 < file->lineStarts.len)
@@ -84,7 +84,7 @@ static void getSourceLine(SourceFile *file, u32 lineIdx, const char **out,
 		end = file->srcLen;
 
 	while (end > start &&
-		   (file->src[end - 1] == '\n' || file->src[end - 1] == '\r'))
+				 (file->src[end - 1] == '\n' || file->src[end - 1] == '\r'))
 		end--;
 
 	*out = file->src + start;
@@ -111,7 +111,6 @@ static void printWrapped(const char *msg, int maxwidth) {
 	const char *p = msg;
 
 	while (*p) {
-
 		while (*p == ' ')
 			p++;
 		if (!*p)
@@ -151,7 +150,7 @@ void printDiagnostic(SourceFile *file, Diagnostic diag) {
 	u32 el = end.line - 1, ec = end.col - 1;
 
 	printf("%s%s at %s:%u:%u ...%s\n\n", color, kindStr, file->path, start.line,
-		   start.col, ANSI_RESET);
+				 start.col, ANSI_RESET);
 
 	const u32 contextWant = 2;
 
@@ -171,7 +170,7 @@ void printDiagnostic(SourceFile *file, Diagnostic diag) {
 	u32 endLine = sl;
 	u32 foundAfter = 0;
 	for (u32 i = sl + 1; i < file->lineStarts.len && foundAfter < contextWant;
-		 i++) {
+			 i++) {
 		const char *ln;
 		u32 lnLen;
 		getSourceLine(file, i, &ln, &lnLen);
@@ -209,7 +208,7 @@ void printDiagnostic(SourceFile *file, Diagnostic diag) {
 
 		char lineBuf[2048];
 		u32 copyLen =
-			lnLen < sizeof(lineBuf) - 4 ? lnLen : (u32)sizeof(lineBuf) - 4;
+				lnLen < sizeof(lineBuf) - 4 ? lnLen : (u32)sizeof(lineBuf) - 4;
 		memcpy(lineBuf, ln, copyLen);
 		lineBuf[copyLen] = '\0';
 
@@ -246,7 +245,7 @@ void printDiagnostic(SourceFile *file, Diagnostic diag) {
 
 		if (i == sl && adjSc > (u32)maxwidth - (u32)gutterWidth - 10) {
 			int prefixLen =
-				snprintf(displayBuf, sizeof(displayBuf), "... (col %u) ... ", sc + 1);
+					snprintf(displayBuf, sizeof(displayBuf), "... (col %u) ... ", sc + 1);
 			u32 skip = adjSc;
 			if (skip < expandLen) {
 				u32 remaining = expandLen - skip;
@@ -277,9 +276,8 @@ void printDiagnostic(SourceFile *file, Diagnostic diag) {
 		}
 
 		if (i == sl) {
-
 			printf(ANSI_GRAY "%*u | " ANSI_RESET ANSI_WHITE "%s" ANSI_RESET "\n",
-				   gutterWidth, i + 1, displayBuf);
+						 gutterWidth, i + 1, displayBuf);
 
 			u32 caretStart = dispSc + gutterWidth + 3;
 			u32 caretCount = (dispEc > dispSc) ? dispEc - dispSc : 1;
@@ -293,9 +291,8 @@ void printDiagnostic(SourceFile *file, Diagnostic diag) {
 				fputc('^', stdout);
 			printf(ANSI_RESET "\n");
 		} else {
-
 			printf(ANSI_GRAY "%*u | %s" ANSI_RESET "\n", gutterWidth, i + 1,
-				   displayBuf);
+						 displayBuf);
 		}
 	}
 
@@ -322,8 +319,7 @@ void diagnosticFreeMessage(Diagnostic *diag) {
 }
 
 Diagnostic *reportDiagnostic(SourceFile *file, DiagnosticKind kind, u32 pos,
-							 u32 len, const char *message) {
-
+														 u32 len, const char *message) {
 	if (len == 0)
 		len = 1;
 
@@ -341,11 +337,11 @@ Diagnostic *reportDiagnostic(SourceFile *file, DiagnosticKind kind, u32 pos,
 	}
 
 	listAppend(file->diagnostics, ((Diagnostic){
-									  .kind = kind,
-									  .pos = pos,
-									  .len = len,
-									  .message = owned,
-								  }));
+																		.kind = kind,
+																		.pos = pos,
+																		.len = len,
+																		.message = owned,
+																}));
 
 	return &file->diagnostics.items[file->diagnostics.len - 1];
 }

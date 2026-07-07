@@ -25,7 +25,7 @@ int main(void) {
 		return 1;
 	strcpy(p, "heap");
 	printf("i=%d s=%s digit=%d up=%c %s\n",
-		   tls_i, tls_s, isdigit('5') != 0, toupper('a'), p);
+				 tls_i, tls_s, isdigit('5') != 0, toupper('a'), p);
 	free(p);
 	return 0;
 }

@@ -7,6 +7,7 @@
 
 #ifdef __cplusplus
 extern "C" {
+
 #endif
 
 _CRTIMP errno_t __cdecl _strset_s(char *_Dst, size_t _DstSize, int _Value);

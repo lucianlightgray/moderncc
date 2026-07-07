@@ -4,6 +4,7 @@
 static inline void libc_hooks_will_read_cstring(const char *s) {
 	(void)s;
 }
+
 static inline void libc_hooks_will_read(const void *p, unsigned long n) {
 	(void)p;
 	(void)n;

@@ -19,7 +19,6 @@ static lldiv_t rt_lldiv(long long n, long long d) {
 #endif
 
 int main(void) {
-
 	div_t d = div(17, 5);
 	if (d.quot != 3 || d.rem != 2)
 		return 1;

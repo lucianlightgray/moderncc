@@ -64,7 +64,6 @@ _enlarge(BUF *b) {
 
 	new = (vm_address_t)(b->end + 1);
 	if (vm_allocate(mach_task_self(), &new, VM_PAGE_SIZE, 0) == 0) {
-
 		b->end += VM_PAGE_SIZE;
 		return 1;
 	}
@@ -91,7 +90,6 @@ _enlarge(BUF *b) {
 
 static int
 _snprintf_out_of_space(BUF *b) {
-
 	if (b->fd < INT_MAX) {
 		b->fd++;
 	}
@@ -109,7 +107,6 @@ put_c(BUF *b, _esc_func esc, unsigned char c) {
 	else {
 		if (b->ptr >= b->end)
 			if (!b->full(b)) {
-
 				return;
 			}
 		*b->ptr++ = c;
@@ -309,7 +306,6 @@ __simple_bprintf(BUF *b, _esc_func esc, const char *fmt, va_list ap) {
 		lflag = zero = width = 0;
 		for (;;) {
 			if (strncmp(fmt, ".*s", 3) == 0) {
-
 				width = va_arg(ap, int);
 				cp = va_arg(ap, char *);
 				while (width-- > 0)
@@ -402,15 +398,15 @@ __simple_bprintf(BUF *b, _esc_func esc, const char *fmt, va_list ap) {
 				switch (lflag) {
 				case 0:
 					hex(b, esc, va_arg(ap, unsigned int), width, zero,
-						*fmt == 'X', 0);
+							*fmt == 'X', 0);
 					break;
 				case 1:
 					hex(b, esc, va_arg(ap, unsigned long), width, zero,
-						*fmt == 'X', 0);
+							*fmt == 'X', 0);
 					break;
 				default:
 					hex(b, esc, va_arg(ap, unsigned long long), width, zero,
-						*fmt == 'X', 0);
+							*fmt == 'X', 0);
 					break;
 				}
 				break;
@@ -562,7 +558,7 @@ int _simple_vsnprintf(char *str, size_t size, const char *fmt, va_list ap) {
 
 	if (b.ptr < str || (b.ptr - str) >= size) {
 		__LIBPLATFORM_INTERNAL_CRASH__((uintptr_t)(b.ptr - str),
-									   "Overflow in _simple_snprintf");
+																	 "Overflow in _simple_snprintf");
 	}
 
 	*(b.ptr) = '\0';

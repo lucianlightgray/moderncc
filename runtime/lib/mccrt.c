@@ -33,7 +33,7 @@ typedef long double XFtype;
 #define EXPD(fp) (((fp.l.upper) >> 20) & 0x7FF)
 #define SIGND(fp) ((fp.l.upper) & SIGNBIT)
 #define MANTD(fp) (((((fp.l.upper) & 0xFFFFF) | HIDDEND) << 10) | \
-				   (fp.l.lower >> 22))
+									 (fp.l.lower >> 22))
 #define HIDDEND_LL ((long long)1 << 52)
 #define MANTD_LL(fp) ((fp.ll & (HIDDEND_LL - 1)) | HIDDEND_LL)
 #define PACKD_LL(s, e, m) (((long long)((s) + ((e) << 20)) << 32) | (m))
@@ -44,7 +44,9 @@ typedef long double XFtype;
 
 union ldouble_long {
 	long double ld;
-	struct {
+
+	struct
+	{
 		unsigned long long lower;
 		unsigned short upper;
 	} l;
@@ -53,12 +55,14 @@ union ldouble_long {
 union double_long {
 	double d;
 #if 1
-	struct {
+	struct
+	{
 		unsigned int lower;
 		int upper;
 	} l;
 #else
-	struct {
+	struct
+	{
 		int upper;
 		unsigned int lower;
 	} l;
@@ -74,31 +78,31 @@ union float_long {
 #if defined __i386__
 
 #define sub_ddmmss(sh, sl, ah, al, bh, bl) \
-	__asm__("subl %5,%1\n\tsbbl %3,%0"     \
-			: "=r"((USItype)(sh)),         \
-			  "=&r"((USItype)(sl))         \
-			: "0"((USItype)(ah)),          \
-			  "g"((USItype)(bh)),          \
-			  "1"((USItype)(al)),          \
-			  "g"((USItype)(bl)))
-#define umul_ppmm(w1, w0, u, v)    \
+	__asm__("subl %5,%1\n\tsbbl %3,%0"       \
+					: "=r"((USItype)(sh)),           \
+						"=&r"((USItype)(sl))           \
+					: "0"((USItype)(ah)),            \
+						"g"((USItype)(bh)),            \
+						"1"((USItype)(al)),            \
+						"g"((USItype)(bl)))
+#define umul_ppmm(w1, w0, u, v)  \
 	__asm__("mull %3"              \
-			: "=a"((USItype)(w0)), \
-			  "=d"((USItype)(w1))  \
-			: "%0"((USItype)(u)),  \
-			  "rm"((USItype)(v)))
+					: "=a"((USItype)(w0)), \
+						"=d"((USItype)(w1))  \
+					: "%0"((USItype)(u)),  \
+						"rm"((USItype)(v)))
 #define udiv_qrnnd(q, r, n1, n0, dv) \
-	__asm__("divl %4"                \
-			: "=a"((USItype)(q)),    \
-			  "=d"((USItype)(r))     \
-			: "0"((USItype)(n0)),    \
-			  "1"((USItype)(n1)),    \
-			  "rm"((USItype)(dv)))
-#define count_leading_zeros(count, x)                  \
-	do {                                               \
+	__asm__("divl %4"                  \
+					: "=a"((USItype)(q)),      \
+						"=d"((USItype)(r))       \
+					: "0"((USItype)(n0)),      \
+						"1"((USItype)(n1)),      \
+						"rm"((USItype)(dv)))
+#define count_leading_zeros(count, x)              \
+	do {                                             \
 		USItype __cbtmp;                               \
 		__asm__("bsrl %1,%0"                           \
-				: "=r"(__cbtmp) : "rm"((USItype)(x))); \
+						: "=r"(__cbtmp) : "rm"((USItype)(x))); \
 		(count) = __cbtmp ^ 31;                        \
 	} while (0)
 
@@ -314,6 +318,7 @@ unsigned long long __umoddi3(unsigned long long u, unsigned long long v) {
 }
 
 long long __ashrdi3(long long a, int b) {
+
 #ifdef __MCC__
 	DWunion u;
 	u.ll = a;
@@ -331,6 +336,7 @@ long long __ashrdi3(long long a, int b) {
 }
 
 unsigned long long __lshrdi3(unsigned long long a, int b) {
+
 #ifdef __MCC__
 	DWunion u;
 	u.ll = a;
@@ -348,6 +354,7 @@ unsigned long long __lshrdi3(unsigned long long a, int b) {
 }
 
 long long __ashldi3(long long a, int b) {
+
 #ifdef __MCC__
 	DWunion u;
 	u.ll = a;

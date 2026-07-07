@@ -10,7 +10,6 @@ __FBSDID("$FreeBSD: src/lib/libc/string/strcspn.c,v 1.5 2005/04/02 18:52:44 das 
 
 size_t
 strcspn(const char *s, const char *charset) {
-
 	const char *s1;
 	u_long bit;
 	u_long tbl[(UCHAR_MAX + 1) / LONG_BIT];

@@ -33,8 +33,8 @@ static const char *fr(disasm_ctx *dc, int kind, int r) {
 }
 
 static const char *cc[16] = {
-	"eq", "ne", "cs", "cc", "mi", "pl", "vs", "vc",
-	"hi", "ls", "ge", "lt", "gt", "le", "al", "nv"};
+		"eq", "ne", "cs", "cc", "mi", "pl", "vs", "vc",
+		"hi", "ls", "ge", "lt", "gt", "le", "al", "nv"};
 
 static int dis_encode_bimm64(uint64_t x) {
 	int neg = x & 1;
@@ -93,7 +93,7 @@ static int dis_encode_bimm64(uint64_t x) {
 		len = rep - len;
 	}
 	return ((0x1000 & rep << 6) | (((rep - 1) ^ 31) << 1 & 63) |
-			((rep - pos) & (rep - 1)) << 6 | (len - 1));
+					((rep - pos) & (rep - 1)) << 6 | (len - 1));
 }
 
 static uint64_t dis_decode_bimm(int n, int immr, int imms) {
@@ -158,23 +158,26 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) {
 	}
 	if ((w & 0xffffffe0) == 0xd53b4400 || (w & 0xffffffe0) == 0xd53b4420) {
 		snprintf(out, osz, "mrs\t%s, %s", ir(dc, 1, rd),
-				 (w & 0x20) ? "fpsr" : "fpcr");
+						 (w & 0x20) ? "fpsr" : "fpcr");
 		return D_ASM;
 	}
 	if ((w & 0xffffffe0) == 0xd51b4400 || (w & 0xffffffe0) == 0xd51b4420) {
 		snprintf(out, osz, "msr\t%s, %s", (w & 0x20) ? "fpsr" : "fpcr",
-				 ir(dc, 1, rd));
+						 ir(dc, 1, rd));
 		return D_ASM;
 	}
 	if ((w & 0xfffff01f) == 0xd503301f && ((w >> 5) & 7) >= 4) {
-
 		static const char *opt[16] = {
-			0, "oshld", "oshst", "osh", 0, "nshld", "nshst", "nsh",
-			0, "ishld", "ishst", "ish", 0, "ld", "st", "sy"};
+				0, "oshld", "oshst", "osh", 0, "nshld", "nshst", "nsh",
+				0, "ishld", "ishst", "ish", 0, "ld", "st", "sy"};
 		int op2 = (w >> 5) & 7, o = (w >> 8) & 15;
-		const char *nm = op2 == 4 ? "dsb" : op2 == 5 ? "dmb"
-										: op2 == 6	 ? "isb"
-													 : 0;
+		const char *nm = op2 == 4
+												 ? "dsb"
+										 : op2 == 5
+												 ? "dmb"
+										 : op2 == 6
+												 ? "isb"
+												 : 0;
 		if (nm) {
 			if (opt[o])
 				snprintf(out, osz, "%s\t%s", nm, opt[o]);
@@ -185,20 +188,20 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) {
 	}
 	if ((w & 0xfff00000) == 0xd5300000) {
 		snprintf(out, osz, "mrs\t%s, s3_%d_c%d_c%d_%d", ir(dc, 1, rd),
-				 (int)(w >> 16) & 7, (int)(w >> 12) & 15,
-				 (int)(w >> 8) & 15, (int)(w >> 5) & 7);
+						 (int)(w >> 16) & 7, (int)(w >> 12) & 15,
+						 (int)(w >> 8) & 15, (int)(w >> 5) & 7);
 		return D_CMT;
 	}
 	if ((w & 0xfff00000) == 0xd5100000) {
 		snprintf(out, osz, "msr\ts3_%d_c%d_c%d_%d, %s",
-				 (int)(w >> 16) & 7, (int)(w >> 12) & 15,
-				 (int)(w >> 8) & 15, (int)(w >> 5) & 7, ir(dc, 1, rd));
+						 (int)(w >> 16) & 7, (int)(w >> 12) & 15,
+						 (int)(w >> 8) & 15, (int)(w >> 5) & 7, ir(dc, 1, rd));
 		return D_CMT;
 	}
 	if ((w & 0xfff80000) == 0xd5080000) {
 		snprintf(out, osz, "sys\t#%d, c%d, c%d, #%d, %s",
-				 (int)(w >> 16) & 7, (int)(w >> 12) & 15,
-				 (int)(w >> 8) & 15, (int)(w >> 5) & 7, ir(dc, 1, rd));
+						 (int)(w >> 16) & 7, (int)(w >> 12) & 15,
+						 (int)(w >> 8) & 15, (int)(w >> 5) & 7, ir(dc, 1, rd));
 		return D_CMT;
 	}
 
@@ -217,7 +220,7 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) {
 			const char *l = btext(dc, target);
 
 			snprintf(out, osz, "%s\t0x%llx\t// %s", nm,
-					 (unsigned long long)target, l);
+							 (unsigned long long)target, l);
 			return D_ASM;
 		}
 	}
@@ -252,8 +255,8 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) {
 		int bit = ((w >> 31) << 5) | ((w >> 19) & 31);
 		addr_t target = pc + (addr_t)((int64_t)simm(w, 5, 14) << 2);
 		snprintf(out, osz, "%s\t%s, #%d, %s",
-				 (w & 0x01000000) ? "tbnz" : "tbz",
-				 ir(dc, w >> 31, rd), bit, btext(dc, target));
+						 (w & 0x01000000) ? "tbnz" : "tbz",
+						 ir(dc, w >> 31, rd), bit, btext(dc, target));
 		return D_CMT;
 	}
 
@@ -268,21 +271,25 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) {
 			return D_CMT;
 		}
 		snprintf(out, osz, "%s\t%s, 0x%llx", nm, ir(dc, 1, rd),
-				 (unsigned long long)(simm(w, 5, 19) << 2 |
-									  (int)((w >> 29) & 3)));
+						 (unsigned long long)(simm(w, 5, 19) << 2 |
+																	(int)((w >> 29) & 3)));
 		return D_CMT;
 	}
 
 	if ((w & 0x1f800000) == 0x12800000) {
 		int opc = (w >> 29) & 3, hw = (w >> 21) & 3;
 		unsigned imm = (w >> 5) & 0xffff;
-		const char *nm = opc == 0 ? "movn" : opc == 2 ? "movz"
-										 : opc == 3	  ? "movk"
-													  : 0;
+		const char *nm = opc == 0
+												 ? "movn"
+										 : opc == 2
+												 ? "movz"
+										 : opc == 3
+												 ? "movk"
+												 : 0;
 		if (nm && (sf || hw <= 1)) {
 			if (hw)
 				snprintf(out, osz, "%s\t%s, #0x%x, lsl #%d",
-						 nm, ir(dc, sf, rd), imm, hw * 16);
+								 nm, ir(dc, sf, rd), imm, hw * 16);
 			else
 				snprintf(out, osz, "%s\t%s, #0x%x", nm, ir(dc, sf, rd), imm);
 			return sym ? D_CMT : D_ASM;
@@ -293,16 +300,20 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) {
 	if ((w & 0x1f800000) == 0x11000000) {
 		int op = (w >> 30) & 1, S = (w >> 29) & 1, sh = (w >> 22) & 1;
 		unsigned long long val = (unsigned long long)((w >> 10) & 0xfff)
-								 << (sh ? 12 : 0);
+														 << (sh ? 12 : 0);
 		const char *nm = op ? (S ? "subs" : "sub") : (S ? "adds" : "add");
 		const char *d = S ? ir(dc, sf, rd) : irsp(dc, sf, rd);
 		if (sym) {
 			const char *pfx =
-				rtype == R_AARCH64_ADD_ABS_LO12_NC ? ":lo12:" : rtype == R_AARCH64_TLSLE_ADD_TPREL_HI12 ? ":tprel_hi12:"
-															: rtype == R_AARCH64_TLSLE_ADD_TPREL_LO12	? ":tprel_lo12:"
-																										: "";
+					rtype == R_AARCH64_ADD_ABS_LO12_NC
+							? ":lo12:"
+					: rtype == R_AARCH64_TLSLE_ADD_TPREL_HI12
+							? ":tprel_hi12:"
+					: rtype == R_AARCH64_TLSLE_ADD_TPREL_LO12
+							? ":tprel_lo12:"
+							: "";
 			snprintf(out, osz, "%s\t%s, %s, #%s%s", nm, d, irsp(dc, sf, rn),
-					 pfx, sym);
+							 pfx, sym);
 
 			if (*pfx && !op && !S && !((w >> 10) & 0xfff) && sh == (rtype == R_AARCH64_TLSLE_ADD_TPREL_HI12) && (sf || (rd != 31 && rn != 31)))
 				return D_ASM;
@@ -320,30 +331,33 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) {
 		const char *nm = op ? (S ? "subs" : "sub") : (S ? "adds" : "add");
 		if (!shift && !imm6) {
 			snprintf(out, osz, "%s\t%s, %s, %s", nm,
-					 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm));
+							 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm));
 			return D_ASM;
 		}
 		snprintf(out, osz, "%s\t%s, %s, %s, %s #%d", nm,
-				 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm),
-				 shift == 0 ? "lsl" : shift == 1 ? "lsr"
-												 : "asr",
-				 imm6);
+						 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm),
+						 shift == 0
+								 ? "lsl"
+						 : shift == 1
+								 ? "lsr"
+								 : "asr",
+						 imm6);
 		return D_CMT;
 	}
 	if ((w & 0x1f200000) == 0x0b200000) {
 		int op = (w >> 30) & 1, S = (w >> 29) & 1;
 		static const char *ext[8] = {
-			"uxtb", "uxth", "uxtw", "uxtx", "sxtb", "sxth", "sxtw", "sxtx"};
+				"uxtb", "uxth", "uxtw", "uxtx", "sxtb", "sxth", "sxtw", "sxtx"};
 		int option = (w >> 13) & 7, imm3 = (w >> 10) & 7;
 		const char *nm = op ? (S ? "subs" : "sub") : (S ? "adds" : "add");
 		if (imm3)
 			snprintf(out, osz, "%s\t%s, %s, %s, %s #%d", nm,
-					 S ? ir(dc, sf, rd) : irsp(dc, sf, rd), irsp(dc, sf, rn),
-					 ir(dc, sf && (option & 3) == 3, rm), ext[option], imm3);
+							 S ? ir(dc, sf, rd) : irsp(dc, sf, rd), irsp(dc, sf, rn),
+							 ir(dc, sf && (option & 3) == 3, rm), ext[option], imm3);
 		else
 			snprintf(out, osz, "%s\t%s, %s, %s, %s", nm,
-					 S ? ir(dc, sf, rd) : irsp(dc, sf, rd), irsp(dc, sf, rn),
-					 ir(dc, sf && (option & 3) == 3, rm), ext[option]);
+							 S ? ir(dc, sf, rd) : irsp(dc, sf, rd), irsp(dc, sf, rn),
+							 ir(dc, sf && (option & 3) == 3, rm), ext[option]);
 		return D_CMT;
 	}
 
@@ -358,11 +372,11 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) {
 				snprintf(out, osz, "mvn\t%s, %s", ir(dc, sf, rd), ir(dc, sf, rm));
 			else if (!shift && !imm6)
 				snprintf(out, osz, "%s\t%s, %s, %s", nm4n[opc],
-						 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm));
+								 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm));
 			else
 				snprintf(out, osz, "%s\t%s, %s, %s, %s #%d", nm4n[opc],
-						 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm),
-						 shnm[shift], imm6);
+								 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm),
+								 shnm[shift], imm6);
 			return D_CMT;
 		}
 		if (!shift && !imm6) {
@@ -371,11 +385,11 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) {
 				return D_ASM;
 			}
 			snprintf(out, osz, "%s\t%s, %s, %s", nm4[opc],
-					 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm));
+							 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm));
 			return D_ASM;
 		}
 		snprintf(out, osz, "%s\t%s, %s, %s, %s #%d", nm4[opc],
-				 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm), shnm[shift], imm6);
+						 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm), shnm[shift], imm6);
 		return D_CMT;
 	}
 
@@ -396,8 +410,8 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) {
 				return D_UNK;
 		}
 		snprintf(out, osz, "%s\t%s, %s, #0x%llx", nm4[opc],
-				 opc == 3 ? ir(dc, sf, rd) : irsp(dc, sf, rd), ir(dc, sf, rn),
-				 (unsigned long long)val);
+						 opc == 3 ? ir(dc, sf, rd) : irsp(dc, sf, rd), ir(dc, sf, rn),
+						 (unsigned long long)val);
 		return D_ASM;
 	}
 
@@ -410,12 +424,12 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) {
 		if (opc == 2) {
 			if (imms == nbits - 1) {
 				snprintf(out, osz, "lsr\t%s, %s, #%d",
-						 ir(dc, sf, rd), ir(dc, sf, rn), immr);
+								 ir(dc, sf, rd), ir(dc, sf, rn), immr);
 				return D_ASM;
 			}
 			if (imms + 1 == immr) {
 				snprintf(out, osz, "lsl\t%s, %s, #%d",
-						 ir(dc, sf, rd), ir(dc, sf, rn), nbits - 1 - imms);
+								 ir(dc, sf, rd), ir(dc, sf, rn), nbits - 1 - imms);
 				return D_ASM;
 			}
 			if (!immr && imms == 7) {
@@ -427,13 +441,13 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) {
 				return D_CMT;
 			}
 			snprintf(out, osz, "ubfm\t%s, %s, #%d, #%d",
-					 ir(dc, sf, rd), ir(dc, sf, rn), immr, imms);
+							 ir(dc, sf, rd), ir(dc, sf, rn), immr, imms);
 			return D_CMT;
 		}
 		if (opc == 0) {
 			if (imms == nbits - 1) {
 				snprintf(out, osz, "asr\t%s, %s, #%d",
-						 ir(dc, sf, rd), ir(dc, sf, rn), immr);
+								 ir(dc, sf, rd), ir(dc, sf, rn), immr);
 
 				return sf ? D_ASM : D_CMT;
 			}
@@ -450,7 +464,7 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) {
 				return D_CMT;
 			}
 			snprintf(out, osz, "sbfm\t%s, %s, #%d, #%d",
-					 ir(dc, sf, rd), ir(dc, sf, rn), immr, imms);
+							 ir(dc, sf, rd), ir(dc, sf, rn), immr, imms);
 			return D_CMT;
 		}
 		return D_UNK;
@@ -460,11 +474,11 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) {
 		int imms = (w >> 10) & 0x3f;
 		if (rn == rm && (sf || imms < 32)) {
 			snprintf(out, osz, "ror\t%s, %s, #%d", ir(dc, sf, rd), ir(dc, sf, rn),
-					 imms);
+							 imms);
 			return D_ASM;
 		}
 		snprintf(out, osz, "extr\t%s, %s, %s, #%d",
-				 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm), imms);
+						 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm), imms);
 		return D_CMT;
 	}
 
@@ -473,12 +487,12 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) {
 		static const char *shnm[4] = {"lsl", "lsr", "asr", "ror"};
 		if (op >= 8 && op <= 11) {
 			snprintf(out, osz, "%s\t%s, %s, %s", shnm[op - 8],
-					 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm));
+							 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm));
 			return D_ASM;
 		}
 		if (op == 2 || op == 3) {
 			snprintf(out, osz, "%s\t%s, %s, %s", op == 2 ? "udiv" : "sdiv",
-					 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm));
+							 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm));
 			return D_CMT;
 		}
 		return D_UNK;
@@ -489,10 +503,10 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) {
 		if (!o0 && ra == 31)
 
 			snprintf(out, osz, "mul\t%s, %s, %s",
-					 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm));
+							 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm));
 		else
 			snprintf(out, osz, "%s\t%s, %s, %s, %s", o0 ? "msub" : "madd",
-					 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm), ir(dc, sf, ra));
+							 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm), ir(dc, sf, ra));
 		return D_CMT;
 	}
 
@@ -503,7 +517,7 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) {
 		else {
 			static const char *nm[4] = {"csel", "csinc", "csinv", "csneg"};
 			snprintf(out, osz, "%s\t%s, %s, %s, %s", nm[op << 1 | o2],
-					 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm), cc[cond]);
+							 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm), cc[cond]);
 		}
 		return D_CMT;
 	}
@@ -517,11 +531,18 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) {
 		if (enc == 0)
 			return D_UNK;
 		if (V) {
-			kind = opcv == 0 ? 's' : opcv == 1 ? 'd'
-								 : opcv == 2   ? 'q'
-											   : 0;
-			scale = opcv == 0 ? 2 : opcv == 1 ? 3
-											  : 4;
+			kind = opcv == 0
+								 ? 's'
+						 : opcv == 1
+								 ? 'd'
+						 : opcv == 2
+								 ? 'q'
+								 : 0;
+			scale = opcv == 0
+									? 2
+							: opcv == 1
+									? 3
+									: 4;
 			if (!kind)
 				return D_UNK;
 		} else {
@@ -545,10 +566,10 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) {
 		}
 		if (V)
 			snprintf(out, osz, "%s\t%s, %s, %s", nm,
-					 fr(dc, kind, rd), fr(dc, kind, rt2), addr);
+							 fr(dc, kind, rd), fr(dc, kind, rt2), addr);
 		else
 			snprintf(out, osz, "%s\t%s, %s, %s", nm,
-					 ir(dc, psf, rd), ir(dc, psf, rt2), addr);
+							 ir(dc, psf, rd), ir(dc, psf, rt2), addr);
 
 		return (V ? kind == 'd' : psf) ? D_ASM : D_CMT;
 	}
@@ -565,16 +586,20 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) {
 					return D_UNK;
 				kind = 'q', scale = 4, load = opc & 1;
 			} else {
-				kind = size == 0 ? 'b' : size == 1 ? 'h'
-									 : size == 2   ? 's'
-												   : 'd';
+				kind = size == 0
+									 ? 'b'
+							 : size == 1
+									 ? 'h'
+							 : size == 2
+									 ? 's'
+									 : 'd';
 				scale = size;
 				load = opc & 1;
 			}
 			off = (unsigned long long)((w >> 10) & 0xfff) << scale;
 			if (sym) {
 				snprintf(out, osz, "%s\t%s, [%s, #:lo12:%s]",
-						 load ? "ldr" : "str", fr(dc, kind, rd), irsp(dc, 1, rn), sym);
+								 load ? "ldr" : "str", fr(dc, kind, rd), irsp(dc, 1, rn), sym);
 				return D_CMT;
 			}
 			if (off)
@@ -582,7 +607,7 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) {
 			else
 				snprintf(addr, sizeof addr, "[%s]", irsp(dc, 1, rn));
 			snprintf(out, osz, "%s\t%s, %s", load ? "ldr" : "str",
-					 fr(dc, kind, rd), addr);
+							 fr(dc, kind, rd), addr);
 			return kind == 'd' ? D_ASM : D_CMT;
 		}
 		scale = size;
@@ -597,32 +622,37 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) {
 			else if (opc == 1)
 				nm = ldnm[size];
 			else {
-				const char *snm = size == 0 ? "ldrsb" : size == 1 ? "ldrsh"
-													: size == 2	  ? "ldrsw"
-																  : 0;
+				const char *snm = size == 0
+															? "ldrsb"
+													: size == 1
+															? "ldrsh"
+													: size == 2
+															? "ldrsw"
+															: 0;
 				if (!snm)
 					return D_UNK;
 				tsf = (opc == 2);
 				if (sym)
 					snprintf(out, osz, "%s\t%s, [%s, #:lo12:%s]", snm,
-							 ir(dc, tsf, rd), irsp(dc, 1, rn), sym);
+									 ir(dc, tsf, rd), irsp(dc, 1, rn), sym);
 				else if (off)
 					snprintf(out, osz, "%s\t%s, [%s, #%llu]", snm,
-							 ir(dc, tsf, rd), irsp(dc, 1, rn), off);
+									 ir(dc, tsf, rd), irsp(dc, 1, rn), off);
 				else
 					snprintf(out, osz, "%s\t%s, [%s]", snm,
-							 ir(dc, tsf, rd), irsp(dc, 1, rn));
+									 ir(dc, tsf, rd), irsp(dc, 1, rn));
 				return D_CMT;
 			}
 			if (sym) {
 				static const int lo12_type[4] = {
-					R_AARCH64_LDST8_ABS_LO12_NC, R_AARCH64_LDST16_ABS_LO12_NC,
-					R_AARCH64_LDST32_ABS_LO12_NC, R_AARCH64_LDST64_ABS_LO12_NC};
+						R_AARCH64_LDST8_ABS_LO12_NC, R_AARCH64_LDST16_ABS_LO12_NC,
+						R_AARCH64_LDST32_ABS_LO12_NC, R_AARCH64_LDST64_ABS_LO12_NC};
 				const char *pfx =
-					rtype == R_AARCH64_LD64_GOT_LO12_NC ? ":got_lo12:"
-														: ":lo12:";
+						rtype == R_AARCH64_LD64_GOT_LO12_NC
+								? ":got_lo12:"
+								: ":lo12:";
 				snprintf(out, osz, "%s\t%s, [%s, #%s%s]", nm,
-						 ir(dc, tsf, rd), irsp(dc, 1, rn), pfx, sym);
+								 ir(dc, tsf, rd), irsp(dc, 1, rn), pfx, sym);
 
 				if (!((w >> 10) & 0xfff) && (rtype == lo12_type[size] || (rtype == R_AARCH64_LD64_GOT_LO12_NC && size == 3 && opc == 1)))
 					return D_ASM;
@@ -630,10 +660,10 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) {
 			}
 			if (off)
 				snprintf(out, osz, "%s\t%s, [%s, #%llu]", nm,
-						 ir(dc, tsf, rd), irsp(dc, 1, rn), off);
+								 ir(dc, tsf, rd), irsp(dc, 1, rn), off);
 			else
 				snprintf(out, osz, "%s\t%s, [%s]", nm,
-						 ir(dc, tsf, rd), irsp(dc, 1, rn));
+								 ir(dc, tsf, rd), irsp(dc, 1, rn));
 			return D_ASM;
 		}
 	}
@@ -656,24 +686,27 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) {
 					return D_UNK;
 				kind = 'q', load = opc & 1;
 			} else {
-				kind = size == 0 ? 'b' : size == 1 ? 'h'
-									 : size == 2   ? 's'
-												   : 'd';
+				kind = size == 0
+									 ? 'b'
+							 : size == 1
+									 ? 'h'
+							 : size == 2
+									 ? 's'
+									 : 'd';
 				load = opc & 1;
 			}
 			if (idx == 0) {
-
 				if (kind == 'd' && (off < 0 || (off & 7))) {
 					snprintf(out, osz, "%s\t%s, %s", load ? "ldr" : "str",
-							 fr(dc, kind, rd), addr);
+									 fr(dc, kind, rd), addr);
 					return D_ASM;
 				}
 				snprintf(out, osz, "%s\t%s, %s", load ? "ldur" : "stur",
-						 fr(dc, kind, rd), addr);
+								 fr(dc, kind, rd), addr);
 				return D_CMT;
 			}
 			snprintf(out, osz, "%s\t%s, %s", load ? "ldr" : "str",
-					 fr(dc, kind, rd), addr);
+							 fr(dc, kind, rd), addr);
 			return D_CMT;
 		}
 		{
@@ -683,28 +716,31 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) {
 			static const char *sunm[4] = {"sturb", "sturh", "stur", "stur"};
 			int tsf = (size == 3);
 			if (opc > 1) {
-				const char *snm = size == 0 ? "ldursb" : size == 1 ? "ldursh"
-													 : size == 2   ? "ldursw"
-																   : 0;
+				const char *snm = size == 0
+															? "ldursb"
+													: size == 1
+															? "ldursh"
+													: size == 2
+															? "ldursw"
+															: 0;
 				if (!snm)
 					return D_UNK;
 				snprintf(out, osz, "%s\t%s, %s", snm,
-						 ir(dc, opc == 2, rd), addr);
+								 ir(dc, opc == 2, rd), addr);
 				return D_CMT;
 			}
 			if (idx == 0) {
 				if (off < 0 || (off & ((1 << size) - 1))) {
-
 					snprintf(out, osz, "%s\t%s, %s",
-							 opc ? ldnm[size] : stnm[size], ir(dc, tsf, rd), addr);
+									 opc ? ldnm[size] : stnm[size], ir(dc, tsf, rd), addr);
 					return D_ASM;
 				}
 				snprintf(out, osz, "%s\t%s, %s",
-						 opc ? lunm[size] : sunm[size], ir(dc, tsf, rd), addr);
+								 opc ? lunm[size] : sunm[size], ir(dc, tsf, rd), addr);
 				return D_CMT;
 			}
 			snprintf(out, osz, "%s\t%s, %s",
-					 opc ? ldnm[size] : stnm[size], ir(dc, tsf, rd), addr);
+							 opc ? ldnm[size] : stnm[size], ir(dc, tsf, rd), addr);
 			return D_CMT;
 		}
 	}
@@ -713,39 +749,46 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) {
 		int size = w >> 30, V = (w >> 26) & 1, opc = (w >> 22) & 3;
 		int load = opc & 1;
 		if (V) {
-			int kind = (opc & 2)   ? 'q'
-					   : size == 0 ? 'b'
-					   : size == 1 ? 'h'
-					   : size == 2 ? 's'
-								   : 'd';
+			int kind = (opc & 2)
+										 ? 'q'
+								 : size == 0
+										 ? 'b'
+								 : size == 1
+										 ? 'h'
+								 : size == 2
+										 ? 's'
+										 : 'd';
 			snprintf(out, osz, "%s\t%s, [%s, %s]", load ? "ldr" : "str",
-					 fr(dc, kind, rd), irsp(dc, 1, rn), ir(dc, 1, rm));
+							 fr(dc, kind, rd), irsp(dc, 1, rn), ir(dc, 1, rm));
 			return D_CMT;
 		}
 		{
 			static const char *ldnm[4] = {"ldrb", "ldrh", "ldr", "ldr"};
 			static const char *stnm[4] = {"strb", "strh", "str", "str"};
 			const char *nm = opc > 1
-								 ? (size == 0 ? "ldrsb" : size == 1 ? "ldrsh"
+													 ? (size == 0
+																	? "ldrsb"
+															: size == 1
+																	? "ldrsh"
 																	: "ldrsw")
-								 : (load ? ldnm[size] : stnm[size]);
+													 : (load ? ldnm[size] : stnm[size]);
 			snprintf(out, osz, "%s\t%s, [%s, %s]", nm,
-					 ir(dc, opc > 1 ? opc == 2 : size == 3, rd),
-					 irsp(dc, 1, rn), ir(dc, 1, rm));
+							 ir(dc, opc > 1 ? opc == 2 : size == 3, rd),
+							 irsp(dc, 1, rn), ir(dc, 1, rm));
 			return D_CMT;
 		}
 	}
 
 	if ((w & 0xff200c00) == 0x1e200800) {
 		static const char *nm[16] = {
-			"fmul", "fdiv", "fadd", "fsub", "fmax", "fmin", "fmaxnm", "fminnm",
-			"fnmul", 0, 0, 0, 0, 0, 0, 0};
+				"fmul", "fdiv", "fadd", "fsub", "fmax", "fmin", "fmaxnm", "fminnm",
+				"fnmul", 0, 0, 0, 0, 0, 0, 0};
 		int type = (w >> 22) & 1, op = (w >> 12) & 15;
 		int kind = type ? 'd' : 's';
 		if (!nm[op])
 			return D_UNK;
 		snprintf(out, osz, "%s\t%s, %s, %s", nm[op],
-				 fr(dc, kind, rd), fr(dc, kind, rn), fr(dc, kind, rm));
+						 fr(dc, kind, rd), fr(dc, kind, rn), fr(dc, kind, rm));
 		return D_CMT;
 	}
 	if ((w & 0xffbffc00) == 0x1e204000) {
@@ -787,13 +830,13 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) {
 	if ((w & 0x7fbefc00) == 0x1e220000) {
 		int kind = (w & 0x400000) ? 'd' : 's';
 		snprintf(out, osz, "%s\t%s, %s", (w & 0x10000) ? "ucvtf" : "scvtf",
-				 fr(dc, kind, rd), ir(dc, sf, rn));
+						 fr(dc, kind, rd), ir(dc, sf, rn));
 		return D_CMT;
 	}
 	if ((w & 0x7fbefc00) == 0x1e380000) {
 		int kind = (w & 0x400000) ? 'd' : 's';
 		snprintf(out, osz, "%s\t%s, %s", (w & 0x10000) ? "fcvtzu" : "fcvtzs",
-				 ir(dc, sf, rd), fr(dc, kind, rn));
+						 ir(dc, sf, rd), fr(dc, kind, rn));
 		return D_CMT;
 	}
 	if ((w & 0xfffffc00) == 0x9e660000) {
@@ -814,21 +857,21 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) {
 	}
 	if ((w & 0xffeffc00) == 0x4e083c00) {
 		snprintf(out, osz, "mov\t%s, %s.d[%d]", ir(dc, 1, rd), fr(dc, 'v', rn),
-				 (int)(w >> 20) & 1);
+						 (int)(w >> 20) & 1);
 		return D_CMT;
 	}
 	if ((w & 0xffe0fc00) == 0x4ea01c00) {
 		if (rn == rm)
 			snprintf(out, osz, "mov\t%s.16b, %s.16b", fr(dc, 'v', rd),
-					 fr(dc, 'v', rn));
+							 fr(dc, 'v', rn));
 		else
 			snprintf(out, osz, "orr\t%s.16b, %s.16b, %s.16b", fr(dc, 'v', rd),
-					 fr(dc, 'v', rn), fr(dc, 'v', rm));
+							 fr(dc, 'v', rn), fr(dc, 'v', rm));
 		return D_CMT;
 	}
 	if ((w & 0xbfbf0000) == 0x0c000000 || (w & 0xbf9f0000) == 0x0d000000) {
 		snprintf(out, osz, "%s\t{...}, [%s]",
-				 (w & 0x400000) ? "ld1" : "st1", irsp(dc, 1, rn));
+						 (w & 0x400000) ? "ld1" : "st1", irsp(dc, 1, rn));
 		return D_CMT;
 	}
 
@@ -891,7 +934,6 @@ ST_FUNC int mcc_disasm_reloc_size(int type) {
 }
 
 ST_FUNC int mcc_disasm_reloc_addend_bias(int type, int size) {
-
 	(void)type;
 	(void)size;
 	return 0;

@@ -21,15 +21,18 @@
 struct mh {
 	uint32_t magic, cputype, cpusubtype, filetype, ncmds, sizeofcmds, flags, reserved;
 };
+
 struct lc {
 	uint32_t cmd, cmdsize;
 };
+
 struct seg {
 	uint32_t cmd, cmdsize;
 	char segname[16];
 	uint64_t vmaddr, vmsize, fileoff, filesize;
 	uint32_t maxprot, initprot, nsects, flags;
 };
+
 struct main_c {
 	uint32_t cmd, cmdsize;
 	uint64_t entryoff, stacksize;
@@ -84,8 +87,8 @@ int main(int argc, char **argv) {
 			struct seg *sg = (void *)p;
 			if (strcmp(sg->segname, "__PAGEZERO") && strcmp(sg->segname, "__LINKEDIT") && sg->vmsize) {
 				void *m = mmap((void *)sg->vmaddr, sg->vmsize,
-							   PROT_READ | PROT_WRITE | PROT_EXEC,
-							   MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+											 PROT_READ | PROT_WRITE | PROT_EXEC,
+											 MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
 				if (m == MAP_FAILED) {
 					perror("mmap seg");
 					return 2;
@@ -114,10 +117,10 @@ int main(int argc, char **argv) {
 	sigemptyset(&sa.sa_mask);
 	sigaction(SIGSYS, &sa, 0);
 	struct sock_filter filt[] = {
-		BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)),
-		BPF_JUMP(BPF_JMP | BPF_JGE | BPF_K, MACOS_CLASS, 0, 1),
-		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRAP),
-		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+			BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)),
+			BPF_JUMP(BPF_JMP | BPF_JGE | BPF_K, MACOS_CLASS, 0, 1),
+			BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRAP),
+			BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
 	};
 	struct sock_fprog prog = {sizeof(filt) / sizeof(filt[0]), filt};
 	if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) || prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog, 0, 0)) {

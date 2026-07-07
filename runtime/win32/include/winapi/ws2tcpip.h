@@ -119,6 +119,7 @@ typedef struct sockaddr_in6 *LPSOCKADDR_IN6;
 
 #ifdef __cplusplus
 extern "C" {
+
 #endif
 
 extern const struct in6_addr in6addr_any;
@@ -151,66 +152,122 @@ void IN6ADDR_SETANY(struct sockaddr_in6 *);
 void IN6ADDR_SETLOOPBACK(struct sockaddr_in6 *);
 
 #ifndef __CRT__NO_INLINE
-WS2TCPIP_INLINE int IN6_ADDR_EQUAL(const struct in6_addr *a, const struct in6_addr *b) {
+WS2TCPIP_INLINE
+
+int IN6_ADDR_EQUAL(const struct in6_addr *a, const struct in6_addr *b) {
 	return (memcmp(a, b, sizeof(struct in6_addr)) == 0);
 }
-WS2TCPIP_INLINE int IN6_IS_ADDR_UNSPECIFIED(const struct in6_addr *a) {
+
+WS2TCPIP_INLINE
+
+int IN6_IS_ADDR_UNSPECIFIED(const struct in6_addr *a) {
 	return ((a->s6_words[0] == 0) && (a->s6_words[1] == 0) && (a->s6_words[2] == 0) && (a->s6_words[3] == 0) && (a->s6_words[4] == 0) && (a->s6_words[5] == 0) && (a->s6_words[6] == 0) && (a->s6_words[7] == 0));
 }
-WS2TCPIP_INLINE int IN6_IS_ADDR_LOOPBACK(const struct in6_addr *a) {
+
+WS2TCPIP_INLINE
+
+int IN6_IS_ADDR_LOOPBACK(const struct in6_addr *a) {
 	return ((a->s6_words[0] == 0) && (a->s6_words[1] == 0) && (a->s6_words[2] == 0) && (a->s6_words[3] == 0) && (a->s6_words[4] == 0) && (a->s6_words[5] == 0) && (a->s6_words[6] == 0) && (a->s6_words[7] == 0x0100));
 }
-WS2TCPIP_INLINE int IN6_IS_ADDR_MULTICAST(const struct in6_addr *a) {
+
+WS2TCPIP_INLINE
+
+int IN6_IS_ADDR_MULTICAST(const struct in6_addr *a) {
 	return (a->s6_bytes[0] == 0xff);
 }
-WS2TCPIP_INLINE int IN6_IS_ADDR_LINKLOCAL(const struct in6_addr *a) {
+
+WS2TCPIP_INLINE
+
+int IN6_IS_ADDR_LINKLOCAL(const struct in6_addr *a) {
 	return ((a->s6_bytes[0] == 0xfe) && ((a->s6_bytes[1] & 0xc0) == 0x80));
 }
-WS2TCPIP_INLINE int IN6_IS_ADDR_SITELOCAL(const struct in6_addr *a) {
+
+WS2TCPIP_INLINE
+
+int IN6_IS_ADDR_SITELOCAL(const struct in6_addr *a) {
 	return ((a->s6_bytes[0] == 0xfe) && ((a->s6_bytes[1] & 0xc0) == 0xc0));
 }
-WS2TCPIP_INLINE int IN6_IS_ADDR_V4MAPPED(const struct in6_addr *a) {
+
+WS2TCPIP_INLINE
+
+int IN6_IS_ADDR_V4MAPPED(const struct in6_addr *a) {
 	return ((a->s6_words[0] == 0) && (a->s6_words[1] == 0) && (a->s6_words[2] == 0) && (a->s6_words[3] == 0) && (a->s6_words[4] == 0) && (a->s6_words[5] == 0xffff));
 }
-WS2TCPIP_INLINE int IN6_IS_ADDR_V4COMPAT(const struct in6_addr *a) {
+
+WS2TCPIP_INLINE
+
+int IN6_IS_ADDR_V4COMPAT(const struct in6_addr *a) {
 	return ((a->s6_words[0] == 0) && (a->s6_words[1] == 0) && (a->s6_words[2] == 0) && (a->s6_words[3] == 0) && (a->s6_words[4] == 0) && (a->s6_words[5] == 0) && !((a->s6_words[6] == 0) && (a->s6_addr[14] == 0) && ((a->s6_addr[15] == 0) || (a->s6_addr[15] == 1))));
 }
-WS2TCPIP_INLINE int IN6_IS_ADDR_MC_NODELOCAL(const struct in6_addr *a) {
+
+WS2TCPIP_INLINE
+
+int IN6_IS_ADDR_MC_NODELOCAL(const struct in6_addr *a) {
 	return IN6_IS_ADDR_MULTICAST(a) && ((a->s6_bytes[1] & 0xf) == 1);
 }
-WS2TCPIP_INLINE int IN6_IS_ADDR_MC_LINKLOCAL(const struct in6_addr *a) {
+
+WS2TCPIP_INLINE
+
+int IN6_IS_ADDR_MC_LINKLOCAL(const struct in6_addr *a) {
 	return IN6_IS_ADDR_MULTICAST(a) && ((a->s6_bytes[1] & 0xf) == 2);
 }
-WS2TCPIP_INLINE int IN6_IS_ADDR_MC_SITELOCAL(const struct in6_addr *a) {
+
+WS2TCPIP_INLINE
+
+int IN6_IS_ADDR_MC_SITELOCAL(const struct in6_addr *a) {
 	return IN6_IS_ADDR_MULTICAST(a) && ((a->s6_bytes[1] & 0xf) == 5);
 }
-WS2TCPIP_INLINE int IN6_IS_ADDR_MC_ORGLOCAL(const struct in6_addr *a) {
+
+WS2TCPIP_INLINE
+
+int IN6_IS_ADDR_MC_ORGLOCAL(const struct in6_addr *a) {
 	return IN6_IS_ADDR_MULTICAST(a) && ((a->s6_bytes[1] & 0xf) == 8);
 }
-WS2TCPIP_INLINE int IN6_IS_ADDR_MC_GLOBAL(const struct in6_addr *a) {
+
+WS2TCPIP_INLINE
+
+int IN6_IS_ADDR_MC_GLOBAL(const struct in6_addr *a) {
 	return IN6_IS_ADDR_MULTICAST(a) && ((a->s6_bytes[1] & 0xf) == 0xe);
 }
-WS2TCPIP_INLINE int IN6ADDR_ISANY(const struct sockaddr_in6 *a) {
+
+WS2TCPIP_INLINE
+
+int IN6ADDR_ISANY(const struct sockaddr_in6 *a) {
 	return ((a->sin6_family == AF_INET6) && IN6_IS_ADDR_UNSPECIFIED(&a->sin6_addr));
 }
-WS2TCPIP_INLINE int IN6ADDR_ISLOOPBACK(const struct sockaddr_in6 *a) {
+
+WS2TCPIP_INLINE
+
+int IN6ADDR_ISLOOPBACK(const struct sockaddr_in6 *a) {
 	return ((a->sin6_family == AF_INET6) && IN6_IS_ADDR_LOOPBACK(&a->sin6_addr));
 }
-WS2TCPIP_INLINE void IN6_SET_ADDR_UNSPECIFIED(struct in6_addr *a) {
+
+WS2TCPIP_INLINE
+
+void IN6_SET_ADDR_UNSPECIFIED(struct in6_addr *a) {
 	memset(a->s6_bytes, 0, sizeof(struct in6_addr));
 }
-WS2TCPIP_INLINE void IN6_SET_ADDR_LOOPBACK(struct in6_addr *a) {
+
+WS2TCPIP_INLINE
+
+void IN6_SET_ADDR_LOOPBACK(struct in6_addr *a) {
 	memset(a->s6_bytes, 0, sizeof(struct in6_addr));
 	a->s6_bytes[15] = 1;
 }
-WS2TCPIP_INLINE void IN6ADDR_SETANY(struct sockaddr_in6 *a) {
+
+WS2TCPIP_INLINE
+
+void IN6ADDR_SETANY(struct sockaddr_in6 *a) {
 	a->sin6_family = AF_INET6;
 	a->sin6_port = 0;
 	a->sin6_flowinfo = 0;
 	IN6_SET_ADDR_UNSPECIFIED(&a->sin6_addr);
 	a->sin6_scope_id = 0;
 }
-WS2TCPIP_INLINE void IN6ADDR_SETLOOPBACK(struct sockaddr_in6 *a) {
+
+WS2TCPIP_INLINE
+
+void IN6ADDR_SETLOOPBACK(struct sockaddr_in6 *a) {
 	a->sin6_family = AF_INET6;
 	a->sin6_port = 0;
 	a->sin6_flowinfo = 0;
@@ -307,6 +364,7 @@ typedef ADDRINFOA ADDRINFO, *LPADDRINFO;
 
 #ifdef __cplusplus
 extern "C" {
+
 #endif
 
 #ifdef UNICODE
@@ -315,14 +373,18 @@ extern "C" {
 #define GetAddrInfo GetAddrInfoA
 #endif
 
-WINSOCK_API_LINKAGE int WSAAPI getaddrinfo(const char *nodename, const char *servname, const struct addrinfo *hints, struct addrinfo **res);
-WINSOCK_API_LINKAGE int WSAAPI GetAddrInfoW(PCWSTR pNodeName, PCWSTR pServiceName, const ADDRINFOW *pHints, PADDRINFOW *ppResult);
+WINSOCK_API_LINKAGE
+int WSAAPI getaddrinfo(const char *nodename, const char *servname, const struct addrinfo *hints, struct addrinfo **res);
+WINSOCK_API_LINKAGE
+int WSAAPI GetAddrInfoW(PCWSTR pNodeName, PCWSTR pServiceName, const ADDRINFOW *pHints, PADDRINFOW *ppResult);
 
 #define GetAddrInfoA getaddrinfo
 
 #if INCL_WINSOCK_API_TYPEDEFS
-typedef int(WSAAPI *LPFN_GETADDRINFO)(const char *nodename, const char *servname, const struct addrinfo *hints, struct addrinfo **res);
-typedef int(WSAAPI *LPFN_GETADDRINFOW)(PCWSTR pNodeName, PCWSTR pServiceName, const ADDRINFOW *pHints, PADDRINFOW *ppResult);
+typedef int(WSAAPI *LPFN_GETADDRINFO)(const char *nodename, const char *servname, const struct addrinfo *hints,
+																			struct addrinfo **res);
+typedef int(WSAAPI *LPFN_GETADDRINFOW)(PCWSTR pNodeName, PCWSTR pServiceName, const ADDRINFOW *pHints,
+																			 PADDRINFOW *ppResult);
 
 #define LPFN_GETADDRINFOA LPFN_GETADDRINFO
 
@@ -339,8 +401,10 @@ typedef int(WSAAPI *LPFN_GETADDRINFOW)(PCWSTR pNodeName, PCWSTR pServiceName, co
 #define FreeAddrInfo FreeAddrInfoA
 #endif
 
-WINSOCK_API_LINKAGE void WSAAPI freeaddrinfo(LPADDRINFO pAddrInfo);
-WINSOCK_API_LINKAGE void WSAAPI FreeAddrInfoW(PADDRINFOW pAddrInfo);
+WINSOCK_API_LINKAGE
+void WSAAPI freeaddrinfo(LPADDRINFO pAddrInfo);
+WINSOCK_API_LINKAGE
+void WSAAPI FreeAddrInfoW(PADDRINFOW pAddrInfo);
 
 #define FreeAddrInfoA freeaddrinfo
 
@@ -368,14 +432,20 @@ typedef int socklen_t;
 #define GetNameInfo GetNameInfoA
 #endif
 
-WINSOCK_API_LINKAGE int WSAAPI getnameinfo(const struct sockaddr *sa, socklen_t salen, char *host, DWORD hostlen, char *serv, DWORD servlen, int flags);
-WINSOCK_API_LINKAGE INT WSAAPI GetNameInfoW(const SOCKADDR *pSockaddr, socklen_t SockaddrLength, PWCHAR pNodeBuffer, DWORD NodeBufferSize, PWCHAR pServiceBuffer, DWORD ServiceBufferSize, INT Flags);
+WINSOCK_API_LINKAGE
+int WSAAPI getnameinfo(const struct sockaddr *sa, socklen_t salen, char *host, DWORD hostlen, char *serv, DWORD servlen,
+											 int flags);
+WINSOCK_API_LINKAGE INT WSAAPI GetNameInfoW(const SOCKADDR *pSockaddr, socklen_t SockaddrLength, PWCHAR pNodeBuffer,
+																						DWORD NodeBufferSize, PWCHAR pServiceBuffer, DWORD ServiceBufferSize,
+																						INT Flags);
 
 #define GetNameInfoA getnameinfo
 
 #if INCL_WINSOCK_API_TYPEDEFS
-typedef int(WSAAPI *LPFN_GETNAMEINFO)(const struct sockaddr *sa, socklen_t salen, char *host, DWORD hostlen, char *serv, DWORD servlen, int flags);
-typedef INT(WSAAPI *LPFN_GETNAMEINFOW)(const SOCKADDR *pSockaddr, socklen_t SockaddrLength, PWCHAR pNodeBuffer, DWORD NodeBufferSize, PWCHAR pServiceBuffer, DWORD ServiceBufferSize, INT Flags);
+typedef int(WSAAPI *LPFN_GETNAMEINFO)(const struct sockaddr *sa, socklen_t salen, char *host, DWORD hostlen,
+																			char *serv, DWORD servlen, int flags);
+typedef INT(WSAAPI *LPFN_GETNAMEINFOW)(const SOCKADDR *pSockaddr, socklen_t SockaddrLength, PWCHAR pNodeBuffer,
+																			 DWORD NodeBufferSize, PWCHAR pServiceBuffer, DWORD ServiceBufferSize, INT Flags);
 
 #define LPFN_GETNAMEINFOA LPFN_GETNAMEINFO
 

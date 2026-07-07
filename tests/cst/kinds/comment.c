@@ -4,7 +4,7 @@
 // a line comment
 int commented(int x /* inline */) {
 	/* a block comment
-	   spanning several
-	   lines */
+		 spanning several
+		 lines */
 	return x + 1; // trailing line comment
 }

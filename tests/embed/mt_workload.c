@@ -3,9 +3,11 @@
 int mt_add(int a, int b) {
 	return a + b;
 }
+
 int mt_sub(int a, int b) {
 	return a - b;
 }
+
 int mt_mul(int a, int b) {
 	return a * b;
 }

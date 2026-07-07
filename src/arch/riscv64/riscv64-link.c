@@ -23,7 +23,6 @@
 
 ST_FUNC int code_reloc(int reloc_type) {
 	switch (reloc_type) {
-
 	case R_RISCV_BRANCH:
 	case R_RISCV_CALL:
 	case R_RISCV_JAL:
@@ -131,7 +130,8 @@ ST_FUNC void relocate_plt(MCCState *s1) {
 		uint64_t got = s1->got->sh_addr;
 		uint64_t off = (got - plt + 0x800) >> 12;
 		if ((off + ((uint32_t)1 << 20)) >> 21)
-			mcc_error_noabort("Failed relocating PLT (off=0x%lx, got=0x%lx, plt=0x%lx)", (long)off, (long)got, (long)plt);
+			mcc_error_noabort("Failed relocating PLT (off=0x%lx, got=0x%lx, plt=0x%lx)", (long)off, (long)got,
+												(long)plt);
 		write32le(p, 0x397 | (off << 12));
 		write32le(p + 4, 0x41c30333);
 		write32le(p + 8, 0x0003be03 | (((got - plt) & 0xfff) << 20));
@@ -146,7 +146,8 @@ ST_FUNC void relocate_plt(MCCState *s1) {
 			uint64_t addr = got + read64le(p);
 			uint64_t off = (addr - pc + 0x800) >> 12;
 			if ((off + ((uint32_t)1 << 20)) >> 21)
-				mcc_error_noabort("Failed relocating PLT (off=0x%lx, addr=0x%lx, pc=0x%lx)", (long)off, (long)addr, (long)pc);
+				mcc_error_noabort("Failed relocating PLT (off=0x%lx, addr=0x%lx, pc=0x%lx)", (long)off, (long)addr,
+													(long)pc);
 			write32le(p, 0xe17 | (off << 12));
 			write32le(p + 4, 0x000e3e03 | (((addr - pc) & 0xfff) << 20));
 			write32le(p + 8, 0x000e0367);
@@ -183,7 +184,7 @@ static int riscv64_lookup_pcrel_hi(MCCState *s1, addr_t hi_addr, addr_t *hi_val)
 }
 
 ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
-					  addr_t addr, addr_t val) {
+											addr_t addr, addr_t val) {
 	uint64_t off64;
 	uint32_t off32;
 	int sym_index = ELFW(R_SYM)(rel->r_info), esym_index;
@@ -198,19 +199,21 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		off64 = val - addr;
 		if ((off64 + (1 << 12)) & ~(uint64_t)0x1ffe)
 			mcc_error_noabort("R_RISCV_BRANCH relocation failed"
-							  " (val=%lx, addr=%lx)",
-							  (long)val, (long)addr);
+												" (val=%lx, addr=%lx)",
+												(long)val, (long)addr);
 		off32 = off64 >> 1;
-		write32le(ptr, (read32le(ptr) & ~0xfe000f80) | ((off32 & 0x800) << 20) | ((off32 & 0x3f0) << 21) | ((off32 & 0x00f) << 8) | ((off32 & 0x400) >> 3));
+		write32le(
+				ptr, (read32le(ptr) & ~0xfe000f80) | ((off32 & 0x800) << 20) | ((off32 & 0x3f0) << 21) | ((off32 & 0x00f) << 8) | ((off32 & 0x400) >> 3));
 		return;
 	case R_RISCV_JAL:
 		off64 = val - addr;
 		if ((off64 + (1 << 21)) & ~(((uint64_t)1 << 22) - 2))
 			mcc_error_noabort("R_RISCV_JAL relocation failed"
-							  " (val=%lx, addr=%lx)",
-							  (long)val, (long)addr);
+												" (val=%lx, addr=%lx)",
+												(long)val, (long)addr);
 		off32 = off64;
-		write32le(ptr, (read32le(ptr) & 0xfff) | (((off32 >> 12) & 0xff) << 12) | (((off32 >> 11) & 1) << 20) | (((off32 >> 1) & 0x3ff) << 21) | (((off32 >> 20) & 1) << 31));
+		write32le(
+				ptr, (read32le(ptr) & 0xfff) | (((off32 >> 12) & 0xff) << 12) | (((off32 >> 11) & 1) << 20) | (((off32 >> 1) & 0x3ff) << 21) | (((off32 >> 20) & 1) << 31));
 		return;
 	case R_RISCV_CALL:
 	case R_RISCV_CALL_PLT:
@@ -224,8 +227,8 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		off64 = (int64_t)(val - addr + 0x800) >> 12;
 		if ((off64 + ((uint64_t)1 << 20)) >> 21)
 			mcc_error_noabort("R_RISCV_PCREL_HI20 relocation failed: off=%lx cond=%lx sym=%s",
-							  (long)off64, (long)((int64_t)(off64 + ((uint64_t)1 << 20)) >> 21),
-							  symtab_section->link->data + sym->st_name);
+												(long)off64, (long)((int64_t)(off64 + ((uint64_t)1 << 20)) >> 21),
+												symtab_section->link->data + sym->st_name);
 		write32le(ptr, (read32le(ptr) & 0xfff) | ((off64 & 0xfffff) << 12));
 		riscv64_record_pcrel_hi(s1, addr, val);
 		return;
@@ -256,19 +259,21 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		off64 = (val - addr);
 		if ((off64 + (1 << 8)) & ~(uint64_t)0x1fe)
 			mcc_error_noabort("R_RISCV_RVC_BRANCH relocation failed"
-							  " (val=%lx, addr=%lx)",
-							  (long)val, (long)addr);
+												" (val=%lx, addr=%lx)",
+												(long)val, (long)addr);
 		off32 = off64;
-		write16le(ptr, (read16le(ptr) & 0xe383) | (((off32 >> 5) & 1) << 2) | (((off32 >> 1) & 3) << 3) | (((off32 >> 6) & 3) << 5) | (((off32 >> 3) & 3) << 10) | (((off32 >> 8) & 1) << 12));
+		write16le(
+				ptr, (read16le(ptr) & 0xe383) | (((off32 >> 5) & 1) << 2) | (((off32 >> 1) & 3) << 3) | (((off32 >> 6) & 3) << 5) | (((off32 >> 3) & 3) << 10) | (((off32 >> 8) & 1) << 12));
 		return;
 	case R_RISCV_RVC_JUMP:
 		off64 = (val - addr);
 		if ((off64 + (1 << 11)) & ~(uint64_t)0xffe)
 			mcc_error_noabort("R_RISCV_RVC_BRANCH relocation failed"
-							  " (val=%lx, addr=%lx)",
-							  (long)val, (long)addr);
+												" (val=%lx, addr=%lx)",
+												(long)val, (long)addr);
 		off32 = off64;
-		write16le(ptr, (read16le(ptr) & 0xe003) | (((off32 >> 5) & 1) << 2) | (((off32 >> 1) & 7) << 3) | (((off32 >> 7) & 1) << 6) | (((off32 >> 6) & 1) << 7) | (((off32 >> 10) & 1) << 8) | (((off32 >> 8) & 3) << 9) | (((off32 >> 4) & 1) << 11) | (((off32 >> 11) & 1) << 12));
+		write16le(
+				ptr, (read16le(ptr) & 0xe003) | (((off32 >> 5) & 1) << 2) | (((off32 >> 1) & 7) << 3) | (((off32 >> 7) & 1) << 6) | (((off32 >> 6) & 1) << 7) | (((off32 >> 10) & 1) << 8) | (((off32 >> 8) & 3) << 9) | (((off32 >> 4) & 1) << 11) | (((off32 >> 11) & 1) << 12));
 		return;
 
 	case R_RISCV_32:
@@ -377,7 +382,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 
 	default:
 		mcc_error_noabort("unhandled relocation type 0x%x at 0x%x (value 0x%x)",
-				(unsigned)type, (unsigned)addr, (unsigned)val);
+											(unsigned)type, (unsigned)addr, (unsigned)val);
 		return;
 	}
 }

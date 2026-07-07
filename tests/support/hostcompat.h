@@ -64,7 +64,7 @@ HC_UNUSED static FILE *hc_popen_sh(const char *cmd) {
 	char path[1024], line[1200];
 	hc_script(cmd, path, sizeof path);
 	snprintf(line, sizeof line, "\"\"%s\" \"%s\"\"",
-			 hc_envv("MCC_TEST_SH", "sh"), path);
+					 hc_envv("MCC_TEST_SH", "sh"), path);
 	return popen(line, "r");
 }
 
@@ -72,7 +72,7 @@ HC_UNUSED static int hc_system_sh(const char *cmd) {
 	char path[1024], line[1200];
 	hc_script(cmd, path, sizeof path);
 	snprintf(line, sizeof line, "\"\"%s\" \"%s\"\"",
-			 hc_envv("MCC_TEST_SH", "sh"), path);
+					 hc_envv("MCC_TEST_SH", "sh"), path);
 	return system(line);
 }
 

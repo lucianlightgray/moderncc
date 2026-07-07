@@ -1,25 +1,12 @@
-/* tests/bench/corpus.c — portable compile-speed benchmark corpus.
- *
- * A single self-contained C translation unit that every benchmarked compiler
- * (mcc, gcc, clang, mingw, msvc) must be able to compile with no extra flags,
- * no project headers, and only the standard library. It is deliberately
- * bulky and function-dense so that compile time is dominated by real front-end
- * and codegen work rather than process startup.
- *
- * Keep it strictly portable: C89/C11-common constructs only, no POSIX, no
- * compiler extensions, no VLAs, no designated-init tricks that MSVC rejects.
- * It is compiled with -c (never linked or run), so `main` is nominal. */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
 
-/* --- a chunk of genuine data-structure code: an open-addressing hash map -- */
-
 #define MAP_CAP 1024
 
-typedef struct {
+typedef struct
+{
 	unsigned long keys[MAP_CAP];
 	long vals[MAP_CAP];
 	unsigned char used[MAP_CAP];
@@ -70,8 +57,6 @@ static long map_get(const map_t *m, unsigned long k, long def) {
 	}
 	return def;
 }
-
-/* --- some numeric kernels ------------------------------------------------ */
 
 static long gcd_long(long a, long b) {
 	if (a < 0)
@@ -127,8 +112,6 @@ static long dot(const long *a, const long *b, int n) {
 	return s;
 }
 
-/* --- string utilities ---------------------------------------------------- */
-
 static unsigned long str_hash(const char *s) {
 	unsigned long h = 1469598103934665603UL;
 	while (*s) {
@@ -161,36 +144,33 @@ static int count_words(const char *s) {
 	return n;
 }
 
-/* --- bulk: preprocessor-generated families of small functions ------------ *
- * Each expansion is a real, distinct function so the front end and codegen
- * both do proportional work. This is the bulk of the translation unit.     */
-
 #define GEN_ARITH(N)                                             \
-	static long arith_##N(long a, long b, long c) {             \
-		long x = a * (N) + b - c;                              \
-		long y = (a ^ b) + (c << ((N) % 13));                 \
-		long z = (x > y) ? (x - y) : (y - x);                 \
+	static long arith_##N(long a, long b, long c) {                \
+		long x = a * (N) + b - c;                                    \
+		long y = (a ^ b) + (c << ((N) % 13));                        \
+		long z = (x > y) ? (x - y) : (y - x);                        \
 		return z * (N) + gcd_long(x + (N), y + 1) - (a % ((N) + 1)); \
 	}
 
-#define GEN_POLY(N)                                             \
-	static long poly_##N(long t) {                             \
-		return ((t + (N)) * (t - (N)) + (N) * t) % 1000003L;  \
+#define GEN_POLY(N)                                      \
+	static long poly_##N(long t) {                         \
+		return ((t + (N)) * (t - (N)) + (N) * t) % 1000003L; \
 	}
 
-#define GEN10(M, B) \
-	M(B##0) M(B##1) M(B##2) M(B##3) M(B##4) \
-	M(B##5) M(B##6) M(B##7) M(B##8) M(B##9)
+#define GEN10(M, B)               \
+	M(B##0)                         \
+	M(B##1) M(B##2) M(B##3) M(B##4) \
+			M(B##5) M(B##6) M(B##7) M(B##8) M(B##9)
 
-#define GEN100(M, B) \
-	GEN10(M, B##0) GEN10(M, B##1) GEN10(M, B##2) GEN10(M, B##3) GEN10(M, B##4) \
-	GEN10(M, B##5) GEN10(M, B##6) GEN10(M, B##7) GEN10(M, B##8) GEN10(M, B##9)
+#define GEN100(M, B)                                          \
+	GEN10(M, B##0)                                              \
+	GEN10(M, B##1) GEN10(M, B##2) GEN10(M, B##3) GEN10(M, B##4) \
+			GEN10(M, B##5) GEN10(M, B##6) GEN10(M, B##7) GEN10(M, B##8) GEN10(M, B##9)
 
-/* 100 arith_* and 100 poly_* functions */
 GEN100(GEN_ARITH, 1)
 GEN100(GEN_POLY, 1)
 
-#define CALL10(F, B) \
+#define CALL10(F, B)                                     \
 	(F##B##0(i, i + 1, i + 2) + F##B##1(i, i + 2, i + 3) + \
 	 F##B##2(i, i + 3, i + 4) + F##B##3(i, i + 4, i + 5) + \
 	 F##B##4(i, i + 5, i + 6) + F##B##5(i, i + 6, i + 7) + \
@@ -199,12 +179,10 @@ GEN100(GEN_POLY, 1)
 
 static long sum_arith(long i) {
 	return CALL10(arith_1, 0) + CALL10(arith_1, 1) + CALL10(arith_1, 2) +
-		   CALL10(arith_1, 3) + CALL10(arith_1, 4) + CALL10(arith_1, 5) +
-		   CALL10(arith_1, 6) + CALL10(arith_1, 7) + CALL10(arith_1, 8) +
-		   CALL10(arith_1, 9);
+				 CALL10(arith_1, 3) + CALL10(arith_1, 4) + CALL10(arith_1, 5) +
+				 CALL10(arith_1, 6) + CALL10(arith_1, 7) + CALL10(arith_1, 8) +
+				 CALL10(arith_1, 9);
 }
-
-/* --- driver (never executed; present so nothing warns as unused) --------- */
 
 int main(void) {
 	map_t m;

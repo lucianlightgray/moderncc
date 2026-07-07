@@ -3,20 +3,21 @@
 #ifdef MCC_TARGET_ARM
 
 static const char *const cc_sfx[16] = {
-	"eq", "ne", "cs", "cc", "mi", "pl", "vs", "vc",
-	"hi", "ls", "ge", "lt", "gt", "le", "", ""};
+		"eq", "ne", "cs", "cc", "mi", "pl", "vs", "vc",
+		"hi", "ls", "ge", "lt", "gt", "le", "", ""};
 
 static const char *const regnm[16] = {
-	"r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
-	"r8", "r9", "r10", "r11", "r12", "sp", "lr", "pc"};
+		"r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
+		"r8", "r9", "r10", "r11", "r12", "sp", "lr", "pc"};
 
 static const char *const dpnm[16] = {
-	"and", "eor", "sub", "rsb", "add", "adc", "sbc", "rsc",
-	"tst", "teq", "cmp", "cmn", "orr", "mov", "bic", "mvn"};
+		"and", "eor", "sub", "rsb", "add", "adc", "sbc", "rsc",
+		"tst", "teq", "cmp", "cmn", "orr", "mov", "bic", "mvn"};
 
 static const char *const shnm[4] = {"lsl", "lsr", "asr", "ror"};
 
-typedef struct {
+typedef struct
+{
 	char *p;
 	char *end;
 } SB;
@@ -108,7 +109,6 @@ static int dis_branch(disasm_ctx *dc, uint32_t w, SB *b) {
 		off -= 0x1000000;
 	rel = disasm_reloc(dc, dc->pc, 4, &rtype);
 	if (rel && (rtype == R_ARM_PC24 || rtype == R_ARM_CALL || rtype == R_ARM_JUMP24 || rtype == R_ARM_PLT32)) {
-
 		long v = (long)off * 4 + 8;
 		if (v == 0)
 			sb(b, "%s%s\t%s", nm, cc, rel);
@@ -121,7 +121,6 @@ static int dis_branch(disasm_ctx *dc, uint32_t w, SB *b) {
 	if (rel)
 		return 0;
 	{
-
 		addr_t target = dc->pc + 8 + (addr_t)((long)off * 4);
 		if (target >= dc->size || (target & 3))
 			return 0;
@@ -176,24 +175,23 @@ static int dis_dp(uint32_t w, SB *b) {
 		if (rn)
 			return 0;
 		if (opc == 13 && !I) {
-
 			int rm = w & 15, ty = (w >> 5) & 3;
 			if (w & 0x10) {
 				if (w & 0x80)
 					return 0;
 				sb(b, "%s%s%s\t%s, %s, %s", shnm[ty], S ? "s" : "", cc,
-				   regnm[rd], regnm[rm], regnm[(w >> 8) & 15]);
+					 regnm[rd], regnm[rm], regnm[(w >> 8) & 15]);
 				return 1;
 			} else {
 				int amt = (w >> 7) & 31;
 				if (amt == 0 && ty == 3) {
 					sb(b, "rrx%s%s\t%s, %s", S ? "s" : "", cc,
-					   regnm[rd], regnm[rm]);
+						 regnm[rd], regnm[rm]);
 					return 1;
 				}
 				if (amt) {
 					sb(b, "%s%s%s\t%s, %s, #%d", shnm[ty], S ? "s" : "", cc,
-					   regnm[rd], regnm[rm], amt);
+						 regnm[rd], regnm[rm], amt);
 					return 1;
 				}
 				if (ty)
@@ -210,7 +208,7 @@ static int dis_dp(uint32_t w, SB *b) {
 		return 1;
 	}
 	sb(b, "%s%s%s\t%s, %s, %s", dpnm[opc], S ? "s" : "", cc,
-	   regnm[rd], regnm[rn], o2buf);
+		 regnm[rd], regnm[rn], o2buf);
 	return 1;
 }
 
@@ -221,12 +219,12 @@ static int dis_mul(uint32_t w, SB *b) {
 	int rs = (w >> 8) & 15, rm = w & 15;
 	if (A)
 		sb(b, "mla%s%s\t%s, %s, %s, %s", S ? "s" : "", cc,
-		   regnm[rd], regnm[rm], regnm[rs], regnm[ra]);
+			 regnm[rd], regnm[rm], regnm[rs], regnm[ra]);
 	else {
 		if (ra)
 			return 0;
 		sb(b, "mul%s%s\t%s, %s, %s", S ? "s" : "", cc,
-		   regnm[rd], regnm[rm], regnm[rs]);
+			 regnm[rd], regnm[rm], regnm[rs]);
 	}
 	return 1;
 }
@@ -237,8 +235,8 @@ static int dis_mull(uint32_t w, SB *b) {
 	int rdhi = (w >> 16) & 15, rdlo = (w >> 12) & 15;
 	int rs = (w >> 8) & 15, rm = w & 15;
 	sb(b, "%s%s%s%s\t%s, %s, %s, %s",
-	   sg ? "s" : "u", A ? "mlal" : "mull", S ? "s" : "", cc,
-	   regnm[rdlo], regnm[rdhi], regnm[rm], regnm[rs]);
+		 sg ? "s" : "u", A ? "mlal" : "mull", S ? "s" : "", cc,
+		 regnm[rdlo], regnm[rdhi], regnm[rm], regnm[rs]);
 	return 1;
 }
 
@@ -295,8 +293,11 @@ static int dis_hmem(uint32_t w, SB *b) {
 	SB off;
 
 	if (L)
-		nm = SH == 1 ? "ldrh" : SH == 2 ? "ldrsb"
-										: "ldrsh";
+		nm = SH == 1
+						 ? "ldrh"
+				 : SH == 2
+						 ? "ldrsb"
+						 : "ldrsh";
 	else if (SH == 1)
 		nm = "strh";
 	else
@@ -334,7 +335,7 @@ static int dis_ldm(uint32_t w, SB *b) {
 		sb(b, "push%s\t", cc);
 	else
 		sb(b, "%s%s%s\t%s%s, ", L ? "ldm" : "stm", sfx[(Pb << 1) | U], cc,
-		   regnm[rn], W ? "!" : "");
+			 regnm[rn], W ? "!" : "");
 	sb_reglist(b, list);
 	return 1;
 }
@@ -348,7 +349,7 @@ static void sb_vlist(SB *b, int dbl, int first, int count) {
 		sb(b, "{%c%d}", dbl ? 'd' : 's', first);
 	else
 		sb(b, "{%c%d-%c%d}", dbl ? 'd' : 's', first,
-		   dbl ? 'd' : 's', first + count - 1);
+			 dbl ? 'd' : 's', first + count - 1);
 }
 
 static int dis_cpmem(uint32_t w, SB *b) {
@@ -361,7 +362,6 @@ static int dis_cpmem(uint32_t w, SB *b) {
 	int vfp = (cp == 10 || cp == 11), dbl = (cp == 11);
 
 	if (vfp && Pb && !W && !(dbl && D)) {
-
 		sb(b, "%s%s\t", L ? "vldr" : "vstr", cc);
 		if (dbl)
 			sb(b, "d%d", crd);
@@ -390,7 +390,7 @@ static int dis_cpmem(uint32_t w, SB *b) {
 				sb(b, "vpop%s\t", cc);
 			else
 				sb(b, "%s%s\t%s%s, ", L ? "vldmia" : "vstmia", cc,
-				   regnm[rn], W ? "!" : "");
+					 regnm[rn], W ? "!" : "");
 			sb_vlist(b, dbl, first, count);
 			return 1;
 		}
@@ -405,7 +405,7 @@ static int dis_cpmem(uint32_t w, SB *b) {
 		else if (!U)
 			sb(&ob, "#-0");
 		sb(b, "%s%s%s\tp%d, c%d, ", L ? "ldc" : "stc", D ? "l" : "", cc,
-		   cp, crd);
+			 cp, crd);
 		return sb_addr(b, rn, offbuf, Pb, W);
 	}
 }
@@ -438,11 +438,11 @@ static int dis_vfp_dp(uint32_t w, SB *b) {
 		case 1:
 		case 4: {
 			static const char *const enm[3][2] = {
-				{"vmov", "vabs"}, {"vneg", "vsqrt"}, {"vcmp", "vcmpe"}};
+					{"vmov", "vabs"}, {"vneg", "vsqrt"}, {"vcmp", "vcmpe"}};
 			if (dbl && M)
 				return 0;
 			sb(b, "%s%s.%s\t%s, %s",
-			   enm[Fn == 4 ? 2 : Fn][N], cc, pr, d, m);
+				 enm[Fn == 4 ? 2 : Fn][N], cc, pr, d, m);
 			return 1;
 		}
 		case 5:
@@ -465,7 +465,7 @@ static int dis_vfp_dp(uint32_t w, SB *b) {
 			return 1;
 		case 8:
 			sb(b, "vcvt%s.%s.%s\t%s, s%d", cc, pr, N ? "s32" : "u32", d,
-			   (Fm << 1) | M);
+				 (Fm << 1) | M);
 			return 1;
 		case 0xc:
 		case 0xd:
@@ -473,7 +473,7 @@ static int dis_vfp_dp(uint32_t w, SB *b) {
 			if (dbl && M)
 				return 0;
 			sb(b, "%s%s.%s.%s\ts%d, %s", N ? "vcvt" : "vcvtr", cc,
-			   (Fn & 1) ? "s32" : "u32", pr, (Fd << 1) | D, m);
+				 (Fn & 1) ? "s32" : "u32", pr, (Fd << 1) | D, m);
 			return 1;
 		}
 		return 0;
@@ -491,11 +491,11 @@ static int dis_vfp_dp(uint32_t w, SB *b) {
 		switch (sel) {
 		case 0x2:
 			sb(b, "%s%s.%s\t%s, %s, %s", op6 ? "vnmul" : "vmul",
-			   cc, pr, d, n, m);
+				 cc, pr, d, n, m);
 			return 1;
 		case 0x3:
 			sb(b, "%s%s.%s\t%s, %s, %s", op6 ? "vsub" : "vadd",
-			   cc, pr, d, n, m);
+				 cc, pr, d, n, m);
 			return 1;
 		case 0x8:
 			if (op6)
@@ -514,7 +514,7 @@ static int dis_cdp(uint32_t w, SB *b) {
 		return 1;
 
 	sb(b, "cdp%s\tp%d, %d, c%d, c%d, c%d, %d", cc, cp,
-	   (w >> 20) & 15, (w >> 12) & 15, (w >> 16) & 15, w & 15, (w >> 5) & 7);
+		 (w >> 20) & 15, (w >> 12) & 15, (w >> 16) & 15, w & 15, (w >> 5) & 7);
 	return 1;
 }
 
@@ -545,7 +545,7 @@ static int dis_mrc(uint32_t w, SB *b) {
 	}
 
 	sb(b, "%s%s\tp%d, %d, %s, c%d, c%d, %d", L ? "mrc" : "mcr", cc, cp,
-	   (w >> 21) & 7, regnm[rt], (w >> 16) & 15, w & 15, (w >> 5) & 7);
+		 (w >> 21) & 7, regnm[rt], (w >> 16) & 15, w & 15, (w >> 5) & 7);
 	return 1;
 }
 
@@ -567,7 +567,7 @@ static int decode(disasm_ctx *dc, uint32_t w, SB *b) {
 		}
 		if ((w & 0x0FFF0FF0) == 0x016F0F10) {
 			sb(b, "clz%s\t%s, %s", cc_sfx[cond],
-			   regnm[(w >> 12) & 15], regnm[w & 15]);
+				 regnm[(w >> 12) & 15], regnm[w & 15]);
 			return 1;
 		}
 		if ((w & 0x0FC000F0) == 0x00000090)
@@ -629,7 +629,6 @@ ST_FUNC int mcc_disasm_insn(disasm_ctx *dc) {
 		if (!dc->collect)
 			fprintf(dc->out, "%s", line);
 	} else {
-
 		if (!dc->collect)
 			fprintf(dc->out, ".long\t0x%08x", w);
 	}
@@ -651,7 +650,6 @@ ST_FUNC int mcc_disasm_reloc_size(int type) {
 }
 
 ST_FUNC int mcc_disasm_reloc_addend_bias(int type, int size) {
-
 	(void)type;
 	(void)size;
 	return 0;

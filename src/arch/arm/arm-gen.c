@@ -104,35 +104,35 @@ enum {
 #include "mcc.h"
 
 ST_DATA const char *const target_machine_defs =
-	"__arm__\0"
-	"__arm\0"
-	"arm\0"
-	"__arm_elf__\0"
-	"__arm_elf\0"
-	"arm_elf\0"
-	"__ARM_ARCH_4__\0"
-	"__ARMEL__\0"
-	"__APCS_32__\0"
+		"__arm__\0"
+		"__arm\0"
+		"arm\0"
+		"__arm_elf__\0"
+		"__arm_elf\0"
+		"arm_elf\0"
+		"__ARM_ARCH_4__\0"
+		"__ARMEL__\0"
+		"__APCS_32__\0"
 #if defined MCC_ARM_EABI
-	"__ARM_EABI__\0"
+		"__ARM_EABI__\0"
 #endif
-	;
+		;
 
 ST_DATA const int reg_classes[NB_REGS] = {
-	RC_INT | RC_R0,
-	RC_INT | RC_R1,
-	RC_INT | RC_R2,
-	RC_INT | RC_R3,
-	RC_INT | RC_R12,
-	RC_FLOAT | RC_F0,
-	RC_FLOAT | RC_F1,
-	RC_FLOAT | RC_F2,
-	RC_FLOAT | RC_F3,
+		RC_INT | RC_R0,
+		RC_INT | RC_R1,
+		RC_INT | RC_R2,
+		RC_INT | RC_R3,
+		RC_INT | RC_R12,
+		RC_FLOAT | RC_F0,
+		RC_FLOAT | RC_F1,
+		RC_FLOAT | RC_F2,
+		RC_FLOAT | RC_F3,
 #ifdef MCC_ARM_VFP
-	RC_FLOAT | RC_F4,
-	RC_FLOAT | RC_F5,
-	RC_FLOAT | RC_F6,
-	RC_FLOAT | RC_F7,
+		RC_FLOAT | RC_F4,
+		RC_FLOAT | RC_F5,
+		RC_FLOAT | RC_F6,
+		RC_FLOAT | RC_F7,
 #endif
 };
 
@@ -171,12 +171,12 @@ ST_FUNC void arm_init(struct MCCState *s) {
 ST_FUNC void arm_init(struct MCCState *s) {
 #if 0
 #if !defined(MCC_ARM_VFP)
-	mcc_warning("Support for FPA is deprecated and will be removed in next"
-				" release");
+    mcc_warning("Support for FPA is deprecated and will be removed in next"
+        " release");
 #endif
 #if !defined(MCC_ARM_EABI)
-	mcc_warning("Support for OABI is deprecated and will be removed in next"
-				" release");
+    mcc_warning("Support for OABI is deprecated and will be removed in next"
+        " release");
 #endif
 #endif
 }
@@ -203,7 +203,7 @@ void o(uint32_t i) {
 	ind1 = ind + 4;
 	if (!cur_text_section)
 		mcc_error("compiler error! This happens f.ex. if the compiler\n"
-				  "can't evaluate constant expressions outside of a function.");
+							"can't evaluate constant expressions outside of a function.");
 	if (ind1 > cur_text_section->data_allocated)
 		section_realloc(cur_text_section, ind1);
 	cur_text_section->data[ind++] = i & 255;
@@ -325,7 +325,7 @@ uint32_t encbranch(int pos, int addr, int fail) {
 	addr /= 4;
 	if (addr >= 0x1000000 || addr < -0x1000000) {
 		if (fail)
-			mcc_error("FIXME: function bigger than 32MB");
+			mcc_error("branch target out of range (ARM B/BL reach is +/-32MB); veneers not implemented");
 		return 0;
 	}
 	return 0x0A000000 | (addr & 0xffffff);
@@ -496,7 +496,7 @@ static void load_value(SValue *sv, int r) {
 				o(0xe5900000 | (intr(r) << 12) | (intr(r) << 16));
 				if (sv->c.i)
 					stuff_const_harder(0xe2800000 | (intr(r) << 12) | (intr(r) << 16),
-									   sv->c.i);
+														 sv->c.i);
 			}
 		} else
 			o(sv->c.i);
@@ -900,7 +900,7 @@ ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int 
 	int size, align;
 	size = type_size(vt, &align);
 	if (cg_float_abi == ARM_HARD_FLOAT && !variadic &&
-		(is_float(vt->t) || is_hgen_float_aggr(vt))) {
+			(is_float(vt->t) || is_hgen_float_aggr(vt))) {
 		*ret_align = 8;
 		*regsize = 8;
 		ret->ref = NULL;
@@ -978,7 +978,7 @@ static int assign_regs(int nb_args, int float_abi, struct plan *plan, int *todo)
 					end_vfpreg = start_vfpreg + ((size - 1) >> 2);
 					if (start_vfpreg >= 0) {
 						add_param_plan(plan, is_hfa ? VFP_STRUCT_CLASS : VFP_CLASS,
-									   start_vfpreg, end_vfpreg, &vtop[-i]);
+													 start_vfpreg, end_vfpreg, &vtop[-i]);
 						continue;
 					} else
 						break;
@@ -1026,7 +1026,6 @@ static int copy_params(int nb_args, struct plan *plan, int todo) {
 again:
 	for (int i = 0; i < NB_CLASSES; i++) {
 		for (pplan = plan->clsplans[i]; pplan; pplan = pplan->prev) {
-
 			if (pass && (i != CORE_CLASS || pplan->sval->r < VT_CONST))
 				continue;
 
@@ -1215,7 +1214,7 @@ void gfunc_prolog(Sym *func_sym) {
 
 	n = nf = 0;
 	if ((func_vt.t & VT_BTYPE) == VT_STRUCT &&
-		!gfunc_sret(&func_vt, func_var, &ret_type, &align, &rs)) {
+			!gfunc_sret(&func_vt, func_var, &ret_type, &align, &rs)) {
 		n++;
 		struct_ret = 1;
 		func_vc = 16;
@@ -1224,13 +1223,13 @@ void gfunc_prolog(Sym *func_sym) {
 		size = type_size(&sym2->type, &align);
 #ifdef MCC_ARM_EABI
 		if (cg_float_abi == ARM_HARD_FLOAT && !func_var &&
-			(is_float(sym2->type.t) || is_hgen_float_aggr(&sym2->type))) {
+				(is_float(sym2->type.t) || is_hgen_float_aggr(&sym2->type))) {
 			int tmpnf = assign_vfpreg(&avregs, align, size);
 			tmpnf += (size + 3) / 4;
 			nf = (tmpnf > nf) ? tmpnf : nf;
 		} else
 #endif
-			if (n < 4)
+				if (n < 4)
 			n += (size + 3) / 4;
 	}
 	o(0xE1A0C00D);
@@ -1277,7 +1276,7 @@ void gfunc_prolog(Sym *func_sym) {
 				goto from_stack;
 		} else
 #endif
-			if (pn < 4) {
+				if (pn < 4) {
 #ifdef MCC_ARM_EABI
 			pn = (pn + (align - 1) / 4) & -(align / 4);
 #endif
@@ -1339,7 +1338,8 @@ void gfunc_epilog(void) {
 			o(0xE04BD00C);
 			o(0xE1A0F00E);
 			o(diff);
-			*(uint32_t *)(cur_text_section->data + func_sub_sp_offset) = 0xE1000000 | encbranch(func_sub_sp_offset, addr, 1);
+			*(uint32_t *)(cur_text_section->data + func_sub_sp_offset) = 0xE1000000 | encbranch(
+																																										func_sub_sp_offset, addr, 1);
 		}
 	}
 }

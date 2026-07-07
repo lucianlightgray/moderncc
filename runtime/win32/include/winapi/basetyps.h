@@ -52,16 +52,16 @@
 #define THIS_ INTERFACE *This,
 #define THIS INTERFACE *This
 #ifdef CONST_VTABLE
-#define DECLARE_INTERFACE(iface)                  \
+#define DECLARE_INTERFACE(iface)                \
 	typedef struct iface {                        \
-		const struct iface##Vtbl *lpVtbl;         \
+		const struct iface##Vtbl *lpVtbl;           \
 	} iface;                                      \
 	typedef const struct iface##Vtbl iface##Vtbl; \
 	const struct iface##Vtbl
 #else
-#define DECLARE_INTERFACE(iface)            \
+#define DECLARE_INTERFACE(iface)          \
 	typedef struct iface {                  \
-		struct iface##Vtbl *lpVtbl;         \
+		struct iface##Vtbl *lpVtbl;           \
 	} iface;                                \
 	typedef struct iface##Vtbl iface##Vtbl; \
 	struct iface##Vtbl

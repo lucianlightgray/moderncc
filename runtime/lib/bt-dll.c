@@ -1,11 +1,11 @@
 #include <windows.h>
 #include <stdio.h>
 
-#define REDIR_ALL               \
+#define REDIR_ALL             \
 	REDIR(__bt_init)            \
 	REDIR(__bt_exit)            \
 	REDIR(mcc_backtrace)        \
-								\
+                              \
 	REDIR(__bound_ptr_add)      \
 	REDIR(__bound_ptr_indir1)   \
 	REDIR(__bound_ptr_indir2)   \
@@ -16,7 +16,7 @@
 	REDIR(__bound_local_new)    \
 	REDIR(__bound_local_delete) \
 	REDIR(__bound_new_region)   \
-								\
+                              \
 	REDIR(__bound_free)         \
 	REDIR(__bound_malloc)       \
 	REDIR(__bound_realloc)      \
@@ -44,7 +44,9 @@
 #endif
 
 #define REDIR(s) void *s;
-static struct {
+
+static struct
+{
 	REDIR_ALL
 } all_ptrs;
 #undef REDIR
@@ -54,7 +56,7 @@ static const char all_names[] = REDIR_ALL;
 #undef REDIR
 
 #if __aarch64__
-#define REDIR(s)                                              \
+#define REDIR(s)                                            \
 	__asm__(".global " _(s) ";" _(s) ":");                    \
 	__asm__(".int 0x58000090");                               \
 	__asm__(".int 0xf9400210");                               \
@@ -66,9 +68,10 @@ static const char all_names[] = REDIR_ALL;
 __asm__(".text\n.align 8\nall_jmps:");
 REDIR_ALL
 #else
-#define REDIR(s)                           \
+#define REDIR(s)                         \
 	__asm__(".global " _(s) ";" _(s) ":"); \
 	goto *all_ptrs.s;
+
 static void all_jmps() {
 	REDIR_ALL
 }
@@ -83,9 +86,9 @@ void __bt_init_dll(int bcheck) {
 		if (NULL == *p) {
 			char buf[100];
 			sprintf(buf,
-					"Error: function '%s()' not found in executable. "
-					"(Need -bt or -b for linking the exe.)",
-					s);
+							"Error: function '%s()' not found in executable. "
+							"(Need -bt or -b for linking the exe.)",
+							s);
 			if (GetStdHandle(STD_ERROR_HANDLE))
 				fprintf(stderr, "MCC/BCHECK: %s\n", buf), fflush(stderr);
 			else

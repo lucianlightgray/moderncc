@@ -8,6 +8,7 @@
 
 #ifdef __cplusplus
 extern "C" {
+
 #endif
 
 #ifndef _DISKFREE_T_DEFINED
@@ -30,7 +31,8 @@ struct _diskfree_t {
 
 #ifndef _GETDISKFREE_DEFINED
 #define _GETDISKFREE_DEFINED
-_CRTIMP unsigned __cdecl _getdiskfree(unsigned _Drive, struct _diskfree_t *_DiskFree);
+_CRTIMP
+unsigned __cdecl _getdiskfree(unsigned _Drive, struct _diskfree_t *_DiskFree);
 #endif
 
 #if (defined(_X86_) && !defined(__x86_64))

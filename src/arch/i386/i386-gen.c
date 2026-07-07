@@ -49,17 +49,17 @@ enum {
 #include "mcc.h"
 
 ST_DATA const char *const target_machine_defs =
-	"__i386__\0"
-	"__i386\0";
+		"__i386__\0"
+		"__i386\0";
 
 #define USE_EBX 2
 
 ST_DATA const int reg_classes[NB_REGS] = {
-	RC_INT | RC_EAX,
-	RC_INT | RC_ECX,
-	RC_INT | RC_EDX,
-	(RC_INT | RC_EBX) * (USE_EBX == 1),
-	RC_FLOAT | RC_ST0,
+		RC_INT | RC_EAX,
+		RC_INT | RC_ECX,
+		RC_INT | RC_EDX,
+		(RC_INT | RC_EBX) * (USE_EBX == 1),
+		RC_FLOAT | RC_ST0,
 };
 
 #define func_sub_sp_offset (mcc_state->cg_func_sub_sp_offset)
@@ -101,12 +101,13 @@ ST_FUNC void gen_fill_nops(int bytes) {
 }
 
 static void gen_static_call(int v);
+
 static void get_pc_thunk(int r, int add) {
 	static const char *const pc_thunk_name[] = {
-		"__x86.get_pc_thunk.ax",
-		"__x86.get_pc_thunk.cx",
-		"__x86.get_pc_thunk.dx",
-		"__x86.get_pc_thunk.bx"};
+			"__x86.get_pc_thunk.ax",
+			"__x86.get_pc_thunk.cx",
+			"__x86.get_pc_thunk.dx",
+			"__x86.get_pc_thunk.bx"};
 	if (nocode_wanted)
 		return;
 	gen_static_call(tok_alloc_const(pc_thunk_name[r]));
@@ -235,7 +236,7 @@ ST_FUNC void load(int r, SValue *sv) {
 			if ((ft & VT_TYPE) == VT_BYTE || (ft & VT_TYPE) == VT_BOOL)
 				opc = 0xbe0f;
 			else if ((ft & VT_TYPE) == (VT_BYTE | VT_UNSIGNED) ||
-					 (ft & VT_TYPE) == (VT_BOOL | VT_UNSIGNED))
+							 (ft & VT_TYPE) == (VT_BOOL | VT_UNSIGNED))
 				opc = 0xb60f;
 			else if ((ft & VT_TYPE) == VT_SHORT)
 				opc = 0xbf0f;
@@ -281,7 +282,7 @@ ST_FUNC void load(int r, SValue *sv) {
 		} else if ((ft & VT_TYPE) == VT_BYTE || (ft & VT_TYPE) == VT_BOOL) {
 			opc = 0xbe0f;
 		} else if ((ft & VT_TYPE) == (VT_BYTE | VT_UNSIGNED) ||
-				   (ft & VT_TYPE) == (VT_BOOL | VT_UNSIGNED)) {
+							 (ft & VT_TYPE) == (VT_BOOL | VT_UNSIGNED)) {
 			opc = 0xb60f;
 		} else if ((ft & VT_TYPE) == VT_SHORT) {
 			opc = 0xbf0f;
@@ -379,9 +380,7 @@ ST_FUNC void store(int r, SValue *v) {
 		gen_gotpcrel(TREG_EBX, v->sym, v->c.i);
 		o(opc);
 		o(3 + (r << 3));
-	} else
-
-		if ((v->r & VT_SYM) && v->sym->type.t & VT_TLS) {
+	} else if ((v->r & VT_SYM) && v->sym->type.t & VT_TLS) {
 #ifdef MCC_TARGET_PE
 		{
 			int base = (REG_VALUE(r) == TREG_EAX) ? TREG_ECX : TREG_EAX;
@@ -454,6 +453,7 @@ static int fastcall_arg_inreg(CType *type) {
 	int align;
 	return !is_float(type->t) && (type->t & VT_BTYPE) != VT_STRUCT && type_size(type, &align) <= 4;
 }
+
 static int fastcall_arg_slots(CType *type) {
 	int align, words;
 	if (is_float(type->t))
@@ -529,7 +529,7 @@ ST_FUNC void gfunc_call(int nb_args) {
 			if (fastcall_arg_inreg(t) && slots < fastcall_nb_regs) {
 				if (spilled)
 					mcc_error("fastcall with a non-register argument before an "
-							  "integer register argument is not supported");
+										"integer register argument is not supported");
 				n_reg_pop++, slots++;
 			} else {
 				spilled = 1;
@@ -759,11 +759,11 @@ ST_FUNC void gjmp_addr(int a) {
 #if 0
 ST_FUNC void gjmp_cond_addr(int a, int op)
 {
-	int r = a - ind - 2;
-	if (r == (signed char)r)
-		g(op - 32), g(r);
-	else
-		g(0x0f), gjmp2(op - 16, r - 4);
+    int r = a - ind - 2;
+    if (r == (signed char)r)
+        g(op - 32), g(r);
+    else
+        g(0x0f), gjmp2(op - 16, r - 4);
 }
 #endif
 
@@ -919,7 +919,7 @@ ST_FUNC void gen_opf(int op) {
 		gv(RC_FLOAT);
 
 	if ((vtop[-1].r & VT_LVAL) &&
-		(vtop[0].r & VT_LVAL)) {
+			(vtop[0].r & VT_LVAL)) {
 		vswap();
 		gv(RC_FLOAT);
 		vswap();
@@ -1003,7 +1003,7 @@ ST_FUNC void gen_opf(int op) {
 			}
 
 			gen_modrm((ft & VT_BTYPE) == VT_DOUBLE ? 0xdc : 0xd8,
-					  a, r, vtop->sym, fc);
+								a, r, vtop->sym, fc);
 		}
 		vtop--;
 	}
@@ -1019,7 +1019,7 @@ ST_FUNC void gen_cvt_itof(int t) {
 		o(0x08c483);
 		vtop->r2 = VT_CONST;
 	} else if ((vtop->type.t & (VT_BTYPE | VT_UNSIGNED)) ==
-			   (VT_INT | VT_UNSIGNED)) {
+						 (VT_INT | VT_UNSIGNED)) {
 		o(0x6a);
 		g(0x00);
 		o(0x50 + (vtop->r & VT_VALMASK));
@@ -1136,7 +1136,7 @@ static void gen_bounds_epilog(void) {
 	*bounds_ptr = 0;
 
 	sym_data = get_sym_ref(&char_pointer_type, lbounds_section,
-						   func_bound_offset, PTR_SIZE);
+												 func_bound_offset, PTR_SIZE);
 
 	if (offset_modified) {
 		saved_ind = ind;

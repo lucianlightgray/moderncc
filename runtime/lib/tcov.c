@@ -54,7 +54,7 @@ static FILE *open_tcov_file(char *cov_filename) {
 	{
 		OVERLAPPED overlapped = {0};
 		LockFileEx((HANDLE)_get_osfhandle(fd), LOCKFILE_EXCLUSIVE_LOCK,
-				   0, 1, 0, &overlapped);
+							 0, 1, 0, &overlapped);
 	}
 #endif
 
@@ -74,18 +74,26 @@ static int sort_func(const void *p, const void *q) {
 	const tcov_function *pp = (const tcov_function *)p;
 	const tcov_function *pq = (const tcov_function *)q;
 
-	return pp->first_line > pq->first_line ? 1 : pp->first_line < pq->first_line ? -1
-																				 : 0;
+	return pp->first_line > pq->first_line
+						 ? 1
+				 : pp->first_line < pq->first_line
+						 ? -1
+						 : 0;
 }
 
 static int sort_line(const void *p, const void *q) {
 	const tcov_line *pp = (const tcov_line *)p;
 	const tcov_line *pq = (const tcov_line *)q;
 
-	return pp->fline > pq->fline ? 1 : pp->fline < pq->fline ? -1
-								   : pp->count < pq->count	 ? 1
-								   : pp->count > pq->count	 ? -1
-															 : 0;
+	return pp->fline > pq->fline
+						 ? 1
+				 : pp->fline < pq->fline
+						 ? -1
+				 : pp->count < pq->count
+						 ? 1
+				 : pp->count > pq->count
+						 ? -1
+						 : 0;
 }
 
 static tcov_file *sort_test_coverage(unsigned char *p) {
@@ -143,8 +151,8 @@ static tcov_file *sort_test_coverage(unsigned char *p) {
 				if (nfile->n_func >= nfile->m_func) {
 					nfile->m_func = nfile->m_func == 0 ? 4 : nfile->m_func * 2;
 					nfile->func = realloc(nfile->func,
-										  nfile->m_func *
-											  sizeof(tcov_function));
+																nfile->m_func *
+																		sizeof(tcov_function));
 					if (nfile->func == NULL) {
 						fprintf(stderr, "Realloc error test_coverage\n");
 						return file;
@@ -165,7 +173,7 @@ static tcov_file *sort_test_coverage(unsigned char *p) {
 				if (func->n_line >= func->m_line) {
 					func->m_line = func->m_line == 0 ? 4 : func->m_line * 2;
 					func->line = realloc(func->line,
-										 func->m_line * sizeof(tcov_line));
+															 func->m_line * sizeof(tcov_line));
 					if (func->line == NULL) {
 						fprintf(stderr, "Realloc error test_coverage\n");
 						return file;
@@ -195,7 +203,7 @@ static tcov_file *sort_test_coverage(unsigned char *p) {
 }
 
 static void merge_test_coverage(tcov_file *file, FILE *fp,
-								unsigned int *pruns) {
+																unsigned int *pruns) {
 	unsigned int runs;
 	char *p;
 	char str[10000];
@@ -204,18 +212,19 @@ static void merge_test_coverage(tcov_file *file, FILE *fp,
 	if (fp == NULL)
 		return;
 	if (fgets(str, sizeof(str), fp) &&
-		(p = strrchr(str, ':')) &&
-		(sscanf(p + 1, "%u", &runs) == 1))
+			(p = strrchr(str, ':')) &&
+			(sscanf(p + 1, "%u", &runs) == 1))
 		*pruns = runs + 1;
 	while (file) {
 		int i;
 		size_t len = strlen(file->filename);
 
 		while (fgets(str, sizeof(str), fp) &&
-			   (p = strstr(str, "0:File:")) == NULL) {}
+					 (p = strstr(str, "0:File:")) == NULL) {
+		}
 		if ((p = strstr(str, "0:File:")) == NULL ||
-			strncmp(p + strlen("0:File:"), file->filename, len) != 0 ||
-			p[strlen("0:File:") + len] != ' ')
+				strncmp(p + strlen("0:File:"), file->filename, len) != 0 ||
+				p[strlen("0:File:") + len] != ' ')
 			break;
 		for (i = 0; i < file->n_func; i++) {
 			int j;
@@ -231,9 +240,9 @@ static void merge_test_coverage(tcov_file *file, FILE *fp,
 				char c;
 
 				while (curline < fline &&
-					   fgets(str, sizeof(str), fp))
+							 fgets(str, sizeof(str), fp))
 					if ((p = strchr(str, ':')) &&
-						sscanf(p + 1, "%u", &tmp) == 1)
+							sscanf(p + 1, "%u", &tmp) == 1)
 						curline = tmp;
 				if (sscanf(str, "%llu%c\n", &count, &c) == 2) {
 					if (next_zero == 0)
@@ -289,7 +298,7 @@ void __store_test_coverage(unsigned char *p) {
 	if (blocks == 0)
 		blocks = 1;
 	fprintf(fp, "        -:    0:All:%s Files:%u Functions:%u %.02f%%\n",
-			cov_filename, files, funcs, 100.0 * (double)blocks_run / blocks);
+					cov_filename, files, funcs, 100.0 * (double)blocks_run / blocks);
 	nfile = file;
 	while (nfile) {
 		FILE *src = fopen(nfile->filename, "r");
@@ -312,12 +321,12 @@ void __store_test_coverage(unsigned char *p) {
 		if (blocks == 0)
 			blocks = 1;
 		fprintf(fp, "        -:    0:File:%s Functions:%u %.02f%%\n",
-				nfile->filename, funcs, 100.0 * (double)blocks_run / blocks);
+						nfile->filename, funcs, 100.0 * (double)blocks_run / blocks);
 		for (i = 0; i < nfile->n_func; i++) {
 			func = &nfile->func[i];
 
 			while (curline < func->first_line &&
-				   fgets(str, sizeof(str), src))
+						 fgets(str, sizeof(str), src))
 				fprintf(fp, "        -:%5u:%s", curline++, str);
 			blocks = 0;
 			blocks_run = 0;
@@ -328,15 +337,16 @@ void __store_test_coverage(unsigned char *p) {
 			if (blocks == 0)
 				blocks = 1;
 			fprintf(fp, "        -:    0:Function:%s %.02f%%\n",
-					func->function, 100.0 * (double)blocks_run / blocks);
+							func->function, 100.0 * (double)blocks_run / blocks);
 #if 0
-	    for (j = 0; j < func->n_line; j++) {
-	        unsigned int fline = func->line[j].fline;
-	        unsigned int lline = func->line[j].lline;
-		unsigned long long count = func->line[j].count;
+            for (j = 0; j < func->n_line; j++)
+            {
+                unsigned int fline = func->line[j].fline;
+                unsigned int lline = func->line[j].lline;
+                unsigned long long count = func->line[j].count;
 
-		fprintf (fp, "%u %u %llu\n", fline, lline, count);
-	    }
+                fprintf(fp, "%u %u %llu\n", fline, lline, count);
+            }
 #endif
 			for (j = 0; j < func->n_line;) {
 				unsigned int fline = func->line[j].fline;
@@ -366,19 +376,19 @@ void __store_test_coverage(unsigned char *p) {
 					lline++;
 
 				while (curline < fline &&
-					   fgets(str, sizeof(str), src))
+							 fgets(str, sizeof(str), src))
 					fprintf(fp, "        -:%5u:%s", curline++, str);
 				while (curline < lline &&
-					   fgets(str, sizeof(str), src)) {
+							 fgets(str, sizeof(str), src)) {
 					if (count == 0)
 						fprintf(fp, "    #####:%5u:%s",
-								curline, str);
+										curline, str);
 					else if (has_zero)
 						fprintf(fp, "%8llu*:%5u:%s",
-								count, curline, str);
+										count, curline, str);
 					else
 						fprintf(fp, "%9llu:%5u:%s",
-								count, curline, str);
+										count, curline, str);
 					curline++;
 				}
 			}

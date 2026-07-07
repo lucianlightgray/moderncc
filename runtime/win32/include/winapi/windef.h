@@ -7,6 +7,7 @@
 
 #ifdef __cplusplus
 extern "C" {
+
 #endif
 
 #ifndef WINVER
@@ -249,6 +250,7 @@ typedef struct _FILETIME {
 	DWORD dwLowDateTime;
 	DWORD dwHighDateTime;
 } FILETIME, *PFILETIME, *LPFILETIME;
+
 #define _FILETIME_
 
 #define DM_UPDATE 1

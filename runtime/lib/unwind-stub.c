@@ -19,14 +19,12 @@ static void unwind_unsupported(const char *who) {
 	abort();
 }
 
-__attribute__((weak, noreturn))
-void _Unwind_Resume(void *exc) {
+__attribute__((weak, noreturn)) void _Unwind_Resume(void *exc) {
 	(void)exc;
 	unwind_unsupported("_Unwind_Resume");
 }
 
-__attribute__((weak))
-int _Unwind_ForcedUnwind(void *exc, void *stop, void *stop_arg) {
+__attribute__((weak)) int _Unwind_ForcedUnwind(void *exc, void *stop, void *stop_arg) {
 	(void)exc;
 	(void)stop;
 	(void)stop_arg;
@@ -34,16 +32,14 @@ int _Unwind_ForcedUnwind(void *exc, void *stop, void *stop_arg) {
 	return 0;
 }
 
-__attribute__((weak))
-void *_Unwind_GetCFA(void *ctx) {
+__attribute__((weak)) void *_Unwind_GetCFA(void *ctx) {
 	(void)ctx;
 	unwind_unsupported("_Unwind_GetCFA");
 	return 0;
 }
 
-__attribute__((weak))
-int __gcc_personality_v0(int version, int actions, unsigned long long exc_class,
-						 void *exc_obj, void *ctx) {
+__attribute__((weak)) int __gcc_personality_v0(int version, int actions, unsigned long long exc_class,
+																							 void *exc_obj, void *ctx) {
 	(void)version;
 	(void)actions;
 	(void)exc_class;

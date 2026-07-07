@@ -43,14 +43,14 @@
 #define SIGN11(x) ((((x) & 0xfff) ^ 0x800) - 0x800)
 
 ST_DATA const char *const target_machine_defs =
-	"__riscv\0"
-	"__riscv_xlen 64\0"
-	"__riscv_flen 64\0"
-	"__riscv_div\0"
-	"__riscv_mul\0"
-	"__riscv_fdiv\0"
-	"__riscv_fsqrt\0"
-	"__riscv_float_abi_double\0";
+		"__riscv\0"
+		"__riscv_xlen 64\0"
+		"__riscv_flen 64\0"
+		"__riscv_div\0"
+		"__riscv_mul\0"
+		"__riscv_fdiv\0"
+		"__riscv_fsqrt\0"
+		"__riscv_float_abi_double\0";
 
 #define XLEN 8
 
@@ -58,25 +58,25 @@ ST_DATA const char *const target_machine_defs =
 #define TREG_SP 18
 
 ST_DATA const int reg_classes[NB_REGS] = {
-	RC_INT | RC_R(0),
-	RC_INT | RC_R(1),
-	RC_INT | RC_R(2),
-	RC_INT | RC_R(3),
-	RC_INT | RC_R(4),
-	RC_INT | RC_R(5),
-	RC_INT | RC_R(6),
-	RC_INT | RC_R(7),
-	RC_FLOAT | RC_F(0),
-	RC_FLOAT | RC_F(1),
-	RC_FLOAT | RC_F(2),
-	RC_FLOAT | RC_F(3),
-	RC_FLOAT | RC_F(4),
-	RC_FLOAT | RC_F(5),
-	RC_FLOAT | RC_F(6),
-	RC_FLOAT | RC_F(7),
-	0,
-	1 << TREG_RA,
-	1 << TREG_SP};
+		RC_INT | RC_R(0),
+		RC_INT | RC_R(1),
+		RC_INT | RC_R(2),
+		RC_INT | RC_R(3),
+		RC_INT | RC_R(4),
+		RC_INT | RC_R(5),
+		RC_INT | RC_R(6),
+		RC_INT | RC_R(7),
+		RC_FLOAT | RC_F(0),
+		RC_FLOAT | RC_F(1),
+		RC_FLOAT | RC_F(2),
+		RC_FLOAT | RC_F(3),
+		RC_FLOAT | RC_F(4),
+		RC_FLOAT | RC_F(5),
+		RC_FLOAT | RC_F(6),
+		RC_FLOAT | RC_F(7),
+		0,
+		1 << TREG_RA,
+		1 << TREG_SP};
 
 #if defined(CONFIG_MCC_BCHECK)
 #define func_bound_offset (mcc_state->cg_func_bound_offset)
@@ -117,23 +117,23 @@ ST_FUNC void o(unsigned int c) {
 }
 
 static void EIu(uint32_t opcode, uint32_t func3,
-				uint32_t rd, uint32_t rs1, uint32_t imm) {
+								uint32_t rd, uint32_t rs1, uint32_t imm) {
 	o(opcode | (func3 << 12) | (rd << 7) | (rs1 << 15) | (imm << 20));
 }
 
 static void ER(uint32_t opcode, uint32_t func3,
-			   uint32_t rd, uint32_t rs1, uint32_t rs2, uint32_t func7) {
+							 uint32_t rd, uint32_t rs1, uint32_t rs2, uint32_t func7) {
 	o(opcode | func3 << 12 | rd << 7 | rs1 << 15 | rs2 << 20 | func7 << 25);
 }
 
 static void EI(uint32_t opcode, uint32_t func3,
-			   uint32_t rd, uint32_t rs1, uint32_t imm) {
+							 uint32_t rd, uint32_t rs1, uint32_t imm) {
 	assert(!LOW_OVERFLOW(imm));
 	EIu(opcode, func3, rd, rs1, imm);
 }
 
 static void ES(uint32_t opcode, uint32_t func3,
-			   uint32_t rs1, uint32_t rs2, uint32_t imm) {
+							 uint32_t rs1, uint32_t rs2, uint32_t imm) {
 	assert(!LOW_OVERFLOW(imm));
 	o(opcode | (func3 << 12) | ((imm & 0x1f) << 7) | (rs1 << 15) | (rs2 << 20) | ((imm >> 5) << 25));
 }
@@ -162,10 +162,10 @@ static int load_symofs(int r, SValue *sv, int forstore, int *new_fc) {
 		if (sv->sym->type.t & VT_TLS) {
 			rr = is_ireg(r) ? ireg(r) : 5;
 			greloca(cur_text_section, sv->sym, ind,
-					R_RISCV_TPREL_HI20, sv->c.i);
+							R_RISCV_TPREL_HI20, sv->c.i);
 			o(0x37 | (rr << 7));
 			greloca(cur_text_section, sv->sym, ind,
-					R_RISCV_TPREL_LO12_I, sv->c.i);
+							R_RISCV_TPREL_LO12_I, sv->c.i);
 			EI(0x13, 0, rr, rr, 0);
 			ER(0x33, 0, rr, rr, 4, 0);
 			*new_fc = 0;
@@ -173,14 +173,14 @@ static int load_symofs(int r, SValue *sv, int forstore, int *new_fc) {
 		}
 		if (sv->sym->type.t & VT_STATIC) {
 			greloca(cur_text_section, sv->sym, ind,
-					R_RISCV_PCREL_HI20, sv->c.i);
+							R_RISCV_PCREL_HI20, sv->c.i);
 			*new_fc = 0;
 		} else {
 			if (LOW_OVERFLOW(fc)) {
 				large_addend = 1;
 			}
 			greloca(cur_text_section, sv->sym, ind,
-					R_RISCV_GOT_HI20, 0);
+							R_RISCV_GOT_HI20, 0);
 			doload = 1;
 		}
 		label.type.t = VT_VOID | VT_STATIC;
@@ -189,10 +189,10 @@ static int load_symofs(int r, SValue *sv, int forstore, int *new_fc) {
 		rr = is_ireg(r) ? ireg(r) : 5;
 		o(0x17 | (rr << 7));
 		greloca(cur_text_section, &label, ind,
-				doload || !forstore
-					? R_RISCV_PCREL_LO12_I
-					: R_RISCV_PCREL_LO12_S,
-				0);
+						doload || !forstore
+								? R_RISCV_PCREL_LO12_I
+								: R_RISCV_PCREL_LO12_S,
+						0);
 		if (doload) {
 			EI(0x03, 3, rr, rr, 0);
 			if (large_addend) {
@@ -241,9 +241,13 @@ ST_FUNC void load(int r, SValue *sv) {
 		assert(!is_freg(r) || bt == VT_FLOAT || bt == VT_DOUBLE);
 		if (bt == VT_PTR || bt == VT_FUNC)
 			size = PTR_SIZE;
-		func3 = size == 1 ? 0 : size == 2 ? 1
-							: size == 4	  ? 2
-										  : 3;
+		func3 = size == 1
+								? 0
+						: size == 2
+								? 1
+						: size == 4
+								? 2
+								: 3;
 		if (size < 4 && !is_float(sv->type.t) && (sv->type.t & VT_UNSIGNED))
 			func3 |= 4;
 		if (v == VT_LOCAL || (fr & VT_SYM)) {
@@ -414,18 +418,22 @@ ST_FUNC void store(int r, SValue *sv) {
 	} else
 		mcc_error("implement me: %s(!local)", __FUNCTION__);
 	ES(is_freg(r) ? 0x27 : 0x23,
-	   size == 1 ? 0 : size == 2 ? 1
-				   : size == 4	 ? 2
-								 : 3,
-	   ptrreg, rr, fc);
+		 size == 1
+				 ? 0
+		 : size == 2
+				 ? 1
+		 : size == 4
+				 ? 2
+				 : 3,
+		 ptrreg, rr, fc);
 }
 
 static void gcall_or_jmp(int docall) {
 	int tr = docall ? 1 : 5;
 	if ((vtop->r & (VT_VALMASK | VT_LVAL)) == VT_CONST &&
-		((vtop->r & VT_SYM) && vtop->c.i == (int)vtop->c.i)) {
+			((vtop->r & VT_SYM) && vtop->c.i == (int)vtop->c.i)) {
 		greloca(cur_text_section, vtop->sym, ind,
-				R_RISCV_CALL_PLT, (int)vtop->c.i);
+						R_RISCV_CALL_PLT, (int)vtop->c.i);
 		o(0x17 | (tr << 7));
 		EI(0x67, 0, tr, tr, 0);
 	} else if (vtop->r < VT_CONST) {
@@ -533,12 +541,20 @@ static void reg_pass(CType *type, int *prc, int *fieldofs, int named) {
 		int align, size = type_size(type, &align);
 		prc[0] = (size + 7) >> 3;
 		prc[1] = prc[2] = RC_INT;
-		fieldofs[1] = (0 << 4) | (size <= 1 ? VT_BYTE : size <= 2 ? VT_SHORT
-													: size <= 4	  ? VT_INT
-																  : VT_LLONG);
-		fieldofs[2] = (8 << 4) | (size <= 9 ? VT_BYTE : size <= 10 ? VT_SHORT
-													: size <= 12   ? VT_INT
-																   : VT_LLONG);
+		fieldofs[1] = (0 << 4) | (size <= 1
+																	? VT_BYTE
+															: size <= 2
+																	? VT_SHORT
+															: size <= 4
+																	? VT_INT
+																	: VT_LLONG);
+		fieldofs[2] = (8 << 4) | (size <= 9
+																	? VT_BYTE
+															: size <= 10
+																	? VT_SHORT
+															: size <= 12
+																	? VT_INT
+																	: VT_LLONG);
 	}
 }
 
@@ -822,7 +838,7 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) {
 }
 
 ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret,
-					   int *ret_align, int *regsize) {
+											 int *ret_align, int *regsize) {
 	int align, size = type_size(vt, &align), nregs;
 	int prc[3], fieldofs[3];
 	*ret_align = 1;
@@ -1340,7 +1356,9 @@ ST_FUNC void gen_cvt_ftof(int dt) {
 	if (st == dt)
 		return;
 	if (dt == VT_LDOUBLE || st == VT_LDOUBLE) {
-		int func = (dt == VT_LDOUBLE) ? (st == VT_FLOAT ? TOK___extendsftf2 : TOK___extenddftf2) : (dt == VT_FLOAT ? TOK___trunctfsf2 : TOK___trunctfdf2);
+		int func = (dt == VT_LDOUBLE)
+									 ? (st == VT_FLOAT ? TOK___extendsftf2 : TOK___extenddftf2)
+									 : (dt == VT_FLOAT ? TOK___trunctfsf2 : TOK___trunctfdf2);
 		save_regs(1);
 		if (dt == VT_LDOUBLE)
 			gv(RC_F(0));

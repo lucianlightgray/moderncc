@@ -2,8 +2,7 @@
 
 #if defined(__x86_64__) || defined(__i386__)
 
-int fesetround(int __round)
-{
+int fesetround(int __round) {
 	unsigned short __cw;
 	unsigned int __mxcsr;
 
@@ -18,8 +17,7 @@ int fesetround(int __round)
 	return 0;
 }
 
-int fegetround(void)
-{
+int fegetround(void) {
 	unsigned int __mxcsr;
 
 	__asm__ __volatile__("stmxcsr %0" : "=m"(__mxcsr));
@@ -28,8 +26,7 @@ int fegetround(void)
 
 #elif defined(__aarch64__)
 
-int fesetround(int __round)
-{
+int fesetround(int __round) {
 	unsigned long __fpcr;
 	unsigned __rm;
 	static const unsigned char __fe_to_fpcr[4] = {0, 2, 1, 3};
@@ -43,8 +40,7 @@ int fesetround(int __round)
 	return 0;
 }
 
-int fegetround(void)
-{
+int fegetround(void) {
 	unsigned long __fpcr;
 	static const int __fpcr_to_fe[4] = {0x000, 0x800, 0x400, 0xc00};
 
@@ -54,7 +50,11 @@ int fegetround(void)
 
 #else
 
-int fesetround(int __round) { return __round == 0 ? 0 : -1; }
-int fegetround(void) { return 0; }
+int fesetround(int __round) {
+	return __round == 0 ? 0 : -1;
+}
+int fegetround(void) {
+	return 0;
+}
 
 #endif

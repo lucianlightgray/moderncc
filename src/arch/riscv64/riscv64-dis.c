@@ -3,15 +3,15 @@
 #ifdef MCC_TARGET_RISCV64
 
 static const char *const xrn[32] = {
-	"zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2",
-	"s0", "s1", "a0", "a1", "a2", "a3", "a4", "a5",
-	"a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7",
-	"s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6"};
+		"zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2",
+		"s0", "s1", "a0", "a1", "a2", "a3", "a4", "a5",
+		"a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7",
+		"s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6"};
 static const char *const frn[32] = {
-	"ft0", "ft1", "ft2", "ft3", "ft4", "ft5", "ft6", "ft7",
-	"fs0", "fs1", "fa0", "fa1", "fa2", "fa3", "fa4", "fa5",
-	"fa6", "fa7", "fs2", "fs3", "fs4", "fs5", "fs6", "fs7",
-	"fs8", "fs9", "fs10", "fs11", "ft8", "ft9", "ft10", "ft11"};
+		"ft0", "ft1", "ft2", "ft3", "ft4", "ft5", "ft6", "ft7",
+		"fs0", "fs1", "fa0", "fa1", "fa2", "fa3", "fa4", "fa5",
+		"fa6", "fa7", "fs2", "fs3", "fs4", "fs5", "fs6", "fs7",
+		"fs8", "fs9", "fs10", "fs11", "ft8", "ft9", "ft10", "ft11"};
 
 static void P(disasm_ctx *dc, const char *fmt, ...) {
 	va_list ap;
@@ -48,8 +48,8 @@ static int plain_sym(const char *s) {
 
 static const char *sym_esc(const char *s) {
 	static const char *const csr[] = {
-		"cycle", "fcsr", "fflags", "frm", "instret", "time",
-		"cycleh", "instreth", "timeh", "pc", NULL};
+			"cycle", "fcsr", "fflags", "frm", "instret", "time",
+			"cycleh", "instreth", "timeh", "pc", NULL};
 	int i;
 	if ((s[0] == 'x' || s[0] == 'f') && s[1] >= '0' && s[1] <= '9')
 		return "0+";
@@ -116,22 +116,20 @@ static int dis_auipc(disasm_ctx *dc, uint32_t w) {
 		rel = relbuf;
 	}
 	lo = dc->pc + 4 < dc->size
-			 ? disasm_reloc(dc, dc->pc + 4, 4, &lotype)
-			 : NULL;
+					 ? disasm_reloc(dc, dc->pc + 4, 4, &lotype)
+					 : NULL;
 
 	if (!rel) {
 		P(dc, "auipc\t%s, 0x%x", xrn[rd], (w >> 12) & 0xfffff);
 		return 4;
 	}
 	if (rtype == R_RISCV_CALL || rtype == R_RISCV_CALL_PLT) {
-
 		ElfW(Sym) *s = reloc_sym_at(dc, dc->pc, rtype);
 		if (plain_sym(rel)) {
 			if (defined_before(dc, s, dc->pc) && ELFW(ST_BIND)(s->st_info) != STB_LOCAL) {
-
 				P(dc, ".set\t.Lcs%llx, %s%s\n\tauipc\t%s, .Lcs%llx",
-				  (unsigned long long)dc->pc, sym_esc(rel), rel, xrn[rd],
-				  (unsigned long long)dc->pc);
+					(unsigned long long)dc->pc, sym_esc(rel), rel, xrn[rd],
+					(unsigned long long)dc->pc);
 			} else {
 				P(dc, "auipc\t%s, %s%s", xrn[rd], sym_esc(rel), rel);
 			}
@@ -140,7 +138,6 @@ static int dis_auipc(disasm_ctx *dc, uint32_t w) {
 		return raw32(dc, w);
 	}
 	if (rtype == R_RISCV_GOT_HI20 && plain_sym(rel) && lo && lotype == R_RISCV_PCREL_LO12_I && !defined_before(dc, reloc_sym_at(dc, dc->pc, rtype), dc->pc)) {
-
 		P(dc, ".globl\t%s\n\tauipc\t%s, %s%s", rel, xrn[rd], sym_esc(rel), rel);
 		return 4;
 	}
@@ -149,11 +146,10 @@ static int dis_auipc(disasm_ctx *dc, uint32_t w) {
 		return 4;
 	}
 	if (rtype == R_RISCV_PCREL_HI20 || rtype == R_RISCV_GOT_HI20) {
-
 		P(dc, ".Lpc%llx:\n\tauipc\t%s, %s(%s%s)",
-		  (unsigned long long)dc->pc, xrn[rd],
-		  rtype == R_RISCV_GOT_HI20 ? "%got_pcrel_hi" : "%pcrel_hi",
-		  sym_esc(rel), rel);
+			(unsigned long long)dc->pc, xrn[rd],
+			rtype == R_RISCV_GOT_HI20 ? "%got_pcrel_hi" : "%pcrel_hi",
+			sym_esc(rel), rel);
 		return 4;
 	}
 
@@ -176,7 +172,7 @@ static int dis_op_fp(disasm_ctx *dc, uint32_t w) {
 		if (rm != 7)
 			break;
 		P(dc, "%s.%c\t%s, %s, %s", nm[(f7 >> 2) & 3], fc,
-		  frn[rd], frn[rs1], frn[rs2]);
+			frn[rd], frn[rs1], frn[rs2]);
 		return 4;
 	}
 	case 0x10:
@@ -195,12 +191,11 @@ static int dis_op_fp(disasm_ctx *dc, uint32_t w) {
 		if (rm > 1)
 			break;
 		P(dc, "%s.%c\t%s, %s, %s", rm ? "fmax" : "fmin", fc,
-		  frn[rd], frn[rs1], frn[rs2]);
+			frn[rd], frn[rs1], frn[rs2]);
 		return 4;
 	case 0x20: {
-
 		static const char *const rmn[5] =
-			{"rne", "rtz", "rdn", "rup", "rmm"};
+				{"rne", "rtz", "rdn", "rup", "rmm"};
 		const char *nm;
 		if (f7 == 0x20 && rs2 == 1)
 			nm = "fcvt.s.d";
@@ -226,14 +221,14 @@ static int dis_op_fp(disasm_ctx *dc, uint32_t w) {
 		if (rm > 2)
 			break;
 		P(dc, "%s.%c\t%s, %s, %s", nm[rm], fc,
-		  xrn[rd], frn[rs1], frn[rs2]);
+			xrn[rd], frn[rs1], frn[rs2]);
 		return 4;
 	}
 	case 0x60:
 		if (rs2 > 3 || (rm != 1 && rm != 7))
 			break;
 		P(dc, "fcvt.%s.%c\t%s, %s%s", cvt[rs2], fc, xrn[rd], frn[rs1],
-		  rm == 1 ? ", rtz" : "");
+			rm == 1 ? ", rtz" : "");
 		return 4;
 	case 0x68:
 		if (rs2 > 3 || rm != 7)
@@ -247,14 +242,14 @@ static int dis_op_fp(disasm_ctx *dc, uint32_t w) {
 		}
 		if (rm == 0 && rs2 == 0) {
 			P(dc, "fmv.x.%c\t%s, %s", (f7 & 1) ? 'd' : 'w',
-			  xrn[rd], frn[rs1]);
+				xrn[rd], frn[rs1]);
 			return 4;
 		}
 		break;
 	case 0x78:
 		if (rm == 0 && rs2 == 0) {
 			P(dc, "fmv.%c.x\t%s, %s", (f7 & 1) ? 'd' : 'w',
-			  frn[rd], xrn[rs1]);
+				frn[rd], xrn[rs1]);
 			return 4;
 		}
 		break;
@@ -274,7 +269,6 @@ static int dis_insn(disasm_ctx *dc) {
 	}
 	w = read16le(dc->data + pc);
 	if ((w & 3) != 3 || pc + 4 > dc->size) {
-
 		P(dc, ".short\t0x%04x", w);
 		return 2;
 	}
@@ -316,9 +310,8 @@ static int dis_insn(disasm_ctx *dc) {
 		return 4;
 
 	case 0x63: {
-
 		static const char *const nm[8] =
-			{"beq", "bne", 0, 0, "blt", "bge", "bltu", "bgeu"};
+				{"beq", "bne", 0, 0, "blt", "bge", "bltu", "bgeu"};
 		int32_t off = imm_b(w);
 		if (!nm[f3] || disasm_reloc(dc, pc, 4, &rtype))
 			return raw32(dc, w);
@@ -329,7 +322,7 @@ static int dis_insn(disasm_ctx *dc) {
 
 	case 0x03: {
 		static const char *const nm[8] =
-			{"lb", "lh", "lw", "ld", "lbu", "lhu", "lwu", 0};
+				{"lb", "lh", "lw", "ld", "lbu", "lhu", "lwu", 0};
 
 		rel = disasm_reloc(dc, pc, 4, &rtype);
 		if (!nm[f3] || (rel && rtype != R_RISCV_PCREL_LO12_I))
@@ -338,7 +331,7 @@ static int dis_insn(disasm_ctx *dc) {
 			addr_t A = pcrel_lo_target(dc, pc, rtype);
 			if (auipc_spelling(dc, A) == 2) {
 				P(dc, "%s\t%s, %%pcrel_lo(.Lpc%llx)(%s)", nm[f3], xrn[rd],
-				  (unsigned long long)A, xrn[rs1]);
+					(unsigned long long)A, xrn[rs1]);
 				return 4;
 			}
 		}
@@ -355,7 +348,7 @@ static int dis_insn(disasm_ctx *dc) {
 			addr_t A = pcrel_lo_target(dc, pc, rtype);
 			if (auipc_spelling(dc, A) == 2) {
 				P(dc, "%s\t%s, %%pcrel_lo(.Lpc%llx)(%s)", nm[f3], xrn[rs2],
-				  (unsigned long long)A, xrn[rs1]);
+					(unsigned long long)A, xrn[rs1]);
 				return 4;
 			}
 		}
@@ -371,13 +364,13 @@ static int dis_insn(disasm_ctx *dc) {
 			addr_t A = pcrel_lo_target(dc, pc, rtype);
 			if (auipc_spelling(dc, A) == 2) {
 				P(dc, "%s\t%s, %%pcrel_lo(.Lpc%llx)(%s)",
-				  f3 == 3 ? "fld" : "flw", frn[rd],
-				  (unsigned long long)A, xrn[rs1]);
+					f3 == 3 ? "fld" : "flw", frn[rd],
+					(unsigned long long)A, xrn[rs1]);
 				return 4;
 			}
 		}
 		P(dc, "%s\t%s, %d(%s)", f3 == 3 ? "fld" : "flw", frn[rd],
-		  imm_i(w), xrn[rs1]);
+			imm_i(w), xrn[rs1]);
 		return 4;
 
 	case 0x27:
@@ -388,18 +381,18 @@ static int dis_insn(disasm_ctx *dc) {
 			addr_t A = pcrel_lo_target(dc, pc, rtype);
 			if (auipc_spelling(dc, A) == 2) {
 				P(dc, "%s\t%s, %%pcrel_lo(.Lpc%llx)(%s)",
-				  f3 == 3 ? "fsd" : "fsw", frn[rs2],
-				  (unsigned long long)A, xrn[rs1]);
+					f3 == 3 ? "fsd" : "fsw", frn[rs2],
+					(unsigned long long)A, xrn[rs1]);
 				return 4;
 			}
 		}
 		P(dc, "%s\t%s, %d(%s)", f3 == 3 ? "fsd" : "fsw", frn[rs2],
-		  imm_s(w), xrn[rs1]);
+			imm_s(w), xrn[rs1]);
 		return 4;
 
 	case 0x13: {
 		static const char *const nm[8] =
-			{"addi", 0, "slti", "sltiu", "xori", 0, "ori", "andi"};
+				{"addi", 0, "slti", "sltiu", "xori", 0, "ori", "andi"};
 		int32_t imm = imm_i(w);
 		rel = disasm_reloc(dc, pc, 4, &rtype);
 		if (rel && rtype != R_RISCV_PCREL_LO12_I && rtype != R_RISCV_TPREL_LO12_I)
@@ -420,7 +413,7 @@ static int dis_insn(disasm_ctx *dc) {
 			addr_t A = pcrel_lo_target(dc, pc, rtype);
 			if (auipc_spelling(dc, A) == 2) {
 				P(dc, "addi\t%s, %s, %%pcrel_lo(.Lpc%llx)", xrn[rd],
-				  xrn[rs1], (unsigned long long)A);
+					xrn[rs1], (unsigned long long)A);
 				return 4;
 			}
 		}
@@ -451,9 +444,9 @@ static int dis_insn(disasm_ctx *dc) {
 	case 0x33:
 	case 0x3b: {
 		static const char *const base[8] =
-			{"add", "sll", "slt", "sltu", "xor", "srl", "or", "and"};
+				{"add", "sll", "slt", "sltu", "xor", "srl", "or", "and"};
 		static const char *const muldiv[8] =
-			{"mul", "mulh", "mulhsu", "mulhu", "div", "divu", "rem", "remu"};
+				{"mul", "mulh", "mulhsu", "mulhu", "div", "divu", "rem", "remu"};
 		int w32 = (w & 0x7f) == 0x3b;
 		int f7 = w >> 25;
 		const char *nm = NULL;
@@ -468,8 +461,9 @@ static int dis_insn(disasm_ctx *dc) {
 		if (!nm)
 			return raw32(dc, w);
 		if (w32) {
-
-			if (strcmp(nm, "add") && strcmp(nm, "sub") && strcmp(nm, "sll") && strcmp(nm, "srl") && strcmp(nm, "sra") && strcmp(nm, "mul") && strcmp(nm, "div") && strcmp(nm, "divu") && strcmp(nm, "rem") && strcmp(nm, "remu"))
+			if (strcmp(nm, "add") && strcmp(nm, "sub") && strcmp(nm, "sll") && strcmp(nm, "srl") &&
+					strcmp(nm, "sra") && strcmp(nm, "mul") && strcmp(nm, "div") && strcmp(nm, "divu") &&
+					strcmp(nm, "rem") && strcmp(nm, "remu"))
 				return raw32(dc, w);
 			P(dc, "%sw\t%s, %s, %s", nm, xrn[rd], xrn[rs1], xrn[rs2]);
 		} else {
@@ -518,7 +512,6 @@ ST_FUNC int mcc_disasm_reloc_size(int type) {
 }
 
 ST_FUNC int mcc_disasm_reloc_addend_bias(int type, int size) {
-
 	(void)type;
 	(void)size;
 	return 0;

@@ -10,7 +10,6 @@ void CenterWindow(HWND hWnd);
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
 	switch (message) {
-
 	case WM_CREATE:
 		CenterWindow(hwnd);
 		break;
@@ -50,10 +49,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
 }
 
 int APIENTRY WinMain(
-	HINSTANCE hInstance,
-	HINSTANCE hPrevInstance,
-	LPSTR lpCmdLine,
-	int nCmdShow) {
+		HINSTANCE hInstance,
+		HINSTANCE hPrevInstance,
+		LPSTR lpCmdLine,
+		int nCmdShow) {
 	MSG msg;
 	WNDCLASS wc;
 	HWND hwnd;
@@ -73,17 +72,17 @@ int APIENTRY WinMain(
 		return 0;
 
 	hwnd = CreateWindow(
-		szAppName,
-		szTitle,
-		WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-		CW_USEDEFAULT,
-		CW_USEDEFAULT,
-		360,
-		240,
-		0,
-		0,
-		hInstance,
-		0);
+			szAppName,
+			szTitle,
+			WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+			CW_USEDEFAULT,
+			CW_USEDEFAULT,
+			360,
+			240,
+			0,
+			0,
+			hInstance,
+			0);
 
 	if (NULL == hwnd)
 		return 0;
@@ -113,7 +112,7 @@ void CenterWindow(HWND hwnd_self) {
 	ypos = rw_parent.top + (rc_parent.bottom + rw_self.top - rw_self.bottom) / 2;
 
 	SetWindowPos(
-		hwnd_self, NULL,
-		xpos, ypos, 0, 0,
-		SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+			hwnd_self, NULL,
+			xpos, ypos, 0, 0,
+			SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 }

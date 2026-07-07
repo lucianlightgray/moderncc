@@ -125,13 +125,13 @@ int main(int argc, char **argv) {
 			drift = 1;
 		} else if (typed[i] && !typeok[i]) {
 			printf("DRIFT: node %s type does not match BUILD.md (expected %s)\n",
-				   names[i], types[i]);
+						 names[i], types[i]);
 			drift = 1;
 		}
 	}
 	if (drift) {
 		printf("BUILD.md node tables have drifted from the mcc_config_node() "
-			   "source of truth; update docs/BUILD.md.\n");
+					 "source of truth; update docs/BUILD.md.\n");
 		return 1;
 	}
 	printf("BUILD.md node tables in sync (%d nodes).\n", nn);

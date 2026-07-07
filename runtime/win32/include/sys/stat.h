@@ -12,6 +12,7 @@
 
 #ifdef __cplusplus
 extern "C" {
+
 #endif
 
 #ifndef _CRTIMP
@@ -171,12 +172,15 @@ struct _stat64 {
 #define _S_IEXEC 0x0040
 
 _CRTIMP int __cdecl _fstat32(int _FileDes, struct _stat32 *_Stat);
-_CRTIMP int __cdecl _stat32(const char *_Name, struct _stat32 *_Stat);
+_CRTIMP
+int __cdecl _stat32(const char *_Name, struct _stat32 *_Stat);
 #if _INTEGRAL_MAX_BITS >= 64
 _CRTIMP int __cdecl _fstat64(int _FileDes, struct _stat64 *_Stat);
-_CRTIMP int __cdecl _fstat32i64(int _FileDes, struct _stat32i64 *_Stat);
+_CRTIMP
+int __cdecl _fstat32i64(int _FileDes, struct _stat32i64 *_Stat);
 int __cdecl _fstat64i32(int _FileDes, struct _stat64i32 *_Stat);
-__CRT_INLINE int __cdecl _fstat64i32(int _FileDes, struct _stat64i32 *_Stat) {
+__CRT_INLINE
+int __cdecl _fstat64i32(int _FileDes, struct _stat64i32 *_Stat) {
 	struct _stat64 st;
 	int ret = _fstat64(_FileDes, &st);
 	_Stat->st_dev = st.st_dev;
@@ -193,9 +197,11 @@ __CRT_INLINE int __cdecl _fstat64i32(int _FileDes, struct _stat64i32 *_Stat) {
 	return ret;
 }
 _CRTIMP int __cdecl _stat64(const char *_Name, struct _stat64 *_Stat);
-_CRTIMP int __cdecl _stat32i64(const char *_Name, struct _stat32i64 *_Stat);
+_CRTIMP
+int __cdecl _stat32i64(const char *_Name, struct _stat32i64 *_Stat);
 int __cdecl _stat64i32(const char *_Name, struct _stat64i32 *_Stat);
-__CRT_INLINE int __cdecl _stat64i32(const char *_Name, struct _stat64i32 *_Stat) {
+__CRT_INLINE
+int __cdecl _stat64i32(const char *_Name, struct _stat64i32 *_Stat) {
 	struct _stat64 st;
 	int ret = _stat64(_Name, &st);
 	_Stat->st_dev = st.st_dev;
@@ -215,11 +221,13 @@ __CRT_INLINE int __cdecl _stat64i32(const char *_Name, struct _stat64i32 *_Stat)
 
 #ifndef _WSTAT_DEFINED
 #define _WSTAT_DEFINED
-_CRTIMP int __cdecl _wstat32(const wchar_t *_Name, struct _stat32 *_Stat);
+_CRTIMP
+int __cdecl _wstat32(const wchar_t *_Name, struct _stat32 *_Stat);
 #if _INTEGRAL_MAX_BITS >= 64
 _CRTIMP int __cdecl _wstat32i64(const wchar_t *_Name, struct _stat32i64 *_Stat);
 int __cdecl _wstat64i32(const wchar_t *_Name, struct _stat64i32 *_Stat);
-_CRTIMP int __cdecl _wstat64(const wchar_t *_Name, struct _stat64 *_Stat);
+_CRTIMP
+int __cdecl _wstat64(const wchar_t *_Name, struct _stat64 *_Stat);
 #endif
 #endif
 
@@ -259,10 +267,14 @@ int __cdecl stat(const char *_Filename, struct stat *_Stat);
 int __cdecl fstat(int _Desc, struct stat *_Stat);
 int __cdecl wstat(const wchar_t *_Filename, struct stat *_Stat);
 #ifdef _USE_32BIT_TIME_T
-__CRT_INLINE int __cdecl fstat(int _Desc, struct stat *_Stat) {
+__CRT_INLINE
+int __cdecl fstat(int _Desc, struct stat *_Stat) {
 	return _fstat32(_Desc, (struct _stat32 *)_Stat);
 }
-__CRT_INLINE int __cdecl stat(const char *_Filename, struct stat *_Stat) {
+
+__CRT_INLINE
+
+int __cdecl stat(const char *_Filename, struct stat *_Stat) {
 	return _stat32(_Filename, (struct _stat32 *)_Stat);
 }
 #else

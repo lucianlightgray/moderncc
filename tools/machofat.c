@@ -63,8 +63,9 @@ static unsigned char *read_file(const char *path, uint32_t *len) {
 }
 
 static void wr_be32(FILE *f, uint32_t v) {
-	unsigned char b[4] = {(unsigned char)(v >> 24), (unsigned char)(v >> 16),
-						  (unsigned char)(v >> 8), (unsigned char)v};
+	unsigned char b[4] = {
+			(unsigned char)(v >> 24), (unsigned char)(v >> 16),
+			(unsigned char)(v >> 8), (unsigned char)v};
 	fwrite(b, 1, 4, f);
 }
 
@@ -104,7 +105,7 @@ int main(int argc, char **argv) {
 			swap = 1;
 		else {
 			fprintf(stderr, "machofat: '%s' is not a thin Mach-O (bad magic 0x%08x)\n",
-					path, magic);
+							path, magic);
 			goto done;
 		}
 		memcpy(&ct, d + 4, 4);
@@ -171,9 +172,9 @@ int main(int argc, char **argv) {
 				int cs = WEXITSTATUS(st);
 				if (cs != 0 && cs != 127)
 					fprintf(stderr,
-						"machofat: warning: codesign failed (exit %d); '%s' "
-						"may be rejected by AMFI on Apple silicon\n",
-						cs, argv[1]);
+									"machofat: warning: codesign failed (exit %d); '%s' "
+									"may be rejected by AMFI on Apple silicon\n",
+									cs, argv[1]);
 			}
 		}
 	}

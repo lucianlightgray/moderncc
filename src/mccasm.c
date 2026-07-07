@@ -14,9 +14,9 @@ static Sym *asm_new_label1(MCCState *s1, int label, int is_local, int sh_num, in
 ST_FUNC int mcc_cfi_uleb(unsigned char *p, unsigned long long value);
 ST_FUNC int mcc_cfi_advance(unsigned char *p, unsigned long delta);
 ST_FUNC void mcc_eh_frame_fde(MCCState *s1, Section *code_sec,
-							  unsigned long func_start,
-							  unsigned long func_size,
-							  const unsigned char *ops, int nops);
+															unsigned long func_start,
+															unsigned long func_size,
+															const unsigned char *ops, int nops);
 #endif
 
 #if PTR_SIZE == 8
@@ -198,7 +198,7 @@ static void asm_expr_prod(MCCState *s1, ExprValue *pe) {
 	for (;;) {
 		op = tok;
 		if (op != '*' && op != '/' && op != '%' &&
-			op != TOK_SHL && op != TOK_SAR)
+				op != TOK_SHL && op != TOK_SAR)
 			break;
 		next();
 		asm_expr_unary(s1, &e2);
@@ -357,7 +357,7 @@ ST_FUNC int asm_int_expr(MCCState *s1) {
 }
 
 static Sym *asm_new_label1(MCCState *s1, int label, int is_local,
-						   int sh_num, int value) {
+													 int sh_num, int value) {
 	Sym *sym;
 	ElfSym *esym;
 
@@ -369,7 +369,7 @@ static Sym *asm_new_label1(MCCState *s1, int label, int is_local,
 				goto new_label;
 			if (!(sym->type.t & VT_EXTERN))
 				mcc_error("assembler label '%s' already defined",
-						  get_tok_str(label, NULL));
+									get_tok_str(label, NULL));
 		}
 	} else {
 	new_label:
@@ -607,7 +607,7 @@ static void asm_parse_directive(MCCState *s1, int global) {
 		begin_macro(init_str, 1);
 		while (repeat-- > 0) {
 			mcc_assemble_internal(s1, (parse_flags & PARSE_FLAG_PREPROCESS),
-								  global);
+														global);
 			macro_ptr = init_str->str;
 		}
 		end_macro();
@@ -787,7 +787,7 @@ static void asm_parse_directive(MCCState *s1, int global) {
 			goto set_st_type;
 		} else
 			mcc_warning_c(warn_unsupported)("change type of '%s' from 0x%x to '%s' ignored",
-											get_tok_str(sym->v, NULL), sym->type.t, newtype);
+																			get_tok_str(sym->v, NULL), sym->type.t, newtype);
 
 		next();
 	} break;
@@ -1003,7 +1003,6 @@ static void asm_parse_cfi_directive(MCCState *s1) {
 	pstrcpy(dir, sizeof(dir), get_tok_str(tok, NULL) + 5);
 	next();
 	if (!eh_frame_section) {
-
 		while (tok != ';' && tok != TOK_LINEFEED && tok != TOK_EOF)
 			next();
 		return;
@@ -1026,7 +1025,7 @@ static void asm_parse_cfi_directive(MCCState *s1) {
 		if (cur_text_section != asm_cfi.sec)
 			mcc_error(".cfi_endproc outside its function's section");
 		mcc_eh_frame_fde(s1, asm_cfi.sec, asm_cfi.start, ind - asm_cfi.start,
-						 asm_cfi.buf, asm_cfi.len);
+										 asm_cfi.buf, asm_cfi.len);
 		asm_cfi.nfde++;
 		asm_cfi.active = 0;
 		return;
@@ -1087,7 +1086,6 @@ static void asm_parse_cfi_directive(MCCState *s1) {
 			asm_cfi.len += mcc_cfi_uleb(asm_cfi.buf + asm_cfi.len, a);
 		}
 	} else {
-
 		mcc_warning_c(warn_unsupported)("ignoring .cfi_%s", dir);
 		while (tok != ';' && tok != TOK_LINEFEED && tok != TOK_EOF)
 			next();
@@ -1115,7 +1113,7 @@ static int mcc_assemble_internal(MCCState *s1, int do_preprocess, int global) {
 				next();
 		} else
 #endif
-			if (tok >= TOK_ASMDIR_FIRST && tok <= TOK_ASMDIR_LAST) {
+				if (tok >= TOK_ASMDIR_FIRST && tok <= TOK_ASMDIR_LAST) {
 			asm_parse_directive(s1, global);
 		} else if (tok == TOK_PPNUM) {
 			const char *p;
@@ -1210,7 +1208,7 @@ ST_FUNC const char *skip_constraint_modifiers(const char *p) {
 }
 
 ST_FUNC int find_constraint(ASMOperand *operands, int nb_operands,
-							const char *name, const char **pp) {
+														const char *name, const char **pp) {
 	int index;
 	TokenSym *ts;
 	const char *p;
@@ -1247,7 +1245,7 @@ ST_FUNC int find_constraint(ASMOperand *operands, int nb_operands,
 }
 
 static void subst_asm_operands(ASMOperand *operands, int nb_operands,
-							   CString *out_str, const char *str) {
+															 CString *out_str, const char *str) {
 	int c, index, modifier;
 	ASMOperand *op;
 	SValue sv;
@@ -1261,15 +1259,15 @@ static void subst_asm_operands(ASMOperand *operands, int nb_operands,
 			}
 			modifier = 0;
 			if (*str == 'c' || *str == 'n' ||
-				*str == 'b' || *str == 'w' || *str == 'h' || *str == 'k' ||
-				*str == 'q' || *str == 'l' ||
+					*str == 'b' || *str == 'w' || *str == 'h' || *str == 'k' ||
+					*str == 'q' || *str == 'l' ||
 #ifdef MCC_TARGET_ARM64
-				*str == 'x' || *str == 's' || *str == 'd' || *str == 'Z' ||
+					*str == 'x' || *str == 's' || *str == 'd' || *str == 'Z' ||
 #endif
 #ifdef MCC_TARGET_RISCV64
-				*str == 'z' ||
+					*str == 'z' ||
 #endif
-				*str == 'P')
+					*str == 'P')
 				modifier = *str++;
 			index = find_constraint(operands, nb_operands, str, &str);
 			if (index < 0)
@@ -1299,7 +1297,7 @@ static void subst_asm_operands(ASMOperand *operands, int nb_operands,
 }
 
 static void parse_asm_operands(ASMOperand *operands, int *nb_operands_ptr,
-							   int is_output) {
+															 int is_output) {
 	ASMOperand *op;
 	int nb_operands;
 	char *astr;
@@ -1330,11 +1328,11 @@ static void parse_asm_operands(ASMOperand *operands, int *nb_operands_ptr,
 					test_lvalue();
 			} else {
 				if ((vtop->r & VT_LVAL) &&
-					((vtop->r & VT_VALMASK) == VT_LLOCAL ||
-					 (vtop->r & VT_VALMASK) < VT_CONST) &&
-					!strchr(op->constraint, 'm')
+						((vtop->r & VT_VALMASK) == VT_LLOCAL ||
+						 (vtop->r & VT_VALMASK) < VT_CONST) &&
+						!strchr(op->constraint, 'm')
 #ifdef MCC_TARGET_ARM64
-					&& !strchr(op->constraint, 'Q') && !strstr(op->constraint, "Ump")
+						&& !strchr(op->constraint, 'Q') && !strstr(op->constraint, "Ump")
 #endif
 				) {
 					gv(RC_INT);
@@ -1408,20 +1406,20 @@ ST_FUNC void asm_instr(void) {
 						if (tok < TOK_UIDENT)
 							expect("label identifier");
 						memset(operands + nb_operands + nb_labels, 0,
-							   sizeof(operands[0]));
+									 sizeof(operands[0]));
 						operands[nb_operands + nb_labels++].id = tok;
 
 						csym = label_find(tok);
 						if (!csym) {
 							csym = label_push(&global_label_stack, tok,
-											  LABEL_FORWARD);
+																LABEL_FORWARD);
 						} else {
 							if (csym->r == LABEL_DECLARED)
 								csym->r = LABEL_FORWARD;
 						}
 						next();
 						asmname = asm_get_prefix_name(mcc_state, "LG.",
-													  ++asmgoto_n);
+																					++asmgoto_n);
 						if (!csym->c)
 							put_extern_sym2(csym, SHN_UNDEF, 0, 0, 1);
 						get_asm_sym(asmname, csym);
@@ -1442,7 +1440,7 @@ ST_FUNC void asm_instr(void) {
 	save_regs(0);
 
 	asm_compute_constraints(operands, nb_operands, nb_outputs,
-							clobber_regs, &out_reg);
+													clobber_regs, &out_reg);
 
 #ifdef ASM_DEBUG
 	printf("asm: \"%s\"\n", (char *)astr.data);
@@ -1459,7 +1457,7 @@ ST_FUNC void asm_instr(void) {
 #endif
 
 	asm_gen_code(operands, nb_operands, nb_outputs, 0,
-				 clobber_regs, out_reg);
+							 clobber_regs, out_reg);
 
 	sec = cur_text_section;
 	mcc_assemble_inline(mcc_state, astr.data, astr.size - 1, 0);
@@ -1472,7 +1470,7 @@ ST_FUNC void asm_instr(void) {
 	next();
 
 	asm_gen_code(operands, nb_operands, nb_outputs, 1,
-				 clobber_regs, out_reg);
+							 clobber_regs, out_reg);
 
 	for (int i = 0; i < nb_operands; i++) {
 		vpop();

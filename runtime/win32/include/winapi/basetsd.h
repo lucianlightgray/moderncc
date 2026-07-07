@@ -13,6 +13,7 @@ typedef unsigned long POINTER_64_INT;
 
 #ifdef __cplusplus
 extern "C" {
+
 #endif
 
 typedef signed char INT8, *PINT8;
@@ -138,12 +139,15 @@ typedef unsigned long HANDLE_PTR;
 static __inline void *PtrToPtr64(const void *p) {
 	return ((void *)(ULONG_PTR)p);
 }
+
 static __inline void *Ptr64ToPtr(const void *p) {
 	return ((void *)(ULONG_PTR)p);
 }
+
 static __inline void *HandleToHandle64(const void *h) {
 	return ((void *)h);
 }
+
 static __inline void *Handle64ToHandle(const void *h) {
 	return ((void *)(ULONG_PTR)h);
 }

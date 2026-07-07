@@ -19,9 +19,11 @@ typedef long double f128_t;
 #endif
 
 typedef union {
-	struct {
+	struct
+	{
 		uint64_t x0, x1;
 	};
+
 	f128_t f;
 } u128_t;
 
@@ -47,7 +49,7 @@ static f128_t f3_infinity(int sgn) {
 
 static f128_t f3_NaN(void) {
 #if 0
-	u128_t x = {  0, 0x7fff800000000000 };
+    u128_t x = {0, 0x7fff800000000000};
 #else
 	u128_t x = {-1, 0x7fffffffffffffff};
 #endif
@@ -55,24 +57,25 @@ static f128_t f3_NaN(void) {
 }
 
 static int fp3_convert_NaN(f128_t *f, int sgn, u128_t *mnt) {
-	u128_t x = {mnt->x0,
-				mnt->x1 | 0x7fff800000000000 | (uint64_t)sgn << 63};
+	u128_t x = {
+			mnt->x0,
+			mnt->x1 | 0x7fff800000000000 | (uint64_t)sgn << 63};
 	*f = x.f;
 	return 1;
 #define fp3_convert_NaN(a, b, c) fp3_convert_NaN(a, b, &c)
 }
 
 static int fp3_detect_NaNs(f128_t *f,
-						   int a_sgn, int a_exp, u128_t *a,
-						   int b_sgn, int b_exp, u128_t *b)
+													 int a_sgn, int a_exp, u128_t *a,
+													 int b_sgn, int b_exp, u128_t *b)
 #define a (*a)
 #define b (*b)
 {
 #if 0
-	if (a_exp == 32767 && (a.x0 | a.x1 << 16) && !(a.x1 >> 47 & 1))
-		return fp3_convert_NaN(f, a_sgn, a);
-	if (b_exp == 32767 && (b.x0 | b.x1 << 16) && !(b.x1 >> 47 & 1))
-		return fp3_convert_NaN(f, b_sgn, b);
+    if (a_exp == 32767 && (a.x0 | a.x1 << 16) && !(a.x1 >> 47 & 1))
+        return fp3_convert_NaN(f, a_sgn, a);
+    if (b_exp == 32767 && (b.x0 | b.x1 << 16) && !(b.x1 >> 47 & 1))
+        return fp3_convert_NaN(f, b_sgn, b);
 #endif
 	if (a_exp == 32767 && (a.x0 | a.x1 << 16))
 		return fp3_convert_NaN(f, a_sgn, a);
@@ -249,7 +252,7 @@ f128_t __multf3(f128_t fa, f128_t fb) {
 		return fx;
 
 	if ((a_exp == 32767 && !(b.x0 | b.x1)) ||
-		(b_exp == 32767 && !(a.x0 | a.x1)))
+			(b_exp == 32767 && !(a.x0 | a.x1)))
 		return f3_NaN();
 	if (a_exp == 32767 || b_exp == 32767)
 		return f3_infinity(a_sgn ^ b_sgn);
@@ -279,7 +282,7 @@ f128_t __multf3(f128_t fa, f128_t fb) {
 		uint64_t x5 = (x4 >> 30) + a2 * b3 + a3 * b2;
 		uint64_t x6 = (x5 >> 30) + a3 * b3;
 		uint64_t y0 = (x5 << 34 | x4 << 34 >> 30 | x3 << 34 >> 60 |
-					   !!(x3 << 38 | (x2 | x1 | x0) << 34));
+									 !!(x3 << 38 | (x2 | x1 | x0) << 34));
 		uint64_t y1 = x6;
 		if (!(y1 >> 63)) {
 			y1 = y1 << 1 | y0 >> 63;
@@ -306,7 +309,7 @@ f128_t __divtf3(f128_t fa, f128_t fb) {
 		return fx;
 
 	if ((a_exp == 32767 && b_exp == 32767) ||
-		(!(a.x0 | a.x1) && !(b.x0 | b.x1)))
+			(!(a.x0 | a.x1) && !(b.x0 | b.x1)))
 		return f3_NaN();
 	if (a_exp == 32767 || !(b.x0 | b.x1))
 		return f3_infinity(a_sgn ^ b_sgn);
@@ -362,7 +365,7 @@ f128_t __extendsftf2(float f) {
 		x.x1 = aa << 32;
 	else if (a << 1 >> 24 == 255)
 		x.x1 = (0x7fff000000000000 | aa >> 31 << 63 | aa << 41 >> 16 |
-				(uint64_t)!!(a << 9) << 47);
+						(uint64_t)!!(a << 9) << 47);
 	else if (a << 1 >> 24 == 0) {
 		uint64_t adj = 0;
 		while (!(a << 1 >> 1 >> (23 - adj)))
@@ -370,7 +373,7 @@ f128_t __extendsftf2(float f) {
 		x.x1 = aa >> 31 << 63 | (16256 - adj + 1) << 48 | aa << adj << 41 >> 16;
 	} else
 		x.x1 = (aa >> 31 << 63 | ((aa >> 23 & 255) + 16256) << 48 |
-				aa << 41 >> 16);
+						aa << 41 >> 16);
 	return x.f;
 }
 
@@ -386,7 +389,7 @@ f128_t __extenddftf2(double f) {
 		x.x1 = a;
 	else if (a << 1 >> 53 == 2047)
 		x.x1 = (0x7fff000000000000 | a >> 63 << 63 | a << 12 >> 16 |
-				(uint64_t)!!(a << 12) << 47);
+						(uint64_t)!!(a << 12) << 47);
 	else if (a << 1 >> 53 == 0) {
 		uint64_t adj = 0;
 		while (!(a << 1 >> 1 >> (52 - adj)))
@@ -437,7 +440,7 @@ double __trunctfdf2(f128_t f) {
 	f3_unpack(&sgn, &exp, &mnt, f);
 	if (exp == 32767 && (mnt.x0 | mnt.x1 << 16))
 		x = (0x7ff8000000000000 | (uint64_t)sgn << 63 |
-			 mnt.x1 << 16 >> 12 | mnt.x0 >> 60);
+				 mnt.x1 << 16 >> 12 | mnt.x0 >> 60);
 	else if (exp > 17406)
 		x = 0x7ff0000000000000 | (uint64_t)sgn << 63;
 	else if (exp < 15308)
@@ -526,7 +529,7 @@ f128_t __floatsitf(int32_t a) {
 				exp -= i;
 			}
 		x.x1 = ((uint64_t)sgn << 63 | (uint64_t)exp << 48 |
-				(uint64_t)(mnt << 1) << 16);
+						(uint64_t)(mnt << 1) << 16);
 	}
 	return x.f;
 }
@@ -591,13 +594,21 @@ static int f3_cmp(f128_t fa, f128_t fb) {
 	u128_t a, b;
 	a.f = fa;
 	b.f = fb;
-	return (!(a.x0 | a.x1 << 1 | b.x0 | b.x1 << 1) ? 0 : ((a.x1 << 1 >> 49 == 0x7fff && (a.x0 | a.x1 << 16)) || (b.x1 << 1 >> 49 == 0x7fff && (b.x0 | b.x1 << 16))) ? 2
-													 : a.x1 >> 63 != b.x1 >> 63																						? (int)(b.x1 >> 63) - (int)(a.x1 >> 63)
-													 : a.x1 < b.x1																									? (int)(a.x1 >> 63 << 1) - 1
-													 : a.x1 > b.x1																									? 1 - (int)(a.x1 >> 63 << 1)
-													 : a.x0 < b.x0																									? (int)(a.x1 >> 63 << 1) - 1
-													 : b.x0 < a.x0																									? 1 - (int)(a.x1 >> 63 << 1)
-																																									: 0);
+	return (!(a.x0 | a.x1 << 1 | b.x0 | b.x1 << 1)
+							? 0
+					: ((a.x1 << 1 >> 49 == 0x7fff && (a.x0 | a.x1 << 16)) || (b.x1 << 1 >> 49 == 0x7fff && (b.x0 | b.x1 << 16)))
+							? 2
+					: a.x1 >> 63 != b.x1 >> 63
+							? (int)(b.x1 >> 63) - (int)(a.x1 >> 63)
+					: a.x1 < b.x1
+							? (int)(a.x1 >> 63 << 1) - 1
+					: a.x1 > b.x1
+							? 1 - (int)(a.x1 >> 63 << 1)
+					: a.x0 < b.x0
+							? (int)(a.x1 >> 63 << 1) - 1
+					: b.x0 < a.x0
+							? 1 - (int)(a.x1 >> 63 << 1)
+							: 0);
 }
 
 int __eqtf2(f128_t a, f128_t b) {

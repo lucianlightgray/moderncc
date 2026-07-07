@@ -57,6 +57,7 @@ void x4(void) {
 }
 
 void x5(void);
+
 void x5(void) {
 	printf(" x5");
 }

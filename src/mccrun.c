@@ -5,17 +5,21 @@
 #ifdef CONFIG_MCC_BACKTRACE
 typedef struct rt_context {
 	union {
-		struct {
+		struct
+		{
 			Stab_Sym *stab_sym;
 			Stab_Sym *stab_sym_end;
 			char *stab_str;
 		};
-		struct {
+
+		struct
+		{
 			unsigned char *dwarf_line;
 			unsigned char *dwarf_line_end;
 			unsigned char *dwarf_line_str;
 		};
 	};
+
 	ElfW(Sym) * esym_start;
 	ElfW(Sym) * esym_end;
 	char *elf_str;
@@ -38,12 +42,15 @@ typedef struct rt_frame {
 
 static MCCState *g_s1;
 HOST_SEM(rt_sem);
+
 static void rt_wait_sem(void) {
 	HOST_SEM_WAIT(&rt_sem);
 }
+
 static void rt_post_sem(void) {
 	HOST_SEM_POST(&rt_sem);
 }
+
 static int rt_get_caller_pc(addr_t *paddr, rt_frame *f, int level);
 static void rt_exit(rt_frame *f, int code);
 
@@ -170,7 +177,8 @@ static void cleanup_symbols(MCCState *s1) {
 }
 
 static void cleanup_sections(MCCState *s1) {
-	struct {
+	struct
+	{
 		Section **secs;
 		int nb_secs;
 	} *p = (void *)&s1->sections;
@@ -219,7 +227,7 @@ redo:
 		addr = 0;
 		for (i = 1; i < s1->nb_sections; i++) {
 			static const char shf[] = {
-				SHF_ALLOC | SHF_EXECINSTR, SHF_ALLOC, SHF_ALLOC | SHF_WRITE};
+					SHF_ALLOC | SHF_EXECINSTR, SHF_ALLOC, SHF_ALLOC | SHF_WRITE};
 			s = s1->sections[i];
 			if (shf[k] != (s->sh_flags & (SHF_ALLOC | SHF_WRITE | SHF_EXECINSTR)))
 				continue;
@@ -233,7 +241,7 @@ redo:
 			if (copy) {
 				if (s1->verbose == 2)
 					printf("%d: %-16s %p  len %05x  align %04x\n",
-						   k, s->name, (void *)s->sh_addr, length, s->sh_addralign);
+								 k, s->name, (void *)s->sh_addr, length, s->sh_addralign);
 				ptr = (void *)s->sh_addr;
 				if (k == 0)
 					ptr = (void *)(s->sh_addr + ptr_diff);
@@ -275,7 +283,7 @@ redo:
 			n = PAGEALIGN(n);
 			if (s1->verbose == 2) {
 				printf("protect         %3s %p  len %05x\n",
-					   &"rx\0ro\0rw\0rwx"[f * 3], (void *)addr, (unsigned)n);
+							 &"rx\0ro\0rw\0rwx"[f * 3], (void *)addr, (unsigned)n);
 			}
 			if (host_runmem_protect((void *)addr, n, f) < 0)
 				return mcc_error_noabort(HOST_MPROTECT_FAILMSG);
@@ -292,9 +300,9 @@ redo:
 #if defined MCC_TARGET_PE && (defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64)
 		if (s1->uw_pdata) {
 			s1->run_function_table = host_unwind_register(
-				(void *)s1->uw_pdata->sh_addr,
-				(unsigned)s1->uw_pdata->data_offset,
-				s1->pe_imagebase);
+					(void *)s1->uw_pdata->sh_addr,
+					(unsigned)s1->uw_pdata->data_offset,
+					s1->pe_imagebase);
 			if (!s1->run_function_table)
 				mcc_error_noabort("RtlAddFunctionTable failed");
 			s1->uw_pdata = NULL;
@@ -563,27 +571,27 @@ found:
 #define DIR_TABLE_SIZE (64)
 #define FILE_TABLE_SIZE (512)
 
-#define dwarf_ignore_type(ln, end)        \
-	switch (entry_format[j].form) {       \
-	case DW_FORM_data1:                   \
+#define dwarf_ignore_type(ln, end)    \
+	switch (entry_format[j].form) {     \
+	case DW_FORM_data1:                 \
 		(ln) += 1;                        \
 		break;                            \
-	case DW_FORM_data2:                   \
+	case DW_FORM_data2:                 \
 		(ln) += 2;                        \
 		break;                            \
-	case DW_FORM_data4:                   \
+	case DW_FORM_data4:                 \
 		(ln) += 3;                        \
 		break;                            \
-	case DW_FORM_data8:                   \
+	case DW_FORM_data8:                 \
 		(ln) += 8;                        \
 		break;                            \
-	case DW_FORM_data16:                  \
+	case DW_FORM_data16:                \
 		(ln) += 16;                       \
 		break;                            \
-	case DW_FORM_udata:                   \
+	case DW_FORM_udata:                 \
 		dwarf_read_uleb128(&(ln), (end)); \
 		break;                            \
-	default:                              \
+	default:                            \
 		goto next_line;                   \
 	}
 
@@ -606,16 +614,18 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 	unsigned int j;
 	unsigned int len;
 	unsigned long long value;
-	struct {
+	struct
+	{
 		unsigned int type;
 		unsigned int form;
 	} entry_format[256];
 	unsigned int dir_size;
 #if 0
-	char *dirs[DIR_TABLE_SIZE];
+    char* dirs[DIR_TABLE_SIZE];
 #endif
 	unsigned int filename_size;
-	struct {
+	struct
+	{
 		unsigned int dir_entry;
 		char *name;
 	} filename_table[FILE_TABLE_SIZE];
@@ -679,13 +689,15 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 						if (entry_format[j].form != DW_FORM_line_strp)
 							goto next_line;
 #if 0
-		        value = length == 4 ? dwarf_read_4(ln, end)
-					    : dwarf_read_8(ln, end);
-		        if (i < DIR_TABLE_SIZE)
-		            dirs[i] = (char *)rc->dwarf_line_str + value;
+                        value = length == 4
+                                    ? dwarf_read_4(ln, end)
+                                    : dwarf_read_8(ln, end);
+                        if (i < DIR_TABLE_SIZE)
+                            dirs[i] = (char*)rc->dwarf_line_str + value;
 #else
-						length == 4 ? dwarf_read_4(ln, end)
-									: dwarf_read_8(ln, end);
+						length == 4
+								? dwarf_read_4(ln, end)
+								: dwarf_read_8(ln, end);
 #endif
 					} else
 						dwarf_ignore_type(ln, end);
@@ -702,11 +714,12 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 					if (entry_format[j].type == DW_LNCT_path) {
 						if (entry_format[j].form != DW_FORM_line_strp)
 							goto next_line;
-						value = length == 4 ? dwarf_read_4(ln, end)
-											: dwarf_read_8(ln, end);
+						value = length == 4
+												? dwarf_read_4(ln, end)
+												: dwarf_read_8(ln, end);
 						if (i < FILE_TABLE_SIZE)
 							filename_table[i].name =
-								(char *)rc->dwarf_line_str + value;
+									(char *)rc->dwarf_line_str + value;
 					} else if (entry_format[j].type == DW_LNCT_directory_index) {
 						switch (entry_format[j].form) {
 						case DW_FORM_data1:
@@ -732,19 +745,22 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 		} else {
 			while ((dwarf_read_1(ln, end))) {
 #if 0
-		if (++dir_size < DIR_TABLE_SIZE)
-		    dirs[dir_size - 1] = (char *)ln - 1;
+                if (++dir_size < DIR_TABLE_SIZE)
+                    dirs[dir_size - 1] = (char*)ln - 1;
 #endif
-				while (dwarf_read_1(ln, end)) {}
+				while (dwarf_read_1(ln, end)) {
+				}
 			}
 			while ((dwarf_read_1(ln, end))) {
 				if (++filename_size < FILE_TABLE_SIZE) {
 					filename_table[filename_size - 1].name = (char *)ln - 1;
-					while (dwarf_read_1(ln, end)) {}
+					while (dwarf_read_1(ln, end)) {
+					}
 					filename_table[filename_size - 1].dir_entry =
-						dwarf_read_uleb128(&ln, end);
+							dwarf_read_uleb128(&ln, end);
 				} else {
-					while (dwarf_read_1(ln, end)) {}
+					while (dwarf_read_1(ln, end)) {
+					}
 					dwarf_read_uleb128(&ln, end);
 				}
 				dwarf_read_uleb128(&ln, end);
@@ -761,9 +777,9 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 					pc += ((i - opcode_base) / line_range) * min_insn_length;
 				else {
 					pc += (opindex + (i - opcode_base) / line_range) /
-						  max_ops_per_insn * min_insn_length;
+								max_ops_per_insn * min_insn_length;
 					opindex = (opindex + (i - opcode_base) / line_range) %
-							  max_ops_per_insn;
+										max_ops_per_insn;
 				}
 				i = (int)((i - opcode_base) % line_range) + line_base;
 			check_pc:
@@ -795,11 +811,13 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 					case DW_LNE_define_file:
 						if (++filename_size < FILE_TABLE_SIZE) {
 							filename_table[filename_size - 1].name = (char *)ln - 1;
-							while (dwarf_read_1(ln, end)) {}
+							while (dwarf_read_1(ln, end)) {
+							}
 							filename_table[filename_size - 1].dir_entry =
-								dwarf_read_uleb128(&ln, end);
+									dwarf_read_uleb128(&ln, end);
 						} else {
-							while (dwarf_read_1(ln, end)) {}
+							while (dwarf_read_1(ln, end)) {
+							}
 							dwarf_read_uleb128(&ln, end);
 						}
 						dwarf_read_uleb128(&ln, end);
@@ -820,7 +838,7 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 						unsigned long long off = dwarf_read_uleb128(&ln, end);
 
 						pc += (opindex + off) / max_ops_per_insn *
-							  min_insn_length;
+									min_insn_length;
 						opindex = (opindex + off) % max_ops_per_insn;
 					}
 					i = 0;
@@ -841,7 +859,7 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 						unsigned int off = (255 - opcode_base) / line_range;
 
 						pc += ((opindex + off) / max_ops_per_insn) *
-							  min_insn_length;
+									min_insn_length;
 						opindex = (opindex + off) % max_ops_per_insn;
 					}
 					i = 0;
@@ -874,7 +892,7 @@ found:
 #ifndef CONFIG_MCC_BACKTRACE_ONLY
 static
 #endif
-	int _mcc_backtrace(rt_frame *f, const char *fmt, va_list ap) {
+		int _mcc_backtrace(rt_frame *f, const char *fmt, va_list ap) {
 	rt_context *rc, *rc2;
 	addr_t pc;
 	char skip[40], msg[200];
@@ -926,12 +944,12 @@ static
 			MCCState *s = rt_find_state(f);
 			if (s && s->bt_func) {
 				ret = s->bt_func(
-					s->bt_data,
-					(void *)pc,
-					bi.file[0] ? bi.file : NULL,
-					bi.line,
-					bi.func[0] ? bi.func : NULL,
-					level == 0 ? msg : NULL);
+						s->bt_data,
+						(void *)pc,
+						bi.file[0] ? bi.file : NULL,
+						bi.line,
+						bi.func[0] ? bi.func : NULL,
+						level == 0 ? msg : NULL);
 				if (ret == 0)
 					break;
 				goto check_break;

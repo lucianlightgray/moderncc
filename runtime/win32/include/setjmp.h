@@ -7,6 +7,7 @@
 
 #ifdef __cplusplus
 extern "C" {
+
 #endif
 
 #if (defined(_X86_) && !defined(__x86_64))
@@ -37,7 +38,6 @@ typedef _CRT_ALIGN(16) struct _SETJMP_FLOAT128 {
 typedef SETJMP_FLOAT128 _JBTYPE;
 
 typedef struct __JUMP_BUFFER {
-
 	unsigned long iAReserved[6];
 
 	unsigned long Registration;
@@ -85,10 +85,11 @@ typedef struct __JUMP_BUFFER {
 	__int64 IntSp;
 	__int64 IntNats;
 	__int64 Preds;
-
 } _JUMP_BUFFER;
 #elif defined(__x86_64)
-typedef _CRT_ALIGN(16) struct _SETJMP_FLOAT128 {
+typedef _CRT_ALIGN(16)
+
+		struct _SETJMP_FLOAT128 {
 	unsigned __int64 Part[2];
 } SETJMP_FLOAT128;
 

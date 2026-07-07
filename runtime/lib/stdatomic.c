@@ -13,15 +13,15 @@
 #define __ATOMIC_SEQ_CST 5
 typedef __SIZE_TYPE__ size_t;
 
-#define ATOMIC_GEN_OP(TYPE, MODE, NAME, OP, RET)                                   \
+#define ATOMIC_GEN_OP(TYPE, MODE, NAME, OP, RET)                                 \
 	TYPE __atomic_##NAME##_##MODE(volatile void *atom, TYPE value, int memorder) { \
-		TYPE xchg, cmp;                                                            \
-		__atomic_load((TYPE *)atom, (TYPE *)&cmp, __ATOMIC_RELAXED);               \
-		do {                                                                       \
-			xchg = (OP);                                                           \
-		} while (!__atomic_compare_exchange((TYPE *)atom, &cmp, &xchg, true,       \
-											__ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST));  \
-		return RET;                                                                \
+		TYPE xchg, cmp;                                                              \
+		__atomic_load((TYPE *)atom, (TYPE *)&cmp, __ATOMIC_RELAXED);                 \
+		do {                                                                         \
+			xchg = (OP);                                                               \
+		} while (!__atomic_compare_exchange((TYPE *)atom, &cmp, &xchg, true,         \
+																				__ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST));    \
+		return RET;                                                                  \
 	}
 
 #define ATOMIC_EXCHANGE(TYPE, MODE) \
@@ -51,7 +51,7 @@ typedef __SIZE_TYPE__ size_t;
 #define ATOMIC_FETCH_NAND(TYPE, MODE) \
 	ATOMIC_GEN_OP(TYPE, MODE, fetch_nand, ~(cmp & value), cmp)
 
-#define ATOMIC_GEN(TYPE, SIZE)    \
+#define ATOMIC_GEN(TYPE, SIZE)  \
 	ATOMIC_EXCHANGE(TYPE, SIZE)   \
 	ATOMIC_ADD_FETCH(TYPE, SIZE)  \
 	ATOMIC_SUB_FETCH(TYPE, SIZE)  \
@@ -112,8 +112,9 @@ bool ATOMIC(is_lock_free)(unsigned long size, const volatile void *ptr) {
 #define MCC_STR(x) MCC_STR2(x)
 #define MCC_ULP MCC_STR(__USER_LABEL_PREFIX__)
 __asm__(".globl " MCC_ULP "__atomic_is_lock_free"
-		"\n\t.set " MCC_ULP "__atomic_is_lock_free," MCC_ULP "__mcc_atomic_is_lock_free");
+				"\n\t.set " MCC_ULP "__atomic_is_lock_free," MCC_ULP "__mcc_atomic_is_lock_free");
 #else
-bool __atomic_is_lock_free(unsigned long size, const volatile void *ptr) __attribute__((alias("__mcc_atomic_is_lock_free")));
+bool __atomic_is_lock_free(unsigned long size, const volatile void *ptr) __attribute__((alias(
+		"__mcc_atomic_is_lock_free")));
 #endif
 #endif

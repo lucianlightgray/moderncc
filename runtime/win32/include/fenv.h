@@ -48,6 +48,7 @@ typedef struct
 
 #ifdef __cplusplus
 extern "C" {
+
 #endif
 
 extern int __cdecl feclearexcept(int);

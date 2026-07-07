@@ -196,24 +196,24 @@ int test18(void) {
 }
 
 int (*table_test[])(void) = {
-	test1,
-	test2,
-	test3,
-	test4,
-	test5,
-	test6,
-	test7,
-	test8,
-	test9,
-	test10,
-	test11,
-	test12,
-	test13,
-	test14,
-	test15,
-	test16,
-	test17,
-	test18};
+		test1,
+		test2,
+		test3,
+		test4,
+		test5,
+		test6,
+		test7,
+		test8,
+		test9,
+		test10,
+		test11,
+		test12,
+		test13,
+		test14,
+		test15,
+		test16,
+		test17,
+		test18};
 
 int main(int argc, char **argv) {
 	int i;
@@ -231,10 +231,10 @@ int main(int argc, char **argv) {
 
 	if (argc < 2) {
 		printf(
-			"test MCC bound checking system\n"
-			"usage: boundtest N\n"
-			"  1 <= N <= %d\n",
-			index_max);
+				"test MCC bound checking system\n"
+				"usage: boundtest N\n"
+				"  1 <= N <= %d\n",
+				index_max);
 		exit(1);
 	}
 

@@ -19,9 +19,9 @@ static const unsigned long mask80 = 0x8080808080808080;
 
 #define LONGPTR_MASK (sizeof(long) - 1)
 
-#define testbyte(x)               \
-	do {                          \
-		if (p[x] == '\0')         \
+#define testbyte(x)         \
+	do {                      \
+		if (p[x] == '\0')       \
 			return (p - str + x); \
 	} while (0)
 

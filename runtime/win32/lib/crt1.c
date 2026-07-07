@@ -25,9 +25,11 @@
 #define _runtmain _runmain
 #endif
 
-typedef struct {
+typedef struct
+{
 	int newmode;
 } _startupinfo;
+
 int __cdecl __tgetmainargs(int *pargc, _TCHAR ***pargv, _TCHAR ***penv, int globb, _startupinfo *);
 void __cdecl __set_app_type(int apptype);
 unsigned int __cdecl _controlfp(unsigned int new_value, unsigned int mask);

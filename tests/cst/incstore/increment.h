@@ -7,11 +7,11 @@ int ICAT(level_, INCREMENTING) = INCREMENTING; /* distinct decl per depth */
 
 #if (INCREMENTING) == 1
 #undef INCREMENTING
-#define INCREMENTING 2      /* redefine using the previous value's successor */
+#define INCREMENTING 2 /* redefine using the previous value's successor */
 #elif (INCREMENTING) == 2
 #undef INCREMENTING
 #define INCREMENTING 3
 #endif
 
-#include "increment.h"      /* recursive re-include */
+#include "increment.h" /* recursive re-include */
 #endif

@@ -5,15 +5,15 @@
 unsigned _mccsyscall(unsigned syscall_nr, ...);
 
 __asm__(
-	".global _mccsyscall\n"
-	"_mccsyscall:\n"
-	"push    {r7, lr}\n\t"
-	"mov     r7, r0\n\t"
-	"mov     r0, r1\n\t"
-	"mov     r1, r2\n\t"
-	"mov     r2, r3\n\t"
-	"svc     #0\n\t"
-	"pop     {r7, pc}");
+		".global _mccsyscall\n"
+		"_mccsyscall:\n"
+		"push    {r7, lr}\n\t"
+		"mov     r7, r0\n\t"
+		"mov     r0, r1\n\t"
+		"mov     r1, r2\n\t"
+		"mov     r2, r3\n\t"
+		"svc     #0\n\t"
+		"pop     {r7, pc}");
 
 #if defined(__thumb__) || defined(__ARM_EABI__)
 #define __NR_SYSCALL_BASE 0x0
@@ -40,6 +40,7 @@ void __clear_cache(void *beginning, void *end) {
 
 #elif defined __aarch64__
 void __clear_cache(void *beg, void *end) {
+
 #ifdef __MCC__
 	__arm64_clear_cache(beg, end);
 #else

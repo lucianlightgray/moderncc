@@ -30,8 +30,8 @@
 #include "mcchost.h"
 
 #if !defined(MCC_TARGET_I386) && !defined(MCC_TARGET_ARM) && \
-	!defined(MCC_TARGET_ARM64) &&                            \
-	!defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_RISCV64)
+		!defined(MCC_TARGET_ARM64) &&                            \
+		!defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_RISCV64)
 #if defined __x86_64__
 #define MCC_TARGET_X86_64
 #elif defined __arm__
@@ -54,9 +54,9 @@
 #endif
 #endif
 
-#if (defined(MCC_TARGET_I386) + defined(MCC_TARGET_X86_64) +   \
-	 defined(MCC_TARGET_ARM) + defined(MCC_TARGET_ARM64) +     \
-	 defined(MCC_TARGET_RISCV64)) != 1
+#if (defined(MCC_TARGET_I386) + defined(MCC_TARGET_X86_64) + \
+		 defined(MCC_TARGET_ARM) + defined(MCC_TARGET_ARM64) +   \
+		 defined(MCC_TARGET_RISCV64)) != 1
 #error "exactly one MCC_TARGET_* backend CPU (I386/X86_64/ARM/ARM64/RISCV64) must be defined"
 #endif
 
@@ -130,13 +130,13 @@
 #endif
 
 #if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64
-#define MCC_ELF_LIBDIRS                                                                      \
+#define MCC_ELF_LIBDIRS                                                                    \
 	USE_TRIPLET("{R}/usr/lib")                                                               \
 	HOST_PATHSEP                                                                             \
 	"{R}/usr/lib64" HOST_PATHSEP "{R}/lib64" HOST_PATHSEP "{R}/usr/local/lib64" HOST_PATHSEP \
 	"{R}/usr/lib" HOST_PATHSEP "{R}/lib" HOST_PATHSEP "{R}/usr/local/lib"
 #else
-#define MCC_ELF_LIBDIRS                                   \
+#define MCC_ELF_LIBDIRS                                 \
 	USE_TRIPLET("{R}/usr/lib")                            \
 	HOST_PATHSEP                                          \
 	"{R}/usr/lib32" HOST_PATHSEP "{R}/lib32" HOST_PATHSEP \
@@ -305,10 +305,13 @@ typedef union CValue {
 	double d;
 	float f;
 	uint64_t i;
-	struct {
+
+	struct
+	{
 		char *data;
 		int size;
 	} str;
+
 	int tab[LDOUBLE_WORDS];
 } CValue;
 
@@ -316,61 +319,69 @@ typedef struct SValue {
 	CType type;
 	unsigned short r;
 	unsigned short r2;
+
 	union {
-		struct {
+		struct
+		{
 			int jtrue, jfalse;
 		};
+
 		CValue c;
 	};
+
 	union {
-		struct {
+		struct
+		{
 			unsigned short cmp_op, cmp_r;
 		};
+
 		struct Sym *sym;
 	};
-
 } SValue;
 
 struct SymAttr {
 	unsigned int
-		aligned : 5,
-		packed : 1,
-		weak : 1,
-		visibility : 2,
-		visibility_set : 1,
-		dllexport : 1,
-		nodecorate : 1,
-		dllimport : 1,
-		addrtaken : 1,
-		nodebug : 1,
-		transp_union : 1,
-		is_complex : 1,
-		tentative_array : 1,
-		is_register : 1,
-		used : 1,
-		inited : 1;
+			aligned : 5,
+			packed : 1,
+			weak : 1,
+			visibility : 2,
+			visibility_set : 1,
+			dllexport : 1,
+			nodecorate : 1,
+			dllimport : 1,
+			addrtaken : 1,
+			nodebug : 1,
+			transp_union : 1,
+			is_complex : 1,
+			tentative_array : 1,
+			is_register : 1,
+			used : 1,
+			inited : 1;
 };
 
 struct FuncAttr {
 	unsigned
-		func_call : 3,
-		func_type : 2,
-		func_noreturn : 1,
-		func_ctor : 1,
-		func_dtor : 1,
-		func_args : 8,
-		func_alwinl : 1,
-		func_star_param : 1,
-		xxxx : 14;
+			func_call : 3,
+			func_type : 2,
+			func_noreturn : 1,
+			func_ctor : 1,
+			func_dtor : 1,
+			func_args : 8,
+			func_alwinl : 1,
+			func_star_param : 1,
+			xxxx : 14;
 };
 
 typedef struct Sym {
 	int v;
 	unsigned short r;
 	struct SymAttr a;
+
 	union {
-		struct {
+		struct
+		{
 			int c;
+
 			union {
 				int sym_scope;
 				int jnext;
@@ -379,12 +390,14 @@ typedef struct Sym {
 				int auxtype;
 			};
 		};
+
 		long long enum_val;
 		int *d;
 		struct Sym *cleanup_func;
 	};
 
 	CType type;
+
 	union {
 		struct Sym *next;
 		int *e;
@@ -392,9 +405,11 @@ typedef struct Sym {
 		struct Sym *cleanupstate;
 		int *vla_array_str;
 	};
+
 	int vla_inner_id;
 	int vla_min_goto_gpp;
 	struct Sym *prev;
+
 	union {
 		struct Sym *prev_tok;
 		struct Sym *cleanup_sym;
@@ -541,6 +556,7 @@ typedef struct ExprValue {
 } ExprValue;
 
 #define MAX_ASM_OPERANDS 30
+
 typedef struct ASMOperand {
 	int id;
 	char constraint[16];
@@ -584,14 +600,20 @@ struct TinyAlloc;
 
 struct scope {
 	struct scope *prev;
-	struct {
+
+	struct
+	{
 		int loc, locorig, num;
 	} vla;
+
 	int vla_diag;
-	struct {
+
+	struct
+	{
 		Sym *s;
 		int n;
 	} cl;
+
 	int *bsym, *csym;
 	Sym *lstk, *llstk;
 	unsigned char stdc_fp_contract, stdc_fenv_access, stdc_cx_limited;
@@ -602,6 +624,7 @@ struct switch_t {
 		int64_t v1, v2;
 		int ind, line;
 	} **p;
+
 	int n;
 	int def_sym;
 	int nocode_wanted;
@@ -842,6 +865,7 @@ struct MCCState {
 	union {
 		Section *symtab_section, *symtab;
 	};
+
 	Section *dynsymtab_section;
 	Section *dynsym;
 	Section *got, *plt;
@@ -1016,9 +1040,11 @@ struct MCCState {
 static inline int stdc_cx_limited(MCCState *s1) {
 	return s1->stdc_cx_limited == STDC_ON;
 }
+
 static inline int stdc_fenv_access(MCCState *s1) {
 	return s1->stdc_fenv_access == STDC_ON;
 }
+
 static inline int stdc_fp_contract(MCCState *s1) {
 	return s1->stdc_fp_contract == STDC_ON;
 }
@@ -1193,6 +1219,7 @@ enum mcc_token {
 	TOK_LAST = TOK_IDENT - 1
 #define DEF(id, str) , id
 #include "mcctok.h"
+
 #undef DEF
 };
 
@@ -1214,7 +1241,7 @@ PUB_FUNC void *mcc_malloc(unsigned long size);
 PUB_FUNC void *mcc_mallocz(unsigned long size);
 PUB_FUNC void *mcc_realloc(void *ptr, unsigned long size);
 ST_FUNC unsigned long mcc_grow_capacity(unsigned long cur, unsigned long need,
-										unsigned long min_cap);
+																				unsigned long min_cap);
 ST_FUNC int mcc_uleb128_size(unsigned long long value);
 ST_FUNC int mcc_sleb128_size(long long value);
 ST_FUNC void mcc_write_uleb128(Section *sec, unsigned long long value);
@@ -1382,15 +1409,19 @@ ST_FUNC void pp_error(CString *cs);
 static inline int is_space(int ch) {
 	return ch == ' ' || ch == '\t' || ch == '\v' || ch == '\f' || ch == '\r';
 }
+
 static inline int isid(int c) {
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
 }
+
 static inline int isnum(int c) {
 	return c >= '0' && c <= '9';
 }
+
 static inline int isoct(int c) {
 	return c >= '0' && c <= '7';
 }
+
 static inline int toup(int c) {
 	return (c >= 'a' && c <= 'z') ? c - 'a' + 'A' : c;
 }
@@ -1498,7 +1529,7 @@ ST_FUNC int classify_x86_64_va_arg(CType *ty);
 ST_FUNC void gbound_args(int nb_args);
 ST_DATA int func_bound_add_epilog;
 ST_FUNC int gen_bounds_epilog_head(addr_t func_bound_offset,
-								   Sym **psym_data, int *poffset_modified);
+																	 Sym **psym_data, int *poffset_modified);
 #endif
 ST_FUNC Sym *gfunc_set_param(Sym *s, int c, int byref);
 
@@ -1508,7 +1539,8 @@ ST_FUNC Sym *gfunc_set_param(Sym *s, int c, int byref);
 
 #define ARMAG "!<arch>\n"
 
-typedef struct {
+typedef struct
+{
 	unsigned int n_strx;
 	unsigned char n_type;
 	unsigned char n_other;
@@ -1526,7 +1558,8 @@ ST_FUNC size_t section_add(Section *sec, addr_t size, int align);
 ST_FUNC void *section_ptr_add(Section *sec, addr_t size);
 ST_FUNC Section *find_section(MCCState *s1, const char *name);
 ST_FUNC void free_section(Section *s);
-ST_FUNC Section *new_symtab(MCCState *s1, const char *symtab_name, int sh_type, int sh_flags, const char *strtab_name, const char *hash_name, int hash_sh_flags);
+ST_FUNC Section *new_symtab(MCCState *s1, const char *symtab_name, int sh_type, int sh_flags, const char *strtab_name,
+														const char *hash_name, int hash_sh_flags);
 ST_FUNC void init_symtab(Section *s);
 
 ST_FUNC int put_elf_str(Section *s, const char *sym);
@@ -1550,12 +1583,12 @@ ST_FUNC void add_array(MCCState *s1, const char *sec, int c);
 ST_FUNC struct sym_attr *get_sym_attr(MCCState *s1, int index, int alloc);
 ST_FUNC addr_t get_sym_addr(MCCState *s, const char *name, int err, int forc);
 ST_FUNC void list_elf_symbols(MCCState *s, void *ctx,
-							  void (*symbol_cb)(void *ctx, const char *name, const void *val));
+															void (*symbol_cb)(void *ctx, const char *name, const void *val));
 ST_FUNC int set_global_sym(MCCState *s1, const char *name, Section *sec, addr_t offs);
 
 #define for_each_elem(sec, startoff, elem, type) \
-	for (elem = (type *)sec->data + startoff;    \
-		 elem < (type *)(sec->data + sec->data_offset); elem++)
+	for (elem = (type *)sec->data + startoff;      \
+			 elem < (type *)(sec->data + sec->data_offset); elem++)
 
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_I386) || defined(MCC_TARGET_ARM) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)
 #define MCC_HAVE_DISASM 1
@@ -1609,12 +1642,14 @@ ST_FUNC int mcc_add_mccrt_embedded(MCCState *s1);
 #ifndef MCC_TARGET_PE
 ST_FUNC int code_reloc(int reloc_type);
 ST_FUNC int gotplt_entry_type(int reloc_type);
+
 enum gotplt_entry {
 	NO_GOTPLT_ENTRY,
 	BUILD_GOT_ONLY,
 	AUTO_GOTPLT_ENTRY,
 	ALWAYS_GOTPLT_ENTRY
 };
+
 #define NEED_RELOC_TYPE
 #if !defined MCC_TARGET_MACHO || defined MCC_IS_NATIVE
 ST_FUNC unsigned create_plt_entry(MCCState *s1, unsigned got_offset, struct sym_attr *attr);
@@ -1656,30 +1691,38 @@ ST_FUNC void gen_vla_alloc(CType *type, int align);
 static inline uint16_t read16le(unsigned char *p) {
 	return p[0] | (uint16_t)p[1] << 8;
 }
+
 static inline void write16le(unsigned char *p, uint16_t x) {
 	p[0] = x & 255;
 	p[1] = x >> 8 & 255;
 }
+
 static inline uint32_t read32le(unsigned char *p) {
 	return read16le(p) | (uint32_t)read16le(p + 2) << 16;
 }
+
 static inline void write32le(unsigned char *p, uint32_t x) {
 	write16le(p, x);
 	write16le(p + 2, x >> 16);
 }
+
 static inline void add32le(unsigned char *p, int32_t x) {
 	write32le(p, read32le(p) + x);
 }
+
 static inline uint64_t read64le(unsigned char *p) {
 	return read32le(p) | (uint64_t)read32le(p + 4) << 32;
 }
+
 static inline void write64le(unsigned char *p, uint64_t x) {
 	write32le(p, x);
 	write32le(p + 4, x >> 32);
 }
+
 static inline void add64le(unsigned char *p, int64_t x) {
 	write64le(p, read64le(p) + x);
 }
+
 ST_FUNC void g(int c);
 ST_FUNC void gen_le16(int c);
 #if defined MCC_TARGET_I386 || defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM
@@ -1750,9 +1793,11 @@ ST_FUNC void gen_expr64(ExprValue *pe);
 ST_FUNC void gen_expr32(ExprValue *pe);
 ST_FUNC void asm_opcode(MCCState *s1, int opcode);
 ST_FUNC int asm_parse_regvar(int t);
-ST_FUNC void asm_compute_constraints(ASMOperand *operands, int nb_operands, int nb_outputs, const uint8_t *clobber_regs, int *pout_reg);
+ST_FUNC void asm_compute_constraints(ASMOperand *operands, int nb_operands, int nb_outputs, const uint8_t *clobber_regs,
+																		 int *pout_reg);
 ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier);
-ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands, int nb_outputs, int is_output, uint8_t *clobber_regs, int out_reg);
+ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands, int nb_outputs, int is_output, uint8_t *clobber_regs,
+													int out_reg);
 ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str);
 #endif
 
@@ -1789,12 +1834,12 @@ ST_FUNC void mcc_run_free(MCCState *s1);
 #endif
 
 #if 0
-ST_FUNC int mcc_tool_ar(MCCState *s, int argc, char **argv);
+ST_FUNC int mcc_tool_ar(MCCState* s, int argc, char** argv);
 #ifdef MCC_TARGET_PE
-ST_FUNC int mcc_tool_impdef(MCCState *s, int argc, char **argv);
+ST_FUNC int mcc_tool_impdef(MCCState* s, int argc, char** argv);
 #endif
-ST_FUNC int mcc_tool_cross(MCCState *s, char **argv, int option);
-ST_FUNC int gen_makedeps(MCCState *s, const char *target, const char *filename);
+ST_FUNC int mcc_tool_cross(MCCState* s, char** argv, int option);
+ST_FUNC int gen_makedeps(MCCState* s, const char* target, const char* filename);
 #endif
 
 ST_FUNC void mcc_debug_new(MCCState *s);
@@ -1850,6 +1895,7 @@ ST_FUNC void mcc_tcov_reset_ind(MCCState *s1);
 	((ln) + 3 < (end) ? read32le(((ln) += 4) - 4) : 0)
 #define dwarf_read_8(ln, end) \
 	((ln) + 7 < (end) ? read64le(((ln) += 8) - 8) : 0)
+
 static inline uint64_t
 dwarf_read_uleb128(unsigned char **ln, unsigned char *end) {
 	unsigned char *cp = *ln;
@@ -1864,6 +1910,7 @@ dwarf_read_uleb128(unsigned char **ln, unsigned char *end) {
 	*ln = cp;
 	return retval;
 }
+
 static inline int64_t
 dwarf_read_sleb128(unsigned char **ln, unsigned char *end) {
 	unsigned char *cp = *ln;
@@ -1930,7 +1977,7 @@ PUB_FUNC void mcc_enter_state(MCCState *s1);
 PUB_FUNC void mcc_exit_state(MCCState *s1);
 
 #define mcc_warning_c(sw) MCC_SET_STATE(( \
-	mcc_state->warn_num = offsetof(MCCState, sw) - offsetof(MCCState, warn_none), _mcc_warning))
+		mcc_state->warn_num = offsetof(MCCState, sw) - offsetof(MCCState, warn_none), _mcc_warning))
 
 #endif
 

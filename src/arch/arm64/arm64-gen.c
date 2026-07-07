@@ -36,45 +36,45 @@
 #include <assert.h>
 
 ST_DATA const char *const target_machine_defs =
-	"__aarch64__\0"
+		"__aarch64__\0"
 #if defined(MCC_TARGET_MACHO)
-	"__arm64__\0"
+		"__arm64__\0"
 #endif
-	"__AARCH64EL__\0";
+		"__AARCH64EL__\0";
 
 ST_DATA const int reg_classes[NB_REGS] = {
-	RC_INT | RC_R(0),
-	RC_INT | RC_R(1),
-	RC_INT | RC_R(2),
-	RC_INT | RC_R(3),
-	RC_INT | RC_R(4),
-	RC_INT | RC_R(5),
-	RC_INT | RC_R(6),
-	RC_INT | RC_R(7),
-	RC_INT | RC_R(8),
-	RC_INT | RC_R(9),
-	RC_INT | RC_R(10),
-	RC_INT | RC_R(11),
-	RC_INT | RC_R(12),
-	RC_INT | RC_R(13),
-	RC_INT | RC_R(14),
-	RC_INT | RC_R(15),
-	RC_INT | RC_R(16),
-	RC_INT | RC_R(17),
+		RC_INT | RC_R(0),
+		RC_INT | RC_R(1),
+		RC_INT | RC_R(2),
+		RC_INT | RC_R(3),
+		RC_INT | RC_R(4),
+		RC_INT | RC_R(5),
+		RC_INT | RC_R(6),
+		RC_INT | RC_R(7),
+		RC_INT | RC_R(8),
+		RC_INT | RC_R(9),
+		RC_INT | RC_R(10),
+		RC_INT | RC_R(11),
+		RC_INT | RC_R(12),
+		RC_INT | RC_R(13),
+		RC_INT | RC_R(14),
+		RC_INT | RC_R(15),
+		RC_INT | RC_R(16),
+		RC_INT | RC_R(17),
 #ifdef MCC_TARGET_PE
-	RC_R(18),
+		RC_R(18),
 #else
-	RC_INT | RC_R(18),
+		RC_INT | RC_R(18),
 #endif
-	RC_R30,
-	RC_FLOAT | RC_F(0),
-	RC_FLOAT | RC_F(1),
-	RC_FLOAT | RC_F(2),
-	RC_FLOAT | RC_F(3),
-	RC_FLOAT | RC_F(4),
-	RC_FLOAT | RC_F(5),
-	RC_FLOAT | RC_F(6),
-	RC_FLOAT | RC_F(7)};
+		RC_R30,
+		RC_FLOAT | RC_F(0),
+		RC_FLOAT | RC_F(1),
+		RC_FLOAT | RC_F(2),
+		RC_FLOAT | RC_F(3),
+		RC_FLOAT | RC_F(4),
+		RC_FLOAT | RC_F(5),
+		RC_FLOAT | RC_F(6),
+		RC_FLOAT | RC_F(7)};
 
 #if defined(CONFIG_MCC_BCHECK)
 #define func_bound_offset (mcc_state->cg_func_bound_offset)
@@ -165,7 +165,7 @@ static int arm64_encode_bimm64(uint64_t x) {
 		len = rep - len;
 	}
 	return ((0x1000 & rep << 6) | (((rep - 1) ^ 31) << 1 & 63) |
-			((rep - pos) & (rep - 1)) << 6 | (len - 1));
+					((rep - pos) & (rep - 1)) << 6 | (len - 1));
 }
 
 static uint32_t arm64_movi(int r, uint64_t x) {
@@ -181,22 +181,22 @@ static uint32_t arm64_movi(int r, uint64_t x) {
 		return (ARM64_MOVZ64 | ARM64_HW(3) | r | x >> 43);
 	if ((x & ~m) == m << 16)
 		return (ARM64_MOVN | r |
-				(~x << 5 & 0x1fffe0));
+						(~x << 5 & 0x1fffe0));
 	if ((x & ~(m << 16)) == m)
 		return (ARM64_MOVN | ARM64_HW(1) | r |
-				(~x >> 11 & 0x1fffe0));
+						(~x >> 11 & 0x1fffe0));
 	if (!~(x | m))
 		return (ARM64_MOVN64 | r |
-				(~x << 5 & 0x1fffe0));
+						(~x << 5 & 0x1fffe0));
 	if (!~(x | m << 16))
 		return (ARM64_MOVN64 | ARM64_HW(1) | r |
-				(~x >> 11 & 0x1fffe0));
+						(~x >> 11 & 0x1fffe0));
 	if (!~(x | m << 32))
 		return (ARM64_MOVN64 | ARM64_HW(2) | r |
-				(~x >> 27 & 0x1fffe0));
+						(~x >> 27 & 0x1fffe0));
 	if (!~(x | m << 48))
 		return (ARM64_MOVN64 | ARM64_HW(3) | r |
-				(~x >> 43 & 0x1fffe0));
+						(~x >> 43 & 0x1fffe0));
 	if (!(x >> 32) && (e = arm64_encode_bimm64(x | x << 32)) >= 0)
 		return (ARM64_ORR_IMM | r | (uint32_t)e << 10);
 	if ((e = arm64_encode_bimm64(x)) >= 0)
@@ -290,7 +290,7 @@ static uint64_t arm64_check_offset(int invert, int sz_, uint64_t off) {
 	uint64_t scaled_mask = 0xffful << sz;
 
 	if (!(off & ~scaled_mask) ||
-		(off < 256 || -off <= 256))
+			(off < 256 || -off <= 256))
 		return invert ? off : 0ul;
 	else if (off & scaled_mask)
 		return invert ? off & scaled_mask : off & ~scaled_mask;
@@ -307,14 +307,14 @@ static void arm64_ldrx(int sg, int sz_, int dst, int bas, uint64_t off) {
 		sg = 0;
 	if (!(off & ~scaled_mask))
 		o(ARM64_LDR_B | dst | bas << 5 | off << (10 - sz) |
-		  (uint32_t)!!sg << 23 | sz << 30);
+			(uint32_t)!!sg << 23 | sz << 30);
 	else if (off < 256 || -off <= 256)
 		o(ARM64_LDUR_B | dst | bas << 5 | (off & 511) << 12 |
-		  (uint32_t)!!sg << 23 | sz << 30);
+			(uint32_t)!!sg << 23 | sz << 30);
 	else {
 		arm64_movimm(30, off);
 		o(ARM64_LDR_B_REG | dst | bas << 5 | (uint32_t)30 << 16 |
-		  (uint32_t)(!!sg + 1) << 22 | sz << 30);
+			(uint32_t)(!!sg + 1) << 22 | sz << 30);
 	}
 }
 
@@ -324,14 +324,14 @@ static void arm64_ldrv(int sz_, int dst, int bas, uint64_t off) {
 
 	if (!(off & ~scaled_mask))
 		o(ARM64_LDR_SCALAR | dst | bas << 5 | off << (10 - sz) |
-		  (sz & 4) << 21 | (sz & 3) << 30);
+			(sz & 4) << 21 | (sz & 3) << 30);
 	else if (off < 256 || -off <= 256)
 		o(ARM64_LDUR_Q_SIMD | dst | bas << 5 | (off & 511) << 12 |
-		  (sz & 4) << 21 | (sz & 3) << 30);
+			(sz & 4) << 21 | (sz & 3) << 30);
 	else {
 		arm64_movimm(30, off);
 		o(ARM64_LDR_Q_REG | dst | bas << 5 | (uint32_t)30 << 16 |
-		  sz << 30 | (sz & 4) << 21);
+			sz << 30 | (sz & 4) << 21);
 	}
 }
 
@@ -434,14 +434,14 @@ static void arm64_strv(int sz_, int dst, int bas, uint64_t off) {
 
 	if (!(off & ~scaled_mask))
 		o(0x3d000000 | dst | bas << 5 | off << (10 - sz) |
-		  (sz & 4) << 21 | (sz & 3) << 30);
+			(sz & 4) << 21 | (sz & 3) << 30);
 	else if (off < 256 || -off <= 256)
 		o(0x3c000000 | dst | bas << 5 | (off & 511) << 12 |
-		  (sz & 4) << 21 | (sz & 3) << 30);
+			(sz & 4) << 21 | (sz & 3) << 30);
 	else {
 		arm64_movimm(30, off);
 		o(0x3c206800 | dst | bas << 5 | (uint32_t)30 << 16 |
-		  sz << 30 | (sz & 4) << 21);
+			sz << 30 | (sz & 4) << 21);
 	}
 }
 
@@ -460,11 +460,11 @@ static void arm64_sym(int r, Sym *sym, unsigned long addend) {
 	if (addend) {
 		if (addend & 0xffful)
 			o(ARM64_ADD_IMM | ARM64_SF(1) | ARM64_RN(r) | r |
-			  (addend & 0xfff) << 10);
+				(addend & 0xfff) << 10);
 		if (addend > 0xffful) {
 			if (addend & 0xfff000ul)
 				o(ARM64_ADD_IMM | ARM64_SF(1) | ARM64_SH(1) |
-				  ARM64_RN(r) | r | ((addend >> 12) & 0xfff) << 10);
+					ARM64_RN(r) | r | ((addend >> 12) & 0xfff) << 10);
 			if (addend > 0xfffffful) {
 				int t = r ? 0 : 1;
 				o(ARM64_STR_X_PRE | 0x001F0FE0U | t);
@@ -492,10 +492,10 @@ static void arm64_macho_tls_addr(Sym *sym, uint64_t addend) {
 	o(ARM64_BLR | ARM64_RN(16));
 	if (addend & 0xfff)
 		o(ARM64_ADD_IMM | ARM64_SF(1) | ARM64_RN(0) | ARM64_RD(0) |
-		  ARM64_IMM12(addend & 0xfff));
+			ARM64_IMM12(addend & 0xfff));
 	if (addend > 0xfff)
 		o(ARM64_ADD_IMM | ARM64_SF(1) | ARM64_SH(1) | ARM64_RN(0) | ARM64_RD(0) |
-		  ARM64_IMM12((addend >> 12) & 0xfff));
+			ARM64_IMM12((addend >> 12) & 0xfff));
 	o(ARM64_MOV_REG | ARM64_SF(1) | ARM64_RM(0) | ARM64_RD(30));
 	arm64_ldrx(0, 3, 0, 31, 0);
 	arm64_ldrx(0, 3, 16, 31, 8);
@@ -513,7 +513,7 @@ static void arm64_tls_base_x30(void) {
 	arm64_sym(16, pe_tls_index_sym(), 0);
 	arm64_ldrx(0, 2, 16, 16, 0);
 	o(ARM64_ADD_REG | ARM64_SF(1) | ARM64_RM(16) |
-	  ARM64_SHIFT_LSL(3) | ARM64_RN(30) | ARM64_RD(30));
+		ARM64_SHIFT_LSL(3) | ARM64_RN(30) | ARM64_RD(30));
 	arm64_ldrx(0, 3, 30, 30, 0);
 	o(ARM64_LDR_X_POST | 0x000107E0U | 16);
 #else
@@ -534,7 +534,7 @@ ST_FUNC void load(int r, SValue *sv) {
 			arm64_ldrv(arm64_type_size(svtt), fltr(r), 29, svcoff);
 		else
 			arm64_ldrx(!(svtt & VT_UNSIGNED), arm64_type_size(svtt),
-					   intr(r), 29, svcoff);
+								 intr(r), 29, svcoff);
 		return;
 	}
 
@@ -543,15 +543,15 @@ ST_FUNC void load(int r, SValue *sv) {
 
 		if (sv->sym)
 			arm64_sym(30, sv->sym,
-					  arm64_check_offset(0, arm64_type_size(svtt), i));
+								arm64_check_offset(0, arm64_type_size(svtt), i));
 		else
 			arm64_movimm(30, i), i = 0;
 		if (IS_FREG(r))
 			arm64_ldrv(arm64_type_size(svtt), fltr(r), 30,
-					   arm64_check_offset(1, arm64_type_size(svtt), i));
+								 arm64_check_offset(1, arm64_type_size(svtt), i));
 		else
 			arm64_ldrx(!(svtt & VT_UNSIGNED), arm64_type_size(svtt), intr(r), 30,
-					   arm64_check_offset(1, arm64_type_size(svtt), i));
+								 arm64_check_offset(1, arm64_type_size(svtt), i));
 		return;
 	}
 
@@ -561,7 +561,7 @@ ST_FUNC void load(int r, SValue *sv) {
 				arm64_ldrv(arm64_type_size(svtt), fltr(r), intr(svrv), 0);
 			else
 				arm64_ldrx(!(svtt & VT_UNSIGNED), arm64_type_size(svtt),
-						   intr(r), intr(svrv), 0);
+									 intr(r), intr(svrv), 0);
 		}
 		return;
 	}
@@ -574,33 +574,33 @@ ST_FUNC void load(int r, SValue *sv) {
 				arm64_ldrv(arm64_type_size(svtt), fltr(r), 30, 0);
 			else
 				arm64_ldrx(!(svtt & VT_UNSIGNED), arm64_type_size(svtt),
-						   intr(r), 30, 0);
+									 intr(r), 30, 0);
 #else
 			arm64_tls_base_x30();
 			greloca(cur_text_section, sv->sym, ind,
-					R_AARCH64_TLSLE_ADD_TPREL_HI12, 0);
+							R_AARCH64_TLSLE_ADD_TPREL_HI12, 0);
 			o(ARM64_ADD_IMM | ARM64_SF(1) | ARM64_SH(1) |
-			  ARM64_RN(30) | ARM64_RD(30));
+				ARM64_RN(30) | ARM64_RD(30));
 			greloca(cur_text_section, sv->sym, ind,
-					R_AARCH64_TLSLE_ADD_TPREL_LO12, 0);
+							R_AARCH64_TLSLE_ADD_TPREL_LO12, 0);
 			o(ARM64_ADD_IMM | ARM64_SF(1) |
-			  ARM64_RN(30) | ARM64_RD(30));
+				ARM64_RN(30) | ARM64_RD(30));
 			if (IS_FREG(r))
 				arm64_ldrv(arm64_type_size(svtt), fltr(r), 30, svcoff);
 			else
 				arm64_ldrx(!(svtt & VT_UNSIGNED), arm64_type_size(svtt),
-						   intr(r), 30, svcoff);
+									 intr(r), 30, svcoff);
 #endif
 			return;
 		}
 		arm64_sym(30, sv->sym,
-				  arm64_check_offset(0, arm64_type_size(svtt), svcoff));
+							arm64_check_offset(0, arm64_type_size(svtt), svcoff));
 		if (IS_FREG(r))
 			arm64_ldrv(arm64_type_size(svtt), fltr(r), 30,
-					   arm64_check_offset(1, arm64_type_size(svtt), svcoff));
+								 arm64_check_offset(1, arm64_type_size(svtt), svcoff));
 		else
 			arm64_ldrx(!(svtt & VT_UNSIGNED), arm64_type_size(svtt), intr(r), 30,
-					   arm64_check_offset(1, arm64_type_size(svtt), svcoff));
+								 arm64_check_offset(1, arm64_type_size(svtt), svcoff));
 		return;
 	}
 
@@ -612,13 +612,13 @@ ST_FUNC void load(int r, SValue *sv) {
 #else
 			arm64_tls_base_x30();
 			greloca(cur_text_section, sv->sym, ind,
-					R_AARCH64_TLSLE_ADD_TPREL_HI12, svcul);
+							R_AARCH64_TLSLE_ADD_TPREL_HI12, svcul);
 			o(ARM64_ADD_IMM | ARM64_SF(1) | ARM64_SH(1) |
-			  ARM64_RN(30) | ARM64_RD(30));
+				ARM64_RN(30) | ARM64_RD(30));
 			greloca(cur_text_section, sv->sym, ind,
-					R_AARCH64_TLSLE_ADD_TPREL_LO12, svcul);
+							R_AARCH64_TLSLE_ADD_TPREL_LO12, svcul);
 			o(ARM64_ADD_IMM | ARM64_SF(1) |
-			  ARM64_RN(30) | ARM64_RD(intr(r)));
+				ARM64_RN(30) | ARM64_RD(intr(r)));
 #endif
 			return;
 		}
@@ -670,7 +670,7 @@ ST_FUNC void load(int r, SValue *sv) {
 			arm64_ldrv(arm64_type_size(svtt), fltr(r), 30, 0);
 		else
 			arm64_ldrx(!(svtt & VT_UNSIGNED), arm64_type_size(svtt),
-					   intr(r), 30, 0);
+								 intr(r), 30, 0);
 		return;
 	}
 
@@ -710,13 +710,13 @@ ST_FUNC void store(int r, SValue *sv) {
 #else
 			arm64_tls_base_x30();
 			greloca(cur_text_section, sv->sym, ind,
-					R_AARCH64_TLSLE_ADD_TPREL_HI12, 0);
+							R_AARCH64_TLSLE_ADD_TPREL_HI12, 0);
 			o(ARM64_ADD_IMM | ARM64_SF(1) | ARM64_SH(1) |
-			  ARM64_RN(30) | ARM64_RD(30));
+				ARM64_RN(30) | ARM64_RD(30));
 			greloca(cur_text_section, sv->sym, ind,
-					R_AARCH64_TLSLE_ADD_TPREL_LO12, 0);
+							R_AARCH64_TLSLE_ADD_TPREL_LO12, 0);
 			o(ARM64_ADD_IMM | ARM64_SF(1) |
-			  ARM64_RN(30) | ARM64_RD(30));
+				ARM64_RN(30) | ARM64_RD(30));
 			if (IS_FREG(r))
 				arm64_strv(arm64_type_size(svtt), fltr(r), 30, i);
 			else
@@ -726,15 +726,15 @@ ST_FUNC void store(int r, SValue *sv) {
 		}
 		if (sv->sym)
 			arm64_sym(30, sv->sym,
-					  arm64_check_offset(0, arm64_type_size(svtt), i));
+								arm64_check_offset(0, arm64_type_size(svtt), i));
 		else
 			arm64_movimm(30, i), i = 0;
 		if (IS_FREG(r))
 			arm64_strv(arm64_type_size(svtt), fltr(r), 30,
-					   arm64_check_offset(1, arm64_type_size(svtt), i));
+								 arm64_check_offset(1, arm64_type_size(svtt), i));
 		else
 			arm64_strx(arm64_type_size(svtt), intr(r), 30,
-					   arm64_check_offset(1, arm64_type_size(svtt), i));
+								 arm64_check_offset(1, arm64_type_size(svtt), i));
 		return;
 	}
 
@@ -757,13 +757,13 @@ ST_FUNC void store(int r, SValue *sv) {
 #else
 			arm64_tls_base_x30();
 			greloca(cur_text_section, sv->sym, ind,
-					R_AARCH64_TLSLE_ADD_TPREL_HI12, 0);
+							R_AARCH64_TLSLE_ADD_TPREL_HI12, 0);
 			o(ARM64_ADD_IMM | ARM64_SF(1) | ARM64_SH(1) |
-			  ARM64_RN(30) | ARM64_RD(30));
+				ARM64_RN(30) | ARM64_RD(30));
 			greloca(cur_text_section, sv->sym, ind,
-					R_AARCH64_TLSLE_ADD_TPREL_LO12, 0);
+							R_AARCH64_TLSLE_ADD_TPREL_LO12, 0);
 			o(ARM64_ADD_IMM | ARM64_SF(1) |
-			  ARM64_RN(30) | ARM64_RD(30));
+				ARM64_RN(30) | ARM64_RD(30));
 			if (IS_FREG(r))
 				arm64_strv(arm64_type_size(svtt), fltr(r), 30, svcoff);
 			else
@@ -772,13 +772,13 @@ ST_FUNC void store(int r, SValue *sv) {
 			return;
 		}
 		arm64_sym(30, sv->sym,
-				  arm64_check_offset(0, arm64_type_size(svtt), svcoff));
+							arm64_check_offset(0, arm64_type_size(svtt), svcoff));
 		if (IS_FREG(r))
 			arm64_strv(arm64_type_size(svtt), fltr(r), 30,
-					   arm64_check_offset(1, arm64_type_size(svtt), svcoff));
+								 arm64_check_offset(1, arm64_type_size(svtt), svcoff));
 		else
 			arm64_strx(arm64_type_size(svtt), intr(r), 30,
-					   arm64_check_offset(1, arm64_type_size(svtt), svcoff));
+								 arm64_check_offset(1, arm64_type_size(svtt), svcoff));
 		return;
 	}
 
@@ -789,7 +789,7 @@ ST_FUNC void store(int r, SValue *sv) {
 static void arm64_gen_bl_or_b(int b) {
 	if ((vtop->r & (VT_VALMASK | VT_LVAL)) == VT_CONST && (vtop->r & VT_SYM)) {
 		greloca(cur_text_section, vtop->sym, ind,
-				b ? R_AARCH64_JUMP26 : R_AARCH64_CALL26, 0);
+						b ? R_AARCH64_JUMP26 : R_AARCH64_CALL26, 0);
 		o(b ? ARM64_B : ARM64_BL);
 	} else {
 #ifdef CONFIG_MCC_BCHECK
@@ -1044,7 +1044,7 @@ static unsigned long arm64_pcs(int variadic, int n, CType **type, unsigned long 
 				printf("V%lu\n", a[i] / 2 - 8);
 			else
 				printf("stack %lu%s\n",
-					   (a[i] - 32) & ~1, a[i] & 1 ? " pointer" : "");
+							 (a[i] - 32) & ~1, a[i] & 1 ? " pointer" : "");
 		}
 	}
 
@@ -1122,10 +1122,10 @@ ST_FUNC void gfunc_call(int nb_args) {
 
 	stack = arm64_pcs(
 #ifdef MCC_TARGET_PE
-		old_style ? -1 :
+			old_style ? -1 :
 #endif
-				  var_nb_arg,
-		nb_args + 1, t, a);
+								var_nb_arg,
+			nb_args + 1, t, a);
 
 	for (int i = nb_args; i; i--)
 		if (a[i] & 1) {
@@ -1167,11 +1167,11 @@ ST_FUNC void gfunc_call(int nb_args) {
 			} else if (is_float(vtop->type.t)) {
 				gv(RC_FLOAT);
 				arm64_strv(arm64_type_size(vtop[0].type.t),
-						   fltr(vtop[0].r), 31, a[i] - 32);
+									 fltr(vtop[0].r), 31, a[i] - 32);
 			} else {
 				gv(RC_INT);
 				arm64_strx(3,
-						   intr(vtop[0].r), 31, a[i] - 32);
+									 intr(vtop[0].r), 31, a[i] - 32);
 			}
 		}
 
@@ -1203,9 +1203,9 @@ ST_FUNC void gfunc_call(int nb_args) {
 					gv_addr(RC_R30);
 					for (uint32_t j = 0; j < n; j++)
 						o(0x3d4003c0 |
-						  (sz & 16) << 19 | -(sz & 8) << 27 | (sz & 4) << 29 |
-						  (a[i] / 2 - 8 + j) |
-						  j << 10);
+							(sz & 16) << 19 | -(sz & 8) << 27 | (sz & 4) << 29 |
+							(a[i] / 2 - 8 + j) |
+							j << 10);
 				} else {
 					gv(RC_F(a[i] / 2 - 8));
 				}
@@ -1241,17 +1241,19 @@ ST_FUNC void gfunc_call(int nb_args) {
 				if (size > 8)
 					o(0xa9000500);
 				else if (size)
-					arm64_strx(size > 4 ? 3 : size > 2 ? 2
-													   : size > 1,
-							   0, 8, 0);
-
+					arm64_strx(size > 4
+												 ? 3
+										 : size > 2
+												 ? 2
+												 : size > 1,
+										 0, 8, 0);
 			} else if (a[0] == 16) {
 				uint32_t sz, n = arm64_hfa(return_type, &sz);
 				for (uint32_t j = 0; j < n; j++)
 					o(0x3d000100 |
-					  (sz & 16) << 19 | -(sz & 8) << 27 | (sz & 4) << 29 |
-					  (fltr(REG_FRET) + j) |
-					  j << 10);
+						(sz & 16) << 19 | -(sz & 8) << 27 | (sz & 4) << 29 |
+						(fltr(REG_FRET) + j) |
+						j << 10);
 			}
 		}
 	}
@@ -1271,8 +1273,11 @@ ST_FUNC void gfunc_call(int nb_args) {
 
 #ifdef MCC_TARGET_PE
 static unsigned long arm64_pe_param_off(unsigned long a) {
-	return a < 16 ? 160 + a / 2 * 8 : a < 32 ? 16 + (a - 16) / 2 * 16
-											 : 224 + ((a - 32) >> 1 << 1);
+	return a < 16
+						 ? 160 + a / 2 * 8
+				 : a < 32
+						 ? 16 + (a - 16) / 2 * 16
+						 : 224 + ((a - 32) >> 1 << 1);
 }
 #endif
 
@@ -1380,21 +1385,24 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) {
 	arm64_func_va_list_vr_offs = -128;
 
 	for (i = 1, sym = func_type->ref->next; sym; i++, sym = sym->next) {
-		int off = (a[i] < 16 ? 160 + a[i] / 2 * 8 : a[i] < 32 ? 16 + (a[i] - 16) / 2 * 16
-															  : 224 + ((a[i] - 32) >> 1 << 1));
+		int off = (a[i] < 16
+									 ? 160 + a[i] / 2 * 8
+							 : a[i] < 32
+									 ? 16 + (a[i] - 16) / 2 * 16
+									 : 224 + ((a[i] - 32) >> 1 << 1));
 
 		gfunc_set_param(sym, off, a[i] & 1);
 
 		if (a[i] < 16) {
 			int align, size = type_size(&sym->type, &align);
 			arm64_func_va_list_gr_offs = (a[i] / 2 - 7 +
-										  (!(a[i] & 1) && size > 8)) *
-										 8;
+																		(!(a[i] & 1) && size > 8)) *
+																	 8;
 		} else if (a[i] < 32) {
 			uint32_t hfa = arm64_hfa(&sym->type, 0);
 			arm64_func_va_list_vr_offs = (a[i] / 2 - 16 +
-										  (hfa ? hfa : 1)) *
-										 16;
+																		(hfa ? hfa : 1)) *
+																	 16;
 		}
 
 		if (16 <= a[i] && a[i] < 32 && (sym->type.t & VT_BTYPE) == VT_STRUCT) {
@@ -1402,7 +1410,7 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) {
 			if (k > 0 && sz < 16)
 				for (uint32_t j = 0; j < k; j++) {
 					o(0x3d0003e0 | -(sz & 8) << 27 | (sz & 4) << 29 |
-					  ((a[i] - 16) / 2 + j) | (off / sz + j) << 10);
+						((a[i] - 16) / 2 + j) | (off / sz + j) << 10);
 				}
 		}
 	}
@@ -1574,11 +1582,11 @@ ST_FUNC void gen_va_arg(CType *t) {
 			arm64_movimm(r1, loc);
 			o(0x8b0003a0 | r1 | r1 << 16);
 			o(0x4c402bdc | (uint32_t)fsize << 7 |
-			  (uint32_t)(hfa == 2) << 15 |
-			  (uint32_t)(hfa == 3) << 14);
+				(uint32_t)(hfa == 2) << 15 |
+				(uint32_t)(hfa == 3) << 14);
 			o(0x0d00801c | r1 << 5 | (fsize == 8) << 10 |
-			  (uint32_t)(hfa != 2) << 13 |
-			  (uint32_t)(hfa != 3) << 21);
+				(uint32_t)(hfa != 2) << 13 |
+				(uint32_t)(hfa != 3) << 21);
 		}
 		write32le(cur_text_section->data + b2, ARM64_B | ((ind - b2) >> 2));
 #endif
@@ -1587,7 +1595,7 @@ ST_FUNC void gen_va_arg(CType *t) {
 }
 
 ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret,
-					   int *align, int *regsize) {
+											 int *align, int *regsize) {
 	return 0;
 }
 
@@ -1623,8 +1631,8 @@ ST_FUNC void gfunc_return(CType *func_type) {
 			gv_addr(RC_R(0));
 			for (uint32_t j = 0; j < n; j++)
 				o(0x3d400000 |
-				  (sz & 16) << 19 | -(sz & 8) << 27 | (sz & 4) << 29 |
-				  (fltr(REG_FRET) + j) | j << 10);
+					(sz & 16) << 19 | -(sz & 8) << 27 | (sz & 4) << 29 |
+					(fltr(REG_FRET) + j) | j << 10);
 		} else
 			gv(RC_FRET);
 		break;
@@ -1744,13 +1752,15 @@ static int arm64_iconst(uint64_t *val, SValue *sv) {
 	if (val) {
 		int t = sv->type.t;
 		int bt = t & VT_BTYPE;
-		*val = ((bt == VT_LLONG || bt == VT_PTR) ? sv->c.i : (uint32_t)sv->c.i | (t & VT_UNSIGNED ? 0 : -(sv->c.i & 0x80000000)));
+		*val = ((bt == VT_LLONG || bt == VT_PTR)
+								? sv->c.i
+								: (uint32_t)sv->c.i | (t & VT_UNSIGNED ? 0 : -(sv->c.i & 0x80000000)));
 	}
 	return 1;
 }
 
 static int arm64_gen_opic(int op, uint32_t l, int rev, uint64_t val,
-						  uint32_t x, uint32_t a) {
+													uint32_t x, uint32_t a) {
 	if (op == '-' && !rev) {
 		val = -val;
 		op = '+';
@@ -1758,7 +1768,6 @@ static int arm64_gen_opic(int op, uint32_t l, int rev, uint64_t val,
 	val = l ? val : (uint32_t)val;
 
 	switch (op) {
-
 	case '+': {
 		uint32_t s = l ? val >> 63 : val >> 31;
 		val = s ? -val : val;
@@ -1796,9 +1805,12 @@ static int arm64_gen_opic(int op, uint32_t l, int rev, uint64_t val,
 		int e = arm64_encode_bimm64(l ? val : val | val << 32);
 		if (e < 0)
 			return 0;
-		o((op == '&' ? 0x12000000 : op == '|' ? 0x32000000
-											  : 0x52000000) |
-		  l << 31 | x | a << 5 | (uint32_t)e << 10);
+		o((op == '&'
+					 ? 0x12000000
+			 : op == '|'
+					 ? 0x32000000
+					 : 0x52000000) |
+			l << 31 | x | a << 5 | (uint32_t)e << 10);
 		return 1;
 	}
 
@@ -1814,10 +1826,10 @@ static int arm64_gen_opic(int op, uint32_t l, int rev, uint64_t val,
 			return 1;
 		} else if (op == TOK_SHL)
 			o(0x53000000 | l << 31 | l << 22 | x | a << 5 |
-			  (n - val) << 16 | (n - 1 - val) << 10);
+				(n - val) << 16 | (n - 1 - val) << 10);
 		else
 			o(0x13000000 | (op == TOK_SHR) << 30 | l << 31 | l << 22 |
-			  x | a << 5 | val << 16 | (n - 1) << 10);
+				x | a << 5 | val << 16 | (n - 1) << 10);
 		return 1;
 	}
 	}
@@ -1866,7 +1878,7 @@ static void arm64_gen_opil(int op, uint32_t l) {
 	case '%':
 		o(0x1ac00c00 | l << 31 | 30 | a << 5 | b << 16);
 		o(0x1b008000 | l << 31 | x | (uint32_t)30 << 5 |
-		  b << 16 | a << 10);
+			b << 16 | a << 10);
 		break;
 	case '&':
 		o(0x0a000000 | l << 31 | x | a << 5 | b << 16);
@@ -1945,7 +1957,7 @@ static void arm64_gen_opil(int op, uint32_t l) {
 	case TOK_UMOD:
 		o(0x1ac00800 | l << 31 | 30 | a << 5 | b << 16);
 		o(0x1b008000 | l << 31 | x | (uint32_t)30 << 5 |
-		  b << 16 | a << 10);
+			b << 16 | a << 10);
 		break;
 	default:
 		assert(0);
@@ -2125,7 +2137,9 @@ ST_FUNC void gen_cvt_csti(int t) {
 ST_FUNC void gen_cvt_itof(int t) {
 	if (t == VT_LDOUBLE) {
 		int f = vtop->type.t;
-		int func = (f & VT_BTYPE) == VT_LLONG ? (f & VT_UNSIGNED ? TOK___floatunditf : TOK___floatditf) : (f & VT_UNSIGNED ? TOK___floatunsitf : TOK___floatsitf);
+		int func = (f & VT_BTYPE) == VT_LLONG
+									 ? (f & VT_UNSIGNED ? TOK___floatunditf : TOK___floatditf)
+									 : (f & VT_UNSIGNED ? TOK___floatunsitf : TOK___floatsitf);
 		vpush_helper_func(func);
 		vrott(2);
 		gfunc_call(1);
@@ -2142,14 +2156,16 @@ ST_FUNC void gen_cvt_itof(int t) {
 		++vtop;
 		vtop[0].r = d;
 		o(0x1e220000 | (uint32_t)!s << 16 |
-		  (uint32_t)(t != VT_FLOAT) << 22 | fltr(d) |
-		  l << 31 | n << 5);
+			(uint32_t)(t != VT_FLOAT) << 22 | fltr(d) |
+			l << 31 | n << 5);
 	}
 }
 
 ST_FUNC void gen_cvt_ftoi(int t) {
 	if ((vtop->type.t & VT_BTYPE) == VT_LDOUBLE) {
-		int func = (t & VT_BTYPE) == VT_LLONG ? (t & VT_UNSIGNED ? TOK___fixunstfdi : TOK___fixtfdi) : (t & VT_UNSIGNED ? TOK___fixunstfsi : TOK___fixtfsi);
+		int func = (t & VT_BTYPE) == VT_LLONG
+									 ? (t & VT_UNSIGNED ? TOK___fixunstfdi : TOK___fixtfdi)
+									 : (t & VT_UNSIGNED ? TOK___fixunstfsi : TOK___fixtfsi);
 		vpush_helper_func(func);
 		vrott(2);
 		gfunc_call(1);
@@ -2165,9 +2181,9 @@ ST_FUNC void gen_cvt_ftoi(int t) {
 		++vtop;
 		vtop[0].r = d;
 		o(0x1e380000 |
-		  (uint32_t)!!(t & VT_UNSIGNED) << 16 |
-		  (uint32_t)((t & VT_BTYPE) == VT_LLONG) << 31 | intr(d) |
-		  l << 22 | n << 5);
+			(uint32_t)!!(t & VT_UNSIGNED) << 16 |
+			(uint32_t)((t & VT_BTYPE) == VT_LLONG) << 31 | intr(d) |
+			l << 22 | n << 5);
 	}
 }
 
@@ -2179,7 +2195,9 @@ ST_FUNC void gen_cvt_ftof(int t) {
 		return;
 
 	if (t == VT_LDOUBLE || f == VT_LDOUBLE) {
-		int func = (t == VT_LDOUBLE) ? (f == VT_FLOAT ? TOK___extendsftf2 : TOK___extenddftf2) : (t == VT_FLOAT ? TOK___trunctfsf2 : TOK___trunctfdf2);
+		int func = (t == VT_LDOUBLE)
+									 ? (f == VT_FLOAT ? TOK___extendsftf2 : TOK___extenddftf2)
+									 : (t == VT_FLOAT ? TOK___trunctfsf2 : TOK___trunctfdf2);
 		vpush_helper_func(func);
 		vrott(2);
 		gfunc_call(1);

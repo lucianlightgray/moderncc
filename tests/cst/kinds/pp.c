@@ -11,7 +11,7 @@ int widget = 0;
 #endif
 
 #ifndef WIDGET_GUARD
-#  define WIDGET_GUARD
+#define WIDGET_GUARD
 #endif
 
 int pp_kinds(void) {

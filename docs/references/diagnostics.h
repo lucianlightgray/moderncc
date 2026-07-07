@@ -61,7 +61,8 @@ typedef enum {
 	DK_INFO,
 } DiagnosticKind;
 
-typedef struct {
+typedef struct
+{
 	DiagnosticKind kind : 8;
 	u32 len : 24;
 	u32 pos;
@@ -73,7 +74,7 @@ typedef struct SourceFile SourceFile;
 void printDiagnostic(SourceFile *file, Diagnostic diag);
 
 Diagnostic *reportDiagnostic(SourceFile *file, DiagnosticKind kind, u32 pos,
-							 u32 len, const char *message);
+														 u32 len, const char *message);
 
 bool diagnosticKindIsError(DiagnosticKind kind);
 

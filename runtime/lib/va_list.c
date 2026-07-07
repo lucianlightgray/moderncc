@@ -11,8 +11,8 @@ enum __va_arg_type {
 extern void *memcpy(void *dest, const void *src, unsigned long n);
 
 void *__va_arg(__builtin_va_list ap,
-			   int arg_type,
-			   int size, int align) {
+							 int arg_type,
+							 int size, int align) {
 	size = (size + 7) & ~7;
 	align = (align + 7) & ~7;
 	switch ((enum __va_arg_type)arg_type) {
@@ -30,7 +30,7 @@ void *__va_arg(__builtin_va_list ap,
 				return ap->reg_save_area + ap->fp_offset - 16;
 			if (ap->fp_offset < 128 + 48) {
 				memcpy(ap->reg_save_area + ap->fp_offset - 8,
-					   ap->reg_save_area + ap->fp_offset, 8);
+							 ap->reg_save_area + ap->fp_offset, 8);
 				ap->fp_offset += 16;
 				return ap->reg_save_area + ap->fp_offset - 32;
 			}

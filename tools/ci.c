@@ -116,7 +116,8 @@ static int do_run_preset(int argc, char **argv) {
 			preset = argv[i];
 	}
 	if (!preset) {
-		fprintf(stderr, "usage: ci run-preset <name> [--out DIR] [--install] [--no-test] [--config C] [-- <ctest args>]\n");
+		fprintf(
+				stderr, "usage: ci run-preset <name> [--out DIR] [--install] [--no-test] [--config C] [-- <ctest args>]\n");
 		return 2;
 	}
 	snprintf(jflag, sizeof jflag, "-j%d", jobs > 0 ? jobs : 1);
@@ -191,8 +192,9 @@ static int do_run_preset(int argc, char **argv) {
 
 static void qemu_fixup_multilib(const char *dldir) {
 	static const char *libcs[] = {"glibc", "musl", 0};
-	static const char *objs[] = {"crt1.o",  "crti.o",  "crtn.o",
-	                             "Scrt1.o", "gcrt1.o", "Mcrt1.o", 0};
+	static const char *objs[] = {
+			"crt1.o", "crti.o", "crtn.o",
+			"Scrt1.o", "gcrt1.o", "Mcrt1.o", 0};
 	char root[4096], src[4096], dst[4096];
 	int i, j, isd;
 
@@ -288,9 +290,10 @@ static int do_qemu(int argc, char **argv) {
 	return 0;
 }
 
-
 #define LOC_MAX 64
-typedef struct {
+
+typedef struct
+{
 	char preset[64], cc[16], plat[64];
 } LocJob;
 
@@ -318,7 +321,7 @@ static int loc_env_on(const char *var) {
 }
 
 static int run_dist(const char *preset, const char *plat, const char *ver,
-                    char **extra, int n_extra) {
+										char **extra, int n_extra) {
 	char pdv[256], pdp[256], bdir[128];
 	int msvc = strstr(preset, "msvc") != NULL, i;
 
@@ -344,8 +347,9 @@ static int run_dist(const char *preset, const char *plat, const char *ver,
 			return 1;
 	}
 	{
-		const char *a[] = {"cmake",  "--install", bdir,
-		                   "--config", "Release",  0};
+		const char *a[] = {
+				"cmake", "--install", bdir,
+				"--config", "Release", 0};
 		if (!msvc)
 			a[3] = 0;
 		if (ts_run(a))
@@ -363,14 +367,16 @@ static int run_dist(const char *preset, const char *plat, const char *ver,
 	}
 #endif
 	{
-		const char *a[] = {"cmake", "--build",       "--preset",
-		                   preset, "--target", "bench", 0};
+		const char *a[] = {
+				"cmake", "--build", "--preset",
+				preset, "--target", "bench", 0};
 		if (ts_run(a))
 			return 1;
 	}
 	{
-		const char *a[] = {"cmake", "--build",         "--preset",
-		                   preset, "--target", "package-dist", 0};
+		const char *a[] = {
+				"cmake", "--build", "--preset",
+				preset, "--target", "package-dist", 0};
 		if (ts_run(a))
 			return 1;
 	}
@@ -385,8 +391,9 @@ static int do_local(int argc, char **argv) {
 	int n_test = 0, n_dist = 0, n_skip = 0, n_res = 0, n_fail = 0;
 	int keep_going = 1, i, stop = 0;
 	static const char *QARCH[] = {"x86_64", "i386", "arm", "arm64", "riscv64", 0};
-	static const char *QBIN[] = {"qemu-x86_64", "qemu-i386",  "qemu-arm",
-	                             "qemu-aarch64", "qemu-riscv64", 0};
+	static const char *QBIN[] = {
+			"qemu-x86_64", "qemu-i386", "qemu-arm",
+			"qemu-aarch64", "qemu-riscv64", 0};
 	int have_gcc, have_clang, have_cl, have_wine, have_mingw, have_docker;
 	int qfound[8], n_qemu = 0;
 #if MCC_HOST_WIN32
@@ -420,39 +427,40 @@ static int do_local(int argc, char **argv) {
 			n_qemu++;
 	}
 
-#define LOC_TEST(P, CC)                                                        \
-	do {                                                                   \
-		if (n_test < LOC_MAX) {                                        \
-			snprintf(test[n_test].preset, 64, "%s", (P));         \
-			snprintf(test[n_test].cc, 16, "%s", (CC));            \
-			n_test++;                                             \
-		}                                                             \
+#define LOC_TEST(P, CC)                             \
+	do {                                              \
+		if (n_test < LOC_MAX) {                         \
+			snprintf(test[n_test].preset, 64, "%s", (P)); \
+			snprintf(test[n_test].cc, 16, "%s", (CC));    \
+			n_test++;                                     \
+		}                                               \
 	} while (0)
-#define LOC_SKIP(FMT, ...)                                                     \
-	do {                                                                   \
-		if (n_skip < LOC_MAX)                                          \
-			snprintf(skip[n_skip++], 160, FMT, __VA_ARGS__);      \
+#define LOC_SKIP(FMT, ...)                             \
+	do {                                                 \
+		if (n_skip < LOC_MAX)                              \
+			snprintf(skip[n_skip++], 160, FMT, __VA_ARGS__); \
 	} while (0)
-#define LOC_DIST(P, CC, PLAT)                                                  \
-	do {                                                                   \
-		if (n_dist < LOC_MAX) {                                        \
-			snprintf(dist[n_dist].preset, 64, "%s", (P));         \
-			snprintf(dist[n_dist].cc, 16, "%s", (CC));            \
-			snprintf(dist[n_dist].plat, 64, "%s", (PLAT));        \
-			n_dist++;                                             \
-		}                                                             \
+#define LOC_DIST(P, CC, PLAT)                        \
+	do {                                               \
+		if (n_dist < LOC_MAX) {                          \
+			snprintf(dist[n_dist].preset, 64, "%s", (P));  \
+			snprintf(dist[n_dist].cc, 16, "%s", (CC));     \
+			snprintf(dist[n_dist].plat, 64, "%s", (PLAT)); \
+			n_dist++;                                      \
+		}                                                \
 	} while (0)
 
 	if (!strcmp(os, "Linux")) {
 		static const char *G[] = {
-		    "linux-gcc",           "linux-gcc-cross",
-		    "linux-gcc-release",   "linux-gcc-musl",
-		    "linux-gcc-static",    "linux-gcc-multisource",
-		    "linux-gcc-asm-off",   "linux-gcc-predefs-off",
-		    "linux-gcc-pie",       "linux-gcc-dwarf",
-		    "linux-gcc-diagnostics", "linux-gcc-sanitize", 0};
-		static const char *C[] = {"linux-clang", "linux-clang-cross",
-		                          "linux-clang-release", 0};
+				"linux-gcc", "linux-gcc-cross",
+				"linux-gcc-release", "linux-gcc-musl",
+				"linux-gcc-static", "linux-gcc-multisource",
+				"linux-gcc-asm-off", "linux-gcc-predefs-off",
+				"linux-gcc-pie", "linux-gcc-dwarf",
+				"linux-gcc-diagnostics", "linux-gcc-sanitize", 0};
+		static const char *C[] = {
+				"linux-clang", "linux-clang-cross",
+				"linux-clang-release", 0};
 		for (i = 0; G[i]; i++) {
 			if (have_gcc)
 				LOC_TEST(G[i], "");
@@ -491,7 +499,7 @@ static int do_local(int argc, char **argv) {
 				LOC_TEST(p, "");
 			} else {
 				LOC_SKIP("qemu-%s - %s not found (install qemu-user)",
-				         QARCH[i], QBIN[i]);
+								 QARCH[i], QBIN[i]);
 			}
 		}
 	} else {
@@ -543,7 +551,7 @@ static int do_local(int argc, char **argv) {
 	printf("  clang           : %s\n", have_clang ? "yes" : "no");
 	printf("  msvc (cl)       : %s\n", have_cl ? "yes" : "no");
 	printf("  wine            : %s   (drives pe-wine-conformance in *-cross)\n",
-	       have_wine ? "yes" : "no");
+				 have_wine ? "yes" : "no");
 	printf("  mingw cross gcc : %s\n", have_mingw ? "yes" : "no");
 	printf("  docker          : %s\n", have_docker ? "yes" : "no");
 	printf("  qemu-user       : %d arch(es)\n", n_qemu);
@@ -551,7 +559,7 @@ static int do_local(int argc, char **argv) {
 	printf("  test presets    : %d\n", n_test);
 	for (i = 0; i < n_test; i++)
 		printf("      run   %s%s%s\n", test[i].preset,
-		       *test[i].cc ? " CC=" : "", test[i].cc);
+					 *test[i].cc ? " CC=" : "", test[i].cc);
 	printf("  release bundles : %d\n", n_dist);
 	for (i = 0; i < n_dist; i++)
 		printf("      dist  %s -> %s\n", dist[i].preset, dist[i].plat);
@@ -570,14 +578,14 @@ static int do_local(int argc, char **argv) {
 		int rc;
 		loc_setcc(test[i].cc);
 		printf("\n>>>> [test] %s%s%s\n", test[i].preset,
-		       *test[i].cc ? " CC=" : "", test[i].cc);
+					 *test[i].cc ? " CC=" : "", test[i].cc);
 		a[0] = test[i].preset;
 		rc = do_run_preset(1, a);
 		if (rc == 0) {
 			snprintf(results[n_res++], 192, "PASS  test %.63s", test[i].preset);
 		} else {
 			snprintf(results[n_res++], 192, "FAIL  test %.63s (exit %d)",
-			         test[i].preset, rc);
+							 test[i].preset, rc);
 			n_fail++;
 			if (!keep_going)
 				stop = 1;
@@ -589,10 +597,10 @@ static int do_local(int argc, char **argv) {
 		rc = run_dist(dist[i].preset, dist[i].plat, ver, NULL, 0);
 		if (rc == 0) {
 			snprintf(results[n_res++], 192, "PASS  dist %.63s -> %.63s",
-			         dist[i].preset, dist[i].plat);
+							 dist[i].preset, dist[i].plat);
 		} else {
 			snprintf(results[n_res++], 192, "FAIL  dist %.63s -> %.63s (exit %d)",
-			         dist[i].preset, dist[i].plat, rc);
+							 dist[i].preset, dist[i].plat, rc);
 			n_fail++;
 			if (!keep_going)
 				stop = 1;
@@ -639,7 +647,7 @@ static int do_dist(int argc, char **argv) {
 	}
 	if (!preset || !plat) {
 		fprintf(stderr, "usage: ci dist --preset P --plat PLAT [--version V] "
-		                "[-- <extra -D configure args>]\n");
+										"[-- <extra -D configure args>]\n");
 		return 2;
 	}
 	return run_dist(preset, plat, ver, extra, n_extra);
@@ -647,6 +655,7 @@ static int do_dist(int argc, char **argv) {
 
 static const char *g_filter;
 static int g_json, g_json_first = 1;
+
 static void emit_preset(const char *b, const char *e) {
 	const char *nm = NULL, *p;
 	int hidden = 0;
@@ -800,7 +809,7 @@ static int do_sha256sums(int argc, char **argv) {
 }
 
 static const char *HOST_EXES[] = {
-	"mcc", "mcc-static", "mcc-dynamic", "mcc-musl", "mcc-static-musl", "mcc-dynamic-musl", 0};
+		"mcc", "mcc-static", "mcc-dynamic", "mcc-musl", "mcc-static-musl", "mcc-dynamic-musl", 0};
 
 static int is_host_exe(const char *base) {
 	char nm[256];
@@ -819,6 +828,7 @@ static int is_host_exe(const char *base) {
 struct pkgcopy {
 	const char *dst;
 };
+
 static int pkg_copy_cb(const char *path, int is_dir, void *ud) {
 	struct pkgcopy *c = ud;
 	const char *base = strrchr(path, '/');
@@ -866,7 +876,7 @@ static void pkg_copy_glob(const char *dir, const char *pat, const char *destdir)
 }
 
 static int pkg_archive(const char *pkg, const char *out, const char *d,
-					   const char *ext, Argv *names) {
+											 const char *ext, Argv *names) {
 	Argv v = {{0}, 0};
 	char target[8192], *nm;
 	HostSpawnOpts o;
@@ -1098,7 +1108,7 @@ static int do_pkg(int argc, char **argv) {
 }
 
 static void js_attr(char *out, int n, const char *p, const char *end,
-                    const char *key) {
+										const char *key) {
 	const char *a = p, *kl = 0;
 	size_t klen = strlen(key);
 	out[0] = 0;
@@ -1129,7 +1139,7 @@ static int do_junit_summary(int argc, char **argv) {
 	if (!x) {
 		return 0;
 	}
-	for (p = x; (p = strstr(p, "<testcase")); ) {
+	for (p = x; (p = strstr(p, "<testcase"));) {
 		const char *gt = strchr(p, '>');
 		const char *tagend, *extent;
 		char name[256] = "?", st[32] = "";
@@ -1146,9 +1156,11 @@ static int do_junit_summary(int argc, char **argv) {
 		js_attr(name, sizeof name, p, gt, "name=\"");
 		js_attr(st, sizeof st, p, gt, "status=\"");
 		skipped = (strstr(tagend, "<skipped") &&
-		           strstr(tagend, "<skipped") < extent) || !strcmp(st, "notrun");
+							 strstr(tagend, "<skipped") < extent) ||
+							!strcmp(st, "notrun");
 		failed = (strstr(tagend, "<failure") &&
-		          strstr(tagend, "<failure") < extent) || !strcmp(st, "fail");
+							strstr(tagend, "<failure") < extent) ||
+						 !strcmp(st, "fail");
 		total++;
 		if (skipped) {
 			skip++;
@@ -1169,12 +1181,12 @@ static int do_junit_summary(int argc, char **argv) {
 	}
 	printf("### tests — %s\n\n", title);
 	printf("**%d tests · %d passed · %d failed · %d skipped**\n\n",
-	       total, total - fail - skip, fail, skip);
+				 total, total - fail - skip, fail, skip);
 	if (fail)
 		printf("Failed: %s\n\n", fails);
 	if (skip)
 		printf("<details><summary>%d skipped</summary>\n\n%s\n\n</details>\n\n",
-		       skip, skips);
+					 skip, skips);
 	free(x);
 	return 0;
 }

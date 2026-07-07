@@ -1,12 +1,12 @@
 #if 0
 
-#define REDIR_ALL         \
+#define REDIR_ALL       \
 	REDIR(__set_app_type) \
 	REDIR(__getmainargs)  \
 	REDIR(_controlfp)     \
 	REDIR(_vsnprintf)     \
 	REDIR(exit)           \
-						  \
+                        \
 	REDIR(puts)           \
 	REDIR(printf)         \
 	REDIR(putchar)        \
@@ -28,7 +28,10 @@
 #endif
 
 #define REDIR(s) void *s;
-static struct { REDIR_ALL } all_ptrs;
+static struct
+{
+    REDIR_ALL
+} all_ptrs;
 #undef REDIR
 
 #define REDIR(s) #s "\0"
@@ -41,7 +44,7 @@ static const char all_names[] = REDIR_ALL;
 #else
 #define ALIGN ".align 3"
 #endif
-#define REDIR(s)                                              \
+#define REDIR(s)                                            \
 	__asm__("\n" _(s) ":");                                   \
 	__asm__(".int 0x58000090");                               \
 	__asm__(".int 0xf9400210");                               \
@@ -50,15 +53,15 @@ static const char all_names[] = REDIR_ALL;
 	__asm__(".quad all_ptrs + (. - all_jmps - 16) / 24 * 8"); \
 	__asm__(".global " _(s));
 
-	__asm__("\t.text\n\t"ALIGN"\nall_jmps:");
-	REDIR_ALL
+__asm__("\t.text\n\t"ALIGN"\nall_jmps:");
+REDIR_ALL
 #else
-#define REDIR(s)                          \
+#define REDIR(s)                        \
 	__asm__("\n" _(s) ":");               \
 	__asm__("jmp *%0" ::"m"(all_ptrs.s)); \
 	__asm__(".global " _(s));
 
-	static void all_jmps() { REDIR_ALL }
+static void all_jmps() { REDIR_ALL }
 #endif
 #undef REDIR
 
@@ -73,8 +76,8 @@ static const char all_names[] = REDIR_ALL;
 #define DWORD long unsigned
 #define HMODULE void *
 #define HANDLE void *
-S TDCALL HMODULE LoadLibraryA(const char *);
-S TDCALL HMODULE GetProcAddress(HMODULE , char*);
+S TDCALL HMODULE LoadLibraryA(const char*);
+S TDCALL HMODULE GetProcAddress(HMODULE, char*);
 S TDCALL void ExitProcess(int);
 S TDCALL int WriteFile(HANDLE, const void*, DWORD, DWORD*, void*);
 S TDCALL HANDLE GetStdHandle(DWORD);
@@ -82,34 +85,38 @@ S TDCALL int FlushFileBuffers(HANDLE);
 #define STD_ERROR_HANDLE -12
 #endif
 
-static void eput(const char *s)
+static void eput(const char* s)
 {
-	DWORD n_out;
-	int n = 0;
-	while (s[n])
-		++n;
-	WriteFile(GetStdHandle(STD_ERROR_HANDLE), s, n, &n_out, 0);
+    DWORD n_out;
+    int n = 0;
+    while (s[n])
+        ++n;
+    WriteFile(GetStdHandle(STD_ERROR_HANDLE), s, n, &n_out, 0);
 }
 
 static void rt_reloc()
 {
-	const char *s = all_names;
-	void **p = (void**)&all_ptrs;
-	void *dll = LoadLibraryA("msvcrt.dll");
-	do {
-		char buf[100], *d = buf;
-		*p = (void*)GetProcAddress(dll, (char*)s);
-		*d++ = '_'; do *d++ = *s; while (*s++);
-		if (0 == *p)
-			*p = (void*)GetProcAddress(dll, buf);
-		if (0 == *p) {
-			eput("MSVCRT_START.C: RUNTIME RELOCATION ERROR: '");
-			eput(buf+1);
-			eput("'\n");
-			ExitProcess(-1);
-		}
-		++p;
-	} while (*s);
+    const char* s = all_names;
+    void** p = (void**)&all_ptrs;
+    void* dll = LoadLibraryA("msvcrt.dll");
+    do
+    {
+        char buf[100], *d = buf;
+        *p = (void*)GetProcAddress(dll, (char*)s);
+        *d++ = '_';
+        do *d++ = *s; while (*s++);
+        if (0 == *p)
+            *p = (void*)GetProcAddress(dll, buf);
+        if (0 == *p)
+        {
+            eput("MSVCRT_START.C: RUNTIME RELOCATION ERROR: '");
+            eput(buf + 1);
+            eput("'\n");
+            ExitProcess(-1);
+        }
+        ++p;
+    }
+    while (*s);
 }
 
 #else
@@ -120,9 +127,11 @@ int main(int argc, char **argv, char **env);
 void exit(int);
 void __set_app_type(int apptype);
 
-typedef struct {
+typedef struct
+{
 	int newmode;
 } _startupinfo;
+
 int __getmainargs(int *pargc, char ***pargv, char ***penv, int globb, _startupinfo *);
 
 void _controlfp(unsigned a, unsigned b);
@@ -157,8 +166,10 @@ int vprintf(const char *format, va_list ap) {
 
 void __main() {
 }
+
 void _pei386_runtime_relocator(void) {
 }
+
 void __chkstk(unsigned n) {
 }
 
@@ -168,10 +179,10 @@ void __mingw_raise_matherr(int typ, const char *name, double a1, double a2, doub
 #if defined(__x86_64__) && !defined(__MCC__)
 
 __asm__(
-	".globl __intrinsic_setjmpex\n"
-	"__intrinsic_setjmpex:\n"
-	"\tjmp *__imp__setjmpex(%rip)\n"
-	".globl __intrinsic_setjmp\n"
-	"__intrinsic_setjmp:\n"
-	"\tjmp *__imp__setjmp(%rip)\n");
+		".globl __intrinsic_setjmpex\n"
+		"__intrinsic_setjmpex:\n"
+		"\tjmp *__imp__setjmpex(%rip)\n"
+		".globl __intrinsic_setjmp\n"
+		"__intrinsic_setjmp:\n"
+		"\tjmp *__imp__setjmp(%rip)\n");
 #endif

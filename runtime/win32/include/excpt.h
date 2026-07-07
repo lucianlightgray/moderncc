@@ -7,6 +7,7 @@
 
 #ifdef __cplusplus
 extern "C" {
+
 #endif
 
 struct _EXCEPTION_POINTERS;
@@ -23,7 +24,8 @@ struct _EXCEPTION_POINTERS;
 struct _EXCEPTION_RECORD;
 struct _CONTEXT;
 
-EXCEPTION_DISPOSITION __cdecl _except_handler(struct _EXCEPTION_RECORD *_ExceptionRecord, void *_EstablisherFrame, struct _CONTEXT *_ContextRecord, void *_DispatcherContext);
+EXCEPTION_DISPOSITION __cdecl _except_handler(struct _EXCEPTION_RECORD *_ExceptionRecord, void *_EstablisherFrame,
+																							struct _CONTEXT *_ContextRecord, void *_DispatcherContext);
 #elif defined(__ia64__)
 
 typedef struct _EXCEPTION_POINTERS *Exception_info_ptr;
@@ -31,7 +33,12 @@ struct _EXCEPTION_RECORD;
 struct _CONTEXT;
 struct _DISPATCHER_CONTEXT;
 
-_CRTIMP EXCEPTION_DISPOSITION __cdecl __C_specific_handler(struct _EXCEPTION_RECORD *_ExceptionRecord, unsigned __int64 _MemoryStackFp, unsigned __int64 _BackingStoreFp, struct _CONTEXT *_ContextRecord, struct _DISPATCHER_CONTEXT *_DispatcherContext, unsigned __int64 _GlobalPointer);
+_CRTIMP EXCEPTION_DISPOSITION __cdecl __C_specific_handler(struct _EXCEPTION_RECORD *_ExceptionRecord,
+																													 unsigned __int64 _MemoryStackFp,
+																													 unsigned __int64 _BackingStoreFp,
+																													 struct _CONTEXT *_ContextRecord,
+																													 struct _DISPATCHER_CONTEXT *_DispatcherContext,
+																													 unsigned __int64 _GlobalPointer);
 #elif defined(__x86_64)
 
 struct _EXCEPTION_RECORD;
@@ -86,16 +93,16 @@ typedef PEXCEPTION_REGISTRATION PEXCEPTION_REGISTRATION_RECORD;
 #define __try1(pHandler) \
 	__asm__("pushl %0;pushl %%fs:0;movl %%esp,%%fs:0;" : : "g"(pHandler));
 
-#define __except1                                                 \
+#define __except1                                               \
 	__asm__("movl (%%esp),%%eax;movl %%eax,%%fs:0;addl $8,%%esp;" \
-			: : : "%eax");
+					: : : "%eax");
 #elif defined(__x86_64)
 #define __try1(pHandler) \
 	__asm__("pushq %0;pushq %%gs:0;movq %%rsp,%%gs:0;" : : "g"(pHandler));
 
-#define __except1                                                  \
+#define __except1                                                \
 	__asm__("movq (%%rsp),%%rax;movq %%rax,%%gs:0;addq $16,%%rsp;" \
-			: : : "%rax");
+					: : : "%rax");
 #else
 #define __try1(pHandler)
 #define __except1

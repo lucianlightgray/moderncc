@@ -5,6 +5,7 @@
 
 #ifdef __cplusplus
 extern "C" {
+
 #endif
 
 #ifndef _SIG_ATOMIC_T_DEFINED

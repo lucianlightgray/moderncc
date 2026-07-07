@@ -11,6 +11,7 @@
 
 #ifdef __cplusplus
 extern "C" {
+
 #endif
 
 #ifndef _CRTIMP
@@ -99,6 +100,7 @@ typedef int ssize_t;
 
 #ifndef _TM_DEFINED
 #define _TM_DEFINED
+
 struct tm {
 	int tm_sec;
 	int tm_min;
@@ -114,24 +116,35 @@ struct tm {
 
 #define CLOCKS_PER_SEC 1000
 
-__MINGW_IMPORT int _daylight;
-__MINGW_IMPORT long _dstbias;
-__MINGW_IMPORT long _timezone;
-__MINGW_IMPORT char *_tzname[2];
+__MINGW_IMPORT
+int _daylight;
+__MINGW_IMPORT
+long _dstbias;
+__MINGW_IMPORT
+long _timezone;
+__MINGW_IMPORT
+char *_tzname[2];
 _CRTIMP errno_t __cdecl _get_daylight(int *_Daylight);
 _CRTIMP errno_t __cdecl _get_dstbias(long *_Daylight_savings_bias);
 _CRTIMP errno_t __cdecl _get_timezone(long *_Timezone);
 _CRTIMP errno_t __cdecl _get_tzname(size_t *_ReturnValue, char *_Buffer, size_t _SizeInBytes, int _Index);
 char *__cdecl asctime(const struct tm *_Tm);
-_CRTIMP char *__cdecl _ctime32(const __time32_t *_Time);
+_CRTIMP
+char *__cdecl _ctime32(const __time32_t *_Time);
 clock_t __cdecl clock(void);
-_CRTIMP double __cdecl _difftime32(__time32_t _Time1, __time32_t _Time2);
-_CRTIMP struct tm *__cdecl _gmtime32(const __time32_t *_Time);
-_CRTIMP struct tm *__cdecl _localtime32(const __time32_t *_Time);
+_CRTIMP
+double __cdecl _difftime32(__time32_t _Time1, __time32_t _Time2);
+_CRTIMP
+struct tm *__cdecl _gmtime32(const __time32_t *_Time);
+_CRTIMP
+struct tm *__cdecl _localtime32(const __time32_t *_Time);
 size_t __cdecl strftime(char *_Buf, size_t _SizeInBytes, const char *_Format, const struct tm *_Tm);
-_CRTIMP size_t __cdecl _strftime_l(char *_Buf, size_t _Max_size, const char *_Format, const struct tm *_Tm, _locale_t _Locale);
-_CRTIMP char *__cdecl _strdate(char *_Buffer);
-_CRTIMP char *__cdecl _strtime(char *_Buffer);
+_CRTIMP size_t __cdecl _strftime_l(char *_Buf, size_t _Max_size, const char *_Format, const struct tm *_Tm,
+																	 _locale_t _Locale);
+_CRTIMP
+char *__cdecl _strdate(char *_Buffer);
+_CRTIMP
+char *__cdecl _strtime(char *_Buffer);
 _CRTIMP __time32_t __cdecl _time32(__time32_t *_Time);
 _CRTIMP __time32_t __cdecl _mktime32(struct tm *_Tm);
 _CRTIMP __time32_t __cdecl _mkgmtime32(struct tm *_Tm);
@@ -144,8 +157,10 @@ _CRTIMP void __cdecl _tzset(void);
 #if _INTEGRAL_MAX_BITS >= 64
 double __cdecl _difftime64(__time64_t _Time1, __time64_t _Time2);
 _CRTIMP char *__cdecl _ctime64(const __time64_t *_Time);
-_CRTIMP struct tm *__cdecl _gmtime64(const __time64_t *_Time);
-_CRTIMP struct tm *__cdecl _localtime64(const __time64_t *_Time);
+_CRTIMP
+struct tm *__cdecl _gmtime64(const __time64_t *_Time);
+_CRTIMP
+struct tm *__cdecl _localtime64(const __time64_t *_Time);
 _CRTIMP __time64_t __cdecl _mktime64(struct tm *_Tm);
 _CRTIMP __time64_t __cdecl _mkgmtime64(struct tm *_Tm);
 _CRTIMP __time64_t __cdecl _time64(__time64_t *_Time);
@@ -183,7 +198,8 @@ typedef long ssize_t;
 _CRTIMP wchar_t *__cdecl _wasctime(const struct tm *_Tm);
 _CRTIMP wchar_t *__cdecl _wctime32(const __time32_t *_Time);
 size_t __cdecl wcsftime(wchar_t *_Buf, size_t _SizeInWords, const wchar_t *_Format, const struct tm *_Tm);
-_CRTIMP size_t __cdecl _wcsftime_l(wchar_t *_Buf, size_t _SizeInWords, const wchar_t *_Format, const struct tm *_Tm, _locale_t _Locale);
+_CRTIMP size_t __cdecl _wcsftime_l(wchar_t *_Buf, size_t _SizeInWords, const wchar_t *_Format, const struct tm *_Tm,
+																	 _locale_t _Locale);
 _CRTIMP wchar_t *__cdecl _wstrdate(wchar_t *_Buffer);
 _CRTIMP wchar_t *__cdecl _wstrtime(wchar_t *_Buffer);
 #if _INTEGRAL_MAX_BITS >= 64
@@ -219,33 +235,47 @@ time_t __cdecl time(time_t *_Time);
 
 #ifdef _USE_32BIT_TIME_T
 #if 0
-__CRT_INLINE double __cdecl difftime(time_t _Time1,time_t _Time2) { return _difftime32(_Time1,_Time2); }
-__CRT_INLINE char *__cdecl ctime(const time_t *_Time) { return _ctime32(_Time); }
-__CRT_INLINE struct tm *__cdecl gmtime(const time_t *_Time) { return _gmtime32(_Time); }
-__CRT_INLINE struct tm *__cdecl localtime(const time_t *_Time) { return _localtime32(_Time); }
-__CRT_INLINE time_t __cdecl mktime(struct tm *_Tm) { return _mktime32(_Tm); }
-__CRT_INLINE time_t __cdecl _mkgmtime(struct tm *_Tm) { return _mkgmtime32(_Tm); }
-__CRT_INLINE time_t __cdecl time(time_t *_Time) { return _time32(_Time); }
+__CRT_INLINE double __cdecl difftime(time_t _Time1, time_t _Time2) { return _difftime32(_Time1, _Time2); }
+__CRT_INLINE char*__cdecl ctime(const time_t* _Time) { return _ctime32(_Time); }
+__CRT_INLINE struct tm*__cdecl gmtime(const time_t* _Time) { return _gmtime32(_Time); }
+__CRT_INLINE struct tm*__cdecl localtime(const time_t* _Time) { return _localtime32(_Time); }
+__CRT_INLINE time_t __cdecl mktime(struct tm* _Tm) { return _mktime32(_Tm); }
+__CRT_INLINE time_t __cdecl _mkgmtime(struct tm* _Tm) { return _mkgmtime32(_Tm); }
+__CRT_INLINE time_t __cdecl time(time_t* _Time) { return _time32(_Time); }
 #endif
 #else
-__CRT_INLINE double __cdecl difftime(time_t _Time1, time_t _Time2) {
+__CRT_INLINE
+
+double __cdecl difftime(time_t _Time1, time_t _Time2) {
 	return _difftime64(_Time1, _Time2);
 }
-__CRT_INLINE char *__cdecl ctime(const time_t *_Time) {
+
+__CRT_INLINE
+
+char *__cdecl ctime(const time_t *_Time) {
 	return _ctime64(_Time);
 }
-__CRT_INLINE struct tm *__cdecl gmtime(const time_t *_Time) {
+
+__CRT_INLINE
+
+struct tm *__cdecl gmtime(const time_t *_Time) {
 	return _gmtime64(_Time);
 }
-__CRT_INLINE struct tm *__cdecl localtime(const time_t *_Time) {
+
+__CRT_INLINE
+
+struct tm *__cdecl localtime(const time_t *_Time) {
 	return _localtime64(_Time);
 }
+
 __CRT_INLINE time_t __cdecl mktime(struct tm *_Tm) {
 	return _mktime64(_Tm);
 }
+
 __CRT_INLINE time_t __cdecl _mkgmtime(struct tm *_Tm) {
 	return _mkgmtime64(_Tm);
 }
+
 __CRT_INLINE time_t __cdecl time(time_t *_Time) {
 	return _time64(_Time);
 }
@@ -255,19 +285,25 @@ __CRT_INLINE time_t __cdecl time(time_t *_Time) {
 #if !defined(NO_OLDNAMES) || defined(_POSIX)
 #define CLK_TCK CLOCKS_PER_SEC
 
-__MINGW_IMPORT int daylight;
-__MINGW_IMPORT long dstbias;
-__MINGW_IMPORT long timezone;
-__MINGW_IMPORT char *tzname[2];
+__MINGW_IMPORT
+int daylight;
+__MINGW_IMPORT
+long dstbias;
+__MINGW_IMPORT
+long timezone;
+__MINGW_IMPORT
+char *tzname[2];
 void __cdecl tzset(void);
 #endif
 
 #ifndef _TIMEVAL_DEFINED
 #define _TIMEVAL_DEFINED
+
 struct timeval {
 	long tv_sec;
 	long tv_usec;
 };
+
 #define timerisset(tvp) ((tvp)->tv_sec || (tvp)->tv_usec)
 #define timercmp(tvp, uvp, cmp) ((tvp)->tv_sec cmp(uvp)->tv_sec || (tvp)->tv_sec == (uvp)->tv_sec && (tvp)->tv_usec cmp(uvp)->tv_usec)
 #define timerclear(tvp) (tvp)->tv_sec = (tvp)->tv_usec = 0
@@ -276,6 +312,7 @@ struct timeval {
 #ifndef __STRICT_ANSI__
 #ifndef _TIMEZONE_DEFINED
 #define _TIMEZONE_DEFINED
+
 struct timezone {
 	int tz_minuteswest;
 	int tz_dsttime;

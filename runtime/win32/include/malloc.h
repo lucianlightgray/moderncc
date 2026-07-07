@@ -11,6 +11,7 @@
 
 #ifdef __cplusplus
 extern "C" {
+
 #endif
 
 #ifdef _WIN64
@@ -35,6 +36,7 @@ extern "C" {
 
 #ifndef _HEAPINFO_DEFINED
 #define _HEAPINFO_DEFINED
+
 typedef struct _heapinfo {
 	int *_pentry;
 	size_t _size;
@@ -53,22 +55,33 @@ void *__cdecl calloc(size_t _NumOfElements, size_t _SizeOfElements);
 void __cdecl free(void *_Memory);
 void *__cdecl malloc(size_t _Size);
 void *__cdecl realloc(void *_Memory, size_t _NewSize);
-_CRTIMP void *__cdecl _recalloc(void *_Memory, size_t _Count, size_t _Size);
-_CRTIMP void __cdecl _aligned_free(void *_Memory);
-_CRTIMP void *__cdecl _aligned_malloc(size_t _Size, size_t _Alignment);
-_CRTIMP void *__cdecl _aligned_offset_malloc(size_t _Size, size_t _Alignment, size_t _Offset);
-_CRTIMP void *__cdecl _aligned_realloc(void *_Memory, size_t _Size, size_t _Alignment);
-_CRTIMP void *__cdecl _aligned_recalloc(void *_Memory, size_t _Count, size_t _Size, size_t _Alignment);
-_CRTIMP void *__cdecl _aligned_offset_realloc(void *_Memory, size_t _Size, size_t _Alignment, size_t _Offset);
-_CRTIMP void *__cdecl _aligned_offset_recalloc(void *_Memory, size_t _Count, size_t _Size, size_t _Alignment, size_t _Offset);
+_CRTIMP
+void *__cdecl _recalloc(void *_Memory, size_t _Count, size_t _Size);
+_CRTIMP
+void __cdecl _aligned_free(void *_Memory);
+_CRTIMP
+void *__cdecl _aligned_malloc(size_t _Size, size_t _Alignment);
+_CRTIMP
+void *__cdecl _aligned_offset_malloc(size_t _Size, size_t _Alignment, size_t _Offset);
+_CRTIMP
+void *__cdecl _aligned_realloc(void *_Memory, size_t _Size, size_t _Alignment);
+_CRTIMP
+void *__cdecl _aligned_recalloc(void *_Memory, size_t _Count, size_t _Size, size_t _Alignment);
+_CRTIMP
+void *__cdecl _aligned_offset_realloc(void *_Memory, size_t _Size, size_t _Alignment, size_t _Offset);
+_CRTIMP
+void *__cdecl _aligned_offset_recalloc(void *_Memory, size_t _Count, size_t _Size, size_t _Alignment, size_t _Offset);
 #endif
 
 #define _MAX_WAIT_MALLOC_CRT 60000
 
-_CRTIMP int __cdecl _resetstkoflw(void);
-_CRTIMP unsigned long __cdecl _set_malloc_crt_max_wait(unsigned long _NewValue);
+_CRTIMP
+int __cdecl _resetstkoflw(void);
+_CRTIMP
+unsigned long __cdecl _set_malloc_crt_max_wait(unsigned long _NewValue);
 
-_CRTIMP void *__cdecl _expand(void *_Memory, size_t _NewSize);
+_CRTIMP
+void *__cdecl _expand(void *_Memory, size_t _NewSize);
 _CRTIMP size_t __cdecl _msize(void *_Memory);
 #ifdef __GNUC__
 #undef _alloca
@@ -80,14 +93,20 @@ _CRTIMP size_t __cdecl _msize(void *_Memory);
 #define _alloca(x) alloca((x))
 #endif
 _CRTIMP size_t __cdecl _get_sbh_threshold(void);
-_CRTIMP int __cdecl _set_sbh_threshold(size_t _NewValue);
+_CRTIMP
+int __cdecl _set_sbh_threshold(size_t _NewValue);
 _CRTIMP errno_t __cdecl _set_amblksiz(size_t _Value);
 _CRTIMP errno_t __cdecl _get_amblksiz(size_t *_Value);
-_CRTIMP int __cdecl _heapadd(void *_Memory, size_t _Size);
-_CRTIMP int __cdecl _heapchk(void);
-_CRTIMP int __cdecl _heapmin(void);
-_CRTIMP int __cdecl _heapset(unsigned int _Fill);
-_CRTIMP int __cdecl _heapwalk(_HEAPINFO *_EntryInfo);
+_CRTIMP
+int __cdecl _heapadd(void *_Memory, size_t _Size);
+_CRTIMP
+int __cdecl _heapchk(void);
+_CRTIMP
+int __cdecl _heapmin(void);
+_CRTIMP
+int __cdecl _heapset(unsigned int _Fill);
+_CRTIMP
+int __cdecl _heapwalk(_HEAPINFO *_EntryInfo);
 _CRTIMP size_t __cdecl _heapused(size_t *_Used, size_t *_Commit);
 _CRTIMP intptr_t __cdecl _get_heap_handle(void);
 

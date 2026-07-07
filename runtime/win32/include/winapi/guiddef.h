@@ -1,5 +1,6 @@
 #ifndef GUID_DEFINED
 #define GUID_DEFINED
+
 typedef struct _GUID {
 	unsigned long Data1;
 	unsigned short Data2;
@@ -124,7 +125,7 @@ typedef FMTID *LPFMTID;
 #ifdef __cplusplus
 __inline int InlineIsEqualGUID(REFGUID rguid1, REFGUID rguid2) {
 	return (((unsigned long *)&rguid1)[0] == ((unsigned long *)&rguid2)[0] && ((unsigned long *)&rguid1)[1] == ((unsigned long *)&rguid2)[1] &&
-			((unsigned long *)&rguid1)[2] == ((unsigned long *)&rguid2)[2] && ((unsigned long *)&rguid1)[3] == ((unsigned long *)&rguid2)[3]);
+					((unsigned long *)&rguid1)[2] == ((unsigned long *)&rguid2)[2] && ((unsigned long *)&rguid1)[3] == ((unsigned long *)&rguid2)[3]);
 }
 __inline int IsEqualGUID(REFGUID rguid1, REFGUID rguid2) {
 	return !memcmp(&rguid1, &rguid2, sizeof(GUID));

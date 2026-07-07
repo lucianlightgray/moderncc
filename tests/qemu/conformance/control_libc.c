@@ -17,7 +17,6 @@ static void deep(int n) {
 }
 
 int main(void) {
-
 	volatile int marker = 12345;
 	int keep = 678;
 

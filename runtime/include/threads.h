@@ -58,7 +58,7 @@ static inline void *__mcc_thrd_trampoline(void *__p) {
 
 static inline int thrd_create(thrd_t *__thr, thrd_start_t __func, void *__arg) {
 	struct __mcc_thrd_args *__a =
-		(struct __mcc_thrd_args *)malloc(sizeof *__a);
+			(struct __mcc_thrd_args *)malloc(sizeof *__a);
 	if (!__a)
 		return thrd_nomem;
 	__a->__func = __func;
@@ -147,7 +147,7 @@ static inline int mtx_timedlock(mtx_t *__m, const struct timespec *__ts) {
 			struct timespec __nap = {0, 1000000};
 			clock_gettime(CLOCK_REALTIME, &__now);
 			if (__now.tv_sec > __ts->tv_sec ||
-				(__now.tv_sec == __ts->tv_sec && __now.tv_nsec >= __ts->tv_nsec))
+					(__now.tv_sec == __ts->tv_sec && __now.tv_nsec >= __ts->tv_nsec))
 				return thrd_timedout;
 			nanosleep(&__nap, (void *)0);
 		}

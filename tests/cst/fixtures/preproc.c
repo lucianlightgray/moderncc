@@ -12,11 +12,11 @@ this text is inside an inactive branch and must round-trip byte-for-byte $$$
 #endif
 
 #ifndef MISSING
-#  define FALLBACK 42
+#define FALLBACK 42
 #endif
 
 int use_macros(int v) {
-    int a = SQUARE(v + 1);
-    int b = FALLBACK;
-    return a + b + mode;
+	int a = SQUARE(v + 1);
+	int b = FALLBACK;
+	return a + b + mode;
 }

@@ -195,7 +195,7 @@ PUB_FUNC void *mcc_realloc(void *ptr, unsigned long size) {
 }
 
 ST_FUNC unsigned long mcc_grow_capacity(unsigned long cur, unsigned long need,
-										unsigned long min_cap) {
+																				unsigned long min_cap) {
 	if (cur < min_cap)
 		cur = min_cap;
 	while (cur < need)
@@ -300,13 +300,13 @@ static int nb_states;
 static mem_debug_header_t *malloc_check(void *ptr, const char *msg) {
 	mem_debug_header_t *header = MEM_HEADER_PTR(ptr);
 	if (header->magic1 != MEM_DEBUG_MAGIC1 ||
-		header->magic2 != MEM_DEBUG_MAGIC2 ||
-		read32le(MEM_DEBUG_CHECK3(header)) != MEM_DEBUG_MAGIC3 ||
-		header->size == (unsigned)-1) {
+			header->magic2 != MEM_DEBUG_MAGIC2 ||
+			read32le(MEM_DEBUG_CHECK3(header)) != MEM_DEBUG_MAGIC3 ||
+			header->size == (unsigned)-1) {
 		fprintf(stderr, "%s check failed\n", msg);
 		if (header->magic1 == MEM_DEBUG_MAGIC1)
 			fprintf(stderr, "%s:%u: block allocated here.\n",
-					header->file_name, header->line_num);
+							header->file_name, header->line_num);
 		exit(1);
 	}
 	return header;
@@ -408,10 +408,10 @@ PUB_FUNC void mcc_memcheck(int d) {
 		mem_debug_header_t *header = mem_debug_chain;
 		fflush(stdout);
 		fprintf(stderr, "MEM_DEBUG: mem_leak= %d bytes, mem_max_size= %d bytes\n",
-				mem_cur_size, mem_max_size);
+						mem_cur_size, mem_max_size);
 		while (header) {
 			fprintf(stderr, "%s:%u: error: %u bytes leaked\n",
-					header->file_name, header->line_num, header->size);
+							header->file_name, header->line_num, header->size);
 			header = header->next;
 		}
 		fflush(stderr);
@@ -543,9 +543,11 @@ static void mcc_split_path(MCCState *s, void *p_ary, int *p_nb_ary, const char *
 #define WARN_ERR 2
 #define WARN_NOE 4
 
-enum { ERROR_WARN,
-	   ERROR_NOABORT,
-	   ERROR_ERROR };
+enum {
+	ERROR_WARN,
+	ERROR_NOABORT,
+	ERROR_ERROR
+};
 
 static int diag_want_color(MCCState *s1) {
 	if (s1->error_func)
@@ -561,7 +563,7 @@ static int diag_want_color(MCCState *s1) {
 }
 
 static void append_caret_context(MCCState *s1, CString *cs, BufferedFile *f,
-								  int line, int bol_adj, int use_color) {
+																 int line, int bol_adj, int use_color) {
 	const unsigned char *start, *end, *p, *cpos, *ls, *le;
 	int col, n, i;
 	char numbuf[16];
@@ -673,7 +675,7 @@ static void error1(int mode, const char *fmt, va_list ap) {
 	if (f) {
 		for (pf = s1->include_stack; pf < s1->include_stack_ptr; pf++)
 			cstr_printf(&cs, "In file included from %s:%d:\n",
-						(*pf)->filename, (*pf)->line_num - 1);
+									(*pf)->filename, (*pf)->line_num - 1);
 		if (0 == line) {
 			bol_adj = (tok_flags & TOK_FLAG_BOL) && !macro_ptr;
 			line = f->line_num - bol_adj;
@@ -736,6 +738,7 @@ PUB_FUNC void _mcc_error(const char *fmt, ...) {
 	error1(ERROR_ERROR, fmt, ap);
 	exit(1);
 }
+
 #define _mcc_error use_mcc_error_noabort
 
 PUB_FUNC void _mcc_warning(const char *fmt, ...) {
@@ -787,7 +790,7 @@ static int _mcc_open(MCCState *s1, const char *filename) {
 		fd = open(filename, O_RDONLY | O_BINARY);
 	if ((s1->verbose == 2 && fd >= 0) || s1->verbose == 3)
 		printf("%s %*s%s\n", fd < 0 ? "nf" : "->",
-			   (int)(s1->include_stack_ptr - s1->include_stack), "", filename);
+					 (int)(s1->include_stack_ptr - s1->include_stack), "", filename);
 	return fd;
 }
 
@@ -801,12 +804,10 @@ ST_FUNC int mcc_open(MCCState *s1, const char *filename) {
 }
 
 static int mcc_compile(MCCState *s1, int filetype, const char *str, int fd) {
-
 	mcc_enter_state(s1);
 	s1->error_set_jmp_enabled = 1;
 
 	if (setjmp(s1->error_jmp_buf) == 0) {
-
 		if (fd == -1) {
 			int len = strlen(str);
 			mcc_open_bf(s1, "<string>", len);
@@ -818,7 +819,7 @@ static int mcc_compile(MCCState *s1, int filetype, const char *str, int fd) {
 
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
 		int cst_on = (fd != -1 && s1->output_type != MCC_OUTPUT_PREPROCESS &&
-			      !(filetype & (AFF_TYPE_ASM | AFF_TYPE_ASMPP)));
+									!(filetype & (AFF_TYPE_ASM | AFF_TYPE_ASMPP)));
 		if (cst_on)
 			cst_capture_begin(str);
 #endif
@@ -873,6 +874,7 @@ LIBMCCAPI void mcc_undefine_symbol(MCCState *s1, const char *sym) {
 #if defined CONFIG_MCC_AUTO_MCCDIR && MCC_HOST_POSIX
 #include <sys/stat.h>
 static char auto_mccdir_buf[1024];
+
 static const char *mcc_auto_mccdir(void) {
 	char exe[1024], probe[1024];
 	struct stat st;
@@ -890,6 +892,7 @@ static const char *mcc_auto_mccdir(void) {
 	pstrcpy(auto_mccdir_buf, sizeof auto_mccdir_buf, exe);
 	return auto_mccdir_buf;
 }
+
 #define CONFIG_MCCDIR_DEFAULT mcc_auto_mccdir()
 #else
 #define CONFIG_MCCDIR_DEFAULT CONFIG_MCCDIR
@@ -1003,11 +1006,6 @@ LIBMCCAPI int mcc_set_output_type(MCCState *s, int output_type) {
 #else
 			pie = 0;
 #endif
-			/* -static disables the *implicit* PIE default, matching gcc: a
-			   plain static link is a position-dependent EXEC, not a
-			   static-PIE (a DYN image that needs startup self-relocation mcc
-			   does not emit — it would segfault at entry). An explicit -pie
-			   still opts in. */
 			if (s->static_link)
 				pie = 0;
 		}
@@ -1031,7 +1029,6 @@ LIBMCCAPI int mcc_set_output_type(MCCState *s, int output_type) {
 	mccelf_new(s);
 
 	if (output_type == MCC_OUTPUT_OBJ || output_type == MCC_OUTPUT_ASM) {
-
 		s->output_format = MCC_OUTPUT_FORMAT_ELF;
 		return 0;
 	}
@@ -1125,7 +1122,6 @@ static int mcc_add_binary(MCCState *s1, int flags, const char *filename, int fd)
 	lseek(fd, 0, SEEK_SET);
 
 	switch (obj_type) {
-
 	case AFF_BINTYPE_REL:
 		ret = mcc_load_object_file(s1, fd, 0);
 		break;
@@ -1290,7 +1286,7 @@ LIBMCCAPI int mcc_add_file(MCCState *s, const char *filename) {
 }
 
 static int mcc_add_library_internal(MCCState *s1, const char *fmt,
-									const char *filename, int flags, char **paths, int nb_paths) {
+																		const char *filename, int flags, char **paths, int nb_paths) {
 	char buf[1024];
 	int ret;
 
@@ -1302,13 +1298,13 @@ static int mcc_add_library_internal(MCCState *s1, const char *fmt,
 	}
 	if (flags & AFF_PRINT_ERROR)
 		mcc_error_noabort("%s '%s' not found",
-						  flags & AFF_TYPE_LIB ? "library" : "file", filename);
+											flags & AFF_TYPE_LIB ? "library" : "file", filename);
 	return FILE_NOT_FOUND;
 }
 
 ST_FUNC int mcc_add_dll(MCCState *s, const char *filename, int flags) {
 	return mcc_add_library_internal(s, "%s/%s", filename, flags,
-									s->library_paths, s->nb_library_paths);
+																	s->library_paths, s->nb_library_paths);
 }
 
 ST_FUNC int mcc_add_support(MCCState *s1, const char *filename) {
@@ -1331,7 +1327,7 @@ ST_FUNC int mcc_add_mccrt_embedded(MCCState *s1) {
 	if (fd < 0)
 		return mcc_error_noabort("embedded " MCC_MCCRT ": cannot create temp fd");
 	unlink(tmp);
-	for (off = 0; off < mccrt_blob_len; ) {
+	for (off = 0; off < mccrt_blob_len;) {
 		ssize_t w = write(fd, mccrt_blob + off, mccrt_blob_len - off);
 		if (w <= 0) {
 			close(fd);
@@ -1348,10 +1344,10 @@ ST_FUNC int mcc_add_mccrt_embedded(MCCState *s1) {
 #ifdef MCC_TARGET_UNIX
 ST_FUNC int mcc_add_crt(MCCState *s1, const char *filename) {
 	int ret = mcc_add_library_internal(s1, "%s/%s",
-									   filename, 0, s1->crt_paths, s1->nb_crt_paths);
+																		 filename, 0, s1->crt_paths, s1->nb_crt_paths);
 	if (ret == FILE_NOT_FOUND)
 		ret = mcc_add_library_internal(s1, "%s/%s",
-									   filename, AFF_PRINT_ERROR, s1->library_paths, s1->nb_library_paths);
+																	 filename, AFF_PRINT_ERROR, s1->library_paths, s1->nb_library_paths);
 	return ret;
 }
 #endif
@@ -1359,16 +1355,16 @@ ST_FUNC int mcc_add_crt(MCCState *s1, const char *filename) {
 LIBMCCAPI int mcc_add_library(MCCState *s, const char *libraryname) {
 	static const char *const libs[] = {
 #if defined MCC_TARGET_PE
-		"%s/%s.def", "%s/lib%s.def", "%s/%s.dll", "%s/lib%s.dll",
+			"%s/%s.def", "%s/lib%s.def", "%s/%s.dll", "%s/lib%s.dll",
 #elif defined MCC_TARGET_MACHO
-		"%s/lib%s.dylib", "%s/lib%s.tbd",
+			"%s/lib%s.dylib", "%s/lib%s.tbd",
 #elif defined TARGETOS_OpenBSD
-		"%s/lib%s.so.*",
+			"%s/lib%s.so.*",
 #else
-		"%s/lib%s.so",
+			"%s/lib%s.so",
 #endif
-		"%s/lib%s.a",
-		NULL};
+			"%s/lib%s.a",
+			NULL};
 	int flags = AFF_TYPE_LIB | (s->filetype & AFF_WHOLE_ARCHIVE);
 #if defined MCC_TARGET_PE
 	if (!strcmp(libraryname, "m"))
@@ -1382,7 +1378,7 @@ LIBMCCAPI int mcc_add_library(MCCState *s, const char *libraryname) {
 			pp += sizeof(libs) / sizeof(*libs) - 2;
 		while (*pp) {
 			int ret = mcc_add_library_internal(s, *pp,
-											   libraryname, flags, s->library_paths, s->nb_library_paths);
+																				 libraryname, flags, s->library_paths, s->nb_library_paths);
 			if (ret != FILE_NOT_FOUND)
 				return ret;
 			++pp;
@@ -1394,9 +1390,9 @@ LIBMCCAPI int mcc_add_library(MCCState *s, const char *libraryname) {
 LIBMCCAPI int mcc_add_framework(MCCState *s1, const char *name) {
 #ifdef MCC_TARGET_MACHO
 	static const char *const pat[] = {
-		"%s/%s.framework/%s.tbd",
-		"%s/%s.framework/%s",
-		NULL};
+			"%s/%s.framework/%s.tbd",
+			"%s/%s.framework/%s",
+			NULL};
 	char buf[1024];
 	int whole = s1->filetype & AFF_WHOLE_ARCHIVE;
 
@@ -1563,8 +1559,8 @@ static int mcc_set_linker(MCCState *s, const char *optarg) {
 			mcc_pe_set_dll_characteristics(s, PE_DLLCHARACTERISTICS_DYNAMIC_BASE);
 		} else if (link_option(&o, "disable-dynamicbase|no-dynamicbase")) {
 			mcc_pe_clear_dll_characteristics(s,
-											 PE_DLLCHARACTERISTICS_DYNAMIC_BASE |
-												 PE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA);
+																			 PE_DLLCHARACTERISTICS_DYNAMIC_BASE |
+																					 PE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA);
 		} else if (link_option(&o, "nxcompat")) {
 			mcc_pe_set_dll_characteristics(s, PE_DLLCHARACTERISTICS_NX_COMPAT);
 		} else if (link_option(&o, "disable-nxcompat|no-nxcompat")) {
@@ -1572,8 +1568,8 @@ static int mcc_set_linker(MCCState *s, const char *optarg) {
 		} else if (link_option(&o, "high-entropy-va")) {
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
 			mcc_pe_set_dll_characteristics(s,
-										   PE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA |
-											   PE_DLLCHARACTERISTICS_DYNAMIC_BASE);
+																		 PE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA |
+																				 PE_DLLCHARACTERISTICS_DYNAMIC_BASE);
 #else
 			goto err;
 #endif
@@ -1711,98 +1707,98 @@ enum {
 #define MCC_OPTION_NOSEP 0x0002
 
 static const MCCOption mcc_options[] = {
-	{"h", MCC_OPTION_HELP, 0},
-	{"-help", MCC_OPTION_HELP, 0},
-	{"?", MCC_OPTION_HELP, 0},
-	{"hh", MCC_OPTION_HELP2, 0},
-	{"v", MCC_OPTION_v, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
-	{"-version", MCC_OPTION_v, 0},
-	{"I", MCC_OPTION_I, MCC_OPTION_HAS_ARG},
-	{"D", MCC_OPTION_D, MCC_OPTION_HAS_ARG},
-	{"U", MCC_OPTION_U, MCC_OPTION_HAS_ARG},
-	{"P", MCC_OPTION_P, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
-	{"L", MCC_OPTION_L, MCC_OPTION_HAS_ARG},
-	{"B", MCC_OPTION_B, MCC_OPTION_HAS_ARG},
-	{"l", MCC_OPTION_l, MCC_OPTION_HAS_ARG},
-	{"bench", MCC_OPTION_bench, 0},
-	{"bt", MCC_OPTION_bt, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
-	{"b", MCC_OPTION_b, 0},
-	{"g", MCC_OPTION_g, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
+		{"h", MCC_OPTION_HELP, 0},
+		{"-help", MCC_OPTION_HELP, 0},
+		{"?", MCC_OPTION_HELP, 0},
+		{"hh", MCC_OPTION_HELP2, 0},
+		{"v", MCC_OPTION_v, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
+		{"-version", MCC_OPTION_v, 0},
+		{"I", MCC_OPTION_I, MCC_OPTION_HAS_ARG},
+		{"D", MCC_OPTION_D, MCC_OPTION_HAS_ARG},
+		{"U", MCC_OPTION_U, MCC_OPTION_HAS_ARG},
+		{"P", MCC_OPTION_P, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
+		{"L", MCC_OPTION_L, MCC_OPTION_HAS_ARG},
+		{"B", MCC_OPTION_B, MCC_OPTION_HAS_ARG},
+		{"l", MCC_OPTION_l, MCC_OPTION_HAS_ARG},
+		{"bench", MCC_OPTION_bench, 0},
+		{"bt", MCC_OPTION_bt, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
+		{"b", MCC_OPTION_b, 0},
+		{"g", MCC_OPTION_g, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
 #ifdef MCC_TARGET_MACHO
-	{"compatibility_version", MCC_OPTION_compatibility_version, MCC_OPTION_HAS_ARG},
-	{"current_version", MCC_OPTION_current_version, MCC_OPTION_HAS_ARG},
-	{"dynamiclib", MCC_OPTION_dynamiclib, 0},
-	{"flat_namespace", MCC_OPTION_flat_namespace, 0},
-	{"framework", MCC_OPTION_framework, MCC_OPTION_HAS_ARG},
-	{"F", MCC_OPTION_F, MCC_OPTION_HAS_ARG},
-	{"install_name", MCC_OPTION_install_name, MCC_OPTION_HAS_ARG},
-	{"mmacosx-version-min=", MCC_OPTION_mmacosx_version_min, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
-	{"mmacos-version-min=", MCC_OPTION_mmacosx_version_min, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
-	{"two_levelnamespace", MCC_OPTION_two_levelnamespace, 0},
-	{"undefined", MCC_OPTION_undefined, MCC_OPTION_HAS_ARG},
+		{"compatibility_version", MCC_OPTION_compatibility_version, MCC_OPTION_HAS_ARG},
+		{"current_version", MCC_OPTION_current_version, MCC_OPTION_HAS_ARG},
+		{"dynamiclib", MCC_OPTION_dynamiclib, 0},
+		{"flat_namespace", MCC_OPTION_flat_namespace, 0},
+		{"framework", MCC_OPTION_framework, MCC_OPTION_HAS_ARG},
+		{"F", MCC_OPTION_F, MCC_OPTION_HAS_ARG},
+		{"install_name", MCC_OPTION_install_name, MCC_OPTION_HAS_ARG},
+		{"mmacosx-version-min=", MCC_OPTION_mmacosx_version_min, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
+		{"mmacos-version-min=", MCC_OPTION_mmacosx_version_min, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
+		{"two_levelnamespace", MCC_OPTION_two_levelnamespace, 0},
+		{"undefined", MCC_OPTION_undefined, MCC_OPTION_HAS_ARG},
 #endif
-	{"c", MCC_OPTION_c, 0},
-	{"dumpmachine", MCC_OPTION_dumpmachine, 0},
-	{"dumpversion", MCC_OPTION_dumpversion, 0},
-	{"d", MCC_OPTION_d, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
-	{"static", MCC_OPTION_static, 0},
-	{"std", MCC_OPTION_std, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
-	{"shared", MCC_OPTION_shared, 0},
-	{"soname", MCC_OPTION_soname, MCC_OPTION_HAS_ARG},
-	{"o", MCC_OPTION_o, MCC_OPTION_HAS_ARG},
-	{"pthread", MCC_OPTION_pthread, 0},
-	{"run", MCC_OPTION_run, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
-	{"rstdin", MCC_OPTION_rstdin, MCC_OPTION_HAS_ARG},
-	{"rdynamic", MCC_OPTION_rdynamic, 0},
-	{"r", MCC_OPTION_r, 0},
-	{"Wl,", MCC_OPTION_Wl, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
-	{"Wp,", MCC_OPTION_Wp, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
-	{"W", MCC_OPTION_W, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
-	{"O", MCC_OPTION_O, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
+		{"c", MCC_OPTION_c, 0},
+		{"dumpmachine", MCC_OPTION_dumpmachine, 0},
+		{"dumpversion", MCC_OPTION_dumpversion, 0},
+		{"d", MCC_OPTION_d, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
+		{"static", MCC_OPTION_static, 0},
+		{"std", MCC_OPTION_std, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
+		{"shared", MCC_OPTION_shared, 0},
+		{"soname", MCC_OPTION_soname, MCC_OPTION_HAS_ARG},
+		{"o", MCC_OPTION_o, MCC_OPTION_HAS_ARG},
+		{"pthread", MCC_OPTION_pthread, 0},
+		{"run", MCC_OPTION_run, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
+		{"rstdin", MCC_OPTION_rstdin, MCC_OPTION_HAS_ARG},
+		{"rdynamic", MCC_OPTION_rdynamic, 0},
+		{"r", MCC_OPTION_r, 0},
+		{"Wl,", MCC_OPTION_Wl, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
+		{"Wp,", MCC_OPTION_Wp, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
+		{"W", MCC_OPTION_W, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
+		{"O", MCC_OPTION_O, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
 #ifdef MCC_TARGET_ARM
-	{"mfloat-abi", MCC_OPTION_mfloat_abi, MCC_OPTION_HAS_ARG},
+		{"mfloat-abi", MCC_OPTION_mfloat_abi, MCC_OPTION_HAS_ARG},
 #endif
-	{"m", MCC_OPTION_m, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
-	{"f", MCC_OPTION_f, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
-	{"isystem", MCC_OPTION_isystem, MCC_OPTION_HAS_ARG},
-	{"iquote", MCC_OPTION_iquote, MCC_OPTION_HAS_ARG},
-	{"idirafter", MCC_OPTION_idirafter, MCC_OPTION_HAS_ARG},
-	{"imacros", MCC_OPTION_imacros, MCC_OPTION_HAS_ARG},
-	{"-sysroot", MCC_OPTION_sysroot, MCC_OPTION_HAS_ARG},
-	{"isysroot", MCC_OPTION_isysroot, MCC_OPTION_HAS_ARG},
-	{"include", MCC_OPTION_include, MCC_OPTION_HAS_ARG},
-	{"nostdinc", MCC_OPTION_nostdinc, 0},
-	{"trigraphs", MCC_OPTION_trigraphs, 0},
-	{"nostdlib", MCC_OPTION_nostdlib, 0},
-	{"print-search-dirs", MCC_OPTION_print_search_dirs, 0},
-	{"w", MCC_OPTION_w, 0},
-	{"E", MCC_OPTION_E, 0},
-	{"M", MCC_OPTION_M, 0},
-	{"MM", MCC_OPTION_MM, 0},
-	{"MD", MCC_OPTION_MD, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
-	{"MMD", MCC_OPTION_MMD, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
-	{"MF", MCC_OPTION_MF, MCC_OPTION_HAS_ARG},
-	{"MP", MCC_OPTION_MP, 0},
-	{"MT", MCC_OPTION_MT, MCC_OPTION_HAS_ARG},
-	{"MQ", MCC_OPTION_MQ, MCC_OPTION_HAS_ARG},
-	{"S", MCC_OPTION_S, 0},
-	{"x", MCC_OPTION_x, MCC_OPTION_HAS_ARG},
-	{"ar", MCC_OPTION_ar, 0},
+		{"m", MCC_OPTION_m, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
+		{"f", MCC_OPTION_f, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
+		{"isystem", MCC_OPTION_isystem, MCC_OPTION_HAS_ARG},
+		{"iquote", MCC_OPTION_iquote, MCC_OPTION_HAS_ARG},
+		{"idirafter", MCC_OPTION_idirafter, MCC_OPTION_HAS_ARG},
+		{"imacros", MCC_OPTION_imacros, MCC_OPTION_HAS_ARG},
+		{"-sysroot", MCC_OPTION_sysroot, MCC_OPTION_HAS_ARG},
+		{"isysroot", MCC_OPTION_isysroot, MCC_OPTION_HAS_ARG},
+		{"include", MCC_OPTION_include, MCC_OPTION_HAS_ARG},
+		{"nostdinc", MCC_OPTION_nostdinc, 0},
+		{"trigraphs", MCC_OPTION_trigraphs, 0},
+		{"nostdlib", MCC_OPTION_nostdlib, 0},
+		{"print-search-dirs", MCC_OPTION_print_search_dirs, 0},
+		{"w", MCC_OPTION_w, 0},
+		{"E", MCC_OPTION_E, 0},
+		{"M", MCC_OPTION_M, 0},
+		{"MM", MCC_OPTION_MM, 0},
+		{"MD", MCC_OPTION_MD, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
+		{"MMD", MCC_OPTION_MMD, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
+		{"MF", MCC_OPTION_MF, MCC_OPTION_HAS_ARG},
+		{"MP", MCC_OPTION_MP, 0},
+		{"MT", MCC_OPTION_MT, MCC_OPTION_HAS_ARG},
+		{"MQ", MCC_OPTION_MQ, MCC_OPTION_HAS_ARG},
+		{"S", MCC_OPTION_S, 0},
+		{"x", MCC_OPTION_x, MCC_OPTION_HAS_ARG},
+		{"ar", MCC_OPTION_ar, 0},
 #ifdef MCC_TARGET_PE
-	{"impdef", MCC_OPTION_impdef, 0},
+		{"impdef", MCC_OPTION_impdef, 0},
 #endif
-	{"arch", 0, MCC_OPTION_HAS_ARG},
-	{"C", 0, 0},
-	{"-param", 0, MCC_OPTION_HAS_ARG},
-	{"pedantic", MCC_OPTION_pedantic, 0},
-	{"pedantic-errors", MCC_OPTION_pedantic_errors, 0},
-	{"pie", MCC_OPTION_pie, 0},
-	{"no-pie", MCC_OPTION_nopie, 0},
-	{"nopie", MCC_OPTION_nopie, 0},
-	{"pipe", 0, 0},
-	{"s", MCC_OPTION_s, 0},
-	{"traditional", 0, 0},
-	{NULL, 0, 0},
+		{"arch", 0, MCC_OPTION_HAS_ARG},
+		{"C", 0, 0},
+		{"-param", 0, MCC_OPTION_HAS_ARG},
+		{"pedantic", MCC_OPTION_pedantic, 0},
+		{"pedantic-errors", MCC_OPTION_pedantic_errors, 0},
+		{"pie", MCC_OPTION_pie, 0},
+		{"no-pie", MCC_OPTION_nopie, 0},
+		{"nopie", MCC_OPTION_nopie, 0},
+		{"pipe", 0, 0},
+		{"s", MCC_OPTION_s, 0},
+		{"traditional", 0, 0},
+		{NULL, 0, 0},
 };
 
 typedef struct FlagDef {
@@ -1815,66 +1811,66 @@ typedef struct FlagDef {
 #define FD_INVERT 0x0002
 
 static const FlagDef options_W[] = {
-	{offsetof(MCCState, warn_all), WD_ALL, "all"},
-	{offsetof(MCCState, warn_error), 0, "error"},
-	{offsetof(MCCState, warn_write_strings), 0, "write-strings"},
-	{offsetof(MCCState, warn_unsupported), 0, "unsupported"},
-	{offsetof(MCCState, warn_implicit_function_declaration), WD_ALL, "implicit-function-declaration"},
-	{offsetof(MCCState, warn_discarded_qualifiers), WD_ALL, "discarded-qualifiers"},
-	{offsetof(MCCState, warn_sequence_point), WD_ALL, "sequence-point"},
-	{offsetof(MCCState, warn_format), WD_ALL, "format"},
-	{offsetof(MCCState, warn_vla), 0, "vla"},
-	{offsetof(MCCState, warn_undef), 0, "undef"},
-	{offsetof(MCCState, warn_implicit_int), 0, "implicit-int"},
-	{offsetof(MCCState, warn_sign_compare), 0, "sign-compare"},
-	{offsetof(MCCState, warn_parentheses), WD_ALL, "parentheses"},
-	{offsetof(MCCState, warn_switch), WD_ALL, "switch"},
-	{offsetof(MCCState, warn_unused_variable), WD_ALL, "unused-variable"},
-	{offsetof(MCCState, warn_unused_parameter), 0, "unused-parameter"},
-	{offsetof(MCCState, warn_unused_function), WD_ALL, "unused-function"},
-	{offsetof(MCCState, warn_unknown_pragmas), WD_ALL, "unknown-pragmas"},
-	{offsetof(MCCState, warn_pedantic), 0, "pedantic"},
-	{offsetof(MCCState, warn_fatal_errors), 0, "fatal-errors"},
-	{offsetof(MCCState, warn_shadow), 0, "shadow"},
-	{offsetof(MCCState, warn_unused_value), WD_ALL, "unused-value"},
-	{offsetof(MCCState, warn_uninitialized), WD_ALL, "uninitialized"},
-	{offsetof(MCCState, warn_varargs), 0, "varargs"},
-	{offsetof(MCCState, warn_strict_prototypes), 0, "strict-prototypes"},
-	{offsetof(MCCState, warn_return_type), WD_ALL, "return-type"},
-	{offsetof(MCCState, warn_return_type), WD_ALL, "return-mismatch"},
-	{0, 0, NULL}};
+		{offsetof(MCCState, warn_all), WD_ALL, "all"},
+		{offsetof(MCCState, warn_error), 0, "error"},
+		{offsetof(MCCState, warn_write_strings), 0, "write-strings"},
+		{offsetof(MCCState, warn_unsupported), 0, "unsupported"},
+		{offsetof(MCCState, warn_implicit_function_declaration), WD_ALL, "implicit-function-declaration"},
+		{offsetof(MCCState, warn_discarded_qualifiers), WD_ALL, "discarded-qualifiers"},
+		{offsetof(MCCState, warn_sequence_point), WD_ALL, "sequence-point"},
+		{offsetof(MCCState, warn_format), WD_ALL, "format"},
+		{offsetof(MCCState, warn_vla), 0, "vla"},
+		{offsetof(MCCState, warn_undef), 0, "undef"},
+		{offsetof(MCCState, warn_implicit_int), 0, "implicit-int"},
+		{offsetof(MCCState, warn_sign_compare), 0, "sign-compare"},
+		{offsetof(MCCState, warn_parentheses), WD_ALL, "parentheses"},
+		{offsetof(MCCState, warn_switch), WD_ALL, "switch"},
+		{offsetof(MCCState, warn_unused_variable), WD_ALL, "unused-variable"},
+		{offsetof(MCCState, warn_unused_parameter), 0, "unused-parameter"},
+		{offsetof(MCCState, warn_unused_function), WD_ALL, "unused-function"},
+		{offsetof(MCCState, warn_unknown_pragmas), WD_ALL, "unknown-pragmas"},
+		{offsetof(MCCState, warn_pedantic), 0, "pedantic"},
+		{offsetof(MCCState, warn_fatal_errors), 0, "fatal-errors"},
+		{offsetof(MCCState, warn_shadow), 0, "shadow"},
+		{offsetof(MCCState, warn_unused_value), WD_ALL, "unused-value"},
+		{offsetof(MCCState, warn_uninitialized), WD_ALL, "uninitialized"},
+		{offsetof(MCCState, warn_varargs), 0, "varargs"},
+		{offsetof(MCCState, warn_strict_prototypes), 0, "strict-prototypes"},
+		{offsetof(MCCState, warn_return_type), WD_ALL, "return-type"},
+		{offsetof(MCCState, warn_return_type), WD_ALL, "return-mismatch"},
+		{0, 0, NULL}};
 
 static const FlagDef options_f[] = {
-	{offsetof(MCCState, char_is_unsigned), 0, "unsigned-char"},
-	{offsetof(MCCState, char_is_unsigned), FD_INVERT, "signed-char"},
-	{offsetof(MCCState, nocommon), FD_INVERT, "common"},
-	{offsetof(MCCState, leading_underscore), 0, "leading-underscore"},
-	{offsetof(MCCState, ms_extensions), 0, "ms-extensions"},
-	{offsetof(MCCState, dollars_in_identifiers), 0, "dollars-in-identifiers"},
-	{offsetof(MCCState, test_coverage), 0, "test-coverage"},
-	{offsetof(MCCState, reverse_funcargs), 0, "reverse-funcargs"},
-	{offsetof(MCCState, gnu89_inline), 0, "gnu89-inline"},
-	{offsetof(MCCState, unwind_tables), 0, "asynchronous-unwind-tables"},
-	{offsetof(MCCState, short_enums), 0, "short-enums"},
-	{offsetof(MCCState, nobuiltin), FD_INVERT, "builtin"},
-	{offsetof(MCCState, omit_frame_pointer), 0, "omit-frame-pointer"},
-	{offsetof(MCCState, function_sections), 0, "function-sections"},
-	{offsetof(MCCState, data_sections), 0, "data-sections"},
-	{offsetof(MCCState, wrapv), 0, "wrapv"},
-	{offsetof(MCCState, trigraphs), 0, "trigraphs"},
-	{offsetof(MCCState, cx_limited_range), 0, "cx-limited-range"},
-	{offsetof(MCCState, freestanding), 0, "freestanding"},
-	{offsetof(MCCState, freestanding), FD_INVERT, "hosted"},
-	{offsetof(MCCState, syntax_only), 0, "syntax-only"},
-	{offsetof(MCCState, diag_no_caret), FD_INVERT, "diagnostics-show-caret"},
-	{0, 0, NULL}};
+		{offsetof(MCCState, char_is_unsigned), 0, "unsigned-char"},
+		{offsetof(MCCState, char_is_unsigned), FD_INVERT, "signed-char"},
+		{offsetof(MCCState, nocommon), FD_INVERT, "common"},
+		{offsetof(MCCState, leading_underscore), 0, "leading-underscore"},
+		{offsetof(MCCState, ms_extensions), 0, "ms-extensions"},
+		{offsetof(MCCState, dollars_in_identifiers), 0, "dollars-in-identifiers"},
+		{offsetof(MCCState, test_coverage), 0, "test-coverage"},
+		{offsetof(MCCState, reverse_funcargs), 0, "reverse-funcargs"},
+		{offsetof(MCCState, gnu89_inline), 0, "gnu89-inline"},
+		{offsetof(MCCState, unwind_tables), 0, "asynchronous-unwind-tables"},
+		{offsetof(MCCState, short_enums), 0, "short-enums"},
+		{offsetof(MCCState, nobuiltin), FD_INVERT, "builtin"},
+		{offsetof(MCCState, omit_frame_pointer), 0, "omit-frame-pointer"},
+		{offsetof(MCCState, function_sections), 0, "function-sections"},
+		{offsetof(MCCState, data_sections), 0, "data-sections"},
+		{offsetof(MCCState, wrapv), 0, "wrapv"},
+		{offsetof(MCCState, trigraphs), 0, "trigraphs"},
+		{offsetof(MCCState, cx_limited_range), 0, "cx-limited-range"},
+		{offsetof(MCCState, freestanding), 0, "freestanding"},
+		{offsetof(MCCState, freestanding), FD_INVERT, "hosted"},
+		{offsetof(MCCState, syntax_only), 0, "syntax-only"},
+		{offsetof(MCCState, diag_no_caret), FD_INVERT, "diagnostics-show-caret"},
+		{0, 0, NULL}};
 
 static const FlagDef options_m[] = {
-	{offsetof(MCCState, ms_bitfields), 0, "ms-bitfields"},
+		{offsetof(MCCState, ms_bitfields), 0, "ms-bitfields"},
 #ifdef MCC_TARGET_X86_64
-	{offsetof(MCCState, nosse), FD_INVERT, "sse"},
+		{offsetof(MCCState, nosse), FD_INVERT, "sse"},
 #endif
-	{0, 0, NULL}};
+		{0, 0, NULL}};
 
 static int set_flag(MCCState *s, const FlagDef *flags, const char *name) {
 	int value, mask, ret;
@@ -1910,33 +1906,33 @@ static int set_flag(MCCState *s, const FlagDef *flags, const char *name) {
 
 static const char dumpmachine_str[] =
 #ifdef MCC_TARGET_I386
-	"i386-pc"
+		"i386-pc"
 #elif defined MCC_TARGET_X86_64
-	"x86_64-pc"
+		"x86_64-pc"
 #elif defined MCC_TARGET_ARM
-	"arm"
+		"arm"
 #elif defined MCC_TARGET_ARM64
-	"aarch64"
+		"aarch64"
 #elif defined MCC_TARGET_RISCV64
-	"riscv64"
+		"riscv64"
 #endif
-	"-"
+		"-"
 #ifdef MCC_TARGET_PE
-	"mingw32"
+		"mingw32"
 #elif defined(MCC_TARGET_MACHO)
-	"apple-darwin"
+		"apple-darwin"
 #elif TARGETOS_FreeBSD || TARGETOS_FreeBSD_kernel
-	"freebsd"
+		"freebsd"
 #elif TARGETOS_OpenBSD
-	"openbsd"
+		"openbsd"
 #elif TARGETOS_NetBSD
-	"netbsd"
+		"netbsd"
 #elif CONFIG_MCC_MUSL
-	"linux-musl"
+		"linux-musl"
 #else
-	"linux-gnu"
+		"linux-gnu"
 #endif
-	;
+		;
 
 #if defined MCC_TARGET_MACHO
 static uint32_t parse_version(MCCState *s1, const char *version) {
@@ -2108,8 +2104,11 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) {
 				s->dwarf = 0;
 			} else if (isnum(*optarg)) {
 				x = *optarg++ - '0';
-				s->do_debug = x > 2 ? 2 : x == 0 && s->do_backtrace ? 1
-																	: x;
+				s->do_debug = x > 2
+													? 2
+											: x == 0 && s->do_backtrace
+													? 1
+													: x;
 				goto g_redo;
 #ifdef MCC_TARGET_PE
 			} else if (0 == strcmp(".pdb", optarg)) {
@@ -2272,9 +2271,9 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) {
 				s->stack_protector = 1;
 #else
 				mcc_warning_c(warn_unsupported)(
-					"-f%s: stack protection is only implemented on x86_64 (ELF/Mach-O) "
-					"and arm64 Mach-O",
-					optarg);
+						"-f%s: stack protection is only implemented on x86_64 (ELF/Mach-O) "
+						"and arm64 Mach-O",
+						optarg);
 #endif
 			} else if (!strcmp(optarg, "no-stack-protector")) {
 				s->stack_protector = 0;
@@ -2300,7 +2299,8 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) {
 		case MCC_OPTION_m:
 			if (set_flag(s, options_m, optarg) < 0) {
 				const char *marg = optarg;
-				if (strstart("arch=", &marg) || strstart("tune=", &marg) || strstart("cpu=", &marg) || strstart("cmodel=", &marg) || strstart("fpmath=", &marg))
+				if (strstart("arch=", &marg) || strstart("tune=", &marg) || strstart("cpu=", &marg) ||
+						strstart("cmodel=", &marg) || strstart("fpmath=", &marg))
 					break;
 				if (x = atoi(optarg), x != 32 && x != 64)
 					goto unsupported_option;
@@ -2525,16 +2525,16 @@ PUB_FUNC void mcc_print_stats(MCCState *s1, unsigned total_time) {
 	if (!total_time)
 		total_time = 1;
 	fprintf(stderr, "# %d idents, %d lines, %d functions, %u bytes\n"
-					"# %0.3f s, %u lines/s, %0.1f MB/s\n",
-			total_idents, total_lines, total_funcs, total_bytes,
-			(double)total_time / 1000,
-			(unsigned)total_lines * 1000 / total_time,
-			(double)total_bytes / 1000 / total_time);
+									"# %0.3f s, %u lines/s, %0.1f MB/s\n",
+					total_idents, total_lines, total_funcs, total_bytes,
+					(double)total_time / 1000,
+					(unsigned)total_lines * 1000 / total_time,
+					(double)total_bytes / 1000 / total_time);
 	fprintf(stderr, "# text %u, data.rw %u, data.ro %u, bss %u bytes\n",
-			s1->total_output[0],
-			s1->total_output[1],
-			s1->total_output[2],
-			s1->total_output[3]);
+					s1->total_output[0],
+					s1->total_output[1],
+					s1->total_output[2],
+					s1->total_output[3]);
 #ifdef MEM_DEBUG
 	fprintf(stderr, "# memory usage");
 #ifdef MCC_IS_NATIVE
@@ -2543,7 +2543,7 @@ PUB_FUNC void mcc_print_stats(MCCState *s1, unsigned total_time) {
 		unsigned ms = s->data_offset + s->link->data_offset + s->hash->data_offset;
 		unsigned rs = s1->run_size;
 		fprintf(stderr, ": %d to run, %d symbols, %d other,",
-				rs, ms, mem_cur_size - rs - ms);
+						rs, ms, mem_cur_size - rs - ms);
 	}
 #endif
 	fprintf(stderr, " %d max (bytes)\n", mem_max_size);

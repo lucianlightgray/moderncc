@@ -7,6 +7,7 @@
 
 #ifdef __cplusplus
 extern "C" {
+
 #endif
 
 _CRTIMP errno_t __cdecl _access_s(const char *_Filename, int _AccessMode);

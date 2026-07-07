@@ -14,27 +14,27 @@ int add(int a, int b) {
 const char hello[] = "Hello World!";
 
 char my_program[] =
-	"#include <mcclib.h>\n"
-	"extern int add(int a, int b);\n"
-	"#ifdef _WIN32\n"
-	" __attribute__((dllimport))\n"
-	"#endif\n"
-	"extern const char hello[];\n"
-	"int fib(int n)\n"
-	"{\n"
-	"    if (n <= 2)\n"
-	"        return 1;\n"
-	"    else\n"
-	"        return fib(n-1) + fib(n-2);\n"
-	"}\n"
-	"\n"
-	"int foo(int n)\n"
-	"{\n"
-	"    printf(\"%s\\n\", hello);\n"
-	"    printf(\"fib(%d) = %d\\n\", n, fib(n));\n"
-	"    printf(\"add(%d, %d) = %d\\n\", n, 2 * n, add(n, 2 * n));\n"
-	"    return 0;\n"
-	"}\n";
+		"#include <mcclib.h>\n"
+		"extern int add(int a, int b);\n"
+		"#ifdef _WIN32\n"
+		" __attribute__((dllimport))\n"
+		"#endif\n"
+		"extern const char hello[];\n"
+		"int fib(int n)\n"
+		"{\n"
+		"    if (n <= 2)\n"
+		"        return 1;\n"
+		"    else\n"
+		"        return fib(n-1) + fib(n-2);\n"
+		"}\n"
+		"\n"
+		"int foo(int n)\n"
+		"{\n"
+		"    printf(\"%s\\n\", hello);\n"
+		"    printf(\"fib(%d) = %d\\n\", n, fib(n));\n"
+		"    printf(\"add(%d, %d) = %d\\n\", n, 2 * n, add(n, 2 * n));\n"
+		"    return 0;\n"
+		"}\n";
 
 int main(int argc, char **argv) {
 	MCCState *s;

@@ -11,6 +11,7 @@
 
 #ifdef __cplusplus
 extern "C" {
+
 #endif
 
 #ifndef _CRTIMP
@@ -107,7 +108,8 @@ struct itimerspec {
 
 #if !defined(RC_INVOKED) && !defined(NO_OLDNAMES)
 #ifdef _USE_32BIT_TIME_T
-__CRT_INLINE void __cdecl ftime(struct timeb *_Tmb) {
+__CRT_INLINE
+void __cdecl ftime(struct timeb *_Tmb) {
 	_ftime32((struct __timeb32 *)_Tmb);
 }
 #else

@@ -71,10 +71,12 @@ struct exception;
 
 #ifdef __cplusplus
 extern "C" {
+
 #endif
 
 #ifndef _EXCEPTION_DEFINED
 #define _EXCEPTION_DEFINED
+
 struct _exception {
 	int type;
 	char *name;
@@ -86,6 +88,7 @@ struct _exception {
 
 #ifndef _COMPLEX_DEFINED
 #define _COMPLEX_DEFINED
+
 struct _complex {
 	double x, y;
 };
@@ -116,8 +119,10 @@ double __cdecl atan(double _X);
 double __cdecl atan2(double _Y, double _X);
 #ifndef _SIGN_DEFINED
 #define _SIGN_DEFINED
-_CRTIMP double __cdecl _copysign(double _Number, double _Sign);
-_CRTIMP double __cdecl _chgsign(double _X);
+_CRTIMP
+double __cdecl _copysign(double _Number, double _Sign);
+_CRTIMP
+double __cdecl _chgsign(double _X);
 #endif
 double __cdecl cos(double _X);
 double __cdecl cosh(double _X);
@@ -139,23 +144,30 @@ double __cdecl atof(const char *_String);
 double __cdecl _atof_l(const char *_String, _locale_t _Locale);
 #endif
 
-_CRTIMP double __cdecl _cabs(struct _complex _ComplexA);
+_CRTIMP
+double __cdecl _cabs(struct _complex _ComplexA);
 double __cdecl ceil(double _X);
 double __cdecl floor(double _X);
 double __cdecl frexp(double _X, int *_Y);
 double __cdecl _hypot(double _X, double _Y);
-_CRTIMP double __cdecl _j0(double _X);
-_CRTIMP double __cdecl _j1(double _X);
-_CRTIMP double __cdecl _jn(int _X, double _Y);
+_CRTIMP
+double __cdecl _j0(double _X);
+_CRTIMP
+double __cdecl _j1(double _X);
+_CRTIMP
+double __cdecl _jn(int _X, double _Y);
 double __cdecl ldexp(double _X, int _Y);
 #ifndef _CRT_MATHERR_DEFINED
 #define _CRT_MATHERR_DEFINED
 int __cdecl _matherr(struct _exception *_Except);
 #endif
 double __cdecl modf(double _X, double *_Y);
-_CRTIMP double __cdecl _y0(double _X);
-_CRTIMP double __cdecl _y1(double _X);
-_CRTIMP double __cdecl _yn(int _X, double _Y);
+_CRTIMP
+double __cdecl _y0(double _X);
+_CRTIMP
+double __cdecl _y1(double _X);
+_CRTIMP
+double __cdecl _yn(int _X, double _Y);
 
 #if (defined(_X86_) && !defined(__x86_64))
 _CRTIMP int __cdecl _set_SSE2_enable(int _Flag);
@@ -202,12 +214,18 @@ int __cdecl _fpclassf(float _X);
 
 #define HUGE _HUGE
 double __cdecl hypot(double _X, double _Y);
-_CRTIMP double __cdecl j0(double _X);
-_CRTIMP double __cdecl j1(double _X);
-_CRTIMP double __cdecl jn(int _X, double _Y);
-_CRTIMP double __cdecl y0(double _X);
-_CRTIMP double __cdecl y1(double _X);
-_CRTIMP double __cdecl yn(int _X, double _Y);
+_CRTIMP
+double __cdecl j0(double _X);
+_CRTIMP
+double __cdecl j1(double _X);
+_CRTIMP
+double __cdecl jn(int _X, double _Y);
+_CRTIMP
+double __cdecl y0(double _X);
+_CRTIMP
+double __cdecl y1(double _X);
+_CRTIMP
+double __cdecl yn(int _X, double _Y);
 #endif
 
 #ifndef __NO_ISOCEXT

@@ -218,8 +218,8 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 			qrel++;
 		}
 		if ((type == R_X86_64_32 ? val != (unsigned)val : val != (int)val) && (stab_section == NULL ||
-																			   addr < stab_section->sh_addr ||
-																			   addr >= (stab_section->sh_addr + stab_section->data_offset))) {
+																																					 addr < stab_section->sh_addr ||
+																																					 addr >= (stab_section->sh_addr + stab_section->data_offset))) {
 			mcc_error_noabort("relocation 'R_X86_64_32[S]' out of range");
 		}
 		add32le(ptr, val);
@@ -280,14 +280,9 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 	case R_X86_64_GOTPCREL:
 	case R_X86_64_GOTPCRELX:
 	case R_X86_64_REX_GOTPCRELX:
-		/* value = G + GOT + A - P (x86-64 psABI). Use the real RELA addend,
-		   not a hardcoded -4: instructions with a trailing immediate after
-		   the disp32 (e.g. glibc's `cmpq $imm8,foo@GOTPCREL(%rip)`) carry
-		   addend -5, and a fixed -4 lands the reference one byte past the
-		   8-aligned GOT slot. mcc's own gen emits addend -4 (unchanged). */
 		add32le(ptr, s1->got->sh_addr - addr +
-						 get_sym_attr(s1, sym_index, 0)->got_offset +
-						 rel->r_addend);
+										 get_sym_attr(s1, sym_index, 0)->got_offset +
+										 rel->r_addend);
 		break;
 	case R_X86_64_GOTPC32:
 		add32le(ptr, s1->got->sh_addr - addr + rel->r_addend);
@@ -308,10 +303,6 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 				ptr[-2] = 0x81;
 			else
 				mcc_error_noabort("unexpected R_X86_64_GOTTPOFF instruction");
-			/* IE->LE: the result is a local-exec immediate, not a PC-relative
-			   reference, so strip the GOTTPOFF reloc's -4 addend (folded into
-			   `val`) before converting to a TPOFF — otherwise the offset lands
-			   4 bytes below the real TLS slot. */
 			write32le(ptr, (int32_t)x86_64_tpoff(s1, val - rel->r_addend));
 		} else {
 			add32le(ptr, val - s1->got->sh_addr);
@@ -328,32 +319,26 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		break;
 	case R_X86_64_TLSGD: {
 		static const unsigned char expect[] = {
-			0x66, 0x48, 0x8d, 0x3d, 0x00, 0x00, 0x00, 0x00,
-			0x66, 0x66, 0x48, 0xe8, 0x00, 0x00, 0x00, 0x00};
+				0x66, 0x48, 0x8d, 0x3d, 0x00, 0x00, 0x00, 0x00,
+				0x66, 0x66, 0x48, 0xe8, 0x00, 0x00, 0x00, 0x00};
 		static const unsigned char replace[] = {
-			0x64, 0x48, 0x8b, 0x04, 0x25, 0x00, 0x00, 0x00, 0x00,
-			0x48, 0x8d, 0x80, 0x00, 0x00, 0x00, 0x00};
+				0x64, 0x48, 0x8b, 0x04, 0x25, 0x00, 0x00, 0x00, 0x00,
+				0x48, 0x8d, 0x80, 0x00, 0x00, 0x00, 0x00};
 
 		if (memcmp(ptr - 4, expect, sizeof(expect)) == 0) {
 			memcpy(ptr - 4, replace, sizeof(replace));
 			rel[1].r_info = ELFW(R_INFO)(0, R_X86_64_NONE);
-			/* GD->LE: write the symbol's local-exec TP offset. Use the same
-			   whole-TLS-block computation as R_X86_64_TPOFF32 (x86_64_tpoff);
-			   the old `st_value - sec->sh_addr - sec->data_offset` counted
-			   only the symbol's own section size and was wrong whenever a
-			   second TLS section (e.g. a .tbss) exists. Strip rel->r_addend
-			   like the GOTTPOFF IE->LE case — the result is an immediate. */
 			add32le(ptr + 8, (int32_t)x86_64_tpoff(s1, val - rel->r_addend));
 		} else
 			mcc_error_noabort("unexpected R_X86_64_TLSGD pattern");
 	} break;
 	case R_X86_64_TLSLD: {
 		static const unsigned char expect[] = {
-			0x48, 0x8d, 0x3d, 0x00, 0x00, 0x00, 0x00,
-			0xe8, 0x00, 0x00, 0x00, 0x00};
+				0x48, 0x8d, 0x3d, 0x00, 0x00, 0x00, 0x00,
+				0xe8, 0x00, 0x00, 0x00, 0x00};
 		static const unsigned char replace[] = {
-			0x66, 0x66, 0x66, 0x64, 0x48, 0x8b, 0x04, 0x25,
-			0x00, 0x00, 0x00, 0x00};
+				0x66, 0x66, 0x66, 0x64, 0x48, 0x8b, 0x04, 0x25,
+				0x00, 0x00, 0x00, 0x00};
 
 		if (memcmp(ptr - 3, expect, sizeof(expect)) == 0) {
 			memcpy(ptr - 3, replace, sizeof(replace));
@@ -444,7 +429,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		break;
 	default:
 		mcc_error_noabort("unhandled relocation type %d at 0x%x (value 0x%x)",
-				type, (unsigned)addr, (unsigned)val);
+											type, (unsigned)addr, (unsigned)val);
 		break;
 	}
 }

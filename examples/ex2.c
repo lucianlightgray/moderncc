@@ -29,7 +29,6 @@ int find(int n, int i1, int a, int b, int op) {
 			a = tab[i];
 			b = tab[j];
 			if (a != 0 && b != 0) {
-
 				tab[j] = 0;
 				stack_ptr++;
 
@@ -68,8 +67,8 @@ int main(int argc, char **argv) {
 
 	if (argc < 3) {
 		printf("usage: %s: result numbers...\n"
-			   "Try to find result from numbers with the 4 basic operations.\n",
-			   argv[0]);
+					 "Try to find result from numbers with the 4 basic operations.\n",
+					 argv[0]);
 		exit(1);
 	}
 
@@ -86,8 +85,8 @@ int main(int argc, char **argv) {
 	if (res) {
 		for (i = 0; i <= stack_ptr; i++) {
 			printf("%d %c %d = %d\n",
-				   stack_res[3 * i], stack_op[i],
-				   stack_res[3 * i + 1], stack_res[3 * i + 2]);
+						 stack_res[3 * i], stack_op[i],
+						 stack_res[3 * i + 1], stack_res[3 * i + 2]);
 		}
 		return 0;
 	} else {

@@ -2,7 +2,8 @@
 
 #ifdef MCC_TARGET_X86_64
 
-typedef struct {
+typedef struct
+{
 	disasm_ctx *dc;
 	addr_t pc0;
 	int len;
@@ -22,16 +23,19 @@ static unsigned char peek(Dis *d, int i) {
 	addr_t o = d->pc0 + d->len + i;
 	return (o < d->dc->size) ? d->dc->data[o] : 0;
 }
+
 static unsigned char get8(Dis *d) {
 	unsigned char c = peek(d, 0);
 	d->len++;
 	return c;
 }
+
 static int get16(Dis *d) {
 	int v = get8(d);
 	v |= get8(d) << 8;
 	return v;
 }
+
 static long long get32(Dis *d) {
 	unsigned v = get8(d);
 	v |= (unsigned)get8(d) << 8;
@@ -39,6 +43,7 @@ static long long get32(Dis *d) {
 	v |= (unsigned)get8(d) << 24;
 	return (int)v;
 }
+
 static long long get64(Dis *d) {
 	unsigned long long lo = (unsigned)get32(d) & 0xffffffffu;
 	unsigned long long hi = (unsigned)get32(d) & 0xffffffffu;
@@ -46,17 +51,17 @@ static long long get64(Dis *d) {
 }
 
 static const char *reg64[16] = {
-	"rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi",
-	"r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"};
+		"rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi",
+		"r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"};
 static const char *reg32[16] = {
-	"eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi",
-	"r8d", "r9d", "r10d", "r11d", "r12d", "r13d", "r14d", "r15d"};
+		"eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi",
+		"r8d", "r9d", "r10d", "r11d", "r12d", "r13d", "r14d", "r15d"};
 static const char *reg16[16] = {
-	"ax", "cx", "dx", "bx", "sp", "bp", "si", "di",
-	"r8w", "r9w", "r10w", "r11w", "r12w", "r13w", "r14w", "r15w"};
+		"ax", "cx", "dx", "bx", "sp", "bp", "si", "di",
+		"r8w", "r9w", "r10w", "r11w", "r12w", "r13w", "r14w", "r15w"};
 static const char *reg8rex[16] = {
-	"al", "cl", "dl", "bl", "spl", "bpl", "sil", "dil",
-	"r8b", "r9b", "r10b", "r11b", "r12b", "r13b", "r14b", "r15b"};
+		"al", "cl", "dl", "bl", "spl", "bpl", "sil", "dil",
+		"r8b", "r9b", "r10b", "r11b", "r12b", "r13b", "r14b", "r15b"};
 static const char *reg8[8] = {"al", "cl", "dl", "bl", "ah", "ch", "dh", "bh"};
 
 static const char *gpr(Dis *d, int size, int n) {
@@ -79,6 +84,7 @@ static const char *gpr(Dis *d, int size, int n) {
 	snprintf(buf, sizeof d->regbuf, "%%%s", nm);
 	return buf;
 }
+
 static const char *xmm(Dis *d, int n) {
 	char *buf = d->regbuf;
 	snprintf(buf, sizeof d->regbuf, "%%xmm%d", n & 15);
@@ -123,7 +129,6 @@ static void modrm(Dis *d, int size, int xmm_rm) {
 				snprintf(base, sizeof base, "%s", gpr(d, 8, br));
 			}
 		} else if (rm == 5 && mod == 0) {
-
 			int rtype = 0;
 			const char *sym;
 			disp_off = d->pc0 + d->len;
@@ -153,23 +158,23 @@ static void modrm(Dis *d, int size, int xmm_rm) {
 		{
 			int rtype = 0;
 			const char *sym = (have_disp && disp_size == 4)
-								  ? disasm_reloc(d->dc, disp_off, 4, &rtype)
-								  : NULL;
+														? disasm_reloc(d->dc, disp_off, 4, &rtype)
+														: NULL;
 			char dbuf[288];
 			if (sym)
 				snprintf(dbuf, sizeof dbuf, "%s", sym);
 			else if (have_disp && disp)
 				snprintf(dbuf, sizeof dbuf, disp < 0 ? "-0x%llx" : "0x%llx",
-						 disp < 0 ? -disp : disp);
+								 disp < 0 ? -disp : disp);
 			else
 				dbuf[0] = 0;
 
 			snprintf(d->rm, sizeof d->rm, "%s%s%s%s%s",
-					 dbuf,
-					 (have_base || index[0]) ? "(" : "",
-					 have_base ? base : "",
-					 index,
-					 (have_base || index[0]) ? ")" : "");
+							 dbuf,
+							 (have_base || index[0]) ? "(" : "",
+							 have_base ? base : "",
+							 index,
+							 (have_base || index[0]) ? ")" : "");
 			if (!have_base && !index[0] && !dbuf[0])
 				snprintf(d->rm, sizeof d->rm, "0x0");
 		}
@@ -187,14 +192,21 @@ static void P(Dis *d, const char *fmt, ...) {
 }
 
 static char sfx(int size) {
-	return size == 8 ? 'q' : size == 4 ? 'l'
-						 : size == 2   ? 'w'
-									   : 'b';
+	return size == 8
+						 ? 'q'
+				 : size == 4
+						 ? 'l'
+				 : size == 2
+						 ? 'w'
+						 : 'b';
 }
 
 static int vsize(Dis *d) {
-	return d->rex_w ? 8 : d->opsz ? 2
-								  : 4;
+	return d->rex_w
+						 ? 8
+				 : d->opsz
+						 ? 2
+						 : 4;
 }
 
 static void imm_ext(Dis *d, int size, int opsize, char *out, int outsz) {
@@ -216,9 +228,13 @@ static void imm_ext(Dis *d, int size, int opsize, char *out, int outsz) {
 		snprintf(out, outsz, "$%s", sym);
 		return;
 	}
-	mask = opsize >= 8 ? ~0ULL : opsize == 4 ? 0xffffffffULL
-							 : opsize == 2	 ? 0xffffULL
-											 : 0xffULL;
+	mask = opsize >= 8
+						 ? ~0ULL
+				 : opsize == 4
+						 ? 0xffffffffULL
+				 : opsize == 2
+						 ? 0xffffULL
+						 : 0xffULL;
 	snprintf(out, outsz, "$0x%llx", (unsigned long long)v & mask);
 }
 
@@ -227,7 +243,7 @@ static void imm(Dis *d, int size, char *out, int outsz) {
 }
 
 static const char *alu8[8] =
-	{"add", "or", "adc", "sbb", "and", "sub", "xor", "cmp"};
+		{"add", "or", "adc", "sbb", "and", "sub", "xor", "cmp"};
 
 static void alu_rm(Dis *d, const char *name, int size, int dbit) {
 	modrm(d, size, 0);
@@ -238,8 +254,8 @@ static void alu_rm(Dis *d, const char *name, int size, int dbit) {
 }
 
 static const char *cc[16] = {
-	"o", "no", "b", "ae", "e", "ne", "be", "a",
-	"s", "ns", "p", "np", "l", "ge", "le", "g"};
+		"o", "no", "b", "ae", "e", "ne", "be", "a",
+		"s", "ns", "p", "np", "l", "ge", "le", "g"};
 
 static int decode(Dis *d) {
 	unsigned char op;
@@ -372,7 +388,7 @@ static int decode(Dis *d) {
 			P(d, "j%s\t%s", cc[op & 15], sym);
 		else
 			P(d, "j%s\t%s", cc[op & 15],
-			  disasm_label(d->dc, d->pc0 + d->len + rel));
+				disasm_label(d->dc, d->pc0 + d->len + rel));
 		return d->len;
 	}
 	case 0x80:
@@ -422,12 +438,18 @@ static int decode(Dis *d) {
 		P(d, "nop");
 		return d->len;
 	case 0x98:
-		P(d, d->rex_w ? "cltq" : d->opsz ? "cbtw"
-										 : "cwtl");
+		P(d, d->rex_w
+						 ? "cltq"
+				 : d->opsz
+						 ? "cbtw"
+						 : "cwtl");
 		return d->len;
 	case 0x99:
-		P(d, d->rex_w ? "cqto" : d->opsz ? "cwtd"
-										 : "cltd");
+		P(d, d->rex_w
+						 ? "cqto"
+				 : d->opsz
+						 ? "cwtd"
+						 : "cltd");
 		return d->len;
 	case 0xa4:
 	case 0xa5:
@@ -440,11 +462,15 @@ static int decode(Dis *d) {
 	case 0xae:
 	case 0xaf: {
 		int sz = (op & 1) ? vsize(d) : 1;
-		const char *nm = (op < 0xa6)   ? "movs"
-						 : (op < 0xaa) ? "cmps"
-						 : (op < 0xac) ? "stos"
-						 : (op < 0xae) ? "lods"
-									   : "scas";
+		const char *nm = (op < 0xa6)
+												 ? "movs"
+										 : (op < 0xaa)
+												 ? "cmps"
+										 : (op < 0xac)
+												 ? "stos"
+										 : (op < 0xae)
+												 ? "lods"
+												 : "scas";
 		if (d->rep)
 			P(d, "rep ");
 		else if (d->repne)
@@ -480,7 +506,7 @@ static int decode(Dis *d) {
 		size = vsize(d);
 		imm(d, size, i1, sizeof i1);
 		P(d, "%s\t%s, %s", size == 8 ? "movabs" : "mov", i1,
-		  gpr(d, size, (op & 7) | (d->rex_b ? 8 : 0)));
+			gpr(d, size, (op & 7) | (d->rex_b ? 8 : 0)));
 		return d->len;
 	case 0xc0:
 	case 0xc1:
@@ -489,19 +515,19 @@ static int decode(Dis *d) {
 	case 0xd2:
 	case 0xd3: {
 		static const char *sh[8] =
-			{"rol", "ror", "rcl", "rcr", "shl", "shr", "sal", "sar"};
+				{"rol", "ror", "rcl", "rcr", "shl", "shr", "sal", "sar"};
 		size = (op & 1) ? vsize(d) : 1;
 		modrm(d, size, 0);
 		if (op <= 0xc1) {
 			imm(d, 1, i1, sizeof i1);
 			P(d, "%s%s\t%s, %s", sh[d->reg & 7],
-			  d->rm_is_mem ? (char[2]){sfx(size), 0} : "", i1, d->rm);
+				d->rm_is_mem ? (char[2]){sfx(size), 0} : "", i1, d->rm);
 		} else if (op <= 0xd1) {
 			P(d, "%s%s\t%s", sh[d->reg & 7],
-			  d->rm_is_mem ? (char[2]){sfx(size), 0} : "", d->rm);
+				d->rm_is_mem ? (char[2]){sfx(size), 0} : "", d->rm);
 		} else {
 			P(d, "%s%s\t%%cl, %s", sh[d->reg & 7],
-			  d->rm_is_mem ? (char[2]){sfx(size), 0} : "", d->rm);
+				d->rm_is_mem ? (char[2]){sfx(size), 0} : "", d->rm);
 		}
 		return d->len;
 	}
@@ -540,7 +566,7 @@ static int decode(Dis *d) {
 			P(d, "%s\t%s", op == 0xe8 ? "call" : "jmp", sym);
 		else
 			P(d, "%s\t%s", op == 0xe8 ? "call" : "jmp",
-			  disasm_label(d->dc, d->pc0 + d->len + rel));
+				disasm_label(d->dc, d->pc0 + d->len + rel));
 		return d->len;
 	}
 	case 0xeb: {
@@ -551,7 +577,7 @@ static int decode(Dis *d) {
 	case 0xf6:
 	case 0xf7: {
 		static const char *g3[8] =
-			{"test", "test", "not", "neg", "mul", "imul", "div", "idiv"};
+				{"test", "test", "not", "neg", "mul", "imul", "div", "idiv"};
 		size = (op & 1) ? vsize(d) : 1;
 		modrm(d, size, 0);
 		if ((d->reg & 7) < 2) {
@@ -562,7 +588,7 @@ static int decode(Dis *d) {
 				P(d, "test\t%s, %s", i1, d->rm);
 		} else {
 			P(d, "%s%s\t%s", g3[d->reg & 7],
-			  d->rm_is_mem ? (char[2]){sfx(size), 0} : "", d->rm);
+				d->rm_is_mem ? (char[2]){sfx(size), 0} : "", d->rm);
 		}
 		return d->len;
 	}
@@ -579,7 +605,7 @@ static int decode(Dis *d) {
 		r = d->reg & 7;
 		if (op == 0xfe) {
 			P(d, "%s%s\t%s", r == 0 ? "inc" : "dec",
-			  d->rm_is_mem ? (char[2]){sfx(size), 0} : "", d->rm);
+				d->rm_is_mem ? (char[2]){sfx(size), 0} : "", d->rm);
 			return d->len;
 		}
 		switch (r) {
@@ -615,10 +641,10 @@ static int decode(Dis *d) {
 		unsigned char mb = peek(d, 0);
 		int rf = (mb >> 3) & 7;
 		if ((mb >> 6) == 3) {
-
 			static const char *st[8] =
-				{"%st(0)", "%st(1)", "%st(2)", "%st(3)",
-				 "%st(4)", "%st(5)", "%st(6)", "%st(7)"};
+					{
+							"%st(0)", "%st(1)", "%st(2)", "%st(3)",
+							"%st(4)", "%st(5)", "%st(6)", "%st(7)"};
 			int r = mb & 7;
 			get8(d);
 			switch (op) {
@@ -760,14 +786,19 @@ static int decode(Dis *d) {
 		}
 
 		{
-			static const char *m_d8[8] = {"fadds", "fmuls", "fcoms", "fcomps", "fsubs", "fsubrs", "fdivs", "fdivrs"};
+			static const char *m_d8[8] = {
+					"fadds", "fmuls", "fcoms", "fcomps", "fsubs", "fsubrs", "fdivs", "fdivrs"};
 			static const char *m_d9[8] = {"flds", 0, "fsts", "fstps", "fldenv", "fldcw", "fnstenv", "fnstcw"};
-			static const char *m_da[8] = {"fiaddl", "fimull", "ficoml", "ficompl", "fisubl", "fisubrl", "fidivl", "fidivrl"};
+			static const char *m_da[8] = {
+					"fiaddl", "fimull", "ficoml", "ficompl", "fisubl", "fisubrl", "fidivl", "fidivrl"};
 			static const char *m_db[8] = {"fildl", "fisttpl", "fistl", "fistpl", 0, "fldt", 0, "fstpt"};
-			static const char *m_dc[8] = {"faddl", "fmull", "fcoml", "fcompl", "fsubl", "fsubrl", "fdivl", "fdivrl"};
+			static const char *m_dc[8] = {
+					"faddl", "fmull", "fcoml", "fcompl", "fsubl", "fsubrl", "fdivl", "fdivrl"};
 			static const char *m_dd[8] = {"fldl", "fisttpll", "fstl", "fstpl", "frstor", 0, "fnsave", "fnstsw"};
-			static const char *m_de[8] = {"fiadds", "fimuls", "ficoms", "ficomps", "fisubs", "fisubrs", "fidivs", "fidivrs"};
-			static const char *m_df[8] = {"filds", "fisttps", "fists", "fistps", "fbld", "fildll", "fbstp", "fistpll"};
+			static const char *m_de[8] = {
+					"fiadds", "fimuls", "ficoms", "ficomps", "fisubs", "fisubrs", "fidivs", "fidivrs"};
+			static const char *m_df[8] = {
+					"filds", "fisttps", "fists", "fistps", "fbld", "fildll", "fbstp", "fistpll"};
 			static const char **tab[8] = {m_d8, m_d9, m_da, m_db, m_dc, m_dd, m_de, m_df};
 			const char *nm = tab[op - 0xd8][rf];
 			modrm(d, 4, 0);
@@ -805,9 +836,13 @@ static int decode(Dis *d) {
 		return d->len;
 	case 0x10:
 	case 0x11: {
-		const char *nm = d->rep ? "movss" : d->repne ? "movsd"
-										: d->opsz	 ? "movupd"
-													 : "movups";
+		const char *nm = d->rep
+												 ? "movss"
+										 : d->repne
+												 ? "movsd"
+										 : d->opsz
+												 ? "movupd"
+												 : "movups";
 		modrm(d, 8, 1);
 		if (op == 0x10)
 			P(d, "%s\t%s, %s", nm, d->rm, xmm(d, d->reg));
@@ -820,8 +855,8 @@ static int decode(Dis *d) {
 	case 0x16:
 	case 0x17: {
 		const char *nm = (op < 0x16)
-							 ? (d->opsz ? "movlpd" : "movlps")
-							 : (d->opsz ? "movhpd" : "movhps");
+												 ? (d->opsz ? "movlpd" : "movlps")
+												 : (d->opsz ? "movhpd" : "movhps");
 		modrm(d, 8, 1);
 		if (op & 1)
 			P(d, "%s\t%s, %s", nm, xmm(d, d->reg), d->rm);
@@ -831,8 +866,9 @@ static int decode(Dis *d) {
 	}
 	case 0x14:
 	case 0x15: {
-		const char *nm = op == 0x14 ? (d->opsz ? "unpcklpd" : "unpcklps")
-									: (d->opsz ? "unpckhpd" : "unpckhps");
+		const char *nm = op == 0x14
+												 ? (d->opsz ? "unpcklpd" : "unpcklps")
+												 : (d->opsz ? "unpckhpd" : "unpckhps");
 		modrm(d, 8, 1);
 		P(d, "%s\t%s, %s", nm, d->rm, xmm(d, d->reg));
 		return d->len;
@@ -848,28 +884,38 @@ static int decode(Dis *d) {
 		return d->len;
 	}
 	case 0x2a: {
-		const char *nm = d->rep ? "cvtsi2ss" : d->repne ? "cvtsi2sd"
-														: "cvtpi2ps";
+		const char *nm = d->rep
+												 ? "cvtsi2ss"
+										 : d->repne
+												 ? "cvtsi2sd"
+												 : "cvtpi2ps";
 		modrm(d, vsize(d), 0);
 		P(d, "%s%s\t%s, %s", nm, d->rm_is_mem ? (char[2]){sfx(vsize(d)), 0} : "",
-		  d->rm, xmm(d, d->reg));
+			d->rm, xmm(d, d->reg));
 		return d->len;
 	}
 	case 0x2c:
 	case 0x2d: {
 		const char *nm = op == 0x2c
-							 ? (d->rep ? "cvttss2si" : d->repne ? "cvttsd2si"
+												 ? (d->rep
+																? "cvttss2si"
+														: d->repne
+																? "cvttsd2si"
 																: "cvttps2pi")
-							 : (d->rep ? "cvtss2si" : d->repne ? "cvtsd2si"
-															   : "cvtps2pi");
+												 : (d->rep
+																? "cvtss2si"
+														: d->repne
+																? "cvtsd2si"
+																: "cvtps2pi");
 		modrm(d, 8, 1);
 		P(d, "%s\t%s, %s", nm, d->rm, gpr(d, vsize(d), d->reg));
 		return d->len;
 	}
 	case 0x2e:
 	case 0x2f: {
-		const char *nm = op == 0x2e ? (d->opsz ? "ucomisd" : "ucomiss")
-									: (d->opsz ? "comisd" : "comiss");
+		const char *nm = op == 0x2e
+												 ? (d->opsz ? "ucomisd" : "ucomiss")
+												 : (d->opsz ? "comisd" : "comiss");
 		modrm(d, 8, 1);
 		P(d, "%s\t%s, %s", nm, d->rm, xmm(d, d->reg));
 		return d->len;
@@ -904,7 +950,6 @@ static int decode(Dis *d) {
 	case 0x5d:
 	case 0x5e:
 	case 0x5f: {
-
 		const char *base;
 		char nm[16];
 		switch (op) {
@@ -946,17 +991,25 @@ static int decode(Dis *d) {
 			snprintf(nm, sizeof nm, "%sp%c", base, d->opsz ? 'd' : 's');
 		else
 			snprintf(nm, sizeof nm, "%s%s", base,
-					 d->rep ? "ss" : d->repne ? "sd"
-								 : d->opsz	  ? "pd"
-											  : "ps");
+							 d->rep
+									 ? "ss"
+							 : d->repne
+									 ? "sd"
+							 : d->opsz
+									 ? "pd"
+									 : "ps");
 		modrm(d, 8, 1);
 		P(d, "%s\t%s, %s", nm, d->rm, xmm(d, d->reg));
 		return d->len;
 	}
 	case 0x5a: {
-		const char *nm = d->rep ? "cvtss2sd" : d->repne ? "cvtsd2ss"
-										   : d->opsz	? "cvtpd2ps"
-														: "cvtps2pd";
+		const char *nm = d->rep
+												 ? "cvtss2sd"
+										 : d->repne
+												 ? "cvtsd2ss"
+										 : d->opsz
+												 ? "cvtpd2ps"
+												 : "cvtps2pd";
 		modrm(d, 8, 1);
 		P(d, "%s\t%s, %s", nm, d->rm, xmm(d, d->reg));
 		return d->len;
@@ -1015,7 +1068,7 @@ static int decode(Dis *d) {
 			P(d, "j%s\t%s", cc[op & 15], sym);
 		else
 			P(d, "j%s\t%s", cc[op & 15],
-			  disasm_label(d->dc, d->pc0 + d->len + rel));
+				disasm_label(d->dc, d->pc0 + d->len + rel));
 		return d->len;
 	}
 	case 0x90:
@@ -1058,13 +1111,13 @@ static int decode(Dis *d) {
 	case 0xb7:
 		modrm(d, op == 0xb6 ? 1 : 2, 0);
 		P(d, "movz%c%c\t%s, %s", op == 0xb6 ? 'b' : 'w', sfx(vsize(d)),
-		  d->rm, gpr(d, vsize(d), d->reg));
+			d->rm, gpr(d, vsize(d), d->reg));
 		return d->len;
 	case 0xbe:
 	case 0xbf:
 		modrm(d, op == 0xbe ? 1 : 2, 0);
 		P(d, "movs%c%c\t%s, %s", op == 0xbe ? 'b' : 'w', sfx(vsize(d)),
-		  d->rm, gpr(d, vsize(d), d->reg));
+			d->rm, gpr(d, vsize(d), d->reg));
 		return d->len;
 	case 0xc0:
 	case 0xc1:
@@ -1106,8 +1159,8 @@ ST_FUNC int mcc_disasm_reloc_size(int type) {
 }
 
 ST_FUNC int mcc_disasm_reloc_addend_bias(int type, int size) {
-
-	if (type == R_X86_64_PC32 || type == R_X86_64_PLT32 || type == R_X86_64_GOTPCREL || type == R_X86_64_GOTPCRELX || type == R_X86_64_REX_GOTPCRELX)
+	if (type == R_X86_64_PC32 || type == R_X86_64_PLT32 || type == R_X86_64_GOTPCREL || type == R_X86_64_GOTPCRELX ||
+			type == R_X86_64_REX_GOTPCRELX)
 		return size;
 	return 0;
 }

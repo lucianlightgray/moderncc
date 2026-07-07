@@ -10,7 +10,8 @@ void check_fail(const char *assertion, const char *file, unsigned int line) {
 	exit(1);
 }
 
-typedef struct {
+typedef struct
+{
 	unsigned long long x0, x1;
 } u128_t;
 
@@ -51,8 +52,9 @@ u128_t copy_ild(long double f) {
 }
 
 long double make(int sgn, int exp, uint64_t high, uint64_t low) {
-	u128_t x = {low,
-				(0x0000ffffffffffff & high) |
+	u128_t x = {
+			low,
+			(0x0000ffffffffffff & high) |
 					(0x7fff000000000000 & (uint64_t)exp << 48) |
 					(0x8000000000000000 & (uint64_t)sgn << 63)};
 	return copy_ldi(x);
@@ -75,7 +77,7 @@ void cmp(long double a, long double b) {
 	check(eq + lt + gt < 2);
 
 	printf("cmp %016llx%016llx %016llx%016llx %d %d %d\n",
-		   ax.x1, ax.x0, bx.x1, bx.x0, lt, eq, gt);
+				 ax.x1, ax.x0, bx.x1, bx.x0, lt, eq, gt);
 }
 
 void cmps(void) {
@@ -99,7 +101,7 @@ void cmps(void) {
 	for (i = 0; i < 6; i++)
 		for (j = 0; j < 6; j++)
 			cmp(make(i & 1, i >> 1, 0, 0),
-				make(j & 1, j >> 1, 0, 0));
+					make(j & 1, j >> 1, 0, 0));
 
 	for (i = 0; i < 2; i++) {
 		for (j = 0; j < 2; j++) {
@@ -119,7 +121,7 @@ void xop(const char *name, long double a, long double b, long double c) {
 	u128_t bx = copy_ild(b);
 	u128_t cx = copy_ild(c);
 	printf("%s %016llx%016llx %016llx%016llx %016llx%016llx\n",
-		   name, ax.x1, ax.x0, bx.x1, bx.x0, cx.x1, cx.x0);
+				 name, ax.x1, ax.x0, bx.x1, bx.x0, cx.x1, cx.x0);
 }
 
 void fadd(long double a, long double b) {
@@ -139,7 +141,6 @@ void fdiv(long double a, long double b) {
 }
 
 void nanz(void) {
-
 	{
 		long double x[7];
 		int i, j, n = 0;
@@ -183,14 +184,13 @@ void nanz(void) {
 }
 
 void adds(void) {
-
 	{
 		int i;
 		for (i = -130; i <= 130; i++) {
 			int s1 = (uint32_t)i % 3 < 1;
 			int s2 = (uint32_t)i % 5 < 2;
 			fadd(make(s1, 16384, 0x502c065e4f71a65d, 0xd2f9bdb031f4f031),
-				 make(s2, 16384 + i, 0xae267395a9bc1033, 0xb56b5800da1ba448));
+					 make(s2, 16384 + i, 0xae267395a9bc1033, 0xb56b5800da1ba448));
 		}
 	}
 
@@ -204,10 +204,10 @@ void adds(void) {
 			fsub(make(0, exp, a1, a0), make(0, 0, 0, 0));
 			for (i = 63; i >= 0; i--)
 				fsub(make(0, exp, a1 | (uint64_t)1 << i >> 1, a0),
-					 make(0, exp, a1 >> i << i, 0));
+						 make(0, exp, a1 >> i << i, 0));
 			for (i = 63; i >= 0; i--)
 				fsub(make(0, exp, a1, a0 | (uint64_t)1 << i >> 1),
-					 make(0, exp, a1, a0 >> i << i));
+						 make(0, exp, a1, a0 >> i << i));
 		}
 	}
 
@@ -231,7 +231,7 @@ void muls(void) {
 
 	for (i = 117; i > 0; i--)
 		fmul(make(0, 16268, 0x643dcea76edc, 0xe0877a598403627a),
-			 make(i & 1, i, 0, 0));
+				 make(i & 1, i, 0, 0));
 
 	fmul(make(0, 16383, -1, -3), make(0, 16383, 0, 1));
 
@@ -242,9 +242,9 @@ void muls(void) {
 	for (i = 0; i < 2; i++)
 		for (j = 0; j < 112; j++)
 			fmul(make(0, 16383, (uint64_t)1 << i, 0),
-				 make(0, 16383,
-					  j < 64 ? 0 : (uint64_t)1 << (j - 64),
-					  j < 64 ? (uint64_t)1 << j : 0));
+					 make(0, 16383,
+								j < 64 ? 0 : (uint64_t)1 << (j - 64),
+								j < 64 ? (uint64_t)1 << j : 0));
 }
 
 void divs(void) {
@@ -275,7 +275,7 @@ void cvtlsx(int64_t a) {
 	long double f = a;
 	u128_t x = copy_ild(f);
 	printf("cvtlsx %016llx %016llx%016llx\n",
-		   (long long)(uint64_t)a, x.x1, x.x0);
+				 (long long)(uint64_t)a, x.x1, x.x0);
 }
 
 void cvtluw(uint32_t a) {
@@ -297,13 +297,13 @@ void cvtil(long double a) {
 	uint32_t b3 = a;
 	uint64_t b4 = a;
 	printf("cvtswl %016llx%016llx %08lx\n",
-		   x.x1, x.x0, (long)(uint32_t)b1);
+				 x.x1, x.x0, (long)(uint32_t)b1);
 	printf("cvtsxl %016llx%016llx %016llx\n",
-		   x.x1, x.x0, (long long)(uint64_t)b2);
+				 x.x1, x.x0, (long long)(uint64_t)b2);
 	printf("cvtuwl %016llx%016llx %08lx\n",
-		   x.x1, x.x0, (long)b3);
+				 x.x1, x.x0, (long)b3);
 	printf("cvtuxl %016llx%016llx %016llx\n",
-		   x.x1, x.x0, (long long)b4);
+				 x.x1, x.x0, (long long)b4);
 }
 
 void cvtlf(float a) {
@@ -458,7 +458,7 @@ int main() {
 	tests();
 #else
 	printf("This test program is intended for a little-endian architecture\n"
-		   "with an IEEE-standard 128-bit long double.\n");
+				 "with an IEEE-standard 128-bit long double.\n");
 #endif
 	return 0;
 }

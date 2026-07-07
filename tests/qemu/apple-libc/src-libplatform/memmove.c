@@ -19,18 +19,16 @@ _platform_memmove(void *dst0, const void *src0, size_t length) {
 		goto done;
 
 #define TLOOP(s) \
-	if (t)       \
+	if (t)         \
 	TLOOP1(s)
 #define TLOOP1(s) \
-	do {          \
-		s;        \
+	do {            \
+		s;            \
 	} while (--t)
 
 	if ((unsigned long)dst < (unsigned long)src) {
-
 		t = (uintptr_t)src;
 		if ((t | (uintptr_t)dst) & wmask) {
-
 			if ((t ^ (uintptr_t)dst) & wmask || length < wsize)
 				t = length;
 			else
@@ -44,7 +42,6 @@ _platform_memmove(void *dst0, const void *src0, size_t length) {
 		t = length & wmask;
 		TLOOP(*dst++ = *src++);
 	} else {
-
 		src += length;
 		dst += length;
 		t = (uintptr_t)src;

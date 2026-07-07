@@ -143,50 +143,50 @@ typedef struct Operand {
 } Operand;
 
 static const uint8_t reg_to_size[9] = {
-	0, 0, 1, 0, 2, 0, 0, 0, 3};
+		0, 0, 1, 0, 2, 0, 0, 0, 3};
 
 #define NB_TEST_OPCODES 30
 
 static const uint8_t test_bits[NB_TEST_OPCODES] = {
-	0x00,
-	0x01,
-	0x02,
-	0x02,
-	0x02,
-	0x03,
-	0x03,
-	0x03,
-	0x04,
-	0x04,
-	0x05,
-	0x05,
-	0x06,
-	0x06,
-	0x07,
-	0x07,
-	0x08,
-	0x09,
-	0x0a,
-	0x0a,
-	0x0b,
-	0x0b,
-	0x0c,
-	0x0c,
-	0x0d,
-	0x0d,
-	0x0e,
-	0x0e,
-	0x0f,
-	0x0f,
+		0x00,
+		0x01,
+		0x02,
+		0x02,
+		0x02,
+		0x03,
+		0x03,
+		0x03,
+		0x04,
+		0x04,
+		0x05,
+		0x05,
+		0x06,
+		0x06,
+		0x07,
+		0x07,
+		0x08,
+		0x09,
+		0x0a,
+		0x0a,
+		0x0b,
+		0x0b,
+		0x0c,
+		0x0c,
+		0x0d,
+		0x0d,
+		0x0e,
+		0x0e,
+		0x0f,
+		0x0f,
 };
 
 static const uint8_t segment_prefixes[] = {
-	0x26,
-	0x2e,
-	0x36,
-	0x3e,
-	0x64,
-	0x65};
+		0x26,
+		0x2e,
+		0x36,
+		0x3e,
+		0x64,
+		0x65};
 
 static const ASMInstr asm_instrs[] = {
 #define ALT(x) x
@@ -199,12 +199,13 @@ static const ASMInstr asm_instrs[] = {
 #define DEF_ASM_OP3(name, opcode, group, instr_type, op0, op1, op2) {TOK_ASM_##name, O(opcode), T(opcode, instr_type, group), 3, {op0, op1, op2}},
 #ifdef MCC_TARGET_X86_64
 #include "x86_64-asm.h"
+
 #else
 #include "i386-asm.h"
 #endif
-	{
-		0,
-	},
+		{
+				0,
+		},
 };
 
 static const uint16_t op0_codes[] = {
@@ -216,6 +217,7 @@ static const uint16_t op0_codes[] = {
 #define DEF_ASM_OP3(name, opcode, group, instr_type, op0, op1, op2)
 #ifdef MCC_TARGET_X86_64
 #include "x86_64-asm.h"
+
 #else
 #include "i386-asm.h"
 #endif
@@ -318,7 +320,7 @@ static int asm_parse_ntpoff(void) {
 	next();
 	if (tok < TOK_IDENT || strcmp(get_tok_str(tok, NULL), "ntpoff"))
 		mcc_error("unsupported relocation operator '@%s'",
-				  get_tok_str(tok, &tokc));
+							get_tok_str(tok, &tokc));
 	next();
 	return 1;
 }
@@ -507,7 +509,6 @@ static inline int asm_modrm(int reg, Operand *op) {
 		g(0x25);
 #else
 		if (op->ntpoff) {
-
 			g(0x04 + (reg << 3));
 			g(0x25);
 		} else
@@ -559,7 +560,7 @@ static inline int asm_modrm(int reg, Operand *op) {
 #define REX_B 0x41
 
 static void asm_rex(int width64, Operand *ops, int nb_ops, int *op_type,
-					int regi, int rmi) {
+										int regi, int rmi) {
 	unsigned char rex = width64 ? 0x48 : 0;
 	int saw_high_8bit = 0;
 	if (rmi == -1) {
@@ -602,7 +603,7 @@ static void asm_rex(int width64, Operand *ops, int nb_ops, int *op_type,
 	if (rex) {
 		if (saw_high_8bit)
 			mcc_error("can't encode register %%%ch when REX prefix is required",
-					  "acdb"[saw_high_8bit - 4]);
+								"acdb"[saw_high_8bit - 4]);
 		g(rex);
 	}
 }
@@ -634,9 +635,9 @@ static void maybe_print_stats(void) {
 			printf("%3d: %08x\n", i, v);
 		}
 		printf("size=%d nb=%d f0=%d f1=%d f2=%d f3=%d\n",
-			   (int)sizeof(asm_instrs),
-			   (int)sizeof(asm_instrs) / (int)sizeof(ASMInstr),
-			   freq[0], freq[1], freq[2], freq[3]);
+					 (int)sizeof(asm_instrs),
+					 (int)sizeof(asm_instrs) / (int)sizeof(ASMInstr),
+					 freq[0], freq[1], freq[2], freq[3]);
 	}
 }
 
@@ -793,7 +794,7 @@ again:
 			return;
 		} else if (opcode <= TOK_ASM_alllast) {
 			mcc_error("bad operand with opcode '%s'",
-					  get_tok_str(opcode, NULL));
+								get_tok_str(opcode, NULL));
 		} else {
 			TokenSym *ts = table_ident[opcode - TOK_IDENT];
 			if (ts->len >= 6 && strchr("wlq", ts->str[ts->len - 1]) && !memcmp(ts->str, "cmov", 4)) {
@@ -815,10 +816,10 @@ again:
 		}
 		if (s == autosize) {
 			if ((opcode == TOK_ASM_push || opcode == TOK_ASM_pop) &&
-				(ops[0].type & (OP_SEG | OP_IM8S | OP_IM32)))
+					(ops[0].type & (OP_SEG | OP_IM8S | OP_IM32)))
 				s = 2;
 			else if ((opcode == TOK_ASM_push || opcode == TOK_ASM_pop) &&
-					 (ops[0].type & OP_EA))
+							 (ops[0].type & OP_EA))
 				s = NBWLX - 2;
 			else
 				mcc_error("cannot infer opcode suffix");
@@ -837,7 +838,10 @@ again:
 				break;
 			}
 		}
-		if (((opcode != TOK_ASM_push && opcode != TOK_ASM_pop && opcode != TOK_ASM_pushw && opcode != TOK_ASM_pushl && opcode != TOK_ASM_pushq && opcode != TOK_ASM_popw && opcode != TOK_ASM_popl && opcode != TOK_ASM_popq && opcode != TOK_ASM_call && opcode != TOK_ASM_jmp)) && !default64)
+		if (((opcode != TOK_ASM_push && opcode != TOK_ASM_pop && opcode != TOK_ASM_pushw && opcode != TOK_ASM_pushl &&
+					opcode != TOK_ASM_pushq && opcode != TOK_ASM_popw && opcode != TOK_ASM_popl && opcode != TOK_ASM_popq &&
+					opcode != TOK_ASM_call && opcode != TOK_ASM_jmp)) &&
+				!default64)
 			rex64 = 1;
 	}
 #endif
@@ -952,7 +956,7 @@ again:
 		for (i = 0; i < nb_ops; i++) {
 			int t = op_type[i];
 			if (i != modrm_index &&
-				(t & (OP_REG | OP_MMX | OP_SSE | OP_CR | OP_TR | OP_DB | OP_SEG))) {
+					(t & (OP_REG | OP_MMX | OP_SSE | OP_CR | OP_TR | OP_DB | OP_SEG))) {
 				modreg_index = i;
 				break;
 			}
@@ -1147,9 +1151,9 @@ ST_FUNC int asm_parse_regvar(int t) {
 #include "arch/asm-constraints.inc.c"
 
 ST_FUNC void asm_compute_constraints(ASMOperand *operands,
-									 int nb_operands, int nb_outputs,
-									 const uint8_t *clobber_regs,
-									 int *pout_reg) {
+																		 int nb_operands, int nb_outputs,
+																		 const uint8_t *clobber_regs,
+																		 int *pout_reg) {
 	ASMOperand *op;
 	int sorted_op[MAX_ASM_OPERANDS];
 	int j, reg, c, reg_mask;
@@ -1157,7 +1161,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 	uint8_t regs_allocated[NB_ASM_REGS];
 
 	asm_constraints_prologue(operands, nb_operands, nb_outputs,
-							 clobber_regs, sorted_op, regs_allocated);
+													 clobber_regs, sorted_op, regs_allocated);
 	regs_allocated[4] = REG_IN_MASK | REG_OUT_MASK;
 	regs_allocated[5] = REG_IN_MASK | REG_OUT_MASK;
 
@@ -1201,7 +1205,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 			regs_allocated[TREG_XAX] |= reg_mask;
 #else
 			if (is_reg_allocated(TREG_XAX) ||
-				is_reg_allocated(TREG_XDX))
+					is_reg_allocated(TREG_XDX))
 				goto try_next;
 			op->is_llong = 1;
 			op->reg = TREG_XAX;
@@ -1287,7 +1291,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 			break;
 		default:
 			mcc_error("asm constraint %d ('%s') could not be satisfied",
-					  j, op->constraint);
+								j, op->constraint);
 			break;
 		}
 		if (op->input_index >= 0) {
@@ -1300,8 +1304,8 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 	for (int i = 0; i < nb_operands; i++) {
 		op = &operands[i];
 		if (op->reg >= 0 &&
-			(op->vt->r & VT_VALMASK) == VT_LLOCAL &&
-			!op->is_memory) {
+				(op->vt->r & VT_VALMASK) == VT_LLOCAL &&
+				!op->is_memory) {
 			for (reg = 0; reg < NB_ASM_REGS; reg++) {
 				if (!(regs_allocated[reg] & REG_OUT_MASK))
 					goto reg_found2;
@@ -1318,11 +1322,11 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 		j = sorted_op[i];
 		op = &operands[j];
 		printf("%%%d [%s]: \"%s\" r=0x%04x reg=%d\n",
-			   j,
-			   op->id ? get_tok_str(op->id, NULL) : "",
-			   op->constraint,
-			   op->vt->r,
-			   op->reg);
+					 j,
+					 op->id ? get_tok_str(op->id, NULL) : "",
+					 op->constraint,
+					 op->vt->r,
+					 op->reg);
 	}
 	if (*pout_reg >= 0)
 		printf("out_reg=%d\n", *pout_reg);
@@ -1330,13 +1334,13 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 }
 
 ST_FUNC void subst_asm_operand(CString *add_str,
-							   SValue *sv, int modifier) {
+															 SValue *sv, int modifier) {
 	int r, reg, size, val;
 
 	r = sv->r;
 	if ((r & VT_VALMASK) == VT_CONST) {
 		if (!(r & VT_LVAL) && modifier != 'c' && modifier != 'n' &&
-			modifier != 'P')
+				modifier != 'P')
 			cstr_ccat(add_str, '$');
 		if (r & VT_SYM) {
 			const char *name = get_tok_str(sv->sym->v, NULL);
@@ -1372,13 +1376,13 @@ ST_FUNC void subst_asm_operand(CString *add_str,
 			mcc_internal_error("");
 
 		if ((sv->type.t & VT_BTYPE) == VT_BYTE ||
-			(sv->type.t & VT_BTYPE) == VT_BOOL)
+				(sv->type.t & VT_BTYPE) == VT_BOOL)
 			size = 1;
 		else if ((sv->type.t & VT_BTYPE) == VT_SHORT)
 			size = 2;
 #ifdef MCC_TARGET_X86_64
 		else if ((sv->type.t & VT_BTYPE) == VT_LLONG ||
-				 (sv->type.t & VT_BTYPE) == VT_PTR)
+						 (sv->type.t & VT_BTYPE) == VT_PTR)
 			size = 8;
 #endif
 		else
@@ -1432,9 +1436,9 @@ ST_FUNC void subst_asm_operand(CString *add_str,
 }
 
 ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
-						  int nb_outputs, int is_output,
-						  uint8_t *clobber_regs,
-						  int out_reg) {
+													int nb_outputs, int is_output,
+													uint8_t *clobber_regs,
+													int out_reg) {
 	uint8_t regs_allocated[NB_ASM_REGS];
 	ASMOperand *op;
 	int reg;
@@ -1469,7 +1473,7 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
 			op = &operands[i];
 			if (op->reg >= 0) {
 				if ((op->vt->r & VT_VALMASK) == VT_LLOCAL &&
-					op->is_memory) {
+						op->is_memory) {
 					SValue sv;
 					sv = *op->vt;
 					sv.r = (sv.r & ~VT_VALMASK) | VT_LOCAL | VT_LVAL;
@@ -1531,8 +1535,8 @@ ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str) {
 #endif
 
 	if (!strcmp(str, "memory") ||
-		!strcmp(str, "cc") ||
-		!strcmp(str, "flags"))
+			!strcmp(str, "cc") ||
+			!strcmp(str, "flags"))
 		return;
 	reg = tok_alloc_const(str);
 	if (reg >= TOK_ASM_eax && reg <= TOK_ASM_edi) {

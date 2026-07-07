@@ -1,7 +1,6 @@
 
 
 
-
    .byte 0xff
    .byte 1, 2, 3
    .short 1, 2, 3
@@ -16,7 +15,6 @@
    .skip 3
    .skip 15, 0x90
    .string "hello\0world"
-
 
 #define __stringify(n) #n
 #define stringify(n) __stringify(n)
@@ -36,7 +34,6 @@ var1:
         nop ; nop ; nop ; nop
 
         mov var1, %eax
-
 
 movl %eax, %ebx
 mov 0x10000, %eax
@@ -177,8 +174,7 @@ notl %r15d
   out %ax, $100                       
   out %eax, $100                       
 
-
-  outb %al, %dx                       
+  outb %al, %dx
   outw %ax, %dx                       
   outl %eax, %dx                       
 
@@ -426,7 +422,6 @@ L3:
  fsubp %st(5)
  fsubp
 
-
  fsubs 0x1000
  fisubs 0x1002
  fsubl 0x1004
@@ -439,7 +434,6 @@ L3:
  fsubrp %st(5)
  fsubrp
 
-
  fsubrs 0x1000
  fisubrs 0x1002
  fsubrl 0x1004
@@ -451,7 +445,6 @@ L3:
 
  fdivp %st(5)
  fdivp
-
 
  fdivs 0x1000
  fidivs 0x1002
@@ -572,7 +565,6 @@ fcomip %st(5), %st
 fucomip %st(5), %st
 
 
-
  cmovo 0x1000, %eax
  cmovs 0x1000, %eax
  cmovns %edx, %edi
@@ -646,7 +638,6 @@ int $0x10
     vmresume
     vmxoff
 
-
 #if 0
     aword
     addr16
@@ -666,7 +657,6 @@ int $0x10
     repz ;cmpsb
     repne;movsb
     repnz;outsb
-
 
     lock  negl (%eax)
     wait  pushf
@@ -813,8 +803,6 @@ int $0x10
 
 
 
-
-
     str %edx
     str %r9d
 #endif
@@ -946,7 +934,6 @@ overrideme:
     movq %rcx, %mm1
     movq %rdx, %xmm2
     movq %r13, %xmm3
-
 
 
     movq (%rsi), %xmm3

@@ -14,7 +14,6 @@ _Thread_local int *pg = &global;
 static _Thread_local char buf[32];
 
 int main(void) {
-
 	if (rec.k != 7 || rec.v != 99 || strcmp(rec.tag, "hi"))
 		return 1;
 	rec.k += 3;

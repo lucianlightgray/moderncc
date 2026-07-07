@@ -24,8 +24,8 @@
 #define MAXCC 8
 #define MAXWL 8
 
-
-enum { STYLE_GCC, STYLE_CL };
+enum { STYLE_GCC,
+			 STYLE_CL };
 
 struct compiler {
 	const char *key;
@@ -34,7 +34,6 @@ struct compiler {
 	const char *ccmacro;
 	char version[128];
 };
-
 
 struct workload {
 	const char *key;
@@ -46,7 +45,6 @@ struct workload {
 	int lines;
 	int have_counts;
 };
-
 
 struct meas {
 	int ok;
@@ -86,7 +84,7 @@ static struct meas measure_once(const char *const *argv) {
 			return m;
 		m.wall_ms = host_clock_ms() - t0;
 		m.cpu_ms = (long)ru.ru_utime.tv_sec * 1000 + ru.ru_utime.tv_usec / 1000 +
-				   (long)ru.ru_stime.tv_sec * 1000 + ru.ru_stime.tv_usec / 1000;
+							 (long)ru.ru_stime.tv_sec * 1000 + ru.ru_stime.tv_usec / 1000;
 		m.peak_kb = MCC_HOST_DARWIN ? ru.ru_maxrss / 1024 : ru.ru_maxrss;
 		m.ok = WIFEXITED(st) && WEXITSTATUS(st) == 0;
 	}
@@ -122,7 +120,7 @@ static struct meas measure_once(const char *const *argv) {
 		sa.nLength = sizeof sa;
 		sa.bInheritHandle = TRUE;
 		nul = CreateFileA("NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
-						  &sa, OPEN_EXISTING, 0, NULL);
+											&sa, OPEN_EXISTING, 0, NULL);
 		memset(&si, 0, sizeof si);
 		si.cb = sizeof si;
 		si.dwFlags = STARTF_USESTDHANDLES;
@@ -142,9 +140,9 @@ static struct meas measure_once(const char *const *argv) {
 			FILETIME cre, ex, kt, ut;
 			if (GetProcessTimes(pi.hProcess, &cre, &ex, &kt, &ut)) {
 				unsigned long long k = ((unsigned long long)kt.dwHighDateTime << 32) |
-									   kt.dwLowDateTime;
+															 kt.dwLowDateTime;
 				unsigned long long u = ((unsigned long long)ut.dwHighDateTime << 32) |
-									   ut.dwLowDateTime;
+															 ut.dwLowDateTime;
 				m.cpu_ms = (long)((k + u) / 10000);
 			}
 		}
@@ -165,7 +163,7 @@ static struct meas measure_once(const char *const *argv) {
 }
 
 static void build_cmd(Argv *v, const struct compiler *cc,
-					  const struct workload *wl, const char *obj) {
+											const struct workload *wl, const char *obj) {
 	int i;
 	char buf[4160];
 	ts_arg(v, cc->path);
@@ -208,7 +206,7 @@ static void build_cmd(Argv *v, const struct compiler *cc,
 }
 
 static struct meas bench_one(const struct compiler *cc,
-							 const struct workload *wl, int reps) {
+														 const struct workload *wl, int reps) {
 	struct meas best;
 	char obj[4096];
 	int r;
@@ -278,7 +276,6 @@ static void count_with_mcc(const struct compiler *mcc, struct workload *wl) {
 	remove(obj);
 }
 
-
 static void fmt_secs(char *b, int n, long ms) {
 	if (ms < 0)
 		snprintf(b, n, "%s", "   n/a");
@@ -287,23 +284,23 @@ static void fmt_secs(char *b, int n, long ms) {
 }
 
 static void write_table(FILE *f, const struct compiler *ccs, int nccs,
-						struct workload *wl, int reps) {
+												struct workload *wl, int reps) {
 	int i;
 	char cpu[16], wall[16];
 	if (wl->have_counts)
 		fprintf(f, "\nWorkload: %s  (%d lines, %d functions, best of %d)\n",
-				wl->key, wl->lines, wl->funcs, reps);
+						wl->key, wl->lines, wl->funcs, reps);
 	else
 		fprintf(f, "\nWorkload: %s  (best of %d)\n", wl->key, reps);
 	fprintf(f, "  %-8s %8s %10s %8s %9s %8s\n",
-			"compiler", "cpu(s)", "funcs/s", "obj(KB)", "peak(MB)", "wall(s)");
+					"compiler", "cpu(s)", "funcs/s", "obj(KB)", "peak(MB)", "wall(s)");
 	for (i = 0; i < nccs; i++) {
 		struct meas m = bench_one(&ccs[i], wl, reps);
 		fmt_secs(cpu, sizeof cpu, m.cpu_ms);
 		fmt_secs(wall, sizeof wall, (long)m.wall_ms);
 		if (!m.ok) {
 			fprintf(f, "  %-8s %8s %10s %8s %9s %8s\n",
-					ccs[i].key, "n/a", "n/a", "n/a", "n/a", "n/a");
+							ccs[i].key, "n/a", "n/a", "n/a", "n/a", "n/a");
 			continue;
 		}
 		fprintf(f, "  %-8s %8s ", ccs[i].key, cpu);
@@ -329,7 +326,7 @@ static const char *find_lim(const char *p, const char *lim, const char *needle) 
 }
 
 static void attr(char *dst, int n, const char *p, const char *lim,
-				 const char *key) {
+								 const char *key) {
 	const char *a = find_lim(p, lim, key);
 	if (a) {
 		a += strlen(key);
@@ -344,7 +341,7 @@ static void write_tests(FILE *f, const char *junit) {
 		return;
 	fprintf(f, "\nTest results (%s)\n", junit);
 	fprintf(f, "  %-7s %-48s %8s\n", "status", "name", "time(s)");
-	for (p = x; (p = strstr(p, "<testcase")); ) {
+	for (p = x; (p = strstr(p, "<testcase"));) {
 		const char *gt = strchr(p, '>');
 		const char *tagend, *extent;
 		char name[256] = "?", tm[32] = "?", st[32] = "";
@@ -362,23 +359,24 @@ static void write_tests(FILE *f, const char *junit) {
 		attr(tm, sizeof tm, p, gt, "time=\"");
 		attr(st, sizeof st, p, gt, "status=\"");
 		skipped = find_lim(tagend, extent, "<skipped") != NULL ||
-				  !strcmp(st, "notrun");
+							!strcmp(st, "notrun");
 		failed = find_lim(tagend, extent, "<failure") != NULL ||
-				 !strcmp(st, "fail");
+						 !strcmp(st, "fail");
 		total++;
 		if (skipped)
 			skip++;
 		else if (failed)
 			fail++;
 		fprintf(f, "  %-7s %-48.48s %8s\n",
-				skipped ? "SKIP" : failed ? "FAIL" : "PASS", name, tm);
+						skipped ? "SKIP" : failed ? "FAIL"
+																			: "PASS",
+						name, tm);
 		p = (char *)extent;
 	}
 	fprintf(f, "\n  totals: %d tests, %d passed, %d failed, %d skipped\n",
-			total, total - fail - skip, fail, skip);
+					total, total - fail - skip, fail, skip);
 	free(x);
 }
-
 
 struct hostinfo {
 	char cpu_model[256];
@@ -470,22 +468,18 @@ static int file_has(const char *path, const char *needle, char *found, int fn) {
 }
 
 static int decode_arm_midr(const char *ci, char *out, int n) {
-	static const struct { unsigned impl, part; const char *name; } P[] = {
-		{0x41, 0xd03, "ARM Cortex-A53"},   {0x41, 0xd05, "ARM Cortex-A55"},
-		{0x41, 0xd07, "ARM Cortex-A57"},   {0x41, 0xd08, "ARM Cortex-A72"},
-		{0x41, 0xd09, "ARM Cortex-A73"},   {0x41, 0xd0a, "ARM Cortex-A75"},
-		{0x41, 0xd0b, "ARM Cortex-A76"},   {0x41, 0xd0c, "ARM Neoverse-N1"},
-		{0x41, 0xd40, "ARM Neoverse-V1"},  {0x41, 0xd49, "ARM Neoverse-N2"},
-		{0x41, 0xd4f, "ARM Neoverse-V2"},  {0x41, 0xd46, "ARM Cortex-A510"},
-		{0x41, 0xd47, "ARM Cortex-A710"},  {0x41, 0xd4d, "ARM Cortex-A715"},
-		{0xc0, 0xac3, "Ampere-1"},         {0xc0, 0xac4, "Ampere-1a"},
-		{0x48, 0xd01, "HiSilicon TSV110"}, {0x51, 0x800, "Qualcomm Falkor"},
-		{0x4e, 0x004, "NVIDIA Carmel"},    {0x61, 0x000, "Apple"},
-		{0, 0, 0}};
-	static const struct { unsigned impl; const char *vendor; } V[] = {
-		{0x41, "ARM"}, {0x42, "Broadcom"}, {0x43, "Cavium"}, {0x48, "HiSilicon"},
-		{0x4e, "NVIDIA"}, {0x50, "APM"}, {0x51, "Qualcomm"}, {0x53, "Samsung"},
-		{0x61, "Apple"}, {0xc0, "Ampere"}, {0, 0}};
+	static const struct
+	{
+		unsigned impl, part;
+		const char *name;
+	} P[] = {
+			{0x41, 0xd03, "ARM Cortex-A53"}, {0x41, 0xd05, "ARM Cortex-A55"}, {0x41, 0xd07, "ARM Cortex-A57"}, {0x41, 0xd08, "ARM Cortex-A72"}, {0x41, 0xd09, "ARM Cortex-A73"}, {0x41, 0xd0a, "ARM Cortex-A75"}, {0x41, 0xd0b, "ARM Cortex-A76"}, {0x41, 0xd0c, "ARM Neoverse-N1"}, {0x41, 0xd40, "ARM Neoverse-V1"}, {0x41, 0xd49, "ARM Neoverse-N2"}, {0x41, 0xd4f, "ARM Neoverse-V2"}, {0x41, 0xd46, "ARM Cortex-A510"}, {0x41, 0xd47, "ARM Cortex-A710"}, {0x41, 0xd4d, "ARM Cortex-A715"}, {0xc0, 0xac3, "Ampere-1"}, {0xc0, 0xac4, "Ampere-1a"}, {0x48, 0xd01, "HiSilicon TSV110"}, {0x51, 0x800, "Qualcomm Falkor"}, {0x4e, 0x004, "NVIDIA Carmel"}, {0x61, 0x000, "Apple"}, {0, 0, 0}};
+	static const struct
+	{
+		unsigned impl;
+		const char *vendor;
+	} V[] = {
+			{0x41, "ARM"}, {0x42, "Broadcom"}, {0x43, "Cavium"}, {0x48, "HiSilicon"}, {0x4e, "NVIDIA"}, {0x50, "APM"}, {0x51, "Qualcomm"}, {0x53, "Samsung"}, {0x61, "Apple"}, {0xc0, "Ampere"}, {0, 0}};
 	char v[64];
 	unsigned impl, part;
 	int k;
@@ -527,9 +521,9 @@ static void fill_hostinfo(struct hostinfo *h) {
 		char *mi = read_all("/proc/meminfo");
 		if (ci) {
 			if (proc_field(ci, "model name", v, sizeof v) ||
-				proc_field(ci, "Model", v, sizeof v) ||
-				proc_field(ci, "Hardware", v, sizeof v) ||
-				decode_arm_midr(ci, v, sizeof v))
+					proc_field(ci, "Model", v, sizeof v) ||
+					proc_field(ci, "Hardware", v, sizeof v) ||
+					decode_arm_midr(ci, v, sizeof v))
 				snprintf(h->cpu_model, sizeof h->cpu_model, "%s", v);
 			if (proc_field(ci, "cpu MHz", v, sizeof v))
 				h->cpu_mhz = atof(v);
@@ -542,9 +536,10 @@ static void fill_hostinfo(struct hostinfo *h) {
 		free(mi);
 	}
 	{
-		static const char *VM[] = {"QEMU", "KVM", "VMware", "VirtualBox", "Xen",
-								   "Bochs", "Parallels", "Hyper-V", "Virtual Machine",
-								   "Google Compute", "OpenStack", "Amazon EC2", 0};
+		static const char *VM[] = {
+				"QEMU", "KVM", "VMware", "VirtualBox", "Xen",
+				"Bochs", "Parallels", "Hyper-V", "Virtual Machine",
+				"Google Compute", "OpenStack", "Amazon EC2", 0};
 		char prod[128] = "";
 		int is_vm = 0, k;
 		file_has("/sys/class/dmi/id/product_name", NULL, prod, sizeof prod);
@@ -552,11 +547,11 @@ static void fill_hostinfo(struct hostinfo *h) {
 			if (strstr(prod, VM[k]))
 				is_vm = 1;
 		if (file_has("/.dockerenv", NULL, NULL, 0) ||
-			file_has("/run/.containerenv", NULL, NULL, 0))
+				file_has("/run/.containerenv", NULL, NULL, 0))
 			snprintf(h->virt, sizeof h->virt, "%s", "container");
 		else if (hv == 1 || is_vm)
 			snprintf(h->virt, sizeof h->virt, "VM%s%s",
-					 prod[0] ? ": " : " (hypervisor present)", prod[0] ? prod : "");
+							 prod[0] ? ": " : " (hypervisor present)", prod[0] ? prod : "");
 		else
 			snprintf(h->virt, sizeof h->virt, "%s", "none detected (bare metal)");
 	}
@@ -591,11 +586,11 @@ static void fill_hostinfo(struct hostinfo *h) {
 		GetSystemInfo(&si);
 		h->log_cores = (int)si.dwNumberOfProcessors;
 		if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
-						  "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", 0,
-						  KEY_READ, &k) == 0) {
+											"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", 0,
+											KEY_READ, &k) == 0) {
 			DWORD sz = sizeof h->cpu_model, mhz = 0, msz = sizeof mhz;
 			RegQueryValueExA(k, "ProcessorNameString", NULL, NULL,
-							 (LPBYTE)h->cpu_model, &sz);
+											 (LPBYTE)h->cpu_model, &sz);
 			if (RegQueryValueExA(k, "~MHz", NULL, NULL, (LPBYTE)&mhz, &msz) == 0)
 				h->cpu_mhz = (double)mhz;
 			RegCloseKey(k);
@@ -605,12 +600,12 @@ static void fill_hostinfo(struct hostinfo *h) {
 }
 
 static void write_sysinfo(FILE *f, const char *plat, const struct compiler *ccs,
-						  int nccs) {
+													int nccs) {
 	char sysname[128] = "?", release[128] = "?", machine[64] = "?";
 	struct hostinfo h;
 	int i;
 	host_sys_info(sysname, sizeof sysname, release, sizeof release, machine,
-				  sizeof machine);
+								sizeof machine);
 	fill_hostinfo(&h);
 	fprintf(f, "mcc benchmark report");
 	if (plat)
@@ -622,21 +617,20 @@ static void write_sysinfo(FILE *f, const char *plat, const struct compiler *ccs,
 	fprintf(f, "  cpu     : %s\n", h.cpu_model[0] ? h.cpu_model : "?");
 	if (h.phys_cores)
 		fprintf(f, "  cores   : %d physical, %d logical\n", h.phys_cores,
-				h.log_cores);
+						h.log_cores);
 	else
 		fprintf(f, "  cores   : %d logical\n", h.log_cores);
 	if (h.cpu_mhz > 0)
 		fprintf(f, "  clock   : %.0f MHz\n", h.cpu_mhz);
 	if (h.mem_kb > 0)
 		fprintf(f, "  memory  : %.1f GiB (%lld kB)\n",
-				(double)h.mem_kb / (1024.0 * 1024.0), h.mem_kb);
+						(double)h.mem_kb / (1024.0 * 1024.0), h.mem_kb);
 	fprintf(f, "  virt    : %s\n", h.virt);
 	fprintf(f, "  compilers:\n");
 	for (i = 0; i < nccs; i++)
 		fprintf(f, "    %-8s %s  (%s)\n", ccs[i].key,
-				ccs[i].version[0] ? ccs[i].version : "?", ccs[i].path);
+						ccs[i].version[0] ? ccs[i].version : "?", ccs[i].path);
 }
-
 
 static void probe_cl_version(const char *cc, char *version, int vsz) {
 	const char *argv[] = {cc, NULL};
@@ -656,11 +650,11 @@ static void probe_cl_version(const char *cc, char *version, int vsz) {
 }
 
 static int detect(struct compiler *cc, const char *key, const char *const *names,
-				  int style, const char *ccmacro) {
+									int style, const char *ccmacro) {
 	char m[128];
 	cc->path[0] = 0;
 	if (!host_find_tool_any(names, MCC_HOST_WIN32 ? ".exe" : NULL, cc->path,
-							sizeof cc->path))
+													sizeof cc->path))
 		return 0;
 	cc->key = key;
 	cc->style = style;
@@ -699,7 +693,7 @@ int main(int argc, char **argv) {
 	}
 	if (!mccpath || !out) {
 		fprintf(stderr, "usage: mccbench --mcc <exe> --out <file> [--srcroot D] "
-						"[--builddir D] [--plat P] [--junit XML] [--reps N]\n");
+										"[--builddir D] [--plat P] [--junit XML] [--reps N]\n");
 		return 2;
 	}
 	if (reps < 1)
@@ -755,10 +749,11 @@ int main(int argc, char **argv) {
 		ts_path(w->src, sizeof w->src, srcroot, "src/mcc.c");
 		{
 			static char id[11][4096];
-			static const char *rel[] = {"src", "src/arch/i386", "src/arch/x86_64",
-										"src/arch/arm", "src/arch/arm64",
-										"src/arch/riscv64", "src/objfmt",
-										"src/formats", "include"};
+			static const char *rel[] = {
+					"src", "src/arch/i386", "src/arch/x86_64",
+					"src/arch/arm", "src/arch/arm64",
+					"src/arch/riscv64", "src/objfmt",
+					"src/formats", "include"};
 			int k;
 			for (k = 0; k < 9; k++) {
 				ts_path(id[k], sizeof id[k], srcroot, "%s", rel[k]);
@@ -794,7 +789,7 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 	printf("==> benchmarking %d compilers x %d workloads (best of %d) -> %s\n",
-		   nccs, nwl, reps, out);
+				 nccs, nwl, reps, out);
 	write_sysinfo(f, plat, ccs, nccs);
 	for (i = 0; i < nwl; i++) {
 		count_with_mcc(&ccs[0], &wls[i]);

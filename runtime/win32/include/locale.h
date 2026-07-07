@@ -7,6 +7,7 @@
 
 #ifdef __cplusplus
 extern "C" {
+
 #endif
 
 #ifndef NULL
@@ -29,6 +30,7 @@ extern "C" {
 
 #ifndef _LCONV_DEFINED
 #define _LCONV_DEFINED
+
 struct lconv {
 	char *decimal_point;
 	char *thousands_sep;
@@ -65,7 +67,8 @@ struct lconv {
 
 int __cdecl _configthreadlocale(int _Flag);
 char *__cdecl setlocale(int _Category, const char *_Locale);
-_CRTIMP struct lconv *__cdecl localeconv(void);
+_CRTIMP
+struct lconv *__cdecl localeconv(void);
 _locale_t __cdecl _get_current_locale(void);
 _locale_t __cdecl _create_locale(int _Category, const char *_Locale);
 void __cdecl _free_locale(_locale_t _Locale);

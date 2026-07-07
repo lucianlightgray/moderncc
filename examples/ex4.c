@@ -15,9 +15,9 @@ int main(int argc, char **argv) {
 	printf("X11 display opened.\n");
 	screen = XScreenOfDisplay(display, 0);
 	printf("width = %d\nheight = %d\ndepth = %d\n",
-		   screen->width,
-		   screen->height,
-		   screen->root_depth);
+				 screen->width,
+				 screen->height,
+				 screen->root_depth);
 	XCloseDisplay(display);
 	return 0;
 }

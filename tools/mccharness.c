@@ -16,6 +16,7 @@ static void report_err(const char *tag, const char *name, const char *stderr_tex
 static void A(Argv *v, const char *s) {
 	ts_arg(v, s);
 }
+
 static const char *const *Z(Argv *v) {
 	return ts_argz(v);
 }
@@ -27,6 +28,7 @@ static int compile_l(const char *const *argv, const char *const *launcher, char 
 	o.stderr_buf = err;
 	return host_spawn_ex(argv, &o);
 }
+
 static int compile(const char *const *argv, char **err) {
 	return compile_l(argv, NULL, err);
 }
@@ -38,6 +40,7 @@ static int run_to_l(const char *const *argv, const char *const *launcher, const 
 	o.stdout_file = outfile;
 	return host_spawn_ex(argv, &o);
 }
+
 static int run_to(const char *const *argv, const char *outfile) {
 	return run_to_l(argv, NULL, outfile);
 }
@@ -205,7 +208,7 @@ static int suite_parts(int argc, char **argv) {
 
 	if (!list_mode && (!gcc || !clang || !mcc || !bdir || !idir || !parts || !work)) {
 		fprintf(stderr, "usage: mccharness parts --gcc --clang --mcc --bdir --idir --parts --work"
-						" [--list] [--only NAME]\n");
+										" [--list] [--only NAME]\n");
 		return 2;
 	}
 	if (list_mode) {
@@ -362,7 +365,7 @@ static int suite_mcctest(int argc, char **argv) {
 
 	if (!cc || !mcc || !src || !bdir || !idir || !srcdir || !work) {
 		fprintf(stderr, "usage: mccharness mcctest --cc --mcc --src --bdir --idir --srcdir --work"
-						" [--testdefs S] [--refflags S] [--mccargs S] [--emu S]\n");
+										" [--testdefs S] [--refflags S] [--mccargs S] [--emu S]\n");
 		return 2;
 	}
 	host_mkdirs(work);
@@ -719,7 +722,7 @@ static int suite_preprocess(int argc, char **argv) {
 
 	if (!tdir || (!list_mode && (!mcc || !bdir || !idir))) {
 		fprintf(stderr, "usage: mccharness preprocess --mcc --bdir --idir --tdir"
-						" [--gcc --clang] [--list] [--only REL]\n");
+										" [--gcc --clang] [--list] [--only REL]\n");
 		return 2;
 	}
 	if (list_mode) {
@@ -886,29 +889,29 @@ static int suite_preprocess(int argc, char **argv) {
 }
 
 static const char *FC_CALLEE =
-	"struct P2 { int x, y; };\n"
-	"int __attribute__((fastcall)) mix_ll(int a, long long b, int c){ return (int)(a+b+c); }\n"
-	"int __attribute__((fastcall)) small(char a, short b, int c){ return a+b+c; }\n"
-	"int __attribute__((fastcall)) ptr2(int *a, int *b){ return *a + *b; }\n"
-	"int __attribute__((fastcall)) ll_first(long long a, int b){ return (int)(a+b); }\n"
-	"int __attribute__((fastcall)) fs(int a, struct P2 p, int b){ return a*1000+p.x*100+p.y*10+b; }\n";
+		"struct P2 { int x, y; };\n"
+		"int __attribute__((fastcall)) mix_ll(int a, long long b, int c){ return (int)(a+b+c); }\n"
+		"int __attribute__((fastcall)) small(char a, short b, int c){ return a+b+c; }\n"
+		"int __attribute__((fastcall)) ptr2(int *a, int *b){ return *a + *b; }\n"
+		"int __attribute__((fastcall)) ll_first(long long a, int b){ return (int)(a+b); }\n"
+		"int __attribute__((fastcall)) fs(int a, struct P2 p, int b){ return a*1000+p.x*100+p.y*10+b; }\n";
 static const char *FC_CALLER =
-	"struct P2 { int x, y; };\n"
-	"int __attribute__((fastcall)) mix_ll(int a, long long b, int c);\n"
-	"int __attribute__((fastcall)) small(char a, short b, int c);\n"
-	"int __attribute__((fastcall)) ptr2(int *a, int *b);\n"
-	"int __attribute__((fastcall)) ll_first(long long a, int b);\n"
-	"int __attribute__((fastcall)) fs(int a, struct P2 p, int b);\n"
-	"int main(void){\n"
-	"    int x=10, y=20, f=0; struct P2 p={2,3};\n"
-	"    if (mix_ll(1,100,3)!=104) f|=1;\n"
-	"    if (small(1,2,3)!=6) f|=2;\n"
-	"    if (ptr2(&x,&y)!=30) f|=4;\n"
-	"    if (ll_first(100,5)!=105) f|=8;\n"
-	"    if (fs(1,p,4)!=1234) f|=16;\n"
-	"    return f;\n}\n";
+		"struct P2 { int x, y; };\n"
+		"int __attribute__((fastcall)) mix_ll(int a, long long b, int c);\n"
+		"int __attribute__((fastcall)) small(char a, short b, int c);\n"
+		"int __attribute__((fastcall)) ptr2(int *a, int *b);\n"
+		"int __attribute__((fastcall)) ll_first(long long a, int b);\n"
+		"int __attribute__((fastcall)) fs(int a, struct P2 p, int b);\n"
+		"int main(void){\n"
+		"    int x=10, y=20, f=0; struct P2 p={2,3};\n"
+		"    if (mix_ll(1,100,3)!=104) f|=1;\n"
+		"    if (small(1,2,3)!=6) f|=2;\n"
+		"    if (ptr2(&x,&y)!=30) f|=4;\n"
+		"    if (ll_first(100,5)!=105) f|=8;\n"
+		"    if (fs(1,p,4)!=1234) f|=16;\n"
+		"    return f;\n}\n";
 static const char *FC_UNSUP =
-	"int __attribute__((fastcall)) f(double a,int b); int g(){ return f(1.0,2); }\n";
+		"int __attribute__((fastcall)) f(double a,int b); int g(){ return f(1.0,2); }\n";
 
 static int suite_i386fastcall(int argc, char **argv) {
 	const char *imcc = opt(argc, argv, "--imcc", NULL);
@@ -1042,12 +1045,13 @@ static int suite_i386fastcall(int argc, char **argv) {
 	}
 
 	{
-		struct {
+		struct
+		{
 			const char *name, *o1, *o2;
 		} chk[] = {
-			{"mcc caller -> gcc callee", eg, lt},
-			{"gcc caller -> mcc callee", et, lg},
-			{"mcc caller -> mcc callee", et, lt}};
+				{"mcc caller -> gcc callee", eg, lt},
+				{"gcc caller -> mcc callee", et, lg},
+				{"mcc caller -> mcc callee", et, lt}};
 		int i;
 		for (i = 0; i < 3; i++) {
 			Argv v = {{0}, 0};
@@ -1098,8 +1102,8 @@ static int suite_i386fastcall(int argc, char **argv) {
 }
 
 static const char *GCCTS_FIXED_SKIP[] = {
-	"20000120-2.c", "mipscop-1.c", "mipscop-2.c", "mipscop-3.c", "mipscop-4.c",
-	"fp-cmp-4f.c", "fp-cmp-4l.c", "fp-cmp-8f.c", "fp-cmp-8l.c", "pr38016.c", 0};
+		"20000120-2.c", "mipscop-1.c", "mipscop-2.c", "mipscop-3.c", "mipscop-4.c",
+		"fp-cmp-4f.c", "fp-cmp-4l.c", "fp-cmp-8f.c", "fp-cmp-8l.c", "pr38016.c", 0};
 
 static int gccts_skiplisted(const char *base, const char *content) {
 	int i;
@@ -1107,8 +1111,8 @@ static int gccts_skiplisted(const char *base, const char *content) {
 		if (!strcmp(base, GCCTS_FIXED_SKIP[i]))
 			return 1;
 	return content && (strstr(content, "_builtin_") || strstr(content, "complex") ||
-					   strstr(content, "Complex") || strstr(content, "__int128_t") ||
-					   strstr(content, "__uint128_t") || strstr(content, "vector"));
+										 strstr(content, "Complex") || strstr(content, "__int128_t") ||
+										 strstr(content, "__uint128_t") || strstr(content, "vector"));
 }
 
 static int suite_gcctestsuite(int argc, char **argv) {
@@ -1349,18 +1353,19 @@ static int parse_stage3_rel(const char *text, char *out, int osz) {
 }
 
 static int qemufetch_selftest(void) {
-	struct {
+	struct
+	{
 		const char *name, *text, *want;
 	} cases[] = {
-		{"amd64-openrc",
-		 "20240115T170328Z/stage3-amd64-openrc-20240115T170328Z.tar.xz 268435456 BLAKE2B abc\n",
-		 "20240115T170328Z/stage3-amd64-openrc-20240115T170328Z.tar.xz"},
-		{"leading-comment",
-		 "# Latest as of Mon\n20240115T170328Z/stage3-arm64-openrc-20240115T170328Z.tar.xz 1 SHA512 x\n",
-		 "20240115T170328Z/stage3-arm64-openrc-20240115T170328Z.tar.xz"},
-		{"bz2", "path/foo.tar.bz2 10\n", "path/foo.tar.bz2"},
-		{"gz-tabbed", "dir/bar.tar.gz\t42\n", "dir/bar.tar.gz"},
-		{0, 0, 0}};
+			{"amd64-openrc",
+			 "20240115T170328Z/stage3-amd64-openrc-20240115T170328Z.tar.xz 268435456 BLAKE2B abc\n",
+			 "20240115T170328Z/stage3-amd64-openrc-20240115T170328Z.tar.xz"},
+			{"leading-comment",
+			 "# Latest as of Mon\n20240115T170328Z/stage3-arm64-openrc-20240115T170328Z.tar.xz 1 SHA512 x\n",
+			 "20240115T170328Z/stage3-arm64-openrc-20240115T170328Z.tar.xz"},
+			{"bz2", "path/foo.tar.bz2 10\n", "path/foo.tar.bz2"},
+			{"gz-tabbed", "dir/bar.tar.gz\t42\n", "dir/bar.tar.gz"},
+			{0, 0, 0}};
 	int i, fails = 0;
 	char got[1024];
 	for (i = 0; cases[i].name; i++) {
@@ -1664,9 +1669,9 @@ static int suite_pewine(int argc, char **argv) {
 }
 
 static const char *MACHO_PROGS_NATIVE[] = {
-	"atomics", "control", "integers", "floats", "lexical", "aggregates", "varargs",
-	"complex_annexg", "control_libc", "floats_libc", "libc", "libc_struct",
-	"varargs_fp", "vla", "tls", "tls_aggr", 0};
+		"atomics", "control", "integers", "floats", "lexical", "aggregates", "varargs",
+		"complex_annexg", "control_libc", "floats_libc", "libc", "libc_struct",
+		"varargs_fp", "vla", "tls", "tls_aggr", 0};
 
 static int obj_is_macho(const char *objcheck, const char *file) {
 	const char *a[] = {objcheck, "macho", file, 0};
@@ -1792,9 +1797,9 @@ static int suite_stackguard(int argc, char **argv) {
 	int isd, status = 0;
 
 	static const char SRC[] =
-		"#include <string.h>\n#include <stdio.h>\n"
-		"static void frob(const char *s){ char buf[16]; strcpy(buf, s); printf(\"%s\\n\", buf); }\n"
-		"int main(int argc, char **argv){ frob(argc>1?argv[1]:\"ok\"); return 0; }\n";
+			"#include <string.h>\n#include <stdio.h>\n"
+			"static void frob(const char *s){ char buf[16]; strcpy(buf, s); printf(\"%s\\n\", buf); }\n"
+			"int main(int argc, char **argv){ frob(argc>1?argv[1]:\"ok\"); return 0; }\n";
 
 	if (!mcc || !bdir || !work || !objcheck) {
 		fprintf(stderr, "usage: mccharness stackguard --mcc --bdir --work --objcheck\n");
@@ -1899,43 +1904,43 @@ static int host_is_x86_64(void) {
 }
 
 static const char *MACHO_WRAP_C =
-	"int cmain(void);\n"
-	"static void osx_exit(int c){ __asm__ volatile(\"movl %0,%%edi; movl $0x2000001,%%eax; syscall\"\n"
-	"                              :: \"r\"(c):\"eax\",\"edi\",\"rcx\",\"r11\"); }\n"
-	"int main(void){ osx_exit(cmain()); for(;;); return 0; }\n"
-	"void abort(void){ osx_exit(99); }\n"
-	"void *memset(void *d, int c, unsigned long n){ unsigned char *p=d; while(n--)*p++=(unsigned char)c; return d; }\n"
-	"void *memcpy(void *d, const void *s, unsigned long n){ unsigned char *a=d; const unsigned char *b=s; while(n--)*a++=*b++; return d; }\n"
-	"void *memmove(void *d, const void *s, unsigned long n){ unsigned char *a=d; const unsigned char *b=s;\n"
-	"    if(a<b){ while(n--)*a++=*b++; } else { a+=n; b+=n; while(n--)*--a=*--b; } return d; }\n"
-	"int memcmp(const void *x, const void *y, unsigned long n){ const unsigned char *a=x,*b=y;\n"
-	"    while(n--){ if(*a!=*b) return *a-*b; a++; b++; } return 0; }\n"
-	"unsigned long strlen(const char *s){ const char *p=s; while(*p)p++; return (unsigned long)(p-s); }\n"
-	"int strcmp(const char *a, const char *b){ while(*a&&*a==*b){a++;b++;} return (unsigned char)*a-(unsigned char)*b; }\n"
-	"char *strcpy(char *d, const char *s){ char *r=d; while((*d++=*s++)); return r; }\n"
-	"static char heap[1<<16]; static unsigned long hp;\n"
-	"void *malloc(unsigned long n){ n=(n+15)&~15UL; if(hp+n>sizeof heap) return 0; void *p=heap+hp; hp+=n; return p; }\n"
-	"void free(void *p){ (void)p; }\n"
-	"static void emit_(char *b,unsigned long n,unsigned long *i,char c){ if(*i+1<n)b[*i]=c; (*i)++; }\n"
-	"static void emitu_(char *b,unsigned long n,unsigned long *i,unsigned long v,int base){\n"
-	"    char t[24]; int k=0; if(!v)t[k++]='0'; while(v){t[k++]=\"0123456789abcdef\"[v%base]; v/=base;}\n"
-	"    while(k--) emit_(b,n,i,t[k]); }\n"
-	"int snprintf(char *b, unsigned long n, const char *f, ...){\n"
-	"    __builtin_va_list ap; __builtin_va_start(ap,f); unsigned long i=0;\n"
-	"    for(; *f; f++){\n"
-	"        if(*f!='%'){ emit_(b,n,&i,*f); continue; }\n"
-	"        f++;\n"
-	"        if(*f=='d'){ int v=__builtin_va_arg(ap,int); if(v<0){emit_(b,n,&i,'-'); v=-v;} emitu_(b,n,&i,(unsigned long)v,10); }\n"
-	"        else if(*f=='u'){ emitu_(b,n,&i,(unsigned long)__builtin_va_arg(ap,unsigned),10); }\n"
-	"        else if(*f=='x'){ emitu_(b,n,&i,(unsigned long)__builtin_va_arg(ap,unsigned),16); }\n"
-	"        else if(*f=='s'){ const char *s=__builtin_va_arg(ap,char*); while(*s)emit_(b,n,&i,*s++); }\n"
-	"        else if(*f=='c'){ emit_(b,n,&i,(char)__builtin_va_arg(ap,int)); }\n"
-	"        else if(*f=='%'){ emit_(b,n,&i,'%'); }\n"
-	"    }\n"
-	"    if(n) b[i<n?i:n-1]=0;\n"
-	"    __builtin_va_end(ap);\n"
-	"    return (int)i;\n"
-	"}\n";
+		"int cmain(void);\n"
+		"static void osx_exit(int c){ __asm__ volatile(\"movl %0,%%edi; movl $0x2000001,%%eax; syscall\"\n"
+		"                              :: \"r\"(c):\"eax\",\"edi\",\"rcx\",\"r11\"); }\n"
+		"int main(void){ osx_exit(cmain()); for(;;); return 0; }\n"
+		"void abort(void){ osx_exit(99); }\n"
+		"void *memset(void *d, int c, unsigned long n){ unsigned char *p=d; while(n--)*p++=(unsigned char)c; return d; }\n"
+		"void *memcpy(void *d, const void *s, unsigned long n){ unsigned char *a=d; const unsigned char *b=s; while(n--)*a++=*b++; return d; }\n"
+		"void *memmove(void *d, const void *s, unsigned long n){ unsigned char *a=d; const unsigned char *b=s;\n"
+		"    if(a<b){ while(n--)*a++=*b++; } else { a+=n; b+=n; while(n--)*--a=*--b; } return d; }\n"
+		"int memcmp(const void *x, const void *y, unsigned long n){ const unsigned char *a=x,*b=y;\n"
+		"    while(n--){ if(*a!=*b) return *a-*b; a++; b++; } return 0; }\n"
+		"unsigned long strlen(const char *s){ const char *p=s; while(*p)p++; return (unsigned long)(p-s); }\n"
+		"int strcmp(const char *a, const char *b){ while(*a&&*a==*b){a++;b++;} return (unsigned char)*a-(unsigned char)*b; }\n"
+		"char *strcpy(char *d, const char *s){ char *r=d; while((*d++=*s++)); return r; }\n"
+		"static char heap[1<<16]; static unsigned long hp;\n"
+		"void *malloc(unsigned long n){ n=(n+15)&~15UL; if(hp+n>sizeof heap) return 0; void *p=heap+hp; hp+=n; return p; }\n"
+		"void free(void *p){ (void)p; }\n"
+		"static void emit_(char *b,unsigned long n,unsigned long *i,char c){ if(*i+1<n)b[*i]=c; (*i)++; }\n"
+		"static void emitu_(char *b,unsigned long n,unsigned long *i,unsigned long v,int base){\n"
+		"    char t[24]; int k=0; if(!v)t[k++]='0'; while(v){t[k++]=\"0123456789abcdef\"[v%base]; v/=base;}\n"
+		"    while(k--) emit_(b,n,i,t[k]); }\n"
+		"int snprintf(char *b, unsigned long n, const char *f, ...){\n"
+		"    __builtin_va_list ap; __builtin_va_start(ap,f); unsigned long i=0;\n"
+		"    for(; *f; f++){\n"
+		"        if(*f!='%'){ emit_(b,n,&i,*f); continue; }\n"
+		"        f++;\n"
+		"        if(*f=='d'){ int v=__builtin_va_arg(ap,int); if(v<0){emit_(b,n,&i,'-'); v=-v;} emitu_(b,n,&i,(unsigned long)v,10); }\n"
+		"        else if(*f=='u'){ emitu_(b,n,&i,(unsigned long)__builtin_va_arg(ap,unsigned),10); }\n"
+		"        else if(*f=='x'){ emitu_(b,n,&i,(unsigned long)__builtin_va_arg(ap,unsigned),16); }\n"
+		"        else if(*f=='s'){ const char *s=__builtin_va_arg(ap,char*); while(*s)emit_(b,n,&i,*s++); }\n"
+		"        else if(*f=='c'){ emit_(b,n,&i,(char)__builtin_va_arg(ap,int)); }\n"
+		"        else if(*f=='%'){ emit_(b,n,&i,'%'); }\n"
+		"    }\n"
+		"    if(n) b[i<n?i:n-1]=0;\n"
+		"    __builtin_va_end(ap);\n"
+		"    return (int)i;\n"
+		"}\n";
 
 static int suite_machoimage(int argc, char **argv) {
 	const char *src = opt(argc, argv, "--src", NULL);
@@ -1943,7 +1948,8 @@ static int suite_machoimage(int argc, char **argv) {
 	const char *work = opt(argc, argv, "--work", NULL);
 	const char *objcheck = opt(argc, argv, "--objcheck", NULL);
 	static const char *SKIPS[] = {"stack", "deprecat", 0};
-	static const char *PROGS[] = {"atomics", "control", "integers", "floats", "lexical", "aggregates", "varargs", "libc", 0};
+	static const char *PROGS[] = {
+			"atomics", "control", "integers", "floats", "lexical", "aggregates", "varargs", "libc", 0};
 	char mcc[4200], osxrt[4200], conf[4200], gcc[4096], loader[4200], ldsrc[4200];
 	char wrapc[4200], wrapo[4200], Iinc[4200];
 	char probe[4300];
@@ -2067,23 +2073,23 @@ static int suite_machoimage(int argc, char **argv) {
 }
 
 static const char *AL_WRAP_C =
-	"typedef unsigned long size_t;\n"
-	"int cmain(void);\n"
-	"static void osx_exit(int c){ __asm__ volatile(\"movl %0,%%edi; movl $0x2000001,%%eax; syscall\"\n"
-	"                            :: \"r\"(c):\"eax\",\"edi\",\"rcx\",\"r11\"); }\n"
-	"int main(void){ osx_exit(cmain()); for(;;); return 0; }\n"
-	"void abort(void){ osx_exit(99); }\n"
-	"int errno;\n"
-	"long write(int fd, const void *p, size_t n){ (void)fd;(void)p;(void)n; return -1; }\n"
-	"int  vm_allocate(unsigned int t, unsigned long *a, unsigned long s, int f){\n"
-	"    (void)t;(void)a;(void)s;(void)f; return -1; }\n"
-	"int  vm_deallocate(unsigned int t, unsigned long a, unsigned long s){\n"
-	"    (void)t;(void)a;(void)s; return -1; }\n"
-	"unsigned int mach_task_self(void){ return 0; }\n";
+		"typedef unsigned long size_t;\n"
+		"int cmain(void);\n"
+		"static void osx_exit(int c){ __asm__ volatile(\"movl %0,%%edi; movl $0x2000001,%%eax; syscall\"\n"
+		"                            :: \"r\"(c):\"eax\",\"edi\",\"rcx\",\"r11\"); }\n"
+		"int main(void){ osx_exit(cmain()); for(;;); return 0; }\n"
+		"void abort(void){ osx_exit(99); }\n"
+		"int errno;\n"
+		"long write(int fd, const void *p, size_t n){ (void)fd;(void)p;(void)n; return -1; }\n"
+		"int  vm_allocate(unsigned int t, unsigned long *a, unsigned long s, int f){\n"
+		"    (void)t;(void)a;(void)s;(void)f; return -1; }\n"
+		"int  vm_deallocate(unsigned int t, unsigned long a, unsigned long s){\n"
+		"    (void)t;(void)a;(void)s; return -1; }\n"
+		"unsigned int mach_task_self(void){ return 0; }\n";
 
 static int al_run_image(const char *mcc, const char *shiminc, char **objs, int nobjs,
-						const char *wrapo, char **rt, int nrt, const char *objcheck,
-						const char *work, const char *src, const char *label) {
+												const char *wrapo, char **rt, int nrt, const char *objcheck,
+												const char *work, const char *src, const char *label) {
 	static const char *SKIPS[] = {"stack", "deprecat", 0};
 	char testo[8192], macho[8192], *err = NULL;
 	const char **a;
@@ -2287,16 +2293,17 @@ static int suite_machoapplelibc(int argc, char **argv) {
 		ts_path(s3, sizeof s3, AL, "apple_simple_conf.c");
 		status |= al_run_image(mcc, shiminc, objs, nobjs, wrapo, rt, nrt, objcheck, work, s1, "apple-libc-freebsd");
 		status |= al_run_image(mcc, shiminc, objs, nobjs, wrapo, rt, nrt, objcheck, work, s2, "apple-libc-libplatform");
-		status |= al_run_image(mcc, shiminc, objs, nobjs, wrapo, rt, nrt, objcheck, work, s3, "apple-libc-simple-printf");
+		status |= al_run_image(mcc, shiminc, objs, nobjs, wrapo, rt, nrt, objcheck, work, s3,
+													 "apple-libc-simple-printf");
 	}
 	return status ? 1 : 0;
 }
 
 static const char *CG_HARNESS =
-	"extern int osx_main(void) __asm__(\"_main\");\nint main(void){ return osx_main(); }\n";
+		"extern int osx_main(void) __asm__(\"_main\");\nint main(void){ return osx_main(); }\n";
 static const char *CG_LIBCNAMES[] = {
-	"memset", "memcpy", "memmove", "memcmp", "malloc", "calloc", "realloc", "free", "printf", "snprintf",
-	"strcmp", "strncmp", "strcpy", "strlen", "abort", "qsort", "strtod", "strtold", "div", "ldiv", "lldiv", 0};
+		"memset", "memcpy", "memmove", "memcmp", "malloc", "calloc", "realloc", "free", "printf", "snprintf",
+		"strcmp", "strncmp", "strcpy", "strlen", "abort", "qsort", "strtod", "strtold", "div", "ldiv", "lldiv", 0};
 static const char *CG_LINK_NEEDLES[] = {"undefined reference", "undefined symbol", "error:", 0};
 
 static int in_list(const char *s, const char *const *set) {
@@ -2316,7 +2323,8 @@ static int suite_machocodegen(int argc, char **argv) {
 	int is_arm = !strcmp(arch, "arm64");
 	const char *br = is_arm ? "b" : "jmp", *plt = is_arm ? "" : "@PLT";
 	static const char *SKIP_X64[] = {"tls", "tls_aggr", 0};
-	static const char *SKIP_A64[] = {"tls", "tls_aggr", "control_libc", "floats_libc", "libc", "libc_struct", "varargs_fp", 0};
+	static const char *SKIP_A64[] = {
+			"tls", "tls_aggr", "control_libc", "floats_libc", "libc", "libc_struct", "varargs_fp", 0};
 	const char *const *skipset = is_arm ? SKIP_A64 : SKIP_X64;
 	char mcc[4200], osxrt[4200], conf[4200], gcc[4096], clang[4096], qemu[4096];
 	char harness[4300], shimS[4300], Iinc[4300], probe[4300];
@@ -2388,7 +2396,8 @@ static int suite_machocodegen(int argc, char **argv) {
 	snprintf(Iinc, sizeof Iinc, "-I%s/runtime/include", src);
 	write_file(harness, CG_HARNESS);
 
-	sl += snprintf(shim + sl, sizeof shim - sl, ".text\n.macro tramp dar, nat\n.globl \\dar\n\\dar: %s \\nat%s\n.endm\n", br, plt);
+	sl += snprintf(shim + sl, sizeof shim - sl,
+								 ".text\n.macro tramp dar, nat\n.globl \\dar\n\\dar: %s \\nat%s\n.endm\n", br, plt);
 	for (i = 0; CG_LIBCNAMES[i]; i++)
 		sl += snprintf(shim + sl, sizeof shim - sl, "tramp _%s, %s\n", CG_LIBCNAMES[i], CG_LIBCNAMES[i]);
 	sl += snprintf(shim + sl, sizeof shim - sl, "tramp __setjmp, _setjmp\n.section .note.GNU-stack,\"\",@progbits\n");
@@ -2509,41 +2518,41 @@ static int suite_machocodegen(int argc, char **argv) {
 }
 
 static const char *ARM_COMBOS[] = {
-	"r3, r4, r5, r6", "r3, r4, r5", "r3, r4, r5, asl #7", "r3, r4, r5, lsl #7",
-	"r3, r4, r5, asr #7", "r3, r4, r5, lsr #7", "r3, r4, r5, ror #7",
-	"r3, r4, r5, rrx", "r3, r4, r5, asl r6", "r3, r4, r5, lsl r6",
-	"r3, r4, r5, asr r6", "r3, r4, r5, lsr r6", "r3, r4, r5, ror r6",
-	"r3, r4, #5, asl #7", "r3, r4, #5, lsl #7", "r3, r4, #5, asr #7",
-	"r3, r4, #5, lsr #7", "r3, r4, #5, ror #7", "r3, r4, #5, rrx", "r3, #5, r4",
-	"r3, #4, #8", "r3, r4, asl #5", "r3, r4, lsl #5", "r3, r4, asr #5",
-	"r3, r4, lsr #5", "r3, r4, ror #5", "r3, r4, ror #8", "r3, r4, asl r5",
-	"r3, r4, lsl r5", "r3, r4, asr r5", "r3, r4, lsr r5", "r3, r4, ror r5",
-	"r3, r4, ror #8", "r3, r4, ror #16", "r3, r4, ror #24", "r3, r4, rrx",
-	"r3, #4, asl #5", "r3, #4, lsl #5", "r3, #4, asr #5", "r3, #4, lsr #5",
-	"r3, #4, ror #5", "r3, r4, rrx", "r3, r4", "r3", "{r3,r4,r5}", "{r3,r5,r4}",
-	"r2!, {r3,r4,r5}", "r2!, {r3,r5,r4}", "r2, {r3,r4,r5}", "r2, {r3,r5,r4}",
-	"r2, [r3, r4]", "r2, [r3, r4]!", "r2, [r3, -r4]", "r2, [r3, -r4]!",
-	"r2, [r3], r4", "r2, [r3], -r4", "r2, [r3]", "r2, r3, [r4, lsl# 2]",
-	"r2, [r3, r4, lsr# 1]", "r2, [r3, r4, lsr# 2]!", "r2, [r3, -r4, ror# 3]",
-	"r2, [r3, -r4, lsl# 1]!", "r2, [r3], r4, lsl# 3", "r2, [r3], -r4, asr# 31",
-	"r2, [r3], -r4, asl# 1", "r2, [r3], -r4, rrx", "r2, r3, [r4]",
-	"r2, [r3, #4]", "r2, [r3, #-4]", "r2, [r3, #0x45]", "r2, [r3, #-0x45]",
-	"r2, r3, #4", "r2, r3, #-4", "p10, #7, c2, c0, c1, #4",
-	"p10, #7, r2, c0, c1, #4", "p10, #0, c2, c0, c1, #4", "p10, #0, r2, c0, c1, #4",
-	"r2, #4", "r2, #-4", "r2, #0xEFFF", "r3, #0x0000", "r4, #0x0201",
-	"r4, #0xFFFFFF00", "#4", "#-4", "p5, c2, [r3]", "p5, c3, [r4]",
-	"p5, c2, [r3, #4]", "p5, c2, [r3, #-4]", "p5, c2, [r3, #0x45]",
-	"p5, c2, [r3, #-0x45]", "s2, [r3]", "s3, [r4]", "s2, [r3, #4]",
-	"s2, [r3, #-4]", "s2, [r3, #0x45]", "s2, [r3, #-0x45]", "r1, {d3-d4}",
-	"r1!, {d3-d4}", "r2, {d4-d15}", "r3!, {d4-d15}", "r3!, {d4}", "r2, {s4-s31}",
-	"r3!, {s4}", "{d3-d4}", "{d4-d15}", "{d4}", "{s4-s31}", "{s4}", "s2, s3, s4",
-	"s2, s3", "d2, d3, d4", "d2, d3", "s2, #0", "d2, #0", "s3, #0.0", "d3, #0.0",
-	"s4, #-0.1796875", "d4, #0.1796875", "r2, r3, d1", "d1, r2, r3", "s1, r2",
-	"r2, s1", "r2, fpexc", "r2, fpscr", "r2, fpsid", "apsr_nzcv, fpscr",
-	"fpexc, r2", "fpscr, r2", "fpsid, r2", "s3, d4", "d4, s3", "", 0};
+		"r3, r4, r5, r6", "r3, r4, r5", "r3, r4, r5, asl #7", "r3, r4, r5, lsl #7",
+		"r3, r4, r5, asr #7", "r3, r4, r5, lsr #7", "r3, r4, r5, ror #7",
+		"r3, r4, r5, rrx", "r3, r4, r5, asl r6", "r3, r4, r5, lsl r6",
+		"r3, r4, r5, asr r6", "r3, r4, r5, lsr r6", "r3, r4, r5, ror r6",
+		"r3, r4, #5, asl #7", "r3, r4, #5, lsl #7", "r3, r4, #5, asr #7",
+		"r3, r4, #5, lsr #7", "r3, r4, #5, ror #7", "r3, r4, #5, rrx", "r3, #5, r4",
+		"r3, #4, #8", "r3, r4, asl #5", "r3, r4, lsl #5", "r3, r4, asr #5",
+		"r3, r4, lsr #5", "r3, r4, ror #5", "r3, r4, ror #8", "r3, r4, asl r5",
+		"r3, r4, lsl r5", "r3, r4, asr r5", "r3, r4, lsr r5", "r3, r4, ror r5",
+		"r3, r4, ror #8", "r3, r4, ror #16", "r3, r4, ror #24", "r3, r4, rrx",
+		"r3, #4, asl #5", "r3, #4, lsl #5", "r3, #4, asr #5", "r3, #4, lsr #5",
+		"r3, #4, ror #5", "r3, r4, rrx", "r3, r4", "r3", "{r3,r4,r5}", "{r3,r5,r4}",
+		"r2!, {r3,r4,r5}", "r2!, {r3,r5,r4}", "r2, {r3,r4,r5}", "r2, {r3,r5,r4}",
+		"r2, [r3, r4]", "r2, [r3, r4]!", "r2, [r3, -r4]", "r2, [r3, -r4]!",
+		"r2, [r3], r4", "r2, [r3], -r4", "r2, [r3]", "r2, r3, [r4, lsl# 2]",
+		"r2, [r3, r4, lsr# 1]", "r2, [r3, r4, lsr# 2]!", "r2, [r3, -r4, ror# 3]",
+		"r2, [r3, -r4, lsl# 1]!", "r2, [r3], r4, lsl# 3", "r2, [r3], -r4, asr# 31",
+		"r2, [r3], -r4, asl# 1", "r2, [r3], -r4, rrx", "r2, r3, [r4]",
+		"r2, [r3, #4]", "r2, [r3, #-4]", "r2, [r3, #0x45]", "r2, [r3, #-0x45]",
+		"r2, r3, #4", "r2, r3, #-4", "p10, #7, c2, c0, c1, #4",
+		"p10, #7, r2, c0, c1, #4", "p10, #0, c2, c0, c1, #4", "p10, #0, r2, c0, c1, #4",
+		"r2, #4", "r2, #-4", "r2, #0xEFFF", "r3, #0x0000", "r4, #0x0201",
+		"r4, #0xFFFFFF00", "#4", "#-4", "p5, c2, [r3]", "p5, c3, [r4]",
+		"p5, c2, [r3, #4]", "p5, c2, [r3, #-4]", "p5, c2, [r3, #0x45]",
+		"p5, c2, [r3, #-0x45]", "s2, [r3]", "s3, [r4]", "s2, [r3, #4]",
+		"s2, [r3, #-4]", "s2, [r3, #0x45]", "s2, [r3, #-0x45]", "r1, {d3-d4}",
+		"r1!, {d3-d4}", "r2, {d4-d15}", "r3!, {d4-d15}", "r3!, {d4}", "r2, {s4-s31}",
+		"r3!, {s4}", "{d3-d4}", "{d4-d15}", "{d4}", "{s4-s31}", "{s4}", "s2, s3, s4",
+		"s2, s3", "d2, d3, d4", "d2, d3", "s2, #0", "d2, #0", "s3, #0.0", "d3, #0.0",
+		"s4, #-0.1796875", "d4, #0.1796875", "r2, r3, d1", "d1, r2, r3", "s1, r2",
+		"r2, s1", "r2, fpexc", "r2, fpscr", "r2, fpsid", "apsr_nzcv, fpscr",
+		"fpexc, r2", "fpscr, r2", "fpsid, r2", "s3, d4", "d4, s3", "", 0};
 static const char *ARM_KNOWN_FAIL[] = {
-	"bl r3", "b r3", "mov r2, #0xEFFF", "mov r4, #0x0201",
-	"vmov.f32 r2, r3, d1", "vmov.f32 d1, r2, r3", 0};
+		"bl r3", "b r3", "mov r2, #0xEFFF", "mov r4, #0x0201",
+		"vmov.f32 r2, r3, d1", "vmov.f32 d1, r2, r3", 0};
 
 static int arm_isreg(const char *s) {
 	static const char *ex[] = {"fp", "ip", "sp", "lr", "pc", "asl", "apsr_nzcv", "fpsid", "fpscr", "fpexc", 0};
@@ -2631,7 +2640,7 @@ static int suite_armasm(int argc, char **argv) {
 		if (!strstr(tok, "DEF_ASM"))
 			continue;
 		if (strstr(tok, "not useful") || strstr(tok, "#define") || strstr(tok, "/*") ||
-			strstr(tok, "DEF_ASM_CONDED_WITH_SUFFIX(x"))
+				strstr(tok, "DEF_ASM_CONDED_WITH_SUFFIX(x"))
 			continue;
 		op = strchr(tok, '(');
 		cp = strrchr(tok, ')');
@@ -2864,8 +2873,9 @@ static int suite_pkgsmoke(int argc, char **argv) {
 	const char *work = opt(argc, argv, "--work", NULL);
 	char stage[4200], out[4200], p[4400];
 	int status = 0, isd, i;
-	static const char *ARCH[] = {"mcc-1.2.3-test.tar.gz", "libmcc-1.2.3-test.tar.gz",
-								 "mcc-cross-1.2.3-test.tar.gz", "checksums-test.txt", 0};
+	static const char *ARCH[] = {
+			"mcc-1.2.3-test.tar.gz", "libmcc-1.2.3-test.tar.gz",
+			"mcc-cross-1.2.3-test.tar.gz", "checksums-test.txt", 0};
 
 	if (!ci || !work) {
 		fprintf(stderr, "usage: mccharness pkgsmoke --ci --work\n");
@@ -2887,13 +2897,13 @@ static int suite_pkgsmoke(int argc, char **argv) {
 	ts_path(p, sizeof p, stage, "include");
 	host_mkdirs(p);
 
-#define PUT(rel, txt)                     \
-	do {                                  \
+#define PUT(rel, txt)                 \
+	do {                                \
 		ts_path(p, sizeof p, stage, rel); \
 		write_file(p, txt);               \
 	} while (0)
-#define PUTX(rel, txt)                                          \
-	do {                                                        \
+#define PUTX(rel, txt)                                      \
+	do {                                                      \
 		ts_path(p, sizeof p, stage, rel "%s", HOST_EXE_SUFFIX); \
 		write_file(p, txt);                                     \
 	} while (0)
@@ -3081,7 +3091,7 @@ static int suite_machofat(int argc, char **argv) {
 				printf("FAIL machofat (combine 2 slices)\n");
 				status = 1;
 			} else if (mf_fat_arches(u2, cts, 8, &n) || n != 2 ||
-					   !mf_has(cts, n, MF_CPU_ARM64) || !mf_has(cts, n, MF_CPU_X86_64)) {
+								 !mf_has(cts, n, MF_CPU_ARM64) || !mf_has(cts, n, MF_CPU_X86_64)) {
 				printf("FAIL machofat (2-slice fat header wrong)\n");
 				status = 1;
 			} else if ((rc = run_quiet(exe)) != 7) {
@@ -3100,9 +3110,9 @@ static int suite_machofat(int argc, char **argv) {
 int main(int argc, char **argv) {
 	if (argc < 2) {
 		fprintf(stderr, "usage: mccharness <suite> ... (parts|mcctest|mccexe|asmconnect|dashs|"
-						"preprocess|i386fastcall|gcctestsuite|penative|qemurun|pewine|machonative|"
-						"machoimage|machoapplelibc|machocodegen|armasm|machostructural|stackguard|pkgsmoke|"
-						"machofat|qemufetch)\n");
+										"preprocess|i386fastcall|gcctestsuite|penative|qemurun|pewine|machonative|"
+										"machoimage|machoapplelibc|machocodegen|armasm|machostructural|stackguard|pkgsmoke|"
+										"machofat|qemufetch)\n");
 		return 2;
 	}
 	if (!strcmp(argv[1], "machofat"))
