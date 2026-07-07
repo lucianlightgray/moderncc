@@ -69,13 +69,16 @@ brought up one §17 category at a time.
     `gsym` pattern (no backend jump hooks). Done: **comparisons** (`< > <= >= == !=`),
     **`if`/`if-else`** (nested BasicBlocks), **non-tail returns** (branch returns that
     jump to the epilogue), **`while`**, **`++`/`--`** (`inc()` modeled as `Unary`),
-    **`for`** (init;cond;incr), **`break`/`continue`** (Jump nodes chaining onto the
-    loop's replay-time break/continue chains). Loops are `If` nodes op==2 (while)/
-    op==3 (for). Compound-assign (`+=`) and comma already replay. **Coverage
-    68→98/239 files (41%).** Remaining: the **memory model** (`a[i]`/`.`/`->` — needs
-    `gaddrof`/`indir` → `Load`/`Store` of computed addresses), `InitList` (aggregate
-    init), expression control flow (`?:`, `&&`/`||`), `switch`, `do-while`, `goto`,
-    floats/wider types. Then A7 const-fold template.
+    **`for`** (init;cond;incr), **`do-while`**, **`break`/`continue`** (Jump nodes
+    chaining onto the loop's replay-time chains). Loops are `If` nodes op==2 (while)/
+    op==3 (for)/op==4 (do-while). Compound-assign (`+=`) and comma replay. **Memory
+    model:** pointer deref/address-of (`Load`/`gaddrof`) and **array subscripting
+    `a[i]`** (gen_op nesting counter for the recursive pointer-scale gen_op('*');
+    `ast_bad_type` guards keep struct/union/bitfield/float on correct fallback).
+    **Coverage 68→117/239 files (49%).** Remaining: expression-level control flow
+    (`?:`/`&&`/`||` — register-coordinated branch values, intricate), `InitList`
+    (aggregate `{...}` init), scalar struct member access `.`/`->` (aggregate deref
+    currently bails), `switch`, `goto`, floats/wider types. Then A7 const-fold template.
 - [~] **A5 — parser AST-build hooks.** `ast_hook_stmt` (count + bail on unsupported
   leaf statements) and `ast_hook_return` (capture Return of an int constant) fire from
   the parser's statement/return positions, gated by `CONFIG_AST` + `ast_active`. Grows
