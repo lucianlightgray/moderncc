@@ -7,6 +7,14 @@
 
 #include <_mingw.h>
 
+#if defined __i386__
+typedef long double float_t;
+typedef long double double_t;
+#else
+typedef float float_t;
+typedef double double_t;
+#endif
+
 struct exception;
 
 #pragma pack(push, _CRT_PACKING)
