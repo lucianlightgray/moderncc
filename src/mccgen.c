@@ -88,6 +88,7 @@ static int ast_base_depth;  /* real vstack depth when capture started          *
 static int ast_in_op;       /* inside gen_op/vstore — ignore its internal ops  */
 static int ast_in_call;     /* inside a call boundary — ignore all vstack ops  */
 static AstLocal ast_call_pending; /* Invoke awaiting its result push (or NONE)  */
+static AstLocal ast_inc_pending;  /* ++/-- in progress (or NONE)                */
 /* Control-flow capture: effects append to ast_cur_bb (the BasicBlock currently
  * open); `if` branches open nested BasicBlocks pushed on a small stack. */
 static AstLocal ast_cur_bb;
@@ -117,6 +118,8 @@ static void ast_hook_if_else(void);
 static void ast_hook_if_end(void);
 static void ast_hook_while_begin(void);
 static void ast_hook_while_end(void);
+static void ast_hook_inc(int post, int c);
+static void ast_hook_inc_end(void);
 static void ast_hook_inplace(void);
 #endif
 
@@ -3858,6 +3861,9 @@ ST_FUNC void inc(int post, int c) {
 		mcc_error("'++'/'--' on this '_Atomic' object is not supported "
 							"(only integer/pointer atomics up to a machine word)");
 	}
+#if defined(CONFIG_AST) && CONFIG_AST
+	ast_hook_inc(post, c);
+#endif
 	vdup();
 	if (post) {
 		gv_dup();
@@ -3869,6 +3875,9 @@ ST_FUNC void inc(int post, int c) {
 	vstore();
 	if (post)
 		vpop();
+#if defined(CONFIG_AST) && CONFIG_AST
+	ast_hook_inc_end();
+#endif
 }
 
 ST_FUNC CString *parse_mult_str(const char *msg) {
@@ -10464,6 +10473,41 @@ static void ast_hook_convert(CType *type) {
 	ast_vs[ast_vn - 1] = cvt;
 }
 
+/* ++/-- : an lvalue increment/decrement. Modeled as a Unary node (op = the
+ * operator token, ival = post-flag) wrapping the target lvalue; inc()'s intricate
+ * vstack dance (vdup/gv_dup/vrotb/…) is suppressed via ast_in_call and replayed by
+ * re-issuing inc() itself. */
+static void ast_hook_inc(int post, int c) {
+	ast_inc_pending = AST_NONE;
+	if (!ast_active || ast_desync || ast_in_op || ast_in_call)
+		return;
+	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+	if (ast_vn < 1 || ast_vn != rel) {
+		ast_desync = 1;
+		return;
+	}
+	ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
+	AstLocal u = ast_node(ast_cur, AST_Unary);
+	ast_set_op(ast_cur, u, c);
+	ast_set_ival(ast_cur, u, (uint64_t)post);
+	ast_add_child(ast_cur, u, ast_vs[ast_vn - 1]);
+	ast_vs[ast_vn - 1] = u; /* target replaced by the ++/-- result */
+	ast_inc_pending = u;
+	ast_in_call = 1;
+}
+
+static void ast_hook_inc_end(void) {
+	if (ast_inc_pending == AST_NONE)
+		return;
+	ast_inc_pending = AST_NONE;
+	ast_in_call = 0;
+	if (ast_desync || !ast_capture)
+		return;
+	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+	if (ast_vn != rel)
+		ast_desync = 1;
+}
+
 /* --- control flow: `if` --------------------------------------------------
  * Captured at the statement level: the condition is the single value on the
  * mirror (about to be consumed by gvtst); the then/else branches are captured
@@ -10649,11 +10693,12 @@ static void ast_hook_vpop(void) {
 		ast_desync = 1;
 		return;
 	}
-	/* Discarding a bare call result (`f();`): the call has a side effect, so keep
-	 * it as a BasicBlock effect. A discarded value that merely *contains* a call
-	 * (e.g. `f()+1;`) is not this simple node, so it falls back via byte-verify. */
+	/* Discarding a bare side-effecting result (`f();`, `i++;`): keep it as a
+	 * BasicBlock effect. A discarded value that merely *contains* one (e.g.
+	 * `f()+1;`) is not this simple node, so it falls back via byte-verify. */
 	AstLocal top = ast_vs[ast_vn - 1];
-	if (ast_kind(ast_cur, top) == AST_Invoke)
+	uint16_t tk = ast_kind(ast_cur, top);
+	if (tk == AST_Invoke || tk == AST_Unary)
 		ast_add_child(ast_cur, ast_cur_bb, top);
 	ast_vn--;
 }
@@ -10795,6 +10840,11 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 		gen_cast(&ct);
 		break;
 	}
+	case AST_Unary:
+		/* ++/--: push the target lvalue, re-issue inc(post, op). */
+		ast_replay_value(a, ast_child(a, n, 0));
+		inc((int)ast_ival(a, n), ast_op(a, n));
+		break;
 	case AST_Invoke: {
 		/* push callee + args, transfer, then re-push the captured result. */
 		uint32_t nc = ast_nchild(a, n);
@@ -10832,6 +10882,11 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 			break;
 		case AST_Invoke:
 			/* a bare call statement: evaluate the call, discard the result. */
+			ast_replay_value(a, s);
+			vpop();
+			break;
+		case AST_Unary:
+			/* a bare ++/-- statement: apply it, discard the result. */
 			ast_replay_value(a, s);
 			vpop();
 			break;
@@ -10969,6 +11024,7 @@ static void gen_function(Sym *sym) {
 		ast_in_op = 0;
 		ast_in_call = 0;
 		ast_call_pending = AST_NONE;
+		ast_inc_pending = AST_NONE;
 		ast_vn = 0;
 		ast_ret_val = AST_NONE;
 		ast_base_depth = (int)(vtop - vstack + 1);
