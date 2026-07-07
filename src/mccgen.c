@@ -71,6 +71,7 @@ static int ast_replay_dump; /* MCC_AST_REPLAY_DUMP: dump replayed trees        *
 static AstArena *ast_cur;   /* the function currently being built              */
 static int ast_bail;        /* an unsupported construct was seen              */
 static AstLocal ast_ret_val; /* captured return-expression tree (or AST_NONE)  */
+static AstLocal ast_last_return; /* the Return node just recorded (for the jmp flag) */
 
 /* Return-expression value mirror: a small stack shadowing the vstack while a
  * return expression is evaluated, so its intention tree can be captured op by
@@ -87,9 +88,17 @@ static int ast_base_depth;  /* real vstack depth when capture started          *
 static int ast_in_op;       /* inside gen_op/vstore — ignore its internal ops  */
 static int ast_in_call;     /* inside a call boundary — ignore all vstack ops  */
 static AstLocal ast_call_pending; /* Invoke awaiting its result push (or NONE)  */
+/* Control-flow capture: effects append to ast_cur_bb (the BasicBlock currently
+ * open); `if` branches open nested BasicBlocks pushed on a small stack. */
+static AstLocal ast_cur_bb;
+#define AST_CF_MAX 32
+static AstLocal ast_cf_if[AST_CF_MAX];    /* pending If nodes                    */
+static AstLocal ast_cf_savebb[AST_CF_MAX]; /* the BB to restore at if_end         */
+static int ast_cf_top;
 
 static void ast_hook_stmt(int t);
 static void ast_hook_return(int has_val);
+static void ast_hook_return_jmp(int jumps);
 static void ast_hook_implicit_return(void);
 static void ast_hook_ret_expr_done(void);
 static void ast_hook_vpush(void);
@@ -102,6 +111,10 @@ static void ast_hook_vswap(void);
 static void ast_hook_convert(CType *type);
 static void ast_hook_call_begin(int nb_args, int is_struct_ret);
 static void ast_hook_call_end(void);
+static void ast_hook_if_begin(void);
+static void ast_hook_if_gvtst_done(void);
+static void ast_hook_if_else(void);
+static void ast_hook_if_end(void);
 static void ast_hook_inplace(void);
 #endif
 
@@ -8771,18 +8784,30 @@ again:
 			mcc_warning_c(warn_parentheses)("suggest parentheses around "
 																			"assignment used as a truth value");
 		seqp_check();
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_if_begin();
+#endif
 		a = gvtst(1, 0);
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_if_gvtst_done();
+#endif
 		skip(')');
 		block(0);
 		if (tok == TOK_ELSE) {
 			d = gjmp(0);
 			gsym(a);
 			next();
+#if defined(CONFIG_AST) && CONFIG_AST
+			ast_hook_if_else();
+#endif
 			block(0);
 			gsym(d);
 		} else {
 			gsym(a);
 		}
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_if_end();
+#endif
 		prev_scope_s(&o);
 	} else if (t == TOK_WHILE) {
 		new_scope_s(&o);
@@ -8864,8 +8889,14 @@ again:
 		if (b)
 			gfunc_return(&func_vt);
 		skip(';');
-		if (tok != '}' || local_scope != 1)
-			rsym = gjmp(rsym);
+		{
+			int ret_jumps = (tok != '}' || local_scope != 1);
+			if (ret_jumps)
+				rsym = gjmp(rsym);
+#if defined(CONFIG_AST) && CONFIG_AST
+			ast_hook_return_jmp(ret_jumps);
+#endif
+		}
 		if (debug_modes)
 			mcc_tcov_block_end(mcc_state, -1);
 		CODE_OFF();
@@ -10285,7 +10316,7 @@ static void ast_hook_stmt(int t) {
 	if (!ast_active)
 		return;
 	switch (t) {
-	case TOK_IF: case TOK_WHILE: case TOK_FOR: case TOK_DO:
+	case TOK_WHILE: case TOK_FOR: case TOK_DO:
 	case TOK_SWITCH: case TOK_GOTO: case TOK_BREAK: case TOK_CONTINUE:
 	case TOK_CASE: case TOK_DEFAULT:
 		ast_bail = 1;
@@ -10359,6 +10390,12 @@ static int ast_op_modeled(int op) {
 	case '+': case '-': case '*': case '/': case '%':
 	case '&': case '|': case '^':
 	case TOK_SHL: case TOK_SAR: case TOK_SHR:
+	/* relational / equality — gen_op leaves a VT_CMP the same way each time, so
+	 * replaying gen_op reproduces it; used directly as an `if`/loop condition.
+	 * (NB: '<'/'>' are TOK_SHL/TOK_SAR above; the relational ops are TOK_LT/GT.) */
+	case TOK_LT: case TOK_GT: case TOK_LE: case TOK_GE:
+	case TOK_EQ: case TOK_NE:
+	case TOK_ULT: case TOK_UGE: case TOK_ULE: case TOK_UGT:
 		return 1;
 	default:
 		return 0;
@@ -10414,6 +10451,68 @@ static void ast_hook_convert(CType *type) {
 	ast_set_type(ast_cur, cvt, type->t, (uint64_t)(uintptr_t)type->ref);
 	ast_add_child(ast_cur, cvt, ast_vs[ast_vn - 1]);
 	ast_vs[ast_vn - 1] = cvt;
+}
+
+/* --- control flow: `if` --------------------------------------------------
+ * Captured at the statement level: the condition is the single value on the
+ * mirror (about to be consumed by gvtst); the then/else branches are captured
+ * into nested BasicBlocks. Replay re-issues the parser's exact gvtst/gjmp/gsym
+ * pattern, so no backend jump primitives need hooking. */
+static void ast_hook_if_begin(void) {
+	if (!ast_active || ast_desync || ast_bail)
+		return;
+	if (ast_vn != 1 || ast_cf_top >= AST_CF_MAX) {
+		ast_bail = 1;
+		return;
+	}
+	AstLocal cond = ast_vs[0];
+	ast_vn = 0; /* the condition is consumed by gvtst */
+	AstLocal iff = ast_node(ast_cur, AST_If);
+	ast_add_child(ast_cur, iff, cond);
+	AstLocal thenbb = ast_node(ast_cur, AST_BasicBlock);
+	ast_add_child(ast_cur, iff, thenbb);
+	ast_add_child(ast_cur, ast_cur_bb, iff);
+	ast_cf_if[ast_cf_top] = iff;
+	ast_cf_savebb[ast_cf_top] = ast_cur_bb;
+	ast_cf_top++;
+	ast_cur_bb = thenbb;
+	ast_in_call = 1; /* suppress the mirror across gvtst's condition test */
+}
+
+/* gvtst has emitted the conditional branch; resume capturing the branch body. */
+static void ast_hook_if_gvtst_done(void) {
+	if (!ast_active)
+		return;
+	ast_in_call = 0;
+	if (ast_desync || ast_bail)
+		return;
+	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+	if (ast_vn != rel)
+		ast_desync = 1;
+}
+
+static void ast_hook_if_else(void) {
+	if (!ast_active || ast_desync || ast_bail)
+		return;
+	if (ast_cf_top < 1) {
+		ast_bail = 1;
+		return;
+	}
+	AstLocal iff = ast_cf_if[ast_cf_top - 1];
+	AstLocal elsebb = ast_node(ast_cur, AST_BasicBlock);
+	ast_add_child(ast_cur, iff, elsebb);
+	ast_cur_bb = elsebb;
+}
+
+static void ast_hook_if_end(void) {
+	if (!ast_active)
+		return;
+	if (ast_cf_top < 1) {
+		ast_bail = 1;
+		return;
+	}
+	ast_cf_top--;
+	ast_cur_bb = ast_cf_savebb[ast_cf_top];
 }
 
 /* An in-place transform (deref, address-of) mutates a vstack value's meaning
@@ -10508,7 +10607,7 @@ static void ast_hook_vpop(void) {
 	 * (e.g. `f()+1;`) is not this simple node, so it falls back via byte-verify. */
 	AstLocal top = ast_vs[ast_vn - 1];
 	if (ast_kind(ast_cur, top) == AST_Invoke)
-		ast_add_child(ast_cur, ast_root(ast_cur), top);
+		ast_add_child(ast_cur, ast_cur_bb, top);
 	ast_vn--;
 }
 
@@ -10530,7 +10629,7 @@ static void ast_hook_vstore(void) {
 	AstLocal st = ast_node(ast_cur, AST_Store);
 	ast_add_child(ast_cur, st, lval);
 	ast_add_child(ast_cur, st, value);
-	ast_add_child(ast_cur, ast_root(ast_cur), st);
+	ast_add_child(ast_cur, ast_cur_bb, st);
 	ast_vs[ast_vn - 2] = value; /* store leaves the value */
 	ast_vn--;
 	ast_in_op = 1;
@@ -10551,11 +10650,12 @@ static void ast_hook_vstore_end(void) {
  * return-type cast). The mirror must hold exactly that one value. */
 static void ast_hook_ret_expr_done(void) {
 	ast_ret_val = AST_NONE;
-	if (!ast_capture)
+	if (!ast_capture || ast_in_call)
 		return;
-	/* The return is terminal: stop capturing so the return-type cast and the
-	 * epilogue transfer (gen_assign_cast/gfunc_return) do not disturb the mirror. */
-	ast_capture = 0;
+	/* Suppress the mirror across the return-type cast and epilogue transfer
+	 * (gen_assign_cast/gfunc_return) so they do not disturb it; capture resumes at
+	 * ast_hook_return_jmp, so statements after a *non-tail* return are still seen. */
+	ast_in_call = 1;
 	if (!ast_desync && ast_vn == 1) {
 		ast_finalize_leaf(ast_vs[0], vtop);
 		ast_ret_val = ast_vs[0];
@@ -10568,17 +10668,36 @@ static void ast_hook_ret_expr_done(void) {
 /* A `return` statement is complete. Attach the captured value as a Return effect
  * (or bail). Void returns are not modeled yet. */
 static void ast_hook_return(int has_val) {
+	ast_last_return = AST_NONE;
 	if (!ast_active)
 		return;
 	if (!has_val || ast_ret_val == AST_NONE) {
 		ast_bail = 1;
 		return;
 	}
-	AstLocal bb = ast_root(ast_cur);
+	AstLocal bb = ast_cur_bb;
 	AstLocal ret = ast_node(ast_cur, AST_Return);
 	ast_add_child(ast_cur, ret, ast_ret_val);
 	ast_add_child(ast_cur, bb, ret);
 	ast_ret_val = AST_NONE;
+	ast_last_return = ret;
+}
+
+/* Record whether this return jumped to the epilogue (non-tail) or fell through
+ * (a tail return before `}`). Replay reproduces the jump when set. */
+static void ast_hook_return_jmp(int jumps) {
+	if (!ast_active)
+		return;
+	if (ast_last_return != AST_NONE)
+		ast_set_op(ast_cur, ast_last_return, jumps ? 1 : 0);
+	ast_last_return = AST_NONE;
+	/* Resume capturing (the return's tail ops are done); re-sync the mirror. */
+	ast_in_call = 0;
+	if (!ast_desync && !ast_bail) {
+		int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+		if (ast_vn != rel)
+			ast_desync = 1;
+	}
 }
 
 /* The main/K&R implicit `return 0;` synthesized at a fall-off-the-end body.
@@ -10588,7 +10707,7 @@ static void ast_hook_implicit_return(void) {
 		return;
 	/* Stop capturing before the synthetic vpushi(0)/gfunc_return runs. */
 	ast_capture = 0;
-	AstLocal bb = ast_root(ast_cur);
+	AstLocal bb = ast_cur_bb;
 	AstLocal ret = ast_node(ast_cur, AST_Return);
 	AstLocal lit = ast_node(ast_cur, AST_Literal);
 	ast_set_op(ast_cur, lit, VT_CONST); /* r: a plain integer constant */
@@ -10651,8 +10770,7 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 	}
 }
 
-static void ast_replay_body(AstArena *a) {
-	AstLocal bb = ast_root(a);
+static void ast_replay_bb(AstArena *a, AstLocal bb) {
 	for (AstLocal s = ast_first_child(a, bb); s != AST_NONE;
 			 s = ast_next_sib(a, s)) {
 		switch (ast_kind(a, s)) {
@@ -10670,6 +10788,23 @@ static void ast_replay_body(AstArena *a) {
 			ast_replay_value(a, s);
 			vpop();
 			break;
+		case AST_If: {
+			/* Reproduce the parser's if-emission exactly: condition, gvtst,
+			 * then-branch, and either gsym (no else) or gjmp/gsym/else/gsym. */
+			ast_replay_value(a, ast_child(a, s, 0));
+			int aa = gvtst(1, 0);
+			ast_replay_bb(a, ast_child(a, s, 1));
+			AstLocal elsebb = ast_child(a, s, 2);
+			if (elsebb != AST_NONE) {
+				int dd = gjmp(0);
+				gsym(aa);
+				ast_replay_bb(a, elsebb);
+				gsym(dd);
+			} else {
+				gsym(aa);
+			}
+			break;
+		}
 		case AST_Return: {
 			AstLocal v = ast_first_child(a, s);
 			if (v != AST_NONE) {
@@ -10677,9 +10812,11 @@ static void ast_replay_body(AstArena *a) {
 				gen_assign_cast(&func_vt);
 				gfunc_return(&func_vt);
 			}
-			/* No jump: the captured body is a straight-line run ending in a tail
-			 * return, so control falls through to the epilogue exactly as the
-			 * parser leaves it (the parser omits the jump for a return before `}`). */
+			/* op==1: a non-tail return (inside a branch) jumps to the epilogue,
+			 * chaining onto rsym exactly as the parser does; op==0: a tail return
+			 * falls through (the parser omits the jump for a return before `}`). */
+			if (ast_op(a, s) == 1)
+				rsym = gjmp(rsym);
 			break;
 		}
 		default:
@@ -10688,14 +10825,21 @@ static void ast_replay_body(AstArena *a) {
 	}
 }
 
+static void ast_replay_body(AstArena *a) {
+	ast_replay_bb(a, ast_root(a));
+}
+
 /* The captured body faithfully accounts for the whole function: not bailed, the
  * mirror is balanced (every value produced was consumed), and it ends in a
  * return. Byte-verification (in gen_function) is the ultimate correctness gate. */
 static int ast_replay_ok(AstArena *a) {
-	if (ast_bail || ast_desync || ast_vn != 0)
+	/* Not bailed/desynced, mirror balanced, control-flow stack unwound, and the
+	 * body captured at least one effect. Byte-verify (in gen_function) is the
+	 * ultimate completeness/correctness gate — a body that ends in an `if` whose
+	 * branches all return is fine (no trailing Return in the entry block). */
+	if (ast_bail || ast_desync || ast_vn != 0 || ast_cf_top != 0)
 		return 0;
-	AstLocal last = ast_last_child(a, ast_root(a));
-	return last != AST_NONE && ast_kind(a, last) == AST_Return;
+	return ast_first_child(a, ast_root(a)) != AST_NONE;
 }
 #endif /* CONFIG_AST */
 
@@ -10760,7 +10904,8 @@ static void gen_function(Sym *sym) {
 			cur_text_section->reloc ? cur_text_section->reloc->data_offset : 0;
 	if (ast_try) {
 		ast_cur = ast_arena_new();
-		ast_node(ast_cur, AST_BasicBlock);
+		ast_cur_bb = ast_node(ast_cur, AST_BasicBlock);
+		ast_cf_top = 0;
 		ast_bail = 0;
 		ast_desync = 0;
 		ast_in_op = 0;
