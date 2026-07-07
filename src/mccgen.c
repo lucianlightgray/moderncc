@@ -10446,7 +10446,9 @@ static void ast_replay_body(AstArena *a) {
 				gen_assign_cast(&func_vt);
 				gfunc_return(&func_vt);
 			}
-			rsym = gjmp(rsym);
+			/* No jump: the captured body is a single tail return, so control
+			 * falls through to the epilogue exactly as the parser leaves it (the
+			 * parser also omits the jump for a return right before `}`). */
 			break;
 		}
 		default:
@@ -10540,16 +10542,36 @@ static void gen_function(Sym *sym) {
 		 * captured return: no body locals (loc unchanged) and no relocations
 		 * (no calls / global references). Otherwise keep the parser's emission. */
 		if (ast_replay_ok(ast_cur) && loc == ast_loc0 && ast_reloc1 == ast_reloc0) {
-			/* Discard the parser's body emission and re-emit from the AST. */
+			/* Re-emit from the AST, then byte-verify against the parser's (-O0)
+			 * body. For zero-template straight-line replay a faithful capture
+			 * re-emits byte-for-byte (§17's straight-line tripwire); any mismatch
+			 * means the capture missed something (an unmodeled in-place op such as
+			 * unary negation), so we restore the parser's emission verbatim. This
+			 * is the ultimate safety net — correctness never depends on having
+			 * hooked every vstack primitive. */
+			int orig_ind = ind, orig_rsym = rsym;
+			int body_len = orig_ind - ast_body_ind;
+			unsigned char *orig = mcc_malloc(body_len > 0 ? body_len : 1);
+			memcpy(orig, cur_text_section->data + ast_body_ind, body_len);
+
 			ind = ast_body_ind;
 			rsym = 0;
 			nocode_wanted = 0;
-			if (ast_replay_dump) {
+			ast_replay_body(ast_cur);
+
+			int new_len = ind - ast_body_ind;
+			int faithful = new_len == body_len &&
+					memcmp(cur_text_section->data + ast_body_ind, orig, body_len) == 0;
+			if (!faithful) {
+				memcpy(cur_text_section->data + ast_body_ind, orig, body_len);
+				ind = orig_ind;
+				rsym = orig_rsym;
+			} else if (ast_replay_dump) {
 				char buf[512];
 				ast_dump(ast_cur, ast_root(ast_cur), buf, sizeof buf);
 				fprintf(stderr, "[ast-replay] %s\n%s", funcname, buf);
 			}
-			ast_replay_body(ast_cur);
+			mcc_free(orig);
 		}
 		ast_arena_free(ast_cur);
 		ast_cur = NULL;
