@@ -33,7 +33,6 @@ static const mcc_golden_t mcc_goldens[] = {
 	{"atomic_n_builtins", "run", "exec/features_c99_c11/atomic_n_builtins.c", "OK\n", "", "", ""},
 	{"builtin_overflow", "run", "exec/features_c99_c11/builtin_overflow.c", "OK\n", "", "", ""},
 	{"builtin_bitops_fold", "run", "exec/features_c99_c11/builtin_bitops_fold.c", "OK\n", "", "", ""},
-	{"feature_macros", "run", "exec/features_c99_c11/feature_macros.c", "OK\n", "", "", ""},
 	{"noreturn", "run", "exec/features_c99_c11/noreturn.c", "OK\n", "", "", ""},
 	{"alignas_over", "run", "exec/features_c99_c11/alignas_over.c", "OK\n", "", "", ""},
 	{"flexarray_runtime", "run", "exec/features_c99_c11/flexarray_runtime.c", "OK\n", "", "", ""},

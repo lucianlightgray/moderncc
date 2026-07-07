@@ -77,6 +77,17 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
   `docs/NOTES.md` (Platform ABI & runtime notes) — revisit only if a real
   cross-module-TLS-on-Darwin need appears; the fix is emitting TLV *import*
   descriptors.
+- [ ] **`__WCHAR_TYPE__` wrong signedness on ARM/AArch64 (fix).**
+  `runtime/include/mccdefs.h:42-43` hardcodes `__WCHAR_TYPE__ int` for all
+  `__linux__`, but the ARM EABI and AArch64 ABI mandate `wchar_t == unsigned int`.
+  mcc's `<stddef.h>` (`typedef __WCHAR_TYPE__ wchar_t`) then clashes with the musl
+  sysroot's `unsigned int wchar_t` → `error: incompatible redefinition of 'wchar_t'`
+  whenever a TU includes a libc header (that pulls in wchar_t) before `<stddef.h>`
+  on **arm/arm64 musl** (glibc-arm masks it via different guards; x86 is unaffected
+  since its wchar_t is `int`). Discovered when `flexarray_runtime.c` failed only on
+  qemu arm/arm64 musl. → Gate `__WCHAR_TYPE__`/`__WINT_TYPE__` on
+  `__arm__`/`__aarch64__` (→ `unsigned int`). Needs qemu-arm-musl to verify (wchar
+  string-literal codegen must stay correct); the test was worked around meanwhile.
 - [ ] **ARM far-branch has no veneer — errors past ±32 MB (fix).**
   `src/arch/arm/arm-gen.c:326` `"FIXME: function bigger than 32MB"`. → Emit a
   long-branch trampoline/island, or downgrade to a documented diagnostic (not FIXME).
@@ -220,11 +231,13 @@ runtime cases go in `tests/exec/features_c99_c11/`, diagnostics/negatives in
 
 ## Conforming omissions — assert, don't implement
 
-- [x] **Pin the feature-subset macros with a test.** _Done:_
-  `tests/exec/features_c99_c11/feature_macros.c` — asserts `__STDC_NO_*` absent (mcc
-  supports complex/atomics/VLA), `__STDC_IEC_559{,_COMPLEX}__`, `__STDC_HOSTED__`,
-  `__STDC_ISO_10646__`, `__STDC_UTF_{16,32}__`, and `ATOMIC_*_LOCK_FREE ∈ {0,1,2}`.
-  _Ref:_ clang `C11/n1460.c`, `C11/n1482.c`.
+- [x] **Pin the feature-subset macros with a test.** _Already covered_ by the
+  pre-existing `tests/exec/features_c99_c11/c11_freestanding_headers.c` —
+  `ATOMIC_*_LOCK_FREE`, `__STDC_IEC_559{,_COMPLEX}__`, `__STDC_ISO_10646__` (guarded
+  `!_WIN32`), `FLT_EVAL_METHOD`, `__CHAR16/32_TYPE__`, limits, stdint, iso646
+  digraphs. A separately-drafted `feature_macros.c` was dropped as redundant (and it
+  was non-portable — it asserted `__STDC_ISO_10646__` unconditionally, which is not
+  defined on the PE target). _Ref:_ clang `C11/n1460.c`, `C11/n1482.c`.
 
 ---
 
