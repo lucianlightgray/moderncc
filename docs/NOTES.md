@@ -721,6 +721,46 @@ deliberate, tested difference from a reference compiler (not a defect).
   predefines `__GNUC__ 4`, so glibc's `<math.h>` takes its GCC path — `NAN` prints
   `nan` and `signbit` returns a normalized `0`/`1` (§7.12p5, §7.12.3.6p3).
 
+### Landed: C99/C11 test-coverage additions & fixes (2026-07)
+
+Closed from the [docs/TESTS.md](TESTS.md) gap analysis. Each mirrors a named
+gcc/clang conformance test; runtime cases self-check by printing `OK`,
+diagnostics grep the message text via `tests/cli`. All verified against the
+gcc/clang references and green across ctest + the qemu matrix.
+
+- **[BUG] `__WCHAR_TYPE__` signedness on ARM/AArch64 Linux** — `mccdefs.h` emitted
+  `int` for all `__linux__`, but the ARM EABI / AArch64 ABI (and glibc/musl)
+  mandate `unsigned int`, so mcc's `<stddef.h>` clashed with the musl-arm sysroot
+  (`incompatible redefinition of 'wchar_t'` when a libc header pulled in wchar_t
+  before `<stddef.h>`). Fixed with a Linux-ARM `#elif` → `unsigned int`; macOS ARM
+  stays `int` (macOS wchar_t is signed), x86/i386/riscv64 unchanged. Reproduced and
+  verified under real qemu-arm-musl (sizeof==4, unsigned, `L"…"` literals,
+  `wcslen`). Regression-guarded by `flexarray_runtime.c`, which first exposed it.
+- **Flexible array members** — runtime `exec/features_c99_c11/flexarray_runtime.c`
+  (sizeof==offsetof, heap alloc/access, char-FAM string, typedef FAM) + diagnostic
+  `cli/c99_fam_not_last` (FAM not at end of struct). Ref gcc `c99-flex-array-*`.
+- **`_Noreturn`** — `exec/features_c99_c11/noreturn.c` (`_Noreturn` keyword +
+  `<stdnoreturn.h>` `noreturn` macro, pre/post placement, genuine non-return via
+  longjmp) + diagnostic `cli/c11_noreturn_returns` (a returning noreturn function
+  warns). Ref gcc `c11-noreturn-2`.
+- **`_Alignas`/`_Alignof`** — runtime `exec/features_c99_c11/alignas_over.c`
+  (over-alignment addresses, `alignof(max_align_t)`, member/offset alignment) +
+  diagnostic `cli/c11_alignas_underalign` (alignment below the type minimum). Ref
+  gcc `c11-align-*`.
+- **VLA jump-into-scope** — diagnostics `cli/c99_vla_goto_into_scope` and
+  `cli/c99_vla_switch_into_scope` (goto/switch into a variably-modified
+  declaration's scope is rejected); the legal jump-*out* case is exercised at
+  runtime by `exec/vla/label.c`. Ref gcc `c99-vla-jump-*`.
+- **FP evaluation-method** — `exec/features_c99_c11/flt_eval_method.c`:
+  `FLT_EVAL_METHOD ∈ {-1..2}`, `float_t`/`double_t` widths track the reported
+  method (§7.12p2), `<float.h>` characteristics sane. Ref gcc `c11-float-*`, clang
+  `C11/n1365`. (Annex-F wide-return intermediate precision stays open — see TODO.)
+- **Feature-subset / `__STDC_NO_*` macros** — already asserted portably by the
+  pre-existing `exec/features_c99_c11/c11_freestanding_headers.c`
+  (`ATOMIC_*_LOCK_FREE`, `__STDC_IEC_559{,_COMPLEX}__`, `__STDC_ISO_10646__` guarded
+  `!_WIN32`, `__CHAR16/32_TYPE__`, limits, stdint, iso646). A separately-drafted
+  `feature_macros.c` was dropped as redundant (and non-portable on PE).
+
 ## CST database — design record (frozen spec §0–§11)
 
 The authoritative CST design, folded in from the former `docs/PLAN.md` (frozen

@@ -77,16 +77,6 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
   `docs/NOTES.md` (Platform ABI & runtime notes) — revisit only if a real
   cross-module-TLS-on-Darwin need appears; the fix is emitting TLV *import*
   descriptors.
-- [x] **`__WCHAR_TYPE__` wrong signedness on ARM/AArch64 (fix).** _Done_
-  (`mccdefs.h`): added `#elif defined __linux__ && (defined __arm__ || defined
-  __aarch64__)` → `__WCHAR_TYPE__ unsigned int`, matching the ARM EABI / AArch64
-  ABI (and glibc/musl). Previously hardcoded `int` for all `__linux__`, which
-  clashed with the musl-arm sysroot's `unsigned wchar_t` (`incompatible
-  redefinition of 'wchar_t'`). macOS ARM correctly stays `int` (falls to the
-  `#else`); x86/i386/riscv64 unchanged. Reproduced and verified under real
-  qemu-arm-musl: error gone, and wchar semantics correct (`sizeof==4`,
-  `(wchar_t)-1 > 0`, `L"…"` literals, `wcslen`). `flexarray_runtime.c` restored to
-  its natural `<stddef.h>`/`offsetof` form as a regression guard.
 - [ ] **ARM far-branch has no veneer — errors past ±32 MB (fix).**
   `src/arch/arm/arm-gen.c:326` `"FIXME: function bigger than 32MB"`. → Emit a
   long-branch trampoline/island, or downgrade to a documented diagnostic (not FIXME).
@@ -188,55 +178,28 @@ runtime cases go in `tests/exec/features_c99_c11/`, diagnostics/negatives in
 
 ## Coverage-depth gaps — mcc passes but under-tests vs gcc/clang; add tests
 
-- [x] **Flexible array members — constraint+runtime suite.** _Done:_ runtime
-  `tests/exec/features_c99_c11/flexarray_runtime.c` (sizeof==offsetof, heap
-  alloc/access, char-FAM string, typedef FAM) + diagnostic
-  `tests/cli/cases.h::c99_fam_not_last` (FAM not at end of struct). _Ref:_ gcc
-  `gcc.dg/c99-flex-array-*.c`. (A union with a struct-FAM member is valid GNU C —
-  mcc and gcc both accept it — so there is no union-FAM negative to add.)
-- [x] **`_Noreturn` — expand from 1 case to full coverage.** _Done:_
-  `tests/exec/features_c99_c11/noreturn.c` (both `_Noreturn` keyword + `noreturn`
-  macro, pre/post placement, genuine non-return via longjmp). _Ref:_ gcc
-  `gcc.dg/c11-noreturn-2.c`.
-- [x] **`_Alignas`/`_Alignof` — over-align runtime + constraint diagnostics.**
-  _Done:_ runtime `tests/exec/features_c99_c11/alignas_over.c` (over-alignment
-  addresses, `alignof(max_align_t)`, member/offset alignment) + diagnostic
-  `tests/cli/cases.h::c11_alignas_underalign` (alignment < type minimum). _Ref:_
-  gcc `gcc.dg/c11-align-{1..9}.c`.
-- [x] **VLA goto/switch-into-scope diagnostics.** _Done:_
-  `tests/cli/cases.h::c99_vla_goto_into_scope` (goto into a variably-modified
-  declaration's scope is rejected). _Ref:_ gcc `gcc.dg/c99-vla-jump-{1..5}.c`.
-  *Extension available later: the `switch`-into-scope variant + jump-out (which is
-  legal and must NOT error).*
 - [~] **UCN-in-identifier breadth.** Basic runtime is already covered by
   `tests/exec/lexical/ucn_identifiers.c` (`\u`/`\U` escapes, raw UTF-8, raw≡escaped
   equivalence). *Remaining = the ~30 gcc edge cases: invalid-UCN rejection
   (basic-latin range), UCN in different token positions, normalization* — mostly
   diagnostics → negative-test tier. _Ref:_ gcc `gcc.dg/ucnid-*.c`; clang
   `C99/n717.c` (UCN grammar), `C11/n1518.c` (UAX#31).
-- [x] **FP evaluation-method.** _Done:_ `tests/exec/features_c99_c11/flt_eval_method.c`
-  — `FLT_EVAL_METHOD ∈ {-1..2}`, `float_t`/`double_t` widths match the reported
-  method, `<float.h>` characteristics sane. _Ref:_ gcc `gcc.dg/c11-float-*.c`, clang
-  `C11/n1365.c`. *Remaining: Annex F wide-return intermediate-precision (per-target).*
+- [ ] **FP Annex F wide-return intermediate precision.** `FLT_EVAL_METHOD` itself
+  is done (`flt_eval_method.c`, migrated to NOTES); this is the remaining per-target
+  piece — verify wide intermediate-precision return conformance (Annex F/§5.2.4.2.2).
+  _Ref:_ gcc `gcc.dg/c11-float-*.c` (wide-return cases), clang `C11/n1365.c`,
+  `C11/n1396.c` (per-target IR).
 - [ ] **`_Complex` diagnostics + Annex G special values.** mcc is arithmetic/ABI
   strong but light on constraint diagnostics and CMPLX/NaN/inf edge cases. _Ref:_
   clang `C11/n1464.c` (CMPLX/`__builtin_complex`), `C11/n1514.c` (Annex G); gcc
   `gcc.dg/c99-complex-{1,3}.c`.
-- [ ] **Negative/diagnostic test tier.** mcc's exec suite is execute-first; ~70% of
-  gcc's C99/C11 files are `dg-error` negatives. Build a golden-stderr reject corpus
-  (`tests/reject/` or a `tests/diff/parts` extension) mirroring the
-  `-pedantic-errors` negatives. _Seed refs:_ gcc `gcc.dg/c99-typespec-1.c` (1055
-  dg-error), `c11-align-3.c`, the `c99-flex-array-*` / `c11-*` negative files.
-
-## Conforming omissions — assert, don't implement
-
-- [x] **Pin the feature-subset macros with a test.** _Already covered_ by the
-  pre-existing `tests/exec/features_c99_c11/c11_freestanding_headers.c` —
-  `ATOMIC_*_LOCK_FREE`, `__STDC_IEC_559{,_COMPLEX}__`, `__STDC_ISO_10646__` (guarded
-  `!_WIN32`), `FLT_EVAL_METHOD`, `__CHAR16/32_TYPE__`, limits, stdint, iso646
-  digraphs. A separately-drafted `feature_macros.c` was dropped as redundant (and it
-  was non-portable — it asserted `__STDC_ISO_10646__` unconditionally, which is not
-  defined on the PE target). _Ref:_ clang `C11/n1460.c`, `C11/n1482.c`.
+- [~] **Negative/diagnostic test tier.** _Established_ in `tests/cli/cases.h`
+  (grep-the-message pattern): `c99_fam_not_last`, `c11_alignas_underalign`,
+  `c99_vla_goto_into_scope`, `c99_vla_switch_into_scope`, `c11_noreturn_returns`.
+  *Remaining: broaden toward the ~70% of gcc's C99/C11 files that are `dg-error`
+  negatives* — the highest-volume seed is gcc `gcc.dg/c99-typespec-1.c` (1055
+  dg-error over every type-specifier combo), plus `c11-align-3.c` and the
+  `c99-flex-array-*` / `c11-*` negative files.
 
 ---
 
