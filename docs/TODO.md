@@ -24,9 +24,15 @@ brought up one §17 category at a time.
 - [~] **A4 — replay driver (`ast_replay_body`) over the vstack API.** In `gen_function`,
   when `MCC_AST_REPLAY` is set: build the intention tree while the parser runs, then
   **discard the parser's body emission** (`ind = body_ind`) and re-emit from the AST
-  through the vstack API. Anything unsupported sets `ast_bail` and keeps the parser's
-  (correct, -O0) emission — so the path is safe over the whole corpus and grows one
-  construct at a time. Off by default; `-O0` untouched (full ctest 866/866).
+  through the vstack API. **Byte-verify safety net (§17 straight-line tripwire):** the
+  re-emitted body is compared to the parser's `-O0` bytes; on *any* mismatch the parser's
+  emission is restored verbatim (bytes + `ind` + `rsym`). So correctness never depends on
+  having modeled every vstack op — an unmodeled construct (unary `-`, a call, control
+  flow) just diverges and falls back. Faithful captures re-emit **byte-for-byte identical**
+  to `-O0` (the zero-template invariant, demonstrated). Off by default; `-O0` untouched.
+  **Coverage: 25 / 239 exec golden source files have ≥1 function that faithfully replays**
+  (return of int constants / param+local integer arithmetic incl. `+ - * / % & | ^ << >>`
+  and the `~` desugaring); the rest fall back. Full ast-preset ctest 1149/1149.
   - [x] rung 1: `return <integer-constant>;` → `vpushi`/`gfunc_return`/`gjmp`.
   - [x] rung 2: **integer-arithmetic return trees** (`return argc + 41;`,
     `return 2+3*4;`) via a **scoped vstack-mirror**: `ast_hook_vpush`/`ast_hook_genop`

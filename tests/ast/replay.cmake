@@ -42,4 +42,12 @@ if(REPLAYED)
     endif()
 endif()
 
+# NOREPLAY: the function must *not* faithfully replay (an unmodeled construct),
+# proving the byte-verify safety net falls back to correct -O0 emission.
+if(NOREPLAY)
+    if(_r1_all MATCHES "\\[ast-replay\\] ${NOREPLAY}\n")
+        message(FATAL_ERROR "expected function '${NOREPLAY}' to fall back, but it replayed:\n${_r1_all}")
+    endif()
+endif()
+
 message(STATUS "ast/replay ${_name}: -O0 and replay both exit ${EXPECT_RC}")
