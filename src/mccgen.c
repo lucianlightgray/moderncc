@@ -70,7 +70,6 @@ static int ast_replay_env;  /* MCC_AST_REPLAY requested for this TU           */
 static int ast_replay_dump; /* MCC_AST_REPLAY_DUMP: dump replayed trees        */
 static AstArena *ast_cur;   /* the function currently being built              */
 static int ast_bail;        /* an unsupported construct was seen              */
-static int ast_stmt_n;      /* leaf statements the builder accounted for       */
 static AstLocal ast_ret_val; /* captured return-expression tree (or AST_NONE)  */
 
 /* Return-expression value mirror: a small stack shadowing the vstack while a
@@ -82,19 +81,22 @@ static AstLocal ast_ret_val; /* captured return-expression tree (or AST_NONE)  *
 #define AST_VS_MAX 64
 static AstLocal ast_vs[AST_VS_MAX];
 static int ast_vn;          /* mirror depth (relative to ast_base_depth)       */
-static int ast_capture;     /* mirror is live (inside a return expression)     */
+static int ast_capture;     /* mirror is live (a function body is being built)  */
 static int ast_desync;      /* mirror lost sync with the vstack                */
 static int ast_base_depth;  /* real vstack depth when capture started          */
-static int ast_in_op;       /* inside gen_op — ignore its internal vstack ops  */
+static int ast_in_op;       /* inside gen_op/vstore — ignore its internal ops  */
 
 static void ast_hook_stmt(int t);
 static void ast_hook_return(int has_val);
 static void ast_hook_implicit_return(void);
-static void ast_hook_ret_expr_begin(int has_val);
 static void ast_hook_ret_expr_done(void);
 static void ast_hook_vpush(void);
 static void ast_hook_genop(int op);
 static void ast_hook_genop_end(void);
+static void ast_hook_vstore(void);
+static void ast_hook_vstore_end(void);
+static void ast_hook_vpop(void);
+static void ast_hook_vswap(void);
 static void ast_hook_inplace(void);
 #endif
 
@@ -1090,6 +1092,9 @@ static void vsetc(CType *type, int r, CValue *vc) {
 
 ST_FUNC void vswap(void) {
 	SValue tmp;
+#if defined(CONFIG_AST) && CONFIG_AST
+	ast_hook_vswap();
+#endif
 
 	vcheck_cmp();
 	tmp = vtop[0];
@@ -1099,6 +1104,9 @@ ST_FUNC void vswap(void) {
 
 ST_FUNC void vpop(void) {
 	int v;
+#if defined(CONFIG_AST) && CONFIG_AST
+	ast_hook_vpop();
+#endif
 	v = vtop->r & VT_VALMASK;
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
 	if (v == TREG_ST0) {
@@ -3652,6 +3660,9 @@ static void gen_assign_cast(CType *dt) {
 
 ST_FUNC void vstore(void) {
 	int sbt, dbt, ft, r, size, align, bit_size, bit_pos, delayed_cast;
+#if defined(CONFIG_AST) && CONFIG_AST
+	ast_hook_vstore();
+#endif
 
 	seqp_record_sv(vtop - 1, SEQP_WRITE);
 
@@ -3806,6 +3817,9 @@ ST_FUNC void vstore(void) {
 		vswap();
 		vtop--;
 	}
+#if defined(CONFIG_AST) && CONFIG_AST
+	ast_hook_vstore_end();
+#endif
 }
 
 ST_FUNC void inc(int post, int c) {
@@ -8814,9 +8828,6 @@ again:
 			mcc_warning("function declared 'noreturn' has a 'return' statement");
 		b = (func_vt.t & VT_BTYPE) != VT_VOID;
 		if (tok != ';') {
-#if defined(CONFIG_AST) && CONFIG_AST
-			ast_hook_ret_expr_begin(b);
-#endif
 			gexpr();
 #if defined(CONFIG_AST) && CONFIG_AST
 			ast_hook_ret_expr_done();
@@ -10254,17 +10265,26 @@ static void sym_push_params(Sym *ref) {
 #if defined(CONFIG_AST) && CONFIG_AST
 /* --- AST replay: builder hooks (called from the parser) ------------------- */
 
-/* One leaf statement is about to be handled. Count it, and bail on any kind the
- * replay driver does not yet lower. The supported set grows here as the driver
- * grows; today it is only `return`. The compound wrapper ('{') is not a leaf. */
+/* A statement is about to be handled. The whole-body mirror captures straight-
+ * line bodies: `return`, expression statements (assignments → Store), and local
+ * declarations with initialisers (captured via vstore). Control-flow statements
+ * emit jumps the mirror does not model, so bail early on them (byte-verify would
+ * catch them anyway, this just avoids wasted capture). */
 static void ast_hook_stmt(int t) {
 	if (!ast_active)
 		return;
-	if (t == '{')
-		return;
-	ast_stmt_n++;
-	if (t != TOK_RETURN)
+	switch (t) {
+	case TOK_IF: case TOK_WHILE: case TOK_FOR: case TOK_DO:
+	case TOK_SWITCH: case TOK_GOTO: case TOK_BREAK: case TOK_CONTINUE:
+	case TOK_CASE: case TOK_DEFAULT:
 		ast_bail = 1;
+		break;
+	default:
+		/* '{' (the function-body compound, or a nested block) is not bailed here:
+		 * the outer body must proceed, and a nested straight-line block either
+		 * captures or trips the byte-verify. */
+		break;
+	}
 }
 
 /* --- return-expression mirror -------------------------------------------- */
@@ -10356,27 +10376,82 @@ static void ast_hook_inplace(void) {
 		ast_desync = 1;
 }
 
-static void ast_hook_ret_expr_begin(int has_val) {
-	if (!ast_active || !has_val)
+/* vswap / vpop reorder or drop mirror values (compile-time stack ops, no bytes);
+ * mirror them directly. */
+static void ast_hook_vswap(void) {
+	if (!ast_capture || ast_desync || ast_in_op)
 		return;
-	ast_capture = 1;
-	ast_desync = 0;
-	ast_vn = 0;
-	ast_base_depth = (int)(vtop - vstack + 1);
+	if (ast_vn < 2) {
+		ast_desync = 1;
+		return;
+	}
+	AstLocal t = ast_vs[ast_vn - 1];
+	ast_vs[ast_vn - 1] = ast_vs[ast_vn - 2];
+	ast_vs[ast_vn - 2] = t;
 }
 
-/* Freeze the mirror at the end of the return expression (before the return-type
- * cast). The single remaining mirror value is the return-expression tree. */
+static void ast_hook_vpop(void) {
+	if (!ast_capture || ast_desync || ast_in_op)
+		return;
+	if (ast_vn < 1) {
+		ast_desync = 1;
+		return;
+	}
+	ast_vn--;
+}
+
+/* A store consumes the top two values (vtop = value, vtop[-1] = lvalue),
+ * performs the store, and leaves the value (net -1). Record it as a Store effect
+ * in the BasicBlock; model the op atomically like gen_op. */
+static void ast_hook_vstore(void) {
+	if (!ast_capture || ast_desync || ast_in_op)
+		return;
+	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+	if (ast_vn != rel || ast_vn < 2) {
+		ast_desync = 1;
+		return;
+	}
+	AstLocal value = ast_vs[ast_vn - 1];
+	AstLocal lval = ast_vs[ast_vn - 2];
+	AstLocal st = ast_node(ast_cur, AST_Store);
+	ast_add_child(ast_cur, st, lval);
+	ast_add_child(ast_cur, st, value);
+	ast_add_child(ast_cur, ast_root(ast_cur), st);
+	ast_vs[ast_vn - 2] = value; /* store leaves the value */
+	ast_vn--;
+	ast_in_op = 1;
+}
+
+static void ast_hook_vstore_end(void) {
+	if (!ast_in_op)
+		return;
+	ast_in_op = 0;
+	if (ast_capture && !ast_desync) {
+		int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+		if (ast_vn != rel)
+			ast_desync = 1;
+	}
+}
+
+/* Freeze the return value at the end of the return expression (before the
+ * return-type cast). The mirror must hold exactly that one value. */
 static void ast_hook_ret_expr_done(void) {
 	ast_ret_val = AST_NONE;
 	if (!ast_capture)
 		return;
+	/* The return is terminal: stop capturing so the return-type cast and the
+	 * epilogue transfer (gen_assign_cast/gfunc_return) do not disturb the mirror. */
 	ast_capture = 0;
-	if (!ast_desync && ast_vn == 1)
+	if (!ast_desync && ast_vn == 1) {
 		ast_ret_val = ast_vs[0];
+		ast_vn = 0; /* the return consumes it — mirror is now balanced */
+	} else {
+		ast_desync = 1;
+	}
 }
 
-/* A `return` statement is complete. Attach the captured tree (or bail). */
+/* A `return` statement is complete. Attach the captured value as a Return effect
+ * (or bail). Void returns are not modeled yet. */
 static void ast_hook_return(int has_val) {
 	if (!ast_active)
 		return;
@@ -10388,6 +10463,7 @@ static void ast_hook_return(int has_val) {
 	AstLocal ret = ast_node(ast_cur, AST_Return);
 	ast_add_child(ast_cur, ret, ast_ret_val);
 	ast_add_child(ast_cur, bb, ret);
+	ast_ret_val = AST_NONE;
 }
 
 /* The main/K&R implicit `return 0;` synthesized at a fall-off-the-end body.
@@ -10395,6 +10471,8 @@ static void ast_hook_return(int has_val) {
 static void ast_hook_implicit_return(void) {
 	if (!ast_active)
 		return;
+	/* Stop capturing before the synthetic vpushi(0)/gfunc_return runs. */
+	ast_capture = 0;
 	AstLocal bb = ast_root(ast_cur);
 	AstLocal ret = ast_node(ast_cur, AST_Return);
 	AstLocal lit = ast_node(ast_cur, AST_Literal);
@@ -10403,7 +10481,6 @@ static void ast_hook_implicit_return(void) {
 	ast_set_type(ast_cur, lit, VT_INT, 0);
 	ast_add_child(ast_cur, ret, lit);
 	ast_add_child(ast_cur, bb, ret);
-	ast_stmt_n++;
 }
 
 /* --- AST replay: the emit driver (AST -> vstack ops -> bytes) -------------- */
@@ -10439,6 +10516,15 @@ static void ast_replay_body(AstArena *a) {
 	for (AstLocal s = ast_first_child(a, bb); s != AST_NONE;
 			 s = ast_next_sib(a, s)) {
 		switch (ast_kind(a, s)) {
+		case AST_Store:
+			/* push lvalue, push value, store, discard the result — the byte-exact
+			 * sequence for a scalar store (pushes of constants/locals emit nothing,
+			 * only vstore emits, so operand order does not affect the bytes). */
+			ast_replay_value(a, ast_child(a, s, 0));
+			ast_replay_value(a, ast_child(a, s, 1));
+			vstore();
+			vpop();
+			break;
 		case AST_Return: {
 			AstLocal v = ast_first_child(a, s);
 			if (v != AST_NONE) {
@@ -10446,9 +10532,9 @@ static void ast_replay_body(AstArena *a) {
 				gen_assign_cast(&func_vt);
 				gfunc_return(&func_vt);
 			}
-			/* No jump: the captured body is a single tail return, so control
-			 * falls through to the epilogue exactly as the parser leaves it (the
-			 * parser also omits the jump for a return right before `}`). */
+			/* No jump: the captured body is a straight-line run ending in a tail
+			 * return, so control falls through to the epilogue exactly as the
+			 * parser leaves it (the parser omits the jump for a return before `}`). */
 			break;
 		}
 		default:
@@ -10457,12 +10543,14 @@ static void ast_replay_body(AstArena *a) {
 	}
 }
 
-/* The captured tree fully and faithfully accounts for the body: not bailed,
- * every leaf statement was turned into a node, and there is at least one. */
+/* The captured body faithfully accounts for the whole function: not bailed, the
+ * mirror is balanced (every value produced was consumed), and it ends in a
+ * return. Byte-verification (in gen_function) is the ultimate correctness gate. */
 static int ast_replay_ok(AstArena *a) {
-	if (ast_bail || ast_stmt_n < 1)
+	if (ast_bail || ast_desync || ast_vn != 0)
 		return 0;
-	return ast_nchild(a, ast_root(a)) == (uint32_t)ast_stmt_n;
+	AstLocal last = ast_last_child(a, ast_root(a));
+	return last != AST_NONE && ast_kind(a, last) == AST_Return;
 }
 #endif /* CONFIG_AST */
 
@@ -10523,25 +10611,30 @@ static void gen_function(Sym *sym) {
 #if defined(CONFIG_AST) && CONFIG_AST
 	int ast_try = ast_replay_env && !debug_modes && !cur_func_inline_extern;
 	int ast_body_ind = ind;
-	int ast_loc0 = loc;
 	addr_t ast_reloc0 =
 			cur_text_section->reloc ? cur_text_section->reloc->data_offset : 0;
 	if (ast_try) {
 		ast_cur = ast_arena_new();
 		ast_node(ast_cur, AST_BasicBlock);
 		ast_bail = 0;
-		ast_stmt_n = 0;
+		ast_desync = 0;
+		ast_in_op = 0;
+		ast_vn = 0;
+		ast_ret_val = AST_NONE;
+		ast_base_depth = (int)(vtop - vstack + 1);
 		ast_active = 1;
+		ast_capture = 1;
 	}
 	block(0);
 	if (ast_try) {
 		addr_t ast_reloc1 =
 				cur_text_section->reloc ? cur_text_section->reloc->data_offset : 0;
 		ast_active = 0;
-		/* Replay only when the discarded body provably held no work beyond the
-		 * captured return: no body locals (loc unchanged) and no relocations
-		 * (no calls / global references). Otherwise keep the parser's emission. */
-		if (ast_replay_ok(ast_cur) && loc == ast_loc0 && ast_reloc1 == ast_reloc0) {
+		ast_capture = 0;
+		/* Replay only when the discarded body emitted no relocations (no calls /
+		 * global references, so the discard is safe). Body locals are fine now —
+		 * their init Stores are captured. Byte-verify is the correctness gate. */
+		if (ast_replay_ok(ast_cur) && ast_reloc1 == ast_reloc0) {
 			/* Re-emit from the AST, then byte-verify against the parser's (-O0)
 			 * body. For zero-template straight-line replay a faithful capture
 			 * re-emits byte-for-byte (§17's straight-line tripwire); any mismatch

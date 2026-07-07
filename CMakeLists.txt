@@ -2910,7 +2910,8 @@ if(MCC_BUILD_TESTS)
         # at a time; ret42 is the smallest rung (return of an integer constant).
         if(NOT CMAKE_CROSSCOMPILING AND NOT MCC_TARGETOS STREQUAL "WIN32")
             # fixture;expected-exit-code pairs (return of an integer constant).
-            foreach(_case "ret42;42" "ret0;0" "retexpr;14" "mainempty;0" "argc_expr;42")
+            foreach(_case "ret42;42" "ret0;0" "retexpr;14" "mainempty;0" "argc_expr;42"
+                          "local_ret;42" "local_two;42" "neg_fallback;42")
                 list(GET _case 0 _rn)
                 list(GET _case 1 _rc)
                 add_test(NAME "ast/replay-${_rn}" COMMAND "${CMAKE_COMMAND}"
@@ -2922,15 +2923,16 @@ if(MCC_BUILD_TESTS)
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
                 set_tests_properties("ast/replay-${_rn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
             endforeach()
-            # Safety-net case: an unmodeled construct (unary minus) must fall back
-            # to correct -O0 emission (same exit code) without faithfully replaying.
-            add_test(NAME "ast/replay-neg_fallback" COMMAND "${CMAKE_COMMAND}"
+            # Safety-net case: an unmodeled construct (a comparison via VT_CMP)
+            # must fall back to correct -O0 emission (same exit code) without
+            # faithfully replaying — proving the byte-verify net.
+            add_test(NAME "ast/replay-cmp_fallback" COMMAND "${CMAKE_COMMAND}"
                 "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
-                "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/neg_fallback.c"
+                "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/cmp_fallback.c"
                 "-DOUT=${CMAKE_BINARY_DIR}/ast-replay"
                 "-DEXPECT_RC=42" "-DNOREPLAY=main"
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
-            set_tests_properties("ast/replay-neg_fallback" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+            set_tests_properties("ast/replay-cmp_fallback" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endif()
     endif()
 
