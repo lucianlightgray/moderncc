@@ -49,10 +49,19 @@ brought up one §17 category at a time.
     BasicBlock. `int main(){int a=5,b=7; return a*b+7;}` replays byte-identically as
     `[Store(a,5), Store(b,7), Return]`. Unary minus (emitted `0-x` via `gen_op`) also
     replays now. Fixtures local_ret/local_two + cmp_fallback (safety net).
-  - [ ] rung 4: **calls** (`Invoke` → printf) — replay must own relocations (drop the
-    reloc guard, discard body relocations too, re-emit them), then most corpus
-    functions (which call printf) can move off fallback. Then control flow (`If`/
-    `Jump` = the CFG milestone D-b).
+  - [x] rung 4a: **global references + relocation discard/verify.** Symbolic leaves
+    (a global's address/lvalue — the Sym persists so re-push re-creates it) are
+    captured; the safety net now discards the body's relocations with its text before
+    replay and byte-verifies both, restoring verbatim on mismatch. Leaf SValues are
+    finalized lazily at consumption (vsetc's hook fires before callers set `->sym`).
+    `int g=7; int main(){return g+35;}` replays byte-identically. Fixture global_ref.
+  - [ ] rung 4b: **calls** (`Invoke` → printf). The reloc machinery is in place; the
+    remaining work is modeling `AST_Convert` (arg default-promotions call `gen_cast`,
+    which currently desyncs), the `gfunc_call` boundary (consume callee+args, produce
+    result), and the register-resident result push. Then most corpus functions (which
+    call printf) move off fallback.
+  - [ ] rung 5: control flow (`If`/`Jump` = the CFG milestone D-b) — multi-BB capture,
+    backpatched jumps.
 - [~] **A5 — parser AST-build hooks.** `ast_hook_stmt` (count + bail on unsupported
   leaf statements) and `ast_hook_return` (capture Return of an int constant) fire from
   the parser's statement/return positions, gated by `CONFIG_AST` + `ast_active`. Grows
