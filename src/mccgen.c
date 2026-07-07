@@ -115,6 +115,8 @@ static void ast_hook_if_begin(void);
 static void ast_hook_if_gvtst_done(void);
 static void ast_hook_if_else(void);
 static void ast_hook_if_end(void);
+static void ast_hook_while_begin(void);
+static void ast_hook_while_end(void);
 static void ast_hook_inplace(void);
 #endif
 
@@ -8818,10 +8820,19 @@ again:
 			mcc_warning_c(warn_parentheses)("suggest parentheses around "
 																			"assignment used as a truth value");
 		seqp_check();
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_while_begin();
+#endif
 		a = gvtst(1, 0);
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_if_gvtst_done();
+#endif
 		skip(')');
 		b = 0;
 		lblock(&a, &b);
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_while_end();
+#endif
 		gjmp_addr(d);
 		gsym_addr(b, d);
 		gsym(a);
@@ -10316,7 +10327,7 @@ static void ast_hook_stmt(int t) {
 	if (!ast_active)
 		return;
 	switch (t) {
-	case TOK_WHILE: case TOK_FOR: case TOK_DO:
+	case TOK_FOR: case TOK_DO:
 	case TOK_SWITCH: case TOK_GOTO: case TOK_BREAK: case TOK_CONTINUE:
 	case TOK_CASE: case TOK_DEFAULT:
 		ast_bail = 1;
@@ -10505,6 +10516,42 @@ static void ast_hook_if_else(void) {
 }
 
 static void ast_hook_if_end(void) {
+	if (!ast_active)
+		return;
+	if (ast_cf_top < 1) {
+		ast_bail = 1;
+		return;
+	}
+	ast_cf_top--;
+	ast_cur_bb = ast_cf_savebb[ast_cf_top];
+}
+
+/* --- control flow: `while` (no break/continue — those bail in ast_hook_stmt) --
+ * A loop is an If node marked op==2: [condition, body-BB]. Replay reproduces the
+ * parser's gind/gvtst/back-edge/gsym pattern. */
+static void ast_hook_while_begin(void) {
+	if (!ast_active || ast_desync || ast_bail)
+		return;
+	if (ast_vn != 1 || ast_cf_top >= AST_CF_MAX) {
+		ast_bail = 1;
+		return;
+	}
+	AstLocal cond = ast_vs[0];
+	ast_vn = 0;
+	AstLocal loop = ast_node(ast_cur, AST_If);
+	ast_set_op(ast_cur, loop, 2); /* loop marker */
+	ast_add_child(ast_cur, loop, cond);
+	AstLocal body = ast_node(ast_cur, AST_BasicBlock);
+	ast_add_child(ast_cur, loop, body);
+	ast_add_child(ast_cur, ast_cur_bb, loop);
+	ast_cf_if[ast_cf_top] = loop;
+	ast_cf_savebb[ast_cf_top] = ast_cur_bb;
+	ast_cf_top++;
+	ast_cur_bb = body;
+	ast_in_call = 1; /* suppress the mirror across gvtst's condition test */
+}
+
+static void ast_hook_while_end(void) {
 	if (!ast_active)
 		return;
 	if (ast_cf_top < 1) {
@@ -10789,6 +10836,17 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 			vpop();
 			break;
 		case AST_If: {
+			if (ast_op(a, s) == 2) {
+				/* while loop: gind; condition; gvtst; body; back-edge; gsym. */
+				int dd = gind();
+				ast_replay_value(a, ast_child(a, s, 0));
+				int aa = gvtst(1, 0);
+				ast_replay_bb(a, ast_child(a, s, 1));
+				gjmp_addr(dd);
+				gsym_addr(0, dd);
+				gsym(aa);
+				break;
+			}
 			/* Reproduce the parser's if-emission exactly: condition, gvtst,
 			 * then-branch, and either gsym (no else) or gjmp/gsym/else/gsym. */
 			ast_replay_value(a, ast_child(a, s, 0));
