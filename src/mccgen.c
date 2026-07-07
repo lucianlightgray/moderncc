@@ -136,6 +136,7 @@ static void ast_hook_inc_end(void);
 #define AST_OP_ADDR 0x40000 /* Unary op marker: gaddrof (array-decay/address-of) */
 static void ast_hook_indir(void);
 static void ast_hook_gaddrof(void);
+static int ast_bad_type(int tt);
 #endif
 
 #if PTR_SIZE == 4
@@ -10437,7 +10438,7 @@ static void ast_hook_vpush(void) {
 	 * a frame-relative address value (an array, which is its own address). Both
 	 * re-push exactly from (r, offset). */
 	int is_local = (r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM);
-	if (is_float(tt) || (!is_const && !is_sym && !is_local)) {
+	if (ast_bad_type(tt) || (!is_const && !is_sym && !is_local)) {
 		ast_desync = 1;
 		return;
 	}
@@ -10484,11 +10485,32 @@ static int ast_op_modeled(int op) {
 	}
 }
 
+/* Types this rung does not reconstruct faithfully in an arithmetic/store/leaf
+ * position: aggregates (struct/union), bit-fields, and floats. An operation
+ * touching one is bailed so the function falls back — otherwise replay can build
+ * an invalid gen_op that errors mid-emit (before byte-verify can catch it).
+ * (VT_FUNC is intentionally NOT here: a callee is a VT_FUNC leaf that must be
+ * captured for Invoke; a function in an arithmetic operand is vanishingly rare.) */
+static int ast_bad_type(int tt) {
+	int bt = tt & VT_BTYPE;
+	return bt == VT_STRUCT || (tt & VT_BITFIELD) || is_float(tt);
+}
+
 static void ast_hook_genop(int op) {
-	if (!ast_capture || ast_desync || ast_in_call)
+	if (!ast_active)
+		return;
+	/* ast_in_op is a nesting counter kept balanced with ast_hook_genop_end (which
+	 * is called at every gen_op exit): entry always increments. We model this op
+	 * only when it is the top-level, capturable one — not nested inside another
+	 * op, and not inside a call/desynced/non-capturing region (there gen_op runs
+	 * for internal codegen, e.g. arg setup or the pointer-scale gen_op('*')). */
+	int model = ast_in_op == 0 && ast_capture && !ast_desync && !ast_in_call;
+	ast_in_op++;
+	if (!model)
 		return;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
-	if (!ast_op_modeled(op) || ast_vn != rel || ast_vn < 2) {
+	if (!ast_op_modeled(op) || ast_vn != rel || ast_vn < 2 ||
+			ast_bad_type(vtop->type.t) || ast_bad_type(vtop[-1].type.t)) {
 		ast_desync = 1;
 		return;
 	}
@@ -10500,16 +10522,15 @@ static void ast_hook_genop(int op) {
 	ast_add_child(ast_cur, b, ast_vs[ast_vn - 1]);
 	ast_vn -= 2;
 	ast_vs[ast_vn++] = b;
-	ast_in_op = 1; /* the op is modeled atomically; ignore its internal traffic */
 }
 
-/* gen_op has finished. Stop ignoring vstack traffic and re-sync: the op must
- * have left exactly one net value, matching the mirror's pop2/push1. */
+/* gen_op has finished; pop one nesting level. When back at the top (and actually
+ * capturing), re-sync: the op must have left one net value (pop2/push1). */
 static void ast_hook_genop_end(void) {
-	if (!ast_in_op)
+	if (!ast_active || ast_in_op == 0)
 		return;
-	ast_in_op = 0;
-	if (ast_capture && !ast_desync) {
+	ast_in_op--;
+	if (ast_in_op == 0 && ast_capture && !ast_desync && !ast_in_call) {
 		int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 		if (ast_vn != rel)
 			ast_desync = 1;
@@ -10835,7 +10856,12 @@ static void ast_hook_indir(void) {
 	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
 		return;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
-	if (ast_vn < 1 || ast_vn != rel) {
+	/* Deref to an aggregate (struct/union member access) builds trees whose
+	 * intermediate types this rung does not reconstruct — bail. Scalar derefs
+	 * (*p, a[i]) are fine. */
+	int derefs_aggregate = (vtop->type.t & VT_BTYPE) == VT_PTR &&
+			ast_bad_type(pointed_type(&vtop->type)->t);
+	if (ast_vn < 1 || ast_vn != rel || derefs_aggregate) {
 		ast_desync = 1;
 		return;
 	}
@@ -10953,10 +10979,15 @@ static void ast_hook_vpop(void) {
  * performs the store, and leaves the value (net -1). Record it as a Store effect
  * in the BasicBlock; model the op atomically like gen_op. */
 static void ast_hook_vstore(void) {
-	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
+	if (!ast_active)
+		return;
+	int model = ast_in_op == 0 && ast_capture && !ast_desync && !ast_in_call;
+	ast_in_op++;
+	if (!model)
 		return;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
-	if (ast_vn != rel || ast_vn < 2) {
+	if (ast_vn != rel || ast_vn < 2 ||
+			ast_bad_type(vtop->type.t) || ast_bad_type(vtop[-1].type.t)) {
 		ast_desync = 1;
 		return;
 	}
@@ -10970,14 +11001,13 @@ static void ast_hook_vstore(void) {
 	ast_add_child(ast_cur, ast_cur_bb, st);
 	ast_vs[ast_vn - 2] = value; /* store leaves the value */
 	ast_vn--;
-	ast_in_op = 1;
 }
 
 static void ast_hook_vstore_end(void) {
-	if (!ast_in_op)
+	if (!ast_active || ast_in_op == 0)
 		return;
-	ast_in_op = 0;
-	if (ast_capture && !ast_desync) {
+	ast_in_op--;
+	if (ast_in_op == 0 && ast_capture && !ast_desync && !ast_in_call) {
 		int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 		if (ast_vn != rel)
 			ast_desync = 1;
@@ -11328,7 +11358,11 @@ static void gen_function(Sym *sym) {
 	mcc_debug_prolog_epilog(mcc_state, 0);
 	func_vla_arg(sym);
 #if defined(CONFIG_AST) && CONFIG_AST
-	int ast_try = ast_replay_env && !debug_modes && !cur_func_inline_extern;
+	/* Skip functions whose return type this rung does not reconstruct (struct/
+	 * union/float): gfunc_return for them is aggregate/ABI-specific and replay
+	 * would build invalid ops. */
+	int ast_try = ast_replay_env && !debug_modes && !cur_func_inline_extern &&
+			!ast_bad_type(func_vt.t);
 	int ast_body_ind = ind;
 	addr_t ast_reloc0 =
 			cur_text_section->reloc ? cur_text_section->reloc->data_offset : 0;
