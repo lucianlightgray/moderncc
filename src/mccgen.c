@@ -10415,9 +10415,11 @@ static void ast_hook_vpush(void) {
 	 * is not reconstructable — desync. */
 	int is_const = (r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
 	int is_sym = (r & VT_VALMASK) == VT_CONST && (r & VT_SYM);
-	int is_local_lval =
-			(r & VT_VALMASK) == VT_LOCAL && (r & VT_LVAL) && !(r & VT_SYM);
-	if (is_float(tt) || (!is_const && !is_sym && !is_local_lval)) {
+	/* VT_LOCAL, with or without VT_LVAL: a frame-relative lvalue (a variable) or
+	 * a frame-relative address value (an array, which is its own address). Both
+	 * re-push exactly from (r, offset). */
+	int is_local = (r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM);
+	if (is_float(tt) || (!is_const && !is_sym && !is_local)) {
 		ast_desync = 1;
 		return;
 	}
