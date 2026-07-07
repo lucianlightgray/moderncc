@@ -37,6 +37,7 @@ static const mcc_golden_t mcc_goldens[] = {
 	{"noreturn", "run", "exec/features_c99_c11/noreturn.c", "OK\n", "", "", ""},
 	{"alignas_over", "run", "exec/features_c99_c11/alignas_over.c", "OK\n", "", "", ""},
 	{"flexarray_runtime", "run", "exec/features_c99_c11/flexarray_runtime.c", "OK\n", "", "", ""},
+	{"flt_eval_method", "run", "exec/features_c99_c11/flt_eval_method.c", "OK\n", "-lm", "", ""},
 	{"digraphs", "run", "exec/lexical/digraphs.c", "20 1 4\n", "", "", ""},
 	{"trigraphs", "run", "exec/lexical/trigraphs.c", "OK\n", "-trigraphs", "", ""},
 	{"u8_string", "run", "exec/lexical/u8_string.c", "OK\n", "", "", ""},

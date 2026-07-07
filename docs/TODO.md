@@ -196,11 +196,16 @@ runtime cases go in `tests/exec/features_c99_c11/`, diagnostics/negatives in
   `gcc.dg/c11-align-{1..9}.c` (`-3` 28 dg-error, `-5` 14).
 - [ ] **VLA goto/switch-into-scope diagnostics.** mcc tests VLA runtime but not the
   jump-into-VLA-scope constraint. _Ref:_ gcc `gcc.dg/c99-vla-jump-{1,2,3,4,5}.c`.
-- [ ] **UCN-in-identifier breadth.** mcc has 4 UCN cases, gcc ~30. _Ref:_ gcc
-  `gcc.dg/ucnid-*.c`; clang `C99/n717.c` (UCN grammar), `C11/n1518.c` (UAX#31).
-- [ ] **FP evaluation-method / Annex F wide returns.** `FLT_EVAL_METHOD`,
-  intermediate precision, wide-return conformance. _Ref:_ gcc
-  `gcc.dg/c11-float-{1..8}.c`; clang `C11/n1365.c`, `C11/n1396.c` (per-target IR).
+- [~] **UCN-in-identifier breadth.** Basic runtime is already covered by
+  `tests/exec/lexical/ucn_identifiers.c` (`\u`/`\U` escapes, raw UTF-8, raw≡escaped
+  equivalence). *Remaining = the ~30 gcc edge cases: invalid-UCN rejection
+  (basic-latin range), UCN in different token positions, normalization* — mostly
+  diagnostics → negative-test tier. _Ref:_ gcc `gcc.dg/ucnid-*.c`; clang
+  `C99/n717.c` (UCN grammar), `C11/n1518.c` (UAX#31).
+- [x] **FP evaluation-method.** _Done:_ `tests/exec/features_c99_c11/flt_eval_method.c`
+  — `FLT_EVAL_METHOD ∈ {-1..2}`, `float_t`/`double_t` widths match the reported
+  method, `<float.h>` characteristics sane. _Ref:_ gcc `gcc.dg/c11-float-*.c`, clang
+  `C11/n1365.c`. *Remaining: Annex F wide-return intermediate-precision (per-target).*
 - [ ] **`_Complex` diagnostics + Annex G special values.** mcc is arithmetic/ABI
   strong but light on constraint diagnostics and CMPLX/NaN/inf edge cases. _Ref:_
   clang `C11/n1464.c` (CMPLX/`__builtin_complex`), `C11/n1514.c` (Annex G); gcc
