@@ -71,6 +71,7 @@ static int ast_replay_dump; /* MCC_AST_REPLAY_DUMP: dump replayed trees        *
 static AstArena *ast_cur;   /* the function currently being built              */
 static int ast_bail;        /* an unsupported construct was seen              */
 static int ast_stmt_n;      /* leaf statements the builder accounted for       */
+static int ast_ret_ind0;    /* `ind` captured before a return expr is evaluated */
 static void ast_hook_stmt(int t);
 static void ast_hook_return(int has_val);
 static void ast_hook_implicit_return(void);
@@ -8767,6 +8768,9 @@ again:
 		if (cur_func_noreturn)
 			mcc_warning("function declared 'noreturn' has a 'return' statement");
 		b = (func_vt.t & VT_BTYPE) != VT_VOID;
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_ret_ind0 = ind;
+#endif
 		if (tok != ';') {
 			gexpr();
 			seqp_check();
@@ -10220,25 +10224,29 @@ static void ast_hook_stmt(int t) {
 static void ast_hook_return(int has_val) {
 	if (!ast_active)
 		return;
+	/* Rung 1 only supports a value return whose value is a plain int-sized
+	 * constant that emitted *no code* to compute (a pure constant — evaluating
+	 * it left `ind` untouched). A void return, or a value expression that emitted
+	 * anything (a call, a store, a comma side effect), bails so the parser's
+	 * correct emission is kept — the discard-and-re-emit must never drop work. */
+	if (!has_val) {
+		ast_bail = 1;
+		return;
+	}
+	int pure = ind == ast_ret_ind0;
+	int is_int_const =
+			(vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST &&
+			(vtop->type.t & VT_BTYPE) == VT_INT;
+	if (!pure || !is_int_const) {
+		ast_bail = 1;
+		return;
+	}
 	AstLocal bb = ast_root(ast_cur);
 	AstLocal ret = ast_node(ast_cur, AST_Return);
-	if (has_val) {
-		/* Rung 1: a plain int-sized integer constant (folds to a 32-bit value,
-		 * so `vpushi` at replay is exact and no relocation is emitted — the
-		 * discard-and-re-emit stays safe). Wider/float/non-constant returns bail
-		 * and keep the parser's emission until later rungs own them. */
-		int is_int_const =
-				(vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST &&
-				(vtop->type.t & VT_BTYPE) == VT_INT;
-		if (!is_int_const) {
-			ast_bail = 1;
-		} else {
-			AstLocal lit = ast_node(ast_cur, AST_Literal);
-			ast_set_ival(ast_cur, lit, (uint64_t)vtop->c.i);
-			ast_set_type(ast_cur, lit, vtop->type.t, 0);
-			ast_add_child(ast_cur, ret, lit);
-		}
-	}
+	AstLocal lit = ast_node(ast_cur, AST_Literal);
+	ast_set_ival(ast_cur, lit, (uint64_t)vtop->c.i);
+	ast_set_type(ast_cur, lit, vtop->type.t, 0);
+	ast_add_child(ast_cur, ret, lit);
 	ast_add_child(ast_cur, bb, ret);
 }
 
@@ -10357,6 +10365,9 @@ static void gen_function(Sym *sym) {
 #if defined(CONFIG_AST) && CONFIG_AST
 	int ast_try = ast_replay_env && !debug_modes && !cur_func_inline_extern;
 	int ast_body_ind = ind;
+	int ast_loc0 = loc;
+	addr_t ast_reloc0 =
+			cur_text_section->reloc ? cur_text_section->reloc->data_offset : 0;
 	if (ast_try) {
 		ast_cur = ast_arena_new();
 		ast_node(ast_cur, AST_BasicBlock);
@@ -10366,11 +10377,14 @@ static void gen_function(Sym *sym) {
 	}
 	block(0);
 	if (ast_try) {
+		addr_t ast_reloc1 =
+				cur_text_section->reloc ? cur_text_section->reloc->data_offset : 0;
 		ast_active = 0;
-		if (ast_replay_ok(ast_cur)) {
-			/* Discard the parser's body emission and re-emit from the AST. Safe
-			 * only while the supported set stays relocation-free (return-const);
-			 * ast_bail keeps the parser's output for anything else. */
+		/* Replay only when the discarded body provably held no work beyond the
+		 * captured return: no body locals (loc unchanged) and no relocations
+		 * (no calls / global references). Otherwise keep the parser's emission. */
+		if (ast_replay_ok(ast_cur) && loc == ast_loc0 && ast_reloc1 == ast_reloc0) {
+			/* Discard the parser's body emission and re-emit from the AST. */
 			ind = ast_body_ind;
 			rsym = 0;
 			nocode_wanted = 0;

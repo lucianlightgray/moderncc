@@ -36,12 +36,18 @@ brought up one §17 category at a time.
   leaf statements) and `ast_hook_return` (capture Return of an int constant) fire from
   the parser's statement/return positions, gated by `CONFIG_AST` + `ast_active`. Grows
   alongside A4's rungs.
-- [~] **A6 — differential-exec replay gate.** `tests/ast/replay.cmake` compiles a
-  fixture through `-O0` and through the replay driver and asserts the same exit code,
-  requiring the function to actually go through replay (dump fired) not silently fall
-  back. `ast/replay-ret42` (return 42) is green. Next: widen to the `tests/exec`
-  goldens as a runner column as the driver reaches call/printf support (§17 curriculum
-  1 `expressions` → 6 long tail).
+- [~] **A6 — differential-exec replay gate (two layers, both green).**
+  - `tests/ast/replay.cmake` — targeted fixtures that must *actually* replay (dump
+    fired, not fall back): `ret42`/`ret0`/`retexpr`/`mainempty`.
+  - **`exec-replay/*` column** — the whole `tests/exec` golden corpus (280) re-run
+    with `MCC_AST_REPLAY=1`, asserting the same expected output. Functions the driver
+    can lower go through the AST; everything else falls back to `-O0`, so the column
+    stays green as the driver grows. Replay-induced safety verified: the discard is
+    guarded by no-new-locals + no-new-relocations + pure-constant-return, so a body
+    with a call / cleanup / global store (e.g. cleanup.c `test_ret`) correctly falls
+    back instead of dropping work. Full ctest 1148/1148.
+  - Next: widen the *replayed* set (not just fallback) toward §17 curriculum 1
+    `expressions` → 6 long tail as the driver reaches locals/calls/CFG.
 - [ ] **A7 — first template = const-fold**, sequenced *after* the corpus is green
   under zero-template replay, with its own §15 per-template differential test. (Deferred
   to the end of the first phase.)

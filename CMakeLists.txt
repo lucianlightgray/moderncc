@@ -3037,6 +3037,24 @@ if(MCC_BUILD_TESTS)
             SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env}")
     endforeach()
 
+    # AST replay column (docs/AST.md §17): the same golden corpus re-run with the
+    # replay driver on (MCC_AST_REPLAY=1), asserting the same expected output. It
+    # is the differential-exec gate over the whole corpus — functions the driver
+    # can lower go through the AST, everything else falls back to the -O0 emission,
+    # so it must stay green as the driver grows one construct at a time.
+    if(MCC_AST)
+        foreach(_gl IN LISTS _exec_glines)
+            string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
+            set(_gn "${CMAKE_MATCH_1}")
+            add_test(NAME "exec-replay/${_gn}"
+                COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+                        "${CMAKE_BINARY_DIR}/exec-replay-${_gn}" --only "${_gn}")
+            set_tests_properties("exec-replay/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_AST_REPLAY=1")
+        endforeach()
+    endif()
+
     if(MCC_EMULATOR)
         mcc_skip_test(cli-suite "structural readelf/nm suite runs on native host only")
     else()
