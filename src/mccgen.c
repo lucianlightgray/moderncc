@@ -97,6 +97,8 @@ static AstLocal ast_cf_if[AST_CF_MAX];    /* pending If nodes                   
 static AstLocal ast_cf_savebb[AST_CF_MAX]; /* the BB to restore at if_end         */
 static int ast_cf_top;
 static int *ast_rp_bsym, *ast_rp_csym;    /* replay-time break/continue chains   */
+static AstLocal ast_tern[16];             /* pending ternary (Cond) nodes         */
+static int ast_tern_top;
 
 static void ast_hook_stmt(int t);
 static void ast_hook_return(int has_val);
@@ -137,6 +139,10 @@ static void ast_hook_inc_end(void);
 static void ast_hook_indir(void);
 static void ast_hook_gaddrof(void);
 static int ast_bad_type(int tt);
+static void ast_hook_ternary_begin(int c, int g);
+static void ast_hook_ternary_branch(int which);
+static void ast_hook_ternary_branch_done(int which);
+static void ast_hook_ternary_end(void);
 #endif
 
 #if PTR_SIZE == 4
@@ -8119,6 +8125,9 @@ static void expr_cond(void) {
 		c = condition_3way();
 		seqp_flush();
 		g = (tok == ':' && gnu_ext);
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_ternary_begin(c, g);
+#endif
 		tt = 0;
 		if (!g) {
 			if (c < 0) {
@@ -8135,8 +8144,14 @@ static void expr_cond(void) {
 
 		if (c == 0)
 			nocode_wanted++;
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_ternary_branch(0);
+#endif
 		if (!g)
 			gexpr();
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_ternary_branch_done(0);
+#endif
 
 		if ((vtop->type.t & VT_BTYPE) == VT_FUNC)
 			mk_pointer(&vtop->type);
@@ -8156,7 +8171,13 @@ static void expr_cond(void) {
 		if (c == 1)
 			nocode_wanted++;
 		skip(':');
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_ternary_branch(1);
+#endif
 		expr_cond();
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_ternary_branch_done(1);
+#endif
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
 		CST_OPEN_AT(CST_Cond, cst_m);
 		CST_CLOSE();
@@ -8234,6 +8255,9 @@ static void expr_cond(void) {
 
 		if (islv)
 			indir();
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_ternary_end();
+#endif
 	}
 }
 
@@ -10591,6 +10615,67 @@ static void ast_hook_inc_end(void) {
 		ast_desync = 1;
 }
 
+/* Ternary `c ? a : b` — an expression that yields a value via register-
+ * coordinated branches. Captured as an If node (op==5) with [cond, true, false];
+ * the branch values are captured with the mirror briefly un-suppressed, while the
+ * coordination (save_regs/gvtst/gjmp/gsym/gv/move_reg) is suppressed. Only the
+ * runtime scalar case (c<0, non-gnu) is modeled; constant-condition/gnu/aggregate
+ * cases desync and fall back. Replay reproduces expr_cond's exact coordination. */
+static void ast_hook_ternary_begin(int c, int g) {
+	if (!ast_active || ast_desync || ast_bail)
+		return;
+	if (c >= 0 || g || ast_in_call || ast_in_op || ast_tern_top >= 16 ||
+			ast_vn < 1) {
+		ast_desync = 1;
+		return;
+	}
+	ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
+	AstLocal cn = ast_node(ast_cur, AST_If);
+	ast_set_op(ast_cur, cn, 5);
+	ast_add_child(ast_cur, cn, ast_vs[ast_vn - 1]); /* child0 = condition */
+	ast_vn--;                                       /* consumed by gvtst */
+	ast_tern[ast_tern_top++] = cn;
+	ast_in_call = 1; /* suppress the branch coordination */
+}
+
+static void ast_hook_ternary_branch(int which) {
+	(void)which;
+	if (!ast_active || ast_desync || ast_bail || ast_tern_top < 1)
+		return;
+	ast_in_call = 0; /* capture the branch expression */
+}
+
+static void ast_hook_ternary_branch_done(int which) {
+	(void)which;
+	if (!ast_active || ast_desync || ast_bail || ast_tern_top < 1)
+		return;
+	if (ast_vn < 1) {
+		ast_desync = 1;
+		return;
+	}
+	ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
+	ast_add_child(ast_cur, ast_tern[ast_tern_top - 1], ast_vs[ast_vn - 1]);
+	ast_vn--;
+	ast_in_call = 1; /* suppress again */
+}
+
+static void ast_hook_ternary_end(void) {
+	if (!ast_active || ast_tern_top < 1)
+		return;
+	AstLocal cn = ast_tern[--ast_tern_top];
+	ast_in_call = 0;
+	if (ast_desync || ast_bail)
+		return;
+	if (ast_vn >= AST_VS_MAX) {
+		ast_desync = 1;
+		return;
+	}
+	ast_vs[ast_vn++] = cn; /* the ternary result */
+	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+	if (ast_vn != rel)
+		ast_desync = 1;
+}
+
 /* --- control flow: `if` --------------------------------------------------
  * Captured at the statement level: the condition is the single value on the
  * mirror (about to be consumed by gvtst); the then/else branches are captured
@@ -11128,6 +11213,37 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 		ast_replay_value(a, ast_child(a, n, 0));
 		indir();
 		break;
+	case AST_If: {
+		/* ternary (op==5): reproduce expr_cond's runtime-scalar coordination so
+		 * the branch values land in one register, byte-for-byte. */
+		SValue sv;
+		CType type;
+		int tt, u, rc, r1, r2;
+		ast_replay_value(a, ast_child(a, n, 0)); /* condition */
+		save_regs(1);
+		tt = gvtst(1, 0);
+		ast_replay_value(a, ast_child(a, n, 1)); /* true */
+		sv = *vtop;
+		vtop--;
+		u = gjmp(0);
+		gsym(tt);
+		ast_replay_value(a, ast_child(a, n, 2)); /* false */
+		combine_types(&type, &sv, vtop, '?');
+		gen_cast(&type);
+		rc = RC_TYPE(type.t);
+		if (USING_TWO_WORDS(type.t))
+			rc = RC_RET(type.t);
+		r2 = gv(rc);
+		tt = gjmp(0);
+		gsym(u);
+		*vtop = sv;
+		gen_cast(&type);
+		r1 = gv(rc);
+		move_reg(r2, r1, type.t);
+		vtop->r = r2;
+		gsym(tt);
+		break;
+	}
 	case AST_Invoke: {
 		/* push callee + args, transfer, then re-push the captured result. */
 		uint32_t nc = ast_nchild(a, n);
@@ -11370,6 +11486,7 @@ static void gen_function(Sym *sym) {
 		ast_cur = ast_arena_new();
 		ast_cur_bb = ast_node(ast_cur, AST_BasicBlock);
 		ast_cf_top = 0;
+		ast_tern_top = 0;
 		ast_bail = 0;
 		ast_desync = 0;
 		ast_in_op = 0;
