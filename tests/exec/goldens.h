@@ -20,6 +20,7 @@ static const mcc_golden_t mcc_goldens[] = {
 	{"local_extern", "run", "exec/functions_abi/local_extern.c", "f\nf\n", "", "", ""},
 	{"versym", "run", "exec/features_c99_c11/versym.c", "ok\n", "", "", "os!=WIN32:tests glibc symbol versioning; harness uses pthread cond vars absent from the PE pthread shim"},
 	{"c11_freestanding_headers", "run", "exec/features_c99_c11/c11_freestanding_headers.c", "OK\n", "", "", "diff3!=WIN32:mcc guarantees the C11 freestanding-header macros (__STDC_IEC_559__, lock-free atomics, ...) that gcc/clang-on-Windows do not, so the gcc==clang consensus fails while mcc passes"},
+	{"feature_macros", "run", "exec/features_c99_c11/feature_macros.c", "OK\n", "", "", ""},
 	{"c11_complex_decls", "run", "exec/features_c99_c11/c11_complex_decls.c", "OK\n", "", "", ""},
 	{"c11_complex_convert", "run", "exec/features_c99_c11/c11_complex_convert.c", "OK\n", "", "", ""},
 	{"c11_complex_const_fold", "run", "exec/features_c99_c11/c11_complex_const_fold.c", "OK\n", "", "", ""},

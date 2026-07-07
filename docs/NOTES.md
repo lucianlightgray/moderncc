@@ -755,11 +755,17 @@ gcc/clang references and green across ctest + the qemu matrix.
   `FLT_EVAL_METHOD ∈ {-1..2}`, `float_t`/`double_t` widths track the reported
   method (§7.12p2), `<float.h>` characteristics sane. Ref gcc `c11-float-*`, clang
   `C11/n1365`. (Annex-F wide-return intermediate precision stays open — see TODO.)
-- **Feature-subset / `__STDC_NO_*` macros** — already asserted portably by the
-  pre-existing `exec/features_c99_c11/c11_freestanding_headers.c`
+- **Feature-subset / `__STDC_NO_*` macros** — the header *content* macros
   (`ATOMIC_*_LOCK_FREE`, `__STDC_IEC_559{,_COMPLEX}__`, `__STDC_ISO_10646__` guarded
-  `!_WIN32`, `__CHAR16/32_TYPE__`, limits, stdint, iso646). A separately-drafted
-  `feature_macros.c` was dropped as redundant (and non-portable on PE).
+  `!_WIN32`, `__CHAR16/32_TYPE__`, limits, stdint, iso646) are asserted by
+  `exec/features_c99_c11/c11_freestanding_headers.c`; the compiler-level
+  §6.10.8 feature macros by `exec/features_c99_c11/feature_macros.c`. The latter
+  pins the mandatory §6.10.8.1 macros (`__STDC__`==1, `__STDC_HOSTED__`==1,
+  `__STDC_VERSION__`>=201112L, `__STDC_UTF_16/32__`==1) and the §6.10.8.3
+  conditional-feature opt-outs (`__STDC_NO_ATOMICS/COMPLEX/THREADS/VLA__` all
+  absent, each corroborated by exercising the feature). It is written to agree
+  across mcc/gcc/clang and every hosted target incl. PE — version macros use `>=`
+  and it avoids the `!_WIN32`-only content macros — so it also runs under diff3.
 
 ## CST database — design record (frozen spec §0–§11)
 
