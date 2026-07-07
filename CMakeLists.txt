@@ -2925,16 +2925,16 @@ if(MCC_BUILD_TESTS)
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
                 set_tests_properties("ast/replay-${_rn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
             endforeach()
-            # Safety-net case: an unmodeled construct (a `while` loop) must fall
+            # Safety-net case: an unmodeled construct (a `switch`) must fall
             # back to correct -O0 emission (same exit code) without faithfully
             # replaying — proving the byte-verify net.
-            add_test(NAME "ast/replay-loop_fallback" COMMAND "${CMAKE_COMMAND}"
+            add_test(NAME "ast/replay-switch_fallback" COMMAND "${CMAKE_COMMAND}"
                 "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
-                "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/loop_fallback.c"
+                "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/switch_fallback.c"
                 "-DOUT=${CMAKE_BINARY_DIR}/ast-replay"
                 "-DEXPECT_RC=42" "-DNOREPLAY=main"
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
-            set_tests_properties("ast/replay-loop_fallback" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+            set_tests_properties("ast/replay-switch_fallback" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endif()
     endif()
 

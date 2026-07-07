@@ -1,6 +1,7 @@
 int main(int argc, char **argv) {
-	int i = argc;
-	while (i > 1)
-		i--;
+	switch (argc) {
+	case 1:
+		return 42;
+	}
 	return 42;
 }
