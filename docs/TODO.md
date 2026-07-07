@@ -178,16 +178,22 @@ runtime cases go in `tests/exec/features_c99_c11/`, diagnostics/negatives in
 
 ## Coverage-depth gaps — mcc passes but under-tests vs gcc/clang; add tests
 
-- [ ] **Flexible array members — add a constraint+runtime suite.** mcc has ~1 case,
+- [~] **Flexible array members — add a constraint+runtime suite.** mcc has ~1 case,
   gcc 12. Cover union FAM, string-init, typedef FAM, `sizeof`, invalid nesting.
   _Ref:_ gcc `gcc.dg/c99-flex-array-{1,2,3,5,6,7}.c`,
   `gcc.dg/c99-flex-array-typedef-{1,2,3,5,7,8}.c`.
-- [ ] **`_Noreturn` — expand from 1 case to full coverage.** noreturn-fn-that-returns
-  (UB), `_Noreturn main`, constraint violations, `<stdnoreturn.h>` macro. _Ref:_ gcc
-  `gcc.dg/c11-noreturn-{1,2,3,4,5}.c` (`-2` is execute).
-- [ ] **`_Alignas`/`_Alignof` — add over-align runtime + constraint diagnostics.**
-  _Ref:_ gcc `gcc.dg/c11-align-{1,2,3,4,5,6,7,8,9}.c` (`-2`/`-6` execute; `-3` 28
-  dg-error, `-5` 14).
+  → **Runtime half done:** `tests/exec/features_c99_c11/flexarray_runtime.c`
+  (sizeof==offsetof, heap alloc/access, char-FAM string, typedef FAM). *Remaining:
+  the invalid-use diagnostics (union FAM, FAM-not-last) → negative-test tier.*
+- [x] **`_Noreturn` — expand from 1 case to full coverage.** _Done:_
+  `tests/exec/features_c99_c11/noreturn.c` (both `_Noreturn` keyword + `noreturn`
+  macro, pre/post placement, genuine non-return via longjmp). _Ref:_ gcc
+  `gcc.dg/c11-noreturn-2.c`.
+- [~] **`_Alignas`/`_Alignof` — add over-align runtime + constraint diagnostics.**
+  → **Runtime half done:** `tests/exec/features_c99_c11/alignas_over.c`
+  (over-alignment addresses, `alignof(max_align_t)`, member/offset alignment).
+  *Remaining: the constraint diagnostics (under-align errors).* _Ref:_ gcc
+  `gcc.dg/c11-align-{1..9}.c` (`-3` 28 dg-error, `-5` 14).
 - [ ] **VLA goto/switch-into-scope diagnostics.** mcc tests VLA runtime but not the
   jump-into-VLA-scope constraint. _Ref:_ gcc `gcc.dg/c99-vla-jump-{1,2,3,4,5}.c`.
 - [ ] **UCN-in-identifier breadth.** mcc has 4 UCN cases, gcc ~30. _Ref:_ gcc
@@ -207,11 +213,11 @@ runtime cases go in `tests/exec/features_c99_c11/`, diagnostics/negatives in
 
 ## Conforming omissions — assert, don't implement
 
-- [ ] **Pin the feature-subset macros with a test.** `_Imaginary` (Annex G) and Annex
-  K are consensus omissions (mcc==gcc==clang); add a test asserting mcc advertises
-  them correctly: `__STDC_NO_COMPLEX__` absent, `__STDC_NO_VLA__`/`ATOMICS`/`THREADS`
-  as appropriate, `__STDC_IEC_559_COMPLEX__`, `ATOMIC_*_LOCK_FREE`. _Ref:_ clang
-  `C11/n1460.c`, `C11/n1514.c`, `C11/n1482.c`.
+- [x] **Pin the feature-subset macros with a test.** _Done:_
+  `tests/exec/features_c99_c11/feature_macros.c` — asserts `__STDC_NO_*` absent (mcc
+  supports complex/atomics/VLA), `__STDC_IEC_559{,_COMPLEX}__`, `__STDC_HOSTED__`,
+  `__STDC_ISO_10646__`, `__STDC_UTF_{16,32}__`, and `ATOMIC_*_LOCK_FREE ∈ {0,1,2}`.
+  _Ref:_ clang `C11/n1460.c`, `C11/n1482.c`.
 
 ---
 
