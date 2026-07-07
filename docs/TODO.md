@@ -69,10 +69,13 @@ brought up one §17 category at a time.
     `gsym` pattern (no backend jump hooks). Done: **comparisons** (`< > <= >= == !=`),
     **`if`/`if-else`** (nested BasicBlocks), **non-tail returns** (branch returns that
     jump to the epilogue), **`while`**, **`++`/`--`** (`inc()` modeled as `Unary`),
-    **`for`** (init;cond;incr). Loops are `If` nodes marked op==2 (while)/op==3 (for).
-    **Coverage 68→98/239 files (41%).** Remaining: `break`/`continue` (loop chains),
-    `switch`, `do-while`, `goto`, and expression tails (`?:`, `&&`/`||`, compound
-    assignment, `[]`/`.`/`->`, wider/float types).
+    **`for`** (init;cond;incr), **`break`/`continue`** (Jump nodes chaining onto the
+    loop's replay-time break/continue chains). Loops are `If` nodes op==2 (while)/
+    op==3 (for). Compound-assign (`+=`) and comma already replay. **Coverage
+    68→98/239 files (41%).** Remaining: the **memory model** (`a[i]`/`.`/`->` — needs
+    `gaddrof`/`indir` → `Load`/`Store` of computed addresses), `InitList` (aggregate
+    init), expression control flow (`?:`, `&&`/`||`), `switch`, `do-while`, `goto`,
+    floats/wider types. Then A7 const-fold template.
 - [~] **A5 — parser AST-build hooks.** `ast_hook_stmt` (count + bail on unsupported
   leaf statements) and `ast_hook_return` (capture Return of an int constant) fire from
   the parser's statement/return positions, gated by `CONFIG_AST` + `ast_active`. Grows

@@ -129,7 +129,9 @@ static void ast_hook_for_body_begin(void);
 static void ast_hook_for_end(void);
 static void ast_hook_inc(int post, int c);
 static void ast_hook_inc_end(void);
-static void ast_hook_inplace(void);
+#define AST_OP_ADDR 0x40000 /* Unary op marker: gaddrof (array-decay/address-of) */
+static void ast_hook_indir(void);
+static void ast_hook_gaddrof(void);
 #endif
 
 #if PTR_SIZE == 4
@@ -1686,7 +1688,7 @@ static void move_reg(int r, int s, int t) {
 
 ST_FUNC void gaddrof(void) {
 #if defined(CONFIG_AST) && CONFIG_AST
-	ast_hook_inplace();
+	ast_hook_gaddrof();
 #endif
 	vtop->r &= ~VT_LVAL;
 	if ((vtop->r & VT_VALMASK) == VT_LLOCAL)
@@ -5851,7 +5853,7 @@ static CType *type_decl(CType *type, AttributeDef *ad, int *v, int td) {
 
 ST_FUNC void indir(void) {
 #if defined(CONFIG_AST) && CONFIG_AST
-	ast_hook_inplace();
+	ast_hook_indir();
 #endif
 	if ((vtop->type.t & VT_BTYPE) != VT_PTR) {
 		if ((vtop->type.t & VT_BTYPE) == VT_FUNC)
@@ -10749,12 +10751,38 @@ static void ast_hook_for_end(void) {
 	ast_cur_bb = ast_cf_savebb[ast_cf_top];
 }
 
-/* An in-place transform (deref, address-of) mutates a vstack value's meaning
- * without a depth change; this rung does not model those, so desync and fall
- * back (byte-verify would catch them regardless). */
-static void ast_hook_inplace(void) {
-	if (ast_capture && !ast_in_op && !ast_in_call)
+/* Memory model. `indir` (deref) wraps the top address value in a Load; `gaddrof`
+ * (array-decay / address-of) wraps it in a Unary(AST_OP_ADDR). Both re-issue the
+ * primitive at replay, so a computed-address lvalue (a[i], *p) is reconstructed
+ * from its address expression rather than a non-reproducible register. Inside a
+ * modeled op (ast_in_op/ast_in_call) they are part of that op and are skipped. */
+static void ast_hook_indir(void) {
+	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
+		return;
+	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+	if (ast_vn < 1 || ast_vn != rel) {
 		ast_desync = 1;
+		return;
+	}
+	ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
+	AstLocal ld = ast_node(ast_cur, AST_Load);
+	ast_add_child(ast_cur, ld, ast_vs[ast_vn - 1]);
+	ast_vs[ast_vn - 1] = ld;
+}
+
+static void ast_hook_gaddrof(void) {
+	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
+		return;
+	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+	if (ast_vn < 1 || ast_vn != rel) {
+		ast_desync = 1;
+		return;
+	}
+	ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
+	AstLocal u = ast_node(ast_cur, AST_Unary);
+	ast_set_op(ast_cur, u, AST_OP_ADDR);
+	ast_add_child(ast_cur, u, ast_vs[ast_vn - 1]);
+	ast_vs[ast_vn - 1] = u;
 }
 
 /* Call boundary. Before gfunc_call the mirror holds [callee, arg0..arg_{n-1}];
@@ -10984,9 +11012,16 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 		break;
 	}
 	case AST_Unary:
-		/* ++/--: push the target lvalue, re-issue inc(post, op). */
 		ast_replay_value(a, ast_child(a, n, 0));
-		inc((int)ast_ival(a, n), ast_op(a, n));
+		if (ast_op(a, n) == AST_OP_ADDR)
+			gaddrof(); /* array-decay / address-of */
+		else
+			inc((int)ast_ival(a, n), ast_op(a, n)); /* ++/-- */
+		break;
+	case AST_Load:
+		/* deref: reconstruct the address, then indir to an lvalue. */
+		ast_replay_value(a, ast_child(a, n, 0));
+		indir();
 		break;
 	case AST_Invoke: {
 		/* push callee + args, transfer, then re-push the captured result. */
