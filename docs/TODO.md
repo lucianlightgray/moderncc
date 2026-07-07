@@ -43,8 +43,16 @@ brought up one §17 category at a time.
     Leaves restricted to int-constants + frame-relative locals/params (re-push exactly
     after discard). Corpus column caught + drove fixes (cleanup/enum). Fixtures:
     `retexpr` (folds), `argc_expr` (param arithmetic).
-  - [ ] rung 3: locals (`Store` capture for `int a=...;`), then calls (`Invoke` →
-    printf) — needs replay to own relocations before discard can cover them.
+  - [x] rung 3: **whole-body straight-line capture with local `Store`.** The mirror
+    stays live across statements; `vstore`/`vswap`/`vpop` are modeled so local decls
+    with initializers and assignment statements become `Store` effects in the
+    BasicBlock. `int main(){int a=5,b=7; return a*b+7;}` replays byte-identically as
+    `[Store(a,5), Store(b,7), Return]`. Unary minus (emitted `0-x` via `gen_op`) also
+    replays now. Fixtures local_ret/local_two + cmp_fallback (safety net).
+  - [ ] rung 4: **calls** (`Invoke` → printf) — replay must own relocations (drop the
+    reloc guard, discard body relocations too, re-emit them), then most corpus
+    functions (which call printf) can move off fallback. Then control flow (`If`/
+    `Jump` = the CFG milestone D-b).
 - [~] **A5 — parser AST-build hooks.** `ast_hook_stmt` (count + bail on unsupported
   leaf statements) and `ast_hook_return` (capture Return of an int constant) fire from
   the parser's statement/return positions, gated by `CONFIG_AST` + `ast_active`. Grows
