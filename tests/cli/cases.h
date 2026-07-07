@@ -1652,7 +1652,7 @@ static const cli_case_t cli_cases[] = {
 	 "switch jumps into the scope of a variably modified declaration\n"},
 	{"c11_noreturn_returns", "",
 	 "printf '#include <stdnoreturn.h>\\nnoreturn void f(int x){if(x)return;}\\nint main(void){return 0;}\\n' > {W}/nr.c && "
-	 "{MCC} -c {W}/nr.c -o {W}/nr.o 2>&1 | "
+	 "{MCC} -B{B} -I{I} -c {W}/nr.c -o {W}/nr.o 2>&1 | "
 	 "grep -oE \"function declared .noreturn. has a .return. statement\"",
 	 "function declared 'noreturn' has a 'return' statement\n"},
 
