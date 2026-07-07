@@ -7,7 +7,6 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
 # Now
 
 - [ ] Normalize as much of the CMake code as possible: 1) minimize gating instead preferring autodetecting the existence of tools and enabling as many tests/targets/configs as are available on the host, 2) reduce CMake usage by relying on `tools` where advantageous, 3) fold in separate .cmake files into CMakeLists.txt
-- [ ] Can a fully static build use an internal minimalistic `-run`/JIT to sidestep the dynamic linking limitations of static (and use libc/musl in-memory?)
 - [ ] **`exec/tls` skipped on arm64+WIN32 (`skipon=arm64/WIN32`, 2026-07-05).**
   On the `msvc / arm64` runner, `exec/tls` intermittently hung (ctest 63 min,
   manual cancel). Root cause is **not** in mcc: **MSVC's arm64 code generator
