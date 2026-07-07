@@ -97,6 +97,7 @@ static void ast_hook_vstore(void);
 static void ast_hook_vstore_end(void);
 static void ast_hook_vpop(void);
 static void ast_hook_vswap(void);
+static void ast_hook_convert(CType *type);
 static void ast_hook_inplace(void);
 #endif
 
@@ -3248,7 +3249,7 @@ static void gen_cast_s(int t) {
 static void gen_cast(CType *type) {
 	int sbt, dbt, sf, df, c;
 #if defined(CONFIG_AST) && CONFIG_AST
-	ast_hook_inplace();
+	ast_hook_convert(type);
 #endif
 	int dbt_bt, sbt_bt, ds, ss, bits, trunc;
 
@@ -10386,11 +10387,28 @@ static void ast_hook_genop_end(void) {
 	}
 }
 
-/* An in-place transform (cast, deref, address-of) mutates a vstack value's
- * meaning without a depth change, which the mirror cannot see. Inside a modeled
- * gen_op such transforms are part of the op (usual arithmetic conversions) and
- * are reproduced by replaying gen_op; *outside* gen_op they are operations this
- * rung does not model yet, so the function desyncs and falls back. */
+/* A cast converts the top value in place (no depth change). Inside a modeled
+ * gen_op it is a usual-arithmetic-conversion reproduced by replaying gen_op, so
+ * ignore it; otherwise wrap the top mirror node in a Convert(dst-type) that
+ * replay re-emits with gen_cast. Finalize the leaf first (the value being cast
+ * may still be a not-yet-finished symbolic leaf). */
+static void ast_hook_convert(CType *type) {
+	if (!ast_capture || ast_desync || ast_in_op)
+		return;
+	if (ast_vn < 1) {
+		ast_desync = 1;
+		return;
+	}
+	ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
+	AstLocal cvt = ast_node(ast_cur, AST_Convert);
+	ast_set_type(ast_cur, cvt, type->t, (uint64_t)(uintptr_t)type->ref);
+	ast_add_child(ast_cur, cvt, ast_vs[ast_vn - 1]);
+	ast_vs[ast_vn - 1] = cvt;
+}
+
+/* An in-place transform (deref, address-of) mutates a vstack value's meaning
+ * without a depth change; this rung does not model those, so desync and fall
+ * back (byte-verify would catch them regardless). */
 static void ast_hook_inplace(void) {
 	if (ast_capture && !ast_in_op)
 		ast_desync = 1;
@@ -10529,6 +10547,14 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 		ast_replay_value(a, ast_child(a, n, 1));
 		gen_op(ast_op(a, n));
 		break;
+	case AST_Convert: {
+		ast_replay_value(a, ast_child(a, n, 0));
+		CType ct;
+		ct.t = ast_type_t(a, n);
+		ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+		gen_cast(&ct);
+		break;
+	}
 	default:
 		break;
 	}

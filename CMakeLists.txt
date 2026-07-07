@@ -2911,7 +2911,8 @@ if(MCC_BUILD_TESTS)
         if(NOT CMAKE_CROSSCOMPILING AND NOT MCC_TARGETOS STREQUAL "WIN32")
             # fixture;expected-exit-code pairs (return of an integer constant).
             foreach(_case "ret42;42" "ret0;0" "retexpr;14" "mainempty;0" "argc_expr;42"
-                          "local_ret;42" "local_two;42" "neg_fallback;42" "global_ref;42")
+                          "local_ret;42" "local_two;42" "neg_fallback;42" "global_ref;42"
+                          "cast_expr;41")
                 list(GET _case 0 _rn)
                 list(GET _case 1 _rc)
                 add_test(NAME "ast/replay-${_rn}" COMMAND "${CMAKE_COMMAND}"
