@@ -2929,8 +2929,15 @@ static int combine_types(CType *dest, SValue *op1, SValue *op2, int op) {
 	return ret;
 }
 
+static int bf_operand_bits(int tt) {
+	if (tt & VT_BITFIELD)
+		return BIT_SIZE(tt);
+	return (tt & VT_BTYPE) == VT_LLONG ? 64 : 32;
+}
+
 ST_FUNC void gen_op(int op) {
 	int t1, t2, bt1, bt2, t;
+	int bf_trunc = 0;
 	CType type1, combtype;
 	int op_class = op;
 
@@ -3026,6 +3033,19 @@ redo:
 			goto op_err;
 		}
 	std_op:
+		if (op_class != CMP_OP && (combtype.t & VT_BTYPE) == VT_LLONG && !is_float(combtype.t)) {
+			int wide1 = (t1 & VT_BITFIELD) && BIT_SIZE(t1) > 32;
+			int wide2 = (t2 & VT_BITFIELD) && BIT_SIZE(t2) > 32;
+			if (op_class == SHIFT_OP) {
+				if (wide1 && bf_operand_bits(t1) < 64)
+					bf_trunc = bf_operand_bits(t1);
+			} else if (wide1 || wide2) {
+				int w1 = bf_operand_bits(t1), w2 = bf_operand_bits(t2);
+				int p = w1 > w2 ? w1 : w2;
+				if (p < 64)
+					bf_trunc = p;
+			}
+		}
 		if (op_class == CMP_OP && (mcc_state->warn_sign_compare & WARN_ON) && !is_float(combtype.t) && (t1 & VT_UNSIGNED) != (t2 & VT_UNSIGNED)) {
 			int ac = (vtop[-1].r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
 			int bc = (vtop[0].r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
@@ -3064,6 +3084,13 @@ redo:
 			vtop->type.t = VT_INT;
 		} else {
 			vtop->type.t = t;
+			if (bf_trunc) {
+				int sh = 64 - bf_trunc;
+				vpushi(sh);
+				gen_op(TOK_SHL);
+				vpushi(sh);
+				gen_op((t & VT_UNSIGNED) ? TOK_SHR : TOK_SAR);
+			}
 		}
 	}
 	if (vtop->r & VT_LVAL)
@@ -5583,7 +5610,7 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td) {
 		type->ref = s;
 
 		if (vla_array_str) {
-			if ((t1 & VT_VLA) && (td & TYPE_NEST))
+			if ((t1 & VT_VLA) && (td & (TYPE_NEST | TYPE_PARAM)))
 				s->vla_array_str = vla_array_str;
 			else
 				tok_str_free_str(vla_array_str);
@@ -10040,12 +10067,30 @@ static void func_vla_arg_code(Sym *arg) {
 	}
 }
 
+static void vla_arg_eval_discard(int *vla_str) {
+	TokenString *vla_array_tok = tok_str_alloc();
+
+	unget_tok(0);
+	vla_array_tok->str = vla_str;
+	begin_macro(vla_array_tok, 1);
+	next();
+	gexpr();
+	end_macro();
+	next();
+	vpop();
+}
+
 static void func_vla_arg(Sym *sym) {
 	Sym *arg;
 
-	for (arg = sym->type.ref->next; arg; arg = arg->next)
-		if ((arg->type.t & VT_BTYPE) == VT_PTR && (arg->type.ref->type.t & VT_VLA))
+	for (arg = sym->type.ref->next; arg; arg = arg->next) {
+		if ((arg->type.t & VT_BTYPE) != VT_PTR || !arg->type.ref)
+			continue;
+		if (arg->type.ref->type.t & VT_VLA)
 			func_vla_arg_code(arg->type.ref);
+		if (arg->type.ref->vla_array_str)
+			vla_arg_eval_discard(arg->type.ref->vla_array_str);
+	}
 }
 
 ST_FUNC Sym *gfunc_set_param(Sym *s, int c, int byref) {
