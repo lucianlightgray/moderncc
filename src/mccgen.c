@@ -57,6 +57,24 @@ ST_DATA const char *funcname;
 ST_DATA CType int_type, func_old_type, char_type, char_pointer_type;
 #define initstr (mcc_state->initstr)
 
+#if defined(CONFIG_AST) && CONFIG_AST
+/* AST intention-IR replay (docs/AST.md §10/§17). When MCC_AST_REPLAY is set,
+ * gen_function builds a per-function intention tree while the parser runs, then
+ * discards the parser's body emission and re-emits from the AST through the same
+ * vstack API. Anything the builder does not yet understand sets ast_bail, and
+ * gen_function keeps the parser's (correct, -O0) emission instead — so the path
+ * is safe over the whole corpus and grows one construct at a time. Off by
+ * default; the -O0 path never touches any of this. */
+int ast_active;             /* build hooks fire (a function build is running) */
+static int ast_replay_env;  /* MCC_AST_REPLAY requested for this TU           */
+static int ast_replay_dump; /* MCC_AST_REPLAY_DUMP: dump replayed trees        */
+static AstArena *ast_cur;   /* the function currently being built              */
+static int ast_bail;        /* an unsupported construct was seen              */
+static int ast_stmt_n;      /* leaf statements the builder accounted for       */
+static void ast_hook_stmt(int t);
+static void ast_hook_return(int has_val);
+#endif
+
 #if PTR_SIZE == 4
 #define VT_SIZE_T (VT_INT | VT_UNSIGNED)
 #define VT_PTRDIFF_T VT_INT
@@ -581,6 +599,11 @@ ST_FUNC int mccgen_compile(MCCState *s1) {
 	nocode_wanted = DATA_ONLY_WANTED;
 	debug_modes = (s1->do_debug ? 1 : 0) | s1->test_coverage << 1;
 	global_expr = 0;
+
+#if defined(CONFIG_AST) && CONFIG_AST
+	ast_replay_env = getenv("MCC_AST_REPLAY") != NULL;
+	ast_replay_dump = getenv("MCC_AST_REPLAY_DUMP") != NULL;
+#endif
 
 	mcc_debug_start(s1);
 	mcc_tcov_start(s1);
@@ -8650,6 +8673,9 @@ again:
 	cst_lm = CST_MARK();
 #endif
 	t = tok;
+#if defined(CONFIG_AST) && CONFIG_AST
+	ast_hook_stmt(t);
+#endif
 	if (TOK_HAS_VALUE(t))
 		goto expr;
 	stdc_save_fp = mcc_state->stdc_fp_contract;
@@ -8753,6 +8779,9 @@ again:
 			mcc_warning_c(warn_return_type)("'return' with no value");
 			b = 0;
 		}
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_return(b);
+#endif
 		leave_scope(root_scope);
 		if (b)
 			gfunc_return(&func_vt);
@@ -10166,6 +10195,88 @@ static void sym_push_params(Sym *ref) {
 	}
 }
 
+#if defined(CONFIG_AST) && CONFIG_AST
+/* --- AST replay: builder hooks (called from the parser) ------------------- */
+
+/* One leaf statement is about to be handled. Count it, and bail on any kind the
+ * replay driver does not yet lower. The supported set grows here as the driver
+ * grows; today it is only `return`. The compound wrapper ('{') is not a leaf. */
+static void ast_hook_stmt(int t) {
+	if (!ast_active)
+		return;
+	if (t == '{')
+		return;
+	ast_stmt_n++;
+	if (t != TOK_RETURN)
+		ast_bail = 1;
+}
+
+/* A `return` was parsed; vtop holds the assign-cast return value (when has_val).
+ * Capture Return(Literal) for a plain integer constant; bail otherwise. */
+static void ast_hook_return(int has_val) {
+	if (!ast_active)
+		return;
+	AstLocal bb = ast_root(ast_cur);
+	AstLocal ret = ast_node(ast_cur, AST_Return);
+	if (has_val) {
+		int is_int_const =
+				(vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST &&
+				!is_float(vtop->type.t);
+		if (!is_int_const) {
+			ast_bail = 1;
+		} else {
+			AstLocal lit = ast_node(ast_cur, AST_Literal);
+			ast_set_ival(ast_cur, lit, (uint64_t)vtop->c.i);
+			ast_set_type(ast_cur, lit, vtop->type.t, 0);
+			ast_add_child(ast_cur, ret, lit);
+		}
+	}
+	ast_add_child(ast_cur, bb, ret);
+}
+
+/* --- AST replay: the emit driver (AST -> vstack ops -> bytes) -------------- */
+
+static void ast_replay_value(AstArena *a, AstLocal n) {
+	switch (ast_kind(a, n)) {
+	case AST_Literal:
+		vpushi((int)ast_ival(a, n));
+		vtop->type.t = ast_type_t(a, n);
+		break;
+	default:
+		break;
+	}
+}
+
+static void ast_replay_body(AstArena *a) {
+	AstLocal bb = ast_root(a);
+	for (AstLocal s = ast_first_child(a, bb); s != AST_NONE;
+			 s = ast_next_sib(a, s)) {
+		switch (ast_kind(a, s)) {
+		case AST_Return: {
+			AstLocal v = ast_first_child(a, s);
+			if (v != AST_NONE) {
+				ast_replay_value(a, v);
+				gen_assign_cast(&func_vt);
+				gfunc_return(&func_vt);
+			}
+			rsym = gjmp(rsym);
+			break;
+		}
+		default:
+			break;
+		}
+	}
+}
+
+/* The captured tree fully and faithfully accounts for the body: not bailed,
+ * every leaf statement was turned into a node, and there is at least one. */
+static int ast_replay_ok(AstArena *a) {
+	if (ast_bail || ast_stmt_n < 1)
+		return 0;
+	return ast_nchild(a, ast_root(a)) == (uint32_t)ast_stmt_n;
+}
+#endif /* CONFIG_AST */
+
 static void gen_function(Sym *sym) {
 	struct scope f = {0};
 
@@ -10220,7 +10331,39 @@ static void gen_function(Sym *sym) {
 	gfunc_prolog(sym);
 	mcc_debug_prolog_epilog(mcc_state, 0);
 	func_vla_arg(sym);
+#if defined(CONFIG_AST) && CONFIG_AST
+	int ast_try = ast_replay_env && !debug_modes && !cur_func_inline_extern;
+	int ast_body_ind = ind;
+	if (ast_try) {
+		ast_cur = ast_arena_new();
+		ast_node(ast_cur, AST_BasicBlock);
+		ast_bail = 0;
+		ast_stmt_n = 0;
+		ast_active = 1;
+	}
 	block(0);
+	if (ast_try) {
+		ast_active = 0;
+		if (ast_replay_ok(ast_cur)) {
+			/* Discard the parser's body emission and re-emit from the AST. Safe
+			 * only while the supported set stays relocation-free (return-const);
+			 * ast_bail keeps the parser's output for anything else. */
+			ind = ast_body_ind;
+			rsym = 0;
+			nocode_wanted = 0;
+			if (ast_replay_dump) {
+				char buf[512];
+				ast_dump(ast_cur, ast_root(ast_cur), buf, sizeof buf);
+				fprintf(stderr, "[ast-replay] %s\n%s", funcname, buf);
+			}
+			ast_replay_body(ast_cur);
+		}
+		ast_arena_free(ast_cur);
+		ast_cur = NULL;
+	}
+#else
+	block(0);
+#endif
 	if ((mcc_state->warn_unused_parameter & WARN_ON) && sym->type.ref->f.func_type != FUNC_OLD) {
 		Sym *pc;
 		for (pc = local_stack; pc; pc = pc->prev) {

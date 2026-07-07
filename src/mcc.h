@@ -200,6 +200,7 @@
 #include "stab.h"
 #include "dwarf.h"
 #include "mcccst.h"
+#include "mccast.h"
 
 #ifdef MCC_PROFILE
 #define static

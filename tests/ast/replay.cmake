@@ -1,0 +1,45 @@
+# AST replay differential-exec driver (docs/AST.md §17).
+# Compiles SRC twice — once through the -O0 parser->emit path, once with the AST
+# replay driver on (MCC_AST_REPLAY=1, which builds the intention tree and re-emits
+# from it) — links, runs both, and asserts the same exit code. When REPLAYED is
+# set, it also asserts the named function actually went through the replay path
+# (the dump fired) rather than silently falling back, so the test proves the AST
+# path is exercised, not bypassed.
+#   cmake -DMCC=<mcc> -DSRC=<file> -DOUT=<dir> -DEXPECT_RC=<n> [-DREPLAYED=main] -P replay.cmake
+if(NOT MCC OR NOT SRC OR NOT OUT)
+    message(FATAL_ERROR "usage: -DMCC= -DSRC= -DOUT= -DEXPECT_RC= [-DREPLAYED=] -P replay.cmake")
+endif()
+
+get_filename_component(_name "${SRC}" NAME_WE)
+set(_o0 "${OUT}/${_name}.O0")
+set(_r1 "${OUT}/${_name}.R1")
+
+function(build_and_run out_exe expect_rc env_on out_all)
+    if(env_on)
+        set(_env "${CMAKE_COMMAND}" -E env MCC_AST_REPLAY=1 MCC_AST_REPLAY_DUMP=1)
+    else()
+        set(_env "${CMAKE_COMMAND}" -E env)
+    endif()
+    execute_process(
+        COMMAND ${_env} "${MCC}" "-B${BDIR}" "${SRC}" -o "${out_exe}"
+        OUTPUT_VARIABLE _co ERROR_VARIABLE _ce RESULT_VARIABLE _crc)
+    if(NOT _crc EQUAL 0)
+        message(FATAL_ERROR "compile failed (replay=${env_on}) for ${SRC} (rc=${_crc}):\n${_co}${_ce}")
+    endif()
+    execute_process(COMMAND "${out_exe}" RESULT_VARIABLE _rrc)
+    if(NOT _rrc EQUAL expect_rc)
+        message(FATAL_ERROR "run (replay=${env_on}) exit ${_rrc}, expected ${expect_rc} for ${SRC}")
+    endif()
+    set(${out_all} "${_co}${_ce}" PARENT_SCOPE)
+endfunction()
+
+build_and_run("${_o0}" "${EXPECT_RC}" OFF _o0_all)
+build_and_run("${_r1}" "${EXPECT_RC}" ON _r1_all)
+
+if(REPLAYED)
+    if(NOT _r1_all MATCHES "\\[ast-replay\\] ${REPLAYED}\n")
+        message(FATAL_ERROR "expected function '${REPLAYED}' to go through the AST replay path, but it fell back:\n${_r1_all}")
+    endif()
+endif()
+
+message(STATUS "ast/replay ${_name}: -O0 and replay both exit ${EXPECT_RC}")

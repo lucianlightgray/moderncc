@@ -21,19 +21,27 @@ brought up one §17 category at a time.
   CST-provenance id per node (§14); `ast_validate`. Self-contained (malloc un-poison).
 - [x] **A3 — `tools/asttool.c` pure-lib TDD harness + `ast/*` ctests.** 5 suites
   (arena/validate/dump/cfg/provenance), 30 checks. Full `ast`-preset ctest 865/865.
-- [ ] **A4 — replay driver (`mccast_replay`) over the vstack API.** Walk a built AST
-  and emit via `vpushi`/`gen_op`/`gv`/`vstore`; start with a `main` returning a
-  constant, then tree expressions (Literal/Binary/Convert/Ref/Load). Lives in mccgen
-  where the vstack API is visible; driven by an `-O1`/`ast_replay` path in
-  `gen_function`, off by default so `-O0` is untouched.
-- [ ] **A5 — parser AST-build hooks (expressions).** Capture Literal/Binary/Convert/
-  Ref/Load intention nodes from the same parse positions as the CST hooks, gated by
-  `CONFIG_AST` + the runtime `ast_replay` flag.
-- [ ] **A6 — `-O1-replay` runner column over `tests/exec`.** New runner column that
-  re-runs the goldens with the replay path on, asserting the same `expect`. Bring up
-  §17 category 1 `expressions` (14) first, then 2 `types`, 3 `pointers_arrays`/
-  `structs_unions`, 4 `statements` (the CFG milestone, D-b), 5 `functions_abi`, 6 the
-  long tail. Each green category = one checklist item.
+- [~] **A4 — replay driver (`ast_replay_body`) over the vstack API.** In `gen_function`,
+  when `MCC_AST_REPLAY` is set: build the intention tree while the parser runs, then
+  **discard the parser's body emission** (`ind = body_ind`) and re-emit from the AST
+  through the vstack API. Anything unsupported sets `ast_bail` and keeps the parser's
+  (correct, -O0) emission — so the path is safe over the whole corpus and grows one
+  construct at a time. Off by default; `-O0` untouched (full ctest 866/866).
+  - [x] rung 1: `return <integer-constant>;` → `vpushi`/`gfunc_return`/`gjmp`.
+  - [ ] rung 2: integer-arithmetic return (`Binary`/`Unary`/`Convert` tree capture via
+    a vstack-mirroring value stack; discard is still relocation-free).
+  - [ ] rung 3: locals (`Ref`/`Load`/`Store`), then calls (`Invoke` → printf) — needs
+    replay to own relocations before discard can cover them.
+- [~] **A5 — parser AST-build hooks.** `ast_hook_stmt` (count + bail on unsupported
+  leaf statements) and `ast_hook_return` (capture Return of an int constant) fire from
+  the parser's statement/return positions, gated by `CONFIG_AST` + `ast_active`. Grows
+  alongside A4's rungs.
+- [~] **A6 — differential-exec replay gate.** `tests/ast/replay.cmake` compiles a
+  fixture through `-O0` and through the replay driver and asserts the same exit code,
+  requiring the function to actually go through replay (dump fired) not silently fall
+  back. `ast/replay-ret42` (return 42) is green. Next: widen to the `tests/exec`
+  goldens as a runner column as the driver reaches call/printf support (§17 curriculum
+  1 `expressions` → 6 long tail).
 - [ ] **A7 — first template = const-fold**, sequenced *after* the corpus is green
   under zero-template replay, with its own §15 per-template differential test. (Deferred
   to the end of the first phase.)
