@@ -119,6 +119,10 @@ static void ast_hook_if_else(void);
 static void ast_hook_if_end(void);
 static void ast_hook_while_begin(void);
 static void ast_hook_while_end(void);
+static void ast_hook_do_begin(void);
+static void ast_hook_do_body_end(void);
+static void ast_hook_do_cond(void);
+static void ast_hook_do_end(void);
 static void ast_hook_break_continue(int is_continue);
 static void ast_hook_for_begin(int has_cond);
 static void ast_hook_for_cond(void);
@@ -9024,7 +9028,13 @@ again:
 		new_scope_s(&o);
 		a = b = 0;
 		d = gind();
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_do_begin();
+#endif
 		lblock(&a, &b);
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_do_body_end();
+#endif
 		gsym(b);
 		skip(TOK_WHILE);
 		skip('(');
@@ -9033,11 +9043,20 @@ again:
 			mcc_warning_c(warn_parentheses)("suggest parentheses around "
 																			"assignment used as a truth value");
 		seqp_check();
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_do_cond();
+#endif
 		c = gvtst(0, 0);
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_if_gvtst_done();
+#endif
 		skip(')');
 		skip(';');
 		gsym_addr(c, d);
 		gsym(a);
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_do_end();
+#endif
 		prev_scope_s(&o);
 	} else if (t == TOK_SWITCH) {
 		struct switch_t *sw;
@@ -10378,7 +10397,6 @@ static void ast_hook_stmt(int t) {
 	if (!ast_active)
 		return;
 	switch (t) {
-	case TOK_DO:
 	case TOK_SWITCH: case TOK_GOTO:
 	case TOK_CASE: case TOK_DEFAULT:
 		ast_bail = 1;
@@ -10640,6 +10658,61 @@ static void ast_hook_while_begin(void) {
 }
 
 static void ast_hook_while_end(void) {
+	if (!ast_active)
+		return;
+	if (ast_cf_top < 1) {
+		ast_bail = 1;
+		return;
+	}
+	ast_cf_top--;
+	ast_cur_bb = ast_cf_savebb[ast_cf_top];
+}
+
+/* --- control flow: `do { } while (cond)` -----------------------------------
+ * An If node marked op==4 with children [body-BB, condition]; the body runs
+ * before the condition. Replay reproduces gind/body/gsym(continue)/cond/
+ * gvtst(0)/gsym_addr(back)/gsym(exit). */
+static void ast_hook_do_begin(void) {
+	if (!ast_active || ast_desync || ast_bail)
+		return;
+	if (ast_vn != 0 || ast_cf_top >= AST_CF_MAX) {
+		ast_bail = 1;
+		return;
+	}
+	AstLocal loop = ast_node(ast_cur, AST_If);
+	ast_set_op(ast_cur, loop, 4);
+	ast_add_child(ast_cur, ast_cur_bb, loop);
+	AstLocal body = ast_node(ast_cur, AST_BasicBlock);
+	ast_add_child(ast_cur, loop, body); /* child0 = body */
+	ast_cf_if[ast_cf_top] = loop;
+	ast_cf_savebb[ast_cf_top] = ast_cur_bb;
+	ast_cf_top++;
+	ast_cur_bb = body;
+}
+
+static void ast_hook_do_body_end(void) {
+	if (!ast_active || ast_desync || ast_bail)
+		return;
+	if (ast_cf_top < 1) {
+		ast_bail = 1;
+		return;
+	}
+	ast_cur_bb = ast_cf_savebb[ast_cf_top - 1];
+}
+
+static void ast_hook_do_cond(void) {
+	if (!ast_active || ast_desync || ast_bail)
+		return;
+	if (ast_cf_top < 1 || ast_vn != 1) {
+		ast_bail = 1;
+		return;
+	}
+	ast_add_child(ast_cur, ast_cf_if[ast_cf_top - 1], ast_vs[0]); /* child1 = cond */
+	ast_vn = 0;
+	ast_in_call = 1; /* suppress gvtst */
+}
+
+static void ast_hook_do_end(void) {
 	if (!ast_active)
 		return;
 	if (ast_cf_top < 1) {
@@ -11097,6 +11170,24 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 				ast_rp_csym = sc;
 				gjmp_addr(dd);
 				gsym_addr(bb, dd);
+				gsym(aa);
+				break;
+			}
+			if (ast_op(a, s) == 4) {
+				/* do-while: gind; body; gsym(continue); cond; gvtst(0); patch
+				 * true-jump back to top; gsym(exit). break→aa, continue→bb. */
+				int dd = gind();
+				int aa = 0, bb = 0;
+				int *sb = ast_rp_bsym, *sc = ast_rp_csym;
+				ast_rp_bsym = &aa;
+				ast_rp_csym = &bb;
+				ast_replay_bb(a, ast_child(a, s, 0));
+				ast_rp_bsym = sb;
+				ast_rp_csym = sc;
+				gsym(bb);
+				ast_replay_value(a, ast_child(a, s, 1));
+				int cc = gvtst(0, 0);
+				gsym_addr(cc, dd);
 				gsym(aa);
 				break;
 			}
