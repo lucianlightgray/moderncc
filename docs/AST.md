@@ -282,6 +282,81 @@ Both share one emit core, so they agree.
 
 ---
 
+## 11. Building the AST — typed-CST → AST, lowered lazily
+
+The CST solved single-pass construction via deferred leaf-capture + retroactive
+wrapping. The AST needs *typed values + basic blocks*, so it is **lowered from the
+CST**, not emitted in parallel with the parser.
+
+| Decision | Options | Choice |
+|---|---|---|
+| Construction path | parallel parse-emission · **lower from the CST** | post-D1–D5 the CST already has `If`/`While`/`Binary`/`Call`… nodes; lowering from it leaves the gnarly parser untouched and realizes "reduce the CST to intention" |
+| Typing | re-derive · **reuse parse-time types** ("typed CST") | annotate CST expr/decl nodes with the `CType`/`Sym` the vstack already computes; re-deriving would duplicate the semantic engine |
+| Build timing | eager side-channel · **lazy, only when -O1 asks** | the AST's only consumer is -O1 codegen; building at -O0 is pure overhead (this *refines* the intro's "side-channel" wording) |
+| -O0 annotation cost | always annotate · **-O1-gated** | -O0 pays nothing |
+
+**Net: typed-CST → AST, built lazily at -O1.** New work = typed-CST annotation hooks
+(mirror the existing `cst_hook_*`). Complexity flag: the CST→AST pass must resolve
+every node to `CType`/`Sym`; the reuse path avoids re-implementing typing but couples
+parse to annotation.
+
+## 12. The optimization-template engine ("-O1 waits for a pattern")
+
+A library of **templates** = `pattern → rewrite (+ guard)`. -O1 holds codegen and runs
+templates until a budget or fixpoint, then lowers.
+
+| Decision | Options | Choice |
+|---|---|---|
+| What a template is | one engine, three pattern *scopes*: tree-expr (peephole), CFG (jump-table, dead-block), binding-graph (inline, specialize) | uniform engine, scoped patterns |
+| Pattern representation | hand-C matchers · declarative DSL · **patterns as AST fragments with metavariables** | AST-fragments; a pattern's structural hash **indexes candidate sites in the hash-cons store** |
+| Find sites | bottom-up · **worklist + hash-indexed candidates** | mirror `cst_rehash_dirty`'s dirty frontier — a changed node re-hashes → re-checked against templates whose root-hash matches |
+| Termination | prove confluence · **cost-monotone + budget backstop** | each template must not raise a cost metric; budget is the hard stop (same philosophy as depth-`k`) |
+| Time budget (TODO §221) | per-expr · **per-function** · per-TU | per-function; run in priority order until the seconds are spent, then emit; `-O1..N` = escalating budgets |
+| Provenance | learned · data-file · **compiled-in registry, data-driven-ready** | uniform interface so templates are reorderable/schedulable at runtime |
+| vs. inlining | phase-ordered · **interleaved via the worklist** | a render dirties nodes → triggers templates → may enable more inlining, to fixpoint/budget |
+
+Key reuse: **the content-addressed store that dedups inline templates also indexes
+optimization patterns** — matching becomes a hash lookup.
+
+## 13. -O1 deferral / trigger ("wait before compiling/linking")
+
+| Decision | Options | Choice |
+|---|---|---|
+| Granularity | per-function, held after build | per-function |
+| "Wait" boundary | compile when built · **defer to the inline-closure (the TU)** | always-inline needs callees rendered before callers optimize → -O1 is necessarily **multi-pass** (fine — -O0 is the one-pass path) |
+| Compile trigger | — | **budget exhausted OR fixpoint reached OR must-emit (end of closure)** — never waits forever |
+| Lowering order | source · **dependency (leaves first)** | callees optimized before callers inline them |
+| Cross-TU | inline now · **within-TU only; cross-TU = LTO later** | boundary calls to other TUs stay `Call`; the inline closure = the TU |
+| -O0 | — | skips all of this: parse → shared vstack primitives, real calls, greedy storage |
+
+## 14. AST↔CST linkage & persistence
+
+| Decision | Options | Choice |
+|---|---|---|
+| Provenance | none · **each AST node carries its origin CST node id** | free (AST is lowered from CST); unlocks `-g` ranges, diagnostics, hot-reload reconciliation |
+| Serialization | new format · **reuse `cst_snapshot`** | the template/binding store is already snapshot-shaped |
+| Hot-reload (TODO) | now · **later; store serializable from day one** | later |
+| `-g` / LSP | AST only · **AST + CST provenance** | AST = intention (live ranges, types); CST = concrete spans/scopes |
+
+## 15. Validation & correctness gates
+
+| Decision | Options | Choice |
+|---|---|---|
+| Oracle | byte round-trip (CST-style) · **differential behavioral equivalence** | AST is desugared → no byte round-trip; run the program and compare output |
+| The invariant | — | **-O1-with-zero-templates ⇒ same observable result as -O0** (proves lowering faithful before any template lands) |
+| Template safety | trust · **per-template semantic differential test** | each rewrite proven input ≡ output |
+| Harness | new · **reuse qemu-user / exec suite** | the 5-target exec harnesses already in the repo |
+
+## 16. Phasing / prerequisites / overhead
+
+| Horizon | Milestone | Prereq / overhead | Codegen risk |
+|---|---|---|---|
+| **Short** | typed-CST annotations + CST→AST lowering for exprs & straight-line code; AST-dump + differential-exec gate | annotation hooks; no templates/inlining | none (AST unread by codegen) |
+| **Mid** | flat-CFG construction (control flow); factor the vstack into a **shared emit core**; -O1 lowers AST→core with zero templates (behaviorally == -O0); virtual-inline via the CST store; first templates (tree-const-fold, algebraic, dead-branch, jump-table) | the invasive emit-core refactor; defer-to-TU | gated by the zero-template invariant |
+| **Long** | time-budgeted engine (§221); dependency-ordered -O1 compile; cross-TU LTO; hot-reload snapshots; `-g` from provenance; SSA (`-O2+`) | LTO plumbing; snapshot reconciliation | mature |
+
+---
+
 ## Open decisions (DECIDE)
 
 - **`Bind` marker**: fully dissolved into liveness (15 kinds) — confirmed. Revisit
@@ -293,3 +368,11 @@ Both share one emit core, so they agree.
 - **PP-as-executable-C (JIT)**: parked; promoted by the include-permutation analysis.
 - **Store factoring**: generalize `cst_store`/`binding`/`render` into a
   structure-agnostic engine shared by CST (bytes) and AST (CFG nodes).
+- **Construction (§11)**: confirm typed-CST → AST + lazy build; how far to push
+  parse-time type annotation (coupling cost) vs a standalone typing pass.
+- **Template representation (§12)**: patterns-as-AST-fragments + hash-index (rec) vs
+  a declarative DSL; when/whether to make the registry data-driven.
+- **Defer-to-TU (§13)**: accept that -O1 is multi-pass (departs from streaming) — the
+  price of whole-TU always-inline; revisit if per-function compile is wanted.
+- **Emit-core refactor (§16 Mid)**: scope of factoring `vstack`/`gen_op`/`unary` into
+  shared lowering primitives — the highest-risk prerequisite.
