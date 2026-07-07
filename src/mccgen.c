@@ -85,6 +85,8 @@ static int ast_capture;     /* mirror is live (a function body is being built)  
 static int ast_desync;      /* mirror lost sync with the vstack                */
 static int ast_base_depth;  /* real vstack depth when capture started          */
 static int ast_in_op;       /* inside gen_op/vstore — ignore its internal ops  */
+static int ast_in_call;     /* inside a call boundary — ignore all vstack ops  */
+static AstLocal ast_call_pending; /* Invoke awaiting its result push (or NONE)  */
 
 static void ast_hook_stmt(int t);
 static void ast_hook_return(int has_val);
@@ -98,6 +100,8 @@ static void ast_hook_vstore_end(void);
 static void ast_hook_vpop(void);
 static void ast_hook_vswap(void);
 static void ast_hook_convert(CType *type);
+static void ast_hook_call_begin(int nb_args, int is_struct_ret);
+static void ast_hook_call_end(void);
 static void ast_hook_inplace(void);
 #endif
 
@@ -7755,6 +7759,9 @@ tok_next:
 
 			next();
 			vcheck_cmp();
+#if defined(CONFIG_AST) && CONFIG_AST
+			ast_hook_call_begin(nb_args, (s->type.t & VT_BTYPE) == VT_STRUCT);
+#endif
 			gfunc_call(nb_args);
 			expr_has_effect = 1;
 
@@ -7814,6 +7821,9 @@ tok_next:
 					mcc_tcov_block_end(mcc_state, -1);
 				CODE_OFF();
 			}
+#if defined(CONFIG_AST) && CONFIG_AST
+			ast_hook_call_end();
+#endif
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
 			CST_OPEN_AT(CST_Call, cst_um);
 			CST_CLOSE();
@@ -10296,7 +10306,7 @@ static void ast_hook_stmt(int t) {
  * re-pushes it exactly. Symbol references bail (they would relocate anyway).
  * Depth is re-synced to the vstack; a mismatch means an unmodeled op ran. */
 static void ast_hook_vpush(void) {
-	if (!ast_capture || ast_desync || ast_in_op)
+	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
 		return;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	if (ast_vn != rel - 1 || rel > AST_VS_MAX) {
@@ -10356,7 +10366,7 @@ static int ast_op_modeled(int op) {
 }
 
 static void ast_hook_genop(int op) {
-	if (!ast_capture || ast_desync)
+	if (!ast_capture || ast_desync || ast_in_call)
 		return;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	if (!ast_op_modeled(op) || ast_vn != rel || ast_vn < 2) {
@@ -10393,7 +10403,7 @@ static void ast_hook_genop_end(void) {
  * replay re-emits with gen_cast. Finalize the leaf first (the value being cast
  * may still be a not-yet-finished symbolic leaf). */
 static void ast_hook_convert(CType *type) {
-	if (!ast_capture || ast_desync || ast_in_op)
+	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
 		return;
 	if (ast_vn < 1) {
 		ast_desync = 1;
@@ -10410,14 +10420,72 @@ static void ast_hook_convert(CType *type) {
  * without a depth change; this rung does not model those, so desync and fall
  * back (byte-verify would catch them regardless). */
 static void ast_hook_inplace(void) {
-	if (ast_capture && !ast_in_op)
+	if (ast_capture && !ast_in_op && !ast_in_call)
+		ast_desync = 1;
+}
+
+/* Call boundary. Before gfunc_call the mirror holds [callee, arg0..arg_{n-1}];
+ * fold them into an Invoke and suppress the mirror across gfunc_call and the
+ * result push (ast_in_call), then push the Invoke as the result. Struct returns
+ * and indirect (non-symbol) callees are not modeled yet. */
+static void ast_hook_call_begin(int nb_args, int is_struct_ret) {
+	ast_call_pending = AST_NONE;
+	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
+		return;
+	if (is_struct_ret) {
+		ast_desync = 1;
+		return;
+	}
+	int need = nb_args + 1; /* callee + args */
+	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+	if (ast_vn != rel || ast_vn < need) {
+		ast_desync = 1;
+		return;
+	}
+	for (int i = 0; i < need; i++)
+		ast_finalize_leaf(ast_vs[ast_vn - need + i], vtop - nb_args + i);
+	AstLocal inv = ast_node(ast_cur, AST_Invoke);
+	for (int i = 0; i < need; i++)
+		ast_add_child(ast_cur, inv, ast_vs[ast_vn - need + i]);
+	ast_vn -= need;
+	ast_call_pending = inv;
+	ast_in_call = 1;
+}
+
+static void ast_hook_call_end(void) {
+	if (ast_call_pending == AST_NONE)
+		return;
+	AstLocal inv = ast_call_pending;
+	ast_call_pending = AST_NONE;
+	ast_in_call = 0;
+	if (!ast_capture || ast_desync)
+		return;
+	/* Capture the result descriptor the parser left on vtop (return register /
+	 * type) so replay re-pushes it after gfunc_call. Single-register results
+	 * only; a two-register result (r2 != VT_CONST) is not modeled → byte-verify
+	 * would catch it, so bail here to avoid wasted replay. */
+	if (vtop->r2 != VT_CONST) {
+		ast_desync = 1;
+		return;
+	}
+	ast_set_op(ast_cur, inv, vtop->r);
+	ast_set_type(ast_cur, inv, vtop->type.t, (uint64_t)(uintptr_t)vtop->type.ref);
+	ast_set_ival(ast_cur, inv, (uint64_t)vtop->c.i);
+	ast_set_sym(ast_cur, inv, (uint64_t)(uintptr_t)vtop->sym);
+	if (ast_vn >= AST_VS_MAX) {
+		ast_desync = 1;
+		return;
+	}
+	ast_vs[ast_vn++] = inv; /* the call result */
+	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+	if (ast_vn != rel)
 		ast_desync = 1;
 }
 
 /* vswap / vpop reorder or drop mirror values (compile-time stack ops, no bytes);
  * mirror them directly. */
 static void ast_hook_vswap(void) {
-	if (!ast_capture || ast_desync || ast_in_op)
+	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
 		return;
 	if (ast_vn < 2) {
 		ast_desync = 1;
@@ -10429,12 +10497,18 @@ static void ast_hook_vswap(void) {
 }
 
 static void ast_hook_vpop(void) {
-	if (!ast_capture || ast_desync || ast_in_op)
+	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
 		return;
 	if (ast_vn < 1) {
 		ast_desync = 1;
 		return;
 	}
+	/* Discarding a bare call result (`f();`): the call has a side effect, so keep
+	 * it as a BasicBlock effect. A discarded value that merely *contains* a call
+	 * (e.g. `f()+1;`) is not this simple node, so it falls back via byte-verify. */
+	AstLocal top = ast_vs[ast_vn - 1];
+	if (ast_kind(ast_cur, top) == AST_Invoke)
+		ast_add_child(ast_cur, ast_root(ast_cur), top);
 	ast_vn--;
 }
 
@@ -10442,7 +10516,7 @@ static void ast_hook_vpop(void) {
  * performs the store, and leaves the value (net -1). Record it as a Store effect
  * in the BasicBlock; model the op atomically like gen_op. */
 static void ast_hook_vstore(void) {
-	if (!ast_capture || ast_desync || ast_in_op)
+	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
 		return;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	if (ast_vn != rel || ast_vn < 2) {
@@ -10555,6 +10629,23 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 		gen_cast(&ct);
 		break;
 	}
+	case AST_Invoke: {
+		/* push callee + args, transfer, then re-push the captured result. */
+		uint32_t nc = ast_nchild(a, n);
+		for (uint32_t i = 0; i < nc; i++)
+			ast_replay_value(a, ast_child(a, n, i));
+		gfunc_call((int)nc - 1);
+		SValue sv;
+		memset(&sv, 0, sizeof sv);
+		sv.type.t = ast_type_t(a, n);
+		sv.type.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+		sv.r = (unsigned short)ast_op(a, n);
+		sv.r2 = VT_CONST;
+		sv.c.i = ast_ival(a, n);
+		sv.sym = (Sym *)(uintptr_t)ast_sym(a, n);
+		vpushv(&sv);
+		break;
+	}
 	default:
 		break;
 	}
@@ -10572,6 +10663,11 @@ static void ast_replay_body(AstArena *a) {
 			ast_replay_value(a, ast_child(a, s, 0));
 			ast_replay_value(a, ast_child(a, s, 1));
 			vstore();
+			vpop();
+			break;
+		case AST_Invoke:
+			/* a bare call statement: evaluate the call, discard the result. */
+			ast_replay_value(a, s);
 			vpop();
 			break;
 		case AST_Return: {
@@ -10668,6 +10764,8 @@ static void gen_function(Sym *sym) {
 		ast_bail = 0;
 		ast_desync = 0;
 		ast_in_op = 0;
+		ast_in_call = 0;
+		ast_call_pending = AST_NONE;
 		ast_vn = 0;
 		ast_ret_val = AST_NONE;
 		ast_base_depth = (int)(vtop - vstack + 1);
@@ -10703,7 +10801,13 @@ static void gen_function(Sym *sym) {
 			if (ast_rsec)
 				ast_rsec->data_offset = ast_reloc0; /* discard body relocations */
 			nocode_wanted = 0;
+			/* Suppress diagnostics during replay: the same ops already ran (and
+			 * warned/checked) during the parse-build; re-running them must not
+			 * duplicate warnings. */
+			unsigned char ast_sv_warn = mcc_state->warn_none;
+			mcc_state->warn_none = 1;
 			ast_replay_body(ast_cur);
+			mcc_state->warn_none = ast_sv_warn;
 
 			Section *rsec2 = cur_text_section->reloc;
 			addr_t new_rel = rsec2 ? rsec2->data_offset : 0;
