@@ -64,9 +64,15 @@ brought up one §17 category at a time.
     effects. Diagnostics suppressed during replay (`warn_none`). Struct/two-register
     returns and indirect callees fall back. **Coverage 27→68/239 files.** Fixtures
     cast_expr, call_printf.
-  - [ ] rung 5: **control flow** (`If`/`Jump` = the CFG milestone D-b) — multi-BB
-    capture, backpatched jumps. The last major straight-line→CFG step; the ~171
-    remaining files are dominated by loops/branches.
+  - [~] rung 5: **control flow** (the CFG milestone D-b) — captured at the `block()`
+    handler level, with replay re-issuing the parser's exact `gind`/`gvtst`/`gjmp`/
+    `gsym` pattern (no backend jump hooks). Done: **comparisons** (`< > <= >= == !=`),
+    **`if`/`if-else`** (nested BasicBlocks), **non-tail returns** (branch returns that
+    jump to the epilogue), **`while`**, **`++`/`--`** (`inc()` modeled as `Unary`),
+    **`for`** (init;cond;incr). Loops are `If` nodes marked op==2 (while)/op==3 (for).
+    **Coverage 68→98/239 files (41%).** Remaining: `break`/`continue` (loop chains),
+    `switch`, `do-while`, `goto`, and expression tails (`?:`, `&&`/`||`, compound
+    assignment, `[]`/`.`/`->`, wider/float types).
 - [~] **A5 — parser AST-build hooks.** `ast_hook_stmt` (count + bail on unsupported
   leaf statements) and `ast_hook_return` (capture Return of an int constant) fire from
   the parser's statement/return positions, gated by `CONFIG_AST` + `ast_active`. Grows
