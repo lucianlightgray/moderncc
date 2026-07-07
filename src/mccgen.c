@@ -10304,13 +10304,16 @@ static void ast_hook_vpush(void) {
 	}
 	int r = vtop->r, tt = vtop->type.t;
 	/* Only leaves that re-push faithfully after the body is discarded are safe:
-	 * an integer constant, or a frame-relative local/parameter lvalue (fixed
-	 * offset). Anything holding a register (a value materialised by code we are
-	 * about to discard), a symbol, or a float is not reconstructable — desync. */
+	 * an integer constant, a frame-relative local/parameter lvalue (fixed offset),
+	 * or a symbolic constant/lvalue (a global's address — the Sym persists, so
+	 * re-pushing it re-creates the same reference and relocation). Anything holding
+	 * a register (a value materialised by code we are about to discard) or a float
+	 * is not reconstructable — desync. */
 	int is_const = (r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
+	int is_sym = (r & VT_VALMASK) == VT_CONST && (r & VT_SYM);
 	int is_local_lval =
 			(r & VT_VALMASK) == VT_LOCAL && (r & VT_LVAL) && !(r & VT_SYM);
-	if (is_float(tt) || (!is_const && !is_local_lval)) {
+	if (is_float(tt) || (!is_const && !is_sym && !is_local_lval)) {
 		ast_desync = 1;
 		return;
 	}
@@ -10320,6 +10323,21 @@ static void ast_hook_vpush(void) {
 	ast_set_ival(ast_cur, n, (uint64_t)vtop->c.i);
 	ast_set_sym(ast_cur, n, (uint64_t)(uintptr_t)vtop->sym);
 	ast_vs[ast_vn++] = n;
+}
+
+/* Re-read a leaf's SValue from the live vstack at consumption time. A push hook
+ * fires inside vsetc, but callers finish a leaf afterwards (vpushsym / the
+ * identifier path set ->sym and adjust ->c.i only after vsetc returns), so the
+ * eager capture can be incomplete. Finalizing at consumption picks up the final
+ * value. Only leaves carry an SValue; subtrees (Binary) are left untouched. */
+static void ast_finalize_leaf(AstLocal n, SValue *sv) {
+	uint16_t k = ast_kind(ast_cur, n);
+	if (k != AST_Literal && k != AST_Ref)
+		return;
+	ast_set_op(ast_cur, n, sv->r);
+	ast_set_type(ast_cur, n, sv->type.t, (uint64_t)(uintptr_t)sv->type.ref);
+	ast_set_ival(ast_cur, n, (uint64_t)sv->c.i);
+	ast_set_sym(ast_cur, n, (uint64_t)(uintptr_t)sv->sym);
 }
 
 /* A binary op is about to consume the top two vstack values. Fold the two
@@ -10344,6 +10362,8 @@ static void ast_hook_genop(int op) {
 		ast_desync = 1;
 		return;
 	}
+	ast_finalize_leaf(ast_vs[ast_vn - 2], vtop - 1);
+	ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
 	AstLocal b = ast_node(ast_cur, AST_Binary);
 	ast_set_op(ast_cur, b, op);
 	ast_add_child(ast_cur, b, ast_vs[ast_vn - 2]);
@@ -10411,6 +10431,8 @@ static void ast_hook_vstore(void) {
 		ast_desync = 1;
 		return;
 	}
+	ast_finalize_leaf(ast_vs[ast_vn - 2], vtop - 1);
+	ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
 	AstLocal value = ast_vs[ast_vn - 1];
 	AstLocal lval = ast_vs[ast_vn - 2];
 	AstLocal st = ast_node(ast_cur, AST_Store);
@@ -10443,6 +10465,7 @@ static void ast_hook_ret_expr_done(void) {
 	 * epilogue transfer (gen_assign_cast/gfunc_return) do not disturb the mirror. */
 	ast_capture = 0;
 	if (!ast_desync && ast_vn == 1) {
+		ast_finalize_leaf(ast_vs[0], vtop);
 		ast_ret_val = ast_vs[0];
 		ast_vn = 0; /* the return consumes it — mirror is now balanced */
 	} else {
@@ -10627,36 +10650,49 @@ static void gen_function(Sym *sym) {
 	}
 	block(0);
 	if (ast_try) {
-		addr_t ast_reloc1 =
-				cur_text_section->reloc ? cur_text_section->reloc->data_offset : 0;
+		Section *ast_rsec = cur_text_section->reloc;
+		addr_t ast_reloc1 = ast_rsec ? ast_rsec->data_offset : 0;
 		ast_active = 0;
 		ast_capture = 0;
-		/* Replay only when the discarded body emitted no relocations (no calls /
-		 * global references, so the discard is safe). Body locals are fine now —
-		 * their init Stores are captured. Byte-verify is the correctness gate. */
-		if (ast_replay_ok(ast_cur) && ast_reloc1 == ast_reloc0) {
+		if (ast_replay_ok(ast_cur)) {
 			/* Re-emit from the AST, then byte-verify against the parser's (-O0)
-			 * body. For zero-template straight-line replay a faithful capture
-			 * re-emits byte-for-byte (§17's straight-line tripwire); any mismatch
-			 * means the capture missed something (an unmodeled in-place op such as
-			 * unary negation), so we restore the parser's emission verbatim. This
-			 * is the ultimate safety net — correctness never depends on having
-			 * hooked every vstack primitive. */
+			 * emission — both the text bytes and the relocations the body added.
+			 * For zero-template straight-line replay a faithful capture re-emits
+			 * byte-for-byte and re-creates identical relocations (§17's straight-
+			 * line tripwire); any mismatch means the capture missed something, so
+			 * we restore the parser's emission verbatim. This is the ultimate
+			 * safety net — correctness never depends on having modeled every op. */
 			int orig_ind = ind, orig_rsym = rsym;
 			int body_len = orig_ind - ast_body_ind;
 			unsigned char *orig = mcc_malloc(body_len > 0 ? body_len : 1);
 			memcpy(orig, cur_text_section->data + ast_body_ind, body_len);
 
+			addr_t rel_len = ast_reloc1 - ast_reloc0;
+			unsigned char *orig_rel = mcc_malloc(rel_len > 0 ? rel_len : 1);
+			if (rel_len)
+				memcpy(orig_rel, ast_rsec->data + ast_reloc0, rel_len);
+
 			ind = ast_body_ind;
 			rsym = 0;
+			if (ast_rsec)
+				ast_rsec->data_offset = ast_reloc0; /* discard body relocations */
 			nocode_wanted = 0;
 			ast_replay_body(ast_cur);
 
+			Section *rsec2 = cur_text_section->reloc;
+			addr_t new_rel = rsec2 ? rsec2->data_offset : 0;
 			int new_len = ind - ast_body_ind;
 			int faithful = new_len == body_len &&
-					memcmp(cur_text_section->data + ast_body_ind, orig, body_len) == 0;
+					memcmp(cur_text_section->data + ast_body_ind, orig, body_len) == 0 &&
+					new_rel - ast_reloc0 == rel_len &&
+					(rel_len == 0 ||
+					 memcmp(rsec2->data + ast_reloc0, orig_rel, rel_len) == 0);
 			if (!faithful) {
 				memcpy(cur_text_section->data + ast_body_ind, orig, body_len);
+				if (rel_len)
+					memcpy(ast_rsec->data + ast_reloc0, orig_rel, rel_len);
+				if (ast_rsec)
+					ast_rsec->data_offset = ast_reloc1;
 				ind = orig_ind;
 				rsym = orig_rsym;
 			} else if (ast_replay_dump) {
@@ -10665,6 +10701,7 @@ static void gen_function(Sym *sym) {
 				fprintf(stderr, "[ast-replay] %s\n%s", funcname, buf);
 			}
 			mcc_free(orig);
+			mcc_free(orig_rel);
 		}
 		ast_arena_free(ast_cur);
 		ast_cur = NULL;
