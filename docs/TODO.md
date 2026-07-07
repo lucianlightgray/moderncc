@@ -68,6 +68,8 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
   `va_start` through the real builtin (implement `gen_va_start` for SysV) instead
   of the frame-address macro — a codegen rework of the primary target's varargs
   for a diagnostic-only gain; not worth the risk without a driving need.
+  Reference test to mirror once fixed: gcc `c-c++-common/Wvarargs-2.c`
+  (`va_start` on a non-last / fixed-arg param). See docs/TESTS.md §6-A.3.
 - [ ] **External (SHN_UNDEF) thread-local symbols hard-error on Mach-O — TLV
   imports unimplemented (impl).** `src/objfmt/mccmacho.c:2099`. Locally-defined
   `__thread` works (TLV descriptors via `__tlv_bootstrap`); cross-module
@@ -142,6 +144,74 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
   fails on divergence, so CONFIG.md can't rot. → Then update `docs/BUILD.md` (which
   already tables the CMake nodes, §3–§14) to become the ongoing source of truth for
   in-code flags, cross-linked to CONFIG.md, and wire the checker into ctest.
+
+---
+
+# C99/C11 test-coverage backlog (from docs/TESTS.md)
+
+Each item ports/mirrors a specific gcc/clang conformance test into an mcc test —
+runtime cases go in `tests/exec/features_c99_c11/`, diagnostics/negatives in
+`tests/diff/parts/` (or a new reject corpus). Reference paths are relative to
+`~/Projects/gcc/gcc/testsuite` (gcc) and `~/Projects/llvm-project/clang/test/C`
+(clang). Context + gap matrix: docs/TESTS.md §5–§6. The `va_start` diagnostic gap
+(§6-A.3) is tracked with its own item above.
+
+## Real semantic/diagnostic gaps — fix mcc, then add the test
+
+- [ ] **§6.7.4p6 — plain `inline` w/o external definition emits a global (fix+test).**
+  An `-O0` call to an inline-only function *links* in mcc (rc 0) where gcc/clang fail
+  with `undefined reference` (rc 1): an inline definition is not an external
+  definition. Fix the linkage semantics, then add a 2-TU test asserting the call is
+  unresolved (and that adding `extern` makes it resolve). _Ref:_ gcc
+  `gcc.dg/inline-20.c` (C99 `-fno-gnu89-inline` emission, `scan-assembler`),
+  `gcc.dg/inline-15.c`, `gcc.dg/inline-19.c`.
+- [ ] **§6.9.1p6 — K&R identifier-list params default to `int` with only a warning
+  (fix+test).** `int g(x){return x;}` compiles in mcc (rc 0); gcc `-std=c11` and
+  clang reject (C99 removed implicit int). Promote to a default-mode error; add a
+  reject test. _Ref:_ gcc `gcc.dg/c99-impl-int-1.c`, `c99-impl-int-2.c`,
+  `c11-old-style-definition-1.c`, `c11-unproto-1.c`.
+- [ ] **§7.26.1 — bundled `<threads.h>` shadows the system header (fix).** mcc's
+  `include/threads.h` resolves ahead of glibc's (`-M` confirms), the root of the
+  `c11_threads` divergence. Fix header-search precedence / align the shim. _No direct
+  gcc/clang test to port_ (mcc-internal include-path behavior); validate against the
+  existing `tests/exec/features_c99_c11/c11_threads.c`. See docs/TESTS.md §6-A.4.
+
+## Coverage-depth gaps — mcc passes but under-tests vs gcc/clang; add tests
+
+- [ ] **Flexible array members — add a constraint+runtime suite.** mcc has ~1 case,
+  gcc 12. Cover union FAM, string-init, typedef FAM, `sizeof`, invalid nesting.
+  _Ref:_ gcc `gcc.dg/c99-flex-array-{1,2,3,5,6,7}.c`,
+  `gcc.dg/c99-flex-array-typedef-{1,2,3,5,7,8}.c`.
+- [ ] **`_Noreturn` — expand from 1 case to full coverage.** noreturn-fn-that-returns
+  (UB), `_Noreturn main`, constraint violations, `<stdnoreturn.h>` macro. _Ref:_ gcc
+  `gcc.dg/c11-noreturn-{1,2,3,4,5}.c` (`-2` is execute).
+- [ ] **`_Alignas`/`_Alignof` — add over-align runtime + constraint diagnostics.**
+  _Ref:_ gcc `gcc.dg/c11-align-{1,2,3,4,5,6,7,8,9}.c` (`-2`/`-6` execute; `-3` 28
+  dg-error, `-5` 14).
+- [ ] **VLA goto/switch-into-scope diagnostics.** mcc tests VLA runtime but not the
+  jump-into-VLA-scope constraint. _Ref:_ gcc `gcc.dg/c99-vla-jump-{1,2,3,4,5}.c`.
+- [ ] **UCN-in-identifier breadth.** mcc has 4 UCN cases, gcc ~30. _Ref:_ gcc
+  `gcc.dg/ucnid-*.c`; clang `C99/n717.c` (UCN grammar), `C11/n1518.c` (UAX#31).
+- [ ] **FP evaluation-method / Annex F wide returns.** `FLT_EVAL_METHOD`,
+  intermediate precision, wide-return conformance. _Ref:_ gcc
+  `gcc.dg/c11-float-{1..8}.c`; clang `C11/n1365.c`, `C11/n1396.c` (per-target IR).
+- [ ] **`_Complex` diagnostics + Annex G special values.** mcc is arithmetic/ABI
+  strong but light on constraint diagnostics and CMPLX/NaN/inf edge cases. _Ref:_
+  clang `C11/n1464.c` (CMPLX/`__builtin_complex`), `C11/n1514.c` (Annex G); gcc
+  `gcc.dg/c99-complex-{1,3}.c`.
+- [ ] **Negative/diagnostic test tier.** mcc's exec suite is execute-first; ~70% of
+  gcc's C99/C11 files are `dg-error` negatives. Build a golden-stderr reject corpus
+  (`tests/reject/` or a `tests/diff/parts` extension) mirroring the
+  `-pedantic-errors` negatives. _Seed refs:_ gcc `gcc.dg/c99-typespec-1.c` (1055
+  dg-error), `c11-align-3.c`, the `c99-flex-array-*` / `c11-*` negative files.
+
+## Conforming omissions — assert, don't implement
+
+- [ ] **Pin the feature-subset macros with a test.** `_Imaginary` (Annex G) and Annex
+  K are consensus omissions (mcc==gcc==clang); add a test asserting mcc advertises
+  them correctly: `__STDC_NO_COMPLEX__` absent, `__STDC_NO_VLA__`/`ATOMICS`/`THREADS`
+  as appropriate, `__STDC_IEC_559_COMPLEX__`, `ATOMIC_*_LOCK_FREE`. _Ref:_ clang
+  `C11/n1460.c`, `C11/n1514.c`, `C11/n1482.c`.
 
 ---
 
