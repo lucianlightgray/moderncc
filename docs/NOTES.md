@@ -112,19 +112,28 @@ all 5 arches × glibc+musl + `qemu-arm64-osx`). With the `cross` toolchain
 built (`MCC_CROSS_DIR`, default `cmake-cross`), the wine PE-conformance
 and the four host-runnable Mach-O drivers run natively and pass too.
 
-**Windows status (2026-07-05, mingw gcc 13.1/16.1 / MSVC 19.51 / clang 22):**
-every Windows-runnable preset is green. The suite is now registered one CTest
+**Windows status (2026-07-07, mingw gcc 13.1/16.1 / MSVC 19.51 / clang 22):**
+every Windows-runnable preset is green. The suite is registered one CTest
 per case (the `exec`/`cli`/`diff3`/`parts`/`preprocess` corpora fan out), so the
-counts are per-case: `debug`, `release`, `diagnostics`, `cross` and `msvc`
-(VS generator) all run **782/782** (120 environment-gated skips). On the MSVC
+counts are per-case: `debug`, `release`, `diagnostics`, `cst` and `cross` all
+run **812/812** (≈120 environment-gated skips; the exact total tracks upstream
+test additions — new platform-gated cases register and self-skip here); `msvc`
+(VS generator) runs **810/810** — two fewer only because its test preset also
+filters the `wine` and `macho` labels the Ninja presets carry as counted-skips. On the MSVC
 host `mcctest` still registers and passes — its gcc reference auto-resolves to
-the vendored winlibs GCC (`MCC_REF_CC`) — so the MSVC total matches the mingw
-hosts. Those totals assume the vendored clang toolchain is present (`cmake
+the vendored winlibs GCC (`MCC_REF_CC`) — so the MSVC pass count tracks the
+mingw hosts. Those totals assume the vendored clang toolchain is present (`cmake
 --build <bld> --target clang-toolchain`, or drop it under `vendor/llvm-clang`;
 auto-wired on the next reconfigure); without it the ~260 three-way
-`diff3`/`preprocess` cases self-skip and the native suite is **520/520**.
-`mingw` (superbuild; fetches the pinned winlibs GCC and tests with
-it) and `matrix` (gcc/clang × native/cross — **4 cells × 782/782**, clang
+`diff3`/`preprocess` cases self-skip. The `cli`/`diff3` suites are now
+**self-sufficient for their shell helpers**: on WIN32 the harness prepends both
+the resolved `MCC_TEST_SH` directory (which bundles `grep`/`sed`/`printf`) and a
+resolved `nm`/`readelf` directory (found on `PATH`, else the vendored winlibs
+`bin`) to each case's `PATH` via `ENVIRONMENT_MODIFICATION`, so the suites pass
+without the invoker adding a UNIX-tools or binutils directory to `PATH` (git
+`sh` + `cmake` alone suffice; on an MSVC host the binutils come from the
+vendored winlibs). `mingw` (superbuild; fetches the pinned winlibs GCC and tests
+with it) and `matrix` (gcc/clang × native/cross — **4 cells × 812/812**, clang
 resolved from the fetched `vendor/llvm-clang`) are green too. Both `dist-*` packagings
 build the full artifact matrix — mcc + `-static`/`-dynamic` +
 `libmcc-static`/`-dynamic` + all 11 cross compilers; `dist-mingw` additionally
@@ -184,7 +193,10 @@ Windows no system clang is needed: `cmake --build <bld> --target
 clang-toolchain` fetches a pinned, SHA256-verified LLVM into `vendor/llvm-clang/`,
 auto-wired by the next reconfigure (both suites then run and pass).
 ³ Needs POSIX `sh` (`MCC_TEST_SH`) + `nm`/`readelf`; ~31 ELF-image cases
-self-skip on a PE target.
+self-skip on a PE target. On WIN32 the harness auto-prepends the `sh` directory
+(for its bundled `grep`/`sed`/`printf`) and a resolved `nm`/`readelf` directory
+(system `PATH`, else the vendored winlibs `bin`) to each case's `PATH`, so no
+UNIX-tools/binutils directory need be on the invoker's `PATH`.
 ⁴ X11 example (`compile.ex4`) skips when `<X11/Xlib.h>` is absent.
 ⁵ Always skipped: integrated assembler lacks a few GAS encodings
 (`sgdtq`/`sidtq`/`swapgs`).
