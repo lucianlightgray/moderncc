@@ -1627,5 +1627,24 @@ static const cli_case_t cli_cases[] = {
 	 "printf 'int f(void){ void *p = &&L; goto *p; L: return 0; }\\n' > {W}/computed_goto_ext.c && {MCC} -c {W}/computed_goto_ext.c -o {W}/computed_goto_ext.o 2>&1 | grep -oE 'FIXED_OK' || echo FIXED_OK",
 	 "FIXED_OK\n"},
 
+	/* C99/C11 constraint diagnostics (negative-test tier, docs/TESTS.md §6-B).
+	   Each mirrors a gcc dg-error test; grep isolates the diagnostic so line/
+	   column noise does not enter the golden. */
+	{"c99_fam_not_last", "",
+	 "printf 'struct s{int f[];int x;};\\n' > {W}/fam.c && "
+	 "{MCC} -c {W}/fam.c -o {W}/fam.o 2>&1 | "
+	 "grep -oE \"flexible array member .* not at the end of struct\"",
+	 "flexible array member 'f' not at the end of struct\n"},
+	{"c11_alignas_underalign", "",
+	 "printf 'int main(void){_Alignas(1) int x;return x=0;}\\n' > {W}/al.c && "
+	 "{MCC} -c {W}/al.c -o {W}/al.o 2>&1 | "
+	 "grep -oE \"requested alignment is less than the minimum alignment of the type\"",
+	 "requested alignment is less than the minimum alignment of the type\n"},
+	{"c99_vla_goto_into_scope", "",
+	 "printf 'int main(int c){goto L;{int a[c];L:return a[0];}}\\n' > {W}/vj.c && "
+	 "{MCC} -c {W}/vj.c -o {W}/vj.o 2>&1 | "
+	 "grep -oE \"goto jumps into the scope of a variably modified declaration\"",
+	 "goto jumps into the scope of a variably modified declaration\n"},
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases) / sizeof(cli_cases[0]));

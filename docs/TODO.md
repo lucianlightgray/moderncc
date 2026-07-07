@@ -178,24 +178,26 @@ runtime cases go in `tests/exec/features_c99_c11/`, diagnostics/negatives in
 
 ## Coverage-depth gaps — mcc passes but under-tests vs gcc/clang; add tests
 
-- [~] **Flexible array members — add a constraint+runtime suite.** mcc has ~1 case,
-  gcc 12. Cover union FAM, string-init, typedef FAM, `sizeof`, invalid nesting.
-  _Ref:_ gcc `gcc.dg/c99-flex-array-{1,2,3,5,6,7}.c`,
-  `gcc.dg/c99-flex-array-typedef-{1,2,3,5,7,8}.c`.
-  → **Runtime half done:** `tests/exec/features_c99_c11/flexarray_runtime.c`
-  (sizeof==offsetof, heap alloc/access, char-FAM string, typedef FAM). *Remaining:
-  the invalid-use diagnostics (union FAM, FAM-not-last) → negative-test tier.*
+- [x] **Flexible array members — constraint+runtime suite.** _Done:_ runtime
+  `tests/exec/features_c99_c11/flexarray_runtime.c` (sizeof==offsetof, heap
+  alloc/access, char-FAM string, typedef FAM) + diagnostic
+  `tests/cli/cases.h::c99_fam_not_last` (FAM not at end of struct). _Ref:_ gcc
+  `gcc.dg/c99-flex-array-*.c`. (A union with a struct-FAM member is valid GNU C —
+  mcc and gcc both accept it — so there is no union-FAM negative to add.)
 - [x] **`_Noreturn` — expand from 1 case to full coverage.** _Done:_
   `tests/exec/features_c99_c11/noreturn.c` (both `_Noreturn` keyword + `noreturn`
   macro, pre/post placement, genuine non-return via longjmp). _Ref:_ gcc
   `gcc.dg/c11-noreturn-2.c`.
-- [~] **`_Alignas`/`_Alignof` — add over-align runtime + constraint diagnostics.**
-  → **Runtime half done:** `tests/exec/features_c99_c11/alignas_over.c`
-  (over-alignment addresses, `alignof(max_align_t)`, member/offset alignment).
-  *Remaining: the constraint diagnostics (under-align errors).* _Ref:_ gcc
-  `gcc.dg/c11-align-{1..9}.c` (`-3` 28 dg-error, `-5` 14).
-- [ ] **VLA goto/switch-into-scope diagnostics.** mcc tests VLA runtime but not the
-  jump-into-VLA-scope constraint. _Ref:_ gcc `gcc.dg/c99-vla-jump-{1,2,3,4,5}.c`.
+- [x] **`_Alignas`/`_Alignof` — over-align runtime + constraint diagnostics.**
+  _Done:_ runtime `tests/exec/features_c99_c11/alignas_over.c` (over-alignment
+  addresses, `alignof(max_align_t)`, member/offset alignment) + diagnostic
+  `tests/cli/cases.h::c11_alignas_underalign` (alignment < type minimum). _Ref:_
+  gcc `gcc.dg/c11-align-{1..9}.c`.
+- [x] **VLA goto/switch-into-scope diagnostics.** _Done:_
+  `tests/cli/cases.h::c99_vla_goto_into_scope` (goto into a variably-modified
+  declaration's scope is rejected). _Ref:_ gcc `gcc.dg/c99-vla-jump-{1..5}.c`.
+  *Extension available later: the `switch`-into-scope variant + jump-out (which is
+  legal and must NOT error).*
 - [~] **UCN-in-identifier breadth.** Basic runtime is already covered by
   `tests/exec/lexical/ucn_identifiers.c` (`\u`/`\U` escapes, raw UTF-8, raw≡escaped
   equivalence). *Remaining = the ~30 gcc edge cases: invalid-UCN rejection
