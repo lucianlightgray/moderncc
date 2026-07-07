@@ -77,17 +77,16 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (then removed).
   `docs/NOTES.md` (Platform ABI & runtime notes) — revisit only if a real
   cross-module-TLS-on-Darwin need appears; the fix is emitting TLV *import*
   descriptors.
-- [ ] **`__WCHAR_TYPE__` wrong signedness on ARM/AArch64 (fix).**
-  `runtime/include/mccdefs.h:42-43` hardcodes `__WCHAR_TYPE__ int` for all
-  `__linux__`, but the ARM EABI and AArch64 ABI mandate `wchar_t == unsigned int`.
-  mcc's `<stddef.h>` (`typedef __WCHAR_TYPE__ wchar_t`) then clashes with the musl
-  sysroot's `unsigned int wchar_t` → `error: incompatible redefinition of 'wchar_t'`
-  whenever a TU includes a libc header (that pulls in wchar_t) before `<stddef.h>`
-  on **arm/arm64 musl** (glibc-arm masks it via different guards; x86 is unaffected
-  since its wchar_t is `int`). Discovered when `flexarray_runtime.c` failed only on
-  qemu arm/arm64 musl. → Gate `__WCHAR_TYPE__`/`__WINT_TYPE__` on
-  `__arm__`/`__aarch64__` (→ `unsigned int`). Needs qemu-arm-musl to verify (wchar
-  string-literal codegen must stay correct); the test was worked around meanwhile.
+- [x] **`__WCHAR_TYPE__` wrong signedness on ARM/AArch64 (fix).** _Done_
+  (`mccdefs.h`): added `#elif defined __linux__ && (defined __arm__ || defined
+  __aarch64__)` → `__WCHAR_TYPE__ unsigned int`, matching the ARM EABI / AArch64
+  ABI (and glibc/musl). Previously hardcoded `int` for all `__linux__`, which
+  clashed with the musl-arm sysroot's `unsigned wchar_t` (`incompatible
+  redefinition of 'wchar_t'`). macOS ARM correctly stays `int` (falls to the
+  `#else`); x86/i386/riscv64 unchanged. Reproduced and verified under real
+  qemu-arm-musl: error gone, and wchar semantics correct (`sizeof==4`,
+  `(wchar_t)-1 > 0`, `L"…"` literals, `wcslen`). `flexarray_runtime.c` restored to
+  its natural `<stddef.h>`/`offsetof` form as a regression guard.
 - [ ] **ARM far-branch has no veneer — errors past ±32 MB (fix).**
   `src/arch/arm/arm-gen.c:326` `"FIXME: function bigger than 32MB"`. → Emit a
   long-branch trampoline/island, or downgrade to a documented diagnostic (not FIXME).

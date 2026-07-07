@@ -1,16 +1,17 @@
 /* Flexible array members (C11 §6.7.2.1p18). Runtime behavior: sizeof excludes
- * the flexible member, heap allocation with a trailing array, read/write,
- * char-FAM string storage, and a typedef'd FAM struct. Mirrors the valid
- * runtime uses in gcc c99-flex-array-*.c (the invalid ones are diagnostic tests,
- * covered by tests/cli c99_fam_not_last). Prints OK.
+ * the flexible member (== offsetof), heap allocation with a trailing array,
+ * read/write, char-FAM string storage, and a typedef'd FAM struct. Mirrors the
+ * valid runtime uses in gcc c99-flex-array-*.c (the invalid ones are diagnostic
+ * tests, covered by tests/cli c99_fam_not_last). Prints OK.
  *
- * Deliberately avoids <stddef.h>/offsetof: on the musl-arm sysroot, including
- * stddef.h after the C library headers triggers an incompatible wchar_t
- * redefinition, so the member offset is computed by pointer difference instead.
- * size_t comes from <stdlib.h>. */
+ * Includes <stddef.h> (for offsetof) after the C library headers — this also
+ * regression-guards the ARM/AArch64 __WCHAR_TYPE__ fix (mccdefs.h): before it,
+ * this exact include order triggered an incompatible wchar_t redefinition on the
+ * musl-arm sysroot. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stddef.h>
 
 struct vec {
 	size_t n;
@@ -28,13 +29,10 @@ typedef struct {
 int main(void) {
 	int ok = 1;
 
-	/* sizeof excludes the flexible member: it equals the member's offset. */
-	struct vec vhdr;
-	struct buf bhdr;
-	tdef_fam thdr;
-	ok &= (sizeof(struct vec) == (size_t)((char *)&vhdr.data - (char *)&vhdr));
-	ok &= (sizeof(struct buf) == (size_t)((char *)&bhdr.data - (char *)&bhdr));
-	ok &= (sizeof(tdef_fam) == (size_t)((char *)&thdr.v - (char *)&thdr));
+	/* sizeof excludes the flexible member */
+	ok &= (sizeof(struct vec) == offsetof(struct vec, data));
+	ok &= (sizeof(struct buf) == offsetof(struct buf, data));
+	ok &= (sizeof(tdef_fam) == offsetof(tdef_fam, v));
 
 	/* heap alloc + element access */
 	struct vec *p = malloc(sizeof *p + 5 * sizeof(int));

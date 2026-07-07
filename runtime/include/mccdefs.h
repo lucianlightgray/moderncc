@@ -39,6 +39,9 @@
 #if defined _WIN32
 	#define __WCHAR_TYPE__ unsigned short
 	#define __WINT_TYPE__ unsigned short
+#elif defined __linux__ && (defined __arm__ || defined __aarch64__)
+	#define __WCHAR_TYPE__ unsigned int
+	#define __WINT_TYPE__ unsigned int
 #elif defined __linux__
 	#define __WCHAR_TYPE__ int
 	#define __WINT_TYPE__ unsigned int
