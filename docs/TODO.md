@@ -55,13 +55,18 @@ brought up one §17 category at a time.
     replay and byte-verifies both, restoring verbatim on mismatch. Leaf SValues are
     finalized lazily at consumption (vsetc's hook fires before callers set `->sym`).
     `int g=7; int main(){return g+35;}` replays byte-identically. Fixture global_ref.
-  - [ ] rung 4b: **calls** (`Invoke` → printf). The reloc machinery is in place; the
-    remaining work is modeling `AST_Convert` (arg default-promotions call `gen_cast`,
-    which currently desyncs), the `gfunc_call` boundary (consume callee+args, produce
-    result), and the register-resident result push. Then most corpus functions (which
-    call printf) move off fallback.
-  - [ ] rung 5: control flow (`If`/`Jump` = the CFG milestone D-b) — multi-BB capture,
-    backpatched jumps.
+  - [x] rung 4b: **casts (`Convert`) + calls (`Invoke`).** `gen_cast` outside a modeled
+    op becomes a `Convert` node (unblocking arg promotions/explicit casts). The
+    `gfunc_call` boundary folds [callee, args] into an `Invoke`, suppresses the mirror
+    across the call + result push (`ast_in_call`), and re-pushes the captured result;
+    string-literal args ride as `Convert(Ref)` (their `.rodata` persists — only
+    text+relocations are discarded/replayed). Bare call statements are BasicBlock
+    effects. Diagnostics suppressed during replay (`warn_none`). Struct/two-register
+    returns and indirect callees fall back. **Coverage 27→68/239 files.** Fixtures
+    cast_expr, call_printf.
+  - [ ] rung 5: **control flow** (`If`/`Jump` = the CFG milestone D-b) — multi-BB
+    capture, backpatched jumps. The last major straight-line→CFG step; the ~171
+    remaining files are dominated by loops/branches.
 - [~] **A5 — parser AST-build hooks.** `ast_hook_stmt` (count + bail on unsupported
   leaf statements) and `ast_hook_return` (capture Return of an int constant) fire from
   the parser's statement/return positions, gated by `CONFIG_AST` + `ast_active`. Grows
