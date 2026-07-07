@@ -118,6 +118,13 @@ static void ast_hook_if_else(void);
 static void ast_hook_if_end(void);
 static void ast_hook_while_begin(void);
 static void ast_hook_while_end(void);
+static void ast_hook_for_begin(int has_cond);
+static void ast_hook_for_cond(void);
+static void ast_hook_for_incr_begin(void);
+static void ast_hook_for_incr_end(void);
+static void ast_hook_for_no_incr(void);
+static void ast_hook_for_body_begin(void);
+static void ast_hook_for_end(void);
 static void ast_hook_inc(int post, int c);
 static void ast_hook_inc_end(void);
 static void ast_hook_inplace(void);
@@ -8954,26 +8961,51 @@ again:
 		skip(';');
 		a = b = 0;
 		c = d = gind();
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_for_begin(tok != ';');
+#endif
 		if (tok != ';') {
 			gexpr();
 			if (expr_was_assign)
 				mcc_warning_c(warn_parentheses)("suggest parentheses around "
 																				"assignment used as a truth value");
+#if defined(CONFIG_AST) && CONFIG_AST
+			ast_hook_for_cond();
+#endif
 			a = gvtst(1, 0);
+#if defined(CONFIG_AST) && CONFIG_AST
+			ast_hook_if_gvtst_done();
+#endif
 		}
 		seqp_flush();
 		skip(';');
 		if (tok != ')') {
 			e = gjmp(0);
 			d = gind();
+#if defined(CONFIG_AST) && CONFIG_AST
+			ast_hook_for_incr_begin();
+#endif
 			gexpr();
 			seqp_check();
 			vpop();
+#if defined(CONFIG_AST) && CONFIG_AST
+			ast_hook_for_incr_end();
+#endif
 			gjmp_addr(c);
 			gsym(e);
 		}
+#if defined(CONFIG_AST) && CONFIG_AST
+		else
+			ast_hook_for_no_incr();
+#endif
 		skip(')');
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_for_body_begin();
+#endif
 		lblock(&a, &b);
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_for_end();
+#endif
 		gjmp_addr(d);
 		gsym_addr(b, d);
 		gsym(a);
@@ -10336,7 +10368,7 @@ static void ast_hook_stmt(int t) {
 	if (!ast_active)
 		return;
 	switch (t) {
-	case TOK_FOR: case TOK_DO:
+	case TOK_DO:
 	case TOK_SWITCH: case TOK_GOTO: case TOK_BREAK: case TOK_CONTINUE:
 	case TOK_CASE: case TOK_DEFAULT:
 		ast_bail = 1;
@@ -10596,6 +10628,93 @@ static void ast_hook_while_begin(void) {
 }
 
 static void ast_hook_while_end(void) {
+	if (!ast_active)
+		return;
+	if (ast_cf_top < 1) {
+		ast_bail = 1;
+		return;
+	}
+	ast_cf_top--;
+	ast_cur_bb = ast_cf_savebb[ast_cf_top];
+}
+
+/* --- control flow: `for` (init;cond;incr) ----------------------------------
+ * A For loop is an If node marked op==3 with children [cond, incr-BB, body-BB];
+ * the init runs before it as ordinary effects. Requires a condition (degenerate
+ * for(;;)/for(;;x) bail). Replay reproduces the parser's gind/gvtst/jump-over-
+ * increment/back-edge/gsym structure. */
+static void ast_hook_for_begin(int has_cond) {
+	if (!ast_active || ast_desync || ast_bail)
+		return;
+	if (!has_cond || ast_cf_top >= AST_CF_MAX) {
+		ast_bail = 1; /* for(;;)-style loops not modeled */
+		return;
+	}
+	AstLocal loop = ast_node(ast_cur, AST_If);
+	ast_set_op(ast_cur, loop, 3); /* for-loop marker */
+	ast_add_child(ast_cur, ast_cur_bb, loop);
+	ast_cf_if[ast_cf_top] = loop;
+	ast_cf_savebb[ast_cf_top] = ast_cur_bb;
+	ast_cf_top++;
+}
+
+static void ast_hook_for_cond(void) {
+	if (!ast_active || ast_desync || ast_bail)
+		return;
+	if (ast_cf_top < 1 || ast_vn != 1) {
+		ast_bail = 1;
+		return;
+	}
+	ast_add_child(ast_cur, ast_cf_if[ast_cf_top - 1], ast_vs[0]); /* child0 = cond */
+	ast_vn = 0;
+	ast_in_call = 1; /* suppress gvtst */
+}
+
+static void ast_hook_for_incr_begin(void) {
+	if (!ast_active || ast_desync || ast_bail)
+		return;
+	if (ast_cf_top < 1) {
+		ast_bail = 1;
+		return;
+	}
+	AstLocal incrbb = ast_node(ast_cur, AST_BasicBlock);
+	ast_add_child(ast_cur, ast_cf_if[ast_cf_top - 1], incrbb); /* child1 = incr */
+	ast_cur_bb = incrbb;
+}
+
+static void ast_hook_for_incr_end(void) {
+	if (!ast_active || ast_desync || ast_bail)
+		return;
+	if (ast_cf_top < 1) {
+		ast_bail = 1;
+		return;
+	}
+	ast_cur_bb = ast_cf_savebb[ast_cf_top - 1]; /* back to the enclosing block */
+}
+
+static void ast_hook_for_no_incr(void) {
+	if (!ast_active || ast_desync || ast_bail)
+		return;
+	if (ast_cf_top < 1)
+		return;
+	/* empty incr-BB placeholder so body is child2 */
+	ast_add_child(ast_cur, ast_cf_if[ast_cf_top - 1],
+								ast_node(ast_cur, AST_BasicBlock));
+}
+
+static void ast_hook_for_body_begin(void) {
+	if (!ast_active || ast_desync || ast_bail)
+		return;
+	if (ast_cf_top < 1) {
+		ast_bail = 1;
+		return;
+	}
+	AstLocal bodybb = ast_node(ast_cur, AST_BasicBlock);
+	ast_add_child(ast_cur, ast_cf_if[ast_cf_top - 1], bodybb); /* child2 = body */
+	ast_cur_bb = bodybb;
+}
+
+static void ast_hook_for_end(void) {
 	if (!ast_active)
 		return;
 	if (ast_cf_top < 1) {
@@ -10897,6 +11016,27 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 				ast_replay_value(a, ast_child(a, s, 0));
 				int aa = gvtst(1, 0);
 				ast_replay_bb(a, ast_child(a, s, 1));
+				gjmp_addr(dd);
+				gsym_addr(0, dd);
+				gsym(aa);
+				break;
+			}
+			if (ast_op(a, s) == 3) {
+				/* for loop: gind; cond; gvtst; [jump-over-incr; gind; incr;
+				 * back-to-cond; gsym]; body; back-edge; gsym. */
+				int cc = gind();
+				ast_replay_value(a, ast_child(a, s, 0));
+				int aa = gvtst(1, 0);
+				int dd = cc;
+				AstLocal incrbb = ast_child(a, s, 1);
+				if (incrbb != AST_NONE && ast_first_child(a, incrbb) != AST_NONE) {
+					int ee = gjmp(0);
+					dd = gind();
+					ast_replay_bb(a, incrbb);
+					gjmp_addr(cc);
+					gsym(ee);
+				}
+				ast_replay_bb(a, ast_child(a, s, 2));
 				gjmp_addr(dd);
 				gsym_addr(0, dd);
 				gsym(aa);
