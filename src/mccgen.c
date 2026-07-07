@@ -96,6 +96,7 @@ static AstLocal ast_cur_bb;
 static AstLocal ast_cf_if[AST_CF_MAX];    /* pending If nodes                    */
 static AstLocal ast_cf_savebb[AST_CF_MAX]; /* the BB to restore at if_end         */
 static int ast_cf_top;
+static int *ast_rp_bsym, *ast_rp_csym;    /* replay-time break/continue chains   */
 
 static void ast_hook_stmt(int t);
 static void ast_hook_return(int has_val);
@@ -118,6 +119,7 @@ static void ast_hook_if_else(void);
 static void ast_hook_if_end(void);
 static void ast_hook_while_begin(void);
 static void ast_hook_while_end(void);
+static void ast_hook_break_continue(int is_continue);
 static void ast_hook_for_begin(int has_cond);
 static void ast_hook_for_cond(void);
 static void ast_hook_for_incr_begin(void);
@@ -8935,12 +8937,18 @@ again:
 		else
 			leave_scope(loop_scope);
 		*cur_scope->bsym = gjmp(*cur_scope->bsym);
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_break_continue(0);
+#endif
 		skip(';');
 	} else if (t == TOK_CONTINUE) {
 		if (!cur_scope->csym)
 			mcc_error("cannot continue");
 		leave_scope(loop_scope);
 		*cur_scope->csym = gjmp(*cur_scope->csym);
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_break_continue(1);
+#endif
 		skip(';');
 	} else if (t == TOK_FOR) {
 		new_scope(&o);
@@ -10369,7 +10377,7 @@ static void ast_hook_stmt(int t) {
 		return;
 	switch (t) {
 	case TOK_DO:
-	case TOK_SWITCH: case TOK_GOTO: case TOK_BREAK: case TOK_CONTINUE:
+	case TOK_SWITCH: case TOK_GOTO:
 	case TOK_CASE: case TOK_DEFAULT:
 		ast_bail = 1;
 		break;
@@ -10636,6 +10644,22 @@ static void ast_hook_while_end(void) {
 	}
 	ast_cf_top--;
 	ast_cur_bb = ast_cf_savebb[ast_cf_top];
+}
+
+/* break/continue: an unconditional jump onto the enclosing loop's break or
+ * continue chain. Captured as a Jump node (op 0=break, 1=continue); replay
+ * chains onto the loop's replay-time bsym/csym. If leave_scope emitted cleanup
+ * code (VLA/cleanup attrs), byte-verify catches the divergence and falls back. */
+static void ast_hook_break_continue(int is_continue) {
+	if (!ast_active || ast_desync || ast_bail)
+		return;
+	if (ast_vn != 0) {
+		ast_desync = 1;
+		return;
+	}
+	AstLocal j = ast_node(ast_cur, AST_Jump);
+	ast_set_op(ast_cur, j, is_continue ? 1 : 0);
+	ast_add_child(ast_cur, ast_cur_bb, j);
 }
 
 /* --- control flow: `for` (init;cond;incr) ----------------------------------
@@ -11009,21 +11033,40 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 			ast_replay_value(a, s);
 			vpop();
 			break;
+		case AST_Jump:
+			/* break (op 0) / continue (op 1): chain onto the loop's break/continue
+			 * chain exactly as the parser does. */
+			if (ast_op(a, s) == 1) {
+				if (ast_rp_csym)
+					*ast_rp_csym = gjmp(*ast_rp_csym);
+			} else {
+				if (ast_rp_bsym)
+					*ast_rp_bsym = gjmp(*ast_rp_bsym);
+			}
+			break;
 		case AST_If: {
 			if (ast_op(a, s) == 2) {
-				/* while loop: gind; condition; gvtst; body; back-edge; gsym. */
+				/* while loop: gind; condition; gvtst; body; back-edge; gsym.
+				 * break chains onto aa (exit), continue onto bb (→ loop top). */
 				int dd = gind();
 				ast_replay_value(a, ast_child(a, s, 0));
 				int aa = gvtst(1, 0);
+				int bb = 0;
+				int *sb = ast_rp_bsym, *sc = ast_rp_csym;
+				ast_rp_bsym = &aa;
+				ast_rp_csym = &bb;
 				ast_replay_bb(a, ast_child(a, s, 1));
+				ast_rp_bsym = sb;
+				ast_rp_csym = sc;
 				gjmp_addr(dd);
-				gsym_addr(0, dd);
+				gsym_addr(bb, dd);
 				gsym(aa);
 				break;
 			}
 			if (ast_op(a, s) == 3) {
 				/* for loop: gind; cond; gvtst; [jump-over-incr; gind; incr;
-				 * back-to-cond; gsym]; body; back-edge; gsym. */
+				 * back-to-cond; gsym]; body; back-edge; gsym. break→aa (exit),
+				 * continue→bb (→ the increment). */
 				int cc = gind();
 				ast_replay_value(a, ast_child(a, s, 0));
 				int aa = gvtst(1, 0);
@@ -11036,9 +11079,15 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 					gjmp_addr(cc);
 					gsym(ee);
 				}
+				int bb = 0;
+				int *sb = ast_rp_bsym, *sc = ast_rp_csym;
+				ast_rp_bsym = &aa;
+				ast_rp_csym = &bb;
 				ast_replay_bb(a, ast_child(a, s, 2));
+				ast_rp_bsym = sb;
+				ast_rp_csym = sc;
 				gjmp_addr(dd);
-				gsym_addr(0, dd);
+				gsym_addr(bb, dd);
 				gsym(aa);
 				break;
 			}
@@ -11205,6 +11254,7 @@ static void gen_function(Sym *sym) {
 			 * duplicate warnings. */
 			unsigned char ast_sv_warn = mcc_state->warn_none;
 			mcc_state->warn_none = 1;
+			ast_rp_bsym = ast_rp_csym = NULL;
 			ast_replay_body(ast_cur);
 			mcc_state->warn_none = ast_sv_warn;
 
