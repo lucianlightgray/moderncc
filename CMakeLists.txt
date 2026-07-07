@@ -2910,7 +2910,7 @@ if(MCC_BUILD_TESTS)
         # at a time; ret42 is the smallest rung (return of an integer constant).
         if(NOT CMAKE_CROSSCOMPILING AND NOT MCC_TARGETOS STREQUAL "WIN32")
             # fixture;expected-exit-code pairs (return of an integer constant).
-            foreach(_case "ret42;42" "ret0;0" "retexpr;14" "mainempty;0")
+            foreach(_case "ret42;42" "ret0;0" "retexpr;14" "mainempty;0" "argc_expr;42")
                 list(GET _case 0 _rn)
                 list(GET _case 1 _rc)
                 add_test(NAME "ast/replay-${_rn}" COMMAND "${CMAKE_COMMAND}"

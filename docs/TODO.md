@@ -28,10 +28,17 @@ brought up one §17 category at a time.
   (correct, -O0) emission — so the path is safe over the whole corpus and grows one
   construct at a time. Off by default; `-O0` untouched (full ctest 866/866).
   - [x] rung 1: `return <integer-constant>;` → `vpushi`/`gfunc_return`/`gjmp`.
-  - [ ] rung 2: integer-arithmetic return (`Binary`/`Unary`/`Convert` tree capture via
-    a vstack-mirroring value stack; discard is still relocation-free).
-  - [ ] rung 3: locals (`Ref`/`Load`/`Store`), then calls (`Invoke` → printf) — needs
-    replay to own relocations before discard can cover them.
+  - [x] rung 2: **integer-arithmetic return trees** (`return argc + 41;`,
+    `return 2+3*4;`) via a **scoped vstack-mirror**: `ast_hook_vpush`/`ast_hook_genop`
+    shadow the vstack during the return expression, capturing `Literal`/`Ref`/`Binary`;
+    `gen_op` is modeled atomically (internal traffic ignored via `ast_in_op`, re-synced
+    at its exit); unmodeled in-place transforms (`gen_cast`/`indir`/`gaddrof`) and
+    non-reconstructable leaves (registers/symbols/floats) trip `ast_desync` → fall back.
+    Leaves restricted to int-constants + frame-relative locals/params (re-push exactly
+    after discard). Corpus column caught + drove fixes (cleanup/enum). Fixtures:
+    `retexpr` (folds), `argc_expr` (param arithmetic).
+  - [ ] rung 3: locals (`Store` capture for `int a=...;`), then calls (`Invoke` →
+    printf) — needs replay to own relocations before discard can cover them.
 - [~] **A5 — parser AST-build hooks.** `ast_hook_stmt` (count + bail on unsupported
   leaf statements) and `ast_hook_return` (capture Return of an int constant) fire from
   the parser's statement/return positions, gated by `CONFIG_AST` + `ast_active`. Grows

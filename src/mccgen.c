@@ -71,10 +71,31 @@ static int ast_replay_dump; /* MCC_AST_REPLAY_DUMP: dump replayed trees        *
 static AstArena *ast_cur;   /* the function currently being built              */
 static int ast_bail;        /* an unsupported construct was seen              */
 static int ast_stmt_n;      /* leaf statements the builder accounted for       */
-static int ast_ret_ind0;    /* `ind` captured before a return expr is evaluated */
+static AstLocal ast_ret_val; /* captured return-expression tree (or AST_NONE)  */
+
+/* Return-expression value mirror: a small stack shadowing the vstack while a
+ * return expression is evaluated, so its intention tree can be captured op by
+ * op (the §10 "AST-builder captures vstack ops"). It is kept synced to vtop's
+ * depth after every modeled primitive; any unmodeled depth change (a vstack op
+ * we don't hook) or an in-place cast trips ast_desync and the function falls
+ * back to the parser's emission. Live only across one return expression. */
+#define AST_VS_MAX 64
+static AstLocal ast_vs[AST_VS_MAX];
+static int ast_vn;          /* mirror depth (relative to ast_base_depth)       */
+static int ast_capture;     /* mirror is live (inside a return expression)     */
+static int ast_desync;      /* mirror lost sync with the vstack                */
+static int ast_base_depth;  /* real vstack depth when capture started          */
+static int ast_in_op;       /* inside gen_op — ignore its internal vstack ops  */
+
 static void ast_hook_stmt(int t);
 static void ast_hook_return(int has_val);
 static void ast_hook_implicit_return(void);
+static void ast_hook_ret_expr_begin(int has_val);
+static void ast_hook_ret_expr_done(void);
+static void ast_hook_vpush(void);
+static void ast_hook_genop(int op);
+static void ast_hook_genop_end(void);
+static void ast_hook_inplace(void);
 #endif
 
 #if PTR_SIZE == 4
@@ -1062,6 +1083,9 @@ static void vsetc(CType *type, int r, CValue *vc) {
 	vtop->r2 = VT_CONST;
 	vtop->c = *vc;
 	vtop->sym = NULL;
+#if defined(CONFIG_AST) && CONFIG_AST
+	ast_hook_vpush();
+#endif
 }
 
 ST_FUNC void vswap(void) {
@@ -1121,6 +1145,9 @@ ST_FUNC void vpushv(SValue *v) {
 		mcc_error("memory full (vstack)");
 	vtop++;
 	*vtop = *v;
+#if defined(CONFIG_AST) && CONFIG_AST
+	ast_hook_vpush();
+#endif
 }
 
 static void vdup(void) {
@@ -1618,6 +1645,9 @@ static void move_reg(int r, int s, int t) {
 }
 
 ST_FUNC void gaddrof(void) {
+#if defined(CONFIG_AST) && CONFIG_AST
+	ast_hook_inplace();
+#endif
 	vtop->r &= ~VT_LVAL;
 	if ((vtop->r & VT_VALMASK) == VT_LLOCAL)
 		vtop->r = (vtop->r & ~VT_VALMASK) | VT_LOCAL | VT_LVAL;
@@ -2975,6 +3005,9 @@ static int bf_operand_bits(int tt) {
 ST_FUNC void gen_op(int op) {
 	int t1, t2, bt1, bt2, t;
 	int bf_trunc = 0;
+#if defined(CONFIG_AST) && CONFIG_AST
+	ast_hook_genop(op);
+#endif
 	CType type1, combtype;
 	int op_class = op;
 
@@ -2993,6 +3026,9 @@ redo:
 
 	if (is_complex_type(&vtop[-1].type) || is_complex_type(&vtop[0].type)) {
 		gen_complex_op(op);
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_genop_end();
+#endif
 		return;
 	}
 
@@ -3134,6 +3170,9 @@ redo:
 	}
 	if (vtop->r & VT_LVAL)
 		gv(RC_TYPE(vtop->type.t));
+#if defined(CONFIG_AST) && CONFIG_AST
+	ast_hook_genop_end();
+#endif
 }
 
 #if defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64 || defined MCC_TARGET_ARM
@@ -3200,6 +3239,9 @@ static void gen_cast_s(int t) {
 
 static void gen_cast(CType *type) {
 	int sbt, dbt, sf, df, c;
+#if defined(CONFIG_AST) && CONFIG_AST
+	ast_hook_inplace();
+#endif
 	int dbt_bt, sbt_bt, ds, ss, bits, trunc;
 
 	if (!atomic_lowering && (vtop->type.t & VT_ATOMIC_BIT) && (vtop->r & VT_LVAL) && atomic_store_needs_libcall(vtop))
@@ -5756,6 +5798,9 @@ static CType *type_decl(CType *type, AttributeDef *ad, int *v, int td) {
 }
 
 ST_FUNC void indir(void) {
+#if defined(CONFIG_AST) && CONFIG_AST
+	ast_hook_inplace();
+#endif
 	if ((vtop->type.t & VT_BTYPE) != VT_PTR) {
 		if ((vtop->type.t & VT_BTYPE) == VT_FUNC)
 			return;
@@ -8768,11 +8813,14 @@ again:
 		if (cur_func_noreturn)
 			mcc_warning("function declared 'noreturn' has a 'return' statement");
 		b = (func_vt.t & VT_BTYPE) != VT_VOID;
-#if defined(CONFIG_AST) && CONFIG_AST
-		ast_ret_ind0 = ind;
-#endif
 		if (tok != ';') {
+#if defined(CONFIG_AST) && CONFIG_AST
+			ast_hook_ret_expr_begin(b);
+#endif
 			gexpr();
+#if defined(CONFIG_AST) && CONFIG_AST
+			ast_hook_ret_expr_done();
+#endif
 			seqp_check();
 			if (b) {
 				gen_assign_cast(&func_vt);
@@ -10219,34 +10267,126 @@ static void ast_hook_stmt(int t) {
 		ast_bail = 1;
 }
 
-/* A `return` was parsed; vtop holds the assign-cast return value (when has_val).
- * Capture Return(Literal) for a plain integer constant; bail otherwise. */
+/* --- return-expression mirror -------------------------------------------- */
+
+/* A value was pushed onto the vstack while a return expression is being
+ * evaluated. Capture it as a leaf (Literal for a plain integer constant, Ref
+ * for an lvalue such as a parameter/local) carrying the full SValue so replay
+ * re-pushes it exactly. Symbol references bail (they would relocate anyway).
+ * Depth is re-synced to the vstack; a mismatch means an unmodeled op ran. */
+static void ast_hook_vpush(void) {
+	if (!ast_capture || ast_desync || ast_in_op)
+		return;
+	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+	if (ast_vn != rel - 1 || rel > AST_VS_MAX) {
+		ast_desync = 1;
+		return;
+	}
+	int r = vtop->r, tt = vtop->type.t;
+	/* Only leaves that re-push faithfully after the body is discarded are safe:
+	 * an integer constant, or a frame-relative local/parameter lvalue (fixed
+	 * offset). Anything holding a register (a value materialised by code we are
+	 * about to discard), a symbol, or a float is not reconstructable — desync. */
+	int is_const = (r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
+	int is_local_lval =
+			(r & VT_VALMASK) == VT_LOCAL && (r & VT_LVAL) && !(r & VT_SYM);
+	if (is_float(tt) || (!is_const && !is_local_lval)) {
+		ast_desync = 1;
+		return;
+	}
+	AstLocal n = ast_node(ast_cur, is_const ? AST_Literal : AST_Ref);
+	ast_set_op(ast_cur, n, r);
+	ast_set_type(ast_cur, n, tt, (uint64_t)(uintptr_t)vtop->type.ref);
+	ast_set_ival(ast_cur, n, (uint64_t)vtop->c.i);
+	ast_set_sym(ast_cur, n, (uint64_t)(uintptr_t)vtop->sym);
+	ast_vs[ast_vn++] = n;
+}
+
+/* A binary op is about to consume the top two vstack values. Fold the two
+ * mirror nodes into a Binary(op). Only arithmetic/bitwise/shift ops are
+ * modeled; comparisons and anything producing VT_CMP bail. */
+static int ast_op_modeled(int op) {
+	switch (op) {
+	case '+': case '-': case '*': case '/': case '%':
+	case '&': case '|': case '^':
+	case TOK_SHL: case TOK_SAR: case TOK_SHR:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+static void ast_hook_genop(int op) {
+	if (!ast_capture || ast_desync)
+		return;
+	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+	if (!ast_op_modeled(op) || ast_vn != rel || ast_vn < 2) {
+		ast_desync = 1;
+		return;
+	}
+	AstLocal b = ast_node(ast_cur, AST_Binary);
+	ast_set_op(ast_cur, b, op);
+	ast_add_child(ast_cur, b, ast_vs[ast_vn - 2]);
+	ast_add_child(ast_cur, b, ast_vs[ast_vn - 1]);
+	ast_vn -= 2;
+	ast_vs[ast_vn++] = b;
+	ast_in_op = 1; /* the op is modeled atomically; ignore its internal traffic */
+}
+
+/* gen_op has finished. Stop ignoring vstack traffic and re-sync: the op must
+ * have left exactly one net value, matching the mirror's pop2/push1. */
+static void ast_hook_genop_end(void) {
+	if (!ast_in_op)
+		return;
+	ast_in_op = 0;
+	if (ast_capture && !ast_desync) {
+		int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+		if (ast_vn != rel)
+			ast_desync = 1;
+	}
+}
+
+/* An in-place transform (cast, deref, address-of) mutates a vstack value's
+ * meaning without a depth change, which the mirror cannot see. Inside a modeled
+ * gen_op such transforms are part of the op (usual arithmetic conversions) and
+ * are reproduced by replaying gen_op; *outside* gen_op they are operations this
+ * rung does not model yet, so the function desyncs and falls back. */
+static void ast_hook_inplace(void) {
+	if (ast_capture && !ast_in_op)
+		ast_desync = 1;
+}
+
+static void ast_hook_ret_expr_begin(int has_val) {
+	if (!ast_active || !has_val)
+		return;
+	ast_capture = 1;
+	ast_desync = 0;
+	ast_vn = 0;
+	ast_base_depth = (int)(vtop - vstack + 1);
+}
+
+/* Freeze the mirror at the end of the return expression (before the return-type
+ * cast). The single remaining mirror value is the return-expression tree. */
+static void ast_hook_ret_expr_done(void) {
+	ast_ret_val = AST_NONE;
+	if (!ast_capture)
+		return;
+	ast_capture = 0;
+	if (!ast_desync && ast_vn == 1)
+		ast_ret_val = ast_vs[0];
+}
+
+/* A `return` statement is complete. Attach the captured tree (or bail). */
 static void ast_hook_return(int has_val) {
 	if (!ast_active)
 		return;
-	/* Rung 1 only supports a value return whose value is a plain int-sized
-	 * constant that emitted *no code* to compute (a pure constant — evaluating
-	 * it left `ind` untouched). A void return, or a value expression that emitted
-	 * anything (a call, a store, a comma side effect), bails so the parser's
-	 * correct emission is kept — the discard-and-re-emit must never drop work. */
-	if (!has_val) {
-		ast_bail = 1;
-		return;
-	}
-	int pure = ind == ast_ret_ind0;
-	int is_int_const =
-			(vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST &&
-			(vtop->type.t & VT_BTYPE) == VT_INT;
-	if (!pure || !is_int_const) {
+	if (!has_val || ast_ret_val == AST_NONE) {
 		ast_bail = 1;
 		return;
 	}
 	AstLocal bb = ast_root(ast_cur);
 	AstLocal ret = ast_node(ast_cur, AST_Return);
-	AstLocal lit = ast_node(ast_cur, AST_Literal);
-	ast_set_ival(ast_cur, lit, (uint64_t)vtop->c.i);
-	ast_set_type(ast_cur, lit, vtop->type.t, 0);
-	ast_add_child(ast_cur, ret, lit);
+	ast_add_child(ast_cur, ret, ast_ret_val);
 	ast_add_child(ast_cur, bb, ret);
 }
 
@@ -10258,6 +10398,7 @@ static void ast_hook_implicit_return(void) {
 	AstLocal bb = ast_root(ast_cur);
 	AstLocal ret = ast_node(ast_cur, AST_Return);
 	AstLocal lit = ast_node(ast_cur, AST_Literal);
+	ast_set_op(ast_cur, lit, VT_CONST); /* r: a plain integer constant */
 	ast_set_ival(ast_cur, lit, 0);
 	ast_set_type(ast_cur, lit, VT_INT, 0);
 	ast_add_child(ast_cur, ret, lit);
@@ -10270,8 +10411,23 @@ static void ast_hook_implicit_return(void) {
 static void ast_replay_value(AstArena *a, AstLocal n) {
 	switch (ast_kind(a, n)) {
 	case AST_Literal:
-		vpushi((int)ast_ival(a, n));
-		vtop->type.t = ast_type_t(a, n);
+	case AST_Ref: {
+		/* Re-push the exact SValue captured at build time. */
+		SValue sv;
+		memset(&sv, 0, sizeof sv);
+		sv.type.t = ast_type_t(a, n);
+		sv.type.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+		sv.r = (unsigned short)ast_op(a, n);
+		sv.r2 = VT_CONST;
+		sv.c.i = ast_ival(a, n);
+		sv.sym = (Sym *)(uintptr_t)ast_sym(a, n);
+		vpushv(&sv);
+		break;
+	}
+	case AST_Binary:
+		ast_replay_value(a, ast_child(a, n, 0));
+		ast_replay_value(a, ast_child(a, n, 1));
+		gen_op(ast_op(a, n));
 		break;
 	default:
 		break;
