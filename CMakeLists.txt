@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-set(MCC_VERSION "20260707090000")
+set(MCC_VERSION "20260707094756")
 set(MCC_SOVERSION "1.0.0")
 string(REGEX MATCH "^[0-9]+(\\.[0-9]+)*" MCC_VERSION_NUMERIC "${MCC_SOVERSION}")
 
@@ -1067,15 +1067,21 @@ mcc_config_node(MCC_BUILD_STATIC_EXE TYPE BOOL DEFAULT OFF GROUP "Build targets"
 mcc_config_node(MCC_BUILD_DYNAMIC_LIB TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Also build a shared libmcc (libmcc.so) alongside the static libmcc.a")
 mcc_config_node(MCC_BUILD_DYNAMIC_EXE TYPE BOOL DEFAULT ON  GROUP "Build targets"
-    HELP "Build mcc-dynamic: a non-single-source driver TU linked against the primary libmcc (needs MCC_SINGLE_SOURCE=OFF; skipped otherwise)")
+    HELP "Build mcc-dynamic: a single-source mcc executable dynamically linked against libc (the dynamic counterpart to mcc-static; not linked against libmcc)")
 mcc_config_node(MCC_BUILD_MUSL       TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Also build musl-targeting compiler variants (mcc*-musl) beside the glibc ones")
 if(APPLE AND MCC_BUILD_STATIC_EXE)
     set(MCC_BUILD_STATIC_EXE OFF)
     message(STATUS "mcc: macOS has no fully-static libc; forcing MCC_BUILD_STATIC_EXE=OFF")
 endif()
-mcc_config_node(MCC_BUILD_STRIP      TYPE BOOL DEFAULT OFF GROUP "Build targets"
-    HELP "Strip symbols from the mcc executable(s) at link (-s)")
+# Strip release-type builds by default; debug/other build types keep symbols.
+# Presets that set MCC_BUILD_STRIP explicitly (e.g. dist-macos=OFF) still win.
+set(_mcc_strip_default OFF)
+if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "MinSizeRel")
+    set(_mcc_strip_default ON)
+endif()
+mcc_config_node(MCC_BUILD_STRIP      TYPE BOOL DEFAULT ${_mcc_strip_default} GROUP "Build targets"
+    HELP "Strip symbols from the mcc executable(s) at link (-s); defaults ON for Release/MinSizeRel builds")
 mcc_config_node(MCC_ENABLE_RPATH TYPE BOOL DEFAULT ON GROUP "Build targets"
     HELP "Bake -rpath into binaries linking libmcc.so so they find the shared lib at runtime"
     VISIBLE_WHEN "NOT MCC_BUILD_STATIC_LIB")
@@ -1131,9 +1137,9 @@ mcc_config_node(MCC_CONFIG_AUTOCORRECT TYPE BOOL DEFAULT OFF GROUP "Build target
 
 mcc_config_node(MCC_CONFIG_MINGW  TYPE BOOL DEFAULT OFF GROUP "mcc features"
     HELP "Build a WIN32/mingw target (input: forces MCC_TARGETOS=WIN32)")
-mcc_config_node(MCC_CONFIG_BACKTRACE TYPE BOOL DEFAULT ON GROUP "mcc features"
+mcc_config_node(MCC_CONFIG_BACKTRACE TYPE BOOL DEFAULT OFF GROUP "mcc features"
     HELP "Enable stack backtraces (-bt / -run)")
-mcc_config_node(MCC_CONFIG_BCHECK   TYPE BOOL DEFAULT ON GROUP "mcc features"
+mcc_config_node(MCC_CONFIG_BCHECK   TYPE BOOL DEFAULT OFF GROUP "mcc features"
     HELP "Enable bounds checker (-b)"
     VISIBLE_WHEN "MCC_CONFIG_BACKTRACE")
 mcc_config_node(MCC_CONFIG_ASM      TYPE BOOL DEFAULT ON GROUP "mcc features"
@@ -1984,20 +1990,21 @@ if(MCC_BUILD_STATIC_EXE)
     endif()
 endif()
 
-if(MCC_BUILD_DYNAMIC_EXE AND NOT MCC_SINGLE_SOURCE)
+if(MCC_BUILD_DYNAMIC_EXE)
     add_executable(mcc_dynamic src/mcc.c)
     set_source_files_properties(src/mcc.c PROPERTIES OBJECT_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/src/mcctools.c")
     set_target_properties(mcc_dynamic PROPERTIES OUTPUT_NAME mcc-dynamic)
-    target_compile_definitions(mcc_dynamic PRIVATE SINGLE_SOURCE=0)
-    target_link_libraries(mcc_dynamic PRIVATE libmcc)
-    if(NOT MCC_BUILD_STATIC_LIB AND MCC_ENABLE_RPATH)
-        if(APPLE)
-            set_target_properties(mcc_dynamic PROPERTIES
-                INSTALL_RPATH "@executable_path/../${CMAKE_INSTALL_LIBDIR};${CMAKE_INSTALL_FULL_LIBDIR}")
-        else()
-            set_target_properties(mcc_dynamic PROPERTIES INSTALL_RPATH "${CMAKE_INSTALL_FULL_LIBDIR}")
+    target_include_directories(mcc_dynamic PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    if(NOT MCC_TARGETOS STREQUAL "WIN32")
+        target_link_libraries(mcc_dynamic PRIVATE m)
+        find_package(Threads)
+        if(Threads_FOUND)
+            target_link_libraries(mcc_dynamic PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
         endif()
+    endif()
+    if(NOT "${MCC_EXTRA_LIBS}" STREQUAL "")
+        target_link_libraries(mcc_dynamic PRIVATE ${_mcc_extra_libs})
     endif()
     if(MCC_GITHASH)
         target_compile_definitions(mcc_dynamic PRIVATE "MCC_GITHASH=\"${MCC_GITHASH}\"")
@@ -2011,8 +2018,6 @@ if(MCC_BUILD_DYNAMIC_EXE AND NOT MCC_SINGLE_SOURCE)
     if(MCC_ALL_DIAGNOSTICS)
         target_compile_options(mcc_dynamic PRIVATE ${MCC_DIAG_FLAGS})
     endif()
-elseif(MCC_BUILD_DYNAMIC_EXE AND MCC_SINGLE_SOURCE)
-    message(STATUS "mcc: mcc-dynamic needs a multi-TU libmcc; skipped under MCC_SINGLE_SOURCE=ON")
 endif()
 
 if(MCC_BUILD_MUSL AND NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT APPLE)
@@ -2135,15 +2140,17 @@ if(MCC_BUILD_MUSL AND NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT APPLE)
         endif()
     endif()
 
-    if(MCC_BUILD_DYNAMIC_EXE AND NOT MCC_SINGLE_SOURCE)
+    if(MCC_BUILD_DYNAMIC_EXE)
         add_executable(mcc_dynamic_musl src/mcc.c)
         set_source_files_properties(src/mcc.c PROPERTIES OBJECT_DEPENDS
             "${CMAKE_CURRENT_SOURCE_DIR}/src/mcctools.c")
-        target_compile_definitions(mcc_dynamic_musl PRIVATE SINGLE_SOURCE=0 ${_mccdefs_musl})
+        target_compile_definitions(mcc_dynamic_musl PRIVATE ${_mccdefs_musl})
+        target_include_directories(mcc_dynamic_musl PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
         set_target_properties(mcc_dynamic_musl PROPERTIES OUTPUT_NAME mcc-dynamic-musl)
-        target_link_libraries(mcc_dynamic_musl PRIVATE ${_libmcc_musl})
-        if(NOT MCC_BUILD_STATIC_LIB AND MCC_ENABLE_RPATH)
-            set_target_properties(mcc_dynamic_musl PROPERTIES INSTALL_RPATH "${CMAKE_INSTALL_FULL_LIBDIR}")
+        target_link_libraries(mcc_dynamic_musl PRIVATE m)
+        find_package(Threads)
+        if(Threads_FOUND)
+            target_link_libraries(mcc_dynamic_musl PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
         endif()
         if(MCC_GITHASH)
             target_compile_definitions(mcc_dynamic_musl PRIVATE "MCC_GITHASH=\"${MCC_GITHASH}\"")
@@ -2153,6 +2160,9 @@ if(MCC_BUILD_MUSL AND NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT APPLE)
         endif()
         if(MCC_BUILD_STRIP AND NOT MCC_CC_NAME STREQUAL "msvc")
             target_link_options(mcc_dynamic_musl PRIVATE ${MCC_STRIP_LDFLAG})
+        endif()
+        if(_musl_vendored)
+            add_dependencies(mcc_dynamic_musl musl-sysroot)
         endif()
         install(TARGETS mcc_dynamic_musl RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
     endif()
