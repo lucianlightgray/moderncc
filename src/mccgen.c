@@ -73,6 +73,7 @@ static int ast_bail;        /* an unsupported construct was seen              */
 static int ast_stmt_n;      /* leaf statements the builder accounted for       */
 static void ast_hook_stmt(int t);
 static void ast_hook_return(int has_val);
+static void ast_hook_implicit_return(void);
 #endif
 
 #if PTR_SIZE == 4
@@ -8306,6 +8307,9 @@ static void check_func_return(void) {
 	if ((func_vt.t & VT_BTYPE) == VT_VOID)
 		return;
 	if ((!strcmp(funcname, "main") || func_old) && (func_vt.t & VT_BTYPE) == VT_INT) {
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_implicit_return();
+#endif
 		vpushi(0);
 		gfunc_return(&func_vt);
 	} else {
@@ -10236,6 +10240,21 @@ static void ast_hook_return(int has_val) {
 		}
 	}
 	ast_add_child(ast_cur, bb, ret);
+}
+
+/* The main/K&R implicit `return 0;` synthesized at a fall-off-the-end body.
+ * Recorded as a real Return(Literal 0) so the whole body is accounted for. */
+static void ast_hook_implicit_return(void) {
+	if (!ast_active)
+		return;
+	AstLocal bb = ast_root(ast_cur);
+	AstLocal ret = ast_node(ast_cur, AST_Return);
+	AstLocal lit = ast_node(ast_cur, AST_Literal);
+	ast_set_ival(ast_cur, lit, 0);
+	ast_set_type(ast_cur, lit, VT_INT, 0);
+	ast_add_child(ast_cur, ret, lit);
+	ast_add_child(ast_cur, bb, ret);
+	ast_stmt_n++;
 }
 
 /* --- AST replay: the emit driver (AST -> vstack ops -> bytes) -------------- */
