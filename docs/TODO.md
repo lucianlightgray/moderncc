@@ -265,8 +265,9 @@ brought up one §17 category at a time.
   ARM-target-only). *(Aside noted during triage: mcc's `-c` ARM objects carry no
   `.ARM.attributes`, so a local `objdump` misdisassembles correct v6T2+ bytes —
   a harness-reliability nicety, not a codegen defect.)*
-- [~] **Reference-harness `exec`/`diff3` goldens are effectively dead (validated
-  2026-07-07).** The four `note:`-skipped goldens (inline multi-unit, backtrace,
+- [x] **Reference-harness `exec`/`diff3` goldens are effectively dead (validated
+  2026-07-07: all covered by executing tests; bespoke harness declined).** The four
+  `note:`-skipped goldens (inline multi-unit, backtrace,
   btdll, alias) carry full expected output but self-skip because each needs a
   bespoke harness the exec runner has no mode for (multi-variant compile,
   shared-lib, multi-TU symbol export). Determination: their behavior *is* covered
@@ -376,7 +377,9 @@ runtime cases go in `tests/exec/features_c99_c11/`, diagnostics/negatives in
   narrowing on i386 (FLT_EVAL_METHOD==2) via the qemu matrix. `FLT_EVAL_METHOD`
   itself stays covered by `flt_eval_method.c`. _Ref:_ gcc `gcc.dg/c11-float-*.c`,
   clang `C11/n1365.c`, `C11/n1396.c`.
-- [~] **`_Complex` diagnostics + Annex G special values.** _Annex G / CMPLX edges
+- [x] **`_Complex` diagnostics + Annex G special values (2026-07-07: Annex G/CMPLX
+  covered; constraint-diagnostics fold into the negative-test-tier item).**
+  _Annex G / CMPLX edges
   now covered_ by `exec/features_c99_c11/complex_cmplx_special.c` (3-way validated,
   runs the exec/exec-replay/exec-replay-tmpl/diff3 columns): CMPLX/CMPLXF/CMPLXL
   exactness with NaN/inf parts (n1464), `cabs` inf-part→+inf, `conj` exact sign
