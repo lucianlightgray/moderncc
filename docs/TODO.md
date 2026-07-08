@@ -69,9 +69,11 @@ brought up one §17 category at a time.
     `gsym` pattern (no backend jump hooks). Done: **comparisons** (`< > <= >= == !=`),
     **`if`/`if-else`** (nested BasicBlocks), **non-tail returns** (branch returns that
     jump to the epilogue), **`while`**, **`++`/`--`** (`inc()` modeled as `Unary`),
-    **`for`** (init;cond;incr), **`do-while`**, **`break`/`continue`** (Jump nodes
+    **`for`** (init;cond;incr), **`for(;;)`** (no controlling expression — no gvtst,
+    empty break chain), **`do-while`**, **`break`/`continue`** (Jump nodes
     chaining onto the loop's replay-time chains). Loops are `If` nodes op==2 (while)/
-    op==3 (for)/op==4 (do-while). Compound-assign (`+=`) and comma replay. **Memory
+    op==3 (for)/op==4 (do-while)/op==5 (for(;;)). Compound-assign (`+=`) and comma
+    replay. **Memory
     model:** pointer deref/address-of (`Load`/`gaddrof`) and **array subscripting
     `a[i]`** (gen_op nesting counter for the recursive pointer-scale gen_op('*');
     `ast_bad_type` guards keep struct/union/bitfield/float on correct fallback).

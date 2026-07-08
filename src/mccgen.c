@@ -10954,12 +10954,16 @@ static void ast_hook_break_continue(int is_continue) {
 static void ast_hook_for_begin(int has_cond) {
 	if (!ast_active || ast_desync || ast_bail)
 		return;
-	if (!has_cond || ast_cf_top >= AST_CF_MAX) {
-		ast_bail = 1; /* for(;;)-style loops not modeled */
+	if (ast_cf_top >= AST_CF_MAX) {
+		ast_bail = 1;
 		return;
 	}
 	AstLocal loop = ast_node(ast_cur, AST_If);
-	ast_set_op(ast_cur, loop, 3); /* for-loop marker */
+	/* op 3 = for(cond;;): children [cond, incr-BB, body-BB]. op 5 = for(;;)
+	   with no controlling expression: children [incr-BB, body-BB] (ast_hook_for_cond
+	   is not called, so no cond child is added) — the parser emits no gvtst, so the
+	   break chain starts empty. */
+	ast_set_op(ast_cur, loop, has_cond ? 3 : 5);
 	ast_add_child(ast_cur, ast_cur_bb, loop);
 	ast_cf_if[ast_cf_top] = loop;
 	ast_cf_savebb[ast_cf_top] = ast_cur_bb;
@@ -11486,6 +11490,32 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 				ast_replay_value(a, ast_child(a, s, 1));
 				int cc = gvtst(0, 0);
 				gsym_addr(cc, dd);
+				gsym(aa);
+				break;
+			}
+			if (ast_op(a, s) == 5) {
+				/* for(;;): no controlling expression, so no gvtst — the break chain
+				 * starts empty (aa = 0). Children [incr-BB, body-BB]. Otherwise the
+				 * same gind/[jump-over-incr]/body/back-edge/gsym shape as op==3. */
+				int cc = gind();
+				int dd = cc;
+				AstLocal incrbb = ast_child(a, s, 0);
+				if (incrbb != AST_NONE && ast_first_child(a, incrbb) != AST_NONE) {
+					int ee = gjmp(0);
+					dd = gind();
+					ast_replay_bb(a, incrbb);
+					gjmp_addr(cc);
+					gsym(ee);
+				}
+				int aa = 0, bb = 0;
+				int *sb = ast_rp_bsym, *sc = ast_rp_csym;
+				ast_rp_bsym = &aa;
+				ast_rp_csym = &bb;
+				ast_replay_bb(a, ast_child(a, s, 1));
+				ast_rp_bsym = sb;
+				ast_rp_csym = sc;
+				gjmp_addr(dd);
+				gsym_addr(bb, dd);
 				gsym(aa);
 				break;
 			}
