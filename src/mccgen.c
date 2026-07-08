@@ -12250,8 +12250,11 @@ static int ast_plan_promotion(AstArena *a) {
 	 * that clobbers the promoted pointer (a promoted read is instead copied to a scratch
 	 * before any modify: `mov %pin, %tmp; add …, %tmp`). Confirmed: promoting the `s`
 	 * param of `s->average = …; s->count++` in the exec suite's average.c diverged from
-	 * -O0. Future extension: for a promoted base, fold the constant member offset as an
-	 * addressing *displacement* (the SIB+disp path in gen_modrm_impl) instead of an add. */
+	 * -O0. Folding the offset as an addressing *displacement* instead does NOT work as-is:
+	 * gen_modrm_impl's plain-register-base path deliberately ignores a nonzero `c` (-O0
+	 * pre-adds member offsets into the base register and leaves stale addend metadata that
+	 * must not be re-emitted — teaching that path to emit `c` breaks -O0 codegen). A real
+	 * fix needs a distinct "register base + live displacement" addressing form. */
 	for (AstLocal n = 0; n < nn; n++) {
 		if (ast_kind(a, n) != AST_Unary)
 			continue;
