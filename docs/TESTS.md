@@ -10,7 +10,7 @@ local clones; refresh when they are updated.
 |---|---|---|---|---|
 | GCC | `~/Projects/gcc` | `master` @ `31d967232a9` (2026-07-04, gcc-17 base) | `gcc.dg/c99-*.c` ×135 + `gcc.c-torture/**` | `gcc.dg/c11-*.c` ×126 + `gcc.dg/atomic/*.c` ×48 |
 | Clang | `~/Projects/llvm-project` | `main` @ `0f1f456263b5` (2026-07-03, llvmorg-23-init) | `clang/test/C/C99/` ×19 | `clang/test/C/C11/` ×16 |
-| mcc | this repo | `main` | `tests/exec/**` ×232 + `tests/diff/**` + `tests/qemu/**` | same suites (unified) |
+| mcc | this repo | `main` | `tests/exec/**` ×241 + `tests/diff/**` + `tests/diff3/**` + `tests/ast/**` + `tests/qemu/**` | same suites (unified) |
 
 **How each project organizes C-standard tests**
 
@@ -27,9 +27,9 @@ local clones; refresh when they are updated.
   `-emit-llvm`, or `-E` piped to `FileCheck`. Small, precise, edge-case-driven;
   most feature *breadth* lives elsewhere (`Sema/`, `CodeGen/`, `Preprocessor/`,
   and the larger `C/C23` tree).
-- **mcc** — feature-grouped runtime suites. `tests/exec/` (232 `.c`, golden
+- **mcc** — feature-grouped runtime suites. `tests/exec/` (241 `.c`, golden
   stdout/exit in `goldens.h`, run by `runner.c`) is the behavioral driver, with a
-  dedicated **`features_c99_c11/` (37 cases)** plus `types/`, `structs_unions/`,
+  dedicated **`features_c99_c11/` (46 cases)** plus `types/`, `structs_unions/`,
   `statements/`, `vla/`, etc. `tests/diff/` is a 3-way (gcc/clang/tcc) golden-diff
   suite: a `full_language.c` mega-TU + 33 clause-numbered `parts/run_s*.c` runners
   (§6.2…§7.28, Annexes C/D/E/F/G/K). `tests/qemu/` re-runs conformance on all 5
@@ -43,17 +43,41 @@ local clones; refresh when they are updated.
 
 | Suite | Purpose | ~cases |
 |---|---|---|
-| `tests/exec/` | Main behavioral/codegen driver; 17 category dirs incl. **`features_c99_c11` (37)**, types (30), statements (25), structs_unions (19), preprocessor (18), lexical (16), pointers_arrays (15), expressions (14), functions_abi (14), vla (5) | 232 |
+| `tests/exec/` | Main behavioral/codegen driver; 17 category dirs incl. **`features_c99_c11` (46)**, types (30), statements (25), structs_unions (19), preprocessor (15), lexical (16), pointers_arrays (15), expressions (14), functions_abi (14), vla (5) | 241 |
 | `tests/diff/` | 3-way diff vs gcc/clang/tcc: `full_language.c` + clause runners `parts/run_s6_2…s7_28` + Annex C/D/E/F/G/K + `complex_abi/` | ~35 |
+| `tests/diff3/` | granular 3-way differential vs gcc **and** clang over the exec corpus (`runner.c` → one `diff3/<name>` per case); distinct from the tcc-based `tests/diff/` | (corpus) |
+| `tests/ast/` | AST intention-IR replay differential (docs/AST.md): `asttool` pure-lib checks (`ast/{arena,validate,dump,cfg,provenance,template}`) + ~40 `ast/replay-<case>` exit-code/byte-identical `-O1`-replay-vs-`-O0` gates + the whole-corpus `exec-replay`/`exec-replay-tmpl` columns | 41 |
 | `tests/preprocess/` | conditional, diagnostics, directives, expansion, stringize, token-pasting, variadic | ~38 |
-| `tests/qemu/` | cross-target runtime (5 arches): `conformance/` (16) + `apple-libc/` (44) | ~60 |
-| `tests/cli/` | driver/CLI behavior (deps, aliases, wmain, TLS, suffixes) | 21 |
+| `tests/qemu/` | cross-target runtime (5 arches): `conformance/` (16) + `apple-libc/` (26); + the containerized `docker/` runner and `macho/` drivers | ~42 |
+| `tests/cli/` | driver/CLI behavior (deps, aliases, wmain, TLS, suffixes) | 16 |
 | `tests/cst/` | CST subsystem (roundtrip, symref, hashinv, macro, kinds) | 24 |
-| `tests/{tls,static}/` | 4 TLS models × dyn/static; static-link smoke | 4 |
+| `tests/sanitize/` | `sanitize-smoke`: compile+link+run a program with the instrumented `mcc_s` (registered only when `MCC_BUILD_SANITIZE`/`diagnostics`) | 1 |
+| `tests/diagnostics/` | `compile_errors.c` — expected must-reject compile diagnostics | 1 |
+| `tests/{tls,static}/` | TLS models (dyn/static) + static-link smoke | 2 |
 | `tests/{embed,behavior,asm,ci,support,bench}/` | libmcc API, bounds stress, asm roundtrip, harness | ~30 |
 
-**Total ≈ 398 case files.** Suites auto-enable when the reference toolchain / qemu
-is detected.
+**Total ≈ 400+ case files** (the exec corpus grows; the `diff3`/`ast` replay columns
+re-run it). Suites auto-enable when the reference toolchain / qemu is detected.
+
+**Platform-gated harnesses (labels & `SKIP_RETURN_CODE 77`).** Beyond the portable
+suites, several run only where their toolchain/host is present and otherwise
+**skip-with-reason** rather than fail:
+
+- **macOS / Mach-O** (label `macho`). Cross-consuming: `macho-structural`,
+  `macho-codegen-run`, `macho-image-run`, `macho-apple-libc` need the `mcc-x86_64-osx`
+  cross (`cmake --preset cross` / `MCC_CROSS_DIR`) and self-skip off x86_64. Native
+  self-skipping: `macho-conformance-native`, `macho-stack-protector`, `macho-universal`
+  (the `machofat` fat-binary tool; 2-slice case via `xcrun --show-sdk-path`).
+  `macho-libsystem-kernel-fused` needs `MCC_DARWIN_HOST=ON` (a macOS/darling host).
+  `qemu-arm64-osx` covers arm64-Darwin codegen under qemu. `ast/replay-ld_fallback`
+  is excluded on Darwin+arm64; `mcctest`/`-bcheck` skip when the reference cc is a
+  Homebrew GNU gcc on Darwin/arm64.
+- **Windows / PE** (label `wine`). `pe-wine-conformance` runs mcc's PE output under
+  `wine` using the `mcc-x86_64-win32` cross; `pe-native-conformance` and `compile.win32.*`
+  run only on a native WIN32 target. mcc's PE output links legacy `msvcrt.dll`, so `-b`
+  bounds checking (`mcctest-bcheck`), the `parts-suite`, and (on arm64) `mcctest` self-skip.
+  `MCC_BUILD_SANITIZE` now works on Windows too — MSVC AddressSanitizer or mingw trap-mode
+  UBSan — feeding `sanitize-smoke`.
 
 ---
 

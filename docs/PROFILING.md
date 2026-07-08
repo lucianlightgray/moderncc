@@ -13,7 +13,7 @@ quiet system (§3).
   - `tests/diff/full_language.c` — the `mcctest` differential TU (416 lines +
     its `tests/diff/parts/*` and `runtime/include` headers). Small; the
     established lexer-optimization workload (§6). Same source the `mcctest` test
-    drives (`mccharness mcctest`, `CMakeLists.txt` ~2783), so the compile flags
+    drives (`mccharness mcctest`, `CMakeLists.txt` ~3587), so the compile flags
     mirror that harness. **`-O0`-only:** its self-referential `__bug_table`
     inline-asm (`tests/diff/parts/legacy_meta.h:364`) miscompiles/traps under any
     optimizer, so it exercises the `-Ox` compilers at `-O0` and `-c` only (§4a).
@@ -31,7 +31,16 @@ quiet system (§3).
 - **Host of record:** Linux x86-64 (Gentoo, kernel 6.18), 32 cores, gcc 15.3.0,
   clang 22.1.8. Measurements pinned to core 2 with ASLR off, turbo off, and the
   `performance` governor (§3a); `perf_event_paranoid` lowered to 1 for §5.
+  **Linux/GNU-Clang only:** the `-pg`/`mcc_p` gprof path below requires a GNU or Clang
+  host. It is a hard configure error on **Darwin** (`MCC_BUILD_PROFILE` — "unsupported on
+  Darwin (no static crt0.o)"; the `diagnostics` preset skips `mcc_p` there) and unavailable
+  on **Windows/MSVC** (needs a GNU/Clang host); the `perf`-based path (§5) is likewise Linux.
 - **Reference date:** 2026-07-06.
+
+- **The `gprof` build (`mcc_p`).** Separate from the `perf` path, `-DMCC_BUILD_PROFILE=ON`
+  (or the `diagnostics` preset, which seeds it) builds a dedicated **`mcc_p`** target with
+  `-pg -static` and defines `MCC_PROFILE`, which neutralizes `static`/`inline`
+  (`src/mcc.h:205`) so gprof can attribute every function. Linux/GNU-Clang only (see above).
 
 ---
 
@@ -39,7 +48,8 @@ quiet system (§3).
 
 Each `mcc` in the spread is a **plain `Debug` (`-O0 -g`) build with sanitizers
 off** (`MCC_BUILD_SANITIZE=OFF`; the default, and never on the primary `mcc`
-target — it only ever builds a separate `mcc_s`), unstripped, no bcheck/backtrace.
+target — it only ever builds a separate `mcc_s`, now on Windows too: MSVC ASan or
+mingw trap-UBSan), unstripped, no bcheck/backtrace.
 `-O0 -g` symbolizes cleanly for `perf` (no inlining). `mcc` ignores `-O`, so
 `mcc-self` codegen is unaffected by the build type; only the gcc/clang-built rows
 change (their `mcc` binary is now `-O0`, hence slower than the old `-O2` build).

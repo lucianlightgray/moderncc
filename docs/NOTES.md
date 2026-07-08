@@ -154,7 +154,7 @@ test additions). Other presets differ only by their skip set: `asm-off`
 legitimately registers fewer (its integrated-assembler cases drop). The `qemu`
 matrix runs all 5 arches × glibc+musl + `qemu-arm64-osx` once the `*-fetch` steps
 download the target sysroots. With the `cross` toolchain built (`MCC_CROSS_DIR`,
-default `cmake-cross`), the wine PE-conformance and the four host-runnable Mach-O
+default `cmake-cross`), the wine PE-conformance and the six host-runnable Mach-O
 drivers run natively and pass too.
 
 **Windows status (2026-07-08, main@9544d719, mingw gcc 13.1 / MSVC 19.51 / clang 22):**
@@ -193,10 +193,16 @@ take, so the per-cross static shapes are intentionally skipped under MSVC). The
 in-tree build/CI tools carry their own ctests that pass here too —
 `host-gate-invariant`, `git-stamp`, `def-verify`, `build-md-nodes`,
 `config-defines`, `host-detect`, `cross-factory`, `ci-matrix`, `ci-pkg-smoke`,
-`qemu-fetch-parse`. `sanitize`
-intentionally fails at configure — mingw ships no libasan/libubsan; use
-`diagnostics`, which builds the coverage + profile variants and skips
-sanitize. The PE target gets native-only extra coverage
+`qemu-fetch-parse`. **`sanitize` now runs on Windows too** (commit `ccba8d22`): it is
+no longer a configure-fatal there. On **mingw** it resolves to **trap-mode UBSan**
+(`-fsanitize=undefined -fsanitize-trap=undefined -fno-sanitize=alignment`) — no
+libasan/libubsan runtime needed, and `-fno-sanitize=alignment` drops mcc's one
+intentional unaligned-access trip — while the new **`sanitize-msvc`** preset builds an
+**MSVC AddressSanitizer** (`/fsanitize=address`) `mcc_s`. A `sanitize-smoke` ctest
+compiles+links+runs a program with the instrumented `mcc_s`; both are green (`sanitize`
+mingw 1416/1416, `sanitize-msvc` 1414/1414). `diagnostics` still builds the coverage +
+profile variants (and skips `mcc_p` on Windows/Darwin). The PE target gets native-only
+extra coverage
 (`pe-native-conformance`, `compile.win32.*`); remaining skips are
 environment- or libc-gated with reasons (wine, macOS, X11, ELF-emitting
 32-bit reference, the osx/arm64/riscv64 cross drivers when the `cross`
@@ -215,6 +221,7 @@ failure), `—` = not applicable.
 | `exec/*` (golden run/diff)            | P | P | P | P | P | P |
 | `mcctest`¹                            | P | P | P | P | P | P |
 | `mcctest-bcheck`¹                     | S | S | S | P | P | P |
+| `sanitize-smoke`¹¹                    | P | P | P | P | P | P |
 | `preprocess/*`²                       | P | P | P | P | P | P |
 | `diff3/*`²                            | P | P | P | P | P | P |
 | `parts/*`² (per-unit 3-way diff)⁹     | S | S | S | P | P | P |
@@ -228,7 +235,7 @@ failure), `—` = not applicable.
 | `i386-fastcall-abi`⁶                  | S | S | S | P | P | S |
 | `compile.win32.*` / `pe-native-conformance` | P | P | P | — | — | S |
 | `pe-wine-conformance` (label `wine`)⁷ | S | S | S | P | P | S |
-| `macho-*` (7 drivers, label `macho`)⁷ | S | S | S | P | P | P |
+| `macho-*` (8 drivers, label `macho`)⁷ | S | S | S | P | P | P |
 | qemu cross×libc matrix (label `qemu`)⁸| S | S | S | P | P | S |
 
 ¹ Differential vs. a GCC-compatible reference cc (needs the integrated
@@ -255,12 +262,15 @@ UNIX-tools/binutils directory need be on the invoker's `PATH`.
 ⁷ Both need the cross toolchain (preset `cross`, or a populated
 `MCC_CROSS_DIR` — default `cmake-cross`): wine + the win32 cross
 compilers for `pe-wine-conformance`; the osx cross compilers +
-`llvm-otool`/`otool` for the Mach-O drivers. Linux: four host-runnable drivers
+`llvm-otool`/`otool` for the Mach-O drivers. Linux: six host-runnable drivers
 pass (`macho-structural`, `macho-codegen-run`, `macho-image-run`,
-`macho-apple-libc`); `macho-conformance-native` and
-`macho-libsystem-kernel-fused` skip (need Darwin/darling). macOS:
-`macho-structural` + `macho-conformance-native` are native; Linux-approximation
-drivers self-skip off x86_64.
+`macho-apple-libc`, `macho-stack-protector`, and `macho-universal` — the last is the
+`machofat` fat-binary combiner, 1-slice; its 2-slice case self-skips without the
+`x86_64-osx` cross + SDK); `macho-conformance-native` and
+`macho-libsystem-kernel-fused` skip (need Darwin/darling — the latter also gated on
+`MCC_DARWIN_HOST=ON`). macOS: `macho-structural`, `macho-conformance-native`,
+`macho-stack-protector`, and `macho-universal` are native (the last shelling to
+`xcrun --show-sdk-path`); the Linux-approximation drivers self-skip off x86_64.
 ⁸ Windows runs it via the Docker runner; a Linux host with `qemu-user` runs it
 natively (`ctest -L qemu`).
 ⁹ Native 3-way per-unit differential of each `tests/diff/parts/run_*.c`
@@ -272,6 +282,13 @@ macOS). With the cross compilers built, `dash-s-bytes-{arm64,riscv64}`
 additionally assert **object-byte-exact** `-S` roundtrips on the fixed-width
 targets (i386/arm are instruction-exact; their assemblers legally re-encode
 some widths/branch fields).
+¹¹ Registered only when the separate `mcc_s` is built (the `sanitize`/
+`sanitize-msvc`/`diagnostics` presets, `MCC_BUILD_SANITIZE=ON`); `—`/absent on the
+plain presets. The instrumentation differs by host: **Lin gcc/clang** ASan+UBSan,
+**Win mingw** trap-mode UBSan (no runtime lib), **Win msvc** ASan (`/fsanitize=address`),
+**mac clang** ASan+UBSan (a Homebrew GNU-`gcc` host instead skips `mcc_s` — no linkable
+libasan/libubsan). `-fno-sanitize=alignment` throughout (mcc's one intentional
+unaligned-access idiom).
 
 ## Compile speed & footprint
 

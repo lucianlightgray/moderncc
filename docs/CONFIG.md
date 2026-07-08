@@ -62,6 +62,13 @@ them (with the rationale in `tools/ckconfig.c`):
 | `CONFIG_MCC_BACKTRACE_ONLY` | **read**, no CMake node | opt-in "backtrace-only" runtime build variant; `#ifndef`-graceful, set outside the config surface |
 | `CONFIG_MCC_ELFINTERP_ARMHF` | **read**, header `#define` | code-internal constant (`src/mcc.h`), not a build option |
 | `CONFIG_MCC_TOOLHOST` | **read**, header `#define` | set by `tools/toolhost.h` when mcc source is built as a host tool |
+| `CONFIG_MCC_STATIC` | emitted **per-target** + read | driven by `MCC_BUILD_STATIC_EXE` / the `mcc_p` target (a `MCC_BUILD_*` option, not a `MCC_CONFIG_*`/`MCC_*` one), emitted with `target_compile_definitions` rather than the `_mccdefs` list — so it is outside the `ckconfig --list` surface above yet is genuinely read (`src/mcchost.{c,h}`, `src/libmcc.c`: static `-run` symbols from a built-in table). **Set only on Linux** (`NOT MSVC AND NOT APPLE AND NOT WIN32`) — inert/undefined on **Darwin** and **WIN32**. |
+
+**Platform note.** The Darwin/Win32-specific *build* knobs — `MCC_CONFIG_NEW_MACHO`,
+`MCC_CONFIG_CODESIGN` (Darwin only) and `MCC_CONFIG_MINGW` (Win32), plus `MCC_CONFIG_DWARF`
+— steer the build only and emit **no** `-DCONFIG_MCC_*` the source reads, so they are
+catalogued in [BUILD.md](BUILD.md), not here. `CONFIG_MCC_STATIC` (above) is the one
+`MCC_BUILD_*`-driven macro the code actually branches on.
 
 ## The checker
 

@@ -47,8 +47,8 @@ cmake --build --preset debug -j
 ```
 
 The developer presets above are the ones you'll use by hand; CI/dist presets
-(`linux-*`, `macos*`, `msvc`, `mingw`, `qemu*`, `dist-*`) are also defined and
-drive the workflows + docker runners. See [BUILD.md §2](docs/BUILD.md) for the full
+(`linux-*`, `macos*`, `msvc`, `sanitize-msvc`, `mingw`, `qemu*`, `dist-*`) are also
+defined and drive the workflows + docker runners. See [BUILD.md §2](docs/BUILD.md) for the full
 preset catalog and naming conventions. Current per-platform build status lives
 in [docs/NOTES.md](docs/NOTES.md#build-status).
 
@@ -226,9 +226,11 @@ Docker runner) on every push.
 **Mach-O by host.** macOS: `macho-conformance-native` compiles the full
 self-checking set with native `mcc` and runs each as a real Mach-O image against
 system libSystem — the most direct coverage (subsumes TLS and libc-dependent
-programs). Linux/x86_64: structural, self-contained-image, codegen and
-apple-libc drivers approximate the same codegen via a loader/trampoline; off
-x86_64 they **Skip**, not hollow-pass. The remaining libSystem/dyld path
+programs); `macho-stack-protector` and `macho-universal` (the `machofat` fat-binary
+combiner, its 2-slice case via `xcrun --show-sdk-path`) run natively too. Linux/x86_64:
+the `structural`, `image-run`, `codegen-run`, `apple-libc`, and `stack-protector`
+drivers approximate the same codegen via a loader/trampoline (and consume the
+`mcc-x86_64-osx` cross); off x86_64 they **Skip**, not hollow-pass. The remaining libSystem/dyld path
 (libmalloc, locale stdio, dyld, pthread/GCD, ObjC) is kernel-fused and needs a
 macOS or **darling** host (`-DMCC_DARWIN_HOST=ON` — the `macos` preset sets it,
 so the macOS CI runner covers this); intentionally outside the ELF matrix.

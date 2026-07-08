@@ -160,6 +160,7 @@ host-dynamic (macOS Homebrew gcc). Hidden bases are prefixed `_`
 | `linux-gcc-diagnostics` | `linux` | + `MCC_ALL_DIAGNOSTICS=ON` (`mcc_s`/`mcc_p`/`mcc_c`) |
 | `macos`, `macos-cross` | `macos` | Debug, `CMAKE_C_COMPILER=$env{CC}` (clang / Homebrew gcc), `MCC_DARWIN_HOST=ON` |
 | `msvc` | `msvc` | Release, `MCC_TOOLCHAIN_PROFILE=msvc`, diff3 refs from `$env{}` |
+| `sanitize-msvc` | `msvc` | + `MCC_BUILD_SANITIZE=ON` — MSVC AddressSanitizer (`/fsanitize=address`); test preset excludes `qemu\|wine\|macho` |
 | `mingw` | `mingw` | Release, `MCC_TOOLCHAIN_PROFILE=mingw` (build-only) |
 
 The `linux`, `macos`, `msvc`, and `mingw` build jobs upload their build
@@ -264,8 +265,12 @@ host), enabling the kernel-fused apple-libc suite.
 | `MCC_BUILD_COVERAGE` | BOOL | OFF | GNU/Clang host; needs runnable mcc | Build `mcc_c` (coverage instrumentation). |
 
 `MCC_BUILD_PROFILE` requires a GCC/Clang **host** compiler (fatal otherwise);
-`MCC_BUILD_SANITIZE` also accepts an MSVC host (AddressSanitizer). Presets:
-`sanitize` (mingw, trap-UBSan) and `sanitize-msvc` (MSVC ASan).
+`MCC_BUILD_SANITIZE` is broader — it accepts a GCC/Clang, **MSVC**, or **mingw**
+host (only a non-GCC/Clang/MSVC host is fatal). Presets: `sanitize` (native
+GCC/Clang host → ASan+UBSan) and `sanitize-msvc` (Windows/MSVC → AddressSanitizer,
+`/fsanitize=address`). There is no dedicated mingw-sanitize preset: mingw/PE
+trap-mode UBSan (no libasan/libubsan runtime needed) is reached by adding
+`MCC_BUILD_SANITIZE=ON` to a `mingw`-profile build.
 
 ---
 
@@ -397,14 +402,38 @@ Consumed by the `mingw-toolchain` / `clang-toolchain` / `vendor-musl` /
 | Value | Type | Default | Purpose |
 |---|---|---|---|
 | `MCC_REF_CC` | FILEPATH | host cc | GCC-compatible reference compiler for differential tests (mcctest/-bcheck). |
+| `MCC_DIFF3_GCC` / `MCC_DIFF3_CLANG` | FILEPATH | `''` | gcc/clang reference compilers for the three-way `diff3` differential. On Windows the `msvc`/`sanitize-msvc` presets pass these from `$env{}` (there is no host gcc/clang otherwise). |
 | `MCC_GCCTESTSUITE_PATH` | PATH | `''` | `gcc.c-torture` dir for the `gcctestsuite` target. |
 | `MCC_ARM_CROSS_COMPILE` | STRING | `''` | binutils prefix (e.g. `arm-linux-gnueabi-`) for `arm-asm-testsuite`. |
-| `MCC_DARWIN_HOST` | BOOL | OFF | Tests run on a macOS/darling host with real libSystem (enables mach-o kernel-fused tests). |
+| `MCC_DARWIN_HOST` | BOOL | OFF | Tests run on a macOS/darling host with real libSystem (enables `macho-libsystem-kernel-fused`). The `macos` preset sets it (the CI runner is real Darwin). |
+| `MCC_CROSS_DIR` | PATH | `''` | The cross-compiler **build** dir the cross-consuming tests read `mcc-<arch>-{osx,win32}` from — every `macho-*` cross test and `pe-wine-conformance`. The `qemu`/`qemu-*` presets set it; without it those tests self-skip. |
+| `MCC_WINE` | FILEPATH | auto | wine/wine64 runner for `pe-wine-conformance` (installed by the `setup-wine` target). Empty ⇒ the wine PE test skips. |
+| `MCC_QEMU_TESTS` | BOOL | OFF | Master on/off for the qemu-user cross-conformance matrix below (the `qemu` presets set it). |
 | `MCC_QEMU_MIRROR` | STRING | Gentoo releases | Base URL for qemu-user rootfs downloads. |
 | `MCC_QEMU_ARCHS` | STRING (list) | `x86_64;i386;arm;arm64;riscv64` | Architectures to exercise under qemu-user. |
 | `MCC_QEMU_LIBCS` | STRING (list) | `glibc;musl` | C libraries to exercise. |
 | `MCC_QEMU_DLDIR` | PATH | `vendor` | Parent dir for the Gentoo stage3 rootfs trees (`vendor/gentoo-stage3-<arch>-<libc>`). |
 | `MCC_QEMU_DOCKER_ARCHS` / `_LIBCS` | STRING | `''` | Passed to the `qemu-docker` matrix (empty = image default). |
+
+**Platform test families & host tooling.**
+
+- **Darwin / Mach-O** (label `macho`, filtered out of the `msvc`/`sanitize-msvc` test
+  presets). Cross-consuming drivers `macho-structural`, `macho-codegen-run`,
+  `macho-image-run`, `macho-apple-libc` read the `mcc-x86_64-osx` cross from
+  `MCC_CROSS_DIR` (else self-skip → "requires the (x86_64-)osx cross compilers"). Native
+  self-skipping drivers: `macho-conformance-native`, `macho-stack-protector`,
+  `macho-universal` (the last exercises the `machofat` tool — a self-contained universal/fat
+  Mach-O combiner + ad-hoc `codesign`, built only when `MCC_TARGETOS=Darwin`; its 2-slice case
+  shells out to `xcrun --show-sdk-path` for the SDK). `macho-libsystem-kernel-fused` needs
+  `MCC_DARWIN_HOST=ON`. `qemu-arm64-osx` (labels `qemu;macho`) covers arm64-Darwin codegen
+  under qemu.
+- **Windows / PE** (label `wine`). `pe-wine-conformance` runs mcc's PE output under
+  `MCC_WINE` using the `mcc-x86_64-win32` cross from `MCC_CROSS_DIR` (`setup-wine` installs
+  wine); `pe-native-conformance` runs only on a native WIN32 host. mcc's PE output links the
+  legacy `msvcrt.dll` import set (`msvcrt`,`kernel32`,`user32`,`gdi32`), so `-b` bounds
+  checking, the `parts-suite`, and (on arm64) the `mcctest` differential self-skip on PE.
+  `compile.win32` runs only for a WIN32 target. `setup-mingw` installs the mingw toolchain
+  (or the `mingw` preset's superbuild fetches WinLibs GCC `16.1.0-ucrt`).
 
 ---
 
@@ -499,7 +528,10 @@ several of these already (§2).
 
 11. `cross` preset (`MCC_ENABLE_CROSS=ON`) — all cross compilers.
 12. `matrix` preset (`gcc;clang` × `native;cross`).
-13. WIN32 target: `MCC_CONFIG_MINGW=ON` (verify sanitize is rejected).
+13. WIN32 target: `MCC_CONFIG_MINGW=ON`; and `MCC_BUILD_SANITIZE=ON` on Windows —
+    verify it is **accepted** now (MSVC → ASan `/fsanitize=address`; mingw/PE → trap-mode
+    UBSan, no runtime lib), not rejected. The `sanitize` configure-fatal fires only on a
+    non-GCC/Clang/MSVC host.
 14. A real cross target with `CMAKE_TOOLCHAIN_FILE` + `CMAKE_CROSSCOMPILING_EMULATOR`
     (e.g. qemu-arm / wine), and the same without an emulator to hit the fatal /
     autocorrect path.
