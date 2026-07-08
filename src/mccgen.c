@@ -11325,6 +11325,7 @@ static void ast_hook_gaddrof(void) {
 	ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
 	AstLocal u = ast_node(ast_cur, AST_Unary);
 	ast_set_op(ast_cur, u, AST_OP_ADDR);
+	ast_set_type(ast_cur, u, vtop->type.t, (uint64_t)(uintptr_t)vtop->type.ref);
 	ast_add_child(ast_cur, u, ast_vs[ast_vn - 1]);
 	ast_vs[ast_vn - 1] = u;
 }
@@ -11688,6 +11689,8 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 		ast_replay_value(a, ast_child(a, n, 0));
 		if (uop == AST_OP_ADDR) {
 			gaddrof(); /* array-decay / address-of */
+			vtop->type.t = ast_type_t(a, n);
+			vtop->type.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 		} else if (uop == AST_OP_MEMBER || uop == AST_OP_MEMBER_ARROW) {
 			/* Reproduce the parser's member-access sequence exactly (mccgen.c
 			 * postfix `.`/`->`): [indir for `->`], gaddrof, retype to char* for the
