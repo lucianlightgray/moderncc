@@ -12169,6 +12169,18 @@ static int ast_fn_inlinable(AstArena *a, Sym *sym) {
 		if (k == AST_Unary &&
 				(ast_op(a, n) == AST_OP_VLA || ast_op(a, n) == AST_OP_VLA_RESTORE))
 			return 0;
+		/* A `setjmp`-family call must run in its own stack frame — inlining the caller would
+		 * make it capture the grafting caller's frame, so `longjmp` would restore the wrong
+		 * context (guard query, docs/AST.md §18.4). Exclude a callee that calls setjmp. */
+		if (k == AST_Invoke) {
+			AstLocal ce = ast_first_child(a, n);
+			void *cs = ce != AST_NONE ? (void *)(uintptr_t)ast_sym(a, ce) : NULL;
+			if (cs) {
+				const char *cn = get_tok_str(((Sym *)cs)->v, NULL);
+				if (cn && strstr(cn, "setjmp")) /* setjmp/_setjmp/sigsetjmp/__sigsetjmp/… */
+					return 0;
+			}
+		}
 		/* A reference to an ANONYMOUS symbol-relative constant — a string literal / rodata
 		 * const captured as a raw Sym pointer — is not safely retainable: that Sym can be
 		 * recycled after this callee's own gen, long before a later caller grafts the body,

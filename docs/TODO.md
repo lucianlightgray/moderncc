@@ -367,11 +367,16 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
     that gets recycled after the callee's own gen, dangling by graft time — garbage `printf`
     formats) is now excluded from grafting. Verified `quad`→`add`, self-recursive `rec`, `withlib`
     (real `printf` call, excluded); corpus + ctest 1769/1769, ASan-clean.
+  - [x] **`setjmp` guard query — LANDED 2026-07-08.** A callee that calls a `setjmp`-family
+    function (name contains `setjmp`) is excluded: inlining it would make the `setjmp` capture the
+    grafting caller's frame, so `longjmp` restores the wrong context (docs/AST.md §18.4). Verified a
+    `setjmp`-using helper is no longer grafted and the program matches `-O0` (was diverging). VLA is
+    already excluded; signal handlers aren't a call-site inline concern (the OS calls them).
   - [ ] **Slice 2 breadth.** `goto`/`switch` (shared label/switch replay state); struct-by-value
     params/return. Then **forward-declared / later-defined callees (needs true defer-to-TU)** — the
-    common case a caller-before-callee misses today; per-site specialization; the `setjmp`/signal/
-    VLA guard queries; combine inline + promotion in one pass 2. Un-gate the fixture on non-x86_64
-    once verified there (arch-independent). Persist string/rodata Syms to lift that exclusion.
+    common case a caller-before-callee misses today; per-site specialization; combine inline +
+    promotion in one pass 2. Un-gate the fixture on non-x86_64 once verified there (arch-independent).
+    Persist string/rodata Syms to lift that exclusion.
 - [ ] **Long horizon (design only):** the broader template library (algebraic, dead-branch,
   jump-table), the time-budgeted engine (§12/§221), dependency-ordered `-O1` compile, cross-TU
   LTO, `-g` from provenance, hot-reload snapshots, and separate `-O2`/`-O3` (SSA) drivers.
