@@ -28,10 +28,20 @@ only add (or fail to add) replayed functions.
   replaying `gv` made a *second* slot and the reloc diverged → the parse-build now **records
   each const-pool symbol and replay reuses them ordinally** (`ast_fconst`/`ast_replaying`),
   keeping the relocation byte-identical. Fixture `ast/replay-float_ops`. Next targets by bail
-  volume: **`switch`** (~28 fns — the dispatch is a `gcase` binary-search comparison tree
-  emitted *after* the fall-through body, so byte-exact replay must reconstruct the
-  sorted `case_t`/`ind` layout), **`goto`/labels** (~25 fns — unstructured jumps with
-  forward references). **Landed 2026-07-08 — scalar struct member access (`.`/`->`).**
+  volume: **`goto`/labels** (~25 fns — unstructured jumps with forward references).
+  **Landed 2026-07-08 — `switch` dispatch.** A switch is an `If(op==6)` [value, bodyBB];
+  `case`/`default` labels are `Jump` markers (op==2 [ival=v1,fbits=v2] / op==3) inside the
+  body. Capture: `ast_hook_switch_begin` (before `sw->sv=*vtop--`, so the value leaf is
+  finalized against the right vtop) + `_case`/`_default` + `_body_end` (suppresses the
+  dispatch epilogue's vstack ops via `ast_in_call`) + `_end`. Replay rebuilds a `switch_t`,
+  emits the value, jump-over, replays the body (markers record `cr->ind`/`def_sym`), then
+  `case_sort` + `gcase` reproduce the binary-search dispatch (with the global `cur_switch`
+  set so `case_cmp` sees signedness). **Safety:** the controlling value must be a reloadable
+  leaf (Ref/Literal) — a computed value lives in a register the body clobbers, and since a
+  fatal replay error is NOT caught by byte-verify (unlike a byte mismatch), computed-value
+  switches bail (this fixed a segfault on grep's `switch(tolower(...))`). Fall-through,
+  break, ranges (`case a ... b`), unsigned, and nested if/while/switch in cases all replay;
+  fixture `ast/replay-switch_dispatch`. **Landed 2026-07-08 — scalar struct member access (`.`/`->`).**
   Member access does uncaptured in-place `vtop->type` retypes (to `char*` for the byte-offset
   add, back to the member type), so the fine-grained op tree can't be replayed (the offset
   would scale by `sizeof(base)`). Folded into one coarse `Unary(AST_OP_MEMBER[_ARROW])` node

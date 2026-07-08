@@ -124,6 +124,15 @@ static int ast_replaying;   /* the replay walker is driving gv (reuse, don't add
 static int ast_member_cap;   /* this member access is being captured (top-level)   */
 static int ast_member_arrow; /* saved is_arrow for the pending member access       */
 
+/* switch capture/replay (docs/AST.md §5 switch cascade). A switch is an If node
+ * with op==6: child0 = the controlling value, child1 = the body BB. `case`/
+ * `default` labels are recorded as marker effects inside the body (Jump op==2 =
+ * case [ival=v1, fbits=v2], op==3 = default). Replay rebuilds a switch_t: emit the
+ * value, jump-over to the dispatch, replay the body (each case marker records
+ * cr->ind=gind()), then case_sort + gcase reproduces the binary-search dispatch. */
+static AstLocal ast_switch_node;   /* the If(op=6) currently being captured (or NONE) */
+static struct switch_t *ast_rp_switch; /* replay: the switch whose body is emitting  */
+
 static void ast_hook_stmt(int t);
 static void ast_hook_return(int has_val);
 static void ast_hook_return_jmp(int jumps);
@@ -158,6 +167,11 @@ static void ast_hook_for_incr_end(void);
 static void ast_hook_for_no_incr(void);
 static void ast_hook_for_body_begin(void);
 static void ast_hook_for_end(void);
+static void ast_hook_switch_begin(void);
+static void ast_hook_case(int64_t v1, int64_t v2, int type);
+static void ast_hook_default(void);
+static void ast_hook_switch_body_end(void);
+static void ast_hook_switch_end(void);
 static void ast_hook_inc(int post, int c);
 static void ast_hook_inc_end(void);
 #define AST_OP_ADDR 0x40000 /* Unary op marker: gaddrof (array-decay/address-of) */
@@ -9196,10 +9210,16 @@ again:
 		if (!is_integer_btype(vtop->type.t & VT_BTYPE))
 			mcc_error("switch value not an integer");
 		skip(')');
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_switch_begin();
+#endif
 		sw->sv = *vtop--;
 		a = 0;
 		b = gjmp(0);
 		lblock(&a, NULL);
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_switch_body_end();
+#endif
 		a = gjmp(a);
 		gsym(b);
 		prev_scope_s(&o);
@@ -9234,6 +9254,9 @@ again:
 	skip_switch:
 		gsym(a);
 		end_switch();
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_switch_end();
+#endif
 	} else if (t == TOK_CASE) {
 		struct case_t *cr;
 		if (!cur_switch)
@@ -9255,6 +9278,9 @@ again:
 		if (!cur_switch->nocode_wanted)
 			cr->ind = gind();
 		cr->line = file->line_num;
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_case(cr->v1, cr->v2, t);
+#endif
 		skip(':');
 		if (cur_switch->vla_gpp < vla_inner_scope())
 			mcc_error("switch jumps into the scope of a variably modified declaration");
@@ -9265,6 +9291,9 @@ again:
 		if (cur_switch->def_sym)
 			mcc_error("too many 'default'");
 		cur_switch->def_sym = cur_switch->nocode_wanted ? -1 : gind();
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_default();
+#endif
 		skip(':');
 		if (cur_switch->vla_gpp < vla_inner_scope())
 			mcc_error("switch jumps into the scope of a variably modified declaration");
@@ -10523,8 +10552,7 @@ static void ast_hook_stmt(int t) {
 	if (!ast_active)
 		return;
 	switch (t) {
-	case TOK_SWITCH: case TOK_GOTO:
-	case TOK_CASE: case TOK_DEFAULT:
+	case TOK_GOTO:
 		ast_bail = 1;
 		break;
 	default:
@@ -11116,6 +11144,94 @@ static void ast_hook_for_end(void) {
 	ast_cur_bb = ast_cf_savebb[ast_cf_top];
 }
 
+/* switch: the controlling value is the single value on the mirror (about to be
+ * popped by `sw->sv = *vtop--`). Capture it as child0 of an If(op=6) and open the
+ * body BB as child1; `case`/`default` labels append markers to it. */
+static void ast_hook_switch_begin(void) {
+	ast_switch_node = AST_NONE;
+	if (!ast_active || ast_desync || ast_bail)
+		return;
+	if (ast_vn != 1 || ast_cf_top >= AST_CF_MAX) {
+		ast_bail = 1;
+		return;
+	}
+	ast_finalize_leaf(ast_vs[0], vtop);
+	AstLocal val = ast_vs[0];
+	/* The dispatch re-reads the controlling value AFTER the body (vpushv(&sw->sv);
+	 * gv), so it must be a reloadable leaf (a frame/global lvalue or a constant) —
+	 * a computed value would live in a register the body clobbers. Anything else
+	 * bails so the whole switch falls back to the parser's emission. */
+	uint16_t vk = ast_kind(ast_cur, val);
+	if ((vk != AST_Ref && vk != AST_Literal) ||
+			ast_bad_type(ast_type_t(ast_cur, val))) {
+		ast_bail = 1;
+		return;
+	}
+	ast_vn = 0; /* the value is consumed by `sw->sv = *vtop--` */
+	AstLocal sw = ast_node(ast_cur, AST_If);
+	ast_set_op(ast_cur, sw, 6);
+	ast_add_child(ast_cur, sw, val);
+	AstLocal body = ast_node(ast_cur, AST_BasicBlock);
+	ast_add_child(ast_cur, sw, body);
+	ast_add_child(ast_cur, ast_cur_bb, sw);
+	ast_cf_if[ast_cf_top] = sw;
+	ast_cf_savebb[ast_cf_top] = ast_cur_bb;
+	ast_cf_top++;
+	ast_cur_bb = body;
+	ast_switch_node = sw;
+}
+
+/* A `case v1 [... v2]:` label: append a marker (Jump op==2, ival=v1, fbits=v2) to
+ * the switch body so replay records cr->ind at this position. */
+static void ast_hook_case(int64_t v1, int64_t v2, int type) {
+	(void)type;
+	if (!ast_active || ast_desync || ast_bail || ast_cf_top < 1)
+		return;
+	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+	if (ast_vn != rel) {
+		ast_desync = 1;
+		return;
+	}
+	AstLocal m = ast_node(ast_cur, AST_Jump);
+	ast_set_op(ast_cur, m, 2);
+	ast_set_ival(ast_cur, m, (uint64_t)v1);
+	ast_set_fbits(ast_cur, m, (uint64_t)v2);
+	ast_add_child(ast_cur, ast_cur_bb, m);
+}
+
+/* A `default:` label: append a marker (Jump op==3). */
+static void ast_hook_default(void) {
+	if (!ast_active || ast_desync || ast_bail || ast_cf_top < 1)
+		return;
+	AstLocal m = ast_node(ast_cur, AST_Jump);
+	ast_set_op(ast_cur, m, 3);
+	ast_add_child(ast_cur, ast_cur_bb, m);
+}
+
+/* The switch body is captured; the dispatch epilogue (case_sort/vpushv/gv/gcase/
+ * vpop) is about to emit real code whose vstack ops must NOT touch the mirror —
+ * suppress until switch_end. Always paired 1:1 with switch_end (both run
+ * unconditionally per switch), so ast_in_call stays balanced. */
+static void ast_hook_switch_body_end(void) {
+	if (!ast_active)
+		return;
+	ast_in_call++;
+}
+
+static void ast_hook_switch_end(void) {
+	if (!ast_active)
+		return;
+	if (ast_in_call > 0)
+		ast_in_call--;
+	if (ast_cf_top < 1) {
+		ast_bail = 1;
+		return;
+	}
+	ast_cf_top--;
+	ast_cur_bb = ast_cf_savebb[ast_cf_top];
+	ast_switch_node = AST_NONE;
+}
+
 /* Memory model. `indir` (deref) wraps the top address value in a Load; `gaddrof`
  * (array-decay / address-of) wraps it in a Unary(AST_OP_ADDR). Both re-issue the
  * primitive at replay, so a computed-address lvalue (a[i], *p) is reconstructed
@@ -11621,8 +11737,21 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 			break;
 		case AST_Jump:
 			/* break (op 0) / continue (op 1): chain onto the loop's break/continue
-			 * chain exactly as the parser does. */
-			if (ast_op(a, s) == 1) {
+			 * chain exactly as the parser does. case (op 2) / default (op 3): record
+			 * the label position into the switch being replayed. */
+			if (ast_op(a, s) == 2) {
+				if (ast_rp_switch) {
+					struct case_t *cr = mcc_malloc(sizeof(struct case_t));
+					cr->v1 = (int64_t)ast_ival(a, s);
+					cr->v2 = (int64_t)ast_fbits(a, s);
+					cr->ind = gind();
+					cr->line = 0;
+					dynarray_add(&ast_rp_switch->p, &ast_rp_switch->n, cr);
+				}
+			} else if (ast_op(a, s) == 3) {
+				if (ast_rp_switch)
+					ast_rp_switch->def_sym = gind();
+			} else if (ast_op(a, s) == 1) {
 				if (ast_rp_csym)
 					*ast_rp_csym = gjmp(*ast_rp_csym);
 			} else {
@@ -11631,6 +11760,45 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 			}
 			break;
 		case AST_If: {
+			if (ast_op(a, s) == 6) {
+				/* switch: rebuild a switch_t, emit the value, jump-over to the
+				 * dispatch, replay the body (case/default markers record cr->ind /
+				 * def_sym), then case_sort + gcase reproduces the binary-search
+				 * dispatch — the parser's `sw->sv=*vtop--; b=gjmp; lblock; a=gjmp(a);
+				 * gsym(b); case_sort; gcase; default; gsym(a)` sequence. */
+				struct switch_t *sw = mcc_mallocz(sizeof *sw);
+				struct switch_t *prevsw = ast_rp_switch;
+				int *sb = ast_rp_bsym;
+				int a2 = 0, b2;
+				ast_replay_value(a, ast_child(a, s, 0)); /* controlling value */
+				sw->sv = *vtop;
+				vtop--;
+				b2 = gjmp(0);
+				ast_rp_bsym = &a2; /* break -> switch exit (continue passes through) */
+				ast_rp_switch = sw;
+				ast_replay_bb(a, ast_child(a, s, 1)); /* body + case/default markers */
+				ast_rp_switch = prevsw;
+				ast_rp_bsym = sb;
+				a2 = gjmp(a2);
+				gsym(b2);
+				/* case_cmp reads the global cur_switch for signedness — set it. */
+				sw->prev = cur_switch;
+				cur_switch = sw;
+				case_sort(sw);
+				vpushv(&sw->sv);
+				gv(RC_INT);
+				int d = gcase(sw->p, sw->n, 0);
+				vpop();
+				if (sw->def_sym)
+					gsym_addr(d, sw->def_sym);
+				else
+					gsym(d);
+				gsym(a2);
+				cur_switch = sw->prev;
+				dynarray_reset(&sw->p, &sw->n);
+				mcc_free(sw);
+				break;
+			}
 			if (ast_op(a, s) == 2) {
 				/* while loop: gind; condition; gvtst; body; back-edge; gsym.
 				 * break chains onto aa (exit), continue onto bb (→ loop top). */
@@ -11933,6 +12101,7 @@ static void gen_function(Sym *sym) {
 		ast_base_depth = (int)(vtop - vstack + 1);
 		ast_fconst_n = 0;
 		ast_replaying = 0;
+		ast_switch_node = AST_NONE;
 		ast_active = 1;
 		ast_capture = 1;
 	}
@@ -11980,6 +12149,7 @@ static void gen_function(Sym *sym) {
 				ast_run_templates(ast_cur);
 			ast_fconst_i = 0;
 			ast_replaying = 1;
+			ast_rp_switch = NULL;
 			ast_replay_body(ast_cur);
 			ast_replaying = 0;
 			mcc_state->warn_none = ast_sv_warn;

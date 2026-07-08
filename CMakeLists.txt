@@ -2925,7 +2925,8 @@ if(MCC_BUILD_TESTS)
                           "cast_expr;41" "call_printf;3" "if_else;42" "if_return;42"
                           "while_sum;36" "for_sum;36" "for_infinite;28" "ptr_deref;42" "do_while;36"
                           "array_sum;42" "ternary;42" "logand;42" "array_init;42" "float_ops;15"
-                          "call_store;42" "struct_member;42" "struct_copy;42")
+                          "call_store;42" "struct_member;42" "struct_copy;42"
+                          "switch_dispatch;17")
                 list(GET _case 0 _rn)
                 list(GET _case 1 _rc)
                 add_test(NAME "ast/replay-${_rn}" COMMAND "${CMAKE_COMMAND}"
@@ -2937,16 +2938,16 @@ if(MCC_BUILD_TESTS)
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
                 set_tests_properties("ast/replay-${_rn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
             endforeach()
-            # Safety-net case: an unmodeled construct (a `switch`) must fall
+            # Safety-net case: an unmodeled construct (a `goto`) must fall
             # back to correct -O0 emission (same exit code) without faithfully
             # replaying — proving the byte-verify net.
-            add_test(NAME "ast/replay-switch_fallback" COMMAND "${CMAKE_COMMAND}"
+            add_test(NAME "ast/replay-goto_fallback" COMMAND "${CMAKE_COMMAND}"
                 "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
-                "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/switch_fallback.c"
+                "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/goto_fallback.c"
                 "-DOUT=${CMAKE_BINARY_DIR}/ast-replay"
                 "-DEXPECT_RC=42" "-DNOREPLAY=main"
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
-            set_tests_properties("ast/replay-switch_fallback" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+            set_tests_properties("ast/replay-goto_fallback" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
             # A7 first template = const-fold (docs/AST.md §12/§15/§17-D-d). The
             # per-template differential test: the fixture is compiled with the
