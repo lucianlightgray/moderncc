@@ -257,10 +257,20 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
     functions like `if.c` main are excluded). The remaining 9 are *faithful* call-ful fns with
     genuine callee-saved bugs: **capping the pool to 3 regs {RBX,R12,R13} drops it to 7**, so
     R14/R15 have a register-count/encoding defect (check the `load`/push/pop REX paths for regs
-    14/15), and the other **7** are distinct ABI edges (e.g. `incr_decr`, `stack_protector`,
-    `struct_packed_indirect`, `type_coercion` — diagnose per-function). Re-enable by removing the
-    `if (has_call) return 0;` guard and fixing those; the two-pass gate + exec-replay-promote
-    column already provide the correctness net. VLA+call-ful already bails (rsp race).
+    14/15), and the other **7** are distinct ABI edges. **One concrete bug found + characterized
+    (`unary_operators`):** a constant-index **array element** (`a[0]`, `a[1]`) is captured as a
+    plain `int` local Ref at the element's frame offset, so it gets promoted to a register — but
+    when the array is **address-taken** (`int *q=&a[1]; *q`), the element is *also* read through
+    the pointer from **memory**, so the register and memory diverge (`*q` read 0). The
+    address-taken poison misses it because `&a[1]` is `a+1` **pointer arithmetic — there is no
+    `AST_OP_ADDR` node** to catch. Fix: poison any offset that belongs to a local **array** — e.g.
+    detect the array via its decayed base Ref (VT_ARRAY / a `gaddrof` of the base) and poison its
+    whole `[base, base+sizeof]` range, or more simply poison every candidate offset in any function
+    that takes the address of / forms a pointer into a local array. (This does **not** affect the
+    committed call-free promoter — verified: a call-free fn with an address-taken array is not
+    promoted — it only surfaces once call-ful widens what promotes.) Enable call-ful via the
+    `MCC_AST_CALLFUL` env knob (already wired) to reproduce. The two-pass gate + exec-replay-promote
+    column are the correctness net. VLA+call-ful already bails (rsp race).
   - [ ] share one spill slot across disjoint live ranges; spill-weight by access-freq × loop-depth;
     promote pointers/floats; other arches (the R10/R9/R8 pool is x86_64-specific).
 - [ ] **Tier 4 — virtual always-inline over the shared store (the minimize-invoke payoff).**
