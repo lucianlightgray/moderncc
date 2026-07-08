@@ -15,19 +15,23 @@ hidden-pointer / arch-transfer / variadic) and by-value struct args, the full
 `_Complex` surface (arithmetic, `__real__`/`__imag__`, casts, imaginary literals),
 and short-circuit results used as values. Two latent correctness bugs were fixed
 on the way (call double-emit; float const-pool duplication) and a switch-replay
-segfault guarded. **Remaining (3 items, all fall back correctly) — each is a
-Tier-2 *query* gap, not a codegen gap (§18): the backend already compiles all
-three at `-O0`; the driver just lacks the query to drive the existing ops.** VLA/
-`alloca` (the `StackAlloc`/`StackSave`/`StackRestore` ops exist — missing the
-lexical-scope-edge query for LIFO SP placement, §4/§18.3); the
-`__builtin_complex`-based `I` unit (`r + i*I`, needs the rodata-const-symbol-reuse
-query); and nested short-circuit operands (`(a&&b)||c`, needs the nested
-landor-chain query — the flat model segfaults on grep). **The founding reframe
-(§18): the vstack/ABI backend is feature-complete C11 — the exec suite proves it —
-so the replay driver never fakes/reimplements anything; the only real problem is the
-AST query surface.** The remainder below (mid/long horizons: virtual
-always-inline, more templates, liveness-steered placement, LTO, `-g`, hot-reload)
-is **plan / design** (curate freely).
+segfault guarded. **All three of the once-"Remaining" Tier-2 query gaps are now
+CLOSED (2026-07-08), completing `-O0` replay parity for the §18.5 checklist:**
+nested short-circuit operands (`(a&&b)||c` — the inner Binary is already a captured
+node; the outer chain just accepts it and replay's `AST_Binary` recurses — no query
+needed, and the "grep segfault" was an unrelated latent NULL-`sym` bug in bare-global
+`if`/loop conditions, now fixed); the `__builtin_complex`-based `I` unit (`r + i*I` —
+`ast_hook_builtin_complex_begin/end` capture the rodata-const result as a Ref leaf, and
+the float→double `_Complex` widening cast reuses its rodata symbol ordinally via a
+generalized `ast_fconst_reuse/_record/_push_ref` trio); and VLA/`alloca` (the coarse
+`Unary(AST_OP_VLA)` alloc effect + the LIFO SP-restore lexical-scope-edge query as a
+Return annotation / `AST_OP_VLA_RESTORE` BB effect — fixing another latent bug, an
+unreset `ast_last_return`). **The founding reframe (§18) held exactly: the vstack/ABI
+backend is feature-complete C11 — the exec suite proves it — so the replay driver never
+faked/reimplemented anything; every gap was a driver-side query/capture over ops that
+already exist.** The remainder below (mid/long horizons: liveness-steered register
+promotion [the next real `-O1` win, Tier 3], virtual always-inline [Tier 4], more
+templates, LTO, `-g`, hot-reload) is **plan / design** (curate freely).
 
 ### Key mechanisms landed in the Mid coverage widening (2026-07-08)
 
@@ -597,21 +601,28 @@ whole game. Tier 1 is free; Tier 4 is where the engineering lives.
 | does this inline instance terminate? | instance-hash ∈ ancestor stack | §9 structural hash |
 | per-site specialization | constant-arg branch select | §9 binding state |
 
-### 18.3 Every open item is a Tier-2 query gap, not a codegen gap
+### 18.3 Every open item was a Tier-2 query gap, not a codegen gap — all now CLOSED (2026-07-08)
 
-The three "Remaining" replay items (§16, docs/TODO.md) are **op-exists / query-missing**,
-not feature gaps — the backend already compiles all three at `-O0`:
+The three "Remaining" replay items were **op-exists / query-missing**, not feature gaps —
+the backend already compiled all three at `-O0`. All three are now landed, exactly as the
+reframe predicted (no new machine op):
 
-- **VLA/`alloca`** — the SP-move ops exist; the driver lacks the **lexical-scope-edge
-  query** that says *where* to emit the paired `StackSave`/`StackRestore` for correct
-  LIFO unwind. The scope nesting is in the CST/AST; the query is a local walk.
-- **`__builtin_complex` `I`-unit** — capturing its rodata-const result as a plain `Ref`
-  leaf link-errors (unresolved anon symbol); it needs the **rodata-const-symbol-reuse
-  query** (the same ordinal-symbol-reuse pattern `ast_fconst` already uses for float
-  const pools), not a bare leaf capture.
-- **nested short-circuit** (`(a&&b)||c`) — the flat gvtst reproduction segfaults on deep
-  nesting; the driver needs the **nested landor-chain query** (the chain structure),
-  not a flat operand.
+- **VLA/`alloca`** ✅ — the SP-move ops exist; the driver added the **lexical-scope-edge
+  query**: a coarse `Unary(AST_OP_VLA)` alloc effect (captured immediates, no `loc`
+  decrement at replay) plus the paired SP restore emitted at the scope edge — a `Return`
+  annotation when it fires in a `return`'s `leave_scope`, else an `AST_OP_VLA_RESTORE` BB
+  effect at a nested block's `}`. Fixture `replay-vla`.
+- **`__builtin_complex` `I`-unit** ✅ — `ast_hook_builtin_complex_begin/end` capture the
+  rodata-const result as a Ref leaf (the anon Sym persists), and the float→double
+  `_Complex` widening cast reuses its rodata symbol ordinally via the generalized
+  `ast_fconst_reuse/_record/_push_ref` trio. Fixture `replay-complex_ctor`.
+- **nested short-circuit** (`(a&&b)||c`) ✅ — needed **no** new "landor-chain query": the
+  inner `Binary(&&/||)` is already a captured child, so `ast_hook_landor_operand` just
+  accepts it and replay's `AST_Binary` case recurses. The "grep segfault" was an *unrelated*
+  latent NULL-`sym` bug in bare-global `if`/loop conditions (the eager push-hook captures
+  a global leaf before `vpushsym` sets `->sym`; the condition site never re-finalized it),
+  now fixed by finalizing the condition leaf in the four condition hooks. Fixture
+  `replay-short_circuit`.
 
 ### 18.4 Guard queries — the Tier-4 correctness backstops
 
@@ -648,16 +659,16 @@ Mid). This is the single source of truth for "what's left."
 | direct vs indirect call | `ast_hook_call_begin`/`_end` node | `replay-call_store` |
 | must-be-memory (`&`/`volatile`/`register`) | `VT_*` flags on the captured type; bail gate `ast_bad_type()` | — |
 
-**Tier 2 — local structural walk (control ✅; the three open items 🔧)**
+**Tier 2 — local structural walk (all ✅ as of 2026-07-08 — `-O0` parity complete)**
 
-| Query | Answered by / gap | Fixture |
+| Query | Answered by | Fixture |
 |---|---|---|
 | structured branch target | `ast_replay_bb()` reproduces the parser's `gind`/`gvtst`/`gjmp`/`gsym` per construct | `replay-*` (loops/if) |
 | `goto`/label target + back-edge | per-fn label table (token→`{jind,jnext}`), `ast_hook_label`/`ast_hook_goto` | `replay-goto_dispatch` |
 | switch dispatch | `ast_hook_switch_*` → rebuild `switch_t`, `case_sort`+`gcase` | `replay-switch_dispatch` |
-| 🔧 **VLA scope edges** | answer-source **exists** in parser state (`nb_vla_open`/`vla_open_birth`, block-edge save/restore) but is **not hooked** — *TODO: add `ast_hook_scope_enter/exit` capturing the LIFO save/restore points* | *new* `replay-vla` |
-| 🔧 **rodata const-symbol reuse (`I`-unit)** | *TODO: extend the `ast_fconst[]` ordinal-symbol pattern to the `__builtin_complex` rodata const* (today a bare `Ref` leaf → unresolved-anon-symbol link error) | *new* `replay-complex_ctor` |
-| 🔧 **nested landor chain** | `ast_hook_landor_operand()` bails on a nested operand — *TODO: build a nested landor node (chain) instead of the flat `gvtst` reproduction* (flat model segfaults on grep) | extend `replay-short_circuit` |
+| ✅ **VLA scope edges** | coarse `Unary(AST_OP_VLA)` alloc effect (`ast_hook_vla_alloc_begin/end`) + LIFO SP restore as a `Return` annotation / `AST_OP_VLA_RESTORE` BB effect (`ast_hook_vla_restore`) — captured immediates, no `loc` decrement at replay | `replay-vla` |
+| ✅ **rodata const-symbol reuse (`I`-unit)** | `ast_hook_builtin_complex_begin/end` capture the rodata-const result as a Ref leaf; the widening cast reuses its symbol ordinally via `ast_fconst_reuse/_record/_push_ref` | `replay-complex_ctor` |
+| ✅ **nested landor** | no new node needed — the inner `Binary(&&/||)` is already a captured child; `ast_hook_landor_operand` accepts it and replay's `AST_Binary` recurses. (The "grep segfault" was an unrelated NULL-`sym` bug in bare-global conditions, fixed.) | `replay-short_circuit` |
 
 **Tier 3 — whole-function liveness (⬜ beyond `-O0`, early Mid — the register-promotion payoff)**
 
@@ -675,10 +686,11 @@ Mid). This is the single source of truth for "what's left."
 | per-site specialization | constant-arg branch select (§9 binding state) |
 | guard: `setjmp`/signal/VLA region | propagate a **non-inlinable-across** flag up the binding graph (§18.4) |
 
-**Net remaining work:** three Tier-2 hooks (🔧, each a fixture away from green) close
-`-O0` parity; Tier 3 (liveness→`gv` steering) is the first real `-O1` win; Tier 4
-(inline + guards) is the "minimize-invoke" payoff. Nothing on this list is a new machine
-op — every ⬜/🔧 is a query or a driver-steering step over ops the exec suite already proves.
+**Net remaining work:** the three Tier-2 hooks are all ✅ (2026-07-08) — **`-O0` replay
+parity is complete** for the checklist. What is left is **beyond `-O0`**: Tier 3
+(liveness→`gv` steering) is the first real `-O1` win; Tier 4 (inline + guards) is the
+"minimize-invoke" payoff. Nothing on this list is a new machine op — every remaining ⬜ is
+a query or a driver-steering step over ops the exec suite already proves.
 
 ---
 
