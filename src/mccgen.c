@@ -11458,14 +11458,10 @@ static void ast_hook_call_begin(int nb_args, int is_struct_ret, int ret_nregs,
 		ast_desync = 1;
 		return;
 	}
-	/* A struct return: only the register-return form (ret_nregs > 0, non-variadic)
-	 * is modeled — the post-call register->temp reconstruction is reproduced at
-	 * replay with an ordinal frame-slot (ast_alloc_loc). An sret hidden-pointer
-	 * return (ret_nregs <= 0) or a variadic struct return bails. */
-	/* Register-return (ret_nregs>0) and sret hidden-pointer (ret_nregs==0) struct
-	 * returns are modeled; the arch-transfer form (ret_nregs<0) and variadic struct
-	 * returns bail. */
-	if (is_struct_ret && (ret_nregs < 0 || variadic)) {
+	/* Register-return (ret_nregs>0), sret hidden-pointer (ret_nregs==0), and
+	 * arch-transfer (ret_nregs<0, mixed INT+SSE) struct returns are all modeled via
+	 * the ordinal frame-slot (ast_alloc_loc); only a variadic struct return bails. */
+	if (is_struct_ret && variadic) {
 		ast_desync = 1;
 		return;
 	}
@@ -11840,8 +11836,14 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 			 * VT_LOCAL lvalue). The register-return path below is unchanged. */
 			{
 				CType rtmp;
-				int rax, rsx;
-				if (gfunc_sret(&rt, 0, &rtmp, &rax, &rsx) == 0) {
+				int rax, rsx, rnx;
+				rnx = gfunc_sret(&rt, 0, &rtmp, &rax, &rsx);
+				if (rnx <= 0) {
+					/* sret hidden-pointer (==0) and arch-transfer (<0): both allocate
+					 * the result temp before the call (the wrapped ast_alloc_loc slot)
+					 * and leave it as the result. Reserve the same slot, re-push the
+					 * captured temp, and for the arch-transfer form re-run the register
+					 * move. */
 					int sal, ssz = type_size(&rt, &sal);
 #ifdef MCC_TARGET_ARM64
 					if (ssz < 16)
@@ -11858,6 +11860,10 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 					sv.c.i = ast_ival(a, n);
 					sv.sym = (Sym *)(uintptr_t)ast_sym(a, n);
 					vpushv(&sv);
+#if defined(MCC_TARGET_RISCV64) || (defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_PE))
+					if (rnx < 0)
+						arch_transfer_ret_regs(1);
+#endif
 					vtop->r |= VT_NONLVAL;
 					break;
 				}

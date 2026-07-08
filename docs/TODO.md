@@ -35,9 +35,11 @@ only add (or fail to add) replayed functions.
     the sret temp, so replay reserves the same ordinal slot and re-pushes the captured result.
     Took three attempts — the frame-slot `loc` reuse must be coordinated across both sites, and
     the bug lived outside the byte-verified body (epilog/temp reservation), so the test suite
-    (not byte-verify) caught the regressions. Only the **arch-transfer form (ret_nregs<0)**
-    still bails. `f().x` (a struct-call result used directly as a member base) also replays —
-    `ast_hook_member_end` threads the base's non-lvalue bit (VT_NONLVAL) through to replay.
+    (not byte-verify) caught the regressions. **The arch-transfer form (ret_nregs<0, mixed
+    INT+SSE structs) now replays too** — same sret temp slot + `arch_transfer_ret_regs`; only
+    **variadic struct returns** still bail. `f().x` (a struct-call result used directly as a
+    member base) also replays — `ast_hook_member_end` threads the base's non-lvalue bit
+    (VT_NONLVAL) through to replay. **Struct-return callers are now complete (all ABI forms).**
   - ~~bit-field member Store~~ **LANDED 2026-07-08** — the read-modify-write mask/shift
     (`adjust_bf`/`load_packed_bf` in `gv`, the mask/shift in `vstore`) runs inside the
     suppressed `gv`/`vstore`, so bit-field member access + `Store` + arithmetic all replay
