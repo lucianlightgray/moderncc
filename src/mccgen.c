@@ -12239,7 +12239,11 @@ static int ast_plan_promotion(AstArena *a) {
 		if (ast_kind(a, n) != AST_Ref)
 			continue;
 		int r = ast_op(a, n), t = ast_type_t(a, n);
-		if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM) || !(t & VT_ARRAY))
+		if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
+			continue;
+		/* array or struct/union aggregate — its member/element slots must not be
+		 * individually promoted (same aliasing hazard as the array case). */
+		if (!(t & VT_ARRAY) && (t & VT_BTYPE) != VT_STRUCT)
 			continue;
 		CType ct;
 		ct.t = t;
