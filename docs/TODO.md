@@ -22,11 +22,13 @@ only add (or fail to add) replayed functions.
   bugs fixed on the way (vpop call double-emit; float const-pool duplication). Fixtures:
   `ast/replay-{float_ops,call_store,struct_member,struct_copy,switch_dispatch,goto_dispatch,struct_return,struct_byval_arg}`.
   **Remaining long tail**, each with a specific blocker (all fall back correctly today):
-  - **struct-return callers** (`struct r = f()`) — the caller's sret result temp is a direct
-    `loc = (loc-size)&-align` decrement that diverges between parse-build and replay (replay
-    re-allocates at a different offset). Needs an ordinal loc-temp-reuse table (record each
-    decrement at build, reuse at replay — the pattern used for `ast_fconst`), plus modeling
-    the hidden-pointer arg + `PUT_R_RET` result handling. Moderate infra, low crash risk.
+  - ~~struct-return callers~~ **LANDED 2026-07-08** (register-return form) — `struct r = f()`
+    replays. The post-call register→temp reconstruction is reproduced in the Invoke replay,
+    and the result temp uses an ordinal frame-slot table (`ast_alloc_loc`/`ast_locrec`, the
+    `ast_fconst` pattern) so its offset matches the parse-build; `-O0` stays byte-identical
+    (the record is passive). Fixture `ast/replay-struct_ret_caller`. Still falls back: the
+    **sret hidden-pointer** form (large structs, `ret_nregs<=0`), variadic struct returns, and
+    a struct-call result used directly as a member base (`f().x`).
   - ~~bit-field member Store~~ **LANDED 2026-07-08** — the read-modify-write mask/shift
     (`adjust_bf`/`load_packed_bf` in `gv`, the mask/shift in `vstore`) runs inside the
     suppressed `gv`/`vstore`, so bit-field member access + `Store` + arithmetic all replay

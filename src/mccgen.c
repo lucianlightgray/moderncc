@@ -118,6 +118,33 @@ static int ast_fconst_cap;  /* allocated capacity (grow-only, reset per function
 static int ast_fconst_i;    /* replay cursor into ast_fconst                        */
 static int ast_replaying;   /* the replay walker is driving gv (reuse, don't add)  */
 
+/* Frame-temp offset reuse (docs/AST.md §A3 struct callers). A struct-return
+ * result temp is a direct `loc = (loc-size)&-align` decrement; replaying it would
+ * place the slot at a different offset (source locals are fixed in their Syms and
+ * not re-allocated at replay). The build records each slot offset in emission
+ * order and replay reuses them ordinally (the ast_fconst pattern). */
+static int *ast_locrec;
+static int ast_locrec_n, ast_locrec_cap, ast_locrec_i;
+
+/* Allocate an anonymous frame slot, recording (build) / reusing (replay) its
+ * offset. Outside a replay-candidate build this is exactly `loc=(loc-size)&-align`,
+ * so -O0 stays byte-identical. */
+static int ast_alloc_loc(int size, int align) {
+	if (ast_replaying && ast_locrec_i < ast_locrec_n) {
+		loc = ast_locrec[ast_locrec_i++];
+		return loc;
+	}
+	loc = (loc - size) & -align;
+	if (ast_active && !ast_replaying) {
+		if (ast_locrec_n == ast_locrec_cap) {
+			ast_locrec_cap = ast_locrec_cap ? ast_locrec_cap * 2 : 16;
+			ast_locrec = mcc_realloc(ast_locrec, ast_locrec_cap * sizeof *ast_locrec);
+		}
+		ast_locrec[ast_locrec_n++] = loc;
+	}
+	return loc;
+}
+
 /* Member access (`.`/`->`) capture state: the internal indir/gaddrof/vpushi/genop
  * are suppressed (via ast_in_call) between begin and end, and the whole access is
  * folded into one Unary(AST_OP_MEMBER[_ARROW]) node. */
@@ -156,7 +183,8 @@ static void ast_hook_vstore_end(void);
 static void ast_hook_vpop(void);
 static void ast_hook_vswap(void);
 static void ast_hook_convert(CType *type);
-static void ast_hook_call_begin(int nb_args, int is_struct_ret);
+static void ast_hook_call_begin(int nb_args, int is_struct_ret, int ret_nregs,
+																int variadic);
 static void ast_hook_call_end(void);
 static void ast_hook_call_effect_end(void);
 static void ast_hook_if_begin(void);
@@ -7914,7 +7942,8 @@ tok_next:
 			next();
 			vcheck_cmp();
 #if defined(CONFIG_AST) && CONFIG_AST
-			ast_hook_call_begin(nb_args, (s->type.t & VT_BTYPE) == VT_STRUCT);
+			ast_hook_call_begin(nb_args, (s->type.t & VT_BTYPE) == VT_STRUCT,
+													ret_nregs, s->f.func_type == FUNC_ELLIPSIS);
 #endif
 			gfunc_call(nb_args);
 			expr_has_effect = 1;
@@ -7944,7 +7973,11 @@ tok_next:
 					size = (size + regsize - 1) & -regsize;
 					if (ret_align > align)
 						align = ret_align;
+#if defined(CONFIG_AST) && CONFIG_AST
+					loc = ast_alloc_loc(size, align);
+#else
 					loc = (loc - size) & -align;
+#endif
 					addr = loc;
 					offset = 0;
 					for (;;) {
@@ -9516,7 +9549,7 @@ static void init_putz(init_params *p, unsigned long c, int size) {
 		vswap();
 #endif
 #if CONFIG_AST
-		ast_hook_call_begin(3, 0);
+		ast_hook_call_begin(3, 0, 1, 0);
 #endif
 		gfunc_call(3);
 #if CONFIG_AST
@@ -11399,7 +11432,8 @@ static void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
  * fold them into an Invoke and suppress the mirror across gfunc_call and the
  * result push (ast_in_call), then push the Invoke as the result. Struct returns
  * and indirect (non-symbol) callees are not modeled yet. */
-static void ast_hook_call_begin(int nb_args, int is_struct_ret) {
+static void ast_hook_call_begin(int nb_args, int is_struct_ret, int ret_nregs,
+																int variadic) {
 	ast_call_pending = AST_NONE;
 	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
 		return;
@@ -11414,7 +11448,11 @@ static void ast_hook_call_begin(int nb_args, int is_struct_ret) {
 		ast_desync = 1;
 		return;
 	}
-	if (is_struct_ret) {
+	/* A struct return: only the register-return form (ret_nregs > 0, non-variadic)
+	 * is modeled — the post-call register->temp reconstruction is reproduced at
+	 * replay with an ordinal frame-slot (ast_alloc_loc). An sret hidden-pointer
+	 * return (ret_nregs <= 0) or a variadic struct return bails. */
+	if (is_struct_ret && (ret_nregs <= 0 || variadic)) {
 		ast_desync = 1;
 		return;
 	}
@@ -11771,6 +11809,51 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 		gfunc_call((int)nc - 1);
 		if (ast_type_t(a, n) == VT_VOID)
 			break; /* void effect (e.g. memset): gfunc_call left nothing to push */
+		if ((ast_type_t(a, n) & VT_BTYPE) == VT_STRUCT) {
+			/* Struct returned in registers: reconstruct the return descriptor from
+			 * the result type and reproduce the parser's post-call register->temp
+			 * store (mccgen.c postfix `(`), with an ordinal frame slot (ast_alloc_loc)
+			 * so the temp offset matches the parse-build. */
+			CType rt;
+			SValue ret;
+			int ret_nregs, regsize, ret_align, r, nn, size, align, addr, offset;
+			rt.t = ast_type_t(a, n);
+			rt.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+			memset(&ret, 0, sizeof ret);
+			ret_nregs = gfunc_sret(&rt, 0, &ret.type, &ret_align, &regsize);
+			ret.c.i = 0;
+			PUT_R_RET(&ret, ret.type.t);
+			nn = ret_nregs;
+			while (nn > 1) {
+				int rc = reg_classes[ret.r] & ~(RC_INT | RC_FLOAT);
+				rc <<= --nn;
+				for (r = 0; r < NB_REGS; ++r)
+					if (reg_classes[r] & rc)
+						break;
+				vsetc(&ret.type, r, &ret.c);
+			}
+			vsetc(&ret.type, ret.r, &ret.c);
+			vtop->r2 = ret.r2;
+			size = type_size(&rt, &align);
+			size = (size + regsize - 1) & -regsize;
+			if (ret_align > align)
+				align = ret_align;
+			loc = ast_alloc_loc(size, align);
+			addr = loc;
+			offset = 0;
+			for (;;) {
+				vset(&ret.type, VT_LOCAL | VT_LVAL, addr + offset);
+				vswap();
+				vstore();
+				vtop--;
+				if (--ret_nregs == 0)
+					break;
+				offset += regsize;
+			}
+			vset(&rt, VT_LOCAL | VT_LVAL, addr);
+			vtop->r |= VT_NONLVAL;
+			break;
+		}
 		SValue sv;
 		memset(&sv, 0, sizeof sv);
 		sv.type.t = ast_type_t(a, n);
@@ -12211,6 +12294,7 @@ static void gen_function(Sym *sym) {
 		ast_ret_val = AST_NONE;
 		ast_base_depth = (int)(vtop - vstack + 1);
 		ast_fconst_n = 0;
+		ast_locrec_n = 0;
 		ast_replaying = 0;
 		ast_switch_node = AST_NONE;
 		ast_active = 1;
@@ -12259,6 +12343,7 @@ static void gen_function(Sym *sym) {
 			if (ast_templates_env)
 				ast_run_templates(ast_cur);
 			ast_fconst_i = 0;
+			ast_locrec_i = 0;
 			ast_replaying = 1;
 			ast_rp_switch = NULL;
 			ast_rp_nlabel = 0;
