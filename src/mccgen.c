@@ -1435,7 +1435,15 @@ static void patch_type(Sym *sym, CType *type) {
 
 		if ((type->t | sym->type.t) & VT_INLINE) {
 			if (!((type->t ^ sym->type.t) & VT_INLINE) || ((type->t | sym->type.t) & VT_STATIC))
-				static_proto |= VT_INLINE;
+				/* Preserve the definition's own `static` too: a `static inline`
+				   definition following an `extern`/plain prototype is a local
+				   (internal-linkage) definition and must be emitted — otherwise it
+				   collapses to a plain external inline (VT_INLINE, no VT_STATIC),
+				   which §6.7.4p7 leaves undefined, breaking the win32 libm shims
+				   (extern proto in <math.h> + static-inline body in mcc_libm.h).
+				   gcc/clang reject extern-then-static outright, so no conforming
+				   program depends on the collapsed behavior. */
+				static_proto |= VT_INLINE | (type->t & VT_STATIC);
 		}
 
 		if (0 == (type->t & VT_EXTERN)) {
