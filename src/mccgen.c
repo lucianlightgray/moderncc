@@ -99,6 +99,8 @@ static int ast_cf_top;
 static int *ast_rp_bsym, *ast_rp_csym;    /* replay-time break/continue chains   */
 static AstLocal ast_tern[16];             /* pending ternary (Cond) nodes         */
 static int ast_tern_top;
+static AstLocal ast_lor[16];              /* pending &&/|| nodes                   */
+static int ast_lor_top;
 
 static void ast_hook_stmt(int t);
 static void ast_hook_return(int has_val);
@@ -143,6 +145,9 @@ static void ast_hook_ternary_begin(int c, int g);
 static void ast_hook_ternary_branch(int which);
 static void ast_hook_ternary_branch_done(int which);
 static void ast_hook_ternary_end(void);
+static void ast_hook_landor_operand(int op, int c, int first);
+static void ast_hook_landor_next(void);
+static void ast_hook_landor_end(int materialized);
 #endif
 
 #if PTR_SIZE == 4
@@ -8069,12 +8074,17 @@ static int condition_3way(void) {
 
 static void expr_landor(int op) {
 	int t = 0, cc = 1, f = 0, i = op == TOK_LAND, c;
+	int first = 1;
 	for (;;) {
 		c = f ? i : condition_3way();
 		if (c < 0)
 			save_regs(1), cc = 0;
 		else if (c != i)
 			nocode_wanted++, f = 1;
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_landor_operand(op, c, first);
+#endif
+		first = 0;
 		if (tok != op)
 			break;
 		if (c < 0)
@@ -8083,6 +8093,9 @@ static void expr_landor(int op) {
 			vpop();
 		next();
 		seqp_flush();
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_landor_next();
+#endif
 		expr_landor_next(op);
 	}
 	if (cc || f) {
@@ -8093,6 +8106,9 @@ static void expr_landor(int op) {
 	} else {
 		gvtst_set(i, t);
 	}
+#if defined(CONFIG_AST) && CONFIG_AST
+	ast_hook_landor_end(cc || f);
+#endif
 }
 
 static int is_cond_bool(SValue *sv) {
@@ -10676,6 +10692,73 @@ static void ast_hook_ternary_end(void) {
 		ast_desync = 1;
 }
 
+/* `&&` / `||` short-circuit: captured as a Binary node (op TOK_LAND/TOK_LOR) with
+ * all operands as children; the operand expressions are captured with the mirror
+ * un-suppressed, the gvtst chaining suppressed. Only the all-runtime VT_CMP form
+ * is modeled (constant operands / the materialized 0-1 form desync). Replay
+ * reproduces expr_landor's exact gvtst chain + gvtst_set. */
+static void ast_hook_landor_operand(int op, int c, int first) {
+	if (!ast_active || ast_desync || ast_bail)
+		return;
+	if (first) {
+		if (c >= 0 || ast_in_call || ast_in_op || ast_lor_top >= 16 ||
+				ast_vn < 1) {
+			ast_desync = 1;
+			return;
+		}
+		AstLocal nd = ast_node(ast_cur, AST_Binary);
+		ast_set_op(ast_cur, nd, op);
+		ast_lor[ast_lor_top++] = nd;
+	}
+	if (ast_lor_top < 1)
+		return;
+	if (c >= 0 || ast_vn < 1) { /* a constant operand — not modeled */
+		ast_desync = 1;
+		return;
+	}
+	/* A nested short-circuit / ternary operand produces a VT_CMP whose chains
+	 * this flat reproduction does not handle — bail. */
+	AstLocal opnd = ast_vs[ast_vn - 1];
+	int ok = ast_op(ast_cur, opnd);
+	if ((ast_kind(ast_cur, opnd) == AST_Binary &&
+			 (ok == TOK_LAND || ok == TOK_LOR)) ||
+			(ast_kind(ast_cur, opnd) == AST_If && ok == 5)) {
+		ast_desync = 1;
+		return;
+	}
+	ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
+	ast_add_child(ast_cur, ast_lor[ast_lor_top - 1], ast_vs[ast_vn - 1]);
+	ast_vn--;
+	ast_in_call = 1; /* suppress the gvtst coordination */
+}
+
+static void ast_hook_landor_next(void) {
+	if (!ast_active || ast_desync || ast_bail || ast_lor_top < 1)
+		return;
+	ast_in_call = 0; /* capture the next operand */
+}
+
+static void ast_hook_landor_end(int materialized) {
+	if (!ast_active || ast_lor_top < 1)
+		return;
+	AstLocal nd = ast_lor[--ast_lor_top];
+	ast_in_call = 0;
+	if (ast_desync || ast_bail)
+		return;
+	if (materialized) { /* the vpushi 0/1 form (constants) — not modeled */
+		ast_desync = 1;
+		return;
+	}
+	if (ast_vn >= AST_VS_MAX) {
+		ast_desync = 1;
+		return;
+	}
+	ast_vs[ast_vn++] = nd; /* the VT_CMP result */
+	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+	if (ast_vn != rel)
+		ast_desync = 1;
+}
+
 /* --- control flow: `if` --------------------------------------------------
  * Captured at the statement level: the condition is the single value on the
  * mirror (about to be consumed by gvtst); the then/else branches are captured
@@ -11188,11 +11271,27 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 		vpushv(&sv);
 		break;
 	}
-	case AST_Binary:
+	case AST_Binary: {
+		int bop = ast_op(a, n);
+		if (bop == TOK_LAND || bop == TOK_LOR) {
+			/* &&/||: reproduce expr_landor's chain — each operand gvtst-chains
+			 * onto t (short-circuit), the last leaves the VT_CMP via gvtst_set. */
+			int i = bop == TOK_LAND, t = 0;
+			uint32_t nc = ast_nchild(a, n), k;
+			for (k = 0; k < nc; k++) {
+				ast_replay_value(a, ast_child(a, n, k));
+				save_regs(1);
+				if (k + 1 < nc)
+					t = gvtst(i, t);
+			}
+			gvtst_set(i, t);
+			break;
+		}
 		ast_replay_value(a, ast_child(a, n, 0));
 		ast_replay_value(a, ast_child(a, n, 1));
-		gen_op(ast_op(a, n));
+		gen_op(bop);
 		break;
+	}
 	case AST_Convert: {
 		ast_replay_value(a, ast_child(a, n, 0));
 		CType ct;
@@ -11487,6 +11586,7 @@ static void gen_function(Sym *sym) {
 		ast_cur_bb = ast_node(ast_cur, AST_BasicBlock);
 		ast_cf_top = 0;
 		ast_tern_top = 0;
+		ast_lor_top = 0;
 		ast_bail = 0;
 		ast_desync = 0;
 		ast_in_op = 0;
