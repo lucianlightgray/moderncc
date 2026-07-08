@@ -233,12 +233,14 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
   local's stack slot at function entry** (`ast_promo_entry_init`), which makes promotion valid
   across **arbitrary control flow (loops/if)** and for parameters / read-before-write locals —
   the register mirrors what `-O0` would read from the never-again-written slot. **Applies to:**
-  any function with integer (`int`/`long`) locals — **call-free** uses caller-saved **R10/R9/R8**
-  (no save/restore), **call-ful** uses callee-saved **RBX/R12–R15** (pushed at entry, popped at the
-  return funnel; see the call-ful sub-item below, ON by default since 2026-07-08). **Poisoned:**
-  pointers/floats/structs, `&`-taken / member-base locals and whole local array/struct slot ranges,
-  `++`/`--` (lvalue) targets, and any function using **inline asm** (clobbers). Additive — no
-  `gen_op` surgery.
+  any function with integer (`int`/`long`) **or pointer** locals — **call-free** uses caller-saved
+  **R10/R9/R8** (no save/restore), **call-ful** uses callee-saved **RBX/R12–R15** (pushed at entry,
+  popped at the return funnel; see the call-ful sub-item below, ON by default since 2026-07-08). A
+  promoted pointer's *value* lives in the register; a deref `*p`/`p[i]` is an `AST_Load` that indirs
+  the register into a memory base (needing high-register SIB/REX.B addressing in `load`/`store` —
+  landed). **Poisoned:** floats/structs, `&`-taken / member-base locals (incl. `p->m`) and whole
+  local array/struct slot ranges, `++`/`--` (lvalue) targets, and any function using **inline asm**
+  (clobbers). Additive — no `gen_op` surgery.
   - [x] **Two-pass soundness gate — LANDED 2026-07-08.** Promotion now replays WITHOUT it and
     byte-verifies against `-O0` first (pass 1); only if faithful does it re-replay WITH promotion
     (pass 2), kept unconditionally. This closes a real (if narrow) unsoundness: forcing
@@ -278,8 +280,14 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
       format string resolved to a float const → empty `printf`). Fixed by hiding `sym_free_first`
       (set to NULL) for the duration of replay so every replay allocation is fresh, restoring it
       after both passes. VLA+call-ful still bails (rsp race).
+  - [x] **Promote pointer locals — LANDED 2026-07-08.** A pointer's value (address) is promoted
+    like an int; `*p`/`p[i]` derefs the register (an `AST_Load`, not an lvalue use of `p`). Needed a
+    real backend fix: `gen_modrm_impl` now emits the SIB byte for an r12 base (low bits `100`) and a
+    forced disp8 for r13 (`101`), and `store()`'s 32-bit/byte paths take REX.B from the destination
+    base — the normal allocator never bases off r12-r15, so this was an unexercised encoding gap;
+    byte-identical for every register it does use (ctest 1768/1768, exec-replay byte-verify green).
   - [ ] share one spill slot across disjoint live ranges; spill-weight by access-freq × loop-depth;
-    promote pointers/floats; other arches (the R10/R9/R8 pool is x86_64-specific).
+    promote floats (needs an XMM pin pool); other arches (the GP pools are x86_64-specific).
 - [ ] **Tier 4 — virtual always-inline over the shared store (the minimize-invoke payoff).**
   Inline internal calls instead of emitting a boundary `Call`, using the CST's content-
   addressed store/binding/render engine (docs/AST.md §9). Cycle detection via the instance

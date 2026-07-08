@@ -12188,13 +12188,16 @@ static int ast_plan_promotion(AstArena *a) {
 		int off = (int)(int64_t)ast_ival(a, n);
 		int tt = ast_type_t(a, n);
 		int bt = tt & VT_BTYPE;
-		/* Integer scalars only (not VT_PTR): a promoted value living in a pinned
-		 * register is only ever read-as-value / written — never a deref base or
-		 * address, which the pointer cases (`*p`, `&x`) would require. A `volatile`
-		 * or `_Atomic` (VT_ATOMIC includes VT_VOLATILE) local must keep every access
-		 * in memory, so it is never promotable. */
-		int scalar = (bt == VT_INT || bt == VT_LLONG) &&
-				!(tt & (VT_BITFIELD | VT_VOLATILE));
+		/* GP scalars: integers and pointers. A promoted value lives in a pinned GP
+		 * register and is only read-as-value / written. A pointer's *value* (the
+		 * address) qualifies — a deref `*p` is an `AST_Load(Ref p)` that indirs the
+		 * register value into an lvalue base (never needing p itself to be an lvalue),
+		 * and every construct that needs p as an lvalue (`&p`, `p->m`, `p++`) is a Unary
+		 * whose child Ref is poisoned above. Arrays/structs are caught by the aggregate
+		 * range poison. A `volatile`/`_Atomic` (VT_ATOMIC includes VT_VOLATILE) local
+		 * must keep every access in memory, so it is never promotable. */
+		int scalar = (bt == VT_INT || bt == VT_LLONG || bt == VT_PTR) &&
+				!(tt & (VT_ARRAY | VT_BITFIELD | VT_VOLATILE));
 		int j;
 		for (j = 0; j < nc; j++)
 			if (coff[j] == off)

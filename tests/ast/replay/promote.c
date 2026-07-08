@@ -36,6 +36,17 @@ static int loopy(int start) {
 
 int ident(int x) { return x; }
 
+/* Pointer promotion: the pointer p lives in a register across the loop; `p[i]` derefs
+ * the register value (an AST_Load, which does not need p to be an lvalue — only `&p`,
+ * `p->m`, `p++` would, and those poison it). Exercises a high-register base address
+ * (SIB / REX.B encoding for r12-r15 in load/store). */
+static int sumptr(int *p, int n) {
+	int t = 0;
+	for (int i = 0; i < n; i++)
+		t += p[i];
+	return t; /* {1,2,3,4} -> 10 */
+}
+
 /* Call-ful: p, q, r must survive the ident() calls, so they are promoted into
  * callee-saved registers (pushed at entry, popped at the return funnel) rather than
  * the caller-saved pool a call would clobber. */
@@ -48,5 +59,6 @@ static int callful(int start) {
 }
 
 int main(void) {
-	return calc(5) + loopy(4) + callful(1) - 52; /* 42 + 40 + 12 - 52 = 42 */
+	int arr[4] = {1, 2, 3, 4};
+	return calc(5) + loopy(4) + callful(1) + sumptr(arr, 4) - 62; /* 42+40+12+10-62 = 42 */
 }
