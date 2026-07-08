@@ -236,11 +236,17 @@ brought up one §17 category at a time.
   codegen-side variable/spill metadata that is discarded after emission;
   classified low-value (reloc symbol names are already printed). Revisit
   only if a debugging workflow materializes that needs it.
-- [ ] **CST slice-I symbol resolution is last-declaration-wins (validate/decide).**
-  NOTES CST slice I: no scope stack, so a name shadowed across scopes can
-  mis-resolve `use→def`. the CST D4 gap analysis flagged this for a failing `sym_ref` shadowing
-  fixture to force the decision. → Add the shadowing test; either build a scope
-  stack or record the limitation as intentional with the test as the boundary.
+- [x] **CST slice-I symbol resolution is last-declaration-wins (decided
+  2026-07-07: intentional v1, pinned).** Root cause: `cst_hook_def`/`cst_hook_use`
+  key def offsets by identifier token id in a single slot (`cst_defoff[v]`), so a
+  redeclaration overwrites the previous def — no scope stack. A file-scope name
+  shadowed inside a function resolves *both* uses to the same (last-declared) def.
+  **Decision:** record as the intentional v1 boundary rather than build a scope
+  stack (LSP-era work; the CST symref is a side-channel tooling aid, not codegen —
+  codegen scoping is the parser's and is correct). Pinned by
+  `tests/cst/symref/shadow.c` + `symref-shadow.cmake` (`cst/symref-shadow`), which
+  asserts both `x` uses map to one def and fails with a pointer to this item if a
+  scope-aware resolver ever splits them.
 - [ ] **CST slice-J macro-invocation v1 imprecisions (validate/decide).**
   NOTES CST slice J: function-like invocations may drop the trailing `)`, and
   object-like macros used inside another macro's args stay plain tokens. Round-trip

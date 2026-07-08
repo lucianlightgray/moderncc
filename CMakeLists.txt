@@ -2989,6 +2989,17 @@ if(MCC_BUILD_TESTS)
             -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/symref.cmake")
         set_tests_properties("cst/symref" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
+        # Shadowing boundary (slice I): pins the v1 last-declaration-wins
+        # resolver (a file-scope name shadowed in a function resolves both uses
+        # to the same def — no scope stack). Documents the limitation.
+        add_test(NAME "cst/symref-shadow" COMMAND "${CMAKE_COMMAND}"
+            "-DMCC=${_mcc_exe}"
+            "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/symref/shadow.c"
+            "-DOUT=${CMAKE_BINARY_DIR}/cst-symref-shadow.o"
+            "-DIDIR=${_idir}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/symref-shadow.cmake")
+        set_tests_properties("cst/symref-shadow" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
         # Structural-hash invariance on real trees (slice C/G, §8.4).
         add_test(NAME "cst/hashinv" COMMAND "${CMAKE_COMMAND}"
             "-DMCC=${_mcc_exe}"
