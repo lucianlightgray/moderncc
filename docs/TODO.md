@@ -236,10 +236,31 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
   a **call-free** function (a call clobbers the caller-saved pins) with integer (`int`/`long`)
   locals. **Poisoned:** pointers/floats/structs, `&`-taken / member-base locals, `++`/`--`
   (lvalue) targets, and any function using **inline asm** (clobbers). Coverage: **89** promoted
-  functions across the corpus (was 3 at the single-BB v1). **Follow-ons:** pin **callee-saved**
-  RBX/R12–R15 too (needs prologue/epilogue save/restore); share one spill slot across disjoint
-  live ranges; spill-weight by access-freq × loop-depth; promote pointers/floats; other arches
-  (the R10/R9/R8 pool is x86_64-specific). Additive — no `gen_op` surgery (docs/AST.md §10/§18.2).
+  functions across the corpus (was 3 at the single-BB v1). Additive — no `gen_op` surgery.
+  - [ ] **Broaden to call-ful functions via callee-saved RBX/R12–R15 (attempted, reverted —
+    the big win, but hazard-laden).** A call-free fn's caller-saved pins die across calls; a
+    callee-saved reg (mcc never allocates RBX/R12–R15; the ABI has the callee preserve them)
+    survives, so the fn push/pops them at entry / at the single return funnel (`gsym(rsym)`
+    right before `gfunc_epilog`). `load(r,sv)`/`store(r,sv)` take explicit reg numbers, and gv
+    on a `{r=RBX}`(class-0) source copies via `load` — all verified working; simple call-ful
+    programs (loop+`add`, `printf`) promoted correctly. **But a spread of corpus programs
+    miscompiled.** Findings for the next attempt: (1) **A two-pass gate is REQUIRED and is a
+    real soundness fix even for call-free:** replay WITHOUT promotion and byte-verify first;
+    only if faithful, re-replay WITH promotion (kept unconditionally). Forcing `faithful=1` for
+    a promoted fn is unsound — byte-verify can't tell "diverged by promotion" from "diverged by
+    a replay bug", so it kept broken replays (e.g. a corrupted string GOTPCREL reloc in a
+    call-ful fn). The two-pass cut call-ful failures 20→11 — but it also **regressed one
+    call-free case (`return_struct_in_reg`: struct/float values zeroed)**, so the second replay
+    pass is not yet idempotent (some per-pass state — likely around struct-return `ast_locrec` /
+    float-pool reuse or `loc` — isn't reset between passes; must fix before re-landing). (2)
+    Remaining call-ful miscompiles at higher register pressure (e.g. 5 pins) — a value corrupts
+    (`unary_operators`: an int went 20→0); suspect the odd-count alignment pad or an ABI edge.
+    (3) VLA + call-ful must bail (rsp race). The scaffolding (two pools, push/pop, `ast_promo_
+    write` with a class-0 `load` path, entry-init pushes, `ast_promo_exit_restore`, the two-pass
+    block) was **reverted** (not committed) once the corpus regressed — re-derive from these notes,
+    landing the idempotent two-pass gate first (verify it holds call-free at 269/0) before calls.
+  - [ ] share one spill slot across disjoint live ranges; spill-weight by access-freq × loop-depth;
+    promote pointers/floats; other arches (the R10/R9/R8 pool is x86_64-specific).
 - [ ] **Tier 4 — virtual always-inline over the shared store (the minimize-invoke payoff).**
   Inline internal calls instead of emitting a boundary `Call`, using the CST's content-
   addressed store/binding/render engine (docs/AST.md §9). Cycle detection via the instance
