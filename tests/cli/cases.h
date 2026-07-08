@@ -1663,12 +1663,12 @@ static const cli_case_t cli_cases[] = {
 		{"c99_inline_no_extern_def", "",
 		 "printf 'inline int f(void){return 42;}\\nint g(void){return f();}\\n' > {W}/inl_u.c && "
 		 "{MCC} -c {W}/inl_u.c -o {W}/inl_u.o >/dev/null 2>&1 && "
-		 "nm {W}/inl_u.o | grep -oE 'U f'",
+		 "nm {W}/inl_u.o | sed -E 's/ ([A-Za-z]) _/ \\1 /' | grep -oE 'U f'",
 		 "U f\n"},
 		{"c99_inline_extern_makes_def", "",
 		 "printf 'extern int f(void);\\ninline int f(void){return 42;}\\nint g(void){return f();}\\n' > {W}/inl_t.c && "
 		 "{MCC} -c {W}/inl_t.c -o {W}/inl_t.o >/dev/null 2>&1 && "
-		 "nm {W}/inl_t.o | grep -oE 'T f'",
+		 "nm {W}/inl_t.o | sed -E 's/ ([A-Za-z]) _/ \\1 /' | grep -oE 'T f'",
 		 "T f\n"},
 		/* §6.7.4 emission matrix over the exhaustive multi-unit inline.c: which
 		   declaration/definition combos yield an exported symbol. Spans all four
@@ -1677,7 +1677,7 @@ static const cli_case_t cli_cases[] = {
 		   otherwise reference-harness-only exec/functions_abi/inline.c golden. */
 		{"c99_inline_emission_matrix", "",
 		 "{MCC} -c {D}/../exec/functions_abi/inline.c -o {W}/inlmat.o >/dev/null 2>&1 && "
-		 "nm {W}/inlmat.o | grep -oE '(U|[Tt]) (inline_inline_undeclared|extern_extern_undeclared|noinst_static_inline_predeclared|static_func|main)$' | LC_ALL=C sort",
+		 "nm {W}/inlmat.o | sed -E 's/ ([A-Za-z]) _/ \\1 /' | grep -oE '(U|[Tt]) (inline_inline_undeclared|extern_extern_undeclared|noinst_static_inline_predeclared|static_func|main)$' | LC_ALL=C sort",
 		 "T extern_extern_undeclared\nT main\nU inline_inline_undeclared\nt noinst_static_inline_predeclared\nt static_func\n"},
 
 };
