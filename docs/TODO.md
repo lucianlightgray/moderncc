@@ -187,9 +187,6 @@ brought up one §17 category at a time.
   `docs/NOTES.md` (Platform ABI & runtime notes) — revisit only if a real
   cross-module-TLS-on-Darwin need appears; the fix is emitting TLV *import*
   descriptors.
-- [ ] **ARM far-branch has no veneer — errors past ±32 MB (fix).**
-  `src/arch/arm/arm-gen.c:326` `"FIXME: function bigger than 32MB"`. → Emit a
-  long-branch trampoline/island, or downgrade to a documented diagnostic (not FIXME).
 - [x] **i386 fastcall/thiscall: non-register arg before a register arg
   unsupported (decided 2026-07-07: accepted limitation, documented).**
   `src/arch/i386/i386-gen.c` errors when a register-eligible integer arg follows a
