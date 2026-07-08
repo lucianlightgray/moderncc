@@ -12228,6 +12228,30 @@ static int ast_plan_promotion(AstArena *a) {
 			if (coff[j] == off)
 				cpoison[j] = 1;
 	}
+	/* Poison the whole [base, base+sizeof) slot range of any local ARRAY. A constant-
+	 * index element `a[k]` is captured as a plain int Ref at its own frame offset (so
+	 * it looks like a promotable scalar), but the array's address escapes via pointer
+	 * arithmetic — `&a[1]` is `a+1` on the array's decayed base value (a VT_LOCAL Ref
+	 * with VT_ARRAY type and no VT_LVAL, NOT an AST_OP_ADDR node the Unary poison would
+	 * catch) — so the same slot is also read through the pointer from memory. Promoting
+	 * an element to a register would diverge from that memory read. */
+	for (AstLocal n = 0; n < nn; n++) {
+		if (ast_kind(a, n) != AST_Ref)
+			continue;
+		int r = ast_op(a, n), t = ast_type_t(a, n);
+		if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM) || !(t & VT_ARRAY))
+			continue;
+		CType ct;
+		ct.t = t;
+		ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+		int al, size = type_size(&ct, &al);
+		if (size <= 0)
+			size = 8; /* unknown / VLA: poison at least the base slot */
+		int base = (int)(int64_t)ast_ival(a, n);
+		for (int j = 0; j < nc; j++)
+			if (coff[j] >= base && coff[j] < base + size)
+				cpoison[j] = 1;
+	}
 	/* Take the non-poisoned integer candidates, assigning each a register from the
 	 * pool the function's call-freeness selects. */
 	ast_promo_callful = has_call;
