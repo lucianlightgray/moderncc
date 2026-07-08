@@ -46,7 +46,11 @@ only add (or fail to add) replayed functions.
     (member_end/vstore/genop now admit VT_BITFIELD lvalues/operands; feared crash never
     materialized — the shift/mask is fully suppressed). Signed + unsigned. Fixture
     `ast/replay-bitfield`.
-  - **`_Complex`** — VT_STRUCT+`is_complex`; needs the build/extract `Convert` modeled.
+  - **`_Complex` arithmetic LANDED 2026-07-08** — a `_Complex` operand routes to
+    `gen_complex_op` inside the suppressed `gen_op`, and its result temp is now an ordinal
+    frame slot (`cplx_local` wraps `ast_alloc_loc`), so complex `+`/`-`/`*` replay. Fixture
+    `ast/replay-complex_arith`. Still falls back: **`__real__`/`__imag__` extraction** (needs
+    a coarse member-style hook, like `.`/`->`, for the in-place retype) and complex casts.
   - **VLA/`alloca`** — needs the machine-tier `StackAlloc`/`StackSave`/`StackRestore` op (§4),
     a new mechanism, not just a hook.
   - **short-circuit sub-cases** — a plain assignment (`r = a&&b`) and a direct return

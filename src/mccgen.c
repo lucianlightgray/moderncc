@@ -4890,7 +4890,11 @@ static void complex_part(int imag) {
 
 static void cplx_local(CType *cplx, SValue *out) {
 	int align, size = type_size(cplx, &align);
+#if defined(CONFIG_AST) && CONFIG_AST
+	loc = ast_alloc_loc(size, align);
+#else
 	loc = (loc - size) & -align;
+#endif
 	out->type = *cplx;
 	out->r = VT_LOCAL | VT_LVAL;
 	out->r2 = VT_CONST;
@@ -10729,13 +10733,16 @@ static void ast_hook_genop(int op) {
 		return;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	/* A bit-field operand is read (adjust_bf/load_packed_bf) inside the suppressed
-	 * gen_op, so it is a valid arithmetic operand; struct/fp bad types still bail. */
+	 * gen_op, so it is a valid arithmetic operand; a _Complex operand routes to
+	 * gen_complex_op inside the suppressed gen_op. Other struct/fp bad types bail. */
 	int bf0 = (vtop->type.t & VT_BITFIELD) && (vtop->type.t & VT_BTYPE) != VT_STRUCT;
 	int bf1 =
 			(vtop[-1].type.t & VT_BITFIELD) && (vtop[-1].type.t & VT_BTYPE) != VT_STRUCT;
+	int cx0 = is_complex_type(&vtop->type);
+	int cx1 = is_complex_type(&vtop[-1].type);
 	if (!ast_op_modeled(op) || ast_vn != rel || ast_vn < 2 ||
-			(ast_bad_type(vtop->type.t) && !bf0) ||
-			(ast_bad_type(vtop[-1].type.t) && !bf1)) {
+			(ast_bad_type(vtop->type.t) && !bf0 && !cx0) ||
+			(ast_bad_type(vtop[-1].type.t) && !bf1 && !cx1)) {
 		ast_desync = 1;
 		return;
 	}
