@@ -12243,7 +12243,11 @@ static int ast_plan_promotion(AstArena *a) {
 	/* Poison any offset whose Ref is a child of a Unary — every such use needs the
 	 * local as an *lvalue* (ADDR = `&x`, address escapes; MEMBER = aggregate base;
 	 * `++`/`--` = read-modify-write), which the register-resident rvalue we push for a
-	 * promoted read cannot satisfy ("lvalue expected"). */
+	 * promoted read cannot satisfy ("lvalue expected"). MEMBER_ARROW (`p->m`) stays
+	 * poisoned too: unlike `*p`/`p[i]` (a plain deref that never touches the pin), its
+	 * `indir`+`gaddrof`+byte-offset member lowering miscompiles a promoted pointer base
+	 * (confirmed: promoting the `s` param of `s->average = …; s->count++` in the exec
+	 * suite's average.c diverged from -O0). Left as a future extension. */
 	for (AstLocal n = 0; n < nn; n++) {
 		if (ast_kind(a, n) != AST_Unary)
 			continue;
