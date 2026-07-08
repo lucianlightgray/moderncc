@@ -251,9 +251,6 @@ function(mcc_validate_config)
             "compiler (have '${CMAKE_C_COMPILER_ID}'); disable it or set "
             "-DCMAKE_C_COMPILER to gcc/clang.")
     endif()
-    # MCC_BUILD_SANITIZE works on GCC/Clang (ASan+UBSan) and MSVC (ASan). On a
-    # mingw/PE host with no libasan it falls back to trap-mode UBSan; the actual
-    # flavor is resolved where mcc_s is defined.
     if(MCC_BUILD_SANITIZE
        AND NOT CMAKE_C_COMPILER_ID MATCHES "GNU|Clang"
        AND NOT CMAKE_C_COMPILER_ID STREQUAL "MSVC")
@@ -1107,8 +1104,6 @@ if(MCC_ALL_DIAGNOSTICS)
             message(STATUS "mcc diagnostics: skipping mcc_s (-fsanitize) with GNU gcc on "
                            "macOS (Homebrew gcc ships no linkable libasan/libubsan here)")
         else()
-            # WIN32/mingw resolves to trap-mode UBSan (no runtime needed); ELF/Mach
-            # to full ASan+UBSan. Flavor is picked where mcc_s is defined.
             mcc_profile_seed(MCC_BUILD_SANITIZE ON)
         endif()
         mcc_profile_seed(MCC_BUILD_COVERAGE ON)
@@ -2209,20 +2204,10 @@ if(MCC_BUILD_PROFILE)
 endif()
 
 if(MCC_BUILD_SANITIZE)
-    # Resolve the strongest sanitizer flavor the host toolchain actually supports:
-    #  - MSVC ships AddressSanitizer (/fsanitize=address); its runtime DLL lives
-    #    beside cl.exe. MSVC has no UBSan/TSan on Windows.
-    #  - a mingw/PE GCC ships no libasan/libubsan, but trap-mode UBSan links with
-    #    no runtime library (it emits ud2 on UB). mcc's only UBSan trip is
-    #    unaligned access (an intentional, arch-safe tcc idiom), so excluding the
-    #    alignment check leaves a *runnable* sanitized mcc that still traps genuine
-    #    UB. If a libasan is actually present, prefer full ASan+UBSan.
-    #  - ELF/Mach-O GCC/Clang: full ASan+UBSan against the system runtimes.
     set(_san_cflags "")
     set(_san_lflags "")
     set(_san_asan_bindir "")
     if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
-        # /Zi + /DEBUG so ASan reports are symbolized (silences C5072/LNK4302).
         set(_san_cflags /fsanitize=address /Zi)
         set(_san_lflags /DEBUG)
         set(_san_desc "MSVC AddressSanitizer (/fsanitize=address)")
@@ -2240,9 +2225,6 @@ if(MCC_BUILD_SANITIZE)
             set(_san_desc "trap-mode UBSan minus alignment (mingw ships no ASan/UBSan runtime)")
         endif()
     else()
-        # -fno-sanitize=alignment: mcc's only UBSan trip is intentional unaligned
-        # access (a tcc idiom, safe on every mcc target arch). Excluding it keeps a
-        # *runnable* mcc_s (see the sanitize-smoke test) without spurious reports.
         set(_san_cflags -fsanitize=address,undefined -fno-sanitize=alignment)
         set(_san_lflags -fsanitize=address,undefined -fno-sanitize=alignment)
         set(_san_desc "ASan+UBSan (minus alignment)")
@@ -2925,10 +2907,6 @@ if(MCC_BUILD_TESTS)
         COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}")
     set_tests_properties(mcc_build PROPERTIES FIXTURES_SETUP MCC_BUILT)
 
-    # sanitize-smoke: the sanitizer-instrumented compiler (mcc_s) actually runs a
-    # full compile+link+execute pass. This is where MCC_BUILD_SANITIZE earns its
-    # keep — a clean run proves the instrumented mcc executes without an ASan
-    # report or a UBSan trap. Registered only when mcc_s exists.
     if(TARGET mcc_s)
         add_test(NAME sanitize-smoke COMMAND "${CMAKE_COMMAND}"
             "-DMCC=$<TARGET_FILE:mcc_s>" "-DBDIR=${_bdir}"

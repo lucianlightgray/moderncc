@@ -1,7 +1,3 @@
-/* Smoke program compiled by the sanitizer-instrumented mcc (mcc_s). It stays
- * header-free (just an extern printf) so the test does not depend on the build
- * tree's include layout; the point is to drive a full parse/codegen/link pass
- * through the instrumented compiler and check the emitted program runs. */
 extern int printf(const char *, ...);
 
 static int fib(int n) {

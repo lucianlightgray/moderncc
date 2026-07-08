@@ -1,12 +1,3 @@
-# Driver for the sanitize-smoke test: compile SRC with the sanitizer-instrumented
-# mcc (mcc_s), run the result, and compare stdout. Invoked via `cmake -P` with
-# -DMCC -DBDIR -DSRC -DOUT set (-DASAN_BINDIR optional: the dir holding the MSVC
-# clang_rt.asan_dynamic-*.dll, prepended to PATH so mcc_s can load it).
-#
-# This is the one place the sanitizer actually *executes*: mcc_s is fully
-# instrumented, so any failure here (ASan report, UBSan trap -> SIGILL, or a
-# wrong result) is a real defect in mcc, not a missing-toolchain skip.
-
 set(_expect "fib=55 dot=39\n")
 
 if(ASAN_BINDIR AND EXISTS "${ASAN_BINDIR}")
