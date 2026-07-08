@@ -11838,13 +11838,43 @@ static void gen_inline_functions(MCCState *s) {
 		for (int i = 0; i < s->nb_inline_fns; ++i) {
 			fn = s->inline_fns[i];
 			sym = fn->sym;
-			if (sym && (sym->c || !(sym->type.t & VT_INLINE))) {
+			if (!sym)
+				continue;
+			/* §6.7.4p7: a plain `inline` definition (no `extern`, no `static`)
+			   is an inline definition — it does NOT provide an external
+			   definition. So we must not leave an external definition behind:
+			   an un-inlined call is then an undefined reference, as in gcc/clang.
+			   We *emit* only when the function acquired an external definition
+			   (VT_INLINE cleared — e.g. via `extern` or a non-inline declaration)
+			   or is a used static-inline (internal linkage). */
+			int emit = !(sym->type.t & VT_INLINE) ||
+					((sym->type.t & VT_STATIC) && sym->c);
+			/* A *referenced* plain inline still has its body parsed so the §6.7.4p3
+			   constraint diagnostics fire (references to internal-linkage / static
+			   objects from an external-linkage inline), then the generated
+			   definition is discarded so the symbol stays undefined. */
+			int diag_only = !emit && sym->c &&
+					(sym->type.t & VT_INLINE) && !(sym->type.t & VT_STATIC);
+			if (emit || diag_only) {
 				fn->sym = NULL;
 				mccpp_putfile(fn->filename);
 				begin_macro(fn->func_str, 1);
 				next();
 				cur_text_section = text_section;
-				gen_function(sym);
+				if (diag_only) {
+					Section *ts = cur_text_section;
+					int save_off = ts->data_offset;
+					int save_rel = ts->reloc ? ts->reloc->data_offset : 0;
+					ElfSym saved = *elfsym(sym);
+					gen_function(sym);
+					/* undo the definition emitted for the diagnostics pass */
+					ts->data_offset = save_off;
+					if (ts->reloc)
+						ts->reloc->data_offset = save_rel;
+					*elfsym(sym) = saved;
+				} else {
+					gen_function(sym);
+				}
 				end_macro();
 
 				inline_generated = 1;

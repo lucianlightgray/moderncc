@@ -280,13 +280,6 @@ runtime cases go in `tests/exec/features_c99_c11/`, diagnostics/negatives in
 
 ## Real semantic/diagnostic gaps — fix mcc, then add the test
 
-- [ ] **§6.7.4p6 — plain `inline` w/o external definition emits a global (fix+test).**
-  An `-O0` call to an inline-only function *links* in mcc (rc 0) where gcc/clang fail
-  with `undefined reference` (rc 1): an inline definition is not an external
-  definition. Fix the linkage semantics, then add a 2-TU test asserting the call is
-  unresolved (and that adding `extern` makes it resolve). _Ref:_ gcc
-  `gcc.dg/inline-20.c` (C99 `-fno-gnu89-inline` emission, `scan-assembler`),
-  `gcc.dg/inline-15.c`, `gcc.dg/inline-19.c`.
 - [ ] **§7.26.1 — bundled `<threads.h>` shadows the system header (fix).** mcc's
   `include/threads.h` resolves ahead of glibc's (`-M` confirms), the root of the
   `c11_threads` divergence. Fix header-search precedence / align the shim. _No direct

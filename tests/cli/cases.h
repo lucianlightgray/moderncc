@@ -1656,6 +1656,20 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -std=c89 -c {W}/kro.c -o {W}/kro.o 2>&1 | "
 		 "grep -oE \"type of .x. defaults to .int.$\"",
 		 "type of 'x' defaults to 'int'\n"},
+		/* §6.7.4p6/p7: a plain `inline` definition provides no external
+		   definition — the symbol stays undefined (nm 'U'), so an un-inlined
+		   call is unresolved at link time (as in gcc/clang); adding an `extern`
+		   declaration turns it into an external definition (nm 'T'). */
+		{"c99_inline_no_extern_def", "",
+		 "printf 'inline int f(void){return 42;}\\nint g(void){return f();}\\n' > {W}/inl_u.c && "
+		 "{MCC} -c {W}/inl_u.c -o {W}/inl_u.o >/dev/null 2>&1 && "
+		 "nm {W}/inl_u.o | grep -oE 'U f'",
+		 "U f\n"},
+		{"c99_inline_extern_makes_def", "",
+		 "printf 'extern int f(void);\\ninline int f(void){return 42;}\\nint g(void){return f();}\\n' > {W}/inl_t.c && "
+		 "{MCC} -c {W}/inl_t.c -o {W}/inl_t.o >/dev/null 2>&1 && "
+		 "nm {W}/inl_t.o | grep -oE 'T f'",
+		 "T f\n"},
 
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases) / sizeof(cli_cases[0]));
