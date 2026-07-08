@@ -4879,6 +4879,12 @@ static void complex_part(int imag) {
 	CType base = fre->type;
 	int ofs = imag ? fre->next->c : fre->c;
 
+	/* __real__/__imag__ is a member access of the _Complex pair at `ofs`: same
+	 * `&base + offset` + in-place retype as `.`, so capture it with the coarse
+	 * member hook (replay reproduces the exact sequence). */
+#if defined(CONFIG_AST) && CONFIG_AST
+	ast_hook_member_begin(0);
+#endif
 	test_lvalue();
 	gaddrof();
 	vtop->type = char_pointer_type;
@@ -4886,6 +4892,9 @@ static void complex_part(int imag) {
 	gen_op('+');
 	vtop->type = base;
 	vtop->r |= VT_LVAL;
+#if defined(CONFIG_AST) && CONFIG_AST
+	ast_hook_member_end(ofs, &base, 0, 0, 0);
+#endif
 }
 
 static void cplx_local(CType *cplx, SValue *out) {

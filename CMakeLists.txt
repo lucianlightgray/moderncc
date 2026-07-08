@@ -2963,13 +2963,13 @@ if(MCC_BUILD_TESTS)
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
             set_tests_properties("ast/replay-struct_return" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
-            # _Complex arithmetic replays (REPLAYED targets addc; main falls back on
-            # the __real__ extraction, which still needs a coarse member-style hook).
+            # _Complex arithmetic + __real__/__imag__ extraction replay (REPLAYED
+            # targets addre; main falls back on the _Complex construction re+im*I).
             add_test(NAME "ast/replay-complex_arith" COMMAND "${CMAKE_COMMAND}"
                 "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
                 "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/complex_arith.c"
                 "-DOUT=${CMAKE_BINARY_DIR}/ast-replay"
-                "-DEXPECT_RC=42" "-DREPLAYED=addc"
+                "-DEXPECT_RC=42" "-DREPLAYED=addre"
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
             set_tests_properties("ast/replay-complex_arith" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 

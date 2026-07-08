@@ -46,11 +46,12 @@ only add (or fail to add) replayed functions.
     (member_end/vstore/genop now admit VT_BITFIELD lvalues/operands; feared crash never
     materialized — the shift/mask is fully suppressed). Signed + unsigned. Fixture
     `ast/replay-bitfield`.
-  - **`_Complex` arithmetic LANDED 2026-07-08** — a `_Complex` operand routes to
-    `gen_complex_op` inside the suppressed `gen_op`, and its result temp is now an ordinal
-    frame slot (`cplx_local` wraps `ast_alloc_loc`), so complex `+`/`-`/`*` replay. Fixture
-    `ast/replay-complex_arith`. Still falls back: **`__real__`/`__imag__` extraction** (needs
-    a coarse member-style hook, like `.`/`->`, for the in-place retype) and complex casts.
+  - **`_Complex` arithmetic + `__real__`/`__imag__` LANDED 2026-07-08** — a `_Complex` operand
+    routes to `gen_complex_op` inside the suppressed `gen_op`, its result temp is an ordinal
+    frame slot (`cplx_local` wraps `ast_alloc_loc`), and `__real__`/`__imag__` (`complex_part`)
+    is captured via the same coarse member hook as `.`/`->`. Complex `+`/`-`/`*` and part
+    extraction replay. Fixture `ast/replay-complex_arith`. Still falls back: **`_Complex`
+    construction** (`re + im*I` build) and complex casts.
   - **VLA/`alloca`** — needs the machine-tier `StackAlloc`/`StackSave`/`StackRestore` op (§4),
     a new mechanism, not just a hook.
   - **short-circuit sub-cases** — a plain assignment (`r = a&&b`) and a direct return
