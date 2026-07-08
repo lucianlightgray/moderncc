@@ -15,6 +15,20 @@ only under `MCC_AST_REPLAY`, and the byte-verify net keeps every unmodeled const
 on correct `-O0` fallback — so widening coverage cannot break output correctness,
 only add (or fail to add) replayed functions.
 
+**Query-first framing (docs/AST.md §18).** The vstack/ABI backend is **feature-complete
+C11 — the exec suite proves it.** The parser is one driver demonstrating the opcodes
+span the language; the replay driver is a *second* driver of the *same* ops. It never
+fakes or reimplements anything (no faux-stack, no abstract machine) — reaching `-O0`
+parity is "use the tools it already has." **Every remaining coverage gap is therefore an
+AST-*query* gap, not a codegen gap:** the op exists; the driver lacks the query to drive
+it. Gaps are tiered by query cost (§18.2) — the three open items below are all Tier 2
+(a local structural walk). **The actionable checklist — every query mapped to the exact
+`src/mccgen.c` symbol that answers it today vs. the specific TODO — is docs/AST.md §18.5
+(the single source of truth for "what's left").** In brief: three Tier-2 hooks close
+`-O0` parity (VLA scope-edge capture, `I`-unit rodata-const reuse, nested landor chain);
+Tier 3 (liveness→`gv` steering) is the first real `-O1` win; Tier 4 (inline + guards) is
+the minimize-invoke payoff. **No item on the list is a new machine op.**
+
 - [~] **Widen replay coverage (§16 Mid).** **This session (2026-07-08) landed 19 milestones**
   covering every major target and nearly the whole tail: floats/double, call-result stores,
   scalar struct member access (`.`/`->`), struct copy/deref, `switch` dispatch, named
@@ -27,17 +41,24 @@ only add (or fail to add) replayed functions.
   (`ast_alloc_loc`/`ast_locrec`, the `ast_fconst` pattern) wrapping the struct-result and
   complex temps so replay reserves the same offsets — `-O0` stays byte-identical (the record is
   passive). Fixtures under `ast/replay-*` (16 REPLAYED + fallback + template gates).
-  **Remaining** (all fall back correctly today, no crashes): **VLA/`alloca`** — the one large
-  item, needs the machine-tier `StackAlloc`/`StackSave`/`StackRestore` subsystem with
-  scope-aware SP save/restore (docs/AST.md §4); plus two niche cases — **`_Complex`
+  **Remaining** (all fall back correctly today, no crashes). **Query-first framing
+  (docs/AST.md §18): the vstack/ABI backend is feature-complete C11 — `-O0` already
+  compiles all three of these correctly — so none is a codegen gap. Each is a Tier-2
+  *AST-query* gap: the op exists; the driver lacks the query needed to drive it.**
+  **VLA/`alloca`** — the `StackAlloc`/`StackSave`/`StackRestore` ops exist (`-O0` emits
+  them); the driver lacks the **lexical-scope-edge query** that says *where* to emit the
+  paired save/restore for correct LIFO unwind (the scope nesting is in the CST/AST — a
+  local walk; docs/AST.md §4/§18.3). Plus two niche query gaps — **`_Complex`
   construction** (`re + im*I`, the imaginary-unit `I` const materialized as two unsuppressed
   float pushes — the imaginary-*literal* form `r + 2.0i` now replays via a coarse
   `Unary(AST_OP_IMAG)` node, fixture `ast/replay-complex_imag`; only the `__builtin_complex`-based
   `I` unit remains — capturing its rodata-const result as a Ref leaf link-errored
-  (unresolved anon symbol), so it needs proper const-symbol reuse, not a plain leaf capture)
-  and **nested short-circuit operands** (`(a&&b)||c`) — simply allowing a nested
+  (unresolved anon symbol), so it needs the **rodata-const-symbol-reuse query**, the same
+  ordinal-symbol-reuse pattern `ast_fconst` uses for float const pools, not a plain leaf
+  capture) and **nested short-circuit operands** (`(a&&b)||c`) — simply allowing a nested
   Binary(&&/||) operand replays flat cases but **segfaults mcc on deeper nesting (grep)**, so it
-  genuinely needs the nested landor-chain structure, not the flat gvtst reproduction.
+  genuinely needs the **nested landor-chain query** (the chain structure), not the flat
+  gvtst reproduction.
   **Variadic struct returns now replay** (`ast/replay-struct_ret_variadic`) — the struct-return
   ABI is variadic-independent, so no special handling was needed. Detail per item below:
   - ~~struct-return callers~~ **LANDED 2026-07-08** (register-return form) — `struct r = f()`
@@ -68,15 +89,22 @@ only add (or fail to add) replayed functions.
     extraction replay. **Complex casts** (real→complex, complex→complex) also replay now —
     `gen_complex_cast` runs suppressed under the Convert node (same pattern). Fixture
     `ast/replay-complex_arith`. Still falls back: **`_Complex` construction** (`re + im*I`, the
-    imaginary-unit `I` constant / const-fold rodata).
-  - **VLA/`alloca`** — needs the machine-tier `StackAlloc`/`StackSave`/`StackRestore` op (§4),
-    a new mechanism, not just a hook.
+    imaginary-unit `I` constant / const-fold rodata) — a Tier-2 **rodata-const-symbol-reuse
+    query** gap (docs/AST.md §18.3), not a codegen gap: reuse the `ast_fconst` ordinal-symbol
+    pattern rather than capturing the rodata const as a bare Ref leaf.
+  - **VLA/`alloca`** — **not a codegen gap** (docs/AST.md §18.3): the machine-tier
+    `StackAlloc`/`StackSave`/`StackRestore` ops already exist and `-O0` emits them
+    correctly. The gap is the **lexical-scope-edge query** — the driver needs to know
+    *where* (which scope boundaries) to emit the paired save/restore for correct LIFO
+    unwind. The scope nesting is in the CST/AST; the query is a local walk (§4/§18.2 Tier 2).
   - **short-circuit sub-cases LANDED 2026-07-08** — `int r = a&&b` (decl-init), `(a&&b)+1`
     (VT_CMP used arithmetically), and short-circuit in a ternary all replay: the VT_CMP→0/1
     materialization (setcc, in `vcheck_cmp`) is now suppressed during capture, so the
     `Binary(&&/||)` node stays and replay re-materializes it when the consuming op runs.
     Fixture `ast/replay-short_circuit`. Still falls back: **nested VT_CMP operands**
-    (`(a&&b)||c`, bail in `ast_hook_landor_operand`).
+    (`(a&&b)||c`, bail in `ast_hook_landor_operand`) — a Tier-2 **nested-landor-chain query**
+    gap (docs/AST.md §18.3): the driver needs the chain structure, not the flat gvtst
+    reproduction (the flat model segfaults on deep nesting).
 
   _Baseline (predates this session's widening):_ ≥119/238 exec golden source files replay
   ≥1 function. Measured outcome buckets across the exec corpus (per function):

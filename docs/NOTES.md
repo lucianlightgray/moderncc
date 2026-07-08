@@ -1422,14 +1422,25 @@ an rvalue struct); `_Complex` arithmetic; `__real__`/`__imag__`; `_Complex` cast
   mirror (member access, `vcheck_cmp` VT_CMP→0/1, `gen_complex_cast`, imaginary literals),
   reproduced faithfully at replay.
 
-**Remaining (3, all fall back correctly — tracked open in docs/TODO.md):** VLA/`alloca`
-(needs the §4 `StackAlloc`/`StackSave`/`StackRestore` subsystem with scope-aware SP
-save/restore — a new machine-tier mechanism); the `__builtin_complex`-based `I` unit
-(`r + i*I`, a rodata complex constant needing const-symbol recording/reuse — a plain
-leaf capture link-errors); and nested short-circuit operands (`(a&&b)||c`, needs nested
-landor-chain structure — the flat gvtst reproduction segfaults on grep). Each was
-attempted; the two broken attempts (link error, segfault) were reverted rather than left
-in the tree.
+**Query-first framing (docs/AST.md §18, 2026-07-08).** The vstack/ABI backend is
+**feature-complete C11 — this exec suite is the proof.** The parser is just one driver
+demonstrating the opcodes span the language; the replay driver is a *second* driver of
+the *same* ops and never fakes/reimplements anything (no faux-stack, no abstract
+machine). Reaching `-O0` parity = "use the tools it already has"; `-O1` beats `-O0` only
+via two AST-only queries — inline (Tier 4) and register-promote (Tier 3). Consequently
+**every remaining gap is an AST-*query* gap, not a codegen gap:** the op exists, the
+driver lacks the query to drive it. C11 flatten hazards (`setjmp`/VLA/signals) relocate
+to **guard queries** (§18.4), not new machinery.
+
+**Remaining (3, all fall back correctly — tracked open in docs/TODO.md) — all Tier-2
+query gaps (§18.3), *not* codegen gaps (`-O0` compiles all three):** VLA/`alloca` (the
+`StackAlloc`/`StackSave`/`StackRestore` ops exist; missing the **lexical-scope-edge
+query** for LIFO save/restore placement); the `__builtin_complex`-based `I` unit
+(`r + i*I`, needs the **rodata-const-symbol-reuse query** — the `ast_fconst` ordinal
+pattern; a plain leaf capture link-errors); and nested short-circuit operands
+(`(a&&b)||c`, needs the **nested landor-chain query** — the flat gvtst reproduction
+segfaults on grep). Each was attempted; the two broken attempts (link error, segfault)
+were reverted rather than left in the tree.
 
 ## Completed — Now-queue decisions, limitations & boundaries (2026-07-07/08)
 

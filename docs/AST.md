@@ -15,11 +15,17 @@ hidden-pointer / arch-transfer / variadic) and by-value struct args, the full
 `_Complex` surface (arithmetic, `__real__`/`__imag__`, casts, imaginary literals),
 and short-circuit results used as values. Two latent correctness bugs were fixed
 on the way (call double-emit; float const-pool duplication) and a switch-replay
-segfault guarded. **Remaining (3 items, all fall back correctly):** VLA/`alloca`
-(needs the §4 `StackAlloc`/`StackSave`/`StackRestore` subsystem — scope-aware SP);
-the `__builtin_complex`-based `I` unit (`r + i*I`, needs rodata-const-symbol reuse);
-and nested short-circuit operands (`(a&&b)||c`, needs nested landor chains — the
-flat model segfaults on grep). The remainder below (mid/long horizons: virtual
+segfault guarded. **Remaining (3 items, all fall back correctly) — each is a
+Tier-2 *query* gap, not a codegen gap (§18): the backend already compiles all
+three at `-O0`; the driver just lacks the query to drive the existing ops.** VLA/
+`alloca` (the `StackAlloc`/`StackSave`/`StackRestore` ops exist — missing the
+lexical-scope-edge query for LIFO SP placement, §4/§18.3); the
+`__builtin_complex`-based `I` unit (`r + i*I`, needs the rodata-const-symbol-reuse
+query); and nested short-circuit operands (`(a&&b)||c`, needs the nested
+landor-chain query — the flat model segfaults on grep). **The founding reframe
+(§18): the vstack/ABI backend is feature-complete C11 — the exec suite proves it —
+so the replay driver never fakes/reimplements anything; the only real problem is the
+AST query surface.** The remainder below (mid/long horizons: virtual
 always-inline, more templates, liveness-steered placement, LTO, `-g`, hot-reload)
 is **plan / design** (curate freely).
 
@@ -500,6 +506,182 @@ green case is one feature checked off. Natural order by what each category force
 
 ---
 
+## 18. The AST query surface — the only real remaining problem
+
+**Founding reframe (2026-07-08).** The backend — the vstack API (`vpush*`/`gen_op`/
+`gv`/`gsym`/`gjmp`) plus every piece of ABI machinery below it (indirect
+`CallTransfer`, sret, varargs marshalling, VLA SP moves, soft-float, `_Complex`) — is
+**feature-complete C11, and the exec suite is the proof.** The recursive-descent
+parser is not "the `-O0` implementation of C11"; it is merely **one driver that
+demonstrates the opcodes already span the language.** There is nothing in C11 the
+opcodes can't already express, because `-O0` already emits all of it correctly across
+thousands of passing tests.
+
+Therefore the replay driver **never fakes, reimplements, or invents machinery.** It
+*calls the same ops*. Reaching feature-parity with `-O0` = **"use the tools it already
+has."** Every downstream feature question (recursion, varargs, function pointers,
+`setjmp`/`longjmp`, VLA) is already answered by the backend; the driver only needs to
+know *when* and *with what* to call each op. **The entire difficulty is the AST query
+surface**: can the driver — holding the whole AST — answer, easily, the questions the
+streaming parser answered implicitly from its live context?
+
+### 18.1 Dissolution — the "new machinery" mirage
+
+Anything that *looked* like it needed a new abstract machine dissolves into "the op
+exists; the driver needs one query." The naïve one-`main`-with-a-faux-stack flattening
+is an *existence proof that inline-everything is sound*, **not** an implementation
+strategy — physically flattening would force `switch`-dispatch even where a call is
+statically a `Jump`, re-introducing the very overhead inlining removes.
+
+| Looked like "reimplement…" | The op already exists (proven by `-O0`) | The *only* new thing is the query |
+|---|---|---|
+| non-tail/tree recursion via a faux-stack | a non-inlined recursive call **is** the existing internal/boundary `Call` on the **real** machine stack | *"inline this instance, or emit the `Call`?"* (inlinability + hash-termination) |
+| `va_start`/`va_arg` on a faux-stack | `-O0` already marshals varargs — **replay already ships variadic struct-return calls** | *(none special — the descriptor is recomputed from the result type)* |
+| function-pointer `switch`-dispatch / computed goto | the existing **indirect `CallTransfer`**; identity is real because escaped fns are materialized standalones (§9) | *"is this `Invoke` indirect?"* — an O(1) node field |
+| `setjmp`/`longjmp` against a faux-stack | runtime calls + a real frame; `-O0` compiles them | *"does this region contain `setjmp` → forbid inlining across it"* — a **guard** query (§18.4) |
+| VLA/`alloca` SP reimplementation | `-O0` already emits the SP moves (`StackAlloc`/`StackSave`/`StackRestore` exist) | *"where are the lexical scope edges, for LIFO save/restore placement?"* — a **scope** query |
+
+Restated: **every C11 hazard that seemed to need new machine machinery is actually an
+inlinability/placement *guard query* over ops that already exist.** The reframe doesn't
+lose the C11 subtlety — it *relocates* it from the machine tier (hard) to the query
+tier (a predicate on the AST). "Minimize-invoke" needs no floor theorem: parity =
+reproduce the parser's op selection; boundary calls stay `Call` exactly as `-O0` does
+(that's just linkage). `-O1` then beats `-O0` in exactly **two** ways, both purely
+because the driver holds the whole AST as a *queryable object* the streaming parser
+never had: **(1)** inline an internal call instead of `Call` (Tier 4 query); **(2)**
+steer placement / promote address-not-taken locals to registers (Tier 3 query).
+
+### 18.2 The surface, tiered by query cost
+
+The right axis is **cost to answer**, because "answer the questions *easily*" is the
+whole game. Tier 1 is free; Tier 4 is where the engineering lives.
+
+**Tier 1 — O(1) node-field reads** (free; mostly shipped)
+
+| Driver decision | Query | Answer lives in | Parity / beyond | Status |
+|---|---|---|---|---|
+| operand width/sign for `Binary`/`Convert`/`Load`/`Store` | access `CType` | node field (§11 capture) | parity | ✅ |
+| no-op reinterpret vs real `Convert` | `is_noop(src,dst)` | predicate on node | parity | ✅ |
+| literal encoding (int/float/`_Complex`) | `Literal` | node field | parity | ✅ (float-pool bug fixed) |
+| address/loc of a named object | `Ref → Sym.loc` | Sym | parity | ✅ |
+| anon temp slot (sret ptr, struct-ret temp, `cplx_local`) | ordinal loc record | `ast_locrec` | parity | ✅ (the Mid enabler) |
+| sret / return-descriptor form | recompute from result type | `gfunc_sret`+`PUT_R_RET` | parity | ✅ |
+| direct vs indirect call | is the `Invoke` target a value? | node field | parity | ✅ |
+| must-be-memory (`&`-taken/`volatile`/`register`) | constraint flag | Sym/type (§4) | parity **+ enables promotion** | ✅ |
+
+**Tier 2 — local structural walk** (cheap; on-demand — **all three open items live here**)
+
+| Driver decision | Query | Mechanism (shipped) | Status |
+|---|---|---|---|
+| structured branch target (`if`/`while`/`do`/`for`/ternary) | reproduce parser `gind`/`gvtst`/`gjmp`/`gsym` | per-construct pattern in `ast_replay_bb` | ✅ |
+| `goto`/label target + back-edge | per-fn label table (token → `{jind,jnext}`) | `ast_hook_label`/`ast_hook_goto` | ✅ |
+| switch cascade + default | rebuild `switch_t`, `case_sort`+`gcase` | `ast_hook_switch_*` | ✅ |
+| *(planned generalization)* flat-CFG target | `bb_addr[BB]` + RPO layout + fixup | §17 D-b — not yet built | ⬜ |
+| **VLA save/restore placement** | **lexical scope edges (LIFO nesting)** | CST/AST scope walk | 🔧 **open — pure query gap** |
+| **rodata const-symbol reuse (`I`-unit)** | **look up existing rodata symbol** | const-pool table | 🔧 **open — pure query gap** |
+| **nested short-circuit** | **nested landor-chain shape** | replace the flat model | 🔧 **open — model gap** |
+
+**Tier 3 — whole-function analysis** (the register-promotion payoff — beyond `-O0`, early Mid)
+
+| Driver decision | Query | Analysis |
+|---|---|---|
+| promote local to register | live range (birth = first def, death = last use) | backward liveness |
+| share one spill slot across disjoint lifetimes | non-overlapping live ranges | liveness interference |
+| keep-in-reg across a span / spill weight | access freq × loop depth | liveness + loop nesting |
+
+**Tier 4 — whole-program / fixpoint** (the inline payoff + its correctness guards — Mid)
+
+| Driver decision | Query | Analysis |
+|---|---|---|
+| inline vs emit `Call` | callee internal & inlinable? | linkage (O(1)) + **address-escape (whole-program)** + size |
+| does this inline instance terminate? | instance-hash ∈ ancestor stack | §9 structural hash |
+| per-site specialization | constant-arg branch select | §9 binding state |
+
+### 18.3 Every open item is a Tier-2 query gap, not a codegen gap
+
+The three "Remaining" replay items (§16, docs/TODO.md) are **op-exists / query-missing**,
+not feature gaps — the backend already compiles all three at `-O0`:
+
+- **VLA/`alloca`** — the SP-move ops exist; the driver lacks the **lexical-scope-edge
+  query** that says *where* to emit the paired `StackSave`/`StackRestore` for correct
+  LIFO unwind. The scope nesting is in the CST/AST; the query is a local walk.
+- **`__builtin_complex` `I`-unit** — capturing its rodata-const result as a plain `Ref`
+  leaf link-errors (unresolved anon symbol); it needs the **rodata-const-symbol-reuse
+  query** (the same ordinal-symbol-reuse pattern `ast_fconst` already uses for float
+  const pools), not a bare leaf capture.
+- **nested short-circuit** (`(a&&b)||c`) — the flat gvtst reproduction segfaults on deep
+  nesting; the driver needs the **nested landor-chain query** (the chain structure),
+  not a flat operand.
+
+### 18.4 Guard queries — the Tier-4 correctness backstops
+
+Inlining is what turns C11 hazards into query obligations. These predicates keep
+inline-heavy *sound*, not merely fast — each is a flag propagated up the binding graph:
+
+| Guard query | Hazard it prevents | Effect on the driver |
+|---|---|---|
+| region contains `setjmp` / installs a signal handler? | inlining would change the frame `longjmp` / the handler refers to | mark the region **non-inlinable across** |
+| body allocates a VLA? | inlining into a loop changes the SP-unwind scope | inhibit inline, or emit a fresh scope pair |
+| callee address-taken / external linkage? | identity + ABI must be observable | keep a materialized standalone (§9); boundary `Call` |
+
+The reframe therefore *relocates* the classic C11 flatten hazards from "machinery we'd
+have to build" to "predicates the driver evaluates" — and the machine ops they guard are
+already proven correct by the exec suite.
+
+### 18.5 Implementation checklist — query → concrete mechanism
+
+The actionable artifact: every query from §18.2–18.4 mapped to the **exact symbol in
+`src/mccgen.c` that answers it today**, or the specific TODO if it's a gap. Legend:
+✅ shipped · 🔧 open (answer-source exists, not yet driven) · ⬜ not built (beyond `-O0`,
+Mid). This is the single source of truth for "what's left."
+
+**Tier 1 — O(1) node-field reads (all ✅)**
+
+| Query | Answered by | Fixture |
+|---|---|---|
+| operand type/width/sign | `ast_finalize_leaf()` snapshots the `SValue` `CType`/`Sym` onto the leaf; replay reads it | (all) |
+| no-op vs real `Convert` | `ast_hook_convert` + node `op` | `replay-float_ops` |
+| fp/complex literal encoding | `ast_fconst[]` const-pool symbols, ordinal reuse via `ast_fconst_i` under `ast_replaying` | `replay-float_ops` |
+| address of a named object | `ast_sym(a,n)` → reconstructed into `sv.sym` in `ast_replay_value()` | (all) |
+| anon temp slot (sret/struct-ret/`cplx_local`) | `ast_alloc_loc()` + `ast_locrec[]`, ordinal cursor `ast_locrec_i` | `replay-struct_ret_*` |
+| sret / return-descriptor form | recomputed from result type (`gfunc_sret`+`PUT_R_RET`) in the Invoke replay | `replay-struct_ret_sret` |
+| direct vs indirect call | `ast_hook_call_begin`/`_end` node | `replay-call_store` |
+| must-be-memory (`&`/`volatile`/`register`) | `VT_*` flags on the captured type; bail gate `ast_bad_type()` | — |
+
+**Tier 2 — local structural walk (control ✅; the three open items 🔧)**
+
+| Query | Answered by / gap | Fixture |
+|---|---|---|
+| structured branch target | `ast_replay_bb()` reproduces the parser's `gind`/`gvtst`/`gjmp`/`gsym` per construct | `replay-*` (loops/if) |
+| `goto`/label target + back-edge | per-fn label table (token→`{jind,jnext}`), `ast_hook_label`/`ast_hook_goto` | `replay-goto_dispatch` |
+| switch dispatch | `ast_hook_switch_*` → rebuild `switch_t`, `case_sort`+`gcase` | `replay-switch_dispatch` |
+| 🔧 **VLA scope edges** | answer-source **exists** in parser state (`nb_vla_open`/`vla_open_birth`, block-edge save/restore) but is **not hooked** — *TODO: add `ast_hook_scope_enter/exit` capturing the LIFO save/restore points* | *new* `replay-vla` |
+| 🔧 **rodata const-symbol reuse (`I`-unit)** | *TODO: extend the `ast_fconst[]` ordinal-symbol pattern to the `__builtin_complex` rodata const* (today a bare `Ref` leaf → unresolved-anon-symbol link error) | *new* `replay-complex_ctor` |
+| 🔧 **nested landor chain** | `ast_hook_landor_operand()` bails on a nested operand — *TODO: build a nested landor node (chain) instead of the flat `gvtst` reproduction* (flat model segfaults on grep) | extend `replay-short_circuit` |
+
+**Tier 3 — whole-function liveness (⬜ beyond `-O0`, early Mid — the register-promotion payoff)**
+
+| Query | TODO |
+|---|---|
+| promote local to register | backward-liveness pass over the per-fn AST, then **steer `gv`** (keep-in-reg) — additive driver upgrade, no `gen_op` surgery (§10) |
+| share one spill slot / spill weight | liveness interference + loop-depth weighting on top of the same pass |
+
+**Tier 4 — whole-program / fixpoint (⬜ beyond `-O0`, Mid — the inline payoff + guards)**
+
+| Query | TODO |
+|---|---|
+| inline vs `Call` | inlinability query: linkage (O(1)) + address-escape (whole-program) + size |
+| inline instance terminates? | instance-hash ∈ ancestor stack (§9 structural hash) |
+| per-site specialization | constant-arg branch select (§9 binding state) |
+| guard: `setjmp`/signal/VLA region | propagate a **non-inlinable-across** flag up the binding graph (§18.4) |
+
+**Net remaining work:** three Tier-2 hooks (🔧, each a fixture away from green) close
+`-O0` parity; Tier 3 (liveness→`gv` steering) is the first real `-O1` win; Tier 4
+(inline + guards) is the "minimize-invoke" payoff. Nothing on this list is a new machine
+op — every ⬜/🔧 is a query or a driver-steering step over ops the exec suite already proves.
+
+---
+
 ## Decisions — final (ready for implementation)
 
 ### Ratified this pass (2026-07-08)
@@ -517,6 +699,14 @@ green case is one feature checked off. Natural order by what each category force
 - **§C1 acceptance bar** — exec goldens **+ the full GCC test suite** green under both
   `mcc -O0` and `mcc -O1`; `-O2`/`-O3` get **separate** replay drivers later.
 - **§C2 hoisted temps** — anonymous per-temp `Sym`, register-preferred (easy *and* fast).
+- **§18 query-first reframe** — the backend is **feature-complete C11** (the exec suite
+  proves it); the parser is one driver demonstrating the opcodes span the language. The
+  replay driver **never fakes/reimplements** — it "uses the tools it already has" to reach
+  `-O0` parity, and beats `-O0` only via two AST-only queries (inline, register-promote).
+  Every open item (VLA, `I`-unit, nested short-circuit) is a **Tier-2 query gap, not a
+  codegen gap.** C11 flatten hazards (`setjmp`/VLA/signals) relocate to **guard queries**
+  (§18.4), not new machinery. This supersedes any "faux-stack / reimplement / irreducible
+  invoke floor" framing from earlier passes.
 
 ### Decided (2026-07-07 design pass)
 
