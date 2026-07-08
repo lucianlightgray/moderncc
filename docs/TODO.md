@@ -15,13 +15,16 @@ only under `MCC_AST_REPLAY`, and the byte-verify net keeps every unmodeled const
 on correct `-O0` fallback — so widening coverage cannot break output correctness,
 only add (or fail to add) replayed functions.
 
-- [~] **Widen replay coverage (§16 Mid).** **This session (2026-07-08) landed 8 milestones**
-  covering every major target: floats/double, call-result stores, scalar struct member access
-  (`.`/`->`), struct copy/deref, `switch` dispatch, named `goto`/labels, **struct-return
-  callees** (`return s`), and **by-value struct args** (`f(s)`) — plus two latent correctness
-  bugs fixed on the way (vpop call double-emit; float const-pool duplication). Fixtures:
-  `ast/replay-{float_ops,call_store,struct_member,struct_copy,switch_dispatch,goto_dispatch,struct_return,struct_byval_arg}`.
-  **Remaining long tail**, each with a specific blocker (all fall back correctly today):
+- [~] **Widen replay coverage (§16 Mid).** **This session (2026-07-08) landed 11 milestones**
+  covering every major target and most of the tail: floats/double, call-result stores, scalar
+  struct member access (`.`/`->`), struct copy/deref, `switch` dispatch, named `goto`/labels,
+  **struct-return callees** (`return s`), **by-value struct args** (`f(s)`), **bit-field member
+  access**, **struct-return callers** (`struct r=f()`, register-return), and **`f().x`** (member
+  of an rvalue struct) — plus two latent correctness bugs fixed on the way (vpop call
+  double-emit; float const-pool duplication) and a switch-replay segfault guarded. Fixtures:
+  `ast/replay-{float_ops,call_store,struct_member,struct_copy,switch_dispatch,goto_dispatch,struct_return,struct_byval_arg,bitfield,struct_ret_caller}`.
+  **Remaining long tail** — four genuinely large/niche items, each needing dedicated
+  infrastructure or elaborate reproduction (all fall back correctly today, no crashes):
   - ~~struct-return callers~~ **LANDED 2026-07-08** (register-return form) — `struct r = f()`
     replays. The post-call register→temp reconstruction is reproduced in the Invoke replay,
     and the result temp uses an ordinal frame-slot table (`ast_alloc_loc`/`ast_locrec`, the
