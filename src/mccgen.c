@@ -12205,29 +12205,31 @@ static void ast_inline_capture(Sym *fnsym) {
 	ast_inline_cap_ok = 1;
 }
 
-/* Graftable form: a BasicBlock body with EXACTLY ONE `return EXPR;` as its final
- * statement — the single tail exit. Local declarations and internal control flow
- * (if/else, loops = `If` nodes with their own BasicBlock branches) are allowed: their
- * local slots relocate under the same frame bias, and their internal branches use fresh
- * code offsets (gind), so no label scoping or return-jump chain is needed while the
- * return stays the single tail. `goto`/`switch` (which touch the shared label/switch
- * replay state) and early/nested returns are excluded by the single-tail-Return rule and
- * the node scan below. */
+/* Graftable form: a BasicBlock body with one or more value `return EXPR;` statements —
+ * including early returns inside branches — and internal control flow (if/else, loops =
+ * `If` nodes with their own BasicBlock branches). Local declarations relocate under the
+ * frame bias, and internal branches use fresh code offsets (gind). Each return coalesces
+ * its value into the return register and (if non-tail) jumps to a graft-local inline-end
+ * label; the tail return falls through (see ast_inline_graft / the AST_Return graft path).
+ * `goto`/`switch`/`break`/`continue` (`AST_Jump` — they touch the shared label/switch
+ * replay state) and `void` returns (no value to coalesce) are excluded. */
 static int ast_inline_graftable(AstArena *a) {
 	AstLocal root = ast_root(a);
 	if (ast_kind(a, root) != AST_BasicBlock)
 		return 0;
 	AstLocal nn = ast_count(a);
 	int totret = 0;
-	for (AstLocal n = 0; n < nn; n++)
-		if (ast_kind(a, n) == AST_Return)
+	for (AstLocal n = 0; n < nn; n++) {
+		uint16_t k = ast_kind(a, n);
+		if (k == AST_Jump) /* goto/switch/break/continue: shared label/switch state */
+			return 0;
+		if (k == AST_Return) {
 			totret++;
-	if (totret != 1) /* exactly one return anywhere in the body (so it is the tail) */
-		return 0;
-	AstLocal last = AST_NONE;
-	for (AstLocal s = ast_first_child(a, root); s != AST_NONE; s = ast_next_sib(a, s))
-		last = s;
-	return last != AST_NONE && ast_kind(a, last) == AST_Return && ast_nchild(a, last) >= 1;
+			if (ast_nchild(a, n) < 1) /* `return;` (void): no value to coalesce */
+				return 0;
+		}
+	}
+	return totret >= 1;
 }
 
 /* Grafting state (pass 2): active enables the AST_Invoke graft; bias relocates the
@@ -12238,6 +12240,8 @@ static int ast_inline_active;
 static int ast_inline_bias;
 static int ast_in_graft;
 static CType ast_graft_rt;
+static int ast_inline_ret_sym;  /* jump chain to the grafted body's inline-end join */
+static int ast_inline_ret_slot; /* frame slot each return stores its value into (phi via memory) */
 
 /* If node `n` is an AST_Invoke to a graftable retained callee, emit the callee's body in
  * place of the call — bind the args to relocated param slots, then replay `return EXPR`'s
@@ -12273,19 +12277,39 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 		vstore(); /* param_slot = arg */
 		vpop();
 	}
-	/* Replay the callee body (straight-line stmts + the trailing return) under the frame
-	 * bias; ast_in_graft makes the Return leave its (return-cast) value on vtop instead of
-	 * emitting the epilogue transfer. Save/restore the state so nested/sequential grafts
-	 * compose. */
-	int save_bias = ast_inline_bias, save_ig = ast_in_graft;
+	/* Replay the callee body under the frame bias. ast_in_graft makes each Return store its
+	 * (return-cast) value into a dedicated result slot and, if non-tail (op==1), jump to a
+	 * graft-local inline-end join (ast_inline_ret_sym); the tail return falls through. The
+	 * result is coalesced via memory (a phi in a stack slot) rather than a fixed register, so
+	 * several grafts feeding one call each own a distinct slot with no register conflict.
+	 * After the body, land the join and push the slot as an lvalue. Save/restore all the graft
+	 * state so nested/sequential grafts compose. */
 	CType save_rt = ast_graft_rt;
-	ast_inline_bias = bias;
-	ast_in_graft = 1;
+	int save_bias = ast_inline_bias, save_ig = ast_in_graft;
+	int save_rsym = ast_inline_ret_sym, save_rslot = ast_inline_ret_slot;
 	ast_graft_rt.t = ast_type_t(a, n);
 	ast_graft_rt.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+	int ral, rsz = type_size(&ast_graft_rt, &ral);
+	if (rsz < 1)
+		rsz = 8;
+	loc = (loc - rsz) & -(ral > 0 ? ral : 1); /* the result slot, in the caller's frame */
+	ast_inline_bias = bias;
+	ast_in_graft = 1;
+	ast_inline_ret_sym = 0;
+	ast_inline_ret_slot = loc;
 	ast_replay_bb(e->ast, ast_root(e->ast));
+	gsym(ast_inline_ret_sym); /* land every early return's jump here */
+	SValue res;               /* push the coalesced result as an lvalue at the slot */
+	memset(&res, 0, sizeof res);
+	res.type = ast_graft_rt;
+	res.r = VT_LOCAL | VT_LVAL;
+	res.r2 = VT_CONST;
+	res.c.i = ast_inline_ret_slot;
+	vpushv(&res);
 	ast_inline_bias = save_bias;
 	ast_in_graft = save_ig;
+	ast_inline_ret_sym = save_rsym;
+	ast_inline_ret_slot = save_rslot;
 	ast_graft_rt = save_rt;
 	if (ast_replay_dump)
 		fprintf(stderr, "[ast-inline] grafted %s\n", get_tok_str(((Sym *)csym)->v, NULL));
@@ -13168,13 +13192,26 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 		case AST_Return: {
 			AstLocal v = ast_first_child(a, s);
 			if (ast_in_graft) {
-				/* Tier-4: a grafted callee's return leaves its value on vtop (cast to the
-				 * call's result type) — no epilogue transfer, no rsym jump. */
+				/* Tier-4: a grafted callee's return stores its (return-cast) value into the
+				 * result slot (phi via memory); a non-tail return then jumps to the graft-
+				 * local inline-end join, the tail return falls through to it. No epilogue
+				 * transfer. */
 				if (v != AST_NONE) {
 					ast_replay_value(a, v);
-					if ((ast_graft_rt.t & VT_BTYPE) != VT_VOID)
-						gen_cast(&ast_graft_rt);
+					gen_cast(&ast_graft_rt);
+					SValue rs;
+					memset(&rs, 0, sizeof rs);
+					rs.type = ast_graft_rt;
+					rs.r = VT_LOCAL | VT_LVAL;
+					rs.r2 = VT_CONST;
+					rs.c.i = ast_inline_ret_slot;
+					vpushv(&rs);
+					vswap();
+					vstore(); /* result_slot = value */
+					vpop();
 				}
+				if (ast_op(a, s) == 1) /* non-tail: jump to the graft-local inline-end join */
+					ast_inline_ret_sym = gjmp(ast_inline_ret_sym);
 				break;
 			}
 			if (v != AST_NONE) {

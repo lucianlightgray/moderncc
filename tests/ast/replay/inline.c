@@ -25,6 +25,16 @@ static int clamp(int x, int lo, int hi) {
 		r = hi;
 	return r;
 }
+/* early + tail returns: each stores to the graft's result slot and (if non-tail) jumps to
+ * the inline-end join — a phi via memory, so multiple such grafts feeding one call each own
+ * a distinct slot instead of fighting over a return register. */
+static int sgn(int x) {
+	if (x < 0)
+		return -1;
+	if (x > 0)
+		return 1;
+	return 0;
+}
 
 int main(void) {
 	int r = add(3, 4);              /* 7 */
@@ -32,5 +42,6 @@ int main(void) {
 	int t = add(scale(2, 3), r);   /* nested: 6 + 7 = 13 */
 	int u = madd(2, 3);            /* p=6, q=8, -> 7 */
 	int c = clamp(99, 0, 5);       /* -> 5 */
-	return r + s + t + u + c - 20; /* 7 + 30 + 13 + 7 + 5 - 20 = 42 */
+	int g = sgn(-4) + sgn(0) + sgn(9); /* early/tail returns, multi-arg: -1+0+1 = 0 */
+	return r + s + t + u + c + g - 20; /* 7 + 30 + 13 + 7 + 5 + 0 - 20 = 42 */
 }

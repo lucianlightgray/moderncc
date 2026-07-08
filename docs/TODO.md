@@ -344,11 +344,21 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
     making the trailing `Return` leave its value on vtop. Pointer-to-VLA params (`int m[n][n]`,
     whose indexing needs a runtime size the bias can't relocate) are excluded. Verified: whole
     `tests/exec` corpus output-matches `-O0`; ctest 1769/1769; default (inline off) byte-untouched.
-    Fixture `ast/replay-inline` asserts `add`/`scale`/`madd`/`clamp` (multi-statement + two-if) graft.
-  - [ ] **Slice 2 breadth.** Early/multiple returns via an inline-end label + return-value coalesce;
-    `goto`/`switch` (shared label/switch replay state); non-scalar params/return (struct by-value,
-    float). Then forward-declared / later-defined callees (needs true defer-to-TU), cycle detection
-    via the instance hash, and the `setjmp`/signal/VLA guard queries. Combine inline + promotion.
+    Fixture `ast/replay-inline` asserts `add`/`scale`/`madd`/`clamp`/`sgn` graft.
+  - [x] **Early / multiple returns — LANDED 2026-07-08.** A graftable body may now have several
+    value returns (incl. early returns inside branches). Each stores its return-cast value into a
+    **dedicated result slot** and, if non-tail, jumps to a graft-local inline-end join
+    (`ast_inline_ret_sym`); the tail return falls through. The result is coalesced **via memory** (a
+    phi in a stack slot), not a fixed return register — so several such grafts feeding one call each
+    own a distinct slot with no register conflict (a register-coalesce first attempt broke
+    `printf("…", sgn(a), sgn(b), sgn(c))` when the grafts fought over RAX). `goto`/`switch`/`break`/
+    `continue` (`AST_Jump`) and `void` returns stay excluded. Verified: `sgn` (2 early + tail),
+    `mx` (if/else), `fib` (loop + tail); corpus output-matches `-O0`, ctest 1769/1769, ASan-clean.
+  - [ ] **Slice 2 breadth.** `goto`/`switch` (shared label/switch replay state); non-scalar
+    params/return (struct by-value, float). Then forward-declared / later-defined callees (needs
+    true defer-to-TU), cycle detection via the instance hash, and the `setjmp`/signal/VLA guard
+    queries. Combine inline + promotion in one pass 2. Un-gate the fixture on non-x86_64 once
+    verified there (the code is arch-independent).
 - [ ] **Long horizon (design only):** the broader template library (algebraic, dead-branch,
   jump-table), the time-budgeted engine (§12/§221), dependency-ordered `-O1` compile, cross-TU
   LTO, `-g` from provenance, hot-reload snapshots, and separate `-O2`/`-O3` (SSA) drivers.
