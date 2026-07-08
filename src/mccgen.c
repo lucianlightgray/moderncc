@@ -11596,6 +11596,13 @@ static void ast_hook_call_begin(int nb_args, int is_struct_ret, int ret_nregs,
 			ast_desync = 1;
 			return;
 		}
+		AstLocal an = ast_vs[ast_vn - nb_args + i];
+		int ak = ast_op(ast_cur, an);
+		if (ast_kind(ast_cur, an) == AST_Binary &&
+				(ak == TOK_LAND || ak == TOK_LOR)) {
+			ast_desync = 1;
+			return;
+		}
 	}
 	for (int i = 0; i < need; i++)
 		ast_finalize_leaf(ast_vs[ast_vn - need + i], vtop - nb_args + i);
