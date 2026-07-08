@@ -203,11 +203,15 @@ brought up one §17 category at a time.
   ctest (`tests/tls/`, links gcc/clang objects in all four models, dynamic +
   static) — that push fixed real bugs: TLSGD→LE used only the symbol's own
   section size for the TP offset (wrong with a 2nd TLS section), and static GD/LD
-  links failed on `__tls_get_addr` (relaxed away, now resolved to 0). STILL OPEN:
-  (a) the i386 `R_386_TLS_GD/LDM` pattern paths (`i386-link.c`) need an i386 cross
-  build to exercise; (b) the `R_X86_64_32[S] out of range` check (`x86_64-link.c`)
-  has no positive test — needs a >2 GB text/data layout to trigger. → Add an i386
-  TLS gate under the cross preset, and a forced-high-address link case.
+  links failed on `__tls_get_addr` (relaxed away, now resolved to 0).
+  **(b) DONE (2026-07-07):** the `R_X86_64_32[S] out of range` check
+  (`x86_64-link.c`) now has a positive test — `cli/x86_64_reloc_32s_range`
+  (`cpu=x86_64,os=linux`) forces a >2 GB layout with two ~1.5 GB `.bss` arrays
+  (NOBITS, so a cheap address-arithmetic check) and an absolute `movl $b+…` past
+  +2 GB, asserting the diagnostic fires. **STILL OPEN (a):** the i386
+  `R_386_TLS_GD/LDM` pattern paths (`i386-link.c`) need an i386 cross build +
+  32-bit sysroot to exercise (not available in this env). → Add the i386 TLS gate
+  under the cross preset when i386 runtime is available.
 - [ ] **ARM inline-asm `long long` operands unimplemented (impl).**
   `src/arch/arm/arm-asm.c:2465` hard-errors — handle the 64-bit register-pair case.
 - [ ] **arm64 inline assembler errors on unmodeled mnemonics (impl).**
