@@ -12178,6 +12178,7 @@ static int ast_plan_promotion(AstArena *a) {
 	 * member base retypes the same Ref to VT_STRUCT / char*, so a single scalar-
 	 * looking occurrence is not enough. */
 	int coff[AST_PROMO_MAX * 8], ctyp[AST_PROMO_MAX * 8], cpoison[AST_PROMO_MAX * 8];
+	int cref[AST_PROMO_MAX * 8]; /* reference count — access-frequency weight for selection */
 	int nc = 0;
 	for (AstLocal n = 0; n < nn; n++) {
 		if (ast_kind(a, n) != AST_Ref)
@@ -12205,8 +12206,9 @@ static int ast_plan_promotion(AstArena *a) {
 		if (j == nc) {
 			if (nc >= (int)(sizeof coff / sizeof *coff))
 				continue;
-			coff[nc] = off, ctyp[nc] = ast_type_t(a, n), cpoison[nc] = 0, nc++;
+			coff[nc] = off, ctyp[nc] = ast_type_t(a, n), cpoison[nc] = 0, cref[nc] = 0, nc++;
 		}
+		cref[j]++; /* every scalar reference weights this candidate */
 		if (!scalar)
 			cpoison[j] = 1;
 		else if (!(ctyp[j] & VT_BTYPE)) /* keep the first non-zero type seen */
@@ -12258,19 +12260,32 @@ static int ast_plan_promotion(AstArena *a) {
 			if (coff[j] >= base && coff[j] < base + size)
 				cpoison[j] = 1;
 	}
-	/* Take the non-poisoned integer candidates, assigning each a register from the
-	 * pool the function's call-freeness selects. */
+	/* Assign each eligible candidate a register from the pool the function's call-
+	 * freeness selects. When there are more candidates than pins, promote the most-
+	 * referenced ones first (access-frequency weight) — any valid subset is correct, so
+	 * this only changes *which* locals win, spending the scarce pins on the hottest
+	 * slots. Selection-sort by cref (nc is tiny); ties keep first-seen order (stable). */
 	ast_promo_callful = has_call;
 	const int *pool = has_call ? ast_promo_callee : ast_promo_caller;
 	int pool_n = has_call ? (int)(sizeof ast_promo_callee / sizeof *ast_promo_callee)
 												: (int)(sizeof ast_promo_caller / sizeof *ast_promo_caller);
-	for (int j = 0; j < nc && ast_promo_n < pool_n; j++) {
-		if (cpoison[j] || coff[j] >= 0)
-			continue; /* poisoned, or not a real (negative) frame slot */
-		ast_promo_off[ast_promo_n] = coff[j];
-		ast_promo_typ[ast_promo_n] = ctyp[j];
+	for (;;) {
+		if (ast_promo_n >= pool_n)
+			break;
+		int best = -1;
+		for (int j = 0; j < nc; j++) {
+			if (cpoison[j] || coff[j] >= 0)
+				continue; /* poisoned, already taken, or not a real (negative) slot */
+			if (best < 0 || cref[j] > cref[best])
+				best = j;
+		}
+		if (best < 0)
+			break; /* no eligible candidate remains */
+		ast_promo_off[ast_promo_n] = coff[best];
+		ast_promo_typ[ast_promo_n] = ctyp[best];
 		ast_promo_reg[ast_promo_n] = pool[ast_promo_n];
 		ast_promo_n++;
+		cpoison[best] = 1; /* mark taken so the next pass skips it */
 	}
 	return ast_promo_n;
 }
