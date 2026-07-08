@@ -7862,7 +7862,11 @@ tok_next:
 						while (size & (size - 1))
 							size = (size | (size - 1)) + 1;
 #endif
+#if defined(CONFIG_AST) && CONFIG_AST
+					loc = ast_alloc_loc(size, align);
+#else
 					loc = (loc - size) & -align;
+#endif
 					ret.type = s->type;
 					ret.r = VT_LOCAL | VT_LVAL;
 					vseti(VT_LOCAL, loc);
@@ -11458,7 +11462,10 @@ static void ast_hook_call_begin(int nb_args, int is_struct_ret, int ret_nregs,
 	 * is modeled — the post-call register->temp reconstruction is reproduced at
 	 * replay with an ordinal frame-slot (ast_alloc_loc). An sret hidden-pointer
 	 * return (ret_nregs <= 0) or a variadic struct return bails. */
-	if (is_struct_ret && (ret_nregs <= 0 || variadic)) {
+	/* Register-return (ret_nregs>0) and sret hidden-pointer (ret_nregs==0) struct
+	 * returns are modeled; the arch-transfer form (ret_nregs<0) and variadic struct
+	 * returns bail. */
+	if (is_struct_ret && (ret_nregs < 0 || variadic)) {
 		ast_desync = 1;
 		return;
 	}
@@ -11826,6 +11833,35 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 			int ret_nregs, regsize, ret_align, r, nn, size, align, addr, offset;
 			rt.t = ast_type_t(a, n);
 			rt.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+			/* sret hidden-pointer (ret_nregs==0): the caller allocated the result temp
+			 * (a raw `loc` slot, wrapped in ast_alloc_loc) before the call and passed
+			 * its pointer; the callee filled it. Reserve that same ordinal slot here
+			 * (matching the parser's size), then re-push the captured result temp (a
+			 * VT_LOCAL lvalue). The register-return path below is unchanged. */
+			{
+				CType rtmp;
+				int rax, rsx;
+				if (gfunc_sret(&rt, 0, &rtmp, &rax, &rsx) == 0) {
+					int sal, ssz = type_size(&rt, &sal);
+#ifdef MCC_TARGET_ARM64
+					if (ssz < 16)
+						while (ssz & (ssz - 1))
+							ssz = (ssz | (ssz - 1)) + 1;
+#endif
+					ast_alloc_loc(ssz, sal);
+					SValue sv;
+					memset(&sv, 0, sizeof sv);
+					sv.type.t = ast_type_t(a, n);
+					sv.type.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+					sv.r = (unsigned short)ast_op(a, n);
+					sv.r2 = VT_CONST;
+					sv.c.i = ast_ival(a, n);
+					sv.sym = (Sym *)(uintptr_t)ast_sym(a, n);
+					vpushv(&sv);
+					vtop->r |= VT_NONLVAL;
+					break;
+				}
+			}
 			memset(&ret, 0, sizeof ret);
 			ret_nregs = gfunc_sret(&rt, 0, &ret.type, &ret_align, &regsize);
 			ret.c.i = 0;
