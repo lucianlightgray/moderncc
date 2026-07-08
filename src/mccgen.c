@@ -117,6 +117,7 @@ static void ast_hook_vswap(void);
 static void ast_hook_convert(CType *type);
 static void ast_hook_call_begin(int nb_args, int is_struct_ret);
 static void ast_hook_call_end(void);
+static void ast_hook_call_effect_end(void);
 static void ast_hook_if_begin(void);
 static void ast_hook_if_gvtst_done(void);
 static void ast_hook_if_else(void);
@@ -9389,7 +9390,13 @@ static void init_putz(init_params *p, unsigned long c, int size) {
 #if defined MCC_TARGET_ARM && defined MCC_ARM_EABI
 		vswap();
 #endif
+#if CONFIG_AST
+		ast_hook_call_begin(3, 0);
+#endif
 		gfunc_call(3);
+#if CONFIG_AST
+		ast_hook_call_effect_end();
+#endif
 	}
 }
 
@@ -11112,6 +11119,26 @@ static void ast_hook_call_end(void) {
 		ast_desync = 1;
 }
 
+/* End a helper call whose result is a void effect (e.g. the `memset` an aggregate
+ * initializer emits to zero the object): gfunc_call consumed every operand and
+ * pushed nothing, so — unlike ast_hook_call_end — read no result off vtop and push
+ * nothing onto the mirror. Record the Invoke as a BasicBlock effect; replay re-emits
+ * the call and leaves the stack empty (the VT_VOID type marks it for the replay). */
+static void ast_hook_call_effect_end(void) {
+	if (ast_call_pending == AST_NONE)
+		return;
+	AstLocal inv = ast_call_pending;
+	ast_call_pending = AST_NONE;
+	ast_in_call = 0;
+	if (!ast_capture || ast_desync)
+		return;
+	ast_set_type(ast_cur, inv, VT_VOID, 0);
+	ast_add_child(ast_cur, ast_cur_bb, inv);
+	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+	if (ast_vn != rel)
+		ast_desync = 1;
+}
+
 /* vswap / vpop reorder or drop mirror values (compile-time stack ops, no bytes);
  * mirror them directly. */
 static void ast_hook_vswap(void) {
@@ -11349,6 +11376,8 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 		for (uint32_t i = 0; i < nc; i++)
 			ast_replay_value(a, ast_child(a, n, i));
 		gfunc_call((int)nc - 1);
+		if (ast_type_t(a, n) == VT_VOID)
+			break; /* void effect (e.g. memset): gfunc_call left nothing to push */
 		SValue sv;
 		memset(&sv, 0, sizeof sv);
 		sv.type.t = ast_type_t(a, n);
@@ -11379,9 +11408,11 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 			vpop();
 			break;
 		case AST_Invoke:
-			/* a bare call statement: evaluate the call, discard the result. */
+			/* a bare call statement: evaluate the call, discard the result. A void
+			 * effect (memset from an initializer) leaves nothing — do not vpop. */
 			ast_replay_value(a, s);
-			vpop();
+			if (ast_type_t(a, s) != VT_VOID)
+				vpop();
 			break;
 		case AST_Unary:
 			/* a bare ++/-- statement: apply it, discard the result. */

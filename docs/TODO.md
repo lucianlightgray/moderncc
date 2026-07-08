@@ -30,9 +30,9 @@ brought up one §17 category at a time.
   having modeled every vstack op — an unmodeled construct (unary `-`, a call, control
   flow) just diverges and falls back. Faithful captures re-emit **byte-for-byte identical**
   to `-O0` (the zero-template invariant, demonstrated). Off by default; `-O0` untouched.
-  **Coverage: 25 / 239 exec golden source files have ≥1 function that faithfully replays**
-  (return of int constants / param+local integer arithmetic incl. `+ - * / % & | ^ << >>`
-  and the `~` desugaring); the rest fall back. Full ast-preset ctest 1149/1149.
+  **Coverage: 119 / 238 exec golden source files have ≥1 function that faithfully replays**
+  (int-constant/local/param arithmetic, calls, casts, control flow, array subscripting +
+  scalar-array `{...}` initializers); the rest fall back. Full ast-preset ctest 1166/1166.
   - [x] rung 1: `return <integer-constant>;` → `vpushi`/`gfunc_return`/`gjmp`.
   - [x] rung 2: **integer-arithmetic return trees** (`return argc + 41;`,
     `return 2+3*4;`) via a **scoped vstack-mirror**: `ast_hook_vpush`/`ast_hook_genop`
@@ -75,26 +75,33 @@ brought up one §17 category at a time.
     model:** pointer deref/address-of (`Load`/`gaddrof`) and **array subscripting
     `a[i]`** (gen_op nesting counter for the recursive pointer-scale gen_op('*');
     `ast_bad_type` guards keep struct/union/bitfield/float on correct fallback).
-    **Coverage 68→117/239 files (49%).** Remaining: expression-level control flow
-    (`?:`/`&&`/`||` — register-coordinated branch values, intricate), `InitList`
-    (aggregate `{...}` init), scalar struct member access `.`/`->` (aggregate deref
-    currently bails), `switch`, `goto`, floats/wider types. Then A7 const-fold template.
+    Expression-level control flow: **`?:` ternary** and **`&&`/`||` short-circuit**
+    (register-coordinated branch values; nested short-circuit/ternary operands bail).
+    **Scalar-array `InitList`** (`int a[N]={...}`): the zero-init `memset` a local
+    aggregate emits is captured as a **void-effect `Invoke`** (a new
+    `ast_hook_call_effect_end` — `gfunc_call` consumes every operand and pushes nothing,
+    so no result rides the mirror; the `VT_VOID` type marks it so replay re-emits the
+    call and leaves the stack empty), and each element `{...}` value is an ordinary
+    `Store` effect. Fixture array_init. **Coverage 68→119/238 files (50%).** Remaining:
+    aggregate struct/union/bitfield `Store`/copy + member access `.`/`->` (aggregate
+    deref bails), `switch`, `goto`, floats/wider types. Then A7 const-fold template.
 - [~] **A5 — parser AST-build hooks.** `ast_hook_stmt` (count + bail on unsupported
   leaf statements) and `ast_hook_return` (capture Return of an int constant) fire from
   the parser's statement/return positions, gated by `CONFIG_AST` + `ast_active`. Grows
   alongside A4's rungs.
 - [~] **A6 — differential-exec replay gate (two layers, both green).**
-  - `tests/ast/replay.cmake` — targeted fixtures that must *actually* replay (dump
-    fired, not fall back): `ret42`/`ret0`/`retexpr`/`mainempty`.
+  - `tests/ast/replay.cmake` — 21 targeted fixtures that must *actually* replay (dump
+    fired, not fall back), from `ret42` through `array_init`/`ternary`/`logand`, plus a
+    `switch_fallback` safety-net case that must fall back to correct `-O0`.
   - **`exec-replay/*` column** — the whole `tests/exec` golden corpus (280) re-run
     with `MCC_AST_REPLAY=1`, asserting the same expected output. Functions the driver
     can lower go through the AST; everything else falls back to `-O0`, so the column
     stays green as the driver grows. Replay-induced safety verified: the discard is
     guarded by no-new-locals + no-new-relocations + pure-constant-return, so a body
     with a call / cleanup / global store (e.g. cleanup.c `test_ret`) correctly falls
-    back instead of dropping work. Full ctest 1148/1148.
-  - Next: widen the *replayed* set (not just fallback) toward §17 curriculum 1
-    `expressions` → 6 long tail as the driver reaches locals/calls/CFG.
+    back instead of dropping work. Full ctest 1166/1166.
+  - Next: widen the *replayed* set (not just fallback) toward §17 curriculum 3–6 —
+    aggregate struct/union `Store`+member access, `switch`/`goto`, floats/wider types.
 - [ ] **A7 — first template = const-fold**, sequenced *after* the corpus is green
   under zero-template replay, with its own §15 per-template differential test. (Deferred
   to the end of the first phase.)
