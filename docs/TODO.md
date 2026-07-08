@@ -15,23 +15,32 @@ only under `MCC_AST_REPLAY`, and the byte-verify net keeps every unmodeled const
 on correct `-O0` fallback — so widening coverage cannot break output correctness,
 only add (or fail to add) replayed functions.
 
-- [~] **Widen replay coverage (§16 Mid).** **All major documented targets landed
-  (2026-07-08):** floats/double, call-result stores, scalar struct member access,
-  struct copy/deref, `switch` dispatch, and named `goto`/labels — plus two latent
-  correctness bugs fixed on the way (vpop call double-emit; float const-pool duplication).
-  Remaining is a **delicate long tail**, each moderate effort with real crash risk (a fatal
-  replay error is not caught by the byte-verify net) or niche: **struct-return callers**
-  (`struct r = f()`) — the result temp's `loc` offset diverges on replay (the callee side —
-  `return s` — now replays: fixture `ast/replay-struct_return`, both register-return and
-  sret hidden-pointer). **Landed 2026-07-08 — by-value struct args** (`f(s)`, small + large;
-  `gfunc_call` copies the aggregate to the outgoing slot; fixture `ast/replay-struct_byval_arg`).
-  Remaining: **struct-return callers** (`struct r=f()` — result-temp `loc` divergence);
-  **bit-field member `Store`**
-  (shift/mask desugar); **`_Complex`**; **VLA/`alloca`** (needs `StackAlloc` — §4); and the
-  **stored/nested short-circuit** (`int r = a&&b`, `(a&&b)||c`). All fall back correctly
-  today. Baseline below predates this session's widening.
-  ≥119/238 exec golden source files replay
-  ≥1 function today. Measured outcome buckets across the exec corpus (per function):
+- [~] **Widen replay coverage (§16 Mid).** **This session (2026-07-08) landed 8 milestones**
+  covering every major target: floats/double, call-result stores, scalar struct member access
+  (`.`/`->`), struct copy/deref, `switch` dispatch, named `goto`/labels, **struct-return
+  callees** (`return s`), and **by-value struct args** (`f(s)`) — plus two latent correctness
+  bugs fixed on the way (vpop call double-emit; float const-pool duplication). Fixtures:
+  `ast/replay-{float_ops,call_store,struct_member,struct_copy,switch_dispatch,goto_dispatch,struct_return,struct_byval_arg}`.
+  **Remaining long tail**, each with a specific blocker (all fall back correctly today):
+  - **struct-return callers** (`struct r = f()`) — the caller's sret result temp is a direct
+    `loc = (loc-size)&-align` decrement that diverges between parse-build and replay (replay
+    re-allocates at a different offset). Needs an ordinal loc-temp-reuse table (record each
+    decrement at build, reuse at replay — the pattern used for `ast_fconst`), plus modeling
+    the hidden-pointer arg + `PUT_R_RET` result handling. Moderate infra, low crash risk.
+  - **bit-field member `Store`** — the `gv` bit-field paths (`adjust_bf`/`load_packed_bf` + the
+    shift/mask in `vstore`) can build invalid ops mid-emit → **crash risk** (not caught by
+    byte-verify); needs VT_BITFIELD threaded through member access + careful suppression.
+  - **`_Complex`** — VT_STRUCT+`is_complex`; needs the build/extract `Convert` modeled.
+  - **VLA/`alloca`** — needs the machine-tier `StackAlloc`/`StackSave`/`StackRestore` op (§4),
+    a new mechanism, not just a hook.
+  - **stored/nested short-circuit** (`int r = a&&b`, `(a&&b)||c`) — a VT_CMP result that is
+    stored/used arithmetically is materialized to 0/1 (setcc) by `gv`, and that materialization
+    fires unsuppressed capture hooks → desync; nested VT_CMP operands bail in
+    `ast_hook_landor_operand`. Value-level (safe — no crash), needs materialize suppression +
+    replay reproduction.
+
+  _Baseline (predates this session's widening):_ ≥119/238 exec golden source files replay
+  ≥1 function. Measured outcome buckets across the exec corpus (per function):
   ~283 replay, ~200 bail (unsupported construct), ~116 desync (mirror lost sync), ~89
   skip (struct/float/aggregate return via `ast_bad_type`), ~67 unfaithful (byte
   mismatch), ~39 empty. Landed: `for(;;)` loops (`If` op==5; `ast/replay-for_infinite`).
