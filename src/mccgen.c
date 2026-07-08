@@ -12078,12 +12078,23 @@ static void ast_hook_implicit_return(void) {
  * addressing, so a promoted value there would be clobbered by an ordinary global
  * access. (Callee-saved RBX/R12-R15 would give more registers but need prologue/
  * epilogue save/restore — a future extension.) */
-#define AST_PROMO_MAX 3
-static const int ast_promo_regpool[AST_PROMO_MAX] = {10, 9, 8}; /* R10,R9,R8 */
+/* Two pin pools. **Call-free** functions use caller-saved R10/R9/R8 (R10 is used
+ * nowhere in the backend; R8/R9 only in the call-argument arrays; R11 excluded — it
+ * backs `load`/GOTPCREL/TLS) with no save/restore. **Call-ful** functions use
+ * callee-saved RBX/R12-R15 (the backend never touches them, and by the ABI a callee
+ * preserves them, so a promoted value survives the internal calls) — the function
+ * push/pops them at entry/exit. The two-pass gate (below) only promotes functions
+ * that replay faithfully without promotion, so a call-ful fn whose replay is not
+ * byte-exact (e.g. `if.c` main) is excluded rather than miscompiled. */
+#define AST_PROMO_MAX 5
+static const int ast_promo_caller[3] = {10, 9, 8};          /* R10,R9,R8 */
+static const int ast_promo_callee[5] = {3, 12, 13, 14, 15}; /* RBX,R12-R15 */
 static int ast_promo_off[AST_PROMO_MAX]; /* frame offset of each promoted local */
 static int ast_promo_typ[AST_PROMO_MAX]; /* its access type (full-width GP scalar) */
+static int ast_promo_reg[AST_PROMO_MAX]; /* the physical register chosen for it */
 static int ast_promo_n;
-static int ast_promo_regpool_at(int i) { return ast_promo_regpool[i]; }
+static int ast_promo_callful; /* uses callee-saved regs → needs push/pop save/restore */
+static int ast_promo_regpool_at(int i) { return ast_promo_reg[i]; }
 
 /* -1 if node n is not a promoted local's Ref, else its pinned register. */
 static int ast_promo_reg_of(AstArena *a, AstLocal n) {
@@ -12095,7 +12106,7 @@ static int ast_promo_reg_of(AstArena *a, AstLocal n) {
 	int off = (int)(int64_t)ast_ival(a, n);
 	for (int i = 0; i < ast_promo_n; i++)
 		if (ast_promo_off[i] == off)
-			return ast_promo_regpool[i];
+			return ast_promo_reg[i];
 	return -1;
 }
 
@@ -12137,12 +12148,27 @@ static int ast_subtree_refs_local(AstArena *a, AstLocal n, int off) {
  * before written, on every path. This is what makes loop variables promotable. */
 static int ast_plan_promotion(AstArena *a) {
 	ast_promo_n = 0;
+	ast_promo_callful = 0;
 	if (!ast_promote_env || ast_func_has_asm)
 		return 0; /* inline asm may clobber the pin registers */
 	AstLocal nn = ast_count(a);
-	for (AstLocal n = 0; n < nn; n++)
-		if (ast_kind(a, n) == AST_Invoke)
-			return 0; /* a call clobbers the caller-saved pin registers */
+	int has_call = 0, has_vla = 0;
+	for (AstLocal n = 0; n < nn; n++) {
+		uint16_t k = ast_kind(a, n);
+		if (k == AST_Invoke)
+			has_call = 1;
+		else if (k == AST_Unary && ast_op(a, n) == AST_OP_VLA)
+			has_vla = 1;
+	}
+	if (has_call && has_vla)
+		return 0; /* callee-saved push/pop would race the VLA's runtime rsp moves */
+	/* Call-ful promotion (callee-saved RBX/R12-R15) is scaffolded above and gated by
+	 * the two-pass byte-verify (so unfaithful call-ful functions are excluded), but a
+	 * few faithful call-ful programs still miscompile (register-count/encoding for the
+	 * higher pins + a handful of other ABI edges — docs/TODO.md Tier-3 "broaden"), so it
+	 * is DISABLED for now. Promotion stays call-free (caller-saved R10/R9/R8). */
+	if (has_call)
+		return 0;
 	/* Collect every distinct local-slot offset with its type and a poison flag.
 	 * An offset is poisoned (never promotable) if ANY reference to it is not a
 	 * full-width GP scalar (int/llong/ptr) — e.g. a struct copy or an aggregate
@@ -12198,25 +12224,66 @@ static int ast_plan_promotion(AstArena *a) {
 			if (coff[j] == off)
 				cpoison[j] = 1;
 	}
-	/* Take the non-poisoned integer candidates (entry-init makes them safe on every
-	 * path, so no def-before-use analysis is needed). */
-	for (int j = 0; j < nc && ast_promo_n < AST_PROMO_MAX; j++) {
+	/* Take the non-poisoned integer candidates, assigning each a register from the
+	 * pool the function's call-freeness selects. */
+	ast_promo_callful = has_call;
+	const int *pool = has_call ? ast_promo_callee : ast_promo_caller;
+	int pool_n = has_call ? (int)(sizeof ast_promo_callee / sizeof *ast_promo_callee)
+												: (int)(sizeof ast_promo_caller / sizeof *ast_promo_caller);
+	for (int j = 0; j < nc && ast_promo_n < pool_n; j++) {
 		if (cpoison[j] || coff[j] >= 0)
 			continue; /* poisoned, or not a real (negative) frame slot */
 		ast_promo_off[ast_promo_n] = coff[j];
 		ast_promo_typ[ast_promo_n] = ctyp[j];
+		ast_promo_reg[ast_promo_n] = pool[ast_promo_n];
 		ast_promo_n++;
 	}
 	return ast_promo_n;
 }
 
-/* Emit the entry initialization: load each promoted local's stack slot into its
- * pinned register so the register mirrors the slot's value on entry (parameter
- * value, or the same garbage -O0 would read for an uninitialized local). Called
- * once at the top of the replayed body, with the pins already set. */
+/* push/pop a GP register (raw encoding; REX.B for r8-r15). */
+static void ast_promo_push(int reg) {
+	if (reg >= 8)
+		o(0x41);
+	o(0x50 + (reg & 7));
+}
+static void ast_promo_pop(int reg) {
+	if (reg >= 8)
+		o(0x41);
+	o(0x58 + (reg & 7));
+}
+
+/* Move the value on vtop into the promoted register `reg`. R10/R9/R8 have a register
+ * class so gv can target it; RBX/R12-R15 have class 0, so materialize into an RC_INT
+ * temp and emit the reg->reg move via load(). */
+static void ast_promo_write(int reg) {
+	if (reg_classes[reg]) {
+		ast_pinned_regs &= ~(1u << reg);
+		gv(reg_classes[reg]);
+		ast_pinned_regs |= (1u << reg);
+	} else {
+		gv(RC_INT);
+		load(reg, vtop); /* mov reg, <rc_int> */
+		vtop->r = reg;
+		vtop->r2 = VT_CONST;
+		vtop->c.i = 0;
+		vtop->sym = NULL;
+	}
+}
+
+/* Emit the entry initialization. For a call-ful function first push the callee-saved
+ * pins (padded to an even count so %rsp stays 16-aligned before the internal calls).
+ * Then load each promoted local's stack slot into its pin so the register mirrors the
+ * slot's value on entry (parameter value, or the garbage -O0 would read). Pins set. */
 static void ast_promo_entry_init(void) {
+	if (ast_promo_callful) {
+		for (int i = 0; i < ast_promo_n; i++)
+			ast_promo_push(ast_promo_reg[i]);
+		if (ast_promo_n & 1)
+			ast_promo_push(ast_promo_reg[0]); /* alignment pad (even # of pushes) */
+	}
 	for (int i = 0; i < ast_promo_n; i++) {
-		int reg = ast_promo_regpool[i];
+		int reg = ast_promo_reg[i];
 		SValue sv;
 		memset(&sv, 0, sizeof sv);
 		sv.type.t = ast_promo_typ[i];
@@ -12225,15 +12292,30 @@ static void ast_promo_entry_init(void) {
 		sv.c.i = ast_promo_off[i];
 		vpushv(&sv);
 		ast_pinned_regs &= ~(1u << reg);
-		gv(reg_classes[reg]); /* load slot -> pinned reg */
+		if (reg_classes[reg])
+			gv(reg_classes[reg]); /* load slot -> pin (has a class) */
+		else
+			load(reg, vtop); /* load slot -> RBX/R12-R15 directly */
 		ast_pinned_regs |= (1u << reg);
 		vpop();
 	}
+}
+
+/* Emit the exit restore (call-ful only): pop the callee-saved pins in reverse, at the
+ * single return-funnel point right before the epilogue's leave/ret. */
+static void ast_promo_exit_restore(void) {
+	if (!ast_promo_callful)
+		return;
+	if (ast_promo_n & 1)
+		ast_promo_pop(ast_promo_reg[0]); /* the alignment pad */
+	for (int i = ast_promo_n - 1; i >= 0; i--)
+		ast_promo_pop(ast_promo_reg[i]);
 }
 #else
 static int ast_plan_promotion(AstArena *a) { (void)a; return 0; }
 static int ast_promo_reg_of(AstArena *a, AstLocal n) { (void)a; (void)n; return -1; }
 static void ast_promo_entry_init(void) {}
+static void ast_promo_exit_restore(void) {}
 static int ast_promo_n;
 static int ast_promo_regpool_at(int i) { (void)i; return 0; }
 #endif
@@ -12502,10 +12584,8 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 			int preg = ast_promo_n ? ast_promo_reg_of(a, ast_child(a, s, 0)) : -1;
 			if (preg >= 0) {
 				ast_replay_value(a, ast_child(a, s, 1));
-				ast_pinned_regs &= ~(1u << preg);
-				gv(reg_classes[preg]); /* force the value into the pinned register */
-				ast_pinned_regs |= (1u << preg);
-				vpop(); /* discard the statement result */
+				ast_promo_write(preg); /* force the value into the pinned register */
+				vpop();                /* discard the statement result */
 				break;
 			}
 #endif
@@ -13001,17 +13081,12 @@ static void gen_function(Sym *sym) {
 			 * each promoted local's register for the duration of the replay so no
 			 * temporary clobbers it. A promoted function's bytes differ from -O0 by
 			 * construction, so byte-verify is bypassed for it (exec-golden is the gate). */
-			int promoted = ast_plan_promotion(ast_cur);
+			/* Pass 1: no promotion; byte-verify. */
+			int saved_loc = loc, saved_anon = anon_sym;
+			ast_promo_n = 0;
 			ast_pinned_regs = 0;
-			for (int pi = 0; pi < ast_promo_n; pi++)
-				ast_pinned_regs |= (1u << ast_promo_regpool_at(pi));
-			if (promoted)
-				ast_promo_entry_init(); /* seed each pin from its stack slot */
 			ast_replay_body(ast_cur);
 			ast_replaying = 0;
-			ast_pinned_regs = 0;
-			ast_promo_n = 0;
-			mcc_state->warn_none = ast_sv_warn;
 
 			Section *rsec2 = cur_text_section->reloc;
 			addr_t new_rel = rsec2 ? rsec2->data_offset : 0;
@@ -13021,8 +13096,35 @@ static void gen_function(Sym *sym) {
 					new_rel - ast_reloc0 == rel_len &&
 					(rel_len == 0 ||
 					 memcmp(rsec2->data + ast_reloc0, orig_rel, rel_len) == 0);
-			if (promoted)
-				faithful = 1; /* accept the deliberately byte-divergent promoted replay */
+
+			int promoted = 0;
+			if (faithful && ast_promote_env && ast_plan_promotion(ast_cur) > 0) {
+				ind = ast_body_ind;
+				rsym = 0;
+				if (ast_rsec)
+					ast_rsec->data_offset = ast_reloc0;
+				nocode_wanted = 0; /* pass 1 ending in a return left this > 0 */
+				loc = saved_loc;
+				anon_sym = saved_anon;
+				ast_fconst_i = 0;
+				ast_locrec_i = 0;
+				ast_replaying = 1;
+				ast_rp_switch = NULL;
+				ast_rp_nlabel = 0;
+				ast_rp_bsym = ast_rp_csym = NULL;
+				ast_pinned_regs = 0;
+				for (int pi = 0; pi < ast_promo_n; pi++)
+					ast_pinned_regs |= (1u << ast_promo_regpool_at(pi));
+				ast_promo_entry_init();
+				ast_replay_body(ast_cur);
+				ast_replaying = 0;
+				ast_pinned_regs = 0;
+				promoted = ast_promo_n;
+			}
+			/* Keep ast_promo_n/callful set: a call-ful promoted function's save-register
+			 * restore is emitted at the return funnel in the common epilogue tail below
+			 * (and both are cleared there). A non-promoted function has ast_promo_n==0. */
+			mcc_state->warn_none = ast_sv_warn;
 			if (!faithful) {
 				memcpy(cur_text_section->data + ast_body_ind, orig, body_len);
 				if (rel_len)
@@ -13061,6 +13163,14 @@ static void gen_function(Sym *sym) {
 	}
 	cur_func_inline_extern = 0;
 	gsym(rsym);
+#if defined(CONFIG_AST) && CONFIG_AST && defined(MCC_TARGET_X86_64)
+	/* Tier-3: at the single return funnel (all returns jump to rsym, just gsym'd here;
+	 * the tail return falls through), restore the callee-saved pin registers a call-ful
+	 * promoted function pushed at entry — before leave/ret. */
+	ast_promo_exit_restore();
+	ast_promo_n = 0;
+	ast_promo_callful = 0;
+#endif
 	nocode_wanted = 0;
 	mcc_debug_end_scope(NULL, !func_var);
 	mcc_debug_prolog_epilog(mcc_state, 1);

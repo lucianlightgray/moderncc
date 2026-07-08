@@ -237,53 +237,30 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
   locals. **Poisoned:** pointers/floats/structs, `&`-taken / member-base locals, `++`/`--`
   (lvalue) targets, and any function using **inline asm** (clobbers). Coverage: **89** promoted
   functions across the corpus (was 3 at the single-BB v1). Additive — no `gen_op` surgery.
-  - [ ] **Broaden to call-ful functions via callee-saved RBX/R12–R15 (attempted, reverted —
-    the big win, but hazard-laden).** A call-free fn's caller-saved pins die across calls; a
-    callee-saved reg (mcc never allocates RBX/R12–R15; the ABI has the callee preserve them)
-    survives, so the fn push/pops them at entry / at the single return funnel (`gsym(rsym)`
-    right before `gfunc_epilog`). `load(r,sv)`/`store(r,sv)` take explicit reg numbers, and gv
-    on a `{r=RBX}`(class-0) source copies via `load` — all verified working; simple call-ful
-    programs (loop+`add`, `printf`) promoted correctly. **But a spread of corpus programs
-    miscompiled.** Findings for the next attempt: (1) **A two-pass gate is REQUIRED and is a
-    real soundness fix even for call-free:** replay WITHOUT promotion and byte-verify first;
-    only if faithful, re-replay WITH promotion (kept unconditionally). Forcing `faithful=1` for
-    a promoted fn is unsound — byte-verify can't tell "diverged by promotion" from "diverged by
-    a replay bug", so it kept broken replays (e.g. a corrupted string GOTPCREL reloc in a
-    call-ful fn). The two-pass cut call-ful failures 20→11 — but it also **regressed one
-    call-free case (`return_struct_in_reg`: the returned struct's float values zeroed).** **ROOT
-    CAUSE pinned (2026-07-08):** the non-idempotent state is **`gen_gotpcrel` / GOT symbol+slot
-    creation**, not `loc`/`anon_sym`/`ast_fconst`/`ast_locrec` (resetting all of those did not
-    help). A controlled double-replay with **no promotion** IS idempotent (correct output), so the
-    replay itself is fine — the break is a *promoted* second pass over a function that accesses a
-    global via `mov sym@GOTPCREL(%rip),%r`. Pass 1 emits the GOTPCREL and registers a GOT
-    entry/synthetic symbol; pass 2's re-emit references stale/duplicated GOT state, so the reloc
-    resolves wrong (`return_struct_in_reg`: `g_f4`'s GOTPCREL → zeroed struct copy; `if.c` earlier:
-    `*ABS*` invalid symbol index). **Fix directions for the next attempt:** (a) make GOT emission
-    idempotent — reset/reuse the per-function GOT symbol+slot map between passes; or (b) avoid a
-    full second emit pass entirely — apply promotion as a byte-level transform on the already-
-    faithful pass-1 output (rewrite the promoted locals' loads/stores in place), so GOTPCREL and
-    all other relocations are emitted exactly once. Option (b) is likely cleaner and also sidesteps
-    every other double-emit hazard. (2)
-    Remaining call-ful miscompiles at higher register pressure (e.g. 5 pins) — a value corrupts
-    (`unary_operators`: an int went 20→0); suspect the odd-count alignment pad or an ABI edge.
-    (3) VLA + call-ful must bail (rsp race). The scaffolding (two pools, push/pop, `ast_promo_
-    write` with a class-0 `load` path, entry-init pushes, `ast_promo_exit_restore`, the two-pass
-    block) was **reverted** (not committed) once the corpus regressed.
-    **CONCLUSION after a second investigation (2026-07-08) — the two paths are interlocked, so
-    fix-direction (b) is the way in:** _single-pass call-ful is provably unsound_ — call-ful
-    functions frequently replay UNfaithfully (verified: `if.c`'s `main` gives `replayed=0`, it
-    falls back in HEAD because its printf/string handling isn't byte-exact), and single-pass
-    promotion bypasses byte-verify, so it keeps that broken replay (the `*ABS*` GOTPCREL is a
-    symptom of the unfaithful replay, NOT of promotion). So call-ful **needs** the two-pass gate
-    to exclude unfaithful functions — but the two-pass hits the GOT idempotency wall above on the
-    faithful-but-global-accessing functions. Net: neither single-pass nor a naive two-pass works.
-    **Do fix-direction (b): apply promotion as an in-place byte rewrite of the FAITHFUL pass-1
-    output** — pass 1 replays without promotion, byte-verifies (sound gate, excludes `if.c`
-    main), AND records each promoted-local access's byte offset + form; then patch those
-    `mov r,[rbp-off]`/`mov [rbp-off],r` to the register form (often length-preserving — verify;
-    fall back if not) plus the entry push/seed and exit restore. This emits every relocation
-    exactly once (no GOT re-emit) and only touches faithful functions. It needs the replay to
-    surface per-access byte offsets for promoted locals — the one new piece of instrumentation.
+  - [x] **Two-pass soundness gate — LANDED 2026-07-08.** Promotion now replays WITHOUT it and
+    byte-verifies against `-O0` first (pass 1); only if faithful does it re-replay WITH promotion
+    (pass 2), kept unconditionally. This closes a real (if narrow) unsoundness: forcing
+    `faithful=1` for a promoted fn is wrong — byte-verify can't tell "diverged by promotion" from
+    "diverged by a replay bug", so it kept broken replays. The pass-2 idempotency bug that stalled
+    the first attempt was **`nocode_wanted`** (pass 1 ending in a `return` leaves it `>0`, so pass
+    2 emitted an empty body → zeroed struct returns) — **not** GOT/`gen_gotpcrel` (that earlier
+    diagnosis was wrong; `*ABS*` in `if.c` was a symptom of that function's *unfaithful* replay,
+    which the gate now correctly excludes). Pass 2 also resets `ind`/`rsym`/body-relocs/`loc`/
+    `anon_sym`/`ast_fconst_i`/`ast_locrec_i`. Corpus 269/0, ctest 1768/1768; 84 fns promote.
+  - [ ] **Broaden to call-ful functions via callee-saved RBX/R12–R15 (scaffolded + committed,
+    DISABLED — the big win).** A call-free fn's caller-saved pins die across calls; a callee-saved
+    reg (mcc never allocates RBX/R12–R15; the ABI has the callee preserve them) survives, so the
+    fn push/pops them at entry / at the single return funnel. The full path is committed but gated
+    off in `ast_plan_promotion` (`if (has_call) return 0;`): the two pools, `ast_promo_write`
+    (class-0 `load` move), entry-init pushes with even-count alignment pad, `ast_promo_exit_restore`.
+    **With it enabled, the two-pass gate cuts corpus failures 20→9** (the unfaithful call-ful
+    functions like `if.c` main are excluded). The remaining 9 are *faithful* call-ful fns with
+    genuine callee-saved bugs: **capping the pool to 3 regs {RBX,R12,R13} drops it to 7**, so
+    R14/R15 have a register-count/encoding defect (check the `load`/push/pop REX paths for regs
+    14/15), and the other **7** are distinct ABI edges (e.g. `incr_decr`, `stack_protector`,
+    `struct_packed_indirect`, `type_coercion` — diagnose per-function). Re-enable by removing the
+    `if (has_call) return 0;` guard and fixing those; the two-pass gate + exec-replay-promote
+    column already provide the correctness net. VLA+call-ful already bails (rsp race).
   - [ ] share one spill slot across disjoint live ranges; spill-weight by access-freq × loop-depth;
     promote pointers/floats; other arches (the R10/R9/R8 pool is x86_64-specific).
 - [ ] **Tier 4 — virtual always-inline over the shared store (the minimize-invoke payoff).**
