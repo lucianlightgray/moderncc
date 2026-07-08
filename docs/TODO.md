@@ -28,7 +28,14 @@ only add (or fail to add) replayed functions.
   replaying `gv` made a *second* slot and the reloc diverged → the parse-build now **records
   each const-pool symbol and replay reuses them ordinally** (`ast_fconst`/`ast_replaying`),
   keeping the relocation byte-identical. Fixture `ast/replay-float_ops`. Next targets by bail
-  volume: **`goto`/labels** (~25 fns — unstructured jumps with forward references).
+  volume: none of the big buckets remain. **Landed 2026-07-08 — `goto`/labels.** A `label:`
+  is a `Jump` op==4 marker (ival=token), a `goto` a `Jump` op==5 (both effects in their BB).
+  Replay keeps a per-function label table (token → {jind, jnext}) reproducing the parser's
+  forward-chain (`gjmp` onto jnext) / backward-jump (`gjmp_addr(jind)`) / definition-backpatch
+  (`gsym`). Modeled for plain named gotos; VLA/cleanup-scope/computed-goto bail (their
+  `pending_gotos`/`try_call_cleanup_goto` machinery is unmodeled). Forward + backward, out of
+  nested loops, over blocks, multiple labels, and goto-from-a-switch-case all replay; fixture
+  `ast/replay-goto_dispatch` (safety-net fixture now `ld_fallback`, `long double`).
   **Landed 2026-07-08 — `switch` dispatch.** A switch is an `If(op==6)` [value, bodyBB];
   `case`/`default` labels are `Jump` markers (op==2 [ival=v1,fbits=v2] / op==3) inside the
   body. Capture: `ast_hook_switch_begin` (before `sw->sv=*vtop--`, so the value leaf is

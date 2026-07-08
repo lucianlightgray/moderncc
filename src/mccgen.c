@@ -133,6 +133,16 @@ static int ast_member_arrow; /* saved is_arrow for the pending member access    
 static AstLocal ast_switch_node;   /* the If(op=6) currently being captured (or NONE) */
 static struct switch_t *ast_rp_switch; /* replay: the switch whose body is emitting  */
 
+/* goto/labels (docs/AST.md §5). A label is a Jump op==4 marker (ival = label token),
+ * a goto a Jump op==5 (ival = target token) — both effects in their BasicBlock.
+ * Replay keeps a per-function table mapping label token → {jind, jnext} and
+ * reproduces the parser's forward-chain (gjmp onto jnext) / backward-jump
+ * (gjmp_addr(jind)) / definition-backpatch (gsym) dance. Modeled only for plain
+ * gotos — VLA/cleanup/computed-goto bail (their scope machinery is unmodeled). */
+struct ast_rp_label { int v, jind, jnext, defined; };
+static struct ast_rp_label *ast_rp_labels;
+static int ast_rp_nlabel, ast_rp_caplabel;
+
 static void ast_hook_stmt(int t);
 static void ast_hook_return(int has_val);
 static void ast_hook_return_jmp(int jumps);
@@ -172,6 +182,8 @@ static void ast_hook_case(int64_t v1, int64_t v2, int type);
 static void ast_hook_default(void);
 static void ast_hook_switch_body_end(void);
 static void ast_hook_switch_end(void);
+static void ast_hook_label(int v);
+static void ast_hook_goto(int v);
 static void ast_hook_inc(int post, int c);
 static void ast_hook_inc_end(void);
 #define AST_OP_ADDR 0x40000 /* Unary op marker: gaddrof (array-decay/address-of) */
@@ -9329,6 +9341,9 @@ again:
 				try_call_cleanup_goto(s->cleanupstate);
 				gjmp_addr(s->jind);
 			}
+#if defined(CONFIG_AST) && CONFIG_AST
+			ast_hook_goto(tok);
+#endif
 			next();
 		} else {
 			expect("label identifier");
@@ -9367,6 +9382,9 @@ again:
 			s->vla_inner_id = vla_inner_scope();
 			if (s->vla_min_goto_gpp < s->vla_inner_id)
 				mcc_error("goto jumps into the scope of a variably modified declaration");
+#if defined(CONFIG_AST) && CONFIG_AST
+			ast_hook_label(t);
+#endif
 
 		block_after_label:
 			parse_attribute(NULL);
@@ -10552,9 +10570,6 @@ static void ast_hook_stmt(int t) {
 	if (!ast_active)
 		return;
 	switch (t) {
-	case TOK_GOTO:
-		ast_bail = 1;
-		break;
 	default:
 		/* '{' (the function-body compound, or a nested block) is not bailed here:
 		 * the outer body must proceed, and a nested straight-line block either
@@ -11232,6 +11247,47 @@ static void ast_hook_switch_end(void) {
 	ast_switch_node = AST_NONE;
 }
 
+/* A `label:` definition. Recorded as a Jump op==4 marker (ival = label token).
+ * VLA / cleanup-scope machinery (pending_gotos, try_call_cleanup_goto) is not
+ * modeled, so bail those functions. */
+static void ast_hook_label(int v) {
+	if (!ast_active || ast_desync || ast_bail)
+		return;
+	if (nb_vla_open > 0 || cur_scope->cl.s) {
+		ast_bail = 1;
+		return;
+	}
+	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+	if (ast_vn != rel) {
+		ast_desync = 1;
+		return;
+	}
+	AstLocal m = ast_node(ast_cur, AST_Jump);
+	ast_set_op(ast_cur, m, 4);
+	ast_set_ival(ast_cur, m, (uint64_t)(unsigned)v);
+	ast_add_child(ast_cur, ast_cur_bb, m);
+}
+
+/* A `goto label;` (named only — computed goto is not hooked). Recorded as a Jump
+ * op==5 marker (ival = target token). */
+static void ast_hook_goto(int v) {
+	if (!ast_active || ast_desync || ast_bail)
+		return;
+	if (nb_vla_open > 0 || cur_scope->cl.s) {
+		ast_bail = 1;
+		return;
+	}
+	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+	if (ast_vn != rel) {
+		ast_desync = 1;
+		return;
+	}
+	AstLocal m = ast_node(ast_cur, AST_Jump);
+	ast_set_op(ast_cur, m, 5);
+	ast_set_ival(ast_cur, m, (uint64_t)(unsigned)v);
+	ast_add_child(ast_cur, ast_cur_bb, m);
+}
+
 /* Memory model. `indir` (deref) wraps the top address value in a Load; `gaddrof`
  * (array-decay / address-of) wraps it in a Unary(AST_OP_ADDR). Both re-issue the
  * primitive at replay, so a computed-address lvalue (a[i], *p) is reconstructed
@@ -11710,6 +11766,22 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 	}
 }
 
+/* Per-function replay label table: find-or-create the entry for a label token. */
+static struct ast_rp_label *ast_rp_label_get(int v) {
+	for (int i = 0; i < ast_rp_nlabel; i++)
+		if (ast_rp_labels[i].v == v)
+			return &ast_rp_labels[i];
+	if (ast_rp_nlabel == ast_rp_caplabel) {
+		ast_rp_caplabel = ast_rp_caplabel ? ast_rp_caplabel * 2 : 8;
+		ast_rp_labels =
+				mcc_realloc(ast_rp_labels, ast_rp_caplabel * sizeof *ast_rp_labels);
+	}
+	struct ast_rp_label *l = &ast_rp_labels[ast_rp_nlabel++];
+	l->v = v;
+	l->jind = l->jnext = l->defined = 0;
+	return l;
+}
+
 static void ast_replay_bb(AstArena *a, AstLocal bb) {
 	for (AstLocal s = ast_first_child(a, bb); s != AST_NONE;
 			 s = ast_next_sib(a, s)) {
@@ -11739,7 +11811,21 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 			/* break (op 0) / continue (op 1): chain onto the loop's break/continue
 			 * chain exactly as the parser does. case (op 2) / default (op 3): record
 			 * the label position into the switch being replayed. */
-			if (ast_op(a, s) == 2) {
+			if (ast_op(a, s) == 4) {
+				/* label def: backpatch pending forward gotos, record its address. */
+				struct ast_rp_label *l = ast_rp_label_get((int)ast_ival(a, s));
+				gsym(l->jnext);
+				l->jnext = 0;
+				l->jind = gind();
+				l->defined = 1;
+			} else if (ast_op(a, s) == 5) {
+				/* goto: backward -> jump to the known address; forward -> chain. */
+				struct ast_rp_label *l = ast_rp_label_get((int)ast_ival(a, s));
+				if (l->defined)
+					gjmp_addr(l->jind);
+				else
+					l->jnext = gjmp(l->jnext);
+			} else if (ast_op(a, s) == 2) {
 				if (ast_rp_switch) {
 					struct case_t *cr = mcc_malloc(sizeof(struct case_t));
 					cr->v1 = (int64_t)ast_ival(a, s);
@@ -12150,6 +12236,7 @@ static void gen_function(Sym *sym) {
 			ast_fconst_i = 0;
 			ast_replaying = 1;
 			ast_rp_switch = NULL;
+			ast_rp_nlabel = 0;
 			ast_replay_body(ast_cur);
 			ast_replaying = 0;
 			mcc_state->warn_none = ast_sv_warn;
