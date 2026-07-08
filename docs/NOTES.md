@@ -205,8 +205,9 @@ no longer a configure-fatal there. On **mingw** it resolves to **trap-mode UBSan
 libasan/libubsan runtime needed, and `-fno-sanitize=alignment` drops mcc's one
 intentional unaligned-access trip — while the new **`sanitize-msvc`** preset builds an
 **MSVC AddressSanitizer** (`/fsanitize=address`) `mcc_s`. A `sanitize-smoke` ctest
-compiles+links+runs a program with the instrumented `mcc_s`; both are green (`sanitize`
-mingw 1416/1416, `sanitize-msvc` 1414/1414). `diagnostics` still builds the coverage +
+compiles+links+runs a program with the instrumented `mcc_s`; both are green on the
+post-promote per-case basis (see the counts above): `sanitize` mingw **1516 / 181**
+(1697) and `sanitize-msvc` **1495 / 200** (1695). `diagnostics` still builds the coverage +
 profile variants (and skips `mcc_p` on Windows/Darwin). The PE target gets native-only
 extra coverage
 (`pe-native-conformance`, `compile.win32.*`); remaining skips are
