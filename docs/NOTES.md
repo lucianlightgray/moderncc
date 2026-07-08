@@ -1378,6 +1378,59 @@ floats/aggregates) is tracked open in `docs/TODO.md`.
   `MCC_AST_TEMPLATES`. This **closes the AST first phase** (§17); further templates
   (algebraic, dead-branch, jump-table) and coverage widening are §16 Mid.
 
+## AST replay coverage widening (§16 Mid — 2026-07-08, 19 milestones)
+
+Building on the first-phase replay driver, the `MCC_AST_REPLAY` path was widened to
+cover essentially all of C, one construct at a time, each landing with an
+`ast/replay-*` fixture and the whole-corpus `exec-replay`/`exec-replay-tmpl` columns
+staying green. The design + per-item detail is in [docs/AST.md](AST.md) §A3 and the
+per-milestone entries in `docs/TODO.md`; `-O0` byte-identity was preserved throughout
+(all new work is `CONFIG_AST`-gated and replay-path-only, with the byte-verify net as
+the backstop). All local presets (`ast`/`debug`/`cst`/`release`) 100% green (1483
+per-case tests).
+
+**Landed (19):** float/double (arith, casts, comparisons, params/returns, const-pool
+ordinal reuse); call-result stores (`T x = f()`); scalar struct member access
+(`.`/`->`); struct copy/deref (`a=b`, `*a=*b`, `(*p).x`); `switch` dispatch (cases,
+ranges, fall-through, default, nested); named `goto`/labels (forward + backward);
+struct-return **callees** (`return s`); by-value struct **args** (`f(s)`); bit-field
+member access (read/write); struct-return **callers** — **all four ABI forms**
+(register-return, sret hidden-pointer, arch-transfer, variadic); `f().x` (member of
+an rvalue struct); `_Complex` arithmetic; `__real__`/`__imag__`; `_Complex` casts;
+`_Complex` imaginary literals (`r + 2.0i`); short-circuit results used as values
+(`int r=a&&b`, `(a&&b)+1`).
+
+**Two latent correctness bugs fixed** (surfaced by the widening, guarded by fixtures):
+- **vpop call double-emit** — a `Store` leaves the RHS value on the capture mirror as
+  the assignment's result; `ast_hook_vpop` re-added that already-parented `Invoke` as a
+  bare BB effect, so replay emitted the call twice. Fixed by only re-adding an unparented
+  node.
+- **float const-pool duplication** — `gv()` materialized a float/double constant into a
+  fresh rodata slot; replaying `gv` made a *second* slot, diverging the relocation. The
+  parse-build now records each const-pool symbol and replay reuses them ordinally
+  (`ast_fconst`).
+- Plus a **switch-replay segfault** guarded: the controlling value must be a reloadable
+  leaf (a computed value lives in a register the body clobbers), fixed after a crash on
+  grep's `switch(tolower(...))`.
+
+**Two reusable enablers** (see AST.md §A3 "Key mechanisms"):
+- **Ordinal frame-slot reuse** (`ast_alloc_loc`/`ast_locrec`) — replay reserves the same
+  anonymous frame offsets the parse-build used (struct-return temps, `_Complex` temps).
+  Its absence caused a real frame-layout regression *outside* the byte-verified body,
+  caught by the exec suite, not byte-verify.
+- **Suppress-and-fold** — coarse-capture an operation whose internal ops would desync the
+  mirror (member access, `vcheck_cmp` VT_CMP→0/1, `gen_complex_cast`, imaginary literals),
+  reproduced faithfully at replay.
+
+**Remaining (3, all fall back correctly — tracked open in docs/TODO.md):** VLA/`alloca`
+(needs the §4 `StackAlloc`/`StackSave`/`StackRestore` subsystem with scope-aware SP
+save/restore — a new machine-tier mechanism); the `__builtin_complex`-based `I` unit
+(`r + i*I`, a rodata complex constant needing const-symbol recording/reuse — a plain
+leaf capture link-errors); and nested short-circuit operands (`(a&&b)||c`, needs nested
+landor-chain structure — the flat gvtst reproduction segfaults on grep). Each was
+attempted; the two broken attempts (link error, segfault) were reverted rather than left
+in the tree.
+
 ## Completed — Now-queue decisions, limitations & boundaries (2026-07-07/08)
 
 Triaged items migrated from `docs/TODO.md` "Now": each was resolved as a documented

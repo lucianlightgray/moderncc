@@ -6,11 +6,46 @@ intention-IR library (`src/mccast.{c,h}`), the vstack-replay driver (in
 (`tests/ast/`, `exec-replay/*`), and the first optimization template —
 **const-fold** (`MCC_AST_TEMPLATES`, `exec-replay-tmpl/*`) — are all in and green.
 The completion record (A1–A7) is in docs/NOTES.md ("Completed work — AST
-intention-IR"); **§16 Mid coverage-widening is in progress** (`for(;;)` landed;
-`switch`/`goto`/floats/aggregates next — see docs/TODO.md "AST — coverage
-widening"). The remainder below (mid/long horizons: broader replay coverage,
-virtual always-inline, more templates, liveness-steered placement, LTO, `-g`,
-hot-reload) is **plan / design** (curate freely). Companion to the CST subsystem
+intention-IR"). **§16 Mid coverage-widening is substantially complete (2026-07-08,
+19 milestones — see docs/NOTES.md "AST replay coverage widening" + docs/TODO.md).**
+The replay driver now covers essentially all of C: floats/double, call-result
+stores, struct member access (`.`/`->`) + copy/deref + `f().x` + bit-fields,
+`switch`, named `goto`/labels, **all struct-return ABI forms** (register / sret
+hidden-pointer / arch-transfer / variadic) and by-value struct args, the full
+`_Complex` surface (arithmetic, `__real__`/`__imag__`, casts, imaginary literals),
+and short-circuit results used as values. Two latent correctness bugs were fixed
+on the way (call double-emit; float const-pool duplication) and a switch-replay
+segfault guarded. **Remaining (3 items, all fall back correctly):** VLA/`alloca`
+(needs the §4 `StackAlloc`/`StackSave`/`StackRestore` subsystem — scope-aware SP);
+the `__builtin_complex`-based `I` unit (`r + i*I`, needs rodata-const-symbol reuse);
+and nested short-circuit operands (`(a&&b)||c`, needs nested landor chains — the
+flat model segfaults on grep). The remainder below (mid/long horizons: virtual
+always-inline, more templates, liveness-steered placement, LTO, `-g`, hot-reload)
+is **plan / design** (curate freely).
+
+### Key mechanisms landed in the Mid coverage widening (2026-07-08)
+
+- **Ordinal frame-slot reuse** (`ast_alloc_loc`/`ast_locrec`, the `ast_fconst`
+  pattern): a codegen path that allocates an anonymous frame slot with a direct
+  `loc = (loc-size)&-align` (struct-return result temps, sret hidden-pointer temp,
+  the `_Complex` result temp `cplx_local`) would land at a *different* offset on
+  replay (source locals are fixed in their Syms, not re-allocated). The parse-build
+  records each slot offset in emission order; replay reuses them ordinally. `-O0`
+  and the parse-build stay byte-identical (the record is passive; reuse fires only
+  under `ast_replaying`). This was the enabler for all struct-return callers and
+  `_Complex` — and its absence caused a real frame-layout regression (caught by the
+  exec suite, *not* byte-verify, since the epilog/temp reservation lives outside the
+  verified body).
+- **Suppress-and-fold**: an operation whose internal ops fire capture hooks and
+  desync the mirror is bracketed with `ast_in_op`/`ast_in_call` suppression and
+  captured as one coarse node whose replay reproduces the exact sequence. Used for
+  member access (`Unary(AST_OP_MEMBER)`), the `VT_CMP`→0/1 materialization in
+  `vcheck_cmp` (short-circuit-as-value), `gen_complex_cast`, and imaginary literals
+  (`Unary(AST_OP_IMAG)`).
+- **Struct-return caller reconstruction**: the Invoke replay recomputes the return
+  descriptor from the result type (`gfunc_sret` + `PUT_R_RET`) and reproduces the
+  parser's post-call handling — register→temp reconstruction (`ret_nregs>0`),
+  re-push of the sret result temp (`==0`), or `+ arch_transfer_ret_regs` (`<0`). Companion to the CST subsystem
 (`src/mcccst.{c,h}`). Where the **CST** is byte-faithful *concrete* syntax, the
 **AST** is *intention*: desugared, type-resolved, post-preprocessor. Guarded by
 CMake `CONFIG_AST` (ON by default), built as a pure side-channel like the CST —
