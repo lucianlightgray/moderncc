@@ -142,7 +142,8 @@ brought up one §17 category at a time.
   What remains is an open-ended "as much as possible" polish with real
   CI-breakage risk across the ~35 presets/platforms not testable from one Linux
   host — pursue incrementally with a specific, verifiable target, not as a sweep.
-- [ ] **`exec/tls` skipped on arm64+WIN32 (`skipon=arm64/WIN32`, 2026-07-05).**
+- [x] **`exec/tls` skipped on arm64+WIN32 (decided: not an mcc defect —
+  diagnosed as an MSVC-arm64 miscompile of mcc; mitigated with skip + timeout).**
   On the `msvc / arm64` runner, `exec/tls` intermittently hung (ctest 63 min,
   manual cancel). Root cause is **not** in mcc: **MSVC's arm64 code generator
   miscompiles mcc itself** on the static-`__thread` emission path. The
@@ -171,7 +172,8 @@ brought up one §17 category at a time.
     A whole-mcc-TU `/Od` on that build is the last-resort blunt workaround, but
     the earlier `MCC_NOOPT` `/Od`-vs-`/O2` probe was inconclusive (the intermittent
     corruption did not reproduce that run), so even that is unverified.
-- [ ] **Regenerate the Windows "all green" counts + add a divergence check (validate).**
+- [~] **Regenerate the Windows "all green" counts + add a divergence check
+  (Linux done; Windows residual needs a Windows CI run).**
   The Linux side is now regenerated from an actual `ctest -N` run and date-stamped
   (2026-07-07: `debug` = 1447 registered / 1279 run / 168 env-gated skips; the
   `docs/NOTES.md` "Build status" + Profiling §7 + "Compile speed & footprint" table
@@ -182,8 +184,9 @@ brought up one §17 category at a time.
   cite the same basis (a note to that effect is in the doc). Optional durable fix:
   a checker (mirror `tools/ckbuildmd.c`) that greps the NOTES.md registered-count
   against `ctest -N` and fails on drift.
-- [ ] **`va_start` non-last / `register` param check never fires on x86_64
-  (impl).** `C9911.md:3215` §7.16.1.4p3 — the SysV macro (`__builtin_va_start` in
+- [x] **`va_start` non-last / `register` param check never fires on x86_64
+  (decided 2026-07-07: deferred, diagnostic-only, boundary documented).**
+  `C9911.md:3215` §7.16.1.4p3 — the SysV macro (`__builtin_va_start` in
   `runtime/include/mccdefs.h`) reads the reg-save area from the frame and never
   references `parmN`, so the misuse diagnostic (present on arm64/riscv64/PE via
   the real `TOK_builtin_va_start` case) is absent on x86_64-SysV and i386.
@@ -193,8 +196,9 @@ brought up one §17 category at a time.
   for a diagnostic-only gain; not worth the risk without a driving need.
   Reference test to mirror once fixed: gcc `c-c++-common/Wvarargs-2.c`
   (`va_start` on a non-last / fixed-arg param). See docs/TESTS.md §6-A.3.
-- [ ] **External (SHN_UNDEF) thread-local symbols hard-error on Mach-O — TLV
-  imports unimplemented (impl).** `src/objfmt/mccmacho.c:2099`. Locally-defined
+- [x] **External (SHN_UNDEF) thread-local symbols hard-error on Mach-O — TLV
+  imports unimplemented (decided: intentional limitation, documented).**
+  `src/objfmt/mccmacho.c:2099`. Locally-defined
   `__thread` works (TLV descriptors via `__tlv_bootstrap`); cross-module
   `extern __thread` errors. Documented as an intentional limitation in
   `docs/NOTES.md` (Platform ABI & runtime notes) — revisit only if a real
@@ -211,8 +215,9 @@ brought up one §17 category at a time.
   docs/NOTES.md "Platform ABI & runtime notes". The common register-then-stack
   ordering is fully supported (`i386-fastcall-abi`). Revisit if a real
   spilled-then-register prototype surfaces.
-- [ ] **Validate the remaining i386 TLS + x86_64 32[S] large-address pattern
-  assumptions (validate).** x86_64 GD/LD/IE/LE is now covered by the `tls-models`
+- [~] **Validate the remaining i386 TLS + x86_64 32[S] large-address pattern
+  assumptions (x86_64 32[S] done; i386 TLS residual needs i386 cross + sysroot).**
+  x86_64 GD/LD/IE/LE is now covered by the `tls-models`
   ctest (`tests/tls/`, links gcc/clang objects in all four models, dynamic +
   static) — that push fixed real bugs: TLSGD→LE used only the symbol's own
   section size for the TP offset (wrong with a 2nd TLS section), and static GD/LD
@@ -275,14 +280,22 @@ brought up one §17 category at a time.
   multi-variant / shared-lib address-normalizing harness is not justified for it.
   → *Residual (optional):* build the multi-variant backtrace harness if formatted
   `-bt`/`-b` output ever needs execution-level pinning.
-- [ ] **Windows keeps diagnostic color off unconditionally (validate).**
-  src/mcchost.c:21 — suppresses color even on VT-enabled Windows Terminal. →
-  Probe `ENABLE_VIRTUAL_TERMINAL_PROCESSING`; confirm `-fdiagnostics-color=always`
-  still forces it. Low priority.
-- [ ] `-fverbose-asm`-style operand comments: meaningful comments need
-  codegen-side variable/spill metadata that is discarded after emission;
-  classified low-value (reloc symbol names are already printed). Revisit
-  only if a debugging workflow materializes that needs it.
+- [x] **Windows keeps diagnostic *auto*-color off (validated 2026-07-07).**
+  Confirmed from the code: `-fdiagnostics-color=always` **does** force color on
+  Windows — `diag_want_color` (`src/libmcc.c:553`) returns 1 for `diag_color==1`
+  unconditionally, bypassing `host_stderr_isatty`. The only gap is *auto*-detection:
+  `host_stderr_isatty` (`src/mcchost.c:21`) hardcodes `return 0` on `_WIN32`, so no
+  color is auto-enabled even on a VT-capable Windows Terminal. **Decision:** keep
+  the conservative default (explicit override works, which covers the real need);
+  the auto-detect enhancement — return `_isatty(2) && GetConsoleMode(stderr) &
+  ENABLE_VIRTUAL_TERMINAL_PROCESSING` — is fail-safe by construction but its
+  *compilation* on the mingw/MSVC toolchains can't be validated from this Linux
+  host, and a broken Windows build is worse than color-off, so it is deferred to a
+  change made with a Windows toolchain in hand. Low priority.
+- [x] `-fverbose-asm`-style operand comments (decided: won't-do, low-value):
+  meaningful comments need codegen-side variable/spill metadata that is discarded
+  after emission; classified low-value (reloc symbol names are already printed).
+  Revisit only if a debugging workflow materializes that needs it.
 - [x] **CST slice-I symbol resolution is last-declaration-wins (decided
   2026-07-07: intentional v1, pinned).** Root cause: `cst_hook_def`/`cst_hook_use`
   key def offsets by identifier token id in a single slot (`cst_defoff[v]`), so a
@@ -307,14 +320,16 @@ brought up one §17 category at a time.
   `MacroInvocation` (nested object macro unwrapped), and the split trailing-`)`
   `Paren` — and fails with a pointer to this item if a precise expander changes
   the shape.
-- [ ] **CST 5B incremental splice + `H_e` epoch hash are designed, not built (impl).**
+- [x] **CST 5B incremental splice + `H_e` epoch hash are designed, not built
+  (decided: deferred until the LSP/5B consumer lands).**
   NOTES CST §3.1/§10: the invertible epoch hash + tombstone sweep (O(1)-per-level
   incremental rehash for live edits) and the 5B splice are reserved (slot-key field
   + frontier-scoped `H_s`-recompute ship) but unbuilt; they're LSP/5B-era and gated
   on 4B rolling-hash + error-recovery + `Error`/`Missing` nodes. → Build when the
   LSP consumer lands. Note: D3 repurposed `slot_key` for branch tags, so an `H_e`
   build must reconcile that column's dual use.
-- [ ] **ARM (32-bit) direct branch can't reach past ±32MB — no veneers (impl).**
+- [x] **ARM (32-bit) direct branch can't reach past ±32MB — no veneers (decided:
+  documented diagnostic is the pinned boundary until a >32MB image surfaces).**
   `encbranch` in `src/arch/arm/arm-gen.c` encodes `B`/`BL` with the 24-bit signed
   word displacement (±32MB reach); a target farther than that is currently a hard
   `mcc_error("branch target out of range ...")` (formerly a `FIXME:` inline
