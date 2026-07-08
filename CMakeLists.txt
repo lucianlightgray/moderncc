@@ -2898,7 +2898,7 @@ if(MCC_BUILD_TESTS)
         add_executable(asttool tools/asttool.c)
         target_include_directories(asttool PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
         target_compile_definitions(asttool PRIVATE CONFIG_AST=1)
-        foreach(_an arena validate dump cfg provenance)
+        foreach(_an arena validate dump cfg provenance template)
             add_test(NAME "ast/${_an}" COMMAND asttool "${_an}")
             set_tests_properties("ast/${_an}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endforeach()
@@ -2936,6 +2936,20 @@ if(MCC_BUILD_TESTS)
                 "-DEXPECT_RC=42" "-DNOREPLAY=main"
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
             set_tests_properties("ast/replay-switch_fallback" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
+            # A7 first template = const-fold (docs/AST.md §12/§15/§17-D-d). The
+            # per-template differential test: the fixture is compiled with the
+            # const-fold template on and must (a) exit the same as -O0 (input ==
+            # output) and (b) actually fold (FOLDS=main asserts the rewrite fired
+            # and replay stayed byte-faithful — the fold is byte-neutral because
+            # gen_op already folds constants at -O0).
+            add_test(NAME "ast/template-constfold" COMMAND "${CMAKE_COMMAND}"
+                "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
+                "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/constfold.c"
+                "-DOUT=${CMAKE_BINARY_DIR}/ast-replay"
+                "-DEXPECT_RC=42" "-DREPLAYED=main" "-DTEMPLATES=1" "-DFOLDS=main"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
+            set_tests_properties("ast/template-constfold" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endif()
     endif()
 
@@ -3066,6 +3080,23 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_BINARY_DIR}/exec-replay-${_gn}" --only "${_gn}")
             set_tests_properties("exec-replay/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_AST_REPLAY=1")
+        endforeach()
+
+        # A7 const-fold template column (docs/AST.md §15): the whole golden corpus
+        # re-run with the replay driver *and* the const-fold template on, asserting
+        # the same expected output. This is the per-template differential gate over
+        # the full corpus — the rewrite is byte-neutral (gen_op folds constants at
+        # -O0), so every faithfully-replayed function stays byte-identical and the
+        # column stays green, proving template input == output across the corpus.
+        foreach(_gl IN LISTS _exec_glines)
+            string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
+            set(_gn "${CMAKE_MATCH_1}")
+            add_test(NAME "exec-replay-tmpl/${_gn}"
+                COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+                        "${CMAKE_BINARY_DIR}/exec-replay-tmpl-${_gn}" --only "${_gn}")
+            set_tests_properties("exec-replay-tmpl/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_AST_REPLAY=1;MCC_AST_TEMPLATES=1")
         endforeach()
     endif()
 

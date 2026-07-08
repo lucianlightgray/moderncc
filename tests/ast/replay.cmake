@@ -17,6 +17,9 @@ set(_r1 "${OUT}/${_name}.R1")
 function(build_and_run out_exe expect_rc env_on out_all)
     if(env_on)
         set(_env "${CMAKE_COMMAND}" -E env MCC_AST_REPLAY=1 MCC_AST_REPLAY_DUMP=1)
+        if(TEMPLATES)
+            list(APPEND _env MCC_AST_TEMPLATES=1)
+        endif()
     else()
         set(_env "${CMAKE_COMMAND}" -E env)
     endif()
@@ -39,6 +42,15 @@ build_and_run("${_r1}" "${EXPECT_RC}" ON _r1_all)
 if(REPLAYED)
     if(NOT _r1_all MATCHES "\\[ast-replay\\] ${REPLAYED}\n")
         message(FATAL_ERROR "expected function '${REPLAYED}' to go through the AST replay path, but it fell back:\n${_r1_all}")
+    endif()
+endif()
+
+# FOLDS: with the const-fold template on (TEMPLATES), the named function must
+# have actually folded at least one Binary(Lit,Lit) — proving the template fired
+# and the byte-verify net kept the replay faithful (not a silent no-op/fallback).
+if(FOLDS)
+    if(NOT _r1_all MATCHES "\\[ast-template\\] const-fold ([1-9][0-9]*) ${FOLDS}\n")
+        message(FATAL_ERROR "expected the const-fold template to fire on '${FOLDS}', but it did not (fell back or folded nothing):\n${_r1_all}")
     endif()
 endif()
 

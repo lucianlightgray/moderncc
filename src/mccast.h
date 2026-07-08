@@ -61,6 +61,13 @@ void ast_arena_reset(AstArena *a);
 AstLocal ast_node(AstArena *a, uint16_t kind);
 void ast_add_child(AstArena *a, AstLocal parent, AstLocal child);
 
+/* In-place mutation used by the optimization templates (§12): a rewrite that
+ * collapses a subtree (e.g. const-fold Binary(Lit,Lit) → Literal) retags the
+ * node and orphans its former children (they stay in the per-function arena,
+ * unreferenced — no compaction until hash-consing at Mid). */
+void ast_set_kind(AstArena *a, AstLocal n, uint16_t kind);
+void ast_clear_children(AstArena *a, AstLocal n);
+
 void ast_set_op(AstArena *a, AstLocal n, int op);
 void ast_set_type(AstArena *a, AstLocal n, int type_t, uint64_t type_ref);
 void ast_set_ival(AstArena *a, AstLocal n, uint64_t v);

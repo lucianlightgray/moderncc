@@ -68,6 +68,8 @@ ST_DATA CType int_type, func_old_type, char_type, char_pointer_type;
 int ast_active;             /* build hooks fire (a function build is running) */
 static int ast_replay_env;  /* MCC_AST_REPLAY requested for this TU           */
 static int ast_replay_dump; /* MCC_AST_REPLAY_DUMP: dump replayed trees        */
+static int ast_templates_env; /* MCC_AST_TEMPLATES: run optimization templates */
+static int ast_tmpl_folds;  /* const-fold rewrites performed this function     */
 static AstArena *ast_cur;   /* the function currently being built              */
 static int ast_bail;        /* an unsupported construct was seen              */
 static AstLocal ast_ret_val; /* captured return-expression tree (or AST_NONE)  */
@@ -679,6 +681,7 @@ ST_FUNC int mccgen_compile(MCCState *s1) {
 #if defined(CONFIG_AST) && CONFIG_AST
 	ast_replay_env = getenv("MCC_AST_REPLAY") != NULL;
 	ast_replay_dump = getenv("MCC_AST_REPLAY_DUMP") != NULL;
+	ast_templates_env = getenv("MCC_AST_TEMPLATES") != NULL;
 #endif
 
 	mcc_debug_start(s1);
@@ -11535,6 +11538,84 @@ static void ast_replay_body(AstArena *a) {
 	ast_replay_bb(a, ast_root(a));
 }
 
+/* --- A7: first optimization template — tree-scope integer const-fold --------
+ * docs/AST.md §12/§15/§17-D-d. Pattern → rewrite: Binary(op, Literal, Literal)
+ * with a foldable integer op → Literal(fold). The rewrite happens on the tree
+ * (above the emitter, §10) before replay; the emitter (gen_op) already folds
+ * adjacent constants at -O0, so this template is *byte-neutral* — replay of the
+ * folded Literal pushes the very SValue gen_op would have produced, and the
+ * gen_function byte-verify net confirms it (falling back on any residual
+ * mismatch). Value: it exercises the template mechanism (§12) and exposes
+ * constants for later CFG/dead-branch templates. Only the pure arithmetic/
+ * bitwise/shift subset is folded — comparisons and &&/|| have special replay
+ * paths (VT_CMP / short-circuit chains), so they are left for gen_op. The fold
+ * arithmetic mirrors gen_opic exactly (same value64 normalization / signed div)
+ * so a folded node is bit-for-bit what the streaming parser emitted. */
+static uint64_t ast_fold_eval(int op, int tt, uint64_t l1, uint64_t l2,
+															int *ok) {
+	int shm = ((tt & VT_BTYPE) == VT_LLONG) ? 63 : 31;
+	switch (op) {
+	case '+': return l1 + l2;
+	case '-': return l1 - l2;
+	case '&': return l1 & l2;
+	case '^': return l1 ^ l2;
+	case '|': return l1 | l2;
+	case '*': return l1 * l2;
+	case '/':
+		if (l2 == 0) { *ok = 0; return 0; }
+		return gen_opic_sdiv(l1, l2);
+	case '%':
+		if (l2 == 0) { *ok = 0; return 0; }
+		return l1 - l2 * gen_opic_sdiv(l1, l2);
+	case TOK_SHL: return l1 << (l2 & shm);
+	case TOK_SHR: return l1 >> (l2 & shm);
+	case TOK_SAR: return (l1 >> 63) ? ~(~l1 >> (l2 & shm)) : l1 >> (l2 & shm);
+	default: *ok = 0; return 0;
+	}
+}
+
+static void ast_fold_rec(AstArena *a, AstLocal n) {
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		ast_fold_rec(a, c);
+	if (ast_kind(a, n) != AST_Binary || ast_nchild(a, n) != 2)
+		return;
+	int op = ast_op(a, n);
+	switch (op) {
+	case '+': case '-': case '*': case '/': case '%':
+	case '&': case '|': case '^':
+	case TOK_SHL: case TOK_SHR: case TOK_SAR:
+		break;
+	default:
+		return; /* comparisons / && / || : leave for gen_op's own path */
+	}
+	AstLocal x = ast_child(a, n, 0), y = ast_child(a, n, 1);
+	if (ast_kind(a, x) != AST_Literal || ast_kind(a, y) != AST_Literal)
+		return;
+	int tt = ast_type_t(a, x);
+	if (ast_bad_type(tt) || ast_bad_type(ast_type_t(a, y)))
+		return;
+	uint64_t l1 = value64(ast_ival(a, x), tt);
+	uint64_t l2 = value64(ast_ival(a, y), ast_type_t(a, y));
+	int ok = 1;
+	uint64_t r = ast_fold_eval(op, tt, l1, l2, &ok);
+	if (!ok)
+		return;
+	/* Rewrite in place to a Literal carrying the first operand's type (gen_opic's
+	 * result type) and normalized value; VT_NONCONST propagates from either. */
+	ast_set_kind(a, n, AST_Literal);
+	ast_clear_children(a, n);
+	ast_set_op(a, n, ast_op(a, x) | (ast_op(a, y) & VT_NONCONST));
+	ast_set_type(a, n, tt, ast_type_ref(a, x));
+	ast_set_ival(a, n, value64(r, tt));
+	ast_set_sym(a, n, 0);
+	ast_tmpl_folds++;
+}
+
+static void ast_run_templates(AstArena *a) {
+	ast_tmpl_folds = 0;
+	ast_fold_rec(a, ast_root(a));
+}
+
 /* The captured body faithfully accounts for the whole function: not bailed, the
  * mirror is balanced (every value produced was consumed), and it ends in a
  * return. Byte-verification (in gen_function) is the ultimate correctness gate. */
@@ -11665,6 +11746,13 @@ static void gen_function(Sym *sym) {
 			unsigned char ast_sv_warn = mcc_state->warn_none;
 			mcc_state->warn_none = 1;
 			ast_rp_bsym = ast_rp_csym = NULL;
+			/* Optimization templates (§12) run on the tree before replay. Gated by
+			 * MCC_AST_TEMPLATES so the zero-template invariant (byte-identity to -O0)
+			 * still governs the default replay column; with templates on, the fold is
+			 * byte-neutral and the same byte-verify net still guards correctness. */
+			ast_tmpl_folds = 0;
+			if (ast_templates_env)
+				ast_run_templates(ast_cur);
 			ast_replay_body(ast_cur);
 			mcc_state->warn_none = ast_sv_warn;
 
@@ -11688,6 +11776,9 @@ static void gen_function(Sym *sym) {
 				char buf[512];
 				ast_dump(ast_cur, ast_root(ast_cur), buf, sizeof buf);
 				fprintf(stderr, "[ast-replay] %s\n%s", funcname, buf);
+				if (ast_templates_env)
+					fprintf(stderr, "[ast-template] const-fold %d %s\n",
+									ast_tmpl_folds, funcname);
 			}
 			mcc_free(orig);
 			mcc_free(orig_rel);

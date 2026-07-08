@@ -21,7 +21,7 @@ brought up one §17 category at a time.
   CST-provenance id per node (§14); `ast_validate`. Self-contained (malloc un-poison).
 - [x] **A3 — `tools/asttool.c` pure-lib TDD harness + `ast/*` ctests.** 5 suites
   (arena/validate/dump/cfg/provenance), 30 checks. Full `ast`-preset ctest 865/865.
-- [~] **A4 — replay driver (`ast_replay_body`) over the vstack API.** In `gen_function`,
+- [x] **A4 — replay driver (`ast_replay_body`) over the vstack API.** In `gen_function`,
   when `MCC_AST_REPLAY` is set: build the intention tree while the parser runs, then
   **discard the parser's body emission** (`ind = body_ind`) and re-emit from the AST
   through the vstack API. **Byte-verify safety net (§17 straight-line tripwire):** the
@@ -64,7 +64,7 @@ brought up one §17 category at a time.
     effects. Diagnostics suppressed during replay (`warn_none`). Struct/two-register
     returns and indirect callees fall back. **Coverage 27→68/239 files.** Fixtures
     cast_expr, call_printf.
-  - [~] rung 5: **control flow** (the CFG milestone D-b) — captured at the `block()`
+  - [x] rung 5: **control flow** (the CFG milestone D-b) — captured at the `block()`
     handler level, with replay re-issuing the parser's exact `gind`/`gvtst`/`gjmp`/
     `gsym` pattern (no backend jump hooks). Done: **comparisons** (`< > <= >= == !=`),
     **`if`/`if-else`** (nested BasicBlocks), **non-tail returns** (branch returns that
@@ -83,28 +83,46 @@ brought up one §17 category at a time.
     so no result rides the mirror; the `VT_VOID` type marks it so replay re-emits the
     call and leaves the stack empty), and each element `{...}` value is an ordinary
     `Store` effect. Fixture array_init. **Coverage 68→119/238 files (50%).** Remaining:
-    aggregate struct/union/bitfield `Store`/copy + member access `.`/`->` (aggregate
-    deref bails), `switch`, `goto`, floats/wider types. Then A7 const-fold template.
-- [~] **A5 — parser AST-build hooks.** `ast_hook_stmt` (count + bail on unsupported
+    first-phase gate (§15/§17) — the whole corpus green under **zero-template**
+    replay, faithful captures re-emitting byte-for-byte — holds, so the replay
+    driver is up and A7 (below) landed on top of it. **Deferred to Mid** (coverage
+    widening, §16 Mid — not a first-phase blocker: the byte-verify net keeps the
+    unmodeled tail on correct `-O0`): aggregate struct/union/bitfield `Store`/copy
+    + member access `.`/`->` (aggregate deref bails), `switch`, `goto`, floats/wider
+    types.
+- [x] **A5 — parser AST-build hooks.** `ast_hook_stmt` (count + bail on unsupported
   leaf statements) and `ast_hook_return` (capture Return of an int constant) fire from
-  the parser's statement/return positions, gated by `CONFIG_AST` + `ast_active`. Grows
-  alongside A4's rungs.
-- [~] **A6 — differential-exec replay gate (two layers, both green).**
+  the parser's statement/return positions, gated by `CONFIG_AST` + `ast_active`. Grew
+  alongside A4's rungs into the full hook set (vpush/genop/vstore/convert/call/if/
+  while/for/do/inc/indir/gaddrof/ternary/landor).
+- [x] **A6 — differential-exec replay gate (three layers, all green).**
   - `tests/ast/replay.cmake` — 21 targeted fixtures that must *actually* replay (dump
     fired, not fall back), from `ret42` through `array_init`/`ternary`/`logand`, plus a
-    `switch_fallback` safety-net case that must fall back to correct `-O0`.
-  - **`exec-replay/*` column** — the whole `tests/exec` golden corpus (280) re-run
+    `switch_fallback` safety-net case that must fall back to correct `-O0`, plus the A7
+    `template-constfold` case (fold must fire *and* stay byte-faithful).
+  - **`exec-replay/*` column** — the whole `tests/exec` golden corpus re-run
     with `MCC_AST_REPLAY=1`, asserting the same expected output. Functions the driver
     can lower go through the AST; everything else falls back to `-O0`, so the column
     stays green as the driver grows. Replay-induced safety verified: the discard is
     guarded by no-new-locals + no-new-relocations + pure-constant-return, so a body
     with a call / cleanup / global store (e.g. cleanup.c `test_ret`) correctly falls
-    back instead of dropping work. Full ctest 1166/1166.
-  - Next: widen the *replayed* set (not just fallback) toward §17 curriculum 3–6 —
-    aggregate struct/union `Store`+member access, `switch`/`goto`, floats/wider types.
-- [ ] **A7 — first template = const-fold**, sequenced *after* the corpus is green
-  under zero-template replay, with its own §15 per-template differential test. (Deferred
-  to the end of the first phase.)
+    back instead of dropping work.
+  - **`exec-replay-tmpl/*` column** — the same corpus re-run with the const-fold
+    template *also* on (`MCC_AST_TEMPLATES=1`): the §15 whole-corpus per-template
+    differential gate (input == output). Full ctest 1446/1446.
+- [x] **A7 — first template = const-fold** (docs/AST.md §12/§15/§17-D-d). A tree-scope
+  rewrite `Binary(op, Literal, Literal) → Literal(fold)` over the pure integer
+  arithmetic/bitwise/shift subset, run on the AST *above* the emitter before replay
+  (`ast_run_templates`/`ast_fold_rec`/`ast_fold_eval` in mccgen.c; new `ast_set_kind`/
+  `ast_clear_children` builder API). The fold mirrors `gen_opic` exactly (same
+  `value64` normalization / signed div), so it is **byte-neutral** — gen_op already
+  folds adjacent constants at `-O0`, so a folded node re-emits bit-for-bit and the
+  gen_function byte-verify net still governs correctness. Gated by `MCC_AST_TEMPLATES`
+  so the zero-template invariant still owns the default replay column. §15 differential
+  tests: pure-lib `ast/template` (rewrite API), `ast/template-constfold` (fold fires +
+  byte-faithful), and the whole-corpus `exec-replay-tmpl/*` column. **This closes the
+  AST first phase** (§17 "Replay driver — golden-TDD bring-up"); further templates
+  (algebraic, dead-branch, jump-table) and coverage widening are §16 Mid.
 
 ---
 

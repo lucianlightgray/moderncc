@@ -1,6 +1,13 @@
 # AST — an intention IR alongside the CST
 
-Status: **plan / design** (curate freely). Companion to the CST subsystem
+Status: **first phase implemented** (§16 Short + §17 replay-driver bring-up; see
+docs/TODO.md "AST first phase" A1–A7). The intention-IR library (`src/mccast.{c,h}`),
+the vstack-replay driver (in `src/mccgen.c`, gated by `MCC_AST_REPLAY`), the
+golden-TDD differential gates (`tests/ast/`, `exec-replay/*`), and the first
+optimization template — **const-fold** (`MCC_AST_TEMPLATES`, `exec-replay-tmpl/*`)
+— are all in and green. The remainder below (mid/long horizons: broader replay
+coverage, virtual always-inline, more templates, liveness-steered placement, LTO,
+`-g`, hot-reload) is **plan / design** (curate freely). Companion to the CST subsystem
 (`src/mcccst.{c,h}`). Where the **CST** is byte-faithful *concrete* syntax, the
 **AST** is *intention*: desugared, type-resolved, post-preprocessor. Guarded by
 CMake `CONFIG_AST` (ON by default), built as a pure side-channel like the CST —

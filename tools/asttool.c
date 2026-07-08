@@ -130,6 +130,42 @@ static void suite_provenance(void) {
 	ast_arena_free(a);
 }
 
+/* Template rewrite API (§12): ast_set_kind + ast_clear_children collapse a
+ * Binary(Literal, Literal) subtree into a Literal in place, as the const-fold
+ * template does. Fold `2 + 3 * 4` bottom-up to a single Literal 14. */
+static void suite_template(void) {
+	AstArena *a = ast_arena_new();
+	AstLocal add = build_expr(a);
+	AstLocal mul = ast_child(a, add, 1);
+
+	/* fold the inner 3 * 4 -> 12 */
+	ast_set_kind(a, mul, AST_Literal);
+	ast_clear_children(a, mul);
+	ast_set_ival(a, mul, 12);
+	CHECK(ast_kind(a, mul) == AST_Literal, "mul retagged to Literal");
+	CHECK(ast_nchild(a, mul) == 0, "folded node has no children");
+	CHECK(ast_first_child(a, mul) == AST_NONE, "folded first_child cleared");
+	CHECK(ast_last_child(a, mul) == AST_NONE, "folded last_child cleared");
+
+	char msg[64];
+	CHECK(ast_validate(a, msg, sizeof msg) == 0, "tree valid after inner fold");
+
+	/* now both children of add are Literals (2 and 12) -> fold to 14 */
+	CHECK(ast_kind(a, ast_child(a, add, 0)) == AST_Literal, "add[0] Literal");
+	CHECK(ast_kind(a, ast_child(a, add, 1)) == AST_Literal, "add[1] Literal");
+	ast_set_kind(a, add, AST_Literal);
+	ast_clear_children(a, add);
+	ast_set_ival(a, add, 14);
+	CHECK(ast_kind(a, add) == AST_Literal, "add folded to Literal");
+	CHECK(ast_ival(a, add) == 14, "folded value is 14");
+	CHECK(ast_validate(a, msg, sizeof msg) == 0, "tree valid after outer fold");
+
+	char buf[64];
+	ast_dump(a, ast_root(a), buf, sizeof buf);
+	CHECK(strcmp(buf, "Literal 14\n") == 0, "folded tree dumps as a single Literal");
+	ast_arena_free(a);
+}
+
 int main(int argc, char **argv) {
 	const char *only = argc > 1 ? argv[1] : NULL;
 	if (!only || !strcmp(only, "arena"))
@@ -142,6 +178,8 @@ int main(int argc, char **argv) {
 		suite_cfg();
 	if (!only || !strcmp(only, "provenance"))
 		suite_provenance();
+	if (!only || !strcmp(only, "template"))
+		suite_template();
 
 	fprintf(stderr, "asttool: %d checks, %d failures\n", g_checks, g_failures);
 	return g_failures ? 1 : 0;

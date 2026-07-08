@@ -131,6 +131,13 @@ void ast_add_child(AstArena *a, AstLocal parent, AstLocal child) {
 	a->nchild[parent]++;
 }
 
+void ast_set_kind(AstArena *a, AstLocal n, uint16_t kind) { a->kind[n] = kind; }
+void ast_clear_children(AstArena *a, AstLocal n) {
+	a->first_child[n] = AST_NONE;
+	a->last_child[n] = AST_NONE;
+	a->nchild[n] = 0;
+}
+
 void ast_set_op(AstArena *a, AstLocal n, int op) { a->op[n] = op; }
 void ast_set_type(AstArena *a, AstLocal n, int type_t, uint64_t type_ref) {
 	a->type_t[n] = type_t;
