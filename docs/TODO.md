@@ -40,9 +40,13 @@ only add (or fail to add) replayed functions.
   admits struct/union **lvalue** leaves (a reconstructable frame/global address; bit-field/
   `long double`/`_Complex` still out), and `call_begin` guards by-value struct args so they
   fall back. Reads + writes, local `.` and pointer `->`, and struct-by-value *params* replay;
-  fixture `ast/replay-struct_member`. Still falling back (future work): struct **copy**
-  (`a = b`, `T q = *p`), struct **returns** (sret), by-value struct **args**, `(*p).x`, and
-  aggregate `Store`. Remaining aggregate work `.`/`->`. Each construct lands with its `ast/replay-*`
+  fixture `ast/replay-struct_member`. **Landed 2026-07-08 — struct copy + deref.** Struct→struct
+  `vstore` now records a `Store` (the aggregate memmove/`gen_struct_copy` runs with its internal
+  ops suppressed by `ast_in_op`); replay reproduces the copy. The `indir` guard now allows
+  deref-to-struct (a reconstructable lvalue, not a register value), so `*a = *b`, `q = *b`, and
+  `(*p).x` replay. Fixture `ast/replay-struct_copy`. Still falling back (future work): struct
+  **returns** (sret), by-value struct **args** (call-site guarded), bit-field member `Store`
+  (shift/mask desugar), and the `InitList` node. Each construct lands with its `ast/replay-*`
   fixture and the whole-corpus `exec-replay` / `exec-replay-tmpl` columns staying green.
   _Node-level gap ledger (docs/AST.md §A3, feature-complete = the 15 kinds):_ the unbuilt
   kinds are **`InitList`** (aggregate/compound-literal init still reaches codegen as scalar

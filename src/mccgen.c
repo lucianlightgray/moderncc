@@ -11125,12 +11125,14 @@ static void ast_hook_indir(void) {
 	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
 		return;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
-	/* Deref to an aggregate (struct/union member access) builds trees whose
-	 * intermediate types this rung does not reconstruct — bail. Scalar derefs
-	 * (*p, a[i]) are fine. */
-	int derefs_aggregate = (vtop->type.t & VT_BTYPE) == VT_PTR &&
-			ast_bad_type(pointed_type(&vtop->type)->t);
-	if (ast_vn < 1 || ast_vn != rel || derefs_aggregate) {
+	/* Deref to a struct/union yields an lvalue (an address, not a register value)
+	 * — reconstructable by re-running indir, so allow it (member access / struct
+	 * copy consume it). Deref to a bit-field / long double / _Complex-pair is not
+	 * modeled — bail. */
+	int bad_deref = (vtop->type.t & VT_BTYPE) == VT_PTR &&
+			ast_bad_type(pointed_type(&vtop->type)->t) &&
+			(pointed_type(&vtop->type)->t & VT_BTYPE) != VT_STRUCT;
+	if (ast_vn < 1 || ast_vn != rel || bad_deref) {
 		ast_desync = 1;
 		return;
 	}
@@ -11353,8 +11355,15 @@ static void ast_hook_vstore(void) {
 	if (!model)
 		return;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+	/* A struct/union → struct/union assignment is an aggregate copy (memmove /
+	 * gen_struct_copy, emitted with the internal ops suppressed by ast_in_op);
+	 * both operands are reconstructable lvalues, so record it as a Store and let
+	 * replay reproduce the copy. Bit-field / other bad types still fall back. */
+	int agg_store = (vtop->type.t & VT_BTYPE) == VT_STRUCT &&
+			(vtop[-1].type.t & VT_BTYPE) == VT_STRUCT;
 	if (ast_vn != rel || ast_vn < 2 ||
-			ast_bad_type(vtop->type.t) || ast_bad_type(vtop[-1].type.t)) {
+			((ast_bad_type(vtop->type.t) || ast_bad_type(vtop[-1].type.t)) &&
+			 !agg_store)) {
 		ast_desync = 1;
 		return;
 	}
