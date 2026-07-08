@@ -674,8 +674,8 @@ Mid). This is the single source of truth for "what's left."
 
 | Query | Status |
 |---|---|
-| promote local to register | ✅ **landed incl. control flow** (opt-in `MCC_AST_PROMOTE`, x86_64): an address-not-taken **integer** local in a **call-free** function is pinned to R10/R9/R8 (R10 is used nowhere in the backend, R8/R9 only for call args; R11 excluded — it backs `load`/GOTPCREL) with zero stack traffic — reads push it register-resident (gv copies on use), writes force it into the pin, and the pin is **seeded from the local's slot at entry** so it is valid across loops/if and for params. Poisons: pointers/floats/structs, `&`/member-base, `++`/`--`, inline asm. Byte-verify bypassed (bytes diverge from `-O0`) so the whole-corpus **`exec-replay-promote`** column + `ast/replay-promote` fixture are the gate (89 functions promoted across the corpus). The first opt that beats `-O0`. |
-| ⬜ broaden | pin **callee-saved** RBX/R12–R15 too (needs prologue/epilogue save/restore); share one spill slot across disjoint live ranges + loop-depth spill-weighting; pointers/floats; a real backward-liveness pass for finer live-range reuse; other arches. |
+| promote local to register | ✅ **landed incl. control flow AND calls** (opt-in `MCC_AST_PROMOTE`, x86_64): an address-not-taken **integer** local is pinned to a register with zero stack traffic — reads push it register-resident (gv copies on use), writes force it into the pin (converting to the local's type, so a widening store sign-extends), and the pin is **seeded from the local's slot at entry** so it is valid across loops/if and for params. A **call-free** function uses caller-saved **R10/R9/R8** (R10 is used nowhere in the backend, R8/R9 only for call args; R11 excluded — it backs `load`/GOTPCREL); a **call-ful** function uses callee-saved **RBX/R12–R15** (pushed at entry with an even-count alignment pad, popped at the single return funnel) so the pin survives calls. Poisons: pointers/floats/structs, `&`/member-base and whole local array/struct slot ranges, `++`/`--`, inline asm; VLA+call-ful bails (rsp race). Byte-verify bypassed (bytes diverge from `-O0`) so the two-pass faithfulness gate + whole-corpus **`exec-replay-promote`** column + `ast/replay-promote` fixture (asserts both a call-free and a call-ful fn promote) are the gate. The first opt that beats `-O0`. `MCC_AST_NO_CALLFUL` restricts to the call-free pool. |
+| ⬜ broaden | share one spill slot across disjoint live ranges + loop-depth spill-weighting; pointers/floats; a real backward-liveness pass for finer live-range reuse; other arches (the pin pools are x86_64-specific). |
 
 **Tier 4 — whole-program / fixpoint (⬜ beyond `-O0`, Mid — the inline payoff + guards)**
 
@@ -687,10 +687,12 @@ Mid). This is the single source of truth for "what's left."
 | guard: `setjmp`/signal/VLA region | propagate a **non-inlinable-across** flag up the binding graph (§18.4) |
 
 **Net remaining work:** the three Tier-2 hooks are all ✅ (2026-07-08) — **`-O0` replay
-parity is complete** for the checklist — and **Tier 3 register promotion has a landed v1**
-(the first opt that beats `-O0`: single-BB call-free integer locals kept in pinned registers,
-gated by the `exec-replay-promote` corpus column). What remains is **breadth, still beyond
-`-O0`**: extend Tier 3 past single-BB via a backward-liveness/def-use pass (loops), and Tier 4
+parity is complete** for the checklist — and **Tier 3 register promotion is landed**
+(the first opt that beats `-O0`: address-not-taken integer locals kept in pinned registers
+across control flow AND calls — call-free via caller-saved R10/R9/R8, call-ful via callee-saved
+RBX/R12–R15 — gated by the `exec-replay-promote` corpus column). What remains is **breadth, still beyond
+`-O0`**: a real backward-liveness/def-use pass for finer live-range reuse (share a slot across
+disjoint ranges, spill-weight by loop depth, promote pointers/floats), and Tier 4
 (inline + guards, the "minimize-invoke" payoff). Nothing here is a new machine op — every
 remaining ⬜ is a query or a driver-steering step over ops the exec suite already proves.
 

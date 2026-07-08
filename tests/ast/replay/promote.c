@@ -7,7 +7,10 @@
  * even for a parameter or a local read before written — the first optimization that
  * deliberately beats -O0. Strictly opt-in (MCC_AST_PROMOTE); byte-verify is bypassed
  * for a promoted function, so the exit-code equality vs -O0 is the gate. REPLAYED +
- * PROMOTES target loopy (which exercises promotion across a loop). */
+ * PROMOTES target loopy (call-free, promotion across a loop) and callful (promotion
+ * into callee-saved RBX/R12–R15 that survives an intervening call). */
+
+int ident(int x); /* forward decl; defined below so callful has a real call to cross */
 
 /* Straight-line: a, b, c live in registers with no stack traffic. */
 static int calc(int n) {
@@ -31,6 +34,19 @@ static int loopy(int start) {
 	return s; /* start=4: 4+6+8+10+12 = 40 */
 }
 
+int ident(int x) { return x; }
+
+/* Call-ful: p, q, r must survive the ident() calls, so they are promoted into
+ * callee-saved registers (pushed at entry, popped at the return funnel) rather than
+ * the caller-saved pool a call would clobber. */
+static int callful(int start) {
+	int p = ident(start);
+	int q = ident(start + 1);
+	int r = ident(start + 2);
+	int t = ident(p + q + r);
+	return p + q + r + t; /* start=1: 1+2+3 + 6 = 12 */
+}
+
 int main(void) {
-	return calc(5) + loopy(4) - 40; /* 42 + 40 - 40 = 42 */
+	return calc(5) + loopy(4) + callful(1) - 52; /* 42 + 40 + 12 - 52 = 42 */
 }

@@ -233,10 +233,12 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
   local's stack slot at function entry** (`ast_promo_entry_init`), which makes promotion valid
   across **arbitrary control flow (loops/if)** and for parameters / read-before-write locals —
   the register mirrors what `-O0` would read from the never-again-written slot. **Applies to:**
-  a **call-free** function (a call clobbers the caller-saved pins) with integer (`int`/`long`)
-  locals. **Poisoned:** pointers/floats/structs, `&`-taken / member-base locals, `++`/`--`
-  (lvalue) targets, and any function using **inline asm** (clobbers). Coverage: **89** promoted
-  functions across the corpus (was 3 at the single-BB v1). Additive — no `gen_op` surgery.
+  any function with integer (`int`/`long`) locals — **call-free** uses caller-saved **R10/R9/R8**
+  (no save/restore), **call-ful** uses callee-saved **RBX/R12–R15** (pushed at entry, popped at the
+  return funnel; see the call-ful sub-item below, ON by default since 2026-07-08). **Poisoned:**
+  pointers/floats/structs, `&`-taken / member-base locals and whole local array/struct slot ranges,
+  `++`/`--` (lvalue) targets, and any function using **inline asm** (clobbers). Additive — no
+  `gen_op` surgery.
   - [x] **Two-pass soundness gate — LANDED 2026-07-08.** Promotion now replays WITHOUT it and
     byte-verifies against `-O0` first (pass 1); only if faithful does it re-replay WITH promotion
     (pass 2), kept unconditionally. This closes a real (if narrow) unsoundness: forcing
@@ -246,31 +248,36 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
     2 emitted an empty body → zeroed struct returns) — **not** GOT/`gen_gotpcrel` (that earlier
     diagnosis was wrong; `*ABS*` in `if.c` was a symptom of that function's *unfaithful* replay,
     which the gate now correctly excludes). Pass 2 also resets `ind`/`rsym`/body-relocs/`loc`/
-    `anon_sym`/`ast_fconst_i`/`ast_locrec_i`. Corpus 269/0, ctest 1768/1768; 84 fns promote.
-  - [ ] **Broaden to call-ful functions via callee-saved RBX/R12–R15 (scaffolded + committed,
-    DISABLED — the big win).** A call-free fn's caller-saved pins die across calls; a callee-saved
-    reg (mcc never allocates RBX/R12–R15; the ABI has the callee preserve them) survives, so the
-    fn push/pops them at entry / at the single return funnel. The full path is committed but gated
-    off in `ast_plan_promotion` (`if (has_call) return 0;`): the two pools, `ast_promo_write`
-    (class-0 `load` move), entry-init pushes with even-count alignment pad, `ast_promo_exit_restore`.
-    **With it enabled, the two-pass gate cuts corpus failures 20→9** (the unfaithful call-ful
-    functions like `if.c` main are excluded). The remaining 9 are *faithful* call-ful fns with
-    genuine callee-saved bugs: **capping the pool to 3 regs {RBX,R12,R13} drops it to 7**, so
-    R14/R15 have a register-count/encoding defect (check the `load`/push/pop REX paths for regs
-    14/15), and the other **7** are distinct ABI edges. **One concrete bug found + characterized
-    (`unary_operators`):** a constant-index **array element** (`a[0]`, `a[1]`) is captured as a
-    plain `int` local Ref at the element's frame offset, so it gets promoted to a register — but
-    when the array is **address-taken** (`int *q=&a[1]; *q`), the element is *also* read through
-    the pointer from **memory**, so the register and memory diverge (`*q` read 0). The
-    address-taken poison misses it because `&a[1]` is `a+1` **pointer arithmetic — there is no
-    `AST_OP_ADDR` node** to catch. Fix: poison any offset that belongs to a local **array** — e.g.
-    detect the array via its decayed base Ref (VT_ARRAY / a `gaddrof` of the base) and poison its
-    whole `[base, base+sizeof]` range, or more simply poison every candidate offset in any function
-    that takes the address of / forms a pointer into a local array. (This does **not** affect the
-    committed call-free promoter — verified: a call-free fn with an address-taken array is not
-    promoted — it only surfaces once call-ful widens what promotes.) Enable call-ful via the
-    `MCC_AST_CALLFUL` env knob (already wired) to reproduce. The two-pass gate + exec-replay-promote
-    column are the correctness net. VLA+call-ful already bails (rsp race).
+    `anon_sym`/`ast_fconst_i`/`ast_locrec_i`/`nocode_wanted`. Whole `tests/exec` corpus green,
+    ctest 1768/1768 (in both call-free and call-ful modes).
+  - [x] **Broaden to call-ful functions via callee-saved RBX/R12–R15 — LANDED 2026-07-08, ON by
+    default (the big win).** A call-free fn's caller-saved pins die across calls; a callee-saved reg
+    (mcc never allocates RBX/R12–R15; the ABI has the callee preserve them) survives, so the fn
+    push/pops them at entry / at the single return funnel with an even-count alignment pad. Promotion
+    (`MCC_AST_PROMOTE`) now promotes across calls by default; `MCC_AST_NO_CALLFUL` is an escape hatch
+    that restricts it to the call-free pool. **Whole `tests/exec` corpus green in both modes; ctest
+    1768/1768.** A 5-pin stress fn (`[ast-promote] 5`) round-trips across a loop + calls, so the
+    R14/R15 push/pop/`load` REX encoding is correct. Three bugs closed to get here, all *faithful*
+    call-ful miscompiles the two-pass byte-verify could not catch (promoted bytes diverge from `-O0`
+    by construction):
+    - **Aggregate-element aliasing** (`unary_operators`, `type_coercion` structs): a constant-index
+      **array element** / **struct member** is captured as a plain `int` local Ref at the member's
+      frame offset and promoted — but the aggregate is also read from **memory** when its address is
+      formed (`int *q=&a[1]`, `a+1` is pointer arithmetic with **no `AST_OP_ADDR` node** to catch).
+      Fixed by poisoning the whole `[base, base+sizeof]` slot range of any local array/struct Ref.
+    - **Widening sign-extension** (`conversions_semantics`): `long lo = sh;` (short→long) is a memory
+      store that applies the implicit assign-cast to the slot's width; the register write skipped it,
+      leaving a 32-bit `mov %eax,%ebx` (zero-extended) instead of 64-bit sign-extended. Fixed by
+      `gen_cast`-ing the value to the target local's `CType` (type **and** ref, so enums don't crash)
+      inside `ast_promo_write`.
+    - **Recycled Sym pointer across the two passes** (`type_coercion`): the AST captures rodata
+      leaves (string literals) as raw `Sym*`; such a ref sym can already sit on `sym_free_first`
+      (freed after the parse-build used it), and replay's own `sym_push` (float/`_Complex` const-pool
+      reuse in `ast_fconst_push_ref`) recycled that slot — harmless for one byte-verified pass, but
+      pass 2 re-read the corrupted pointer and emitted a relocation against the wrong symbol (a
+      format string resolved to a float const → empty `printf`). Fixed by hiding `sym_free_first`
+      (set to NULL) for the duration of replay so every replay allocation is fresh, restoring it
+      after both passes. VLA+call-ful still bails (rsp race).
   - [ ] share one spill slot across disjoint live ranges; spill-weight by access-freq × loop-depth;
     promote pointers/floats; other arches (the R10/R9/R8 pool is x86_64-specific).
 - [ ] **Tier 4 — virtual always-inline over the shared store (the minimize-invoke payoff).**

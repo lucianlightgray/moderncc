@@ -70,7 +70,7 @@ static int ast_replay_env;  /* MCC_AST_REPLAY requested for this TU           */
 static int ast_replay_dump; /* MCC_AST_REPLAY_DUMP: dump replayed trees        */
 static int ast_templates_env; /* MCC_AST_TEMPLATES: run optimization templates */
 static int ast_promote_env; /* MCC_AST_PROMOTE: Tier-3 register promotion      */
-static int ast_callful_env; /* MCC_AST_CALLFUL: enable (WIP) call-ful promotion */
+static int ast_no_callful_env; /* MCC_AST_NO_CALLFUL: force call-free promotion only */
 static int ast_tmpl_folds;  /* const-fold rewrites performed this function     */
 static AstArena *ast_cur;   /* the function currently being built              */
 static int ast_bail;        /* an unsupported construct was seen              */
@@ -790,7 +790,7 @@ ST_FUNC int mccgen_compile(MCCState *s1) {
 	ast_replay_dump = getenv("MCC_AST_REPLAY_DUMP") != NULL;
 	ast_templates_env = getenv("MCC_AST_TEMPLATES") != NULL;
 	ast_promote_env = getenv("MCC_AST_PROMOTE") != NULL;
-	ast_callful_env = getenv("MCC_AST_CALLFUL") != NULL;
+	ast_no_callful_env = getenv("MCC_AST_NO_CALLFUL") != NULL;
 #endif
 
 	mcc_debug_start(s1);
@@ -12164,14 +12164,13 @@ static int ast_plan_promotion(AstArena *a) {
 	}
 	if (has_call && has_vla)
 		return 0; /* callee-saved push/pop would race the VLA's runtime rsp moves */
-	/* Call-ful promotion (callee-saved RBX/R12-R15) is scaffolded above and gated by
-	 * the two-pass byte-verify (so unfaithful call-ful functions are excluded), but a
-	 * few faithful call-ful programs still miscompile (register-count/encoding for the
-	 * higher pins + a handful of other ABI edges — docs/TODO.md Tier-3 "broaden"), so it
-	 * is DISABLED by default. Promotion stays call-free (caller-saved R10/R9/R8). The
-	 * `MCC_AST_CALLFUL` env knob enables it for debugging the remaining bugs (still
-	 * opt-in under MCC_AST_PROMOTE). */
-	if (has_call && !ast_callful_env)
+	/* A function with calls promotes into callee-saved pins (RBX/R12-R15), pushed at
+	 * entry and popped at the single return funnel so they survive the calls; a call-
+	 * free function uses caller-saved R10/R9/R8 (no save/restore). Both are gated by the
+	 * two-pass byte-verify (unfaithful captures fall back to -O0) and the exec-golden
+	 * suite. `MCC_AST_NO_CALLFUL` restricts promotion to the call-free case as an escape
+	 * hatch. */
+	if (has_call && ast_no_callful_env)
 		return 0;
 	/* Collect every distinct local-slot offset with its type and a poison flag.
 	 * An offset is poisoned (never promotable) if ANY reference to it is not a
@@ -12285,10 +12284,14 @@ static void ast_promo_pop(int reg) {
 	o(0x58 + (reg & 7));
 }
 
-/* Move the value on vtop into the promoted register `reg`. R10/R9/R8 have a register
- * class so gv can target it; RBX/R12-R15 have class 0, so materialize into an RC_INT
- * temp and emit the reg->reg move via load(). */
-static void ast_promo_write(int reg) {
+/* Move the value on vtop into the promoted register `reg`, first converting it to the
+ * promoted local's type `*ct` — a memory store applies this implicit assign-cast (a
+ * narrow/wide store to the slot), so the register-resident value must too (e.g.
+ * `long lo = sh` must sign-extend the short to 64 bits, not leave a 32-bit result).
+ * R10/R9/R8 have a register class so gv can target it; RBX/R12-R15 have class 0, so
+ * materialize into an RC_INT temp and emit the reg->reg move via load(). */
+static void ast_promo_write(int reg, CType *ct) {
+	gen_cast(ct);
 	if (reg_classes[reg]) {
 		ast_pinned_regs &= ~(1u << reg);
 		gv(reg_classes[reg]);
@@ -12616,8 +12619,13 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 			int preg = ast_promo_n ? ast_promo_reg_of(a, ast_child(a, s, 0)) : -1;
 			if (preg >= 0) {
 				ast_replay_value(a, ast_child(a, s, 1));
-				ast_promo_write(preg); /* force the value into the pinned register */
-				vpop();                /* discard the statement result */
+				/* the target's type (with its ref, for enum/typedef) minus lvalue
+				 * bits — the implicit assign-cast the memory store would apply */
+				CType tct;
+				tct.t = ast_type_t(a, ast_child(a, s, 0)) & ~(VT_ARRAY | VT_VLA);
+				tct.ref = (Sym *)(uintptr_t)ast_type_ref(a, ast_child(a, s, 0));
+				ast_promo_write(preg, &tct); /* convert + force into the pinned register */
+				vpop();                      /* discard the statement result */
 				break;
 			}
 #endif
@@ -13113,6 +13121,17 @@ static void gen_function(Sym *sym) {
 			 * each promoted local's register for the duration of the replay so no
 			 * temporary clobbers it. A promoted function's bytes differ from -O0 by
 			 * construction, so byte-verify is bypassed for it (exec-golden is the gate). */
+			/* The AST captures rodata-constant leaves (string literals, etc.) as raw
+			 * Sym pointers. Such a ref sym may already sit on the sym free-list (freed
+			 * after the parse-build used it). Replay's own sym_push() calls (e.g. the
+			 * float/_Complex const-pool reuse in ast_fconst_push_ref) would recycle that
+			 * freed slot and overwrite the still-referenced Sym — harmless for a single
+			 * byte-verified pass, but the two-pass promote path re-reads the corrupted
+			 * pointer in pass 2 and emits a relocation against the wrong symbol. Hide the
+			 * pre-replay free-list so every replay allocation is fresh; restore it after
+			 * both passes (func-end sym_pop returns the fresh syms to it as usual). */
+			Sym *ast_saved_free = sym_free_first;
+			sym_free_first = NULL;
 			/* Pass 1: no promotion; byte-verify. */
 			int saved_loc = loc, saved_anon = anon_sym;
 			ast_promo_n = 0;
@@ -13153,6 +13172,7 @@ static void gen_function(Sym *sym) {
 				ast_pinned_regs = 0;
 				promoted = ast_promo_n;
 			}
+			sym_free_first = ast_saved_free; /* restore the hidden pre-replay free-list */
 			/* Keep ast_promo_n/callful set: a call-ful promoted function's save-register
 			 * restore is emitted at the return funnel in the common epilogue tail below
 			 * (and both are cleared there). A non-promoted function has ast_promo_n==0. */

@@ -52,14 +52,18 @@ if(REPLAYED)
     endif()
 endif()
 
-# PROMOTES: with Tier-3 register promotion on (PROMOTE), the named function must
+# PROMOTES: with Tier-3 register promotion on (PROMOTE), each named function must
 # have actually promoted >=1 local into a register (proving promotion fired and the
 # exec-golden output is unchanged — a promoted function's bytes differ from -O0, so
-# byte-verify is bypassed and this run/exit-code equality is the gate).
+# byte-verify is bypassed and this run/exit-code equality is the gate). PROMOTES is a
+# list so both the call-free (R10/R9/R8) and call-ful (callee-saved) paths can be asserted.
 if(PROMOTES)
-    if(NOT _r1_all MATCHES "\\[ast-promote\\] ([1-9][0-9]*) ${PROMOTES}\n")
-        message(FATAL_ERROR "expected register promotion to fire on '${PROMOTES}', but it did not:\n${_r1_all}")
-    endif()
+    string(REPLACE "," ";" _promotes "${PROMOTES}") # comma-separated (a literal ; would split the add_test COMMAND)
+    foreach(_fn IN LISTS _promotes)
+        if(NOT _r1_all MATCHES "\\[ast-promote\\] ([1-9][0-9]*) ${_fn}\n")
+            message(FATAL_ERROR "expected register promotion to fire on '${_fn}', but it did not:\n${_r1_all}")
+        endif()
+    endforeach()
 endif()
 
 # FOLDS: with the const-fold template on (TEMPLATES), the named function must

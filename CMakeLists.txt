@@ -3053,26 +3053,29 @@ if(MCC_BUILD_TESTS)
             set_tests_properties("ast/replay-vla" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
             # Tier-3 register promotion (docs/AST.md §4/§10/§18.2 Tier 3, opt-in
-            # MCC_AST_PROMOTE): a call-free single-BB function's address-not-taken int
-            # locals live in pinned registers (no stack traffic) — the first opt that
-            # deliberately beats -O0. PROMOTES asserts it fired; the exit-code equality
-            # vs -O0 is the gate (byte-verify is bypassed for a promoted function).
-            # Register promotion is currently **x86_64-only** (the R11/R10/R9/R8 pin pool
-            # is x86_64-specific — on every other target the driver is a no-op, so the
-            # PROMOTES assertion would fail); the whole-corpus exec-replay-promote column
-            # still runs everywhere (promotion no-op => output matches). The general
-            # replay driver is covered on all arches by exec-replay/*.
+            # MCC_AST_PROMOTE): an address-not-taken int local lives in a pinned register
+            # (no stack traffic) — the first opt that deliberately beats -O0. A call-free
+            # function uses caller-saved R10/R9/R8; a call-ful function uses callee-saved
+            # RBX/R12–R15 (pushed at entry, popped at the return funnel) so the pin survives
+            # calls. PROMOTES asserts promotion fired on loopy (call-free, across a loop)
+            # AND callful (across calls); the exit-code equality vs -O0 is the gate
+            # (byte-verify is bypassed for a promoted function). Register promotion is
+            # currently **x86_64-only** (the pin pools are x86_64-specific — on every other
+            # target the driver is a no-op, so the PROMOTES assertion would fail); the
+            # whole-corpus exec-replay-promote column still runs everywhere (promotion
+            # no-op => output matches). The general replay driver is covered on all arches
+            # by exec-replay/*.
             if(MCC_CPU STREQUAL "x86_64")
                 add_test(NAME "ast/replay-promote" COMMAND "${CMAKE_COMMAND}"
                     "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
                     "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/promote.c"
                     "-DOUT=${CMAKE_BINARY_DIR}/ast-replay"
-                    "-DEXPECT_RC=42" "-DREPLAYED=loopy" "-DPROMOTE=1" "-DPROMOTES=loopy"
+                    "-DEXPECT_RC=42" "-DREPLAYED=loopy" "-DPROMOTE=1" "-DPROMOTES=loopy,callful"
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
                 set_tests_properties("ast/replay-promote" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
             else()
                 mcc_skip_test("ast/replay-promote"
-                    "Tier-3 register promotion v1 is x86_64-only (pins R11/R10/R9/R8); on ${MCC_CPU} it is a no-op — coverage stays via exec-replay-promote")
+                    "Tier-3 register promotion is x86_64-only (caller-saved R10/R9/R8 + callee-saved RBX/R12–R15 pools); on ${MCC_CPU} it is a no-op — coverage stays via exec-replay-promote")
             endif()
 
             # A7 first template = const-fold (docs/AST.md §12/§15/§17-D-d). The
