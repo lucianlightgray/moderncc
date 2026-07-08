@@ -157,17 +157,18 @@ download the target sysroots. With the `cross` toolchain built (`MCC_CROSS_DIR`,
 default `cmake-cross`), the wine PE-conformance and the four host-runnable Mach-O
 drivers run natively and pass too.
 
-**Windows status (2026-07-07, mingw gcc 13.1/16.1 / MSVC 19.51 / clang 22):**
+**Windows status (2026-07-08, main@9544d719, mingw gcc 13.1 / MSVC 19.51 / clang 22):**
 every Windows-runnable preset is green. The suite is registered one CTest
-per case (the `exec`/`cli`/`diff3`/`parts`/`preprocess` corpora fan out), so the
-counts are per-case: `debug`, `release`, `diagnostics`, `cst` and `cross` all
-run **812/812** (≈120 environment-gated skips; the exact total tracks upstream
-test additions — new platform-gated cases register and self-skip here); `msvc`
-(VS generator) runs **810/810** — two fewer only because its test preset also
-filters the `wine` and `macho` labels the Ninja presets carry as counted-skips.
-*(These Windows totals predate the `CONFIG_AST` replay columns, which add ~640
-per-case tests on the Linux hosts — cf. the 1447 debug count above; regenerate the
-Windows figures from the next Windows CI run so both hosts cite the same basis.)* On the MSVC
+per case (the `exec`/`cli`/`diff3`/`parts`/`preprocess`/`ast` corpora fan out —
+now including the `CONFIG_AST` `exec-replay`/`exec-replay-tmpl` replay columns, so
+the Windows basis matches the Linux one), so the counts are per-case: every native
+preset registers **1415** cases with **0 failures** and 161–179 environment-gated
+self-skips (the exact total tracks upstream test additions — new platform-gated
+cases register and self-skip here). Regenerated from an actual Windows `ctest` run:
+`debug`, `cst` and `diagnostics` = **1252 run / 163 skip**, `cross` = **1254 / 161**,
+`release` = **1236 / 179**, and `msvc` (VS generator, cl-built) = **1252 / 163**.
+`msvc` now equals `debug` — the `wine`/`macho` cases register and self-skip
+(counted) rather than being label-filtered, so it is no longer "two fewer". On the MSVC
 host `mcctest` still registers and passes — its gcc reference auto-resolves to
 the vendored winlibs GCC (`MCC_REF_CC`) — so the MSVC pass count tracks the
 mingw hosts. Those totals assume the vendored clang toolchain is present (`cmake
@@ -181,8 +182,9 @@ resolved `nm`/`readelf` directory (found on `PATH`, else the vendored winlibs
 without the invoker adding a UNIX-tools or binutils directory to `PATH` (git
 `sh` + `cmake` alone suffice; on an MSVC host the binutils come from the
 vendored winlibs). `mingw` (superbuild; fetches the pinned winlibs GCC and tests
-with it) and `matrix` (gcc/clang × native/cross — **4 cells × 812/812**, clang
-resolved from the fetched `vendor/llvm-clang`) are green too. Both `dist-*` packagings
+with it) and `matrix` (gcc/clang × native/cross — 4 cells, each on the same
+per-case registration as the native/cross presets above, clang resolved from the
+fetched `vendor/llvm-clang`) are green too. Both `dist-*` packagings
 build the full artifact matrix — mcc + `-static`/`-dynamic` +
 `libmcc-static`/`-dynamic` + all 11 cross compilers; `dist-mingw` additionally
 ships each cross compiler in a fully-static (`-static`) shape, while `dist-msvc`

@@ -96,18 +96,23 @@ Each is a closed decision; the item is the named condition that would reopen it.
   What remains is an open-ended "as much as possible" polish with real
   CI-breakage risk across the ~35 presets/platforms not testable from one Linux
   host — pursue incrementally with a specific, verifiable target, not as a sweep.
-- [~] **Regenerate the Windows "all green" counts + add a divergence check
-  (Linux done; Windows residual needs a Windows CI run).**
-  The Linux side is now regenerated from an actual `ctest -N` run and date-stamped
-  (2026-07-07: `debug` = 1447 registered / 1279 run / 168 env-gated skips; the
-  `docs/NOTES.md` "Build status" + Profiling §7 + "Compile speed & footprint" table
-  + `README.md` headline all cite that single per-case basis and the re-measured
-  0.07 s / 76–91× vs -O2 / 0.72 MB / 1.45 MB figures). **Residual (not locally
-  reproducible):** the Windows counts (812/810) predate the `CONFIG_AST` replay
-  columns (~+640 cases) — regenerate them from the next Windows CI run so both hosts
-  cite the same basis (a note to that effect is in the doc). Optional durable fix:
-  a checker (mirror `tools/ckbuildmd.c`) that greps the NOTES.md registered-count
-  against `ctest -N` and fails on drift.
+- [x] **Regenerate the Windows "all green" counts + add a divergence check
+  (both hosts now cite the same per-case basis).**
+  The Linux side was regenerated earlier (2026-07-07: `debug` = 1447 registered /
+  1279 run / 168 env-gated skips). **Windows now regenerated (2026-07-08,
+  main@9544d719) from an actual `ctest` run on this host** — every native preset
+  registers **1415** per-case tests, **0 fail**: `debug`/`cst`/`diagnostics` =
+  1252 run / 163 skip, `cross` = 1254 / 161, `release` = 1236 / 179, `msvc`
+  (cl-built) = 1252 / 163. The prior 812/810 figures predated the `CONFIG_AST`
+  `exec-replay`/`exec-replay-tmpl` columns; the regenerated Windows basis now
+  matches the Linux one (per-case, replay columns included), and `msvc` no longer
+  reads "two fewer" (the `wine`/`macho` cases register-and-self-skip, counted).
+  `docs/NOTES.md` "Windows status" cites these figures. _Divergence check —
+  decided NOT to add the strict count-checker_ (the `tools/ckbuildmd.c`-style grep
+  of NOTES.md vs `ctest -N`): the registered total is documented to **track
+  upstream test additions**, so a hard drift-fail would break CI on every
+  legitimate new test; the real divergence risk was the two hosts citing different
+  *bases*, which the regeneration resolves.
 - [~] **Validate the remaining i386 TLS large-address pattern assumptions
   (x86_64 32[S] done; i386 TLS residual needs i386 cross + sysroot).**
   x86_64 GD/LD/IE/LE is covered by the `tls-models` ctest (`tests/tls/`, links
