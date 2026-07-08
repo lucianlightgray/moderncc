@@ -111,13 +111,17 @@ callee's body into the caller. Built in slices, all landed this session.
 
 ### What works
 
-A **`static`, non-variadic, leaf** (calls nothing itself), VLA-free, size-bounded function —
-with **local declarations**, **internal control flow (if/else, loops)**, and **one or more
-value returns including early returns inside branches** — is inlined into a **later** caller
-(defined-before-use). Returns coalesce **via memory** (each stores to a dedicated result slot,
-non-tail returns jump to a graft-local inline-end join), so several grafts feeding one call
-don't fight over a return register. `goto`/`switch`/`break`/`continue` and `void` returns are
-excluded.
+A **`static`, non-variadic**, VLA-free, size-bounded function — with **local declarations**,
+**internal control flow (if/else, loops)**, **one or more value returns including early returns
+inside branches**, **`int`/pointer/`float`/`double` scalar params and returns**, and **its own
+calls** (leaf or not) — is inlined into a **later** caller (defined-before-use). Returns coalesce
+**via memory** (each stores to a dedicated result slot, non-tail returns jump to a graft-local
+inline-end join), so several grafts feeding one call don't fight over a return register. A
+**non-leaf** callee's own calls graft recursively (a depth+stack **cycle guard**, max depth 8,
+stops direct/mutual recursion — the recursive call stays real) or emit a real call.
+**Excluded:** `goto`/`switch`/`break`/`continue`, `void` returns, pointer-to-VLA params, and
+callees referencing a **string literal / anon rodata const** (its captured Sym pointer can be
+recycled after the callee's own gen — a real cross-function Sym-lifetime limit, see remaining).
 
 - **Retention** (`ast_inline_retain`, keyed by function Sym; `ast_inline_lookup`): the
   within-TU inline closure held in memory. Non-graftable candidates are retained-only.
@@ -145,12 +149,13 @@ fixture (asserts `add`/`scale`/`madd` (multi-statement) / `clamp` (two-if) graft
 
 ### Remaining Tier-4 breadth (TODO.md "Slice 2 breadth")
 
+- **Forward-declared / later-defined callees** — the common caller-before-callee case, missed
+  today. Needs true **defer-to-TU** (§13): hold ASTs until the TU closes, then lower in
+  dependency order (leaves-first). This is the largest remaining piece.
 - **`goto` / `switch`** — these touch the shared label/switch replay state, so need scoping.
-- **Non-scalar params/return** — struct-by-value, float params.
-- **Forward-declared / later-defined callees** — needs true **defer-to-TU** (§13): hold ASTs
-  until the TU closes, then lower in dependency order (leaves-first). Today only
-  defined-before-use inlines, since the callee must be retained at the call site.
-- **Cycle detection** — instance-hash ∈ ancestor stack (recursion guard).
+- **Struct-by-value params/return** — needs the aggregate-copy / sret ABI in the graft.
+- **Persist string/rodata Syms** — to lift the string-literal exclusion (currently such callees
+  fall back to a real call).
 - **Guard queries** — `setjmp`/signal/VLA regions → non-inlinable-across (§18.4).
 - **Combine inline + promotion** in one pass 2 (currently inline takes precedence).
 
