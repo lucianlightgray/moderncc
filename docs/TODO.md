@@ -217,9 +217,25 @@ brought up one §17 category at a time.
   `src/arch/arm64/arm64-asm.c:1877` (+ `:1298/:1441/:1651`). → Enumerate the common
   missing mnemonics; expand the table or document the supported subset.
 - [ ] **Resolve/remove the 6 permanently-masked ARM asm encodings (fix).**
-  `ARM_KNOWN_FAIL` (tools/mccharness.c:2540) never fails on `bl r3`, `b r3`,
-  `mov #0xEFFF`, `mov #0x0201`, two `vmov.f32` forms — real encoding defects. → Fix
-  the `mov #imm`/`vmov.f32` cases and drop the entries.
+  `ARM_KNOWN_FAIL` (tools/mccharness.c) masks `bl r3`, `b r3`, `mov #0xEFFF`,
+  `mov #0x0201`, two `vmov.f32` forms. **Byte-level triage (2026-07-07, mcc-arm vs
+  `arm-linux-gnueabi-as`):**
+  - `b r3` / `bl r3` — **byte-identical** to gas (`feffffea` / `feffffeb`): *not*
+    encoding defects, they only diverge in the harness's disassembly-*text*
+    compare. Can be dropped from `ARM_KNOWN_FAIL` once the harness compares bytes
+    (or the attribute gap below is fixed).
+  - `mov #0xEFFF` / `mov #0x0201` — mcc **rejects** these (immediate is not a valid
+    ARM rotated-immediate); gas auto-expands to `movw` (v6T2+) / a literal-pool
+    load. Real gap = **`mov`-immediate synthesis** (fall back to `movw`/`mvn`/pool).
+  - `vmov.f32 r2,r3,d1` / `vmov.f32 d1,r2,r3` — mcc rejects the 64-bit two-GPR↔dreg
+    transfer; unimplemented (**overlaps the ARM inline-asm `long long` item above**).
+  **Harness caveat surfaced:** mcc's `-c` ARM objects carry no `.ARM.attributes`
+  (Tag_CPU_arch), so `objdump` disassembles correct v6T2+ bytes at a lower arch →
+  ~18 *false* failures (uxtb/uxth/movw/movt/mls/udiv/sdiv/ldrex/strex/…) swamp the
+  real 4 unless the reference env supplies the arch. → Fix `mov #imm` synthesis +
+  64-bit `vmov`; switch the harness to a byte compare (or emit object
+  `.ARM.attributes`); then drop the now-passing entries. Needs the ARM cross
+  toolchain + a matching reference assembler to validate byte-for-byte.
 - [~] **Reference-harness `exec`/`diff3` goldens are effectively dead (validated
   2026-07-07).** The four `note:`-skipped goldens (inline multi-unit, backtrace,
   btdll, alias) carry full expected output but self-skip because each needs a
