@@ -13547,14 +13547,15 @@ static void gen_function(Sym *sym) {
 					 memcmp(rsec2->data + ast_reloc0, orig_rel, rel_len) == 0);
 
 			int promoted = 0;
-			/* Pass 2 applies a byte-diverging transformation to a faithful replay. Tier-4
-			 * virtual-inline (graft graftable calls) takes precedence over Tier-3 promotion
-			 * for a function that has both, since grafting removes the calls the promotion
-			 * planner keyed its caller-saved/callee-saved choice on (combining them is a
-			 * later slice). */
+			/* Pass 2 applies byte-diverging transformations to a faithful replay: Tier-4
+			 * virtual-inline (graft graftable calls) and Tier-3 register promotion, which
+			 * COMPOSE — a function may inline its calls AND promote its own address-not-taken
+			 * locals. Promotion planning still sees the (soon-grafted) calls and so picks the
+			 * callee-saved pool with save/restore, which is always safe (a call-ful frame
+			 * survives whatever the grafted body does); the inlined callee's own locals live in
+			 * fresh biased slots the promoter never considers. */
 			int do_inline = faithful && ast_has_graftable_call(ast_cur);
-			int do_promote = faithful && !do_inline && ast_promote_env &&
-					ast_plan_promotion(ast_cur) > 0;
+			int do_promote = faithful && ast_promote_env && ast_plan_promotion(ast_cur) > 0;
 			if (do_inline || do_promote) {
 				ind = ast_body_ind;
 				rsym = 0;
