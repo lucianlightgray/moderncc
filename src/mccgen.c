@@ -12245,9 +12245,13 @@ static int ast_plan_promotion(AstArena *a) {
 	 * `++`/`--` = read-modify-write), which the register-resident rvalue we push for a
 	 * promoted read cannot satisfy ("lvalue expected"). MEMBER_ARROW (`p->m`) stays
 	 * poisoned too: unlike `*p`/`p[i]` (a plain deref that never touches the pin), its
-	 * `indir`+`gaddrof`+byte-offset member lowering miscompiles a promoted pointer base
-	 * (confirmed: promoting the `s` param of `s->average = …; s->count++` in the exec
-	 * suite's average.c diverged from -O0). Left as a future extension. */
+	 * lowering does `gaddrof` then folds the member byte-offset in with `gen_op('+',
+	 * const)`, which emits `add $off, %base` *in place* — and when the base is the pin
+	 * that clobbers the promoted pointer (a promoted read is instead copied to a scratch
+	 * before any modify: `mov %pin, %tmp; add …, %tmp`). Confirmed: promoting the `s`
+	 * param of `s->average = …; s->count++` in the exec suite's average.c diverged from
+	 * -O0. Future extension: for a promoted base, fold the constant member offset as an
+	 * addressing *displacement* (the SIB+disp path in gen_modrm_impl) instead of an add. */
 	for (AstLocal n = 0; n < nn; n++) {
 		if (ast_kind(a, n) != AST_Unary)
 			continue;

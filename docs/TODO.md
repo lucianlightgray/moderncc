@@ -286,6 +286,10 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
     forced disp8 for r13 (`101`), and `store()`'s 32-bit/byte paths take REX.B from the destination
     base — the normal allocator never bases off r12-r15, so this was an unexercised encoding gap;
     byte-identical for every register it does use (ctest 1768/1768, exec-replay byte-verify green).
+    A pointer used as a `p->m` base stays **poisoned** (a deref `*p`/`p[i]` is fine): the member
+    lowering folds the byte-offset with `gen_op('+', const)` = `add $off, %base` in place, which
+    corrupts the pin (verified: average.c `s->average`/`s->count++`). Fix path: for a promoted base,
+    fold the constant offset as an addressing displacement (the SIB+disp form) instead of an add.
   - [x] **Spill weighting (access-frequency × loop-depth) — LANDED 2026-07-08.** When candidates
     exceed the pin pool, `ast_plan_promotion` promotes the highest-weighted locals first (selection-
     sort) rather than first-seen — the scarce pins go to the hottest slots. The weight is a tree
