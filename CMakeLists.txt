@@ -2888,6 +2888,16 @@ if(MCC_BUILD_TESTS)
             COMMAND "$<TARGET_FILE:hostgate>" src tools
             WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
         set_tests_properties(host-gate-invariant PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
+        # Config-drift invariant (docs/CONFIG.md): the CONFIG_MCC_* surface the
+        # code reads must stay reconciled with what CMakeLists.txt / tools/build.c
+        # emit and what the headers default. Fails on an implicit read or a dead -D.
+        add_executable(ckconfig tools/ckconfig.c tools/toolsupport.c)
+        target_link_libraries(ckconfig ${CMAKE_DL_LIBS})
+        add_test(NAME config-drift-invariant
+            COMMAND "$<TARGET_FILE:ckconfig>" src CMakeLists.txt
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+        set_tests_properties(config-drift-invariant PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
     # AST intention-IR pure-library test harness (docs/AST.md §16/§17, D-c).

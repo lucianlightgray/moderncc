@@ -267,19 +267,6 @@ brought up one §17 category at a time.
   on 4B rolling-hash + error-recovery + `Error`/`Missing` nodes. → Build when the
   LSP consumer lands. Note: D3 repurposed `slot_key` for branch tags, so an `H_e`
   build must reconcile that column's dual use.
-- [ ] **Write `docs/CONFIG.md` reconciling code preprocessor names vs. CMake
-  config (doc/tooling).** Enumerate every unique preprocessor name in the codebase
-  — `#define`/`#ifdef`/`#if defined` macros, especially the `CONFIG_MCC_*` family
-  (~30 in `src/`) and any `MCC_*` build/host gates — and cross-check them against
-  the CMake config surface (the 55 `mcc_config_node` declarations in
-  `CMakeLists.txt`, the `target_compile_definitions`, and preset/cache flags).
-  Flag: (a) `CONFIG_MCC_*`/`MCC_*` macros the code reads but no `mcc_config_node`
-  defines (undocumented/implicit), (b) config nodes defined but never read,
-  (c) name-drift between the CMake option and the emitted `-D`. Prefer a `tools/`
-  checker (mirror `tools/hostgate.c` / `ckbuildmd.c`) that greps both sides and
-  fails on divergence, so CONFIG.md can't rot. → Then update `docs/BUILD.md` (which
-  already tables the CMake nodes, §3–§14) to become the ongoing source of truth for
-  in-code flags, cross-linked to CONFIG.md, and wire the checker into ctest.
 - [ ] **ARM (32-bit) direct branch can't reach past ±32MB — no veneers (impl).**
   `encbranch` in `src/arch/arm/arm-gen.c` encodes `B`/`BL` with the 24-bit signed
   word displacement (±32MB reach); a target farther than that is currently a hard

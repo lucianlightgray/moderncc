@@ -11,6 +11,11 @@ superbuild, toolchain-download, and test subsystems. A machine-generated version
 of the node table can be emitted from the build itself via
 `mcc_generate_node_doc()`.
 
+> **Code-facing subset:** most nodes here only steer the build. The ones that
+> reach the compiler as a `-DCONFIG_MCC_*` the source reads are documented, with
+> their naming convention and the drift checker, in **[CONFIG.md](CONFIG.md)**
+> (ctest `config-drift-invariant`). Keep the two in sync when adding a flag.
+
 **Executable targets & default build shape.** On the host the compiler ships in
 three executable shapes, each with a musl sibling (`mcc-*-musl`):
 
