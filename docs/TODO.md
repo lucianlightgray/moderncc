@@ -27,8 +27,9 @@ only add (or fail to add) replayed functions.
     and the result temp uses an ordinal frame-slot table (`ast_alloc_loc`/`ast_locrec`, the
     `ast_fconst` pattern) so its offset matches the parse-build; `-O0` stays byte-identical
     (the record is passive). Fixture `ast/replay-struct_ret_caller`. Still falls back: the
-    **sret hidden-pointer** form (large structs, `ret_nregs<=0`), variadic struct returns, and
-    a struct-call result used directly as a member base (`f().x`).
+    **sret hidden-pointer** form (large structs, `ret_nregs<=0`) and variadic struct returns.
+    `f().x` (a struct-call result used directly as a member base) now replays too —
+    `ast_hook_member_end` threads the base's non-lvalue bit (VT_NONLVAL) through to replay.
   - ~~bit-field member Store~~ **LANDED 2026-07-08** — the read-modify-write mask/shift
     (`adjust_bf`/`load_packed_bf` in `gv`, the mask/shift in `vstore`) runs inside the
     suppressed `gv`/`vstore`, so bit-field member access + `Store` + arithmetic all replay

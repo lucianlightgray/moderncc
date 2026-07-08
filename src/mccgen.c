@@ -11410,7 +11410,7 @@ static void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
 	 * runs inside the suppressed gv/vstore); struct/long double/_Complex members
 	 * still bail. */
 	int mt_bf_ok = (mtype->t & VT_BITFIELD) && (mtype->t & VT_BTYPE) != VT_STRUCT;
-	if (nonlval || qual || bcheck || (ast_bad_type(mtype->t) && !mt_bf_ok)) {
+	if (qual || bcheck || (ast_bad_type(mtype->t) && !mt_bf_ok)) {
 		ast_desync = 1;
 		return;
 	}
@@ -11424,6 +11424,10 @@ static void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
 						 ast_member_arrow ? AST_OP_MEMBER_ARROW : AST_OP_MEMBER);
 	ast_set_ival(ast_cur, m, (uint64_t)(unsigned)cumofs);
 	ast_set_type(ast_cur, m, mtype->t, (uint64_t)(uintptr_t)mtype->ref);
+	/* Preserve the base's non-lvalue bit (a member of an rvalue struct, e.g. the
+	 * result of a struct-returning call `f().x`): the parser re-ORs it, so replay
+	 * must too. */
+	ast_set_fbits(ast_cur, m, (uint64_t)(unsigned)nonlval);
 	ast_add_child(ast_cur, m, ast_vs[ast_vn - 1]);
 	ast_vs[ast_vn - 1] = m;
 }
@@ -11759,7 +11763,7 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 			mt.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 			vtop->type = mt;
 			if (!(mt.t & VT_ARRAY))
-				vtop->r |= VT_LVAL;
+				vtop->r |= VT_LVAL | (int)ast_fbits(a, n); /* fbits = base_nonlval */
 		} else {
 			inc((int)ast_ival(a, n), uop); /* ++/-- */
 		}
