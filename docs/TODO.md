@@ -15,7 +15,18 @@ only under `MCC_AST_REPLAY`, and the byte-verify net keeps every unmodeled const
 on correct `-O0` fallback — so widening coverage cannot break output correctness,
 only add (or fail to add) replayed functions.
 
-- [~] **Widen replay coverage (§16 Mid).** ≥119/238 exec golden source files replay
+- [~] **Widen replay coverage (§16 Mid).** **All major documented targets landed
+  (2026-07-08):** floats/double, call-result stores, scalar struct member access,
+  struct copy/deref, `switch` dispatch, and named `goto`/labels — plus two latent
+  correctness bugs fixed on the way (vpop call double-emit; float const-pool duplication).
+  Remaining is a **delicate long tail**, each moderate effort with real crash risk (a fatal
+  replay error is not caught by the byte-verify net) or niche: **struct returns (sret ABI)**
+  — the register-return path reallocates a `loc` temp that diverges on replay, and the
+  callee/caller ABI is delicate; **by-value struct args**; **bit-field member `Store`**
+  (shift/mask desugar); **`_Complex`**; **VLA/`alloca`** (needs `StackAlloc` — §4); and the
+  **stored/nested short-circuit** (`int r = a&&b`, `(a&&b)||c`). All fall back correctly
+  today. Baseline below predates this session's widening.
+  ≥119/238 exec golden source files replay
   ≥1 function today. Measured outcome buckets across the exec corpus (per function):
   ~283 replay, ~200 bail (unsupported construct), ~116 desync (mirror lost sync), ~89
   skip (struct/float/aggregate return via `ast_bad_type`), ~67 unfaithful (byte
