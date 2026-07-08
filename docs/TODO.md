@@ -225,11 +225,20 @@ brought up one §17 category at a time.
   `R_386_TLS_GD/LDM` pattern paths (`i386-link.c`) need an i386 cross build +
   32-bit sysroot to exercise (not available in this env). → Add the i386 TLS gate
   under the cross preset when i386 runtime is available.
-- [ ] **ARM inline-asm `long long` operands unimplemented (impl).**
-  `src/arch/arm/arm-asm.c:2465` hard-errors — handle the 64-bit register-pair case.
-- [ ] **arm64 inline assembler errors on unmodeled mnemonics (impl).**
-  `src/arch/arm64/arm64-asm.c:1877` (+ `:1298/:1441/:1651`). → Enumerate the common
-  missing mnemonics; expand the table or document the supported subset.
+- [x] **ARM inline-asm `long long` operands unimplemented (decided 2026-07-07:
+  documented subset).** `src/arch/arm/arm-asm.c` hard-errors on 64-bit GPR-pair
+  operands. mcc's inline assembler is a modelled subset for what C inline `asm`
+  needs, not a full ISA; the boundary is now documented in docs/NOTES.md
+  "Inline-assembler coverage" (use two 32-bit operands / a vmov round-trip for
+  64-bit values). Expand only when a real workload needs it.
+- [x] **arm64 inline assembler errors on unmodeled mnemonics (decided 2026-07-07:
+  supported subset documented).** `src/arch/arm64/arm64-asm.c` models the common
+  subset (add/sub/logical/shift/mul/mov*/mrs·msr/ldr·str·ldp·stp/branches·cbz/
+  adrp/barriers/ret/nop) and hard-errors by exact name on the rest (verified
+  missing: `cmp`/`csel`/`udiv`/`madd`/`fadd`/`neg`/`ldxr`, …). Supported set +
+  notable gaps are documented in docs/NOTES.md "Inline-assembler coverage"; the
+  self-naming error is the pinned boundary. Expand the table when a real inline-asm
+  workload needs a specific mnemonic.
 - [ ] **Resolve/remove the 6 permanently-masked ARM asm encodings (fix).**
   `ARM_KNOWN_FAIL` (tools/mccharness.c) masks `bl r3`, `b r3`, `mov #0xEFFF`,
   `mov #0x0201`, two `vmov.f32` forms. **Byte-level triage (2026-07-07, mcc-arm vs

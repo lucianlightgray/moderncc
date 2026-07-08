@@ -101,6 +101,28 @@ POSIX scheduling interface; `<fenv.h>` has no rounding-control-register access
 on non-x86/arm64 PE arches (only the default rounding mode). Callers targeting
 win32 should not rely on the missing semantics.
 
+**Inline-assembler coverage is a modelled subset, not a full ISA.** mcc's
+integrated inline assembler models the operations real C inline `asm` needs
+(memory barriers, register moves, loads/stores, arithmetic, branches, syscalls),
+not the entire target instruction set — it is not a drop-in for a standalone `as`
+on hand-written assembly. Unmodelled mnemonics hard-error with the exact name
+(`"ARM64 instruction '<m>' not implemented"` / the ARM equivalent), so the
+boundary is self-documenting.
+- **arm64** (`src/arch/arm64/arm64-asm.c`): supported = `add(s)`/`sub(s)`,
+  `and(s)`/`orr`/`eor`, `asr`/`lsl`/`lsr`/`ror`, `mul`, `mov`/`movk`/`movn`/`movz`,
+  `mrs`/`msr`, `ldr(b/h)`/`ldp`/`str(b/h)`/`stp`, `b`/`b.<cond>`/`bl`/`blr`/`br`/
+  `cbz`/`cbnz`, `adrp`, `isb`/`dsb`/`dmb`, `ret`, `nop`. Not modelled (error):
+  comparisons (`cmp`/`cmn`/`tst`), conditional-select (`csel`/`cset`), division
+  (`udiv`/`sdiv`), multiply-add (`madd`/`msub`), FP/SIMD arithmetic
+  (`fadd`/`fmov`/…), negation aliases (`neg`/`mvn`), and atomics (`ldxr`/`stxr`).
+- **arm (32-bit)** (`src/arch/arm/arm-asm.c`): 64-bit (`long long`) inline-asm
+  *operands* are unmodelled — the 64-bit GPR-pair case hard-errors. Use two 32-bit
+  operands, or a `vmov`/memory round-trip, for 64-bit values in ARM inline asm.
+
+Expanding either table toward full ISA coverage is deferred until a real
+inline-asm workload needs a specific missing mnemonic; the error names exactly
+what to add.
+
 **i386 `__fastcall` / `__thiscall` argument ordering.** A register-eligible
 integer argument that follows a stack-spilled argument in a `__fastcall`
 (`ecx`,`edx`) or `__thiscall` (`ecx`) call is an **accepted limitation**: mcc
