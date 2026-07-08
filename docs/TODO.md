@@ -251,8 +251,12 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
     a replay bug", so it kept broken replays (e.g. a corrupted string GOTPCREL reloc in a
     call-ful fn). The two-pass cut call-ful failures 20→11 — but it also **regressed one
     call-free case (`return_struct_in_reg`: struct/float values zeroed)**, so the second replay
-    pass is not yet idempotent (some per-pass state — likely around struct-return `ast_locrec` /
-    float-pool reuse or `loc` — isn't reset between passes; must fix before re-landing). (2)
+    pass is not idempotent for struct-returning functions. Resetting `ind`/`rsym`/body-relocs/
+    `ast_fconst_i`/`ast_locrec_i` **and `loc`/`anon_sym`** between passes was NOT enough (still
+    zeroed) — so the non-idempotent state is elsewhere (candidates: `func_scratch`, the
+    struct-return `gfunc_sret` path, or rodata materialized outside the `ast_fconst`-tracked `gv`
+    path). Pin this down first; the plain-replay column stays 269/0, so it is specific to
+    re-running the promoted replay after a faithful pass 1. (2)
     Remaining call-ful miscompiles at higher register pressure (e.g. 5 pins) — a value corrupts
     (`unary_operators`: an int went 20→0); suspect the odd-count alignment pad or an ABI edge.
     (3) VLA + call-ful must bail (rsp race). The scaffolding (two pools, push/pop, `ast_promo_
