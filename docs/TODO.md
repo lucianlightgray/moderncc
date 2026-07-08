@@ -358,10 +358,20 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
     the result coalesces through a slot typed by the return type, both type-agnostic, so admitting
     `VT_FLOAT`/`VT_DOUBLE` to the param capture was enough (float return already worked). Verified
     `area`/`clampd` (double params+return), corpus + ctest 1769/1769, ASan-clean.
+  - [x] **Non-leaf callees + recursion/cycle guard — LANDED 2026-07-08.** A callee may now itself
+    call other functions: each `Invoke` in a grafted body grafts recursively (a graftable retained
+    callee) or emits a real call (library/non-graftable) — both correct. A simple depth+stack cycle
+    guard (`ast_inline_depth`/`ast_inline_stack`, max 8) stops direct/mutual recursion from
+    inlining forever (the recursive call stays a real call). **Also fixed a latent bug** it exposed:
+    a callee referencing a **string literal / anon rodata const** (captured as a raw Sym pointer
+    that gets recycled after the callee's own gen, dangling by graft time — garbage `printf`
+    formats) is now excluded from grafting. Verified `quad`→`add`, self-recursive `rec`, `withlib`
+    (real `printf` call, excluded); corpus + ctest 1769/1769, ASan-clean.
   - [ ] **Slice 2 breadth.** `goto`/`switch` (shared label/switch replay state); struct-by-value
-    params/return. Then forward-declared / later-defined callees (needs true defer-to-TU), cycle
-    detection via the instance hash, and the `setjmp`/signal/VLA guard queries. Combine inline +
-    promotion in one pass 2. Un-gate the fixture on non-x86_64 once verified there (arch-independent).
+    params/return. Then **forward-declared / later-defined callees (needs true defer-to-TU)** — the
+    common case a caller-before-callee misses today; per-site specialization; the `setjmp`/signal/
+    VLA guard queries; combine inline + promotion in one pass 2. Un-gate the fixture on non-x86_64
+    once verified there (arch-independent). Persist string/rodata Syms to lift that exclusion.
 - [ ] **Long horizon (design only):** the broader template library (algebraic, dead-branch,
   jump-table), the time-budgeted engine (§12/§221), dependency-ordered `-O1` compile, cross-TU
   LTO, `-g` from provenance, hot-reload snapshots, and separate `-O2`/`-O3` (SSA) drivers.

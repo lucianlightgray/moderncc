@@ -38,6 +38,9 @@ static int sgn(int x) {
 /* scalar float params + return: args bind via vstore, the result coalesces through a
  * double-typed result slot. */
 static double area(double w, double h) { return w * h; }
+/* non-leaf callee: its own call to the graftable `add` grafts recursively (guarded
+ * against cycles by the graft stack). */
+static int quad(int x) { return add(x, x) * 2; }
 
 int main(void) {
 	int r = add(3, 4);              /* 7 */
@@ -47,5 +50,6 @@ int main(void) {
 	int c = clamp(99, 0, 5);       /* -> 5 */
 	int g = sgn(-4) + sgn(0) + sgn(9); /* early/tail returns, multi-arg: -1+0+1 = 0 */
 	int d = (int)area(2.5, 4.0);       /* double params + return: 10.0 -> 10 */
-	return r + s + t + u + c + g + d - 30; /* 7+30+13+7+5+0+10 - 30 = 42 */
+	int q = quad(2);                   /* non-leaf: add(2,2)*2 = 8 (add grafts inside) */
+	return r + s + t + u + c + g + d + q - 38; /* 7+30+13+7+5+0+10+8 - 38 = 42 */
 }

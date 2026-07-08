@@ -12163,11 +12163,24 @@ static int ast_fn_inlinable(AstArena *a, Sym *sym) {
 		return 0;
 	for (AstLocal n = 0; n < nn; n++) {
 		uint16_t k = ast_kind(a, n);
-		if (k == AST_Invoke)                      /* leaf only (no nested calls yet) */
-			return 0;
+		/* Non-leaf callees are allowed: each Invoke in the body either grafts recursively
+		 * (a graftable retained callee, guarded against cycles by ast_inline_depth/stack) or
+		 * emits a real call — both correct. VLA frame games are not inlinable. */
 		if (k == AST_Unary &&
 				(ast_op(a, n) == AST_OP_VLA || ast_op(a, n) == AST_OP_VLA_RESTORE))
-			return 0;                             /* VLA frame games are non-inlinable */
+			return 0;
+		/* A reference to an ANONYMOUS symbol-relative constant — a string literal / rodata
+		 * const captured as a raw Sym pointer — is not safely retainable: that Sym can be
+		 * recycled after this callee's own gen, long before a later caller grafts the body,
+		 * leaving a dangling pointer (a named global/function Sym persists, so it is fine).
+		 * Exclude such a callee; its calls fall back to a real call. */
+		if (k == AST_Ref || k == AST_Literal) {
+			int r = ast_op(a, n);
+			void *sp = (void *)(uintptr_t)ast_sym(a, n);
+			if (sp && (r & VT_SYM) && (r & VT_VALMASK) == VT_CONST &&
+					((Sym *)sp)->v >= SYM_FIRST_ANOM)
+				return 0;
+		}
 	}
 	return 1;
 }
@@ -12243,6 +12256,9 @@ static int ast_in_graft;
 static CType ast_graft_rt;
 static int ast_inline_ret_sym;  /* jump chain to the grafted body's inline-end join */
 static int ast_inline_ret_slot; /* frame slot each return stores its value into (phi via memory) */
+#define AST_INLINE_MAX_DEPTH 8
+static void *ast_inline_stack[AST_INLINE_MAX_DEPTH]; /* Syms currently being grafted (cycle guard) */
+static int ast_inline_depth;
 
 /* If node `n` is an AST_Invoke to a graftable retained callee, emit the callee's body in
  * place of the call — bind the args to relocated param slots, then replay `return EXPR`'s
@@ -12262,6 +12278,16 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 		}
 	if (!e || !e->graftable || (int)ast_nchild(a, n) - 1 != e->nparams)
 		return 0;
+	/* Cycle / depth guard for grafting a NON-leaf callee: its body may itself Invoke a
+	 * graftable function (grafted recursively below). Refuse if this callee is already on
+	 * the active graft stack (direct/mutual recursion) or the nesting is too deep — those
+	 * Invokes then emit a real call instead, which is always correct. */
+	if (ast_inline_depth >= AST_INLINE_MAX_DEPTH)
+		return 0;
+	for (int i = 0; i < ast_inline_depth; i++)
+		if (ast_inline_stack[i] == csym)
+			return 0;
+	ast_inline_stack[ast_inline_depth++] = csym;
 	int bias = loc; /* callee offset co -> co + loc, into fresh space below the caller's */
 	loc -= e->frame_size; /* reserve it permanently: gfunc_epilog sizes the frame from loc */
 	for (int i = 0; i < e->nparams; i++) {
@@ -12312,6 +12338,7 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 	ast_inline_ret_sym = save_rsym;
 	ast_inline_ret_slot = save_rslot;
 	ast_graft_rt = save_rt;
+	ast_inline_depth--; /* pop the cycle-guard stack */
 	if (ast_replay_dump)
 		fprintf(stderr, "[ast-inline] grafted %s\n", get_tok_str(((Sym *)csym)->v, NULL));
 	return 1;
