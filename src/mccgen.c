@@ -70,6 +70,7 @@ static int ast_replay_env;  /* MCC_AST_REPLAY requested for this TU           */
 static int ast_replay_dump; /* MCC_AST_REPLAY_DUMP: dump replayed trees        */
 static int ast_templates_env; /* MCC_AST_TEMPLATES: run optimization templates */
 static int ast_promote_env; /* MCC_AST_PROMOTE: Tier-3 register promotion      */
+static int ast_callful_env; /* MCC_AST_CALLFUL: enable (WIP) call-ful promotion */
 static int ast_tmpl_folds;  /* const-fold rewrites performed this function     */
 static AstArena *ast_cur;   /* the function currently being built              */
 static int ast_bail;        /* an unsupported construct was seen              */
@@ -789,6 +790,7 @@ ST_FUNC int mccgen_compile(MCCState *s1) {
 	ast_replay_dump = getenv("MCC_AST_REPLAY_DUMP") != NULL;
 	ast_templates_env = getenv("MCC_AST_TEMPLATES") != NULL;
 	ast_promote_env = getenv("MCC_AST_PROMOTE") != NULL;
+	ast_callful_env = getenv("MCC_AST_CALLFUL") != NULL;
 #endif
 
 	mcc_debug_start(s1);
@@ -12166,8 +12168,10 @@ static int ast_plan_promotion(AstArena *a) {
 	 * the two-pass byte-verify (so unfaithful call-ful functions are excluded), but a
 	 * few faithful call-ful programs still miscompile (register-count/encoding for the
 	 * higher pins + a handful of other ABI edges — docs/TODO.md Tier-3 "broaden"), so it
-	 * is DISABLED for now. Promotion stays call-free (caller-saved R10/R9/R8). */
-	if (has_call)
+	 * is DISABLED by default. Promotion stays call-free (caller-saved R10/R9/R8). The
+	 * `MCC_AST_CALLFUL` env knob enables it for debugging the remaining bugs (still
+	 * opt-in under MCC_AST_PROMOTE). */
+	if (has_call && !ast_callful_env)
 		return 0;
 	/* Collect every distinct local-slot offset with its type and a poison flag.
 	 * An offset is poisoned (never promotable) if ANY reference to it is not a
