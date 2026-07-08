@@ -247,11 +247,19 @@ brought up one §17 category at a time.
   `tests/cst/symref/shadow.c` + `symref-shadow.cmake` (`cst/symref-shadow`), which
   asserts both `x` uses map to one def and fails with a pointer to this item if a
   scope-aware resolver ever splits them.
-- [ ] **CST slice-J macro-invocation v1 imprecisions (validate/decide).**
-  NOTES CST slice J: function-like invocations may drop the trailing `)`, and
-  object-like macros used inside another macro's args stay plain tokens. Round-trip
-  still holds. the CST D4 gap analysis flagged failing tests to decide fix-vs-keep. → Add the
-  fixtures; fix or record as accepted v1 with the test pinning the boundary.
+- [x] **CST slice-J macro-invocation v1 imprecisions (decided 2026-07-07:
+  accepted v1, pinned).** Confirmed both: a function-like invocation's trailing
+  `)` splits into a sibling `Paren` node (the `MacroInvocation` span stops before
+  it), and an object-like macro used inside another macro's args stays a plain
+  token (no nested `MacroInvocation`). The byte-identical round-trip — the
+  load-bearing invariant — still holds in both. **Decision:** accept as the v1
+  boundary (fixing the node shape risks the round-trip for a side-channel tooling
+  aid; a precise expander is slice-J/LSP-era work) rather than reshape the nodes
+  now. Pinned by `tests/cst/macro/macro_nesting.c` + `macro-nesting.cmake`
+  (`cst/macro-nesting`), which asserts the clean round-trip, exactly one
+  `MacroInvocation` (nested object macro unwrapped), and the split trailing-`)`
+  `Paren` — and fails with a pointer to this item if a precise expander changes
+  the shape.
 - [ ] **CST 5B incremental splice + `H_e` epoch hash are designed, not built (impl).**
   NOTES CST §3.1/§10: the invertible epoch hash + tombstone sweep (O(1)-per-level
   incremental rehash for live edits) and the 5B splice are reserved (slot-key field

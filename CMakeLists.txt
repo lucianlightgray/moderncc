@@ -3018,6 +3018,17 @@ if(MCC_BUILD_TESTS)
             -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/macro.cmake")
         set_tests_properties("cst/macro" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
+        # Macro-invocation v1 boundary (slice J): pins the two accepted
+        # imprecisions (trailing ')' split off; object-like macro in args stays a
+        # plain token) while the source still round-trips byte-identically.
+        add_test(NAME "cst/macro-nesting" COMMAND "${CMAKE_COMMAND}"
+            "-DMCC=${_mcc_exe}"
+            "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/macro/macro_nesting.c"
+            "-DOUT=${CMAKE_BINARY_DIR}/cst-macro-nesting.o"
+            "-DIDIR=${_idir}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/macro-nesting.cmake")
+        set_tests_properties("cst/macro-nesting" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
         # Node-kind coverage gates (D4, docs/CST.md): each fixture asserts a set
         # of previously reserved-but-unproduced kinds is now emitted. Registered
         # per slice as the kinds land (D1a expr, D1b decl, D1c pp, D1d comment).
