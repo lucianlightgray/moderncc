@@ -190,9 +190,17 @@ brought up one §17 category at a time.
 - [ ] **ARM far-branch has no veneer — errors past ±32 MB (fix).**
   `src/arch/arm/arm-gen.c:326` `"FIXME: function bigger than 32MB"`. → Emit a
   long-branch trampoline/island, or downgrade to a documented diagnostic (not FIXME).
-- [ ] **i386 fastcall/thiscall: non-register arg before a register arg
-  unsupported (impl).** `src/arch/i386/i386-gen.c:530`. → Handle the
-  spilled-then-register ordering, or document the accepted ABI limitation.
+- [x] **i386 fastcall/thiscall: non-register arg before a register arg
+  unsupported (decided 2026-07-07: accepted limitation, documented).**
+  `src/arch/i386/i386-gen.c` errors when a register-eligible integer arg follows a
+  stack-spilled arg in a `__fastcall`/`__thiscall` call. Decided to document the
+  accepted ABI limitation rather than rework the register assignment (the affected
+  shapes are rare — a large by-value aggregate or over-width value ahead of a
+  small integer in a Microsoft-convention prototype — and a fix can't be validated
+  without an i386 runtime here). The diagnostic is the pinned boundary; see
+  docs/NOTES.md "Platform ABI & runtime notes". The common register-then-stack
+  ordering is fully supported (`i386-fastcall-abi`). Revisit if a real
+  spilled-then-register prototype surfaces.
 - [ ] **Validate the remaining i386 TLS + x86_64 32[S] large-address pattern
   assumptions (validate).** x86_64 GD/LD/IE/LE is now covered by the `tls-models`
   ctest (`tests/tls/`, links gcc/clang objects in all four models, dynamic +

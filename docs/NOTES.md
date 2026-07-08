@@ -101,6 +101,18 @@ POSIX scheduling interface; `<fenv.h>` has no rounding-control-register access
 on non-x86/arm64 PE arches (only the default rounding mode). Callers targeting
 win32 should not rely on the missing semantics.
 
+**i386 `__fastcall` / `__thiscall` argument ordering.** A register-eligible
+integer argument that follows a stack-spilled argument in a `__fastcall`
+(`ecx`,`edx`) or `__thiscall` (`ecx`) call is an **accepted limitation**: mcc
+errors "fastcall with a non-register argument before an integer register argument
+is not supported" (`src/arch/i386/i386-gen.c`) rather than assigning the trailing
+register slot out of order. In practice the affected shapes are rare (a large
+by-value aggregate or an over-`ecx`/`edx`-width value ahead of a small integer in
+a Microsoft-convention prototype); the diagnostic is the pinned boundary. The
+straight-ahead register-then-stack ordering — the overwhelmingly common case — is
+fully supported (`i386-fastcall-abi` test, i386 cross target). Revisit only if a
+real prototype with the spilled-then-register ordering surfaces.
+
 ## Build status
 
 **Linux status (2026-07-07, gcc 15.3.0 / clang 22.1.8):** every Linux preset is
