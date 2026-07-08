@@ -310,12 +310,28 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
     XMM6/7; `float` and `double`; call-ful correctly excludes floats. Corpus green, ctest 1768/1768.
   - [ ] share one spill slot across disjoint live ranges (needs a real backward-liveness pass);
     other arches (GP/XMM pools are x86_64-specific).
-- [ ] **Tier 4 — virtual always-inline over the shared store (the minimize-invoke payoff).**
+- [~] **Tier 4 — virtual always-inline over the shared store (the minimize-invoke payoff).**
   Inline internal calls instead of emitting a boundary `Call`, using the CST's content-
   addressed store/binding/render engine (docs/AST.md §9). Cycle detection via the instance
   hash; guard queries (`setjmp`/signal/VLA regions → non-inlinable-across, §18.4). Requires
   defer-to-TU (§13) and store factoring (the first virtual-inline render is the validated
   second user of the shared engine).
+  - [x] **Slice 1 — candidate analysis + AST retention (LANDED 2026-07-08).** Opt-in
+    `MCC_AST_INLINE`. `ast_fn_inlinable` classifies a captured body as a virtual-inline
+    candidate — internal (static) linkage, non-variadic/non-K&R, leaf (no `AST_Invoke`),
+    VLA-free, ≤ `AST_INLINE_NODE_BUDGET` nodes — and `ast_inline_retain` keeps its AST
+    (keyed by its function Sym) instead of freeing it, so a later caller can look it up
+    (`ast_inline_lookup`). Passive: no codegen change, so `-O0`/replay are byte-untouched
+    (ctest 1768/1768); `MCC_AST_REPLAY_DUMP` prints `[ast-inline] candidate <fn>`. This is
+    the within-TU inline closure held in memory — defer-to-TU (§13) without deferring the
+    whole TU, since a callee defined before its caller is already retained at the call site.
+  - [ ] **Slice 2 — the grafting engine.** At a caller's `AST_Invoke` to a retained callee,
+    replay the callee body in place of the call: relocate its frame (bias every `VT_LOCAL`
+    offset into fresh caller stack space, `loc -= callee_frame`), bind actual args to the
+    (biased) param slots, scope its control-flow labels, and lower each `Return` to
+    `assign-result + jump-to-inline-end`. Gate on exec-golden (inlined bytes diverge from
+    `-O0`, like promotion). Then forward-declared / later-defined callees (needs true
+    defer-to-TU), then cycle detection via the instance hash, then the guard queries.
 - [ ] **Long horizon (design only):** the broader template library (algebraic, dead-branch,
   jump-table), the time-budgeted engine (§12/§221), dependency-ordered `-O1` compile, cross-TU
   LTO, `-g` from provenance, hot-reload snapshots, and separate `-O2`/`-O3` (SSA) drivers.

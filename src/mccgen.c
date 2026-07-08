@@ -71,6 +71,7 @@ static int ast_replay_dump; /* MCC_AST_REPLAY_DUMP: dump replayed trees        *
 static int ast_templates_env; /* MCC_AST_TEMPLATES: run optimization templates */
 static int ast_promote_env; /* MCC_AST_PROMOTE: Tier-3 register promotion      */
 static int ast_no_callful_env; /* MCC_AST_NO_CALLFUL: force call-free promotion only */
+static int ast_inline_env; /* MCC_AST_INLINE: Tier-4 virtual always-inline (analysis) */
 static int ast_tmpl_folds;  /* const-fold rewrites performed this function     */
 static AstArena *ast_cur;   /* the function currently being built              */
 static int ast_bail;        /* an unsupported construct was seen              */
@@ -791,6 +792,7 @@ ST_FUNC int mccgen_compile(MCCState *s1) {
 	ast_templates_env = getenv("MCC_AST_TEMPLATES") != NULL;
 	ast_promote_env = getenv("MCC_AST_PROMOTE") != NULL;
 	ast_no_callful_env = getenv("MCC_AST_NO_CALLFUL") != NULL;
+	ast_inline_env = getenv("MCC_AST_INLINE") != NULL;
 #endif
 
 	mcc_debug_start(s1);
@@ -12103,6 +12105,66 @@ static int ast_promo_n;
 static int ast_promo_callful; /* uses callee-saved regs → needs push/pop save/restore */
 static int ast_promo_regpool_at(int i) { return ast_promo_reg[i]; }
 
+/* ---- Tier-4 virtual always-inline: candidate analysis + retention (docs/AST.md §9/§13) ----
+ * A function whose captured body is small, leaf (calls nothing), non-variadic, VLA-free,
+ * and has internal (static) linkage is a virtual-inline candidate: its AST is retained
+ * (keyed by its Sym) instead of freed, so a later caller in the same TU can graft it in
+ * place of a boundary Call. This first slice only ANALYZES and RETAINS; the grafting engine
+ * (frame relocation, argument binding, return lowering) is a subsequent slice. Opt-in via
+ * MCC_AST_INLINE; retention is passive (no codegen change), so -O0 and the replay column
+ * are untouched. */
+#define AST_INLINE_MAX 512
+#define AST_INLINE_NODE_BUDGET 64
+static struct AstInlineFn {
+	void *sym;     /* the callee's function Sym (persistent global-stack sym) */
+	AstArena *ast; /* its retained body AST */
+} ast_inline_pool[AST_INLINE_MAX];
+static int ast_inline_n;
+
+/* Look up a retained inline candidate by its function Sym; NULL if none. */
+static AstArena *ast_inline_lookup(void *sym) {
+	for (int i = 0; i < ast_inline_n; i++)
+		if (ast_inline_pool[i].sym == sym)
+			return ast_inline_pool[i].ast;
+	return NULL;
+}
+
+/* Is the captured body of `sym` a virtual-inline candidate (see the block comment)? */
+static int ast_fn_inlinable(AstArena *a, Sym *sym) {
+	if (!ast_inline_env || ast_bail || ast_desync)
+		return 0;
+	if (!(sym->type.t & VT_STATIC))               /* internal linkage only */
+		return 0;
+	if (sym->type.ref->f.func_type != FUNC_NEW)   /* skip K&R-old and variadic */
+		return 0;
+	AstLocal nn = ast_count(a);
+	if (nn == 0 || nn > AST_INLINE_NODE_BUDGET)
+		return 0;
+	for (AstLocal n = 0; n < nn; n++) {
+		uint16_t k = ast_kind(a, n);
+		if (k == AST_Invoke)                      /* leaf only (no nested calls yet) */
+			return 0;
+		if (k == AST_Unary &&
+				(ast_op(a, n) == AST_OP_VLA || ast_op(a, n) == AST_OP_VLA_RESTORE))
+			return 0;                             /* VLA frame games are non-inlinable */
+	}
+	return 1;
+}
+
+/* Retain the inlinable body keyed by its Sym; 1 if retained (caller must NOT free it). */
+static int ast_inline_retain(AstArena *a, Sym *sym) {
+	if (!ast_fn_inlinable(a, sym) || ast_inline_n >= AST_INLINE_MAX ||
+			ast_inline_lookup(sym))
+		return 0;
+	ast_inline_pool[ast_inline_n].sym = sym;
+	ast_inline_pool[ast_inline_n].ast = a;
+	ast_inline_n++;
+	if (ast_replay_dump)
+		fprintf(stderr, "[ast-inline] candidate %s (%d nodes)\n",
+						get_tok_str(sym->v, NULL), (int)ast_count(a));
+	return 1;
+}
+
 /* -1 if node n is not a promoted local's Ref, else its pinned register. */
 static int ast_promo_reg_of(AstArena *a, AstLocal n) {
 	if (n == AST_NONE || ast_kind(a, n) != AST_Ref)
@@ -13270,7 +13332,8 @@ static void gen_function(Sym *sym) {
 			mcc_free(orig);
 			mcc_free(orig_rel);
 		}
-		ast_arena_free(ast_cur);
+		if (!ast_inline_retain(ast_cur, sym)) /* Tier-4: retain inline candidates */
+			ast_arena_free(ast_cur);
 		ast_cur = NULL;
 	}
 #else
