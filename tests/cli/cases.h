@@ -1705,7 +1705,7 @@ static const cli_case_t cli_cases[] = {
 		   lands past +2 GB must be rejected. Force a >2 GB layout with two ~1.5 GB
 		   .bss arrays (.bss is NOBITS, so this is a cheap address-arithmetic check,
 		   not a real allocation) and reference b's tail via an absolute movl. */
-		{"x86_64_reloc_32s_range", "cpu=x86_64,os=linux",
+		{"x86_64_reloc_32s_range", "cpu=x86_64,os=linux,asm",
 		 "printf '%s\\n' 'char a[1500000000];' 'char b[1500000000];' 'int main(void){int r;__asm__ volatile(\"movl $b+1499999000, %0\":\"=r\"(r));return r?0:1;}' > {W}/r32s.c && "
 		 "{MCC} -no-pie {W}/r32s.c -o {W}/r32s 2>&1 | grep -oE \"relocation .R_X86_64_32.* out of range\"",
 		 "relocation 'R_X86_64_32[S]' out of range\n"},
