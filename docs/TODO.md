@@ -15,16 +15,24 @@ only under `MCC_AST_REPLAY`, and the byte-verify net keeps every unmodeled const
 on correct `-O0` fallback — so widening coverage cannot break output correctness,
 only add (or fail to add) replayed functions.
 
-- [~] **Widen replay coverage (§16 Mid).** **This session (2026-07-08) landed 11 milestones**
-  covering every major target and most of the tail: floats/double, call-result stores, scalar
-  struct member access (`.`/`->`), struct copy/deref, `switch` dispatch, named `goto`/labels,
-  **struct-return callees** (`return s`), **by-value struct args** (`f(s)`), **bit-field member
-  access**, **struct-return callers** (`struct r=f()`, register-return), and **`f().x`** (member
-  of an rvalue struct) — plus two latent correctness bugs fixed on the way (vpop call
-  double-emit; float const-pool duplication) and a switch-replay segfault guarded. Fixtures:
-  `ast/replay-{float_ops,call_store,struct_member,struct_copy,switch_dispatch,goto_dispatch,struct_return,struct_byval_arg,bitfield,struct_ret_caller}`.
-  **Remaining long tail** — four genuinely large/niche items, each needing dedicated
-  infrastructure or elaborate reproduction (all fall back correctly today, no crashes):
+- [~] **Widen replay coverage (§16 Mid).** **This session (2026-07-08) landed 17 milestones**
+  covering every major target and nearly the whole tail: floats/double, call-result stores,
+  scalar struct member access (`.`/`->`), struct copy/deref, `switch` dispatch, named
+  `goto`/labels, struct-return callees (`return s`), by-value struct args (`f(s)`), bit-field
+  member access, struct-return callers **all ABI forms** (register-return, sret hidden-pointer,
+  arch-transfer), `f().x` (member of an rvalue struct), **`_Complex` arithmetic +
+  `__real__`/`__imag__` + casts**, and **short-circuit results used as values** (`int r=a&&b`,
+  `(a&&b)+1`) — plus two latent correctness bugs fixed (vpop call double-emit; float const-pool
+  duplication) and a switch-replay segfault guarded. Key enabler: an **ordinal frame-slot table**
+  (`ast_alloc_loc`/`ast_locrec`, the `ast_fconst` pattern) wrapping the struct-result and
+  complex temps so replay reserves the same offsets — `-O0` stays byte-identical (the record is
+  passive). Fixtures under `ast/replay-*` (16 REPLAYED + fallback + template gates).
+  **Remaining** (all fall back correctly today, no crashes): **VLA/`alloca`** — the one large
+  item, needs the machine-tier `StackAlloc`/`StackSave`/`StackRestore` subsystem with
+  scope-aware SP save/restore (docs/AST.md §4); plus three niche cases — **`_Complex`
+  construction** (`re + im*I`, the imaginary-unit `I` const), **nested short-circuit operands**
+  (`(a&&b)||c`, needs nested landor chains), and **variadic struct returns**. Detail per item
+  below:
   - ~~struct-return callers~~ **LANDED 2026-07-08** (register-return form) — `struct r = f()`
     replays. The post-call register→temp reconstruction is reproduced in the Invoke replay,
     and the result temp uses an ordinal frame-slot table (`ast_alloc_loc`/`ast_locrec`, the
