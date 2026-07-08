@@ -151,6 +151,7 @@ static int ast_alloc_loc(int size, int align) {
 static int ast_member_cap;   /* this member access is being captured (top-level)   */
 static int ast_member_arrow; /* saved is_arrow for the pending member access       */
 static int ast_imag_cap;     /* an imaginary-literal construction is being captured */
+static int ast_bcplx_cap;    /* a `__builtin_complex` const is being captured        */
 
 /* switch capture/replay (docs/AST.md §5 switch cascade). A switch is an If node
  * with op==6: child0 = the controlling value, child1 = the body BB. `case`/
@@ -230,6 +231,8 @@ static void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
 															 int bcheck);
 static void ast_hook_imag_begin(void);
 static void ast_hook_imag_end(int t);
+static void ast_hook_builtin_complex_begin(void);
+static void ast_hook_builtin_complex_end(void);
 static int ast_bad_type(int tt);
 static void ast_hook_ternary_begin(int c, int g);
 static void ast_hook_ternary_branch(int which);
@@ -2047,6 +2050,40 @@ static int adjust_bf(SValue *sv, int bit_pos, int bit_size) {
 	return t;
 }
 
+#if defined(CONFIG_AST) && CONFIG_AST
+/* Body-emitted rodata constants (scalar float/double const pools, `_Complex`
+ * const-folds/casts) are materialized fresh on every emit pass. Discard/replay
+ * only rewinds text + text relocations, so replay's fresh materialization gets a
+ * NEW anon symbol and the relocation *content* diverges from the parse-build even
+ * though the value is identical (docs/AST.md §18.3). Record each const's ELF
+ * symbol index (`sym->c`) at build and reuse it ordinally at replay: reference the
+ * same ELF symbol so the relocation is byte-identical, and skip re-materializing
+ * the rodata (it persists). `-O0` and the parse-build are unaffected — recording is
+ * passive; reuse fires only under ast_replaying. */
+static int ast_fconst_reuse(void) {
+	if (ast_replaying && ast_fconst_i < ast_fconst_n)
+		return ast_fconst[ast_fconst_i++];
+	return 0;
+}
+static void ast_fconst_record(int c) {
+	if (!ast_active || ast_replaying)
+		return;
+	if (ast_fconst_n == ast_fconst_cap) {
+		ast_fconst_cap = ast_fconst_cap ? ast_fconst_cap * 2 : 16;
+		ast_fconst = mcc_realloc(ast_fconst, ast_fconst_cap * sizeof *ast_fconst);
+	}
+	ast_fconst[ast_fconst_n++] = c;
+}
+/* Push an lvalue reference to the rodata constant whose ELF symbol index is `fc`
+ * (recorded at build). No section_add / init_putv — the rodata persists. */
+static void ast_fconst_push_ref(CType *type, int fc) {
+	Sym *fs = sym_push(anon_sym++, type, VT_CONST | VT_SYM, fc);
+	fs->type.t |= VT_STATIC;
+	vpushsym(type, fs);
+	vtop->r |= VT_LVAL;
+}
+#endif
+
 ST_FUNC int gv(int rc) {
 	int r, r2, r_ok, r2_ok, rc2, bt;
 	int bit_pos, bit_size, size, align;
@@ -2094,33 +2131,20 @@ ST_FUNC int gv(int rc) {
 			if (NODATA_WANTED)
 				size = 0, align = 1;
 #if defined(CONFIG_AST) && CONFIG_AST
-			int fc = 0;
-			if (ast_replaying && ast_fconst_i < ast_fconst_n)
-				fc = ast_fconst[ast_fconst_i++];
+			int fc = ast_fconst_reuse();
 			if (fc) {
 				/* Reuse the rodata constant the parse-build already materialized:
 				 * reference the same symbol so the relocation is byte-identical (no
 				 * duplicate pool entry, no fresh anon_sym). */
-				Sym *fs = sym_push(anon_sym++, &ltype, VT_CONST | VT_SYM, fc);
-				fs->type.t |= VT_STATIC;
-				vpop();                     /* drop the immediate const */
-				vpushsym(&ltype, fs);       /* memory ref to the recorded slot */
-				vtop->r |= VT_LVAL;
+				vpop();                       /* drop the immediate const */
+				ast_fconst_push_ref(&ltype, fc);
 			} else
 #endif
 			{
 				offset = section_add(p.sec, size, align);
 				vpush_ref(&ltype, p.sec, offset, size);
 #if defined(CONFIG_AST) && CONFIG_AST
-				if (ast_active && !ast_replaying) {
-					/* record this const-pool symbol for ordinal replay reuse */
-					if (ast_fconst_n == ast_fconst_cap) {
-						ast_fconst_cap = ast_fconst_cap ? ast_fconst_cap * 2 : 16;
-						ast_fconst = mcc_realloc(ast_fconst,
-								ast_fconst_cap * sizeof *ast_fconst);
-					}
-					ast_fconst[ast_fconst_n++] = vtop->sym->c;
-				}
+				ast_fconst_record(vtop->sym->c); /* record for ordinal replay reuse */
 #endif
 				vswap();
 				init_putv(&p, &vtop->type, offset);
@@ -5344,14 +5368,28 @@ static void gen_complex_cast(CType *dt) {
 					csz = 0;
 					cal = 1;
 				}
-				offset = section_add(pp.sec, csz, cal);
-				cplx_push_cst(&re, &dbase);
-				init_putv(&pp, &dbase, offset);
-				cplx_push_cst(&im, &dbase);
-				init_putv(&pp, &dbase, offset + bsz);
-				vtop--;
-				vpush_ref(dt, pp.sec, offset, csz);
-				vtop->r |= VT_LVAL;
+#if defined(CONFIG_AST) && CONFIG_AST
+				int fc = ast_fconst_reuse();
+				if (fc) {
+					/* Reuse the rodata _Complex const the parse-build materialized so
+					 * replay's relocation is byte-identical (docs/AST.md §18.3). */
+					vtop--; /* drop the source const (matches the vpush_ref path below) */
+					ast_fconst_push_ref(dt, fc);
+				} else
+#endif
+				{
+					offset = section_add(pp.sec, csz, cal);
+					cplx_push_cst(&re, &dbase);
+					init_putv(&pp, &dbase, offset);
+					cplx_push_cst(&im, &dbase);
+					init_putv(&pp, &dbase, offset + bsz);
+					vtop--;
+					vpush_ref(dt, pp.sec, offset, csz);
+					vtop->r |= VT_LVAL;
+#if defined(CONFIG_AST) && CONFIG_AST
+					ast_fconst_record(vtop->sym->c);
+#endif
+				}
 			} else {
 				vtop--;
 				cplx_push_cst(&re, dt);
@@ -7224,6 +7262,9 @@ tok_next:
 		CType cbase, ccplx;
 		SValue r;
 		next();
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_builtin_complex_begin();
+#endif
 		skip('(');
 		expr_eq();
 		skip(',');
@@ -7259,6 +7300,9 @@ tok_next:
 			cplx_store_part(&r, 0);
 			vpushv(&r);
 		}
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_builtin_complex_end();
+#endif
 	} break;
 	case TOK_builtin_constant_p:
 		parse_builtin_params(1, "e");
@@ -11559,6 +11603,60 @@ static void ast_hook_imag_end(int t) {
 	ast_set_ival(ast_cur, m, (uint64_t)(unsigned)t);
 	ast_add_child(ast_cur, m, ast_vs[ast_vn - 1]);
 	ast_vs[ast_vn - 1] = m;
+}
+
+/* `__builtin_complex(re, im)` — the `_Complex_I`/`I` unit and any const pair. The
+ * constant form materializes a _Complex value into rodata and pushes it as an
+ * lvalue reference (VT_CONST|VT_SYM); the two scalar-const arg pushes and the
+ * init_putv/section_add in between would desync the mirror (they push captured
+ * leaves the operation then consumes without notifying it). Suppress the whole
+ * construction (ast_in_op) and capture the rodata-const *result* as a single Ref
+ * leaf — the anon Sym persists across discard/replay, so replay re-pushing it
+ * re-creates the same reference/relocation (the ast_fconst rodata-reuse idea, but
+ * the Sym itself is stable so no ordinal table is needed). The non-const cplx_local
+ * form (a frame temp) is rarer and desyncs. (docs/AST.md §18.3 _Complex construction) */
+static void ast_hook_builtin_complex_begin(void) {
+	ast_bcplx_cap = 0;
+	if (!ast_active)
+		return;
+	if (ast_capture && !ast_desync && !ast_in_op && !ast_in_call) {
+		int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+		if (ast_vn == rel)
+			ast_bcplx_cap = 1;
+		else
+			ast_desync = 1;
+	}
+	ast_in_op++; /* suppress the arg pushes + rodata materialization */
+}
+
+static void ast_hook_builtin_complex_end(void) {
+	if (!ast_active)
+		return;
+	if (ast_in_op > 0)
+		ast_in_op--;
+	if (!ast_bcplx_cap)
+		return;
+	ast_bcplx_cap = 0;
+	if (ast_desync)
+		return;
+	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+	if (ast_vn != rel - 1 || rel > AST_VS_MAX) {
+		ast_desync = 1;
+		return;
+	}
+	/* Only the rodata-const form is reconstructable: a VT_CONST|VT_SYM lvalue whose
+	 * Sym persists. The non-const cplx_local (VT_LOCAL frame temp) form desyncs. */
+	int r = vtop->r;
+	if (!((r & VT_VALMASK) == VT_CONST && (r & VT_SYM) && (r & VT_LVAL))) {
+		ast_desync = 1;
+		return;
+	}
+	AstLocal n = ast_node(ast_cur, AST_Ref);
+	ast_set_op(ast_cur, n, r);
+	ast_set_type(ast_cur, n, vtop->type.t, (uint64_t)(uintptr_t)vtop->type.ref);
+	ast_set_ival(ast_cur, n, (uint64_t)vtop->c.i);
+	ast_set_sym(ast_cur, n, (uint64_t)(uintptr_t)vtop->sym);
+	ast_vs[ast_vn++] = n;
 }
 
 /* Call boundary. Before gfunc_call the mirror holds [callee, arg0..arg_{n-1}];

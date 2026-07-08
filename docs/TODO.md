@@ -50,14 +50,22 @@ the minimize-invoke payoff. **No item on the list is a new machine op.**
   **VLA/`alloca`** — the `StackAlloc`/`StackSave`/`StackRestore` ops exist (`-O0` emits
   them); the driver lacks the **lexical-scope-edge query** that says *where* to emit the
   paired save/restore for correct LIFO unwind (the scope nesting is in the CST/AST — a
-  local walk; docs/AST.md §4/§18.3). Plus two niche query gaps — **`_Complex`
-  construction** (`re + im*I`, the imaginary-unit `I` const materialized as two unsuppressed
-  float pushes — the imaginary-*literal* form `r + 2.0i` now replays via a coarse
-  `Unary(AST_OP_IMAG)` node, fixture `ast/replay-complex_imag`; only the `__builtin_complex`-based
-  `I` unit remains — capturing its rodata-const result as a Ref leaf link-errored
-  (unresolved anon symbol), so it needs the **rodata-const-symbol-reuse query**, the same
-  ordinal-symbol-reuse pattern `ast_fconst` uses for float const pools, not a plain leaf
-  capture).
+  local walk; docs/AST.md §4/§18.3).
+  **`_Complex` construction `re + im*I` LANDED 2026-07-08.** The imaginary-*literal* form
+  `r + 2.0i` already replayed via a coarse `Unary(AST_OP_IMAG)` node (fixture
+  `ast/replay-complex_imag`); the `__builtin_complex`-based `I` unit now replays too
+  (fixture `ast/replay-complex_ctor`). Two mechanisms: (1) `ast_hook_builtin_complex_begin/
+  end` bracket `__builtin_complex(re,im)` — the two scalar-const arg pushes + the
+  init_putv/section_add would desync the mirror, so they are suppressed (`ast_in_op`) and the
+  rodata-const *result* is captured as a single Ref leaf (its anon Sym persists across
+  discard/replay, so re-pushing it re-creates the same reference — no ordinal table needed).
+  (2) The float→double `_Complex` **widening cast** (`gen_complex_cast`, const path) and the
+  scalar float pool now share one **ordinal rodata-symbol-reuse** helper trio
+  (`ast_fconst_reuse`/`_record`/`_push_ref`, generalized from the inline `gv` float-pool
+  code): the cast materializes a fresh rodata const on every emit pass, so replay recorded
+  the build-time ELF symbol index and reuses it, keeping the relocation byte-identical. The
+  earlier "link-errored (unresolved anon symbol)" note was the pre-generalization diagnosis;
+  the reuse mechanism resolves it.
   **Nested short-circuit operands LANDED 2026-07-08** (`(a&&b)||c`): the inner
   Binary(&&/||) is already a captured node, so the outer chain just accepts it as a child
   and replay's `AST_Binary` case recurses (the inner short-circuit renders its own gvtst

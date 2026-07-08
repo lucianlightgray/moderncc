@@ -3029,6 +3029,18 @@ if(MCC_BUILD_TESTS)
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
             set_tests_properties("ast/replay-complex_imag" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
+            # _Complex construction from the imaginary unit I (`re + im*I`): the
+            # __builtin_complex rodata const is captured as a Ref leaf, and the
+            # float->double _Complex widening cast's rodata const is reused ordinally
+            # so replay's relocation is byte-identical (docs/AST.md §18.3). REPLAYED=mk.
+            add_test(NAME "ast/replay-complex_ctor" COMMAND "${CMAKE_COMMAND}"
+                "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
+                "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/complex_ctor.c"
+                "-DOUT=${CMAKE_BINARY_DIR}/ast-replay"
+                "-DEXPECT_RC=42" "-DREPLAYED=mk"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
+            set_tests_properties("ast/replay-complex_ctor" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
             # A7 first template = const-fold (docs/AST.md §12/§15/§17-D-d). The
             # per-template differential test: the fixture is compiled with the
             # const-fold template on and must (a) exit the same as -O0 (input ==
