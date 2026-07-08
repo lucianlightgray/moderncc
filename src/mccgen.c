@@ -12092,9 +12092,17 @@ static int decl(int l) {
 						mcc_error("parameter '%s' has incomplete type",
 											get_tok_str(sa->v & ~SYM_FIELD, NULL));
 					if (sym->type.ref->f.func_type == FUNC_OLD) {
-						if (sa->type.t & VT_EXTERN)
-							mcc_warning_c(warn_implicit_int)("type of '%s' defaults to 'int'",
-																							 get_tok_str(sa->v & ~SYM_FIELD, NULL));
+						if (sa->type.t & VT_EXTERN) {
+							/* §6.9.1p6 / §6.7.2p2: an identifier-list parameter with no
+							   matching declaration defaulting to 'int' is a constraint
+							   violation in C99+ (implicit int was removed); C89 allowed it. */
+							if (mcc_state->cversion >= 199901)
+								mcc_error_noabort("type of '%s' defaults to 'int' (implicit int removed in C99)",
+																	get_tok_str(sa->v & ~SYM_FIELD, NULL));
+							else
+								mcc_warning_c(warn_implicit_int)("type of '%s' defaults to 'int'",
+																								 get_tok_str(sa->v & ~SYM_FIELD, NULL));
+						}
 						if (sa->type.t == VT_FLOAT)
 							sa->type.t = VT_DOUBLE;
 					}

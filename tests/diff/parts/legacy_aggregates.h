@@ -208,15 +208,18 @@ void compound_literal_test(void) {
 
 #if __MCC__
 
-kr_func1(a, b) {
+/* K&R identifier-list definitions with explicit parameter declarations:
+   still exercises the FUNC_OLD parser path, but conforming under C99+
+   (implicit-int params were removed in C99). */
+int kr_func1(a, b) int a, b; {
 	return a + b;
 }
 
-int kr_func2(a, b) {
+int kr_func2(a, b) int a, b; {
 	return a + b;
 }
 
-kr_test() {
+int kr_test(void) {
 	printf("func1=%d\n", kr_func1(3, 4));
 	printf("func2=%d\n", kr_func2(3, 4));
 	return 0;

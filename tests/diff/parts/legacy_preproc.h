@@ -164,11 +164,13 @@ void recursive_macro_test(void) {
 }
 
 #if __MCC__
-int op(a, b) {
+/* K&R identifier-list definitions with explicit parameter declarations
+   (implicit-int params were removed in C99; this form stays conforming). */
+int op(a, b) int a, b; {
 	return a / b;
 }
 
-int ret(a) {
+int ret(a) int a; {
 	if (a == 2)
 		return 1;
 	if (a == 3)

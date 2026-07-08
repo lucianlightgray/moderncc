@@ -287,11 +287,6 @@ runtime cases go in `tests/exec/features_c99_c11/`, diagnostics/negatives in
   unresolved (and that adding `extern` makes it resolve). _Ref:_ gcc
   `gcc.dg/inline-20.c` (C99 `-fno-gnu89-inline` emission, `scan-assembler`),
   `gcc.dg/inline-15.c`, `gcc.dg/inline-19.c`.
-- [ ] **§6.9.1p6 — K&R identifier-list params default to `int` with only a warning
-  (fix+test).** `int g(x){return x;}` compiles in mcc (rc 0); gcc `-std=c11` and
-  clang reject (C99 removed implicit int). Promote to a default-mode error; add a
-  reject test. _Ref:_ gcc `gcc.dg/c99-impl-int-1.c`, `c99-impl-int-2.c`,
-  `c11-old-style-definition-1.c`, `c11-unproto-1.c`.
 - [ ] **§7.26.1 — bundled `<threads.h>` shadows the system header (fix).** mcc's
   `include/threads.h` resolves ahead of glibc's (`-M` confirms), the root of the
   `c11_threads` divergence. Fix header-search precedence / align the shim. _No direct

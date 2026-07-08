@@ -1643,6 +1643,19 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -c {W}/nr.c -o {W}/nr.o 2>&1 | "
 		 "grep -oE \"function declared .noreturn. has a .return. statement\"",
 		 "function declared 'noreturn' has a 'return' statement\n"},
+		/* §6.9.1p6 / §6.7.2p2: a K&R identifier-list parameter defaulting to
+		   'int' is a constraint violation in C99+ (rejected), but was valid in
+		   C89 (warned). The pair pins that boundary. */
+		{"c99_kr_implicit_int", "",
+		 "printf 'int g(x){return x;}\\n' > {W}/kri.c && "
+		 "{MCC} -c {W}/kri.c -o {W}/kri.o 2>&1 | "
+		 "grep -oE \"type of .x. defaults to .int. .implicit int removed in C99.\"",
+		 "type of 'x' defaults to 'int' (implicit int removed in C99)\n"},
+		{"c89_kr_implicit_int_ok", "",
+		 "printf 'int g(x){return x;}\\nint main(void){return g(0);}\\n' > {W}/kro.c && "
+		 "{MCC} -std=c89 -c {W}/kro.c -o {W}/kro.o 2>&1 | "
+		 "grep -oE \"type of .x. defaults to .int.$\"",
+		 "type of 'x' defaults to 'int'\n"},
 
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases) / sizeof(cli_cases[0]));
