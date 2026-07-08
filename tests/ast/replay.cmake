@@ -10,6 +10,10 @@ if(NOT MCC OR NOT SRC OR NOT OUT)
     message(FATAL_ERROR "usage: -DMCC= -DSRC= -DOUT= -DEXPECT_RC= [-DREPLAYED=] -P replay.cmake")
 endif()
 
+# mcc won't create the output file's parent dir; on a fresh build tree OUT
+# does not exist yet, so ensure it before the first compile writes into it.
+file(MAKE_DIRECTORY "${OUT}")
+
 get_filename_component(_name "${SRC}" NAME_WE)
 set(_o0 "${OUT}/${_name}.O0")
 set(_r1 "${OUT}/${_name}.R1")
