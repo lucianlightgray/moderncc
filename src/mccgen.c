@@ -69,6 +69,7 @@ int ast_active;             /* build hooks fire (a function build is running) */
 static int ast_replay_env;  /* MCC_AST_REPLAY requested for this TU           */
 static int ast_replay_dump; /* MCC_AST_REPLAY_DUMP: dump replayed trees        */
 static int ast_templates_env; /* MCC_AST_TEMPLATES: run optimization templates */
+static int ast_promote_env; /* MCC_AST_PROMOTE: Tier-3 register promotion      */
 static int ast_tmpl_folds;  /* const-fold rewrites performed this function     */
 static AstArena *ast_cur;   /* the function currently being built              */
 static int ast_bail;        /* an unsupported construct was seen              */
@@ -125,6 +126,12 @@ static int ast_replaying;   /* the replay walker is driving gv (reuse, don't add
  * order and replay reuses them ordinally (the ast_fconst pattern). */
 static int *ast_locrec;
 static int ast_locrec_n, ast_locrec_cap, ast_locrec_i;
+
+/* Tier-3 register promotion (docs/AST.md §4/§10/§18.2 Tier 3). `ast_pinned_regs` is
+ * a bitmask of physical registers reserved to hold promoted address-not-taken locals
+ * for the whole (call-free) function; get_reg/get_reg_ex skip them so no temporary
+ * clobbers a live promoted value. 0 outside promoted replay → no behavior change. */
+static unsigned ast_pinned_regs;
 
 /* Allocate an anonymous frame slot, recording (build) / reusing (replay) its
  * offset. Outside a replay-candidate build this is exactly `loc=(loc-size)&-align`,
@@ -777,6 +784,7 @@ ST_FUNC int mccgen_compile(MCCState *s1) {
 	ast_replay_env = getenv("MCC_AST_REPLAY") != NULL;
 	ast_replay_dump = getenv("MCC_AST_REPLAY_DUMP") != NULL;
 	ast_templates_env = getenv("MCC_AST_TEMPLATES") != NULL;
+	ast_promote_env = getenv("MCC_AST_PROMOTE") != NULL;
 #endif
 
 	mcc_debug_start(s1);
@@ -1728,6 +1736,10 @@ ST_FUNC int get_reg_ex(int rc, int rc2) {
 
 	for (r = 0; r < NB_REGS; r++) {
 		if (reg_classes[r] & rc2) {
+#if defined(CONFIG_AST) && CONFIG_AST
+			if (ast_pinned_regs & (1u << r))
+				continue; /* reserved for a promoted local (Tier 3) */
+#endif
 			int n;
 			n = 0;
 			for (p = vstack; p <= vtop; p++) {
@@ -1749,6 +1761,10 @@ ST_FUNC int get_reg(int rc) {
 
 	for (r = 0; r < NB_REGS; r++) {
 		if (reg_classes[r] & rc) {
+#if defined(CONFIG_AST) && CONFIG_AST
+			if (ast_pinned_regs & (1u << r))
+				continue; /* reserved for a promoted local (Tier 3) */
+#endif
 			if (nocode_wanted)
 				return r;
 			for (p = vstack; p <= vtop; p++) {
@@ -1763,9 +1779,17 @@ ST_FUNC int get_reg(int rc) {
 
 	for (p = vstack; p <= vtop; p++) {
 		r = p->r2;
+#if defined(CONFIG_AST) && CONFIG_AST
+		if (r < VT_CONST && (ast_pinned_regs & (1u << r)))
+			r = VT_CONST; /* never spill a pinned register */
+#endif
 		if (r < VT_CONST && (reg_classes[r] & rc))
 			goto save_found;
 		r = p->r & VT_VALMASK;
+#if defined(CONFIG_AST) && CONFIG_AST
+		if (r < VT_CONST && (ast_pinned_regs & (1u << r)))
+			r = VT_CONST;
+#endif
 		if (r < VT_CONST && (reg_classes[r] & rc)) {
 		save_found:
 			save_reg(r);
@@ -12024,6 +12048,180 @@ static void ast_hook_implicit_return(void) {
 	ast_add_child(ast_cur, bb, ret);
 }
 
+/* --- Tier-3 register promotion (docs/AST.md §4/§10/§18.2 Tier 3) -----------
+ * The first optimization that deliberately beats -O0: keep an address-not-taken
+ * scalar local in a register across the function instead of spilling it to a stack
+ * slot, eliminating its load/store memory traffic. v1 is intentionally narrow and
+ * provably safe — single-BasicBlock, call-free functions only — and strictly opt-in
+ * (MCC_AST_PROMOTE); byte-verify is disabled for a promoted function (its bytes
+ * differ from -O0 by construction), so the exec-golden corpus is the gate (§15/§17).
+ *
+ * Mechanism (x86_64): each promoted local is pinned to a caller-saved register
+ * OUTSIDE the RC_INT temporary pool (R11/R10/R9/R8 — get_reg never hands these out
+ * for RC_INT temporaries, and a call-free leaf owns them). A read pushes the value
+ * as living in that register; gv naturally copies it into a temp when consumed
+ * (the pinned reg is never allocated away, so it stays intact for the next read). A
+ * write forces the value into the pinned reg (no memory store). Duration/linkage
+ * are unchanged; the frame slot simply goes unread. */
+#if defined(CONFIG_AST) && CONFIG_AST && defined(MCC_TARGET_X86_64)
+#define AST_PROMO_MAX 4
+static const int ast_promo_regpool[AST_PROMO_MAX] = {11, 10, 9, 8}; /* R11,R10,R9,R8 */
+static int ast_promo_off[AST_PROMO_MAX]; /* frame offset of each promoted local */
+static int ast_promo_typ[AST_PROMO_MAX]; /* its access type (full-width GP scalar) */
+static int ast_promo_n;
+static int ast_promo_regpool_at(int i) { return ast_promo_regpool[i]; }
+
+/* -1 if node n is not a promoted local's Ref, else its pinned register. */
+static int ast_promo_reg_of(AstArena *a, AstLocal n) {
+	if (n == AST_NONE || ast_kind(a, n) != AST_Ref)
+		return -1;
+	int r = ast_op(a, n);
+	if ((r & VT_VALMASK) != VT_LOCAL || !(r & VT_LVAL) || (r & VT_SYM))
+		return -1;
+	int off = (int)(int64_t)ast_ival(a, n);
+	for (int i = 0; i < ast_promo_n; i++)
+		if (ast_promo_off[i] == off)
+			return ast_promo_regpool[i];
+	return -1;
+}
+
+/* Is node n the lvalue Ref of local frame offset `off`? */
+static int ast_ref_is_local_off(AstArena *a, AstLocal n, int off) {
+	if (n == AST_NONE || ast_kind(a, n) != AST_Ref)
+		return 0;
+	int r = ast_op(a, n);
+	return (r & VT_VALMASK) == VT_LOCAL && (r & VT_LVAL) && !(r & VT_SYM) &&
+			(int)(int64_t)ast_ival(a, n) == off;
+}
+
+/* Does subtree n contain a read of local frame offset `off`? */
+static int ast_subtree_refs_local(AstArena *a, AstLocal n, int off) {
+	if (n == AST_NONE)
+		return 0;
+	if (ast_kind(a, n) == AST_Ref) {
+		int r = ast_op(a, n);
+		if ((r & VT_VALMASK) == VT_LOCAL && (r & VT_LVAL) && !(r & VT_SYM) &&
+				(int)(int64_t)ast_ival(a, n) == off)
+			return 1;
+	}
+	uint32_t nc = ast_nchild(a, n);
+	for (uint32_t i = 0; i < nc; i++)
+		if (ast_subtree_refs_local(a, ast_child(a, n, i), off))
+			return 1;
+	return 0;
+}
+
+/* Plan register promotion for the just-built function. Returns the number of
+ * promoted locals (0 = none; replay proceeds normally). Conservative and safe:
+ *   - single BasicBlock, no calls (reject any AST_If / AST_Invoke / nested BB);
+ *   - candidate = an address-not-taken, full-width GP scalar (int/llong/ptr) local;
+ *   - def-before-use: the first BB effect that mentions the local must be a
+ *     top-level Store *to* it whose value subtree does not read it (so the pinned
+ *     register is written before it is ever read — no uninitialized read, and a
+ *     promoted parameter whose slot value is still live is excluded). */
+static int ast_plan_promotion(AstArena *a) {
+	ast_promo_n = 0;
+	if (!ast_promote_env)
+		return 0;
+	AstLocal nn = ast_count(a);
+	AstLocal root = ast_root(a);
+	for (AstLocal n = 0; n < nn; n++) {
+		uint16_t k = ast_kind(a, n);
+		if (k == AST_Invoke || k == AST_If)
+			return 0;
+		if (k == AST_BasicBlock && n != root)
+			return 0;
+	}
+	/* Collect every distinct local-slot offset with its type and a poison flag.
+	 * An offset is poisoned (never promotable) if ANY reference to it is not a
+	 * full-width GP scalar (int/llong/ptr) — e.g. a struct copy or an aggregate
+	 * member base retypes the same Ref to VT_STRUCT / char*, so a single scalar-
+	 * looking occurrence is not enough. */
+	int coff[AST_PROMO_MAX * 8], ctyp[AST_PROMO_MAX * 8], cpoison[AST_PROMO_MAX * 8];
+	int nc = 0;
+	for (AstLocal n = 0; n < nn; n++) {
+		if (ast_kind(a, n) != AST_Ref)
+			continue;
+		int r = ast_op(a, n);
+		if ((r & VT_VALMASK) != VT_LOCAL || !(r & VT_LVAL) || (r & VT_SYM))
+			continue;
+		int off = (int)(int64_t)ast_ival(a, n);
+		int bt = ast_type_t(a, n) & VT_BTYPE;
+		/* Integer scalars only (not VT_PTR): a promoted value living in a pinned
+		 * register is only ever read-as-value / written — never a deref base or
+		 * address, which the pointer cases (`*p`, `&x`) would require. */
+		int scalar = (bt == VT_INT || bt == VT_LLONG) &&
+				!(ast_type_t(a, n) & VT_BITFIELD);
+		int j;
+		for (j = 0; j < nc; j++)
+			if (coff[j] == off)
+				break;
+		if (j == nc) {
+			if (nc >= (int)(sizeof coff / sizeof *coff))
+				continue;
+			coff[nc] = off, ctyp[nc] = ast_type_t(a, n), cpoison[nc] = 0, nc++;
+		}
+		if (!scalar)
+			cpoison[j] = 1;
+		else if (!(ctyp[j] & VT_BTYPE)) /* keep the first non-zero type seen */
+			ctyp[j] = ast_type_t(a, n);
+	}
+	/* Poison any offset used as an address / member base — a local Ref under
+	 * Unary(ADDR/MEMBER/MEMBER_ARROW/IMAG). ADDR = address escapes (must be memory);
+	 * MEMBER = the Ref is an aggregate base that was retyped, not a scalar value. */
+	for (AstLocal n = 0; n < nn; n++) {
+		if (ast_kind(a, n) != AST_Unary)
+			continue;
+		int uop = ast_op(a, n);
+		if (uop != AST_OP_ADDR && uop != AST_OP_MEMBER &&
+				uop != AST_OP_MEMBER_ARROW && uop != AST_OP_IMAG)
+			continue;
+		AstLocal c = ast_first_child(a, n);
+		if (c == AST_NONE || ast_kind(a, c) != AST_Ref)
+			continue;
+		int r = ast_op(a, c);
+		if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
+			continue;
+		int off = (int)(int64_t)ast_ival(a, c);
+		for (int j = 0; j < nc; j++)
+			if (coff[j] == off)
+				cpoison[j] = 1;
+	}
+	/* def-before-use over the single BB's effects, in order */
+	for (int j = 0; j < nc && ast_promo_n < AST_PROMO_MAX; j++) {
+		int off = coff[j];
+		if (cpoison[j] || off >= 0)
+			continue; /* poisoned, or not a real (negative) frame slot */
+		int ok = 0;
+		for (AstLocal e = ast_first_child(a, root); e != AST_NONE;
+				 e = ast_next_sib(a, e)) {
+			if (!ast_subtree_refs_local(a, e, off))
+				continue;
+			/* first effect mentioning it: must be a top-level `off = value`
+			 * whose value does not read off */
+			if (ast_kind(a, e) == AST_Store) {
+				AstLocal lv = ast_child(a, e, 0), val = ast_child(a, e, 1);
+				if (ast_ref_is_local_off(a, lv, off) &&
+						!ast_subtree_refs_local(a, val, off))
+					ok = 1;
+			}
+			break;
+		}
+		if (ok) {
+			ast_promo_off[ast_promo_n] = off;
+			ast_promo_typ[ast_promo_n] = ctyp[j];
+			ast_promo_n++;
+		}
+	}
+	return ast_promo_n;
+}
+#else
+static int ast_plan_promotion(AstArena *a) { (void)a; return 0; }
+static int ast_promo_reg_of(AstArena *a, AstLocal n) { (void)a; (void)n; return -1; }
+static int ast_promo_n;
+static int ast_promo_regpool_at(int i) { (void)i; return 0; }
+#endif
+
 /* --- AST replay: the emit driver (AST -> vstack ops -> bytes) -------------- */
 
 static void ast_replay_value(AstArena *a, AstLocal n) {
@@ -12039,6 +12237,17 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 		sv.r2 = VT_CONST;
 		sv.c.i = ast_ival(a, n);
 		sv.sym = (Sym *)(uintptr_t)ast_sym(a, n);
+		if (ast_promo_n) {
+			/* Tier-3 read: a promoted local reads from its pinned register (not the
+			 * stack slot). Push the value as register-resident; gv copies it into a
+			 * temp when consumed, leaving the pinned register intact for later reads. */
+			int preg = ast_promo_reg_of(a, n);
+			if (preg >= 0) {
+				sv.r = (unsigned short)preg; /* value lives in the pinned reg (rvalue) */
+				sv.c.i = 0;
+				sv.sym = NULL;
+			}
+		}
 		vpushv(&sv);
 		break;
 	}
@@ -12267,7 +12476,23 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 	for (AstLocal s = ast_first_child(a, bb); s != AST_NONE;
 			 s = ast_next_sib(a, s)) {
 		switch (ast_kind(a, s)) {
-		case AST_Store:
+		case AST_Store: {
+#if defined(CONFIG_AST) && CONFIG_AST && defined(MCC_TARGET_X86_64)
+			/* Tier-3 write: a store to a promoted local moves the value into its
+			 * pinned register instead of the stack slot (no memory store). The value
+			 * is materialized into the pinned reg (un-pin briefly so gv can target it);
+			 * the register-resident result is left, then discarded like a normal
+			 * store's result. */
+			int preg = ast_promo_n ? ast_promo_reg_of(a, ast_child(a, s, 0)) : -1;
+			if (preg >= 0) {
+				ast_replay_value(a, ast_child(a, s, 1));
+				ast_pinned_regs &= ~(1u << preg);
+				gv(reg_classes[preg]); /* force the value into the pinned register */
+				ast_pinned_regs |= (1u << preg);
+				vpop(); /* discard the statement result */
+				break;
+			}
+#endif
 			/* push lvalue, push value, store, discard the result — the byte-exact
 			 * sequence for a scalar store (pushes of constants/locals emit nothing,
 			 * only vstore emits, so operand order does not affect the bytes). */
@@ -12276,6 +12501,7 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 			vstore();
 			vpop();
 			break;
+		}
 		case AST_Invoke:
 			/* a bare call statement: evaluate the call, discard the result. A void
 			 * effect (memset from an initializer) leaves nothing — do not vpop. */
@@ -12754,8 +12980,18 @@ static void gen_function(Sym *sym) {
 			ast_replaying = 1;
 			ast_rp_switch = NULL;
 			ast_rp_nlabel = 0;
+			/* Tier-3 register promotion (opt-in MCC_AST_PROMOTE): plan it, then pin
+			 * each promoted local's register for the duration of the replay so no
+			 * temporary clobbers it. A promoted function's bytes differ from -O0 by
+			 * construction, so byte-verify is bypassed for it (exec-golden is the gate). */
+			int promoted = ast_plan_promotion(ast_cur);
+			ast_pinned_regs = 0;
+			for (int pi = 0; pi < ast_promo_n; pi++)
+				ast_pinned_regs |= (1u << ast_promo_regpool_at(pi));
 			ast_replay_body(ast_cur);
 			ast_replaying = 0;
+			ast_pinned_regs = 0;
+			ast_promo_n = 0;
 			mcc_state->warn_none = ast_sv_warn;
 
 			Section *rsec2 = cur_text_section->reloc;
@@ -12766,6 +13002,8 @@ static void gen_function(Sym *sym) {
 					new_rel - ast_reloc0 == rel_len &&
 					(rel_len == 0 ||
 					 memcmp(rsec2->data + ast_reloc0, orig_rel, rel_len) == 0);
+			if (promoted)
+				faithful = 1; /* accept the deliberately byte-divergent promoted replay */
 			if (!faithful) {
 				memcpy(cur_text_section->data + ast_body_ind, orig, body_len);
 				if (rel_len)
@@ -12781,6 +13019,8 @@ static void gen_function(Sym *sym) {
 				if (ast_templates_env)
 					fprintf(stderr, "[ast-template] const-fold %d %s\n",
 									ast_tmpl_folds, funcname);
+				if (promoted)
+					fprintf(stderr, "[ast-promote] %d %s\n", promoted, funcname);
 			}
 			mcc_free(orig);
 			mcc_free(orig_rel);

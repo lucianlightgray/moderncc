@@ -221,14 +221,24 @@ With `-O0` replay parity complete, these are where `-O1` beats `-O0` — both pu
 because the replay driver holds the whole per-function AST as a queryable object the
 streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
 
-- [ ] **Tier 3 — liveness-steered register promotion (the real `-O1` payoff).** A backward
-  liveness pass over the per-fn AST (birth = first def, death = last use), then **steer `gv`**
-  to keep address-not-taken locals in registers instead of spilling to a stack slot
-  (mem2reg). Additive driver upgrade — no `gen_op` surgery (docs/AST.md §10/§18.2 Tier 3).
-  This is the first change that deliberately diverges from `-O0` bytes, so the gate shifts
-  from byte-verify to the **exec-golden differential** (the exec-replay corpus, §15/§17);
-  add a promotion-on mode (à la `MCC_AST_TEMPLATES`). Follow-ons: share one spill slot across
-  disjoint live ranges; spill-weight by access-freq × loop-depth.
+- [~] **Tier 3 — liveness-steered register promotion (the real `-O1` payoff).** **v1 LANDED
+  2026-07-08** — the first optimization that deliberately beats `-O0`: an address-not-taken
+  integer local is kept in a pinned caller-saved register (R11/R10/R9/R8 — outside the
+  `RC_INT` temp pool, so `get_reg`/`get_reg_ex` skip them and no temporary clobbers a live
+  promoted value) with **zero stack load/store traffic**. Opt-in `MCC_AST_PROMOTE`; a
+  promoted function's bytes diverge from `-O0` by construction, so **byte-verify is bypassed
+  for it and the exec-golden differential is the gate** — a new whole-corpus
+  `exec-replay-promote` column (281 programs, all green) plus fixture `ast/replay-promote`
+  (`[ast-promote] N <fn>` proves it fired). A read pushes the value as register-resident (gv
+  copies it into a temp when consumed; the pinned reg stays intact for later reads); a write
+  forces the value into the pinned reg. **v1 scope (deliberately conservative & provably
+  safe):** single-BasicBlock, call-free functions; integer (`int`/`long`) locals only (not
+  pointers — a promoted value is never a deref/address base); def-before-use (the first BB
+  effect mentioning the local is a `Store` to it). A struct/aggregate/member-base/`&`-taken
+  local is poisoned. **Follow-ons (the real breadth):** extend past single-BB via a proper
+  backward-liveness/def-use pass (loops are where promotion pays off most); share one spill
+  slot across disjoint live ranges; spill-weight by access-freq × loop-depth; promote
+  pointers/floats. Additive driver upgrade — no `gen_op` surgery (docs/AST.md §10/§18.2 Tier 3).
 - [ ] **Tier 4 — virtual always-inline over the shared store (the minimize-invoke payoff).**
   Inline internal calls instead of emitting a boundary `Call`, using the CST's content-
   addressed store/binding/render engine (docs/AST.md §9). Cycle detection via the instance

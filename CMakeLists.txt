@@ -3052,6 +3052,19 @@ if(MCC_BUILD_TESTS)
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
             set_tests_properties("ast/replay-vla" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
+            # Tier-3 register promotion (docs/AST.md §4/§10/§18.2 Tier 3, opt-in
+            # MCC_AST_PROMOTE): a call-free single-BB function's address-not-taken int
+            # locals live in pinned registers (no stack traffic) — the first opt that
+            # deliberately beats -O0. PROMOTES asserts it fired; the exit-code equality
+            # vs -O0 is the gate (byte-verify is bypassed for a promoted function).
+            add_test(NAME "ast/replay-promote" COMMAND "${CMAKE_COMMAND}"
+                "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
+                "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/promote.c"
+                "-DOUT=${CMAKE_BINARY_DIR}/ast-replay"
+                "-DEXPECT_RC=42" "-DREPLAYED=calc" "-DPROMOTE=1" "-DPROMOTES=calc"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
+            set_tests_properties("ast/replay-promote" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
             # A7 first template = const-fold (docs/AST.md §12/§15/§17-D-d). The
             # per-template differential test: the fixture is compiled with the
             # const-fold template on and must (a) exit the same as -O0 (input ==
@@ -3234,6 +3247,23 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_BINARY_DIR}/exec-replay-tmpl-${_gn}" --only "${_gn}")
             set_tests_properties("exec-replay-tmpl/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_AST_REPLAY=1;MCC_AST_TEMPLATES=1")
+        endforeach()
+
+        # Tier-3 register-promotion column (docs/AST.md §18.2 Tier 3): the whole
+        # golden corpus re-run with the replay driver *and* register promotion on,
+        # asserting the same expected output. Unlike the template column this is NOT
+        # byte-identical to -O0 (a promoted function keeps its address-not-taken int
+        # locals in registers), so byte-verify is bypassed for promoted functions and
+        # this exec-golden differential is the correctness gate for the optimization.
+        foreach(_gl IN LISTS _exec_glines)
+            string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
+            set(_gn "${CMAKE_MATCH_1}")
+            add_test(NAME "exec-replay-promote/${_gn}"
+                COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+                        "${CMAKE_BINARY_DIR}/exec-replay-promote-${_gn}" --only "${_gn}")
+            set_tests_properties("exec-replay-promote/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_AST_REPLAY=1;MCC_AST_PROMOTE=1")
         endforeach()
     endif()
 

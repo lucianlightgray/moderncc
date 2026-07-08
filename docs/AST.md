@@ -670,12 +670,12 @@ Mid). This is the single source of truth for "what's left."
 | ✅ **rodata const-symbol reuse (`I`-unit)** | `ast_hook_builtin_complex_begin/end` capture the rodata-const result as a Ref leaf; the widening cast reuses its symbol ordinally via `ast_fconst_reuse/_record/_push_ref` | `replay-complex_ctor` |
 | ✅ **nested landor** | no new node needed — the inner `Binary(&&/||)` is already a captured child; `ast_hook_landor_operand` accepts it and replay's `AST_Binary` recurses. (The "grep segfault" was an unrelated NULL-`sym` bug in bare-global conditions, fixed.) | `replay-short_circuit` |
 
-**Tier 3 — whole-function liveness (⬜ beyond `-O0`, early Mid — the register-promotion payoff)**
+**Tier 3 — whole-function liveness (beyond `-O0` — the register-promotion payoff; v1 ✅ 2026-07-08)**
 
-| Query | TODO |
+| Query | Status |
 |---|---|
-| promote local to register | backward-liveness pass over the per-fn AST, then **steer `gv`** (keep-in-reg) — additive driver upgrade, no `gen_op` surgery (§10) |
-| share one spill slot / spill weight | liveness interference + loop-depth weighting on top of the same pass |
+| promote local to register | ✅ **v1 landed** (opt-in `MCC_AST_PROMOTE`): an address-not-taken **integer** local in a **single-BB, call-free** function is pinned to a caller-saved register outside the `RC_INT` temp pool (R11/R10/R9/R8) with zero stack traffic — reads push it register-resident (gv copies on use), writes force it into the pin. `get_reg`/`get_reg_ex` skip pinned regs; byte-verify bypassed (bytes diverge from `-O0`) so the whole-corpus **`exec-replay-promote`** column + `ast/replay-promote` fixture are the gate. This is the first opt that beats `-O0`. |
+| ⬜ extend past single-BB | the real breadth (loops especially): a proper **backward-liveness / def-use pass** over the per-fn AST to prove def-before-use across control flow, then **steer `gv`** — additive driver upgrade, no `gen_op` surgery (§10). Also: pointers/floats, and sharing one spill slot across disjoint live ranges + loop-depth spill-weighting. |
 
 **Tier 4 — whole-program / fixpoint (⬜ beyond `-O0`, Mid — the inline payoff + guards)**
 
@@ -687,10 +687,12 @@ Mid). This is the single source of truth for "what's left."
 | guard: `setjmp`/signal/VLA region | propagate a **non-inlinable-across** flag up the binding graph (§18.4) |
 
 **Net remaining work:** the three Tier-2 hooks are all ✅ (2026-07-08) — **`-O0` replay
-parity is complete** for the checklist. What is left is **beyond `-O0`**: Tier 3
-(liveness→`gv` steering) is the first real `-O1` win; Tier 4 (inline + guards) is the
-"minimize-invoke" payoff. Nothing on this list is a new machine op — every remaining ⬜ is
-a query or a driver-steering step over ops the exec suite already proves.
+parity is complete** for the checklist — and **Tier 3 register promotion has a landed v1**
+(the first opt that beats `-O0`: single-BB call-free integer locals kept in pinned registers,
+gated by the `exec-replay-promote` corpus column). What remains is **breadth, still beyond
+`-O0`**: extend Tier 3 past single-BB via a backward-liveness/def-use pass (loops), and Tier 4
+(inline + guards, the "minimize-invoke" payoff). Nothing here is a new machine op — every
+remaining ⬜ is a query or a driver-steering step over ops the exec suite already proves.
 
 ---
 

@@ -24,6 +24,9 @@ function(build_and_run out_exe expect_rc env_on out_all)
         if(TEMPLATES)
             list(APPEND _env MCC_AST_TEMPLATES=1)
         endif()
+        if(PROMOTE)
+            list(APPEND _env MCC_AST_PROMOTE=1)
+        endif()
     else()
         set(_env "${CMAKE_COMMAND}" -E env)
     endif()
@@ -46,6 +49,16 @@ build_and_run("${_r1}" "${EXPECT_RC}" ON _r1_all)
 if(REPLAYED)
     if(NOT _r1_all MATCHES "\\[ast-replay\\] ${REPLAYED}\n")
         message(FATAL_ERROR "expected function '${REPLAYED}' to go through the AST replay path, but it fell back:\n${_r1_all}")
+    endif()
+endif()
+
+# PROMOTES: with Tier-3 register promotion on (PROMOTE), the named function must
+# have actually promoted >=1 local into a register (proving promotion fired and the
+# exec-golden output is unchanged — a promoted function's bytes differ from -O0, so
+# byte-verify is bypassed and this run/exit-code equality is the gate).
+if(PROMOTES)
+    if(NOT _r1_all MATCHES "\\[ast-promote\\] ([1-9][0-9]*) ${PROMOTES}\n")
+        message(FATAL_ERROR "expected register promotion to fire on '${PROMOTES}', but it did not:\n${_r1_all}")
     endif()
 endif()
 
