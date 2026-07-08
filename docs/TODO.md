@@ -372,11 +372,17 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
     grafting caller's frame, so `longjmp` restores the wrong context (docs/AST.md §18.4). Verified a
     `setjmp`-using helper is no longer grafted and the program matches `-O0` (was diverging). VLA is
     already excluded; signal handlers aren't a call-site inline concern (the OS calls them).
+  - [x] **Compose inline + promotion — LANDED 2026-07-08.** Pass 2 now runs BOTH Tier-4 inline and
+    Tier-3 promotion when applicable (was mutually exclusive). A function inlines its calls AND
+    promotes its own address-not-taken locals; promotion still plans call-ful (callee-saved pool
+    with save/restore — always safe), the inlined callee's locals live in fresh biased slots the
+    promoter ignores, and the graft's `vstore`/`gv` honor the pins. Verified in all three modes
+    (inline+promote / promote-only / inline-only), corpus + ctest 1769/1769, ASan-clean.
   - [ ] **Slice 2 breadth.** `goto`/`switch` (shared label/switch replay state); struct-by-value
     params/return. Then **forward-declared / later-defined callees (needs true defer-to-TU)** — the
-    common case a caller-before-callee misses today; per-site specialization; combine inline +
-    promotion in one pass 2. Un-gate the fixture on non-x86_64 once verified there (arch-independent).
-    Persist string/rodata Syms to lift that exclusion.
+    common caller-before-callee case, missed today; per-site specialization. Un-gate the fixture on
+    non-x86_64 once verified there (arch-independent). Persist string/rodata Syms to lift that
+    exclusion.
 - [ ] **Long horizon (design only):** the broader template library (algebraic, dead-branch,
   jump-table), the time-budgeted engine (§12/§221), dependency-ordered `-O1` compile, cross-TU
   LTO, `-g` from provenance, hot-reload snapshots, and separate `-O2`/`-O3` (SSA) drivers.

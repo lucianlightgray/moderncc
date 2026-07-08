@@ -144,8 +144,12 @@ recycled after the callee's own gen — a real cross-function Sym-lifetime limit
 - **Excluded:** pointer-to-VLA params (`int m[n][n]`) — indexing needs a runtime element
   size the frame bias can't relocate.
 
+**Composes with Tier-3 promotion:** pass 2 runs both when applicable — a function inlines its
+calls and promotes its own locals (the `setjmp` guard excludes `setjmp`-calling callees, and
+inline+promote are exec-verified together).
+
 **Gates:** exec-golden (an inlined caller's bytes diverge from `-O0`) + the `ast/replay-inline`
-fixture (asserts `add`/`scale`/`madd` (multi-statement) / `clamp` (two-if) graft).
+fixture (asserts `add`/`scale`/`madd`/`clamp`/`sgn`/`area`/`quad` graft).
 
 ### Remaining Tier-4 breadth (TODO.md "Slice 2 breadth")
 
@@ -156,8 +160,6 @@ fixture (asserts `add`/`scale`/`madd` (multi-statement) / `clamp` (two-if) graft
 - **Struct-by-value params/return** — needs the aggregate-copy / sret ABI in the graft.
 - **Persist string/rodata Syms** — to lift the string-literal exclusion (currently such callees
   fall back to a real call).
-- **Guard queries** — `setjmp`/signal/VLA regions → non-inlinable-across (§18.4).
-- **Combine inline + promotion** in one pass 2 (currently inline takes precedence).
 
 ---
 
