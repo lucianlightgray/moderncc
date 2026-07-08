@@ -132,6 +132,10 @@ static int ast_locrec_n, ast_locrec_cap, ast_locrec_i;
  * for the whole (call-free) function; get_reg/get_reg_ex skip them so no temporary
  * clobbers a live promoted value. 0 outside promoted replay → no behavior change. */
 static unsigned ast_pinned_regs;
+/* Set when the function being built used inline asm: its (possibly implicit)
+ * register clobbers can corrupt a promoted local's pinned register, so such a
+ * function is never promoted (Tier 3). Reset per function. */
+static int ast_func_has_asm;
 
 /* Allocate an anonymous frame slot, recording (build) / reusing (replay) its
  * offset. Outside a replay-candidate build this is exactly `loc=(loc-size)&-align`,
@@ -9533,6 +9537,9 @@ again:
 		}
 		skip(';');
 	} else if (t == TOK_ASM1 || t == TOK_ASM2 || t == TOK_ASM3) {
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_func_has_asm = 1; /* asm register clobbers can corrupt a promoted pin */
+#endif
 #ifdef CONFIG_MCC_ASM
 		asm_instr();
 #else
@@ -12064,8 +12071,15 @@ static void ast_hook_implicit_return(void) {
  * write forces the value into the pinned reg (no memory store). Duration/linkage
  * are unchanged; the frame slot simply goes unread. */
 #if defined(CONFIG_AST) && CONFIG_AST && defined(MCC_TARGET_X86_64)
-#define AST_PROMO_MAX 4
-static const int ast_promo_regpool[AST_PROMO_MAX] = {11, 10, 9, 8}; /* R11,R10,R9,R8 */
+/* Pin pool: caller-saved GP registers that a *call-free* function never has the
+ * backend allocate. R10 is used nowhere in the x86_64 backend; R8/R9 appear only in
+ * the call-argument register arrays (unreachable with no calls). R11 is deliberately
+ * EXCLUDED — the backend hardcodes it as a scratch in `load` and for GOTPCREL/TLS
+ * addressing, so a promoted value there would be clobbered by an ordinary global
+ * access. (Callee-saved RBX/R12-R15 would give more registers but need prologue/
+ * epilogue save/restore — a future extension.) */
+#define AST_PROMO_MAX 3
+static const int ast_promo_regpool[AST_PROMO_MAX] = {10, 9, 8}; /* R10,R9,R8 */
 static int ast_promo_off[AST_PROMO_MAX]; /* frame offset of each promoted local */
 static int ast_promo_typ[AST_PROMO_MAX]; /* its access type (full-width GP scalar) */
 static int ast_promo_n;
@@ -12112,26 +12126,23 @@ static int ast_subtree_refs_local(AstArena *a, AstLocal n, int off) {
 }
 
 /* Plan register promotion for the just-built function. Returns the number of
- * promoted locals (0 = none; replay proceeds normally). Conservative and safe:
- *   - single BasicBlock, no calls (reject any AST_If / AST_Invoke / nested BB);
- *   - candidate = an address-not-taken, full-width GP scalar (int/llong/ptr) local;
- *   - def-before-use: the first BB effect that mentions the local must be a
- *     top-level Store *to* it whose value subtree does not read it (so the pinned
- *     register is written before it is ever read — no uninitialized read, and a
- *     promoted parameter whose slot value is still live is excluded). */
+ * promoted locals (0 = none; replay proceeds normally).
+ *   - **call-free** (reject any AST_Invoke): a call clobbers the caller-saved pin
+ *     registers, so the promoted value must not have to survive one.
+ *   - candidate = an address-not-taken integer (int/llong) local; a struct/aggregate/
+ *     member-base/`&`-taken/bitfield/pointer/float occurrence poisons the offset.
+ * Control flow (if/loops) is fine: the register is initialized from the local's stack
+ * slot at function entry (see gen_function), so it faithfully mirrors what -O0 would
+ * read from the never-again-written slot — valid even for a parameter or a local read
+ * before written, on every path. This is what makes loop variables promotable. */
 static int ast_plan_promotion(AstArena *a) {
 	ast_promo_n = 0;
-	if (!ast_promote_env)
-		return 0;
+	if (!ast_promote_env || ast_func_has_asm)
+		return 0; /* inline asm may clobber the pin registers */
 	AstLocal nn = ast_count(a);
-	AstLocal root = ast_root(a);
-	for (AstLocal n = 0; n < nn; n++) {
-		uint16_t k = ast_kind(a, n);
-		if (k == AST_Invoke || k == AST_If)
-			return 0;
-		if (k == AST_BasicBlock && n != root)
-			return 0;
-	}
+	for (AstLocal n = 0; n < nn; n++)
+		if (ast_kind(a, n) == AST_Invoke)
+			return 0; /* a call clobbers the caller-saved pin registers */
 	/* Collect every distinct local-slot offset with its type and a poison flag.
 	 * An offset is poisoned (never promotable) if ANY reference to it is not a
 	 * full-width GP scalar (int/llong/ptr) — e.g. a struct copy or an aggregate
@@ -12166,15 +12177,12 @@ static int ast_plan_promotion(AstArena *a) {
 		else if (!(ctyp[j] & VT_BTYPE)) /* keep the first non-zero type seen */
 			ctyp[j] = ast_type_t(a, n);
 	}
-	/* Poison any offset used as an address / member base — a local Ref under
-	 * Unary(ADDR/MEMBER/MEMBER_ARROW/IMAG). ADDR = address escapes (must be memory);
-	 * MEMBER = the Ref is an aggregate base that was retyped, not a scalar value. */
+	/* Poison any offset whose Ref is a child of a Unary — every such use needs the
+	 * local as an *lvalue* (ADDR = `&x`, address escapes; MEMBER = aggregate base;
+	 * `++`/`--` = read-modify-write), which the register-resident rvalue we push for a
+	 * promoted read cannot satisfy ("lvalue expected"). */
 	for (AstLocal n = 0; n < nn; n++) {
 		if (ast_kind(a, n) != AST_Unary)
-			continue;
-		int uop = ast_op(a, n);
-		if (uop != AST_OP_ADDR && uop != AST_OP_MEMBER &&
-				uop != AST_OP_MEMBER_ARROW && uop != AST_OP_IMAG)
 			continue;
 		AstLocal c = ast_first_child(a, n);
 		if (c == AST_NONE || ast_kind(a, c) != AST_Ref)
@@ -12187,37 +12195,42 @@ static int ast_plan_promotion(AstArena *a) {
 			if (coff[j] == off)
 				cpoison[j] = 1;
 	}
-	/* def-before-use over the single BB's effects, in order */
+	/* Take the non-poisoned integer candidates (entry-init makes them safe on every
+	 * path, so no def-before-use analysis is needed). */
 	for (int j = 0; j < nc && ast_promo_n < AST_PROMO_MAX; j++) {
-		int off = coff[j];
-		if (cpoison[j] || off >= 0)
+		if (cpoison[j] || coff[j] >= 0)
 			continue; /* poisoned, or not a real (negative) frame slot */
-		int ok = 0;
-		for (AstLocal e = ast_first_child(a, root); e != AST_NONE;
-				 e = ast_next_sib(a, e)) {
-			if (!ast_subtree_refs_local(a, e, off))
-				continue;
-			/* first effect mentioning it: must be a top-level `off = value`
-			 * whose value does not read off */
-			if (ast_kind(a, e) == AST_Store) {
-				AstLocal lv = ast_child(a, e, 0), val = ast_child(a, e, 1);
-				if (ast_ref_is_local_off(a, lv, off) &&
-						!ast_subtree_refs_local(a, val, off))
-					ok = 1;
-			}
-			break;
-		}
-		if (ok) {
-			ast_promo_off[ast_promo_n] = off;
-			ast_promo_typ[ast_promo_n] = ctyp[j];
-			ast_promo_n++;
-		}
+		ast_promo_off[ast_promo_n] = coff[j];
+		ast_promo_typ[ast_promo_n] = ctyp[j];
+		ast_promo_n++;
 	}
 	return ast_promo_n;
+}
+
+/* Emit the entry initialization: load each promoted local's stack slot into its
+ * pinned register so the register mirrors the slot's value on entry (parameter
+ * value, or the same garbage -O0 would read for an uninitialized local). Called
+ * once at the top of the replayed body, with the pins already set. */
+static void ast_promo_entry_init(void) {
+	for (int i = 0; i < ast_promo_n; i++) {
+		int reg = ast_promo_regpool[i];
+		SValue sv;
+		memset(&sv, 0, sizeof sv);
+		sv.type.t = ast_promo_typ[i];
+		sv.r = VT_LOCAL | VT_LVAL;
+		sv.r2 = VT_CONST;
+		sv.c.i = ast_promo_off[i];
+		vpushv(&sv);
+		ast_pinned_regs &= ~(1u << reg);
+		gv(reg_classes[reg]); /* load slot -> pinned reg */
+		ast_pinned_regs |= (1u << reg);
+		vpop();
+	}
 }
 #else
 static int ast_plan_promotion(AstArena *a) { (void)a; return 0; }
 static int ast_promo_reg_of(AstArena *a, AstLocal n) { (void)a; (void)n; return -1; }
+static void ast_promo_entry_init(void) {}
 static int ast_promo_n;
 static int ast_promo_regpool_at(int i) { (void)i; return 0; }
 #endif
@@ -12930,6 +12943,7 @@ static void gen_function(Sym *sym) {
 		ast_locrec_n = 0;
 		ast_replaying = 0;
 		ast_switch_node = AST_NONE;
+		ast_func_has_asm = 0;
 		ast_active = 1;
 		ast_capture = 1;
 	}
@@ -12988,6 +13002,8 @@ static void gen_function(Sym *sym) {
 			ast_pinned_regs = 0;
 			for (int pi = 0; pi < ast_promo_n; pi++)
 				ast_pinned_regs |= (1u << ast_promo_regpool_at(pi));
+			if (promoted)
+				ast_promo_entry_init(); /* seed each pin from its stack slot */
 			ast_replay_body(ast_cur);
 			ast_replaying = 0;
 			ast_pinned_regs = 0;

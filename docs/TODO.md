@@ -221,24 +221,25 @@ With `-O0` replay parity complete, these are where `-O1` beats `-O0` — both pu
 because the replay driver holds the whole per-function AST as a queryable object the
 streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
 
-- [~] **Tier 3 — liveness-steered register promotion (the real `-O1` payoff).** **v1 LANDED
-  2026-07-08** — the first optimization that deliberately beats `-O0`: an address-not-taken
-  integer local is kept in a pinned caller-saved register (R11/R10/R9/R8 — outside the
-  `RC_INT` temp pool, so `get_reg`/`get_reg_ex` skip them and no temporary clobbers a live
-  promoted value) with **zero stack load/store traffic**. Opt-in `MCC_AST_PROMOTE`; a
-  promoted function's bytes diverge from `-O0` by construction, so **byte-verify is bypassed
-  for it and the exec-golden differential is the gate** — a new whole-corpus
-  `exec-replay-promote` column (281 programs, all green) plus fixture `ast/replay-promote`
-  (`[ast-promote] N <fn>` proves it fired). A read pushes the value as register-resident (gv
-  copies it into a temp when consumed; the pinned reg stays intact for later reads); a write
-  forces the value into the pinned reg. **v1 scope (deliberately conservative & provably
-  safe):** single-BasicBlock, call-free functions; integer (`int`/`long`) locals only (not
-  pointers — a promoted value is never a deref/address base); def-before-use (the first BB
-  effect mentioning the local is a `Store` to it). A struct/aggregate/member-base/`&`-taken
-  local is poisoned. **Follow-ons (the real breadth):** extend past single-BB via a proper
-  backward-liveness/def-use pass (loops are where promotion pays off most); share one spill
-  slot across disjoint live ranges; spill-weight by access-freq × loop-depth; promote
-  pointers/floats. Additive driver upgrade — no `gen_op` surgery (docs/AST.md §10/§18.2 Tier 3).
+- [~] **Tier 3 — liveness-steered register promotion (the real `-O1` payoff).** **LANDED
+  2026-07-08 (incl. control flow)** — the first optimization that deliberately beats `-O0`:
+  an address-not-taken integer local is kept in a pinned register (**R10/R9/R8**, x86_64) with
+  **zero stack load/store traffic**. Opt-in `MCC_AST_PROMOTE`; a promoted function's bytes
+  diverge from `-O0` by construction, so **byte-verify is bypassed for it and the exec-golden
+  differential is the gate** — a whole-corpus `exec-replay-promote` column (281 programs, all
+  green) plus fixture `ast/replay-promote` (`[ast-promote] N <fn>` proves it fired). A read
+  pushes the value register-resident (gv copies it into a temp when consumed; the pin stays
+  intact for later reads); a write forces the value into the pin; **the pin is seeded from the
+  local's stack slot at function entry** (`ast_promo_entry_init`), which makes promotion valid
+  across **arbitrary control flow (loops/if)** and for parameters / read-before-write locals —
+  the register mirrors what `-O0` would read from the never-again-written slot. **Applies to:**
+  a **call-free** function (a call clobbers the caller-saved pins) with integer (`int`/`long`)
+  locals. **Poisoned:** pointers/floats/structs, `&`-taken / member-base locals, `++`/`--`
+  (lvalue) targets, and any function using **inline asm** (clobbers). Coverage: **89** promoted
+  functions across the corpus (was 3 at the single-BB v1). **Follow-ons:** pin **callee-saved**
+  RBX/R12–R15 too (needs prologue/epilogue save/restore); share one spill slot across disjoint
+  live ranges; spill-weight by access-freq × loop-depth; promote pointers/floats; other arches
+  (the R10/R9/R8 pool is x86_64-specific). Additive — no `gen_op` surgery (docs/AST.md §10/§18.2).
 - [ ] **Tier 4 — virtual always-inline over the shared store (the minimize-invoke payoff).**
   Inline internal calls instead of emitting a boundary `Call`, using the CST's content-
   addressed store/binding/render engine (docs/AST.md §9). Cycle detection via the instance
@@ -410,17 +411,21 @@ natively on arm64. Remaining gaps to close:
   formatting + addresses); decide whether to validate a Darwin-specific formatted
   backtrace/bcheck golden or keep it documented as ELF-only.
 
-## Tier-3 register-promotion correctness (x86_64) — MUST-FIX before broadening
+## Tier-3 register-promotion correctness (x86_64)
 
-- [ ] **A promoted function that accesses a global miscompiles** under `MCC_AST_PROMOTE`:
-  the GOTPCREL global-access path emits `mov <sym>@GOTPCREL(%rip), %r11` directly, which
-  clobbers a promoted local pinned in **R11** (and R8–R11 are likewise reachable by other
-  hardcoded backend uses) — e.g. `int g; int f(int v){int x=v+1; g=x; return x+40;}`
-  returns 16, not 42. The corpus missed it (its few promoted functions have no global
-  store). **The caller-saved R8–R11 pin pool is fundamentally unsafe.** Fix: pin
-  **callee-saved** registers (RBX/R12–R15 — the backend never touches them) with
-  prologue/epilogue save+restore. This is also the prerequisite for the parked control-flow
-  extension (single-BB restriction lifted via entry-init; stashed) — reopen both together.
+- [x] **Global-access miscompile fixed + promotion broadened to control flow (2026-07-08).**
+  The v1 pin pool `{R11,R10,R9,R8}` was unsafe: **R11** backs `load`'s scratch and the
+  GOTPCREL/TLS addressing, so `int g; int f(int v){int x=v+1; g=x; return x+40;}` returned
+  16, not 42. Fixed by **excluding R11** — the pool is now `{R10,R9,R8}`, all provably safe
+  in a *call-free* function (R10 is used nowhere in the x86_64 backend; R8/R9 only in the
+  call-argument register arrays). Same change let the **control-flow extension** land: the
+  pinned register is seeded from the local's stack slot at function entry (`ast_promo_entry_
+  init`), so promotion is valid across arbitrary control flow (loops/if) and for parameters/
+  read-before-write locals — the single-BB and def-before-use restrictions are gone. New
+  poisons: **inline asm** (clobbers) and **`++`/`--`** (lvalue) targets. Coverage rose from 3
+  to **89** promoted functions across the exec corpus (all green under `exec-replay-promote`);
+  fixture `ast/replay-promote` now exercises a loop. Follow-on (more registers, needs
+  prologue/epilogue save/restore): pin **callee-saved** RBX/R12–R15 too.
 
 ---
 
