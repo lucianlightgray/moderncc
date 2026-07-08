@@ -7608,8 +7608,10 @@ tok_next:
 		vpop();
 		gen_va_arg(&type);
 		vtop->type = type;
+#if defined(CONFIG_AST) && CONFIG_AST
 		if (ast_active)
 			ast_bail = 1;
+#endif
 		break;
 	}
 #endif
