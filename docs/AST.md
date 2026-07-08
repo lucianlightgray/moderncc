@@ -1,5 +1,9 @@
 # AST — an intention IR alongside the CST
 
+> **Implementation status:** see **[docs/AST-STATUS.md](AST-STATUS.md)** for the current
+> tier-by-tier state (Tier 1/2 `-O0` parity ✅, Tier 3 register promotion ✅, Tier 4
+> virtual-inline 🟡), env flags, gates, and remaining work. This file is the *design*.
+
 Status: **first phase complete** (§16 Short + §17 replay-driver bring-up). The
 intention-IR library (`src/mccast.{c,h}`), the vstack-replay driver (in
 `src/mccgen.c`, gated by `MCC_AST_REPLAY`), the golden-TDD differential gates
