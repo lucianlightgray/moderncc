@@ -54,11 +54,12 @@ only add (or fail to add) replayed functions.
     construction** (`re + im*I` build) and complex casts.
   - **VLA/`alloca`** — needs the machine-tier `StackAlloc`/`StackSave`/`StackRestore` op (§4),
     a new mechanism, not just a hook.
-  - **short-circuit sub-cases** — a plain assignment (`r = a&&b`) and a direct return
-    (`return a&&b`) already replay. Still falling back: the *decl-initializer* form
-    (`int r = a&&b`, a different init store path) and a VT_CMP used *arithmetically*
-    (`(a&&b)+1`, materialized to 0/1 by `gv` outside a suppressed op), plus nested VT_CMP
-    operands (bail in `ast_hook_landor_operand`). Value-level (safe — no crash), niche.
+  - **short-circuit sub-cases LANDED 2026-07-08** — `int r = a&&b` (decl-init), `(a&&b)+1`
+    (VT_CMP used arithmetically), and short-circuit in a ternary all replay: the VT_CMP→0/1
+    materialization (setcc, in `vcheck_cmp`) is now suppressed during capture, so the
+    `Binary(&&/||)` node stays and replay re-materializes it when the consuming op runs.
+    Fixture `ast/replay-short_circuit`. Still falls back: **nested VT_CMP operands**
+    (`(a&&b)||c`, bail in `ast_hook_landor_operand`).
 
   _Baseline (predates this session's widening):_ ≥119/238 exec golden source files replay
   ≥1 function. Measured outcome buckets across the exec corpus (per function):

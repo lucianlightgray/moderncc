@@ -1208,8 +1208,22 @@ ST_FUNC void label_pop(Sym **ptop, Sym *slast, int keep) {
 }
 
 static void vcheck_cmp(void) {
-	if (vtop->r == VT_CMP && 0 == (nocode_wanted & ~CODE_OFF_BIT))
+	if (vtop->r == VT_CMP && 0 == (nocode_wanted & ~CODE_OFF_BIT)) {
+#if defined(CONFIG_AST) && CONFIG_AST
+		/* Materializing a pending VT_CMP to a 0/1 register value emits a setcc/branch
+		 * whose vpushi/gen_op would corrupt the capture mirror (the &&/|| result stays
+		 * a Binary node; replay re-materializes it when the consuming op runs).
+		 * Suppress the mirror across it (§A3 short-circuit). */
+		int sup = ast_active && !ast_replaying;
+		if (sup)
+			ast_in_op++;
 		gv(RC_INT);
+		if (sup)
+			ast_in_op--;
+#else
+		gv(RC_INT);
+#endif
+	}
 }
 
 static void vsetc(CType *type, int r, CValue *vc) {
