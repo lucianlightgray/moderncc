@@ -20,9 +20,10 @@ only add (or fail to add) replayed functions.
   struct copy/deref, `switch` dispatch, and named `goto`/labels — plus two latent
   correctness bugs fixed on the way (vpop call double-emit; float const-pool duplication).
   Remaining is a **delicate long tail**, each moderate effort with real crash risk (a fatal
-  replay error is not caught by the byte-verify net) or niche: **struct returns (sret ABI)**
-  — the register-return path reallocates a `loc` temp that diverges on replay, and the
-  callee/caller ABI is delicate; **by-value struct args**; **bit-field member `Store`**
+  replay error is not caught by the byte-verify net) or niche: **struct-return callers**
+  (`struct r = f()`) — the result temp's `loc` offset diverges on replay (the callee side —
+  `return s` — now replays: fixture `ast/replay-struct_return`, both register-return and
+  sret hidden-pointer); **by-value struct args**; **bit-field member `Store`**
   (shift/mask desugar); **`_Complex`**; **VLA/`alloca`** (needs `StackAlloc` — §4); and the
   **stored/nested short-circuit** (`int r = a&&b`, `(a&&b)||c`). All fall back correctly
   today. Baseline below predates this session's widening.

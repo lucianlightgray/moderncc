@@ -2949,6 +2949,17 @@ if(MCC_BUILD_TESTS)
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
             set_tests_properties("ast/replay-ld_fallback" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
+            # Struct-returning callee (`return s`): the aggregate return replays
+            # (REPLAYED targets `make`, since the caller `main` falls back on the
+            # result-temp loc divergence).
+            add_test(NAME "ast/replay-struct_return" COMMAND "${CMAKE_COMMAND}"
+                "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
+                "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/struct_return.c"
+                "-DOUT=${CMAKE_BINARY_DIR}/ast-replay"
+                "-DEXPECT_RC=42" "-DREPLAYED=make"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
+            set_tests_properties("ast/replay-struct_return" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
             # A7 first template = const-fold (docs/AST.md §12/§15/§17-D-d). The
             # per-template differential test: the fixture is compiled with the
             # const-fold template on and must (a) exit the same as -O0 (input ==

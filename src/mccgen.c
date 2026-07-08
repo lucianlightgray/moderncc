@@ -12162,11 +12162,15 @@ static void gen_function(Sym *sym) {
 	mcc_debug_prolog_epilog(mcc_state, 0);
 	func_vla_arg(sym);
 #if defined(CONFIG_AST) && CONFIG_AST
-	/* Skip functions whose return type this rung does not reconstruct (struct/
-	 * union/float): gfunc_return for them is aggregate/ABI-specific and replay
-	 * would build invalid ops. */
+	/* Skip functions whose return type this rung does not reconstruct (bit-field/
+	 * long double/_Complex-pair): gfunc_return for them is ABI-specific and replay
+	 * would build invalid ops. Struct/union returns ARE attempted — `return s`
+	 * captures the aggregate value and replay re-runs gfunc_return (the sret copy /
+	 * register-return path), with the byte-verify net as the backstop. */
+	int ast_ret_bad = ast_bad_type(func_vt.t) &&
+			(func_vt.t & VT_BTYPE) != VT_STRUCT;
 	int ast_try = ast_replay_env && !debug_modes && !cur_func_inline_extern &&
-			!ast_bad_type(func_vt.t);
+			!ast_ret_bad;
 	int ast_body_ind = ind;
 	addr_t ast_reloc0 =
 			cur_text_section->reloc ? cur_text_section->reloc->data_offset : 0;
