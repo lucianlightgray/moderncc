@@ -12157,12 +12157,15 @@ static int ast_plan_promotion(AstArena *a) {
 		if ((r & VT_VALMASK) != VT_LOCAL || !(r & VT_LVAL) || (r & VT_SYM))
 			continue;
 		int off = (int)(int64_t)ast_ival(a, n);
-		int bt = ast_type_t(a, n) & VT_BTYPE;
+		int tt = ast_type_t(a, n);
+		int bt = tt & VT_BTYPE;
 		/* Integer scalars only (not VT_PTR): a promoted value living in a pinned
 		 * register is only ever read-as-value / written — never a deref base or
-		 * address, which the pointer cases (`*p`, `&x`) would require. */
+		 * address, which the pointer cases (`*p`, `&x`) would require. A `volatile`
+		 * or `_Atomic` (VT_ATOMIC includes VT_VOLATILE) local must keep every access
+		 * in memory, so it is never promotable. */
 		int scalar = (bt == VT_INT || bt == VT_LLONG) &&
-				!(ast_type_t(a, n) & VT_BITFIELD);
+				!(tt & (VT_BITFIELD | VT_VOLATILE));
 		int j;
 		for (j = 0; j < nc; j++)
 			if (coff[j] == off)
