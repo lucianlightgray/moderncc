@@ -15,7 +15,7 @@ only under `MCC_AST_REPLAY`, and the byte-verify net keeps every unmodeled const
 on correct `-O0` fallback — so widening coverage cannot break output correctness,
 only add (or fail to add) replayed functions.
 
-- [~] **Widen replay coverage (§16 Mid).** **This session (2026-07-08) landed 17 milestones**
+- [~] **Widen replay coverage (§16 Mid).** **This session (2026-07-08) landed 19 milestones**
   covering every major target and nearly the whole tail: floats/double, call-result stores,
   scalar struct member access (`.`/`->`), struct copy/deref, `switch` dispatch, named
   `goto`/labels, struct-return callees (`return s`), by-value struct args (`f(s)`), bit-field
@@ -33,7 +33,9 @@ only add (or fail to add) replayed functions.
   construction** (`re + im*I`, the imaginary-unit `I` const materialized as two unsuppressed
   float pushes — the imaginary-*literal* form `r + 2.0i` now replays via a coarse
   `Unary(AST_OP_IMAG)` node, fixture `ast/replay-complex_imag`; only the `__builtin_complex`-based
-  `I` unit remains) and **nested short-circuit operands** (`(a&&b)||c`) — simply allowing a nested
+  `I` unit remains — capturing its rodata-const result as a Ref leaf link-errored
+  (unresolved anon symbol), so it needs proper const-symbol reuse, not a plain leaf capture)
+  and **nested short-circuit operands** (`(a&&b)||c`) — simply allowing a nested
   Binary(&&/||) operand replays flat cases but **segfaults mcc on deeper nesting (grep)**, so it
   genuinely needs the nested landor-chain structure, not the flat gvtst reproduction.
   **Variadic struct returns now replay** (`ast/replay-struct_ret_variadic`) — the struct-return
