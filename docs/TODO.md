@@ -75,6 +75,62 @@ only add (or fail to add) replayed functions.
   32-bit sysroot to exercise (not available in this env). → Add the i386 TLS gate under
   the cross preset when an i386 runtime is available.
 
+- [ ] **Investigate the macOS CI benchmark reporting gcc "n/a" for the
+  full-language config.** gcc should be available/enabled for `full_language` on
+  macOS — find why the bench probe skips or fails to detect it (likely the
+  Homebrew `gcc` vs Apple-clang-`gcc`-shim distinction, or a `full_language`
+  feature the shim can't compile) and fix it so the column reports a real number
+  instead of `n/a`.
+
+---
+
+# Skipped-test ungating audit (per triple)
+
+For each triple below: **when the current host has enough access to build/run
+*all* of that triple's tests**, rigorously re-evaluate every test it currently
+`mcc_skip_test`s or self-skips (rc 77). For each skip, decide whether a
+*legitimate* subset can actually run on this platform and ungate that subset
+(narrow the gate, split the case, or drop the guard); leave genuinely
+unsupportable cases skipped with the reason kept current. Don't ungate blind —
+verify the ungated part passes on the real target, not just that it compiles.
+
+Access status is from this host (x86_64 Linux; qemu-aarch64/arm/i386, wine,
+mingw x86_64 + i686 present; no macOS SDK/osxcross, no i386-Linux sysroot, no
+arm64 mingw). Re-probe before acting — availability changes per CI runner.
+
+- [ ] **x86_64-linux (native).** _Access: full now._ Audit the host-native skips
+  first — these have no emulation excuse: `cli-suite` native-only structural
+  readelf/nm, `static-glibc-run` (no static glibc), `parts-suite`/`diff3-suite`
+  (needs both gcc + clang), `mcctest` (GCC-compatible ref cc). Confirm each guard
+  still reflects a real host gap vs a stale assumption.
+- [ ] **i386-linux.** _Access: blocked — qemu-i386 present but no 32-bit Linux
+  sysroot._ Ties into the open i386-TLS item in "Now". Ungate once a 32-bit
+  sysroot is on the runner; until then the skips are legitimate.
+- [ ] **aarch64-linux.** _Access: partial — qemu-aarch64 present, but qemu models
+  x86-TSO so weak-memory atomics/bounds tests can't be faithfully validated
+  (see [[arm64-native-ci-failures]])._ Ungate only the memory-model-independent
+  subset under qemu; leave the ordering-sensitive cases for a native arm64 runner.
+- [ ] **armv7-linux.** _Access: partial — qemu-arm present, same x86-TSO caveat._
+  Same split as aarch64: ungate memory-model-independent tests under qemu, defer
+  ordering-sensitive ones to native hardware.
+- [ ] **x86_64-windows (mingw + wine).** _Access: available — x86_64-w64-mingw32
+  + wine present._ Re-evaluate the `pe-wine-conformance` / `mcctest` PE skips: how
+  much of the full_language differential runs under wine byte-identically, and
+  which cases are genuinely wine-limited vs conservatively gated.
+- [ ] **i386-windows (mingw + wine).** _Access: available — i686-w64-mingw32 +
+  wine present._ Same audit as x86_64-windows for the 32-bit PE path.
+- [ ] **arm64-windows.** _Access: blocked — no arm64 gcc/mingw reference; the only
+  reference is emulated x86_64 mingw, which can't be byte-identical to native
+  arm64 mcc (see the `mcctest` skip reason)._ Leave `mcctest`/`mcctest-bcheck`
+  skipped until a native arm64-Windows reference cc exists; codegen stays covered
+  by exec/* goldens + pe-native-conformance.
+- [ ] **x86_64-Darwin.** _Access: blocked — no macOS SDK/osxcross on host._ Ungate
+  the 2-slice / macho differential skips only on a runner with the SDK + cross
+  toolchain; the exec-based macho harnesses already self-skip off-x86_64.
+- [ ] **arm64-Darwin.** _Access: blocked — no macOS SDK/osxcross on host._ Same as
+  x86_64-Darwin; also revisit the documented external `__thread` Mach-O limitation
+  when a real arm64 macOS runner is available.
+
 ---
 
 # C99/C11 test-coverage backlog (from docs/TESTS.md)
