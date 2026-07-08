@@ -104,6 +104,20 @@ static int ast_tern_top;
 static AstLocal ast_lor[16];              /* pending &&/|| nodes                   */
 static int ast_lor_top;
 
+/* Float-constant const-pool reuse (docs/AST.md §A3 floats). A `float`/`double`
+ * constant is materialized by gv() into a fresh rodata slot + anonymous symbol
+ * (§gv). Replaying that gv would allocate a *second* slot, so the text
+ * relocation would point at a different symbol and byte-verify would fall back.
+ * Instead, the parse-build records each such symbol in emission order; replay
+ * reuses them ordinally (it reproduces the same gv sequence, so the Nth
+ * float-const matches). Byte-verify remains the backstop if the order ever
+ * diverges. */
+static Sym **ast_fconst;    /* symbols recorded at build; reused at replay        */
+static int ast_fconst_n;    /* count recorded this function                        */
+static int ast_fconst_cap;  /* allocated capacity (grow-only, reset per function)  */
+static int ast_fconst_i;    /* replay cursor into ast_fconst                        */
+static int ast_replaying;   /* the replay walker is driving gv (reuse, don't add)  */
+
 static void ast_hook_stmt(int t);
 static void ast_hook_return(int has_val);
 static void ast_hook_return_jmp(int jumps);
@@ -1991,11 +2005,35 @@ ST_FUNC int gv(int rc) {
 			size = type_size(&vtop->type, &align);
 			if (NODATA_WANTED)
 				size = 0, align = 1;
-			offset = section_add(p.sec, size, align);
-			vpush_ref(&ltype, p.sec, offset, size);
-			vswap();
-			init_putv(&p, &vtop->type, offset);
-			vtop->r |= VT_LVAL;
+#if defined(CONFIG_AST) && CONFIG_AST
+			if (ast_replaying && ast_fconst_i < ast_fconst_n) {
+				/* Reuse the rodata constant the parse-build already materialized:
+				 * reference the same symbol so the relocation is byte-identical (no
+				 * duplicate pool entry, no fresh anon_sym). */
+				Sym *fs = ast_fconst[ast_fconst_i++];
+				vpop();                     /* drop the immediate const */
+				vpushsym(&ltype, fs);       /* memory ref to the recorded slot */
+				vtop->r |= VT_LVAL;
+			} else
+#endif
+			{
+				offset = section_add(p.sec, size, align);
+				vpush_ref(&ltype, p.sec, offset, size);
+#if defined(CONFIG_AST) && CONFIG_AST
+				if (ast_active && !ast_replaying) {
+					/* record this const-pool symbol for ordinal replay reuse */
+					if (ast_fconst_n == ast_fconst_cap) {
+						ast_fconst_cap = ast_fconst_cap ? ast_fconst_cap * 2 : 16;
+						ast_fconst = mcc_realloc(ast_fconst,
+								ast_fconst_cap * sizeof *ast_fconst);
+					}
+					ast_fconst[ast_fconst_n++] = vtop->sym;
+				}
+#endif
+				vswap();
+				init_putv(&p, &vtop->type, offset);
+				vtop->r |= VT_LVAL;
+			}
 		}
 #ifdef CONFIG_MCC_BCHECK
 		if (vtop->r & VT_MUSTBOUND)
@@ -10553,7 +10591,13 @@ static int ast_op_modeled(int op) {
  * captured for Invoke; a function in an arithmetic operand is vanishingly rare.) */
 static int ast_bad_type(int tt) {
 	int bt = tt & VT_BTYPE;
-	return bt == VT_STRUCT || (tt & VT_BITFIELD) || is_float(tt);
+	/* struct/union, bit-fields, and the two SSE-atypical floats (x87 80-bit
+	 * `long double` and the `_Complex float`-pair VT_QFLOAT) are not reconstructed
+	 * faithfully in an arithmetic/store/leaf position. Plain `float`/`double` ARE:
+	 * a float leaf round-trips through the SValue union (c.i captures all 8 bytes),
+	 * and gen_opif/gen_cast/gfunc_return replay the same ops the parser emitted. */
+	return bt == VT_STRUCT || (tt & VT_BITFIELD) ||
+			bt == VT_LDOUBLE || bt == VT_QFLOAT;
 }
 
 static void ast_hook_genop(int op) {
@@ -11759,6 +11803,8 @@ static void gen_function(Sym *sym) {
 		ast_vn = 0;
 		ast_ret_val = AST_NONE;
 		ast_base_depth = (int)(vtop - vstack + 1);
+		ast_fconst_n = 0;
+		ast_replaying = 0;
 		ast_active = 1;
 		ast_capture = 1;
 	}
@@ -11804,7 +11850,10 @@ static void gen_function(Sym *sym) {
 			ast_tmpl_folds = 0;
 			if (ast_templates_env)
 				ast_run_templates(ast_cur);
+			ast_fconst_i = 0;
+			ast_replaying = 1;
 			ast_replay_body(ast_cur);
+			ast_replaying = 0;
 			mcc_state->warn_none = ast_sv_warn;
 
 			Section *rsec2 = cur_text_section->reloc;

@@ -19,23 +19,31 @@ only add (or fail to add) replayed functions.
   ≥1 function today. Measured outcome buckets across the exec corpus (per function):
   ~283 replay, ~200 bail (unsupported construct), ~116 desync (mirror lost sync), ~89
   skip (struct/float/aggregate return via `ast_bad_type`), ~67 unfaithful (byte
-  mismatch), ~39 empty. Landed this pass: `for(;;)` loops (`If` op==5 — no gvtst, empty
-  break chain; fixture `ast/replay-for_infinite`). Next targets by bail volume:
-  **`switch`** (~28 fns — the dispatch is a `gcase` binary-search comparison tree
+  mismatch), ~39 empty. Landed: `for(;;)` loops (`If` op==5; `ast/replay-for_infinite`).
+  **Landed 2026-07-08 — `float`/`double` (§A3 floats).** `ast_bad_type` now allows plain
+  `float`/`double` (still bails `long double`/`_Complex`-pair `VT_QFLOAT`/struct/bitfield):
+  fp arithmetic (`gen_opif`), int↔fp + fp-resize casts (`gen_cast`), fp comparisons, float
+  params/returns, and float local-store chains all replay. The one blocker — a `float`/
+  `double` constant is materialized by `gv()` into a fresh rodata slot + anon symbol, so
+  replaying `gv` made a *second* slot and the reloc diverged → the parse-build now **records
+  each const-pool symbol and replay reuses them ordinally** (`ast_fconst`/`ast_replaying`),
+  keeping the relocation byte-identical. Fixture `ast/replay-float_ops`. Next targets by bail
+  volume: **`switch`** (~28 fns — the dispatch is a `gcase` binary-search comparison tree
   emitted *after* the fall-through body, so byte-exact replay must reconstruct the
   sorted `case_t`/`ind` layout), **`goto`/labels** (~25 fns — unstructured jumps with
-  forward references), then floats/wider types and aggregate struct/union/bitfield
-  `Store`/copy + member access `.`/`->`. Each construct lands with its `ast/replay-*`
+  forward references), then aggregate struct/union/bitfield `Store`/copy + member access
+  `.`/`->`. Each construct lands with its `ast/replay-*`
   fixture and the whole-corpus `exec-replay` / `exec-replay-tmpl` columns staying green.
   _Node-level gap ledger (docs/AST.md §A3, feature-complete = the 15 kinds):_ the unbuilt
   kinds are **`InitList`** (aggregate/compound-literal init still reaches codegen as scalar
   `Store`s or a `memset`/`memcpy` `Invoke` — the §7 blob/`memset` grouping node does not
   exist yet) and TU-level **`TranslationUnit`** (per-fn arena only; needed for LTO/static
   localization, Long). `Store` lacks the bitfield shift/mask desugar + aggregate copy;
-  `Invoke` lacks sret / by-value-struct args; `Convert`/`Literal`/`Binary` desync on floats
-  and `_Complex`. _Note the two orderings differ:_ by **bail volume** `switch`/`goto` lead,
-  but by **combined payoff** floats/wider types lead (they dominate the ~89 skip + much of
-  the ~116 desync buckets — a larger slice than the ~28+~25 `switch`/`goto` bails).
+  `Invoke` lacks sret / by-value-struct args. **General gap (not float-specific):** storing a
+  *call result* straight into a local (`T x = f();`, `int` and `double` alike) does not yet
+  replay — a `Store(Ref, Invoke)` capture gap, separate from the per-construct list above.
+  `long double`/`_Complex` still desync. _Note the two orderings differ:_ by **bail volume**
+  `switch`/`goto` lead, but by **combined payoff** floats/wider types led (now landed).
 - **Reprioritized (2026-07-08, docs/AST.md §A1):** liveness-steered **register promotion**
   (mem2reg of address-not-taken locals) is the real -O1 payoff → moved to **early Mid**,
   right after the zero-template invariant is green. The broader template library beyond
