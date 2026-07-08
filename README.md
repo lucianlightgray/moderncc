@@ -11,8 +11,8 @@ from a single source tree.
 | **Formats**   | ELF · PE/COFF · Mach-O                                                                                                                |
 | **Libc**      | glibc · musl (`--sysroot`) · msvcrt · libSystem                                                                                       |
 | **Modes**     | compile+link · `-c` · `-S` (asm listing) · `-run` (JIT, no `a.out`) · `libmcc` C API                                                  |
-| **Speed**     | single-pass (~100× faster to compile than `gcc -O2`)                                                                                  |
-| **Size**      | ~0.6 MB dynamic · ~1.3 MB static self-contained binary                                                                                |
+| **Speed**     | single-pass (~75–90× faster to compile than `-O2`, vs clang/gcc — [measured](docs/NOTES.md#compile-speed--footprint))                  |
+| **Size**      | ~0.7 MB dynamic · ~1.5 MB static self-contained binary                                                                                |
 | **Assembler** | integrated (`MCC_CONFIG_ASM`, incl. scalar SSE + `.cfi_*`) · inline asm · `asm goto` · `-S` via built-in disassembler (all 5 targets) |
 | **Safety**    | optional bounds checker (`-b`) and backtraces (`-bt`)                                                                                 |
 | **Cross**     | `mcc-<arch>` compilers via `MCC_ENABLE_CROSS`                                                                                         |

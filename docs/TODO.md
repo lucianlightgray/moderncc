@@ -158,28 +158,17 @@ brought up one §17 category at a time.
     A whole-mcc-TU `/Od` on that build is the last-resort blunt workaround, but
     the earlier `MCC_NOOPT` `/Od`-vs-`/O2` probe was inconclusive (the intermittent
     corruption did not reproduce that run), so even that is unverified.
-- [ ] **Reconcile divergent test-count claims across docs (validate).**
-  `docs/NOTES.md` "Build status" (39/39, 22/22 and 782/782 / 520/520) vs its
-  Profiling §7 validation matrix (804/772) cite different totals with no stated
-  basis (all three moved out of README/PROFILING in the 2026-07-06 reorg).
-  → Regenerate from one `ctest -N` per host/preset and state the per-case vs
-  aggregate counting basis; make the docs cite the same source of truth.
-- [ ] **Trace the "~100× faster than gcc -O2" headline to a measurement (validate).**
-  `README.md:15` says "~100×"; `docs/NOTES.md` Profiling §4b measures 118–204×
-  (TU/opt dependent); the NOTES.md "Compile speed & footprint" table shows
-  108–141×. → Pick the documented benchmark and make the headline a measured
-  range, not a round number.
-- [ ] **Re-measure & date-stamp the README speed/size table post-lexer-change
-  (validate).** The `docs/NOTES.md` "Compile speed & footprint" table (0.05 s;
-  7/19/108/141×) and the ~0.6 MB / ~1.3 MB size claims (`README.md:16` + that
-  table) predate the `TOK_HASH_SIZE` change and are toolchain/host-sensitive. →
-  Re-run `mccbench` + `size`/`strip` a `dist-*` build; refresh, noting the host
-  as PROFILING does.
-- [ ] **Regenerate the dated "all green" status prose from CI (validate).**
-  `docs/NOTES.md` "Build status" (moved from README) narrates per-preset
-  pass/skip counts across ~35 presets; this rots silently. → Derive from the
-  latest workflow run, or add a check that fails when the prose diverges from
-  actual CTest output.
+- [ ] **Regenerate the Windows "all green" counts + add a divergence check (validate).**
+  The Linux side is now regenerated from an actual `ctest -N` run and date-stamped
+  (2026-07-07: `debug` = 1447 registered / 1279 run / 168 env-gated skips; the
+  `docs/NOTES.md` "Build status" + Profiling §7 + "Compile speed & footprint" table
+  + `README.md` headline all cite that single per-case basis and the re-measured
+  0.07 s / 76–91× vs -O2 / 0.72 MB / 1.45 MB figures). **Residual (not locally
+  reproducible):** the Windows counts (812/810) predate the `CONFIG_AST` replay
+  columns (~+640 cases) — regenerate them from the next Windows CI run so both hosts
+  cite the same basis (a note to that effect is in the doc). Optional durable fix:
+  a checker (mirror `tools/ckbuildmd.c`) that greps the NOTES.md registered-count
+  against `ctest -N` and fails on drift.
 - [ ] **`va_start` non-last / `register` param check never fires on x86_64
   (impl).** `C9911.md:3215` §7.16.1.4p3 — the SysV macro (`__builtin_va_start` in
   `runtime/include/mccdefs.h`) reads the reg-save area from the frame and never

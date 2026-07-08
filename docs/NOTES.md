@@ -103,14 +103,25 @@ win32 should not rely on the missing semantics.
 
 ## Build status
 
-**Linux status (2026-07, gcc 15.3 / clang 22):** every Linux preset is green —
-`debug`, `release`, `sanitize`, `diagnostics`, `cross`, `matrix` (gcc/clang ×
-native/cross superbuild), all 15 `linux-*` CI presets, both `dist-linux-*`
-packagings, and the full `qemu` cross×libc matrix. Each test-bearing preset
-passes its complete suite (39/39 portable tests; 22/22 in the qemu matrix,
-all 5 arches × glibc+musl + `qemu-arm64-osx`). With the `cross` toolchain
-built (`MCC_CROSS_DIR`, default `cmake-cross`), the wine PE-conformance
-and the four host-runnable Mach-O drivers run natively and pass too.
+**Linux status (2026-07-07, gcc 15.3.0 / clang 22.1.8):** every Linux preset is
+green — `debug`, `release`, `sanitize`, `diagnostics`, `cross`, `matrix`
+(gcc/clang × native/cross superbuild), all 15 `linux-*` CI presets, both
+`dist-linux-*` packagings, and the full `qemu` cross×libc matrix.
+
+**Counting basis — per-case (`ctest -N`).** The suite registers one CTest per
+case: the `exec`/`cli`/`diff3`/`parts`/`preprocess`/`ast` corpora each fan out to
+one test per row, and (with `CONFIG_AST` default-ON) the AST replay driver adds
+its `exec-replay/*` + `exec-replay-tmpl/*` columns over the whole `exec` corpus.
+On the host of record the `debug` preset registers **1447** cases: **1279 run and
+pass, 168 environment-gated self-skip, 0 fail** (the skips are the cross-toolchain,
+`wine`, `macho`, `qemu`, and network-`*-fetch` cases that are absent on a bare
+Linux host — they self-skip rather than fail, and the exact total tracks upstream
+test additions). Other presets differ only by their skip set: `asm-off`
+legitimately registers fewer (its integrated-assembler cases drop). The `qemu`
+matrix runs all 5 arches × glibc+musl + `qemu-arm64-osx` once the `*-fetch` steps
+download the target sysroots. With the `cross` toolchain built (`MCC_CROSS_DIR`,
+default `cmake-cross`), the wine PE-conformance and the four host-runnable Mach-O
+drivers run natively and pass too.
 
 **Windows status (2026-07-07, mingw gcc 13.1/16.1 / MSVC 19.51 / clang 22):**
 every Windows-runnable preset is green. The suite is registered one CTest
@@ -119,7 +130,10 @@ counts are per-case: `debug`, `release`, `diagnostics`, `cst` and `cross` all
 run **812/812** (≈120 environment-gated skips; the exact total tracks upstream
 test additions — new platform-gated cases register and self-skip here); `msvc`
 (VS generator) runs **810/810** — two fewer only because its test preset also
-filters the `wine` and `macho` labels the Ninja presets carry as counted-skips. On the MSVC
+filters the `wine` and `macho` labels the Ninja presets carry as counted-skips.
+*(These Windows totals predate the `CONFIG_AST` replay columns, which add ~640
+per-case tests on the Linux hosts — cf. the 1447 debug count above; regenerate the
+Windows figures from the next Windows CI run so both hosts cite the same basis.)* On the MSVC
 host `mcctest` still registers and passes — its gcc reference auto-resolves to
 the vendored winlibs GCC (`MCC_REF_CC`) — so the MSVC pass count tracks the
 mingw hosts. Those totals assume the vendored clang toolchain is present (`cmake
@@ -225,17 +239,20 @@ some widths/branch fields).
 
 ## Compile speed & footprint
 
-Compiling `mcc`'s own whole-compiler TU (`src/mcc.c`, `SINGLE_SOURCE=1`) to an
-object, best of 3 (gcc 15.3 / clang 22, 2026-07). Stripped release binaries:
-dynamic `mcc` ≈ **0.6 MB**, `mcc-static` ≈ **1.3 MB**.
+Compiling `mcc`'s own whole-compiler TU (`src/mcc.c`, `SINGLE_SOURCE=1`, ~108 k
+lines) to an object, best of 3, on the host of record (Ryzen 9 8940HX, Gentoo
+6.18, gcc 15.3.0 / clang 22.1.8, release `mcc`, 2026-07-07). Stripped release
+binaries: dynamic `mcc` ≈ **0.72 MB**, `mcc-static` (musl) ≈ **1.45 MB** (both up
+from the pre-CST/AST 0.6 / 1.3 MB — the CST and AST side-channel subsystems are
+now compiled in by default).
 
 | Compiler | Time | vs mcc |
 |---|--:|--:|
-| **mcc**       | **0.05 s** | 1× |
-| clang `-O0`   | 0.36 s | 7× slower |
-| gcc `-O0`     | 0.97 s | 19× slower |
-| clang `-O2`   | 5.40 s | 108× slower |
-| gcc `-O2`     | 7.03 s | 141× slower |
+| **mcc**       | **0.07 s** | 1× |
+| clang `-O0`   | 0.35 s | 5× slower |
+| gcc `-O0`     | 0.95 s | 14× slower |
+| clang `-O2`   | 5.17 s | 76× slower |
+| gcc `-O2`     | 6.17 s | 91× slower |
 
 ## Profiling — measured results & lexer-optimization findings
 
@@ -481,7 +498,9 @@ return — minus the subtract, bounds-check and array load.
 ### 7. Validation matrix
 
 The change is validated across the **20 Linux-runnable presets** (each the full
-804-test CTest suite; `asm-off` legitimately runs 772), all **100% green**:
+per-case CTest suite — see [Build status](#build-status) for the counting basis;
+the `debug` preset registers 1447 cases / 1279 run / 168 env-gated skips as of
+2026-07-07, `asm-off` legitimately fewer), all **100% green**:
 
 ```
 debug  sanitize  diagnostics  linux-gcc  linux-clang
