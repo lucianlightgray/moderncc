@@ -11502,11 +11502,11 @@ static void ast_hook_call_begin(int nb_args, int is_struct_ret, int ret_nregs,
 	}
 	/* Register-return (ret_nregs>0), sret hidden-pointer (ret_nregs==0), and
 	 * arch-transfer (ret_nregs<0, mixed INT+SSE) struct returns are all modeled via
-	 * the ordinal frame-slot (ast_alloc_loc); only a variadic struct return bails. */
-	if (is_struct_ret && variadic) {
-		ast_desync = 1;
-		return;
-	}
+	 * the ordinal frame-slot (ast_alloc_loc). The struct-return ABI is independent of
+	 * variadic (varargs affect argument passing, which gfunc_call reproduces from the
+	 * callee type, not the return), so variadic struct returns are modeled too; the
+	 * byte-verify net backstops any residual ABI mismatch. */
+	(void)variadic;
 	int need = nb_args + 1; /* callee + args */
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	if (ast_vn != rel || ast_vn < need) {

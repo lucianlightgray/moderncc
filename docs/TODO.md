@@ -29,10 +29,11 @@ only add (or fail to add) replayed functions.
   passive). Fixtures under `ast/replay-*` (16 REPLAYED + fallback + template gates).
   **Remaining** (all fall back correctly today, no crashes): **VLA/`alloca`** — the one large
   item, needs the machine-tier `StackAlloc`/`StackSave`/`StackRestore` subsystem with
-  scope-aware SP save/restore (docs/AST.md §4); plus three niche cases — **`_Complex`
-  construction** (`re + im*I`, the imaginary-unit `I` const), **nested short-circuit operands**
-  (`(a&&b)||c`, needs nested landor chains), and **variadic struct returns**. Detail per item
-  below:
+  scope-aware SP save/restore (docs/AST.md §4); plus two niche cases — **`_Complex`
+  construction** (`re + im*I`, the imaginary-unit `I` const materialized as two unsuppressed
+  float pushes) and **nested short-circuit operands** (`(a&&b)||c`, needs nested landor chains).
+  **Variadic struct returns now replay** (`ast/replay-struct_ret_variadic`) — the struct-return
+  ABI is variadic-independent, so no special handling was needed. Detail per item below:
   - ~~struct-return callers~~ **LANDED 2026-07-08** (register-return form) — `struct r = f()`
     replays. The post-call register→temp reconstruction is reproduced in the Invoke replay,
     and the result temp uses an ordinal frame-slot table (`ast_alloc_loc`/`ast_locrec`, the

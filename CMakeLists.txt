@@ -2964,6 +2964,16 @@ if(MCC_BUILD_TESTS)
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
             set_tests_properties("ast/replay-struct_return" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
+            # Variadic struct-returning call (REPLAYED targets use; main→use also
+            # replays but keep the assertion on the function doing the vararg call).
+            add_test(NAME "ast/replay-struct_ret_variadic" COMMAND "${CMAKE_COMMAND}"
+                "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
+                "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/struct_ret_variadic.c"
+                "-DOUT=${CMAKE_BINARY_DIR}/ast-replay"
+                "-DEXPECT_RC=42" "-DREPLAYED=use"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
+            set_tests_properties("ast/replay-struct_ret_variadic" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
             # _Complex arithmetic + __real__/__imag__ extraction replay (REPLAYED
             # targets addre; main falls back on the _Complex construction re+im*I).
             add_test(NAME "ast/replay-complex_arith" COMMAND "${CMAKE_COMMAND}"
