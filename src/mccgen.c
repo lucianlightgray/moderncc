@@ -10972,13 +10972,14 @@ static void ast_hook_landor_operand(int op, int c, int first) {
 		ast_desync = 1;
 		return;
 	}
-	/* A nested short-circuit / ternary operand produces a VT_CMP whose chains
-	 * this flat reproduction does not handle — bail. */
+	/* A nested short-circuit operand (`(a&&b)||c`) is itself a Binary(&&/||) node
+	 * already captured on the mirror; the outer chain accepts it as a child and
+	 * replay's AST_Binary case recurses — the inner short-circuit renders its own
+	 * gvtst chain into a VT_CMP, which the outer chain then gvtst's exactly as the
+	 * parser does. (A nested ternary operand produces a register value, not a
+	 * VT_CMP chain the flat reproduction expects — that still bails.) */
 	AstLocal opnd = ast_vs[ast_vn - 1];
-	int ok = ast_op(ast_cur, opnd);
-	if ((ast_kind(ast_cur, opnd) == AST_Binary &&
-			 (ok == TOK_LAND || ok == TOK_LOR)) ||
-			(ast_kind(ast_cur, opnd) == AST_If && ok == 5)) {
+	if (ast_kind(ast_cur, opnd) == AST_If && ast_op(ast_cur, opnd) == 5) {
 		ast_desync = 1;
 		return;
 	}
@@ -11027,6 +11028,11 @@ static void ast_hook_if_begin(void) {
 		ast_bail = 1;
 		return;
 	}
+	/* Finalize a bare-leaf condition against the live vtop: a global Ref's ->sym
+	 * is set by vpushsym only after the eager push-hook captured the leaf (sym=0),
+	 * so without this a global used directly as the condition (`if (g)`) replays
+	 * with a NULL sym and faults in gvtst's load. No-op for a Binary/compare cond. */
+	ast_finalize_leaf(ast_vs[0], vtop);
 	AstLocal cond = ast_vs[0];
 	ast_vn = 0; /* the condition is consumed by gvtst */
 	AstLocal iff = ast_node(ast_cur, AST_If);
@@ -11087,6 +11093,7 @@ static void ast_hook_while_begin(void) {
 		ast_bail = 1;
 		return;
 	}
+	ast_finalize_leaf(ast_vs[0], vtop); /* pick up a global cond's ->sym (see if_begin) */
 	AstLocal cond = ast_vs[0];
 	ast_vn = 0;
 	AstLocal loop = ast_node(ast_cur, AST_If);
@@ -11152,6 +11159,7 @@ static void ast_hook_do_cond(void) {
 		ast_bail = 1;
 		return;
 	}
+	ast_finalize_leaf(ast_vs[0], vtop); /* pick up a global cond's ->sym (see if_begin) */
 	ast_add_child(ast_cur, ast_cf_if[ast_cf_top - 1], ast_vs[0]); /* child1 = cond */
 	ast_vn = 0;
 	ast_in_call = 1; /* suppress gvtst */
@@ -11215,6 +11223,7 @@ static void ast_hook_for_cond(void) {
 		ast_bail = 1;
 		return;
 	}
+	ast_finalize_leaf(ast_vs[0], vtop); /* pick up a global cond's ->sym (see if_begin) */
 	ast_add_child(ast_cur, ast_cf_if[ast_cf_top - 1], ast_vs[0]); /* child0 = cond */
 	ast_vn = 0;
 	ast_in_call = 1; /* suppress gvtst */

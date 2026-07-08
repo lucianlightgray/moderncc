@@ -43,8 +43,10 @@ the minimize-invoke payoff. **No item on the list is a new machine op.**
   passive). Fixtures under `ast/replay-*` (16 REPLAYED + fallback + template gates).
   **Remaining** (all fall back correctly today, no crashes). **Query-first framing
   (docs/AST.md §18): the vstack/ABI backend is feature-complete C11 — `-O0` already
-  compiles all three of these correctly — so none is a codegen gap. Each is a Tier-2
+  compiles these correctly — so none is a codegen gap. Each is a Tier-2
   *AST-query* gap: the op exists; the driver lacks the query needed to drive it.**
+  (Nested short-circuit — the third item this list once carried — LANDED 2026-07-08; see
+  below. It needed no query at all, and its "segfault" was an unrelated latent bug.)
   **VLA/`alloca`** — the `StackAlloc`/`StackSave`/`StackRestore` ops exist (`-O0` emits
   them); the driver lacks the **lexical-scope-edge query** that says *where* to emit the
   paired save/restore for correct LIFO unwind (the scope nesting is in the CST/AST — a
@@ -55,10 +57,21 @@ the minimize-invoke payoff. **No item on the list is a new machine op.**
   `I` unit remains — capturing its rodata-const result as a Ref leaf link-errored
   (unresolved anon symbol), so it needs the **rodata-const-symbol-reuse query**, the same
   ordinal-symbol-reuse pattern `ast_fconst` uses for float const pools, not a plain leaf
-  capture) and **nested short-circuit operands** (`(a&&b)||c`) — simply allowing a nested
-  Binary(&&/||) operand replays flat cases but **segfaults mcc on deeper nesting (grep)**, so it
-  genuinely needs the **nested landor-chain query** (the chain structure), not the flat
-  gvtst reproduction.
+  capture).
+  **Nested short-circuit operands LANDED 2026-07-08** (`(a&&b)||c`): the inner
+  Binary(&&/||) is already a captured node, so the outer chain just accepts it as a child
+  and replay's `AST_Binary` case recurses (the inner short-circuit renders its own gvtst
+  chain into a VT_CMP the outer chain then gvtst's — the parser's exact sequence). No
+  "nested landor-chain query" was needed after all; the earlier "segfaults on deeper
+  nesting (grep)" was **not** the nested operand — it was a **latent pre-existing bug** the
+  bail happened to mask: a *bare global* used directly as an `if`/`while`/`for`/`do`
+  condition (`if (g)`) was captured with `sym==0` (the eager push-hook fires inside
+  `vsetc`, before `vpushsym` sets `->sym`) and never re-finalized at the condition site, so
+  replay reconstructed a NULL `sym` and faulted in `gvtst`'s `load`. Fixed by finalizing the
+  condition leaf (`ast_finalize_leaf(ast_vs[0], vtop)`) in the four condition hooks; a
+  nested *ternary* operand (register value, not a VT_CMP chain) still bails. Fixture
+  `ast/replay-short_circuit` now covers nested operands, nested short-circuit as a branch
+  condition, and bare-global conditions.
   **Variadic struct returns now replay** (`ast/replay-struct_ret_variadic`) — the struct-return
   ABI is variadic-independent, so no special handling was needed. Detail per item below:
   - ~~struct-return callers~~ **LANDED 2026-07-08** (register-return form) — `struct r = f()`
