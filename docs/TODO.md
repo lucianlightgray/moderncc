@@ -27,10 +27,48 @@ only add (or fail to add) replayed functions.
   forward references), then floats/wider types and aggregate struct/union/bitfield
   `Store`/copy + member access `.`/`->`. Each construct lands with its `ast/replay-*`
   fixture and the whole-corpus `exec-replay` / `exec-replay-tmpl` columns staying green.
-- Further templates beyond const-fold (algebraic, dead-branch, jump-table) and the
-  Long-horizon items (virtual always-inline over the CST store, liveness-steered
-  placement, cross-TU LTO, `-g` from provenance, hot-reload snapshots) stay design in
-  docs/AST.md §16 Mid/Long.
+  _Node-level gap ledger (docs/AST.md §A3, feature-complete = the 15 kinds):_ the unbuilt
+  kinds are **`InitList`** (aggregate/compound-literal init still reaches codegen as scalar
+  `Store`s or a `memset`/`memcpy` `Invoke` — the §7 blob/`memset` grouping node does not
+  exist yet) and TU-level **`TranslationUnit`** (per-fn arena only; needed for LTO/static
+  localization, Long). `Store` lacks the bitfield shift/mask desugar + aggregate copy;
+  `Invoke` lacks sret / by-value-struct args; `Convert`/`Literal`/`Binary` desync on floats
+  and `_Complex`. _Note the two orderings differ:_ by **bail volume** `switch`/`goto` lead,
+  but by **combined payoff** floats/wider types lead (they dominate the ~89 skip + much of
+  the ~116 desync buckets — a larger slice than the ~28+~25 `switch`/`goto` bails).
+- **Reprioritized (2026-07-08, docs/AST.md §A1):** liveness-steered **register promotion**
+  (mem2reg of address-not-taken locals) is the real -O1 payoff → moved to **early Mid**,
+  right after the zero-template invariant is green. The broader template library beyond
+  const-fold (algebraic, dead-branch, jump-table) is **demoted to Long** (structural
+  rewrites are the smaller win). Long-horizon items (virtual always-inline over the shared
+  store, cross-TU LTO, `-g` from provenance, hot-reload snapshots, **separate `-O2`/`-O3`
+  replay drivers / SSA**) stay design in docs/AST.md §16 Mid/Long.
+
+## AST — decided-with-revisit-trigger backlog (docs/AST.md "Revisit triggers")
+
+Each is a closed decision; the item is the named condition that would reopen it.
+
+- [ ] **Verify the CST answers every `-g` and LSP question without friction/contention**
+  (does the CST's lexical-scope spans + source ranges cover debugger scope queries, hover
+  types, go-to-def, live ranges) — if a gap surfaces, that reopens the dissolved `Bind`
+  marker (docs/AST.md §B1). Until then `Bind` stays fully dissolved into liveness.
+- [ ] **Acceptance bar (§C1):** the `-O1` replay driver is "done" only when every
+  `tests/exec` golden is green under the `-O1-replay` column **and** GCC's own test suite
+  passes under both `mcc -O0` and `mcc -O1`. Wire up the GCC-suite run as an AST gate.
+- [ ] **`k` value:** raise the always-inline depth `k` above the `k=1`/widen-on-back-edge
+  default only under `-O2`/`-O3` or an explicit size budget (`k≈log_b(budget)`).
+- [ ] **Size-gated outline:** land as a later binding-graph template (swap an inline binding
+  for a `Call` to a materialized standalone when rendered-size × site-count > budget);
+  v1 stays strict always-inline.
+- [ ] **Store factoring:** pull `store`/`binding`/`render` into the structure-agnostic
+  engine at the *first virtual-inline render* — the shared-storage mechanism for the
+  `CONFIG_CST || CONFIG_AST` overlap; neither subsystem ever depends on the other.
+- [ ] **Template DSL / data-driven registry:** revisit a declarative pattern DSL past ~30
+  templates; keep the function-pointer registry interface uniform so it can go data-driven.
+- [ ] **Per-function `-O1` mode:** consider only if `-O1`'s multi-pass (defer-to-TU) compile
+  latency becomes a complaint.
+- [ ] **PP-as-executable-C (JIT):** parked; promoted-not-necessitated by the
+  include-permutation analysis.
 
 ---
 

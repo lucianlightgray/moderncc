@@ -143,7 +143,9 @@ Everything desugars here: `while`/`for`/`do`/`switch` → `If`+`Jump`; `switch` 
 `switchable`-`If` cascade testing one value (jump-table is an `-O1` template;
 fall-through is free; `default` = the final false-edge). **Control-flow operators
 `&&`/`||`/`?:`/`,` lower to CFG** (hoisted out, leaving temps) — only control-free
-operators remain as tree nodes. `!x` → `Binary(==, x, 0)`; all 0/1-producing ops are
+operators remain as tree nodes. Each hoisted temp is an **anonymous per-temp `Sym`,
+register-preferred** (address never taken → the allocator keeps it in a register, liveness
+scoped): the easy-to-lower form that is also the fast one, no shared-slot bookkeeping (§C2). `!x` → `Binary(==, x, 0)`; all 0/1-producing ops are
 comparisons in one family. Op order within a block encodes C sequence points.
 
 ---
@@ -332,15 +334,17 @@ CST**, not emitted in parallel with the parser.
 
 | Decision | Options | Choice |
 |---|---|---|
-| Construction path | parallel parse-emission · **lower from the CST** | post-D1–D5 the CST already has `If`/`While`/`Binary`/`Call`… nodes; lowering from it leaves the gnarly parser untouched and realizes "reduce the CST to intention" |
-| Typing | re-derive · **reuse parse-time types** ("typed CST") | annotate CST expr/decl nodes with the `CType`/`Sym` the vstack already computes; re-deriving would duplicate the semantic engine |
+| Construction path | **parallel parse-emission via vstack hooks** · lower from the CST | **Ratified from the shipped first phase** (§17): `ast_hook_*` fire from the same vstack positions as the CST hooks and capture typed values directly, with **zero CST dependency**. Overlapping hook *sites* compile under `CONFIG_CST \|\| CONFIG_AST`; each subsystem functions entirely without the other (A4). Lowering-from-CST is *rejected* — it would couple AST to CST, violating the independence rule. |
+| AST↔CST independence (A4) | shared impl · **two independent impls, one storage when both on** | AST and CST are **separate implementations**: `CONFIG_AST` builds and replays with `CONFIG_CST` **off**, and vice-versa. When *both* are enabled they share one storage/hook-firing surface (gated by the `CONFIG_CST \|\| CONFIG_AST` OR) to avoid duplicating captured provenance — but neither ever *depends* on the other. |
+| Typing | re-derive · **reuse parse-time types** | the `ast_hook_*` sites snapshot the `CType`/`Sym` the vstack already computed at that parse moment (`ast_finalize_leaf`); re-deriving would duplicate the semantic engine |
 | Build timing | eager side-channel · **lazy, only when -O1 asks** | the AST's only consumer is -O1 codegen; building at -O0 is pure overhead (this *refines* the intro's "side-channel" wording) |
-| -O0 annotation cost | always annotate · **-O1-gated** | -O0 pays nothing |
+| -O0 cost | always build · **-O1-gated (`ast_active`)** | -O0 pays nothing — the hooks early-return on `!ast_active` |
 
-**Net: typed-CST → AST, built lazily at -O1.** New work = typed-CST annotation hooks
-(mirror the existing `cst_hook_*`). Complexity flag: the CST→AST pass must resolve
-every node to `CType`/`Sym`; the reuse path avoids re-implementing typing but couples
-parse to annotation.
+**Net: parser-hook → AST (CST-independent), built lazily at -O1.** Types are captured
+inline at the ~11 vstack sites that already hold a resolved `vtop` (no standalone typing
+pass, no CST→AST lowering). The one residual is confirming each capture site sees a valid
+`vtop` at finalize — structurally guaranteed (types resolve bottom-up on the vstack exactly
+as expressions complete), retired the first time a full function captures.
 
 ## 12. The optimization-template engine ("-O1 waits for a pattern")
 
@@ -387,6 +391,7 @@ optimization patterns** — matching becomes a hash lookup.
 | Oracle | byte round-trip (CST-style) · **differential behavioral equivalence, operationalized as the existing exec-golden corpus** (§17) | AST is desugared → no byte round-trip; run the program and compare output. *No new oracle:* re-run the ~240 3-way-validated `tests/exec` goldens as an `-O1-replay` runner column (the CST-on/off pattern) |
 | The invariant | — | **-O1-with-zero-templates ⇒ same observable result as -O0** (proves lowering faithful before any template lands). Brought up **one golden at a time** (§17) — the corpus is the replay driver's feature checklist |
 | Template safety | trust · **per-template semantic differential test** | each rewrite proven input ≡ output |
+| Acceptance bar (§C1) | exec goldens only · **exec goldens + full GCC test suite, both `-O0` and `-O1`** | the replay driver is "done" when every `tests/exec` golden is green under the `-O1-replay` column **and** GCC's own test suite passes under both `mcc -O0` and `mcc -O1`. `-O2`/`-O3` get their own separate replay drivers later (§16 Long) |
 | Harness | new · **reuse qemu-user / exec suite** | the 5-target exec harnesses already in the repo |
 
 ## 16. Phasing / prerequisites / overhead
@@ -394,8 +399,8 @@ optimization patterns** — matching becomes a hash lookup.
 | Horizon | Milestone | Prereq / overhead | Codegen risk |
 |---|---|---|---|
 | **Short** | typed-CST annotations + CST→AST lowering for exprs & straight-line code; AST-dump + differential-exec gate | annotation hooks; no templates/inlining | none (AST unread by codegen) |
-| **Mid** | flat-CFG construction (control flow); add the **AST-replay driver** over the existing vstack API (§10 — *not* a refactor of `gen_op`); -O1 replays AST→vstack with zero templates (byte-identical to -O0); virtual-inline via the CST store; first templates (tree-const-fold, algebraic, dead-branch, jump-table) | the replay driver + CFG→control-emission reconstruction; defer-to-TU | gated by the zero-template invariant |
-| **Long** | liveness-steered placement in the replay driver (register promotion / static localization — the §10 "Later" phase); time-budgeted engine (§221); dependency-ordered -O1 compile; cross-TU LTO; hot-reload snapshots; `-g` from provenance; SSA (`-O2+`) | LTO plumbing; snapshot reconciliation | mature |
+| **Mid** | flat-CFG construction (control flow); the **AST-replay driver** over the existing vstack API (§10 — *not* a refactor of `gen_op`); -O1 replays AST→vstack with zero templates (byte-identical to -O0); **then liveness-steered register promotion** (mem2reg of address-not-taken locals — the real -O1 payoff per §A1, promoted from Long); const-fold template (proves the template mechanism); virtual-inline via the shared store | the replay driver + CFG→control-emission reconstruction; defer-to-TU | gated by the zero-template invariant |
+| **Long** | the broader template library (algebraic, dead-branch, jump-table — demoted from Mid per §A1: rewrites are the *smaller* payoff); time-budgeted engine (§221); dependency-ordered -O1 compile; cross-TU LTO; hot-reload snapshots; `-g` from provenance; **separate `-O2`/`-O3` replay drivers (SSA)** | LTO plumbing; snapshot reconciliation | mature |
 
 ## 17. Replay driver — golden-TDD bring-up (First phase)
 
@@ -429,10 +434,27 @@ green case is one feature checked off. Natural order by what each category force
 
 **This reshapes §17's sub-decisions:**
 
-- **D-b (control emission)** — *implemented on demand.* Not designed up front: the
-  first `statements/` golden that fails specifies exactly the `If`/`Jump` shape needed.
-  Direct CFG emission (each BB a label; `If`→`gtst`+`gjmp`; `Jump`→`gjmp`; backpatch by
-  BB id) — no loop-recovery pass, consistent with the flat-CFG model.
+- **D-b (control emission)** — *implemented on demand.* Two mechanisms, by structure:
+  - **Structured constructs (shipped):** `if`/`else`/`while`/`do`/`for`/`for(;;)`/ternary
+    replay by **reproducing the parser's exact `gind`/`gvtst`/`gjmp`/`gsym` pattern** per
+    construct (`ast_replay_bb`), so no backpatch table is needed — the byte-verify net
+    confirms fidelity. `break`/`continue` chain onto the loop's `bsym`/`csym` exactly as
+    the parser does.
+  - **Unstructured remainder (`goto`/labels, `switch`):** the flat-CFG model — **RPO block
+    layout + `int bb_addr[nbb]` + per-BB pending-jump fixups**. `Jump` to the next block in
+    layout is fall-through; else `gjmp` recorded against the target BB. `If`→`gvtst` (thread
+    its returned jump-list into the fixup list) + `gjmp` the other edge. Back-edges target
+    already-emitted blocks → `gjmp_addr(bb_addr[i])` directly. **No loop-recovery pass** —
+    the flat CFG already carries every edge. `switch` reconstructs the parser's sorted
+    `gcase` binary-search tree emitted *after* the fall-through body. This is the one
+    concrete "known unknown" of the phase; retired by the first `statements/` golden that
+    confirms `gvtst`'s jump-list threads cleanly into the fixup list.
+
+  **Byte-tripwire scope (§A3):** byte-identity holds *iff* replay issues the same `gen_op`
+  order as the parser — precisely **single-BB functions, zero templates, zero placement
+  steering** (predicate `nbb==1`). Auto-enabled there, auto-disabled otherwise. Any control
+  flow may reorder block layout (benign, but not byte-equal), so it is a debug aid, never a
+  gate.
 - **D-c (AST storage)** — *minimal upfront, grows only when a test forces it.* Plain
   per-function arena (build → replay → free); no hash-consing until virtual-inline (Mid)
   needs it. TDD prevents over-building.
@@ -443,15 +465,31 @@ green case is one feature checked off. Natural order by what each category force
 
 ---
 
-## Open decisions & questions (DECIDE)
+## Decisions — final (ready for implementation)
+
+### Ratified this pass (2026-07-08)
+
+- **§11 construction** — the AST builds from vstack/parser hooks (`ast_hook_*`),
+  **CST-independent**; overlapping hook/storage surface is gated `CONFIG_CST || CONFIG_AST`
+  so each subsystem functions entirely without the other (A4). Lowering-from-CST is dropped.
+- **§A1 sequencing** — liveness-steered **register promotion is the real -O1 payoff** →
+  moved to **early Mid**; the template library beyond const-fold is **demoted to Long**
+  (structural rewrites are the smaller win; const-fold only proves the mechanism).
+- **§A2 control emission** — structured constructs replay by parser-pattern reproduction
+  (shipped); the `goto`/`switch` remainder uses RPO layout + `bb_addr[]` fixups.
+- **§A3 byte-tripwire** — scope is exactly `nbb==1` (+ zero templates/steering); a debug
+  aid, never a gate.
+- **§C1 acceptance bar** — exec goldens **+ the full GCC test suite** green under both
+  `mcc -O0` and `mcc -O1`; `-O2`/`-O3` get **separate** replay drivers later.
+- **§C2 hoisted temps** — anonymous per-temp `Sym`, register-preferred (easy *and* fast).
 
 ### Decided (2026-07-07 design pass)
 
-- **Construction (§11)** — *eager* type capture (`cst_hook_type` off the existing
-  vstack path; a no-op pointer store at `-O0`, so `-O0` pays nothing) + *lazy* AST
-  lowering (only when `-O1` asks). Splits "when types are captured" (eager, at the
-  parse moment that already holds them) from "when the AST is built" (lazy) — removes
-  the coupling objection. No standalone typing pass.
+- **Construction (§11)** — *superseded by the 2026-07-08 ratification above.* The original
+  plan (eager `cst_hook_type` capture + lazy CST→AST lowering) is dropped: the shipped build
+  captures types via `ast_hook_*` directly off the vstack (CST-independent), and the AST is
+  built parallel-with-parse, still lazily gated by `ast_active` so `-O0` pays nothing. The
+  "no standalone typing pass" and "-O0 pays nothing" conclusions carry over unchanged.
 - **Emit-core is not a refactor (§10/§16)** — the vstack API (`vpush*`/`gen_op`/`gv`/
   `gsym`/`gjmp`) is already the parser-decoupled seam (`gen_op` never touches `tok`/
   parser state — verified). `-O1` = a second **AST-replay driver** over that same API.
@@ -465,42 +503,36 @@ green case is one feature checked off. Natural order by what each category force
   BB=label); AST storage a minimal per-fn arena (hash-cons deferred to Mid); first
   template = const-fold, sequenced *after* the corpus is green under zero templates.
 
-### Open decisions
+### Revisit triggers (backlog — tracked in docs/TODO.md)
 
-- **`Bind` marker**: fully dissolved into liveness (15 kinds) — confirmed. Revisit
-  only if `-g` scope quality needs a positioned marker beyond the CST.
-- **`k` value** & generalization strategy: depth-`k` unroll then widen, vs widen at
-  first back-edge. Default `k=1–2`. *(Mid — inlining.)*
-- **Outline threshold**: strict always-inline (accept bloat, outline only to break
-  recursion) vs size-gated outline of hot-but-huge templates. *(Mid — inlining.)*
-- **PP-as-executable-C (JIT)**: parked; promoted (not necessitated) by the
+Each is a **closed** decision paired with the named condition that would reopen it:
+
+- **`Bind` marker** — stays dissolved into liveness (15 kinds). Reopen only if CST lexical
+  scope spans prove insufficient for a `-g`/LSP scope query → *TODO: verify the CST answers
+  every `-g`/LSP question without friction.*
+- **`k` value** — default **`k=1`, widen-on-back-edge** (the instance hash detects the
+  back-edge precisely; `k` only bounds permutation breadth). Raise `k` only under
+  `-O2`/`-O3` or an explicit size budget (`k≈log_b(budget)`). *(Mid — inlining.)*
+- **Outline threshold** — v1 **strict always-inline** (outline only to break recursion /
+  escaped identities). Size-gated outline arrives as a *later binding-graph template*, not
+  a v1 knob. *(Mid.)*
+- **Store factoring** — plain per-fn arena now. Factor `store`/`binding`/`render` into the
+  structure-agnostic engine at the **first virtual-inline render** (the validated second
+  user — not speculative); this is also the shared-storage mechanism for A4. *(Mid.)*
+- **Template representation (§12)** — **AST-fragment patterns + hash-index + hand-C guards**;
+  revisit a declarative DSL past ~30 templates; data-file registry deferred (uniform
+  function-pointer interface from day one). *(After the corpus is green under zero-template
+  replay.)*
+- **Defer-to-TU (§13)** — accept `-O1` is multi-pass (price of whole-TU always-inline). Add
+  a per-function `-O1` mode only if compile latency becomes a complaint.
+- **PP-as-executable-C (JIT)** — parked; promoted-not-necessitated by the
   include-permutation analysis.
-- **Store factoring**: generalize `cst_store`/`binding`/`render` into a
-  structure-agnostic engine shared by CST (bytes) and AST (CFG nodes). Lean: don't
-  factor speculatively — pull it out when virtual-inline becomes the second real user.
-  *(Mid.)*
-- **Template representation (§12)**: patterns-as-AST-fragments + hash-index (rec) vs
-  a declarative DSL; when/whether to make the registry data-driven. *(Deferred until
-  the corpus is green under zero-template replay — the next real design conversation.)*
-- **Defer-to-TU (§13)**: accept that `-O1` is multi-pass (departs from streaming) — the
-  price of whole-TU always-inline; revisit if per-function compile is wanted.
 
-### Open questions / ambiguities (unresolved, surfaced but not yet decided)
+### Residual ledger (implementation-validation only — no design ambiguity remains)
 
-- **`-O1` payoff source (sequencing fork)**: does `-O1`'s value come mostly from
-  structural rewrites (then the §10 "Later" liveness-steered placement can stay Long) or
-  are register-allocation gains wanted early (then placement-steering moves up in
-  priority)? Undecided — changes only *sequencing*, not architecture.
-- **CFG → control-emission reconstruction (§16 Mid risk)**: how hard is reconstructing
-  the parser's `gsym`/`gjmp` backpatching from a flat CFG in the replay driver? Believed
-  tractable via direct BB-labelled emission (§17 D-b), but the exact `switch`/loop
-  back-edge and label-fixup mechanics are unproven until the `statements/` goldens are
-  attempted. The one concrete "known unknown" of the First phase.
-- **Byte-tripwire scope (§17)**: byte-identity is dropped as a *gate* but kept as an
-  optional debug aid "on the straight-line subset where it naturally holds" — the exact
-  boundary of that subset (which nodes still emit byte-identically vs. legitimately
-  diverge) is unspecified until replay is built.
-- **`cst_hook_type` annotation surface (§11)**: which CST nodes must carry `CType`/`Sym`
-  for lowering to resolve every node, and whether the existing `cst_hook_*` set covers
-  them or new hook points are needed — a coupling-cost unknown until the CST→AST pass is
-  attempted.
+| Residual | Retired by |
+|---|---|
+| §A2 `gvtst` jump-list threads into the BB fixup list | first `goto`/`switch` `statements/` golden green |
+| §11 `vtop` valid at every capture site | first full-function capture (structurally guaranteed) |
+| §A3 tripwire predicate holds | `nbb==1` goldens byte-match under zero templates |
+| §16 Mid coverage widening | the per-construct gap list in docs/TODO.md, one `ast/replay-*` fixture at a time |
