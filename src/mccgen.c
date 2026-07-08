@@ -12148,6 +12148,33 @@ static int ast_subtree_refs_local(AstArena *a, AstLocal n, int off) {
  * slot at function entry (see gen_function), so it faithfully mirrors what -O0 would
  * read from the never-again-written slot — valid even for a parameter or a local read
  * before written, on every path. This is what makes loop variables promotable. */
+/* Accumulate an access-frequency weight for each candidate offset, walking the AST tree
+ * so a reference inside a loop counts more than a straight-line one. A loop is an If node
+ * with op==2 (see the loop-lowering marker); descending through one raises the depth, and
+ * each reference contributes 2^depth (capped) — an inner-loop local outranks an outer-loop
+ * or straight-line one when the pins are scarce. Purely a selection heuristic: any subset
+ * of valid candidates is correct, so this never changes observable behavior. */
+static void ast_promo_weigh(AstArena *a, AstLocal n, int depth, const int *coff, int nc,
+														int *cweight) {
+	if (n == AST_NONE)
+		return;
+	uint16_t k = ast_kind(a, n);
+	if (k == AST_Ref) {
+		int r = ast_op(a, n);
+		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM)) {
+			int off = (int)(int64_t)ast_ival(a, n);
+			for (int j = 0; j < nc; j++)
+				if (coff[j] == off) {
+					cweight[j] += 1 << (depth < 12 ? depth : 12);
+					break;
+				}
+		}
+	}
+	int cd = (k == AST_If && ast_op(a, n) == 2) ? depth + 1 : depth; /* op==2 = loop */
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		ast_promo_weigh(a, c, cd, coff, nc, cweight);
+}
+
 static int ast_plan_promotion(AstArena *a) {
 	ast_promo_n = 0;
 	ast_promo_callful = 0;
@@ -12178,7 +12205,7 @@ static int ast_plan_promotion(AstArena *a) {
 	 * member base retypes the same Ref to VT_STRUCT / char*, so a single scalar-
 	 * looking occurrence is not enough. */
 	int coff[AST_PROMO_MAX * 8], ctyp[AST_PROMO_MAX * 8], cpoison[AST_PROMO_MAX * 8];
-	int cref[AST_PROMO_MAX * 8]; /* reference count — access-frequency weight for selection */
+	int cweight[AST_PROMO_MAX * 8]; /* loop-depth-weighted access frequency (see ast_promo_weigh) */
 	int nc = 0;
 	for (AstLocal n = 0; n < nn; n++) {
 		if (ast_kind(a, n) != AST_Ref)
@@ -12206,9 +12233,8 @@ static int ast_plan_promotion(AstArena *a) {
 		if (j == nc) {
 			if (nc >= (int)(sizeof coff / sizeof *coff))
 				continue;
-			coff[nc] = off, ctyp[nc] = ast_type_t(a, n), cpoison[nc] = 0, cref[nc] = 0, nc++;
+			coff[nc] = off, ctyp[nc] = ast_type_t(a, n), cpoison[nc] = 0, nc++;
 		}
-		cref[j]++; /* every scalar reference weights this candidate */
 		if (!scalar)
 			cpoison[j] = 1;
 		else if (!(ctyp[j] & VT_BTYPE)) /* keep the first non-zero type seen */
@@ -12260,11 +12286,15 @@ static int ast_plan_promotion(AstArena *a) {
 			if (coff[j] >= base && coff[j] < base + size)
 				cpoison[j] = 1;
 	}
-	/* Assign each eligible candidate a register from the pool the function's call-
-	 * freeness selects. When there are more candidates than pins, promote the most-
-	 * referenced ones first (access-frequency weight) — any valid subset is correct, so
-	 * this only changes *which* locals win, spending the scarce pins on the hottest
-	 * slots. Selection-sort by cref (nc is tiny); ties keep first-seen order (stable). */
+	/* Weight each candidate by loop-depth-scaled reference frequency (a tree walk, so an
+	 * inner-loop use outranks a straight-line one), then assign each a register from the
+	 * pool the function's call-freeness selects. When there are more candidates than pins,
+	 * promote the highest-weighted ones first — any valid subset is correct, so this only
+	 * changes *which* locals win, spending the scarce pins on the hottest slots. Selection-
+	 * sort by weight (nc is tiny); ties keep first-seen order (stable). */
+	for (int j = 0; j < nc; j++)
+		cweight[j] = 0;
+	ast_promo_weigh(a, ast_root(a), 0, coff, nc, cweight);
 	ast_promo_callful = has_call;
 	const int *pool = has_call ? ast_promo_callee : ast_promo_caller;
 	int pool_n = has_call ? (int)(sizeof ast_promo_callee / sizeof *ast_promo_callee)
@@ -12276,7 +12306,7 @@ static int ast_plan_promotion(AstArena *a) {
 		for (int j = 0; j < nc; j++) {
 			if (cpoison[j] || coff[j] >= 0)
 				continue; /* poisoned, already taken, or not a real (negative) slot */
-			if (best < 0 || cref[j] > cref[best])
+			if (best < 0 || cweight[j] > cweight[best])
 				best = j;
 		}
 		if (best < 0)

@@ -286,12 +286,12 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
     forced disp8 for r13 (`101`), and `store()`'s 32-bit/byte paths take REX.B from the destination
     base — the normal allocator never bases off r12-r15, so this was an unexercised encoding gap;
     byte-identical for every register it does use (ctest 1768/1768, exec-replay byte-verify green).
-  - [~] **Spill weighting — access-frequency LANDED 2026-07-08.** When candidates exceed the pin
-    pool, `ast_plan_promotion` now promotes the most-referenced locals first (selection-sort by
-    reference count) rather than first-seen — the scarce pins go to the hottest slots. Any valid
-    subset is correct, so exec output is unchanged. Remaining: multiply the weight by **loop depth**
-    (needs loop-region identification from the flat CFG) so an inner-loop local outranks a
-    same-count straight-line one.
+  - [x] **Spill weighting (access-frequency × loop-depth) — LANDED 2026-07-08.** When candidates
+    exceed the pin pool, `ast_plan_promotion` promotes the highest-weighted locals first (selection-
+    sort) rather than first-seen — the scarce pins go to the hottest slots. The weight is a tree
+    walk (`ast_promo_weigh`): each reference contributes `2^loop-depth`, where a loop is an `If`
+    node with `op==2`, so an inner-loop local (verified: nested-loop `x,y,z,w` win R12–R15) outranks
+    an outer-loop or straight-line one. Any valid subset is correct, so exec output is unchanged.
   - [ ] share one spill slot across disjoint live ranges (needs a real backward-liveness pass);
     promote floats (blocked: the x86_64 backend has only XMM0–XMM7, all in RC_FLOAT or reserved —
     no spare XMM to pin without extending the backend to XMM8–15); other arches (GP pools are
