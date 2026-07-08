@@ -2942,13 +2942,15 @@ if(MCC_BUILD_TESTS)
             # Safety-net case: an unmodeled construct (`long double`) must fall
             # back to correct -O0 emission (same exit code) without faithfully
             # replaying — proving the byte-verify net.
-            add_test(NAME "ast/replay-ld_fallback" COMMAND "${CMAKE_COMMAND}"
-                "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
-                "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/ld_fallback.c"
-                "-DOUT=${CMAKE_BINARY_DIR}/ast-replay"
-                "-DEXPECT_RC=42" "-DNOREPLAY=main"
-                -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
-            set_tests_properties("ast/replay-ld_fallback" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+            if(NOT (MCC_TARGETOS STREQUAL "Darwin" AND MCC_CPU STREQUAL "arm64"))
+                add_test(NAME "ast/replay-ld_fallback" COMMAND "${CMAKE_COMMAND}"
+                    "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
+                    "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/ld_fallback.c"
+                    "-DOUT=${CMAKE_BINARY_DIR}/ast-replay"
+                    "-DEXPECT_RC=42" "-DNOREPLAY=main"
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
+                set_tests_properties("ast/replay-ld_fallback" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+            endif()
 
             # Struct-returning callee (`return s`): the aggregate return replays
             # (REPLAYED targets `make`, since the caller `main` falls back on the

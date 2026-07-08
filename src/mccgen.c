@@ -7528,6 +7528,8 @@ tok_next:
 		vpop();
 		gen_va_arg(&type);
 		vtop->type = type;
+		if (ast_active)
+			ast_bail = 1;
 		break;
 	}
 #endif
@@ -11471,8 +11473,9 @@ static void ast_hook_call_begin(int nb_args, int is_struct_ret, int ret_nregs,
 	 * args ARE attempted — gfunc_call copies the aggregate to the outgoing slot and
 	 * replay re-runs it, with the byte-verify net as the backstop. */
 	for (int i = 0; i < nb_args; i++) {
-		int at = (vtop - nb_args + 1 + i)->type.t;
-		if (ast_bad_type(at) && (at & VT_BTYPE) != VT_STRUCT) {
+		CType *at = &(vtop - nb_args + 1 + i)->type;
+		if (ast_bad_type(at->t) &&
+				((at->t & VT_BTYPE) != VT_STRUCT || is_complex_type(at))) {
 			ast_desync = 1;
 			return;
 		}
@@ -12367,8 +12370,8 @@ static void gen_function(Sym *sym) {
 				memcpy(cur_text_section->data + ast_body_ind, orig, body_len);
 				if (rel_len)
 					memcpy(ast_rsec->data + ast_reloc0, orig_rel, rel_len);
-				if (ast_rsec)
-					ast_rsec->data_offset = ast_reloc1;
+				if (rsec2)
+					rsec2->data_offset = ast_reloc1;
 				ind = orig_ind;
 				rsym = orig_rsym;
 			} else if (ast_replay_dump) {
