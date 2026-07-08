@@ -307,10 +307,13 @@ runtime cases go in `tests/exec/features_c99_c11/`, diagnostics/negatives in
   piece — verify wide intermediate-precision return conformance (Annex F/§5.2.4.2.2).
   _Ref:_ gcc `gcc.dg/c11-float-*.c` (wide-return cases), clang `C11/n1365.c`,
   `C11/n1396.c` (per-target IR).
-- [ ] **`_Complex` diagnostics + Annex G special values.** mcc is arithmetic/ABI
-  strong but light on constraint diagnostics and CMPLX/NaN/inf edge cases. _Ref:_
-  clang `C11/n1464.c` (CMPLX/`__builtin_complex`), `C11/n1514.c` (Annex G); gcc
-  `gcc.dg/c99-complex-{1,3}.c`.
+- [~] **`_Complex` diagnostics + Annex G special values.** _Annex G / CMPLX edges
+  now covered_ by `exec/features_c99_c11/complex_cmplx_special.c` (3-way validated,
+  runs the exec/exec-replay/exec-replay-tmpl/diff3 columns): CMPLX/CMPLXF/CMPLXL
+  exactness with NaN/inf parts (n1464), `cabs` inf-part→+inf, `conj` exact sign
+  flip, `cproj` inf→(+inf, copysign(0,imag)) — all matching gcc/clang. *Residual:*
+  `_Complex` constraint *diagnostics* (folds into the negative-test-tier item
+  below). _Ref:_ clang `C11/n1464.c`, `C11/n1514.c`; gcc `gcc.dg/c99-complex-{1,3}.c`.
 - [~] **Negative/diagnostic test tier.** _Established_ in `tests/cli/cases.h`
   (grep-the-message pattern): `c99_fam_not_last`, `c11_alignas_underalign`,
   `c99_vla_goto_into_scope`, `c99_vla_switch_into_scope`, `c11_noreturn_returns`.
