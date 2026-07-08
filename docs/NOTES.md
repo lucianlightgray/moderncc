@@ -157,18 +157,24 @@ download the target sysroots. With the `cross` toolchain built (`MCC_CROSS_DIR`,
 default `cmake-cross`), the wine PE-conformance and the six host-runnable Mach-O
 drivers run natively and pass too.
 
-**Windows status (2026-07-08, main@9544d719, mingw gcc 13.1 / MSVC 19.51 / clang 22):**
+**Windows status (2026-07-08, main@ab7f5ee9, mingw gcc 13.1 / MSVC 19.51 / clang 22):**
 every Windows-runnable preset is green. The suite is registered one CTest
 per case (the `exec`/`cli`/`diff3`/`parts`/`preprocess`/`ast` corpora fan out —
-now including the `CONFIG_AST` `exec-replay`/`exec-replay-tmpl` replay columns, so
-the Windows basis matches the Linux one), so the counts are per-case: every native
-preset registers **1415** cases with **0 failures** and 161–179 environment-gated
-self-skips (the exact total tracks upstream test additions — new platform-gated
-cases register and self-skip here). Regenerated from an actual Windows `ctest` run:
-`debug`, `cst` and `diagnostics` = **1252 run / 163 skip**, `cross` = **1254 / 161**,
-`release` = **1236 / 179**, and `msvc` (VS generator, cl-built) = **1252 / 163**.
-`msvc` now equals `debug` — the `wine`/`macho` cases register and self-skip
-(counted) rather than being label-filtered, so it is no longer "two fewer". On the MSVC
+now including the `CONFIG_AST` `exec-replay`/`exec-replay-tmpl`/`exec-replay-promote`
+replay columns, so the Windows basis matches the Linux one), so the counts are
+per-case: every native preset registers **~1696** cases with **0 failures** and
+~180–200 environment-gated self-skips (the exact total tracks upstream test additions
+— new platform-gated cases register and self-skip here; the whole-corpus
+`exec-replay-promote` column that `d6740df9` added is the ~281-case jump from the
+prior 1415 basis). Regenerated from an actual Windows `ctest` run: `debug`, `ast`
+and `cst` = **1515 run / 181 skip** (1696 registered), `cross` = **1517 / 179**,
+`release` = **1494 / 202**, `diagnostics` = **1516 / 181** (1697 — +`sanitize-smoke`),
+`sanitize` = **1516 / 181** (1697) and `sanitize-msvc` = **1495 / 200** (1695).
+`msvc` (VS generator, cl-built) = **1515 / 179** (1694): it runs the very same
+**1515** cases as `debug` and all pass — it registers two fewer skip-stubs only
+because the two macOS-only `macho-*` cross cases (`macho-conformance-native`,
+`macho-stack-protector`) aren't emitted under the VS generator (they
+register-and-self-skip on the Ninja presets). On the MSVC
 host `mcctest` still registers and passes — its gcc reference auto-resolves to
 the vendored winlibs GCC (`MCC_REF_CC`) — so the MSVC pass count tracks the
 mingw hosts. Those totals assume the vendored clang toolchain is present (`cmake

@@ -297,13 +297,18 @@ Each is a closed decision; the item is the named condition that would reopen it.
   (both hosts now cite the same per-case basis).**
   The Linux side was regenerated earlier (2026-07-07: `debug` = 1447 registered /
   1279 run / 168 env-gated skips). **Windows now regenerated (2026-07-08,
-  main@9544d719) from an actual `ctest` run on this host** — every native preset
-  registers **1415** per-case tests, **0 fail**: `debug`/`cst`/`diagnostics` =
-  1252 run / 163 skip, `cross` = 1254 / 161, `release` = 1236 / 179, `msvc`
-  (cl-built) = 1252 / 163. The prior 812/810 figures predated the `CONFIG_AST`
-  `exec-replay`/`exec-replay-tmpl` columns; the regenerated Windows basis now
-  matches the Linux one (per-case, replay columns included), and `msvc` no longer
-  reads "two fewer" (the `wine`/`macho` cases register-and-self-skip, counted).
+  main@ab7f5ee9) from an actual `ctest` run on this host** — every native preset
+  registers **~1696** per-case tests, **0 fail**: `debug`/`ast`/`cst` =
+  1515 run / 181 skip (1696), `cross` = 1517 / 179, `release` = 1494 / 202,
+  `diagnostics` = 1516 / 181 (1697, +`sanitize-smoke`), `sanitize` = 1516 / 181
+  (1697), `sanitize-msvc` = 1495 / 200 (1695), `msvc` (cl-built) = 1515 / 179
+  (1694). The prior 812/810 figures predated the `CONFIG_AST`
+  `exec-replay`/`exec-replay-tmpl` columns and the 1415 basis predated
+  `exec-replay-promote` (the whole-corpus Tier-3 promotion column `d6740df9` added,
+  the ~281-case jump); the regenerated Windows basis now matches the Linux one
+  (per-case, replay columns included). `msvc` runs the same 1515 cases as `debug`
+  (all pass); it registers two fewer only because the two macOS-only `macho-*`
+  cross cases aren't emitted under the VS generator.
   `docs/NOTES.md` "Windows status" cites these figures. _Divergence check —
   decided NOT to add the strict count-checker_ (the `tools/ckbuildmd.c`-style grep
   of NOTES.md vs `ctest -N`): the registered total is documented to **track
