@@ -150,6 +150,7 @@ static int ast_alloc_loc(int size, int align) {
  * folded into one Unary(AST_OP_MEMBER[_ARROW]) node. */
 static int ast_member_cap;   /* this member access is being captured (top-level)   */
 static int ast_member_arrow; /* saved is_arrow for the pending member access       */
+static int ast_imag_cap;     /* an imaginary-literal construction is being captured */
 
 /* switch capture/replay (docs/AST.md §5 switch cascade). A switch is an If node
  * with op==6: child0 = the controlling value, child1 = the body BB. `case`/
@@ -221,11 +222,14 @@ static void ast_hook_inc_end(void);
  * mark lvalue). The internal ops are suppressed during capture (§A3 aggregates). */
 #define AST_OP_MEMBER 0x40001       /* `.`  : &base + offset                        */
 #define AST_OP_MEMBER_ARROW 0x40002 /* `->` : indir, then &base + offset            */
+#define AST_OP_IMAG 0x40003 /* imaginary literal: child = value; build 0+val*i pair */
 static void ast_hook_indir(void);
 static void ast_hook_gaddrof(void);
 static void ast_hook_member_begin(int is_arrow);
 static void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
 															 int bcheck);
+static void ast_hook_imag_begin(void);
+static void ast_hook_imag_end(int t);
 static int ast_bad_type(int tt);
 static void ast_hook_ternary_begin(int c, int g);
 static void ast_hook_ternary_branch(int which);
@@ -4951,6 +4955,23 @@ static void cplx_store_part(SValue *dst, int imag) {
 	vpop();
 }
 
+/* Build the `0 + val*i` _Complex pair for an imaginary literal, given the pushed
+ * value on vtop and its scalar type `t`. Factored out so the AST replay (§A3
+ * _Complex construction) can reproduce it identically. */
+static void gen_imaginary_complex(int t) {
+	CType cbase, ccplx;
+	SValue r;
+	cbase.t = t & (VT_BTYPE | VT_LONG);
+	cbase.ref = NULL;
+	mk_complex_type(&ccplx, &cbase);
+	cplx_local(&ccplx, &r);
+	cplx_store_part(&r, 1);
+	vpushi(0);
+	gen_cast(&cbase);
+	cplx_store_part(&r, 0);
+	vpushv(&r);
+}
+
 static void cplx_materialize(CType *cplx, CType *base, SValue *out) {
 	cplx_local(cplx, out);
 	if (is_complex_type(&vtop->type)) {
@@ -6900,17 +6921,13 @@ tok_next:
 		type.t = t;
 		vsetc(&type, VT_CONST, &tokc);
 		if (tok_imaginary) {
-			CType cbase, ccplx;
-			SValue r;
-			cbase.t = t & (VT_BTYPE | VT_LONG);
-			cbase.ref = NULL;
-			mk_complex_type(&ccplx, &cbase);
-			cplx_local(&ccplx, &r);
-			cplx_store_part(&r, 1);
-			vpushi(0);
-			gen_cast(&cbase);
-			cplx_store_part(&r, 0);
-			vpushv(&r);
+#if defined(CONFIG_AST) && CONFIG_AST
+			ast_hook_imag_begin();
+#endif
+			gen_imaginary_complex(t);
+#if defined(CONFIG_AST) && CONFIG_AST
+			ast_hook_imag_end(t);
+#endif
 		}
 		next();
 		CST_PRIMARY();
@@ -11480,6 +11497,49 @@ static void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
 	ast_vs[ast_vn - 1] = m;
 }
 
+/* An imaginary literal (`1.0iF`): the pushed scalar value on the mirror top is a
+ * Literal; the following gen_imaginary_complex builds the `0 + val*i` pair with
+ * several ops that would corrupt the mirror. Suppress them and fold the whole
+ * construction into one Unary(AST_OP_IMAG) node (ival = scalar type) wrapping the
+ * value; replay re-runs gen_imaginary_complex (§A3 _Complex construction). */
+static void ast_hook_imag_begin(void) {
+	ast_imag_cap = 0;
+	if (!ast_active)
+		return;
+	if (ast_capture && !ast_desync && !ast_in_op && !ast_in_call && ast_vn >= 1) {
+		int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+		if (ast_vn == rel && ast_kind(ast_cur, ast_vs[ast_vn - 1]) == AST_Literal) {
+			ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
+			ast_imag_cap = 1;
+		} else {
+			ast_desync = 1;
+		}
+	}
+	ast_in_op++; /* suppress the construction's ops */
+}
+
+static void ast_hook_imag_end(int t) {
+	if (!ast_active)
+		return;
+	if (ast_in_op > 0)
+		ast_in_op--;
+	if (!ast_imag_cap)
+		return;
+	ast_imag_cap = 0;
+	if (ast_desync)
+		return;
+	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+	if (ast_vn != rel) {
+		ast_desync = 1;
+		return;
+	}
+	AstLocal m = ast_node(ast_cur, AST_Unary);
+	ast_set_op(ast_cur, m, AST_OP_IMAG);
+	ast_set_ival(ast_cur, m, (uint64_t)(unsigned)t);
+	ast_add_child(ast_cur, m, ast_vs[ast_vn - 1]);
+	ast_vs[ast_vn - 1] = m;
+}
+
 /* Call boundary. Before gfunc_call the mirror holds [callee, arg0..arg_{n-1}];
  * fold them into an Invoke and suppress the mirror across gfunc_call and the
  * result push (ast_in_call), then push the Invoke as the result. Struct returns
@@ -11812,6 +11872,10 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 			vtop->type = mt;
 			if (!(mt.t & VT_ARRAY))
 				vtop->r |= VT_LVAL | (int)ast_fbits(a, n); /* fbits = base_nonlval */
+		} else if (uop == AST_OP_IMAG) {
+			/* imaginary literal: the child pushed the scalar value; rebuild the
+			 * `0 + val*i` _Complex pair exactly (ival = the scalar type). */
+			gen_imaginary_complex((int)ast_ival(a, n));
 		} else {
 			inc((int)ast_ival(a, n), uop); /* ++/-- */
 		}

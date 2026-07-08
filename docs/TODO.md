@@ -31,7 +31,9 @@ only add (or fail to add) replayed functions.
   item, needs the machine-tier `StackAlloc`/`StackSave`/`StackRestore` subsystem with
   scope-aware SP save/restore (docs/AST.md §4); plus two niche cases — **`_Complex`
   construction** (`re + im*I`, the imaginary-unit `I` const materialized as two unsuppressed
-  float pushes) and **nested short-circuit operands** (`(a&&b)||c`) — simply allowing a nested
+  float pushes — the imaginary-*literal* form `r + 2.0i` now replays via a coarse
+  `Unary(AST_OP_IMAG)` node, fixture `ast/replay-complex_imag`; only the `__builtin_complex`-based
+  `I` unit remains) and **nested short-circuit operands** (`(a&&b)||c`) — simply allowing a nested
   Binary(&&/||) operand replays flat cases but **segfaults mcc on deeper nesting (grep)**, so it
   genuinely needs the nested landor-chain structure, not the flat gvtst reproduction.
   **Variadic struct returns now replay** (`ast/replay-struct_ret_variadic`) — the struct-return
