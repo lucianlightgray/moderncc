@@ -320,11 +320,13 @@ runtime cases go in `tests/exec/features_c99_c11/`, diagnostics/negatives in
 
 ## Coverage-depth gaps — mcc passes but under-tests vs gcc/clang; add tests
 
-- [~] **UCN-in-identifier breadth.** Basic runtime is already covered by
-  `tests/exec/lexical/ucn_identifiers.c` (`\u`/`\U` escapes, raw UTF-8, raw≡escaped
-  equivalence). *Remaining = the ~30 gcc edge cases: invalid-UCN rejection
-  (basic-latin range), UCN in different token positions, normalization* — mostly
-  diagnostics → negative-test tier. _Ref:_ gcc `gcc.dg/ucnid-*.c`; clang
+- [~] **UCN-in-identifier breadth.** Basic runtime is covered by
+  `tests/exec/lexical/ucn_identifiers.c` (`\u`/`\U`, raw UTF-8, raw≡escaped); the
+  **invalid-UCN rejection** cases (§6.4.3) are now pinned by
+  `cli/c11_ucn_basic_latin_reject` (`A` in an identifier) and
+  `cli/c11_ucn_surrogate_reject` (`\uD800`), both matching gcc/clang rc=1.
+  *Remaining = the smaller tail: UCN in different token positions and
+  normalization/UAX#31 breadth.* _Ref:_ gcc `gcc.dg/ucnid-*.c`; clang
   `C99/n717.c` (UCN grammar), `C11/n1518.c` (UAX#31).
 - [x] **FP Annex F wide-return intermediate precision (2026-07-07).** Added
   `exec/features_c99_c11/fp_wide_return.c` (3-way validated; runs the exec /

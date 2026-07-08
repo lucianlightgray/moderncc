@@ -1679,6 +1679,20 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -c {D}/../exec/functions_abi/inline.c -o {W}/inlmat.o >/dev/null 2>&1 && "
 		 "nm {W}/inlmat.o | sed -E 's/ ([A-Za-z]) _/ \\1 /' | grep -oE '(U|[Tt]) (inline_inline_undeclared|extern_extern_undeclared|noinst_static_inline_predeclared|static_func|main)$' | LC_ALL=C sort",
 		 "T extern_extern_undeclared\nT main\nU inline_inline_undeclared\nt noinst_static_inline_predeclared\nt static_func\n"},
+		/* §6.4.3: a universal-character-name in an identifier must not designate a
+		   character in the basic-latin range (< 00A0, other than $ @ `) nor a
+		   surrogate (D800-DFFF). The valid-UCN runtime side is exec/lexical/
+		   ucn_identifiers.c; these pin the two invalid-UCN rejections. */
+		{"c11_ucn_basic_latin_reject", "",
+		 "printf '%s\\n' 'int a\\u0041b;' > {W}/ucnbl.c && "
+		 "{MCC} -c {W}/ucnbl.c -o {W}/ucnbl.o 2>&1 | "
+		 "grep -oE 'universal character .u0041 is not valid in an identifier'",
+		 "universal character \\u0041 is not valid in an identifier\n"},
+		{"c11_ucn_surrogate_reject", "",
+		 "printf '%s\\n' 'int a\\uD800b;' > {W}/ucnsur.c && "
+		 "{MCC} -c {W}/ucnsur.c -o {W}/ucnsur.o 2>&1 | "
+		 "grep -oE 'universal character .ud800 is not valid in an identifier'",
+		 "universal character \\ud800 is not valid in an identifier\n"},
 
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases) / sizeof(cli_cases[0]));
