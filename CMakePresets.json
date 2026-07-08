@@ -215,6 +215,12 @@
       }
     },
     {
+      "name": "sanitize-msvc",
+      "displayName": "CI windows / MSVC AddressSanitizer (mcc_s, /fsanitize=address)",
+      "inherits": "msvc",
+      "cacheVariables": { "MCC_BUILD_SANITIZE": "ON" }
+    },
+    {
       "name": "mingw",
       "displayName": "CI windows / mingw / Release (superbuild fetches winlibs GCC)",
       "inherits": "_ninja",
@@ -375,6 +381,7 @@
     { "name": "macos-cross", "configurePreset": "macos-cross" },
 
     { "name": "msvc", "configurePreset": "msvc", "configuration": "Release" },
+    { "name": "sanitize-msvc", "configurePreset": "sanitize-msvc", "configuration": "Release" },
     { "name": "mingw", "configurePreset": "mingw" },
 
     { "name": "qemu", "configurePreset": "qemu" },
@@ -450,6 +457,7 @@
     { "name": "macos-cross", "configurePreset": "macos-cross", "inherits": "_test-macos" },
 
     { "name": "msvc", "configurePreset": "msvc", "configuration": "Release", "inherits": "_test-msvc" },
+    { "name": "sanitize-msvc", "configurePreset": "sanitize-msvc", "configuration": "Release", "inherits": "_test-msvc" },
 
     { "name": "qemu", "configurePreset": "qemu", "inherits": "_test-qemu" },
     { "name": "qemu-x86_64", "configurePreset": "qemu-x86_64", "inherits": "_test-qemu" },

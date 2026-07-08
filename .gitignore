@@ -3,3 +3,5 @@
 /vendor/
 /dist/
 /stage/
+# stray MSVC PDB the VS generator writes to CWD during custom build steps
+/vc140.pdb

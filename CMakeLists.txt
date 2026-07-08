@@ -245,19 +245,21 @@ function(mcc_validate_config)
             "mcc config: MCC_CONFIG_SEMLOCK='${MCC_CONFIG_SEMLOCK}' must be a number")
     endif()
 
-    if((MCC_BUILD_SANITIZE OR MCC_BUILD_PROFILE)
-       AND NOT CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    if(MCC_BUILD_PROFILE AND NOT CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
         message(FATAL_ERROR
-            "mcc config: MCC_BUILD_SANITIZE/PROFILE need a GCC/Clang host compiler "
-            "(have '${CMAKE_C_COMPILER_ID}'); disable them or set -DCMAKE_C_COMPILER "
-            "to gcc/clang.")
+            "mcc config: MCC_BUILD_PROFILE (mcc_p, -pg) needs a GCC/Clang host "
+            "compiler (have '${CMAKE_C_COMPILER_ID}'); disable it or set "
+            "-DCMAKE_C_COMPILER to gcc/clang.")
     endif()
-    if(MCC_BUILD_SANITIZE AND MCC_TARGETOS STREQUAL "WIN32")
+    # MCC_BUILD_SANITIZE works on GCC/Clang (ASan+UBSan) and MSVC (ASan). On a
+    # mingw/PE host with no libasan it falls back to trap-mode UBSan; the actual
+    # flavor is resolved where mcc_s is defined.
+    if(MCC_BUILD_SANITIZE
+       AND NOT CMAKE_C_COMPILER_ID MATCHES "GNU|Clang"
+       AND NOT CMAKE_C_COMPILER_ID STREQUAL "MSVC")
         message(FATAL_ERROR
-            "mcc config: MCC_BUILD_SANITIZE (mcc_s, -fsanitize=address,undefined) "
-            "is unsupported on a PE/mingw target: mingw GCC ships no "
-            "libasan/libubsan. Disable it with -DMCC_BUILD_SANITIZE=OFF "
-            "(coverage and profiling do work on mingw).")
+            "mcc config: MCC_BUILD_SANITIZE needs a GCC/Clang or MSVC host compiler "
+            "(have '${CMAKE_C_COMPILER_ID}'); disable it with -DMCC_BUILD_SANITIZE=OFF.")
     endif()
     if(MCC_BUILD_PROFILE AND MCC_TARGETOS STREQUAL "Darwin")
         message(FATAL_ERROR
@@ -1101,14 +1103,12 @@ if(MCC_ALL_DIAGNOSTICS)
 
     if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
 
-        if(WIN32 OR MCC_CONFIG_MINGW)
-            message(STATUS "mcc diagnostics: skipping mcc_s (-fsanitize) on a PE/mingw "
-                           "target (mingw ships no libasan/libubsan)")
-        elseif(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-
+        if(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
             message(STATUS "mcc diagnostics: skipping mcc_s (-fsanitize) with GNU gcc on "
                            "macOS (Homebrew gcc ships no linkable libasan/libubsan here)")
         else()
+            # WIN32/mingw resolves to trap-mode UBSan (no runtime needed); ELF/Mach
+            # to full ASan+UBSan. Flavor is picked where mcc_s is defined.
             mcc_profile_seed(MCC_BUILD_SANITIZE ON)
         endif()
         mcc_profile_seed(MCC_BUILD_COVERAGE ON)
@@ -1129,7 +1129,7 @@ mcc_config_node(MCC_BUILD_PROFILE  TYPE BOOL DEFAULT OFF GROUP "Diagnostics"
 mcc_config_node(MCC_BUILD_COVERAGE TYPE BOOL DEFAULT OFF GROUP "Diagnostics"
     HELP "Also build mcc_c (coverage instrumentation)")
 mcc_config_node(MCC_BUILD_SANITIZE TYPE BOOL DEFAULT OFF GROUP "Diagnostics"
-    HELP "Also build mcc_s (-fsanitize=address,undefined)")
+    HELP "Also build mcc_s (sanitized: GCC/Clang ASan+UBSan, MSVC ASan, mingw trap-UBSan)")
 mcc_config_node(MCC_MCCRT_USE_HOSTCC TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Build the native mccrt with the host CC instead of mcc (faster bcheck)")
 mcc_config_node(MCC_EMBED_MCCRT TYPE BOOL DEFAULT ON GROUP "Build targets"
@@ -2209,16 +2209,60 @@ if(MCC_BUILD_PROFILE)
 endif()
 
 if(MCC_BUILD_SANITIZE)
+    # Resolve the strongest sanitizer flavor the host toolchain actually supports:
+    #  - MSVC ships AddressSanitizer (/fsanitize=address); its runtime DLL lives
+    #    beside cl.exe. MSVC has no UBSan/TSan on Windows.
+    #  - a mingw/PE GCC ships no libasan/libubsan, but trap-mode UBSan links with
+    #    no runtime library (it emits ud2 on UB). mcc's only UBSan trip is
+    #    unaligned access (an intentional, arch-safe tcc idiom), so excluding the
+    #    alignment check leaves a *runnable* sanitized mcc that still traps genuine
+    #    UB. If a libasan is actually present, prefer full ASan+UBSan.
+    #  - ELF/Mach-O GCC/Clang: full ASan+UBSan against the system runtimes.
+    set(_san_cflags "")
+    set(_san_lflags "")
+    set(_san_asan_bindir "")
+    if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
+        # /Zi + /DEBUG so ASan reports are symbolized (silences C5072/LNK4302).
+        set(_san_cflags /fsanitize=address /Zi)
+        set(_san_lflags /DEBUG)
+        set(_san_desc "MSVC AddressSanitizer (/fsanitize=address)")
+        get_filename_component(_san_asan_bindir "${CMAKE_C_COMPILER}" DIRECTORY)
+    elseif(MCC_TARGETOS STREQUAL "WIN32")
+        execute_process(COMMAND "${CMAKE_C_COMPILER}" -print-file-name=libasan.a
+            OUTPUT_VARIABLE _libasan OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+        if(_libasan AND EXISTS "${_libasan}")
+            set(_san_cflags -fsanitize=address,undefined -fno-sanitize=alignment)
+            set(_san_lflags -fsanitize=address,undefined -fno-sanitize=alignment)
+            set(_san_desc "ASan+UBSan (mingw libasan/libubsan present)")
+        else()
+            set(_san_cflags -fsanitize=undefined -fno-sanitize=alignment -fsanitize-trap=undefined)
+            set(_san_lflags -fsanitize=undefined -fno-sanitize=alignment -fsanitize-trap=undefined)
+            set(_san_desc "trap-mode UBSan minus alignment (mingw ships no ASan/UBSan runtime)")
+        endif()
+    else()
+        # -fno-sanitize=alignment: mcc's only UBSan trip is intentional unaligned
+        # access (a tcc idiom, safe on every mcc target arch). Excluding it keeps a
+        # *runnable* mcc_s (see the sanitize-smoke test) without spurious reports.
+        set(_san_cflags -fsanitize=address,undefined -fno-sanitize=alignment)
+        set(_san_lflags -fsanitize=address,undefined -fno-sanitize=alignment)
+        set(_san_desc "ASan+UBSan (minus alignment)")
+    endif()
+    message(STATUS "mcc sanitizer (mcc_s): ${_san_desc}")
+
     add_executable(mcc_s src/mcc.c)
     set_source_files_properties(src/mcc.c PROPERTIES OBJECT_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/src/mcctools.c")
     target_include_directories(mcc_s PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-    target_compile_options(mcc_s PRIVATE -fsanitize=address,undefined)
-    target_link_options(mcc_s PRIVATE -fsanitize=address,undefined)
-    target_link_libraries(mcc_s PRIVATE m)
-    find_package(Threads)
-    if(Threads_FOUND)
-        target_link_libraries(mcc_s PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
+    target_compile_options(mcc_s PRIVATE ${_san_cflags})
+    if(_san_lflags)
+        target_link_options(mcc_s PRIVATE ${_san_lflags})
+    endif()
+    if(NOT MCC_TARGETOS STREQUAL "WIN32")
+        target_link_libraries(mcc_s PRIVATE m)
+        find_package(Threads)
+        if(Threads_FOUND)
+            target_link_libraries(mcc_s PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
+        endif()
     endif()
     if(MCC_GITHASH)
         target_compile_definitions(mcc_s PRIVATE "MCC_GITHASH=\"${MCC_GITHASH}\"")
@@ -2880,6 +2924,20 @@ if(MCC_BUILD_TESTS)
     add_test(NAME mcc_build
         COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}")
     set_tests_properties(mcc_build PROPERTIES FIXTURES_SETUP MCC_BUILT)
+
+    # sanitize-smoke: the sanitizer-instrumented compiler (mcc_s) actually runs a
+    # full compile+link+execute pass. This is where MCC_BUILD_SANITIZE earns its
+    # keep — a clean run proves the instrumented mcc executes without an ASan
+    # report or a UBSan trap. Registered only when mcc_s exists.
+    if(TARGET mcc_s)
+        add_test(NAME sanitize-smoke COMMAND "${CMAKE_COMMAND}"
+            "-DMCC=$<TARGET_FILE:mcc_s>" "-DBDIR=${_bdir}"
+            "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/sanitize/smoke.c"
+            "-DOUT=${CMAKE_BINARY_DIR}/sanitize-smoke${MCC_EXESUF}"
+            "-DASAN_BINDIR=${_san_asan_bindir}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/sanitize/run_sanitize.cmake")
+        set_tests_properties(sanitize-smoke PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+    endif()
 
     if(NOT CMAKE_CROSSCOMPILING)
         add_executable(hostgate tools/hostgate.c tools/toolsupport.c)

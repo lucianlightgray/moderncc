@@ -259,12 +259,13 @@ host), enabling the kernel-fused apple-libc suite.
 | Value | Type | Default | Gate | Purpose |
 |---|---|---|---|---|
 | `MCC_ALL_DIAGNOSTICS` | BOOL | OFF | GNU/Clang host (advanced) | Everything-on: verbose warnings + debug info + build `mcc_s`/`mcc_p`/`mcc_c`. |
-| `MCC_BUILD_SANITIZE` | BOOL | OFF | GNU/Clang host; **not** WIN32/mingw | Build `mcc_s` (`-fsanitize=address,undefined`). Fatal on a PE target. |
+| `MCC_BUILD_SANITIZE` | BOOL | OFF | GNU/Clang or MSVC host | Build `mcc_s` (sanitized): GCC/Clang → ASan+UBSan; MSVC → ASan (`/fsanitize=address`); mingw/PE with no libasan → trap-mode UBSan. Alignment excluded (mcc's intentional unaligned access). Exercised by the `sanitize-smoke` ctest. |
 | `MCC_BUILD_PROFILE` | BOOL | OFF | GNU/Clang host; **not** Darwin | Build `mcc_p` (`-pg -static`). Fatal on Darwin (no static crt0). |
 | `MCC_BUILD_COVERAGE` | BOOL | OFF | GNU/Clang host; needs runnable mcc | Build `mcc_c` (coverage instrumentation). |
 
-`MCC_BUILD_SANITIZE`/`MCC_BUILD_PROFILE` require a GCC/Clang **host** compiler
-(fatal otherwise).
+`MCC_BUILD_PROFILE` requires a GCC/Clang **host** compiler (fatal otherwise);
+`MCC_BUILD_SANITIZE` also accepts an MSVC host (AddressSanitizer). Presets:
+`sanitize` (mingw, trap-UBSan) and `sanitize-msvc` (MSVC ASan).
 
 ---
 
@@ -431,8 +432,9 @@ at the target definition, and the toolchain-profile-entry fatal at the node
 declaration); test both the pass and the warn/fatal path. With
 `MCC_CONFIG_AUTOCORRECT=ON` several fatals become auto-corrections instead.
 
-- **Sanitize/profile need GCC/Clang host** → fatal on MSVC host.
-- **`MCC_BUILD_SANITIZE` + WIN32** → fatal (mingw has no libasan/libubsan).
+- **`MCC_BUILD_PROFILE` needs a GCC/Clang host** → fatal on MSVC host.
+- **`MCC_BUILD_SANITIZE`** → works on GCC/Clang (ASan+UBSan), MSVC (ASan), and
+  mingw/PE (trap-mode UBSan; no libasan ships). Fatal only on a non-GCC/Clang/MSVC host.
 - **`MCC_BUILD_PROFILE` + Darwin** → fatal (no static crt0).
 - **Cross-compiling with empty `MCC_EMULATOR`** → fatal (can't run the foreign
   `mcc` to build mccrt/tests/coverage). Autocorrect: force `MCC_MCCRT_USE_HOSTCC=ON`,
