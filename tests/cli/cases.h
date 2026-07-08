@@ -50,6 +50,11 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -F{W}/fw {W}/mk.c -o {W}/mk && {W}/mk && echo RAN",
 		 "RAN\n"},
 
+		{"macho_extern_tls_unsupported", "os=Darwin",
+		 "printf 'extern __thread int c;\\nint main(void){ return c; }\\n' > {W}/et.c && "
+		 "{MCC} -B{B} -I{I} {W}/et.c -o {W}/et 2>&1 | grep -oE 'external thread-local .* unsupported' | head -1",
+		 "external thread-local '_c' is unsupported\n"},
+
 		{"visibility_attribute", "cpu=x86_64,os=linux",
 		 "{MCC} -B{B} -I{I} -c {D}/vis.c -o {W}/v.o && "
 		 "readelf -s {W}/v.o | grep -E 'hidden_att|shown_one|plain_one' | awk '{print $6, $8}' | sort",

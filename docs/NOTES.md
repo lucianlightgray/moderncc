@@ -800,6 +800,41 @@ deliberate, tested difference from a reference compiler (not a defect).
   predefines `__GNUC__ 4`, so glibc's `<math.h>` takes its GCC path — `NAN` prints
   `nan` and `signbit` returns a normalized `0`/`1` (§7.12p5, §7.12.3.6p3).
 
+### Landed: macOS bench gcc column + Darwin skip audit (2026-07-08)
+
+Closed the three macOS docs/TODO.md items on a native arm64 macOS host (SDK +
+full Homebrew cross toolchain present).
+
+- **Bench `full-language` gcc column no longer reads `n/a`.** Two root causes,
+  both macOS-only. (1) `tools/bench.c` detected `/usr/bin/gcc` (the Apple clang
+  shim) as its "gcc" column and passed it `-DCC_NAME=CC_gcc`; `full_language.c`
+  guards a K&R path with `#if CC_NAME == CC_clang`, so Apple-clang-as-gcc took the
+  non-clang branch and modern clang errors on the `int`-conversion → n/a. Now the
+  "gcc" column routes through `ts_resolve_reference_cc()` (genuine GNU gcc only —
+  skips clang/Apple-LLVM, requires gcc/GCC/Free-Software; candidate list widened to
+  `gcc-16…gcc-10`), so `-DCC_NAME=CC_gcc` reaches the real Homebrew gcc, mirroring
+  CMake's `mcc_find_gnu_gcc()`. (2) genuine gcc-16 then ICE'd (`assemble_alias`) on
+  `__attribute__((weak, alias(…)))` in `tests/diff/parts/legacy_builtins.h` — alias
+  is unsupported on Mach-O (why the block already excluded `__clang__`); now also
+  excludes `__APPLE__` (defined by gcc/clang/mcc on Darwin, not mingw/Linux) on both
+  the alias def and the paired `some_lib_func` print, keeping every Darwin compiler
+  on the same `some_lib_func=444` path (output-neutral for the mcctest differential).
+- **Darwin skip audit (x86_64 + arm64).** Re-evaluated every rc-77 skip on the
+  `macos`/`macos-cross` presets; all are legitimate. The 2-slice universal /
+  `macho-structural` / `dash-s-bytes-*` differentials run under `macos-cross`; the
+  loader-based `macho-codegen-run`/`macho-image-run`/`macho-apple-libc` self-skip
+  (Linux-only oracle) and are covered natively by `macho-conformance-native`.
+- **Fixed a real red the audit surfaced:** the just-landed Tier-3
+  `ast/replay-promote` fixture was registered unconditionally, but promotion v1 is
+  x86_64-only (`#if …MCC_TARGET_X86_64`, pins R11/R10/R9/R8), so it failed on arm64.
+  Now gated to `MCC_CPU==x86_64` (self-skip elsewhere); the output-identical
+  `exec-replay-promote` corpus keeps coverage on other targets.
+- **External `__thread` Mach-O limitation revisited** on the real runner: the
+  cross-module `extern __thread` hard-error (`src/objfmt/mccmacho.c`) still fires
+  correctly at link; lifting it needs TLV import descriptors + GOT-indirect loads
+  (non-trivial, currently-green subsystem, no driving need) — decision stands, now
+  pinned by `cli/macho_extern_tls_unsupported` (`os=Darwin`).
+
 ### Landed: C99/C11 test-coverage additions & fixes (2026-07)
 
 Closed from the [docs/TESTS.md](TESTS.md) gap analysis. Each mirrors a named

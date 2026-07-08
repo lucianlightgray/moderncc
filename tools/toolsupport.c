@@ -256,7 +256,8 @@ int ts_cc_probe(const char *cc, char *machine, int msz, char *version, int vsz) 
 }
 
 int ts_resolve_reference_cc(char *buf, int size) {
-	static const char *cands[] = {"gcc", "cc", "gcc-14", "gcc-13", "gcc-12", NULL};
+	static const char *cands[] = {"gcc", "cc", "gcc-16", "gcc-15", "gcc-14",
+																"gcc-13", "gcc-12", "gcc-11", "gcc-10", NULL};
 	int i;
 	for (i = 0; cands[i]; ++i) {
 		char path[4096], ver[256];

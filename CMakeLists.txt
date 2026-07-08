@@ -3070,6 +3070,9 @@ if(MCC_BUILD_TESTS)
                     "-DEXPECT_RC=42" "-DREPLAYED=loopy" "-DPROMOTE=1" "-DPROMOTES=loopy"
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
                 set_tests_properties("ast/replay-promote" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+            else()
+                mcc_skip_test("ast/replay-promote"
+                    "Tier-3 register promotion v1 is x86_64-only (pins R11/R10/R9/R8); on ${MCC_CPU} it is a no-op — coverage stays via exec-replay-promote")
             endif()
 
             # A7 first template = const-fold (docs/AST.md §12/§15/§17-D-d). The

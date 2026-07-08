@@ -329,12 +329,26 @@ Each is a closed decision; the item is the named condition that would reopen it.
   32-bit sysroot to exercise (not available in this env). → Add the i386 TLS gate under
   the cross preset when an i386 runtime is available.
 
-- [ ] **Investigate the macOS CI benchmark reporting gcc "n/a" for the
-  full-language config.** gcc should be available/enabled for `full_language` on
-  macOS — find why the bench probe skips or fails to detect it (likely the
-  Homebrew `gcc` vs Apple-clang-`gcc`-shim distinction, or a `full_language`
-  feature the shim can't compile) and fix it so the column reports a real number
-  instead of `n/a`.
+- [x] **Investigate the macOS CI benchmark reporting gcc "n/a" for the
+  full-language config — DONE 2026-07-08.** Two independent root causes, both
+  hit only on macOS/arm64 and both now fixed: **(1) the Apple-clang-`gcc`-shim
+  distinction.** `tools/bench.c` detected `/usr/bin/gcc` (the Apple clang shim)
+  as its "gcc" column and fed it `-DCC_NAME=CC_gcc`; `full_language.c` guards its
+  K&R `old_style_f((void*)1,…)` path with `#if CC_NAME == CC_clang`, so
+  Apple-clang-told-it-is-gcc took the non-clang path and modern clang rejects the
+  `int`-conversion as a hard *error* → n/a. Fixed by routing the bench "gcc"
+  column through the genuine-GNU-gcc resolver `ts_resolve_reference_cc()` (skips
+  clang/Apple-LLVM, requires "gcc"/"GCC"/"Free Software"; candidate list extended
+  to `gcc-16…gcc-10`), mirroring CMake's `mcc_find_gnu_gcc()` — so `-DCC_NAME=CC_gcc`
+  now goes to the real Homebrew gcc-16. **(2) a `full_language` feature genuine
+  gcc-on-Darwin can't compile.** gcc-16 then ICE'd (`assemble_alias`, varasm.cc)
+  on the `__attribute__((weak, alias(…)))` block in `tests/diff/parts/legacy_builtins.h`
+  — alias is unsupported on Mach-O (that is *why* the block already excluded
+  `__clang__`). Fixed by also excluding `__APPLE__` (defined by gcc, clang, and mcc
+  on Darwin, but not mingw/Linux) on both the alias def and the paired
+  `some_lib_func` print, keeping all Darwin compilers on the same output path
+  (`some_lib_func=444`) — output-neutral for the mcctest differential. The
+  full-language gcc column now reports a real number (obj size ≈ clang's).
 
 ---
 
@@ -378,12 +392,34 @@ arm64 mingw). Re-probe before acting — availability changes per CI runner.
   arm64 mcc (see the `mcctest` skip reason)._ Leave `mcctest`/`mcctest-bcheck`
   skipped until a native arm64-Windows reference cc exists; codegen stays covered
   by exec/* goldens + pe-native-conformance.
-- [ ] **x86_64-Darwin.** _Access: blocked — no macOS SDK/osxcross on host._ Ungate
-  the 2-slice / macho differential skips only on a runner with the SDK + cross
-  toolchain; the exec-based macho harnesses already self-skip off-x86_64.
-- [ ] **arm64-Darwin.** _Access: blocked — no macOS SDK/osxcross on host._ Same as
-  x86_64-Darwin; also revisit the documented external `__thread` Mach-O limitation
-  when a real arm64 macOS runner is available.
+- [x] **x86_64-Darwin — AUDITED 2026-07-08 on a native arm64 macOS host (SDK +
+  full cross toolchain present).** Re-evaluated every rc-77 skip on the `macos`
+  and `macos-cross` presets; all remaining Darwin skips are legitimate, none
+  spurious: the **2-slice universal / `macho-structural` / `dash-s-bytes-*`**
+  differential skips are cross-toolchain-gated and **do run** under `macos-cross`
+  (which builds `mcc-x86_64-osx` etc.); the loader-based **`macho-codegen-run` /
+  `macho-image-run` / `macho-apple-libc`** self-skip because their oracle
+  (`tests/qemu/macho/loader.c`) is Linux-only (`<linux/seccomp.h>`, `REG_RAX`,
+  `uc_mcontext.gregs`) — their native equivalent, **`macho-conformance-native`**
+  (real libSystem exec) + `macho-structural` + `macho-universal`, already runs on
+  the Mac; the rest are arch- (x86/i386/riscv/win32) or config- (bcheck/static-glibc)
+  gated. **Fixed a real red surfaced by the audit:** the just-landed Tier-3
+  `ast/replay-promote` fixture was registered unconditionally but promotion v1 is
+  x86_64-only (pins R11/R10/R9/R8, `#if …MCC_TARGET_X86_64`), so it failed on
+  arm64 — now gated to `MCC_CPU==x86_64` with a self-skip (coverage on other
+  targets stays via the output-identical `exec-replay-promote` corpus).
+- [x] **arm64-Darwin — AUDITED 2026-07-08 (native arm64 macOS runner).** Same
+  skip audit as x86_64-Darwin (all legitimate); the `ast/replay-promote`
+  arch-gate fix applies here too. **External `__thread` Mach-O limitation
+  revisited on the real runner:** the hard-error (`Mach-O: external thread-local
+  '<x>' is unsupported`, `src/objfmt/mccmacho.c`) still fires correctly at link
+  time for a cross-module `extern __thread` reference; locally-defined `__thread`
+  works (TLV descriptors). Lifting it needs TLV *import* descriptors + GOT-indirect
+  loads in both arm64/x86_64 codegen and the Mach-O writer — a non-trivial change
+  to a currently-green subsystem, and the repo gates it behind "a real
+  cross-module-TLS-on-Darwin need appears" (docs/NOTES.md), which has not. Decision
+  stands; the limitation is now **pinned** by a negative test
+  (`cli/macho_extern_tls_unsupported`, `os=Darwin`) so it cannot silently regress.
 
 ## macOS CI observations (from the 2026-07-08 `macos-15-arm64` CI run)
 

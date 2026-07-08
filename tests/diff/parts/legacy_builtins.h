@@ -88,7 +88,7 @@ extern int weak_asm_v1 asm("weak_asm_v1x") __attribute((weak));
 extern int __attribute((weak)) weak_asm_v2 asm("weak_asm_v2x");
 extern int __attribute((weak)) weak_asm_v3(void) asm("weak_asm_v3x") __attribute((weak));
 
-#ifndef __clang__
+#if !defined(__clang__) && !defined(__APPLE__)
 static const size_t dummy = 0;
 extern __typeof(dummy) weak_dummy1 __attribute__((weak, alias("dummy")));
 extern __typeof(dummy) __attribute__((weak, alias("dummy"))) weak_dummy2;
@@ -99,7 +99,7 @@ int some_lib_func(void);
 int dummy_impl_of_slf(void) {
 	return 444;
 }
-#ifndef __clang__
+#if !defined(__clang__) && !defined(__APPLE__)
 int some_lib_func(void) __attribute__((weak, alias("dummy_impl_of_slf")));
 #endif
 
@@ -126,7 +126,7 @@ void __attribute__((weak)) weak_test(void) {
 	printf("weak_asm_v1=%d\n", &weak_asm_v1 != NULL);
 	printf("weak_asm_v2=%d\n", &weak_asm_v2 != NULL);
 	printf("weak_asm_v3=%d\n", &weak_asm_v3 != NULL);
-#ifdef __clang__
+#if defined(__clang__) || defined(__APPLE__)
 	printf("some_lib_func=444\n");
 #else
 	printf("some_lib_func=%d\n", &some_lib_func ? some_lib_func() : 0);

@@ -667,6 +667,19 @@ static int detect(struct compiler *cc, const char *key, const char *const *names
 	return 1;
 }
 
+static int detect_gnu_gcc(struct compiler *cc) {
+	char m[128];
+	cc->path[0] = 0;
+	if (!ts_resolve_reference_cc(cc->path, sizeof cc->path))
+		return 0;
+	cc->key = "gcc";
+	cc->style = STYLE_GCC;
+	cc->ccmacro = "CC_gcc";
+	cc->version[0] = 0;
+	ts_cc_probe(cc->path, m, sizeof m, cc->version, sizeof cc->version);
+	return 1;
+}
+
 int main(int argc, char **argv) {
 	const char *mccpath = NULL, *srcroot = ".", *builddir = ".";
 	const char *plat = NULL, *out = NULL, *junit = NULL;
@@ -710,10 +723,10 @@ int main(int argc, char **argv) {
 	}
 	nccs++;
 	{
-		const char *gcc[] = {"gcc", 0}, *clang[] = {"clang", 0};
+		const char *clang[] = {"clang", 0};
 		const char *mingw[] = {"x86_64-w64-mingw32-gcc", "i686-w64-mingw32-gcc", 0};
 		const char *cl[] = {"cl", 0};
-		if (nccs < MAXCC && detect(&ccs[nccs], "gcc", gcc, STYLE_GCC, "CC_gcc"))
+		if (nccs < MAXCC && detect_gnu_gcc(&ccs[nccs]))
 			nccs++;
 		if (nccs < MAXCC && detect(&ccs[nccs], "clang", clang, STYLE_GCC, "CC_clang"))
 			nccs++;
