@@ -50,8 +50,10 @@ only add (or fail to add) replayed functions.
     routes to `gen_complex_op` inside the suppressed `gen_op`, its result temp is an ordinal
     frame slot (`cplx_local` wraps `ast_alloc_loc`), and `__real__`/`__imag__` (`complex_part`)
     is captured via the same coarse member hook as `.`/`->`. Complex `+`/`-`/`*` and part
-    extraction replay. Fixture `ast/replay-complex_arith`. Still falls back: **`_Complex`
-    construction** (`re + im*I` build) and complex casts.
+    extraction replay. **Complex casts** (real→complex, complex→complex) also replay now —
+    `gen_complex_cast` runs suppressed under the Convert node (same pattern). Fixture
+    `ast/replay-complex_arith`. Still falls back: **`_Complex` construction** (`re + im*I`, the
+    imaginary-unit `I` constant / const-fold rodata).
   - **VLA/`alloca`** — needs the machine-tier `StackAlloc`/`StackSave`/`StackRestore` op (§4),
     a new mechanism, not just a hook.
   - **short-circuit sub-cases LANDED 2026-07-08** — `int r = a&&b` (decl-init), `(a&&b)+1`

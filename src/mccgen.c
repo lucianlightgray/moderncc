@@ -3444,7 +3444,19 @@ static void gen_cast(CType *type) {
 	if (is_complex_type(type) || is_complex_type(&vtop->type)) {
 		if (is_complex_type(type) && is_complex_type(&vtop->type) && (type->ref->next->type.t & (VT_BTYPE | VT_LONG)) == (vtop->type.ref->next->type.t & (VT_BTYPE | VT_LONG)))
 			return;
+#if defined(CONFIG_AST) && CONFIG_AST
+		/* ast_hook_convert (above) wrapped the top in a Convert node; suppress the
+		 * mirror across gen_complex_cast's part-wise ops so they do not corrupt it —
+		 * the Convert replay re-runs gen_cast to reproduce them (§A3 _Complex). */
+		int sup = ast_active && !ast_replaying;
+		if (sup)
+			ast_in_op++;
 		gen_complex_cast(type);
+		if (sup)
+			ast_in_op--;
+#else
+		gen_complex_cast(type);
+#endif
 		return;
 	}
 
