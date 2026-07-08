@@ -212,10 +212,22 @@ brought up one §17 category at a time.
   `ARM_KNOWN_FAIL` (tools/mccharness.c:2540) never fails on `bl r3`, `b r3`,
   `mov #0xEFFF`, `mov #0x0201`, two `vmov.f32` forms — real encoding defects. → Fix
   the `mov #imm`/`vmov.f32` cases and drop the entries.
-- [ ] **Reference-harness `exec`/`diff3` goldens are effectively dead (validate).**
-  `tests/exec/goldens.h:19/53/54/62` (inline multi-unit, backtrace, btdll, alias)
-  carry full expected output but SKIP for lack of a reference harness. → Confirm
-  each is exercised elsewhere (mcctest/diff); otherwise wire up the harness.
+- [~] **Reference-harness `exec`/`diff3` goldens are effectively dead (validated
+  2026-07-07).** The four `note:`-skipped goldens (inline multi-unit, backtrace,
+  btdll, alias) carry full expected output but self-skip because each needs a
+  bespoke harness the exec runner has no mode for (multi-variant compile,
+  shared-lib, multi-TU symbol export). Determination: their behavior *is* covered
+  by executing tests, so the goldens are documentation, not coverage holes —
+  their `req` notes now say so. **inline**: the §6.7.4 emission matrix is now
+  executed by `cli/c99_inline_emission_matrix` (compiles the real
+  `exec/functions_abi/inline.c`, checks all four export categories via `nm`) plus
+  the cli inline-linkage cases. **alias**: single-TU alias is executed by the
+  `alias_single_tu` golden; only cross-TU alias resolution stays documentation.
+  **backtrace/btdll**: bcheck *detection* is executed by the `bound_*` + `builtins`
+  goldens; the formatted backtrace output (a debug aid) stays documentation — a
+  multi-variant / shared-lib address-normalizing harness is not justified for it.
+  → *Residual (optional):* build the multi-variant backtrace harness if formatted
+  `-bt`/`-b` output ever needs execution-level pinning.
 - [ ] **Windows keeps diagnostic color off unconditionally (validate).**
   src/mcchost.c:21 — suppresses color even on VT-enabled Windows Terminal. →
   Probe `ENABLE_VIRTUAL_TERMINAL_PROCESSING`; confirm `-fdiagnostics-color=always`

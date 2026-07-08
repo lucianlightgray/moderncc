@@ -1670,6 +1670,15 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -c {W}/inl_t.c -o {W}/inl_t.o >/dev/null 2>&1 && "
 		 "nm {W}/inl_t.o | grep -oE 'T f'",
 		 "T f\n"},
+		/* §6.7.4 emission matrix over the exhaustive multi-unit inline.c: which
+		   declaration/definition combos yield an exported symbol. Spans all four
+		   categories — plain inline (undefined U), extern (exported T), static
+		   inline (local t), plain static (local t). This *executes* the
+		   otherwise reference-harness-only exec/functions_abi/inline.c golden. */
+		{"c99_inline_emission_matrix", "",
+		 "{MCC} -c {D}/../exec/functions_abi/inline.c -o {W}/inlmat.o >/dev/null 2>&1 && "
+		 "nm {W}/inlmat.o | grep -oE '(U|[Tt]) (inline_inline_undeclared|extern_extern_undeclared|noinst_static_inline_predeclared|static_func|main)$' | LC_ALL=C sort",
+		 "T extern_extern_undeclared\nT main\nU inline_inline_undeclared\nt noinst_static_inline_predeclared\nt static_func\n"},
 
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases) / sizeof(cli_cases[0]));
