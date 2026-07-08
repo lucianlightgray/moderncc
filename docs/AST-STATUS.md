@@ -111,9 +111,13 @@ callee's body into the caller. Built in slices, all landed this session.
 
 ### What works
 
-A **`static`, non-variadic, leaf** (calls nothing itself), VLA-free, size-bounded function
-whose body ends in **one tail `return EXPR;`** — with **local declarations** and **internal
-control flow (if/else, loops)** — is inlined into a **later** caller (defined-before-use).
+A **`static`, non-variadic, leaf** (calls nothing itself), VLA-free, size-bounded function —
+with **local declarations**, **internal control flow (if/else, loops)**, and **one or more
+value returns including early returns inside branches** — is inlined into a **later** caller
+(defined-before-use). Returns coalesce **via memory** (each stores to a dedicated result slot,
+non-tail returns jump to a graft-local inline-end join), so several grafts feeding one call
+don't fight over a return register. `goto`/`switch`/`break`/`continue` and `void` returns are
+excluded.
 
 - **Retention** (`ast_inline_retain`, keyed by function Sym; `ast_inline_lookup`): the
   within-TU inline closure held in memory. Non-graftable candidates are retained-only.
@@ -126,8 +130,10 @@ control flow (if/else, loops)** — is inlined into a **later** caller (defined-
   via `ast_replay_bb` under **`ast_inline_bias`** (added to every `VT_LOCAL` ref offset in
   `ast_replay_value`); `ast_in_graft` makes the tail `Return` leave its value on vtop cast to
   the call's result type instead of emitting the epilogue transfer. Internal branches use
-  fresh code offsets (`gind`), so no label scoping is needed while the return is the single
-  tail. Nested inlines compose (arg expressions graft recursively).
+  fresh code offsets (`gind`). Returns coalesce via memory: each stores its return-cast value
+  to a per-graft result slot; non-tail returns (`op==1`) jump to the inline-end join
+  (`ast_inline_ret_sym`), and the slot is pushed as an lvalue after the join. Nested inlines
+  compose (arg expressions graft recursively).
 - **Pass structure:** grafting is a faithfulness-gated **pass-2** transformation, taking
   **precedence over promotion** for a function that has both (grafting removes the calls the
   promotion planner keyed its pool choice on).
@@ -139,8 +145,6 @@ fixture (asserts `add`/`scale`/`madd` (multi-statement) / `clamp` (two-if) graft
 
 ### Remaining Tier-4 breadth (TODO.md "Slice 2 breadth")
 
-- **Early / multiple returns** — needs an inline-end label and return-value coalescing
-  (phi-like: each return path lands the value in one register at the join).
 - **`goto` / `switch`** — these touch the shared label/switch replay state, so need scoping.
 - **Non-scalar params/return** — struct-by-value, float params.
 - **Forward-declared / later-defined callees** — needs true **defer-to-TU** (§13): hold ASTs
