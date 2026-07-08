@@ -29,7 +29,15 @@ it. Gaps are tiered by query cost (§18.2) — the three open items below are al
 Tier 3 (liveness→`gv` steering) is the first real `-O1` win; Tier 4 (inline + guards) is
 the minimize-invoke payoff. **No item on the list is a new machine op.**
 
-- [~] **Widen replay coverage (§16 Mid).** **This session (2026-07-08) landed 19 milestones**
+- [x] **Widen replay coverage to `-O0` parity (§16 Mid) — DONE 2026-07-08.** All actionable
+  §18.5 Tier-2 query gaps are closed; the replay driver reproduces `-O0` for the checklist.
+  ~436 function instances across the exec corpus now replay byte-identically (up from ~283).
+  The residual long tail is diverse per-construct fallbacks (atomics, `__builtin_*` families,
+  inline asm, `_Complex` specials, and the deliberately-deferred short-circuit-as-call-argument
+  case — commit f50807dc, whose failure mode is a hard arm64/macos crash byte-verify can't
+  catch, so it stays bailed) — each an isolated capture gap, not a blocker, and all fall back
+  correctly. Detail of the 19+ milestones + the three Tier-2 closures below.
+- [~] **This session (2026-07-08) landed 19 milestones**
   covering every major target and nearly the whole tail: floats/double, call-result stores,
   scalar struct member access (`.`/`->`), struct copy/deref, `switch` dispatch, named
   `goto`/labels, struct-return callees (`return s`), by-value struct args (`f(s)`), bit-field
@@ -206,6 +214,30 @@ the minimize-invoke payoff. **No item on the list is a new machine op.**
   rewrites are the smaller win). Long-horizon items (virtual always-inline over the shared
   store, cross-TU LTO, `-g` from provenance, hot-reload snapshots, **separate `-O2`/`-O3`
   replay drivers / SSA**) stay design in docs/AST.md §16 Mid/Long.
+
+### AST — beyond `-O0`: the next milestones (design in docs/AST.md §16 Mid/Long)
+
+With `-O0` replay parity complete, these are where `-O1` beats `-O0` — both purely
+because the replay driver holds the whole per-function AST as a queryable object the
+streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
+
+- [ ] **Tier 3 — liveness-steered register promotion (the real `-O1` payoff).** A backward
+  liveness pass over the per-fn AST (birth = first def, death = last use), then **steer `gv`**
+  to keep address-not-taken locals in registers instead of spilling to a stack slot
+  (mem2reg). Additive driver upgrade — no `gen_op` surgery (docs/AST.md §10/§18.2 Tier 3).
+  This is the first change that deliberately diverges from `-O0` bytes, so the gate shifts
+  from byte-verify to the **exec-golden differential** (the exec-replay corpus, §15/§17);
+  add a promotion-on mode (à la `MCC_AST_TEMPLATES`). Follow-ons: share one spill slot across
+  disjoint live ranges; spill-weight by access-freq × loop-depth.
+- [ ] **Tier 4 — virtual always-inline over the shared store (the minimize-invoke payoff).**
+  Inline internal calls instead of emitting a boundary `Call`, using the CST's content-
+  addressed store/binding/render engine (docs/AST.md §9). Cycle detection via the instance
+  hash; guard queries (`setjmp`/signal/VLA regions → non-inlinable-across, §18.4). Requires
+  defer-to-TU (§13) and store factoring (the first virtual-inline render is the validated
+  second user of the shared engine).
+- [ ] **Long horizon (design only):** the broader template library (algebraic, dead-branch,
+  jump-table), the time-budgeted engine (§12/§221), dependency-ordered `-O1` compile, cross-TU
+  LTO, `-g` from provenance, hot-reload snapshots, and separate `-O2`/`-O3` (SSA) drivers.
 
 ## AST — decided-with-revisit-trigger backlog (docs/AST.md "Revisit triggers")
 
