@@ -23,7 +23,10 @@ only add (or fail to add) replayed functions.
   replay error is not caught by the byte-verify net) or niche: **struct-return callers**
   (`struct r = f()`) — the result temp's `loc` offset diverges on replay (the callee side —
   `return s` — now replays: fixture `ast/replay-struct_return`, both register-return and
-  sret hidden-pointer); **by-value struct args**; **bit-field member `Store`**
+  sret hidden-pointer). **Landed 2026-07-08 — by-value struct args** (`f(s)`, small + large;
+  `gfunc_call` copies the aggregate to the outgoing slot; fixture `ast/replay-struct_byval_arg`).
+  Remaining: **struct-return callers** (`struct r=f()` — result-temp `loc` divergence);
+  **bit-field member `Store`**
   (shift/mask desugar); **`_Complex`**; **VLA/`alloca`** (needs `StackAlloc` — §4); and the
   **stored/nested short-circuit** (`int r = a&&b`, `(a&&b)||c`). All fall back correctly
   today. Baseline below predates this session's widening.

@@ -11413,14 +11413,17 @@ static void ast_hook_call_begin(int nb_args, int is_struct_ret) {
 		ast_desync = 1;
 		return;
 	}
-	/* A by-value struct argument (or any aggregate-typed operand) is an ABI copy
-	 * this rung does not model; replaying it could build an invalid transfer. Now
-	 * that struct lvalues reach the mirror (member bases), guard the call site. */
-	for (int i = 0; i < nb_args; i++)
-		if (ast_bad_type((vtop - nb_args + 1 + i)->type.t)) {
+	/* A bit-field / long double / _Complex-pair argument is an ABI copy this rung
+	 * does not model; replaying it could build an invalid transfer. By-value struct
+	 * args ARE attempted — gfunc_call copies the aggregate to the outgoing slot and
+	 * replay re-runs it, with the byte-verify net as the backstop. */
+	for (int i = 0; i < nb_args; i++) {
+		int at = (vtop - nb_args + 1 + i)->type.t;
+		if (ast_bad_type(at) && (at & VT_BTYPE) != VT_STRUCT) {
 			ast_desync = 1;
 			return;
 		}
+	}
 	for (int i = 0; i < need; i++)
 		ast_finalize_leaf(ast_vs[ast_vn - need + i], vtop - nb_args + i);
 	AstLocal inv = ast_node(ast_cur, AST_Invoke);
