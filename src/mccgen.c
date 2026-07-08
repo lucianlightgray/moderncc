@@ -224,6 +224,8 @@ static void ast_hook_inc_end(void);
 #define AST_OP_MEMBER 0x40001       /* `.`  : &base + offset                        */
 #define AST_OP_MEMBER_ARROW 0x40002 /* `->` : indir, then &base + offset            */
 #define AST_OP_IMAG 0x40003 /* imaginary literal: child = value; build 0+val*i pair */
+#define AST_OP_VLA 0x40004 /* VLA alloc effect (no child): type/addr/locorig/new_save */
+#define AST_OP_VLA_RESTORE 0x40005 /* VLA SP restore effect (no child): ival=loc      */
 static void ast_hook_indir(void);
 static void ast_hook_gaddrof(void);
 static void ast_hook_member_begin(int is_arrow);
@@ -233,6 +235,9 @@ static void ast_hook_imag_begin(void);
 static void ast_hook_imag_end(int t);
 static void ast_hook_builtin_complex_begin(void);
 static void ast_hook_builtin_complex_end(void);
+static void ast_hook_vla_alloc_begin(void);
+static void ast_hook_vla_alloc_end(CType *type, int addr, int new_save, int locorig);
+static void ast_hook_vla_restore(int loc);
 static int ast_bad_type(int tt);
 static void ast_hook_ternary_begin(int c, int g);
 static void ast_hook_ternary_branch(int which);
@@ -8866,6 +8871,9 @@ static void block_cleanup(struct scope *o) {
 static void vla_restore(int loc) {
 	if (loc)
 		gen_vla_sp_restore(loc);
+#if defined(CONFIG_AST) && CONFIG_AST
+	ast_hook_vla_restore(loc);
+#endif
 }
 
 static int vla_scope_open(int id) {
@@ -10582,12 +10590,17 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 		if (NODATA_WANTED)
 			goto no_alloc;
 
+		int vla_new_save = 0;
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_vla_alloc_begin();
+#endif
 		if (cur_scope->vla.num == 0) {
 			if (cur_scope->prev && cur_scope->prev->vla.num) {
 				cur_scope->vla.locorig = cur_scope->prev->vla.loc;
 			} else {
 				gen_vla_sp_save(loc -= PTR_SIZE);
 				cur_scope->vla.locorig = loc;
+				vla_new_save = 1;
 			}
 		}
 
@@ -10599,6 +10612,9 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 		gen_vla_sp_save(addr);
 		cur_scope->vla.loc = addr;
 		cur_scope->vla.num++;
+#if defined(CONFIG_AST) && CONFIG_AST
+		ast_hook_vla_alloc_end(type, addr, vla_new_save, cur_scope->vla.locorig);
+#endif
 	} else if (has_init) {
 		p.sec = sec;
 		if (!init_str && size >= 0 && (type->t & VT_ARRAY) && (tok == TOK_STR || tok == TOK_LSTR || tok == TOK_U16STR || tok == TOK_U32STR || tok == TOK_U8STR)) {
@@ -11659,6 +11675,86 @@ static void ast_hook_builtin_complex_end(void) {
 	ast_vs[ast_vn++] = n;
 }
 
+/* VLA declaration alloc sequence (`int a[n]`). The runtime size computation
+ * (n*elemsize -> the length slot) is an ordinary captured Store; only the machine-
+ * tier alloc sequence — gen_vla_sp_save(locorig) [first VLA in a fresh SP scope],
+ * vpush_type_size + gen_vla_alloc (StackAlloc: gv the size, sub/and %rsp), and
+ * gen_vla_sp_save(addr) — is not seen by the mirror (its net vstack effect is 0)
+ * and so is not otherwise replayed. It is relocation-free and fully rbp/rsp-relative
+ * (the frame-slot offsets are immediates), so it is captured as one coarse
+ * Unary(AST_OP_VLA) effect carrying the VLA type (for vpush_type_size/gen_vla_alloc),
+ * the pointer-var slot `addr`, the LIFO SP-save slot `locorig`, and whether this decl
+ * emitted the fresh SP save. Replay re-issues the exact ops; `loc` is NOT decremented
+ * at replay (the captured offsets are reused), so the frame size stays parse-final.
+ * (docs/AST.md §4/§18.3 — the VLA lexical-scope-edge query. The paired SP *restore*
+ * at a scope exit is handled by ast_hook_vla_restore.) */
+static void ast_hook_vla_alloc_begin(void) {
+	if (!ast_active)
+		return;
+	ast_in_op++; /* suppress vpush_type_size/gen_vla_alloc's vstack traffic */
+}
+
+static void ast_hook_vla_alloc_end(CType *type, int addr, int new_save,
+																		int locorig) {
+#if defined MCC_TARGET_PE && defined MCC_TARGET_X86_64
+	/* The PE alloc path also does gen_vla_result + `addr = (loc -= PTR_SIZE)`, which
+	 * moves the frame — not modeled; fall back. */
+	if (ast_active && ast_in_op > 0)
+		ast_in_op--;
+	if (ast_active)
+		ast_desync = 1;
+	(void)type, (void)addr, (void)new_save, (void)locorig;
+#else
+	if (!ast_active)
+		return;
+	if (ast_in_op > 0)
+		ast_in_op--;
+	if (ast_desync || ast_bail || ast_in_call)
+		return;
+	/* The alloc's net vstack effect is 0 — the mirror must be balanced. */
+	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+	if (ast_vn != rel) {
+		ast_desync = 1;
+		return;
+	}
+	AstLocal n = ast_node(ast_cur, AST_Unary);
+	ast_set_op(ast_cur, n, AST_OP_VLA);
+	ast_set_type(ast_cur, n, type->t, (uint64_t)(uintptr_t)type->ref);
+	ast_set_ival(ast_cur, n, (uint64_t)(int64_t)addr);
+	ast_set_sym(ast_cur, n, (uint64_t)(int64_t)locorig);
+	ast_set_fbits(ast_cur, n, (uint64_t)(unsigned)new_save);
+	ast_add_child(ast_cur, ast_cur_bb, n);
+#endif
+}
+
+/* The paired VLA SP *restore* (`gen_vla_sp_restore(loc)`) at a scope edge — the
+ * lexical-scope-edge query (docs/AST.md §4/§18.3). Two positions:
+ *   - during a `return`'s leave_scope (between gen_assign_cast and gfunc_return):
+ *     annotate the just-captured Return node (ast_ival) so replay re-emits it there.
+ *   - a plain block-scope exit (`}`, goto, label): a BB effect (AST_OP_VLA_RESTORE)
+ *     at the current BB position. */
+static void ast_hook_vla_restore(int loc) {
+	if (!ast_active || ast_desync || ast_bail || loc == 0)
+		return;
+	/* A restore reached under nocode_wanted (dead code after a return: the block-end
+	 * `}` still calls vla_leave, but gen_vla_sp_restore emits nothing) must not be
+	 * captured — replaying it would emit a stray restore the -O0 reference omits. */
+	if (NODATA_WANTED)
+		return;
+	if (ast_last_return != AST_NONE) {
+		if (ast_ival(ast_cur, ast_last_return) != 0) {
+			ast_desync = 1; /* a second restore on one return — unmodeled */
+			return;
+		}
+		ast_set_ival(ast_cur, ast_last_return, (uint64_t)(int64_t)loc);
+		return;
+	}
+	AstLocal n = ast_node(ast_cur, AST_Unary);
+	ast_set_op(ast_cur, n, AST_OP_VLA_RESTORE);
+	ast_set_ival(ast_cur, n, (uint64_t)(int64_t)loc);
+	ast_add_child(ast_cur, ast_cur_bb, n);
+}
+
 /* Call boundary. Before gfunc_call the mirror holds [callee, arg0..arg_{n-1}];
  * fold them into an Invoke and suppress the mirror across gfunc_call and the
  * result push (ast_in_call), then push the Invoke as the result. Struct returns
@@ -12188,6 +12284,27 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 				vpop();
 			break;
 		case AST_Unary:
+			if (ast_op(a, s) == AST_OP_VLA) {
+				/* VLA alloc effect: re-issue the machine-tier sequence with the exact
+				 * captured frame-slot offsets (no loc decrement — loc stays parse-final;
+				 * the size computation is a separate captured Store). */
+				CType vt;
+				vt.t = ast_type_t(a, s);
+				vt.ref = (Sym *)(uintptr_t)ast_type_ref(a, s);
+				int addr = (int)(int64_t)ast_ival(a, s);
+				int locorig = (int)(int64_t)ast_sym(a, s);
+				int al;
+				if (ast_fbits(a, s))
+					gen_vla_sp_save(locorig);
+				vpush_type_size(&vt, &al);
+				gen_vla_alloc(&vt, al);
+				gen_vla_sp_save(addr);
+				break;
+			}
+			if (ast_op(a, s) == AST_OP_VLA_RESTORE) {
+				gen_vla_sp_restore((int)(int64_t)ast_ival(a, s));
+				break;
+			}
 			/* a bare ++/-- statement: apply it, discard the result. */
 			ast_replay_value(a, s);
 			vpop();
@@ -12381,6 +12498,11 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 			if (v != AST_NONE) {
 				ast_replay_value(a, v);
 				gen_assign_cast(&func_vt);
+				/* leave_scope's VLA SP restore, emitted between the cast and the
+				 * epilogue transfer (ast_hook_vla_restore annotated ast_ival). */
+				int rloc = (int)(int64_t)ast_ival(a, s);
+				if (rloc)
+					gen_vla_sp_restore(rloc);
 				gfunc_return(&func_vt);
 			}
 			/* op==1: a non-tail return (inside a branch) jumps to the epilogue,
@@ -12573,6 +12695,10 @@ static void gen_function(Sym *sym) {
 		ast_inc_pending = AST_NONE;
 		ast_vn = 0;
 		ast_ret_val = AST_NONE;
+		/* AST_NONE is 0xffffffff, not 0 — reset per function so a scope-exit hook
+		 * (ast_hook_vla_restore) doesn't mistake the zero-init node index 0 for a
+		 * live Return node before any return has been captured. */
+		ast_last_return = AST_NONE;
 		ast_base_depth = (int)(vtop - vstack + 1);
 		ast_fconst_n = 0;
 		ast_locrec_n = 0;

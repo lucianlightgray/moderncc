@@ -3041,6 +3041,17 @@ if(MCC_BUILD_TESTS)
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
             set_tests_properties("ast/replay-complex_ctor" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
+            # VLA alloc + LIFO SP save/restore (the lexical-scope-edge query,
+            # docs/AST.md §4/§18.3): 1-D + nested-block VLAs replay, incl. the inner
+            # block's scope-exit SP restore and the function-scope restore at return.
+            add_test(NAME "ast/replay-vla" COMMAND "${CMAKE_COMMAND}"
+                "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
+                "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/vla.c"
+                "-DOUT=${CMAKE_BINARY_DIR}/ast-replay"
+                "-DEXPECT_RC=42" "-DREPLAYED=sum"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
+            set_tests_properties("ast/replay-vla" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
             # A7 first template = const-fold (docs/AST.md §12/§15/§17-D-d). The
             # per-template differential test: the fixture is compiled with the
             # const-fold template on and must (a) exit the same as -O0 (input ==

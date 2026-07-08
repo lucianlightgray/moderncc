@@ -41,16 +41,25 @@ the minimize-invoke payoff. **No item on the list is a new machine op.**
   (`ast_alloc_loc`/`ast_locrec`, the `ast_fconst` pattern) wrapping the struct-result and
   complex temps so replay reserves the same offsets — `-O0` stays byte-identical (the record is
   passive). Fixtures under `ast/replay-*` (16 REPLAYED + fallback + template gates).
-  **Remaining** (all fall back correctly today, no crashes). **Query-first framing
-  (docs/AST.md §18): the vstack/ABI backend is feature-complete C11 — `-O0` already
-  compiles these correctly — so none is a codegen gap. Each is a Tier-2
-  *AST-query* gap: the op exists; the driver lacks the query needed to drive it.**
-  (Nested short-circuit — the third item this list once carried — LANDED 2026-07-08; see
-  below. It needed no query at all, and its "segfault" was an unrelated latent bug.)
-  **VLA/`alloca`** — the `StackAlloc`/`StackSave`/`StackRestore` ops exist (`-O0` emits
-  them); the driver lacks the **lexical-scope-edge query** that says *where* to emit the
-  paired save/restore for correct LIFO unwind (the scope nesting is in the CST/AST — a
-  local walk; docs/AST.md §4/§18.3).
+  **All three Tier-2 query gaps this list once carried are now LANDED (2026-07-08)** —
+  nested short-circuit, `_Complex` construction, and VLA/`alloca` (details below). **Query-first
+  framing (docs/AST.md §18) held: the vstack/ABI backend is feature-complete C11 — `-O0`
+  already compiled all three correctly — so none was a codegen gap; each was a driver-side
+  query/capture gap over ops that already exist.** Two latent pre-existing bugs surfaced and
+  were fixed on the way (a NULL-`sym` global-condition crash; an unreset `ast_last_return`).
+  **VLA/`alloca` LANDED 2026-07-08.** The `gen_vla_sp_save`/`gen_vla_alloc`/`gen_vla_sp_restore`
+  ops exist (`-O0` emits them); the missing pieces were pure capture/query, all local walks
+  (docs/AST.md §4/§18.3): (1) the runtime **size computation** (`n*elemsize` → the length slot)
+  is already an ordinary captured Store; (2) the machine-tier **alloc sequence** is captured as
+  one coarse `Unary(AST_OP_VLA)` effect carrying the VLA type + the `addr`/`locorig` frame-slot
+  offsets (relocation-free, rbp/rsp-relative, so replay re-issues it with the captured immediates
+  and does **not** decrement `loc` — the frame size stays parse-final); (3) the paired **LIFO SP
+  restore** at the scope edge — the *lexical-scope-edge query* — is captured by hooking
+  `vla_restore`, annotating the `Return` node when it fires during a `return`'s `leave_scope`
+  (emitted between the cast and `gfunc_return`) or emitting an `AST_OP_VLA_RESTORE` BB effect at
+  a nested block's `}`. 1-D, N-D, char, multiple-same-scope, and nested-block VLAs all replay
+  byte-identically (fixture `ast/replay-vla`). PE / bcheck `use_call` alloc forms desync (fall
+  back). No new machine op — exactly the §18 prediction.
   **`_Complex` construction `re + im*I` LANDED 2026-07-08.** The imaginary-*literal* form
   `r + 2.0i` already replayed via a coarse `Unary(AST_OP_IMAG)` node (fixture
   `ast/replay-complex_imag`); the `__builtin_complex`-based `I` unit now replays too
