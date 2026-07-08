@@ -39,10 +39,13 @@ only add (or fail to add) replayed functions.
   `Store`s or a `memset`/`memcpy` `Invoke` — the §7 blob/`memset` grouping node does not
   exist yet) and TU-level **`TranslationUnit`** (per-fn arena only; needed for LTO/static
   localization, Long). `Store` lacks the bitfield shift/mask desugar + aggregate copy;
-  `Invoke` lacks sret / by-value-struct args. **General gap (not float-specific):** storing a
-  *call result* straight into a local (`T x = f();`, `int` and `double` alike) does not yet
-  replay — a `Store(Ref, Invoke)` capture gap, separate from the per-construct list above.
-  `long double`/`_Complex` still desync. _Note the two orderings differ:_ by **bail volume**
+  `Invoke` lacks sret / by-value-struct args. **Landed 2026-07-08 — call-result stores:**
+  `T x = f();` / `x = f();` (both initializer and assignment, `int`/`double` alike) now replay.
+  Root cause was a latent double-emit bug: a `Store` leaves the RHS value on the mirror as the
+  assignment's result, and `ast_hook_vpop` re-added that `Invoke`/`Unary` as a *bare* BB effect
+  → replay emitted the call twice. Fixed by only re-adding when the node is still unparented
+  (`ast_parent==AST_NONE`); a value already consumed by a `Store` is parented to it. Fixture
+  `ast/replay-call_store`. `long double`/`_Complex` still desync. _Note the two orderings differ:_ by **bail volume**
   `switch`/`goto` lead, but by **combined payoff** floats/wider types led (now landed).
 - **Reprioritized (2026-07-08, docs/AST.md §A1):** liveness-steered **register promotion**
   (mem2reg of address-not-taken locals) is the real -O1 payoff → moved to **early Mid**,

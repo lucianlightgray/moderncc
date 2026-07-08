@@ -11234,10 +11234,14 @@ static void ast_hook_vpop(void) {
 	}
 	/* Discarding a bare side-effecting result (`f();`, `i++;`): keep it as a
 	 * BasicBlock effect. A discarded value that merely *contains* one (e.g.
-	 * `f()+1;`) is not this simple node, so it falls back via byte-verify. */
+	 * `f()+1;`) is not this simple node, so it falls back via byte-verify.
+	 * Guard on parent==NONE: a value already consumed by a Store (`b = g();`
+	 * leaves the RHS Invoke on the mirror as the assignment's result) is already
+	 * parented to that Store — re-adding it here would replay the call twice. */
 	AstLocal top = ast_vs[ast_vn - 1];
 	uint16_t tk = ast_kind(ast_cur, top);
-	if (tk == AST_Invoke || tk == AST_Unary)
+	if ((tk == AST_Invoke || tk == AST_Unary) &&
+			ast_parent(ast_cur, top) == AST_NONE)
 		ast_add_child(ast_cur, ast_cur_bb, top);
 	ast_vn--;
 }
