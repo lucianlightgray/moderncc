@@ -3057,13 +3057,20 @@ if(MCC_BUILD_TESTS)
             # locals live in pinned registers (no stack traffic) — the first opt that
             # deliberately beats -O0. PROMOTES asserts it fired; the exit-code equality
             # vs -O0 is the gate (byte-verify is bypassed for a promoted function).
-            add_test(NAME "ast/replay-promote" COMMAND "${CMAKE_COMMAND}"
-                "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
-                "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/promote.c"
-                "-DOUT=${CMAKE_BINARY_DIR}/ast-replay"
-                "-DEXPECT_RC=42" "-DREPLAYED=calc" "-DPROMOTE=1" "-DPROMOTES=calc"
-                -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
-            set_tests_properties("ast/replay-promote" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+            # Register promotion is currently **x86_64-only** (the R11/R10/R9/R8 pin pool
+            # is x86_64-specific — on every other target the driver is a no-op, so the
+            # PROMOTES assertion would fail); the whole-corpus exec-replay-promote column
+            # still runs everywhere (promotion no-op => output matches). The general
+            # replay driver is covered on all arches by exec-replay/*.
+            if(MCC_CPU STREQUAL "x86_64")
+                add_test(NAME "ast/replay-promote" COMMAND "${CMAKE_COMMAND}"
+                    "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
+                    "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/promote.c"
+                    "-DOUT=${CMAKE_BINARY_DIR}/ast-replay"
+                    "-DEXPECT_RC=42" "-DREPLAYED=calc" "-DPROMOTE=1" "-DPROMOTES=calc"
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
+                set_tests_properties("ast/replay-promote" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+            endif()
 
             # A7 first template = const-fold (docs/AST.md §12/§15/§17-D-d). The
             # per-template differential test: the fixture is compiled with the

@@ -379,6 +379,44 @@ arm64 mingw). Re-probe before acting — availability changes per CI runner.
   x86_64-Darwin; also revisit the documented external `__thread` Mach-O limitation
   when a real arm64 macOS runner is available.
 
+## macOS CI observations (from the 2026-07-08 `macos-15-arm64` CI run)
+
+The GitHub macOS runners are now **Apple Silicon (`macos-15-arm64`)**. Native coverage
+is healthy — `macho-conformance-native`, `macho-stack-protector`, and `macho-universal`
+(the `machofat` fat-binary tool, shelling to `xcrun --show-sdk-path`) all **pass**
+natively on arm64. Remaining gaps to close:
+
+- [x] **`ast/replay-promote` failed on every non-x86_64 target** (arm64 Linux + macOS
+  arm64): the fixture asserted `PROMOTES=calc`, but Tier-3 register promotion is
+  x86_64-only, so the assertion can never hold elsewhere. **Fixed 2026-07-08** — the
+  fixture is now registered only when `MCC_CPU STREQUAL "x86_64"` (the whole-corpus
+  `exec-replay-promote` column still runs everywhere as a no-op). _This was a
+  self-inflicted regression from the Tier-3 v1 commit._
+- [ ] **The four x86_64-targeting `macho-{structural,codegen-run,image-run,apple-libc}`
+  drivers self-skip on arm64 macOS** (`_have_osx_cross` is false: the `macos` preset
+  builds no cross compilers, and `host_is_x86_64()` is false). On an arm64 host these
+  would need the **`x86_64-osx` cross** (they'd run x86_64 Mach-O under Rosetta 2) — so
+  either build it on the arm64 macOS runner (via the `macos-cross` preset) or add
+  **arm64-native** structural/codegen/image/apple-libc drivers so arm64 macOS gets that
+  coverage directly. (Native arm64 Mach-O is already exercised by
+  `macho-conformance-native`.)
+- [ ] **`exec/backtrace` (+ its `exec-replay`/`-tmpl`/`-promote` and `diff3` columns)
+  skips on macOS.** The golden output is ELF/Linux-specific (exact BCHECK/backtrace
+  formatting + addresses); decide whether to validate a Darwin-specific formatted
+  backtrace/bcheck golden or keep it documented as ELF-only.
+
+## Tier-3 register-promotion correctness (x86_64) — MUST-FIX before broadening
+
+- [ ] **A promoted function that accesses a global miscompiles** under `MCC_AST_PROMOTE`:
+  the GOTPCREL global-access path emits `mov <sym>@GOTPCREL(%rip), %r11` directly, which
+  clobbers a promoted local pinned in **R11** (and R8–R11 are likewise reachable by other
+  hardcoded backend uses) — e.g. `int g; int f(int v){int x=v+1; g=x; return x+40;}`
+  returns 16, not 42. The corpus missed it (its few promoted functions have no global
+  store). **The caller-saved R8–R11 pin pool is fundamentally unsafe.** Fix: pin
+  **callee-saved** registers (RBX/R12–R15 — the backend never touches them) with
+  prologue/epilogue save+restore. This is also the prerequisite for the parked control-flow
+  extension (single-BB restriction lifted via entry-init; stashed) — reopen both together.
+
 ---
 
 # C99/C11 test-coverage backlog (from docs/TESTS.md)
