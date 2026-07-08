@@ -118,6 +118,12 @@ static int ast_fconst_cap;  /* allocated capacity (grow-only, reset per function
 static int ast_fconst_i;    /* replay cursor into ast_fconst                        */
 static int ast_replaying;   /* the replay walker is driving gv (reuse, don't add)  */
 
+/* Member access (`.`/`->`) capture state: the internal indir/gaddrof/vpushi/genop
+ * are suppressed (via ast_in_call) between begin and end, and the whole access is
+ * folded into one Unary(AST_OP_MEMBER[_ARROW]) node. */
+static int ast_member_cap;   /* this member access is being captured (top-level)   */
+static int ast_member_arrow; /* saved is_arrow for the pending member access       */
+
 static void ast_hook_stmt(int t);
 static void ast_hook_return(int has_val);
 static void ast_hook_return_jmp(int jumps);
@@ -155,8 +161,17 @@ static void ast_hook_for_end(void);
 static void ast_hook_inc(int post, int c);
 static void ast_hook_inc_end(void);
 #define AST_OP_ADDR 0x40000 /* Unary op marker: gaddrof (array-decay/address-of) */
+/* Member access (`.` / `->`) captured coarsely: ival = field byte offset, type =
+ * member type, child = the aggregate base. Replay reproduces the parser's exact
+ * op sequence (indir for `->`, gaddrof, retype-to-char*, +offset, retype-to-member,
+ * mark lvalue). The internal ops are suppressed during capture (§A3 aggregates). */
+#define AST_OP_MEMBER 0x40001       /* `.`  : &base + offset                        */
+#define AST_OP_MEMBER_ARROW 0x40002 /* `->` : indir, then &base + offset            */
 static void ast_hook_indir(void);
 static void ast_hook_gaddrof(void);
+static void ast_hook_member_begin(int is_arrow);
+static void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
+															 int bcheck);
 static int ast_bad_type(int tt);
 static void ast_hook_ternary_begin(int c, int g);
 static void ast_hook_ternary_branch(int which);
@@ -7705,6 +7720,9 @@ tok_next:
 			next();
 		} else if (tok == '.' || tok == TOK_ARROW) {
 			int qualifiers, cumofs, base_nonlval;
+#if defined(CONFIG_AST) && CONFIG_AST
+			ast_hook_member_begin(tok == TOK_ARROW);
+#endif
 			if (tok == TOK_ARROW)
 				indir();
 			qualifiers = vtop->type.t & VT_QUALIFY;
@@ -7726,6 +7744,15 @@ tok_next:
 					vtop->r |= VT_MUSTBOUND;
 #endif
 			}
+#if defined(CONFIG_AST) && CONFIG_AST
+			{
+				int _mbc = 0;
+#ifdef CONFIG_MCC_BCHECK
+				_mbc = mcc_state->do_bounds_check;
+#endif
+				ast_hook_member_end(cumofs, &s->type, base_nonlval, qualifiers, _mbc);
+			}
+#endif
 			next();
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
 			CST_OPEN_AT(CST_Member, cst_um);
@@ -10536,7 +10563,13 @@ static void ast_hook_vpush(void) {
 	 * a frame-relative address value (an array, which is its own address). Both
 	 * re-push exactly from (r, offset). */
 	int is_local = (r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM);
-	if (ast_bad_type(tt) || (!is_const && !is_sym && !is_local)) {
+	/* A struct/union LVALUE base (a frame local or a global's address) is a
+	 * reconstructable address — allow it so member access (ast_hook_member_*) can
+	 * consume it. Other bad types (bit-field, long double, _Complex-pair) and any
+	 * non-lvalue leaf still desync. */
+	int agg_lval = (tt & VT_BTYPE) == VT_STRUCT && !(tt & VT_BITFIELD) &&
+			(is_local || is_sym);
+	if ((ast_bad_type(tt) && !agg_lval) || (!is_const && !is_sym && !is_local)) {
 		ast_desync = 1;
 		return;
 	}
@@ -11122,6 +11155,61 @@ static void ast_hook_gaddrof(void) {
 	ast_vs[ast_vn - 1] = u;
 }
 
+/* Member access `.`/`->`: the parser computes `&base + field_offset` with several
+ * in-place `vtop->type` retypes (to char* for the offset add, back to the member
+ * type) that fire no hooks — so the fine-grained op tree cannot be replayed
+ * faithfully (the offset would scale by sizeof(base), not 1). Instead we fold the
+ * whole access into one node. begin() finalizes the base leaf and suppresses the
+ * internal ops (indir/gaddrof/vpushi/gen_op) via ast_in_call; end() builds the
+ * Unary(MEMBER) node. */
+static void ast_hook_member_begin(int is_arrow) {
+	ast_member_cap = 0;
+	if (!ast_active)
+		return;
+	if (ast_capture && !ast_desync && !ast_in_op && !ast_in_call && ast_vn >= 1) {
+		int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+		if (ast_vn == rel) {
+			ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
+			ast_member_cap = 1;
+			ast_member_arrow = is_arrow;
+		} else {
+			ast_desync = 1;
+		}
+	}
+	ast_in_call++; /* suppress the internal indir/gaddrof/vpushi/gen_op */
+}
+
+static void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
+																int bcheck) {
+	if (!ast_active)
+		return;
+	if (ast_in_call > 0)
+		ast_in_call--;
+	if (!ast_member_cap)
+		return;
+	ast_member_cap = 0;
+	if (ast_desync)
+		return;
+	/* This rung models a scalar member reached without qualifier laundering, a
+	 * non-lvalue base, or bounds instrumentation. Anything else falls back. */
+	if (nonlval || qual || bcheck || ast_bad_type(mtype->t)) {
+		ast_desync = 1;
+		return;
+	}
+	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+	if (ast_vn != rel) {
+		ast_desync = 1;
+		return;
+	}
+	AstLocal m = ast_node(ast_cur, AST_Unary);
+	ast_set_op(ast_cur, m,
+						 ast_member_arrow ? AST_OP_MEMBER_ARROW : AST_OP_MEMBER);
+	ast_set_ival(ast_cur, m, (uint64_t)(unsigned)cumofs);
+	ast_set_type(ast_cur, m, mtype->t, (uint64_t)(uintptr_t)mtype->ref);
+	ast_add_child(ast_cur, m, ast_vs[ast_vn - 1]);
+	ast_vs[ast_vn - 1] = m;
+}
+
 /* Call boundary. Before gfunc_call the mirror holds [callee, arg0..arg_{n-1}];
  * fold them into an Invoke and suppress the mirror across gfunc_call and the
  * result push (ast_in_call), then push the Invoke as the result. Struct returns
@@ -11151,6 +11239,14 @@ static void ast_hook_call_begin(int nb_args, int is_struct_ret) {
 		ast_desync = 1;
 		return;
 	}
+	/* A by-value struct argument (or any aggregate-typed operand) is an ABI copy
+	 * this rung does not model; replaying it could build an invalid transfer. Now
+	 * that struct lvalues reach the mirror (member bases), guard the call site. */
+	for (int i = 0; i < nb_args; i++)
+		if (ast_bad_type((vtop - nb_args + 1 + i)->type.t)) {
+			ast_desync = 1;
+			return;
+		}
 	for (int i = 0; i < need; i++)
 		ast_finalize_leaf(ast_vs[ast_vn - need + i], vtop - nb_args + i);
 	AstLocal inv = ast_node(ast_cur, AST_Invoke);
@@ -11403,13 +11499,32 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 		gen_cast(&ct);
 		break;
 	}
-	case AST_Unary:
+	case AST_Unary: {
+		int uop = ast_op(a, n);
 		ast_replay_value(a, ast_child(a, n, 0));
-		if (ast_op(a, n) == AST_OP_ADDR)
+		if (uop == AST_OP_ADDR) {
 			gaddrof(); /* array-decay / address-of */
-		else
-			inc((int)ast_ival(a, n), ast_op(a, n)); /* ++/-- */
+		} else if (uop == AST_OP_MEMBER || uop == AST_OP_MEMBER_ARROW) {
+			/* Reproduce the parser's member-access sequence exactly (mccgen.c
+			 * postfix `.`/`->`): [indir for `->`], gaddrof, retype to char* for the
+			 * byte-offset add, +offset, retype to the member type, mark lvalue. */
+			if (uop == AST_OP_MEMBER_ARROW)
+				indir();
+			gaddrof();
+			vtop->type = char_pointer_type;
+			vpushi((int)ast_ival(a, n));
+			gen_op('+');
+			CType mt;
+			mt.t = ast_type_t(a, n);
+			mt.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+			vtop->type = mt;
+			if (!(mt.t & VT_ARRAY))
+				vtop->r |= VT_LVAL;
+		} else {
+			inc((int)ast_ival(a, n), uop); /* ++/-- */
+		}
 		break;
+	}
 	case AST_Load:
 		/* deref: reconstruct the address, then indir to an lvalue. */
 		ast_replay_value(a, ast_child(a, n, 0));

@@ -2925,7 +2925,7 @@ if(MCC_BUILD_TESTS)
                           "cast_expr;41" "call_printf;3" "if_else;42" "if_return;42"
                           "while_sum;36" "for_sum;36" "for_infinite;28" "ptr_deref;42" "do_while;36"
                           "array_sum;42" "ternary;42" "logand;42" "array_init;42" "float_ops;15"
-                          "call_store;42")
+                          "call_store;42" "struct_member;42")
                 list(GET _case 0 _rn)
                 list(GET _case 1 _rc)
                 add_test(NAME "ast/replay-${_rn}" COMMAND "${CMAKE_COMMAND}"

@@ -31,8 +31,18 @@ only add (or fail to add) replayed functions.
   volume: **`switch`** (~28 fns — the dispatch is a `gcase` binary-search comparison tree
   emitted *after* the fall-through body, so byte-exact replay must reconstruct the
   sorted `case_t`/`ind` layout), **`goto`/labels** (~25 fns — unstructured jumps with
-  forward references), then aggregate struct/union/bitfield `Store`/copy + member access
-  `.`/`->`. Each construct lands with its `ast/replay-*`
+  forward references). **Landed 2026-07-08 — scalar struct member access (`.`/`->`).**
+  Member access does uncaptured in-place `vtop->type` retypes (to `char*` for the byte-offset
+  add, back to the member type), so the fine-grained op tree can't be replayed (the offset
+  would scale by `sizeof(base)`). Folded into one coarse `Unary(AST_OP_MEMBER[_ARROW])` node
+  (ival=offset, type=member): `ast_hook_member_begin`/`_end` suppress the internal
+  indir/gaddrof/vpushi/gen_op and replay reproduces the parser's exact sequence. `vpush` now
+  admits struct/union **lvalue** leaves (a reconstructable frame/global address; bit-field/
+  `long double`/`_Complex` still out), and `call_begin` guards by-value struct args so they
+  fall back. Reads + writes, local `.` and pointer `->`, and struct-by-value *params* replay;
+  fixture `ast/replay-struct_member`. Still falling back (future work): struct **copy**
+  (`a = b`, `T q = *p`), struct **returns** (sret), by-value struct **args**, `(*p).x`, and
+  aggregate `Store`. Remaining aggregate work `.`/`->`. Each construct lands with its `ast/replay-*`
   fixture and the whole-corpus `exec-replay` / `exec-replay-tmpl` columns staying green.
   _Node-level gap ledger (docs/AST.md §A3, feature-complete = the 15 kinds):_ the unbuilt
   kinds are **`InitList`** (aggregate/compound-literal init still reaches codegen as scalar
