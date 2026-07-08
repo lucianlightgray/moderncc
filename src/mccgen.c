@@ -10689,8 +10689,14 @@ static void ast_hook_genop(int op) {
 	if (!model)
 		return;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+	/* A bit-field operand is read (adjust_bf/load_packed_bf) inside the suppressed
+	 * gen_op, so it is a valid arithmetic operand; struct/fp bad types still bail. */
+	int bf0 = (vtop->type.t & VT_BITFIELD) && (vtop->type.t & VT_BTYPE) != VT_STRUCT;
+	int bf1 =
+			(vtop[-1].type.t & VT_BITFIELD) && (vtop[-1].type.t & VT_BTYPE) != VT_STRUCT;
 	if (!ast_op_modeled(op) || ast_vn != rel || ast_vn < 2 ||
-			ast_bad_type(vtop->type.t) || ast_bad_type(vtop[-1].type.t)) {
+			(ast_bad_type(vtop->type.t) && !bf0) ||
+			(ast_bad_type(vtop[-1].type.t) && !bf1)) {
 		ast_desync = 1;
 		return;
 	}
@@ -11365,9 +11371,13 @@ static void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
 	ast_member_cap = 0;
 	if (ast_desync)
 		return;
-	/* This rung models a scalar member reached without qualifier laundering, a
-	 * non-lvalue base, or bounds instrumentation. Anything else falls back. */
-	if (nonlval || qual || bcheck || ast_bad_type(mtype->t)) {
+	/* This rung models a scalar or bit-field member reached without qualifier
+	 * laundering, a non-lvalue base, or bounds instrumentation. Anything else
+	 * falls back. A bit-field member is a valid lvalue (its shift/mask load/store
+	 * runs inside the suppressed gv/vstore); struct/long double/_Complex members
+	 * still bail. */
+	int mt_bf_ok = (mtype->t & VT_BITFIELD) && (mtype->t & VT_BTYPE) != VT_STRUCT;
+	if (nonlval || qual || bcheck || (ast_bad_type(mtype->t) && !mt_bf_ok)) {
 		ast_desync = 1;
 		return;
 	}
@@ -11537,9 +11547,14 @@ static void ast_hook_vstore(void) {
 	 * replay reproduce the copy. Bit-field / other bad types still fall back. */
 	int agg_store = (vtop->type.t & VT_BTYPE) == VT_STRUCT &&
 			(vtop[-1].type.t & VT_BTYPE) == VT_STRUCT;
+	/* A bit-field destination (`s.bf = v`): the read-modify-write mask/shift runs
+	 * inside vstore (suppressed by ast_in_op), so record the Store and let replay
+	 * reproduce it. The value must be a plain scalar. */
+	int bf_store = (vtop[-1].type.t & VT_BITFIELD) &&
+			(vtop[-1].type.t & VT_BTYPE) != VT_STRUCT && !ast_bad_type(vtop->type.t);
 	if (ast_vn != rel || ast_vn < 2 ||
 			((ast_bad_type(vtop->type.t) || ast_bad_type(vtop[-1].type.t)) &&
-			 !agg_store)) {
+			 !agg_store && !bf_store)) {
 		ast_desync = 1;
 		return;
 	}

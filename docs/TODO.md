@@ -27,9 +27,12 @@ only add (or fail to add) replayed functions.
     re-allocates at a different offset). Needs an ordinal loc-temp-reuse table (record each
     decrement at build, reuse at replay — the pattern used for `ast_fconst`), plus modeling
     the hidden-pointer arg + `PUT_R_RET` result handling. Moderate infra, low crash risk.
-  - **bit-field member `Store`** — the `gv` bit-field paths (`adjust_bf`/`load_packed_bf` + the
-    shift/mask in `vstore`) can build invalid ops mid-emit → **crash risk** (not caught by
-    byte-verify); needs VT_BITFIELD threaded through member access + careful suppression.
+  - ~~bit-field member Store~~ **LANDED 2026-07-08** — the read-modify-write mask/shift
+    (`adjust_bf`/`load_packed_bf` in `gv`, the mask/shift in `vstore`) runs inside the
+    suppressed `gv`/`vstore`, so bit-field member access + `Store` + arithmetic all replay
+    (member_end/vstore/genop now admit VT_BITFIELD lvalues/operands; feared crash never
+    materialized — the shift/mask is fully suppressed). Signed + unsigned. Fixture
+    `ast/replay-bitfield`.
   - **`_Complex`** — VT_STRUCT+`is_complex`; needs the build/extract `Convert` modeled.
   - **VLA/`alloca`** — needs the machine-tier `StackAlloc`/`StackSave`/`StackRestore` op (§4),
     a new mechanism, not just a hook.
