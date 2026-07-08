@@ -128,7 +128,20 @@ brought up one §17 category at a time.
 
 # Now
 
-- [ ] Normalize as much of the CMake code as possible: 1) minimize gating instead preferring autodetecting the existence of tools and enabling as many tests/targets/configs as are available on the host, 2) reduce CMake usage by relying on `tools` where advantageous, 3) fold in separate .cmake files into CMakeLists.txt
+- [~] Normalize as much of the CMake code as possible: 1) minimize gating instead preferring autodetecting the existence of tools and enabling as many tests/targets/configs as are available on the host, 2) reduce CMake usage by relying on `tools` where advantageous, 3) fold in separate .cmake files into CMakeLists.txt.
+  _Assessment (2026-07-07):_ **(3) largely moot** — there are no external `.cmake`
+  *modules* to fold: `CMakeLists.txt` is already monolithic, the only `include()`s
+  are the optional `config-extra.cmake` + standard CMake modules (ExternalProject,
+  GNUInstallDirs, …), and the `run_*_fetch.cmake` helpers are already generated
+  inline via `file(WRITE …)`; the `tests/*.cmake` are `-P` driver scripts that run
+  in a fresh process and *cannot* be folded. **(1) substantially in place** — 25
+  `find_program()` autodetections drive the toolchain/reference-cc/emulator
+  discovery, and `ci local`/the presets enable what the host supports. **(2)** the
+  `tools/` family (`build.c`, `ckbuildmd.c`, `hostgate.c`, and this session's
+  `ckconfig.c`) already offloads config-emission + invariant checks from CMake.
+  What remains is an open-ended "as much as possible" polish with real
+  CI-breakage risk across the ~35 presets/platforms not testable from one Linux
+  host — pursue incrementally with a specific, verifiable target, not as a sweep.
 - [ ] **`exec/tls` skipped on arm64+WIN32 (`skipon=arm64/WIN32`, 2026-07-05).**
   On the `msvc / arm64` runner, `exec/tls` intermittently hung (ctest 63 min,
   manual cancel). Root cause is **not** in mcc: **MSVC's arm64 code generator
