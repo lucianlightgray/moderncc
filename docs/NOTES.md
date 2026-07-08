@@ -819,6 +819,19 @@ gcc/clang references and green across ctest + the qemu matrix.
   absent, each corroborated by exercising the feature). It is written to agree
   across mcc/gcc/clang and every hosted target incl. PE — version macros use `>=`
   and it avoids the `!_WIN32`-only content macros — so it also runs under diff3.
+- **FP Annex F wide-return intermediate precision** — `exec/features_c99_c11/
+  fp_wide_return.c` (3-way validated; runs the exec / exec-replay / exec-replay-tmpl /
+  diff3 columns): a float/double return must remove extra range/precision —
+  `FLT_MAX+FLT_MAX` / `DBL_MAX+DBL_MAX` narrow to +inf and a float-rounded quotient stays
+  narrowed. Trivially holds on the `FLT_EVAL_METHOD==0` targets (x86_64 SSE, arm64,
+  riscv64) and exercises real x87 narrowing on i386 (`FLT_EVAL_METHOD==2`) via the qemu
+  matrix. Ref gcc `gcc.dg/c11-float-*.c`, clang `C11/n1365.c`, `C11/n1396.c`.
+- **`_Complex` Annex G special values / CMPLX** — `exec/features_c99_c11/
+  complex_cmplx_special.c` (3-way validated; exec/exec-replay/exec-replay-tmpl/diff3):
+  CMPLX/CMPLXF/CMPLXL exactness with NaN/inf parts (n1464), `cabs` inf-part→+inf, `conj`
+  exact sign flip, `cproj` inf→(+inf, copysign(0,imag)) — all matching gcc/clang.
+  `_Complex` constraint *diagnostics* fold into the open negative-test-tier item. Ref
+  clang `C11/n1464.c`, `C11/n1514.c`; gcc `gcc.dg/c99-complex-{1,3}.c`.
 
 ## CST database — design record (frozen spec §0–§11)
 
@@ -1278,6 +1291,187 @@ Still open in `docs/TODO.md` (these need a measurement/CI run, not a doc edit):
 the test-count reconcile, the "~100×" headline, the speed/size table re-measure,
 the PROFILING §4–§5 pre-`TOK_HASH_SIZE` baselines, and the "all green" status
 prose regeneration.
+
+## Completed work — AST intention-IR (first phase: replay driver + first template)
+
+The AST intention-IR first phase is complete — the side-channel IR library, the
+vstack-replay driver, the three-layer differential gate, and the first
+optimization template all landed and are green. Migrated here from `docs/TODO.md`
+"AST first phase (A1–A7)"; the design lives in [docs/AST.md](AST.md) (§16 Short +
+§17 replay bring-up), the implementation in `src/mccast.{c,h}` and the
+`MCC_AST_REPLAY` / `MCC_AST_TEMPLATES` paths of `src/mccgen.c` (+ `tools/asttool`,
+`tests/ast/`, the `exec-replay*` columns). `CONFIG_AST` is ON by default; `-O0`
+codegen is byte-identical either way (the driver only runs when `MCC_AST_REPLAY`
+is set). Coverage widening past the first phase (Mid horizon — `switch`/`goto`/
+floats/aggregates) is tracked open in `docs/TODO.md`.
+
+- **A1 — `CONFIG_AST` scaffolding.** CMake `MCC_AST` option (ON), `CONFIG_AST=1`
+  define, `ast` preset, `libmcc.c` includes `src/mccast.c` (guarded); mccbuild
+  `--ast` + BUILD.md node/preset rows so the config-drift gates stay green.
+- **A2 — `src/mccast.{c,h}` intention-IR library.** The 15 node kinds; per-function
+  SoA arena (D-c: minimal, no hash-cons yet); builder API; textual `ast_dump`;
+  CST-provenance id per node (§14); `ast_validate`. Self-contained (malloc un-poison).
+- **A3 — `tools/asttool.c` pure-lib TDD harness + `ast/*` ctests.** 5 suites
+  (arena/validate/dump/cfg/provenance), 30 checks.
+- **A4 — replay driver (`ast_replay_body`) over the vstack API.** In `gen_function`,
+  when `MCC_AST_REPLAY` is set: build the intention tree while the parser runs, then
+  **discard the parser's body emission** (`ind = body_ind`) and re-emit from the AST
+  through the vstack API. **Byte-verify safety net (§17 straight-line tripwire):** the
+  re-emitted body is compared to the parser's `-O0` bytes; on *any* mismatch the
+  parser's emission is restored verbatim (bytes + `ind` + `rsym`). So correctness never
+  depends on having modeled every vstack op — an unmodeled construct just diverges and
+  falls back. Faithful captures re-emit **byte-for-byte identical** to `-O0` (the
+  zero-template invariant). Off by default; `-O0` untouched. **Coverage: ≥119 / 238
+  exec golden source files have ≥1 function that faithfully replays** (int-constant/
+  local/param arithmetic, calls, casts, control flow incl. `for(;;)`, array
+  subscripting + scalar-array `{...}` initializers); the rest fall back.
+  - rung 1: `return <integer-constant>;` → `vpushi`/`gfunc_return`/`gjmp`.
+  - rung 2: **integer-arithmetic return trees** via a **scoped vstack-mirror**
+    (`ast_hook_vpush`/`ast_hook_genop` shadow the vstack; `gen_op` modeled atomically via
+    `ast_in_op`; unmodeled in-place transforms and non-reconstructable leaves trip
+    `ast_desync` → fall back). Leaves = int-constants + frame-relative locals/params.
+  - rung 3: **whole-body straight-line capture with local `Store`.** `vstore`/`vswap`/
+    `vpop` modeled so local decls with initializers and assignments become `Store`
+    effects. `int main(){int a=5,b=7; return a*b+7;}` replays byte-identically.
+  - rung 4a: **global references + relocation discard/verify.** Symbolic leaves captured;
+    the safety net discards the body's relocations with its text before replay and
+    byte-verifies both. Leaf SValues finalized lazily at consumption.
+  - rung 4b: **casts (`Convert`) + calls (`Invoke`).** `gen_cast` outside a modeled op →
+    `Convert`; the `gfunc_call` boundary folds [callee, args] into an `Invoke`, suppresses
+    the mirror across the call + result push (`ast_in_call`), re-pushes the result;
+    string-literal args ride as `Convert(Ref)`. Struct/two-register returns + indirect
+    callees fall back. Diagnostics suppressed during replay (`warn_none`).
+  - rung 5: **control flow** (CFG milestone D-b) — captured at the `block()` handler
+    level, replay re-issuing the parser's exact `gind`/`gvtst`/`gjmp`/`gsym` pattern:
+    comparisons, `if`/`if-else`, non-tail returns, `while`, `++`/`--` (`Unary`),
+    `for`(init;cond;incr), `for(;;)` (op==5, no gvtst, empty break chain), `do-while`,
+    `break`/`continue` (Jump nodes). Loops are `If` nodes op==2 (while)/3 (for)/4
+    (do-while)/5 (for(;;)). Compound-assign (`+=`) and comma replay. Memory model:
+    pointer deref/address-of and array subscripting `a[i]`; `ast_bad_type` keeps
+    struct/union/bitfield/float on correct fallback. Expression-level control flow:
+    `?:` ternary and `&&`/`||` short-circuit. Scalar-array `InitList` — the zero-init
+    `memset` a local aggregate emits is captured as a **void-effect `Invoke`**
+    (`ast_hook_call_effect_end`), each element `{...}` value an ordinary `Store`.
+- **A5 — parser AST-build hooks.** `ast_hook_stmt` (count + bail on unsupported leaf
+  statements) and `ast_hook_return`, gated by `CONFIG_AST` + `ast_active`; grew into the
+  full hook set (vpush/genop/vstore/convert/call/if/while/for/do/inc/indir/gaddrof/
+  ternary/landor).
+- **A6 — differential-exec replay gate (three layers, all green).**
+  `tests/ast/replay.cmake` — targeted fixtures that must *actually* replay (dump fired),
+  from `ret42` through `array_init`/`ternary`/`logand`/`for_infinite`, plus a
+  `switch_fallback` safety-net case (must fall back to correct `-O0`) and the
+  `template-constfold` case (fold must fire *and* stay byte-faithful). **`exec-replay/*`
+  column** — the whole `tests/exec` corpus re-run with `MCC_AST_REPLAY=1`, asserting the
+  same expected output; functions the driver can lower go through the AST, everything
+  else falls back. **`exec-replay-tmpl/*` column** — the same corpus re-run with the
+  const-fold template also on (`MCC_AST_TEMPLATES=1`): the §15 whole-corpus per-template
+  differential gate (input == output).
+- **A7 — first template = const-fold** (docs/AST.md §12/§15/§17-D-d). A tree-scope rewrite
+  `Binary(op, Literal, Literal) → Literal(fold)` over the pure integer arithmetic/bitwise/
+  shift subset, run on the AST *above* the emitter before replay (`ast_run_templates`/
+  `ast_fold_rec`/`ast_fold_eval`; new `ast_set_kind`/`ast_clear_children` builder API).
+  The fold mirrors `gen_opic` exactly (same `value64` normalization / signed div), so it
+  is **byte-neutral** — gen_op already folds adjacent constants at `-O0`, so a folded node
+  re-emits bit-for-bit and the byte-verify net still governs correctness. Gated by
+  `MCC_AST_TEMPLATES`. This **closes the AST first phase** (§17); further templates
+  (algebraic, dead-branch, jump-table) and coverage widening are §16 Mid.
+
+## Completed — Now-queue decisions, limitations & boundaries (2026-07-07/08)
+
+Triaged items migrated from `docs/TODO.md` "Now": each was resolved as a documented
+decision or accepted platform/ABI limitation and is pinned by a boundary test.
+
+- **`exec/tls` on `msvc / arm64` — not an mcc defect.** The `msvc/arm64`-built
+  `mcc.exe` nondeterministically drops/truncates functions when it compiles a
+  `__thread` TU (`tls.c`) → the linked exe hangs. Root cause is **MSVC's arm64 backend
+  miscompiling mcc itself**, not mcc's codegen: the same mcc source built by gcc
+  (x86_64 + arm64 Linux) and by MSVC-x64 cross-targeting arm64-win32 all emit a
+  byte-identical, correct `tls.s` (50×/30× runs); Valgrind + `-ftrivial-auto-var-init`
+  clean. Mitigated with a skip on arm64+WIN32 + a `--timeout 300` on the msvc ctest
+  step; `__thread` codegen stays covered on x86_64-WIN32 and every gcc/clang arm64
+  target. A scoped `#pragma optimize("",off)` around the arm64 TLS-access codegen did
+  **not** fix it (reverted 435087ee — also used raw `_MSC_VER`/`_M_ARM64`, which the
+  `host-gate-invariant` test forbids outside `src/mcchost.{h,c}`). Bisecting the
+  miscompiled construct needs an arm64 Windows + MSVC box.
+- **`va_start` non-last / `register` param misuse diagnostic absent on x86_64-SysV /
+  i386 (deferred, diagnostic-only).** The SysV `__builtin_va_start` macro reads the
+  reg-save area and never references `parmN`, so the misuse warning (present on
+  arm64/riscv64/PE via the real `TOK_builtin_va_start`) can't fire. Making it
+  target-independent needs SysV to lower `va_start` through the real builtin
+  (`gen_va_start`) — a varargs codegen rework of the primary target for a diagnostic-only
+  gain; not worth the risk without a driving need. Ref to mirror once fixed: gcc
+  `c-c++-common/Wvarargs-2.c`.
+- **External (`SHN_UNDEF`) TLS symbols hard-error on Mach-O (intentional limitation).**
+  `src/objfmt/mccmacho.c`. Locally-defined `__thread` works (TLV descriptors via
+  `__tlv_bootstrap`); cross-module `extern __thread` errors. The fix is emitting TLV
+  *import* descriptors — revisit only if a real cross-module-TLS-on-Darwin need appears.
+- **i386 fastcall/thiscall: a non-register arg before a register arg is unsupported
+  (accepted limitation).** `src/arch/i386/i386-gen.c` errors when a register-eligible
+  integer arg follows a stack-spilled arg in a `__fastcall`/`__thiscall` call. The
+  affected shapes are rare (a large by-value aggregate or over-width value ahead of a
+  small integer) and a fix can't be validated without an i386 runtime here; the
+  diagnostic is the pinned boundary. Register-then-stack ordering is fully supported
+  (`i386-fastcall-abi`).
+- **ARM (32-bit) inline-asm `long long` operands unimplemented (documented subset).**
+  `src/arch/arm/arm-asm.c` hard-errors on 64-bit GPR-pair operands. mcc's inline
+  assembler is a modelled subset for what C inline `asm` needs, not a full ISA (use two
+  32-bit operands / a vmov round-trip for 64-bit values).
+- **arm64 inline assembler errors on unmodeled mnemonics (supported subset documented).**
+  `src/arch/arm64/arm64-asm.c` models the common subset (add/sub/logical/shift/mul/mov*/
+  mrs·msr/ldr·str·ldp·stp/branches·cbz/adrp/barriers/ret/nop) and hard-errors by exact
+  name on the rest (`cmp`/`csel`/`udiv`/`madd`/`fadd`/`neg`/`ldxr`, …). The self-naming
+  error is the pinned boundary; expand the table when a real inline-asm workload needs a
+  mnemonic.
+- **Six permanently-masked ARM asm encodings resolved (4 fixed + byte-verified, 2
+  non-defects).** `mov #0xEFFF` / `mov #0x0201` now synthesize `movw Rd,#imm16` when an
+  immediate is neither rotated nor inverted (matches GNU as `e30e2fff`/`e3004201`).
+  `vmov.f32 r2,r3,d1` / `vmov.f32 d1,r2,r3` — a `d`-register operand promotes the op to
+  double regardless of the `.f32` suffix (`ec532b11`/`ec432b11`). `b r3` / `bl r3` are
+  not encoding defects (byte-identical to gas; mcc now emits `R_ARM_JUMP24`/`R_ARM_CALL`);
+  the only residual is objdump's symbolic target annotation, so they stay in
+  `ARM_KNOWN_FAIL` documented. All four fixes byte-verified vs `arm-linux-gnueabi-as`.
+- **ARM/arm64 direct branch can't reach past ±32MB — no veneers (documented boundary).**
+  `encbranch` (`src/arch/arm/arm-gen.c`) encodes `B`/`BL` with the 24-bit signed word
+  displacement (±32MB); a farther target is a hard `mcc_error("branch target out of
+  range")` (arm64 has the matching limit in `arm64-gen.c`). Real toolchains synthesize a
+  veneer (long-branch trampoline); emit one for out-of-reach `B`/`BL` when an image that
+  large actually surfaces.
+- **Windows keeps diagnostic *auto*-color off (validated).** `-fdiagnostics-color=always`
+  *does* force color on Windows (`diag_want_color` returns 1 for `diag_color==1`
+  unconditionally); only *auto*-detection is off (`host_stderr_isatty` hardcodes
+  `return 0` on `_WIN32`). Explicit override covers the real need; the auto-detect
+  enhancement (`_isatty(2) && GetConsoleMode(...) & ENABLE_VIRTUAL_TERMINAL_PROCESSING`)
+  can't be compile-validated from this Linux host, and a broken Windows build is worse
+  than color-off, so it is deferred to a change made with a Windows toolchain in hand.
+- **Reference-harness `exec`/`diff3` goldens are documentation, not coverage holes.** The
+  four `note:`-skipped goldens (inline multi-unit, backtrace, btdll, alias) carry full
+  expected output but self-skip because each needs a bespoke harness the exec runner has
+  no mode for; their behavior *is* covered by executing tests (the §6.7.4 emission matrix
+  by `cli/c99_inline_emission_matrix`; single-TU alias by `alias_single_tu`; bcheck
+  detection by the `bound_*`/`builtins` goldens). Their `req` notes now say so. Optional
+  residual: a multi-variant backtrace harness if formatted `-bt`/`-b` output ever needs
+  execution-level pinning.
+- **`-fverbose-asm`-style operand comments — won't-do (low-value).** Meaningful comments
+  need codegen-side variable/spill metadata that is discarded after emission; reloc
+  symbol names are already printed. Revisit only if a debugging workflow needs it.
+- **CST slice-I symbol resolution is last-declaration-wins (intentional v1).**
+  `cst_hook_def`/`cst_hook_use` key def offsets by identifier token id in a single slot
+  (`cst_defoff[v]`) — no scope stack — so a file-scope name shadowed inside a function
+  resolves both uses to the last-declared def. Recorded as the v1 boundary (the CST
+  symref is a side-channel tooling aid, not codegen; codegen scoping is the parser's and
+  is correct); a scope-aware resolver is LSP-era work. Pinned by `tests/cst/symref/
+  shadow.c` + `cst/symref-shadow`.
+- **CST slice-J macro-invocation v1 imprecisions (accepted v1).** A function-like
+  invocation's trailing `)` splits into a sibling `Paren` node, and an object-like macro
+  used inside another macro's args stays a plain token (no nested `MacroInvocation`). The
+  byte-identical round-trip (the load-bearing invariant) holds in both; a precise expander
+  is slice-J/LSP-era work. Pinned by `tests/cst/macro/macro_nesting.c` + `cst/macro-nesting`.
+- **CST 5B incremental splice + `H_e` epoch hash designed, not built (deferred to the
+  LSP/5B consumer).** The invertible epoch hash + tombstone sweep and the 5B splice are
+  reserved (slot-key field + frontier-scoped `H_s`-recompute) but unbuilt; gated on 4B
+  rolling-hash + error-recovery + `Error`/`Missing` nodes. Note: D3 repurposed `slot_key`
+  for branch tags, so an `H_e` build must reconcile that column's dual use.
+
 
 ## Migrated from code comments (2026-07-06 comment-strip)
 

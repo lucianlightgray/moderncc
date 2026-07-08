@@ -196,8 +196,8 @@ current build** (the ledger dates to 2026-06-30 and had drifted — see the note
    diagnostic (default-mode error).*
 3. **§7.16.1.4p3 — `va_start` 2nd arg not the last named param.** Silently accepted
    on x86_64-SysV / i386 (rc 0, no diagnostic); the check *does* fire on
-   arm64/riscv64/PE. Tracked open in `TODO.md` (needs SysV `gen_va_start` rework).
-   ✓ *Confirmed; diagnostic-only.*
+   arm64/riscv64/PE. Deferred (diagnostic-only; needs a SysV `gen_va_start` rework) —
+   see `docs/NOTES.md` "Completed — Now-queue decisions". ✓ *Confirmed; diagnostic-only.*
 4. **§7.26.1 — `<threads.h>` precedence.** mcc's bundled `include/threads.h`
    resolves *ahead* of the system header (confirmed via `-M`); basic `thrd_t`/`tss`
    usage still compiles and runs, but this shadowing is the root of the ledger's
