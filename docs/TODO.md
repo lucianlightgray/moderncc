@@ -250,13 +250,20 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
     a promoted fn is unsound — byte-verify can't tell "diverged by promotion" from "diverged by
     a replay bug", so it kept broken replays (e.g. a corrupted string GOTPCREL reloc in a
     call-ful fn). The two-pass cut call-ful failures 20→11 — but it also **regressed one
-    call-free case (`return_struct_in_reg`: struct/float values zeroed)**, so the second replay
-    pass is not idempotent for struct-returning functions. Resetting `ind`/`rsym`/body-relocs/
-    `ast_fconst_i`/`ast_locrec_i` **and `loc`/`anon_sym`** between passes was NOT enough (still
-    zeroed) — so the non-idempotent state is elsewhere (candidates: `func_scratch`, the
-    struct-return `gfunc_sret` path, or rodata materialized outside the `ast_fconst`-tracked `gv`
-    path). Pin this down first; the plain-replay column stays 269/0, so it is specific to
-    re-running the promoted replay after a faithful pass 1. (2)
+    call-free case (`return_struct_in_reg`: the returned struct's float values zeroed).** **ROOT
+    CAUSE pinned (2026-07-08):** the non-idempotent state is **`gen_gotpcrel` / GOT symbol+slot
+    creation**, not `loc`/`anon_sym`/`ast_fconst`/`ast_locrec` (resetting all of those did not
+    help). A controlled double-replay with **no promotion** IS idempotent (correct output), so the
+    replay itself is fine — the break is a *promoted* second pass over a function that accesses a
+    global via `mov sym@GOTPCREL(%rip),%r`. Pass 1 emits the GOTPCREL and registers a GOT
+    entry/synthetic symbol; pass 2's re-emit references stale/duplicated GOT state, so the reloc
+    resolves wrong (`return_struct_in_reg`: `g_f4`'s GOTPCREL → zeroed struct copy; `if.c` earlier:
+    `*ABS*` invalid symbol index). **Fix directions for the next attempt:** (a) make GOT emission
+    idempotent — reset/reuse the per-function GOT symbol+slot map between passes; or (b) avoid a
+    full second emit pass entirely — apply promotion as a byte-level transform on the already-
+    faithful pass-1 output (rewrite the promoted locals' loads/stores in place), so GOTPCREL and
+    all other relocations are emitted exactly once. Option (b) is likely cleaner and also sidesteps
+    every other double-emit hazard. (2)
     Remaining call-ful miscompiles at higher register pressure (e.g. 5 pins) — a value corrupts
     (`unary_operators`: an int went 20→0); suspect the odd-count alignment pad or an ABI edge.
     (3) VLA + call-ful must bail (rsp race). The scaffolding (two pools, push/pop, `ast_promo_
