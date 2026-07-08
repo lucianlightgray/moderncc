@@ -11072,6 +11072,17 @@ static void ast_hook_call_begin(int nb_args, int is_struct_ret) {
 	ast_call_pending = AST_NONE;
 	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
 		return;
+	/* A call captured while byte emission is suppressed (nocode_wanted: an
+	 * unevaluated _Generic/typeof/sizeof operand, a dead branch) is a phantom —
+	 * the -O0 reference emits nothing for it, so replaying the recorded Invoke
+	 * would emit stray bytes/relocations (e.g. the memset an unevaluated array
+	 * compound literal lowers to, whose CALL26 reloc corrupts a later
+	 * instruction). Abandon replay for this function; the parser's correct
+	 * emission is kept. */
+	if (nocode_wanted) {
+		ast_desync = 1;
+		return;
+	}
 	if (is_struct_ret) {
 		ast_desync = 1;
 		return;
