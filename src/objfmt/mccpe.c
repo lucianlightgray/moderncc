@@ -239,7 +239,7 @@ typedef struct _IMAGE_BASE_RELOCATION {
 
 #endif
 
-ST_FUNC Sym *pe_tls_index_sym(void) {
+ST_FUNC MAYBE_UNUSED Sym *pe_tls_index_sym(void) {
 	CType ct;
 	ct.t = VT_INT;
 	ct.ref = NULL;

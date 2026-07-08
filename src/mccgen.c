@@ -392,7 +392,7 @@ ST_FUNC int oad(int c, int s) {
 
 #ifdef CONFIG_MCC_BCHECK
 
-ST_FUNC int gen_bounds_epilog_head(addr_t func_bound_offset,
+ST_FUNC MAYBE_UNUSED int gen_bounds_epilog_head(addr_t func_bound_offset,
 																	 Sym **psym_data, int *poffset_modified) {
 	addr_t *bounds_ptr;
 	int offset_modified = func_bound_offset != lbounds_section->data_offset;
@@ -8086,7 +8086,9 @@ static int condition_3way(void) {
 
 static void expr_landor(int op) {
 	int t = 0, cc = 1, f = 0, i = op == TOK_LAND, c;
+#if defined(CONFIG_AST) && CONFIG_AST
 	int first = 1;
+#endif
 	for (;;) {
 		c = f ? i : condition_3way();
 		if (c < 0)
@@ -8095,8 +8097,8 @@ static void expr_landor(int op) {
 			nocode_wanted++, f = 1;
 #if defined(CONFIG_AST) && CONFIG_AST
 		ast_hook_landor_operand(op, c, first);
-#endif
 		first = 0;
+#endif
 		if (tok != op)
 			break;
 		if (c < 0)

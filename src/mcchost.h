@@ -221,17 +221,17 @@ typedef int (*host_walk_fn)(const char *path, int is_dir, void *ud);
 ST_FUNC int host_dir_walk(const char *dir, int recursive, host_walk_fn fn, void *ud);
 
 ST_FUNC unsigned host_clock_ms(void);
-ST_FUNC char **host_environ(void);
+ST_FUNC MAYBE_UNUSED char **host_environ(void);
 ST_FUNC int host_nproc(void);
 
 ST_FUNC void host_sys_info(char *sysname, int ssz, char *release, int rsz,
 													 char *machine, int msz);
 
 ST_FUNC void *host_dlopen(const char *name);
-ST_FUNC void host_dlclose(void *h);
+ST_FUNC MAYBE_UNUSED void host_dlclose(void *h);
 ST_FUNC const char *host_dlerror(void);
 ST_FUNC void *host_dlsym(void *h, const char *symbol);
-ST_FUNC void *host_dlsym_process(const char *symbol);
+ST_FUNC MAYBE_UNUSED void *host_dlsym_process(const char *symbol);
 
 ST_FUNC const char *host_macos_sdk_root(void);
 ST_FUNC const char *host_elf_interp_override(void);
@@ -252,15 +252,15 @@ ST_FUNC const char *host_elf_interp_override(void);
 #define HOST_MPROTECT_FAILMSG "mprotect failed — on an SELinux/PaX hardened (W^X) kernel, rebuild with -DMCC_RUN_MMAP_EXEC=ON"
 #endif
 
-ST_FUNC size_t host_pagesize(void);
+ST_FUNC MAYBE_UNUSED size_t host_pagesize(void);
 
-ST_FUNC void *host_runmem_alloc(unsigned *psize, int *ptr_diff);
-ST_FUNC void host_runmem_free(void *ptr, unsigned size);
-ST_FUNC int host_runmem_protect(void *ptr, unsigned long length, int mode);
-ST_FUNC void host_icache_flush(void *ptr, unsigned long length);
+ST_FUNC MAYBE_UNUSED void *host_runmem_alloc(unsigned *psize, int *ptr_diff);
+ST_FUNC MAYBE_UNUSED void host_runmem_free(void *ptr, unsigned size);
+ST_FUNC MAYBE_UNUSED int host_runmem_protect(void *ptr, unsigned long length, int mode);
+ST_FUNC MAYBE_UNUSED void host_icache_flush(void *ptr, unsigned long length);
 
-ST_FUNC void *host_unwind_register(void *table, unsigned size_bytes, size_t base);
-ST_FUNC void host_unwind_unregister(void *table);
+ST_FUNC MAYBE_UNUSED void *host_unwind_register(void *table, unsigned size_bytes, size_t base);
+ST_FUNC MAYBE_UNUSED void host_unwind_unregister(void *table);
 
 enum {
 	HOST_FAULT_MEM,
