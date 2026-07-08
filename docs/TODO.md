@@ -346,8 +346,12 @@ runtime cases go in `tests/exec/features_c99_c11/`, diagnostics/negatives in
   below). _Ref:_ clang `C11/n1464.c`, `C11/n1514.c`; gcc `gcc.dg/c99-complex-{1,3}.c`.
 - [~] **Negative/diagnostic test tier.** _Established_ in `tests/cli/cases.h`
   (grep-the-message pattern): `c99_fam_not_last`, `c11_alignas_underalign`,
-  `c99_vla_goto_into_scope`, `c99_vla_switch_into_scope`, `c11_noreturn_returns`.
-  *Remaining: broaden toward the ~70% of gcc's C99/C11 files that are `dg-error`
+  `c99_vla_goto_into_scope`, `c99_vla_switch_into_scope`, `c11_noreturn_returns`,
+  plus this session's `c99_kr_implicit_int`, `c99_inline_no_extern_def`,
+  `c11_ucn_basic_latin_reject`, `c11_ucn_surrogate_reject`, and
+  `c11_signed_unsigned_reject` (type-specifier `signed`+`unsigned`; the "too many
+  basic types" excess is already in `errors_and_warnings.c`). *Remaining
+  (continuous): broaden toward the ~70% of gcc's C99/C11 files that are `dg-error`
   negatives* — the highest-volume seed is gcc `gcc.dg/c99-typespec-1.c` (1055
   dg-error over every type-specifier combo), plus `c11-align-3.c` and the
   `c99-flex-array-*` / `c11-*` negative files.

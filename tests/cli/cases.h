@@ -1693,6 +1693,14 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -c {W}/ucnsur.c -o {W}/ucnsur.o 2>&1 | "
 		 "grep -oE 'universal character .ud800 is not valid in an identifier'",
 		 "universal character \\ud800 is not valid in an identifier\n"},
+		/* §6.7.2p2: `signed` and `unsigned` are mutually exclusive in a
+		   declaration-specifier list (a distinct diagnostic from the
+		   "too many basic types" excess covered by errors_and_warnings.c). */
+		{"c11_signed_unsigned_reject", "",
+		 "printf 'signed unsigned int x;\\n' > {W}/su.c && "
+		 "{MCC} -c {W}/su.c -o {W}/su.o 2>&1 | "
+		 "grep -oE 'signed and unsigned modifier'",
+		 "signed and unsigned modifier\n"},
 
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases) / sizeof(cli_cases[0]));
