@@ -12104,7 +12104,11 @@ static int ast_promo_reg[AST_PROMO_MAX]; /* the physical register chosen for it 
 static int ast_promo_n;
 static int ast_promo_callful; /* uses callee-saved regs → needs push/pop save/restore */
 static int ast_promo_regpool_at(int i) { return ast_promo_reg[i]; }
+#endif /* end the x86_64-only register-promotion block */
 
+/* Virtual always-inline is arch-independent — it works at the vstack/AST tier (no
+ * register numbers or machine encodings), so it lives outside the x86_64 guard. */
+#if defined(CONFIG_AST) && CONFIG_AST
 /* ---- Tier-4 virtual always-inline: candidate analysis + retention (docs/AST.md §9/§13) ----
  * A function whose captured body is small, leaf (calls nothing), non-variadic, VLA-free,
  * and has internal (static) linkage is a virtual-inline candidate: its AST is retained
@@ -12329,7 +12333,9 @@ static int ast_inline_retain(AstArena *a, Sym *sym) {
 						e->graftable ? "graftable" : "retained-only");
 	return 1;
 }
+#endif /* end the arch-independent virtual-inline block */
 
+#if defined(CONFIG_AST) && CONFIG_AST && defined(MCC_TARGET_X86_64)
 /* -1 if node n is not a promoted local's Ref, else its pinned register. */
 static int ast_promo_reg_of(AstArena *a, AstLocal n) {
 	if (n == AST_NONE || ast_kind(a, n) != AST_Ref)
