@@ -280,11 +280,6 @@ runtime cases go in `tests/exec/features_c99_c11/`, diagnostics/negatives in
 
 ## Real semantic/diagnostic gaps — fix mcc, then add the test
 
-- [ ] **§7.26.1 — bundled `<threads.h>` shadows the system header (fix).** mcc's
-  `include/threads.h` resolves ahead of glibc's (`-M` confirms), the root of the
-  `c11_threads` divergence. Fix header-search precedence / align the shim. _No direct
-  gcc/clang test to port_ (mcc-internal include-path behavior); validate against the
-  existing `tests/exec/features_c99_c11/c11_threads.c`. See docs/TESTS.md §6-A.4.
 
 ## Coverage-depth gaps — mcc passes but under-tests vs gcc/clang; add tests
 
