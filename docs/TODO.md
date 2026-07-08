@@ -325,13 +325,26 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
     (ctest 1768/1768); `MCC_AST_REPLAY_DUMP` prints `[ast-inline] candidate <fn>`. This is
     the within-TU inline closure held in memory — defer-to-TU (§13) without deferring the
     whole TU, since a callee defined before its caller is already retained at the call site.
-  - [ ] **Slice 2 — the grafting engine.** At a caller's `AST_Invoke` to a retained callee,
-    replay the callee body in place of the call: relocate its frame (bias every `VT_LOCAL`
-    offset into fresh caller stack space, `loc -= callee_frame`), bind actual args to the
-    (biased) param slots, scope its control-flow labels, and lower each `Return` to
-    `assign-result + jump-to-inline-end`. Gate on exec-golden (inlined bytes diverge from
-    `-O0`, like promotion). Then forward-declared / later-defined callees (needs true
-    defer-to-TU), then cycle detection via the instance hash, then the guard queries.
+  - [~] **Slice 2 — the grafting engine (minimal case LANDED 2026-07-08).** At a caller's
+    `AST_Invoke` to a graftable retained callee, `ast_inline_graft` replays the callee body in
+    place of the boundary call: it reserves fresh caller stack (`loc -= callee_frame`, kept so
+    `gfunc_epilog` sizes the frame from the lowered `loc`), stores each arg to its relocated
+    param slot (offset `+ bias`, with the captured param `type.t`/`type.ref` so enum/pointer
+    params pass `vstore`'s cast check), and replays the body under `ast_inline_bias` (added to
+    every `VT_LOCAL` ref), applying the return type's cast to the result. Grafting is a
+    faithfulness-gated **pass-2** transformation (like promotion): pass 1 replays the real call
+    and byte-verifies against `-O0`, then pass 2 grafts — so an inlined caller's divergent bytes
+    are exec-golden-gated, not byte-gated. Precedence over promotion when a function has both
+    (grafting removes the calls the promo planner keyed on). **Minimal graftable form:** a
+    within-TU `static` leaf whose body is exactly `return EXPR;` with GP-scalar params, defined
+    before the caller. Verified: 13 corpus programs graft (incl. nested `add(scale(…), …)` and
+    enum/pointer params); whole `tests/exec` corpus output-matches `-O0`; ctest 1769/1769;
+    default (inline off) byte-untouched. Fixture `ast/replay-inline` asserts `add`/`scale` graft.
+  - [ ] **Slice 2 breadth.** Bodies with local decls + multiple statements (bias already covers
+    their locals); early/multiple returns via an inline-end label; internal control flow (label
+    scoping); non-scalar params/return (struct by-value, float). Then forward-declared /
+    later-defined callees (needs true defer-to-TU), cycle detection via the instance hash, and
+    the `setjmp`/signal/VLA guard queries. Combine inline + promotion in one pass 2.
 - [ ] **Long horizon (design only):** the broader template library (algebraic, dead-branch,
   jump-table), the time-budgeted engine (§12/§221), dependency-ordered `-O1` compile, cross-TU
   LTO, `-g` from provenance, hot-reload snapshots, and separate `-O2`/`-O3` (SSA) drivers.

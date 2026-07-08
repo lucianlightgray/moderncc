@@ -12113,13 +12113,29 @@ static int ast_promo_regpool_at(int i) { return ast_promo_reg[i]; }
  * (frame relocation, argument binding, return lowering) is a subsequent slice. Opt-in via
  * MCC_AST_INLINE; retention is passive (no codegen change), so -O0 and the replay column
  * are untouched. */
+static void ast_replay_value(AstArena *a, AstLocal n); /* fwd: used by the inline graft */
 #define AST_INLINE_MAX 512
 #define AST_INLINE_NODE_BUDGET 64
+#define AST_INLINE_MAX_PARAMS 6
 static struct AstInlineFn {
 	void *sym;     /* the callee's function Sym (persistent global-stack sym) */
 	AstArena *ast; /* its retained body AST */
+	int frame_size;                          /* bytes of callee frame to relocate (-loc) */
+	int nparams;
+	int param_off[AST_INLINE_MAX_PARAMS];    /* each param's frame offset (ABI order) */
+	int param_typ[AST_INLINE_MAX_PARAMS];    /* each param's type.t (for the arg-bind store) */
+	void *param_ref[AST_INLINE_MAX_PARAMS];  /* its type.ref (enum/pointer target Sym) */
+	int graftable;                           /* body is a straight-line single-Return leaf */
 } ast_inline_pool[AST_INLINE_MAX];
 static int ast_inline_n;
+
+/* Callee metadata captured right after gfunc_prolog (when the param local Syms carry
+ * their assigned frame offsets); transferred into the pool entry at retention. */
+static int ast_inline_cap_np;
+static int ast_inline_cap_off[AST_INLINE_MAX_PARAMS];
+static int ast_inline_cap_typ[AST_INLINE_MAX_PARAMS];
+static void *ast_inline_cap_ref[AST_INLINE_MAX_PARAMS];
+static int ast_inline_cap_ok;
 
 /* Look up a retained inline candidate by its function Sym; NULL if none. */
 static AstArena *ast_inline_lookup(void *sym) {
@@ -12151,17 +12167,141 @@ static int ast_fn_inlinable(AstArena *a, Sym *sym) {
 	return 1;
 }
 
+/* Capture the callee's scalar param offsets/types in ABI order, right after gfunc_prolog
+ * (the param local Syms now carry their assigned frame offsets). Sets ast_inline_cap_ok=0
+ * if any param is non-scalar, unnamed, or the arity cap is exceeded (then: not graftable). */
+static void ast_inline_capture(Sym *fnsym) {
+	ast_inline_cap_np = 0;
+	ast_inline_cap_ok = 0;
+	if (!ast_inline_env)
+		return;
+	int n = 0;
+	for (Sym *p = fnsym->type.ref->next; p; p = p->next) {
+		int v = p->v & ~SYM_FIELD;
+		if (v < TOK_IDENT || n >= AST_INLINE_MAX_PARAMS)
+			return; /* unnamed param or too many: leave cap_ok=0 */
+		Sym *ls = sym_find(v);
+		if (!ls || (ls->r & VT_VALMASK) != VT_LOCAL)
+			return;
+		int bt = ls->type.t & VT_BTYPE;
+		if ((bt != VT_INT && bt != VT_LLONG && bt != VT_PTR) ||
+				(ls->type.t & (VT_ARRAY | VT_VLA)))
+			return; /* GP scalar params only for the minimal grafting */
+		ast_inline_cap_off[n] = (int)ls->c;
+		ast_inline_cap_typ[n] = ls->type.t;
+		ast_inline_cap_ref[n] = ls->type.ref;
+		n++;
+	}
+	ast_inline_cap_np = n;
+	ast_inline_cap_ok = 1;
+}
+
+/* Slice-2 minimal graftable form: the body is a single BasicBlock holding exactly one
+ * statement — `return EXPR;` — so grafting is just bind-args + replay-EXPR (no local decls,
+ * no control flow, no label scoping, no return jumps). `add`/`square`-shaped helpers. */
+static int ast_inline_graftable(AstArena *a) {
+	AstLocal root = ast_root(a);
+	if (ast_kind(a, root) != AST_BasicBlock)
+		return 0;
+	AstLocal s = ast_first_child(a, root);
+	if (s == AST_NONE || ast_next_sib(a, s) != AST_NONE) /* exactly one statement */
+		return 0;
+	return ast_kind(a, s) == AST_Return && ast_nchild(a, s) >= 1;
+}
+
+/* Grafting state (pass 2): active enables the AST_Invoke graft; bias relocates the
+ * inlined callee's VT_LOCAL offsets into fresh caller stack space. */
+static int ast_inline_active;
+static int ast_inline_bias;
+
+/* If node `n` is an AST_Invoke to a graftable retained callee, emit the callee's body in
+ * place of the call — bind the args to relocated param slots, then replay `return EXPR`'s
+ * expression under the frame bias, leaving the (return-cast) result on vtop. 1 if grafted. */
+static int ast_inline_graft(AstArena *a, AstLocal n) {
+	if (!ast_inline_active)
+		return 0;
+	AstLocal cref = ast_child(a, n, 0);
+	if (cref == AST_NONE || ast_kind(a, cref) != AST_Ref)
+		return 0;
+	void *csym = (void *)(uintptr_t)ast_sym(a, cref);
+	struct AstInlineFn *e = NULL;
+	for (int i = 0; i < ast_inline_n; i++)
+		if (ast_inline_pool[i].sym == csym) {
+			e = &ast_inline_pool[i];
+			break;
+		}
+	if (!e || !e->graftable || (int)ast_nchild(a, n) - 1 != e->nparams)
+		return 0;
+	int bias = loc; /* callee offset co -> co + loc, into fresh space below the caller's */
+	loc -= e->frame_size; /* reserve it permanently: gfunc_epilog sizes the frame from loc */
+	for (int i = 0; i < e->nparams; i++) {
+		ast_replay_value(a, ast_child(a, n, i + 1)); /* arg (caller frame, no bias) */
+		SValue slot;
+		memset(&slot, 0, sizeof slot);
+		slot.type.t = e->param_typ[i];
+		slot.type.ref = e->param_ref[i];
+		slot.r = VT_LOCAL | VT_LVAL;
+		slot.r2 = VT_CONST;
+		slot.c.i = e->param_off[i] + bias;
+		vpushv(&slot);
+		vswap();
+		vstore(); /* param_slot = arg */
+		vpop();
+	}
+	AstLocal ret = ast_first_child(e->ast, ast_root(e->ast)); /* the sole `return EXPR` */
+	int save_bias = ast_inline_bias;
+	ast_inline_bias = bias;
+	ast_replay_value(e->ast, ast_child(e->ast, ret, 0)); /* EXPR -> result on vtop */
+	ast_inline_bias = save_bias;
+	CType rt; /* apply the return type (the callee's implicit return cast) */
+	rt.t = ast_type_t(a, n);
+	rt.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+	if ((rt.t & VT_BTYPE) != VT_VOID)
+		gen_cast(&rt);
+	if (ast_replay_dump)
+		fprintf(stderr, "[ast-inline] grafted %s\n", get_tok_str(((Sym *)csym)->v, NULL));
+	return 1;
+}
+
+/* Does this body call a graftable retained callee (so the inline pass 2 should run)? */
+static int ast_has_graftable_call(AstArena *a) {
+	if (!ast_inline_env)
+		return 0;
+	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++) {
+		if (ast_kind(a, n) != AST_Invoke)
+			continue;
+		AstLocal cref = ast_child(a, n, 0);
+		if (cref == AST_NONE || ast_kind(a, cref) != AST_Ref)
+			continue;
+		void *csym = (void *)(uintptr_t)ast_sym(a, cref);
+		for (int i = 0; i < ast_inline_n; i++)
+			if (ast_inline_pool[i].sym == csym && ast_inline_pool[i].graftable)
+				return 1;
+	}
+	return 0;
+}
+
 /* Retain the inlinable body keyed by its Sym; 1 if retained (caller must NOT free it). */
 static int ast_inline_retain(AstArena *a, Sym *sym) {
 	if (!ast_fn_inlinable(a, sym) || ast_inline_n >= AST_INLINE_MAX ||
 			ast_inline_lookup(sym))
 		return 0;
-	ast_inline_pool[ast_inline_n].sym = sym;
-	ast_inline_pool[ast_inline_n].ast = a;
-	ast_inline_n++;
+	struct AstInlineFn *e = &ast_inline_pool[ast_inline_n++];
+	e->sym = sym;
+	e->ast = a;
+	e->frame_size = loc < 0 ? -loc : 0; /* callee frame to relocate into caller space */
+	e->nparams = ast_inline_cap_np;
+	for (int i = 0; i < ast_inline_cap_np; i++) {
+		e->param_off[i] = ast_inline_cap_off[i];
+		e->param_typ[i] = ast_inline_cap_typ[i];
+		e->param_ref[i] = ast_inline_cap_ref[i];
+	}
+	e->graftable = ast_inline_cap_ok && ast_inline_graftable(a);
 	if (ast_replay_dump)
-		fprintf(stderr, "[ast-inline] candidate %s (%d nodes)\n",
-						get_tok_str(sym->v, NULL), (int)ast_count(a));
+		fprintf(stderr, "[ast-inline] candidate %s (%d nodes, %d params, frame %d, %s)\n",
+						get_tok_str(sym->v, NULL), (int)ast_count(a), e->nparams, e->frame_size,
+						e->graftable ? "graftable" : "retained-only");
 	return 1;
 }
 
@@ -12504,6 +12644,8 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 		sv.r2 = VT_CONST;
 		sv.c.i = ast_ival(a, n);
 		sv.sym = (Sym *)(uintptr_t)ast_sym(a, n);
+		if (ast_inline_bias && (sv.r & VT_VALMASK) == VT_LOCAL && !(sv.r & VT_SYM))
+			sv.c.i += ast_inline_bias; /* Tier-4: relocate a grafted callee's frame slot */
 		if (ast_promo_n) {
 			/* Tier-3 read: a promoted local reads from its pinned register (not the
 			 * stack slot). Push the value as register-resident; gv copies it into a
@@ -12616,6 +12758,9 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 		break;
 	}
 	case AST_Invoke: {
+		/* Tier-4: graft a graftable retained callee in place of the boundary call. */
+		if (ast_inline_graft(a, n))
+			break;
 		/* push callee + args, transfer, then re-push the captured result. */
 		uint32_t nc = ast_nchild(a, n);
 		for (uint32_t i = 0; i < nc; i++)
@@ -13165,6 +13310,7 @@ static void gen_function(Sym *sym) {
 	mcc_debug_prolog_epilog(mcc_state, 0);
 	func_vla_arg(sym);
 #if defined(CONFIG_AST) && CONFIG_AST
+	ast_inline_capture(sym); /* Tier-4: param offsets while the local Syms carry them */
 	/* Skip functions whose return type this rung does not reconstruct (bit-field/
 	 * long double/_Complex-pair): gfunc_return for them is ABI-specific and replay
 	 * would build invalid ops. Struct/union returns ARE attempted — `return s`
@@ -13283,7 +13429,15 @@ static void gen_function(Sym *sym) {
 					 memcmp(rsec2->data + ast_reloc0, orig_rel, rel_len) == 0);
 
 			int promoted = 0;
-			if (faithful && ast_promote_env && ast_plan_promotion(ast_cur) > 0) {
+			/* Pass 2 applies a byte-diverging transformation to a faithful replay. Tier-4
+			 * virtual-inline (graft graftable calls) takes precedence over Tier-3 promotion
+			 * for a function that has both, since grafting removes the calls the promotion
+			 * planner keyed its caller-saved/callee-saved choice on (combining them is a
+			 * later slice). */
+			int do_inline = faithful && ast_has_graftable_call(ast_cur);
+			int do_promote = faithful && !do_inline && ast_promote_env &&
+					ast_plan_promotion(ast_cur) > 0;
+			if (do_inline || do_promote) {
 				ind = ast_body_ind;
 				rsym = 0;
 				if (ast_rsec)
@@ -13298,11 +13452,14 @@ static void gen_function(Sym *sym) {
 				ast_rp_nlabel = 0;
 				ast_rp_bsym = ast_rp_csym = NULL;
 				ast_pinned_regs = 0;
+				ast_inline_active = do_inline;
 				for (int pi = 0; pi < ast_promo_n; pi++)
 					ast_pinned_regs |= (1u << ast_promo_regpool_at(pi));
-				ast_promo_entry_init();
+				if (do_promote)
+					ast_promo_entry_init();
 				ast_replay_body(ast_cur);
 				ast_replaying = 0;
+				ast_inline_active = 0;
 				ast_pinned_regs = 0;
 				promoted = ast_promo_n;
 			}

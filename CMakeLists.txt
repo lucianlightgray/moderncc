@@ -3078,6 +3078,19 @@ if(MCC_BUILD_TESTS)
                     "Tier-3 register promotion is x86_64-only (caller-saved R10/R9/R8 + callee-saved RBX/R12–R15 pools); on ${MCC_CPU} it is a no-op — coverage stays via exec-replay-promote")
             endif()
 
+            # Tier-4 virtual always-inline (docs/AST.md §9, opt-in MCC_AST_INLINE): a
+            # within-TU static leaf `return EXPR` helper is grafted into a later caller in
+            # place of the boundary Call. INLINES asserts the graft fired; the exit-code
+            # equality vs -O0 is the gate (an inlined caller's bytes diverge from -O0). Arch-
+            # independent (the graft is at the vstack/AST tier), so it runs on every target.
+            add_test(NAME "ast/replay-inline" COMMAND "${CMAKE_COMMAND}"
+                "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
+                "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/inline.c"
+                "-DOUT=${CMAKE_BINARY_DIR}/ast-replay"
+                "-DEXPECT_RC=42" "-DREPLAYED=main" "-DINLINE=1" "-DINLINES=add,scale"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
+            set_tests_properties("ast/replay-inline" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
             # A7 first template = const-fold (docs/AST.md §12/§15/§17-D-d). The
             # per-template differential test: the fixture is compiled with the
             # const-fold template on and must (a) exit the same as -O0 (input ==
