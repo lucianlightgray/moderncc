@@ -12189,9 +12189,10 @@ static void ast_inline_capture(Sym *fnsym) {
 		if (!ls || (ls->r & VT_VALMASK) != VT_LOCAL)
 			return;
 		int bt = ls->type.t & VT_BTYPE;
-		if ((bt != VT_INT && bt != VT_LLONG && bt != VT_PTR) ||
+		if ((bt != VT_INT && bt != VT_LLONG && bt != VT_PTR &&
+				 bt != VT_FLOAT && bt != VT_DOUBLE) ||
 				(ls->type.t & (VT_ARRAY | VT_VLA)))
-			return; /* GP scalar params only for the minimal grafting */
+			return; /* scalar params (int/ptr/float/double); the arg binds via vstore */
 		if (bt == VT_PTR && ls->type.ref &&
 				(((Sym *)ls->type.ref)->type.t & VT_VLA))
 			return; /* pointer-to-VLA param (`int m[n][n]`): indexing needs the runtime

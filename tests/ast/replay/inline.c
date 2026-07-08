@@ -35,6 +35,9 @@ static int sgn(int x) {
 		return 1;
 	return 0;
 }
+/* scalar float params + return: args bind via vstore, the result coalesces through a
+ * double-typed result slot. */
+static double area(double w, double h) { return w * h; }
 
 int main(void) {
 	int r = add(3, 4);              /* 7 */
@@ -43,5 +46,6 @@ int main(void) {
 	int u = madd(2, 3);            /* p=6, q=8, -> 7 */
 	int c = clamp(99, 0, 5);       /* -> 5 */
 	int g = sgn(-4) + sgn(0) + sgn(9); /* early/tail returns, multi-arg: -1+0+1 = 0 */
-	return r + s + t + u + c + g - 20; /* 7 + 30 + 13 + 7 + 5 + 0 - 20 = 42 */
+	int d = (int)area(2.5, 4.0);       /* double params + return: 10.0 -> 10 */
+	return r + s + t + u + c + g + d - 30; /* 7+30+13+7+5+0+10 - 30 = 42 */
 }

@@ -354,11 +354,14 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
     `printf("…", sgn(a), sgn(b), sgn(c))` when the grafts fought over RAX). `goto`/`switch`/`break`/
     `continue` (`AST_Jump`) and `void` returns stay excluded. Verified: `sgn` (2 early + tail),
     `mx` (if/else), `fib` (loop + tail); corpus output-matches `-O0`, ctest 1769/1769, ASan-clean.
-  - [ ] **Slice 2 breadth.** `goto`/`switch` (shared label/switch replay state); non-scalar
-    params/return (struct by-value, float). Then forward-declared / later-defined callees (needs
-    true defer-to-TU), cycle detection via the instance hash, and the `setjmp`/signal/VLA guard
-    queries. Combine inline + promotion in one pass 2. Un-gate the fixture on non-x86_64 once
-    verified there (the code is arch-independent).
+  - [x] **`float`/`double` params + return — LANDED 2026-07-08.** The arg binds via `vstore` and
+    the result coalesces through a slot typed by the return type, both type-agnostic, so admitting
+    `VT_FLOAT`/`VT_DOUBLE` to the param capture was enough (float return already worked). Verified
+    `area`/`clampd` (double params+return), corpus + ctest 1769/1769, ASan-clean.
+  - [ ] **Slice 2 breadth.** `goto`/`switch` (shared label/switch replay state); struct-by-value
+    params/return. Then forward-declared / later-defined callees (needs true defer-to-TU), cycle
+    detection via the instance hash, and the `setjmp`/signal/VLA guard queries. Combine inline +
+    promotion in one pass 2. Un-gate the fixture on non-x86_64 once verified there (arch-independent).
 - [ ] **Long horizon (design only):** the broader template library (algebraic, dead-branch,
   jump-table), the time-budgeted engine (§12/§221), dependency-ordered `-O1` compile, cross-TU
   LTO, `-g` from provenance, hot-reload snapshots, and separate `-O2`/`-O3` (SSA) drivers.
