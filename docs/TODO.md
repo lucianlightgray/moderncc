@@ -302,11 +302,15 @@ runtime cases go in `tests/exec/features_c99_c11/`, diagnostics/negatives in
   (basic-latin range), UCN in different token positions, normalization* — mostly
   diagnostics → negative-test tier. _Ref:_ gcc `gcc.dg/ucnid-*.c`; clang
   `C99/n717.c` (UCN grammar), `C11/n1518.c` (UAX#31).
-- [ ] **FP Annex F wide-return intermediate precision.** `FLT_EVAL_METHOD` itself
-  is done (`flt_eval_method.c`, migrated to NOTES); this is the remaining per-target
-  piece — verify wide intermediate-precision return conformance (Annex F/§5.2.4.2.2).
-  _Ref:_ gcc `gcc.dg/c11-float-*.c` (wide-return cases), clang `C11/n1365.c`,
-  `C11/n1396.c` (per-target IR).
+- [x] **FP Annex F wide-return intermediate precision (2026-07-07).** Added
+  `exec/features_c99_c11/fp_wide_return.c` (3-way validated; runs the exec /
+  exec-replay / exec-replay-tmpl / diff3 columns): a float/double return must
+  remove extra range/precision — `FLT_MAX+FLT_MAX` / `DBL_MAX+DBL_MAX` narrow to
+  +inf and a float-rounded quotient stays narrowed. Trivially holds on the
+  FLT_EVAL_METHOD==0 targets (x86_64 SSE, arm64, riscv64) and exercises real x87
+  narrowing on i386 (FLT_EVAL_METHOD==2) via the qemu matrix. `FLT_EVAL_METHOD`
+  itself stays covered by `flt_eval_method.c`. _Ref:_ gcc `gcc.dg/c11-float-*.c`,
+  clang `C11/n1365.c`, `C11/n1396.c`.
 - [~] **`_Complex` diagnostics + Annex G special values.** _Annex G / CMPLX edges
   now covered_ by `exec/features_c99_c11/complex_cmplx_special.c` (3-way validated,
   runs the exec/exec-replay/exec-replay-tmpl/diff3 columns): CMPLX/CMPLXF/CMPLXL

@@ -41,6 +41,7 @@ static const mcc_golden_t mcc_goldens[] = {
 	{"vla_param_side_effects", "run", "exec/features_c99_c11/vla_param_side_effects.c", "OK\n", "", "", ""},
 	{"wide_bitfield_arith", "run", "exec/features_c99_c11/wide_bitfield_arith.c", "OK\n", "", "", ""},
 	{"flt_eval_method", "run", "exec/features_c99_c11/flt_eval_method.c", "OK\n", "-lm", "", ""},
+	{"fp_wide_return", "run", "exec/features_c99_c11/fp_wide_return.c", "OK\n", "-lm", "", ""},
 	{"digraphs", "run", "exec/lexical/digraphs.c", "20 1 4\n", "", "", ""},
 	{"trigraphs", "run", "exec/lexical/trigraphs.c", "OK\n", "-trigraphs", "", ""},
 	{"u8_string", "run", "exec/lexical/u8_string.c", "OK\n", "", "", ""},
