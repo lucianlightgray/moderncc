@@ -336,13 +336,15 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
     and byte-verifies against `-O0`, then pass 2 grafts — so an inlined caller's divergent bytes
     are exec-golden-gated, not byte-gated. Precedence over promotion when a function has both
     (grafting removes the calls the promo planner keyed on). **Minimal graftable form:** a
-    within-TU `static` leaf whose body is exactly `return EXPR;` with GP-scalar params, defined
-    before the caller. Verified: 13 corpus programs graft (incl. nested `add(scale(…), …)` and
-    enum/pointer params); whole `tests/exec` corpus output-matches `-O0`; ctest 1769/1769;
-    default (inline off) byte-untouched. Fixture `ast/replay-inline` asserts `add`/`scale` graft.
-  - [ ] **Slice 2 breadth.** Bodies with local decls + multiple statements (bias already covers
-    their locals); early/multiple returns via an inline-end label; internal control flow (label
-    scoping); non-scalar params/return (struct by-value, float). Then forward-declared /
+    within-TU `static` leaf whose body is a straight-line statement sequence ending in one
+    `return EXPR;` with GP-scalar params, defined before the caller. **Multi-statement bodies with
+    local declarations work** (the locals relocate under the same frame bias; the graft replays
+    the whole body via `ast_replay_bb` with `ast_in_graft` making the trailing `Return` leave its
+    value on vtop). Verified: whole `tests/exec` corpus output-matches `-O0`; ctest 1769/1769;
+    default (inline off) byte-untouched. Fixture `ast/replay-inline` asserts `add`/`scale`/`madd`
+    (the last multi-statement) graft.
+  - [ ] **Slice 2 breadth.** Early/multiple returns via an inline-end label; internal control flow
+    (label scoping); non-scalar params/return (struct by-value, float). Then forward-declared /
     later-defined callees (needs true defer-to-TU), cycle detection via the instance hash, and
     the `setjmp`/signal/VLA guard queries. Combine inline + promotion in one pass 2.
 - [ ] **Long horizon (design only):** the broader template library (algebraic, dead-branch,

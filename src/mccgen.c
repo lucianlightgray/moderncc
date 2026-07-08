@@ -12114,6 +12114,7 @@ static int ast_promo_regpool_at(int i) { return ast_promo_reg[i]; }
  * MCC_AST_INLINE; retention is passive (no codegen change), so -O0 and the replay column
  * are untouched. */
 static void ast_replay_value(AstArena *a, AstLocal n); /* fwd: used by the inline graft */
+static void ast_replay_bb(AstArena *a, AstLocal bb);   /* fwd: used by the inline graft */
 #define AST_INLINE_MAX 512
 #define AST_INLINE_NODE_BUDGET 64
 #define AST_INLINE_MAX_PARAMS 6
@@ -12196,23 +12197,36 @@ static void ast_inline_capture(Sym *fnsym) {
 	ast_inline_cap_ok = 1;
 }
 
-/* Slice-2 minimal graftable form: the body is a single BasicBlock holding exactly one
- * statement — `return EXPR;` — so grafting is just bind-args + replay-EXPR (no local decls,
- * no control flow, no label scoping, no return jumps). `add`/`square`-shaped helpers. */
+/* Graftable form: a single BasicBlock of straight-line statements (no statement-level
+ * control flow / nested block) ending in exactly one `return EXPR;`. Local declarations
+ * are fine — their VT_LOCAL slots relocate under the same frame bias as the params. No
+ * label scoping or return jumps needed. */
 static int ast_inline_graftable(AstArena *a) {
 	AstLocal root = ast_root(a);
 	if (ast_kind(a, root) != AST_BasicBlock)
 		return 0;
-	AstLocal s = ast_first_child(a, root);
-	if (s == AST_NONE || ast_next_sib(a, s) != AST_NONE) /* exactly one statement */
-		return 0;
-	return ast_kind(a, s) == AST_Return && ast_nchild(a, s) >= 1;
+	AstLocal last = AST_NONE;
+	int nret = 0;
+	for (AstLocal s = ast_first_child(a, root); s != AST_NONE; s = ast_next_sib(a, s)) {
+		uint16_t k = ast_kind(a, s);
+		if (k == AST_If || k == AST_BasicBlock)
+			return 0; /* statement-level control flow / nested block: not yet */
+		if (k == AST_Return)
+			nret++;
+		last = s;
+	}
+	return nret == 1 && last != AST_NONE && ast_kind(a, last) == AST_Return &&
+			ast_nchild(a, last) >= 1;
 }
 
 /* Grafting state (pass 2): active enables the AST_Invoke graft; bias relocates the
- * inlined callee's VT_LOCAL offsets into fresh caller stack space. */
+ * inlined callee's VT_LOCAL offsets into fresh caller stack space; in_graft marks the
+ * replay of a grafted body so its Return leaves the value on vtop (cast to graft_rt)
+ * instead of emitting the epilogue transfer. */
 static int ast_inline_active;
 static int ast_inline_bias;
+static int ast_in_graft;
+static CType ast_graft_rt;
 
 /* If node `n` is an AST_Invoke to a graftable retained callee, emit the callee's body in
  * place of the call — bind the args to relocated param slots, then replay `return EXPR`'s
@@ -12248,16 +12262,20 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 		vstore(); /* param_slot = arg */
 		vpop();
 	}
-	AstLocal ret = ast_first_child(e->ast, ast_root(e->ast)); /* the sole `return EXPR` */
-	int save_bias = ast_inline_bias;
+	/* Replay the callee body (straight-line stmts + the trailing return) under the frame
+	 * bias; ast_in_graft makes the Return leave its (return-cast) value on vtop instead of
+	 * emitting the epilogue transfer. Save/restore the state so nested/sequential grafts
+	 * compose. */
+	int save_bias = ast_inline_bias, save_ig = ast_in_graft;
+	CType save_rt = ast_graft_rt;
 	ast_inline_bias = bias;
-	ast_replay_value(e->ast, ast_child(e->ast, ret, 0)); /* EXPR -> result on vtop */
+	ast_in_graft = 1;
+	ast_graft_rt.t = ast_type_t(a, n);
+	ast_graft_rt.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+	ast_replay_bb(e->ast, ast_root(e->ast));
 	ast_inline_bias = save_bias;
-	CType rt; /* apply the return type (the callee's implicit return cast) */
-	rt.t = ast_type_t(a, n);
-	rt.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
-	if ((rt.t & VT_BTYPE) != VT_VOID)
-		gen_cast(&rt);
+	ast_in_graft = save_ig;
+	ast_graft_rt = save_rt;
 	if (ast_replay_dump)
 		fprintf(stderr, "[ast-inline] grafted %s\n", get_tok_str(((Sym *)csym)->v, NULL));
 	return 1;
@@ -13136,6 +13154,16 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 		}
 		case AST_Return: {
 			AstLocal v = ast_first_child(a, s);
+			if (ast_in_graft) {
+				/* Tier-4: a grafted callee's return leaves its value on vtop (cast to the
+				 * call's result type) — no epilogue transfer, no rsym jump. */
+				if (v != AST_NONE) {
+					ast_replay_value(a, v);
+					if ((ast_graft_rt.t & VT_BTYPE) != VT_VOID)
+						gen_cast(&ast_graft_rt);
+				}
+				break;
+			}
 			if (v != AST_NONE) {
 				ast_replay_value(a, v);
 				gen_assign_cast(&func_vt);

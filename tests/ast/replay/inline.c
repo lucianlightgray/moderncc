@@ -8,10 +8,18 @@
 
 static int add(int a, int b) { return a + b; }
 static int scale(int x, int k) { return x * k; }
+/* multi-statement straight-line body with a local — its slot relocates under the same
+ * frame bias as the params. */
+static int madd(int a, int b) {
+	int p = a * b;
+	int q = p + a;
+	return q - 1;
+}
 
 int main(void) {
 	int r = add(3, 4);              /* 7 */
 	int s = scale(5, 6);           /* 30 */
 	int t = add(scale(2, 3), r);   /* nested: 6 + 7 = 13 */
-	return r + s + t - 8;          /* 7 + 30 + 13 - 8 = 42 */
+	int u = madd(2, 3);            /* p=6, q=8, -> 7 */
+	return r + s + t + u - 15;     /* 7 + 30 + 13 + 7 - 15 = 42 */
 }
