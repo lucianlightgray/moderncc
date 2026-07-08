@@ -108,11 +108,18 @@ static int ast_lor_top;
  * constant is materialized by gv() into a fresh rodata slot + anonymous symbol
  * (§gv). Replaying that gv would allocate a *second* slot, so the text
  * relocation would point at a different symbol and byte-verify would fall back.
- * Instead, the parse-build records each such symbol in emission order; replay
- * reuses them ordinally (it reproduces the same gv sequence, so the Nth
- * float-const matches). Byte-verify remains the backstop if the order ever
- * diverges. */
-static Sym **ast_fconst;    /* symbols recorded at build; reused at replay        */
+ * Instead, the parse-build records each such symbol's ELF symtab index in
+ * emission order; replay reuses them ordinally (it reproduces the same gv
+ * sequence, so the Nth float-const matches), aliasing the recorded ELF symbol
+ * so the relocation is byte-identical. Byte-verify remains the backstop if the
+ * order ever diverges.
+ *
+ * The recorded value is the ELF index (Sym->c), NOT the Sym*: the anon const
+ * Sym is often freed and its memory recycled for other Syms before replay runs
+ * (a stale pointer would then alias a live field/struct sym and get emitted as
+ * an empty-named undefined global). The ELF symtab entry, by contrast, is
+ * stable for the whole TU. */
+static int *ast_fconst;     /* ELF symtab indices recorded at build; aliased on replay */
 static int ast_fconst_n;    /* count recorded this function                        */
 static int ast_fconst_cap;  /* allocated capacity (grow-only, reset per function)  */
 static int ast_fconst_i;    /* replay cursor into ast_fconst                        */
@@ -847,6 +854,7 @@ ST_FUNC void mccgen_finish(MCCState *s1) {
 	free_inline_functions(s1);
 	sym_pop(&global_stack, NULL, 0);
 	memset(s1->gen_complex_type_cache, 0, sizeof s1->gen_complex_type_cache);
+	memset(s1->gen_complex_call_ftype, 0, sizeof s1->gen_complex_call_ftype);
 	s1->gen_complex_re_tok = s1->gen_complex_im_tok = 0;
 	sym_pop(&local_stack, NULL, 0);
 	free_defines(NULL);
@@ -2093,11 +2101,18 @@ ST_FUNC int gv(int rc) {
 			if (NODATA_WANTED)
 				size = 0, align = 1;
 #if defined(CONFIG_AST) && CONFIG_AST
-			if (ast_replaying && ast_fconst_i < ast_fconst_n) {
+			int fc = 0;
+			if (ast_replaying && ast_fconst_i < ast_fconst_n)
+				fc = ast_fconst[ast_fconst_i++];
+			if (fc) {
 				/* Reuse the rodata constant the parse-build already materialized:
-				 * reference the same symbol so the relocation is byte-identical (no
-				 * duplicate pool entry, no fresh anon_sym). */
-				Sym *fs = ast_fconst[ast_fconst_i++];
+				 * a fresh anon Sym whose ->c aliases the recorded ELF symtab entry,
+				 * so the relocation is byte-identical (no duplicate pool entry, no
+				 * fresh anon symbol). Aliasing by index (not by a stale Sym*) is
+				 * essential: the original const Sym is usually freed and its memory
+				 * recycled before replay runs. */
+				Sym *fs = sym_push(anon_sym++, &ltype, VT_CONST | VT_SYM, fc);
+				fs->type.t |= VT_STATIC;
 				vpop();                     /* drop the immediate const */
 				vpushsym(&ltype, fs);       /* memory ref to the recorded slot */
 				vtop->r |= VT_LVAL;
@@ -2108,13 +2123,13 @@ ST_FUNC int gv(int rc) {
 				vpush_ref(&ltype, p.sec, offset, size);
 #if defined(CONFIG_AST) && CONFIG_AST
 				if (ast_active && !ast_replaying) {
-					/* record this const-pool symbol for ordinal replay reuse */
+					/* record this const-pool symbol's ELF index for ordinal replay reuse */
 					if (ast_fconst_n == ast_fconst_cap) {
 						ast_fconst_cap = ast_fconst_cap ? ast_fconst_cap * 2 : 16;
 						ast_fconst = mcc_realloc(ast_fconst,
 								ast_fconst_cap * sizeof *ast_fconst);
 					}
-					ast_fconst[ast_fconst_n++] = vtop->sym;
+					ast_fconst[ast_fconst_n++] = vtop->sym->c;
 				}
 #endif
 				vswap();
@@ -4996,6 +5011,7 @@ static void gen_complex_call(int op, CType *cplx, CType *base, SValue *a, SValue
 						 : bt == VT_LDOUBLE
 								 ? 'l'
 								 : 0;
+	int idx = bt == VT_FLOAT ? 0 : bt == VT_DOUBLE ? ((base->t & VT_LONG) ? 3 : 1) : 2;
 	Sym *fsym, *p, *prev;
 	CType functype, ptype;
 	SValue r;
@@ -5008,24 +5024,32 @@ static void gen_complex_call(int op, CType *cplx, CType *base, SValue *a, SValue
 	else
 		snprintf(buf, sizeof buf, "__mcc_c%s", op == '*' ? "mul" : "div");
 
-	ptype = *base;
-	mk_pointer(&ptype);
-	fsym = sym_push2(&global_stack, SYM_FIELD, VT_VOID, 0);
-	fsym->type.ref = NULL;
-	fsym->f.func_call = FUNC_CDECL;
-	fsym->f.func_type = FUNC_NEW;
-	fsym->f.func_args = 5;
-	prev = NULL;
-	for (i = 0; i < 4; i++) {
-		p = sym_push2(&global_stack, SYM_FIELD, base->t, 0);
-		p->type.ref = base->ref;
+	/* Build the helper's function type once per base variant and cache it (as
+	 * mk_complex_type caches the _Complex struct type). The param field syms are
+	 * pushed on the global_stack and live for the whole TU, so re-pushing them on
+	 * every call just leaks a fresh set each time. */
+	fsym = mcc_state->gen_complex_call_ftype[idx];
+	if (!fsym) {
+		ptype = *base;
+		mk_pointer(&ptype);
+		fsym = sym_push2(&global_stack, SYM_FIELD, VT_VOID, 0);
+		fsym->type.ref = NULL;
+		fsym->f.func_call = FUNC_CDECL;
+		fsym->f.func_type = FUNC_NEW;
+		fsym->f.func_args = 5;
+		prev = NULL;
+		for (i = 0; i < 4; i++) {
+			p = sym_push2(&global_stack, SYM_FIELD, base->t, 0);
+			p->type.ref = base->ref;
+			p->next = prev;
+			prev = p;
+		}
+		p = sym_push2(&global_stack, SYM_FIELD, ptype.t, 0);
+		p->type.ref = ptype.ref;
 		p->next = prev;
-		prev = p;
+		fsym->next = p;
+		mcc_state->gen_complex_call_ftype[idx] = fsym;
 	}
-	p = sym_push2(&global_stack, SYM_FIELD, ptype.t, 0);
-	p->type.ref = ptype.ref;
-	p->next = prev;
-	fsym->next = p;
 	functype.t = VT_FUNC;
 	functype.ref = fsym;
 

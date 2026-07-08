@@ -970,6 +970,7 @@ struct MCCState {
 	int gen_sizeof_parsed_type;
 	int gen_complex_re_tok, gen_complex_im_tok;
 	CType gen_complex_type_cache[4];
+	Sym *gen_complex_call_ftype[4];
 	unsigned char gen_prec[256];
 
 	Sym *sym_free_first;
