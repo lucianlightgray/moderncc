@@ -58,7 +58,19 @@ static int callful(int start) {
 	return p + q + r + t; /* start=1: 1+2+3 + 6 = 12 */
 }
 
+/* Float promotion: the accumulator s (a double) lives in a caller-saved XMM pin
+ * (XMM6/7) across the loop — only a call-free function can, since a call would
+ * clobber it. Mixes with the GP-pinned pointer v. */
+static int fdot(double *v, int n) {
+	double s = 0.0;
+	for (int i = 0; i < n; i++)
+		s += v[i];
+	return (int)s; /* {1,2,3} -> 6 */
+}
+
 int main(void) {
 	int arr[4] = {1, 2, 3, 4};
-	return calc(5) + loopy(4) + callful(1) + sumptr(arr, 4) - 62; /* 42+40+12+10-62 = 42 */
+	double dv[3] = {1.0, 2.0, 3.0};
+	return calc(5) + loopy(4) + callful(1) + sumptr(arr, 4) + fdot(dv, 3) - 68;
+	/* 42 + 40 + 12 + 10 + 6 - 68 = 42 */
 }

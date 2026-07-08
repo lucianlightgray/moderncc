@@ -299,10 +299,17 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
     walk (`ast_promo_weigh`): each reference contributes `2^loop-depth`, where a loop is an `If`
     node with `op==2`, so an inner-loop local (verified: nested-loop `x,y,z,w` win R12–R15) outranks
     an outer-loop or straight-line one. Any valid subset is correct, so exec output is unchanged.
+  - [x] **Promote float/double locals — LANDED 2026-07-08.** A `float`/`double` local pins into
+    **XMM6/XMM7** (`reg_classes` = `RC_XMM6`/`RC_XMM7` with no `RC_FLOAT`, so `get_reg` never
+    allocates them — free to pin, no backend extension needed). All XMM are caller-saved on SysV, so
+    float promotion is **call-free only** (`xmm_max = has_call ? 0 : 2`); no save/restore. Two
+    independent pools (GP + XMM) in one weight-ordered pass, so a function mixes int/pointer (GP) and
+    float (XMM) pins. The existing `ast_promo_write`/`entry_init` already dispatch on
+    `reg_classes[reg]`, so `gv(RC_XMM6/7)` materializes/seeds the pin; a read copies it to a scratch
+    XMM (XMM6/7 aren't in `RC_FLOAT`). Verified: `s += a[i]`/`t *= 1.5` stay in `addsd`/`mulsd` on
+    XMM6/7; `float` and `double`; call-ful correctly excludes floats. Corpus green, ctest 1768/1768.
   - [ ] share one spill slot across disjoint live ranges (needs a real backward-liveness pass);
-    promote floats (blocked: the x86_64 backend has only XMM0–XMM7, all in RC_FLOAT or reserved —
-    no spare XMM to pin without extending the backend to XMM8–15); other arches (GP pools are
-    x86_64-specific).
+    other arches (GP/XMM pools are x86_64-specific).
 - [ ] **Tier 4 — virtual always-inline over the shared store (the minimize-invoke payoff).**
   Inline internal calls instead of emitting a boundary `Call`, using the CST's content-
   addressed store/binding/render engine (docs/AST.md §9). Cycle detection via the instance

@@ -12091,6 +12091,11 @@ static void ast_hook_implicit_return(void) {
 #define AST_PROMO_MAX 5
 static const int ast_promo_caller[3] = {10, 9, 8};          /* R10,R9,R8 */
 static const int ast_promo_callee[5] = {3, 12, 13, 14, 15}; /* RBX,R12-R15 */
+static const int ast_promo_xmm[2] = {22, 23};               /* XMM6,XMM7 — reg_classes
+	RC_XMM6/RC_XMM7 (no RC_FLOAT), so get_reg never allocates them: free to pin a float/
+	double local. All XMM are caller-saved on SysV, so float promotion is call-free only
+	(no save/restore, and no call clobbers the pin). Reads copy the pin to a scratch XMM
+	because it is not in RC_FLOAT; gv(RC_XMM6/7) materializes a write into it. */
 static int ast_promo_off[AST_PROMO_MAX]; /* frame offset of each promoted local */
 static int ast_promo_typ[AST_PROMO_MAX]; /* its access type (full-width GP scalar) */
 static int ast_promo_reg[AST_PROMO_MAX]; /* the physical register chosen for it */
@@ -12224,7 +12229,8 @@ static int ast_plan_promotion(AstArena *a) {
 		 * whose child Ref is poisoned above. Arrays/structs are caught by the aggregate
 		 * range poison. A `volatile`/`_Atomic` (VT_ATOMIC includes VT_VOLATILE) local
 		 * must keep every access in memory, so it is never promotable. */
-		int scalar = (bt == VT_INT || bt == VT_LLONG || bt == VT_PTR) &&
+		int scalar = (bt == VT_INT || bt == VT_LLONG || bt == VT_PTR ||
+				bt == VT_FLOAT || bt == VT_DOUBLE) && /* float/double pin into XMM6/7 */
 				!(tt & (VT_ARRAY | VT_BITFIELD | VT_VOLATILE));
 		int j;
 		for (j = 0; j < nc; j++)
@@ -12307,16 +12313,22 @@ static int ast_plan_promotion(AstArena *a) {
 		cweight[j] = 0;
 	ast_promo_weigh(a, ast_root(a), 0, coff, nc, cweight);
 	ast_promo_callful = has_call;
-	const int *pool = has_call ? ast_promo_callee : ast_promo_caller;
-	int pool_n = has_call ? (int)(sizeof ast_promo_callee / sizeof *ast_promo_callee)
+	const int *gp_pool = has_call ? ast_promo_callee : ast_promo_caller;
+	int gp_max = has_call ? (int)(sizeof ast_promo_callee / sizeof *ast_promo_callee)
 												: (int)(sizeof ast_promo_caller / sizeof *ast_promo_caller);
+	/* Float/double locals pin into the caller-saved XMM6/7, so only a call-free function
+	 * (a call would clobber them) can promote them. Integer/pointer locals take the GP
+	 * pool. Two independent pools, one weight-ordered pass: pick the hottest candidate
+	 * whose pool still has room. */
+	int xmm_max = has_call ? 0 : (int)(sizeof ast_promo_xmm / sizeof *ast_promo_xmm);
+	int gp_n = 0, xmm_n = 0;
 	for (;;) {
-		if (ast_promo_n >= pool_n)
-			break;
 		int best = -1;
 		for (int j = 0; j < nc; j++) {
 			if (cpoison[j] || coff[j] >= 0)
 				continue; /* poisoned, already taken, or not a real (negative) slot */
+			if (is_float(ctyp[j]) ? (xmm_n >= xmm_max) : (gp_n >= gp_max))
+				continue; /* that local's pool is full */
 			if (best < 0 || cweight[j] > cweight[best])
 				best = j;
 		}
@@ -12324,7 +12336,8 @@ static int ast_plan_promotion(AstArena *a) {
 			break; /* no eligible candidate remains */
 		ast_promo_off[ast_promo_n] = coff[best];
 		ast_promo_typ[ast_promo_n] = ctyp[best];
-		ast_promo_reg[ast_promo_n] = pool[ast_promo_n];
+		ast_promo_reg[ast_promo_n] =
+				is_float(ctyp[best]) ? ast_promo_xmm[xmm_n++] : gp_pool[gp_n++];
 		ast_promo_n++;
 		cpoison[best] = 1; /* mark taken so the next pass skips it */
 	}
