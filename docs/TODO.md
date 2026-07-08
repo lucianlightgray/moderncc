@@ -268,8 +268,22 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
     (`unary_operators`: an int went 20→0); suspect the odd-count alignment pad or an ABI edge.
     (3) VLA + call-ful must bail (rsp race). The scaffolding (two pools, push/pop, `ast_promo_
     write` with a class-0 `load` path, entry-init pushes, `ast_promo_exit_restore`, the two-pass
-    block) was **reverted** (not committed) once the corpus regressed — re-derive from these notes,
-    landing the idempotent two-pass gate first (verify it holds call-free at 269/0) before calls.
+    block) was **reverted** (not committed) once the corpus regressed.
+    **CONCLUSION after a second investigation (2026-07-08) — the two paths are interlocked, so
+    fix-direction (b) is the way in:** _single-pass call-ful is provably unsound_ — call-ful
+    functions frequently replay UNfaithfully (verified: `if.c`'s `main` gives `replayed=0`, it
+    falls back in HEAD because its printf/string handling isn't byte-exact), and single-pass
+    promotion bypasses byte-verify, so it keeps that broken replay (the `*ABS*` GOTPCREL is a
+    symptom of the unfaithful replay, NOT of promotion). So call-ful **needs** the two-pass gate
+    to exclude unfaithful functions — but the two-pass hits the GOT idempotency wall above on the
+    faithful-but-global-accessing functions. Net: neither single-pass nor a naive two-pass works.
+    **Do fix-direction (b): apply promotion as an in-place byte rewrite of the FAITHFUL pass-1
+    output** — pass 1 replays without promotion, byte-verifies (sound gate, excludes `if.c`
+    main), AND records each promoted-local access's byte offset + form; then patch those
+    `mov r,[rbp-off]`/`mov [rbp-off],r` to the register form (often length-preserving — verify;
+    fall back if not) plus the entry push/seed and exit restore. This emits every relocation
+    exactly once (no GOT re-emit) and only touches faithful functions. It needs the replay to
+    surface per-access byte offsets for promoted locals — the one new piece of instrumentation.
   - [ ] share one spill slot across disjoint live ranges; spill-weight by access-freq × loop-depth;
     promote pointers/floats; other arches (the R10/R9/R8 pool is x86_64-specific).
 - [ ] **Tier 4 — virtual always-inline over the shared store (the minimize-invoke payoff).**
