@@ -2550,9 +2550,15 @@ static const char *ARM_COMBOS[] = {
 		"s4, #-0.1796875", "d4, #0.1796875", "r2, r3, d1", "d1, r2, r3", "s1, r2",
 		"r2, s1", "r2, fpexc", "r2, fpscr", "r2, fpsid", "apsr_nzcv, fpscr",
 		"fpexc, r2", "fpscr, r2", "fpsid, r2", "s3, d4", "d4, s3", "", 0};
+/* `b r3` / `bl r3` are semantically invalid (branch-to-register); mcc and GNU as
+   now emit byte-identical opcodes AND matching EABI relocations (R_ARM_JUMP24 for
+   b, R_ARM_CALL for bl). The only residual is objdump's symbolic target
+   annotation (`b 0 <r3>` vs `b 0x0`), a cosmetic rendering difference from mcc
+   ARM emitting RELA where GNU as emits REL — immaterial for these invalid
+   instructions. The `mov #imm16` and `vmov.f32` two-GPR<->dreg forms are now
+   implemented (arm-asm.c) and match GNU as byte-for-byte, so they were dropped. */
 static const char *ARM_KNOWN_FAIL[] = {
-		"bl r3", "b r3", "mov r2, #0xEFFF", "mov r4, #0x0201",
-		"vmov.f32 r2, r3, d1", "vmov.f32 d1, r2, r3", 0};
+		"bl r3", "b r3", 0};
 
 static int arm_isreg(const char *s) {
 	static const char *ex[] = {"fp", "ip", "sp", "lr", "pc", "asl", "apsr_nzcv", "fpsid", "fpscr", "fpexc", 0};

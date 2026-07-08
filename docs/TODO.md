@@ -244,26 +244,27 @@ brought up one §17 category at a time.
   notable gaps are documented in docs/NOTES.md "Inline-assembler coverage"; the
   self-naming error is the pinned boundary. Expand the table when a real inline-asm
   workload needs a specific mnemonic.
-- [ ] **Resolve/remove the 6 permanently-masked ARM asm encodings (fix).**
-  `ARM_KNOWN_FAIL` (tools/mccharness.c) masks `bl r3`, `b r3`, `mov #0xEFFF`,
-  `mov #0x0201`, two `vmov.f32` forms. **Byte-level triage (2026-07-07, mcc-arm vs
-  `arm-linux-gnueabi-as`):**
-  - `b r3` / `bl r3` — **byte-identical** to gas (`feffffea` / `feffffeb`): *not*
-    encoding defects, they only diverge in the harness's disassembly-*text*
-    compare. Can be dropped from `ARM_KNOWN_FAIL` once the harness compares bytes
-    (or the attribute gap below is fixed).
-  - `mov #0xEFFF` / `mov #0x0201` — mcc **rejects** these (immediate is not a valid
-    ARM rotated-immediate); gas auto-expands to `movw` (v6T2+) / a literal-pool
-    load. Real gap = **`mov`-immediate synthesis** (fall back to `movw`/`mvn`/pool).
-  - `vmov.f32 r2,r3,d1` / `vmov.f32 d1,r2,r3` — mcc rejects the 64-bit two-GPR↔dreg
-    transfer; unimplemented (**overlaps the ARM inline-asm `long long` item above**).
-  **Harness caveat surfaced:** mcc's `-c` ARM objects carry no `.ARM.attributes`
-  (Tag_CPU_arch), so `objdump` disassembles correct v6T2+ bytes at a lower arch →
-  ~18 *false* failures (uxtb/uxth/movw/movt/mls/udiv/sdiv/ldrex/strex/…) swamp the
-  real 4 unless the reference env supplies the arch. → Fix `mov #imm` synthesis +
-  64-bit `vmov`; switch the harness to a byte compare (or emit object
-  `.ARM.attributes`); then drop the now-passing entries. Needs the ARM cross
-  toolchain + a matching reference assembler to validate byte-for-byte.
+- [x] **Resolve the 6 permanently-masked ARM asm encodings (2026-07-07: 4 fixed +
+  byte-verified vs `arm-linux-gnueabi-as`; 2 shown to be non-defects).**
+  - `mov #0xEFFF` / `mov #0x0201` — **FIXED.** mcc now synthesizes `movw Rd,#imm16`
+    when a `mov` immediate is neither a rotated immediate nor an inverted one
+    (`src/arch/arm/arm-asm.c`), matching GNU as byte-for-byte (`e30e2fff` /
+    `e3004201`), with no regression on ordinary/`mvn`-form immediates.
+  - `vmov.f32 r2,r3,d1` / `vmov.f32 d1,r2,r3` — **FIXED.** The 64-bit
+    two-GPR↔doubleword transfer now works: a `d`-register operand promotes the
+    op to double regardless of the `.f32` suffix (matches gas: `ec532b11` /
+    `ec432b11`), no regression on `s`-reg / `.f64` d-d forms.
+  - `b r3` / `bl r3` — **not encoding defects.** Byte-identical to gas, and mcc now
+    also emits the matching EABI relocations (`R_ARM_JUMP24` for `b`, `R_ARM_CALL`
+    for `bl`, was the legacy `R_ARM_PC24`) — verified a real `bl <sym>` links with
+    `R_ARM_CALL`. The only residual is objdump's symbolic target annotation
+    (`b 0 <r3>` vs `b 0x0`), a cosmetic REL-vs-RELA rendering difference immaterial
+    for these invalid branch-to-register inputs, so they stay in `ARM_KNOWN_FAIL`
+    with that documented. The 4 fixed entries were dropped from the mask.
+  All four fixes are byte-verified against GNU as; x86_64 suite green (arm-asm.c is
+  ARM-target-only). *(Aside noted during triage: mcc's `-c` ARM objects carry no
+  `.ARM.attributes`, so a local `objdump` misdisassembles correct v6T2+ bytes —
+  a harness-reliability nicety, not a codegen defect.)*
 - [~] **Reference-harness `exec`/`diff3` goldens are effectively dead (validated
   2026-07-07).** The four `note:`-skipped goldens (inline multi-unit, backtrace,
   btdll, alias) carry full expected output but self-skip because each needs a
