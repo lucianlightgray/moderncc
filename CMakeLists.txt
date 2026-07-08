@@ -3087,7 +3087,7 @@ if(MCC_BUILD_TESTS)
                 "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
                 "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/inline.c"
                 "-DOUT=${CMAKE_BINARY_DIR}/ast-replay"
-                "-DEXPECT_RC=42" "-DREPLAYED=main" "-DINLINE=1" "-DINLINES=add,scale,madd"
+                "-DEXPECT_RC=42" "-DREPLAYED=main" "-DINLINE=1" "-DINLINES=add,scale,madd,clamp"
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
             set_tests_properties("ast/replay-inline" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 

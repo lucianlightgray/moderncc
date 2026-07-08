@@ -336,17 +336,19 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
     and byte-verifies against `-O0`, then pass 2 grafts — so an inlined caller's divergent bytes
     are exec-golden-gated, not byte-gated. Precedence over promotion when a function has both
     (grafting removes the calls the promo planner keyed on). **Minimal graftable form:** a
-    within-TU `static` leaf whose body is a straight-line statement sequence ending in one
-    `return EXPR;` with GP-scalar params, defined before the caller. **Multi-statement bodies with
-    local declarations work** (the locals relocate under the same frame bias; the graft replays
-    the whole body via `ast_replay_bb` with `ast_in_graft` making the trailing `Return` leave its
-    value on vtop). Verified: whole `tests/exec` corpus output-matches `-O0`; ctest 1769/1769;
-    default (inline off) byte-untouched. Fixture `ast/replay-inline` asserts `add`/`scale`/`madd`
-    (the last multi-statement) graft.
-  - [ ] **Slice 2 breadth.** Early/multiple returns via an inline-end label; internal control flow
-    (label scoping); non-scalar params/return (struct by-value, float). Then forward-declared /
-    later-defined callees (needs true defer-to-TU), cycle detection via the instance hash, and
-    the `setjmp`/signal/VLA guard queries. Combine inline + promotion in one pass 2.
+    within-TU `static` leaf whose body ends in one tail `return EXPR;` with GP-scalar params,
+    defined before the caller. **Multi-statement bodies with local declarations AND internal
+    control flow (if/else, loops) work** — locals relocate under the frame bias, and the internal
+    branches use fresh code offsets (`gind`) so no label scoping is needed while the return stays
+    the single tail; the graft replays the whole body via `ast_replay_bb` with `ast_in_graft`
+    making the trailing `Return` leave its value on vtop. Pointer-to-VLA params (`int m[n][n]`,
+    whose indexing needs a runtime size the bias can't relocate) are excluded. Verified: whole
+    `tests/exec` corpus output-matches `-O0`; ctest 1769/1769; default (inline off) byte-untouched.
+    Fixture `ast/replay-inline` asserts `add`/`scale`/`madd`/`clamp` (multi-statement + two-if) graft.
+  - [ ] **Slice 2 breadth.** Early/multiple returns via an inline-end label + return-value coalesce;
+    `goto`/`switch` (shared label/switch replay state); non-scalar params/return (struct by-value,
+    float). Then forward-declared / later-defined callees (needs true defer-to-TU), cycle detection
+    via the instance hash, and the `setjmp`/signal/VLA guard queries. Combine inline + promotion.
 - [ ] **Long horizon (design only):** the broader template library (algebraic, dead-branch,
   jump-table), the time-budgeted engine (§12/§221), dependency-ordered `-O1` compile, cross-TU
   LTO, `-g` from provenance, hot-reload snapshots, and separate `-O2`/`-O3` (SSA) drivers.

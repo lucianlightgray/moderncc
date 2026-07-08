@@ -15,11 +15,22 @@ static int madd(int a, int b) {
 	int q = p + a;
 	return q - 1;
 }
+/* internal control flow (two ifs) with a single tail return: the branches use fresh
+ * code offsets, so no label scoping is needed. */
+static int clamp(int x, int lo, int hi) {
+	int r = x;
+	if (x < lo)
+		r = lo;
+	if (x > hi)
+		r = hi;
+	return r;
+}
 
 int main(void) {
 	int r = add(3, 4);              /* 7 */
 	int s = scale(5, 6);           /* 30 */
 	int t = add(scale(2, 3), r);   /* nested: 6 + 7 = 13 */
 	int u = madd(2, 3);            /* p=6, q=8, -> 7 */
-	return r + s + t + u - 15;     /* 7 + 30 + 13 + 7 - 15 = 42 */
+	int c = clamp(99, 0, 5);       /* -> 5 */
+	return r + s + t + u + c - 20; /* 7 + 30 + 13 + 7 + 5 - 20 = 42 */
 }

@@ -12188,6 +12188,10 @@ static void ast_inline_capture(Sym *fnsym) {
 		if ((bt != VT_INT && bt != VT_LLONG && bt != VT_PTR) ||
 				(ls->type.t & (VT_ARRAY | VT_VLA)))
 			return; /* GP scalar params only for the minimal grafting */
+		if (bt == VT_PTR && ls->type.ref &&
+				(((Sym *)ls->type.ref)->type.t & VT_VLA))
+			return; /* pointer-to-VLA param (`int m[n][n]`): indexing needs the runtime
+			         * size, which the frame bias does not relocate */
 		ast_inline_cap_off[n] = (int)ls->c;
 		ast_inline_cap_typ[n] = ls->type.t;
 		ast_inline_cap_ref[n] = ls->type.ref;
@@ -12197,26 +12201,29 @@ static void ast_inline_capture(Sym *fnsym) {
 	ast_inline_cap_ok = 1;
 }
 
-/* Graftable form: a single BasicBlock of straight-line statements (no statement-level
- * control flow / nested block) ending in exactly one `return EXPR;`. Local declarations
- * are fine — their VT_LOCAL slots relocate under the same frame bias as the params. No
- * label scoping or return jumps needed. */
+/* Graftable form: a BasicBlock body with EXACTLY ONE `return EXPR;` as its final
+ * statement — the single tail exit. Local declarations and internal control flow
+ * (if/else, loops = `If` nodes with their own BasicBlock branches) are allowed: their
+ * local slots relocate under the same frame bias, and their internal branches use fresh
+ * code offsets (gind), so no label scoping or return-jump chain is needed while the
+ * return stays the single tail. `goto`/`switch` (which touch the shared label/switch
+ * replay state) and early/nested returns are excluded by the single-tail-Return rule and
+ * the node scan below. */
 static int ast_inline_graftable(AstArena *a) {
 	AstLocal root = ast_root(a);
 	if (ast_kind(a, root) != AST_BasicBlock)
 		return 0;
+	AstLocal nn = ast_count(a);
+	int totret = 0;
+	for (AstLocal n = 0; n < nn; n++)
+		if (ast_kind(a, n) == AST_Return)
+			totret++;
+	if (totret != 1) /* exactly one return anywhere in the body (so it is the tail) */
+		return 0;
 	AstLocal last = AST_NONE;
-	int nret = 0;
-	for (AstLocal s = ast_first_child(a, root); s != AST_NONE; s = ast_next_sib(a, s)) {
-		uint16_t k = ast_kind(a, s);
-		if (k == AST_If || k == AST_BasicBlock)
-			return 0; /* statement-level control flow / nested block: not yet */
-		if (k == AST_Return)
-			nret++;
+	for (AstLocal s = ast_first_child(a, root); s != AST_NONE; s = ast_next_sib(a, s))
 		last = s;
-	}
-	return nret == 1 && last != AST_NONE && ast_kind(a, last) == AST_Return &&
-			ast_nchild(a, last) >= 1;
+	return last != AST_NONE && ast_kind(a, last) == AST_Return && ast_nchild(a, last) >= 1;
 }
 
 /* Grafting state (pass 2): active enables the AST_Invoke graft; bias relocates the
