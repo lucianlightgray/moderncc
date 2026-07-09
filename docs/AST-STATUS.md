@@ -224,12 +224,15 @@ is x86_64-gated (the dead-branch selection is verified on x86_64 so far).
 - **`-O1` transform soundness backlog (surfaced by the A4 gate).** The gcc c-torture
   differential baselined **14 promote + 4 inline + 3 replay** `KNOWNGAP`s (all behind the
   experimental `MCC_AST_PROMOTE`/`MCC_AST_INLINE` flags, not default `-O0`). These diverge from
-  `-O0` by construction, so byte-verify can't catch them — the gate is their only net. Notable:
-  a promoted **float pin (XMM6/7) clobbered by `gen_opf` operating in place** (root-caused;
-  needs real float-promotion register discipline — the naive "copy the pin read to a scratch"
-  regressed the corpus), and the 2 `pr51581` replay gaps = the parked §20 pp-const-expr
-  state-corruption. Each fix shrinks the corresponding `GCCTS_AST_KNOWN_*` list in
-  `tools/mccharness.c`.
+  `-O0` by construction, so byte-verify can't catch them — the gate is their only net. The
+  promote 14 categorize (2026-07-09, `MCC_AST_NO_CALLFUL` bisect + float grep) as **7 call-free
+  FLOAT + 6 call-ful GP + 1 call-free int**; the 7 float share ONE root cause — a promoted float
+  pin (XMM6/7) **clobbered by `gen_opf` operating on its operand register in place** (integer
+  `gen_op` gv's to an RC_INT scratch that skips the pin; the float path doesn't), so fixing it
+  clears ~7 at once (needs real float-promotion register discipline — the naive "copy the pin
+  read to a scratch" regressed the corpus 269→233). The 2 `pr51581` replay gaps = the parked §20
+  pp-const-expr state-corruption. Full breakdown + suggested fix order in TODO.md §C1 residual;
+  each fix shrinks the corresponding `GCCTS_AST_KNOWN_*` list in `tools/mccharness.c`.
 - **Other architectures (arm64/riscv64) for promotion** — the promo push/pop/write/seed
   encodings and pin pools are x86_64-specific. Unlike x86_64 (where RBX/R12–R15 and XMM6/7 were
   already modeled as class-0/reserved registers), arm64's backend (`NB_REGS=28`) does not

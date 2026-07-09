@@ -545,14 +545,28 @@ Each is a closed decision; the item is the named condition that would reopen it.
 - [ ] **§C1 residual — the -O1 transform soundness backlog (surfaced by the A4 gate).** The
   differential's promote/inline columns baselined **14 promote + 4 inline** pre-existing
   miscompiles (they diverge from -O0 by construction, so byte-verify can't catch them — the gate
-  is their only net; all behind experimental MCC_AST_PROMOTE/INLINE, not default -O0). Promote:
-  register-promotion poison-analysis holes — `990829-1` is a **float pin (xmm6/xmm7) clobbered
-  by `gen_opf` operating in place** (root-caused; the naive "copy the float-pin read to an
-  RC_FLOAT scratch" fix regressed the corpus 269→233, so it needs real float-promotion register
-  discipline, not a point patch), the rest a mix of call-ful/call-free int/pointer (postmod
-  pointer, loop temporaries). Inline: graft holes in sad/usad reduction idioms + struct/vector
-  returns. Plus the 3 replay KNOWNGAPs (2 = the §20 pp-state checkpoint/restore, 1 = cyclic
-  VLA-in-struct). Fix incrementally; each removal shrinks the corresponding `GCCTS_AST_KNOWN_*`.
+  is their only net; all behind experimental MCC_AST_PROMOTE/INLINE, not default -O0). Each
+  removal shrinks the corresponding `GCCTS_AST_KNOWN_*` list in `tools/mccharness.c`.
+  **Promote (14) — categorized 2026-07-09 (`MCC_AST_NO_CALLFUL` bisect + float grep):**
+  - **7 call-free FLOAT (the dominant cluster, one root cause):** `941021-1`, `postmod-1`,
+    `990829-1`, `920929-1`, `pr36343`, `pr28982a`, `pr15262` — a promoted **float pin (XMM6/7)
+    is clobbered by `gen_opf` operating on its operand register IN PLACE** (`(ri-le)/(ri*(le+1))`
+    → `divsd %xmm6,%xmm6` = 1.0). Integer `gen_op` gv's operands to an RC_INT scratch that skips
+    the pin; the float path doesn't. The naive "gv the float-pin read to an RC_FLOAT scratch on
+    read" regressed the corpus 269→233 (reverted) — needs real float-promotion register
+    discipline OR disable float promotion (marginal: 2 pins, call-free only). **Fixing this one
+    root cause clears ~7 of the 14.**
+  - **6 call-ful (fixed by `MCC_AST_NO_CALLFUL`):** `20080519-1`, `20170111-1`, `20020402-3`,
+    `loop-8`, `20000722-1`, `pr28982b` — callee-saved-pin (RBX/R12–R15) promotion holes across
+    calls (int/pointer; `loop-8`/`pr28982b` are float-typed but their floats don't promote in a
+    call-ful fn, so the bug is the call-ful GP path).
+  - **1 call-free int:** `pr119002`.
+  **Inline (4):** `usad-run`, `pr45070`, `ssad-run`, `pr41750` — graft holes in sad/usad
+  reduction idioms + struct/vector-ish returns (distinct causes; `pr45070` grafts `next`,
+  `pr41750` grafts `get_got`). **Replay (3 KNOWNGAP):** `pr51581-1/2` = the §20 pp-const-expr
+  state corruption (needs the codegen checkpoint/restore), `20070919-1` = cyclic VLA-in-struct
+  compiler crash (bail candidate). Suggested order: the 7-for-1 float cluster first, then the
+  call-ful GP cluster, then the singletons.
 - [ ] **`k` value:** raise the always-inline depth `k` above the `k=1`/widen-on-back-edge
   default only under `-O2`/`-O3` or an explicit size budget (`k≈log_b(budget)`).
 - [ ] **Size-gated outline:** land as a later binding-graph template (swap an inline binding
