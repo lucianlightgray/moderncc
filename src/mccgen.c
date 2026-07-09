@@ -12219,10 +12219,13 @@ static void ast_inline_capture(Sym *fnsym) {
 		if ((bt != VT_INT && bt != VT_LLONG && bt != VT_PTR &&
 				 bt != VT_FLOAT && bt != VT_DOUBLE) ||
 				(ls->type.t & (VT_ARRAY | VT_VLA)))
-			return; /* scalar params only: a by-value STRUCT param's frame layout is ABI-
-			         * dependent (register vs memory passing), so a plain vstore-to-slot bind
-			         * does not match a >16-byte struct — struct *return* (memory-coalesced)
-			         * works and stays enabled, struct params fall back to a real call */
+			return; /* scalar params only. A by-value STRUCT/UNION param's frame layout is
+			         * ABI-dependent — even ≤16-byte aggregates classify per member
+			         * (register class, unions/transparent_union, packing), so a plain
+			         * vstore-to-slot bind miscompiles some (verified: a transparent_union
+			         * param). Struct *return* (memory-coalesced) works and stays enabled;
+			         * struct/union params fall back to a real call. An ABI-aware bind is
+			         * future work (docs/AST-STATUS.md). */
 		if (bt == VT_PTR && ls->type.ref &&
 				(((Sym *)ls->type.ref)->type.t & VT_VLA))
 			return; /* pointer-to-VLA param (`int m[n][n]`): indexing needs the runtime
