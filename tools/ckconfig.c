@@ -218,7 +218,7 @@ int main(int argc, char **argv) {
 	if (errs) {
 		fprintf(stderr,
 						"ckconfig: %d config-drift issue(s) — reconcile CMakeLists.txt, the "
-						"code, docs/CONFIG.md, and the ALLOW_* lists in tools/ckconfig.c\n",
+						"code, EXCESS.md (config surface), and the ALLOW_* lists in tools/ckconfig.c\n",
 						errs);
 		return 1;
 	}

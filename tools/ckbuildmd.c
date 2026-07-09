@@ -50,7 +50,7 @@ int main(int argc, char **argv) {
 	char line[8192];
 
 	if (argc != 3) {
-		fprintf(stderr, "usage: ckbuildmd <config-nodes.tsv> <docs/BUILD.md>\n");
+		fprintf(stderr, "usage: ckbuildmd <config-nodes.tsv> <BUILD.md>\n");
 		return 2;
 	}
 	if (!(tsv = fopen(argv[1], "r"))) {
@@ -131,7 +131,7 @@ int main(int argc, char **argv) {
 	}
 	if (drift) {
 		printf("BUILD.md node tables have drifted from the mcc_config_node() "
-					 "source of truth; update docs/BUILD.md.\n");
+					 "source of truth; update BUILD.md.\n");
 		return 1;
 	}
 	printf("BUILD.md node tables in sync (%d nodes).\n", nn);

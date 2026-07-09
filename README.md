@@ -49,7 +49,7 @@ cmake --build --preset debug -j
 
 The developer presets above are the ones you'll use by hand; CI/dist presets
 (`linux-*`, `macos*`, `msvc`, `sanitize-msvc`, `mingw`, `qemu*`, `dist-*`) are also
-defined and drive the workflows + docker runners. See [BUILD.md §2](docs/BUILD.md) for the full
+defined and drive the workflows + docker runners. See [BUILD.md §2](BUILD.md) for the full
 preset catalog and naming conventions. Current per-platform build status lives
 in [EXCESS.md](EXCESS.md).
 
