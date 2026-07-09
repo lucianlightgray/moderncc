@@ -414,9 +414,13 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
     and a block-scoped aggregate TYPE ref is still recyclable (crash in scopes.c), so a re-emit
     candidate that references an anon rodata const OR an aggregate type falls back to a real forward
     call. Corpus + ctest 1769/1769, ASan-clean.
-  - [ ] **Slice 2 breadth.** Pin/transitively-persist **type refs** too (lifts the conservative
-    re-emit restriction for string/struct-typed forward callers). Then struct-by-value **params**
-    (ABI-aware bind); per-site specialization; un-gate the fixture on non-x86_64 once verified there.
+  - [ ] **Slice 2 breadth.** Broaden re-emission to string/struct-typed forward callers. Attempted:
+    a depth-bounded transitive **type-ref pin** (`ast_pin_type` over struct member chains + pointer
+    element types) fixed the scopes.c crash and re-emitted struct/string forward callers correctly
+    (`fwds`/`fwd`), BUT scopes.c then miscompiled — a *deeper* string-in-re-emission bug (nested-scope
+    `main_6`'s printf format strings mis-referenced) that the value+type Sym pins don't cover.
+    Reverted to conservative re-emission; needs that root cause found first. Then struct-by-value
+    **params** (ABI-aware bind); per-site specialization; un-gate the fixture on non-x86_64.
 - [ ] **Long horizon (design only):** the broader template library (algebraic, dead-branch,
   jump-table), the time-budgeted engine (§12/§221), dependency-ordered `-O1` compile, cross-TU
   LTO, `-g` from provenance, hot-reload snapshots, and separate `-O2`/`-O3` (SSA) drivers.
