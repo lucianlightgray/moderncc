@@ -237,21 +237,21 @@ void math_cmp_test(void) {
 #define bug(a, b, op, iop, part) printf("Test broken: %s %s %s %s %d\n", #a, #b, #op, #iop, part)
 
 #define FCMP(a, b, op, iop, code) \
-	if (fcompare(a, b, code))     \
-		bug(a, b, op, iop, 1);    \
-	if (a op b)                   \
-		bug(a, b, op, iop, 2);    \
-	if (a iop b)                  \
-		;                         \
-	else                          \
-		bug(a, b, op, iop, 3);    \
-	if ((a op b) || comp)         \
-		bug(a, b, op, iop, 4);    \
-	if ((a iop b) || comp)        \
-		;                         \
-	else                          \
-		bug(a, b, op, iop, 5);    \
-	if (v = !(a op b), !v)        \
+	if (fcompare(a, b, code))       \
+		bug(a, b, op, iop, 1);        \
+	if (a op b)                     \
+		bug(a, b, op, iop, 2);        \
+	if (a iop b)                    \
+		;                             \
+	else                            \
+		bug(a, b, op, iop, 3);        \
+	if ((a op b) || comp)           \
+		bug(a, b, op, iop, 4);        \
+	if ((a iop b) || comp)          \
+		;                             \
+	else                            \
+		bug(a, b, op, iop, 5);        \
+	if (v = !(a op b), !v)          \
 		bug(a, b, op, iop, 7);
 
 	FCMP(nan, nan, ==, !=, 0);
@@ -358,13 +358,13 @@ gate_desc a_gate_desc;
 void attrib_test(void) {
 #ifndef _WIN32
 	printf("attr: %d %d %d %d\n", sizeof(struct Spacked),
-		   sizeof(spacked), sizeof(Spacked2), sizeof(spacked2));
+				 sizeof(spacked), sizeof(Spacked2), sizeof(spacked2));
 	printf("attr: %d %d\n", sizeof(Spacked3), sizeof(spacked3));
 	printf("attr: %d %d\n", sizeof(gate_desc), sizeof(a_gate_desc));
 #endif
 }
 extern __attribute__((__unused__)) char *__attribute__((__unused__)) *
-	strange_attrib_placement(void);
+		strange_attrib_placement(void);
 
 void *__attribute__((__unused__)) get_void_ptr(void *a) {
 	return a;

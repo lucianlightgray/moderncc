@@ -1,6 +1,3 @@
-
-
-
 #define CC_unknown 0
 #define CC_gcc 1
 #define CC_clang 2

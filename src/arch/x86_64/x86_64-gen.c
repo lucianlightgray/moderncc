@@ -237,23 +237,16 @@ static void gen_modrm_impl(int op_reg, int r, Sym *sym, int c, int is_got) {
 			oad(0x85 | op_reg, c);
 		}
 	} else {
-		/* Register-indirect base `[rv + c]` — either the TREG_MEM indirect-with-disp
-		 * form or a plain register holding an address (a promoted pointer, Tier-3). A
-		 * base whose low 3 bits are 100 (rsp/r12) requires a SIB byte (0x24 = no index,
-		 * base = that reg); one that is 101 (rbp/r13) cannot use mod=00 (that encodes
-		 * disp32-no-base), so it must carry an explicit disp8 even when c==0. The normal
-		 * allocator never bases off r12/r13, so for every register it does use this is
-		 * byte-identical to the historic `mod=00`/`mod=10` encoding. */
 		int rv = REG_VALUE(r);
 		int indirect = (r & VT_VALMASK) >= TREG_MEM;
-		int disp32 = indirect && c; /* TREG_MEM keeps its historic disp32 form */
+		int disp32 = indirect && c;
 		if (disp32) {
 			g(0x80 | op_reg | rv);
 			if (rv == 4)
 				g(0x24);
 			gen_le32(c);
 		} else if (rv == 5) {
-			g(0x40 | op_reg | rv); /* rbp/r13: forced disp8 */
+			g(0x40 | op_reg | rv);
 			g(0x00);
 		} else {
 			g(0x00 | op_reg | rv);
@@ -631,9 +624,6 @@ void store(int r, SValue *v) {
 		if (bt == VT_SHORT)
 			o(0x66);
 		o(pic);
-		/* REX.B from the destination base `fr` so a store through a high-register base
-		 * (r8-r15 — a promoted pointer, Tier-3) is addressed correctly; byte-identical
-		 * for every base the normal allocator uses (low regs / rbp / const → no REX.B). */
 		if (bt == VT_BYTE || bt == VT_BOOL)
 			orex(0, fr, r, 0x88);
 		else if (is64_type(bt))

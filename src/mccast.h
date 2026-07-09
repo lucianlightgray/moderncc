@@ -1,42 +1,24 @@
 #ifndef MCCAST_H
 #define MCCAST_H
 
-/* The AST — an intention IR alongside the CST (docs/AST.md).
- *
- * Where the CST is byte-faithful concrete syntax, the AST is intention:
- * desugared, type-resolved, post-preprocessor. It is a pure side-channel like
- * the CST: -O0 never builds or reads it; -O1 builds it (lowered from the typed
- * CST / parser) and replays it through the existing vstack API to emit code.
- *
- * This header declares only the structure-agnostic arena/builder/dump API,
- * which is self-contained (no dependency on the compiler's CType/Sym). Types
- * and symbols ride as opaque handles: `type_t` carries the CType.t bit-field
- * and `type_ref`/`sym` carry opaque Sym* casts that the full build fills in and
- * the replay driver (in mccgen.c) reconstructs. The pure-library harness
- * (tools/asttool.c) treats them as tags. */
-
 #include <stddef.h>
 #include <stdint.h>
 
 typedef enum AstKind {
-	/* Structural */
 	AST_TranslationUnit = 0,
 	AST_BasicBlock,
-	/* Terminators */
 	AST_If,
 	AST_Jump,
 	AST_Return,
-	/* Values */
-	AST_Ref,      /* address of a named object (Sym)             */
-	AST_Literal,  /* integer/float constant                      */
-	AST_Load,     /* explicit read of an address                 */
-	AST_Store,    /* explicit write: Store(addr, value)          */
-	AST_Unary,    /* neg / bitnot (single-operand machine ops)   */
-	AST_Binary,   /* control-free binary op (op = token value)   */
-	AST_Convert,  /* genuine value conversion (resize/int<->fp)  */
-	AST_Invoke,   /* abstract call: callee + arg values          */
-	AST_InitList, /* aggregate initializer (blob/memset group)   */
-	/* Recovery */
+	AST_Ref,
+	AST_Literal,
+	AST_Load,
+	AST_Store,
+	AST_Unary,
+	AST_Binary,
+	AST_Convert,
+	AST_Invoke,
+	AST_InitList,
 	AST_Poison,
 
 	AST_KIND_COUNT
@@ -52,19 +34,13 @@ typedef struct AstArena AstArena;
 extern "C" {
 #endif
 
-/* --- arena lifecycle --- */
 AstArena *ast_arena_new(void);
 void ast_arena_free(AstArena *a);
 void ast_arena_reset(AstArena *a);
 
-/* --- construction --- */
 AstLocal ast_node(AstArena *a, uint16_t kind);
 void ast_add_child(AstArena *a, AstLocal parent, AstLocal child);
 
-/* In-place mutation used by the optimization templates (§12): a rewrite that
- * collapses a subtree (e.g. const-fold Binary(Lit,Lit) → Literal) retags the
- * node and orphans its former children (they stay in the per-function arena,
- * unreferenced — no compaction until hash-consing at Mid). */
 void ast_set_kind(AstArena *a, AstLocal n, uint16_t kind);
 void ast_clear_children(AstArena *a, AstLocal n);
 
@@ -75,7 +51,6 @@ void ast_set_fbits(AstArena *a, AstLocal n, uint64_t bits);
 void ast_set_sym(AstArena *a, AstLocal n, uint64_t sym);
 void ast_set_cst(AstArena *a, AstLocal n, uint64_t cst_id);
 
-/* --- accessors --- */
 uint16_t ast_kind(const AstArena *a, AstLocal n);
 int ast_op(const AstArena *a, AstLocal n);
 int ast_type_t(const AstArena *a, AstLocal n);
@@ -94,7 +69,6 @@ AstLocal ast_child(const AstArena *a, AstLocal n, uint32_t i);
 AstLocal ast_count(const AstArena *a);
 AstLocal ast_root(const AstArena *a);
 
-/* --- reflection / diagnostics --- */
 const char *ast_kind_name(uint16_t kind);
 size_t ast_dump(const AstArena *a, AstLocal root, char *out, size_t cap);
 int ast_validate(const AstArena *a, char *msg, size_t msgcap);
@@ -103,17 +77,10 @@ int ast_validate(const AstArena *a, char *msg, size_t msgcap);
 }
 #endif
 
-/* --- parser-side build hooks (full build only) ------------------------------
- * These fire from the same parse positions as the CST hooks and capture typed
- * vstack values into the per-function AST. They live in mccgen.c (where vtop is
- * visible). When CONFIG_AST is off, or -O1/ast_replay is not requested, they are
- * no-ops so the -O0 path is untouched. */
 #if defined(CONFIG_AST) && CONFIG_AST
 
-/* Runtime gate: only build/replay when the driver asked for it. Defined in
- * mccgen.c. */
 extern int ast_active;
 
-#endif /* CONFIG_AST */
+#endif
 
-#endif /* MCCAST_H */
+#endif

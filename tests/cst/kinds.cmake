@@ -1,8 +1,3 @@
-# CST node-kind coverage gate (D4, docs/CST.md). Compiles SRC with the CST tree
-# dump on and asserts every kind name in KINDS (a ';'-separated list) is produced
-# — a *coverage* assertion, since round-trip alone passed even while these kinds
-# were reserved-but-unproduced. Also re-checks the round-trip self-check.
-#   cmake -DMCC= -DSRC= -DOUT= -DIDIR= -DKINDS=a;b;c -P kinds.cmake
 if(NOT MCC OR NOT SRC OR NOT KINDS)
     message(FATAL_ERROR "usage: -DMCC= -DSRC= -DOUT= -DIDIR= -DKINDS= -P kinds.cmake")
 endif()
@@ -22,8 +17,6 @@ if(_all MATCHES "MISMATCH")
     message(FATAL_ERROR "CST round-trip MISMATCH for ${SRC}:\n${_all}")
 endif()
 foreach(_k IN LISTS KINDS)
-    # The tree dump prints internal nodes as "<Kind> [lo,hi)"; anchor on the
-    # trailing space+bracket so e.g. "Paren" does not match "ParamList".
     if(NOT _all MATCHES "[^A-Za-z]${_k} \\[")
         message(FATAL_ERROR "CST kind '${_k}' not produced for ${SRC}:\n${_all}")
     endif()

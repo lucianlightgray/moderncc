@@ -23,12 +23,12 @@ static int eq(C x, ABI_BASE re, ABI_BASE im) {
 }
 
 static int fail = 0;
-#define CHK(cond, name)                     \
-	do {                                    \
-		if (!(cond)) {                      \
+#define CHK(cond, name)               \
+	do {                                \
+		if (!(cond)) {                    \
 			printf("MISMATCH: %s\n", name); \
 			fail = 1;                       \
-		}                                   \
+		}                                 \
 	} while (0)
 
 int main(void) {

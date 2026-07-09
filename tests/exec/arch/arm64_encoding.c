@@ -39,7 +39,7 @@ static void test_shifts(void) {
 
 static void test_ldr_str(void) {
 	int64_t buf[4] = {0x1122334455667788LL, 0x99AABBCCDDEEFF00LL,
-					  0x0F1E2D3C4B5A6978LL, 0x0000000000000001LL};
+										0x0F1E2D3C4B5A6978LL, 0x0000000000000001LL};
 	int64_t val;
 	int32_t wval;
 	int64_t *p;
@@ -62,7 +62,7 @@ static void test_ldr_str(void) {
 	val = *p;
 	p++;
 	printf("%llx %llx\n", (unsigned long long)val,
-		   (unsigned long long)*p);
+				 (unsigned long long)*p);
 }
 
 static void test_ldp_stp(void) {
@@ -74,8 +74,8 @@ static void test_ldp_stp(void) {
 
 	printf("ldp-stp:\n");
 	printf("%llx %llx\n",
-		   (unsigned long long)dst[0],
-		   (unsigned long long)dst[1]);
+				 (unsigned long long)dst[0],
+				 (unsigned long long)dst[1]);
 }
 
 static const char *cbz_test(int x) {
@@ -181,8 +181,8 @@ static void test_large_structs(void) {
 
 	t = make_large(10, 20, 30, 40);
 	printf("%lld %lld %lld %lld\n",
-		   (long long)t.a, (long long)t.b,
-		   (long long)t.c, (long long)t.d);
+				 (long long)t.a, (long long)t.b,
+				 (long long)t.c, (long long)t.d);
 }
 
 struct s18 {

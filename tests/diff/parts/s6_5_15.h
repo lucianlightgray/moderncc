@@ -94,8 +94,8 @@ void s6_5_17_comma_test(void) {
 }
 
 enum { S6_6_A = 2 * 3 + 1,
-	   S6_6_B = S6_6_A << 2,
-	   S6_6_C = sizeof(int) + 0 };
+			 S6_6_B = S6_6_A << 2,
+			 S6_6_C = sizeof(int) + 0 };
 
 static int s6_6_obj[4] = {11, 22, 33, 44};
 static int *s6_6_ptr = s6_6_obj + 2;

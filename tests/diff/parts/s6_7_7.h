@@ -17,7 +17,7 @@ void s6_7_7_init_inconsistent(void) {
 	} w[] = {{1}, 2};
 	int n = (int)(sizeof w / sizeof w[0]);
 	printf("w5: n=%d %d %d %d %d %d\n", n,
-		   w[0].a[0], w[0].a[1], w[0].a[2], w[0].b, w[1].a[0]);
+				 w[0].a[0], w[0].a[1], w[0].a[2], w[0].b, w[1].a[0]);
 }
 
 void s6_7_7_init_mixed(void) {
@@ -31,8 +31,8 @@ void s6_7_7_init_mixed(void) {
 void s6_7_7_init_elision(void) {
 	short q[4][3][2] = {{1}, {2, 3}, {4, 5, 6}};
 	printf("q6: %d %d %d %d %d %d %d\n",
-		   q[0][0][0], q[0][1][0], q[1][0][0], q[1][0][1],
-		   q[2][0][0], q[2][0][1], q[2][1][0]);
+				 q[0][0][0], q[0][1][0], q[1][0][0], q[1][0][1],
+				 q[2][0][0], q[2][0][1], q[2][1][0]);
 }
 
 void s6_7_7_init_union_next(void) {
@@ -53,8 +53,8 @@ void s6_7_7_init_union_next(void) {
 }
 
 enum s6_7_7_e { s6_7_7_one,
-				s6_7_7_two,
-				s6_7_7_three };
+								s6_7_7_two,
+								s6_7_7_three };
 void s6_7_7_init_enum_desig(void) {
 	int a[4] = {[s6_7_7_two] = 20, [s6_7_7_one] = 10};
 	printf("edes: %d %d %d %d\n", a[0], a[1], a[2], a[3]);
@@ -65,14 +65,14 @@ void s6_7_7_init_enum_desig(void) {
 void s6_7_7_init_sparse(void) {
 	int a[] = {[10] = 1, [3] = 2};
 	printf("sparse: sz=%d %d %d\n",
-		   (int)(sizeof a / sizeof a[0]), a[3], a[10]);
+				 (int)(sizeof a / sizeof a[0]), a[3], a[10]);
 }
 
 void s6_7_7_init_string(void) {
 	char s[] = "abc";
 	char t[3] = "abc";
 	printf("str: %d %d %c%c%c %c%c%c\n",
-		   (int)sizeof s, (int)sizeof t, s[0], s[1], s[2], t[0], t[1], t[2]);
+				 (int)sizeof s, (int)sizeof t, s[0], s[1], s[2], t[0], t[1], t[2]);
 }
 
 void s6_7_7_typedef_vla(void) {
@@ -100,7 +100,7 @@ void s6_7_7_typedef_incomplete(void) {
 	c.left = 0;
 	c.right = 0;
 	printf("tnode: %d %d %d\n",
-		   a.count, a.left->count, a.right->count);
+				 a.count, a.left->count, a.right->count);
 }
 
 void s6_7_7_init_flat(void) {

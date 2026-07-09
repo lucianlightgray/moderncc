@@ -1,11 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 asm(
-	".text;"
-	".globl _us;.globl _ss;.globl _uc;.globl _sc;"
-	"_us:;_ss:;_uc:;_sc:;"
-	"movl $0x1234ABCD, %eax;"
-	"ret;");
+		".text;"
+		".globl _us;.globl _ss;.globl _uc;.globl _sc;"
+		"_us:;_ss:;_uc:;_sc:;"
+		"movl $0x1234ABCD, %eax;"
+		"ret;");
 
 #ifndef __leading_underscore
 #define us _us

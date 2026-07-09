@@ -21,7 +21,7 @@ int main(void) {
 
 	unsigned mask = 0xFFFFu;
 	printf("demorgan: %d\n",
-		   (~(a & b) & mask) == ((~a | ~b) & mask));
+				 (~(a & b) & mask) == ((~a | ~b) & mask));
 
 	printf("lowbyte: %u\n", 0x1234u & 0xFFu);
 	return 0;

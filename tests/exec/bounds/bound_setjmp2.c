@@ -10,10 +10,10 @@
 #define SIZE 10
 #define COUNT 10
 
-#define TST                 \
+#define TST               \
 	int i, a[2], b[2];      \
 	for (i = 0; i < 2; i++) \
-		a[i] = 0;           \
+		a[i] = 0;             \
 	for (i = 0; i < 2; i++) \
 	b[i] = 0
 

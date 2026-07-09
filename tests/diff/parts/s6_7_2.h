@@ -20,10 +20,10 @@ struct s6_7_2_boolbf {
 };
 
 enum s6_7_2_e { s6_7_2_A,
-				s6_7_2_B,
-				s6_7_2_C = 10,
-				s6_7_2_D,
-				s6_7_2_E = 10,
+								s6_7_2_B,
+								s6_7_2_C = 10,
+								s6_7_2_D,
+								s6_7_2_E = 10,
 };
 
 void s6_7_2_specifiers(void) {
@@ -52,7 +52,7 @@ void s6_7_2_specifiers(void) {
 	printf("boolbf0: %d\n", bb.b == 0);
 
 	printf("enum: %d %d %d %d %d\n",
-		   s6_7_2_A, s6_7_2_B, s6_7_2_C, s6_7_2_D, s6_7_2_E);
+				 s6_7_2_A, s6_7_2_B, s6_7_2_C, s6_7_2_D, s6_7_2_E);
 	printf("enum-dup: %d\n", s6_7_2_C == s6_7_2_E);
 	printf("enum-int: %d\n", (int)(sizeof(s6_7_2_A) == sizeof(int)));
 

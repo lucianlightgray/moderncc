@@ -1,33 +1,9 @@
-/* ckconfig — config-drift checker for the CONFIG_MCC_* preprocessor surface.
- *
- * mcc's build-time configuration flows CMake option -> emitted `-DCONFIG_MCC_X`
- * -> `#if CONFIG_MCC_X` in the code, with an in-code `#ifndef`-guarded default in
- * a header. This tool cross-checks the two ends so the mapping cannot rot:
- *
- *   (a) a CONFIG_MCC_X the code *reads* but that neither CMakeLists.txt mentions
- *       nor a header `#define`s (an implicit/undefined config), and
- *   (b) a CONFIG_MCC_X CMakeLists.txt *emits* as a -D but the code never reads
- *       (a dead emission).
- *
- * Known-intentional exceptions are listed in ALLOW_* below with a rationale.
- * Names a header `#define`s are code-internal (an unconditional constant or an
- * overridable default) and are never "undefined". Run: `ckconfig <src> <cmake>`.
- * `--list` prints the full inventory (used to keep docs/CONFIG.md honest).
- *
- * Companion to docs/CONFIG.md (the human-readable surface) and BUILD.md (the
- * CMake node table). Mirrors tools/hostgate.c's file-walking style. */
 #include "toolsupport.h"
 
-/* CONFIG_MCC_* the code reads with no CMake node — intentional, external. */
 static const char *ALLOW_EXTERN[] = {
-		/* opt-in "backtrace-only" runtime build variant; #ifndef-graceful, set
-		   outside the CMake config surface by that specialized build. */
 		"CONFIG_MCC_BACKTRACE_ONLY",
 		0};
-/* CONFIG_MCC_* CMake emits but the code no longer reads — intentional, benign. */
 static const char *ALLOW_DEAD[] = {
-		/* legacy uClibc marker; emitted for provenance, "no path effect on modern
-		   hosts" (CMakeLists.txt), so nothing reads it. */
 		"CONFIG_MCC_UCLIBC",
 		0};
 
@@ -65,14 +41,12 @@ static int is_id(int c) {
 				 (c >= '0' && c <= '9') || c == '_';
 }
 
-/* Sets collected from the two ends. */
-static Set s_read;    /* CONFIG_MCC_* the compiler (src/) references            */
-static Set s_selfdef; /* CONFIG_MCC_* a header #defines (default/constant)      */
-static Set s_emit;    /* CONFIG_MCC_* CMakeLists.txt emits as a -D              */
-static Set s_any;     /* CONFIG_MCC_* any provider mentions (CMake or build.c)  */
-static int g_selfdef_only; /* when scanning tools/: collect #defines, not reads */
+static Set s_read;
+static Set s_selfdef;
+static Set s_emit;
+static Set s_any;
+static int g_selfdef_only;
 
-/* Return the #define'd name if `line` (trimmed) is `#define CONFIG_MCC_X ...`. */
 static int line_defines(const char *line, char *out, int osz) {
 	const char *p = line;
 	while (*p == ' ' || *p == '\t')
@@ -108,10 +82,8 @@ static int scan_code(const char *path, int is_dir, void *ud) {
 		return 0;
 	const char *base = strrchr(path, '/');
 	base = base ? base + 1 : path;
-	if (!strcmp(base, "ckconfig.c")) /* our own placeholder literals */
+	if (!strcmp(base, "ckconfig.c"))
 		return 0;
-	/* build.c is an *emitter* (like CMakeLists.txt), not a reader — its EMIT()
-	   string literals are scanned as provider mentions, not code reads. */
 	if (g_selfdef_only && !strcmp(base, "build.c"))
 		return 0;
 	char *text = ts_read_file(path, NULL);
@@ -130,7 +102,6 @@ static int scan_code(const char *path, int is_dir, void *ud) {
 		if (has_def)
 			set_add(&s_selfdef, defname);
 
-		/* Every CONFIG_MCC_* occurrence that is not the #define'd name is a read. */
 		for (char *q = p; (q = strstr(q, "CONFIG_MCC_")) != NULL;) {
 			char name[128];
 			int i = 0;
@@ -150,9 +121,6 @@ static int scan_code(const char *path, int is_dir, void *ud) {
 	return 0;
 }
 
-/* Scan a provider (CMakeLists.txt or tools/build.c) for CONFIG_MCC_* mentions.
-   emit_ok records the -D emissions too (used only for CMakeLists.txt's dead
-   check); build.c is scanned for mentions only. */
 static void scan_cmake(const char *path, int emit_ok) {
 	char *text = ts_read_file(path, NULL);
 	if (!text) {
@@ -176,8 +144,6 @@ static void scan_cmake(const char *path, int emit_ok) {
 			name[i] = 0;
 			if (i > 11) {
 				set_add(&s_any, name);
-				/* Emitted as a -D when it is `CONFIG_MCC_X=...` (value) or appears on
-				   an mcc_def_str(...) line (string-valued define). */
 				if (emit_ok && (*r == '=' || line_has_defstr))
 					set_add(&s_emit, name);
 			}
@@ -208,22 +174,17 @@ int main(int argc, char **argv) {
 		return 2;
 	}
 	host_dir_walk(srcdir, 1, scan_code, NULL);
-	/* tools/ headers may #define code-internal CONFIG_MCC_* (e.g. TOOLHOST);
-	   collect those #defines only, not reads (build.c is an emitter). */
 	if (!host_stat("tools", &isd, NULL, NULL) && isd) {
 		g_selfdef_only = 1;
 		host_dir_walk("tools", 1, scan_code, NULL);
 		g_selfdef_only = 0;
 	}
 	scan_cmake(cmake, 1);
-	/* tools/build.c is the second (mccbuild) emitter — count its mentions as a
-	   provider so a config it (but not CMake) supplies isn't flagged implicit. */
 	if (!host_stat("tools/build.c", &isd, NULL, NULL))
 		scan_cmake("tools/build.c", 0);
 
 	int errs = 0, i;
 
-	/* (a) code reads a config nobody defines. */
 	for (i = 0; i < s_read.n; i++) {
 		const char *k = s_read.v[i];
 		if (set_has(&s_selfdef, k) || set_has(&s_any, k) || in_list(ALLOW_EXTERN, k))
@@ -233,7 +194,6 @@ int main(int argc, char **argv) {
 					 k);
 		errs++;
 	}
-	/* (b) CMake emits a -D the code never reads. */
 	for (i = 0; i < s_emit.n; i++) {
 		const char *k = s_emit.v[i];
 		if (set_has(&s_read, k) || in_list(ALLOW_DEAD, k))

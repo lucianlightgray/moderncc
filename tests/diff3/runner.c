@@ -21,7 +21,7 @@ static int verbose;
 
 static int timed_out(int raw_status) {
 	return WIFEXITED(raw_status) &&
-		   (WEXITSTATUS(raw_status) == 124 || WEXITSTATUS(raw_status) == 137);
+				 (WEXITSTATUS(raw_status) == 124 || WEXITSTATUS(raw_status) == 137);
 }
 
 static int crashed(int raw_status) {
@@ -130,9 +130,9 @@ static void timeout_wrap(const char *cmd, char *out, size_t n) {
 	else
 
 		snprintf(out, n,
-				 "{ %s & __p=$!; ( sleep %d; kill -9 $__p ) >/dev/null 2>&1 & __w=$!; "
-				 "wait $__p; __r=$?; kill $__w 2>/dev/null; exit $__r; }",
-				 cmd, DIFF3_RUN_TIMEOUT);
+						 "{ %s & __p=$!; ( sleep %d; kill -9 $__p ) >/dev/null 2>&1 & __w=$!; "
+						 "wait $__p; __r=$?; kill $__w 2>/dev/null; exit $__r; }",
+						 cmd, DIFF3_RUN_TIMEOUT);
 }
 
 static int file_has(const char *path, const char *needle) {
@@ -160,12 +160,12 @@ static int same_compiler(const char *a, const char *b) {
 
 static int intentional_divergence(const char *name) {
 	static const char *const list[] = {
-		"c11_freestanding_headers",
+			"c11_freestanding_headers",
 
-		"predefined_macros",
+			"predefined_macros",
 
-		"bitfields_ms",
-		"cleanup",
+			"bitfields_ms",
+			"cleanup",
 	};
 	for (size_t i = 0; i < sizeof list / sizeof *list; i++)
 		if (!strcmp(name, list[i]))
@@ -187,20 +187,20 @@ static void sub_self(const char *in, const char *src, char *out, size_t n) {
 }
 
 static int build_run(const char *label, const char *cc, const char *mcc,
-					 const char *bdir, const char *idir, const char *sup,
-					 const char *work, const char *src, const char *flags,
-					 const char *args, char **out) {
+										 const char *bdir, const char *idir, const char *sup,
+										 const char *work, const char *src, const char *flags,
+										 const char *args, char **out) {
 	char exe[2048], cmd[8192];
 	snprintf(exe, sizeof exe, "%s/%s%s", work, label, EXE_SFX);
 	remove(exe);
 	if (cc)
 		snprintf(cmd, sizeof cmd,
-				 "\"%s\" -w -O0 \"-I%s\" %s \"%s\" -o \"%s\" >/dev/null 2>&1",
-				 cc, sup, flags, src, exe);
+						 "\"%s\" -w -O0 \"-I%s\" %s \"%s\" -o \"%s\" >/dev/null 2>&1",
+						 cc, sup, flags, src, exe);
 	else
 		snprintf(cmd, sizeof cmd,
-				 "\"%s\" \"-B%s\" \"-I%s\" \"-I%s\" %s \"%s\" -o \"%s\" >/dev/null 2>&1",
-				 mcc, bdir, idir, sup, flags, src, exe);
+						 "\"%s\" \"-B%s\" \"-I%s\" \"-I%s\" %s \"%s\" -o \"%s\" >/dev/null 2>&1",
+						 mcc, bdir, idir, sup, flags, src, exe);
 	if (verbose)
 		fprintf(stderr, "  [%s build] %s\n", label, cmd);
 	char gbuild[8448];
@@ -235,12 +235,12 @@ static int build_run(const char *label, const char *cc, const char *mcc,
 int main(int argc, char **argv) {
 	if (argc < 8) {
 		fprintf(stderr, "usage: %s <mcc> <bdir> <idir> <root> <work> <gcc> <clang>"
-						" [--list] [--only <name>]\n",
-				argv[0]);
+										" [--list] [--only <name>]\n",
+						argv[0]);
 		return 2;
 	}
 	const char *mcc = argv[1], *bdir = argv[2], *idir = argv[3], *root = argv[4],
-			   *work = argv[5], *gcc = argv[6], *clang = argv[7];
+						 *work = argv[5], *gcc = argv[6], *clang = argv[7];
 
 	const char *only = NULL;
 	int list_mode = 0;
@@ -273,9 +273,9 @@ int main(int argc, char **argv) {
 
 	if (same_compiler(gcc, clang)) {
 		printf("diff3: SKIP -- '%s' and '%s' are the same compiler; a three-way "
-			   "differential needs two distinct references (the exec golden suite "
-			   "still covers these programs)\n",
-			   gcc, clang);
+					 "differential needs two distinct references (the exec golden suite "
+					 "still covers these programs)\n",
+					 gcc, clang);
 		return MCC_SKIP_RC;
 	}
 
@@ -322,7 +322,7 @@ int main(int argc, char **argv) {
 
 			if (verbose)
 				printf("SKIP  %-28s -- build/run hit %ds watchdog or crashed (inconclusive)\n",
-					   g->name, DIFF3_RUN_TIMEOUT);
+							 g->name, DIFF3_RUN_TIMEOUT);
 			skip++;
 		} else if (!mok) {
 			printf("FAIL  %-28s -- mcc failed to build\n", g->name);
@@ -338,8 +338,8 @@ int main(int argc, char **argv) {
 		} else if (!strcmp(gout, cout) && strcmp(mout, gout)) {
 			if (intentional_divergence(g->name)) {
 				printf("INFO  %-28s -- mcc intentionally diverges from gcc==clang "
-					   "(bundled headers/predefines/impl-defined); exec golden suite is the guardrail\n",
-					   g->name);
+							 "(bundled headers/predefines/impl-defined); exec golden suite is the guardrail\n",
+							 g->name);
 				intent++;
 				pass++;
 			} else {
@@ -357,8 +357,8 @@ int main(int argc, char **argv) {
 		free(mout);
 	}
 	printf("diff3: %d agree, %d mcc-divergence, %d impl-defined, %d intentional, "
-		   "%d ref-cant-build, %d mcc-only, %d mcc-build-fail\n",
-		   pass, mcc_diff, impl, intent, skip, mcc_only, mcc_build_fail);
+				 "%d ref-cant-build, %d mcc-only, %d mcc-build-fail\n",
+				 pass, mcc_diff, impl, intent, skip, mcc_only, mcc_build_fail);
 	if (mcc_diff || mcc_build_fail)
 		return 1;
 	if (pass == 0)

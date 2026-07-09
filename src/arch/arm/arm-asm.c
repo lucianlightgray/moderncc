@@ -682,12 +682,6 @@ static void asm_data_processing_opcode(MCCState *s1, int token) {
 			}
 			if (half_immediate_rotation >= 16) {
 				immediate_value = ops[2].e.v;
-				/* `mov Rd, #imm16` whose value is neither a rotated immediate nor an
-				   inverted one (e.g. 0xEFFF, 0x0201): synthesize `movw Rd, #imm16`,
-				   exactly as GNU as does. Only MOV (opcode_nos 0xd), no shift, value
-				   in 0..0xFFFF; the explicit `movw` encoder above is likewise
-				   unconditional (v6T2+). Wider values still error (would need a
-				   movw+movt pair or a literal pool). */
 				if (opcode_nos == 0xd && !nb_shift &&
 						(uint32_t)ops[2].e.v <= 0xFFFF) {
 					uint16_t iv = (uint16_t)ops[2].e.v;
@@ -1801,10 +1795,6 @@ static void asm_floating_point_data_processing_opcode(MCCState *s1, int token) {
 			}
 		} else if (ops[nb_ops].type == OP_VREG64) {
 			if (vmov) {
-				/* A `d`-register operand in a vmov is the 64-bit two-GPR<->doubleword
-				   transfer (`vmov Rt, Rt2, Dm` / `vmov Dm, Rt, Rt2`). gas accepts a
-				   .f32 suffix on this form, so promote to double by the operand type
-				   regardless of the mnemonic suffix. */
 				coprocessor = CP_DOUBLE_PRECISION_FLOAT;
 			} else if (coprocessor != CP_DOUBLE_PRECISION_FLOAT) {
 				expect("'d<number>'");
@@ -2147,12 +2137,9 @@ static void asm_branch_opcode(MCCState *s1, int token) {
 			if (esym && esym->st_shndx == cur_text_section->sh_num) {
 				jmp_disp = esym->st_value;
 			} else {
-				/* Emit the EABI branch relocations (as GNU as does): R_ARM_CALL for
-				   `bl`, R_ARM_JUMP24 for `b`. mcc's linker handles all three types
-				   (arm-link.c); R_ARM_PC24 is the legacy form. */
 				greloca(cur_text_section, e.sym, ind,
 								ARM_INSTRUCTION_GROUP(token) == TOK_ASM_bleq ? R_ARM_CALL
-																														: R_ARM_JUMP24,
+																														 : R_ARM_JUMP24,
 								0);
 				jmp_disp = ind;
 			}

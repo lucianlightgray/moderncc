@@ -1,1 +1,3 @@
-int main(int argc, char **argv) { return -argc + 43; }
+int main(int argc, char **argv) {
+	return -argc + 43;
+}

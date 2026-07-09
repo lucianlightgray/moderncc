@@ -1,12 +1,12 @@
 #define s6_2_5_gtag(x) _Generic((x), \
-	char: 1,                         \
-	signed char: 2,                  \
-	unsigned char: 3,                \
-	default: 0)
+		char: 1,                         \
+		signed char: 2,                  \
+		unsigned char: 3,                \
+		default: 0)
 
 enum s6_2_5_e { s6_2_5_A,
-				s6_2_5_B,
-				s6_2_5_C };
+								s6_2_5_B,
+								s6_2_5_C };
 
 extern int s6_2_5_arr[];
 int s6_2_5_arr[5];
@@ -14,26 +14,26 @@ int s6_2_5_arr[5];
 void s6_2_5_types(void) {
 
 	printf("bool: %d %d %d %d %d\n",
-		   (int)(_Bool)5, (int)(_Bool)0, (int)(_Bool)0.3,
-		   (int)(_Bool)0.0, (int)(_Bool)-2);
+				 (int)(_Bool)5, (int)(_Bool)0, (int)(_Bool)0.3,
+				 (int)(_Bool)0.0, (int)(_Bool)-2);
 
 	{
 		char c = 0;
 		signed char sc = 0;
 		unsigned char uc = 0;
 		printf("chardistinct: %d %d %d\n",
-			   s6_2_5_gtag(c), s6_2_5_gtag(sc), s6_2_5_gtag(uc));
+					 s6_2_5_gtag(c), s6_2_5_gtag(sc), s6_2_5_gtag(uc));
 		printf("charsize: %d %d %d\n",
-			   (int)sizeof(char), (int)sizeof(signed char),
-			   (int)sizeof(unsigned char));
+					 (int)sizeof(char), (int)sizeof(signed char),
+					 (int)sizeof(unsigned char));
 	}
 
 	{
 		unsigned u = UINT_MAX;
 		unsigned char ucv = 255;
 		printf("umod: %d %d\n",
-			   (u + 1u) == 0u,
-			   (unsigned char)(ucv + 1) == 0);
+					 (u + 1u) == 0u,
+					 (unsigned char)(ucv + 1) == 0);
 	}
 
 	{
@@ -62,14 +62,14 @@ void s6_2_5_types(void) {
 		__imag__ cd = 4.0;
 		memcpy(a, &cd, sizeof a);
 		printf("cplxlayout: %d %d %d\n",
-			   sizeof(double _Complex) == sizeof(double[2]),
-			   a[0] == 3.0, a[1] == 4.0);
+					 sizeof(double _Complex) == sizeof(double[2]),
+					 a[0] == 3.0, a[1] == 4.0);
 	}
 
 	printf("align: %d %d %d\n",
-		   _Alignof(char) == 1,
-		   _Alignof(float[2]) == _Alignof(float),
-		   _Alignof(double _Complex) == _Alignof(double));
+				 _Alignof(char) == 1,
+				 _Alignof(float[2]) == _Alignof(float),
+				 _Alignof(double _Complex) == _Alignof(double));
 
 	printf("maxalign: %d\n", _Alignof(max_align_t) >= _Alignof(double));
 

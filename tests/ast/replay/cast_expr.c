@@ -1,1 +1,4 @@
-int main(void) { unsigned char c = 297; return c; }
+int main(void) {
+	unsigned char c = 297;
+	return c;
+}

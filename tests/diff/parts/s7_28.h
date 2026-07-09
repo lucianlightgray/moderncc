@@ -81,9 +81,9 @@ void s7_28_wstr(void) {
 	printf("wcscat-len %d\n", (int)wcslen(buf));
 
 	printf("wcscmp %d %d %d\n",
-		   s7_28_sgn(wcscmp(L"abc", L"abc")),
-		   s7_28_sgn(wcscmp(L"abc", L"abd")),
-		   s7_28_sgn(wcscmp(L"abd", L"abc")));
+				 s7_28_sgn(wcscmp(L"abc", L"abc")),
+				 s7_28_sgn(wcscmp(L"abc", L"abd")),
+				 s7_28_sgn(wcscmp(L"abd", L"abc")));
 	printf("wcsncmp %d\n", s7_28_sgn(wcsncmp(L"abcX", L"abcY", 3)));
 
 	static const wchar_t s6[] = L"abcabc";
@@ -167,25 +167,25 @@ void s7_28_wprintf(void) {
 void s7_28_wctypef(void) {
 
 	printf("cls %d%d%d%d%d%d\n",
-		   iswalpha(L'a') != 0, iswdigit(L'5') != 0, iswupper(L'A') != 0,
-		   iswlower(L'z') != 0, iswspace(L' ') != 0, iswblank(L'\t') != 0);
+				 iswalpha(L'a') != 0, iswdigit(L'5') != 0, iswupper(L'A') != 0,
+				 iswlower(L'z') != 0, iswspace(L' ') != 0, iswblank(L'\t') != 0);
 	printf("cls2 %d%d%d%d%d%d\n",
-		   iswalnum(L'k') != 0, iswpunct(L'!') != 0, iswcntrl(L'\n') != 0,
-		   iswgraph(L'#') != 0, iswprint(L' ') != 0, iswxdigit(L'F') != 0);
+				 iswalnum(L'k') != 0, iswpunct(L'!') != 0, iswcntrl(L'\n') != 0,
+				 iswgraph(L'#') != 0, iswprint(L' ') != 0, iswxdigit(L'F') != 0);
 	printf("clsF %d%d%d\n",
-		   iswalpha(L'5') == 0, iswdigit(L'a') == 0, iswspace(L'x') == 0);
+				 iswalpha(L'5') == 0, iswdigit(L'a') == 0, iswspace(L'x') == 0);
 
 	printf("wctype %d %d\n",
-		   iswctype(L'q', wctype("alpha")) != 0,
-		   iswctype(L'5', wctype("digit")) != 0);
+				 iswctype(L'q', wctype("alpha")) != 0,
+				 iswctype(L'5', wctype("digit")) != 0);
 	printf("wctype-bad %d\n", wctype("nosuchclass") == 0);
 
 	printf("towlower %d\n", (int)towlower(L'Z'));
 	printf("towupper %d\n", (int)towupper(L'a'));
 	printf("towlower-id %d\n", (int)towlower(L'5'));
 	printf("towctrans %d %d\n",
-		   (int)towctrans(L'm', wctrans("toupper")),
-		   (int)towctrans(L'M', wctrans("tolower")));
+				 (int)towctrans(L'm', wctrans("toupper")),
+				 (int)towctrans(L'M', wctrans("tolower")));
 	printf("wctrans-bad %d\n", wctrans("nope") == 0);
 }
 

@@ -183,13 +183,13 @@ void dump(void *p, int s) {
 #define pv(m) \
 	printf(sizeof(s->m + 0) == 8 ? " %016llx" : " %02x", s->m)
 
-#define TEST_STRUCT(v1, v2, v3, v4, v5)                                           \
-	{                                                                             \
+#define TEST_STRUCT(v1, v2, v3, v4, v5)                                       \
+	{                                                                           \
 		struct __s _s, *s = &_s;                                                  \
 		printf("\n---- TEST %d%s%s%s ----\n" + top,                               \
-			   TEST, MS_BF ? " - MS-BITFIELDS" : "",                              \
-			   PACK ? " - PACKED" : "",                                           \
-			   ALIGN ? " - WITH ALIGN" : "");                                     \
+					 TEST, MS_BF ? " - MS-BITFIELDS" : "",                              \
+					 PACK ? " - PACKED" : "",                                           \
+					 ALIGN ? " - WITH ALIGN" : "");                                     \
 		memset(s, 0, sizeof *s);                                                  \
 		s->x = -1, s->y = -1, s->z = -1, s->a = -1, s->b = -1;                    \
 		printf("bits in use : "), dump(s, sizeof *s);                             \
@@ -220,6 +220,7 @@ int top = 1;
 int main() {
 #define MS_BF MS_BITFIELDS
 #include SELF
+
 	return 0;
 }
 

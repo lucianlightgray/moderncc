@@ -1,7 +1,7 @@
 void s7_1_ctype(void) {
 	int cnt_alpha = 0, cnt_digit = 0, cnt_upper = 0, cnt_lower = 0, cnt_alnum = 0,
-		cnt_space = 0, cnt_blank = 0, cnt_xdig = 0, cnt_punct = 0, cnt_cntrl = 0,
-		cnt_graph = 0, cnt_print = 0;
+			cnt_space = 0, cnt_blank = 0, cnt_xdig = 0, cnt_punct = 0, cnt_cntrl = 0,
+			cnt_graph = 0, cnt_print = 0;
 	for (int c = 0; c < 128; c++) {
 		if (isalpha(c))
 			cnt_alpha++;
@@ -29,8 +29,8 @@ void s7_1_ctype(void) {
 			cnt_print++;
 	}
 	printf("ctype counts %d %d %d %d %d %d %d %d %d %d %d %d\n",
-		   cnt_alpha, cnt_digit, cnt_upper, cnt_lower, cnt_alnum, cnt_space,
-		   cnt_blank, cnt_xdig, cnt_punct, cnt_cntrl, cnt_graph, cnt_print);
+				 cnt_alpha, cnt_digit, cnt_upper, cnt_lower, cnt_alnum, cnt_space,
+				 cnt_blank, cnt_xdig, cnt_punct, cnt_cntrl, cnt_graph, cnt_print);
 
 	int consistent = 1;
 	for (int c = 0; c < 128; c++)
@@ -45,7 +45,7 @@ void s7_1_ctype(void) {
 	printf("graph=print&!sp %d\n", gp);
 
 	printf("blank tab=%d sp=%d a=%d\n",
-		   isblank('\t') != 0, isblank(' ') != 0, isblank('a') != 0);
+				 isblank('\t') != 0, isblank(' ') != 0, isblank('a') != 0);
 
 	printf("EOF cls %d %d %d\n", isalpha(EOF) != 0, isspace(EOF) != 0, isdigit(EOF) != 0);
 
@@ -96,8 +96,8 @@ void s7_1_complex(void) {
 void s7_1_errno(void) {
 
 	printf("errno macros pos=%d distinct=%d\n",
-		   (EDOM > 0 && ERANGE > 0 && EILSEQ > 0),
-		   (EDOM != ERANGE && ERANGE != EILSEQ && EDOM != EILSEQ));
+				 (EDOM > 0 && ERANGE > 0 && EILSEQ > 0),
+				 (EDOM != ERANGE && ERANGE != EILSEQ && EDOM != EILSEQ));
 
 #if EDOM > 0 && ERANGE > 0 && EILSEQ > 0
 	printf("errno #if ok\n");

@@ -1,12 +1,12 @@
 extern int printf(const char *, ...);
 
 static int fails;
-#define CK(cond)                                \
-	do {                                        \
-		if (!(cond)) {                          \
+#define CK(cond)                          \
+	do {                                    \
+		if (!(cond)) {                        \
 			printf("FAIL line %d\n", __LINE__); \
 			fails++;                            \
-		}                                       \
+		}                                     \
 	} while (0)
 
 int main(void) {

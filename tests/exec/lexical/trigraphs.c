@@ -1,7 +1,3 @@
-
-
-
-
 ??=include <stddef.h>
 
 extern int printf(const char *, ...);

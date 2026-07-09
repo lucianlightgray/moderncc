@@ -157,14 +157,18 @@ static int count_words(const char *s) {
 		return ((t + (N)) * (t - (N)) + (N) * t) % 1000003L; \
 	}
 
-#define GEN10(M, B)               \
-	M(B##0)                         \
-	M(B##1) M(B##2) M(B##3) M(B##4) \
+#define GEN10(M, B) \
+	M(B##0)           \
+	M(B##1)           \
+	M(B##2)           \
+	M(B##3) M(B##4)   \
 			M(B##5) M(B##6) M(B##7) M(B##8) M(B##9)
 
-#define GEN100(M, B)                                          \
-	GEN10(M, B##0)                                              \
-	GEN10(M, B##1) GEN10(M, B##2) GEN10(M, B##3) GEN10(M, B##4) \
+#define GEN100(M, B)            \
+	GEN10(M, B##0)                \
+	GEN10(M, B##1)                \
+	GEN10(M, B##2)                \
+	GEN10(M, B##3) GEN10(M, B##4) \
 			GEN10(M, B##5) GEN10(M, B##6) GEN10(M, B##7) GEN10(M, B##8) GEN10(M, B##9)
 
 GEN100(GEN_ARITH, 1)

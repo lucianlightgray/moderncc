@@ -53,7 +53,7 @@ void s7_21_length_mods(void) {
 	size_t z = 9;
 	ptrdiff_t t = 10;
 	sprintf(b, "%hhd %hd %ld %lld %ju %zu %td",
-			(int)sc, (int)sh, lo, ll, j, z, t);
+					(int)sc, (int)sh, lo, ll, j, z, t);
 	printf("LM %s\n", b);
 	unsigned u = 0xABCD;
 	sprintf(b, "%x %X %o %u", u, u, 64u, 100u);

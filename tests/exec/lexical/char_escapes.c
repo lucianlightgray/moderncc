@@ -3,7 +3,7 @@
 int main(void) {
 
 	printf("simple: %d %d %d %d %d %d %d\n",
-		   '\a', '\b', '\f', '\n', '\r', '\t', '\v');
+				 '\a', '\b', '\f', '\n', '\r', '\t', '\v');
 	printf("punct: %d %d %d %d\n", '\\', '\'', '\"', '\?');
 	printf("nul: %d\n", '\0');
 

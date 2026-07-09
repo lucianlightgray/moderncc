@@ -202,24 +202,24 @@ void fa_hfae22(struct hfae22 a) {
 }
 
 void fa1(struct s8 a, struct s9 b, struct s10 c, struct s11 d,
-		 struct s12 e, struct s13 f) {
+				 struct s12 e, struct s13 f) {
 	printf("%.3s %.3s %.3s %.3s %.3s %.3s\n", a.x, b.x, c.x, d.x, e.x, f.x);
 }
 
 void fa2(struct s9 a, struct s10 b, struct s11 c, struct s12 d,
-		 struct s13 e, struct s14 f) {
+				 struct s13 e, struct s14 f) {
 	printf("%.3s %.3s %.3s %.3s %.3s %.3s\n", a.x, b.x, c.x, d.x, e.x, f.x);
 }
 
 void fa3(struct hfa14 a, struct hfa23 b, struct hfa32 c) {
 	printf("%.1f %.1f %.1f %.1f %.1Lf %.1Lf\n",
-		   a.a, a.d, b.a, b.c, c.a, c.b);
+				 a.a, a.d, b.a, b.c, c.a, c.b);
 }
 
 void fa4(struct s1 a, struct hfa14 b, struct s2 c, struct hfa24 d,
-		 struct s3 e, struct hfa34 f) {
+				 struct s3 e, struct hfa34 f) {
 	printf("%.1s %.1f %.1f %.2s %.1f %.1f %.3s %.1Lf %.1Lf\n",
-		   a.x, b.a, b.d, c.x, d.a, d.d, e.x, f.a, f.d);
+				 a.x, b.a, b.d, c.x, d.a, d.d, e.x, f.a, f.d);
 }
 
 void arg(void) {
@@ -496,19 +496,19 @@ void stdarg(void) {
 	myprintf("%hfa31 %hfa34 %hfa34 %hfa34", hfa31, hfa34, hfa34, hfa34);
 
 	myprintf("%hfa32 %hfa33 %hfa33 %hfa33 %hfa33",
-			 hfa32, hfa33, hfa33, hfa33, hfa33);
+					 hfa32, hfa33, hfa33, hfa33, hfa33);
 	myprintf("%hfa31 %hfa33 %hfa33 %hfa33 %hfa33",
-			 hfa31, hfa33, hfa33, hfa33, hfa33);
+					 hfa31, hfa33, hfa33, hfa33, hfa33);
 	myprintf("%hfa33 %hfa33 %hfa33 %hfa33",
-			 hfa33, hfa33, hfa33, hfa33);
+					 hfa33, hfa33, hfa33, hfa33);
 
 	myprintf("%hfa34 %hfa32 %hfa32 %hfa32 %hfa32",
-			 hfa34, hfa32, hfa32, hfa32, hfa32);
+					 hfa34, hfa32, hfa32, hfa32, hfa32);
 	myprintf("%hfa33 %hfa32 %hfa32 %hfa32 %hfa32",
-			 hfa33, hfa32, hfa32, hfa32, hfa32);
+					 hfa33, hfa32, hfa32, hfa32, hfa32);
 
 	myprintf("%hfa34 %hfa32 %hfa31 %hfa31 %hfa31 %hfa31",
-			 hfa34, hfa32, hfa31, hfa31, hfa31, hfa31);
+					 hfa34, hfa32, hfa31, hfa31, hfa31, hfa31);
 
 	myprintf("HFA double:");
 	myprintf("%hfa24 %hfa24 %hfa24 %hfa24", hfa24, hfa24, hfa24, hfa24);
@@ -517,19 +517,19 @@ void stdarg(void) {
 	myprintf("%hfa21 %hfa24 %hfa24 %hfa24", hfa21, hfa24, hfa24, hfa24);
 
 	myprintf("%hfa22 %hfa23 %hfa23 %hfa23 %hfa23",
-			 hfa22, hfa23, hfa23, hfa23, hfa23);
+					 hfa22, hfa23, hfa23, hfa23, hfa23);
 	myprintf("%hfa21 %hfa23 %hfa23 %hfa23 %hfa23",
-			 hfa21, hfa23, hfa23, hfa23, hfa23);
+					 hfa21, hfa23, hfa23, hfa23, hfa23);
 	myprintf("%hfa23 %hfa23 %hfa23 %hfa23",
-			 hfa23, hfa23, hfa23, hfa23);
+					 hfa23, hfa23, hfa23, hfa23);
 
 	myprintf("%hfa24 %hfa22 %hfa22 %hfa22 %hfa22",
-			 hfa24, hfa22, hfa22, hfa22, hfa22);
+					 hfa24, hfa22, hfa22, hfa22, hfa22);
 	myprintf("%hfa23 %hfa22 %hfa22 %hfa22 %hfa22",
-			 hfa23, hfa22, hfa22, hfa22, hfa22);
+					 hfa23, hfa22, hfa22, hfa22, hfa22);
 
 	myprintf("%hfa24 %hfa22 %hfa21 %hfa21 %hfa21 %hfa21",
-			 hfa24, hfa22, hfa21, hfa21, hfa21, hfa21);
+					 hfa24, hfa22, hfa21, hfa21, hfa21, hfa21);
 
 	myprintf("HFA float:");
 	myprintf("%hfa14 %hfa14 %hfa14 %hfa14", hfa14, hfa14, hfa14, hfa14);
@@ -538,19 +538,19 @@ void stdarg(void) {
 	myprintf("%hfa11 %hfa14 %hfa14 %hfa14", hfa11, hfa14, hfa14, hfa14);
 
 	myprintf("%hfa12 %hfa13 %hfa13 %hfa13 %hfa13",
-			 hfa12, hfa13, hfa13, hfa13, hfa13);
+					 hfa12, hfa13, hfa13, hfa13, hfa13);
 	myprintf("%hfa11 %hfa13 %hfa13 %hfa13 %hfa13",
-			 hfa11, hfa13, hfa13, hfa13, hfa13);
+					 hfa11, hfa13, hfa13, hfa13, hfa13);
 	myprintf("%hfa13 %hfa13 %hfa13 %hfa13",
-			 hfa13, hfa13, hfa13, hfa13);
+					 hfa13, hfa13, hfa13, hfa13);
 
 	myprintf("%hfa14 %hfa12 %hfa12 %hfa12 %hfa12",
-			 hfa14, hfa12, hfa12, hfa12, hfa12);
+					 hfa14, hfa12, hfa12, hfa12, hfa12);
 	myprintf("%hfa13 %hfa12 %hfa12 %hfa12 %hfa12",
-			 hfa13, hfa12, hfa12, hfa12, hfa12);
+					 hfa13, hfa12, hfa12, hfa12, hfa12);
 
 	myprintf("%hfa14 %hfa12 %hfa11 %hfa11 %hfa11 %hfa11",
-			 hfa14, hfa12, hfa11, hfa11, hfa11, hfa11);
+					 hfa14, hfa12, hfa11, hfa11, hfa11, hfa11);
 }
 
 void pll(unsigned long long x) {

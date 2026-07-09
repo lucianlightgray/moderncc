@@ -1,6 +1,3 @@
-# CST macro-fidelity driver (slice J, PLAN §4). Asserts macro uses become
-# CST_MacroInvocation nodes AND the written source round-trips byte-identically.
-#   cmake -DMCC= -DSRC= -DOUT= -DIDIR= -P macro.cmake
 if(NOT MCC OR NOT SRC)
     message(FATAL_ERROR "usage: -DMCC= -DSRC= -DOUT= -DIDIR= -P macro.cmake")
 endif()
@@ -16,7 +13,6 @@ endif()
 if(NOT _all MATCHES "round-trip OK")
     message(FATAL_ERROR "macro source did not round-trip:\n${_all}")
 endif()
-# SQUARE, ADD (function-like) and LIMIT (object-like) -> at least 3 MacroInv.
 string(REGEX MATCHALL "MacroInv" _mi "${_all}")
 list(LENGTH _mi _n)
 if(_n LESS 3)

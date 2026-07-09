@@ -33,9 +33,7 @@ struct compiler {
 	int style;
 	const char *ccmacro;
 	char version[128];
-	const char *opt; /* optimization flag to append (e.g. "-O1" / "/O1"), or NULL for the
-	                    compiler's default (-O0). Each detected compiler is measured twice:
-	                    once at default and once at its first optimization level. */
+	const char *opt;
 };
 
 struct workload {
@@ -206,7 +204,7 @@ static void build_cmd(Argv *v, const struct compiler *cc,
 			ts_arg(v, strdup(buf));
 		}
 	}
-	if (cc->opt) /* the flag is pre-spelled for the compiler's style (-O1 / /O1) */
+	if (cc->opt)
 		ts_arg(v, cc->opt);
 }
 
@@ -633,7 +631,7 @@ static void write_sysinfo(FILE *f, const char *plat, const struct compiler *ccs,
 	fprintf(f, "  virt    : %s\n", h.virt);
 	fprintf(f, "  compilers:\n");
 	for (i = 0; i < nccs; i++) {
-		if (ccs[i].opt) /* the -O1 twin shares the base compiler's version/path */
+		if (ccs[i].opt)
 			continue;
 		fprintf(f, "    %-8s %s  (%s)\n", ccs[i].key,
 						ccs[i].version[0] ? ccs[i].version : "?", ccs[i].path);
@@ -747,10 +745,6 @@ int main(int argc, char **argv) {
 			nccs++;
 	}
 
-	/* Measure every detected compiler twice: at its default level (opt=NULL, ≈ -O0) and
-	   at its first optimization level (-O1, or MSVC /O1). Interleave base/-O1 per compiler
-	   so the report pairs them for direct comparison. mcc's -O1 engages the AST replay
-	   optimizer (docs/AST.md §10); gcc/clang/mingw take -O1; MSVC takes /O1. */
 	{
 		struct compiler base[MAXCC];
 		static char optkey[MAXCC][24];

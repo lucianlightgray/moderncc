@@ -1,6 +1,3 @@
-/* literals.c — exercises string/char/number literals with escapes and adjacent
- * string concatenation for the CST round-trip. */
-
 const char *greeting = "hello,\tworld\n\"quoted\"\\backslash";
 const char *concat = "adjacent"
 										 " string"

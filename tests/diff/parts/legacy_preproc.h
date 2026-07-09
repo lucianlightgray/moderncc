@@ -98,7 +98,7 @@ void macro_test(void) {
 #define MF_s MF_hello
 #define MF_hello(msg) printf("%s\n", msg)
 
-#define MF_t             \
+#define MF_t           \
 	printf("tralala\n"); \
 	MF_hello
 
@@ -164,13 +164,15 @@ void recursive_macro_test(void) {
 }
 
 #if __MCC__
-/* K&R identifier-list definitions with explicit parameter declarations
-   (implicit-int params were removed in C99; this form stays conforming). */
-int op(a, b) int a, b; {
+int op(a, b)
+int a, b;
+{
 	return a / b;
 }
 
-int ret(a) int a; {
+int ret(a)
+int a;
+{
 	if (a == 2)
 		return 1;
 	if (a == 3)
@@ -189,8 +191,8 @@ char str_ag2[] = {"b"};
 #ifdef CONSTANTINDEXEDSTRLIT
 char str_ag3[] = {"ab"[1], 0};
 char str_x[2] = {"xy"
-				 "z"[2],
-				 0};
+								 "z"[2],
+								 0};
 #endif
 char *str_ar[] = {"one", "two"};
 struct str_SS {
@@ -203,8 +205,8 @@ static void string_test2() {
 	char *p = "hello";
 	char a3[2] = {"p"};
 	char a4[2] = {"ab"
-				  "c"[2],
-				  0};
+								"c"[2],
+								0};
 	char *pa1 = "def" + 1;
 	char *pa2 = {"xyz" + 1};
 	int i = 0;
@@ -212,8 +214,8 @@ static void string_test2() {
 #ifndef CONSTANTINDEXEDSTRLIT
 	char str_ag3[] = {"ab"[1], 0};
 	char str_x[2] = {"xy"
-					 "z"[2],
-					 0};
+									 "z"[2],
+									 0};
 #endif
 	puts("string_test2");
 	puts(str_ag1);

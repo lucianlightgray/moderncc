@@ -1,6 +1,3 @@
-
-
-
    .byte 0xff
    .byte 1, 2, 3
    .short 1, 2, 3

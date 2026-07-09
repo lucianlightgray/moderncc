@@ -15,19 +15,19 @@ void *SYMBOL(trap_handler);
 
 extern unsigned char SYMBOL(trap)[];
 asm(
-	".text;"
-	"_trap:;"
-	"pushl %esp;"
-	"pusha;"
-	"addl $0x4, 0xc(%esp);"
-	"pushl %esp;"
-	"call *_trap_handler;"
-	"addl $0x4, %esp;"
-	"movl 0xc(%esp), %eax;"
-	"movl %eax, 0x20(%esp);"
-	"popa;"
-	"popl %esp;"
-	"ret;");
+		".text;"
+		"_trap:;"
+		"pushl %esp;"
+		"pusha;"
+		"addl $0x4, 0xc(%esp);"
+		"pushl %esp;"
+		"call *_trap_handler;"
+		"addl $0x4, %esp;"
+		"movl 0xc(%esp), %eax;"
+		"movl %eax, 0x20(%esp);"
+		"popa;"
+		"popl %esp;"
+		"ret;");
 
 struct trapframe {
 	unsigned edi, esi, ebp, esp, ebx, edx, ecx, eax;
@@ -48,14 +48,14 @@ struct trapframe {
 
 #define ARG(x) (M_DWORD(R_ESP + (x) * 4))
 
-#define RETN(x)                                \
-	do {                                       \
+#define RETN(x)                            \
+	do {                                     \
 		M_DWORD(R_ESP + (x)) = M_DWORD(R_ESP); \
 		R_ESP += (x);                          \
 	} while (0)
 
-#define DUMP()                                       \
-	do {                                             \
+#define DUMP()                                   \
+	do {                                           \
 		unsigned i;                                  \
 		printf("EAX: %08X\n", R_EAX);                \
 		printf("ECX: %08X\n", R_ECX);                \
@@ -68,7 +68,7 @@ struct trapframe {
 		printf("\n");                                \
 		printf("[RETADDR]: %08X\n", M_DWORD(R_ESP)); \
 		for (i = 1; i <= 8; i++) {                   \
-			printf("[ARG%4d]: %08X\n", i, ARG(i));   \
+			printf("[ARG%4d]: %08X\n", i, ARG(i));     \
 		}                                            \
 	} while (0)
 
@@ -82,14 +82,14 @@ unsigned SYMBOL(sc_new_esp);
 
 extern unsigned char SYMBOL(safecall)[];
 asm(
-	".text;"
-	"_safecall:;"
-	"popl _sc_retn_addr;"
-	"movl %esp, _sc_old_esp;"
-	"call *_sc_call_target;"
-	"movl %esp, _sc_new_esp;"
-	"movl _sc_old_esp, %esp;"
-	"jmp *_sc_retn_addr;");
+		".text;"
+		"_safecall:;"
+		"popl _sc_retn_addr;"
+		"movl %esp, _sc_old_esp;"
+		"call *_sc_call_target;"
+		"movl %esp, _sc_new_esp;"
+		"movl _sc_old_esp, %esp;"
+		"jmp *_sc_retn_addr;");
 
 #define SET_SAFECALL_TARGET(x) ((SYMBOL(sc_call_target)) = (x))
 #define SAFECALL ((void *)&SYMBOL(safecall))

@@ -54,7 +54,7 @@ ts1:;
 		double d = 8.0;
 		struct
 #ifndef __arm__
-			__attribute__((packed))
+				__attribute__((packed))
 #endif
 		{
 			unsigned x : 12;
@@ -64,9 +64,9 @@ ts1:;
 
 		printf("data:\n");
 		printf("  %d - %.1f - %.1f - %s - %s\n",
-			   sizeof 8.0, 8.0, d, __FUNCTION__, cc);
+					 sizeof 8.0, 8.0, d, __FUNCTION__, cc);
 		printf("  %x %x %x %x %x\n",
-			   s.x, s.y, s.z, s.a, s.b);
+					 s.x, s.y, s.z, s.a, s.b);
 	}
 te1:;
 	static const char de1 = 0;
@@ -74,7 +74,7 @@ te1:;
 	dl += &de1 - &ds1;
 	tl += &&te1 - &&ts1;
 	printf("size of data/text:\n  %s/%s\n",
-		   dl ? "non-zero" : "zero", tl ? "non-zero" : "zero");
+				 dl ? "non-zero" : "zero", tl ? "non-zero" : "zero");
 }
 
 #elif defined test_static_data

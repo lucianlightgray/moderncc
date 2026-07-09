@@ -25,8 +25,8 @@ void dummy(Node self) {
 
 void print_data(Node data) {
 	printf("%d %d %d %d %g %g\n",
-		   data.data[0], data.data[1], data.data[2], data.data[3],
-		   data.d1, data.d2);
+				 data.data[0], data.data[1], data.data[2], data.data[3],
+				 data.d1, data.d2);
 }
 
 A test(void) {

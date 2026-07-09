@@ -4,7 +4,7 @@ void s04_charset_test(void) {
 	int s04_vals[7], s04_i, s04_j, s04_distinct = 1;
 	char s04_str[] = "AB";
 	printf("esc: %d %d %d %d %d %d %d\n",
-		   s04_a, s04_b, s04_f, s04_n, s04_r, s04_t, s04_v);
+				 s04_a, s04_b, s04_f, s04_n, s04_r, s04_t, s04_v);
 	s04_vals[0] = s04_a;
 	s04_vals[1] = s04_b;
 	s04_vals[2] = s04_f;
@@ -25,8 +25,8 @@ void s04_ident_significance_test(void) {
 	int s04_ident_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_first = 11;
 	int s04_ident_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_second = 22;
 	printf("ident: %d %d\n",
-		   s04_ident_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_first,
-		   s04_ident_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_second);
+				 s04_ident_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_first,
+				 s04_ident_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_second);
 }
 
 void s04_limits_test(void) {
@@ -38,8 +38,8 @@ void s04_limits_test(void) {
 	printf("ullong=%d\n", ULLONG_MAX == (unsigned long long)-1);
 	printf("schar=%d\n", SCHAR_MAX == UCHAR_MAX / 2 && SCHAR_MIN < 0);
 	printf("charrange=%d\n",
-		   (CHAR_MIN == SCHAR_MIN && CHAR_MAX == SCHAR_MAX) ||
-			   (CHAR_MIN == 0 && CHAR_MAX == UCHAR_MAX));
+				 (CHAR_MIN == SCHAR_MIN && CHAR_MAX == SCHAR_MAX) ||
+						 (CHAR_MIN == 0 && CHAR_MAX == UCHAR_MAX));
 	printf("intord=%d\n", SCHAR_MAX <= SHRT_MAX && SHRT_MAX <= INT_MAX && INT_MAX <= LONG_MAX && LONG_MAX <= LLONG_MAX);
 #if INT_MAX >= 32767 && UINT_MAX >= 65535U && LONG_MAX >= 2147483647L
 	printf("ifusable=1\n");

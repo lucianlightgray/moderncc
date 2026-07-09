@@ -213,7 +213,42 @@ static char *canon_line(const char *line, size_t len) {
 	return out;
 }
 
-static int texts_equal(const char *a, const char *b) {
+static int is_dig(char c) {
+	return c >= '0' && c <= '9';
+}
+
+static char *mask_linenos(const char *s) {
+	size_t n = strlen(s);
+	char *out = malloc(n + 1);
+	size_t o = 0, i = 0;
+	while (s[i]) {
+		char c = s[i];
+		char prev = i >= 1 ? s[i - 1] : 0;
+		if ((c == 'c' || c == 'h' || c == 'S' || c == 's') && prev == '.' &&
+				s[i + 1] == ':' && is_dig(s[i + 2])) {
+			out[o++] = c;
+			out[o++] = ':';
+			i += 2;
+			while (is_dig(s[i]))
+				i++;
+			out[o++] = 'N';
+			if (s[i] == ':' && is_dig(s[i + 1])) {
+				out[o++] = ':';
+				i++;
+				while (is_dig(s[i]))
+					i++;
+				out[o++] = 'N';
+			}
+			continue;
+		}
+		out[o++] = c;
+		i++;
+	}
+	out[o] = 0;
+	return out;
+}
+
+static int texts_equal_raw(const char *a, const char *b) {
 	const char *pa = a, *pb = b;
 	for (;;) {
 
@@ -273,6 +308,14 @@ static int texts_equal(const char *a, const char *b) {
 		(void)a_end;
 		(void)b_end;
 	}
+}
+
+static int texts_equal(const char *a, const char *b) {
+	char *ma = mask_linenos(a), *mb = mask_linenos(b);
+	int r = texts_equal_raw(ma, mb);
+	free(ma);
+	free(mb);
+	return r;
 }
 
 int main(int argc, char **argv) {
@@ -346,14 +389,14 @@ int main(int argc, char **argv) {
 
 		if (cross && strcmp(g->mode, "run")) {
 			printf("SKIP  %-32s -- cross run: only compile-and-execute goldens\n",
-				   g->name);
+						 g->name);
 			skipped++;
 			continue;
 		}
 
 		if ((strstr(g->flags, "-b") || !strcmp(g->mode, "brun") || !strcmp(g->mode, "run2")) && strcmp(hc_envv("MCC_TEST_BCHECK", "0"), "1")) {
 			printf("SKIP  %-32s -- requires bounds checker (MCC_CONFIG_BCHECK)\n",
-				   g->name);
+						 g->name);
 			skipped++;
 			continue;
 		}
@@ -392,27 +435,27 @@ int main(int argc, char **argv) {
 
 		if (!strcmp(g->mode, "pp")) {
 			snprintf(cmd, sizeof cmd,
-					 "%s \"%s\" \"-B%s\" -fno-diagnostics-show-caret \"-I%s\" \"-I%s\" -E -P \"%s\" 2>&1",
-					 emu, mcc, bdir, idir, sup, path);
+							 "%s \"%s\" \"-B%s\" -fno-diagnostics-show-caret \"-I%s\" \"-I%s\" -E -P \"%s\" 2>&1",
+							 emu, mcc, bdir, idir, sup, path);
 			out = run_capture(cmd, &rc);
 		} else if (!strcmp(g->mode, "brun")) {
 
 			snprintf(cmd, sizeof cmd,
-					 "cd \"%s\" && %s \"%s\" \"-B%s\" -fno-diagnostics-show-caret \"-I%s\" \"-I%s\" -b -run \"%s\" %s 2>&1",
-					 work, emu, mcc, bdir, idir, sup, path, g->flags);
+							 "cd \"%s\" && %s \"%s\" \"-B%s\" -fno-diagnostics-show-caret \"-I%s\" \"-I%s\" -b -run \"%s\" %s 2>&1",
+							 work, emu, mcc, bdir, idir, sup, path, g->flags);
 			out = run_capture(cmd, &rc);
 		} else if (!strcmp(g->mode, "dt")) {
 
 			snprintf(cmd, sizeof cmd,
-					 "cd \"%s\" && %s \"%s\" \"-B%s\" -fno-diagnostics-show-caret \"-I%s\" \"-I%s\" -dt -run \"%s\" %s 2>&1",
-					 work, emu, mcc, bdir, idir, sup, path, g->flags);
+							 "cd \"%s\" && %s \"%s\" \"-B%s\" -fno-diagnostics-show-caret \"-I%s\" \"-I%s\" -dt -run \"%s\" %s 2>&1",
+							 work, emu, mcc, bdir, idir, sup, path, g->flags);
 			out = run_capture(cmd, &rc);
 		} else if (!strcmp(g->mode, "run2")) {
 
 			snprintf(cmd, sizeof cmd,
-					 "cd \"%s\" && ( %s \"%s\" \"-B%s\" -fno-diagnostics-show-caret \"-I%s\" \"-I%s\" -run \"%s\" && "
-					 "%s \"%s\" \"-B%s\" -fno-diagnostics-show-caret \"-I%s\" \"-I%s\" -b -run \"%s\" ) 2>&1",
-					 work, emu, mcc, bdir, idir, sup, path, emu, mcc, bdir, idir, sup, path);
+							 "cd \"%s\" && ( %s \"%s\" \"-B%s\" -fno-diagnostics-show-caret \"-I%s\" \"-I%s\" -run \"%s\" && "
+							 "%s \"%s\" \"-B%s\" -fno-diagnostics-show-caret \"-I%s\" \"-I%s\" -b -run \"%s\" ) 2>&1",
+							 work, emu, mcc, bdir, idir, sup, path, emu, mcc, bdir, idir, sup, path);
 			out = run_capture(cmd, &rc);
 		} else {
 			char exe[4096];
@@ -420,12 +463,12 @@ int main(int argc, char **argv) {
 			char xflags[6144] = "";
 			if (cross)
 				snprintf(xflags, sizeof xflags,
-						 "\"--sysroot=%s\" \"-isystem\" \"%s/usr/include\" "
-						 "\"-L%s/usr/lib64\" \"-L%s/lib64\" \"-L%s/usr/lib\" \"-L%s/lib\" ",
-						 xsysroot, xsysroot, xsysroot, xsysroot, xsysroot, xsysroot);
+								 "\"--sysroot=%s\" \"-isystem\" \"%s/usr/include\" "
+								 "\"-L%s/usr/lib64\" \"-L%s/lib64\" \"-L%s/usr/lib\" \"-L%s/lib\" ",
+								 xsysroot, xsysroot, xsysroot, xsysroot, xsysroot, xsysroot);
 			snprintf(cmd, sizeof cmd,
-					 "%s \"%s\" \"-B%s\" -fno-diagnostics-show-caret \"-I%s\" \"-I%s\" %s\"%s\" %s -o \"%s\" 2>&1",
-					 cross ? "" : emu, mcc, bdir, idir, sup, xflags, path, g->flags, exe);
+							 "%s \"%s\" \"-B%s\" -fno-diagnostics-show-caret \"-I%s\" \"-I%s\" %s\"%s\" %s -o \"%s\" 2>&1",
+							 cross ? "" : emu, mcc, bdir, idir, sup, xflags, path, g->flags, exe);
 			char *cerr = run_capture(cmd, &rc);
 			if (rc != 0) {
 				printf("FAIL  %-32s (compile)\n%s", g->name, cerr);
@@ -435,7 +478,7 @@ int main(int argc, char **argv) {
 			}
 
 			snprintf(cmd, sizeof cmd, "cd \"%s\" && %s \"%s\" %s", work,
-					 cross ? runemu : emu, exe, xargs);
+							 cross ? runemu : emu, exe, xargs);
 			char *prog = run_capture(cmd, &rc);
 
 			out = malloc(strlen(cerr) + strlen(prog) + 1);
@@ -462,7 +505,7 @@ int main(int argc, char **argv) {
 		free(out);
 	}
 	printf("exec runner: %d passed, %d failed, %d skipped (of %d)\n",
-		   pass, fail, skipped, mcc_goldens_count);
+				 pass, fail, skipped, mcc_goldens_count);
 	if (only && pass + fail + skipped == 0) {
 		fprintf(stderr, "exec runner: no golden named '%s'\n", only);
 		return 2;

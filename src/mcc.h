@@ -1230,9 +1230,7 @@ enum mcc_token {
 ST_DATA struct MCCState *mcc_state;
 ST_DATA void **stk_data;
 ST_DATA int nb_stk_data;
-ST_DATA int stk_data_floor; /* mcc_error's longjmp cleanup frees stk_data down to this, not 0,
-                               so a nested error trap (AST -O1 replay) can preserve the outer
-                               compile's live cleanup entries. 0 for the normal top-level path. */
+ST_DATA int stk_data_floor;
 ST_DATA int g_debug;
 
 ST_FUNC char *pstrcpy(char *buf, size_t buf_size, const char *s);

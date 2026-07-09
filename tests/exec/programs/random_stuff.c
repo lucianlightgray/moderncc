@@ -86,7 +86,7 @@ void tst_cast(void) {
 struct {
 	int (*print)(const char *format, ...);
 } tst_indir = {
-	printf};
+		printf};
 
 void tst_indir_func(void) {
 	tst_indir.print("tst_indir_func %d\n", 10);

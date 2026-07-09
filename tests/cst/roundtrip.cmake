@@ -1,7 +1,3 @@
-# CST round-trip driver (PLAN §8.1, the strongest "pure reflection" proof).
-# Compiles SRC with the CST self-check enabled and asserts the recorded tree
-# reflects back to byte-identical source. Invoked per-fixture via ctest:
-#   cmake -DMCC=<mcc> -DSRC=<file> -DOUT=<obj> -DIDIR=<inc> -P roundtrip.cmake
 if(NOT MCC OR NOT SRC)
     message(FATAL_ERROR "usage: -DMCC= -DSRC= -DOUT= -DIDIR= -P roundtrip.cmake")
 endif()

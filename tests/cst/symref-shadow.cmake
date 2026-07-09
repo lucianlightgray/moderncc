@@ -1,10 +1,3 @@
-# CST symbol-ref shadowing boundary driver (slice I).
-#
-# Compiles SRC (shadow.c) with MCC_CST_SYMDUMP and asserts the *current* v1
-# behavior: a file-scope name shadowed inside a function resolves both uses to
-# the same def (last-declaration-wins, no scope stack). This pins the documented
-# limitation as a boundary — a future scope-aware resolver would map the two `x`
-# uses to different defs and this assertion would (correctly) need updating.
 if(NOT MCC OR NOT SRC)
     message(FATAL_ERROR "usage: -DMCC= -DSRC= -DOUT= -DIDIR= -P symref-shadow.cmake")
 endif()
@@ -18,7 +11,6 @@ if(NOT _rc EQUAL 0)
     message(FATAL_ERROR "mcc failed to compile ${SRC} (rc=${_rc}):\n${_all}")
 endif()
 
-# Collect the def-node id each use of `x` resolves to.
 string(REGEX MATCHALL "x' -> def\\[[0-9]+\\]" _maps "${_all}")
 list(LENGTH _maps _n)
 if(_n LESS 2)

@@ -23,7 +23,7 @@ int main(void) {
 
 	for (int x = -1; x <= 1; x++) {
 		const char *s = x < 0 ? "neg" : x == 0 ? "zero"
-											   : "pos";
+																					 : "pos";
 		printf("sign(%d)=%s\n", x, s);
 	}
 

@@ -1,7 +1,3 @@
-# CST structural-hash invariance gate (slice C/G, PLAN §3 / §8.4) on real trees.
-# compact.c and spaced.c share token structure but differ in whitespace/comments
-# -> equal root H_s. changed.c changes a token -> different H_s.
-#   cmake -DMCC= -DDIR= -DIDIR= -DOUT= -P hashinv.cmake
 if(NOT MCC OR NOT DIR)
     message(FATAL_ERROR "usage: -DMCC= -DDIR= -DIDIR= -DOUT= -P hashinv.cmake")
 endif()

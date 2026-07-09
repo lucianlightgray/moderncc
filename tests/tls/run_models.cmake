@@ -1,11 +1,3 @@
-# Drive the four x86-64 TLS models through mcc's linker. For each model the
-# reference compiler (CC) emits the object; mcc links it dynamically, and also
-# fully static when STATIC=1. A pattern-match abort ("unexpected R_X86_64_TLSGD
-# pattern" etc.) or a wrong runtime value fails the test — pinning the tight
-# codegen<->linker coupling so a future change is caught.
-#
-# Args (via -D): MCC, CC, BDIR, IDIR, SRC, OUTDIR, STATIC.
-
 set(_models global-dynamic local-dynamic initial-exec local-exec)
 set(_expect "g=112 l=224\n")
 

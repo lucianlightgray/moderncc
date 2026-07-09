@@ -8,7 +8,7 @@ static struct s6_7_1_agg s6_7_1_static_agg;
 void s6_7_1_storage_qual_test(void) {
 
 	printf("agg=%d %ld %d\n", s6_7_1_static_agg.a, s6_7_1_static_agg.b,
-		   (int)s6_7_1_static_agg.c);
+				 (int)s6_7_1_static_agg.c);
 
 	const const int s6_7_1_cc = 7;
 	printf("cc=%d\n", s6_7_1_cc);
@@ -24,8 +24,8 @@ void s6_7_1_storage_qual_test(void) {
 	signed long long s6_7_1_sll = -5;
 	printf("lli=%d\n", s6_7_1_lli == s6_7_1_sll);
 	printf("ullsz=%d llsz=%d\n",
-		   (int)(sizeof(unsigned long long int) == sizeof(unsigned long long)),
-		   (int)(sizeof(signed long long) == sizeof(long long int)));
+				 (int)(sizeof(unsigned long long int) == sizeof(unsigned long long)),
+				 (int)(sizeof(signed long long) == sizeof(long long int)));
 
 	signed s6_7_1_s = -1;
 	signed int s6_7_1_si = -1;

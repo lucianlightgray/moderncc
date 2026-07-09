@@ -66,6 +66,30 @@ int main(int argc, char **argv) {
 		while (*p && isspc(*p))
 			++p, ++f;
 
+		{
+			int ll = (int)strlen(l);
+			if (ll >= 3 && l[ll - 3] == '/' && l[ll - 2] == '/' && l[ll - 1] == '@') {
+				char *end = l + ll - 3;
+				while (end > l && isspc(end[-1]))
+					--end;
+				*end = 0;
+				do {
+					for (e = f = 0; (r = platform_macros[f]); f += 2) {
+						c = strlen(r);
+						if (0 == memcmp(p + e, r, c)) {
+							p += e + c;
+							q = strchr(strcpy(q, platform_macros[f + 1]), 0);
+							break;
+						}
+					}
+					if (r)
+						continue;
+				} while (!!(*q++ = *p++));
+				fprintf(op, "%s\n", l2);
+				continue;
+			}
+		}
+
 		if (p[0] == '/' && cmt == 0) {
 			if (p[1] == '*')
 				cmt = 2;
@@ -87,49 +111,37 @@ int main(int argc, char **argv) {
 			continue;
 		}
 
-		if (l[0] != '\t') {
-			do {
-				for (e = f = 0; (r = platform_macros[f]); f += 2) {
-					c = strlen(r);
-					if (0 == memcmp(p + e, r, c)) {
-						p += e + c;
-						q = strchr(strcpy(q, platform_macros[f + 1]), 0);
-						break;
-					}
-				}
-				if (r)
-					continue;
-			} while (!!(*q++ = *p++));
-			fprintf(op, "%s\n", l2);
+		if (*p == 0) {
+			fprintf(op, "\n");
 			continue;
-		} else {
-			s = e = f = 0, p0 = p;
-			for (;;) {
-				c = *p++;
-
-				if (isspc(c)) {
-					s = 1;
-					continue;
-				}
-				if (c == '/' && (p[0] == '/' || p[0] == '*'))
-					c = 0;
-				else if (s && q > l2 && ((isid(q[-1]) && isid(c)) || (q >= l2 + 2 && l2[0] == '#' && l2[1] == 'd' && f < 2 && !e)))
-					*q++ = ' ', ++f;
-				s = 0;
-
-				if (c == '(')
-					++e;
-				if (c == ')')
-					--e;
-				if (c == '\\' || c == '\"')
-					*q++ = '\\';
-				*q++ = c;
-				if (c == 0)
-					break;
-				p0 = p;
-			}
-			fprintf(op, "    \"%s\\n\"%s\n", l2, p0);
 		}
+
+		s = e = f = 0, p0 = p;
+		for (;;) {
+			c = *p++;
+
+			if (isspc(c)) {
+				s = 1;
+				continue;
+			}
+			if (c == '/' && (p[0] == '/' || p[0] == '*'))
+				c = 0;
+			else if (s && q > l2 && ((isid(q[-1]) && isid(c)) || (q >= l2 + 2 && l2[0] == '#' && l2[1] == 'd' && f < 2 && !e)))
+				*q++ = ' ', ++f;
+			s = 0;
+
+			if (c == '(')
+				++e;
+			if (c == ')')
+				--e;
+			if (c == '\\' || c == '\"')
+				*q++ = '\\';
+			*q++ = c;
+			if (c == 0)
+				break;
+			p0 = p;
+		}
+		fprintf(op, "    \"%s\\n\"%s\n", l2, p0);
 	}
 
 	fclose(fp);

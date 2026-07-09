@@ -58,91 +58,53 @@ ST_DATA CType int_type, func_old_type, char_type, char_pointer_type;
 #define initstr (mcc_state->initstr)
 
 #if defined(CONFIG_AST) && CONFIG_AST
-/* AST intention-IR replay (docs/AST.md §10/§17). When MCC_AST_REPLAY is set,
- * gen_function builds a per-function intention tree while the parser runs, then
- * discards the parser's body emission and re-emits from the AST through the same
- * vstack API. Anything the builder does not yet understand sets ast_bail, and
- * gen_function keeps the parser's (correct, -O0) emission instead — so the path
- * is safe over the whole corpus and grows one construct at a time. Off by
- * default; the -O0 path never touches any of this. */
-int ast_active;             /* build hooks fire (a function build is running) */
-static int ast_replay_env;  /* MCC_AST_REPLAY requested for this TU           */
-static int ast_replay_dump; /* MCC_AST_REPLAY_DUMP: dump replayed trees        */
-static int ast_templates_env; /* MCC_AST_TEMPLATES: run optimization templates */
-static int ast_promote_env; /* MCC_AST_PROMOTE: Tier-3 register promotion      */
-static int ast_no_callful_env; /* MCC_AST_NO_CALLFUL: force call-free promotion only */
-static int ast_inline_env; /* MCC_AST_INLINE: Tier-4 virtual always-inline (analysis) */
-static int ast_tmpl_folds;  /* const-fold rewrites performed this function     */
-static AstArena *ast_cur;   /* the function currently being built              */
-static int ast_bail;        /* an unsupported construct was seen              */
-static int ast_reemit_poison; /* a block-scoped Sym/type ref: unsafe to re-emit at end-of-TU */
-static AstLocal ast_ret_val; /* captured return-expression tree (or AST_NONE)  */
-static AstLocal ast_last_return; /* the Return node just recorded (for the jmp flag) */
+int ast_active;
+static int ast_replay_env;
+static int ast_replay_dump;
+static int ast_templates_env;
+static int ast_promote_env;
+static int ast_no_callful_env;
+static int ast_inline_env;
+static int ast_tmpl_folds;
+static AstArena *ast_cur;
+static int ast_bail;
+static int ast_reemit_poison;
+static AstLocal ast_ret_val;
+static AstLocal ast_last_return;
 
-/* Return-expression value mirror: a small stack shadowing the vstack while a
- * return expression is evaluated, so its intention tree can be captured op by
- * op (the §10 "AST-builder captures vstack ops"). It is kept synced to vtop's
- * depth after every modeled primitive; any unmodeled depth change (a vstack op
- * we don't hook) or an in-place cast trips ast_desync and the function falls
- * back to the parser's emission. Live only across one return expression. */
 #define AST_VS_MAX 64
 static AstLocal ast_vs[AST_VS_MAX];
-static int ast_vn;          /* mirror depth (relative to ast_base_depth)       */
-static int ast_capture;     /* mirror is live (a function body is being built)  */
-static int ast_desync;      /* mirror lost sync with the vstack                */
-static int ast_base_depth;  /* real vstack depth when capture started          */
-static int ast_in_op;       /* inside gen_op/vstore — ignore its internal ops  */
-static int ast_in_call;     /* inside a call boundary — ignore all vstack ops  */
-static AstLocal ast_call_pending; /* Invoke awaiting its result push (or NONE)  */
-static AstLocal ast_inc_pending;  /* ++/-- in progress (or NONE)                */
-/* Control-flow capture: effects append to ast_cur_bb (the BasicBlock currently
- * open); `if` branches open nested BasicBlocks pushed on a small stack. */
+static int ast_vn;
+static int ast_capture;
+static int ast_desync;
+static int ast_base_depth;
+static int ast_in_op;
+static int ast_in_call;
+static AstLocal ast_call_pending;
+static AstLocal ast_inc_pending;
 static AstLocal ast_cur_bb;
 #define AST_CF_MAX 32
-static AstLocal ast_cf_if[AST_CF_MAX];    /* pending If nodes                    */
-static AstLocal ast_cf_savebb[AST_CF_MAX]; /* the BB to restore at if_end         */
+static AstLocal ast_cf_if[AST_CF_MAX];
+static AstLocal ast_cf_savebb[AST_CF_MAX];
 static int ast_cf_top;
-static int *ast_rp_bsym, *ast_rp_csym;    /* replay-time break/continue chains   */
-static AstLocal ast_tern[16];             /* pending ternary (Cond) nodes         */
+static int *ast_rp_bsym, *ast_rp_csym;
+static AstLocal ast_tern[16];
 static int ast_tern_top;
-static AstLocal ast_lor[16];              /* pending &&/|| nodes                   */
+static AstLocal ast_lor[16];
 static int ast_lor_top;
 
-/* Float-constant const-pool reuse (docs/AST.md §A3 floats). A `float`/`double`
- * constant is materialized by gv() into a fresh rodata slot + anonymous symbol
- * (§gv). Replaying that gv would allocate a *second* slot, so the text
- * relocation would point at a different symbol and byte-verify would fall back.
- * Instead, the parse-build records each such symbol in emission order; replay
- * reuses them ordinally (it reproduces the same gv sequence, so the Nth
- * float-const matches). Byte-verify remains the backstop if the order ever
- * diverges. */
-static int *ast_fconst;     /* symbols recorded at build; reused at replay        */
-static int ast_fconst_n;    /* count recorded this function                        */
-static int ast_fconst_cap;  /* allocated capacity (grow-only, reset per function)  */
-static int ast_fconst_i;    /* replay cursor into ast_fconst                        */
-static int ast_replaying;   /* the replay walker is driving gv (reuse, don't add)  */
+static int *ast_fconst;
+static int ast_fconst_n;
+static int ast_fconst_cap;
+static int ast_fconst_i;
+static int ast_replaying;
 
-/* Frame-temp offset reuse (docs/AST.md §A3 struct callers). A struct-return
- * result temp is a direct `loc = (loc-size)&-align` decrement; replaying it would
- * place the slot at a different offset (source locals are fixed in their Syms and
- * not re-allocated at replay). The build records each slot offset in emission
- * order and replay reuses them ordinally (the ast_fconst pattern). */
 static int *ast_locrec;
 static int ast_locrec_n, ast_locrec_cap, ast_locrec_i;
 
-/* Tier-3 register promotion (docs/AST.md §4/§10/§18.2 Tier 3). `ast_pinned_regs` is
- * a bitmask of physical registers reserved to hold promoted address-not-taken locals
- * for the whole (call-free) function; get_reg/get_reg_ex skip them so no temporary
- * clobbers a live promoted value. 0 outside promoted replay → no behavior change. */
 static unsigned ast_pinned_regs;
-/* Set when the function being built used inline asm: its (possibly implicit)
- * register clobbers can corrupt a promoted local's pinned register, so such a
- * function is never promoted (Tier 3). Reset per function. */
 static int ast_func_has_asm;
 
-/* Allocate an anonymous frame slot, recording (build) / reusing (replay) its
- * offset. Outside a replay-candidate build this is exactly `loc=(loc-size)&-align`,
- * so -O0 stays byte-identical. */
 static int ast_alloc_loc(int size, int align) {
 	if (ast_replaying && ast_locrec_i < ast_locrec_n) {
 		loc = ast_locrec[ast_locrec_i++];
@@ -159,34 +121,20 @@ static int ast_alloc_loc(int size, int align) {
 	return loc;
 }
 
-/* Member access (`.`/`->`) capture state: the internal indir/gaddrof/vpushi/genop
- * are suppressed (via ast_in_call) between begin and end, and the whole access is
- * folded into one Unary(AST_OP_MEMBER[_ARROW]) node. */
-static int ast_member_cap;   /* this member access is being captured (top-level)   */
-static int ast_member_arrow; /* saved is_arrow for the pending member access       */
-static int ast_imag_cap;     /* an imaginary-literal construction is being captured */
-static int ast_bcplx_cap;    /* a `__builtin_complex` const is being captured        */
+static int ast_member_cap;
+static int ast_member_arrow;
+static int ast_imag_cap;
+static int ast_bcplx_cap;
 
-/* switch capture/replay (docs/AST.md §5 switch cascade). A switch is an If node
- * with op==6: child0 = the controlling value, child1 = the body BB. `case`/
- * `default` labels are recorded as marker effects inside the body (Jump op==2 =
- * case [ival=v1, fbits=v2], op==3 = default). Replay rebuilds a switch_t: emit the
- * value, jump-over to the dispatch, replay the body (each case marker records
- * cr->ind=gind()), then case_sort + gcase reproduces the binary-search dispatch. */
-static AstLocal ast_switch_node;   /* the If(op=6) currently being captured (or NONE) */
-static struct switch_t *ast_rp_switch; /* replay: the switch whose body is emitting  */
+static AstLocal ast_switch_node;
+static struct switch_t *ast_rp_switch;
 
-/* goto/labels (docs/AST.md §5). A label is a Jump op==4 marker (ival = label token),
- * a goto a Jump op==5 (ival = target token) — both effects in their BasicBlock.
- * Replay keeps a per-function table mapping label token → {jind, jnext} and
- * reproduces the parser's forward-chain (gjmp onto jnext) / backward-jump
- * (gjmp_addr(jind)) / definition-backpatch (gsym) dance. Modeled only for plain
- * gotos — VLA/cleanup/computed-goto bail (their scope machinery is unmodeled). */
-struct ast_rp_label { int v, jind, jnext, defined; };
+struct ast_rp_label {
+	int v, jind, jnext, defined;
+};
 static struct ast_rp_label *ast_rp_labels;
 static int ast_rp_nlabel, ast_rp_caplabel;
-static int ast_rp_label_floor; /* label lookups ignore entries below this — used to scope a
-                                * grafted callee's labels away from the caller's (Tier-4) */
+static int ast_rp_label_floor;
 
 static void ast_hook_stmt(int t);
 static void ast_hook_return(int has_val);
@@ -232,21 +180,17 @@ static void ast_hook_label(int v);
 static void ast_hook_goto(int v);
 static void ast_hook_inc(int post, int c);
 static void ast_hook_inc_end(void);
-#define AST_OP_ADDR 0x40000 /* Unary op marker: gaddrof (array-decay/address-of) */
-/* Member access (`.` / `->`) captured coarsely: ival = field byte offset, type =
- * member type, child = the aggregate base. Replay reproduces the parser's exact
- * op sequence (indir for `->`, gaddrof, retype-to-char*, +offset, retype-to-member,
- * mark lvalue). The internal ops are suppressed during capture (§A3 aggregates). */
-#define AST_OP_MEMBER 0x40001       /* `.`  : &base + offset                        */
-#define AST_OP_MEMBER_ARROW 0x40002 /* `->` : indir, then &base + offset            */
-#define AST_OP_IMAG 0x40003 /* imaginary literal: child = value; build 0+val*i pair */
-#define AST_OP_VLA 0x40004 /* VLA alloc effect (no child): type/addr/locorig/new_save */
-#define AST_OP_VLA_RESTORE 0x40005 /* VLA SP restore effect (no child): ival=loc      */
+#define AST_OP_ADDR 0x40000
+#define AST_OP_MEMBER 0x40001
+#define AST_OP_MEMBER_ARROW 0x40002
+#define AST_OP_IMAG 0x40003
+#define AST_OP_VLA 0x40004
+#define AST_OP_VLA_RESTORE 0x40005
 static void ast_hook_indir(void);
 static void ast_hook_gaddrof(void);
 static void ast_hook_member_begin(int is_arrow);
 static void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
-															 int bcheck);
+																int bcheck);
 static void ast_hook_imag_begin(void);
 static void ast_hook_imag_end(int t);
 static void ast_hook_builtin_complex_begin(void);
@@ -426,7 +370,7 @@ static void resolve_alias_fixups(MCCState *s);
 static void free_inline_functions(MCCState *s);
 static void finalize_tentative_arrays(void);
 #if defined(CONFIG_AST) && CONFIG_AST
-static void ast_reemit_forward_inlines(void); /* Tier-4 defer-to-TU (end-of-TU) */
+static void ast_reemit_forward_inlines(void);
 #endif
 static void skip_or_save_block(TokenString **str);
 static void gv_dup(void);
@@ -507,7 +451,7 @@ ST_FUNC int oad(int c, int s) {
 #ifdef CONFIG_MCC_BCHECK
 
 ST_FUNC MAYBE_UNUSED int gen_bounds_epilog_head(addr_t func_bound_offset,
-																	 Sym **psym_data, int *poffset_modified) {
+																								Sym **psym_data, int *poffset_modified) {
 	addr_t *bounds_ptr;
 	int offset_modified = func_bound_offset != lbounds_section->data_offset;
 
@@ -799,21 +743,10 @@ ST_FUNC int mccgen_compile(MCCState *s1) {
 	ast_promote_env = getenv("MCC_AST_PROMOTE") != NULL;
 	ast_no_callful_env = getenv("MCC_AST_NO_CALLFUL") != NULL;
 	ast_inline_env = getenv("MCC_AST_INLINE") != NULL;
-	/* -O1+ engages the AST replay-driven optimizer (docs/AST.md §10: "-O1 = a second
-	   driver over the same vstack ops"). Replay is arch-general and faithfulness-gated
-	   (each function byte-verifies against -O0 and falls back to the parser's emission
-	   otherwise), so it is safe on every target. Register promotion (Tier 3) and virtual
-	   always-inline (Tier 4) are x86_64-validated (the pin pools are x86_64 register
-	   indices), so gate those on the target. The MCC_AST_* env vars still force any layer
-	   on independently, on any arch, for testing. */
 	if (s1->optimize >= 1) {
 		ast_replay_env = 1;
 #ifdef MCC_TARGET_X86_64
 		ast_promote_env = 1;
-		/* Tier-4 virtual-inline is NOT auto-enabled by -O1 yet: it is broadly functional
-		   but not robust on large TUs (it can blow up combinatorially self-compiling mcc),
-		   so it stays behind MCC_AST_INLINE for explicit opt-in until hardened + governed.
-		   Tier-3 promotion is the documented "first opt that beats -O0" and is safe here. */
 #endif
 	}
 #endif
@@ -830,7 +763,7 @@ ST_FUNC int mccgen_compile(MCCState *s1) {
 	next();
 	decl(VT_CONST);
 #if defined(CONFIG_AST) && CONFIG_AST
-	ast_reemit_forward_inlines(); /* Tier-4 defer-to-TU: inline forward-declared callees */
+	ast_reemit_forward_inlines();
 #endif
 	finalize_tentative_arrays();
 	gen_inline_functions(s1);
@@ -1265,10 +1198,6 @@ ST_FUNC void label_pop(Sym **ptop, Sym *slast, int keep) {
 static void vcheck_cmp(void) {
 	if (vtop->r == VT_CMP && 0 == (nocode_wanted & ~CODE_OFF_BIT)) {
 #if defined(CONFIG_AST) && CONFIG_AST
-		/* Materializing a pending VT_CMP to a 0/1 register value emits a setcc/branch
-		 * whose vpushi/gen_op would corrupt the capture mirror (the &&/|| result stays
-		 * a Binary node; replay re-materializes it when the consuming op runs).
-		 * Suppress the mirror across it (§A3 short-circuit). */
 		int sup = ast_active && !ast_replaying;
 		if (sup)
 			ast_in_op++;
@@ -1587,14 +1516,6 @@ static void patch_type(Sym *sym, CType *type) {
 
 		if ((type->t | sym->type.t) & VT_INLINE) {
 			if (!((type->t ^ sym->type.t) & VT_INLINE) || ((type->t | sym->type.t) & VT_STATIC))
-				/* Preserve the definition's own `static` too: a `static inline`
-				   definition following an `extern`/plain prototype is a local
-				   (internal-linkage) definition and must be emitted — otherwise it
-				   collapses to a plain external inline (VT_INLINE, no VT_STATIC),
-				   which §6.7.4p7 leaves undefined, breaking the win32 libm shims
-				   (extern proto in <math.h> + static-inline body in mcc_libm.h).
-				   gcc/clang reject extern-then-static outright, so no conforming
-				   program depends on the collapsed behavior. */
 				static_proto |= VT_INLINE | (type->t & VT_STATIC);
 		}
 
@@ -1772,7 +1693,7 @@ ST_FUNC int get_reg_ex(int rc, int rc2) {
 		if (reg_classes[r] & rc2) {
 #if defined(CONFIG_AST) && CONFIG_AST
 			if (ast_pinned_regs & (1u << r))
-				continue; /* reserved for a promoted local (Tier 3) */
+				continue;
 #endif
 			int n;
 			n = 0;
@@ -1797,7 +1718,7 @@ ST_FUNC int get_reg(int rc) {
 		if (reg_classes[r] & rc) {
 #if defined(CONFIG_AST) && CONFIG_AST
 			if (ast_pinned_regs & (1u << r))
-				continue; /* reserved for a promoted local (Tier 3) */
+				continue;
 #endif
 			if (nocode_wanted)
 				return r;
@@ -1815,7 +1736,7 @@ ST_FUNC int get_reg(int rc) {
 		r = p->r2;
 #if defined(CONFIG_AST) && CONFIG_AST
 		if (r < VT_CONST && (ast_pinned_regs & (1u << r)))
-			r = VT_CONST; /* never spill a pinned register */
+			r = VT_CONST;
 #endif
 		if (r < VT_CONST && (reg_classes[r] & rc))
 			goto save_found;
@@ -2114,15 +2035,6 @@ static int adjust_bf(SValue *sv, int bit_pos, int bit_size) {
 }
 
 #if defined(CONFIG_AST) && CONFIG_AST
-/* Body-emitted rodata constants (scalar float/double const pools, `_Complex`
- * const-folds/casts) are materialized fresh on every emit pass. Discard/replay
- * only rewinds text + text relocations, so replay's fresh materialization gets a
- * NEW anon symbol and the relocation *content* diverges from the parse-build even
- * though the value is identical (docs/AST.md §18.3). Record each const's ELF
- * symbol index (`sym->c`) at build and reuse it ordinally at replay: reference the
- * same ELF symbol so the relocation is byte-identical, and skip re-materializing
- * the rodata (it persists). `-O0` and the parse-build are unaffected — recording is
- * passive; reuse fires only under ast_replaying. */
 static int ast_fconst_reuse(void) {
 	if (ast_replaying && ast_fconst_i < ast_fconst_n)
 		return ast_fconst[ast_fconst_i++];
@@ -2137,8 +2049,6 @@ static void ast_fconst_record(int c) {
 	}
 	ast_fconst[ast_fconst_n++] = c;
 }
-/* Push an lvalue reference to the rodata constant whose ELF symbol index is `fc`
- * (recorded at build). No section_add / init_putv — the rodata persists. */
 static void ast_fconst_push_ref(CType *type, int fc) {
 	Sym *fs = sym_push(anon_sym++, type, VT_CONST | VT_SYM, fc);
 	fs->type.t |= VT_STATIC;
@@ -2196,10 +2106,7 @@ ST_FUNC int gv(int rc) {
 #if defined(CONFIG_AST) && CONFIG_AST
 			int fc = ast_fconst_reuse();
 			if (fc) {
-				/* Reuse the rodata constant the parse-build already materialized:
-				 * reference the same symbol so the relocation is byte-identical (no
-				 * duplicate pool entry, no fresh anon_sym). */
-				vpop();                       /* drop the immediate const */
+				vpop();
 				ast_fconst_push_ref(&ltype, fc);
 			} else
 #endif
@@ -2207,7 +2114,7 @@ ST_FUNC int gv(int rc) {
 				offset = section_add(p.sec, size, align);
 				vpush_ref(&ltype, p.sec, offset, size);
 #if defined(CONFIG_AST) && CONFIG_AST
-				ast_fconst_record(vtop->sym->c); /* record for ordinal replay reuse */
+				ast_fconst_record(vtop->sym->c);
 #endif
 				vswap();
 				init_putv(&p, &vtop->type, offset);
@@ -3541,9 +3448,6 @@ static void gen_cast(CType *type) {
 		if (is_complex_type(type) && is_complex_type(&vtop->type) && (type->ref->next->type.t & (VT_BTYPE | VT_LONG)) == (vtop->type.ref->next->type.t & (VT_BTYPE | VT_LONG)))
 			return;
 #if defined(CONFIG_AST) && CONFIG_AST
-		/* ast_hook_convert (above) wrapped the top in a Convert node; suppress the
-		 * mirror across gen_complex_cast's part-wise ops so they do not corrupt it —
-		 * the Convert replay re-runs gen_cast to reproduce them (§A3 _Complex). */
 		int sup = ast_active && !ast_replaying;
 		if (sup)
 			ast_in_op++;
@@ -5001,9 +4905,6 @@ static void complex_part(int imag) {
 	CType base = fre->type;
 	int ofs = imag ? fre->next->c : fre->c;
 
-	/* __real__/__imag__ is a member access of the _Complex pair at `ofs`: same
-	 * `&base + offset` + in-place retype as `.`, so capture it with the coarse
-	 * member hook (replay reproduces the exact sequence). */
 #if defined(CONFIG_AST) && CONFIG_AST
 	ast_hook_member_begin(0);
 #endif
@@ -5047,9 +4948,6 @@ static void cplx_store_part(SValue *dst, int imag) {
 	vpop();
 }
 
-/* Build the `0 + val*i` _Complex pair for an imaginary literal, given the pushed
- * value on vtop and its scalar type `t`. Factored out so the AST replay (§A3
- * _Complex construction) can reproduce it identically. */
 static void gen_imaginary_complex(int t) {
 	CType cbase, ccplx;
 	SValue r;
@@ -5088,7 +4986,8 @@ static void gen_complex_call(int op, CType *cplx, CType *base, SValue *a, SValue
 						 : bt == VT_LDOUBLE
 								 ? 'l'
 								 : 0;
-	int idx = bt == VT_FLOAT ? 0 : bt == VT_DOUBLE ? ((base->t & VT_LONG) ? 3 : 1) : 2;
+	int idx = bt == VT_FLOAT ? 0 : bt == VT_DOUBLE ? ((base->t & VT_LONG) ? 3 : 1)
+																								 : 2;
 	Sym *fsym, *p, *prev;
 	CType functype, ptype;
 	SValue r;
@@ -5434,9 +5333,7 @@ static void gen_complex_cast(CType *dt) {
 #if defined(CONFIG_AST) && CONFIG_AST
 				int fc = ast_fconst_reuse();
 				if (fc) {
-					/* Reuse the rodata _Complex const the parse-build materialized so
-					 * replay's relocation is byte-identical (docs/AST.md §18.3). */
-					vtop--; /* drop the source const (matches the vpush_ref path below) */
+					vtop--;
 					ast_fconst_push_ref(dt, fc);
 				} else
 #endif
@@ -9568,7 +9465,7 @@ again:
 		skip(';');
 	} else if (t == TOK_ASM1 || t == TOK_ASM2 || t == TOK_ASM3) {
 #if defined(CONFIG_AST) && CONFIG_AST
-		ast_func_has_asm = 1; /* asm register clobbers can corrupt a promoted pin */
+		ast_func_has_asm = 1;
 #endif
 #ifdef CONFIG_MCC_ASM
 		asm_instr();
@@ -10787,32 +10684,16 @@ static void sym_push_params(Sym *ref) {
 }
 
 #if defined(CONFIG_AST) && CONFIG_AST
-/* --- AST replay: builder hooks (called from the parser) ------------------- */
 
-/* A statement is about to be handled. The whole-body mirror captures straight-
- * line bodies: `return`, expression statements (assignments → Store), and local
- * declarations with initialisers (captured via vstore). Control-flow statements
- * emit jumps the mirror does not model, so bail early on them (byte-verify would
- * catch them anyway, this just avoids wasted capture). */
 static void ast_hook_stmt(int t) {
 	if (!ast_active)
 		return;
 	switch (t) {
 	default:
-		/* '{' (the function-body compound, or a nested block) is not bailed here:
-		 * the outer body must proceed, and a nested straight-line block either
-		 * captures or trips the byte-verify. */
 		break;
 	}
 }
 
-/* --- return-expression mirror -------------------------------------------- */
-
-/* A value was pushed onto the vstack while a return expression is being
- * evaluated. Capture it as a leaf (Literal for a plain integer constant, Ref
- * for an lvalue such as a parameter/local) carrying the full SValue so replay
- * re-pushes it exactly. Symbol references bail (they would relocate anyway).
- * Depth is re-synced to the vstack; a mismatch means an unmodeled op ran. */
 static void ast_hook_vpush(void) {
 	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
 		return;
@@ -10822,24 +10703,11 @@ static void ast_hook_vpush(void) {
 		return;
 	}
 	int r = vtop->r, tt = vtop->type.t;
-	/* Only leaves that re-push faithfully after the body is discarded are safe:
-	 * an integer constant, a frame-relative local/parameter lvalue (fixed offset),
-	 * or a symbolic constant/lvalue (a global's address — the Sym persists, so
-	 * re-pushing it re-creates the same reference and relocation). Anything holding
-	 * a register (a value materialised by code we are about to discard) or a float
-	 * is not reconstructable — desync. */
 	int is_const = (r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
 	int is_sym = (r & VT_VALMASK) == VT_CONST && (r & VT_SYM);
-	/* VT_LOCAL, with or without VT_LVAL: a frame-relative lvalue (a variable) or
-	 * a frame-relative address value (an array, which is its own address). Both
-	 * re-push exactly from (r, offset). */
 	int is_local = (r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM);
-	/* A struct/union LVALUE base (a frame local or a global's address) is a
-	 * reconstructable address — allow it so member access (ast_hook_member_*) can
-	 * consume it. Other bad types (bit-field, long double, _Complex-pair) and any
-	 * non-lvalue leaf still desync. */
 	int agg_lval = (tt & VT_BTYPE) == VT_STRUCT && !(tt & VT_BITFIELD) &&
-			(is_local || is_sym);
+								 (is_local || is_sym);
 	if ((ast_bad_type(tt) && !agg_lval) || (!is_const && !is_sym && !is_local)) {
 		ast_desync = 1;
 		return;
@@ -10849,22 +10717,12 @@ static void ast_hook_vpush(void) {
 	ast_set_type(ast_cur, n, tt, (uint64_t)(uintptr_t)vtop->type.ref);
 	ast_set_ival(ast_cur, n, (uint64_t)vtop->c.i);
 	ast_set_sym(ast_cur, n, (uint64_t)(uintptr_t)vtop->sym);
-	/* Immediate replay re-pushes these Sym pointers while they are still live. End-of-TU
-	 * re-emission does not: a BLOCK-SCOPED symbolic reference (an inner extern/function
-	 * redeclaration) or a block-scoped aggregate TYPE ref is freed at block close and
-	 * recycled by later gen, so its pointer dangles by re-emit time. Poison re-emission
-	 * for this function when we see one; grafting/immediate replay are unaffected. */
 	if ((is_sym && vtop->sym && vtop->sym->sym_scope) ||
 			(vtop->type.ref && (tt & VT_BTYPE) == VT_STRUCT && sym_scope_ex(vtop->type.ref)))
 		ast_reemit_poison = 1;
 	ast_vs[ast_vn++] = n;
 }
 
-/* Re-read a leaf's SValue from the live vstack at consumption time. A push hook
- * fires inside vsetc, but callers finish a leaf afterwards (vpushsym / the
- * identifier path set ->sym and adjust ->c.i only after vsetc returns), so the
- * eager capture can be incomplete. Finalizing at consumption picks up the final
- * value. Only leaves carry an SValue; subtrees (Binary) are left untouched. */
 static void ast_finalize_leaf(AstLocal n, SValue *sv) {
 	uint16_t k = ast_kind(ast_cur, n);
 	if (k != AST_Literal && k != AST_Ref)
@@ -10873,66 +10731,54 @@ static void ast_finalize_leaf(AstLocal n, SValue *sv) {
 	ast_set_type(ast_cur, n, sv->type.t, (uint64_t)(uintptr_t)sv->type.ref);
 	ast_set_ival(ast_cur, n, (uint64_t)sv->c.i);
 	ast_set_sym(ast_cur, n, (uint64_t)(uintptr_t)sv->sym);
-	/* Same block-scoped-Sym re-emit hazard as ast_hook_leaf: the final sym is only known
-	 * here for leaves whose ->sym is set after vsetc (vpushsym). Poison re-emission too. */
 	if (((sv->r & VT_VALMASK) == VT_CONST && (sv->r & VT_SYM) && sv->sym && sv->sym->sym_scope) ||
 			(sv->type.ref && (sv->type.t & VT_BTYPE) == VT_STRUCT && sym_scope_ex(sv->type.ref)))
 		ast_reemit_poison = 1;
 }
 
-/* A binary op is about to consume the top two vstack values. Fold the two
- * mirror nodes into a Binary(op). Only arithmetic/bitwise/shift ops are
- * modeled; comparisons and anything producing VT_CMP bail. */
 static int ast_op_modeled(int op) {
 	switch (op) {
-	case '+': case '-': case '*': case '/': case '%':
-	case '&': case '|': case '^':
-	case TOK_SHL: case TOK_SAR: case TOK_SHR:
-	/* relational / equality — gen_op leaves a VT_CMP the same way each time, so
-	 * replaying gen_op reproduces it; used directly as an `if`/loop condition.
-	 * (NB: '<'/'>' are TOK_SHL/TOK_SAR above; the relational ops are TOK_LT/GT.) */
-	case TOK_LT: case TOK_GT: case TOK_LE: case TOK_GE:
-	case TOK_EQ: case TOK_NE:
-	case TOK_ULT: case TOK_UGE: case TOK_ULE: case TOK_UGT:
+	case '+':
+	case '-':
+	case '*':
+	case '/':
+	case '%':
+	case '&':
+	case '|':
+	case '^':
+	case TOK_SHL:
+	case TOK_SAR:
+	case TOK_SHR:
+	case TOK_LT:
+	case TOK_GT:
+	case TOK_LE:
+	case TOK_GE:
+	case TOK_EQ:
+	case TOK_NE:
+	case TOK_ULT:
+	case TOK_UGE:
+	case TOK_ULE:
+	case TOK_UGT:
 		return 1;
 	default:
 		return 0;
 	}
 }
 
-/* Types this rung does not reconstruct faithfully in an arithmetic/store/leaf
- * position: aggregates (struct/union), bit-fields, and floats. An operation
- * touching one is bailed so the function falls back — otherwise replay can build
- * an invalid gen_op that errors mid-emit (before byte-verify can catch it).
- * (VT_FUNC is intentionally NOT here: a callee is a VT_FUNC leaf that must be
- * captured for Invoke; a function in an arithmetic operand is vanishingly rare.) */
 static int ast_bad_type(int tt) {
 	int bt = tt & VT_BTYPE;
-	/* struct/union, bit-fields, and the two SSE-atypical floats (x87 80-bit
-	 * `long double` and the `_Complex float`-pair VT_QFLOAT) are not reconstructed
-	 * faithfully in an arithmetic/store/leaf position. Plain `float`/`double` ARE:
-	 * a float leaf round-trips through the SValue union (c.i captures all 8 bytes),
-	 * and gen_opif/gen_cast/gfunc_return replay the same ops the parser emitted. */
 	return bt == VT_STRUCT || (tt & VT_BITFIELD) ||
-			bt == VT_LDOUBLE || bt == VT_QFLOAT;
+				 bt == VT_LDOUBLE || bt == VT_QFLOAT;
 }
 
 static void ast_hook_genop(int op) {
 	if (!ast_active)
 		return;
-	/* ast_in_op is a nesting counter kept balanced with ast_hook_genop_end (which
-	 * is called at every gen_op exit): entry always increments. We model this op
-	 * only when it is the top-level, capturable one — not nested inside another
-	 * op, and not inside a call/desynced/non-capturing region (there gen_op runs
-	 * for internal codegen, e.g. arg setup or the pointer-scale gen_op('*')). */
 	int model = ast_in_op == 0 && ast_capture && !ast_desync && !ast_in_call;
 	ast_in_op++;
 	if (!model)
 		return;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
-	/* A bit-field operand is read (adjust_bf/load_packed_bf) inside the suppressed
-	 * gen_op, so it is a valid arithmetic operand; a _Complex operand routes to
-	 * gen_complex_op inside the suppressed gen_op. Other struct/fp bad types bail. */
 	int bf0 = (vtop->type.t & VT_BITFIELD) && (vtop->type.t & VT_BTYPE) != VT_STRUCT;
 	int bf1 =
 			(vtop[-1].type.t & VT_BITFIELD) && (vtop[-1].type.t & VT_BTYPE) != VT_STRUCT;
@@ -10954,8 +10800,6 @@ static void ast_hook_genop(int op) {
 	ast_vs[ast_vn++] = b;
 }
 
-/* gen_op has finished; pop one nesting level. When back at the top (and actually
- * capturing), re-sync: the op must have left one net value (pop2/push1). */
 static void ast_hook_genop_end(void) {
 	if (!ast_active || ast_in_op == 0)
 		return;
@@ -10967,11 +10811,6 @@ static void ast_hook_genop_end(void) {
 	}
 }
 
-/* A cast converts the top value in place (no depth change). Inside a modeled
- * gen_op it is a usual-arithmetic-conversion reproduced by replaying gen_op, so
- * ignore it; otherwise wrap the top mirror node in a Convert(dst-type) that
- * replay re-emits with gen_cast. Finalize the leaf first (the value being cast
- * may still be a not-yet-finished symbolic leaf). */
 static void ast_hook_convert(CType *type) {
 	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
 		return;
@@ -10986,10 +10825,6 @@ static void ast_hook_convert(CType *type) {
 	ast_vs[ast_vn - 1] = cvt;
 }
 
-/* ++/-- : an lvalue increment/decrement. Modeled as a Unary node (op = the
- * operator token, ival = post-flag) wrapping the target lvalue; inc()'s intricate
- * vstack dance (vdup/gv_dup/vrotb/…) is suppressed via ast_in_call and replayed by
- * re-issuing inc() itself. */
 static void ast_hook_inc(int post, int c) {
 	ast_inc_pending = AST_NONE;
 	if (!ast_active || ast_desync || ast_in_op || ast_in_call)
@@ -11004,7 +10839,7 @@ static void ast_hook_inc(int post, int c) {
 	ast_set_op(ast_cur, u, c);
 	ast_set_ival(ast_cur, u, (uint64_t)post);
 	ast_add_child(ast_cur, u, ast_vs[ast_vn - 1]);
-	ast_vs[ast_vn - 1] = u; /* target replaced by the ++/-- result */
+	ast_vs[ast_vn - 1] = u;
 	ast_inc_pending = u;
 	ast_in_call = 1;
 }
@@ -11021,12 +10856,6 @@ static void ast_hook_inc_end(void) {
 		ast_desync = 1;
 }
 
-/* Ternary `c ? a : b` — an expression that yields a value via register-
- * coordinated branches. Captured as an If node (op==5) with [cond, true, false];
- * the branch values are captured with the mirror briefly un-suppressed, while the
- * coordination (save_regs/gvtst/gjmp/gsym/gv/move_reg) is suppressed. Only the
- * runtime scalar case (c<0, non-gnu) is modeled; constant-condition/gnu/aggregate
- * cases desync and fall back. Replay reproduces expr_cond's exact coordination. */
 static void ast_hook_ternary_begin(int c, int g) {
 	if (!ast_active || ast_desync || ast_bail)
 		return;
@@ -11038,17 +10867,17 @@ static void ast_hook_ternary_begin(int c, int g) {
 	ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
 	AstLocal cn = ast_node(ast_cur, AST_If);
 	ast_set_op(ast_cur, cn, 5);
-	ast_add_child(ast_cur, cn, ast_vs[ast_vn - 1]); /* child0 = condition */
-	ast_vn--;                                       /* consumed by gvtst */
+	ast_add_child(ast_cur, cn, ast_vs[ast_vn - 1]);
+	ast_vn--;
 	ast_tern[ast_tern_top++] = cn;
-	ast_in_call = 1; /* suppress the branch coordination */
+	ast_in_call = 1;
 }
 
 static void ast_hook_ternary_branch(int which) {
 	(void)which;
 	if (!ast_active || ast_desync || ast_bail || ast_tern_top < 1)
 		return;
-	ast_in_call = 0; /* capture the branch expression */
+	ast_in_call = 0;
 }
 
 static void ast_hook_ternary_branch_done(int which) {
@@ -11062,7 +10891,7 @@ static void ast_hook_ternary_branch_done(int which) {
 	ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
 	ast_add_child(ast_cur, ast_tern[ast_tern_top - 1], ast_vs[ast_vn - 1]);
 	ast_vn--;
-	ast_in_call = 1; /* suppress again */
+	ast_in_call = 1;
 }
 
 static void ast_hook_ternary_end(void) {
@@ -11076,17 +10905,12 @@ static void ast_hook_ternary_end(void) {
 		ast_desync = 1;
 		return;
 	}
-	ast_vs[ast_vn++] = cn; /* the ternary result */
+	ast_vs[ast_vn++] = cn;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	if (ast_vn != rel)
 		ast_desync = 1;
 }
 
-/* `&&` / `||` short-circuit: captured as a Binary node (op TOK_LAND/TOK_LOR) with
- * all operands as children; the operand expressions are captured with the mirror
- * un-suppressed, the gvtst chaining suppressed. Only the all-runtime VT_CMP form
- * is modeled (constant operands / the materialized 0-1 form desync). Replay
- * reproduces expr_landor's exact gvtst chain + gvtst_set. */
 static void ast_hook_landor_operand(int op, int c, int first) {
 	if (!ast_active || ast_desync || ast_bail)
 		return;
@@ -11102,16 +10926,10 @@ static void ast_hook_landor_operand(int op, int c, int first) {
 	}
 	if (ast_lor_top < 1)
 		return;
-	if (c >= 0 || ast_vn < 1) { /* a constant operand — not modeled */
+	if (c >= 0 || ast_vn < 1) {
 		ast_desync = 1;
 		return;
 	}
-	/* A nested short-circuit operand (`(a&&b)||c`) is itself a Binary(&&/||) node
-	 * already captured on the mirror; the outer chain accepts it as a child and
-	 * replay's AST_Binary case recurses — the inner short-circuit renders its own
-	 * gvtst chain into a VT_CMP, which the outer chain then gvtst's exactly as the
-	 * parser does. (A nested ternary operand produces a register value, not a
-	 * VT_CMP chain the flat reproduction expects — that still bails.) */
 	AstLocal opnd = ast_vs[ast_vn - 1];
 	if (ast_kind(ast_cur, opnd) == AST_If && ast_op(ast_cur, opnd) == 5) {
 		ast_desync = 1;
@@ -11120,13 +10938,13 @@ static void ast_hook_landor_operand(int op, int c, int first) {
 	ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
 	ast_add_child(ast_cur, ast_lor[ast_lor_top - 1], ast_vs[ast_vn - 1]);
 	ast_vn--;
-	ast_in_call = 1; /* suppress the gvtst coordination */
+	ast_in_call = 1;
 }
 
 static void ast_hook_landor_next(void) {
 	if (!ast_active || ast_desync || ast_bail || ast_lor_top < 1)
 		return;
-	ast_in_call = 0; /* capture the next operand */
+	ast_in_call = 0;
 }
 
 static void ast_hook_landor_end(int materialized) {
@@ -11136,7 +10954,7 @@ static void ast_hook_landor_end(int materialized) {
 	ast_in_call = 0;
 	if (ast_desync || ast_bail)
 		return;
-	if (materialized) { /* the vpushi 0/1 form (constants) — not modeled */
+	if (materialized) {
 		ast_desync = 1;
 		return;
 	}
@@ -11144,17 +10962,12 @@ static void ast_hook_landor_end(int materialized) {
 		ast_desync = 1;
 		return;
 	}
-	ast_vs[ast_vn++] = nd; /* the VT_CMP result */
+	ast_vs[ast_vn++] = nd;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	if (ast_vn != rel)
 		ast_desync = 1;
 }
 
-/* --- control flow: `if` --------------------------------------------------
- * Captured at the statement level: the condition is the single value on the
- * mirror (about to be consumed by gvtst); the then/else branches are captured
- * into nested BasicBlocks. Replay re-issues the parser's exact gvtst/gjmp/gsym
- * pattern, so no backend jump primitives need hooking. */
 static void ast_hook_if_begin(void) {
 	if (!ast_active || ast_desync || ast_bail)
 		return;
@@ -11162,13 +10975,9 @@ static void ast_hook_if_begin(void) {
 		ast_bail = 1;
 		return;
 	}
-	/* Finalize a bare-leaf condition against the live vtop: a global Ref's ->sym
-	 * is set by vpushsym only after the eager push-hook captured the leaf (sym=0),
-	 * so without this a global used directly as the condition (`if (g)`) replays
-	 * with a NULL sym and faults in gvtst's load. No-op for a Binary/compare cond. */
 	ast_finalize_leaf(ast_vs[0], vtop);
 	AstLocal cond = ast_vs[0];
-	ast_vn = 0; /* the condition is consumed by gvtst */
+	ast_vn = 0;
 	AstLocal iff = ast_node(ast_cur, AST_If);
 	ast_add_child(ast_cur, iff, cond);
 	AstLocal thenbb = ast_node(ast_cur, AST_BasicBlock);
@@ -11178,10 +10987,9 @@ static void ast_hook_if_begin(void) {
 	ast_cf_savebb[ast_cf_top] = ast_cur_bb;
 	ast_cf_top++;
 	ast_cur_bb = thenbb;
-	ast_in_call = 1; /* suppress the mirror across gvtst's condition test */
+	ast_in_call = 1;
 }
 
-/* gvtst has emitted the conditional branch; resume capturing the branch body. */
 static void ast_hook_if_gvtst_done(void) {
 	if (!ast_active)
 		return;
@@ -11217,9 +11025,6 @@ static void ast_hook_if_end(void) {
 	ast_cur_bb = ast_cf_savebb[ast_cf_top];
 }
 
-/* --- control flow: `while` (no break/continue — those bail in ast_hook_stmt) --
- * A loop is an If node marked op==2: [condition, body-BB]. Replay reproduces the
- * parser's gind/gvtst/back-edge/gsym pattern. */
 static void ast_hook_while_begin(void) {
 	if (!ast_active || ast_desync || ast_bail)
 		return;
@@ -11227,11 +11032,11 @@ static void ast_hook_while_begin(void) {
 		ast_bail = 1;
 		return;
 	}
-	ast_finalize_leaf(ast_vs[0], vtop); /* pick up a global cond's ->sym (see if_begin) */
+	ast_finalize_leaf(ast_vs[0], vtop);
 	AstLocal cond = ast_vs[0];
 	ast_vn = 0;
 	AstLocal loop = ast_node(ast_cur, AST_If);
-	ast_set_op(ast_cur, loop, 2); /* loop marker */
+	ast_set_op(ast_cur, loop, 2);
 	ast_add_child(ast_cur, loop, cond);
 	AstLocal body = ast_node(ast_cur, AST_BasicBlock);
 	ast_add_child(ast_cur, loop, body);
@@ -11240,7 +11045,7 @@ static void ast_hook_while_begin(void) {
 	ast_cf_savebb[ast_cf_top] = ast_cur_bb;
 	ast_cf_top++;
 	ast_cur_bb = body;
-	ast_in_call = 1; /* suppress the mirror across gvtst's condition test */
+	ast_in_call = 1;
 }
 
 static void ast_hook_while_end(void) {
@@ -11254,10 +11059,6 @@ static void ast_hook_while_end(void) {
 	ast_cur_bb = ast_cf_savebb[ast_cf_top];
 }
 
-/* --- control flow: `do { } while (cond)` -----------------------------------
- * An If node marked op==4 with children [body-BB, condition]; the body runs
- * before the condition. Replay reproduces gind/body/gsym(continue)/cond/
- * gvtst(0)/gsym_addr(back)/gsym(exit). */
 static void ast_hook_do_begin(void) {
 	if (!ast_active || ast_desync || ast_bail)
 		return;
@@ -11269,7 +11070,7 @@ static void ast_hook_do_begin(void) {
 	ast_set_op(ast_cur, loop, 4);
 	ast_add_child(ast_cur, ast_cur_bb, loop);
 	AstLocal body = ast_node(ast_cur, AST_BasicBlock);
-	ast_add_child(ast_cur, loop, body); /* child0 = body */
+	ast_add_child(ast_cur, loop, body);
 	ast_cf_if[ast_cf_top] = loop;
 	ast_cf_savebb[ast_cf_top] = ast_cur_bb;
 	ast_cf_top++;
@@ -11293,10 +11094,10 @@ static void ast_hook_do_cond(void) {
 		ast_bail = 1;
 		return;
 	}
-	ast_finalize_leaf(ast_vs[0], vtop); /* pick up a global cond's ->sym (see if_begin) */
-	ast_add_child(ast_cur, ast_cf_if[ast_cf_top - 1], ast_vs[0]); /* child1 = cond */
+	ast_finalize_leaf(ast_vs[0], vtop);
+	ast_add_child(ast_cur, ast_cf_if[ast_cf_top - 1], ast_vs[0]);
 	ast_vn = 0;
-	ast_in_call = 1; /* suppress gvtst */
+	ast_in_call = 1;
 }
 
 static void ast_hook_do_end(void) {
@@ -11310,10 +11111,6 @@ static void ast_hook_do_end(void) {
 	ast_cur_bb = ast_cf_savebb[ast_cf_top];
 }
 
-/* break/continue: an unconditional jump onto the enclosing loop's break or
- * continue chain. Captured as a Jump node (op 0=break, 1=continue); replay
- * chains onto the loop's replay-time bsym/csym. If leave_scope emitted cleanup
- * code (VLA/cleanup attrs), byte-verify catches the divergence and falls back. */
 static void ast_hook_break_continue(int is_continue) {
 	if (!ast_active || ast_desync || ast_bail)
 		return;
@@ -11326,11 +11123,6 @@ static void ast_hook_break_continue(int is_continue) {
 	ast_add_child(ast_cur, ast_cur_bb, j);
 }
 
-/* --- control flow: `for` (init;cond;incr) ----------------------------------
- * A For loop is an If node marked op==3 with children [cond, incr-BB, body-BB];
- * the init runs before it as ordinary effects. Requires a condition (degenerate
- * for(;;)/for(;;x) bail). Replay reproduces the parser's gind/gvtst/jump-over-
- * increment/back-edge/gsym structure. */
 static void ast_hook_for_begin(int has_cond) {
 	if (!ast_active || ast_desync || ast_bail)
 		return;
@@ -11339,10 +11131,6 @@ static void ast_hook_for_begin(int has_cond) {
 		return;
 	}
 	AstLocal loop = ast_node(ast_cur, AST_If);
-	/* op 3 = for(cond;;): children [cond, incr-BB, body-BB]. op 5 = for(;;)
-	   with no controlling expression: children [incr-BB, body-BB] (ast_hook_for_cond
-	   is not called, so no cond child is added) — the parser emits no gvtst, so the
-	   break chain starts empty. */
 	ast_set_op(ast_cur, loop, has_cond ? 3 : 5);
 	ast_add_child(ast_cur, ast_cur_bb, loop);
 	ast_cf_if[ast_cf_top] = loop;
@@ -11357,10 +11145,10 @@ static void ast_hook_for_cond(void) {
 		ast_bail = 1;
 		return;
 	}
-	ast_finalize_leaf(ast_vs[0], vtop); /* pick up a global cond's ->sym (see if_begin) */
-	ast_add_child(ast_cur, ast_cf_if[ast_cf_top - 1], ast_vs[0]); /* child0 = cond */
+	ast_finalize_leaf(ast_vs[0], vtop);
+	ast_add_child(ast_cur, ast_cf_if[ast_cf_top - 1], ast_vs[0]);
 	ast_vn = 0;
-	ast_in_call = 1; /* suppress gvtst */
+	ast_in_call = 1;
 }
 
 static void ast_hook_for_incr_begin(void) {
@@ -11371,7 +11159,7 @@ static void ast_hook_for_incr_begin(void) {
 		return;
 	}
 	AstLocal incrbb = ast_node(ast_cur, AST_BasicBlock);
-	ast_add_child(ast_cur, ast_cf_if[ast_cf_top - 1], incrbb); /* child1 = incr */
+	ast_add_child(ast_cur, ast_cf_if[ast_cf_top - 1], incrbb);
 	ast_cur_bb = incrbb;
 }
 
@@ -11382,7 +11170,7 @@ static void ast_hook_for_incr_end(void) {
 		ast_bail = 1;
 		return;
 	}
-	ast_cur_bb = ast_cf_savebb[ast_cf_top - 1]; /* back to the enclosing block */
+	ast_cur_bb = ast_cf_savebb[ast_cf_top - 1];
 }
 
 static void ast_hook_for_no_incr(void) {
@@ -11390,7 +11178,6 @@ static void ast_hook_for_no_incr(void) {
 		return;
 	if (ast_cf_top < 1)
 		return;
-	/* empty incr-BB placeholder so body is child2 */
 	ast_add_child(ast_cur, ast_cf_if[ast_cf_top - 1],
 								ast_node(ast_cur, AST_BasicBlock));
 }
@@ -11403,7 +11190,7 @@ static void ast_hook_for_body_begin(void) {
 		return;
 	}
 	AstLocal bodybb = ast_node(ast_cur, AST_BasicBlock);
-	ast_add_child(ast_cur, ast_cf_if[ast_cf_top - 1], bodybb); /* child2 = body */
+	ast_add_child(ast_cur, ast_cf_if[ast_cf_top - 1], bodybb);
 	ast_cur_bb = bodybb;
 }
 
@@ -11418,9 +11205,6 @@ static void ast_hook_for_end(void) {
 	ast_cur_bb = ast_cf_savebb[ast_cf_top];
 }
 
-/* switch: the controlling value is the single value on the mirror (about to be
- * popped by `sw->sv = *vtop--`). Capture it as child0 of an If(op=6) and open the
- * body BB as child1; `case`/`default` labels append markers to it. */
 static void ast_hook_switch_begin(void) {
 	ast_switch_node = AST_NONE;
 	if (!ast_active || ast_desync || ast_bail)
@@ -11431,17 +11215,13 @@ static void ast_hook_switch_begin(void) {
 	}
 	ast_finalize_leaf(ast_vs[0], vtop);
 	AstLocal val = ast_vs[0];
-	/* The dispatch re-reads the controlling value AFTER the body (vpushv(&sw->sv);
-	 * gv), so it must be a reloadable leaf (a frame/global lvalue or a constant) —
-	 * a computed value would live in a register the body clobbers. Anything else
-	 * bails so the whole switch falls back to the parser's emission. */
 	uint16_t vk = ast_kind(ast_cur, val);
 	if ((vk != AST_Ref && vk != AST_Literal) ||
 			ast_bad_type(ast_type_t(ast_cur, val))) {
 		ast_bail = 1;
 		return;
 	}
-	ast_vn = 0; /* the value is consumed by `sw->sv = *vtop--` */
+	ast_vn = 0;
 	AstLocal sw = ast_node(ast_cur, AST_If);
 	ast_set_op(ast_cur, sw, 6);
 	ast_add_child(ast_cur, sw, val);
@@ -11455,8 +11235,6 @@ static void ast_hook_switch_begin(void) {
 	ast_switch_node = sw;
 }
 
-/* A `case v1 [... v2]:` label: append a marker (Jump op==2, ival=v1, fbits=v2) to
- * the switch body so replay records cr->ind at this position. */
 static void ast_hook_case(int64_t v1, int64_t v2, int type) {
 	(void)type;
 	if (!ast_active || ast_desync || ast_bail || ast_cf_top < 1)
@@ -11473,7 +11251,6 @@ static void ast_hook_case(int64_t v1, int64_t v2, int type) {
 	ast_add_child(ast_cur, ast_cur_bb, m);
 }
 
-/* A `default:` label: append a marker (Jump op==3). */
 static void ast_hook_default(void) {
 	if (!ast_active || ast_desync || ast_bail || ast_cf_top < 1)
 		return;
@@ -11482,10 +11259,6 @@ static void ast_hook_default(void) {
 	ast_add_child(ast_cur, ast_cur_bb, m);
 }
 
-/* The switch body is captured; the dispatch epilogue (case_sort/vpushv/gv/gcase/
- * vpop) is about to emit real code whose vstack ops must NOT touch the mirror —
- * suppress until switch_end. Always paired 1:1 with switch_end (both run
- * unconditionally per switch), so ast_in_call stays balanced. */
 static void ast_hook_switch_body_end(void) {
 	if (!ast_active)
 		return;
@@ -11506,9 +11279,6 @@ static void ast_hook_switch_end(void) {
 	ast_switch_node = AST_NONE;
 }
 
-/* A `label:` definition. Recorded as a Jump op==4 marker (ival = label token).
- * VLA / cleanup-scope machinery (pending_gotos, try_call_cleanup_goto) is not
- * modeled, so bail those functions. */
 static void ast_hook_label(int v) {
 	if (!ast_active || ast_desync || ast_bail)
 		return;
@@ -11527,8 +11297,6 @@ static void ast_hook_label(int v) {
 	ast_add_child(ast_cur, ast_cur_bb, m);
 }
 
-/* A `goto label;` (named only — computed goto is not hooked). Recorded as a Jump
- * op==5 marker (ival = target token). */
 static void ast_hook_goto(int v) {
 	if (!ast_active || ast_desync || ast_bail)
 		return;
@@ -11547,22 +11315,13 @@ static void ast_hook_goto(int v) {
 	ast_add_child(ast_cur, ast_cur_bb, m);
 }
 
-/* Memory model. `indir` (deref) wraps the top address value in a Load; `gaddrof`
- * (array-decay / address-of) wraps it in a Unary(AST_OP_ADDR). Both re-issue the
- * primitive at replay, so a computed-address lvalue (a[i], *p) is reconstructed
- * from its address expression rather than a non-reproducible register. Inside a
- * modeled op (ast_in_op/ast_in_call) they are part of that op and are skipped. */
 static void ast_hook_indir(void) {
 	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
 		return;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
-	/* Deref to a struct/union yields an lvalue (an address, not a register value)
-	 * — reconstructable by re-running indir, so allow it (member access / struct
-	 * copy consume it). Deref to a bit-field / long double / _Complex-pair is not
-	 * modeled — bail. */
 	int bad_deref = (vtop->type.t & VT_BTYPE) == VT_PTR &&
-			ast_bad_type(pointed_type(&vtop->type)->t) &&
-			(pointed_type(&vtop->type)->t & VT_BTYPE) != VT_STRUCT;
+									ast_bad_type(pointed_type(&vtop->type)->t) &&
+									(pointed_type(&vtop->type)->t & VT_BTYPE) != VT_STRUCT;
 	if (ast_vn < 1 || ast_vn != rel || bad_deref) {
 		ast_desync = 1;
 		return;
@@ -11589,13 +11348,6 @@ static void ast_hook_gaddrof(void) {
 	ast_vs[ast_vn - 1] = u;
 }
 
-/* Member access `.`/`->`: the parser computes `&base + field_offset` with several
- * in-place `vtop->type` retypes (to char* for the offset add, back to the member
- * type) that fire no hooks — so the fine-grained op tree cannot be replayed
- * faithfully (the offset would scale by sizeof(base), not 1). Instead we fold the
- * whole access into one node. begin() finalizes the base leaf and suppresses the
- * internal ops (indir/gaddrof/vpushi/gen_op) via ast_in_call; end() builds the
- * Unary(MEMBER) node. */
 static void ast_hook_member_begin(int is_arrow) {
 	ast_member_cap = 0;
 	if (!ast_active)
@@ -11610,7 +11362,7 @@ static void ast_hook_member_begin(int is_arrow) {
 			ast_desync = 1;
 		}
 	}
-	ast_in_call++; /* suppress the internal indir/gaddrof/vpushi/gen_op */
+	ast_in_call++;
 }
 
 static void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
@@ -11624,11 +11376,6 @@ static void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
 	ast_member_cap = 0;
 	if (ast_desync)
 		return;
-	/* This rung models a scalar or bit-field member reached without qualifier
-	 * laundering, a non-lvalue base, or bounds instrumentation. Anything else
-	 * falls back. A bit-field member is a valid lvalue (its shift/mask load/store
-	 * runs inside the suppressed gv/vstore); struct/long double/_Complex members
-	 * still bail. */
 	int mt_bf_ok = (mtype->t & VT_BITFIELD) && (mtype->t & VT_BTYPE) != VT_STRUCT;
 	if (qual || bcheck || (ast_bad_type(mtype->t) && !mt_bf_ok)) {
 		ast_desync = 1;
@@ -11644,19 +11391,11 @@ static void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
 						 ast_member_arrow ? AST_OP_MEMBER_ARROW : AST_OP_MEMBER);
 	ast_set_ival(ast_cur, m, (uint64_t)(unsigned)cumofs);
 	ast_set_type(ast_cur, m, mtype->t, (uint64_t)(uintptr_t)mtype->ref);
-	/* Preserve the base's non-lvalue bit (a member of an rvalue struct, e.g. the
-	 * result of a struct-returning call `f().x`): the parser re-ORs it, so replay
-	 * must too. */
 	ast_set_fbits(ast_cur, m, (uint64_t)(unsigned)nonlval);
 	ast_add_child(ast_cur, m, ast_vs[ast_vn - 1]);
 	ast_vs[ast_vn - 1] = m;
 }
 
-/* An imaginary literal (`1.0iF`): the pushed scalar value on the mirror top is a
- * Literal; the following gen_imaginary_complex builds the `0 + val*i` pair with
- * several ops that would corrupt the mirror. Suppress them and fold the whole
- * construction into one Unary(AST_OP_IMAG) node (ival = scalar type) wrapping the
- * value; replay re-runs gen_imaginary_complex (§A3 _Complex construction). */
 static void ast_hook_imag_begin(void) {
 	ast_imag_cap = 0;
 	if (!ast_active)
@@ -11670,7 +11409,7 @@ static void ast_hook_imag_begin(void) {
 			ast_desync = 1;
 		}
 	}
-	ast_in_op++; /* suppress the construction's ops */
+	ast_in_op++;
 }
 
 static void ast_hook_imag_end(int t) {
@@ -11695,16 +11434,6 @@ static void ast_hook_imag_end(int t) {
 	ast_vs[ast_vn - 1] = m;
 }
 
-/* `__builtin_complex(re, im)` — the `_Complex_I`/`I` unit and any const pair. The
- * constant form materializes a _Complex value into rodata and pushes it as an
- * lvalue reference (VT_CONST|VT_SYM); the two scalar-const arg pushes and the
- * init_putv/section_add in between would desync the mirror (they push captured
- * leaves the operation then consumes without notifying it). Suppress the whole
- * construction (ast_in_op) and capture the rodata-const *result* as a single Ref
- * leaf — the anon Sym persists across discard/replay, so replay re-pushing it
- * re-creates the same reference/relocation (the ast_fconst rodata-reuse idea, but
- * the Sym itself is stable so no ordinal table is needed). The non-const cplx_local
- * form (a frame temp) is rarer and desyncs. (docs/AST.md §18.3 _Complex construction) */
 static void ast_hook_builtin_complex_begin(void) {
 	ast_bcplx_cap = 0;
 	if (!ast_active)
@@ -11716,7 +11445,7 @@ static void ast_hook_builtin_complex_begin(void) {
 		else
 			ast_desync = 1;
 	}
-	ast_in_op++; /* suppress the arg pushes + rodata materialization */
+	ast_in_op++;
 }
 
 static void ast_hook_builtin_complex_end(void) {
@@ -11734,8 +11463,6 @@ static void ast_hook_builtin_complex_end(void) {
 		ast_desync = 1;
 		return;
 	}
-	/* Only the rodata-const form is reconstructable: a VT_CONST|VT_SYM lvalue whose
-	 * Sym persists. The non-const cplx_local (VT_LOCAL frame temp) form desyncs. */
 	int r = vtop->r;
 	if (!((r & VT_VALMASK) == VT_CONST && (r & VT_SYM) && (r & VT_LVAL))) {
 		ast_desync = 1;
@@ -11749,30 +11476,15 @@ static void ast_hook_builtin_complex_end(void) {
 	ast_vs[ast_vn++] = n;
 }
 
-/* VLA declaration alloc sequence (`int a[n]`). The runtime size computation
- * (n*elemsize -> the length slot) is an ordinary captured Store; only the machine-
- * tier alloc sequence — gen_vla_sp_save(locorig) [first VLA in a fresh SP scope],
- * vpush_type_size + gen_vla_alloc (StackAlloc: gv the size, sub/and %rsp), and
- * gen_vla_sp_save(addr) — is not seen by the mirror (its net vstack effect is 0)
- * and so is not otherwise replayed. It is relocation-free and fully rbp/rsp-relative
- * (the frame-slot offsets are immediates), so it is captured as one coarse
- * Unary(AST_OP_VLA) effect carrying the VLA type (for vpush_type_size/gen_vla_alloc),
- * the pointer-var slot `addr`, the LIFO SP-save slot `locorig`, and whether this decl
- * emitted the fresh SP save. Replay re-issues the exact ops; `loc` is NOT decremented
- * at replay (the captured offsets are reused), so the frame size stays parse-final.
- * (docs/AST.md §4/§18.3 — the VLA lexical-scope-edge query. The paired SP *restore*
- * at a scope exit is handled by ast_hook_vla_restore.) */
 static void ast_hook_vla_alloc_begin(void) {
 	if (!ast_active)
 		return;
-	ast_in_op++; /* suppress vpush_type_size/gen_vla_alloc's vstack traffic */
+	ast_in_op++;
 }
 
 static void ast_hook_vla_alloc_end(CType *type, int addr, int new_save,
-																		int locorig) {
+																	 int locorig) {
 #if defined MCC_TARGET_PE && defined MCC_TARGET_X86_64
-	/* The PE alloc path also does gen_vla_result + `addr = (loc -= PTR_SIZE)`, which
-	 * moves the frame — not modeled; fall back. */
 	if (ast_active && ast_in_op > 0)
 		ast_in_op--;
 	if (ast_active)
@@ -11785,7 +11497,6 @@ static void ast_hook_vla_alloc_end(CType *type, int addr, int new_save,
 		ast_in_op--;
 	if (ast_desync || ast_bail || ast_in_call)
 		return;
-	/* The alloc's net vstack effect is 0 — the mirror must be balanced. */
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	if (ast_vn != rel) {
 		ast_desync = 1;
@@ -11801,23 +11512,14 @@ static void ast_hook_vla_alloc_end(CType *type, int addr, int new_save,
 #endif
 }
 
-/* The paired VLA SP *restore* (`gen_vla_sp_restore(loc)`) at a scope edge — the
- * lexical-scope-edge query (docs/AST.md §4/§18.3). Two positions:
- *   - during a `return`'s leave_scope (between gen_assign_cast and gfunc_return):
- *     annotate the just-captured Return node (ast_ival) so replay re-emits it there.
- *   - a plain block-scope exit (`}`, goto, label): a BB effect (AST_OP_VLA_RESTORE)
- *     at the current BB position. */
 static void ast_hook_vla_restore(int loc) {
 	if (!ast_active || ast_desync || ast_bail || loc == 0)
 		return;
-	/* A restore reached under nocode_wanted (dead code after a return: the block-end
-	 * `}` still calls vla_leave, but gen_vla_sp_restore emits nothing) must not be
-	 * captured — replaying it would emit a stray restore the -O0 reference omits. */
 	if (NODATA_WANTED)
 		return;
 	if (ast_last_return != AST_NONE) {
 		if (ast_ival(ast_cur, ast_last_return) != 0) {
-			ast_desync = 1; /* a second restore on one return — unmodeled */
+			ast_desync = 1;
 			return;
 		}
 		ast_set_ival(ast_cur, ast_last_return, (uint64_t)(int64_t)loc);
@@ -11829,43 +11531,22 @@ static void ast_hook_vla_restore(int loc) {
 	ast_add_child(ast_cur, ast_cur_bb, n);
 }
 
-/* Call boundary. Before gfunc_call the mirror holds [callee, arg0..arg_{n-1}];
- * fold them into an Invoke and suppress the mirror across gfunc_call and the
- * result push (ast_in_call), then push the Invoke as the result. Struct returns
- * and indirect (non-symbol) callees are not modeled yet. */
 static void ast_hook_call_begin(int nb_args, int is_struct_ret, int ret_nregs,
 																int variadic) {
 	ast_call_pending = AST_NONE;
 	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
 		return;
-	/* A call captured while byte emission is suppressed (nocode_wanted: an
-	 * unevaluated _Generic/typeof/sizeof operand, a dead branch) is a phantom —
-	 * the -O0 reference emits nothing for it, so replaying the recorded Invoke
-	 * would emit stray bytes/relocations (e.g. the memset an unevaluated array
-	 * compound literal lowers to, whose CALL26 reloc corrupts a later
-	 * instruction). Abandon replay for this function; the parser's correct
-	 * emission is kept. */
 	if (nocode_wanted) {
 		ast_desync = 1;
 		return;
 	}
-	/* Register-return (ret_nregs>0), sret hidden-pointer (ret_nregs==0), and
-	 * arch-transfer (ret_nregs<0, mixed INT+SSE) struct returns are all modeled via
-	 * the ordinal frame-slot (ast_alloc_loc). The struct-return ABI is independent of
-	 * variadic (varargs affect argument passing, which gfunc_call reproduces from the
-	 * callee type, not the return), so variadic struct returns are modeled too; the
-	 * byte-verify net backstops any residual ABI mismatch. */
 	(void)variadic;
-	int need = nb_args + 1; /* callee + args */
+	int need = nb_args + 1;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	if (ast_vn != rel || ast_vn < need) {
 		ast_desync = 1;
 		return;
 	}
-	/* A bit-field / long double / _Complex-pair argument is an ABI copy this rung
-	 * does not model; replaying it could build an invalid transfer. By-value struct
-	 * args ARE attempted — gfunc_call copies the aggregate to the outgoing slot and
-	 * replay re-runs it, with the byte-verify net as the backstop. */
 	for (int i = 0; i < nb_args; i++) {
 		CType *at = &(vtop - nb_args + 1 + i)->type;
 		if (ast_bad_type(at->t) &&
@@ -11881,12 +11562,6 @@ static void ast_hook_call_begin(int nb_args, int is_struct_ret, int ret_nregs,
 			return;
 		}
 	}
-	/* The callee (child 0) must be a reconstructable reference — a direct function symbol or
-	 * a pointer variable (both AST_Ref). A COMPUTED callee — a ternary `(c?f:g)()`, a call
-	 * result `getf()()`, a member `s.fn()` — replays as a value whose function-type `ref` the
-	 * driver does not reconstruct, so gfunc_call derefs a NULL `type.ref` and CRASHES (a hard
-	 * SIGSEGV the byte-verify net cannot catch — it happens before verification). Bail to the
-	 * -O0 emission. Surfaced by the gcc c-torture AST gate (pr34768-1/-2). */
 	if (ast_kind(ast_cur, ast_vs[ast_vn - need]) != AST_Ref) {
 		ast_desync = 1;
 		return;
@@ -11909,10 +11584,6 @@ static void ast_hook_call_end(void) {
 	ast_in_call = 0;
 	if (!ast_capture || ast_desync)
 		return;
-	/* Capture the result descriptor the parser left on vtop (return register /
-	 * type) so replay re-pushes it after gfunc_call. Single-register results
-	 * only; a two-register result (r2 != VT_CONST) is not modeled → byte-verify
-	 * would catch it, so bail here to avoid wasted replay. */
 	if (vtop->r2 != VT_CONST) {
 		ast_desync = 1;
 		return;
@@ -11925,17 +11596,12 @@ static void ast_hook_call_end(void) {
 		ast_desync = 1;
 		return;
 	}
-	ast_vs[ast_vn++] = inv; /* the call result */
+	ast_vs[ast_vn++] = inv;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	if (ast_vn != rel)
 		ast_desync = 1;
 }
 
-/* End a helper call whose result is a void effect (e.g. the `memset` an aggregate
- * initializer emits to zero the object): gfunc_call consumed every operand and
- * pushed nothing, so — unlike ast_hook_call_end — read no result off vtop and push
- * nothing onto the mirror. Record the Invoke as a BasicBlock effect; replay re-emits
- * the call and leaves the stack empty (the VT_VOID type marks it for the replay). */
 static void ast_hook_call_effect_end(void) {
 	if (ast_call_pending == AST_NONE)
 		return;
@@ -11951,8 +11617,6 @@ static void ast_hook_call_effect_end(void) {
 		ast_desync = 1;
 }
 
-/* vswap / vpop reorder or drop mirror values (compile-time stack ops, no bytes);
- * mirror them directly. */
 static void ast_hook_vswap(void) {
 	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
 		return;
@@ -11972,12 +11636,6 @@ static void ast_hook_vpop(void) {
 		ast_desync = 1;
 		return;
 	}
-	/* Discarding a bare side-effecting result (`f();`, `i++;`): keep it as a
-	 * BasicBlock effect. A discarded value that merely *contains* one (e.g.
-	 * `f()+1;`) is not this simple node, so it falls back via byte-verify.
-	 * Guard on parent==NONE: a value already consumed by a Store (`b = g();`
-	 * leaves the RHS Invoke on the mirror as the assignment's result) is already
-	 * parented to that Store — re-adding it here would replay the call twice. */
 	AstLocal top = ast_vs[ast_vn - 1];
 	uint16_t tk = ast_kind(ast_cur, top);
 	if ((tk == AST_Invoke || tk == AST_Unary) &&
@@ -11986,9 +11644,6 @@ static void ast_hook_vpop(void) {
 	ast_vn--;
 }
 
-/* A store consumes the top two values (vtop = value, vtop[-1] = lvalue),
- * performs the store, and leaves the value (net -1). Record it as a Store effect
- * in the BasicBlock; model the op atomically like gen_op. */
 static void ast_hook_vstore(void) {
 	if (!ast_active)
 		return;
@@ -11997,17 +11652,10 @@ static void ast_hook_vstore(void) {
 	if (!model)
 		return;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
-	/* A struct/union → struct/union assignment is an aggregate copy (memmove /
-	 * gen_struct_copy, emitted with the internal ops suppressed by ast_in_op);
-	 * both operands are reconstructable lvalues, so record it as a Store and let
-	 * replay reproduce the copy. Bit-field / other bad types still fall back. */
 	int agg_store = (vtop->type.t & VT_BTYPE) == VT_STRUCT &&
-			(vtop[-1].type.t & VT_BTYPE) == VT_STRUCT;
-	/* A bit-field destination (`s.bf = v`): the read-modify-write mask/shift runs
-	 * inside vstore (suppressed by ast_in_op), so record the Store and let replay
-	 * reproduce it. The value must be a plain scalar. */
+									(vtop[-1].type.t & VT_BTYPE) == VT_STRUCT;
 	int bf_store = (vtop[-1].type.t & VT_BITFIELD) &&
-			(vtop[-1].type.t & VT_BTYPE) != VT_STRUCT && !ast_bad_type(vtop->type.t);
+								 (vtop[-1].type.t & VT_BTYPE) != VT_STRUCT && !ast_bad_type(vtop->type.t);
 	if (ast_vn != rel || ast_vn < 2 ||
 			((ast_bad_type(vtop->type.t) || ast_bad_type(vtop[-1].type.t)) &&
 			 !agg_store && !bf_store)) {
@@ -12022,7 +11670,7 @@ static void ast_hook_vstore(void) {
 	ast_add_child(ast_cur, st, lval);
 	ast_add_child(ast_cur, st, value);
 	ast_add_child(ast_cur, ast_cur_bb, st);
-	ast_vs[ast_vn - 2] = value; /* store leaves the value */
+	ast_vs[ast_vn - 2] = value;
 	ast_vn--;
 }
 
@@ -12037,27 +11685,20 @@ static void ast_hook_vstore_end(void) {
 	}
 }
 
-/* Freeze the return value at the end of the return expression (before the
- * return-type cast). The mirror must hold exactly that one value. */
 static void ast_hook_ret_expr_done(void) {
 	ast_ret_val = AST_NONE;
 	if (!ast_capture || ast_in_call)
 		return;
-	/* Suppress the mirror across the return-type cast and epilogue transfer
-	 * (gen_assign_cast/gfunc_return) so they do not disturb it; capture resumes at
-	 * ast_hook_return_jmp, so statements after a *non-tail* return are still seen. */
 	ast_in_call = 1;
 	if (!ast_desync && ast_vn == 1) {
 		ast_finalize_leaf(ast_vs[0], vtop);
 		ast_ret_val = ast_vs[0];
-		ast_vn = 0; /* the return consumes it — mirror is now balanced */
+		ast_vn = 0;
 	} else {
 		ast_desync = 1;
 	}
 }
 
-/* A `return` statement is complete. Attach the captured value as a Return effect
- * (or bail). Void returns are not modeled yet. */
 static void ast_hook_return(int has_val) {
 	ast_last_return = AST_NONE;
 	if (!ast_active)
@@ -12074,15 +11715,12 @@ static void ast_hook_return(int has_val) {
 	ast_last_return = ret;
 }
 
-/* Record whether this return jumped to the epilogue (non-tail) or fell through
- * (a tail return before `}`). Replay reproduces the jump when set. */
 static void ast_hook_return_jmp(int jumps) {
 	if (!ast_active)
 		return;
 	if (ast_last_return != AST_NONE)
 		ast_set_op(ast_cur, ast_last_return, jumps ? 1 : 0);
 	ast_last_return = AST_NONE;
-	/* Resume capturing (the return's tail ops are done); re-sync the mirror. */
 	ast_in_call = 0;
 	if (!ast_desync && !ast_bail) {
 		int rel = (int)(vtop - vstack + 1) - ast_base_depth;
@@ -12091,116 +11729,63 @@ static void ast_hook_return_jmp(int jumps) {
 	}
 }
 
-/* The main/K&R implicit `return 0;` synthesized at a fall-off-the-end body.
- * Recorded as a real Return(Literal 0) so the whole body is accounted for. */
 static void ast_hook_implicit_return(void) {
 	if (!ast_active)
 		return;
-	/* Stop capturing before the synthetic vpushi(0)/gfunc_return runs. */
 	ast_capture = 0;
 	AstLocal bb = ast_cur_bb;
 	AstLocal ret = ast_node(ast_cur, AST_Return);
 	AstLocal lit = ast_node(ast_cur, AST_Literal);
-	ast_set_op(ast_cur, lit, VT_CONST); /* r: a plain integer constant */
+	ast_set_op(ast_cur, lit, VT_CONST);
 	ast_set_ival(ast_cur, lit, 0);
 	ast_set_type(ast_cur, lit, VT_INT, 0);
 	ast_add_child(ast_cur, ret, lit);
 	ast_add_child(ast_cur, bb, ret);
 }
 
-/* --- Tier-3 register promotion (docs/AST.md §4/§10/§18.2 Tier 3) -----------
- * The first optimization that deliberately beats -O0: keep an address-not-taken
- * scalar local in a register across the function instead of spilling it to a stack
- * slot, eliminating its load/store memory traffic. v1 is intentionally narrow and
- * provably safe — single-BasicBlock, call-free functions only — and strictly opt-in
- * (MCC_AST_PROMOTE); byte-verify is disabled for a promoted function (its bytes
- * differ from -O0 by construction), so the exec-golden corpus is the gate (§15/§17).
- *
- * Mechanism (x86_64): each promoted local is pinned to a caller-saved register
- * OUTSIDE the RC_INT temporary pool (R11/R10/R9/R8 — get_reg never hands these out
- * for RC_INT temporaries, and a call-free leaf owns them). A read pushes the value
- * as living in that register; gv naturally copies it into a temp when consumed
- * (the pinned reg is never allocated away, so it stays intact for the next read). A
- * write forces the value into the pinned reg (no memory store). Duration/linkage
- * are unchanged; the frame slot simply goes unread. */
 #if defined(CONFIG_AST) && CONFIG_AST && defined(MCC_TARGET_X86_64)
-/* Pin pool: caller-saved GP registers that a *call-free* function never has the
- * backend allocate. R10 is used nowhere in the x86_64 backend; R8/R9 appear only in
- * the call-argument register arrays (unreachable with no calls). R11 is deliberately
- * EXCLUDED — the backend hardcodes it as a scratch in `load` and for GOTPCREL/TLS
- * addressing, so a promoted value there would be clobbered by an ordinary global
- * access. (Callee-saved RBX/R12-R15 would give more registers but need prologue/
- * epilogue save/restore — a future extension.) */
-/* Two pin pools. **Call-free** functions use caller-saved R10/R9/R8 (R10 is used
- * nowhere in the backend; R8/R9 only in the call-argument arrays; R11 excluded — it
- * backs `load`/GOTPCREL/TLS) with no save/restore. **Call-ful** functions use
- * callee-saved RBX/R12-R15 (the backend never touches them, and by the ABI a callee
- * preserves them, so a promoted value survives the internal calls) — the function
- * push/pops them at entry/exit. The two-pass gate (below) only promotes functions
- * that replay faithfully without promotion, so a call-ful fn whose replay is not
- * byte-exact (e.g. `if.c` main) is excluded rather than miscompiled. */
 #define AST_PROMO_MAX 5
-static const int ast_promo_caller[3] = {10, 9, 8};          /* R10,R9,R8 */
-static const int ast_promo_callee[5] = {3, 12, 13, 14, 15}; /* RBX,R12-R15 */
-static const int ast_promo_xmm[2] = {22, 23};               /* XMM6,XMM7 — reg_classes
-	RC_XMM6/RC_XMM7 (no RC_FLOAT), so get_reg never allocates them: free to pin a float/
-	double local. All XMM are caller-saved on SysV, so float promotion is call-free only
-	(no save/restore, and no call clobbers the pin). Reads copy the pin to a scratch XMM
-	because it is not in RC_FLOAT; gv(RC_XMM6/7) materializes a write into it. */
-static int ast_promo_off[AST_PROMO_MAX]; /* frame offset of each promoted local */
-static int ast_promo_typ[AST_PROMO_MAX]; /* its access type (full-width GP scalar) */
-static int ast_promo_reg[AST_PROMO_MAX]; /* the physical register chosen for it */
+static const int ast_promo_caller[3] = {10, 9, 8};
+static const int ast_promo_callee[5] = {3, 12, 13, 14, 15};
+static const int ast_promo_xmm[2] = {22, 23};
+static int ast_promo_off[AST_PROMO_MAX];
+static int ast_promo_typ[AST_PROMO_MAX];
+static int ast_promo_reg[AST_PROMO_MAX];
 static int ast_promo_n;
-static int ast_promo_callful; /* uses callee-saved regs → needs push/pop save/restore */
-static int ast_promo_regpool_at(int i) { return ast_promo_reg[i]; }
-#endif /* end the x86_64-only register-promotion block */
+static int ast_promo_callful;
+static int ast_promo_regpool_at(int i) {
+	return ast_promo_reg[i];
+}
+#endif
 
-/* Virtual always-inline is arch-independent — it works at the vstack/AST tier (no
- * register numbers or machine encodings), so it lives outside the x86_64 guard. */
 #if defined(CONFIG_AST) && CONFIG_AST
-/* ---- Tier-4 virtual always-inline: candidate analysis + retention (docs/AST.md §9/§13) ----
- * A function whose captured body is small, leaf (calls nothing), non-variadic, VLA-free,
- * and has internal (static) linkage is a virtual-inline candidate: its AST is retained
- * (keyed by its Sym) instead of freed, so a later caller in the same TU can graft it in
- * place of a boundary Call. This first slice only ANALYZES and RETAINS; the grafting engine
- * (frame relocation, argument binding, return lowering) is a subsequent slice. Opt-in via
- * MCC_AST_INLINE; retention is passive (no codegen change), so -O0 and the replay column
- * are untouched. */
-static void ast_replay_value(AstArena *a, AstLocal n); /* fwd: used by the inline graft */
-static void ast_replay_bb(AstArena *a, AstLocal bb);   /* fwd: used by the inline graft */
-static int ast_local_is_readonly(AstArena *a, int off); /* fwd: §19.3 const-arg substitution */
+static void ast_replay_value(AstArena *a, AstLocal n);
+static void ast_replay_bb(AstArena *a, AstLocal bb);
+static int ast_local_is_readonly(AstArena *a, int off);
 #define AST_INLINE_MAX 512
 #define AST_INLINE_NODE_BUDGET 64
 #define AST_INLINE_MAX_PARAMS 6
 static struct AstInlineFn {
-	void *sym;     /* the callee's function Sym (persistent global-stack sym) */
-	AstArena *ast; /* its retained body AST */
-	int frame_size;                          /* bytes of callee frame to relocate (-loc) */
+	void *sym;
+	AstArena *ast;
+	int frame_size;
 	int nparams;
-	int param_off[AST_INLINE_MAX_PARAMS];    /* each param's frame offset (ABI order) */
-	int param_typ[AST_INLINE_MAX_PARAMS];    /* each param's type.t (for the arg-bind store) */
-	void *param_ref[AST_INLINE_MAX_PARAMS];  /* its type.ref (enum/pointer target Sym) */
-	int param_size[AST_INLINE_MAX_PARAMS];   /* its byte size (for the param-region range) */
-	int param_stack[AST_INLINE_MAX_PARAMS];  /* stack/memory-passed (positive param_addr, §19.2) */
-	int graftable;                           /* body is a straight-line single-Return leaf */
+	int param_off[AST_INLINE_MAX_PARAMS];
+	int param_typ[AST_INLINE_MAX_PARAMS];
+	void *param_ref[AST_INLINE_MAX_PARAMS];
+	int param_size[AST_INLINE_MAX_PARAMS];
+	int param_stack[AST_INLINE_MAX_PARAMS];
+	int graftable;
 } ast_inline_pool[AST_INLINE_MAX];
 static int ast_inline_n;
 
-/* Tier-4 defer-to-TU: functions that call a static function which was NOT yet retained when
- * they were emitted — a possible forward-inline miss (the callee is defined later in the TU).
- * At end-of-TU (all callees now retained) any such function whose forward call is now graftable
- * is RE-EMITTED with inlining at a fresh text offset, and its symbol is repointed to the new
- * code (the original emission becomes dead). Retained only in non-debug builds where inline runs. */
 static struct AstReemitFn {
 	Sym *sym;
 	AstArena *ast;
-	int inline_n_at_gen; /* ast_inline_n when this function was emitted; a callee at pool
-	                      * index >= this was retained later (a forward reference) */
+	int inline_n_at_gen;
 } ast_reemit_pool[AST_INLINE_MAX];
 static int ast_reemit_n;
 
-/* Callee metadata captured right after gfunc_prolog (when the param local Syms carry
- * their assigned frame offsets); transferred into the pool entry at retention. */
 static int ast_inline_cap_np;
 static int ast_inline_cap_off[AST_INLINE_MAX_PARAMS];
 static int ast_inline_cap_typ[AST_INLINE_MAX_PARAMS];
@@ -12209,7 +11794,6 @@ static int ast_inline_cap_size[AST_INLINE_MAX_PARAMS];
 static int ast_inline_cap_stack[AST_INLINE_MAX_PARAMS];
 static int ast_inline_cap_ok;
 
-/* Look up a retained inline candidate by its function Sym; NULL if none. */
 static AstArena *ast_inline_lookup(void *sym) {
 	for (int i = 0; i < ast_inline_n; i++)
 		if (ast_inline_pool[i].sym == sym)
@@ -12217,46 +11801,34 @@ static AstArena *ast_inline_lookup(void *sym) {
 	return NULL;
 }
 
-/* Is the captured body of `sym` a virtual-inline candidate (see the block comment)? */
 static int ast_fn_inlinable(AstArena *a, Sym *sym) {
 	if (!ast_inline_env || ast_bail || ast_desync)
 		return 0;
-	if (!(sym->type.t & VT_STATIC))               /* internal linkage only */
+	if (!(sym->type.t & VT_STATIC))
 		return 0;
-	if (sym->type.ref->f.func_type != FUNC_NEW)   /* skip K&R-old and variadic */
+	if (sym->type.ref->f.func_type != FUNC_NEW)
 		return 0;
 	AstLocal nn = ast_count(a);
 	if (nn == 0 || nn > AST_INLINE_NODE_BUDGET)
 		return 0;
 	for (AstLocal n = 0; n < nn; n++) {
 		uint16_t k = ast_kind(a, n);
-		/* Non-leaf callees are allowed: each Invoke in the body either grafts recursively
-		 * (a graftable retained callee, guarded against cycles by ast_inline_depth/stack) or
-		 * emits a real call — both correct. VLA frame games are not inlinable. */
 		if (k == AST_Unary &&
 				(ast_op(a, n) == AST_OP_VLA || ast_op(a, n) == AST_OP_VLA_RESTORE))
 			return 0;
-		/* A `setjmp`-family call must run in its own stack frame — inlining the caller would
-		 * make it capture the grafting caller's frame, so `longjmp` would restore the wrong
-		 * context (guard query, docs/AST.md §18.4). Exclude a callee that calls setjmp. */
 		if (k == AST_Invoke) {
 			AstLocal ce = ast_first_child(a, n);
 			void *cs = ce != AST_NONE ? (void *)(uintptr_t)ast_sym(a, ce) : NULL;
 			if (cs) {
 				const char *cn = get_tok_str(((Sym *)cs)->v, NULL);
-				if (cn && strstr(cn, "setjmp")) /* setjmp/_setjmp/sigsetjmp/__sigsetjmp/… */
+				if (cn && strstr(cn, "setjmp"))
 					return 0;
 			}
 		}
-		/* String-literal / rodata-const refs no longer exclude a callee: the Syms it
-		 * captures are pinned at retention (ast_pin_rodata_syms) so they stay valid. */
 	}
 	return 1;
 }
 
-/* Capture the callee's scalar param offsets/types in ABI order, right after gfunc_prolog
- * (the param local Syms now carry their assigned frame offsets). Sets ast_inline_cap_ok=0
- * if any param is non-scalar, unnamed, or the arity cap is exceeded (then: not graftable). */
 static void ast_inline_capture(Sym *fnsym) {
 	ast_inline_cap_np = 0;
 	ast_inline_cap_ok = 0;
@@ -12266,7 +11838,7 @@ static void ast_inline_capture(Sym *fnsym) {
 	for (Sym *p = fnsym->type.ref->next; p; p = p->next) {
 		int v = p->v & ~SYM_FIELD;
 		if (v < TOK_IDENT || n >= AST_INLINE_MAX_PARAMS)
-			return; /* unnamed param or too many: leave cap_ok=0 */
+			return;
 		Sym *ls = sym_find(v);
 		if (!ls || (ls->r & VT_VALMASK) != VT_LOCAL)
 			return;
@@ -12274,29 +11846,19 @@ static void ast_inline_capture(Sym *fnsym) {
 		if ((bt != VT_INT && bt != VT_LLONG && bt != VT_PTR &&
 				 bt != VT_FLOAT && bt != VT_DOUBLE && bt != VT_STRUCT) ||
 				(ls->type.t & (VT_ARRAY | VT_VLA)))
-			return; /* scalar + by-value struct/union params (§19.2). Grafting DELETES the
-			         * ABI: rather than reproduce register-vs-memory arg passing, every param
-			         * is copied into a fresh caller-frame slot (materialize-then-copy), so a
-			         * struct's ABI classification no longer matters. `long double`/_Complex
-			         * (VT_QLONG/VT_QFLOAT pairs) and bit-field params still fall back. */
+			return;
 		if (bt == VT_STRUCT && is_complex_type(&ls->type))
-			return; /* _Complex is a struct-typed pair with special ABI/codegen; not modeled */
+			return;
 		if (bt == VT_PTR && ls->type.ref &&
 				(((Sym *)ls->type.ref)->type.t & VT_VLA))
-			return; /* pointer-to-VLA param (`int m[n][n]`): indexing needs the runtime
-			         * size, which the frame bias does not relocate */
+			return;
 		int palign, psize = type_size(&ls->type, &palign);
 		if (psize < 0)
-			return; /* incomplete type: cannot size a materialization slot */
+			return;
 		ast_inline_cap_off[n] = (int)ls->c;
 		ast_inline_cap_typ[n] = ls->type.t;
 		ast_inline_cap_ref[n] = ls->type.ref;
 		ast_inline_cap_size[n] = psize;
-		/* Stack/memory-passed params (>16B struct, x87, 7th+ overflow arg) get a POSITIVE
-		 * param_addr (read in place from the incoming-args area); register-class params get
-		 * a NEGATIVE spill slot. The uniform frame bias only relocates the negative kind, so
-		 * a positive-offset param needs its own materialization slot + remap (§19.2). The
-		 * offset sign is exactly the classify result the prolog already computed. */
 		ast_inline_cap_stack[n] = (int)ls->c >= 0;
 		n++;
 	}
@@ -12304,14 +11866,6 @@ static void ast_inline_capture(Sym *fnsym) {
 	ast_inline_cap_ok = 1;
 }
 
-/* Graftable form: a BasicBlock body with one or more value `return EXPR;` statements —
- * including early returns inside branches — and internal control flow (if/else, loops =
- * `If` nodes with their own BasicBlock branches). Local declarations relocate under the
- * frame bias, and internal branches use fresh code offsets (gind). Each return coalesces
- * its value into the return register and (if non-tail) jumps to a graft-local inline-end
- * label; the tail return falls through (see ast_inline_graft / the AST_Return graft path).
- * `goto`/`switch`/`break`/`continue` (`AST_Jump` — they touch the shared label/switch
- * replay state) and `void` returns (no value to coalesce) are excluded. */
 static int ast_inline_graftable(AstArena *a) {
 	AstLocal root = ast_root(a);
 	if (ast_kind(a, root) != AST_BasicBlock)
@@ -12320,43 +11874,28 @@ static int ast_inline_graftable(AstArena *a) {
 	int totret = 0;
 	for (AstLocal n = 0; n < nn; n++) {
 		uint16_t k = ast_kind(a, n);
-		/* All AST_Jump forms are graftable: break/continue (op 0/1) and case/default (op 2/3)
-		 * target the callee's own loop/switch, and named-label def/`goto` (op 4/5) are scoped
-		 * to the callee via the label floor (see ast_inline_graft) — so the callee's control
-		 * flow is fully isolated from the caller's under a graft. */
 		if (k == AST_Return) {
 			totret++;
-			if (ast_nchild(a, n) < 1) /* `return;` (void): no value to coalesce */
+			if (ast_nchild(a, n) < 1)
 				return 0;
 		}
 	}
 	return totret >= 1;
 }
 
-/* Grafting state (pass 2): active enables the AST_Invoke graft; bias relocates the
- * inlined callee's VT_LOCAL offsets into fresh caller stack space; in_graft marks the
- * replay of a grafted body so its Return leaves the value on vtop (cast to graft_rt)
- * instead of emitting the epilogue transfer. */
 static int ast_inline_active;
 static int ast_inline_bias;
-/* §19.3 per-site specialization: a CONSTANT argument bound to a read-only param is not stored
- * to a slot and re-loaded — its Literal is substituted at the param's Ref sites during body
- * replay, so gen_op/gvtst fold it (per-site constant-prop + dead-branch elim fall out for
- * free). templates-gated (MCC_AST_TEMPLATES). Saved/restored around each graft. */
 static int ast_argsub_n;
 static int ast_argsub_off[AST_INLINE_MAX_PARAMS];
 static SValue ast_argsub_val[AST_INLINE_MAX_PARAMS];
 static int ast_in_graft;
 static CType ast_graft_rt;
-static int ast_inline_ret_sym;  /* jump chain to the grafted body's inline-end join */
-static int ast_inline_ret_slot; /* frame slot each return stores its value into (phi via memory) */
+static int ast_inline_ret_sym;
+static int ast_inline_ret_slot;
 #define AST_INLINE_MAX_DEPTH 8
-static void *ast_inline_stack[AST_INLINE_MAX_DEPTH]; /* Syms currently being grafted (cycle guard) */
+static void *ast_inline_stack[AST_INLINE_MAX_DEPTH];
 static int ast_inline_depth;
 
-/* If node `n` is an AST_Invoke to a graftable retained callee, emit the callee's body in
- * place of the call — bind the args to relocated param slots, then replay `return EXPR`'s
- * expression under the frame bias, leaving the (return-cast) result on vtop. 1 if grafted. */
 static int ast_inline_graft(AstArena *a, AstLocal n) {
 	if (!ast_inline_active)
 		return 0;
@@ -12376,24 +11915,12 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 	int hidden = ((ast_type_t(a, n) & VT_BTYPE) == VT_STRUCT && nargs == e->nparams + 1) ? 1 : 0;
 	if (nargs - hidden != e->nparams)
 		return 0;
-	/* Cycle / depth guard for grafting a NON-leaf callee: its body may itself Invoke a
-	 * graftable function (grafted recursively below). Refuse if this callee is already on
-	 * the active graft stack (direct/mutual recursion) or the nesting is too deep — those
-	 * Invokes then emit a real call instead, which is always correct. */
 	if (ast_inline_depth >= AST_INLINE_MAX_DEPTH)
 		return 0;
 	for (int i = 0; i < ast_inline_depth; i++)
 		if (ast_inline_stack[i] == csym)
 			return 0;
 	ast_inline_stack[ast_inline_depth++] = csym;
-	/* Reserve the callee frame BELOW the caller's live locals AND any POSITIVE param
-	 * offsets. On arm64 register params spill ABOVE the frame pointer (positive); on x86_64
-	 * a memory-class (>16B) struct param is read from the positive incoming-args area — both
-	 * lie outside frame_size (negatives only). Shift the whole callee frame below the positive
-	 * param extent `hi` so nothing overlaps the caller's saved fp/lr or locals (x86_64 register
-	 * params are negative -> hi==0 -> bias==loc, byte-identical). Grafting DELETES the ABI:
-	 * every param — scalar, arm64-positive, or by-value struct — is materialized into its
-	 * biased slot (a struct arg block-copies via vstore, §19.2), so ABI class no longer matters. */
 	int hi = 0;
 	for (int i = 0; i < e->nparams; i++) {
 		CType pt;
@@ -12405,18 +11932,14 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 		if (e->param_off[i] + ps > hi)
 			hi = e->param_off[i] + ps;
 	}
-	int bias = hi > 0 ? ((loc - hi) & -16) : loc; /* callee offset co -> co + bias */
-	loc = bias - e->frame_size; /* reserve it permanently: gfunc_epilog sizes the frame from loc */
+	int bias = hi > 0 ? ((loc - hi) & -16) : loc;
+	loc = bias - e->frame_size;
 	int nsub = 0, suboff[AST_INLINE_MAX_PARAMS];
 	SValue subval[AST_INLINE_MAX_PARAMS];
 	for (int i = 0; i < e->nparams; i++) {
 		int dst = e->param_off[i] + bias;
-		/* §19.3: a constant integer arg bound to a read-only param is constant-propagated
-		 * (substituted at the param's Ref sites during replay) instead of stored to a slot,
-		 * so gen_op/gvtst fold it — per-site specialization + dead-branch elim. Templates-
-		 * gated; the read-only query guards against a body that assigns/mutates the param. */
 		AstLocal arg = ast_child(a, n, hidden + i + 1);
-		AstLocal cbase = arg; /* unwrap the arg-passing Convert(s) to the literal, if any */
+		AstLocal cbase = arg;
 		while (ast_kind(a, cbase) == AST_Convert && ast_nchild(a, cbase) == 1)
 			cbase = ast_first_child(a, cbase);
 		int pbt = e->param_typ[i] & VT_BTYPE, cbt = ast_type_t(a, cbase) & VT_BTYPE;
@@ -12430,15 +11953,13 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 			lv.type.ref = (Sym *)e->param_ref[i];
 			lv.r = VT_CONST;
 			lv.r2 = VT_CONST;
-			/* the arg-passing Convert(s) + implicit assign-cast collapse to one value64 to
-			 * the param's integer type — the constant the param would hold at this site. */
 			lv.c.i = value64(ast_ival(a, cbase), e->param_typ[i]);
 			suboff[nsub] = e->param_off[i];
 			subval[nsub] = lv;
 			nsub++;
-			continue; /* no slot, no store: reads are substituted below */
+			continue;
 		}
-		ast_replay_value(a, ast_child(a, n, hidden + i + 1)); /* arg (skip hidden sret ptr) */
+		ast_replay_value(a, ast_child(a, n, hidden + i + 1));
 		SValue slot;
 		memset(&slot, 0, sizeof slot);
 		slot.type.t = e->param_typ[i];
@@ -12448,22 +11969,12 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 		slot.c.i = dst;
 		vpushv(&slot);
 		vswap();
-		vstore(); /* param_slot = arg (scalar store or struct block-copy) */
+		vstore();
 		vpop();
 	}
-	/* Replay the callee body under the frame bias. ast_in_graft makes each Return store its
-	 * (return-cast) value into a dedicated result slot and, if non-tail (op==1), jump to a
-	 * graft-local inline-end join (ast_inline_ret_sym); the tail return falls through. The
-	 * result is coalesced via memory (a phi in a stack slot) rather than a fixed register, so
-	 * several grafts feeding one call each own a distinct slot with no register conflict.
-	 * After the body, land the join and push the slot as an lvalue. Save/restore all the graft
-	 * state so nested/sequential grafts compose. */
 	CType save_rt = ast_graft_rt;
 	int save_bias = ast_inline_bias, save_ig = ast_in_graft;
 	int save_rsym = ast_inline_ret_sym, save_rslot = ast_inline_ret_slot;
-	/* Isolate the callee's control-flow replay state from the caller's: the callee's own
-	 * loops/switch set break/continue/switch, and its named labels get fresh entries above
-	 * the label floor (so a `goto`/label collides only within the callee, not the caller). */
 	int save_floor = ast_rp_label_floor, save_nlabel = ast_rp_nlabel;
 	struct switch_t *save_switch = ast_rp_switch;
 	int *save_bsym = ast_rp_bsym, *save_csym = ast_rp_csym;
@@ -12477,7 +11988,7 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 	int ral, rsz = type_size(&ast_graft_rt, &ral);
 	if (rsz < 1)
 		rsz = 8;
-	loc = (loc - rsz) & -(ral > 0 ? ral : 1); /* the result slot, in the caller's frame */
+	loc = (loc - rsz) & -(ral > 0 ? ral : 1);
 	ast_inline_bias = bias;
 	ast_in_graft = 1;
 	ast_inline_ret_sym = 0;
@@ -12485,12 +11996,12 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 	ast_rp_label_floor = ast_rp_nlabel;
 	ast_rp_switch = NULL;
 	ast_rp_bsym = ast_rp_csym = NULL;
-	ast_argsub_n = nsub; /* §19.3: activate this graft's constant-arg substitutions */
+	ast_argsub_n = nsub;
 	memcpy(ast_argsub_off, suboff, sizeof suboff);
 	memcpy(ast_argsub_val, subval, sizeof subval);
 	ast_replay_bb(e->ast, ast_root(e->ast));
-	gsym(ast_inline_ret_sym); /* land every early return's jump here */
-	SValue res;               /* push the coalesced result as an lvalue at the slot */
+	gsym(ast_inline_ret_sym);
+	SValue res;
 	memset(&res, 0, sizeof res);
 	res.type = ast_graft_rt;
 	res.r = VT_LOCAL | VT_LVAL;
@@ -12503,14 +12014,14 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 	ast_inline_ret_slot = save_rslot;
 	ast_graft_rt = save_rt;
 	ast_rp_label_floor = save_floor;
-	ast_rp_nlabel = save_nlabel; /* discard the callee's labels */
+	ast_rp_nlabel = save_nlabel;
 	ast_rp_switch = save_switch;
 	ast_rp_bsym = save_bsym;
 	ast_rp_csym = save_csym;
 	ast_argsub_n = save_argsub_n;
 	memcpy(ast_argsub_off, save_argsub_off, sizeof save_argsub_off);
 	memcpy(ast_argsub_val, save_argsub_val, sizeof save_argsub_val);
-	ast_inline_depth--; /* pop the cycle-guard stack */
+	ast_inline_depth--;
 	if (ast_replay_dump) {
 		fprintf(stderr, "[ast-inline] grafted %s\n", get_tok_str(((Sym *)csym)->v, NULL));
 		if (nsub)
@@ -12520,7 +12031,6 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 	return 1;
 }
 
-/* Does this body call a graftable retained callee (so the inline pass 2 should run)? */
 static int ast_has_graftable_call(AstArena *a) {
 	if (!ast_inline_env)
 		return 0;
@@ -12539,8 +12049,6 @@ static int ast_has_graftable_call(AstArena *a) {
 	return 0;
 }
 
-/* Unlink `p` from the sym free-list so it is never recycled (it then persists — a small
- * deliberate leak). No-op if `p` is not on the list (already live). */
 static void ast_sym_pin(Sym *p) {
 	if (sym_free_first == p) {
 		sym_free_first = p->next;
@@ -12553,10 +12061,6 @@ static void ast_sym_pin(Sym *p) {
 		}
 }
 
-/* Pin every anon rodata-const Sym (string literal / rodata const) this body references, so
- * the raw Sym pointers the AST captured stay valid until a later caller grafts or re-emits
- * this body (they would otherwise be recycled after this function's own gen). Called at
- * retention while the Syms are still valid. Lifts the string-ref exclusions. */
 static void ast_pin_type(int t, Sym *ref, int depth) {
 	if (!ref || depth > 16)
 		return;
@@ -12586,7 +12090,6 @@ static void ast_pin_rodata_syms(AstArena *a) {
 	}
 }
 
-/* Retain the inlinable body keyed by its Sym; 1 if retained (caller must NOT free it). */
 static int ast_inline_retain(AstArena *a, Sym *sym) {
 	if (!ast_fn_inlinable(a, sym) || ast_inline_n >= AST_INLINE_MAX ||
 			ast_inline_lookup(sym))
@@ -12594,7 +12097,7 @@ static int ast_inline_retain(AstArena *a, Sym *sym) {
 	struct AstInlineFn *e = &ast_inline_pool[ast_inline_n++];
 	e->sym = sym;
 	e->ast = a;
-	e->frame_size = loc < 0 ? -loc : 0; /* callee frame to relocate into caller space */
+	e->frame_size = loc < 0 ? -loc : 0;
 	e->nparams = ast_inline_cap_np;
 	for (int i = 0; i < ast_inline_cap_np; i++) {
 		e->param_off[i] = ast_inline_cap_off[i];
@@ -12611,8 +12114,6 @@ static int ast_inline_retain(AstArena *a, Sym *sym) {
 	return 1;
 }
 
-/* Retain a function that calls a static function, for possible end-of-TU re-emission (a
- * forward-inline miss). Returns 1 if retained (caller must not free the AST). */
 static int ast_reemit_retain(AstArena *a, Sym *sym) {
 	if (!ast_inline_env || ast_bail || ast_desync || ast_reemit_poison ||
 			ast_reemit_n >= AST_INLINE_MAX)
@@ -12637,8 +12138,6 @@ static int ast_reemit_retain(AstArena *a, Sym *sym) {
 	return 1;
 }
 
-/* Does this re-emit candidate call a callee that was retained AFTER it (pool index >=
- * inline_n_at_gen) and is now graftable — i.e. a forward inline it missed originally? */
 static int ast_reemit_has_forward(struct AstReemitFn *f) {
 	AstArena *a = f->ast;
 	AstLocal nn = ast_count(a);
@@ -12655,10 +12154,9 @@ static int ast_reemit_has_forward(struct AstReemitFn *f) {
 	}
 	return 0;
 }
-#endif /* end the arch-independent virtual-inline block */
+#endif
 
 #if defined(CONFIG_AST) && CONFIG_AST && defined(MCC_TARGET_X86_64)
-/* -1 if node n is not a promoted local's Ref, else its pinned register. */
 static int ast_promo_reg_of(AstArena *a, AstLocal n) {
 	if (n == AST_NONE || ast_kind(a, n) != AST_Ref)
 		return -1;
@@ -12672,16 +12170,14 @@ static int ast_promo_reg_of(AstArena *a, AstLocal n) {
 	return -1;
 }
 
-/* Is node n the lvalue Ref of local frame offset `off`? */
 static int ast_ref_is_local_off(AstArena *a, AstLocal n, int off) {
 	if (n == AST_NONE || ast_kind(a, n) != AST_Ref)
 		return 0;
 	int r = ast_op(a, n);
 	return (r & VT_VALMASK) == VT_LOCAL && (r & VT_LVAL) && !(r & VT_SYM) &&
-			(int)(int64_t)ast_ival(a, n) == off;
+				 (int)(int64_t)ast_ival(a, n) == off;
 }
 
-/* Does subtree n contain a read of local frame offset `off`? */
 static int ast_subtree_refs_local(AstArena *a, AstLocal n, int off) {
 	if (n == AST_NONE)
 		return 0;
@@ -12698,38 +12194,18 @@ static int ast_subtree_refs_local(AstArena *a, AstLocal n, int off) {
 	return 0;
 }
 
-/* §19.3: is local frame offset `off` READ-ONLY across the whole body — i.e. never assigned
- * (Store child0), never mutated / address-taken / used as a member base (the Ref sits under a
- * Unary), so its every occurrence is a pure-read leaf? A read-only param may have a constant
- * argument substituted at its Ref sites (constant-prop) instead of a slot store + reload. */
 static int ast_local_is_readonly(AstArena *a, int off) {
 	AstLocal nn = ast_count(a);
 	for (AstLocal n = 0; n < nn; n++) {
 		uint16_t k = ast_kind(a, n);
 		if (k == AST_Store && ast_ref_is_local_off(a, ast_child(a, n, 0), off))
-			return 0; /* assigned */
+			return 0;
 		if (k == AST_Unary && ast_ref_is_local_off(a, ast_first_child(a, n), off))
-			return 0; /* ++/--, &, member-base, or any lvalue use */
+			return 0;
 	}
 	return 1;
 }
 
-/* Plan register promotion for the just-built function. Returns the number of
- * promoted locals (0 = none; replay proceeds normally).
- *   - **call-free** (reject any AST_Invoke): a call clobbers the caller-saved pin
- *     registers, so the promoted value must not have to survive one.
- *   - candidate = an address-not-taken integer (int/llong) local; a struct/aggregate/
- *     member-base/`&`-taken/bitfield/pointer/float occurrence poisons the offset.
- * Control flow (if/loops) is fine: the register is initialized from the local's stack
- * slot at function entry (see gen_function), so it faithfully mirrors what -O0 would
- * read from the never-again-written slot — valid even for a parameter or a local read
- * before written, on every path. This is what makes loop variables promotable. */
-/* Accumulate an access-frequency weight for each candidate offset, walking the AST tree
- * so a reference inside a loop counts more than a straight-line one. A loop is an If node
- * with op==2 (see the loop-lowering marker); descending through one raises the depth, and
- * each reference contributes 2^depth (capped) — an inner-loop local outranks an outer-loop
- * or straight-line one when the pins are scarce. Purely a selection heuristic: any subset
- * of valid candidates is correct, so this never changes observable behavior. */
 static void ast_promo_weigh(AstArena *a, AstLocal n, int depth, const int *coff, int nc,
 														int *cweight) {
 	if (n == AST_NONE)
@@ -12746,7 +12222,7 @@ static void ast_promo_weigh(AstArena *a, AstLocal n, int depth, const int *coff,
 				}
 		}
 	}
-	int cd = (k == AST_If && ast_op(a, n) == 2) ? depth + 1 : depth; /* op==2 = loop */
+	int cd = (k == AST_If && ast_op(a, n) == 2) ? depth + 1 : depth;
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
 		ast_promo_weigh(a, c, cd, coff, nc, cweight);
 }
@@ -12755,7 +12231,7 @@ static int ast_plan_promotion(AstArena *a) {
 	ast_promo_n = 0;
 	ast_promo_callful = 0;
 	if (!ast_promote_env || ast_func_has_asm)
-		return 0; /* inline asm may clobber the pin registers */
+		return 0;
 	AstLocal nn = ast_count(a);
 	int has_call = 0, has_vla = 0;
 	for (AstLocal n = 0; n < nn; n++) {
@@ -12766,22 +12242,11 @@ static int ast_plan_promotion(AstArena *a) {
 			has_vla = 1;
 	}
 	if (has_call && has_vla)
-		return 0; /* callee-saved push/pop would race the VLA's runtime rsp moves */
-	/* A function with calls promotes into callee-saved pins (RBX/R12-R15), pushed at
-	 * entry and popped at the single return funnel so they survive the calls; a call-
-	 * free function uses caller-saved R10/R9/R8 (no save/restore). Both are gated by the
-	 * two-pass byte-verify (unfaithful captures fall back to -O0) and the exec-golden
-	 * suite. `MCC_AST_NO_CALLFUL` restricts promotion to the call-free case as an escape
-	 * hatch. */
+		return 0;
 	if (has_call && ast_no_callful_env)
 		return 0;
-	/* Collect every distinct local-slot offset with its type and a poison flag.
-	 * An offset is poisoned (never promotable) if ANY reference to it is not a
-	 * full-width GP scalar (int/llong/ptr) — e.g. a struct copy or an aggregate
-	 * member base retypes the same Ref to VT_STRUCT / char*, so a single scalar-
-	 * looking occurrence is not enough. */
 	int coff[AST_PROMO_MAX * 8], ctyp[AST_PROMO_MAX * 8], cpoison[AST_PROMO_MAX * 8];
-	int cweight[AST_PROMO_MAX * 8]; /* loop-depth-weighted access frequency (see ast_promo_weigh) */
+	int cweight[AST_PROMO_MAX * 8];
 	int nc = 0;
 	for (AstLocal n = 0; n < nn; n++) {
 		if (ast_kind(a, n) != AST_Ref)
@@ -12792,17 +12257,9 @@ static int ast_plan_promotion(AstArena *a) {
 		int off = (int)(int64_t)ast_ival(a, n);
 		int tt = ast_type_t(a, n);
 		int bt = tt & VT_BTYPE;
-		/* GP scalars: integers and pointers. A promoted value lives in a pinned GP
-		 * register and is only read-as-value / written. A pointer's *value* (the
-		 * address) qualifies — a deref `*p` is an `AST_Load(Ref p)` that indirs the
-		 * register value into an lvalue base (never needing p itself to be an lvalue),
-		 * and every construct that needs p as an lvalue (`&p`, `p->m`, `p++`) is a Unary
-		 * whose child Ref is poisoned above. Arrays/structs are caught by the aggregate
-		 * range poison. A `volatile`/`_Atomic` (VT_ATOMIC includes VT_VOLATILE) local
-		 * must keep every access in memory, so it is never promotable. */
 		int scalar = (bt == VT_INT || bt == VT_LLONG || bt == VT_PTR ||
-				bt == VT_FLOAT || bt == VT_DOUBLE) && /* float/double pin into XMM6/7 */
-				!(tt & (VT_ARRAY | VT_BITFIELD | VT_VOLATILE));
+									bt == VT_FLOAT || bt == VT_DOUBLE) &&
+								 !(tt & (VT_ARRAY | VT_BITFIELD | VT_VOLATILE));
 		int j;
 		for (j = 0; j < nc; j++)
 			if (coff[j] == off)
@@ -12814,24 +12271,9 @@ static int ast_plan_promotion(AstArena *a) {
 		}
 		if (!scalar)
 			cpoison[j] = 1;
-		else if (!(ctyp[j] & VT_BTYPE)) /* keep the first non-zero type seen */
+		else if (!(ctyp[j] & VT_BTYPE))
 			ctyp[j] = ast_type_t(a, n);
 	}
-	/* Poison any offset whose Ref is a child of a Unary — every such use needs the
-	 * local as an *lvalue* (ADDR = `&x`, address escapes; MEMBER = aggregate base;
-	 * `++`/`--` = read-modify-write), which the register-resident rvalue we push for a
-	 * promoted read cannot satisfy ("lvalue expected"). MEMBER_ARROW (`p->m`) stays
-	 * poisoned too: unlike `*p`/`p[i]` (a plain deref that never touches the pin), its
-	 * lowering does `gaddrof` then folds the member byte-offset in with `gen_op('+',
-	 * const)`, which emits `add $off, %base` *in place* — and when the base is the pin
-	 * that clobbers the promoted pointer (a promoted read is instead copied to a scratch
-	 * before any modify: `mov %pin, %tmp; add …, %tmp`). Confirmed: promoting the `s`
-	 * param of `s->average = …; s->count++` in the exec suite's average.c diverged from
-	 * -O0. Folding the offset as an addressing *displacement* instead does NOT work as-is:
-	 * gen_modrm_impl's plain-register-base path deliberately ignores a nonzero `c` (-O0
-	 * pre-adds member offsets into the base register and leaves stale addend metadata that
-	 * must not be re-emitted — teaching that path to emit `c` breaks -O0 codegen). A real
-	 * fix needs a distinct "register base + live displacement" addressing form. */
 	for (AstLocal n = 0; n < nn; n++) {
 		if (ast_kind(a, n) != AST_Unary)
 			continue;
@@ -12846,21 +12288,12 @@ static int ast_plan_promotion(AstArena *a) {
 			if (coff[j] == off)
 				cpoison[j] = 1;
 	}
-	/* Poison the whole [base, base+sizeof) slot range of any local ARRAY. A constant-
-	 * index element `a[k]` is captured as a plain int Ref at its own frame offset (so
-	 * it looks like a promotable scalar), but the array's address escapes via pointer
-	 * arithmetic — `&a[1]` is `a+1` on the array's decayed base value (a VT_LOCAL Ref
-	 * with VT_ARRAY type and no VT_LVAL, NOT an AST_OP_ADDR node the Unary poison would
-	 * catch) — so the same slot is also read through the pointer from memory. Promoting
-	 * an element to a register would diverge from that memory read. */
 	for (AstLocal n = 0; n < nn; n++) {
 		if (ast_kind(a, n) != AST_Ref)
 			continue;
 		int r = ast_op(a, n), t = ast_type_t(a, n);
 		if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
 			continue;
-		/* array or struct/union aggregate — its member/element slots must not be
-		 * individually promoted (same aliasing hazard as the array case). */
 		if (!(t & VT_ARRAY) && (t & VT_BTYPE) != VT_STRUCT)
 			continue;
 		CType ct;
@@ -12868,18 +12301,12 @@ static int ast_plan_promotion(AstArena *a) {
 		ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 		int al, size = type_size(&ct, &al);
 		if (size <= 0)
-			size = 8; /* unknown / VLA: poison at least the base slot */
+			size = 8;
 		int base = (int)(int64_t)ast_ival(a, n);
 		for (int j = 0; j < nc; j++)
 			if (coff[j] >= base && coff[j] < base + size)
 				cpoison[j] = 1;
 	}
-	/* Weight each candidate by loop-depth-scaled reference frequency (a tree walk, so an
-	 * inner-loop use outranks a straight-line one), then assign each a register from the
-	 * pool the function's call-freeness selects. When there are more candidates than pins,
-	 * promote the highest-weighted ones first — any valid subset is correct, so this only
-	 * changes *which* locals win, spending the scarce pins on the hottest slots. Selection-
-	 * sort by weight (nc is tiny); ties keep first-seen order (stable). */
 	for (int j = 0; j < nc; j++)
 		cweight[j] = 0;
 	ast_promo_weigh(a, ast_root(a), 0, coff, nc, cweight);
@@ -12887,35 +12314,30 @@ static int ast_plan_promotion(AstArena *a) {
 	const int *gp_pool = has_call ? ast_promo_callee : ast_promo_caller;
 	int gp_max = has_call ? (int)(sizeof ast_promo_callee / sizeof *ast_promo_callee)
 												: (int)(sizeof ast_promo_caller / sizeof *ast_promo_caller);
-	/* Float/double locals pin into the caller-saved XMM6/7, so only a call-free function
-	 * (a call would clobber them) can promote them. Integer/pointer locals take the GP
-	 * pool. Two independent pools, one weight-ordered pass: pick the hottest candidate
-	 * whose pool still has room. */
 	int xmm_max = has_call ? 0 : (int)(sizeof ast_promo_xmm / sizeof *ast_promo_xmm);
 	int gp_n = 0, xmm_n = 0;
 	for (;;) {
 		int best = -1;
 		for (int j = 0; j < nc; j++) {
 			if (cpoison[j] || coff[j] >= 0)
-				continue; /* poisoned, already taken, or not a real (negative) slot */
+				continue;
 			if (is_float(ctyp[j]) ? (xmm_n >= xmm_max) : (gp_n >= gp_max))
-				continue; /* that local's pool is full */
+				continue;
 			if (best < 0 || cweight[j] > cweight[best])
 				best = j;
 		}
 		if (best < 0)
-			break; /* no eligible candidate remains */
+			break;
 		ast_promo_off[ast_promo_n] = coff[best];
 		ast_promo_typ[ast_promo_n] = ctyp[best];
 		ast_promo_reg[ast_promo_n] =
 				is_float(ctyp[best]) ? ast_promo_xmm[xmm_n++] : gp_pool[gp_n++];
 		ast_promo_n++;
-		cpoison[best] = 1; /* mark taken so the next pass skips it */
+		cpoison[best] = 1;
 	}
 	return ast_promo_n;
 }
 
-/* push/pop a GP register (raw encoding; REX.B for r8-r15). */
 static void ast_promo_push(int reg) {
 	if (reg >= 8)
 		o(0x41);
@@ -12927,12 +12349,6 @@ static void ast_promo_pop(int reg) {
 	o(0x58 + (reg & 7));
 }
 
-/* Move the value on vtop into the promoted register `reg`, first converting it to the
- * promoted local's type `*ct` — a memory store applies this implicit assign-cast (a
- * narrow/wide store to the slot), so the register-resident value must too (e.g.
- * `long lo = sh` must sign-extend the short to 64 bits, not leave a 32-bit result).
- * R10/R9/R8 have a register class so gv can target it; RBX/R12-R15 have class 0, so
- * materialize into an RC_INT temp and emit the reg->reg move via load(). */
 static void ast_promo_write(int reg, CType *ct) {
 	gen_cast(ct);
 	if (reg_classes[reg]) {
@@ -12941,7 +12357,7 @@ static void ast_promo_write(int reg, CType *ct) {
 		ast_pinned_regs |= (1u << reg);
 	} else {
 		gv(RC_INT);
-		load(reg, vtop); /* mov reg, <rc_int> */
+		load(reg, vtop);
 		vtop->r = reg;
 		vtop->r2 = VT_CONST;
 		vtop->c.i = 0;
@@ -12949,16 +12365,12 @@ static void ast_promo_write(int reg, CType *ct) {
 	}
 }
 
-/* Emit the entry initialization. For a call-ful function first push the callee-saved
- * pins (padded to an even count so %rsp stays 16-aligned before the internal calls).
- * Then load each promoted local's stack slot into its pin so the register mirrors the
- * slot's value on entry (parameter value, or the garbage -O0 would read). Pins set. */
 static void ast_promo_entry_init(void) {
 	if (ast_promo_callful) {
 		for (int i = 0; i < ast_promo_n; i++)
 			ast_promo_push(ast_promo_reg[i]);
 		if (ast_promo_n & 1)
-			ast_promo_push(ast_promo_reg[0]); /* alignment pad (even # of pushes) */
+			ast_promo_push(ast_promo_reg[0]);
 	}
 	for (int i = 0; i < ast_promo_n; i++) {
 		int reg = ast_promo_reg[i];
@@ -12971,47 +12383,53 @@ static void ast_promo_entry_init(void) {
 		vpushv(&sv);
 		ast_pinned_regs &= ~(1u << reg);
 		if (reg_classes[reg])
-			gv(reg_classes[reg]); /* load slot -> pin (has a class) */
+			gv(reg_classes[reg]);
 		else
-			load(reg, vtop); /* load slot -> RBX/R12-R15 directly */
+			load(reg, vtop);
 		ast_pinned_regs |= (1u << reg);
 		vpop();
 	}
 }
 
-/* Emit the exit restore (call-ful only): pop the callee-saved pins in reverse, at the
- * single return-funnel point right before the epilogue's leave/ret. */
 static void ast_promo_exit_restore(void) {
 	if (!ast_promo_callful)
 		return;
 	if (ast_promo_n & 1)
-		ast_promo_pop(ast_promo_reg[0]); /* the alignment pad */
+		ast_promo_pop(ast_promo_reg[0]);
 	for (int i = ast_promo_n - 1; i >= 0; i--)
 		ast_promo_pop(ast_promo_reg[i]);
 }
 #else
-static int ast_plan_promotion(AstArena *a) { (void)a; return 0; }
-static int ast_promo_reg_of(AstArena *a, AstLocal n) { (void)a; (void)n; return -1; }
-static void ast_promo_entry_init(void) {}
-static void ast_promo_exit_restore(void) {}
+static int ast_plan_promotion(AstArena *a) {
+	(void)a;
+	return 0;
+}
+static int ast_promo_reg_of(AstArena *a, AstLocal n) {
+	(void)a;
+	(void)n;
+	return -1;
+}
+static void ast_promo_entry_init(void) {
+}
+static void ast_promo_exit_restore(void) {
+}
 static int ast_promo_n;
 static int ast_promo_callful;
-static int ast_promo_regpool_at(int i) { (void)i; return 0; }
+static int ast_promo_regpool_at(int i) {
+	(void)i;
+	return 0;
+}
 #endif
 
-/* Diagnostic sink installed while re-emitting from the AST (the -O1 replay pass): an error
-   raised by an imperfectly-captured construct must be silent and non-fatal, because the
-   parser's already-validated -O0 emission is the guaranteed fallback. Swallows the message;
-   the surrounding setjmp trap in gen_function unwinds and restores the -O0 bytes. */
-static void ast_error_sink(void *opaque, const char *msg) { (void)opaque; (void)msg; }
-
-/* --- AST replay: the emit driver (AST -> vstack ops -> bytes) -------------- */
+static void ast_error_sink(void *opaque, const char *msg) {
+	(void)opaque;
+	(void)msg;
+}
 
 static void ast_replay_value(AstArena *a, AstLocal n) {
 	switch (ast_kind(a, n)) {
 	case AST_Literal:
 	case AST_Ref: {
-		/* Re-push the exact SValue captured at build time. */
 		SValue sv;
 		memset(&sv, 0, sizeof sv);
 		sv.type.t = ast_type_t(a, n);
@@ -13023,28 +12441,19 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 		if ((sv.r & VT_VALMASK) == VT_LOCAL && !(sv.r & VT_SYM) &&
 				(ast_inline_bias || ast_argsub_n)) {
 			int off = (int)sv.c.i, subst = 0;
-			/* §19.3: a constant argument bound to a read-only param propagates as its
-			 * Literal here (no slot load), so gen_op/gvtst fold it — per-site constant-prop
-			 * and dead-branch elimination. */
 			for (int j = 0; j < ast_argsub_n; j++)
 				if (ast_argsub_off[j] == off) {
 					sv = ast_argsub_val[j];
 					subst = 1;
 					break;
 				}
-			/* Tier-4: relocate a grafted callee's frame slot (every local — scalar, struct,
-			 * or arm64-positive param — shifts by the uniform frame bias; §19.2's hi-based
-			 * bias already placed positive param offsets below the caller's live locals). */
 			if (!subst)
 				sv.c.i += ast_inline_bias;
 		}
 		if (ast_promo_n) {
-			/* Tier-3 read: a promoted local reads from its pinned register (not the
-			 * stack slot). Push the value as register-resident; gv copies it into a
-			 * temp when consumed, leaving the pinned register intact for later reads. */
 			int preg = ast_promo_reg_of(a, n);
 			if (preg >= 0) {
-				sv.r = (unsigned short)preg; /* value lives in the pinned reg (rvalue) */
+				sv.r = (unsigned short)preg;
 				sv.c.i = 0;
 				sv.sym = NULL;
 			}
@@ -13055,8 +12464,6 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 	case AST_Binary: {
 		int bop = ast_op(a, n);
 		if (bop == TOK_LAND || bop == TOK_LOR) {
-			/* &&/||: reproduce expr_landor's chain — each operand gvtst-chains
-			 * onto t (short-circuit), the last leaves the VT_CMP via gvtst_set. */
 			int i = bop == TOK_LAND, t = 0;
 			uint32_t nc = ast_nchild(a, n), k;
 			for (k = 0; k < nc; k++) {
@@ -13085,13 +12492,10 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 		int uop = ast_op(a, n);
 		ast_replay_value(a, ast_child(a, n, 0));
 		if (uop == AST_OP_ADDR) {
-			gaddrof(); /* array-decay / address-of */
+			gaddrof();
 			vtop->type.t = ast_type_t(a, n);
 			vtop->type.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 		} else if (uop == AST_OP_MEMBER || uop == AST_OP_MEMBER_ARROW) {
-			/* Reproduce the parser's member-access sequence exactly (mccgen.c
-			 * postfix `.`/`->`): [indir for `->`], gaddrof, retype to char* for the
-			 * byte-offset add, +offset, retype to the member type, mark lvalue. */
 			if (uop == AST_OP_MEMBER_ARROW)
 				indir();
 			gaddrof();
@@ -13103,36 +12507,31 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 			mt.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 			vtop->type = mt;
 			if (!(mt.t & VT_ARRAY))
-				vtop->r |= VT_LVAL | (int)ast_fbits(a, n); /* fbits = base_nonlval */
+				vtop->r |= VT_LVAL | (int)ast_fbits(a, n);
 		} else if (uop == AST_OP_IMAG) {
-			/* imaginary literal: the child pushed the scalar value; rebuild the
-			 * `0 + val*i` _Complex pair exactly (ival = the scalar type). */
 			gen_imaginary_complex((int)ast_ival(a, n));
 		} else {
-			inc((int)ast_ival(a, n), uop); /* ++/-- */
+			inc((int)ast_ival(a, n), uop);
 		}
 		break;
 	}
 	case AST_Load:
-		/* deref: reconstruct the address, then indir to an lvalue. */
 		ast_replay_value(a, ast_child(a, n, 0));
 		indir();
 		break;
 	case AST_If: {
-		/* ternary (op==5): reproduce expr_cond's runtime-scalar coordination so
-		 * the branch values land in one register, byte-for-byte. */
 		SValue sv;
 		CType type;
 		int tt, u, rc, r1, r2;
-		ast_replay_value(a, ast_child(a, n, 0)); /* condition */
+		ast_replay_value(a, ast_child(a, n, 0));
 		save_regs(1);
 		tt = gvtst(1, 0);
-		ast_replay_value(a, ast_child(a, n, 1)); /* true */
+		ast_replay_value(a, ast_child(a, n, 1));
 		sv = *vtop;
 		vtop--;
 		u = gjmp(0);
 		gsym(tt);
-		ast_replay_value(a, ast_child(a, n, 2)); /* false */
+		ast_replay_value(a, ast_child(a, n, 2));
 		combine_types(&type, &sv, vtop, '?');
 		gen_cast(&type);
 		rc = RC_TYPE(type.t);
@@ -13150,41 +12549,25 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 		break;
 	}
 	case AST_Invoke: {
-		/* Tier-4: graft a graftable retained callee in place of the boundary call. */
 		if (ast_inline_graft(a, n))
 			break;
-		/* push callee + args, transfer, then re-push the captured result. */
 		uint32_t nc = ast_nchild(a, n);
 		for (uint32_t i = 0; i < nc; i++)
 			ast_replay_value(a, ast_child(a, n, i));
 		gfunc_call((int)nc - 1);
 		if (ast_type_t(a, n) == VT_VOID)
-			break; /* void effect (e.g. memset): gfunc_call left nothing to push */
+			break;
 		if ((ast_type_t(a, n) & VT_BTYPE) == VT_STRUCT) {
-			/* Struct returned in registers: reconstruct the return descriptor from
-			 * the result type and reproduce the parser's post-call register->temp
-			 * store (mccgen.c postfix `(`), with an ordinal frame slot (ast_alloc_loc)
-			 * so the temp offset matches the parse-build. */
 			CType rt;
 			SValue ret;
 			int ret_nregs, regsize, ret_align, r, nn, size, align, addr, offset;
 			rt.t = ast_type_t(a, n);
 			rt.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
-			/* sret hidden-pointer (ret_nregs==0): the caller allocated the result temp
-			 * (a raw `loc` slot, wrapped in ast_alloc_loc) before the call and passed
-			 * its pointer; the callee filled it. Reserve that same ordinal slot here
-			 * (matching the parser's size), then re-push the captured result temp (a
-			 * VT_LOCAL lvalue). The register-return path below is unchanged. */
 			{
 				CType rtmp;
 				int rax, rsx, rnx;
 				rnx = gfunc_sret(&rt, 0, &rtmp, &rax, &rsx);
 				if (rnx <= 0) {
-					/* sret hidden-pointer (==0) and arch-transfer (<0): both allocate
-					 * the result temp before the call (the wrapped ast_alloc_loc slot)
-					 * and leave it as the result. Reserve the same slot, re-push the
-					 * captured temp, and for the arch-transfer form re-run the register
-					 * move. */
 					int sal, ssz = type_size(&rt, &sal);
 #ifdef MCC_TARGET_ARM64
 					if (ssz < 16)
@@ -13260,7 +12643,6 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 	}
 }
 
-/* Per-function replay label table: find-or-create the entry for a label token. */
 static struct ast_rp_label *ast_rp_label_get(int v) {
 	for (int i = ast_rp_label_floor; i < ast_rp_nlabel; i++)
 		if (ast_rp_labels[i].v == v)
@@ -13282,27 +12664,17 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 		switch (ast_kind(a, s)) {
 		case AST_Store: {
 #if defined(CONFIG_AST) && CONFIG_AST && defined(MCC_TARGET_X86_64)
-			/* Tier-3 write: a store to a promoted local moves the value into its
-			 * pinned register instead of the stack slot (no memory store). The value
-			 * is materialized into the pinned reg (un-pin briefly so gv can target it);
-			 * the register-resident result is left, then discarded like a normal
-			 * store's result. */
 			int preg = ast_promo_n ? ast_promo_reg_of(a, ast_child(a, s, 0)) : -1;
 			if (preg >= 0) {
 				ast_replay_value(a, ast_child(a, s, 1));
-				/* the target's type (with its ref, for enum/typedef) minus lvalue
-				 * bits — the implicit assign-cast the memory store would apply */
 				CType tct;
 				tct.t = ast_type_t(a, ast_child(a, s, 0)) & ~(VT_ARRAY | VT_VLA);
 				tct.ref = (Sym *)(uintptr_t)ast_type_ref(a, ast_child(a, s, 0));
-				ast_promo_write(preg, &tct); /* convert + force into the pinned register */
-				vpop();                      /* discard the statement result */
+				ast_promo_write(preg, &tct);
+				vpop();
 				break;
 			}
 #endif
-			/* push lvalue, push value, store, discard the result — the byte-exact
-			 * sequence for a scalar store (pushes of constants/locals emit nothing,
-			 * only vstore emits, so operand order does not affect the bytes). */
 			ast_replay_value(a, ast_child(a, s, 0));
 			ast_replay_value(a, ast_child(a, s, 1));
 			vstore();
@@ -13310,17 +12682,12 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 			break;
 		}
 		case AST_Invoke:
-			/* a bare call statement: evaluate the call, discard the result. A void
-			 * effect (memset from an initializer) leaves nothing — do not vpop. */
 			ast_replay_value(a, s);
 			if (ast_type_t(a, s) != VT_VOID)
 				vpop();
 			break;
 		case AST_Unary:
 			if (ast_op(a, s) == AST_OP_VLA) {
-				/* VLA alloc effect: re-issue the machine-tier sequence with the exact
-				 * captured frame-slot offsets (no loc decrement — loc stays parse-final;
-				 * the size computation is a separate captured Store). */
 				CType vt;
 				vt.t = ast_type_t(a, s);
 				vt.ref = (Sym *)(uintptr_t)ast_type_ref(a, s);
@@ -13338,23 +12705,17 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 				gen_vla_sp_restore((int)(int64_t)ast_ival(a, s));
 				break;
 			}
-			/* a bare ++/-- statement: apply it, discard the result. */
 			ast_replay_value(a, s);
 			vpop();
 			break;
 		case AST_Jump:
-			/* break (op 0) / continue (op 1): chain onto the loop's break/continue
-			 * chain exactly as the parser does. case (op 2) / default (op 3): record
-			 * the label position into the switch being replayed. */
 			if (ast_op(a, s) == 4) {
-				/* label def: backpatch pending forward gotos, record its address. */
 				struct ast_rp_label *l = ast_rp_label_get((int)ast_ival(a, s));
 				gsym(l->jnext);
 				l->jnext = 0;
 				l->jind = gind();
 				l->defined = 1;
 			} else if (ast_op(a, s) == 5) {
-				/* goto: backward -> jump to the known address; forward -> chain. */
 				struct ast_rp_label *l = ast_rp_label_get((int)ast_ival(a, s));
 				if (l->defined)
 					gjmp_addr(l->jind);
@@ -13382,27 +12743,21 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 			break;
 		case AST_If: {
 			if (ast_op(a, s) == 6) {
-				/* switch: rebuild a switch_t, emit the value, jump-over to the
-				 * dispatch, replay the body (case/default markers record cr->ind /
-				 * def_sym), then case_sort + gcase reproduces the binary-search
-				 * dispatch — the parser's `sw->sv=*vtop--; b=gjmp; lblock; a=gjmp(a);
-				 * gsym(b); case_sort; gcase; default; gsym(a)` sequence. */
 				struct switch_t *sw = mcc_mallocz(sizeof *sw);
 				struct switch_t *prevsw = ast_rp_switch;
 				int *sb = ast_rp_bsym;
 				int a2 = 0, b2;
-				ast_replay_value(a, ast_child(a, s, 0)); /* controlling value */
+				ast_replay_value(a, ast_child(a, s, 0));
 				sw->sv = *vtop;
 				vtop--;
 				b2 = gjmp(0);
-				ast_rp_bsym = &a2; /* break -> switch exit (continue passes through) */
+				ast_rp_bsym = &a2;
 				ast_rp_switch = sw;
-				ast_replay_bb(a, ast_child(a, s, 1)); /* body + case/default markers */
+				ast_replay_bb(a, ast_child(a, s, 1));
 				ast_rp_switch = prevsw;
 				ast_rp_bsym = sb;
 				a2 = gjmp(a2);
 				gsym(b2);
-				/* case_cmp reads the global cur_switch for signedness — set it. */
 				sw->prev = cur_switch;
 				cur_switch = sw;
 				case_sort(sw);
@@ -13421,8 +12776,6 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 				break;
 			}
 			if (ast_op(a, s) == 2) {
-				/* while loop: gind; condition; gvtst; body; back-edge; gsym.
-				 * break chains onto aa (exit), continue onto bb (→ loop top). */
 				int dd = gind();
 				ast_replay_value(a, ast_child(a, s, 0));
 				int aa = gvtst(1, 0);
@@ -13439,8 +12792,6 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 				break;
 			}
 			if (ast_op(a, s) == 4) {
-				/* do-while: gind; body; gsym(continue); cond; gvtst(0); patch
-				 * true-jump back to top; gsym(exit). break→aa, continue→bb. */
 				int dd = gind();
 				int aa = 0, bb = 0;
 				int *sb = ast_rp_bsym, *sc = ast_rp_csym;
@@ -13457,9 +12808,6 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 				break;
 			}
 			if (ast_op(a, s) == 5) {
-				/* for(;;): no controlling expression, so no gvtst — the break chain
-				 * starts empty (aa = 0). Children [incr-BB, body-BB]. Otherwise the
-				 * same gind/[jump-over-incr]/body/back-edge/gsym shape as op==3. */
 				int cc = gind();
 				int dd = cc;
 				AstLocal incrbb = ast_child(a, s, 0);
@@ -13483,9 +12831,6 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 				break;
 			}
 			if (ast_op(a, s) == 3) {
-				/* for loop: gind; cond; gvtst; [jump-over-incr; gind; incr;
-				 * back-to-cond; gsym]; body; back-edge; gsym. break→aa (exit),
-				 * continue→bb (→ the increment). */
 				int cc = gind();
 				ast_replay_value(a, ast_child(a, s, 0));
 				int aa = gvtst(1, 0);
@@ -13510,18 +12855,11 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 				gsym(aa);
 				break;
 			}
-			/* Reproduce the parser's if-emission exactly: condition, gvtst,
-			 * then-branch, and either gsym (no else) or gjmp/gsym/else/gsym. */
 			ast_replay_value(a, ast_child(a, s, 0));
-			/* §19.3 per-site dead-branch elimination: inside a graft (pass 2, not byte-
-			 * verified) a condition that folded to a compile-time constant — e.g. a
-			 * constant-propagated read-only param — selects its taken branch and DROPS the
-			 * dead one entirely (block and all). -O0 keeps the unreachable block, so this is
-			 * graft-only; it is what makes constant-arg specialization eliminate dead code. */
 			if (ast_in_graft &&
 					(vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) {
 				int truthy = vtop->c.i != 0;
-				vtop--; /* discard the constant condition (no code emitted for it) */
+				vtop--;
 				AstLocal taken = truthy ? ast_child(a, s, 1) : ast_child(a, s, 2);
 				if (taken != AST_NONE)
 					ast_replay_bb(a, taken);
@@ -13543,10 +12881,6 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 		case AST_Return: {
 			AstLocal v = ast_first_child(a, s);
 			if (ast_in_graft) {
-				/* Tier-4: a grafted callee's return stores its (return-cast) value into the
-				 * result slot (phi via memory); a non-tail return then jumps to the graft-
-				 * local inline-end join, the tail return falls through to it. No epilogue
-				 * transfer. */
 				if (v != AST_NONE) {
 					ast_replay_value(a, v);
 					gen_cast(&ast_graft_rt);
@@ -13558,26 +12892,21 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 					rs.c.i = ast_inline_ret_slot;
 					vpushv(&rs);
 					vswap();
-					vstore(); /* result_slot = value */
+					vstore();
 					vpop();
 				}
-				if (ast_op(a, s) == 1) /* non-tail: jump to the graft-local inline-end join */
+				if (ast_op(a, s) == 1)
 					ast_inline_ret_sym = gjmp(ast_inline_ret_sym);
 				break;
 			}
 			if (v != AST_NONE) {
 				ast_replay_value(a, v);
 				gen_assign_cast(&func_vt);
-				/* leave_scope's VLA SP restore, emitted between the cast and the
-				 * epilogue transfer (ast_hook_vla_restore annotated ast_ival). */
 				int rloc = (int)(int64_t)ast_ival(a, s);
 				if (rloc)
 					gen_vla_sp_restore(rloc);
 				gfunc_return(&func_vt);
 			}
-			/* op==1: a non-tail return (inside a branch) jumps to the epilogue,
-			 * chaining onto rsym exactly as the parser does; op==0: a tail return
-			 * falls through (the parser omits the jump for a return before `}`). */
 			if (ast_op(a, s) == 1)
 				rsym = gjmp(rsym);
 			break;
@@ -13592,39 +12921,43 @@ static void ast_replay_body(AstArena *a) {
 	ast_replay_bb(a, ast_root(a));
 }
 
-/* --- A7: first optimization template — tree-scope integer const-fold --------
- * docs/AST.md §12/§15/§17-D-d. Pattern → rewrite: Binary(op, Literal, Literal)
- * with a foldable integer op → Literal(fold). The rewrite happens on the tree
- * (above the emitter, §10) before replay; the emitter (gen_op) already folds
- * adjacent constants at -O0, so this template is *byte-neutral* — replay of the
- * folded Literal pushes the very SValue gen_op would have produced, and the
- * gen_function byte-verify net confirms it (falling back on any residual
- * mismatch). Value: it exercises the template mechanism (§12) and exposes
- * constants for later CFG/dead-branch templates. Only the pure arithmetic/
- * bitwise/shift subset is folded — comparisons and &&/|| have special replay
- * paths (VT_CMP / short-circuit chains), so they are left for gen_op. The fold
- * arithmetic mirrors gen_opic exactly (same value64 normalization / signed div)
- * so a folded node is bit-for-bit what the streaming parser emitted. */
 static uint64_t ast_fold_eval(int op, int tt, uint64_t l1, uint64_t l2,
 															int *ok) {
 	int shm = ((tt & VT_BTYPE) == VT_LLONG) ? 63 : 31;
 	switch (op) {
-	case '+': return l1 + l2;
-	case '-': return l1 - l2;
-	case '&': return l1 & l2;
-	case '^': return l1 ^ l2;
-	case '|': return l1 | l2;
-	case '*': return l1 * l2;
+	case '+':
+		return l1 + l2;
+	case '-':
+		return l1 - l2;
+	case '&':
+		return l1 & l2;
+	case '^':
+		return l1 ^ l2;
+	case '|':
+		return l1 | l2;
+	case '*':
+		return l1 * l2;
 	case '/':
-		if (l2 == 0) { *ok = 0; return 0; }
+		if (l2 == 0) {
+			*ok = 0;
+			return 0;
+		}
 		return gen_opic_sdiv(l1, l2);
 	case '%':
-		if (l2 == 0) { *ok = 0; return 0; }
+		if (l2 == 0) {
+			*ok = 0;
+			return 0;
+		}
 		return l1 - l2 * gen_opic_sdiv(l1, l2);
-	case TOK_SHL: return l1 << (l2 & shm);
-	case TOK_SHR: return l1 >> (l2 & shm);
-	case TOK_SAR: return (l1 >> 63) ? ~(~l1 >> (l2 & shm)) : l1 >> (l2 & shm);
-	default: *ok = 0; return 0;
+	case TOK_SHL:
+		return l1 << (l2 & shm);
+	case TOK_SHR:
+		return l1 >> (l2 & shm);
+	case TOK_SAR:
+		return (l1 >> 63) ? ~(~l1 >> (l2 & shm)) : l1 >> (l2 & shm);
+	default:
+		*ok = 0;
+		return 0;
 	}
 }
 
@@ -13635,12 +12968,20 @@ static void ast_fold_rec(AstArena *a, AstLocal n) {
 		return;
 	int op = ast_op(a, n);
 	switch (op) {
-	case '+': case '-': case '*': case '/': case '%':
-	case '&': case '|': case '^':
-	case TOK_SHL: case TOK_SHR: case TOK_SAR:
+	case '+':
+	case '-':
+	case '*':
+	case '/':
+	case '%':
+	case '&':
+	case '|':
+	case '^':
+	case TOK_SHL:
+	case TOK_SHR:
+	case TOK_SAR:
 		break;
 	default:
-		return; /* comparisons / && / || : leave for gen_op's own path */
+		return;
 	}
 	AstLocal x = ast_child(a, n, 0), y = ast_child(a, n, 1);
 	if (ast_kind(a, x) != AST_Literal || ast_kind(a, y) != AST_Literal)
@@ -13654,8 +12995,6 @@ static void ast_fold_rec(AstArena *a, AstLocal n) {
 	uint64_t r = ast_fold_eval(op, tt, l1, l2, &ok);
 	if (!ok)
 		return;
-	/* Rewrite in place to a Literal carrying the first operand's type (gen_opic's
-	 * result type) and normalized value; VT_NONCONST propagates from either. */
 	ast_set_kind(a, n, AST_Literal);
 	ast_clear_children(a, n);
 	ast_set_op(a, n, ast_op(a, x) | (ast_op(a, y) & VT_NONCONST));
@@ -13670,19 +13009,12 @@ static void ast_run_templates(AstArena *a) {
 	ast_fold_rec(a, ast_root(a));
 }
 
-/* The captured body faithfully accounts for the whole function: not bailed, the
- * mirror is balanced (every value produced was consumed), and it ends in a
- * return. Byte-verification (in gen_function) is the ultimate correctness gate. */
 static int ast_replay_ok(AstArena *a) {
-	/* Not bailed/desynced, mirror balanced, control-flow stack unwound, and the
-	 * body captured at least one effect. Byte-verify (in gen_function) is the
-	 * ultimate completeness/correctness gate — a body that ends in an `if` whose
-	 * branches all return is fine (no trailing Return in the entry block). */
 	if (ast_bail || ast_desync || ast_vn != 0 || ast_cf_top != 0)
 		return 0;
 	return ast_first_child(a, ast_root(a)) != AST_NONE;
 }
-#endif /* CONFIG_AST */
+#endif
 
 #if MCC_HOST_WIN32 && defined(__GNUC__) && !defined(__clang__)
 __attribute__((optimize("O0")))
@@ -13742,16 +13074,11 @@ static void gen_function(Sym *sym) {
 	mcc_debug_prolog_epilog(mcc_state, 0);
 	func_vla_arg(sym);
 #if defined(CONFIG_AST) && CONFIG_AST
-	ast_inline_capture(sym); /* Tier-4: param offsets while the local Syms carry them */
-	/* Skip functions whose return type this rung does not reconstruct (bit-field/
-	 * long double/_Complex-pair): gfunc_return for them is ABI-specific and replay
-	 * would build invalid ops. Struct/union returns ARE attempted — `return s`
-	 * captures the aggregate value and replay re-runs gfunc_return (the sret copy /
-	 * register-return path), with the byte-verify net as the backstop. */
+	ast_inline_capture(sym);
 	int ast_ret_bad = ast_bad_type(func_vt.t) &&
-			(func_vt.t & VT_BTYPE) != VT_STRUCT;
+										(func_vt.t & VT_BTYPE) != VT_STRUCT;
 	int ast_try = ast_replay_env && !debug_modes && !cur_func_inline_extern &&
-			!ast_ret_bad;
+								!ast_ret_bad;
 	int ast_body_ind = ind;
 	addr_t ast_reloc0 =
 			cur_text_section->reloc ? cur_text_section->reloc->data_offset : 0;
@@ -13770,9 +13097,6 @@ static void gen_function(Sym *sym) {
 		ast_inc_pending = AST_NONE;
 		ast_vn = 0;
 		ast_ret_val = AST_NONE;
-		/* AST_NONE is 0xffffffff, not 0 — reset per function so a scope-exit hook
-		 * (ast_hook_vla_restore) doesn't mistake the zero-init node index 0 for a
-		 * live Return node before any return has been captured. */
 		ast_last_return = AST_NONE;
 		ast_base_depth = (int)(vtop - vstack + 1);
 		ast_fconst_n = 0;
@@ -13790,13 +13114,6 @@ static void gen_function(Sym *sym) {
 		ast_active = 0;
 		ast_capture = 0;
 		if (ast_replay_ok(ast_cur)) {
-			/* Re-emit from the AST, then byte-verify against the parser's (-O0)
-			 * emission — both the text bytes and the relocations the body added.
-			 * For zero-template straight-line replay a faithful capture re-emits
-			 * byte-for-byte and re-creates identical relocations (§17's straight-
-			 * line tripwire); any mismatch means the capture missed something, so
-			 * we restore the parser's emission verbatim. This is the ultimate
-			 * safety net — correctness never depends on having modeled every op. */
 			int orig_ind = ind, orig_rsym = rsym;
 			int body_len = orig_ind - ast_body_ind;
 			unsigned char *orig = mcc_malloc(body_len > 0 ? body_len : 1);
@@ -13810,18 +13127,11 @@ static void gen_function(Sym *sym) {
 			ind = ast_body_ind;
 			rsym = 0;
 			if (ast_rsec)
-				ast_rsec->data_offset = ast_reloc0; /* discard body relocations */
+				ast_rsec->data_offset = ast_reloc0;
 			nocode_wanted = 0;
-			/* Suppress diagnostics during replay: the same ops already ran (and
-			 * warned/checked) during the parse-build; re-running them must not
-			 * duplicate warnings. */
 			unsigned char ast_sv_warn = mcc_state->warn_none;
 			mcc_state->warn_none = 1;
 			ast_rp_bsym = ast_rp_csym = NULL;
-			/* Optimization templates (§12) run on the tree before replay. Gated by
-			 * MCC_AST_TEMPLATES so the zero-template invariant (byte-identity to -O0)
-			 * still governs the default replay column; with templates on, the fold is
-			 * byte-neutral and the same byte-verify net still guards correctness. */
 			ast_tmpl_folds = 0;
 			if (ast_templates_env)
 				ast_run_templates(ast_cur);
@@ -13830,33 +13140,12 @@ static void gen_function(Sym *sym) {
 			ast_replaying = 1;
 			ast_rp_switch = NULL;
 			ast_rp_nlabel = 0;
-			/* Tier-3 register promotion (opt-in MCC_AST_PROMOTE): plan it, then pin
-			 * each promoted local's register for the duration of the replay so no
-			 * temporary clobbers it. A promoted function's bytes differ from -O0 by
-			 * construction, so byte-verify is bypassed for it (exec-golden is the gate). */
-			/* The AST captures rodata-constant leaves (string literals, etc.) as raw
-			 * Sym pointers. Such a ref sym may already sit on the sym free-list (freed
-			 * after the parse-build used it). Replay's own sym_push() calls (e.g. the
-			 * float/_Complex const-pool reuse in ast_fconst_push_ref) would recycle that
-			 * freed slot and overwrite the still-referenced Sym — harmless for a single
-			 * byte-verified pass, but the two-pass promote path re-reads the corrupted
-			 * pointer in pass 2 and emits a relocation against the wrong symbol. Hide the
-			 * pre-replay free-list so every replay allocation is fresh; restore it after
-			 * both passes (func-end sym_pop returns the fresh syms to it as usual). */
 			Sym *ast_saved_free = sym_free_first;
 			sym_free_first = NULL;
 			int saved_loc = loc, saved_anon = anon_sym;
-			Section *rsec2 = cur_text_section->reloc; /* stable ptr; only data_offset moves */
+			Section *rsec2 = cur_text_section->reloc;
 			volatile int faithful = 0;
 			int promoted = 0;
-			/* Nested error trap around the whole re-emission. Replay drives the same vstack
-			 * ops the parser did, but a construct the driver captured imperfectly can make one
-			 * raise mcc_error ("unknown type size", etc.) mid-emit — which would longjmp out
-			 * and abort the compile. That must never happen: -O1 may not fail a program -O0
-			 * compiles. A hard error is just the extreme case of "capture missed something," so
-			 * we catch it, restore the parser's saved -O0 emission (below, via !faithful), and
-			 * continue — the same fallback a byte-mismatch takes. Swap in our own error_jmp_buf
-			 * for the duration and restore the outer one after. */
 			jmp_buf ast_outer_jmp;
 			int ast_outer_en = mcc_state->error_set_jmp_enabled;
 			int ast_saved_nberr = mcc_state->nb_errors;
@@ -13864,15 +13153,10 @@ static void gen_function(Sym *sym) {
 			void *ast_sv_eopaque = mcc_state->error_opaque;
 			int ast_saved_floor = stk_data_floor;
 			memcpy(ast_outer_jmp, mcc_state->error_jmp_buf, sizeof(jmp_buf));
-			/* Silence + defang diagnostics from the replay attempt: the sink suppresses the
-			   print, and any ERROR_ERROR still longjmps to our trap below. Raise the cleanup
-			   floor so that trap's longjmp frees only what replay itself pushed, never the
-			   outer compile's live stk_data entries (freeing those corrupts later parsing). */
 			mcc_state->error_func = ast_error_sink;
 			stk_data_floor = nb_stk_data;
 			if (setjmp(mcc_state->error_jmp_buf) == 0) {
 				mcc_state->error_set_jmp_enabled = 1;
-				/* Pass 1: no promotion; byte-verify. */
 				ast_promo_n = 0;
 				ast_pinned_regs = 0;
 				ast_replay_body(ast_cur);
@@ -13881,34 +13165,21 @@ static void gen_function(Sym *sym) {
 				addr_t new_rel = rsec2 ? rsec2->data_offset : 0;
 				int new_len = ind - ast_body_ind;
 				faithful = new_len == body_len &&
-						memcmp(cur_text_section->data + ast_body_ind, orig, body_len) == 0 &&
-						new_rel - ast_reloc0 == rel_len &&
-						(rel_len == 0 ||
-						 memcmp(rsec2->data + ast_reloc0, orig_rel, rel_len) == 0);
+									 memcmp(cur_text_section->data + ast_body_ind, orig, body_len) == 0 &&
+									 new_rel - ast_reloc0 == rel_len &&
+									 (rel_len == 0 ||
+										memcmp(rsec2->data + ast_reloc0, orig_rel, rel_len) == 0);
 
-				/* Pass 2 applies byte-diverging transformations to a faithful replay: Tier-4
-				 * virtual-inline (graft graftable calls) and Tier-3 register promotion, which
-				 * COMPOSE — a function may inline its calls AND promote its own address-not-taken
-				 * locals. Promotion planning still sees the (soon-grafted) calls and so picks the
-				 * callee-saved pool with save/restore, which is always safe (a call-ful frame
-				 * survives whatever the grafted body does); the inlined callee's own locals live in
-				 * fresh biased slots the promoter never considers. */
 				int do_inline = faithful && ast_has_graftable_call(ast_cur);
 				int do_promote = faithful && ast_promote_env && ast_plan_promotion(ast_cur) > 0;
 				if (faithful && !do_inline && !do_promote)
-					/* Faithful body, no pass-2 transform: the correct frame is -O0 (saved_loc).
-					 * gfunc_epilog back-patches the prologue `sub $N,%rsp` from the final loc,
-					 * which lives OUTSIDE the verified body range; pass-1 ordinal temp allocation
-					 * can leave loc shallower than -O0 despite identical body bytes, giving a
-					 * too-small frame that clobbers the locals below it (gcc c-torture 20020215-1:
-					 * 0x50->0x30). The pass-2 and fallback paths already reset loc themselves. */
 					loc = saved_loc;
 				if (do_inline || do_promote) {
 					ind = ast_body_ind;
 					rsym = 0;
 					if (ast_rsec)
 						ast_rsec->data_offset = ast_reloc0;
-					nocode_wanted = 0; /* pass 1 ending in a return left this > 0 */
+					nocode_wanted = 0;
 					loc = saved_loc;
 					anon_sym = saved_anon;
 					ast_fconst_i = 0;
@@ -13930,10 +13201,6 @@ static void gen_function(Sym *sym) {
 					promoted = ast_promo_n;
 				}
 			} else {
-				/* Replay raised mcc_error on a construct it captured imperfectly. Swallow the
-				 * error, unwind the codegen state it clobbered, and force the parser-emission
-				 * fallback (faithful stays 0). Correctness is preserved: `orig` holds the exact
-				 * -O0 bytes for this body, restored below. */
 				mcc_state->nb_errors = ast_saved_nberr;
 				vtop = vstack + ast_base_depth - 1;
 				ast_replaying = 0;
@@ -13949,17 +13216,10 @@ static void gen_function(Sym *sym) {
 			mcc_state->error_set_jmp_enabled = ast_outer_en;
 			mcc_state->error_func = ast_sv_efunc;
 			mcc_state->error_opaque = ast_sv_eopaque;
-			nb_stk_data = stk_data_floor; /* drop any entries replay pushed but didn't pop */
+			nb_stk_data = stk_data_floor;
 			stk_data_floor = ast_saved_floor;
-			/* The parse-build (block(0) above) already validated this function and reported any
-			   real program error; a replay attempt must never leave a user-visible error behind.
-			   Restore the count unconditionally so a swallowed replay-only error (including a
-			   non-longjmp NOABORT one) cannot fail the compile. */
 			mcc_state->nb_errors = ast_saved_nberr;
-			sym_free_first = ast_saved_free; /* restore the hidden pre-replay free-list */
-			/* Keep ast_promo_n/callful set: a call-ful promoted function's save-register
-			 * restore is emitted at the return funnel in the common epilogue tail below
-			 * (and both are cleared there). A non-promoted function has ast_promo_n==0. */
+			sym_free_first = ast_saved_free;
 			mcc_state->warn_none = ast_sv_warn;
 			if (!faithful) {
 				memcpy(cur_text_section->data + ast_body_ind, orig, body_len);
@@ -13969,12 +13229,6 @@ static void gen_function(Sym *sym) {
 					rsec2->data_offset = ast_reloc1;
 				ind = orig_ind;
 				rsym = orig_rsym;
-				/* Restore the parse-build frame depth: an UNfaithful pass-1 replay can leave
-				 * `loc` shallower than -O0 (e.g. an ordinal result-temp slot it allocated in a
-				 * different order), and gfunc_epilog below sizes the frame from `loc`. Keeping
-				 * the -O0 body bytes but a too-small frame overlaps the locals → corruption.
-				 * saved_loc is the -O0 final depth captured after block(0). (The faithful and
-				 * pass-2 paths already end at the correct loc.) */
 				loc = saved_loc;
 			} else if (ast_replay_dump) {
 				char buf[512];
@@ -13989,9 +13243,6 @@ static void gen_function(Sym *sym) {
 			mcc_free(orig);
 			mcc_free(orig_rel);
 		}
-		/* Tier-4: keep the AST if it is an inline candidate OR a defer-to-TU re-emit
-		 * candidate (calls a static function, maybe a forward inline). Pin the rodata Syms
-		 * it references so they survive until a later graft/re-emit. */
 		int keep_inline = ast_inline_retain(ast_cur, sym);
 		int keep_reemit = ast_reemit_retain(ast_cur, sym);
 		if (keep_inline || keep_reemit)
@@ -14015,9 +13266,6 @@ static void gen_function(Sym *sym) {
 	cur_func_inline_extern = 0;
 	gsym(rsym);
 #if defined(CONFIG_AST) && CONFIG_AST && defined(MCC_TARGET_X86_64)
-	/* Tier-3: at the single return funnel (all returns jump to rsym, just gsym'd here;
-	 * the tail return falls through), restore the callee-saved pin registers a call-ful
-	 * promoted function pushed at entry — before leave/ret. */
 	ast_promo_exit_restore();
 	ast_promo_n = 0;
 	ast_promo_callful = 0;
@@ -14050,10 +13298,6 @@ static void gen_function(Sym *sym) {
 }
 
 #if defined(CONFIG_AST) && CONFIG_AST
-/* Tier-4 defer-to-TU: re-emit `sym`'s body from its retained AST with inlining, at a fresh
- * text offset, and repoint the symbol to it. Mirrors gen_function's prologue/replay/epilogue
- * but drives the body from the AST (parser-independent) with no parse and no byte-verify —
- * the AST was already proven faithful at the original emission. Non-debug only. */
 static void ast_reemit(Sym *sym, AstArena *ast) {
 	struct scope f = {0};
 	cur_scope = root_scope = &f;
@@ -14085,13 +13329,6 @@ static void ast_reemit(Sym *sym, AstArena *ast) {
 	gfunc_prolog(sym);
 	func_vla_arg(sym);
 
-	/* gfunc_prolog reset loc to the param-spill low-water-mark. The body's own locals have
-	 * their frame offsets baked into the AST (captured at the original gen) and are NOT
-	 * re-allocated here, so they never move loc. A graft (ast_inline_graft) reserves its
-	 * param/result slots by decrementing loc from here — if loc does not already reflect the
-	 * deepest baked-in local, those graft slots land ON TOP of a live local (e.g. a grafted
-	 * int result slot overlapping the upper half of a pointer local -> corruption). Lower loc
-	 * to the AST's frame low-water-mark first so grafts allocate strictly below every local. */
 	{
 		AstLocal nn = ast_count(ast);
 		for (AstLocal n = 0; n < nn; n++) {
@@ -14130,7 +13367,7 @@ static void ast_reemit(Sym *sym, AstArena *ast) {
 	ast_promo_n = 0;
 	nocode_wanted = 0;
 	gfunc_epilog();
-	put_extern_sym(sym, cur_text_section, new_ind, ind - new_ind); /* repoint symbol */
+	put_extern_sym(sym, cur_text_section, new_ind, ind - new_ind);
 	elfsym(sym)->st_size = ind - new_ind;
 	cur_text_section->data_offset = ind;
 
@@ -14150,8 +13387,6 @@ static void ast_reemit(Sym *sym, AstArena *ast) {
 						get_tok_str(sym->v, NULL));
 }
 
-/* End-of-TU: re-emit every retained function that missed a forward inline (a call to a
- * static function defined later, now graftable). Called after the whole TU is parsed. */
 static void ast_reemit_forward_inlines(void) {
 	for (int i = 0; i < ast_reemit_n; i++)
 		if (ast_reemit_has_forward(&ast_reemit_pool[i]))
@@ -14172,21 +13407,10 @@ static void gen_inline_functions(MCCState *s) {
 			sym = fn->sym;
 			if (!sym)
 				continue;
-			/* §6.7.4p7: a plain `inline` definition (no `extern`, no `static`)
-			   is an inline definition — it does NOT provide an external
-			   definition. So we must not leave an external definition behind:
-			   an un-inlined call is then an undefined reference, as in gcc/clang.
-			   We *emit* only when the function acquired an external definition
-			   (VT_INLINE cleared — e.g. via `extern` or a non-inline declaration)
-			   or is a used static-inline (internal linkage). */
 			int emit = !(sym->type.t & VT_INLINE) ||
-					((sym->type.t & VT_STATIC) && sym->c);
-			/* A *referenced* plain inline still has its body parsed so the §6.7.4p3
-			   constraint diagnostics fire (references to internal-linkage / static
-			   objects from an external-linkage inline), then the generated
-			   definition is discarded so the symbol stays undefined. */
+								 ((sym->type.t & VT_STATIC) && sym->c);
 			int diag_only = !emit && sym->c &&
-					(sym->type.t & VT_INLINE) && !(sym->type.t & VT_STATIC);
+											(sym->type.t & VT_INLINE) && !(sym->type.t & VT_STATIC);
 			if (emit || diag_only) {
 				fn->sym = NULL;
 				mccpp_putfile(fn->filename);
@@ -14199,7 +13423,6 @@ static void gen_inline_functions(MCCState *s) {
 					int save_rel = ts->reloc ? ts->reloc->data_offset : 0;
 					ElfSym saved = *elfsym(sym);
 					gen_function(sym);
-					/* undo the definition emitted for the diagnostics pass */
 					ts->data_offset = save_off;
 					if (ts->reloc)
 						ts->reloc->data_offset = save_rel;
@@ -14455,9 +13678,6 @@ static int decl(int l) {
 											get_tok_str(sa->v & ~SYM_FIELD, NULL));
 					if (sym->type.ref->f.func_type == FUNC_OLD) {
 						if (sa->type.t & VT_EXTERN) {
-							/* §6.9.1p6 / §6.7.2p2: an identifier-list parameter with no
-							   matching declaration defaulting to 'int' is a constraint
-							   violation in C99+ (implicit int was removed); C89 allowed it. */
 							if (mcc_state->cversion >= 199901)
 								mcc_error_noabort("type of '%s' defaults to 'int' (implicit int removed in C99)",
 																	get_tok_str(sa->v & ~SYM_FIELD, NULL));

@@ -199,23 +199,24 @@ void compound_literal_test(void) {
 	for (i = 0; i < 3; i++) {
 		p = (int[]){1, 2, 4 + i};
 		printf("%d %d %d\n",
-			   p[0],
-			   p[1],
-			   p[2]);
+					 p[0],
+					 p[1],
+					 p[2]);
 	}
 #endif
 }
 
 #if __MCC__
 
-/* K&R identifier-list definitions with explicit parameter declarations:
-   still exercises the FUNC_OLD parser path, but conforming under C99+
-   (implicit-int params were removed in C99). */
-int kr_func1(a, b) int a, b; {
+int kr_func1(a, b)
+int a, b;
+{
 	return a + b;
 }
 
-int kr_func2(a, b) int a, b; {
+int kr_func2(a, b)
+int a, b;
+{
 	return a + b;
 }
 
@@ -285,7 +286,7 @@ void struct_assign_test(void) {
 		void (*elem)();
 	} t[] = {
 
-		{struct_assign_test}};
+			{struct_assign_test}};
 	printf("%d\n", struct_assign_test == t[0].elem);
 
 	s.lsta1 = s.lsta2 = struct_assign_test2(s.lsta1, 1);
@@ -313,15 +314,15 @@ void cast_test() {
 	cast1(a, a, a, a);
 	a = 0xffffe;
 	printf("%d %d %d %d\n",
-		   (char)(a + 1),
-		   (short)(a + 1),
-		   (unsigned char)(a + 1),
-		   (unsigned short)(a + 1));
+				 (char)(a + 1),
+				 (short)(a + 1),
+				 (unsigned char)(a + 1),
+				 (unsigned short)(a + 1));
 	printf("%d %d %d %d\n",
-		   (char)0xfffff,
-		   (short)0xfffff,
-		   (unsigned char)0xfffff,
-		   (unsigned short)0xfffff);
+				 (char)0xfffff,
+				 (short)0xfffff,
+				 (unsigned char)0xfffff,
+				 (unsigned short)0xfffff);
 
 	a = (bcast = 128) + 1;
 	printf("%d\n", a);
@@ -349,13 +350,13 @@ void cast_test() {
 #if CC_NAME != CC_clang
 
 	printf("%d %d %ld %ld %lld %lld\n",
-		   (int)p, (unsigned int)p,
-		   (long)p, (unsigned long)p,
-		   (long long)p, (unsigned long long)p);
+				 (int)p, (unsigned int)p,
+				 (long)p, (unsigned long)p,
+				 (long long)p, (unsigned long long)p);
 #endif
 
 	printf("%p %p %p %p\n",
-		   (void *)a, (void *)b, (void *)c, (void *)d);
+				 (void *)a, (void *)b, (void *)c, (void *)d);
 
 	printf("0x%lx\n", (unsigned long)(int)ul);
 }
@@ -370,35 +371,35 @@ struct structinit1 {
 int sinit1 = 2;
 int sinit2 = {3};
 int sinit3[3] = {
-	1,
-	2,
-	{3},
+		1,
+		2,
+		{3},
 };
 int sinit4[3][2] = {{1, 2}, {3, 4}, {5, 6}};
 int sinit5[3][2] = {1, 2, 3, 4, 5, 6};
 int sinit6[] = {1, 2, 3};
 int sinit7[] = {[2] = 3, [0] = 1, 2};
 char sinit8[] = "hello"
-				"trala";
+								"trala";
 
 struct structinit1 sinit9 = {1, 2, 3};
 struct structinit1 sinit10 = {.f2 = 2, 3, .f1 = 1};
 struct structinit1 sinit11 = {
-	.f2 = 2,
-	3,
-	.f1 = 1,
+		.f2 = 2,
+		3,
+		.f1 = 1,
 #ifdef ALL_ISOC99
-	.farray[0] = 10,
-	.farray[1] = 11,
-	.farray[2] = 12,
+		.farray[0] = 10,
+		.farray[1] = 11,
+		.farray[2] = 12,
 #endif
 };
 
 char *sinit12 = "hello world";
 char *sinit13[] = {
-	"test1",
-	"test2",
-	"test3",
+		"test1",
+		"test2",
+		"test3",
 };
 char sinit14[10] = {"abc"};
 int sinit15[3] = {sizeof(sinit15), 1, 2};
@@ -411,13 +412,13 @@ struct bar {
 	char *s;
 	int len;
 } sinit17[] = {
-	"a1", 4,
-	"a2", 1};
+		"a1", 4,
+		"a2", 1};
 
 int sinit18[10] = {
-	[2 ... 5] = 20,
-	2,
-	[8] = 10,
+		[2 ... 5] = 20,
+		2,
+		[8] = 10,
 };
 
 struct complexinit0 {
@@ -431,12 +432,12 @@ struct complexinit {
 };
 
 const static struct complexinit cix[] = {
-	[0] = {
-		.a = 2000,
-		.b = (const struct complexinit0[]){
-			{2001, 2002},
-			{2003, 2003},
-			{}}}};
+		[0] = {
+				.a = 2000,
+				.b = (const struct complexinit0[]){
+						{2001, 2002},
+						{2003, 2003},
+						{}}}};
 
 struct complexinit2 {
 	int a;
@@ -446,12 +447,12 @@ struct complexinit2 {
 struct complexinit2 cix20;
 
 struct complexinit2 cix21 = {
-	.a = 3000,
-	.b = {3001, 3002, 3003}};
+		.a = 3000,
+		.b = {3001, 3002, 3003}};
 
 struct complexinit2 cix22 = {
-	.a = 4000,
-	.b = {4001, 4002, 4003, 4004, 4005, 4006}};
+		.a = 4000,
+		.b = {4001, 4002, 4003, 4004, 4005, 4006}};
 
 typedef int arrtype1[];
 arrtype1 sinit19;
@@ -465,7 +466,7 @@ arrtype2 sinit21 = {4};
 arrtype2 sinit22 = {5, 6, 7};
 
 int sinit23[2] = {"astring" ? sizeof("astring") : -1,
-				  &sinit23 ? 42 : -1};
+									&sinit23 ? 42 : -1};
 
 int sinit24 = 2 || 1 / 0;
 
@@ -502,19 +503,19 @@ void init_test(void) {
 	int linit6[] = {1, 2, 3};
 	int i, j;
 	char linit8[] = "hello"
-					"trala";
+									"trala";
 	int linit12[10] = {1, 2};
 	int linit13[10] = {
-		1,
-		2,
-		[7] = 3,
-		[3] = 4,
+			1,
+			2,
+			[7] = 3,
+			[3] = 4,
 	};
 	char linit14[10] = "abc";
 	int linit15[10] = {
-		linit1,
-		linit1 + 1,
-		[6] = linit1 + 2,
+			linit1,
+			linit1 + 1,
+			[6] = linit1 + 2,
 	};
 	struct linit16 {
 		int a1, a2, a3, a4;
@@ -533,37 +534,37 @@ void init_test(void) {
 	printf("sinit1=%d\n", sinit1);
 	printf("sinit2=%d\n", sinit2);
 	printf("sinit3=%d %d %d %d\n",
-		   sizeof(sinit3),
-		   sinit3[0],
-		   sinit3[1],
-		   sinit3[2]);
+				 sizeof(sinit3),
+				 sinit3[0],
+				 sinit3[1],
+				 sinit3[2]);
 	printf("sinit6=%d\n", sizeof(sinit6));
 	printf("sinit7=%d %d %d %d\n",
-		   sizeof(sinit7),
-		   sinit7[0],
-		   sinit7[1],
-		   sinit7[2]);
+				 sizeof(sinit7),
+				 sinit7[0],
+				 sinit7[1],
+				 sinit7[2]);
 	printf("sinit8=%s\n", sinit8);
 	printf("sinit9=%d %d %d\n",
-		   sinit9.f1,
-		   sinit9.f2,
-		   sinit9.f3);
+				 sinit9.f1,
+				 sinit9.f2,
+				 sinit9.f3);
 	printf("sinit10=%d %d %d\n",
-		   sinit10.f1,
-		   sinit10.f2,
-		   sinit10.f3);
+				 sinit10.f1,
+				 sinit10.f2,
+				 sinit10.f3);
 	printf("sinit11=%d %d %d %d %d %d\n",
-		   sinit11.f1,
-		   sinit11.f2,
-		   sinit11.f3,
-		   sinit11.farray[0],
-		   sinit11.farray[1],
-		   sinit11.farray[2]);
+				 sinit11.f1,
+				 sinit11.f2,
+				 sinit11.f3,
+				 sinit11.farray[0],
+				 sinit11.farray[1],
+				 sinit11.farray[2]);
 
 	for (i = 0; i < 3; i++)
 		for (j = 0; j < 2; j++)
 			printf("[%d][%d] = %d %d %d\n",
-				   i, j, sinit4[i][j], sinit5[i][j], linit4[i][j]);
+						 i, j, sinit4[i][j], sinit5[i][j], linit4[i][j]);
 	printf("linit1=%d\n", linit1);
 	printf("linit2=%d\n", linit2);
 	printf("linit6=%d\n", sizeof(linit6));
@@ -571,10 +572,10 @@ void init_test(void) {
 
 	printf("sinit12=%s\n", sinit12);
 	printf("sinit13=%d %s %s %s\n",
-		   sizeof(sinit13),
-		   sinit13[0],
-		   sinit13[1],
-		   sinit13[2]);
+				 sizeof(sinit13),
+				 sinit13[0],
+				 sinit13[1],
+				 sinit13[2]);
 	printf("sinit14=%s\n", sinit14);
 
 	for (i = 0; i < 10; i++)
@@ -590,26 +591,26 @@ void init_test(void) {
 		printf(" %d", linit15[i]);
 	printf("\n");
 	printf("%d %d %d %d\n",
-		   linit16.a1,
-		   linit16.a2,
-		   linit16.a3,
-		   linit16.a4);
+				 linit16.a1,
+				 linit16.a2,
+				 linit16.a3,
+				 linit16.a4);
 
 	printf("linit17=%d\n", linit17);
 	printf("sinit15=%d\n", sinit15[0]);
 	printf("sinit16=%d %d\n", sinit16[0].a[0], sinit16[1].a[0]);
 	printf("sinit17=%s %d %s %d\n",
-		   sinit17[0].s, sinit17[0].len,
-		   sinit17[1].s, sinit17[1].len);
+				 sinit17[0].s, sinit17[0].len,
+				 sinit17[1].s, sinit17[1].len);
 	for (i = 0; i < 10; i++)
 		printf("%x ", sinit18[i]);
 	printf("\n");
 
 	printf("cix: %d %d %d %d %d %d %d\n",
-		   cix[0].a,
-		   cix[0].b[0].a, cix[0].b[0].b,
-		   cix[0].b[1].a, cix[0].b[1].b,
-		   cix[0].b[2].a, cix[0].b[2].b);
+				 cix[0].a,
+				 cix[0].b[0].a, cix[0].b[0].b,
+				 cix[0].b[1].a, cix[0].b[1].b,
+				 cix[0].b[2].a, cix[0].b[2].b);
 	printf("cix2: %d %d\n", cix21.b[2], cix22.b[5]);
 	printf("sizeof cix20 %d, cix21 %d, sizeof cix22 %d\n", sizeof cix20, sizeof cix21, sizeof cix22);
 
@@ -769,7 +770,7 @@ void c99_bool_test(void) {
 	printf("b = %d\n", b);
 	b2 = 0;
 	printf("sizeof(x ? _Bool : _Bool) = %d (should be sizeof int)\n",
-		   sizeof((volatile int)a ? b : b2));
+				 sizeof((volatile int)a ? b : b2));
 #endif
 }
 
@@ -796,7 +797,7 @@ void bitfield_test(void) {
 	st1.f5 = a;
 	st1.f5++;
 	printf("%d %d %d %d %d\n",
-		   st1.f1, st1.f2, st1.f3, st1.f4, st1.f5);
+				 st1.f1, st1.f2, st1.f3, st1.f4, st1.f5);
 	sa = st1.f5;
 	ca = st1.f5;
 	printf("%d %d\n", sa, ca);
@@ -884,31 +885,31 @@ float strtof(const char *nptr, char **endptr);
 LONG_DOUBLE strtold(const char *nptr, char **endptr);
 #endif
 
-#define FTEST(prefix, typename, type, fmt)                                    \
-	void prefix##cmp(type a, type b) {                                        \
+#define FTEST(prefix, typename, type, fmt)                                \
+	void prefix##cmp(type a, type b) {                                      \
 		printf("%d %d %d %d %d %d\n",                                         \
-			   a == b,                                                        \
-			   a != b,                                                        \
-			   a<b,                                                           \
-				 a>                                                           \
-				   b,                                                         \
-			   a >= b,                                                        \
-			   a <= b);                                                       \
+					 a == b,                                                        \
+					 a != b,                                                        \
+					 a<b,                                                           \
+						 a>                                                           \
+							 b,                                                         \
+					 a >= b,                                                        \
+					 a <= b);                                                       \
 		printf(fmt " " fmt " " fmt " " fmt " " fmt " " fmt " " fmt "\n",      \
-			   a,                                                             \
-			   b,                                                             \
-			   a + b,                                                         \
-			   a - b,                                                         \
-			   a * b,                                                         \
-			   a / b,                                                         \
-			   -a);                                                           \
+					 a,                                                             \
+					 b,                                                             \
+					 a + b,                                                         \
+					 a - b,                                                         \
+					 a * b,                                                         \
+					 a / b,                                                         \
+					 -a);                                                           \
 		printf(fmt "\n", ++a);                                                \
 		printf(fmt "\n", a++);                                                \
 		printf(fmt "\n", a);                                                  \
 		b = 0;                                                                \
 		printf("%d %d\n", !a, !b);                                            \
-	}                                                                         \
-	void prefix##fcast(type a) {                                              \
+	}                                                                       \
+	void prefix##fcast(type a) {                                            \
 		float fa;                                                             \
 		double da;                                                            \
 		LONG_DOUBLE la;                                                       \
@@ -939,60 +940,60 @@ LONG_DOUBLE strtold(const char *nptr, char **endptr);
 		printf("lltof: " fmt "\n", b);                                        \
 		b = llua;                                                             \
 		if (CC_NAME != CC_clang)                                              \
-			printf("ulltof: " fmt "\n", b);                                   \
-	}                                                                         \
-																			  \
-	float prefix##retf(type a) {                                              \
+			printf("ulltof: " fmt "\n", b);                                     \
+	}                                                                       \
+                                                                          \
+	float prefix##retf(type a) {                                            \
 		return a;                                                             \
-	}                                                                         \
-	double prefix##retd(type a) {                                             \
+	}                                                                       \
+	double prefix##retd(type a) {                                           \
 		return a;                                                             \
-	}                                                                         \
-	LONG_DOUBLE prefix##retld(type a) {                                       \
+	}                                                                       \
+	LONG_DOUBLE prefix##retld(type a) {                                     \
 		return a;                                                             \
-	}                                                                         \
-																			  \
-	void prefix##call(void) {                                                 \
+	}                                                                       \
+                                                                          \
+	void prefix##call(void) {                                               \
 		printf("float: " FLOAT_FMT, prefix##retf(42.123456789));              \
 		printf("double: %f\n", prefix##retd(42.123456789));                   \
 		printf("long double: %Lf\n", prefix##retld(42.123456789));            \
 		printf("strto%s: %f\n", #prefix, (double)strto##prefix("1.2", NULL)); \
-	}                                                                         \
-																			  \
-	void prefix##signed_zeros(void) {                                         \
+	}                                                                       \
+                                                                          \
+	void prefix##signed_zeros(void) {                                       \
 		type x = 0.0, y = -0.0, n, p;                                         \
 		if (x == y)                                                           \
-			printf("Test 1.0 / x != 1.0 / y  returns %d (should be 1).\n",    \
-				   1.0 / x != 1.0 / y);                                       \
+			printf("Test 1.0 / x != 1.0 / y  returns %d (should be 1).\n",      \
+						 1.0 / x != 1.0 / y);                                         \
 		else                                                                  \
-			printf("x != y; this is wrong!\n");                               \
-																			  \
+			printf("x != y; this is wrong!\n");                                 \
+                                                                          \
 		n = -x;                                                               \
 		if (x == n)                                                           \
-			printf("Test 1.0 / x != 1.0 / -x returns %d (should be 1).\n",    \
-				   1.0 / x != 1.0 / n);                                       \
+			printf("Test 1.0 / x != 1.0 / -x returns %d (should be 1).\n",      \
+						 1.0 / x != 1.0 / n);                                         \
 		else                                                                  \
-			printf("x != -x; this is wrong!\n");                              \
-																			  \
+			printf("x != -x; this is wrong!\n");                                \
+                                                                          \
 		p = +y;                                                               \
 		if (x == p)                                                           \
-			printf("Test 1.0 / x != 1.0 / +y returns %d (should be 1).\n",    \
-				   1.0 / x != 1.0 / p);                                       \
+			printf("Test 1.0 / x != 1.0 / +y returns %d (should be 1).\n",      \
+						 1.0 / x != 1.0 / p);                                         \
 		else                                                                  \
-			printf("x != +y; this is wrong!\n");                              \
+			printf("x != +y; this is wrong!\n");                                \
 		p = -y;                                                               \
 		if (x == p)                                                           \
-			printf("Test 1.0 / x != 1.0 / -y returns %d (should be 0).\n",    \
-				   1.0 / x != 1.0 / p);                                       \
+			printf("Test 1.0 / x != 1.0 / -y returns %d (should be 0).\n",      \
+						 1.0 / x != 1.0 / p);                                         \
 		else                                                                  \
-			printf("x != -y; this is wrong!\n");                              \
-	}                                                                         \
-	void prefix##nan(void) {                                                  \
+			printf("x != -y; this is wrong!\n");                                \
+	}                                                                       \
+	void prefix##nan(void) {                                                \
 		type nan = 0.0 / 0.0;                                                 \
 		type nnan = -nan;                                                     \
 		printf("nantest: " fmt " " fmt "\n", nan, nnan);                      \
-	}                                                                         \
-	void prefix##test(void) {                                                 \
+	}                                                                       \
+	void prefix##test(void) {                                               \
 		printf("testing '%s'\n", #typename);                                  \
 		prefix##cmp(1, 2.5);                                                  \
 		prefix##cmp(2, 1.5);                                                  \
@@ -1002,7 +1003,7 @@ LONG_DOUBLE strtold(const char *nptr, char **endptr);
 		prefix##call();                                                       \
 		prefix##signed_zeros();                                               \
 		if (CC_NAME != CC_clang)                                              \
-			prefix##nan();                                                    \
+			prefix##nan();                                                      \
 	}
 
 FTEST(f, float, float, "%f")

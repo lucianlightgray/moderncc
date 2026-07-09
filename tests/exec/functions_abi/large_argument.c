@@ -19,9 +19,9 @@ void pass_large_struct2(struct large2 in) {
 }
 
 void pass_many_args(int a, int b, int c, int d, int e, int f, int g, int h, int i,
-					int j, int k, int l, int m) {
+										int j, int k, int l, int m) {
 	printf("%d %d %d %d %d %d %d %d %d %d %d %d %d\n", a, b, c, d, e, f, g, h, i,
-		   j, k, l, m);
+				 j, k, l, m);
 	return;
 }
 

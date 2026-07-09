@@ -30,7 +30,7 @@ int main(void) {
 	struct rect {
 		struct point lo, hi;
 	} r =
-		(struct rect){.lo = (struct point){1, 1}, .hi = (struct point){4, 5}};
+			(struct rect){.lo = (struct point){1, 1}, .hi = (struct point){4, 5}};
 	printf("rect area: %d\n", (r.hi.x - r.lo.x) * (r.hi.y - r.lo.y));
 
 	int total = 0;

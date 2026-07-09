@@ -10,9 +10,9 @@ int main(void) {
 
 	int exp = 20, des = 30;
 	int ok = __atomic_compare_exchange_n(&x, &exp, des, 0,
-										 __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+																			 __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
 	int bad = __atomic_compare_exchange_n(&x, &exp, 99, 0,
-										  __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+																				__ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
 
 	__atomic_store_n(&lx, 7L, __ATOMIC_RELAXED);
 	long ll = __atomic_load_n(&lx, __ATOMIC_RELAXED);

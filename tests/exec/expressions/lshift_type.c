@@ -2,25 +2,25 @@
 
 #define PTYPE(M) ((M) < 0 || -(M) < 0 ? -1 : 1) * (int)sizeof((M) + 0)
 #define CHECK(X, T) check(#X, PTYPE(X), PTYPE((X) << (T)1))
-#define TEST1(X, T)           \
-	do {                      \
+#define TEST1(X, T)       \
+	do {                    \
 		CHECK(X, T);          \
 		CHECK(X, unsigned T); \
 	} while (0)
-#define TEST2(X)               \
-	do {                       \
+#define TEST2(X)           \
+	do {                     \
 		TEST1((X), short);     \
 		TEST1((X), int);       \
 		TEST1((X), long);      \
 		TEST1((X), long long); \
 	} while (0)
-#define TEST3(X, T)             \
-	do {                        \
+#define TEST3(X, T)         \
+	do {                      \
 		TEST2((T)(X));          \
 		TEST2((unsigned T)(X)); \
 	} while (0)
-#define TEST4(X)               \
-	do {                       \
+#define TEST4(X)           \
+	do {                     \
 		TEST3((X), short);     \
 		TEST3((X), int);       \
 		TEST3((X), long);      \

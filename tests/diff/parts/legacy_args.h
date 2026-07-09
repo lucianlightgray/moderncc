@@ -1,31 +1,31 @@
 void manyarg_test(void) {
 	LONG_DOUBLE ld = 1234567891234LL;
 	printf("%d %d %d %d %d %d %d %d %f %f %f %f %f %f %f %f %f %f\n",
-		   1, 2, 3, 4, 5, 6, 7, 8,
-		   0.1, 1.2, 2.3, 3.4, 4.5, 5.6, 6.7, 7.8, 8.9, 9.0);
+				 1, 2, 3, 4, 5, 6, 7, 8,
+				 0.1, 1.2, 2.3, 3.4, 4.5, 5.6, 6.7, 7.8, 8.9, 9.0);
 	printf("%d %d %d %d %d %d %d %d %f %f %f %f %f %f %f %f %f %f " LONG_LONG_FORMAT " " LONG_LONG_FORMAT " %f %f\n",
-		   1, 2, 3, 4, 5, 6, 7, 8,
-		   0.1, 1.2, 2.3, 3.4, 4.5, 5.6, 6.7, 7.8, 8.9, 9.0,
-		   1234567891234LL, 987654321986LL,
-		   42.0, 43.0);
+				 1, 2, 3, 4, 5, 6, 7, 8,
+				 0.1, 1.2, 2.3, 3.4, 4.5, 5.6, 6.7, 7.8, 8.9, 9.0,
+				 1234567891234LL, 987654321986LL,
+				 42.0, 43.0);
 	printf("%Lf %d %d %d %d %d %d %d %d %f %f %f %f %f %f %f %f %f %f " LONG_LONG_FORMAT " " LONG_LONG_FORMAT " %f %f\n",
-		   ld, 1, 2, 3, 4, 5, 6, 7, 8,
-		   0.1, 1.2, 2.3, 3.4, 4.5, 5.6, 6.7, 7.8, 8.9, 9.0,
-		   1234567891234LL, 987654321986LL,
-		   42.0, 43.0);
+				 ld, 1, 2, 3, 4, 5, 6, 7, 8,
+				 0.1, 1.2, 2.3, 3.4, 4.5, 5.6, 6.7, 7.8, 8.9, 9.0,
+				 1234567891234LL, 987654321986LL,
+				 42.0, 43.0);
 	printf("%d %d %d %d %d %d %d %d %Lf\n",
-		   1, 2, 3, 4, 5, 6, 7, 8, ld);
+				 1, 2, 3, 4, 5, 6, 7, 8, ld);
 	printf("%d %d %d %d %d %d %d %d %f %f %f %f %f %f %f %f %f %f " LONG_LONG_FORMAT " " LONG_LONG_FORMAT "%f %f %Lf\n",
-		   1, 2, 3, 4, 5, 6, 7, 8,
-		   0.1, 1.2, 2.3, 3.4, 4.5, 5.6, 6.7, 7.8, 8.9, 9.0,
-		   1234567891234LL, 987654321986LL,
-		   42.0, 43.0, ld);
+				 1, 2, 3, 4, 5, 6, 7, 8,
+				 0.1, 1.2, 2.3, 3.4, 4.5, 5.6, 6.7, 7.8, 8.9, 9.0,
+				 1234567891234LL, 987654321986LL,
+				 42.0, 43.0, ld);
 	printf("%d %d %d %d %d %d %d %d %f %f %f %f %f %f %f %f %f %f "
-		   "%Lf " LONG_LONG_FORMAT " " LONG_LONG_FORMAT " %f %f %Lf\n",
-		   1, 2, 3, 4, 5, 6, 7, 8,
-		   0.1, 1.2, 2.3, 3.4, 4.5, 5.6, 6.7, 7.8, 8.9, 9.0,
-		   ld, 1234567891234LL, 987654321986LL,
-		   42.0, 43.0, ld);
+				 "%Lf " LONG_LONG_FORMAT " " LONG_LONG_FORMAT " %f %f %Lf\n",
+				 1, 2, 3, 4, 5, 6, 7, 8,
+				 0.1, 1.2, 2.3, 3.4, 4.5, 5.6, 6.7, 7.8, 8.9, 9.0,
+				 ld, 1234567891234LL, 987654321986LL,
+				 42.0, 43.0, ld);
 }
 
 void *
@@ -123,8 +123,8 @@ struct mytest stdarg_for_struct(struct myspace bob, ...) {
 	george = va_arg(ap, struct myspace);
 	validate = va_arg(ap, int);
 	printf("stdarg_for_struct: %d %d %d %d %d %d %d\n",
-		   alex2.a[0], alex3.a[0], alex3.a[1],
-		   bob.profile, bill.profile, george.profile, validate);
+				 alex2.a[0], alex3.a[0], alex3.a[1],
+				 bob.profile, bill.profile, george.profile, validate);
 	va_end(ap);
 	return (struct mytest){};
 }
@@ -185,39 +185,39 @@ void stdarg_test(void) {
 	vprintf1("%l %l %d %f\n", 1234567891234LL, 987654321986LL, 3, 1234.0);
 	vprintf1("%F %F %F\n", LONG_DOUBLE_LITERAL(1.2), LONG_DOUBLE_LITERAL(2.3), LONG_DOUBLE_LITERAL(3.4));
 	vprintf1("%d %f %l %F %d %f %l %F\n",
-			 1, 1.2, 3LL, LONG_DOUBLE_LITERAL(4.5), 6, 7.8, 9LL, LONG_DOUBLE_LITERAL(0.1));
+					 1, 1.2, 3LL, LONG_DOUBLE_LITERAL(4.5), 6, 7.8, 9LL, LONG_DOUBLE_LITERAL(0.1));
 	vprintf1("%d %d %d %d %d %d %d %d %f %f %f %f %f %f %f %f\n",
-			 1, 2, 3, 4, 5, 6, 7, 8,
-			 0.1, 1.2, 2.3, 3.4, 4.5, 5.6, 6.7, 7.8);
+					 1, 2, 3, 4, 5, 6, 7, 8,
+					 0.1, 1.2, 2.3, 3.4, 4.5, 5.6, 6.7, 7.8);
 	vprintf1("%d %d %d %d %d %d %d %d %f %f %f %f %f %f %f %f %f %f\n",
-			 1, 2, 3, 4, 5, 6, 7, 8,
-			 0.1, 1.2, 2.3, 3.4, 4.5, 5.6, 6.7, 7.8, 8.9, 9.0);
+					 1, 2, 3, 4, 5, 6, 7, 8,
+					 0.1, 1.2, 2.3, 3.4, 4.5, 5.6, 6.7, 7.8, 8.9, 9.0);
 	vprintf1("%d %d %d %d %d %d %d %d %f %f %f %f %f %f %f %f %f %f "
-			 "%l %l %f %f\n",
-			 1, 2, 3, 4, 5, 6, 7, 8,
-			 0.1, 1.2, 2.3, 3.4, 4.5, 5.6, 6.7, 7.8, 8.9, 9.0,
-			 1234567891234LL, 987654321986LL,
-			 42.0, 43.0);
+					 "%l %l %f %f\n",
+					 1, 2, 3, 4, 5, 6, 7, 8,
+					 0.1, 1.2, 2.3, 3.4, 4.5, 5.6, 6.7, 7.8, 8.9, 9.0,
+					 1234567891234LL, 987654321986LL,
+					 42.0, 43.0);
 	vprintf1("%F %d %d %d %d %d %d %d %d %f %f %f %f %f %f %f %f %f %f "
-			 "%l %l %f %f\n",
-			 ld, 1, 2, 3, 4, 5, 6, 7, 8,
-			 0.1, 1.2, 2.3, 3.4, 4.5, 5.6, 6.7, 7.8, 8.9, 9.0,
-			 1234567891234LL, 987654321986LL,
-			 42.0, 43.0);
+					 "%l %l %f %f\n",
+					 ld, 1, 2, 3, 4, 5, 6, 7, 8,
+					 0.1, 1.2, 2.3, 3.4, 4.5, 5.6, 6.7, 7.8, 8.9, 9.0,
+					 1234567891234LL, 987654321986LL,
+					 42.0, 43.0);
 	vprintf1("%d %d %d %d %d %d %d %d %F\n",
-			 1, 2, 3, 4, 5, 6, 7, 8, ld);
+					 1, 2, 3, 4, 5, 6, 7, 8, ld);
 	vprintf1("%d %d %d %d %d %d %d %d %f %f %f %f %f %f %f %f %f %f "
-			 "%l %l %f %f %F\n",
-			 1, 2, 3, 4, 5, 6, 7, 8,
-			 0.1, 1.2, 2.3, 3.4, 4.5, 5.6, 6.7, 7.8, 8.9, 9.0,
-			 1234567891234LL, 987654321986LL,
-			 42.0, 43.0, ld);
+					 "%l %l %f %f %F\n",
+					 1, 2, 3, 4, 5, 6, 7, 8,
+					 0.1, 1.2, 2.3, 3.4, 4.5, 5.6, 6.7, 7.8, 8.9, 9.0,
+					 1234567891234LL, 987654321986LL,
+					 42.0, 43.0, ld);
 	vprintf1("%d %d %d %d %d %d %d %d %f %f %f %f %f %f %f %f %f %f "
-			 "%F %l %l %f %f %F\n",
-			 1, 2, 3, 4, 5, 6, 7, 8,
-			 0.1, 1.2, 2.3, 3.4, 4.5, 5.6, 6.7, 7.8, 8.9, 9.0,
-			 ld, 1234567891234LL, 987654321986LL,
-			 42.0, 43.0, ld);
+					 "%F %l %l %f %f %F\n",
+					 1, 2, 3, 4, 5, 6, 7, 8,
+					 0.1, 1.2, 2.3, 3.4, 4.5, 5.6, 6.7, 7.8, 8.9, 9.0,
+					 ld, 1234567891234LL, 987654321986LL,
+					 42.0, 43.0, ld);
 
 	bob.profile = 42;
 	bob3.a[0] = 1;
@@ -378,13 +378,13 @@ void c99_vla_test_2(int d, int h, int w) {
 	}
 	starr = &arr[1];
 	printf(" sizes : %d %d %d\n"
-		   " pdiff : %d %d\n"
-		   " tests : %d %d %d\n",
-		   sizeof(*arr), sizeof(*arr)[0], sizeof(*arr)[0][0],
-		   arr + 2 - arr, *arr + 3 - *arr,
-		   0 == sizeof(*arr + 1) - sizeof arr,
-		   0 == sizeof sizeof *arr - sizeof arr,
-		   starr[0][2][3] == arr[1][2][3]);
+				 " pdiff : %d %d\n"
+				 " tests : %d %d %d\n",
+				 sizeof(*arr), sizeof(*arr)[0], sizeof(*arr)[0][0],
+				 arr + 2 - arr, *arr + 3 - *arr,
+				 0 == sizeof(*arr + 1) - sizeof arr,
+				 0 == sizeof sizeof *arr - sizeof arr,
+				 starr[0][2][3] == arr[1][2][3]);
 	free(arr);
 }
 

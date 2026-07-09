@@ -112,8 +112,8 @@ enum test {
 
 struct S_enum {
 	enum { E6 = 42,
-		   E7,
-		   E8 } e : 8;
+				 E7,
+				 E8 } e : 8;
 };
 
 enum ELong {
@@ -137,7 +137,7 @@ void enum_test() {
 	unsigned *p = &b1;
 	struct S_enum s = {E7};
 	printf("%d %d %d %d %d %d %d\n", s.e,
-		   E0, E1, E2, E3, E4, E5);
+				 E0, E1, E2, E3, E4, E5);
 	b1 = 1;
 	printf("b1=%d\n", b1);
 	printf("enum large: %ld\n", EL_large);
@@ -328,10 +328,10 @@ void expr_test() {
 	printf("%d\n", -12);
 	printf("%d\n", +12);
 	printf("%d %d %d %d\n",
-		   isid('a'),
-		   isid('g'),
-		   isid('T'),
-		   isid('('));
+				 isid('a'),
+				 isid('g'),
+				 isid('T'),
+				 isid('('));
 }
 
 int isid(int c) {
@@ -395,20 +395,20 @@ void expr_ptr_test() {
 	q += i;
 	printf("%p %p %ld\n", q, p, p - q);
 	printf("%d %d %d %d %d %d\n",
-		   p == q, p != q, p<q, p <= q, p >= q, p> q);
+				 p == q, p != q, p<q, p <= q, p >= q, p> q);
 	i = 0xf0000000;
 	p += i;
 	printf("%p %p %ld\n", q, p, p - q);
 	printf("%d %d %d %d %d %d\n",
-		   p == q, p != q, p<q, p <= q, p >= q, p> q);
+				 p == q, p != q, p<q, p <= q, p >= q, p> q);
 	p = (int *)((char *)p + 0xf0000000);
 	printf("%p %p %ld\n", q, p, p - q);
 	printf("%d %d %d %d %d %d\n",
-		   p == q, p != q, p<q, p <= q, p >= q, p> q);
+				 p == q, p != q, p<q, p <= q, p >= q, p> q);
 	p += 0xf0000000;
 	printf("%p %p %ld\n", q, p, p - q);
 	printf("%d %d %d %d %d %d\n",
-		   p == q, p != q, p<q, p <= q, p >= q, p> q);
+				 p == q, p != q, p<q, p <= q, p >= q, p> q);
 	{
 		struct size12 {
 			int i, j, k;
@@ -544,16 +544,16 @@ void struct_test() {
 	struct Large ls;
 
 	printf("sizes: %d %d %d %d\n",
-		   sizeof(struct struct1),
-		   sizeof(struct struct2),
-		   sizeof(union union1),
-		   sizeof(union union2));
+				 sizeof(struct struct1),
+				 sizeof(struct struct2),
+				 sizeof(union union1),
+				 sizeof(union union2));
 	printf("offsets: %d\n", (int)((char *)&st1.u.v1 - (char *)&st1));
 	st1.f1 = 1;
 	st1.f2 = 2;
 	st1.f3 = 3;
 	printf("st1: %d %d %d\n",
-		   st1.f1, st1.f2, st1.f3);
+				 st1.f1, st1.f2, st1.f3);
 	st1.u.v1 = 1;
 	st1.u.v2 = 2;
 	printf("union1: %d\n", st1.u.v1);
@@ -565,39 +565,39 @@ void struct_test() {
 	s->f2 = 2;
 	s->f3 = 1;
 	printf("st2: %d %d %d\n",
-		   s->f1, s->f2, s->f3);
+				 s->f1, s->f2, s->f3);
 	printf("str_addr=%x\n", (int)(uintptr_t)st1.str - (int)(uintptr_t)&st1.f1);
 
 	printf("aligntest1 sizeof=%d alignof=%d\n",
-		   sizeof(struct aligntest1), __alignof__(struct aligntest1));
+				 sizeof(struct aligntest1), __alignof__(struct aligntest1));
 	printf("aligntest2 sizeof=%d alignof=%d\n",
-		   sizeof(struct aligntest2), __alignof__(struct aligntest2));
+				 sizeof(struct aligntest2), __alignof__(struct aligntest2));
 	printf("aligntest3 sizeof=%d alignof=%d\n",
-		   sizeof(struct aligntest3), __alignof__(struct aligntest3));
+				 sizeof(struct aligntest3), __alignof__(struct aligntest3));
 #if !(defined _WIN32 && CC_NAME == CC_clang)
 	printf("aligntest4 sizeof=%d alignof=%d\n",
-		   sizeof(struct aligntest4), __alignof__(struct aligntest4));
+				 sizeof(struct aligntest4), __alignof__(struct aligntest4));
 #endif
 	printf("aligntest5 sizeof=%d alignof=%d\n",
-		   sizeof(struct aligntest5), __alignof__(struct aligntest5));
+				 sizeof(struct aligntest5), __alignof__(struct aligntest5));
 	printf("aligntest6 sizeof=%d alignof=%d\n",
-		   sizeof(struct aligntest6), __alignof__(struct aligntest6));
+				 sizeof(struct aligntest6), __alignof__(struct aligntest6));
 	printf("aligntest7 sizeof=%d alignof=%d\n",
-		   sizeof(struct aligntest7), __alignof__(struct aligntest7));
+				 sizeof(struct aligntest7), __alignof__(struct aligntest7));
 	printf("aligntest8 sizeof=%d alignof=%d\n",
-		   sizeof(struct aligntest8), __alignof__(struct aligntest8));
+				 sizeof(struct aligntest8), __alignof__(struct aligntest8));
 #if !(defined _WIN32 && CC_NAME == CC_clang)
 	printf("aligntest9 sizeof=%d alignof=%d\n",
-		   sizeof(struct aligntest9), __alignof__(struct aligntest9));
+				 sizeof(struct aligntest9), __alignof__(struct aligntest9));
 #endif
 	printf("aligntest10 sizeof=%d alignof=%d\n",
-		   sizeof(struct aligntest10), __alignof__(struct aligntest10));
+				 sizeof(struct aligntest10), __alignof__(struct aligntest10));
 	printf("altest5 sizeof=%d alignof=%d\n",
-		   sizeof(altest5), __alignof__(altest5));
+				 sizeof(altest5), __alignof__(altest5));
 	printf("altest6 sizeof=%d alignof=%d\n",
-		   sizeof(altest6), __alignof__(altest6));
+				 sizeof(altest6), __alignof__(altest6));
 	printf("altest7 sizeof=%d alignof=%d\n",
-		   sizeof(altest7), __alignof__(altest7));
+				 sizeof(altest7), __alignof__(altest7));
 
 #if !(defined _WIN32 && CC_NAME == CC_clang)
 	printf("sizeof(struct empty) = %d\n", sizeof(struct empty));
@@ -624,17 +624,17 @@ void char_short_test() {
 	var1 = 0x01020304;
 	var2 = 0xfffefdfc;
 	printf("s8=%d %d\n",
-		   *(signed char *)&var1, *(signed char *)&var2);
+				 *(signed char *)&var1, *(signed char *)&var2);
 	printf("u8=%d %d\n",
-		   *(unsigned char *)&var1, *(unsigned char *)&var2);
+				 *(unsigned char *)&var1, *(unsigned char *)&var2);
 	printf("s16=%d %d\n",
-		   *(short *)&var1, *(short *)&var2);
+				 *(short *)&var1, *(short *)&var2);
 	printf("u16=%d %d\n",
-		   *(unsigned short *)&var1, *(unsigned short *)&var2);
+				 *(unsigned short *)&var1, *(unsigned short *)&var2);
 	printf("s32=%d %d\n",
-		   *(int *)&var1, *(int *)&var2);
+				 *(int *)&var1, *(int *)&var2);
 	printf("u32=%d %d\n",
-		   *(unsigned int *)&var1, *(unsigned int *)&var2);
+				 *(unsigned int *)&var1, *(unsigned int *)&var2);
 	*(signed char *)&var1 = 0x08;
 	printf("var1=%x\n", var1);
 	*(short *)&var1 = 0x0809;
@@ -661,10 +661,10 @@ void char_short_test() {
 #endif
 	printf("promote char/short funcret %d " LONG_LONG_FORMAT "\n", var1, var4);
 	printf("promote char/short fumcret VA %d %d %d %d\n",
-		   csf(unsigned short, 0xcdcdcdcd),
-		   csf(short, 0xefefefef),
-		   csf(_Bool, 0x33221100),
-		   csf(_Bool, 0x33221101));
+				 csf(unsigned short, 0xcdcdcdcd),
+				 csf(short, 0xefefefef),
+				 csf(_Bool, 0x33221100),
+				 csf(_Bool, 0x33221101));
 #endif
 	var3 = -10;
 	var1 = (signed char)(unsigned char)(var3 + 1);
@@ -697,12 +697,12 @@ static unsigned int calc_vm_flags(unsigned int prot) {
 	unsigned int prot_bits;
 
 	prot_bits = ((0x1 == 0x00000001) ? (prot & 0x1) : (prot & 0x1) ? 0x00000001
-																   : 0);
+																																 : 0);
 	return prot_bits;
 }
 
 enum cast_enum { FIRST,
-				 LAST };
+								 LAST };
 
 static void tst_cast(enum cast_enum ce) {
 	printf("%d\n", ce);

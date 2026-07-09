@@ -28,9 +28,9 @@ void s6_7_6_declarators(void) {
 	p = arr;
 	fp = s6_7_6_mdfunc;
 	printf("multi: %d %d %d\n",
-		   (int)(sizeof arr == 3 * sizeof(int)),
-		   p[0] + p[2],
-		   fp());
+				 (int)(sizeof arr == 3 * sizeof(int)),
+				 p[0] + p[2],
+				 fp());
 
 	s6_7_6_apply(s6_7_6_cbfn);
 
@@ -45,9 +45,9 @@ void s6_7_6_declarators(void) {
 		int firstsz = sizeof v;
 		int secondsz = sizeof v;
 		printf("vla_once: %d %d %d\n",
-			   s6_7_6_counter,
-			   (int)(firstsz == 4 * (int)sizeof(int)),
-			   (int)(firstsz == secondsz));
+					 s6_7_6_counter,
+					 (int)(firstsz == 4 * (int)sizeof(int)),
+					 (int)(firstsz == secondsz));
 	}
 
 	{
@@ -63,7 +63,7 @@ void s6_7_6_declarators(void) {
 		int b = s6_7_6_getn();
 		int m[a][b];
 		printf("vla_order: %d %d\n",
-			   s6_7_6_counter,
-			   (int)(sizeof m == (size_t)a * b * sizeof(int)));
+					 s6_7_6_counter,
+					 (int)(sizeof m == (size_t)a * b * sizeof(int)));
 	}
 }

@@ -140,8 +140,8 @@ int f6(int x) {
 }
 
 #if defined __MCC__                 \
-	? !defined __leading_underscore \
-	: !(defined __APPLE__ || defined _WIN32)
+		? !defined __leading_underscore \
+		: !(defined __APPLE__ || defined _WIN32)
 #define _
 #else
 #define _ "_"

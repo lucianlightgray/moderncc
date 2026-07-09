@@ -110,38 +110,38 @@ void lloptest(long long a, long long b) {
 	ub = b;
 
 	printf("arith: " LONG_LONG_FORMAT " " LONG_LONG_FORMAT " " LONG_LONG_FORMAT "\n",
-		   a + b,
-		   a - b,
-		   a * b);
+				 a + b,
+				 a - b,
+				 a * b);
 
 	if (b != 0) {
 		printf("arith1: " LONG_LONG_FORMAT " " LONG_LONG_FORMAT "\n",
-			   a / b,
-			   a % b);
+					 a / b,
+					 a % b);
 	}
 
 	printf("bin: " LONG_LONG_FORMAT " " LONG_LONG_FORMAT " " LONG_LONG_FORMAT "\n",
-		   a & b,
-		   a | b,
-		   a ^ b);
+				 a & b,
+				 a | b,
+				 a ^ b);
 
 	printf("test: %d %d %d %d %d %d\n",
-		   a == b,
-		   a != b,
-		   a<b,
-			 a>
-			   b,
-		   a >= b,
-		   a <= b);
+				 a == b,
+				 a != b,
+				 a<b,
+					 a>
+						 b,
+				 a >= b,
+				 a <= b);
 
 	printf("utest: %d %d %d %d %d %d\n",
-		   ua == ub,
-		   ua != ub,
-		   ua<ub,
-			  ua>
-			   ub,
-		   ua >= ub,
-		   ua <= ub);
+				 ua == ub,
+				 ua != ub,
+				 ua<ub,
+						ua>
+						 ub,
+				 ua >= ub,
+				 ua <= ub);
 
 	a++;
 	b++;
@@ -155,17 +155,17 @@ void lloptest(long long a, long long b) {
 
 void llshift(long long a, int b) {
 	printf("shift: " LONG_LONG_FORMAT " " LONG_LONG_FORMAT " " LONG_LONG_FORMAT "\n",
-		   (unsigned long long)a >> b,
-		   a >> b,
-		   a << b);
+				 (unsigned long long)a >> b,
+				 a >> b,
+				 a << b);
 	printf("shiftc: " LONG_LONG_FORMAT " " LONG_LONG_FORMAT " " LONG_LONG_FORMAT "\n",
-		   (unsigned long long)a >> 3,
-		   a >> 3,
-		   a << 3);
+				 (unsigned long long)a >> 3,
+				 a >> 3,
+				 a << 3);
 	printf("shiftc: " LONG_LONG_FORMAT " " LONG_LONG_FORMAT " " LONG_LONG_FORMAT "\n",
-		   (unsigned long long)a >> 35,
-		   a >> 35,
-		   a << 35);
+				 (unsigned long long)a >> 35,
+				 a >> 35,
+				 a << 35);
 }
 
 void llfloat(void) {
@@ -233,10 +233,10 @@ void longlong_test(void) {
 	b = ua;
 	printf(LONG_LONG_FORMAT " " LONG_LONG_FORMAT "\n", a, b);
 	printf(LONG_LONG_FORMAT " " LONG_LONG_FORMAT " " LONG_LONG_FORMAT " " XLONG_LONG_FORMAT "\n",
-		   (long long)1,
-		   (long long)-2,
-		   1LL,
-		   0x1234567812345679);
+				 (long long)1,
+				 (long long)-2,
+				 1LL,
+				 0x1234567812345679);
 	a = llfunc1(-3);
 	printf(LONG_LONG_FORMAT "\n", a);
 

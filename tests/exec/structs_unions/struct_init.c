@@ -7,9 +7,9 @@ struct contains_empty {
 	u8 b;
 };
 struct contains_empty ce = {
-	{(1)},
-	(empty_s){},
-	022,
+		{(1)},
+		(empty_s){},
+		022,
 };
 
 struct SS {
@@ -51,21 +51,21 @@ struct U gu = {3, 5, 6, 7, 8, 4, "huhu", 43};
 struct U gu2 = {3, {5, 6, 7, 8}, 4, {"huhu", 43}};
 
 struct U gu3 = {{3}, {
-						 5,
-						 6,
-						 7,
-						 8,
-					 },
-				4,
-				{"huhu", 43}};
+												 5,
+												 6,
+												 7,
+												 8,
+										 },
+								4,
+								{"huhu", 43}};
 
 struct U gu4 = {3, {
-					   5,
-					   6,
-					   7,
-				   },
-				5,
-				{"bla", {44}}};
+											 5,
+											 6,
+											 7,
+									 },
+								5,
+								{"bla", {44}}};
 
 struct S gs3 = {(1), {(2)}, {(((3))), {4}}};
 
@@ -129,8 +129,8 @@ void inc_global(void) {
 }
 
 struct Wrap global_wrap[] = {
-	((struct Wrap){inc_global}),
-	inc_global,
+		((struct Wrap){inc_global}),
+		inc_global,
 };
 
 #include <stdio.h>
@@ -157,21 +157,21 @@ void foo(struct W *w, struct pkthdr *phdr_) {
 	struct U lu21 = {3, ls, 4, "huhu", 43};
 
 	struct U lu3 = {3, {
-						   5,
-						   6,
-						   7,
-						   8,
-					   },
-					4,
-					{"huhu", 43}};
+												 5,
+												 6,
+												 7,
+												 8,
+										 },
+									4,
+									{"huhu", 43}};
 
 	struct U lu4 = {3, {
-						   5,
-						   6,
-						   7,
-					   },
-					5,
-					{"bla", 44}};
+												 5,
+												 6,
+												 7,
+										 },
+									5,
+									{"bla", 44}};
 
 	struct S ls3 = {(1), (2), {(((3))), 4}};
 
@@ -218,8 +218,8 @@ void foo(struct W *w, struct pkthdr *phdr_) {
 
 void test_compound_with_relocs(void) {
 	struct Wrap local_wrap[] = {
-		((struct Wrap){inc_global}),
-		inc_global,
+			((struct Wrap){inc_global}),
+			inc_global,
 	};
 	void (*p)(void);
 	p = global_wrap[0].func;
@@ -255,13 +255,13 @@ void test_multi_relocs(void) {
 	int i;
 
 	static const fptr tabl1[4] = {
-		[0 ... 3] = &sys_ni,
-		[0] = sys_one,
-		[1] = sys_two,
-		[2] = sys_three,
-		sys_four,
-		[1 ... 2] = &sys_ni,
-		[1] = 0,
+			[0 ... 3] = &sys_ni,
+			[0] = sys_one,
+			[1] = sys_two,
+			[2] = sys_three,
+			sys_four,
+			[1 ... 2] = &sys_ni,
+			[1] = 0,
 	};
 	for (i = 0; i < array_size(tabl1); i++)
 		if (tabl1[i])
@@ -270,13 +270,13 @@ void test_multi_relocs(void) {
 			printf("(0)\n");
 
 	const fptr tabl2[4] = {
-		[0 ... 3] = &sys_ni,
-		[0] = sys_one,
-		[1] = sys_two,
-		[2] = sys_three,
-		sys_four,
-		[1 ... 2] = &sys_ni,
-		[1] = 0,
+			[0 ... 3] = &sys_ni,
+			[0] = sys_one,
+			[1] = sys_two,
+			[2] = sys_three,
+			sys_four,
+			[1 ... 2] = &sys_ni,
+			[1] = 0,
 	};
 	for (i = 0; i < array_size(tabl2); i++)
 		if (tabl2[i])
@@ -286,8 +286,8 @@ void test_multi_relocs(void) {
 
 	int c = 0;
 	int dd[] = {
-		[0 ... 1] = ++c,
-		[2 ... 3] = ++c};
+			[0 ... 1] = ++c,
+			[2 ... 3] = ++c};
 	for (i = 0; i < array_size(dd); i++)
 		printf(" %d", dd[i]);
 	printf("\n");
@@ -308,7 +308,7 @@ void test_multi_relocs(void) {
 void test_init_ranges(void) {
 	int i, c = 0;
 	static void *gostring[] = {
-		[0 ... 31] = &&l_bad, [127] = &&l_bad, [32 ... 126] = &&l_loop, ['\\'] = &&l_esc, ['"'] = &&l_qdown, [128 ... 191] = &&l_bad, [192 ... 223] = &&l_utf8_2, [224 ... 239] = &&l_utf8_3, [240 ... 247] = &&l_utf8_4, [248 ... 255] = &&l_bad};
+			[0 ... 31] = &&l_bad, [127] = &&l_bad, [32 ... 126] = &&l_loop, ['\\'] = &&l_esc, ['"'] = &&l_qdown, [128 ... 191] = &&l_bad, [192 ... 223] = &&l_utf8_2, [224 ... 239] = &&l_utf8_3, [240 ... 247] = &&l_utf8_4, [248 ... 255] = &&l_bad};
 
 	for (i = 0; i < 256; i++) {
 		goto *gostring[i];
@@ -375,25 +375,25 @@ void test_init_struct_from_struct(void) {
 	struct S {
 		int x, y;
 	} a = {1, 2},
-	  b = {3, 4},
-	  c[] = {a, b},
-	  d[] = {++i, ++i, ++i, ++i},
-	  e[] = {b, (struct S){5, 6}};
+		b = {3, 4},
+		c[] = {a, b},
+		d[] = {++i, ++i, ++i, ++i},
+		e[] = {b, (struct S){5, 6}};
 
 	printf("%s: %d %d %d %d - %d %d %d %d - %d %d %d %d\n",
-		   __FUNCTION__,
-		   c[0].x,
-		   c[0].y,
-		   c[1].x,
-		   c[1].y,
-		   d[0].x,
-		   d[0].y,
-		   d[1].x,
-		   d[1].y,
-		   e[0].x,
-		   e[0].y,
-		   e[1].x,
-		   e[1].y);
+				 __FUNCTION__,
+				 c[0].x,
+				 c[0].y,
+				 c[1].x,
+				 c[1].y,
+				 d[0].x,
+				 d[0].y,
+				 d[1].x,
+				 d[1].y,
+				 e[0].x,
+				 e[0].y,
+				 e[1].x,
+				 e[1].y);
 }
 
 typedef struct {

@@ -40,10 +40,10 @@ void sizeof_test(void) {
 	printf("sizeof(char[1+2*a]) = %d\n", sizeof(char[1 + 2 * a]));
 
 	printf("sizeof( (struct {int i; int j;}){4,5} ) = %d\n",
-		   sizeof((struct {int i; int j; }){4, 5}));
+				 sizeof((struct {int i; int j; }){4, 5}));
 
 	printf("sizeof (struct {short i; short j;}){4,5} = %d\n",
-		   sizeof(struct {short i; short j; }){4, 5});
+				 sizeof(struct {short i; short j; }){4, 5});
 
 	printf("sizeof(t && 0) = %d\n", sizeof(t && 0));
 	printf("sizeof(1 && 1) = %d\n", sizeof(1 && 1));
@@ -81,13 +81,13 @@ void statement_expr_test(void) {
 	a = 0;
 	for (i = 0; i < 10; i++) {
 		a += 1 +
-			 ({
-				 int b, j;
-				 b = 0;
-				 for (j = 0; j < 5; j++)
-					 b += j;
-				 b;
-			 });
+				 ({
+					 int b, j;
+					 b = 0;
+					 for (j = 0; j < 5; j++)
+						 b += j;
+					 b;
+				 });
 	}
 	printf("a=%d\n", a);
 
@@ -96,16 +96,16 @@ void statement_expr_test(void) {
 		(struct hlist_node *)v;
 	})) x;
 	typeof(x)
-		ptr = (struct hlist_node *)v;
+			ptr = (struct hlist_node *)v;
 
 #define some_attr __attribute__((aligned(1)))
-#define tps(str) ({                       \
+#define tps(str) ({                     \
 	static const char *t some_attr = str; \
 	t;                                    \
 })
 	printf("stmtexpr: %s %s\n",
-		   tps("somerandomlongstring"),
-		   tps("anotherlongstring"));
+				 tps("somerandomlongstring"),
+				 tps("anotherlongstring"));
 
 	int t = 40;
 	int b = ({ int t = 41; t; });
@@ -143,20 +143,20 @@ void local_label_test(void) {
 	goto l1;
 l2:
 	a = 1 + ({
-			__label__ l1, l2, l3, l4;
-			goto l1;
-		l4:
-			printf("aa1\n");
-			goto l3;
-		l2:
-			printf("aa3\n");
-			goto l4;
-		l1:
-			printf("aa2\n");
-			goto l2;
-		l3:;
-			1;
-		});
+				__label__ l1, l2, l3, l4;
+				goto l1;
+			l4:
+				printf("aa1\n");
+				goto l3;
+			l2:
+				printf("aa3\n");
+				goto l4;
+			l1:
+				printf("aa2\n");
+				goto l2;
+			l3:;
+				1;
+			});
 	printf("a=%d\n", a);
 	return;
 l4:
@@ -174,75 +174,75 @@ typedef __SIZE_TYPE__ word;
 static char *strncat1(char *dest, const char *src, size_t count) {
 	word d0, d1, d2, d3;
 	__asm__ __volatile__(
-		"repne\n\t"
-		"scasb\n\t"
-		"dec %1\n\t"
-		"mov %8,%3\n"
-		"1:\tdec %3\n\t"
-		"js 2f\n\t"
-		"lodsb\n\t"
-		"stosb\n\t"
-		"testb %%al,%%al\n\t"
-		"jne 1b\n"
-		"2:\txor %2,%2\n\t"
-		"stosb"
-		: "=&S"(d0), "=&D"(d1), "=&a"(d2), "=&c"(d3)
-		: "0"(src), "1"(dest), "2"(0), "3"(0xffffffff), "g"(count)
-		: "memory");
+			"repne\n\t"
+			"scasb\n\t"
+			"dec %1\n\t"
+			"mov %8,%3\n"
+			"1:\tdec %3\n\t"
+			"js 2f\n\t"
+			"lodsb\n\t"
+			"stosb\n\t"
+			"testb %%al,%%al\n\t"
+			"jne 1b\n"
+			"2:\txor %2,%2\n\t"
+			"stosb"
+			: "=&S"(d0), "=&D"(d1), "=&a"(d2), "=&c"(d3)
+			: "0"(src), "1"(dest), "2"(0), "3"(0xffffffff), "g"(count)
+			: "memory");
 	return dest;
 }
 
 static char *strncat2(char *dest, const char *src, size_t count) {
 	word d0, d1, d2, d3;
 	__asm__ __volatile__(
-		"repne scasb\n\t"
-		"dec %1\n\t"
-		"mov %8,%3\n"
-		"1:\tdec %3\n\t"
-		"js 2f\n\t"
-		"lodsb\n\t"
-		"stosb\n\t"
-		"testb %%al,%%al\n\t"
-		"jne 1b\n"
-		"2:\txor %2,%2\n\t"
-		"stosb"
-		: "=&S"(d0), "=&D"(d1), "=&a"(d2), "=&c"(d3)
-		: "0"(src), "1"(dest), "2"(0), "3"(0xffffffff), "g"(count)
-		: "memory");
+			"repne scasb\n\t"
+			"dec %1\n\t"
+			"mov %8,%3\n"
+			"1:\tdec %3\n\t"
+			"js 2f\n\t"
+			"lodsb\n\t"
+			"stosb\n\t"
+			"testb %%al,%%al\n\t"
+			"jne 1b\n"
+			"2:\txor %2,%2\n\t"
+			"stosb"
+			: "=&S"(d0), "=&D"(d1), "=&a"(d2), "=&c"(d3)
+			: "0"(src), "1"(dest), "2"(0), "3"(0xffffffff), "g"(count)
+			: "memory");
 	return dest;
 }
 
 static inline void *memcpy1(void *to, const void *from, size_t n) {
 	word d0, d1, d2;
 	__asm__ __volatile__(
-		"rep ; movsl\n\t"
-		"testb $2,%b4\n\t"
-		"je 1f\n\t"
-		"movsw\n"
-		"1:\ttestb $1,%b4\n\t"
-		"je 2f\n\t"
-		"movsb\n"
-		"2:"
-		: "=&c"(d0), "=&D"(d1), "=&S"(d2)
-		: "0"(n / 4), "q"(n), "1"((word)to), "2"((word)from)
-		: "memory");
+			"rep ; movsl\n\t"
+			"testb $2,%b4\n\t"
+			"je 1f\n\t"
+			"movsw\n"
+			"1:\ttestb $1,%b4\n\t"
+			"je 2f\n\t"
+			"movsb\n"
+			"2:"
+			: "=&c"(d0), "=&D"(d1), "=&S"(d2)
+			: "0"(n / 4), "q"(n), "1"((word)to), "2"((word)from)
+			: "memory");
 	return (to);
 }
 
 static inline void *memcpy2(void *to, const void *from, size_t n) {
 	word d0, d1, d2;
 	__asm__ __volatile__(
-		"rep movsl\n\t"
-		"testb $2,%b4\n\t"
-		"je 1f\n\t"
-		"movsw\n"
-		"1:\ttestb $1,%b4\n\t"
-		"je 2f\n\t"
-		"movsb\n"
-		"2:"
-		: "=&c"(d0), "=&D"(d1), "=&S"(d2)
-		: "0"(n / 4), "q"(n), "1"((word)to), "2"((word)from)
-		: "memory");
+			"rep movsl\n\t"
+			"testb $2,%b4\n\t"
+			"je 1f\n\t"
+			"movsw\n"
+			"1:\ttestb $1,%b4\n\t"
+			"je 2f\n\t"
+			"movsb\n"
+			"2:"
+			: "=&c"(d0), "=&D"(d1), "=&S"(d2)
+			: "0"(n / 4), "q"(n), "1"((word)to), "2"((word)from)
+			: "memory");
 	return (to);
 }
 
@@ -258,18 +258,18 @@ static __inline__ void sigdelset1(unsigned int *set, int _sig) {
 
 static __inline__ __const__ unsigned int swab32(unsigned int x) {
 	return ((x >> 24) & 0xff) |
-		   ((x >> 8) & 0xff00) |
-		   ((x << 8) & 0xff0000) |
-		   ((x << 24) & 0xff000000);
+				 ((x >> 8) & 0xff00) |
+				 ((x << 8) & 0xff0000) |
+				 ((x << 24) & 0xff000000);
 }
 #else
 static __inline__ __const__ unsigned int swab32(unsigned int x) {
 	__asm__("xchgb %b0,%h0\n\t"
-			"rorl $16,%0\n\t"
-			"xchgb %b0,%h0"
-			: "="
-			  "q"(x)
-			: "0"(x));
+					"rorl $16,%0\n\t"
+					"xchgb %b0,%h0"
+					: "="
+						"q"(x)
+					: "0"(x));
 	return x;
 }
 #endif
@@ -311,8 +311,8 @@ word mconstraint_test(struct struct1231 *r) {
 	unsigned int a[2];
 	a[0] = 0;
 	__asm__ volatile("lea %2,%0; movl 4(%0),%k0; addl %2,%k0; movl $51,%2; movl $52,4%2; movl $63,%1"
-					 : "=&r"(ret), "=m"(a)
-					 : "m"(*(struct struct123 *)r->addr));
+									 : "=&r"(ret), "=m"(a)
+									 : "m"(*(struct struct123 *)r->addr));
 	return ret + a[0];
 }
 
@@ -320,8 +320,8 @@ word mconstraint_test(struct struct1231 *r) {
 int fls64(unsigned long long x) {
 	int bitpos = -1;
 	asm("bsrq %1,%q0"
-		: "+r"(bitpos)
-		: "rm"(x));
+			: "+r"(bitpos)
+			: "rm"(x));
 	return bitpos + 1;
 }
 #endif
@@ -359,15 +359,15 @@ char *get_asm_string(void) {
 #ifndef __clang__
 	extern int some_symbol;
 	asm volatile(".globl some_symbol\n"
-				 "jmp .+6\n"
-				 "1:\n"
-				 "some_symbol: .long 0\n"
-				 ".pushsection __bug_table, \"a\"\n"
-				 ".globl bug_table\n"
-				 "bug_table:\n"
+							 "jmp .+6\n"
+							 "1:\n"
+							 "some_symbol: .long 0\n"
+							 ".pushsection __bug_table, \"a\"\n"
+							 ".globl bug_table\n"
+							 "bug_table:\n"
 
-				 "2:\t.long 1b - 2b, %c0 - 2b\n"
-				 ".popsection\n" : : "i"("A string"));
+							 "2:\t.long 1b - 2b, %c0 - 2b\n"
+							 ".popsection\n" : : "i"("A string"));
 	char *str = ((char *)bug_table) + bug_table[1];
 	return str;
 #else
@@ -377,16 +377,16 @@ char *get_asm_string(void) {
 
 extern unsigned char alld_stuff[];
 asm(".data\n"
-	".byte 41\n"
-	"alld_stuff:\n"
-	"661:\n"
-	".byte 42\n"
-	"662:\n"
-	".pushsection .data.ignore\n"
-	".long 661b - .\n"
+		".byte 41\n"
+		"alld_stuff:\n"
+		"661:\n"
+		".byte 42\n"
+		"662:\n"
+		".pushsection .data.ignore\n"
+		".long 661b - .\n"
 
-	".popsection\n"
-	".byte 662b - 661b\n");
+		".popsection\n"
+		".byte 662b - 661b\n");
 
 void asm_local_label_diff(void) {
 	printf("asm_local_label_diff: %d %d\n", alld_stuff[0], alld_stuff[1]);
@@ -444,43 +444,43 @@ void trace_console(long len, long len2) {
 #ifdef __x86_64__
 
 	if (0 &&
-		({
-			long pscr_ret__;
-			switch (len) {
-			case 4: {
-				long pfo_ret__;
-				switch (len2) {
-				case 8:
-					printf("bla");
-					pfo_ret__ = 42;
-					break;
+			({
+				long pscr_ret__;
+				switch (len) {
+				case 4: {
+					long pfo_ret__;
+					switch (len2) {
+					case 8:
+						printf("bla");
+						pfo_ret__ = 42;
+						break;
+					}
+					pscr_ret__ = pfo_ret__;
+				} break;
+				case 8: {
+					long pfo_ret__;
+					switch (len2) {
+					case 1:
+						asm("movq %1,%0" : "=r"(pfo_ret__) : "m"(cpu_number));
+						break;
+					case 2:
+						asm("movq %1,%0" : "=r"(pfo_ret__) : "m"(cpu_number));
+						break;
+					case 4:
+						asm("movq %1,%0" : "=r"(pfo_ret__) : "m"(cpu_number));
+						break;
+					case 8:
+						asm("movq %1,%0" : "=r"(pfo_ret__) : "m"(cpu_number));
+						break;
+					default:
+						printf("impossible\n");
+					}
+					pscr_ret__ = pfo_ret__;
+				};
+						break;
 				}
-				pscr_ret__ = pfo_ret__;
-			} break;
-			case 8: {
-				long pfo_ret__;
-				switch (len2) {
-				case 1:
-					asm("movq %1,%0" : "=r"(pfo_ret__) : "m"(cpu_number));
-					break;
-				case 2:
-					asm("movq %1,%0" : "=r"(pfo_ret__) : "m"(cpu_number));
-					break;
-				case 4:
-					asm("movq %1,%0" : "=r"(pfo_ret__) : "m"(cpu_number));
-					break;
-				case 8:
-					asm("movq %1,%0" : "=r"(pfo_ret__) : "m"(cpu_number));
-					break;
-				default:
-					printf("impossible\n");
-				}
-				pscr_ret__ = pfo_ret__;
-			};
-				break;
-			}
-			pscr_ret__;
-		})) {
+				pscr_ret__;
+			})) {
 		printf("huh?\n");
 	}
 #endif
@@ -505,12 +505,12 @@ void test_asm_call(void) {
 
 	asm volatile("push %%rdi; push %%rdi; mov %0, %%rdi;"
 #if 1 && !defined(__MCC__) && (defined(__PIC__) || defined(__PIE__))
-				 "call getenv@plt;"
+							 "call getenv@plt;"
 #else
-				 "call getenv;"
+							 "call getenv;"
 #endif
-				 "pop %%rdi; pop %%rdi"
-				 : "=a"(s) : "r"(str));
+							 "pop %%rdi; pop %%rdi"
+							 : "=a"(s) : "r"(str));
 	printf("asmd: %s\n", s);
 #endif
 }
@@ -670,10 +670,10 @@ void asm_test(void) {
 
 #endif
 
-#define COMPAT_TYPE(type1, type2)                                             \
-	{                                                                         \
+#define COMPAT_TYPE(type1, type2)                                         \
+	{                                                                       \
 		printf("__builtin_types_compatible_p(%s, %s) = %d\n", #type1, #type2, \
-			   __builtin_types_compatible_p(type1, type2));                   \
+					 __builtin_types_compatible_p(type1, type2));                   \
 	}
 
 int constant_p_var;

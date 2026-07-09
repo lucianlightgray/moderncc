@@ -2,8 +2,8 @@ void s7_12_classify(void) {
 	double dn = 0.0 / 0.0;
 	double di = 1.0 / 0.0;
 	printf("fpc normal=%d inf=%d nan=%d zero=%d\n",
-		   fpclassify(1.0) == FP_NORMAL, fpclassify(di) == FP_INFINITE,
-		   fpclassify(dn) == FP_NAN, fpclassify(0.0) == FP_ZERO);
+				 fpclassify(1.0) == FP_NORMAL, fpclassify(di) == FP_INFINITE,
+				 fpclassify(dn) == FP_NAN, fpclassify(0.0) == FP_ZERO);
 	printf("fpc sub=%d\n", fpclassify(1e-310) == FP_SUBNORMAL);
 	printf("isfinite %d %d %d\n", isfinite(1.0) != 0, isfinite(di) != 0, isfinite(dn) != 0);
 	printf("isinf %d %d\n", isinf(di) != 0, isinf(1.0) != 0);
@@ -14,13 +14,13 @@ void s7_12_classify(void) {
 
 void s7_12_trig_hyp(void) {
 	printf("trig %d %d %d %d %d %d %d\n",
-		   (int)acos(1.0), (int)asin(0.0), (int)atan(0.0), (int)atan2(0.0, 1.0),
-		   (int)cos(0.0), (int)sin(0.0), (int)tan(0.0));
+				 (int)acos(1.0), (int)asin(0.0), (int)atan(0.0), (int)atan2(0.0, 1.0),
+				 (int)cos(0.0), (int)sin(0.0), (int)tan(0.0));
 	printf("trigf %d %d\n", (int)cosf(0.0f), (int)sinf(0.0f));
 	printf("trigl %d %d\n", (int)cosl(0.0L), (int)sinl(0.0L));
 	printf("hyp %d %d %d %d %d %d\n",
-		   (int)acosh(1.0), (int)asinh(0.0), (int)atanh(0.0),
-		   (int)cosh(0.0), (int)sinh(0.0), (int)tanh(0.0));
+				 (int)acosh(1.0), (int)asinh(0.0), (int)atanh(0.0),
+				 (int)cosh(0.0), (int)sinh(0.0), (int)tanh(0.0));
 }
 
 void s7_12_explog(void) {
@@ -40,17 +40,17 @@ void s7_12_explog(void) {
 
 void s7_12_powabs(void) {
 	printf("cbrt %d fabs %d hypot %d pow %d sqrt %d\n",
-		   (int)cbrt(27.0), (int)fabs(-3.0), (int)hypot(3.0, 4.0),
-		   (int)pow(2.0, 10.0), (int)sqrt(16.0));
+				 (int)cbrt(27.0), (int)fabs(-3.0), (int)hypot(3.0, 4.0),
+				 (int)pow(2.0, 10.0), (int)sqrt(16.0));
 	printf("sqrtf %d powl %d\n", (int)sqrtf(16.0f), (int)powl(2.0L, 10.0L));
 	printf("erf %d erfc %d lgamma %d tgamma %d\n",
-		   (int)erf(0.0), (int)erfc(0.0), (int)lgamma(1.0), (int)tgamma(5.0));
+				 (int)erf(0.0), (int)erfc(0.0), (int)lgamma(1.0), (int)tgamma(5.0));
 }
 
 void s7_12_nearest_rem(void) {
 	int q;
 	printf("ceil %d floor %d round %d trunc %d\n",
-		   (int)ceil(2.1), (int)floor(2.7), (int)round(2.5), (int)trunc(2.7));
+				 (int)ceil(2.1), (int)floor(2.7), (int)round(2.5), (int)trunc(2.7));
 	printf("nearbyint %d rint %d\n", (int)nearbyint(2.5), (int)rint(2.5));
 	printf("lrint %ld llrint %lld\n", lrint(2.5), llrint(2.5));
 	printf("lround %ld llround %lld\n", lround(2.5), llround(2.5));
@@ -64,11 +64,11 @@ void s7_12_manip_cmp(void) {
 	printf("nextafter %d %d\n", nextafter(1.0, 2.0) > 1.0, nextafter(1.0, 0.0) < 1.0);
 	printf("nexttoward %d\n", nexttoward(1.0, 2.0L) > 1.0);
 	printf("fdim %d fmax %d fmin %d fma %d\n",
-		   (int)fdim(5.0, 2.0), (int)fmax(1.0, 2.0), (int)fmin(1.0, 2.0), (int)fma(2.0, 3.0, 4.0));
+				 (int)fdim(5.0, 2.0), (int)fmax(1.0, 2.0), (int)fmin(1.0, 2.0), (int)fma(2.0, 3.0, 4.0));
 	printf("fmax_nan %d fmin_nan %d\n", (int)fmax(nan, 5.0), (int)fmin(nan, 5.0));
 	printf("isgreater %d %d\n", isgreater(2.0, 1.0), isgreater(1.0, 2.0));
 	printf("isgreaterequal %d isless %d islessequal %d\n",
-		   isgreaterequal(2.0, 2.0), isless(2.0, 1.0), islessequal(2.0, 2.0));
+				 isgreaterequal(2.0, 2.0), isless(2.0, 1.0), islessequal(2.0, 2.0));
 	printf("islessgreater %d isunordered %d %d\n",
-		   islessgreater(2.0, 1.0), isunordered(2.0, nan), isunordered(2.0, 1.0));
+				 islessgreater(2.0, 1.0), isunordered(2.0, nan), isunordered(2.0, 1.0));
 }

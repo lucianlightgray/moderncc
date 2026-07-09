@@ -18,8 +18,8 @@ int main() {
 		int atomic_var = 100;
 		int expected = 100;
 		bool success = __atomic_compare_exchange_n(
-			&atomic_var, &expected, 200,
-			false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+				&atomic_var, &expected, 200,
+				false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
 		assert(success);
 		assert(atomic_var == 200);
 		assert(expected == 100);
@@ -29,8 +29,8 @@ int main() {
 		int atomic_var = 100;
 		int expected = 99;
 		bool success = __atomic_compare_exchange_n(
-			&atomic_var, &expected, 200,
-			false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+				&atomic_var, &expected, 200,
+				false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
 		assert(!success);
 		assert(atomic_var == 100);
 		assert(expected == 100);
@@ -41,8 +41,8 @@ int main() {
 		int expected = 50;
 		for (int i = 0; i < 10; i++) {
 			if (__atomic_compare_exchange_n(
-					&atomic_var, &expected, 60,
-					true, __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
+							&atomic_var, &expected, 60,
+							true, __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
 				break;
 			}
 		}

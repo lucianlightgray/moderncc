@@ -7,7 +7,7 @@ int main(void) {
 		int a = pairs[i][0], b = pairs[i][1];
 		int q = a / b, r = a % b;
 		printf("%d/%d=%d %d%%%d=%d ident=%d\n",
-			   a, b, q, a, b, r, (q * b + r) == a);
+					 a, b, q, a, b, r, (q * b + r) == a);
 	}
 
 	unsigned u = 0u;

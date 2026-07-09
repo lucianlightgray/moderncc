@@ -1,17 +1,7 @@
-# AST replay differential-exec driver (docs/AST.md §17).
-# Compiles SRC twice — once through the -O0 parser->emit path, once with the AST
-# replay driver on (MCC_AST_REPLAY=1, which builds the intention tree and re-emits
-# from it) — links, runs both, and asserts the same exit code. When REPLAYED is
-# set, it also asserts the named function actually went through the replay path
-# (the dump fired) rather than silently falling back, so the test proves the AST
-# path is exercised, not bypassed.
-#   cmake -DMCC=<mcc> -DSRC=<file> -DOUT=<dir> -DEXPECT_RC=<n> [-DREPLAYED=main] -P replay.cmake
 if(NOT MCC OR NOT SRC OR NOT OUT)
     message(FATAL_ERROR "usage: -DMCC= -DSRC= -DOUT= -DEXPECT_RC= [-DREPLAYED=] -P replay.cmake")
 endif()
 
-# mcc won't create the output file's parent dir; on a fresh build tree OUT
-# does not exist yet, so ensure it before the first compile writes into it.
 file(MAKE_DIRECTORY "${OUT}")
 
 get_filename_component(_name "${SRC}" NAME_WE)
@@ -55,13 +45,8 @@ if(REPLAYED)
     endif()
 endif()
 
-# PROMOTES: with Tier-3 register promotion on (PROMOTE), each named function must
-# have actually promoted >=1 local into a register (proving promotion fired and the
-# exec-golden output is unchanged — a promoted function's bytes differ from -O0, so
-# byte-verify is bypassed and this run/exit-code equality is the gate). PROMOTES is a
-# list so both the call-free (R10/R9/R8) and call-ful (callee-saved) paths can be asserted.
 if(PROMOTES)
-    string(REPLACE "," ";" _promotes "${PROMOTES}") # comma-separated (a literal ; would split the add_test COMMAND)
+    string(REPLACE "," ";" _promotes "${PROMOTES}")
     foreach(_fn IN LISTS _promotes)
         if(NOT _r1_all MATCHES "\\[ast-promote\\] ([1-9][0-9]*) ${_fn}\n")
             message(FATAL_ERROR "expected register promotion to fire on '${_fn}', but it did not:\n${_r1_all}")
@@ -69,9 +54,6 @@ if(PROMOTES)
     endforeach()
 endif()
 
-# INLINES: with Tier-4 virtual-inline on (INLINE), each named callee must have been
-# grafted into a caller (no boundary call) — a comma-separated list, same as PROMOTES.
-# The inlined caller's bytes diverge from -O0, so the exit-code equality is the gate.
 if(INLINES)
     string(REPLACE "," ";" _inlines "${INLINES}")
     foreach(_fn IN LISTS _inlines)
@@ -81,10 +63,6 @@ if(INLINES)
     endforeach()
 endif()
 
-# SPECIALIZES: with Tier-4 inline + templates on (INLINE + TEMPLATES), each named callee must
-# have been per-site specialized — a constant argument constant-propagated into the graft
-# (docs/AST.md §19.3). Comma-separated, same shape as INLINES. The exit-code equality vs -O0
-# is the gate; this proves the specialization path fired rather than a plain graft.
 if(SPECIALIZES)
     string(REPLACE "," ";" _specs "${SPECIALIZES}")
     foreach(_fn IN LISTS _specs)
@@ -94,8 +72,6 @@ if(SPECIALIZES)
     endforeach()
 endif()
 
-# REEMITS: with Tier-4 defer-to-TU on (INLINE), each named function must have been re-emitted
-# at end-of-TU with a forward-declared callee inlined (proving the defer path fired).
 if(REEMITS)
     string(REPLACE "," ";" _reemits "${REEMITS}")
     foreach(_fn IN LISTS _reemits)
@@ -105,17 +81,12 @@ if(REEMITS)
     endforeach()
 endif()
 
-# FOLDS: with the const-fold template on (TEMPLATES), the named function must
-# have actually folded at least one Binary(Lit,Lit) — proving the template fired
-# and the byte-verify net kept the replay faithful (not a silent no-op/fallback).
 if(FOLDS)
     if(NOT _r1_all MATCHES "\\[ast-template\\] const-fold ([1-9][0-9]*) ${FOLDS}\n")
         message(FATAL_ERROR "expected the const-fold template to fire on '${FOLDS}', but it did not (fell back or folded nothing):\n${_r1_all}")
     endif()
 endif()
 
-# NOREPLAY: the function must *not* faithfully replay (an unmodeled construct),
-# proving the byte-verify safety net falls back to correct -O0 emission.
 if(NOREPLAY)
     if(_r1_all MATCHES "\\[ast-replay\\] ${NOREPLAY}\n")
         message(FATAL_ERROR "expected function '${NOREPLAY}' to fall back, but it replayed:\n${_r1_all}")

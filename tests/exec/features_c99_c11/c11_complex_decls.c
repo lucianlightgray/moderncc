@@ -3,15 +3,15 @@
 extern int printf(const char *, ...);
 
 #define CHK_F(name) _Static_assert(                               \
-	__builtin_types_compatible_p(__typeof__(name##f),             \
-								 float _Complex(float _Complex)), \
-	#name "f decl")
+		__builtin_types_compatible_p(__typeof__(name##f),             \
+																 float _Complex(float _Complex)), \
+		#name "f decl")
 #define CHK_L(name) _Static_assert(                                           \
-	__builtin_types_compatible_p(__typeof__(name##l),                         \
-								 long double _Complex(long double _Complex)), \
-	#name "l decl")
+		__builtin_types_compatible_p(__typeof__(name##l),                         \
+																 long double _Complex(long double _Complex)), \
+		#name "l decl")
 #define CHK(name) \
-	CHK_F(name);  \
+	CHK_F(name);    \
 	CHK_L(name)
 
 CHK(csin);

@@ -8,10 +8,10 @@
 #define NR_THREADS 16
 #define NR_STEPS ((uint32_t)UINT16_MAX)
 
-#define BUG_ON(COND)  \
-	do {              \
-		if (!!(COND)) \
-			abort();  \
+#define BUG_ON(COND) \
+	do {               \
+		if (!!(COND))    \
+			abort();       \
 	} while (0)
 
 typedef struct {
@@ -53,19 +53,19 @@ static void *adder_cmpxchg(void *arg) {
 		do {
 			xchgc = (cmpc + 1);
 		} while (!atomic_compare_exchange_strong_explicit(&counter->uc,
-														  &cmpc, xchgc, memory_order_relaxed, memory_order_relaxed));
+																											&cmpc, xchgc, memory_order_relaxed, memory_order_relaxed));
 		do {
 			xchgs = (cmps + 1);
 		} while (!atomic_compare_exchange_strong_explicit(&counter->us,
-														  &cmps, xchgs, memory_order_relaxed, memory_order_relaxed));
+																											&cmps, xchgs, memory_order_relaxed, memory_order_relaxed));
 		do {
 			xchgi = (cmpi + 1);
 		} while (!atomic_compare_exchange_strong_explicit(&counter->ui,
-														  &cmpi, xchgi, memory_order_relaxed, memory_order_relaxed));
+																											&cmpi, xchgi, memory_order_relaxed, memory_order_relaxed));
 		do {
 			xchgl = (cmpl + 1);
 		} while (!atomic_compare_exchange_strong_explicit(&counter->ul,
-														  &cmpl, xchgl, memory_order_relaxed, memory_order_relaxed));
+																											&cmpl, xchgl, memory_order_relaxed, memory_order_relaxed));
 	}
 
 	return NULL;

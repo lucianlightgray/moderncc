@@ -38,7 +38,7 @@ static Sdf negdf(Sdf s) {
 }
 
 static long big(int i0, ID s1, double d0, LL s2, int i1,
-				ID s3, double d1, LL s4, int i2) {
+								ID s3, double d1, LL s4, int i2) {
 	return i0 + s1.a + (long)s1.d + (long)d0 + s2.a + s2.b + i1 + s3.a + (long)s3.d + (long)d1 + s4.a + s4.b + i2;
 }
 

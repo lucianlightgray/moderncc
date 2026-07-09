@@ -66,10 +66,10 @@ int main() {
 #define OP8(func, v, e1, e2) atomic_##func(&l, v) == e1 &&l == e2
 
 #define OP(func, v, e1, e2) printf("%s: %s\n", #func,                                   \
-								   OP1(func, v, e1, e2) && OP2(func, v, e1, e2) &&      \
-										   OP4(func, v, e1, e2) && OP8(func, v, e1, e2) \
-									   ? "SUCCESS"                                      \
-									   : "FAIL");
+																	 OP1(func, v, e1, e2) && OP2(func, v, e1, e2) &&      \
+																					 OP4(func, v, e1, e2) && OP8(func, v, e1, e2) \
+																			 ? "SUCCESS"                                      \
+																			 : "FAIL");
 
 int main() {
 	atomic_char c;
@@ -103,10 +103,10 @@ typedef __SIZE_TYPE__ size64_t;
 	__atomic_##func(&l, v, __ATOMIC_SEQ_CST) == e1 &&l == e2
 
 #define OP(func, v, e1, e2) printf("%s: %s\n", #func,                                   \
-								   OP1(func, v, e1, e2) && OP2(func, v, e1, e2) &&      \
-										   OP4(func, v, e1, e2) && OP8(func, v, e1, e2) \
-									   ? "SUCCESS"                                      \
-									   : "FAIL");
+																	 OP1(func, v, e1, e2) && OP2(func, v, e1, e2) &&      \
+																					 OP4(func, v, e1, e2) && OP8(func, v, e1, e2) \
+																			 ? "SUCCESS"                                      \
+																			 : "FAIL");
 
 int main() {
 	signed char c;

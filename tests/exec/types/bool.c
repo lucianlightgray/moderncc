@@ -27,7 +27,7 @@ int main(void) {
 
 	struct flags f = {.a = 7, .b = 0, .c = 1};
 	printf("size=%d bitfields: %d %d %d\n",
-		   (int)sizeof(bool), f.a, f.b, f.c);
+				 (int)sizeof(bool), f.a, f.b, f.c);
 
 	bool t = false;
 	t++;

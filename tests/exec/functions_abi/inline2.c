@@ -1,4 +1,4 @@
-#define GOT(f)                          \
+#define GOT(f)                        \
 	__attribute__((weak)) void f(void); \
 	printf("%d %s\n", !!((__SIZE_TYPE__)f & ~0u), #f);
 

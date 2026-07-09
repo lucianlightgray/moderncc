@@ -7,22 +7,22 @@ static int s6_3_side(int v) {
 void s6_3_conversions(void) {
 
 	printf("bool: %d %d %d %d %d\n",
-		   (int)(_Bool)2.5, (int)(_Bool)0.0, (int)(_Bool)-0.0,
-		   (int)(_Bool)(void *)0, (int)(_Bool)(char)256);
+				 (int)(_Bool)2.5, (int)(_Bool)0.0, (int)(_Bool)-0.0,
+				 (int)(_Bool)(void *)0, (int)(_Bool)(char)256);
 
 	printf("umod: %d %lu %d\n",
-		   (int)(unsigned char)257, (unsigned long)((unsigned)-1) & 0xFFFFFFFFul,
-		   (int)(unsigned short)65537);
+				 (int)(unsigned char)257, (unsigned long)((unsigned)-1) & 0xFFFFFFFFul,
+				 (int)(unsigned short)65537);
 
 	printf("snarrow: %d %d\n", (int)(signed char)300, (int)(signed char)-200);
 
 	printf("ftrunc: %d %d %d %d\n",
-		   (int)3.9, (int)-3.9, (int)0.99, (int)-0.99);
+				 (int)3.9, (int)-3.9, (int)0.99, (int)-0.99);
 
 	printf("i2f: %d %d\n", (double)16777216 == 16777216.0, (float)1 == 1.0f);
 
 	printf("widen: %d %d\n",
-		   (double)(float)1.0f == 1.0, (double)(float)0.5f == 0.5);
+				 (double)(float)1.0f == 1.0, (double)(float)0.5f == 0.5);
 
 	printf("narrow: %d\n", (float)0.1 != 0.1);
 
@@ -37,8 +37,8 @@ void s6_3_conversions(void) {
 	}
 
 	printf("uac: %d %d\n",
-		   (-1 < 0u),
-		   ((long)-1 < 0u));
+				 (-1 < 0u),
+				 ((long)-1 < 0u));
 
 	{
 		long long big = 0x100000000LL;
@@ -79,7 +79,7 @@ void s6_3_conversions(void) {
 		unsigned int u = 0x04030201u;
 		unsigned char *b = (unsigned char *)&u;
 		printf("bytewalk: %d %d\n",
-			   (void *)b == (void *)&u,
-			   (b[0] + b[1] + b[2] + b[3]) == 10);
+					 (void *)b == (void *)&u,
+					 (b[0] + b[1] + b[2] + b[3]) == 10);
 	}
 }

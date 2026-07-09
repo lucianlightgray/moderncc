@@ -10,12 +10,12 @@ void s7_22_strtol_test(void) {
 	printf("dec %ld end=%s\n", v, end);
 
 	printf("auto %ld %ld %ld\n",
-		   strtol("42", 0, 0), strtol("0755", 0, 0), strtol("0x2A", 0, 0));
+				 strtol("42", 0, 0), strtol("0755", 0, 0), strtol("0x2A", 0, 0));
 
 	printf("hex %ld\n", strtol("0xFF", 0, 16));
 
 	printf("bin %ld base36 %ld\n",
-		   strtol("1011", 0, 2), strtol("Zz", 0, 36));
+				 strtol("1011", 0, 2), strtol("Zz", 0, 36));
 
 	v = strtol("xyz", &end, 10);
 	printf("noconv %ld same=%d\n", v, end == (char *)0 ? -1 : 1);
@@ -23,11 +23,11 @@ void s7_22_strtol_test(void) {
 	printf("uneg %lu\n", strtoul("-1", 0, 10));
 
 	printf("clamp %d %d\n",
-		   strtol("999999999999999999999999", 0, 10) == strtol("9223372036854775807", 0, 10) ? 1 : 0,
-		   strtoul("999999999999999999999999", 0, 10) == strtoul("18446744073709551615", 0, 10) ? 1 : 0);
+				 strtol("999999999999999999999999", 0, 10) == strtol("9223372036854775807", 0, 10) ? 1 : 0,
+				 strtoul("999999999999999999999999", 0, 10) == strtoul("18446744073709551615", 0, 10) ? 1 : 0);
 
 	printf("ll %lld ull %llu\n",
-		   strtoll("-77", 0, 10), strtoull("300", 0, 10));
+				 strtoll("-77", 0, 10), strtoull("300", 0, 10));
 }
 
 void s7_22_intarith_test(void) {

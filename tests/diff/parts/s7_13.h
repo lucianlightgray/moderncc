@@ -33,16 +33,16 @@ void s7_13_setjmp_signal_align(void) {
 #endif
 
 	printf("s7_13 stdalign defs=%d\n",
-		   __alignas_is_defined == 1 && __alignof_is_defined == 1);
+				 __alignas_is_defined == 1 && __alignof_is_defined == 1);
 
 	printf("s7_13 _Alignof int matches=%d\n",
-		   _Alignof(int) == __alignof__(int));
+				 _Alignof(int) == __alignof__(int));
 	printf("s7_13 _Alignof array=elem=%d\n",
-		   _Alignof(double[10]) == _Alignof(double));
+				 _Alignof(double[10]) == _Alignof(double));
 
 	printf("s7_13 _Alignas typename=ice=%d\n",
-		   _Alignof(s7_13_da) == _Alignof(double));
+				 _Alignof(s7_13_da) == _Alignof(double));
 
 	printf("s7_13 _Alignas32 aligned=%d\n",
-		   ((uintptr_t)(void *)s7_13_buf) % 32u == 0);
+				 ((uintptr_t)(void *)s7_13_buf) % 32u == 0);
 }

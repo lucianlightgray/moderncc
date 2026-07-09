@@ -2,10 +2,10 @@
 #include <string.h>
 #include <setjmp.h>
 
-#define TST                 \
+#define TST               \
 	int i, a[2], b[2];      \
 	for (i = 0; i < 2; i++) \
-		a[i] = 0;           \
+		a[i] = 0;             \
 	for (i = 0; i < 2; i++) \
 	b[i] = 0
 
@@ -114,9 +114,9 @@ static void stack(void) {
 	}
 
 	if (!(way_point1 == 0 && way_point2 == 0 &&
-		  g_counter == 6 && counter == 2))
+				g_counter == 6 && counter == 2))
 		printf("Failed %d %d %d %d\n",
-			   way_point1, way_point2, g_counter, counter);
+					 way_point1, way_point2, g_counter, counter);
 }
 
 static jmp_buf env;
@@ -133,7 +133,7 @@ static void check(void) {
 	value = setjmp(env);
 	if (value != last_value + 1) {
 		printf("incorrect value %d %d\n",
-			   value, last_value + 1);
+					 value, last_value + 1);
 		return;
 	}
 	last_value = value;

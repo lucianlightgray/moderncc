@@ -4,7 +4,7 @@ int main(void) {
 	const char *s = u8"hello";
 	char buf[] = u8"abc";
 	const char *cat = u8"x"
-					  "y";
+										"y";
 	int u8 = 42;
 	unsigned u = 1;
 

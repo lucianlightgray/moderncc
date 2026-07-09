@@ -18,24 +18,24 @@ static int slen(const char *s) {
 int main(void) {
 	int ok = 1;
 	const wchar_t *s = L"ab"
-					   "cd";
+										 "cd";
 	const wchar_t *s2 = L"xy"
-						L"zw";
+											L"zw";
 	const char *n = "ab"
-					"cd"
-					"ef";
+									"cd"
+									"ef";
 	wchar_t w[] = L"pq"
-				  "rs";
+								"rs";
 
 	const wchar_t *nf = "ab"
-						L"cd";
+											L"cd";
 	const wchar_t *nf2 = "x"
-						 "y"
-						 L"z";
+											 "y"
+											 L"z";
 	wchar_t wnf[] = "x"
-					L"y";
+									L"y";
 	wchar_t wnf3[3] = "p"
-					  L"q";
+										L"q";
 
 	if (!(s[0] == (wchar_t)'a' && s[1] == (wchar_t)'b' && s[2] == (wchar_t)'c' && s[3] == (wchar_t)'d' && s[4] == 0 && wlen(s) == 4))
 		ok = 0;

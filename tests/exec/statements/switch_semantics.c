@@ -43,7 +43,7 @@ static void copy_n(const char *src, char *dst, int n) {
 
 int main(void) {
 	printf("classify: %d %d %d %d %d\n",
-		   classify(1), classify(2), classify(3), classify(5), classify(9));
+				 classify(1), classify(2), classify(3), classify(5), classify(9));
 
 	char dst[16] = {0};
 	copy_n("abcdefg", dst, 7);

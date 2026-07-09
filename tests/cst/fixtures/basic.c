@@ -1,15 +1,11 @@
-/* basic.c — exercises comments, operators, and declarations for the CST
- * round-trip. Freestanding: no includes, so it compiles with a bare -c. */
-
-// a line comment with odd chars: /* not nested */ and a tab	here
-int global_counter = 0; /* trailing block comment */
+int global_counter = 0;
 
 struct Point {
 	int x, y;
 };
 
 static int add(int a, int b) {
-	return a + b; // returns the sum
+	return a + b;
 }
 
 int compute(int n) {

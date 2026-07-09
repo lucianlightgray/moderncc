@@ -1,8 +1,8 @@
 #include <stdio.h>
 
 enum Small { A,
-			 B,
-			 C };
+						 B,
+						 C };
 
 int main(void) {
 	printf("%ld\n", (long)__STDC_VERSION__);

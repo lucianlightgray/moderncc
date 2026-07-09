@@ -1648,9 +1648,6 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -c {W}/nr.c -o {W}/nr.o 2>&1 | "
 		 "grep -oE \"function declared .noreturn. has a .return. statement\"",
 		 "function declared 'noreturn' has a 'return' statement\n"},
-		/* §6.9.1p6 / §6.7.2p2: a K&R identifier-list parameter defaulting to
-		   'int' is a constraint violation in C99+ (rejected), but was valid in
-		   C89 (warned). The pair pins that boundary. */
 		{"c99_kr_implicit_int", "",
 		 "printf 'int g(x){return x;}\\n' > {W}/kri.c && "
 		 "{MCC} -c {W}/kri.c -o {W}/kri.o 2>&1 | "
@@ -1661,10 +1658,6 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -std=c89 -c {W}/kro.c -o {W}/kro.o 2>&1 | "
 		 "grep -oE \"type of .x. defaults to .int.$\"",
 		 "type of 'x' defaults to 'int'\n"},
-		/* §6.7.4p6/p7: a plain `inline` definition provides no external
-		   definition — the symbol stays undefined (nm 'U'), so an un-inlined
-		   call is unresolved at link time (as in gcc/clang); adding an `extern`
-		   declaration turns it into an external definition (nm 'T'). */
 		{"c99_inline_no_extern_def", "",
 		 "printf 'inline int f(void){return 42;}\\nint g(void){return f();}\\n' > {W}/inl_u.c && "
 		 "{MCC} -c {W}/inl_u.c -o {W}/inl_u.o >/dev/null 2>&1 && "
@@ -1675,19 +1668,10 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -c {W}/inl_t.c -o {W}/inl_t.o >/dev/null 2>&1 && "
 		 "nm {W}/inl_t.o | sed -E 's/ ([A-Za-z]) _/ \\1 /' | grep -oE 'T f'",
 		 "T f\n"},
-		/* §6.7.4 emission matrix over the exhaustive multi-unit inline.c: which
-		   declaration/definition combos yield an exported symbol. Spans all four
-		   categories — plain inline (undefined U), extern (exported T), static
-		   inline (local t), plain static (local t). This *executes* the
-		   otherwise reference-harness-only exec/functions_abi/inline.c golden. */
 		{"c99_inline_emission_matrix", "",
 		 "{MCC} -c {D}/../exec/functions_abi/inline.c -o {W}/inlmat.o >/dev/null 2>&1 && "
 		 "nm {W}/inlmat.o | sed -E 's/ ([A-Za-z]) _/ \\1 /' | grep -oE '(U|[Tt]) (inline_inline_undeclared|extern_extern_undeclared|noinst_static_inline_predeclared|static_func|main)$' | LC_ALL=C sort",
 		 "T extern_extern_undeclared\nT main\nU inline_inline_undeclared\nt noinst_static_inline_predeclared\nt static_func\n"},
-		/* §6.4.3: a universal-character-name in an identifier must not designate a
-		   character in the basic-latin range (< 00A0, other than $ @ `) nor a
-		   surrogate (D800-DFFF). The valid-UCN runtime side is exec/lexical/
-		   ucn_identifiers.c; these pin the two invalid-UCN rejections. */
 		{"c11_ucn_basic_latin_reject", "",
 		 "printf '%s\\n' 'int a\\u0041b;' > {W}/ucnbl.c && "
 		 "{MCC} -c {W}/ucnbl.c -o {W}/ucnbl.o 2>&1 | "
@@ -1698,18 +1682,11 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -c {W}/ucnsur.c -o {W}/ucnsur.o 2>&1 | "
 		 "grep -oE 'universal character .ud800 is not valid in an identifier'",
 		 "universal character \\ud800 is not valid in an identifier\n"},
-		/* §6.7.2p2: `signed` and `unsigned` are mutually exclusive in a
-		   declaration-specifier list (a distinct diagnostic from the
-		   "too many basic types" excess covered by errors_and_warnings.c). */
 		{"c11_signed_unsigned_reject", "",
 		 "printf 'signed unsigned int x;\\n' > {W}/su.c && "
 		 "{MCC} -c {W}/su.c -o {W}/su.o 2>&1 | "
 		 "grep -oE 'signed and unsigned modifier'",
 		 "signed and unsigned modifier\n"},
-		/* x86_64 link range check: an absolute R_X86_64_32S reference whose target
-		   lands past +2 GB must be rejected. Force a >2 GB layout with two ~1.5 GB
-		   .bss arrays (.bss is NOBITS, so this is a cheap address-arithmetic check,
-		   not a real allocation) and reference b's tail via an absolute movl. */
 		{"x86_64_reloc_32s_range", "cpu=x86_64,os=linux,asm",
 		 "printf '%s\\n' 'char a[1500000000];' 'char b[1500000000];' 'int main(void){int r;__asm__ volatile(\"movl $b+1499999000, %0\":\"=r\"(r));return r?0:1;}' > {W}/r32s.c && "
 		 "{MCC} -no-pie {W}/r32s.c -o {W}/r32s 2>&1 | grep -oE \"relocation .R_X86_64_32.* out of range\"",

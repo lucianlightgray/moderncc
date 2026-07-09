@@ -82,9 +82,9 @@ void __aeabi_memclr4(void *d, unsigned long n) {
 }
 #endif
 
-#define TEST_MAIN()      \
-	void _start(void) {  \
-		sys_exit(run()); \
+#define TEST_MAIN()   \
+	void _start(void) { \
+		sys_exit(run());  \
 	}
 
 #endif

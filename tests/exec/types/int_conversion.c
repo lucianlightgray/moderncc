@@ -26,10 +26,10 @@ int promote_main(void) {
 	signed long long ss = fp_ss();
 
 	printf("uc=%llx sc=%llx us=%llx ss=%llx\n",
-		   (unsigned long long)uc,
-		   (unsigned long long)sc,
-		   (unsigned long long)us,
-		   (unsigned long long)ss);
+				 (unsigned long long)uc,
+				 (unsigned long long)sc,
+				 (unsigned long long)us,
+				 (unsigned long long)ss);
 
 	if (uc != 0x80) {
 		printf("FAIL: uc not zero-extended\n");
@@ -62,8 +62,8 @@ int cast_main(void) {
 	unsigned short us = (unsigned short)x + 1;
 
 	printf("c=%x uc=%x s=%x us=%x\n",
-		   (unsigned char)c, (unsigned)uc,
-		   (unsigned short)s, (unsigned)us);
+				 (unsigned char)c, (unsigned)uc,
+				 (unsigned short)s, (unsigned)us);
 
 	if (c != (char)0x78 + 1) {
 		printf("FAIL: char conversion\n");

@@ -69,6 +69,6 @@ int main(void) {
 	struct B B = {22, 99};
 	int n = 77;
 	printf("TU %d %d %d %d\n",
-		   tu_first(&A), tu_first(&B), tu_nested(&A), tu_first((TU){.pv = &n}));
+				 tu_first(&A), tu_first(&B), tu_nested(&A), tu_first((TU){.pv = &n}));
 	return 0;
 }

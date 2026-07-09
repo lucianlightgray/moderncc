@@ -9,7 +9,7 @@ double __attribute__((__mode__(__DF__))) gv;
 
 int main(void) {
 	printf("%zu %zu %zu %zu\n",
-		   sizeof(qv), sizeof(hv), sizeof(sv), sizeof(dv));
+				 sizeof(qv), sizeof(hv), sizeof(sv), sizeof(dv));
 	printf("%zu %zu\n", sizeof(fv), sizeof(gv));
 	dv = 1;
 	dv <<= 40;

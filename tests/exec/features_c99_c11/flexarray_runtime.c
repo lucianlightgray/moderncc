@@ -1,13 +1,3 @@
-/* Flexible array members (C11 §6.7.2.1p18). Runtime behavior: sizeof excludes
- * the flexible member (== offsetof), heap allocation with a trailing array,
- * read/write, char-FAM string storage, and a typedef'd FAM struct. Mirrors the
- * valid runtime uses in gcc c99-flex-array-*.c (the invalid ones are diagnostic
- * tests, covered by tests/cli c99_fam_not_last). Prints OK.
- *
- * Includes <stddef.h> (for offsetof) after the C library headers — this also
- * regression-guards the ARM/AArch64 __WCHAR_TYPE__ fix (mccdefs.h): before it,
- * this exact include order triggered an incompatible wchar_t redefinition on the
- * musl-arm sysroot. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,12 +19,10 @@ typedef struct {
 int main(void) {
 	int ok = 1;
 
-	/* sizeof excludes the flexible member */
 	ok &= (sizeof(struct vec) == offsetof(struct vec, data));
 	ok &= (sizeof(struct buf) == offsetof(struct buf, data));
 	ok &= (sizeof(tdef_fam) == offsetof(tdef_fam, v));
 
-	/* heap alloc + element access */
 	struct vec *p = malloc(sizeof *p + 5 * sizeof(int));
 	p->n = 5;
 	for (int i = 0; i < 5; i++)
@@ -45,14 +33,12 @@ int main(void) {
 	ok &= (sum == 0 + 1 + 4 + 9 + 16);
 	free(p);
 
-	/* char FAM used as a string buffer */
 	struct buf *b = malloc(sizeof *b + 8);
 	b->n = 8;
 	strcpy(b->data, "abc");
 	ok &= (strcmp(b->data, "abc") == 0);
 	free(b);
 
-	/* typedef'd FAM */
 	tdef_fam *t = malloc(sizeof *t + 3 * sizeof(long));
 	t->k = 3;
 	t->v[0] = 10;

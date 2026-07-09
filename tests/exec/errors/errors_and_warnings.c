@@ -23,20 +23,20 @@ int (*fct)[42](int x);
 
 #elif defined test_60_enum_redefinition
 enum color { RED,
-			 GREEN,
-			 BLUE };
+						 GREEN,
+						 BLUE };
 enum color { R,
-			 G,
-			 B };
+						 G,
+						 B };
 enum color c;
 
 #elif defined test_62_enumerator_redefinition
 enum color { RED,
-			 GREEN,
-			 BLUE };
+						 GREEN,
+						 BLUE };
 enum rgb { RED,
-		   G,
-		   B };
+					 G,
+					 B };
 enum color c = RED;
 
 #elif defined test_63_local_enumerator_redefinition
@@ -128,7 +128,7 @@ void f3(enum e5 e);
 
 #elif defined test_enum_compat_2
 enum e6 { E1 = -1,
-		  E0 };
+					E0 };
 void f3(enum e6);
 void f3(int);
 void f4(enum e6 e);
@@ -164,8 +164,8 @@ int foo(int()) {
 void f(char *);
 void g(void) {
 	f((char[]){
-		1,
-		,
+			1,
+			,
 	});
 }
 #elif defined test_invalid_2
@@ -217,10 +217,10 @@ struct x {
 
 #elif defined test_static_assert_2
 _Static_assert(1, "1"
-				  " is 1");
+									" is 1");
 struct y {
 	_Static_assert(0, "0"
-					  " is 0");
+										" is 0");
 };
 
 #elif defined test_static_assert_c2x
@@ -270,7 +270,7 @@ int main() {
 #if defined test_func_6
 	static
 #endif
-		int hello(int);
+			int hello(int);
 	hello(123);
 	return 0;
 }
@@ -301,7 +301,7 @@ int main() {
 	{
 		extern int xxx[
 #if defined test_var_3
-			2
+				2
 #endif
 		];
 		P(1, xxx[0]);
@@ -371,9 +371,9 @@ static struct var_len {
 	int i;
 	const char str[];
 } var_array[] =
-	{{1, "abcdefghijklmnopqrstuvwxyz"},
-	 {2, "longlonglonglonglong"},
-	 {3, "tst3"}};
+		{{1, "abcdefghijklmnopqrstuvwxyz"},
+		 {2, "longlonglonglonglong"},
+		 {3, "tst3"}};
 
 #elif defined test_var_array2
 
@@ -572,7 +572,7 @@ int foo(struct xxx { int x[2]; } * p);
 #endif
 #ifndef test_scope_3
 enum ee { a = 1,
-		  b };
+					b };
 #endif
 
 struct xxx x = {11, 22, 33, 44};

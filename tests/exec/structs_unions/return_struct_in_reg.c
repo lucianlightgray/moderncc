@@ -24,31 +24,31 @@ struct s_f4 {
 	double a, b, c, d;
 } g_f4 = {1, 2, 3, 4};
 
-#define def(S)                                  \
-	struct s##S f##S(int x) {                   \
+#define def(S)                              \
+	struct s##S f##S(int x) {                 \
 		struct s##S l##S = g##S, *p##S = &l##S; \
 		if (x == 0)                             \
-			return g##S;                        \
+			return g##S;                          \
 		else if (x == 1)                        \
-			return l##S;                        \
+			return l##S;                          \
 		else                                    \
-			return *p##S;                       \
+			return *p##S;                         \
 	}
 
 def(1)
-	def(2)
-		def(4)
-			def(8)
-				def(16)
-					def(_f4)
+		def(2)
+				def(4)
+						def(8)
+								def(16)
+										def(_f4)
 
-#define chk(S, x)                      \
+#define chk(S, x)                    \
 	struct s##S l##S = f##S(x);        \
 	printf("%02llx %02llx\n",          \
-		   (unsigned long long)l##S.a, \
-		   (unsigned long long)l##S.b);
+				 (unsigned long long)l##S.a, \
+				 (unsigned long long)l##S.b);
 
-						int main() {
+												int main() {
 	for (int x = 0;;) {
 		chk(1, x);
 		chk(2, x);

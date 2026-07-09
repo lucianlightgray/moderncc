@@ -1761,3 +1761,621 @@ constructs exist to satisfy a foreign toolchain's type checker or assembler:
   `tests/exec/preprocessor/comment.c` treat comments as parsed input (captured as
   trivia, folded into `H_t`, or the literal subject of the test), so those
   comments are payload, not decoration, and were left in place.
+
+## Migrated from code comments (2026-07-09 — full-tree strip)
+
+Design and implementation notes migrated out of the source code. Every code
+comment in the tree was moved here (the code itself now carries none), organized
+as a per-file prose summary. Section headings are repo-relative paths.
+
+Not migrated (comments left in place because they are load-bearing):
+
+- `tests/exec/programs/grep.c` — the `grep` exec test runs the built program
+  **over `grep.c` itself** and expects to match its `/* vim: … */` modeline, so
+  its comments are test data.
+- `tests/cst/kinds/comment.c`, `tests/exec/preprocessor/comment.c`,
+  `tests/preprocess/asm/gas_comments.S`, `tests/cst/hashinv/{compact,spaced,changed}.c`
+  — tests whose subject *is* comment handling / comment-and-whitespace hash
+  invariance.
+- `runtime/win32/include/winapi/winerror.h`, `winnt.h` — third-party Win32
+  headers (carry upstream license/copyright text).
+
+Related change: because comment removal can shift source line numbers,
+`tests/exec/runner.c` now normalizes `file.c:NN:` → `file.c:N:` in both the
+expected and actual output before comparing (`mask_linenos`), so the exec
+goldens no longer pin exact diagnostic line numbers. `tests/diff3/runner.c` is
+deliberately left exact — it is a live gcc/clang/mcc differential over program
+*stdout* (compiler diagnostics are discarded during its build), so cross-compiler
+agreement stays byte-exact.
+
+---
+
+### The compiler core — `src/`
+
+#### `src/mccgen.c` — AST intention-IR replay and the `-O1` optimizer
+
+This file carries the parser-side build hooks, the replay emit driver, and the
+optimization tiers for the AST intention IR (see `docs/AST.md`). It is the bulk
+of the migrated documentation.
+
+**Replay architecture (§10/§17).** When `MCC_AST_REPLAY` is set, `gen_function`
+builds a per-function intention tree while the parser runs, then discards the
+parser's body emission and re-emits from the AST through the same vstack API.
+Anything the builder does not yet understand sets `ast_bail`, and `gen_function`
+keeps the parser's (correct, `-O0`) emission instead — so the path is safe over
+the whole corpus and grows one construct at a time. It is off by default; the
+`-O0` path never touches any of it. The `MCC_AST_*` environment flags gate the
+layers independently for testing: `REPLAY` (build+replay), `REPLAY_DUMP` (dump
+trees), `TEMPLATES` (optimization templates), `PROMOTE` (Tier-3 register
+promotion), `NO_CALLFUL` (force call-free promotion only), `INLINE` (Tier-4
+virtual always-inline).
+
+**The vstack mirror.** A small shadow stack mirrors the vstack while an
+expression is evaluated, so its intention tree can be captured op by op. It is
+kept synced to `vtop`'s depth after every modeled primitive; any unmodeled depth
+change or an in-place cast trips `ast_desync` and the function falls back to the
+parser's emission. State flags track whether the mirror is live (`ast_capture`),
+its depth relative to the capture base, and whether we are inside a `gen_op`/
+`vstore` (`ast_in_op`) or across a call boundary (`ast_in_call`) whose internal
+vstack traffic must be ignored. Leaves are re-read from the live vstack at
+consumption time because a push hook fires inside `vsetc` but callers finish a
+leaf afterwards (`vpushsym` / the identifier path set `->sym` and adjust `->c.i`
+only after `vsetc` returns) — eager capture can be incomplete, so it is finalized
+when the value is consumed. Only leaves that re-push faithfully after the body is
+discarded are safe: an integer constant, a frame-relative local/parameter lvalue
+(fixed offset), or a symbolic constant/lvalue (a global's address — the `Sym`
+persists). Anything holding a register, or a float value materialized by
+soon-discarded code, is not reconstructable and desyncs.
+
+**Block-scoped-symbol re-emit hazard (`ast_reemit_poison`).** Immediate replay
+re-pushes captured `Sym` pointers while they are still live. End-of-TU
+re-emission does not: a block-scoped symbolic reference (an inner extern/function
+redeclaration) or a block-scoped aggregate *type* ref is freed at block close and
+recycled by later codegen, so its pointer dangles by re-emit time. Seeing one
+poisons re-emission for that function; grafting/immediate replay are unaffected.
+
+**Const-pool / frame-slot ordinal reuse (§A3, §18.3).** Body-emitted rodata
+constants (scalar `float`/`double` pools and `_Complex` const-folds/casts) are
+materialized fresh on every emit pass. Because discard/replay only rewinds text +
+text relocations, a naive replay would allocate a *second* rodata slot and a new
+anonymous symbol, so the relocation content would diverge even though the value
+is identical. Instead the parse-build records each such symbol (its ELF symbol
+index `sym->c`) in emission order, and replay reuses them ordinally — referencing
+the same ELF symbol so the relocation is byte-identical and skipping the
+re-materialization. The same ordinal trick handles struct-return result temps:
+a `loc = (loc - size) & -align` frame-slot decrement is recorded at build and the
+offset reused at replay (`ast_alloc_loc`), so temp offsets match the parse-build
+and the frame stays parse-final. Outside a replay-candidate build these recorders
+are exactly the original decrement, so `-O0` stays byte-identical.
+
+**Control-flow capture.** Effects append to the currently open `BasicBlock`;
+`if` branches open nested BasicBlocks pushed on a small stack. Loops and
+conditionals are captured as `If` nodes with an `op` discriminator: `if` (plain),
+`op==2` while-loop, `op==3` for, `op==4` do-while, `op==5` ternary, `op==6`
+switch; `for(;;)` with no controlling expression uses `op==5`/an empty break
+chain. Replay re-issues the parser's exact `gind`/`gvtst`/`gjmp`/`gsym` pattern
+for each shape, so no backend jump primitive needs hooking. `break`/`continue`
+are `Jump` nodes chaining onto the loop's replay-time break/continue chains;
+named labels and `goto` are `Jump` markers (`op==4` label / `op==5` goto)
+resolved through a per-function replay label table reproducing the parser's
+forward-chain / backward-jump / definition-backpatch dance. `switch` bodies carry
+`case` (`Jump op==2`, `ival=v1`, `fbits=v2`) and `default` (`op==3`) markers; the
+dispatch epilogue (`case_sort`/`gcase` binary search) is suppressed during
+capture and reproduced at replay from a rebuilt `switch_t`. The controlling value
+must be a reloadable leaf (a frame/global lvalue or constant) because the
+dispatch re-reads it after the body. VLA/cleanup/computed-goto scope machinery is
+unmodeled and bails.
+
+**Short-circuit and ternary.** `&&`/`||` are captured as a `Binary` node
+(`TOK_LAND`/`TOK_LOR`) with all operands as children; the `VT_CMP`→0/1
+materialization (setcc) and the `gvtst` chaining are suppressed, and replay
+re-materializes the chain when the consuming op runs (reproducing `expr_landor`'s
+`gvtst` chain + `gvtst_set`). Only the all-runtime `VT_CMP` form is modeled;
+constant operands / the materialized 0-1 form desync. A nested short-circuit
+operand rides as a child and replay's `AST_Binary` case recurses. A ternary
+`c ? a : b` is captured as an `If(op==5)` `[cond, true, false]`, with the branch
+coordination (`save_regs`/`gvtst`/`gjmp`/`gsym`/`gv`/`move_reg`) suppressed and
+only the branch values captured; only the runtime-scalar case is modeled.
+
+**Memory model, members, aggregates, `_Complex`, VLAs.** `indir` (deref) wraps
+the top address in a `Load`; `gaddrof` wraps it in `Unary(AST_OP_ADDR)` — both
+re-issue the primitive at replay so a computed-address lvalue (`a[i]`, `*p`) is
+reconstructed from its address expression, not a non-reproducible register.
+Member access `.`/`->` cannot be replayed op-by-op (the parser's in-place
+`vtop->type` retypes fire no hooks and would scale the offset wrongly), so the
+whole access is folded into one `Unary(AST_OP_MEMBER[_ARROW])` node (`ival` =
+field byte offset) with the internal ops suppressed; replay reproduces the exact
+`indir`/`gaddrof`/retype-to-`char*`/`+offset`/retype-to-member/mark-lvalue
+sequence, preserving the base's non-lvalue bit. Struct→struct assignment is an
+aggregate copy (`memmove`/`gen_struct_copy`) recorded as a `Store`; bit-field
+destinations record a `Store` and let replay reproduce the read-modify-write
+inside the suppressed `vstore`. Imaginary literals (`2.0i`) fold their `0 + val*i`
+construction into one `Unary(AST_OP_IMAG)`; `__builtin_complex`/`I` capture the
+rodata-const result as a single `Ref` leaf (its anon `Sym` persists). VLA
+declarations capture the machine-tier alloc sequence
+(`gen_vla_sp_save`/`gen_vla_alloc`) as one coarse `Unary(AST_OP_VLA)` effect and
+the paired SP restore at a scope edge as either a `Return` annotation
+(function-scope) or an `AST_OP_VLA_RESTORE` effect (a nested block's `}`); `loc`
+is not decremented at replay. The PE alloc path moves the frame and is not
+modeled.
+
+**Calls.** Before `gfunc_call` the mirror holds `[callee, arg0..arg_{n-1}]`;
+these fold into an `Invoke`, the mirror is suppressed across the call and result
+push, and the `Invoke` is pushed as the result. A call captured while byte
+emission is suppressed (`nocode_wanted`: an unevaluated `_Generic`/`typeof`/
+`sizeof` operand or a dead branch) is a phantom and abandons replay for the
+function — replaying it would emit stray bytes/relocations. Register-return,
+sret hidden-pointer, and arch-transfer (mixed INT+SSE) struct returns are all
+modeled via ordinal frame slots, including variadic struct returns (the
+struct-return ABI is independent of varargs). The callee must be a reconstructable
+reference — a direct function symbol or a pointer variable — a computed callee (a
+ternary/call-result/member `s.fn()`) replays as a value whose function-type `ref`
+the driver cannot reconstruct and would SIGSEGV before byte-verify, so it bails
+(surfaced by the gcc c-torture gate `pr34768-1/-2`). By-value struct args are
+attempted (with the byte-verify net as backstop); bit-field/`long double`/
+`_Complex`-pair args are an ABI copy this rung does not model and bail.
+
+**Tier-3 register promotion (§4/§10/§18.2).** The first optimization that
+deliberately beats `-O0`: keep an address-not-taken scalar local in a register
+across the function instead of spilling it, eliminating its load/store traffic.
+A read pushes the value as register-resident (`gv` copies it to a temp when
+consumed, leaving the pin intact); a write forces the value into the pinned
+register with the implicit assign-cast a memory store would apply. The register
+is seeded from the local's stack slot at function entry, so promotion is valid
+across arbitrary control flow and even for a parameter or a local read before
+written — that is what makes loop variables promotable. Two pin pools: **call-free**
+functions use caller-saved `R10`/`R9`/`R8` (R10 is used nowhere in the x86_64
+backend; R8/R9 only in the call-arg arrays; `R11` is excluded — it backs `load`/
+GOTPCREL/TLS) with no save/restore; **call-ful** functions use callee-saved
+`RBX`/`R12`-`R15` (the backend never touches them, the ABI preserves them across
+the internal calls) pushed at entry and popped at the single return funnel.
+Floats promote into caller-saved `XMM6`/`XMM7` (call-free only). Poison analysis:
+an offset is poisoned unless every reference is a full-width GP scalar — a
+`Ref` under a `Unary` (`&x`, member base, `++`/`--`) needs an lvalue the
+register-resident rvalue cannot supply (`MEMBER_ARROW` stays poisoned because its
+lowering folds the offset in place and would clobber the pinned pointer); an
+array's whole slot range is poisoned because a constant-index element looks
+scalar but the address escapes via decayed-pointer arithmetic; `volatile`/
+`_Atomic` locals must stay in memory. Candidates are weighted by loop-depth-scaled
+reference frequency (an inner-loop use contributes `2^depth`) and the hottest
+win the scarce pins (selection is a heuristic — any valid subset is correct).
+`inline asm` (may clobber pins) and VLAs (callee-saved push/pop would race the
+runtime `rsp` moves) exclude a function. Promotion is opt-in (`MCC_AST_PROMOTE`)
+and bypasses byte-verify (a promoted function's bytes differ from `-O0` by
+construction), so the exec-golden corpus is the gate.
+
+**Tier-4 virtual always-inline (§9/§13/§19).** A within-TU `static` leaf-ish
+helper whose captured body is graftable (small, non-variadic, VLA-free, internal
+linkage) is retained keyed by its `Sym` instead of freed, so a later caller can
+graft it in place of a boundary `Call`. Non-leaf callees graft recursively
+(cycle-guarded by a graft stack and depth). A `setjmp`-family callee is excluded
+(inlining would capture the caller's frame). Grafting **deletes the ABI**: every
+param — scalar, arm64-positive, or by-value struct — is materialized into a fresh
+caller-frame slot, so register-vs-memory classification no longer matters; the
+whole callee frame is shifted below the caller's live locals and any positive
+param extent (`hi`-based bias, §19.2). Each `return EXPR` coalesces its value into
+a dedicated result slot (a phi via memory, so several grafts feeding one call each
+own a distinct slot) and non-tail returns jump to a graft-local inline-end join.
+The callee's control flow is isolated via a label floor. **Per-site specialization
+(§19.3):** a constant argument bound to a read-only param is constant-propagated
+(substituted at the param's `Ref` sites) instead of stored-and-reloaded, so
+`gen_op`/`gvtst` fold it and — inside the graft (pass 2, not byte-verified) — a
+condition that folds to a compile-time constant selects its taken branch and
+drops the dead one entirely. **Defer-to-TU:** a function that calls a `static`
+function not yet retained at its emission (a possible forward-inline miss) is
+retained and, at end-of-TU (all callees now retained), re-emitted at a fresh text
+offset with the forward callee grafted and its symbol repointed; referenced rodata
+`Sym`s are pinned so they survive to re-emit time. Tier-4 is opt-in
+(`MCC_AST_INLINE`) and not auto-enabled by `-O1` — it is broadly functional but
+can blow up combinatorially self-compiling mcc, so it stays behind explicit opt-in
+until hardened. Tier-3 is the documented "first opt that beats `-O0`."
+
+**Const-fold template (§12/§15).** The first optimization template: `Binary(op,
+Literal, Literal)` with a foldable integer op rewrites in place to a `Literal`.
+It runs on the tree before replay; because `gen_op` already folds adjacent
+constants at `-O0`, the template is byte-neutral (replay pushes the very `SValue`
+`gen_op` would have produced, and byte-verify confirms it). Only the pure
+arithmetic/bitwise/shift subset is folded — comparisons and `&&`/`||` have
+special replay paths. The fold arithmetic mirrors `gen_opic` exactly (same
+`value64` normalization / signed division).
+
+**`-O1` wiring and the safety net.** `-O1+` engages the replay-driven optimizer.
+Replay is arch-general and faithfulness-gated (each function byte-verifies against
+`-O0` and falls back otherwise), so it is safe on every target; register
+promotion and virtual-inline are x86_64-validated (the pin pools are x86_64
+register indices) and gated on the target. `gen_function` wraps the whole
+re-emission in a nested error trap and a diagnostic sink: replay drives the same
+vstack ops the parser did, so a construct captured imperfectly can raise
+`mcc_error` mid-emit — that must never fail a program `-O0` compiles, so the trap
+catches it, restores the parser's saved `-O0` bytes, and continues (the same
+fallback a byte-mismatch takes). Diagnostics are suppressed during replay (the ops
+already warned during the parse-build). The cleanup floor is raised so the trap's
+`longjmp` frees only what replay pushed, never the outer compile's live
+`stk_data`. Because the AST captures rodata-const leaves as raw `Sym` pointers
+that may already sit on the sym free-list, the pre-replay free-list is hidden for
+the duration so every replay allocation is fresh (the two-pass promote path would
+otherwise re-read a corrupted pointer in pass 2). Pass 1 replays with no
+promotion and byte-verifies; pass 2 applies the byte-diverging transforms
+(virtual-inline graft + register promotion, which compose). A faithful body with
+no pass-2 transform restores the `-O0` final `loc` (an unfaithful pass-1 replay
+can leave `loc` shallower, and `gfunc_epilog` sizes the frame from it — a
+too-small frame clobbers the locals below, e.g. gcc c-torture `20020215-1`).
+
+**Inline linkage (§6.7.4/§6.9.1).** A plain `inline` definition (no `extern`, no
+`static`) provides no external definition — mcc emits it only when the function
+acquired an external definition (`VT_INLINE` cleared) or is a used static-inline;
+a referenced plain inline still has its body parsed so the §6.7.4p3 diagnostics
+fire, then the generated definition is discarded so the symbol stays undefined
+(as in gcc/clang). A `static inline` definition following an `extern`/plain
+prototype must preserve its own `static` (internal-linkage) so it is emitted —
+otherwise it collapses to a plain external inline, which §6.7.4p7 leaves
+undefined and which breaks the win32 libm shims. A K&R identifier-list parameter
+with no matching declaration defaulting to `int` is a C99+ constraint violation
+(§6.9.1p6/§6.7.2p2; C89 allowed it).
+
+#### `src/mccast.h` / `src/mccast.c` — the AST library
+
+The AST is an intention IR alongside the CST (`docs/AST.md`): where the CST is
+byte-faithful concrete syntax, the AST is intention — desugared, type-resolved,
+post-preprocessor. It is a pure side-channel like the CST: `-O0` never builds or
+reads it; `-O1` builds it (lowered from the typed CST / parser) and replays it
+through the existing vstack API. The header declares only the structure-agnostic
+arena/builder/dump API; types and symbols ride as opaque handles (`type_t`
+carries the `CType.t` bit-field, `type_ref`/`sym` carry opaque `Sym*` casts) that
+the full build fills in, the replay driver in `mccgen.c` reconstructs, and the
+pure-library harness (`tools/asttool.c`) treats as tags.
+
+Node kinds: **structural** (TranslationUnit, BasicBlock, …), **terminators**,
+and **values** — `Ref` (address of a named object), `Literal` (int/float
+constant), `Load` (explicit read of an address), `Store(addr, value)` (explicit
+write), `Unary` (neg/bitnot single-operand machine ops), `Binary` (control-free
+binary op, `op` = token value), `Convert` (genuine value conversion), `Invoke`
+(abstract call: callee + arg values), `InitList` (aggregate initializer), plus a
+recovery kind. The arena is a structure-of-arrays node store, one `AstArena` per
+function (minimal, no hash-consing until virtual-inline lands); node 0 is the
+first node created and doubles as the root. In-place mutation used by the
+optimization templates retags a node and orphans its former children (they stay
+in the per-function arena, unreferenced — no compaction until hash-consing). The
+dump/reflection API prints a single printable token for a node's operator (the
+ASCII operators print directly, multi-char tokens fall back to a numeric tag) and
+validates structural invariants (mutually consistent parent/child links, `nchild`
+matching the sibling chain, every reachable node's kind in range). The
+amalgamated build poisons `malloc`/`realloc`/`free` so the compiler routes
+through its tracked allocators; the AST library is a standalone side-channel with
+its own lifetime, so it un-poisons them for the span of the file (as `mcccst.c`
+does). The parser-side build hooks fire from the same parse positions as the CST
+hooks and capture typed vstack values; they live in `mccgen.c` (where `vtop` is
+visible) and are no-ops when `CONFIG_AST` is off or replay is not requested. All
+of it is under `CONFIG_AST`.
+
+#### `src/mcc.h`
+
+`mcc_error`'s `longjmp` cleanup frees `stk_data` down to a floor rather than 0,
+so a nested error trap (the AST `-O1` replay) can preserve the outer compile's
+live cleanup entries; the floor is 0 for the normal top-level path.
+
+#### `src/mcchost.h`
+
+The native-backtrace helper prototypes are gated on the same condition as their
+definitions (`mcchost.c`, used by `mccrun.c` only under the native backtrace
+path) — declaring them unconditionally makes them unused functions when that path
+is compiled out (e.g. the macos preset builds backtrace off).
+
+#### `src/arch/arm/arm-asm.c`
+
+Three GNU-as-compatibility encoder notes: (1) a `mov Rd, #imm16` whose value is
+neither a rotated nor an inverted immediate (e.g. `0xEFFF`, `0x0201`) synthesizes
+`movw Rd, #imm16` exactly as GNU as does (MOV only, no shift, value in
+`0..0xFFFF`, unconditional v6T2+; wider values still error — they would need a
+`movw`+`movt` pair or a literal pool). (2) A `d`-register operand in a `vmov` is
+the 64-bit two-GPR↔doubleword transfer (`vmov Rt, Rt2, Dm`); gas accepts a `.f32`
+suffix on this form, so the operand type promotes to double regardless of the
+mnemonic suffix. (3) Branch relocations follow the EABI as GNU as does:
+`R_ARM_CALL` for `bl`, `R_ARM_JUMP24` for `b` (the linker handles all three types;
+`R_ARM_PC24` is the legacy form).
+
+#### `src/arch/x86_64/x86_64-gen.c`
+
+Notes on register-indirect addressing under Tier-3 promotion. A base `[rv + c]`
+is either the `TREG_MEM` indirect-with-disp form or a plain register holding an
+address (a promoted pointer): a base whose low 3 bits are `100` (rsp/r12) needs a
+SIB byte (`0x24`), and one that is `101` (rbp/r13) cannot use `mod=00` (that
+encodes disp32-no-base) so it carries an explicit disp8 even when `c==0`. Because
+the normal allocator never bases off r12/r13, every register it does use is
+byte-identical to the historic `mod=00`/`mod=10` encoding. `TREG_MEM` keeps its
+historic disp32 form. `REX.B` is taken from the destination base so a store
+through a high-register base (r8-r15, a promoted pointer) is addressed correctly,
+byte-identical for every base the normal allocator uses.
+
+---
+
+### Tools — `tools/`
+
+#### `tools/ckconfig.c`
+
+A config-drift checker for the `CONFIG_MCC_*` preprocessor surface. mcc's
+build-time configuration flows CMake option → emitted `-DCONFIG_MCC_X` →
+`#if CONFIG_MCC_X` in the code, with an in-code `#ifndef`-guarded default in a
+header. ckconfig cross-checks the two ends so the mapping cannot rot: (a) a
+`CONFIG_MCC_X` the code *reads* but that neither `CMakeLists.txt` mentions nor a
+header `#define`s (an implicit/undefined config), and (b) one CMake emits as a
+`-D` but the code never reads (a dead emission). Known-intentional exceptions are
+listed in `ALLOW_*` with a rationale — e.g. an opt-in "backtrace-only" build
+variant set outside the CMake surface, and a legacy uClibc provenance marker
+nothing reads. Names a header `#define`s are code-internal (constant or
+overridable default) and never "undefined". `tools/build.c` is a second emitter
+(mccbuild): its `EMIT()` string literals are scanned as provider mentions, not
+code reads, so a config it supplies is not flagged implicit; `tools/` headers may
+`#define` code-internal `CONFIG_MCC_*` (e.g. `TOOLHOST`), collected as defines
+only. Companion to `docs/CONFIG.md` and `BUILD.md`; `--list` prints the full
+inventory. Mirrors `tools/hostgate.c`'s file-walking style.
+
+#### `tools/mccharness.c`
+
+The GCC-c-torture differential AST gate (`docs/AST.md §C1`). `--ast <mode>`
+compiles/runs each test at `-O0` (baseline) *and* under an AST column
+(`replay`/`promote`/`inline`/`inline-tmpl`), and only a test that PASSES at `-O0`
+but FAILS under the column counts as a regression (the gate's exit status) —
+baseline `-O0` gaps versus the GCC suite are not the driver's concern, since the
+replay path is byte-identical-or-fallback and must match `-O0` test-for-test.
+A baseline of **known pre-existing AST-column gaps** is maintained per column so
+the gate stays green on "no new regression": the `REPLAY` set is the sound
+foundation and must stay tiny (`pr51581-1/-2` — a replay leaves the `#if`
+const-expr evaluator's shared vstack/jump state inconsistent, the parked `-O1`
+self-compile issue; `20070919-1` — a block-scoped VLA-member struct causes cyclic
+type recursion in `aggr_has_const_member`); `PROMOTE`/`INLINE` are the `-O1`
+transform-soundness backlog (they diverge from `-O0` by construction, so
+byte-verify cannot catch them — the gate is their only net), and both inherit the
+replay set. Env handling is a portable per-process `setenv`/clear (the harness is
+single-threaded, so `setenv` around a child spawn is safe). `run_one` returns
+0=pass / 1=compile-fail / 2=exe-fail / 3=the "cannot use local functions" skip.
+
+#### `tools/asttool.c`
+
+The pure-AST-library unit harness: builds `2 + 3 * 4` as an intention tree and
+checks geometry; verifies reuse-after-reset produces a fresh valid tree; builds a
+minimal function shell (an entry BasicBlock terminated by `Return(value)`);
+checks node provenance (every node can carry its origin CST node id, §14); and
+exercises the template rewrite API (§12) — `ast_set_kind` + `ast_clear_children`
+collapse a `Binary(Literal, Literal)` subtree into a `Literal` in place, folding
+`2 + 3 * 4` bottom-up to a single `Literal 14`.
+
+#### `tools/bench.c`
+
+A cross-compiler benchmark. It measures every detected compiler twice — at its
+default level (≈ `-O0`) and at its first optimization level — interleaving the two
+per compiler so the report pairs them for direct comparison. The optimization
+flag is pre-spelled for the compiler's style (`-O1`, or MSVC `/O1`); mcc's `-O1`
+engages the AST replay optimizer.
+
+---
+
+### Tests — `tests/`
+
+#### AST replay fixtures — `tests/ast/`
+
+**`replay.cmake`** is the differential-exec driver (§17): it compiles `SRC` twice
+— through the `-O0` parser→emit path and with the replay driver on
+(`MCC_AST_REPLAY=1`) — links, runs both, and asserts the same exit code. Extra
+list parameters assert a specific path *fired* (rather than silently falling back)
+via the dump: `REPLAYED` (named functions actually replayed), `PROMOTES`
+(Tier-3 promoted ≥1 local; a list so both the call-free and call-ful pools are
+asserted), `INLINES` (Tier-4 grafted a named callee, no boundary call),
+`SPECIALIZES` (per-site constant-arg specialization fired, §19.3), `REEMITS`
+(defer-to-TU re-emitted a function with a forward-declared callee inlined),
+`FOLDS` (the const-fold template fired), and `NOREPLAY` (the function must *not*
+faithfully replay — proving the byte-verify net falls back to `-O0`). Lists are
+comma-separated because a literal `;` would split the `add_test` COMMAND; `OUT`
+is ensured to exist before the first compile because mcc won't create the output
+dir. A promoted/inlined function's bytes diverge from `-O0`, so byte-verify is
+bypassed and the run/exit-code equality is the gate.
+
+The per-construct fixtures each prove one capture path replays faithfully and
+still exits equal to the `-O0` build:
+
+- `bitfield.c` — bit-field member read + write (the mask/shift runs inside the
+  suppressed `gv`/`vstore`).
+- `call_store.c` — storing a call result straight into a local (init and assign);
+  regression guard for the `vpop` double-emit bug (the store's leftover rvalue
+  must not be re-added as a bare BasicBlock effect).
+- `complex_arith.c` — `_Complex` arithmetic + `__real__`/`__imag__` extraction
+  (routes to `gen_complex_op`; the result temp is an ordinal frame slot).
+- `complex_ctor.c` — `_Complex` construction from the imaginary unit `I`
+  (`re + im*I`); the rodata `_Complex` const and the float→double widening const
+  reuse their ELF symbols ordinally so relocations are byte-identical.
+- `complex_imag.c` — an imaginary literal `2.0i` builds a `0 + val*i` pair folded
+  into one `Unary(AST_OP_IMAG)`.
+- `constfold.c` — the const-fold template collapses an all-constant return
+  expression to a single `Literal` (byte-neutral: `gen_op` already folds these).
+- `float_ops.c` — float/double constants, local stores, arithmetic, int↔fp casts,
+  and a float comparison, including const-pool reuse.
+- `goto_dispatch.c` — named forward/backward `goto`/labels via label markers and
+  the replay-time label table.
+- `inline.c` — the broad Tier-4 fixture: multi-statement straight-line bodies with
+  relocating locals; internal control flow with a single tail return; early+tail
+  returns coalescing through per-graft result slots (phi via memory); scalar-float
+  params/return; recursive non-leaf grafts; self-contained `switch`/loop control
+  flow; struct-by-value return and params (register-class `sumpt` with a negative
+  uniform bias, memory/stack-passed `sumbig` with a positive per-param remap,
+  `addpt` taking and returning a struct); scalar-arg wrappers so `main`'s own
+  replay stays faithful; label scoping via the label floor; and two defer-to-TU
+  cases (a plain forward-caller `fwd_sum` re-emitted with `fwd_callee` grafted,
+  and a broadened one referencing an anon rodata string and a struct type that the
+  value/type-ref pins keep alive to re-emit time). The final sum minus a constant
+  yields 42.
+- `inline_spec.c` — Tier-4 per-site specialization (§19.3): each `choose` call
+  passes a constant flag bound to a read-only param, so the dead branch (which
+  returns a different value than the live one) is eliminated; a runtime arg still
+  binds via a slot (specialization is per-arg). The exec-golden equality is the
+  real gate; `SPECIALIZES` proves the substitution fired.
+- `ld_fallback.c` — `long double` is not modeled, so the function must fall back
+  without faithfully replaying (proving the safety net).
+- `promote.c` — Tier-3 promotion across straight-line code, a loop (the
+  accumulator/loop-carried value live in registers while `i`, which uses `++`, is
+  poisoned and stays in memory), pointer promotion (`p[i]` derefs the register
+  value; exercises high-register SIB/`REX.B` encoding), a call-ful case (pins into
+  callee-saved regs that survive the calls), and float promotion (`XMM6`/`XMM7`,
+  call-free only).
+- `short_circuit.c` — `&&`/`||` results used as values (stored / arithmetic) and
+  nested operands (`(a&&b)||c`) as values, mixed globals, and branch conditions,
+  plus a bare-global condition (`if (g)` whose leaf `->sym` is finalized so replay
+  reconstructs it).
+- `struct_byval_arg.c` — passing a struct by value as a call argument (both caller
+  and by-value-param callee replay).
+- `struct_copy.c` — struct assignment/copy, direct and through pointers, plus
+  `(*p).x` member access on a dereferenced struct pointer.
+- `struct_member.c` — scalar struct member access, `.` and `->`, read and write,
+  via the coarse `Unary(MEMBER)` capture.
+- `struct_ret_caller.c` — calling a register-return struct function and using the
+  result (post-call register→temp reconstruction with an ordinal slot).
+- `struct_ret_sret.c` — the sret hidden-pointer ABI (`ret_nregs==0`, a >16-byte
+  struct): the caller allocates the result temp (ordinal slot) and passes its
+  pointer; replay reserves the same slot.
+- `struct_ret_variadic.c` — a variadic struct-returning call (the struct-return
+  ABI is independent of varargs).
+- `struct_return.c` — a struct-returning function (`return s`) replays; the caller
+  side still falls back (its result-temp `loc` offset diverges on replay), so
+  `REPLAYED` targets `make`, not `main`.
+- `switch_dispatch.c` — switch dispatch (value + cases + default + fall-through +
+  break, including a case range); captured as `If(op==6)` with markers, replay
+  rebuilds the `switch_t` and reproduces `case_sort` + `gcase`.
+- `vla.c` — VLAs (`int a[n]`), the lexical-scope-edge query: the size computation
+  is an ordinary captured `Store`; the machine-tier alloc is one coarse
+  `Unary(AST_OP_VLA)`, the paired SP restore a `Return` annotation (function-scope)
+  or an `AST_OP_VLA_RESTORE` effect (nested block `}`); `loc` is not decremented at
+  replay.
+
+#### CST tests — `tests/cst/`
+
+Driver scripts:
+
+- `roundtrip.cmake` — the strongest pure-reflection proof (PLAN §8.1): compiles
+  `SRC` with the CST self-check on and asserts the recorded tree reflects back to
+  byte-identical source.
+- `kinds.cmake` — node-kind coverage gate (D4): with the tree dump on, asserts
+  every kind name in `KINDS` is produced (a coverage assertion, since round-trip
+  alone passed while these kinds were reserved-but-unproduced); the dump prints
+  internal nodes as `<Kind> [lo,hi)`, so the check anchors on the trailing
+  space+bracket (so e.g. `Paren` does not match `ParamList`). It also re-checks
+  the round-trip.
+- `hashinv.cmake` — structural-hash invariance gate (slice C/G): `compact.c` and
+  `spaced.c` share token structure but differ in whitespace/comments → equal root
+  `H_s`; `changed.c` changes a token → different `H_s`.
+- `increment.cmake` / `incstore.cmake` — the D3 hash-consed-`SourceFile` claims.
+  `increment.h` re-includes itself several times under an incrementing,
+  depth-gated macro (`#if (INCREMENTING) < 3`); every pass reads the same bytes so
+  all collapse to ONE content-addressed template (a file's bytes fix its template
+  regardless of include context), and the template is full-concrete (its `#if`
+  depth-gate + successor table are `PPConditional` nodes) and renders back to its
+  exact bytes. `incstore.cmake` is the live-capture form: `driver.c` pulls `leaf.h`
+  in via `wrap.h` and directly twice; all references collapse to two templates
+  (`wrap.h`, `leaf.h`), `leaf.h` deduped across three references, and both direct
+  `#include "leaf.h"` nodes must bind to the same (non-`0xffffffff`) template id.
+- `macro.cmake` / `macro-nesting.cmake` — slice-J macro fidelity: macro uses must
+  become `CST_MacroInvocation` nodes AND the written source must round-trip
+  byte-identically. `macro-nesting.cmake` pins the two accepted v1 imprecisions
+  (see the fixture below); the byte-identical round-trip is the load-bearing
+  invariant, and a future precise expander would change the node shape and require
+  updating the assertions.
+- `symref.cmake` / `symref-shadow.cmake` — slice-I symbol-ref resolution. The
+  correctness driver asserts each use of `NAME` maps to a def whose spanned text
+  is also `NAME`; the shadow driver pins the documented v1 boundary — a file-scope
+  name shadowed inside a function resolves both uses to the same def
+  (last-declaration-wins, no scope stack).
+
+Fixtures: `fixtures/basic.c` (comments, operators, declarations for round-trip;
+freestanding so it compiles with a bare `-c`), `fixtures/literals.c` (string/char/
+number literals with escapes and adjacent-string concatenation),
+`fixtures/preproc.c` (directives, inactive `#if` branches whose bytes must still be
+reflected verbatim as inter-token source, macro invocations). `kinds/decl.c`
+(D1b — Declaration/FunctionDef/ParamList/Enum/TypeName/Initializer/Label via
+retroactive range-wrap), `kinds/expr.c` (D1a — Unary/Cast/Paren/Primary plus the
+existing Binary/Call/Member/Index), `kinds/pp.c` (D1c — IncludeDirective/
+PPDirective/PPConditional captured at the preprocessor boundary, never reaching
+the post-expansion parser). `incstore/{driver.c,increment.h,increment_driver.c}`
+and `symref/{refs.c,shadow.c}` are the fixtures for the drivers above.
+`macro/macro_nesting.c` documents the two v1 imprecisions: (1) the trailing `)` of
+a function-like invocation splits into a sibling `Paren` node (not inside the
+`MacroInvocation` span), and (2) an object-like macro used inside another macro's
+argument list stays a plain token (not its own `MacroInvocation`); the written
+source still round-trips byte-identically. `macro/macros.c` and
+`symref/refs.c`/`shadow.c` restate the same invariants briefly.
+
+#### C99/C11 feature exec tests — `tests/exec/features_c99_c11/`
+
+Each mirrors the runtime half of the corresponding gcc/clang conformance test and
+prints `OK`:
+
+- `alignas_over.c` — `_Alignas`/`_Alignof` over-alignment (C11 §6.7.5, §6.5.3.4):
+  over-aligned objects get the requested runtime alignment, `alignas(alignof(
+  max_align_t))` works, member/offset alignment holds, and a smaller-than-natural
+  request is a no-op-min (never under-aligns).
+- `complex_cmplx_special.c` — C11 §7.3.9.3 `CMPLX` + Annex G edges: `CMPLX(x,y)`
+  builds a complex with parts exactly `x`,`y` even when a part is NaN/inf (unlike
+  `x + y*I`); `cabs` of anything with an infinite part is `+inf`; `cproj` maps any
+  infinite part to `(+inf, copysign(0,imag))`; `conj` flips the imaginary sign
+  exactly. Checks are normalized to booleans.
+- `feature_macros.c` — C11 §6.10.8 predefined feature-test macros, checked
+  portably (complements `c11_freestanding_headers.c`): mandatory
+  translation-environment macros (compared with `>=`) and the conditional
+  `__STDC_NO_*` opt-out macros, each absence corroborated by exercising the
+  feature (atomics/complex/threads/VLAs), so macro and capability can never
+  disagree. Written to agree across mcc/gcc/clang and every hosted target (PE
+  included; the exec/diff3 harness always builds hosted).
+- `flexarray_runtime.c` — flexible array members (C11 §6.7.2.1p18): `sizeof`
+  excludes the flexible member (`== offsetof`), heap allocation with a trailing
+  array, read/write, char-FAM string storage, a typedef'd FAM. Includes
+  `<stddef.h>` after the C library headers, which also regression-guards the
+  ARM/AArch64 `__WCHAR_TYPE__` fix (this include order once triggered an
+  incompatible `wchar_t` redefinition on the musl-arm sysroot).
+- `flt_eval_method.c` — `FLT_EVAL_METHOD`, `float_t`/`double_t` (§5.2.4.2.2,
+  §7.12p2): the macro is in `{-1,0,1,2}` and the widths match the reported method
+  (only asserted for the well-defined methods; `-1` is indeterminate), with
+  neighbouring `<float.h>` characteristics sane.
+- `fp_wide_return.c` — C99 §5.1.2.3 / Annex F.6: a function returning
+  `float`/`double` must remove extra range/precision (the returned value is the
+  declared type, not a wider evaluation-format intermediate). `FLT_MAX + FLT_MAX`
+  is finite in `long double` but overflows `float`, so the return must narrow to
+  `+inf` regardless of evaluation format; a value whose float-rounded result
+  differs from its `long double` value must be seen float-rounded by the caller,
+  and re-narrowing is idempotent. On `FLT_EVAL_METHOD == 0` targets the narrowing
+  is a no-op; on i386 x87 (`== 2`) it exercises real narrowing.
+- `noreturn.c` — `_Noreturn` functions (C11 §6.7.4): a function that genuinely
+  does not return (via `longjmp`), exercising both the `_Noreturn` keyword and the
+  `<stdnoreturn.h>` `noreturn` macro, in both placements.
+
+#### CLI cases, diff parts, and other drivers
+
+- `tests/cli/cases.h` — a table of CLI test cases pinning several standard
+  boundaries: a K&R identifier-list param defaulting to `int` (C99+ constraint
+  violation vs. C89-valid — the pair pins the boundary, §6.9.1p6/§6.7.2p2); the
+  `inline` external-definition matrix (a plain `inline` leaves the symbol
+  undefined `nm 'U'`, an added `extern` exports it `'T'`) run over the exhaustive
+  multi-unit `inline.c` so the otherwise reference-only exec golden actually
+  executes; invalid universal-character-name rejections in identifiers (§6.4.3 —
+  basic-latin range and surrogates), whose valid side lives in
+  `exec/lexical/ucn_identifiers.c`; `signed`/`unsigned` mutual exclusion (§6.7.2p2,
+  distinct from the "too many basic types" excess); and an x86_64 link range check
+  — an absolute `R_X86_64_32S` reference past +2 GB must be rejected, forced with
+  two ~1.5 GB `.bss` (`NOBITS`, so cheap) arrays and an absolute `movl` to `b`'s
+  tail.
+- `tests/diff/parts/legacy_aggregates.h`, `legacy_preproc.h` — K&R
+  identifier-list definitions with *explicit* parameter declarations: still
+  exercise the `FUNC_OLD` parser path but stay conforming under C99+ (implicit-int
+  params were removed in C99).
+- `tests/static/run_static.cmake` + `smoke.c` — the static-glibc smoke test:
+  link `SRC` fully static with mcc, run it, and compare stdout. The `add_test` is
+  only created when a static glibc `libc.a` is present, so a link failure here is a
+  real defect, not a missing-toolchain skip. `smoke.c` exercises the three linker
+  fixes that make `mcc -static` work under glibc: the weak-undef guard via
+  GOTPCREL (`__libc_start_main`'s optional hooks, reached by any static startup
+  that touches `printf`), the GOTTPOFF IE→LE TLS relaxation + local-exec TPOFF
+  (glibc's internal `__thread` state, reached through `isdigit`/`toupper`'s ctype
+  tables), and the `.tdata` TLS init image (must be copied, not zero-filled — the
+  nonzero-initialized `__thread` objects read back their initializers). Output is
+  normalized so it is identical across glibc and musl ctype encodings.
+- `tests/tls/run_models.cmake` — drives the four x86-64 TLS models through mcc's
+  linker: the reference compiler emits the object, mcc links it dynamically (and
+  fully static when `STATIC=1`); a pattern-match abort ("unexpected
+  R_X86_64_TLSGD pattern" etc.) or a wrong runtime value fails the test, pinning
+  the tight codegen↔linker coupling.

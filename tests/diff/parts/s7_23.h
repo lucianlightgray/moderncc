@@ -10,12 +10,12 @@ void s7_23_string_test(void) {
 	printf("memmove %s ret=%d\n", buf, mr == buf + 2);
 
 	printf("memcmp %d %d\n", s7_23_sign(memcmp("abc", "abd", 3)),
-		   s7_23_sign(memcmp("abd", "abc", 3)));
+				 s7_23_sign(memcmp("abd", "abc", 3)));
 	printf("strcmp %d %d %d\n", s7_23_sign(strcmp("a", "b")),
-		   s7_23_sign(strcmp("b", "a")),
-		   s7_23_sign(strcmp("eq", "eq")));
+				 s7_23_sign(strcmp("b", "a")),
+				 s7_23_sign(strcmp("eq", "eq")));
 	printf("strncmp %d %d\n", s7_23_sign(strncmp("abcX", "abcY", 3)),
-		   s7_23_sign(strncmp("abcX", "abcY", 4)));
+				 s7_23_sign(strncmp("abcX", "abcY", 4)));
 
 	char nb[8];
 	memset(nb, '#', sizeof nb);
@@ -33,16 +33,16 @@ void s7_23_string_test(void) {
 
 	char h[] = "banana";
 	printf("strchr %d strrchr %d\n",
-		   (int)(strchr(h, 'a') - h), (int)(strrchr(h, 'a') - h));
+				 (int)(strchr(h, 'a') - h), (int)(strrchr(h, 'a') - h));
 	char xyz[] = "xyz";
 	printf("memchr %d\n", (int)((char *)memchr(xyz, 'y', 3) - xyz));
 	char hel[] = "hello";
 	printf("strpbrk %d\n", (int)(strpbrk(hel, "lo") - hel));
 	printf("strspn %d strcspn %d\n",
-		   (int)strspn("abcXYZ", "cba"), (int)strcspn("abcXYZ", "Z"));
+				 (int)strspn("abcXYZ", "cba"), (int)strcspn("abcXYZ", "Z"));
 	char s6[] = "abcdef";
 	printf("strstr %d empty %d\n",
-		   (int)(strstr(s6, "cd") - s6), (int)(strstr(s6, "") - s6));
+				 (int)(strstr(s6, "cd") - s6), (int)(strstr(s6, "") - s6));
 	printf("strchr_null %d\n", strchr("abc", 'z') == NULL);
 
 	char tb[] = ",,1,2,,3,";
@@ -69,25 +69,25 @@ void s7_23_tgmath_test(void) {
 	double _Complex dc = 0;
 
 	printf("p3 %d %d %d %d\n",
-		   (int)(sizeof(sqrt((float)1)) == sizeof(float)),
-		   (int)(sizeof(sqrt((double)1)) == sizeof(double)),
-		   (int)(sizeof(sqrt(1)) == sizeof(double)),
-		   (int)(sizeof(sqrt((long double)1)) == sizeof(long double)));
+				 (int)(sizeof(sqrt((float)1)) == sizeof(float)),
+				 (int)(sizeof(sqrt((double)1)) == sizeof(double)),
+				 (int)(sizeof(sqrt(1)) == sizeof(double)),
+				 (int)(sizeof(sqrt((long double)1)) == sizeof(long double)));
 
 	printf("p4 %d %d\n",
-		   (int)(sizeof(sqrt(dc)) == 2 * sizeof(double)),
-		   (int)(sizeof(sqrt(fc)) == 2 * sizeof(float)));
+				 (int)(sizeof(sqrt(dc)) == 2 * sizeof(double)),
+				 (int)(sizeof(sqrt(fc)) == 2 * sizeof(float)));
 
 	printf("p5 %d %d %d\n",
-		   (int)(sizeof(fabs(fc)) == sizeof(float)),
-		   (int)(sizeof(fabs(dc)) == sizeof(double)),
-		   (int)(sizeof(fabs((long double)1)) == sizeof(long double)));
+				 (int)(sizeof(fabs(fc)) == sizeof(float)),
+				 (int)(sizeof(fabs(dc)) == sizeof(double)),
+				 (int)(sizeof(fabs((long double)1)) == sizeof(long double)));
 
 	printf("p7 %d %d\n",
-		   (int)(sizeof(creal(ldc)) == sizeof(long double)),
-		   (int)(sizeof(cimag(fc)) == sizeof(float)));
+				 (int)(sizeof(creal(ldc)) == sizeof(long double)),
+				 (int)(sizeof(cimag(fc)) == sizeof(float)));
 
 	printf("p6 %d %d\n",
-		   (int)(sizeof(nexttoward((float)1, 2.0L)) == sizeof(float)),
-		   (int)(sizeof(ldexp((float)1, 3)) == sizeof(float)));
+				 (int)(sizeof(nexttoward((float)1, 2.0L)) == sizeof(float)),
+				 (int)(sizeof(ldexp((float)1, 3)) == sizeof(float)));
 }

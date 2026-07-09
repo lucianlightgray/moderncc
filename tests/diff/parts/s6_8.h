@@ -11,8 +11,8 @@ static unsigned char s6_8_retc(void) {
 	return 300;
 }
 enum s6_8_E { s6_8_A,
-			  s6_8_B = 5,
-			  s6_8_C };
+							s6_8_B = 5,
+							s6_8_C };
 
 static int s6_8_dang(int a, int b) {
 	int r = 0;

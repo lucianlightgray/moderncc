@@ -7,7 +7,7 @@ static int s6_5_5_side(int r) {
 void s6_5_5_binary_ops(void) {
 
 	printf("prec %d %d %d %d %d\n",
-		   2 + 3 * 4, 1 << 2 + 1, (1 < 2) == 1, 5 & 3 | 4, 1 | 2 ^ 3 & 4);
+				 2 + 3 * 4, 1 << 2 + 1, (1 < 2) == 1, 5 & 3 | 4, 1 | 2 ^ 3 & 4);
 
 	printf("assoc %d %d\n", 10 - 3 - 2, 100 / 5 / 2);
 

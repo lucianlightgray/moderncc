@@ -8,13 +8,13 @@ label:
 static int three_way_jump(int val, int *addr) {
 	*addr = 42;
 	asm goto("cmp $0, %1\n\t"
-			 "jg %l[larger]\n\t"
-			 "jl %l[smaller]\n\t"
-			 "incl %0\n\t"
-			 : "=m"(*addr)
-			 : "r"(val)
-			 :
-			 : smaller, larger);
+					 "jg %l[larger]\n\t"
+					 "jl %l[smaller]\n\t"
+					 "incl %0\n\t"
+					 : "=m"(*addr)
+					 : "r"(val)
+					 :
+					 : smaller, larger);
 	return 1;
 smaller:
 	return 2;

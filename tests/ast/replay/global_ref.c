@@ -1,2 +1,4 @@
 int g = 7;
-int main(void) { return g + 35; }
+int main(void) {
+	return g + 35;
+}

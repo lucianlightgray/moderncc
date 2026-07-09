@@ -27,6 +27,6 @@ void s6_10_4_preproc_test(void) {
 
 #pragma s6_10_4_bogus_pragma_name 12 34
 	s6_10_4_DOPRAGMA(s6_10_4_unknown_via_operator)
-		_Pragma("s6_10_4_also_unknown")
-			printf("pragma_ok=1\n");
+			_Pragma("s6_10_4_also_unknown")
+					printf("pragma_ok=1\n");
 }

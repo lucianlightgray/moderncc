@@ -11,10 +11,6 @@
 #define AST_ASSERT(x) assert(x)
 #endif
 
-/* The amalgamated build poisons malloc/realloc/free (src/mcc.h) so that the
- * compiler proper routes through its tracked allocators. The AST library is a
- * standalone side-channel with its own lifetime, so it un-poisons them for the
- * span of this file, exactly as mcccst.c does. */
 #pragma push_macro("malloc")
 #pragma push_macro("realloc")
 #pragma push_macro("free")
@@ -22,10 +18,6 @@
 #undef realloc
 #undef free
 
-/* Structure-of-arrays node arena. One AstArena per function (D-c: minimal, no
- * hash-consing until virtual-inline lands at Mid). Node 0 is the first node
- * created (typically the TranslationUnit or the function's entry BasicBlock)
- * and doubles as the root. */
 struct AstArena {
 	uint16_t *kind;
 	AstLocal *parent;
@@ -34,13 +26,13 @@ struct AstArena {
 	AstLocal *next_sib;
 	uint32_t *nchild;
 
-	int32_t *op;       /* token value / cast selector / terminator tag */
-	int32_t *type_t;   /* CType.t bit-field (opaque to the pure lib)   */
-	uint64_t *type_ref; /* opaque Sym* for pointer/aggregate types      */
-	uint64_t *ival;    /* literal integer payload / block target       */
-	uint64_t *fbits;   /* literal float payload (IEEE bits)            */
-	uint64_t *sym;     /* opaque Sym* the node refers to (Ref/Invoke)  */
-	uint64_t *cst;     /* CST provenance id (§14)                      */
+	int32_t *op;
+	int32_t *type_t;
+	uint64_t *type_ref;
+	uint64_t *ival;
+	uint64_t *fbits;
+	uint64_t *sym;
+	uint64_t *cst;
 
 	AstLocal count;
 	AstLocal cap;
@@ -131,39 +123,81 @@ void ast_add_child(AstArena *a, AstLocal parent, AstLocal child) {
 	a->nchild[parent]++;
 }
 
-void ast_set_kind(AstArena *a, AstLocal n, uint16_t kind) { a->kind[n] = kind; }
+void ast_set_kind(AstArena *a, AstLocal n, uint16_t kind) {
+	a->kind[n] = kind;
+}
 void ast_clear_children(AstArena *a, AstLocal n) {
 	a->first_child[n] = AST_NONE;
 	a->last_child[n] = AST_NONE;
 	a->nchild[n] = 0;
 }
 
-void ast_set_op(AstArena *a, AstLocal n, int op) { a->op[n] = op; }
+void ast_set_op(AstArena *a, AstLocal n, int op) {
+	a->op[n] = op;
+}
 void ast_set_type(AstArena *a, AstLocal n, int type_t, uint64_t type_ref) {
 	a->type_t[n] = type_t;
 	a->type_ref[n] = type_ref;
 }
-void ast_set_ival(AstArena *a, AstLocal n, uint64_t v) { a->ival[n] = v; }
-void ast_set_fbits(AstArena *a, AstLocal n, uint64_t bits) { a->fbits[n] = bits; }
-void ast_set_sym(AstArena *a, AstLocal n, uint64_t sym) { a->sym[n] = sym; }
-void ast_set_cst(AstArena *a, AstLocal n, uint64_t cst_id) { a->cst[n] = cst_id; }
+void ast_set_ival(AstArena *a, AstLocal n, uint64_t v) {
+	a->ival[n] = v;
+}
+void ast_set_fbits(AstArena *a, AstLocal n, uint64_t bits) {
+	a->fbits[n] = bits;
+}
+void ast_set_sym(AstArena *a, AstLocal n, uint64_t sym) {
+	a->sym[n] = sym;
+}
+void ast_set_cst(AstArena *a, AstLocal n, uint64_t cst_id) {
+	a->cst[n] = cst_id;
+}
 
-uint16_t ast_kind(const AstArena *a, AstLocal n) { return a->kind[n]; }
-int ast_op(const AstArena *a, AstLocal n) { return a->op[n]; }
-int ast_type_t(const AstArena *a, AstLocal n) { return a->type_t[n]; }
-uint64_t ast_type_ref(const AstArena *a, AstLocal n) { return a->type_ref[n]; }
-uint64_t ast_ival(const AstArena *a, AstLocal n) { return a->ival[n]; }
-uint64_t ast_fbits(const AstArena *a, AstLocal n) { return a->fbits[n]; }
-uint64_t ast_sym(const AstArena *a, AstLocal n) { return a->sym[n]; }
-uint64_t ast_cst(const AstArena *a, AstLocal n) { return a->cst[n]; }
+uint16_t ast_kind(const AstArena *a, AstLocal n) {
+	return a->kind[n];
+}
+int ast_op(const AstArena *a, AstLocal n) {
+	return a->op[n];
+}
+int ast_type_t(const AstArena *a, AstLocal n) {
+	return a->type_t[n];
+}
+uint64_t ast_type_ref(const AstArena *a, AstLocal n) {
+	return a->type_ref[n];
+}
+uint64_t ast_ival(const AstArena *a, AstLocal n) {
+	return a->ival[n];
+}
+uint64_t ast_fbits(const AstArena *a, AstLocal n) {
+	return a->fbits[n];
+}
+uint64_t ast_sym(const AstArena *a, AstLocal n) {
+	return a->sym[n];
+}
+uint64_t ast_cst(const AstArena *a, AstLocal n) {
+	return a->cst[n];
+}
 
-AstLocal ast_parent(const AstArena *a, AstLocal n) { return a->parent[n]; }
-AstLocal ast_first_child(const AstArena *a, AstLocal n) { return a->first_child[n]; }
-AstLocal ast_last_child(const AstArena *a, AstLocal n) { return a->last_child[n]; }
-AstLocal ast_next_sib(const AstArena *a, AstLocal n) { return a->next_sib[n]; }
-uint32_t ast_nchild(const AstArena *a, AstLocal n) { return a->nchild[n]; }
-AstLocal ast_count(const AstArena *a) { return a->count; }
-AstLocal ast_root(const AstArena *a) { return a->count ? 0 : AST_NONE; }
+AstLocal ast_parent(const AstArena *a, AstLocal n) {
+	return a->parent[n];
+}
+AstLocal ast_first_child(const AstArena *a, AstLocal n) {
+	return a->first_child[n];
+}
+AstLocal ast_last_child(const AstArena *a, AstLocal n) {
+	return a->last_child[n];
+}
+AstLocal ast_next_sib(const AstArena *a, AstLocal n) {
+	return a->next_sib[n];
+}
+uint32_t ast_nchild(const AstArena *a, AstLocal n) {
+	return a->nchild[n];
+}
+AstLocal ast_count(const AstArena *a) {
+	return a->count;
+}
+AstLocal ast_root(const AstArena *a) {
+	return a->count ? 0 : AST_NONE;
+}
 
 AstLocal ast_child(const AstArena *a, AstLocal n, uint32_t i) {
 	AstLocal c = a->first_child[n];
@@ -173,9 +207,21 @@ AstLocal ast_child(const AstArena *a, AstLocal n, uint32_t i) {
 }
 
 static const char *const kind_names[AST_KIND_COUNT] = {
-	"TranslationUnit", "BasicBlock", "If", "Jump", "Return",
-	"Ref", "Literal", "Load", "Store", "Unary",
-	"Binary", "Convert", "Invoke", "InitList", "Poison",
+		"TranslationUnit",
+		"BasicBlock",
+		"If",
+		"Jump",
+		"Return",
+		"Ref",
+		"Literal",
+		"Load",
+		"Store",
+		"Unary",
+		"Binary",
+		"Convert",
+		"Invoke",
+		"InitList",
+		"Poison",
 };
 
 const char *ast_kind_name(uint16_t kind) {
@@ -184,10 +230,6 @@ const char *ast_kind_name(uint16_t kind) {
 	return kind_names[kind];
 }
 
-/* A single printable token for the node's operator field. Binary/Unary ops
- * carry the parser's token value; for the common ASCII operators that value is
- * the character itself, so we print it directly and fall back to a numeric tag
- * for multi-char tokens (the pure harness pins only the ASCII ones). */
 static void op_str(int op, char *buf, size_t cap) {
 	if (op > 0x20 && op < 0x7f)
 		snprintf(buf, cap, "%c", op);
@@ -255,15 +297,12 @@ size_t ast_dump(const AstArena *a, AstLocal root, char *out, size_t cap) {
 	return d.len;
 }
 
-/* Structural invariants: parent/child links are mutually consistent, nchild
- * matches the sibling chain, and every reachable-from-root node's kind is in
- * range. Returns 0 on success, -1 on failure (msg filled). */
 int ast_validate(const AstArena *a, char *msg, size_t msgcap) {
-#define AST_FAIL(m)                          \
-	do {                                       \
-		if (msg)                                 \
-			snprintf(msg, msgcap, "%s", m);        \
-		return -1;                               \
+#define AST_FAIL(m)                   \
+	do {                                \
+		if (msg)                          \
+			snprintf(msg, msgcap, "%s", m); \
+		return -1;                        \
 	} while (0)
 	for (AstLocal n = 0; n < a->count; n++) {
 		if (a->kind[n] >= AST_KIND_COUNT)
@@ -291,4 +330,4 @@ int ast_validate(const AstArena *a, char *msg, size_t msgcap) {
 #pragma pop_macro("realloc")
 #pragma pop_macro("free")
 
-#endif /* CONFIG_AST */
+#endif

@@ -78,9 +78,9 @@ void test_clobber_list(void) {
 	int y = 20;
 	int result;
 	asm("add %0, %1, %2"
-		: "=r"(result)
-		: "r"(x), "r"(y)
-		: "cc");
+			: "=r"(result)
+			: "r"(x), "r"(y)
+			: "cc");
 	assert(result == 30);
 	printf("Test 6 (clobber list): PASSED\n");
 }
@@ -88,7 +88,7 @@ void test_clobber_list(void) {
 void test_multiple_outputs(void) {
 	int a, b;
 	asm("mov %0, #1; mov %1, #2"
-		: "=r"(a), "=r"(b));
+			: "=r"(a), "=r"(b));
 	assert(a == 1 && b == 2);
 	printf("Test 7 (multiple outputs): PASSED\n");
 }
@@ -147,9 +147,9 @@ void test_regvar_preservation(void) {
 	uint64_t out;
 
 	asm volatile("mov x19, #7; add %0, x19, #1"
-				 : "=r"(out)
-				 :
-				 : "x19");
+							 : "=r"(out)
+							 :
+							 : "x19");
 	assert(keep == 0x123456789abcdef0ULL);
 	assert(out == 8);
 	printf("Test 14 (regvar preservation): PASSED\n");
@@ -159,8 +159,8 @@ void test_complex_arithmetic(void) {
 	int a = 100, b = 50, c = 25;
 	int result;
 	asm("add %0, %1, %2; sub %0, %0, %3"
-		: "=&r"(result)
-		: "r"(a), "r"(b), "r"(c));
+			: "=&r"(result)
+			: "r"(a), "r"(b), "r"(c));
 	assert(result == 125);
 	printf("Test 15 (complex arithmetic): PASSED\n");
 }
@@ -169,8 +169,8 @@ void test_named_operand(void) {
 	int input = 10;
 	int output;
 	asm("add %[out], %[in], #5"
-		: [out] "=r"(output)
-		: [in] "r"(input));
+			: [out] "=r"(output)
+			: [in] "r"(input));
 	assert(output == 15);
 	printf("Test 16 (named operand): PASSED\n");
 }
@@ -209,7 +209,7 @@ void test_bitwise_ops(void) {
 	asm("orr %0, %1, %2" : "=r"(orv) : "r"(a), "r"(b));
 	asm("eor %0, %1, %2" : "=r"(xorv) : "r"(a), "r"(b));
 	asm("and %0, %1, %2" : "=r"(imm_and)
-		: "r"(~0ULL), "L"(0xff00ff00ff00ff00ULL));
+			: "r"(~0ULL), "L"(0xff00ff00ff00ff00ULL));
 
 	assert(andv == (a & b));
 	assert(orv == (a | b));
@@ -226,7 +226,7 @@ void test_register_shift_operands(void) {
 
 	asm("lsl %0, %1, %2" : "=r"(shifted) : "r"(val), "r"(amount));
 	asm("ror %0, %1, %2" : "=r"(rotated)
-		: "r"(0x0123456789abcdefULL), "r"(8ULL));
+			: "r"(0x0123456789abcdefULL), "r"(8ULL));
 	assert(shifted == 48);
 	assert(rotated == 0xef0123456789abcdULL);
 	printf("Test 21 (register shifts): PASSED\n");

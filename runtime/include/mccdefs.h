@@ -1,58 +1,58 @@
-#if __SIZEOF_POINTER__ == 4
-#if defined  __OpenBSD__
+#if __SIZEOF_POINTER__ == 4 //@
+#if defined  __OpenBSD__ //@
 	#define __SIZE_TYPE__ unsigned long
 	#define __PTRDIFF_TYPE__ long
-#else
+#else //@
 	#define __SIZE_TYPE__ unsigned int
 	#define __PTRDIFF_TYPE__ int
-#endif
+#endif //@
 	#define __ILP32__ 1
 	#define __INT64_TYPE__ long long
-#elif __SIZEOF_LONG__ == 4
+#elif __SIZEOF_LONG__ == 4 //@
 	#define __SIZE_TYPE__ unsigned long long
 	#define __PTRDIFF_TYPE__ long long
 	#define __LLP64__ 1
 	#define __INT64_TYPE__ long long
-#else
+#else //@
 	#define __SIZE_TYPE__ unsigned long
 	#define __PTRDIFF_TYPE__ long
 	#define __LP64__ 1
-# if defined __linux__
+# if defined __linux__ //@
 	#define __INT64_TYPE__ long
-# else
+# else //@
 	#define __INT64_TYPE__ long long
-# endif
-#endif
+# endif //@
+#endif //@
 	#define __SIZEOF_INT__ 4
 	#define __INT_MAX__ 0x7fffffff
-#if __SIZEOF_LONG__ == 4
+#if __SIZEOF_LONG__ == 4 //@
 	#define __LONG_MAX__ 0x7fffffffL
-#else
+#else //@
 	#define __LONG_MAX__ 0x7fffffffffffffffL
-#endif
+#endif //@
 	#define __SIZEOF_LONG_LONG__ 8
 	#define __LONG_LONG_MAX__ 0x7fffffffffffffffLL
 	#define __CHAR_BIT__ 8
 	#define __ORDER_LITTLE_ENDIAN__ 1234
 	#define __ORDER_BIG_ENDIAN__ 4321
 	#define __BYTE_ORDER__ __ORDER_LITTLE_ENDIAN__
-#if defined _WIN32
+#if defined _WIN32 //@
 	#define __WCHAR_TYPE__ unsigned short
 	#define __WINT_TYPE__ unsigned short
-#elif defined __linux__ && (defined __arm__ || defined __aarch64__)
+#elif defined __linux__ && (defined __arm__ || defined __aarch64__) //@
 	#define __WCHAR_TYPE__ unsigned int
 	#define __WINT_TYPE__ unsigned int
-#elif defined __linux__
+#elif defined __linux__ //@
 	#define __WCHAR_TYPE__ int
 	#define __WINT_TYPE__ unsigned int
-#else
+#else //@
 	#define __WCHAR_TYPE__ int
 	#define __WINT_TYPE__ int
-#endif
+#endif //@
 
-#if !defined _WIN32
+#if !defined _WIN32 //@
 	#define __STDC_ISO_10646__ 201706L
-#endif
+#endif //@
 
 	#define __STDC_IEC_559__ 1
 	#define __STDC_IEC_559_COMPLEX__ 1
@@ -60,42 +60,42 @@
 	#define __STDC_UTF_16__ 1
 	#define __STDC_UTF_32__ 1
 
-#if defined _WIN32
+#if defined _WIN32 //@
 	#define __declspec(x) __attribute__((x))
 	#define __cdecl
 
-#elif defined __FreeBSD__
+#elif defined __FreeBSD__ //@
 	#define __GNUC__ 9
 	#define __GNUC_MINOR__ 3
 	#define __GNUC_PATCHLEVEL__ 0
 	#define __GNUC_STDC_INLINE__ 1
 	#define __NO_TLS 1
 	#define __RUNETYPE_INTERNAL 1
-# if __SIZEOF_POINTER__ == 8
+# if __SIZEOF_POINTER__ == 8 //@
 	#define __SIZEOF_SIZE_T__ 8
 	#define __SIZEOF_PTRDIFF_T__ 8
-#else
+#else //@
 	#define __SIZEOF_SIZE_T__ 4
 	#define __SIZEOF_PTRDIFF_T__ 4
-# endif
+# endif //@
 
-#elif defined __FreeBSD_kernel__
+#elif defined __FreeBSD_kernel__ //@
 
-#elif defined __NetBSD__
+#elif defined __NetBSD__ //@
 	#define __GNUC__ 4
 	#define __GNUC_MINOR__ 1
 	#define __GNUC_PATCHLEVEL__ 0
 	#define _Pragma(x)
 	#define __ELF__ 1
-#if defined __aarch64__
+#if defined __aarch64__ //@
 	#define _LOCORE
-#endif
+#endif //@
 
-#elif defined __OpenBSD__
+#elif defined __OpenBSD__ //@
 	#define __GNUC__ 4
 	#define _ANSI_LIBRARY 1
 
-#elif defined __APPLE__
+#elif defined __APPLE__ //@
 	#define __GNUC__ 4
 	#define __APPLE_CC__ 1
 	#define __LITTLE_ENDIAN__ 1
@@ -112,17 +112,17 @@
 	#define _FORTIFY_SOURCE 0
 	#define _Float16 short unsigned int
 
-#elif defined __ANDROID__
+#elif defined __ANDROID__ //@
 	#define  BIONIC_IOCTL_NO_SIGNEDNESS_OVERLOAD
 
-#else
+#else //@
 
-#endif
+#endif //@
 
-#ifndef __NetBSD__
+#ifndef __NetBSD__ //@
 	#define __UINTPTR_TYPE__ unsigned __PTRDIFF_TYPE__
 	#define __INTPTR_TYPE__ __PTRDIFF_TYPE__
-#endif
+#endif //@
 	#define __INT32_TYPE__ int
 	#define __CHAR16_TYPE__ unsigned short
 	#define __CHAR32_TYPE__ unsigned int
@@ -133,11 +133,11 @@
 	#define __ATOMIC_ACQ_REL 4
 	#define __ATOMIC_SEQ_CST 5
 
-#if !defined _WIN32
+#if !defined _WIN32 //@
 	#define __REDIRECT(name, proto, alias) name proto __asm__ (#alias)
 	#define __REDIRECT_NTH(name, proto, alias) name proto __asm__ (#alias) __THROW
 	#define __REDIRECT_NTHNL(name, proto, alias) name proto __asm__ (#alias) __THROWNL
-#endif
+#endif //@
 
 	#define  __PRETTY_FUNCTION__ __FUNCTION__
 	#define __has_builtin(x) 0
@@ -187,12 +187,12 @@
 	({ __typeof__(*(p)) __d = (d); \
 	__atomic_compare_exchange((p), (e), &__d, (w), (s), (f)); })
 
-#if !defined __linux__ && !defined _WIN32
-# if defined __APPLE__
+#if !defined __linux__ && !defined _WIN32 //@
+# if defined __APPLE__ //@
 	#define __builtin_flt_rounds() 1
 	#define __builtin_bzero(p, ignored_size) bzero(p, sizeof(*(p)))
-# endif
-#endif
+# endif //@
+#endif //@
 	#ifndef __builtin_nansf
 	#define __builtin_nansf(s) (0.0f / 0.0f)
 	#endif
@@ -222,8 +222,8 @@
 	#define __int128_t struct __uint128__
 	#define __uint128_t struct __uint128__
 
-#if defined __x86_64__
-#if !defined _WIN32
+#if defined __x86_64__ //@
+#if !defined _WIN32 //@
 	typedef struct __va_list_tag {
 	unsigned gp_offset, fp_offset;
 	union {
@@ -240,13 +240,13 @@
 	(*(t *)(__va_arg(ap, __builtin_va_arg_types(t), sizeof(t), __alignof__(t))))
 	#define __builtin_va_copy(dest, src) (*(dest) = *(src))
 
-#else
+#else //@
 	typedef char *__builtin_va_list;
 	#define __builtin_va_arg(ap, t) ((sizeof(t) > 8 || (sizeof(t) & (sizeof(t) - 1))) \
 	? **(t **)((ap += 8) - 8) : *(t  *)((ap += 8) - 8))
-#endif
+#endif //@
 
-#elif defined __arm__
+#elif defined __arm__ //@
 	typedef char *__builtin_va_list;
 	#define _mcc_alignof(type) ((int)&((struct {char c;type x;} *)0)->x)
 	#define _mcc_align(addr,type) (((unsigned)addr + _mcc_alignof(type) - 1) \
@@ -255,34 +255,34 @@
 	#define __builtin_va_arg(ap,type) (ap = (void *) ((_mcc_align(ap,type)+sizeof(type)+3) \
 	&~3), *(type *)(ap - ((sizeof(type)+3)&~3)))
 
-#elif defined __aarch64__
-#if defined _WIN32
+#elif defined __aarch64__ //@
+#if defined _WIN32 //@
 	typedef char *__builtin_va_list;
-#elif defined __APPLE__
+#elif defined __APPLE__ //@
 	typedef struct {
 	void *__stack;
 	} __builtin_va_list;
 
-#else
+#else //@
 	typedef struct {
 	void *__stack, *__gr_top, *__vr_top;
 	int   __gr_offs, __vr_offs;
 	} __builtin_va_list;
 
-#endif
-#elif defined __riscv
+#endif //@
+#elif defined __riscv //@
 	typedef char *__builtin_va_list;
 	#define __va_reg_size (__riscv_xlen >> 3)
 	#define _mcc_align(addr,type) (((unsigned long)addr + __alignof__(type) - 1) \
 	& -(__alignof__(type)))
 	#define __builtin_va_arg(ap,type) (*(sizeof(type) > (2*__va_reg_size) ? *(type **)((ap += __va_reg_size) - __va_reg_size) : (ap = (va_list)(_mcc_align(ap,type) + (sizeof(type)+__va_reg_size - 1)& -__va_reg_size), (type *)(ap - ((sizeof(type)+ __va_reg_size - 1)& -__va_reg_size)))))
 
-#else
+#else //@
 	typedef char *__builtin_va_list;
 	#define __builtin_va_start(ap,last) (ap = ((char *)&(last)) + ((sizeof(last)+3)&~3))
 	#define __builtin_va_arg(ap,t) (*(t*)((ap+=(sizeof(t)+3)&~3)-((sizeof(t)+3)&~3)))
 
-#endif
+#endif //@
 	#define __builtin_va_end(ap) (void)(ap)
 	#ifndef __builtin_va_copy
 	# define __builtin_va_copy(dest, src) (dest) = (src)
@@ -318,19 +318,19 @@
 	__BOTH(char*, strchr, (const char*, int))
 	__BOTH(char*, strrchr, (const char*, int))
 	__BOTH(char*, strdup, (const char*))
-#if defined __ARM_EABI__
+#if defined __ARM_EABI__ //@
 	__BOUND(void*,__aeabi_memcpy,(void*,const void*,__SIZE_TYPE__))
 	__BOUND(void*,__aeabi_memmove,(void*,const void*,__SIZE_TYPE__))
 	__BOUND(void*,__aeabi_memmove4,(void*,const void*,__SIZE_TYPE__))
 	__BOUND(void*,__aeabi_memmove8,(void*,const void*,__SIZE_TYPE__))
 	__BOUND(void*,__aeabi_memset,(void*,int,__SIZE_TYPE__))
-#endif
+#endif //@
 
-#if defined __linux__ || defined __APPLE__
+#if defined __linux__ || defined __APPLE__ //@
 	#define __MAYBE_REDIR __BUILTIN
-#else
+#else //@
 	#define __MAYBE_REDIR __BOTH
-#endif
+#endif //@
 	__MAYBE_REDIR(void*, malloc, (__SIZE_TYPE__))
 	__MAYBE_REDIR(void*, realloc, (void *, __SIZE_TYPE__))
 	__MAYBE_REDIR(void*, calloc, (__SIZE_TYPE__, __SIZE_TYPE__))
@@ -340,10 +340,10 @@
 	void *alloca(__SIZE_TYPE__);
 	__BUILTIN(void, abort, (void))
 	__BOUND(void, longjmp, ())
-#if !defined _WIN32
+#if !defined _WIN32 //@
 	__BOUND(void*, mmap, ())
 	__BOUND(int, munmap, ())
-#endif
+#endif //@
 	#undef __BUILTINBC
 	#undef __BUILTIN
 	#undef __BOUND

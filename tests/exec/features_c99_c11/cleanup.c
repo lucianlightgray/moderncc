@@ -40,8 +40,8 @@ void incr_glob_i(int *i) {
 	*i = -1;
 }
 
-#define INCR_GI                                              \
-	{                                                        \
+#define INCR_GI                                          \
+	{                                                      \
 		int i __attribute__((__cleanup__(incr_glob_i))) = 1; \
 	}
 
@@ -97,7 +97,7 @@ out:
 	if (chk != 2)
 		goto again;
 	{
-		{char *__attribute__((cleanup(check2))) out = "last goto out";
+			{char *__attribute__((cleanup(check2))) out = "last goto out";
 	++chk;
 	if (chk != 3)
 		goto out;
@@ -228,7 +228,7 @@ int test_cleanup1(void) {
 
 void my_cleanup2(tstl *p) {
 	printf("%d %d %d %d %d %d %d %d\n", p->a, p->b, p->c, p->d,
-		   p->e, p->f, p->g, p->h);
+				 p->e, p->f, p->g, p->h);
 	p->a = 0x90;
 	p->b = 0x91;
 	p->c = 0x92;
@@ -372,7 +372,7 @@ naaaaaaaa:
 	printf("%d\n", test_cleanup1());
 	tl = test_cleanup2();
 	printf("%d %d %d %d %d %d %d %d\n", tl.a, tl.b, tl.c, tl.d,
-		   tl.e, tl.f, tl.g, tl.h);
+				 tl.e, tl.f, tl.g, tl.h);
 	ti = test_cleanup3();
 	printf("%d %d %d %d\n", ti.a, ti.b, ti.c, ti.d);
 	td = test_cleanup4();

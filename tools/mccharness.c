@@ -1115,23 +1115,6 @@ static int gccts_skiplisted(const char *base, const char *content) {
 										 strstr(content, "__uint128_t") || strstr(content, "vector"));
 }
 
-/* Known PRE-EXISTING AST-column gaps (docs/AST.md §C1): tests that pass at -O0 but whose AST
- * column is a known-open gap, NOT a NEW regression. Baselined per column so the differential
- * gate stays green on "no new regression" while these are fixed incrementally. The REPLAY set
- * is the sound foundation and must stay tiny; PROMOTE/INLINE are the -O1 transform soundness
- * backlog (both diverge from -O0 by construction, so byte-verify cannot catch them — the gate
- * is their only net). Promote/inline runs also enable replay, so they inherit the replay set.
- *
- *   REPLAY:
- *     pr51581-1/-2 — a replay leaves the `#if` const-expr evaluator's shared vstack/jump state
- *                    inconsistent → a later `#if A && B` mis-evaluates (the parked -O1
- *                    self-compile issue, §20; needs a codegen checkpoint/restore).
- *     20070919-1   — block-scoped `struct S{char w[y];}` (VLA member) → cyclic type → infinite
- *                    recursion in aggr_has_const_member (compiler crash).
- *   PROMOTE — register-promotion soundness holes (the promoter's poison analysis misses these):
- *     990829-1 is a float pin (xmm6/xmm7) clobbered by gen_opf operating in place; others are a
- *     mix of call-ful and call-free int/pointer cases (postmod pointer, loop temporaries).
- *   INLINE — graft soundness holes (sad/usad reduction idioms, struct/vector-ish returns). */
 static const char *GCCTS_AST_KNOWN_REPLAY[] = {
 		"pr51581-1.c", "pr51581-2.c", "20070919-1.c", 0};
 static const char *GCCTS_AST_KNOWN_PROMOTE[] = {
@@ -1151,7 +1134,7 @@ static int gccts_in_list(const char *base, const char *const *list) {
 
 static int gccts_ast_skiplisted(const char *base, const char *col) {
 	if (gccts_in_list(base, GCCTS_AST_KNOWN_REPLAY))
-		return 1; /* the replay foundation's known gaps apply to every column */
+		return 1;
 	if (col && !strcmp(col, "promote"))
 		return gccts_in_list(base, GCCTS_AST_KNOWN_PROMOTE);
 	if (col && (!strcmp(col, "inline") || !strcmp(col, "inline-tmpl")))
@@ -1159,8 +1142,6 @@ static int gccts_ast_skiplisted(const char *base, const char *col) {
 	return 0;
 }
 
-/* Portable per-process env set/clear (the harness is single-threaded, so setenv around a
- * child spawn is safe; run_cap inherits the parent environment when o->env is NULL). */
 static void gccts_setenv(const char *k, const char *v) {
 #if MCC_HOST_WIN32
 	char buf[256];
@@ -1174,12 +1155,11 @@ static void gccts_setenv(const char *k, const char *v) {
 #endif
 }
 
-/* Apply (on=1) or clear (on=0) the MCC_AST_* env for one gate column. */
 static void gccts_ast_env(const char *mode, int on) {
 	const char *v = on ? "1" : NULL;
 	if (!mode)
 		return;
-	gccts_setenv("MCC_AST_REPLAY", v); /* every column enables the replay driver */
+	gccts_setenv("MCC_AST_REPLAY", v);
 	if (!strcmp(mode, "promote"))
 		gccts_setenv("MCC_AST_PROMOTE", v);
 	else if (!strcmp(mode, "inline"))
@@ -1188,12 +1168,8 @@ static void gccts_ast_env(const char *mode, int on) {
 		gccts_setenv("MCC_AST_INLINE", v);
 		gccts_setenv("MCC_AST_TEMPLATES", v);
 	}
-	/* "replay" enables just the driver (no extra var). */
 }
 
-/* One compile(+run) attempt of a torture test under the current environment. Returns
- * 0=pass, 1=compile-fail, 2=exe-fail, 3=the "cannot use local functions" skip signal.
- * `execute` selects compile-only (0, -c to tsto) vs compile+link+run (1, to tstx). */
 static int gccts_attempt(const char *mcc, const char *Bflag, const char *idir,
 												 const char *Iinc, const char *Iinc2, const char *s,
 												 const char *tsto, const char *tstx, int execute) {
@@ -1240,12 +1216,6 @@ static int suite_gcctestsuite(int argc, char **argv) {
 	const char *idir = opt(argc, argv, "--idir", NULL);
 	const char *path = opt(argc, argv, "--path", NULL);
 	const char *builddir = opt(argc, argv, "--builddir", NULL);
-	/* --ast <mode> turns this into a DIFFERENTIAL AST gate (docs/AST.md §C1): each test is
-	 * compiled/run at -O0 (baseline) AND under the AST column, and only a test that PASSES at
-	 * -O0 but FAILS under the column counts as a REGRESSION (the gate's exit status). Baseline
-	 * -O0 gaps (mcc vs the GCC suite) are NOT the AST driver's concern — the replay path is
-	 * byte-identical-or-fallback, so it must match -O0 test-for-test. mode ∈ replay | promote |
-	 * inline | inline-tmpl. */
 	const char *ast = opt(argc, argv, "--ast", NULL);
 	char Bflag[4096], Iinc[4096], Iinc2[4200], rt[4096], sumpath[4200];
 	char dir[4200], tsto[4200], tstx[4200];
@@ -1282,7 +1252,6 @@ static int suite_gcctestsuite(int argc, char **argv) {
 		return 1;
 	}
 
-	/* Passes 0 (compile-only) then execute + execute/ieee. */
 	const char *subs[] = {"compile", "execute", "execute/ieee", 0};
 	int si;
 	for (si = 0; subs[si]; si++) {
@@ -1299,8 +1268,6 @@ static int suite_gcctestsuite(int argc, char **argv) {
 				r = "SKIP";
 				sk++;
 			} else if (st == 0) {
-				/* Baseline passes. In --ast mode, re-run under the column: a fail is a
-				 * regression (the gate's failure); otherwise it stays a pass. */
 				if (ast) {
 					gccts_ast_env(ast, 1);
 					int ast_st =
@@ -1308,7 +1275,7 @@ static int suite_gcctestsuite(int argc, char **argv) {
 					gccts_ast_env(ast, 0);
 					if (ast_st != 0) {
 						if (gccts_ast_skiplisted(base, ast)) {
-							r = "KNOWNGAP"; /* a documented pre-existing AST gap, not a NEW regression */
+							r = "KNOWNGAP";
 							sk++;
 						} else {
 							r = ast_st == 2 ? "REGRESS-EXE" : "REGRESS";
@@ -1344,7 +1311,7 @@ static int suite_gcctestsuite(int argc, char **argv) {
 				 ok, sk, fa, xf);
 	if (ast) {
 		printf("%d AST regression(s) vs -O0 (column: %s).\n", re, ast);
-		return re == 0 ? 0 : 1; /* the gate: nonzero iff the AST column regressed vs -O0 */
+		return re == 0 ? 0 : 1;
 	}
 	return 0;
 }
@@ -2651,13 +2618,6 @@ static const char *ARM_COMBOS[] = {
 		"s4, #-0.1796875", "d4, #0.1796875", "r2, r3, d1", "d1, r2, r3", "s1, r2",
 		"r2, s1", "r2, fpexc", "r2, fpscr", "r2, fpsid", "apsr_nzcv, fpscr",
 		"fpexc, r2", "fpscr, r2", "fpsid, r2", "s3, d4", "d4, s3", "", 0};
-/* `b r3` / `bl r3` are semantically invalid (branch-to-register); mcc and GNU as
-   now emit byte-identical opcodes AND matching EABI relocations (R_ARM_JUMP24 for
-   b, R_ARM_CALL for bl). The only residual is objdump's symbolic target
-   annotation (`b 0 <r3>` vs `b 0x0`), a cosmetic rendering difference from mcc
-   ARM emitting RELA where GNU as emits REL — immaterial for these invalid
-   instructions. The `mov #imm16` and `vmov.f32` two-GPR<->dreg forms are now
-   implemented (arm-asm.c) and match GNU as byte-for-byte, so they were dropped. */
 static const char *ARM_KNOWN_FAIL[] = {
 		"bl r3", "b r3", 0};
 

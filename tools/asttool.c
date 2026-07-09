@@ -15,7 +15,6 @@ static int g_checks;
 		}                                                               \
 	} while (0)
 
-/* Build `2 + 3 * 4` as an intention tree and check geometry. */
 static AstLocal build_expr(AstArena *a) {
 	AstLocal add = ast_node(a, AST_Binary);
 	ast_set_op(a, add, '+');
@@ -71,7 +70,6 @@ static void suite_validate(void) {
 	CHECK(ast_count(a) == 0, "reset empties the arena");
 	CHECK(ast_root(a) == AST_NONE, "reset arena has no root");
 
-	/* Reuse after reset must produce a fresh, valid tree. */
 	build_expr(a);
 	CHECK(ast_count(a) == 5, "rebuild after reset");
 	CHECK(ast_validate(a, msg, sizeof msg) == 0, "rebuilt tree validates");
@@ -88,17 +86,16 @@ static void suite_dump(void) {
 	CHECK(got == need, "sized and buffered dump agree");
 
 	const char *want =
-		"Binary +\n"
-		"  Literal 2\n"
-		"  Binary *\n"
-		"    Literal 3\n"
-		"    Literal 4\n";
+			"Binary +\n"
+			"  Literal 2\n"
+			"  Binary *\n"
+			"    Literal 3\n"
+			"    Literal 4\n";
 	CHECK(strcmp(buf, want) == 0, "dump matches the expected intention tree");
 
 	ast_arena_free(a);
 }
 
-/* A minimal function shell: an entry BasicBlock terminated by Return(value). */
 static void suite_cfg(void) {
 	AstArena *a = ast_arena_new();
 	AstLocal bb = ast_node(a, AST_BasicBlock);
@@ -118,27 +115,22 @@ static void suite_cfg(void) {
 	ast_arena_free(a);
 }
 
-/* Provenance: every AST node can carry its origin CST node id (§14). */
 static void suite_provenance(void) {
 	AstArena *a = ast_arena_new();
 	AstLocal n = ast_node(a, AST_Binary);
 	ast_set_op(a, n, '+');
 	ast_set_cst(a, n, 0x0000000700000012ull);
-	ast_set_type(a, n, 3 /*VT_INT-ish*/, 0);
+	ast_set_type(a, n, 3, 0);
 	CHECK(ast_cst(a, n) == 0x0000000700000012ull, "cst provenance round-trips");
 	CHECK(ast_type_t(a, n) == 3, "type_t round-trips");
 	ast_arena_free(a);
 }
 
-/* Template rewrite API (§12): ast_set_kind + ast_clear_children collapse a
- * Binary(Literal, Literal) subtree into a Literal in place, as the const-fold
- * template does. Fold `2 + 3 * 4` bottom-up to a single Literal 14. */
 static void suite_template(void) {
 	AstArena *a = ast_arena_new();
 	AstLocal add = build_expr(a);
 	AstLocal mul = ast_child(a, add, 1);
 
-	/* fold the inner 3 * 4 -> 12 */
 	ast_set_kind(a, mul, AST_Literal);
 	ast_clear_children(a, mul);
 	ast_set_ival(a, mul, 12);
@@ -150,7 +142,6 @@ static void suite_template(void) {
 	char msg[64];
 	CHECK(ast_validate(a, msg, sizeof msg) == 0, "tree valid after inner fold");
 
-	/* now both children of add are Literals (2 and 12) -> fold to 14 */
 	CHECK(ast_kind(a, ast_child(a, add, 0)) == AST_Literal, "add[0] Literal");
 	CHECK(ast_kind(a, ast_child(a, add, 1)) == AST_Literal, "add[1] Literal");
 	ast_set_kind(a, add, AST_Literal);

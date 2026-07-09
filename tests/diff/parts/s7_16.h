@@ -1,7 +1,7 @@
 void s7_16_stdbool(void) {
 
 	printf("s7_16 stdbool defined=%d true=%d false=%d\n",
-		   __bool_true_false_are_defined, (int)true, (int)false);
+				 __bool_true_false_are_defined, (int)true, (int)false);
 
 	printf("s7_16 stdbool bsize=%d\n", (int)(sizeof(bool) == sizeof(_Bool)));
 
@@ -12,8 +12,8 @@ void s7_16_stdbool(void) {
 	bool s7_16_b5 = 0.5;
 	bool s7_16_b6 = (void *)0;
 	printf("s7_16 stdbool store=%d %d %d %d %d %d\n",
-		   (int)s7_16_b1, (int)s7_16_b2, (int)s7_16_b3,
-		   (int)s7_16_b4, (int)s7_16_b5, (int)s7_16_b6);
+				 (int)s7_16_b1, (int)s7_16_b2, (int)s7_16_b3,
+				 (int)s7_16_b4, (int)s7_16_b5, (int)s7_16_b6);
 
 #if (true == 1) && (false == 0) && (__bool_true_false_are_defined == 1)
 	printf("s7_16 stdbool ppif=1\n");

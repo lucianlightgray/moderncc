@@ -1,7 +1,3 @@
-/* preproc.c — exercises preprocessor directives, inactive #if branches, and
- * macro invocations for the CST round-trip. The inactive branch's bytes must
- * still be reflected verbatim (they are captured as inter-token source). */
-
 #define SQUARE(x) ((x) * (x))
 #define ENABLE_A 1
 

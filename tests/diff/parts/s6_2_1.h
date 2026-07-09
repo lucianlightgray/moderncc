@@ -86,8 +86,8 @@ void s6_2_1_scopes_test(void) {
 
 	{
 		enum s6_2_1_e { s6_2_1_E_A = 10,
-						s6_2_1_E_B = s6_2_1_E_A + 1,
-						s6_2_1_E_C = s6_2_1_E_B * 2 };
+										s6_2_1_E_B = s6_2_1_E_A + 1,
+										s6_2_1_E_C = s6_2_1_E_B * 2 };
 		printf("enum=%d %d %d\n", (int)s6_2_1_E_A, (int)s6_2_1_E_B, (int)s6_2_1_E_C);
 	}
 

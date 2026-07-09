@@ -4,13 +4,13 @@
 int main(void) {
 
 	const char *s = "abc"
-					"def"
-					"ghi";
+									"def"
+									"ghi";
 	printf("concat: %s len=%d\n", s, (int)strlen(s));
 
 	const char *multi =
-		"line one is here "
-		"and continues here";
+			"line one is here "
+			"and continues here";
 	printf("multi: %s\n", multi);
 
 	printf("escapes: [%s]\n", "tab\tend\\backslash\"quote");
@@ -19,9 +19,9 @@ int main(void) {
 
 	char buf[] = "ab\0cd";
 	printf("embedded: strlen=%d sizeof=%d byte4=%d\n",
-		   (int)strlen(buf), (int)sizeof(buf), buf[3]);
+				 (int)strlen(buf), (int)sizeof(buf), buf[3]);
 
 	printf("array: %c %c sizeof=%d\n",
-		   "hello"[0], "hello"[4], (int)sizeof("hello"));
+				 "hello"[0], "hello"[4], (int)sizeof("hello"));
 	return 0;
 }

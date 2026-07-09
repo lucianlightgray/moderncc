@@ -1,9 +1,3 @@
-# Driver for the static-glibc smoke test: link SRC fully static with mcc, run
-# it, and compare stdout to the expected line. Invoked via `cmake -P` with
-# -DMCC -DBDIR -DIDIR -DSRC -DOUT set. The enclosing add_test() is only created
-# when a static glibc libc.a is present on the host, so a link failure here is a
-# real defect, not a missing-toolchain skip.
-
 set(_expect "i=42 s=tls digit=1 up=A heap\n")
 
 execute_process(

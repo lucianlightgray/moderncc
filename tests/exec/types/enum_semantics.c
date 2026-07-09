@@ -1,8 +1,8 @@
 #include <stdio.h>
 
 enum color { RED,
-			 GREEN,
-			 BLUE,
+						 GREEN,
+						 BLUE,
 };
 
 enum mixed {

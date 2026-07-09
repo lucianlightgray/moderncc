@@ -10,12 +10,12 @@ static int s6_5_1_mark(int v) {
 }
 
 #define S6_5_1_TAG(x) _Generic((x), \
-	int: 1,                         \
-	unsigned: 2,                    \
-	long: 3,                        \
-	double: 4,                      \
-	char *: 5,                      \
-	default: 0)
+		int: 1,                         \
+		unsigned: 2,                    \
+		long: 3,                        \
+		double: 4,                      \
+		char *: 5,                      \
+		default: 0)
 
 struct s6_5_1_a {
 	int tag;
@@ -50,7 +50,7 @@ void s6_5_1_expr(void) {
 	double d = 0.0;
 	char *cp = "x";
 	printf("gen int=%d uns=%d long=%d dbl=%d cp=%d\n",
-		   S6_5_1_TAG(i), S6_5_1_TAG(u), S6_5_1_TAG(l), S6_5_1_TAG(d), S6_5_1_TAG(cp));
+				 S6_5_1_TAG(i), S6_5_1_TAG(u), S6_5_1_TAG(l), S6_5_1_TAG(d), S6_5_1_TAG(cp));
 
 	s6_5_1_side_calls = 0;
 	int r = _Generic(s6_5_1_side(), int: 111, default: 222);
@@ -70,7 +70,7 @@ void s6_5_1_expr(void) {
 
 	int m[2][3] = {{0, 1, 2}, {3, 4, 5}};
 	printf("md m12=%d flat5=%d sz_row=%d\n",
-		   m[1][2], (&m[0][0])[5], (int)sizeof(m[0]));
+				 m[1][2], (&m[0][0])[5], (int)sizeof(m[0]));
 
 	union s6_5_1_u un;
 	un.a.tag = 4242;

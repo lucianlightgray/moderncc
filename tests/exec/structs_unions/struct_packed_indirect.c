@@ -63,7 +63,7 @@ int main(void) {
 	printf("viaptr %d %d\n", viaptr(a, b).x, viaptr(a, b).y);
 
 	printf("clit %d\n",
-		   addp((P){1, 2}, (P){3, 4}).x + addp((P){1, 2}, (P){3, 4}).y);
+				 addp((P){1, 2}, (P){3, 4}).x + addp((P){1, 2}, (P){3, 4}).y);
 
 	printf("deep %d\n", deep((P){0, 0}, 1000));
 	return 0;
