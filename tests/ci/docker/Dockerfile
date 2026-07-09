@@ -15,6 +15,8 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
         gcc \
         clang \
         wine64 \
+        mingw-w64 \
+        qemu-user \
         git \
         rsync \
     && rm -rf /var/lib/apt/lists/*

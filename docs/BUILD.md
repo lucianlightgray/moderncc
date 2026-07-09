@@ -424,7 +424,7 @@ Consumed by the `mingw-toolchain` / `clang-toolchain` / `vendor-musl` /
 | `MCC_MINGW_WINLIBS_I686_URL` / `_SHA256` | STRING | pinned | WinLibs i686 zip + hash. |
 | `MCC_MINGW_MULTILIB_URL` / `_SHA256` / `_SUBDIR` | STRING | `''` / `''` / `mingw64` | Single-gcc multilib archive (required when `MCC_MINGW_SOURCE=multilib`). |
 | `MCC_CLANG_DIR` | PATH | `vendor` | Parent dir for the `llvm-clang` tree. |
-| `MCC_CLANG_URL` / `_SHA256` / `_SUBDIR` | STRING | host-dependent | LLVM release archive, hash, and top-level dir. |
+| `MCC_CLANG_URL` / `_SHA256` / `_SUBDIR` | STRING | host-dependent | LLVM release archive, hash, and top-level dir. Pinned defaults exist for Windows x86_64, Linux x86_64/arm64, and macOS arm64 — `clang-toolchain` vendors clang on any of those hosts (`ci local` fetches it automatically when no system clang is found). |
 | `MCC_CONFIG_EXTRA` | FILEPATH | `config-extra.cmake` | Optional extra CMake config included before options. |
 
 ---
@@ -439,7 +439,6 @@ Consumed by the `mingw-toolchain` / `clang-toolchain` / `vendor-musl` /
 | `MCC_ARM_CROSS_COMPILE` | STRING | `''` | binutils prefix (e.g. `arm-linux-gnueabi-`) for `arm-asm-testsuite`. |
 | `MCC_DARWIN_HOST` | BOOL | OFF | Tests run on a macOS/darling host with real libSystem (enables `macho-libsystem-kernel-fused`). The `macos` preset sets it (the CI runner is real Darwin). |
 | `MCC_CROSS_DIR` | PATH | `''` | The cross-compiler **build** dir the cross-consuming tests read `mcc-<arch>-{osx,win32}` from — every `macho-*` cross test and `pe-wine-conformance`. The `qemu`/`qemu-*` presets set it; without it those tests self-skip. |
-| `MCC_WINE` | FILEPATH | auto | wine/wine64 runner for `pe-wine-conformance` (installed by the `setup-wine` target). Empty ⇒ the wine PE test skips. |
 | `MCC_QEMU_TESTS` | BOOL | OFF | Master on/off for the qemu-user cross-conformance matrix below (the `qemu` presets set it). |
 | `MCC_QEMU_MIRROR` | STRING | Gentoo releases | Base URL for qemu-user rootfs downloads. |
 | `MCC_QEMU_ARCHS` | STRING (list) | `x86_64;i386;arm;arm64;riscv64` | Architectures to exercise under qemu-user. |
@@ -460,8 +459,8 @@ Consumed by the `mingw-toolchain` / `clang-toolchain` / `vendor-musl` /
   `MCC_DARWIN_HOST=ON`. `qemu-arm64-osx` (labels `qemu;macho`) covers arm64-Darwin codegen
   under qemu.
 - **Windows / PE** (label `wine`). `pe-wine-conformance` runs mcc's PE output under
-  `MCC_WINE` using the `mcc-x86_64-win32` cross from `MCC_CROSS_DIR` (`setup-wine` installs
-  wine); `pe-native-conformance` runs only on a native WIN32 host. mcc's PE output links the
+  wine (self-located; `setup-wine` installs it) using the `mcc-x86_64-win32` cross from
+  `MCC_CROSS_DIR`; `pe-native-conformance` runs only on a native WIN32 host. mcc's PE output links the
   legacy `msvcrt.dll` import set (`msvcrt`,`kernel32`,`user32`,`gdi32`), so `-b` bounds
   checking, the `parts-suite`, and (on arm64) the `mcctest` differential self-skip on PE.
   `compile.win32` runs only for a WIN32 target. `setup-mingw` installs the mingw toolchain

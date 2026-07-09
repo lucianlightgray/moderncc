@@ -317,7 +317,8 @@ static int do_qemu(int argc, char **argv) {
 typedef struct
 {
 	char preset[64], cc[16], plat[64];
-	int no_test; /* build-only preset: no top-level test preset exists */
+	int no_test;   /* build-only preset: no top-level test preset exists */
+	int vendor_cc; /* pin CMAKE_C_COMPILER to the vendored clang */
 } LocJob;
 
 /* The curated preset ledger — the single schedule source. `ci local` drives
@@ -425,6 +426,73 @@ static int loc_env_on(const char *var) {
 	return v && *v && strcmp(v, "0");
 }
 
+/* vendored-toolchain probes: the vendor/ tree is download-once-share-everywhere,
+   so a toolchain fetched by any build dir (or `ci local` itself) is visible here.
+   ts_glob() matches files only, so directories need their own walk. */
+
+struct loc_dirscan {
+	const char *pat;
+	char hit[4096];
+};
+
+static int loc_dirscan_cb(const char *path, int is_dir, void *ud) {
+	struct loc_dirscan *s = ud;
+	const char *b = strrchr(path, '/');
+	b = b ? b + 1 : path;
+	if (is_dir && !s->hit[0] && ts_fnmatch(s->pat, b))
+		snprintf(s->hit, sizeof s->hit, "%s", path);
+	return 0;
+}
+
+static int loc_scan_dir(const char *dir, const char *pat, char *out, size_t n) {
+	struct loc_dirscan s;
+	s.pat = pat;
+	s.hit[0] = 0;
+	host_dir_walk(dir, 0, loc_dirscan_cb, &s);
+	if (!s.hit[0])
+		return 0;
+	if (out)
+		snprintf(out, n, "%s", s.hit);
+	return 1;
+}
+
+static int loc_vendor_clang(char *out, size_t n) {
+	char sub[4096], bin[4200];
+	if (!loc_scan_dir("vendor/llvm-clang", "*", sub, sizeof sub))
+		return 0;
+	ts_path(bin, sizeof bin, sub, "bin/clang%s", MCC_HOST_WIN32 ? ".exe" : "");
+	if (host_stat(bin, NULL, NULL, NULL) == 0) {
+		char *abs = host_path_canonical(bin);
+		snprintf(out, n, "%s", abs ? abs : bin);
+		free(abs);
+		return 1;
+	}
+	return 0;
+}
+
+static int loc_vendor_dir(const char *pat) {
+	return loc_scan_dir("vendor", pat, NULL, 0);
+}
+
+/* fetch the self-contained LLVM/clang toolchain into vendor/llvm-clang via
+   the clang-toolchain target (needs one configured dir; local-ci is cheapest) */
+static int loc_fetch_clang(void) {
+	int isd;
+	if (host_stat("cmake-local-ci/CMakeCache.txt", &isd, NULL, NULL)) {
+		const char *cfg[] = {"cmake", "--preset", "local-ci", 0};
+		printf("==> vendoring clang: configuring local-ci driver\n");
+		if (ts_run(cfg))
+			return 1;
+	}
+	{
+		const char *a[] = {
+				"cmake", "--build", "cmake-local-ci",
+				"--target", "clang-toolchain", 0};
+		printf("==> vendoring clang: fetching LLVM release into vendor/llvm-clang\n");
+		return ts_run(a);
+	}
+}
+
 static int run_dist(const char *preset, const char *plat, const char *ver,
 										char **extra, int n_extra) {
 	char pdv[256], pdp[256], bdir[128];
@@ -496,6 +564,8 @@ static int do_local(int argc, char **argv) {
 	int n_test = 0, n_dist = 0, n_skip = 0, n_res = 0, n_fail = 0;
 	int keep_going = 1, i, stop = 0;
 	int have_gcc, have_clang, have_cl, have_wine, have_mingw, have_docker;
+	int have_vmusl, have_vmingw, clang_vendored = 0;
+	char vclang[4096] = "";
 	int qfound[8], n_qemu = 0;
 #if MCC_HOST_WIN32
 	const char *os = "Windows";
@@ -522,18 +592,34 @@ static int do_local(int argc, char **argv) {
 	have_wine = loc_have("wine") || loc_have("wine64");
 	have_mingw = loc_have("x86_64-w64-mingw32-gcc");
 	have_docker = loc_have("docker");
+	have_vmusl = loc_vendor_dir("musl-sysroot");
+	have_vmingw = loc_vendor_dir("winlibs-mingw-w64-*") ||
+								loc_vendor_dir("mingw-w64-multilib");
 	for (i = 0; QARCH[i]; i++) {
 		qfound[i] = loc_have(QBIN[i]);
 		if (qfound[i])
 			n_qemu++;
 	}
 
-#define LOC_TEST(P, CC, NT)                         \
+	/* clang is the one toolchain with a vendor recipe on every host: when the
+	   system has none, fetch the LLVM release once and pin the clang presets
+	   to it (profile-based presets resolve vendor/llvm-clang on their own) */
+	if (!strcmp(os, "Linux") && !have_clang) {
+		clang_vendored = loc_vendor_clang(vclang, sizeof vclang);
+		if (!clang_vendored && !loc_env_on("LOCAL_CI_NO_VENDOR") &&
+				!loc_env_on("LOCAL_CI_LIST") && have_gcc) {
+			if (loc_fetch_clang() == 0)
+				clang_vendored = loc_vendor_clang(vclang, sizeof vclang);
+		}
+	}
+
+#define LOC_TEST(P, CC, NT, VC)                     \
 	do {                                              \
 		if (n_test < LOC_MAX) {                         \
 			snprintf(test[n_test].preset, 64, "%s", (P)); \
 			snprintf(test[n_test].cc, 16, "%s", (CC));    \
 			test[n_test].no_test = (NT);                  \
+			test[n_test].vendor_cc = (VC);                \
 			n_test++;                                     \
 		}                                               \
 	} while (0)
@@ -542,12 +628,13 @@ static int do_local(int argc, char **argv) {
 		if (n_skip < LOC_MAX)                              \
 			snprintf(skip[n_skip++], 160, FMT, __VA_ARGS__); \
 	} while (0)
-#define LOC_DIST(P, CC, PLAT)                        \
+#define LOC_DIST(P, CC, PLAT, VC)                    \
 	do {                                               \
 		if (n_dist < LOC_MAX) {                          \
 			snprintf(dist[n_dist].preset, 64, "%s", (P));  \
 			snprintf(dist[n_dist].cc, 16, "%s", (CC));     \
 			snprintf(dist[n_dist].plat, 64, "%s", (PLAT)); \
+			dist[n_dist].vendor_cc = (VC);                 \
 			n_dist++;                                      \
 		}                                                \
 	} while (0)
@@ -555,26 +642,29 @@ static int do_local(int argc, char **argv) {
 	if (!strcmp(os, "Linux")) {
 		for (i = 0; PS_LINUX_GCC[i]; i++) {
 			if (have_gcc)
-				LOC_TEST(PS_LINUX_GCC[i], "", 0);
+				LOC_TEST(PS_LINUX_GCC[i], "", 0, 0);
 			else
 				LOC_SKIP("%s - gcc not found", PS_LINUX_GCC[i]);
 		}
 		for (i = 0; PS_LINUX_CLANG[i]; i++) {
 			if (have_clang)
-				LOC_TEST(PS_LINUX_CLANG[i], "", 0);
+				LOC_TEST(PS_LINUX_CLANG[i], "", 0, 0);
+			else if (clang_vendored)
+				LOC_TEST(PS_LINUX_CLANG[i], "", 0, 1);
 			else
-				LOC_SKIP("%s - clang not found", PS_LINUX_CLANG[i]);
+				LOC_SKIP("%s - clang not found (and not vendored)",
+								 PS_LINUX_CLANG[i]);
 		}
 		/* developer presets: default host cc */
 		for (i = 0; PS_DEV[i]; i++) {
 			if (have_gcc || have_clang)
-				LOC_TEST(PS_DEV[i], "", 0);
+				LOC_TEST(PS_DEV[i], "", 0, 0);
 			else
 				LOC_SKIP("%s - no C compiler (need gcc or clang)", PS_DEV[i]);
 		}
 		for (i = 0; PS_SUPER[i]; i++) {
-			if (have_gcc && have_clang)
-				LOC_TEST(PS_SUPER[i], "", 1);
+			if (have_gcc && (have_clang || clang_vendored))
+				LOC_TEST(PS_SUPER[i], "", 1, 0);
 			else
 				LOC_SKIP("%s - needs both gcc and clang (gcc;clang superbuild)",
 								 PS_SUPER[i]);
@@ -582,22 +672,22 @@ static int do_local(int argc, char **argv) {
 	} else if (!strcmp(os, "Darwin")) {
 		for (i = 0; PS_DARWIN[i]; i++) {
 			if (have_clang)
-				LOC_TEST(PS_DARWIN[i], "clang", 0);
+				LOC_TEST(PS_DARWIN[i], "clang", 0, 0);
 			if (have_gcc)
-				LOC_TEST(PS_DARWIN[i], "gcc", 0);
+				LOC_TEST(PS_DARWIN[i], "gcc", 0, 0);
 			if (!have_clang && !have_gcc)
 				LOC_SKIP("%s - no C compiler (need clang or gcc)", PS_DARWIN[i]);
 		}
 	} else if (!strcmp(os, "Windows")) {
 		for (i = 0; PS_WIN_MSVC[i]; i++) {
 			if (have_cl)
-				LOC_TEST(PS_WIN_MSVC[i], "", 0);
+				LOC_TEST(PS_WIN_MSVC[i], "", 0, 0);
 			else
 				LOC_SKIP("%s - cl (MSVC) not found (run from a VS dev shell)",
 								 PS_WIN_MSVC[i]);
 		}
 		for (i = 0; PS_WIN_BUILDONLY[i]; i++)
-			LOC_TEST(PS_WIN_BUILDONLY[i], "", 1);
+			LOC_TEST(PS_WIN_BUILDONLY[i], "", 1, 0);
 	}
 
 	if (!loc_env_on("LOCAL_CI_SKIP_QEMU")) {
@@ -605,7 +695,7 @@ static int do_local(int argc, char **argv) {
 			char p[64];
 			if (qfound[i]) {
 				snprintf(p, sizeof p, "qemu-%s", QARCH[i]);
-				LOC_TEST(p, "", 0);
+				LOC_TEST(p, "", 0, 0);
 			} else {
 				LOC_SKIP("qemu-%s - %s not found (install qemu-user)",
 								 QARCH[i], QBIN[i]);
@@ -620,22 +710,22 @@ static int do_local(int argc, char **argv) {
 		if (!strcmp(os, "Linux")) {
 			if (have_gcc) {
 				snprintf(plat, sizeof plat, "linux-%s-gcc", host_cpu);
-				LOC_DIST(PS_DIST_LINUX_GCC, "", plat);
+				LOC_DIST(PS_DIST_LINUX_GCC, "", plat, 0);
 			}
-			if (have_clang) {
+			if (have_clang || clang_vendored) {
 				snprintf(plat, sizeof plat, "linux-%s-clang", host_cpu);
-				LOC_DIST(PS_DIST_LINUX_CLANG, "", plat);
+				LOC_DIST(PS_DIST_LINUX_CLANG, "", plat, !have_clang);
 			}
 		} else if (!strcmp(os, "Darwin")) {
 			snprintf(plat, sizeof plat, "macos-%s-clang", host_cpu);
-			LOC_DIST(PS_DIST_MACOS, "clang", plat);
+			LOC_DIST(PS_DIST_MACOS, "clang", plat, 0);
 		} else if (!strcmp(os, "Windows")) {
 			if (have_cl) {
 				snprintf(plat, sizeof plat, "windows-%s-msvc", host_cpu);
-				LOC_DIST(PS_DIST_MSVC, "", plat);
+				LOC_DIST(PS_DIST_MSVC, "", plat, 0);
 			}
 			snprintf(plat, sizeof plat, "windows-%s-mingw", host_cpu);
-			LOC_DIST(PS_DIST_MINGW, "", plat);
+			LOC_DIST(PS_DIST_MINGW, "", plat, 0);
 		}
 	} else {
 		LOC_SKIP("%s", "dist-* - skipped (LOCAL_CI_SKIP_RELEASE)");
@@ -657,19 +747,25 @@ static int do_local(int argc, char **argv) {
 	printf("\n==================== local CI: host probe ====================\n");
 	printf("  host            : %s / %s\n", os, host_cpu);
 	printf("  gcc             : %s\n", have_gcc ? "yes" : "no");
-	printf("  clang           : %s\n", have_clang ? "yes" : "no");
+	printf("  clang           : %s%s\n",
+				 have_clang ? "yes" : (clang_vendored ? "vendored" : "no"),
+				 clang_vendored ? " (vendor/llvm-clang)" : "");
 	printf("  msvc (cl)       : %s\n", have_cl ? "yes" : "no");
 	printf("  wine            : %s   (drives pe-wine-conformance in *-cross)\n",
 				 have_wine ? "yes" : "no");
-	printf("  mingw cross gcc : %s\n", have_mingw ? "yes" : "no");
+	printf("  mingw cross gcc : %s%s\n", have_mingw ? "yes" : "no",
+				 have_vmingw ? " (+ vendored winlibs)" : "");
+	printf("  musl sysroot    : %s   (vendor/musl-sysroot)\n",
+				 have_vmusl ? "yes" : "no");
 	printf("  docker          : %s\n", have_docker ? "yes" : "no");
 	printf("  qemu-user       : %d arch(es)\n", n_qemu);
 	printf("  --------------------------------------------------------\n");
 	printf("  test presets    : %d\n", n_test);
 	for (i = 0; i < n_test; i++)
-		printf("      run   %s%s%s%s\n", test[i].preset,
+		printf("      run   %s%s%s%s%s\n", test[i].preset,
 					 *test[i].cc ? " CC=" : "", test[i].cc,
-					 test[i].no_test ? " (build-only)" : "");
+					 test[i].no_test ? " (build-only)" : "",
+					 test[i].vendor_cc ? " (vendored clang)" : "");
 	printf("  release bundles : %d\n", n_dist);
 	for (i = 0; i < n_dist; i++)
 		printf("      dist  %s -> %s\n", dist[i].preset, dist[i].plat);
@@ -684,14 +780,19 @@ static int do_local(int argc, char **argv) {
 	}
 
 	for (i = 0; i < n_test && !stop; i++) {
-		char *a[2];
+		char *a[3], dflag[4160];
 		int rc, na = 0;
 		loc_setcc(test[i].cc);
-		printf("\n>>>> [test] %s%s%s\n", test[i].preset,
-					 *test[i].cc ? " CC=" : "", test[i].cc);
+		printf("\n>>>> [test] %s%s%s%s\n", test[i].preset,
+					 *test[i].cc ? " CC=" : "", test[i].cc,
+					 test[i].vendor_cc ? " (vendored clang)" : "");
 		a[na++] = test[i].preset;
 		if (test[i].no_test)
 			a[na++] = (char *)"--no-test";
+		if (test[i].vendor_cc && *vclang) {
+			snprintf(dflag, sizeof dflag, "-DCMAKE_C_COMPILER=%s", vclang);
+			a[na++] = dflag;
+		}
 		rc = do_run_preset(na, a);
 		if (rc == 0) {
 			snprintf(results[n_res++], 192, "PASS  test %.63s", test[i].preset);
@@ -704,9 +805,15 @@ static int do_local(int argc, char **argv) {
 		}
 	}
 	for (i = 0; i < n_dist && !stop; i++) {
-		int rc;
-		printf("\n>>>> [dist] %s -> %s\n", dist[i].preset, dist[i].plat);
-		rc = run_dist(dist[i].preset, dist[i].plat, ver, NULL, 0);
+		char dflag[4160], *extra[1];
+		int rc, n_extra = 0;
+		printf("\n>>>> [dist] %s -> %s%s\n", dist[i].preset, dist[i].plat,
+					 dist[i].vendor_cc ? " (vendored clang)" : "");
+		if (dist[i].vendor_cc && *vclang) {
+			snprintf(dflag, sizeof dflag, "-DCMAKE_C_COMPILER=%s", vclang);
+			extra[n_extra++] = dflag;
+		}
+		rc = run_dist(dist[i].preset, dist[i].plat, ver, extra, n_extra);
 		if (rc == 0) {
 			snprintf(results[n_res++], 192, "PASS  dist %.63s -> %.63s",
 							 dist[i].preset, dist[i].plat);
