@@ -308,8 +308,23 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
     `reg_classes[reg]`, so `gv(RC_XMM6/7)` materializes/seeds the pin; a read copies it to a scratch
     XMM (XMM6/7 aren't in `RC_FLOAT`). Verified: `s += a[i]`/`t *= 1.5` stay in `addsd`/`mulsd` on
     XMM6/7; `float` and `double`; call-ful correctly excludes floats. Corpus green, ctest 1768/1768.
-  - [ ] share one spill slot across disjoint live ranges (needs a real backward-liveness pass);
-    other arches (GP/XMM pools are x86_64-specific).
+  - [ ] **A1 — backward-liveness spill-slot sharing (last ratified roadmap item).** Share a pin
+    across disjoint live ranges: a real backward-liveness pass + interval coloring over the AST
+    CFG. **Blocker (EXCESS.md):** promotion currently *entry-seeds every pin* from the stack slot
+    (mirrors `-O0` for read-before-write/params/loop-carried), which conflicts with sharing — A1
+    must replace entry-seeding with **per-live-range seeding**, a rework of the emit model, not
+    just added analysis. **Ordering: drive the §C1 KNOWNGAP backlog to zero first** — a register
+    allocator built on a promotion pass with 14 holes inherits them.
+  - [ ] **Promotion on arm64/riscv64.** The analysis (`ast_plan_promotion`/weigh/poison) is
+    arch-agnostic; the blocker is the backend register model — arm64 `NB_REGS=28` does not
+    expose callee-saved **x19–x28** (no pinnable pool), riscv64 similar. Needs the register-model
+    extension + qemu-user validation (`tests/complex-cross` sysroots), then the promote column on
+    those arches.
+  - [ ] **Tier-3 deferred extensions (documented not-done, marginal-vs-surgery):**
+    `p->m` bases need a distinct **"register base + live displacement"** addressing form
+    (`gen_modrm_impl`'s plain-base path deliberately ignores nonzero `c`; folding member offsets
+    as disp8/32 breaks `-O0` — verified); **>2 float pins** need XMM8–15 in the pool (still
+    call-free only on SysV — every XMM is caller-saved).
 - [~] **Tier 4 — virtual always-inline over the shared store (the minimize-invoke payoff).**
   Inline internal calls instead of emitting a boundary `Call`, using the CST's content-
   addressed store/binding/render engine (docs/AST.md §9). Cycle detection via the instance
@@ -505,6 +520,66 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
 - [ ] **Long horizon (design only):** the broader template library (algebraic, dead-branch,
   jump-table), the time-budgeted engine (§12/§221), dependency-ordered `-O1` compile, cross-TU
   LTO, `-g` from provenance, hot-reload snapshots, and separate `-O2`/`-O3` (SSA) drivers.
+
+## AST — doc/verification gaps (MCC.md §Verification, 2026-07-09)
+
+The MCC.md index-agents flagged AST nouns whose 5W/H is thin; close each while
+touching the code it names:
+
+- [ ] **`Poison` node:** the docs never say *when* it is emitted or *how* it lowers —
+  document its Why/How/Whn (emission sites, replay behavior, fallback semantics) in
+  docs/AST.md when next in `src/mccast.{c,h}`.
+- [ ] **`pr119002` (call-free int promote KNOWNGAP):** named with no root cause — analyze
+  and record the failure mechanism (then fix; part of the §C1 backlog).
+- [ ] **`usad-run`/`ssad-run` (inline KNOWNGAPs):** named with no root cause — analyze the
+  sad/usad reduction graft holes and record the mechanism (then fix; §C1).
+- [ ] **Inline governor:** has What+Why but no Whr (symbol/file) or sizing metric — the
+  §20 item below defines both when it lands.
+- [ ] **A1 spill-slot sharing:** no Whr/sizing/Whn — the enriched Tier-3 sub-item now
+  carries the blocker; add symbol/file when the pass exists.
+
+## `-O1` completion plan (organized 2026-07-09; sources: MCC.md §9–§10, EXCESS.md AST §§, this file)
+
+Goal: **`mcc -O1` (replay + Tier-3 promotion) safe-by-default with zero KNOWNGAP
+baselines and every test green** — ctest native suite, the exec-replay/-tmpl/-promote
+columns, the A4 gcc-torture differential columns with `GCCTS_AST_KNOWN_* = {}`,
+diff3, qemu, and `mcc-self -O1` compiling itself and passing the suite.
+
+**Phase 1 — transform soundness: drive the 21 KNOWNGAPs to zero (§C1 residual).**
+1. The 7-for-1 **call-free FLOAT cluster** (`941021-1` `postmod-1` `990829-1` `920929-1`
+   `pr36343` `pr28982a` `pr15262`): real float-promotion register discipline — `gen_opf`
+   operates on its operand register in place and clobbers the XMM6/7 pin; the fix must
+   copy-on-consume without regressing the corpus (the naive scratch-copy did, 269→233).
+2. The 6 **call-ful GP holes** (`20080519-1` `20170111-1` `20020402-3` `loop-8`
+   `20000722-1` `pr28982b`): callee-saved-pin promotion across calls, bisected via
+   `MCC_AST_NO_CALLFUL`.
+3. The 1 **call-free int singleton** `pr119002` (root-cause first).
+4. The 4 **inline graft holes** (`usad-run` `ssad-run` sad/usad reduction; `pr45070`
+   grafts `next`; `pr41750` grafts `get_got`) — distinct causes, root-cause each.
+5. The 3 **replay KNOWNGAPs**: `pr51581-1/2` = the §20 pp-const-expr state corruption
+   (fixed by Phase 2's checkpoint/restore, one work item); `20070919-1` = cyclic
+   VLA-in-struct crash in `aggr_has_const_member` (bail candidate: detect the cycle,
+   fall back gracefully).
+   Each fix shrinks `GCCTS_AST_KNOWN_{REPLAY,PROMOTE,INLINE}` in `tools/mccharness.c`.
+
+**Phase 2 — un-park the §20 `-O1` wiring.**
+6. **Complete graceful hard-error recovery** (the error-model surgery): checkpoint/restore
+   the replay-touched globals (jump lists, `ind`, `nocode_wanted`, macro/token + pp
+   const-expr state) so a caught replay error leaves the compile consistent —
+   `mcc-self -O1` goes from `n/a` to green; closes `pr51581-1/2`.
+7. **Inline governor** (size/complexity cap + termination guard) so `MCC_AST_INLINE`
+   cannot blow up on large TUs; then decide whether `-O1` re-includes Tier-4.
+
+**Phase 3 — acceptance: everything green, baselines empty.**
+8. `gcctestsuite-ast-{replay,promote,inline}` = 0 regressions with **empty** KNOWNGAP
+   baselines; exec-replay/-tmpl/-promote columns green; full native ctest + qemu matrix +
+   diff3 green; `-O0` byte-identity and the self-host fixpoint unchanged; `mcc -O1`
+   self-compile + suite green. Then flip `-O1` from parked to supported.
+
+**Phase 4 — post-goal backlog (explicitly after "all tests passing"):** A1 spill-slot
+sharing (per-live-range seeding rework), promotion on arm64/riscv64 (register-model
+extension + qemu), Tier-3 deferred extensions (`p->m` addressing form, XMM8–15),
+un-gate `ast/replay-inline-spec` on arm64, riscv64/other-arch inline verification.
 
 ## AST — decided-with-revisit-trigger backlog (docs/AST.md "Revisit triggers")
 
