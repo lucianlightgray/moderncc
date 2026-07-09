@@ -219,8 +219,13 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) {
 			addr_t target = pc + (addr_t)((int64_t)simm(w, 0, 26) << 2);
 			const char *l = btext(dc, target);
 
-			snprintf(out, osz, "%s\t0x%llx\t// %s", nm,
-							 (unsigned long long)target, l);
+			if (r == D_CMT) {
+				snprintf(out, osz, "%s\t0x%llx\t// %s", nm,
+								 (unsigned long long)target, l);
+			} else {
+				snprintf(out, osz, "%s\t0x%llx", nm,
+								 (unsigned long long)target, l);
+			}
 			return D_ASM;
 		}
 	}
