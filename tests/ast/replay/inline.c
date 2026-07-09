@@ -60,7 +60,7 @@ static int firsthit(const int *a, int n) {
 	return n;
 }
 /* struct-by-value RETURN with scalar params: coalesces through a struct-sized result
- * slot (memory-agnostic). (Struct *params* are ABI-dependent and stay a real call.) */
+ * slot (memory-agnostic). */
 struct Pair {
 	int a, b;
 };
@@ -69,6 +69,39 @@ static struct Pair mkpair(int a, int b) {
 	p.a = a;
 	p.b = b;
 	return p;
+}
+/* struct-by-value PARAMS (§19.2): grafting DELETES the ABI — each param is materialized
+ * into a fresh caller-frame slot (materialize-then-copy), so the register-vs-memory
+ * classification no longer matters. `sumpt` takes a <=16-byte register-class struct
+ * (negative param_addr, uniform bias); `sumbig` a >16-byte memory/stack-passed struct
+ * (positive param_addr — the per-param remap to a fresh slot); `addpt` takes AND returns a
+ * struct, co-verifying both memory paths at once (§19.5). */
+static int sumpt(struct Pair p) { return p.a + p.b; }
+struct Big {
+	long a, b, c, d;
+};
+static long sumbig(struct Big b) { return b.a + b.b + b.c + b.d; }
+static struct Pair addpt(struct Pair p, struct Pair q) {
+	struct Pair r;
+	r.a = p.a + q.a;
+	r.b = p.b + q.b;
+	return r;
+}
+/* Scalar-arg wrappers: main calls these (so main's own replay stays faithful — the general
+ * replay path still desyncs on multiple by-value struct args in one function, a Tier-2
+ * capture gap orthogonal to the graft), and each wrapper grafts into main, grafting its
+ * struct-param helper recursively. This proves sumpt/sumbig/addpt graft (the §19.2 bind). */
+static int use_sumpt(int x, int y) {
+	struct Pair p = {x, y};
+	return sumpt(p);
+}
+static int use_sumbig(long a, long b, long c, long d) {
+	struct Big s = {a, b, c, d};
+	return (int)sumbig(s); /* cast inside the wrapper so main's call site stays a plain int */
+}
+static int use_addpt(int ax, int ay, int bx, int by) {
+	struct Pair p = {ax, ay}, q = {bx, by}, r = addpt(p, q);
+	return r.a + r.b;
 }
 /* `goto` + a named label: the callee's labels are scoped (label floor) so they don't
  * collide with the caller's — main has no label here, but see the loop below. */
@@ -135,6 +168,9 @@ int main(void) {
 	int fw = fp(4);                      /* fwd_callee(0..3) = 1+2+3+4 = 10 */
 	int (*fb)(int) = fwd_boxed;          /* via pointer -> the string/struct-referencing re-emit */
 	int bx = fb(4);                      /* fwd_dbl(0..3)=0+2+4+6=12, +1 string-check = 13 */
-	return r + s + t + u + c + g + d + q + p + m + gs + fw + bx - 83;
-	/* 7+30+13+7+5+0+10+8+7+5+10+10+13 - 83 = 42 */
+	int sp = use_sumpt(3, 4);            /* <=16B struct param: sumpt grafts -> 7 */
+	int sb = use_sumbig(1, 2, 3, 4);     /* >16B stack-passed struct param: sumbig grafts -> 10 */
+	int ap = use_addpt(3, 4, 10, 20);    /* struct param+return: addpt grafts -> 13+24 = 37 */
+	return r + s + t + u + c + g + d + q + p + m + gs + fw + bx + sp + sb + ap - 137;
+	/* 7+30+13+7+5+0+10+8+7+5+10+10+13+7+10+37 - 137 = 42 */
 }

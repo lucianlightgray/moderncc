@@ -433,11 +433,30 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
     `MCC_AST_INLINE`; ctest 1769/1769; ASan/UBSan-clean. Fixture `REEMITS=fwd_sum,fwd_boxed`
     (`fwd_boxed` references a string literal + a struct local + a forward-declared static callee —
     the previously-excluded shape).
-  - [ ] **Slice 2 remainder.** Struct-by-value **params** (ABI-aware bind, still a real call);
-    per-site specialization; un-gate the inline fixture on non-x86_64 (arm64 verification).
-    **Design pass for struct-by-value params + per-site specialization is now written up in
-    docs/AST.md §19** (materialize-into-fresh-local + per-param remap; constant-arg branch-select
-    via the const-fold template) — ready to implement, three sub-choices flagged for ratification.
+  - [x] **Struct-by-value PARAMS — LANDED 2026-07-08 (§19.2).** Grafting now admits by-value
+    struct/union params (and stack-passed scalars). The bind **deletes the ABI** rather than
+    reproducing it: every param is materialized into a fresh caller-frame slot
+    (materialize-then-copy), so the register-vs-memory classification no longer matters. A
+    **register-class ≤16B struct** (negative `param_addr`) keeps the uniform frame bias; a
+    **memory/stack-passed >16B struct** (positive `param_addr` — read in place from the
+    incoming-args area) gets a fresh negative materialization slot whose captured offset region
+    `[param_off, param_off+size)` relocates via a per-param **remap** (`ast_param_remap_*`,
+    range-checked in `ast_replay_value` before the uniform bias — §19.5 lean 1). The struct arg
+    block-copies through `vstore`. `ast_inline_capture` records `param_size` + a `param_stack`
+    bit (= `param_addr >= 0`, the classify result the prolog already computed — §19.2 arch-
+    agnostic query). `_Complex`/`long double`/bit-field params still fall back. **Also fixed a
+    latent correctness bug this exposed:** on the UNfaithful-replay fallback, `loc` was left at
+    pass-1's (possibly shallower) depth instead of the parse-build -O0 depth, so `gfunc_epilog`
+    mis-sized the frame → the restored -O0 body ran on a too-small frame → corruption; now
+    `loc = saved_loc` on fallback. Gate: whole exec corpus 269/269 byte/exit-identical -O0 vs
+    MCC_AST_INLINE (also under REPLAY/PROMOTE/TEMPLATES + the sanitized mcc); ctest 1769/1769;
+    ASan/UBSan-clean. Fixture `ast/replay-inline` INLINES now includes `sumpt` (≤16B), `sumbig`
+    (>16B stack-passed), `addpt` (struct param AND return, co-verifying both memory paths — §19.5
+    lean 3), each grafted via a scalar-arg wrapper so main stays replay-faithful (the general
+    replay path still desyncs on *multiple* by-value struct args in one function — a Tier-2
+    capture gap orthogonal to the graft).
+  - [ ] **Slice 2 remainder.** Per-site specialization (§19.3 — constant-arg fold via the
+    const-fold template); un-gate the inline fixture on non-x86_64 (arm64 verification).
 
 - [~] **`-O1` flag → AST pipeline wiring + benchmark/CI `-O1` columns (STARTED 2026-07-08,
   PARKED — docs/AST.md §20).** `mcc -O1` now engages the AST replay optimizer (docs/AST.md §10):

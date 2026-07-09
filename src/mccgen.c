@@ -12169,6 +12169,8 @@ static struct AstInlineFn {
 	int param_off[AST_INLINE_MAX_PARAMS];    /* each param's frame offset (ABI order) */
 	int param_typ[AST_INLINE_MAX_PARAMS];    /* each param's type.t (for the arg-bind store) */
 	void *param_ref[AST_INLINE_MAX_PARAMS];  /* its type.ref (enum/pointer target Sym) */
+	int param_size[AST_INLINE_MAX_PARAMS];   /* its byte size (for the param-region range) */
+	int param_stack[AST_INLINE_MAX_PARAMS];  /* stack/memory-passed (positive param_addr, §19.2) */
 	int graftable;                           /* body is a straight-line single-Return leaf */
 } ast_inline_pool[AST_INLINE_MAX];
 static int ast_inline_n;
@@ -12192,6 +12194,8 @@ static int ast_inline_cap_np;
 static int ast_inline_cap_off[AST_INLINE_MAX_PARAMS];
 static int ast_inline_cap_typ[AST_INLINE_MAX_PARAMS];
 static void *ast_inline_cap_ref[AST_INLINE_MAX_PARAMS];
+static int ast_inline_cap_size[AST_INLINE_MAX_PARAMS];
+static int ast_inline_cap_stack[AST_INLINE_MAX_PARAMS];
 static int ast_inline_cap_ok;
 
 /* Look up a retained inline candidate by its function Sym; NULL if none. */
@@ -12257,22 +12261,32 @@ static void ast_inline_capture(Sym *fnsym) {
 			return;
 		int bt = ls->type.t & VT_BTYPE;
 		if ((bt != VT_INT && bt != VT_LLONG && bt != VT_PTR &&
-				 bt != VT_FLOAT && bt != VT_DOUBLE) ||
+				 bt != VT_FLOAT && bt != VT_DOUBLE && bt != VT_STRUCT) ||
 				(ls->type.t & (VT_ARRAY | VT_VLA)))
-			return; /* scalar params only. A by-value STRUCT/UNION param's frame layout is
-			         * ABI-dependent — even ≤16-byte aggregates classify per member
-			         * (register class, unions/transparent_union, packing), so a plain
-			         * vstore-to-slot bind miscompiles some (verified: a transparent_union
-			         * param). Struct *return* (memory-coalesced) works and stays enabled;
-			         * struct/union params fall back to a real call. An ABI-aware bind is
-			         * future work (docs/AST-STATUS.md). */
+			return; /* scalar + by-value struct/union params (§19.2). Grafting DELETES the
+			         * ABI: rather than reproduce register-vs-memory arg passing, every param
+			         * is copied into a fresh caller-frame slot (materialize-then-copy), so a
+			         * struct's ABI classification no longer matters. `long double`/_Complex
+			         * (VT_QLONG/VT_QFLOAT pairs) and bit-field params still fall back. */
+		if (bt == VT_STRUCT && is_complex_type(&ls->type))
+			return; /* _Complex is a struct-typed pair with special ABI/codegen; not modeled */
 		if (bt == VT_PTR && ls->type.ref &&
 				(((Sym *)ls->type.ref)->type.t & VT_VLA))
 			return; /* pointer-to-VLA param (`int m[n][n]`): indexing needs the runtime
 			         * size, which the frame bias does not relocate */
+		int palign, psize = type_size(&ls->type, &palign);
+		if (psize < 0)
+			return; /* incomplete type: cannot size a materialization slot */
 		ast_inline_cap_off[n] = (int)ls->c;
 		ast_inline_cap_typ[n] = ls->type.t;
 		ast_inline_cap_ref[n] = ls->type.ref;
+		ast_inline_cap_size[n] = psize;
+		/* Stack/memory-passed params (>16B struct, x87, 7th+ overflow arg) get a POSITIVE
+		 * param_addr (read in place from the incoming-args area); register-class params get
+		 * a NEGATIVE spill slot. The uniform frame bias only relocates the negative kind, so
+		 * a positive-offset param needs its own materialization slot + remap (§19.2). The
+		 * offset sign is exactly the classify result the prolog already computed. */
+		ast_inline_cap_stack[n] = (int)ls->c >= 0;
 		n++;
 	}
 	ast_inline_cap_np = n;
@@ -12314,6 +12328,14 @@ static int ast_inline_graftable(AstArena *a) {
  * instead of emitting the epilogue transfer. */
 static int ast_inline_active;
 static int ast_inline_bias;
+/* §19.2 per-param remap: a stack/memory-passed param (positive param_addr) is materialized
+ * into a fresh negative caller slot, so its captured offset region [lo,hi) relocates by
+ * `delta` (not the uniform ast_inline_bias). Consulted in ast_replay_value before the bias;
+ * saved/restored around each graft so nested/sequential grafts compose. */
+static int ast_param_remap_n;
+static int ast_param_remap_lo[AST_INLINE_MAX_PARAMS];
+static int ast_param_remap_hi[AST_INLINE_MAX_PARAMS];
+static int ast_param_remap_delta[AST_INLINE_MAX_PARAMS];
 static int ast_in_graft;
 static CType ast_graft_rt;
 static int ast_inline_ret_sym;  /* jump chain to the grafted body's inline-end join */
@@ -12352,18 +12374,43 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 	ast_inline_stack[ast_inline_depth++] = csym;
 	int bias = loc; /* callee offset co -> co + loc, into fresh space below the caller's */
 	loc -= e->frame_size; /* reserve it permanently: gfunc_epilog sizes the frame from loc */
+	/* §19.2: bind each arg by materializing it into a caller-frame slot (materialize-then-copy,
+	 * deleting the ABI). A register-class param keeps its biased spill slot; a stack/memory-
+	 * passed param (positive param_addr — >16B struct, x87, 7th+ overflow arg) gets a FRESH
+	 * negative slot whose region is recorded in maplo/hi/delta and installed as the param remap
+	 * for the body replay below. A struct arg block-copies via vstore. */
+	int nmap = 0, maplo[AST_INLINE_MAX_PARAMS];
+	int maphi[AST_INLINE_MAX_PARAMS], mapdelta[AST_INLINE_MAX_PARAMS];
 	for (int i = 0; i < e->nparams; i++) {
-		ast_replay_value(a, ast_child(a, n, i + 1)); /* arg (caller frame, no bias) */
+		int dst;
+		if (e->param_stack[i]) {
+			CType pt;
+			pt.t = e->param_typ[i];
+			pt.ref = (Sym *)e->param_ref[i];
+			int pal, psz = e->param_size[i];
+			type_size(&pt, &pal);
+			if (pal < 1)
+				pal = 1;
+			loc = (loc - psz) & -pal; /* fresh materialization slot, below the frame */
+			dst = loc;
+			maplo[nmap] = e->param_off[i];
+			maphi[nmap] = e->param_off[i] + psz;
+			mapdelta[nmap] = dst - e->param_off[i];
+			nmap++;
+		} else {
+			dst = e->param_off[i] + bias; /* register-class: biased spill slot */
+		}
+		ast_replay_value(a, ast_child(a, n, i + 1)); /* arg (caller frame, outer ctx) */
 		SValue slot;
 		memset(&slot, 0, sizeof slot);
 		slot.type.t = e->param_typ[i];
 		slot.type.ref = e->param_ref[i];
 		slot.r = VT_LOCAL | VT_LVAL;
 		slot.r2 = VT_CONST;
-		slot.c.i = e->param_off[i] + bias;
+		slot.c.i = dst;
 		vpushv(&slot);
 		vswap();
-		vstore(); /* param_slot = arg */
+		vstore(); /* param_slot = arg (scalar store or struct block-copy) */
 		vpop();
 	}
 	/* Replay the callee body under the frame bias. ast_in_graft makes each Return store its
@@ -12382,6 +12429,12 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 	int save_floor = ast_rp_label_floor, save_nlabel = ast_rp_nlabel;
 	struct switch_t *save_switch = ast_rp_switch;
 	int *save_bsym = ast_rp_bsym, *save_csym = ast_rp_csym;
+	int save_remap_n = ast_param_remap_n;
+	int save_remap_lo[AST_INLINE_MAX_PARAMS], save_remap_hi[AST_INLINE_MAX_PARAMS];
+	int save_remap_delta[AST_INLINE_MAX_PARAMS];
+	memcpy(save_remap_lo, ast_param_remap_lo, sizeof save_remap_lo);
+	memcpy(save_remap_hi, ast_param_remap_hi, sizeof save_remap_hi);
+	memcpy(save_remap_delta, ast_param_remap_delta, sizeof save_remap_delta);
 	ast_graft_rt.t = ast_type_t(a, n);
 	ast_graft_rt.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 	int ral, rsz = type_size(&ast_graft_rt, &ral);
@@ -12395,6 +12448,10 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 	ast_rp_label_floor = ast_rp_nlabel;
 	ast_rp_switch = NULL;
 	ast_rp_bsym = ast_rp_csym = NULL;
+	ast_param_remap_n = nmap; /* §19.2: activate this graft's stack-param remap for the body */
+	memcpy(ast_param_remap_lo, maplo, sizeof maplo);
+	memcpy(ast_param_remap_hi, maphi, sizeof maphi);
+	memcpy(ast_param_remap_delta, mapdelta, sizeof mapdelta);
 	ast_replay_bb(e->ast, ast_root(e->ast));
 	gsym(ast_inline_ret_sym); /* land every early return's jump here */
 	SValue res;               /* push the coalesced result as an lvalue at the slot */
@@ -12414,6 +12471,10 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 	ast_rp_switch = save_switch;
 	ast_rp_bsym = save_bsym;
 	ast_rp_csym = save_csym;
+	ast_param_remap_n = save_remap_n;
+	memcpy(ast_param_remap_lo, save_remap_lo, sizeof save_remap_lo);
+	memcpy(ast_param_remap_hi, save_remap_hi, sizeof save_remap_hi);
+	memcpy(ast_param_remap_delta, save_remap_delta, sizeof save_remap_delta);
 	ast_inline_depth--; /* pop the cycle-guard stack */
 	if (ast_replay_dump)
 		fprintf(stderr, "[ast-inline] grafted %s\n", get_tok_str(((Sym *)csym)->v, NULL));
@@ -12500,6 +12561,8 @@ static int ast_inline_retain(AstArena *a, Sym *sym) {
 		e->param_off[i] = ast_inline_cap_off[i];
 		e->param_typ[i] = ast_inline_cap_typ[i];
 		e->param_ref[i] = ast_inline_cap_ref[i];
+		e->param_size[i] = ast_inline_cap_size[i];
+		e->param_stack[i] = ast_inline_cap_stack[i];
 	}
 	e->graftable = ast_inline_cap_ok && ast_inline_graftable(a);
 	if (ast_replay_dump)
@@ -12902,8 +12965,19 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 		sv.r2 = VT_CONST;
 		sv.c.i = ast_ival(a, n);
 		sv.sym = (Sym *)(uintptr_t)ast_sym(a, n);
-		if (ast_inline_bias && (sv.r & VT_VALMASK) == VT_LOCAL && !(sv.r & VT_SYM))
-			sv.c.i += ast_inline_bias; /* Tier-4: relocate a grafted callee's frame slot */
+		if ((ast_inline_bias || ast_param_remap_n) &&
+				(sv.r & VT_VALMASK) == VT_LOCAL && !(sv.r & VT_SYM)) {
+			/* Tier-4: relocate a grafted callee's frame slot. A stack-passed param's
+			 * region (positive offset) remaps to its materialization slot (§19.2); every
+			 * other local shifts by the uniform frame bias. */
+			int off = (int)sv.c.i, delta = ast_inline_bias;
+			for (int j = 0; j < ast_param_remap_n; j++)
+				if (off >= ast_param_remap_lo[j] && off < ast_param_remap_hi[j]) {
+					delta = ast_param_remap_delta[j];
+					break;
+				}
+			sv.c.i += delta;
+		}
 		if (ast_promo_n) {
 			/* Tier-3 read: a promoted local reads from its pinned register (not the
 			 * stack slot). Push the value as register-resident; gv copies it into a
@@ -13810,6 +13884,13 @@ static void gen_function(Sym *sym) {
 					rsec2->data_offset = ast_reloc1;
 				ind = orig_ind;
 				rsym = orig_rsym;
+				/* Restore the parse-build frame depth: an UNfaithful pass-1 replay can leave
+				 * `loc` shallower than -O0 (e.g. an ordinal result-temp slot it allocated in a
+				 * different order), and gfunc_epilog below sizes the frame from `loc`. Keeping
+				 * the -O0 body bytes but a too-small frame overlaps the locals → corruption.
+				 * saved_loc is the -O0 final depth captured after block(0). (The faithful and
+				 * pass-2 paths already end at the correct loc.) */
+				loc = saved_loc;
 			} else if (ast_replay_dump) {
 				char buf[512];
 				ast_dump(ast_cur, ast_root(ast_cur), buf, sizeof buf);
