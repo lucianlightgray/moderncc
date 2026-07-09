@@ -12247,7 +12247,12 @@ static int ast_inline_graftable(AstArena *a) {
 	int totret = 0;
 	for (AstLocal n = 0; n < nn; n++) {
 		uint16_t k = ast_kind(a, n);
-		if (k == AST_Jump) /* goto/switch/break/continue: shared label/switch state */
+		/* AST_Jump op 4 (named label def) / op 5 (goto) use the shared per-function label
+		 * table, which a grafted callee would collide with the caller's — exclude those.
+		 * op 0/1 (break/continue) and op 2/3 (case/default) target the callee's OWN enclosing
+		 * loop/switch (whose replay saves/restores bsym/csym/ast_rp_switch), so they are
+		 * self-contained and safe to graft. */
+		if (k == AST_Jump && (ast_op(a, n) == 4 || ast_op(a, n) == 5))
 			return 0;
 		if (k == AST_Return) {
 			totret++;

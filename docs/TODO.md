@@ -378,11 +378,17 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
     with save/restore — always safe), the inlined callee's locals live in fresh biased slots the
     promoter ignores, and the graft's `vstore`/`gv` honor the pins. Verified in all three modes
     (inline+promote / promote-only / inline-only), corpus + ctest 1769/1769, ASan-clean.
-  - [ ] **Slice 2 breadth.** `goto`/`switch` (shared label/switch replay state); struct-by-value
-    params/return. Then **forward-declared / later-defined callees (needs true defer-to-TU)** — the
-    common caller-before-callee case, missed today; per-site specialization. Un-gate the fixture on
-    non-x86_64 once verified there (arch-independent). Persist string/rodata Syms to lift that
-    exclusion.
+  - [x] **`break`/`continue`/`switch` (case/default) — LANDED 2026-07-08.** These `AST_Jump`s
+    (op 0/1/2/3) target the callee's OWN enclosing loop/switch, whose replay saves/restores
+    `bsym`/`csym`/`ast_rp_switch`, so they are self-contained under a graft (verified: `firsthit`
+    break-loop, `countpos` continue, `pick` switch — incl. a break-loop grafted inside a caller
+    loop). Only op 4/5 (named-label def / `goto`) stay excluded (shared per-function label table).
+    Corpus + ctest 1769/1769, ASan-clean.
+  - [ ] **Slice 2 breadth.** `goto` / named labels (shared label table — needs per-graft scoping);
+    struct-by-value params/return. Then **forward-declared / later-defined callees (needs true
+    defer-to-TU)** — the common caller-before-callee case, missed today; per-site specialization.
+    Un-gate the fixture on non-x86_64 once verified there (arch-independent). Persist string/rodata
+    Syms to lift that exclusion.
 - [ ] **Long horizon (design only):** the broader template library (algebraic, dead-branch,
   jump-table), the time-budgeted engine (§12/§221), dependency-ordered `-O1` compile, cross-TU
   LTO, `-g` from provenance, hot-reload snapshots, and separate `-O2`/`-O3` (SSA) drivers.

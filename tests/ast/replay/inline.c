@@ -41,6 +41,24 @@ static double area(double w, double h) { return w * h; }
 /* non-leaf callee: its own call to the graftable `add` grafts recursively (guarded
  * against cycles by the graft stack). */
 static int quad(int x) { return add(x, x) * 2; }
+/* a `switch` (case/default) and a loop with an early `break` — self-contained control
+ * flow: their break/case AST_Jumps target the callee's own switch/loop, not the caller's. */
+static int pick(int k) {
+	switch (k) {
+	case 1:
+		return 3;
+	case 2:
+		return 5;
+	default:
+		return 0;
+	}
+}
+static int firsthit(const int *a, int n) {
+	for (int i = 0; i < n; i++)
+		if (a[i])
+			return i;
+	return n;
+}
 
 int main(void) {
 	int r = add(3, 4);              /* 7 */
@@ -51,5 +69,7 @@ int main(void) {
 	int g = sgn(-4) + sgn(0) + sgn(9); /* early/tail returns, multi-arg: -1+0+1 = 0 */
 	int d = (int)area(2.5, 4.0);       /* double params + return: 10.0 -> 10 */
 	int q = quad(2);                   /* non-leaf: add(2,2)*2 = 8 (add grafts inside) */
-	return r + s + t + u + c + g + d + q - 38; /* 7+30+13+7+5+0+10+8 - 38 = 42 */
+	int arr2[3] = {0, 0, 7};
+	int p = pick(2) + firsthit(arr2, 3); /* switch: 5, break-loop: 2 -> 7 */
+	return r + s + t + u + c + g + d + q + p - 45; /* 7+30+13+7+5+0+10+8+7 - 45 = 42 */
 }
