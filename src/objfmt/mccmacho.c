@@ -684,9 +684,9 @@ static void check_relocs(MCCState *s1, struct macho *mo) {
 						jmp = section_ptr_add(mo->stubs, 6);
 						jmp[0] = 0xff;
 						jmp[1] = 0x25;
-						put_elf_reloc(s1->symtab, mo->stubs,
-													attr->plt_offset + 2,
-													R_X86_64_GOTPCREL, sym_index);
+						put_elf_reloca(s1->symtab, mo->stubs,
+													 attr->plt_offset + 2,
+													 R_X86_64_GOTPCREL, sym_index, -4);
 #elif defined MCC_TARGET_ARM64
 						if (type != R_AARCH64_CALL26)
 							continue;

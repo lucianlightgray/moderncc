@@ -12154,6 +12154,25 @@ static int ast_reemit_has_forward(struct AstReemitFn *f) {
 	}
 	return 0;
 }
+static int ast_ref_is_local_off(AstArena *a, AstLocal n, int off) {
+	if (n == AST_NONE || ast_kind(a, n) != AST_Ref)
+		return 0;
+	int r = ast_op(a, n);
+	return (r & VT_VALMASK) == VT_LOCAL && (r & VT_LVAL) && !(r & VT_SYM) &&
+				 (int)(int64_t)ast_ival(a, n) == off;
+}
+
+static int ast_local_is_readonly(AstArena *a, int off) {
+	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++) {
+		uint16_t k = ast_kind(a, n);
+		if (k == AST_Store && ast_ref_is_local_off(a, ast_child(a, n, 0), off))
+			return 0;
+		if (k == AST_Unary && ast_ref_is_local_off(a, ast_first_child(a, n), off))
+			return 0;
+	}
+	return 1;
+}
 #endif
 
 #if defined(CONFIG_AST) && CONFIG_AST && defined(MCC_TARGET_X86_64)
@@ -12170,14 +12189,6 @@ static int ast_promo_reg_of(AstArena *a, AstLocal n) {
 	return -1;
 }
 
-static int ast_ref_is_local_off(AstArena *a, AstLocal n, int off) {
-	if (n == AST_NONE || ast_kind(a, n) != AST_Ref)
-		return 0;
-	int r = ast_op(a, n);
-	return (r & VT_VALMASK) == VT_LOCAL && (r & VT_LVAL) && !(r & VT_SYM) &&
-				 (int)(int64_t)ast_ival(a, n) == off;
-}
-
 static int ast_subtree_refs_local(AstArena *a, AstLocal n, int off) {
 	if (n == AST_NONE)
 		return 0;
@@ -12192,18 +12203,6 @@ static int ast_subtree_refs_local(AstArena *a, AstLocal n, int off) {
 		if (ast_subtree_refs_local(a, ast_child(a, n, i), off))
 			return 1;
 	return 0;
-}
-
-static int ast_local_is_readonly(AstArena *a, int off) {
-	AstLocal nn = ast_count(a);
-	for (AstLocal n = 0; n < nn; n++) {
-		uint16_t k = ast_kind(a, n);
-		if (k == AST_Store && ast_ref_is_local_off(a, ast_child(a, n, 0), off))
-			return 0;
-		if (k == AST_Unary && ast_ref_is_local_off(a, ast_first_child(a, n), off))
-			return 0;
-	}
-	return 1;
 }
 
 static void ast_promo_weigh(AstArena *a, AstLocal n, int depth, const int *coff, int nc,
