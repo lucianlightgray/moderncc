@@ -1155,19 +1155,22 @@ static void gccts_setenv(const char *k, const char *v) {
 #endif
 }
 
+/* The AST gates are open by default, so the baseline leg of the
+   differential must close the master gate explicitly, and the AST leg
+   must close the gates its column does not exercise. */
 static void gccts_ast_env(const char *mode, int on) {
-	const char *v = on ? "1" : NULL;
 	if (!mode)
 		return;
-	gccts_setenv("MCC_AST_REPLAY", v);
-	if (!strcmp(mode, "promote"))
-		gccts_setenv("MCC_AST_PROMOTE", v);
-	else if (!strcmp(mode, "inline"))
-		gccts_setenv("MCC_AST_INLINE", v);
-	else if (!strcmp(mode, "inline-tmpl")) {
-		gccts_setenv("MCC_AST_INLINE", v);
-		gccts_setenv("MCC_AST_TEMPLATES", v);
+	if (!on) {
+		gccts_setenv("MCC_AST_REPLAY", "0");
+		return;
 	}
+	gccts_setenv("MCC_AST_REPLAY", "1");
+	gccts_setenv("MCC_AST_TEMPLATES", strcmp(mode, "inline-tmpl") ? "0" : "1");
+	gccts_setenv("MCC_AST_PROMOTE", strcmp(mode, "promote") ? "0" : "1");
+	gccts_setenv("MCC_AST_INLINE",
+							 !strcmp(mode, "inline") || !strcmp(mode, "inline-tmpl") ? "1"
+																																			 : "0");
 }
 
 static int gccts_attempt(const char *mcc, const char *Bflag, const char *idir,
@@ -1234,6 +1237,7 @@ static int suite_gcctestsuite(int argc, char **argv) {
 		fprintf(stderr, "gcctestsuite: --ast must be replay|promote|inline|inline-tmpl\n");
 		return 2;
 	}
+	gccts_ast_env(ast, 0);
 	if (!bdir)
 		bdir = builddir;
 	snprintf(Bflag, sizeof Bflag, "-B%s", bdir);

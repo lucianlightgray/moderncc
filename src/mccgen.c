@@ -58,6 +58,14 @@ ST_DATA CType int_type, func_old_type, char_type, char_pointer_type;
 #define initstr (mcc_state->initstr)
 
 #if defined(CONFIG_AST) && CONFIG_AST
+/* AST env gates: unset takes the built-in default, "0" closes the
+   gate, any other value opens it. */
+static int ast_env_gate(const char *name, int dflt) {
+	const char *v = getenv(name);
+	if (!v)
+		return dflt;
+	return strcmp(v, "0") != 0;
+}
 int ast_active;
 static int ast_replay_env;
 static int ast_replay_dump;
@@ -740,22 +748,16 @@ ST_FUNC int mccgen_compile(MCCState *s1) {
 	global_expr = 0;
 
 #if defined(CONFIG_AST) && CONFIG_AST
-	ast_replay_env = getenv("MCC_AST_REPLAY") != NULL;
-	ast_replay_dump = getenv("MCC_AST_REPLAY_DUMP") != NULL;
-	ast_templates_env = getenv("MCC_AST_TEMPLATES") != NULL;
-	ast_promote_env = getenv("MCC_AST_PROMOTE") != NULL;
-	ast_no_callful_env = getenv("MCC_AST_NO_CALLFUL") != NULL;
-	ast_inline_env = getenv("MCC_AST_INLINE") != NULL;
+	ast_replay_env = ast_env_gate("MCC_AST_REPLAY", 1);
+	ast_replay_dump = ast_env_gate("MCC_AST_REPLAY_DUMP", 0);
+	ast_templates_env = ast_env_gate("MCC_AST_TEMPLATES", 1);
+	ast_promote_env = ast_env_gate("MCC_AST_PROMOTE", 1);
+	ast_no_callful_env = ast_env_gate("MCC_AST_NO_CALLFUL", 0);
+	ast_inline_env = ast_env_gate("MCC_AST_INLINE", 1);
 	{
 		const char *lim = getenv("MCC_AST_INLINE_LIMIT");
 		ast_graft_limit = lim ? atoi(lim) : -1;
 		ast_graft_total = 0;
-	}
-	if (s1->optimize >= 1) {
-		ast_replay_env = 1;
-#ifdef MCC_TARGET_X86_64
-		ast_promote_env = 1;
-#endif
 	}
 #endif
 
@@ -11890,8 +11892,12 @@ static void ast_inline_capture(Sym *fnsym) {
 			return;
 		if (bt == VT_STRUCT && is_complex_type(&ls->type))
 			return;
+		/* func_vla_arg evaluates VLA-parameter size expressions (and their
+		   side effects) in the prologue, which is outside the captured body,
+		   so a grafted call would silently skip them. */
 		if (bt == VT_PTR && ls->type.ref &&
-				(((Sym *)ls->type.ref)->type.t & VT_VLA))
+				((((Sym *)ls->type.ref)->type.t & VT_VLA) ||
+				 ((Sym *)ls->type.ref)->vla_array_str))
 			return;
 		int palign, psize = type_size(&ls->type, &palign);
 		if (psize < 0)

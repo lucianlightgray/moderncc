@@ -193,9 +193,10 @@ high-value specifics the summary omits:
   C11 (exec suite proves it), so replay never fakes anything — every gap is an
   AST-**query** gap, not a codegen gap, tiered by query cost (Tier 1 O(1) field
   reads → Tier 4 whole-program/fixpoint).
-- **Env flags (opt-in; `-O0` byte-untouched):** `MCC_AST_REPLAY`,
-  `MCC_AST_REPLAY_DUMP`, `MCC_AST_PROMOTE`, `MCC_AST_NO_CALLFUL`,
-  `MCC_AST_INLINE`, `MCC_AST_TEMPLATES`. Faithfulness gate: pass 1 replays with no
+- **Env flags (default-open; set to `0` to close a gate):** `MCC_AST_REPLAY`,
+  `MCC_AST_PROMOTE`, `MCC_AST_INLINE`, `MCC_AST_TEMPLATES` default on at every
+  `-O` level; `MCC_AST_REPLAY_DUMP` and `MCC_AST_NO_CALLFUL` stay opt-in;
+  `MCC_AST_REPLAY=0` disables the whole stack. Faithfulness gate: pass 1 replays with no
   transform and **byte-verifies vs `-O0`**; only if faithful does pass 2 apply the
   transform, then gated by the **exec-golden differential**; unfaithful → `-O0`
   fallback.

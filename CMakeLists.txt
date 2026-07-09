@@ -3137,7 +3137,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-replay-${_gn}" --only "${_gn}")
             set_tests_properties("exec-replay/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_AST_REPLAY=1")
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_AST_REPLAY=1;MCC_AST_TEMPLATES=0;MCC_AST_PROMOTE=0;MCC_AST_INLINE=0")
         endforeach()
 
         foreach(_gl IN LISTS _exec_glines)
@@ -3148,7 +3148,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-replay-tmpl-${_gn}" --only "${_gn}")
             set_tests_properties("exec-replay-tmpl/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_AST_REPLAY=1;MCC_AST_TEMPLATES=1")
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_AST_REPLAY=1;MCC_AST_TEMPLATES=1;MCC_AST_PROMOTE=0;MCC_AST_INLINE=0")
         endforeach()
 
         foreach(_gl IN LISTS _exec_glines)
@@ -3159,7 +3159,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-replay-promote-${_gn}" --only "${_gn}")
             set_tests_properties("exec-replay-promote/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_AST_REPLAY=1;MCC_AST_PROMOTE=1")
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_AST_REPLAY=1;MCC_AST_TEMPLATES=0;MCC_AST_PROMOTE=1;MCC_AST_INLINE=0")
         endforeach()
     endif()
 
