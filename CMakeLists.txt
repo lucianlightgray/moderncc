@@ -652,8 +652,12 @@ add_custom_target(clang-toolchain
     USES_TERMINAL VERBATIM)
 
 find_program(GIT_EXECUTABLE git)
-set(MCC_MUSL_URL "https://git.musl-libc.org/git/musl" CACHE STRING
-    "musl git repository URL for the `vendor-musl` target")
+set(MCC_MUSL_URL "https://github.com/ifduyue/musl" CACHE STRING
+    "Primary musl git repository URL for the `vendor-musl` target (a GitHub mirror by default: the canonical git.musl-libc.org is frequently unreachable from CI runners and blackholes the connection for minutes before falling back)")
+set(MCC_MUSL_MIRROR "https://git.musl-libc.org/git/musl" CACHE STRING
+    "Fallback musl git repository for `vendor-musl` (tried if MCC_MUSL_URL is unreachable)")
+set(MCC_MUSL_TARBALL "https://codeload.github.com/ifduyue/musl/tar.gz/refs/tags/@REF@" CACHE STRING
+    "Last-resort musl source tarball for `vendor-musl` (plain HTTPS, no git credentials); @REF@ is replaced by MCC_MUSL_REF. Empty disables the tarball fallback.")
 set(MCC_MUSL_REF "v1.2.5" CACHE STRING
     "musl git ref (tag/branch) to clone for `vendor-musl` (empty = default branch)")
 set(MCC_MUSL_DIR "${MCC_VENDOR_DIR}/musl-src" CACHE PATH
@@ -663,15 +667,17 @@ set(_musl_fetch "${CMAKE_BINARY_DIR}/run_musl_fetch.cmake")
 file(WRITE "${_musl_fetch}"
     "set(GIT \"${GIT_EXECUTABLE}\")\n"
     "set(URL \"${MCC_MUSL_URL}\")\n"
+    "set(MIRROR \"${MCC_MUSL_MIRROR}\")\n"
+    "set(TARBALL \"${MCC_MUSL_TARBALL}\")\n"
     "set(REF \"${MCC_MUSL_REF}\")\n"
     "set(DEST \"${MCC_MUSL_DIR}\")\n")
 file(APPEND "${_musl_fetch}" [==[
 if(GIT STREQUAL "" OR NOT EXISTS "${GIT}")
     message(FATAL_ERROR "vendor-musl: git not found. Install git or pass -DGIT_EXECUTABLE=<path>.")
 endif()
-if(EXISTS "${DEST}/.git")
-    message(STATUS "vendor-musl: ${DEST} already present "
-        "(delete it to re-clone, or update with: git -C ${DEST} pull)")
+# A git checkout has .git; a tarball-extracted tree is marked with a stamp.
+if(EXISTS "${DEST}/.git" OR EXISTS "${DEST}/.vendor-musl.stamp")
+    message(STATUS "vendor-musl: ${DEST} already present (delete it to re-fetch)")
     return()
 endif()
 get_filename_component(_parent "${DEST}" DIRECTORY)
@@ -680,21 +686,81 @@ set(_branchargs "")
 if(NOT REF STREQUAL "")
     set(_branchargs --branch "${REF}")
 endif()
-message(STATUS "vendor-musl: cloning ${URL} (${REF}) into ${DEST}")
-execute_process(
-    COMMAND "${GIT}" clone --depth 1 ${_branchargs} "${URL}" "${DEST}"
-    RESULT_VARIABLE _rc)
+
+# Disable interactive credential prompting for every git invocation below: CI
+# runners have no TTY, so an anonymous clone that draws an auth challenge (e.g.
+# a mistyped/renamed mirror, which GitHub answers with 401, not 404) would
+# otherwise fail with "could not read Username ... No such device or address"
+# -- or hang waiting on a credential manager. GIT_TERMINAL_PROMPT=0 turns that
+# into an immediate error; the low-speed limits abort a stalled transfer. These
+# go on the script's own environment (inherited by execute_process) rather than
+# a `cmake -E env` wrapper, which is unreliable when re-invoked nested here.
+set(ENV{GIT_TERMINAL_PROMPT} "0")
+set(ENV{GIT_HTTP_LOW_SPEED_LIMIT} "1000")
+set(ENV{GIT_HTTP_LOW_SPEED_TIME} "30")
+set(ENV{GCM_INTERACTIVE} "never")
+
+function(_musl_git_clone url resultvar)
+    message(STATUS "vendor-musl: cloning ${url} (${REF}) into ${DEST}")
+    execute_process(
+        COMMAND "${GIT}" -c credential.helper=
+                clone --depth 1 ${_branchargs} "${url}" "${DEST}"
+        RESULT_VARIABLE _rc)
+    set(${resultvar} "${_rc}" PARENT_SCOPE)
+endfunction()
+
+_musl_git_clone("${URL}" _rc)
+if(NOT _rc EQUAL 0 AND NOT MIRROR STREQUAL "")
+    file(REMOVE_RECURSE "${DEST}")
+    message(STATUS "vendor-musl: ${URL} unreachable (${_rc}); trying mirror ${MIRROR}")
+    _musl_git_clone("${MIRROR}" _rc)
+endif()
+
+# Last resort: a plain HTTPS tarball via libcurl, which bypasses git's
+# credential machinery entirely (the path that works behind restricted egress
+# where anonymous git-over-https is challenged). The extracted tree has no
+# .git, but musl-sysroot only needs the source, so a stamp file suffices.
+if(NOT _rc EQUAL 0 AND NOT TARBALL STREQUAL "")
+    file(REMOVE_RECURSE "${DEST}")
+    string(REPLACE "@REF@" "${REF}" _turl "${TARBALL}")
+    message(STATUS "vendor-musl: git clone failed; downloading tarball ${_turl}")
+    set(_tgz "${_parent}/musl-src.tar.gz")
+    set(_xdir "${_parent}/musl-src.extract")
+    file(REMOVE "${_tgz}")
+    file(REMOVE_RECURSE "${_xdir}")
+    file(DOWNLOAD "${_turl}" "${_tgz}"
+        STATUS _dstat TIMEOUT 300 INACTIVITY_TIMEOUT 30 SHOW_PROGRESS)
+    list(GET _dstat 0 _drc)
+    if(_drc EQUAL 0)
+        file(MAKE_DIRECTORY "${_xdir}")
+        file(ARCHIVE_EXTRACT INPUT "${_tgz}" DESTINATION "${_xdir}")
+        file(GLOB _tops LIST_DIRECTORIES true "${_xdir}/*")
+        list(LENGTH _tops _ntop)
+        if(_ntop EQUAL 1)
+            list(GET _tops 0 _top)
+            file(RENAME "${_top}" "${DEST}")
+            file(WRITE "${DEST}/.vendor-musl.stamp" "musl ${REF} from ${_turl}\n")
+            set(_rc 0)
+        else()
+            message(STATUS "vendor-musl: unexpected tarball layout (${_ntop} top-level entries)")
+        endif()
+        file(REMOVE "${_tgz}")
+        file(REMOVE_RECURSE "${_xdir}")
+    else()
+        list(GET _dstat 1 _dmsg)
+        message(STATUS "vendor-musl: tarball download failed: ${_dmsg}")
+    endif()
+endif()
+
 if(NOT _rc EQUAL 0)
     file(REMOVE_RECURSE "${DEST}")
-    set(_mirror "https://github.com/bminor/musl")
-    message(STATUS "vendor-musl: ${URL} unreachable (${_rc}); trying mirror ${_mirror}")
-    execute_process(
-        COMMAND "${GIT}" clone --depth 1 ${_branchargs} "${_mirror}" "${DEST}"
-        RESULT_VARIABLE _rc)
-    if(NOT _rc EQUAL 0)
-        file(REMOVE_RECURSE "${DEST}")
-        message(FATAL_ERROR "vendor-musl: git clone failed (${_rc}): ${URL} and mirror ${_mirror}")
-    endif()
+    message(FATAL_ERROR
+        "vendor-musl: could not obtain musl ${REF}. Tried:\n"
+        "  git   ${URL}\n"
+        "  git   ${MIRROR}\n"
+        "  https ${TARBALL}\n"
+        "Point -DMCC_MUSL_URL / -DMCC_MUSL_MIRROR / -DMCC_MUSL_TARBALL at a reachable "
+        "source, or pre-populate ${DEST}.")
 endif()
 message(STATUS "vendor-musl: established ${DEST}")
 ]==])
