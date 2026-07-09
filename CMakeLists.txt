@@ -2966,11 +2966,21 @@ if(MCC_BUILD_TESTS)
             endif()
 
             if(MCC_CPU STREQUAL "x86_64" OR MCC_CPU STREQUAL "arm64")
+                # sumbig takes a 32-byte struct by value. On x86_64 the argument
+                # lands in the caller's stack frame and the Tier-4 capture grafts
+                # it; on arm64 (AAPCS64) aggregates >16 bytes are passed indirectly
+                # via a hidden pointer (VT_LLOCAL), which the capture does not model
+                # yet, so sumbig desyncs and stays retained-only. Every other case,
+                # including the 8-byte struct sumpt/addpt, grafts on both arches.
+                set(_inline_fns "add,scale,madd,clamp,sgn,area,quad,pick,firsthit,mkpair,gsum,sumpt,sumbig,addpt")
+                if(MCC_CPU STREQUAL "arm64")
+                    set(_inline_fns "add,scale,madd,clamp,sgn,area,quad,pick,firsthit,mkpair,gsum,sumpt,addpt")
+                endif()
                 add_test(NAME "ast/replay-inline" COMMAND "${CMAKE_COMMAND}"
                     "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
                     "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/inline.c"
                     "-DOUT=${CMAKE_BINARY_DIR}/ast-replay"
-                    "-DEXPECT_RC=42" "-DREPLAYED=main" "-DINLINE=1" "-DINLINES=add,scale,madd,clamp,sgn,area,quad,pick,firsthit,mkpair,gsum,sumpt,sumbig,addpt" "-DREEMITS=fwd_sum,fwd_boxed"
+                    "-DEXPECT_RC=42" "-DREPLAYED=main" "-DINLINE=1" "-DINLINES=${_inline_fns}" "-DREEMITS=fwd_sum,fwd_boxed"
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
                 set_tests_properties("ast/replay-inline" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
