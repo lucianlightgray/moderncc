@@ -375,8 +375,9 @@ struct FuncAttr {
 			func_dtor : 1,
 			func_args : 8,
 			func_alwinl : 1,
+			func_noinl : 1,
 			func_star_param : 1,
-			xxxx : 14;
+			xxxx : 13;
 };
 
 typedef struct Sym {

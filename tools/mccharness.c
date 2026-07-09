@@ -1115,11 +1115,9 @@ static int gccts_skiplisted(const char *base, const char *content) {
 										 strstr(content, "__uint128_t") || strstr(content, "vector"));
 }
 
-static const char *GCCTS_AST_KNOWN_REPLAY[] = {
-		"pr51581-1.c", "pr51581-2.c", "20070919-1.c", 0};
+static const char *GCCTS_AST_KNOWN_REPLAY[] = {0};
 static const char *GCCTS_AST_KNOWN_PROMOTE[] = {0};
-static const char *GCCTS_AST_KNOWN_INLINE[] = {
-		"usad-run.c", "pr45070.c", "ssad-run.c", "pr41750.c", 0};
+static const char *GCCTS_AST_KNOWN_INLINE[] = {0};
 
 static int gccts_in_list(const char *base, const char *const *list) {
 	int i;

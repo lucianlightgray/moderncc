@@ -1032,8 +1032,20 @@ static inline Sym *sym_malloc(void) {
 #endif
 }
 
+#if defined(CONFIG_AST) && CONFIG_AST
+static Sym *ast_sym_deferred;
+static int ast_sym_defer_on;
+#endif
+
 ST_INLN void sym_free(Sym *sym) {
 #ifndef SYM_DEBUG
+#if defined(CONFIG_AST) && CONFIG_AST
+	if (ast_sym_defer_on) {
+		sym->next = ast_sym_deferred;
+		ast_sym_deferred = sym;
+		return;
+	}
+#endif
 	sym->next = sym_free_first;
 	sym_free_first = sym;
 #else
@@ -3651,14 +3663,25 @@ again:
 			goto done;
 		}
 #endif
-		bits = (ss - ds) * 8;
-		vtop->type.t = (ss == 8 ? VT_LLONG : VT_INT) | (dbt & VT_UNSIGNED);
-		vpushi(bits);
-		gen_op(TOK_SHL);
-		vpushi(bits - trunc);
-		gen_op(TOK_SAR);
-		vpushi(trunc);
-		gen_op(TOK_SHR);
+	{
+#if defined(CONFIG_AST) && CONFIG_AST
+			int sup = ast_active && !ast_replaying;
+			if (sup)
+				ast_in_op++;
+#endif
+			bits = (ss - ds) * 8;
+			vtop->type.t = (ss == 8 ? VT_LLONG : VT_INT) | (dbt & VT_UNSIGNED);
+			vpushi(bits);
+			gen_op(TOK_SHL);
+			vpushi(bits - trunc);
+			gen_op(TOK_SAR);
+			vpushi(trunc);
+			gen_op(TOK_SHR);
+#if defined(CONFIG_AST) && CONFIG_AST
+			if (sup)
+				ast_in_op--;
+#endif
+		}
 	}
 done:
 	vtop->type = *type;
@@ -3749,17 +3772,23 @@ static void cast_error(CType *st, CType *dt) {
 	type_incompatibility_error(st, dt, "cannot convert '%s' to '%s'");
 }
 
-static int aggr_has_const_member(CType *type) {
+static int aggr_has_const_member_rec(CType *type, int depth) {
 	Sym *f;
-	if ((type->t & VT_BTYPE) != VT_STRUCT)
+	if ((type->t & VT_BTYPE) != VT_STRUCT || depth > 64)
 		return 0;
 	for (f = type->ref->next; f; f = f->next) {
 		if (f->type.t & VT_CONSTANT)
 			return 1;
-		if ((f->type.t & VT_BTYPE) == VT_STRUCT && aggr_has_const_member(&f->type))
+		if ((f->type.t & VT_BTYPE) == VT_STRUCT &&
+				f->type.ref != type->ref &&
+				aggr_has_const_member_rec(&f->type, depth + 1))
 			return 1;
 	}
 	return 0;
+}
+
+static int aggr_has_const_member(CType *type) {
+	return aggr_has_const_member_rec(type, 0);
 }
 
 static void verify_assign_cast(CType *dt) {
@@ -4202,6 +4231,8 @@ redo:
 		case TOK_PURE2:
 			break;
 		case TOK_NOINLINE:
+		case TOK_NOINLINE1:
+			ad->f.func_noinl = 1;
 			break;
 		case TOK_FORMAT1:
 		case TOK_FORMAT2:
@@ -11808,6 +11839,8 @@ static int ast_fn_inlinable(AstArena *a, Sym *sym) {
 		return 0;
 	if (sym->type.ref->f.func_type != FUNC_NEW)
 		return 0;
+	if (sym->type.ref->f.func_noinl)
+		return 0;
 	AstLocal nn = ast_count(a);
 	if (nn == 0 || nn > AST_INLINE_NODE_BUDGET)
 		return 0;
@@ -11889,11 +11922,14 @@ static int ast_argsub_n;
 static int ast_argsub_off[AST_INLINE_MAX_PARAMS];
 static SValue ast_argsub_val[AST_INLINE_MAX_PARAMS];
 static int ast_in_graft;
+static int ast_fn_faithful;
 static CType ast_graft_rt;
 static int ast_inline_ret_sym;
 static int ast_inline_ret_slot;
 #define AST_INLINE_MAX_DEPTH 8
+#define AST_GRAFT_BUDGET 2048
 static void *ast_inline_stack[AST_INLINE_MAX_DEPTH];
+static int ast_graft_budget;
 static int ast_inline_depth;
 
 static int ast_inline_graft(AstArena *a, AstLocal n) {
@@ -11920,6 +11956,9 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 	for (int i = 0; i < ast_inline_depth; i++)
 		if (ast_inline_stack[i] == csym)
 			return 0;
+	if (ast_graft_budget < (int)ast_count(e->ast))
+		return 0;
+	ast_graft_budget -= (int)ast_count(e->ast);
 	ast_inline_stack[ast_inline_depth++] = csym;
 	int hi = 0;
 	for (int i = 0; i < e->nparams; i++) {
@@ -11999,6 +12038,7 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 	ast_argsub_n = nsub;
 	memcpy(ast_argsub_off, suboff, sizeof suboff);
 	memcpy(ast_argsub_val, subval, sizeof subval);
+	save_regs(0);
 	ast_replay_bb(e->ast, ast_root(e->ast));
 	gsym(ast_inline_ret_sym);
 	SValue res;
@@ -12047,47 +12087,6 @@ static int ast_has_graftable_call(AstArena *a) {
 				return 1;
 	}
 	return 0;
-}
-
-static void ast_sym_pin(Sym *p) {
-	if (sym_free_first == p) {
-		sym_free_first = p->next;
-		return;
-	}
-	for (Sym *s = sym_free_first; s; s = s->next)
-		if (s->next == p) {
-			s->next = p->next;
-			return;
-		}
-}
-
-static void ast_pin_type(int t, Sym *ref, int depth) {
-	if (!ref || depth > 16)
-		return;
-	int bt = t & VT_BTYPE;
-	if (bt == VT_STRUCT) {
-		ast_sym_pin(ref);
-		for (Sym *m = ref->next; m; m = m->next) {
-			ast_sym_pin(m);
-			ast_pin_type(m->type.t, m->type.ref, depth + 1);
-		}
-	} else if (bt == VT_PTR || bt == VT_FUNC) {
-		ast_sym_pin(ref);
-		ast_pin_type(ref->type.t, ref->type.ref, depth + 1);
-	}
-}
-
-static void ast_pin_rodata_syms(AstArena *a) {
-	AstLocal nn = ast_count(a);
-	for (AstLocal n = 0; n < nn; n++) {
-		uint16_t k = ast_kind(a, n);
-		int r = ast_op(a, n);
-		Sym *sp = (Sym *)(uintptr_t)ast_sym(a, n);
-		if ((k == AST_Ref || k == AST_Literal) && sp && (r & VT_SYM) &&
-				(r & VT_VALMASK) == VT_CONST && sp->v >= SYM_FIRST_ANOM)
-			ast_sym_pin(sp);
-		ast_pin_type(ast_type_t(a, n), (Sym *)(uintptr_t)ast_type_ref(a, n), 0);
-	}
 }
 
 static int ast_inline_retain(AstArena *a, Sym *sym) {
@@ -13136,6 +13135,8 @@ static void gen_function(Sym *sym) {
 		ast_func_has_asm = 0;
 		ast_active = 1;
 		ast_capture = 1;
+		ast_sym_deferred = NULL;
+		ast_sym_defer_on = 1;
 	}
 	block(0);
 	if (ast_try) {
@@ -13143,6 +13144,7 @@ static void gen_function(Sym *sym) {
 		addr_t ast_reloc1 = ast_rsec ? ast_rsec->data_offset : 0;
 		ast_active = 0;
 		ast_capture = 0;
+		ast_fn_faithful = 0;
 		if (ast_replay_ok(ast_cur)) {
 			int orig_ind = ind, orig_rsym = rsym;
 			int body_len = orig_ind - ast_body_ind;
@@ -13199,6 +13201,7 @@ static void gen_function(Sym *sym) {
 									 new_rel - ast_reloc0 == rel_len &&
 									 (rel_len == 0 ||
 										memcmp(rsec2->data + ast_reloc0, orig_rel, rel_len) == 0);
+				ast_fn_faithful = faithful;
 
 				int do_inline = faithful && ast_has_graftable_call(ast_cur);
 				int do_promote = faithful && ast_promote_env && ast_plan_promotion(ast_cur) > 0;
@@ -13220,6 +13223,7 @@ static void gen_function(Sym *sym) {
 					ast_rp_bsym = ast_rp_csym = NULL;
 					ast_pinned_regs = 0;
 					ast_inline_active = do_inline;
+					ast_graft_budget = AST_GRAFT_BUDGET;
 					for (int pi = 0; pi < ast_promo_n; pi++)
 						ast_pinned_regs |= (1u << ast_promo_regpool_at(pi));
 					if (do_promote)
@@ -13251,6 +13255,7 @@ static void gen_function(Sym *sym) {
 			mcc_state->nb_errors = ast_saved_nberr;
 			sym_free_first = ast_saved_free;
 			mcc_state->warn_none = ast_sv_warn;
+			seqp_reset();
 			if (!faithful) {
 				memcpy(cur_text_section->data + ast_body_ind, orig, body_len);
 				if (rel_len)
@@ -13273,13 +13278,22 @@ static void gen_function(Sym *sym) {
 			mcc_free(orig);
 			mcc_free(orig_rel);
 		}
-		int keep_inline = ast_inline_retain(ast_cur, sym);
+		int keep_inline = ast_fn_faithful && ast_inline_retain(ast_cur, sym);
 		int keep_reemit = ast_reemit_retain(ast_cur, sym);
-		if (keep_inline || keep_reemit)
-			ast_pin_rodata_syms(ast_cur);
-		else
+		if (!keep_inline && !keep_reemit)
 			ast_arena_free(ast_cur);
 		ast_cur = NULL;
+		ast_sym_defer_on = 0;
+		if (keep_inline || keep_reemit) {
+			ast_sym_deferred = NULL;
+		} else {
+			while (ast_sym_deferred) {
+				Sym *nx = ast_sym_deferred->next;
+				ast_sym_deferred->next = sym_free_first;
+				sym_free_first = ast_sym_deferred;
+				ast_sym_deferred = nx;
+			}
+		}
 	}
 #else
 	block(0);
@@ -13387,6 +13401,7 @@ static void ast_reemit(Sym *sym, AstArena *ast) {
 	ast_promo_n = 0;
 	ast_pinned_regs = 0;
 	ast_inline_active = 1;
+	ast_graft_budget = AST_GRAFT_BUDGET;
 	ast_replay_body(ast);
 	ast_inline_active = 0;
 	ast_replaying = 0;
