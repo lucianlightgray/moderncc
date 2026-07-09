@@ -320,10 +320,11 @@ typedef struct
 	int no_test; /* build-only preset: no top-level test preset exists */
 } LocJob;
 
-/* The curated preset ledger — one table per scheduling group. `ci local`
-   drives its per-OS plan from these, and `ci parity` checks them (plus the
-   workflow files) against CMakePresets.json. Adding a preset there means
-   adding it here and to the workflow matrices, or `ci parity` (and the
+/* The curated preset ledger — the single schedule source. `ci local` drives
+   its per-OS plan from these tables, `ci plan --job <x>` emits each workflow
+   job's matrix from them (the .yml matrices are fromJSON consumers), and
+   `ci parity` checks them against CMakePresets.json. Adding a preset to
+   CMakePresets.json means adding it here or `ci parity` (and the
    preset-parity-invariant ctest) fails. */
 static const char *PS_LINUX_GCC[] = {
 		"linux-gcc", "linux-gcc-cross",
@@ -335,9 +336,11 @@ static const char *PS_LINUX_GCC[] = {
 static const char *PS_LINUX_CLANG[] = {
 		"linux-clang", "linux-clang-cross",
 		"linux-clang-release", 0};
-static const char *PS_DEV[] = {
-		"debug", "release", "sanitize",
-		"diagnostics", "cst", "ast", "cross", 0};
+/* developer presets that are NOT aliases of a pinned linux-gcc* cell:
+   `release` is the only Release+musl test run and `ast` the only MCC_AST
+   scenario. The alias dev presets (debug/cst/sanitize/diagnostics/cross)
+   build the identical tree with an unpinned cc and are exempt below. */
+static const char *PS_DEV[] = {"release", "ast", 0};
 /* gcc;clang x native;cross superbuild: needs both compilers; build-only
    (no top-level test preset - each cell runs its own ctest while building) */
 static const char *PS_SUPER[] = {"matrix", 0};
@@ -345,15 +348,46 @@ static const char *PS_DARWIN[] = {"macos", "macos-cross", 0};
 static const char *PS_WIN_MSVC[] = {"msvc", "sanitize-msvc", 0};
 /* build-only: the mingw superbuild has no test preset either */
 static const char *PS_WIN_BUILDONLY[] = {"mingw", 0};
-/* [0] dist-linux-gcc  [1] dist-linux-clang  [2] dist-macos
-   [3] dist-msvc       [4] dist-mingw        (indexed by do_local) */
-static const char *PS_DIST[] = {
-		"dist-linux-gcc", "dist-linux-clang",
-		"dist-macos", "dist-msvc", "dist-mingw", 0};
 static const char *QARCH[] = {"x86_64", "i386", "arm", "arm64", "riscv64", 0};
 static const char *QBIN[] = {
 		"qemu-x86_64", "qemu-i386", "qemu-arm",
 		"qemu-aarch64", "qemu-riscv64", 0};
+
+/* dist preset names (macros so the plan cell tables, `ci local`, and the
+   parity set share one spelling) */
+#define PS_DIST_LINUX_GCC "dist-linux-gcc"
+#define PS_DIST_LINUX_CLANG "dist-linux-clang"
+#define PS_DIST_MACOS "dist-macos"
+#define PS_DIST_MSVC "dist-msvc"
+#define PS_DIST_MINGW "dist-mingw"
+
+/* plan cell tables: the runner-facing schedule `ci plan` emits as JSON */
+static const char *PLAN_HOSTS[] = {"x86_64", "arm64", 0};
+static const struct {
+	const char *arch, *runner, *msvcarch;
+} PLAN_WIN[] = {
+		{"x86_64", "windows-latest", "x64"},
+		{"arm64", "windows-11-arm", "arm64"},
+		{0, 0, 0}};
+static const struct {
+	const char *preset, *plat, *os;
+	int rosetta;
+} PLAN_DIST_UNIX[] = {
+		{PS_DIST_LINUX_GCC, "linux-x86_64-gcc", "ubuntu-latest", 0},
+		{PS_DIST_LINUX_GCC, "linux-arm64-gcc", "ubuntu-24.04-arm", 0},
+		{PS_DIST_LINUX_CLANG, "linux-x86_64-clang", "ubuntu-latest", 0},
+		{PS_DIST_LINUX_CLANG, "linux-arm64-clang", "ubuntu-24.04-arm", 0},
+		{PS_DIST_MACOS, "macos-arm64-clang", "macos-15", 0},
+		{PS_DIST_MACOS, "macos-x86_64-clang", "macos-15", 1},
+		{0, 0, 0, 0}};
+static const struct {
+	const char *preset, *plat, *runner, *msvcarch;
+	int mingw;
+} PLAN_DIST_WIN[] = {
+		{PS_DIST_MSVC, "windows-x86_64-msvc", "windows-latest", "x64", 0},
+		{PS_DIST_MSVC, "windows-arm64-msvc", "windows-11-arm", "arm64", 0},
+		{PS_DIST_MINGW, "windows-x86_64-mingw", "windows-latest", "x64", 1},
+		{0, 0, 0, 0, 0}};
 
 /* presets deliberately without a CI cell or `ci local` slot */
 static const struct {
@@ -361,6 +395,11 @@ static const struct {
 } PS_EXEMPT[] = {
 		{"local-ci", "the local-CI orchestrator itself (MCC_LOCAL_CI_AS_TEST)"},
 		{"qemu", "umbrella; the per-arch qemu-* presets are the cells"},
+		{"debug", "alias: = linux-gcc with unpinned cc (interactive use)"},
+		{"cst", "alias: MCC_CST defaults ON, = debug (interactive use)"},
+		{"sanitize", "alias: = linux-gcc-sanitize with unpinned cc"},
+		{"diagnostics", "alias: = linux-gcc-diagnostics with unpinned cc"},
+		{"cross", "alias: = linux-gcc-cross with unpinned cc"},
 		{0, 0}};
 
 static int loc_have(const char *name) {
@@ -581,22 +620,22 @@ static int do_local(int argc, char **argv) {
 		if (!strcmp(os, "Linux")) {
 			if (have_gcc) {
 				snprintf(plat, sizeof plat, "linux-%s-gcc", host_cpu);
-				LOC_DIST(PS_DIST[0], "", plat);
+				LOC_DIST(PS_DIST_LINUX_GCC, "", plat);
 			}
 			if (have_clang) {
 				snprintf(plat, sizeof plat, "linux-%s-clang", host_cpu);
-				LOC_DIST(PS_DIST[1], "", plat);
+				LOC_DIST(PS_DIST_LINUX_CLANG, "", plat);
 			}
 		} else if (!strcmp(os, "Darwin")) {
 			snprintf(plat, sizeof plat, "macos-%s-clang", host_cpu);
-			LOC_DIST(PS_DIST[2], "clang", plat);
+			LOC_DIST(PS_DIST_MACOS, "clang", plat);
 		} else if (!strcmp(os, "Windows")) {
 			if (have_cl) {
 				snprintf(plat, sizeof plat, "windows-%s-msvc", host_cpu);
-				LOC_DIST(PS_DIST[3], "", plat);
+				LOC_DIST(PS_DIST_MSVC, "", plat);
 			}
 			snprintf(plat, sizeof plat, "windows-%s-mingw", host_cpu);
-			LOC_DIST(PS_DIST[4], "", plat);
+			LOC_DIST(PS_DIST_MINGW, "", plat);
 		}
 	} else {
 		LOC_SKIP("%s", "dist-* - skipped (LOCAL_CI_SKIP_RELEASE)");
@@ -1005,20 +1044,161 @@ static const char *par_exempt(const char *nm) {
 	return NULL;
 }
 
-/* union of the PS_* tables = every preset `ci local` can schedule */
+/* union of the ledger tables = every preset `ci local` can schedule */
 static void par_local_set(StrSet *loc) {
 	static const char **T[] = {
 			PS_LINUX_GCC, PS_LINUX_CLANG, PS_DEV, PS_SUPER,
-			PS_DARWIN, PS_WIN_MSVC, PS_WIN_BUILDONLY, PS_DIST, 0};
+			PS_DARWIN, PS_WIN_MSVC, PS_WIN_BUILDONLY, 0};
 	int t, k;
 	for (t = 0; T[t]; t++)
 		for (k = 0; T[t][k]; k++)
 			set_add(loc, T[t][k], (int)strlen(T[t][k]));
+	for (k = 0; PLAN_DIST_UNIX[k].preset; k++)
+		set_add(loc, PLAN_DIST_UNIX[k].preset,
+						(int)strlen(PLAN_DIST_UNIX[k].preset));
+	for (k = 0; PLAN_DIST_WIN[k].preset; k++)
+		set_add(loc, PLAN_DIST_WIN[k].preset,
+						(int)strlen(PLAN_DIST_WIN[k].preset));
 	for (k = 0; QARCH[k]; k++) {
 		char q[64];
 		snprintf(q, sizeof q, "qemu-%s", QARCH[k]);
 		set_add(loc, q, (int)strlen(q));
 	}
+}
+
+/* the presets a given `ci plan --job <name>` schedules (parity uses this to
+   credit workflow coverage wherever a .yml references that plan) */
+static void plan_presets(const char *job, StrSet *s) {
+	int i, t;
+	if (!strcmp(job, "linux")) {
+		static const char **T[] = {
+				PS_LINUX_GCC, PS_LINUX_CLANG, PS_DEV, PS_SUPER, 0};
+		for (t = 0; T[t]; t++)
+			for (i = 0; T[t][i]; i++)
+				set_add(s, T[t][i], (int)strlen(T[t][i]));
+	} else if (!strcmp(job, "macos")) {
+		for (i = 0; PS_DARWIN[i]; i++)
+			set_add(s, PS_DARWIN[i], (int)strlen(PS_DARWIN[i]));
+	} else if (!strcmp(job, "msvc")) {
+		for (i = 0; PS_WIN_MSVC[i]; i++)
+			set_add(s, PS_WIN_MSVC[i], (int)strlen(PS_WIN_MSVC[i]));
+	} else if (!strcmp(job, "qemu")) {
+		for (i = 0; QARCH[i]; i++) {
+			char q[64];
+			snprintf(q, sizeof q, "qemu-%s", QARCH[i]);
+			set_add(s, q, (int)strlen(q));
+		}
+	} else if (!strcmp(job, "dist-unix")) {
+		for (i = 0; PLAN_DIST_UNIX[i].preset; i++)
+			set_add(s, PLAN_DIST_UNIX[i].preset,
+							(int)strlen(PLAN_DIST_UNIX[i].preset));
+	} else if (!strcmp(job, "dist-windows")) {
+		for (i = 0; PLAN_DIST_WIN[i].preset; i++)
+			set_add(s, PLAN_DIST_WIN[i].preset,
+							(int)strlen(PLAN_DIST_WIN[i].preset));
+	}
+}
+
+/* collect the job names workflow files request via `ci plan --job <name>` */
+static void yml_plan_jobs(const char *text, StrSet *jobs) {
+	const char *p;
+	for (p = text; (p = strstr(p, "--job")) != NULL;) {
+		const char *q = p + 5, *s;
+		p = q;
+		while (*q == ' ')
+			q++;
+		s = q;
+		while (yml_word(*q))
+			q++;
+		if (q > s)
+			set_add(jobs, s, (int)(q - s));
+	}
+}
+
+static void plan_cell(int *first, const char *fmt, ...) {
+	va_list ap;
+	printf("%s{", *first ? "" : ",");
+	*first = 0;
+	va_start(ap, fmt);
+	vprintf(fmt, ap);
+	va_end(ap);
+	printf("}");
+}
+
+/* Emit a workflow job's matrix cells as a JSON `include` list, generated
+   from the preset ledger — the .yml jobs consume this via fromJSON, so the
+   schedule has exactly one source (shared with `ci local`). */
+static int do_plan(int argc, char **argv) {
+	const char *job = NULL;
+	int i, k, first = 1;
+
+	for (i = 0; i < argc; i++)
+		if (!strcmp(argv[i], "--job") && i + 1 < argc)
+			job = argv[++i];
+	if (!job) {
+		fprintf(stderr,
+						"usage: ci plan --job <linux|macos|msvc|qemu|dist-unix|dist-windows>\n");
+		return 2;
+	}
+	printf("[");
+	if (!strcmp(job, "linux")) {
+		static const char **T[] = {PS_LINUX_GCC, PS_LINUX_CLANG, PS_DEV, 0};
+		int t;
+		for (t = 0; T[t]; t++)
+			for (i = 0; T[t][i]; i++)
+				for (k = 0; PLAN_HOSTS[k]; k++)
+					plan_cell(&first, "\"preset\":\"%s\",\"arch\":\"%s\"",
+										T[t][i], PLAN_HOSTS[k]);
+		for (i = 0; PS_SUPER[i]; i++) /* superbuild: no top-level test preset */
+			for (k = 0; PLAN_HOSTS[k]; k++)
+				plan_cell(&first,
+									"\"preset\":\"%s\",\"arch\":\"%s\",\"flags\":\"--no-test\"",
+									PS_SUPER[i], PLAN_HOSTS[k]);
+	} else if (!strcmp(job, "macos")) {
+		static const char *CC[] = {"clang", "gcc", 0};
+		for (i = 0; PS_DARWIN[i]; i++)
+			for (k = 0; CC[k]; k++)
+				plan_cell(&first, "\"preset\":\"%s\",\"cc\":\"%s\",\"arch\":\"arm64\"",
+									PS_DARWIN[i], CC[k]);
+		/* x86_64 under Rosetta 2: clang only (Homebrew gcc is arm64-only) */
+		for (i = 0; PS_DARWIN[i]; i++)
+			plan_cell(&first, "\"preset\":\"%s\",\"cc\":\"clang\",\"arch\":\"x86_64\"",
+								PS_DARWIN[i]);
+	} else if (!strcmp(job, "msvc")) {
+		for (i = 0; PS_WIN_MSVC[i]; i++)
+			for (k = 0; PLAN_WIN[k].arch; k++)
+				plan_cell(&first,
+									"\"preset\":\"%s\",\"arch\":\"%s\",\"runner\":\"%s\",\"msvcarch\":\"%s\"",
+									PS_WIN_MSVC[i], PLAN_WIN[k].arch,
+									PLAN_WIN[k].runner, PLAN_WIN[k].msvcarch);
+	} else if (!strcmp(job, "qemu")) {
+		static const char *L[] = {"glibc", "musl", 0};
+		int h, l;
+		for (h = 0; PLAN_HOSTS[h]; h++)
+			for (i = 0; QARCH[i]; i++)
+				for (l = 0; L[l]; l++)
+					plan_cell(&first,
+										"\"host\":\"%s\",\"arch\":\"%s\",\"libc\":\"%s\",\"preset\":\"qemu-%s\"",
+										PLAN_HOSTS[h], QARCH[i], L[l], QARCH[i]);
+	} else if (!strcmp(job, "dist-unix")) {
+		for (i = 0; PLAN_DIST_UNIX[i].preset; i++)
+			plan_cell(&first, "\"preset\":\"%s\",\"plat\":\"%s\",\"os\":\"%s\"%s",
+								PLAN_DIST_UNIX[i].preset, PLAN_DIST_UNIX[i].plat,
+								PLAN_DIST_UNIX[i].os,
+								PLAN_DIST_UNIX[i].rosetta ? ",\"rosetta\":true" : "");
+	} else if (!strcmp(job, "dist-windows")) {
+		for (i = 0; PLAN_DIST_WIN[i].preset; i++)
+			plan_cell(&first,
+								"\"preset\":\"%s\",\"plat\":\"%s\",\"runner\":\"%s\",\"msvcarch\":\"%s\"%s",
+								PLAN_DIST_WIN[i].preset, PLAN_DIST_WIN[i].plat,
+								PLAN_DIST_WIN[i].runner, PLAN_DIST_WIN[i].msvcarch,
+								PLAN_DIST_WIN[i].mingw ? ",\"mingw\":true" : "");
+	} else {
+		fprintf(stderr, "ci plan: unknown job '%s'\n", job);
+		return 2;
+	}
+	printf("]\n");
+	return 0;
 }
 
 static char *par_read(const char *root, const char *rel) {
@@ -1032,9 +1212,13 @@ static char *par_read(const char *root, const char *rel) {
 }
 
 static int do_parity(int argc, char **argv) {
+	static const char *WF[] = {
+			".github/workflows/ci.yml",
+			".github/workflows/release.yml",
+			".github/workflows/dist.yml", 0};
 	const char *root = ".";
-	char *text, *ci_vals, *rel_vals;
-	StrSet all, loc;
+	char *text, *wf_vals[8] = {0};
+	StrSet all, loc, wfplan;
 	int i, miss = 0, checked = 0, list_only = 0;
 
 	for (i = 0; i < argc; i++) {
@@ -1064,16 +1248,23 @@ static int do_parity(int argc, char **argv) {
 	scan_presets(text, par_collect_cb, &all);
 	free(text);
 
-	if (!(text = par_read(root, ".github/workflows/ci.yml")))
-		return 2;
-	ci_vals = yml_preset_values(text);
-	free(text);
-	if (!(text = par_read(root, ".github/workflows/release.yml")))
-		return 2;
-	rel_vals = yml_preset_values(text);
-	free(text);
-	if (!ci_vals || !rel_vals)
-		return 2;
+	/* workflow coverage = literal preset values named by the .yml files
+	   plus everything scheduled by the `ci plan --job <x>` calls they make */
+	memset(&wfplan, 0, sizeof wfplan);
+	for (i = 0; WF[i]; i++) {
+		StrSet jobs;
+		int k;
+		if (!(text = par_read(root, WF[i])))
+			return 2;
+		wf_vals[i] = yml_preset_values(text);
+		memset(&jobs, 0, sizeof jobs);
+		yml_plan_jobs(text, &jobs);
+		for (k = 0; k < jobs.n; k++)
+			plan_presets(jobs.v[k], &wfplan);
+		free(text);
+		if (!wf_vals[i])
+			return 2;
+	}
 
 	qsort(all.v, (size_t)all.n, PAR_LEN, par_cmp);
 	qsort(loc.v, (size_t)loc.n, PAR_LEN, par_cmp);
@@ -1083,12 +1274,14 @@ static int do_parity(int argc, char **argv) {
 	for (i = 0; i < all.n; i++) {
 		const char *nm = all.v[i];
 		const char *why = par_exempt(nm);
-		int in_ci, in_loc;
+		int in_ci, in_loc, w;
 		if (why) {
 			printf("  %-28s exempt - %s\n", nm, why);
 			continue;
 		}
-		in_ci = yml_has_preset(ci_vals, nm) || yml_has_preset(rel_vals, nm);
+		in_ci = set_has(&wfplan, nm);
+		for (w = 0; !in_ci && WF[w]; w++)
+			in_ci = yml_has_preset(wf_vals[w], nm);
 		in_loc = set_has(&loc, nm);
 		printf("  %-28s %-10s %s\n", nm,
 					 in_ci ? "ok" : "MISSING", in_loc ? "ok" : "MISSING");
@@ -1109,8 +1302,8 @@ static int do_parity(int argc, char **argv) {
 			miss++;
 		}
 	printf("========================================================\n");
-	free(ci_vals);
-	free(rel_vals);
+	for (i = 0; WF[i]; i++)
+		free(wf_vals[i]);
 	if (miss) {
 		fprintf(stderr, "preset parity: %d gap(s) across %d checked preset(s)\n",
 						miss, checked);
@@ -1550,7 +1743,7 @@ static int do_junit_summary(int argc, char **argv) {
 
 int main(int argc, char **argv) {
 	if (argc < 2) {
-		fprintf(stderr, "usage: ci <stage|run-preset|qemu|local|dist|matrix|parity|bench-summary|pkg|sha256sums> ...\n");
+		fprintf(stderr, "usage: ci <stage|run-preset|qemu|local|dist|matrix|plan|parity|bench-summary|pkg|sha256sums> ...\n");
 		return 2;
 	}
 	if (!strcmp(argv[1], "stage"))
@@ -1567,6 +1760,8 @@ int main(int argc, char **argv) {
 		return do_matrix(argc - 2, argv + 2);
 	if (!strcmp(argv[1], "parity"))
 		return do_parity(argc - 2, argv + 2);
+	if (!strcmp(argv[1], "plan"))
+		return do_plan(argc - 2, argv + 2);
 	if (!strcmp(argv[1], "bench-summary"))
 		return do_bench_summary(argc - 2, argv + 2);
 	if (!strcmp(argv[1], "pkg"))

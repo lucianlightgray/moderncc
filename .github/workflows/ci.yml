@@ -13,26 +13,34 @@ permissions:
   contents: read
 
 jobs:
+  plan:
+    # Every job matrix below is generated from the preset ledger in
+    # tools/ci.c (`ci plan --job <x>`), so the schedule has exactly one
+    # source of truth, shared with `ci local` and checked by `ci parity`.
+    runs-on: ubuntu-latest
+    outputs:
+      linux: ${{ steps.gen.outputs.linux }}
+      macos: ${{ steps.gen.outputs.macos }}
+      msvc: ${{ steps.gen.outputs.msvc }}
+      qemu: ${{ steps.gen.outputs.qemu }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: gen
+        run: |
+          cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl
+          echo "linux=$(/tmp/mcc-ci plan --job linux)" >> "$GITHUB_OUTPUT"
+          echo "macos=$(/tmp/mcc-ci plan --job macos)" >> "$GITHUB_OUTPUT"
+          echo "msvc=$(/tmp/mcc-ci plan --job msvc)" >> "$GITHUB_OUTPUT"
+          echo "qemu=$(/tmp/mcc-ci plan --job qemu)" >> "$GITHUB_OUTPUT"
+
   linux:
-    # Full preset x arch cross-product: every Linux-runnable CI preset plus the
-    # developer presets (default host cc), each on both runner arches. The
-    # `matrix` preset is the gcc;clang x native;cross superbuild, which has no
-    # top-level test preset (each cell runs its own ctest during the build),
-    # hence the --no-test include below.
+    needs: plan
     name: ${{ matrix.preset }} / ${{ matrix.arch }}
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
-        preset: [linux-gcc, linux-gcc-cross, linux-clang, linux-clang-cross,
-                 linux-gcc-release, linux-clang-release, linux-gcc-musl,
-                 linux-gcc-static, linux-gcc-multisource, linux-gcc-asm-off,
-                 linux-gcc-predefs-off, linux-gcc-pie, linux-gcc-dwarf,
-                 linux-gcc-diagnostics, linux-gcc-sanitize,
-                 debug, release, sanitize, diagnostics, cst, ast, cross, matrix]
-        arch: [x86_64, arm64]
-        include:
-          - { preset: matrix, flags: --no-test }
+        include: ${{ fromJSON(needs.plan.outputs.linux) }}
     env:
       ART: mcc-${{ matrix.preset }}-${{ matrix.arch }}
     steps:
@@ -60,21 +68,13 @@ jobs:
           path: ${{ env.ART }}.tar.xz
 
   macos:
+    needs: plan
     name: ${{ matrix.preset }} / ${{ matrix.cc }} / ${{ matrix.arch }}
     runs-on: macos-15
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { preset: macos,       cc: clang, arch: arm64 }
-          - { preset: macos-cross, cc: clang, arch: arm64 }
-          - { preset: macos,       cc: gcc,   arch: arm64 }
-          - { preset: macos-cross, cc: gcc,   arch: arm64 }
-          # x86_64 cross-produced by the universal clang (-arch x86_64) and
-          # executed under Rosetta 2, as in dist-macos. clang only: Homebrew
-          # GNU gcc is a single-target arm64 compiler and cannot emit x86_64.
-          - { preset: macos,       cc: clang, arch: x86_64 }
-          - { preset: macos-cross, cc: clang, arch: x86_64 }
+        include: ${{ fromJSON(needs.plan.outputs.macos) }}
     env:
       ART: mcc-${{ matrix.preset }}-${{ matrix.cc }}-${{ matrix.arch }}
     steps:
@@ -116,16 +116,13 @@ jobs:
             dist/bench-*.txt
 
   msvc:
+    needs: plan
     name: ${{ matrix.preset }} / ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { preset: msvc,          arch: x86_64, runner: windows-latest, msvcarch: x64 }
-          - { preset: msvc,          arch: arm64,  runner: windows-11-arm, msvcarch: arm64 }
-          - { preset: sanitize-msvc, arch: x86_64, runner: windows-latest, msvcarch: x64 }
-          - { preset: sanitize-msvc, arch: arm64,  runner: windows-11-arm, msvcarch: arm64 }
+        include: ${{ fromJSON(needs.plan.outputs.msvc) }}
     env:
       ART: mcc-${{ matrix.preset }}-${{ matrix.arch }}
     steps:
@@ -194,22 +191,13 @@ jobs:
     # runners (no Docker), on both host arches. One job per (host x arch x
     # libc) cell keeps each run small and fetches only that cell's Gentoo
     # stage3 sysroot (target-side data, so the cache is shared across hosts).
+    needs: plan
     name: qemu / ${{ matrix.host }} / ${{ matrix.arch }} / ${{ matrix.libc }}
     runs-on: ${{ matrix.host == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
-        host: [x86_64, arm64]
-        arch: [x86_64, i386, arm, arm64, riscv64]
-        libc: [glibc, musl]
-        include:
-          # map each arch cell to its literal preset name — the canonical
-          # label stays greppable and `ci parity` can verify coverage
-          - { arch: x86_64,  preset: qemu-x86_64 }
-          - { arch: i386,    preset: qemu-i386 }
-          - { arch: arm,     preset: qemu-arm }
-          - { arch: arm64,   preset: qemu-arm64 }
-          - { arch: riscv64, preset: qemu-riscv64 }
+        include: ${{ fromJSON(needs.plan.outputs.qemu) }}
     steps:
       - uses: actions/checkout@v5
       - name: install qemu-user + toolchain
@@ -236,128 +224,7 @@ jobs:
           /tmp/mcc-ci junit-summary "cmake-qemu-${{ matrix.arch }}/ctest-junit.xml" \
             "qemu / ${{ matrix.host }} / ${{ matrix.arch }} / ${{ matrix.libc }}" >> "$GITHUB_STEP_SUMMARY" || true
 
-  dist-matrix:
-    runs-on: ubuntu-latest
-    outputs:
-      presets: ${{ steps.gen.outputs.presets }}
-    steps:
-      - uses: actions/checkout@v5
-      - id: gen
-        run: |
-          cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl
-          echo "presets=$(/tmp/mcc-ci matrix --filter dist-linux --json)" >> "$GITHUB_OUTPUT"
-
   dist:
-    needs: dist-matrix
-    name: ${{ matrix.preset }} / ${{ matrix.arch }}
-    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        preset: ${{ fromJSON(needs.dist-matrix.outputs.presets) }}
-        arch: [x86_64, arm64]
-    steps:
-      - uses: actions/checkout@v5
-      - name: install toolchain
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends cmake ninja-build gcc clang
-      - name: dist (configure + build + install + bench + package)
-        run: |
-          set -eux
-          cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl
-          /tmp/mcc-ci dist --preset ${{ matrix.preset }} \
-            --plat "${{ matrix.preset }}-${{ matrix.arch }}" --version "ci-${GITHUB_SHA::12}"
-      - name: benchmark summary
-        if: always()
-        run: /tmp/mcc-ci bench-summary --plat "${{ matrix.preset }}-${{ matrix.arch }}" --append "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v7
-        with:
-          name: mcc-${{ matrix.preset }}-${{ matrix.arch }}
-          path: |
-            dist/*.tar.xz
-            dist/checksums-*.txt
-            dist/bench-*.txt
-
-  dist-macos:
-    name: dist-macos / ${{ matrix.arch }}
-    # Both arches run on the Apple-silicon runner: arm64 natively, x86_64
-    # cross-produced by the universal clang (-arch x86_64) and executed under
-    # Rosetta 2 -- GitHub's Intel macos-13 image is being retired.
-    runs-on: macos-15
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [x86_64, arm64]
-    steps:
-      - uses: actions/checkout@v5
-      - name: install Rosetta 2 (run x86_64 binaries on Apple silicon)
-        if: matrix.arch == 'x86_64'
-        run: sudo softwareupdate --install-rosetta --agree-to-license
-      - name: install toolchain
-        run: |
-          brew untap aws/tap 2>/dev/null || true
-          brew install cmake ninja
-      - name: dist (configure + build + install + strip + bench + package)
-        # `ci dist` folds in the macOS local-symbol strip, as in release.yml
-        run: |
-          set -eux
-          cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c
-          extra=""
-          if [ "${{ matrix.arch }}" = x86_64 ]; then
-            extra="-- -DCMAKE_OSX_ARCHITECTURES=x86_64 -DMCC_TARGET_ARCH=x86_64"
-          fi
-          /tmp/mcc-ci dist --preset dist-macos \
-            --plat "dist-macos-${{ matrix.arch }}" --version "ci-${GITHUB_SHA::12}" $extra
-      - name: benchmark summary
-        if: always()
-        run: /tmp/mcc-ci bench-summary --plat "dist-macos-${{ matrix.arch }}" --append "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v7
-        with:
-          name: mcc-dist-macos-${{ matrix.arch }}
-          path: |
-            dist/*.tar.xz
-            dist/checksums-*.txt
-            dist/bench-*.txt
-
-  dist-windows:
-    # Release dist packaging for Windows via the `ci dist` tool, both toolchains:
-    # MSVC (x86_64 + arm64) and mingw (x86_64, superbuild fetches winlibs GCC).
-    # The tool is bootstrapped with cl — the same two sources the `ci` CMake
-    # target builds — so the whole dist flow lives in one place across platforms.
-    name: dist-windows / ${{ matrix.plat }}
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { toolchain: msvc,  runner: windows-latest, arch: x64,   plat: windows-x86_64-msvc,  preset: dist-msvc }
-          - { toolchain: msvc,  runner: windows-11-arm, arch: arm64, plat: windows-arm64-msvc,   preset: dist-msvc }
-          - { toolchain: mingw, runner: windows-latest, arch: x64,   plat: windows-x86_64-mingw, preset: dist-mingw }
-    steps:
-      - uses: actions/checkout@v5
-      - name: set up MSVC dev shell (cl for the ci bootstrap + mingw driver)
-        uses: TheMrMilchmann/setup-msvc-dev@v4
-        with:
-          arch: ${{ matrix.arch }}
-      - name: install ninja
-        if: matrix.toolchain == 'mingw'
-        run: choco install ninja -y
-      - name: build ci tool
-        run: cl /nologo /O2 /Fe:ci.exe tools\ci.c tools\toolsupport.c
-      - name: dist (configure + build + install + bench + package)
-        run: .\ci.exe dist --preset ${{ matrix.preset }} --plat ${{ matrix.plat }} --version "ci-$($env:GITHUB_SHA.Substring(0,12))"
-      - name: benchmark summary
-        if: always()
-        run: |
-          Add-Content $env:GITHUB_STEP_SUMMARY "### benchmark - ${{ matrix.plat }}"
-          Add-Content $env:GITHUB_STEP_SUMMARY '```'
-          Get-Content dist/bench-*.txt | Add-Content $env:GITHUB_STEP_SUMMARY
-          Add-Content $env:GITHUB_STEP_SUMMARY '```'
-      - uses: actions/upload-artifact@v7
-        with:
-          name: mcc-${{ matrix.plat }}
-          path: |
-            dist/*.zip
-            dist/checksums-*.txt
-            dist/bench-*.txt
+    # Shared dist pipeline (.github/workflows/dist.yml, also used by
+    # release.yml); with no version input it stamps ci-<sha12>.
+    uses: ./.github/workflows/dist.yml

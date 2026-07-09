@@ -118,7 +118,15 @@ flags — and every workflow job drives its preset through the `ci` tool
 (configure + build + ctest-with-junit + optional `--bench`/install, `-D`
 overrides forwarded), `ci qemu`, and `ci dist` are the same C flow whether the
 runner shell is bash or pwsh, and `ci bench-summary --append` writes the
-step-summary section shell-agnostically. A preset name is the canonical label for a scenario and
+step-summary section shell-agnostically. The job *matrices* are generated too:
+a `plan` job runs `ci plan --job <linux|macos|msvc|qemu|dist-unix|dist-windows>`
+and the jobs consume the JSON via `fromJSON`, so the schedule lives in one
+place — the preset ledger tables in `tools/ci.c`, shared with `ci local`.
+The dist pipeline is one reusable workflow (`dist.yml`, `workflow_call`)
+invoked by both `ci.yml` (version `ci-<sha12>`) and `release.yml` (the tag);
+artifacts are `mcc-<plat>` with release-style plats (`linux-x86_64-gcc`,
+`macos-arm64-clang`, `windows-x86_64-msvc`, …) in both pipelines.
+A preset name is the canonical label for a scenario and
 is reused verbatim as the CI job / matrix cell name and, where applicable, the
 docker `PRESET` env — so `linux-gcc`, `msvc`, `qemu-arm64`, `dist-linux-gcc`
 name the same thing everywhere.
@@ -132,13 +140,15 @@ plain name (`gcc`/`clang`), and comes from `$env{CC}` only where the path is
 host-dynamic (macOS Homebrew gcc). Hidden bases are prefixed `_`
 (`_base`, `_ninja`, `_dist`, `_test*`).
 
-**Developer presets** — interactive use (`cmake --preset debug`). CI's `linux`
-job runs the full preset × arch cross-product — each of these plus every
-`linux-*` preset, on both x86_64 and arm64 runners, with the default host cc
-(`matrix` build-only via `--no-test` — the superbuild has no top-level test
-preset and instead runs ctest per cell during the build; `local-ci` is the
-orchestrator itself and is the one preset with no CI cell). `ci local`
-schedules the same set:
+**Developer presets** — interactive use (`cmake --preset debug`). CI and
+`ci local` schedule the two that cover unique scenarios — `release` (the only
+Release+musl test run) and `ast` (the only `MCC_AST` build) — plus `matrix`
+(the superbuild, build-only via `--no-test`: no top-level test preset, each
+cell ctests during the build), each on both x86_64 and arm64 runners. The
+rest (`debug`, `cst`, `sanitize`, `diagnostics`, `cross`) are **aliases**: they
+build the identical tree to a pinned `linux-gcc*` cell with an unpinned host
+cc, so they are parity-exempt interactive conveniences, not CI cells
+(`local-ci` likewise — it *is* the orchestrator):
 
 | Preset | CMAKE_BUILD_TYPE | Key overrides |
 |---|---|---|
@@ -198,7 +208,9 @@ and shared across hosts); `qemu` alone is the full local matrix:
 | `qemu` | all (`x86_64;i386;arm;arm64;riscv64`) | Debug, `MCC_ENABLE_CROSS=ON`, `MCC_QEMU_TESTS=ON`, `MCC_QEMU_LIBCS=glibc;musl` |
 | `qemu-x86_64` … `qemu-riscv64` | that one arch | inherit `qemu` |
 
-**dist presets** — release artifacts (`ci.yml` `dist`, `release.yml`). Every dist
+**dist presets** — release artifacts (the shared `dist.yml` pipeline, called
+by both `ci.yml` and `release.yml`; cells from `ci plan --job dist-unix` /
+`--job dist-windows`). Every dist
 build produces *all* permutations: Release, `MCC_BUILD_TESTS=OFF`,
 `MCC_SINGLE_SOURCE=OFF` (so `mcc-dynamic` builds), `MCC_BUILD_STATIC_LIB=ON` **and**
 `MCC_BUILD_DYNAMIC_LIB=ON` (both `libmcc-static.a` + `libmcc-dynamic.so`),
@@ -233,9 +245,11 @@ summary.
 
 **Parity is machine-checked**: `ci parity` (run in every build as the
 `preset-parity-invariant` ctest) diffs the non-hidden configure presets against
-the workflow cells (`ci.yml`/`release.yml`) and the `ci local` schedule tables
-(`tools/ci.c` `PS_*`), failing on any preset without both a CI cell and a local
-slot; `local-ci` and the `qemu` umbrella are the two curated exemptions, and
+workflow coverage (the presets scheduled by each `ci plan --job <x>` a workflow
+references, plus literal preset mentions, across `ci.yml`/`release.yml`/
+`dist.yml`) and against the ledger tables (`tools/ci.c` `PS_*`/`PLAN_*`),
+failing on any preset without both. The curated exemptions are `local-ci`, the
+`qemu` umbrella, and the five alias dev presets; and
 `diff <(ci matrix | sort -u) <(ci parity --list)` is empty by construction.
 
 Build presets exist for every configure preset; test presets exist for all
