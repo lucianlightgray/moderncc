@@ -424,6 +424,9 @@ static void gen_inline_functions(MCCState *s);
 static void resolve_alias_fixups(MCCState *s);
 static void free_inline_functions(MCCState *s);
 static void finalize_tentative_arrays(void);
+#if defined(CONFIG_AST) && CONFIG_AST
+static void ast_reemit_forward_inlines(void); /* Tier-4 defer-to-TU (end-of-TU) */
+#endif
 static void skip_or_save_block(TokenString **str);
 static void gv_dup(void);
 static int get_temp_local_var(int size, int align, int *r2);
@@ -808,6 +811,9 @@ ST_FUNC int mccgen_compile(MCCState *s1) {
 	parse_flags = PARSE_FLAG_PREPROCESS | PARSE_FLAG_TOK_NUM | PARSE_FLAG_TOK_STR;
 	next();
 	decl(VT_CONST);
+#if defined(CONFIG_AST) && CONFIG_AST
+	ast_reemit_forward_inlines(); /* Tier-4 defer-to-TU: inline forward-declared callees */
+#endif
 	finalize_tentative_arrays();
 	gen_inline_functions(s1);
 	resolve_alias_fixups(s1);
@@ -12136,6 +12142,19 @@ static struct AstInlineFn {
 } ast_inline_pool[AST_INLINE_MAX];
 static int ast_inline_n;
 
+/* Tier-4 defer-to-TU: functions that call a static function which was NOT yet retained when
+ * they were emitted — a possible forward-inline miss (the callee is defined later in the TU).
+ * At end-of-TU (all callees now retained) any such function whose forward call is now graftable
+ * is RE-EMITTED with inlining at a fresh text offset, and its symbol is repointed to the new
+ * code (the original emission becomes dead). Retained only in non-debug builds where inline runs. */
+static struct AstReemitFn {
+	Sym *sym;
+	AstArena *ast;
+	int inline_n_at_gen; /* ast_inline_n when this function was emitted; a callee at pool
+	                      * index >= this was retained later (a forward reference) */
+} ast_reemit_pool[AST_INLINE_MAX];
+static int ast_reemit_n;
+
 /* Callee metadata captured right after gfunc_prolog (when the param local Syms carry
  * their assigned frame offsets); transferred into the pool entry at retention. */
 static int ast_inline_cap_np;
@@ -12420,6 +12439,63 @@ static int ast_inline_retain(AstArena *a, Sym *sym) {
 						get_tok_str(sym->v, NULL), (int)ast_count(a), e->nparams, e->frame_size,
 						e->graftable ? "graftable" : "retained-only");
 	return 1;
+}
+
+/* Retain a function that calls a static function, for possible end-of-TU re-emission (a
+ * forward-inline miss). Returns 1 if retained (caller must not free the AST). */
+static int ast_reemit_retain(AstArena *a, Sym *sym) {
+	if (!ast_inline_env || ast_bail || ast_desync || ast_reemit_n >= AST_INLINE_MAX)
+		return 0;
+	AstLocal nn = ast_count(a);
+	int has_static_call = 0;
+	for (AstLocal n = 0; n < nn; n++) {
+		uint16_t k = ast_kind(a, n);
+		if (k == AST_Invoke) {
+			AstLocal ce = ast_first_child(a, n);
+			void *cs = ce != AST_NONE ? (void *)(uintptr_t)ast_sym(a, ce) : NULL;
+			if (cs && (((Sym *)cs)->type.t & VT_STATIC) &&
+					(((Sym *)cs)->type.t & VT_BTYPE) == VT_FUNC)
+				has_static_call = 1;
+		}
+		/* Re-emission at end-of-TU re-reads this body's captured Sym pointers; an anon
+		 * rodata ref (string literal / const) can be recycled after this function's own gen,
+		 * dangling by re-emission time (an unresolved `<\0>` reloc). Exclude such functions —
+		 * they fall back to a real forward call. (Same cross-function Sym-lifetime limit as
+		 * the string-referencing callee exclusion; lifting both needs Sym persistence.) */
+		if (k == AST_Ref || k == AST_Literal) {
+			int r = ast_op(a, n);
+			void *sp = (void *)(uintptr_t)ast_sym(a, n);
+			if (sp && (r & VT_SYM) && (r & VT_VALMASK) == VT_CONST &&
+					((Sym *)sp)->v >= SYM_FIRST_ANOM)
+				return 0;
+		}
+	}
+	if (!has_static_call)
+		return 0;
+	ast_reemit_pool[ast_reemit_n].sym = sym;
+	ast_reemit_pool[ast_reemit_n].ast = a;
+	ast_reemit_pool[ast_reemit_n].inline_n_at_gen = ast_inline_n;
+	ast_reemit_n++;
+	return 1;
+}
+
+/* Does this re-emit candidate call a callee that was retained AFTER it (pool index >=
+ * inline_n_at_gen) and is now graftable — i.e. a forward inline it missed originally? */
+static int ast_reemit_has_forward(struct AstReemitFn *f) {
+	AstArena *a = f->ast;
+	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++) {
+		if (ast_kind(a, n) != AST_Invoke)
+			continue;
+		AstLocal ce = ast_first_child(a, n);
+		void *cs = ce != AST_NONE ? (void *)(uintptr_t)ast_sym(a, ce) : NULL;
+		if (!cs)
+			continue;
+		for (int i = f->inline_n_at_gen; i < ast_inline_n; i++)
+			if (ast_inline_pool[i].sym == cs && ast_inline_pool[i].graftable)
+				return 1;
+	}
+	return 0;
 }
 #endif /* end the arch-independent virtual-inline block */
 
@@ -13632,7 +13708,11 @@ static void gen_function(Sym *sym) {
 			mcc_free(orig);
 			mcc_free(orig_rel);
 		}
-		if (!ast_inline_retain(ast_cur, sym)) /* Tier-4: retain inline candidates */
+		/* Tier-4: keep the AST if it is an inline candidate OR a defer-to-TU re-emit
+		 * candidate (calls a static function, maybe a forward inline). */
+		int keep_inline = ast_inline_retain(ast_cur, sym);
+		int keep_reemit = ast_reemit_retain(ast_cur, sym);
+		if (!keep_inline && !keep_reemit)
 			ast_arena_free(ast_cur);
 		ast_cur = NULL;
 	}
@@ -13684,6 +13764,94 @@ static void gen_function(Sym *sym) {
 
 	next();
 }
+
+#if defined(CONFIG_AST) && CONFIG_AST
+/* Tier-4 defer-to-TU: re-emit `sym`'s body from its retained AST with inlining, at a fresh
+ * text offset, and repoint the symbol to it. Mirrors gen_function's prologue/replay/epilogue
+ * but drives the body from the AST (parser-independent) with no parse and no byte-verify —
+ * the AST was already proven faithful at the original emission. Non-debug only. */
+static void ast_reemit(Sym *sym, AstArena *ast) {
+	struct scope f = {0};
+	cur_scope = root_scope = &f;
+	nocode_wanted = 0;
+	cur_text_section = text_section;
+	ind = cur_text_section->data_offset;
+	if (sym->a.aligned) {
+		size_t no = section_add(cur_text_section, 0, 1 << (sym->a.aligned - 1));
+		gen_fill_nops(no - ind);
+	}
+	int new_ind = ind;
+	funcname = get_tok_str(sym->v, NULL);
+	func_ind = ind;
+	func_vt = sym->type.ref->type;
+	func_var = sym->type.ref->f.func_type == FUNC_ELLIPSIS;
+	func_old = sym->type.ref->f.func_type == FUNC_OLD;
+	cur_func_noreturn = sym->type.ref->f.func_noreturn;
+	cur_func_inline_extern = 0;
+	vla_seq = 0;
+	nb_vla_open = 0;
+	vla_track_ovf = 0;
+
+	sym_push2(&local_stack, SYM_FIELD, 0, 0);
+	local_scope = 1;
+	sym_push_params(sym->type.ref);
+	local_scope = 0;
+	rsym = 0;
+	nb_temp_local_vars = 0;
+	gfunc_prolog(sym);
+	func_vla_arg(sym);
+
+	Sym *saved_free = sym_free_first;
+	sym_free_first = NULL;
+	ast_cur = ast;
+	ast_replaying = 1;
+	ast_rp_switch = NULL;
+	ast_rp_nlabel = 0;
+	ast_rp_label_floor = 0;
+	ast_rp_bsym = ast_rp_csym = NULL;
+	ast_fconst_i = 0;
+	ast_locrec_i = 0;
+	ast_promo_n = 0;
+	ast_pinned_regs = 0;
+	ast_inline_active = 1;
+	ast_replay_body(ast);
+	ast_inline_active = 0;
+	ast_replaying = 0;
+	sym_free_first = saved_free;
+	ast_cur = NULL;
+
+	gsym(rsym);
+	ast_promo_n = 0;
+	nocode_wanted = 0;
+	gfunc_epilog();
+	put_extern_sym(sym, cur_text_section, new_ind, ind - new_ind); /* repoint symbol */
+	elfsym(sym)->st_size = ind - new_ind;
+	cur_text_section->data_offset = ind;
+
+	sym_pop(&local_stack, NULL, 0);
+	label_pop(&global_label_stack, NULL, 0);
+	sym_pop(&all_cleanups, NULL, 0);
+	local_scope = 0;
+	cur_text_section = NULL;
+	funcname = "";
+	func_vt.t = VT_VOID;
+	func_var = 0;
+	ind = 0;
+	func_ind = -1;
+	nocode_wanted = DATA_ONLY_WANTED;
+	if (ast_replay_dump)
+		fprintf(stderr, "[ast-inline] re-emitted %s (forward inline)\n",
+						get_tok_str(sym->v, NULL));
+}
+
+/* End-of-TU: re-emit every retained function that missed a forward inline (a call to a
+ * static function defined later, now graftable). Called after the whole TU is parsed. */
+static void ast_reemit_forward_inlines(void) {
+	for (int i = 0; i < ast_reemit_n; i++)
+		if (ast_reemit_has_forward(&ast_reemit_pool[i]))
+			ast_reemit(ast_reemit_pool[i].sym, ast_reemit_pool[i].ast);
+}
+#endif
 
 static void gen_inline_functions(MCCState *s) {
 	Sym *sym;

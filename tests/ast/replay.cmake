@@ -81,6 +81,17 @@ if(INLINES)
     endforeach()
 endif()
 
+# REEMITS: with Tier-4 defer-to-TU on (INLINE), each named function must have been re-emitted
+# at end-of-TU with a forward-declared callee inlined (proving the defer path fired).
+if(REEMITS)
+    string(REPLACE "," ";" _reemits "${REEMITS}")
+    foreach(_fn IN LISTS _reemits)
+        if(NOT _r1_all MATCHES "\\[ast-inline\\] re-emitted ${_fn} ")
+            message(FATAL_ERROR "expected defer-to-TU to re-emit '${_fn}', but it did not:\n${_r1_all}")
+        endif()
+    endforeach()
+endif()
+
 # FOLDS: with the const-fold template on (TEMPLATES), the named function must
 # have actually folded at least one Binary(Lit,Lit) — proving the template fired
 # and the byte-verify net kept the replay faithful (not a silent no-op/fallback).

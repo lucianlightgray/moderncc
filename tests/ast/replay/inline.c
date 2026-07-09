@@ -82,6 +82,19 @@ loop:
 	}
 	return s;
 }
+/* defer-to-TU: fwd_sum is defined BEFORE fwd_callee but calls it — at fwd_sum's original
+ * emission fwd_callee is not yet retained, so its call is not inlined. At end-of-TU
+ * fwd_sum is RE-EMITTED with fwd_callee grafted, and its symbol repointed. (No string
+ * literals, so it is re-emit-eligible.) main calls it through a pointer so the re-emitted
+ * body is actually executed, not grafted away. */
+static int fwd_callee(int x);
+static int fwd_sum(int n) {
+	int s = 0;
+	for (int i = 0; i < n; i++)
+		s += fwd_callee(i);
+	return s;
+}
+static int fwd_callee(int x) { return x + 1; }
 
 int main(void) {
 	int r = add(3, 4);              /* 7 */
@@ -97,6 +110,8 @@ int main(void) {
 	struct Pair pr = mkpair(2, 3);       /* struct return: {2,3} */
 	int m = pr.a + pr.b;                 /* 5 */
 	int gs = gsum(5);                    /* goto loop: 0+1+2+3+4 = 10 */
-	return r + s + t + u + c + g + d + q + p + m + gs - 60;
-	/* 7+30+13+7+5+0+10+8+7+5+10 - 60 = 42 */
+	int (*fp)(int) = fwd_sum;            /* via pointer -> a real call to the re-emitted body */
+	int fw = fp(4);                      /* fwd_callee(0..3) = 1+2+3+4 = 10 */
+	return r + s + t + u + c + g + d + q + p + m + gs + fw - 70;
+	/* 7+30+13+7+5+0+10+8+7+5+10+10 - 70 = 42 */
 }
