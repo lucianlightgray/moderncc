@@ -227,6 +227,13 @@ per-workload compiler table, and a test-results table parsed from a ctest
 report into the release `bundle-`; CI also uploads it and posts it to the job
 summary.
 
+**Parity is machine-checked**: `ci parity` (run in every build as the
+`preset-parity-invariant` ctest) diffs the non-hidden configure presets against
+the workflow cells (`ci.yml`/`release.yml`) and the `ci local` schedule tables
+(`tools/ci.c` `PS_*`), failing on any preset without both a CI cell and a local
+slot; `local-ci` and the `qemu` umbrella are the two curated exemptions, and
+`diff <(ci matrix | sort -u) <(ci parity --list)` is empty by construction.
+
 Build presets exist for every configure preset; test presets exist for all
 except the build-only (`mingw`), test-less (`dist-*`), superbuild
 (`matrix`), and `local-ci` (whose own build `test` target reproduces CI) ones —

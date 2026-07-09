@@ -298,6 +298,49 @@ typedef struct
 	int no_test; /* build-only preset: no top-level test preset exists */
 } LocJob;
 
+/* The curated preset ledger — one table per scheduling group. `ci local`
+   drives its per-OS plan from these, and `ci parity` checks them (plus the
+   workflow files) against CMakePresets.json. Adding a preset there means
+   adding it here and to the workflow matrices, or `ci parity` (and the
+   preset-parity-invariant ctest) fails. */
+static const char *PS_LINUX_GCC[] = {
+		"linux-gcc", "linux-gcc-cross",
+		"linux-gcc-release", "linux-gcc-musl",
+		"linux-gcc-static", "linux-gcc-multisource",
+		"linux-gcc-asm-off", "linux-gcc-predefs-off",
+		"linux-gcc-pie", "linux-gcc-dwarf",
+		"linux-gcc-diagnostics", "linux-gcc-sanitize", 0};
+static const char *PS_LINUX_CLANG[] = {
+		"linux-clang", "linux-clang-cross",
+		"linux-clang-release", 0};
+static const char *PS_DEV[] = {
+		"debug", "release", "sanitize",
+		"diagnostics", "cst", "ast", "cross", 0};
+/* gcc;clang x native;cross superbuild: needs both compilers; build-only
+   (no top-level test preset - each cell runs its own ctest while building) */
+static const char *PS_SUPER[] = {"matrix", 0};
+static const char *PS_DARWIN[] = {"macos", "macos-cross", 0};
+static const char *PS_WIN_MSVC[] = {"msvc", "sanitize-msvc", 0};
+/* build-only: the mingw superbuild has no test preset either */
+static const char *PS_WIN_BUILDONLY[] = {"mingw", 0};
+/* [0] dist-linux-gcc  [1] dist-linux-clang  [2] dist-macos
+   [3] dist-msvc       [4] dist-mingw        (indexed by do_local) */
+static const char *PS_DIST[] = {
+		"dist-linux-gcc", "dist-linux-clang",
+		"dist-macos", "dist-msvc", "dist-mingw", 0};
+static const char *QARCH[] = {"x86_64", "i386", "arm", "arm64", "riscv64", 0};
+static const char *QBIN[] = {
+		"qemu-x86_64", "qemu-i386", "qemu-arm",
+		"qemu-aarch64", "qemu-riscv64", 0};
+
+/* presets deliberately without a CI cell or `ci local` slot */
+static const struct {
+	const char *name, *why;
+} PS_EXEMPT[] = {
+		{"local-ci", "the local-CI orchestrator itself (MCC_LOCAL_CI_AS_TEST)"},
+		{"qemu", "umbrella; the per-arch qemu-* presets are the cells"},
+		{0, 0}};
+
 static int loc_have(const char *name) {
 	char buf[4096];
 	return host_find_tool(name, ".exe", buf, sizeof buf);
@@ -391,10 +434,6 @@ static int do_local(int argc, char **argv) {
 	char skip[LOC_MAX][160], results[LOC_MAX * 2][192];
 	int n_test = 0, n_dist = 0, n_skip = 0, n_res = 0, n_fail = 0;
 	int keep_going = 1, i, stop = 0;
-	static const char *QARCH[] = {"x86_64", "i386", "arm", "arm64", "riscv64", 0};
-	static const char *QBIN[] = {
-			"qemu-x86_64", "qemu-i386", "qemu-arm",
-			"qemu-aarch64", "qemu-riscv64", 0};
 	int have_gcc, have_clang, have_cl, have_wine, have_mingw, have_docker;
 	int qfound[8], n_qemu = 0;
 #if MCC_HOST_WIN32
@@ -453,66 +492,51 @@ static int do_local(int argc, char **argv) {
 	} while (0)
 
 	if (!strcmp(os, "Linux")) {
-		static const char *G[] = {
-				"linux-gcc", "linux-gcc-cross",
-				"linux-gcc-release", "linux-gcc-musl",
-				"linux-gcc-static", "linux-gcc-multisource",
-				"linux-gcc-asm-off", "linux-gcc-predefs-off",
-				"linux-gcc-pie", "linux-gcc-dwarf",
-				"linux-gcc-diagnostics", "linux-gcc-sanitize", 0};
-		static const char *C[] = {
-				"linux-clang", "linux-clang-cross",
-				"linux-clang-release", 0};
-		static const char *D[] = {
-				"debug", "release", "sanitize",
-				"diagnostics", "cst", "ast", "cross", 0};
-		for (i = 0; G[i]; i++) {
+		for (i = 0; PS_LINUX_GCC[i]; i++) {
 			if (have_gcc)
-				LOC_TEST(G[i], "", 0);
+				LOC_TEST(PS_LINUX_GCC[i], "", 0);
 			else
-				LOC_SKIP("%s - gcc not found", G[i]);
+				LOC_SKIP("%s - gcc not found", PS_LINUX_GCC[i]);
 		}
-		for (i = 0; C[i]; i++) {
+		for (i = 0; PS_LINUX_CLANG[i]; i++) {
 			if (have_clang)
-				LOC_TEST(C[i], "", 0);
+				LOC_TEST(PS_LINUX_CLANG[i], "", 0);
 			else
-				LOC_SKIP("%s - clang not found", C[i]);
+				LOC_SKIP("%s - clang not found", PS_LINUX_CLANG[i]);
 		}
 		/* developer presets: default host cc */
-		for (i = 0; D[i]; i++) {
+		for (i = 0; PS_DEV[i]; i++) {
 			if (have_gcc || have_clang)
-				LOC_TEST(D[i], "", 0);
+				LOC_TEST(PS_DEV[i], "", 0);
 			else
-				LOC_SKIP("%s - no C compiler (need gcc or clang)", D[i]);
+				LOC_SKIP("%s - no C compiler (need gcc or clang)", PS_DEV[i]);
 		}
-		/* gcc;clang x native;cross superbuild: no top-level test preset
-		   (each cell runs its own ctest during the build) */
-		if (have_gcc && have_clang)
-			LOC_TEST("matrix", "", 1);
-		else
-			LOC_SKIP("%s - needs both gcc and clang (gcc;clang superbuild)",
-							 "matrix");
+		for (i = 0; PS_SUPER[i]; i++) {
+			if (have_gcc && have_clang)
+				LOC_TEST(PS_SUPER[i], "", 1);
+			else
+				LOC_SKIP("%s - needs both gcc and clang (gcc;clang superbuild)",
+								 PS_SUPER[i]);
+		}
 	} else if (!strcmp(os, "Darwin")) {
-		static const char *M[] = {"macos", "macos-cross", 0};
-		for (i = 0; M[i]; i++) {
+		for (i = 0; PS_DARWIN[i]; i++) {
 			if (have_clang)
-				LOC_TEST(M[i], "clang", 0);
+				LOC_TEST(PS_DARWIN[i], "clang", 0);
 			if (have_gcc)
-				LOC_TEST(M[i], "gcc", 0);
+				LOC_TEST(PS_DARWIN[i], "gcc", 0);
 			if (!have_clang && !have_gcc)
-				LOC_SKIP("%s - no C compiler (need clang or gcc)", M[i]);
+				LOC_SKIP("%s - no C compiler (need clang or gcc)", PS_DARWIN[i]);
 		}
 	} else if (!strcmp(os, "Windows")) {
-		if (have_cl) {
-			LOC_TEST("msvc", "", 0);
-			LOC_TEST("sanitize-msvc", "", 0);
-		} else {
-			LOC_SKIP("%s - cl (MSVC) not found (run from a VS dev shell)", "msvc");
-			LOC_SKIP("%s - cl (MSVC) not found (run from a VS dev shell)",
-							 "sanitize-msvc");
+		for (i = 0; PS_WIN_MSVC[i]; i++) {
+			if (have_cl)
+				LOC_TEST(PS_WIN_MSVC[i], "", 0);
+			else
+				LOC_SKIP("%s - cl (MSVC) not found (run from a VS dev shell)",
+								 PS_WIN_MSVC[i]);
 		}
-		/* build-only preset (superbuild fetches winlibs GCC; no test preset) */
-		LOC_TEST("mingw", "", 1);
+		for (i = 0; PS_WIN_BUILDONLY[i]; i++)
+			LOC_TEST(PS_WIN_BUILDONLY[i], "", 1);
 	}
 
 	if (!loc_env_on("LOCAL_CI_SKIP_QEMU")) {
@@ -535,22 +559,22 @@ static int do_local(int argc, char **argv) {
 		if (!strcmp(os, "Linux")) {
 			if (have_gcc) {
 				snprintf(plat, sizeof plat, "linux-%s-gcc", host_cpu);
-				LOC_DIST("dist-linux-gcc", "", plat);
+				LOC_DIST(PS_DIST[0], "", plat);
 			}
 			if (have_clang) {
 				snprintf(plat, sizeof plat, "linux-%s-clang", host_cpu);
-				LOC_DIST("dist-linux-clang", "", plat);
+				LOC_DIST(PS_DIST[1], "", plat);
 			}
 		} else if (!strcmp(os, "Darwin")) {
 			snprintf(plat, sizeof plat, "macos-%s-clang", host_cpu);
-			LOC_DIST("dist-macos", "clang", plat);
+			LOC_DIST(PS_DIST[2], "clang", plat);
 		} else if (!strcmp(os, "Windows")) {
 			if (have_cl) {
 				snprintf(plat, sizeof plat, "windows-%s-msvc", host_cpu);
-				LOC_DIST("dist-msvc", "", plat);
+				LOC_DIST(PS_DIST[3], "", plat);
 			}
 			snprintf(plat, sizeof plat, "windows-%s-mingw", host_cpu);
-			LOC_DIST("dist-mingw", "", plat);
+			LOC_DIST(PS_DIST[4], "", plat);
 		}
 	} else {
 		LOC_SKIP("%s", "dist-* - skipped (LOCAL_CI_SKIP_RELEASE)");
@@ -683,7 +707,9 @@ static int do_dist(int argc, char **argv) {
 static const char *g_filter;
 static int g_json, g_json_first = 1;
 
-static void emit_preset(const char *b, const char *e) {
+typedef void (*PresetCb)(const char *name, int len, void *ud);
+
+static void preset_obj(const char *b, const char *e, PresetCb cb, void *ud) {
 	const char *nm = NULL, *p;
 	int hidden = 0;
 	for (p = b; p + 6 <= e; p++) {
@@ -711,52 +737,22 @@ static void emit_preset(const char *b, const char *e) {
 	}
 	if (nm && !hidden) {
 		const char *q = nm;
-		int len;
 		while (*q != '"')
 			q++;
-		len = (int)(q - nm);
-		if (g_filter && strncmp(nm, g_filter, strlen(g_filter)))
-			return;
-		if (g_json) {
-			printf("%s\"%.*s\"", g_json_first ? "" : ",", len, nm);
-			g_json_first = 0;
-		} else
-			printf("%.*s\n", len, nm);
+		cb(nm, (int)(q - nm), ud);
 	}
 }
 
-static int do_matrix(int argc, char **argv) {
-	const char *file = NULL;
-	char *text, *p, *arr;
-	int instr = 0, esc = 0, depth = 0, i;
+/* iterate the non-hidden configurePresets of an already-read presets json */
+static void scan_presets(const char *text, PresetCb cb, void *ud) {
+	const char *arr, *p;
 	const char *obj_start = NULL;
+	int instr = 0, esc = 0, depth = 0;
 
-	for (i = 0; i < argc; i++) {
-		if (!strcmp(argv[i], "--filter") && i + 1 < argc)
-			g_filter = argv[++i];
-		else if (!strcmp(argv[i], "--json"))
-			g_json = 1;
-		else if (!file)
-			file = argv[i];
-	}
-	if (!file)
-		file = "CMakePresets.json";
-	text = ts_read_file(file, NULL);
-	if (!text) {
-		fprintf(stderr, "ci: cannot read %s\n", file);
-		return 2;
-	}
-	if (!(arr = strstr(text, "\"configurePresets\""))) {
-		free(text);
-		return 0;
-	}
-	p = strchr(arr, '[');
-	if (!p) {
-		free(text);
-		return 0;
-	}
-	if (g_json)
-		printf("[");
+	if (!(arr = strstr(text, "\"configurePresets\"")))
+		return;
+	if (!(p = strchr(arr, '[')))
+		return;
 	for (++p; *p; p++) {
 		char c = *p;
 		if (instr) {
@@ -778,15 +774,278 @@ static int do_matrix(int argc, char **argv) {
 			depth++;
 		} else if (c == '}') {
 			if (--depth == 0 && obj_start) {
-				emit_preset(obj_start, p + 1);
+				preset_obj(obj_start, p + 1, cb, ud);
 				obj_start = NULL;
 			}
 		} else if (c == ']' && depth == 0)
 			break;
 	}
+}
+
+static void matrix_emit_cb(const char *nm, int len, void *ud) {
+	(void)ud;
+	if (g_filter && strncmp(nm, g_filter, strlen(g_filter)))
+		return;
+	if (g_json) {
+		printf("%s\"%.*s\"", g_json_first ? "" : ",", len, nm);
+		g_json_first = 0;
+	} else
+		printf("%.*s\n", len, nm);
+}
+
+static int do_matrix(int argc, char **argv) {
+	const char *file = NULL;
+	char *text;
+	int i;
+
+	for (i = 0; i < argc; i++) {
+		if (!strcmp(argv[i], "--filter") && i + 1 < argc)
+			g_filter = argv[++i];
+		else if (!strcmp(argv[i], "--json"))
+			g_json = 1;
+		else if (!file)
+			file = argv[i];
+	}
+	if (!file)
+		file = "CMakePresets.json";
+	text = ts_read_file(file, NULL);
+	if (!text) {
+		fprintf(stderr, "ci: cannot read %s\n", file);
+		return 2;
+	}
+	if (g_json)
+		printf("[");
+	scan_presets(text, matrix_emit_cb, NULL);
 	if (g_json)
 		printf("]\n");
 	free(text);
+	return 0;
+}
+
+/* ---- parity: CMakePresets.json vs workflow cells vs the `ci local` plan --
+   The three views of "which scenarios exist" must agree: every non-hidden
+   configure preset (minus the curated PS_EXEMPT list) needs a workflow cell
+   (ci.yml or release.yml) and a slot in the PS_* local tables. Sort-uniq-diff
+   semantics: sorted sets, missing/stale rows reported, non-zero on any gap. */
+
+#define PAR_MAX 128
+#define PAR_LEN 64
+
+typedef struct {
+	char v[PAR_MAX][PAR_LEN];
+	int n;
+} StrSet;
+
+static void set_add(StrSet *s, const char *nm, int len) {
+	int i;
+	if (len >= PAR_LEN)
+		len = PAR_LEN - 1;
+	for (i = 0; i < s->n; i++)
+		if ((int)strlen(s->v[i]) == len && !strncmp(s->v[i], nm, (size_t)len))
+			return;
+	if (s->n < PAR_MAX) {
+		memcpy(s->v[s->n], nm, (size_t)len);
+		s->v[s->n][len] = 0;
+		s->n++;
+	}
+}
+
+static int set_has(const StrSet *s, const char *nm) {
+	int i;
+	for (i = 0; i < s->n; i++)
+		if (!strcmp(s->v[i], nm))
+			return 1;
+	return 0;
+}
+
+static void par_collect_cb(const char *nm, int len, void *ud) {
+	set_add((StrSet *)ud, nm, len);
+}
+
+static int par_cmp(const void *a, const void *b) {
+	return strcmp((const char *)a, (const char *)b);
+}
+
+static int yml_word(char c) {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+				 (c >= '0' && c <= '9') || c == '_' || c == '-';
+}
+
+/* Collect every preset *value* a workflow file names: the text after each
+   `preset:` key (following a multi-line [..] flow list to its bracket) and
+   the token after each `--preset` flag in run scripts. Token checks then
+   only see real cell values, not comments or job names. */
+static char *yml_preset_values(const char *text) {
+	char *out = malloc(2 * strlen(text) + 16);
+	size_t o = 0;
+	const char *p;
+
+	if (!out)
+		return NULL;
+	for (p = text; (p = strstr(p, "preset:")) != NULL;) {
+		const char *q = p + 7;
+		p = q;
+		while (*q == ' ' || *q == '\t')
+			q++;
+		if (*q == '[') {
+			int depth = 0;
+			for (; *q; q++) {
+				if (*q == '[')
+					depth++;
+				else if (*q == ']' && --depth == 0)
+					break;
+				out[o++] = (*q == '\n') ? ' ' : *q;
+			}
+		} else {
+			while (*q && *q != '\n' && *q != ',' && *q != '}' && *q != '#')
+				out[o++] = *q++;
+		}
+		out[o++] = '\n';
+	}
+	for (p = text; (p = strstr(p, "--preset")) != NULL;) {
+		const char *q = p + 8;
+		p = q;
+		while (*q == ' ')
+			q++;
+		while (yml_word(*q))
+			out[o++] = *q++;
+		out[o++] = '\n';
+	}
+	out[o] = 0;
+	return out;
+}
+
+static int yml_has_preset(const char *values, const char *name) {
+	size_t n = strlen(name);
+	const char *p = values;
+	while ((p = strstr(p, name)) != NULL) {
+		if ((p == values || !yml_word(p[-1])) && !yml_word(p[n]))
+			return 1;
+		p++;
+	}
+	return 0;
+}
+
+static const char *par_exempt(const char *nm) {
+	int i;
+	for (i = 0; PS_EXEMPT[i].name; i++)
+		if (!strcmp(nm, PS_EXEMPT[i].name))
+			return PS_EXEMPT[i].why;
+	return NULL;
+}
+
+/* union of the PS_* tables = every preset `ci local` can schedule */
+static void par_local_set(StrSet *loc) {
+	static const char **T[] = {
+			PS_LINUX_GCC, PS_LINUX_CLANG, PS_DEV, PS_SUPER,
+			PS_DARWIN, PS_WIN_MSVC, PS_WIN_BUILDONLY, PS_DIST, 0};
+	int t, k;
+	for (t = 0; T[t]; t++)
+		for (k = 0; T[t][k]; k++)
+			set_add(loc, T[t][k], (int)strlen(T[t][k]));
+	for (k = 0; QARCH[k]; k++) {
+		char q[64];
+		snprintf(q, sizeof q, "qemu-%s", QARCH[k]);
+		set_add(loc, q, (int)strlen(q));
+	}
+}
+
+static char *par_read(const char *root, const char *rel) {
+	char path[4096];
+	char *text;
+	ts_path(path, sizeof path, root, "%s", rel);
+	text = ts_read_file(path, NULL);
+	if (!text)
+		fprintf(stderr, "ci: cannot read %s\n", path);
+	return text;
+}
+
+static int do_parity(int argc, char **argv) {
+	const char *root = ".";
+	char *text, *ci_vals, *rel_vals;
+	StrSet all, loc;
+	int i, miss = 0, checked = 0, list_only = 0;
+
+	for (i = 0; i < argc; i++) {
+		if (!strcmp(argv[i], "--srcroot") && i + 1 < argc)
+			root = argv[++i];
+		else if (!strcmp(argv[i], "--list"))
+			list_only = 1;
+	}
+
+	memset(&loc, 0, sizeof loc);
+	par_local_set(&loc);
+
+	if (list_only) {
+		/* the curated coverage list (local slots + exemptions), sorted -
+		   `diff <(ci matrix | sort) <(ci parity --list)` must be empty */
+		for (i = 0; PS_EXEMPT[i].name; i++)
+			set_add(&loc, PS_EXEMPT[i].name, (int)strlen(PS_EXEMPT[i].name));
+		qsort(loc.v, (size_t)loc.n, PAR_LEN, par_cmp);
+		for (i = 0; i < loc.n; i++)
+			printf("%s\n", loc.v[i]);
+		return 0;
+	}
+
+	memset(&all, 0, sizeof all);
+	if (!(text = par_read(root, "CMakePresets.json")))
+		return 2;
+	scan_presets(text, par_collect_cb, &all);
+	free(text);
+
+	if (!(text = par_read(root, ".github/workflows/ci.yml")))
+		return 2;
+	ci_vals = yml_preset_values(text);
+	free(text);
+	if (!(text = par_read(root, ".github/workflows/release.yml")))
+		return 2;
+	rel_vals = yml_preset_values(text);
+	free(text);
+	if (!ci_vals || !rel_vals)
+		return 2;
+
+	qsort(all.v, (size_t)all.n, PAR_LEN, par_cmp);
+	qsort(loc.v, (size_t)loc.n, PAR_LEN, par_cmp);
+
+	printf("==================== preset parity ====================\n");
+	printf("  %-28s %-10s %s\n", "preset", "workflows", "ci-local");
+	for (i = 0; i < all.n; i++) {
+		const char *nm = all.v[i];
+		const char *why = par_exempt(nm);
+		int in_ci, in_loc;
+		if (why) {
+			printf("  %-28s exempt - %s\n", nm, why);
+			continue;
+		}
+		in_ci = yml_has_preset(ci_vals, nm) || yml_has_preset(rel_vals, nm);
+		in_loc = set_has(&loc, nm);
+		printf("  %-28s %-10s %s\n", nm,
+					 in_ci ? "ok" : "MISSING", in_loc ? "ok" : "MISSING");
+		if (!in_ci || !in_loc)
+			miss++;
+		checked++;
+	}
+	for (i = 0; i < loc.n; i++)
+		if (!set_has(&all, loc.v[i]) && !par_exempt(loc.v[i])) {
+			printf("  %-28s STALE - in the `ci local` tables but not a preset\n",
+						 loc.v[i]);
+			miss++;
+		}
+	for (i = 0; PS_EXEMPT[i].name; i++)
+		if (!set_has(&all, PS_EXEMPT[i].name)) {
+			printf("  %-28s STALE - exempted but not a preset\n",
+						 PS_EXEMPT[i].name);
+			miss++;
+		}
+	printf("========================================================\n");
+	free(ci_vals);
+	free(rel_vals);
+	if (miss) {
+		fprintf(stderr, "preset parity: %d gap(s) across %d checked preset(s)\n",
+						miss, checked);
+		return 1;
+	}
+	printf("preset parity: %d preset(s) checked, full coverage.\n", checked);
 	return 0;
 }
 
@@ -1220,7 +1479,7 @@ static int do_junit_summary(int argc, char **argv) {
 
 int main(int argc, char **argv) {
 	if (argc < 2) {
-		fprintf(stderr, "usage: ci <stage|run-preset|qemu|local|dist|matrix|pkg|sha256sums> ...\n");
+		fprintf(stderr, "usage: ci <stage|run-preset|qemu|local|dist|matrix|parity|pkg|sha256sums> ...\n");
 		return 2;
 	}
 	if (!strcmp(argv[1], "stage"))
@@ -1235,6 +1494,8 @@ int main(int argc, char **argv) {
 		return do_dist(argc - 2, argv + 2);
 	if (!strcmp(argv[1], "matrix"))
 		return do_matrix(argc - 2, argv + 2);
+	if (!strcmp(argv[1], "parity"))
+		return do_parity(argc - 2, argv + 2);
 	if (!strcmp(argv[1], "pkg"))
 		return do_pkg(argc - 2, argv + 2);
 	if (!strcmp(argv[1], "sha256sums"))

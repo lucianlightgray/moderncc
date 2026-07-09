@@ -2934,6 +2934,14 @@ if(MCC_BUILD_TESTS)
             COMMAND "$<TARGET_FILE:ckconfig>" src CMakeLists.txt
             WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
         set_tests_properties(config-drift-invariant PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
+        # Preset-parity invariant (docs/BUILD.md §2): every non-hidden preset in
+        # CMakePresets.json must have a workflow cell (ci.yml / release.yml) and
+        # a `ci local` slot; the curated tables + exemptions live in tools/ci.c.
+        add_test(NAME preset-parity-invariant
+            COMMAND "$<TARGET_FILE:ci>" parity --srcroot "${CMAKE_CURRENT_SOURCE_DIR}"
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+        set_tests_properties(preset-parity-invariant PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
     # AST intention-IR pure-library test harness (docs/AST.md §16/§17, D-c).

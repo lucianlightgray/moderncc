@@ -221,6 +221,14 @@ jobs:
         host: [x86_64, arm64]
         arch: [x86_64, i386, arm, arm64, riscv64]
         libc: [glibc, musl]
+        include:
+          # map each arch cell to its literal preset name — the canonical
+          # label stays greppable and `ci parity` can verify coverage
+          - { arch: x86_64,  preset: qemu-x86_64 }
+          - { arch: i386,    preset: qemu-i386 }
+          - { arch: arm,     preset: qemu-arm }
+          - { arch: arm64,   preset: qemu-arm64 }
+          - { arch: riscv64, preset: qemu-riscv64 }
     steps:
       - uses: actions/checkout@v5
       - name: install qemu-user + toolchain
@@ -236,7 +244,7 @@ jobs:
           key: gentoo-stage3-${{ matrix.arch }}-${{ matrix.libc }}
       - name: run qemu-${{ matrix.arch }} / ${{ matrix.libc }}
         env:
-          PRESET: qemu-${{ matrix.arch }}
+          PRESET: ${{ matrix.preset }}
           LIBCS: ${{ matrix.libc }}
         run: |
           cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl
