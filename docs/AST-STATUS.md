@@ -111,11 +111,12 @@ callee's body into the caller. Built in slices, all landed this session.
 
 ### What works
 
-A **`static`, non-variadic**, VLA-free, size-bounded function — with **local declarations**,
-**internal control flow (if/else, loops, `switch`, `break`/`continue`)**, **one or more value
-returns including early returns inside branches**, **`int`/pointer/`float`/`double` scalar params
-and struct/scalar returns**, and **its own calls** (leaf or not) — is inlined into a **later**
-caller (defined-before-use). Returns coalesce **via memory** (each stores to a dedicated
+A **`static`, non-variadic**, VLA-free, size-bounded function — with **local declarations**, **any
+intra-function control flow (if/else, loops, `switch`, `break`/`continue`, `goto`/named labels)**,
+**one or more value returns including early returns inside branches**, **`int`/pointer/`float`/
+`double` scalar params and struct/scalar returns**, and **its own calls** (leaf or not) — is
+inlined into a **later** caller (defined-before-use). The callee's control-flow replay state
+(labels via a **label floor**, plus `switch`/`break`/`continue`) is isolated from the caller's. Returns coalesce **via memory** (each stores to a dedicated
 result slot — struct-sized for a struct return — non-tail returns jump to a graft-local inline-end
 join), so several grafts feeding one call don't fight over a return register. A **non-leaf**
 callee's own calls graft recursively (a depth+stack **cycle guard**, max depth 8, stops
@@ -166,8 +167,10 @@ fixture (asserts `add`/`scale`/`madd`/`clamp`/`sgn`/`area`/`quad` graft).
   param offsets match the AST) and `put_extern_sym` to repoint the symbol; the original emission
   becomes dead code. Risks to handle: re-emission dependency order (leaves first), the dead-code
   relocations, and debug info. This is the largest remaining Tier-4 piece.
-- **Struct-by-value params** — need an ABI-correct bind (a `vstore`-to-slot works only for
-  ≤16-byte, register-passed structs; >16-byte memory-passed structs have a different frame layout).
+- **Struct-by-value params** — need an ABI-aware bind. A plain `vstore`-to-slot works for plain
+  ≤16-byte structs but miscompiles memory-passed (>16-byte) ones AND some ≤16-byte aggregates that
+  classify per member (verified: a `transparent_union` param). Struct *return* works (ABI-agnostic
+  memory coalesce); struct/union params fall back to a real call.
 - **`goto` / `switch`** — these touch the shared label/switch replay state, so need scoping.
 - **Struct-by-value params/return** — needs the aggregate-copy / sret ABI in the graft.
 - **Persist string/rodata Syms** — to lift the string-literal exclusion (currently such callees
