@@ -31,6 +31,12 @@
 #define MCC_HOST_BSD 0
 #endif
 
+#ifdef __GNU__
+#define MCC_HOST_HURD 1
+#else
+#define MCC_HOST_HURD 0
+#endif
+
 #define MCC_HOST_POSIX (!MCC_HOST_WIN32)
 
 #ifndef _WIN32

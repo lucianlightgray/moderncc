@@ -3,7 +3,7 @@
 static const char *BANNED[] = {
 		"_WIN32", "_WIN64", "_MSC_VER", "__MINGW32__", "__MINGW64__", "__CYGWIN__",
 		"__APPLE__", "__linux__", "__FreeBSD__", "__FreeBSD_kernel__", "__NetBSD__",
-		"__OpenBSD__", "__DragonFly__", "__ANDROID__", "__dietlibc__", 0};
+		"__OpenBSD__", "__DragonFly__", "__ANDROID__", "__dietlibc__", "__GNU__", 0};
 
 static int g_violations;
 

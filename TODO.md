@@ -25,7 +25,7 @@ format files add the local matrix / a qemu spot-check as noted.
 
 ## 3. Close the `__GNU__` hostgate straggler (trivial)
 
-- [ ] `mcc.h:178` `#if defined __GNU__` (Hurd elfinterp default) is the one raw
+- [x] `mcc.h:178` `#if defined __GNU__` (Hurd elfinterp default) is the one raw
       host-OS macro outside `mcchost.*`; add `__GNU__` to the BANNED list in
       `tools/hostgate.c:91-92` and route the test through the host/target
       abstraction. Gate: `host-gate-invariant` ctest stays green.
