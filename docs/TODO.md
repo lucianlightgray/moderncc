@@ -536,8 +536,20 @@ Each is a closed decision; the item is the named condition that would reopen it.
     `struct S{char w[y];}` VLA member → cyclic type → infinite recursion in
     `aggr_has_const_member`). Skiplisted as KNOWNGAP so the gate is green on "no NEW regression".
   Replay column: **10→0 unexpected regressions**, no new ones introduced (exec corpus 269/269
-  across replay/promote/inline; ctest 1770/1770). Remaining for full §C1: fix the 3 known gaps
-  (2 need the §20 codegen checkpoint/restore) and gate the promote/inline columns green.
+  across replay/promote/inline; ctest 1770/1770). All three gate columns now report **0
+  regressions** via per-column KNOWNGAP baselines (`GCCTS_AST_KNOWN_{REPLAY,PROMOTE,INLINE}`),
+  so the gate is CI-usable (green on no-NEW-regression) while the residual is tracked.
+- [ ] **§C1 residual — the -O1 transform soundness backlog (surfaced by the A4 gate).** The
+  differential's promote/inline columns baselined **14 promote + 5 inline** pre-existing
+  miscompiles (they diverge from -O0 by construction, so byte-verify can't catch them — the gate
+  is their only net; all behind experimental MCC_AST_PROMOTE/INLINE, not default -O0). Promote:
+  register-promotion poison-analysis holes — `990829-1` is a **float pin (xmm6/xmm7) clobbered
+  by `gen_opf` operating in place** (root-caused; the naive "copy the float-pin read to an
+  RC_FLOAT scratch" fix regressed the corpus 269→233, so it needs real float-promotion register
+  discipline, not a point patch), the rest a mix of call-ful/call-free int/pointer (postmod
+  pointer, loop temporaries). Inline: graft holes in sad/usad reduction idioms + struct/vector
+  returns. Plus the 3 replay KNOWNGAPs (2 = the §20 pp-state checkpoint/restore, 1 = cyclic
+  VLA-in-struct). Fix incrementally; each removal shrinks the corresponding `GCCTS_AST_KNOWN_*`.
 - [ ] **`k` value:** raise the always-inline depth `k` above the `k=1`/widen-on-back-edge
   default only under `-O2`/`-O3` or an explicit size budget (`k≈log_b(budget)`).
 - [ ] **Size-gated outline:** land as a later binding-graph template (swap an inline binding

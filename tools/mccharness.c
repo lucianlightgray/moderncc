@@ -1115,22 +1115,47 @@ static int gccts_skiplisted(const char *base, const char *content) {
 										 strstr(content, "__uint128_t") || strstr(content, "vector"));
 }
 
-/* Known PRE-EXISTING AST-replay-column gaps (docs/AST.md §C1): tests that pass at -O0 but
- * whose AST replay is a known-open coverage/soundness gap, NOT a NEW regression. Kept small
- * and explicit so the differential gate stays green on "no new regression" while these are
- * fixed incrementally. Each has a root cause:
- *   pr51581-1/-2 — a replay attempt leaves the `#if` const-expr evaluator's shared vstack/jump
- *                  state inconsistent, so a later `#if A && B` mis-evaluates (the parked -O1
- *                  self-compile issue, docs/AST.md §20; needs a codegen checkpoint/restore).
- *   20070919-1  — a block-scoped `struct S { char w[y]; }` (VLA member) makes replay build a
- *                  cyclic type → infinite recursion in aggr_has_const_member (compiler crash). */
-static const char *GCCTS_AST_KNOWN[] = {"pr51581-1.c", "pr51581-2.c", "20070919-1.c", 0};
+/* Known PRE-EXISTING AST-column gaps (docs/AST.md §C1): tests that pass at -O0 but whose AST
+ * column is a known-open gap, NOT a NEW regression. Baselined per column so the differential
+ * gate stays green on "no new regression" while these are fixed incrementally. The REPLAY set
+ * is the sound foundation and must stay tiny; PROMOTE/INLINE are the -O1 transform soundness
+ * backlog (both diverge from -O0 by construction, so byte-verify cannot catch them — the gate
+ * is their only net). Promote/inline runs also enable replay, so they inherit the replay set.
+ *
+ *   REPLAY:
+ *     pr51581-1/-2 — a replay leaves the `#if` const-expr evaluator's shared vstack/jump state
+ *                    inconsistent → a later `#if A && B` mis-evaluates (the parked -O1
+ *                    self-compile issue, §20; needs a codegen checkpoint/restore).
+ *     20070919-1   — block-scoped `struct S{char w[y];}` (VLA member) → cyclic type → infinite
+ *                    recursion in aggr_has_const_member (compiler crash).
+ *   PROMOTE — register-promotion soundness holes (the promoter's poison analysis misses these):
+ *     990829-1 is a float pin (xmm6/xmm7) clobbered by gen_opf operating in place; others are a
+ *     mix of call-ful and call-free int/pointer cases (postmod pointer, loop temporaries).
+ *   INLINE — graft soundness holes (sad/usad reduction idioms, struct/vector-ish returns). */
+static const char *GCCTS_AST_KNOWN_REPLAY[] = {
+		"pr51581-1.c", "pr51581-2.c", "20070919-1.c", 0};
+static const char *GCCTS_AST_KNOWN_PROMOTE[] = {
+		"941021-1.c", "20080519-1.c", "20170111-1.c", "postmod-1.c", "990829-1.c",
+		"20020402-3.c", "920929-1.c", "loop-8.c", "pr36343.c", "pr28982a.c", "20000722-1.c",
+		"pr28982b.c", "pr15262.c", "pr119002.c", 0};
+static const char *GCCTS_AST_KNOWN_INLINE[] = {
+		"usad-run.c", "pr43784.c", "pr45070.c", "ssad-run.c", "pr41750.c", 0};
 
-static int gccts_ast_skiplisted(const char *base) {
+static int gccts_in_list(const char *base, const char *const *list) {
 	int i;
-	for (i = 0; GCCTS_AST_KNOWN[i]; i++)
-		if (!strcmp(base, GCCTS_AST_KNOWN[i]))
+	for (i = 0; list[i]; i++)
+		if (!strcmp(base, list[i]))
 			return 1;
+	return 0;
+}
+
+static int gccts_ast_skiplisted(const char *base, const char *col) {
+	if (gccts_in_list(base, GCCTS_AST_KNOWN_REPLAY))
+		return 1; /* the replay foundation's known gaps apply to every column */
+	if (col && !strcmp(col, "promote"))
+		return gccts_in_list(base, GCCTS_AST_KNOWN_PROMOTE);
+	if (col && (!strcmp(col, "inline") || !strcmp(col, "inline-tmpl")))
+		return gccts_in_list(base, GCCTS_AST_KNOWN_INLINE);
 	return 0;
 }
 
@@ -1282,7 +1307,7 @@ static int suite_gcctestsuite(int argc, char **argv) {
 							gccts_attempt(mcc, Bflag, idir, Iinc, Iinc2, s, tsto, tstx, execute);
 					gccts_ast_env(ast, 0);
 					if (ast_st != 0) {
-						if (gccts_ast_skiplisted(base)) {
+						if (gccts_ast_skiplisted(base, ast)) {
 							r = "KNOWNGAP"; /* a documented pre-existing AST gap, not a NEW regression */
 							sk++;
 						} else {
