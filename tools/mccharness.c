@@ -2867,13 +2867,17 @@ static int suite_machostructural(int argc, char **argv) {
 	const char *xb = opt(argc, argv, "--xb", NULL);
 	const char *objcheck = opt(argc, argv, "--objcheck", NULL);
 	const char *work = opt(argc, argv, "--work", NULL);
+	const char *nativemcc = opt(argc, argv, "--nativemcc", NULL);
+	const char *nativearch = opt(argc, argv, "--nativearch", NULL);
+	const char *bdir = opt(argc, argv, "--bdir", NULL);
 	static const char *TGT[] = {"x86_64-osx", "arm64-osx", 0};
 	static const char *SKIPN[] = {"aggregates", "libc", "varargs", 0};
 	char conf[4300], Irt[4300];
 	int t, status = 0, any = 0, isd;
 
 	if (!src || !xb || !objcheck || !work) {
-		fprintf(stderr, "usage: mccharness machostructural --src --xb --objcheck --work\n");
+		fprintf(stderr, "usage: mccharness machostructural --src --xb --objcheck --work "
+										"[--nativemcc PATH --nativearch ARCH --bdir DIR]\n");
 		return 2;
 	}
 	ts_path(conf, sizeof conf, src, "tests/qemu/conformance");
@@ -2883,13 +2887,24 @@ static int suite_machostructural(int argc, char **argv) {
 	for (t = 0; TGT[t]; t++) {
 		const char *tgt = TGT[t];
 		char mcc[4300];
+		char Bf[4300];
 		char *files[4096];
 		int nf, i;
 		char vsrc[4300], vexe[4300], *err = NULL;
+		Bf[0] = 0;
 		ts_path(mcc, sizeof mcc, xb, "mcc-%s", tgt);
-		if (host_stat(mcc, &isd, NULL, NULL)) {
-			printf("SKIP %s: no mcc-%s\n", tgt, tgt);
-			continue;
+		if (host_stat(mcc, &isd, NULL, NULL) || isd) {
+			char want[64];
+			snprintf(want, sizeof want, "%s-osx", nativearch ? nativearch : "");
+			if (nativemcc && nativearch && !strcmp(tgt, want) &&
+					!host_stat(nativemcc, &isd, NULL, NULL) && !isd) {
+				snprintf(mcc, sizeof mcc, "%s", nativemcc);
+				if (bdir)
+					snprintf(Bf, sizeof Bf, "-B%s", bdir);
+			} else {
+				printf("SKIP %s: no mcc-%s\n", tgt, tgt);
+				continue;
+			}
 		}
 		any = 1;
 		nf = ts_glob(conf, "*.c", 0, files, 4096);
@@ -2908,6 +2923,8 @@ static int suite_machostructural(int argc, char **argv) {
 			{
 				Argv v = {{0}, 0};
 				A(&v, mcc);
+				if (Bf[0])
+					A(&v, Bf);
 				A(&v, Irt);
 				A(&v, f);
 				A(&v, "-o");
@@ -2944,6 +2961,8 @@ static int suite_machostructural(int argc, char **argv) {
 		{
 			Argv v = {{0}, 0};
 			A(&v, mcc);
+			if (Bf[0])
+				A(&v, Bf);
 			A(&v, Irt);
 			A(&v, "-mmacosx-version-min=12.3.1");
 			A(&v, vsrc);

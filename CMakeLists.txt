@@ -3082,10 +3082,10 @@ if(MCC_BUILD_TESTS)
             # within-TU static leaf `return EXPR` helper is grafted into a later caller in
             # place of the boundary Call. INLINES asserts the graft fired; the exit-code
             # equality vs -O0 is the gate (an inlined caller's bytes diverge from -O0). The
-            # graft is at the vstack/AST tier (arch-independent — it compiles and is exercised
-            # on every target), but the fixture assertion is only verified on x86_64 for now,
-            # so it is gated here to avoid asserting un-verified behavior on other native arches.
-            if(MCC_CPU STREQUAL "x86_64")
+            # graft is at the vstack/AST tier (arch-independent — compiled on every target);
+            # the fixture assertion is verified on x86_64 and arm64, so it is gated to those
+            # two native arches (see docs/AST-STATUS.md §5 for the arm64 graft fixes).
+            if(MCC_CPU STREQUAL "x86_64" OR MCC_CPU STREQUAL "arm64")
                 add_test(NAME "ast/replay-inline" COMMAND "${CMAKE_COMMAND}"
                     "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
                     "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/inline.c"
@@ -3109,7 +3109,7 @@ if(MCC_BUILD_TESTS)
                 set_tests_properties("ast/replay-inline-spec" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
             else()
                 mcc_skip_test("ast/replay-inline"
-                    "virtual-inline is arch-independent and compiles on ${MCC_CPU}, but the fixture assertion is only verified on x86_64 so far")
+                    "virtual-inline is arch-independent and compiles on ${MCC_CPU}, but the fixture assertion is only verified on x86_64/arm64 so far")
                 mcc_skip_test("ast/replay-inline-spec"
                     "per-site specialization is arch-independent but its fixture assertion is only verified on x86_64 so far")
             endif()
@@ -3973,17 +3973,29 @@ if(MCC_BUILD_TESTS)
             "native PE runtime conformance (only on a native WIN32 host)")
     endif()
 
-    if(_have_osx_cross)
+    # Structural Mach-O validation is objcheck-only (no execution), so on a native Darwin host
+    # it also runs with the plain `mcc` as the native-arch osx compiler (no cross tree needed);
+    # the x86_64-osx cross still supplies the x86_64 structural target under macos-cross. The
+    # exec-based macho-{codegen,image,apple-libc} drivers stay cross/loader-gated (see
+    # docs/TODO.md "macOS CI observations").
+    set(_macho_struct_native "")
+    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+        set(_macho_struct_native
+            --nativemcc "$<TARGET_FILE:mcc>" --nativearch "${MCC_CPU}"
+            --bdir "${CMAKE_BINARY_DIR}")
+    endif()
+    if(_have_osx_cross OR CMAKE_SYSTEM_NAME STREQUAL "Darwin")
         add_test(NAME macho-structural
             COMMAND "$<TARGET_FILE:mccharness>" machostructural
                     --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"
                     --objcheck "$<TARGET_FILE:objcheck>"
+                    ${_macho_struct_native}
                     --work "${CMAKE_BINARY_DIR}/macho-work")
         set_tests_properties(macho-structural PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
     else()
         mcc_skip_test(macho-structural
-            "requires the osx cross compilers (cmake --preset cross)")
+            "requires the osx cross compilers (cmake --preset cross) or a native Darwin host")
     endif()
 
     if(_have_osx_cross)

@@ -12339,14 +12339,6 @@ static int ast_inline_graftable(AstArena *a) {
  * instead of emitting the epilogue transfer. */
 static int ast_inline_active;
 static int ast_inline_bias;
-/* §19.2 per-param remap: a stack/memory-passed param (positive param_addr) is materialized
- * into a fresh negative caller slot, so its captured offset region [lo,hi) relocates by
- * `delta` (not the uniform ast_inline_bias). Consulted in ast_replay_value before the bias;
- * saved/restored around each graft so nested/sequential grafts compose. */
-static int ast_param_remap_n;
-static int ast_param_remap_lo[AST_INLINE_MAX_PARAMS];
-static int ast_param_remap_hi[AST_INLINE_MAX_PARAMS];
-static int ast_param_remap_delta[AST_INLINE_MAX_PARAMS];
 /* §19.3 per-site specialization: a CONSTANT argument bound to a read-only param is not stored
  * to a slot and re-loaded — its Literal is substituted at the param's Ref sites during body
  * replay, so gen_op/gvtst fold it (per-site constant-prop + dead-branch elim fall out for
@@ -12378,7 +12370,11 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 			e = &ast_inline_pool[i];
 			break;
 		}
-	if (!e || !e->graftable || (int)ast_nchild(a, n) - 1 != e->nparams)
+	if (!e || !e->graftable)
+		return 0;
+	int nargs = (int)ast_nchild(a, n) - 1;
+	int hidden = ((ast_type_t(a, n) & VT_BTYPE) == VT_STRUCT && nargs == e->nparams + 1) ? 1 : 0;
+	if (nargs - hidden != e->nparams)
 		return 0;
 	/* Cycle / depth guard for grafting a NON-leaf callee: its body may itself Invoke a
 	 * graftable function (grafted recursively below). Refuse if this callee is already on
@@ -12390,24 +12386,36 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 		if (ast_inline_stack[i] == csym)
 			return 0;
 	ast_inline_stack[ast_inline_depth++] = csym;
-	int bias = loc; /* callee offset co -> co + loc, into fresh space below the caller's */
-	loc -= e->frame_size; /* reserve it permanently: gfunc_epilog sizes the frame from loc */
-	/* §19.2: bind each arg by materializing it into a caller-frame slot (materialize-then-copy,
-	 * deleting the ABI). A register-class param keeps its biased spill slot; a stack/memory-
-	 * passed param (positive param_addr — >16B struct, x87, 7th+ overflow arg) gets a FRESH
-	 * negative slot whose region is recorded in maplo/hi/delta and installed as the param remap
-	 * for the body replay below. A struct arg block-copies via vstore. */
-	int nmap = 0, maplo[AST_INLINE_MAX_PARAMS];
-	int maphi[AST_INLINE_MAX_PARAMS], mapdelta[AST_INLINE_MAX_PARAMS];
+	/* Reserve the callee frame BELOW the caller's live locals AND any POSITIVE param
+	 * offsets. On arm64 register params spill ABOVE the frame pointer (positive); on x86_64
+	 * a memory-class (>16B) struct param is read from the positive incoming-args area — both
+	 * lie outside frame_size (negatives only). Shift the whole callee frame below the positive
+	 * param extent `hi` so nothing overlaps the caller's saved fp/lr or locals (x86_64 register
+	 * params are negative -> hi==0 -> bias==loc, byte-identical). Grafting DELETES the ABI:
+	 * every param — scalar, arm64-positive, or by-value struct — is materialized into its
+	 * biased slot (a struct arg block-copies via vstore, §19.2), so ABI class no longer matters. */
+	int hi = 0;
+	for (int i = 0; i < e->nparams; i++) {
+		CType pt;
+		pt.t = e->param_typ[i];
+		pt.ref = (Sym *)e->param_ref[i];
+		int pa, ps = type_size(&pt, &pa);
+		if (ps < 1)
+			ps = 1;
+		if (e->param_off[i] + ps > hi)
+			hi = e->param_off[i] + ps;
+	}
+	int bias = hi > 0 ? ((loc - hi) & -16) : loc; /* callee offset co -> co + bias */
+	loc = bias - e->frame_size; /* reserve it permanently: gfunc_epilog sizes the frame from loc */
 	int nsub = 0, suboff[AST_INLINE_MAX_PARAMS];
 	SValue subval[AST_INLINE_MAX_PARAMS];
 	for (int i = 0; i < e->nparams; i++) {
-		int dst;
+		int dst = e->param_off[i] + bias;
 		/* §19.3: a constant integer arg bound to a read-only param is constant-propagated
 		 * (substituted at the param's Ref sites during replay) instead of stored to a slot,
 		 * so gen_op/gvtst fold it — per-site specialization + dead-branch elim. Templates-
 		 * gated; the read-only query guards against a body that assigns/mutates the param. */
-		AstLocal arg = ast_child(a, n, i + 1);
+		AstLocal arg = ast_child(a, n, hidden + i + 1);
 		AstLocal cbase = arg; /* unwrap the arg-passing Convert(s) to the literal, if any */
 		while (ast_kind(a, cbase) == AST_Convert && ast_nchild(a, cbase) == 1)
 			cbase = ast_first_child(a, cbase);
@@ -12430,24 +12438,7 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 			nsub++;
 			continue; /* no slot, no store: reads are substituted below */
 		}
-		if (e->param_stack[i]) {
-			CType pt;
-			pt.t = e->param_typ[i];
-			pt.ref = (Sym *)e->param_ref[i];
-			int pal, psz = e->param_size[i];
-			type_size(&pt, &pal);
-			if (pal < 1)
-				pal = 1;
-			loc = (loc - psz) & -pal; /* fresh materialization slot, below the frame */
-			dst = loc;
-			maplo[nmap] = e->param_off[i];
-			maphi[nmap] = e->param_off[i] + psz;
-			mapdelta[nmap] = dst - e->param_off[i];
-			nmap++;
-		} else {
-			dst = e->param_off[i] + bias; /* register-class: biased spill slot */
-		}
-		ast_replay_value(a, ast_child(a, n, i + 1)); /* arg (caller frame, outer ctx) */
+		ast_replay_value(a, ast_child(a, n, hidden + i + 1)); /* arg (skip hidden sret ptr) */
 		SValue slot;
 		memset(&slot, 0, sizeof slot);
 		slot.type.t = e->param_typ[i];
@@ -12476,12 +12467,6 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 	int save_floor = ast_rp_label_floor, save_nlabel = ast_rp_nlabel;
 	struct switch_t *save_switch = ast_rp_switch;
 	int *save_bsym = ast_rp_bsym, *save_csym = ast_rp_csym;
-	int save_remap_n = ast_param_remap_n;
-	int save_remap_lo[AST_INLINE_MAX_PARAMS], save_remap_hi[AST_INLINE_MAX_PARAMS];
-	int save_remap_delta[AST_INLINE_MAX_PARAMS];
-	memcpy(save_remap_lo, ast_param_remap_lo, sizeof save_remap_lo);
-	memcpy(save_remap_hi, ast_param_remap_hi, sizeof save_remap_hi);
-	memcpy(save_remap_delta, ast_param_remap_delta, sizeof save_remap_delta);
 	int save_argsub_n = ast_argsub_n;
 	int save_argsub_off[AST_INLINE_MAX_PARAMS];
 	SValue save_argsub_val[AST_INLINE_MAX_PARAMS];
@@ -12500,10 +12485,6 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 	ast_rp_label_floor = ast_rp_nlabel;
 	ast_rp_switch = NULL;
 	ast_rp_bsym = ast_rp_csym = NULL;
-	ast_param_remap_n = nmap; /* §19.2: activate this graft's stack-param remap for the body */
-	memcpy(ast_param_remap_lo, maplo, sizeof maplo);
-	memcpy(ast_param_remap_hi, maphi, sizeof maphi);
-	memcpy(ast_param_remap_delta, mapdelta, sizeof mapdelta);
 	ast_argsub_n = nsub; /* §19.3: activate this graft's constant-arg substitutions */
 	memcpy(ast_argsub_off, suboff, sizeof suboff);
 	memcpy(ast_argsub_val, subval, sizeof subval);
@@ -12526,10 +12507,6 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 	ast_rp_switch = save_switch;
 	ast_rp_bsym = save_bsym;
 	ast_rp_csym = save_csym;
-	ast_param_remap_n = save_remap_n;
-	memcpy(ast_param_remap_lo, save_remap_lo, sizeof save_remap_lo);
-	memcpy(ast_param_remap_hi, save_remap_hi, sizeof save_remap_hi);
-	memcpy(ast_param_remap_delta, save_remap_delta, sizeof save_remap_delta);
 	ast_argsub_n = save_argsub_n;
 	memcpy(ast_argsub_off, save_argsub_off, sizeof save_argsub_off);
 	memcpy(ast_argsub_val, save_argsub_val, sizeof save_argsub_val);
@@ -13044,7 +13021,7 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 		sv.c.i = ast_ival(a, n);
 		sv.sym = (Sym *)(uintptr_t)ast_sym(a, n);
 		if ((sv.r & VT_VALMASK) == VT_LOCAL && !(sv.r & VT_SYM) &&
-				(ast_inline_bias || ast_param_remap_n || ast_argsub_n)) {
+				(ast_inline_bias || ast_argsub_n)) {
 			int off = (int)sv.c.i, subst = 0;
 			/* §19.3: a constant argument bound to a read-only param propagates as its
 			 * Literal here (no slot load), so gen_op/gvtst fold it — per-site constant-prop
@@ -13055,18 +13032,11 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 					subst = 1;
 					break;
 				}
-			if (!subst) {
-				/* Tier-4: relocate a grafted callee's frame slot. A stack-passed param's
-				 * region (positive offset) remaps to its materialization slot (§19.2); every
-				 * other local shifts by the uniform frame bias. */
-				int delta = ast_inline_bias;
-				for (int j = 0; j < ast_param_remap_n; j++)
-					if (off >= ast_param_remap_lo[j] && off < ast_param_remap_hi[j]) {
-						delta = ast_param_remap_delta[j];
-						break;
-					}
-				sv.c.i += delta;
-			}
+			/* Tier-4: relocate a grafted callee's frame slot (every local — scalar, struct,
+			 * or arm64-positive param — shifts by the uniform frame bias; §19.2's hi-based
+			 * bias already placed positive param offsets below the caller's live locals). */
+			if (!subst)
+				sv.c.i += ast_inline_bias;
 		}
 		if (ast_promo_n) {
 			/* Tier-3 read: a promoted local reads from its pinned register (not the
