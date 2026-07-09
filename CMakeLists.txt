@@ -1095,10 +1095,14 @@ mcc_config_node(MCC_CONFIG_AUTOCORRECT TYPE BOOL DEFAULT OFF GROUP "Build target
 
 mcc_config_node(MCC_CONFIG_MINGW  TYPE BOOL DEFAULT OFF GROUP "mcc features"
     HELP "Build a WIN32/mingw target (input: forces MCC_TARGETOS=WIN32)")
-mcc_config_node(MCC_CONFIG_BACKTRACE TYPE BOOL DEFAULT OFF GROUP "mcc features"
-    HELP "Enable stack backtraces (-bt / -run)")
-mcc_config_node(MCC_CONFIG_BCHECK   TYPE BOOL DEFAULT OFF GROUP "mcc features"
-    HELP "Enable bounds checker (-b)"
+set(_mcc_bt_default OFF)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(_mcc_bt_default ON)
+endif()
+mcc_config_node(MCC_CONFIG_BACKTRACE TYPE BOOL DEFAULT ${_mcc_bt_default} GROUP "mcc features"
+    HELP "Enable stack backtraces (-bt / -run); defaults ON for Debug builds")
+mcc_config_node(MCC_CONFIG_BCHECK   TYPE BOOL DEFAULT ${_mcc_bt_default} GROUP "mcc features"
+    HELP "Enable bounds checker (-b); defaults ON for Debug builds"
     VISIBLE_WHEN "MCC_CONFIG_BACKTRACE")
 mcc_config_node(MCC_CONFIG_ASM      TYPE BOOL DEFAULT ON GROUP "mcc features"
     HELP "Enable the integrated assembler (inline asm, global asm, .s files, asm labels)")
