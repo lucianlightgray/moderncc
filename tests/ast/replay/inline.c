@@ -59,6 +59,17 @@ static int firsthit(const int *a, int n) {
 			return i;
 	return n;
 }
+/* struct-by-value RETURN with scalar params: coalesces through a struct-sized result
+ * slot (memory-agnostic). (Struct *params* are ABI-dependent and stay a real call.) */
+struct Pair {
+	int a, b;
+};
+static struct Pair mkpair(int a, int b) {
+	struct Pair p;
+	p.a = a;
+	p.b = b;
+	return p;
+}
 
 int main(void) {
 	int r = add(3, 4);              /* 7 */
@@ -71,5 +82,7 @@ int main(void) {
 	int q = quad(2);                   /* non-leaf: add(2,2)*2 = 8 (add grafts inside) */
 	int arr2[3] = {0, 0, 7};
 	int p = pick(2) + firsthit(arr2, 3); /* switch: 5, break-loop: 2 -> 7 */
-	return r + s + t + u + c + g + d + q + p - 45; /* 7+30+13+7+5+0+10+8+7 - 45 = 42 */
+	struct Pair pr = mkpair(2, 3);       /* struct return: {2,3} */
+	int m = pr.a + pr.b;                 /* 5 */
+	return r + s + t + u + c + g + d + q + p + m - 50; /* 7+30+13+7+5+0+10+8+7+5 - 50 = 42 */
 }
