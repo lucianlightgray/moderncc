@@ -4,3 +4,6 @@
 /dist/
 /stage/
 /vc140.pdb
+
+# CI log bundles downloaded for triage (transient)
+logs_*.zip
