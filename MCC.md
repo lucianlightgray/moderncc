@@ -132,9 +132,12 @@ clang 22.
 ## 5. Conformance
 
 **C9911 ledger** (≈10+) — W: clause-by-clause source of truth for C99 (N1256) +
-C11 (N1570); every normative requirement a paraphrased checkbox. Whr:
-`docs/C9911.md` (~6400 lines). Why: authoritative gap ledger that TESTS.md
-summarizes. Who: cross-references mcc / gcc 15.3 / clang 22. Children:
+C11 (N1570); every normative requirement a paraphrased checkbox. Whr: was the
+~6400-row `docs/C9911.md`; the consolidation kept the **52 mcc-specific
+divergences + deliberate DIFFs** (below + §5 gaps) and dropped the 2,875
+conforming per-clause rows as extrapolatable ("conforms except the listed
+divergences"). Why: authoritative gap ledger. Who: mcc / gcc 15.3 / clang 22.
+Children:
 
 - **requirement checkboxes** (≈8) — W: **3,837 rows**; 2,875 `mcc:✓`; 111 non-`✓` (88 `~`, 23 `✗`); **52 mcc-specific divergences** from the gcc==clang consensus (45 `~`, 7 `✗`).
 - **status tags** (≈9) — W: `✓` conforms · `✗` diverges · `~` partial/optional; `(spec; not separately testable)` for pure-definition/UB rows.
@@ -172,9 +175,9 @@ Parent: per-target byte-for-byte native-ABI matching. Children by reference freq
 
 **profiling method** (≈8) — W: where the mcc front end spends time. H: `hyperfine`
 on a kernel-tuned quiet system (ASLR/turbo off, `performance` governor, pinned to
-core 2); every figure reproducible from its command. Whr: `docs/PROFILING.md`
-(method) + NOTES (results). Whn: 2026-07-06, Gentoo x86-64 / gcc 15.3.0 / clang
-22.1.8. Children:
+core 2); every figure reproducible from its command. Whr: method + results folded
+into [EXCESS.md](EXCESS.md) §Profiling (was `docs/PROFILING.md` + NOTES.md). Whn:
+2026-07-06, Gentoo x86-64 / gcc 15.3.0 / clang 22.1.8. Children:
 
 - **the nine-build spread** (≈11) — W: `mcc-self` (baseline) / `mcc-gcc` / `mcc-clang` / `mcc-musl` / `mcc-static`, all `-O0 -g`, + gcc/clang debug+release. Why: mcc ignores `-O` so all mcc rows emit byte-identical code — only run-speed differs; `mcc-self` is the fastest glibc mcc (280 ms), inverting the old bootstrap cost.
 - **`src/mcc.c` amalgamation** (≈12) — W: ~108k-line whole-compiler TU. Whn: `mcc-self` 280 ms `-c` vs gcc-O2 16.1 s (**57×**), clang-O2 13.4 s (48×).

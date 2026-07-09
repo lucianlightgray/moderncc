@@ -11,14 +11,15 @@ from a single source tree.
 | **Formats**   | ELF · PE/COFF · Mach-O                                                                                                                |
 | **Libc**      | glibc · musl (`--sysroot`) · msvcrt · libSystem                                                                                       |
 | **Modes**     | compile+link · `-c` · `-S` (asm listing) · `-run` (JIT, no `a.out`) · `libmcc` C API                                                  |
-| **Speed**     | single-pass (~75–90× faster to compile than `-O2`, vs clang/gcc — [measured](docs/NOTES.md#compile-speed--footprint))                  |
+| **Speed**     | single-pass (~75–90× faster to compile than `-O2`, vs clang/gcc — [measured](EXCESS.md#profiling--method--measured-results-was-profilingmd--notesmd))                  |
 | **Size**      | ~0.7 MB dynamic · ~1.5 MB static self-contained binary                                                                                |
 | **Assembler** | integrated (`MCC_CONFIG_ASM`, incl. scalar SSE + `.cfi_*`) · inline asm · `asm goto` · `-S` via built-in disassembler (all 5 targets) |
 | **Safety**    | optional bounds checker (`-b`) and backtraces (`-bt`)                                                                                 |
 | **Cross**     | `mcc-<arch>` compilers via `MCC_ENABLE_CROSS`                                                                                         |
 
 > Detailed toolchain comparisons, build-status reports, per-toolchain test
-> coverage, and performance benchmarks live in [docs/NOTES.md](docs/NOTES.md).
+> coverage, and performance benchmarks live in [MCC.md](MCC.md) (noun index)
+> and [EXCESS.md](EXCESS.md) (full detail).
 
 ## Downloads
 
@@ -50,7 +51,7 @@ The developer presets above are the ones you'll use by hand; CI/dist presets
 (`linux-*`, `macos*`, `msvc`, `sanitize-msvc`, `mingw`, `qemu*`, `dist-*`) are also
 defined and drive the workflows + docker runners. See [BUILD.md §2](docs/BUILD.md) for the full
 preset catalog and naming conventions. Current per-platform build status lives
-in [docs/NOTES.md](docs/NOTES.md#build-status).
+in [EXCESS.md](EXCESS.md).
 
 or, CMake (without presets):
 
@@ -144,7 +145,7 @@ ctest --test-dir cmake-debug -j"$(nproc)"
 
 Per-toolchain coverage tables (which suites pass/skip on each host) and
 compile-speed/footprint benchmarks live in
-[docs/NOTES.md](docs/NOTES.md#per-toolchain-test-coverage).
+[EXCESS.md](EXCESS.md#detailed-enumerations--the-full-tail-mccmd-defers-here).
 
 ## Cross-target × libc matrix (qemu-user)
 
