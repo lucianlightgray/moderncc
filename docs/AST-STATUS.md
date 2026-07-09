@@ -212,6 +212,15 @@ is x86_64-gated (the dead-branch selection is verified on x86_64 so far).
   ranges don't overlap needs a real **backward-liveness pass** + interval coloring
   (essentially a register allocator over the AST CFG). Purely additive to coverage — a valid
   coloring never changes observable behavior, so it stays behind the same two-pass gate.
+  **Key non-obvious design point (blocks a naive implementation):** promotion **seeds every
+  pin from its stack slot at function entry** (`ast_promo_entry_init`) so the register mirrors
+  what `-O0` reads for read-before-write locals, params, and loop-carried values. This
+  *conflicts* with sharing — two locals can't both be entry-seeded into one register. A1 must
+  therefore replace entry-seeding with **per-live-range seeding** (seed a shared local from its
+  slot at its range *start*, not at entry), which is a rework of the promotion emit model, not
+  just an added analysis. Sequencing note: the `-O1` transform soundness backlog (below) should
+  be driven down first — a register allocator built on a promotion pass that already miscompiles
+  14 gcc-torture cases inherits and compounds those holes.
 - **`-O1` transform soundness backlog (surfaced by the A4 gate).** The gcc c-torture
   differential baselined **14 promote + 4 inline + 3 replay** `KNOWNGAP`s (all behind the
   experimental `MCC_AST_PROMOTE`/`MCC_AST_INLINE` flags, not default `-O0`). These diverge from
