@@ -112,9 +112,13 @@ so it stays plain `libmcc.so`. Otherwise the shape is explicit:
 
 `CMakePresets.json` is the **single source of truth** for every build in the
 repo: the CI workflows (`.github/workflows/*.yml`) and the docker runners
-(`tests/*/docker/run-*.sh`) invoke `cmake --preset <name>` /
-`cmake --build --preset <name>` / `ctest --preset <name>` rather than
-hand-passing `-D` flags. A preset name is the canonical label for a scenario and
+(`tests/*/docker/run-*.sh`) invoke presets rather than hand-passing `-D`
+flags — and every workflow job drives its preset through the `ci` tool
+(`tools/ci.c`), not per-shell cmake step lists: `ci run-preset <name>`
+(configure + build + ctest-with-junit + optional `--bench`/install, `-D`
+overrides forwarded), `ci qemu`, and `ci dist` are the same C flow whether the
+runner shell is bash or pwsh, and `ci bench-summary --append` writes the
+step-summary section shell-agnostically. A preset name is the canonical label for a scenario and
 is reused verbatim as the CI job / matrix cell name and, where applicable, the
 docker `PRESET` env — so `linux-gcc`, `msvc`, `qemu-arm64`, `dist-linux-gcc`
 name the same thing everywhere.

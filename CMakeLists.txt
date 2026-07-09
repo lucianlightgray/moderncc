@@ -2836,7 +2836,7 @@ if(NOT CMAKE_CROSSCOMPILING)
                     --srcroot "${CMAKE_SOURCE_DIR}"
                     --builddir "${CMAKE_BINARY_DIR}"
                     --plat "${MCC_DIST_PLAT}"
-                    --junit "${CMAKE_BINARY_DIR}/bench-tests.xml"
+                    --junit "${CMAKE_BINARY_DIR}/ctest-junit.xml"
                     --out "${MCC_DIST_DIR}/bench-${MCC_DIST_PLAT}.txt"
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
             VERBATIM USES_TERMINAL

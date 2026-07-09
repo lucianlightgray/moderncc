@@ -94,27 +94,20 @@ jobs:
           else
             echo "CC=clang" >> "$GITHUB_ENV"
           fi
-      - name: configure
+      - name: run ${{ matrix.preset }} (configure + build + test + bench + install)
         run: |
+          cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c
           extra=""
           if [ "${{ matrix.arch }}" = x86_64 ]; then
             extra="-DCMAKE_OSX_ARCHITECTURES=x86_64 -DMCC_TARGET_ARCH=x86_64"
           fi
-          cmake --preset ${{ matrix.preset }} "-DCMAKE_INSTALL_PREFIX=$PWD/dist/$ART" -DMCC_BENCH=ON "-DMCC_DIST_PLAT=$ART" $extra
-      - name: build
-        run: cmake --build --preset ${{ matrix.preset }} -j"$(sysctl -n hw.ncpu)"
-      - name: test
-        run: ctest --preset ${{ matrix.preset }} -j"$(sysctl -n hw.ncpu)" --output-junit "$PWD/cmake-${{ matrix.preset }}/bench-tests.xml"
-      - name: benchmark
+          /tmp/mcc-ci run-preset ${{ matrix.preset }} --out "$PWD/dist/$ART" --bench \
+            -DMCC_BENCH=ON "-DMCC_DIST_PLAT=$ART" $extra
+      - name: benchmark summary
         if: always()
-        run: |
-          cmake --build --preset ${{ matrix.preset }} --target bench
-          echo "### benchmark — $ART" >> "$GITHUB_STEP_SUMMARY"
-          { echo '```'; cat dist/bench-*.txt 2>/dev/null || echo '(no report)'; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-      - name: install + pack build targets
-        run: |
-          cmake --install cmake-${{ matrix.preset }}
-          tar cJf "$ART.tar.xz" -C dist "$ART"
+        run: /tmp/mcc-ci bench-summary --plat "$ART" --append "$GITHUB_STEP_SUMMARY"
+      - name: pack build targets
+        run: tar cJf "$ART.tar.xz" -C dist "$ART"
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ART }}
@@ -129,14 +122,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { preset: msvc,          arch: x86_64, runner: windows-latest }
-          - { preset: msvc,          arch: arm64,  runner: windows-11-arm }
-          - { preset: sanitize-msvc, arch: x86_64, runner: windows-latest }
-          - { preset: sanitize-msvc, arch: arm64,  runner: windows-11-arm }
+          - { preset: msvc,          arch: x86_64, runner: windows-latest, msvcarch: x64 }
+          - { preset: msvc,          arch: arm64,  runner: windows-11-arm, msvcarch: arm64 }
+          - { preset: sanitize-msvc, arch: x86_64, runner: windows-latest, msvcarch: x64 }
+          - { preset: sanitize-msvc, arch: arm64,  runner: windows-11-arm, msvcarch: arm64 }
     env:
       ART: mcc-${{ matrix.preset }}-${{ matrix.arch }}
     steps:
       - uses: actions/checkout@v5
+      - name: set up MSVC dev shell (cl bootstraps the ci tool)
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: ${{ matrix.msvcarch }}
       - name: resolve diff3 reference compilers (mingw gcc + clang)
         continue-on-error: true
         shell: pwsh
@@ -145,27 +142,18 @@ jobs:
           $clang = (Get-Command clang -ErrorAction SilentlyContinue).Source
           if ($gcc)   { "MCC_DIFF3_GCC=$($gcc.Replace('\','/'))"     | Out-File -FilePath $env:GITHUB_ENV -Append }
           if ($clang) { "MCC_DIFF3_CLANG=$($clang.Replace('\','/'))" | Out-File -FilePath $env:GITHUB_ENV -Append }
-      - name: configure
-        run: cmake --preset ${{ matrix.preset }} "-DCMAKE_INSTALL_PREFIX=$($PWD.Path.Replace('\','/'))/dist/${env:ART}" "-DMCC_BENCH=ON" "-DMCC_DIST_PLAT=${env:ART}"
-      - name: build
-        run: cmake --build --preset ${{ matrix.preset }} -j
-      - name: test
+      - name: run ${{ matrix.preset }} (configure + build + test + bench + install)
         # --timeout caps any single test: a hung test (e.g. a thread-contention
         # deadlock that only manifests on real arm64 silicon) is killed and named
         # in the log instead of stalling the whole job until it is cancelled.
-        run: ctest --preset ${{ matrix.preset }} -j ${env:NUMBER_OF_PROCESSORS} --timeout 300 --output-junit "cmake-${{ matrix.preset }}/bench-tests.xml"
-      - name: benchmark
+        run: |
+          cl /nologo /O2 /Fe:ci.exe tools\ci.c tools\toolsupport.c
+          .\ci.exe run-preset ${{ matrix.preset }} --config Release --out "$($PWD.Path.Replace('\','/'))/dist/${env:ART}" --bench "-DMCC_BENCH=ON" "-DMCC_DIST_PLAT=${env:ART}" -- --timeout 300
+      - name: benchmark summary
         if: always()
-        run: |
-          cmake --build --preset ${{ matrix.preset }} --config Release --target bench
-          Add-Content $env:GITHUB_STEP_SUMMARY "### benchmark - ${env:ART}"
-          Add-Content $env:GITHUB_STEP_SUMMARY '```'
-          Get-Content dist/bench-*.txt | Add-Content $env:GITHUB_STEP_SUMMARY
-          Add-Content $env:GITHUB_STEP_SUMMARY '```'
-      - name: install + pack build targets
-        run: |
-          cmake --install cmake-${{ matrix.preset }} --config Release
-          tar cJf "${env:ART}.tar.xz" -C dist "${env:ART}"
+        run: .\ci.exe bench-summary --plat ${env:ART} --append "${env:GITHUB_STEP_SUMMARY}"
+      - name: pack build targets
+        run: tar cJf "${env:ART}.tar.xz" -C dist "${env:ART}"
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ART }}
@@ -185,22 +173,15 @@ jobs:
           arch: x64
       - name: install ninja
         run: choco install ninja -y
-      - name: configure + build (superbuild fetches winlibs GCC)
+      - name: run mingw (superbuild fetches winlibs GCC; cells ctest while building)
         run: |
-          cmake --preset mingw "-DCMAKE_INSTALL_PREFIX=$($PWD.Path.Replace('\','/'))/dist/${env:ART}" "-DMCC_BENCH=ON" "-DMCC_DIST_PLAT=${env:ART}"
-          cmake --build --preset mingw -j
-      - name: benchmark
+          cl /nologo /O2 /Fe:ci.exe tools\ci.c tools\toolsupport.c
+          .\ci.exe run-preset mingw --no-test --out "$($PWD.Path.Replace('\','/'))/dist/${env:ART}" --bench "-DMCC_BENCH=ON" "-DMCC_DIST_PLAT=${env:ART}"
+      - name: benchmark summary
         if: always()
-        run: |
-          cmake --build --preset mingw --target bench
-          Add-Content $env:GITHUB_STEP_SUMMARY "### benchmark - ${env:ART}"
-          Add-Content $env:GITHUB_STEP_SUMMARY '```'
-          Get-Content dist/bench-*.txt | Add-Content $env:GITHUB_STEP_SUMMARY
-          Add-Content $env:GITHUB_STEP_SUMMARY '```'
-      - name: install + pack build targets
-        run: |
-          cmake --install cmake-mingw
-          tar cJf "${env:ART}.tar.xz" -C dist "${env:ART}"
+        run: .\ci.exe bench-summary --plat ${env:ART} --append "${env:GITHUB_STEP_SUMMARY}"
+      - name: pack build targets
+        run: tar cJf "${env:ART}.tar.xz" -C dist "${env:ART}"
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ART }}
@@ -281,21 +262,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends cmake ninja-build gcc clang
-      - name: configure + build + install + package
+      - name: dist (configure + build + install + bench + package)
         run: |
           set -eux
-          cmake --preset ${{ matrix.preset }} \
-            "-DMCC_DIST_VERSION=ci-${GITHUB_SHA::12}" "-DMCC_DIST_PLAT=${{ matrix.preset }}-${{ matrix.arch }}" \
-            -DMCC_BENCH=ON
-          cmake --build --preset ${{ matrix.preset }} -j"$(nproc)"
-          cmake --install cmake-${{ matrix.preset }}
-          cmake --build --preset ${{ matrix.preset }} --target bench
-          cmake --build --preset ${{ matrix.preset }} --target package-dist
+          cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl
+          /tmp/mcc-ci dist --preset ${{ matrix.preset }} \
+            --plat "${{ matrix.preset }}-${{ matrix.arch }}" --version "ci-${GITHUB_SHA::12}"
       - name: benchmark summary
         if: always()
-        run: |
-          echo "### benchmark — ${{ matrix.preset }}-${{ matrix.arch }}" >> "$GITHUB_STEP_SUMMARY"
-          { echo '```'; cat dist/bench-*.txt 2>/dev/null || echo '(no report)'; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+        run: /tmp/mcc-ci bench-summary --plat "${{ matrix.preset }}-${{ matrix.arch }}" --append "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
         with:
           name: mcc-${{ matrix.preset }}-${{ matrix.arch }}
@@ -323,25 +298,20 @@ jobs:
         run: |
           brew untap aws/tap 2>/dev/null || true
           brew install cmake ninja
-      - name: configure + build + install + package
+      - name: dist (configure + build + install + strip + bench + package)
+        # `ci dist` folds in the macOS local-symbol strip, as in release.yml
         run: |
           set -eux
+          cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c
           extra=""
           if [ "${{ matrix.arch }}" = x86_64 ]; then
-            extra="-DCMAKE_OSX_ARCHITECTURES=x86_64 -DMCC_TARGET_ARCH=x86_64"
+            extra="-- -DCMAKE_OSX_ARCHITECTURES=x86_64 -DMCC_TARGET_ARCH=x86_64"
           fi
-          cmake --preset dist-macos \
-            "-DMCC_DIST_VERSION=ci-${GITHUB_SHA::12}" "-DMCC_DIST_PLAT=dist-macos-${{ matrix.arch }}" \
-            -DMCC_BENCH=ON $extra
-          cmake --build --preset dist-macos -j"$(sysctl -n hw.ncpu)"
-          cmake --install cmake-dist-macos
-          cmake --build --preset dist-macos --target bench
-          cmake --build --preset dist-macos --target package-dist
+          /tmp/mcc-ci dist --preset dist-macos \
+            --plat "dist-macos-${{ matrix.arch }}" --version "ci-${GITHUB_SHA::12}" $extra
       - name: benchmark summary
         if: always()
-        run: |
-          echo "### benchmark — dist-macos-${{ matrix.arch }}" >> "$GITHUB_STEP_SUMMARY"
-          { echo '```'; cat dist/bench-*.txt 2>/dev/null || echo '(no report)'; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+        run: /tmp/mcc-ci bench-summary --plat "dist-macos-${{ matrix.arch }}" --append "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
         with:
           name: mcc-dist-macos-${{ matrix.arch }}

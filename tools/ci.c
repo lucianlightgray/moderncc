@@ -97,7 +97,7 @@ static int do_stage(int argc, char **argv) {
 static int do_run_preset(int argc, char **argv) {
 	const char *preset = NULL, *out = NULL, *config = NULL;
 	char jflag[32], instdir[4096], prefix[4096];
-	int i, extra_start = argc, no_test = 0, do_install = 0;
+	int i, extra_start = argc, no_test = 0, do_install = 0, bench = 0;
 	int jobs = host_nproc();
 
 	for (i = 0; i < argc; i++) {
@@ -109,15 +109,17 @@ static int do_run_preset(int argc, char **argv) {
 			no_test = 1;
 		else if (!strcmp(argv[i], "--install"))
 			do_install = 1;
+		else if (!strcmp(argv[i], "--bench"))
+			bench = 1;
 		else if (!strcmp(argv[i], "--")) {
 			extra_start = i + 1;
 			break;
-		} else if (!preset && argv[i][0] != '-')
+		} else if (!preset && strncmp(argv[i], "-D", 2) && argv[i][0] != '-')
 			preset = argv[i];
 	}
 	if (!preset) {
 		fprintf(
-				stderr, "usage: ci run-preset <name> [--out DIR] [--install] [--no-test] [--config C] [-- <ctest args>]\n");
+				stderr, "usage: ci run-preset <name> [--out DIR] [--install] [--no-test] [--bench] [--config C] [-D<var>=<v>...] [-- <ctest args>]\n");
 		return 2;
 	}
 	snprintf(jflag, sizeof jflag, "-j%d", jobs > 0 ? jobs : 1);
@@ -131,6 +133,9 @@ static int do_run_preset(int argc, char **argv) {
 			snprintf(prefix, sizeof prefix, "-DCMAKE_INSTALL_PREFIX=%s", out);
 			ts_arg(&v, prefix);
 		}
+		for (i = 0; i < extra_start; i++) /* forward -D cache overrides */
+			if (!strncmp(argv[i], "-D", 2))
+				ts_arg(&v, argv[i]);
 		printf("==> configuring (preset=%s)\n", preset);
 		if (ts_run(ts_argz(&v)))
 			return 1;
@@ -169,6 +174,23 @@ static int do_run_preset(int argc, char **argv) {
 		for (i = extra_start; i < argc; i++)
 			ts_arg(&v, argv[i]);
 		printf("==> testing (preset=%s)\n", preset);
+		if (ts_run(ts_argz(&v)))
+			return 1;
+	}
+
+	if (bench) {
+		Argv v = {{0}, 0};
+		ts_arg(&v, "cmake");
+		ts_arg(&v, "--build");
+		ts_arg(&v, "--preset");
+		ts_arg(&v, preset);
+		if (config) {
+			ts_arg(&v, "--config");
+			ts_arg(&v, config);
+		}
+		ts_arg(&v, "--target");
+		ts_arg(&v, "bench");
+		printf("==> benchmarking (preset=%s)\n", preset);
 		if (ts_run(ts_argz(&v)))
 			return 1;
 	}
@@ -822,6 +844,51 @@ static int do_matrix(int argc, char **argv) {
 	return 0;
 }
 
+/* Emit the dist/bench-*.txt report(s) as a GitHub step-summary section.
+   --append writes straight to the summary file so the same invocation works
+   from bash and pwsh alike (no shell-redirect encoding differences). */
+static int do_bench_summary(int argc, char **argv) {
+	const char *plat = "", *dir = "dist", *append = NULL;
+	FILE *out = stdout;
+	char *g[64];
+	int i, k, n;
+
+	for (i = 0; i < argc; i++) {
+		if (!strcmp(argv[i], "--plat") && i + 1 < argc)
+			plat = argv[++i];
+		else if (!strcmp(argv[i], "--dir") && i + 1 < argc)
+			dir = argv[++i];
+		else if (!strcmp(argv[i], "--append") && i + 1 < argc)
+			append = argv[++i];
+	}
+	if (append && *append) {
+		out = fopen(append, "a");
+		if (!out) {
+			fprintf(stderr, "ci: cannot append to %s\n", append);
+			return 1;
+		}
+	}
+	fprintf(out, "### benchmark - %s\n\n```\n", plat);
+	n = ts_glob(dir, "bench-*.txt", 0, g, 64);
+	if (n <= 0)
+		fprintf(out, "(no report)\n");
+	for (k = 0; k < n && k < 64; k++) {
+		long len;
+		char *text = ts_read_file(g[k], &len);
+		if (text) {
+			fwrite(text, 1, (size_t)len, out);
+			if (len > 0 && text[len - 1] != '\n')
+				fputc('\n', out);
+			free(text);
+		}
+		free(g[k]);
+	}
+	fprintf(out, "```\n\n");
+	if (out != stdout)
+		fclose(out);
+	return 0;
+}
+
 /* ---- parity: CMakePresets.json vs workflow cells vs the `ci local` plan --
    The three views of "which scenarios exist" must agree: every non-hidden
    configure preset (minus the curated PS_EXEMPT list) needs a workflow cell
@@ -873,12 +940,14 @@ static int yml_word(char c) {
 
 /* Collect every preset *value* a workflow file names: the text after each
    `preset:` key (following a multi-line [..] flow list to its bracket) and
-   the token after each `--preset` flag in run scripts. Token checks then
-   only see real cell values, not comments or job names. */
+   the token after each `--preset` flag or `run-preset` verb in run scripts.
+   Token checks then only see real cell values, not comments or job names. */
 static char *yml_preset_values(const char *text) {
-	char *out = malloc(2 * strlen(text) + 16);
+	static const char *FLAG[] = {"--preset", "run-preset", 0};
+	char *out = malloc(4 * strlen(text) + 32);
 	size_t o = 0;
 	const char *p;
+	int f;
 
 	if (!out)
 		return NULL;
@@ -902,14 +971,16 @@ static char *yml_preset_values(const char *text) {
 		}
 		out[o++] = '\n';
 	}
-	for (p = text; (p = strstr(p, "--preset")) != NULL;) {
-		const char *q = p + 8;
-		p = q;
-		while (*q == ' ')
-			q++;
-		while (yml_word(*q))
-			out[o++] = *q++;
-		out[o++] = '\n';
+	for (f = 0; FLAG[f]; f++) {
+		for (p = text; (p = strstr(p, FLAG[f])) != NULL;) {
+			const char *q = p + strlen(FLAG[f]);
+			p = q;
+			while (*q == ' ')
+				q++;
+			while (yml_word(*q))
+				out[o++] = *q++;
+			out[o++] = '\n';
+		}
 	}
 	out[o] = 0;
 	return out;
@@ -1479,7 +1550,7 @@ static int do_junit_summary(int argc, char **argv) {
 
 int main(int argc, char **argv) {
 	if (argc < 2) {
-		fprintf(stderr, "usage: ci <stage|run-preset|qemu|local|dist|matrix|parity|pkg|sha256sums> ...\n");
+		fprintf(stderr, "usage: ci <stage|run-preset|qemu|local|dist|matrix|parity|bench-summary|pkg|sha256sums> ...\n");
 		return 2;
 	}
 	if (!strcmp(argv[1], "stage"))
@@ -1496,6 +1567,8 @@ int main(int argc, char **argv) {
 		return do_matrix(argc - 2, argv + 2);
 	if (!strcmp(argv[1], "parity"))
 		return do_parity(argc - 2, argv + 2);
+	if (!strcmp(argv[1], "bench-summary"))
+		return do_bench_summary(argc - 2, argv + 2);
 	if (!strcmp(argv[1], "pkg"))
 		return do_pkg(argc - 2, argv + 2);
 	if (!strcmp(argv[1], "sha256sums"))
