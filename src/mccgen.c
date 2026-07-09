@@ -12202,18 +12202,8 @@ static int ast_fn_inlinable(AstArena *a, Sym *sym) {
 					return 0;
 			}
 		}
-		/* A reference to an ANONYMOUS symbol-relative constant — a string literal / rodata
-		 * const captured as a raw Sym pointer — is not safely retainable: that Sym can be
-		 * recycled after this callee's own gen, long before a later caller grafts the body,
-		 * leaving a dangling pointer (a named global/function Sym persists, so it is fine).
-		 * Exclude such a callee; its calls fall back to a real call. */
-		if (k == AST_Ref || k == AST_Literal) {
-			int r = ast_op(a, n);
-			void *sp = (void *)(uintptr_t)ast_sym(a, n);
-			if (sp && (r & VT_SYM) && (r & VT_VALMASK) == VT_CONST &&
-					((Sym *)sp)->v >= SYM_FIRST_ANOM)
-				return 0;
-		}
+		/* String-literal / rodata-const refs no longer exclude a callee: the Syms it
+		 * captures are pinned at retention (ast_pin_rodata_syms) so they stay valid. */
 	}
 	return 1;
 }
@@ -12418,6 +12408,37 @@ static int ast_has_graftable_call(AstArena *a) {
 	return 0;
 }
 
+/* Unlink `p` from the sym free-list so it is never recycled (it then persists — a small
+ * deliberate leak). No-op if `p` is not on the list (already live). */
+static void ast_sym_pin(Sym *p) {
+	if (sym_free_first == p) {
+		sym_free_first = p->next;
+		return;
+	}
+	for (Sym *s = sym_free_first; s; s = s->next)
+		if (s->next == p) {
+			s->next = p->next;
+			return;
+		}
+}
+
+/* Pin every anon rodata-const Sym (string literal / rodata const) this body references, so
+ * the raw Sym pointers the AST captured stay valid until a later caller grafts or re-emits
+ * this body (they would otherwise be recycled after this function's own gen). Called at
+ * retention while the Syms are still valid. Lifts the string-ref exclusions. */
+static void ast_pin_rodata_syms(AstArena *a) {
+	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++) {
+		uint16_t k = ast_kind(a, n);
+		if (k != AST_Ref && k != AST_Literal)
+			continue;
+		int r = ast_op(a, n);
+		Sym *sp = (Sym *)(uintptr_t)ast_sym(a, n);
+		if (sp && (r & VT_SYM) && (r & VT_VALMASK) == VT_CONST && sp->v >= SYM_FIRST_ANOM)
+			ast_sym_pin(sp);
+	}
+}
+
 /* Retain the inlinable body keyed by its Sym; 1 if retained (caller must NOT free it). */
 static int ast_inline_retain(AstArena *a, Sym *sym) {
 	if (!ast_fn_inlinable(a, sym) || ast_inline_n >= AST_INLINE_MAX ||
@@ -12457,16 +12478,19 @@ static int ast_reemit_retain(AstArena *a, Sym *sym) {
 					(((Sym *)cs)->type.t & VT_BTYPE) == VT_FUNC)
 				has_static_call = 1;
 		}
-		/* Re-emission at end-of-TU re-reads this body's captured Sym pointers; an anon
-		 * rodata ref (string literal / const) can be recycled after this function's own gen,
-		 * dangling by re-emission time (an unresolved `<\0>` reloc). Exclude such functions —
-		 * they fall back to a real forward call. (Same cross-function Sym-lifetime limit as
-		 * the string-referencing callee exclusion; lifting both needs Sym persistence.) */
+		/* End-of-TU re-emission re-reads ALL of this body's captured Sym pointers — value
+		 * syms (pinned by ast_pin_rodata_syms) AND type refs. A block-scoped aggregate TYPE
+		 * ref is recyclable and dangling by re-emission time (crash in scopes.c), and pinning
+		 * whole type graphs is out of scope here. So keep re-emission conservative: a function
+		 * that references an anon rodata const OR an aggregate type is not re-emitted (it falls
+		 * back to a real forward call — correct). Grafting (which happens near the callee's own
+		 * gen, value syms pinned) is not restricted this way. */
 		if (k == AST_Ref || k == AST_Literal) {
-			int r = ast_op(a, n);
+			int r = ast_op(a, n), t = ast_type_t(a, n);
 			void *sp = (void *)(uintptr_t)ast_sym(a, n);
-			if (sp && (r & VT_SYM) && (r & VT_VALMASK) == VT_CONST &&
-					((Sym *)sp)->v >= SYM_FIRST_ANOM)
+			if ((sp && (r & VT_SYM) && (r & VT_VALMASK) == VT_CONST &&
+					 ((Sym *)sp)->v >= SYM_FIRST_ANOM) ||
+					(t & VT_BTYPE) == VT_STRUCT)
 				return 0;
 		}
 	}
@@ -13709,10 +13733,13 @@ static void gen_function(Sym *sym) {
 			mcc_free(orig_rel);
 		}
 		/* Tier-4: keep the AST if it is an inline candidate OR a defer-to-TU re-emit
-		 * candidate (calls a static function, maybe a forward inline). */
+		 * candidate (calls a static function, maybe a forward inline). Pin the rodata Syms
+		 * it references so they survive until a later graft/re-emit. */
 		int keep_inline = ast_inline_retain(ast_cur, sym);
 		int keep_reemit = ast_reemit_retain(ast_cur, sym);
-		if (!keep_inline && !keep_reemit)
+		if (keep_inline || keep_reemit)
+			ast_pin_rodata_syms(ast_cur);
+		else
 			ast_arena_free(ast_cur);
 		ast_cur = NULL;
 	}

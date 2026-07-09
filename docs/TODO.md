@@ -406,11 +406,17 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
     match; the original emission is dead code). Non-debug only; arch-independent (compiles
     arm64/riscv64/x86_64). Verified `fwd_sum`→`fwd_callee` (caller before callee); corpus + ctest
     1769/1769, ASan-clean. Fixture `REEMITS=fwd_sum`.
-  - [ ] **Slice 2 breadth.** **Persist string/rodata Syms** — the key remaining lever: lifts BOTH
-    the string-referencing-callee exclusion AND the string-caller defer-to-TU exclusion (a captured
-    anon rodata Sym is recycled after the function's gen → dangling; excluded for now, correct
-    fallback). Then struct-by-value **params** (ABI-aware bind); per-site specialization; un-gate the
-    fixture on non-x86_64 once verified there.
+  - [x] **Pin rodata value Syms — string-referencing CALLEES now inline (LANDED 2026-07-08).**
+    `ast_pin_rodata_syms` unlinks each anon rodata-const Sym (string literal / const) the retained
+    body references from the sym free-list at retention, so the captured pointers stay valid for a
+    later graft (a small deliberate leak). Grafting a callee with string literals now works (`greet`,
+    `withlib`). **Re-emission stays conservative** — it re-reads ALL captured Syms incl. type refs,
+    and a block-scoped aggregate TYPE ref is still recyclable (crash in scopes.c), so a re-emit
+    candidate that references an anon rodata const OR an aggregate type falls back to a real forward
+    call. Corpus + ctest 1769/1769, ASan-clean.
+  - [ ] **Slice 2 breadth.** Pin/transitively-persist **type refs** too (lifts the conservative
+    re-emit restriction for string/struct-typed forward callers). Then struct-by-value **params**
+    (ABI-aware bind); per-site specialization; un-gate the fixture on non-x86_64 once verified there.
 - [ ] **Long horizon (design only):** the broader template library (algebraic, dead-branch,
   jump-table), the time-budgeted engine (§12/§221), dependency-ordered `-O1` compile, cross-TU
   LTO, `-g` from provenance, hot-reload snapshots, and separate `-O2`/`-O3` (SSA) drivers.
