@@ -748,16 +748,22 @@ ST_FUNC int mccgen_compile(MCCState *s1) {
 	global_expr = 0;
 
 #if defined(CONFIG_AST) && CONFIG_AST
-	ast_replay_env = ast_env_gate("MCC_AST_REPLAY", 1);
+	ast_replay_env = ast_env_gate("MCC_AST_REPLAY", 0);
 	ast_replay_dump = ast_env_gate("MCC_AST_REPLAY_DUMP", 0);
-	ast_templates_env = ast_env_gate("MCC_AST_TEMPLATES", 1);
-	ast_promote_env = ast_env_gate("MCC_AST_PROMOTE", 1);
+	ast_templates_env = ast_env_gate("MCC_AST_TEMPLATES", 0);
+	ast_promote_env = ast_env_gate("MCC_AST_PROMOTE", 0);
 	ast_no_callful_env = ast_env_gate("MCC_AST_NO_CALLFUL", 0);
-	ast_inline_env = ast_env_gate("MCC_AST_INLINE", 1);
+	ast_inline_env = ast_env_gate("MCC_AST_INLINE", 0);
 	{
 		const char *lim = getenv("MCC_AST_INLINE_LIMIT");
 		ast_graft_limit = lim ? atoi(lim) : -1;
 		ast_graft_total = 0;
+	}
+	if (s1->optimize >= 1) {
+		ast_replay_env = 1;
+#ifdef MCC_TARGET_X86_64
+		ast_promote_env = 1;
+#endif
 	}
 #endif
 
