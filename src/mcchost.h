@@ -285,12 +285,6 @@ typedef struct HostFaultRegs {
 
 typedef int (*host_fault_fn)(int code, unsigned detail, HostFaultRegs *r);
 
-#if defined MCC_IS_NATIVE && defined CONFIG_MCC_BACKTRACE
-ST_FUNC void host_fault_install(host_fault_fn fn);
-ST_FUNC int host_fault_regs(void *osctx, HostFaultRegs *r);
-ST_FUNC void host_fault_unblock(unsigned detail);
-#endif
-
 #ifndef CONFIG_MCC_SEMLOCK
 #define CONFIG_MCC_SEMLOCK 1
 #endif

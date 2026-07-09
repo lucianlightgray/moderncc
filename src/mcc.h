@@ -80,6 +80,12 @@
 #define CONFIG_MCC_BACKTRACE 1
 #endif
 
+#if defined MCC_IS_NATIVE && defined CONFIG_MCC_BACKTRACE
+ST_FUNC void host_fault_install(host_fault_fn fn);
+ST_FUNC int host_fault_regs(void *osctx, HostFaultRegs *r);
+ST_FUNC void host_fault_unblock(unsigned detail);
+#endif
+
 #if defined CONFIG_MCC_BCHECK && CONFIG_MCC_BCHECK == 0
 #undef CONFIG_MCC_BCHECK
 #else

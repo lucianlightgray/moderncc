@@ -2061,6 +2061,17 @@ definitions (`mcchost.c`, used by `mccrun.c` only under the native backtrace
 path) — declaring them unconditionally makes them unused functions when that path
 is compiled out (e.g. the macos preset builds backtrace off).
 
+The `host_fault_install`/`host_fault_regs`/`host_fault_unblock` prototypes for
+that block live in **`src/mcc.h`** (right after the `MCC_IS_NATIVE` derivation),
+**not** in `mcchost.h` — deliberately. `mcc.h` includes `mcchost.h` *before* it
+derives `MCC_IS_NATIVE` (the derivation needs `mcchost.h`'s `MCC_HOST_*`), so the
+gate `#if defined MCC_IS_NATIVE && defined CONFIG_MCC_BACKTRACE` would be false if
+evaluated inside `mcchost.h`. The amalgamated build masks that (the definitions in
+`mcchost.c` precede the call in `mccrun.c`, so no prototype is needed), but the
+multisource build compiles `mccrun.c` as a separate TU and needs the visible
+prototype — moving it below the derivation makes both builds see it. Do not move
+these back into `mcchost.h`.
+
 #### `src/arch/arm/arm-asm.c`
 
 Three GNU-as-compatibility encoder notes: (1) a `mov Rd, #imm16` whose value is
