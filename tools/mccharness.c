@@ -2426,6 +2426,8 @@ static int suite_machocodegen(int argc, char **argv) {
 	ts_path(osxrt, sizeof osxrt, xb, "lib-%s-osx", arch);
 	if (!is_arm && !host_is_x86_64())
 		ts_skip("host is not x86_64");
+	if (!is_arm && MCC_HOST_DARWIN)
+		ts_skip("host gcc is Mach-O (x86_64 Mach-O-ABI codegen needs an ELF-linking gcc)");
 	if (host_stat(mcc, &isd, NULL, NULL))
 		ts_skip("no mcc-%s-osx", arch);
 	ts_path(probe, sizeof probe, osxrt, "atomic.o");
