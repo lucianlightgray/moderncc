@@ -61,6 +61,8 @@ ST_DATA CType int_type, func_old_type, char_type, char_pointer_type;
 int ast_active;
 static int ast_replay_env;
 static int ast_replay_dump;
+static int ast_graft_limit;
+static int ast_graft_total;
 static int ast_templates_env;
 static int ast_promote_env;
 static int ast_no_callful_env;
@@ -743,6 +745,11 @@ ST_FUNC int mccgen_compile(MCCState *s1) {
 	ast_promote_env = getenv("MCC_AST_PROMOTE") != NULL;
 	ast_no_callful_env = getenv("MCC_AST_NO_CALLFUL") != NULL;
 	ast_inline_env = getenv("MCC_AST_INLINE") != NULL;
+	{
+		const char *lim = getenv("MCC_AST_INLINE_LIMIT");
+		ast_graft_limit = lim ? atoi(lim) : -1;
+		ast_graft_total = 0;
+	}
 	if (s1->optimize >= 1) {
 		ast_replay_env = 1;
 #ifdef MCC_TARGET_X86_64
@@ -11958,6 +11965,9 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 			return 0;
 	if (ast_graft_budget < (int)ast_count(e->ast))
 		return 0;
+	if (ast_graft_limit >= 0 && ast_graft_total >= ast_graft_limit)
+		return 0;
+	ast_graft_total++;
 	ast_graft_budget -= (int)ast_count(e->ast);
 	ast_inline_stack[ast_inline_depth++] = csym;
 	int hi = 0;

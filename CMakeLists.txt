@@ -686,7 +686,15 @@ execute_process(
     RESULT_VARIABLE _rc)
 if(NOT _rc EQUAL 0)
     file(REMOVE_RECURSE "${DEST}")
-    message(FATAL_ERROR "vendor-musl: git clone failed (${_rc}): ${URL}")
+    set(_mirror "https://github.com/bminor/musl")
+    message(STATUS "vendor-musl: ${URL} unreachable (${_rc}); trying mirror ${_mirror}")
+    execute_process(
+        COMMAND "${GIT}" clone --depth 1 ${_branchargs} "${_mirror}" "${DEST}"
+        RESULT_VARIABLE _rc)
+    if(NOT _rc EQUAL 0)
+        file(REMOVE_RECURSE "${DEST}")
+        message(FATAL_ERROR "vendor-musl: git clone failed (${_rc}): ${URL} and mirror ${_mirror}")
+    endif()
 endif()
 message(STATUS "vendor-musl: established ${DEST}")
 ]==])
