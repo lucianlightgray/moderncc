@@ -10,7 +10,8 @@ set(_r1 "${OUT}/${_name}.R1")
 
 function(build_and_run out_exe expect_rc env_on out_all)
     if(env_on)
-        set(_env "${CMAKE_COMMAND}" -E env MCC_AST_REPLAY=1 MCC_AST_REPLAY_DUMP=1)
+        set(_opt "-O1")
+        set(_env "${CMAKE_COMMAND}" -E env MCC_AST_REPLAY_DUMP=1)
         if(TEMPLATES)
             list(APPEND _env MCC_AST_TEMPLATES=1)
         else()
@@ -27,10 +28,11 @@ function(build_and_run out_exe expect_rc env_on out_all)
             list(APPEND _env MCC_AST_INLINE=0)
         endif()
     else()
-        set(_env "${CMAKE_COMMAND}" -E env MCC_AST_REPLAY=0)
+        set(_opt "-O0")
+        set(_env "${CMAKE_COMMAND}" -E env)
     endif()
     execute_process(
-        COMMAND ${_env} "${MCC}" "-B${BDIR}" "${SRC}" -o "${out_exe}"
+        COMMAND ${_env} "${MCC}" "-B${BDIR}" "${_opt}" "${SRC}" -o "${out_exe}"
         OUTPUT_VARIABLE _co ERROR_VARIABLE _ce RESULT_VARIABLE _crc)
     if(NOT _crc EQUAL 0)
         message(FATAL_ERROR "compile failed (replay=${env_on}) for ${SRC} (rc=${_crc}):\n${_co}${_ce}")

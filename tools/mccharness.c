@@ -1155,17 +1155,19 @@ static void gccts_setenv(const char *k, const char *v) {
 #endif
 }
 
-/* The AST gates are open by default, so the baseline leg of the
-   differential must close the master gate explicitly, and the AST leg
-   must close the gates its column does not exercise. */
+/* The AST stack is driven by the -O level (-O0 disables it), so the
+   baseline leg of the differential compiles at -O0 and the AST leg at
+   -O1 with the gates its column does not exercise closed via env. */
+static const char *gccts_opt = "-O0";
+
 static void gccts_ast_env(const char *mode, int on) {
 	if (!mode)
 		return;
 	if (!on) {
-		gccts_setenv("MCC_AST_REPLAY", "0");
+		gccts_opt = "-O0";
 		return;
 	}
-	gccts_setenv("MCC_AST_REPLAY", "1");
+	gccts_opt = "-O1";
 	gccts_setenv("MCC_AST_TEMPLATES", strcmp(mode, "inline-tmpl") ? "0" : "1");
 	gccts_setenv("MCC_AST_PROMOTE", strcmp(mode, "promote") ? "0" : "1");
 	gccts_setenv("MCC_AST_INLINE",
@@ -1180,6 +1182,7 @@ static int gccts_attempt(const char *mcc, const char *Bflag, const char *idir,
 	Argv v = {{0}, 0};
 	A(&v, mcc);
 	A(&v, Bflag);
+	A(&v, gccts_opt);
 	A(&v, "-DNO_TRAMPOLINES");
 	if (idir) {
 		A(&v, Iinc);

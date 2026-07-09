@@ -193,13 +193,15 @@ high-value specifics the summary omits:
   C11 (exec suite proves it), so replay never fakes anything — every gap is an
   AST-**query** gap, not a codegen gap, tiered by query cost (Tier 1 O(1) field
   reads → Tier 4 whole-program/fixpoint).
-- **Env flags (opt-in; `-O0` byte-untouched):** `MCC_AST_REPLAY`,
-  `MCC_AST_REPLAY_DUMP`, `MCC_AST_PROMOTE`, `MCC_AST_NO_CALLFUL`,
-  `MCC_AST_INLINE`, `MCC_AST_TEMPLATES` — all default off (set to any non-`0`
-  value to open a gate, `0` to keep it closed); `-O1` engages replay + Tier-3
-  promotion (x86_64). The default-on flip was reverted: the full-corpus
-  `mcctest` differential exposed Tier-3/Tier-4 soundness gaps on the PE target
-  and arm64 that the per-golden columns miss. Faithfulness gate: pass 1 replays with no
+- **Opt gating (`-O0` byte-untouched):** the replay stack is driven by the
+  runtime `-O` level — `-O0` (the default) disables it, `-O1`+ engages replay +
+  Tier-3 promotion (x86_64 only); the former `MCC_AST_REPLAY` env master gate
+  is gone. `MCC_AST_TEMPLATES`, `MCC_AST_PROMOTE` and `MCC_AST_INLINE` remain
+  env overrides on top of the `-O` defaults (non-`0` opens, `0` closes);
+  `MCC_AST_REPLAY_DUMP` and `MCC_AST_NO_CALLFUL` stay opt-in. The default-on
+  flip was reverted: the full-corpus `mcctest` differential exposed
+  Tier-3/Tier-4 soundness gaps on the PE target and arm64 that the per-golden
+  columns miss. Faithfulness gate: pass 1 replays with no
   transform and **byte-verifies vs `-O0`**; only if faithful does pass 2 apply the
   transform, then gated by the **exec-golden differential**; unfaithful → `-O0`
   fallback.
