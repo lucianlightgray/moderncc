@@ -242,16 +242,33 @@ high-value specifics the summary omits:
 
 ## AST — open backlog / revisit-triggers (was TODO.md)
 
-- **`-O1` transform soundness backlog (14 promote + 4 inline + 3 replay
-  KNOWNGAPs**, behind experimental flags, byte-verify can't catch them): promote 14
-  = 7 call-free FLOAT (one root cause — a promoted XMM6/7 pin clobbered by
-  `gen_opf` operating in place; naive "copy pin read to scratch" regressed corpus
-  269→233) + 6 call-ful GP + 1 call-free int; inline 4 = sad/usad reduction +
-  struct/vector returns; replay 3 = the §20 pp-const-expr corruption + cyclic-VLA
-  crash. Each fix shrinks `GCCTS_AST_KNOWN_*` in `tools/mccharness.c`. Suggested
-  order: 7-for-1 float cluster → call-ful GP → singletons. **Drive this to zero
-  before A1** — a register allocator built on a promotion pass with 14 holes
-  inherits them.
+- **`-O1` transform soundness backlog — CLEARED 2026-07-09.** All 21 KNOWNGAPs
+  (14 promote + 4 inline + 3 replay) are fixed and `GCCTS_AST_KNOWN_{REPLAY,
+  PROMOTE,INLINE}` are all **empty**; every gcc-torture AST column reports 0
+  regressions with no baseline. Root causes were five x86_64 high-register
+  (r8–r15/pin) encoding bugs in `store`/`load`/`gen_opf` (missing/misplaced REX,
+  in-place SSE-dest pin clobber, setcc REX.R) invisible at `-O0`; two promotion
+  analysis holes (address-escape range poisoning; VLA functions no longer
+  promote); the inline graft not spilling caller regs before the callee body
+  (`save_regs(0)`) + honoring `__attribute__((noinline))` + only retaining
+  byte-faithful callees as graft candidates; and for replay, a stale
+  sequence-point warning firing inside a `#if` (fixed by `seqp_reset()` on
+  restore) + a self-cycle guard in `aggr_has_const_member`. A `gen_cast`
+  double-emit (internal truncation shifts captured as AST nodes) was also fixed
+  via `ast_in_op` suppression, and a recycled-`Sym` class of bugs (garbage
+  symtab names breaking the `-O1` self-LINK) closed by deferring `sym_free`
+  across the capture→replay window.
+- **`-O1` self-hosts (2026-07-09).** `mcc -O1` (replay + Tier-3 promote, both
+  call-free and call-ful pools; inline excluded by design) compiles + links
+  itself, and the `-O1`-built compiler's `-O0` output is byte-identical to the
+  `-O0`-built compiler's. Replay + promote + **inline** combined also self-hosts
+  byte-identically, gated by: a per-function `AST_GRAFT_BUDGET` (2048 nodes)
+  governor, and `ast_no_callful_promo` — Tier-4 inline and call-ful Tier-3
+  promotion both claim the callee-saved bank (RBX/R12–R15), so a function that
+  will inline-graft restricts promotion to the call-free pool (the one real
+  promote×inline interaction bug; found fast via the env-flag fallthrough gates
+  rather than byte-diffing). `MCC_AST_INLINE_LIMIT=N` caps grafts to the first N
+  (bisection aid).
 - **A1 — backward-liveness spill-slot sharing (last ratified roadmap item):** pin
   sharing across disjoint live ranges needs a real backward-liveness pass +
   interval coloring. Blocker: promotion currently entry-seeds every pin (mirrors
@@ -354,7 +371,7 @@ Slices S0 (gating), B (SoA CstArena store: `kind[]/parent[]/first_child[]/next_s
 ### Full AST fixture + KNOWNGAP list (was AST-STATUS §5–§8, TODO §C1)
 
 - `ast/replay-*` fixtures: `promote` (call-free/call-ful/pointer/float), `inline` (add/scale/madd/clamp/sgn/area/quad/pick/firsthit/mkpair/gsum/sumpt/sumbig>16B/addpt + fwd_sum/fwd_boxed defer-to-TU), `inline-spec` (choose/clampk/mul/addk specialize, x86_64-gated), `vla`, `complex_ctor`/`_imag`/`_arith`, `short_circuit`, `goto_dispatch`, `switch_dispatch`, `struct_ret_caller`/`_sret`/`_variadic`, `struct_member`, `struct_copy`, `bitfield`, `float_ops`, `call_store`, `ld_fallback`.
-- Promote KNOWNGAP (14): call-free FLOAT (7) `941021-1`,`postmod-1`,`990829-1`,`920929-1`,`pr36343`,`pr28982a`,`pr15262`; call-ful GP (6) `20080519-1`,`20170111-1`,`20020402-3`,`loop-8`,`20000722-1`,`pr28982b`; call-free int (1) `pr119002`. Inline KNOWNGAP (4): `usad-run`,`pr45070`(next),`ssad-run`,`pr41750`(get_got). Replay KNOWNGAP (3): `pr51581-1/2` (pp-const-expr state corruption), `20070919-1` (cyclic VLA-in-struct crash in `aggr_has_const_member`). Baselines: `GCCTS_AST_KNOWN_{REPLAY,PROMOTE,INLINE}` in `tools/mccharness.c`.
+- Promote/Inline/Replay KNOWNGAP baselines: **all empty as of 2026-07-09** (the 14+4+3 listed historically are all fixed; `GCCTS_AST_KNOWN_{REPLAY,PROMOTE,INLINE}` in `tools/mccharness.c` are `{0}`). Historical list, for provenance: promote (14) call-free FLOAT (7) `941021-1`,`postmod-1`,`990829-1`,`920929-1`,`pr36343`,`pr28982a`,`pr15262`; call-ful GP (6) `20080519-1`,`20170111-1`,`20020402-3`,`loop-8`,`20000722-1`,`pr28982b`; call-free int (1) `pr119002`; inline (4) `usad-run`,`pr45070`,`ssad-run`,`pr41750`; replay (3) `pr51581-1/2`,`20070919-1`.
 - Key source symbols (`src/mccgen.c` unless noted): replay `ast_replay_body`/`_bb`/`_value`; promotion `ast_plan_promotion`/`ast_promo_weigh`/`ast_promo_write`/`_entry_init`/`_push`/`_pop`, pools `ast_promo_caller`/`callee`/`xmm`; inline `ast_fn_inlinable`/`ast_inline_capture`/`_graftable`/`_retain`/`_lookup`/`_pool`/`ast_local_is_readonly`/`ast_inline_graft`/`ast_in_graft`/`ast_inline_bias`/`ast_graft_rt`/`ast_argsub_*`; backend addressing `gen_modrm_impl`/`store()` (`src/arch/x86_64/x86_64-gen.c`); gate `suite_gcctestsuite`/`gccts_ast_skiplisted` (`tools/mccharness.c`).
 
 ### Internal symbol & hook inventory (was AST.md / NOTES.md / CONFIG.md)

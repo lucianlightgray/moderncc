@@ -66,6 +66,7 @@ static int ast_graft_total;
 static int ast_templates_env;
 static int ast_promote_env;
 static int ast_no_callful_env;
+static int ast_no_callful_promo;
 static int ast_inline_env;
 static int ast_tmpl_folds;
 static AstArena *ast_cur;
@@ -12251,7 +12252,7 @@ static int ast_plan_promotion(AstArena *a) {
 	}
 	if (has_vla)
 		return 0;
-	if (has_call && ast_no_callful_env)
+	if (has_call && (ast_no_callful_env || ast_no_callful_promo))
 		return 0;
 	int coff[AST_PROMO_MAX * 8], ctyp[AST_PROMO_MAX * 8], cpoison[AST_PROMO_MAX * 8];
 	int cweight[AST_PROMO_MAX * 8];
@@ -12489,7 +12490,7 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 			if (!subst)
 				sv.c.i += ast_inline_bias;
 		}
-		if (ast_promo_n) {
+		if (ast_promo_n && !ast_in_graft) {
 			int preg = ast_promo_reg_of(a, n);
 			if (preg >= 0) {
 				sv.r = (unsigned short)preg;
@@ -12703,7 +12704,9 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 		switch (ast_kind(a, s)) {
 		case AST_Store: {
 #if defined(CONFIG_AST) && CONFIG_AST && defined(MCC_TARGET_X86_64)
-			int preg = ast_promo_n ? ast_promo_reg_of(a, ast_child(a, s, 0)) : -1;
+			int preg = (ast_promo_n && !ast_in_graft)
+										 ? ast_promo_reg_of(a, ast_child(a, s, 0))
+										 : -1;
 			if (preg >= 0) {
 				ast_replay_value(a, ast_child(a, s, 1));
 				CType tct;
@@ -13214,7 +13217,13 @@ static void gen_function(Sym *sym) {
 				ast_fn_faithful = faithful;
 
 				int do_inline = faithful && ast_has_graftable_call(ast_cur);
+				/* Tier-4 inline and call-ful Tier-3 promotion both claim the
+				   callee-saved bank (RBX/R12-R15); combining them in one function
+				   corrupts a pin across the graft. When a function will graft,
+				   restrict promotion to the call-free (caller-saved) pool. */
+				ast_no_callful_promo = do_inline;
 				int do_promote = faithful && ast_promote_env && ast_plan_promotion(ast_cur) > 0;
+				ast_no_callful_promo = 0;
 				if (faithful && !do_inline && !do_promote)
 					loc = saved_loc;
 				if (do_inline || do_promote) {
