@@ -22,8 +22,6 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "MCC_BUILD_MUSL": "OFF",
-        "MCC_CONFIG_BCHECK": "ON",
-        "MCC_CONFIG_BACKTRACE": "ON",
         "MCC_BUILD_STRIP": "OFF"
       }
     },
@@ -34,9 +32,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "MCC_BUILD_MUSL": "ON",
-        "MCC_BUILD_STRIP": "ON",
-        "MCC_CONFIG_BCHECK": "OFF",
-        "MCC_CONFIG_BACKTRACE": "OFF"
+        "MCC_BUILD_STRIP": "ON"
       }
     },
     {
@@ -109,9 +105,7 @@
       "inherits": "linux-gcc",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "MCC_BUILD_STRIP": "ON",
-        "MCC_CONFIG_BCHECK": "OFF",
-        "MCC_CONFIG_BACKTRACE": "OFF"
+        "MCC_BUILD_STRIP": "ON"
       }
     },
     {
@@ -174,9 +168,7 @@
       "inherits": "linux-clang",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "MCC_BUILD_STRIP": "ON",
-        "MCC_CONFIG_BCHECK": "OFF",
-        "MCC_CONFIG_BACKTRACE": "OFF"
+        "MCC_BUILD_STRIP": "ON"
       }
     },
     {
@@ -283,8 +275,6 @@
         "MCC_SINGLE_SOURCE": "OFF",
         "MCC_BUILD_STATIC_LIB": "ON",
         "MCC_BUILD_DYNAMIC_LIB": "ON",
-        "MCC_CONFIG_BCHECK": "OFF",
-        "MCC_CONFIG_BACKTRACE": "OFF",
         "MCC_ENABLE_CROSS": "ON",
         "CMAKE_INSTALL_PREFIX": "${sourceDir}/dist"
       }

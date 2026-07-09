@@ -313,8 +313,8 @@ These bake `CONFIG_*` values into the compiler and change its runtime behavior.
 | Value | Type | Default | Choices | Gate | Purpose |
 |---|---|---|---|---|---|
 | `MCC_CONFIG_MINGW` | BOOL | OFF | | always | Build a WIN32/mingw target (forces `MCC_TARGETOS=WIN32`). |
-| `MCC_CONFIG_BACKTRACE` | BOOL | **ON** | | always | Stack backtraces (`-bt` / `-run`). |
-| `MCC_CONFIG_BCHECK` | BOOL | **ON** | | **MCC_CONFIG_BACKTRACE** | Bounds checker (`-b`). Requires backtrace to link. |
+| `MCC_CONFIG_BACKTRACE` | BOOL | **ON** (Debug) / OFF | | always | Stack backtraces (`-bt` / `-run`). Debugging aid: defaults ON only for Debug builds. |
+| `MCC_CONFIG_BCHECK` | BOOL | **ON** (Debug) / OFF | | **MCC_CONFIG_BACKTRACE** | Bounds checker (`-b`). Requires backtrace to link; defaults ON only for Debug builds. |
 | `MCC_CONFIG_ASM` | BOOL | **ON** | | always | Integrated assembler (inline/global asm, `.s` files, asm labels). Disabling forces `MCC_MCCRT_USE_HOSTCC=ON`. |
 | `MCC_CONFIG_PREDEFS` | BOOL | **ON** | | always | Compile `mccdefs.h` into the binary (c2str). OFF ⇒ runtime dependency on `<mccdefs.h>`. |
 | `MCC_CONFIG_PIE` | BOOL | OFF | | **ELF** | mcc emits position-independent executables. |
@@ -543,7 +543,9 @@ several of these already (§2).
    driver-TU + `libmcc` builds; keeps the non-amalgamated compile path covered.
 5. `MCC_CONFIG_ASM=OFF` (forces mccrt via host CC).
 6. `MCC_CONFIG_PREDEFS=OFF` (runtime mccdefs path).
-7. `MCC_CONFIG_BACKTRACE=OFF` (implies bcheck off) vs default on.
+7. `MCC_CONFIG_BACKTRACE=OFF` (implies bcheck off) vs the Debug default on —
+   the Release presets cover this slice for free (backtrace/bcheck default OFF
+   outside Debug builds).
 
 **Instrumentation (GCC/Clang hosts only):**
 

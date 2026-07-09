@@ -64,8 +64,8 @@ cmake --build cmake-release -j
 |-------------------------|:-------:|----------------------------------------------------------------------------|
 | `MCC_BUILD_TESTS`       |   ON    | Register the CTest suite                                                   |
 | `MCC_CONFIG_ASM`        |   ON    | Integrated assembler                                                       |
-| `MCC_CONFIG_BCHECK`     |   ON    | Bounds checker                                                             |
-| `MCC_CONFIG_BACKTRACE`  |   ON    | Runtime backtraces                                                         |
+| `MCC_CONFIG_BCHECK`     |  Debug  | Bounds checker (ON in Debug builds, OFF otherwise)                         |
+| `MCC_CONFIG_BACKTRACE`  |  Debug  | Runtime backtraces (ON in Debug builds, OFF otherwise)                     |
 | `MCC_ENABLE_CROSS`      |   OFF   | Also build `mcc-<arch>` cross compilers                                    |
 | `MCC_BUILD_STATIC_LIB`  |   OFF   | Build static `libmcc-static.a` instead of shared `libmcc.so`               |
 | `MCC_BUILD_DYNAMIC_LIB` |   OFF   | Also build shared `libmcc-dynamic.so` alongside `libmcc-static.a`          |

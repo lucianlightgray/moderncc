@@ -148,13 +148,11 @@ function(mcc_map_toolchain_cc tc outvar)
         endif()
     endif()
     if(tc STREQUAL "clang")
-        # vendor-first: a fetched clang under vendor/llvm-clang wins over system clang.
         mcc_clang_resolve()
         if(_MCC_CLANG_EXE AND EXISTS "${_MCC_CLANG_EXE}")
             set(${outvar} "${_MCC_CLANG_EXE}" PARENT_SCOPE)
             return()
         endif()
-        # else fall through to the generic PATH probe (find_program clang) below.
     endif()
     set(_names_auto "")
     set(_names_gcc gcc cc)
@@ -174,7 +172,6 @@ function(mcc_find_gnu_gcc outvar)
         set(${outvar} "${MCC_GNU_GCC}" PARENT_SCOPE)
         return()
     endif()
-    # vendor-first: a gcc dropped under vendor/gnu-gcc/bin wins over a system gcc.
     find_program(MCC_VENDOR_GCC NAMES gcc cc
         PATHS "${MCC_VENDOR_DIR}/gnu-gcc/bin" NO_DEFAULT_PATH)
     if(MCC_VENDOR_GCC)
@@ -449,17 +446,9 @@ set(MCC_GNU_GCC "" CACHE FILEPATH
     "Pin the real GNU gcc used by the 'gcc' toolchain profile (empty = probe gcc-16..gcc-10, gcc, cc)")
 mark_as_advanced(MCC_GNU_GCC)
 
-# Single root for every automated download / vendored toolchain / external
-# (mingw, clang, musl source + sysroot, and an optional drop-in gcc). Gitignored.
-# The resolve/autodetect functions below check here first (vendor-first), so a
-# fetched toolchain is picked up automatically on the next configure.
 set(MCC_VENDOR_DIR "${CMAKE_SOURCE_DIR}/vendor" CACHE PATH
     "Root directory for downloaded/vendored toolchains and externals (gcc/clang/mingw/musl)")
 
-# The output counterpart of vendor/: a single gitignored root that is the default
-# install prefix (staging tree) AND where release bundles are written. The docker
-# runners bind-mount it at /dist, so installs/artifacts are produced once and
-# shared with the host and CI — same download-once-share-everywhere model.
 set(MCC_DIST_DIR "${CMAKE_SOURCE_DIR}/dist" CACHE PATH
     "Root directory for install staging and packaged release bundles (default CMAKE_INSTALL_PREFIX; docker-shared)")
 
@@ -468,8 +457,6 @@ mcc_config_node(MCC_MINGW_SOURCE TYPE STRING DEFAULT winlibs GROUP "Build target
     CHOICES winlibs multilib)
 set(MCC_MINGW_DIR "${MCC_VENDOR_DIR}" CACHE PATH
     "Parent directory the downloaded mingw toolchain trees live in")
-# Version tag baked into the vendor/ dir names so a version bump lands in a fresh
-# directory instead of mixing with an older toolchain. Keep in sync with the URLs.
 set(MCC_MINGW_WINLIBS_VER "16.1.0-ucrt" CACHE STRING
     "WinLibs GCC version tag used in the vendor/winlibs-mingw-w64-<ver>-<arch> dir names")
 
@@ -644,9 +631,6 @@ add_custom_target(clang-toolchain
     COMMENT "Fetching self-contained LLVM/clang toolchain into vendor/llvm-clang"
     USES_TERMINAL VERBATIM)
 
-# `vendor-musl` — git-clone a copy of musl into vendor/musl-src (gitignored). Source
-# for MCC_BUILD_MUSL / a native musl sysroot on hosts without musl installed.
-# Idempotent: skips if the checkout already exists (delete it to re-clone).
 find_program(GIT_EXECUTABLE git)
 set(MCC_MUSL_URL "https://git.musl-libc.org/git/musl" CACHE STRING
     "musl git repository URL for the `vendor-musl` target")
@@ -692,11 +676,6 @@ add_custom_target(vendor-musl
     COMMENT "Cloning musl (${MCC_MUSL_REF}) into vendor/musl-src"
     USES_TERMINAL VERBATIM)
 
-# `musl-sysroot` — build the vendored musl source into a self-contained sysroot
-# (headers + crt*.o + libc.a/.so + the ld-musl-*.so.1 loader). This is what the
-# MCC_BUILD_MUSL variants target on a host without a system musl (see the
-# MCC_BUILD_MUSL block). Out-of-tree build so vendor/musl-src stays pristine.
-# Idempotent; depends on vendor-musl so a bare `--target musl-sysroot` clones first.
 set(MCC_MUSL_SYSROOT "${MCC_VENDOR_DIR}/musl-sysroot" CACHE PATH
     "Sysroot the mcc*-musl variants target (built by the `musl-sysroot` target from vendor/musl-src; vendored so it is downloaded/built once and shared across build dirs). Empty = use a system musl (/lib/ld-musl-*).")
 
@@ -993,9 +972,6 @@ if(_is_matrix AND NOT MCC_SUPERBUILD_CHILD)
                 if(_rc)
                     message(FATAL_ERROR \"mcc superbuild: install of cell ${_cell} failed (\${_rc})\")
                 endif()")
-            # The real `bench` target is defined inside each leaf cell (guarded by
-            # MCC_BENCH). Collect a forwarding command per cell so the superbuild
-            # can expose a top-level `bench` (CI runs `--target bench` on the super).
             if(MCC_BENCH)
                 set(_cellbench_cfg "")
                 if(_cell_is_msvc AND NOT MCC_MSVC_GENERATOR STREQUAL "")
@@ -1009,10 +985,6 @@ if(_is_matrix AND NOT MCC_SUPERBUILD_CHILD)
                      COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}/${_cell}"
                              ${_cellbench_cfg} --target bench)
             endif()
-            # Likewise forward `package-dist`: the leaf cell owns the `ci pkg`
-            # target (always defined for a non-cross host build) and packages the
-            # shared dist/ tree the superbuild install step populated. CI's `ci
-            # dist` flow runs `--target package-dist` on the superbuild.
             set(_cellpkg_cfg "")
             if(_cell_is_msvc AND NOT MCC_MSVC_GENERATOR STREQUAL "")
                 if(CMAKE_BUILD_TYPE STREQUAL "")
@@ -1021,9 +993,6 @@ if(_is_matrix AND NOT MCC_SUPERBUILD_CHILD)
                     set(_cellpkg_cfg --config "${CMAKE_BUILD_TYPE}")
                 endif()
             endif()
-            # One package pass suffices: the dist/ tree is shared and fully
-            # populated by the superbuild install step, so overwrite rather than
-            # accumulate (a multi-cell matrix would otherwise repackage N times).
             set(_pkg_cmds
                 COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}/${_cell}"
                         ${_cellpkg_cfg} --target package-dist)
@@ -1031,17 +1000,11 @@ if(_is_matrix AND NOT MCC_SUPERBUILD_CHILD)
         endforeach()
         set(_prev_stage "${_this_stage}")
     endforeach()
-    # Forward `bench` to the leaf cell(s) so `cmake --build <super> --target bench`
-    # produces the report just like on a non-superbuild (leaf) configuration. Not
-    # part of ALL; run on demand after the normal build (matches CI's flow).
     if(MCC_BENCH AND _bench_cmds)
         add_custom_target(bench ${_bench_cmds}
             USES_TERMINAL VERBATIM
             COMMENT "Benchmarking (superbuild: forwarding `bench` to each leaf cell)")
     endif()
-    # Forward `package-dist` too so `ci dist` / release.yml can run it on the
-    # superbuild (the mingw dist preset is a superbuild). Packages the shared
-    # dist/ tree via the leaf cell's `ci pkg` target after install.
     if(_pkg_cmds)
         add_custom_target(package-dist ${_pkg_cmds}
             USES_TERMINAL VERBATIM
@@ -1073,8 +1036,6 @@ if(APPLE AND MCC_BUILD_STATIC_EXE)
     set(MCC_BUILD_STATIC_EXE OFF)
     message(STATUS "mcc: macOS has no fully-static libc; forcing MCC_BUILD_STATIC_EXE=OFF")
 endif()
-# Strip release-type builds by default; debug/other build types keep symbols.
-# Presets that set MCC_BUILD_STRIP explicitly (e.g. dist-macos=OFF) still win.
 set(_mcc_strip_default OFF)
 if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "MinSizeRel")
     set(_mcc_strip_default ON)
@@ -1204,10 +1165,6 @@ if(NOT "${MCC_EXTRA_LDFLAGS}" STREQUAL "")
 endif()
 
 set(_proc "${CMAKE_SYSTEM_PROCESSOR}")
-# Explicit target-CPU override. CMAKE_SYSTEM_PROCESSOR is re-derived from the
-# host during project() and cannot be forced for a native build, so an override
-# is needed to target a non-host CPU with a host (or Rosetta-translated) clang --
-# e.g. producing the x86_64 macOS release on an Apple-silicon runner.
 if(MCC_TARGET_ARCH)
     set(_proc "${MCC_TARGET_ARCH}")
 endif()
@@ -2023,10 +1980,6 @@ endif()
 if(MCC_BUILD_MUSL AND NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT APPLE)
     mcc_musl_target("${MCC_CPU}" "${MCC_ARM_HARDFLOAT}" _mi _mt)
 
-    # Unless MCC_MUSL_SYSROOT was cleared (system-musl mode), target the vendored
-    # sysroot built by the `musl-sysroot` target: bake its absolute loader path as
-    # the interpreter (so output runs on a host without musl installed) and point
-    # {R} (CONFIG_SYSROOT) at it so headers/libs/crt resolve there too.
     set(_musl_vendored OFF)
     if(NOT MCC_MUSL_SYSROOT STREQUAL "" AND NOT _mi STREQUAL "")
         set(_musl_vendored ON)
@@ -2039,12 +1992,10 @@ if(MCC_BUILD_MUSL AND NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT APPLE)
         if(_d MATCHES "^CONFIG_MCC_ELFINTERP="
            OR _d MATCHES "^CONFIG_TRIPLET="
            OR _d MATCHES "^CONFIG_MCC_MUSL=")
-            # re-added below with musl values
         elseif(_musl_vendored AND (_d MATCHES "^CONFIG_SYSROOT="
                OR _d MATCHES "^CONFIG_MCC_SYSINCLUDEPATHS="
                OR _d MATCHES "^CONFIG_MCC_LIBPATHS="
                OR _d MATCHES "^CONFIG_MCC_CRTPREFIX="))
-            # re-pointed at the vendored sysroot below
         else()
             list(APPEND _mccdefs_musl "${_d}")
         endif()
@@ -2375,9 +2326,6 @@ function(mcc_build_mccrt tname mcctgt cpu os native archive objdir out_extra)
     file(MAKE_DIRECTORY "${objdir}")
 
     set(_use_gcc OFF)
-    # Embedding bakes this archive INTO mcc, so the archive must not depend on the
-    # mcc executable (that would be a build cycle). Building it with the host CC
-    # breaks the cycle; the objects are portable C and fully equivalent.
     if(native AND (MCC_MCCRT_USE_HOSTCC OR MCC_EMBED_MCCRT))
         set(_use_gcc ON)
         set(_gccflags ${_mccdefs_flags}
@@ -2385,12 +2333,6 @@ function(mcc_build_mccrt tname mcctgt cpu os native archive objdir out_extra)
                       -Wno-unused-variable
                       -I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include -I${CMAKE_BINARY_DIR}
                       ${_arch_incs})
-        # On aarch64 gcc/clang default to -moutline-atomics, lowering atomics to
-        # libgcc's __aarch64_{cas,swp,ldadd,...}_* helpers. mcc links libc only,
-        # not libgcc, so a gcc-built runtime (EMBED_MCCRT / USE_HOSTCC) would leave
-        # those unresolved. Emit self-contained inline atomics instead. (macOS
-        # arm64 dodges this because EMBED is forced off there, so mcc builds the
-        # runtime and lowers atomics to its own __atomic_*_N helpers.)
         if(MCC_CPU STREQUAL "arm64")
             include(CheckCCompilerFlag)
             check_c_compiler_flag("-mno-outline-atomics" MCC_HAVE_NO_OUTLINE_ATOMICS)
@@ -2400,11 +2342,9 @@ function(mcc_build_mccrt tname mcctgt cpu os native archive objdir out_extra)
         endif()
         if(MCC_CONFIG_DWARF STREQUAL "" AND NOT CMAKE_C_COMPILER_ID MATCHES "Clang"
            AND CMAKE_C_COMPILER_VERSION VERSION_LESS 12)
-            # stabs debug info: gcc-only, and only gcc < 12 — GCC 12 dropped stabs
-            # support, so newer gcc warns "switch '-gstabs' is no longer supported".
             set(_bflags_gcc -gstabs)
         else()
-            set(_bflags_gcc -gdwarf)   # clang, or gcc >= 12 (no stabs): use DWARF
+            set(_bflags_gcc -gdwarf)
         endif()
     endif()
 
@@ -2468,17 +2408,11 @@ function(mcc_build_mccrt tname mcctgt cpu os native archive objdir out_extra)
     set(${out_extra} "${_extra}" PARENT_SCOPE)
 endfunction()
 
-# Embedding streams the archive through a POSIX temp fd (mkstemp); not wired for
-# PE. Keep the on-disk sidecar there.
 if(MCC_EMBED_MCCRT AND MCC_TARGETOS STREQUAL "WIN32")
     set(MCC_EMBED_MCCRT OFF)
     message(STATUS "mcc: MCC_EMBED_MCCRT not supported on WIN32; using the sidecar libmccrt.a")
 endif()
 
-# Embedding forces the native mccrt to be host-CC built (see mcc_build_mccrt).
-# On Darwin the host CC emits Mach-O objects, but mcc's object loader reads only
-# ELF, so it cannot link a host-CC-built runtime. Fall back to the sidecar, which
-# is built by mcc itself (ELF, and therefore loadable).
 if(MCC_EMBED_MCCRT AND MCC_TARGETOS STREQUAL "Darwin" AND NOT MCC_MCCRT_USE_HOSTCC)
     set(MCC_EMBED_MCCRT OFF)
     message(STATUS "mcc: MCC_EMBED_MCCRT unsupported on Darwin (mcc reads ELF objects only); using the sidecar libmccrt.a")
@@ -2493,15 +2427,7 @@ mcc_build_mccrt(mccrt mcc "${MCC_CPU}" "${MCC_TARGETOS}" ON
     "${MCC_MCCRT_ARCHIVE}" "${CMAKE_BINARY_DIR}/lib"
     MCCRT_EXTRA_OBJS)
 
-# Bake libmccrt.a into the mcc binary: generate a byte-array TU from the archive
-# and link it into `mcc`, with MCC_EMBED_MCCRT=1 flipping mcc_add_runtime() over to
-# the embedded loader. Only the primary `mcc` target embeds; static/musl/cross
-# variants keep the on-disk sidecar. The archive is host-CC built (above), so this
-# introduces no build cycle.
 if(MCC_EMBED_MCCRT)
-    # The bin2c codegen tool must run on the build host, so under cross-compilation
-    # compile it with a host CC rather than the (target) project compiler — same
-    # treatment as c2str above.
     if(CMAKE_CROSSCOMPILING)
         find_program(MCC_HOSMCC
             NAMES "$ENV{CC_FOR_BUILD}" "$ENV{HOSMCC}" cc gcc clang
@@ -2825,11 +2751,8 @@ if(NOT CMAKE_CROSSCOMPILING)
         add_executable(mccbench tools/bench.c tools/toolsupport.c)
         target_link_libraries(mccbench ${CMAKE_DL_LIBS})
         if(WIN32)
-            target_link_libraries(mccbench psapi advapi32)  # GetProcessMemoryInfo + registry
+            target_link_libraries(mccbench psapi advapi32)
         endif()
-        # `bench` races mcc against the host compilers and writes a report to
-        # the shared dist/ tree. --junit is optional: CI writes it beforehand
-        # with `ctest --output-junit`; absent, the test table is skipped.
         add_custom_target(bench
             COMMAND "$<TARGET_FILE:mccbench>"
                     --mcc "$<TARGET_FILE:mcc>"
@@ -2844,28 +2767,9 @@ if(NOT CMAKE_CROSSCOMPILING)
         add_dependencies(bench mccbench mcc)
     endif()
 
-    # ---- Local CI: reproduce the whole CI + release matrix on this machine ---
-    # The `ci local` verb (tools/ci.c) probes the host for every toolchain/
-    # emulator the workflows use (native cc, host-runnable cross, qemu-user per
-    # arch, wine, mingw) and runs each preset this OS can run — via the same
-    # do_run_preset() path CI uses — then builds the dist/ release bundles. It
-    # reads its runtime knobs from the environment (LOCAL_CI_ONLY / _SKIP_QEMU /
-    # _SKIP_RELEASE / _LIST / _KEEP_GOING); see the verb's header comment.
-    # CMake hard-reserves the `test` name whenever this build registers ctest
-    # tests, so `test` can only become the orchestrator in a build that isn't
-    # itself running ctest. MCC_LOCAL_CI_AS_TEST=ON turns this into that build:
-    # it drops this build's own test suite (the orchestrator drives fresh
-    # per-preset builds that keep theirs) and binds the orchestrator to `test`,
-    # so `ninja test` runs the whole matrix. The `local-ci` preset sets it. When
-    # OFF (default) the orchestrator is the `ci-local` target and plain ctest is
-    # untouched — CI and every normal build behave exactly as before.
     option(MCC_LOCAL_CI_AS_TEST
         "Make `test` run the full local-CI matrix (disables this build's own ctest suite; see the `local-ci` preset)." OFF)
     if(MCC_LOCAL_CI_AS_TEST)
-        # Transient (non-cache) override: shadows the cached MCC_BUILD_TESTS for
-        # the rest of this configure so the ctest suite below is skipped and the
-        # reserved `test` name is free — without persisting OFF into the cache
-        # (flipping MCC_LOCAL_CI_AS_TEST back would otherwise leave tests dead).
         set(MCC_BUILD_TESTS OFF)
         set(_local_ci_name test)
     else()
@@ -2896,8 +2800,6 @@ if(MCC_BUILD_TESTS)
         add_executable(mccharness tools/mccharness.c tools/toolsupport.c)
         target_link_libraries(mccharness ${CMAKE_DL_LIBS})
 
-        # machofat — self-contained universal/fat Mach-O combiner (macOS only,
-        # a lipo replacement); a pure host tool with no mcc dependency.
         if(MCC_TARGETOS STREQUAL "Darwin")
             add_executable(machofat tools/machofat.c)
         endif()
@@ -2925,9 +2827,6 @@ if(MCC_BUILD_TESTS)
             WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
         set_tests_properties(host-gate-invariant PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
-        # Config-drift invariant (docs/CONFIG.md): the CONFIG_MCC_* surface the
-        # code reads must stay reconciled with what CMakeLists.txt / tools/build.c
-        # emit and what the headers default. Fails on an implicit read or a dead -D.
         add_executable(ckconfig tools/ckconfig.c tools/toolsupport.c)
         target_link_libraries(ckconfig ${CMAKE_DL_LIBS})
         add_test(NAME config-drift-invariant
@@ -2935,19 +2834,12 @@ if(MCC_BUILD_TESTS)
             WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
         set_tests_properties(config-drift-invariant PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
-        # Preset-parity invariant (docs/BUILD.md §2): every non-hidden preset in
-        # CMakePresets.json must have a workflow cell (ci.yml / release.yml) and
-        # a `ci local` slot; the curated tables + exemptions live in tools/ci.c.
         add_test(NAME preset-parity-invariant
             COMMAND "$<TARGET_FILE:ci>" parity --srcroot "${CMAKE_CURRENT_SOURCE_DIR}"
             WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
         set_tests_properties(preset-parity-invariant PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
-    # AST intention-IR pure-library test harness (docs/AST.md §16/§17, D-c).
-    # Self-contained: asttool #includes src/mccast.c and links nothing from mcc,
-    # so the arena / builder / dump / provenance invariants are proven against
-    # synthetic intention trees before the replay driver lands.
     if(MCC_AST AND NOT CMAKE_CROSSCOMPILING)
         add_executable(asttool tools/asttool.c)
         target_include_directories(asttool PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
@@ -2957,13 +2849,7 @@ if(MCC_BUILD_TESTS)
             set_tests_properties("ast/${_an}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endforeach()
 
-        # Replay-driver differential-exec gate (docs/AST.md §17). Compiles the
-        # fixture through the -O0 path and through the AST replay driver and
-        # asserts the same exit code, requiring the named function to actually
-        # go through replay (not silently fall back). Brought up one construct
-        # at a time; ret42 is the smallest rung (return of an integer constant).
         if(NOT CMAKE_CROSSCOMPILING AND NOT MCC_TARGETOS STREQUAL "WIN32")
-            # fixture;expected-exit-code pairs (return of an integer constant).
             foreach(_case "ret42;42" "ret0;0" "retexpr;14" "mainempty;0" "argc_expr;42"
                           "local_ret;42" "local_two;42" "neg_fallback;42" "global_ref;42"
                           "cast_expr;41" "call_printf;3" "if_else;42" "if_return;42"
@@ -2984,9 +2870,6 @@ if(MCC_BUILD_TESTS)
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
                 set_tests_properties("ast/replay-${_rn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
             endforeach()
-            # Safety-net case: an unmodeled construct (`long double`) must fall
-            # back to correct -O0 emission (same exit code) without faithfully
-            # replaying — proving the byte-verify net.
             if(NOT (MCC_TARGETOS STREQUAL "Darwin" AND MCC_CPU STREQUAL "arm64"))
                 add_test(NAME "ast/replay-ld_fallback" COMMAND "${CMAKE_COMMAND}"
                     "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
@@ -2997,9 +2880,6 @@ if(MCC_BUILD_TESTS)
                 set_tests_properties("ast/replay-ld_fallback" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
             endif()
 
-            # Struct-returning callee (`return s`): the aggregate return replays
-            # (REPLAYED targets `make`, since the caller `main` falls back on the
-            # result-temp loc divergence).
             add_test(NAME "ast/replay-struct_return" COMMAND "${CMAKE_COMMAND}"
                 "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
                 "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/struct_return.c"
@@ -3008,8 +2888,6 @@ if(MCC_BUILD_TESTS)
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
             set_tests_properties("ast/replay-struct_return" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
-            # Variadic struct-returning call (REPLAYED targets use; main→use also
-            # replays but keep the assertion on the function doing the vararg call).
             add_test(NAME "ast/replay-struct_ret_variadic" COMMAND "${CMAKE_COMMAND}"
                 "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
                 "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/struct_ret_variadic.c"
@@ -3018,8 +2896,6 @@ if(MCC_BUILD_TESTS)
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
             set_tests_properties("ast/replay-struct_ret_variadic" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
-            # _Complex arithmetic + __real__/__imag__ extraction replay (REPLAYED
-            # targets addre; main falls back on the _Complex construction re+im*I).
             add_test(NAME "ast/replay-complex_arith" COMMAND "${CMAKE_COMMAND}"
                 "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
                 "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/complex_arith.c"
@@ -3028,7 +2904,6 @@ if(MCC_BUILD_TESTS)
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
             set_tests_properties("ast/replay-complex_arith" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
-            # _Complex imaginary-literal construction (`r + 2.0i`) replays.
             add_test(NAME "ast/replay-complex_imag" COMMAND "${CMAKE_COMMAND}"
                 "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
                 "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/complex_imag.c"
@@ -3037,10 +2912,6 @@ if(MCC_BUILD_TESTS)
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
             set_tests_properties("ast/replay-complex_imag" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
-            # _Complex construction from the imaginary unit I (`re + im*I`): the
-            # __builtin_complex rodata const is captured as a Ref leaf, and the
-            # float->double _Complex widening cast's rodata const is reused ordinally
-            # so replay's relocation is byte-identical (docs/AST.md §18.3). REPLAYED=mk.
             add_test(NAME "ast/replay-complex_ctor" COMMAND "${CMAKE_COMMAND}"
                 "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
                 "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/complex_ctor.c"
@@ -3049,9 +2920,6 @@ if(MCC_BUILD_TESTS)
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
             set_tests_properties("ast/replay-complex_ctor" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
-            # VLA alloc + LIFO SP save/restore (the lexical-scope-edge query,
-            # docs/AST.md §4/§18.3): 1-D + nested-block VLAs replay, incl. the inner
-            # block's scope-exit SP restore and the function-scope restore at return.
             add_test(NAME "ast/replay-vla" COMMAND "${CMAKE_COMMAND}"
                 "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
                 "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/vla.c"
@@ -3060,19 +2928,6 @@ if(MCC_BUILD_TESTS)
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
             set_tests_properties("ast/replay-vla" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
-            # Tier-3 register promotion (docs/AST.md §4/§10/§18.2 Tier 3, opt-in
-            # MCC_AST_PROMOTE): an address-not-taken int local lives in a pinned register
-            # (no stack traffic) — the first opt that deliberately beats -O0. A call-free
-            # function uses caller-saved R10/R9/R8; a call-ful function uses callee-saved
-            # RBX/R12–R15 (pushed at entry, popped at the return funnel) so the pin survives
-            # calls. PROMOTES asserts promotion fired on loopy (call-free, across a loop)
-            # AND callful (across calls); the exit-code equality vs -O0 is the gate
-            # (byte-verify is bypassed for a promoted function). Register promotion is
-            # currently **x86_64-only** (the pin pools are x86_64-specific — on every other
-            # target the driver is a no-op, so the PROMOTES assertion would fail); the
-            # whole-corpus exec-replay-promote column still runs everywhere (promotion
-            # no-op => output matches). The general replay driver is covered on all arches
-            # by exec-replay/*.
             if(MCC_CPU STREQUAL "x86_64")
                 add_test(NAME "ast/replay-promote" COMMAND "${CMAKE_COMMAND}"
                     "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
@@ -3086,13 +2941,6 @@ if(MCC_BUILD_TESTS)
                     "Tier-3 register promotion is x86_64-only (caller-saved R10/R9/R8 + callee-saved RBX/R12–R15 pools); on ${MCC_CPU} it is a no-op — coverage stays via exec-replay-promote")
             endif()
 
-            # Tier-4 virtual always-inline (docs/AST.md §9, opt-in MCC_AST_INLINE): a
-            # within-TU static leaf `return EXPR` helper is grafted into a later caller in
-            # place of the boundary Call. INLINES asserts the graft fired; the exit-code
-            # equality vs -O0 is the gate (an inlined caller's bytes diverge from -O0). The
-            # graft is at the vstack/AST tier (arch-independent — compiled on every target);
-            # the fixture assertion is verified on x86_64 and arm64, so it is gated to those
-            # two native arches (see docs/AST-STATUS.md §5 for the arm64 graft fixes).
             if(MCC_CPU STREQUAL "x86_64" OR MCC_CPU STREQUAL "arm64")
                 add_test(NAME "ast/replay-inline" COMMAND "${CMAKE_COMMAND}"
                     "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
@@ -3102,11 +2950,6 @@ if(MCC_BUILD_TESTS)
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
                 set_tests_properties("ast/replay-inline" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
-                # Per-site specialization (docs/AST.md §19.3): with inline + the const-fold
-                # template on, a constant arg bound to a read-only param is constant-propagated
-                # into the graft, so gen_op folds the arithmetic and a constant-folded condition
-                # drops its dead branch. SPECIALIZES asserts the substitution fired; the exit-code
-                # equality vs -O0 is the gate (a specialized graft's bytes diverge from -O0).
                 add_test(NAME "ast/replay-inline-spec" COMMAND "${CMAKE_COMMAND}"
                     "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
                     "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/inline_spec.c"
@@ -3122,12 +2965,6 @@ if(MCC_BUILD_TESTS)
                     "per-site specialization is arch-independent but its fixture assertion is only verified on x86_64 so far")
             endif()
 
-            # A7 first template = const-fold (docs/AST.md §12/§15/§17-D-d). The
-            # per-template differential test: the fixture is compiled with the
-            # const-fold template on and must (a) exit the same as -O0 (input ==
-            # output) and (b) actually fold (FOLDS=main asserts the rewrite fired
-            # and replay stayed byte-faithful — the fold is byte-neutral because
-            # gen_op already folds constants at -O0).
             add_test(NAME "ast/template-constfold" COMMAND "${CMAKE_COMMAND}"
                 "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
                 "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/constfold.c"
@@ -3138,9 +2975,6 @@ if(MCC_BUILD_TESTS)
         endif()
     endif()
 
-    # CST database pure-library test harness (docs/IMPLEMENTATION.md §0/§6).
-    # Self-contained: csttool #includes src/mcccst.c and links nothing from mcc,
-    # so slices B/C/D/E are proven against synthetic trees before Weave 1.
     if(MCC_CST AND NOT CMAKE_CROSSCOMPILING)
         add_executable(csttool tools/csttool.c)
         target_include_directories(csttool PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
@@ -3150,8 +2984,6 @@ if(MCC_BUILD_TESTS)
             set_tests_properties("cst/${_cn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endforeach()
 
-        # Round-trip "pure reflection" gate (PLAN §8.1): compile each fixture
-        # with the CST self-check on and assert byte-identical reflection.
         file(GLOB _cst_fx RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/fixtures"
              "${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/fixtures/*.c")
         foreach(_fx IN LISTS _cst_fx)
@@ -3165,7 +2997,6 @@ if(MCC_BUILD_TESTS)
             set_tests_properties("cst/roundtrip-${_fn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endforeach()
 
-        # Symbol-ref correctness (slice I): use->def node-id resolution.
         add_test(NAME "cst/symref" COMMAND "${CMAKE_COMMAND}"
             "-DMCC=${_mcc_exe}"
             "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/symref/refs.c"
@@ -3174,9 +3005,6 @@ if(MCC_BUILD_TESTS)
             -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/symref.cmake")
         set_tests_properties("cst/symref" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
-        # Shadowing boundary (slice I): pins the v1 last-declaration-wins
-        # resolver (a file-scope name shadowed in a function resolves both uses
-        # to the same def — no scope stack). Documents the limitation.
         add_test(NAME "cst/symref-shadow" COMMAND "${CMAKE_COMMAND}"
             "-DMCC=${_mcc_exe}"
             "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/symref/shadow.c"
@@ -3185,7 +3013,6 @@ if(MCC_BUILD_TESTS)
             -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/symref-shadow.cmake")
         set_tests_properties("cst/symref-shadow" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
-        # Structural-hash invariance on real trees (slice C/G, §8.4).
         add_test(NAME "cst/hashinv" COMMAND "${CMAKE_COMMAND}"
             "-DMCC=${_mcc_exe}"
             "-DDIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/hashinv"
@@ -3194,7 +3021,6 @@ if(MCC_BUILD_TESTS)
             -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/hashinv.cmake")
         set_tests_properties("cst/hashinv" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
-        # Macro fidelity (slice J): MacroInvocation nodes + round-trip.
         add_test(NAME "cst/macro" COMMAND "${CMAKE_COMMAND}"
             "-DMCC=${_mcc_exe}"
             "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/macro/macros.c"
@@ -3203,9 +3029,6 @@ if(MCC_BUILD_TESTS)
             -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/macro.cmake")
         set_tests_properties("cst/macro" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
-        # Macro-invocation v1 boundary (slice J): pins the two accepted
-        # imprecisions (trailing ')' split off; object-like macro in args stays a
-        # plain token) while the source still round-trips byte-identically.
         add_test(NAME "cst/macro-nesting" COMMAND "${CMAKE_COMMAND}"
             "-DMCC=${_mcc_exe}"
             "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/macro/macro_nesting.c"
@@ -3214,9 +3037,6 @@ if(MCC_BUILD_TESTS)
             -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/macro-nesting.cmake")
         set_tests_properties("cst/macro-nesting" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
-        # Node-kind coverage gates (D4, docs/CST.md): each fixture asserts a set
-        # of previously reserved-but-unproduced kinds is now emitted. Registered
-        # per slice as the kinds land (D1a expr, D1b decl, D1c pp, D1d comment).
         function(cst_kinds_test name src kinds)
             add_test(NAME "cst/kinds-${name}" COMMAND "${CMAKE_COMMAND}"
                 "-DMCC=${_mcc_exe}"
@@ -3228,14 +3048,10 @@ if(MCC_BUILD_TESTS)
             set_tests_properties("cst/kinds-${name}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endfunction()
         cst_kinds_test(expr "expr.c" "Unary;Cast;Paren;Primary")
-        # (dump abbreviations: Declaration->Decl, FunctionDef->Func, Initializer->Init)
         cst_kinds_test(decl "decl.c" "Decl;Func;ParamList;Enum;TypeName;Init;Label")
-        # (dump abbreviations: IncludeDirective->Include, PPConditional->PPCond)
         cst_kinds_test(pp "pp.c" "Include;PPDirective;PPCond")
         cst_kinds_test(comment "comment.c" "Comment")
 
-        # D3 live capture: real included files interned as hash-consed SourceFile
-        # templates + IncludeDirective binding/dedup on an actual compile.
         add_test(NAME "cst/incstore" COMMAND "${CMAKE_COMMAND}"
             "-DMCC=${_mcc_exe}"
             "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/incstore/driver.c"
@@ -3244,8 +3060,6 @@ if(MCC_BUILD_TESTS)
             -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/incstore.cmake")
         set_tests_properties("cst/incstore" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
-        # D3 recursive dynamic-value re-include: a header that re-includes itself
-        # under an incrementing, depth-gated macro collapses to one template.
         add_test(NAME "cst/increment" COMMAND "${CMAKE_COMMAND}"
             "-DMCC=${_mcc_exe}"
             "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/cst/incstore/increment_driver.c"
@@ -3272,11 +3086,6 @@ if(MCC_BUILD_TESTS)
             SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env}")
     endforeach()
 
-    # AST replay column (docs/AST.md §17): the same golden corpus re-run with the
-    # replay driver on (MCC_AST_REPLAY=1), asserting the same expected output. It
-    # is the differential-exec gate over the whole corpus — functions the driver
-    # can lower go through the AST, everything else falls back to the -O0 emission,
-    # so it must stay green as the driver grows one construct at a time.
     if(MCC_AST)
         foreach(_gl IN LISTS _exec_glines)
             string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
@@ -3289,12 +3098,6 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_AST_REPLAY=1")
         endforeach()
 
-        # A7 const-fold template column (docs/AST.md §15): the whole golden corpus
-        # re-run with the replay driver *and* the const-fold template on, asserting
-        # the same expected output. This is the per-template differential gate over
-        # the full corpus — the rewrite is byte-neutral (gen_op folds constants at
-        # -O0), so every faithfully-replayed function stays byte-identical and the
-        # column stays green, proving template input == output across the corpus.
         foreach(_gl IN LISTS _exec_glines)
             string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
             set(_gn "${CMAKE_MATCH_1}")
@@ -3306,12 +3109,6 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_AST_REPLAY=1;MCC_AST_TEMPLATES=1")
         endforeach()
 
-        # Tier-3 register-promotion column (docs/AST.md §18.2 Tier 3): the whole
-        # golden corpus re-run with the replay driver *and* register promotion on,
-        # asserting the same expected output. Unlike the template column this is NOT
-        # byte-identical to -O0 (a promoted function keeps its address-not-taken int
-        # locals in registers), so byte-verify is bypassed for promoted functions and
-        # this exec-golden differential is the correctness gate for the optimization.
         foreach(_gl IN LISTS _exec_glines)
             string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
             set(_gn "${CMAKE_MATCH_1}")
@@ -3536,9 +3333,6 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(hello-exe PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
-    # Fully-static glibc link+run gate: covers the IFUNC-iplt, GOTPCREL-addend,
-    # GOTTPOFF IE->LE relaxation and .tdata TLS-layout paths that only fire on a
-    # real static libc.a. Native x86_64 Linux glibc only; skipped elsewhere.
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/static/smoke.c")
         if(NOT MCC_EMULATOR AND NOT MCC_BUILD_MUSL
            AND MCC_TARGETOS STREQUAL "Linux" AND MCC_CPU STREQUAL "x86_64")
@@ -3559,11 +3353,6 @@ if(MCC_BUILD_TESTS)
         endif()
     endif()
 
-    # TLS model coverage: link objects compiled in all four x86-64 TLS models
-    # (GD/LD/IE/LE) through mcc's linker, dynamic and (if a static libc exists)
-    # static. Pins the GD->LE / LD->LE / IE->LE relaxation + pattern-match paths
-    # in x86_64-link.c that only fire on external gcc/clang objects. x86_64-only
-    # (i386's R_386_TLS_* patterns need an i386 cross build to exercise).
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/tls/models.c")
         if(NOT MCC_EMULATOR AND MCC_TARGETOS STREQUAL "Linux"
            AND MCC_CPU STREQUAL "x86_64")
@@ -3861,12 +3650,6 @@ if(MCC_BUILD_TESTS)
         DEPENDS mcc mccharness USES_TERMINAL
         COMMENT "gcctestsuite: gcc c-torture over mcc")
 
-    # AST acceptance gate (docs/AST.md §C1): the same gcc c-torture suite run as a DIFFERENTIAL
-    # — each test at -O0 (baseline) AND under an AST column; a test that passes at -O0 but fails
-    # under the column is a REGRESSION (nonzero exit). The replay path is byte-identical-or-
-    # fallback, so it must match -O0 test-for-test; promotion/inline diverge in bytes but must
-    # match in behavior. These are manual targets (the full suite is slow and needs
-    # MCC_GCCTESTSUITE_PATH); `gcctestsuite-ast` runs all three columns.
     if(MCC_AST)
         foreach(_col replay promote inline)
             add_custom_target(gcctestsuite-ast-${_col}
@@ -3941,13 +3724,6 @@ if(MCC_BUILD_TESTS)
     set(MCC_CROSS_DIR "${_mcc_cross_default}"
         CACHE PATH "cross-compiler build dir for the wine PE runtime test")
 
-    # The macho-* structural/codegen tests consume the x86_64-osx cross compiler.
-    # A pre-built external cross tree is found by EXISTS; but in a self-contained
-    # MCC_ENABLE_CROSS build the compiler is a `all` TARGET not yet on disk at
-    # configure time, so EXISTS is spuriously false. Accept the in-tree target too
-    # -- scoped to Darwin, where `macho-structural` runs natively (structural only,
-    # host-independent). The exec-based macho harnesses still self-skip off-x86_64
-    # via host_is_x86_64(); Linux behaviour is left exactly as before (EXISTS only).
     set(_have_osx_cross FALSE)
     if(EXISTS "${MCC_CROSS_DIR}/mcc-x86_64-osx")
         set(_have_osx_cross TRUE)
@@ -3981,11 +3757,6 @@ if(MCC_BUILD_TESTS)
             "native PE runtime conformance (only on a native WIN32 host)")
     endif()
 
-    # Structural Mach-O validation is objcheck-only (no execution), so on a native Darwin host
-    # it also runs with the plain `mcc` as the native-arch osx compiler (no cross tree needed);
-    # the x86_64-osx cross still supplies the x86_64 structural target under macos-cross. The
-    # exec-based macho-{codegen,image,apple-libc} drivers stay cross/loader-gated (see
-    # docs/TODO.md "macOS CI observations").
     set(_macho_struct_native "")
     if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
         set(_macho_struct_native
@@ -4059,8 +3830,6 @@ if(MCC_BUILD_TESTS)
     set_tests_properties(macho-stack-protector PROPERTIES
         FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
 
-    # Universal (fat) binary combiner. Native 1-slice is the hard guarantee; the
-    # 2-slice case additionally uses the x86_64-osx cross + SDK (self-skips else).
     if(TARGET machofat)
         set(_mf_xargs "")
         if(TARGET mcc-x86_64-osx)
@@ -4178,14 +3947,6 @@ if(MCC_BUILD_TESTS)
                 set_tests_properties(${_tn} PROPERTIES
                     FIXTURES_REQUIRED "MCC_BUILT;FX_${_tn}" LABELS qemu TIMEOUT 600)
 
-                # Full exec golden suite under qemu-user for foreign arches:
-                # cross-compile each "run" golden with mcc-<arch> against the
-                # stage3 sysroot and execute the ELF under qemu, comparing to the
-                # golden. The -run/JIT modes (need a native/foreign compiler) and
-                # the x86_64-calibrated / arch-gated goldens (32-bit long & ABI
-                # layout, quad long double, arch-specific asm) are excluded. The
-                # host arch is covered by the native exec suite (and its stage3
-                # crt0 is not mcc-loadable), so this runs on foreign arches only.
                 if(NOT _arch STREQUAL MCC_CPU)
                     add_test(NAME ${_tn}-exec COMMAND exec_runner
                         "${_qcc}" "${CMAKE_BINARY_DIR}"
