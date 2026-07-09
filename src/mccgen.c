@@ -184,6 +184,8 @@ static struct switch_t *ast_rp_switch; /* replay: the switch whose body is emitt
 struct ast_rp_label { int v, jind, jnext, defined; };
 static struct ast_rp_label *ast_rp_labels;
 static int ast_rp_nlabel, ast_rp_caplabel;
+static int ast_rp_label_floor; /* label lookups ignore entries below this — used to scope a
+                                * grafted callee's labels away from the caller's (Tier-4) */
 
 static void ast_hook_stmt(int t);
 static void ast_hook_return(int has_val);
@@ -12250,13 +12252,10 @@ static int ast_inline_graftable(AstArena *a) {
 	int totret = 0;
 	for (AstLocal n = 0; n < nn; n++) {
 		uint16_t k = ast_kind(a, n);
-		/* AST_Jump op 4 (named label def) / op 5 (goto) use the shared per-function label
-		 * table, which a grafted callee would collide with the caller's — exclude those.
-		 * op 0/1 (break/continue) and op 2/3 (case/default) target the callee's OWN enclosing
-		 * loop/switch (whose replay saves/restores bsym/csym/ast_rp_switch), so they are
-		 * self-contained and safe to graft. */
-		if (k == AST_Jump && (ast_op(a, n) == 4 || ast_op(a, n) == 5))
-			return 0;
+		/* All AST_Jump forms are graftable: break/continue (op 0/1) and case/default (op 2/3)
+		 * target the callee's own loop/switch, and named-label def/`goto` (op 4/5) are scoped
+		 * to the callee via the label floor (see ast_inline_graft) — so the callee's control
+		 * flow is fully isolated from the caller's under a graft. */
 		if (k == AST_Return) {
 			totret++;
 			if (ast_nchild(a, n) < 1) /* `return;` (void): no value to coalesce */
@@ -12334,6 +12333,12 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 	CType save_rt = ast_graft_rt;
 	int save_bias = ast_inline_bias, save_ig = ast_in_graft;
 	int save_rsym = ast_inline_ret_sym, save_rslot = ast_inline_ret_slot;
+	/* Isolate the callee's control-flow replay state from the caller's: the callee's own
+	 * loops/switch set break/continue/switch, and its named labels get fresh entries above
+	 * the label floor (so a `goto`/label collides only within the callee, not the caller). */
+	int save_floor = ast_rp_label_floor, save_nlabel = ast_rp_nlabel;
+	struct switch_t *save_switch = ast_rp_switch;
+	int *save_bsym = ast_rp_bsym, *save_csym = ast_rp_csym;
 	ast_graft_rt.t = ast_type_t(a, n);
 	ast_graft_rt.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 	int ral, rsz = type_size(&ast_graft_rt, &ral);
@@ -12344,6 +12349,9 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 	ast_in_graft = 1;
 	ast_inline_ret_sym = 0;
 	ast_inline_ret_slot = loc;
+	ast_rp_label_floor = ast_rp_nlabel;
+	ast_rp_switch = NULL;
+	ast_rp_bsym = ast_rp_csym = NULL;
 	ast_replay_bb(e->ast, ast_root(e->ast));
 	gsym(ast_inline_ret_sym); /* land every early return's jump here */
 	SValue res;               /* push the coalesced result as an lvalue at the slot */
@@ -12358,6 +12366,11 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 	ast_inline_ret_sym = save_rsym;
 	ast_inline_ret_slot = save_rslot;
 	ast_graft_rt = save_rt;
+	ast_rp_label_floor = save_floor;
+	ast_rp_nlabel = save_nlabel; /* discard the callee's labels */
+	ast_rp_switch = save_switch;
+	ast_rp_bsym = save_bsym;
+	ast_rp_csym = save_csym;
 	ast_inline_depth--; /* pop the cycle-guard stack */
 	if (ast_replay_dump)
 		fprintf(stderr, "[ast-inline] grafted %s\n", get_tok_str(((Sym *)csym)->v, NULL));
@@ -12973,7 +12986,7 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 
 /* Per-function replay label table: find-or-create the entry for a label token. */
 static struct ast_rp_label *ast_rp_label_get(int v) {
-	for (int i = 0; i < ast_rp_nlabel; i++)
+	for (int i = ast_rp_label_floor; i < ast_rp_nlabel; i++)
 		if (ast_rp_labels[i].v == v)
 			return &ast_rp_labels[i];
 	if (ast_rp_nlabel == ast_rp_caplabel) {

@@ -70,6 +70,18 @@ static struct Pair mkpair(int a, int b) {
 	p.b = b;
 	return p;
 }
+/* `goto` + a named label: the callee's labels are scoped (label floor) so they don't
+ * collide with the caller's — main has no label here, but see the loop below. */
+static int gsum(int n) {
+	int s = 0, i = 0;
+loop:
+	if (i < n) {
+		s += i;
+		i++;
+		goto loop;
+	}
+	return s;
+}
 
 int main(void) {
 	int r = add(3, 4);              /* 7 */
@@ -84,5 +96,7 @@ int main(void) {
 	int p = pick(2) + firsthit(arr2, 3); /* switch: 5, break-loop: 2 -> 7 */
 	struct Pair pr = mkpair(2, 3);       /* struct return: {2,3} */
 	int m = pr.a + pr.b;                 /* 5 */
-	return r + s + t + u + c + g + d + q + p + m - 50; /* 7+30+13+7+5+0+10+8+7+5 - 50 = 42 */
+	int gs = gsum(5);                    /* goto loop: 0+1+2+3+4 = 10 */
+	return r + s + t + u + c + g + d + q + p + m + gs - 60;
+	/* 7+30+13+7+5+0+10+8+7+5+10 - 60 = 42 */
 }

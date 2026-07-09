@@ -389,11 +389,17 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
     `mkpair`/`mkp` graft. Struct-by-value **params** stay excluded: a >16-byte struct's frame layout
     is ABI-dependent (register vs memory passing), so a plain `vstore`-to-slot bind miscompiles it
     (`dot(V3,V3)` → wrong) — those fall back to a real call. Fixture asserts `mkpair` grafts.
-  - [ ] **Slice 2 breadth.** `goto` / named labels (shared label table — needs per-graft scoping);
-    struct-by-value **params** (ABI-correct binding). Then **forward-declared / later-defined callees
-    (needs true defer-to-TU)** — the common caller-before-callee case, missed today; per-site
-    specialization. Un-gate the fixture on non-x86_64 once verified there. Persist string/rodata Syms
-    to lift that exclusion.
+  - [x] **`goto` / named labels — LANDED 2026-07-08.** Scoped via a label **floor**: during a graft
+    `ast_rp_label_get` ignores entries below the floor, so the callee's labels get fresh entries and
+    a `goto`/label collides only within the callee, never with a same-named caller label (verified:
+    `find` with `goto found` grafted inside `caller` with its own `goto loop`). The graft also
+    isolates `ast_rp_switch`/`bsym`/`csym`. **The callee body may now contain any intra-function
+    control flow** (if/else, loops, switch, break/continue, goto). Corpus + ctest 1769/1769,
+    ASan-clean. Fixture asserts `gsum` (goto loop) grafts.
+  - [ ] **Slice 2 breadth.** Struct-by-value **params** (ABI-correct binding). Then
+    **forward-declared / later-defined callees (needs true defer-to-TU)** — the common
+    caller-before-callee case, missed today; per-site specialization. Un-gate the fixture on
+    non-x86_64 once verified there. Persist string/rodata Syms to lift that exclusion.
 - [ ] **Long horizon (design only):** the broader template library (algebraic, dead-branch,
   jump-table), the time-budgeted engine (§12/§221), dependency-ordered `-O1` compile, cross-TU
   LTO, `-g` from provenance, hot-reload snapshots, and separate `-O2`/`-O3` (SSA) drivers.
