@@ -38,6 +38,18 @@ jobs:
           - { preset: linux-gcc-dwarf,           arch: x86_64, runner: ubuntu-latest }
           - { preset: linux-gcc-diagnostics,     arch: x86_64, runner: ubuntu-latest }
           - { preset: linux-gcc-sanitize,            arch: x86_64, runner: ubuntu-latest }
+          # developer presets (default host cc) — same scenarios the README
+          # documents for interactive use; `matrix` is the gcc;clang x
+          # native;cross superbuild, which has no top-level test preset (each
+          # cell runs its own ctest during the build), hence --no-test.
+          - { preset: debug,                 arch: x86_64, runner: ubuntu-latest }
+          - { preset: release,               arch: x86_64, runner: ubuntu-latest }
+          - { preset: sanitize,              arch: x86_64, runner: ubuntu-latest }
+          - { preset: diagnostics,           arch: x86_64, runner: ubuntu-latest }
+          - { preset: cst,                   arch: x86_64, runner: ubuntu-latest }
+          - { preset: ast,                   arch: x86_64, runner: ubuntu-latest }
+          - { preset: cross,                 arch: x86_64, runner: ubuntu-latest }
+          - { preset: matrix,                arch: x86_64, runner: ubuntu-latest, flags: --no-test }
     env:
       ART: mcc-${{ matrix.preset }}-${{ matrix.arch }}
     steps:
@@ -51,7 +63,7 @@ jobs:
         run: |
           cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl
           mkdir -p "dist/$ART"
-          /tmp/mcc-ci run-preset ${{ matrix.preset }} --out "dist/$ART"
+          /tmp/mcc-ci run-preset ${{ matrix.preset }} --out "dist/$ART" ${{ matrix.flags }}
       - name: test summary
         if: always()
         run: |
@@ -115,16 +127,18 @@ jobs:
             dist/bench-*.txt
 
   msvc:
-    name: msvc / ${{ matrix.arch }}
+    name: ${{ matrix.preset }} / ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { arch: x86_64, runner: windows-latest }
-          - { arch: arm64,  runner: windows-11-arm }
+          - { preset: msvc,          arch: x86_64, runner: windows-latest }
+          - { preset: msvc,          arch: arm64,  runner: windows-11-arm }
+          - { preset: sanitize-msvc, arch: x86_64, runner: windows-latest }
+          - { preset: sanitize-msvc, arch: arm64,  runner: windows-11-arm }
     env:
-      ART: mcc-msvc-${{ matrix.arch }}
+      ART: mcc-${{ matrix.preset }}-${{ matrix.arch }}
     steps:
       - uses: actions/checkout@v5
       - name: resolve diff3 reference compilers (mingw gcc + clang)
@@ -136,25 +150,25 @@ jobs:
           if ($gcc)   { "MCC_DIFF3_GCC=$($gcc.Replace('\','/'))"     | Out-File -FilePath $env:GITHUB_ENV -Append }
           if ($clang) { "MCC_DIFF3_CLANG=$($clang.Replace('\','/'))" | Out-File -FilePath $env:GITHUB_ENV -Append }
       - name: configure
-        run: cmake --preset msvc "-DCMAKE_INSTALL_PREFIX=$($PWD.Path.Replace('\','/'))/dist/${env:ART}" "-DMCC_BENCH=ON" "-DMCC_DIST_PLAT=${env:ART}"
+        run: cmake --preset ${{ matrix.preset }} "-DCMAKE_INSTALL_PREFIX=$($PWD.Path.Replace('\','/'))/dist/${env:ART}" "-DMCC_BENCH=ON" "-DMCC_DIST_PLAT=${env:ART}"
       - name: build
-        run: cmake --build --preset msvc -j
+        run: cmake --build --preset ${{ matrix.preset }} -j
       - name: test
         # --timeout caps any single test: a hung test (e.g. a thread-contention
         # deadlock that only manifests on real arm64 silicon) is killed and named
         # in the log instead of stalling the whole job until it is cancelled.
-        run: ctest --preset msvc -j ${env:NUMBER_OF_PROCESSORS} --timeout 300 --output-junit "cmake-msvc/bench-tests.xml"
+        run: ctest --preset ${{ matrix.preset }} -j ${env:NUMBER_OF_PROCESSORS} --timeout 300 --output-junit "cmake-${{ matrix.preset }}/bench-tests.xml"
       - name: benchmark
         if: always()
         run: |
-          cmake --build --preset msvc --config Release --target bench
+          cmake --build --preset ${{ matrix.preset }} --config Release --target bench
           Add-Content $env:GITHUB_STEP_SUMMARY "### benchmark - ${env:ART}"
           Add-Content $env:GITHUB_STEP_SUMMARY '```'
           Get-Content dist/bench-*.txt | Add-Content $env:GITHUB_STEP_SUMMARY
           Add-Content $env:GITHUB_STEP_SUMMARY '```'
       - name: install + pack build targets
         run: |
-          cmake --install cmake-msvc --config Release
+          cmake --install cmake-${{ matrix.preset }} --config Release
           tar cJf "${env:ART}.tar.xz" -C dist "${env:ART}"
       - uses: actions/upload-artifact@v7
         with:

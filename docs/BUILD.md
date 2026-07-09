@@ -128,7 +128,12 @@ plain name (`gcc`/`clang`), and comes from `$env{CC}` only where the path is
 host-dynamic (macOS Homebrew gcc). Hidden bases are prefixed `_`
 (`_base`, `_ninja`, `_dist`, `_test*`).
 
-**Developer presets** — interactive use (`cmake --preset debug`):
+**Developer presets** — interactive use (`cmake --preset debug`). CI's `linux`
+job also runs each of these as an x86_64 matrix cell with the default host cc
+(`matrix` build-only via `--no-test` — the superbuild has no top-level test
+preset and instead runs ctest per cell during the build; `local-ci` is the
+orchestrator itself and is the one preset with no CI cell). `ci local`
+schedules the same set:
 
 | Preset | CMAKE_BUILD_TYPE | Key overrides |
 |---|---|---|

@@ -295,6 +295,7 @@ static int do_qemu(int argc, char **argv) {
 typedef struct
 {
 	char preset[64], cc[16], plat[64];
+	int no_test; /* build-only preset: no top-level test preset exists */
 } LocJob;
 
 static int loc_have(const char *name) {
@@ -427,11 +428,12 @@ static int do_local(int argc, char **argv) {
 			n_qemu++;
 	}
 
-#define LOC_TEST(P, CC)                             \
+#define LOC_TEST(P, CC, NT)                         \
 	do {                                              \
 		if (n_test < LOC_MAX) {                         \
 			snprintf(test[n_test].preset, 64, "%s", (P)); \
 			snprintf(test[n_test].cc, 16, "%s", (CC));    \
+			test[n_test].no_test = (NT);                  \
 			n_test++;                                     \
 		}                                               \
 	} while (0)
@@ -461,34 +463,56 @@ static int do_local(int argc, char **argv) {
 		static const char *C[] = {
 				"linux-clang", "linux-clang-cross",
 				"linux-clang-release", 0};
+		static const char *D[] = {
+				"debug", "release", "sanitize",
+				"diagnostics", "cst", "ast", "cross", 0};
 		for (i = 0; G[i]; i++) {
 			if (have_gcc)
-				LOC_TEST(G[i], "");
+				LOC_TEST(G[i], "", 0);
 			else
 				LOC_SKIP("%s - gcc not found", G[i]);
 		}
 		for (i = 0; C[i]; i++) {
 			if (have_clang)
-				LOC_TEST(C[i], "");
+				LOC_TEST(C[i], "", 0);
 			else
 				LOC_SKIP("%s - clang not found", C[i]);
 		}
+		/* developer presets: default host cc */
+		for (i = 0; D[i]; i++) {
+			if (have_gcc || have_clang)
+				LOC_TEST(D[i], "", 0);
+			else
+				LOC_SKIP("%s - no C compiler (need gcc or clang)", D[i]);
+		}
+		/* gcc;clang x native;cross superbuild: no top-level test preset
+		   (each cell runs its own ctest during the build) */
+		if (have_gcc && have_clang)
+			LOC_TEST("matrix", "", 1);
+		else
+			LOC_SKIP("%s - needs both gcc and clang (gcc;clang superbuild)",
+							 "matrix");
 	} else if (!strcmp(os, "Darwin")) {
 		static const char *M[] = {"macos", "macos-cross", 0};
 		for (i = 0; M[i]; i++) {
 			if (have_clang)
-				LOC_TEST(M[i], "clang");
+				LOC_TEST(M[i], "clang", 0);
 			if (have_gcc)
-				LOC_TEST(M[i], "gcc");
+				LOC_TEST(M[i], "gcc", 0);
 			if (!have_clang && !have_gcc)
 				LOC_SKIP("%s - no C compiler (need clang or gcc)", M[i]);
 		}
 	} else if (!strcmp(os, "Windows")) {
-		if (have_cl)
-			LOC_TEST("msvc", "");
-		else
+		if (have_cl) {
+			LOC_TEST("msvc", "", 0);
+			LOC_TEST("sanitize-msvc", "", 0);
+		} else {
 			LOC_SKIP("%s - cl (MSVC) not found (run from a VS dev shell)", "msvc");
-		LOC_TEST("mingw", "");
+			LOC_SKIP("%s - cl (MSVC) not found (run from a VS dev shell)",
+							 "sanitize-msvc");
+		}
+		/* build-only preset (superbuild fetches winlibs GCC; no test preset) */
+		LOC_TEST("mingw", "", 1);
 	}
 
 	if (!loc_env_on("LOCAL_CI_SKIP_QEMU")) {
@@ -496,7 +520,7 @@ static int do_local(int argc, char **argv) {
 			char p[64];
 			if (qfound[i]) {
 				snprintf(p, sizeof p, "qemu-%s", QARCH[i]);
-				LOC_TEST(p, "");
+				LOC_TEST(p, "", 0);
 			} else {
 				LOC_SKIP("qemu-%s - %s not found (install qemu-user)",
 								 QARCH[i], QBIN[i]);
@@ -558,8 +582,9 @@ static int do_local(int argc, char **argv) {
 	printf("  --------------------------------------------------------\n");
 	printf("  test presets    : %d\n", n_test);
 	for (i = 0; i < n_test; i++)
-		printf("      run   %s%s%s\n", test[i].preset,
-					 *test[i].cc ? " CC=" : "", test[i].cc);
+		printf("      run   %s%s%s%s\n", test[i].preset,
+					 *test[i].cc ? " CC=" : "", test[i].cc,
+					 test[i].no_test ? " (build-only)" : "");
 	printf("  release bundles : %d\n", n_dist);
 	for (i = 0; i < n_dist; i++)
 		printf("      dist  %s -> %s\n", dist[i].preset, dist[i].plat);
@@ -574,13 +599,15 @@ static int do_local(int argc, char **argv) {
 	}
 
 	for (i = 0; i < n_test && !stop; i++) {
-		char *a[1];
-		int rc;
+		char *a[2];
+		int rc, na = 0;
 		loc_setcc(test[i].cc);
 		printf("\n>>>> [test] %s%s%s\n", test[i].preset,
 					 *test[i].cc ? " CC=" : "", test[i].cc);
-		a[0] = test[i].preset;
-		rc = do_run_preset(1, a);
+		a[na++] = test[i].preset;
+		if (test[i].no_test)
+			a[na++] = (char *)"--no-test";
+		rc = do_run_preset(na, a);
 		if (rc == 0) {
 			snprintf(results[n_res++], 192, "PASS  test %.63s", test[i].preset);
 		} else {
