@@ -81,6 +81,19 @@ if(INLINES)
     endforeach()
 endif()
 
+# SPECIALIZES: with Tier-4 inline + templates on (INLINE + TEMPLATES), each named callee must
+# have been per-site specialized — a constant argument constant-propagated into the graft
+# (docs/AST.md §19.3). Comma-separated, same shape as INLINES. The exit-code equality vs -O0
+# is the gate; this proves the specialization path fired rather than a plain graft.
+if(SPECIALIZES)
+    string(REPLACE "," ";" _specs "${SPECIALIZES}")
+    foreach(_fn IN LISTS _specs)
+        if(NOT _r1_all MATCHES "\\[ast-inline\\] specialized ${_fn} ")
+            message(FATAL_ERROR "expected per-site specialization to fire on '${_fn}', but it did not:\n${_r1_all}")
+        endif()
+    endforeach()
+endif()
+
 # REEMITS: with Tier-4 defer-to-TU on (INLINE), each named function must have been re-emitted
 # at end-of-TU with a forward-declared callee inlined (proving the defer path fired).
 if(REEMITS)

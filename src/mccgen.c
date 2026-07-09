@@ -12158,6 +12158,7 @@ static int ast_promo_regpool_at(int i) { return ast_promo_reg[i]; }
  * are untouched. */
 static void ast_replay_value(AstArena *a, AstLocal n); /* fwd: used by the inline graft */
 static void ast_replay_bb(AstArena *a, AstLocal bb);   /* fwd: used by the inline graft */
+static int ast_local_is_readonly(AstArena *a, int off); /* fwd: §19.3 const-arg substitution */
 #define AST_INLINE_MAX 512
 #define AST_INLINE_NODE_BUDGET 64
 #define AST_INLINE_MAX_PARAMS 6
@@ -12336,6 +12337,13 @@ static int ast_param_remap_n;
 static int ast_param_remap_lo[AST_INLINE_MAX_PARAMS];
 static int ast_param_remap_hi[AST_INLINE_MAX_PARAMS];
 static int ast_param_remap_delta[AST_INLINE_MAX_PARAMS];
+/* §19.3 per-site specialization: a CONSTANT argument bound to a read-only param is not stored
+ * to a slot and re-loaded — its Literal is substituted at the param's Ref sites during body
+ * replay, so gen_op/gvtst fold it (per-site constant-prop + dead-branch elim fall out for
+ * free). templates-gated (MCC_AST_TEMPLATES). Saved/restored around each graft. */
+static int ast_argsub_n;
+static int ast_argsub_off[AST_INLINE_MAX_PARAMS];
+static SValue ast_argsub_val[AST_INLINE_MAX_PARAMS];
 static int ast_in_graft;
 static CType ast_graft_rt;
 static int ast_inline_ret_sym;  /* jump chain to the grafted body's inline-end join */
@@ -12381,8 +12389,37 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 	 * for the body replay below. A struct arg block-copies via vstore. */
 	int nmap = 0, maplo[AST_INLINE_MAX_PARAMS];
 	int maphi[AST_INLINE_MAX_PARAMS], mapdelta[AST_INLINE_MAX_PARAMS];
+	int nsub = 0, suboff[AST_INLINE_MAX_PARAMS];
+	SValue subval[AST_INLINE_MAX_PARAMS];
 	for (int i = 0; i < e->nparams; i++) {
 		int dst;
+		/* §19.3: a constant integer arg bound to a read-only param is constant-propagated
+		 * (substituted at the param's Ref sites during replay) instead of stored to a slot,
+		 * so gen_op/gvtst fold it — per-site specialization + dead-branch elim. Templates-
+		 * gated; the read-only query guards against a body that assigns/mutates the param. */
+		AstLocal arg = ast_child(a, n, i + 1);
+		AstLocal cbase = arg; /* unwrap the arg-passing Convert(s) to the literal, if any */
+		while (ast_kind(a, cbase) == AST_Convert && ast_nchild(a, cbase) == 1)
+			cbase = ast_first_child(a, cbase);
+		int pbt = e->param_typ[i] & VT_BTYPE, cbt = ast_type_t(a, cbase) & VT_BTYPE;
+		if (ast_templates_env && ast_kind(a, cbase) == AST_Literal &&
+				(ast_op(a, cbase) & VT_VALMASK) == VT_CONST && !(ast_op(a, cbase) & VT_SYM) &&
+				(pbt == VT_INT || pbt == VT_LLONG) && (cbt == VT_INT || cbt == VT_LLONG) &&
+				ast_local_is_readonly(e->ast, e->param_off[i])) {
+			SValue lv;
+			memset(&lv, 0, sizeof lv);
+			lv.type.t = e->param_typ[i];
+			lv.type.ref = (Sym *)e->param_ref[i];
+			lv.r = VT_CONST;
+			lv.r2 = VT_CONST;
+			/* the arg-passing Convert(s) + implicit assign-cast collapse to one value64 to
+			 * the param's integer type — the constant the param would hold at this site. */
+			lv.c.i = value64(ast_ival(a, cbase), e->param_typ[i]);
+			suboff[nsub] = e->param_off[i];
+			subval[nsub] = lv;
+			nsub++;
+			continue; /* no slot, no store: reads are substituted below */
+		}
 		if (e->param_stack[i]) {
 			CType pt;
 			pt.t = e->param_typ[i];
@@ -12435,6 +12472,11 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 	memcpy(save_remap_lo, ast_param_remap_lo, sizeof save_remap_lo);
 	memcpy(save_remap_hi, ast_param_remap_hi, sizeof save_remap_hi);
 	memcpy(save_remap_delta, ast_param_remap_delta, sizeof save_remap_delta);
+	int save_argsub_n = ast_argsub_n;
+	int save_argsub_off[AST_INLINE_MAX_PARAMS];
+	SValue save_argsub_val[AST_INLINE_MAX_PARAMS];
+	memcpy(save_argsub_off, ast_argsub_off, sizeof save_argsub_off);
+	memcpy(save_argsub_val, ast_argsub_val, sizeof save_argsub_val);
 	ast_graft_rt.t = ast_type_t(a, n);
 	ast_graft_rt.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 	int ral, rsz = type_size(&ast_graft_rt, &ral);
@@ -12452,6 +12494,9 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 	memcpy(ast_param_remap_lo, maplo, sizeof maplo);
 	memcpy(ast_param_remap_hi, maphi, sizeof maphi);
 	memcpy(ast_param_remap_delta, mapdelta, sizeof mapdelta);
+	ast_argsub_n = nsub; /* §19.3: activate this graft's constant-arg substitutions */
+	memcpy(ast_argsub_off, suboff, sizeof suboff);
+	memcpy(ast_argsub_val, subval, sizeof subval);
 	ast_replay_bb(e->ast, ast_root(e->ast));
 	gsym(ast_inline_ret_sym); /* land every early return's jump here */
 	SValue res;               /* push the coalesced result as an lvalue at the slot */
@@ -12475,9 +12520,16 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 	memcpy(ast_param_remap_lo, save_remap_lo, sizeof save_remap_lo);
 	memcpy(ast_param_remap_hi, save_remap_hi, sizeof save_remap_hi);
 	memcpy(ast_param_remap_delta, save_remap_delta, sizeof save_remap_delta);
+	ast_argsub_n = save_argsub_n;
+	memcpy(ast_argsub_off, save_argsub_off, sizeof save_argsub_off);
+	memcpy(ast_argsub_val, save_argsub_val, sizeof save_argsub_val);
 	ast_inline_depth--; /* pop the cycle-guard stack */
-	if (ast_replay_dump)
+	if (ast_replay_dump) {
 		fprintf(stderr, "[ast-inline] grafted %s\n", get_tok_str(((Sym *)csym)->v, NULL));
+		if (nsub)
+			fprintf(stderr, "[ast-inline] specialized %s (%d const arg%s)\n",
+							get_tok_str(((Sym *)csym)->v, NULL), nsub, nsub == 1 ? "" : "s");
+	}
 	return 1;
 }
 
@@ -12657,6 +12709,22 @@ static int ast_subtree_refs_local(AstArena *a, AstLocal n, int off) {
 		if (ast_subtree_refs_local(a, ast_child(a, n, i), off))
 			return 1;
 	return 0;
+}
+
+/* §19.3: is local frame offset `off` READ-ONLY across the whole body — i.e. never assigned
+ * (Store child0), never mutated / address-taken / used as a member base (the Ref sits under a
+ * Unary), so its every occurrence is a pure-read leaf? A read-only param may have a constant
+ * argument substituted at its Ref sites (constant-prop) instead of a slot store + reload. */
+static int ast_local_is_readonly(AstArena *a, int off) {
+	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++) {
+		uint16_t k = ast_kind(a, n);
+		if (k == AST_Store && ast_ref_is_local_off(a, ast_child(a, n, 0), off))
+			return 0; /* assigned */
+		if (k == AST_Unary && ast_ref_is_local_off(a, ast_first_child(a, n), off))
+			return 0; /* ++/--, &, member-base, or any lvalue use */
+	}
+	return 1;
 }
 
 /* Plan register promotion for the just-built function. Returns the number of
@@ -12965,18 +13033,30 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 		sv.r2 = VT_CONST;
 		sv.c.i = ast_ival(a, n);
 		sv.sym = (Sym *)(uintptr_t)ast_sym(a, n);
-		if ((ast_inline_bias || ast_param_remap_n) &&
-				(sv.r & VT_VALMASK) == VT_LOCAL && !(sv.r & VT_SYM)) {
-			/* Tier-4: relocate a grafted callee's frame slot. A stack-passed param's
-			 * region (positive offset) remaps to its materialization slot (§19.2); every
-			 * other local shifts by the uniform frame bias. */
-			int off = (int)sv.c.i, delta = ast_inline_bias;
-			for (int j = 0; j < ast_param_remap_n; j++)
-				if (off >= ast_param_remap_lo[j] && off < ast_param_remap_hi[j]) {
-					delta = ast_param_remap_delta[j];
+		if ((sv.r & VT_VALMASK) == VT_LOCAL && !(sv.r & VT_SYM) &&
+				(ast_inline_bias || ast_param_remap_n || ast_argsub_n)) {
+			int off = (int)sv.c.i, subst = 0;
+			/* §19.3: a constant argument bound to a read-only param propagates as its
+			 * Literal here (no slot load), so gen_op/gvtst fold it — per-site constant-prop
+			 * and dead-branch elimination. */
+			for (int j = 0; j < ast_argsub_n; j++)
+				if (ast_argsub_off[j] == off) {
+					sv = ast_argsub_val[j];
+					subst = 1;
 					break;
 				}
-			sv.c.i += delta;
+			if (!subst) {
+				/* Tier-4: relocate a grafted callee's frame slot. A stack-passed param's
+				 * region (positive offset) remaps to its materialization slot (§19.2); every
+				 * other local shifts by the uniform frame bias. */
+				int delta = ast_inline_bias;
+				for (int j = 0; j < ast_param_remap_n; j++)
+					if (off >= ast_param_remap_lo[j] && off < ast_param_remap_hi[j]) {
+						delta = ast_param_remap_delta[j];
+						break;
+					}
+				sv.c.i += delta;
+			}
 		}
 		if (ast_promo_n) {
 			/* Tier-3 read: a promoted local reads from its pinned register (not the
@@ -13453,6 +13533,20 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 			/* Reproduce the parser's if-emission exactly: condition, gvtst,
 			 * then-branch, and either gsym (no else) or gjmp/gsym/else/gsym. */
 			ast_replay_value(a, ast_child(a, s, 0));
+			/* §19.3 per-site dead-branch elimination: inside a graft (pass 2, not byte-
+			 * verified) a condition that folded to a compile-time constant — e.g. a
+			 * constant-propagated read-only param — selects its taken branch and DROPS the
+			 * dead one entirely (block and all). -O0 keeps the unreachable block, so this is
+			 * graft-only; it is what makes constant-arg specialization eliminate dead code. */
+			if (ast_in_graft &&
+					(vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) {
+				int truthy = vtop->c.i != 0;
+				vtop--; /* discard the constant condition (no code emitted for it) */
+				AstLocal taken = truthy ? ast_child(a, s, 1) : ast_child(a, s, 2);
+				if (taken != AST_NONE)
+					ast_replay_bb(a, taken);
+				break;
+			}
 			int aa = gvtst(1, 0);
 			ast_replay_bb(a, ast_child(a, s, 1));
 			AstLocal elsebb = ast_child(a, s, 2);

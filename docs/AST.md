@@ -827,6 +827,28 @@ Three knobs are genuine forks I want confirmed before implementing §19.2/§19.3
 | Constant-arg v1 aggressiveness | fold-only, single-shape graft · full per-site binding-keyed clones now | fold-only (defers store-factoring to its validated second user) |
 | Struct-return × struct-param overlap | land struct-param bind independently · co-verify with the existing struct-*return* coalesce in one fixture | co-verify (a callee taking *and* returning a struct exercises both memory paths at once) |
 
+### 19.6 Landed (2026-07-08/09)
+
+Both §19.2 and §19.3 shipped; all three §19.5 leans were taken as written.
+
+- **§19.2 struct-by-value params** — the bind *deletes* the ABI: every param is materialized
+  into a fresh caller-frame slot. Register-class (negative `param_addr`) keeps the uniform
+  bias; memory/stack-passed (positive `param_addr`) gets a fresh slot + a range-checked
+  per-param remap. Records `param_size` + a `param_stack` bit (= `param_addr >= 0`). Co-verified
+  a struct-param-AND-return callee (`addpt`). One latent bug fixed en route: the unfaithful-
+  replay fallback left `loc` shallower than -O0, mis-sizing the frame → now `loc = saved_loc`.
+- **§19.3 per-site specialization** — a constant integer arg to a **read-only** param is
+  constant-propagated (substituted at Ref sites, `ast_argsub_*`), not slot-stored. `gen_op`
+  folds the constant arithmetic and, **inside a graft (pass 2)**, a constant-folded `if`
+  condition **selects its taken branch and drops the dead block entirely** — this exceeds the
+  original "const-fold template makes dead-branch elim fall out" framing (that only removes the
+  conditional *jump*; the block-drop is a graft-only branch-select in `ast_replay_bb`, safe
+  because pass 2 is exec-gated not byte-verified). Single-shape (no clone). Templates-gated.
+
+Gates: exec corpus 269/269 -O0-identical across INLINE / INLINE+TEMPLATES / TEMPLATES (and the
+sanitized mcc); ctest 1770/1770; ASan/UBSan-clean. Fixtures `ast/replay-inline` (struct params)
+and `ast/replay-inline-spec` (specialization).
+
 ---
 
 ## 20. `-O1` flag → AST pipeline, and the benchmark/CI `-O1` columns (2026-07-08, PARKED)

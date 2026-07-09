@@ -3093,9 +3093,25 @@ if(MCC_BUILD_TESTS)
                     "-DEXPECT_RC=42" "-DREPLAYED=main" "-DINLINE=1" "-DINLINES=add,scale,madd,clamp,sgn,area,quad,pick,firsthit,mkpair,gsum,sumpt,sumbig,addpt" "-DREEMITS=fwd_sum,fwd_boxed"
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
                 set_tests_properties("ast/replay-inline" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
+                # Per-site specialization (docs/AST.md §19.3): with inline + the const-fold
+                # template on, a constant arg bound to a read-only param is constant-propagated
+                # into the graft, so gen_op folds the arithmetic and a constant-folded condition
+                # drops its dead branch. SPECIALIZES asserts the substitution fired; the exit-code
+                # equality vs -O0 is the gate (a specialized graft's bytes diverge from -O0).
+                add_test(NAME "ast/replay-inline-spec" COMMAND "${CMAKE_COMMAND}"
+                    "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
+                    "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/inline_spec.c"
+                    "-DOUT=${CMAKE_BINARY_DIR}/ast-replay"
+                    "-DEXPECT_RC=42" "-DREPLAYED=main" "-DINLINE=1" "-DTEMPLATES=1"
+                    "-DINLINES=choose,clampk,mul,addk" "-DSPECIALIZES=choose,clampk,mul,addk"
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
+                set_tests_properties("ast/replay-inline-spec" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
             else()
                 mcc_skip_test("ast/replay-inline"
                     "virtual-inline is arch-independent and compiles on ${MCC_CPU}, but the fixture assertion is only verified on x86_64 so far")
+                mcc_skip_test("ast/replay-inline-spec"
+                    "per-site specialization is arch-independent but its fixture assertion is only verified on x86_64 so far")
             endif()
 
             # A7 first template = const-fold (docs/AST.md §12/§15/§17-D-d). The

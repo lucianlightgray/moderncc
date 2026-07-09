@@ -455,8 +455,25 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
     lean 3), each grafted via a scalar-arg wrapper so main stays replay-faithful (the general
     replay path still desyncs on *multiple* by-value struct args in one function — a Tier-2
     capture gap orthogonal to the graft).
-  - [ ] **Slice 2 remainder.** Per-site specialization (§19.3 — constant-arg fold via the
-    const-fold template); un-gate the inline fixture on non-x86_64 (arm64 verification).
+  - [x] **Per-site specialization — LANDED 2026-07-09 (§19.3).** With MCC_AST_INLINE +
+    MCC_AST_TEMPLATES, a **constant integer argument** bound to a **read-only param** is
+    constant-propagated: instead of a slot store + reload, its Literal is substituted at the
+    param's Ref sites during the graft (`ast_argsub_*`, consulted in `ast_replay_value` before
+    the frame relocation), so `gen_op` folds the resulting constant arithmetic and — inside a
+    graft (pass 2, not byte-verified) — a condition that folds to a compile-time constant
+    **selects its taken branch and drops the dead one entirely** (block and all, in the plain
+    if/else replay; -O0 keeps the unreachable block, so this is graft-only). The read-only query
+    (`ast_local_is_readonly`) guards against a body that assigns/mutates/address-takes the param
+    (a `Store` child0 or a `Unary` over the param Ref); the arg-passing `Convert(Literal)` chain
+    collapses to one `value64` to the param's integer type. Single-shape graft (no clone) — full
+    binding-keyed clones stay deferred to §9 store-factoring (§19.3 lean 2). Verified: `main`
+    grafting `choose(1,…)` emits **no call at all** (choose inlined AND its `marker_dead` else-
+    branch eliminated — disasm-confirmed). Gate: exec corpus 269/269 -O0-identical under
+    INLINE, INLINE+TEMPLATES, and TEMPLATES (also sanitized); ctest 1770/1770; ASan/UBSan-clean.
+    Fixture `ast/replay-inline-spec` (SPECIALIZES=choose,clampk,mul,addk).
+  - [ ] **Slice 2 remainder.** Un-gate the inline + spec fixtures on non-x86_64 (arm64
+    verification — the graft is arch-independent and compiles everywhere, but the fixture
+    assertions are only checked on x86_64 so far).
 
 - [~] **`-O1` flag → AST pipeline wiring + benchmark/CI `-O1` columns (STARTED 2026-07-08,
   PARKED — docs/AST.md §20).** `mcc -O1` now engages the AST replay optimizer (docs/AST.md §10):
