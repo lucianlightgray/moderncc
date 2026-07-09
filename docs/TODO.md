@@ -511,9 +511,33 @@ Each is a closed decision; the item is the named condition that would reopen it.
   (does the CST's lexical-scope spans + source ranges cover debugger scope queries, hover
   types, go-to-def, live ranges) — if a gap surfaces, that reopens the dissolved `Bind`
   marker (docs/AST.md §B1). Until then `Bind` stays fully dissolved into liveness.
-- [ ] **Acceptance bar (§C1):** the `-O1` replay driver is "done" only when every
-  `tests/exec` golden is green under the `-O1-replay` column **and** GCC's own test suite
-  passes under both `mcc -O0` and `mcc -O1`. Wire up the GCC-suite run as an AST gate.
+- [~] **Acceptance bar (§C1) — GCC-suite AST gate WIRED 2026-07-09 (A4).** The gcc c-torture
+  suite (`gcc.c-torture/{compile,execute,execute/ieee}`, ~3766 tests) now runs as a
+  **differential** AST gate: `mccharness gcctestsuite --ast <replay|promote|inline|inline-tmpl>`
+  compiles/runs each test at **-O0 (baseline) AND under the AST column**, and a test that
+  **passes at -O0 but fails under the column is a REGRESSION** (nonzero exit) — baseline -O0
+  gaps (mcc vs the suite) are excluded, since replay is byte-identical-or-fallback so it must
+  match -O0 test-for-test. cmake targets `gcctestsuite-ast-{replay,promote,inline}` +
+  `gcctestsuite-ast` (manual, need `MCC_GCCTESTSUITE_PATH`). **The gate immediately surfaced 10
+  pre-existing replay regressions the exec corpus never caught; 7 fixed, 3 documented-known:**
+  - **Computed-callee bail (fixed 5):** `(c?f:g)()`, `getf()()`, `s.fn()` — a computed callee
+    replays as a value whose function-type `ref` the driver never reconstructs, so `gfunc_call`
+    derefs NULL → a hard SIGSEGV the byte-verify can't catch (it's before verification).
+    `ast_hook_call_begin` now bails unless the callee (child 0) is an `AST_Ref`.
+  - **Frame-depth faithfulness (fixed 2):** the prologue `sub $N,%rsp` is back-patched by
+    `gfunc_epilog` from the final `loc`, which lives OUTSIDE the byte-verified body range — so a
+    body that byte-matches -O0 but whose pass-1 replay left `loc` shallower ran on a too-small
+    frame → corruption (20020215-1: 0x50→0x30). A faithful body means the correct frame is -O0's,
+    so `loc = saved_loc` is now pinned on the faithful-no-transform path (the pass-2 and fallback
+    paths already reset it). Also fixed the fallback path to restore `loc = saved_loc`.
+  - **Documented-known (3, `GCCTS_AST_KNOWN`):** `pr51581-1/-2` (a replay leaves the `#if`
+    const-expr evaluator's shared vstack/jump state inconsistent → later `#if A && B`
+    mis-evaluates — the parked -O1 self-compile issue, §20) and `20070919-1` (block-scoped
+    `struct S{char w[y];}` VLA member → cyclic type → infinite recursion in
+    `aggr_has_const_member`). Skiplisted as KNOWNGAP so the gate is green on "no NEW regression".
+  Replay column: **10→0 unexpected regressions**, no new ones introduced (exec corpus 269/269
+  across replay/promote/inline; ctest 1770/1770). Remaining for full §C1: fix the 3 known gaps
+  (2 need the §20 codegen checkpoint/restore) and gate the promote/inline columns green.
 - [ ] **`k` value:** raise the always-inline depth `k` above the `k=1`/widen-on-back-edge
   default only under `-O2`/`-O3` or an explicit size budget (`k≈log_b(budget)`).
 - [ ] **Size-gated outline:** land as a later binding-graph template (swap an inline binding

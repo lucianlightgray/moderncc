@@ -3853,6 +3853,27 @@ if(MCC_BUILD_TESTS)
         DEPENDS mcc mccharness USES_TERMINAL
         COMMENT "gcctestsuite: gcc c-torture over mcc")
 
+    # AST acceptance gate (docs/AST.md §C1): the same gcc c-torture suite run as a DIFFERENTIAL
+    # — each test at -O0 (baseline) AND under an AST column; a test that passes at -O0 but fails
+    # under the column is a REGRESSION (nonzero exit). The replay path is byte-identical-or-
+    # fallback, so it must match -O0 test-for-test; promotion/inline diverge in bytes but must
+    # match in behavior. These are manual targets (the full suite is slow and needs
+    # MCC_GCCTESTSUITE_PATH); `gcctestsuite-ast` runs all three columns.
+    if(MCC_AST)
+        foreach(_col replay promote inline)
+            add_custom_target(gcctestsuite-ast-${_col}
+                COMMAND "$<TARGET_FILE:mccharness>" gcctestsuite --mcc $<TARGET_FILE:mcc>
+                        --bdir "${CMAKE_BINARY_DIR}" --idir "${CMAKE_CURRENT_SOURCE_DIR}"
+                        --builddir "${CMAKE_BINARY_DIR}/gcctestsuite-ast-${_col}"
+                        --path "${MCC_GCCTESTSUITE_PATH}" --ast ${_col}
+                DEPENDS mcc mccharness USES_TERMINAL
+                COMMENT "gcctestsuite-ast-${_col}: gcc c-torture AST-vs-O0 differential (${_col} column)")
+        endforeach()
+        add_custom_target(gcctestsuite-ast
+            DEPENDS gcctestsuite-ast-replay gcctestsuite-ast-promote gcctestsuite-ast-inline
+            COMMENT "gcctestsuite-ast: all AST columns of the gcc c-torture differential gate")
+    endif()
+
     if(TARGET mcc-arm)
         add_custom_target(arm-asm-testsuite
             COMMAND "$<TARGET_FILE:mccharness>" armasm --mcc $<TARGET_FILE:mcc-arm>

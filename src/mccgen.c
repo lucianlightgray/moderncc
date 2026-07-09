@@ -11881,6 +11881,16 @@ static void ast_hook_call_begin(int nb_args, int is_struct_ret, int ret_nregs,
 			return;
 		}
 	}
+	/* The callee (child 0) must be a reconstructable reference — a direct function symbol or
+	 * a pointer variable (both AST_Ref). A COMPUTED callee — a ternary `(c?f:g)()`, a call
+	 * result `getf()()`, a member `s.fn()` — replays as a value whose function-type `ref` the
+	 * driver does not reconstruct, so gfunc_call derefs a NULL `type.ref` and CRASHES (a hard
+	 * SIGSEGV the byte-verify net cannot catch — it happens before verification). Bail to the
+	 * -O0 emission. Surfaced by the gcc c-torture AST gate (pr34768-1/-2). */
+	if (ast_kind(ast_cur, ast_vs[ast_vn - need]) != AST_Ref) {
+		ast_desync = 1;
+		return;
+	}
 	for (int i = 0; i < need; i++)
 		ast_finalize_leaf(ast_vs[ast_vn - need + i], vtop - nb_args + i);
 	AstLocal inv = ast_node(ast_cur, AST_Invoke);
@@ -13912,6 +13922,14 @@ static void gen_function(Sym *sym) {
 				 * fresh biased slots the promoter never considers. */
 				int do_inline = faithful && ast_has_graftable_call(ast_cur);
 				int do_promote = faithful && ast_promote_env && ast_plan_promotion(ast_cur) > 0;
+				if (faithful && !do_inline && !do_promote)
+					/* Faithful body, no pass-2 transform: the correct frame is -O0 (saved_loc).
+					 * gfunc_epilog back-patches the prologue `sub $N,%rsp` from the final loc,
+					 * which lives OUTSIDE the verified body range; pass-1 ordinal temp allocation
+					 * can leave loc shallower than -O0 despite identical body bytes, giving a
+					 * too-small frame that clobbers the locals below it (gcc c-torture 20020215-1:
+					 * 0x50->0x30). The pass-2 and fallback paths already reset loc themselves. */
+					loc = saved_loc;
 				if (do_inline || do_promote) {
 					ind = ast_body_ind;
 					rsym = 0;
