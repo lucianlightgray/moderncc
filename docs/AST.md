@@ -702,6 +702,197 @@ remaining ⬜ is a query or a driver-steering step over ops the exec suite alrea
 
 ---
 
+## 19. Completing Tier-4 — struct-by-value params & per-site specialization (A2 design pass)
+
+**Design pass, 2026-07-08 (pre-implementation).** Tier 4 (§9) is broadly functional
+(AST-STATUS §5): a `static`, non-variadic, VLA-free callee with control flow, multiple
+returns, scalar/pointer/float params, and its own calls grafts into a caller, forward
+callers included (defer-to-TU). The two named remainders are **struct-by-value params**
+and **per-site specialization**. This section designs both before any code lands.
+Roadmap ratified with the user: **A2 (this section) → A4 (GCC-suite acceptance gate) →
+A1 (backward-liveness / spill-slot sharing)** — finish the 90%-built inline breadth,
+then lock correctness against an external suite, then invest in the liveness pass that
+compounds under everything.
+
+### 19.1 Diagnosis — why the plain `vstore` bind miscompiles
+
+Grafting today binds each arg with a uniform frame bias (`ast_inline_graft`):
+`ast_replay_value(arg)` → `vstore` into `param_off[i] + ast_inline_bias`, and every
+`VT_LOCAL` reference in the replayed body is shifted by the same `ast_inline_bias`
+(`ast_replay_value`, `sv.c.i += ast_inline_bias`). This is correct **iff every captured
+param offset is a negative rbp-relative local slot** — which holds for the scalar params
+grafting currently accepts, because `gfunc_prolog` spills register-passed scalars to
+fresh negative `loc` slots.
+
+It breaks the moment a param's storage is **not** a negative local. `gfunc_prolog`'s
+`param_addr` (captured verbatim as `ast_inline_cap_off[n] = ls->c`) has two disjoint
+meanings, chosen by `classify_x86_64_arg`:
+
+| Param storage class | `param_addr` sign | Reproduced by uniform bias? |
+|---|---|---|
+| register-class (int/sse, fits remaining regs) — spilled to a fresh local | **negative** (`loc -= …`) | **yes** — inside `[loc-frame_size, loc]`, shifts cleanly |
+| memory-class (>16B struct, x87, or the 7th+ overflow arg) — read in place from the incoming-args area | **positive** (`addr`, from `PTR_SIZE*2` up) | **no** — a positive offset + a negative bias lands in the *caller's own locals*, and it was never reserved by `loc -= frame_size` |
+
+So the failure is **not struct-specific** — it is **stack-passed-param-specific**. A
+`transparent_union` / >16-byte struct is simply the *common* way to hit a positive
+`param_addr`; a function with a 7th+ scalar argument hits the identical latent hazard
+(currently unexercised because graftable callees are small). The register-class ≤16-byte
+struct case the past experiment saw "work" is exactly the sub-case whose `param_addr`
+was already negative.
+
+| Failure mode | Root cause | Fix owned by |
+|---|---|---|
+| >16-byte struct param corrupts caller locals | positive `param_addr` biased as if negative | §19.2 per-param remap |
+| ≤16-byte per-member (`transparent_union`) struct wrong | plain `vstore` copies bytes but arg type ≠ slot type (implicit-arg-conversion the ABI would have done) | §19.2 materialize-then-copy |
+| 7th+ scalar arg (latent) | same positive-offset hazard | §19.2 (same fix, for free) |
+
+### 19.2 The bind — materialize into a fresh local, remap per-param
+
+The unifying move: **inlining dissolves the ABI, so no param should ever be read from
+the incoming-args area.** Give *every* param a fresh negative **materialization slot** in
+the caller's frame, copy the (type-correct) argument value into it, and map the callee's
+references to that slot — replacing the single uniform bias with a per-param offset map
+for the param region (locals keep the uniform bias).
+
+| Decision | Options | Choice |
+|---|---|---|
+| Offset relocation | uniform `ast_inline_bias` (today) · **per-param remap over a uniform local bias** | per-param remap: memory-class (positive) params get a fresh negative slot; register-class params keep the bias path; a small `param_remap[]` consulted in `ast_replay_value` before the uniform shift |
+| Struct copy | element-wise · **`vstore` block-copy of a VT_STRUCT lvalue** | `vstore` already lowers a struct assignment to the backend's block move (memcpy/inline copy); the arg is materialized as an addressable lvalue first |
+| Arg-type correctness (`transparent_union`, promotions) | trust the recorded slot type · **cast the arg to the param's captured `CType` before copy** | reuse the captured `param_typ`/`param_ref`; a `gen_assign_cast`-equivalent makes the union/implicit-conversion match what the boundary `Call` would have produced |
+| Class query | hard-code x86_64 · **`classify_x86_64_arg` at capture, recorded as a class bit** | arch-agnostic: capture records `is_stack_passed` per param (from the same classify the prolog used); the graft branches on the bit, not on the arch |
+| Frame reservation | reserve locals only (today) · **reserve locals + N materialization slots** | `loc -= frame_size` still covers register-class params; the graft additionally allocates one aligned slot per memory-class param and records it in `param_remap[]` |
+| Capture gate | exclude structs (today) · **admit struct/union scalable params; keep excluding pointer-to-VLA** | `ast_inline_capture` drops its `bt != VT_STRUCT` early-return for by-value struct/union; pointer-to-VLA and unnamed params stay excluded (unchanged) |
+
+Net mechanism (all in `ast_inline_graft` / `ast_inline_capture` / the `ast_replay_value`
+`VT_LOCAL` relocation — **no backend change**, the block move and classify already exist
+and are exec-proven):
+
+1. **Capture** (`ast_inline_capture`): for each param record `param_off`, `param_typ`,
+   `param_ref`, **and** a `param_stack` bit = `classify_x86_64_arg(type,…) ==
+   x86_64_mode_memory` (or overflow). Admit VT_STRUCT/VT_UNION.
+2. **Bind** (`ast_inline_graft`): materialize each arg as an addressable lvalue; for a
+   `param_stack` param, allocate a fresh aligned negative slot `s`, set `param_remap[i]=s`;
+   else `param_remap[i] = param_off[i] + bias` (the existing path). Cast the arg to the
+   captured param `CType`, then `vstore` (scalar store or struct block-copy) into
+   `param_remap[i]`.
+3. **Replay**: in `ast_replay_value`, a `VT_LOCAL` reference whose offset falls in the
+   callee's param region resolves through `param_remap[]`; every other local keeps the
+   uniform `ast_inline_bias`. (The param region is contiguous and known from capture, so
+   the test is a range check, not a per-node table walk.)
+
+This is the "ABI-aware bind" AST-STATUS §5 names, reframed: not *reproducing* the ABI but
+*deleting* it — the one query it needs (`is this param stack-passed?`) is answered by the
+same `classify_x86_64_arg` the prolog already calls.
+
+### 19.3 Per-site specialization — constant-arg branch select
+
+Second remainder: a graft is shape-identical at every call site (AST-STATUS §5); a
+constant argument is stored to a slot and re-loaded, not folded into the body. §9's design
+is **binding: constant-arg branch select** — per-site dead-branch elimination falling out
+of the binding, for free.
+
+| Decision | Options | Choice |
+|---|---|---|
+| Specialization vehicle | new specializer · **the existing template engine (`MCC_AST_TEMPLATES`, const-fold)** | reuse §12: bind a constant arg as a `Literal` value (not a slot Store+Load), so the const-fold template already folds it through the grafted body and dead-branches collapse — no new pass |
+| v1 scope | full k-CFA per-site clones · **const-arg fold only (no clone), templates-gated** | a constant arg substitutes its `Literal` at the param's `Load` sites during replay; the graft stays one shape but the *values* specialize per site. Full binding-keyed clones (distinct rendered bodies per constant tuple) defer to the §9 store-factoring milestone |
+| Interaction with the bind | independent · **layered: §19.2 binds non-constant args, §19.3 substitutes constant ones** | a call with mixed args stores the variable ones (§19.2) and substitutes the constant ones (§19.3); the two are orthogonal per-param choices |
+| Gate | trust · **exec-golden + a fixture asserting a dead branch vanished** | a `ast/replay-inline-spec` fixture: a callee `if (flag) A else B` grafted at a `flag=1` site emits only `A` (byte-count / `[ast-inline]` dump check) |
+
+The v1 keeps grafting single-shape (cheap) while getting the constant-prop win by routing
+constants through the *already-built* const-fold template — the §9 promise ("per-site
+specialization falls out for free — it's branch-select") realized without the store-factor
+work, which stays deferred to its validated second user (§ store-factoring revisit).
+
+### 19.4 Validation & sequencing
+
+- **Gates (unchanged shape):** two-pass faithfulness (pass 1 byte-verify vs `-O0`, pass 2
+  the transform under the exec-golden differential) + the whole-corpus `MCC_AST_INLINE`
+  column (byte/exit-identical to `-O0` across the ~218 programs) + `ast/replay-inline`
+  extended with a struct-by-value graft and `ast/replay-inline-spec` for the constant fold.
+- **Then A4:** wire the GCC test suite as an AST gate under both `mcc -O0` and the
+  `-O1-replay`/inline columns (§C1 acceptance bar) — the external suite is expected to
+  surface exactly the stack-passed-param and per-member-classify edge cases §19.2 targets,
+  which is why it sequences *after* A2 lands but *before* the deeper A1 investment.
+- **Then A1:** the real backward-liveness pass (spill-slot sharing across disjoint live
+  ranges, spill-weighting) — the register-allocator-grade work every later tier compounds
+  on (AST-STATUS §6).
+
+### 19.5 Open sub-choices for ratification
+
+Three knobs are genuine forks I want confirmed before implementing §19.2/§19.3:
+
+| Knob | Options | My lean |
+|---|---|---|
+| Param-region resolution in `ast_replay_value` | range-check the offset · a per-graft `param_remap[]` indexed lookup | range-check (contiguous region, O(1), no table walk) |
+| Constant-arg v1 aggressiveness | fold-only, single-shape graft · full per-site binding-keyed clones now | fold-only (defers store-factoring to its validated second user) |
+| Struct-return × struct-param overlap | land struct-param bind independently · co-verify with the existing struct-*return* coalesce in one fixture | co-verify (a callee taking *and* returning a struct exercises both memory paths at once) |
+
+---
+
+## 20. `-O1` flag → AST pipeline, and the benchmark/CI `-O1` columns (2026-07-08, PARKED)
+
+This section records the `-O1` wiring work started 2026-07-08 and **parked mid-way** with a
+concrete finding, so it can be resumed. Tracked in docs/TODO.md ("`-O1` flag → AST pipeline").
+
+### 20.1 What landed
+
+- **`mcc -O1` now engages the AST optimizer** (realizing §10's "`-O1` = a second driver over
+  the same vstack ops"). In `gen_function`'s env setup, `s1->optimize >= 1` sets
+  `ast_replay_env = 1` (arch-general; the replay driver is faithfulness-gated and falls back to
+  `-O0` per function) and, on x86_64, `ast_promote_env = 1` (Tier-3 register promotion — the
+  documented "first opt that beats `-O0`"). The `MCC_AST_*` env vars still force any layer on
+  independently, on any arch. `-O0` is untouched (all of this is behind the replay path).
+- **Tier-4 inline is deliberately NOT auto-enabled by `-O1`.** It is broadly functional (§ Tier-4
+  / AST-STATUS §5) but not robust on large TUs — self-compiling `mcc` under `MCC_AST_INLINE` blows
+  up combinatorially (grafting/defer-to-TU on an 800-function TU). It stays behind `MCC_AST_INLINE`
+  until a size/complexity governor lands.
+- **Benchmark `-O1` columns** (`tools/bench.c`): every detected compiler is measured twice — at its
+  default level and at its first optimization level — interleaved per compiler for direct
+  comparison. Flags: `mcc`/`gcc`/`clang`/`mingw` → `-O1`; MSVC/CL → `/O1` (the size-optimizing
+  level, the literal "1"). A `struct compiler.opt` field carries the pre-spelled flag; the sysinfo
+  compiler list de-dups the `-O1` twins.
+- **CI needs no YAML change:** every benchmark step already `cat`s `dist/bench-*.txt` into the run
+  summary, so the new `-O1` rows surface automatically across the dist-linux/macos/msvc/mingw/
+  dist-windows jobs.
+- **Graceful-fallback net, extended to hard errors.** The replay re-emission in `gen_function` is
+  wrapped in a **nested `error_jmp_buf` trap**: an `mcc_error` raised by an imperfectly-captured
+  construct mid-replay is caught (via a silent `ast_error_sink` diagnostic hook), and the parser's
+  already-saved `-O0` bytes are restored — the same fallback a byte-mismatch takes, so `-O1` need
+  not have modeled every op. The trap restores `nb_errors`, `error_func`, `vtop`, `loc`, and the
+  `stk_data` cleanup stack via a new **`stk_data_floor`** (so `mcc_error`'s longjmp cleanup frees
+  only what replay itself pushed, never the outer compile's live entries).
+
+Gate: `ctest` 1769/1769; the AST replay/promote/inline columns are unchanged (the trap never fires
+on the faithful corpus); `-O0` byte-identical.
+
+### 20.2 The parked finding — full mid-replay recovery needs error-model surgery
+
+The nested trap makes `-O1` compile the corpus and `full_language.c` (per-function graceful
+fallback), but **not `mcc` self-compile**: after a caught replay-error, some codegen/pp-expr global
+state stays inconsistent, and a later `#if defined(CONFIG_AST) && CONFIG_AST` mis-evaluates —
+`error: bad preprocessor expression: #if 0 && 0`. Root cause: mcc's error model is **abort-and-
+clean-up**, not nested recovery — the preprocessor's `#if` constant-expression evaluator shares the
+vstack / jump-list / codegen machinery, so unwinding a longjmp out of arbitrary replay depth leaves
+more than `stk_data` inconsistent (jump lists, `ind`, `nocode_wanted`, macro/token state).
+
+`stk_data_floor` fixed one corruption source but is **not sufficient**. Full, safe mid-replay
+recovery requires a broader save/restore of every replay-touched global (an explicit "codegen
+checkpoint/restore"), which is the "error-model surgery" §18 anticipated — a real, self-contained
+task, not a quick patch. **Until it lands, `mcc -O1` can fail a heavy-replay-error TU that `-O0`
+compiles** (the benchmark honestly shows `mcc-self -O1 = n/a`); `-O1` is therefore **experimental**.
+
+### 20.3 Resume plan
+
+1. **Codegen checkpoint/restore** around the replay attempt: snapshot the full set of replay-mutated
+   globals (jump lists / `rsym`, `ind`, `nocode_wanted`, `vtop`/`vstack` depth, macro & token state,
+   `stk_data`) and restore them wholesale on the trap — turning the fragile partial unwind into a
+   clean one. Then self-compile `-O1` should fall back cleanly and `mcc-self -O1` becomes a real row.
+2. **Inline governor** (Tier-4): size/complexity cap + termination budget, then re-enable inline
+   under `-O1`.
+3. Fold in §19 (struct-by-value params + per-site specialization) once inline is `-O1`-safe.
+
+---
+
 ## Decisions — final (ready for implementation)
 
 ### Ratified this pass (2026-07-08)

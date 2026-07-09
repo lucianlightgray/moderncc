@@ -21,7 +21,7 @@
 #endif
 
 #define REPS_DEFAULT 3
-#define MAXCC 8
+#define MAXCC 16
 #define MAXWL 8
 
 enum { STYLE_GCC,
@@ -33,6 +33,9 @@ struct compiler {
 	int style;
 	const char *ccmacro;
 	char version[128];
+	const char *opt; /* optimization flag to append (e.g. "-O1" / "/O1"), or NULL for the
+	                    compiler's default (-O0). Each detected compiler is measured twice:
+	                    once at default and once at its first optimization level. */
 };
 
 struct workload {
@@ -203,6 +206,8 @@ static void build_cmd(Argv *v, const struct compiler *cc,
 			ts_arg(v, strdup(buf));
 		}
 	}
+	if (cc->opt) /* the flag is pre-spelled for the compiler's style (-O1 / /O1) */
+		ts_arg(v, cc->opt);
 }
 
 static struct meas bench_one(const struct compiler *cc,
@@ -627,9 +632,12 @@ static void write_sysinfo(FILE *f, const char *plat, const struct compiler *ccs,
 						(double)h.mem_kb / (1024.0 * 1024.0), h.mem_kb);
 	fprintf(f, "  virt    : %s\n", h.virt);
 	fprintf(f, "  compilers:\n");
-	for (i = 0; i < nccs; i++)
+	for (i = 0; i < nccs; i++) {
+		if (ccs[i].opt) /* the -O1 twin shares the base compiler's version/path */
+			continue;
 		fprintf(f, "    %-8s %s  (%s)\n", ccs[i].key,
 						ccs[i].version[0] ? ccs[i].version : "?", ccs[i].path);
+	}
 }
 
 static void probe_cl_version(const char *cc, char *version, int vsz) {
@@ -660,6 +668,7 @@ static int detect(struct compiler *cc, const char *key, const char *const *names
 	cc->style = style;
 	cc->ccmacro = ccmacro;
 	cc->version[0] = 0;
+	cc->opt = NULL;
 	if (style == STYLE_CL)
 		probe_cl_version(cc->path, cc->version, sizeof cc->version);
 	else
@@ -676,6 +685,7 @@ static int detect_gnu_gcc(struct compiler *cc) {
 	cc->style = STYLE_GCC;
 	cc->ccmacro = "CC_gcc";
 	cc->version[0] = 0;
+	cc->opt = NULL;
 	ts_cc_probe(cc->path, m, sizeof m, cc->version, sizeof cc->version);
 	return 1;
 }
@@ -717,6 +727,7 @@ int main(int argc, char **argv) {
 	ccs[nccs].style = STYLE_GCC;
 	ccs[nccs].ccmacro = "CC_mcc";
 	ccs[nccs].version[0] = 0;
+	ccs[nccs].opt = NULL;
 	{
 		char mm[128];
 		ts_cc_probe(mccpath, mm, sizeof mm, ccs[nccs].version, sizeof ccs[nccs].version);
@@ -734,6 +745,32 @@ int main(int argc, char **argv) {
 			nccs++;
 		if (nccs < MAXCC && detect(&ccs[nccs], "msvc", cl, STYLE_CL, "CC_msvc"))
 			nccs++;
+	}
+
+	/* Measure every detected compiler twice: at its default level (opt=NULL, ≈ -O0) and
+	   at its first optimization level (-O1, or MSVC /O1). Interleave base/-O1 per compiler
+	   so the report pairs them for direct comparison. mcc's -O1 engages the AST replay
+	   optimizer (docs/AST.md §10); gcc/clang/mingw take -O1; MSVC takes /O1. */
+	{
+		struct compiler base[MAXCC];
+		static char optkey[MAXCC][24];
+		int nbase = nccs, k;
+		memcpy(base, ccs, sizeof(struct compiler) * nbase);
+		nccs = 0;
+		for (k = 0; k < nbase; k++) {
+			if (nccs < MAXCC) {
+				ccs[nccs] = base[k];
+				ccs[nccs].opt = NULL;
+				nccs++;
+			}
+			if (nccs < MAXCC) {
+				ccs[nccs] = base[k];
+				ccs[nccs].opt = (base[k].style == STYLE_CL) ? "/O1" : "-O1";
+				snprintf(optkey[k], sizeof optkey[k], "%s-O1", base[k].key);
+				ccs[nccs].key = optkey[k];
+				nccs++;
+			}
+		}
 	}
 
 	{

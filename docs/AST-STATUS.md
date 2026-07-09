@@ -34,6 +34,7 @@ beats `-O0` via two AST-only transformations — **register promotion** (Tier 3)
 
 | Flag | Effect |
 |---|---|
+| `-O1` (or higher) | **Experimental (docs/AST.md §20).** Engages the AST optimizer: replay (all arches) + Tier-3 register promotion (x86_64). Tier-4 inline is *not* auto-enabled (needs a governor). Falls back to `-O0` per function; a nested error trap catches replay hard-errors, but recovery is incomplete on heavy-replay-error TUs (mcc self-compile). |
 | `MCC_AST_REPLAY=1` | Enable the AST-replay driver (Tier 1/2). Byte-identical to `-O0`. |
 | `MCC_AST_REPLAY_DUMP=1` | Dump replayed trees + `[ast-promote]`/`[ast-inline]` activity to stderr. |
 | `MCC_AST_PROMOTE=1` | Tier-3 register promotion (needs replay). |

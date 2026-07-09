@@ -435,6 +435,34 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
     the previously-excluded shape).
   - [ ] **Slice 2 remainder.** Struct-by-value **params** (ABI-aware bind, still a real call);
     per-site specialization; un-gate the inline fixture on non-x86_64 (arm64 verification).
+    **Design pass for struct-by-value params + per-site specialization is now written up in
+    docs/AST.md §19** (materialize-into-fresh-local + per-param remap; constant-arg branch-select
+    via the const-fold template) — ready to implement, three sub-choices flagged for ratification.
+
+- [~] **`-O1` flag → AST pipeline wiring + benchmark/CI `-O1` columns (STARTED 2026-07-08,
+  PARKED — docs/AST.md §20).** `mcc -O1` now engages the AST replay optimizer (docs/AST.md §10):
+  `s1->optimize >= 1` enables `ast_replay_env` (arch-general) + `ast_promote_env` (Tier-3, x86_64).
+  **Tier-4 inline is deliberately NOT auto-enabled** by `-O1` (it can blow up combinatorially on
+  large TUs — mcc self-compile hung — so it stays behind `MCC_AST_INLINE`). The benchmark
+  (`tools/bench.c`) measures every compiler at default **and** `-O1` (mcc/gcc/clang/mingw `-O1`,
+  MSVC `/O1`), interleaved per compiler; CI surfaces the rows automatically (every bench step
+  `cat`s `dist/bench-*.txt`). `ctest` 1769/1769; `-O0` byte-identical (all new code is behind the
+  replay path). **Remaining before `-O1` is a safe default (the parked work):**
+  - [ ] **Graceful hard-error recovery is INCOMPLETE.** A nested `error_jmp_buf` trap around the
+    replay re-emission (`gen_function`) catches an `mcc_error` from an imperfectly-captured
+    construct and falls back to the parser's `-O0` bytes — extending the faithfulness net from
+    byte-divergence to hard errors. It restores `nb_errors`, `error_func` (a silent `ast_error_sink`),
+    `vtop`, `loc`, and the `stk_data` cleanup stack via a new `stk_data_floor` (so the longjmp frees
+    only replay's own entries, not the outer compile's). **This works for corpus + full-language but
+    NOT self-compile:** after a caught replay-error, additional codegen/pp-expr state stays
+    inconsistent (a later `#if X && Y` mis-evaluates — "bad preprocessor expression: #if 0 && 0" — the
+    pp const-expr evaluator shares the vstack/jump machinery). Full recovery needs a broader
+    save/restore of the replay-touched globals (jump lists, `ind`, `nocode_wanted`, macro/token
+    state). This is the "error-model surgery" AST.md §18/§20 flagged. Until it lands, `mcc -O1` can
+    fail a heavy-replay-error TU that `-O0` compiles (benchmark shows `mcc-self -O1 = n/a`).
+  - [ ] **Inline governor / hardening (Tier-4):** a size/complexity cap + termination governor so
+    `MCC_AST_INLINE` (and eventually `-O1`) does not blow up on large TUs; then re-enable inline
+    under `-O1`.
 - [ ] **Long horizon (design only):** the broader template library (algebraic, dead-branch,
   jump-table), the time-budgeted engine (§12/§221), dependency-ordered `-O1` compile, cross-TU
   LTO, `-g` from provenance, hot-reload snapshots, and separate `-O2`/`-O3` (SSA) drivers.

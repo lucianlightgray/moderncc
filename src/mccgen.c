@@ -799,6 +799,23 @@ ST_FUNC int mccgen_compile(MCCState *s1) {
 	ast_promote_env = getenv("MCC_AST_PROMOTE") != NULL;
 	ast_no_callful_env = getenv("MCC_AST_NO_CALLFUL") != NULL;
 	ast_inline_env = getenv("MCC_AST_INLINE") != NULL;
+	/* -O1+ engages the AST replay-driven optimizer (docs/AST.md §10: "-O1 = a second
+	   driver over the same vstack ops"). Replay is arch-general and faithfulness-gated
+	   (each function byte-verifies against -O0 and falls back to the parser's emission
+	   otherwise), so it is safe on every target. Register promotion (Tier 3) and virtual
+	   always-inline (Tier 4) are x86_64-validated (the pin pools are x86_64 register
+	   indices), so gate those on the target. The MCC_AST_* env vars still force any layer
+	   on independently, on any arch, for testing. */
+	if (s1->optimize >= 1) {
+		ast_replay_env = 1;
+#ifdef MCC_TARGET_X86_64
+		ast_promote_env = 1;
+		/* Tier-4 virtual-inline is NOT auto-enabled by -O1 yet: it is broadly functional
+		   but not robust on large TUs (it can blow up combinatorially self-compiling mcc),
+		   so it stays behind MCC_AST_INLINE for explicit opt-in until hardened + governed.
+		   Tier-3 promotion is the documented "first opt that beats -O0" and is safe here. */
+#endif
+	}
 #endif
 
 	mcc_debug_start(s1);
@@ -12860,8 +12877,15 @@ static int ast_promo_reg_of(AstArena *a, AstLocal n) { (void)a; (void)n; return 
 static void ast_promo_entry_init(void) {}
 static void ast_promo_exit_restore(void) {}
 static int ast_promo_n;
+static int ast_promo_callful;
 static int ast_promo_regpool_at(int i) { (void)i; return 0; }
 #endif
+
+/* Diagnostic sink installed while re-emitting from the AST (the -O1 replay pass): an error
+   raised by an imperfectly-captured construct must be silent and non-fatal, because the
+   parser's already-validated -O0 emission is the guaranteed fallback. Swallows the message;
+   the surrounding setjmp trap in gen_function unwinds and restores the -O0 bytes. */
+static void ast_error_sink(void *opaque, const char *msg) { (void)opaque; (void)msg; }
 
 /* --- AST replay: the emit driver (AST -> vstack ops -> bytes) -------------- */
 
@@ -13670,58 +13694,109 @@ static void gen_function(Sym *sym) {
 			 * both passes (func-end sym_pop returns the fresh syms to it as usual). */
 			Sym *ast_saved_free = sym_free_first;
 			sym_free_first = NULL;
-			/* Pass 1: no promotion; byte-verify. */
 			int saved_loc = loc, saved_anon = anon_sym;
-			ast_promo_n = 0;
-			ast_pinned_regs = 0;
-			ast_replay_body(ast_cur);
-			ast_replaying = 0;
-
-			Section *rsec2 = cur_text_section->reloc;
-			addr_t new_rel = rsec2 ? rsec2->data_offset : 0;
-			int new_len = ind - ast_body_ind;
-			int faithful = new_len == body_len &&
-					memcmp(cur_text_section->data + ast_body_ind, orig, body_len) == 0 &&
-					new_rel - ast_reloc0 == rel_len &&
-					(rel_len == 0 ||
-					 memcmp(rsec2->data + ast_reloc0, orig_rel, rel_len) == 0);
-
+			Section *rsec2 = cur_text_section->reloc; /* stable ptr; only data_offset moves */
+			volatile int faithful = 0;
 			int promoted = 0;
-			/* Pass 2 applies byte-diverging transformations to a faithful replay: Tier-4
-			 * virtual-inline (graft graftable calls) and Tier-3 register promotion, which
-			 * COMPOSE — a function may inline its calls AND promote its own address-not-taken
-			 * locals. Promotion planning still sees the (soon-grafted) calls and so picks the
-			 * callee-saved pool with save/restore, which is always safe (a call-ful frame
-			 * survives whatever the grafted body does); the inlined callee's own locals live in
-			 * fresh biased slots the promoter never considers. */
-			int do_inline = faithful && ast_has_graftable_call(ast_cur);
-			int do_promote = faithful && ast_promote_env && ast_plan_promotion(ast_cur) > 0;
-			if (do_inline || do_promote) {
-				ind = ast_body_ind;
-				rsym = 0;
-				if (ast_rsec)
-					ast_rsec->data_offset = ast_reloc0;
-				nocode_wanted = 0; /* pass 1 ending in a return left this > 0 */
-				loc = saved_loc;
-				anon_sym = saved_anon;
-				ast_fconst_i = 0;
-				ast_locrec_i = 0;
-				ast_replaying = 1;
-				ast_rp_switch = NULL;
-				ast_rp_nlabel = 0;
-				ast_rp_bsym = ast_rp_csym = NULL;
+			/* Nested error trap around the whole re-emission. Replay drives the same vstack
+			 * ops the parser did, but a construct the driver captured imperfectly can make one
+			 * raise mcc_error ("unknown type size", etc.) mid-emit — which would longjmp out
+			 * and abort the compile. That must never happen: -O1 may not fail a program -O0
+			 * compiles. A hard error is just the extreme case of "capture missed something," so
+			 * we catch it, restore the parser's saved -O0 emission (below, via !faithful), and
+			 * continue — the same fallback a byte-mismatch takes. Swap in our own error_jmp_buf
+			 * for the duration and restore the outer one after. */
+			jmp_buf ast_outer_jmp;
+			int ast_outer_en = mcc_state->error_set_jmp_enabled;
+			int ast_saved_nberr = mcc_state->nb_errors;
+			void (*ast_sv_efunc)(void *, const char *) = mcc_state->error_func;
+			void *ast_sv_eopaque = mcc_state->error_opaque;
+			int ast_saved_floor = stk_data_floor;
+			memcpy(ast_outer_jmp, mcc_state->error_jmp_buf, sizeof(jmp_buf));
+			/* Silence + defang diagnostics from the replay attempt: the sink suppresses the
+			   print, and any ERROR_ERROR still longjmps to our trap below. Raise the cleanup
+			   floor so that trap's longjmp frees only what replay itself pushed, never the
+			   outer compile's live stk_data entries (freeing those corrupts later parsing). */
+			mcc_state->error_func = ast_error_sink;
+			stk_data_floor = nb_stk_data;
+			if (setjmp(mcc_state->error_jmp_buf) == 0) {
+				mcc_state->error_set_jmp_enabled = 1;
+				/* Pass 1: no promotion; byte-verify. */
+				ast_promo_n = 0;
 				ast_pinned_regs = 0;
-				ast_inline_active = do_inline;
-				for (int pi = 0; pi < ast_promo_n; pi++)
-					ast_pinned_regs |= (1u << ast_promo_regpool_at(pi));
-				if (do_promote)
-					ast_promo_entry_init();
 				ast_replay_body(ast_cur);
+				ast_replaying = 0;
+
+				addr_t new_rel = rsec2 ? rsec2->data_offset : 0;
+				int new_len = ind - ast_body_ind;
+				faithful = new_len == body_len &&
+						memcmp(cur_text_section->data + ast_body_ind, orig, body_len) == 0 &&
+						new_rel - ast_reloc0 == rel_len &&
+						(rel_len == 0 ||
+						 memcmp(rsec2->data + ast_reloc0, orig_rel, rel_len) == 0);
+
+				/* Pass 2 applies byte-diverging transformations to a faithful replay: Tier-4
+				 * virtual-inline (graft graftable calls) and Tier-3 register promotion, which
+				 * COMPOSE — a function may inline its calls AND promote its own address-not-taken
+				 * locals. Promotion planning still sees the (soon-grafted) calls and so picks the
+				 * callee-saved pool with save/restore, which is always safe (a call-ful frame
+				 * survives whatever the grafted body does); the inlined callee's own locals live in
+				 * fresh biased slots the promoter never considers. */
+				int do_inline = faithful && ast_has_graftable_call(ast_cur);
+				int do_promote = faithful && ast_promote_env && ast_plan_promotion(ast_cur) > 0;
+				if (do_inline || do_promote) {
+					ind = ast_body_ind;
+					rsym = 0;
+					if (ast_rsec)
+						ast_rsec->data_offset = ast_reloc0;
+					nocode_wanted = 0; /* pass 1 ending in a return left this > 0 */
+					loc = saved_loc;
+					anon_sym = saved_anon;
+					ast_fconst_i = 0;
+					ast_locrec_i = 0;
+					ast_replaying = 1;
+					ast_rp_switch = NULL;
+					ast_rp_nlabel = 0;
+					ast_rp_bsym = ast_rp_csym = NULL;
+					ast_pinned_regs = 0;
+					ast_inline_active = do_inline;
+					for (int pi = 0; pi < ast_promo_n; pi++)
+						ast_pinned_regs |= (1u << ast_promo_regpool_at(pi));
+					if (do_promote)
+						ast_promo_entry_init();
+					ast_replay_body(ast_cur);
+					ast_replaying = 0;
+					ast_inline_active = 0;
+					ast_pinned_regs = 0;
+					promoted = ast_promo_n;
+				}
+			} else {
+				/* Replay raised mcc_error on a construct it captured imperfectly. Swallow the
+				 * error, unwind the codegen state it clobbered, and force the parser-emission
+				 * fallback (faithful stays 0). Correctness is preserved: `orig` holds the exact
+				 * -O0 bytes for this body, restored below. */
+				mcc_state->nb_errors = ast_saved_nberr;
+				vtop = vstack + ast_base_depth - 1;
 				ast_replaying = 0;
 				ast_inline_active = 0;
 				ast_pinned_regs = 0;
-				promoted = ast_promo_n;
+				ast_promo_n = 0;
+				ast_promo_callful = 0;
+				loc = saved_loc;
+				anon_sym = saved_anon;
+				faithful = 0;
 			}
+			memcpy(mcc_state->error_jmp_buf, ast_outer_jmp, sizeof(jmp_buf));
+			mcc_state->error_set_jmp_enabled = ast_outer_en;
+			mcc_state->error_func = ast_sv_efunc;
+			mcc_state->error_opaque = ast_sv_eopaque;
+			nb_stk_data = stk_data_floor; /* drop any entries replay pushed but didn't pop */
+			stk_data_floor = ast_saved_floor;
+			/* The parse-build (block(0) above) already validated this function and reported any
+			   real program error; a replay attempt must never leave a user-visible error behind.
+			   Restore the count unconditionally so a swallowed replay-only error (including a
+			   non-longjmp NOABORT one) cannot fail the compile. */
+			mcc_state->nb_errors = ast_saved_nberr;
 			sym_free_first = ast_saved_free; /* restore the hidden pre-replay free-list */
 			/* Keep ast_promo_n/callful set: a call-ful promoted function's save-register
 			 * restore is emitted at the return funnel in the common epilogue tail below

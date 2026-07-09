@@ -55,6 +55,7 @@ ST_DATA struct MCCState *mcc_state;
 HOST_SEM(mcc_compile_sem);
 ST_DATA void **stk_data;
 ST_DATA int nb_stk_data;
+ST_DATA int stk_data_floor;
 ST_DATA int g_debug;
 
 #if defined MCC_TARGET_PE && defined MCC_IS_NATIVE
@@ -713,7 +714,7 @@ static void error1(int mode, const char *fmt, va_list ap) {
 	if (mode == ERROR_NOABORT && s1->error_set_jmp_enabled && (s1->warn_fatal_errors || (s1->max_errors && s1->nb_errors >= s1->max_errors)))
 		mode = ERROR_ERROR;
 	if (mode == ERROR_ERROR && s1->error_set_jmp_enabled) {
-		while (nb_stk_data)
+		while (nb_stk_data > stk_data_floor)
 			mcc_free(*(void **)stk_data[--nb_stk_data]);
 		longjmp(s1->error_jmp_buf, 1);
 	}
