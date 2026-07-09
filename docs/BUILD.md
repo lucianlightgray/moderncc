@@ -129,7 +129,8 @@ host-dynamic (macOS Homebrew gcc). Hidden bases are prefixed `_`
 (`_base`, `_ninja`, `_dist`, `_test*`).
 
 **Developer presets** — interactive use (`cmake --preset debug`). CI's `linux`
-job also runs each of these as an x86_64 matrix cell with the default host cc
+job runs the full preset × arch cross-product — each of these plus every
+`linux-*` preset, on both x86_64 and arm64 runners, with the default host cc
 (`matrix` build-only via `--no-test` — the superbuild has no top-level test
 preset and instead runs ctest per cell during the build; `local-ci` is the
 orchestrator itself and is the one preset with no CI cell). `ci local`
@@ -163,14 +164,14 @@ schedules the same set:
 | `linux-gcc-dwarf` | `linux` | + `MCC_CONFIG_DWARF=5` |
 | `linux-gcc-sanitize` | `linux` | + `MCC_BUILD_SANITIZE=ON` (gcc libasan) |
 | `linux-gcc-diagnostics` | `linux` | + `MCC_ALL_DIAGNOSTICS=ON` (`mcc_s`/`mcc_p`/`mcc_c`) |
-| `macos`, `macos-cross` | `macos` | Debug, `CMAKE_C_COMPILER=$env{CC}` (clang / Homebrew gcc), `MCC_DARWIN_HOST=ON` |
+| `macos`, `macos-cross` | `macos` | Debug, `CMAKE_C_COMPILER=$env{CC}` (clang / Homebrew gcc), `MCC_DARWIN_HOST=ON`; arm64 natively + x86_64 under Rosetta 2 (clang only — Homebrew gcc is single-target arm64) |
 | `msvc` | `msvc` | Release, `MCC_TOOLCHAIN_PROFILE=msvc`, diff3 refs from `$env{}` |
 | `sanitize-msvc` | `msvc` | + `MCC_BUILD_SANITIZE=ON` — MSVC AddressSanitizer (`/fsanitize=address`); test preset excludes `qemu\|wine\|macho` |
 | `mingw` | `mingw` | Release, `MCC_TOOLCHAIN_PROFILE=mingw` (build-only) |
 
 The `linux`, `macos`, `msvc`, and `mingw` build jobs upload their build
 targets (executables + libraries) as artifacts — `mcc-<preset>-<arch>`
-(macOS inserts the compiler: `mcc-macos-<cc>-arm64`): the job configures
+(macOS inserts the compiler: `mcc-macos-<cc>-<arch>`): the job configures
 with `CMAKE_INSTALL_PREFIX` pointing at a `dist/<artifact>` dir, runs
 `cmake --install` after the tests, and uploads the tree as a tar.gz (tar
 first — GitHub artifacts don't preserve the exec bit). The docker `linux`

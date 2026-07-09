@@ -14,42 +14,25 @@ permissions:
 
 jobs:
   linux:
+    # Full preset x arch cross-product: every Linux-runnable CI preset plus the
+    # developer presets (default host cc), each on both runner arches. The
+    # `matrix` preset is the gcc;clang x native;cross superbuild, which has no
+    # top-level test preset (each cell runs its own ctest during the build),
+    # hence the --no-test include below.
     name: ${{ matrix.preset }} / ${{ matrix.arch }}
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
+        preset: [linux-gcc, linux-gcc-cross, linux-clang, linux-clang-cross,
+                 linux-gcc-release, linux-clang-release, linux-gcc-musl,
+                 linux-gcc-static, linux-gcc-multisource, linux-gcc-asm-off,
+                 linux-gcc-predefs-off, linux-gcc-pie, linux-gcc-dwarf,
+                 linux-gcc-diagnostics, linux-gcc-sanitize,
+                 debug, release, sanitize, diagnostics, cst, ast, cross, matrix]
+        arch: [x86_64, arm64]
         include:
-          - { preset: linux-gcc,             arch: x86_64, runner: ubuntu-latest }
-          - { preset: linux-gcc-cross,       arch: x86_64, runner: ubuntu-latest }
-          - { preset: linux-clang,           arch: x86_64, runner: ubuntu-latest }
-          - { preset: linux-clang-cross,     arch: x86_64, runner: ubuntu-latest }
-          - { preset: linux-gcc-release,     arch: x86_64, runner: ubuntu-latest }
-          - { preset: linux-gcc-musl,        arch: x86_64, runner: ubuntu-latest }
-          - { preset: linux-gcc,             arch: arm64,  runner: ubuntu-24.04-arm }
-          - { preset: linux-gcc-cross,       arch: arm64,  runner: ubuntu-24.04-arm }
-          - { preset: linux-clang-release,   arch: arm64,  runner: ubuntu-24.04-arm }
-          - { preset: linux-gcc-musl,        arch: arm64,  runner: ubuntu-24.04-arm }
-          - { preset: linux-gcc-static,          arch: x86_64, runner: ubuntu-latest }
-          - { preset: linux-gcc-multisource,   arch: x86_64, runner: ubuntu-latest }
-          - { preset: linux-gcc-asm-off,         arch: x86_64, runner: ubuntu-latest }
-          - { preset: linux-gcc-predefs-off,     arch: x86_64, runner: ubuntu-latest }
-          - { preset: linux-gcc-pie,             arch: x86_64, runner: ubuntu-latest }
-          - { preset: linux-gcc-dwarf,           arch: x86_64, runner: ubuntu-latest }
-          - { preset: linux-gcc-diagnostics,     arch: x86_64, runner: ubuntu-latest }
-          - { preset: linux-gcc-sanitize,            arch: x86_64, runner: ubuntu-latest }
-          # developer presets (default host cc) — same scenarios the README
-          # documents for interactive use; `matrix` is the gcc;clang x
-          # native;cross superbuild, which has no top-level test preset (each
-          # cell runs its own ctest during the build), hence --no-test.
-          - { preset: debug,                 arch: x86_64, runner: ubuntu-latest }
-          - { preset: release,               arch: x86_64, runner: ubuntu-latest }
-          - { preset: sanitize,              arch: x86_64, runner: ubuntu-latest }
-          - { preset: diagnostics,           arch: x86_64, runner: ubuntu-latest }
-          - { preset: cst,                   arch: x86_64, runner: ubuntu-latest }
-          - { preset: ast,                   arch: x86_64, runner: ubuntu-latest }
-          - { preset: cross,                 arch: x86_64, runner: ubuntu-latest }
-          - { preset: matrix,                arch: x86_64, runner: ubuntu-latest, flags: --no-test }
+          - { preset: matrix, flags: --no-test }
     env:
       ART: mcc-${{ matrix.preset }}-${{ matrix.arch }}
     steps:
@@ -77,20 +60,28 @@ jobs:
           path: ${{ env.ART }}.tar.xz
 
   macos:
-    name: ${{ matrix.preset }} / ${{ matrix.cc }}
+    name: ${{ matrix.preset }} / ${{ matrix.cc }} / ${{ matrix.arch }}
     runs-on: macos-15
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { preset: macos,       cc: clang }
-          - { preset: macos-cross, cc: clang }
-          - { preset: macos,       cc: gcc }
-          - { preset: macos-cross, cc: gcc }
+          - { preset: macos,       cc: clang, arch: arm64 }
+          - { preset: macos-cross, cc: clang, arch: arm64 }
+          - { preset: macos,       cc: gcc,   arch: arm64 }
+          - { preset: macos-cross, cc: gcc,   arch: arm64 }
+          # x86_64 cross-produced by the universal clang (-arch x86_64) and
+          # executed under Rosetta 2, as in dist-macos. clang only: Homebrew
+          # GNU gcc is a single-target arm64 compiler and cannot emit x86_64.
+          - { preset: macos,       cc: clang, arch: x86_64 }
+          - { preset: macos-cross, cc: clang, arch: x86_64 }
     env:
-      ART: mcc-${{ matrix.preset }}-${{ matrix.cc }}-arm64
+      ART: mcc-${{ matrix.preset }}-${{ matrix.cc }}-${{ matrix.arch }}
     steps:
       - uses: actions/checkout@v5
+      - name: install Rosetta 2 (run x86_64 binaries on Apple silicon)
+        if: matrix.arch == 'x86_64'
+        run: sudo softwareupdate --install-rosetta --agree-to-license
       - name: install toolchain
         run: |
           brew untap aws/tap 2>/dev/null || true
@@ -104,7 +95,12 @@ jobs:
             echo "CC=clang" >> "$GITHUB_ENV"
           fi
       - name: configure
-        run: cmake --preset ${{ matrix.preset }} "-DCMAKE_INSTALL_PREFIX=$PWD/dist/$ART" -DMCC_BENCH=ON "-DMCC_DIST_PLAT=$ART"
+        run: |
+          extra=""
+          if [ "${{ matrix.arch }}" = x86_64 ]; then
+            extra="-DCMAKE_OSX_ARCHITECTURES=x86_64 -DMCC_TARGET_ARCH=x86_64"
+          fi
+          cmake --preset ${{ matrix.preset }} "-DCMAKE_INSTALL_PREFIX=$PWD/dist/$ART" -DMCC_BENCH=ON "-DMCC_DIST_PLAT=$ART" $extra
       - name: build
         run: cmake --build --preset ${{ matrix.preset }} -j"$(sysctl -n hw.ncpu)"
       - name: test
