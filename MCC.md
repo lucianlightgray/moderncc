@@ -115,10 +115,13 @@ Whn: opt-in (`MCC_QEMU_TESTS`), offline-by-default. Children: **Gentoo stage3
 rootfs** (≈5, vendored `vendor/gentoo-stage3-<arch>-<libc>/`), **Docker runner**
 (≈3, off-Linux hosts), **`qemu-arm64-osx`** (≈2, arm64-Darwin codegen).
 
-**CI labels** (≈5) — W: stable host-capability selectors. Who: **`macho`** (≈5,
-Mach-O; some need Darwin/darling), **`wine`** (≈3, PE under wine via
-`mcc-x86_64-win32`), **`qemu`** (≈3). H: `ctest -LE 'qemu|wine|macho'` = portable
-subset. Whr: `.github/workflows/ci.yml` on every push.
+**CI labels** (≈5) — W: stable host-capability selectors. Who: **`native`** (every
+non-qemu test; the `_test-native` base runs `ctest -L native` on *every* host, no
+per-OS exclude lists — capability decided by configure probes, missing ones
+skip-stub/self-skip exit 77), **`macho`** (≈5, Mach-O; some need Darwin/darling),
+**`wine`** (≈3, PE under wine, now self-located via `setup-wine`), **`qemu`** (≈3,
+the only non-`native` label; `qemu-arm64-osx` carries `qemu;macho`). H: `ctest -L
+native -N` lists the native set. Whr: `.github/workflows/ci.yml` on every push.
 
 **Reference compilers** — **GCC** (≈10, `~/Projects/gcc` @ `31d967232a9`;
 `gcc.dg/c99-*`×135, `c11-*`×126, `atomic/`×48, torture; ~70% diagnostic), **Clang**
