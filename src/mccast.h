@@ -77,12 +77,12 @@ int ast_validate(const AstArena *a, char *msg, size_t msgcap);
 }
 #endif
 
-#if defined(CONFIG_AST) && CONFIG_AST && defined(_MCC_H)
+#if defined(CONFIG_AST) && CONFIG_AST && defined(MCC_INTERNAL)
 
 /* Compiler integration (mcc translation unit only): the capture hooks
    mccgen.c drives while parsing a function body, and the replay,
    promotion and inline drivers that re-emit the body from the recorded
-   intention tree.  Implemented in the _MCC_H section of mccast.c. */
+   intention tree.  Implemented in the MCC_INTERNAL section of mccast.c. */
 
 struct MCCState;
 struct Sym;

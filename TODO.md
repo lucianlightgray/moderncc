@@ -19,7 +19,7 @@ format files add the local matrix / a qemu spot-check as noted.
 
 ## 2. Give `mccast.h:80` a named macro (trivial)
 
-- [ ] `mccast.h:80` tests the `_MCC_H` include guard to detect "am I included
+- [x] `mccast.h:80` tests the `_MCC_H` include guard to detect "am I included
       from inside mcc.h" — replace with an explicit macro (e.g.
       `MCC_INTERNAL`) defined by `mcc.h` itself. No behavior change.
 

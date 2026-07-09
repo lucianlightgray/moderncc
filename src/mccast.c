@@ -1,4 +1,4 @@
-#if defined(CONFIG_AST) && CONFIG_AST && (defined(_MCC_H) || !defined(SINGLE_SOURCE))
+#if defined(CONFIG_AST) && CONFIG_AST && (defined(MCC_INTERNAL) || !defined(SINGLE_SOURCE))
 
 #include "mccast.h"
 
@@ -330,7 +330,7 @@ int ast_validate(const AstArena *a, char *msg, size_t msgcap) {
 #pragma pop_macro("realloc")
 #pragma pop_macro("free")
 
-#ifdef _MCC_H
+#ifdef MCC_INTERNAL
 
 /* Like the parser in mccgen.c, the capture/replay engine must emit its
    jumps through the _acs wrappers so dead code after an unconditional
@@ -3209,6 +3209,6 @@ void ast_reemit_forward_inlines(void) {
 #undef gjmp_addr
 #undef gjmp
 
-#endif /* _MCC_H */
+#endif /* MCC_INTERNAL */
 
 #endif

@@ -1,6 +1,8 @@
 #ifndef _MCC_H
 #define _MCC_H
 
+#define MCC_INTERNAL 1
+
 #define _GNU_SOURCE
 #define _DARWIN_C_SOURCE
 
@@ -175,7 +177,7 @@ ST_FUNC void host_fault_unblock(unsigned detail);
 #endif
 
 #ifndef CONFIG_MCC_ELFINTERP
-#if defined __GNU__
+#if MCC_HOST_HURD
 #define CONFIG_MCC_ELFINTERP "/lib/ld.so"
 #elif defined(MCC_TARGET_PE)
 #define CONFIG_MCC_ELFINTERP "-"
