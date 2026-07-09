@@ -2861,7 +2861,7 @@ if(NOT CMAKE_CROSSCOMPILING)
                     --out "${MCC_DIST_DIR}/bench-${MCC_DIST_PLAT}.txt"
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
             VERBATIM USES_TERMINAL
-            COMMENT "Benchmarking compilers (mcc/gcc/clang/mingw/msvc) via mccbench")
+            COMMENT "Benchmarking compilers (self-hosted mcc per -O level vs gcc/clang/mingw/msvc) via mccbench")
         add_dependencies(bench mccbench mcc)
     endif()
 

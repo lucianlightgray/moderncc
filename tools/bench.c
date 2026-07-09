@@ -21,7 +21,7 @@
 #endif
 
 #define REPS_DEFAULT 3
-#define MAXCC 16
+#define MAXCC 32
 #define MAXWL 8
 
 enum { STYLE_GCC,
@@ -299,9 +299,10 @@ static void write_table(FILE *f, const struct compiler *ccs, int nccs,
 					"compiler", "cpu(s)", "funcs/s", "obj(KB)", "peak(MB)", "wall(s)");
 	for (i = 0; i < nccs; i++) {
 		struct meas m;
-		const char *op = i ? ccs[i - 1].opt : NULL, *oc = ccs[i].opt;
-		if (i && strcmp(op ? op + 1 : "", oc ? oc + 1 : ""))
-			fprintf(f, "\n");
+		const char *pg = i ? (ccs[i - 1].opt ? ccs[i - 1].opt + 1 : "") : NULL;
+		const char *og = ccs[i].opt ? ccs[i].opt + 1 : "";
+		if (!pg || strcmp(pg, og))
+			fprintf(f, "\n  [%s]\n", ccs[i].opt ? ccs[i].opt : "default");
 		m = bench_one(&ccs[i], wl, reps);
 		fmt_secs(cpu, sizeof cpu, m.cpu_ms);
 		fmt_secs(wall, sizeof wall, (long)m.wall_ms);
@@ -640,6 +641,8 @@ static void write_sysinfo(FILE *f, const char *plat, const struct compiler *ccs,
 		fprintf(f, "    %-8s %s  (%s)\n", ccs[i].key,
 						ccs[i].version[0] ? ccs[i].version : "?", ccs[i].path);
 	}
+	fprintf(f, "  mcc rows are self-hosted stage2 binaries, rebuilt from"
+						 " src/mcc.c at each group's -O level\n");
 }
 
 static void probe_cl_version(const char *cc, char *version, int vsz) {
@@ -678,6 +681,60 @@ static int detect(struct compiler *cc, const char *key, const char *const *names
 	return 1;
 }
 
+static void host_target_defs(const char **defs, int *n) {
+#if defined(__x86_64__) || defined(_M_X64)
+	defs[(*n)++] = "MCC_TARGET_X86_64=1";
+#elif defined(__i386__) || defined(_M_IX86)
+	defs[(*n)++] = "MCC_TARGET_I386=1";
+#elif defined(__aarch64__) || defined(_M_ARM64)
+	defs[(*n)++] = "MCC_TARGET_ARM64=1";
+#elif defined(__riscv)
+	defs[(*n)++] = "MCC_TARGET_RISCV64=1";
+#elif defined(__arm__)
+	defs[(*n)++] = "MCC_TARGET_ARM=1";
+#else
+	defs[(*n)++] = "MCC_TARGET_X86_64=1";
+#endif
+#if MCC_HOST_WIN32
+	defs[(*n)++] = "MCC_TARGET_PE=1";
+#endif
+#if MCC_HOST_DARWIN
+	defs[(*n)++] = "MCC_TARGET_MACHO=1";
+#endif
+}
+
+/* Build a stage2 mcc: the --mcc compiler compiles src/mcc.c (the mcc-self
+   workload) at the given -O level into a runnable binary next to the
+   build tree, so auto-mccdir resolves the bundled headers. */
+static int build_self_mcc(const char *stage1, const struct workload *wl,
+													const char *builddir, const char *opt,
+													char *out, int outsz) {
+	Argv v = {{0}, 0};
+	char buf[4160];
+	int i;
+	ts_path(out, outsz, builddir, "mccbench-self%s%s", opt ? opt : "",
+					MCC_HOST_WIN32 ? ".exe" : "");
+	ts_arg(&v, stage1);
+	snprintf(buf, sizeof buf, "-B%s", builddir);
+	ts_arg(&v, strdup(buf));
+	ts_arg(&v, wl->src);
+	ts_arg(&v, "-o");
+	ts_arg(&v, out);
+	for (i = 0; wl->incs[i]; i++) {
+		snprintf(buf, sizeof buf, "-I%s", wl->incs[i]);
+		ts_arg(&v, strdup(buf));
+	}
+	for (i = 0; wl->defs[i]; i++) {
+		snprintf(buf, sizeof buf, "-D%s", wl->defs[i]);
+		ts_arg(&v, strdup(buf));
+	}
+	ts_arg(&v, "-DCC_NAME=CC_mcc");
+	ts_arg(&v, "-DCONFIG_AST=1");
+	if (opt)
+		ts_arg(&v, opt);
+	return host_spawn_wait(ts_argz(&v)) == 0;
+}
+
 static int detect_gnu_gcc(struct compiler *cc) {
 	char m[128];
 	cc->path[0] = 0;
@@ -698,6 +755,7 @@ int main(int argc, char **argv) {
 	int reps = REPS_DEFAULT, i, nccs = 0, nwl = 0;
 	struct compiler ccs[MAXCC];
 	struct workload wls[MAXWL];
+	struct workload *self_wl = NULL;
 	FILE *f;
 
 	for (i = 1; i < argc; i++) {
@@ -723,6 +781,58 @@ int main(int argc, char **argv) {
 	}
 	if (reps < 1)
 		reps = 1;
+
+	{
+		struct workload *w;
+
+		w = &wls[nwl++];
+		memset(w, 0, sizeof *w);
+		w->key = "portable-corpus";
+		ts_path(w->src, sizeof w->src, srcroot, "tests/bench/corpus.c");
+
+		w = &wls[nwl++];
+		memset(w, 0, sizeof *w);
+		w->key = "full-language";
+		ts_path(w->src, sizeof w->src, srcroot, "tests/diff/full_language.c");
+		w->incs[0] = srcroot;
+		{
+			static char inc1[4096];
+			ts_path(inc1, sizeof inc1, srcroot, "runtime/include");
+			w->incs[1] = inc1;
+		}
+		w->needs_ccmacro = 1;
+
+		w = &wls[nwl++];
+		memset(w, 0, sizeof *w);
+		w->key = "mcc-self";
+		self_wl = w;
+		ts_path(w->src, sizeof w->src, srcroot, "src/mcc.c");
+		{
+			static char id[11][4096];
+			static const char *rel[] = {
+					"src", "src/arch/i386", "src/arch/x86_64",
+					"src/arch/arm", "src/arch/arm64",
+					"src/arch/riscv64", "src/objfmt",
+					"src/formats", "include"};
+			int k;
+			for (k = 0; k < 9; k++) {
+				ts_path(id[k], sizeof id[k], srcroot, "%s", rel[k]);
+				w->incs[k] = id[k];
+			}
+			snprintf(id[9], sizeof id[9], "%s", builddir);
+			w->incs[9] = id[9];
+			w->incs[10] = srcroot;
+		}
+		{
+			int nd = 0;
+			w->defs[nd++] = "SINGLE_SOURCE=1";
+			w->defs[nd++] = "CONFIG_MCC_PREDEFS=1";
+			w->defs[nd++] = "CONFIG_MCC_AUTO_MCCDIR=1";
+			w->defs[nd++] = "MCC_VERSION=20260706135200";
+			host_target_defs(w->defs, &nd);
+		}
+		w->needs_ccmacro = 1;
+	}
 
 	ccs[nccs].key = "mcc";
 	snprintf(ccs[nccs].path, sizeof ccs[nccs].path, "%s", mccpath);
@@ -751,71 +861,48 @@ int main(int argc, char **argv) {
 
 	{
 		struct compiler base[MAXCC];
-		static char optkey[MAXCC][24];
-		static const char *gccopts[] = {NULL, "-O1"};
-		static const char *clopts[] = {NULL, "/O1"};
+		static char selfpath[4][4096];
+		static const char *gccopts[] = {NULL, "-O1", "-O2", "-O3"};
+		static const char *clopts[] = {NULL, "/O1", "/O2", NULL};
 		int nbase = nccs, k, o;
 		memcpy(base, ccs, sizeof(struct compiler) * nbase);
 		nccs = 0;
-		for (o = 0; o < (int)(sizeof gccopts / sizeof *gccopts); o++)
-			for (k = 0; k < nbase && nccs < MAXCC; k++) {
+		for (o = 0; o < (int)(sizeof gccopts / sizeof *gccopts); o++) {
+			struct compiler *mc;
+			if (nccs >= MAXCC)
+				break;
+			/* the mcc row of every -O group is a stage2 binary: the --mcc
+			   compiler builds src/mcc.c at that group's level, so the row
+			   measures a self-hosted mcc optimized by its own optimizer */
+			mc = &ccs[nccs++];
+			*mc = base[0];
+			mc->opt = gccopts[o];
+			printf("==> self-hosting mcc at %s\n",
+						 gccopts[o] ? gccopts[o] : "default");
+			if (build_self_mcc(mccpath, self_wl, builddir, gccopts[o],
+												 selfpath[o], sizeof selfpath[o])) {
+				char mm[128];
+				size_t vl;
+				snprintf(mc->path, sizeof mc->path, "%s", selfpath[o]);
+				ts_cc_probe(mc->path, mm, sizeof mm, mc->version,
+										sizeof mc->version);
+				vl = strlen(mc->version);
+				snprintf(mc->version + vl, sizeof mc->version - vl, "%s",
+								 " [self-hosted]");
+			} else {
+				fprintf(stderr,
+								"mccbench: self-hosting mcc at %s failed; "
+								"benchmarking %s instead\n",
+								gccopts[o] ? gccopts[o] : "default", mccpath);
+			}
+			for (k = 1; k < nbase && nccs < MAXCC; k++) {
+				if (base[k].style == STYLE_CL && o && !clopts[o])
+					continue;
 				ccs[nccs] = base[k];
 				ccs[nccs].opt = base[k].style == STYLE_CL ? clopts[o] : gccopts[o];
-				if (gccopts[o]) {
-					snprintf(optkey[nccs], sizeof optkey[nccs], "%s%s", base[k].key,
-									 gccopts[o]);
-					ccs[nccs].key = optkey[nccs];
-				}
 				nccs++;
 			}
-	}
-
-	{
-		struct workload *w;
-
-		w = &wls[nwl++];
-		memset(w, 0, sizeof *w);
-		w->key = "portable-corpus";
-		ts_path(w->src, sizeof w->src, srcroot, "tests/bench/corpus.c");
-
-		w = &wls[nwl++];
-		memset(w, 0, sizeof *w);
-		w->key = "full-language";
-		ts_path(w->src, sizeof w->src, srcroot, "tests/diff/full_language.c");
-		w->incs[0] = srcroot;
-		{
-			static char inc1[4096];
-			ts_path(inc1, sizeof inc1, srcroot, "runtime/include");
-			w->incs[1] = inc1;
 		}
-		w->needs_ccmacro = 1;
-
-		w = &wls[nwl++];
-		memset(w, 0, sizeof *w);
-		w->key = "mcc-self";
-		ts_path(w->src, sizeof w->src, srcroot, "src/mcc.c");
-		{
-			static char id[11][4096];
-			static const char *rel[] = {
-					"src", "src/arch/i386", "src/arch/x86_64",
-					"src/arch/arm", "src/arch/arm64",
-					"src/arch/riscv64", "src/objfmt",
-					"src/formats", "include"};
-			int k;
-			for (k = 0; k < 9; k++) {
-				ts_path(id[k], sizeof id[k], srcroot, "%s", rel[k]);
-				w->incs[k] = id[k];
-			}
-			snprintf(id[9], sizeof id[9], "%s", builddir);
-			w->incs[9] = id[9];
-			w->incs[10] = srcroot;
-		}
-		w->defs[0] = "SINGLE_SOURCE=1";
-		w->defs[1] = "MCC_TARGET_X86_64=1";
-		w->defs[2] = "MCC_EMBED_MCCRT=0";
-		w->defs[3] = "CONFIG_MCC_PREDEFS=1";
-		w->defs[4] = "MCC_VERSION=20260706135200";
-		w->needs_ccmacro = 1;
 	}
 
 	{
