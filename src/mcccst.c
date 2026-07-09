@@ -1343,19 +1343,23 @@ static void cst_nest_specs(void) {
 	for (k = 0; k < n; k++) {
 		int32_t si = (int32_t)order[k];
 		int overlap = 0;
-		while (top > 0) {
-			int32_t tp = stk[top - 1];
+		uint32_t t = top;
+		while (t > 0) {
+			int32_t tp = stk[t - 1];
 			if (cst_sbuf[tp].first_leaf <= cst_sbuf[si].first_leaf &&
 					cst_sbuf[si].last_leaf <= cst_sbuf[tp].last_leaf)
 				break;
-			if (cst_sbuf[tp].last_leaf > cst_sbuf[si].first_leaf)
+			if (cst_sbuf[tp].last_leaf > cst_sbuf[si].first_leaf) {
 				overlap = 1;
-			top--;
+				break;
+			}
+			t--;
 		}
 		if (overlap) {
 			cst_sbuf[si].parent = -1;
 			continue;
 		}
+		top = t;
 		int32_t parent = top > 0 ? stk[top - 1] : -1;
 		cst_sbuf[si].parent = parent;
 		if (parent >= 0) {
