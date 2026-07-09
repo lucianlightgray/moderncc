@@ -112,16 +112,19 @@ callee's body into the caller. Built in slices, all landed this session.
 ### What works
 
 A **`static`, non-variadic**, VLA-free, size-bounded function — with **local declarations**,
-**internal control flow (if/else, loops)**, **one or more value returns including early returns
-inside branches**, **`int`/pointer/`float`/`double` scalar params and returns**, and **its own
-calls** (leaf or not) — is inlined into a **later** caller (defined-before-use). Returns coalesce
-**via memory** (each stores to a dedicated result slot, non-tail returns jump to a graft-local
-inline-end join), so several grafts feeding one call don't fight over a return register. A
-**non-leaf** callee's own calls graft recursively (a depth+stack **cycle guard**, max depth 8,
-stops direct/mutual recursion — the recursive call stays real) or emit a real call.
-**Excluded:** `goto`/`switch`/`break`/`continue`, `void` returns, pointer-to-VLA params, and
-callees referencing a **string literal / anon rodata const** (its captured Sym pointer can be
-recycled after the callee's own gen — a real cross-function Sym-lifetime limit, see remaining).
+**internal control flow (if/else, loops, `switch`, `break`/`continue`)**, **one or more value
+returns including early returns inside branches**, **`int`/pointer/`float`/`double` scalar params
+and struct/scalar returns**, and **its own calls** (leaf or not) — is inlined into a **later**
+caller (defined-before-use). Returns coalesce **via memory** (each stores to a dedicated
+result slot — struct-sized for a struct return — non-tail returns jump to a graft-local inline-end
+join), so several grafts feeding one call don't fight over a return register. A **non-leaf**
+callee's own calls graft recursively (a depth+stack **cycle guard**, max depth 8, stops
+direct/mutual recursion — the recursive call stays real) or emit a real call. Composes with
+Tier-3 register promotion in one pass 2. **Excluded** (fall back to a real call): `goto`/named
+labels, `void` returns, **struct-by-value params** (ABI-dependent frame layout), pointer-to-VLA
+params, `setjmp`-calling callees (guard query), and callees referencing a **string literal / anon
+rodata const** (its captured Sym pointer can be recycled after the callee's own gen — a real
+cross-function Sym-lifetime limit).
 
 - **Retention** (`ast_inline_retain`, keyed by function Sym; `ast_inline_lookup`): the
   within-TU inline closure held in memory. Non-graftable candidates are retained-only.
@@ -154,8 +157,17 @@ fixture (asserts `add`/`scale`/`madd`/`clamp`/`sgn`/`area`/`quad` graft).
 ### Remaining Tier-4 breadth (TODO.md "Slice 2 breadth")
 
 - **Forward-declared / later-defined callees** — the common caller-before-callee case, missed
-  today. Needs true **defer-to-TU** (§13): hold ASTs until the TU closes, then lower in
-  dependency order (leaves-first). This is the largest remaining piece.
+  today (a callee must be retained at the caller's gen). Needs **defer-to-TU** (§13). The
+  parser/emitter are intertwined in `gen_function` (symbol defined at `ind`, `block()` emits during
+  parse), so full deferral is a driver restructuring. **A bounded design that leverages the
+  parser-independent replay:** retain *every* function's AST + `sym`; at end-of-TU, for any function
+  that had a forward graftable call, re-run `gfunc_prolog(sym)` → replay-with-inline → `gfunc_epilog`
+  at a fresh text offset (`gfunc_prolog` is deterministic from `sym->type.ref`, so the re-spilled
+  param offsets match the AST) and `put_extern_sym` to repoint the symbol; the original emission
+  becomes dead code. Risks to handle: re-emission dependency order (leaves first), the dead-code
+  relocations, and debug info. This is the largest remaining Tier-4 piece.
+- **Struct-by-value params** — need an ABI-correct bind (a `vstore`-to-slot works only for
+  ≤16-byte, register-passed structs; >16-byte memory-passed structs have a different frame layout).
 - **`goto` / `switch`** — these touch the shared label/switch replay state, so need scoping.
 - **Struct-by-value params/return** — needs the aggregate-copy / sret ABI in the graft.
 - **Persist string/rodata Syms** — to lift the string-literal exclusion (currently such callees
