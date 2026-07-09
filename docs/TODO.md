@@ -543,7 +543,7 @@ Each is a closed decision; the item is the named condition that would reopen it.
   regressions** via per-column KNOWNGAP baselines (`GCCTS_AST_KNOWN_{REPLAY,PROMOTE,INLINE}`),
   so the gate is CI-usable (green on no-NEW-regression) while the residual is tracked.
 - [ ] **§C1 residual — the -O1 transform soundness backlog (surfaced by the A4 gate).** The
-  differential's promote/inline columns baselined **14 promote + 5 inline** pre-existing
+  differential's promote/inline columns baselined **14 promote + 4 inline** pre-existing
   miscompiles (they diverge from -O0 by construction, so byte-verify can't catch them — the gate
   is their only net; all behind experimental MCC_AST_PROMOTE/INLINE, not default -O0). Promote:
   register-promotion poison-analysis holes — `990829-1` is a **float pin (xmm6/xmm7) clobbered
