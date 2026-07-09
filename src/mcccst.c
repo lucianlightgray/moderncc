@@ -292,9 +292,22 @@ static uint64_t cst_mix64(uint64_t h, uint64_t x) {
 
 static uint64_t cst_hash_bytes(uint64_t seed, const uint8_t *p, uint32_t len) {
 	uint64_t h = cst_mix64(seed, 0x1000193u + len);
-	uint32_t i;
-	for (i = 0; i < len; i++)
-		h = cst_mix64(h, p[i]);
+	while (len >= 8) {
+		uint64_t v = (uint64_t)p[0] | (uint64_t)p[1] << 8 |
+								 (uint64_t)p[2] << 16 | (uint64_t)p[3] << 24 |
+								 (uint64_t)p[4] << 32 | (uint64_t)p[5] << 40 |
+								 (uint64_t)p[6] << 48 | (uint64_t)p[7] << 56;
+		h = cst_mix64(h, v);
+		p += 8;
+		len -= 8;
+	}
+	if (len) {
+		uint64_t v = 0;
+		uint32_t i;
+		for (i = 0; i < len; i++)
+			v |= (uint64_t)p[i] << (i * 8);
+		h = cst_mix64(h, v);
+	}
 	return h;
 }
 
@@ -1017,6 +1030,11 @@ static int cst_slurp(CstArena *a, const char *filename) {
 static CstStore *cst_session_store;
 static uint32_t *cst_inc_tmpl;
 static uint32_t cst_inc_count, cst_inc_cap;
+static struct CstIncSeen {
+	char *path;
+	uint32_t id;
+} *cst_inc_seen;
+static uint32_t cst_inc_seen_count, cst_inc_seen_cap;
 
 CstStore *cst_hook_store(void) {
 	return cst_session_store;
@@ -1111,16 +1129,37 @@ void cst_hook_include(const char *path, int from_main_file) {
 		return;
 	if (!cst_session_store)
 		cst_session_store = cst_store_new();
-	CstArena *t = cst_arena_new(0);
-	if (cst_slurp(t, path) != 0) {
-		cst_arena_free(t);
-		return;
+	uint32_t i, id;
+	for (i = 0; i < cst_inc_seen_count; i++)
+		if (0 == strcmp(cst_inc_seen[i].path, path))
+			break;
+	if (i < cst_inc_seen_count) {
+		id = cst_inc_seen[i].id;
+	} else {
+		CstArena *t = cst_arena_new(0);
+		if (cst_slurp(t, path) != 0) {
+			cst_arena_free(t);
+			id = 0xffffffffu;
+		} else {
+			uint32_t len = 0;
+			const uint8_t *bytes = cst_source(t, &len);
+			cst_build_sourcefile(t, bytes, len);
+			cst_rehash_all(t);
+			id = cst_store_intern(cst_session_store, t);
+		}
+		if (cst_inc_seen_count >= cst_inc_seen_cap) {
+			cst_inc_seen_cap = cst_inc_seen_cap ? cst_inc_seen_cap * 2 : 32;
+			cst_inc_seen = cst_xrealloc(cst_inc_seen,
+																	cst_inc_seen_cap * sizeof *cst_inc_seen);
+		}
+		size_t pn = strlen(path) + 1;
+		cst_inc_seen[cst_inc_seen_count].path = cst_xrealloc(NULL, pn);
+		memcpy(cst_inc_seen[cst_inc_seen_count].path, path, pn);
+		cst_inc_seen[cst_inc_seen_count].id = id;
+		cst_inc_seen_count++;
 	}
-	uint32_t len = 0;
-	const uint8_t *bytes = cst_source(t, &len);
-	cst_build_sourcefile(t, bytes, len);
-	cst_rehash_all(t);
-	uint32_t id = cst_store_intern(cst_session_store, t);
+	if (id == 0xffffffffu)
+		return;
 	if (from_main_file) {
 		if (cst_inc_count >= cst_inc_cap) {
 			cst_inc_cap = cst_inc_cap ? cst_inc_cap * 2 : 16;
@@ -1162,6 +1201,8 @@ void cst_hook_begin(const char *filename) {
 		cst_store_free(cst_session_store);
 		cst_session_store = NULL;
 	}
+	while (cst_inc_seen_count)
+		free(cst_inc_seen[--cst_inc_seen_count].path);
 	cst_inc_count = 0;
 	for (uint32_t i = 0; i < cst_defoff_cap; i++)
 		cst_defoff[i] = CST_OFF_NONE;
