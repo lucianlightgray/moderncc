@@ -133,7 +133,7 @@ static int do_run_preset(int argc, char **argv) {
 			snprintf(prefix, sizeof prefix, "-DCMAKE_INSTALL_PREFIX=%s", out);
 			ts_arg(&v, prefix);
 		}
-		for (i = 0; i < extra_start; i++) /* forward -D cache overrides */
+		for (i = 0; i < extra_start; i++)
 			if (!strncmp(argv[i], "-D", 2))
 				ts_arg(&v, argv[i]);
 		printf("==> configuring (preset=%s)\n", preset);
@@ -317,16 +317,10 @@ static int do_qemu(int argc, char **argv) {
 typedef struct
 {
 	char preset[64], cc[16], plat[64];
-	int no_test;   /* build-only preset: no top-level test preset exists */
-	int vendor_cc; /* pin CMAKE_C_COMPILER to the vendored clang */
+	int no_test;
+	int vendor_cc;
 } LocJob;
 
-/* The curated preset ledger — the single schedule source. `ci local` drives
-   its per-OS plan from these tables, `ci plan --job <x>` emits each workflow
-   job's matrix from them (the .yml matrices are fromJSON consumers), and
-   `ci parity` checks them against CMakePresets.json. Adding a preset to
-   CMakePresets.json means adding it here or `ci parity` (and the
-   preset-parity-invariant ctest) fails. */
 static const char *PS_LINUX_GCC[] = {
 		"linux-gcc", "linux-gcc-cross",
 		"linux-gcc-release", "linux-gcc-musl",
@@ -337,32 +331,23 @@ static const char *PS_LINUX_GCC[] = {
 static const char *PS_LINUX_CLANG[] = {
 		"linux-clang", "linux-clang-cross",
 		"linux-clang-release", 0};
-/* developer presets that are NOT aliases of a pinned linux-gcc* cell:
-   `release` is the only Release+musl test run and `ast` the only MCC_AST
-   scenario. The alias dev presets (debug/cst/sanitize/diagnostics/cross)
-   build the identical tree with an unpinned cc and are exempt below. */
 static const char *PS_DEV[] = {"release", "ast", 0};
-/* gcc;clang x native;cross superbuild: needs both compilers; build-only
-   (no top-level test preset - each cell runs its own ctest while building) */
 static const char *PS_SUPER[] = {"matrix", 0};
 static const char *PS_DARWIN[] = {"macos", "macos-cross", 0};
 static const char *PS_WIN_MSVC[] = {"msvc", "sanitize-msvc", 0};
-/* build-only: the mingw superbuild has no test preset either */
+
 static const char *PS_WIN_BUILDONLY[] = {"mingw", 0};
 static const char *QARCH[] = {"x86_64", "i386", "arm", "arm64", "riscv64", 0};
 static const char *QBIN[] = {
 		"qemu-x86_64", "qemu-i386", "qemu-arm",
 		"qemu-aarch64", "qemu-riscv64", 0};
 
-/* dist preset names (macros so the plan cell tables, `ci local`, and the
-   parity set share one spelling) */
 #define PS_DIST_LINUX_GCC "dist-linux-gcc"
 #define PS_DIST_LINUX_CLANG "dist-linux-clang"
 #define PS_DIST_MACOS "dist-macos"
 #define PS_DIST_MSVC "dist-msvc"
 #define PS_DIST_MINGW "dist-mingw"
 
-/* plan cell tables: the runner-facing schedule `ci plan` emits as JSON */
 static const char *PLAN_HOSTS[] = {"x86_64", "arm64", 0};
 static const struct {
 	const char *arch, *runner, *msvcarch;
@@ -390,7 +375,6 @@ static const struct {
 		{PS_DIST_MINGW, "windows-x86_64-mingw", "windows-latest", "x64", 1},
 		{0, 0, 0, 0, 0}};
 
-/* presets deliberately without a CI cell or `ci local` slot */
 static const struct {
 	const char *name, *why;
 } PS_EXEMPT[] = {
@@ -425,10 +409,6 @@ static int loc_env_on(const char *var) {
 	const char *v = getenv(var);
 	return v && *v && strcmp(v, "0");
 }
-
-/* vendored-toolchain probes: the vendor/ tree is download-once-share-everywhere,
-   so a toolchain fetched by any build dir (or `ci local` itself) is visible here.
-   ts_glob() matches files only, so directories need their own walk. */
 
 struct loc_dirscan {
 	const char *pat;
@@ -474,8 +454,6 @@ static int loc_vendor_dir(const char *pat) {
 	return loc_scan_dir("vendor", pat, NULL, 0);
 }
 
-/* fetch the self-contained LLVM/clang toolchain into vendor/llvm-clang via
-   the clang-toolchain target (needs one configured dir; local-ci is cheapest) */
 static int loc_fetch_clang(void) {
 	int isd;
 	if (host_stat("cmake-local-ci/CMakeCache.txt", &isd, NULL, NULL)) {
@@ -601,9 +579,6 @@ static int do_local(int argc, char **argv) {
 			n_qemu++;
 	}
 
-	/* clang is the one toolchain with a vendor recipe on every host: when the
-	   system has none, fetch the LLVM release once and pin the clang presets
-	   to it (profile-based presets resolve vendor/llvm-clang on their own) */
 	if (!strcmp(os, "Linux") && !have_clang) {
 		clang_vendored = loc_vendor_clang(vclang, sizeof vclang);
 		if (!clang_vendored && !loc_env_on("LOCAL_CI_NO_VENDOR") &&
@@ -655,7 +630,7 @@ static int do_local(int argc, char **argv) {
 				LOC_SKIP("%s - clang not found (and not vendored)",
 								 PS_LINUX_CLANG[i]);
 		}
-		/* developer presets: default host cc */
+
 		for (i = 0; PS_DEV[i]; i++) {
 			if (have_gcc || have_clang)
 				LOC_TEST(PS_DEV[i], "", 0, 0);
@@ -911,7 +886,6 @@ static void preset_obj(const char *b, const char *e, PresetCb cb, void *ud) {
 	}
 }
 
-/* iterate the non-hidden configurePresets of an already-read presets json */
 static void scan_presets(const char *text, PresetCb cb, void *ud) {
 	const char *arr, *p;
 	const char *obj_start = NULL;
@@ -990,9 +964,6 @@ static int do_matrix(int argc, char **argv) {
 	return 0;
 }
 
-/* Emit the dist/bench-*.txt report(s) as a GitHub step-summary section.
-   --append writes straight to the summary file so the same invocation works
-   from bash and pwsh alike (no shell-redirect encoding differences). */
 static int do_bench_summary(int argc, char **argv) {
 	const char *plat = "", *dir = "dist", *append = NULL;
 	FILE *out = stdout;
@@ -1034,12 +1005,6 @@ static int do_bench_summary(int argc, char **argv) {
 		fclose(out);
 	return 0;
 }
-
-/* ---- parity: CMakePresets.json vs workflow cells vs the `ci local` plan --
-   The three views of "which scenarios exist" must agree: every non-hidden
-   configure preset (minus the curated PS_EXEMPT list) needs a workflow cell
-   (ci.yml or release.yml) and a slot in the PS_* local tables. Sort-uniq-diff
-   semantics: sorted sets, missing/stale rows reported, non-zero on any gap. */
 
 #define PAR_MAX 128
 #define PAR_LEN 64
@@ -1084,10 +1049,6 @@ static int yml_word(char c) {
 				 (c >= '0' && c <= '9') || c == '_' || c == '-';
 }
 
-/* Collect every preset *value* a workflow file names: the text after each
-   `preset:` key (following a multi-line [..] flow list to its bracket) and
-   the token after each `--preset` flag or `run-preset` verb in run scripts.
-   Token checks then only see real cell values, not comments or job names. */
 static char *yml_preset_values(const char *text) {
 	static const char *FLAG[] = {"--preset", "run-preset", 0};
 	char *out = malloc(4 * strlen(text) + 32);
@@ -1151,7 +1112,6 @@ static const char *par_exempt(const char *nm) {
 	return NULL;
 }
 
-/* union of the ledger tables = every preset `ci local` can schedule */
 static void par_local_set(StrSet *loc) {
 	static const char **T[] = {
 			PS_LINUX_GCC, PS_LINUX_CLANG, PS_DEV, PS_SUPER,
@@ -1173,8 +1133,6 @@ static void par_local_set(StrSet *loc) {
 	}
 }
 
-/* the presets a given `ci plan --job <name>` schedules (parity uses this to
-   credit workflow coverage wherever a .yml references that plan) */
 static void plan_presets(const char *job, StrSet *s) {
 	int i, t;
 	if (!strcmp(job, "linux")) {
@@ -1206,7 +1164,6 @@ static void plan_presets(const char *job, StrSet *s) {
 	}
 }
 
-/* collect the job names workflow files request via `ci plan --job <name>` */
 static void yml_plan_jobs(const char *text, StrSet *jobs) {
 	const char *p;
 	for (p = text; (p = strstr(p, "--job")) != NULL;) {
@@ -1232,9 +1189,6 @@ static void plan_cell(int *first, const char *fmt, ...) {
 	printf("}");
 }
 
-/* Emit a workflow job's matrix cells as a JSON `include` list, generated
-   from the preset ledger — the .yml jobs consume this via fromJSON, so the
-   schedule has exactly one source (shared with `ci local`). */
 static int do_plan(int argc, char **argv) {
 	const char *job = NULL;
 	int i, k, first = 1;
@@ -1256,7 +1210,7 @@ static int do_plan(int argc, char **argv) {
 				for (k = 0; PLAN_HOSTS[k]; k++)
 					plan_cell(&first, "\"preset\":\"%s\",\"arch\":\"%s\"",
 										T[t][i], PLAN_HOSTS[k]);
-		for (i = 0; PS_SUPER[i]; i++) /* superbuild: no top-level test preset */
+		for (i = 0; PS_SUPER[i]; i++)
 			for (k = 0; PLAN_HOSTS[k]; k++)
 				plan_cell(&first,
 									"\"preset\":\"%s\",\"arch\":\"%s\",\"flags\":\"--no-test\"",
@@ -1267,7 +1221,7 @@ static int do_plan(int argc, char **argv) {
 			for (k = 0; CC[k]; k++)
 				plan_cell(&first, "\"preset\":\"%s\",\"cc\":\"%s\",\"arch\":\"arm64\"",
 									PS_DARWIN[i], CC[k]);
-		/* x86_64 under Rosetta 2: clang only (Homebrew gcc is arm64-only) */
+
 		for (i = 0; PS_DARWIN[i]; i++)
 			plan_cell(&first, "\"preset\":\"%s\",\"cc\":\"clang\",\"arch\":\"x86_64\"",
 								PS_DARWIN[i]);
@@ -1339,8 +1293,6 @@ static int do_parity(int argc, char **argv) {
 	par_local_set(&loc);
 
 	if (list_only) {
-		/* the curated coverage list (local slots + exemptions), sorted -
-		   `diff <(ci matrix | sort) <(ci parity --list)` must be empty */
 		for (i = 0; PS_EXEMPT[i].name; i++)
 			set_add(&loc, PS_EXEMPT[i].name, (int)strlen(PS_EXEMPT[i].name));
 		qsort(loc.v, (size_t)loc.n, PAR_LEN, par_cmp);
@@ -1355,8 +1307,6 @@ static int do_parity(int argc, char **argv) {
 	scan_presets(text, par_collect_cb, &all);
 	free(text);
 
-	/* workflow coverage = literal preset values named by the .yml files
-	   plus everything scheduled by the `ci plan --job <x>` calls they make */
 	memset(&wfplan, 0, sizeof wfplan);
 	for (i = 0; WF[i]; i++) {
 		StrSet jobs;

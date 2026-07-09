@@ -58,8 +58,6 @@ ST_DATA CType int_type, func_old_type, char_type, char_pointer_type;
 #define initstr (mcc_state->initstr)
 
 #if defined(CONFIG_AST) && CONFIG_AST
-/* AST env gates: unset takes the built-in default, "0" closes the
-   gate, any other value opens it. */
 static int ast_env_gate(const char *name, int dflt) {
 	const char *v = getenv(name);
 	if (!v)
