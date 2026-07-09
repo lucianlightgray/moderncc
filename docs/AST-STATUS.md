@@ -2,7 +2,8 @@
 
 Status of the `docs/AST.md` plan — the two-tier CST/AST intention IR and its `-O1`
 replay driver. This is the *implementation* companion to `AST.md` (the design) and
-`TODO.md` (the live task tracker). Last updated at commit `874953f3`; `ctest` 1769/1769.
+`TODO.md` (the live task tracker). Last updated 2026-07-09 (merge `81fe657e`);
+`ctest` 1770/1770 (x86_64), 1769/1769 (arm64).
 
 Gated under `CONFIG_AST` and opt-in per feature via environment variables (below). Tier 1/2
 replay and Tier-4 virtual-inline are **arch-independent** (Tier-4 is now verified on both
@@ -18,8 +19,9 @@ here — verified empirically (see **Correctness gates**).
 |---|---|---|
 | **Tier 1/2** | AST-replay driver over the vstack API; `-O0` replay parity | ✅ complete |
 | **Tier 3** | Register promotion (mem2reg of address-not-taken locals) — the real `-O1` payoff | ✅ comprehensive (x86_64) |
-| **Tier 4** | Virtual always-inline over the retained-AST store | 🟢 broadly functional (incl. defer-to-TU + rodata/struct/forward callers); struct-by-value params remain |
-| Long-horizon | Template library, time-budgeted engine, LTO, `-g`, `-O2`/`-O3` | ⬜ design only |
+| **Tier 4** | Virtual always-inline over the retained-AST store | ✅ broadly complete — incl. defer-to-TU, rodata/struct/forward callers, **struct-by-value params (§19.2)**, and **per-site specialization + dead-branch elim (§19.3)** |
+| **A4 gate** | GCC c-torture as a differential AST acceptance gate (§C1) | ✅ wired (replay/promote/inline columns); replay green, transform columns baselined |
+| Long-horizon | Backward-liveness spill-slot sharing (A1), template library, time-budgeted engine, LTO, `-g`, `-O2`/`-O3` | ⬜ design only |
 
 The replay driver reconstructs a function's codegen from its captured intention IR, and
 beats `-O0` via two AST-only transformations — **register promotion** (Tier 3) and
@@ -117,7 +119,8 @@ callee's body into the caller. Built in slices, all landed this session.
 A **`static`, non-variadic**, VLA-free, size-bounded function — with **local declarations**, **any
 intra-function control flow (if/else, loops, `switch`, `break`/`continue`, `goto`/named labels)**,
 **one or more value returns including early returns inside branches**, **`int`/pointer/`float`/
-`double` scalar params and struct/scalar returns**, and **its own calls** (leaf or not) — is
+`double` scalar params, by-value struct/union params (§19.2), and struct/scalar returns**, and
+**its own calls** (leaf or not) — is
 inlined into a caller, whether the callee is defined **before OR after** it: a caller-before-callee
 site is handled by **defer-to-TU** (end-of-TU re-emission of the caller with the now-retained callee
 inlined, its symbol repointed). The callee's control-flow replay state
@@ -130,7 +133,7 @@ Tier-3 register promotion in one pass 2. String-literal / anon-rodata refs are h
 **pinning** the captured Syms (`ast_pin_rodata_syms` + transitive `ast_pin_type` for aggregate/ptr
 type refs), so both a string-referencing **callee** (graft) and a string/struct-referencing
 **forward caller** (defer-to-TU re-emit) work. **Excluded** (fall back to a real call):
-**struct-by-value params** (ABI-dependent frame layout), pointer-to-VLA params, and
+`_Complex`/`long double`/bitfield params, pointer-to-VLA params, and
 `setjmp`-calling callees (guard query). Re-emission additionally refuses a function that captures a
 **block-scoped** symbolic/type ref (an inner `extern`/function redeclaration) — that Sym is freed at
 block close and dangles by end-of-TU, so `ast_reemit_poison` forces a real forward call (immediate
@@ -158,69 +161,104 @@ replay/grafting are unaffected — they run while the Sym is live).
   hidden pointer** (arm64's `ret_nregs==0` path for ≤16-byte structs) carries an extra
   `Invoke` child at index 1 that grafting skips (the return coalesces into the result slot, so
   the sret buffer is bypassed).
+- **Struct-by-value params (§19.2):** the same `hi`-bias handles them — the ABI is *deleted*,
+  not reproduced. A by-value struct arg is materialized into its biased slot with a `vstore`
+  block-copy; the body reads members at `member_off + bias`. No ABI classification is needed:
+  register-class and memory-class (>16-byte) structs, and arm64-positive params, all land in
+  the reserved frame the `hi`-bias carved out. (This replaced an initial per-param-remap
+  prototype — the uniform `hi`-bias subsumes it.)
+- **Per-site specialization (§19.3, `MCC_AST_TEMPLATES`):** a **constant integer arg** bound to
+  a **read-only param** (`ast_local_is_readonly`: never a `Store` child0, never under a `Unary`)
+  is constant-propagated — its `Literal` substitutes at the param's Ref sites (`ast_argsub_*`,
+  consulted in `ast_replay_value`) instead of a slot store+reload, so `gen_op` folds the
+  arithmetic and — inside a graft (pass 2) — a condition folding to a compile-time constant
+  **selects its taken branch and drops the dead block entirely**. Single-shape graft (no clone).
 - **Pass structure:** grafting is a faithfulness-gated **pass-2** transformation, taking
   **precedence over promotion** for a function that has both (grafting removes the calls the
   promotion planner keyed its pool choice on).
 - **Excluded:** pointer-to-VLA params (`int m[n][n]`) — indexing needs a runtime element
-  size the frame bias can't relocate.
+  size the frame bias can't relocate; `_Complex`/`long double`/bitfield params.
 
 **Composes with Tier-3 promotion:** pass 2 runs both when applicable — a function inlines its
 calls and promotes its own locals (the `setjmp` guard excludes `setjmp`-calling callees, and
 inline+promote are exec-verified together).
 
 **Gates:** exec-golden (an inlined caller's bytes diverge from `-O0`) + the `ast/replay-inline`
-fixture (asserts `add`/`scale`/`madd`/`clamp`/`sgn`/`area`/`quad`/`pick`/`firsthit`/`mkpair`/`gsum`
-graft and `fwd_sum`/`fwd_boxed` defer-to-TU re-emit) + a whole-exec-corpus differential
-(`-O0` vs `MCC_AST_INLINE` byte/exit-identical across 218 programs). The fixture is now
-verified — and registered — on **x86_64 AND arm64** (`MCC_CPU STREQUAL x86_64 OR arm64`).
+fixture (asserts `add`/`scale`/`madd`/`clamp`/`sgn`/`area`/`quad`/`pick`/`firsthit`/`mkpair`/`gsum`/
+`sumpt`/`sumbig`(>16B)/`addpt` graft and `fwd_sum`/`fwd_boxed` defer-to-TU re-emit) + the
+`ast/replay-inline-spec` fixture (§19.3, asserts `choose`/`clampk`/`mul`/`addk` **specialize**) +
+a whole-exec-corpus differential (`-O0` vs `MCC_AST_INLINE` byte/exit-identical). `ast/replay-inline`
+is registered on **x86_64 AND arm64** (`MCC_CPU STREQUAL x86_64 OR arm64`); `ast/replay-inline-spec`
+is x86_64-gated (the dead-branch selection is verified on x86_64 so far).
 
 ### Remaining Tier-4 breadth (TODO.md "Slice 2 remainder")
 
-- **Struct-by-value params** — need an ABI-aware bind. A plain `vstore`-to-slot works for plain
-  ≤16-byte structs but miscompiles memory-passed (>16-byte) ones AND some ≤16-byte aggregates that
-  classify per member (verified: a `transparent_union` param). Struct *return* works (ABI-agnostic
-  memory coalesce); struct/union params fall back to a real call.
-- **Per-site specialization** — a graft is currently shape-identical at every call site; constant
-  args aren't folded into the grafted body.
-- **Un-gate the fixture on non-x86_64** — ✅ **arm64 DONE (2026-07-08):** the fixture is
-  registered and green on arm64 after fixing two arm64-only graft bugs (the positive-param-offset
-  bias shift and the sret struct-return hidden-child skip; see the grafting note above). riscv64
-  and other native arches stay gated until verified there.
+- **Struct-by-value params — ✅ DONE (§19.2)** via the `hi`-bias + `vstore` block-copy (see the
+  grafting note); `_Complex`/`long double`/bitfield params still fall back.
+- **Per-site specialization — ✅ DONE (§19.3)** — constant-arg const-prop + dead-branch elim
+  under `MCC_AST_TEMPLATES` (see the grafting note). Full binding-keyed per-site *clones* (distinct
+  rendered bodies) stay deferred to the §9 store-factoring milestone.
+- **arm64 — ✅ DONE for `ast/replay-inline`** (positive-param `hi`-bias + sret hidden-child skip).
+  Remaining: un-gate `ast/replay-inline-spec` on arm64; riscv64 and other native arches stay
+  gated until verified there.
 
 ---
 
 ## 6. What remains beyond Tier 3/4
 
-- **Spill-slot sharing across disjoint live ranges** — promotion currently pins each local
-  for the whole function; sharing a pin between two non-overlapping locals needs a real
-  backward-liveness pass + interval coloring (essentially a register allocator).
-- **Other architectures (arm64/riscv64)** — the promo push/pop/write/seed encodings and the
-  pin pools are x86_64-specific. Unlike x86_64 (where RBX/R12–R15 and XMM6/7 were already
-  modeled as class-0/reserved registers), arm64's backend (`NB_REGS=28`) does not expose
-  x19–x28 at all, so it needs a backend register-model extension per target + qemu
-  validation. The arch-agnostic analysis (`ast_plan_promotion`, weighting, poison, the
-  two-pass gate, the shared `get_reg` pin-skip) is reused as-is.
-- **Acceptance bar §C1** (`AST.md`): wire the GCC test suite as an AST gate under both
-  `mcc -O0` and the `-O1-replay` column (the exec-golden column is already green).
+- **A1 — spill-slot sharing across disjoint live ranges (the last ratified roadmap item).**
+  Promotion currently pins each local for the whole function, so once the pin pool is full
+  (5 GP + 2 XMM) the remaining candidates spill. Sharing a pin between two locals whose live
+  ranges don't overlap needs a real **backward-liveness pass** + interval coloring
+  (essentially a register allocator over the AST CFG). Purely additive to coverage — a valid
+  coloring never changes observable behavior, so it stays behind the same two-pass gate.
+- **`-O1` transform soundness backlog (surfaced by the A4 gate).** The gcc c-torture
+  differential baselined **14 promote + 4 inline + 3 replay** `KNOWNGAP`s (all behind the
+  experimental `MCC_AST_PROMOTE`/`MCC_AST_INLINE` flags, not default `-O0`). These diverge from
+  `-O0` by construction, so byte-verify can't catch them — the gate is their only net. Notable:
+  a promoted **float pin (XMM6/7) clobbered by `gen_opf` operating in place** (root-caused;
+  needs real float-promotion register discipline — the naive "copy the pin read to a scratch"
+  regressed the corpus), and the 2 `pr51581` replay gaps = the parked §20 pp-const-expr
+  state-corruption. Each fix shrinks the corresponding `GCCTS_AST_KNOWN_*` list in
+  `tools/mccharness.c`.
+- **Other architectures (arm64/riscv64) for promotion** — the promo push/pop/write/seed
+  encodings and pin pools are x86_64-specific. Unlike x86_64 (where RBX/R12–R15 and XMM6/7 were
+  already modeled as class-0/reserved registers), arm64's backend (`NB_REGS=28`) does not
+  expose x19–x28, so it needs a backend register-model extension per target + qemu validation.
+  The arch-agnostic analysis (`ast_plan_promotion`, weighting, poison, the two-pass gate, the
+  shared `get_reg` pin-skip) is reused as-is. (Tier-4 *inline* is already arch-independent and
+  arm64-verified.)
+- **Acceptance bar §C1 — ✅ gate WIRED (2026-07-09).** The GCC c-torture suite runs as a
+  differential AST gate (`mccharness gcctestsuite --ast <replay|promote|inline|inline-tmpl>` +
+  `gcctestsuite-ast-*` cmake targets): each test at `-O0` baseline AND under the AST column, a
+  test passing at `-O0` but failing under the column = REGRESSION. It surfaced (and fixed) 7
+  pre-existing replay miscompiles the exec corpus never caught; the residual is the backlog
+  above. "Done" for full §C1 = drive that backlog to zero.
 
 ---
 
 ## 7. Correctness gates
 
-- **`exec-replay` / `exec-replay-promote` corpus columns** — every `tests/exec` golden run
-  under replay (and promotion) with output compared to `-O0`.
+- **`exec-replay` / `exec-replay-promote` / `exec-replay-tmpl` corpus columns** — every
+  `tests/exec` golden run under replay (and promotion / templates) with output compared to `-O0`.
+- **GCC c-torture differential AST gate (§C1)** — `mccharness gcctestsuite --ast <column>` runs
+  the ~3766-test suite at `-O0` AND under the AST column; regression = passes at `-O0`, fails
+  under the column. Replay column green (0 regressions); promote/inline columns baselined
+  (`GCCTS_AST_KNOWN_*`). Manual targets `gcctestsuite-ast-{replay,promote,inline}` (need
+  `MCC_GCCTESTSUITE_PATH`).
 - **Byte-identity** — the default replay column byte-verifies against `-O0`; the backend
   addressing change was additionally diffed `.o`-for-`.o` across 55 files against the prior
   backend (0 differences).
-- **`ast/replay-*` fixtures** — `replay-promote` and `replay-inline` assert the specific
-  transformation fired (`[ast-promote] N fn` / `[ast-inline] grafted fn`) and the program
-  still returns 42.
-- **`ctest`** — 1769/1769 with all features off by default (each is opt-in), so `-O0` and the
-  byte-verified replay column are unaffected.
+- **`ast/replay-*` fixtures** — `replay-promote`, `replay-inline`, and `replay-inline-spec`
+  assert the specific transformation fired (`[ast-promote] N fn` / `[ast-inline] grafted fn` /
+  `[ast-inline] specialized fn`) and the program still returns 42.
+- **`ctest`** — 1770/1770 (x86_64) with all features off by default (each is opt-in), so `-O0`
+  and the byte-verified replay column are unaffected.
 
 Methodology held across the whole effort: land a change, run the full corpus + `ctest`, fix
 the surfaced edge case, and commit only when green — reverting anything demonstrated
-incorrect (e.g. two `p->m` promotion attempts were reverted rather than shipped).
+incorrect (e.g. two `p->m` promotion attempts and the naive float-pin-scratch fix were reverted
+rather than shipped).
 
 ---
 
@@ -232,6 +270,8 @@ incorrect (e.g. two `p->m` promotion attempts were reverted rather than shipped)
 | Promotion plan | `ast_plan_promotion`, `ast_promo_weigh` (loop-depth weight), poison loops |
 | Promotion emit | `ast_promo_write`, `ast_promo_entry_init`, `ast_promo_push`/`pop`, pools `ast_promo_caller`/`callee`/`xmm` |
 | Two-pass gate | `gen_function`'s replay block (pass 1 byte-verify → pass 2 transform) |
-| Inline analysis | `ast_fn_inlinable`, `ast_inline_capture`, `ast_inline_graftable`, `ast_inline_retain`/`lookup`, `ast_inline_pool` |
-| Inline emit | `ast_inline_graft`, `ast_in_graft`/`ast_inline_bias`/`ast_graft_rt`, `AST_Return`/`AST_Invoke` cases |
+| Inline analysis | `ast_fn_inlinable`, `ast_inline_capture`, `ast_inline_graftable`, `ast_inline_retain`/`lookup`, `ast_inline_pool`, `ast_local_is_readonly` (§19.3) |
+| Inline emit | `ast_inline_graft` (`hi`-bias, hidden-sret, struct block-copy §19.2), `ast_in_graft`/`ast_inline_bias`/`ast_graft_rt`, `ast_argsub_*` (§19.3 substitution), `AST_Return`/`AST_Invoke`/`AST_If` cases |
+| Computed-callee bail | `ast_hook_call_begin` (callee child0 must be `AST_Ref`) |
+| GCC-torture AST gate | `suite_gcctestsuite` (`--ast` differential), `gccts_ast_skiplisted`, `GCCTS_AST_KNOWN_*` — `tools/mccharness.c` |
 | Backend addressing | `gen_modrm_impl`, `store()` — `src/arch/x86_64/x86_64-gen.c` |

@@ -911,7 +911,64 @@ compiles** (the benchmark honestly shows `mcc-self -O1 = n/a`); `-O1` is therefo
    clean one. Then self-compile `-O1` should fall back cleanly and `mcc-self -O1` becomes a real row.
 2. **Inline governor** (Tier-4): size/complexity cap + termination budget, then re-enable inline
    under `-O1`.
-3. Fold in §19 (struct-by-value params + per-site specialization) once inline is `-O1`-safe.
+3. §19 (struct-by-value params + per-site specialization) is **already landed** behind
+   `MCC_AST_INLINE` (§21) — independent of `-O1` safety; it composes automatically once inline is
+   re-enabled under `-O1`.
+
+---
+
+## 21. Tier-4 completion (§19) + the GCC-suite acceptance gate (A4) — LANDED 2026-07-09
+
+The A2→A4→A1 roadmap's first two legs landed. (A1 — backward-liveness spill-slot sharing —
+remains; see §16/AST-STATUS §6.)
+
+### 21.1 §19.2 struct-by-value params + §19.3 per-site specialization
+
+- **§19.2 struct-by-value params.** Grafting admits by-value struct/union params (capture no
+  longer rejects `VT_STRUCT`). The bind **deletes the ABI** rather than reproducing it: every
+  param — scalar, arm64-positive register param, or by-value struct — is materialized into its
+  biased caller-frame slot (a struct arg block-copies via `vstore`). The unifying mechanism is a
+  **`hi`-based frame bias**: `bias = hi>0 ? (loc-hi)&-16 : loc; loc = bias - frame_size`, where
+  `hi` is the callee's highest positive `param_off+size`. This reserves the callee frame below
+  BOTH the caller's live locals AND any positive param offsets — covering arm64 (register params
+  spill above the frame pointer) and x86_64 (memory-class >16-byte struct params read from the
+  positive incoming-args area) uniformly; x86_64 register params are negative → `hi==0` →
+  `bias==loc` → byte-identical. It **subsumed** an initial per-param-remap prototype. Plus
+  **hidden-sret-arg detection** for a struct return passed via a hidden pointer (`ret_nregs==0`).
+  *(This was reconciled during a `git pull` merge of the arm64 branch, which independently
+  derived the `hi`-bias for arm64 positive params — see merge `81fe657e`.)*
+- **§19.3 per-site specialization** (`MCC_AST_TEMPLATES`). A **constant integer arg** bound to a
+  **read-only param** (`ast_local_is_readonly`) is constant-propagated: its `Literal` substitutes
+  at the param's Ref sites (`ast_argsub_*`) instead of a slot store+reload, so `gen_op` folds the
+  arithmetic and — inside a graft (pass 2, exec-gated) — a condition that folds to a compile-time
+  constant **selects its taken branch and drops the dead block entirely** (exceeds §9's "the
+  const-fold template makes dead-branch-elim fall out" framing, which only removes the jump).
+  Single-shape graft; binding-keyed clones stay deferred to §9 store-factoring (§19.5 lean 2).
+
+### 21.2 A4 — the GCC c-torture acceptance gate
+
+`mccharness gcctestsuite --ast <replay|promote|inline|inline-tmpl>` runs the ~3766-test suite as
+a **differential**: each test at `-O0` (baseline) AND under the AST column; a test that passes at
+`-O0` but fails under the column is a **REGRESSION**. Baseline `-O0` gaps are excluded — replay is
+byte-identical-or-fallback, so it must match `-O0` test-for-test. cmake: `gcctestsuite-ast-*`.
+
+The gate immediately surfaced **10 pre-existing replay miscompiles the exec corpus never caught**;
+**7 fixed:**
+- **Computed-callee bail (5):** `(c?f:g)()` / `getf()()` / `s.fn()` replay as a value whose
+  function-type `ref` the driver never reconstructs, so `gfunc_call` derefs NULL → a hard SIGSEGV
+  the byte-verify can't catch (it's before verification). `ast_hook_call_begin` bails unless the
+  callee (child 0) is an `AST_Ref`.
+- **Frame-depth faithfulness (2):** the prologue `sub $N,%rsp` is back-patched by `gfunc_epilog`
+  from the final `loc`, which lives OUTSIDE the byte-verified body — so a body byte-matching `-O0`
+  but whose replay left `loc` shallower ran on a too-small frame → corruption. A faithful body
+  means the correct frame is `-O0`'s, so `loc = saved_loc` is pinned on the faithful-no-transform
+  and fallback paths.
+
+The residual is the **`-O1` transform soundness backlog** — 14 promote + 4 inline + 3 replay
+`KNOWNGAP`s baselined per column (`GCCTS_AST_KNOWN_*`), all diverging from `-O0` by construction so
+the gate is their only net. Notable: a promoted **float pin (XMM6/7) clobbered by `gen_opf`
+operating in place** (root-caused; needs real float-promotion register discipline), and the 2
+`pr51581` = the §20 pp-const-expr state-corruption. Full §C1 = drive that backlog to zero.
 
 ---
 
