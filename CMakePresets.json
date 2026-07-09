@@ -27,11 +27,10 @@
     },
     {
       "name": "release",
-      "displayName": "Release (SINGLE_SOURCE dynamic exe, stripped, musl, no bcheck/backtrace)",
+      "displayName": "Release (SINGLE_SOURCE dynamic exe, stripped, no bcheck/backtrace)",
       "inherits": "debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "MCC_BUILD_MUSL": "ON",
         "MCC_BUILD_STRIP": "ON"
       }
     },
@@ -287,24 +286,22 @@
     },
     {
       "name": "dist-linux-gcc",
-      "displayName": "Release dist / linux / gcc (static+dynamic lib+exe, stripped, musl, cross)",
+      "displayName": "Release dist / linux / gcc (static+dynamic lib+exe, stripped, cross)",
       "inherits": "_dist-ninja",
       "cacheVariables": {
         "CMAKE_C_COMPILER": "gcc",
         "MCC_BUILD_STATIC_EXE": "ON",
-        "MCC_BUILD_STRIP": "ON",
-        "MCC_BUILD_MUSL": "ON"
+        "MCC_BUILD_STRIP": "ON"
       }
     },
     {
       "name": "dist-linux-clang",
-      "displayName": "Release dist / linux / clang (static+dynamic lib+exe, stripped, musl, cross)",
+      "displayName": "Release dist / linux / clang (static+dynamic lib+exe, stripped, cross)",
       "inherits": "_dist-ninja",
       "cacheVariables": {
         "CMAKE_C_COMPILER": "clang",
         "MCC_BUILD_STATIC_EXE": "ON",
-        "MCC_BUILD_STRIP": "ON",
-        "MCC_BUILD_MUSL": "ON"
+        "MCC_BUILD_STRIP": "ON"
       }
     },
     {

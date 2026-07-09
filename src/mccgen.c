@@ -11085,3 +11085,7 @@ static int decl(int l) {
 
 #undef gjmp_addr
 #undef gjmp
+
+#if defined(CONFIG_AST) && CONFIG_AST && defined(SINGLE_SOURCE) && !SINGLE_SOURCE
+#include "mccast.c"
+#endif

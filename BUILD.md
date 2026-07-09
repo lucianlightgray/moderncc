@@ -142,7 +142,7 @@ host-dynamic (macOS Homebrew gcc). Hidden bases are prefixed `_`
 
 **Developer presets** — interactive use (`cmake --preset debug`). CI and
 `ci local` schedule the two that cover unique scenarios — `release` (the only
-Release+musl test run) and `ast` (the only `MCC_AST` build) — plus `matrix`
+plain-Release test run) and `ast` (the only `MCC_AST` build) — plus `matrix`
 (the superbuild, build-only via `--no-test`: no top-level test preset, each
 cell ctests during the build), each on both x86_64 and arm64 runners. The
 rest (`debug`, `cst`, `sanitize`, `diagnostics`, `cross`) are **aliases**: they
@@ -153,7 +153,7 @@ cc, so they are parity-exempt interactive conveniences, not CI cells
 | Preset | CMAKE_BUILD_TYPE | Key overrides |
 |---|---|---|
 | `debug` | Debug | musl OFF, bcheck ON, backtrace ON, strip OFF |
-| `release` | Release | musl ON, strip ON, bcheck OFF, backtrace OFF (SINGLE_SOURCE dynamic exe) |
+| `release` | Release | strip ON, bcheck OFF, backtrace OFF (SINGLE_SOURCE dynamic exe) |
 | `sanitize` | Debug | `MCC_BUILD_SANITIZE=ON` |
 | `diagnostics` | Debug | `MCC_ALL_DIAGNOSTICS=ON` (warnings + debug + mcc_s/mcc_p/mcc_c) |
 | `cross` | Debug | `MCC_ENABLE_CROSS=ON` |
@@ -218,8 +218,8 @@ build produces *all* permutations: Release, `MCC_BUILD_TESTS=OFF`,
 
 | Preset | Compiler / profile | Extra |
 |---|---|---|
-| `dist-linux-gcc`, `dist-linux-clang` | `gcc` / `clang` | static exe, stripped, musl |
-| `dist-macos` | `clang` | dynamic, no musl (post-`strip -x`), no static exe |
+| `dist-linux-gcc`, `dist-linux-clang` | `gcc` / `clang` | static exe, stripped |
+| `dist-macos` | `clang` | dynamic (post-`strip -x`), no static exe |
 | `dist-mingw` | mingw profile | static exe, stripped (PE) |
 | `dist-msvc` | MSVC profile | static exe, stripped (PE) |
 
@@ -274,7 +274,7 @@ host), enabling the kernel-fused apple-libc suite.
 | `MCC_BUILD_STATIC_EXE` | BOOL | OFF | | always (forced OFF on macOS) | Build the `mcc-static` target (fully static `-static`). `MCC_SINGLE_SOURCE` decides its compile+link path: self-contained (ON) or linking `libmcc.a` (OFF, then also needs `MCC_BUILD_STATIC_LIB=ON`). macOS has no static libc → forced OFF. |
 | `MCC_BUILD_DYNAMIC_LIB` | BOOL | OFF | | always | Also build a shared `libmcc-dynamic.so` alongside the `libmcc-static.a` (only meaningful with `MCC_BUILD_STATIC_LIB=ON`). |
 | `MCC_BUILD_DYNAMIC_EXE` | BOOL | **ON** | | **MCC_SINGLE_SOURCE=OFF** | Build the `mcc-dynamic` target: NOT single-source, driver TU linked against the primary `libmcc`. Requires a multi-TU libmcc (`MCC_SINGLE_SOURCE=OFF`) so libmcc's internal helpers are linkable; under the default `MCC_SINGLE_SOURCE=ON` it is skipped with a status message. |
-| `MCC_BUILD_MUSL` | BOOL | OFF | | always | Also build musl-targeting variants (`mcc*-musl`). Opt-in — enabled only by the explicit `-musl` presets/targets (`release`, `linux-gcc-musl`, `dist-linux-*`). |
+| `MCC_BUILD_MUSL` | BOOL | OFF | | always | Also build musl-targeting variants (`mcc*-musl`). Opt-in — enabled only by presets/targets explicitly labeled `musl` (`linux-gcc-musl`). |
 | `MCC_BUILD_STRIP` | BOOL | OFF | | always | Strip symbols at link (`-s`). |
 | `MCC_ENABLE_RPATH` | BOOL | **ON** | | **!static-lib** | Bake `-rpath` into binaries linking `libmcc.so` so they find the shared lib at runtime (relevant by default, since the lib is shared). |
 | `MCC_SINGLE_SOURCE` | BOOL | **ON** | | always | Build libmcc from a single TU (amalgamation). Also seeded ON by the `mcc` profile. Set OFF for a multi-TU library. |
@@ -534,7 +534,7 @@ several of these already (§2).
 
 1. `debug` preset (baseline new defaults: self-contained single-source `mcc` +
    lib-linking `mcc-dynamic` against shared `libmcc.so`, bcheck+backtrace on, rpath path).
-2. `release` preset (SINGLE_SOURCE dynamic exe, stripped, musl, bcheck/backtrace off).
+2. `release` preset (SINGLE_SOURCE dynamic exe, stripped, bcheck/backtrace off).
 3. `MCC_BUILD_STATIC_EXE=ON` → builds `mcc-static` (self-contained static by
    default; exercises `CONFIG_MCC_STATIC` / built-in `-run` table). Add
    `MCC_SINGLE_SOURCE=OFF` + `MCC_BUILD_STATIC_LIB=ON` to cover the static-against-`libmcc.a` path.

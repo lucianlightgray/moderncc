@@ -211,7 +211,10 @@ gated `MCC_CST` (default ON). Children by reference frequency:
 
 **AST intention IR** — W: an *intention* IR (desugared, type-resolved,
 post-preprocessor) alongside the CST; 15 node kinds. Whr: `src/mccast.{c,h}`, gated
-`CONFIG_AST` (ON). Why: portable/optimizable/inlinable layer feeding an
+`CONFIG_AST` (ON); the hook/replay half lives under `#ifdef _MCC_H` and reads
+`mccgen.c` statics (`vstack` et al.), so multi-TU builds `#include "mccast.c"` at
+the end of `mccgen.c` while the standalone `mccast.c` TU compiles empty — only
+`tools/asttool.c` (no `SINGLE_SOURCE` define) compiles the arena half freestanding. Why: portable/optimizable/inlinable layer feeding an
 experimental `-O1`. H: built as a pure side-channel via parser hooks with **zero
 CST dependency**; `-O0` never reads it. Founding reframe (§18): the backend is
 feature-complete C11, so replay never fakes anything — every gap is a **query

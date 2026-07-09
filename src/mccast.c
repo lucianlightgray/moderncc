@@ -1,4 +1,4 @@
-#if defined(CONFIG_AST) && CONFIG_AST
+#if defined(CONFIG_AST) && CONFIG_AST && (defined(_MCC_H) || !defined(SINGLE_SOURCE))
 
 #include "mccast.h"
 
