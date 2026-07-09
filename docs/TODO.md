@@ -414,12 +414,16 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
     and a block-scoped aggregate TYPE ref is still recyclable (crash in scopes.c), so a re-emit
     candidate that references an anon rodata const OR an aggregate type falls back to a real forward
     call. Corpus + ctest 1769/1769, ASan-clean.
-  - [ ] **Slice 2 breadth.** Broaden re-emission to string/struct-typed forward callers. Attempted:
-    a depth-bounded transitive **type-ref pin** (`ast_pin_type` over struct member chains + pointer
-    element types) fixed the scopes.c crash and re-emitted struct/string forward callers correctly
-    (`fwds`/`fwd`), BUT scopes.c then miscompiled — a *deeper* string-in-re-emission bug (nested-scope
-    `main_6`'s printf format strings mis-referenced) that the value+type Sym pins don't cover.
-    Reverted to conservative re-emission; needs that root cause found first. Then struct-by-value
+  - [ ] **Slice 2 breadth.** Broaden re-emission to rodata-referencing forward callers. Two of the
+    three fixes are worked out (prototyped, verified on `fwd`/`fwds`, then reverted with the third
+    still open): (1) a transitive **type-ref pin** (`ast_pin_type` over struct member chains + ptr
+    element types) fixes the block-scoped-struct crash; (2) **per-candidate snapshot** of the
+    per-function replay side-tables `ast_fconst`/`ast_locrec` (reset each gen → stale by end-of-TU)
+    restored in `ast_reemit` fixes const-pool/loc reuse. With both, simple struct/string forward
+    callers re-emit correctly. STILL OPEN: scopes.c `main_6` (nested-scope name **shadowing** — locals
+    `i6`/`f6` shadow globals, an inner block redeclares them `extern`/as a fn) drops statements under
+    re-emission — a control-flow/scope-resolution interaction beyond Sym lifetime. Conservative
+    re-emission (anon-rodata/aggregate exclusion) stays until that is root-caused. Then struct-by-value
     **params** (ABI-aware bind); per-site specialization; un-gate the fixture on non-x86_64.
 - [ ] **Long horizon (design only):** the broader template library (algebraic, dead-branch,
   jump-table), the time-budgeted engine (§12/§221), dependency-ordered `-O1` compile, cross-TU
