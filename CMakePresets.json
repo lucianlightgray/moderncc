@@ -395,22 +395,10 @@
       "output": { "outputOnFailure": true }
     },
     {
-      "name": "_test-elf",
+      "name": "_test-native",
       "hidden": true,
       "inherits": "_test",
-      "filter": { "exclude": { "label": "qemu" } }
-    },
-    {
-      "name": "_test-macos",
-      "hidden": true,
-      "inherits": "_test",
-      "filter": { "exclude": { "label": "qemu|wine" } }
-    },
-    {
-      "name": "_test-msvc",
-      "hidden": true,
-      "inherits": "_test",
-      "filter": { "exclude": { "label": "qemu|wine|macho" } }
+      "filter": { "include": { "label": "native" } }
     },
     {
       "name": "_test-qemu",
@@ -419,35 +407,35 @@
       "filter": { "include": { "label": "qemu" } }
     },
 
-    { "name": "debug", "configurePreset": "debug", "inherits": "_test-elf" },
-    { "name": "release", "configurePreset": "release", "inherits": "_test-elf" },
-    { "name": "sanitize", "configurePreset": "sanitize", "inherits": "_test-elf" },
-    { "name": "diagnostics", "configurePreset": "diagnostics", "inherits": "_test-elf" },
-    { "name": "cst", "configurePreset": "cst", "inherits": "_test-elf" },
-    { "name": "ast", "configurePreset": "ast", "inherits": "_test-elf" },
-    { "name": "cross", "configurePreset": "cross", "inherits": "_test-elf" },
+    { "name": "debug", "configurePreset": "debug", "inherits": "_test-native" },
+    { "name": "release", "configurePreset": "release", "inherits": "_test-native" },
+    { "name": "sanitize", "configurePreset": "sanitize", "inherits": "_test-native" },
+    { "name": "diagnostics", "configurePreset": "diagnostics", "inherits": "_test-native" },
+    { "name": "cst", "configurePreset": "cst", "inherits": "_test-native" },
+    { "name": "ast", "configurePreset": "ast", "inherits": "_test-native" },
+    { "name": "cross", "configurePreset": "cross", "inherits": "_test-native" },
 
-    { "name": "linux-gcc", "configurePreset": "linux-gcc", "inherits": "_test-elf" },
-    { "name": "linux-gcc-cross", "configurePreset": "linux-gcc-cross", "inherits": "_test-elf" },
-    { "name": "linux-gcc-musl", "configurePreset": "linux-gcc-musl", "inherits": "_test-elf" },
-    { "name": "linux-gcc-release", "configurePreset": "linux-gcc-release", "inherits": "_test-elf" },
-    { "name": "linux-gcc-static", "configurePreset": "linux-gcc-static", "inherits": "_test-elf" },
-    { "name": "linux-gcc-multisource", "configurePreset": "linux-gcc-multisource", "inherits": "_test-elf" },
-    { "name": "linux-gcc-asm-off", "configurePreset": "linux-gcc-asm-off", "inherits": "_test-elf" },
-    { "name": "linux-gcc-predefs-off", "configurePreset": "linux-gcc-predefs-off", "inherits": "_test-elf" },
-    { "name": "linux-gcc-pie", "configurePreset": "linux-gcc-pie", "inherits": "_test-elf" },
-    { "name": "linux-gcc-dwarf", "configurePreset": "linux-gcc-dwarf", "inherits": "_test-elf" },
-    { "name": "linux-gcc-diagnostics", "configurePreset": "linux-gcc-diagnostics", "inherits": "_test-elf" },
-    { "name": "linux-clang", "configurePreset": "linux-clang", "inherits": "_test-elf" },
-    { "name": "linux-clang-cross", "configurePreset": "linux-clang-cross", "inherits": "_test-elf" },
-    { "name": "linux-clang-release", "configurePreset": "linux-clang-release", "inherits": "_test-elf" },
-    { "name": "linux-gcc-sanitize", "configurePreset": "linux-gcc-sanitize", "inherits": "_test-elf" },
+    { "name": "linux-gcc", "configurePreset": "linux-gcc", "inherits": "_test-native" },
+    { "name": "linux-gcc-cross", "configurePreset": "linux-gcc-cross", "inherits": "_test-native" },
+    { "name": "linux-gcc-musl", "configurePreset": "linux-gcc-musl", "inherits": "_test-native" },
+    { "name": "linux-gcc-release", "configurePreset": "linux-gcc-release", "inherits": "_test-native" },
+    { "name": "linux-gcc-static", "configurePreset": "linux-gcc-static", "inherits": "_test-native" },
+    { "name": "linux-gcc-multisource", "configurePreset": "linux-gcc-multisource", "inherits": "_test-native" },
+    { "name": "linux-gcc-asm-off", "configurePreset": "linux-gcc-asm-off", "inherits": "_test-native" },
+    { "name": "linux-gcc-predefs-off", "configurePreset": "linux-gcc-predefs-off", "inherits": "_test-native" },
+    { "name": "linux-gcc-pie", "configurePreset": "linux-gcc-pie", "inherits": "_test-native" },
+    { "name": "linux-gcc-dwarf", "configurePreset": "linux-gcc-dwarf", "inherits": "_test-native" },
+    { "name": "linux-gcc-diagnostics", "configurePreset": "linux-gcc-diagnostics", "inherits": "_test-native" },
+    { "name": "linux-clang", "configurePreset": "linux-clang", "inherits": "_test-native" },
+    { "name": "linux-clang-cross", "configurePreset": "linux-clang-cross", "inherits": "_test-native" },
+    { "name": "linux-clang-release", "configurePreset": "linux-clang-release", "inherits": "_test-native" },
+    { "name": "linux-gcc-sanitize", "configurePreset": "linux-gcc-sanitize", "inherits": "_test-native" },
 
-    { "name": "macos", "configurePreset": "macos", "inherits": "_test-macos" },
-    { "name": "macos-cross", "configurePreset": "macos-cross", "inherits": "_test-macos" },
+    { "name": "macos", "configurePreset": "macos", "inherits": "_test-native" },
+    { "name": "macos-cross", "configurePreset": "macos-cross", "inherits": "_test-native" },
 
-    { "name": "msvc", "configurePreset": "msvc", "configuration": "Release", "inherits": "_test-msvc" },
-    { "name": "sanitize-msvc", "configurePreset": "sanitize-msvc", "configuration": "Release", "inherits": "_test-msvc" },
+    { "name": "msvc", "configurePreset": "msvc", "configuration": "Release", "inherits": "_test-native" },
+    { "name": "sanitize-msvc", "configurePreset": "sanitize-msvc", "configuration": "Release", "inherits": "_test-native" },
 
     { "name": "qemu", "configurePreset": "qemu", "inherits": "_test-qemu" },
     { "name": "qemu-x86_64", "configurePreset": "qemu-x86_64", "inherits": "_test-qemu" },

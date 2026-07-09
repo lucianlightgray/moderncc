@@ -266,9 +266,11 @@ callbacks/library calls).
 ² Needs **two distinct** references (gcc *and* clang) or the three-way
 differential self-skips. On macOS `gcc`/`cc` are the Apple clang shim, so a
 genuine Homebrew `gcc-<n>` (installed by `setup-gcc`) is auto-detected. On
-Windows no system clang is needed: `cmake --build <bld> --target
-clang-toolchain` fetches a pinned, SHA256-verified LLVM into `vendor/llvm-clang/`,
-auto-wired by the next reconfigure (both suites then run and pass).
+Windows, Linux (x86_64/arm64) and Apple-silicon macOS no system clang is
+needed: `cmake --build <bld> --target clang-toolchain` fetches a pinned,
+SHA256-verified LLVM into `vendor/llvm-clang/`, auto-wired by the next
+reconfigure (both suites then run and pass); `ci local` runs the fetch
+automatically when it probes no system clang.
 ³ Needs POSIX `sh` (`MCC_TEST_SH`) + `nm`/`readelf`; ~31 ELF-image cases
 self-skip on a PE target. On WIN32 the harness auto-prepends the `sh` directory
 (for its bundled `grep`/`sed`/`printf`) and a resolved `nm`/`readelf` directory

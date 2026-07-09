@@ -563,14 +563,28 @@ set(MCC_CLANG_DIR "${MCC_VENDOR_DIR}" CACHE PATH
 set(_clang_url "")
 set(_clang_sha "")
 set(_clang_subdir "")
+set(_clang_ver "22.1.8")
 if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
-    set(_clang_ver "22.1.8")
     set(_clang_subdir "clang+llvm-${_clang_ver}-x86_64-pc-windows-msvc")
+    set(_clang_sha "d96c2cc1736f4eb7fa43cb9bbdf56d93551a9ae0a9aadb9c99c3c3b2b712a234")
+elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux"
+       AND CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64)$")
+    set(_clang_subdir "LLVM-${_clang_ver}-Linux-X64")
+    set(_clang_sha "df0e1ecf16caf3489a272a5eea4eec9b0d82878f6477fa309504f918a0006384")
+elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux"
+       AND CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
+    set(_clang_subdir "LLVM-${_clang_ver}-Linux-ARM64")
+    set(_clang_sha "805efad2bb91cb4967fa569e0881d10c0f69c04461cf671cccbae19f547acc34")
+elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin"
+       AND CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$")
+    set(_clang_subdir "LLVM-${_clang_ver}-macOS-ARM64")
+    set(_clang_sha "f260f4f7c0d430828a81ae8a3826a1d63fc0963ec2459489308cc23b1f7eab4f")
+endif()
+if(NOT _clang_subdir STREQUAL "")
     set(_clang_url
         "https://github.com/llvm/llvm-project/releases/download/llvmorg-${_clang_ver}/${_clang_subdir}.tar.xz")
-    set(_clang_sha "d96c2cc1736f4eb7fa43cb9bbdf56d93551a9ae0a9aadb9c99c3c3b2b712a234")
-    unset(_clang_ver)
 endif()
+unset(_clang_ver)
 set(MCC_CLANG_URL "${_clang_url}" CACHE STRING
     "LLVM release archive URL for the `clang-toolchain` download")
 set(MCC_CLANG_SHA256 "${_clang_sha}" CACHE STRING
@@ -585,6 +599,12 @@ function(mcc_clang_resolve)
     set(_c "")
     if(NOT MCC_CLANG_SUBDIR STREQUAL "")
         set(_c "${MCC_CLANG_DIR}/llvm-clang/${MCC_CLANG_SUBDIR}/bin/clang${CMAKE_EXECUTABLE_SUFFIX}")
+    endif()
+    if(_c STREQUAL "" OR NOT EXISTS "${_c}")
+        file(GLOB _g "${MCC_CLANG_DIR}/llvm-clang/*/bin/clang${CMAKE_EXECUTABLE_SUFFIX}")
+        if(_g)
+            list(GET _g 0 _c)
+        endif()
     endif()
     set(_MCC_CLANG_EXE "${_c}" PARENT_SCOPE)
 endfunction()
@@ -2804,7 +2824,7 @@ if(MCC_BUILD_TESTS)
         add_executable(mccharness tools/mccharness.c tools/toolsupport.c)
         target_link_libraries(mccharness ${CMAKE_DL_LIBS})
 
-        if(MCC_TARGETOS STREQUAL "Darwin")
+        if(NOT WIN32)
             add_executable(machofat tools/machofat.c)
         endif()
     endif()
@@ -3719,7 +3739,6 @@ if(MCC_BUILD_TESTS)
         mcc_skip_test(compile.win32 "requires WIN32 target (win32 runtime examples)")
     endif()
 
-    find_program(MCC_WINE NAMES wine wine64 wine64-proton-10.0.4)
     if(MCC_ENABLE_CROSS)
         set(_mcc_cross_default "${CMAKE_BINARY_DIR}")
     else()
@@ -3728,23 +3747,12 @@ if(MCC_BUILD_TESTS)
     set(MCC_CROSS_DIR "${_mcc_cross_default}"
         CACHE PATH "cross-compiler build dir for the wine PE runtime test")
 
-    set(_have_osx_cross FALSE)
-    if(EXISTS "${MCC_CROSS_DIR}/mcc-x86_64-osx")
-        set(_have_osx_cross TRUE)
-    elseif(TARGET mcc-x86_64-osx AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-        set(_have_osx_cross TRUE)
-    endif()
-    if(MCC_WINE AND EXISTS "${MCC_CROSS_DIR}/mcc-x86_64-win32")
-        add_test(NAME pe-wine-conformance
-            COMMAND "$<TARGET_FILE:mccharness>" pewine
-                    --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"
-                    --work "${CMAKE_BINARY_DIR}/pe-wine-work")
-        set_tests_properties(pe-wine-conformance PROPERTIES
-            FIXTURES_REQUIRED MCC_BUILT LABELS "wine" SKIP_RETURN_CODE 77)
-    else()
-        mcc_skip_test(pe-wine-conformance
-            "requires wine + the win32 cross compilers (cmake --preset cross)")
-    endif()
+    add_test(NAME pe-wine-conformance
+        COMMAND "$<TARGET_FILE:mccharness>" pewine
+                --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"
+                --work "${CMAKE_BINARY_DIR}/pe-wine-work")
+    set_tests_properties(pe-wine-conformance PROPERTIES
+        FIXTURES_REQUIRED MCC_BUILT LABELS "wine" SKIP_RETURN_CODE 77)
 
     if(MCC_TARGETOS STREQUAL "WIN32" AND NOT CMAKE_CROSSCOMPILING)
 
@@ -3767,57 +3775,37 @@ if(MCC_BUILD_TESTS)
             --nativemcc "$<TARGET_FILE:mcc>" --nativearch "${MCC_CPU}"
             --bdir "${CMAKE_BINARY_DIR}")
     endif()
-    if(_have_osx_cross OR CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-        add_test(NAME macho-structural
-            COMMAND "$<TARGET_FILE:mccharness>" machostructural
-                    --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"
-                    --objcheck "$<TARGET_FILE:objcheck>"
-                    ${_macho_struct_native}
-                    --work "${CMAKE_BINARY_DIR}/macho-work")
-        set_tests_properties(macho-structural PROPERTIES
-            FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
-    else()
-        mcc_skip_test(macho-structural
-            "requires the osx cross compilers (cmake --preset cross) or a native Darwin host")
-    endif()
+    add_test(NAME macho-structural
+        COMMAND "$<TARGET_FILE:mccharness>" machostructural
+                --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"
+                --objcheck "$<TARGET_FILE:objcheck>"
+                ${_macho_struct_native}
+                --work "${CMAKE_BINARY_DIR}/macho-work")
+    set_tests_properties(macho-structural PROPERTIES
+        FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
 
-    if(_have_osx_cross)
-        add_test(NAME macho-codegen-run
-            COMMAND "$<TARGET_FILE:mccharness>" machocodegen
-                    --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"
-                    --work "${CMAKE_BINARY_DIR}/macho-codegen-work")
-        set_tests_properties(macho-codegen-run PROPERTIES
-            FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
-    else()
-        mcc_skip_test(macho-codegen-run
-            "requires the x86_64-osx cross compiler (cmake --preset cross)")
-    endif()
+    add_test(NAME macho-codegen-run
+        COMMAND "$<TARGET_FILE:mccharness>" machocodegen
+                --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"
+                --work "${CMAKE_BINARY_DIR}/macho-codegen-work")
+    set_tests_properties(macho-codegen-run PROPERTIES
+        FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
 
-    if(_have_osx_cross)
-        add_test(NAME macho-image-run
-            COMMAND "$<TARGET_FILE:mccharness>" machoimage
-                    --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"
-                    --objcheck "$<TARGET_FILE:objcheck>"
-                    --work "${CMAKE_BINARY_DIR}/macho-image-work")
-        set_tests_properties(macho-image-run PROPERTIES
-            FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
-    else()
-        mcc_skip_test(macho-image-run
-            "requires the x86_64-osx cross compiler (cmake --preset cross)")
-    endif()
+    add_test(NAME macho-image-run
+        COMMAND "$<TARGET_FILE:mccharness>" machoimage
+                --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"
+                --objcheck "$<TARGET_FILE:objcheck>"
+                --work "${CMAKE_BINARY_DIR}/macho-image-work")
+    set_tests_properties(macho-image-run PROPERTIES
+        FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
 
-    if(_have_osx_cross)
-        add_test(NAME macho-apple-libc
-            COMMAND "$<TARGET_FILE:mccharness>" machoapplelibc
-                    --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"
-                    --objcheck "$<TARGET_FILE:objcheck>"
-                    --work "${CMAKE_BINARY_DIR}/macho-apple-libc-work")
-        set_tests_properties(macho-apple-libc PROPERTIES
-            FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
-    else()
-        mcc_skip_test(macho-apple-libc
-            "requires the x86_64-osx cross compiler (cmake --preset cross)")
-    endif()
+    add_test(NAME macho-apple-libc
+        COMMAND "$<TARGET_FILE:mccharness>" machoapplelibc
+                --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"
+                --objcheck "$<TARGET_FILE:objcheck>"
+                --work "${CMAKE_BINARY_DIR}/macho-apple-libc-work")
+    set_tests_properties(macho-apple-libc PROPERTIES
+        FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
 
     add_test(NAME macho-conformance-native
         COMMAND "$<TARGET_FILE:mccharness>" machonative
@@ -3851,6 +3839,9 @@ if(MCC_BUILD_TESTS)
                     ${_mf_xargs})
         set_tests_properties(macho-universal PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
+    else()
+        mcc_skip_test(macho-universal
+            "the machofat tool is POSIX-only (not built on a WIN32 host)")
     endif()
 
     option(MCC_DARWIN_HOST "Tests run on a macOS/darling host with real libSystem" OFF)
@@ -4019,6 +4010,15 @@ else()
     message(STATUS "mcc: docker not found — `qemu-docker` target unavailable "
                    "(see tests/qemu/docker/README.md)")
 endif()
+
+get_property(_mcc_all_tests DIRECTORY PROPERTY TESTS)
+foreach(_t IN LISTS _mcc_all_tests)
+    get_property(_l TEST "${_t}" PROPERTY LABELS)
+    if(NOT "qemu" IN_LIST _l)
+        set_property(TEST "${_t}" APPEND PROPERTY LABELS native)
+    endif()
+endforeach()
+unset(_mcc_all_tests)
 
 file(GLOB_RECURSE MCC_TAGFILES
     "${CMAKE_CURRENT_SOURCE_DIR}/*.c"

@@ -61,7 +61,16 @@ re-run it). Suites auto-enable when the reference toolchain / qemu is detected.
 
 **Platform-gated harnesses (labels & `SKIP_RETURN_CODE 77`).** Beyond the portable
 suites, several run only where their toolchain/host is present and otherwise
-**skip-with-reason** rather than fail:
+**skip-with-reason** rather than fail.
+
+Every test that is not qemu-labelled additionally carries the **`native`** label
+(applied in one pass at the end of configure), and the single `_test-native`
+preset base runs `ctest -L native` on every host — there are no per-OS exclude
+lists. What actually executes is decided at configure time by the host probes
+(wine, the osx cross compilers, a Darwin host, …): where a capability is
+missing the test is either registered as a skip-stub or self-skips with
+exit 77, so the native suite is always safe to run in full. `ctest -L native -N`
+lists exactly what the current tree considers native. The capability labels:
 
 - **macOS / Mach-O** (label `macho`). Cross-consuming: `macho-structural`,
   `macho-codegen-run`, `macho-image-run`, `macho-apple-libc` need the `mcc-x86_64-osx`
@@ -78,6 +87,9 @@ suites, several run only where their toolchain/host is present and otherwise
   bounds checking (`mcctest-bcheck`), the `parts-suite`, and (on arm64) `mcctest` self-skip.
   `MCC_BUILD_SANITIZE` now works on Windows too — MSVC AddressSanitizer or mingw trap-mode
   UBSan — feeding `sanitize-smoke`.
+- **qemu-user** (label `qemu` — the only non-`native` label). The foreign-arch
+  emulation matrix scheduled exclusively by the `qemu-*` presets (`ctest -L qemu`);
+  `qemu-arm64-osx` carries `qemu;macho` and stays out of the native suite.
 
 ---
 

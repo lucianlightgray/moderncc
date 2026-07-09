@@ -45,11 +45,12 @@ jobs:
       ART: mcc-${{ matrix.preset }}-${{ matrix.arch }}
     steps:
       - uses: actions/checkout@v5
-      - name: install toolchain
+      - name: install toolchain (everything the platform offers)
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build build-essential gcc clang lld wine64 git rsync
+            cmake ninja-build build-essential gcc clang lld wine64 git rsync \
+            mingw-w64
       - name: run ${{ matrix.preset }}
         run: |
           cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl
@@ -79,13 +80,15 @@ jobs:
       ART: mcc-${{ matrix.preset }}-${{ matrix.cc }}-${{ matrix.arch }}
     steps:
       - uses: actions/checkout@v5
-      - name: install Rosetta 2 (run x86_64 binaries on Apple silicon)
-        if: matrix.arch == 'x86_64'
+      - name: install Rosetta 2 (x86_64 cells + x86_64 wine on Apple silicon)
         run: sudo softwareupdate --install-rosetta --agree-to-license
-      - name: install toolchain
+      - name: install toolchain (everything the platform offers)
         run: |
           brew untap aws/tap 2>/dev/null || true
           brew install cmake ninja gcc
+      - name: install wine (drives pe-wine-conformance in macos-cross)
+        continue-on-error: true
+        run: brew install --cask --no-quarantine wine-stable
       - name: resolve compiler (CC for the preset)
         run: |
           if [ "${{ matrix.cc }}" = gcc ]; then
@@ -131,6 +134,9 @@ jobs:
         uses: TheMrMilchmann/setup-msvc-dev@v4
         with:
           arch: ${{ matrix.msvcarch }}
+      - name: install diff3 reference compilers (mingw gcc + llvm clang)
+        continue-on-error: true
+        run: choco install -y llvm mingw
       - name: resolve diff3 reference compilers (mingw gcc + clang)
         continue-on-error: true
         shell: pwsh
