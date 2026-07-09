@@ -4,8 +4,10 @@ Status of the `docs/AST.md` plan — the two-tier CST/AST intention IR and its `
 replay driver. This is the *implementation* companion to `AST.md` (the design) and
 `TODO.md` (the live task tracker). Last updated at commit `874953f3`; `ctest` 1769/1769.
 
-All work is **x86_64**, gated under `CONFIG_AST`, and opt-in per feature via environment
-variables (below). The default compiler (`-O0`, no env) is byte-untouched by every layer
+Gated under `CONFIG_AST` and opt-in per feature via environment variables (below). Tier 1/2
+replay and Tier-4 virtual-inline are **arch-independent** (Tier-4 is now verified on both
+x86_64 and arm64); only **Tier-3 register promotion is x86_64-specific** (its pin pools and
+push/pop encodings). The default compiler (`-O0`, no env) is byte-untouched by every layer
 here — verified empirically (see **Correctness gates**).
 
 ---
@@ -148,7 +150,14 @@ replay/grafting are unaffected — they run while the Sym is live).
   fresh code offsets (`gind`). Returns coalesce via memory: each stores its return-cast value
   to a per-graft result slot; non-tail returns (`op==1`) jump to the inline-end join
   (`ast_inline_ret_sym`), and the slot is pushed as an lvalue after the join. Nested inlines
-  compose (arg expressions graft recursively).
+  compose (arg expressions graft recursively). The **bias shifts below the callee's positive
+  param extent** (`bias = (loc - hi) & -16`, `hi` = highest `param_off + size`): x86_64 spills
+  register params to negative loc slots (`hi == 0`, `bias == loc`, byte-identical), but arm64
+  spills them ABOVE the frame pointer, so without the shift a low positive param offset would
+  land on the caller's saved fp/lr under the negative bias. A **struct return via an sret
+  hidden pointer** (arm64's `ret_nregs==0` path for ≤16-byte structs) carries an extra
+  `Invoke` child at index 1 that grafting skips (the return coalesces into the result slot, so
+  the sret buffer is bypassed).
 - **Pass structure:** grafting is a faithfulness-gated **pass-2** transformation, taking
   **precedence over promotion** for a function that has both (grafting removes the calls the
   promotion planner keyed its pool choice on).
@@ -162,7 +171,8 @@ inline+promote are exec-verified together).
 **Gates:** exec-golden (an inlined caller's bytes diverge from `-O0`) + the `ast/replay-inline`
 fixture (asserts `add`/`scale`/`madd`/`clamp`/`sgn`/`area`/`quad`/`pick`/`firsthit`/`mkpair`/`gsum`
 graft and `fwd_sum`/`fwd_boxed` defer-to-TU re-emit) + a whole-exec-corpus differential
-(`-O0` vs `MCC_AST_INLINE` byte/exit-identical across 218 programs).
+(`-O0` vs `MCC_AST_INLINE` byte/exit-identical across 218 programs). The fixture is now
+verified — and registered — on **x86_64 AND arm64** (`MCC_CPU STREQUAL x86_64 OR arm64`).
 
 ### Remaining Tier-4 breadth (TODO.md "Slice 2 remainder")
 
@@ -172,8 +182,10 @@ graft and `fwd_sum`/`fwd_boxed` defer-to-TU re-emit) + a whole-exec-corpus diffe
   memory coalesce); struct/union params fall back to a real call.
 - **Per-site specialization** — a graft is currently shape-identical at every call site; constant
   args aren't folded into the grafted body.
-- **Un-gate the fixture on non-x86_64** — the graft/re-emit is arch-independent and compiles on
-  arm64/riscv64, but the `ast/replay-inline` assertion is only verified on x86_64 so far.
+- **Un-gate the fixture on non-x86_64** — ✅ **arm64 DONE (2026-07-08):** the fixture is
+  registered and green on arm64 after fixing two arm64-only graft bugs (the positive-param-offset
+  bias shift and the sret struct-return hidden-child skip; see the grafting note above). riscv64
+  and other native arches stay gated until verified there.
 
 ---
 

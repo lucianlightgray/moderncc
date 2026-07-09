@@ -433,11 +433,31 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
     `MCC_AST_INLINE`; ctest 1769/1769; ASan/UBSan-clean. Fixture `REEMITS=fwd_sum,fwd_boxed`
     (`fwd_boxed` references a string literal + a struct local + a forward-declared static callee —
     the previously-excluded shape).
-  - [ ] **Slice 2 remainder.** Struct-by-value **params** (ABI-aware bind, still a real call);
-    per-site specialization; un-gate the inline fixture on non-x86_64 (arm64 verification).
-    **Design pass for struct-by-value params + per-site specialization is now written up in
-    docs/AST.md §19** (materialize-into-fresh-local + per-param remap; constant-arg branch-select
-    via the const-fold template) — ready to implement, three sub-choices flagged for ratification.
+  - [~] **Slice 2 remainder.** Struct-by-value **params** (ABI-aware bind, still a real call) and
+    per-site specialization remain. **arm64 verification DONE 2026-07-08 — the inline fixture is
+    now un-gated on arm64** (`ast/replay-inline`, CMakeLists `MCC_CPU STREQUAL x86_64 OR arm64`).
+    Two real arm64-only graft bugs were found and fixed to make it pass (both invisible to
+    byte-verify — a grafted caller's bytes diverge from `-O0` by construction, so the exec exit-code
+    is the gate): **(1) positive-param-offset frame collision.** arm64 spills register params ABOVE
+    the frame pointer (SIMD save area at `+0x10`, GP at `+0xa0`; the frame record is at
+    `[fp+0]/[fp+8]`), so the callee's param offsets are POSITIVE and outside `frame_size` (= `-loc`,
+    negatives only). The uniform graft bias (`bias = loc`) then landed a low-offset param (e.g. a
+    `double` at `+0x10`) on the caller's saved fp/lr after the negative bias → clobbered the return
+    address → SIGBUS. Fixed in `ast_inline_graft`: shift `bias` down by the callee's positive param
+    extent `hi` (`bias = (loc - hi) & -16`) so the WHOLE callee frame lands below the caller's live
+    locals. On x86_64 params spill to negative slots (`hi == 0`), so `bias` stays `loc` —
+    byte-identical, no regression. **(2) struct-return sret hidden arg.** arm64 returns an ≤16-byte
+    struct via the `ret_nregs==0` sret path (the parser pushes a result-temp pointer and counts it
+    as an arg), so the struct-return `Invoke` carries one extra child at index 1 that the arity check
+    rejected (`nchild-1 != nparams`) → `mkpair` fell back to a real call. Fixed: detect the hidden
+    sret child (`VT_STRUCT` return AND `nchild-1 == nparams+1`) and skip it when binding params — the
+    graft bypasses the sret buffer, coalescing the struct return into `ast_inline_ret_slot` as
+    before. On x86_64 an ≤16-byte struct returns in registers (no hidden child), so it is a no-op
+    there; a >16-byte sret struct return now also grafts on both arches (a bonus generalization).
+    Whole arm64 `tests/exec` ctest 1769/1769, `ast/replay-inline` green. **Design pass for
+    struct-by-value params + per-site specialization is written up in docs/AST.md §19**
+    (materialize-into-fresh-local + per-param remap; constant-arg branch-select via the const-fold
+    template) — ready to implement, three sub-choices flagged for ratification.
 
 - [~] **`-O1` flag → AST pipeline wiring + benchmark/CI `-O1` columns (STARTED 2026-07-08,
   PARKED — docs/AST.md §20).** `mcc -O1` now engages the AST replay optimizer (docs/AST.md §10):
@@ -651,18 +671,44 @@ natively on arm64. Remaining gaps to close:
   fixture is now registered only when `MCC_CPU STREQUAL "x86_64"` (the whole-corpus
   `exec-replay-promote` column still runs everywhere as a no-op). _This was a
   self-inflicted regression from the Tier-3 v1 commit._
-- [ ] **The four x86_64-targeting `macho-{structural,codegen-run,image-run,apple-libc}`
-  drivers self-skip on arm64 macOS** (`_have_osx_cross` is false: the `macos` preset
-  builds no cross compilers, and `host_is_x86_64()` is false). On an arm64 host these
-  would need the **`x86_64-osx` cross** (they'd run x86_64 Mach-O under Rosetta 2) — so
-  either build it on the arm64 macOS runner (via the `macos-cross` preset) or add
-  **arm64-native** structural/codegen/image/apple-libc drivers so arm64 macOS gets that
-  coverage directly. (Native arm64 Mach-O is already exercised by
-  `macho-conformance-native`.)
-- [ ] **`exec/backtrace` (+ its `exec-replay`/`-tmpl`/`-promote` and `diff3` columns)
-  skips on macOS.** The golden output is ELF/Linux-specific (exact BCHECK/backtrace
-  formatting + addresses); decide whether to validate a Darwin-specific formatted
-  backtrace/bcheck golden or keep it documented as ELF-only.
+- [x] **The four x86_64-targeting `macho-{structural,codegen-run,image-run,apple-libc}`
+  drivers self-skip on arm64 macOS — RESOLVED 2026-07-08.** Decision (evidence-based, on a
+  native arm64 macOS host): **`macho-structural` now runs NATIVELY on arm64** (the actionable
+  gap), and the other three are legitimately covered natively by `macho-conformance-native`.
+  Rationale per driver: structural validation is objcheck-only (no execution, no loader), so
+  the plain `mcc` IS the native-arch osx compiler for it — `suite_machostructural` gained
+  `--nativemcc/--nativearch/--bdir` and, for the native target, uses `mcc` when the cross
+  `mcc-<tgt>` is absent; CMakeLists registers `macho-structural` on any Darwin host (not just
+  when `_have_osx_cross`). On this host it validated **14 arm64-osx conformance programs**
+  structurally (only the x86_64-osx cross target + 3 libSystem-gated cases skip). The
+  x86_64-osx cross adds the x86_64 structural target under `macos-cross` (unchanged). The
+  exec-based `macho-{codegen-run,image-run,apple-libc}` CANNOT run natively — they use the
+  Linux-only loader oracle (`tests/qemu/macho/loader.c`: `<linux/seccomp.h>`, `REG_RAX`,
+  `uc_mcontext.gregs`) and `host_is_x86_64()`; their arm64-native equivalent (compile +
+  objcheck + real libSystem exec of the conformance corpus) IS `macho-conformance-native`,
+  which already runs. So arm64 macOS now has direct structural + codegen/image coverage; no
+  Rosetta / cross toolchain required for the structural column.
+- [x] **`exec/backtrace` (+ its `exec-replay`/`-tmpl`/`-promote` and `diff3` columns) —
+  RESOLVED 2026-07-08 (keep documented; Darwin bcheck formatting is already validated).**
+  Clarified premise: `backtrace` (and `btdll`) are `note:`-tagged **debug-aid reference
+  goldens skipped on ALL platforms** (Linux/macOS/WIN32 alike — the `note:` token in
+  `tests/exec/runner.c` skips unconditionally), not a macOS-specific skip. They document the
+  comprehensive multi-frame `-bt` chain + the full 30+ bcheck-message matrix, whose exact
+  addresses/symbolization are deliberately not asserted anywhere. The **formatted BCHECK
+  detection output IS validated on arm64 macOS by running goldens** — `bound_global` (`brun`,
+  `req=bcheck`, expected = masked-address BCHECK message), `builtins`, and the `bound_*`
+  family (`req=bcheck`, no `note:`/`elf` gate) run natively on Darwin (real libSystem) and
+  assert the formatted output; the whole arm64 `tests/exec` ctest is green (1769/1769). So no
+  Darwin-specific formatted golden is needed: Darwin bcheck formatting is covered by the
+  running `bound_*` goldens, and the comprehensive `backtrace`/`btdll` references stay
+  documented (debug aids, unasserted on every platform by design). _Concrete
+  confirmation the golden is genuinely ELF-specific:_ `-bt` on arm64 macOS emits
+  **unsymbolized raw addresses** — `0x1025b1044: at ???: RUNTIME ERROR: invalid memory
+  access` / `0x…: by ???` — because mcc's backtrace runtime has no Mach-O line/symbol
+  reader (on ELF it walks its own symtab to print `backtrace.c:9: at f3` / `by f2`). A
+  Darwin-specific backtrace golden would therefore first require implementing Mach-O
+  backtrace symbolization (no driving need; the bcheck *detection* it would gate is
+  already covered by the running `bound_*` goldens), so it stays ELF-only.
 
 ## Tier-3 register-promotion correctness (x86_64)
 

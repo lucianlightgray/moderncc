@@ -12338,7 +12338,11 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 			e = &ast_inline_pool[i];
 			break;
 		}
-	if (!e || !e->graftable || (int)ast_nchild(a, n) - 1 != e->nparams)
+	if (!e || !e->graftable)
+		return 0;
+	int nargs = (int)ast_nchild(a, n) - 1;
+	int hidden = ((ast_type_t(a, n) & VT_BTYPE) == VT_STRUCT && nargs == e->nparams + 1) ? 1 : 0;
+	if (nargs - hidden != e->nparams)
 		return 0;
 	/* Cycle / depth guard for grafting a NON-leaf callee: its body may itself Invoke a
 	 * graftable function (grafted recursively below). Refuse if this callee is already on
@@ -12350,10 +12354,21 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 		if (ast_inline_stack[i] == csym)
 			return 0;
 	ast_inline_stack[ast_inline_depth++] = csym;
-	int bias = loc; /* callee offset co -> co + loc, into fresh space below the caller's */
-	loc -= e->frame_size; /* reserve it permanently: gfunc_epilog sizes the frame from loc */
+	int hi = 0;
 	for (int i = 0; i < e->nparams; i++) {
-		ast_replay_value(a, ast_child(a, n, i + 1)); /* arg (caller frame, no bias) */
+		CType pt;
+		pt.t = e->param_typ[i];
+		pt.ref = (Sym *)e->param_ref[i];
+		int pa, ps = type_size(&pt, &pa);
+		if (ps < 1)
+			ps = 1;
+		if (e->param_off[i] + ps > hi)
+			hi = e->param_off[i] + ps;
+	}
+	int bias = hi > 0 ? ((loc - hi) & -16) : loc; /* callee offset co -> co + bias */
+	loc = bias - e->frame_size; /* reserve it permanently: gfunc_epilog sizes the frame from loc */
+	for (int i = 0; i < e->nparams; i++) {
+		ast_replay_value(a, ast_child(a, n, hidden + i + 1)); /* arg (skip hidden sret ptr) */
 		SValue slot;
 		memset(&slot, 0, sizeof slot);
 		slot.type.t = e->param_typ[i];
