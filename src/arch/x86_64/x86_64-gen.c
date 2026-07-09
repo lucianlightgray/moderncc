@@ -405,10 +405,12 @@ void load(int r, SValue *sv) {
 			}
 		}
 		if ((ft & VT_BTYPE) == VT_FLOAT) {
-			b = 0x6e0f66;
+			o(0x66);
+			b = 0x6e0f;
 			r = REG_VALUE(r);
 		} else if ((ft & VT_BTYPE) == VT_DOUBLE) {
-			b = 0x7e0ff3;
+			o(0xf3);
+			b = 0x7e0f;
 			r = REG_VALUE(r);
 		} else if ((ft & VT_BTYPE) == VT_LDOUBLE) {
 			b = 0xdb, r = 5;
@@ -511,7 +513,7 @@ void load(int r, SValue *sv) {
 			orex(0, r, 0, 0x0f);
 			o(fc);
 			o(0xc0 + REG_VALUE(r));
-			orex(0, r, 0, 0x0f);
+			orex(0, r, r, 0x0f);
 			o(0xc0b6 + REG_VALUE(r) * 0x900);
 		} else if (v == VT_JMP || v == VT_JMPI) {
 			t = v & 1;
@@ -607,17 +609,26 @@ void store(int r, SValue *v) {
 
 	if (bt == VT_FLOAT) {
 		o(0x66);
-		o(pic);
+		if (pic)
+			o(pic);
+		else
+			orex(0, v->r, r, 0);
 		o(0x7e0f);
 		r = REG_VALUE(r);
 	} else if (bt == VT_DOUBLE) {
 		o(0x66);
-		o(pic);
+		if (pic)
+			o(pic);
+		else
+			orex(0, v->r, r, 0);
 		o(0xd60f);
 		r = REG_VALUE(r);
 	} else if (bt == VT_LDOUBLE) {
 		o(0xc0d9);
-		o(pic);
+		if (pic)
+			o(pic);
+		else
+			orex(0, v->r, 0, 0);
 		o(0xdb);
 		r = 7;
 	} else {
@@ -1943,6 +1954,8 @@ void gen_opf(int op) {
 
 			if ((vtop->type.t & VT_BTYPE) == VT_DOUBLE)
 				o(0x66);
+			if (vtop->r & VT_LVAL)
+				orex(0, r, vtop[-1].r, 0);
 			if (op == TOK_EQ || op == TOK_NE)
 				o(0x2e0f);
 			else
@@ -2000,11 +2013,26 @@ void gen_opf(int op) {
 				r = vtop->r;
 			}
 
+#if defined(CONFIG_AST) && CONFIG_AST
+			{
+				int dr = vtop[-1].r & VT_VALMASK;
+				if (dr < VT_CONST && (ast_pinned_regs & (1u << dr))) {
+					int sc = get_reg(RC_FLOAT);
+					o((ft & VT_BTYPE) == VT_DOUBLE ? 0x100ff2 : 0x100ff3);
+					o(0xc0 + REG_VALUE(dr) + REG_VALUE(sc) * 8);
+					vtop[-1].r = (vtop[-1].r & ~VT_VALMASK) | sc;
+					fc = vtop->c.i;
+					r = vtop->r;
+				}
+			}
+#endif
 			if ((ft & VT_BTYPE) == VT_DOUBLE) {
 				o(0xf2);
 			} else {
 				o(0xf3);
 			}
+			if (vtop->r & VT_LVAL)
+				orex(0, r, vtop[-1].r, 0);
 			o(0x0f);
 			o(0x58 + a);
 

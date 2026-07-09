@@ -12240,7 +12240,7 @@ static int ast_plan_promotion(AstArena *a) {
 		else if (k == AST_Unary && ast_op(a, n) == AST_OP_VLA)
 			has_vla = 1;
 	}
-	if (has_call && has_vla)
+	if (has_vla)
 		return 0;
 	if (has_call && ast_no_callful_env)
 		return 0;
@@ -12283,8 +12283,39 @@ static int ast_plan_promotion(AstArena *a) {
 		if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
 			continue;
 		int off = (int)(int64_t)ast_ival(a, c);
+		int sz = 0;
+		if (ast_op(a, n) == AST_OP_ADDR) {
+			CType ct;
+			ct.t = ast_type_t(a, n);
+			ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+			if ((ct.t & VT_BTYPE) == VT_PTR && ct.ref) {
+				int al;
+				sz = type_size(&ct.ref->type, &al);
+			}
+		}
 		for (int j = 0; j < nc; j++)
-			if (coff[j] == off)
+			if (coff[j] == off || (sz > 0 && coff[j] >= off && coff[j] < off + sz))
+				cpoison[j] = 1;
+	}
+	for (AstLocal n = 0; n < nn; n++) {
+		if (ast_kind(a, n) != AST_Ref)
+			continue;
+		int r = ast_op(a, n);
+		if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM) || (r & VT_LVAL))
+			continue;
+		int off = (int)(int64_t)ast_ival(a, n);
+		CType ct;
+		ct.t = ast_type_t(a, n);
+		ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+		int al, sz = 8;
+		if ((ct.t & VT_BTYPE) == VT_PTR && ct.ref)
+			sz = type_size(&ct.ref->type, &al);
+		else if ((ct.t & VT_BTYPE) == VT_STRUCT || (ct.t & VT_ARRAY))
+			sz = type_size(&ct, &al);
+		if (sz <= 0)
+			sz = 8;
+		for (int j = 0; j < nc; j++)
+			if (coff[j] >= off && coff[j] < off + sz)
 				cpoison[j] = 1;
 	}
 	for (AstLocal n = 0; n < nn; n++) {

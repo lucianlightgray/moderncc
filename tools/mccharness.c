@@ -1117,10 +1117,7 @@ static int gccts_skiplisted(const char *base, const char *content) {
 
 static const char *GCCTS_AST_KNOWN_REPLAY[] = {
 		"pr51581-1.c", "pr51581-2.c", "20070919-1.c", 0};
-static const char *GCCTS_AST_KNOWN_PROMOTE[] = {
-		"941021-1.c", "20080519-1.c", "20170111-1.c", "postmod-1.c", "990829-1.c",
-		"20020402-3.c", "920929-1.c", "loop-8.c", "pr36343.c", "pr28982a.c", "20000722-1.c",
-		"pr28982b.c", "pr15262.c", "pr119002.c", 0};
+static const char *GCCTS_AST_KNOWN_PROMOTE[] = {0};
 static const char *GCCTS_AST_KNOWN_INLINE[] = {
 		"usad-run.c", "pr45070.c", "ssad-run.c", "pr41750.c", 0};
 
