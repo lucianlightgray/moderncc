@@ -214,13 +214,15 @@ jobs:
 
   qemu:
     # user-mode qemu exists only on Linux, so this runs natively on the ubuntu
-    # runner (no Docker). One job per (arch x libc) cell keeps each run small
-    # and fetches only that cell's Gentoo stage3 sysroot.
-    name: qemu / ${{ matrix.arch }} / ${{ matrix.libc }}
-    runs-on: ubuntu-latest
+    # runners (no Docker), on both host arches. One job per (host x arch x
+    # libc) cell keeps each run small and fetches only that cell's Gentoo
+    # stage3 sysroot (target-side data, so the cache is shared across hosts).
+    name: qemu / ${{ matrix.host }} / ${{ matrix.arch }} / ${{ matrix.libc }}
+    runs-on: ${{ matrix.host == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
+        host: [x86_64, arm64]
         arch: [x86_64, i386, arm, arm64, riscv64]
         libc: [glibc, musl]
     steps:
@@ -247,7 +249,7 @@ jobs:
         if: always()
         run: |
           /tmp/mcc-ci junit-summary "cmake-qemu-${{ matrix.arch }}/ctest-junit.xml" \
-            "qemu / ${{ matrix.arch }} / ${{ matrix.libc }}" >> "$GITHUB_STEP_SUMMARY" || true
+            "qemu / ${{ matrix.host }} / ${{ matrix.arch }} / ${{ matrix.libc }}" >> "$GITHUB_STEP_SUMMARY" || true
 
   dist-matrix:
     runs-on: ubuntu-latest

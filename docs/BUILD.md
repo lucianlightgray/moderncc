@@ -183,9 +183,10 @@ The `dist` jobs instead package their preset's `${sourceDir}/dist` prefix
 via the `package-dist` build target (which drives `ci pkg`); the `qemu` job is
 test-only and uploads nothing.
 
-**qemu presets** — CI runs one job per `(arch × libc)` cell natively on the
-Linux runner (`PRESET=qemu-<arch>`, `LIBCS=<one>`, via `ci qemu`, no Docker);
-`qemu` alone is the full local matrix:
+**qemu presets** — CI runs one job per `(host × arch × libc)` cell natively on
+the Linux runners, both x86_64 and arm64 hosts (`PRESET=qemu-<arch>`,
+`LIBCS=<one>`, via `ci qemu`, no Docker; the stage3 sysroot cache is target-side
+and shared across hosts); `qemu` alone is the full local matrix:
 
 | Preset | `MCC_QEMU_ARCHS` | Common |
 |---|---|---|
