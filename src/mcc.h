@@ -1450,9 +1450,6 @@ ST_DATA int rsym, anon_sym, ind, loc;
 ST_DATA char debug_modes;
 
 ST_DATA int nocode_wanted;
-#if defined(CONFIG_AST) && CONFIG_AST
-ST_DATA unsigned ast_pinned_regs;
-#endif
 ST_DATA int asm_lvalue_cast;
 ST_DATA int global_expr;
 ST_DATA CType func_vt;

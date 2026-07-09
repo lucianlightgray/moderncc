@@ -44,10 +44,11 @@ detail, deliberate-behavior records, measured numbers, and open work.
   (`i386-fastcall-abi`).
 - **mingw-w64 SEH miscompile of `gen_function` (fixed):** a nested `setjmp` (the
   AST-replay error trap) made `RtlVirtualUnwind` fault ~30% on mingw-gcc `-O2/-O3`
-  when an `error1()` longjmp unwound through its frame. Fix: build just
-  `gen_function` unoptimized on mingw-gcc hosts
+  when an `error1()` longjmp unwound through its frame. Fix: build just the
+  setjmp-holding frame unoptimized on mingw-gcc hosts
   (`__attribute__((optimize("O0")))`, gated `MCC_HOST_WIN32 && __GNUC__ &&
-  !__clang__`).
+  !__clang__`). Since the AST migration into `mccast.c`, that frame is
+  `ast_func_end` (the replay driver), not `gen_function`.
 
 ## Toolchain / capability comparison (was NOTES.md)
 

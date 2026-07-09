@@ -168,7 +168,7 @@ Parent: per-target byte-for-byte native-ABI matching. Children by reference freq
 - **Mach-O TLS limitation** (≈4) — Whr: `src/objfmt/mccmacho.c`. W: local `__thread` works (TLV descriptor); cross-module `extern __thread` hard-errors. Whn: pinned by `cli/macho_extern_tls_unsupported`.
 - **arm (32-bit) inline-asm subset** (≈3) — Whr: `src/arch/arm/arm-asm.c`. W: 64-bit `long long` GPR-pair operands hard-error; use two 32-bit operands.
 - **`<math.h>` host-provided policy** (≈2) — W: no freestanding `math.h`; decls + `libm` from host libc. Who: a freestanding non-glibc host must supply its own.
-- **mingw-w64 SEH `gen_function` miscompile** (≈3) — W: fixed ~30% `RtlVirtualUnwind` fault when an `error1()` longjmp unwound through the AST-trap frame at `-O2/-O3`. H: build just `gen_function` `-O0` on mingw-gcc.
+- **mingw-w64 SEH `gen_function` miscompile** (≈3) — W: fixed ~30% `RtlVirtualUnwind` fault when an `error1()` longjmp unwound through the AST-trap frame at `-O2/-O3`. H: build just the setjmp-holding frame `-O0` on mingw-gcc (now `ast_func_end` in `mccast.c`).
 - **runtime-library ABI notes** (≈5) — W: fenv/errno/pthread shims; builtin-name conflicts (`__atomic_*`/`bswap` via asm `.set` — clang refuses C defs, Mach-O rejects non-weak alias); mcc-only cache-flush builtins (`armflush.c`/`lib-riscv.c`).
 
 ## 7. Profiling
