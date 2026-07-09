@@ -110,11 +110,6 @@ typedef struct TinyAlloc {
 	struct TinyAlloc *next;
 	unsigned nb_allocs;
 	unsigned size;
-#if TAL_INFO
-	unsigned nb_peak;
-	unsigned nb_total;
-	uint8_t *peak_p;
-#endif
 	union {
 		uint8_t buffer[1];
 		size_t _aligner_;
@@ -139,27 +134,14 @@ static TinyAlloc *tal_new(TinyAlloc **pal, unsigned size) {
 	al->nb_allocs = 0;
 	al->next = *pal, *pal = al;
 	al->size = al->next ? al->next->size : size;
-#if TAL_INFO
-	al->nb_peak = 0;
-	al->nb_total = 0;
-	al->peak_p = al->p;
-#endif
 	return al;
 }
 
 static void tal_delete(TinyAlloc **pal) {
 	TinyAlloc *al = *pal, *next;
 
-#if TAL_INFO
-	fprintf(stderr, "tal_delete (&tok%s_alloc):\n", pal == &toksym_alloc ? "sym" : "str");
-#endif
 tail_call:
 #if TAL_DEBUG && TAL_DEBUG != 3
-#if TAL_INFO
-	fprintf(stderr, "  size %7d  nb_peak %5d  nb_total %6d  usage %5.1f%%\n",
-					al->bufend - al->buffer, al->nb_peak, al->nb_total,
-					(al->peak_p - al->buffer) * 100.0 / (al->bufend - al->buffer));
-#endif
 	if (al->nb_allocs > 0) {
 		uint8_t *p;
 		fprintf(stderr, "TAL_DEBUG: memory leak %d chunk(s)\n", al->nb_allocs);
@@ -263,13 +245,6 @@ static void *tal_realloc_impl(TinyAlloc **pal, void *p, unsigned size TAL_DEBUG_
 		int ofs = strlen(sfile) + 1 - sizeof header->file_name;
 		strcpy(header->file_name, sfile + (ofs > 0 ? ofs : 0));
 		header->line_num = sline;
-#if TAL_INFO
-		if (al->nb_peak < al->nb_allocs)
-			al->nb_peak = al->nb_allocs;
-		if (al->peak_p < al->p)
-			al->peak_p = al->p;
-		al->nb_total++;
-#endif
 	}
 #endif
 	return ret;

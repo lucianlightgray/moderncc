@@ -13,7 +13,7 @@ format files add the local matrix / a qemu spot-check as noted.
 
 ## 1. Delete `TAL_INFO` (trivial)
 
-- [ ] Remove the `#if TAL_INFO` counters/report from `mccpp.c:113-266` and the
+- [x] Remove the `#if TAL_INFO` counters/report from `mccpp.c:113-266` and the
       `nb_peak/nb_total/peak_p` fields. It is defined nowhere, enabled by
       nothing, and adds fields to the hottest allocator's header when hand-set.
 
