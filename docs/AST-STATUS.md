@@ -16,7 +16,7 @@ here — verified empirically (see **Correctness gates**).
 |---|---|---|
 | **Tier 1/2** | AST-replay driver over the vstack API; `-O0` replay parity | ✅ complete |
 | **Tier 3** | Register promotion (mem2reg of address-not-taken locals) — the real `-O1` payoff | ✅ comprehensive (x86_64) |
-| **Tier 4** | Virtual always-inline over the retained-AST store | 🟡 functional for a broad class; breadth remaining |
+| **Tier 4** | Virtual always-inline over the retained-AST store | 🟢 broadly functional (incl. defer-to-TU); narrow exclusions remain |
 | Long-horizon | Template library, time-budgeted engine, LTO, `-g`, `-O2`/`-O3` | ⬜ design only |
 
 The replay driver reconstructs a function's codegen from its captured intention IR, and
@@ -115,7 +115,9 @@ A **`static`, non-variadic**, VLA-free, size-bounded function — with **local d
 intra-function control flow (if/else, loops, `switch`, `break`/`continue`, `goto`/named labels)**,
 **one or more value returns including early returns inside branches**, **`int`/pointer/`float`/
 `double` scalar params and struct/scalar returns**, and **its own calls** (leaf or not) — is
-inlined into a **later** caller (defined-before-use). The callee's control-flow replay state
+inlined into a caller, whether the callee is defined **before OR after** it: a caller-before-callee
+site is handled by **defer-to-TU** (end-of-TU re-emission of the caller with the now-retained callee
+inlined, its symbol repointed). The callee's control-flow replay state
 (labels via a **label floor**, plus `switch`/`break`/`continue`) is isolated from the caller's. Returns coalesce **via memory** (each stores to a dedicated
 result slot — struct-sized for a struct return — non-tail returns jump to a graft-local inline-end
 join), so several grafts feeding one call don't fight over a return register. A **non-leaf**
@@ -157,16 +159,12 @@ fixture (asserts `add`/`scale`/`madd`/`clamp`/`sgn`/`area`/`quad` graft).
 
 ### Remaining Tier-4 breadth (TODO.md "Slice 2 breadth")
 
-- **Forward-declared / later-defined callees** — the common caller-before-callee case, missed
-  today (a callee must be retained at the caller's gen). Needs **defer-to-TU** (§13). The
-  parser/emitter are intertwined in `gen_function` (symbol defined at `ind`, `block()` emits during
-  parse), so full deferral is a driver restructuring. **A bounded design that leverages the
-  parser-independent replay:** retain *every* function's AST + `sym`; at end-of-TU, for any function
-  that had a forward graftable call, re-run `gfunc_prolog(sym)` → replay-with-inline → `gfunc_epilog`
-  at a fresh text offset (`gfunc_prolog` is deterministic from `sym->type.ref`, so the re-spilled
-  param offsets match the AST) and `put_extern_sym` to repoint the symbol; the original emission
-  becomes dead code. Risks to handle: re-emission dependency order (leaves first), the dead-code
-  relocations, and debug info. This is the largest remaining Tier-4 piece.
+- **Persist string/rodata Syms** — the key remaining lever. A retained AST captures string/rodata
+  refs as raw Sym pointers that get recycled after the function's own gen. This blocks (a) inlining
+  a callee that references a string literal and (b) defer-to-TU re-emission of a caller that does
+  (its own printf format Sym dangles → `<\0>` reloc). Both currently fall back to a real call
+  (correct). Persisting these Syms at retention (or capturing them ordinally like the float const
+  pool) lifts both exclusions.
 - **Struct-by-value params** — need an ABI-aware bind. A plain `vstore`-to-slot works for plain
   ≤16-byte structs but miscompiles memory-passed (>16-byte) ones AND some ≤16-byte aggregates that
   classify per member (verified: a `transparent_union` param). Struct *return* works (ABI-agnostic

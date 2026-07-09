@@ -396,10 +396,21 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
     isolates `ast_rp_switch`/`bsym`/`csym`. **The callee body may now contain any intra-function
     control flow** (if/else, loops, switch, break/continue, goto). Corpus + ctest 1769/1769,
     ASan-clean. Fixture asserts `gsum` (goto loop) grafts.
-  - [ ] **Slice 2 breadth.** Struct-by-value **params** (ABI-correct binding). Then
-    **forward-declared / later-defined callees (needs true defer-to-TU)** — the common
-    caller-before-callee case, missed today; per-site specialization. Un-gate the fixture on
-    non-x86_64 once verified there. Persist string/rodata Syms to lift that exclusion.
+  - [x] **defer-to-TU — forward-declared / later-defined callees LANDED 2026-07-08.** Forward
+    inlining without deferring the whole TU: a function calling a static not-yet-retained callee is
+    recorded (`ast_reemit_retain` + the inline-pool count at its gen); after the TU is parsed,
+    `ast_reemit_forward_inlines` re-emits any whose forward callee is now graftable. `ast_reemit`
+    mirrors gen_function's prologue/replay/epilogue but drives the body from the retained AST (no
+    parse, no byte-verify) at a fresh text offset, and `put_extern_sym` repoints the symbol
+    (`gfunc_prolog` re-resets `loc` + re-spills params deterministically, so the AST frame offsets
+    match; the original emission is dead code). Non-debug only; arch-independent (compiles
+    arm64/riscv64/x86_64). Verified `fwd_sum`→`fwd_callee` (caller before callee); corpus + ctest
+    1769/1769, ASan-clean. Fixture `REEMITS=fwd_sum`.
+  - [ ] **Slice 2 breadth.** **Persist string/rodata Syms** — the key remaining lever: lifts BOTH
+    the string-referencing-callee exclusion AND the string-caller defer-to-TU exclusion (a captured
+    anon rodata Sym is recycled after the function's gen → dangling; excluded for now, correct
+    fallback). Then struct-by-value **params** (ABI-aware bind); per-site specialization; un-gate the
+    fixture on non-x86_64 once verified there.
 - [ ] **Long horizon (design only):** the broader template library (algebraic, dead-branch,
   jump-table), the time-budgeted engine (§12/§221), dependency-ordered `-O1` compile, cross-TU
   LTO, `-g` from provenance, hot-reload snapshots, and separate `-O2`/`-O3` (SSA) drivers.
