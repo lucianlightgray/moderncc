@@ -82,7 +82,7 @@ static const char help2[] =
 		"  -P, -P1                       With -E: suppress or use alternative #line output\n"
 		"  -dD, -dM                      With -E: output #define directives\n"
 		"  -Wp,<arg>                     Pass the comma-separated <arg> to the preprocessor\n"
-		"  -O<n>                         Define __OPTIMIZE__ for n > 0 (no optimization is done)\n"
+		"  -O<n>                         Optimize: 1 = AST replay + const-fold, 2/s = + register promotion, 3 = + inlining\n"
 		"  -pthread                      Support POSIX threads (-D_REENTRANT and -lpthread)\n"
 		"  -include <file>               Include <file> before parsing each input file\n"
 		"  -isystem <dir>                Add <dir> to the system include search path\n"

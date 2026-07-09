@@ -194,11 +194,14 @@ high-value specifics the summary omits:
   AST-**query** gap, not a codegen gap, tiered by query cost (Tier 1 O(1) field
   reads → Tier 4 whole-program/fixpoint).
 - **Opt gating (`-O0` byte-untouched):** the replay stack is driven by the
-  runtime `-O` level — `-O0` (the default) disables it, `-O1`+ engages replay +
-  Tier-3 promotion (x86_64 only); the former `MCC_AST_REPLAY` env master gate
-  is gone. `MCC_AST_TEMPLATES`, `MCC_AST_PROMOTE` and `MCC_AST_INLINE` remain
-  env overrides on top of the `-O` defaults (non-`0` opens, `0` closes);
-  `MCC_AST_REPLAY_DUMP` and `MCC_AST_NO_CALLFUL` stay opt-in. The default-on
+  runtime `-O` level, batched by measured compile cost — `-O0` (the default)
+  disables it; `-O1` = replay + const-fold templates (+13–22% compile cycles,
+  templates ≈ free); `-O2`/`-Os` = + Tier-3 promotion (x86_64 only, +5–7.5%);
+  `-O3`/`-Ofast` = + Tier-4 virtual inline (+1–4%, excluded from `-Os`). The
+  former `MCC_AST_REPLAY` env master gate is gone. `MCC_AST_TEMPLATES`,
+  `MCC_AST_PROMOTE` and `MCC_AST_INLINE` remain env overrides on top of the
+  `-O` defaults (non-`0` opens, `0` closes); `MCC_AST_REPLAY_DUMP` and
+  `MCC_AST_NO_CALLFUL` stay opt-in. The default-on
   flip was reverted: the full-corpus `mcctest` differential exposed
   Tier-3/Tier-4 soundness gaps on the PE target and arm64 that the per-golden
   columns miss. Faithfulness gate: pass 1 replays with no
