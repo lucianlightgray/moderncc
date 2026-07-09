@@ -5,7 +5,7 @@ endif()
 function(roothash src outvar)
     execute_process(
         COMMAND "${CMAKE_COMMAND}" -E env MCC_CST_HASHDUMP=1
-                "${MCC}" -c "${src}" -o "${OUT}" "-I${IDIR}"
+                "${MCC}" --lsp -c "${src}" -o "${OUT}" "-I${IDIR}"
         OUTPUT_VARIABLE _o ERROR_VARIABLE _e RESULT_VARIABLE _rc)
     if(NOT _rc EQUAL 0)
         message(FATAL_ERROR "mcc failed on ${src}:\n${_o}${_e}")

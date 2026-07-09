@@ -5,7 +5,7 @@ endif()
 execute_process(
     COMMAND "${CMAKE_COMMAND}" -E env MCC_CST_SELFCHECK=1
             "MCC_CST_SNAPSHOT=${OUT}.snap"
-            "${MCC}" -c "${SRC}" -o "${OUT}" "-I${IDIR}"
+            "${MCC}" --lsp -c "${SRC}" -o "${OUT}" "-I${IDIR}"
     OUTPUT_VARIABLE _out ERROR_VARIABLE _err RESULT_VARIABLE _rc)
 
 set(_all "${_out}${_err}")

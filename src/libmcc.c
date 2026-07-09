@@ -820,7 +820,8 @@ static int mcc_compile(MCCState *s1, int filetype, const char *str, int fd) {
 		}
 
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
-		int cst_on = (fd != -1 && s1->output_type != MCC_OUTPUT_PREPROCESS &&
+		int cst_on = (s1->lsp && fd != -1 &&
+									s1->output_type != MCC_OUTPUT_PREPROCESS &&
 									!(filetype & (AFF_TYPE_ASM | AFF_TYPE_ASMPP)));
 		if (cst_on)
 			cst_capture_begin(str);
@@ -1703,6 +1704,7 @@ enum {
 	MCC_OPTION_mmacosx_version_min,
 	MCC_OPTION_framework,
 	MCC_OPTION_F,
+	MCC_OPTION_lsp,
 };
 
 #define MCC_OPTION_HAS_ARG 0x0001
@@ -1715,6 +1717,7 @@ static const MCCOption mcc_options[] = {
 		{"hh", MCC_OPTION_HELP2, 0},
 		{"v", MCC_OPTION_v, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
 		{"-version", MCC_OPTION_v, 0},
+		{"-lsp", MCC_OPTION_lsp, 0},
 		{"I", MCC_OPTION_I, MCC_OPTION_HAS_ARG},
 		{"D", MCC_OPTION_D, MCC_OPTION_HAS_ARG},
 		{"U", MCC_OPTION_U, MCC_OPTION_HAS_ARG},
@@ -2073,6 +2076,13 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) {
 		case MCC_OPTION_s:
 			s->do_strip = 1;
 			break;
+		case MCC_OPTION_lsp:
+#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+			s->lsp = 1;
+			break;
+#else
+			return mcc_error_noabort("the CST database (--lsp) was not built into this mcc");
+#endif
 		case MCC_OPTION_bt:
 #ifdef CONFIG_MCC_BACKTRACE
 			s->rt_num_callers = atoi(optarg);

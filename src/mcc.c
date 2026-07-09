@@ -94,6 +94,7 @@ static const char help2[] =
 		"  -rstdin <file>                With -run: use <file> as the program's stdin\n"
 		"  -dt                           With -run / -E: auto-define test_... macros\n"
 		"  -s                            Strip the symbol table from linked output\n"
+		"  --lsp                         Record the concrete syntax tree of each compiled file\n"
 		"  -pedantic                     Diagnose uses of non-ISO C extensions\n"
 		"  -pedantic-errors              Make the -pedantic diagnostics hard errors\n"
 		"Ignored options:\n"

@@ -710,6 +710,7 @@ struct MCCState {
 	unsigned char visibility;
 	unsigned char stack_protector;
 	unsigned char do_strip;
+	unsigned char lsp;
 
 	unsigned char warn_none;
 	unsigned char warn_all;
