@@ -218,6 +218,19 @@ toolchain isn't built, msvcrt's reduced libm/complex surface for
 presets, `dist-linux-*` packagings, and the qemu grid also run from Windows,
 via the Docker runners (`tests/ci/docker`, `tests/qemu/docker`).
 
+**mingw-w64 SEH miscompile of `gen_function` (fixed):** `05685c99` gave
+`gen_function` a nested `setjmp` (the AST-replay error trap). On a mingw-gcc
+`-O2`/`-O3` build that made `RtlVirtualUnwind` fault nondeterministically (~30%)
+whenever an `error1()` `longjmp` to the outer per-file trap (`mcc_compile`)
+unwound *through* `gen_function`'s frame — i.e. any error-recovering compile,
+e.g. `exec/errors_and_warnings`, `exec-replay/atomic_misc`,
+`exec-replay-promote/nodata_wanted` under `-dt`. It only bit the `mingw` CI job
+(ELF/Mach-O `longjmp` does no stack unwinding, and MSVC's own setjmp is
+unaffected). Fix: build just `gen_function` unoptimized on mingw-gcc hosts
+(`__attribute__((optimize("O0")))`, gated `MCC_HOST_WIN32 && __GNUC__ &&
+!__clang__`) — the hot codegen work stays optimized in its `block()`/`gexpr()`
+callees, so the cost is negligible.
+
 ## Per-toolchain test coverage
 
 `P` = passes, `S` = skipped-with-reason (environment/config-gated, not a

@@ -13684,6 +13684,9 @@ static int ast_replay_ok(AstArena *a) {
 }
 #endif /* CONFIG_AST */
 
+#if MCC_HOST_WIN32 && defined(__GNUC__) && !defined(__clang__)
+__attribute__((optimize("O0")))
+#endif
 static void gen_function(Sym *sym) {
 	struct scope f = {0};
 
