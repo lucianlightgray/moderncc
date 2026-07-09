@@ -298,7 +298,11 @@ static void write_table(FILE *f, const struct compiler *ccs, int nccs,
 	fprintf(f, "  %-8s %8s %10s %8s %9s %8s\n",
 					"compiler", "cpu(s)", "funcs/s", "obj(KB)", "peak(MB)", "wall(s)");
 	for (i = 0; i < nccs; i++) {
-		struct meas m = bench_one(&ccs[i], wl, reps);
+		struct meas m;
+		const char *op = i ? ccs[i - 1].opt : NULL, *oc = ccs[i].opt;
+		if (i && strcmp(op ? op + 1 : "", oc ? oc + 1 : ""))
+			fprintf(f, "\n");
+		m = bench_one(&ccs[i], wl, reps);
 		fmt_secs(cpu, sizeof cpu, m.cpu_ms);
 		fmt_secs(wall, sizeof wall, (long)m.wall_ms);
 		if (!m.ok) {
@@ -748,23 +752,22 @@ int main(int argc, char **argv) {
 	{
 		struct compiler base[MAXCC];
 		static char optkey[MAXCC][24];
-		int nbase = nccs, k;
+		static const char *gccopts[] = {NULL, "-O1"};
+		static const char *clopts[] = {NULL, "/O1"};
+		int nbase = nccs, k, o;
 		memcpy(base, ccs, sizeof(struct compiler) * nbase);
 		nccs = 0;
-		for (k = 0; k < nbase; k++) {
-			if (nccs < MAXCC) {
+		for (o = 0; o < (int)(sizeof gccopts / sizeof *gccopts); o++)
+			for (k = 0; k < nbase && nccs < MAXCC; k++) {
 				ccs[nccs] = base[k];
-				ccs[nccs].opt = NULL;
+				ccs[nccs].opt = base[k].style == STYLE_CL ? clopts[o] : gccopts[o];
+				if (gccopts[o]) {
+					snprintf(optkey[nccs], sizeof optkey[nccs], "%s%s", base[k].key,
+									 gccopts[o]);
+					ccs[nccs].key = optkey[nccs];
+				}
 				nccs++;
 			}
-			if (nccs < MAXCC) {
-				ccs[nccs] = base[k];
-				ccs[nccs].opt = (base[k].style == STYLE_CL) ? "/O1" : "-O1";
-				snprintf(optkey[k], sizeof optkey[k], "%s-O1", base[k].key);
-				ccs[nccs].key = optkey[k];
-				nccs++;
-			}
-		}
 	}
 
 	{
