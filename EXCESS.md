@@ -234,11 +234,16 @@ high-value specifics the summary omits:
   and fixed 10 pre-existing replay regressions (computed-callee bail,
   frame-depth-faithfulness); 3 documented-known (`pr51581-1/2` pp-const-expr state
   corruption, `20070919-1` cyclic VLA-in-struct crash).
-- **`-O1` wiring (PARKED, §20):** `mcc -O1` engages replay + Tier-3 promotion (not
-  Tier-4 inline — combinatorial blowup, self-compile hung). Remaining before safe
-  default: (1) graceful hard-error recovery incomplete (a caught replay error
-  leaves pp-const-expr state inconsistent → later `#if A && B` mis-evaluates on
-  self-compile); (2) inline governor/size cap.
+- **`-O1` wiring (UNPARKED 2026-07-09, §20):** `mcc -O1` engages replay + Tier-3
+  promotion (both call-free and call-ful pools; Tier-4 inline stays behind
+  `MCC_AST_INLINE`). Both former blockers are resolved: (1) the pp-const-expr
+  corruption was a stale muted sequence-point warning firing inside a later `#if`
+  (fixed by `seqp_reset()` on replay restore); (2) the inline governor is the
+  per-function `AST_GRAFT_BUDGET`. `mcc -O1` now self-hosts and the `-O1`-built
+  compiler's `-O0` output is byte-identical to the `-O0`-built compiler's.
+  Whether `-O1` should also enable Tier-4 inline by default is the one open
+  policy call (inline is correct + self-hosts under the governor, but the
+  compile-time/size trade-off past the governor cap is unmeasured).
 
 ## AST — open backlog / revisit-triggers (was TODO.md)
 
@@ -269,14 +274,16 @@ high-value specifics the summary omits:
   promote×inline interaction bug; found fast via the env-flag fallthrough gates
   rather than byte-diffing). `MCC_AST_INLINE_LIMIT=N` caps grafts to the first N
   (bisection aid).
-- **A1 — backward-liveness spill-slot sharing (last ratified roadmap item):** pin
-  sharing across disjoint live ranges needs a real backward-liveness pass +
-  interval coloring. Blocker: promotion currently entry-seeds every pin (mirrors
-  `-O0` for read-before-write/params/loop-carried), which conflicts with sharing —
-  A1 must replace entry-seeding with per-live-range seeding (a rework of the emit
-  model, not just added analysis).
-- **Tier-4 remainder:** un-gate `ast/replay-inline-spec` on arm64; riscv64/other
-  arches gated until verified.
+- **A1 — backward-liveness spill-slot sharing (the remaining ratified roadmap
+  item; a quality enhancement, not a correctness gap — `-O1` is complete and
+  self-hosting without it):** pin sharing across disjoint live ranges needs a real
+  backward-liveness pass + interval coloring. Blocker: promotion currently
+  entry-seeds every pin (mirrors `-O0` for read-before-write/params/loop-carried),
+  which conflicts with sharing — A1 must replace entry-seeding with per-live-range
+  seeding (a rework of the emit model, not just added analysis).
+- **Tier-4 remainder:** `ast/replay-inline-spec` is already registered on arm64
+  (the `x86_64 OR arm64` branch; CI arm64 runners exercise it); only riscv64/other
+  arches stay gated until per-arch verified.
 - **Promotion on arm64/riscv64:** needs a backend register-model extension
   (arm64 `NB_REGS=28` doesn't expose x19–x28) + qemu validation; the arch-agnostic
   analysis is reused.
