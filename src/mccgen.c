@@ -102,7 +102,7 @@ static int ast_replaying;
 static int *ast_locrec;
 static int ast_locrec_n, ast_locrec_cap, ast_locrec_i;
 
-static unsigned ast_pinned_regs;
+ST_DATA unsigned ast_pinned_regs;
 static int ast_func_has_asm;
 
 static int ast_alloc_loc(int size, int align) {
