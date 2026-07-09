@@ -75,6 +75,7 @@ static int ast_inline_env; /* MCC_AST_INLINE: Tier-4 virtual always-inline (anal
 static int ast_tmpl_folds;  /* const-fold rewrites performed this function     */
 static AstArena *ast_cur;   /* the function currently being built              */
 static int ast_bail;        /* an unsupported construct was seen              */
+static int ast_reemit_poison; /* a block-scoped Sym/type ref: unsafe to re-emit at end-of-TU */
 static AstLocal ast_ret_val; /* captured return-expression tree (or AST_NONE)  */
 static AstLocal ast_last_return; /* the Return node just recorded (for the jmp flag) */
 
@@ -10831,6 +10832,14 @@ static void ast_hook_vpush(void) {
 	ast_set_type(ast_cur, n, tt, (uint64_t)(uintptr_t)vtop->type.ref);
 	ast_set_ival(ast_cur, n, (uint64_t)vtop->c.i);
 	ast_set_sym(ast_cur, n, (uint64_t)(uintptr_t)vtop->sym);
+	/* Immediate replay re-pushes these Sym pointers while they are still live. End-of-TU
+	 * re-emission does not: a BLOCK-SCOPED symbolic reference (an inner extern/function
+	 * redeclaration) or a block-scoped aggregate TYPE ref is freed at block close and
+	 * recycled by later gen, so its pointer dangles by re-emit time. Poison re-emission
+	 * for this function when we see one; grafting/immediate replay are unaffected. */
+	if ((is_sym && vtop->sym && vtop->sym->sym_scope) ||
+			(vtop->type.ref && (tt & VT_BTYPE) == VT_STRUCT && sym_scope_ex(vtop->type.ref)))
+		ast_reemit_poison = 1;
 	ast_vs[ast_vn++] = n;
 }
 
@@ -10847,6 +10856,11 @@ static void ast_finalize_leaf(AstLocal n, SValue *sv) {
 	ast_set_type(ast_cur, n, sv->type.t, (uint64_t)(uintptr_t)sv->type.ref);
 	ast_set_ival(ast_cur, n, (uint64_t)sv->c.i);
 	ast_set_sym(ast_cur, n, (uint64_t)(uintptr_t)sv->sym);
+	/* Same block-scoped-Sym re-emit hazard as ast_hook_leaf: the final sym is only known
+	 * here for leaves whose ->sym is set after vsetc (vpushsym). Poison re-emission too. */
+	if (((sv->r & VT_VALMASK) == VT_CONST && (sv->r & VT_SYM) && sv->sym && sv->sym->sym_scope) ||
+			(sv->type.ref && (sv->type.t & VT_BTYPE) == VT_STRUCT && sym_scope_ex(sv->type.ref)))
+		ast_reemit_poison = 1;
 }
 
 /* A binary op is about to consume the top two vstack values. Fold the two
@@ -12426,16 +12440,32 @@ static void ast_sym_pin(Sym *p) {
  * the raw Sym pointers the AST captured stay valid until a later caller grafts or re-emits
  * this body (they would otherwise be recycled after this function's own gen). Called at
  * retention while the Syms are still valid. Lifts the string-ref exclusions. */
+static void ast_pin_type(int t, Sym *ref, int depth) {
+	if (!ref || depth > 16)
+		return;
+	int bt = t & VT_BTYPE;
+	if (bt == VT_STRUCT) {
+		ast_sym_pin(ref);
+		for (Sym *m = ref->next; m; m = m->next) {
+			ast_sym_pin(m);
+			ast_pin_type(m->type.t, m->type.ref, depth + 1);
+		}
+	} else if (bt == VT_PTR || bt == VT_FUNC) {
+		ast_sym_pin(ref);
+		ast_pin_type(ref->type.t, ref->type.ref, depth + 1);
+	}
+}
+
 static void ast_pin_rodata_syms(AstArena *a) {
 	AstLocal nn = ast_count(a);
 	for (AstLocal n = 0; n < nn; n++) {
 		uint16_t k = ast_kind(a, n);
-		if (k != AST_Ref && k != AST_Literal)
-			continue;
 		int r = ast_op(a, n);
 		Sym *sp = (Sym *)(uintptr_t)ast_sym(a, n);
-		if (sp && (r & VT_SYM) && (r & VT_VALMASK) == VT_CONST && sp->v >= SYM_FIRST_ANOM)
+		if ((k == AST_Ref || k == AST_Literal) && sp && (r & VT_SYM) &&
+				(r & VT_VALMASK) == VT_CONST && sp->v >= SYM_FIRST_ANOM)
 			ast_sym_pin(sp);
+		ast_pin_type(ast_type_t(a, n), (Sym *)(uintptr_t)ast_type_ref(a, n), 0);
 	}
 }
 
@@ -12465,34 +12495,19 @@ static int ast_inline_retain(AstArena *a, Sym *sym) {
 /* Retain a function that calls a static function, for possible end-of-TU re-emission (a
  * forward-inline miss). Returns 1 if retained (caller must not free the AST). */
 static int ast_reemit_retain(AstArena *a, Sym *sym) {
-	if (!ast_inline_env || ast_bail || ast_desync || ast_reemit_n >= AST_INLINE_MAX)
+	if (!ast_inline_env || ast_bail || ast_desync || ast_reemit_poison ||
+			ast_reemit_n >= AST_INLINE_MAX)
 		return 0;
 	AstLocal nn = ast_count(a);
 	int has_static_call = 0;
-	for (AstLocal n = 0; n < nn; n++) {
-		uint16_t k = ast_kind(a, n);
-		if (k == AST_Invoke) {
-			AstLocal ce = ast_first_child(a, n);
-			void *cs = ce != AST_NONE ? (void *)(uintptr_t)ast_sym(a, ce) : NULL;
-			if (cs && (((Sym *)cs)->type.t & VT_STATIC) &&
-					(((Sym *)cs)->type.t & VT_BTYPE) == VT_FUNC)
-				has_static_call = 1;
-		}
-		/* End-of-TU re-emission re-reads ALL of this body's captured Sym pointers — value
-		 * syms (pinned by ast_pin_rodata_syms) AND type refs. A block-scoped aggregate TYPE
-		 * ref is recyclable and dangling by re-emission time (crash in scopes.c), and pinning
-		 * whole type graphs is out of scope here. So keep re-emission conservative: a function
-		 * that references an anon rodata const OR an aggregate type is not re-emitted (it falls
-		 * back to a real forward call — correct). Grafting (which happens near the callee's own
-		 * gen, value syms pinned) is not restricted this way. */
-		if (k == AST_Ref || k == AST_Literal) {
-			int r = ast_op(a, n), t = ast_type_t(a, n);
-			void *sp = (void *)(uintptr_t)ast_sym(a, n);
-			if ((sp && (r & VT_SYM) && (r & VT_VALMASK) == VT_CONST &&
-					 ((Sym *)sp)->v >= SYM_FIRST_ANOM) ||
-					(t & VT_BTYPE) == VT_STRUCT)
-				return 0;
-		}
+	for (AstLocal n = 0; n < nn && !has_static_call; n++) {
+		if (ast_kind(a, n) != AST_Invoke)
+			continue;
+		AstLocal ce = ast_first_child(a, n);
+		void *cs = ce != AST_NONE ? (void *)(uintptr_t)ast_sym(a, ce) : NULL;
+		if (cs && (((Sym *)cs)->type.t & VT_STATIC) &&
+				(((Sym *)cs)->type.t & VT_BTYPE) == VT_FUNC)
+			has_static_call = 1;
 	}
 	if (!has_static_call)
 		return 0;
@@ -13573,6 +13588,7 @@ static void gen_function(Sym *sym) {
 		ast_lor_top = 0;
 		ast_bail = 0;
 		ast_desync = 0;
+		ast_reemit_poison = 0;
 		ast_in_op = 0;
 		ast_in_call = 0;
 		ast_call_pending = AST_NONE;
@@ -13827,6 +13843,28 @@ static void ast_reemit(Sym *sym, AstArena *ast) {
 	nb_temp_local_vars = 0;
 	gfunc_prolog(sym);
 	func_vla_arg(sym);
+
+	/* gfunc_prolog reset loc to the param-spill low-water-mark. The body's own locals have
+	 * their frame offsets baked into the AST (captured at the original gen) and are NOT
+	 * re-allocated here, so they never move loc. A graft (ast_inline_graft) reserves its
+	 * param/result slots by decrementing loc from here — if loc does not already reflect the
+	 * deepest baked-in local, those graft slots land ON TOP of a live local (e.g. a grafted
+	 * int result slot overlapping the upper half of a pointer local -> corruption). Lower loc
+	 * to the AST's frame low-water-mark first so grafts allocate strictly below every local. */
+	{
+		AstLocal nn = ast_count(ast);
+		for (AstLocal n = 0; n < nn; n++) {
+			uint16_t k = ast_kind(ast, n);
+			if (k != AST_Ref && k != AST_Literal)
+				continue;
+			int r = ast_op(ast, n);
+			if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM)) {
+				int off = (int)ast_ival(ast, n);
+				if (off < loc)
+					loc = off;
+			}
+		}
+	}
 
 	Sym *saved_free = sym_free_first;
 	sym_free_first = NULL;

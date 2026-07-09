@@ -410,21 +410,31 @@ streaming parser never had. Neither is a new machine op (docs/AST.md §18.2).
     `ast_pin_rodata_syms` unlinks each anon rodata-const Sym (string literal / const) the retained
     body references from the sym free-list at retention, so the captured pointers stay valid for a
     later graft (a small deliberate leak). Grafting a callee with string literals now works (`greet`,
-    `withlib`). **Re-emission stays conservative** — it re-reads ALL captured Syms incl. type refs,
-    and a block-scoped aggregate TYPE ref is still recyclable (crash in scopes.c), so a re-emit
-    candidate that references an anon rodata const OR an aggregate type falls back to a real forward
-    call. Corpus + ctest 1769/1769, ASan-clean.
-  - [ ] **Slice 2 breadth.** Broaden re-emission to rodata-referencing forward callers. Two of the
-    three fixes are worked out (prototyped, verified on `fwd`/`fwds`, then reverted with the third
-    still open): (1) a transitive **type-ref pin** (`ast_pin_type` over struct member chains + ptr
-    element types) fixes the block-scoped-struct crash; (2) **per-candidate snapshot** of the
-    per-function replay side-tables `ast_fconst`/`ast_locrec` (reset each gen → stale by end-of-TU)
-    restored in `ast_reemit` fixes const-pool/loc reuse. With both, simple struct/string forward
-    callers re-emit correctly. STILL OPEN: scopes.c `main_6` (nested-scope name **shadowing** — locals
-    `i6`/`f6` shadow globals, an inner block redeclares them `extern`/as a fn) drops statements under
-    re-emission — a control-flow/scope-resolution interaction beyond Sym lifetime. Conservative
-    re-emission (anon-rodata/aggregate exclusion) stays until that is root-caused. Then struct-by-value
-    **params** (ABI-aware bind); per-site specialization; un-gate the fixture on non-x86_64.
+    `withlib`). Corpus + ctest 1769/1769, ASan-clean.
+  - [x] **Slice 2 breadth — re-emission BROADENED to rodata/struct/forward callers (LANDED
+    2026-07-08).** Three fixes, all landed and root-caused:
+    (1) **Transitive type-ref pin** — `ast_pin_type` walks struct member chains + ptr/func element
+    types and pins each, so a re-emitted body's aggregate type refs stay live (fixed the earlier
+    block-scoped-struct crash). `ast_pin_rodata_syms` now also pins each node's type ref.
+    (2) **Frame low-water-mark at re-emit** — `gfunc_prolog` resets `loc` to the param-spill mark,
+    but the body's locals have offsets *baked into the AST* and never move `loc`, so a graft
+    (`ast_inline_graft`) reserving its param/result slots by decrementing `loc` landed ON TOP of a
+    live local (a grafted int result slot overlapped the upper half of a pointer local → runtime
+    corruption/segfault). `ast_reemit` now scans the AST for the deepest VT_LOCAL offset and lowers
+    `loc` to it before replay, so grafts allocate strictly below every local.
+    (3) **Block-scoped-Sym re-emit poison** — the real `main_6` root cause: an inner
+    `extern`/function **redeclaration** (or block-scoped aggregate type) is freed at block close and
+    recycled by later gen, so its captured pointer dangles by end-of-TU (immediate replay is fine —
+    it re-pushes while the Sym is still live). `ast_hook_leaf`/`ast_finalize_leaf` now set
+    `ast_reemit_poison` when a captured symbolic ref or struct type ref has `sym_scope != 0`, and
+    `ast_reemit_retain` refuses to re-emit such a function (it falls back to a real forward call —
+    correct). scopes.c `main_6` is byte-identical under `MCC_AST_INLINE` again.
+    Verified: the whole exec corpus (218/218 programs) is byte/exit-identical `-O0` vs
+    `MCC_AST_INLINE`; ctest 1769/1769; ASan/UBSan-clean. Fixture `REEMITS=fwd_sum,fwd_boxed`
+    (`fwd_boxed` references a string literal + a struct local + a forward-declared static callee —
+    the previously-excluded shape).
+  - [ ] **Slice 2 remainder.** Struct-by-value **params** (ABI-aware bind, still a real call);
+    per-site specialization; un-gate the inline fixture on non-x86_64 (arm64 verification).
 - [ ] **Long horizon (design only):** the broader template library (algebraic, dead-branch,
   jump-table), the time-budgeted engine (§12/§221), dependency-ordered `-O1` compile, cross-TU
   LTO, `-g` from provenance, hot-reload snapshots, and separate `-O2`/`-O3` (SSA) drivers.

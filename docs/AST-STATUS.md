@@ -16,7 +16,7 @@ here — verified empirically (see **Correctness gates**).
 |---|---|---|
 | **Tier 1/2** | AST-replay driver over the vstack API; `-O0` replay parity | ✅ complete |
 | **Tier 3** | Register promotion (mem2reg of address-not-taken locals) — the real `-O1` payoff | ✅ comprehensive (x86_64) |
-| **Tier 4** | Virtual always-inline over the retained-AST store | 🟢 broadly functional (incl. defer-to-TU); narrow exclusions remain |
+| **Tier 4** | Virtual always-inline over the retained-AST store | 🟢 broadly functional (incl. defer-to-TU + rodata/struct/forward callers); struct-by-value params remain |
 | Long-horizon | Template library, time-budgeted engine, LTO, `-g`, `-O2`/`-O3` | ⬜ design only |
 
 The replay driver reconstructs a function's codegen from its captured intention IR, and
@@ -104,7 +104,7 @@ function each promote).
 
 ---
 
-## 5. Tier 4 — virtual always-inline 🟡 (functional; breadth remaining)
+## 5. Tier 4 — virtual always-inline 🟢 (broadly functional; narrow breadth remaining)
 
 `MCC_AST_INLINE=1`. Inline a within-TU call in place of the boundary `Call`, replaying the
 callee's body into the caller. Built in slices, all landed this session.
@@ -123,11 +123,15 @@ result slot — struct-sized for a struct return — non-tail returns jump to a 
 join), so several grafts feeding one call don't fight over a return register. A **non-leaf**
 callee's own calls graft recursively (a depth+stack **cycle guard**, max depth 8, stops
 direct/mutual recursion — the recursive call stays real) or emit a real call. Composes with
-Tier-3 register promotion in one pass 2. **Excluded** (fall back to a real call): `goto`/named
-labels, `void` returns, **struct-by-value params** (ABI-dependent frame layout), pointer-to-VLA
-params, `setjmp`-calling callees (guard query), and callees referencing a **string literal / anon
-rodata const** (its captured Sym pointer can be recycled after the callee's own gen — a real
-cross-function Sym-lifetime limit).
+Tier-3 register promotion in one pass 2. String-literal / anon-rodata refs are handled by
+**pinning** the captured Syms (`ast_pin_rodata_syms` + transitive `ast_pin_type` for aggregate/ptr
+type refs), so both a string-referencing **callee** (graft) and a string/struct-referencing
+**forward caller** (defer-to-TU re-emit) work. **Excluded** (fall back to a real call):
+**struct-by-value params** (ABI-dependent frame layout), pointer-to-VLA params, and
+`setjmp`-calling callees (guard query). Re-emission additionally refuses a function that captures a
+**block-scoped** symbolic/type ref (an inner `extern`/function redeclaration) — that Sym is freed at
+block close and dangles by end-of-TU, so `ast_reemit_poison` forces a real forward call (immediate
+replay/grafting are unaffected — they run while the Sym is live).
 
 - **Retention** (`ast_inline_retain`, keyed by function Sym; `ast_inline_lookup`): the
   within-TU inline closure held in memory. Non-graftable candidates are retained-only.
@@ -155,24 +159,20 @@ calls and promotes its own locals (the `setjmp` guard excludes `setjmp`-calling 
 inline+promote are exec-verified together).
 
 **Gates:** exec-golden (an inlined caller's bytes diverge from `-O0`) + the `ast/replay-inline`
-fixture (asserts `add`/`scale`/`madd`/`clamp`/`sgn`/`area`/`quad` graft).
+fixture (asserts `add`/`scale`/`madd`/`clamp`/`sgn`/`area`/`quad`/`pick`/`firsthit`/`mkpair`/`gsum`
+graft and `fwd_sum`/`fwd_boxed` defer-to-TU re-emit) + a whole-exec-corpus differential
+(`-O0` vs `MCC_AST_INLINE` byte/exit-identical across 218 programs).
 
-### Remaining Tier-4 breadth (TODO.md "Slice 2 breadth")
+### Remaining Tier-4 breadth (TODO.md "Slice 2 remainder")
 
-- **Persist string/rodata Syms** — the key remaining lever. A retained AST captures string/rodata
-  refs as raw Sym pointers that get recycled after the function's own gen. This blocks (a) inlining
-  a callee that references a string literal and (b) defer-to-TU re-emission of a caller that does
-  (its own printf format Sym dangles → `<\0>` reloc). Both currently fall back to a real call
-  (correct). Persisting these Syms at retention (or capturing them ordinally like the float const
-  pool) lifts both exclusions.
 - **Struct-by-value params** — need an ABI-aware bind. A plain `vstore`-to-slot works for plain
   ≤16-byte structs but miscompiles memory-passed (>16-byte) ones AND some ≤16-byte aggregates that
   classify per member (verified: a `transparent_union` param). Struct *return* works (ABI-agnostic
   memory coalesce); struct/union params fall back to a real call.
-- **`goto` / `switch`** — these touch the shared label/switch replay state, so need scoping.
-- **Struct-by-value params/return** — needs the aggregate-copy / sret ABI in the graft.
-- **Persist string/rodata Syms** — to lift the string-literal exclusion (currently such callees
-  fall back to a real call).
+- **Per-site specialization** — a graft is currently shape-identical at every call site; constant
+  args aren't folded into the grafted body.
+- **Un-gate the fixture on non-x86_64** — the graft/re-emit is arch-independent and compiles on
+  arm64/riscv64, but the `ast/replay-inline` assertion is only verified on x86_64 so far.
 
 ---
 

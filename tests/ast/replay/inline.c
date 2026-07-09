@@ -96,6 +96,27 @@ static int fwd_sum(int n) {
 }
 static int fwd_callee(int x) { return x + 1; }
 
+/* defer-to-TU BROADENED: a forward-caller that also references an anon rodata string
+ * literal ("fwdmsg...") AND a struct type — the value/type-ref pin (ast_pin_syms /
+ * ast_pin_type) keeps those captures alive to re-emit time, so this is re-emitted with
+ * fwd_dbl grafted (the earlier conservative rule excluded any rodata/struct reference).
+ * A block-scoped extern/function redeclaration would instead poison re-emission
+ * (ast_reemit_poison) and fall back to a real call — see tests/exec/statements/scopes.c
+ * main_6, which stays byte-identical under MCC_AST_INLINE. */
+struct FwdBox {
+	int v;
+};
+static int fwd_dbl(int x);
+static int fwd_boxed(int n) {
+	struct FwdBox b;      /* struct type ref -> ast_pin_type keeps it alive to re-emit */
+	const char *m = "fwdmsg"; /* anon rodata string -> ast_pin_syms keeps it alive */
+	b.v = 0;
+	for (int i = 0; i < n; i++)
+		b.v += fwd_dbl(i);
+	return b.v + (m[0] == 'f'); /* +1: proves the pinned string ref re-emits correctly */
+}
+static int fwd_dbl(int x) { return x * 2; }
+
 int main(void) {
 	int r = add(3, 4);              /* 7 */
 	int s = scale(5, 6);           /* 30 */
@@ -112,6 +133,8 @@ int main(void) {
 	int gs = gsum(5);                    /* goto loop: 0+1+2+3+4 = 10 */
 	int (*fp)(int) = fwd_sum;            /* via pointer -> a real call to the re-emitted body */
 	int fw = fp(4);                      /* fwd_callee(0..3) = 1+2+3+4 = 10 */
-	return r + s + t + u + c + g + d + q + p + m + gs + fw - 70;
-	/* 7+30+13+7+5+0+10+8+7+5+10+10 - 70 = 42 */
+	int (*fb)(int) = fwd_boxed;          /* via pointer -> the string/struct-referencing re-emit */
+	int bx = fb(4);                      /* fwd_dbl(0..3)=0+2+4+6=12, +1 string-check = 13 */
+	return r + s + t + u + c + g + d + q + p + m + gs + fw + bx - 83;
+	/* 7+30+13+7+5+0+10+8+7+5+10+10+13 - 83 = 42 */
 }
