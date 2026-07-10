@@ -9,6 +9,31 @@ optimizer change: full `ctest` (the `-O0` byte-identity and the four
 exec-replay columns are the safety net), 3-stage self-host fixpoint, and
 bench deltas recorded here.
 
+## Scoreboard (session 2026-07-09/10)
+
+Landed optimizer passes/upgrades (all: full ctest green + self-host
+fixpoint byte-identical + -O0 objects unchanged):
+
+| # | Name | Tier | Commit |
+|---|------|------|--------|
+| 1 | Deterministic libm builtin folding (sqrt/fabs/floor/…) | 1 | a0495e8b |
+| 2 | Algebraic identities / annihilators / same-operand | 1 | b274bfe3 |
+| 3 | Local constant/copy propagation | 2 | 3bd34a0a |
+| 4 | Local dead-store elimination | 2 | 0a22739d |
+| 5 | Constant-branch folding (SCCP conditional half) | 2 | b94ca9ae |
+| 6 | `-O<N>` timed superoptimizer + intention warm cache | 4 | b6dc3f6b/db006639 |
+| 7 | TPE Bayesian search (`--search tpe`) | 4 | 80feb6d9 |
+| 8 | mccbench stats: Welch t + bootstrap CI + Cohen's d | — | 9d03445e |
+| ✚ | -O3 float-return inline miscompile FIX | — | 40ca21cf |
+
+Open / blocked: Tier-1 peephole (emitter byte-identity risk); SCCP
+value-lattice half + CSE/GVN (blocked — no AST value-reference node);
+Sethi–Ullman ordering (codegen-order, byte-identity risk); Tier-3 LICM,
+IV strength reduction, tail-call, jump-threading, Chaitin–Briggs
+coloring; deterministic sin/cos/exp (deferred behind -ffast-math
+opt-in, researched). Six tree passes give −12% .text on
+pass-exercising code; TPE beats linear search (−34% vs −26% memory).
+
 ## Algorithm catalog (named forms, complexity-ranked)
 
 Status: `[ ]` open · `[~]` claimed/in-progress · `[x]` landed (commit)
@@ -503,3 +528,18 @@ dlmf.nist.gov/3.11 (minimax polynomial approximations).
   conditional-branch ✓. Remaining: SCCP's value-lattice half and CSE/GVN
   both blocked on an AST value-reference node; Sethi–Ullman ordering
   (codegen-order, byte-identity-risky). Six landed tree passes now.
+
+### 2026-07-10 — iteration 18 (scoreboard; TPE determinism characterized)
+
+- Added a scoreboard table (8 landed passes/upgrades + 1 miscompile fix,
+  each with commit) so the campaign state is legible at a glance.
+- **TPE determinism characterized**: same --seed gives the same
+  candidate *count* (56/56 — the Parzen sample stream is reproducible)
+  but a different winning config (nhot=12,cut=8 vs 20,cut=6), because
+  winner selection reflects real wall-clock CPU-timing noise, not just
+  the sample stream. Both winners are valid ~−34% Pareto configs. Not a
+  bug — inherent to a measurement-driven superoptimizer (the linear
+  search has the same property); recorded so it is not mistaken for
+  nondeterminism in the sampler.
+- Tail-call-to-loop subagent still studying expressibility (hardest
+  yet — argument-overwrite + back-edge).
