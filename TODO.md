@@ -702,6 +702,20 @@ permutation exhaustion or a wall-clock cap**.
   to spare cores for fast convergence, leaving one for the program; tunable
   per build.
 
+**Infra found (2026-07-10).** The pieces exist: mcc already emits
+`.init_array` constructors (`SHT_INIT_ARRAY` in ELF/Mach-O/PE;
+`__attribute__((constructor))`), and the JIT half is the `-run` path —
+`MCC_OUTPUT_MEMORY` + `mcc_relocate` (`src/mccrun.c`) + `host_runmem_alloc`
+(RWX memory). So §26 assembles as: (a) at `-O4+ --embed-jit`, synthesize a
+constructor into `.init_array` that spawns the `--jit-threads` pool; (b)
+embed the per-function intention trees (`AstArena`, §18) as a data blob in
+the binary; (c) the pool recompiles hot functions via the embedded
+`mcc_relocate` JIT and hot-swaps through the atomic-pointer slot with
+triple-buffer/RCU reclaim. **The dominant cost is embedding a libmcc slice
+(the ~800 KB compiler) + the intention blob into every `-O4+` output** — a
+size/build-system problem as much as a codegen one. That's why it's the
+largest, run-LAST rung.
+
 ## 27. Loop-nest reordering / interchange (very large — DEFERRED, prerequisite-gated)
 
 Deferred (2026-07-10): parked as research behind the value-reference/SSA
