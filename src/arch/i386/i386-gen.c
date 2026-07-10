@@ -756,17 +756,6 @@ ST_FUNC void gjmp_addr(int a) {
 	}
 }
 
-#if 0
-ST_FUNC void gjmp_cond_addr(int a, int op)
-{
-    int r = a - ind - 2;
-    if (r == (signed char)r)
-        g(op - 32), g(r);
-    else
-        g(0x0f), gjmp2(op - 16, r - 4);
-}
-#endif
-
 ST_FUNC int gjmp_cond(int op, int t) {
 	g(0x0f);
 	t = gjmp2(op - 16, t);

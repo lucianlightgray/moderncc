@@ -49,13 +49,13 @@ format files add the local matrix / a qemu spot-check as noted.
 
 Delete outright (verify each still-referenced-nowhere while removing):
 
-- [ ] `mcc.h:1847` — disabled duplicate tool prototypes.
-- [ ] `i386-gen.c:759` — old `gjmp_cond_addr`, superseded by `gjmp_cond`.
-- [ ] `mccpp.c:1059` — unused `tok_size()` helper.
-- [ ] `mccpe.c:317` — unused `pe_sec_flags[]` table.
-- [ ] `arm-gen.c:172` — doubly-nested FPA/OABI deprecation warnings.
-- [ ] `mccgen.c:2286` — old EQ/NE shortcut, superseded by `gvtst_set`.
-- [ ] `mccgen.c:10865` — stray `if(tok=='{') expect(";")` fragment.
+- [x] `mcc.h:1847` — disabled duplicate tool prototypes.
+- [x] `i386-gen.c:759` — old `gjmp_cond_addr`, superseded by `gjmp_cond`.
+- [x] `mccpp.c:1059` — unused `tok_size()` helper.
+- [x] `mccpe.c:317` — unused `pe_sec_flags[]` table.
+- [x] `arm-gen.c:172` — doubly-nested FPA/OABI deprecation warnings.
+- [x] `mccgen.c:2286` — old EQ/NE shortcut, superseded by `gvtst_set`.
+- [x] `mccgen.c:10865` — stray `if(tok=='{') expect(";")` fragment.
 
 (The dormant *trace* blocks — `mccgen.c:521,725`, `mccelf.c:655`,
 `mccpe.c:1107,1354` — are handled by item 9, not deleted here.)

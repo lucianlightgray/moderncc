@@ -1031,38 +1031,6 @@ the_end:;
 	file->buf_ptr = p;
 }
 
-#if 0
-static inline int tok_size(const int* p)
-{
-    switch (*p)
-    {
-    case TOK_CINT:
-    case TOK_CUINT:
-    case TOK_CCHAR:
-    case TOK_LCHAR:
-    case TOK_CFLOAT:
-    case TOK_LINENUM:
-        return 1 + 1;
-    case TOK_STR:
-    case TOK_LSTR:
-    case TOK_PPNUM:
-    case TOK_PPSTR:
-        return 1 + 1 + (p[1] + 3) / 4;
-    case TOK_CLONG:
-    case TOK_CULONG:
-        return 1 + LONG_SIZE / 4;
-    case TOK_CDOUBLE:
-    case TOK_CLLONG:
-    case TOK_CULLONG:
-        return 1 + 2;
-    case TOK_CLDOUBLE:
-        return 1 + LDOUBLE_WORDS;
-    default:
-        return 1 + 0;
-    }
-}
-#endif
-
 ST_INLN void tok_str_new(TokenString *s) {
 	s->str = NULL;
 	s->len = s->need_spc = 0;

@@ -169,16 +169,6 @@ ST_FUNC void arm_init(struct MCCState *s) {
 #define func_double_type func_old_type
 #define func_ldouble_type func_old_type
 ST_FUNC void arm_init(struct MCCState *s) {
-#if 0
-#if !defined(MCC_ARM_VFP)
-    mcc_warning("Support for FPA is deprecated and will be removed in next"
-        " release");
-#endif
-#if !defined(MCC_ARM_EABI)
-    mcc_warning("Support for OABI is deprecated and will be removed in next"
-        " release");
-#endif
-#endif
 }
 #endif
 

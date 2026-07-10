@@ -1846,15 +1846,6 @@ ST_FUNC char *macho_tbd_soname(int fd);
 ST_FUNC void mcc_run_free(MCCState *s1);
 #endif
 
-#if 0
-ST_FUNC int mcc_tool_ar(MCCState* s, int argc, char** argv);
-#ifdef MCC_TARGET_PE
-ST_FUNC int mcc_tool_impdef(MCCState* s, int argc, char** argv);
-#endif
-ST_FUNC int mcc_tool_cross(MCCState* s, char** argv, int option);
-ST_FUNC int gen_makedeps(MCCState* s, const char* target, const char* filename);
-#endif
-
 ST_FUNC void mcc_debug_new(MCCState *s);
 
 ST_FUNC void mcc_debug_start(MCCState *s1);
