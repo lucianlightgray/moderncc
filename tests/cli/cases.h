@@ -155,6 +155,21 @@ static const cli_case_t cli_cases[] = {
 		 "readelf -r {W}/fm4n.o | grep -c log1p ; readelf -r {W}/fm4n.o | grep -c acosh ; readelf -r {W}/fm4n.o | grep -c atanh",
 		 "1\n1\n1\n"},
 
+		{"foldmath_erf", "cpu=x86_64,os=linux,optimizer",
+		 "printf 'double erf(double);double erfc(double);int okc(double a,double b){double d=a-b;if(d<0)d=-d;return d<1e-9;}int okr(double a,double b){double d=a-b;if(d<0)d=-d;double e=b<0?-b:b;return d<=2e-15*e;}int main(void){if(!okc(erf(0.0),0.0))return 1;if(!okc(erf(0.5),0.52049987781304652))return 2;if(!okc(erf(1.0),0.84270079294971489))return 3;if(!okc(erf(2.0),0.99532226501895271))return 4;if(!okc(erf(-1.0),-0.84270079294971489))return 5;if(!okr(erf(1e-10),1.1283791670955126e-10))return 6;if(!okc(erfc(0.0),1.0))return 7;if(!okc(erfc(1.0),0.15729920705028513))return 8;if(!okc(erfc(3.0),2.2090496998585438e-05))return 9;if(!okr(erfc(10.0),2.0884875837625449e-45))return 10;return 0;}\\n' > {W}/fe.c && "
+		 "{MCC} -B{B} -I{I} -ffold-math -O0 -c {W}/fe.c -o {W}/fe_0.o && "
+		 "{MCC} -B{B} -I{I} -ffold-math -O1 -c {W}/fe.c -o {W}/fe_1.o && "
+		 "readelf -r {W}/fe_0.o | grep -c erf ; "
+		 "{MCC} -B{B} -I{I} -ffold-math -O0 -run {W}/fe.c && echo O0OK ; "
+		 "{MCC} -B{B} -I{I} -ffold-math -O1 -run {W}/fe.c && echo O1OK",
+		 "0\nO0OK\nO1OK\n"},
+
+		{"foldmath_erf_must_not", "cpu=x86_64,os=linux,optimizer",
+		 "printf 'double erf(double);double erfc(double);double a(double v){return erf(v);}double b(void){return erfc(0.0/0.0);}\\n' > {W}/fen.c && "
+		 "{MCC} -B{B} -I{I} -ffold-math -O0 -c {W}/fen.c -o {W}/fen.o && "
+		 "readelf -r {W}/fen.o | grep -cw erf ; readelf -r {W}/fen.o | grep -cw erfc",
+		 "1\n1\n"},
+
 		{"O3_float_return_inline", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'static double f(double x){return x*2.0+1.0;} static float g(float x){return x*3.0f+0.5f;} static double h(int a,int b){return (double)a/(double)b+0.25;} static int ii(int x){return x*2+1;} int main(void){ if(f(10.0)!=21.0)return 1; if(g(4.0f)!=12.5f)return 2; if(h(7,2)!=3.75)return 3; if(ii(20)!=41)return 4; return 0; }\\n' > {W}/fi.c && "
 		 "{MCC} -B{B} -I{I} -O0 -run {W}/fi.c && echo O0OK && "
