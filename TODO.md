@@ -317,3 +317,47 @@ GATED.md item 9(a)'s narrower `CONFIG_AST` rename.
       (implicit function declaration), converts the macro to a real function
       and evaluates the call in a spawned `-run` child; driving cli tests
       `macro_eval_recursive` / `macro_eval_off_by_default`.
+
+## 18. Persistent JIT-optimization cache keyed by AST-intention hash
+
+The cache is the hypervisor's memory across runs: for each function it
+stores the best JIT-optimized machine-code version already found and the
+last optimizer-search attempt's inputs, indexed by the **binary hash of
+the original AST "intention" tree** (`mccast` AstArena) so a run resumes
+the search instead of restarting cold — and a different intention (any
+tree edit) simply misses.
+
+- [ ] Add `host_cache_dir(char *buf, int size)` to `mcchost.*` that
+      resolves the OS's most standardized per-user cache directory,
+      appends `mcc/`, and creates it (`host_mkdirs`) — no new env-var
+      names invented, only the platform-established ones, routed through
+      the host abstraction (no raw host-OS macros, so `host-gate-invariant`
+      stays green):
+      - Linux/BSD/Hurd: `$XDG_CACHE_HOME`, else `$HOME/.cache` (XDG Base
+        Directory spec).
+      - macOS (`MCC_HOST_DARWIN`): `$HOME/Library/Caches`.
+      - Windows (`MCC_HOST_WIN32`): `%LOCALAPPDATA%`, else
+        `%USERPROFILE%\AppData\Local`.
+      Return <0 and let callers stay tolerant when no home/cache dir is
+      resolvable (sandboxes, `$HOME` unset).
+- [ ] Compute a stable **intention hash** over the captured AST tree
+      (kinds + ops + type/sym/const payloads in canonical child order —
+      the replay-relevant fields, *not* addresses or capture-order slot
+      ids) so it is reproducible across runs and processes. This is the
+      cache key; a matching hash means "same intention, reuse the prior
+      optimizer result", a miss means "new intention, search fresh".
+- [ ] Cache entry per key = the previously JIT-optimized version of that
+      function (the relocatable/position-independent code bytes the
+      hypervisor produced) **plus the last iteration attempt's optimizer
+      inputs** (the search state / permutation weights / gate settings
+      that produced it) so the next run warm-starts from where the last
+      search left off rather than re-deriving it. File is keyed under the
+      cache dir by `MCC_VERSION` + target triple + intention hash so a
+      compiler-version or target bump can't load a stale/foreign blob.
+- [ ] The hypervisor (`tools/mcchv.c`) reads the cache on start (seed the
+      pattern permutation and JIT kernel from the stored entry when the
+      intention hash matches) and writes back the improved version at the
+      end; a cold miss reproduces today's from-scratch behavior exactly.
+      Ship a cli/unit test: resolve dir, round-trip an entry, prove a hash
+      match warm-starts and a hash mismatch (edited intention) misses, and
+      skip cleanly where no writable home exists.
