@@ -172,6 +172,195 @@ static double cohens_d(const double *a, int na, const double *b, int nb,
 	return d;
 }
 
+static int g_stats;
+
+/* 95% Bayesian credible interval for the mean under a Jeffreys prior: the
+   posterior is Student-t, so the interval is mean +- t_.05(n-1) * se —
+   numerically the t-interval, read as a credible region. */
+static int cred_interval(const double *x, int n, double *lo, double *hi) {
+	double m, se;
+	if (n < 2)
+		return 0;
+	m = vec_mean(x, n);
+	se = sqrt(vec_var(x, n) / n);
+	*lo = m - t_crit_05((double)(n - 1)) * se;
+	*hi = m + t_crit_05((double)(n - 1)) * se;
+	return 1;
+}
+
+/* BF10 via the Wagenmakers (2007) BIC approximation from a pooled two-sample
+   t: dBIC = n*ln(1 + t^2/df) - ln(n), BF10 = exp(dBIC/2). >1 favors "means
+   differ", <1 favors "equal"; robust and dependency-free (approximation, so
+   labeled as such in the report). */
+static int bayes_factor(const double *a, int na, const double *b, int nb,
+												double *bf10, const char **label) {
+	double va, vb, sp2, sp, t, n, df, dbic;
+	if (na < 2 || nb < 2)
+		return 0;
+	va = vec_var(a, na);
+	vb = vec_var(b, nb);
+	df = na + nb - 2;
+	sp2 = ((na - 1) * va + (nb - 1) * vb) / df;
+	sp = sqrt(sp2);
+	if (sp <= 0)
+		return 0;
+	t = (vec_mean(a, na) - vec_mean(b, nb)) / (sp * sqrt(1.0 / na + 1.0 / nb));
+	n = na + nb;
+	dbic = n * log(1.0 + t * t / df) - log(n);
+	*bf10 = exp(dbic / 2.0);
+	*label = *bf10 < 1.0 / 10 ? "strong H0"
+					: *bf10 < 1.0 / 3 ? "subst. H0"
+					: *bf10 < 3			  ? "weak"
+					: *bf10 < 10			? "subst. H1"
+														: "strong H1";
+	return 1;
+}
+
+static double bt_gammln(double xx) {
+	static const double cof[6] = {76.18009172947146,	 -86.50532032941677,
+																24.01409824083091,	 -1.231739572450155,
+																0.1208650973866179e-2, -0.5395239384953e-5};
+	double x = xx, y = xx, tmp, ser = 1.000000000190015;
+	int j;
+	tmp = x + 5.5;
+	tmp -= (x + 0.5) * log(tmp);
+	for (j = 0; j < 6; j++)
+		ser += cof[j] / ++y;
+	return -tmp + log(2.5066282746310005 * ser / x);
+}
+
+static double bt_betacf(double a, double b, double x) {
+	double aa, c, d, del, h, qab = a + b, qap = a + 1, qam = a - 1;
+	int m;
+	c = 1;
+	d = 1 - qab * x / qap;
+	if (fabs(d) < 1e-30)
+		d = 1e-30;
+	d = 1 / d;
+	h = d;
+	for (m = 1; m <= 200; m++) {
+		int m2 = 2 * m;
+		aa = m * (b - m) * x / ((qam + m2) * (a + m2));
+		d = 1 + aa * d;
+		if (fabs(d) < 1e-30)
+			d = 1e-30;
+		c = 1 + aa / c;
+		if (fabs(c) < 1e-30)
+			c = 1e-30;
+		d = 1 / d;
+		h *= d * c;
+		aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2));
+		d = 1 + aa * d;
+		if (fabs(d) < 1e-30)
+			d = 1e-30;
+		c = 1 + aa / c;
+		if (fabs(c) < 1e-30)
+			c = 1e-30;
+		d = 1 / d;
+		del = d * c;
+		h *= del;
+		if (fabs(del - 1) < 3e-7)
+			break;
+	}
+	return h;
+}
+
+/* Regularized incomplete beta I_x(a,b) (Numerical Recipes 6.4). */
+static double bt_betai(double a, double b, double x) {
+	double bt;
+	if (x <= 0)
+		return 0;
+	if (x >= 1)
+		return 1;
+	bt = exp(bt_gammln(a + b) - bt_gammln(a) - bt_gammln(b) + a * log(x) +
+					 b * log(1 - x));
+	if (x < (a + 1) / (a + b + 2))
+		return bt * bt_betacf(a, b, x) / a;
+	return 1 - bt * bt_betacf(b, a, 1 - x) / b;
+}
+
+/* One-way ANOVA F across G>=2 groups; p is the exact upper-tail F survival
+   via the incomplete beta. Returns 0 if fewer than 2 usable groups. */
+static int anova_oneway(double *const *grp, const int *ng, int G, double *F,
+												int *df1, int *df2, double *p) {
+	double grand = 0, ssb = 0, ssw = 0;
+	int g, i, N = 0, used = 0;
+	for (g = 0; g < G; g++) {
+		if (ng[g] < 2)
+			continue;
+		used++;
+		N += ng[g];
+		for (i = 0; i < ng[g]; i++)
+			grand += grp[g][i];
+	}
+	if (used < 2 || N <= used)
+		return 0;
+	grand /= N;
+	for (g = 0; g < G; g++) {
+		double mg;
+		if (ng[g] < 2)
+			continue;
+		mg = vec_mean(grp[g], ng[g]);
+		ssb += ng[g] * (mg - grand) * (mg - grand);
+		for (i = 0; i < ng[g]; i++)
+			ssw += (grp[g][i] - mg) * (grp[g][i] - mg);
+	}
+	*df1 = used - 1;
+	*df2 = N - used;
+	if (ssw <= 0) {
+		*F = ssb > 0 ? 1e30 : 0;
+		*p = ssb > 0 ? 0 : 1;
+		return 1;
+	}
+	*F = (ssb / *df1) / (ssw / *df2);
+	*p = bt_betai(*df2 / 2.0, *df1 / 2.0, *df2 / (*df2 + *df1 * *F));
+	return 1;
+}
+
+static void write_stats(FILE *f, const struct compiler *ccs, int nccs,
+												struct cell *cells) {
+	double *grp[MAXCC];
+	int ng[MAXCC], G = 0, i, j;
+	double F, p;
+	int df1, df2;
+	fprintf(f, "  stats (--stats): 95%% credible interval, BIC-approx Bayes"
+						 " factor vs same-[O] reference\n");
+	for (i = 0; i < nccs; i++) {
+		double lo, hi, bf;
+		const char *blab = "";
+		char cri[40];
+		if (!cells[i].m.ok || !cells[i].nwall)
+			continue;
+		if (cred_interval(cells[i].wall_s, cells[i].nwall, &lo, &hi))
+			snprintf(cri, sizeof cri, "[%.1f,%.1f]", lo * 1000.0, hi * 1000.0);
+		else
+			snprintf(cri, sizeof cri, "%s", "n/a");
+		fprintf(f, "    %-4s %-8s CrI(ms)=%-15s", ccs[i].opt ? ccs[i].opt : "def",
+						ccs[i].key, cri);
+		if (!strcmp(ccs[i].key, "mcc")) {
+			const char *og = ccs[i].opt ? ccs[i].opt + 1 : "";
+			for (j = i + 1; j < nccs; j++) {
+				const char *jg = ccs[j].opt ? ccs[j].opt + 1 : "";
+				if (strcmp(jg, og))
+					break;
+				if (!strcmp(ccs[j].key, "mcc") || !cells[j].m.ok || !cells[j].nwall)
+					continue;
+				if (bayes_factor(cells[i].wall_s, cells[i].nwall, cells[j].wall_s,
+												 cells[j].nwall, &bf, &blab))
+					fprintf(f, "  BF10=%.2g vs %s (%s)", bf, ccs[j].key, blab);
+			}
+		}
+		fprintf(f, "\n");
+		if (!strcmp(ccs[i].key, "mcc") && cells[i].nwall >= 2) {
+			grp[G] = cells[i].wall_s;
+			ng[G++] = cells[i].nwall;
+		}
+	}
+	if (G >= 2 && anova_oneway(grp, ng, G, &F, &df1, &df2, &p))
+		fprintf(f, "    ANOVA across %d mcc -O configs: F(%d,%d)=%.3f  p=%.4f  %s\n",
+						G, df1, df2, F, p, p < 0.05 ? "*" : "ns");
+}
+
 static struct meas measure_once(const char *const *argv) {
 	struct meas m;
 	unsigned t0;
@@ -507,6 +696,8 @@ static void write_table(FILE *f, const struct compiler *ccs, int nccs,
 			fprintf(f, "%9s ", "n/a");
 		fprintf(f, "%8s %7s %-17s  %s\n", wall, wsd, ci, vs);
 	}
+	if (g_stats)
+		write_stats(f, ccs, nccs, cells);
 	free(cells);
 }
 
@@ -956,10 +1147,13 @@ int main(int argc, char **argv) {
 		else if ((!strcmp(argv[i], "--repeats") || !strcmp(argv[i], "--reps")) &&
 						 i + 1 < argc)
 			repeats = atoi(argv[++i]);
+		else if (!strcmp(argv[i], "--stats"))
+			g_stats = 1;
 	}
 	if (!mccpath || !out) {
 		fprintf(stderr, "usage: mccbench --mcc <exe> --out <file> [--srcroot D] "
-										"[--builddir D] [--plat P] [--junit XML] [--repeats N]\n");
+										"[--builddir D] [--plat P] [--junit XML] [--repeats N] "
+										"[--stats]\n");
 		return 2;
 	}
 	if (repeats < 1)

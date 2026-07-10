@@ -1579,3 +1579,127 @@ spot-check, per increment. Every item env-gated on its own flag
 pattern. Builds on §32a/§32b (join dataflow), §32c (fresh temp, for
 §33c's multi-read fallback), the Tier-4 graft path (src/mccast.c:1857-1997),
 and §18/§21/§25/§31 for search + scoring integration.
+
+# Doc-audit gap backlog (added 2026-07-10)
+
+Items surfaced by a full `*.md` audit (OPTIMIZE.md / FIX.md / STATUS.md /
+MCC.md / EXCESS.md) that were **tracked nowhere** in the numbered ladder or
+the arm64 queue. NOTE: the conformance / ABI / CST / promotion-quality
+backlog (A1 spill-slot sharing, `p->m`/XMM8-15 promote, arm64/riscv64
+promotion, Tier-4 default policy, conformance §6-A/§6-B, CST symref-shadow /
+`H_e` / slice-G, i386 TLS, skipped-test ungating audit, CMake normalization)
+already lives in **MCC.md §10 + EXCESS.md** — that is the intended home for
+it and it is deliberately **not** duplicated here. Only genuinely-untracked
+items are added below.
+
+## 34. BUG: arm64 `load()` r-flag mask rejects §30's bit-flag SValue (correctness, latent)
+
+- [ ] On arm64, setting `MCC_AST_INLINE_NODES` (any value) trips
+      `arm64-gen.c:650 load(1,(32,400,0))` (FIX.md:234-237): §30's bit-flag
+      transform (`ast_bf_build`) produces an SValue whose r-field carries a
+      flag not in the arm64 `load()` accepted mask — the "arm64 load()
+      r-flag mask" class. Masked today only because CI never sets that env,
+      so the bench/search never exercises it — but it **blocks the
+      `MCC_AST_INLINE_NODES` search dimension (§23) on arm64 entirely** and
+      will resurface the moment §31 registers bitflag×inline on that target.
+      Fix: extend the arm64 `load()` r-flag mask (`src/arch/arm64/arm64-gen.c`
+      ~:650) to accept the bit-flag r-field, or normalize the SValue in
+      `ast_bf_build` so it presents a mask-legal r. Gate: `MCC_AST_BITFLAG=1
+      MCC_AST_INLINE_NODES=8` on an arm64 build compiles + runs the bitflag
+      corpus (native arm64 — qemu can't be trusted per the standing note);
+      x86_64 ctest/fixpoint unaffected (x86_64 `load()` already accepts it).
+
+## 35. Sethi–Ullman evaluation-order numbering (large, codegen-order, byte-identity risk)
+
+- [ ] OPTIMIZE.md Tier-2 catalog (:81-82) + Frontier (:651): evaluation-order
+      / register-pressure numbering in the replay emitter — reorder
+      commutative operand emission to cut register pressure. Untracked by
+      §17-§33. Codegen-order change ⇒ the byte-identity gate is the hard part
+      (any reorder perturbs `-O0..-O3` bytes unless gated behind a default-off
+      pass like the rest of the ladder). Same landing shape as the other AST
+      passes: a default-off `MCC_AST_*` gate, exec-golden + fixpoint (off AND
+      forced-on) + native arm64 spot-check. Feeds §31 as a strategy.
+
+## 36. Chaitin–Briggs graph-coloring register allocation (largest, codegen — run LAST)
+
+- [ ] OPTIMIZE.md Tier-3 catalog (:90-92) + Frontier (:651), self-described as
+      "largest item, last." Replace the pinned-register promotion heuristic
+      (`ast_plan_promotion`, `ast_promo_*`, src/mccast.c) with a real
+      interference-graph coloring allocator. Untracked by §17-§33 — the single
+      largest algorithm OPTIMIZE.md names with no ladder home. Prerequisite it
+      subsumes: the A1 backward-liveness spill-slot-sharing item already in
+      MCC.md §10/EXCESS (coloring gives interval sharing for free). Enormous,
+      correctness-critical (the promotion machinery is the source of the FIX.md
+      reemit/promote regressions); lands default-off, fixpoint-gated (off AND
+      forced-on) + per-target byte-identical objects + native arm64/riscv64.
+
+## 37. Bench-statistics roadmap — Bayesian + ANOVA inference (medium, tools-only)
+
+`tools/bench.c` ships Welch's t-test + Cohen's d + percentile-bootstrap 95%
+CI. OPTIMIZE.md's statistical taxonomy lists three **planned** methods with
+no tracker — tools-only, cannot touch the compiler / fixpoint:
+
+- [x] **Credible interval** (OPTIMIZE.md:150-155,162): Bayesian counterpart to
+      the bootstrap CI over the per-cell wall-time samples.
+- [x] **Bayes factor** (OPTIMIZE.md:123-128,150-155): the Bayesian
+      significance verdict alongside the Welch `*`/`ns` column, for
+      "faster vs reference" decisions the t-test only frequentist-tests.
+- [x] **ANOVA** (OPTIMIZE.md:160): one-way ANOVA to compare >2 `-O` configs
+      at once instead of the current pairwise-vs-reference Welch tests.
+- [x] Gate: `tools/bench.c` unit/self-check only (no compiler surface, no
+      fixpoint/ctest-codegen impact); additive columns, existing output
+      unchanged unless a new `--stats=bayes|anova` flag is passed.
+
+**LANDED (2026-07-10).** `tools/bench.c` gains three stat functions behind
+a new `--stats` flag (default off, existing report byte-unchanged without
+it): `cred_interval` (95% t-based credible interval under a Jeffreys prior,
+reusing `t_crit_05`), `bayes_factor` (BF10 via the Wagenmakers 2007 BIC
+approximation from a pooled two-sample t, labeled strong/subst./weak H0/H1),
+and `anova_oneway` (one-way F across the mcc `-O` configs, exact upper-tail
+p-value via a Numerical-Recipes regularized incomplete beta
+`bt_betai`/`bt_betacf`/`bt_gammln`). `write_stats` prints a per-workload
+block: per-cell CrI, per-`-O`-group Bayes factor vs same-config reference,
+and the cross-config ANOVA. Verified: math unit-checked against known values
+(`betai(0.5,0.5,0.5)=0.5`, `betai(3,1,0.5)=0.125`, ANOVA `F(2,6)=3.0
+p=0.125`, CrI/BF sign behavior); compiles clean (0 warnings from the new
+code); end-to-end run confirms `--stats` adds only the block and the default
+output is structurally identical without it. Compiler/fixpoint untouched
+(tool-only; `tools/bench.c` is not in the default build or ctest codegen
+path). Naming note: the TODO proposed `--stats=bayes|anova`; shipped as a
+single `--stats` toggle that emits all three (simpler; all are cheap).
+
+## 38. Live CI-validation open items (blocked on non-x86_64-Linux hardware)
+
+Open validations from FIX.md that need a runner this repo's local x86_64
+Linux box does not have — parked here so they are tracked, not lost:
+
+- [ ] **macos-x86_64 `[-O3]` rows n/a** (FIX.md:239-251): may be the same
+      reemit/promote bug as the landed arm64 fix (arch-independent). Retest
+      the CI matrix first; if still red, reproduce via cross mcc→Mach-O
+      (`-DMCC_TARGET_MACHO=1`) needing a Darwin runner or
+      `tests/qemu/apple-libc` to execute stage2.
+- [ ] **CI re-checks pending after three landed FIX.md fixes**: the
+      `vcheck_cmp`-before-`gfunc_call` guard (FIX.md:71 — recheck
+      macos-arm64 / msvc-arm64), the `ast_fn_faithful` reemit gate
+      (FIX.md:222-223 — recheck macos-x86_64 + arm64/msvc), and the promote
+      frame-slot change (FIX.md:253-259 — ELF `-O2/-O3` codegen, CI matrix).
+      All verified locally; only the cross-target CI runs remain.
+- [ ] **static-glibc self-host gap** (README.md:12 / MCC.md:25): static-glibc
+      via mcc hits a `__pthread_initialize_minimal` gap (musl is the
+      fully-static path). Decide finish-or-document-as-permanent.
+
+## 39. Doc-staleness reconciliation (docs-only, no code)
+
+Known-stale prose that later work already contradicts — TODO §32 itself
+(:1427-1429) asks for the first of these:
+
+- [ ] OPTIMIZE.md **Frontier** (:636-660) + Scoreboard **"Open / blocked"**
+      (:34-40): both predate the iter-25/27 CSE/LICM landings and TODO §32's
+      "no new node kind" resolution; re-point them at the §32 decomposition.
+- [ ] MCC.md §10 (:242-243): the `-O1` soundness backlog + wiring rows lag
+      EXCESS.md (§19 CLEARED, §20 UNPARKED 2026-07-09) — reconcile to EXCESS.
+- [ ] STATUS.md §25 row: still says "JIT cpu tier pending" though N4 landed
+      `MCC_AST_JITSCORE` (2026-07-10) — update to match.
+- [ ] OPTIMIZE.md Tier-1 note (:51-55): the sin/cos/exp "stays open until a
+      determinism story exists" text is stale — landed as `-ffold-math`
+      (iterations 31/33/35-38); mark it done.
