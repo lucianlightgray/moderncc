@@ -441,10 +441,10 @@ Implementation (decided 2026-07-10):
 - **Frontier = two-phase coarse-to-fine cursor.** The per-strategy search
   is macro-then-micro (§31): a greedy binary divide-and-conquer narrows the
   strategy's `[MIN,MAX)` range (probe lo/mid/hi, keep the better half) until
-  the range is ≤ the micro-threshold (~64), then an exhaustive sweep of that
-  range. Persist the phase, the surviving `[lo,hi)` macro bounds, the micro
-  sweep cursor, and the best `{seed, cpu_ns, peak_kb, size}` — so a resumed
-  run continues mid-narrowing or mid-sweep exactly where it stopped.
+  the remaining range fits one time slice, then an exhaustive sweep of it.
+  Persist the phase, the surviving `[lo,hi)` macro bounds, the micro sweep
+  cursor, and the best `{seed, cpu_ns, peak_kb, size}` — so a resumed run
+  continues mid-narrowing or mid-sweep exactly where it stopped.
 - **Write protocol = lock + durable-atomic + A/B keep-best.** Hold an
   advisory lock on the entry (`host_lock`: POSIX `flock(LOCK_EX)`, Windows
   `LockFileEx`; auto-released on close/crash, no stale locks), re-read the
@@ -458,11 +458,12 @@ Implementation (decided 2026-07-10):
   A run that made less progress or found a worse best can never clobber a
   better cached optimizer.
 - **Incremental, never end-only.** The record is rewritten (durable-atomic,
-  above) on **every best(k) improvement** and at most every few seconds —
-  not just at search end. So a readily-available recovery point always
-  exists on disk; the stop path, an uncatchable SIGKILL, or power loss lose
-  at most the current in-flight eval, never committed progress. This is what
-  lets §31's stop return in ~1-2 s without finishing any eval.
+  above) on a **fixed ~5 s interval** during the search (and immediately on
+  the save-and-stop signal, which never waits for the tick) — not just at
+  search end. So a readily-available recovery point always exists on disk;
+  an interrupt, uncatchable SIGKILL, or power loss lose at most ~5 s of
+  progress plus the in-flight eval, never more. This is what lets §31's stop
+  return in ~1-2 s without finishing any eval.
 - **No eviction.** One small file per TU/fn under `host_cache_dir()`;
   the dir grows with distinct inputs and is user/OS-clearable. Ship a
   documented `mcc --clear-cache` (equivalent to removing the dir).
@@ -810,13 +811,15 @@ unbounded.
 
 Per-strategy search shape = **macro binary narrow, then micro exhaustive
 sweep** (decided). Within its `[MIN,MAX)` range a strategy first probes
-lo/mid/hi and keeps the better half, recursing until the range is ≤ ~64
-configs (the micro-threshold), then exhaustively sweeps that range. The
-macro phase finds the promising coarse region in ~log2 probes; the micro
-sweep finds the local optimum inside it. `MIN..MAX` is seeded from the
-`-g` hot-value cache when present (§25) so ranges track values that
-actually run. State (phase / macro bounds / micro cursor) lives in the §21
-checkpoint, so this is fully resumable and interruptible.
+lo/mid/hi and keeps the better half, recursing until the **whole remaining
+range can be swept within the strategy's current time slice** (adaptive
+micro-threshold — fast evals sweep a wide range, slow evals narrow further
+first), then exhaustively sweeps it. The macro phase finds the promising
+coarse region in ~log2 probes; the micro sweep finds the local optimum
+inside it. `MIN..MAX` is seeded from the `-g` hot-value cache when present
+(§25) so ranges track values that actually run. State (phase / macro
+bounds / micro cursor) lives in the §21 checkpoint, so this is fully
+resumable and interruptible.
 
 This is the harness §22/§24/§25 plug into: §24 (hot-slice) becomes the
 per-round time allocator across strategies × functions; §25 is the scoring
@@ -826,4 +829,10 @@ Decided 2026-07-10: lexicographic **faster → memory → size** (non-runnable:
 memory → size); strategies **strictly time-bound**, not depth-limited;
 best-carry `k = 4` (default); rounds double the time slice until the budget
 is spent, early-dropping a strategy after 2 no-gain rounds; interruptible
-via the save-checkpoint-and-stop signal.
+via the save-checkpoint-and-stop signal. **Strategy API = static vtable in
+a registry** `{name, [MIN,MAX), decode(seed)→config, apply(config,ast)→ast',
+probe(range,budget)→best(k)}` — `apply` (pure) composes in the beam, `probe`
+drives the search, scheduler owns control flow. **Base time-slice
+adaptive**: `first_eval_time × factor`, so the round-1 ×1 slice sizes to the
+workload's per-eval cost. **Micro-threshold adaptive** (sweep when the range
+fits the slice, above).
