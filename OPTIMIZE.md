@@ -895,3 +895,33 @@ machinery, and at what risk — to decide whether to lift the scope.
   self-host-fixpoint helper. Every un-blocked named algorithm and the
   full C99 transcendental fold set are done; the rest are the documented
   architecturally-blocked frontier.
+
+### 2026-07-10 — iteration 37 (-ffold-math erf/erfc — Gaussian error function)
+
+- **`-ffold-math` extended to erf/erff/erfc/erfcf** — the statistical-analysis
+  core (normal-distribution kernel). musl s_erf.c coefficients verbatim;
+  foldm_erfc1/foldm_erfc2 branch structure; reuses foldm_exp/foldm_fabs/foldm_hi.
+- **Accuracy ≤1 ulp vs glibc** across the spread; erf(1e-10) near-zero and
+  erfc(10)=2.088e-45 small-tail fold exactly (0 ulp). erf(−x)=−erf(x);
+  inf folds to exact limits (erf±inf=±1, erfc+inf=0, erfc−inf=2); nan → call.
+- Tests foldmath_erf + foldmath_erf_must_not; 1842 green, fixpoint identical,
+  default -O0 mccpp.o byte-identical.
+
+### 2026-07-10 — iteration 38 (-ffold-math tgamma/lgamma — gamma function; fold-math thread closed)
+
+- **`-ffold-math` extended to tgamma/tgammaf/lgamma/lgammaf** — the
+  gamma/beta/chi-squared/t/F distribution normalizing constant. musl
+  e_lgamma_r.c + tgamma.c Lanczos coefficients; new foldm_powg (fdlibm
+  double-double pow, ≤1 ulp) + foldm_floor; reuses foldm_log/foldm_exp.
+- **Folds x>0 only** — zero, negatives and poles left as calls (conservative;
+  no reflection/sin-sign hazard). lgamma ≤2 ulp vs glibc; tgamma ≤2 ulp at the
+  required points, mid-range matches musl's own Lanczos (faithful port).
+  tgamma overflow → +inf; +inf folds; nan/−inf → call.
+- Tests foldmath_gamma + foldmath_gamma_must_not; 1844 green, fixpoint
+  identical, default -O0 mccpp.o byte-identical.
+- **`-ffold-math` now folds 27 transcendental families** — every
+  statistically-meaningful C99 <math.h> function (elementary transcendentals +
+  erf/erfc + gamma). Remaining `<math.h>` folds (Bessel j0/j1/y0/y1) are
+  oscillatory/obscure and out of the campaign's on-theme scope. **The
+  fold-math thread and the named-algorithm optimization-pass thread are both
+  at genuine completion; the remaining frontier is architecturally blocked.**
