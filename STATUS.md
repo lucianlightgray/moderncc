@@ -34,6 +34,15 @@ default compiler is unchanged.
 | 32 | Value-reference-node feasibility study | **resolved** (no new node kind; build order §32a→§32c) | `fde58307` |
 | 32a | SCCP value-lattice (structured-join const-prop) | **landed** — `MCC_AST_CPROP_JOIN` (default off): fork/meet at If joins, invariant-lattice loop descent, flat-scan fallback via visited bitmap; ctest green with the gate forced on corpus-wide; fixpoint byte-identical in both modes | — |
 | 32b | Cross-join CSE/LICM (dominator-carried availability) | **landed** — `MCC_AST_CSE_JOIN` (default off): arms inherit the dominating table, node-identity meet at joins, loop LICM runs on the richer incoming table then descends with invariant entries; same gates (ctest with both joins forced on, dual-mode fixpoint) | — |
+| 32c | Synthetic-temp infrastructure | **partial / blocked** — the fresh-temp *carve* infra is landed and exercised (the §23 inliner carves a fresh strictly-negative slot per grafted return); the *value-materializing consumer* pass is not landed and is blocked by **`-O3` self-host codegen non-determinism** (same compiler + source → different bytes, so no `-O3` fixpoint exists to validate fresh-temp ON vs OFF). See TODO N2 box-3 / §40.3. | — |
+| 25 | Frontend-JIT candidate measurement | **functional** — `.text` objective + the `MCC_AST_JITSCORE` cpu+RSS scoring tier (best-of-K `-run` timing via `wait4` + `getrusage`; W^X/MAP_JIT runmem confirmed on Apple silicon) | `9140939c` |
+
+**Rung table scope:** rungs above cover §18/§20–§32 + §25's JIT tier. Live TODO
+items **§33** (call-window), **§35** (Sethi–Ullman), **§36** (Chaitin–Briggs),
+**§37** (bench-stats, landed), **§38** (CI-blocked), **§39/§40** are tracked in
+TODO.md, not here — this table is no longer the complete ladder snapshot. The
+governing near-term blocker is the **`-O3` self-host determinism** milestone
+(TODO §40.3), which gates §32c and N2 box-3.
 
 ## User-facing surface delivered
 

@@ -1775,3 +1775,94 @@ Known-stale prose that later work already contradicts — TODO §32 itself
       determinism story exists" text is stale — landed as `-ffold-math`
       (iterations 31/33/35-38); mark it done. (Done: clause updated to
       LANDED behind `-ffold-math`.)
+
+# 40. TDD execution plan & gap closure (added 2026-07-10)
+
+Consolidated from a full re-read of TODO.md + STATUS.md + OPTIMIZE.md + MCC.md
++ FIX.md + EXCESS.md + README.md + CONFIG.md + BUILD.md. Every open item is
+bucketed by whether it can be *implemented and validated in this environment*
+(native arm64-darwin, Apple M1 Pro; no x86_64-Linux/msvc/riscv64/Darwin-x86
+runner). The standing landing gate for any compiler change is unchanged:
+default-off `MCC_AST_*` env, full ctest green, 3-stage self-host fixpoint
+byte-identical (gate off AND forced-on), native arm64 spot-check, per
+increment.
+
+## 40.1 Untracked gaps now registered as items
+
+- [ ] **§6-A conformance gap 1 — plain `inline` with no external definition
+      emits a global** (MCC.md:148-149, widest-impact): a call to such an
+      `inline` links rc0 where gcc/clang fail (no external def must be
+      emitted per C99/C11 §6.7.4). TDD: golden test asserting an undefined-
+      symbol link error; fix symbol emission so a bare-`inline` def is not
+      externally provided. Correctness, not gated (matches the reference
+      compilers). Independent of the AST optimizer.
+- [ ] **§6-A gap 2** — K&R implicit-`int` params warn-only where consensus
+      errors (MCC.md:149). TDD: negative test → promote to error under the
+      right std.
+- [ ] **§6-A gap 3** — `va_start` 2nd-arg check silent on x86_64-SysV/i386
+      (MCC.md:150); needs SysV `gen_va_start` rework. TDD: negative test.
+- [ ] **§6-A gap 4** — bundled `<threads.h>` shadows the system header
+      (MCC.md:151). TDD: include-order test.
+- [ ] **STATUS.md rung table is stale past §32** (Agent-A gap 1/2): it stops
+      at §32 and frames §32c as "fully scoped," omitting the `-O3`
+      self-host-determinism blocker (N2 box-3) and §33/§35/§36/§37/§38/§39.
+      Docs-only: extend the rung table and add the `-O3`-determinism
+      milestone note. No code, no fixpoint impact.
+
+## 40.2 Bucket A — implementable + validatable now (TDD, this box)
+
+Build order, cheapest-first; each lands green before the next starts (all
+touch `src/mccast.c`, so serialize to avoid worktree merge conflicts):
+
+1. [ ] **§33a — cross-`Invoke` availability** (`MCC_AST_CALL_WINDOW`,
+      default off). Drop the `AST_Invoke` table reset in
+      `ast_cprop_stmts`/`ast_cse_stmts`, keeping only `ast_cprop_escapes`-
+      proven non-escaping entries. The "smallest already-named increment."
+      TDD: gate-off byte-identity (fixpoint), gate-on exec-golden + fire
+      evidence + full ctest. *(in progress — worktree)*
+2. [ ] **§30 additional encodings** (extend `ast_bf_*`, same
+      `MCC_AST_BITFLAG` search dim): `&&`-of-`!=` complement, biased ranges
+      (consts ≥64 via a subtract-bias before the shift-mask), value-table
+      dispatch for differing bodies. Additive, gated; TDD = edge-key sweep
+      vs -O0 reference per encoding (the N3 harness).
+3. [ ] **§32a refinements** — fall-through-aware meets + op-5 `for(;;)`
+      classification + switch(op 6) arm meets in the `MCC_AST_CPROP_JOIN`
+      lattice. Gated (already default-off); TDD = cpropjoin.sh + corpus
+      force-on.
+4. [ ] **§35 — Sethi–Ullman evaluation-order numbering**
+      (`MCC_AST_EVALORDER`, default off). Reorder commutative operand
+      emission to cut register pressure in the replay emitter. Highest
+      byte-identity risk in this bucket → the gate-off fixpoint check is the
+      real test; land after 1-3 prove the pattern.
+
+## 40.3 Bucket B — milestone-scale (plan only; do NOT attempt piecemeal)
+
+Each is multi-day, correctness-critical, and would jeopardize the green/
+fixpoint invariant if rushed. Sequenced, not started:
+- **-O3 self-host determinism** (blocks N2 box-3): root-cause the arena-
+  pointer / hash-order leakage that makes `mcc -O3 src/mcc.c` non-repeatable;
+  prerequisite for any `-O3` self-host fixpoint. TDD entry point exists (a
+  same-compiler-twice determinism check) but the fix is deep.
+- **§32c value-materializing fresh-temp LICM** — needs the above first.
+- **§36 Chaitin–Briggs graph-coloring regalloc** — largest, replaces
+  `ast_plan_promotion`; run last.
+- **§26 `--embed-jit` runtime engine**, **§33b/c/d/e**, **§27/§28**,
+  **§22 true per-function re-emit** (blocked on the AST-clone/destructive-
+  mutation issue).
+
+## 40.4 Bucket C — blocked on hardware not present here
+
+Cannot be validated on arm64-darwin; defer to CI / a matching runner:
+- **§38** macos-x86_64 `-O3` retest, msvc/arm64 CI re-checks, static-glibc
+  self-host gap (needs Darwin-x86 / msvc / glibc runners).
+- **N2 box-4 riscv64**, **EXCESS** i386 TLS `R_386_TLS_GD/LDM`, arm64/riscv64
+  Tier-3 register-model extension + qemu validation, i386-fastcall-abi.
+
+## 40.5 Method
+
+Divide-and-conquer via subagents in isolated git worktrees, one per Bucket-A
+item, serialized on `src/mccast.c`. Each agent must return its diff, the full
+ctest summary, gate-off byte-identity evidence, and gate-on fire+correctness
+evidence; the main loop verifies green (ctest + fixpoint off/on + arm64
+spot-check) before committing to `main`. Docs-only items (40.1 STATUS refresh,
+Bucket-C tracking) land directly. Bucket-B stays documented, not coded.
