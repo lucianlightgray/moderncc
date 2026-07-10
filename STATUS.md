@@ -31,7 +31,8 @@ compiler is unchanged.
 | 29 | `Convert` representation optimizer | **increment** | `ad55ede8` (redundant integer-cast elimination) |
 | 30 | Bit-flag conditional optimizer | **functional** | `fb845871` (detection), transform landed (`ast_bf_run`), `676c1836` (threshold registered as a `-O<N>` search dimension) |
 | 31 | Strategy-portfolio scheduler | **substantial** | `f67c2234` (2-strategy), `e3a2f2d7` (3rd strategy), `c5f3349f` (save-and-stop), `35a8ef70` (watchdog), `3db65b60` (concurrency) |
-| 32 | Value-reference-node feasibility study | **resolved** (no new node kind; build order §32a→§32c, scoping findings in TODO §32a) | `fde58307` |
+| 32 | Value-reference-node feasibility study | **resolved** (no new node kind; build order §32a→§32c) | `fde58307` |
+| 32a | SCCP value-lattice (structured-join const-prop) | **landed** — `MCC_AST_CPROP_JOIN` (default off): fork/meet at If joins, invariant-lattice loop descent, flat-scan fallback via visited bitmap; ctest green with the gate forced on corpus-wide; fixpoint byte-identical in both modes | — |
 
 ## User-facing surface delivered
 

@@ -1031,8 +1031,14 @@ gates green at each commit:
   winner selects threshold 3 on `.text`. Found while validating: `so_copy`
   had dropped the exec bit of every fresh `-O4+` executable since
   `f959078e` — now propagates the candidate's mode.
-- **§32a scoped, not started** — fork/meet extension of `ast_cprop_block`
-  designed against the live machinery; key hazard recorded in TODO §32a:
-  `AST_If` op 5 is *both* `for(;;)` and ternary (and `AST_Jump` op 5 is
-  both goto and the TCO jumps), so no pass may classify loops by op range
-  alone.
+- **§32a landed** — structured-join const-prop (`MCC_AST_CPROP_JOIN`,
+  default off): `ast_cprop_stmts` forks the lattice at If op 0 arms and
+  meets at the join, descends loops (ops 2..4 only — op 5 is the
+  ternary/`for(;;)` overload, recorded in TODO §32a) with an
+  `ast_licm_written`-pre-killed invariant lattice, bails join-∅ on any
+  `AST_Jump` in an arm, and hands undescended BasicBlocks to the flat
+  per-block scan via a visited bitmap (coverage strictly ≥ the old pass).
+  Validated: ctest 1862 with the gate off AND forced on corpus-wide,
+  fixpoint byte-identical in both modes (the ON fixpoint self-hosts three
+  generations with the pass active), new `ast-cprop-join` differential
+  exec test across `-O0..-O3` × gate on/off.

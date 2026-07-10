@@ -432,6 +432,7 @@ static int ast_graft_budget_max = 2048;
 static int ast_cost_env;
 static int ast_bitflag_env;
 static int ast_bitflag_min;
+static int ast_cprop_join_env;
 static int ast_search_worker;
 static uint64_t ast_intention_acc;
 static const char *ast_hash_out;
@@ -677,6 +678,7 @@ void ast_configure(MCCState *s1) {
 	ast_bitflag_min = ast_env_int("MCC_AST_BITFLAG", 5);
 	if (ast_bitflag_min < 3)
 		ast_bitflag_min = 5;
+	ast_cprop_join_env = ast_env_gate("MCC_AST_CPROP_JOIN", 0);
 	ast_intention_acc = 0;
 	ast_hash_out = getenv("MCC_AST_HASH_OUT");
 	ast_search_worker = getenv("MCC_SEARCH_WORKER") != NULL;
@@ -3952,9 +3954,146 @@ static void ast_cprop_block(AstArena *a, AstLocal bb) {
 	}
 }
 
+typedef struct {
+	int koff[AST_CPROP_MAX];
+	int ktt[AST_CPROP_MAX];
+	uint64_t kval[AST_CPROP_MAX];
+	int kn;
+} AstCpropState;
+
+static void ast_cprop_state_save(AstCpropState *st) {
+	st->kn = ast_cprop_kn;
+	memcpy(st->koff, ast_cprop_koff, (size_t)ast_cprop_kn * sizeof(int));
+	memcpy(st->ktt, ast_cprop_ktt, (size_t)ast_cprop_kn * sizeof(int));
+	memcpy(st->kval, ast_cprop_kval, (size_t)ast_cprop_kn * sizeof(uint64_t));
+}
+
+static void ast_cprop_state_load(const AstCpropState *st) {
+	ast_cprop_kn = st->kn;
+	memcpy(ast_cprop_koff, st->koff, (size_t)st->kn * sizeof(int));
+	memcpy(ast_cprop_ktt, st->ktt, (size_t)st->kn * sizeof(int));
+	memcpy(ast_cprop_kval, st->kval, (size_t)st->kn * sizeof(uint64_t));
+}
+
+static void ast_cprop_state_meet(const AstCpropState *st) {
+	int i = 0;
+	while (i < ast_cprop_kn) {
+		int j, keep = 0;
+		for (j = 0; j < st->kn; j++)
+			if (st->koff[j] == ast_cprop_koff[i]) {
+				keep = st->ktt[j] == ast_cprop_ktt[i] &&
+							 st->kval[j] == ast_cprop_kval[i];
+				break;
+			}
+		if (keep)
+			i++;
+		else
+			ast_cprop_kill(ast_cprop_koff[i]);
+	}
+}
+
+static int ast_cprop_opaque(AstArena *a, AstLocal n) {
+	if (n == AST_NONE)
+		return 0;
+	if (ast_kind(a, n) == AST_Jump)
+		return 1;
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		if (ast_cprop_opaque(a, c))
+			return 1;
+	return 0;
+}
+
+static unsigned char *ast_cprop_vis;
+static int ast_licm_written(AstArena *a, AstLocal n, int off);
+static int ast_sccp_has_label(AstArena *a, AstLocal n);
+
+static void ast_cprop_stmts(AstArena *a, AstLocal bb) {
+	if (bb == AST_NONE || ast_kind(a, bb) != AST_BasicBlock)
+		return;
+	ast_cprop_vis[bb] = 1;
+	for (AstLocal s = ast_first_child(a, bb); s != AST_NONE; s = ast_next_sib(a, s)) {
+		uint16_t k = ast_kind(a, s);
+		if (k == AST_Store) {
+			AstLocal lval = ast_child(a, s, 0), val = ast_child(a, s, 1);
+			if (!ast_cprop_safe(a, lval) || !ast_cprop_safe(a, val)) {
+				ast_cprop_kn = 0;
+				continue;
+			}
+			ast_cprop_rewrite(a, val, 0);
+			ast_cprop_rewrite(a, lval, 1);
+			int off, tt;
+			if (ast_cprop_is_local(a, lval, &off, &tt) && !ast_cprop_escapes(a, off)) {
+				int lt;
+				uint64_t lv;
+				if (ast_ident_cval(a, val, &lt, &lv) && lt == tt)
+					ast_cprop_gen(off, tt, lv);
+				else
+					ast_cprop_kill(off);
+			}
+		} else if (k == AST_Return) {
+			if (ast_first_child(a, s) != AST_NONE &&
+					ast_cprop_safe(a, ast_first_child(a, s)))
+				ast_cprop_rewrite(a, ast_first_child(a, s), 0);
+			ast_cprop_kn = 0;
+		} else if (k == AST_BasicBlock) {
+			ast_cprop_stmts(a, s);
+		} else if (k == AST_If && ast_op(a, s) == 0) {
+			AstLocal cond = ast_child(a, s, 0);
+			AstLocal tb = ast_child(a, s, 1), eb = ast_child(a, s, 2);
+			if (cond != AST_NONE && ast_cprop_safe(a, cond))
+				ast_cprop_rewrite(a, cond, 0);
+			if (ast_cprop_opaque(a, tb) || ast_cprop_opaque(a, eb)) {
+				ast_cprop_kn = 0;
+				continue;
+			}
+			AstCpropState in, tout;
+			ast_cprop_state_save(&in);
+			ast_cprop_stmts(a, tb);
+			ast_cprop_state_save(&tout);
+			ast_cprop_state_load(&in);
+			ast_cprop_stmts(a, eb);
+			ast_cprop_state_meet(&tout);
+		} else if (k == AST_If && ast_op(a, s) >= 2 && ast_op(a, s) <= 4) {
+			for (int i = 0; i < ast_cprop_kn;)
+				if (ast_licm_written(a, s, ast_cprop_koff[i]))
+					ast_cprop_kill(ast_cprop_koff[i]);
+				else
+					i++;
+			if (ast_sccp_has_label(a, s)) {
+				ast_cprop_kn = 0;
+				continue;
+			}
+			AstCpropState in;
+			ast_cprop_state_save(&in);
+			for (AstLocal c = ast_first_child(a, s); c != AST_NONE;
+					 c = ast_next_sib(a, c)) {
+				if (ast_kind(a, c) == AST_BasicBlock) {
+					ast_cprop_stmts(a, c);
+					ast_cprop_state_load(&in);
+				} else if (ast_cprop_safe(a, c)) {
+					ast_cprop_rewrite(a, c, 0);
+				}
+			}
+		} else {
+			ast_cprop_kn = 0;
+		}
+	}
+}
+
 static int ast_cprop_run(AstArena *a) {
 	ast_cprop_folds = 0;
 	AstLocal nn = ast_count(a);
+	if (ast_cprop_join_env && nn) {
+		ast_cprop_vis = mcc_mallocz(nn);
+		ast_cprop_kn = 0;
+		ast_cprop_stmts(a, ast_root(a));
+		for (AstLocal n = 0; n < nn; n++)
+			if (ast_kind(a, n) == AST_BasicBlock && !ast_cprop_vis[n])
+				ast_cprop_block(a, n);
+		mcc_free(ast_cprop_vis);
+		ast_cprop_vis = NULL;
+		return ast_cprop_folds;
+	}
 	for (AstLocal n = 0; n < nn; n++)
 		if (ast_kind(a, n) == AST_BasicBlock)
 			ast_cprop_block(a, n);

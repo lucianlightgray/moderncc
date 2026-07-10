@@ -3409,6 +3409,11 @@ if(MCC_BUILD_TESTS)
                         "${_mcc_exe}" "${CMAKE_BINARY_DIR}")
             set_tests_properties(superopt-perfn-cache PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+            add_test(NAME ast-cprop-join
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cpropjoin.sh"
+                        "${_mcc_exe}" "${CMAKE_BINARY_DIR}")
+            set_tests_properties(ast-cprop-join PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
         endif()
     endif()
 

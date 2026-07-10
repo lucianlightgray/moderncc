@@ -1248,6 +1248,32 @@ implementation not yet started):**
   reset-on-unknown), plus threading the lattice through nested plain
   BasicBlock statements.
 
+**§32a LANDED (2026-07-10) — structured-join const-prop
+(`MCC_AST_CPROP_JOIN`, default off).** Implemented exactly per the scoping
+findings above: `ast_cprop_stmts` threads the lattice recursively from the
+root block; If op 0 rewrites the cond with the pre-branch lattice, forks
+(snapshot IN), walks both arms, and meets THEN-OUT against ELSE-OUT
+(swap-delete-aware intersect); loop ops 2..4 pre-kill every
+`ast_licm_written` entry then walk each child BasicBlock with a fresh copy
+of the invariant lattice (per-iteration soundness argument in the findings)
+and rewrite non-BB cond/incr expressions with invariants only; op 5 is
+*not* treated as a loop (the ternary overload) and falls to the
+conservative reset; any `AST_Jump` inside an If arm bails to join-∅ with
+no descent, and a visited bitmap hands every undescended BasicBlock to
+the old flat per-block scan, so coverage is strictly ≥ the flat pass.
+Return-bearing arms conservatively meet as ∅ (fall-through tracking is a
+listed refinement). Validated: full ctest 1862 green with the gate off
+AND forced on corpus-wide (`MCC_AST_CPROP_JOIN=1 ctest`), 3-stage
+self-host fixpoint byte-identical in both modes (the ON fixpoint = mcc
+compiling itself three generations with the pass active), on/off outputs
+agree on the new `ast-cprop-join` exec test (`tests/cpropjoin.sh`:
+same-const joins, differing joins must-not-fold, loop invariants,
+loop-written must-not-fold, nested if-in-loop, break/opaque path,
+escaped locals, do-while, all × `-O1..-O3` × gate on/off against the
+`-O0` reference). Remaining §32a refinements: fall-through-aware meets,
+op-5 `for(;;)` classification via the `ast_cf_*` structure, switch (op 6)
+arms, and §31 strategy registration.
+
 Sub-decisions settled: promotion guard = poison-list first, dominance
 proof later; each pass env-gated per the existing pattern and registered
 as a §31 strategy so the search permutes it. Gates (the FIX.md lesson —
