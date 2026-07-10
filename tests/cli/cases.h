@@ -170,6 +170,21 @@ static const cli_case_t cli_cases[] = {
 		 "readelf -r {W}/fen.o | grep -cw erf ; readelf -r {W}/fen.o | grep -cw erfc",
 		 "1\n1\n"},
 
+		{"foldmath_gamma", "cpu=x86_64,os=linux,optimizer",
+		 "printf 'double lgamma(double);double tgamma(double);int okr(double a,double b){double d=a-b;if(d<0)d=-d;double e=b<0?-b:b;return d<=1e-12*(e>1?e:1);}int main(void){if(!okr(lgamma(1.0),0.0))return 1;if(!okr(lgamma(2.0),0.0))return 2;if(!okr(lgamma(0.5),0.57236494292470008))return 3;if(!okr(lgamma(5.0),3.1780538303479458))return 4;if(!okr(lgamma(10.0),12.801827480081469))return 5;if(!okr(lgamma(0.1),2.252712651734206))return 6;if(!okr(lgamma(100.0),359.1342053695754))return 7;if(!okr(tgamma(1.0),1.0))return 8;if(!okr(tgamma(2.0),1.0))return 9;if(!okr(tgamma(5.0),24.0))return 10;if(!okr(tgamma(0.5),1.7724538509055161))return 11;if(!okr(tgamma(3.5),3.3233509704478426))return 12;if(!okr(tgamma(10.0),362880.0))return 13;return 0;}\\n' > {W}/fg.c && "
+		 "{MCC} -B{B} -I{I} -ffold-math -O0 -c {W}/fg.c -o {W}/fg_0.o && "
+		 "{MCC} -B{B} -I{I} -ffold-math -O1 -c {W}/fg.c -o {W}/fg_1.o && "
+		 "readelf -r {W}/fg_0.o | grep -Ec 'lgamma|tgamma' ; "
+		 "{MCC} -B{B} -I{I} -ffold-math -O0 -run {W}/fg.c && echo O0OK ; "
+		 "{MCC} -B{B} -I{I} -ffold-math -O1 -run {W}/fg.c && echo O1OK",
+		 "0\nO0OK\nO1OK\n"},
+
+		{"foldmath_gamma_must_not", "cpu=x86_64,os=linux,optimizer",
+		 "printf 'double lgamma(double);double tgamma(double);double a(void){return tgamma(0.0);}double b(void){return lgamma(-1.0);}double c(void){return tgamma(-2.5);}double d(void){return lgamma(-0.5);}\\n' > {W}/fgn.c && "
+		 "{MCC} -B{B} -I{I} -ffold-math -O0 -c {W}/fgn.c -o {W}/fgn.o && "
+		 "readelf -r {W}/fgn.o | grep -cw tgamma ; readelf -r {W}/fgn.o | grep -cw lgamma",
+		 "2\n2\n"},
+
 		{"O3_float_return_inline", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'static double f(double x){return x*2.0+1.0;} static float g(float x){return x*3.0f+0.5f;} static double h(int a,int b){return (double)a/(double)b+0.25;} static int ii(int x){return x*2+1;} int main(void){ if(f(10.0)!=21.0)return 1; if(g(4.0f)!=12.5f)return 2; if(h(7,2)!=3.75)return 3; if(ii(20)!=41)return 4; return 0; }\\n' > {W}/fi.c && "
 		 "{MCC} -B{B} -I{I} -O0 -run {W}/fi.c && echo O0OK && "

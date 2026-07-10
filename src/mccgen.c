@@ -6703,7 +6703,8 @@ static const struct {
 		{"expm1", 18, 0},{"expm1f", 18, 1},{"log1p", 19, 0},  {"log1pf", 19, 1},
 		{"asinh", 20, 0},{"asinhf", 20, 1},{"acosh", 21, 0},  {"acoshf", 21, 1},
 		{"atanh", 22, 0},{"atanhf", 22, 1}, {"erf", 23, 0},	 {"erff", 23, 1},
-		{"erfc", 24, 0}, {"erfcf", 24, 1},
+		{"erfc", 24, 0}, {"erfcf", 24, 1}, {"lgamma", 25, 0}, {"lgammaf", 25, 1},
+		{"tgamma", 26, 0}, {"tgammaf", 26, 1},
 };
 
 static double foldm_rint(double x) {
@@ -7599,6 +7600,322 @@ static double foldm_erfc(double x) {
 							: foldm_pow2(-1022) * foldm_pow2(-1022);
 }
 
+static double foldm_floor(double x) {
+	double toint = 4503599627370496.0;
+	int e = (foldm_hi(x) >> 20) & 0x7ff;
+	double y;
+	if (e >= 0x3ff + 52 || x == 0.0)
+		return x;
+	if (foldm_hi(x) < 0)
+		y = x - toint + toint - x;
+	else
+		y = x + toint - toint - x;
+	if (e <= 0x3ff - 1)
+		return foldm_hi(x) < 0 ? -1.0 : 0.0;
+	if (y > 0)
+		return x + y - 1.0;
+	return x + y;
+}
+
+static double foldm_powg(double x, double y) {
+	double bp[] = {1.0, 1.5};
+	double dp_h[] = {0.0, 5.84962487220764160156e-01};
+	double dp_l[] = {0.0, 1.35003920212974897128e-08};
+	double one = 1.0, two = 2.0, two53 = 9007199254740992.0;
+	double L1 = 5.99999999999994648725e-01, L2 = 4.28571428578550184252e-01,
+				 L3 = 3.33333329818377432918e-01, L4 = 2.72728123808534006489e-01,
+				 L5 = 2.30660745775561366331e-01, L6 = 2.06975017800338417784e-01;
+	double P1 = 1.66666666666666019037e-01, P2 = -2.77777777770155933842e-03,
+				 P3 = 6.61375632143793436117e-05, P4 = -1.65339022054652515390e-06,
+				 P5 = 4.13813679705723846039e-08;
+	double lg2 = 6.93147180559945286227e-01, lg2_h = 6.93147182464599609375e-01,
+				 lg2_l = -1.90465429995776804525e-09;
+	double cp = 9.61796693925975554329e-01, cp_h = 9.61796700954437255859e-01,
+				 cp_l = -7.02846165095275826516e-09;
+	double z, ax, z_h, z_l, p_h, p_l, y1, t1, t2, r, s, t, u, v, w, ss, s2, s_h,
+			s_l, t_h, t_l;
+	int32_t i, j, k, n, hx, ix;
+	hx = foldm_hi(x);
+	ix = hx & 0x7fffffff;
+	ax = x;
+	n = 0;
+	if (ix < 0x00100000) {
+		ax *= two53;
+		n -= 53;
+		ix = foldm_hi(ax);
+	}
+	n += (ix >> 20) - 0x3ff;
+	j = ix & 0x000fffff;
+	ix = j | 0x3ff00000;
+	if (j <= 0x3988E)
+		k = 0;
+	else if (j < 0xBB67A)
+		k = 1;
+	else {
+		k = 0;
+		n += 1;
+		ix -= 0x00100000;
+	}
+	ax = foldm_sethi(ax, (uint32_t)ix);
+	u = ax - bp[k];
+	v = one / (ax + bp[k]);
+	ss = u * v;
+	s_h = foldm_hilo0(ss);
+	t_h = foldm_frombits(
+			(uint32_t)((((ix >> 1) & 0xfffff000) | 0x20000000) + 0x00080000 +
+								 (k << 18)),
+			0);
+	t_l = ax - (t_h - bp[k]);
+	s_l = v * ((u - s_h * t_h) - s_h * t_l);
+	s2 = ss * ss;
+	r = s2 * s2 * (L1 + s2 * (L2 + s2 * (L3 + s2 * (L4 + s2 * (L5 + s2 * L6)))));
+	r += s_l * (s_h + ss);
+	s2 = s_h * s_h;
+	t_h = foldm_hilo0(3.0 + s2 + r);
+	t_l = r - ((t_h - 3.0) - s2);
+	u = s_h * t_h;
+	v = s_l * t_h + t_l * ss;
+	p_h = foldm_hilo0(u + v);
+	p_l = v - (p_h - u);
+	z_h = cp_h * p_h;
+	z_l = cp_l * p_h + p_l * cp + dp_l[k];
+	t = (double)n;
+	t1 = foldm_hilo0(((z_h + z_l) + dp_h[k]) + t);
+	t2 = z_l - (((t1 - t) - dp_h[k]) - z_h);
+	s = 1.0;
+	y1 = foldm_hilo0(y);
+	p_l = (y - y1) * t1 + y * t2;
+	p_h = y1 * t1;
+	z = p_l + p_h;
+	j = foldm_hi(z);
+	if (j >= 0x40900000)
+		return foldm_pow2(1023) * foldm_pow2(1023);
+	if ((uint32_t)(j & 0x7fffffff) >= 0x4090cc00)
+		return foldm_pow2(-1022) * foldm_pow2(-1022) * 0.0;
+	i = j & 0x7fffffff;
+	k = (i >> 20) - 0x3ff;
+	n = 0;
+	if (i > 0x3fe00000) {
+		n = j + (0x00100000 >> (k + 1));
+		k = ((n & 0x7fffffff) >> 20) - 0x3ff;
+		t = foldm_sethi(0.0, (uint32_t)(n & ~(0x000fffff >> k)));
+		n = ((n & 0x000fffff) | 0x00100000) >> (20 - k);
+		if (j < 0)
+			n = -n;
+		p_h -= t;
+	}
+	t = foldm_hilo0(p_l + p_h);
+	u = t * lg2_h;
+	v = (p_l - (t - p_h)) * lg2 + t * lg2_l;
+	z = u + v;
+	w = v - (z - u);
+	t = z * z;
+	t1 = z - t * (P1 + t * (P2 + t * (P3 + t * (P4 + t * P5))));
+	r = (z * t1) / (t1 - two) - (w + z * w);
+	z = one - (r - z);
+	j = foldm_hi(z);
+	j += (n << 20);
+	if ((j >> 20) <= 0)
+		z = foldm_scalbn(z, n);
+	else
+		z = foldm_sethi(z, (uint32_t)foldm_hi(z) + (uint32_t)(n << 20));
+	return s * z;
+}
+
+static double foldm_lgamma(double x) {
+	double a0 = 7.72156649015328655494e-02, a1 = 3.22467033424113591611e-01,
+				 a2 = 6.73523010531292681824e-02, a3 = 2.05808084325167332806e-02,
+				 a4 = 7.38555086081402883957e-03, a5 = 2.89051383673415629091e-03,
+				 a6 = 1.19270763183362067845e-03, a7 = 5.10069792153511336608e-04,
+				 a8 = 2.20862790713908385557e-04, a9 = 1.08011567247583939954e-04,
+				 a10 = 2.52144565451257326939e-05, a11 = 4.48640949618915160150e-05;
+	double tc = 1.46163214496836224576e+00, tf = -1.21486290535849611461e-01,
+				 tt = -3.63867699703950536541e-18;
+	double t0 = 4.83836122723810047042e-01, t1c = -1.47587722994593911752e-01,
+				 t2c = 6.46249402391333854778e-02, t3c = -3.27885410759859649565e-02,
+				 t4c = 1.79706750811820387126e-02, t5c = -1.03142241298341437450e-02,
+				 t6c = 6.10053870246291332635e-03, t7c = -3.68452016781138256760e-03,
+				 t8c = 2.25964780900612472250e-03, t9c = -1.40346469989232843813e-03,
+				 t10c = 8.81081882437654011382e-04, t11c = -5.38595305356740546715e-04,
+				 t12c = 3.15632070903625950361e-04, t13c = -3.12754168375120860518e-04,
+				 t14c = 3.35529192635519073543e-04;
+	double u0 = -7.72156649015328655494e-02, u1 = 6.32827064025093366517e-01,
+				 u2 = 1.45492250137234768737e+00, u3 = 9.77717527963372745603e-01,
+				 u4 = 2.28963728064692451092e-01, u5 = 1.33810918536787660377e-02;
+	double v1 = 2.45597793713041134822e+00, v2 = 2.12848976379893395361e+00,
+				 v3 = 7.69285150456672783825e-01, v4 = 1.04222645593369134254e-01,
+				 v5 = 3.21709242282423911810e-03;
+	double s0 = -7.72156649015328655494e-02, s1 = 2.14982415960608852501e-01,
+				 s2c = 3.25778796408930981787e-01, s3 = 1.46350472652464452805e-01,
+				 s4 = 2.66422703033638609560e-02, s5 = 1.84028451407337715652e-03,
+				 s6 = 3.19475326584100867617e-05;
+	double r1 = 1.39200533467621045958e+00, r2 = 7.21935547567138069525e-01,
+				 r3 = 1.71933865632803078993e-01, r4 = 1.86459191715652901344e-02,
+				 r5 = 7.77942496381893596434e-04, r6 = 7.32668430744625636189e-06;
+	double w0 = 4.18938533204672725052e-01, w1 = 8.33333333333329678849e-02,
+				 w2 = -2.77777777728775536470e-03, w3 = 7.93650558643019558500e-04,
+				 w4 = -5.95187557450339963135e-04, w5 = 8.36339918996282139126e-04,
+				 w6 = -1.63092934096575273989e-03;
+	double t, y, z, p, p1, p2, p3, q, r, w;
+	uint32_t ix;
+	int i;
+	ix = (uint32_t)foldm_hi(x) & 0x7fffffff;
+	if (ix >= 0x7ff00000)
+		return x * x;
+	if (ix < ((0x3ffu - 70) << 20))
+		return -foldm_log(x);
+	if ((ix == 0x3ff00000 || ix == 0x40000000) && foldm_lo(x) == 0)
+		r = 0;
+	else if (ix < 0x40000000) {
+		if (ix <= 0x3feccccc) {
+			r = -foldm_log(x);
+			if (ix >= 0x3FE76944) {
+				y = 1.0 - x;
+				i = 0;
+			} else if (ix >= 0x3FCDA661) {
+				y = x - (tc - 1.0);
+				i = 1;
+			} else {
+				y = x;
+				i = 2;
+			}
+		} else {
+			r = 0.0;
+			if (ix >= 0x3FFBB4C3) {
+				y = 2.0 - x;
+				i = 0;
+			} else if (ix >= 0x3FF3B4C4) {
+				y = x - tc;
+				i = 1;
+			} else {
+				y = x - 1.0;
+				i = 2;
+			}
+		}
+		switch (i) {
+		case 0:
+			z = y * y;
+			p1 = a0 + z * (a2 + z * (a4 + z * (a6 + z * (a8 + z * a10))));
+			p2 = z * (a1 + z * (a3 + z * (a5 + z * (a7 + z * (a9 + z * a11)))));
+			p = y * p1 + p2;
+			r += (p - 0.5 * y);
+			break;
+		case 1:
+			z = y * y;
+			w = z * y;
+			p1 = t0 + w * (t3c + w * (t6c + w * (t9c + w * t12c)));
+			p2 = t1c + w * (t4c + w * (t7c + w * (t10c + w * t13c)));
+			p3 = t2c + w * (t5c + w * (t8c + w * (t11c + w * t14c)));
+			p = z * p1 - (tt - w * (p2 + y * p3));
+			r += tf + p;
+			break;
+		case 2:
+			p1 = y * (u0 + y * (u1 + y * (u2 + y * (u3 + y * (u4 + y * u5)))));
+			p2 = 1.0 + y * (v1 + y * (v2 + y * (v3 + y * (v4 + y * v5))));
+			r += -0.5 * y + p1 / p2;
+		}
+	} else if (ix < 0x40200000) {
+		i = (int)x;
+		y = x - (double)i;
+		p = y * (s0 + y * (s1 + y * (s2c + y * (s3 + y * (s4 + y * (s5 + y * s6))))));
+		q = 1.0 + y * (r1 + y * (r2 + y * (r3 + y * (r4 + y * (r5 + y * r6)))));
+		r = 0.5 * y + p / q;
+		z = 1.0;
+		switch (i) {
+		case 7:
+			z *= y + 6.0;
+		case 6:
+			z *= y + 5.0;
+		case 5:
+			z *= y + 4.0;
+		case 4:
+			z *= y + 3.0;
+		case 3:
+			z *= y + 2.0;
+			r += foldm_log(z);
+			break;
+		}
+	} else if (ix < 0x43900000) {
+		t = foldm_log(x);
+		z = 1.0 / x;
+		y = z * z;
+		w = w0 + z * (w1 + y * (w2 + y * (w3 + y * (w4 + y * (w5 + y * w6)))));
+		r = (x - 0.5) * (t - 1.0) + w;
+	} else
+		r = x * (foldm_log(x) - 1.0);
+	return r;
+}
+
+static double foldm_gS(double x) {
+	double Snum[] = {23531376880.410759688572007674451636754734846804940,
+									 42919803642.649098768957899047001988850926355848959,
+									 35711959237.355668049440185451547166705960488635843,
+									 17921034426.037209699919755754458931112671403265390,
+									 6039542586.3520280050642916443072979210699388420708,
+									 1439720407.3117216736632230727949123939715485786772,
+									 248874557.86205415651146038641322942321632125127801,
+									 31426415.585400194380614231628318205362874684987640,
+									 2876370.6289353724412254090516208496135991145378768,
+									 186056.26539522349504029498971604569928220784236328,
+									 8071.6720023658162106380029022722506138218516325024,
+									 210.82427775157934587250973392071336271166969580291,
+									 2.5066282746310002701649081771338373386264310793408};
+	double Sden[] = {0,		 39916800, 120543840, 150917976, 105258076, 45995730,
+									 13339535, 2637558,  357423,		32670,		1925,			66,
+									 1};
+	double num = 0, den = 0;
+	int i;
+	if (x < 8)
+		for (i = 12; i >= 0; i--) {
+			num = num * x + Snum[i];
+			den = den * x + Sden[i];
+		}
+	else
+		for (i = 0; i <= 12; i++) {
+			num = num / x + Snum[i];
+			den = den / x + Sden[i];
+		}
+	return num / den;
+}
+
+static double foldm_tgamma(double x) {
+	double gmhalf = 5.524680040776729583740234375;
+	double gfact[] = {1,				 1,					2,					6,
+										24,				 120,				720,				5040.0,
+										40320.0,	 362880.0,	3628800.0,	39916800.0,
+										479001600.0, 6227020800.0,	87178291200.0,	1307674368000.0,
+										20922789888000.0,	355687428096000.0,	6402373705728000.0,
+										121645100408832000.0,	2432902008176640000.0,
+										51090942171709440000.0, 1124000727777607680000.0};
+	double absx, y, dy, z, r;
+	uint32_t ix = (uint32_t)foldm_hi(x) & 0x7fffffff;
+	if (ix >= 0x7ff00000)
+		return x;
+	if (ix < ((0x3ffu - 54) << 20))
+		return 1.0 / x;
+	if (x == foldm_floor(x)) {
+		if (x <= 23.0)
+			return gfact[(int)x - 1];
+	}
+	if (ix >= 0x40670000)
+		return x * foldm_pow2(1023);
+	absx = x;
+	y = absx + gmhalf;
+	if (absx > gmhalf) {
+		dy = y - absx;
+		dy -= gmhalf;
+	} else {
+		dy = y - gmhalf;
+		dy -= absx;
+	}
+	z = absx - 0.5;
+	r = foldm_gS(absx) * foldm_exp(-y);
+	r += dy * (gmhalf + 0.5) * r / y;
+	z = foldm_powg(y, 0.5 * z);
+	y = r * z * z;
+	return y;
+}
+
 static int foldmath_eval(int id, int flt, uint64_t inbits, uint64_t *out) {
 	double x, res;
 	uint64_t ib;
@@ -7750,6 +8067,18 @@ static int foldmath_eval(int id, int flt, uint64_t inbits, uint64_t *out) {
 	}
 	case 24: {
 		res = foldm_erfc(x);
+		break;
+	}
+	case 25: {
+		if (x <= 0.0)
+			return 0;
+		res = foldm_lgamma(x);
+		break;
+	}
+	case 26: {
+		if (x <= 0.0)
+			return 0;
+		res = foldm_tgamma(x);
 		break;
 	}
 	default:
