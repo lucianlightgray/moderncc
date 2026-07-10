@@ -3,9 +3,17 @@
 
 void s6_10_4_preproc_test(void) {
 
+#ifdef __STDC__
 	printf("__STDC__=%d\n", __STDC__);
+#else
+	printf("__STDC__=%d\n", 0);
+#endif
 	printf("__STDC_HOSTED__=%d\n", __STDC_HOSTED__);
+#ifdef __STDC_VERSION__
 	printf("__STDC_VERSION__=%ldL\n", __STDC_VERSION__);
+#else
+	printf("__STDC_VERSION__=%ldL\n", 0L);
+#endif
 
 	printf("date_len=%d time_len=%d\n", (int)sizeof(__DATE__) - 1, (int)sizeof(__TIME__) - 1);
 	printf("time_colons=%d %d\n", __TIME__[2] == ':', __TIME__[5] == ':');

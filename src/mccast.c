@@ -355,6 +355,10 @@ static int ast_replay_env;
 static int ast_replay_dump;
 static int ast_graft_limit;
 static int ast_graft_total;
+static int ast_promo_limit;
+static int ast_promo_total;
+static int ast_opt_limit;
+static int ast_opt_total;
 static int ast_templates_env;
 static int ast_promote_env;
 static int ast_no_callful_env;
@@ -529,6 +533,16 @@ void ast_configure(MCCState *s1) {
 		const char *lim = getenv("MCC_AST_INLINE_LIMIT");
 		ast_graft_limit = lim ? atoi(lim) : -1;
 		ast_graft_total = 0;
+	}
+	{
+		const char *lim = getenv("MCC_AST_PROMOTE_LIMIT");
+		ast_promo_limit = lim ? atoi(lim) : -1;
+		ast_promo_total = 0;
+	}
+	{
+		const char *lim = getenv("MCC_AST_OPT_LIMIT");
+		ast_opt_limit = lim ? atoi(lim) : -1;
+		ast_opt_total = 0;
 	}
 }
 
@@ -2213,15 +2227,18 @@ static int ast_plan_promotion(AstArena *a) {
 	return ast_promo_n;
 }
 
-static void ast_promo_push(int reg) {
-	if (reg >= 8)
-		o(0x41);
-	o(0x50 + (reg & 7));
-}
-static void ast_promo_pop(int reg) {
-	if (reg >= 8)
-		o(0x41);
-	o(0x58 + (reg & 7));
+/* The saved pinned registers live in rbp-relative frame slots, not in
+   push slots below the frame: on PE the outgoing-call area (win64 home
+   space + stack args) is rsp-relative at the frame bottom, so anything
+   pushed below the frame sits inside it and gets scribbled by callees. */
+static int ast_promo_save_loc;
+
+static void ast_promo_save_sv(SValue *sv, int i) {
+	memset(sv, 0, sizeof *sv);
+	sv->type.t = VT_LLONG;
+	sv->r = VT_LOCAL | VT_LVAL;
+	sv->r2 = VT_CONST;
+	sv->c.i = ast_promo_save_loc + 8 * i;
 }
 
 static void ast_promo_write(int reg, CType *ct) {
@@ -2242,10 +2259,13 @@ static void ast_promo_write(int reg, CType *ct) {
 
 static void ast_promo_entry_init(void) {
 	if (ast_promo_callful) {
-		for (int i = 0; i < ast_promo_n; i++)
-			ast_promo_push(ast_promo_reg[i]);
-		if (ast_promo_n & 1)
-			ast_promo_push(ast_promo_reg[0]);
+		SValue sv;
+		loc = (loc - 8 * ast_promo_n) & -8;
+		ast_promo_save_loc = loc;
+		for (int i = 0; i < ast_promo_n; i++) {
+			ast_promo_save_sv(&sv, i);
+			store(ast_promo_reg[i], &sv);
+		}
 	}
 	for (int i = 0; i < ast_promo_n; i++) {
 		int reg = ast_promo_reg[i];
@@ -2267,12 +2287,13 @@ static void ast_promo_entry_init(void) {
 }
 
 static void ast_promo_exit_restore(void) {
+	SValue sv;
 	if (!ast_promo_callful)
 		return;
-	if (ast_promo_n & 1)
-		ast_promo_pop(ast_promo_reg[0]);
-	for (int i = ast_promo_n - 1; i >= 0; i--)
-		ast_promo_pop(ast_promo_reg[i]);
+	for (int i = ast_promo_n - 1; i >= 0; i--) {
+		ast_promo_save_sv(&sv, i);
+		load(ast_promo_reg[i], &sv);
+	}
 }
 #else
 static int ast_plan_promotion(AstArena *a) {
@@ -4489,6 +4510,20 @@ void ast_func_end(Sym *sym) {
 				ast_no_callful_promo = do_inline;
 				int do_promote = faithful && !do_tco && ast_promote_env && ast_plan_promotion(ast_cur) > 0;
 				ast_no_callful_promo = 0;
+				if (do_promote && ast_promo_limit >= 0 && ast_promo_total >= ast_promo_limit) {
+					do_promote = 0;
+					ast_promo_n = 0;
+				}
+				if (do_promote)
+					ast_promo_total++;
+				if (ast_opt_limit >= 0 && ast_opt_total >= ast_opt_limit) {
+					do_inline = do_promote = do_bfold = do_ident = do_cprop = 0;
+					do_cse = do_licm = do_dse = do_sccp = do_jt = do_tco = 0;
+					ast_promo_n = 0;
+				}
+				if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
+						do_cse || do_licm || do_dse || do_sccp || do_jt || do_tco)
+					ast_opt_total++;
 				if (faithful && !do_inline && !do_promote && !do_bfold && !do_ident &&
 						!do_cprop && !do_cse && !do_licm && !do_dse && !do_sccp && !do_jt &&
 						!do_tco)

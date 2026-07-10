@@ -45,6 +45,7 @@ struct workload {
 	const char *incs[16];
 	const char *defs[16];
 	int needs_ccmacro;
+	int gnu_c;
 	int funcs;
 	int lines;
 	int have_counts;
@@ -451,7 +452,8 @@ static void write_table(FILE *f, const struct compiler *ccs, int nccs,
 	if (!cells)
 		return;
 	for (i = 0; i < nccs; i++)
-		bench_one(&ccs[i], wl, repeats, &cells[i]);
+		if (!(wl->gnu_c && ccs[i].style == STYLE_CL))
+			bench_one(&ccs[i], wl, repeats, &cells[i]);
 	if (wl->have_counts)
 		fprintf(f, "\nWorkload: %s  (%d lines, %d functions, n=%d runs)\n",
 						wl->key, wl->lines, wl->funcs, repeats);
@@ -467,6 +469,10 @@ static void write_table(FILE *f, const struct compiler *ccs, int nccs,
 		double wmean;
 		if (!pg || strcmp(pg, og))
 			fprintf(f, "\n  [%s]\n", ccs[i].opt ? ccs[i].opt : "default");
+		if (wl->gnu_c && ccs[i].style == STYLE_CL) {
+			fprintf(f, "  %-8s skipped (GNU-C workload)\n", ccs[i].key);
+			continue;
+		}
 		if (!c->m.ok) {
 			fprintf(f, "  %-8s %8s %7s %10s %8s %9s %8s %7s %-17s\n",
 							ccs[i].key, "n/a", "", "n/a", "n/a", "n/a", "n/a", "", "n/a");
@@ -972,6 +978,7 @@ int main(int argc, char **argv) {
 		w = &wls[nwl++];
 		memset(w, 0, sizeof *w);
 		w->key = "full-language";
+		w->gnu_c = 1;
 		ts_path(w->src, sizeof w->src, srcroot, "tests/diff/full_language.c");
 		w->incs[0] = srcroot;
 		{

@@ -1097,6 +1097,7 @@ static inline int constraint_priority(const char *str) {
 			pr = 1;
 			break;
 		case 'q':
+		case 'Q':
 			pr = 2;
 			break;
 		case 'r':
@@ -1235,6 +1236,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 				goto try_next;
 			goto reg_found;
 		case 'q':
+		case 'Q':
 			if (op->reg >= 0) {
 				if ((reg = op->reg) < 4)
 					goto reg_found;

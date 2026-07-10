@@ -268,7 +268,7 @@ static __inline__ __const__ unsigned int swab32(unsigned int x) {
 					"rorl $16,%0\n\t"
 					"xchgb %b0,%h0"
 					: "="
-						"q"(x)
+						"Q"(x)
 					: "0"(x));
 	return x;
 }
