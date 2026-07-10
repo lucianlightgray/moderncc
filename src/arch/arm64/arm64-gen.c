@@ -491,7 +491,7 @@ static void arm64_tls_base_x30(void) {
 
 ST_FUNC void load(int r, SValue *sv) {
 	int svtt = sv->type.t;
-	int svr = sv->r & ~(VT_BOUNDED | VT_NONCONST | VT_NONLVAL);
+	int svr = sv->r & ~(VT_BOUNDED | VT_NONCONST | VT_NONLVAL | VT_MUSTCAST);
 	int svrv = svr & VT_VALMASK;
 	uint64_t svcul = sv->c.i;
 	uint64_t svcoff = (uint64_t)(int64_t)(int32_t)sv->c.i;

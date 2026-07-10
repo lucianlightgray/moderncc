@@ -1594,7 +1594,7 @@ items are added below.
 
 ## 34. BUG: arm64 `load()` r-flag mask rejects §30's bit-flag SValue (correctness, latent)
 
-- [ ] On arm64, setting `MCC_AST_INLINE_NODES` (any value) trips
+- [x] On arm64, setting `MCC_AST_INLINE_NODES` (any value) trips
       `arm64-gen.c:650 load(1,(32,400,0))` (FIX.md:234-237): §30's bit-flag
       transform (`ast_bf_build`) produces an SValue whose r-field carries a
       flag not in the arm64 `load()` accepted mask — the "arm64 load()
@@ -1602,12 +1602,26 @@ items are added below.
       so the bench/search never exercises it — but it **blocks the
       `MCC_AST_INLINE_NODES` search dimension (§23) on arm64 entirely** and
       will resurface the moment §31 registers bitflag×inline on that target.
-      Fix: extend the arm64 `load()` r-flag mask (`src/arch/arm64/arm64-gen.c`
-      ~:650) to accept the bit-flag r-field, or normalize the SValue in
-      `ast_bf_build` so it presents a mask-legal r. Gate: `MCC_AST_BITFLAG=1
-      MCC_AST_INLINE_NODES=8` on an arm64 build compiles + runs the bitflag
-      corpus (native arm64 — qemu can't be trusted per the standing note);
-      x86_64 ctest/fixpoint unaffected (x86_64 `load()` already accepts it).
+
+**LANDED (2026-07-10).** Root cause (traced): the stray r-flag is
+`VT_MUSTCAST` (0x400/0x0C00, "char/short in an int register needs a cast").
+arm64 `load()` (`src/arch/arm64/arm64-gen.c:494`) stripped
+`VT_BOUNDED|VT_NONCONST|VT_NONLVAL` from its `svr` location classifier but
+**not** `VT_MUSTCAST`, then used exact-equality case tests (`svr == …`), so a
+value with a pending cast matched no case and hit `assert(0)` — where
+x86_64's `load()` never does, because it bit-tests (`fr & VT_VALMASK`,
+`fr & VT_LVAL`) and inherently ignores `VT_MUSTCAST`. Fix mirrors x86_64:
+add `VT_MUSTCAST` to the strip mask, routing a register-source-with-pending-
+cast to the reg-to-reg move case (`svr < VT_CONST`, :602); the cast is
+applied by the caller (`gv`/`gen_cast`) exactly as on x86_64. **Provably
+regression-free:** any SValue that already matched a case had no
+`VT_MUSTCAST` set (or it would already assert), so masking it is a no-op for
+every working path — the change can only convert an assert into correct
+routing. Gates: full `cmake-cross` ctest **1862/1862** (27/27 arm64 cells),
+`fixpoint-invariant` byte-identical (stage2==3==4). The exact self-host
+assert needs the CI arm64-sysroot self-compile to reproduce (layout-specific,
+FIX.md:225-229) — recommend the native arm64 spot-check
+(`MCC_AST_BITFLAG=1 MCC_AST_INLINE_NODES=8`, bitflag corpus) confirm it there.
 
 ## 35. Sethi–Ullman evaluation-order numbering (large, codegen-order, byte-identity risk)
 
