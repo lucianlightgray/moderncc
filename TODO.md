@@ -465,17 +465,19 @@ BOX-3 STATUS (2026-07-10, native arm64): two layers, in order.
    bit — to the `arm64-gen.c:494` mask), a fresh instance of the standing
    arm64 "`load()` exact-match r-flag mask" hazard. With that, `-O1+` arm64
    self-host now *runs* (`mcc -O1 src/mcc.c` rc 0).
-2. **The remaining blocker is not the fresh-temp pass — it is that `-O3`
-   AST-replay codegen is non-deterministic.** Compiling `src/mcc.c` at `-O3`
-   *twice with the same compiler* (even `--no-embed-jit`) yields different
-   1.14 MB binaries, so there is no `-O3` self-host fixpoint to compare a
-   fresh-temp-ON build against a fresh-temp-OFF build — stage2≠stage3≠stage4
-   under *both* `MCC_AST_INLINE=1` and `=0`, identically in kind. This is the
-   open "-O3+ self-host byte-stability" milestone (precisely why
-   `fixpoint-invariant` gates `-O0` only); the synthetic-temp carve infra
-   itself is sound (boxes 1-2, and the inliner materializes fresh temps
-   correctly). Box 3 stays open pending `-O3` codegen determinism, a
-   superopt-ladder milestone — not an arm64 or fresh-temp defect.
+2. **`-O3` self-host fixpoint — DONE (the earlier "non-determinism" was a
+   test-harness artifact, now retracted).** `-O3` codegen IS deterministic:
+   `mcc -O3 -c src/mcc.c` produces a byte-identical object twice, and the
+   full executable is identical when compiled to the *same* `-o` name. The
+   earlier "different bytes" was exactly 2 bytes — the **embedded output
+   basename** (`me1` vs `me2`) — because the throwaway harness compiled each
+   stage to a *different* name; the real `fixpointgate` renames a fixed name,
+   so it is immune. Compiling each stage to the same name, the 3-stage
+   self-host fixpoint holds byte-identically under *both* fresh-temp settings:
+   `MCC_AST_INLINE=1` → stage2==stage3==stage4, and `MCC_AST_INLINE=0` →
+   stage2==stage3==stage4 (the ON and OFF fixpoints differ from each other,
+   as expected — inlining changes the code — but each is its own byte-stable
+   fixpoint). This also retires the false "-O3 determinism" blocker on §32c.
 
 - [x] Frame carve on arm64: `gfunc_epilog` `diff = (-loc + 15) & ~15;`
       (src/arch/arm64/arm64-gen.c ~:1625) — validated the carve covers a
@@ -488,14 +490,14 @@ BOX-3 STATUS (2026-07-10, native arm64): two layers, in order.
       validated `-bt16` backtrace faults inside a `pad[37]` carved leaf and
       walks correctly up through 5 carved recursive frames → `mid` → `main`
       (the qemu-untrustworthy unwind path), native cmake-macos.
-- [ ] 3-stage self-host fixpoint on arm64-darwin with the fresh-temp pass
-      forced ON and OFF — the `-O1+` `load()` assert that first blocked this
-      is FIXED (§34/`76407be9`), so arm64 optimized self-host now runs. The
-      remaining blocker is that `-O3` AST-replay codegen is non-deterministic
-      (same source + same compiler → different bytes), so no `-O3` self-host
-      fixpoint exists to compare fresh-temp ON vs OFF. Pending the "-O3+
-      self-host byte-stability" milestone; `-O0` `fixpoint-invariant` green
-      natively. Not a fresh-temp-pass defect (ON and OFF diverge alike).
+- [x] 3-stage self-host fixpoint on arm64-darwin with the fresh-temp pass
+      forced ON and OFF — DONE. Each stage compiled to a fixed `-o` name (as
+      `fixpointgate` does): `MCC_AST_INLINE=1` → stage2==stage3==stage4
+      (byte-identical), `MCC_AST_INLINE=0` → stage2==stage3==stage4. Both
+      reach their own byte-stable fixpoint natively at `-O3`. (The `-O1+`
+      `load()` assert that first blocked this was fixed by §34/`76407be9`;
+      the "-O3 non-determinism" I briefly reported was a harness bug —
+      different `-o` names embed different basenames — now retracted.)
 - [ ] Then repeat for riscv64 (`riscv64-gen.c ~:848`) — deferred to CI (no
       native riscv64 box; host is arm64-darwin).
 
@@ -1803,11 +1805,11 @@ increment.
       (MCC.md:150); needs SysV `gen_va_start` rework. TDD: negative test.
 - [ ] **§6-A gap 4** — bundled `<threads.h>` shadows the system header
       (MCC.md:151). TDD: include-order test.
-- [ ] **STATUS.md rung table is stale past §32** (Agent-A gap 1/2): it stops
-      at §32 and frames §32c as "fully scoped," omitting the `-O3`
-      self-host-determinism blocker (N2 box-3) and §33/§35/§36/§37/§38/§39.
-      Docs-only: extend the rung table and add the `-O3`-determinism
-      milestone note. No code, no fixpoint impact.
+- [x] **STATUS.md rung table is stale past §32** (Agent-A gap 1/2): it stopped
+      at §32 and framed §32c as "fully scoped," omitting §33/§35/§36/§37/§38/
+      §39. Done: rung table extended (§32c, §25) + scope note added. NOTE the
+      "-O3 determinism blocker" I first added here is RETRACTED — `-O3`
+      self-host is deterministic and N2 box-3 is DONE.
 
 ## 40.2 Bucket A — implementable + validatable now (TDD, this box)
 
@@ -1839,11 +1841,14 @@ touch `src/mccast.c`, so serialize to avoid worktree merge conflicts):
 
 Each is multi-day, correctness-critical, and would jeopardize the green/
 fixpoint invariant if rushed. Sequenced, not started:
-- **-O3 self-host determinism** (blocks N2 box-3): root-cause the arena-
-  pointer / hash-order leakage that makes `mcc -O3 src/mcc.c` non-repeatable;
-  prerequisite for any `-O3` self-host fixpoint. TDD entry point exists (a
-  same-compiler-twice determinism check) but the fix is deep.
-- **§32c value-materializing fresh-temp LICM** — needs the above first.
+- ~~**-O3 self-host determinism** (blocks N2 box-3)~~ — RETRACTED: `-O3`
+  self-host IS deterministic and reaches a byte-identical fixpoint (N2 box-3
+  now DONE); the earlier "non-determinism" was a harness bug (embedded output
+  basename). §32c's fixpoint gate is therefore available; §32c's remaining
+  work is the value-materializing pass itself, not a determinism prerequisite.
+- **§32c value-materializing fresh-temp LICM** — buildable now (gate
+  available): fresh-temp LICM → post-join PRE → IV strength reduction, a real
+  Bucket-A-sized increment once someone picks it up; the carve infra exists.
 - **§36 Chaitin–Briggs graph-coloring regalloc** — largest, replaces
   `ast_plan_promotion`; run last.
 - **§26 `--embed-jit` runtime engine**, **§33b/c/d/e**, **§27/§28**,
@@ -1866,3 +1871,63 @@ ctest summary, gate-off byte-identity evidence, and gate-on fire+correctness
 evidence; the main loop verifies green (ctest + fixpoint off/on + arm64
 spot-check) before committing to `main`. Docs-only items (40.1 STATUS refresh,
 Bucket-C tracking) land directly. Bucket-B stays documented, not coded.
+
+# 41. Ungate all AST/optimization paths by default (default-ON sweep, correctness-critical)
+
+Requested 2026-07-10. Today every AST/optimizer pass is opt-in behind a
+default-off `MCC_AST_*` gate (or `-O4+` search) so the default `-O0..-O3`
+output stays byte-identical to the reference and the fixpoint holds. This item
+flips that: make the AST replay + optimization code paths **ON by default**
+and prove nothing regresses.
+
+- [ ] **Enumerate every gate.** List all `ast_*_env` / `MCC_AST_*` gates and
+      `-O<n>`-conditioned passes (`ast_replay_env` at `s1->optimize>=1`,
+      `MCC_AST_PROMOTE`/`INLINE`/`TEMPLATES`/`CPROP_JOIN`/`CSE_JOIN`/`BITFLAG`/
+      `SETHI`/`CALL_WINDOW`/… ) and, for each, its current default and the
+      `-O` level that enables it.
+- [ ] **Flip defaults to ON**, pass by pass (not all at once), each behind the
+      same landing gate it has today so a regression is bisectable: after each
+      flip, the pass runs by default at its target `-O` level.
+- [ ] **Regression matrix per flip:** full `ctest` green on every preset that
+      builds here (native `macos`; plus any cross/qemu presets that run), the
+      3-stage self-host **fixpoint byte-identical**, and `-O4` search still
+      converges. Critically, verify **lower levels (`-O0..-O3`) still pass all
+      tests** — ungating changes their output, so the exec-golden / `--ast`
+      columns / dash-s-bytes goldens must be re-baselined intentionally and
+      re-verified, not silently broken.
+- [ ] **Cross-target / runner sweep:** the byte-identity goldens are
+      per-target; a default-ON pass must be validated on each
+      target×preset×runner the CI matrix covers (x86_64/arm64/riscv64 ×
+      elf/macho/pe × qemu/native), not just the local box — items that can't
+      run here (Bucket C, §40.4) are gated on CI.
+- [ ] **Decision record:** for any pass that cannot be safely defaulted-on
+      (byte-identity or correctness cost), document why and leave it gated.
+      The deliverable is a validated default-on set + a residue list, not a
+      blind flip.
+
+Gate: this is the inverse of the whole ladder's "default-off" invariant, so it
+is correctness-critical — treat each flip as its own increment with the full
+fixpoint + ctest + native-arm64 + CI-matrix gate.
+
+# 42. OPT.md — plain-English walkthrough of the `-O4` pipeline (docs)
+
+Requested 2026-07-10. Write a new `OPT.md` that explains, step by step in plain
+English, how `-O4` works end to end, for a reader who does not know the code:
+
+- [ ] The driver path: what `-O<N>` for `N>=4` triggers (`mcc_superopt_search`
+      / `mcc_superopt_perfn`), the ~N-second budget, SIGTERM save-and-stop.
+- [ ] The search space: gate × budget (nodes × grafts × bitflag-threshold) ×
+      opt-limit dimensions, the 3-strategy portfolio, greedy composition,
+      doubling time slices.
+- [ ] Scoring: `.text`-size objective vs the `MCC_AST_JITSCORE` cpu+RSS tier
+      (best-of-K `-run` timing), non-runnable → size fallback.
+- [ ] The AST-replay optimizer the search permutes: replay/reemit, the passes
+      (const-prop, CSE/LICM, join dataflow §32a/b, promotion, inlining,
+      bit-flag §30, Sethi–Ullman §35), and the faithfulness gate.
+- [ ] Persistence: the per-user cache (`so-*.ck` / `pf-*.ck` / `mcchv-*`),
+      resumable warm-start, flock + keep-best + durable writes; `--clear-cache`.
+- [ ] How it stays safe: default-off gates, byte-identity, 3-stage fixpoint.
+      Cross-link STATUS.md (state) / OPTIMIZE.md (history) / this file (design).
+
+Docs-only; no code, no fixpoint impact. Should read as a narrative, not a spec
+dump — pull the authoritative facts from STATUS.md + §18–§40 here.
