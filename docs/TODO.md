@@ -1933,10 +1933,16 @@ touch `src/mccast.c`, so serialize to avoid worktree merge conflicts):
       checksum matching the transform-off reference at -O1/-O2/-O3. **Still
       open**: `&&`-of-`!=` complement, value-table dispatch for differing
       bodies.
-3. [ ] **§32a refinements** — fall-through-aware meets + op-5 `for(;;)`
-      classification + switch(op 6) arm meets in the `MCC_AST_CPROP_JOIN`
-      lattice. Gated (already default-off); TDD = cpropjoin.sh + corpus
-      force-on.
+3. [~] **§32a refinements** — **op-5 `for(;;)` classification LANDED**: the
+      `MCC_AST_CPROP_JOIN` structured descent now treats op-5 infinite loops
+      with the same invariant-preserving meet as op-2..4 loops (`ast_cprop_
+      stmts`, `<=4`→`<=5`) — a `for(;;)` exits only via `break`, so entry
+      facts not written anywhere in the loop are valid at every body point and
+      break target. Validated: gate-off `-O0..-O3` byte-identical + full ctest
+      1860/1860; gate-on fires (0→1 cprop fold on a `for(;;){…break;}`
+      invariant) with output matching the -O0 reference; cpropjoin.sh OK.
+      **Still open**: fall-through-aware meets, switch(op 6) arm meets (both
+      need new per-arm lattice intersection — higher risk).
 4. [x] **§35 — Sethi–Ullman evaluation-order numbering** — LANDED as
       `MCC_AST_SETHI` (commit `f45a6ec5`, first increment): reorders
       commutative operand emission behind a default-off gate; byte-identity

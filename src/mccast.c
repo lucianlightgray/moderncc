@@ -4059,7 +4059,7 @@ static void ast_cprop_stmts(AstArena *a, AstLocal bb) {
 			ast_cprop_state_load(&in);
 			ast_cprop_stmts(a, eb);
 			ast_cprop_state_meet(&tout);
-		} else if (k == AST_If && ast_op(a, s) >= 2 && ast_op(a, s) <= 4) {
+		} else if (k == AST_If && ast_op(a, s) >= 2 && ast_op(a, s) <= 5) {
 			for (int i = 0; i < ast_cprop_kn;)
 				if (ast_licm_written(a, s, ast_cprop_koff[i]))
 					ast_cprop_kill(ast_cprop_koff[i]);
