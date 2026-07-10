@@ -629,3 +629,36 @@ the values; this re-encodes the conditionals over them) and can compose
 with it in the §22 search. Builds on §22 (search) + §25 (scoring) + §28's
 oracle. Gate on `-O0..-O3` byte-identity + an exec-golden that sweeps every
 key value through original vs re-encoded dispatch.
+
+## 31. Strategy-portfolio scheduler — the governing search architecture (large)
+
+Unifies every optimizer methodology under one meta-search. Each methodology
+is a **strategy**: a black-box optimizer that, given an iteration budget,
+returns its **best(k)** candidates — the pass-config search (§22, the first
+strategy, ex-§f959078e child model), the aggressive inliner (§23), Convert
+re-typing (§29), the bit-flag encoder (§30), and later the rewrite-rule
+generator (§28). Each registers itself; strategies land independently.
+
+Schedule = **exponentially-deepening round-robin**: round 1 gives every
+strategy 1× the base iteration budget, round 2 gives 2×, round 3 4×,
+doubling each round until the total `optimize_search_seconds` is spent
+(`strat1*1, strat2*1, strat3*1 ; repeat *2 ; repeat *4 ; …`). A strategy's
+best(k) from a round **seeds its next, deeper round** (warm-start, persisted
+via the §21 checkpoint), so deeper rounds refine rather than restart.
+
+Selection = **always take the global best by the §25 multi-objective**,
+lexicographic **faster → smaller → lowest peak memory** (cpu measured by
+JIT when the TU is runnable, static size the fallback for the "faster"
+axis). Candidates from different strategies **compose** where the §28/§29
+soundness oracle proves the combination equivalent.
+
+This is the harness §22/§24/§25 plug into: §24 (hot-slice) becomes the
+per-round budget allocator across strategies × functions; §25 is the
+scoring oracle it calls. Builds on §22 + §25 + §21.
+
+Open confirmations (2026-07-10): `k` (best-carry count per strategy); the
+base iteration unit (proposed: 1 iteration = one candidate compile+eval);
+lexicographic vs Pareto vs weighted selection (proposed: lexicographic
+faster→smaller→memory, matching the phrasing); round-cap (proposed: keep
+doubling until the budget is spent, dropping a strategy early once it goes
+K rounds with no best(k) improvement).
