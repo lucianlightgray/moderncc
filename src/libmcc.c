@@ -949,6 +949,7 @@ LIBMCCAPI MCCState *mcc_new(void) {
 	s->ms_extensions = 1;
 	s->unwind_tables = 1;
 	s->embed_jit = 1;
+	s->jit_max_duration = 600;
 
 #ifdef MCC_CHAR_IS_UNSIGNED
 	s->char_is_unsigned = 1;
@@ -996,6 +997,7 @@ LIBMCCAPI void mcc_delete(MCCState *s1) {
 	mcc_free(s1->fini_symbol);
 	mcc_free(s1->mapfile);
 	mcc_free(s1->outfile);
+	mcc_free(s1->jit_functions);
 	mcc_free(s1->deps_outfile);
 	mcc_free(s1->dep_target);
 #if defined MCC_TARGET_MACHO
@@ -1661,6 +1663,9 @@ enum {
 	MCC_OPTION_g,
 	MCC_OPTION_embed_jit,
 	MCC_OPTION_no_embed_jit,
+	MCC_OPTION_jit_max_duration,
+	MCC_OPTION_jit_functions,
+	MCC_OPTION_clear_cache,
 	MCC_OPTION_c,
 	MCC_OPTION_dumpmachine,
 	MCC_OPTION_dumpversion,
@@ -1750,6 +1755,9 @@ static const MCCOption mcc_options[] = {
 		{"b", MCC_OPTION_b, 0},
 		{"-embed-jit", MCC_OPTION_embed_jit, 0},
 		{"-no-embed-jit", MCC_OPTION_no_embed_jit, 0},
+		{"-jit-max-duration", MCC_OPTION_jit_max_duration, MCC_OPTION_HAS_ARG},
+		{"-jit-functions", MCC_OPTION_jit_functions, MCC_OPTION_HAS_ARG},
+		{"-clear-cache", MCC_OPTION_clear_cache, 0},
 		{"g", MCC_OPTION_g, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
 #ifdef MCC_TARGET_MACHO
 		{"compatibility_version", MCC_OPTION_compatibility_version, MCC_OPTION_HAS_ARG},
@@ -2129,6 +2137,15 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) {
 			break;
 		case MCC_OPTION_no_embed_jit:
 			s->embed_jit = 0;
+			break;
+		case MCC_OPTION_jit_max_duration:
+			s->jit_max_duration = (unsigned)atoi(optarg);
+			break;
+		case MCC_OPTION_jit_functions:
+			mcc_set_str(&s->jit_functions, optarg);
+			break;
+		case MCC_OPTION_clear_cache:
+			s->clear_cache = 1;
 			break;
 		case MCC_OPTION_b:
 #if MCC_CONFIG_DIAG_RT >= 2

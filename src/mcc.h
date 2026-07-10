@@ -596,6 +596,9 @@ struct MCCState {
 	unsigned char optimize;
 	unsigned char optimize_size;
 	unsigned char embed_jit;
+	unsigned char clear_cache;
+	unsigned jit_max_duration;
+	char *jit_functions;
 	unsigned optimize_search_seconds;
 	signed char pie;
 	unsigned char pic;

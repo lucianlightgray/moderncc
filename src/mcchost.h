@@ -222,6 +222,7 @@ ST_FUNC int host_find_tool_any(const char *const *names, const char *ext, char *
 
 ST_FUNC int host_mkdirs(const char *path);
 ST_FUNC int host_cache_dir(char *buf, int size);
+ST_FUNC int host_rmrf(const char *path);
 ST_FUNC int host_copy_file(const char *src, const char *dst, int preserve_exec);
 ST_FUNC int host_stat(const char *path, int *is_dir, long long *size, long long *mtime);
 typedef int (*host_walk_fn)(const char *path, int is_dir, void *ud);

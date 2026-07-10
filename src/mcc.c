@@ -85,6 +85,9 @@ static const char help2[] =
 		"  -O<n>                         Optimize: 1 = AST replay + const-fold, 2/s = + register promotion, 3 = + inlining;\n"
 		"                                n>=4 = spend n seconds searching pass configs for the smallest object\n"
 		"  --embed-jit, --no-embed-jit   Embed the always-on runtime self-optimizing JIT in the output (default on)\n"
+		"  --jit-max-duration <sec>      Runtime JIT budget baked into the output (default 600; 0 = unlimited)\n"
+		"  --jit-functions <syms>        Comma list of functions to JIT-optimize (default main; sites at their common ancestor)\n"
+		"  --clear-cache                 Remove the per-user optimizer cache directory and exit\n"
 		"  -pthread                      Support POSIX threads (-D_REENTRANT and -lpthread)\n"
 		"  -include <file>               Include <file> before parsing each input file\n"
 		"  -isystem <dir>                Add <dir> to the system include search path\n"
@@ -554,6 +557,15 @@ redo:
 				ret = 1;
 			mcc_delete(s);
 			return ret;
+		}
+		if (s->clear_cache) {
+			char dir[3072];
+			if (host_cache_dir(dir, sizeof dir) == 0) {
+				host_rmrf(dir);
+				printf("cleared %s\n", dir);
+			}
+			mcc_delete(s);
+			return 0;
 		}
 		if (s->nb_files == 0) {
 			mcc_error_noabort("no input files");

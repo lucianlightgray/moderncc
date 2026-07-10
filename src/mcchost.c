@@ -631,6 +631,27 @@ ST_FUNC MAYBE_UNUSED int host_cache_dir(char *buf, int size) {
 	return 0;
 }
 
+ST_FUNC MAYBE_UNUSED int host_rmrf(const char *path) {
+#if MCC_HOST_WIN32
+	return remove(path);
+#else
+	DIR *d = opendir(path);
+	if (d) {
+		struct dirent *e;
+		char child[4096];
+		while ((e = readdir(d))) {
+			if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, ".."))
+				continue;
+			snprintf(child, sizeof child, "%s/%s", path, e->d_name);
+			host_rmrf(child);
+		}
+		closedir(d);
+		return rmdir(path);
+	}
+	return remove(path);
+#endif
+}
+
 ST_FUNC MAYBE_UNUSED int host_copy_file(const char *src, const char *dst, int preserve_exec) {
 	FILE *fi = fopen(src, "rb"), *fo;
 	char buf[65536];
