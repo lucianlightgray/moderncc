@@ -1242,9 +1242,6 @@ static inline void tok_get(int *t, const int **pp, CValue *cv) {
 	*pp = p;
 }
 
-#if 0
-#define TOK_GET(t, p, c) tok_get(t, p, c)
-#else
 #define TOK_GET(t, p, c)   \
 	do {                     \
 		int _t = **(p);        \
@@ -1253,7 +1250,6 @@ static inline void tok_get(int *t, const int **pp, CValue *cv) {
 		else                   \
 			*(t) = _t, ++*(p);   \
 	} while (0)
-#endif
 
 static int macro_is_equal(const int *a, const int *b) {
 	CValue cv;

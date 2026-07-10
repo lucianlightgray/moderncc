@@ -3584,28 +3584,6 @@ ST_FUNC int mcc_load_dll(MCCState *s1, int fd, const char *filename, int level) 
 		}
 	}
 
-#if 0
-    for (i = 0, dt = dynamic; i < nb_dts; i++, dt++)
-        if (dt->d_tag == DT_RPATH)
-            mcc_add_library_path(s1, dynstr + dt->d_un.d_val);
-
-    for (i = 0, dt = dynamic; i < nb_dts; i++, dt++)
-    {
-        switch (dt->d_tag)
-        {
-        case DT_NEEDED:
-            name = dynstr + dt->d_un.d_val;
-            if (mcc_add_dllref(s1, name, -1))
-                continue;
-            if (mcc_add_dll(s1, name, AFF_REFERENCED_DLL) < 0)
-            {
-                ret = mcc_error_noabort("referenced dll '%s' not found", name);
-                goto the_end;
-            }
-        }
-    }
-#endif
-
 ret_success:
 	ret = 0;
 the_end:

@@ -71,9 +71,9 @@ Delete outright (verify each still-referenced-nowhere while removing):
 
 Finish-or-purge decisions; the investigation *is* the task:
 
-- [ ] `mccpp.c:1302` — `TOK_GET` function-call variant vs the inline fast
+- [x] `mccpp.c:1302` — `TOK_GET` function-call variant vs the inline fast
       macro: confirm full equivalence, then delete the gate and the slow path.
-- [ ] `mccelf.c:3587` — disabled `DT_RPATH`/`DT_NEEDED` processing loop: verify
+- [x] `mccelf.c:3587` — disabled `DT_RPATH`/`DT_NEEDED` processing loop: verify
       the live dll-ref resolution covers every case it handled; if yes delete,
       if no finish it (it predates the current loader logic).
 - [ ] `mccrun.c:623,691,747` — the abandoned DWARF directory-table path in the
