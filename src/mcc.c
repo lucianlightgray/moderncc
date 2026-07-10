@@ -280,8 +280,105 @@ static char *default_outputfile(MCCState *s, const char *first_file) {
 #if MCC_HOST_POSIX
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
 
 #define SO_INLINE_LIMIT_MAX 160
+#define SO_CKPT_FMT 1u
+
+typedef struct {
+	uint32_t fmt;
+	uint32_t best_seed;
+	uint32_t next_seed;
+	uint32_t pad;
+	int64_t best_size;
+	uint64_t key;
+} SoCkpt;
+
+static uint64_t so_fnv(uint64_t h, const void *p, size_t n) {
+	const unsigned char *b = (const unsigned char *)p;
+	for (size_t i = 0; i < n; i++) {
+		h ^= b[i];
+		h *= 0x100000001b3u;
+	}
+	return h;
+}
+
+static uint64_t so_key(MCCState *s) {
+	uint64_t h = 0xcbf29ce484222325u;
+	if (s->nb_files >= 1 && s->files[0]->name) {
+		FILE *f = host_fopen(s->files[0]->name, "rb");
+		if (f) {
+			char buf[65536];
+			size_t r;
+			while ((r = fread(buf, 1, sizeof buf, f)) > 0)
+				h = so_fnv(h, buf, r);
+			fclose(f);
+		}
+	}
+#ifdef MCC_CONFIG_TRIPLET
+	h = so_fnv(h, MCC_CONFIG_TRIPLET, strlen(MCC_CONFIG_TRIPLET));
+#endif
+	return h;
+}
+
+static int so_ckpt_path(char *buf, int cap, uint64_t key) {
+	char dir[3072];
+	if (host_cache_dir(dir, sizeof dir) != 0)
+		return -1;
+	snprintf(buf, cap, "%s/so-%016" PRIx64 ".ck", dir, key);
+	return 0;
+}
+
+static int so_ckpt_read(const char *path, uint64_t key, SoCkpt *c) {
+	FILE *f = host_fopen(path, "rb");
+	SoCkpt t;
+	if (!f)
+		return -1;
+	if (fread(&t, sizeof t, 1, f) != 1 || t.fmt != SO_CKPT_FMT || t.key != key) {
+		fclose(f);
+		return -1;
+	}
+	fclose(f);
+	*c = t;
+	return 0;
+}
+
+static void so_ckpt_write(const char *path, const SoCkpt *nw) {
+	char lockp[1300], tmpp[1300];
+	int lockfd, fd;
+	SoCkpt out = *nw, b;
+	FILE *f;
+	snprintf(lockp, sizeof lockp, "%s.lock", path);
+	lockfd = open(lockp, O_CREAT | O_RDWR, 0644);
+	if (lockfd >= 0)
+		flock(lockfd, LOCK_EX);
+	if ((f = host_fopen(path, "rb"))) {
+		if (fread(&b, sizeof b, 1, f) == 1 && b.fmt == nw->fmt && b.key == nw->key) {
+			if (b.best_size >= 0 && (out.best_size < 0 || b.best_size < out.best_size)) {
+				out.best_size = b.best_size;
+				out.best_seed = b.best_seed;
+			}
+			if (b.next_seed > out.next_seed)
+				out.next_seed = b.next_seed;
+		}
+		fclose(f);
+	}
+	snprintf(tmpp, sizeof tmpp, "%s.tmp", path);
+	if ((f = host_fopen(tmpp, "wb"))) {
+		fwrite(&out, sizeof out, 1, f);
+		fflush(f);
+		if ((fd = fileno(f)) >= 0)
+			fsync(fd);
+		fclose(f);
+		rename(tmpp, path);
+	}
+	if (lockfd >= 0) {
+		flock(lockfd, LOCK_UN);
+		close(lockfd);
+	}
+}
 
 static void so_setenv(unsigned seed) {
 	char buf[32];
@@ -324,16 +421,27 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 															 const char *outfile) {
 	unsigned budget_ms = s->optimize_search_seconds * 1000u;
 	unsigned start = host_clock_ms();
-	unsigned seed;
+	unsigned seed, start_seed = 0;
 	long best = -1;
 	unsigned best_seed = 0, tried = 0;
-	char exe[1024], best_tmp[1200], cand_tmp[1200];
+	int best_have = 0;
+	char exe[1024], best_tmp[1200], cand_tmp[1200], ckpt[3200];
 	const char **cv;
-	int i, argn;
+	int i, argn, have_ckpt;
+	uint64_t key = so_key(s);
+	SoCkpt ck;
 	if (host_exe_path(exe, sizeof exe) <= 0)
 		pstrcpy(exe, sizeof exe, argv[0]);
 	snprintf(best_tmp, sizeof best_tmp, "%s.mcc-so-best", outfile);
 	snprintf(cand_tmp, sizeof cand_tmp, "%s.mcc-so-cand", outfile);
+	have_ckpt = so_ckpt_path(ckpt, sizeof ckpt, key) == 0;
+	if (have_ckpt && so_ckpt_read(ckpt, key, &ck) == 0) {
+		start_seed = ck.next_seed;
+		if (ck.best_size >= 0) {
+			best = ck.best_size;
+			best_seed = ck.best_seed;
+		}
+	}
 	cv = mcc_malloc((argc + 4) * sizeof *cv);
 	argn = 0;
 	cv[argn++] = exe;
@@ -342,7 +450,7 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 	cv[argn++] = "-o";
 	cv[argn++] = cand_tmp;
 	cv[argn] = NULL;
-	for (seed = 0;; seed++) {
+	for (seed = start_seed;; seed++) {
 		int inl = (seed >> 2) & 1;
 		unsigned limit = seed >> 4;
 		long sz;
@@ -359,19 +467,41 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 				best = sz;
 				best_seed = seed;
 				so_copy(cand_tmp, best_tmp);
+				best_have = 1;
 			}
 		}
 		tried++;
 	}
-	remove(cand_tmp);
 	if (best < 0) {
+		remove(cand_tmp);
 		remove(best_tmp);
 		mcc_free(cv);
 		return -1;
 	}
+	if (!best_have) {
+		so_setenv(best_seed);
+		if (host_spawn_wait(cv) == 0)
+			so_copy(cand_tmp, best_tmp);
+		else {
+			remove(cand_tmp);
+			mcc_free(cv);
+			return -1;
+		}
+	}
+	remove(cand_tmp);
+	if (have_ckpt) {
+		ck.fmt = SO_CKPT_FMT;
+		ck.key = key;
+		ck.best_seed = best_seed;
+		ck.next_seed = seed;
+		ck.pad = 0;
+		ck.best_size = best;
+		so_ckpt_write(ckpt, &ck);
+	}
 	if (s->verbose)
-		printf("superopt: %u configs in %ums, best seed %u -> %ld bytes\n", tried,
-					 host_clock_ms() - start, best_seed, best);
+		printf("superopt: %u configs from seed %u in %ums, best seed %u -> %ld bytes%s\n",
+					 tried, start_seed, host_clock_ms() - start, best_seed, best,
+					 best_have ? "" : " (cached)");
 	i = so_copy(best_tmp, outfile);
 	remove(best_tmp);
 	mcc_free(cv);
