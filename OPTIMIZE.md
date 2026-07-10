@@ -25,7 +25,8 @@ fixpoint byte-identical + -O0 objects unchanged):
 | 7 | TPE Bayesian search (`--search tpe`) | 4 | 80feb6d9 |
 | 8 | mccbench stats: Welch t + bootstrap CI + Cohen's d | — | 9d03445e |
 | 9 | Self-recursive tail-call → loop | 3 | 187880a4 |
-| 10 | Jump threading / branch simplification | 3 | (this iter) |
+| 10 | Jump threading / branch simplification | 3 | 2b783781 |
+| 11 | Local CSE (named-local value-ref subset) | 2 | (this iter) |
 | ✚ | -O3 float-return inline miscompile FIX | — | 40ca21cf |
 
 Open / blocked: Tier-1 peephole (emitter byte-identity risk); SCCP
@@ -74,9 +75,7 @@ Status: `[ ]` open · `[~]` claimed/in-progress · `[x]` landed (commit)
 - [x] **Sparse conditional constant propagation (conditional half)** — Wegman–Zadeck; constant-branch / unreachable-arm folding, `ast_sccp_run`.
 - [x] **Copy/constant propagation** (Aho–Sethi–Ullman dragon-book; local, `ast_cprop_run`).
 - [x] **Dead store / dead code elimination** (Kildall-flavored local liveness; `ast_dse_run`).
-- [ ] **Common subexpression elimination** — Cocke's available
-      expressions; **value numbering** (Alpern–Wegman–Zadeck GVN as the
-      global form; local VN first).
+- [x] **Common subexpression elimination (local, named-local subset)** — Cocke's available expressions; `ast_cse_run`. General GVN/arbitrary-temp CSE stays blocked (persistent-slot desync).
 - [ ] **Sethi–Ullman numbering** for evaluation-order/register pressure
       in the replay emitter.
 
@@ -675,3 +674,32 @@ machinery, and at what risk — to decide whether to lift the scope.
 - CSE feasibility subagent found a safe path (reuse an existing named
   local as the value-reference — no new node kind, no slot desync) and
   is implementing; harvest next.
+
+### 2026-07-10 — iteration 25 (local CSE — frontier partially unblocked!)
+
+- **Local common-subexpression elimination LANDED** (`ast_cse_run`,
+  eighth sibling) — a real slice of the "blocked" frontier, unblocked by
+  a key insight: **an already-named scalar local IS a durable,
+  replay-synced value reference.** When `foo = E` (E register-pure) and a
+  structurally-identical `E'` reappears in the same block with `foo` and
+  every operand of E unwritten, retag `E'` in place to an `AST_Ref` load
+  of `foo`. No new node kind, no scratch slot, no `ast_locrec`/
+  `ast_alloc_loc` change — the frame layout is byte-for-byte what capture
+  produced, which is exactly why the fixpoint holds. Runs between cprop
+  and dse (its new reads of `foo` keep `foo`'s store alive).
+- The agent CONFIRMED the general blocker precisely (quoted
+  ast_alloc_loc): a *persistent new* CSE spill slot genuinely desyncs the
+  positional slot replay and collides with the transient temp pool — so
+  general GVN / arbitrary-temporary CSE stays blocked. But the
+  named-local subset the "no value-ref node" framing had ruled out
+  entirely is safe and real.
+- Codegen confirmed: `int t=a*b; int u=a*b;` → 2 imul at -O0, **1 imul at
+  -O1**. Register-pure guard (no Load/call/addr/member/volatile/global/
+  div/mod, integer scalar), non-escaping local, E must not read foo, type
+  match on VT_BTYPE|VT_UNSIGNED; killed per-write, cleared on call/store-
+  through-ptr/branch. 11 eliminable + 8 must-not test cases; 1827 green,
+  fixpoint byte-identical, -O0 objects identical.
+- **Nine tree passes** now (bfold, ident, cprop, cse, dse, sccp, tco, jt)
+  + superoptimizer/TPE + bench stats. Remaining blocked: GVN's global
+  form + SCCP value-lattice + LICM (persistent-temp), peephole/Sethi-
+  Ullman/Chaitin-Briggs (emitter), sin/exp (opt-in).

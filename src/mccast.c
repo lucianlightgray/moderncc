@@ -4082,6 +4082,177 @@ static int ast_tco_run(AstArena *a, Sym *fsym) {
 	return converted;
 }
 
+#define AST_CSE_MAX 64
+static AstLocal ast_cse_expr[AST_CSE_MAX];
+static AstLocal ast_cse_ref[AST_CSE_MAX];
+static int ast_cse_off[AST_CSE_MAX];
+static int ast_cse_n;
+static int ast_cse_folds;
+
+static int ast_cse_regpure(AstArena *a, AstLocal n) {
+	int t = ast_type_t(a, n);
+	if (t & VT_VOLATILE)
+		return 0;
+	switch (ast_kind(a, n)) {
+	case AST_Literal:
+		return 1;
+	case AST_Ref: {
+		int r = ast_op(a, n);
+		if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
+			return 0;
+		if ((t & VT_BITFIELD) || !ast_ident_intt(t))
+			return 0;
+		return 1;
+	}
+	case AST_Convert:
+		if (t & VT_BITFIELD)
+			return 0;
+		break;
+	case AST_Binary:
+		switch (ast_op(a, n)) {
+		case '+':
+		case '-':
+		case '*':
+		case '&':
+		case '|':
+		case '^':
+		case TOK_SHL:
+		case TOK_SHR:
+		case TOK_SAR:
+		case TOK_LT:
+		case TOK_GT:
+		case TOK_LE:
+		case TOK_GE:
+		case TOK_EQ:
+		case TOK_NE:
+		case TOK_ULT:
+		case TOK_UGE:
+		case TOK_ULE:
+		case TOK_UGT:
+			break;
+		default:
+			return 0;
+		}
+		break;
+	default:
+		return 0;
+	}
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		if (!ast_cse_regpure(a, c))
+			return 0;
+	return 1;
+}
+
+static void ast_cse_setref(AstArena *a, AstLocal n, AstLocal ref) {
+	ast_clear_children(a, n);
+	a->kind[n] = AST_Ref;
+	a->op[n] = a->op[ref];
+	a->type_t[n] = a->type_t[ref];
+	a->type_ref[n] = a->type_ref[ref];
+	a->ival[n] = a->ival[ref];
+	a->fbits[n] = a->fbits[ref];
+	a->sym[n] = a->sym[ref];
+	a->cst[n] = a->cst[ref];
+}
+
+static int ast_cse_try_match(AstArena *a, AstLocal n) {
+	for (int i = 0; i < ast_cse_n; i++) {
+		if (ast_cse_expr[i] == n)
+			continue;
+		if (ast_ident_same(a, ast_cse_expr[i], n)) {
+			ast_cse_setref(a, n, ast_cse_ref[i]);
+			ast_cse_folds++;
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static void ast_cse_subst(AstArena *a, AstLocal n, int lval) {
+	if (n == AST_NONE)
+		return;
+	uint16_t k = ast_kind(a, n);
+	if (!lval && ast_cse_try_match(a, n))
+		return;
+	if (k == AST_Store) {
+		ast_cse_subst(a, ast_child(a, n, 0), 1);
+		ast_cse_subst(a, ast_child(a, n, 1), 0);
+		return;
+	}
+	int clval = k == AST_Unary && ast_cprop_lval_op(ast_op(a, n));
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		ast_cse_subst(a, c, clval);
+}
+
+static void ast_cse_kill(AstArena *a, int off) {
+	for (int i = 0; i < ast_cse_n;) {
+		if (ast_cse_off[i] == off || ast_tco_reads_off(a, ast_cse_expr[i], off)) {
+			ast_cse_n--;
+			ast_cse_expr[i] = ast_cse_expr[ast_cse_n];
+			ast_cse_ref[i] = ast_cse_ref[ast_cse_n];
+			ast_cse_off[i] = ast_cse_off[ast_cse_n];
+		} else {
+			i++;
+		}
+	}
+}
+
+static void ast_cse_block(AstArena *a, AstLocal bb) {
+	ast_cse_n = 0;
+	for (AstLocal s = ast_first_child(a, bb); s != AST_NONE; s = ast_next_sib(a, s)) {
+		uint16_t k = ast_kind(a, s);
+		if (k == AST_Store) {
+			AstLocal lval = ast_child(a, s, 0), val = ast_child(a, s, 1);
+			ast_cse_subst(a, val, 0);
+			ast_cse_subst(a, lval, 1);
+			if (!ast_cprop_safe(a, lval) || !ast_cprop_safe(a, val)) {
+				ast_cse_n = 0;
+				continue;
+			}
+			int off, tt;
+			if (ast_cprop_is_local(a, lval, &off, &tt)) {
+				ast_cse_kill(a, off);
+				int et;
+				uint64_t er;
+				if (!ast_cprop_escapes(a, off) && ast_cse_n < AST_CSE_MAX &&
+						ast_cse_regpure(a, val) && !ast_ident_leaf(a, val) &&
+						!ast_tco_reads_off(a, val, off) &&
+						ast_ident_etype(a, val, &et, &er) && ast_ident_intt(et) &&
+						(et & (VT_BTYPE | VT_UNSIGNED)) == (tt & (VT_BTYPE | VT_UNSIGNED)) &&
+						er == ast_type_ref(a, lval)) {
+					ast_cse_expr[ast_cse_n] = val;
+					ast_cse_ref[ast_cse_n] = lval;
+					ast_cse_off[ast_cse_n] = off;
+					ast_cse_n++;
+				}
+			} else {
+				ast_cse_n = 0;
+			}
+		} else if (k == AST_Return) {
+			ast_cse_subst(a, ast_first_child(a, s), 0);
+			ast_cse_n = 0;
+		} else if (k == AST_If && ast_op(a, s) == 0) {
+			ast_cse_subst(a, ast_child(a, s, 0), 0);
+			ast_cse_n = 0;
+		} else if (k == AST_Invoke) {
+			for (AstLocal c = ast_first_child(a, s); c != AST_NONE; c = ast_next_sib(a, c))
+				ast_cse_subst(a, c, 0);
+			ast_cse_n = 0;
+		} else {
+			ast_cse_n = 0;
+		}
+	}
+}
+
+static int ast_cse_run(AstArena *a) {
+	ast_cse_folds = 0;
+	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++)
+		if (ast_kind(a, n) == AST_BasicBlock)
+			ast_cse_block(a, n);
+	return ast_cse_folds;
+}
+
 static int ast_replay_ok(AstArena *a) {
 	if (ast_bail || ast_desync || ast_vn != 0 || ast_cf_top != 0)
 		return 0;
@@ -4180,6 +4351,7 @@ void ast_func_end(Sym *sym) {
 			int bfolds = 0;
 			int idents = 0;
 			int cprops = 0;
+			int cses = 0;
 			int dses = 0;
 			int sccps = 0;
 			int jts = 0;
@@ -4212,6 +4384,7 @@ void ast_func_end(Sym *sym) {
 				bfolds = faithful && ast_templates_env ? ast_bfold_run(ast_cur) : 0;
 				idents = faithful && ast_templates_env ? ast_ident_run(ast_cur) : 0;
 				cprops = faithful && ast_templates_env ? ast_cprop_run(ast_cur) : 0;
+				cses = faithful && ast_templates_env ? ast_cse_run(ast_cur) : 0;
 				dses = faithful && ast_templates_env ? ast_dse_run(ast_cur) : 0;
 				sccps = faithful && ast_templates_env ? ast_sccp_run(ast_cur) : 0;
 				jts = faithful && ast_templates_env ? ast_jt_run(ast_cur) : 0;
@@ -4219,6 +4392,7 @@ void ast_func_end(Sym *sym) {
 				int do_bfold = bfolds > 0;
 				int do_ident = idents > 0;
 				int do_cprop = cprops > 0;
+				int do_cse = cses > 0;
 				int do_dse = dses > 0;
 				int do_sccp = sccps > 0;
 				int do_jt = jts > 0;
@@ -4236,10 +4410,10 @@ void ast_func_end(Sym *sym) {
 				int do_promote = faithful && !do_tco && ast_promote_env && ast_plan_promotion(ast_cur) > 0;
 				ast_no_callful_promo = 0;
 				if (faithful && !do_inline && !do_promote && !do_bfold && !do_ident &&
-						!do_cprop && !do_dse && !do_sccp && !do_jt && !do_tco)
+						!do_cprop && !do_cse && !do_dse && !do_sccp && !do_jt && !do_tco)
 					loc = saved_loc;
 				if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
-						do_dse || do_sccp || do_jt || do_tco) {
+						do_cse || do_dse || do_sccp || do_jt || do_tco) {
 					ind = ast_body_ind_sv;
 					rsym = 0;
 					if (ast_rsec)
@@ -4247,7 +4421,7 @@ void ast_func_end(Sym *sym) {
 					nocode_wanted = 0;
 					loc = saved_loc;
 					anon_sym = saved_anon;
-					ast_fconst_i = (do_bfold || do_ident || do_cprop || do_dse || do_sccp || do_jt || do_tco || do_inline) ? ast_fconst_n : 0;
+					ast_fconst_i = (do_bfold || do_ident || do_cprop || do_cse || do_dse || do_sccp || do_jt || do_tco || do_inline) ? ast_fconst_n : 0;
 					ast_locrec_i = 0;
 					ast_replaying = 1;
 					ast_rp_switch = NULL;
@@ -4310,6 +4484,8 @@ void ast_func_end(Sym *sym) {
 					fprintf(stderr, "[ast-ident] %d %s\n", idents, funcname);
 				if (cprops)
 					fprintf(stderr, "[ast-cprop] %d %s\n", cprops, funcname);
+				if (cses)
+					fprintf(stderr, "[ast-cse] %d %s\n", cses, funcname);
 				if (dses)
 					fprintf(stderr, "[ast-dse] %d %s\n", dses, funcname);
 				if (sccps)
