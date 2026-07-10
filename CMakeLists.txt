@@ -3403,6 +3403,13 @@ if(MCC_BUILD_TESTS)
                     "$<TARGET_FILE:mcchv>" "${CMAKE_BINARY_DIR}")
         set_tests_properties(hypervisor-cache PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77)
+        if(MCC_CONFIG_OPTIMIZER)
+            add_test(NAME superopt-perfn-cache
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/perfncache.sh"
+                        "${_mcc_exe}" "${CMAKE_BINARY_DIR}")
+            set_tests_properties(superopt-perfn-cache PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+        endif()
     endif()
 
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples/ex1.c")

@@ -433,6 +433,7 @@ static int ast_cost_env;
 static int ast_bitflag_env;
 static int ast_bitflag_min;
 static uint64_t ast_intention_acc;
+static const char *ast_hash_out;
 
 uint64_t ast_intention_value(void) {
 	return ast_intention_acc;
@@ -676,6 +677,7 @@ void ast_configure(MCCState *s1) {
 	if (ast_bitflag_min < 3)
 		ast_bitflag_min = 5;
 	ast_intention_acc = 0;
+	ast_hash_out = getenv("MCC_AST_HASH_OUT");
 	ast_fncfg_parse();
 }
 
@@ -4887,8 +4889,16 @@ void ast_func_end(Sym *sym) {
 		ast_capture = 0;
 		ast_fn_faithful = 0;
 		ast_fn_tco = 0;
-		ast_intention_acc = ast_intention_acc * 0x100000001b3u ^
-												ast_intention_hash(ast_cur, AST_NONE);
+		uint64_t ast_fnh = ast_intention_hash(ast_cur, AST_NONE);
+		ast_intention_acc = ast_intention_acc * 0x100000001b3u ^ ast_fnh;
+		if (ast_hash_out && ast_hash_out[0]) {
+			FILE *ast_hf = fopen(ast_hash_out, "a");
+			if (ast_hf) {
+				fprintf(ast_hf, "%s %016llx\n", funcname,
+								(unsigned long long)ast_fnh);
+				fclose(ast_hf);
+			}
+		}
 		if (ast_cost_env)
 			ast_fn_cost(ast_cur, funcname);
 		if (ast_bitflag_env)

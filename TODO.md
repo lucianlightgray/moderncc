@@ -418,8 +418,14 @@ Landed, all presets/ctest green + fixpoint byte-identical at each step:
 - **§20 done** — `host_cache_dir()` in mcchost (`97846575`).
 - **§21 first increment** — whole-TU resumable checkpoint on the `-O<N>`
   search: warm-start-and-continue, flock + A/B keep-best + durable-atomic
-  (`da123a35`). Remaining: two-tier per-fn keys, two-phase cursor,
-  multi-objective (land with §22/§25).
+  (`da123a35`). **Second increment (2026-07-10): two-tier per-fn keys** —
+  the `MCC_AST_PERFN` search persists a per-function checkpoint
+  (`pf-<key>.ck`, key = alpha-renamed §18 intention hash + `MCC_VERSION` +
+  triplet; children dump per-fn hashes via `MCC_AST_HASH_OUT`, driver
+  adopts converged functions instantly and probes only untried configs,
+  same flock/keep-best/durable protocol; `superopt-perfn-cache` ctest:
+  cold 0-cached → warm all-cached → edit one fn → only it misses).
+  Remaining: two-phase cursor, multi-objective (land with §22/§25).
 - **flags** — `--clear-cache`, `--jit-max-duration`, `--jit-functions` +
   `host_rmrf` (`4394057f`).
 - **§23 first increment** — inline node/graft budgets are searchable env
@@ -583,6 +589,23 @@ Implementation (decided 2026-07-10):
   (§18/§25) must additionally key on **real callee identity** (or re-verify
   on hit) — for stored executable bytes a wrong match is incorrect, not
   merely suboptimal.
+
+**Per-fn tier LANDED (2026-07-10).** `mcc_superopt_perfn` persists a
+per-function checkpoint `pf-<key>.ck` under `host_cache_dir()`: fixed
+`SoPfCkpt {fmt, best_cfg, key, best_size, tried}` raw-dump records, key =
+§18 `ast_intention_hash` (alpha-renamed, computed in `ast_func_end` and
+exported from the worker child via `MCC_AST_HASH_OUT`, an internal
+driver↔child channel like `MCC_AST_FN_CONFIG`) folded with
+`MCC_VERSION_STR` + triplet. The driver adopts each converged function's
+best config without re-probing (`tried` bitmask over the 3-config space),
+probes only untried configs, and writes back after every measurement
+(incremental, interrupt-safe) through the same flock + A/B keep-best +
+tmp/fsync/rename protocol. Editing one function re-opens only that
+function's search; structurally identical functions share entries by
+construction. `superopt-perfn-cache` ctest drives cold → all-cached →
+one-fn-edit; full ctest 1861/1861 + fixpoint stage2==3==4. Remaining
+here: the two-phase coarse-to-fine cursor and the multi-objective record
+(land with §22/§25 as decided).
 
 ## 22. Per-function search granularity (medium-large)
 

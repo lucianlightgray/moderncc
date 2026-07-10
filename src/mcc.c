@@ -675,20 +675,127 @@ static long so_fn_find(struct so_fn *a, int n, const char *name) {
 	return -1;
 }
 
+#define SO_PF_FMT 1u
+
+typedef struct {
+	uint32_t fmt;
+	uint32_t best_cfg;
+	uint64_t key;
+	int64_t best_size;
+	uint32_t tried;
+	uint32_t pad;
+} SoPfCkpt;
+
+static uint64_t so_pf_key(uint64_t fnhash) {
+	uint64_t h = so_fnv(0xcbf29ce484222325u, &fnhash, sizeof fnhash);
+	h = so_fnv(h, MCC_VERSION_STR, strlen(MCC_VERSION_STR));
+#ifdef MCC_CONFIG_TRIPLET
+	h = so_fnv(h, MCC_CONFIG_TRIPLET, strlen(MCC_CONFIG_TRIPLET));
+#endif
+	return h;
+}
+
+static int so_pf_path(char *buf, int cap, uint64_t key) {
+	char dir[3072];
+	if (host_cache_dir(dir, sizeof dir) != 0)
+		return -1;
+	snprintf(buf, cap, "%s/pf-%016" PRIx64 ".ck", dir, key);
+	return 0;
+}
+
+static int so_pf_read(uint64_t key, SoPfCkpt *c) {
+	char path[3200];
+	FILE *f;
+	SoPfCkpt t;
+	if (so_pf_path(path, sizeof path, key) != 0)
+		return -1;
+	if (!(f = host_fopen(path, "rb")))
+		return -1;
+	if (fread(&t, sizeof t, 1, f) != 1 || t.fmt != SO_PF_FMT || t.key != key) {
+		fclose(f);
+		return -1;
+	}
+	fclose(f);
+	*c = t;
+	return 0;
+}
+
+static void so_pf_write(uint64_t key, const SoPfCkpt *nw) {
+	char path[3200], lockp[3300], tmpp[3300];
+	int lockfd, fd;
+	SoPfCkpt out = *nw, b;
+	FILE *f;
+	if (so_pf_path(path, sizeof path, key) != 0)
+		return;
+	snprintf(lockp, sizeof lockp, "%s.lock", path);
+	lockfd = open(lockp, O_CREAT | O_RDWR, 0644);
+	if (lockfd >= 0)
+		flock(lockfd, LOCK_EX);
+	if ((f = host_fopen(path, "rb"))) {
+		if (fread(&b, sizeof b, 1, f) == 1 && b.fmt == SO_PF_FMT &&
+				b.key == key) {
+			if (b.best_size >= 0 &&
+					(out.best_size < 0 || b.best_size < out.best_size)) {
+				out.best_size = b.best_size;
+				out.best_cfg = b.best_cfg;
+			}
+			out.tried |= b.tried;
+		}
+		fclose(f);
+	}
+	snprintf(tmpp, sizeof tmpp, "%s.tmp", path);
+	if ((f = host_fopen(tmpp, "wb"))) {
+		fwrite(&out, sizeof out, 1, f);
+		fflush(f);
+		if ((fd = fileno(f)) >= 0)
+			fsync(fd);
+		fclose(f);
+		rename(tmpp, path);
+	}
+	if (lockfd >= 0) {
+		flock(lockfd, LOCK_UN);
+		close(lockfd);
+	}
+}
+
+static int so_fn_hashes(const char *path, struct so_fn *fns, int nf,
+												uint64_t *fnh) {
+	FILE *f = host_fopen(path, "rb");
+	char nm[80];
+	unsigned long long h;
+	int got = 0, i;
+	for (i = 0; i < nf; i++)
+		fnh[i] = 0;
+	if (!f)
+		return 0;
+	while (fscanf(f, "%79s %llx", nm, &h) == 2)
+		for (i = 0; i < nf; i++)
+			if (!strcmp(fns[i].name, nm)) {
+				if (!fnh[i])
+					got++;
+				fnh[i] = h;
+				break;
+			}
+	fclose(f);
+	return got;
+}
+
 static int mcc_superopt_perfn(int argc, char **argv, MCCState *s,
 															const char *outfile) {
 	unsigned budget_ms = s->optimize_search_seconds * 1000u;
 	unsigned start = host_clock_ms();
-	char exe[1024], cand[1200], *cfg;
+	char exe[1024], cand[1200], hashp[1300], *cfg;
 	const char **cv;
-	int i, argn, nf, fi, ci, p;
+	int i, argn, nf, fi, ci, p, cached = 0;
 	struct so_fn fns[SO_MAXFN], cur[SO_MAXFN];
-	unsigned best_cfg[SO_MAXFN];
+	unsigned best_cfg[SO_MAXFN], tried[SO_MAXFN];
+	uint64_t fnh[SO_MAXFN];
 	long best_size[SO_MAXFN], sz;
 	static const unsigned cfgs[3] = {1, 3, 7};
 	if (host_exe_path(exe, sizeof exe) <= 0)
 		pstrcpy(exe, sizeof exe, argv[0]);
 	snprintf(cand, sizeof cand, "%s.mcc-pf", outfile);
+	snprintf(hashp, sizeof hashp, "%s.fnh", cand);
 	cfg = mcc_malloc(SO_MAXFN * 96);
 	cv = mcc_malloc((argc + 4) * sizeof *cv);
 	argn = 0;
@@ -705,13 +812,18 @@ static int mcc_superopt_perfn(int argc, char **argv, MCCState *s,
 	setenv("MCC_SEARCH_WORKER", "1", 1);
 	setenv("MCC_AST_TEMPLATES", "1", 1);
 	setenv("MCC_AST_FN_CONFIG", "", 1);
+	remove(hashp);
+	setenv("MCC_AST_HASH_OUT", hashp, 1);
 	if (so_spawn_timeout(cv, 300000u) != 0 ||
 			(nf = so_fn_sizes(cand, fns, SO_MAXFN)) <= 0) {
+		unsetenv("MCC_AST_HASH_OUT");
+		remove(hashp);
 		remove(cand);
 		mcc_free(cfg);
 		mcc_free(cv);
 		return -1;
 	}
+	unsetenv("MCC_AST_HASH_OUT");
 	for (fi = 0; fi < nf; fi++) {
 		int mx = fi, j;
 		for (j = fi + 1; j < nf; j++)
@@ -723,14 +835,30 @@ static int mcc_superopt_perfn(int argc, char **argv, MCCState *s,
 			fns[mx] = t;
 		}
 	}
+	so_fn_hashes(hashp, fns, nf, fnh);
+	remove(hashp);
 	for (fi = 0; fi < nf; fi++) {
 		best_cfg[fi] = 7;
 		best_size[fi] = fns[fi].size;
+		tried[fi] = 4;
+		if (fnh[fi]) {
+			SoPfCkpt c;
+			if (so_pf_read(so_pf_key(fnh[fi]), &c) == 0) {
+				tried[fi] |= c.tried & 7u;
+				if (c.best_size > 0 && c.best_size <= best_size[fi] &&
+						(c.best_cfg == 1 || c.best_cfg == 3 || c.best_cfg == 7)) {
+					best_cfg[fi] = c.best_cfg;
+					best_size[fi] = c.best_size;
+				}
+				if (tried[fi] == 7)
+					cached++;
+			}
+		}
 	}
 	for (fi = 0; fi < nf && !so_stop && host_clock_ms() - start < budget_ms; fi++)
 		for (ci = 0; ci < 3; ci++) {
 			int m, j;
-			if (cfgs[ci] == best_cfg[fi] ||
+			if (((tried[fi] >> ci) & 1) ||
 					host_clock_ms() - start >= budget_ms || so_stop)
 				continue;
 			for (p = 0, j = 0; j < nf; j++)
@@ -741,9 +869,22 @@ static int mcc_superopt_perfn(int argc, char **argv, MCCState *s,
 				continue;
 			m = so_fn_sizes(cand, cur, SO_MAXFN);
 			sz = so_fn_find(cur, m, fns[fi].name);
-			if (sz > 0 && sz < best_size[fi]) {
+			if (sz <= 0)
+				continue;
+			tried[fi] |= 1u << ci;
+			if (sz < best_size[fi]) {
 				best_size[fi] = sz;
 				best_cfg[fi] = cfgs[ci];
+			}
+			if (fnh[fi]) {
+				SoPfCkpt c;
+				memset(&c, 0, sizeof c);
+				c.fmt = SO_PF_FMT;
+				c.key = so_pf_key(fnh[fi]);
+				c.best_cfg = best_cfg[fi];
+				c.best_size = best_size[fi];
+				c.tried = tried[fi];
+				so_pf_write(c.key, &c);
 			}
 		}
 	for (p = 0, fi = 0; fi < nf; fi++)
@@ -762,8 +903,8 @@ static int mcc_superopt_perfn(int argc, char **argv, MCCState *s,
 		long tot = 0;
 		for (fi = 0; fi < nf; fi++)
 			tot += best_size[fi];
-		printf("superopt-perfn: %d functions in %ums, total .text %ld\n", nf,
-					 host_clock_ms() - start, tot);
+		printf("superopt-perfn: %d functions (%d cached) in %ums, total .text %ld\n",
+					 nf, cached, host_clock_ms() - start, tot);
 	}
 	mcc_free(cfg);
 	mcc_free(cv);
