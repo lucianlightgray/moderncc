@@ -5046,7 +5046,7 @@ void ast_func_end(Sym *sym) {
 			mcc_free(orig_rel);
 		}
 		int keep_inline = ast_fn_faithful && ast_inline_retain(ast_cur, sym);
-		int keep_reemit = ast_reemit_retain(ast_cur, sym);
+		int keep_reemit = ast_fn_faithful && ast_reemit_retain(ast_cur, sym);
 		if (!keep_inline && !keep_reemit)
 			ast_arena_free(ast_cur);
 		ast_cur = NULL;

@@ -180,9 +180,66 @@ read after the bail, on arm64 register allocation.
 4. Re-run: st2 (-O1/-O2/-O3) × (corpus/fl/mcc.c) under qemu; then the CI
    matrix. Also re-check macos-arm64 with the same fix.
 
+## FIXED: `[-O3]` mcc rows n/a — reemit retained an unfaithfully-replayed fn
+
+Root cause (one line): `ast_reemit_retain` did not require `ast_fn_faithful`,
+so a function whose AST replay does **not** byte-reproduce its first pass could
+still be queued for end-of-TU forward-inline reemission — and `ast_reemit`
+ships whatever the replay emits with no faithful/fallback safety net (unlike
+`ast_func_end`, which restores the original bytes when `faithful==0`).
+
+Mechanism (macos-arm64, deterministic local repro, no qemu):
+- `-O3` adds exactly one thing over `-O2`: the AST inliner (`MCC_AST_INLINE`,
+  gated `optimize>=3 && !optimize_size`). `MCC_AST_INLINE=0` → all `-O3` mcc
+  rows populate.
+- Minimal trigger: `MCC_AST_INLINE_NODES=26` (25 works, 26 crashes). The 26th
+  candidate is `pstrcat` (libmcc.c), which is `#include`d *after* `parse_include`
+  (mccpp.c) — libmcc.c:7 pulls in mccpp.c before pstrcpy/pstrcat are defined at
+  libmcc.c:83/101. So `parse_include` is compiled with those callees only
+  forward-declared → `ast_reemit_retain` queues it (has static calls) →
+  `ast_reemit_has_forward` fires once pstrcat is pooled graftable →
+  `parse_include` is re-emitted.
+- `parse_include`'s replay is **unfaithful** (verified: 0 `[ast-replay]
+  parse_include` dump hits, but it *is* `re-emitted`). First pass kept correct
+  bytes via the `faithful==0` restore; the reemit re-ran the same unfaithful
+  replay and emitted a corrupt `pstrcpy(buf, sizeof buf, framework_paths[j])`
+  in the Mach-O framework branch (arg register clobbered → `x1`="Contents"
+  path bytes → SIGSEGV inside pstrcpy). Crash is independent of whether any
+  graft actually splices (`MCC_AST_INLINE_LIMIT=0` / `MCC_AST_GRAFT=1` still
+  crash; forcing `ast_inline_active=0` in reemit still crashes) — it is the
+  reemission of an unfaithful body, not the graft.
+
+Fix (src/mccast.c, `ast_func_end`): gate the reemit retain the same way the
+inline retain is already gated —
+`int keep_reemit = ast_fn_faithful && ast_reemit_retain(ast_cur, sym);`.
+A function only becomes a forward-inline reemit candidate when its replay is
+byte-faithful; unfaithful functions keep their correct first-pass code and are
+simply never reemitted (they lose only the forward-inline optimization).
+
+Verified on macos-arm64 (this machine, Apple M1 Pro): `-O3` self-host stage2
+now compiles corpus.c / full_language.c and the produced binary runs (was
+SIGSEGV); full mccbench report has zero all-n/a rows; fixpointgate
+stage2==stage3==stage4 byte-identical; ctest 100% (1856/1856). Recheck
+macos-x86_64 and the arm64/msvc CI matrix.
+
+Note on perturbation: this bug is layout-sensitive (see the historical section
+below). After pulling `5968f6ab` (§30 bit-flag transform, +246 lines in
+mccast.c) the *default*-node-limit manifestation is masked even without the
+fix — the shifted node/pool layout means the offending unfaithful function is
+no longer the one reemitted-with-a-forward-graft. The `ast_fn_faithful` gate is
+kept anyway: it is the correct invariant (unfaithful bodies can never be
+reemitted correctly, only kept from the first pass), it mirrors the sibling
+`keep_inline` gate, and it is what stops the next codegen change from
+re-exposing the same all-n/a. The minimal knob repro (`MCC_AST_INLINE_NODES`)
+is currently unusable on `5968f6ab` for an unrelated reason: setting it trips a
+new `arm64-gen.c:650 load(1,(32,400,0))` assertion from §30's bit-flag r-field
+flag not being in the arm64 `load()` mask (the known "arm64 load() r-flag
+mask" class; CI never sets that env, so it does not gate the bench).
+
 ## Open: macos-x86_64 `[-O3]` rows n/a
 
-Untouched so far. Facts: -O2 (promote) works on Darwin x86_64, -O3 fails for
+May be the same reemit bug (the fix above is arch-independent — retest CI
+first). Facts: -O2 (promote) works on Darwin x86_64, -O3 fails for
 all workloads; Linux x86_64 -O3 self-host works locally. With the PE promote
 fix landed, first retest CI: the PE -O3 failures were promote-caused, and the
 Mach-O -O3 failure may share it (promote is active at -O3 too, and Darwin
