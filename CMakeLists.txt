@@ -2937,6 +2937,27 @@ if(MCC_BUILD_TESTS)
             COMMAND "$<TARGET_FILE:ckretired>" src tools runtime CMakeLists.txt
             WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
         set_tests_properties(retired-macro-invariant PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
+        add_executable(targetgate tools/targetgate.c tools/toolsupport.c)
+        target_link_libraries(targetgate ${CMAKE_DL_LIBS})
+        add_test(NAME target-gate-invariant
+            COMMAND "$<TARGET_FILE:targetgate>" src tools
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+        set_tests_properties(target-gate-invariant PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
+        add_executable(deadgate tools/deadgate.c tools/toolsupport.c)
+        target_link_libraries(deadgate ${CMAKE_DL_LIBS})
+        add_test(NAME dead-gate-invariant
+            COMMAND "$<TARGET_FILE:deadgate>" src tools
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+        set_tests_properties(dead-gate-invariant PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
+        add_executable(idiomgate tools/idiomgate.c tools/toolsupport.c)
+        target_link_libraries(idiomgate ${CMAKE_DL_LIBS})
+        add_test(NAME idiom-gate-invariant
+            COMMAND "$<TARGET_FILE:idiomgate>" src tools
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+        set_tests_properties(idiom-gate-invariant PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
     if(MCC_AST AND NOT CMAKE_CROSSCOMPILING)

@@ -152,21 +152,21 @@ declined; fmtgate moot with the format arc deferred). Same recipe as
 `tools/hostgate.c`: banned-pattern scan + explicit allowlist + ctest
 invariant, wired like `host-gate-invariant`.
 
-- [ ] **targetgate** — `MCC_TARGET_*` in PP conditionals is permitted only in
+- [x] **targetgate** — `MCC_TARGET_*` in PP conditionals is permitted only in
       `src/arch/` plus a frozen allowlist of today's legitimate consumer
       files (`mcc.h`, `mccgen.c`, `mccdbg.c`, `objfmt/*`, `libmcc.c`,
       `mccpp.c`, `mccrun.c`, `mcc.c`, `mccasm.c`, `mcctok.h`, `mccast.c`,
       `mcctools.c` — finalize the list from the audit counts). With TargetDesc
       declined, this fence is what keeps the ~200 scattered sites
       frozen-not-growing: new files cannot introduce target conditionals.
-- [ ] **deadgate** — no new `#if 0` / bare `#if 1` anywhere; the GATED.md §5
+- [x] **deadgate** — no new `#if 0` / bare `#if 1` anywhere; the GATED.md §5
       inventory is the initial frozen allowlist, which items 4, 5, and 8
       shrink to empty.
-- [ ] **idiomgate** — one canonical test form per config macro (the
+- [x] **idiomgate** — one canonical test form per config macro (the
       `mcc.h:77-103` normalization pattern until item 16 lands, then the
       item-16 canonical form). Lowest standalone value of the three; build it
       last and let item 16's grep-gates absorb it if that ships first.
-- [ ] Gates: the three new ctest invariants green on the full matrix; ledger
+- [x] Gates: the three new ctest invariants green on the full matrix; ledger
       lives in the tools (single source of truth, `tools/ci.c` style).
 
 ## 12. Re-gate AST and CST under their parent-feature CONFIG gates (medium-large)
