@@ -145,10 +145,13 @@ Children:
 - **deliberate DIFFs** (≈8) — W: `[DIFF]` conformant differences kept on purpose. Who: `__STDC_VERSION__==199901L` while shipping C11 headers; invalid-token-paste warn-continue (`pp_invalid_paste`); assignment-to-const warns (gcc/clang error); comma-in-ICE / `_Noreturn`-on-object diagnosed only `-pedantic`. Why: a diagnostic of any severity satisfies "shall … a diagnostic".
 - **default C11 standard** (≈2) — W: `cversion=201112`, set in `mcc_new()` (`src/libmcc.c:911`); `-std=c99/c17/c23` select others.
 
-**Conformance gaps** — **§6-A real gaps** (≈5, mcc vs consensus): (1) plain
-`inline` no-extern-def emits a global → links rc0 where gcc/clang fail (widest
-impact); (2) K&R implicit-`int` params warn-only; (3) `va_start` 2nd-arg check
-silent on x86_64-SysV/i386; (4) `<threads.h>` header-precedence shadowing.
+**Conformance gaps** — **§6-A** (was ≈5; 1-4 now RESOLVED, 2026-07-10): (1)
+plain `inline` no-extern-def now provides no external definition and
+link-errors like gcc/clang (`3ca81969`, tested `cli/c99_inline_*`); (2) K&R
+implicit-`int` params rejected under C99+ (`c1777f26`); (3) `va_start` last-arg
+check green (`cli/va_start_last_param_clean`); (4) `<threads.h>` precedence
+fixed via the `include_next` shim (`a90afe80`). Remaining §6-A residue: gnu89
+plain-`inline` link behavior diverges from clang (TODO §40.1 NEW gap).
 **§6-B coverage gaps** (≈8, mcc passes but under-tests): FAM (mcc ~1 vs gcc 13),
 `_Noreturn` (1 vs 5), `_Alignas`/`_Alignof`, VLA-jump diagnostics, UCN breadth,
 FP eval-method / Annex-F wide returns, `_Complex` Annex-G, negative-test tier.

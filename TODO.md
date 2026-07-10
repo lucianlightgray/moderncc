@@ -1791,20 +1791,28 @@ increment.
 
 ## 40.1 Untracked gaps now registered as items
 
-- [ ] **§6-A conformance gap 1 — plain `inline` with no external definition
-      emits a global** (MCC.md:148-149, widest-impact): a call to such an
-      `inline` links rc0 where gcc/clang fail (no external def must be
-      emitted per C99/C11 §6.7.4). TDD: golden test asserting an undefined-
-      symbol link error; fix symbol emission so a bare-`inline` def is not
-      externally provided. Correctness, not gated (matches the reference
-      compilers). Independent of the AST optimizer.
-- [ ] **§6-A gap 2** — K&R implicit-`int` params warn-only where consensus
-      errors (MCC.md:149). TDD: negative test → promote to error under the
-      right std.
-- [ ] **§6-A gap 3** — `va_start` 2nd-arg check silent on x86_64-SysV/i386
-      (MCC.md:150); needs SysV `gen_va_start` rework. TDD: negative test.
-- [ ] **§6-A gap 4** — bundled `<threads.h>` shadows the system header
-      (MCC.md:151). TDD: include-order test.
+- [x] **§6-A conformance gaps 1-4 were ALREADY FIXED — MCC.md prose is
+      stale** (verified 2026-07-10 by re-checking code + regression tests, not
+      just the doc audit): gap 1 (bare-`inline` external def) fixed by
+      `3ca81969` — mcc now link-errors a bare-inline-only call exactly like
+      cc/clang, tested by `cli/c99_inline_no_extern_def` +
+      `c99_inline_emission_matrix`; gap 2 (K&R implicit-int) fixed by
+      `c1777f26`, tested by `cli/knr_implicit_int_param`/`implicit_int_diag`/
+      `wimplicit_int_flag`; gap 3 (`va_start` last-arg) tested green by
+      `cli/va_start_last_param_clean`; gap 4 (`<threads.h>` shadow) resolved by
+      the `include_next` shim (`a90afe80`), tested by `exec/c11_threads`. My
+      earlier §40.1 registration was a doc-audit false-positive. ACTION: flip
+      MCC.md:148-151 prose to "landed"; no code.
+- [ ] **NEW gap — gnu89 plain-`inline` diverges from clang** (found while
+      verifying gap 1; untracked): under `-fgnu89-inline`, `inline int
+      f(){...}` + a call link-errors in mcc but LINKS in clang (gnu89 plain
+      inline should provide the out-of-line definition); conversely mcc's
+      gnu89 `extern inline` links (emits a static copy, the documented
+      "treat extern inline as static inline" [DIFF]) where clang link-errors.
+      Root: `mccgen.c:12332-12337` only rewrites `extern inline` for gnu89;
+      plain inline always takes the C99 `diag_only` no-emit path regardless of
+      `gnu89_inline`. Untested in the suite. TDD: gnu89 link-matrix vs clang;
+      decide fix-vs-document-as-[DIFF].
 - [x] **STATUS.md rung table is stale past §32** (Agent-A gap 1/2): it stopped
       at §32 and framed §32c as "fully scoped," omitting §33/§35/§36/§37/§38/
       §39. Done: rung table extended (§32c, §25) + scope note added. NOTE the
