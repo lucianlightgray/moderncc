@@ -851,6 +851,24 @@ replacement then needs new multi-node AST construction (the pattern no
 current pass uses). Both are why §30 is a focused effort, not a quick
 expression-pass extension.
 
+**Recipe (2026-07-10, de-risked).** Node-building in a pass is a *validated*
+pattern — `ast_tco_run` (src/mccast.c ~4178) already builds `AST_Ref/
+Convert/Store/Jump` and re-parents the root, and the re-emit handles it. So
+§30's transform follows it. Correct **branchless, UB-free** encoding (no
+control-flow restructuring, no short-circuit):
+`res = ((unsigned)key < 64) & (int)((MASK >> ((unsigned)key & 63)) & 1)`
+— the `& 63` keeps the shift amount in `[0,63]` (no UB at any key), the
+`< 64` guard zeroes out-of-range keys; verified at `key`∈set / ∉set / =64 /
+=−1. Build ≈13 integer nodes (two `Convert(key→unsigned)`, `<`, `&63`, the
+`MASK` u64 literal, `>>`, `&1`, outer `&`) reusing a deep-cloned `key`
+subtree (`ast_dup_sub`); adopt into the cluster root. Reads of a duplicated
+local don't call `ast_alloc_loc`, so the `ast_locrec` pool is unaffected —
+the desync risk that blocked it is gone. Two targets: the value form (`r =
+a||b||c`, materialized `AST_Binary TOK_LOR`) is the safer first cut;
+the control-flow if-chain form needs the collapse too. Gate behind the
+existing `MCC_AST_BITFLAG` (default off) and validate at edge keys across
+all four exec-replay columns + fixpoint.
+
 ## 31. Strategy-portfolio scheduler — the governing search architecture (large)
 
 Unifies every optimizer methodology under one meta-search. Each methodology
