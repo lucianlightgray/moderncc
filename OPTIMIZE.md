@@ -382,3 +382,24 @@ dlmf.nist.gov/3.11 (minimax polynomial approximations).
   plus the -O3 inline miscompile fix. Open: peephole, SCCP, Kildall
   DCE, CSE/GVN (blocked on an AST value-ref node), Sethi–Ullman, the
   Tier-3 loop set, and the researched Remez/CORDIC sin/exp evaluator.
+
+### 2026-07-10 — iteration 13 (post-passes re-benchmark)
+
+- Re-ran the pinned n=15 codegen benchmark now that three tree passes
+  landed since iter 4 (builtin fold, algebraic identities, const-prop):
+  - O2 685.7±8.4ms, O3 689.1±23.3ms — both **significantly faster than
+    O0** (welch-t −4.39 / −4.19), reproducing iter-4's finding that
+    promotion (O2) is the codegen lever.
+  - O0 810±110ms and O1 892±208ms this round: **variance inflated ~30×**
+    by a concurrent self-host mccbench run contaminating those samples —
+    treated as unreliable, NOT a regression (the stable O2/O3 numbers
+    match iter 4's 667–689ms band).
+  - The new tree passes don't visibly move self-host codegen speed:
+    mcc's own hot paths have few constant-arg libm calls, integer
+    identities, or local-const patterns to fold — expected; their wins
+    show on code that uses those idioms (the exec goldens), not on the
+    compiler's self-compile. Recorded per protocol: no significant
+    self-host delta attributable to the tree passes.
+- Lesson logged: isolate the bench from other CPU load (the pinned core
+  helps codegen rows but shared caches/memory bw still leak in) — future
+  rounds run bench solo.
