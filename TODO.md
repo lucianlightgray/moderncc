@@ -374,3 +374,90 @@ tree edit) simply misses.
       Repro: a small `double f(...){...}` called in `main` at -O3, diff
       vs `-O0`. Fix the float-return graft; add an inline-column exec
       golden with float/double returns so the suite covers it.
+
+# Superoptimizer / JIT ladder (open)
+
+The `-O<N>` (N>=4) compile-time search landed at `f959078e`
+(`mcc_superopt_search` in `src/mcc.c`): it re-compiles the whole TU under
+different AST pass-configs via child workers and keeps the smallest object.
+These items close the gaps that survey exposed — no persistent cache, a
+conservative-not-aggressive inliner, and uniform (no hot-slice) budget
+spend — ordered simplest → hardest, each building on the previous.
+
+## 20. `host_cache_dir()` — portable per-user cache dir (small)
+
+Shared foundation for §18 and §21/§25/§26. Factor the cache-dir resolver
+out of `tools/mcchv.c` (`hv_cache_path`) into `host_cache_dir(char *buf,
+int size)` in `mcchost.*`, routed through the host abstraction so
+`host-gate-invariant` stays green:
+- Linux/BSD/Hurd: `$XDG_CACHE_HOME`, else `$HOME/.cache`, + `mcc/`.
+- macOS (`MCC_HOST_DARWIN`): `$HOME/Library/Caches/mcc`.
+- Windows (`MCC_HOST_WIN32`): `%LOCALAPPDATA%`, else
+  `%USERPROFILE%\AppData\Local`, + `mcc\`.
+Create via `host_mkdirs`; return <0 when no home is resolvable (sandboxes)
+and keep callers tolerant. Repoint `mcchv` at it with no behavior change.
+Builds on nothing.
+
+## 21. Warm-cache the `-O<N>` search (medium)
+
+Today `mcc -O<N>` re-runs the full ~1296-config search cold every
+invocation; nothing persists (confirmed: no cache use in `src/`). Key the
+winning config by `host_cache_dir()` + `MCC_VERSION` + target triple + a
+content hash of the input(s); on a hit skip to the known-best config
+(re-verify it compiles, else fall back to a fresh search). A
+compiler-version or target bump misses cleanly. Builds on §20; shares
+§18's keying discipline. Test: cold miss then warm hit reuses the cached
+config without re-searching.
+
+## 22. Per-function search granularity (medium-large)
+
+The search is whole-TU: one global pass-config scored by total object
+size. Move the choice into the per-function replay (`ast_func_end`),
+picking the size-best pass subset per captured function. This is the unit
+§18's intention hash was designed for (per-function `AstArena`) and turns
+the §21 cache and the §24 selector per-function. Keep `-O0..-O3`
+byte-identical (still gated on `optimize_search_seconds>0`). Builds on
+§21 + the capture/replay driver.
+
+## 23. Widen the inliner envelope — the "aggressive" mode (medium-large, correctness-sensitive)
+
+`ast_inline_*` is deliberately conservative: static-only, node budget 64,
+<=6 scalar/simple-struct params, depth 8, graft budget 2048, excludes
+VLA/setjmp/complex — complete within that envelope, not aggressive. Behind
+searchable gates (`MCC_AST_INLINE_LIMIT` and new siblings), widen it:
+larger node/graft budgets, more param shapes, cross-TU static callees,
+heuristic non-static inlining — each extension guarded so the
+capture/replay byte-identity invariant and the exec-replay inline column
+stay green, and each added to the §22 search space so the compiler
+auto-tunes the limits instead of hardcoding them. Builds on the existing
+inliner + §22.
+
+## 24. Hot-window / slice selector (large)
+
+The search spends the budget uniformly, with no notion of where effort
+pays. Add a static cost model (captured node count, loop-nest depth from
+the `AST_If` op 2..5 forms, call-out count as a hotness proxy) that ranks
+functions and allocates `optimize_search_seconds` to the top slices
+first, so `-O128` deepens the search on the functions that dominate
+size/cost instead of re-confirming trivia (today O4 and O128 converge to
+the same output). Builds on §22 (+ benefits from §23's widened space).
+
+## 25. Frontend-JIT candidate measurement (large)
+
+§21-24 score by static object size — a proxy, not runtime cost. For TUs
+with a runnable entry, measure candidates by JIT-running them
+(`MCC_OUTPUT_MEMORY` + `mcc_relocate` + `-run`, the `tools/mcchv.c` model)
+and timing / RSS-sampling, choosing by measured cpu+memory as the original
+`-O<N>` intent asked ("more efficient as told by both memory and cpu").
+Reuse §18's JIT-result cache. Builds on §22 + §18.
+
+## 26. `--embed-jit` runtime self-optimizer (largest — run LAST)
+
+Make `--embed-jit` (default on, flag plumbed at `f959078e`) do its runtime
+job: embed an always-on optimizer into the output that, while the program
+runs, JIT-recompiles its own hot functions in a background C11-thread pool
+and hot-swaps the faster versions in place — the original hypervisor
+vision, unconstrained by the compile-time seconds budget. Needs an ELF
+`.init_array` ctor, an embedded libmcc/JIT slice, the captured intention
+trees carried in the binary, and safe live function patching. Builds on
+§25 (JIT measurement) + §21 (cache).
