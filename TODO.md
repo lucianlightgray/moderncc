@@ -439,8 +439,11 @@ Landed, all presets/ctest green + fixpoint byte-identical at each step:
 **Every non-deferred rung (§20-§26, §29-§31) now has a real, tested
 increment**, 1857 ctest + fixpoint byte-identical throughout. The remaining
 *full* builds are the §30 mask-transform and the §26 runtime engine — each a
-focused session. §27/§28 stay deferred behind the value-reference-node
-decision (per the design round).
+focused session. §27/§28 were deferred behind the value-reference-node
+decision (per the design round); that decision is now **resolved in §32**
+(feasibility study, 2026-07-10): no new node kind — §27/§28 are unblocked
+for their analysis/structural halves, and the value-materializing halves
+wait on the §32c synthetic-temp infrastructure.
 
 
 The `-O<N>` (N>=4) compile-time search landed at `f959078e`
@@ -744,6 +747,9 @@ largest, run-LAST rung.
 
 Deferred (2026-07-10): parked as research behind the value-reference/SSA
 node decision; do not start until §20-25 land and that node is reassessed.
+**Reassessed — see §32**: the legality analysis (conservative dependence
+test) and the interchange rewrite (structural subtree swap) need no new
+node; only value-materializing follow-ons wait on §32c.
 No loop-nest transform exists today (only LICM + TCO touch the `AST_If`
 op 2..5 captures; the nest is never rearranged). Interchange (`for x; for
 y` → `for y; for x`), fusion, and tiling all need what the frontier is
@@ -760,6 +766,9 @@ rewrite on `-O0..-O3` byte-identity + a new loop-nest exec-golden column.
 
 Deferred (2026-07-10): the compositional/rewrite-rule half waits on the
 value-reference node reassessment after §20-25; only revisit then.
+**Reassessed — see §32**: the rule engine and algebraic/structural rules
+are φ-free over the existing retag primitives; only rules that materialize
+a shared runtime value wait on §32c.
 Both searches today tune a fixed pass menu; neither composes primitives
 into new transforms. Replace the menu with a small rewrite-rule IR — a
 peephole grammar of match→rewrite templates over the captured `AstArena`
@@ -1021,3 +1030,113 @@ fits the slice, above). Starting constants: base-slice `factor = 8` (round 1
 fits ~8 evals/strategy; rounds 2/3 → 16/32). **Strategy order within a
 round: cheapest-eval first** (quick wins seed the beam), then by recent
 best-gain so productive strategies get their slice while budget is fresh.
+
+## 32. Value-reference node — feasibility study RESOLVED (2026-07-10)
+
+**Verdict: no new node kind is needed.** The frontier's single "missing
+AST value-reference node" blocker (OPTIMIZE.md Frontier; §27/§28 deferral)
+conflates **four distinct mechanisms**, and the study (three horizontal
+slices over the node/arena machinery, the replay/emitter contract, and the
+blocked consumers, plus an end-to-end vertical trace) separates them:
+
+1. **Retag-to-literal (analysis only).** A proven-constant use rewrites in
+   place to `AST_Literal` via the existing `ast_ident_setlit`
+   (src/mccast.c:3478) — no runtime value is ever materialized. Covers the
+   **SCCP value-lattice half** entirely: extend `ast_cprop_block`
+   (src/mccast.c:3849) from per-block to structured-join dataflow — fork
+   the per-offset lattice (`ast_cprop_koff/ktt/kval`) at `AST_If` op 0
+   arms (fork = memcpy, meet = intersect-equal-values), pre-kill
+   loop-written offsets via `ast_licm_written` (src/mccast.c:4337) for op
+   2..5 instead of a fixpoint, bail on any label-def region
+   (`ast_sccp_has_label`, the established soundness device). Also covers
+   **§27 interchange legality** (conservative dependence test from
+   per-offset reaching-defs + affine-IV recognition, bail-to-"no") and the
+   **§27 rewrite** (pure structural swap of the nested op 2..5 subtrees)
+   and most of **§28** (rule engine over the existing retag primitives).
+   The "§27/§28 blocked on the node" framing is over-conservative for
+   these — only their value-materializing sub-cases inherit mechanism 3.
+2. **Existing-named-local reuse (landed; extend across joins).** The
+   CSE/LICM trick (`ast_cse_setref`, src/mccast.c:4281). Carrying the
+   availability table into dominated child regions instead of clearing it
+   at every If/Invoke/loop boundary (`ast_cse_block`, src/mccast.c:4702 —
+   the same move `ast_licm_at_loop` already makes across the back-edge)
+   yields dominator-based available-expressions — the majority of
+   practical CSE/GVN. Never merges two values, so no φ.
+3. **Fresh persistent temp — feasible with zero new node kinds.** A pass
+   builds ordinary `AST_Store`/`AST_Ref` nodes (the exact `ast_tco_run`
+   shape, src/mccast.c:4182-4192: `op=VT_LOCAL|VT_LVAL`, `ival=offset`,
+   `sym=0`, value wrapped in `AST_Convert`) whose offset is a **fresh
+   negative frame slot carved directly from the `saved_loc` floor** —
+   `loc = (loc - size) & -align`, bypassing `ast_alloc_loc` entirely, the
+   proven promote-fix mechanism (`ast_promo_entry_init`,
+   src/mccast.c:2328). This sidesteps the `ast_locrec` positional-pool
+   desync completely. Verified end-to-end: `gfunc_epilog` frame patching
+   includes carved slots on every backend (x86_64-gen.c:1560,
+   arm64-gen.c:1625, riscv64-gen.c:848); inline-graft bias + `frame_size`
+   capture (src/mccast.c:2024, 2402-2412) already accommodate synthetic
+   offsets; the reemit sweep (src/mccast.c:5107-5119) picks them up
+   provided they are strictly negative; PE frame-bottom hazard avoided by
+   construction (rbp-relative, above the outgoing-call area). Arch-neutral
+   (only the register-promotion bonus is x86_64-gated). Unblocks
+   **post-join PRE**, **IV strength reduction** (init/incr insertion
+   points confirmed: dedicated incr BasicBlock in op 3/5 captures,
+   src/mccast.c:1111, replay 2777-2817), and **fresh-temp CSE/LICM**.
+4. **True φ-SSA node.** Genuinely required only for cross-join
+   value-number merges (arms compute the same expression from *different*
+   operand values, merged result reused). Smallest payoff, largest cost —
+   **rejected**; passes bail on this case (the
+   `ast_licm_operands_ok`-style guard already refuses it).
+
+**Obstacles for mechanism 3** (from the vertical trace), one fatal unless
+guarded:
+- **B (fatal without guard):** promotion picks up the synthetic temp (a
+  scalar local whose address is never taken, so never poisoned —
+  `ast_plan_promotion` src/mccast.c:2153-2293) and `ast_promo_entry_init`
+  entry-seeds its register from the **uninitialized** slot. Guard: add
+  temp offsets to the promotion poison list (first), or prove
+  store-dominates-all-refs (later, makes temps register-promotable).
+- **A:** no carve hook exists between `loc = saved_loc`
+  (src/mccast.c:4963) and `ast_promo_entry_init` (4977) — one must be
+  added; temp carve must run **before** the promote save-slot carve. Bake
+  offsets from `saved_loc` at transform time (`loc == saved_loc` there,
+  a property of pass-1 faithfulness), reserve `loc` at the hook.
+- **C:** stored values must be materialized (wrap in `AST_Convert` like
+  TCO) — a bare `VT_CMP`/logical RHS is position-sensitive at `vstore`
+  (the FIX.md `vcheck_cmp` lesson class).
+- **D:** a temp `Store` must dominate every `Ref` (no conditional def
+  with post-join reads); also the trigger for B.
+
+**Per-consumer minimal mechanism:**
+
+| Consumer | Mechanism | Coverage |
+|---|---|---|
+| SCCP value-lattice | 1 (analysis only) | ~full, over int non-escaping scalar locals |
+| GVN dominator core | 2 (carry table across joins) | majority of real CSE |
+| GVN post-join PRE | 3 (hoisted temp; memory is the merge) | adds partial redundancy |
+| GVN value merge | 4 — rejected | bail |
+| IV strength reduction | 3 | full over affine IVs in op 2..5 loops; pow-of-2 already backend-native (§iter-23 negative result) |
+| §27 legality + rewrite | 1 + structural edit | conservative interchange; SSA only tightens the test |
+| §28 rule engine | 1 (+3 for value-materializing rules) | algebraic/structural rules φ-free |
+
+**Build order (decided recommendation):**
+1. **§32a — SCCP value-lattice, analysis-only** (cheapest, no temp infra;
+   pairs with the shipped `ast_sccp_run` branch half).
+2. **§32b — cross-join CSE extension** (no temp infra; extends the landed
+   named-local trick through dominated regions).
+3. **§32c — synthetic-temp infrastructure** (carve hook + promo-poison
+   guard + `AST_Convert` wrap + store-dominance rule), then consumers in
+   order: fresh-temp LICM (smallest step from landed code) → post-join
+   PRE → IV strength reduction.
+4. **φ-SSA node: rejected** — revisit only if the bail-rate of §32b/§32c
+   measures as significant on real corpora.
+
+Sub-decisions settled: promotion guard = poison-list first, dominance
+proof later; each pass env-gated per the existing pattern and registered
+as a §31 strategy so the search permutes it. Gates (the FIX.md lesson —
+pass-2 replay is never byte-verified and the last three regressions were
+invisible to the default suite): full ctest + fixpoint + whole-corpus
+mcctest + c-torture `--ast` columns + native arm64 spot-check for every
+increment. Doc correction folded in: OPTIMIZE.md Frontier and the §27/§28
+deferral texts should be re-pointed at this decomposition (§27/§28 are
+unblocked-for-analysis now; only their value-materializing halves wait on
+§32c). Builds on the landed pass suite + §22/§31 for search integration.
