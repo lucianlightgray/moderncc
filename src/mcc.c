@@ -286,6 +286,13 @@ static char *default_outputfile(MCCState *s, const char *first_file) {
 #include <fcntl.h>
 #include <sys/file.h>
 #include <unistd.h>
+#include <signal.h>
+
+static volatile sig_atomic_t so_stop;
+static void so_on_stop(int sig) {
+	(void)sig;
+	so_stop = 1;
+}
 
 #define SO_INLINE_LIMIT_MAX 160
 #define SO_CKPT_FMT 2u
@@ -518,6 +525,11 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 	cv[argn++] = cand_tmp;
 	cv[argn] = NULL;
 
+	so_stop = 0;
+	signal(SIGTERM, so_on_stop);
+	signal(SIGINT, so_on_stop);
+	signal(SIGHUP, so_on_stop);
+
 	{
 		unsigned t0 = host_clock_ms();
 		best = so_eval(cv, cand_tmp, best_gate, best_budget);
@@ -532,11 +544,11 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 		so_copy(cand_tmp, best_tmp);
 	}
 
-	while (host_clock_ms() - start < budget_ms &&
+	while (!so_stop && host_clock_ms() - start < budget_ms &&
 				 (gate_cur < SO_GATE_SPACE || budget_cur < SO_BUDGET_SPACE)) {
 		unsigned slice = base_ms << (round < 16 ? round : 16);
 		unsigned g_dead = host_clock_ms() + slice, b_dead;
-		while (gate_cur < SO_GATE_SPACE && host_clock_ms() < g_dead &&
+		while (!so_stop && gate_cur < SO_GATE_SPACE && host_clock_ms() < g_dead &&
 					 host_clock_ms() - start < budget_ms) {
 			unsigned g = gate_cur++;
 			long sz;
@@ -551,7 +563,7 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 			}
 		}
 		b_dead = host_clock_ms() + slice;
-		while (budget_cur < SO_BUDGET_SPACE && host_clock_ms() < b_dead &&
+		while (!so_stop && budget_cur < SO_BUDGET_SPACE && host_clock_ms() < b_dead &&
 					 host_clock_ms() - start < budget_ms) {
 			unsigned b = budget_cur++;
 			long sz = so_eval(cv, cand_tmp, best_gate, b);
