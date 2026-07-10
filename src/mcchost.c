@@ -594,6 +594,43 @@ ST_FUNC MAYBE_UNUSED int host_mkdirs(const char *path) {
 	return 0;
 }
 
+ST_FUNC MAYBE_UNUSED int host_cache_dir(char *buf, int size) {
+	const char *base;
+	char tmp[3072];
+#if MCC_HOST_WIN32
+	base = getenv("LOCALAPPDATA");
+	if (base && base[0])
+		snprintf(tmp, sizeof tmp, "%s/mcc", base);
+	else {
+		base = getenv("USERPROFILE");
+		if (!base || !base[0])
+			return -1;
+		snprintf(tmp, sizeof tmp, "%s/AppData/Local/mcc", base);
+	}
+#elif MCC_HOST_DARWIN
+	base = getenv("HOME");
+	if (!base || !base[0])
+		return -1;
+	snprintf(tmp, sizeof tmp, "%s/Library/Caches/mcc", base);
+#else
+	base = getenv("XDG_CACHE_HOME");
+	if (base && base[0])
+		snprintf(tmp, sizeof tmp, "%s/mcc", base);
+	else {
+		base = getenv("HOME");
+		if (!base || !base[0])
+			return -1;
+		snprintf(tmp, sizeof tmp, "%s/.cache/mcc", base);
+	}
+#endif
+	if ((int)strlen(tmp) >= size)
+		return -1;
+	if (host_mkdirs(tmp) != 0)
+		return -1;
+	strcpy(buf, tmp);
+	return 0;
+}
+
 ST_FUNC MAYBE_UNUSED int host_copy_file(const char *src, const char *dst, int preserve_exec) {
 	FILE *fi = fopen(src, "rb"), *fo;
 	char buf[65536];
