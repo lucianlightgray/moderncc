@@ -402,13 +402,21 @@ Landed, all presets/ctest green + fixpoint byte-identical at each step:
   (`f67c2234`, `c5f3349f`, `35a8ef70`, `e3a2f2d7`). Remaining: the static
   vtable registry refactor, adaptive beam width, per-function scoping.
 
+- **§29 first increment** — redundant integer-cast elimination as a
+  provably-correct extension of the proven `ast_ident_run` replay pass
+  (identity cast, and lossless widen-then-narrow round-trip) (`ad55ede8`).
+  Exec golden across all four replay columns; gcc/O0/O3-tmpl agree.
+  Remaining: range-narrowing (needs range analysis), search-gated re-typing.
+
 **Remaining rungs are the deep codegen / new-subsystem class** (each a
 focused session; a defect breaks the green-tests invariant the goal also
 requires): §22 per-function replay refactor (drives `do_*` in-process from
-the fragile `ast_func_end`), §24 hot-slice (needs §22), §29 Convert pass,
-§30 bit-flag pass, §26 embedded JIT (ELF ctor + embedded JIT + RCU
-patching). §27/§28 deferred. The whole driver-side scheduler/cache/search
-foundation is now in place for them to plug into.
+the fragile `ast_func_end`), §24 hot-slice (needs §22), §30 bit-flag pass
+(control-flow, best search-gated since it isn't unconditionally smaller),
+§26 embedded JIT (ELF ctor + embedded JIT + RCU patching). §27/§28
+deferred. §29 proved the safe pattern: extend a proven replay pass with a
+provably-correct transform, validate across all four exec-replay columns +
+fixpoint before commit.
 
 
 The `-O<N>` (N>=4) compile-time search landed at `f959078e`
