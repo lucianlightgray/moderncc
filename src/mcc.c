@@ -288,14 +288,19 @@ static char *default_outputfile(MCCState *s, const char *first_file) {
 #include <unistd.h>
 
 #define SO_INLINE_LIMIT_MAX 160
-#define SO_CKPT_FMT 1u
+#define SO_CKPT_FMT 2u
+#define SO_GATE_SPACE (16u * (SO_INLINE_LIMIT_MAX + 1))
+#define SO_BUDGET_SPACE 9u
+#define SO_SLICE_FACTOR 8u
 
 typedef struct {
 	uint32_t fmt;
-	uint32_t best_seed;
-	uint32_t next_seed;
-	uint32_t pad;
-	int64_t best_size;
+	uint32_t best_gate;
+	uint32_t best_budget;
+	uint32_t gate_cursor;
+	uint32_t budget_cursor;
+	uint32_t round;
+	int64_t best_text;
 	uint64_t key;
 } SoCkpt;
 
@@ -359,12 +364,17 @@ static void so_ckpt_write(const char *path, const SoCkpt *nw) {
 		flock(lockfd, LOCK_EX);
 	if ((f = host_fopen(path, "rb"))) {
 		if (fread(&b, sizeof b, 1, f) == 1 && b.fmt == nw->fmt && b.key == nw->key) {
-			if (b.best_size >= 0 && (out.best_size < 0 || b.best_size < out.best_size)) {
-				out.best_size = b.best_size;
-				out.best_seed = b.best_seed;
+			if (b.best_text >= 0 && (out.best_text < 0 || b.best_text < out.best_text)) {
+				out.best_text = b.best_text;
+				out.best_gate = b.best_gate;
+				out.best_budget = b.best_budget;
 			}
-			if (b.next_seed > out.next_seed)
-				out.next_seed = b.next_seed;
+			if (b.gate_cursor > out.gate_cursor)
+				out.gate_cursor = b.gate_cursor;
+			if (b.budget_cursor > out.budget_cursor)
+				out.budget_cursor = b.budget_cursor;
+			if (b.round > out.round)
+				out.round = b.round;
 		}
 		fclose(f);
 	}
@@ -388,15 +398,16 @@ static void so_ckpt_write(const char *path, const SoCkpt *nw) {
 static const int so_nodes[SO_NNODE] = {64, 128, 256};
 static const int so_graft[SO_NGRAFT] = {2048, 4096, 8192};
 
-static void so_setenv_seed(unsigned seed) {
+static int so_gate_dead(unsigned gate) {
+	return !((gate >> 2) & 1) && (gate >> 4) != 0;
+}
+
+static void so_setenv_cfg(unsigned gate, unsigned budget) {
 	char buf[32];
-	unsigned gate = seed & 15;
-	unsigned rest = seed >> 4;
-	unsigned limit = rest % (SO_INLINE_LIMIT_MAX + 1);
-	unsigned q = rest / (SO_INLINE_LIMIT_MAX + 1);
-	int nsel = (int)(q % SO_NNODE);
-	int gsel = (int)((q / SO_NNODE) % SO_NGRAFT);
+	unsigned limit = gate >> 4;
 	int inl = (gate >> 2) & 1;
+	int nsel = (int)(budget % SO_NNODE);
+	int gsel = (int)((budget / SO_NNODE) % SO_NGRAFT);
 	setenv("MCC_SEARCH_WORKER", "1", 1);
 	setenv("MCC_AST_TEMPLATES", (gate & 1) ? "1" : "0", 1);
 	setenv("MCC_AST_PROMOTE", (gate >> 1) & 1 ? "1" : "0", 1);
@@ -466,14 +477,21 @@ static int so_copy(const char *src, const char *dst) {
 	return ok ? 0 : -1;
 }
 
+static long so_eval(const char **cv, const char *cand_tmp, unsigned gate,
+										unsigned budget) {
+	so_setenv_cfg(gate, budget);
+	if (host_spawn_wait(cv) != 0)
+		return -1;
+	return so_textsize(cand_tmp);
+}
+
 static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 															 const char *outfile) {
 	unsigned budget_ms = s->optimize_search_seconds * 1000u;
 	unsigned start = host_clock_ms();
-	unsigned seed, start_seed = 0;
-	long best = -1;
-	unsigned best_seed = 0, tried = 0;
-	int best_have = 0;
+	unsigned best_gate = 0, best_budget = 0;
+	unsigned gate_cur = 0, budget_cur = 0, round = 0, tried = 0, base_ms;
+	long best;
 	char exe[1024], best_tmp[1200], cand_tmp[1200], ckpt[3200];
 	const char **cv;
 	int i, argn, have_ckpt;
@@ -485,11 +503,11 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 	snprintf(cand_tmp, sizeof cand_tmp, "%s.mcc-so-cand", outfile);
 	have_ckpt = so_ckpt_path(ckpt, sizeof ckpt, key) == 0;
 	if (have_ckpt && so_ckpt_read(ckpt, key, &ck) == 0) {
-		start_seed = ck.next_seed;
-		if (ck.best_size >= 0) {
-			best = ck.best_size;
-			best_seed = ck.best_seed;
-		}
+		best_gate = ck.best_gate;
+		best_budget = ck.best_budget;
+		gate_cur = ck.gate_cursor;
+		budget_cur = ck.budget_cursor;
+		round = ck.round;
 	}
 	cv = mcc_malloc((argc + 4) * sizeof *cv);
 	argn = 0;
@@ -499,60 +517,69 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 	cv[argn++] = "-o";
 	cv[argn++] = cand_tmp;
 	cv[argn] = NULL;
-	for (seed = start_seed;; seed++) {
-		unsigned gate = seed & 15;
-		unsigned rest = seed >> 4;
-		unsigned q = rest / (SO_INLINE_LIMIT_MAX + 1);
-		int inl = (gate >> 2) & 1;
-		long sz;
-		if (host_clock_ms() - start >= budget_ms)
-			break;
-		if (q >= (unsigned)(SO_NNODE * SO_NGRAFT))
-			break;
-		if (!inl && rest != 0)
-			continue;
-		so_setenv_seed(seed);
-		if (host_spawn_wait(cv) == 0) {
-			sz = so_textsize(cand_tmp);
-			if (sz >= 0 && (best < 0 || sz < best)) {
-				best = sz;
-				best_seed = seed;
-				so_copy(cand_tmp, best_tmp);
-				best_have = 1;
-			}
-		}
+
+	{
+		unsigned t0 = host_clock_ms();
+		best = so_eval(cv, cand_tmp, best_gate, best_budget);
+		base_ms = host_clock_ms() - t0;
+		base_ms = (base_ms ? base_ms : 1u) * SO_SLICE_FACTOR;
 		tried++;
-	}
-	if (best < 0) {
-		remove(cand_tmp);
-		remove(best_tmp);
-		mcc_free(cv);
-		return -1;
-	}
-	if (!best_have) {
-		so_setenv_seed(best_seed);
-		if (host_spawn_wait(cv) == 0)
-			so_copy(cand_tmp, best_tmp);
-		else {
+		if (best < 0) {
 			remove(cand_tmp);
 			mcc_free(cv);
 			return -1;
 		}
+		so_copy(cand_tmp, best_tmp);
 	}
+
+	while (host_clock_ms() - start < budget_ms &&
+				 (gate_cur < SO_GATE_SPACE || budget_cur < SO_BUDGET_SPACE)) {
+		unsigned slice = base_ms << (round < 16 ? round : 16);
+		unsigned g_dead = host_clock_ms() + slice, b_dead;
+		while (gate_cur < SO_GATE_SPACE && host_clock_ms() < g_dead &&
+					 host_clock_ms() - start < budget_ms) {
+			unsigned g = gate_cur++;
+			long sz;
+			if (so_gate_dead(g))
+				continue;
+			sz = so_eval(cv, cand_tmp, g, best_budget);
+			tried++;
+			if (sz >= 0 && sz < best) {
+				best = sz;
+				best_gate = g;
+				so_copy(cand_tmp, best_tmp);
+			}
+		}
+		b_dead = host_clock_ms() + slice;
+		while (budget_cur < SO_BUDGET_SPACE && host_clock_ms() < b_dead &&
+					 host_clock_ms() - start < budget_ms) {
+			unsigned b = budget_cur++;
+			long sz = so_eval(cv, cand_tmp, best_gate, b);
+			tried++;
+			if (sz >= 0 && sz < best) {
+				best = sz;
+				best_budget = b;
+				so_copy(cand_tmp, best_tmp);
+			}
+		}
+		round++;
+	}
+
 	remove(cand_tmp);
 	if (have_ckpt) {
 		ck.fmt = SO_CKPT_FMT;
 		ck.key = key;
-		ck.best_seed = best_seed;
-		ck.next_seed = seed;
-		ck.pad = 0;
-		ck.best_size = best;
+		ck.best_gate = best_gate;
+		ck.best_budget = best_budget;
+		ck.gate_cursor = gate_cur;
+		ck.budget_cursor = budget_cur;
+		ck.round = round;
+		ck.best_text = best;
 		so_ckpt_write(ckpt, &ck);
 	}
 	if (s->verbose)
-		printf("superopt: %u configs from seed %u in %ums, best seed %u -> %ld bytes%s\n",
-					 tried, start_seed, host_clock_ms() - start, best_seed, best,
-					 best_have ? "" : " (cached)");
+		printf("superopt: %u evals in %ums, best gate %u budget %u -> %ld .text\n",
+					 tried, host_clock_ms() - start, best_gate, best_budget, best);
 	i = so_copy(best_tmp, outfile);
 	remove(best_tmp);
 	mcc_free(cv);
