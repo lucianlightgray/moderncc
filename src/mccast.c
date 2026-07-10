@@ -3747,6 +3747,88 @@ static int ast_cprop_run(AstArena *a) {
 	return ast_cprop_folds;
 }
 
+#define AST_DSE_MAX 128
+static int ast_dse_koff[AST_DSE_MAX];
+static AstLocal ast_dse_kstore[AST_DSE_MAX];
+static int ast_dse_kn;
+static int ast_dse_folds;
+
+static int ast_dse_find(int off) {
+	for (int i = 0; i < ast_dse_kn; i++)
+		if (ast_dse_koff[i] == off)
+			return i;
+	return -1;
+}
+
+static void ast_dse_kill(int off) {
+	int i = ast_dse_find(off);
+	if (i < 0)
+		return;
+	ast_dse_kn--;
+	ast_dse_koff[i] = ast_dse_koff[ast_dse_kn];
+	ast_dse_kstore[i] = ast_dse_kstore[ast_dse_kn];
+}
+
+static void ast_dse_kill_reads(AstArena *a, AstLocal n) {
+	if (n == AST_NONE)
+		return;
+	if (ast_kind(a, n) == AST_Ref) {
+		int r = ast_op(a, n);
+		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM))
+			ast_dse_kill((int)(int64_t)ast_ival(a, n));
+	}
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		ast_dse_kill_reads(a, c);
+}
+
+static void ast_dse_gen(int off, AstLocal store) {
+	int i = ast_dse_find(off);
+	if (i < 0) {
+		if (ast_dse_kn >= AST_DSE_MAX)
+			return;
+		i = ast_dse_kn++;
+		ast_dse_koff[i] = off;
+	}
+	ast_dse_kstore[i] = store;
+}
+
+static void ast_dse_block(AstArena *a, AstLocal bb) {
+	ast_dse_kn = 0;
+	for (AstLocal s = ast_first_child(a, bb); s != AST_NONE; s = ast_next_sib(a, s)) {
+		if (ast_kind(a, s) != AST_Store) {
+			ast_dse_kn = 0;
+			continue;
+		}
+		AstLocal lval = ast_child(a, s, 0), val = ast_child(a, s, 1);
+		ast_dse_kill_reads(a, val);
+		if (!ast_cprop_safe(a, val)) {
+			ast_dse_kn = 0;
+			continue;
+		}
+		int off, tt;
+		if (ast_cprop_is_local(a, lval, &off, &tt) && !ast_cprop_escapes(a, off)) {
+			int i = ast_dse_find(off);
+			if (i >= 0) {
+				ast_set_kind(a, ast_dse_kstore[i], AST_Poison);
+				ast_clear_children(a, ast_dse_kstore[i]);
+				ast_dse_folds++;
+			}
+			ast_dse_gen(off, s);
+		} else {
+			ast_dse_kn = 0;
+		}
+	}
+}
+
+static int ast_dse_run(AstArena *a) {
+	ast_dse_folds = 0;
+	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++)
+		if (ast_kind(a, n) == AST_BasicBlock)
+			ast_dse_block(a, n);
+	return ast_dse_folds;
+}
+
 static int ast_replay_ok(AstArena *a) {
 	if (ast_bail || ast_desync || ast_vn != 0 || ast_cf_top != 0)
 		return 0;
@@ -3844,6 +3926,7 @@ void ast_func_end(Sym *sym) {
 			int bfolds = 0;
 			int idents = 0;
 			int cprops = 0;
+			int dses = 0;
 			jmp_buf ast_outer_jmp;
 			int ast_outer_en = mcc_state->error_set_jmp_enabled;
 			int ast_saved_nberr = mcc_state->nb_errors;
@@ -3872,9 +3955,11 @@ void ast_func_end(Sym *sym) {
 				bfolds = faithful && ast_templates_env ? ast_bfold_run(ast_cur) : 0;
 				idents = faithful && ast_templates_env ? ast_ident_run(ast_cur) : 0;
 				cprops = faithful && ast_templates_env ? ast_cprop_run(ast_cur) : 0;
+				dses = faithful && ast_templates_env ? ast_dse_run(ast_cur) : 0;
 				int do_bfold = bfolds > 0;
 				int do_ident = idents > 0;
 				int do_cprop = cprops > 0;
+				int do_dse = dses > 0;
 				int do_inline = faithful && ast_has_graftable_call(ast_cur);
 				/* Tier-4 inline and call-ful Tier-3 promotion both claim the
 				   callee-saved bank (RBX/R12-R15); combining them in one function
@@ -3884,9 +3969,10 @@ void ast_func_end(Sym *sym) {
 				int do_promote = faithful && ast_promote_env && ast_plan_promotion(ast_cur) > 0;
 				ast_no_callful_promo = 0;
 				if (faithful && !do_inline && !do_promote && !do_bfold && !do_ident &&
-						!do_cprop)
+						!do_cprop && !do_dse)
 					loc = saved_loc;
-				if (do_inline || do_promote || do_bfold || do_ident || do_cprop) {
+				if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
+						do_dse) {
 					ind = ast_body_ind_sv;
 					rsym = 0;
 					if (ast_rsec)
@@ -3894,7 +3980,7 @@ void ast_func_end(Sym *sym) {
 					nocode_wanted = 0;
 					loc = saved_loc;
 					anon_sym = saved_anon;
-					ast_fconst_i = (do_bfold || do_ident || do_cprop || do_inline) ? ast_fconst_n : 0;
+					ast_fconst_i = (do_bfold || do_ident || do_cprop || do_dse || do_inline) ? ast_fconst_n : 0;
 					ast_locrec_i = 0;
 					ast_replaying = 1;
 					ast_rp_switch = NULL;
@@ -3957,6 +4043,8 @@ void ast_func_end(Sym *sym) {
 					fprintf(stderr, "[ast-ident] %d %s\n", idents, funcname);
 				if (cprops)
 					fprintf(stderr, "[ast-cprop] %d %s\n", cprops, funcname);
+				if (dses)
+					fprintf(stderr, "[ast-dse] %d %s\n", dses, funcname);
 				if (promoted)
 					fprintf(stderr, "[ast-promote] %d %s\n", promoted, funcname);
 			}

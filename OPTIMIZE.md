@@ -46,8 +46,7 @@ Status: `[ ]` open · `[~]` claimed/in-progress · `[x]` landed (commit)
 
 - [ ] **Sparse conditional constant propagation** — Wegman–Zadeck SCCP.
 - [x] **Copy/constant propagation** (Aho–Sethi–Ullman dragon-book; local, `ast_cprop_run`).
-- [ ] **Dead code elimination** (liveness via **Kildall's algorithm**
-      worklist dataflow).
+- [x] **Dead store / dead code elimination** (Kildall-flavored local liveness; `ast_dse_run`).
 - [ ] **Common subexpression elimination** — Cocke's available
       expressions; **value numbering** (Alpern–Wegman–Zadeck GVN as the
       global form; local VN first).
@@ -437,3 +436,22 @@ dlmf.nist.gov/3.11 (minimax polynomial approximations).
   relaxes the equality invariant. Turns a vague open item into a precise
   deferred one.
 - DSE (dead-store elimination) subagent still in flight.
+
+### 2026-07-10 — iteration 15 (Tier-2 local dead-store elimination)
+
+- **Local dead-store elimination LANDED** (`ast_dse_run`, fourth sibling
+  after bfold/ident/cprop). Expressible after all: the replay bb emitter
+  emits nothing for the default case, so a dead `Store(Ref local, pure)`
+  is retagged to **AST_Poison** (drop the statement) — no new node kind.
+  Fires when the same local is overwritten later in the block with no
+  intervening read/call/store-through-pointer/branch and the local is
+  not address-taken; RHS must be side-effect-free (impure RHS keeps the
+  store). Reuses the cprop safety predicates. Fires in 25/36 test fns.
+- 1807 tests green (+5 dead_store_elim rows across the exec-replay
+  columns + diff3), fixpoint byte-identical -O2, -O0 objects identical
+  on neutral inputs. Side-effect counter proves nothing dropped.
+- **Tier-2 dataflow now: const/copy-prop ✓, dead-store elim ✓.** Still
+  open: SCCP (Wegman–Zadeck), CSE/GVN (blocked on an AST value-ref
+  node), Sethi–Ullman ordering. Tier-1 peephole and the whole Tier-3
+  loop set remain.
+- Session tally: 7 landed optimizer passes/upgrades + 1 miscompile fix.
