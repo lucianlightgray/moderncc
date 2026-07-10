@@ -1309,3 +1309,154 @@ increment. Doc correction folded in: OPTIMIZE.md Frontier and the §27/§28
 deferral texts should be re-pointed at this decomposition (§27/§28 are
 unblocked-for-analysis now; only their value-materializing halves wait on
 §32c). Builds on the landed pass suite + §22/§31 for search integration.
+
+## 33. Function-call-window optimization — macro/micro slices (large, correctness-sensitive, INVESTIGATIVE)
+
+**The gap.** Optimization today stops at the function boundary in two
+distinct ways, and neither the landed §32a/§32b join dataflow nor Tier-4
+virtual inlining crosses it. A "call window" is the straight-line region
+that spans the caller ops feeding a call site and the callee's own body
+ops. Two slices of that window are unoptimized:
+
+- **Macro slice** — the coarse dataflow *across* the call/graft boundary:
+  a value or available expression live before a call cannot be reused
+  after it (un-inlined case) or inside the grafted body (inlined case).
+- **Micro slice** — the few ops immediately adjacent to the seam: the
+  caller's last pre-call ops and the callee's first body ops. The
+  motivating case is "two ops before a call fuse with the first two ops
+  inside the callee once it is inlined" — currently impossible.
+
+**Why both fail today (traced, authoritative):**
+1. `AST_Invoke` flushes both dataflow tables. `ast_cprop_stmts` falls to
+   `else { ast_cprop_kn = 0; }` on a call (src/mccast.c ~4079); `ast_cse_stmts`
+   substitutes into the args then `ast_cse_n = 0` (~4950). Availability
+   never survives a call — even though `ast_cprop_escapes` already proves
+   the tracked offsets are call-clobber-free (the §32b "legacy
+   conservatism" note, TODO.md:1298, and §32a finding, :1233-1235).
+2. The **merged post-graft window is never re-analyzed.** The two-pass
+   faithfulness gate runs the AST transforms (`ast_cprop_run`/`ast_cse_run`
+   et al.) once over the *caller's own tree in pass 1*, then grafts in
+   pass-2 replay by walking the callee's **separate, independently
+   optimized arena** (`ast_replay_bb(e->ast, …)`, src/mccast.c:1967).
+   Caller facts and callee facts are computed in two disjoint arenas that
+   never meet; the spliced result is emitted, not re-optimized.
+3. Non-constant arguments are **spilled at the seam.** The graft
+   materializes each non-const arg into a biased frame slot via
+   `vstore` (src/mccast.c:1926-1937); the callee body then re-loads it.
+   The caller's live value is forced through memory, so it cannot fuse
+   with the callee's first op. Only *constant* args cross, via the
+   `ast_argsub_val`/`ast_argsub_off` substitution (1910-1925, replayed at
+   the `AST_Ref` case 2402-2409) and the resulting dead-branch prune
+   (2825-2834). That const channel is the one working cross-window path
+   and the template for the rest.
+
+**Relationship to §32.** This is the cross-*call* extension §32
+explicitly scoped out: §32 mechanism 2 carries availability across
+If/loop joins *within one function* but keeps the Invoke/graft boundary
+(TODO.md:1139, 1298); §32 mechanism 4 (φ-SSA for true value merges) stays
+**rejected** and nothing here revives it — every item below is φ-free,
+using memory (the biased slot / the graft return slot, the same "memory
+is the merge" device as §32 mechanism 3) wherever two paths join. §33 is
+sequenced *after* §32c because the fresh-temp carve is a shared
+dependency of §33c.
+
+**Decomposition (investigative sub-items):**
+
+- **§33a — Cross-`Invoke` availability (macro, un-inlined calls).** Drop
+  the `AST_Invoke` table reset in `ast_cprop_stmts`/`ast_cse_stmts`,
+  keeping only entries proven call-clobber-free. Investigate: (i) the
+  survivor set is exactly the non-escaping scalar locals `ast_cprop_escapes`
+  already whitelists — a call cannot alias a local whose address was never
+  taken; (ii) caller-saved registers are irrelevant because these entries
+  are *memory offsets*, re-loaded on next use, not values pinned in regs;
+  (iii) interaction with Tier-3 register promotion (`ast_plan_promotion`)
+  — a promoted local held in a caller-saved reg across a call is a
+  separate hazard already handled by `ast_no_callful_promo`
+  (src/mccast.c:4931), so the memory-offset survivors are orthogonal.
+  This is the smallest, already-named increment (the "remaining §32b
+  refinement") and the correct first step. No temp infra, φ-free.
+
+- **§33b — Unified post-graft window dataflow (macro, the core gap).**
+  The merged caller+callee window must exist in *one* arena for any
+  cross-boundary analysis to see it. Investigate two structurings:
+  (A) **splice-then-reanalyze** — the graft copies the callee subtree
+  into the caller arena (frame-biased, as the replay already biases live)
+  so a single §32a/§32b join pass over the merged tree treats the callee
+  body as ordinary dominated BasicBlocks; the seam becomes a plain
+  store-then-block, and §33a's cross-Invoke rule is then unnecessary for
+  inlined calls because there is no residual Invoke; (B) **two-pass
+  hand-off** — keep the separate arenas but thread the caller's exit
+  lattice/availability into `ast_inline_graft` as the callee replay's
+  entry facts. (A) is more powerful (enables §33c/§33d natively) but
+  fights the faithfulness-gate architecture: the transforms currently run
+  in pass 1 *before* graft, and pass-2 replay is never byte-verified
+  (the FIX.md lesson, TODO.md:1304-1306) — so a post-graft pass needs its
+  own soundness gate. Deliverable of this item is the decision between
+  (A) and (B) plus the arena/gate design, not code.
+
+- **§33c — Argument de-spill / caller-value forwarding (micro, the
+  motivating case).** Forward a caller's live single-use value directly
+  into the callee's first param use instead of round-tripping through the
+  biased slot — the non-const generalization of the const `ast_argsub`
+  channel. Investigate: (i) legality predicate = the param is **read
+  once, before any store to it, and its forwarded value's operands are
+  unclobbered up to that read** (a read-once/def-dominance analysis over
+  the callee subtree, the same shape as `ast_licm_operands_ok`); (ii)
+  when legal, register the caller SValue in an extended `ast_argsub_val`
+  keyed by param offset and *substitute the live value* at the callee's
+  `AST_Ref`, eliding the `vstore`/reload pair — this is exactly what makes
+  "two caller ops fuse with the callee's first two ops" happen; (iii)
+  multi-read or post-store params fall back to today's spill (strictly no
+  regression). Depends on §33b(A) or the seam being visible; depends on
+  §32c only if a materialized temp is needed for the multi-read case.
+
+- **§33d — Seam peephole window (micro).** Scope the long-open McKeeman
+  peephole item (OPTIMIZE.md Frontier: "peephole window over emitted code
+  … adjacent redundant load/store elision in the vstack emitter") to the
+  graft seam specifically: a store-to-slot immediately followed by a
+  load-from-the-same-slot that straddle the inline boundary is the
+  residue §33c cannot forward (multi-read params, address-exposed slots).
+  Investigate the stated blocker — "emitter byte-identity risk" — i.e.
+  whether a bounded 2-3 op window elision can be proven to preserve the
+  pass-1 faithfulness contract, or whether it must run only in the
+  unverified pass-2 replay under a differential exec gate. This is the
+  narrowest, most correctness-sensitive slice; sequence it last.
+
+- **§33e — Window-level scoring & cache key (governance).** §18/§21 cache
+  keys are per-function intention hashes (`ast_intention_hash`), and a
+  grafted window has no key of its own — the caller's key already covers
+  the graft because the callee tree is folded in before hashing? Verify:
+  `ast_intention_hash` runs in `ast_func_end` pre-pass over the caller
+  arena *before* graft, so it does **not** currently include the callee
+  body — a window transform would need either a window-level key or an
+  accepted cache miss on the first graft. Investigate §31 strategy
+  registration for the window passes and §25 scoring of the size/JIT delta
+  a de-spill produces (typically a net op reduction — cheap to score).
+
+**Per-slice minimal mechanism (proposed):**
+
+| Slice | Item | Mechanism | φ? |
+|---|---|---|---|
+| Macro, un-inlined | §33a | drop Invoke reset for escape-proven entries | no |
+| Macro, inlined | §33b | splice callee into caller arena, reanalyze | no (memory-merge) |
+| Micro, seam value | §33c | forward live single-use arg, elide spill | no |
+| Micro, seam residue | §33d | bounded load/store elision at the seam | no |
+| Governance | §33e | window key + §31/§25 integration | n/a |
+
+**Build order (proposed, cheapest-first):** §33a (no infra, already
+named) → §33b **decision** (A vs B; the pivot everything else hangs on) →
+§33c (the motivating win, needs §33b's seam + optionally §32c) → §33d
+(narrowest, highest risk) → §33e folded in alongside. Open question to
+resolve first in §33b: whether splice-then-reanalyze can be made
+faithfulness-safe, since it is the difference between a genuinely
+re-optimized merged window and a hand-off approximation.
+
+**Gates (same standard as §32b — pass-2 replay is never byte-verified,
+so the default suite is blind to graft regressions):** full ctest +
+3-stage self-host fixpoint byte-identical (gate off AND forced on) +
+whole-corpus mcctest + c-torture `--ast` columns + native arm64
+spot-check, per increment. Every item env-gated on its own flag
+(`MCC_AST_CALL_WINDOW` family) defaulting off, per the established
+pattern. Builds on §32a/§32b (join dataflow), §32c (fresh temp, for
+§33c's multi-read fallback), the Tier-4 graft path (src/mccast.c:1857-1997),
+and §18/§21/§25/§31 for search + scoring integration.
