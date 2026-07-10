@@ -846,6 +846,8 @@ ST_FUNC char **host_environ(void) {
 #ifdef __APPLE__
 	extern char ***_NSGetEnviron(void);
 	return *_NSGetEnviron();
+#elif defined(_WIN32)
+	return environ;
 #else
 	extern char **environ;
 	return environ;
