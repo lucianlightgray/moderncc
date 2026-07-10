@@ -39,6 +39,15 @@ coloring; deterministic sin/cos/exp (deferred behind -ffast-math
 opt-in, researched). Six tree passes give −12% .text on
 pass-exercising code; TPE beats linear search (−34% vs −26% memory).
 
+**Stale as of 2026-07-10 (kept for history):** LICM, tail-call,
+jump-threading, SCCP-conditional, and local CSE have since **landed**
+(iters 17/20/22/25/27); SCCP value-lattice + dominator CSE/GVN landed via
+§32a/§32b (no value-reference node — see §32); sin/cos/exp landed behind
+`-ffold-math`. Still genuinely open: Tier-1 whole-emitter peephole
+(TODO §33d/§35), Sethi–Ullman ordering (TODO §35), Chaitin–Briggs coloring
+(TODO §36), and the §32c fresh-temp consumers (post-join PRE, IV strength
+reduction).
+
 ## Algorithm catalog (named forms, complexity-ranked)
 
 Status: `[ ]` open · `[~]` claimed/in-progress · `[x]` landed (commit)
@@ -51,8 +60,9 @@ Status: `[ ]` open · `[~]` claimed/in-progress · `[x]` landed (commit)
       correct rounding for these, so compile-time evaluation is
       deterministic across hosts (no libm drift); `sin`/`cos`/`exp`
       approximations (Taylor / Chebyshev / minimax **Remez exchange**)
-      stay open until a determinism story exists, since folding through
-      the host libm would break `-O0` vs `-O1` output equality.
+      were noted open pending a determinism story — **landed 2026-07-10**
+      behind opt-in `-ffold-math` (own exactly-rounded polynomials, off by
+      default so `-O0`-vs-`-O1` equality holds; iters 31/33/35-38).
 - [x] **Algebraic identities / reassociation** (ast_ident_run) — replay-level
       identity elimination over the captured tree, run after the faithful
       first replay like ast_bfold_run: keep-x forms `x+0`/`0+x`/`x-0`,
@@ -634,6 +644,17 @@ dlmf.nist.gov/3.11 (minimax polynomial approximations).
   Correctly landed nothing (rigorous negative, disassembly evidence).
 
 ## Frontier (safely-expressible space largely exhausted)
+
+> **SUPERSEDED 2026-07-10 (see TODO.md §32).** The "root blocker = a missing
+> AST value-reference node" framing below is resolved: the feasibility study
+> (TODO §32) found **no new node kind is needed** — the four conflated
+> mechanisms separate, and CSE/GVN-dominator-core, SCCP value-lattice, and
+> LICM all landed via the retag-to-literal and named-local-reuse primitives
+> (§32a `MCC_AST_CPROP_JOIN`, §32b `MCC_AST_CSE_JOIN`). Only the
+> fresh-persistent-temp consumers (post-join PRE, IV strength reduction) wait
+> on §32c's carve infrastructure, and the true φ-SSA node is rejected. §27/§28
+> are unblocked for their analysis/structural halves. The prose below is
+> retained as the historical pre-§32 view.
 
 The campaign landed **eight replay tree passes** (bfold, ident, cprop,
 dse, sccp, tco, jt — strength-reduction is emitter-native) + the -O4+

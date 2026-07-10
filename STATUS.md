@@ -24,7 +24,7 @@ default compiler is unchanged.
 | 22 | Per-function search granularity | **functional** | `323a15a6` (per-fn config), `11bb8323` (driver-side per-fn search) |
 | 23 | Aggressive inliner envelope | **increment** | `7e630c75` (searchable node/graft budgets) |
 | 24 | Hot-window / slice selector | **functional** | `3e81960d` (cost model), `ad5cfee2` (budget ordering) |
-| 25 | Frontend-JIT candidate measurement | **increment** | `382b7169` (.text objective); JIT cpu tier pending |
+| 25 | Frontend-JIT candidate measurement | **functional** | `382b7169` (.text objective); JIT cpu+RSS tier landed (`MCC_AST_JITSCORE`, best-of-K wall time + `getrusage`, N4) |
 | 26 | `--embed-jit` runtime self-optimizer | **increment** | `4394057f` (flags), `95037e96` (manifest); runtime engine pending |
 | 27 | Loop-nest interchange | **unblocked for analysis** (§32); value-materializing half waits on §32c | — |
 | 28 | Dynamic algorithm generation | **unblocked for analysis** (§32); value-materializing rules wait on §32c | — |

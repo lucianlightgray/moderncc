@@ -1693,13 +1693,18 @@ Linux box does not have — parked here so they are tracked, not lost:
 Known-stale prose that later work already contradicts — TODO §32 itself
 (:1427-1429) asks for the first of these:
 
-- [ ] OPTIMIZE.md **Frontier** (:636-660) + Scoreboard **"Open / blocked"**
+- [x] OPTIMIZE.md **Frontier** (:636-660) + Scoreboard **"Open / blocked"**
       (:34-40): both predate the iter-25/27 CSE/LICM landings and TODO §32's
       "no new node kind" resolution; re-point them at the §32 decomposition.
-- [ ] MCC.md §10 (:242-243): the `-O1` soundness backlog + wiring rows lag
+      (Done 2026-07-10: dated SUPERSEDED note on Frontier + staleness
+      correction on the Scoreboard para; historical prose retained.)
+- [x] MCC.md §10 (:242-243): the `-O1` soundness backlog + wiring rows lag
       EXCESS.md (§19 CLEARED, §20 UNPARKED 2026-07-09) — reconcile to EXCESS.
-- [ ] STATUS.md §25 row: still says "JIT cpu tier pending" though N4 landed
-      `MCC_AST_JITSCORE` (2026-07-10) — update to match.
-- [ ] OPTIMIZE.md Tier-1 note (:51-55): the sin/cos/exp "stays open until a
+      (Done: both rows reconciled to CLEARED/UNPARKED, EXCESS cross-refs added.)
+- [x] STATUS.md §25 row: still says "JIT cpu tier pending" though N4 landed
+      `MCC_AST_JITSCORE` (2026-07-10) — update to match. (Done: row now
+      **functional**, cpu+RSS tier noted landed.)
+- [x] OPTIMIZE.md Tier-1 note (:51-55): the sin/cos/exp "stays open until a
       determinism story exists" text is stale — landed as `-ffold-math`
-      (iterations 31/33/35-38); mark it done.
+      (iterations 31/33/35-38); mark it done. (Done: clause updated to
+      LANDED behind `-ffold-math`.)
