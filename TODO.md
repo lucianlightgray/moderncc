@@ -32,16 +32,16 @@ format files add the local matrix / a qemu spot-check as noted.
 
 ## 4. Resolve the five `#if 1` leftovers (small)
 
-- [ ] `mccgen.c:98` — collapse `precedence_parser` to always-on; delete the
+- [x] `mccgen.c:98` — collapse `precedence_parser` to always-on; delete the
       legacy `expr_prod`/`expr_sum` cascade under `#ifndef precedence_parser`
       (`mccgen.c:7944`) after confirming nothing else references it.
-- [ ] `mccgen.c:9448` — `init_assert()` on/off pair: tie to `NDEBUG` instead of
+- [x] `mccgen.c:9448` — `init_assert()` on/off pair: tie to `NDEBUG` instead of
       a hardcoded `#if 1 / #else` no-op define.
-- [ ] `mccpe.c:555` — keep the live ELF→COFF export loop, delete the `#if 0`
+- [x] `mccpe.c:555` — keep the live ELF→COFF export loop, delete the `#if 0`
       `.file`-aux variant at `mccpe.c:545`, drop the gate.
-- [ ] `mccpe.c:1140` — keep the `.def`-export branch, delete the disabled trace
+- [x] `mccpe.c:1140` — keep the `.def`-export branch, delete the disabled trace
       variant at `mccpe.c:1107`, drop the gate.
-- [ ] `mccmacho.c:2001` — chained-fixup pointer format choice
+- [x] `mccmacho.c:2001` — chained-fixup pointer format choice
       (`DYLD_CHAINED_PTR_64` vs `_64_OFFSET`): keep both branches but select by
       a *named* constant, not a bare `#if 1`.
 

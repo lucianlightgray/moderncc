@@ -314,20 +314,6 @@ enum {
 	sec_last
 };
 
-#if 0
-static const DWORD pe_sec_flags[] = {
-    0x60000020,
-    0xC0000040,
-    0xC0000080,
-    0x40000040,
-    0x40000040,
-    0xE0000060,
-    0x40000040,
-    0x42000802,
-    0x42000040,
-};
-#endif
-
 struct section_info {
 	int cls;
 	char name[32];
@@ -542,17 +528,6 @@ static void pe_add_coffsym(struct pe_info *pe) {
 		return;
 	}
 
-#if 0
-    se = section_ptr_add(pe->coffsym, sizeof *se);
-    strcpy(se->n_name, ".file");
-    se->n_scnum = -2;
-    se->n_sclass = 0x67;
-    se->n_numaux = 1;
-    se = section_ptr_add(pe->coffsym, sizeof *se);
-    strcpy((char*)se, "no-file");
-#endif
-
-#if 1
 	esym = (ElfSym *)s1->symtab->data;
 	for (int n = s1->symtab->data_offset / sizeof *esym; ++esym, --n;) {
 		int sym_bind = ELFW(ST_BIND)(esym->st_info);
@@ -576,7 +551,6 @@ static void pe_add_coffsym(struct pe_info *pe) {
 				se->n_offset = put_elf_str(pe->coffstr, name);
 		}
 	}
-#endif
 	write32le(pe->coffstr->data, pe->coffstr->data_offset);
 }
 
@@ -1104,12 +1078,6 @@ static void pe_build_exports(struct pe_info *pe) {
 			p->name = name;
 			dynarray_add(&sorted, &sym_count, p);
 		}
-#if 0
-        if (sym->st_other & ST_PE_EXPORT)
-            printf("export: %s\n", name);
-        if (sym->st_other & ST_PE_STDCALL)
-            printf("stdcall: %s\n", name);
-#endif
 	}
 
 	if (0 == sym_count)
@@ -1137,7 +1105,6 @@ static void pe_build_exports(struct pe_info *pe) {
 	hdr->Name = str_o + rva_base;
 	put_elf_str(pe->thunk, dllname);
 
-#if 1
 	pstrcpy(buf, sizeof buf, pe->filename);
 	strcpy(mcc_fileextension(buf), ".def");
 	op = fopen(buf, "wb");
@@ -1148,7 +1115,6 @@ static void pe_build_exports(struct pe_info *pe) {
 		if (s1->verbose)
 			printf("<- %s (%d symbol%s)\n", buf, sym_count, &"s"[sym_count < 2]);
 	}
-#endif
 
 	for (int ord = 0; ord < sym_count; ++ord) {
 		p = sorted[ord], sym_index = p->index, name = p->name;

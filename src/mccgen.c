@@ -95,10 +95,7 @@ typedef struct
 	char flex_warned;
 } init_params;
 
-#if 1
-#define precedence_parser
 static void init_prec(void);
-#endif
 
 static void block(int flags);
 #define STMT_EXPR 1
@@ -568,9 +565,7 @@ ST_FUNC void mccgen_init(MCCState *s1) {
 	func_old_type.ref = sym_push(SYM_FIELD, &int_type, 0, 0);
 	func_old_type.ref->f.func_call = FUNC_CDECL;
 	func_old_type.ref->f.func_type = FUNC_OLD;
-#ifdef precedence_parser
 	init_prec();
-#endif
 	cstr_new(&initstr);
 }
 
@@ -2283,10 +2278,6 @@ static void gen_opl(int op) {
 		else if (op1 == TOK_GE)
 			op1 = TOK_UGE;
 		gen_op(op1);
-#if 0
-if (op== TOK_NE) { gsym(b); break; }
-		if (op== TOK_EQ) { gsym(a); break; }
-#endif
 		gvtst_set(1, a);
 		gvtst_set(0, b);
 		break;
@@ -7941,107 +7932,6 @@ tok_next:
 }
 #undef CST_PRIMARY
 
-#ifndef precedence_parser
-
-static void expr_prod(void) {
-	int t;
-
-	unary();
-	while ((t = tok) == '*' || t == '/' || t == '%') {
-		next();
-		unary();
-		gen_op(t);
-	}
-}
-
-static void expr_sum(void) {
-	int t;
-
-	expr_prod();
-	while ((t = tok) == '+' || t == '-') {
-		next();
-		expr_prod();
-		gen_op(t);
-	}
-}
-
-static void expr_shift(void) {
-	int t;
-
-	expr_sum();
-	while ((t = tok) == TOK_SHL || t == TOK_SAR) {
-		next();
-		expr_sum();
-		gen_op(t);
-	}
-}
-
-static void expr_cmp(void) {
-	int t;
-
-	expr_shift();
-	while (((t = tok) >= TOK_ULE && t <= TOK_GT) ||
-				 t == TOK_ULT || t == TOK_UGE) {
-		next();
-		expr_shift();
-		gen_op(t);
-	}
-}
-
-static void expr_cmpeq(void) {
-	int t;
-
-	expr_cmp();
-	while ((t = tok) == TOK_EQ || t == TOK_NE) {
-		next();
-		expr_cmp();
-		gen_op(t);
-	}
-}
-
-static void expr_and(void) {
-	expr_cmpeq();
-	while (tok == '&') {
-		next();
-		expr_cmpeq();
-		gen_op('&');
-	}
-}
-
-static void expr_xor(void) {
-	expr_and();
-	while (tok == '^') {
-		next();
-		expr_and();
-		gen_op('^');
-	}
-}
-
-static void expr_or(void) {
-	expr_xor();
-	while (tok == '|') {
-		next();
-		expr_xor();
-		gen_op('|');
-	}
-}
-
-static void expr_landor(int op);
-
-static void expr_land(void) {
-	expr_or();
-	if (tok == TOK_LAND)
-		expr_landor(tok);
-}
-
-static void expr_lor(void) {
-	expr_land();
-	if (tok == TOK_LOR)
-		expr_landor(tok);
-}
-
-#define expr_landor_next(op) op == TOK_LAND ? expr_or() : expr_land()
-#else
 #define expr_landor_next(op) unary(), expr_infix(precedence(op) + 1)
 #define expr_lor() unary(), expr_infix(1)
 
@@ -8107,7 +7997,6 @@ static void expr_infix(int p) {
 		t = tok;
 	}
 }
-#endif
 
 static int condition_3way(void) {
 	int c = -1;
@@ -9445,7 +9334,7 @@ static void parse_init_elem(int expr_type) {
 	}
 }
 
-#if 1
+#ifndef NDEBUG
 static void init_assert(init_params *p, int offset) {
 	if (p->sec
 					? !NODATA_WANTED && offset > p->sec->data_offset
@@ -10862,10 +10751,6 @@ static int decl(int l) {
 			if (gnu_ext && (tok == TOK_ASM1 || tok == TOK_ASM2 || tok == TOK_ASM3)) {
 				ad.asm_label = asm_label_instr();
 				parse_attribute(&ad);
-#if 0
-                if (tok == '{')
-                    expect(";");
-#endif
 			}
 
 #ifdef MCC_TARGET_PE

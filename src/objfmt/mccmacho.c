@@ -153,6 +153,8 @@ enum {
 	DYLD_CHAINED_PTR_64_OFFSET = 6,
 };
 
+#define MCC_MACHO_CHAINED_PTR_64_OFFSET 0
+
 enum {
 	DYLD_CHAINED_PTR_START_NONE = 0xFFFF,
 };
@@ -1998,14 +2000,14 @@ ST_FUNC void bind_rebase_import(MCCState *s1, struct macho *mo) {
 		data += (size + 7) & -8;
 		segment->size = size;
 		segment->page_size = SEG_PAGE_SIZE;
-#if 1
-#define PTR_64_OFFSET 0
-#define PTR_64_MASK 0x7FFFFFFFFFFULL
-		segment->pointer_format = DYLD_CHAINED_PTR_64;
-#else
+#if MCC_MACHO_CHAINED_PTR_64_OFFSET
 #define PTR_64_OFFSET 0x100000000ULL
 #define PTR_64_MASK 0xFFFFFFFFFFFFFFULL
 		segment->pointer_format = DYLD_CHAINED_PTR_64_OFFSET;
+#else
+#define PTR_64_OFFSET 0
+#define PTR_64_MASK 0x7FFFFFFFFFFULL
+		segment->pointer_format = DYLD_CHAINED_PTR_64;
 #endif
 		segment->segment_offset = seg->fileoff;
 		segment->max_valid_pointer = 0;
