@@ -6696,7 +6696,10 @@ static const struct {
 		{"log2", 4, 0},  {"log2f", 4, 1},  {"log10", 5, 0}, {"log10f", 5, 1},
 		{"tan", 6, 0},	 {"tanf", 6, 1},   {"pow", 7, 0},	 {"powf", 7, 1},
 		{"sinh", 8, 0},  {"sinhf", 8, 1},  {"cosh", 9, 0},	 {"coshf", 9, 1},
-		{"tanh", 10, 0}, {"tanhf", 10, 1},
+		{"tanh", 10, 0}, {"tanhf", 10, 1}, {"atan", 11, 0},  {"atanf", 11, 1},
+		{"asin", 12, 0}, {"asinf", 12, 1}, {"acos", 13, 0},  {"acosf", 13, 1},
+		{"cbrt", 14, 0}, {"cbrtf", 14, 1}, {"atan2", 15, 0}, {"atan2f", 15, 1},
+		{"hypot", 16, 0},{"hypotf", 16, 1},
 };
 
 static double foldm_rint(double x) {
@@ -7004,6 +7007,284 @@ static double foldm_powi(double x, int n) {
 	return neg ? 1.0 / r : r;
 }
 
+static double foldm_frombits(uint32_t hi, uint32_t lo) {
+	uint64_t b = ((uint64_t)hi << 32) | lo;
+	double x;
+	memcpy(&x, &b, sizeof x);
+	return x;
+}
+
+static double foldm_sqrt(double x) {
+	int32_t hi;
+	double y;
+	if (x == 0.0)
+		return x;
+	if (x < 0.0)
+		return 0.0;
+	hi = foldm_hi(x);
+	y = foldm_sethi(x, (uint32_t)(((hi - 0x3ff00000) >> 1) + 0x3ff00000));
+	y = 0.5 * (y + x / y);
+	y = 0.5 * (y + x / y);
+	y = 0.5 * (y + x / y);
+	y = 0.5 * (y + x / y);
+	y = 0.5 * (y + x / y);
+	return y;
+}
+
+static double foldm_atan(double x) {
+	double atanhi[] = {4.63647609000806093515e-01, 7.85398163397448278999e-01,
+										 9.82793723247329054082e-01, 1.57079632679489655800e+00};
+	double atanlo[] = {2.26987774529616870924e-17, 3.06161699786838301793e-17,
+										 1.39033110312309984516e-17, 6.12323399573676603587e-17};
+	double aT[] = {3.33333333333329318027e-01,	-1.99999999998764832476e-01,
+								 1.42857142725034663711e-01,	-1.11111104054623557880e-01,
+								 9.09088713343650656196e-02,	-7.69187620504482999495e-02,
+								 6.66107313738753120669e-02,	-5.83357013379057348645e-02,
+								 4.97687799461593236017e-02,	-3.65315727442169155270e-02,
+								 1.62858201153657823623e-02};
+	double w, s1, s2, z;
+	int32_t ix, hx, id;
+	hx = foldm_hi(x);
+	ix = hx & 0x7fffffff;
+	if (ix >= 0x44100000) {
+		if (hx > 0)
+			return atanhi[3] + atanlo[3];
+		return -atanhi[3] - atanlo[3];
+	}
+	if (ix < 0x3fdc0000) {
+		if (ix < 0x3e400000)
+			return x;
+		id = -1;
+	} else {
+		x = foldm_fabs(x);
+		if (ix < 0x3ff30000) {
+			if (ix < 0x3fe60000) {
+				id = 0;
+				x = (2.0 * x - 1.0) / (2.0 + x);
+			} else {
+				id = 1;
+				x = (x - 1.0) / (x + 1.0);
+			}
+		} else {
+			if (ix < 0x40038000) {
+				id = 2;
+				x = (x - 1.5) / (1.0 + 1.5 * x);
+			} else {
+				id = 3;
+				x = -1.0 / x;
+			}
+		}
+	}
+	z = x * x;
+	w = z * z;
+	s1 = z * (aT[0] + w * (aT[2] + w * (aT[4] + w * (aT[6] + w * (aT[8] + w * aT[10])))));
+	s2 = w * (aT[1] + w * (aT[3] + w * (aT[5] + w * (aT[7] + w * aT[9]))));
+	if (id < 0)
+		return x - x * (s1 + s2);
+	z = atanhi[id] - ((x * (s1 + s2) - atanlo[id]) - x);
+	return (hx < 0) ? -z : z;
+}
+
+static double foldm_asin_r(double u) {
+	double pS0 = 1.66666666666666657415e-01, pS1 = -3.25565818622400915405e-01,
+				 pS2 = 2.01212532134862925881e-01, pS3 = -4.00555345006794114027e-02,
+				 pS4 = 7.91534994289814532176e-04, pS5 = 3.47933107596021167570e-05;
+	double qS1 = -2.40339491173441421878e+00, qS2 = 2.02094576023350569471e+00,
+				 qS3 = -6.88283971605453293030e-01, qS4 = 7.70381505559019352791e-02;
+	double p = u * (pS0 + u * (pS1 + u * (pS2 + u * (pS3 + u * (pS4 + u * pS5)))));
+	double q = 1.0 + u * (qS1 + u * (qS2 + u * (qS3 + u * qS4)));
+	return p / q;
+}
+
+static double foldm_asin(double x) {
+	double pio2_hi = 1.57079632679489655800e+00,
+				 pio2_lo = 6.12323399573676603587e-17,
+				 pio4_hi = 7.85398163397448278999e-01;
+	double t, w, p, q, c, r, s;
+	int32_t hx = foldm_hi(x), ix = hx & 0x7fffffff;
+	if (ix >= 0x3ff00000) {
+		uint32_t lx = foldm_lo(x);
+		if (((ix - 0x3ff00000) | (int32_t)lx) == 0)
+			return x * pio2_hi + x * pio2_lo;
+		return 0.0;
+	} else if (ix < 0x3fe00000) {
+		if (ix < 0x3e500000)
+			return x;
+		t = x * x;
+		w = foldm_asin_r(t);
+		return x + x * w;
+	}
+	w = 1.0 - foldm_fabs(x);
+	t = w * 0.5;
+	s = foldm_sqrt(t);
+	if (ix >= 0x3FEF3333) {
+		w = foldm_asin_r(t);
+		t = pio2_hi - (2.0 * (s + s * w) - pio2_lo);
+	} else {
+		w = s;
+		w = foldm_hilo0(w);
+		c = (t - w * w) / (s + w);
+		r = foldm_asin_r(t);
+		p = 2.0 * s * r - (pio2_lo - 2.0 * c);
+		q = pio4_hi - 2.0 * w;
+		t = pio4_hi - (p - q);
+	}
+	return (hx > 0) ? t : -t;
+}
+
+static double foldm_acos(double x) {
+	double pi = 3.14159265358979311600e+00,
+				 pio2_hi = 1.57079632679489655800e+00,
+				 pio2_lo = 6.12323399573676603587e-17;
+	double z, r, w, s, c, df;
+	int32_t hx = foldm_hi(x), ix = hx & 0x7fffffff;
+	if (ix >= 0x3ff00000) {
+		uint32_t lx = foldm_lo(x);
+		if (((ix - 0x3ff00000) | (int32_t)lx) == 0) {
+			if (hx > 0)
+				return 0.0;
+			return pi + 2.0 * pio2_lo;
+		}
+		return 0.0;
+	}
+	if (ix < 0x3fe00000) {
+		if (ix <= 0x3c600000)
+			return pio2_hi + pio2_lo;
+		z = x * x;
+		r = foldm_asin_r(z);
+		return pio2_hi - (x - (pio2_lo - x * r));
+	} else if (hx < 0) {
+		z = (1.0 + x) * 0.5;
+		s = foldm_sqrt(z);
+		r = foldm_asin_r(z);
+		w = r * s - pio2_lo;
+		return pi - 2.0 * (s + w);
+	} else {
+		z = (1.0 - x) * 0.5;
+		s = foldm_sqrt(z);
+		df = s;
+		df = foldm_hilo0(df);
+		c = (z - df * df) / (s + df);
+		r = foldm_asin_r(z);
+		w = r * s + c;
+		return 2.0 * (df + w);
+	}
+}
+
+static double foldm_cbrt(double x) {
+	uint32_t B1 = 715094163u, B2 = 696219795u;
+	double C = 5.42857142857142815906e-01, D = -7.05306122448979611050e-01,
+				 E = 1.41428571428571436819e+00, F = 1.60714285714285720630e+00,
+				 G = 3.57142857142857150787e-01;
+	int32_t hx = foldm_hi(x);
+	uint32_t sign = (uint32_t)hx & 0x80000000u;
+	uint32_t high, low;
+	double r, s, t, w;
+	hx ^= (int32_t)sign;
+	low = foldm_lo(x);
+	if ((hx | (int32_t)low) == 0)
+		return x;
+	x = foldm_sethi(x, (uint32_t)hx);
+	if (hx < 0x00100000) {
+		t = foldm_frombits(0x43500000, 0);
+		t *= x;
+		high = (uint32_t)foldm_hi(t);
+		t = foldm_sethi(t, high / 3 + B2);
+	} else {
+		t = foldm_frombits((uint32_t)hx / 3 + B1, 0);
+	}
+	r = t * t / x;
+	s = C + r * t;
+	t *= G + F / (s + E + D / s);
+	high = (uint32_t)foldm_hi(t);
+	t = foldm_frombits(high + 1, 0);
+	s = t * t;
+	r = x / s;
+	w = t + t;
+	r = (r - t) / (w + r);
+	t = t + t * r;
+	t = foldm_sethi(t, (uint32_t)foldm_hi(t) | sign);
+	return t;
+}
+
+static double foldm_hypot(double x, double y) {
+	double a, b, t1, t2, y1, y2, w;
+	int32_t j, k, ha, hb;
+	ha = foldm_hi(x) & 0x7fffffff;
+	hb = foldm_hi(y) & 0x7fffffff;
+	if (hb > ha) {
+		a = y;
+		b = x;
+		j = ha;
+		ha = hb;
+		hb = j;
+	} else {
+		a = x;
+		b = y;
+	}
+	a = foldm_fabs(a);
+	b = foldm_fabs(b);
+	if ((ha - hb) > 0x3c00000)
+		return a + b;
+	k = 0;
+	if (ha > 0x5f300000) {
+		if (ha >= 0x7ff00000) {
+			uint32_t low;
+			w = a + b;
+			low = foldm_lo(a);
+			if (((ha & 0xfffff) | (int32_t)low) == 0)
+				w = a;
+			low = foldm_lo(b);
+			if (((hb ^ 0x7ff00000) | (int32_t)low) == 0)
+				w = b;
+			return w;
+		}
+		ha -= 0x25800000;
+		hb -= 0x25800000;
+		k += 600;
+		a = foldm_sethi(a, (uint32_t)ha);
+		b = foldm_sethi(b, (uint32_t)hb);
+	}
+	if (hb < 0x20b00000) {
+		if (hb <= 0x000fffff) {
+			uint32_t low = foldm_lo(b);
+			if ((hb | (int32_t)low) == 0)
+				return a;
+			t1 = foldm_frombits(0x7fd00000, 0);
+			b *= t1;
+			a *= t1;
+			k -= 1022;
+		} else {
+			ha += 0x25800000;
+			hb += 0x25800000;
+			k -= 600;
+			a = foldm_sethi(a, (uint32_t)ha);
+			b = foldm_sethi(b, (uint32_t)hb);
+		}
+	}
+	w = a - b;
+	if (w > b) {
+		t1 = foldm_frombits((uint32_t)ha, 0);
+		t2 = a - t1;
+		w = foldm_sqrt(t1 * t1 - (b * (-b) - t2 * (a + t1)));
+	} else {
+		a = a + a;
+		y1 = foldm_frombits((uint32_t)hb, 0);
+		y2 = b - y1;
+		t1 = foldm_frombits((uint32_t)(ha + 0x00100000), 0);
+		t2 = a - t1;
+		w = foldm_sqrt(t1 * y1 - (w * (-w) - (t1 * y2 + t2 * b)));
+	}
+	if (k != 0) {
+		uint32_t high;
+		t1 = 1.0;
+		high = (uint32_t)foldm_hi(t1);
+		t1 = foldm_sethi(t1, high + ((uint32_t)k << 20));
+		return t1 * w;
+	}
+	return w;
+}
+
 static int foldmath_eval(int id, int flt, uint64_t inbits, uint64_t *out) {
 	double x, res;
 	uint64_t ib;
@@ -7081,6 +7362,26 @@ static int foldmath_eval(int id, int flt, uint64_t inbits, uint64_t *out) {
 		}
 		break;
 	}
+	case 11: {
+		if ((ib & 0x7fffffffffffffffull) >= 0x7ff0000000000000ull)
+			return 0;
+		res = foldm_atan(x);
+		break;
+	}
+	case 12:
+	case 13: {
+		double ax = x < 0 ? -x : x;
+		if (ax > 1.0)
+			return 0;
+		res = id == 12 ? foldm_asin(x) : foldm_acos(x);
+		break;
+	}
+	case 14: {
+		if ((ib & 0x7fffffffffffffffull) >= 0x7ff0000000000000ull)
+			return 0;
+		res = foldm_cbrt(x);
+		break;
+	}
 	default:
 		return 0;
 	}
@@ -7117,6 +7418,80 @@ static int foldm_pow_eval(double x, double y, double *out) {
 		return 1;
 	}
 	return 0;
+}
+
+static int foldm_atan2_eval(double y, double x, double *out) {
+	double pi = 3.1415926535897931160e+00, pi_o_2 = 1.5707963267948965580e+00,
+				 pi_lo = 1.2246467991473531772e-16;
+	int32_t hx, hy, ix, iy, k, m;
+	uint32_t lx, ly;
+	double z;
+	if (x != x || y != y)
+		return 0;
+	hx = foldm_hi(x);
+	lx = foldm_lo(x);
+	ix = hx & 0x7fffffff;
+	hy = foldm_hi(y);
+	ly = foldm_lo(y);
+	iy = hy & 0x7fffffff;
+	if (ix >= 0x7ff00000 || iy >= 0x7ff00000)
+		return 0;
+	if (((hx - 0x3ff00000) | (int32_t)lx) == 0) {
+		*out = foldm_atan(y);
+		return 1;
+	}
+	m = ((hy >> 31) & 1) | ((hx >> 30) & 2);
+	if ((iy | (int32_t)ly) == 0) {
+		switch (m) {
+		case 0:
+		case 1:
+			*out = y;
+			return 1;
+		case 2:
+			*out = pi;
+			return 1;
+		default:
+			*out = -pi;
+			return 1;
+		}
+	}
+	if ((ix | (int32_t)lx) == 0) {
+		*out = (hy < 0) ? -pi_o_2 : pi_o_2;
+		return 1;
+	}
+	k = (iy - ix) >> 20;
+	if (k > 60) {
+		z = pi_o_2 + 0.5 * pi_lo;
+		m &= 1;
+	} else if (hx < 0 && k < -60) {
+		z = 0.0;
+	} else {
+		z = foldm_atan(foldm_fabs(y / x));
+	}
+	switch (m) {
+	case 0:
+		*out = z;
+		return 1;
+	case 1:
+		*out = -z;
+		return 1;
+	case 2:
+		*out = pi - (z - pi_lo);
+		return 1;
+	default:
+		*out = (z - pi_lo) - pi;
+		return 1;
+	}
+}
+
+static int foldm_hypot_eval(double x, double y, double *out) {
+	int32_t hx = foldm_hi(x), hy = foldm_hi(y);
+	if (x != x || y != y)
+		return 0;
+	if ((hx & 0x7fffffff) >= 0x7ff00000 || (hy & 0x7fffffff) >= 0x7ff00000)
+		return 0;
+	*out = foldm_hypot(x, y);
+	return 1;
 }
 
 static int foldm_isconst(SValue *v, int bt) {
@@ -7185,15 +7560,22 @@ static int foldmath_try(Sym *ftype, int nb_args) {
 	bt = flt ? VT_FLOAT : VT_DOUBLE;
 	if ((ftype->type.t & VT_BTYPE) != bt)
 		return 0;
-	if (id == 7) {
+	if (id == 7 || id == 15 || id == 16) {
 		double xb, yb, pres;
+		int ok;
 		if (nb_args != 2)
 			return 0;
 		if (!foldm_isconst(vtop - 1, bt) || !foldm_isconst(vtop, bt))
 			return 0;
 		xb = foldm_svd(vtop - 1, flt);
 		yb = foldm_svd(vtop, flt);
-		if (!foldm_pow_eval(xb, yb, &pres))
+		if (id == 7)
+			ok = foldm_pow_eval(xb, yb, &pres);
+		else if (id == 15)
+			ok = foldm_atan2_eval(xb, yb, &pres);
+		else
+			ok = foldm_hypot_eval(xb, yb, &pres);
+		if (!ok)
 			return 0;
 		vpop();
 		vpop();

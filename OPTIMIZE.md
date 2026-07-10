@@ -853,3 +853,27 @@ machinery, and at what risk — to decide whether to lift the scope.
   calls). 1836 green, fixpoint byte-identical, default -O0 objects
   identical. `-ffold-math` now covers **11 transcendental families** —
   the full "sequence approximation" ask, deterministically.
+
+### 2026-07-10 — iteration 35 (-ffold-math completes the C99 transcendental set)
+
+- **`-ffold-math` extended to atan/asin/acos/atan2/cbrt/hypot** (+f
+  variants) — completing the C99 <math.h> transcendental set. fdlibm
+  coefficients (s_atan/e_asin/e_acos/e_atan2/s_cbrt/e_hypot), new shared
+  deterministic foldm_sqrt (Newton) + foldm_asin_r + foldm_frombits; the
+  two-arg dispatch (was pow-only) generalized to pow/atan2/hypot.
+  **Accuracy: atan/asin/acos/atan2 0 ulp, cbrt/hypot 1 ulp** vs glibc.
+  Cases: asin/acos |x|<=1 (else call); atan2/hypot all FINITE inputs
+  (inf/nan left as call); atan/cbrt finite (inf as call). Full fdlibm
+  scaling in hypot (near-overflow safe).
+- Also documented -ffold-math in `mcc -hh` (iter 34).
+- `-ffold-math` now folds **17 transcendental families**:
+  sin cos tan exp log log2 log10 pow sinh cosh tanh atan asin acos atan2
+  cbrt hypot — the deterministic "sequence approximation" ask, complete.
+  Tests foldmath_invtrig + foldmath_invtrig_must_not; 1838 green,
+  fixpoint byte-identical, default -O0 objects identical.
+- **Optimizer campaign at natural completion**: 14 landed features
+  (9 replay tree passes + fold-math over 17 families + -O4+ TPE
+  superoptimizer) + bench statistics + a miscompile fix + the
+  self-host-fixpoint helper. Every un-blocked named algorithm and the
+  full C99 transcendental fold set are done; the rest are the documented
+  architecturally-blocked frontier.
