@@ -1,7 +1,5 @@
 #include "mcc.h"
 
-#undef DEBUG_RELOC
-
 struct sym_version {
 	char *lib;
 	char *version;
@@ -652,10 +650,9 @@ ST_FUNC int set_elf_sym(Section *s, addr_t value, unsigned long size,
 			} else if (esym->st_other & ST_ASM_SET) {
 				goto do_patch;
 			} else {
-#if 0
-                printf("new_bind=%x new_shndx=%x new_vis=%x old_bind=%x old_shndx=%x old_vis=%x\n",
-                       sym_bind, shndx, new_vis, esym_bind, esym->st_shndx, esym_vis);
-#endif
+				if (g_debug & MCC_DBG_SYM)
+					printf("new_bind=%x new_shndx=%x new_vis=%x old_bind=%x old_shndx=%x old_vis=%x\n",
+								 sym_bind, shndx, new_vis, esym_bind, esym->st_shndx, esym_vis);
 				mcc_error_noabort("'%s' defined twice", name);
 			}
 		} else {
@@ -966,9 +963,8 @@ ST_FUNC void relocate_syms(MCCState *s1, Section *symtab, int do_resolve) {
 				}
 				if (addr) {
 					sym->st_value = (addr_t)addr;
-#ifdef DEBUG_RELOC
-					printf("relocate_sym: %s -> 0x%lx\n", name, sym->st_value);
-#endif
+					if (g_debug & MCC_DBG_RELOC)
+						printf("relocate_sym: %s -> 0x%lx\n", name, (long)sym->st_value);
 					goto found;
 				}
 #endif
@@ -3430,8 +3426,6 @@ static void store_version(MCCState *s1, struct versym_info *v, char *dynstr) {
 	uint32_t next;
 	int i;
 
-#define DEBUG_VERSION 0
-
 	if (v->versym && v->verdef) {
 		ElfW(Verdef) *vdef = v->verdef;
 		lib = NULL;
@@ -3439,11 +3433,10 @@ static void store_version(MCCState *s1, struct versym_info *v, char *dynstr) {
 			ElfW(Verdaux) *verdaux =
 					(ElfW(Verdaux) *)(((char *)vdef) + vdef->vd_aux);
 
-#if DEBUG_VERSION
-			printf("verdef: version:%u flags:%u index:%u, hash:%u\n",
-						 vdef->vd_version, vdef->vd_flags, vdef->vd_ndx,
-						 vdef->vd_hash);
-#endif
+			if (g_debug & MCC_DBG_VER)
+				printf("verdef: version:%u flags:%u index:%u, hash:%u\n",
+							 vdef->vd_version, vdef->vd_flags, vdef->vd_ndx,
+							 vdef->vd_hash);
 			if (vdef->vd_cnt) {
 				version = dynstr + verdaux->vda_name;
 
@@ -3452,9 +3445,8 @@ static void store_version(MCCState *s1, struct versym_info *v, char *dynstr) {
 				else
 					set_ver_to_ver(s1, &v->nb_local_ver, &v->local_ver, vdef->vd_ndx,
 												 lib, version);
-#if DEBUG_VERSION
-				printf("  verdaux(%u): %s\n", vdef->vd_ndx, version);
-#endif
+				if (g_debug & MCC_DBG_VER)
+					printf("  verdaux(%u): %s\n", vdef->vd_ndx, version);
 			}
 			next = vdef->vd_next;
 			vdef = (ElfW(Verdef) *)(((char *)vdef) + next);
@@ -3467,19 +3459,17 @@ static void store_version(MCCState *s1, struct versym_info *v, char *dynstr) {
 					(ElfW(Vernaux) *)(((char *)vneed) + vneed->vn_aux);
 
 			lib = dynstr + vneed->vn_file;
-#if DEBUG_VERSION
-			printf("verneed: %u %s\n", vneed->vn_version, lib);
-#endif
+			if (g_debug & MCC_DBG_VER)
+				printf("verneed: %u %s\n", vneed->vn_version, lib);
 			for (i = 0; i < vneed->vn_cnt; i++) {
 				if ((vernaux->vna_other & 0x8000) == 0) {
 					version = dynstr + vernaux->vna_name;
 					set_ver_to_ver(s1, &v->nb_local_ver, &v->local_ver, vernaux->vna_other,
 												 lib, version);
-#if DEBUG_VERSION
-					printf("  vernaux(%u): %u %u %s\n",
-								 vernaux->vna_other, vernaux->vna_hash,
-								 vernaux->vna_flags, version);
-#endif
+					if (g_debug & MCC_DBG_VER)
+						printf("  vernaux(%u): %u %u %s\n",
+									 vernaux->vna_other, vernaux->vna_hash,
+									 vernaux->vna_flags, version);
 				}
 				vernaux = (ElfW(Vernaux) *)(((char *)vernaux) + vernaux->vna_next);
 			}
@@ -3488,15 +3478,15 @@ static void store_version(MCCState *s1, struct versym_info *v, char *dynstr) {
 		} while (next);
 	}
 
-#if DEBUG_VERSION
-	for (i = 0; i < v->nb_local_ver; i++) {
-		if (v->local_ver[i] > 0) {
-			printf("%d: lib: %s, version %s\n",
-						 i, sym_versions[v->local_ver[i]].lib,
-						 sym_versions[v->local_ver[i]].version);
+	if (g_debug & MCC_DBG_VER) {
+		for (i = 0; i < v->nb_local_ver; i++) {
+			if (v->local_ver[i] > 0) {
+				printf("%d: lib: %s, version %s\n",
+							 i, sym_versions[v->local_ver[i]].lib,
+							 sym_versions[v->local_ver[i]].version);
+			}
 		}
 	}
-#endif
 }
 
 ST_FUNC int mcc_load_dll(MCCState *s1, int fd, const char *filename, int level) {

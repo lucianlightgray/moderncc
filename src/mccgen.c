@@ -515,39 +515,31 @@ ST_FUNC void check_vstack(void) {
 							(int)(vtop - vstack + 1));
 }
 
-#if 0
-void pv(const char* lbl, int a, int b)
-{
-    int i;
-    for (i = a; i < a + b; ++i)
-    {
-        SValue* p = &vtop[-i];
-        printf("%s vtop[-%d] : type.t:%04x  r:%04x  r2:%04x  c.i:%d\n",
-               lbl, i, p->type.t, p->r, p->r2, (int)p->c.i);
-    }
+MAYBE_UNUSED void pv(const char *lbl, int a, int b) {
+	for (int i = a; i < a + b; ++i) {
+		SValue *p = &vtop[-i];
+		printf("%s vtop[-%d] : type.t:%04x  r:%04x  r2:%04x  c.i:%d\n",
+					 lbl, i, p->type.t, p->r, p->r2, (int)p->c.i);
+	}
 }
 
-static inline void psyms(const char* msg, Sym* s, Sym* last)
-{
-    printf("%-8s scope         v        c        r   type.t\n", msg);
-    while (s && s != last)
-    {
-        printf("      %8x  %08x %08x %08x %08x %s\n",
-               s->sym_scope, s->v, s->c, s->r, s->type.t, get_tok_str(s->v, 0));
-        s = s->prev;
-    }
+MAYBE_UNUSED static void psyms(const char *msg, Sym *s, Sym *last) {
+	printf("%-8s scope         v        c        r   type.t\n", msg);
+	while (s && s != last) {
+		printf("      %8x  %08x %08x %08x %08x %s\n",
+					 s->sym_scope, s->v, s->c, s->r, s->type.t, get_tok_str(s->v, 0));
+		s = s->prev;
+	}
 }
 
-static void type_to_str(char* buf, int buf_size, CType* type, const char* varstr);
+static void type_to_str(char *buf, int buf_size, CType *type, const char *varstr);
 
-static void ptype(const char* msg, CType* type, int v)
-{
-    char buf[500];
-    type_to_str(buf, sizeof(buf), type,
-                (v & ~SYM_FIELD) ? get_tok_str(v, NULL) : NULL);
-    printf("%s : %s;\n", msg, buf);
+MAYBE_UNUSED static void ptype(const char *msg, CType *type, int v) {
+	char buf[500];
+	type_to_str(buf, sizeof(buf), type,
+							(v & ~SYM_FIELD) ? get_tok_str(v, NULL) : NULL);
+	printf("%s : %s;\n", msg, buf);
 }
-#endif
 
 ST_FUNC void mccgen_init(MCCState *s1) {
 	vtop = vstack - 1;
@@ -585,9 +577,6 @@ ST_FUNC int mccgen_compile(MCCState *s1) {
 	mcc_tcov_start(s1);
 #ifdef MCC_TARGET_ARM
 	arm_init(s1);
-#endif
-#ifdef INC_DEBUG
-	printf("%s: **** new file\n", file->filename);
 #endif
 	parse_flags = PARSE_FLAG_PREPROCESS | PARSE_FLAG_TOK_NUM | PARSE_FLAG_TOK_STR;
 	next();
@@ -717,15 +706,6 @@ ST_FUNC void update_storage(Sym *sym) {
 		esym->st_other |= ST_PE_EXPORT;
 #endif
 
-#if 0
-    printf("storage %s: bind=%c vis=%d exp=%d imp=%d\n",
-           get_tok_str(sym->v, NULL),
-           sym_bind == STB_WEAK ? 'w' : sym_bind == STB_LOCAL ? 'l' : 'g',
-           sym->a.visibility,
-           sym->a.dllexport,
-           sym->a.dllimport
-    );
-#endif
 }
 
 ST_FUNC void put_extern_sym2(Sym *sym, int sh_num,
@@ -4281,16 +4261,16 @@ static void struct_layout(CType *type, AttributeDef *ad) {
 		if (align > maxalign)
 			maxalign = align;
 
-#ifdef BF_DEBUG
-		printf("set field %s offset %-2d size %-2d align %-2d",
-					 get_tok_str(f->v & ~SYM_FIELD, NULL), offset, size, align);
-		if (f->type.t & VT_BITFIELD) {
-			printf(" pos %-2d bits %-2d",
-						 BIT_POS(f->type.t),
-						 BIT_SIZE(f->type.t));
+		if (g_debug & MCC_DBG_STRUCT) {
+			printf("set field %s offset %-2d size %-2d align %-2d",
+						 get_tok_str(f->v & ~SYM_FIELD, NULL), offset, size, align);
+			if (f->type.t & VT_BITFIELD) {
+				printf(" pos %-2d bits %-2d",
+							 BIT_POS(f->type.t),
+							 BIT_SIZE(f->type.t));
+			}
+			printf("\n");
 		}
-		printf("\n");
-#endif
 
 		f->c = offset;
 		f->r = 0;
@@ -4318,9 +4298,8 @@ static void struct_layout(CType *type, AttributeDef *ad) {
 			type->ref->a.transp_union = 1;
 	}
 
-#ifdef BF_DEBUG
-	printf("struct size %-2d align %-2d\n\n", c, a), fflush(stdout);
-#endif
+	if (g_debug & MCC_DBG_STRUCT)
+		printf("struct size %-2d align %-2d\n\n", c, a), fflush(stdout);
 
 	for (f = type->ref->next; f; f = f->next) {
 		int s, px, cx, c0;
@@ -4375,18 +4354,16 @@ static void struct_layout(CType *type, AttributeDef *ad) {
 			f->type.t = (f->type.t & ~(0x3f << VT_STRUCT_SHIFT)) | (bit_pos << VT_STRUCT_SHIFT);
 			if (s != size)
 				f->auxtype = t.t;
-#ifdef BF_DEBUG
-			printf("FIX field %s offset %-2d size %-2d align %-2d "
-						 "pos %-2d bits %-2d\n",
-						 get_tok_str(f->v & ~SYM_FIELD, NULL),
-						 cx, s, align, px, bit_size);
-#endif
+			if (g_debug & MCC_DBG_STRUCT)
+				printf("FIX field %s offset %-2d size %-2d align %-2d "
+							 "pos %-2d bits %-2d\n",
+							 get_tok_str(f->v & ~SYM_FIELD, NULL),
+							 cx, s, align, px, bit_size);
 		} else {
 			f->auxtype = VT_STRUCT;
-#ifdef BF_DEBUG
-			printf("FIX field %s : load byte-wise\n",
-						 get_tok_str(f->v & ~SYM_FIELD, NULL));
-#endif
+			if (g_debug & MCC_DBG_STRUCT)
+				printf("FIX field %s : load byte-wise\n",
+							 get_tok_str(f->v & ~SYM_FIELD, NULL));
 		}
 	}
 }
@@ -5541,9 +5518,8 @@ static int asm_label_instr(void) {
 	next();
 	astr = parse_asm_str()->data;
 	skip(')');
-#ifdef ASM_DEBUG
-	printf("asm_alias: \"%s\"\n", astr);
-#endif
+	if (g_debug & MCC_DBG_ASM)
+		printf("asm_alias: \"%s\"\n", astr);
 	v = tok_alloc_const(astr);
 	return v;
 }

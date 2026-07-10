@@ -172,9 +172,7 @@ ST_FUNC void relocate_plt(MCCState *s1) {
 
 ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr, addr_t addr, addr_t val) {
 	int sym_index = ELFW(R_SYM)(rel->r_info), esym_index;
-#ifdef DEBUG_RELOC
 	ElfW(Sym) *sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
-#endif
 
 	switch (type) {
 	case R_AARCH64_ABS64:
@@ -236,7 +234,6 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		uint64_t off = (val >> 12) - (addr >> 12);
 #ifdef MCC_TARGET_PE
 		if ((off + ((uint64_t)1 << 20)) >> 21) {
-			ElfW(Sym) *sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
 			if (sym->st_shndx == SHN_UNDEF && ELFW(ST_BIND)(sym->st_info) == STB_WEAK) {
 				write32le(ptr, 0xd2800000 | (read32le(ptr) & 0x1f));
 				return;
@@ -273,10 +270,9 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 										(val & 0xff0) << 6));
 		return;
 	case R_AARCH64_CONDBR19:
-#ifdef DEBUG_RELOC
-		printf("reloc %d @ 0x%lx: val=0x%lx name=%s\n", type, addr, val,
-					 (char *)symtab_section->link->data + sym->st_name);
-#endif
+		if (g_debug & MCC_DBG_RELOC)
+			printf("reloc %d @ 0x%lx: val=0x%lx name=%s\n", type, (long)addr, (long)val,
+						 (char *)symtab_section->link->data + sym->st_name);
 		if (((val - addr) + ((uint64_t)1 << 20)) & ~(uint64_t)0x1ffffc)
 			mcc_error_noabort("R_AARCH64_CONDBR19 relocation failed"
 												" (val=%lx, addr=%lx)",
@@ -285,10 +281,9 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 										(((val - addr) >> 2 & 0x7ffff) << 5)));
 		return;
 	case R_AARCH64_TSTBR14:
-#ifdef DEBUG_RELOC
-		printf("reloc %d @ 0x%lx: val=0x%lx name=%s\n", type, addr, val,
-					 (char *)symtab_section->link->data + sym->st_name);
-#endif
+		if (g_debug & MCC_DBG_RELOC)
+			printf("reloc %d @ 0x%lx: val=0x%lx name=%s\n", type, (long)addr, (long)val,
+						 (char *)symtab_section->link->data + sym->st_name);
 		if (((val - addr) + ((uint64_t)1 << 15)) & ~(uint64_t)0xfffc)
 			mcc_error_noabort("R_AARCH64_TSTBR14 relocation failed"
 												" (val=%lx, addr=%lx)",
@@ -299,13 +294,11 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 	case R_AARCH64_JUMP26:
 	case R_AARCH64_CALL26: {
 		const char *name;
-#ifdef DEBUG_RELOC
-		printf("reloc %d @ 0x%lx: val=0x%lx name=%s\n", type, addr, val,
-					 (char *)symtab_section->link->data + sym->st_name);
-#endif
+		if (g_debug & MCC_DBG_RELOC)
+			printf("reloc %d @ 0x%lx: val=0x%lx name=%s\n", type, (long)addr, (long)val,
+						 (char *)symtab_section->link->data + sym->st_name);
 		if (((val - addr) + ((uint64_t)1 << 27)) & ~(uint64_t)0xffffffc) {
 #ifdef MCC_TARGET_PE
-			ElfW(Sym) *sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
 			if (sym->st_shndx == SHN_UNDEF && ELFW(ST_BIND)(sym->st_info) == STB_WEAK) {
 				write32le(ptr, ARM64_NOP);
 				return;
@@ -346,11 +339,10 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		return;
 	case R_AARCH64_GLOB_DAT:
 	case R_AARCH64_JUMP_SLOT:
-#ifdef DEBUG_RELOC
-		printf("reloc %d @ 0x%lx: val=0x%lx name=%s\n", type, addr,
-					 val - rel->r_addend,
-					 (char *)symtab_section->link->data + sym->st_name);
-#endif
+		if (g_debug & MCC_DBG_RELOC)
+			printf("reloc %d @ 0x%lx: val=0x%lx name=%s\n", type, (long)addr,
+						 (long)(val - rel->r_addend),
+						 (char *)symtab_section->link->data + sym->st_name);
 		write64le(ptr, val - rel->r_addend);
 		return;
 	case R_AARCH64_TLSLE_ADD_TPREL_HI12:

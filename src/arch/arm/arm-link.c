@@ -172,9 +172,8 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		int x, is_thumb, is_call, h, blx_avail, is_bl, th_ko;
 		unsigned code = read32le(ptr);
 		x = code & 0x00ffffff;
-#ifdef DEBUG_RELOC
-		printf("reloc %d: x=0x%x val=0x%x ", type, x, val);
-#endif
+		if (g_debug & MCC_DBG_RELOC)
+			printf("reloc %d: x=0x%x val=0x%x ", type, x, (unsigned)val);
 		code &= 0xff000000;
 		x <<= 2;
 		if (x & 0x2000000)
@@ -184,10 +183,9 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		is_bl = code == 0xeb000000;
 		is_call = (type == R_ARM_CALL || (type == R_ARM_PC24 && is_bl));
 		x += val - addr;
-#ifdef DEBUG_RELOC
-		printf(" newx=0x%x name=%s\n", x,
-					 (char *)symtab_section->link->data + sym->st_name);
-#endif
+		if (g_debug & MCC_DBG_RELOC)
+			printf(" newx=0x%x name=%s\n", x,
+						 (char *)symtab_section->link->data + sym->st_name);
 		h = x & 2;
 		th_ko = (x & 3) && (!blx_avail || !is_call);
 		if (th_ko || x >= 0x2000000 || x < -0x2000000)

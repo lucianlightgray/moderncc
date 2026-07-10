@@ -99,10 +99,10 @@ Policy (final): every trace/dump *implementation* compiles always; activation
 is runtime via a category bitmask over the existing `g_debug` int
 (`-d<num>`, `libmcc.c:59,2146`).
 
-- [ ] Define categories: `reloc, inc, pp, struct, tok, pe, ver, asm` (+ `sym`
+- [x] Define categories: `reloc, inc, pp, struct, tok, pe, ver, asm` (+ `sym`
       for the dormant symbol traces). Map `--debug=a,b` → `g_debug` bits;
       keep `-d<num>` as the raw form.
-- [ ] Convert the eight macro families: `DEBUG_RELOC` (also drop the force-
+- [x] Convert the eight macro families: `DEBUG_RELOC` (also drop the force-
       `#undef` at `mccelf.c:3`), `INC_DEBUG` (delete — fold unique messages
       into the existing `-vv` include tree at `mccpp.c:1495`), `PP_DEBUG`
       (keep the `PP_PRINT` wrapper; fast path pays one branch), `BF_DEBUG`,
@@ -110,10 +110,10 @@ is runtime via a category bitmask over the existing `g_debug` int
       compile-time), `PE_PRINT_SECTIONS`, `DEBUG_VERSION`, `ASM_DEBUG`'s trace
       half (its "bad op table" checks at `i386-asm.c:951`, `mccasm.c:1445-1491`
       become always-on cheap asserts).
-- [ ] Convert the dormant `#if 0` traces worth keeping (`mccgen.c:521` pv/psyms
+- [x] Convert the dormant `#if 0` traces worth keeping (`mccgen.c:521` pv/psyms
       dumps → `sym`, `mccelf.c:655`, `mccpe.c:1354`); delete the rest
       (`mccgen.c:725`, `mccpe.c:1107` — superseded by categories above).
-- [ ] Document in `mcc -hh`; bench before/after on the mcc rows (expected ~0:
+- [x] Document in `mcc -hh`; bench before/after on the mcc rows (expected ~0:
       all sites are cold or one-branch guarded).
 
 ## 10. Structural ungating where free (medium-large)

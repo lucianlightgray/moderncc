@@ -1646,6 +1646,7 @@ enum {
 	MCC_OPTION_dumpmachine,
 	MCC_OPTION_dumpversion,
 	MCC_OPTION_d,
+	MCC_OPTION_debug,
 	MCC_OPTION_static,
 	MCC_OPTION_std,
 	MCC_OPTION_shared,
@@ -1745,6 +1746,8 @@ static const MCCOption mcc_options[] = {
 		{"c", MCC_OPTION_c, 0},
 		{"dumpmachine", MCC_OPTION_dumpmachine, 0},
 		{"dumpversion", MCC_OPTION_dumpversion, 0},
+		{"debug=", MCC_OPTION_debug, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
+		{"-debug=", MCC_OPTION_debug, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
 		{"d", MCC_OPTION_d, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
 		{"static", MCC_OPTION_static, 0},
 		{"std", MCC_OPTION_std, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
@@ -2147,6 +2150,34 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) {
 			else
 				goto unsupported_option;
 			break;
+		case MCC_OPTION_debug: {
+			static const struct {
+				const char *name;
+				int bit;
+			} debug_cats[] = {
+					{"reloc", MCC_DBG_RELOC}, {"inc", MCC_DBG_INC},
+					{"pp", MCC_DBG_PP}, {"struct", MCC_DBG_STRUCT},
+					{"tok", MCC_DBG_TOK}, {"pe", MCC_DBG_PE},
+					{"ver", MCC_DBG_VER}, {"asm", MCC_DBG_ASM},
+					{"sym", MCC_DBG_SYM},
+			};
+			const char *p = optarg;
+			while (*p) {
+				size_t n = strcspn(p, ",");
+				unsigned i;
+				for (i = 0; i < countof(debug_cats); i++)
+					if (strlen(debug_cats[i].name) == n &&
+							!memcmp(debug_cats[i].name, p, n))
+						break;
+				if (i == countof(debug_cats))
+					return mcc_error_noabort("unknown debug category '%.*s'", (int)n, p);
+				g_debug |= debug_cats[i].bit;
+				p += n;
+				if (*p)
+					p++;
+			}
+			break;
+		}
 		case MCC_OPTION_static:
 			s->static_link = 1;
 			break;

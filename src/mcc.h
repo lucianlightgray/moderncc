@@ -1243,6 +1243,16 @@ ST_DATA int nb_stk_data;
 ST_DATA int stk_data_floor;
 ST_DATA int g_debug;
 
+#define MCC_DBG_RELOC 0x001
+#define MCC_DBG_INC 0x002
+#define MCC_DBG_PP 0x004
+#define MCC_DBG_STRUCT 0x008
+#define MCC_DBG_TOK 0x010
+#define MCC_DBG_PE 0x020
+#define MCC_DBG_VER 0x040
+#define MCC_DBG_ASM 0x080
+#define MCC_DBG_SYM 0x100
+
 ST_FUNC char *pstrcpy(char *buf, size_t buf_size, const char *s);
 ST_FUNC char *pstrcat(char *buf, size_t buf_size, const char *s);
 ST_FUNC char *pstrncpy(char *out, size_t buf_size, const char *s, size_t num);

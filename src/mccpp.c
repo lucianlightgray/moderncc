@@ -1428,11 +1428,8 @@ static int parse_include(MCCState *s1, int do_next, int test) {
 			pstrcat(buf, sizeof buf, name);
 		e = search_cached_include(s1, buf, 0);
 		if (e && (define_find(e->ifndef_macro) || e->once)) {
-#ifdef INC_DEBUG
-			printf("%s: skipping cached %s\n", file->filename, buf);
-#endif
 			if ((s1->verbose | 1) == 3)
-				printf("=> %*s%s\n",
+				printf("=> %*s%s (cached)\n",
 							 (int)(s1->include_stack_ptr - s1->include_stack), "", buf);
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
 			if (!test)
@@ -1452,9 +1449,6 @@ static int parse_include(MCCState *s1, int do_next, int test) {
 			mcc_error("#include recursion too deep");
 		*s1->include_stack_ptr++ = file->prev;
 		file->include_next_index = i;
-#ifdef INC_DEBUG
-		printf("%s: including %s\n", file->prev->filename, file->filename);
-#endif
 		if (s1->gen_deps
 
 				&& !(c == '<' && 0 == strcmp(name, "mccdefs.h") && 0 == strcmp(file->prev->filename, "<command line>"))) {
@@ -1733,9 +1727,6 @@ static CachedInclude *search_cached_include(MCCState *s1, const char *filename, 
 	dynarray_add(&s1->cached_includes, &s1->nb_cached_includes, e);
 	e->hash_next = s1->cached_includes_hash[h];
 	s1->cached_includes_hash[h] = s1->nb_cached_includes;
-#ifdef INC_DEBUG
-	printf("adding cached '%s'\n", filename);
-#endif
 	return e;
 }
 
@@ -1995,9 +1986,6 @@ redo:
 			mcc_error("invalid argument for '#if%sdef'", c ? "n" : "");
 		if (is_bof) {
 			if (c) {
-#ifdef INC_DEBUG
-				printf("#ifndef %s\n", get_tok_str(tok, NULL));
-#endif
 				file->ifndef_macro = tok;
 			}
 		}
@@ -2987,9 +2975,6 @@ redo_no_start:
 				tok = TOK_EOF;
 			} else {
 				if (tok_flags & TOK_FLAG_ENDIF) {
-#ifdef INC_DEBUG
-					printf("#endif %s\n", get_tok_str(file->ifndef_macro_saved, NULL));
-#endif
 					search_cached_include(s1, file->true_filename, 1)
 							->ifndef_macro = file->ifndef_macro_saved;
 					tok_flags &= ~TOK_FLAG_ENDIF;
@@ -3451,35 +3436,36 @@ keep_tok_flags:
 #if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
 	cst_capture_tok();
 #endif
-#if defined(PARSE_DEBUG)
-	printf("token = %d %s\n", tok, get_tok_str(tok, &tokc));
-#endif
+	if (g_debug & MCC_DBG_TOK)
+		printf("token = %d %s\n", tok, get_tok_str(tok, &tokc));
 }
 
-#ifdef PP_DEBUG
-#define indent (mcc_state->pp_debug_indent)
 static void define_print(MCCState *s1, int v);
 static void pp_print(const char *msg, int v, const int *str) {
 	FILE *fp = mcc_state->ppfp;
+	int *indent = &mcc_state->pp_debug_indent;
 
-	if (msg[0] == '#' && indent == 0)
+	if (!fp)
+		fp = stdout;
+	if (msg[0] == '#' && *indent == 0)
 		fprintf(fp, "\n");
 	else if (msg[0] == '+')
-		++indent, ++msg;
+		++*indent, ++msg;
 	else if (msg[0] == '-')
-		--indent, ++msg;
+		--*indent, ++msg;
 
-	fprintf(fp, "%*s", indent, "");
+	fprintf(fp, "%*s", *indent, "");
 	if (msg[0] == '#') {
 		define_print(mcc_state, v);
 	} else {
 		tok_print(str, v ? "%s %s" : "%s", msg, get_tok_str(v, 0));
 	}
 }
-#define PP_PRINT(x) pp_print x
-#else
-#define PP_PRINT(x)
-#endif
+#define PP_PRINT(x)          \
+	do {                       \
+		if (g_debug & MCC_DBG_PP) \
+			pp_print x;            \
+	} while (0)
 
 static int macro_subst(
 		TokenString *tok_str,
@@ -3493,16 +3479,17 @@ static int *macro_arg_subst(Sym **nested_list, const int *macro_str, Sym *args) 
 	CValue cval;
 	TokenString str;
 
-#ifdef PP_DEBUG
-	PP_PRINT(("asubst:", 0, macro_str));
-	for (s = args, n = 0; s; s = s->prev, ++n)
-		;
-	while (n--) {
-		for (s = args, t = 0; t < n; s = s->prev, ++t)
+	if (g_debug & MCC_DBG_PP) {
+		PP_PRINT(("asubst:", 0, macro_str));
+		for (s = args, n = 0; s; s = s->prev, ++n)
 			;
-		tok_print(s->d, "%*s - arg: %s:", indent, "", get_tok_str(s->v, 0));
+		while (n--) {
+			for (s = args, t = 0; t < n; s = s->prev, ++t)
+				;
+			tok_print(s->d, "%*s - arg: %s:", mcc_state->pp_debug_indent, "",
+								get_tok_str(s->v, 0));
+		}
 	}
-#endif
 
 	tok_str_new(&str);
 	t0 = t1 = 0;
@@ -3908,10 +3895,8 @@ static int macro_subst(
 	CValue cval;
 	TokenString *str;
 
-#ifdef PP_DEBUG
 	int tlen = tok_str->len;
 	PP_PRINT(("+expand:", 0, macro_str));
-#endif
 
 	while (1) {
 		TOK_GET(&t, &macro_str, &cval);
@@ -3947,10 +3932,10 @@ static int macro_subst(
 		}
 	}
 
-#ifdef PP_DEBUG
-	tok_str_add(tok_str, 0), --tok_str->len;
-	PP_PRINT(("-result:", 0, tok_str->str + tlen));
-#endif
+	if (g_debug & MCC_DBG_PP) {
+		tok_str_add(tok_str, 0), --tok_str->len;
+		PP_PRINT(("-result:", 0, tok_str->str + tlen));
+	}
 	return nosubst;
 }
 

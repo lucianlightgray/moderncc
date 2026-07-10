@@ -1442,9 +1442,8 @@ ST_FUNC void asm_instr(void) {
 	asm_compute_constraints(operands, nb_operands, nb_outputs,
 													clobber_regs, &out_reg);
 
-#ifdef ASM_DEBUG
-	printf("asm: \"%s\"\n", (char *)astr.data);
-#endif
+	if (g_debug & MCC_DBG_ASM)
+		printf("asm: \"%s\"\n", (char *)astr.data);
 	if (must_subst) {
 		cstr_reset(astr1);
 		cstr_cat(astr1, astr.data, astr.size);
@@ -1452,9 +1451,8 @@ ST_FUNC void asm_instr(void) {
 		subst_asm_operands(operands, nb_operands + nb_labels, &astr, astr1->data);
 	}
 
-#ifdef ASM_DEBUG
-	printf("subst_asm: \"%s\"\n", (char *)astr.data);
-#endif
+	if (g_debug & MCC_DBG_ASM)
+		printf("subst_asm: \"%s\"\n", (char *)astr.data);
 
 	asm_gen_code(operands, nb_operands, nb_outputs, 0,
 							 clobber_regs, out_reg);
@@ -1488,9 +1486,8 @@ ST_FUNC void asm_global_instr(void) {
 	if (tok != ';')
 		expect("';'");
 
-#ifdef ASM_DEBUG
-	printf("asm_global: \"%s\"\n", (char *)astr->data);
-#endif
+	if (g_debug & MCC_DBG_ASM)
+		printf("asm_global: \"%s\"\n", (char *)astr->data);
 	cur_text_section = text_section;
 	ind = cur_text_section->data_offset;
 

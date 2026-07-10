@@ -221,9 +221,8 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		write32le(ptr + 4, (read32le(ptr + 4) & 0xfffff) | (((val - addr) & 0xfff) << 20));
 		return;
 	case R_RISCV_PCREL_HI20:
-#ifdef DEBUG_RELOC
-		printf("PCREL_HI20: val=%lx addr=%lx\n", (long)val, (long)addr);
-#endif
+		if (g_debug & MCC_DBG_RELOC)
+			printf("PCREL_HI20: val=%lx addr=%lx\n", (long)val, (long)addr);
 		off64 = (int64_t)(val - addr + 0x800) >> 12;
 		if ((off64 + ((uint64_t)1 << 20)) >> 21)
 			mcc_error_noabort("R_RISCV_PCREL_HI20 relocation failed: off=%lx cond=%lx sym=%s",
@@ -241,9 +240,8 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		riscv64_record_pcrel_hi(s1, addr, val);
 		return;
 	case R_RISCV_PCREL_LO12_I:
-#ifdef DEBUG_RELOC
-		printf("PCREL_LO12_I: val=%lx addr=%lx\n", (long)val, (long)addr);
-#endif
+		if (g_debug & MCC_DBG_RELOC)
+			printf("PCREL_LO12_I: val=%lx addr=%lx\n", (long)val, (long)addr);
 		addr = val;
 		riscv64_lookup_pcrel_hi(s1, addr, &val);
 		write32le(ptr, (read32le(ptr) & 0xfffff) | (((val - addr) & 0xfff) << 20));

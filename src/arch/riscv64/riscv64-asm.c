@@ -2407,18 +2407,18 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 		}
 	}
 
-#ifdef ASM_DEBUG
-	for (int i = 0; i < nb_operands; i++) {
-		j = sorted_op[i];
-		op = &operands[j];
-		printf("%%%d [%s]: \"%s\" r=0x%04x reg=%d\n",
-					 j,
-					 op->id ? get_tok_str(op->id, NULL) : "",
-					 op->constraint, op->vt->r, op->reg);
+	if (g_debug & MCC_DBG_ASM) {
+		for (int i = 0; i < nb_operands; i++) {
+			j = sorted_op[i];
+			op = &operands[j];
+			printf("%%%d [%s]: \"%s\" r=0x%04x reg=%d\n",
+						 j,
+						 op->id ? get_tok_str(op->id, NULL) : "",
+						 op->constraint, op->vt->r, op->reg);
+		}
+		if (*pout_reg >= 0)
+			printf("out_reg=%d\n", *pout_reg);
 	}
-	if (*pout_reg >= 0)
-		printf("out_reg=%d\n", *pout_reg);
-#endif
 }
 
 ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str) {

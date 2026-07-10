@@ -1,7 +1,6 @@
 #include "mcc.h"
 
 #define PE_MERGE_DATA 1
-#define PE_PRINT_SECTIONS 0
 
 #ifdef MCC_TARGET_X86_64
 #define ADDR3264 ULONGLONG
@@ -1317,39 +1316,29 @@ static int pe_assign_addresses(struct pe_info *pe) {
 			si->data_size = si->sh_size;
 		}
 	}
-#if 0
-    for (i = 1; i < nbs; ++i)
-    {
-        Section* s = s1->sections[sec_order[i]];
-        int type = s->sh_type;
-        int flags = s->sh_flags;
-        printf("section %-16s %-10s %p %04x %s,%s,%s\n",
-               s->name,
-               type == SHT_PROGBITS
-                   ? "progbits"
-                   : type == SHT_INIT_ARRAY
-                   ? "initarr"
-                   : type == SHT_FINI_ARRAY
-                   ? "finiarr"
-                   : type == SHT_NOBITS
-                   ? "nobits"
-                   : type == SHT_SYMTAB
-                   ? "symtab"
-                   : type == SHT_STRTAB
-                   ? "strtab"
-                   : type == SHT_RELX
-                   ? "rel"
-                   : "???",
-               s->sh_addr,
-               (unsigned)s->data_offset,
-               flags & SHF_ALLOC ? "alloc" : "",
-               flags & SHF_WRITE ? "write" : "",
-               flags & SHF_EXECINSTR ? "exec" : ""
-        );
-        fflush(stdout);
-    }
-    s1->verbose = 2;
-#endif
+	if (g_debug & MCC_DBG_PE) {
+		for (i = 1; i < nbs; ++i) {
+			Section *s = s1->sections[sec_order[i]];
+			int type = s->sh_type;
+			int flags = s->sh_flags;
+			printf("section %-16s %-10s %p %04x %s,%s,%s\n",
+						 s->name,
+						 type == SHT_PROGBITS    ? "progbits"
+						 : type == SHT_INIT_ARRAY ? "initarr"
+						 : type == SHT_FINI_ARRAY ? "finiarr"
+						 : type == SHT_NOBITS     ? "nobits"
+						 : type == SHT_SYMTAB     ? "symtab"
+						 : type == SHT_STRTAB     ? "strtab"
+						 : type == SHT_RELX       ? "rel"
+																			: "???",
+						 (void *)(size_t)s->sh_addr,
+						 (unsigned)s->data_offset,
+						 flags & SHF_ALLOC ? "alloc" : "",
+						 flags & SHF_WRITE ? "write" : "",
+						 flags & SHF_EXECINSTR ? "exec" : "");
+			fflush(stdout);
+		}
+	}
 	mcc_free(sec_order);
 	return 0;
 }
@@ -1459,7 +1448,6 @@ static int pe_check_symbols(struct pe_info *pe) {
 	return ret;
 }
 
-#if PE_PRINT_SECTIONS
 static void pe_print_section(FILE *f, Section *s) {
 	BYTE *p, *e, b;
 	int i, n, l, m;
@@ -1588,7 +1576,6 @@ static void pe_print_sections(MCCState *s1, const char *fname) {
 	pe_print_section(f, s1->dynsymtab_section);
 	fclose(f);
 }
-#endif
 
 ST_FUNC int pe_putimport(MCCState *s1, int dllindex, const char *name, addr_t value) {
 	return set_elf_sym(
@@ -2199,9 +2186,7 @@ ST_FUNC int pe_output_file(MCCState *s1, const char *filename) {
 done:
 	dynarray_reset(&pe.sec_info, &pe.sec_count);
 	pe_free_imports(&pe);
-#if PE_PRINT_SECTIONS
-	if (g_debug & 8)
+	if (g_debug & MCC_DBG_PE)
 		pe_print_sections(s1, "mcc.log");
-#endif
 	return s1->nb_errors ? -1 : 0;
 }
