@@ -134,6 +134,14 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} --no-embed-jit -O0 -c {W}/so.c -o {W}/so2.o && echo FLAGOK",
 		 "WARMOK\nrc=55\nFLAGOK\n"},
 
+		{"per_fn_config", "cpu=x86_64,os=linux,optimizer",
+		 "printf 'static int sq(int x){return x*x;}int main(void){int s=0;for(int i=0;i<10;i++)s+=sq(i);return s;}\\n' > {W}/pf.c && "
+		 "MCC_AST_TEMPLATES=1 MCC_AST_FN_CONFIG='main=1;sq=1' {MCC} -B{B} -I{I} -O3 -c {W}/pf.c -o {W}/pf1.o && "
+		 "MCC_AST_TEMPLATES=1 MCC_AST_FN_CONFIG='main=7;sq=7' {MCC} -B{B} -I{I} -O3 -c {W}/pf.c -o {W}/pf7.o && "
+		 "( cmp -s {W}/pf1.o {W}/pf7.o && echo SAME || echo DIFFER ) ; "
+		 "{MCC} -B{B} -I{I} -O3 {W}/pf.c -o {W}/pf && {W}/pf ; echo rc=$?",
+		 "DIFFER\nrc=29\n"},
+
 		{"ast_cost_report", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'static int inner(int x){int s=0;for(int i=0;i<x;i++)for(int j=0;j<x;j++)s+=i*j;return s;}\\nint main(void){return inner(5);}\\n' > {W}/cost.c && "
 		 "MCC_AST_COST=1 {MCC} -B{B} -I{I} -O1 -c {W}/cost.c -o {W}/cost.o 2>&1 | grep '^ast-cost' | awk '{print $2, $4}' | sort",

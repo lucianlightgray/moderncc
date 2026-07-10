@@ -370,6 +370,52 @@ static int ast_opt_total;
 static int ast_inline_node_limit = 64;
 static int ast_graft_budget_max = 2048;
 static int ast_cost_env;
+
+#define AST_FNCFG_MAX 256
+static struct {
+	char name[80];
+	int tmpl, promo, inl;
+} ast_fncfg[AST_FNCFG_MAX];
+static int ast_fncfg_n;
+
+static void ast_fncfg_parse(void) {
+	const char *s = getenv("MCC_AST_FN_CONFIG");
+	ast_fncfg_n = 0;
+	if (!s)
+		return;
+	while (*s && ast_fncfg_n < AST_FNCFG_MAX) {
+		const char *name = s;
+		int nlen, bits;
+		while (*s && *s != '=' && *s != ';')
+			s++;
+		if (*s != '=')
+			break;
+		nlen = (int)(s - name);
+		if (nlen >= 80)
+			nlen = 79;
+		bits = atoi(s + 1);
+		while (*s && *s != ';')
+			s++;
+		if (*s == ';')
+			s++;
+		memcpy(ast_fncfg[ast_fncfg_n].name, name, nlen);
+		ast_fncfg[ast_fncfg_n].name[nlen] = 0;
+		ast_fncfg[ast_fncfg_n].tmpl = bits & 1;
+		ast_fncfg[ast_fncfg_n].promo = (bits >> 1) & 1;
+		ast_fncfg[ast_fncfg_n].inl = (bits >> 2) & 1;
+		ast_fncfg_n++;
+	}
+}
+
+static int ast_fncfg_find(const char *fn) {
+	int i;
+	if (!fn)
+		return -1;
+	for (i = 0; i < ast_fncfg_n; i++)
+		if (!strcmp(ast_fncfg[i].name, fn))
+			return i;
+	return -1;
+}
 static int ast_templates_env;
 static int ast_promote_env;
 static int ast_no_callful_env;
@@ -558,6 +604,7 @@ void ast_configure(MCCState *s1) {
 	ast_inline_node_limit = ast_env_int("MCC_AST_INLINE_NODES", 64);
 	ast_graft_budget_max = ast_env_int("MCC_AST_GRAFT", 2048);
 	ast_cost_env = ast_env_gate("MCC_AST_COST", 0);
+	ast_fncfg_parse();
 }
 
 int ast_fconst_reuse(void) {
@@ -4496,6 +4543,16 @@ void ast_func_end(Sym *sym) {
 		ast_fn_tco = 0;
 		if (ast_cost_env)
 			ast_fn_cost(ast_cur, funcname);
+		int ast_sv_tmpl = ast_templates_env, ast_sv_promo = ast_promote_env,
+				ast_sv_inl = ast_inline_env;
+		if (ast_fncfg_n) {
+			int fi = ast_fncfg_find(funcname);
+			if (fi >= 0) {
+				ast_templates_env = ast_fncfg[fi].tmpl;
+				ast_promote_env = ast_fncfg[fi].promo;
+				ast_inline_env = ast_fncfg[fi].inl;
+			}
+		}
 		if (ast_replay_ok(ast_cur)) {
 			int orig_ind = ind, orig_rsym = rsym;
 			int body_len = orig_ind - ast_body_ind_sv;
@@ -4717,6 +4774,9 @@ void ast_func_end(Sym *sym) {
 				ast_sym_deferred = nx;
 			}
 		}
+		ast_templates_env = ast_sv_tmpl;
+		ast_promote_env = ast_sv_promo;
+		ast_inline_env = ast_sv_inl;
 	}
 }
 
