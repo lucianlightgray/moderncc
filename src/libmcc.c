@@ -948,6 +948,7 @@ LIBMCCAPI MCCState *mcc_new(void) {
 	s->warn_varargs = 1;
 	s->ms_extensions = 1;
 	s->unwind_tables = 1;
+	s->embed_jit = 1;
 
 #ifdef MCC_CHAR_IS_UNSIGNED
 	s->char_is_unsigned = 1;
@@ -1658,6 +1659,8 @@ enum {
 	MCC_OPTION_bt,
 	MCC_OPTION_b,
 	MCC_OPTION_g,
+	MCC_OPTION_embed_jit,
+	MCC_OPTION_no_embed_jit,
 	MCC_OPTION_c,
 	MCC_OPTION_dumpmachine,
 	MCC_OPTION_dumpversion,
@@ -1745,6 +1748,8 @@ static const MCCOption mcc_options[] = {
 		{"bench", MCC_OPTION_bench, 0},
 		{"bt", MCC_OPTION_bt, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
 		{"b", MCC_OPTION_b, 0},
+		{"-embed-jit", MCC_OPTION_embed_jit, 0},
+		{"-no-embed-jit", MCC_OPTION_no_embed_jit, 0},
 		{"g", MCC_OPTION_g, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
 #ifdef MCC_TARGET_MACHO
 		{"compatibility_version", MCC_OPTION_compatibility_version, MCC_OPTION_HAS_ARG},
@@ -2118,6 +2123,12 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) {
 #else
 			return mcc_error_noabort("backtrace (-bt) support was not built into this mcc");
 #endif
+			break;
+		case MCC_OPTION_embed_jit:
+			s->embed_jit = 1;
+			break;
+		case MCC_OPTION_no_embed_jit:
+			s->embed_jit = 0;
 			break;
 		case MCC_OPTION_b:
 #if MCC_CONFIG_DIAG_RT >= 2

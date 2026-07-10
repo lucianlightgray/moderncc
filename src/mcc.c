@@ -82,7 +82,9 @@ static const char help2[] =
 		"  -P, -P1                       With -E: suppress or use alternative #line output\n"
 		"  -dD, -dM                      With -E: output #define directives\n"
 		"  -Wp,<arg>                     Pass the comma-separated <arg> to the preprocessor\n"
-		"  -O<n>                         Optimize: 1 = AST replay + const-fold, 2/s = + register promotion, 3 = + inlining\n"
+		"  -O<n>                         Optimize: 1 = AST replay + const-fold, 2/s = + register promotion, 3 = + inlining;\n"
+		"                                n>=4 = spend n seconds searching pass configs for the smallest object\n"
+		"  --embed-jit, --no-embed-jit   Embed the always-on runtime self-optimizing JIT in the output (default on)\n"
 		"  -pthread                      Support POSIX threads (-D_REENTRANT and -lpthread)\n"
 		"  -include <file>               Include <file> before parsing each input file\n"
 		"  -isystem <dir>                Add <dir> to the system include search path\n"
@@ -275,6 +277,108 @@ static char *default_outputfile(MCCState *s, const char *first_file) {
 	return mcc_strdup(buf);
 }
 
+#if MCC_HOST_POSIX
+#include <stdlib.h>
+#include <sys/stat.h>
+
+#define SO_INLINE_LIMIT_MAX 160
+
+static void so_setenv(unsigned seed) {
+	char buf[32];
+	int inl = (seed >> 2) & 1;
+	setenv("MCC_SEARCH_WORKER", "1", 1);
+	setenv("MCC_AST_TEMPLATES", (seed & 1) ? "1" : "0", 1);
+	setenv("MCC_AST_PROMOTE", (seed >> 1) & 1 ? "1" : "0", 1);
+	setenv("MCC_AST_INLINE", inl ? "1" : "0", 1);
+	setenv("MCC_AST_NO_CALLFUL", (seed >> 3) & 1 ? "1" : "0", 1);
+	snprintf(buf, sizeof buf, "%u", inl ? (seed >> 4) : 0u);
+	setenv("MCC_AST_INLINE_LIMIT", buf, 1);
+}
+
+static long so_filesize(const char *p) {
+	struct stat st;
+	return stat(p, &st) == 0 ? (long)st.st_size : -1;
+}
+
+static int so_copy(const char *src, const char *dst) {
+	FILE *in, *out;
+	char buf[8192];
+	size_t n;
+	int ok = 0;
+	if (!(in = host_fopen(src, "rb")))
+		return -1;
+	if ((out = host_fopen(dst, "wb"))) {
+		ok = 1;
+		while ((n = fread(buf, 1, sizeof buf, in)) > 0)
+			if (fwrite(buf, 1, n, out) != n) {
+				ok = 0;
+				break;
+			}
+		fclose(out);
+	}
+	fclose(in);
+	return ok ? 0 : -1;
+}
+
+static int mcc_superopt_search(int argc, char **argv, MCCState *s,
+															 const char *outfile) {
+	unsigned budget_ms = s->optimize_search_seconds * 1000u;
+	unsigned start = host_clock_ms();
+	unsigned seed;
+	long best = -1;
+	unsigned best_seed = 0, tried = 0;
+	char exe[1024], best_tmp[1200], cand_tmp[1200];
+	const char **cv;
+	int i, argn;
+	if (host_exe_path(exe, sizeof exe) <= 0)
+		pstrcpy(exe, sizeof exe, argv[0]);
+	snprintf(best_tmp, sizeof best_tmp, "%s.mcc-so-best", outfile);
+	snprintf(cand_tmp, sizeof cand_tmp, "%s.mcc-so-cand", outfile);
+	cv = mcc_malloc((argc + 4) * sizeof *cv);
+	argn = 0;
+	cv[argn++] = exe;
+	for (i = 1; i < argc; i++)
+		cv[argn++] = argv[i];
+	cv[argn++] = "-o";
+	cv[argn++] = cand_tmp;
+	cv[argn] = NULL;
+	for (seed = 0;; seed++) {
+		int inl = (seed >> 2) & 1;
+		unsigned limit = seed >> 4;
+		long sz;
+		if (host_clock_ms() - start >= budget_ms)
+			break;
+		if (limit > SO_INLINE_LIMIT_MAX)
+			break;
+		if (!inl && limit != 0)
+			continue;
+		so_setenv(seed);
+		if (host_spawn_wait(cv) == 0) {
+			sz = so_filesize(cand_tmp);
+			if (sz >= 0 && (best < 0 || sz < best)) {
+				best = sz;
+				best_seed = seed;
+				so_copy(cand_tmp, best_tmp);
+			}
+		}
+		tried++;
+	}
+	remove(cand_tmp);
+	if (best < 0) {
+		remove(best_tmp);
+		mcc_free(cv);
+		return -1;
+	}
+	if (s->verbose)
+		printf("superopt: %u configs in %ums, best seed %u -> %ld bytes\n", tried,
+					 host_clock_ms() - start, best_seed, best);
+	i = so_copy(best_tmp, outfile);
+	remove(best_tmp);
+	mcc_free(cv);
+	return i;
+}
+#endif
+
 int main(int argc, char **argv) {
 	MCCState *s, *s1;
 	int ret, opt, n = 0, t = 0, done;
@@ -356,6 +460,21 @@ redo:
 		if (n)
 			--n;
 	}
+
+#if MCC_HOST_POSIX
+	if (0 == ret && s->optimize_search_seconds && n == 0 &&
+			!getenv("MCC_SEARCH_WORKER") &&
+			(s->output_type == MCC_OUTPUT_OBJ || s->output_type == MCC_OUTPUT_EXE) &&
+			s->nb_files >= 1 && s->files[0]->name && !(s->files[0]->type & AFF_TYPE_LIB)) {
+		if (!s->outfile)
+			s->outfile = default_outputfile(s, s->files[0]->name);
+		if (mcc_superopt_search(argc0, argv0, s, s->outfile) == 0) {
+			mcc_delete(s);
+			return 0;
+		}
+		s->optimize_search_seconds = 0;
+	}
+#endif
 
 	first_file = NULL;
 	while (0 == ret) {

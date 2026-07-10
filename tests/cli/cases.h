@@ -125,6 +125,13 @@ static const cli_case_t cli_cases[] = {
 		 "readelf -r {W}/fm3.o | grep -c log ; readelf -r {W}/fm3.o | grep -c tan ; readelf -r {W}/fm3.o | grep -c pow",
 		 "1\n1\n2\n"},
 
+		{"superopt_search_O4", "cpu=x86_64,os=linux,optimizer",
+		 "printf 'int fib(int n){return n<2?n:fib(n-1)+fib(n-2);}int main(void){return fib(10);}\\n' > {W}/so.c && "
+		 "{MCC} -B{B} -I{I} -O4 -c {W}/so.c -o {W}/so.o && "
+		 "{MCC} -B{B} -I{I} {W}/so.o -o {W}/so && {W}/so ; echo rc=$? ; "
+		 "{MCC} -B{B} -I{I} --no-embed-jit -O0 -c {W}/so.c -o {W}/so2.o && echo FLAGOK",
+		 "rc=55\nFLAGOK\n"},
+
 		{"foldmath_invtrig", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'double atan(double);double asin(double);double acos(double);double atan2(double,double);double cbrt(double);double hypot(double,double);int okc(double a,double b){double d=a-b;if(d<0)d=-d;return d<1e-9;}int main(void){if(!okc(atan(0.5),0.46364760900080609))return 1;if(!okc(asin(0.5),0.52359877559829887))return 2;if(!okc(acos(0.5),1.0471975511965979))return 3;if(!okc(asin(1.0),1.5707963267948966))return 4;if(!okc(acos(-1.0),3.1415926535897931))return 5;if(!okc(atan2(1.0,1.0),0.78539816339744831))return 6;if(!okc(atan2(1.0,0.0),1.5707963267948966))return 7;if(!okc(cbrt(27.0),3.0))return 8;if(!okc(cbrt(-8.0),-2.0))return 9;if(!okc(hypot(3.0,4.0),5.0))return 10;if(!okc(hypot(5.0,12.0),13.0))return 11;return 0;}\\n' > {W}/fmi.c && "
 		 "{MCC} -B{B} -I{I} -ffold-math -O0 -c {W}/fmi.c -o {W}/fmi_0.o && "
