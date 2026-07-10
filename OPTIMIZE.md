@@ -80,3 +80,20 @@ real without passing it.
   (`src/mccast.c:523-529`).
 - Prior queue drained before iteration 1: TODO items 7/10/11/12 landed
   and pushed (`ef650d6a`); the tree under benchmark includes all of it.
+
+### 2026-07-09 — iteration 2
+
+- Baseline round 1 (n=5, /usr/bin/time): **quantized at the 10ms timer
+  resolution** — every config (compile and codegen rows) landed on
+  60-80ms with stdev ≤14ms; no distinguishable deltas. Verdict per
+  protocol: inconclusive, harness below resolution. mcc compiles its
+  whole amalgamated self in ~70ms, so single-compile samples cannot
+  separate -O levels with a centisecond clock.
+- Harness v2 launched: 10-compiles-per-sample batches, nanosecond
+  clock, n=8 per config, Welch's t against the -O0-built compiler
+  (critical t≈2.14 at df≈14) — the "selfcompile" metric times each
+  stage2 binary (built at -O0/-O1-none/-O1/-O2/-O3) recompiling mcc,
+  i.e. generated-code quality on the self-host workload.
+- Subagent 2 claimed the protocol-infrastructure task: repeat-run
+  mean ± stdev + Welch's t-test columns in tools/bench.c (mccbench).
+- Subagent 1 (Tier-1 builtin folding) still in flight.
