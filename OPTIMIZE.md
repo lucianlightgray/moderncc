@@ -24,6 +24,7 @@ fixpoint byte-identical + -O0 objects unchanged):
 | 6 | `-O<N>` timed superoptimizer + intention warm cache | 4 | b6dc3f6b/db006639 |
 | 7 | TPE Bayesian search (`--search tpe`) | 4 | 80feb6d9 |
 | 8 | mccbench stats: Welch t + bootstrap CI + Cohen's d | — | 9d03445e |
+| 9 | Self-recursive tail-call → loop | 3 | (this iter) |
 | ✚ | -O3 float-return inline miscompile FIX | — | 40ca21cf |
 
 Open / blocked: Tier-1 peephole (emitter byte-identity risk); SCCP
@@ -83,7 +84,7 @@ Status: `[ ]` open · `[~]` claimed/in-progress · `[x]` landed (commit)
 - [ ] **Loop-invariant code motion** (Allen/Cocke; lazy code motion per
       Knoop–Rüthing–Steffen as the refinement).
 - [ ] **Induction-variable strength reduction** (Allen–Cocke–Kennedy).
-- [ ] **Tail-call elimination**.
+- [x] **Tail-call elimination** (self-recursive tail-call → loop; `ast_tco_run`).
 - [ ] **Jump threading / branch folding** over the replay basic blocks.
 - [ ] **Graph-coloring register allocation** (Chaitin–Briggs) — replaces
       the pinned-register promotion heuristic; largest item, last.
@@ -556,3 +557,33 @@ dlmf.nist.gov/3.11 (minimax polynomial approximations).
   the six landed passes are live, not dead code.
 - Tail-call-to-loop subagent reached its fixpoint-validation phase
   (found an expressible transform); harvest imminent.
+
+### 2026-07-10 — iteration 20 (Tier-3 tail-call elimination — hardest expressibility win)
+
+- **Self-recursive tail-call → loop LANDED** (`ast_tco_run`, sixth
+  sibling) — the campaign's hardest expressibility question, solved.
+  `return f(args)` in tail position (Invoke of the same Sym) is rewritten
+  to: assign args to the param frame slots (recovered like
+  ast_inline_capture via fsym->type.ref->next / sym_find / ls->c), then
+  an AST_Jump goto (op 5) back to a label-def (op 4) prepended at body
+  entry — a real backward edge. Three constraints handled precisely:
+  (a) detection via Sym identity; (b) **argument-overwrite** via
+  topological sort of the param stores — a store to param_i waits for
+  every arg reading param_i; a genuine cycle (swap `f(b,a)`, rotate
+  `f(b,c,a)`) needs a scratch temp, which is NOT expressible (no
+  scratch-local node; ast_alloc_loc replays recorded slots), so cyclic
+  cases **bail and stay recursive** (still correct); (c) back-edge via
+  the label-def/goto jumps. Safety: promotion+inline disabled on a
+  TCO'd function and it's excluded from the graft pool, so all
+  params/locals stay memory-resident across the back-edge — no
+  register-liveness assumption.
+- Demonstrated: `sum(2000000,0)` runs iteratively at -O1 → correct
+  2000001000000 (would blow the stack recursively). 10/13 test fns
+  convert; swap2/rot3/nontail correctly do not. 1817 green, fixpoint
+  byte-identical -O2, -O0 objects identical, side-effect counter
+  byte-equal O0..O3 (loop iterates exactly as the recursion did).
+- **Seven tree passes now** + the -O4+ superoptimizer/TPE + bench stats.
+  Remaining named items are the hard-blocked ones (CSE/GVN + SCCP
+  value-lattice need an AST value-ref node; Sethi–Ullman + peephole are
+  codegen-order/emitter byte-identity risks; LICM / IV strength
+  reduction / jump-threading / Chaitin–Briggs are large Tier-3).

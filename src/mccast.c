@@ -1765,6 +1765,7 @@ static int ast_argsub_off[AST_INLINE_MAX_PARAMS];
 static SValue ast_argsub_val[AST_INLINE_MAX_PARAMS];
 static int ast_in_graft;
 static int ast_fn_faithful;
+static int ast_fn_tco;
 static CType ast_graft_rt;
 static int ast_inline_ret_sym;
 static int ast_inline_ret_slot;
@@ -1950,7 +1951,7 @@ static int ast_inline_retain(AstArena *a, Sym *sym) {
 		e->param_size[i] = ast_inline_cap_size[i];
 		e->param_stack[i] = ast_inline_cap_stack[i];
 	}
-	e->graftable = ast_inline_cap_ok && ast_inline_graftable(a);
+	e->graftable = ast_inline_cap_ok && !ast_fn_tco && ast_inline_graftable(a);
 	if (ast_replay_dump)
 		fprintf(stderr, "[ast-inline] candidate %s (%d nodes, %d params, frame %d, %s)\n",
 						get_tok_str(sym->v, NULL), (int)ast_count(a), e->nparams, e->frame_size,
@@ -3880,6 +3881,169 @@ static int ast_sccp_run(AstArena *a) {
 	return ast_sccp_folds;
 }
 
+#define AST_TCO_MAXP 16
+#define AST_TCO_LABEL (-0x54434f)
+static int ast_tco_folds;
+
+static int ast_tco_reads_off(AstArena *a, AstLocal n, int off) {
+	if (n == AST_NONE)
+		return 0;
+	if (ast_kind(a, n) == AST_Ref) {
+		int r = ast_op(a, n);
+		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM) &&
+				(int)(int64_t)ast_ival(a, n) == off)
+			return 1;
+	}
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		if (ast_tco_reads_off(a, c, off))
+			return 1;
+	return 0;
+}
+
+static int ast_tco_run(AstArena *a, Sym *fsym) {
+	ast_tco_folds = 0;
+	if (!fsym || !fsym->type.ref)
+		return 0;
+	if (fsym->type.ref->f.func_type != FUNC_NEW)
+		return 0;
+	int poff[AST_TCO_MAXP], ptt[AST_TCO_MAXP];
+	uint64_t pref[AST_TCO_MAXP];
+	int np = 0;
+	for (Sym *p = fsym->type.ref->next; p; p = p->next) {
+		int v = p->v & ~SYM_FIELD;
+		if (v < TOK_IDENT || np >= AST_TCO_MAXP)
+			return 0;
+		Sym *ls = sym_find(v);
+		if (!ls)
+			return 0;
+		if ((ls->r & VT_VALMASK) != VT_LOCAL || !(ls->r & VT_LVAL) || (ls->r & VT_SYM))
+			return 0;
+		int t = ls->type.t;
+		if (!ast_ident_intt(t) || (t & VT_VOLATILE) || (t & (VT_ARRAY | VT_VLA)))
+			return 0;
+		poff[np] = (int)ls->c;
+		ptt[np] = t;
+		pref[np] = (uint64_t)(uintptr_t)ls->type.ref;
+		np++;
+	}
+	if (np < 1)
+		return 0;
+	for (int i = 0; i < np; i++)
+		if (ast_cprop_escapes(a, poff[i]))
+			return 0;
+
+	int converted = 0;
+	AstLocal nn = ast_count(a);
+	for (AstLocal r = 0; r < nn; r++) {
+		if (ast_kind(a, r) != AST_Return)
+			continue;
+		AstLocal inv = ast_first_child(a, r);
+		if (inv == AST_NONE || ast_kind(a, inv) != AST_Invoke)
+			continue;
+		if ((int)ast_nchild(a, inv) != np + 1)
+			continue;
+		AstLocal cref = ast_child(a, inv, 0);
+		if (cref == AST_NONE || ast_kind(a, cref) != AST_Ref)
+			continue;
+		if (!(ast_op(a, cref) & VT_SYM) ||
+				(void *)(uintptr_t)ast_sym(a, cref) != (void *)fsym)
+			continue;
+		AstLocal arg[AST_TCO_MAXP];
+		int ok = 1;
+		for (int i = 0; i < np; i++) {
+			arg[i] = ast_child(a, inv, i + 1);
+			if (!ast_cprop_safe(a, arg[i])) {
+				ok = 0;
+				break;
+			}
+		}
+		if (!ok)
+			continue;
+		int need[AST_TCO_MAXP], emitted[AST_TCO_MAXP], order[AST_TCO_MAXP];
+		int nwrite = 0;
+		for (int i = 0; i < np; i++) {
+			need[i] = 1;
+			if (ast_kind(a, arg[i]) == AST_Ref) {
+				int rr = ast_op(a, arg[i]);
+				if ((rr & VT_VALMASK) == VT_LOCAL && !(rr & VT_SYM) &&
+						(int)(int64_t)ast_ival(a, arg[i]) == poff[i])
+					need[i] = 0;
+			}
+			emitted[i] = !need[i];
+			if (need[i])
+				nwrite++;
+		}
+		int no = 0, cyc = 0;
+		while (no < nwrite) {
+			int pick = -1;
+			for (int i = 0; i < np; i++) {
+				if (emitted[i])
+					continue;
+				int blocked = 0;
+				for (int k = 0; k < np; k++) {
+					if (k == i || emitted[k] || !need[k])
+						continue;
+					if (ast_tco_reads_off(a, arg[k], poff[i])) {
+						blocked = 1;
+						break;
+					}
+				}
+				if (!blocked) {
+					pick = i;
+					break;
+				}
+			}
+			if (pick < 0) {
+				cyc = 1;
+				break;
+			}
+			emitted[pick] = 1;
+			order[no++] = pick;
+		}
+		if (cyc)
+			continue;
+		ast_set_kind(a, r, AST_BasicBlock);
+		ast_clear_children(a, r);
+		for (int oi = 0; oi < no; oi++) {
+			int i = order[oi];
+			AstLocal lref = ast_node(a, AST_Ref);
+			ast_set_op(a, lref, VT_LOCAL | VT_LVAL);
+			ast_set_ival(a, lref, (uint64_t)poff[i]);
+			ast_set_type(a, lref, ptt[i], pref[i]);
+			AstLocal cvt = ast_node(a, AST_Convert);
+			ast_set_type(a, cvt, ptt[i], pref[i]);
+			ast_add_child(a, cvt, arg[i]);
+			AstLocal st = ast_node(a, AST_Store);
+			ast_add_child(a, st, lref);
+			ast_add_child(a, st, cvt);
+			ast_add_child(a, r, st);
+		}
+		AstLocal jmp = ast_node(a, AST_Jump);
+		ast_set_op(a, jmp, 5);
+		ast_set_ival(a, jmp, (uint64_t)(unsigned)AST_TCO_LABEL);
+		ast_add_child(a, r, jmp);
+		converted++;
+	}
+	if (!converted)
+		return 0;
+
+	AstLocal root = ast_root(a);
+	AstLocal lbl = ast_node(a, AST_Jump);
+	ast_set_op(a, lbl, 4);
+	ast_set_ival(a, lbl, (uint64_t)(unsigned)AST_TCO_LABEL);
+	AstLocal first = ast_first_child(a, root);
+	ast_clear_children(a, root);
+	ast_add_child(a, root, lbl);
+	for (AstLocal c = first; c != AST_NONE;) {
+		AstLocal nx = ast_next_sib(a, c);
+		ast_add_child(a, root, c);
+		c = nx;
+	}
+	ast_fn_tco = 1;
+	ast_tco_folds = converted;
+	return converted;
+}
+
 static int ast_replay_ok(AstArena *a) {
 	if (ast_bail || ast_desync || ast_vn != 0 || ast_cf_top != 0)
 		return 0;
@@ -3941,6 +4105,7 @@ void ast_func_end(Sym *sym) {
 		ast_active = 0;
 		ast_capture = 0;
 		ast_fn_faithful = 0;
+		ast_fn_tco = 0;
 		if (ast_replay_ok(ast_cur)) {
 			int orig_ind = ind, orig_rsym = rsym;
 			int body_len = orig_ind - ast_body_ind_sv;
@@ -3979,6 +4144,7 @@ void ast_func_end(Sym *sym) {
 			int cprops = 0;
 			int dses = 0;
 			int sccps = 0;
+			int tcos = 0;
 			jmp_buf ast_outer_jmp;
 			int ast_outer_en = mcc_state->error_set_jmp_enabled;
 			int ast_saved_nberr = mcc_state->nb_errors;
@@ -4009,24 +4175,30 @@ void ast_func_end(Sym *sym) {
 				cprops = faithful && ast_templates_env ? ast_cprop_run(ast_cur) : 0;
 				dses = faithful && ast_templates_env ? ast_dse_run(ast_cur) : 0;
 				sccps = faithful && ast_templates_env ? ast_sccp_run(ast_cur) : 0;
+				tcos = faithful && ast_templates_env ? ast_tco_run(ast_cur, sym) : 0;
 				int do_bfold = bfolds > 0;
 				int do_ident = idents > 0;
 				int do_cprop = cprops > 0;
 				int do_dse = dses > 0;
 				int do_sccp = sccps > 0;
-				int do_inline = faithful && ast_has_graftable_call(ast_cur);
+				int do_tco = tcos > 0;
+				/* A tail-self-call rewritten into a back-edge loop keeps all
+				   params/locals in their stack slots across the iteration; pinning
+				   a param to a register (promotion) or splicing this body into a
+				   caller (inline) would break the back-edge, so disable both here. */
+				int do_inline = faithful && !do_tco && ast_has_graftable_call(ast_cur);
 				/* Tier-4 inline and call-ful Tier-3 promotion both claim the
 				   callee-saved bank (RBX/R12-R15); combining them in one function
 				   corrupts a pin across the graft. When a function will graft,
 				   restrict promotion to the call-free (caller-saved) pool. */
 				ast_no_callful_promo = do_inline;
-				int do_promote = faithful && ast_promote_env && ast_plan_promotion(ast_cur) > 0;
+				int do_promote = faithful && !do_tco && ast_promote_env && ast_plan_promotion(ast_cur) > 0;
 				ast_no_callful_promo = 0;
 				if (faithful && !do_inline && !do_promote && !do_bfold && !do_ident &&
-						!do_cprop && !do_dse && !do_sccp)
+						!do_cprop && !do_dse && !do_sccp && !do_tco)
 					loc = saved_loc;
 				if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
-						do_dse || do_sccp) {
+						do_dse || do_sccp || do_tco) {
 					ind = ast_body_ind_sv;
 					rsym = 0;
 					if (ast_rsec)
@@ -4034,7 +4206,7 @@ void ast_func_end(Sym *sym) {
 					nocode_wanted = 0;
 					loc = saved_loc;
 					anon_sym = saved_anon;
-					ast_fconst_i = (do_bfold || do_ident || do_cprop || do_dse || do_sccp || do_inline) ? ast_fconst_n : 0;
+					ast_fconst_i = (do_bfold || do_ident || do_cprop || do_dse || do_sccp || do_tco || do_inline) ? ast_fconst_n : 0;
 					ast_locrec_i = 0;
 					ast_replaying = 1;
 					ast_rp_switch = NULL;
@@ -4101,6 +4273,8 @@ void ast_func_end(Sym *sym) {
 					fprintf(stderr, "[ast-dse] %d %s\n", dses, funcname);
 				if (sccps)
 					fprintf(stderr, "[ast-sccp] %d %s\n", sccps, funcname);
+				if (tcos)
+					fprintf(stderr, "[ast-tco] %d %s\n", tcos, funcname);
 				if (promoted)
 					fprintf(stderr, "[ast-promote] %d %s\n", promoted, funcname);
 			}

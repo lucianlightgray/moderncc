@@ -288,6 +288,7 @@ static const mcc_golden_t mcc_goldens[] = {
 		{"local_const_prop", "run", "exec/optimizer/local_const_prop.c", "chk=16436925606390758899 fx=30\nOK\n", "", "", ""},
 		{"dead_store_elim", "run", "exec/optimizer/dead_store_elim.c", "chk=16121870917244830463 g=9\nOK\n", "", "", ""},
 		{"const_branch_fold", "run", "exec/optimizer/const_branch_fold.c", "chk=4795743129665478947 g=22\nOK\n", "", "", ""},
+		{"tail_call_loop", "run", "exec/optimizer/tail_call_loop.c", "chk=2376757668953582540 g=10665\nOK\n", "", "", ""},
 };
 
 static const int mcc_goldens_count = (int)(sizeof mcc_goldens / sizeof mcc_goldens[0]);
