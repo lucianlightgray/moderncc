@@ -925,3 +925,50 @@ machinery, and at what risk — to decide whether to lift the scope.
   oscillatory/obscure and out of the campaign's on-theme scope. **The
   fold-math thread and the named-algorithm optimization-pass thread are both
   at genuine completion; the remaining frontier is architecturally blocked.**
+
+### 2026-07-10 — iteration 39 (consolidated benchmark capstone)
+
+Compiler: `cmake-release/mcc` rebuilt from `main@a1ee6b35` (the checked-in
+release artifact was stale/pre-fold-math and silently ignored `-ffold-math`;
+rebuilt before measuring). AMD Ryzen 9 8940HX, powersave, Linux 6.18.35,
+`taskset` pinned, `perf_counter_ns`, 10 compiles/sample, 3 warmups, n=20,
+Welch t + Welch–Satterthwaite df, pooled Cohen's d, bootstrap 95% CI (B=5000).
+Fresh unless labeled (prior run).
+
+**-O sweep** (src/mccpp.c, 4612 LOC, `-c`) — compile-time cost of the replay passes:
+
+| -O | compile ms (mean±sd) | vs -O0 | p | d | .text B | .text Δ |
+|----|------|------|------|------|------|------|
+| O0 | 15.121 ± 0.204 | ref | — | — | 81 714 | — |
+| O1 | 16.173 ± 0.156 | +6.95% | 1.1e-19 | +5.79 | 83 658 | +2.38% |
+| O2 | 16.383 ± 0.184 | +8.34% | 5.1e-22 | +6.49 | 84 085 | +2.90% |
+| O3 | 16.688 ± 0.166 | +10.36% | 1.7e-25 | +8.41 | 84 405 | +3.29% |
+
+All levels significant, monotone. On a neutral compiler TU the passes cost
+compile time and add a little `.text`; the payoff is on idiom-saturated code
+(iter-19: −43.5% .text) and transcendental workloads (below), not on generic src.
+
+**-ffold-math** (fold_work.c, 2160 constant-arg libm calls across all 27 families,
+-O1 vs -O1 -ffold-math):
+
+| metric | no fold | ffold-math | Δ |
+|--------|------|------|------|
+| libm call-site relocs | 2 160 | 80 | −96.3% |
+| distinct undef libm syms | 54 | 2 (pow/powf) | −52 |
+| .text B | 106 633 | 94 313 | −11.6% |
+| object B | 395 974 | 323 398 | −18.3% |
+
+96.3% of libm calls fold away; residue is non-integer-exponent `pow`/`powf`
+(integer exponents in [−64,64] do fold, preserving -O0/-O1 byte-identity).
+
+**-O4+ TPE superoptimizer** (mcchv, cold cache, seed 5, 4 workers; baseline
+1 802 626 B):
+
+| budget | linear mem Δ | TPE mem Δ |
+|--------|------|------|
+| 2s | −17.9% | −26.8% |
+| 4s | −26.9% | −34.6% |
+| 8s | −26.8% | −34.6% |
+
+TPE dominates linear at every budget, reaching the ~−34.6% Pareto ceiling by 4s
+(prior run: −34.5%). **Campaign closed.**
