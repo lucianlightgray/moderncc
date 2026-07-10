@@ -78,16 +78,24 @@ Grounded in actual sources this iteration (prior entries were from memory):
       Compiler Optimization, arXiv:2212.11142) and TPE in Hyperopt/Optuna.
       Least-risk here: TPE (tool-only, no compiler correctness surface).
 - [ ] **Deterministic sequence approximation for `sin`/`cos`/`exp`** —
-      the missing determinism story for the parked libm-fold item.
-      Compile-time evaluate with a **minimax polynomial** whose
-      coefficients come from the **Remez exchange algorithm** (Remez 1934;
-      optimal in the uniform/L∞ norm via the **Chebyshev alternation
-      theorem**), or **CORDIC** for a shift-add integer form. Evaluated in
-      the compiler's own fixed integer arithmetic (not host libm) so the
-      result is bit-identical across hosts — that is what unblocks folding
-      these without breaking `-O0` vs `-O1` output equality. Correctly
-      rounded is not required (unlike sqrt); a fixed, documented
-      max-ulp minimax poly is deterministic, which is the actual gate.
+      DECISION (researched 2026-07-10): defer behind an explicit
+      `-ffast-math`-style opt-in; do NOT fold under the default -O1+.
+      Analysis: GCC folds these via **MPFR correctly-rounded** evaluation
+      (since 4.5) and accepts the residual last-ulp mismatch vs runtime
+      libm as within-spec FP non-portability. mcc's invariant is
+      *stricter* — `-O0` vs `-O1` must be **byte-identical**, but `-O0`
+      emits a runtime libm call while any compile-time fold (minimax via
+      **Remez exchange** / Chebyshev alternation, or **CORDIC**, or
+      correctly-rounded **RLIBM**-style) produces a value that will differ
+      from glibc's not-quite-correctly-rounded libm in the last ulp →
+      breaks the equality gate. So cross-host determinism (the earlier
+      framing) is necessary but NOT sufficient; the true blocker is
+      O0-vs-O1 equality against runtime libm. Correct resolution: gate
+      transcendental folding behind an opt-in flag that relaxes the
+      equality invariant (documented as -ffast-math semantics), reusing
+      the existing correctly-rounded software-eval approach from
+      ast_bfold_run's sqrt. Sources: RLIBM (arXiv:2108.06756), GCC MPFR
+      folding, -ffast-math docs.
 - [x] **Upgrade the benchmark protocol beyond a single Welch's t** (bootstrap CI + Cohen's d, this iter) with
       researched inferential methods (see the taxonomy below): **bootstrap
       confidence intervals** (resampling; distribution-free), **Cohen's d
@@ -403,3 +411,29 @@ dlmf.nist.gov/3.11 (minimax polynomial approximations).
 - Lesson logged: isolate the bench from other CPU load (the pinned core
   helps codegen rows but shared caches/memory bw still leak in) — future
   rounds run bench solo.
+
+### 2026-07-10 — iteration 14 (TPE dominance table; sin/exp decision)
+
+- **TPE vs linear budget sweep** (seed 5, 4 workers, memory = emitted
+  code bytes vs pure-tree baseline):
+
+  | budget | linear cands / mem | tpe cands / mem |
+  |--------|--------------------|------------------|
+  | 2s | 39 / **+0.0%** | 55 / **−34.5%** |
+  | 4s | 81 / −17.9% | 110 / −34.6% |
+  | 8s | 177 / −25.7% | 223 / −34.5% |
+
+  TPE reaches the ~−34.5% Pareto optimum **by 2s** and holds it; the
+  linear sweep is still climbing (−25.7%) at 8s and never catches up in
+  these budgets. TPE also evaluates ~1.3× more candidates/second
+  (steers toward faster-building configs). The Bayesian surrogate is a
+  clear, reproducible win — the researched Tier-4 item pays off.
+- **sin/cos/exp folding decision recorded** (researched): defer behind
+  an -ffast-math-style opt-in. GCC folds via MPFR correctly-rounded and
+  tolerates last-ulp libm mismatch; mcc's -O0-vs-O1 **byte-identity**
+  gate is stricter, so any transcendental fold breaks it against runtime
+  libm. Cross-host determinism is necessary but not sufficient — the
+  real blocker is O0-vs-O1 equality. Clean resolution: opt-in flag that
+  relaxes the equality invariant. Turns a vague open item into a precise
+  deferred one.
+- DSE (dead-store elimination) subagent still in flight.
