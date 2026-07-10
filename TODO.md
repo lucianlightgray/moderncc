@@ -608,6 +608,19 @@ permutation exhaustion or a wall-clock cap**.
   embed at the same lowest-common-ancestor sites `--jit-functions` selects
   (default `main`), so the compile-time and runtime optimizers target the
   same code.
+- **Live patching = atomic function-pointer indirection + triple-buffer /
+  RCU reclamation.** Optimizable calls dispatch through a swappable pointer
+  slot; the optimizer builds the new version into a spare buffer and
+  `atomic_store`s the slot — lock-free, no code overwrite, no W^X. In-flight
+  calls finish on the old body; a **retired body is freed only after
+  consensus** (epoch/grace-period: no thread still executing it). **Triple**
+  buffering gives slack so the writer rarely stalls on reclamation.
+- **Hot detection = per-site atomic call counters, hottest first.** A cheap
+  `atomic ++count` at each site orders the work (highest count first) and
+  also refines the `-g` hot-value cache (§25) / hot-slice ranking (§24).
+- **Thread pool = default `cores-1`, `--jit-threads=<n>` override.** Scales
+  to spare cores for fast convergence, leaving one for the program; tunable
+  per build.
 
 ## 27. Loop-nest reordering / interchange (very large — DEFERRED, prerequisite-gated)
 
