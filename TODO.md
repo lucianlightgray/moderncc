@@ -424,13 +424,17 @@ dimensions of the `-O<N>` search (`so_setenv_cfg`, `SO_BUDGET_SPACE`
 36→144, `SO_CKPT_FMT` 5→6). x86_64: full ctest 1862/1862 + fixpoint
 byte-identical.
 
-- [ ] `mcc -O4 <file>` on arm64-darwin over a TU with same-key `||`
-      clusters + loop-invariant subexpressions: search runs, `so-<key>.ck`
-      v6 round-trips, no miscompile from the two new join dims.
-- [ ] Confirm `-O0..-O3` output byte-identical arm64 (the join dims only
-      fire under `-O4+` search workers; default build must be untouched).
-- [ ] 3-stage self-host fixpoint on arm64-darwin (search plumbing is
-      byte-identity-neutral, but confirm on native).
+- [x] `mcc -O4 <file>` on arm64-darwin over a TU with same-key `||`
+      clusters + loop-invariant subexpressions: search runs (135 evals in
+      ~4s), `so-<key>.ck` v6 round-trips (fmt byte `06`, progress cursor
+      persists across a 2nd warm-start run), no miscompile (output byte-for-
+      byte matches the `-O0` reference).
+- [x] Confirm `-O0..-O3` output byte-identical arm64 (the join dims only
+      fire under `-O4+` search workers; default build must be untouched) —
+      all four `-O0..-O3` objects hash-identical.
+- [x] 3-stage self-host fixpoint on arm64-darwin (search plumbing is
+      byte-identity-neutral, but confirm on native) — `fixpoint-invariant`
+      ctest (native cmake-macos) green.
 
 ## N2. B — §32c synthetic-temp infrastructure (arm64/riscv64 FIRST)
 
@@ -440,19 +444,33 @@ lives in a block gated `#if MCC_CONFIG_OPTIMIZER && defined(MCC_TARGET_X86_64)`
 (stub returns 0 elsewhere), so arm64/riscv64 are inherently safe from it —
 validate the fresh-temp carve there first, add the x86_64 poison guard second.
 
-- [ ] Frame carve on arm64: `gfunc_epilog` `diff = (-loc + 15) & ~15;`
-      (src/arch/arm64/arm64-gen.c ~:1625) must include the synthetic
-      strictly-negative temp offset in the frame size. Validate prologue
-      `sub sp` / epilogue match on a fresh-temp-LICM function.
-- [ ] **Unwind data**: arm64 unwind uses `-loc` (arm64-gen.c ~:1638); a
-      wrong floor corrupts unwinding — validate `-bt`/backtrace through a
-      carved-temp function natively (backtrace/unwind is exactly what qemu
-      can't be trusted for).
+NOTE (2026-07-10, native arm64): the §32c value-materializing pass is not yet
+landed — on arm64 `ast_plan_promotion` is the stub returning 0 (the real impl
+is inside the `#if … defined(MCC_TARGET_X86_64)` block), so there is no
+fresh-temp pass to force ON/OFF here yet. What *is* validated below is the
+arm64 frame-carve + unwind **invariant** the pass will rely on: any
+strictly-negative / non-16-aligned local offset (which is exactly what a
+synthetic temp adds to `loc`) is carved and unwound correctly. Exercised with
+a spill/`pad[37]`/`pad[23]`-heavy TU that drives `loc` strongly negative and
+non-aligned — the identical `gfunc_epilog` code path a synthetic temp hits.
+
+- [x] Frame carve on arm64: `gfunc_epilog` `diff = (-loc + 15) & ~15;`
+      (src/arch/arm64/arm64-gen.c ~:1625) — validated the carve covers a
+      non-16-aligned local block: prologue `sub sp, sp, #112` (and #48/#32/#16
+      across the TU) all 16-aligned, epilogue restores sp via `add sp, x29, #0`
+      (frame-pointer relative) so it is balanced for *any* carve value incl. a
+      future synthetic strictly-negative temp; `-O0..-O3` all run to the same
+      correct result (stack balanced).
+- [x] **Unwind data**: arm64 unwind uses `-loc` (arm64-gen.c ~:1638) —
+      validated `-bt16` backtrace faults inside a `pad[37]` carved leaf and
+      walks correctly up through 5 carved recursive frames → `mid` → `main`
+      (the qemu-untrustworthy unwind path), native cmake-macos.
 - [ ] 3-stage self-host fixpoint on arm64-darwin with the fresh-temp pass
-      forced ON and OFF (both byte-identical to the OFF baseline's own
-      fixpoint); whole-corpus `--ast` columns native.
-- [ ] Then repeat for riscv64 (`riscv64-gen.c ~:848`) if a native box is
-      available; else defer riscv64 to CI.
+      forced ON and OFF — **blocked**: no ON state on arm64 until §32c lands
+      (pass is x86_64-gated). OFF baseline fixpoint (`fixpoint-invariant`
+      ctest) is green natively; ON half to be run when §32c brings up here.
+- [ ] Then repeat for riscv64 (`riscv64-gen.c ~:848`) — deferred to CI (no
+      native riscv64 box; host is arm64-darwin).
 
 ## N3. D — §30/§32a-b transform refinements
 
@@ -463,11 +481,20 @@ order, TODO §30) was *originally an arm64 bug* (the `vcheck_cmp`-before-
 value-table) needs native arm64 confirmation the comparison flags aren't
 clobbered.
 
-- [ ] Edge-key sweep of each new §30 encoding on arm64-darwin
+- [x] Edge-key sweep of the landed §30 shift-mask encoding on arm64-darwin
       (−2³¹/−65/−1/0/63/64/2³²+5 × int/uint/llong/ullong/char/short),
-      hash-checksummed vs the arm64 `-O0` reference.
-- [ ] `--ast` c-torture columns native arm64 for any §32a/§32b refinement
-      (op-5 classifier, fall-through meets, Invoke-availability).
+      hash-checksummed vs the arm64 `-O0` reference — transform confirmed
+      firing (`[ast-bitflag]` on the int cluster; the `key<64` unsigned
+      guard correctly rejects negatives/out-of-window keys), FNV checksum
+      byte-identical to the transform-off reference across the full edge
+      set. (No `&&`-of-`!=`/biased/value-table encoding is landed yet; only
+      the shift-mask form exists to sweep.)
+- [x] `--ast` c-torture columns native arm64 for §32a/§32b: `ast-cprop-join`
+      ctest (Test #1818) + the 949 exec-replay columns green on cmake-macos;
+      `cpropjoin.sh` OK natively (all CPROP_JOIN×CSE_JOIN×{O0..O3} combos
+      match the O0 rc, incl. `cse_join` through an `ext()` Invoke and the
+      escaped-pointer arm); both joins force-on over the 251-file exec
+      corpus at -O2 = 241 compiled, 0 regressions vs joins-off.
 
 ## N4. C — §25 frontend-JIT scoring tier
 
@@ -475,11 +502,25 @@ The JIT `-run` measurement path (`mcc_relocate` + `host_runmem_alloc` RWX)
 and RSS sampling are OS/arch-sensitive; Apple-silicon W^X (JIT entitlement /
 `MAP_JIT` + `pthread_jit_write_protect_np`) differs from Linux.
 
-- [ ] `-O4+` with the JIT scoring tier active on arm64-darwin: candidate
-      `-run` executes under the watchdog, best-of-K timing + `getrusage`
-      peak RSS are sane, non-runnable TUs fall back to the size objective.
-- [ ] Confirm the W^X / `MAP_JIT` runmem path (src/mcchost.c
-      `host_runmem_alloc`) works for candidate JIT on Apple silicon.
+NOTE (2026-07-10, native arm64): the JIT cpu-scoring tier is not landed —
+`grep -rn 'getrusage\|rusage\|best.of.K'` over `src/` is empty; the `-O4`
+search scores candidates purely by `.text` size (`best_size`, src/mcc.c). So
+"best-of-K timing + getrusage RSS" has no code to validate yet. The size
+objective (the fallback that currently *is* the objective) and the underlying
+`-run` runmem path are validated below.
+
+- [ ] `-O4+` with the JIT **cpu-scoring** tier active on arm64-darwin:
+      best-of-K timing + `getrusage` peak RSS — **blocked**: cpu tier not
+      landed (search scores by `.text` size only). The size objective itself
+      is confirmed native (N1: `-O4` search picks best `.text`, 135 evals),
+      and candidate `-run` execution works (box below) — so only the timing/
+      RSS sampling remains, pending the tier landing.
+- [x] Confirm the W^X / `MAP_JIT` runmem path (src/mcchost.c
+      `host_runmem_alloc`) works for candidate JIT on Apple silicon —
+      `mcc -run` JIT-executes correctly natively (`host_runmem_dual()`
+      detects W^X and takes the RW-alias + RX-view dual-map path; three TUs
+      incl. args + fp + calls run to results byte-matching their compiled
+      references).
 
 # Superoptimizer / JIT ladder (open)
 
