@@ -437,7 +437,8 @@ Landed, all presets/ctest green + fixpoint byte-identical at each step:
 - **§31 substantially landed** — the search is a **3-strategy portfolio
   scheduler** (gate + budget + promote/opt-limit strategies, greedy
   composition, exponentially-doubling time slices, adaptive base slice,
-  resumable per-strategy cursors in the v3 checkpoint) with
+  resumable per-strategy cursors in the checkpoint, fmt v5 as of
+  `676c1836`) with
   **SIGTERM/INT/HUP save-checkpoint-and-stop** and a **per-candidate
   subprocess watchdog** (timeout-kill + abandon-in-flight on stop)
   (`f67c2234`, `c5f3349f`, `35a8ef70`, `e3a2f2d7`). Remaining: the static
@@ -467,20 +468,28 @@ Landed, all presets/ctest green + fixpoint byte-identical at each step:
 
 - **§30 detection increment** — same-key equality-cluster detection over
   the control-flow (`AST_If`) form under `MCC_AST_BITFLAG` (`fb845871`).
-  Remaining: the mask-encoding transform (new multi-node AST construction).
+  The mask-encoding transform then **landed** (`ast_bf_run`, see the §30
+  section), and the threshold is now a **searched dimension** of the
+  `-O<N>` budget space (`676c1836`). Remaining: the listed §30 extensions.
 - **§26 manifest increment** — `-O4+ --embed-jit` resolves + reports the
   runtime-JIT manifest (`--jit-functions`/`--jit-max-duration`) (`95037e96`).
   Remaining: the runtime engine (ELF ctor + embedded libmcc slice + RCU
   patching) — the large subsystem.
+- **§18 done** (`400d144a`) — `ast_intention_hash` public arena API +
+  `mcc_intention_hash`/`mcc_cache_dir` LIBMCCAPI; mcchv persistent cache
+  v2 keyed by `MCC_VERSION` + triplet + the AST intention hash of the
+  canonical baseline kernel, storing the search-resume inputs; §21-style
+  durable writes; `ast/intention` + `hypervisor-cache` tests.
 
-**Every non-deferred rung (§20-§26, §29-§31) now has a real, tested
-increment**, 1857 ctest + fixpoint byte-identical throughout. The remaining
-*full* builds are the §30 mask-transform and the §26 runtime engine — each a
+**Every rung §18-§26, §29-§31 now has a real, tested increment** (and
+§18/§20 are done outright), 1861 ctest + fixpoint byte-identical
+throughout. The remaining *full* build is the §26 runtime engine — a
 focused session. §27/§28 were deferred behind the value-reference-node
 decision (per the design round); that decision is now **resolved in §32**
 (feasibility study, 2026-07-10): no new node kind — §27/§28 are unblocked
 for their analysis/structural halves, and the value-materializing halves
-wait on the §32c synthetic-temp infrastructure.
+wait on the §32c synthetic-temp infrastructure. The next frontier build is
+**§32a** (scoping findings recorded in §32).
 
 
 The `-O<N>` (N>=4) compile-time search landed at `f959078e`
@@ -1194,6 +1203,50 @@ guarded:
    PRE → IV strength reduction.
 4. **φ-SSA node: rejected** — revisit only if the bail-rate of §32b/§32c
    measures as significant on real corpora.
+
+**§32a scoping findings (2026-07-10, from reading the live machinery —
+implementation not yet started):**
+
+- **Op maps (authoritative, from the capture hooks).** `AST_If` op: 0 =
+  if/else (children cond, then-bb, else-bb), 2 = `while`
+  (`ast_hook_while_begin`, mccast.c:1059), 3 = `for` with cond (:1154),
+  4 = `do`-`while` (:1090), 5 = `for` **without** cond (:1154) **and
+  ternary** (`ast_hook_ternary_begin`, :889), 6 = `switch` (:1246).
+  `AST_Jump` op: 0 = break, 1 = continue (:1142), 4 = label def (:4275,
+  what `ast_sccp_has_label` tests), 5 = goto **and** the TCO-built
+  internal jumps (:4265).
+- **The op-5 overload is a classifier hazard.** The recurring "loops are
+  the op 2..5 forms" phrasing (§24/§27/§30) is wrong at the edges: an
+  op-5 `AST_If` is *either* a `for(;;)` loop *or* a ternary — indeed
+  `ast_cprop_safe` whitelists If op 5 as a pure *expression* form
+  (mccast.c:3839-3842). Any structured-dataflow or loop-nest pass must
+  disambiguate by structure (loop forms are built through the `ast_cf_*`
+  stack with body/incr BasicBlocks; ternaries through `ast_tern`),
+  never by op alone.
+- **Lattice machinery facts.** `ast_cprop_*` is a 3-parallel-array map
+  (`AST_CPROP_MAX` 128) with swap-delete `ast_cprop_kill` — any meet loop
+  must not advance past a killed slot. `gen` is guarded by
+  `ast_cprop_escapes` (whole-arena address-taken scan), so tracked
+  offsets are provably call-clobber-free — the flat pass's reset on
+  calls is conservatism, not a soundness need. `ast_licm_written`
+  counts *any* `AST_Unary` over a Ref as a write (INC/DEC + the ADDR/
+  MEMBER forms) — free conservative pre-kill for loops.
+- **Fork/meet design (validated against the code, ready to build).**
+  Snapshot = `{koff, ktt, kval, kn}` copy (~2 KB); If op 0: rewrite cond
+  with the pre-branch lattice (sound: cond evaluates before either arm's
+  stores), snapshot IN, walk then-arm, snapshot THEN-OUT, restore IN,
+  walk else-arm, meet THEN-OUT (an absent else = meet with IN). Loops:
+  pre-kill every entry `ast_licm_written` in the whole loop subtree, then
+  walk each child BasicBlock with a fresh copy of the invariant lattice —
+  sound per-iteration: invariants are never written, and body-local gens
+  re-establish in program order every iteration — and continue after the
+  loop with the invariants only (a `while`/`for` may run zero times).
+  Bail to join-∅ (and skip descent) when an arm subtree contains any
+  `AST_Jump`; unvisited BasicBlocks then get today's flat per-block scan
+  via a visited bitmap, so coverage is strictly ≥ the current pass.
+  Statement walk otherwise mirrors `ast_cprop_block` (Store/Return/
+  reset-on-unknown), plus threading the lattice through nested plain
+  BasicBlock statements.
 
 Sub-decisions settled: promotion guard = poison-list first, dominance
 proof later; each pass env-gated per the existing pattern and registered

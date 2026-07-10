@@ -1001,3 +1001,38 @@ at every commit:
 Remaining full builds: §30 `AST_If`-chain collapse, §26 runtime engine
 (embed libmcc + RCU patching) — both scoped/de-risked in STATUS.md/TODO.md.
 §27/§28 deferred behind the value-reference-node decision.
+
+## 2026-07-10 — §18 cache + §21 per-fn tier + §30 search registration
+
+Second session of the day; ctest 1858→1861, fixpoint byte-identical and
+gates green at each commit:
+
+- **§18 done** (`400d144a`) — the persistent JIT-cache design finally has
+  its real key: `ast_intention_hash` joins the public arena API (FNV-1a
+  over kind/op/type_t/nchild in canonical child order, identifiers
+  alpha-renamed to first-seen positional slots; `type_ref`/`cst`/Ref frame
+  offsets excluded), accumulated per function in `ast_func_end` and
+  exposed via new `LIBMCCAPI mcc_intention_hash` + `mcc_cache_dir`. The
+  mcchv hypervisor keys entry v2 by `MCC_VERSION` + triplet + the AST hash
+  of a canonical symbolic-base baseline kernel (the same key from
+  amalgamated and multisource builds — verified bit-identical), persists
+  the search-resume inputs (TPE observations ≤64, linear cursor, RNG), and
+  writes through flock + A/B keep-best + tmp/fsync/rename. New
+  `ast/intention` + `hypervisor-cache` tests.
+- **§21 second increment** (`623c479a`) — two-tier per-fn keys: worker
+  children dump per-function intention hashes (`MCC_AST_HASH_OUT`), the
+  perfn driver persists `pf-<key>.ck` best-config/tried-mask records and
+  adopts converged functions without re-probing; editing one function
+  re-opens only its search (`superopt-perfn-cache` ctest: 0-cached →
+  all-cached → edit → n−1 cached).
+- **§30 search registration + exec-bit bugfix** (`676c1836`) — the
+  bit-flag threshold is a fourth budget dimension ({0,3,5,9}, space 9→36,
+  ckpt fmt 5); on a 7-way same-key `||` cluster the search's checkpointed
+  winner selects threshold 3 on `.text`. Found while validating: `so_copy`
+  had dropped the exec bit of every fresh `-O4+` executable since
+  `f959078e` — now propagates the candidate's mode.
+- **§32a scoped, not started** — fork/meet extension of `ast_cprop_block`
+  designed against the live machinery; key hazard recorded in TODO §32a:
+  `AST_If` op 5 is *both* `for(;;)` and ternary (and `AST_Jump` op 5 is
+  both goto and the TCO jumps), so no pass may classify loops by op range
+  alone.
