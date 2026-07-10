@@ -713,6 +713,17 @@ static int mcc_superopt_perfn(int argc, char **argv, MCCState *s,
 		return -1;
 	}
 	for (fi = 0; fi < nf; fi++) {
+		int mx = fi, j;
+		for (j = fi + 1; j < nf; j++)
+			if (fns[j].size > fns[mx].size)
+				mx = j;
+		if (mx != fi) {
+			struct so_fn t = fns[fi];
+			fns[fi] = fns[mx];
+			fns[mx] = t;
+		}
+	}
+	for (fi = 0; fi < nf; fi++) {
 		best_cfg[fi] = 7;
 		best_size[fi] = fns[fi].size;
 	}
