@@ -371,6 +371,7 @@ static int ast_inline_node_limit = 64;
 static int ast_graft_budget_max = 2048;
 static int ast_cost_env;
 static int ast_bitflag_env;
+static int ast_bitflag_min;
 
 #define AST_FNCFG_MAX 256
 static struct {
@@ -606,6 +607,9 @@ void ast_configure(MCCState *s1) {
 	ast_graft_budget_max = ast_env_int("MCC_AST_GRAFT", 2048);
 	ast_cost_env = ast_env_gate("MCC_AST_COST", 0);
 	ast_bitflag_env = ast_env_gate("MCC_AST_BITFLAG", 0);
+	ast_bitflag_min = ast_env_int("MCC_AST_BITFLAG", 5);
+	if (ast_bitflag_min < 3)
+		ast_bitflag_min = 5;
 	ast_fncfg_parse();
 }
 
@@ -4454,6 +4458,233 @@ static void ast_bf_report(AstArena *a, const char *fn) {
 	}
 }
 
+static int ast_bf_folds;
+
+static AstLocal ast_dup_sub(AstArena *a, AstLocal n) {
+	AstLocal d = ast_node(a, ast_kind(a, n));
+	ast_set_op(a, d, ast_op(a, n));
+	ast_set_type(a, d, ast_type_t(a, n), ast_type_ref(a, n));
+	ast_set_ival(a, d, ast_ival(a, n));
+	ast_set_fbits(a, d, ast_fbits(a, n));
+	ast_set_sym(a, d, ast_sym(a, n));
+	ast_set_cst(a, d, ast_cst(a, n));
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE;
+			 c = ast_next_sib(a, c))
+		ast_add_child(a, d, ast_dup_sub(a, c));
+	return d;
+}
+
+static int ast_bf_eqconst(AstArena *a, AstLocal n, AstLocal *key, uint64_t *v) {
+	AstLocal l, r, k, c;
+	int ct, kt;
+	uint64_t cv, kref;
+	if (ast_kind(a, n) != AST_Binary || ast_op(a, n) != TOK_EQ ||
+			ast_nchild(a, n) != 2)
+		return 0;
+	l = ast_child(a, n, 0);
+	r = ast_child(a, n, 1);
+	if (ast_kind(a, r) == AST_Literal) {
+		k = l;
+		c = r;
+	} else if (ast_kind(a, l) == AST_Literal) {
+		k = r;
+		c = l;
+	} else {
+		return 0;
+	}
+	if (!ast_ident_cval(a, c, &ct, &cv) || cv >= 64)
+		return 0;
+	if (!ast_ident_etype(a, k, &kt, &kref) || !ast_ident_intt(kt))
+		return 0;
+	if (!ast_ident_pure(a, k))
+		return 0;
+	*key = k;
+	*v = cv;
+	return 1;
+}
+
+static int ast_bf_cond_parse(AstArena *a, AstLocal cond, AstLocal *key,
+														 uint64_t *mask, int *cnt) {
+	AstLocal k;
+	uint64_t v;
+	if (ast_bf_eqconst(a, cond, &k, &v)) {
+		if (*key == AST_NONE)
+			*key = k;
+		else if (!ast_ident_same(a, *key, k))
+			return 0;
+		*mask |= (uint64_t)1 << v;
+		(*cnt)++;
+		return 1;
+	}
+	if (ast_kind(a, cond) != AST_Binary || ast_op(a, cond) != TOK_LOR ||
+			ast_nchild(a, cond) < 2)
+		return 0;
+	for (AstLocal c = ast_first_child(a, cond); c != AST_NONE;
+			 c = ast_next_sib(a, c)) {
+		if (!ast_bf_eqconst(a, c, &k, &v))
+			return 0;
+		if (*key == AST_NONE)
+			*key = k;
+		else if (!ast_ident_same(a, *key, k))
+			return 0;
+		*mask |= (uint64_t)1 << v;
+		(*cnt)++;
+	}
+	return 1;
+}
+
+static int ast_bf_has_label(AstArena *a, AstLocal n) {
+	if (n == AST_NONE)
+		return 0;
+	if (ast_kind(a, n) == AST_Jump) {
+		int op = ast_op(a, n);
+		if (op == 2 || op == 3 || op == 4)
+			return 1;
+	}
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE;
+			 c = ast_next_sib(a, c))
+		if (ast_bf_has_label(a, c))
+			return 1;
+	return 0;
+}
+
+static AstLocal ast_bf_lit(AstArena *a, int tt, uint64_t v) {
+	AstLocal n = ast_node(a, AST_Literal);
+	ast_set_op(a, n, VT_CONST);
+	ast_set_type(a, n, tt, 0);
+	ast_set_ival(a, n, v);
+	return n;
+}
+
+static AstLocal ast_bf_bin(AstArena *a, int op, int tt, AstLocal l, AstLocal r) {
+	AstLocal n = ast_node(a, AST_Binary);
+	ast_set_op(a, n, op);
+	ast_set_type(a, n, tt, 0);
+	ast_add_child(a, n, l);
+	ast_add_child(a, n, r);
+	return n;
+}
+
+static AstLocal ast_bf_ucast(AstArena *a, int tt, AstLocal key) {
+	AstLocal n = ast_node(a, AST_Convert);
+	ast_set_type(a, n, tt, 0);
+	ast_add_child(a, n, ast_dup_sub(a, key));
+	return n;
+}
+
+static AstLocal ast_bf_build(AstArena *a, AstLocal key, uint64_t mask) {
+	int kt, kw;
+	uint64_t kref;
+	ast_ident_etype(a, key, &kt, &kref);
+	kw = (kt & VT_BTYPE) == VT_LLONG ? VT_LLONG | VT_UNSIGNED
+																	 : VT_INT | VT_UNSIGNED;
+	int mw = VT_LLONG | VT_UNSIGNED;
+	AstLocal guard = ast_bf_bin(a, TOK_ULT, VT_INT, ast_bf_ucast(a, kw, key),
+															ast_bf_lit(a, kw, 64));
+	AstLocal amt = ast_bf_bin(a, '&', kw, ast_bf_ucast(a, kw, key),
+														ast_bf_lit(a, kw, 63));
+	AstLocal bit = ast_bf_bin(
+			a, '&', mw, ast_bf_bin(a, TOK_SHR, mw, ast_bf_lit(a, mw, mask), amt),
+			ast_bf_lit(a, mw, 1));
+	AstLocal cvt = ast_node(a, AST_Convert);
+	ast_set_type(a, cvt, VT_INT, 0);
+	ast_add_child(a, cvt, bit);
+	return ast_bf_bin(a, '&', VT_INT, cvt, guard);
+}
+
+static void ast_bf_drop(AstArena *a, AstLocal n) {
+	ast_set_kind(a, n, AST_Poison);
+	ast_clear_children(a, n);
+}
+
+static int ast_bf_try_if(AstArena *a, AstLocal s) {
+	AstLocal key = AST_NONE, drop[64];
+	uint64_t mask = 0;
+	int cnt = 0, ndrop = 0;
+	AstLocal cond0 = ast_child(a, s, 0);
+	AstLocal thenbb = ast_child(a, s, 1);
+	if (thenbb == AST_NONE || ast_kind(a, thenbb) != AST_BasicBlock)
+		return 0;
+	if (!ast_bf_cond_parse(a, cond0, &key, &mask, &cnt))
+		return 0;
+	AstLocal tail = ast_child(a, s, 2);
+	for (;;) {
+		if (tail == AST_NONE || ast_kind(a, tail) != AST_BasicBlock ||
+				ast_nchild(a, tail) != 1 || ndrop > 60)
+			break;
+		AstLocal inner = ast_first_child(a, tail);
+		if (ast_kind(a, inner) != AST_If || ast_op(a, inner) != 0)
+			break;
+		AstLocal icond = ast_child(a, inner, 0);
+		AstLocal ithen = ast_child(a, inner, 1);
+		if (ithen == AST_NONE || !ast_ident_same(a, thenbb, ithen))
+			break;
+		if (ast_bf_has_label(a, icond) || ast_bf_has_label(a, ithen))
+			break;
+		AstLocal k2 = key;
+		uint64_t m2 = mask;
+		int c2 = cnt;
+		if (!ast_bf_cond_parse(a, icond, &k2, &m2, &c2))
+			break;
+		key = k2;
+		mask = m2;
+		cnt = c2;
+		drop[ndrop++] = tail;
+		drop[ndrop++] = inner;
+		drop[ndrop++] = icond;
+		tail = ast_child(a, inner, 2);
+	}
+	if (cnt < ast_bitflag_min || key == AST_NONE)
+		return 0;
+	AstLocal cond = ast_bf_build(a, key, mask);
+	ast_clear_children(a, s);
+	ast_add_child(a, s, cond);
+	ast_add_child(a, s, thenbb);
+	if (tail != AST_NONE)
+		ast_add_child(a, s, tail);
+	ast_bf_drop(a, cond0);
+	for (int i = 0; i < ndrop; i++)
+		ast_bf_drop(a, drop[i]);
+	return 1;
+}
+
+static int ast_bf_try_lor(AstArena *a, AstLocal n) {
+	AstLocal key = AST_NONE;
+	uint64_t mask = 0;
+	int cnt = 0;
+	if (!ast_bf_cond_parse(a, n, &key, &mask, &cnt))
+		return 0;
+	if (cnt < ast_bitflag_min || key == AST_NONE)
+		return 0;
+	AstLocal res = ast_bf_build(a, key, mask);
+	AstLocal bit = ast_first_child(a, res);
+	AstLocal guard = ast_next_sib(a, bit);
+	ast_bf_drop(a, res);
+	ast_set_op(a, n, '&');
+	ast_set_type(a, n, VT_INT, 0);
+	ast_set_ival(a, n, 0);
+	ast_set_fbits(a, n, 0);
+	ast_set_sym(a, n, 0);
+	ast_set_cst(a, n, 0);
+	ast_clear_children(a, n);
+	ast_add_child(a, n, bit);
+	ast_add_child(a, n, guard);
+	return 1;
+}
+
+static int ast_bf_run(AstArena *a) {
+	ast_bf_folds = 0;
+	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++)
+		if (ast_kind(a, n) == AST_If && ast_op(a, n) == 0)
+			ast_bf_folds += ast_bf_try_if(a, n);
+	nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++)
+		if (ast_kind(a, n) == AST_Binary && ast_op(a, n) == TOK_LOR)
+			ast_bf_folds += ast_bf_try_lor(a, n);
+	return ast_bf_folds;
+}
+
 static void ast_licm_at_loop(AstArena *a, AstLocal s) {
 	if (ast_sccp_has_label(a, s))
 		return;
@@ -4645,6 +4876,7 @@ void ast_func_end(Sym *sym) {
 			int dses = 0;
 			int sccps = 0;
 			int jts = 0;
+			int bfs = 0;
 			int tcos = 0;
 			jmp_buf ast_outer_jmp;
 			int ast_outer_en = mcc_state->error_set_jmp_enabled;
@@ -4679,6 +4911,7 @@ void ast_func_end(Sym *sym) {
 				dses = faithful && ast_templates_env ? ast_dse_run(ast_cur) : 0;
 				sccps = faithful && ast_templates_env ? ast_sccp_run(ast_cur) : 0;
 				jts = faithful && ast_templates_env ? ast_jt_run(ast_cur) : 0;
+				bfs = faithful && ast_bitflag_env ? ast_bf_run(ast_cur) : 0;
 				tcos = faithful && ast_templates_env ? ast_tco_run(ast_cur, sym) : 0;
 				int do_bfold = bfolds > 0;
 				int do_ident = idents > 0;
@@ -4688,6 +4921,7 @@ void ast_func_end(Sym *sym) {
 				int do_dse = dses > 0;
 				int do_sccp = sccps > 0;
 				int do_jt = jts > 0;
+				int do_bf = bfs > 0;
 				int do_tco = tcos > 0;
 				/* A tail-self-call rewritten into a back-edge loop keeps all
 				   params/locals in their stack slots across the iteration; pinning
@@ -4709,18 +4943,18 @@ void ast_func_end(Sym *sym) {
 					ast_promo_total++;
 				if (ast_opt_limit >= 0 && ast_opt_total >= ast_opt_limit) {
 					do_inline = do_promote = do_bfold = do_ident = do_cprop = 0;
-					do_cse = do_licm = do_dse = do_sccp = do_jt = do_tco = 0;
+					do_cse = do_licm = do_dse = do_sccp = do_jt = do_bf = do_tco = 0;
 					ast_promo_n = 0;
 				}
 				if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
-						do_cse || do_licm || do_dse || do_sccp || do_jt || do_tco)
+						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_tco)
 					ast_opt_total++;
 				if (faithful && !do_inline && !do_promote && !do_bfold && !do_ident &&
 						!do_cprop && !do_cse && !do_licm && !do_dse && !do_sccp && !do_jt &&
-						!do_tco)
+						!do_bf && !do_tco)
 					loc = saved_loc;
 				if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
-						do_cse || do_licm || do_dse || do_sccp || do_jt || do_tco) {
+						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_tco) {
 					ind = ast_body_ind_sv;
 					rsym = 0;
 					if (ast_rsec)
@@ -4728,7 +4962,7 @@ void ast_func_end(Sym *sym) {
 					nocode_wanted = 0;
 					loc = saved_loc;
 					anon_sym = saved_anon;
-					ast_fconst_i = (do_bfold || do_ident || do_cprop || do_cse || do_licm || do_dse || do_sccp || do_jt || do_tco || do_inline) ? ast_fconst_n : 0;
+					ast_fconst_i = (do_bfold || do_ident || do_cprop || do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_tco || do_inline) ? ast_fconst_n : 0;
 					ast_locrec_i = 0;
 					ast_replaying = 1;
 					ast_rp_switch = NULL;
@@ -4801,6 +5035,8 @@ void ast_func_end(Sym *sym) {
 					fprintf(stderr, "[ast-sccp] %d %s\n", sccps, funcname);
 				if (jts)
 					fprintf(stderr, "[ast-jt] %d %s\n", jts, funcname);
+				if (bfs)
+					fprintf(stderr, "[ast-bitflag] %d %s\n", bfs, funcname);
 				if (tcos)
 					fprintf(stderr, "[ast-tco] %d %s\n", tcos, funcname);
 				if (promoted)

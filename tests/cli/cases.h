@@ -146,6 +146,14 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -O1 {W}/bf.c -o {W}/bfx && {W}/bfx ; echo rc=$?",
 		 "bitflag-candidate: classify cluster=4\nrc=52\n"},
 
+		{"bitflag_transform", "cpu=x86_64,os=linux,optimizer",
+		 "printf 'int g;int f(int x){if(x==1||x==3||x==5||x==7||x==9)return 1;return 0;}int c(int x){if(x==2)g=4;else if(x==4)g=4;else if(x==6)g=4;else if(x==8)g=4;else if(x==10)g=4;else g=7;return g;}int main(void){int k[10]={-1,0,1,2,3,64,65,7,9,10},s=0;for(int i=0;i<10;i++)s+=f(k[i])+c(k[i]);return s;}\\n' > {W}/bft.c && "
+		 "MCC_AST_REPLAY_DUMP=1 MCC_AST_BITFLAG=1 {MCC} -B{B} -I{I} -O1 -c {W}/bft.c -o {W}/bft.o 2>&1 | grep -c 'ast-bitflag' ; "
+		 "MCC_AST_BITFLAG=1 {MCC} -B{B} -I{I} -O1 {W}/bft.c -o {W}/bft && {W}/bft ; echo rc=$? ; "
+		 "MCC_AST_BITFLAG=1 {MCC} -B{B} -I{I} -O3 {W}/bft.c -o {W}/bft3 && {W}/bft3 ; echo rc=$? ; "
+		 "{MCC} -B{B} -I{I} -O1 {W}/bft.c -o {W}/bft0 && {W}/bft0 ; echo rc=$?",
+		 "2\nrc=68\nrc=68\nrc=68\n"},
+
 		{"perfn_search", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'static int sq(int x){return x*x;}static int cube(int x){return x*x*x;}int main(void){int s=0;for(int i=0;i<8;i++)s+=sq(i)+cube(i);return s;}\\n' > {W}/pfs.c && "
 		 "XDG_CACHE_HOME={W}/pfsc MCC_AST_PERFN=1 {MCC} -B{B} -I{I} -O4 -c {W}/pfs.c -o {W}/pfs.o && "

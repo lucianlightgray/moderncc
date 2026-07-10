@@ -28,7 +28,7 @@ compiler is unchanged.
 | 27 | Loop-nest interchange | **deferred** | behind the value-reference-node decision |
 | 28 | Dynamic algorithm generation | **deferred** | behind the value-reference-node decision |
 | 29 | `Convert` representation optimizer | **increment** | `ad55ede8` (redundant integer-cast elimination) |
-| 30 | Bit-flag conditional optimizer | **increment** | `fb845871` (same-key cluster detection); transform pending |
+| 30 | Bit-flag conditional optimizer | **functional** | `fb845871` (same-key cluster detection); mask transform landed (`ast_bf_run`: n-ary `TOK_LOR` cond rewrite + `AST_If`-chain collapse, `MCC_AST_BITFLAG=N` threshold, default 5 = size break-even) |
 | 31 | Strategy-portfolio scheduler | **substantial** | `f67c2234` (2-strategy), `e3a2f2d7` (3rd strategy), `c5f3349f` (save-and-stop), `35a8ef70` (watchdog), `3db65b60` (concurrency) |
 
 ## User-facing surface delivered
@@ -72,16 +72,24 @@ picks its best config, biggest-function-first (§24 hot-slice order).
 
 ## Remaining full builds (precisely scoped, de-risked)
 
-1. **§30 bit-flag transform.** Empirically established (built + reverted):
-   `||` is *always* lowered to control flow, so there is **no
-   expression-level transform** — it must collapse the `AST_If` chain
-   following the `ast_tco_run` branch-restructuring precedent. Validated
-   pieces: the branchless UB-free encoding
-   `((unsigned)key < 64) & (int)((MASK >> ((unsigned)key & 63)) & 1)` and
-   in-pass multi-node construction (`ast_node` + the TCO node-build style).
-   The fragile remainder is the chain collapse + identical-body / value-table
-   dispatch. Gate on `MCC_AST_BITFLAG`; validate at edge keys across all four
-   exec-replay columns + fixpoint.
+1. **§30 bit-flag transform — LANDED.** The earlier "no expression-level
+   transform" finding was half-stale: a short-circuit `||` in *condition*
+   position IS captured as one flat n-ary `AST_Binary TOK_LOR` node (only
+   the materialized value form desyncs), so `ast_bf_run` rewrites that node
+   in place; the else-if chain form collapses the `AST_If` chain per the
+   TCO precedent. Encoding is the reversed-operand branchless form
+   `(int)((MASK >> ((unsigned)key & 63)) & 1) & ((unsigned)key < 64)` —
+   the comparison must be the last-evaluated operand because the replay
+   driver, unlike the parser's `vpush` path, never runs `vcheck_cmp`: a
+   `VT_CMP` buried under later emission gets its flags clobbered (same bug
+   class as the arm64 `gfunc_call` fix; the original operand order
+   miscompiled). Threshold `MCC_AST_BITFLAG=N` (N≥3), default 5 = measured
+   x86_64 size break-even (mask test is a constant ~151 B vs ~12 B per
+   compare-branch). Validated: edge keys (−2³¹, −1, 0, 63, 64, 2³²+5) ×
+   int/uint/llong/ullong/char/short × lor/chain/mixed/while/ternary forms;
+   full ctest 1858 incl. new `cli/bitflag_transform`; fixpoint OK. Later
+   extensions: value-table dispatch for differing bodies, `switch` arms,
+   `&&`-of-`!=` complement, biased ranges (consts ≥64).
 2. **§26 runtime engine.** Infra exists (`.init_array`/`SHT_INIT_ARRAY`
    emission + `mcc_relocate`/`-run` JIT). Assembly: `-O4+ --embed-jit`
    synthesizes a ctor spawning the `--jit-threads` pool; embed the

@@ -885,6 +885,41 @@ they're identical) or a mask-indexed value table (when they differ). The
 node-building and the bit-test formula are validated; the remaining work is
 the `AST_If`-chain collapse, which is the genuinely fragile part.
 
+**LANDED (2026-07-10) — `ast_bf_run` transform, both forms.** Correction to
+the finding above: it holds only for the *materialized value* form (which
+desyncs capture). In **condition position** `x==a||x==b||x==c` is captured
+as one flat n-ary `AST_Binary TOK_LOR` whose children are the `==`
+comparisons (see `ast_hook_landor_operand`; replay re-materializes the
+short-circuit via `gvtst`). So the transform has two entry points sharing
+one builder (`ast_bf_build` + new deep-clone `ast_dup_sub`):
+`ast_bf_try_lor` rewrites a same-key LOR-of-eq node in place (covers `if`,
+`while`, `do`, ternary conds), and `ast_bf_try_if` collapses the else-if
+`AST_If` chain (identical `ast_ident_same` bodies, read-only walk first,
+consumed nodes retagged `AST_Poison`, final non-matching `else` survives as
+the collapsed else-arm). **Replay hazard found and designed around:** the
+recipe's operand order `guard & bit` miscompiled — replay pushes leaves
+without the parser's `vcheck_cmp`, so the `VT_CMP` produced by `<` is
+clobbered by the shift-chain emission (same class as the arm64
+`vcheck_cmp`-before-`gfunc_call` fix). Encoding is therefore reversed —
+`(int)((MASK >> ((unsigned)key & 63)) & 1) & ((unsigned)key < 64)` — so the
+comparison is consumed by `gen_op('&')` immediately. Guards: key
+`ast_ident_pure` + `ast_ident_intt`, consts `< 64` via `ast_ident_cval`,
+key width picks u32/u64 mask math (`VT_LLONG` keys use 64-bit unsigned
+ops — no truncation at keys ≥ 2³²), label-bearing subtrees never dropped.
+Threshold: `MCC_AST_BITFLAG=N` (N≥3) with plain `=1` defaulting to 5, the
+measured x86_64 size break-even (mask test ≈ constant 151 B vs ≈12 B per
+compare+branch rung; n=5 equal, n≥6 smaller, plus branch-count win).
+Validated: edge keys −2³¹/−65/−2/−1/0/1/5/7/33/62/63/64/2³²+5 across
+int/uint/llong/ullong/char/short keys and lor/chain/chain-no-else/mixed/
+while/ternary forms, hash-checksummed against gcc and `-O0..-O3` gate-off
+(byte-identical rc); must-not-fire shapes verified (consts ≥64, cnt<min,
+differing bodies, impure key, negative consts); `cli/bitflag_transform`
+added (ctest 1858/1858); fixpoint gate stage2==3==4. Remaining §30
+extensions (search-integration era): value-table dispatch for differing
+bodies, `switch`-arm form, `&&`-of-`!=` complement, biased encodings for
+const ranges not in `[0,63]`, and §22/§31 strategy registration so the
+search permutes the threshold instead of a fixed env default.
+
 ## 31. Strategy-portfolio scheduler — the governing search architecture (large)
 
 Unifies every optimizer methodology under one meta-search. Each methodology
