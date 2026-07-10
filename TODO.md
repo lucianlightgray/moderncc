@@ -379,6 +379,10 @@ tree edit) simply misses.
 
 ## Implementation status (2026-07-10, in progress)
 
+**See [STATUS.md](STATUS.md) for the consolidated snapshot** (rung-by-rung
+state, user-facing flags/env, architecture, and the de-risked recipes for
+the remaining builds). Summary below.
+
 Landed, all presets/ctest green + fixpoint byte-identical at each step:
 - **§20 done** — `host_cache_dir()` in mcchost (`97846575`).
 - **§21 first increment** — whole-TU resumable checkpoint on the `-O<N>`

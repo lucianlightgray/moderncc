@@ -972,3 +972,32 @@ compile time and add a little `.text`; the payoff is on idiom-saturated code
 
 TPE dominates linear at every budget, reaching the ~−34.6% Pareto ceiling by 4s
 (prior run: −34.5%). **Campaign closed.**
+
+## 2026-07-10 — superoptimizer/JIT ladder build-out (see STATUS.md)
+
+The design campaign reopened into an implementation ladder (TODO.md §20-31).
+Built this session, `-O0..-O3` byte-identical + fixpoint + 1857 ctest green
+at every commit:
+
+- **§20 done** — `host_cache_dir()` (`97846575`).
+- **§21** — resumable checkpoint (`da123a35`) + concurrent atomic chunk-claim
+  so parallel `-O<N>` workers reserve disjoint work, not duplicate it
+  (`3db65b60`; verified 2 workers = 1 sweep, not 2).
+- **§22 functional** — per-function config (`323a15a6`) + driver-side
+  per-function search measuring object symbol sizes (`11bb8323`), sidestepping
+  the fragile `ast_func_end` re-emit (the keystone breakthrough).
+- **§23** — searchable inline node/graft budgets (`7e630c75`).
+- **§24 functional** — hot-slice cost model (`3e81960d`) + biggest-first
+  budget ordering (`ad5cfee2`).
+- **§25** — `.text`-size search objective (`382b7169`).
+- **§26** — flags + runtime-JIT manifest resolution (`4394057f`, `95037e96`).
+- **§29** — redundant integer-cast elimination, all 4 replay columns
+  (`ad55ede8`).
+- **§30** — same-key cluster detection (`fb845871`); the transform is
+  empirically control-flow-only (`b0704d00`).
+- **§31 substantial** — 3-strategy portfolio scheduler + SIGTERM save-and-stop
+  + subprocess watchdog + concurrency (`f67c2234`..`3db65b60`).
+
+Remaining full builds: §30 `AST_If`-chain collapse, §26 runtime engine
+(embed libmcc + RCU patching) — both scoped/de-risked in STATUS.md/TODO.md.
+§27/§28 deferred behind the value-reference-node decision.
