@@ -703,3 +703,24 @@ machinery, and at what risk — to decide whether to lift the scope.
   + superoptimizer/TPE + bench stats. Remaining blocked: GVN's global
   form + SCCP value-lattice + LICM (persistent-temp), peephole/Sethi-
   Ullman/Chaitin-Briggs (emitter), sin/exp (opt-in).
+
+### 2026-07-10 — iteration 26 (real-code size benchmark — honest context)
+
+- Measured the pass suite on **real compiler source** (whole
+  src/mcc.c amalgamation .text), not synthetic:
+  - -O0: 601122 B; -O1: **602506 B (+0.23%)**; -O2: 606926 B (+1.0%).
+  - i.e. on generic real code the replay tree passes are **roughly
+    neutral, slightly larger** — the opposite sign from the −12% on the
+    pass-exercising synthetic workload (iter 16). Honest interpretation:
+    the passes shrink code that actually *contains* their idioms
+    (constant-arg libm, algebraic identities, redundant loads/stores,
+    dead branches); mcc's own hot paths have few of those, and replay +
+    register promotion carry a small fixed overhead, so the net on
+    generic code is ≈0 to slightly positive. This is why the self-host
+    fixpoint's .text is essentially unchanged by the passes.
+  - The value proposition is therefore correctness-preserving
+    *idiom-targeted* optimization (measurable where the idioms occur),
+    not blanket size reduction — recorded to avoid overclaiming the
+    synthetic −12% as a universal number.
+- LICM (loop-invariant named-local reuse) subagent reports it fires;
+  validating; harvest next.
