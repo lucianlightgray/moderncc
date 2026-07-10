@@ -622,3 +622,41 @@ dlmf.nist.gov/3.11 (minimax polynomial approximations).
   value-ref node), Sethi–Ullman + peephole (codegen-order/emitter
   byte-identity risk), LICM / IV-strength-reduction / Chaitin–Briggs
   (large Tier-3), and deterministic sin/exp (deferred, -ffast-math).
+
+### 2026-07-10 — iteration 23 (strength reduction = backend-native; frontier reached)
+
+- **Power-of-two strength reduction: NEGATIVE RESULT, nothing to land.**
+  Measured via disassembly: mcc's emitter (`gen_opic`, mccgen.c:2469-89)
+  already reduces `x*2^k → shl` (signed+unsigned), unsigned `x/2^k →
+  shr`, unsigned `x%2^k → and (2^k-1)`, and pointer-diff `/ → sar`, at
+  **-O0** (guard `l2>0 && (l2&(l2-1))==0`), and correctly leaves signed
+  `/`,`%` on `idiv` and non-pow2 on `imul`/`div`. -O0 and -O1 objects
+  byte-identical for these. A tree `ast_sr_run` would retag the exact
+  same operators the emitter already retags → pure no-op at every -O.
+  Correctly landed nothing (rigorous negative, disassembly evidence).
+
+## Frontier (safely-expressible space largely exhausted)
+
+The campaign landed **eight replay tree passes** (bfold, ident, cprop,
+dse, sccp, tco, jt — strength-reduction is emitter-native) + the -O4+
+superoptimizer/TPE + bench statistics, all byte-identical self-host.
+Every remaining named algorithm now hits a hard structural blocker:
+
+- **CSE / GVN (Cocke, Alpern–Wegman–Zadeck)** and **SCCP value-lattice**
+  and **LICM (Allen/Cocke)** — all require *naming a previously-computed
+  runtime value* at a later use. The replay AST has no
+  value-reference/temp node kind, and injecting scratch slots desyncs
+  `ast_locrec`/`ast_alloc_loc`. **Root blocker = a missing AST
+  value-reference node.** Adding one is the single highest-leverage
+  unlock but is a real architectural change (new node kind), out of the
+  "no new node kinds" scope the passes have held to.
+- **Peephole (McKeeman), Sethi–Ullman ordering, Chaitin–Briggs
+  coloring** — emitter/register-allocation/codegen-order changes;
+  byte-identity risk against -O0, or a full backend rewrite.
+- **IV strength reduction, sin/cos/exp folding** — the former is a loop
+  transform gated on the same value-ref blocker; the latter is deferred
+  behind an -ffast-math opt-in (researched, breaks -O0-vs-O1 equality).
+
+Next: a feasibility study of the minimal AST value-reference node — does
+one exist that unblocks CSE/GVN/LICM without desyncing the replay slot
+machinery, and at what risk — to decide whether to lift the scope.
