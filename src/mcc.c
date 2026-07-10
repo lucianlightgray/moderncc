@@ -1013,6 +1013,10 @@ redo:
 			s->nb_files >= 1 && s->files[0]->name && !(s->files[0]->type & AFF_TYPE_LIB)) {
 		int (*so)(int, char **, MCCState *, const char *) =
 				getenv("MCC_AST_PERFN") ? mcc_superopt_perfn : mcc_superopt_search;
+		if (s->embed_jit && s->verbose)
+			printf("embed-jit manifest: functions=%s max-duration=%us%s\n",
+						 s->jit_functions ? s->jit_functions : "main", s->jit_max_duration,
+						 s->jit_max_duration == 0 ? " (unlimited)" : "");
 		if (!s->outfile)
 			s->outfile = default_outputfile(s, s->files[0]->name);
 		if (so(argc0, argv0, s, s->outfile) == 0) {

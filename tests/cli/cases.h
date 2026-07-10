@@ -134,6 +134,12 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} --no-embed-jit -O0 -c {W}/so.c -o {W}/so2.o && echo FLAGOK",
 		 "WARMOK\nrc=55\nFLAGOK\n"},
 
+		{"embed_jit_manifest", "cpu=x86_64,os=linux,optimizer",
+		 "printf 'int main(void){return 0;}\\n' > {W}/mf.c && "
+		 "XDG_CACHE_HOME={W}/mfc {MCC} -B{B} -I{I} -O4 -v --jit-functions main,helper --jit-max-duration 120 -c {W}/mf.c -o {W}/mf.o 2>&1 | grep 'embed-jit manifest' ; "
+		 "XDG_CACHE_HOME={W}/mfc {MCC} -B{B} -I{I} -O4 -v --no-embed-jit -c {W}/mf.c -o {W}/mf2.o 2>&1 | grep -c 'embed-jit manifest'",
+		 "embed-jit manifest: functions=main,helper max-duration=120s\n0\n"},
+
 		{"bitflag_detect", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'int classify(int x){if(x==1)return 10;else if(x==3)return 30;else if(x==5)return 50;else if(x==7)return 70;return 0;}int two(int y){if(y==2)return 1;if(y==4)return 2;return 0;}int main(void){return classify(5)+two(4);}\\n' > {W}/bf.c && "
 		 "MCC_AST_BITFLAG=1 {MCC} -B{B} -I{I} -O1 -c {W}/bf.c -o {W}/bf.o 2>&1 | grep bitflag ; "
