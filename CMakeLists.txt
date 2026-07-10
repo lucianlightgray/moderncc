@@ -1209,7 +1209,7 @@ mcc_config_node(MCC_CONFIG_PIC      TYPE BOOL DEFAULT OFF GROUP "mcc features"
     HELP "Position independent code"
     VISIBLE_WHEN "${_elf}")
 mcc_config_node(MCC_RUN_MMAP_EXEC    TYPE BOOL DEFAULT OFF GROUP "mcc features"
-    HELP "Allocate -run executable memory via mmap (separate RW/RX) instead of mprotect; needed on SELinux/PaX hardened (W^X) kernels")
+    HELP "Force -run executable memory via mmap (separate RW/RX) instead of mprotect; normally auto-detected at runtime (W^X kernels)")
 mcc_config_node(MCC_CONFIG_NEW_DTAGS TYPE BOOL DEFAULT OFF GROUP "mcc features"
     HELP "Use DT_RUNPATH instead of DT_RPATH (mcc-emitted; always relevant on ELF)"
     VISIBLE_WHEN "${_elf}")

@@ -255,11 +255,12 @@ ST_FUNC const char *host_elf_interp_override(void);
 #if MCC_HOST_WIN32
 #define HOST_MPROTECT_FAILMSG "VirtualProtect failed"
 #else
-#define HOST_MPROTECT_FAILMSG "mprotect failed — on an SELinux/PaX hardened (W^X) kernel, rebuild with -DMCC_RUN_MMAP_EXEC=ON"
+#define HOST_MPROTECT_FAILMSG "mprotect failed"
 #endif
 
 ST_FUNC MAYBE_UNUSED size_t host_pagesize(void);
 
+ST_FUNC MAYBE_UNUSED int host_runmem_dual(void);
 ST_FUNC MAYBE_UNUSED void *host_runmem_alloc(unsigned *psize, int *ptr_diff);
 ST_FUNC MAYBE_UNUSED void host_runmem_free(void *ptr, unsigned size);
 ST_FUNC MAYBE_UNUSED int host_runmem_protect(void *ptr, unsigned long length, int mode);

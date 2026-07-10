@@ -949,12 +949,40 @@ ST_FUNC size_t host_pagesize(void) {
 #endif
 }
 
+ST_FUNC int host_runmem_dual(void) {
+#ifdef _WIN32
+	return 0;
+#else
+	static int dual;
+	if (!dual) {
+#ifdef CONFIG_RUN_MMAP_EXEC
+		dual = 1;
+#else
+		size_t page = host_pagesize();
+		void *p = mmap(NULL, page, PROT_READ | PROT_WRITE,
+									 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		dual = -1;
+		if (p != MAP_FAILED) {
+			if (host_runmem_protect(p, page,
+															HOST_RUNMEM_RO ? HOST_PROT_RX : HOST_PROT_RWX) < 0
+					&& (errno == EACCES || errno == EPERM))
+				dual = 1;
+			munmap(p, page);
+		}
+#endif
+	}
+	return dual > 0;
+#endif
+}
+
 ST_FUNC void *host_runmem_alloc(unsigned *psize, int *ptr_diff) {
 	unsigned size = *psize;
 	void *ptr;
 	*ptr_diff = 0;
-#ifdef CONFIG_RUN_MMAP_EXEC
-	{
+#ifdef _WIN32
+	ptr = VirtualAlloc(NULL, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+#else
+	if (host_runmem_dual()) {
 		void *prw;
 		char tmpfname[] = "/tmp/.mccrunXXXXXX";
 		int fd = mkstemp(tmpfname);
@@ -968,27 +996,27 @@ ST_FUNC void *host_runmem_alloc(unsigned *psize, int *ptr_diff) {
 			return NULL;
 		*ptr_diff = (char *)prw - (char *)ptr;
 		size *= 2;
+	} else {
+		ptr = mcc_malloc(size += host_pagesize());
 	}
-#elif defined _WIN32
-	ptr = VirtualAlloc(NULL, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-#else
-	ptr = mcc_malloc(size += host_pagesize());
 #endif
 	*psize = size;
 	return ptr;
 }
 
 ST_FUNC void host_runmem_free(void *ptr, unsigned size) {
-#ifdef CONFIG_RUN_MMAP_EXEC
-	munmap(ptr, size);
-#elif defined _WIN32
+#ifdef _WIN32
 	(void)size;
 	VirtualFree(ptr, 0, MEM_RELEASE);
 #else
-	size_t page = host_pagesize();
-	host_runmem_protect((void *)((size_t)ptr + (-(size_t)ptr & (page - 1))),
-											size - page, HOST_PROT_RW);
-	mcc_free(ptr);
+	if (host_runmem_dual()) {
+		munmap(ptr, size);
+	} else {
+		size_t page = host_pagesize();
+		host_runmem_protect((void *)((size_t)ptr + (-(size_t)ptr & (page - 1))),
+												size - page, HOST_PROT_RW);
+		mcc_free(ptr);
+	}
 #endif
 }
 

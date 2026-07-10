@@ -83,7 +83,7 @@ Finish-or-purge decisions; the investigation *is* the task:
 
 ## 8. `CONFIG_RUN_MMAP_EXEC` → runtime probe (medium)
 
-- [ ] In `host_runmem_alloc`/`host_runmem_protect` (`mcchost.c:952-983`):
+- [x] In `host_runmem_alloc`/`host_runmem_protect` (`mcchost.c:952-983`):
       attempt plain `mmap(RWX)`/`mprotect(RWX)`; on `EACCES`/`EPERM` fall back
       to the file-backed dual-mapping path; probe once, cache the result.
       Remove the "rebuild with -DMCC_RUN_MMAP_EXEC" failmsg (`mcchost.h:252`);
