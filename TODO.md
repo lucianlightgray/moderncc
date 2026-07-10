@@ -575,12 +575,13 @@ Decided 2026-07-10:
 - **Measurement = best-of-K min wall-ns + peak RSS, adaptive K.** Score cpu
   by the **minimum** wall-ns over K taskset-pinned runs (noise only ever
   adds time, so min is the cleanest true-cost estimate), plus peak RSS from
-  `getrusage`. Raise K when run-to-run variance is high, lower when stable.
-  Portable (no perf counters).
+  `getrusage`. `K = 3..15`, growing while the min's relative stdev stays
+  > 5% (cheap on stable hosts, more samples only when noisy). Portable (no
+  perf counters).
 - **`-g` logging mechanism.** Under `-g` the compiler inserts minimal
-  logging at fn-entry and branch/switch keys into a fixed-size in-memory
-  freq-counted ring, flushed to the value cache on exit — bounded memory
-  and overhead, accumulating across runs.
+  logging at fn-entry and branch/switch keys into an in-memory freq-counted
+  table (grows freely, bounded only by a cap on the flushed file size),
+  flushed to the value cache on exit — accumulating across runs.
 - **Oracle inputs (shared by §28/§29/§30).** The differential-equivalence
   test runs original vs transformed over `harness inputs ∪ -g hot values ∪
   per-type edges` (min/max/0/overflow boundary/non-representable float) —
@@ -846,4 +847,7 @@ probe(range,budget)→best(k)}` — `apply` (pure) composes in the beam, `probe`
 drives the search, scheduler owns control flow. **Base time-slice
 adaptive**: `first_eval_time × factor`, so the round-1 ×1 slice sizes to the
 workload's per-eval cost. **Micro-threshold adaptive** (sweep when the range
-fits the slice, above).
+fits the slice, above). Starting constants: base-slice `factor = 8` (round 1
+fits ~8 evals/strategy; rounds 2/3 → 16/32). **Strategy order within a
+round: cheapest-eval first** (quick wins seed the beam), then by recent
+best-gain so productive strategies get their slice while budget is fresh.
