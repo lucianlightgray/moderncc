@@ -1920,19 +1920,19 @@ fixpoint + ctest + native-arm64 + CI-matrix gate.
 Requested 2026-07-10. Write a new `OPT.md` that explains, step by step in plain
 English, how `-O4` works end to end, for a reader who does not know the code:
 
-- [ ] The driver path: what `-O<N>` for `N>=4` triggers (`mcc_superopt_search`
+- [x] The driver path: what `-O<N>` for `N>=4` triggers (`mcc_superopt_search`
       / `mcc_superopt_perfn`), the ~N-second budget, SIGTERM save-and-stop.
-- [ ] The search space: gate × budget (nodes × grafts × bitflag-threshold) ×
+- [x] The search space: gate × budget (nodes × grafts × bitflag-threshold) ×
       opt-limit dimensions, the 3-strategy portfolio, greedy composition,
       doubling time slices.
-- [ ] Scoring: `.text`-size objective vs the `MCC_AST_JITSCORE` cpu+RSS tier
+- [x] Scoring: `.text`-size objective vs the `MCC_AST_JITSCORE` cpu+RSS tier
       (best-of-K `-run` timing), non-runnable → size fallback.
-- [ ] The AST-replay optimizer the search permutes: replay/reemit, the passes
+- [x] The AST-replay optimizer the search permutes: replay/reemit, the passes
       (const-prop, CSE/LICM, join dataflow §32a/b, promotion, inlining,
       bit-flag §30, Sethi–Ullman §35), and the faithfulness gate.
-- [ ] Persistence: the per-user cache (`so-*.ck` / `pf-*.ck` / `mcchv-*`),
+- [x] Persistence: the per-user cache (`so-*.ck` / `pf-*.ck` / `mcchv-*`),
       resumable warm-start, flock + keep-best + durable writes; `--clear-cache`.
-- [ ] How it stays safe: default-off gates, byte-identity, 3-stage fixpoint.
+- [x] How it stays safe: default-off gates, byte-identity, 3-stage fixpoint.
       Cross-link STATUS.md (state) / OPTIMIZE.md (history) / this file (design).
 
 Docs-only; no code, no fixpoint impact. Should read as a narrative, not a spec
