@@ -3622,7 +3622,7 @@ if(MCC_BUILD_TESTS)
     add_test(NAME build-md-nodes
         COMMAND "$<TARGET_FILE:ckbuildmd>"
                 "${CMAKE_BINARY_DIR}/config-nodes.tsv"
-                "${CMAKE_CURRENT_SOURCE_DIR}/BUILD.md")
+                "${CMAKE_CURRENT_SOURCE_DIR}/docs/BUILD.md")
     set_tests_properties(build-md-nodes PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
     if(NOT CMAKE_CROSSCOMPILING)
