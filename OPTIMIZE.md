@@ -777,3 +777,15 @@ machinery, and at what risk — to decide whether to lift the scope.
   Chaitin–Briggs) each require an architectural change the campaign
   scoped out (a value-reference node / persistent replay slot / emitter
   rewrite) or the deferred -ffast-math sin/exp path.
+
+### 2026-07-10 — iteration 30 (cross-matrix validation of the pass suite)
+
+- Ran the full **cross preset** (all backends: i386/x86_64/arm/arm64/
+  riscv64 × ELF/PE/Mach-O cells) — **1832/1832 green**. The ten replay
+  tree passes + CSE/LICM run at compile time regardless of target, and
+  this confirms they are correct on every backend's codegen, not just
+  the native x86_64 build the per-harvest debug gate exercises. No
+  target-specific regression from any optimizer pass.
+- The `-ffold-math` sin/cos/exp subagent is validating the key
+  invariant (stdout byte-identical -O0 vs -O1 under the flag holds);
+  harvest imminent.
