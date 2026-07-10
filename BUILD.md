@@ -321,7 +321,7 @@ These bake `CONFIG_*` values into the compiler and change its runtime behavior.
 | `MCC_CONFIG_PIC` | BOOL | OFF | | **ELF** | Position-independent code. |
 | `MCC_RUN_MMAP_EXEC` | BOOL | OFF | | always | Force `-run` executable memory via `mmap` (separate RW/RX) instead of `mprotect`; normally auto-detected at runtime (SELinux/PaX hardened W^X kernels fall back automatically). |
 | `MCC_CONFIG_NEW_DTAGS` | BOOL | OFF | | **ELF** | `DT_RUNPATH` instead of `DT_RPATH` (mcc-emitted). |
-| `MCC_AUTO_MCCDIR` | BOOL | **ON** | | always | Build-tree mcc auto-discovers `libmccrt.a` + headers locally, else system `MCC_CONFIG_MCCDIR`. |
+| `MCC_AUTO_MCCDIR` | BOOL | **ON** | | always | mcc auto-discovers `libmccrt.a` + headers relative to its own executable — `<exe>/include`, then `<exe>/../include`, then `<exe>/../lib/mcc/include` — then compiled-in `MCC_CONFIG_MCCDIR`, then `/usr/local/lib/mcc` and `/usr/lib/mcc`. `-B<dir>` overrides all of it. |
 | `MCC_CONFIG_LIBC` | STRING | `''` | uClibc, musl, `''` | **ELF** | Target libc. `uClibc` is a legacy selector (warns). |
 | `MCC_CONFIG_DWARF` | STRING | `''` | 0, 2, 3, 4, 5, `''` | always | DWARF debug version; empty = stabs. |
 | `MCC_CONFIG_SEMLOCK` | STRING | `''` | numeric | always | `MCC_CONFIG_SEMLOCK` value; empty = mcc.h default (1). Must be numeric (fatal otherwise). |

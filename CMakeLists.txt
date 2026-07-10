@@ -1202,7 +1202,7 @@ mcc_config_node(MCC_CONFIG_NEW_DTAGS TYPE BOOL DEFAULT OFF GROUP "mcc features"
     VISIBLE_WHEN "${_elf}")
 
 mcc_config_node(MCC_AUTO_MCCDIR     TYPE BOOL DEFAULT ON GROUP "mcc features"
-    HELP "Build-tree mcc auto-discovers libmccrt.a + headers locally, falling back to system MCC_CONFIG_MCCDIR")
+    HELP "mcc auto-discovers libmccrt.a + headers relative to its own exe (<exe>/include, <exe>/../include, <exe>/../lib/mcc/include), then MCC_CONFIG_MCCDIR, then /usr/local/lib/mcc and /usr/lib/mcc; -B overrides")
 
 mcc_config_node(MCC_CONFIG_LIBC    TYPE STRING DEFAULT "" GROUP "mcc features"
     HELP "Target libc: '', uClibc, or musl" CHOICES uClibc musl EMPTY_OK

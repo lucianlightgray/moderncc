@@ -878,22 +878,45 @@ LIBMCCAPI void mcc_undefine_symbol(MCCState *s1, const char *sym) {
 #include <sys/stat.h>
 static char auto_mccdir_buf[1024];
 
-static const char *mcc_auto_mccdir(void) {
-	char exe[1024], probe[1024];
+static int mcc_dir_has_include(const char *base) {
+	char probe[1024];
 	struct stat st;
-	char *p;
-	if (host_exe_path(exe, sizeof exe) <= 0)
-		return MCC_CONFIG_MCCDIR;
-	p = mcc_basename(exe);
-	if (p > exe)
-		--p;
-	*p = 0;
-	pstrcpy(probe, sizeof probe, exe);
+	if (!base || !base[0])
+		return 0;
+	pstrcpy(probe, sizeof probe, base);
 	pstrcat(probe, sizeof probe, "/include");
-	if (stat(probe, &st) != 0 || !S_ISDIR(st.st_mode))
+	return stat(probe, &st) == 0 && S_ISDIR(st.st_mode);
+}
+
+static const char *mcc_auto_mccdir_rel(const char *exedir, const char *suffix) {
+	pstrcpy(auto_mccdir_buf, sizeof auto_mccdir_buf, exedir);
+	pstrcat(auto_mccdir_buf, sizeof auto_mccdir_buf, suffix);
+	return mcc_dir_has_include(auto_mccdir_buf) ? auto_mccdir_buf : NULL;
+}
+
+static const char *mcc_auto_mccdir(void) {
+	static const char *const exe_rel[] = {"", "/..", "/../lib/mcc", NULL};
+	static const char *const sys_dirs[] = {"/usr/local/lib/mcc",
+																				 "/usr/lib/mcc", NULL};
+	char exe[1024];
+	const char *hit;
+	char *p;
+	int i;
+	if (host_exe_path(exe, sizeof exe) > 0) {
+		p = mcc_basename(exe);
+		if (p > exe)
+			--p;
+		*p = 0;
+		for (i = 0; exe_rel[i]; i++)
+			if ((hit = mcc_auto_mccdir_rel(exe, exe_rel[i])))
+				return hit;
+	}
+	if (mcc_dir_has_include(MCC_CONFIG_MCCDIR))
 		return MCC_CONFIG_MCCDIR;
-	pstrcpy(auto_mccdir_buf, sizeof auto_mccdir_buf, exe);
-	return auto_mccdir_buf;
+	for (i = 0; sys_dirs[i]; i++)
+		if (mcc_dir_has_include(sys_dirs[i]))
+			return sys_dirs[i];
+	return MCC_CONFIG_MCCDIR;
 }
 
 #define MCC_MCCDIR_DEFAULT mcc_auto_mccdir()
