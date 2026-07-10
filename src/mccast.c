@@ -370,6 +370,7 @@ static int ast_opt_total;
 static int ast_inline_node_limit = 64;
 static int ast_graft_budget_max = 2048;
 static int ast_cost_env;
+static int ast_bitflag_env;
 
 #define AST_FNCFG_MAX 256
 static struct {
@@ -604,6 +605,7 @@ void ast_configure(MCCState *s1) {
 	ast_inline_node_limit = ast_env_int("MCC_AST_INLINE_NODES", 64);
 	ast_graft_budget_max = ast_env_int("MCC_AST_GRAFT", 2048);
 	ast_cost_env = ast_env_gate("MCC_AST_COST", 0);
+	ast_bitflag_env = ast_env_gate("MCC_AST_BITFLAG", 0);
 	ast_fncfg_parse();
 }
 
@@ -4405,6 +4407,53 @@ static void ast_fn_cost(AstArena *a, const char *fn) {
 					(long)nodes * (maxdepth + 1) * (calls + 1));
 }
 
+static int ast_bf_eqkey(AstArena *a, AstLocal n, AstLocal *key) {
+	AstLocal l, r;
+	if (ast_kind(a, n) != AST_Binary || ast_op(a, n) != TOK_EQ ||
+			ast_nchild(a, n) != 2)
+		return 0;
+	l = ast_child(a, n, 0);
+	r = ast_child(a, n, 1);
+	if (ast_kind(a, r) == AST_Literal) {
+		*key = l;
+		return 1;
+	}
+	if (ast_kind(a, l) == AST_Literal) {
+		*key = r;
+		return 1;
+	}
+	return 0;
+}
+
+static int ast_bf_cond_key(AstArena *a, AstLocal n, AstLocal *key) {
+	AstLocal cond;
+	if (ast_kind(a, n) != AST_If || ast_op(a, n) != 0)
+		return 0;
+	cond = ast_first_child(a, n);
+	return cond != AST_NONE && ast_bf_eqkey(a, cond, key);
+}
+
+static void ast_bf_report(AstArena *a, const char *fn) {
+	AstLocal nn = ast_count(a), n, m;
+	for (n = 0; n < nn; n++) {
+		AstLocal key, k2;
+		int cnt = 0, dup = 0;
+		if (!ast_bf_cond_key(a, n, &key))
+			continue;
+		for (m = 0; m < nn; m++) {
+			if (!ast_bf_cond_key(a, m, &k2) || !ast_ident_same(a, key, k2))
+				continue;
+			if (m < n) {
+				dup = 1;
+				break;
+			}
+			cnt++;
+		}
+		if (!dup && cnt >= 3)
+			fprintf(stderr, "bitflag-candidate: %s cluster=%d\n", fn, cnt);
+	}
+}
+
 static void ast_licm_at_loop(AstArena *a, AstLocal s) {
 	if (ast_sccp_has_label(a, s))
 		return;
@@ -4543,6 +4592,8 @@ void ast_func_end(Sym *sym) {
 		ast_fn_tco = 0;
 		if (ast_cost_env)
 			ast_fn_cost(ast_cur, funcname);
+		if (ast_bitflag_env)
+			ast_bf_report(ast_cur, funcname);
 		int ast_sv_tmpl = ast_templates_env, ast_sv_promo = ast_promote_env,
 				ast_sv_inl = ast_inline_env;
 		if (ast_fncfg_n) {
