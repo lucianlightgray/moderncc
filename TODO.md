@@ -502,19 +502,23 @@ The JIT `-run` measurement path (`mcc_relocate` + `host_runmem_alloc` RWX)
 and RSS sampling are OS/arch-sensitive; Apple-silicon W^X (JIT entitlement /
 `MAP_JIT` + `pthread_jit_write_protect_np`) differs from Linux.
 
-NOTE (2026-07-10, native arm64): the JIT cpu-scoring tier is not landed —
-`grep -rn 'getrusage\|rusage\|best.of.K'` over `src/` is empty; the `-O4`
-search scores candidates purely by `.text` size (`best_size`, src/mcc.c). So
-"best-of-K timing + getrusage RSS" has no code to validate yet. The size
-objective (the fallback that currently *is* the objective) and the underlying
-`-run` runmem path are validated below.
+LANDED (2026-07-10, native arm64): the JIT cpu-scoring tier is now
+implemented — `MCC_AST_JITSCORE` (default off) makes the whole-TU `-O<N>`
+search score each candidate by best-of-3 `-run` wall time (`so_run_score`/
+`so_spawn_run` via `wait4`) with `getrusage` peak RSS, instead of `.text`
+size. The flag folds into `so_key` so time-scored and size-scored
+checkpoints never collide; only link-to-exe TUs are timed, compile-only
+(`-c`/`-S`/`-E`/`-r`/`-shared`) TUs fall back to the size objective.
+Default build byte-identical (`-O0..-O3` hash-identical, gate is opt-in).
 
-- [ ] `-O4+` with the JIT **cpu-scoring** tier active on arm64-darwin:
-      best-of-K timing + `getrusage` peak RSS — **blocked**: cpu tier not
-      landed (search scores by `.text` size only). The size objective itself
-      is confirmed native (N1: `-O4` search picks best `.text`, 135 evals),
-      and candidate `-run` execution works (box below) — so only the timing/
-      RSS sampling remains, pending the tier landing.
+- [x] `-O4+` with the JIT **cpu-scoring** tier active on arm64-darwin:
+      candidate `-run` executes under the watchdog, best-of-K timing +
+      `getrusage` peak RSS are sane, non-runnable TUs fall back to the size
+      objective — `MCC_AST_JITSCORE=1 mcc -O4 -v` on a runnable TU reports
+      `-> 7344 us/run, peak RSS 3536 KiB` and the emitted binary is correct;
+      a `-c` TU reports `-> 268 .text` (size fallback); size- and time-scored
+      runs write two distinct `so-*.ck`; runaway candidates are killed by the
+      per-run watchdog and the search still completes.
 - [x] Confirm the W^X / `MAP_JIT` runmem path (src/mcchost.c
       `host_runmem_alloc`) works for candidate JIT on Apple silicon —
       `mcc -run` JIT-executes correctly natively (`host_runmem_dual()`

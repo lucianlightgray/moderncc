@@ -288,11 +288,21 @@ static char *default_outputfile(MCCState *s, const char *first_file) {
 #include <unistd.h>
 #include <signal.h>
 #include <sys/wait.h>
+#include <sys/resource.h>
+#include <sys/time.h>
 
 static volatile sig_atomic_t so_stop;
 static void so_on_stop(int sig) {
 	(void)sig;
 	so_stop = 1;
+}
+
+static int so_jitscore;
+static long so_last_rss;
+static const char **so_run_cv;
+static int so_jit_env(void) {
+	const char *e = getenv("MCC_AST_JITSCORE");
+	return e && e[0] && e[0] != '0';
 }
 
 #define SO_INLINE_LIMIT_MAX 160
@@ -340,6 +350,10 @@ static uint64_t so_key(MCCState *s) {
 #ifdef MCC_CONFIG_TRIPLET
 	h = so_fnv(h, MCC_CONFIG_TRIPLET, strlen(MCC_CONFIG_TRIPLET));
 #endif
+	if (so_jitscore) {
+		static const char tag[] = "jitscore";
+		h = so_fnv(h, tag, sizeof tag - 1);
+	}
 	return h;
 }
 
@@ -652,12 +666,84 @@ static int so_spawn_timeout(const char **cv, unsigned timeout_ms) {
 	}
 }
 
+static int so_spawn_run(const char **cv, unsigned timeout_ms, long *usec,
+												long *rss_kb) {
+	struct timeval t0, t1;
+	struct rusage ru;
+	pid_t pid = fork();
+	if (pid < 0)
+		return -1;
+	if (pid == 0) {
+		int nul = open("/dev/null", O_RDWR);
+		if (nul >= 0) {
+			dup2(nul, 1);
+			dup2(nul, 2);
+			if (nul > 2)
+				close(nul);
+		}
+		execvp(cv[0], (char *const *)cv);
+		_exit(127);
+	}
+	gettimeofday(&t0, NULL);
+	{
+		unsigned tstart = host_clock_ms();
+		for (;;) {
+			int status;
+			pid_t r = wait4(pid, &status, WNOHANG, &ru);
+			if (r == pid) {
+				int rc = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+				gettimeofday(&t1, NULL);
+				if (rc != 0)
+					return -1;
+				*usec = (long)(t1.tv_sec - t0.tv_sec) * 1000000L +
+								(long)(t1.tv_usec - t0.tv_usec);
+				*rss_kb = (long)ru.ru_maxrss;
+#ifndef __APPLE__
+				/* Linux reports ru_maxrss in KiB; Darwin in bytes. */
+#else
+				*rss_kb /= 1024;
+#endif
+				return 0;
+			}
+			if (r < 0)
+				return -1;
+			if (so_stop || host_clock_ms() - tstart >= timeout_ms) {
+				kill(pid, SIGKILL);
+				wait4(pid, &status, 0, &ru);
+				return -1;
+			}
+			usleep(1000);
+		}
+	}
+}
+
+static long so_run_score(unsigned timeout_ms) {
+	long best = -1, rss_best = -1;
+	int k;
+	for (k = 0; k < 3 && !so_stop; k++) {
+		long usec = -1, rss = -1;
+		if (so_spawn_run(so_run_cv, timeout_ms, &usec, &rss) != 0)
+			return -1;
+		if (best < 0 || usec < best)
+			best = usec;
+		if (rss_best < 0 || rss < rss_best)
+			rss_best = rss;
+	}
+	so_last_rss = rss_best;
+	return best;
+}
+
 static long so_eval(const char **cv, const char *cand_tmp, unsigned gate,
 										unsigned budget, unsigned limit_lvl,
 										unsigned timeout_ms) {
 	so_setenv_cfg(gate, budget, limit_lvl);
 	if (so_spawn_timeout(cv, timeout_ms) != 0)
 		return -1;
+	if (so_jitscore && so_run_cv) {
+		long sc = so_run_score(timeout_ms);
+		if (sc >= 0)
+			return sc;
+	}
 	return so_textsize(cand_tmp);
 }
 
@@ -934,10 +1020,18 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 	unsigned base_ms, cap_ms;
 	long best;
 	char exe[1024], cand_tmp[1200], ckpt[3200];
-	const char **cv;
-	int i, argn, have_ckpt;
-	uint64_t key = so_key(s);
+	const char **cv, **rv = NULL;
+	const char *src = s->nb_files >= 1 ? s->files[0]->name : NULL;
+	int i, argn, have_ckpt, links_exe = src != NULL;
+	uint64_t key;
 	SoCkpt ck;
+	for (i = 1; i < argc; i++)
+		if (!strcmp(argv[i], "-c") || !strcmp(argv[i], "-S") ||
+				!strcmp(argv[i], "-E") || !strcmp(argv[i], "-r") ||
+				!strcmp(argv[i], "-shared"))
+			links_exe = 0;
+	so_jitscore = so_jit_env() && links_exe;
+	key = so_key(s);
 	if (host_exe_path(exe, sizeof exe) <= 0)
 		pstrcpy(exe, sizeof exe, argv[0]);
 	snprintf(cand_tmp, sizeof cand_tmp, "%s.mcc-so-cand", outfile);
@@ -960,6 +1054,26 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 	cv[argn++] = cand_tmp;
 	cv[argn] = NULL;
 
+	if (so_jitscore) {
+		int rn = 0;
+		rv = mcc_malloc((argc + 4) * sizeof *rv);
+		rv[rn++] = exe;
+		for (i = 1; i < argc; i++) {
+			if (!strcmp(argv[i], "-o")) {
+				i++;
+				continue;
+			}
+			if (!strcmp(argv[i], "-c") || !strcmp(argv[i], "-S") ||
+					!strcmp(argv[i], src))
+				continue;
+			rv[rn++] = argv[i];
+		}
+		rv[rn++] = "-run";
+		rv[rn++] = src;
+		rv[rn] = NULL;
+		so_run_cv = rv;
+	}
+
 	so_stop = 0;
 	signal(SIGTERM, so_on_stop);
 	signal(SIGINT, so_on_stop);
@@ -975,6 +1089,9 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 		if (best < 0) {
 			remove(cand_tmp);
 			mcc_free(cv);
+			mcc_free(rv);
+			so_run_cv = NULL;
+			so_jitscore = 0;
 			return -1;
 		}
 	}
@@ -1057,15 +1174,28 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 	if (so_eval(cv, cand_tmp, best_gate, best_budget, best_limit, 300000u) < 0) {
 		remove(cand_tmp);
 		mcc_free(cv);
+		mcc_free(rv);
+		so_run_cv = NULL;
+		so_jitscore = 0;
 		return -1;
 	}
 	i = so_copy(cand_tmp, outfile);
 	remove(cand_tmp);
-	if (s->verbose)
-		printf("superopt: %u evals in %ums, best gate %u budget %u limit %u -> %ld .text\n",
-					 tried, host_clock_ms() - start, best_gate, best_budget, best_limit,
-					 best);
+	if (s->verbose) {
+		if (so_jitscore)
+			printf("superopt: %u evals in %ums, best gate %u budget %u limit %u -> "
+						 "%ld us/run, peak RSS %ld KiB\n",
+						 tried, host_clock_ms() - start, best_gate, best_budget, best_limit,
+						 best, so_last_rss);
+		else
+			printf("superopt: %u evals in %ums, best gate %u budget %u limit %u -> %ld .text\n",
+						 tried, host_clock_ms() - start, best_gate, best_budget, best_limit,
+						 best);
+	}
 	mcc_free(cv);
+	mcc_free(rv);
+	so_run_cv = NULL;
+	so_jitscore = 0;
 	return i;
 }
 #endif
