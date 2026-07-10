@@ -296,18 +296,19 @@ static void so_on_stop(int sig) {
 }
 
 #define SO_INLINE_LIMIT_MAX 160
-#define SO_CKPT_FMT 3u
+#define SO_CKPT_FMT 4u
 #define SO_GATE_SPACE (16u * (SO_INLINE_LIMIT_MAX + 1))
 #define SO_BUDGET_SPACE 9u
 #define SO_LIMIT_SPACE 5u
 #define SO_SLICE_FACTOR 8u
+#define SO_CLAIM_CHUNK 64u
 
 typedef struct {
 	uint32_t fmt;
 	uint32_t best_gate;
 	uint32_t best_budget;
 	uint32_t best_limit;
-	uint32_t gate_cursor;
+	uint32_t claim_gate;
 	uint32_t budget_cursor;
 	uint32_t limit_cursor;
 	uint32_t round;
@@ -381,8 +382,8 @@ static void so_ckpt_write(const char *path, const SoCkpt *nw) {
 				out.best_budget = b.best_budget;
 				out.best_limit = b.best_limit;
 			}
-			if (b.gate_cursor > out.gate_cursor)
-				out.gate_cursor = b.gate_cursor;
+			if (b.claim_gate > out.claim_gate)
+				out.claim_gate = b.claim_gate;
 			if (b.budget_cursor > out.budget_cursor)
 				out.budget_cursor = b.budget_cursor;
 			if (b.limit_cursor > out.limit_cursor)
@@ -405,6 +406,49 @@ static void so_ckpt_write(const char *path, const SoCkpt *nw) {
 		flock(lockfd, LOCK_UN);
 		close(lockfd);
 	}
+}
+
+static unsigned so_claim(const char *path, uint64_t key, SoCkpt *shared) {
+	char lockp[1300], tmpp[1300];
+	int lockfd, fd;
+	unsigned start;
+	SoCkpt c;
+	FILE *f;
+	memset(&c, 0, sizeof c);
+	c.fmt = SO_CKPT_FMT;
+	c.key = key;
+	c.best_text = -1;
+	snprintf(lockp, sizeof lockp, "%s.lock", path);
+	lockfd = open(lockp, O_CREAT | O_RDWR, 0644);
+	if (lockfd >= 0)
+		flock(lockfd, LOCK_EX);
+	if ((f = host_fopen(path, "rb"))) {
+		SoCkpt b;
+		if (fread(&b, sizeof b, 1, f) == 1 && b.fmt == SO_CKPT_FMT && b.key == key)
+			c = b;
+		fclose(f);
+	}
+	start = c.claim_gate;
+	if (start < SO_GATE_SPACE) {
+		c.claim_gate = start + SO_CLAIM_CHUNK;
+		if (c.claim_gate > SO_GATE_SPACE)
+			c.claim_gate = SO_GATE_SPACE;
+		snprintf(tmpp, sizeof tmpp, "%s.tmp", path);
+		if ((f = host_fopen(tmpp, "wb"))) {
+			fwrite(&c, sizeof c, 1, f);
+			fflush(f);
+			if ((fd = fileno(f)) >= 0)
+				fsync(fd);
+			fclose(f);
+			rename(tmpp, path);
+		}
+	}
+	if (lockfd >= 0) {
+		flock(lockfd, LOCK_UN);
+		close(lockfd);
+	}
+	*shared = c;
+	return start;
 }
 
 #define SO_NNODE 3
@@ -532,29 +576,47 @@ static long so_eval(const char **cv, const char *cand_tmp, unsigned gate,
 	return so_textsize(cand_tmp);
 }
 
+static void so_ckpt_save(const char *ckpt, uint64_t key, unsigned best_gate,
+												 unsigned best_budget, unsigned best_limit,
+												 unsigned budget_cur, unsigned limit_cur,
+												 unsigned round, long best) {
+	SoCkpt ck;
+	memset(&ck, 0, sizeof ck);
+	ck.fmt = SO_CKPT_FMT;
+	ck.key = key;
+	ck.best_gate = best_gate;
+	ck.best_budget = best_budget;
+	ck.best_limit = best_limit;
+	ck.claim_gate = 0;
+	ck.budget_cursor = budget_cur;
+	ck.limit_cursor = limit_cur;
+	ck.round = round;
+	ck.best_text = best;
+	so_ckpt_write(ckpt, &ck);
+}
+
 static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 															 const char *outfile) {
 	unsigned budget_ms = s->optimize_search_seconds * 1000u;
 	unsigned start = host_clock_ms();
 	unsigned best_gate = 0, best_budget = 0, best_limit = 0;
-	unsigned gate_cur = 0, budget_cur = 0, limit_cur = 0, round = 0, tried = 0;
+	unsigned local_claim = 0, budget_cur = 0, limit_cur = 0, round = 0, tried = 0;
 	unsigned base_ms, cap_ms;
 	long best;
-	char exe[1024], best_tmp[1200], cand_tmp[1200], ckpt[3200];
+	char exe[1024], cand_tmp[1200], ckpt[3200];
 	const char **cv;
 	int i, argn, have_ckpt;
 	uint64_t key = so_key(s);
 	SoCkpt ck;
 	if (host_exe_path(exe, sizeof exe) <= 0)
 		pstrcpy(exe, sizeof exe, argv[0]);
-	snprintf(best_tmp, sizeof best_tmp, "%s.mcc-so-best", outfile);
 	snprintf(cand_tmp, sizeof cand_tmp, "%s.mcc-so-cand", outfile);
 	have_ckpt = so_ckpt_path(ckpt, sizeof ckpt, key) == 0;
 	if (have_ckpt && so_ckpt_read(ckpt, key, &ck) == 0) {
 		best_gate = ck.best_gate;
 		best_budget = ck.best_budget;
 		best_limit = ck.best_limit;
-		gate_cur = ck.gate_cursor;
+		local_claim = ck.claim_gate;
 		budget_cur = ck.budget_cursor;
 		limit_cur = ck.limit_cursor;
 		round = ck.round;
@@ -585,26 +647,50 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 			mcc_free(cv);
 			return -1;
 		}
-		so_copy(cand_tmp, best_tmp);
 	}
 
-	while (!so_stop && host_clock_ms() - start < budget_ms &&
-				 (gate_cur < SO_GATE_SPACE || budget_cur < SO_BUDGET_SPACE ||
-					limit_cur < SO_LIMIT_SPACE)) {
+	while (!so_stop && host_clock_ms() - start < budget_ms) {
 		unsigned slice = base_ms << (round < 16 ? round : 16);
 		unsigned g_dead = host_clock_ms() + slice, b_dead, l_dead;
-		while (!so_stop && gate_cur < SO_GATE_SPACE && host_clock_ms() < g_dead &&
+		unsigned gate_exhausted = 0;
+		while (!so_stop && host_clock_ms() < g_dead &&
 					 host_clock_ms() - start < budget_ms) {
-			unsigned g = gate_cur++;
-			long sz;
-			if (so_gate_dead(g))
-				continue;
-			sz = so_eval(cv, cand_tmp, g, best_budget, best_limit, cap_ms);
-			tried++;
-			if (sz >= 0 && sz < best) {
-				best = sz;
-				best_gate = g;
-				so_copy(cand_tmp, best_tmp);
+			unsigned cstart, cend, g;
+			if (have_ckpt) {
+				SoCkpt sh;
+				cstart = so_claim(ckpt, key, &sh);
+				if (sh.best_text >= 0 && (best < 0 || sh.best_text < best)) {
+					best = sh.best_text;
+					best_gate = sh.best_gate;
+					best_budget = sh.best_budget;
+					best_limit = sh.best_limit;
+				}
+			} else {
+				cstart = local_claim;
+				local_claim += SO_CLAIM_CHUNK;
+			}
+			if (cstart >= SO_GATE_SPACE) {
+				gate_exhausted = 1;
+				break;
+			}
+			cend = cstart + SO_CLAIM_CHUNK;
+			if (cend > SO_GATE_SPACE)
+				cend = SO_GATE_SPACE;
+			for (g = cstart; g < cend && !so_stop && host_clock_ms() < g_dead &&
+											host_clock_ms() - start < budget_ms;
+					 g++) {
+				long sz;
+				if (so_gate_dead(g))
+					continue;
+				sz = so_eval(cv, cand_tmp, g, best_budget, best_limit, cap_ms);
+				tried++;
+				if (sz >= 0 && sz < best) {
+					best = sz;
+					best_gate = g;
+					if (have_ckpt)
+						so_ckpt_save(ckpt, key, best_gate, best_budget, best_limit,
+												 budget_cur, limit_cur, round, best);
+				}
 			}
 		}
 		b_dead = host_clock_ms() + slice;
@@ -616,7 +702,6 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 			if (sz >= 0 && sz < best) {
 				best = sz;
 				best_budget = b;
-				so_copy(cand_tmp, best_tmp);
 			}
 		}
 		l_dead = host_clock_ms() + slice;
@@ -628,32 +713,28 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 			if (sz >= 0 && sz < best) {
 				best = sz;
 				best_limit = l;
-				so_copy(cand_tmp, best_tmp);
 			}
 		}
 		round++;
+		if (have_ckpt)
+			so_ckpt_save(ckpt, key, best_gate, best_budget, best_limit, budget_cur,
+									 limit_cur, round, best);
+		if (gate_exhausted && budget_cur >= SO_BUDGET_SPACE &&
+				limit_cur >= SO_LIMIT_SPACE)
+			break;
 	}
 
-	remove(cand_tmp);
-	if (have_ckpt) {
-		ck.fmt = SO_CKPT_FMT;
-		ck.key = key;
-		ck.best_gate = best_gate;
-		ck.best_budget = best_budget;
-		ck.best_limit = best_limit;
-		ck.gate_cursor = gate_cur;
-		ck.budget_cursor = budget_cur;
-		ck.limit_cursor = limit_cur;
-		ck.round = round;
-		ck.best_text = best;
-		so_ckpt_write(ckpt, &ck);
+	if (so_eval(cv, cand_tmp, best_gate, best_budget, best_limit, 300000u) < 0) {
+		remove(cand_tmp);
+		mcc_free(cv);
+		return -1;
 	}
+	i = so_copy(cand_tmp, outfile);
+	remove(cand_tmp);
 	if (s->verbose)
 		printf("superopt: %u evals in %ums, best gate %u budget %u limit %u -> %ld .text\n",
 					 tried, host_clock_ms() - start, best_gate, best_budget, best_limit,
 					 best);
-	i = so_copy(best_tmp, outfile);
-	remove(best_tmp);
 	mcc_free(cv);
 	return i;
 }

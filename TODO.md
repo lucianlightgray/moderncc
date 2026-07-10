@@ -393,13 +393,22 @@ Landed, all presets/ctest green + fixpoint byte-identical at each step:
 - **§25 static objective** — search scores by `.text` size (ELF section
   sum), not whole-object (`382b7169`). Remaining: JIT cpu/mem tier (needs
   the subprocess watchdog).
-- **§31 first real form** — the search is now a **2-strategy portfolio
-  scheduler** (gate strategy + budget strategy, greedy composition,
-  exponentially-doubling time slices, adaptive base slice, resumable
-  per-strategy cursors in the v2 checkpoint) (`f67c2234`). Remaining:
-  register more strategies, full beam width, subprocess watchdog + SIGTERM.
-Next (deep codegen, per-session): §22 per-fn refactor → §24 hot-slice →
-§29/§30 new passes → §26 embedded JIT. §27/§28 deferred.
+- **§31 substantially landed** — the search is a **3-strategy portfolio
+  scheduler** (gate + budget + promote/opt-limit strategies, greedy
+  composition, exponentially-doubling time slices, adaptive base slice,
+  resumable per-strategy cursors in the v3 checkpoint) with
+  **SIGTERM/INT/HUP save-checkpoint-and-stop** and a **per-candidate
+  subprocess watchdog** (timeout-kill + abandon-in-flight on stop)
+  (`f67c2234`, `c5f3349f`, `35a8ef70`, `e3a2f2d7`). Remaining: the static
+  vtable registry refactor, adaptive beam width, per-function scoping.
+
+**Remaining rungs are the deep codegen / new-subsystem class** (each a
+focused session; a defect breaks the green-tests invariant the goal also
+requires): §22 per-function replay refactor (drives `do_*` in-process from
+the fragile `ast_func_end`), §24 hot-slice (needs §22), §29 Convert pass,
+§30 bit-flag pass, §26 embedded JIT (ELF ctor + embedded JIT + RCU
+patching). §27/§28 deferred. The whole driver-side scheduler/cache/search
+foundation is now in place for them to plug into.
 
 
 The `-O<N>` (N>=4) compile-time search landed at `f959078e`
