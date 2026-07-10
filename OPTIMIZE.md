@@ -64,6 +64,37 @@ Status: `[ ]` open · `[~]` claimed/in-progress · `[x]` landed (commit)
 - [ ] **Graph-coloring register allocation** (Chaitin–Briggs) — replaces
       the pinned-register promotion heuristic; largest item, last.
 
+### Tier 4 — search strategy & researched approximations (2026-07-09 web research)
+
+Grounded in actual sources this iteration (prior entries were from memory):
+
+- [ ] **Bayesian optimization of the `-O<N>` search** — replace mcchv's
+      linear `0..UINTMAX` sweep with a surrogate-model search that spends
+      the seconds budget on promising candidates. Surrogate options from
+      the literature: **Gaussian-process** (continuous, gives uncertainty),
+      **Tree-structured Parzen Estimator (TPE)** (models P(config|good) vs
+      P(config|bad), cheap in the discrete/mixed (nhot, leaf_cut, …) space),
+      **random forest** (mixed/noisy). Precedent: **BaCO** (Bayesian
+      Compiler Optimization, arXiv:2212.11142) and TPE in Hyperopt/Optuna.
+      Least-risk here: TPE (tool-only, no compiler correctness surface).
+- [ ] **Deterministic sequence approximation for `sin`/`cos`/`exp`** —
+      the missing determinism story for the parked libm-fold item.
+      Compile-time evaluate with a **minimax polynomial** whose
+      coefficients come from the **Remez exchange algorithm** (Remez 1934;
+      optimal in the uniform/L∞ norm via the **Chebyshev alternation
+      theorem**), or **CORDIC** for a shift-add integer form. Evaluated in
+      the compiler's own fixed integer arithmetic (not host libm) so the
+      result is bit-identical across hosts — that is what unblocks folding
+      these without breaking `-O0` vs `-O1` output equality. Correctly
+      rounded is not required (unlike sqrt); a fixed, documented
+      max-ulp minimax poly is deterministic, which is the actual gate.
+- [ ] **Upgrade the benchmark protocol beyond a single Welch's t** with
+      researched inferential methods (see the taxonomy below): **bootstrap
+      confidence intervals** (resampling; distribution-free), **Cohen's d
+      effect size** (is the win meaningful, not just significant), and a
+      **Bayes factor** / **credible interval** as the Bayesian counterpart
+      to the frequentist p-value already used.
+
 ## Benchmark protocol (statistical analysis)
 
 Permutations benchmarked: the optimizer gate lattice
@@ -75,6 +106,34 @@ sample **mean ± standard deviation** and judge deltas with **Welch's
 t-test** at α=0.05 (per the Wikipedia statistical-analysis canon:
 Standard deviation, Student's/Welch's t-test) — no delta is recorded as
 real without passing it.
+
+
+### Statistical-analysis taxonomy (researched — en.wikipedia.org/wiki/Statistical_analysis)
+
+The Wikipedia statistical-analysis canon, mapped to this campaign's use:
+
+- **Descriptive vs inferential** — the bench reports both: descriptive
+  (mean, stdev, min per config) and inferential (does config A beat B).
+- **Inference paradigms**: Frequentist (**used**: Welch's t-test,
+  p-value/NHST), Bayesian (**planned**: Bayes factor, credible interval),
+  Likelihood (MLE), AIC (Akaike), Minimum Description Length, Fiducial,
+  Structural, Universal Inference.
+- **Tests/procedures**: p-values & null-hypothesis significance testing
+  (**used**), confidence intervals (**planned via bootstrap**), credible
+  intervals & Bayes factors (**planned**).
+- **Estimators**: point vs interval; Maximum Likelihood Estimation,
+  Minimum-Variance Unbiased Estimator, Hodges–Lehmann–Sen.
+- **Analytical methods**: Design of Experiments (the gate-lattice
+  permutation matrix *is* a small DoE), Analysis of Variance (ANOVA —
+  candidate for comparing >2 -O configs at once instead of pairwise t),
+  Regression / GLM / Cox, cluster analysis, survey sampling,
+  **bootstrapping / resampling** (**planned** for distribution-free CIs).
+- **Model assessment**: goodness-of-fit, residual analysis, model
+  selection — applicable when fitting the surrogate for Bayesian search.
+
+Sources: en.wikipedia.org/wiki/Statistical_analysis;
+en.wikipedia.org/wiki/Remez_algorithm; arXiv:2212.11142 (BaCO);
+dlmf.nist.gov/3.11 (minimax polynomial approximations).
 
 ## Progress log
 
@@ -209,3 +268,29 @@ real without passing it.
 - Tier-1 now complete except peephole. **Next:** peephole window
   (McKeeman) over the emitted vstack code, then Tier-2 dataflow (SCCP,
   Kildall-liveness DCE, local value numbering).
+
+### 2026-07-09 — iteration 8 (actual web research; catalog expanded)
+
+- Prompted by an audit ("fib, exp, statistical analysis, Bayesian?"),
+  did **real web research** this iteration instead of working from
+  memory, and folded the findings into the catalog:
+  - **Statistical analysis** — pulled the Wikipedia taxonomy (descriptive
+    vs inferential; the 8 inference paradigms incl. Bayesian/Likelihood/
+    AIC/MDL/Fiducial/Structural/Universal; MLE/MVUE/Hodges–Lehmann–Sen
+    estimators; ANOVA/regression/GLM/Cox/bootstrap) and mapped which the
+    bench uses (Welch/p-value) vs should add (bootstrap CI, Cohen's d,
+    Bayes factor). Added as a taxonomy block.
+  - **exp/sin/cos** — the parked libm-fold determinism story is now
+    grounded: minimax poly via **Remez exchange** (Chebyshev alternation
+    theorem) or **CORDIC**, evaluated in the compiler's own fixed integer
+    arithmetic so it is bit-identical across hosts. New Tier-4 item.
+  - **Bayesian** (answering "bayesion?") — new Tier-4 item: replace the
+    linear 0..UINTMAX `-O<N>` sweep with a surrogate search (GP / **TPE** /
+    random forest); precedent **BaCO** arXiv:2212.11142. TPE is the
+    least-risk (tool-only) form and is the next claimed subagent task.
+  - **fib / natural numbers** — natural-number iteration already drives
+    the `-O<N>` search (uintmax_t 0..UINTMAX); fib noted as a recursion/
+    integer-sequence bench workload (was incidental test fodder).
+- Catalog now 16 named algorithms (2 done, 14 open) across 4 tiers, plus
+  the researched statistical taxonomy. Subagent launching for TPE.
+- Tier-2 local value numbering subagent still in flight.
