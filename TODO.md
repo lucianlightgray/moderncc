@@ -472,7 +472,10 @@ Implementation (decided 2026-07-10):
   `type_btype`, const payload, `sym_role` — with **every identifier
   normalized to a positional placeholder** (locals/params AND
   callees/globals: 1st-local, 1st-callee, …), excluding addresses,
-  capture-order slots, and source positions. So structurally identical
+  capture-order slots, and source positions. **Lookup order: TU-tier first**
+  (an unchanged file hits the whole-TU "all converged" marker instantly),
+  **else the per-function tier** (only edited functions re-search; the rest
+  warm-start from their per-fn hits). So structurally identical
   functions/TUs share a checkpoint regardless of names — maximal hits, and
   safe because a config-only hit merely *warm-starts* a search that
   self-corrects (A/B keep-best). The whole-TU key is the same normalization
@@ -628,7 +631,9 @@ permutation exhaustion or a wall-clock cap**.
   slot; the optimizer builds the new version into a spare buffer and
   `atomic_store`s the slot — lock-free, no code overwrite, no W^X. In-flight
   calls finish on the old body; a **retired body is freed only after
-  consensus** (epoch/grace-period: no thread still executing it). **Triple**
+  consensus** via **epoch-based reclamation (RCU)**: a global epoch counter,
+  threads announce their epoch at call boundaries, and a body swapped out at
+  epoch E is freed once all threads have advanced past E. **Triple**
   buffering gives slack so the writer rarely stalls on reclamation.
 - **Hot detection = per-site atomic call counters, hottest first.** A cheap
   `atomic ++count` at each site orders the work (highest count first) and
@@ -737,6 +742,12 @@ the values; this re-encodes the conditionals over them) and can compose
 with it in the §22 search. Builds on §22 (search) + §25 (scoring) + §28's
 oracle. Gate on `-O0..-O3` byte-identity + an exec-golden that sweeps every
 key value through original vs re-encoded dispatch.
+
+Decided 2026-07-10: detection scope = **same-key comparison clusters +
+`switch` arms** (if/else-if runs and switches testing the same key(s)
+against constants/enum labels) — a finite, enumerable key domain the oracle
+proves exhaustively. Boolean bundles and range/interval quantization are
+later extensions, not the first cut.
 
 ## 31. Strategy-portfolio scheduler — the governing search architecture (large)
 
