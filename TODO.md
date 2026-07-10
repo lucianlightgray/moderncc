@@ -12,6 +12,92 @@ Standing gates for every item: `ctest` green; items touching `src/` also need
 the 3-stage byte-identical self-host fixpoint; items touching backend or
 format files add the local matrix / a qemu spot-check as noted.
 
+## 0. [x86_64-host] Differential random-program miscompile fuzzer + auto-reducer (major, NEW 2026-07-10)
+
+A whole-pipeline correctness engine: generate random C programs, run each
+through **mcc** and through **gcc + clang** as a same-ISA reference oracle,
+flag any divergence in observable behavior, then **automatically reduce** the
+offending program to a minimal repro and **bisect** it to the exact `-O` level
+/ `MCC_AST_*` pass / git commit responsible. Found repros graduate into the
+permanent ctest corpus.
+
+**Why an x86_64 host (and why it barely overlaps anything here).** Differential
+testing is only meaningful with a *trusted reference compiler executing on the
+same target ISA* as mcc's output — on the repo's x86_64-Linux dev/CI box both
+gcc **and** clang are first-class native oracles (arm64-darwin has no native
+gcc and a far thinner reference/tooling stack). The mature generator
+(csmith / YARPGen) and reducer (cvise / creduce) ecosystems and the full
+sanitizer/valgrind stack are all native x86_64-Linux. Orthogonality: every
+other TODO item (§1–§42) tunes one pass, codegen order, config macro, or ABI
+detail; this is a *tools-only QA subsystem* over the entire front-to-back
+pipeline (preprocess → parse → AST optimizer → codegen → link), complementing
+the existing **fixed-corpus** diff3 / mcctest / c-torture harnesses with the
+missing pieces: **random generation, automatic minimization, and
+auto-attribution**. It has no compiler-codegen surface, so it carries none of
+the byte-identity / fixpoint risk the ladder items do — and it becomes the
+independent validation engine for §41 (the default-ON ungate sweep) and a
+miscompile detector for §29–§35.
+
+### Investigation tasks
+- [ ] **Generator selection** — csmith vs YARPGen vs a small custom generator:
+      weigh UB-freedom guarantees (csmith `--no-...` knobs), coverage of mcc's
+      known-weak constructs (bitfields, unions, `_Complex`, VLAs, computed
+      `goto`, inline asm, atomics, `long double`, packed structs), licensing,
+      and clean x86_64-Linux build. Decide one primary + one secondary.
+- [ ] **Oracle design** — gcc + clang at matched `-O` as a majority-vote
+      reference; canonicalize observable behavior (exit code + a hash of
+      stdout + a hash of a checksum-of-globals `main` wrapper); a policy for
+      UB/nondeterministic programs (prefer UB-free generation; else drop on
+      oracle disagreement).
+- [ ] **mcc-under-test matrix** — sweep `-O0..-O3` × each gated pass forced on
+      (`MCC_AST_CPROP_JOIN`/`CSE_JOIN`/`CALL_WINDOW`/`BITFLAG`/`SETHI`/
+      `PROMOTE`/`INLINE`/…), so a divergence is directly attributable to a
+      single pass. This is exactly the coverage §41 needs.
+- [ ] **Reduction pipeline** — cvise/creduce driven by an interestingness
+      predicate that re-confirms the mcc-vs-oracle divergence on the reduced
+      program; emit a self-contained `.c` + expected-output into a new
+      `tests/fuzz/` (or `tests/diff/`) corpus.
+- [ ] **Triage / bisection** — for a confirmed divergence, bisect over (a) the
+      `-O` level, (b) which `MCC_AST_*` gate flips it, (c) `git bisect` over
+      commits — to name the responsible change automatically.
+- [ ] **Dynamic-analysis layer** — additionally build both mcc itself and
+      mcc's *output* under ASan/UBSan and run under valgrind on x86_64 to catch
+      latent UB / crashes the pure differential oracle misses (crash vs
+      wrong-answer classification).
+- [ ] **CI integration & budget** — a nightly N-hour campaign on the x86_64
+      box: seed corpus, dedup by crash-site/repro hash, a "no new failure
+      class in K runs" stop rule (mirrors §31's loop-until-dry), seed-
+      reproducible runs, and a regression-lock of known-fixed repros.
+- [ ] **Graduation path** — how a reduced repro becomes a permanent ctest case
+      (naming, expected-output capture, and re-baselining when it's a known
+      accepted `[DIFF]` from gcc/clang rather than a bug).
+
+### Sub-feature discovery topics (explore before scoping)
+- **Equivalence-Modulo-Inputs (EMI)** mutation (Orion/Athena/Hermes style):
+      prune or inject provably-dead code under a recorded profile so the
+      reference output is invariant — targets *optimizer* miscompiles
+      specifically and dovetails with the §32/§33 dataflow work.
+- **Coverage-guided generation** — feed mcc's own edge coverage (gcov, or
+      Intel-PT branch trace on x86_64) back into the generator to steer toward
+      unexercised paths.
+- **Link-time / ABI differential** — mix mcc `.o` with gcc `.o` (and vice
+      versa) and cross-check struct-return, varargs, `long double`, bitfield
+      layout, alignment — an ABI fuzzer orthogonal to the codegen passes.
+- **Self-host differential** — compile `src/mcc.c` with mcc vs gcc and diff the
+      *two resulting compilers'* behavior over the corpus — a semantic check
+      strictly stronger than the byte-identity fixpoint.
+- **Sanitizer-diff bootstrap** — compare a future mcc `-fsanitize=undefined`
+      against clang's on the same UB program; seeds a real sanitizer feature.
+- **Miscompile-class scoreboard** — tag each divergence by pass / ISA / C
+      construct and rank them, to steer where optimizer and codegen effort
+      goes next.
+
+**Landing shape:** tools-only + a growing `tests/fuzz/` corpus; no
+compiler-codegen change (no fixpoint/byte-identity gate on the harness
+itself). First increment = the minimal loop: `csmith → {mcc,gcc,clang} -O2 →
+compare exit+stdout hash → on divergence, cvise-reduce → save repro`, then
+layer the matrix, triage, and dynamic-analysis passes on top.
+
 ## 1. Delete `TAL_INFO` (trivial)
 
 - [x] Remove the `#if TAL_INFO` counters/report from `mccpp.c:113-266` and the
