@@ -869,13 +869,15 @@ static int so_fn_hashes(const char *path, struct so_fn *fns, int nf,
 	if (!f)
 		return 0;
 	while (fscanf(f, "%79s %llx", nm, &h) == 2)
-		for (i = 0; i < nf; i++)
-			if (!strcmp(fns[i].name, nm)) {
+		for (i = 0; i < nf; i++) {
+			const char *sn = fns[i].name;
+			if (!strcmp(sn, nm) || (sn[0] == '_' && !strcmp(sn + 1, nm))) {
 				if (!fnh[i])
 					got++;
 				fnh[i] = h;
 				break;
 			}
+		}
 	fclose(f);
 	return got;
 }
