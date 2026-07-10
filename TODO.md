@@ -402,21 +402,27 @@ Landed, all presets/ctest green + fixpoint byte-identical at each step:
   (`f67c2234`, `c5f3349f`, `35a8ef70`, `e3a2f2d7`). Remaining: the static
   vtable registry refactor, adaptive beam width, per-function scoping.
 
+- **§24 first increment** — the static hot-slice **cost model** (node ×
+  loop-nest-depth × call-outs, per function) computed in `ast_func_end`,
+  gated behind `MCC_AST_COST` (default off, byte-identity held), reporting
+  the ranking (`3e81960d`). Remaining: use it to allocate the search budget
+  per function (needs §22).
 - **§29 first increment** — redundant integer-cast elimination as a
   provably-correct extension of the proven `ast_ident_run` replay pass
   (identity cast, and lossless widen-then-narrow round-trip) (`ad55ede8`).
   Exec golden across all four replay columns; gcc/O0/O3-tmpl agree.
   Remaining: range-narrowing (needs range analysis), search-gated re-typing.
 
-**Remaining rungs are the deep codegen / new-subsystem class** (each a
-focused session; a defect breaks the green-tests invariant the goal also
-requires): §22 per-function replay refactor (drives `do_*` in-process from
-the fragile `ast_func_end`), §24 hot-slice (needs §22), §30 bit-flag pass
-(control-flow, best search-gated since it isn't unconditionally smaller),
-§26 embedded JIT (ELF ctor + embedded JIT + RCU patching). §27/§28
-deferred. §29 proved the safe pattern: extend a proven replay pass with a
-provably-correct transform, validate across all four exec-replay columns +
-fixpoint before commit.
+**Remaining full builds are the deep codegen / new-subsystem class**, each
+now investigated in code and scoped with a concrete path (see their
+sections): §22 per-function replay refactor (needs an `AstArena` clone +
+extracting the fragile re-emit into a reusable arena-parameterized routine),
+§24 budget-allocation half (needs §22), §30 bit-flag (needs `AST_If`-chain
+control-flow detection + new multi-node AST construction), §26 embedded JIT
+(infra exists; dominant cost = embedding a libmcc slice). §27/§28 stay
+deferred behind the value-reference-node decision. §29/§24 proved the safe
+patterns; each remaining full build is a focused session validated across
+all four exec-replay columns + fixpoint at every step.
 
 
 The `-O<N>` (N>=4) compile-time search landed at `f959078e`
