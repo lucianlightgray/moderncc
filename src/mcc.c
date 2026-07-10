@@ -383,16 +383,31 @@ static void so_ckpt_write(const char *path, const SoCkpt *nw) {
 	}
 }
 
-static void so_setenv(unsigned seed) {
+#define SO_NNODE 3
+#define SO_NGRAFT 3
+static const int so_nodes[SO_NNODE] = {64, 128, 256};
+static const int so_graft[SO_NGRAFT] = {2048, 4096, 8192};
+
+static void so_setenv_seed(unsigned seed) {
 	char buf[32];
-	int inl = (seed >> 2) & 1;
+	unsigned gate = seed & 15;
+	unsigned rest = seed >> 4;
+	unsigned limit = rest % (SO_INLINE_LIMIT_MAX + 1);
+	unsigned q = rest / (SO_INLINE_LIMIT_MAX + 1);
+	int nsel = (int)(q % SO_NNODE);
+	int gsel = (int)((q / SO_NNODE) % SO_NGRAFT);
+	int inl = (gate >> 2) & 1;
 	setenv("MCC_SEARCH_WORKER", "1", 1);
-	setenv("MCC_AST_TEMPLATES", (seed & 1) ? "1" : "0", 1);
-	setenv("MCC_AST_PROMOTE", (seed >> 1) & 1 ? "1" : "0", 1);
+	setenv("MCC_AST_TEMPLATES", (gate & 1) ? "1" : "0", 1);
+	setenv("MCC_AST_PROMOTE", (gate >> 1) & 1 ? "1" : "0", 1);
 	setenv("MCC_AST_INLINE", inl ? "1" : "0", 1);
-	setenv("MCC_AST_NO_CALLFUL", (seed >> 3) & 1 ? "1" : "0", 1);
-	snprintf(buf, sizeof buf, "%u", inl ? (seed >> 4) : 0u);
+	setenv("MCC_AST_NO_CALLFUL", (gate >> 3) & 1 ? "1" : "0", 1);
+	snprintf(buf, sizeof buf, "%u", inl ? limit : 0u);
 	setenv("MCC_AST_INLINE_LIMIT", buf, 1);
+	snprintf(buf, sizeof buf, "%d", so_nodes[nsel]);
+	setenv("MCC_AST_INLINE_NODES", buf, 1);
+	snprintf(buf, sizeof buf, "%d", so_graft[gsel]);
+	setenv("MCC_AST_GRAFT", buf, 1);
 }
 
 static long so_filesize(const char *p) {
@@ -454,16 +469,18 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 	cv[argn++] = cand_tmp;
 	cv[argn] = NULL;
 	for (seed = start_seed;; seed++) {
-		int inl = (seed >> 2) & 1;
-		unsigned limit = seed >> 4;
+		unsigned gate = seed & 15;
+		unsigned rest = seed >> 4;
+		unsigned q = rest / (SO_INLINE_LIMIT_MAX + 1);
+		int inl = (gate >> 2) & 1;
 		long sz;
 		if (host_clock_ms() - start >= budget_ms)
 			break;
-		if (limit > SO_INLINE_LIMIT_MAX)
+		if (q >= (unsigned)(SO_NNODE * SO_NGRAFT))
 			break;
-		if (!inl && limit != 0)
+		if (!inl && rest != 0)
 			continue;
-		so_setenv(seed);
+		so_setenv_seed(seed);
 		if (host_spawn_wait(cv) == 0) {
 			sz = so_filesize(cand_tmp);
 			if (sz >= 0 && (best < 0 || sz < best)) {
@@ -482,7 +499,7 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 		return -1;
 	}
 	if (!best_have) {
-		so_setenv(best_seed);
+		so_setenv_seed(best_seed);
 		if (host_spawn_wait(cv) == 0)
 			so_copy(cand_tmp, best_tmp);
 		else {

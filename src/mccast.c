@@ -350,6 +350,14 @@ static int ast_env_gate(const char *name, int dflt) {
 		return dflt;
 	return strcmp(v, "0") != 0;
 }
+static int ast_env_int(const char *name, int dflt) {
+	const char *v = getenv(name);
+	int n;
+	if (!v || !v[0])
+		return dflt;
+	n = atoi(v);
+	return n > 0 ? n : dflt;
+}
 int ast_active;
 static int ast_replay_env;
 static int ast_replay_dump;
@@ -359,6 +367,8 @@ static int ast_promo_limit;
 static int ast_promo_total;
 static int ast_opt_limit;
 static int ast_opt_total;
+static int ast_inline_node_limit = 64;
+static int ast_graft_budget_max = 2048;
 static int ast_templates_env;
 static int ast_promote_env;
 static int ast_no_callful_env;
@@ -544,6 +554,8 @@ void ast_configure(MCCState *s1) {
 		ast_opt_limit = lim ? atoi(lim) : -1;
 		ast_opt_total = 0;
 	}
+	ast_inline_node_limit = ast_env_int("MCC_AST_INLINE_NODES", 64);
+	ast_graft_budget_max = ast_env_int("MCC_AST_GRAFT", 2048);
 }
 
 int ast_fconst_reuse(void) {
@@ -1646,7 +1658,6 @@ static void ast_replay_value(AstArena *a, AstLocal n);
 static void ast_replay_bb(AstArena *a, AstLocal bb);
 static int ast_local_is_readonly(AstArena *a, int off);
 #define AST_INLINE_MAX 512
-#define AST_INLINE_NODE_BUDGET 64
 #define AST_INLINE_MAX_PARAMS 6
 static struct AstInlineFn {
 	void *sym;
@@ -1694,7 +1705,7 @@ static int ast_fn_inlinable(AstArena *a, Sym *sym) {
 	if (sym->type.ref->f.func_noinl)
 		return 0;
 	AstLocal nn = ast_count(a);
-	if (nn == 0 || nn > AST_INLINE_NODE_BUDGET)
+	if (nn == 0 || nn > ast_inline_node_limit)
 		return 0;
 	for (AstLocal n = 0; n < nn; n++) {
 		uint16_t k = ast_kind(a, n);
@@ -1784,7 +1795,6 @@ static CType ast_graft_rt;
 static int ast_inline_ret_sym;
 static int ast_inline_ret_slot;
 #define AST_INLINE_MAX_DEPTH 8
-#define AST_GRAFT_BUDGET 2048
 static void *ast_inline_stack[AST_INLINE_MAX_DEPTH];
 static int ast_graft_budget;
 static int ast_inline_depth;
@@ -4545,7 +4555,7 @@ void ast_func_end(Sym *sym) {
 					ast_rp_bsym = ast_rp_csym = NULL;
 					ast_pinned_regs = 0;
 					ast_inline_active = do_inline;
-					ast_graft_budget = AST_GRAFT_BUDGET;
+					ast_graft_budget = ast_graft_budget_max;
 					for (int pi = 0; pi < ast_promo_n; pi++)
 						ast_pinned_regs |= (1u << ast_promo_regpool_at(pi));
 					if (do_promote)
@@ -4702,7 +4712,7 @@ static void ast_reemit(Sym *sym, AstArena *ast) {
 	ast_promo_n = 0;
 	ast_pinned_regs = 0;
 	ast_inline_active = 1;
-	ast_graft_budget = AST_GRAFT_BUDGET;
+	ast_graft_budget = ast_graft_budget_max;
 	ast_replay_body(ast);
 	ast_inline_active = 0;
 	ast_replaying = 0;
