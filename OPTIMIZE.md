@@ -1042,3 +1042,10 @@ gates green at each commit:
   fixpoint byte-identical in both modes (the ON fixpoint self-hosts three
   generations with the pass active), new `ast-cprop-join` differential
   exec test across `-O0..-O3` × gate on/off.
+- **§32b landed** — cross-join CSE/LICM (`MCC_AST_CSE_JOIN`, default off):
+  the availability table survives into dominated If arms (node-identity
+  meet at the join, arm-local entries never cross it — no φ), and loops
+  run `ast_licm_at_loop` on the richer incoming table before descending
+  with the invariant subset. Same gate battery: ctest 1862 with both
+  joins forced on, dual-mode fixpoint, `ast-cprop-join` extended to the
+  2×2 gate matrix.

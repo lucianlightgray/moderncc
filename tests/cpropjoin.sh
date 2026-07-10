@@ -58,6 +58,25 @@ int do_loop(int n) {
 	do { s += c; i++; } while (i < n);
 	return s;
 }
+int ext(int x);
+int cse_join(int x, int f) {
+	int t = x * 3 + 1, u, v;
+	if (f) u = x * 3 + 1; else u = x * 3 + 1;
+	v = x * 3 + 1;
+	return t + u + v + ext(x * 3 + 1);
+}
+int cse_killed(int x, int f) {
+	int t = x * 3 + 1, u;
+	if (f) x = 9; else x = 10;
+	u = x * 3 + 1;
+	return t + u;
+}
+int cse_loop(int x, int n) {
+	int b = x * 5, s = 0, i;
+	for (i = 0; i < n; i++) s += x * 5;
+	return s + b;
+}
+int ext(int x) { return x / 2; }
 int main(void) {
 	int acc = 0;
 	acc = acc * 31 + same_join(1);
@@ -75,26 +94,34 @@ int main(void) {
 	acc = acc * 31 + escaped(1);
 	acc = acc * 31 + escaped(0);
 	acc = acc * 31 + do_loop(3);
+	acc = acc * 31 + cse_join(2, 1);
+	acc = acc * 31 + cse_join(2, 0);
+	acc = acc * 31 + cse_killed(5, 1);
+	acc = acc * 31 + cse_killed(5, 0);
+	acc = acc * 31 + cse_loop(3, 4);
 	return ((unsigned)acc % 251u);
 }
 EOF
 
 build() {
-	env MCC_AST_CPROP_JOIN="$1" "$MCC" "-B$BDIR" "$2" -o "$3" "$W/j.c" \
-		2>/dev/null
+	env MCC_AST_CPROP_JOIN="$1" MCC_AST_CSE_JOIN="$2" \
+		"$MCC" "-B$BDIR" "$3" -o "$4" "$W/j.c" 2>/dev/null
 }
 
-build 0 -O0 "$W/j-o0" || { echo "O0 build failed"; exit 1; }
+build 0 0 -O0 "$W/j-o0" || { echo "O0 build failed"; exit 1; }
 "$W/j-o0"
 ref=$?
 
 for lvl in -O1 -O2 -O3; do
-	for g in 0 1; do
-		build "$g" "$lvl" "$W/j-t" || { echo "$lvl gate=$g build failed"; exit 1; }
-		"$W/j-t"
-		rc=$?
-		[ "$rc" = "$ref" ] || {
-			echo "$lvl gate=$g rc=$rc, expected $ref"; exit 1; }
+	for gc in 0 1; do
+		for ge in 0 1; do
+			build "$gc" "$ge" "$lvl" "$W/j-t" || {
+				echo "$lvl cprop=$gc cse=$ge build failed"; exit 1; }
+			"$W/j-t"
+			rc=$?
+			[ "$rc" = "$ref" ] || {
+				echo "$lvl cprop=$gc cse=$ge rc=$rc, expected $ref"; exit 1; }
+		done
 	done
 done
 

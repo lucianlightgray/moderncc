@@ -433,6 +433,7 @@ static int ast_cost_env;
 static int ast_bitflag_env;
 static int ast_bitflag_min;
 static int ast_cprop_join_env;
+static int ast_cse_join_env;
 static int ast_search_worker;
 static uint64_t ast_intention_acc;
 static const char *ast_hash_out;
@@ -679,6 +680,7 @@ void ast_configure(MCCState *s1) {
 	if (ast_bitflag_min < 3)
 		ast_bitflag_min = 5;
 	ast_cprop_join_env = ast_env_gate("MCC_AST_CPROP_JOIN", 0);
+	ast_cse_join_env = ast_env_gate("MCC_AST_CSE_JOIN", 0);
 	ast_intention_acc = 0;
 	ast_hash_out = getenv("MCC_AST_HASH_OUT");
 	ast_search_worker = getenv("MCC_SEARCH_WORKER") != NULL;
@@ -4958,10 +4960,153 @@ static void ast_cse_block(AstArena *a, AstLocal bb) {
 	}
 }
 
+typedef struct {
+	AstLocal expr[AST_CSE_MAX];
+	AstLocal ref[AST_CSE_MAX];
+	int off[AST_CSE_MAX];
+	int n;
+} AstCseState;
+
+static void ast_cse_state_save(AstCseState *st) {
+	st->n = ast_cse_n;
+	memcpy(st->expr, ast_cse_expr, (size_t)ast_cse_n * sizeof(AstLocal));
+	memcpy(st->ref, ast_cse_ref, (size_t)ast_cse_n * sizeof(AstLocal));
+	memcpy(st->off, ast_cse_off, (size_t)ast_cse_n * sizeof(int));
+}
+
+static void ast_cse_state_load(const AstCseState *st) {
+	ast_cse_n = st->n;
+	memcpy(ast_cse_expr, st->expr, (size_t)st->n * sizeof(AstLocal));
+	memcpy(ast_cse_ref, st->ref, (size_t)st->n * sizeof(AstLocal));
+	memcpy(ast_cse_off, st->off, (size_t)st->n * sizeof(int));
+}
+
+static void ast_cse_state_meet(const AstCseState *st) {
+	int i = 0;
+	while (i < ast_cse_n) {
+		int j, keep = 0;
+		for (j = 0; j < st->n; j++)
+			if (st->expr[j] == ast_cse_expr[i] && st->ref[j] == ast_cse_ref[i] &&
+					st->off[j] == ast_cse_off[i]) {
+				keep = 1;
+				break;
+			}
+		if (keep) {
+			i++;
+		} else {
+			ast_cse_n--;
+			ast_cse_expr[i] = ast_cse_expr[ast_cse_n];
+			ast_cse_ref[i] = ast_cse_ref[ast_cse_n];
+			ast_cse_off[i] = ast_cse_off[ast_cse_n];
+		}
+	}
+}
+
+static unsigned char *ast_cse_vis;
+
+static void ast_cse_stmts(AstArena *a, AstLocal bb) {
+	if (bb == AST_NONE || ast_kind(a, bb) != AST_BasicBlock)
+		return;
+	ast_cse_vis[bb] = 1;
+	for (AstLocal s = ast_first_child(a, bb); s != AST_NONE; s = ast_next_sib(a, s)) {
+		uint16_t k = ast_kind(a, s);
+		if (k == AST_Store) {
+			AstLocal lval = ast_child(a, s, 0), val = ast_child(a, s, 1);
+			ast_cse_subst(a, val, 0);
+			ast_cse_subst(a, lval, 1);
+			if (!ast_cprop_safe(a, lval) || !ast_cprop_safe(a, val)) {
+				ast_cse_n = 0;
+				continue;
+			}
+			int off, tt;
+			if (ast_cprop_is_local(a, lval, &off, &tt)) {
+				ast_cse_kill(a, off);
+				int et;
+				uint64_t er;
+				if (!ast_cprop_escapes(a, off) && ast_cse_n < AST_CSE_MAX &&
+						ast_cse_regpure(a, val) && !ast_ident_leaf(a, val) &&
+						!ast_tco_reads_off(a, val, off) &&
+						ast_ident_etype(a, val, &et, &er) && ast_ident_intt(et) &&
+						(et & (VT_BTYPE | VT_UNSIGNED)) == (tt & (VT_BTYPE | VT_UNSIGNED)) &&
+						er == ast_type_ref(a, lval)) {
+					ast_cse_expr[ast_cse_n] = val;
+					ast_cse_ref[ast_cse_n] = lval;
+					ast_cse_off[ast_cse_n] = off;
+					ast_cse_n++;
+				}
+			} else {
+				ast_cse_n = 0;
+			}
+		} else if (k == AST_Return) {
+			ast_cse_subst(a, ast_first_child(a, s), 0);
+			ast_cse_n = 0;
+		} else if (k == AST_BasicBlock) {
+			ast_cse_stmts(a, s);
+		} else if (k == AST_If && ast_op(a, s) == 0) {
+			ast_cse_subst(a, ast_child(a, s, 0), 0);
+			AstLocal tb = ast_child(a, s, 1), eb = ast_child(a, s, 2);
+			if (ast_cprop_opaque(a, tb) || ast_cprop_opaque(a, eb)) {
+				ast_cse_n = 0;
+				continue;
+			}
+			AstCseState in, tout;
+			ast_cse_state_save(&in);
+			ast_cse_stmts(a, tb);
+			ast_cse_state_save(&tout);
+			ast_cse_state_load(&in);
+			ast_cse_stmts(a, eb);
+			ast_cse_state_meet(&tout);
+		} else if (k == AST_Invoke) {
+			for (AstLocal c = ast_first_child(a, s); c != AST_NONE; c = ast_next_sib(a, c))
+				ast_cse_subst(a, c, 0);
+			ast_cse_n = 0;
+		} else if (k == AST_If && ast_op(a, s) >= 2 && ast_op(a, s) <= 4) {
+			ast_licm_at_loop(a, s);
+			for (int i = 0; i < ast_cse_n;)
+				if (ast_licm_written(a, s, ast_cse_off[i]) ||
+						!ast_licm_operands_ok(a, s, ast_cse_expr[i]))
+					ast_cse_kill(a, ast_cse_off[i]);
+				else
+					i++;
+			if (ast_sccp_has_label(a, s)) {
+				ast_cse_n = 0;
+				continue;
+			}
+			AstCseState in;
+			ast_cse_state_save(&in);
+			for (AstLocal c = ast_first_child(a, s); c != AST_NONE;
+					 c = ast_next_sib(a, c)) {
+				if (ast_kind(a, c) == AST_BasicBlock) {
+					ast_cse_stmts(a, c);
+					ast_cse_state_load(&in);
+				} else if (ast_cprop_safe(a, c)) {
+					ast_cse_subst(a, c, 0);
+				}
+			}
+		} else if (ast_licm_is_loop(a, s)) {
+			ast_licm_at_loop(a, s);
+			ast_cse_n = 0;
+		} else {
+			ast_cse_n = 0;
+		}
+	}
+}
+
 static int ast_cse_run(AstArena *a) {
 	ast_cse_folds = 0;
 	ast_licm_folds = 0;
 	AstLocal nn = ast_count(a);
+	if (ast_cse_join_env && nn) {
+		ast_cse_vis = mcc_mallocz(nn);
+		ast_cse_n = 0;
+		ast_cse_stmts(a, ast_root(a));
+		for (AstLocal n = 0; n < nn; n++)
+			if (ast_kind(a, n) == AST_BasicBlock && !ast_cse_vis[n])
+				ast_cse_block(a, n);
+		mcc_free(ast_cse_vis);
+		ast_cse_vis = NULL;
+		return ast_cse_folds;
+	}
 	for (AstLocal n = 0; n < nn; n++)
 		if (ast_kind(a, n) == AST_BasicBlock)
 			ast_cse_block(a, n);

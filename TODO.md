@@ -1274,6 +1274,27 @@ escaped locals, do-while, all × `-O1..-O3` × gate on/off against the
 op-5 `for(;;)` classification via the `ast_cf_*` structure, switch (op 6)
 arms, and §31 strategy registration.
 
+**§32b LANDED (2026-07-10) — cross-join CSE/LICM
+(`MCC_AST_CSE_JOIN`, default off).** The same structured walk applied to
+the availability table (`ast_cse_stmts`): If op 0 arms inherit the
+dominating table (the §32 mechanism-2 win) and the join keeps exactly the
+entries that survived both arms (node-identity meet — arm-generated
+entries never cross the join, so no φ); loops run `ast_licm_at_loop` with
+the *incoming* table first (richer table → more hoists), then descend
+child BasicBlocks with only the entries that are unwritten
+(`ast_licm_written`) *and* operand-stable (`ast_licm_operands_ok`) in the
+loop; op 5 keeps the flat `ast_licm_at_loop` + reset (the ternary
+overload); any `AST_Jump` in an arm bails to reset with the flat-scan
+fallback via the visited bitmap. Store/Return/Invoke statement handling
+is byte-for-byte the flat pass's. Validated: ctest 1862 with both join
+gates forced on corpus-wide, fixpoint byte-identical with both on and
+both off, and the `ast-cprop-join` test extended to sweep the 2×2 gate
+matrix at `-O1..-O3` (same-expr joins fold, operand-killed exprs must
+not, loop-invariant exprs reuse across and inside the loop). Remaining
+§32b refinements: availability across `Invoke` statements (entries are
+provably call-clobber-free — the reset is legacy conservatism), and §31
+strategy registration.
+
 Sub-decisions settled: promotion guard = poison-list first, dominance
 proof later; each pass env-gated per the existing pattern and registered
 as a §31 strategy so the search permutes it. Gates (the FIX.md lesson —

@@ -33,6 +33,7 @@ compiler is unchanged.
 | 31 | Strategy-portfolio scheduler | **substantial** | `f67c2234` (2-strategy), `e3a2f2d7` (3rd strategy), `c5f3349f` (save-and-stop), `35a8ef70` (watchdog), `3db65b60` (concurrency) |
 | 32 | Value-reference-node feasibility study | **resolved** (no new node kind; build order §32a→§32c) | `fde58307` |
 | 32a | SCCP value-lattice (structured-join const-prop) | **landed** — `MCC_AST_CPROP_JOIN` (default off): fork/meet at If joins, invariant-lattice loop descent, flat-scan fallback via visited bitmap; ctest green with the gate forced on corpus-wide; fixpoint byte-identical in both modes | — |
+| 32b | Cross-join CSE/LICM (dominator-carried availability) | **landed** — `MCC_AST_CSE_JOIN` (default off): arms inherit the dominating table, node-identity meet at joins, loop LICM runs on the richer incoming table then descends with invariant entries; same gates (ctest with both joins forced on, dual-mode fixpoint) | — |
 
 ## User-facing surface delivered
 
