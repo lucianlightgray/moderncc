@@ -938,6 +938,20 @@ static void update_gnu_hash(MCCState *s1, Section *gnu_hash) {
 }
 #endif
 
+static int sym_referenced_by_reloc(MCCState *s1, int sym_index) {
+	Section *s;
+	ElfW_Rel *rel;
+	for (int i = 1; i < s1->nb_sections; i++) {
+		s = s1->sections[i];
+		if (s->sh_type != SHT_RELX || s->link != symtab_section)
+			continue;
+		for_each_elem(s, 0, rel, ElfW_Rel)
+			if ((int)ELFW(R_SYM)(rel->r_info) == sym_index)
+				return 1;
+	}
+	return 0;
+}
+
 ST_FUNC void relocate_syms(MCCState *s1, Section *symtab, int do_resolve) {
 	ElfW(Sym) * sym;
 	int sym_bind, sh_num;
@@ -978,7 +992,9 @@ ST_FUNC void relocate_syms(MCCState *s1, Section *symtab, int do_resolve) {
 				goto found;
 			}
 			sym_bind = ELFW(ST_BIND)(sym->st_info);
-			if (sym_bind == STB_WEAK)
+			if (sym_bind == STB_WEAK ||
+					!sym_referenced_by_reloc(
+							s1, (int)(sym - (ElfW(Sym) *)symtab->data)))
 				sym->st_value = 0;
 			else
 				mcc_error_noabort("unresolved reference to '%s'", name);
@@ -1901,7 +1917,8 @@ static void bind_exe_dynsyms(MCCState *s1, int is_PIE) {
 			} else {
 				if (ELFW(ST_BIND)(sym->st_info) == STB_WEAK ||
 						!strcmp(name, "_fp_hw")) {
-				} else {
+				} else if (sym_referenced_by_reloc(
+											 s1, (int)(sym - (ElfW(Sym) *)symtab_section->data))) {
 					mcc_error_noabort("unresolved reference to '%s'", name);
 				}
 			}

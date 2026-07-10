@@ -56,13 +56,14 @@ int main(void) {
 	if (fmaxf(2.5f, 7.5f) != fmaxf(f25, f75))
 		ok = 0;
 
+	int check_errno = (math_errhandling & MATH_ERRNO) != 0;
 	errno = 0;
 	double sv = sqrt(dm1);
-	if (sv == sv || errno != EDOM)
+	if (sv == sv || (check_errno && errno != EDOM))
 		ok = 0;
 	errno = 0;
 	double sc = sqrt(-1.0);
-	if (sc == sc || errno != EDOM)
+	if (sc == sc || (check_errno && errno != EDOM))
 		ok = 0;
 
 	printf("%s\n", ok ? "OK" : "FAIL");
