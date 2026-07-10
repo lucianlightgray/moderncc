@@ -26,7 +26,8 @@ fixpoint byte-identical + -O0 objects unchanged):
 | 8 | mccbench stats: Welch t + bootstrap CI + Cohen's d | — | 9d03445e |
 | 9 | Self-recursive tail-call → loop | 3 | 187880a4 |
 | 10 | Jump threading / branch simplification | 3 | 2b783781 |
-| 11 | Local CSE (named-local value-ref subset) | 2 | (this iter) |
+| 11 | Local CSE (named-local value-ref subset) | 2 | 74551b35 |
+| 12 | LICM (loop-invariant named-local reuse) | 3 | (this iter) |
 | ✚ | -O3 float-return inline miscompile FIX | — | 40ca21cf |
 
 Open / blocked: Tier-1 peephole (emitter byte-identity risk); SCCP
@@ -81,8 +82,7 @@ Status: `[ ]` open · `[~]` claimed/in-progress · `[x]` landed (commit)
 
 ### Tier 3 — loops and whole function (most complex)
 
-- [ ] **Loop-invariant code motion** (Allen/Cocke; lazy code motion per
-      Knoop–Rüthing–Steffen as the refinement).
+- [x] **Loop-invariant code motion** (Allen/Cocke; named-local reuse across the back-edge) — extends `ast_cse_run`.
 - [ ] **Induction-variable strength reduction** (Allen–Cocke–Kennedy).
 - [x] **Tail-call elimination** (self-recursive tail-call → loop; `ast_tco_run`).
 - [x] **Jump threading / branch simplification** (empty-both / identical-arms if; `ast_jt_run`).
@@ -724,3 +724,29 @@ machinery, and at what risk — to decide whether to lift the scope.
     synthetic −12% as a universal number.
 - LICM (loop-invariant named-local reuse) subagent reports it fires;
   validating; harvest next.
+
+### 2026-07-10 — iteration 27 (LICM — loop-invariant named-local reuse)
+
+- **Loop-invariant code motion LANDED** (extended `ast_cse_run`) — the
+  named-local value-reference insight carried across the loop back-edge.
+  Key finding (corrects the earlier mental model): loops are captured NOT
+  as If+Jump but as a **dedicated AST_If with op 2=while / 3=for-cond /
+  4=do / 5=for-no-cond** and nested BasicBlock children; the back-edge is
+  materialized only at replay. That makes the loop body one fully-nested
+  subtree → the repeating statement set is exactly its descendants,
+  reliably scannable. If `foo = E` before a loop and E (register-pure)
+  reappears in the loop while foo and every operand of E are unwritten
+  across the whole loop subtree (no store/inc-dec, non-escaping so no
+  call/pointer write can reach them), the in-loop E retags to a load of
+  foo. Bails on any label-def in the loop (goto-into-loop). Codegen:
+  invariant multiply hoisted, 2 imul at -O0 → 1 at -O1.
+- The agent's tests didn't make the patch, so I authored the golden
+  myself: `licm.c` (while/for/do/nested eliminable + operand-mutated /
+  foo-reassign / compound-assign / call-operand must-not cases; g counter
+  proves the in-loop call is NOT hoisted). Byte-equal -O0..-O3
+  (chk=2286992590266 g=5). **1832 green**, fixpoint byte-identical.
+- **Ten tree passes** now (bfold, ident, cprop, cse, licm, dse, sccp,
+  tco, jt). Blocked-remaining: GVN global form + fresh-temp CSE/LICM
+  (persistent-slot desync); peephole/Sethi-Ullman/Chaitin-Briggs
+  (emitter); sin/exp (opt-in). The named-local value-ref trick has now
+  unblocked BOTH local CSE and LICM that the frontier had ruled out.

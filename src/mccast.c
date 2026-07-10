@@ -4197,6 +4197,79 @@ static void ast_cse_kill(AstArena *a, int off) {
 	}
 }
 
+static int ast_licm_folds;
+
+static int ast_licm_written(AstArena *a, AstLocal n, int off) {
+	if (n == AST_NONE)
+		return 0;
+	uint16_t k = ast_kind(a, n);
+	if (k == AST_Store && ast_ref_is_local_off(a, ast_child(a, n, 0), off))
+		return 1;
+	if (k == AST_Unary && ast_ref_is_local_off(a, ast_first_child(a, n), off))
+		return 1;
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		if (ast_licm_written(a, c, off))
+			return 1;
+	return 0;
+}
+
+static int ast_licm_operands_ok(AstArena *a, AstLocal loop, AstLocal e) {
+	if (e == AST_NONE)
+		return 1;
+	int off, tt;
+	if (ast_cprop_is_local(a, e, &off, &tt)) {
+		if (ast_cprop_escapes(a, off))
+			return 0;
+		if (ast_licm_written(a, loop, off))
+			return 0;
+	}
+	for (AstLocal c = ast_first_child(a, e); c != AST_NONE; c = ast_next_sib(a, c))
+		if (!ast_licm_operands_ok(a, loop, c))
+			return 0;
+	return 1;
+}
+
+static void ast_licm_subst(AstArena *a, AstLocal n, AstLocal e, AstLocal ref,
+													 int lval) {
+	if (n == AST_NONE)
+		return;
+	uint16_t k = ast_kind(a, n);
+	if (!lval && n != e && ast_ident_same(a, e, n)) {
+		ast_cse_setref(a, n, ref);
+		ast_licm_folds++;
+		return;
+	}
+	if (k == AST_Store) {
+		ast_licm_subst(a, ast_child(a, n, 0), e, ref, 1);
+		ast_licm_subst(a, ast_child(a, n, 1), e, ref, 0);
+		return;
+	}
+	int clval = k == AST_Unary && ast_cprop_lval_op(ast_op(a, n));
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		ast_licm_subst(a, c, e, ref, clval);
+}
+
+static int ast_licm_is_loop(AstArena *a, AstLocal s) {
+	if (ast_kind(a, s) != AST_If)
+		return 0;
+	int op = ast_op(a, s);
+	return op == 2 || op == 3 || op == 4 || op == 5;
+}
+
+static void ast_licm_at_loop(AstArena *a, AstLocal s) {
+	if (ast_sccp_has_label(a, s))
+		return;
+	for (int i = 0; i < ast_cse_n; i++) {
+		AstLocal e = ast_cse_expr[i], ref = ast_cse_ref[i];
+		int foff = ast_cse_off[i];
+		if (ast_cprop_escapes(a, foff) || ast_licm_written(a, s, foff))
+			continue;
+		if (!ast_licm_operands_ok(a, s, e))
+			continue;
+		ast_licm_subst(a, s, e, ref, 0);
+	}
+}
+
 static void ast_cse_block(AstArena *a, AstLocal bb) {
 	ast_cse_n = 0;
 	for (AstLocal s = ast_first_child(a, bb); s != AST_NONE; s = ast_next_sib(a, s)) {
@@ -4238,6 +4311,9 @@ static void ast_cse_block(AstArena *a, AstLocal bb) {
 			for (AstLocal c = ast_first_child(a, s); c != AST_NONE; c = ast_next_sib(a, c))
 				ast_cse_subst(a, c, 0);
 			ast_cse_n = 0;
+		} else if (ast_licm_is_loop(a, s)) {
+			ast_licm_at_loop(a, s);
+			ast_cse_n = 0;
 		} else {
 			ast_cse_n = 0;
 		}
@@ -4246,6 +4322,7 @@ static void ast_cse_block(AstArena *a, AstLocal bb) {
 
 static int ast_cse_run(AstArena *a) {
 	ast_cse_folds = 0;
+	ast_licm_folds = 0;
 	AstLocal nn = ast_count(a);
 	for (AstLocal n = 0; n < nn; n++)
 		if (ast_kind(a, n) == AST_BasicBlock)
@@ -4352,6 +4429,7 @@ void ast_func_end(Sym *sym) {
 			int idents = 0;
 			int cprops = 0;
 			int cses = 0;
+			int licms = 0;
 			int dses = 0;
 			int sccps = 0;
 			int jts = 0;
@@ -4385,6 +4463,7 @@ void ast_func_end(Sym *sym) {
 				idents = faithful && ast_templates_env ? ast_ident_run(ast_cur) : 0;
 				cprops = faithful && ast_templates_env ? ast_cprop_run(ast_cur) : 0;
 				cses = faithful && ast_templates_env ? ast_cse_run(ast_cur) : 0;
+				licms = faithful && ast_templates_env ? ast_licm_folds : 0;
 				dses = faithful && ast_templates_env ? ast_dse_run(ast_cur) : 0;
 				sccps = faithful && ast_templates_env ? ast_sccp_run(ast_cur) : 0;
 				jts = faithful && ast_templates_env ? ast_jt_run(ast_cur) : 0;
@@ -4393,6 +4472,7 @@ void ast_func_end(Sym *sym) {
 				int do_ident = idents > 0;
 				int do_cprop = cprops > 0;
 				int do_cse = cses > 0;
+				int do_licm = licms > 0;
 				int do_dse = dses > 0;
 				int do_sccp = sccps > 0;
 				int do_jt = jts > 0;
@@ -4410,10 +4490,11 @@ void ast_func_end(Sym *sym) {
 				int do_promote = faithful && !do_tco && ast_promote_env && ast_plan_promotion(ast_cur) > 0;
 				ast_no_callful_promo = 0;
 				if (faithful && !do_inline && !do_promote && !do_bfold && !do_ident &&
-						!do_cprop && !do_cse && !do_dse && !do_sccp && !do_jt && !do_tco)
+						!do_cprop && !do_cse && !do_licm && !do_dse && !do_sccp && !do_jt &&
+						!do_tco)
 					loc = saved_loc;
 				if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
-						do_cse || do_dse || do_sccp || do_jt || do_tco) {
+						do_cse || do_licm || do_dse || do_sccp || do_jt || do_tco) {
 					ind = ast_body_ind_sv;
 					rsym = 0;
 					if (ast_rsec)
@@ -4421,7 +4502,7 @@ void ast_func_end(Sym *sym) {
 					nocode_wanted = 0;
 					loc = saved_loc;
 					anon_sym = saved_anon;
-					ast_fconst_i = (do_bfold || do_ident || do_cprop || do_cse || do_dse || do_sccp || do_jt || do_tco || do_inline) ? ast_fconst_n : 0;
+					ast_fconst_i = (do_bfold || do_ident || do_cprop || do_cse || do_licm || do_dse || do_sccp || do_jt || do_tco || do_inline) ? ast_fconst_n : 0;
 					ast_locrec_i = 0;
 					ast_replaying = 1;
 					ast_rp_switch = NULL;
@@ -4486,6 +4567,8 @@ void ast_func_end(Sym *sym) {
 					fprintf(stderr, "[ast-cprop] %d %s\n", cprops, funcname);
 				if (cses)
 					fprintf(stderr, "[ast-cse] %d %s\n", cses, funcname);
+				if (licms)
+					fprintf(stderr, "[ast-licm] %d %s\n", licms, funcname);
 				if (dses)
 					fprintf(stderr, "[ast-dse] %d %s\n", dses, funcname);
 				if (sccps)
