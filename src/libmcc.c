@@ -2455,11 +2455,17 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) {
 			break;
 		case MCC_OPTION_O:
 			s->optimize_size = 0;
+			s->optimize_search_seconds = 0;
 			if (optarg[0] == '\0')
 				s->optimize = 1;
-			else if (isnum(optarg[0]))
-				s->optimize = optarg[0] - '0';
-			else if (!strcmp(optarg, "s") || !strcmp(optarg, "z")) {
+			else if (isnum(optarg[0])) {
+				unsigned lvl = (unsigned)atoi(optarg);
+				if (lvl > 3) {
+					s->optimize_search_seconds = lvl;
+					s->optimize = 3;
+				} else
+					s->optimize = (unsigned char)lvl;
+			} else if (!strcmp(optarg, "s") || !strcmp(optarg, "z")) {
 				s->optimize = 2;
 				s->optimize_size = 1;
 			} else if (!strcmp(optarg, "g"))

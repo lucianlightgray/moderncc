@@ -595,6 +595,7 @@ struct MCCState {
 	unsigned char filetype;
 	unsigned char optimize;
 	unsigned char optimize_size;
+	unsigned optimize_search_seconds;
 	signed char pie;
 	unsigned char pic;
 	unsigned char option_pthread;

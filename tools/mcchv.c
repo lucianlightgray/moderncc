@@ -16,6 +16,8 @@ int main(void) {
 #include <threads.h>
 #include <stdatomic.h>
 #include <time.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #define HV_BLOCK 64
 #define HV_NBLOCKS (1u << 16)
@@ -137,40 +139,56 @@ static int hv_leaf_cmp(const void *a, const void *b) {
 	return x->hash < y->hash ? -1 : x->hash > y->hash ? 1 : 0;
 }
 
+static size_t hv_emit_one(char *src, size_t n, size_t cap, const HvLeaf *v) {
+	uintptr_t pat = (uintptr_t)(hv_store + (size_t)v->id * HV_BLOCK);
+	return n + (size_t)snprintf(src + n, cap - n,
+															"if (h == 0x%" PRIx64 "ull && !hv_memcmp(blk, (const void *)%" PRIuPTR "ul, %d)) return %" PRIu32 "u; ",
+															v->hash, pat, HV_BLOCK, v->id);
+}
+
 static size_t hv_emit_tree(char *src, size_t n, size_t cap,
-													 const HvLeaf *v, uint32_t lo, uint32_t hi) {
+													 const HvLeaf *v, uint32_t lo, uint32_t hi,
+													 uint32_t leaf_cut) {
 	if (lo >= hi)
 		return n + (size_t)snprintf(src + n, cap - n,
 																"return hv_baseline_lookup(blk, h);");
-	uint32_t mid = lo + (hi - lo) / 2;
-	if (hi - lo == 1) {
-		uintptr_t pat = (uintptr_t)(hv_store + (size_t)v[mid].id * HV_BLOCK);
+	if (hi - lo <= leaf_cut) {
+		for (uint32_t i = lo; i < hi; i++)
+			n = hv_emit_one(src, n, cap, &v[i]);
 		return n + (size_t)snprintf(src + n, cap - n,
-																"if (h == 0x%" PRIx64 "ull && !hv_memcmp(blk, (const void *)%" PRIuPTR "ul, %d)) return %" PRIu32 "u; "
-																"return hv_baseline_lookup(blk, h);",
-																v[mid].hash, pat, HV_BLOCK, v[mid].id);
+																"return hv_baseline_lookup(blk, h);");
 	}
+	uint32_t mid = lo + (hi - lo) / 2;
 	n += (size_t)snprintf(src + n, cap - n, "if (h < 0x%" PRIx64 "ull) { ",
 												v[mid].hash);
-	n = hv_emit_tree(src, n, cap, v, lo, mid);
+	n = hv_emit_tree(src, n, cap, v, lo, mid, leaf_cut);
 	n += (size_t)snprintf(src + n, cap - n, " } else { ");
-	n = hv_emit_tree(src, n, cap, v, mid, hi);
+	n = hv_emit_tree(src, n, cap, v, mid, hi, leaf_cut);
 	n += (size_t)snprintf(src + n, cap - n, " }");
 	return n;
 }
 
-static HvKernel hv_jit_compile(const HvLeaf *leaves, uint32_t nleaf) {
-	size_t cap = (size_t)nleaf * 200 + 65536;
+static HvKernel hv_jit_build(const HvLeaf *leaves, uint32_t nleaf,
+														 const HvLeaf *hot, uint32_t nhot,
+														 uint32_t leaf_cut, size_t *codebytes,
+														 MCCState **st_out) {
+	size_t cap = (size_t)nleaf * 220 + (size_t)nhot * 220 + 65536;
 	char *src = malloc(cap);
 	size_t n = 0;
 	if (!src)
 		return NULL;
+	if (leaf_cut < 1)
+		leaf_cut = 1;
 	n += (size_t)snprintf(src + n, cap - n,
 												"extern unsigned hv_baseline_lookup(const unsigned char *, unsigned long long);\n"
 												"extern int hv_memcmp(const void *, const void *, unsigned long);\n"
 												"unsigned hv_kernel_jit(const unsigned char *blk, unsigned long long h) {\n");
-	n = hv_emit_tree(src, n, cap, leaves, 0, nleaf);
+	for (uint32_t i = 0; i < nhot; i++)
+		n = hv_emit_one(src, n, cap, &hot[i]);
+	n = hv_emit_tree(src, n, cap, leaves, 0, nleaf, leaf_cut);
 	n += (size_t)snprintf(src + n, cap - n, "\n}\n");
+	if (codebytes)
+		*codebytes = n;
 
 	MCCState *s = mcc_new();
 	if (!s) {
@@ -195,8 +213,12 @@ static HvKernel hv_jit_compile(const HvLeaf *leaves, uint32_t nleaf) {
 		mcc_delete(s);
 		return NULL;
 	}
-	if (hv_nstates < (int)(sizeof hv_states / sizeof hv_states[0]))
+	if (st_out)
+		*st_out = s;
+	else if (hv_nstates < (int)(sizeof hv_states / sizeof hv_states[0]))
 		hv_states[hv_nstates++] = s;
+	else
+		mcc_delete(s);
 	return fn;
 }
 
@@ -218,7 +240,7 @@ static int hv_optimizer(void *arg) {
 				}
 				mtx_unlock(&hv_mtx);
 				qsort(leaves, np, sizeof *leaves, hv_leaf_cmp);
-				HvKernel fn = hv_jit_compile(leaves, np);
+				HvKernel fn = hv_jit_build(leaves, np, NULL, 0, 1, NULL, NULL);
 				free(leaves);
 				if (fn) {
 					atomic_store(&hv_kernel, fn);
@@ -299,9 +321,172 @@ static double hv_welch_t(const double *a, int na, const double *b, int nb) {
 	return (ma - mb) / se;
 }
 
+static uint64_t hv_intention_hash(void) {
+	uint64_t h = 0xcbf29ce484222325u;
+	for (uint32_t i = 0; i < hv_npat; i++) {
+		h ^= hv_perm[i].hash;
+		h *= 0x100000001b3u;
+		h ^= (uint64_t)hv_perm[i].weight;
+		h *= 0x100000001b3u;
+	}
+	return h;
+}
+
+static void hv_cache_path(char *buf, int cap, uint64_t key) {
+	const char *env = getenv("MCCHV_CACHE_DIR");
+	const char *xdg = getenv("XDG_CACHE_HOME");
+	const char *home = getenv("HOME");
+	char dir[3072];
+	if (env && env[0])
+		snprintf(dir, sizeof dir, "%s", env);
+	else if (xdg && xdg[0])
+		snprintf(dir, sizeof dir, "%s/mcc", xdg);
+	else if (home && home[0])
+		snprintf(dir, sizeof dir, "%s/.cache/mcc", home);
+	else
+		snprintf(dir, sizeof dir, "/tmp/mcc-cache");
+	mkdir(dir, 0755);
+	snprintf(buf, cap, "%s/mcchv-%016" PRIx64 ".cache", dir, key);
+}
+
+typedef struct {
+	uint64_t magic;
+	uint64_t intention;
+	uint32_t nhot;
+	uint32_t leaf_cut;
+	double cpu_ms;
+	size_t code_bytes;
+	uintmax_t candidates;
+} HvCacheEntry;
+
+static long hv_cache_write(uint64_t key, const HvCacheEntry *e) {
+	char path[4096];
+	FILE *f;
+	long sz = -1;
+	hv_cache_path(path, sizeof path, key);
+	f = fopen(path, "wb");
+	if (!f)
+		return -1;
+	if (fwrite(e, sizeof *e, 1, f) == 1) {
+		fflush(f);
+		fseek(f, 0, SEEK_END);
+		sz = ftell(f);
+	}
+	fclose(f);
+	return sz;
+}
+
+static int hv_cache_read(uint64_t key, HvCacheEntry *e) {
+	char path[4096];
+	FILE *f;
+	int ok = 0;
+	hv_cache_path(path, sizeof path, key);
+	f = fopen(path, "rb");
+	if (!f)
+		return 0;
+	ok = fread(e, sizeof *e, 1, f) == 1 && e->magic == 0x6d6363687643u &&
+			 e->intention == key;
+	fclose(f);
+	return ok;
+}
+
+static double hv_measure(HvKernel fn, int workers, int reps) {
+	HvKernel prev = atomic_load(&hv_kernel);
+	double best = 1e300;
+	uint32_t bad = 0;
+	atomic_store(&hv_kernel, fn);
+	for (int r = 0; r < reps; r++) {
+		double ms = hv_sweep(workers, &bad);
+		if (bad) {
+			atomic_store(&hv_kernel, prev);
+			return -1;
+		}
+		if (ms < best)
+			best = ms;
+	}
+	atomic_store(&hv_kernel, prev);
+	return best;
+}
+
+static uintmax_t hv_search(double seconds, int workers, uint32_t *best_nhot,
+													 uint32_t *best_cut, double *best_cpu,
+													 size_t *best_mem, double *base_cpu,
+													 size_t *base_mem) {
+	uint32_t np = hv_npat;
+	HvLeaf *leaves = malloc((size_t)np * sizeof *leaves);
+	HvLeaf hot[64];
+	uint32_t nhot_max = np < 64 ? np : 64;
+	if (!leaves)
+		return 0;
+	for (uint32_t i = 0; i < np; i++) {
+		leaves[i].hash = hv_perm[i].hash;
+		leaves[i].id = hv_perm[i].id;
+		if (i < nhot_max) {
+			hot[i].hash = hv_perm[i].hash;
+			hot[i].id = hv_perm[i].id;
+		}
+	}
+	qsort(leaves, np, sizeof *leaves, hv_leaf_cmp);
+
+	size_t bmem = 0;
+	MCCState *bst = NULL;
+	HvKernel bfn = hv_jit_build(leaves, np, NULL, 0, 1, &bmem, &bst);
+	double bcpu = bfn ? hv_measure(bfn, workers, 3) : -1;
+	*base_cpu = bcpu;
+	*base_mem = bmem;
+	*best_nhot = 0;
+	*best_cut = 1;
+	*best_cpu = bcpu;
+	*best_mem = bmem;
+	HvKernel winner = bfn;
+	MCCState *winner_st = bst;
+
+	uint64_t deadline = hv_now_ns() + (uint64_t)(seconds * 1e9);
+	uintmax_t cand = 0;
+	for (; hv_now_ns() < deadline; cand++) {
+		uint32_t nhot = (uint32_t)(cand % (nhot_max + 1));
+		uint32_t cut = 1 + (uint32_t)((cand / (nhot_max + 1)) % 8);
+		size_t mem = 0;
+		MCCState *st = NULL;
+		HvKernel fn = hv_jit_build(leaves, np, hot, nhot, cut, &mem, &st);
+		if (!fn)
+			continue;
+		double cpu = hv_measure(fn, workers, 3);
+		if (cpu < 0) {
+			mcc_delete(st);
+			continue;
+		}
+		int better = cpu < *best_cpu && mem <= *best_mem;
+		if (!better && cpu <= *best_cpu && mem < *best_mem)
+			better = 1;
+		if (better) {
+			if (winner_st && winner_st != bst)
+				mcc_delete(winner_st);
+			winner = fn;
+			winner_st = st;
+			*best_nhot = nhot;
+			*best_cut = cut;
+			*best_cpu = cpu;
+			*best_mem = mem;
+		} else {
+			mcc_delete(st);
+		}
+	}
+	if (winner)
+		atomic_store(&hv_kernel, winner);
+	if (winner_st && hv_nstates < (int)(sizeof hv_states / sizeof hv_states[0]))
+		hv_states[hv_nstates++] = winner_st;
+	if (bst && bst != winner_st &&
+			hv_nstates < (int)(sizeof hv_states / sizeof hv_states[0]))
+		hv_states[hv_nstates++] = bst;
+	free(leaves);
+	return cand;
+}
+
 int main(int argc, char **argv) {
 	uint64_t seed = 42;
 	int passes = 6, workers = 4;
+	double search_seconds = 0;
 
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "--seed") && i + 1 < argc) {
@@ -310,6 +495,12 @@ int main(int argc, char **argv) {
 			passes = atoi(argv[++i]);
 		} else if (!strcmp(argv[i], "--workers") && i + 1 < argc) {
 			workers = atoi(argv[++i]);
+		} else if (!strcmp(argv[i], "--seconds") && i + 1 < argc) {
+			search_seconds = atof(argv[++i]);
+		} else if (!strncmp(argv[i], "-O", 2)) {
+			int lvl = atoi(argv[i] + 2);
+			if (lvl > 3)
+				search_seconds = lvl > 28800 ? 28800 : lvl;
 		} else {
 			size_t l = strlen(hv_mccopts);
 			snprintf(hv_mccopts + l, sizeof hv_mccopts - l, "%s\"%s\"",
@@ -428,6 +619,28 @@ int main(int argc, char **argv) {
 	printf("hv: baseline %.2f±%.2fms  jit %.2f±%.2fms  speedup %.2fx  welch-t %.2f (%s)\n",
 				 bm, bs, jm, js, jm > 0 ? bm / jm : 0, t,
 				 t > 2.2 ? "significant" : "not significant");
+
+	if (search_seconds > 0) {
+		uint32_t bnhot = 0, bcut = 1;
+		double bcpu = 0, base_cpu = 0;
+		size_t bmem = 0, base_mem = 0;
+		uint64_t key = hv_intention_hash();
+		HvCacheEntry prev;
+		int warm = hv_cache_read(key, &prev);
+		printf("hv: -O search budget %.0fs, intention 0x%016" PRIx64 " (%s)\n",
+					 search_seconds, key,
+					 warm ? "warm cache hit" : "cold — searching from scratch");
+		uintmax_t n = hv_search(search_seconds, workers, &bnhot, &bcut, &bcpu,
+														&bmem, &base_cpu, &base_mem);
+		HvCacheEntry e = {0x6d6363687643u, key, bnhot, bcut, bcpu, bmem, n};
+		long csz = hv_cache_write(key, &e);
+		printf("hv: searched %ju candidates over 0..UINTMAX; best nhot=%u leaf_cut=%u\n",
+					 n, bnhot, bcut);
+		printf("hv:   cpu  %.3fms -> %.3fms (%.2fx)   mem(code) %zuB -> %zuB (%+.1f%%)\n",
+					 base_cpu, bcpu, bcpu > 0 ? base_cpu / bcpu : 0, base_mem, bmem,
+					 base_mem ? 100.0 * ((double)bmem - base_mem) / base_mem : 0);
+		printf("hv:   cache file %ld bytes at intention key\n", csz);
+	}
 
 	for (int i = 0; i < hv_nstates; i++)
 		mcc_delete(hv_states[i]);

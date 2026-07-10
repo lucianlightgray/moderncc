@@ -123,3 +123,37 @@ real without passing it.
   hypervisor's cross-run warm-start memory.
 - Tier-1 algebraic-identity subagent still in flight; harvest next
   iteration.
+
+### 2026-07-09 — iteration 5 (-O4+ = timed superoptimizer search)
+
+- **`-O<N>` for N≥4 is now a seconds budget** (capped at 28800s = 8h,
+  the documented max) for a superoptimizer search, per request. The
+  driver accepts any `-O<N>` (multi-digit; N≥4 → codegen clamps to -O3,
+  `s->optimize_search_seconds = N`). The search itself lives in the
+  hypervisor `tools/mcchv.c` — the "-run JIT optimizer pool" — where a
+  `for (uintmax_t cand = 0; ...; cand++)` loops over the candidate space
+  0..UINTMAX, each `cand` parameterizing a JIT kernel
+  (nhot hot-front-checks + binary-tree leaf_cut), measures **CPU** (best
+  sweep ms) and **memory** (emitted code bytes), and keeps a candidate
+  only when it **Pareto-dominates** the previous best (better on one
+  axis, no worse on the other) — "more efficient as told by both memory
+  and cpu". Runs the full budget, then persists a cache entry keyed by
+  the **AST/pattern intention hash** (§18) and warm-hits it next run.
+- **Cache-file size is measured and reported** as a runtime-resource
+  metric (48 B here — the compact best-config record), never gating.
+- Bigger budget → deeper search → better Pareto result. Benchmark
+  (seed 7, 4 workers, block sweep; baseline = pure binary tree):
+
+  | -O | budget | cands | best (nhot,cut) | cpu base→best | mem base→best |
+  |----|--------|-------|-----------------|---------------|---------------|
+  | 4  | 4s     | 82    | (0, 2)          | 1.44→1.32ms 1.09× | 1.82→1.50 MB −17.7% |
+  | 6  | 6s     | 129   | (4, 2)          | 1.35→1.33ms 1.01× | 1.82→1.50 MB −17.7% |
+  | 8  | 8s     | 179   | (0, 3)          | 1.43→1.31ms 1.09× | 1.82→1.35 MB −25.9% |
+  | 12 | 12s    | 276   | (32, 4)         | 1.34→1.29ms 1.04× | 1.82→1.34 MB −26.4% |
+  | 16 | 16s    | 391   | (16, 6)         | 1.33→1.28ms 1.04× | 1.82→1.19 MB −34.7% |
+
+  Every row is a genuine Pareto win over the tree baseline (faster AND
+  smaller). Candidate throughput ≈ 20–24/s (each JITs + 3 timed sweeps).
+  ctest `hypervisor-search` covers the path (1.2s budget); full suite
+  1790 green, self-host fixpoint holds.
+- Tier-1 algebraic-identity subagent still in flight.
