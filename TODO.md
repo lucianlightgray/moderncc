@@ -741,8 +741,11 @@ inline) while exploring orderings/combinations, pruned to M. It's a strict
 superset: `M=1` = greedy sequential; `M→∞` over all orderings =
 oracle-gated cross-product. Chosen over pure cross-product (2^strats ×
 orderings, budget spent on bookkeeping) and over pure greedy (phase-order
-blind). M scales with the §31 round budget — deeper rounds widen the beam
-and lengthen the pipeline.
+blind). **M is adaptive to observed synergy**: start `M=1` (greedy) and
+widen the beam only when the round's 2nd-best partial pipeline would have
+overtaken the winner under a different continuation — i.e. only when
+ordering/composition demonstrably matters — so beam width is spent exactly
+where compounding pays, not blindly with the budget.
 
 **Save-checkpoint-and-stop interrupt.** The `-O4+` search must stop within
 ~1-2 s of a kill signal without waiting on any in-flight work, so recovery
