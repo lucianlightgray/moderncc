@@ -805,6 +805,18 @@ against constants/enum labels) — a finite, enumerable key domain the oracle
 proves exhaustively. Boolean bundles and range/interval quantization are
 later extensions, not the first cut.
 
+**Finding (2026-07-10, from a detection prototype).** A short-circuit
+`if (x==a || x==b || x==c)` is **lowered to control flow (nested `AST_If`
+branches on the same key), NOT an `AST_Binary` `TOK_LOR` node** — only the
+*value* form (`int r = a||b`) yields a binary node. So §30 detection can't
+walk expression nodes; it must analyze the `AST_If` chain: an `AST_If`
+whose condition is `key==const`, whose else-branch is another such
+`AST_If` on a structurally-equal key, etc. That control-flow walk (plus the
+`switch` form) is the real detection half of §30, and building the bit-mask
+replacement then needs new multi-node AST construction (the pattern no
+current pass uses). Both are why §30 is a focused effort, not a quick
+expression-pass extension.
+
 ## 31. Strategy-portfolio scheduler — the governing search architecture (large)
 
 Unifies every optimizer methodology under one meta-search. Each methodology
