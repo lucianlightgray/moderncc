@@ -123,6 +123,54 @@ static int welch_sig(const double *a, int na, const double *b, int nb,
 	return 1;
 }
 
+#define BOOT_B 2000
+#define BOOT_SEED 0x9e3779b9u
+
+static uint32_t boot_xs32(uint32_t *s) {
+	uint32_t x = *s;
+	x ^= x << 13;
+	x ^= x >> 17;
+	x ^= x << 5;
+	*s = x;
+	return x;
+}
+
+static int cmp_double(const void *pa, const void *pb) {
+	double a = *(const double *)pa, b = *(const double *)pb;
+	return a < b ? -1 : a > b ? 1 : 0;
+}
+
+static int boot_ci(const double *x, int n, double *lo, double *hi) {
+	static double means[BOOT_B];
+	uint32_t s = BOOT_SEED;
+	int b, i;
+	if (n < 2)
+		return 0;
+	for (b = 0; b < BOOT_B; b++) {
+		double sum = 0;
+		for (i = 0; i < n; i++)
+			sum += x[boot_xs32(&s) % (uint32_t)n];
+		means[b] = sum / n;
+	}
+	qsort(means, BOOT_B, sizeof *means, cmp_double);
+	*lo = means[(int)(0.025 * BOOT_B)];
+	*hi = means[(int)(0.975 * BOOT_B)];
+	return 1;
+}
+
+static double cohens_d(const double *a, int na, const double *b, int nb,
+											 const char **label) {
+	double va = vec_var(a, na), vb = vec_var(b, nb);
+	double sp2 = ((na - 1) * va + (nb - 1) * vb) / (na + nb - 2);
+	double sp = sqrt(sp2);
+	double d = sp > 0 ? (vec_mean(a, na) - vec_mean(b, nb)) / sp : 0;
+	double ad = fabs(d);
+	*label = ad < 0.2 ? "negligible" : ad < 0.5 ? "small"
+										: ad < 0.8	? "medium"
+																: "large";
+	return d;
+}
+
 static struct meas measure_once(const char *const *argv) {
 	struct meas m;
 	unsigned t0;
@@ -374,7 +422,8 @@ static void vs_ref(char *b, int n, const struct compiler *ccs, int nccs,
 	for (j = i + 1; j < nccs; j++) {
 		const char *jg = ccs[j].opt ? ccs[j].opt + 1 : "";
 		struct cell *rc = &cells[j];
-		double rmean;
+		const char *dlab = "";
+		double rmean, d;
 		int sig;
 		if (strcmp(jg, og))
 			return;
@@ -382,12 +431,14 @@ static void vs_ref(char *b, int n, const struct compiler *ccs, int nccs,
 			continue;
 		if (!rc->m.ok || !rc->nwall || (rmean = vec_mean(rc->wall_s, rc->nwall)) <= 0)
 			return;
-		snprintf(b, n, "%+.1f%% vs %s%s", (wmean - rmean) * 100.0 / rmean,
-						 ccs[j].key,
+		d = cohens_d(cells[i].wall_s, cells[i].nwall, rc->wall_s, rc->nwall, &dlab);
+		snprintf(b, n, "%+.1f%% vs %s%s  d=%+.2f %s",
+						 (wmean - rmean) * 100.0 / rmean, ccs[j].key,
 						 welch_sig(cells[i].wall_s, cells[i].nwall, rc->wall_s, rc->nwall,
 											 &sig)
 								 ? (sig ? " *" : " ns")
-								 : "");
+								 : "",
+						 (cells[i].nwall > 1 && rc->nwall > 1) ? d : 0.0, dlab);
 		return;
 	}
 }
@@ -395,7 +446,7 @@ static void vs_ref(char *b, int n, const struct compiler *ccs, int nccs,
 static void write_table(FILE *f, const struct compiler *ccs, int nccs,
 												struct workload *wl, int repeats) {
 	int i;
-	char cpu[16], csd[16], wall[16], wsd[16], vs[64];
+	char cpu[16], csd[16], wall[16], wsd[16], ci[32], vs[96];
 	struct cell *cells = calloc((size_t)nccs, sizeof *cells);
 	if (!cells)
 		return;
@@ -406,9 +457,9 @@ static void write_table(FILE *f, const struct compiler *ccs, int nccs,
 						wl->key, wl->lines, wl->funcs, repeats);
 	else
 		fprintf(f, "\nWorkload: %s  (n=%d runs)\n", wl->key, repeats);
-	fprintf(f, "  %-8s %8s %7s %10s %8s %9s %8s %7s  %s\n",
+	fprintf(f, "  %-8s %8s %7s %10s %8s %9s %8s %7s %-17s  %s\n",
 					"compiler", "cpu(s)", "sd", "funcs/s", "obj(KB)", "peak(MB)",
-					"wall(s)", "sd", "vs-ref");
+					"wall(s)", "sd", "95%CI(ms)", "vs-ref");
 	for (i = 0; i < nccs; i++) {
 		struct cell *c = &cells[i];
 		const char *pg = i ? (ccs[i - 1].opt ? ccs[i - 1].opt + 1 : "") : NULL;
@@ -417,8 +468,8 @@ static void write_table(FILE *f, const struct compiler *ccs, int nccs,
 		if (!pg || strcmp(pg, og))
 			fprintf(f, "\n  [%s]\n", ccs[i].opt ? ccs[i].opt : "default");
 		if (!c->m.ok) {
-			fprintf(f, "  %-8s %8s %7s %10s %8s %9s %8s %7s\n",
-							ccs[i].key, "n/a", "", "n/a", "n/a", "n/a", "n/a", "");
+			fprintf(f, "  %-8s %8s %7s %10s %8s %9s %8s %7s %-17s\n",
+							ccs[i].key, "n/a", "", "n/a", "n/a", "n/a", "n/a", "", "n/a");
 			continue;
 		}
 		wmean = vec_mean(c->wall_s, c->nwall);
@@ -427,6 +478,13 @@ static void write_table(FILE *f, const struct compiler *ccs, int nccs,
 		fmt_stat(wall, sizeof wall, wmean, c->nwall > 0);
 		fmt_stat(wsd, sizeof wsd, sqrt(vec_var(c->wall_s, c->nwall)),
 						 c->nwall > 1);
+		{
+			double lo, hi;
+			if (boot_ci(c->wall_s, c->nwall, &lo, &hi))
+				snprintf(ci, sizeof ci, "[%.1f,%.1f]", lo * 1000.0, hi * 1000.0);
+			else
+				snprintf(ci, sizeof ci, "%s", "n/a");
+		}
 		vs_ref(vs, sizeof vs, ccs, nccs, cells, i);
 		fprintf(f, "  %-8s %8s %7s ", ccs[i].key, cpu, csd);
 		if (wl->have_counts && wl->funcs && wmean > 0)
@@ -441,7 +499,7 @@ static void write_table(FILE *f, const struct compiler *ccs, int nccs,
 			fprintf(f, "%9.1f ", (double)c->m.peak_kb / 1024.0);
 		else
 			fprintf(f, "%9s ", "n/a");
-		fprintf(f, "%8s %7s  %s\n", wall, wsd, vs);
+		fprintf(f, "%8s %7s %-17s  %s\n", wall, wsd, ci, vs);
 	}
 	free(cells);
 }
@@ -1052,12 +1110,17 @@ int main(int argc, char **argv) {
 	}
 	fprintf(f, "\nStatistics: cpu(s)/wall(s) are sample means over n=%d runs per"
 						 " cell; sd is the sample standard deviation\n"
+						 "  95%%CI(ms): percentile bootstrap 95%% confidence interval of the"
+						 " mean wall time (B=%d resamples with replacement, deterministic"
+						 " xorshift RNG, distribution-free)\n"
 						 "  vs-ref: wall-time delta of each mcc row against the first"
 						 " reference compiler row in the same -O group and workload\n"
 						 "  * = significant, ns = not significant: Welch's t-test,"
 						 " two-tailed alpha=0.05, Welch-Satterthwaite df floored into"
-						 " a critical-value table\n",
-					repeats);
+						 " a critical-value table\n"
+						 "  d = Cohen's d effect size vs the same reference (pooled SD),"
+						 " labelled negligible/small/medium/large at |d|<0.2/0.5/0.8\n",
+					repeats, BOOT_B);
 	if (junit)
 		write_tests(f, junit);
 	fclose(f);

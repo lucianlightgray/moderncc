@@ -88,7 +88,7 @@ Grounded in actual sources this iteration (prior entries were from memory):
       these without breaking `-O0` vs `-O1` output equality. Correctly
       rounded is not required (unlike sqrt); a fixed, documented
       max-ulp minimax poly is deterministic, which is the actual gate.
-- [ ] **Upgrade the benchmark protocol beyond a single Welch's t** with
+- [x] **Upgrade the benchmark protocol beyond a single Welch's t** (bootstrap CI + Cohen's d, this iter) with
       researched inferential methods (see the taxonomy below): **bootstrap
       confidence intervals** (resampling; distribution-free), **Cohen's d
       effect size** (is the win meaningful, not just significant), and a
@@ -358,3 +358,27 @@ dlmf.nist.gov/3.11 (minimax polynomial approximations).
   identical on neutral inputs.
 - Two subagents landed this cycle (TPE last iter, this fix); the
   bench bootstrap-CI/Cohen's-d stats upgrade is still in flight.
+
+### 2026-07-10 — iteration 12 (bench protocol: bootstrap CI + Cohen's d)
+
+- **Researched inferential methods added to mccbench** (tools/bench.c),
+  applying the Wikipedia statistical-analysis taxonomy:
+  - **Percentile bootstrap 95% CI** of the mean wall time — B=2000
+    resamples with replacement, deterministic xorshift RNG
+    (distribution-free; the taxonomy's "bootstrapping/resampling → CI").
+  - **Cohen's d** effect size for each mcc row vs the first reference
+    compiler (pooled SD), with negligible/small/medium/large labels —
+    "is the win meaningful, not just significant", complementing the
+    existing Welch's t p-value.
+  Footer names both. Reuses the per-cell samples already collected; no
+  new timing runs. mccbench builds clean under MCC_BENCH=ON; the tool is
+  off in the default preset so the 1802-test suite is unaffected.
+- The bench now reports descriptive (mean±stdev, min) + three
+  inferential views (Welch's t, bootstrap CI, Cohen's d) — frequentist
+  significance, distribution-free interval, and effect magnitude.
+- Campaign scoreboard: 2 done → now 6 landed algorithms/upgrades this
+  session (builtin folding, algebraic identities, local const-prop, TPE
+  Bayesian search, the -O4+ superoptimizer + warm cache, bench stats),
+  plus the -O3 inline miscompile fix. Open: peephole, SCCP, Kildall
+  DCE, CSE/GVN (blocked on an AST value-ref node), Sethi–Ullman, the
+  Tier-3 loop set, and the researched Remez/CORDIC sin/exp evaluator.
