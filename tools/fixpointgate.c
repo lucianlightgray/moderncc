@@ -245,7 +245,7 @@ static int compile_stage(const char *mcc, const char *builddir, const char *root
 int main(int argc, char **argv) {
 	const char *builddir = argc > 1 ? argv[1] : "cmake-debug";
 	char json[4096], mcc[4096], root[4096];
-	char stage2[4096], stage3[4096], stage4[4096];
+	char stage2[4096], stage3[4096], stage4[4096], fixed[4096];
 	Vec defs = {0};
 	int rc;
 
@@ -257,12 +257,19 @@ int main(int argc, char **argv) {
 	snprintf(stage2, sizeof stage2, "%s/fixpoint-stage2", builddir);
 	snprintf(stage3, sizeof stage3, "%s/fixpoint-stage3", builddir);
 	snprintf(stage4, sizeof stage4, "%s/fixpoint-stage4", builddir);
+	snprintf(fixed, sizeof fixed, "%s/fixpoint-out", builddir);
 
-	rc = compile_stage(mcc, builddir, root, stage2, &defs);
+	rc = compile_stage(mcc, builddir, root, fixed, &defs);
+	if (!rc && rename(fixed, stage2))
+		rc = -1;
 	if (!rc)
-		rc = compile_stage(stage2, builddir, root, stage3, &defs);
+		rc = compile_stage(stage2, builddir, root, fixed, &defs);
+	if (!rc && rename(fixed, stage3))
+		rc = -1;
 	if (!rc)
-		rc = compile_stage(stage3, builddir, root, stage4, &defs);
+		rc = compile_stage(stage3, builddir, root, fixed, &defs);
+	if (!rc && rename(fixed, stage4))
+		rc = -1;
 	if (rc) {
 		fprintf(stderr, "fixpointgate: self-host compile failed (rc=%d)\n", rc);
 		return 1;

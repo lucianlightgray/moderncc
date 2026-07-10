@@ -6,7 +6,8 @@
 #include <math.h>
 #include "libmcc.h"
 
-#ifdef __STDC_NO_THREADS__
+#if defined(__STDC_NO_THREADS__) || \
+		(defined(__has_include) && !__has_include(<threads.h>))
 int main(void) {
 	printf("mcchv: C11 threads unavailable; skipping\n");
 	return 77;
