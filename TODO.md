@@ -438,11 +438,17 @@ Implementation (decided 2026-07-10):
   (the key carries the version), so brittleness across builds is harmless.
   Kept current incrementally (see below), so an interrupt/crash loses at
   most the in-flight eval, never committed progress.
-- **Frontier = monotonic seed cursor.** Persist `next_seed` + the best
-  `{seed, cpu_ns, peak_kb, size}`. Resume linearly scans `next_seed..` for
-  this run's budget. (Extends to a TPE observation list once §25 lands.)
+- **Frontier = two-phase coarse-to-fine cursor.** The per-strategy search
+  is macro-then-micro (§31): a greedy binary divide-and-conquer narrows the
+  strategy's `[MIN,MAX)` range (probe lo/mid/hi, keep the better half) until
+  the range is ≤ the micro-threshold (~64), then an exhaustive sweep of that
+  range. Persist the phase, the surviving `[lo,hi)` macro bounds, the micro
+  sweep cursor, and the best `{seed, cpu_ns, peak_kb, size}` — so a resumed
+  run continues mid-narrowing or mid-sweep exactly where it stopped.
 - **Write protocol = lock + durable-atomic + A/B keep-best.** Hold an
-  advisory lock on the entry, re-read the current record (B), and write
+  advisory lock on the entry (`host_lock`: POSIX `flock(LOCK_EX)`, Windows
+  `LockFileEx`; auto-released on close/crash, no stale locks), re-read the
+  current record (B), and write
   back only the better of B vs this run's result (A) by §31's lexicographic
   comparator (faster → memory → size; non-runnable TUs skip the cpu axis);
   on a full objective tie keep the larger `next_seed`. Commit durably:
@@ -534,6 +540,24 @@ it, and let the measured cpu+memory decide — the original `-O<N>` intent
 TUs transparently keep the size objective. Reuse §18's JIT-result cache.
 Builds on §22 + §18.
 
+Decided 2026-07-10:
+- **`--jit-functions=<sym,...>` (default `main`)** selects what to
+  benchmark/optimize. JIT sites attach at the **lowest common ancestor**
+  (dominator) of the listed symbols in the static call graph
+  (`main,child1,child2`→ main; `child1,child2`→ their shared parent);
+  functions in disjoint call trees get one site per independent root;
+  indirect/recursive calls are opaque, so attach at the nearest known
+  ancestor. When neither a `main` nor a named function is runnable the TU
+  falls back to the size/memory objective.
+- **`-g` hot-value cache** (debug builds): instrument `-g` builds to log
+  function-argument and branch/switch **key values with frequencies** into
+  a value cache stored beside the §21 optimization cache (same
+  `host_cache_dir()`). The search then sets each strategy's `MIN..MAX` to
+  the observed hot range and **frequency-weights** its probe order —
+  optimizing for the values that actually run. Feeds §29 (Convert ranges)
+  and §30 (bit-flag bucket quantization) directly. Absent the cache, the
+  search uses default full ranges.
+
 ## 26. `--embed-jit` runtime self-optimizer (largest — run LAST)
 
 Make `--embed-jit` (default on, flag plumbed at `f959078e`) do its runtime
@@ -564,6 +588,10 @@ permutation exhaustion or a wall-clock cap**.
 - Resumes across program runs from the §21 checkpoint shipped inside the
   binary, so a long-lived or repeatedly-run program converges over time
   rather than re-searching cold; the cap applies per program run.
+- **Sites = the `--jit-functions` LCA set (§25).** The runtime workers
+  embed at the same lowest-common-ancestor sites `--jit-functions` selects
+  (default `main`), so the compile-time and runtime optimizers target the
+  same code.
 
 ## 27. Loop-nest reordering / interchange (very large — DEFERRED, prerequisite-gated)
 
@@ -718,6 +746,16 @@ never depends on doing work at stop time:
   subprocess and return immediately — never wait on it.
 That bound is compile-time only; the embedded runtime JIT (§26) is
 unbounded.
+
+Per-strategy search shape = **macro binary narrow, then micro exhaustive
+sweep** (decided). Within its `[MIN,MAX)` range a strategy first probes
+lo/mid/hi and keeps the better half, recursing until the range is ≤ ~64
+configs (the micro-threshold), then exhaustively sweeps that range. The
+macro phase finds the promising coarse region in ~log2 probes; the micro
+sweep finds the local optimum inside it. `MIN..MAX` is seeded from the
+`-g` hot-value cache when present (§25) so ranges track values that
+actually run. State (phase / macro bounds / micro cursor) lives in the §21
+checkpoint, so this is fully resumable and interruptible.
 
 This is the harness §22/§24/§25 plug into: §24 (hot-slice) becomes the
 per-round time allocator across strategies × functions; §25 is the scoring
