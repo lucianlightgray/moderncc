@@ -456,25 +456,26 @@ correctly. Exercised with a spill/`pad[37]`/`pad[23]`-heavy TU that drives
 `loc` strongly negative and non-aligned — the identical `gfunc_epilog` path a
 synthetic temp hits.
 
-BLOCKER FOUND (2026-07-10, native arm64): attempting box 3 (fresh-temp/inliner
-fixpoint ON/OFF) surfaced a **pre-existing arm64 codegen bug** independent of
-the fresh-temp pass. Any AST-replay optimized self-host of `src/mcc.c` on
-arm64 (`-O1`, `-O2`, *and* `-O3`; both `MCC_AST_INLINE=1` and `=0`) aborts in
-`load()` — `load(1, (32, 400, 0))` → `arm64-gen.c:650 assert(0)`. `0x400 ==
-VT_VLA`: a value with `sv->r == reg0 | VT_VLA` (mcc.c uses VLAs) reaches
-`load()`, whose `svr` mask at `arm64-gen.c:494` strips
-`VT_BOUNDED|VT_NONCONST|VT_NONLVAL` but **not** `VT_VLA`, so it matches no case
-and asserts (x86_64 `load()` tolerates the flag → x86 self-host stays green).
-`arm64-gen.c` is byte-identical since `e311c57a` (0 diff) so this is not from
-the JIT-score work; the `-O0` `fixpoint-invariant` gate simply never exercised
-the AST-replay path natively. Fixing it is real arm64 codegen surgery
-(establish why `VT_VLA` lands in the r-field — optimizer leak vs. intentional
-— then mask/handle it in `load()`/`store()`/`asm` without miscompiling VLA
-code in the self-hosting compiler) and must not be rushed onto `main`. This is
-the true blocker for box 3 (it is a fresh instance of the standing arm64
-"`load()` exact-match r-flag mask" hazard: every new front-end r-flag must be
-added to the `arm64-gen.c:494` / `arm64-asm.c` mask or codegen asserts while
-x86 stays green).
+BOX-3 STATUS (2026-07-10, native arm64): two layers, in order.
+1. **arm64 `-O1+` self-host `load()` assert — FIXED.** First attempt aborted:
+   any AST-replay optimized self-host of `src/mcc.c` on arm64 (`-O1/-O2/-O3`)
+   hit `load(1,(32,400,0))` → `arm64-gen.c:650 assert(0)`, where `0x400 ==
+   VT_VLA` reaches `load()` whose `svr` mask didn't strip it. Resolved by
+   `76407be9` (§34: added `VT_MUSTCAST` — `0xC00`, covering `VT_VLA`'s `0x400`
+   bit — to the `arm64-gen.c:494` mask), a fresh instance of the standing
+   arm64 "`load()` exact-match r-flag mask" hazard. With that, `-O1+` arm64
+   self-host now *runs* (`mcc -O1 src/mcc.c` rc 0).
+2. **The remaining blocker is not the fresh-temp pass — it is that `-O3`
+   AST-replay codegen is non-deterministic.** Compiling `src/mcc.c` at `-O3`
+   *twice with the same compiler* (even `--no-embed-jit`) yields different
+   1.14 MB binaries, so there is no `-O3` self-host fixpoint to compare a
+   fresh-temp-ON build against a fresh-temp-OFF build — stage2≠stage3≠stage4
+   under *both* `MCC_AST_INLINE=1` and `=0`, identically in kind. This is the
+   open "-O3+ self-host byte-stability" milestone (precisely why
+   `fixpoint-invariant` gates `-O0` only); the synthetic-temp carve infra
+   itself is sound (boxes 1-2, and the inliner materializes fresh temps
+   correctly). Box 3 stays open pending `-O3` codegen determinism, a
+   superopt-ladder milestone — not an arm64 or fresh-temp defect.
 
 - [x] Frame carve on arm64: `gfunc_epilog` `diff = (-loc + 15) & ~15;`
       (src/arch/arm64/arm64-gen.c ~:1625) — validated the carve covers a
@@ -488,11 +489,13 @@ x86 stays green).
       walks correctly up through 5 carved recursive frames → `mid` → `main`
       (the qemu-untrustworthy unwind path), native cmake-macos.
 - [ ] 3-stage self-host fixpoint on arm64-darwin with the fresh-temp pass
-      forced ON and OFF — **blocked by the arm64 `VT_VLA` `load()` assert
-      above** (fails at `-O1`+ before any fixpoint can be measured, for both
-      inline ON and OFF). The `-O0` `fixpoint-invariant` ctest is green
-      natively; the ON/OFF fixpoint here needs the `VT_VLA`/`load()` fix
-      first, then a `-O3` self-host harness. Not a fresh-temp-pass defect.
+      forced ON and OFF — the `-O1+` `load()` assert that first blocked this
+      is FIXED (§34/`76407be9`), so arm64 optimized self-host now runs. The
+      remaining blocker is that `-O3` AST-replay codegen is non-deterministic
+      (same source + same compiler → different bytes), so no `-O3` self-host
+      fixpoint exists to compare fresh-temp ON vs OFF. Pending the "-O3+
+      self-host byte-stability" milestone; `-O0` `fixpoint-invariant` green
+      natively. Not a fresh-temp-pass defect (ON and OFF diverge alike).
 - [ ] Then repeat for riscv64 (`riscv64-gen.c ~:848`) — deferred to CI (no
       native riscv64 box; host is arm64-darwin).
 
