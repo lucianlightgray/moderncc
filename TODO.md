@@ -384,6 +384,17 @@ These items close the gaps that survey exposed — no persistent cache, a
 conservative-not-aggressive inliner, and uniform (no hot-slice) budget
 spend — ordered simplest → hardest, each building on the previous.
 
+**Curation (2026-07-10, decision round).** Build order starts at the cache
+(§20→§21). The cache is a **resumable search checkpoint, not a skip-on-hit
+lookup** — on a hit the search *continues* spending this run's budget from
+the stored frontier and writes an advanced snapshot back, so budget
+accumulates across runs (run 3 picks up where run 2 stopped). Cache keys on
+**both tiers** (whole-TU fast path + per-function intention hash). Scoring
+is **both**: static object size always, JIT-measured cpu+RSS when the TU is
+runnable (§25). The value-reference/SSA node and the transforms it unblocks
+(§27 loop interchange, the compositional half of §28) are **deferred** —
+parked as research, reassessed only after §20-25 land.
+
 ## 20. `host_cache_dir()` — portable per-user cache dir (small)
 
 Shared foundation for §18 and §21/§25/§26. Factor the cache-dir resolver
@@ -398,16 +409,26 @@ Create via `host_mkdirs`; return <0 when no home is resolvable (sandboxes)
 and keep callers tolerant. Repoint `mcchv` at it with no behavior change.
 Builds on nothing.
 
-## 21. Warm-cache the `-O<N>` search (medium)
+## 21. Resumable-checkpoint search cache (medium) — NEXT
 
 Today `mcc -O<N>` re-runs the full ~1296-config search cold every
-invocation; nothing persists (confirmed: no cache use in `src/`). Key the
-winning config by `host_cache_dir()` + `MCC_VERSION` + target triple + a
-content hash of the input(s); on a hit skip to the known-best config
-(re-verify it compiles, else fall back to a fresh search). A
-compiler-version or target bump misses cleanly. Builds on §20; shares
-§18's keying discipline. Test: cold miss then warm hit reuses the cached
-config without re-searching.
+invocation; nothing persists. Make the cache a **resumable checkpoint of
+the search**, not a skip-on-hit lookup. Persist per entry: the best config
+found so far, its score, and the search frontier (the seeds/permutation
+already explored, plus TPE/linear state). On a hit, do NOT stop at the
+cached best — reload the frontier and **continue** searching for this run's
+full `optimize_search_seconds`, then write the advanced snapshot back. So
+run 1 searches N s cold, run 2 warm-starts from run 1's frontier and
+searches N s more, run 3 continues again: the budget accumulates across
+runs and the best is monotonically non-worse until the space is exhausted
+(then hits are instant). Key on **both tiers** — a whole-TU fast path
+(hash of the input) and a per-function fallback (per-function `AstArena`
+intention hash, §18) so editing one function only re-opens that function's
+search. Every key carries `host_cache_dir()` + `MCC_VERSION` + target
+triple so a compiler/target bump misses cleanly. Builds on §20; shares
+§18's keying discipline. Test: run1 cold → run2 continues (best strictly
+non-worse, more configs covered) → edit one fn → only that fn's tier
+misses; corrupt/foreign snapshot is ignored not trusted.
 
 ## 22. Per-function search granularity (medium-large)
 
@@ -442,14 +463,17 @@ first, so `-O128` deepens the search on the functions that dominate
 size/cost instead of re-confirming trivia (today O4 and O128 converge to
 the same output). Builds on §22 (+ benefits from §23's widened space).
 
-## 25. Frontend-JIT candidate measurement (large)
+## 25. Frontend-JIT candidate measurement — the second scoring tier (large)
 
-§21-24 score by static object size — a proxy, not runtime cost. For TUs
-with a runnable entry, measure candidates by JIT-running them
-(`MCC_OUTPUT_MEMORY` + `mcc_relocate` + `-run`, the `tools/mcchv.c` model)
-and timing / RSS-sampling, choosing by measured cpu+memory as the original
-`-O<N>` intent asked ("more efficient as told by both memory and cpu").
-Reuse §18's JIT-result cache. Builds on §22 + §18.
+§21-24 score by static object size — always available, but a proxy, not
+runtime cost. Add JIT measurement as a **second scoring tier**, not a
+replacement: static size stays the default/fallback objective; when the TU
+has a runnable entry/harness, JIT-run each candidate (`MCC_OUTPUT_MEMORY` +
+`mcc_relocate` + `-run`, the `tools/mcchv.c` model), timing + RSS-sample
+it, and let the measured cpu+memory decide — the original `-O<N>` intent
+("more efficient as told by both memory and cpu"). Non-runnable/library
+TUs transparently keep the size objective. Reuse §18's JIT-result cache.
+Builds on §22 + §18.
 
 ## 26. `--embed-jit` runtime self-optimizer (largest — run LAST)
 
@@ -461,3 +485,36 @@ vision, unconstrained by the compile-time seconds budget. Needs an ELF
 `.init_array` ctor, an embedded libmcc/JIT slice, the captured intention
 trees carried in the binary, and safe live function patching. Builds on
 §25 (JIT measurement) + §21 (cache).
+
+## 27. Loop-nest reordering / interchange (very large — DEFERRED, prerequisite-gated)
+
+Deferred (2026-07-10): parked as research behind the value-reference/SSA
+node decision; do not start until §20-25 land and that node is reassessed.
+No loop-nest transform exists today (only LICM + TCO touch the `AST_If`
+op 2..5 captures; the nest is never rearranged). Interchange (`for x; for
+y` → `for y; for x`), fusion, and tiling all need what the frontier is
+blocked on: a value-reference / SSA-like node so a subscript's provenance
+is analyzable. Prereq: land that node (unblocks CSE/GVN too). Then: a
+loop-nest model over the op 2..5 forms, a conservative dependence test
+(array-subscript direction vectors; bail to "no" on anything unproven), a
+legality check, the interchange rewrite, and a re-run of the §22
+per-function search so opportunities are re-evaluated *after* the nest
+changes. Builds on the frontier value-reference node + §22. Gate every
+rewrite on `-O0..-O3` byte-identity + a new loop-nest exec-golden column.
+
+## 28. Dynamic algorithm generation / pass composition (very large — DEFERRED, research)
+
+Deferred (2026-07-10): the compositional/rewrite-rule half waits on the
+value-reference node reassessment after §20-25; only revisit then.
+Both searches today tune a fixed pass menu; neither composes primitives
+into new transforms. Replace the menu with a small rewrite-rule IR — a
+peephole grammar of match→rewrite templates over the captured `AstArena`
+— that the §22/§24 search *combines* into compound transforms (a
+candidate = an ordered rule sequence, the "0..maxuint" seed decoding to a
+rule program), scored by §25 JIT measurement and cached by §21. Optional
+stretch: instruction-level superoptimization over a fixed emitted window
+(enumerate/lower short instruction sequences, keep the observably-equal
+fastest). This is the only rung that makes `-O<N>` genuinely *generate*
+algorithms rather than select among hand-written ones. Builds on §22 +
+§24 + §25; needs a soundness oracle (differential test each synthesized
+rule against the faithful replay before it may fire).
