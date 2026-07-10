@@ -6687,6 +6687,229 @@ static void macro_eval_call(int v) {
 	vpushll(res);
 }
 
+static const struct {
+	const char *name;
+	unsigned char id, flt;
+} foldmath_tab[] = {
+		{"sin", 0, 0},	{"sinf", 0, 1}, {"cos", 1, 0},
+		{"cosf", 1, 1}, {"exp", 2, 0},	{"expf", 2, 1},
+};
+
+static double foldm_rint(double x) {
+	double t = x + 6755399441055744.0;
+	return t - 6755399441055744.0;
+}
+
+static double foldm_pow2(int e) {
+	union {
+		double d;
+		uint64_t u;
+	} u;
+	u.u = (uint64_t)(0x3ff + e) << 52;
+	return u.d;
+}
+
+static double foldm_scalbn(double x, int n) {
+	double y = x;
+	if (n > 1023) {
+		y *= foldm_pow2(1023);
+		n -= 1023;
+		if (n > 1023) {
+			y *= foldm_pow2(1023);
+			n -= 1023;
+			if (n > 1023)
+				n = 1023;
+		}
+	} else if (n < -1022) {
+		y *= foldm_pow2(-969);
+		n += 969;
+		if (n < -1022) {
+			y *= foldm_pow2(-969);
+			n += 969;
+			if (n < -1022)
+				n = -1022;
+		}
+	}
+	return y * foldm_pow2(n);
+}
+
+static double foldm_ksin(double x) {
+	double S1 = -1.66666666666666324348e-01, S2 = 8.33333333332248946124e-03,
+				 S3 = -1.98412698298579493134e-04, S4 = 2.75573137070700676789e-06,
+				 S5 = -2.50507602534068634195e-08, S6 = 1.58969099521155010221e-10;
+	double z = x * x;
+	double p = S1 + z * (S2 + z * (S3 + z * (S4 + z * (S5 + z * S6))));
+	return x + (x * z) * p;
+}
+
+static double foldm_kcos(double x) {
+	double C1 = 4.16666666666666019037e-02, C2 = -1.38888888888741095749e-03,
+				 C3 = 2.48015872894767294178e-05, C4 = -2.75573143513906633035e-07,
+				 C5 = 2.08757232129817482790e-09, C6 = -1.13596475577881948265e-11;
+	double z = x * x;
+	double p = C1 + z * (C2 + z * (C3 + z * (C4 + z * (C5 + z * C6))));
+	return 1.0 - 0.5 * z + (z * z) * p;
+}
+
+static double foldm_sincos(int wantcos, double x) {
+	double invpio2 = 6.36619772367581382433e-01;
+	double pio2_1 = 1.57079632673412561417e+00,
+				 pio2_1t = 6.07710050650619224932e-11;
+	double pio2_2 = 6.07710050630396597660e-11,
+				 pio2_2t = 2.02226624879595063154e-21;
+	double pio2_3 = 2.02226624871116645580e-21,
+				 pio2_3t = 8.47842766036889956997e-32;
+	double fn = foldm_rint(x * invpio2);
+	double r = x - fn * pio2_1, w = fn * pio2_1t, y = r - w;
+	double t = r;
+	w = fn * pio2_2;
+	r = t - w;
+	w = fn * pio2_2t - ((t - r) - w);
+	y = r - w;
+	t = r;
+	w = fn * pio2_3;
+	r = t - w;
+	w = fn * pio2_3t - ((t - r) - w);
+	y = r - w;
+	int q = ((int)fn + (wantcos ? 1 : 0)) & 3;
+	double s = foldm_ksin(y), c = foldm_kcos(y);
+	switch (q) {
+	case 0:
+		return s;
+	case 1:
+		return c;
+	case 2:
+		return -s;
+	default:
+		return -c;
+	}
+}
+
+static double foldm_exp(double x) {
+	double invln2 = 1.44269504088896338700e+00;
+	double ln2hi = 6.93147180369123816490e-01,
+				 ln2lo = 1.90821492927058770002e-10;
+	double P1 = 1.66666666666666019037e-01, P2 = -2.77777777770155933842e-03,
+				 P3 = 6.61375632143793436117e-05, P4 = -1.65339022054652515390e-06,
+				 P5 = 4.13813679705723846039e-08;
+	double k = foldm_rint(x * invln2);
+	int ki = (int)k;
+	double hi = x - k * ln2hi;
+	double lo = k * ln2lo;
+	double r = hi - lo;
+	double t = r * r;
+	double c = r - t * (P1 + t * (P2 + t * (P3 + t * (P4 + t * P5))));
+	double y = 1.0 - ((lo - (r * c) / (2.0 - c)) - hi);
+	return foldm_scalbn(y, ki);
+}
+
+static int foldmath_eval(int id, int flt, uint64_t inbits, uint64_t *out) {
+	double x, res;
+	uint64_t ib;
+	if (flt) {
+		float xf;
+		uint32_t b = (uint32_t)inbits;
+		memcpy(&xf, &b, sizeof xf);
+		x = (double)xf;
+	} else {
+		memcpy(&x, &inbits, sizeof x);
+	}
+	if (x != x)
+		return 0;
+	memcpy(&ib, &x, sizeof ib);
+	if (id == 2) {
+		int neg = (int)(ib >> 63);
+		uint64_t infb = 0x7ff0000000000000ull;
+		if ((ib & 0x7fffffffffffffffull) == 0x7ff0000000000000ull) {
+			if (neg)
+				res = 0.0;
+			else
+				memcpy(&res, &infb, sizeof res);
+		} else if (x > 709.782712893384) {
+			memcpy(&res, &infb, sizeof res);
+		} else if (x < -745.2) {
+			res = 0.0;
+		} else {
+			res = foldm_exp(x);
+		}
+	} else {
+		double ax;
+		if ((ib & 0x7fffffffffffffffull) >= 0x7ff0000000000000ull)
+			return 0;
+		ax = x < 0 ? -x : x;
+		if (ax > 1048576.0)
+			return 0;
+		res = foldm_sincos(id, x);
+	}
+	if (flt) {
+		float rf = (float)res;
+		uint32_t rb;
+		memcpy(&rb, &rf, sizeof rf);
+		*out = rb;
+	} else {
+		memcpy(out, &res, sizeof res);
+	}
+	return 1;
+}
+
+static int foldmath_try(Sym *ftype, int nb_args) {
+	SValue *fsv, *arg;
+	Sym *cs;
+	ElfSym *es;
+	const char *nm;
+	int nfn, bi, flt, bt;
+	uint64_t inbits, res;
+	CValue cv;
+	CType rtype;
+
+	if (nb_args != 1)
+		return 0;
+	arg = vtop;
+	fsv = vtop - nb_args;
+	if (!(fsv->r & VT_SYM))
+		return 0;
+	cs = fsv->sym;
+	if (!cs || (cs->type.t & VT_BTYPE) != VT_FUNC || (cs->type.t & VT_STATIC))
+		return 0;
+	es = elfsym(cs);
+	if (es && es->st_shndx != SHN_UNDEF)
+		return 0;
+	nm = get_tok_str(cs->v, NULL);
+	nfn = (int)(sizeof foldmath_tab / sizeof *foldmath_tab);
+	for (bi = 0; bi < nfn; bi++)
+		if (!strcmp(nm, foldmath_tab[bi].name))
+			break;
+	if (bi == nfn)
+		return 0;
+	flt = foldmath_tab[bi].flt;
+	bt = flt ? VT_FLOAT : VT_DOUBLE;
+	if ((ftype->type.t & VT_BTYPE) != bt ||
+			(arg->r & (VT_VALMASK | VT_LVAL | VT_SYM)) != VT_CONST ||
+			(arg->type.t & VT_BTYPE) != bt)
+		return 0;
+	if (flt) {
+		uint32_t b;
+		memcpy(&b, &arg->c.f, sizeof b);
+		inbits = b;
+	} else {
+		memcpy(&inbits, &arg->c.d, sizeof inbits);
+	}
+	if (!foldmath_eval(foldmath_tab[bi].id, flt, inbits, &res))
+		return 0;
+	vpop();
+	vpop();
+	rtype.t = bt;
+	rtype.ref = NULL;
+	if (flt) {
+		uint32_t b = (uint32_t)res;
+		memcpy(&cv.f, &b, sizeof cv.f);
+	} else {
+		memcpy(&cv.d, &res, sizeof cv.d);
+	}
+	vsetc(&rtype, VT_CONST, &cv);
+	return 1;
+}
+
 ST_FUNC void unary(void) {
 	int n, t, align, size, r;
 	CType type;
@@ -7849,6 +8072,10 @@ tok_next:
 
 			next();
 			vcheck_cmp();
+			if (mcc_state->fold_math && foldmath_try(s, nb_args)) {
+				expr_has_effect = 1;
+				goto call_folded;
+			}
 #if MCC_CONFIG_OPTIMIZER
 			ast_hook_call_begin(nb_args, (s->type.t & VT_BTYPE) == VT_STRUCT,
 													ret_nregs, s->f.func_type == FUNC_ELLIPSIS);
@@ -7919,6 +8146,7 @@ tok_next:
 #if MCC_CONFIG_OPTIMIZER
 			ast_hook_call_end();
 #endif
+		call_folded:;
 #if MCC_CONFIG_LSP
 			CST_OPEN_AT(CST_Call, cst_um);
 			CST_CLOSE();

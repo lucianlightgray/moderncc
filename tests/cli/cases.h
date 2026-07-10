@@ -96,6 +96,20 @@ static const cli_case_t cli_cases[] = {
 		 "readelf -r {W}/bf0.o | grep -c sqrt && readelf -r {W}/bf1.o | grep -c sqrt",
 		 "1\n0\n"},
 
+		{"foldmath_O0_O1_equal", "cpu=x86_64,os=linux,optimizer",
+		 "printf 'double sin(double);double cos(double);double exp(double);int okc(double a,double b){double d=a-b;if(d<0)d=-d;return d<1e-9;}int main(void){if(!okc(sin(0.5),0.47942553860420301))return 1;if(!okc(cos(1.0),0.54030230586813977))return 2;if(!okc(exp(1.0),2.7182818284590451))return 3;if(!okc(sin(100.0),-0.50636564110975879))return 4;return 0;}\\n' > {W}/fm.c && "
+		 "{MCC} -B{B} -I{I} -ffold-math -O0 -c {W}/fm.c -o {W}/fm0.o && "
+		 "{MCC} -B{B} -I{I} -ffold-math -O1 -c {W}/fm.c -o {W}/fm1.o && "
+		 "readelf -r {W}/fm0.o | grep -c sin ; readelf -r {W}/fm1.o | grep -c sin ; "
+		 "{MCC} -B{B} -I{I} -ffold-math -O0 -run {W}/fm.c && echo O0OK ; "
+		 "{MCC} -B{B} -I{I} -ffold-math -O1 -run {W}/fm.c && echo O1OK",
+		 "0\n0\nO0OK\nO1OK\n"},
+
+		{"foldmath_off_keeps_call", "cpu=x86_64,os=linux,optimizer",
+		 "printf 'double sin(double);int main(void){return sin(0.0)==0.0?0:1;}\\n' > {W}/fmc.c && "
+		 "{MCC} -B{B} -I{I} -O0 -c {W}/fmc.c -o {W}/fmc.o && readelf -r {W}/fmc.o | grep -c sin",
+		 "1\n"},
+
 		{"O3_float_return_inline", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'static double f(double x){return x*2.0+1.0;} static float g(float x){return x*3.0f+0.5f;} static double h(int a,int b){return (double)a/(double)b+0.25;} static int ii(int x){return x*2+1;} int main(void){ if(f(10.0)!=21.0)return 1; if(g(4.0f)!=12.5f)return 2; if(h(7,2)!=3.75)return 3; if(ii(20)!=41)return 4; return 0; }\\n' > {W}/fi.c && "
 		 "{MCC} -B{B} -I{I} -O0 -run {W}/fi.c && echo O0OK && "

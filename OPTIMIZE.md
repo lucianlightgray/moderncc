@@ -27,7 +27,8 @@ fixpoint byte-identical + -O0 objects unchanged):
 | 9 | Self-recursive tail-call → loop | 3 | 187880a4 |
 | 10 | Jump threading / branch simplification | 3 | 2b783781 |
 | 11 | Local CSE (named-local value-ref subset) | 2 | 74551b35 |
-| 12 | LICM (loop-invariant named-local reuse) | 3 | (this iter) |
+| 12 | LICM (loop-invariant named-local reuse) | 3 | accf353c |
+| 13 | Deterministic sin/cos/exp fold (-ffold-math) | 1 | (this iter) |
 | ✚ | -O3 float-return inline miscompile FIX | — | 40ca21cf |
 
 Open / blocked: Tier-1 peephole (emitter byte-identity risk); SCCP
@@ -102,9 +103,7 @@ Grounded in actual sources this iteration (prior entries were from memory):
       **random forest** (mixed/noisy). Precedent: **BaCO** (Bayesian
       Compiler Optimization, arXiv:2212.11142) and TPE in Hyperopt/Optuna.
       Least-risk here: TPE (tool-only, no compiler correctness surface).
-- [ ] **Deterministic sequence approximation for `sin`/`cos`/`exp`** —
-      DECISION (researched 2026-07-10): defer behind an explicit
-      `-ffast-math`-style opt-in; do NOT fold under the default -O1+.
+- [x] **Deterministic sequence approximation for `sin`/`cos`/`exp`** (`-ffold-math`; fdlibm minimax, folds at frontend emit for -O0==-O1 consistency).
       Analysis: GCC folds these via **MPFR correctly-rounded** evaluation
       (since 4.5) and accepts the residual last-ulp mismatch vs runtime
       libm as within-spec FP non-portability. mcc's invariant is
@@ -789,3 +788,30 @@ machinery, and at what risk — to decide whether to lift the scope.
 - The `-ffold-math` sin/cos/exp subagent is validating the key
   invariant (stdout byte-identical -O0 vs -O1 under the flag holds);
   harvest imminent.
+
+### 2026-07-10 — iteration 31 (deterministic sin/cos/exp fold — the "sin" item)
+
+- **The deferred transcendental fold LANDED** behind opt-in `-ffold-math`
+  — the "closest known approximations/simulations of sequences (e.g.
+  sin)" the campaign was asked for, done safely. Key design: fold at the
+  **frontend emit point** in `unary()` (the -O1-only replay pass can't
+  give -O0==-O1 consistency), so -O0 direct-emit and -O1 capture/replay
+  both see the folded Literal → identical program output under the flag.
+  Default OFF → default build byte-identical, fixpoint untouched.
+- Approximation: fixed IEEE-754 double ops (Horner, no fma), coefficients
+  transcribed from **fdlibm** — __kernel_sin/__kernel_cos + Cody-Waite
+  __ieee754_rem_pio2 (pi/2 reduction) + __ieee754_exp (k·ln2 + P1..P5) +
+  scalbn. sin/cos/exp + f-variants. **Max 1 ulp vs glibc** over 21 points
+  (incl. sin(1000.5) range reduction, exp -10..20); most bit-exact.
+  Edge cases: NaN / ±inf-into-trig / |x|>2^20 not folded; exp
+  overflow→inf, underflow→0 fold and match glibc. Shadow guard = same
+  undefined-global-symbol check as ast_bfold_run.
+- Verified: `-ffold-math` folds sin(0.5)/cos(1.0)/exp(2.0) (0 relocs),
+  -O0 output == -O1 output byte-identical == glibc to 10 digits. 1834
+  green, fixpoint byte-identical, -O0 default objects identical.
+- **CAMPAIGN COMPLETE for named algorithms**: 11 landed
+  (bfold/ident/cprop/cse/licm/dse/sccp/tco/jt tree passes + fold-math +
+  the -O4+ TPE superoptimizer) + bench statistics + a miscompile fix.
+  All un-blocked named items are done; the rest are provably blocked
+  (new AST node kind / persistent replay slot / emitter rewrite),
+  documented in the Frontier section.
