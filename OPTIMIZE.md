@@ -587,3 +587,15 @@ dlmf.nist.gov/3.11 (minimax polynomial approximations).
   value-lattice need an AST value-ref node; Sethi–Ullman + peephole are
   codegen-order/emitter byte-identity risks; LICM / IV strength
   reduction / jump-threading / Chaitin–Briggs are large Tier-3).
+
+### 2026-07-10 — iteration 21 (reusable self-host fixpoint helper)
+
+- Committed `scripts/selfhost-fixpoint.sh` — every optimizer subagent
+  was re-deriving the 3-stage byte-identical self-host gate by hand
+  (extracting defines, building stages), costing minutes each. The
+  helper reads the real defines from `<build>/compile_commands.json`
+  (dropping MCC_EMBED_MCCRT which needs the generated blob), builds
+  stage2→3→4, and cmps them. One command: `scripts/selfhost-fixpoint.sh
+  cmake-debug`. Verified FIXPOINT OK on the current tree. Standing
+  campaign gate now scriptable, not folklore.
+- Jump-threading / branch-simplification subagent still in flight.
