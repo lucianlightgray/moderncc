@@ -815,3 +815,17 @@ machinery, and at what risk — to decide whether to lift the scope.
   All un-blocked named items are done; the rest are provably blocked
   (new AST node kind / persistent replay slot / emitter rewrite),
   documented in the Frontier section.
+
+### 2026-07-10 — iteration 32 (-ffold-math benchmark)
+
+- Benchmarked `-ffold-math` on a transcendental-table workload (16
+  constant sin/cos/exp, the common precomputed-init pattern):
+  - `.text`: 493 B → **105 B (−78.7%)** — all the call-setup/spill code
+    for 16 libm calls is gone.
+  - libm relocations: **16 → 0** — the folded program has NO runtime
+    libm dependency (doesn't even need -lm), and pays **zero** runtime
+    cost for what were ~16 transcendental calls (~1.6µs of init).
+  This is fold-math's headline: for constant-heavy init/lookup-table
+  code it eliminates the calls entirely at compile time, deterministic
+  and within 1 ulp — a large, real win, opt-in and default-safe.
+- Fold-math extension subagent (log/pow/tan/hyperbolics) still in flight.
