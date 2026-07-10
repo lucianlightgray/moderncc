@@ -1828,11 +1828,17 @@ touch `src/mccast.c`, so serialize to avoid worktree merge conflicts):
       Requires the pass's own `MCC_AST_CPROP_JOIN`/`CSE_JOIN` gate too (only
       the `*_stmts` join functions are wired; `*_block` is a possible
       follow-up).
-2. [ ] **§30 additional encodings** (extend `ast_bf_*`, same
-      `MCC_AST_BITFLAG` search dim): `&&`-of-`!=` complement, biased ranges
-      (consts ≥64 via a subtract-bias before the shift-mask), value-table
-      dispatch for differing bodies. Additive, gated; TDD = edge-key sweep
-      vs -O0 reference per encoding (the N3 harness).
+2. [~] **§30 additional encodings** (extend `ast_bf_*`, same
+      `MCC_AST_BITFLAG` search dim). **Biased ranges — LANDED**: a cluster of
+      same-key `==` constants fitting any 64-wide window `[base, base+63]`
+      (base picked as the signed-64 min) now folds by biasing `k'=(unsigned)
+      key-base` before the shift-mask; `base==0` is byte-identical to the old
+      encoding (proven by object sha), span>63 / unsigned-wraparound windows
+      conservatively fall back. Validated: gate-off byte-identity + full ctest
+      1860/1860; fires on a `{100,105,120,150,163}` cluster with the edge-key
+      checksum matching the transform-off reference at -O1/-O2/-O3. **Still
+      open**: `&&`-of-`!=` complement, value-table dispatch for differing
+      bodies.
 3. [ ] **§32a refinements** — fall-through-aware meets + op-5 `for(;;)`
       classification + switch(op 6) arm meets in the `MCC_AST_CPROP_JOIN`
       lattice. Gated (already default-off); TDD = cpropjoin.sh + corpus

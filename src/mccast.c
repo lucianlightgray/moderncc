@@ -4714,7 +4714,7 @@ static int ast_bf_eqconst(AstArena *a, AstLocal n, AstLocal *key, uint64_t *v) {
 	} else {
 		return 0;
 	}
-	if (!ast_ident_cval(a, c, &ct, &cv) || cv >= 64)
+	if (!ast_ident_cval(a, c, &ct, &cv))
 		return 0;
 	if (!ast_ident_etype(a, k, &kt, &kref) || !ast_ident_intt(kt))
 		return 0;
@@ -4725,8 +4725,10 @@ static int ast_bf_eqconst(AstArena *a, AstLocal n, AstLocal *key, uint64_t *v) {
 	return 1;
 }
 
+#define AST_BF_MAXVALS 256
+
 static int ast_bf_cond_parse(AstArena *a, AstLocal cond, AstLocal *key,
-														 uint64_t *mask, int *cnt) {
+														 uint64_t *vals, int *cnt) {
 	AstLocal k;
 	uint64_t v;
 	if (ast_bf_eqconst(a, cond, &k, &v)) {
@@ -4734,8 +4736,9 @@ static int ast_bf_cond_parse(AstArena *a, AstLocal cond, AstLocal *key,
 			*key = k;
 		else if (!ast_ident_same(a, *key, k))
 			return 0;
-		*mask |= (uint64_t)1 << v;
-		(*cnt)++;
+		if (*cnt >= AST_BF_MAXVALS)
+			return 0;
+		vals[(*cnt)++] = v;
 		return 1;
 	}
 	if (ast_kind(a, cond) != AST_Binary || ast_op(a, cond) != TOK_LOR ||
@@ -4749,9 +4752,29 @@ static int ast_bf_cond_parse(AstArena *a, AstLocal cond, AstLocal *key,
 			*key = k;
 		else if (!ast_ident_same(a, *key, k))
 			return 0;
-		*mask |= (uint64_t)1 << v;
-		(*cnt)++;
+		if (*cnt >= AST_BF_MAXVALS)
+			return 0;
+		vals[(*cnt)++] = v;
 	}
+	return 1;
+}
+
+static int ast_bf_window(const uint64_t *vals, int cnt, uint64_t *mask,
+												 uint64_t *base) {
+	int i;
+	int64_t b = (int64_t)vals[0];
+	uint64_t m = 0;
+	for (i = 1; i < cnt; i++)
+		if ((int64_t)vals[i] < b)
+			b = (int64_t)vals[i];
+	for (i = 0; i < cnt; i++) {
+		uint64_t d = vals[i] - (uint64_t)b;
+		if (d > 63)
+			return 0;
+		m |= (uint64_t)1 << d;
+	}
+	*mask = m;
+	*base = (uint64_t)b;
 	return 1;
 }
 
@@ -4794,16 +4817,26 @@ static AstLocal ast_bf_ucast(AstArena *a, int tt, AstLocal key) {
 	return n;
 }
 
-static AstLocal ast_bf_build(AstArena *a, AstLocal key, uint64_t mask) {
+static AstLocal ast_bf_keyexpr(AstArena *a, int kw, AstLocal key,
+															 uint64_t base) {
+	AstLocal u = ast_bf_ucast(a, kw, key);
+	if (base == 0)
+		return u;
+	return ast_bf_bin(a, '-', kw, u, ast_bf_lit(a, kw, base));
+}
+
+static AstLocal ast_bf_build(AstArena *a, AstLocal key, uint64_t mask,
+														 uint64_t base) {
 	int kt, kw;
 	uint64_t kref;
 	ast_ident_etype(a, key, &kt, &kref);
 	kw = (kt & VT_BTYPE) == VT_LLONG ? VT_LLONG | VT_UNSIGNED
 																	 : VT_INT | VT_UNSIGNED;
 	int mw = VT_LLONG | VT_UNSIGNED;
-	AstLocal guard = ast_bf_bin(a, TOK_ULT, VT_INT, ast_bf_ucast(a, kw, key),
+	AstLocal guard = ast_bf_bin(a, TOK_ULT, VT_INT,
+															ast_bf_keyexpr(a, kw, key, base),
 															ast_bf_lit(a, kw, 64));
-	AstLocal amt = ast_bf_bin(a, '&', kw, ast_bf_ucast(a, kw, key),
+	AstLocal amt = ast_bf_bin(a, '&', kw, ast_bf_keyexpr(a, kw, key, base),
 														ast_bf_lit(a, kw, 63));
 	AstLocal bit = ast_bf_bin(
 			a, '&', mw, ast_bf_bin(a, TOK_SHR, mw, ast_bf_lit(a, mw, mask), amt),
@@ -4821,13 +4854,13 @@ static void ast_bf_drop(AstArena *a, AstLocal n) {
 
 static int ast_bf_try_if(AstArena *a, AstLocal s) {
 	AstLocal key = AST_NONE, drop[64];
-	uint64_t mask = 0;
+	uint64_t vals[AST_BF_MAXVALS], mask = 0, base = 0;
 	int cnt = 0, ndrop = 0;
 	AstLocal cond0 = ast_child(a, s, 0);
 	AstLocal thenbb = ast_child(a, s, 1);
 	if (thenbb == AST_NONE || ast_kind(a, thenbb) != AST_BasicBlock)
 		return 0;
-	if (!ast_bf_cond_parse(a, cond0, &key, &mask, &cnt))
+	if (!ast_bf_cond_parse(a, cond0, &key, vals, &cnt))
 		return 0;
 	AstLocal tail = ast_child(a, s, 2);
 	for (;;) {
@@ -4844,12 +4877,10 @@ static int ast_bf_try_if(AstArena *a, AstLocal s) {
 		if (ast_bf_has_label(a, icond) || ast_bf_has_label(a, ithen))
 			break;
 		AstLocal k2 = key;
-		uint64_t m2 = mask;
 		int c2 = cnt;
-		if (!ast_bf_cond_parse(a, icond, &k2, &m2, &c2))
+		if (!ast_bf_cond_parse(a, icond, &k2, vals, &c2))
 			break;
 		key = k2;
-		mask = m2;
 		cnt = c2;
 		drop[ndrop++] = tail;
 		drop[ndrop++] = inner;
@@ -4858,7 +4889,9 @@ static int ast_bf_try_if(AstArena *a, AstLocal s) {
 	}
 	if (cnt < ast_bitflag_min || key == AST_NONE)
 		return 0;
-	AstLocal cond = ast_bf_build(a, key, mask);
+	if (!ast_bf_window(vals, cnt, &mask, &base))
+		return 0;
+	AstLocal cond = ast_bf_build(a, key, mask, base);
 	ast_clear_children(a, s);
 	ast_add_child(a, s, cond);
 	ast_add_child(a, s, thenbb);
@@ -4872,13 +4905,15 @@ static int ast_bf_try_if(AstArena *a, AstLocal s) {
 
 static int ast_bf_try_lor(AstArena *a, AstLocal n) {
 	AstLocal key = AST_NONE;
-	uint64_t mask = 0;
+	uint64_t vals[AST_BF_MAXVALS], mask = 0, base = 0;
 	int cnt = 0;
-	if (!ast_bf_cond_parse(a, n, &key, &mask, &cnt))
+	if (!ast_bf_cond_parse(a, n, &key, vals, &cnt))
 		return 0;
 	if (cnt < ast_bitflag_min || key == AST_NONE)
 		return 0;
-	AstLocal res = ast_bf_build(a, key, mask);
+	if (!ast_bf_window(vals, cnt, &mask, &base))
+		return 0;
+	AstLocal res = ast_bf_build(a, key, mask, base);
 	AstLocal bit = ast_first_child(a, res);
 	AstLocal guard = ast_next_sib(a, bit);
 	ast_bf_drop(a, res);
