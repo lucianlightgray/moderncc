@@ -518,6 +518,12 @@ stay green, and each added to the §22 search space so the compiler
 auto-tunes the limits instead of hardcoding them. Builds on the existing
 inliner + §22.
 
+Decided 2026-07-10: extension order = **(1) bigger node/graft/depth
+budgets, (2) more param shapes, (3) cross-TU static callees** — biggest
+wins and least new correctness surface first; heuristic non-static
+inlining stays last/optional. Each lands byte-identity-gated with the
+inline exec column, then becomes a §22 search knob.
+
 ## 24. Hot-window / slice selector (large)
 
 The search spends the budget uniformly, with no notion of where effort
@@ -527,6 +533,11 @@ functions and allocates `optimize_search_seconds` to the top slices
 first, so `-O128` deepens the search on the functions that dominate
 size/cost instead of re-confirming trivia (today O4 and O128 converge to
 the same output). Builds on §22 (+ benefits from §23's widened space).
+
+Decided 2026-07-10: rank by **-g profile entry-frequency when present**
+(the §25 value cache extended with function-entry counts), else fall back
+to the **static proxy `node# × loop-nest-depth × call-out-count`**.
+Accurate with a profile, still works without one.
 
 ## 25. Frontend-JIT candidate measurement — the second scoring tier (large)
 
@@ -557,6 +568,11 @@ Decided 2026-07-10:
   optimizing for the values that actually run. Feeds §29 (Convert ranges)
   and §30 (bit-flag bucket quantization) directly. Absent the cache, the
   search uses default full ranges.
+- **Measurement = best-of-K min wall-ns + peak RSS, adaptive K.** Score cpu
+  by the **minimum** wall-ns over K taskset-pinned runs (noise only ever
+  adds time, so min is the cleanest true-cost estimate), plus peak RSS from
+  `getrusage`. Raise K when run-to-run variance is high, lower when stable.
+  Portable (no perf counters).
 
 ## 26. `--embed-jit` runtime self-optimizer (largest — run LAST)
 
@@ -714,8 +730,19 @@ Selection = **always take the global best by the §25 multi-objective**,
 lexicographic **faster → lowest peak memory → smaller size** (cpu measured
 by JIT when the TU is runnable). For a library/non-runnable TU the "faster"
 axis has no measurement, so selection falls back to **lowest peak memory →
-smaller size**. Candidates from different strategies **compose** where the
-§28/§29 soundness oracle proves the combination equivalent.
+smaller size**.
+
+Composition = **beam search over oracle-gated pipelines** (decided). Build
+the result as a sequential pipeline — apply strategy A's best, then run B
+on the result, etc., oracle-gating each step so it stays sound — but keep
+the top-**M** partial pipelines at each step (beam), trying each strategy's
+best(k) as the next stage. This compounds transforms (Convert→bit-flag→
+inline) while exploring orderings/combinations, pruned to M. It's a strict
+superset: `M=1` = greedy sequential; `M→∞` over all orderings =
+oracle-gated cross-product. Chosen over pure cross-product (2^strats ×
+orderings, budget spent on bookkeeping) and over pure greedy (phase-order
+blind). M scales with the §31 round budget — deeper rounds widen the beam
+and lengthen the pipeline.
 
 **Save-checkpoint-and-stop interrupt.** The `-O4+` search must stop within
 ~1-2 s of a kill signal without waiting on any in-flight work, so recovery
