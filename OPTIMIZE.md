@@ -157,3 +157,22 @@ real without passing it.
   ctest `hypervisor-search` covers the path (1.2s budget); full suite
   1790 green, self-host fixpoint holds.
 - Tier-1 algebraic-identity subagent still in flight.
+
+### 2026-07-09 — iteration 6 (warm-start from the intention cache)
+
+- **Wired the §18 cache to warm-start the search**: on a cache hit the
+  search now seeds its initial best from the cached (nhot, leaf_cut)
+  config instead of the pure-tree baseline, then keeps searching to
+  improve. Quantified payoff at a tiny 0.1s budget (same intention):
+  - **cold** (no cache): 2 candidates, best (0,1), memory **+0.0%** — no
+    improvement found in the budget.
+  - **warm** (cache primed): 2 candidates, best (1,2), memory **−17.8%**
+    delivered from t=0.
+  The prior optimum is reproduced in ~0 search time; the budget then
+  goes toward *further* improvement rather than re-deriving. This is the
+  "reproduce the previously JIT-optimized version, resume the search"
+  behavior of §18, now measured.
+- Cache key = intention hash over the pattern set (kinds/weights),
+  matching the AST-intention-hash design; a different stream (different
+  intention) misses and searches cold, exactly as specified.
+- Algebraic-identity subagent (Tier-1) still validating; harvest next.

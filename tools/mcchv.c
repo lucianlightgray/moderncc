@@ -411,7 +411,7 @@ static double hv_measure(HvKernel fn, int workers, int reps) {
 static uintmax_t hv_search(double seconds, int workers, uint32_t *best_nhot,
 													 uint32_t *best_cut, double *best_cpu,
 													 size_t *best_mem, double *base_cpu,
-													 size_t *base_mem) {
+													 size_t *base_mem, const HvCacheEntry *warm) {
 	uint32_t np = hv_npat;
 	HvLeaf *leaves = malloc((size_t)np * sizeof *leaves);
 	HvLeaf hot[64];
@@ -440,6 +440,27 @@ static uintmax_t hv_search(double seconds, int workers, uint32_t *best_nhot,
 	*best_mem = bmem;
 	HvKernel winner = bfn;
 	MCCState *winner_st = bst;
+
+	if (warm && warm->leaf_cut >= 1) {
+		uint32_t wnhot = warm->nhot > nhot_max ? nhot_max : warm->nhot;
+		size_t wmem = 0;
+		MCCState *wst = NULL;
+		HvKernel wfn = hv_jit_build(leaves, np, hot, wnhot, warm->leaf_cut,
+																&wmem, &wst);
+		double wcpu = wfn ? hv_measure(wfn, workers, 3) : -1;
+		if (wfn && wcpu >= 0 &&
+				(wcpu < *best_cpu || (wcpu <= *best_cpu && wmem < *best_mem))) {
+			winner = wfn;
+			winner_st = wst;
+			*best_nhot = wnhot;
+			*best_cut = warm->leaf_cut;
+			*best_cpu = wcpu;
+			*best_mem = wmem;
+			atomic_store(&hv_kernel, winner);
+		} else if (wst) {
+			mcc_delete(wst);
+		}
+	}
 
 	uint64_t deadline = hv_now_ns() + (uint64_t)(seconds * 1e9);
 	uintmax_t cand = 0;
@@ -631,7 +652,7 @@ int main(int argc, char **argv) {
 					 search_seconds, key,
 					 warm ? "warm cache hit" : "cold — searching from scratch");
 		uintmax_t n = hv_search(search_seconds, workers, &bnhot, &bcut, &bcpu,
-														&bmem, &base_cpu, &base_mem);
+														&bmem, &base_cpu, &base_mem, warm ? &prev : NULL);
 		HvCacheEntry e = {0x6d6363687643u, key, bnhot, bcut, bcpu, bmem, n};
 		long csz = hv_cache_write(key, &e);
 		printf("hv: searched %ju candidates over 0..UINTMAX; best nhot=%u leaf_cut=%u\n",
