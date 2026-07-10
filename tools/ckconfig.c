@@ -1,10 +1,13 @@
 #include "toolsupport.h"
 
 static const char *ALLOW_EXTERN[] = {
-		"CONFIG_MCC_BACKTRACE_ONLY",
+		"MCC_CONFIG_BACKTRACE_ONLY",
+		"MCC_CONFIG_MCCBOOT",
 		0};
 static const char *ALLOW_DEAD[] = {
-		"CONFIG_MCC_UCLIBC",
+		"MCC_CONFIG_UCLIBC",
+		"MCC_CONFIG_AUTOCORRECT",
+		"MCC_CONFIG_LIBC",
 		0};
 
 typedef struct {
@@ -63,7 +66,7 @@ static int line_defines(const char *line, char *out, int osz) {
 		return 0;
 	while (*p == ' ' || *p == '\t')
 		p++;
-	if (strncmp(p, "CONFIG_MCC_", 11))
+	if (strncmp(p, "MCC_CONFIG_", 11))
 		return 0;
 	int i = 0;
 	while (is_id(*p) && i < osz - 1)
@@ -102,7 +105,7 @@ static int scan_code(const char *path, int is_dir, void *ud) {
 		if (has_def)
 			set_add(&s_selfdef, defname);
 
-		for (char *q = p; (q = strstr(q, "CONFIG_MCC_")) != NULL;) {
+		for (char *q = p; (q = strstr(q, "MCC_CONFIG_")) != NULL;) {
 			char name[128];
 			int i = 0;
 			char *r = q;
@@ -135,7 +138,7 @@ static void scan_cmake(const char *path, int emit_ok) {
 			len--;
 		p[len] = 0;
 		int line_has_defstr = strstr(p, "mcc_def_str") != NULL;
-		for (char *q = p; (q = strstr(q, "CONFIG_MCC_")) != NULL;) {
+		for (char *q = p; (q = strstr(q, "MCC_CONFIG_")) != NULL;) {
 			char name[128];
 			int i = 0;
 			char *r = q;
@@ -222,7 +225,7 @@ int main(int argc, char **argv) {
 						errs);
 		return 1;
 	}
-	printf("ckconfig OK: CONFIG_MCC_* surface consistent (%d emitted, %d read, "
+	printf("ckconfig OK: MCC_CONFIG_* surface consistent (%d emitted, %d read, "
 				 "%d header-defined)\n",
 				 s_emit.n, s_read.n, s_selfdef.n);
 	return 0;

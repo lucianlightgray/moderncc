@@ -1,10 +1,10 @@
-#ifdef CONFIG_MCC_TOOLHOST
+#ifdef MCC_CONFIG_TOOLHOST
 #include "mcchost.h"
 #else
 #include "mcc.h"
 #endif
 
-#ifndef CONFIG_MCC_BACKTRACE_ONLY
+#ifndef MCC_CONFIG_BACKTRACE_ONLY
 
 #ifdef _WIN32
 #include <process.h>
@@ -675,7 +675,7 @@ ST_FUNC MAYBE_UNUSED int host_dir_walk(const char *dir, int recursive, host_walk
 }
 
 ST_FUNC MAYBE_UNUSED int host_codesign_adhoc(const char *file) {
-#ifdef CONFIG_CODESIGN
+#if MCC_CONFIG_CODESIGN
 	const char *argv[] = {"codesign", "-f", "-s", "-", file, NULL};
 	return host_spawn_wait(argv);
 #else
@@ -775,7 +775,7 @@ ST_FUNC char **host_environ(void) {
 #endif
 }
 
-#ifdef CONFIG_MCC_STATIC
+#ifdef MCC_CONFIG_STATIC
 
 typedef struct MCCSyms {
 	char *str;
@@ -783,7 +783,7 @@ typedef struct MCCSyms {
 } MCCSyms;
 
 static MCCSyms mcc_syms[] = {
-#if !defined(CONFIG_MCCBOOT)
+#if !defined(MCC_CONFIG_MCCBOOT)
 #define MCCSYM(a) {               \
 											#a,         \
 											(void *)&a, \
@@ -931,7 +931,7 @@ ST_FUNC MAYBE_UNUSED const char *host_elf_interp_override(void) {
 	return getenv("LD_SO");
 }
 
-#ifdef MCC_IS_NATIVE
+#ifdef MCC_TARGET_IS_HOST
 
 #ifndef _WIN32
 #include <sys/mman.h>
@@ -955,7 +955,7 @@ ST_FUNC int host_runmem_dual(void) {
 #else
 	static int dual;
 	if (!dual) {
-#ifdef CONFIG_RUN_MMAP_EXEC
+#if MCC_CONFIG_RUN_DUALMAP
 		dual = 1;
 #else
 		size_t page = host_pagesize();
@@ -1022,7 +1022,7 @@ ST_FUNC void host_runmem_free(void *ptr, unsigned size) {
 
 ST_FUNC void host_icache_flush(void *ptr, unsigned long length) {
 #if !defined _WIN32 && \
-		((defined MCC_TARGET_ARM && !TARGETOS_BSD) || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64)
+		((defined MCC_TARGET_ARM && !MCC_TARGETOS_BSD) || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64)
 	void __clear_cache(void *beginning, void *end);
 	__clear_cache(ptr, (char *)ptr + length);
 #else
@@ -1082,7 +1082,7 @@ ST_FUNC void host_unwind_unregister(void *table) {
 
 #endif
 
-#if defined MCC_IS_NATIVE && defined CONFIG_MCC_BACKTRACE
+#if defined MCC_TARGET_IS_HOST && MCC_CONFIG_BACKTRACE
 
 #ifndef _WIN32
 #include <signal.h>

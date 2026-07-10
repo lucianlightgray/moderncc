@@ -197,8 +197,8 @@ static void emit_sym_decl(FILE *f, ElfW(Sym) * sym, const char *name) {
 		fprintf(f, "\t.type\t%s, %sobject\n", name, TYPE_PFX);
 }
 
-#ifndef FDE_ENCODING
-#define FDE_ENCODING (DW_EH_PE_udata4 | DW_EH_PE_signed | DW_EH_PE_pcrel)
+#ifndef MCC_FDE_ENCODING
+#define MCC_FDE_ENCODING (DW_EH_PE_udata4 | DW_EH_PE_signed | DW_EH_PE_pcrel)
 #endif
 
 struct cfi_note {
@@ -282,7 +282,7 @@ static int cfi_parse(MCCState *s1, struct cfi_info *ci) {
 			code_align = dwarf_read_uleb128(&q, eend);
 			data_align = dwarf_read_sleb128(&q, eend);
 			dwarf_read_uleb128(&q, eend);
-			if (dwarf_read_uleb128(&q, eend) != 1 || dwarf_read_1(q, eend) != FDE_ENCODING)
+			if (dwarf_read_uleb128(&q, eend) != 1 || dwarf_read_1(q, eend) != MCC_FDE_ENCODING)
 				return 0;
 			if (!code_align || !data_align)
 				return 0;

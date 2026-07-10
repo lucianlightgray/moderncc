@@ -419,7 +419,7 @@ struct macho {
 		int orig_sec;
 		addr_t orig_val;
 	} *tls;
-#ifdef CONFIG_NEW_MACHO
+#if MCC_CONFIG_MACHO_CHAINED_FIXUPS
 	Section *chained_fixups;
 	int n_bind;
 	int n_bind_rebase;
@@ -603,7 +603,7 @@ static void mcc_macho_add_destructor(MCCState *s1) {
 	add_array(s1, ".init_array", init_sym);
 }
 
-#ifdef CONFIG_NEW_MACHO
+#if MCC_CONFIG_MACHO_CHAINED_FIXUPS
 static void bind_rebase_add(struct macho *mo, int bind, int sh_info,
 														ElfW_Rel *rel, struct sym_attr *attr) {
 	mo->bind_rebase = mcc_realloc(mo->bind_rebase, (mo->n_bind_rebase + 1) *
@@ -645,7 +645,7 @@ static void check_relocs(MCCState *s1, struct macho *mo) {
 					attr->got_offset = s1->got->data_offset;
 					attr->plt_offset = -1;
 					attr->dyn_index = 1;
-					section_ptr_add(s1->got, PTR_SIZE);
+					section_ptr_add(s1->got, MCC_PTR_SIZE);
 					put_elf_reloc(s1->symtab, s1->got, attr->got_offset,
 												R_JMP_SLOT, sym_index);
 					goti = mcc_realloc(goti, (mo->n_got + 1) * sizeof(*goti));
@@ -795,7 +795,7 @@ static void check_relocs(MCCState *s1, struct macho *mo) {
 					attr->got_offset = s1->got->data_offset;
 					attr->plt_offset = -1;
 					attr->dyn_index = 1;
-					section_ptr_add(s1->got, PTR_SIZE);
+					section_ptr_add(s1->got, MCC_PTR_SIZE);
 					put_elf_reloc(s1->symtab, s1->got, attr->got_offset,
 												R_JMP_SLOT, sym_index);
 					goti = mcc_realloc(goti, (mo->n_got + 1) * sizeof(*goti));
@@ -850,7 +850,7 @@ static void check_relocs(MCCState *s1, struct macho *mo) {
 													 mo->la_symbol_ptr->data_offset,
 													 R_DATA_PTR, mo->helpsym,
 													 mo->stub_helper->data_offset - 10);
-						section_ptr_add(mo->la_symbol_ptr, PTR_SIZE);
+						section_ptr_add(mo->la_symbol_ptr, MCC_PTR_SIZE);
 #elif defined MCC_TARGET_ARM64
 						if (type != R_AARCH64_CALL26)
 							continue;
@@ -885,7 +885,7 @@ static void check_relocs(MCCState *s1, struct macho *mo) {
 													 mo->la_symbol_ptr->data_offset,
 													 R_DATA_PTR, mo->helpsym,
 													 mo->stub_helper->data_offset - 12);
-						section_ptr_add(mo->la_symbol_ptr, PTR_SIZE);
+						section_ptr_add(mo->la_symbol_ptr, MCC_PTR_SIZE);
 #endif
 						mo->s_lazy_bind =
 								mcc_realloc(mo->s_lazy_bind, (mo->n_lazy_bind + 1) *
@@ -1085,7 +1085,7 @@ static void create_symtab(MCCState *s1, struct macho *mo) {
 	mo->stubsym = put_elf_sym(s1->symtab, 0, 0,
 														ELFW(ST_INFO)(STB_LOCAL, STT_SECTION), 0,
 														mo->stubs->sh_num, ".__stubs");
-#ifdef CONFIG_NEW_MACHO
+#if MCC_CONFIG_MACHO_CHAINED_FIXUPS
 	mo->chained_fixups = new_section(s1, "CHAINED_FIXUPS",
 																	 SHT_LINKEDIT, SHF_ALLOC | SHF_WRITE);
 #else
@@ -1097,11 +1097,11 @@ static void create_symtab(MCCState *s1, struct macho *mo) {
 	mo->lasym = put_elf_sym(s1->symtab, 0, 0,
 													ELFW(ST_INFO)(STB_LOCAL, STT_SECTION), 0,
 													mo->la_symbol_ptr->sh_num, ".__la_symbol_ptr");
-	section_ptr_add(data_section, -data_section->data_offset & (PTR_SIZE - 1));
-	mo->dyld_private = put_elf_sym(s1->symtab, data_section->data_offset, PTR_SIZE,
+	section_ptr_add(data_section, -data_section->data_offset & (MCC_PTR_SIZE - 1));
+	mo->dyld_private = put_elf_sym(s1->symtab, data_section->data_offset, MCC_PTR_SIZE,
 																 ELFW(ST_INFO)(STB_LOCAL, STT_OBJECT), 0,
 																 data_section->sh_num, ".__dyld_private");
-	section_ptr_add(data_section, PTR_SIZE);
+	section_ptr_add(data_section, MCC_PTR_SIZE);
 	mo->dyld_stub_binder = put_elf_sym(s1->symtab, 0, 0,
 																		 ELFW(ST_INFO)(STB_GLOBAL, STT_OBJECT), 0,
 																		 SHN_UNDEF, "dyld_stub_binder");
@@ -1124,7 +1124,7 @@ static void create_symtab(MCCState *s1, struct macho *mo) {
 		pn[sym_index - 1].n_strx = put_elf_str(mo->strtab, name);
 		pn[sym_index - 1].n_value = sym_index;
 	}
-	section_ptr_add(mo->strtab, -mo->strtab->data_offset & (PTR_SIZE - 1));
+	section_ptr_add(mo->strtab, -mo->strtab->data_offset & (MCC_PTR_SIZE - 1));
 	mcc_qsort(pn, sym_end - 1, sizeof(*pn), machosymcmp, s1);
 	mo->e2msym = mcc_malloc(sym_end * sizeof(*mo->e2msym));
 	mo->e2msym[0] = -1;
@@ -1188,7 +1188,7 @@ const struct
 
 #define N_SEGMENT (sizeof(all_segment) / sizeof(all_segment[0]))
 
-#ifdef CONFIG_NEW_MACHO
+#if MCC_CONFIG_MACHO_CHAINED_FIXUPS
 static void calc_fixup_size(MCCState *s1, struct macho *mo) {
 	int size;
 
@@ -1526,7 +1526,7 @@ static void collect_sections(MCCState *s1, struct macho *mo, const char *filenam
 	Section *s;
 	struct segment_command_64 *seg;
 	struct dylib_command *dylib;
-#ifdef CONFIG_NEW_MACHO
+#if MCC_CONFIG_MACHO_CHAINED_FIXUPS
 	struct linkedit_data_command *chained_fixups_lc;
 	struct linkedit_data_command *export_trie_lc;
 #endif
@@ -1584,7 +1584,7 @@ static void collect_sections(MCCState *s1, struct macho *mo, const char *filenam
 					sk = sk_tls_vars;
 				else if (flags & SHF_TLS)
 					sk = sk_tls_data;
-#ifndef CONFIG_NEW_MACHO
+#if !MCC_CONFIG_MACHO_CHAINED_FIXUPS
 				else if (s == mo->stub_helper)
 					sk = sk_stub_helper;
 				else if (s == mo->la_symbol_ptr)
@@ -1656,7 +1656,7 @@ static void collect_sections(MCCState *s1, struct macho *mo, const char *filenam
 		strcpy(str, name);
 	}
 
-#ifdef CONFIG_NEW_MACHO
+#if MCC_CONFIG_MACHO_CHAINED_FIXUPS
 	chained_fixups_lc = add_lc(mo, LC_DYLD_CHAINED_FIXUPS,
 														 sizeof(struct linkedit_data_command));
 	export_trie_lc = add_lc(mo, LC_DYLD_EXPORTS_TRIE,
@@ -1726,7 +1726,7 @@ static void collect_sections(MCCState *s1, struct macho *mo, const char *filenam
 			seg->vmsize = curaddr - seg->vmaddr;
 			seg->filesize = fileofs - seg->fileoff;
 		}
-#ifdef CONFIG_NEW_MACHO
+#if MCC_CONFIG_MACHO_CHAINED_FIXUPS
 		if (sk == sk_linkedit) {
 			calc_fixup_size(s1, mo);
 			export_trie(s1, mo);
@@ -1758,7 +1758,7 @@ static void collect_sections(MCCState *s1, struct macho *mo, const char *filenam
 #endif
 				if (sk == sk_nl_ptr)
 					sec->reserved1 = mo->nr_plt;
-#ifndef CONFIG_NEW_MACHO
+#if !MCC_CONFIG_MACHO_CHAINED_FIXUPS
 				if (sk == sk_la_ptr)
 					sec->reserved1 = mo->nr_plt + mo->n_got;
 #endif
@@ -1854,7 +1854,7 @@ static void collect_sections(MCCState *s1, struct macho *mo, const char *filenam
 	dysymlc->indirectsymoff = mo->indirsyms->sh_offset;
 	dysymlc->nindirectsyms = mo->indirsyms->data_offset / sizeof(uint32_t);
 
-#ifdef CONFIG_NEW_MACHO
+#if MCC_CONFIG_MACHO_CHAINED_FIXUPS
 	if (mo->chained_fixups->data_offset) {
 		chained_fixups_lc->dataoff = mo->chained_fixups->sh_offset;
 		chained_fixups_lc->datasize = mo->chained_fixups->data_offset;
@@ -1939,7 +1939,7 @@ static void macho_write(MCCState *s1, struct macho *mo, FILE *fp) {
 	}
 }
 
-#ifdef CONFIG_NEW_MACHO
+#if MCC_CONFIG_MACHO_CHAINED_FIXUPS
 static int bind_rebase_cmp(const void *_a, const void *_b, void *arg) {
 	MCCState *s1 = arg;
 	struct bind_rebase *a = (struct bind_rebase *)_a;
@@ -2030,7 +2030,7 @@ ST_FUNC void bind_rebase_import(MCCState *s1, struct macho *mo) {
 				addr_t addr = s->sh_addr + r_offset;
 
 				if ((addr & 3) ||
-						(addr & (SEG_PAGE_SIZE - 1)) > SEG_PAGE_SIZE - PTR_SIZE)
+						(addr & (SEG_PAGE_SIZE - 1)) > SEG_PAGE_SIZE - MCC_PTR_SIZE)
 					mcc_error("Illegal rel_offset %s %lld",
 										s->name, (long long)r_offset);
 				if (addr >= end)
@@ -2124,7 +2124,7 @@ static void macho_tls_setup(MCCState *s1, struct macho *mo) {
 		if (!mo->tls_vars) {
 			mo->tls_vars = new_section(s1, ".tlv_descriptors", SHT_PROGBITS,
 																 SHF_ALLOC | SHF_WRITE);
-			mo->tls_vars->sh_addralign = PTR_SIZE;
+			mo->tls_vars->sh_addralign = MCC_PTR_SIZE;
 			tlv_sym = put_elf_sym(symtab_section, 0, 0,
 														ELFW(ST_INFO)(STB_GLOBAL, STT_FUNC), 0,
 														SHN_UNDEF, "__tlv_bootstrap");
@@ -2133,7 +2133,7 @@ static void macho_tls_setup(MCCState *s1, struct macho *mo) {
 		}
 
 		desc_off = mo->tls_vars->data_offset;
-		memset(section_ptr_add(mo->tls_vars, 3 * PTR_SIZE), 0, 3 * PTR_SIZE);
+		memset(section_ptr_add(mo->tls_vars, 3 * MCC_PTR_SIZE), 0, 3 * MCC_PTR_SIZE);
 
 		mo->tls = mcc_realloc(mo->tls, (mo->n_tls + 1) * sizeof(*mo->tls));
 		mo->tls[mo->n_tls].desc_off = desc_off;
@@ -2144,7 +2144,7 @@ static void macho_tls_setup(MCCState *s1, struct macho *mo) {
 		memset(&rel, 0, sizeof rel);
 		rel.r_offset = desc_off;
 		rel.r_info = ELFW(R_INFO)(tlv_sym, R_DATA_PTR);
-#ifdef CONFIG_NEW_MACHO
+#if MCC_CONFIG_MACHO_CHAINED_FIXUPS
 		bind_rebase_add(mo, 1, mo->tls_vars->sh_num, &rel, NULL);
 #else
 		mo->bind = mcc_realloc(mo->bind, (mo->n_bind + 1) * sizeof(struct bind));
@@ -2155,7 +2155,7 @@ static void macho_tls_setup(MCCState *s1, struct macho *mo) {
 
 		sym->st_shndx = mo->tls_vars->sh_num;
 		sym->st_value = desc_off;
-		sym->st_size = 3 * PTR_SIZE;
+		sym->st_size = 3 * MCC_PTR_SIZE;
 		sym->st_info = ELFW(ST_INFO)(ELFW(ST_BIND)(sym->st_info), STT_OBJECT);
 	}
 }
@@ -2173,7 +2173,7 @@ static void macho_tls_finalize(MCCState *s1, struct macho *mo) {
 	for (i = 0; i < mo->n_tls; i++) {
 		Section *os = s1->sections[mo->tls[i].orig_sec];
 		addr_t var_addr = os->sh_addr + mo->tls[i].orig_val;
-		write64le(mo->tls_vars->data + mo->tls[i].desc_off + 2 * PTR_SIZE,
+		write64le(mo->tls_vars->data + mo->tls[i].desc_off + 2 * MCC_PTR_SIZE,
 							var_addr - base);
 	}
 }
@@ -2219,7 +2219,7 @@ ST_FUNC int macho_output_file(MCCState *s1, const char *filename) {
 		s1->output_type = MCC_OUTPUT_EXE;
 		relocate_sections(s1);
 		s1->output_type = save_output;
-#ifdef CONFIG_NEW_MACHO
+#if MCC_CONFIG_MACHO_CHAINED_FIXUPS
 		bind_rebase_import(s1, &mo);
 #endif
 		convert_symbols(s1, &mo);
@@ -2269,7 +2269,7 @@ static uint64_t macho_swap64(uint64_t x) {
 	tbd_parse_trample
 #define tbd_parse_trample *pos++ = 0
 
-#ifdef MCC_IS_NATIVE
+#ifdef MCC_TARGET_IS_HOST
 ST_FUNC void mcc_add_macos_sdkpath(MCCState *s) {
 	const char *sdk = host_macos_sdk_root();
 	CString path;

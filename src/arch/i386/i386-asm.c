@@ -1,6 +1,6 @@
 #define USING_GLOBALS
 #include "mcc.h"
-#ifdef CONFIG_MCC_ASM
+#if MCC_CONFIG_ASM
 
 #define MAX_OPERANDS 3
 
@@ -114,14 +114,14 @@ enum {
 #define OP_REG (OP_REG8 | OP_REG16 | OP_REG32 | OP_REG64)
 
 #ifdef MCC_TARGET_X86_64
-#define TREG_XAX TREG_RAX
-#define TREG_XCX TREG_RCX
-#define TREG_XDX TREG_RDX
+#define MCC_TREG_XAX MCC_TREG_RAX
+#define MCC_TREG_XCX MCC_TREG_RCX
+#define MCC_TREG_XDX MCC_TREG_RDX
 #define TOK_ASM_xax TOK_ASM_rax
 #else
-#define TREG_XAX TREG_EAX
-#define TREG_XCX TREG_ECX
-#define TREG_XDX TREG_EDX
+#define MCC_TREG_XAX MCC_TREG_EAX
+#define MCC_TREG_XCX MCC_TREG_ECX
+#define MCC_TREG_XDX MCC_TREG_EDX
 #define TOK_ASM_xax TOK_ASM_eax
 #endif
 
@@ -346,11 +346,11 @@ static void parse_operand(MCCState *s1, Operand *op) {
 			reg = tok - TOK_ASM_al;
 			op->type = 1 << (reg >> 3);
 			op->reg = reg & 7;
-			if ((op->type & OP_REG) && op->reg == TREG_XAX)
+			if ((op->type & OP_REG) && op->reg == MCC_TREG_XAX)
 				op->type |= OP_EAX;
-			else if (op->type == OP_REG8 && op->reg == TREG_XCX)
+			else if (op->type == OP_REG8 && op->reg == MCC_TREG_XCX)
 				op->type |= OP_CL;
-			else if (op->type == OP_REG16 && op->reg == TREG_XDX)
+			else if (op->type == OP_REG16 && op->reg == MCC_TREG_XDX)
 				op->type |= OP_DX;
 		} else if (tok >= TOK_ASM_dr0 && tok <= TOK_ASM_dr7) {
 			op->type = OP_DB;
@@ -1156,7 +1156,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 	int sorted_op[MAX_ASM_OPERANDS];
 	int j, reg, c, reg_mask;
 	const char *str;
-	uint8_t regs_allocated[NB_ASM_REGS];
+	uint8_t regs_allocated[MCC_NB_ASM_REGS];
 
 	asm_constraints_prologue(operands, nb_operands, nb_outputs,
 													 clobber_regs, sorted_op, regs_allocated);
@@ -1196,32 +1196,32 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 			goto try_next;
 		case 'A':
 #ifdef MCC_TARGET_X86_64
-			if (is_reg_allocated(TREG_XAX))
+			if (is_reg_allocated(MCC_TREG_XAX))
 				goto try_next;
 			op->is_llong = 0;
-			op->reg = TREG_XAX;
-			regs_allocated[TREG_XAX] |= reg_mask;
+			op->reg = MCC_TREG_XAX;
+			regs_allocated[MCC_TREG_XAX] |= reg_mask;
 #else
-			if (is_reg_allocated(TREG_XAX) ||
-					is_reg_allocated(TREG_XDX))
+			if (is_reg_allocated(MCC_TREG_XAX) ||
+					is_reg_allocated(MCC_TREG_XDX))
 				goto try_next;
 			op->is_llong = 1;
-			op->reg = TREG_XAX;
-			regs_allocated[TREG_XAX] |= reg_mask;
-			regs_allocated[TREG_XDX] |= reg_mask;
+			op->reg = MCC_TREG_XAX;
+			regs_allocated[MCC_TREG_XAX] |= reg_mask;
+			regs_allocated[MCC_TREG_XDX] |= reg_mask;
 #endif
 			break;
 		case 'a':
-			reg = TREG_XAX;
+			reg = MCC_TREG_XAX;
 			goto alloc_reg;
 		case 'b':
 			reg = 3;
 			goto alloc_reg;
 		case 'c':
-			reg = TREG_XCX;
+			reg = MCC_TREG_XCX;
 			goto alloc_reg;
 		case 'd':
-			reg = TREG_XDX;
+			reg = MCC_TREG_XDX;
 			goto alloc_reg;
 		case 'S':
 			reg = 6;
@@ -1250,7 +1250,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 			if ((reg = op->reg) >= 0)
 				goto reg_found;
 			else
-				for (reg = 0; reg < NB_ASM_REGS; reg++) {
+				for (reg = 0; reg < MCC_NB_ASM_REGS; reg++) {
 					if (!is_reg_allocated(reg))
 						goto reg_found;
 				}
@@ -1275,7 +1275,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 		case 'g':
 			if (j < nb_outputs || c == 'm') {
 				if ((op->vt->r & VT_VALMASK) == VT_LLOCAL) {
-					for (reg = 0; reg < NB_ASM_REGS; reg++) {
+					for (reg = 0; reg < MCC_NB_ASM_REGS; reg++) {
 						if (!(regs_allocated[reg] & REG_IN_MASK))
 							goto reg_found1;
 					}
@@ -1304,7 +1304,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 		if (op->reg >= 0 &&
 				(op->vt->r & VT_VALMASK) == VT_LLOCAL &&
 				!op->is_memory) {
-			for (reg = 0; reg < NB_ASM_REGS; reg++) {
+			for (reg = 0; reg < MCC_NB_ASM_REGS; reg++) {
 				if (!(regs_allocated[reg] & REG_OUT_MASK))
 					goto reg_found2;
 			}
@@ -1437,7 +1437,7 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
 													int nb_outputs, int is_output,
 													uint8_t *clobber_regs,
 													int out_reg) {
-	uint8_t regs_allocated[NB_ASM_REGS];
+	uint8_t regs_allocated[MCC_NB_ASM_REGS];
 	ASMOperand *op;
 	int reg;
 
@@ -1483,7 +1483,7 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
 						SValue sv;
 						sv = *op->vt;
 						sv.c.i += 4;
-						load(TREG_XDX, &sv);
+						load(MCC_TREG_XDX, &sv);
 					}
 				}
 			}
@@ -1510,7 +1510,7 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
 						SValue sv;
 						sv = *op->vt;
 						sv.c.i += 4;
-						store(TREG_XDX, &sv);
+						store(MCC_TREG_XDX, &sv);
 					}
 				}
 			}

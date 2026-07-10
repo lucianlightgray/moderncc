@@ -1,4 +1,4 @@
-#if defined(CONFIG_AST) && CONFIG_AST && (defined(MCC_INTERNAL) || !defined(SINGLE_SOURCE))
+#if MCC_CONFIG_AST && (defined(MCC_INTERNAL) || !defined(MCC_AMALGAMATED))
 
 #include "mccast.h"
 
@@ -1612,7 +1612,7 @@ void ast_hook_implicit_return(void) {
 	ast_add_child(ast_cur, bb, ret);
 }
 
-#if defined(CONFIG_AST) && CONFIG_AST && defined(MCC_TARGET_X86_64)
+#if MCC_CONFIG_AST && defined(MCC_TARGET_X86_64)
 #define AST_PROMO_MAX 5
 static const int ast_promo_caller[3] = {10, 9, 8};
 static const int ast_promo_callee[5] = {3, 12, 13, 14, 15};
@@ -1627,7 +1627,7 @@ static int ast_promo_regpool_at(int i) {
 }
 #endif
 
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 static void ast_replay_value(AstArena *a, AstLocal n);
 static void ast_replay_bb(AstArena *a, AstLocal bb);
 static int ast_local_is_readonly(AstArena *a, int off);
@@ -2019,7 +2019,7 @@ static int ast_local_is_readonly(AstArena *a, int off) {
 }
 #endif
 
-#if defined(CONFIG_AST) && CONFIG_AST && defined(MCC_TARGET_X86_64)
+#if MCC_CONFIG_AST && defined(MCC_TARGET_X86_64)
 static int ast_promo_reg_of(AstArena *a, AstLocal n) {
 	if (n == AST_NONE || ast_kind(a, n) != AST_Ref)
 		return -1;
@@ -2230,7 +2230,7 @@ static void ast_promo_write(int reg, CType *ct) {
 		gv(reg_classes[reg]);
 		ast_pinned_regs |= (1u << reg);
 	} else {
-		gv(RC_INT);
+		gv(MCC_RC_INT);
 		load(reg, vtop);
 		vtop->r = reg;
 		vtop->r2 = VT_CONST;
@@ -2408,9 +2408,9 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 		ast_replay_value(a, ast_child(a, n, 2));
 		combine_types(&type, &sv, vtop, '?');
 		gen_cast(&type);
-		rc = RC_TYPE(type.t);
+		rc = MCC_RC_TYPE(type.t);
 		if (USING_TWO_WORDS(type.t))
-			rc = RC_RET(type.t);
+			rc = MCC_RC_RET(type.t);
 		r2 = gv(rc);
 		tt = gjmp(0);
 		gsym(u);
@@ -2472,9 +2472,9 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 			PUT_R_RET(&ret, ret.type.t);
 			nn = ret_nregs;
 			while (nn > 1) {
-				int rc = reg_classes[ret.r] & ~(RC_INT | RC_FLOAT);
+				int rc = reg_classes[ret.r] & ~(MCC_RC_INT | MCC_RC_FLOAT);
 				rc <<= --nn;
-				for (r = 0; r < NB_REGS; ++r)
+				for (r = 0; r < MCC_NB_REGS; ++r)
 					if (reg_classes[r] & rc)
 						break;
 				vsetc(&ret.type, r, &ret.c);
@@ -2537,7 +2537,7 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 			 s = ast_next_sib(a, s)) {
 		switch (ast_kind(a, s)) {
 		case AST_Store: {
-#if defined(CONFIG_AST) && CONFIG_AST && defined(MCC_TARGET_X86_64)
+#if MCC_CONFIG_AST && defined(MCC_TARGET_X86_64)
 			int preg = (ast_promo_n && !ast_in_graft)
 										 ? ast_promo_reg_of(a, ast_child(a, s, 0))
 										 : -1;
@@ -2638,7 +2638,7 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 				cur_switch = sw;
 				case_sort(sw);
 				vpushv(&sw->sv);
-				gv(RC_INT);
+				gv(MCC_RC_INT);
 				int d = gcase(sw->p, sw->n, 0);
 				vpop();
 				if (sw->def_sym)

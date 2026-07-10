@@ -366,7 +366,7 @@ DEF(TOK___gttf2, "__gttf2")
 DEF(TOK___getf2, "__getf2")
 #endif
 
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 DEF(TOK___bound_ptr_add, "__bound_ptr_add")
 DEF(TOK___bound_ptr_indir1, "__bound_ptr_indir1")
 DEF(TOK___bound_ptr_indir2, "__bound_ptr_indir2")
@@ -431,7 +431,7 @@ DEF_ASMDIR(rept)
 DEF_ASMDIR(endr)
 DEF_ASMDIR(org)
 DEF_ASMDIR(quad)
-#if PTR_SIZE == 4
+#if MCC_PTR_SIZE == 4
 DEF_ASMDIR(code16)
 DEF_ASMDIR(code32)
 #else

@@ -80,7 +80,7 @@ cmake --build cmake-release -j
 All compiler binaries follow one suffix convention:
 `mcc[-<arch>][-static|-dynamic][-musl]` — arch first (cross targets only),
 then the link/single-source shape, with `-musl` always last. `mcc` — the default,
-installed binary — is a self-contained SINGLE_SOURCE build linked only to libc,
+installed binary — is a self-contained MCC_AMALGAMATED build linked only to libc,
 with no `libmcc.so` dependency. `mcc-static` is the same, statically linked
 (`-static`). `mcc-dynamic` is a non-amalgamated driver linked against the shared
 `libmcc.so`. Cross compilers (`MCC_ENABLE_CROSS`) are self-contained host

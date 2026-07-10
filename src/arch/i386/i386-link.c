@@ -73,10 +73,10 @@ ST_FUNC unsigned create_plt_entry(MCCState *s1, unsigned got_offset, struct sym_
 		p = section_ptr_add(plt, 16);
 		p[0] = 0xff;
 		p[1] = modrm + 0x10;
-		write32le(p + 2, PTR_SIZE);
+		write32le(p + 2, MCC_PTR_SIZE);
 		p[6] = 0xff;
 		p[7] = modrm;
-		write32le(p + 8, PTR_SIZE * 2);
+		write32le(p + 8, MCC_PTR_SIZE * 2);
 	}
 	plt_offset = plt->data_offset;
 

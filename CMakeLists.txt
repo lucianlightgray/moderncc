@@ -336,7 +336,7 @@ function(mcc_validate_config)
     if(MCC_CONFIG_LIBC STREQUAL "uClibc")
         message(WARNING
             "mcc config: MCC_CONFIG_LIBC=uClibc is a legacy selector (emits "
-            "CONFIG_MCC_UCLIBC, no path effect on modern hosts).")
+            "MCC_CONFIG_UCLIBC, no path effect on modern hosts).")
     endif()
     if((MCC_TARGETOS STREQUAL "WIN32" OR MCC_TARGETOS STREQUAL "Darwin") AND
        (MCC_CONFIG_NEW_DTAGS OR MCC_CONFIG_PIE OR MCC_CONFIG_PIC
@@ -1140,7 +1140,7 @@ mcc_config_node(MCC_ENABLE_RPATH TYPE BOOL DEFAULT ON GROUP "Build targets"
     HELP "Bake -rpath into binaries linking libmcc.so so they find the shared lib at runtime"
     VISIBLE_WHEN "NOT MCC_BUILD_STATIC_LIB")
 mcc_config_node(MCC_SINGLE_SOURCE    TYPE BOOL DEFAULT ON  GROUP "Build targets"
-    HELP "Build libmcc from a single TU (Makefile: SINGLE_SOURCE)")
+    HELP "Build libmcc from a single TU (Makefile: MCC_AMALGAMATED)")
 mcc_config_node(MCC_BUILD_TESTS   TYPE BOOL DEFAULT ON  GROUP "Build targets"
     HELP "Build/enable the test suite (tests/Makefile)")
 mcc_config_node(MCC_BENCH         TYPE BOOL DEFAULT OFF GROUP "Build targets"
@@ -1215,7 +1215,7 @@ mcc_config_node(MCC_CONFIG_NEW_DTAGS TYPE BOOL DEFAULT OFF GROUP "mcc features"
     VISIBLE_WHEN "${_elf}")
 
 mcc_config_node(MCC_AUTO_MCCDIR     TYPE BOOL DEFAULT ON GROUP "mcc features"
-    HELP "Build-tree mcc auto-discovers libmccrt.a + headers locally, falling back to system CONFIG_MCCDIR")
+    HELP "Build-tree mcc auto-discovers libmccrt.a + headers locally, falling back to system MCC_CONFIG_MCCDIR")
 
 mcc_config_node(MCC_CONFIG_LIBC    TYPE STRING DEFAULT "" GROUP "mcc features"
     HELP "Target libc: '', uClibc, or musl" CHOICES uClibc musl EMPTY_OK
@@ -1223,7 +1223,7 @@ mcc_config_node(MCC_CONFIG_LIBC    TYPE STRING DEFAULT "" GROUP "mcc features"
 mcc_config_node(MCC_CONFIG_DWARF   TYPE STRING DEFAULT "" GROUP "mcc features"
     HELP "DWARF debug version (2..5); empty = stabs" CHOICES 0 2 3 4 5 EMPTY_OK)
 mcc_config_node(MCC_CONFIG_SEMLOCK TYPE STRING DEFAULT "" GROUP "mcc features"
-    HELP "CONFIG_MCC_SEMLOCK value (free-form numeric; empty = mcc.h default 1)")
+    HELP "MCC_CONFIG_SEMLOCK value (free-form numeric; empty = mcc.h default 1)")
 mcc_config_node(MCC_CONFIG_NEW_MACHO TYPE STRING DEFAULT "" GROUP "Darwin"
     HELP "Force apple object format: yes|no|auto" CHOICES yes no auto EMPTY_OK
     VISIBLE_WHEN "${_darwin}")
@@ -1470,7 +1470,7 @@ mcc_config_node(MCC_ARM_IDIV TYPE BOOL DEFAULT OFF GROUP "ARM ABI" ADVANCED
     HELP "ARM hardware integer divide (__ARM_FEATURE_IDIV); autodetected from the host cc")
 mcc_config_node(MCC_CPUVER TYPE STRING DEFAULT "" EMPTY_OK GROUP "ARM ABI" ADVANCED
     VISIBLE_WHEN "MCC_CPU STREQUAL arm"
-    HELP "ARM architecture version 4/5/6/7 (CONFIG_MCC_CPUVER); autodetected (__ARM_ARCH)")
+    HELP "ARM architecture version 4/5/6/7 (MCC_CONFIG_CPUVER); autodetected (__ARM_ARCH)")
 
 if(NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT CMAKE_CROSSCOMPILING)
     if("${MCC_TRIPLET}" STREQUAL "")
@@ -1579,7 +1579,7 @@ endif()
 
 include(GNUInstallDirs)
 mcc_config_node(MCC_INSTALL_MCCDIR TYPE STRING DEFAULT "" GROUP "Install" ADVANCED
-    HELP "Runtime mccdir (CONFIG_MCCDIR); empty = <prefix>/<libdir>/mcc")
+    HELP "Runtime mccdir (MCC_CONFIG_MCCDIR); empty = <prefix>/<libdir>/mcc")
 
 if(MCC_CONFIG_PREDEFS)
     set(_mcc_predefs_value 1)
@@ -1619,7 +1619,7 @@ set(_mccdefs "${_mcc_cpu_define_${MCC_CPU}}=1")
 
 if(MCC_CPU STREQUAL "arm")
     if(MCC_CPUVER)
-        list(APPEND _mccdefs "CONFIG_MCC_CPUVER=${MCC_CPUVER}")
+        list(APPEND _mccdefs "MCC_CONFIG_CPUVER=${MCC_CPUVER}")
     endif()
     if(MCC_ARM_EABI)
         list(APPEND _mccdefs "MCC_ARM_EABI=1")
@@ -1640,7 +1640,7 @@ if(MCC_TARGETOS STREQUAL "WIN32")
 elseif(MCC_TARGETOS STREQUAL "Darwin")
     list(APPEND _mccdefs "MCC_TARGET_MACHO=1")
 elseif(MCC_TARGETOS STREQUAL "Android")
-    list(APPEND _mccdefs "TARGETOS_ANDROID=1")
+    list(APPEND _mccdefs "MCC_TARGETOS_ANDROID=1")
 elseif(MCC_TARGETOS MATCHES "FreeBSD|OpenBSD|NetBSD|DragonFly")
     list(APPEND _mccdefs "TARGETOS_${MCC_TARGETOS}=1")
 endif()
@@ -1670,63 +1670,63 @@ if(MCC_CONFIG_LIBC STREQUAL "musl" AND MCC_ELFINTERP STREQUAL "")
 endif()
 
 if(MCC_CONFIG_LIBC STREQUAL "musl")
-    list(APPEND _mccdefs "CONFIG_MCC_MUSL=1")
+    list(APPEND _mccdefs "MCC_CONFIG_MUSL=1")
 elseif(MCC_CONFIG_LIBC STREQUAL "uClibc")
-    list(APPEND _mccdefs "CONFIG_MCC_UCLIBC=1")
+    list(APPEND _mccdefs "MCC_CONFIG_UCLIBC=1")
 endif()
 
 if(MCC_RUN_MMAP_EXEC)
-    list(APPEND _mccdefs "CONFIG_RUN_MMAP_EXEC=1")
+    list(APPEND _mccdefs "MCC_CONFIG_RUN_DUALMAP=1")
 endif()
 if(MCC_CONFIG_PIE)
-    list(APPEND _mccdefs "CONFIG_MCC_PIE=1")
+    list(APPEND _mccdefs "MCC_CONFIG_PIE=1")
 endif()
 if(MCC_CONFIG_PIC)
-    list(APPEND _mccdefs "CONFIG_MCC_PIC=1")
+    list(APPEND _mccdefs "MCC_CONFIG_PIC=1")
 endif()
 if(MCC_CONFIG_NEW_DTAGS)
-    list(APPEND _mccdefs "CONFIG_NEW_DTAGS=1")
+    list(APPEND _mccdefs "MCC_CONFIG_NEW_DTAGS=1")
 endif()
 if(MCC_CONFIG_CODESIGN)
-    list(APPEND _mccdefs "CONFIG_CODESIGN=1")
+    list(APPEND _mccdefs "MCC_CONFIG_CODESIGN=1")
 endif()
 
 if(NOT MCC_CONFIG_BCHECK)
-    list(APPEND _mccdefs "CONFIG_MCC_BCHECK=0")
+    list(APPEND _mccdefs "MCC_CONFIG_BCHECK=0")
 endif()
 if(NOT MCC_CONFIG_ASM)
-    list(APPEND _mccdefs "CONFIG_MCC_ASM=0")
+    list(APPEND _mccdefs "MCC_CONFIG_ASM=0")
 endif()
 if(NOT MCC_CONFIG_BACKTRACE)
-    list(APPEND _mccdefs "CONFIG_MCC_BACKTRACE=0")
+    list(APPEND _mccdefs "MCC_CONFIG_BACKTRACE=0")
 endif()
 if(MCC_CST)
-    list(APPEND _mccdefs "CONFIG_MCC_CST=1")
+    list(APPEND _mccdefs "MCC_CONFIG_CST=1")
 endif()
 if(MCC_AST)
-    list(APPEND _mccdefs "CONFIG_AST=1")
+    list(APPEND _mccdefs "MCC_CONFIG_AST=1")
 endif()
 if(MCC_CONFIG_NEW_MACHO STREQUAL "no")
-    list(APPEND _mccdefs "CONFIG_NEW_MACHO=0")
+    list(APPEND _mccdefs "MCC_CONFIG_MACHO_CHAINED_FIXUPS=0")
 endif()
 
 if(NOT "${MCC_CONFIG_DWARF}" STREQUAL "")
-    list(APPEND _mccdefs "CONFIG_DWARF_VERSION=${MCC_CONFIG_DWARF}")
+    list(APPEND _mccdefs "MCC_CONFIG_DWARF_VERSION=${MCC_CONFIG_DWARF}")
 endif()
 if(NOT "${MCC_CONFIG_SEMLOCK}" STREQUAL "")
-    list(APPEND _mccdefs "CONFIG_MCC_SEMLOCK=${MCC_CONFIG_SEMLOCK}")
+    list(APPEND _mccdefs "MCC_CONFIG_SEMLOCK=${MCC_CONFIG_SEMLOCK}")
 endif()
 
-mcc_def_str(_mccdefs CONFIG_MCC_SYSINCLUDEPATHS "${MCC_SYSINCLUDEPATHS}")
-mcc_def_str(_mccdefs CONFIG_MCC_LIBPATHS        "${MCC_LIBPATHS}")
-mcc_def_str(_mccdefs CONFIG_MCC_CRTPREFIX       "${MCC_CRTPREFIX}")
-mcc_def_str(_mccdefs CONFIG_MCC_ELFINTERP       "${MCC_ELFINTERP}")
-mcc_def_str(_mccdefs CONFIG_MCC_SWITCHES        "${MCC_SWITCHES}")
-mcc_def_str(_mccdefs CONFIG_TRIPLET             "${MCC_TRIPLET}")
-mcc_def_str(_mccdefs CONFIG_OS_RELEASE          "${MCC_OS_RELEASE}")
+mcc_def_str(_mccdefs MCC_CONFIG_SYSINCLUDEPATHS "${MCC_SYSINCLUDEPATHS}")
+mcc_def_str(_mccdefs MCC_CONFIG_LIBPATHS        "${MCC_LIBPATHS}")
+mcc_def_str(_mccdefs MCC_CONFIG_CRTPREFIX       "${MCC_CRTPREFIX}")
+mcc_def_str(_mccdefs MCC_CONFIG_ELFINTERP       "${MCC_ELFINTERP}")
+mcc_def_str(_mccdefs MCC_CONFIG_SWITCHES        "${MCC_SWITCHES}")
+mcc_def_str(_mccdefs MCC_CONFIG_TRIPLET             "${MCC_TRIPLET}")
+mcc_def_str(_mccdefs MCC_CONFIG_OS_RELEASE          "${MCC_OS_RELEASE}")
 
 if(NOT "${MCC_SYSROOT}" STREQUAL "")
-    list(APPEND _mccdefs "CONFIG_SYSROOT=\"${MCC_SYSROOT}\"")
+    list(APPEND _mccdefs "MCC_CONFIG_SYSROOT=\"${MCC_SYSROOT}\"")
 endif()
 if(NOT MCC_TARGETOS STREQUAL "WIN32")
     if("${MCC_INSTALL_MCCDIR}" STREQUAL "")
@@ -1734,7 +1734,7 @@ if(NOT MCC_TARGETOS STREQUAL "WIN32")
     else()
         set(_mccdir "${MCC_INSTALL_MCCDIR}")
     endif()
-    list(APPEND _mccdefs "CONFIG_MCCDIR=\"${_mccdir}\"")
+    list(APPEND _mccdefs "MCC_CONFIG_MCCDIR=\"${_mccdir}\"")
 endif()
 set(MCC_RESOLVED_MCCDIR "${_mccdir}")
 
@@ -1746,7 +1746,7 @@ set(_mccdefs_common
     "CC_NAME=CC_${MCC_CC_NAME}"
     "GCC_MAJOR=${MCC_GCC_MAJOR}"
     "GCC_MINOR=${MCC_GCC_MINOR}"
-    "CONFIG_MCC_PREDEFS=${_mcc_predefs_value}")
+    "MCC_CONFIG_PREDEFS=${_mcc_predefs_value}")
 add_compile_definitions(${_mccdefs_common})
 
 set(_mccdefs_flags "")
@@ -1772,7 +1772,7 @@ include_directories(
     "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
 if(MCC_AUTO_MCCDIR)
-    add_compile_definitions(CONFIG_MCC_AUTO_MCCDIR=1)
+    add_compile_definitions(MCC_CONFIG_AUTO_MCCDIR=1)
 endif()
 
 find_package(Git QUIET)
@@ -1910,7 +1910,7 @@ function(mcc_add_libmcc tgt kind is_musl)
     mcc_libmcc_output("${kind}" "${is_musl}" _oname)
     set_target_properties(${tgt} PROPERTIES OUTPUT_NAME "${_oname}" PREFIX "lib")
     if(NOT MCC_SINGLE_SOURCE)
-        target_compile_definitions(${tgt} PRIVATE SINGLE_SOURCE=0)
+        target_compile_definitions(${tgt} PRIVATE MCC_AMALGAMATED=0)
     else()
         set_source_files_properties(src/libmcc.c PROPERTIES OBJECT_DEPENDS "${_one_src_deps}")
     endif()
@@ -2015,7 +2015,7 @@ if(MCC_BUILD_STATIC_EXE)
     set_target_properties(mcc_static PROPERTIES OUTPUT_NAME mcc-static)
     target_include_directories(mcc_static PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
     if(NOT MCC_SINGLE_SOURCE)
-        target_compile_definitions(mcc_static PRIVATE SINGLE_SOURCE=0)
+        target_compile_definitions(mcc_static PRIVATE MCC_AMALGAMATED=0)
         target_link_libraries(mcc_static PRIVATE libmcc)
     endif()
     if(NOT MCC_TARGETOS STREQUAL "WIN32")
@@ -2087,30 +2087,30 @@ if(MCC_BUILD_MUSL AND NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT APPLE)
 
     set(_mccdefs_musl "")
     foreach(_d IN LISTS _mccdefs)
-        if(_d MATCHES "^CONFIG_MCC_ELFINTERP="
-           OR _d MATCHES "^CONFIG_TRIPLET="
-           OR _d MATCHES "^CONFIG_MCC_MUSL=")
-        elseif(_musl_vendored AND (_d MATCHES "^CONFIG_SYSROOT="
-               OR _d MATCHES "^CONFIG_MCC_SYSINCLUDEPATHS="
-               OR _d MATCHES "^CONFIG_MCC_LIBPATHS="
-               OR _d MATCHES "^CONFIG_MCC_CRTPREFIX="))
+        if(_d MATCHES "^MCC_CONFIG_ELFINTERP="
+           OR _d MATCHES "^MCC_CONFIG_TRIPLET="
+           OR _d MATCHES "^MCC_CONFIG_MUSL=")
+        elseif(_musl_vendored AND (_d MATCHES "^MCC_CONFIG_SYSROOT="
+               OR _d MATCHES "^MCC_CONFIG_SYSINCLUDEPATHS="
+               OR _d MATCHES "^MCC_CONFIG_LIBPATHS="
+               OR _d MATCHES "^MCC_CONFIG_CRTPREFIX="))
         else()
             list(APPEND _mccdefs_musl "${_d}")
         endif()
     endforeach()
-    list(APPEND _mccdefs_musl "CONFIG_MCC_MUSL=1")
+    list(APPEND _mccdefs_musl "MCC_CONFIG_MUSL=1")
     if(NOT _mi STREQUAL "")
-        list(APPEND _mccdefs_musl "CONFIG_MCC_ELFINTERP=\"${_mi}\"")
+        list(APPEND _mccdefs_musl "MCC_CONFIG_ELFINTERP=\"${_mi}\"")
     endif()
     if(NOT _mt STREQUAL "")
-        list(APPEND _mccdefs_musl "CONFIG_TRIPLET=\"${_mt}\"")
+        list(APPEND _mccdefs_musl "MCC_CONFIG_TRIPLET=\"${_mt}\"")
     endif()
     if(_musl_vendored)
         list(APPEND _mccdefs_musl
-            "CONFIG_SYSROOT=\"${MCC_MUSL_SYSROOT}\""
-            "CONFIG_MCC_SYSINCLUDEPATHS=\"{B}/include:{R}/include\""
-            "CONFIG_MCC_LIBPATHS=\"{B}:{R}/lib\""
-            "CONFIG_MCC_CRTPREFIX=\"{R}/lib\"")
+            "MCC_CONFIG_SYSROOT=\"${MCC_MUSL_SYSROOT}\""
+            "MCC_CONFIG_SYSINCLUDEPATHS=\"{B}/include:{R}/include\""
+            "MCC_CONFIG_LIBPATHS=\"{B}:{R}/lib\""
+            "MCC_CONFIG_CRTPREFIX=\"{R}/lib\"")
         message(STATUS "mcc: musl variants target vendored sysroot ${MCC_MUSL_SYSROOT} (build it: cmake --build . --target musl-sysroot)")
     endif()
 
@@ -2163,7 +2163,7 @@ if(MCC_BUILD_MUSL AND NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT APPLE)
         target_include_directories(mcc_static_musl PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
         set_target_properties(mcc_static_musl PROPERTIES OUTPUT_NAME mcc-static-musl)
         if(NOT MCC_SINGLE_SOURCE)
-            target_compile_definitions(mcc_static_musl PRIVATE SINGLE_SOURCE=0)
+            target_compile_definitions(mcc_static_musl PRIVATE MCC_AMALGAMATED=0)
             target_link_libraries(mcc_static_musl PRIVATE ${_libmcc_musl})
         endif()
         target_link_libraries(mcc_static_musl PRIVATE m)
@@ -2236,7 +2236,7 @@ if(MCC_BUILD_PROFILE)
     target_compile_options(mcc_p PRIVATE -pg)
     target_compile_definitions(mcc_p PRIVATE MCC_PROFILE)
     if(NOT MCC_TARGETOS STREQUAL "WIN32")
-        target_compile_definitions(mcc_p PRIVATE CONFIG_MCC_STATIC)
+        target_compile_definitions(mcc_p PRIVATE MCC_CONFIG_STATIC)
     endif()
     target_link_options(mcc_p PRIVATE -pg -static)
     target_link_libraries(mcc_p PRIVATE m)
@@ -2284,7 +2284,7 @@ if(MCC_BUILD_SANITIZE)
     set_source_files_properties(src/mcc.c PROPERTIES OBJECT_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/src/mcctools.c")
     target_include_directories(mcc_s PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-    target_compile_definitions(mcc_s PRIVATE MEM_DEBUG=1 SYM_DEBUG=1)
+    target_compile_definitions(mcc_s PRIVATE MCC_MEM_DEBUG=1 MCC_SYM_DEBUG=1)
     target_compile_options(mcc_s PRIVATE ${_san_cflags})
     if(_san_lflags)
         target_link_options(mcc_s PRIVATE ${_san_lflags})
@@ -2314,7 +2314,7 @@ if(MCC_BUILD_STATIC_EXE AND NOT MSVC AND NOT APPLE
    AND NOT MCC_TARGETOS STREQUAL "WIN32")
     foreach(_st mcc_static mcc_static_musl)
         if(TARGET ${_st})
-            target_compile_definitions(${_st} PRIVATE CONFIG_MCC_STATIC)
+            target_compile_definitions(${_st} PRIVATE MCC_CONFIG_STATIC)
         endif()
     endforeach()
 endif()
@@ -2615,7 +2615,7 @@ function(mcc_add_cross_mcc base_tgt base_out static_tgt static_out defs)
         endif()
         if(_vk STREQUAL "static")
             if(NOT MCC_TARGETOS STREQUAL "WIN32")
-                target_compile_definitions(${_vt} PRIVATE CONFIG_MCC_STATIC)
+                target_compile_definitions(${_vt} PRIVATE MCC_CONFIG_STATIC)
             endif()
             target_link_options(${_vt} PRIVATE -static)
         endif()
@@ -2703,16 +2703,16 @@ if(MCC_ENABLE_CROSS)
         set(_cpath_defs "")
         if(NOT _ctriplet STREQUAL "")
             list(APPEND _cpath_defs
-                "CONFIG_SYSROOT=\"/usr/${_ctriplet}\""
-                "CONFIG_MCC_CRTPREFIX=\"{R}/lib\""
-                "CONFIG_MCC_LIBPATHS=\"{R}/lib:{B}\""
-                "CONFIG_MCC_SYSINCLUDEPATHS=\"{B}/include:{R}/include\"")
+                "MCC_CONFIG_SYSROOT=\"/usr/${_ctriplet}\""
+                "MCC_CONFIG_CRTPREFIX=\"{R}/lib\""
+                "MCC_CONFIG_LIBPATHS=\"{R}/lib:{B}\""
+                "MCC_CONFIG_SYSINCLUDEPATHS=\"{B}/include:{R}/include\"")
         endif()
 
         set(_cross_defs ${_cdefs} ${_cpath_defs}
-            "CONFIG_MCC_CROSSPREFIX=\"${_t}-\"")
+            "MCC_CONFIG_CROSSPREFIX=\"${_t}-\"")
         if(_cos STREQUAL "WIN32")
-            list(APPEND _cross_defs "CONFIG_MCCDIR=\"${_mccdir_install}/win32\"")
+            list(APPEND _cross_defs "MCC_CONFIG_MCCDIR=\"${_mccdir_install}/win32\"")
         endif()
         mcc_add_cross_mcc(mcc-${_t} "mcc-${_t}"
                           mcc-${_t}-static "mcc-${_t}-static" _cross_defs)
@@ -2726,15 +2726,15 @@ if(MCC_ENABLE_CROSS)
         if(MCC_BUILD_MUSL AND NOT _ctriplet STREQUAL "" AND _cos STREQUAL "Linux")
             mcc_musl_target("${_ccpu}" ON _cmi _cmt)
             set(_cpath_defs_musl
-                "CONFIG_SYSROOT=\"/usr/${_cmt}\""
-                "CONFIG_MCC_CRTPREFIX=\"{R}/lib\""
-                "CONFIG_MCC_LIBPATHS=\"{R}/lib:{B}\""
-                "CONFIG_MCC_SYSINCLUDEPATHS=\"{B}/include:{R}/include\"")
+                "MCC_CONFIG_SYSROOT=\"/usr/${_cmt}\""
+                "MCC_CONFIG_CRTPREFIX=\"{R}/lib\""
+                "MCC_CONFIG_LIBPATHS=\"{R}/lib:{B}\""
+                "MCC_CONFIG_SYSINCLUDEPATHS=\"{B}/include:{R}/include\"")
             if(NOT _cmi STREQUAL "")
-                list(APPEND _cpath_defs_musl "CONFIG_MCC_ELFINTERP=\"${_cmi}\"")
+                list(APPEND _cpath_defs_musl "MCC_CONFIG_ELFINTERP=\"${_cmi}\"")
             endif()
             set(_cross_defs_musl ${_cdefs} ${_cpath_defs_musl}
-                "CONFIG_MCC_MUSL=1" "CONFIG_MCC_CROSSPREFIX=\"${_t}-\"")
+                "MCC_CONFIG_MUSL=1" "MCC_CONFIG_CROSSPREFIX=\"${_t}-\"")
             mcc_add_cross_mcc(mcc-${_t}-musl "mcc-${_t}-musl"
                               mcc-${_t}-static-musl "mcc-${_t}-static-musl" _cross_defs_musl)
         endif()
@@ -2937,12 +2937,19 @@ if(MCC_BUILD_TESTS)
             COMMAND "$<TARGET_FILE:ci>" parity --srcroot "${CMAKE_CURRENT_SOURCE_DIR}"
             WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
         set_tests_properties(preset-parity-invariant PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
+        add_executable(ckretired tools/ckretired.c tools/toolsupport.c)
+        target_link_libraries(ckretired ${CMAKE_DL_LIBS})
+        add_test(NAME retired-macro-invariant
+            COMMAND "$<TARGET_FILE:ckretired>" src tools runtime CMakeLists.txt
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+        set_tests_properties(retired-macro-invariant PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
     if(MCC_AST AND NOT CMAKE_CROSSCOMPILING)
         add_executable(asttool tools/asttool.c)
         target_include_directories(asttool PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-        target_compile_definitions(asttool PRIVATE CONFIG_AST=1)
+        target_compile_definitions(asttool PRIVATE MCC_CONFIG_AST=1)
         foreach(_an arena validate dump cfg provenance template)
             add_test(NAME "ast/${_an}" COMMAND asttool "${_an}")
             set_tests_properties("ast/${_an}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
@@ -3087,7 +3094,7 @@ if(MCC_BUILD_TESTS)
     if(MCC_CST AND NOT CMAKE_CROSSCOMPILING)
         add_executable(csttool tools/csttool.c)
         target_include_directories(csttool PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-        target_compile_definitions(csttool PRIVATE CONFIG_MCC_CST=1)
+        target_compile_definitions(csttool PRIVATE MCC_CONFIG_CST=1)
         foreach(_cn store hash geom serial sym comment template)
             add_test(NAME "cst/${_cn}" COMMAND csttool "${_cn}")
             set_tests_properties("cst/${_cn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)

@@ -10,14 +10,14 @@ const char *platform_macros[] = {
 		"__aarch64__", "MCC_TARGET_ARM64",
 		"__riscv", "MCC_TARGET_RISCV64",
 		"__APPLE__", "MCC_TARGET_MACHO",
-		"__FreeBSD__", "TARGETOS_FreeBSD",
-		"__FreeBSD_kernel__", "TARGETOS_FreeBSD_kernel",
-		"__OpenBSD__", "TARGETOS_OpenBSD",
-		"__NetBSD__", "TARGETOS_NetBSD",
-		"__linux__", "TARGETOS_Linux",
-		"__ANDROID__", "TARGETOS_ANDROID",
+		"__FreeBSD__", "MCC_TARGETOS_FreeBSD",
+		"__FreeBSD_kernel__", "MCC_TARGETOS_FreeBSD_kernel",
+		"__OpenBSD__", "MCC_TARGETOS_OpenBSD",
+		"__NetBSD__", "MCC_TARGETOS_NetBSD",
+		"__linux__", "MCC_TARGETOS_Linux",
+		"__ANDROID__", "MCC_TARGETOS_ANDROID",
 
-		"__SIZEOF_POINTER__", "PTR_SIZE",
+		"__SIZEOF_POINTER__", "MCC_PTR_SIZE",
 		"__SIZEOF_LONG__", "LONG_SIZE",
 		0};
 

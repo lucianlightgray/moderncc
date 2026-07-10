@@ -50,7 +50,7 @@ static void asm_constraints_prologue(ASMOperand *operands, int nb_operands,
 		}
 	}
 
-	for (int i = 0; i < NB_ASM_REGS; i++) {
+	for (int i = 0; i < MCC_NB_ASM_REGS; i++) {
 		if (clobber_regs[i])
 			regs_allocated[i] = REG_IN_MASK | REG_OUT_MASK;
 		else

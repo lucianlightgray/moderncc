@@ -1,6 +1,6 @@
 #define USING_GLOBALS
 #include "mcc.h"
-#ifdef CONFIG_MCC_ASM
+#if MCC_CONFIG_ASM
 
 #define last_text_section (mcc_state->last_text_section)
 #define asmgoto_n (mcc_state->asmgoto_n)
@@ -19,7 +19,7 @@ ST_FUNC void mcc_eh_frame_fde(MCCState *s1, Section *code_sec,
 															const unsigned char *ops, int nops);
 #endif
 
-#if PTR_SIZE == 8
+#if MCC_PTR_SIZE == 8
 ST_FUNC void gen_addr64(int r, Sym *sym, int64_t c) {
 	if (r & VT_SYM)
 		greloca(cur_text_section, sym, ind, R_DATA_PTR, c), c = 0;
@@ -485,7 +485,7 @@ static void asm_parse_directive(MCCState *s1, int global) {
 		ind += size;
 		break;
 	case TOK_ASMDIR_quad:
-#if PTR_SIZE == 8
+#if MCC_PTR_SIZE == 8
 		size = 8;
 		goto asm_data;
 #else
@@ -533,7 +533,7 @@ static void asm_parse_directive(MCCState *s1, int global) {
 			if (sec->sh_type != SHT_NOBITS) {
 				if (size == 4) {
 					gen_expr32(&e);
-#if PTR_SIZE == 8
+#if MCC_PTR_SIZE == 8
 				} else if (size == 8) {
 					gen_expr64(&e);
 #endif
@@ -861,7 +861,7 @@ static void asm_parse_directive(MCCState *s1, int global) {
 		s1->seg_size = 32;
 	} break;
 #endif
-#if PTR_SIZE == 8
+#if MCC_PTR_SIZE == 8
 	case TOK_ASMDIR_code64:
 		next();
 		break;
@@ -952,7 +952,7 @@ static void asm_cfi_factors(MCCState *s1) {
 	if (asm_cfi.have_factors)
 		return;
 	asm_cfi.code_align = 1;
-	asm_cfi.data_align = -PTR_SIZE;
+	asm_cfi.data_align = -MCC_PTR_SIZE;
 	p = eh_frame_section->data + s1->eh_start;
 	end = eh_frame_section->data + eh_frame_section->data_offset;
 	p += 8;
@@ -965,7 +965,7 @@ static void asm_cfi_factors(MCCState *s1) {
 	if (!asm_cfi.code_align)
 		asm_cfi.code_align = 1;
 	if (!asm_cfi.data_align)
-		asm_cfi.data_align = -PTR_SIZE;
+		asm_cfi.data_align = -MCC_PTR_SIZE;
 	asm_cfi.have_factors = 1;
 }
 
@@ -1335,7 +1335,7 @@ static void parse_asm_operands(ASMOperand *operands, int *nb_operands_ptr,
 						&& !strchr(op->constraint, 'Q') && !strstr(op->constraint, "Ump")
 #endif
 				) {
-					gv(RC_INT);
+					gv(MCC_RC_INT);
 				}
 			}
 			op->vt = vtop;
@@ -1355,7 +1355,7 @@ ST_FUNC void asm_instr(void) {
 
 	ASMOperand operands[MAX_ASM_OPERANDS];
 	int nb_outputs, nb_operands, must_subst, out_reg, nb_labels;
-	uint8_t clobber_regs[NB_ASM_REGS];
+	uint8_t clobber_regs[MCC_NB_ASM_REGS];
 	Section *sec;
 
 	while (tok == TOK_VOLATILE1 || tok == TOK_VOLATILE2 || tok == TOK_VOLATILE3 || tok == TOK_GOTO) {

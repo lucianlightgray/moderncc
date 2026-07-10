@@ -39,7 +39,7 @@ root. Why: CI workflows + docker runners invoke presets, not raw `-D`. H: names
 encode `platform[-compiler][-axis]`, each builds into `cmake-<preset>/`, Ninja
 except msvc. Children (presets, by reference frequency):
 
-- **`dist-*`** (≈14) — W: release-artifact presets (`dist-linux-gcc/-clang`, `-macos`, `-mingw`, `-msvc`). H: all permutations (Release, tests OFF, SINGLE_SOURCE OFF, both libs, all cross). Whr: shared `dist.yml`.
+- **`dist-*`** (≈14) — W: release-artifact presets (`dist-linux-gcc/-clang`, `-macos`, `-mingw`, `-msvc`). H: all permutations (Release, tests OFF, MCC_AMALGAMATED OFF, both libs, all cross). Whr: shared `dist.yml`.
 - **`msvc`** (≈11) — W: MSVC CI cell. H: Release, `TOOLCHAIN_PROFILE=msvc`, default VS generator (no fixed `-G`), diff3 refs from `$env{}`.
 - **`qemu` / `qemu-<arch>`** (≈11) — W: qemu-user cross-conformance. H: Debug, cross+`QEMU_TESTS` ON, `glibc;musl`; one CI job per host×arch×libc via `ci qemu`. → §4.
 - **`sanitize` / `sanitize-msvc`** (≈10) — W: sanitized builds. H: GCC/Clang→ASan+UBSan, MSVC→ASan, mingw→trap-UBSan; alignment excluded. Why: feed `sanitize-smoke`.
@@ -56,10 +56,10 @@ except msvc. Children (presets, by reference frequency):
 
 - **`MCC_SINGLE_SOURCE`** (≈18, ON) — W: amalgamate libmcc into one TU. Why: gates whether libmcc's `ST_FUNC` helpers have external linkage (needed by `mcc-dynamic`).
 - **`MCC_BUILD_STATIC_LIB`** (≈12, OFF) — W: `libmcc-static.a` vs shared `libmcc.so`.
-- **`MCC_BUILD_STATIC_EXE`** (≈11, OFF; forced OFF macOS) — W: build `mcc-static`; `SINGLE_SOURCE` decides self-contained vs linking `libmcc.a`.
+- **`MCC_BUILD_STATIC_EXE`** (≈11, OFF; forced OFF macOS) — W: build `mcc-static`; `MCC_AMALGAMATED` decides self-contained vs linking `libmcc.a`.
 - **`MCC_CONFIG_ASM`** (≈8, ON), **`MCC_BUILD_SANITIZE`** (≈8, OFF), **`MCC_ENABLE_CROSS`** (≈8, OFF) — see §1/§2.
 - **`MCC_BUILD_MUSL`** (≈7, OFF), **`MCC_MCCRT_USE_HOSTCC`** (≈6, auto), **`MCC_TOOLCHAIN_PROFILE`** (≈6, auto — seeds defaults, doesn't switch compilers), **`MCC_CONFIG_BACKTRACE`/`BCHECK`** (≈6, Debug), **`MCC_BUILD_DYNAMIC_EXE`** (≈6, ON) — see EXCESS for the rest.
-- **`MCC_CST`/`MCC_AST`** (≈4 each, ON) — W: build the side-channel subsystems (`CONFIG_MCC_CST`/`CONFIG_AST`); codegen byte-identical either way.
+- **`MCC_CST`/`MCC_AST`** (≈4 each, ON) — W: build the side-channel subsystems (`MCC_CONFIG_CST`/`MCC_CONFIG_AST`); codegen byte-identical either way.
 
 **`ci` tool** (≈13) — W: the C tool (`tools/ci.c`) every workflow job drives its
 preset through. H: subcommands `run-preset`/`qemu`/`dist`/`plan`/`parity`/`pkg`/
@@ -72,7 +72,7 @@ one reusable pipeline).
 **ckconfig** (≈6) — W: config-drift checker (`tools/ckconfig.c`, ctest
 `config-drift-invariant`). Why: prevents emitter/default/reader rot. H: fails on
 DRIFT(a) read-with-no-provider / DRIFT(b) emitted-but-unread. Children:
-**`CONFIG_MCC_STATIC`** (≈6, the one `MCC_BUILD_*`-driven macro the code reads —
+**`MCC_CONFIG_STATIC`** (≈6, the one `MCC_BUILD_*`-driven macro the code reads —
 static `-run` symbol table, Linux-only), the read-flag set (`ASM AUTO_MCCDIR
 BACKTRACE BCHECK … SYSINCLUDEPATHS`), and allowlisted asymmetries
 (`UCLIBC` dead, `BACKTRACE_ONLY`/`ELFINTERP_ARMHF`/`TOOLHOST` header-only).
@@ -83,10 +83,10 @@ Analogue: **`hostgate.c`** (`MCC_HOST_*`).
 Parent: the **suffix convention** `mcc[-<arch>][-static|-dynamic][-musl]`
 (arch first for cross, then link shape, `-musl` last). Children by reference frequency:
 
-- **`mcc-dynamic`** (≈14) — W: non-amalgamated driver TU (`mcctools.c`) linked against primary libmcc. Whn: `BUILD_DYNAMIC_EXE` **and** `SINGLE_SOURCE=OFF`; skipped under default ON. Why: its `mcctools.c` needs libmcc-internal `ST_FUNC` helpers (`pstrcpy`, …) that only a multi-TU libmcc exports.
+- **`mcc-dynamic`** (≈14) — W: non-amalgamated driver TU (`mcctools.c`) linked against primary libmcc. Whn: `BUILD_DYNAMIC_EXE` **and** `MCC_AMALGAMATED=OFF`; skipped under default ON. Why: its `mcctools.c` needs libmcc-internal `ST_FUNC` helpers (`pstrcpy`, …) that only a multi-TU libmcc exports.
 - **`mcc`** (≈12) — W: canonical installed binary the suite drives. H: single-source, self-contained, dynamic libc, resolves `-run` symbols via `dlsym`. Whn: built always.
 - **`libmcc`** (≈12) — → §1.
-- **`mcc-static`** (≈9) — W: fully static (`-static`). Whn: `BUILD_STATIC_EXE`; forced OFF macOS (no static libc). Why: resolves `-run` symbols from a built-in table (`CONFIG_MCC_STATIC`).
+- **`mcc-static`** (≈9) — W: fully static (`-static`). Whn: `BUILD_STATIC_EXE`; forced OFF macOS (no static libc). Why: resolves `-run` symbols from a built-in table (`MCC_CONFIG_STATIC`).
 - **cross compilers `mcc-<arch>`** (≈9) — W: self-contained host binaries for 11 foreign targets. Whn: `ENABLE_CROSS`. H: take `-static`+`-musl`, never `-dynamic` (no per-arch libmcc); each emits `<arch>-libmccrt.a`.
 - **`-musl` siblings** (≈8) — Whn: `BUILD_MUSL`, via explicit `-musl` presets.
 - **`mccrt` / `libmccrt.a`** (≈7) — W: the runtime archive. H: built by mcc or host CC (`MCC_MCCRT_USE_HOSTCC`); bakeable into `mcc` via `MCC_EMBED_MCCRT` (streamed through a temp fd, breaks the build cycle).
@@ -211,10 +211,10 @@ gated `MCC_CST` (default ON). Children by reference frequency:
 
 **AST intention IR** — W: an *intention* IR (desugared, type-resolved,
 post-preprocessor) alongside the CST; 15 node kinds. Whr: `src/mccast.{c,h}`, gated
-`CONFIG_AST` (ON); the hook/replay half lives under `#ifdef _MCC_H` and reads
+`MCC_CONFIG_AST` (ON); the hook/replay half lives under `#ifdef _MCC_H` and reads
 `mccgen.c` statics (`vstack` et al.), so multi-TU builds `#include "mccast.c"` at
 the end of `mccgen.c` while the standalone `mccast.c` TU compiles empty — only
-`tools/asttool.c` (no `SINGLE_SOURCE` define) compiles the arena half freestanding. Why: portable/optimizable/inlinable layer feeding an
+`tools/asttool.c` (no `MCC_AMALGAMATED` define) compiles the arena half freestanding. Why: portable/optimizable/inlinable layer feeding an
 experimental `-O1`. H: built as a pure side-channel via parser hooks with **zero
 CST dependency**; `-O0` never reads it. Founding reframe (§18): the backend is
 feature-complete C11, so replay never fakes anything — every gap is a **query

@@ -1,5 +1,5 @@
-#define CONFIG_MCC_BACKTRACE_ONLY
-#define SINGLE_SOURCE 1
+#define MCC_CONFIG_BACKTRACE_ONLY
+#define MCC_AMALGAMATED 1
 #define pstrcpy mcc_pstrcpy
 #include "../mcchost.c"
 #include "../mccrun.c"

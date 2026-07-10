@@ -70,7 +70,7 @@ high-value specifics the summary omits:
   `mcc-static` (`MCC_BUILD_STATIC_EXE`, `MCC_SINGLE_SOURCE` decides self-contained
   vs libmcc.a); `mcc-dynamic` (`MCC_BUILD_DYNAMIC_EXE` **and**
   `MCC_SINGLE_SOURCE=OFF` — non-amalgamated driver linking primary libmcc; skipped
-  under default SINGLE_SOURCE=ON, the recurring `pstrcpy` link reason). Each with
+  under default MCC_AMALGAMATED=ON, the recurring `pstrcpy` link reason). Each with
   a `-musl` sibling. Cross compilers (`MCC_ENABLE_CROSS`) build the same shape for
   11 targets, host binaries, `-static` but never `-dynamic`.
 - **Libraries:** default `libmcc.so`; `MCC_BUILD_STATIC_LIB` → `libmcc-static.a`;
@@ -91,7 +91,7 @@ high-value specifics the summary omits:
   SEMLOCK must be numeric; toolchain-profile entry must be in
   {auto,gcc,clang,mcc,msvc,mingw}; ELF-only knobs on WIN32/Darwin warn as inert.
 - **dist presets** produce all permutations (Release, tests OFF,
-  SINGLE_SOURCE=OFF, both libs, all cross compilers) and package `mcc-`,
+  MCC_AMALGAMATED=OFF, both libs, all cross compilers) and package `mcc-`,
   `libmcc-`, `mcc-cross-`, `bundle-`, `checksums-` archives via `ci pkg` into
   `dist/`. `dist-msvc` skips per-cross `-static` (`-static` is a GNU-ld flag).
 - **Benchmark** (`MCC_BENCH`, CI-on): `mccbench` races mcc vs host compilers over
@@ -103,9 +103,9 @@ high-value specifics the summary omits:
   `CONFIG_MCC_<T>` (prefix). Booleans emit `=0/=1`; strings via `mcc_def_str`.
 - Read flags: `ASM AUTO_MCCDIR BACKTRACE BCHECK CPUVER CROSSPREFIX CRTPREFIX CST
   ELFINTERP LIBPATHS MUSL PIC PIE PREDEFS SEMLOCK SWITCHES SYSINCLUDEPATHS`.
-- Intentional asymmetries `ckconfig` allowlists: `CONFIG_MCC_UCLIBC` (emitted,
+- Intentional asymmetries `ckconfig` allowlists: `MCC_CONFIG_UCLIBC` (emitted,
   dead — legacy provenance), `BACKTRACE_ONLY` (read, no node),
-  `ELFINTERP_ARMHF`/`TOOLHOST` (header `#define`s), `CONFIG_MCC_STATIC`
+  `ELFINTERP_ARMHF`/`TOOLHOST` (header `#define`s), `MCC_CONFIG_STATIC`
   (per-target via `MCC_BUILD_STATIC_EXE`, Linux-only, read in
   `src/mcchost.*`/`libmcc.c` for the static `-run` symbol table).
 - `ckconfig` (ctest `config-drift-invariant`) fails on DRIFT(a) read-with-no-
@@ -295,7 +295,7 @@ high-value specifics the summary omits:
   (the `x86_64 OR arm64` branch; CI arm64 runners exercise it); only riscv64/other
   arches stay gated until per-arch verified.
 - **Promotion on arm64/riscv64:** needs a backend register-model extension
-  (arm64 `NB_REGS=28` doesn't expose x19–x28) + qemu validation; the arch-agnostic
+  (arm64 `MCC_NB_REGS=28` doesn't expose x19–x28) + qemu validation; the arch-agnostic
   analysis is reused.
 - **Decided-with-revisit-trigger backlog:** verify the CST answers every `-g`/LSP
   query (else reopen the dissolved `Bind` marker); `k` value (raise always-inline
@@ -314,7 +314,7 @@ high-value specifics the summary omits:
   `render` engine, `H_s` structural hash), snapshot-serializable
   (`cst_snapshot`). Built via `ast_hook_*`-style vstack hooks, CST-independent of
   the AST (each subsystem functions with the other off; shared storage only when
-  both on, gated `CONFIG_CST || CONFIG_AST`). Substrate for `-g`/LSP (lexical
+  both on, gated `CONFIG_CST || MCC_CONFIG_AST`). Substrate for `-g`/LSP (lexical
   scope spans + source ranges) and the AST's shared inline/template engine.
   Frozen spec + completed vertical slices are in the former NOTES.md (§0–§11 +
   "Completed work — CST database", D1–D5). Its per-node hash-consing is the #1
@@ -360,7 +360,7 @@ Exhaustive lists that `MCC.md` names but does not spell out, kept so no
 ### Full CMake node catalog (was BUILD.md §1–§13, 55 nodes)
 
 - **Standard CMake values:** `CMAKE_BUILD_TYPE` (Debug/Release/RelWithDebInfo/MinSizeRel, forwarded to matrix cells), `CMAKE_C_COMPILER` (the real compiler switch — profile only seeds defaults), `CMAKE_CROSSCOMPILING_EMULATOR`→`MCC_EMULATOR` (needed to run foreign mcc), `CMAKE_TOOLCHAIN_FILE`, `CMAKE_INSTALL_PREFIX` (defaults to `MCC_DIST_DIR`; must be set at configure time — mcc runtime dir bakes an absolute path), `CMAKE_OSX_DEPLOYMENT_TARGET` (auto-pinned for Homebrew gcc), `CMAKE_EXPORT_COMPILE_COMMANDS` (ON, before `project()`).
-- **Build-target knobs:** `MCC_TOOLCHAIN_PROFILE` (auto/gcc/clang/mcc/msvc/mingw; list→superbuild), `MCC_ENABLE_CROSS`, `MCC_BUILD_STATIC_LIB`, `MCC_BUILD_STATIC_EXE`, `MCC_BUILD_DYNAMIC_LIB`, `MCC_BUILD_DYNAMIC_EXE` (ON, gate SINGLE_SOURCE=OFF), `MCC_BUILD_MUSL`, `MCC_BUILD_STRIP`, `MCC_ENABLE_RPATH` (ON, !static-lib), `MCC_SINGLE_SOURCE` (ON), `MCC_BUILD_TESTS` (ON), `MCC_BENCH`, `MCC_MCCRT_USE_HOSTCC` (auto-forced when no emulator/asm-off/embed), `MCC_EMBED_MCCRT` (ON ELF/Mach-O, OFF WIN32), `MCC_CONFIG_AUTOCORRECT`, `MCC_MINGW_SOURCE` (winlibs/multilib).
+- **Build-target knobs:** `MCC_TOOLCHAIN_PROFILE` (auto/gcc/clang/mcc/msvc/mingw; list→superbuild), `MCC_ENABLE_CROSS`, `MCC_BUILD_STATIC_LIB`, `MCC_BUILD_STATIC_EXE`, `MCC_BUILD_DYNAMIC_LIB`, `MCC_BUILD_DYNAMIC_EXE` (ON, gate MCC_AMALGAMATED=OFF), `MCC_BUILD_MUSL`, `MCC_BUILD_STRIP`, `MCC_ENABLE_RPATH` (ON, !static-lib), `MCC_SINGLE_SOURCE` (ON), `MCC_BUILD_TESTS` (ON), `MCC_BENCH`, `MCC_MCCRT_USE_HOSTCC` (auto-forced when no emulator/asm-off/embed), `MCC_EMBED_MCCRT` (ON ELF/Mach-O, OFF WIN32), `MCC_CONFIG_AUTOCORRECT`, `MCC_MINGW_SOURCE` (winlibs/multilib).
 - **Diagnostics/instrumentation:** `MCC_ALL_DIAGNOSTICS`, `MCC_BUILD_SANITIZE`, `MCC_BUILD_PROFILE` (mcc_p, `-pg -static`, fatal Darwin/MSVC), `MCC_BUILD_COVERAGE` (mcc_c).
 - **Feature toggles (→ CONFIG_*):** `MCC_CONFIG_MINGW`, `_BACKTRACE`, `_BCHECK` (needs BACKTRACE), `_ASM`, `_PREDEFS`, `_PIE`/`_PIC` (ELF), `MCC_RUN_MMAP_EXEC` (W^X kernels), `_NEW_DTAGS` (ELF, DT_RUNPATH vs DT_RPATH), `MCC_AUTO_MCCDIR`, `_LIBC` (uClibc/musl/''), `_DWARF` (0/2/3/4/5/''), `_SEMLOCK` (numeric, fatal else), `MCC_CST`, `MCC_AST`, `_NEW_MACHO`/`_CODESIGN` (Darwin).
 - **Runtime path overrides** (STRING '', mirror `configure --…`): `MCC_SYSROOT`, `_TRIPLET`, `_SYSINCLUDEPATHS`, `_LIBPATHS`, `_CRTPREFIX`, `_ELFINTERP`, `_SWITCHES`, `_OS_RELEASE`, `_INSTALL_MCCDIR`.
@@ -396,7 +396,7 @@ Slices S0 (gating), B (SoA CstArena store: `kind[]/parent[]/first_child[]/next_s
 - **AST capture hooks** (`src/mccgen.c`, fire from vstack positions, early-return on `!ast_active`): `ast_hook_leaf`, `ast_hook_stmt`, `ast_hook_vpush`/`_vpop`, `ast_hook_genop`, `ast_hook_convert`, `ast_hook_return`, `ast_hook_call_begin`/`_call_effect_end`, `ast_hook_member_begin`/`_end`, `ast_hook_label`/`_goto`, `ast_hook_switch_begin`/`_case`/`_default`/`_body_end`/`_end`, `ast_hook_landor_operand`, `ast_hook_vla_alloc_begin`/`_end`/`_vla_restore`, `ast_hook_builtin_complex_begin`/`_end`.
 - **AST internals:** `ast_active` (build gate), `ast_finalize_leaf` (snapshots vtop CType/Sym), `ast_desync`/`ast_bail`/`ast_bad_type` (fallback triggers), `ast_capture`/`ast_clear_children`, `ast_in_op`/`ast_in_call` (suppress-and-fold), `ast_fconst`/`_i`/`_reuse`/`_record`/`_push_ref` (const-pool ordinal reuse), `ast_alloc_loc`/`ast_locrec`/`_i` (frame-slot reuse), `ast_replaying`, `ast_error_sink`/`stk_data_floor` (error trap), `ast_fold_eval`/`_rec` (const-fold), `ast_dump`, `ast_inline_cap_off`/`_depth`/`_stack`/`_bias`/`_ret_sym`/`_pool`, `ast_reemit`/`_retain`/`_forward_inlines`/`_poison`, `ast_pin_rodata_syms`/`ast_pin_type`, `ast_rp_switch`/`ast_rp_label_get`, `ast_sym`.
 - **CST internals:** `cst_open`/`_close`/`_mark`/`_leaf` (`CST_*` macros), `cst_hook_token`/`_def`/`_use`/`_wrap`/`_include`, `cst_store_intern`, `cst_render`, `cst_reflect`, `cst_node_at`, `cst_base` (`src/mcc.h:464`), `cst_mix64`/`cst_hash_bytes`, `cst_mark_branch` (`mcccst.c:512`), `cst_validate`, `cst_rehash_dirty`, `cst_snapshot`, `slot_key`, `H_s`/`H_t`/`H_e`.
-- **Additional knobs not in MCC.md:** `MCC_TEST_SH` (POSIX sh dir for cli/diff3 helpers), `MCC_TEST_RUNEMU`/`MCC_TEST_SYSROOT` (test emulator/sysroot), `MCC_LOCAL_CI_AS_TEST` (local-ci preset), `MCC_PROFILE` (defined by `mcc_p`; neutralizes `static`/`inline` at `src/mcc.h:205`), `MCC_IS_NATIVE`/`MCC_TARGET_X86_64` (derived/target macros). Header include-guards (`MCC_COMPLEX_H`, `MCC_LIMITS_H`, `MCC_STDINT_H`, `MCC_CST_STORE`/`_SNAPSHOT`) are incidental and carry no config semantics.
+- **Additional knobs not in MCC.md:** `MCC_TEST_SH` (POSIX sh dir for cli/diff3 helpers), `MCC_TEST_RUNEMU`/`MCC_TEST_SYSROOT` (test emulator/sysroot), `MCC_LOCAL_CI_AS_TEST` (local-ci preset), `MCC_PROFILE` (defined by `mcc_p`; neutralizes `static`/`inline` at `src/mcc.h:205`), `MCC_TARGET_IS_HOST`/`MCC_TARGET_X86_64` (derived/target macros). Header include-guards (`MCC_COMPLEX_H`, `MCC_LIMITS_H`, `MCC_STDINT_H`, `MCC_CST_STORE`/`_SNAPSHOT`) are incidental and carry no config semantics.
 
 ## Migrated code-comment rationale (was NOTES.md §"Migrated from code comments")
 

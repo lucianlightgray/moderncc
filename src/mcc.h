@@ -64,56 +64,43 @@
 
 #if MCC_HOST_WIN32 == defined MCC_TARGET_PE && MCC_HOST_DARWIN == defined MCC_TARGET_MACHO
 #if defined __i386__ && defined MCC_TARGET_I386
-#define MCC_IS_NATIVE
+#define MCC_TARGET_IS_HOST
 #elif defined __x86_64__ && defined MCC_TARGET_X86_64
-#define MCC_IS_NATIVE
+#define MCC_TARGET_IS_HOST
 #elif defined __arm__ && defined MCC_TARGET_ARM
-#define MCC_IS_NATIVE
+#define MCC_TARGET_IS_HOST
 #elif defined __aarch64__ && defined MCC_TARGET_ARM64
-#define MCC_IS_NATIVE
+#define MCC_TARGET_IS_HOST
 #elif defined __riscv && defined __LP64__ && defined MCC_TARGET_RISCV64
-#define MCC_IS_NATIVE
+#define MCC_TARGET_IS_HOST
 #endif
 #endif
 
-#if defined CONFIG_MCC_BACKTRACE && CONFIG_MCC_BACKTRACE == 0
-#undef CONFIG_MCC_BACKTRACE
-#else
-#define CONFIG_MCC_BACKTRACE 1
+#ifndef MCC_CONFIG_BACKTRACE
+#define MCC_CONFIG_BACKTRACE 1
 #endif
 
-#if defined MCC_IS_NATIVE && defined CONFIG_MCC_BACKTRACE
+#if defined MCC_TARGET_IS_HOST && MCC_CONFIG_BACKTRACE
 ST_FUNC void host_fault_install(host_fault_fn fn);
 ST_FUNC int host_fault_regs(void *osctx, HostFaultRegs *r);
 ST_FUNC void host_fault_unblock(unsigned detail);
 #endif
 
-#if defined CONFIG_MCC_BCHECK && CONFIG_MCC_BCHECK == 0
-#undef CONFIG_MCC_BCHECK
-#else
-#define CONFIG_MCC_BCHECK 1
+#ifndef MCC_CONFIG_BCHECK
+#define MCC_CONFIG_BCHECK 1
 #endif
 
-#if defined CONFIG_NEW_MACHO && CONFIG_NEW_MACHO == 0
-#undef CONFIG_NEW_MACHO
-#else
-#define CONFIG_NEW_MACHO 1
+#ifndef MCC_CONFIG_MACHO_CHAINED_FIXUPS
+#define MCC_CONFIG_MACHO_CHAINED_FIXUPS 1
 #endif
 
-#if defined CONFIG_MCC_ASM && CONFIG_MCC_ASM == 0
-#undef CONFIG_MCC_ASM
-#define MCC_DISABLE_ASM 1
-#endif
-
-#if defined TARGETOS_OpenBSD || defined TARGETOS_FreeBSD || defined TARGETOS_NetBSD || defined TARGETOS_FreeBSD_kernel
-#define TARGETOS_BSD 1
+#if defined MCC_TARGETOS_OpenBSD || defined MCC_TARGETOS_FreeBSD || defined MCC_TARGETOS_NetBSD || defined MCC_TARGETOS_FreeBSD_kernel
+#define MCC_TARGETOS_BSD 1
 #elif !(defined MCC_TARGET_PE || defined MCC_TARGET_MACHO)
-#define TARGETOS_Linux 1
+#define MCC_TARGETOS_Linux 1
 #endif
 
-#if defined MCC_TARGET_PE || defined MCC_TARGET_MACHO
-#define ELF_OBJ_ONLY
-#else
+#if !(defined MCC_TARGET_PE || defined MCC_TARGET_MACHO)
 #define MCC_TARGET_UNIX 1
 #endif
 
@@ -121,16 +108,16 @@ ST_FUNC void host_fault_unblock(unsigned detail);
 #define MCC_USING_DOUBLE_FOR_LDOUBLE 1
 #endif
 
-#ifdef CONFIG_MCC_PIE
-#define CONFIG_MCC_PIC 1
+#if MCC_CONFIG_PIE
+#define MCC_CONFIG_PIC 1
 #endif
 
-#ifndef CONFIG_SYSROOT
-#define CONFIG_SYSROOT ""
+#ifndef MCC_CONFIG_SYSROOT
+#define MCC_CONFIG_SYSROOT ""
 #endif
 
-#ifdef CONFIG_TRIPLET
-#define USE_TRIPLET(s) s "/" CONFIG_TRIPLET
+#ifdef MCC_CONFIG_TRIPLET
+#define USE_TRIPLET(s) s "/" MCC_CONFIG_TRIPLET
 #define ALSO_TRIPLET(s) USE_TRIPLET(s) HOST_PATHSEP s
 #else
 #define USE_TRIPLET(s) s
@@ -151,47 +138,47 @@ ST_FUNC void host_fault_unblock(unsigned detail);
 	"{R}/usr/lib" HOST_PATHSEP "{R}/lib" HOST_PATHSEP "{R}/usr/local/lib"
 #endif
 
-#ifndef CONFIG_MCC_CRTPREFIX
-#define CONFIG_MCC_CRTPREFIX \
+#ifndef MCC_CONFIG_CRTPREFIX
+#define MCC_CONFIG_CRTPREFIX \
 	MCC_ELF_LIBDIRS
 #endif
 
-#ifndef CONFIG_MCC_SYSINCLUDEPATHS
+#ifndef MCC_CONFIG_SYSINCLUDEPATHS
 #if defined MCC_TARGET_PE || MCC_HOST_WIN32
-#define CONFIG_MCC_SYSINCLUDEPATHS \
+#define MCC_CONFIG_SYSINCLUDEPATHS \
 	"{B}/include" HOST_PATHSEP "{B}/include/winapi"
 #else
-#define CONFIG_MCC_SYSINCLUDEPATHS \
+#define MCC_CONFIG_SYSINCLUDEPATHS \
 	"{B}/include" HOST_PATHSEP ALSO_TRIPLET("{R}/usr/include")
 #endif
 #endif
 
-#ifndef CONFIG_MCC_LIBPATHS
+#ifndef MCC_CONFIG_LIBPATHS
 #if defined MCC_TARGET_PE || MCC_HOST_WIN32
-#define CONFIG_MCC_LIBPATHS \
+#define MCC_CONFIG_LIBPATHS \
 	"{B}/lib"
 #else
-#define CONFIG_MCC_LIBPATHS \
+#define MCC_CONFIG_LIBPATHS \
 	"{B}" HOST_PATHSEP MCC_ELF_LIBDIRS
 #endif
 #endif
 
-#ifndef CONFIG_MCC_ELFINTERP
+#ifndef MCC_CONFIG_ELFINTERP
 #if MCC_HOST_HURD
-#define CONFIG_MCC_ELFINTERP "/lib/ld.so"
+#define MCC_CONFIG_ELFINTERP "/lib/ld.so"
 #elif defined(MCC_TARGET_PE)
-#define CONFIG_MCC_ELFINTERP "-"
+#define MCC_CONFIG_ELFINTERP "-"
 #elif defined MCC_TARGET_ARM64
-#define CONFIG_MCC_ELFINTERP "/lib/ld-linux-aarch64.so.1"
+#define MCC_CONFIG_ELFINTERP "/lib/ld-linux-aarch64.so.1"
 #elif defined(MCC_TARGET_X86_64)
-#define CONFIG_MCC_ELFINTERP "/lib64/ld-linux-x86-64.so.2"
+#define MCC_CONFIG_ELFINTERP "/lib64/ld-linux-x86-64.so.2"
 #elif defined(MCC_TARGET_RISCV64)
-#define CONFIG_MCC_ELFINTERP "/lib/ld-linux-riscv64-lp64d.so.1"
+#define MCC_CONFIG_ELFINTERP "/lib/ld-linux-riscv64-lp64d.so.1"
 #elif defined(MCC_TARGET_ARM)
-#define CONFIG_MCC_ELFINTERP "/lib/ld-linux.so.3"
-#define CONFIG_MCC_ELFINTERP_ARMHF "/lib/ld-linux-armhf.so.3"
+#define MCC_CONFIG_ELFINTERP "/lib/ld-linux.so.3"
+#define MCC_CONFIG_ELFINTERP_ARMHF "/lib/ld-linux-armhf.so.3"
 #else
-#define CONFIG_MCC_ELFINTERP "/lib/ld-linux.so.2"
+#define MCC_CONFIG_ELFINTERP "/lib/ld-linux.so.2"
 #endif
 #endif
 
@@ -199,8 +186,8 @@ ST_FUNC void host_fault_unblock(unsigned detail);
 #define MCC_MCCRT "libmccrt.a"
 #endif
 
-#ifndef CONFIG_MCC_CROSSPREFIX
-#define CONFIG_MCC_CROSSPREFIX ""
+#ifndef MCC_CONFIG_CROSSPREFIX
+#define MCC_CONFIG_CROSSPREFIX ""
 #endif
 
 #include "libmcc.h"
@@ -238,7 +225,7 @@ ST_FUNC void host_fault_unblock(unsigned detail);
 #error unknown target
 #endif
 
-#if PTR_SIZE == 8
+#if MCC_PTR_SIZE == 8
 #define ELFCLASSW ELFCLASS64
 #define ElfW(type) Elf##64##_##type
 #define ELFW(type) ELF##64##_##type
@@ -260,7 +247,7 @@ ST_FUNC void host_fault_unblock(unsigned detail);
 #define addr_t ElfW(Addr)
 #define ElfSym ElfW(Sym)
 
-#if PTR_SIZE == 8 && !defined MCC_TARGET_PE
+#if MCC_PTR_SIZE == 8 && !defined MCC_TARGET_PE
 #define LONG_SIZE 8
 #else
 #define LONG_SIZE 4
@@ -498,7 +485,7 @@ typedef struct BufferedFile {
 	struct BufferedFile *prev;
 	int line_num;
 	int line_ref;
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 	unsigned long cst_base;
 #endif
 	int ifndef_macro;
@@ -560,7 +547,7 @@ typedef struct CachedInclude {
 
 #define CACHED_INCLUDES_HASH_SIZE 32
 
-#ifdef CONFIG_MCC_ASM
+#if MCC_CONFIG_ASM
 typedef struct ExprValue {
 	uint64_t v;
 	Sym *sym;
@@ -758,7 +745,7 @@ struct MCCState {
 	unsigned char do_debug;
 	unsigned char dwarf;
 	unsigned char do_backtrace;
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 	unsigned char do_bounds_check;
 #endif
 	unsigned char test_coverage;
@@ -871,7 +858,7 @@ struct MCCState {
 	Section *tdata_section, *tbss_section;
 	Section *common_section;
 	Section *cur_text_section;
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 	Section *bounds_section;
 	Section *lbounds_section;
 #endif
@@ -931,7 +918,7 @@ struct MCCState {
 	uint32_t macos_version_min;
 #endif
 
-#ifndef ELF_OBJ_ONLY
+#if MCC_TARGET_UNIX
 	int nb_sym_versions;
 	struct sym_version *sym_versions;
 	int nb_sym_to_version;
@@ -941,7 +928,7 @@ struct MCCState {
 	Section *verneed_section;
 #endif
 
-#ifdef MCC_IS_NATIVE
+#ifdef MCC_TARGET_IS_HOST
 	const char *run_main;
 	void *run_ptr;
 	unsigned run_size;
@@ -954,7 +941,7 @@ struct MCCState {
 	void *bt_data;
 #endif
 
-#ifdef CONFIG_MCC_BACKTRACE
+#if MCC_CONFIG_BACKTRACE
 	int rt_num_callers;
 #endif
 
@@ -1273,7 +1260,7 @@ ST_FUNC void mcc_write_uleb128(Section *sec, unsigned long long value);
 ST_FUNC void mcc_write_sleb128(Section *sec, long long value);
 PUB_FUNC char *mcc_strdup(const char *str);
 
-#ifdef MEM_DEBUG
+#ifdef MCC_MEM_DEBUG
 #define mcc_free(ptr) mcc_free_debug(ptr)
 #define mcc_malloc(size) mcc_malloc_debug(size, __FILE__, __LINE__)
 #define mcc_mallocz(size) mcc_mallocz_debug(size, __FILE__, __LINE__)
@@ -1336,15 +1323,15 @@ ST_FUNC int mcc_add_file_internal(MCCState *s1, const char *filename, int flags)
 #define FILE_NOT_FOUND -2
 #define FILE_NOT_RECOGNIZED -3
 
-#ifndef ELF_OBJ_ONLY
+#if MCC_TARGET_UNIX
 ST_FUNC int mcc_add_crt(MCCState *s, const char *filename);
 #endif
 ST_FUNC int mcc_add_dll(MCCState *s, const char *filename, int flags);
 ST_FUNC int mcc_add_support(MCCState *s1, const char *filename);
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 ST_FUNC void mcc_add_bcheck(MCCState *s1);
 #endif
-#ifdef CONFIG_MCC_BACKTRACE
+#if MCC_CONFIG_BACKTRACE
 ST_FUNC void mcc_add_btstub(MCCState *s1);
 #endif
 ST_FUNC void mcc_add_pragma_libs(MCCState *s1);
@@ -1486,7 +1473,7 @@ ST_FUNC ElfSym *elfsym(Sym *);
 ST_FUNC void update_storage(Sym *sym);
 ST_FUNC void put_extern_sym2(Sym *sym, int sh_num, addr_t value, unsigned long size, int can_add_underscore);
 ST_FUNC void put_extern_sym(Sym *sym, Section *section, addr_t value, unsigned long size);
-#if PTR_SIZE == 4
+#if MCC_PTR_SIZE == 4
 ST_FUNC void greloc(Section *s, Sym *sym, unsigned long offset, int type);
 #endif
 ST_FUNC void greloca(Section *s, Sym *sym, unsigned long offset, int type, addr_t addend);
@@ -1516,7 +1503,7 @@ ST_FUNC void vrott(int n);
 ST_FUNC void vrotb(int n);
 ST_FUNC void vrev(int n);
 ST_FUNC void vpop(void);
-#if PTR_SIZE == 4
+#if MCC_PTR_SIZE == 4
 ST_FUNC void lexpand(void);
 #endif
 #ifdef MCC_TARGET_ARM
@@ -1540,17 +1527,17 @@ ST_FUNC void indir(void);
 ST_FUNC void unary(void);
 ST_FUNC void gexpr(void);
 ST_FUNC int expr_const(void);
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 ST_FUNC void cst_capture_begin(const char *filename);
 ST_FUNC CstArena *cst_capture_end(void);
 #endif
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 ST_FUNC Sym *get_sym_ref(CType *type, Section *sec, unsigned long offset, unsigned long size);
 #endif
 #if defined MCC_TARGET_X86_64 && !defined MCC_TARGET_PE
 ST_FUNC int classify_x86_64_va_arg(CType *ty);
 #endif
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 ST_FUNC void gbound_args(int nb_args);
 ST_DATA int func_bound_add_epilog;
 ST_FUNC int gen_bounds_epilog_head(addr_t func_bound_offset,
@@ -1651,7 +1638,7 @@ ST_FUNC int mcc_disasm_reloc_size(int type);
 ST_FUNC int mcc_disasm_reloc_addend_bias(int type, int size);
 #endif
 
-#ifndef ELF_OBJ_ONLY
+#if MCC_TARGET_UNIX
 ST_FUNC int mcc_load_dll(MCCState *s1, int fd, const char *filename, int level);
 ST_FUNC int mcc_load_ldscript(MCCState *s1, int fd);
 ST_FUNC void mccelf_add_crtbegin(MCCState *s1);
@@ -1681,7 +1668,7 @@ ST_FUNC void build_got_entries(MCCState *s1, int got_sym);
 ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr, addr_t addr, addr_t val);
 
 ST_DATA const char *const target_machine_defs;
-ST_DATA const int reg_classes[NB_REGS];
+ST_DATA const int reg_classes[MCC_NB_REGS];
 
 ST_FUNC void gsym_addr(int t, int a);
 ST_FUNC void gsym(int t);
@@ -1765,7 +1752,7 @@ ST_FUNC void gen_cvt_csti(int t);
 #endif
 
 #ifdef MCC_TARGET_ARM
-#if defined(MCC_ARM_EABI) && !defined(CONFIG_MCC_ELFINTERP)
+#if defined(MCC_ARM_EABI) && !defined(MCC_CONFIG_ELFINTERP)
 PUB_FUNC const char *default_elfinterp(struct MCCState *s);
 #endif
 ST_FUNC void arm_init(struct MCCState *s);
@@ -1800,13 +1787,13 @@ ST_FUNC void arch_transfer_ret_regs(int);
 ST_FUNC void asm_instr(void);
 ST_FUNC void asm_global_instr(void);
 ST_FUNC int mcc_assemble(MCCState *s1, int do_preprocess);
-#ifdef CONFIG_MCC_ASM
+#if MCC_CONFIG_ASM
 ST_FUNC int find_constraint(ASMOperand *operands, int nb_operands, const char *name, const char **pp);
 ST_FUNC const char *skip_constraint_modifiers(const char *p);
 ST_FUNC Sym *get_asm_sym(int name, Sym *csym);
 ST_FUNC void asm_expr(MCCState *s1, ExprValue *pe);
 ST_FUNC int asm_int_expr(MCCState *s1);
-#if PTR_SIZE == 8
+#if MCC_PTR_SIZE == 8
 ST_FUNC void gen_expr64(ExprValue *pe);
 #endif
 ST_FUNC void gen_expr32(ExprValue *pe);
@@ -1842,13 +1829,13 @@ PUB_FUNC int mcc_get_dllexports(const char *filename, char **pp);
 ST_FUNC int macho_output_file(MCCState *s1, const char *filename);
 ST_FUNC int macho_load_dll(MCCState *s1, int fd, const char *filename, int lev);
 ST_FUNC int macho_load_tbd(MCCState *s1, int fd, const char *filename, int lev);
-#ifdef MCC_IS_NATIVE
+#ifdef MCC_TARGET_IS_HOST
 ST_FUNC void mcc_add_macos_sdkpath(MCCState *s);
 ST_FUNC void mcc_add_macos_sdkincludepath(MCCState *s);
 ST_FUNC char *macho_tbd_soname(int fd);
 #endif
 #endif
-#ifdef MCC_IS_NATIVE
+#ifdef MCC_TARGET_IS_HOST
 ST_FUNC void mcc_run_free(MCCState *s1);
 #endif
 
@@ -1870,7 +1857,7 @@ ST_FUNC void mcc_debug_typedef(MCCState *s1, Sym *sym);
 ST_FUNC void mcc_debug_stabn(MCCState *s1, int type, int value);
 ST_FUNC void mcc_debug_fix_forw(MCCState *s1, CType *t);
 
-#if !(defined ELF_OBJ_ONLY || defined MCC_TARGET_ARM || defined TARGETOS_BSD)
+#if MCC_TARGET_UNIX && !defined MCC_TARGET_ARM && !defined MCC_TARGETOS_BSD
 ST_FUNC void mcc_eh_frame_start(MCCState *s1);
 ST_FUNC void mcc_eh_frame_end(MCCState *s1);
 ST_FUNC void mcc_eh_frame_hdr(MCCState *s1, int final);
@@ -1945,8 +1932,8 @@ dwarf_read_sleb128(unsigned char **ln, unsigned char *end) {
 #define DEFAULT_DWARF_VERSION 5
 #endif
 
-#ifndef CONFIG_DWARF_VERSION
-#define CONFIG_DWARF_VERSION 0
+#ifndef MCC_CONFIG_DWARF_VERSION
+#define MCC_CONFIG_DWARF_VERSION 0
 #endif
 
 #if defined MCC_TARGET_X86_64
@@ -1956,7 +1943,7 @@ dwarf_read_sleb128(unsigned char **ln, unsigned char *end) {
 #endif
 
 #undef ST_DATA
-#if SINGLE_SOURCE
+#if MCC_AMALGAMATED
 #define ST_DATA static
 #else
 #define ST_DATA

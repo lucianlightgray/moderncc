@@ -12,7 +12,7 @@ of the node table can be emitted from the build itself via
 `mcc_generate_node_doc()`.
 
 > **Code-facing subset:** most nodes here only steer the build. The ones that
-> reach the compiler as a `-DCONFIG_MCC_*` the source reads are documented, with
+> reach the compiler as a `-DMCC_CONFIG_*` the source reads are documented, with
 > their naming convention and the drift checker, in **[CONFIG.md](CONFIG.md)**
 > (ctest `config-drift-invariant`). Keep the two in sync when adding a flag.
 
@@ -58,12 +58,12 @@ The CMake target ids equal the output binary names (`mcc-<arch>`):
 | `mcc-arm64-osx`       | arm64   | Darwin    | `-static`                          |
 
 `mcc` is the canonical, installed binary and the one the test suite drives; by
-default it is a self-contained SINGLE_SOURCE build linked only to libc. The
+default it is a self-contained MCC_AMALGAMATED build linked only to libc. The
 `libmcc` library (shared `libmcc.so` by default, or static `libmcc.a` with
 `MCC_BUILD_STATIC_LIB=ON`) is still built — for the embed API and for
 `mcc-dynamic` to link against. One behavioral note: a **static** `mcc-static`
 resolves `-run` libc symbols from a built-in table (common symbols only, via
-`CONFIG_MCC_STATIC`), whereas the dynamic `mcc` / `mcc-dynamic` resolve
+`MCC_CONFIG_STATIC`), whereas the dynamic `mcc` / `mcc-dynamic` resolve
 arbitrary libc symbols through `dlsym`.
 
 All binaries follow one **suffix convention**, appended in a fixed order:
@@ -153,7 +153,7 @@ cc, so they are parity-exempt interactive conveniences, not CI cells
 | Preset | CMAKE_BUILD_TYPE | Key overrides |
 |---|---|---|
 | `debug` | Debug | musl OFF, bcheck ON, backtrace ON, strip OFF |
-| `release` | Release | strip ON, bcheck OFF, backtrace OFF (SINGLE_SOURCE dynamic exe) |
+| `release` | Release | strip ON, bcheck OFF, backtrace OFF (MCC_AMALGAMATED dynamic exe) |
 | `sanitize` | Debug | `MCC_BUILD_SANITIZE=ON` |
 | `diagnostics` | Debug | `MCC_ALL_DIAGNOSTICS=ON` (warnings + debug + mcc_s/mcc_p/mcc_c) |
 | `cross` | Debug | `MCC_ENABLE_CROSS=ON` |
@@ -170,7 +170,7 @@ cc, so they are parity-exempt interactive conveniences, not CI cells
 | `linux-gcc-cross`, `linux-clang-cross` | `linux` | + `MCC_ENABLE_CROSS=ON` |
 | `linux-gcc-musl` | `linux` | + `MCC_BUILD_MUSL=ON` |
 | `linux-gcc-release`, `linux-clang-release` | `linux` | Release, stripped, bcheck/backtrace off |
-| `linux-gcc-static` | `linux` | + `MCC_BUILD_STATIC_EXE=ON` (`mcc-static`, `CONFIG_MCC_STATIC`) |
+| `linux-gcc-static` | `linux` | + `MCC_BUILD_STATIC_EXE=ON` (`mcc-static`, `MCC_CONFIG_STATIC`) |
 | `linux-gcc-multisource` | `linux` | + `MCC_SINGLE_SOURCE=OFF` (multi-TU; builds `mcc-dynamic`) |
 | `linux-gcc-asm-off` | `linux` | + `MCC_CONFIG_ASM=OFF` (mccrt via host cc) |
 | `linux-gcc-predefs-off` | `linux` | + `MCC_CONFIG_PREDEFS=OFF` (runtime mccdefs) |
@@ -321,12 +321,12 @@ These bake `CONFIG_*` values into the compiler and change its runtime behavior.
 | `MCC_CONFIG_PIC` | BOOL | OFF | | **ELF** | Position-independent code. |
 | `MCC_RUN_MMAP_EXEC` | BOOL | OFF | | always | Force `-run` executable memory via `mmap` (separate RW/RX) instead of `mprotect`; normally auto-detected at runtime (SELinux/PaX hardened W^X kernels fall back automatically). |
 | `MCC_CONFIG_NEW_DTAGS` | BOOL | OFF | | **ELF** | `DT_RUNPATH` instead of `DT_RPATH` (mcc-emitted). |
-| `MCC_AUTO_MCCDIR` | BOOL | **ON** | | always | Build-tree mcc auto-discovers `libmccrt.a` + headers locally, else system `CONFIG_MCCDIR`. |
+| `MCC_AUTO_MCCDIR` | BOOL | **ON** | | always | Build-tree mcc auto-discovers `libmccrt.a` + headers locally, else system `MCC_CONFIG_MCCDIR`. |
 | `MCC_CONFIG_LIBC` | STRING | `''` | uClibc, musl, `''` | **ELF** | Target libc. `uClibc` is a legacy selector (warns). |
 | `MCC_CONFIG_DWARF` | STRING | `''` | 0, 2, 3, 4, 5, `''` | always | DWARF debug version; empty = stabs. |
-| `MCC_CONFIG_SEMLOCK` | STRING | `''` | numeric | always | `CONFIG_MCC_SEMLOCK` value; empty = mcc.h default (1). Must be numeric (fatal otherwise). |
-| `MCC_CST` | BOOL | **ON** | | always (`GROUP "Advanced"`) | Build the CST database subsystem (side-recorded concrete syntax tree; LSP/`-g`/opt substrate) → `CONFIG_MCC_CST=1`. On by default; codegen is byte-identical either way (guarded by the codegen-identity gate). The `cst` preset builds/runs the `tests/cst` suite explicitly. |
-| `MCC_AST` | BOOL | **ON** | | always (`GROUP "Advanced"`) | Build the AST intention-IR subsystem (MCC.md §9 / EXCESS.md) → `CONFIG_AST=1`. A pure side-channel like the CST: `-O0` never builds it and stays byte-identical; `-O1` lowers it and replays through the vstack API. The `ast` preset builds/runs the `tests/exec` `-O1-replay` column + the `asttool` pure-lib suite. |
+| `MCC_CONFIG_SEMLOCK` | STRING | `''` | numeric | always | `MCC_CONFIG_SEMLOCK` value; empty = mcc.h default (1). Must be numeric (fatal otherwise). |
+| `MCC_CST` | BOOL | **ON** | | always (`GROUP "Advanced"`) | Build the CST database subsystem (side-recorded concrete syntax tree; LSP/`-g`/opt substrate) → `MCC_CONFIG_CST=1`. On by default; codegen is byte-identical either way (guarded by the codegen-identity gate). The `cst` preset builds/runs the `tests/cst` suite explicitly. |
+| `MCC_AST` | BOOL | **ON** | | always (`GROUP "Advanced"`) | Build the AST intention-IR subsystem (MCC.md §9 / EXCESS.md) → `MCC_CONFIG_AST=1`. A pure side-channel like the CST: `-O0` never builds it and stays byte-identical; `-O1` lowers it and replays through the vstack API. The `ast` preset builds/runs the `tests/exec` `-O1-replay` column + the `asttool` pure-lib suite. |
 | `MCC_CONFIG_NEW_MACHO` | STRING | `''` | yes, no, auto, `''` | **Darwin** | Force apple object format. |
 | `MCC_CONFIG_CODESIGN` | STRING | `''` | yes, no, auto, `''` | **Darwin** | Use `codesign` to sign executables. |
 
@@ -346,7 +346,7 @@ All STRING, default `''`, mirror `configure --…` flags. Empty = autodetect.
 | `MCC_ELFINTERP` | `--elfinterp` |
 | `MCC_SWITCHES` | `--mcc-switches` |
 | `MCC_OS_RELEASE` | `--os-release` |
-| `MCC_INSTALL_MCCDIR` | `CONFIG_MCCDIR`; empty = `<prefix>/<libdir>/mcc` (`GROUP "Install"`) |
+| `MCC_INSTALL_MCCDIR` | `MCC_CONFIG_MCCDIR`; empty = `<prefix>/<libdir>/mcc` (`GROUP "Install"`) |
 
 ## 7. Extra build flags (`GROUP "Build flags"`, advanced)
 
@@ -487,7 +487,7 @@ useful to assert in CI. They are computed, not user inputs.
 ## 13. Cross-value validation (combinations the configure step checks)
 
 `mcc_validate_config()` enforces these (two live elsewhere but still fire at
-configure time: the `mcc-dynamic`-skipped-under-SINGLE_SOURCE status is printed
+configure time: the `mcc-dynamic`-skipped-under-MCC_AMALGAMATED status is printed
 at the target definition, and the toolchain-profile-entry fatal at the node
 declaration); test both the pass and the warn/fatal path. With
 `MCC_CONFIG_AUTOCORRECT=ON` several fatals become auto-corrections instead.
@@ -534,9 +534,9 @@ several of these already (§2).
 
 1. `debug` preset (baseline new defaults: self-contained single-source `mcc` +
    lib-linking `mcc-dynamic` against shared `libmcc.so`, bcheck+backtrace on, rpath path).
-2. `release` preset (SINGLE_SOURCE dynamic exe, stripped, bcheck/backtrace off).
+2. `release` preset (MCC_AMALGAMATED dynamic exe, stripped, bcheck/backtrace off).
 3. `MCC_BUILD_STATIC_EXE=ON` → builds `mcc-static` (self-contained static by
-   default; exercises `CONFIG_MCC_STATIC` / built-in `-run` table). Add
+   default; exercises `MCC_CONFIG_STATIC` / built-in `-run` table). Add
    `MCC_SINGLE_SOURCE=OFF` + `MCC_BUILD_STATIC_LIB=ON` to cover the static-against-`libmcc.a` path.
 4. `MCC_SINGLE_SOURCE=OFF` (non-default multi-TU): `mcc`/`mcc-static` become
    driver-TU + `libmcc` builds; keeps the non-amalgamated compile path covered.

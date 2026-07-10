@@ -153,7 +153,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		x <<= 2;
 		if (x & 0x2000000)
 			x -= 0x4000000;
-		blx_avail = (CONFIG_MCC_CPUVER >= 5);
+		blx_avail = (MCC_CONFIG_CPUVER >= 5);
 		is_thumb = val & 1;
 		is_bl = code == 0xeb000000;
 		is_call = (type == R_ARM_CALL || (type == R_ARM_PC24 && is_bl));

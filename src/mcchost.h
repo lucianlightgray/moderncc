@@ -42,7 +42,7 @@
 #ifndef _WIN32
 #include <unistd.h>
 #include <sys/time.h>
-#ifndef CONFIG_MCC_STATIC
+#ifndef MCC_CONFIG_STATIC
 #include <dlfcn.h>
 #endif
 extern float strtof(const char *__nptr, char **__endptr);
@@ -145,11 +145,11 @@ extern long double strtold(const char *__nptr, char **__endptr);
 #define PUB_FUNC
 #endif
 
-#ifndef SINGLE_SOURCE
-#define SINGLE_SOURCE 0
+#ifndef MCC_AMALGAMATED
+#define MCC_AMALGAMATED 0
 #endif
 
-#if SINGLE_SOURCE
+#if MCC_AMALGAMATED
 #define ST_INLN static inline
 #define ST_FUNC static
 #define ST_DATA static
@@ -171,14 +171,14 @@ extern long double strtold(const char *__nptr, char **__endptr);
 #define HOST_PATHSEP ":"
 #endif
 
-#if !defined CONFIG_MCCDIR && !MCC_HOST_WIN32
-#define CONFIG_MCCDIR "/usr/local/lib/mcc"
+#if !defined MCC_CONFIG_MCCDIR && !MCC_HOST_WIN32
+#define MCC_CONFIG_MCCDIR "/usr/local/lib/mcc"
 #endif
 
-#if MCC_HOST_WIN32 && !defined CONFIG_MCCDIR
+#if MCC_HOST_WIN32 && !defined MCC_CONFIG_MCCDIR
 #define MCC_HOST_AUTO_MCCDIR_W32 1
 ST_FUNC char *host_w32_mccdir(char *path);
-#define CONFIG_MCCDIR host_w32_mccdir(alloca(MAX_PATH))
+#define MCC_CONFIG_MCCDIR host_w32_mccdir(alloca(MAX_PATH))
 #endif
 
 #ifdef _WIN32
@@ -242,10 +242,10 @@ ST_FUNC MAYBE_UNUSED void *host_dlsym_process(const char *symbol);
 ST_FUNC const char *host_macos_sdk_root(void);
 ST_FUNC const char *host_elf_interp_override(void);
 
-#ifndef CONFIG_RUNMEM_RO
-#define CONFIG_RUNMEM_RO MCC_HOST_DARWIN
+#ifndef MCC_CONFIG_RUNMEM_RO
+#define MCC_CONFIG_RUNMEM_RO MCC_HOST_DARWIN
 #endif
-#define HOST_RUNMEM_RO CONFIG_RUNMEM_RO
+#define HOST_RUNMEM_RO MCC_CONFIG_RUNMEM_RO
 
 #define HOST_PROT_RX 0
 #define HOST_PROT_RO 1
@@ -292,11 +292,11 @@ typedef struct HostFaultRegs {
 
 typedef int (*host_fault_fn)(int code, unsigned detail, HostFaultRegs *r);
 
-#ifndef CONFIG_MCC_SEMLOCK
-#define CONFIG_MCC_SEMLOCK 1
+#ifndef MCC_CONFIG_SEMLOCK
+#define MCC_CONFIG_SEMLOCK 1
 #endif
 
-#if CONFIG_MCC_SEMLOCK
+#if MCC_CONFIG_SEMLOCK
 #if defined _WIN32
 typedef struct
 {

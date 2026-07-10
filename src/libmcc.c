@@ -1,8 +1,8 @@
-#ifndef SINGLE_SOURCE
-#define SINGLE_SOURCE 1
+#ifndef MCC_AMALGAMATED
+#define MCC_AMALGAMATED 1
 #endif
 
-#if SINGLE_SOURCE
+#if MCC_AMALGAMATED
 #include "mcchost.c"
 #include "mccpp.c"
 #include "mccgen.c"
@@ -58,7 +58,7 @@ ST_DATA int nb_stk_data;
 ST_DATA int stk_data_floor;
 ST_DATA int g_debug;
 
-#if defined MCC_TARGET_PE && defined MCC_IS_NATIVE
+#if defined MCC_TARGET_PE && defined MCC_TARGET_IS_HOST
 static void mcc_add_systemdir(MCCState *s) {
 	char buf[1000];
 	if (host_system_dir(buf, sizeof buf) == 0)
@@ -266,13 +266,13 @@ PUB_FUNC char *mcc_strdup(const char *str) {
 	return ptr;
 }
 
-#ifdef MEM_DEBUG
+#ifdef MCC_MEM_DEBUG
 
-#define MEM_DEBUG_MAGIC1 0xFEEDDEB1
-#define MEM_DEBUG_MAGIC2 0xFEEDDEB2
-#define MEM_DEBUG_MAGIC3 0xFEEDDEB3
-#define MEM_DEBUG_FILE_LEN 40
-#define MEM_DEBUG_CHECK3(header) \
+#define MCC_MEM_DEBUG_MAGIC1 0xFEEDDEB1
+#define MCC_MEM_DEBUG_MAGIC2 0xFEEDDEB2
+#define MCC_MEM_DEBUG_MAGIC3 0xFEEDDEB3
+#define MCC_MEM_DEBUG_FILE_LEN 40
+#define MCC_MEM_DEBUG_CHECK3(header) \
 	(((unsigned char *)header->magic3) + header->size)
 #define MEM_USER_PTR(header) \
 	((char *)header + offsetof(mem_debug_header_t, magic3))
@@ -285,7 +285,7 @@ struct mem_debug_header {
 	struct mem_debug_header *prev;
 	struct mem_debug_header *next;
 	int line_num;
-	char file_name[MEM_DEBUG_FILE_LEN];
+	char file_name[MCC_MEM_DEBUG_FILE_LEN];
 	unsigned magic2;
 	ALIGNED(16)
 	unsigned char magic3[4];
@@ -301,12 +301,12 @@ static int nb_states;
 
 static mem_debug_header_t *malloc_check(void *ptr, const char *msg) {
 	mem_debug_header_t *header = MEM_HEADER_PTR(ptr);
-	if (header->magic1 != MEM_DEBUG_MAGIC1 ||
-			header->magic2 != MEM_DEBUG_MAGIC2 ||
-			read32le(MEM_DEBUG_CHECK3(header)) != MEM_DEBUG_MAGIC3 ||
+	if (header->magic1 != MCC_MEM_DEBUG_MAGIC1 ||
+			header->magic2 != MCC_MEM_DEBUG_MAGIC2 ||
+			read32le(MCC_MEM_DEBUG_CHECK3(header)) != MCC_MEM_DEBUG_MAGIC3 ||
 			header->size == (unsigned)-1) {
 		fprintf(stderr, "%s check failed\n", msg);
-		if (header->magic1 == MEM_DEBUG_MAGIC1)
+		if (header->magic1 == MCC_MEM_DEBUG_MAGIC1)
 			fprintf(stderr, "%s:%u: block allocated here.\n",
 							header->file_name, header->line_num);
 		exit(1);
@@ -320,12 +320,12 @@ PUB_FUNC void *mcc_malloc_debug(unsigned long size, const char *file, int line) 
 	if (!size)
 		return NULL;
 	header = mcc_malloc(sizeof(mem_debug_header_t) + size);
-	header->magic1 = MEM_DEBUG_MAGIC1;
-	header->magic2 = MEM_DEBUG_MAGIC2;
+	header->magic1 = MCC_MEM_DEBUG_MAGIC1;
+	header->magic2 = MCC_MEM_DEBUG_MAGIC2;
 	header->size = size;
-	write32le(MEM_DEBUG_CHECK3(header), MEM_DEBUG_MAGIC3);
+	write32le(MCC_MEM_DEBUG_CHECK3(header), MCC_MEM_DEBUG_MAGIC3);
 	header->line_num = line;
-	ofs = strlen(file) + 1 - MEM_DEBUG_FILE_LEN;
+	ofs = strlen(file) + 1 - MCC_MEM_DEBUG_FILE_LEN;
 	strcpy(header->file_name, file + (ofs > 0 ? ofs : 0));
 	HOST_SEM_WAIT(&mem_sem);
 	header->next = mem_debug_chain;
@@ -382,7 +382,7 @@ PUB_FUNC void *mcc_realloc_debug(void *ptr, unsigned long size, const char *file
 	mem_debug_chain_update = (header == mem_debug_chain);
 	header = mcc_realloc(header, sizeof(mem_debug_header_t) + size);
 	header->size = size;
-	write32le(MEM_DEBUG_CHECK3(header), MEM_DEBUG_MAGIC3);
+	write32le(MCC_MEM_DEBUG_CHECK3(header), MCC_MEM_DEBUG_MAGIC3);
 	if (header->next)
 		header->next->prev = header;
 	if (header->prev)
@@ -409,7 +409,7 @@ PUB_FUNC void mcc_memcheck(int d) {
 	if (0 == nb_states && mem_cur_size) {
 		mem_debug_header_t *header = mem_debug_chain;
 		fflush(stdout);
-		fprintf(stderr, "MEM_DEBUG: mem_leak= %d bytes, mem_max_size= %d bytes\n",
+		fprintf(stderr, "MCC_MEM_DEBUG: mem_leak= %d bytes, mem_max_size= %d bytes\n",
 						mem_cur_size, mem_max_size);
 		while (header) {
 			fprintf(stderr, "%s:%u: error: %u bytes leaked\n",
@@ -420,7 +420,7 @@ PUB_FUNC void mcc_memcheck(int d) {
 		mem_cur_size = 0;
 		mem_max_size = 0;
 		mem_debug_chain = NULL;
-#if MEM_DEBUG - 0 == 2
+#if MCC_MEM_DEBUG - 0 == 2
 		exit(2);
 #endif
 	}
@@ -520,7 +520,7 @@ static void mcc_split_path(MCCState *s, void *p_ary, int *p_nb_ary, const char *
 				if (c == 'B')
 					cstr_cat(&str, s->mcc_lib_path, -1);
 				if (c == 'R')
-					cstr_cat(&str, (s->sysroot && s->sysroot[0]) ? s->sysroot : CONFIG_SYSROOT, -1);
+					cstr_cat(&str, (s->sysroot && s->sysroot[0]) ? s->sysroot : MCC_CONFIG_SYSROOT, -1);
 				if (c == 'f' && file) {
 					const char *f = file->true_filename;
 					const char *b = mcc_basename(f);
@@ -819,7 +819,7 @@ static int mcc_compile(MCCState *s1, int filetype, const char *str, int fd) {
 			file->fd = fd;
 		}
 
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 		int cst_on = (s1->lsp && fd != -1 &&
 									s1->output_type != MCC_OUTPUT_PREPROCESS &&
 									!(filetype & (AFF_TYPE_ASM | AFF_TYPE_ASMPP)));
@@ -835,14 +835,14 @@ static int mcc_compile(MCCState *s1, int filetype, const char *str, int fd) {
 		} else {
 			mccelf_begin_file(s1);
 			if (filetype & (AFF_TYPE_ASM | AFF_TYPE_ASMPP)) {
-#ifdef CONFIG_MCC_ASM
+#if MCC_CONFIG_ASM
 				mcc_assemble(s1, !!(filetype & AFF_TYPE_ASMPP));
 #else
-				mcc_error_noabort("assembler source not supported (built without CONFIG_MCC_ASM)");
+				mcc_error_noabort("assembler source not supported (built without MCC_CONFIG_ASM)");
 #endif
 			} else {
 				mccgen_compile(s1);
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 				if (cst_on)
 					cst_capture_end();
 #endif
@@ -874,7 +874,7 @@ LIBMCCAPI void mcc_undefine_symbol(MCCState *s1, const char *sym) {
 	cstr_printf(&s1->cmdline_defs, "#undef %s\n", sym);
 }
 
-#if defined CONFIG_MCC_AUTO_MCCDIR && MCC_HOST_POSIX
+#if defined MCC_CONFIG_AUTO_MCCDIR && MCC_HOST_POSIX
 #include <sys/stat.h>
 static char auto_mccdir_buf[1024];
 
@@ -883,7 +883,7 @@ static const char *mcc_auto_mccdir(void) {
 	struct stat st;
 	char *p;
 	if (host_exe_path(exe, sizeof exe) <= 0)
-		return CONFIG_MCCDIR;
+		return MCC_CONFIG_MCCDIR;
 	p = mcc_basename(exe);
 	if (p > exe)
 		--p;
@@ -891,21 +891,21 @@ static const char *mcc_auto_mccdir(void) {
 	pstrcpy(probe, sizeof probe, exe);
 	pstrcat(probe, sizeof probe, "/include");
 	if (stat(probe, &st) != 0 || !S_ISDIR(st.st_mode))
-		return CONFIG_MCCDIR;
+		return MCC_CONFIG_MCCDIR;
 	pstrcpy(auto_mccdir_buf, sizeof auto_mccdir_buf, exe);
 	return auto_mccdir_buf;
 }
 
-#define CONFIG_MCCDIR_DEFAULT mcc_auto_mccdir()
+#define MCC_MCCDIR_DEFAULT mcc_auto_mccdir()
 #else
-#define CONFIG_MCCDIR_DEFAULT CONFIG_MCCDIR
+#define MCC_MCCDIR_DEFAULT MCC_CONFIG_MCCDIR
 #endif
 
 LIBMCCAPI MCCState *mcc_new(void) {
 	MCCState *s;
 
 	s = mcc_mallocz(sizeof(MCCState));
-#ifdef MEM_DEBUG
+#ifdef MCC_MEM_DEBUG
 	mcc_memcheck(1);
 #endif
 
@@ -916,7 +916,7 @@ LIBMCCAPI MCCState *mcc_new(void) {
 	s->dollars_in_identifiers = 1;
 	s->cversion = 201112;
 	s->pie = -1;
-#if defined CONFIG_MCC_PIC
+#if MCC_CONFIG_PIC
 	s->pic = 2;
 #endif
 	s->warn_implicit_function_declaration = WARN_ON | WARN_ERR;
@@ -928,7 +928,7 @@ LIBMCCAPI MCCState *mcc_new(void) {
 	s->ms_extensions = 1;
 	s->unwind_tables = 1;
 
-#ifdef CHAR_IS_UNSIGNED
+#ifdef MCC_CHAR_IS_UNSIGNED
 	s->char_is_unsigned = 1;
 #endif
 #ifdef MCC_TARGET_I386
@@ -940,15 +940,15 @@ LIBMCCAPI MCCState *mcc_new(void) {
 #ifdef MCC_ARM_HARDFLOAT
 	s->float_abi = ARM_HARD_FLOAT;
 #endif
-#ifdef CONFIG_NEW_DTAGS
+#if MCC_CONFIG_NEW_DTAGS
 	s->enable_new_dtags = 1;
 #endif
 	s->ppfp = stdout;
 	s->include_stack_ptr = s->include_stack;
 
-	mcc_set_lib_path(s, CONFIG_MCCDIR_DEFAULT);
-#ifdef CONFIG_MCC_SWITCHES
-	mcc_set_options(s, CONFIG_MCC_SWITCHES);
+	mcc_set_lib_path(s, MCC_MCCDIR_DEFAULT);
+#ifdef MCC_CONFIG_SWITCHES
+	mcc_set_options(s, MCC_CONFIG_SWITCHES);
 #endif
 	return s;
 }
@@ -990,12 +990,12 @@ LIBMCCAPI void mcc_delete(MCCState *s1) {
 	mcc_free(s1->asm_cfi_st.buf);
 	dynarray_reset(&s1->alias_fixups, &s1->nb_alias_fixups);
 	mcc_free(s1->dState);
-#ifdef MCC_IS_NATIVE
+#ifdef MCC_TARGET_IS_HOST
 	mcc_run_free(s1);
 #endif
 	dynarray_reset(&s1->loaded_dlls, &s1->nb_loaded_dlls);
 	mcc_free(s1);
-#ifdef MEM_DEBUG
+#ifdef MCC_MEM_DEBUG
 	mcc_memcheck(-1);
 #endif
 }
@@ -1004,7 +1004,7 @@ LIBMCCAPI int mcc_set_output_type(MCCState *s, int output_type) {
 	if (output_type == MCC_OUTPUT_EXE) {
 		int pie = s->pie;
 		if (pie < 0) {
-#ifdef CONFIG_MCC_PIE
+#if MCC_CONFIG_PIE
 			pie = 1;
 #else
 			pie = 0;
@@ -1018,8 +1018,8 @@ LIBMCCAPI int mcc_set_output_type(MCCState *s, int output_type) {
 	s->output_type = output_type;
 
 	if (!s->nostdinc) {
-		mcc_add_sysinclude_path(s, CONFIG_MCC_SYSINCLUDEPATHS);
-#if defined MCC_TARGET_MACHO && defined MCC_IS_NATIVE
+		mcc_add_sysinclude_path(s, MCC_CONFIG_SYSINCLUDEPATHS);
+#if defined MCC_TARGET_MACHO && defined MCC_TARGET_IS_HOST
 		mcc_add_macos_sdkincludepath(s);
 #endif
 	}
@@ -1037,20 +1037,20 @@ LIBMCCAPI int mcc_set_output_type(MCCState *s, int output_type) {
 	}
 
 	if (!s->nostdlib_paths)
-		mcc_add_library_path(s, CONFIG_MCC_LIBPATHS);
+		mcc_add_library_path(s, MCC_CONFIG_LIBPATHS);
 
 #ifdef MCC_TARGET_PE
-#ifdef MCC_IS_NATIVE
+#ifdef MCC_TARGET_IS_HOST
 	mcc_add_systemdir(s);
 #endif
 
 #elif defined MCC_TARGET_MACHO
-#ifdef MCC_IS_NATIVE
+#ifdef MCC_TARGET_IS_HOST
 	mcc_add_macos_sdkpath(s);
 #endif
 
 #else
-	mcc_split_path(s, &s->crt_paths, &s->nb_crt_paths, CONFIG_MCC_CRTPREFIX);
+	mcc_split_path(s, &s->crt_paths, &s->nb_crt_paths, MCC_CONFIG_CRTPREFIX);
 	if (output_type != MCC_OUTPUT_MEMORY && !s->nostdlib)
 		mccelf_add_crtbegin(s);
 #endif
@@ -1136,8 +1136,8 @@ static int mcc_add_binary(MCCState *s1, int flags, const char *filename, int fd)
 #if defined MCC_TARGET_UNIX
 	case AFF_BINTYPE_DYN:
 		if (s1->output_type == MCC_OUTPUT_MEMORY) {
-#ifdef MCC_IS_NATIVE
-#ifdef CONFIG_MCC_STATIC
+#ifdef MCC_TARGET_IS_HOST
+#ifdef MCC_CONFIG_STATIC
 			(void)filename;
 #else
 			void *dl = host_dlopen(filename);
@@ -1159,7 +1159,7 @@ static int mcc_add_binary(MCCState *s1, int flags, const char *filename, int fd)
 	case AFF_BINTYPE_DYN:
 	case_dyn_or_tbd:
 		if (s1->output_type == MCC_OUTPUT_MEMORY) {
-#ifdef MCC_IS_NATIVE
+#ifdef MCC_TARGET_IS_HOST
 			void *dl;
 			const char *soname = filename;
 			char *tmp = 0;
@@ -1211,7 +1211,7 @@ static int mcc_add_binary(MCCState *s1, int flags, const char *filename, int fd)
 	return ret;
 }
 
-#if defined TARGETOS_OpenBSD && MCC_HOST_POSIX
+#if defined MCC_TARGETOS_OpenBSD && MCC_HOST_POSIX
 #include <glob.h>
 static int mcc_glob_so(MCCState *s1, const char *pattern, char *buf, int size) {
 	const char *star;
@@ -1258,7 +1258,7 @@ static int guess_filetype(const char *filename) {
 ST_FUNC int mcc_add_file_internal(MCCState *s1, const char *filename, int flags) {
 	int fd;
 
-#if defined TARGETOS_OpenBSD && MCC_HOST_POSIX
+#if defined MCC_TARGETOS_OpenBSD && MCC_HOST_POSIX
 	char buf[1024];
 	if (mcc_glob_so(s1, filename, buf, sizeof buf) >= 0)
 		filename = buf;
@@ -1312,8 +1312,8 @@ ST_FUNC int mcc_add_dll(MCCState *s, const char *filename, int flags) {
 
 ST_FUNC int mcc_add_support(MCCState *s1, const char *filename) {
 	char buf[100];
-	if (CONFIG_MCC_CROSSPREFIX[0])
-		filename = strcat(strcpy(buf, CONFIG_MCC_CROSSPREFIX), filename);
+	if (MCC_CONFIG_CROSSPREFIX[0])
+		filename = strcat(strcpy(buf, MCC_CONFIG_CROSSPREFIX), filename);
 	return mcc_add_dll(s1, filename, AFF_PRINT_ERROR);
 }
 
@@ -1361,7 +1361,7 @@ LIBMCCAPI int mcc_add_library(MCCState *s, const char *libraryname) {
 			"%s/%s.def", "%s/lib%s.def", "%s/%s.dll", "%s/lib%s.dll",
 #elif defined MCC_TARGET_MACHO
 			"%s/lib%s.dylib", "%s/lib%s.tbd",
-#elif defined TARGETOS_OpenBSD
+#elif defined MCC_TARGETOS_OpenBSD
 			"%s/lib%s.so.*",
 #else
 			"%s/lib%s.so",
@@ -1525,7 +1525,7 @@ static int mcc_set_linker(MCCState *s, const char *optarg) {
 		} else if (link_option(&o, "oformat=")) {
 #if defined MCC_TARGET_PE
 			if (0 == strncmp("pe-", o.arg, 3))
-#elif PTR_SIZE == 8
+#elif MCC_PTR_SIZE == 8
 			if (0 == strncmp("elf64-", o.arg, 6))
 #else
 			if (0 == strncmp("elf32-", o.arg, 6))
@@ -1929,13 +1929,13 @@ static const char dumpmachine_str[] =
 		"mingw32"
 #elif defined(MCC_TARGET_MACHO)
 		"apple-darwin"
-#elif TARGETOS_FreeBSD || TARGETOS_FreeBSD_kernel
+#elif MCC_TARGETOS_FreeBSD || MCC_TARGETOS_FreeBSD_kernel
 		"freebsd"
-#elif TARGETOS_OpenBSD
+#elif MCC_TARGETOS_OpenBSD
 		"openbsd"
-#elif TARGETOS_NetBSD
+#elif MCC_TARGETOS_NetBSD
 		"netbsd"
-#elif CONFIG_MCC_MUSL
+#elif MCC_CONFIG_MUSL
 		"linux-musl"
 #else
 		"linux-gnu"
@@ -2080,29 +2080,29 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) {
 			s->do_strip = 1;
 			break;
 		case MCC_OPTION_lsp:
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 			s->lsp = 1;
 			break;
 #else
 			return mcc_error_noabort("the CST database (--lsp) was not built into this mcc");
 #endif
 		case MCC_OPTION_bt:
-#ifdef CONFIG_MCC_BACKTRACE
+#if MCC_CONFIG_BACKTRACE
 			s->rt_num_callers = atoi(optarg);
 #endif
 			goto enable_backtrace;
 		enable_backtrace:
-#ifdef CONFIG_MCC_BACKTRACE
+#if MCC_CONFIG_BACKTRACE
 			s->do_backtrace = 1;
 			if (0 == s->do_debug)
 				s->do_debug = 1;
-			s->dwarf = CONFIG_DWARF_VERSION;
+			s->dwarf = MCC_CONFIG_DWARF_VERSION;
 #else
 			return mcc_error_noabort("backtrace (-bt) support was not built into this mcc");
 #endif
 			break;
 		case MCC_OPTION_b:
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 			s->do_bounds_check = 1;
 			goto enable_backtrace;
 #else
@@ -2111,7 +2111,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) {
 			break;
 		case MCC_OPTION_g:
 			s->do_debug = 2;
-			s->dwarf = CONFIG_DWARF_VERSION;
+			s->dwarf = MCC_CONFIG_DWARF_VERSION;
 		g_redo:
 			if (strstart("dwarf", &optarg)) {
 				s->dwarf = (*optarg) ? (0 - atoi(optarg)) : DEFAULT_DWARF_VERSION;
@@ -2271,14 +2271,14 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) {
 			s->nostdlib = 1;
 			break;
 		case MCC_OPTION_run:
-#ifdef MCC_IS_NATIVE
+#ifdef MCC_TARGET_IS_HOST
 			run = optarg;
 			x = MCC_OUTPUT_MEMORY;
 			goto set_output_type;
 #else
 			return mcc_error_noabort("-run is not available in a cross compiler");
 #endif
-#ifdef MCC_IS_NATIVE
+#ifdef MCC_TARGET_IS_HOST
 		case MCC_OPTION_rstdin:
 			s->run_stdin = optarg;
 			break;
@@ -2347,7 +2347,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) {
 					break;
 				if (x = atoi(optarg), x != 32 && x != 64)
 					goto unsupported_option;
-				if (PTR_SIZE != x / 8)
+				if (MCC_PTR_SIZE != x / 8)
 					return x;
 				continue;
 			}
@@ -2578,9 +2578,9 @@ PUB_FUNC void mcc_print_stats(MCCState *s1, unsigned total_time) {
 					s1->total_output[1],
 					s1->total_output[2],
 					s1->total_output[3]);
-#ifdef MEM_DEBUG
+#ifdef MCC_MEM_DEBUG
 	fprintf(stderr, "# memory usage");
-#ifdef MCC_IS_NATIVE
+#ifdef MCC_TARGET_IS_HOST
 	if (s1->run_size) {
 		Section *s = s1->symtab;
 		unsigned ms = s->data_offset + s->link->data_offset + s->hash->data_offset;

@@ -16,21 +16,21 @@ ST_DATA const char *const target_machine_defs =
 #endif
 		;
 
-ST_DATA const int reg_classes[NB_REGS] = {
-		RC_INT | RC_R0,
-		RC_INT | RC_R1,
-		RC_INT | RC_R2,
-		RC_INT | RC_R3,
-		RC_INT | RC_R12,
-		RC_FLOAT | RC_F0,
-		RC_FLOAT | RC_F1,
-		RC_FLOAT | RC_F2,
-		RC_FLOAT | RC_F3,
+ST_DATA const int reg_classes[MCC_NB_REGS] = {
+		MCC_RC_INT | MCC_RC_R0,
+		MCC_RC_INT | MCC_RC_R1,
+		MCC_RC_INT | MCC_RC_R2,
+		MCC_RC_INT | MCC_RC_R3,
+		MCC_RC_INT | MCC_RC_R12,
+		MCC_RC_FLOAT | MCC_RC_F0,
+		MCC_RC_FLOAT | MCC_RC_F1,
+		MCC_RC_FLOAT | MCC_RC_F2,
+		MCC_RC_FLOAT | MCC_RC_F3,
 #ifdef MCC_ARM_VFP
-		RC_FLOAT | RC_F4,
-		RC_FLOAT | RC_F5,
-		RC_FLOAT | RC_F6,
-		RC_FLOAT | RC_F7,
+		MCC_RC_FLOAT | MCC_RC_F4,
+		MCC_RC_FLOAT | MCC_RC_F5,
+		MCC_RC_FLOAT | MCC_RC_F6,
+		MCC_RC_FLOAT | MCC_RC_F7,
 #endif
 };
 
@@ -39,7 +39,7 @@ ST_DATA const int reg_classes[NB_REGS] = {
 #define last_itod_magic (mcc_state->cg_last_itod_magic)
 #define leaffunc (mcc_state->cg_leaffunc)
 
-#if defined(CONFIG_MCC_BCHECK)
+#if MCC_CONFIG_BCHECK
 #define func_bound_offset (mcc_state->cg_func_bound_offset)
 #define func_bound_ind (mcc_state->cg_func_bound_ind)
 ST_DATA int func_bound_add_epilog;
@@ -70,18 +70,18 @@ ST_FUNC void arm_init(struct MCCState *s) {
 }
 #endif
 
-#define CHECK_R(r) ((r) >= TREG_R0 && (r) <= TREG_LR)
+#define CHECK_R(r) ((r) >= MCC_TREG_R0 && (r) <= MCC_TREG_LR)
 
 static int two2mask(int a, int b) {
 	if (!CHECK_R(a) || !CHECK_R(b))
 		mcc_error("compiler error! registers %i,%i is not valid", a, b);
-	return (reg_classes[a] | reg_classes[b]) & ~(RC_INT | RC_FLOAT);
+	return (reg_classes[a] | reg_classes[b]) & ~(MCC_RC_INT | MCC_RC_FLOAT);
 }
 
 static int regmask(int r) {
 	if (!CHECK_R(r))
 		mcc_error("compiler error! register %i is not valid", r);
-	return reg_classes[r] & ~(RC_INT | RC_FLOAT);
+	return reg_classes[r] & ~(MCC_RC_INT | MCC_RC_FLOAT);
 }
 
 void o(uint32_t i) {
@@ -245,26 +245,26 @@ void gsym_addr(int t, int a) {
 
 #ifdef MCC_ARM_VFP
 static uint32_t vfpr(int r) {
-	if (r < TREG_F0 || r > TREG_F7)
+	if (r < MCC_TREG_F0 || r > MCC_TREG_F7)
 		mcc_error("compiler error! register %i is no vfp register", r);
-	return r - TREG_F0;
+	return r - MCC_TREG_F0;
 }
 #else
 static uint32_t fpr(int r) {
-	if (r < TREG_F0 || r > TREG_F3)
+	if (r < MCC_TREG_F0 || r > MCC_TREG_F3)
 		mcc_error("compiler error! register %i is no fpa register", r);
-	return r - TREG_F0;
+	return r - MCC_TREG_F0;
 }
 #endif
 
 static uint32_t intr(int r) {
-	if (r == TREG_R12)
+	if (r == MCC_TREG_R12)
 		return 12;
-	if (r >= TREG_R0 && r <= TREG_R3)
-		return r - TREG_R0;
-	if (!(r >= TREG_SP && r <= TREG_LR))
+	if (r >= MCC_TREG_R0 && r <= MCC_TREG_R3)
+		return r - MCC_TREG_R0;
+	if (!(r >= MCC_TREG_SP && r <= MCC_TREG_LR))
 		mcc_error("compiler error! register %i is no int register", r);
-	return r + (13 - TREG_SP);
+	return r + (13 - MCC_TREG_SP);
 }
 
 static void calcaddr(uint32_t *base, int *off, int *sgn, int maxoff, unsigned shift) {
@@ -356,7 +356,7 @@ static int negcc(int cc) {
 }
 
 static void load_value(SValue *sv, int r) {
-#if CONFIG_MCC_CPUVER >= 7
+#if MCC_CONFIG_CPUVER >= 7
 	if (!(sv->r & VT_SYM)) {
 		unsigned x = sv->c.i;
 		o(0xE3000000 | intr(r) << 12 | (x & 0xFFF) | (x << 4 & 0xF0000));
@@ -430,7 +430,7 @@ void load(int r, SValue *sv) {
 			v1.type.t = VT_PTR;
 			v1.r = VT_LOCAL | VT_LVAL;
 			v1.c.i = sv->c.i;
-			load(TREG_LR, &v1);
+			load(MCC_TREG_LR, &v1);
 			base = 14;
 			fc = sign = 0;
 			v = VT_LOCAL;
@@ -439,7 +439,7 @@ void load(int r, SValue *sv) {
 			v1.r = fr & ~VT_LVAL;
 			v1.c.i = sv->c.i;
 			v1.sym = sv->sym;
-			load(TREG_LR, &v1);
+			load(MCC_TREG_LR, &v1);
 			base = 14;
 			fc = sign = 0;
 			v = VT_LOCAL;
@@ -464,7 +464,7 @@ void load(int r, SValue *sv) {
 					op |= 0x800000;
 				if ((ft & VT_BTYPE) == VT_DOUBLE)
 					op |= 0x8000;
-#if LDOUBLE_SIZE != 8
+#if MCC_LDOUBLE_SIZE != 8
 				else if ((ft & VT_BTYPE) == VT_LDOUBLE)
 					op |= 0x400000;
 #endif
@@ -572,7 +572,7 @@ void store(int r, SValue *sv) {
 			v1.r = fr & ~VT_LVAL;
 			v1.c.i = sv->c.i;
 			v1.sym = sv->sym;
-			load(TREG_LR, &v1);
+			load(MCC_TREG_LR, &v1);
 			base = 14;
 			fc = sign = 0;
 			v = VT_LOCAL;
@@ -593,7 +593,7 @@ void store(int r, SValue *sv) {
 					op |= 0x800000;
 				if ((ft & VT_BTYPE) == VT_DOUBLE)
 					op |= 0x8000;
-#if LDOUBLE_SIZE != 8
+#if MCC_LDOUBLE_SIZE != 8
 				else if ((ft & VT_BTYPE) == VT_LDOUBLE)
 					op |= 0x400000;
 #endif
@@ -635,7 +635,7 @@ static void gcall_or_jmp(int is_jmp) {
 				greloc(cur_text_section, vtop->sym, ind, R_ARM_PC24);
 				o(x | (is_jmp ? 0xE0000000 : 0xE1000000));
 			} else {
-				r = TREG_LR;
+				r = MCC_TREG_LR;
 				load_value(vtop, r);
 				if (is_jmp)
 					o(0xE1A0F000 | intr(r));
@@ -649,17 +649,17 @@ static void gcall_or_jmp(int is_jmp) {
 			o(vtop->c.i);
 		}
 	} else {
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 		vtop->r &= ~VT_MUSTBOUND;
 #endif
-		r = gv(RC_INT);
+		r = gv(MCC_RC_INT);
 		if (!is_jmp)
 			o(0xE1A0E00F);
 		o(0xE1A0F000 | intr(r));
 	}
 }
 
-#if defined(CONFIG_MCC_BCHECK)
+#if MCC_CONFIG_BCHECK
 
 static void gen_bounds_call(int v) {
 	Sym *sym = external_helper_sym(v);
@@ -931,7 +931,7 @@ again:
 						padding = pplan->start - pplan->prev->end;
 					size += padding;
 					gadd_sp(-size);
-					r = get_reg(RC_INT);
+					r = get_reg(MCC_RC_INT);
 					o(0xE28D0000 | (intr(r) << 12) | padding);
 					vset(&vtop->type, r | VT_LVAL, 0);
 					vswap();
@@ -946,7 +946,7 @@ again:
 				} else {
 					if (is_float(pplan->sval->type.t)) {
 #ifdef MCC_ARM_VFP
-						r = vfpr(gv(RC_FLOAT)) << 12;
+						r = vfpr(gv(MCC_RC_FLOAT)) << 12;
 						if ((pplan->sval->type.t & VT_BTYPE) == VT_FLOAT)
 							size = 4;
 						else {
@@ -955,13 +955,13 @@ again:
 						}
 						o(0xED2D0A01 + r);
 #else
-						r = fpr(gv(RC_FLOAT)) << 12;
+						r = fpr(gv(MCC_RC_FLOAT)) << 12;
 						if ((pplan->sval->type.t & VT_BTYPE) == VT_FLOAT)
 							size = 4;
 						else if ((pplan->sval->type.t & VT_BTYPE) == VT_DOUBLE)
 							size = 8;
 						else
-							size = LDOUBLE_SIZE;
+							size = MCC_LDOUBLE_SIZE;
 						if (size == 12)
 							r |= 0x400000;
 						else if (size == 8)
@@ -974,11 +974,11 @@ again:
 						if ((pplan->sval->type.t & VT_BTYPE) == VT_LLONG) {
 							lexpand();
 							size = 8;
-							r = gv(RC_INT);
+							r = gv(MCC_RC_INT);
 							o(0xE52D0004 | (intr(r) << 12));
 							vtop--;
 						}
-						r = gv(RC_INT);
+						r = gv(MCC_RC_INT);
 						o(0xE52D0004 | (intr(r) << 12));
 					}
 					if (i == STACK_CLASS && pplan->prev)
@@ -987,7 +987,7 @@ again:
 				break;
 
 			case VFP_CLASS:
-				gv(regmask(TREG_F0 + (pplan->start >> 1)));
+				gv(regmask(MCC_TREG_F0 + (pplan->start >> 1)));
 				if (pplan->start & 1) {
 					o(0xEEF00A40 | ((pplan->start >> 1) << 12) | (pplan->start >> 1));
 					vtop->r = VT_CONST;
@@ -1037,7 +1037,7 @@ void gfunc_call(int nb_args) {
 	int variadic;
 #endif
 
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 	if (mcc_state->do_bounds_check)
 		gbound_args(nb_args);
 #endif
@@ -1185,7 +1185,7 @@ void gfunc_prolog(Sym *func_sym) {
 	last_itod_magic = 0;
 	leaffunc = 1;
 	loc = 0;
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 	if (mcc_state->do_bounds_check)
 		gen_bounds_prolog();
 #endif
@@ -1195,7 +1195,7 @@ void gfunc_epilog(void) {
 	uint32_t x;
 	int diff;
 
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 	if (mcc_state->do_bounds_check)
 		gen_bounds_epilog();
 #endif
@@ -1325,7 +1325,7 @@ void gen_opi(int op) {
 		c = 1;
 		break;
 	case '*':
-		gv2(RC_INT, RC_INT);
+		gv2(MCC_RC_INT, MCC_RC_INT);
 		r = vtop[-1].r;
 		fr = vtop[0].r;
 		vtop--;
@@ -1371,10 +1371,10 @@ void gen_opi(int op) {
 		c = 3;
 		break;
 	case TOK_UMULL:
-		gv2(RC_INT, RC_INT);
-		r = intr(vtop[-1].r2 = get_reg(RC_INT));
+		gv2(MCC_RC_INT, MCC_RC_INT);
+		r = intr(vtop[-1].r2 = get_reg(MCC_RC_INT));
 		c = vtop[-1].r;
-		vtop[-1].r = get_reg_ex(RC_INT, regmask(c));
+		vtop[-1].r = get_reg_ex(MCC_RC_INT, regmask(c));
 		vtop--;
 		o(0xE0800090 | (r << 16) | (intr(vtop->r) << 12) | (intr(c) << 8) | intr(vtop[1].r));
 		return;
@@ -1392,7 +1392,7 @@ void gen_opi(int op) {
 			}
 		}
 		vswap();
-		c = intr(gv(RC_INT));
+		c = intr(gv(MCC_RC_INT));
 		vswap();
 		opc = 0xE0000000 | (opc << 20);
 		if ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) {
@@ -1402,24 +1402,24 @@ void gen_opi(int op) {
 				if ((x & 0xfff00000) == 0xe3500000)
 					o(x);
 				else {
-					r = intr(vtop[-1].r = get_reg_ex(RC_INT, regmask(vtop[-1].r)));
+					r = intr(vtop[-1].r = get_reg_ex(MCC_RC_INT, regmask(vtop[-1].r)));
 					o(x | (r << 12));
 				}
 				goto done;
 			}
 		}
-		fr = intr(gv(RC_INT));
-#ifdef CONFIG_MCC_BCHECK
+		fr = intr(gv(MCC_RC_INT));
+#if MCC_CONFIG_BCHECK
 		if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) {
 			vswap();
-			c = intr(gv(RC_INT));
+			c = intr(gv(MCC_RC_INT));
 			vswap();
 		}
 #endif
 		if ((opc & 0xfff00000) == 0xe1500000)
 			o(opc | (c << 16) | fr);
 		else {
-			r = intr(vtop[-1].r = get_reg_ex(RC_INT, two2mask(vtop->r, vtop[-1].r)));
+			r = intr(vtop[-1].r = get_reg_ex(MCC_RC_INT, two2mask(vtop->r, vtop[-1].r)));
 			o(opc | (c << 16) | (r << 12) | fr);
 		}
 	done:
@@ -1430,22 +1430,22 @@ void gen_opi(int op) {
 	case 2:
 		opc = 0xE1A00000 | (opc << 5);
 		vswap();
-		r = intr(gv(RC_INT));
+		r = intr(gv(MCC_RC_INT));
 		vswap();
 		if ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) {
-			fr = intr(vtop[-1].r = get_reg_ex(RC_INT, regmask(vtop[-1].r)));
+			fr = intr(vtop[-1].r = get_reg_ex(MCC_RC_INT, regmask(vtop[-1].r)));
 			c = vtop->c.i & 0x1f;
 			o(opc | r | (c << 7) | (fr << 12));
 		} else {
-			fr = intr(gv(RC_INT));
-#ifdef CONFIG_MCC_BCHECK
+			fr = intr(gv(MCC_RC_INT));
+#if MCC_CONFIG_BCHECK
 			if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) {
 				vswap();
-				r = intr(gv(RC_INT));
+				r = intr(gv(MCC_RC_INT));
 				vswap();
 			}
 #endif
-			c = intr(vtop[-1].r = get_reg_ex(RC_INT, two2mask(vtop->r, vtop[-1].r)));
+			c = intr(vtop[-1].r = get_reg_ex(MCC_RC_INT, two2mask(vtop->r, vtop[-1].r)));
 			o(opc | r | (c << 12) | (fr << 8) | 0x10);
 		}
 		vtop--;
@@ -1533,9 +1533,9 @@ void gen_opf(int op) {
 			x |= 0x80;
 		if (is_zero(0)) {
 			vtop--;
-			o(x | 0x10000 | (vfpr(gv(RC_FLOAT)) << 12));
+			o(x | 0x10000 | (vfpr(gv(MCC_RC_FLOAT)) << 12));
 		} else {
-			gv2(RC_FLOAT, RC_FLOAT);
+			gv2(MCC_RC_FLOAT, MCC_RC_FLOAT);
 			x |= vfpr(vtop[0].r);
 			o(x | (vfpr(vtop[-1].r) << 12));
 			vtop--;
@@ -1559,25 +1559,25 @@ void gen_opf(int op) {
 		vset_VT_CMP(op);
 		return;
 	}
-	r = gv(RC_FLOAT);
+	r = gv(MCC_RC_FLOAT);
 	x |= vfpr(r);
 	r = regmask(r);
 	if (!fneg) {
 		int r2;
 		vswap();
-		r2 = gv(RC_FLOAT);
+		r2 = gv(MCC_RC_FLOAT);
 		x |= vfpr(r2) << 16;
 		r |= regmask(r2);
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 		if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) {
 			vswap();
-			r = gv(RC_FLOAT);
+			r = gv(MCC_RC_FLOAT);
 			vswap();
 			x = (x & ~0xf) | vfpr(r);
 		}
 #endif
 	}
-	vtop->r = get_reg_ex(RC_FLOAT, r);
+	vtop->r = get_reg_ex(MCC_RC_FLOAT, r);
 	if (!fneg)
 		vtop--;
 	o(x | (vfpr(vtop->r) << 12));
@@ -1630,7 +1630,7 @@ void gen_opf(int op) {
 	x = 0xEE000100;
 	if ((vtop->type.t & VT_BTYPE) == VT_DOUBLE)
 		x |= 0x80;
-#if LDOUBLE_SIZE != 8
+#if MCC_LDOUBLE_SIZE != 8
 	else if ((vtop->type.t & VT_BTYPE) == VT_LDOUBLE)
 		x |= 0x80000;
 #endif
@@ -1642,18 +1642,18 @@ void gen_opf(int op) {
 			c2 = c1;
 		}
 		vswap();
-		r = fpr(gv(RC_FLOAT));
+		r = fpr(gv(MCC_RC_FLOAT));
 		vswap();
 		if (c2) {
 			if (c2 > 0xf)
 				x |= 0x200000;
 			r2 = c2 & 0xf;
 		} else {
-			r2 = fpr(gv(RC_FLOAT));
-#ifdef CONFIG_MCC_BCHECK
+			r2 = fpr(gv(MCC_RC_FLOAT));
+#if MCC_CONFIG_BCHECK
 			if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) {
 				vswap();
-				r = fpr(gv(RC_FLOAT));
+				r = fpr(gv(MCC_RC_FLOAT));
 				vswap();
 			}
 #endif
@@ -1665,23 +1665,23 @@ void gen_opf(int op) {
 				x |= 0x200000;
 			r2 = c2 & 0xf;
 			vswap();
-			r = fpr(gv(RC_FLOAT));
+			r = fpr(gv(MCC_RC_FLOAT));
 			vswap();
 		} else if (c1 && c1 <= 0xf) {
 			x |= 0x300000;
 			r2 = c1;
-			r = fpr(gv(RC_FLOAT));
+			r = fpr(gv(MCC_RC_FLOAT));
 			vswap();
 		} else {
 			x |= 0x200000;
 			vswap();
-			r = fpr(gv(RC_FLOAT));
+			r = fpr(gv(MCC_RC_FLOAT));
 			vswap();
-			r2 = fpr(gv(RC_FLOAT));
-#ifdef CONFIG_MCC_BCHECK
+			r2 = fpr(gv(MCC_RC_FLOAT));
+#if MCC_CONFIG_BCHECK
 			if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) {
 				vswap();
-				r = fpr(gv(RC_FLOAT));
+				r = fpr(gv(MCC_RC_FLOAT));
 				vswap();
 			}
 #endif
@@ -1693,16 +1693,16 @@ void gen_opf(int op) {
 			c2 = c1;
 		}
 		vswap();
-		r = fpr(gv(RC_FLOAT));
+		r = fpr(gv(MCC_RC_FLOAT));
 		vswap();
 		if (c2 && c2 <= 0xf)
 			r2 = c2;
 		else {
-			r2 = fpr(gv(RC_FLOAT));
-#ifdef CONFIG_MCC_BCHECK
+			r2 = fpr(gv(MCC_RC_FLOAT));
+#if MCC_CONFIG_BCHECK
 			if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) {
 				vswap();
-				r = fpr(gv(RC_FLOAT));
+				r = fpr(gv(MCC_RC_FLOAT));
 				vswap();
 			}
 #endif
@@ -1714,23 +1714,23 @@ void gen_opf(int op) {
 			x |= 0x400000;
 			r2 = c2;
 			vswap();
-			r = fpr(gv(RC_FLOAT));
+			r = fpr(gv(MCC_RC_FLOAT));
 			vswap();
 		} else if (c1 && c1 <= 0xf) {
 			x |= 0x500000;
 			r2 = c1;
-			r = fpr(gv(RC_FLOAT));
+			r = fpr(gv(MCC_RC_FLOAT));
 			vswap();
 		} else {
 			x |= 0x400000;
 			vswap();
-			r = fpr(gv(RC_FLOAT));
+			r = fpr(gv(MCC_RC_FLOAT));
 			vswap();
-			r2 = fpr(gv(RC_FLOAT));
-#ifdef CONFIG_MCC_BCHECK
+			r2 = fpr(gv(MCC_RC_FLOAT));
+#if MCC_CONFIG_BCHECK
 			if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) {
 				vswap();
-				r = fpr(gv(RC_FLOAT));
+				r = fpr(gv(MCC_RC_FLOAT));
 				vswap();
 			}
 #endif
@@ -1776,18 +1776,18 @@ void gen_opf(int op) {
 				}
 			}
 			vswap();
-			r = fpr(gv(RC_FLOAT));
+			r = fpr(gv(MCC_RC_FLOAT));
 			vswap();
 			if (c2) {
 				if (c2 > 0xf)
 					x |= 0x200000;
 				r2 = c2 & 0xf;
 			} else {
-				r2 = fpr(gv(RC_FLOAT));
-#ifdef CONFIG_MCC_BCHECK
+				r2 = fpr(gv(MCC_RC_FLOAT));
+#if MCC_CONFIG_BCHECK
 				if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) {
 					vswap();
-					r = fpr(gv(RC_FLOAT));
+					r = fpr(gv(MCC_RC_FLOAT));
 					vswap();
 				}
 #endif
@@ -1806,7 +1806,7 @@ void gen_opf(int op) {
 		c1 = vtop->r;
 		if (r2 & 0x8)
 			c1 = vtop[-1].r;
-		vtop[-1].r = get_reg_ex(RC_FLOAT, two2mask(vtop[-1].r, c1));
+		vtop[-1].r = get_reg_ex(MCC_RC_FLOAT, two2mask(vtop[-1].r, c1));
 		c1 = fpr(vtop[-1].r);
 	}
 	vtop--;
@@ -1822,23 +1822,23 @@ ST_FUNC void gen_cvt_itof(int t) {
 #ifndef MCC_ARM_VFP
 		uint32_t dsize = 0;
 #endif
-		r = intr(gv(RC_INT));
+		r = intr(gv(MCC_RC_INT));
 #ifdef MCC_ARM_VFP
-		r2 = vfpr(vtop->r = get_reg(RC_FLOAT));
+		r2 = vfpr(vtop->r = get_reg(MCC_RC_FLOAT));
 		o(0xEE000A10 | (r << 12) | (r2 << 16));
 		r2 |= r2 << 12;
 		if (!(vtop->type.t & VT_UNSIGNED))
 			r2 |= 0x80;
 		o(0xEEB80A40 | r2 | T2CPR(t));
 #else
-		r2 = fpr(vtop->r = get_reg(RC_FLOAT));
+		r2 = fpr(vtop->r = get_reg(MCC_RC_FLOAT));
 		if ((t & VT_BTYPE) != VT_FLOAT)
 			dsize = 0x80;
 		o(0xEE000110 | dsize | (r2 << 16) | (r << 12));
 		if ((vtop->type.t & (VT_UNSIGNED | VT_BTYPE)) == (VT_UNSIGNED | VT_INT)) {
 			uint32_t off = 0;
 			o(0xE3500000 | (r << 12));
-			r = fpr(get_reg(RC_FLOAT));
+			r = fpr(get_reg(MCC_RC_FLOAT));
 			if (last_itod_magic) {
 				off = ind + 8 - last_itod_magic;
 				off /= 4;
@@ -1870,7 +1870,7 @@ ST_FUNC void gen_cvt_itof(int t) {
 				func = TOK___floatundidf;
 			else
 				func = TOK___floatdidf;
-#if LDOUBLE_SIZE != 8
+#if MCC_LDOUBLE_SIZE != 8
 		} else if ((t & VT_BTYPE) == VT_LDOUBLE) {
 			func_type = &func_ldouble_type;
 			if (vtop->type.t & VT_UNSIGNED)
@@ -1884,7 +1884,7 @@ ST_FUNC void gen_cvt_itof(int t) {
 			vswap();
 			gfunc_call(1);
 			vpushi(0);
-			vtop->r = TREG_F0;
+			vtop->r = MCC_TREG_F0;
 			return;
 		}
 	}
@@ -1899,10 +1899,10 @@ void gen_cvt_ftoi(int t) {
 	r2 = vtop->type.t & VT_BTYPE;
 	if (t == VT_INT) {
 #ifdef MCC_ARM_VFP
-		r = vfpr(gv(RC_FLOAT));
+		r = vfpr(gv(MCC_RC_FLOAT));
 		u = u ? 0 : 0x10000;
 		o(0xEEBC0AC0 | (r << 12) | r | T2CPR(r2) | u);
-		r2 = intr(vtop->r = get_reg(RC_INT));
+		r2 = intr(vtop->r = get_reg(MCC_RC_INT));
 		o(0xEE100A10 | (r << 16) | (r2 << 12));
 		return;
 #else
@@ -1911,13 +1911,13 @@ void gen_cvt_ftoi(int t) {
 				func = TOK___fixunssfsi;
 			else if (r2 == VT_DOUBLE)
 				func = TOK___fixunsdfsi;
-#if LDOUBLE_SIZE != 8
+#if MCC_LDOUBLE_SIZE != 8
 			else if (r2 == VT_LDOUBLE)
 				func = TOK___fixunsxfsi;
 #endif
 		} else {
-			r = fpr(gv(RC_FLOAT));
-			r2 = intr(vtop->r = get_reg(RC_INT));
+			r = fpr(gv(MCC_RC_FLOAT));
+			r2 = intr(vtop->r = get_reg(MCC_RC_INT));
 			o(0xEE100170 | (r2 << 12) | r);
 			return;
 		}
@@ -1927,7 +1927,7 @@ void gen_cvt_ftoi(int t) {
 			func = TOK___fixsfdi;
 		else if (r2 == VT_DOUBLE)
 			func = TOK___fixdfdi;
-#if LDOUBLE_SIZE != 8
+#if MCC_LDOUBLE_SIZE != 8
 		else if (r2 == VT_LDOUBLE)
 			func = TOK___fixxfdi;
 #endif
@@ -1947,13 +1947,13 @@ void gen_cvt_ftoi(int t) {
 
 void gen_cvt_ftof(int t) {
 #ifdef MCC_ARM_VFP
-	uint32_t r = gv(RC_FLOAT);
+	uint32_t r = gv(MCC_RC_FLOAT);
 	if (((vtop->type.t & VT_BTYPE) == VT_FLOAT) != ((t & VT_BTYPE) == VT_FLOAT)) {
 		r = vfpr(r);
 		o(0xEEB70AC0 | (r << 12) | r | T2CPR(vtop->type.t));
 	}
 #else
-	gv(RC_FLOAT);
+	gv(MCC_RC_FLOAT);
 #endif
 }
 
@@ -1961,8 +1961,8 @@ ST_FUNC void gen_increment_tcov(SValue *sv) {
 	int r1, r2;
 
 	vpushv(sv);
-	vtop->r = r1 = get_reg(RC_INT);
-	r2 = get_reg(RC_INT);
+	vtop->r = r1 = get_reg(MCC_RC_INT);
+	r2 = get_reg(MCC_RC_INT);
 	o(0xE59F0000 | (intr(r1) << 12));
 	o(0xEA000000);
 	greloc(cur_text_section, sv->sym, ind, R_ARM_REL32);
@@ -1988,7 +1988,7 @@ ST_FUNC void gen_vla_sp_save(int addr) {
 	v.type.t = VT_PTR;
 	v.r = VT_LOCAL | VT_LVAL;
 	v.c.i = addr;
-	store(TREG_SP, &v);
+	store(MCC_TREG_SP, &v);
 }
 
 ST_FUNC void gen_vla_sp_restore(int addr) {
@@ -1996,17 +1996,17 @@ ST_FUNC void gen_vla_sp_restore(int addr) {
 	v.type.t = VT_PTR;
 	v.r = VT_LOCAL | VT_LVAL;
 	v.c.i = addr;
-	load(TREG_SP, &v);
+	load(MCC_TREG_SP, &v);
 }
 
 ST_FUNC void gen_vla_alloc(CType *type, int align) {
 	int r;
-#if defined(CONFIG_MCC_BCHECK)
+#if MCC_CONFIG_BCHECK
 	if (mcc_state->do_bounds_check)
 		vpushv(vtop);
 #endif
-	r = intr(gv(RC_INT));
-#if defined(CONFIG_MCC_BCHECK)
+	r = intr(gv(MCC_RC_INT));
+#if MCC_CONFIG_BCHECK
 	if (mcc_state->do_bounds_check)
 		o(0xe2800001 | (r << 16) | (r << 12));
 #endif
@@ -2022,10 +2022,10 @@ ST_FUNC void gen_vla_alloc(CType *type, int align) {
 		mcc_error("alignment is not a power of 2: %i", align);
 	o(stuff_const(0xE3C0D000 | (r << 16), align - 1));
 	vpop();
-#if defined(CONFIG_MCC_BCHECK)
+#if MCC_CONFIG_BCHECK
 	if (mcc_state->do_bounds_check) {
 		vpushi(0);
-		vtop->r = TREG_R0;
+		vtop->r = MCC_TREG_R0;
 		o(0xe1a0000d | (vtop->r << 12));
 		vswap();
 		vpush_helper_func(TOK___bound_new_region);

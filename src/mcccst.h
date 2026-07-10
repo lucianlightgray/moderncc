@@ -160,7 +160,7 @@ size_t cst_render_identity(const CstArena *tmpl, uint8_t *out, size_t cap);
 }
 #endif
 
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 
 void cst_hook_begin(const char *filename);
 CstArena *cst_hook_end(void);

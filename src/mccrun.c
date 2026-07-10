@@ -1,8 +1,8 @@
 #include "mcc.h"
 
-#ifdef MCC_IS_NATIVE
+#ifdef MCC_TARGET_IS_HOST
 
-#ifdef CONFIG_MCC_BACKTRACE
+#if MCC_CONFIG_BACKTRACE
 typedef struct rt_context {
 	union {
 		struct
@@ -54,12 +54,12 @@ static void rt_post_sem(void) {
 static int rt_get_caller_pc(addr_t *paddr, rt_frame *f, int level);
 static void rt_exit(rt_frame *f, int code);
 
-#ifndef CONFIG_MCC_BACKTRACE_ONLY
+#ifndef MCC_CONFIG_BACKTRACE_ONLY
 
 static int mcc_relocate_ex(MCCState *s1, void *ptr, unsigned ptr_diff);
 static void st_link(MCCState *s1);
 static void st_unlink(MCCState *s1);
-#ifdef CONFIG_MCC_BACKTRACE
+#if MCC_CONFIG_BACKTRACE
 static int _mcc_backtrace(rt_frame *f, const char *fmt, va_list ap);
 #endif
 
@@ -82,7 +82,7 @@ LIBMCCAPI int mcc_relocate(MCCState *s1) {
 
 	if (s1->run_ptr)
 		exit(mcc_error_noabort("'mcc_relocate()' twice is no longer supported"));
-#ifdef CONFIG_MCC_BACKTRACE
+#if MCC_CONFIG_BACKTRACE
 	if (s1->do_backtrace)
 		mcc_add_symbol(s1, "_mcc_backtrace", _mcc_backtrace);
 #endif
@@ -216,7 +216,7 @@ static int mcc_relocate_ex(MCCState *s1, void *ptr, unsigned ptr_diff) {
 	mem = (addr_t)ptr;
 redo:
 	if (s1->verbose == 2 && copy)
-		printf(&"-----------------------------------------------------\n"[PTR_SIZE * 2 - 8]);
+		printf(&"-----------------------------------------------------\n"[MCC_PTR_SIZE * 2 - 8]);
 	if (s1->nb_errors)
 		return -1;
 	if (copy == 3)
@@ -324,7 +324,7 @@ redo:
 }
 
 static void bt_link(MCCState *s1) {
-#ifdef CONFIG_MCC_BACKTRACE
+#if MCC_CONFIG_BACKTRACE
 	rt_context *rc;
 	if (!s1->do_backtrace)
 		return;
@@ -334,9 +334,9 @@ static void bt_link(MCCState *s1) {
 	rc->esym_start = (ElfW(Sym) *)(symtab_section->data);
 	rc->esym_end = (ElfW(Sym) *)(symtab_section->data + symtab_section->data_offset);
 	rc->elf_str = (char *)symtab_section->link->data;
-	if (PTR_SIZE == 8 && !s1->dwarf)
+	if (MCC_PTR_SIZE == 8 && !s1->dwarf)
 		rc->prog_base &= 0xffffffff00000000ULL;
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 	if (s1->do_bounds_check) {
 		void *p;
 		if ((p = mcc_get_symbol(s1, "__bound_init")))
@@ -369,7 +369,7 @@ static void ptr_unlink(void *list, void *e, unsigned next) {
 
 static void st_unlink(MCCState *s1) {
 	rt_wait_sem();
-#ifdef CONFIG_MCC_BACKTRACE
+#if MCC_CONFIG_BACKTRACE
 	ptr_unlink(&g_rc, s1->rc, offsetof(rt_context, next));
 #endif
 	ptr_unlink(&g_s1, s1, offsetof(MCCState, next));
@@ -379,7 +379,7 @@ static void st_unlink(MCCState *s1) {
 LIBMCCAPI void *_mcc_setjmp(MCCState *s1, void *p_jmp_buf, void *func, void *p_longjmp) {
 	s1->run_lj = p_longjmp;
 	s1->run_jb = p_jmp_buf;
-#ifdef CONFIG_MCC_BACKTRACE
+#if MCC_CONFIG_BACKTRACE
 	if (s1->rc)
 		s1->rc->top_func = func;
 #endif
@@ -416,7 +416,7 @@ static void rt_exit(rt_frame *f, int code) {
 	s = rt_find_state(f);
 	rt_post_sem();
 	if (s && s->run_lj) {
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 		if (f->fp) {
 			void *p = mcc_get_symbol(s, "__bound_exit");
 			if (p)
@@ -435,7 +435,7 @@ static void rt_exit(rt_frame *f, int code) {
 	exit(code);
 }
 #endif
-#ifdef CONFIG_MCC_BACKTRACE
+#if MCC_CONFIG_BACKTRACE
 
 static int rt_vprintf(const char *fmt, va_list ap) {
 	int ret = vfprintf(stderr, fmt, ap);
@@ -501,7 +501,7 @@ static addr_t rt_printline(rt_context *rc, addr_t wanted_pc, bt_info *bi) {
 			if (sym->n_strx == 0)
 				goto rel_pc;
 		abs_pc:
-#if PTR_SIZE == 8
+#if MCC_PTR_SIZE == 8
 			pc += rc->prog_base;
 #endif
 			goto check_pc;
@@ -793,7 +793,7 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 					case DW_LNE_end_sequence:
 						break;
 					case DW_LNE_set_address:
-#if PTR_SIZE == 4
+#if MCC_PTR_SIZE == 4
 						pc = dwarf_read_4(cp, end);
 #else
 						pc = dwarf_read_8(cp, end);
@@ -893,7 +893,7 @@ found:
 	bi->func_pc = func_addr;
 	return (addr_t)func_addr;
 }
-#ifndef CONFIG_MCC_BACKTRACE_ONLY
+#ifndef MCC_CONFIG_BACKTRACE_ONLY
 static
 #endif
 		int _mcc_backtrace(rt_frame *f, const char *fmt, va_list ap) {
@@ -943,7 +943,7 @@ static
 
 		if (skip[0] && !bi.file[0] && !strncmp(bi.func, "__bound_", 8))
 			continue;
-#ifndef CONFIG_MCC_BACKTRACE_ONLY
+#ifndef MCC_CONFIG_BACKTRACE_ONLY
 		{
 			MCCState *s = rt_find_state(f);
 			if (s && s->bt_func) {
@@ -973,7 +973,7 @@ static
 		}
 		rt_printf("\n");
 
-#ifndef CONFIG_MCC_BACKTRACE_ONLY
+#ifndef MCC_CONFIG_BACKTRACE_ONLY
 	check_break:
 #endif
 		if (rc2 && bi.func_pc && bi.func_pc == (addr_t)rc2->top_func)

@@ -7,17 +7,17 @@ ST_DATA const char *const target_machine_defs =
 
 #define USE_EBX 2
 
-ST_DATA const int reg_classes[NB_REGS] = {
-		RC_INT | RC_EAX,
-		RC_INT | RC_ECX,
-		RC_INT | RC_EDX,
-		(RC_INT | RC_EBX) * (USE_EBX == 1),
-		RC_FLOAT | RC_ST0,
+ST_DATA const int reg_classes[MCC_NB_REGS] = {
+		MCC_RC_INT | MCC_RC_EAX,
+		MCC_RC_INT | MCC_RC_ECX,
+		MCC_RC_INT | MCC_RC_EDX,
+		(MCC_RC_INT | MCC_RC_EBX) * (USE_EBX == 1),
+		MCC_RC_FLOAT | MCC_RC_ST0,
 };
 
 #define func_sub_sp_offset (mcc_state->cg_func_sub_sp_offset)
 #define func_ret_sub (mcc_state->cg_func_ret_sub)
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 #define func_bound_offset (mcc_state->cg_func_bound_offset)
 #define func_bound_ind (mcc_state->cg_func_bound_ind)
 ST_DATA int func_bound_add_epilog;
@@ -107,9 +107,9 @@ static void gen_modrm(int opc, int op_r2, int r, Sym *sym, int c) {
 	int op_reg = REG_VALUE(op_r2) << 3;
 
 	if (mcc_state->pic && (r & (VT_VALMASK | VT_SYM)) == (VT_CONST | VT_SYM)) {
-		int is_got = (op_r2 & TREG_MEM) && !(sym->type.t & VT_STATIC);
+		int is_got = (op_r2 & MCC_TREG_MEM) && !(sym->type.t & VT_STATIC);
 		int here = ind;
-		get_pc_thunk(TREG_EBX, is_got);
+		get_pc_thunk(MCC_TREG_EBX, is_got);
 		o(opc);
 		o(0x83 | op_reg);
 		if (is_got) {
@@ -117,7 +117,7 @@ static void gen_modrm(int opc, int op_r2, int r, Sym *sym, int c) {
 		} else {
 			gen_addrpc32(r, sym, c + (ind - here - 1));
 		}
-	} else if (mcc_state->pic && (r & VT_VALMASK) < VT_CONST && (r & TREG_MEM)) {
+	} else if (mcc_state->pic && (r & VT_VALMASK) < VT_CONST && (r & MCC_TREG_MEM)) {
 		o(opc);
 		if (c) {
 			g(0x80 | op_reg | REG_VALUE(r));
@@ -145,7 +145,7 @@ static void gen_modrm(int opc, int op_r2, int r, Sym *sym, int c) {
 
 #ifdef MCC_TARGET_PE
 static void gen_pe_tls_base(int dst) {
-	int sc = (dst == TREG_EAX) ? TREG_ECX : TREG_EAX;
+	int sc = (dst == MCC_TREG_EAX) ? MCC_TREG_ECX : MCC_TREG_EAX;
 	o(0x50 + sc);
 	o(0x64);
 	o(0x8b);
@@ -174,9 +174,9 @@ ST_FUNC void load(int r, SValue *sv) {
 	v = fr & VT_VALMASK;
 
 	if (mcc_state->pic && (fr & (VT_VALMASK | VT_SYM | VT_LVAL)) == (VT_CONST | VT_SYM | VT_LVAL) && !(sv->sym->type.t & VT_STATIC)) {
-		int tr = r | TREG_MEM;
+		int tr = r | MCC_TREG_MEM;
 		if (is_float(ft)) {
-			tr = get_reg(RC_INT) | TREG_MEM;
+			tr = get_reg(MCC_RC_INT) | MCC_TREG_MEM;
 		}
 		gen_modrm(0x8b, tr, fr, sv->sym, 0);
 		fr = tr | VT_LVAL;
@@ -219,8 +219,8 @@ ST_FUNC void load(int r, SValue *sv) {
 			v1.c.i = fc;
 			v1.sym = NULL;
 			fr = r;
-			if (!(reg_classes[fr] & RC_INT))
-				fr = get_reg(RC_INT);
+			if (!(reg_classes[fr] & MCC_RC_INT))
+				fr = get_reg(MCC_RC_INT);
 			load(fr, &v1);
 		}
 		if ((ft & VT_BTYPE) == VT_FLOAT) {
@@ -328,15 +328,15 @@ ST_FUNC void store(int r, SValue *v) {
 	fr = v->r & VT_VALMASK;
 
 	if (mcc_state->pic && (v->r & (VT_VALMASK | VT_SYM)) == (VT_CONST | VT_SYM) && !(v->sym->type.t & VT_STATIC)) {
-		get_pc_thunk(TREG_EBX, 1);
+		get_pc_thunk(MCC_TREG_EBX, 1);
 		o(0x9b8b);
-		gen_gotpcrel(TREG_EBX, v->sym, v->c.i);
+		gen_gotpcrel(MCC_TREG_EBX, v->sym, v->c.i);
 		o(opc);
 		o(3 + (r << 3));
 	} else if ((v->r & VT_SYM) && v->sym->type.t & VT_TLS) {
 #ifdef MCC_TARGET_PE
 		{
-			int base = (REG_VALUE(r) == TREG_EAX) ? TREG_ECX : TREG_EAX;
+			int base = (REG_VALUE(r) == MCC_TREG_EAX) ? MCC_TREG_ECX : MCC_TREG_EAX;
 			o(0x50 + base);
 			gen_pe_tls_base(base);
 			o(opc);
@@ -385,7 +385,7 @@ static void gcall_or_jmp(int is_jmp) {
 	int r;
 	if ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == (VT_CONST | VT_SYM)) {
 		if (mcc_state->pic && !(vtop->sym->type.t & VT_STATIC)) {
-			get_pc_thunk(TREG_EBX, 1);
+			get_pc_thunk(MCC_TREG_EBX, 1);
 			oad(0xe8 + is_jmp, vtop->c.i - 4);
 			greloc(cur_text_section, vtop->sym, ind - 4, R_386_PLT32);
 			return;
@@ -393,14 +393,14 @@ static void gcall_or_jmp(int is_jmp) {
 		oad(0xe8 + is_jmp, vtop->c.i - 4);
 		greloc(cur_text_section, vtop->sym, ind - 4, R_386_PC32);
 	} else {
-		r = gv(RC_INT);
+		r = gv(MCC_RC_INT);
 		o(0xff);
 		o(0xd0 + r + (is_jmp << 4));
 	}
 }
 
-static const uint8_t fastcall_regs[3] = {TREG_EAX, TREG_EDX, TREG_ECX};
-static const uint8_t fastcallw_regs[2] = {TREG_ECX, TREG_EDX};
+static const uint8_t fastcall_regs[3] = {MCC_TREG_EAX, MCC_TREG_EDX, MCC_TREG_ECX};
+static const uint8_t fastcallw_regs[2] = {MCC_TREG_ECX, MCC_TREG_EDX};
 
 static int fastcall_arg_inreg(CType *type) {
 	int align;
@@ -415,14 +415,14 @@ static int fastcall_arg_slots(CType *type) {
 	return words > 2 ? 2 : words;
 }
 
-#if !defined(MCC_TARGET_PE) && !TARGETOS_FreeBSD && !TARGETOS_OpenBSD
+#if !defined(MCC_TARGET_PE) && !MCC_TARGETOS_FreeBSD && !MCC_TARGETOS_OpenBSD
 static int sysv_struct_ret_in_regs(CType *vt) {
 	return (vt->t & VT_BTYPE) == VT_STRUCT && vt->ref->a.is_complex && (vt->ref->next->type.t & VT_BTYPE) == VT_FLOAT;
 }
 #endif
 
 ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int *regsize) {
-#if defined(MCC_TARGET_PE) || TARGETOS_FreeBSD || TARGETOS_OpenBSD
+#if defined(MCC_TARGET_PE) || MCC_TARGETOS_FreeBSD || MCC_TARGETOS_OpenBSD
 	int size, align, nregs;
 	*ret_align = 1;
 	*regsize = 4;
@@ -458,7 +458,7 @@ ST_FUNC void gfunc_call(int nb_args) {
 	const uint8_t *fastcall_regs_ptr;
 	Sym *func_sym;
 
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 	if (mcc_state->do_bounds_check)
 		gbound_args(nb_args);
 #endif
@@ -502,8 +502,8 @@ ST_FUNC void gfunc_call(int nb_args) {
 			size = (size + 3) & ~3;
 #ifdef MCC_TARGET_PE
 			if (size >= 4096) {
-				save_reg(TREG_EDX);
-				r = get_reg(RC_EAX);
+				save_reg(MCC_TREG_EDX);
+				r = get_reg(MCC_RC_EAX);
 				oad(0x68, size);
 				gen_static_call(tok_alloc_const("__alloca"));
 				gadd_sp(4);
@@ -511,7 +511,7 @@ ST_FUNC void gfunc_call(int nb_args) {
 #endif
 			{
 				oad(0xec81, size);
-				r = get_reg(RC_INT);
+				r = get_reg(MCC_RC_INT);
 				o(0xe089 + (r << 8));
 			}
 			vset(&vtop->type, r | VT_LVAL, 0);
@@ -519,7 +519,7 @@ ST_FUNC void gfunc_call(int nb_args) {
 			vstore();
 			args_size += size;
 		} else if (is_float(vtop->type.t)) {
-			gv(RC_FLOAT);
+			gv(MCC_RC_FLOAT);
 			if ((vtop->type.t & VT_BTYPE) == VT_FLOAT)
 				size = 4;
 			else if ((vtop->type.t & VT_BTYPE) == VT_DOUBLE)
@@ -535,7 +535,7 @@ ST_FUNC void gfunc_call(int nb_args) {
 			g(0x00);
 			args_size += size;
 		} else {
-			r = gv(RC_INT);
+			r = gv(MCC_RC_INT);
 			if ((vtop->type.t & VT_BTYPE) == VT_LLONG) {
 				size = 8;
 				o(0x50 + vtop->r2);
@@ -556,7 +556,7 @@ ST_FUNC void gfunc_call(int nb_args) {
 			args_size -= 4;
 		}
 	}
-#if !defined(MCC_TARGET_PE) && !TARGETOS_FreeBSD || TARGETOS_OpenBSD
+#if !defined(MCC_TARGET_PE) && !MCC_TARGETOS_FreeBSD || MCC_TARGETOS_OpenBSD
 	else if ((vtop->type.ref->type.t & VT_BTYPE) == VT_STRUCT)
 		args_size -= 4;
 #endif
@@ -605,7 +605,7 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) {
 
 	ind += FUNC_PROLOG_SIZE;
 	func_sub_sp_offset = ind;
-#if defined(MCC_TARGET_PE) || TARGETOS_FreeBSD || TARGETOS_OpenBSD
+#if defined(MCC_TARGET_PE) || MCC_TARGETOS_FreeBSD || MCC_TARGETOS_OpenBSD
 	size = type_size(&func_vt, &align);
 	if (((func_vt.t & VT_BTYPE) == VT_STRUCT) && (size > 8 || (size & (size - 1)))) {
 #else
@@ -620,7 +620,7 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) {
 		type = &sym->type;
 		size = type_size(type, &align);
 		size = (size + 3) & ~3;
-#ifdef FUNC_STRUCT_PARAM_AS_PTR
+#ifdef MCC_FUNC_STRUCT_PARAM_AS_PTR
 		if ((type->t & VT_BTYPE) == VT_STRUCT) {
 			size = 4;
 		}
@@ -642,12 +642,12 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) {
 	func_ret_sub = 0;
 	if (func_call == FUNC_STDCALL || func_call == FUNC_FASTCALLW || func_call == FUNC_THISCALL)
 		func_ret_sub = addr - 8;
-#if !defined(MCC_TARGET_PE) && !TARGETOS_FreeBSD || TARGETOS_OpenBSD
+#if !defined(MCC_TARGET_PE) && !MCC_TARGETOS_FreeBSD || MCC_TARGETOS_OpenBSD
 	else if (func_vc)
 		func_ret_sub = 4;
 #endif
 
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 	if (mcc_state->do_bounds_check)
 		gen_bounds_prolog();
 #endif
@@ -656,7 +656,7 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) {
 ST_FUNC void gfunc_epilog(void) {
 	addr_t v, saved_ind;
 
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 	if (mcc_state->do_bounds_check)
 		gen_bounds_epilog();
 #endif
@@ -664,7 +664,7 @@ ST_FUNC void gfunc_epilog(void) {
 	v = (-loc + 3) & -4;
 
 	if (mcc_state->pic)
-		gen_modrm(0x8b, TREG_EBX, VT_LOCAL, NULL, -(v + 4));
+		gen_modrm(0x8b, MCC_TREG_EBX, VT_LOCAL, NULL, -(v + 4));
 
 	o(0xc9);
 	if (func_ret_sub == 0) {
@@ -725,7 +725,7 @@ ST_FUNC void gen_opi(int op) {
 	gen_op8:
 		if ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) {
 			vswap();
-			r = gv(RC_INT);
+			r = gv(MCC_RC_INT);
 			vswap();
 			c = vtop->c.i;
 			if (c == (signed char)c) {
@@ -742,7 +742,7 @@ ST_FUNC void gen_opi(int op) {
 				oad(0xc0 | (opc << 3) | r, c);
 			}
 		} else {
-			gv2(RC_INT, RC_INT);
+			gv2(MCC_RC_INT, MCC_RC_INT);
 			r = vtop[-1].r;
 			fr = vtop[0].r;
 			o((opc << 3) | 0x01);
@@ -772,7 +772,7 @@ ST_FUNC void gen_opi(int op) {
 		opc = 1;
 		goto gen_op8;
 	case '*':
-		gv2(RC_INT, RC_INT);
+		gv2(MCC_RC_INT, MCC_RC_INT);
 		r = vtop[-1].r;
 		fr = vtop[0].r;
 		vtop--;
@@ -791,14 +791,14 @@ ST_FUNC void gen_opi(int op) {
 		opc = 0xc0 | (opc << 3);
 		if ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) {
 			vswap();
-			r = gv(RC_INT);
+			r = gv(MCC_RC_INT);
 			vswap();
 			c = vtop->c.i & 0x1f;
 			o(0xc1);
 			o(opc | r);
 			g(c);
 		} else {
-			gv2(RC_INT, RC_ECX);
+			gv2(MCC_RC_INT, MCC_RC_ECX);
 			r = vtop[-1].r;
 			o(0xd3);
 			o(opc | r);
@@ -811,17 +811,17 @@ ST_FUNC void gen_opi(int op) {
 	case '%':
 	case TOK_UMOD:
 	case TOK_UMULL:
-		gv2(RC_EAX, RC_ECX);
+		gv2(MCC_RC_EAX, MCC_RC_ECX);
 		r = vtop[-1].r;
 		fr = vtop[0].r;
 		vtop--;
-		save_reg(TREG_EDX);
-		save_reg_upstack(TREG_EAX, 1);
+		save_reg(MCC_TREG_EDX);
+		save_reg_upstack(MCC_TREG_EAX, 1);
 		if (op == TOK_UMULL) {
 			o(0xf7);
 			o(0xe0 + fr);
-			vtop->r2 = TREG_EDX;
-			r = TREG_EAX;
+			vtop->r2 = MCC_TREG_EDX;
+			r = MCC_TREG_EAX;
 		} else {
 			if (op == TOK_UDIV || op == TOK_UMOD) {
 				o(0xf7d231);
@@ -831,9 +831,9 @@ ST_FUNC void gen_opi(int op) {
 				o(0xf8 + fr);
 			}
 			if (op == '%' || op == TOK_UMOD)
-				r = TREG_EDX;
+				r = MCC_TREG_EDX;
 			else
-				r = TREG_EAX;
+				r = MCC_TREG_EAX;
 		}
 		vtop->r = r;
 		break;
@@ -847,23 +847,23 @@ ST_FUNC void gen_opf(int op) {
 	int a, ft, fc, swapped, r;
 
 	if (op == TOK_NEG) {
-		gv(RC_FLOAT);
+		gv(MCC_RC_FLOAT);
 		o(0xe0d9);
 		return;
 	}
 
 	if ((vtop[-1].r & (VT_VALMASK | VT_LVAL)) == VT_CONST) {
 		vswap();
-		gv(RC_FLOAT);
+		gv(MCC_RC_FLOAT);
 		vswap();
 	}
 	if ((vtop[0].r & (VT_VALMASK | VT_LVAL)) == VT_CONST)
-		gv(RC_FLOAT);
+		gv(MCC_RC_FLOAT);
 
 	if ((vtop[-1].r & VT_LVAL) &&
 			(vtop[0].r & VT_LVAL)) {
 		vswap();
-		gv(RC_FLOAT);
+		gv(MCC_RC_FLOAT);
 		vswap();
 	}
 	swapped = 0;
@@ -872,8 +872,8 @@ ST_FUNC void gen_opf(int op) {
 		swapped = 1;
 	}
 	if (op >= TOK_ULT && op <= TOK_GT) {
-		load(TREG_ST0, vtop);
-		save_reg(TREG_EAX);
+		load(MCC_TREG_ST0, vtop);
+		save_reg(MCC_TREG_EAX);
 		if (op == TOK_GE || op == TOK_GT)
 			swapped = !swapped;
 		else if (op == TOK_EQ || op == TOK_NE)
@@ -903,7 +903,7 @@ ST_FUNC void gen_opf(int op) {
 		vset_VT_CMP(op);
 	} else {
 		if ((vtop->type.t & VT_BTYPE) == VT_LDOUBLE) {
-			load(TREG_ST0, vtop);
+			load(MCC_TREG_ST0, vtop);
 			swapped = !swapped;
 		}
 
@@ -935,7 +935,7 @@ ST_FUNC void gen_opf(int op) {
 			r = vtop->r;
 			if ((r & VT_VALMASK) == VT_LLOCAL) {
 				SValue v1;
-				r = get_reg(RC_INT);
+				r = get_reg(MCC_RC_INT);
 				v1.type.t = VT_INT;
 				v1.r = VT_LOCAL | VT_LVAL;
 				v1.c.i = fc;
@@ -952,8 +952,8 @@ ST_FUNC void gen_opf(int op) {
 }
 
 ST_FUNC void gen_cvt_itof(int t) {
-	save_reg(TREG_ST0);
-	gv(RC_INT);
+	save_reg(MCC_TREG_ST0);
+	gv(MCC_RC_INT);
 	if ((vtop->type.t & VT_BTYPE) == VT_LLONG) {
 		o(0x50 + vtop->r2);
 		o(0x50 + (vtop->r & VT_VALMASK));
@@ -973,7 +973,7 @@ ST_FUNC void gen_cvt_itof(int t) {
 		o(0x04c483);
 	}
 	vtop->r2 = VT_CONST;
-	vtop->r = TREG_ST0;
+	vtop->r = MCC_TREG_ST0;
 }
 
 ST_FUNC void gen_cvt_ftoi(int t) {
@@ -993,12 +993,12 @@ ST_FUNC void gen_cvt_ftoi(int t) {
 }
 
 ST_FUNC void gen_cvt_ftof(int t) {
-	gv(RC_FLOAT);
+	gv(MCC_RC_FLOAT);
 }
 
 ST_FUNC void gen_cvt_csti(int t) {
 	int r, sz, xl;
-	r = gv(RC_INT);
+	r = gv(MCC_RC_INT);
 	sz = !(t & VT_UNSIGNED);
 	xl = (t & VT_BTYPE) == VT_SHORT;
 	o(0xc0b60f | (sz << 3 | xl) << 8 | (r << 3 | r) << 16);
@@ -1007,7 +1007,7 @@ ST_FUNC void gen_cvt_csti(int t) {
 ST_FUNC void gen_increment_tcov(SValue *sv) {
 	int indir, rel, add1, add2;
 	if (mcc_state->pic) {
-		get_pc_thunk(TREG_EBX, 0);
+		get_pc_thunk(MCC_TREG_EBX, 0);
 		indir = 0x8300;
 		rel = R_386_PC32;
 		add1 = 2;
@@ -1033,14 +1033,14 @@ ST_FUNC void ggoto(void) {
 	vtop--;
 }
 
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 
 static void gen_bound_call(int v) {
 	Sym *sym;
 
 	sym = external_helper_sym(v);
 	if (mcc_state->pic) {
-		get_pc_thunk(TREG_EBX, 1);
+		get_pc_thunk(MCC_TREG_EBX, 1);
 		oad(0xe8, -4);
 		greloc(cur_text_section, sym, ind - 4, R_386_PLT32);
 	} else {
@@ -1078,14 +1078,14 @@ static void gen_bounds_epilog(void) {
 	*bounds_ptr = 0;
 
 	sym_data = get_sym_ref(&char_pointer_type, lbounds_section,
-												 func_bound_offset, PTR_SIZE);
+												 func_bound_offset, MCC_PTR_SIZE);
 
 	if (offset_modified) {
 		saved_ind = ind;
 		ind = func_bound_ind;
 		if (mcc_state->pic) {
-			get_pc_thunk(TREG_EAX, 0);
-			o(0x808d | TREG_EAX * 0x900);
+			get_pc_thunk(MCC_TREG_EAX, 0);
+			o(0x808d | MCC_TREG_EAX * 0x900);
 			greloc(cur_text_section, sym_data, ind, R_386_PC32);
 			gen_le32(2);
 		} else {
@@ -1098,8 +1098,8 @@ static void gen_bounds_epilog(void) {
 
 	o(0x5250);
 	if (mcc_state->pic) {
-		get_pc_thunk(TREG_EAX, 0);
-		o(0x808d | TREG_EAX * 0x900);
+		get_pc_thunk(MCC_TREG_EAX, 0);
+		o(0x808d | MCC_TREG_EAX * 0x900);
 		greloc(cur_text_section, sym_data, ind, R_386_PC32);
 		gen_le32(2);
 	} else {
@@ -1112,17 +1112,17 @@ static void gen_bounds_epilog(void) {
 #endif
 
 ST_FUNC void gen_vla_sp_save(int addr) {
-	gen_modrm(0x89, TREG_ESP, VT_LOCAL, NULL, addr);
+	gen_modrm(0x89, MCC_TREG_ESP, VT_LOCAL, NULL, addr);
 }
 
 ST_FUNC void gen_vla_sp_restore(int addr) {
-	gen_modrm(0x8b, TREG_ESP, VT_LOCAL, NULL, addr);
+	gen_modrm(0x8b, MCC_TREG_ESP, VT_LOCAL, NULL, addr);
 }
 
 ST_FUNC void gen_vla_alloc(CType *type, int align) {
 	int use_call = 0;
 
-#if defined(CONFIG_MCC_BCHECK)
+#if MCC_CONFIG_BCHECK
 	use_call = mcc_state->do_bounds_check;
 #endif
 #ifdef MCC_TARGET_PE
@@ -1134,7 +1134,7 @@ ST_FUNC void gen_vla_alloc(CType *type, int align) {
 		gfunc_call(1);
 	} else {
 		int r;
-		r = gv(RC_INT);
+		r = gv(MCC_RC_INT);
 		o(0x2b);
 		o(0xe0 | r);
 		o(0xf0e483);

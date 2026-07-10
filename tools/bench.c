@@ -729,7 +729,7 @@ static int build_self_mcc(const char *stage1, const struct workload *wl,
 		ts_arg(&v, strdup(buf));
 	}
 	ts_arg(&v, "-DCC_NAME=CC_mcc");
-	ts_arg(&v, "-DCONFIG_AST=1");
+	ts_arg(&v, "-DMCC_CONFIG_AST=1");
 	if (opt)
 		ts_arg(&v, opt);
 	return host_spawn_wait(ts_argz(&v)) == 0;
@@ -825,9 +825,9 @@ int main(int argc, char **argv) {
 		}
 		{
 			int nd = 0;
-			w->defs[nd++] = "SINGLE_SOURCE=1";
-			w->defs[nd++] = "CONFIG_MCC_PREDEFS=1";
-			w->defs[nd++] = "CONFIG_MCC_AUTO_MCCDIR=1";
+			w->defs[nd++] = "MCC_AMALGAMATED=1";
+			w->defs[nd++] = "MCC_CONFIG_PREDEFS=1";
+			w->defs[nd++] = "MCC_CONFIG_AUTO_MCCDIR=1";
 			w->defs[nd++] = "MCC_VERSION=20260706135200";
 			host_target_defs(w->defs, &nd);
 		}

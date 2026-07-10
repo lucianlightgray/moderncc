@@ -1008,7 +1008,7 @@ static void pe_build_imports(struct pe_info *pe) {
 				else
 					ordinal = 0, v = imp_sym->st_value;
 
-#ifdef MCC_IS_NATIVE
+#ifdef MCC_TARGET_IS_HOST
 				if (pe->type == PE_RUN) {
 					if (dllref) {
 						if (!dllref->handle)
@@ -2018,9 +2018,9 @@ static void pe_add_runtime(MCCState *s1, struct pe_info *pe) {
 			++start_symbol;
 	}
 
-#ifdef CONFIG_MCC_BACKTRACE
+#if MCC_CONFIG_BACKTRACE
 	if (s1->do_backtrace) {
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 		if (s1->do_bounds_check && s1->output_type != MCC_OUTPUT_DLL)
 			mcc_add_support(s1, "bcheck.o");
 #endif
@@ -2034,7 +2034,7 @@ static void pe_add_runtime(MCCState *s1, struct pe_info *pe) {
 	}
 #endif
 
-#ifdef MCC_IS_NATIVE
+#ifdef MCC_TARGET_IS_HOST
 	if (MCC_OUTPUT_MEMORY != s1->output_type || s1->run_main)
 #endif
 		set_global_sym(s1, start_symbol, NULL, 0);
@@ -2151,7 +2151,7 @@ ST_FUNC int pe_output_file(MCCState *s1, const char *filename) {
 	pe.s1 = s1;
 	s1->filetype = 0;
 
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 	mcc_add_bcheck(s1);
 #endif
 	mcc_add_pragma_libs(s1);
@@ -2174,7 +2174,7 @@ ST_FUNC int pe_output_file(MCCState *s1, const char *filename) {
 			goto done;
 		pe_write(&pe);
 	} else {
-#ifdef MCC_IS_NATIVE
+#ifdef MCC_TARGET_IS_HOST
 		pe.thunk = data_section;
 		pe_build_imports(&pe);
 		s1->run_main = pe.start_symbol;

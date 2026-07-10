@@ -1,6 +1,6 @@
 #define USING_GLOBALS
 #include "mcc.h"
-#ifdef CONFIG_MCC_ASM
+#if MCC_CONFIG_ASM
 
 #define REG_X 0x01
 #define REG_W 0x02
@@ -27,38 +27,38 @@ enum {
 
 #define is_reg_allocated(reg) (regs_allocated[reg] & reg_mask)
 
-#define TREG_X0 0
-#define TREG_X1 1
-#define TREG_X2 2
-#define TREG_X3 3
-#define TREG_X4 4
-#define TREG_X5 5
-#define TREG_X6 6
-#define TREG_X7 7
-#define TREG_X8 8
-#define TREG_X9 9
-#define TREG_X10 10
-#define TREG_X11 11
-#define TREG_X12 12
-#define TREG_X13 13
-#define TREG_X14 14
-#define TREG_X15 15
-#define TREG_X16 16
-#define TREG_X17 17
-#define TREG_X18 18
-#define TREG_X19 19
-#define TREG_X20 20
-#define TREG_X21 21
-#define TREG_X22 22
-#define TREG_X23 23
-#define TREG_X24 24
-#define TREG_X25 25
-#define TREG_X26 26
-#define TREG_X27 27
-#define TREG_X28 28
-#define TREG_X29 29
-#define TREG_X30 30
-#define TREG_SP 31
+#define MCC_TREG_X0 0
+#define MCC_TREG_X1 1
+#define MCC_TREG_X2 2
+#define MCC_TREG_X3 3
+#define MCC_TREG_X4 4
+#define MCC_TREG_X5 5
+#define MCC_TREG_X6 6
+#define MCC_TREG_X7 7
+#define MCC_TREG_X8 8
+#define MCC_TREG_X9 9
+#define MCC_TREG_X10 10
+#define MCC_TREG_X11 11
+#define MCC_TREG_X12 12
+#define MCC_TREG_X13 13
+#define MCC_TREG_X14 14
+#define MCC_TREG_X15 15
+#define MCC_TREG_X16 16
+#define MCC_TREG_X17 17
+#define MCC_TREG_X18 18
+#define MCC_TREG_X19 19
+#define MCC_TREG_X20 20
+#define MCC_TREG_X21 21
+#define MCC_TREG_X22 22
+#define MCC_TREG_X23 23
+#define MCC_TREG_X24 24
+#define MCC_TREG_X25 25
+#define MCC_TREG_X26 26
+#define MCC_TREG_X27 27
+#define MCC_TREG_X28 28
+#define MCC_TREG_X29 29
+#define MCC_TREG_X30 30
+#define MCC_TREG_SP 31
 
 #define ARM64_FREG_BASE 20
 #define ARM64_FREG_LAST (ARM64_FREG_BASE + 7)
@@ -887,9 +887,9 @@ static int arm64_memory_is_pair_suitable(const SValue *sv) {
 
 static int arm64_int_reg_is_allocatable(int reg) {
 #ifdef MCC_TARGET_PE
-	return reg >= TREG_X0 && reg <= TREG_X17;
+	return reg >= MCC_TREG_X0 && reg <= MCC_TREG_X17;
 #else
-	return reg >= TREG_X0 && reg <= TREG_X30;
+	return reg >= MCC_TREG_X0 && reg <= MCC_TREG_X30;
 #endif
 }
 
@@ -1988,7 +1988,7 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
 													int nb_outputs, int is_output,
 													uint8_t *clobber_regs,
 													int out_reg) {
-	uint8_t regs_allocated[NB_ASM_REGS];
+	uint8_t regs_allocated[MCC_NB_ASM_REGS];
 	ASMOperand *op;
 	int reg, saved_count, stack_size, stack_off;
 	int saved_regs[12];
@@ -2018,11 +2018,11 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
 			for (int i = stack_off = 0; i < saved_count;) {
 				if (i + 1 < saved_count) {
 					gen_ldst_pair(ARM64_STP_X, saved_regs[i], saved_regs[i + 1],
-												TREG_SP, stack_off, 3);
+												MCC_TREG_SP, stack_off, 3);
 					stack_off += 16;
 					i += 2;
 				} else {
-					gen_ldst_imm(ARM64_STR_X, saved_regs[i], TREG_SP,
+					gen_ldst_imm(ARM64_STR_X, saved_regs[i], MCC_TREG_SP,
 											 stack_off, 3);
 					i++;
 				}
@@ -2067,11 +2067,11 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
 			for (int i = stack_off = 0; i < saved_count;) {
 				if (i + 1 < saved_count) {
 					gen_ldst_pair(ARM64_LDP_X, saved_regs[i], saved_regs[i + 1],
-												TREG_SP, stack_off, 3);
+												MCC_TREG_SP, stack_off, 3);
 					stack_off += 16;
 					i += 2;
 				} else {
-					gen_ldst_imm(ARM64_LDR_X, saved_regs[i], TREG_SP,
+					gen_ldst_imm(ARM64_LDR_X, saved_regs[i], MCC_TREG_SP,
 											 stack_off, 3);
 					i++;
 				}
@@ -2091,7 +2091,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 	int sorted_op[MAX_ASM_OPERANDS];
 	int j, reg, c, reg_mask;
 	const char *str;
-	uint8_t regs_allocated[NB_ASM_REGS];
+	uint8_t regs_allocated[MCC_NB_ASM_REGS];
 
 	asm_constraints_prologue(operands, nb_operands, nb_outputs,
 													 clobber_regs, sorted_op, regs_allocated);

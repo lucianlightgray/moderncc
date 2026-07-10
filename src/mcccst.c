@@ -1,4 +1,4 @@
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 
 #include "mcccst.h"
 

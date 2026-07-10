@@ -1,81 +1,81 @@
 #ifndef MCC_X86_64_GEN_H
 #define MCC_X86_64_GEN_H
 
-#define NB_REGS 25
-#define NB_ASM_REGS 16
-#ifndef MCC_DISABLE_ASM
-#define CONFIG_MCC_ASM
+#define MCC_NB_REGS 25
+#define MCC_NB_ASM_REGS 16
+#ifndef MCC_CONFIG_ASM
+#define MCC_CONFIG_ASM 1
 #endif
 
-#define RC_INT 0x0001
-#define RC_FLOAT 0x0002
-#define RC_RAX 0x0004
-#define RC_RDX 0x0008
-#define RC_RCX 0x0010
-#define RC_RSI 0x0020
-#define RC_RDI 0x0040
-#define RC_ST0 0x0080
-#define RC_R8 0x0100
-#define RC_R9 0x0200
-#define RC_R10 0x0400
-#define RC_R11 0x0800
-#define RC_XMM0 0x1000
-#define RC_XMM1 0x2000
-#define RC_XMM2 0x4000
-#define RC_XMM3 0x8000
-#define RC_XMM4 0x10000
-#define RC_XMM5 0x20000
-#define RC_XMM6 0x40000
-#define RC_XMM7 0x80000
-#define RC_IRET RC_RAX
-#define RC_IRE2 RC_RDX
-#define RC_FRET RC_XMM0
-#define RC_FRE2 RC_XMM1
+#define MCC_RC_INT 0x0001
+#define MCC_RC_FLOAT 0x0002
+#define MCC_RC_RAX 0x0004
+#define MCC_RC_RDX 0x0008
+#define MCC_RC_RCX 0x0010
+#define MCC_RC_RSI 0x0020
+#define MCC_RC_RDI 0x0040
+#define MCC_RC_ST0 0x0080
+#define MCC_RC_R8 0x0100
+#define MCC_RC_R9 0x0200
+#define MCC_RC_R10 0x0400
+#define MCC_RC_R11 0x0800
+#define MCC_RC_XMM0 0x1000
+#define MCC_RC_XMM1 0x2000
+#define MCC_RC_XMM2 0x4000
+#define MCC_RC_XMM3 0x8000
+#define MCC_RC_XMM4 0x10000
+#define MCC_RC_XMM5 0x20000
+#define MCC_RC_XMM6 0x40000
+#define MCC_RC_XMM7 0x80000
+#define MCC_RC_IRET MCC_RC_RAX
+#define MCC_RC_IRE2 MCC_RC_RDX
+#define MCC_RC_FRET MCC_RC_XMM0
+#define MCC_RC_FRE2 MCC_RC_XMM1
 
 enum {
-	TREG_RAX = 0,
-	TREG_RCX = 1,
-	TREG_RDX = 2,
-	TREG_RSP = 4,
-	TREG_RSI = 6,
-	TREG_RDI = 7,
+	MCC_TREG_RAX = 0,
+	MCC_TREG_RCX = 1,
+	MCC_TREG_RDX = 2,
+	MCC_TREG_RSP = 4,
+	MCC_TREG_RSI = 6,
+	MCC_TREG_RDI = 7,
 
-	TREG_R8 = 8,
-	TREG_R9 = 9,
-	TREG_R10 = 10,
-	TREG_R11 = 11,
+	MCC_TREG_R8 = 8,
+	MCC_TREG_R9 = 9,
+	MCC_TREG_R10 = 10,
+	MCC_TREG_R11 = 11,
 
-	TREG_XMM0 = 16,
-	TREG_XMM1 = 17,
-	TREG_XMM2 = 18,
-	TREG_XMM3 = 19,
-	TREG_XMM4 = 20,
-	TREG_XMM5 = 21,
-	TREG_XMM6 = 22,
-	TREG_XMM7 = 23,
+	MCC_TREG_XMM0 = 16,
+	MCC_TREG_XMM1 = 17,
+	MCC_TREG_XMM2 = 18,
+	MCC_TREG_XMM3 = 19,
+	MCC_TREG_XMM4 = 20,
+	MCC_TREG_XMM5 = 21,
+	MCC_TREG_XMM6 = 22,
+	MCC_TREG_XMM7 = 23,
 
-	TREG_ST0 = 24,
+	MCC_TREG_ST0 = 24,
 
-	TREG_MEM = 0x20
+	MCC_TREG_MEM = 0x20
 };
 
 #define REX_BASE(reg) (((reg) >> 3) & 1)
 #define REG_VALUE(reg) ((reg) & 7)
 
-#define REG_IRET TREG_RAX
-#define REG_IRE2 TREG_RDX
-#define REG_FRET TREG_XMM0
-#define REG_FRE2 TREG_XMM1
+#define REG_IRET MCC_TREG_RAX
+#define REG_IRE2 MCC_TREG_RDX
+#define REG_FRET MCC_TREG_XMM0
+#define REG_FRE2 MCC_TREG_XMM1
 
 #define INVERT_FUNC_PARAMS
 
-#define PTR_SIZE 8
+#define MCC_PTR_SIZE 8
 
-#define LDOUBLE_SIZE 16
-#define LDOUBLE_ALIGN 16
-#define MAX_ALIGN 16
+#define MCC_LDOUBLE_SIZE 16
+#define MCC_LDOUBLE_ALIGN 16
+#define MCC_MAX_ALIGN 16
 
-#define PROMOTE_RET
+#define MCC_RET_PROMOTES_INT
 
 #define MCC_TARGET_NATIVE_STRUCT_COPY
 ST_FUNC void gen_struct_copy(int size);

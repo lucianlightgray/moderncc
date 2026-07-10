@@ -1,10 +1,10 @@
 #ifndef MCC_TOOLHOST_H
 #define MCC_TOOLHOST_H
 
-#define CONFIG_MCC_TOOLHOST 1
+#define MCC_CONFIG_TOOLHOST 1
 
-#ifndef SINGLE_SOURCE
-#define SINGLE_SOURCE 0
+#ifndef MCC_AMALGAMATED
+#define MCC_AMALGAMATED 0
 #endif
 
 #include <stdio.h>

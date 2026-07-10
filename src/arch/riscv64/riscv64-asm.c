@@ -1,6 +1,6 @@
 #define USING_GLOBALS
 #include "mcc.h"
-#ifdef CONFIG_MCC_ASM
+#if MCC_CONFIG_ASM
 
 enum {
 	OPT_REG,
@@ -2137,7 +2137,7 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
 													int nb_outputs, int is_output,
 													uint8_t *clobber_regs,
 													int out_reg) {
-	uint8_t regs_allocated[NB_ASM_REGS];
+	uint8_t regs_allocated[MCC_NB_ASM_REGS];
 	ASMOperand *op;
 	int reg;
 
@@ -2281,7 +2281,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 	int sorted_op[MAX_ASM_OPERANDS];
 	int j, reg, c, reg_mask;
 	const char *str;
-	uint8_t regs_allocated[NB_ASM_REGS];
+	uint8_t regs_allocated[MCC_NB_ASM_REGS];
 
 	asm_constraints_prologue(operands, nb_operands, nb_outputs,
 													 clobber_regs, sorted_op, regs_allocated);

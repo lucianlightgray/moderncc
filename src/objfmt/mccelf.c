@@ -26,7 +26,7 @@ static const char rdata[] = ".rdata";
 static const char rdata[] = ".data.ro";
 #endif
 
-#ifndef ELF_OBJ_ONLY
+#if MCC_TARGET_UNIX
 static char *musl_elfinterp(MCCState *s) {
 	const char *arch;
 	char interp[64], probe[1024];
@@ -90,7 +90,7 @@ ST_FUNC void mccelf_new(MCCState *s) {
 	mcc_eh_frame_start(s);
 #endif
 
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 	if (s->do_bounds_check) {
 		bounds_section = new_section(s, ".bounds", SHT_PROGBITS, shf_RELRO);
 		lbounds_section = new_section(s, ".lbounds", SHT_PROGBITS, shf_RELRO);
@@ -102,16 +102,16 @@ ST_FUNC void mccelf_new(MCCState *s) {
 		set_global_sym(s, s->elf_entryname, NULL, 0);
 #endif
 
-#ifndef ELF_OBJ_ONLY
+#if MCC_TARGET_UNIX
 	if (NULL == s->elfint && s1->output_type != MCC_OUTPUT_OBJ) {
 		s->elfint = musl_elfinterp(s);
 		if (NULL == s->elfint) {
-			const char *p = CONFIG_MCC_ELFINTERP;
-#if defined MCC_TARGET_ARM && defined CONFIG_MCC_ELFINTERP_ARMHF
+			const char *p = MCC_CONFIG_ELFINTERP;
+#if defined MCC_TARGET_ARM && defined MCC_CONFIG_ELFINTERP_ARMHF
 			if (s->float_abi == ARM_HARD_FLOAT)
-				p = CONFIG_MCC_ELFINTERP_ARMHF;
+				p = MCC_CONFIG_ELFINTERP_ARMHF;
 #endif
-#if defined MCC_IS_NATIVE && defined TARGETOS_BSD
+#if defined MCC_TARGET_IS_HOST && defined MCC_TARGETOS_BSD
 			{
 				const char *e = host_elf_interp_override();
 				if (e)
@@ -133,7 +133,7 @@ ST_FUNC void free_section(Section *s) {
 }
 
 ST_FUNC void mccelf_delete(MCCState *s1) {
-#ifndef ELF_OBJ_ONLY
+#if MCC_TARGET_UNIX
 	for (int i = 0; i < nb_sym_versions; i++) {
 		mcc_free(sym_versions[i].version);
 		mcc_free(sym_versions[i].lib);
@@ -226,13 +226,13 @@ ST_FUNC Section *new_section(MCCState *s1, const char *name, int sh_type, int sh
 	case SHT_DYNAMIC:
 	case SHT_GNU_verneed:
 	case SHT_GNU_verdef:
-		sec->sh_addralign = PTR_SIZE;
+		sec->sh_addralign = MCC_PTR_SIZE;
 		break;
 	case SHT_STRTAB:
 		sec->sh_addralign = 1;
 		break;
 	default:
-		sec->sh_addralign = PTR_SIZE;
+		sec->sh_addralign = MCC_PTR_SIZE;
 		break;
 	}
 
@@ -302,7 +302,7 @@ ST_FUNC void *section_ptr_add(Section *sec, addr_t size) {
 	return sec->data + offset;
 }
 
-#ifndef ELF_OBJ_ONLY
+#if MCC_TARGET_UNIX
 static void section_reserve(Section *sec, unsigned long size) {
 	if (size > sec->data_allocated)
 		section_realloc(sec, size);
@@ -524,7 +524,7 @@ LIBMCCAPI void mcc_list_symbols(MCCState *s, void *ctx,
 	list_elf_symbols(s, ctx, symbol_cb);
 }
 
-#ifndef ELF_OBJ_ONLY
+#if MCC_TARGET_UNIX
 static void
 version_add(MCCState *s1) {
 	ElfW(Sym) * sym;
@@ -779,8 +779,8 @@ static void sort_syms(MCCState *s1, Section *s) {
 	mcc_free(old_to_new_syms);
 }
 
-#ifndef ELF_OBJ_ONLY
-#define ELFCLASS_BITS (PTR_SIZE * 8)
+#if MCC_TARGET_UNIX
+#define ELFCLASS_BITS (MCC_PTR_SIZE * 8)
 
 static Section *create_gnu_hash(MCCState *s1) {
 	int nb_syms, ndef, nbuckets, symoffset, bloom_size, bloom_shift;
@@ -801,12 +801,12 @@ static Section *create_gnu_hash(MCCState *s1) {
 
 	nbuckets = ndef / 4 + 1;
 	symoffset = nb_syms - ndef;
-	bloom_shift = PTR_SIZE == 8 ? 6 : 5;
+	bloom_shift = MCC_PTR_SIZE == 8 ? 6 : 5;
 	bloom_size = 1;
 	while (ndef >= bloom_size * (1 << (bloom_shift - 3)))
 		bloom_size *= 2;
 	ptr = section_ptr_add(gnu_hash, 4 * 4 +
-																			PTR_SIZE * bloom_size +
+																			MCC_PTR_SIZE * bloom_size +
 																			nbuckets * 4 +
 																			ndef * 4);
 	ptr[0] = nbuckets;
@@ -868,7 +868,7 @@ static void update_gnu_hash(MCCState *s1, Section *gnu_hash) {
 	buck = mcc_malloc(nbuckets * sizeof(*buck));
 
 	if (gnu_hash->data_offset != 4 * 4 +
-																	 PTR_SIZE * bloom_size +
+																	 MCC_PTR_SIZE * bloom_size +
 																	 nbuckets * 4 +
 																	 (nb_syms - (q - new_syms)) * 4)
 		mcc_error_noabort("gnu_hash size incorrect");
@@ -950,7 +950,7 @@ ST_FUNC void relocate_syms(MCCState *s1, Section *symtab, int do_resolve) {
 				continue;
 			name = (char *)s1->symtab->link->data + sym->st_name;
 			if (do_resolve) {
-#if defined MCC_IS_NATIVE && !defined MCC_TARGET_PE
+#if defined MCC_TARGET_IS_HOST && !defined MCC_TARGET_PE
 				const char *name_ud = &name[s1->leading_underscore];
 				void *addr = NULL;
 				if (!s1->nostdlib)
@@ -1016,15 +1016,15 @@ static void relocate_section(MCCState *s1, Section *s, Section *sr) {
 		relocate(s1, rel, type, ptr, addr, tgt);
 	}
 
-#ifndef ELF_OBJ_ONLY
+#if MCC_TARGET_UNIX
 	if (sr->sh_flags & SHF_ALLOC) {
 		sr->link = s1->dynsym;
 		if (s1->output_type & MCC_OUTPUT_DYN) {
 			size_t r = (uint8_t *)qrel - sr->data;
-			if (sizeof((Stab_Sym *)0)->n_value < PTR_SIZE && 0 == strcmp(s->name, ".stab"))
+			if (sizeof((Stab_Sym *)0)->n_value < MCC_PTR_SIZE && 0 == strcmp(s->name, ".stab"))
 				r = 0;
 			sr->data_offset = sr->sh_size = r;
-#ifdef CONFIG_MCC_PIE
+#if MCC_CONFIG_PIE
 			if (r && (s->sh_flags & SHF_EXECINSTR))
 				mcc_warning("%d relocations to %s", (unsigned)(r / sizeof *qrel), s->name);
 #endif
@@ -1053,7 +1053,7 @@ ST_FUNC void relocate_sections(MCCState *s1) {
 		{
 			relocate_section(s1, s, sr);
 		}
-#ifndef ELF_OBJ_ONLY
+#if MCC_TARGET_UNIX
 		if (sr->sh_flags & SHF_ALLOC) {
 			ElfW_Rel *rel;
 			for_each_elem(sr, 0, rel, ElfW_Rel)
@@ -1063,7 +1063,7 @@ ST_FUNC void relocate_sections(MCCState *s1) {
 	}
 }
 
-#ifndef ELF_OBJ_ONLY
+#if MCC_TARGET_UNIX
 static int prepare_dynamic_rel(MCCState *s1, Section *sr) {
 	int count = 0;
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64) || \
@@ -1134,7 +1134,7 @@ static int prepare_dynamic_rel(MCCState *s1, Section *sr) {
 static int build_got(MCCState *s1) {
 	s1->got = new_section(s1, ".got", SHT_PROGBITS, SHF_ALLOC | SHF_WRITE);
 	s1->got->sh_entsize = 4;
-	section_ptr_add(s1->got, 3 * PTR_SIZE);
+	section_ptr_add(s1->got, 3 * MCC_PTR_SIZE);
 	return set_elf_sym(symtab_section, 0, 0, ELFW(ST_INFO)(STB_GLOBAL, STT_OBJECT),
 										 0, s1->got->sh_num, "_GLOBAL_OFFSET_TABLE_");
 }
@@ -1166,7 +1166,7 @@ static struct sym_attr *put_got_entry(MCCState *s1, int dyn_reloc_type,
 	}
 
 	got_offset = s1->got->data_offset;
-	section_ptr_add(s1->got, PTR_SIZE);
+	section_ptr_add(s1->got, MCC_PTR_SIZE);
 
 	sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
 	name = (char *)symtab_section->link->data + sym->st_name;
@@ -1251,7 +1251,7 @@ redo:
 					if (sym->st_value == 0)
 						continue;
 #ifndef MCC_TARGET_ARM
-					if (PTR_SIZE != 8)
+					if (MCC_PTR_SIZE != 8)
 						continue;
 #endif
 				} else
@@ -1362,10 +1362,10 @@ ST_FUNC void add_array(MCCState *s1, const char *sec, int c) {
 	s->sh_flags = shf_RELRO;
 	s->sh_type = sec[1] == 'i' ? SHT_INIT_ARRAY : SHT_FINI_ARRAY;
 	put_elf_reloc(s1->symtab, s, s->data_offset, R_DATA_PTR, c);
-	section_ptr_add(s, PTR_SIZE);
+	section_ptr_add(s, MCC_PTR_SIZE);
 }
 
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 ST_FUNC void mcc_add_bcheck(MCCState *s1) {
 	if (0 == s1->do_bounds_check)
 		return;
@@ -1394,13 +1394,13 @@ static void mcc_compile_string_no_debug(MCCState *s, const char *str) {
 	s->test_coverage = save_test_coverage;
 }
 
-#ifdef CONFIG_MCC_BACKTRACE
+#if MCC_CONFIG_BACKTRACE
 static void put_ptr(MCCState *s1, Section *s, int offs) {
 	int c;
 	c = set_global_sym(s1, NULL, s, offs);
 	s = data_section;
 	put_elf_reloc(s1->symtab, s, s->data_offset, R_DATA_PTR, c);
-	section_ptr_add(s, PTR_SIZE);
+	section_ptr_add(s, MCC_PTR_SIZE);
 }
 
 ST_FUNC void mcc_add_btstub(MCCState *s1) {
@@ -1410,7 +1410,7 @@ ST_FUNC void mcc_add_btstub(MCCState *s1) {
 	const char *__rt_info = &"___rt_info"[!s1->leading_underscore];
 
 	s = data_section;
-	section_add(s, 0, PTR_SIZE);
+	section_add(s, 0, MCC_PTR_SIZE);
 	o = s->data_offset;
 	if (s1->dwarf) {
 		put_ptr(s1, dwarf_line_section, 0);
@@ -1425,7 +1425,7 @@ ST_FUNC void mcc_add_btstub(MCCState *s1) {
 		put_ptr(s1, stab_section->link, 0);
 	}
 
-	section_ptr_add(s, 3 * PTR_SIZE);
+	section_ptr_add(s, 3 * MCC_PTR_SIZE);
 
 	if (s1->output_type == MCC_OUTPUT_MEMORY && 0 == s1->dwarf) {
 		put_ptr(s1, text_section, 0);
@@ -1433,15 +1433,15 @@ ST_FUNC void mcc_add_btstub(MCCState *s1) {
 		put_ptr(s1, NULL, 0);
 #if defined MCC_TARGET_MACHO
 		if (s1->dwarf == 0 && s1->output_type == MCC_OUTPUT_EXE)
-			write64le(data_section->data + data_section->data_offset - PTR_SIZE,
+			write64le(data_section->data + data_section->data_offset - MCC_PTR_SIZE,
 								(uint64_t)1 << 32);
 #endif
 	}
-	n = 3 * PTR_SIZE;
-#ifdef CONFIG_MCC_BCHECK
+	n = 3 * MCC_PTR_SIZE;
+#if MCC_CONFIG_BCHECK
 	if (s1->do_bounds_check) {
 		put_ptr(s1, bounds_section, 0);
-		n -= PTR_SIZE;
+		n -= MCC_PTR_SIZE;
 	}
 #endif
 	section_ptr_add(s, n);
@@ -1461,7 +1461,7 @@ ST_FUNC void mcc_add_btstub(MCCState *s1) {
 							"__attribute__((constructor)) static void __bt_init_rt(){");
 #ifdef MCC_TARGET_PE
 	if (s1->output_type == MCC_OUTPUT_DLL)
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 		cstr_printf(&cstr, "__bt_init_dll(%d);", s1->do_bounds_check);
 #else
 		cstr_printf(&cstr, "__bt_init_dll(0);");
@@ -1515,16 +1515,16 @@ static void mcc_tcov_add_file(MCCState *s1, const char *filename) {
 
 #ifdef MCC_TARGET_UNIX
 ST_FUNC void mccelf_add_crtbegin(MCCState *s1) {
-#if TARGETOS_OpenBSD
+#if MCC_TARGETOS_OpenBSD
 	if (s1->output_type != MCC_OUTPUT_DLL)
 		mcc_add_crt(s1, "crt0.o");
 	if (s1->output_type == MCC_OUTPUT_DLL)
 		mcc_add_crt(s1, "crtbeginS.o");
 	else
 		mcc_add_crt(s1, "crtbegin.o");
-#elif TARGETOS_FreeBSD || TARGETOS_NetBSD
+#elif MCC_TARGETOS_FreeBSD || MCC_TARGETOS_NetBSD
 	if (s1->output_type != MCC_OUTPUT_DLL)
-#if TARGETOS_FreeBSD
+#if MCC_TARGETOS_FreeBSD
 		mcc_add_crt(s1, "crt1.o");
 #else
 		mcc_add_crt(s1, "crt0.o");
@@ -1536,7 +1536,7 @@ ST_FUNC void mccelf_add_crtbegin(MCCState *s1) {
 		mcc_add_crt(s1, "crtbeginS.o");
 	else
 		mcc_add_crt(s1, "crtbegin.o");
-#elif TARGETOS_ANDROID
+#elif MCC_TARGETOS_ANDROID
 	if (s1->output_type == MCC_OUTPUT_DLL)
 		mcc_add_crt(s1, "crtbegin_so.o");
 	else
@@ -1549,18 +1549,18 @@ ST_FUNC void mccelf_add_crtbegin(MCCState *s1) {
 }
 
 ST_FUNC void mccelf_add_crtend(MCCState *s1) {
-#if TARGETOS_OpenBSD
+#if MCC_TARGETOS_OpenBSD
 	if (s1->output_type == MCC_OUTPUT_DLL)
 		mcc_add_crt(s1, "crtendS.o");
 	else
 		mcc_add_crt(s1, "crtend.o");
-#elif TARGETOS_FreeBSD || TARGETOS_NetBSD
+#elif MCC_TARGETOS_FreeBSD || MCC_TARGETOS_NetBSD
 	if (s1->output_type == MCC_OUTPUT_DLL)
 		mcc_add_crt(s1, "crtendS.o");
 	else
 		mcc_add_crt(s1, "crtend.o");
 	mcc_add_crt(s1, "crtn.o");
-#elif TARGETOS_ANDROID
+#elif MCC_TARGETOS_ANDROID
 	if (s1->output_type == MCC_OUTPUT_DLL)
 		mcc_add_crt(s1, "crtend_so.o");
 	else
@@ -1575,7 +1575,7 @@ ST_FUNC void mccelf_add_crtend(MCCState *s1) {
 ST_FUNC void mcc_add_runtime(MCCState *s1) {
 	s1->filetype = 0;
 
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 	mcc_add_bcheck(s1);
 #endif
 	mcc_add_pragma_libs(s1);
@@ -1583,16 +1583,16 @@ ST_FUNC void mcc_add_runtime(MCCState *s1) {
 	if (!s1->nostdlib) {
 		int lpthread = s1->option_pthread;
 
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 		if (s1->do_bounds_check && s1->output_type != MCC_OUTPUT_DLL) {
 			mcc_add_support(s1, "bcheck.o");
-#if !(TARGETOS_OpenBSD || TARGETOS_NetBSD)
+#if !(MCC_TARGETOS_OpenBSD || MCC_TARGETOS_NetBSD)
 			mcc_add_library(s1, "dl");
 #endif
 			lpthread = 1;
 		}
 #endif
-#ifdef CONFIG_MCC_BACKTRACE
+#if MCC_CONFIG_BACKTRACE
 		if (s1->do_backtrace) {
 			if (s1->output_type & MCC_OUTPUT_EXE)
 				mcc_add_support(s1, "bt-exe.o");
@@ -1613,7 +1613,7 @@ ST_FUNC void mcc_add_runtime(MCCState *s1) {
 				mcc_add_dll(s1, MCC_LIBGCC, AFF_PRINT_ERROR);
 		}
 #endif
-#if defined MCC_TARGET_ARM && TARGETOS_FreeBSD
+#if defined MCC_TARGET_ARM && MCC_TARGETOS_FreeBSD
 		mcc_add_library(s1, "gcc_s");
 #endif
 #ifdef MCC_EMBED_MCCRT
@@ -1637,7 +1637,7 @@ static void mcc_add_linker_symbols(MCCState *s1) {
 	set_global_sym(s1, "_etext", text_section, -1);
 	set_global_sym(s1, "_edata", data_section, -1);
 	set_global_sym(s1, "_end", bss_section, -1);
-#if TARGETOS_OpenBSD
+#if MCC_TARGETOS_OpenBSD
 	set_global_sym(s1, "__executable_start", NULL, ELF_START_ADDR);
 #endif
 #ifndef MCC_TARGET_MACHO
@@ -1690,7 +1690,7 @@ ST_FUNC void resolve_common_syms(MCCState *s1) {
 	mcc_add_linker_symbols(s1);
 }
 
-#ifndef ELF_OBJ_ONLY
+#if MCC_TARGET_UNIX
 ST_FUNC void fill_got_entry(MCCState *s1, ElfW_Rel *rel) {
 	int sym_index = ELFW(R_SYM)(rel->r_info);
 	ElfW(Sym) *sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
@@ -1699,8 +1699,8 @@ ST_FUNC void fill_got_entry(MCCState *s1, ElfW_Rel *rel) {
 
 	if (0 == offset)
 		return;
-	section_reserve(s1->got, offset + PTR_SIZE);
-#if PTR_SIZE == 8
+	section_reserve(s1->got, offset + MCC_PTR_SIZE);
+#if MCC_PTR_SIZE == 8
 	write64le(s1->got->data + offset, sym->st_value);
 #else
 	write32le(s1->got->data + offset, sym->st_value);
@@ -1762,7 +1762,7 @@ static void mcc_prepare_static_ifunc(MCCState *s1) {
 				iplt->sh_addralign = 1;
 				relaplt = new_section(s1, ".rela.plt", SHT_RELX, SHF_ALLOC);
 				relaplt->sh_entsize = sizeof(ElfW_Rel);
-				relaplt->sh_addralign = PTR_SIZE;
+				relaplt->sh_addralign = MCC_PTR_SIZE;
 				relaplt->link = NULL;
 				relaplt->sh_info = 0;
 			}
@@ -2068,7 +2068,7 @@ static int sort_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) {
 			++d->shnum;
 		if (k < 0x700) {
 			f = s->sh_flags & (SHF_ALLOC | SHF_WRITE | SHF_EXECINSTR);
-#if TARGETOS_NetBSD
+#if MCC_TARGETOS_NetBSD
 			if ((f & SHF_WRITE) == 0)
 				f |= SHF_EXECINSTR;
 #else
@@ -2297,7 +2297,7 @@ static void fill_dynamic(MCCState *s1, struct dyn_inf *dyninf) {
 	put_dt(dynamic, DT_SYMTAB, s1->dynsym->sh_addr);
 	put_dt(dynamic, DT_STRSZ, dyninf->dynstr->data_offset);
 	put_dt(dynamic, DT_SYMENT, sizeof(ElfW(Sym)));
-#if PTR_SIZE == 8
+#if MCC_PTR_SIZE == 8
 	put_dt(dynamic, DT_RELA, dyninf->rel_addr);
 	put_dt(dynamic, DT_RELASZ, dyninf->rel_size);
 	put_dt(dynamic, DT_RELAENT, sizeof(ElfW_Rel));
@@ -2400,11 +2400,11 @@ static int mcc_output_elf(MCCState *s1, FILE *f, int phnum, ElfW(Phdr) * phdr) {
 	ehdr.e_ident[5] = ELFDATA2LSB;
 	ehdr.e_ident[6] = EV_CURRENT;
 
-#if TARGETOS_FreeBSD || TARGETOS_FreeBSD_kernel
+#if MCC_TARGETOS_FreeBSD || MCC_TARGETOS_FreeBSD_kernel
 	ehdr.e_ident[EI_OSABI] = ELFOSABI_FREEBSD;
-#elif TARGETOS_OpenBSD
+#elif MCC_TARGETOS_OpenBSD
 	ehdr.e_ident[EI_OSABI] = ELFOSABI_OPENBSD;
-#elif TARGETOS_NetBSD
+#elif MCC_TARGETOS_NetBSD
 	ehdr.e_ident[EI_OSABI] = ELFOSABI_NETBSD;
 #elif defined MCC_TARGET_ARM && defined MCC_ARM_EABI
 	ehdr.e_flags = EF_ARM_EABI_VER5;
@@ -2534,7 +2534,7 @@ static int mcc_write_elf_file(MCCState *s1, const char *filename, int phnum,
 	return ret;
 }
 
-#ifndef ELF_OBJ_ONLY
+#if MCC_TARGET_UNIX
 static void reorder_sections(MCCState *s1, int *sec_order) {
 	int i, nnew, k, *backmap;
 	Section **snew, *s;
@@ -2575,7 +2575,7 @@ static void create_arm_attribute_section(MCCState *s1) {
 			'a', 'e', 'a', 'b', 'i', 0x00,
 			0x01, 0x22, 0x00, 0x00, 0x00,
 			0x05, 0x36, 0x00,
-#if CONFIG_MCC_CPUVER >= 7
+#if MCC_CONFIG_CPUVER >= 7
 			0x06, 0x0a,
 #else
 			0x06, 0x06,
@@ -2690,7 +2690,7 @@ static void create_riscv_attribute_section(MCCState *s1) {
 }
 #endif
 
-#if TARGETOS_OpenBSD || TARGETOS_NetBSD || TARGETOS_FreeBSD
+#if MCC_TARGETOS_OpenBSD || MCC_TARGETOS_NetBSD || MCC_TARGETOS_FreeBSD
 
 static void fill_bsd_note(Section *s, int type,
 													const char *value, uint32_t data) {
@@ -2722,22 +2722,22 @@ static Section *create_bsd_note_section(MCCState *s1,
 	Section *s;
 	unsigned int major = 0, minor = 0, patch = 0;
 
-#ifdef CONFIG_OS_RELEASE
-	sscanf(CONFIG_OS_RELEASE, "%u.%u.%u", &major, &minor, &patch);
+#ifdef MCC_CONFIG_OS_RELEASE
+	sscanf(MCC_CONFIG_OS_RELEASE, "%u.%u.%u", &major, &minor, &patch);
 #endif
-#if TARGETOS_FreeBSD
+#if MCC_TARGETOS_FreeBSD
 	if (major < 14)
 		return NULL;
 #endif
 	s = find_section(s1, name);
 	s->sh_type = SHT_NOTE;
-#if TARGETOS_OpenBSD
+#if MCC_TARGETOS_OpenBSD
 	fill_bsd_note(s, ELF_NOTE_OS_GNU, value, 0);
-#elif TARGETOS_NetBSD
+#elif MCC_TARGETOS_NetBSD
 	fill_bsd_note(s, 1, value,
 								major * 100000000u + (minor % 100u) * 1000000u +
 										(patch % 10000u) * 100u);
-#elif TARGETOS_FreeBSD
+#elif MCC_TARGETOS_FreeBSD
 	fill_bsd_note(s, 1, value,
 								major * 100000u + (minor % 100u) * 1000u);
 	fill_bsd_note(s, 4, value, 0);
@@ -2765,19 +2765,19 @@ static int elf_output_file(MCCState *s1, const char *filename) {
 	create_arm_attribute_section(s1);
 #endif
 
-#if TARGETOS_OpenBSD
+#if MCC_TARGETOS_OpenBSD
 	dyninf.note = create_bsd_note_section(s1, ".note.openbsd.ident", "OpenBSD");
 #endif
 
-#if TARGETOS_NetBSD
+#if MCC_TARGETOS_NetBSD
 	dyninf.note = create_bsd_note_section(s1, ".note.netbsd.ident", "NetBSD");
 #endif
 
-#if TARGETOS_FreeBSD
+#if MCC_TARGETOS_FreeBSD
 	dyninf.note = create_bsd_note_section(s1, ".note.tag", "FreeBSD");
 #endif
 
-#if TARGETOS_FreeBSD || TARGETOS_NetBSD
+#if MCC_TARGETOS_FreeBSD || MCC_TARGETOS_NetBSD
 	dyninf.roinf = NULL;
 #endif
 
@@ -3070,7 +3070,7 @@ ST_FUNC int mcc_load_object_file(MCCState *s1,
 		if (0 == strncmp(sh_name, ".debug_", 7) || 0 == strncmp(sh_name, ".stab", 5)) {
 			if (!s1->do_debug || seencompressed)
 				continue;
-#if !(TARGETOS_OpenBSD || TARGETOS_FreeBSD || TARGETOS_NetBSD)
+#if !(MCC_TARGETOS_OpenBSD || MCC_TARGETOS_FreeBSD || MCC_TARGETOS_NetBSD)
 		} else if (0 == strncmp(sh_name, ".eh_frame", 9)) {
 			if (NULL == eh_frame_section)
 				continue;
@@ -3084,7 +3084,7 @@ ST_FUNC int mcc_load_object_file(MCCState *s1,
 #ifdef MCC_ARM_EABI
 #endif
 
-#if TARGETOS_OpenBSD || TARGETOS_FreeBSD || TARGETOS_NetBSD
+#if MCC_TARGETOS_OpenBSD || MCC_TARGETOS_FreeBSD || MCC_TARGETOS_NetBSD
 							 && sh->sh_type != SHT_X86_64_UNWIND
 #endif
 		)
@@ -3366,7 +3366,7 @@ ST_FUNC int mcc_load_archive(MCCState *s1, int fd, int alacarte) {
 	}
 }
 
-#ifndef ELF_OBJ_ONLY
+#if MCC_TARGET_UNIX
 static void set_ver_to_ver(MCCState *s1, int *n, int **lv, int i, char *lib, char *version) {
 	while (i >= *n) {
 		*lv = mcc_realloc(*lv, (*n + 1) * sizeof(**lv));
@@ -3713,7 +3713,7 @@ redo:
 static int ld_add_file(MCCState *s1, const char filename[]) {
 	if (filename[0] == '-' && filename[1] == 'l')
 		return mcc_add_library(s1, filename + 2);
-	if ((s1->sysroot && s1->sysroot[0]) || CONFIG_SYSROOT[0] != '\0' || !HOST_IS_ABSPATH(filename)) {
+	if ((s1->sysroot && s1->sysroot[0]) || MCC_CONFIG_SYSROOT[0] != '\0' || !HOST_IS_ABSPATH(filename)) {
 		int ret = mcc_add_dll(s1, mcc_basename(filename), 0);
 		if (ret != FILE_NOT_FOUND)
 			return ret;

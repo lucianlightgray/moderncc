@@ -1,9 +1,9 @@
-#ifndef SINGLE_SOURCE
-#define SINGLE_SOURCE 1
+#ifndef MCC_AMALGAMATED
+#define MCC_AMALGAMATED 1
 #endif
 
 #include "mcc.h"
-#if SINGLE_SOURCE
+#if MCC_AMALGAMATED
 #include "libmcc.c"
 #endif
 #include "mcctools.c"
@@ -49,10 +49,10 @@ static const char help[] =
 #ifdef MCC_TARGET_PE
 		"  -g.pdb              Generate a .pdb debug database\n"
 #endif
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 		"  -b                  Enable the built-in memory and bounds checker (implies -g)\n"
 #endif
-#ifdef CONFIG_MCC_BACKTRACE
+#if MCC_CONFIG_BACKTRACE
 		"  -bt[<n>]            Link with backtrace support (show up to <n> callers)\n"
 #endif
 		"Other options:\n"
@@ -196,11 +196,11 @@ static const char version[] =
 		" Windows"
 #elif defined(MCC_TARGET_MACHO)
 		" Darwin"
-#elif TARGETOS_FreeBSD || TARGETOS_FreeBSD_kernel
+#elif MCC_TARGETOS_FreeBSD || MCC_TARGETOS_FreeBSD_kernel
 		" FreeBSD"
-#elif TARGETOS_OpenBSD
+#elif MCC_TARGETOS_OpenBSD
 		" OpenBSD"
-#elif TARGETOS_NetBSD
+#elif MCC_TARGETOS_NetBSD
 		" NetBSD"
 #else
 		" Linux"
@@ -217,7 +217,7 @@ static void print_search_dirs(MCCState *s) {
 	printf("install: %s\n", s->mcc_lib_path);
 	print_dirs("include", s->sysinclude_paths, s->nb_sysinclude_paths);
 	print_dirs("libraries", s->library_paths, s->nb_library_paths);
-	printf("mccrt:\n  %s/%s\n", s->library_paths[0], CONFIG_MCC_CROSSPREFIX MCC_MCCRT);
+	printf("mccrt:\n  %s/%s\n", s->library_paths[0], MCC_CONFIG_CROSSPREFIX MCC_MCCRT);
 #ifdef MCC_TARGET_UNIX
 	print_dirs("crt", s->crt_paths, s->nb_crt_paths);
 	printf("elfinterp:\n  %s\n", s->elfint);
@@ -388,7 +388,7 @@ redo:
 		;
 	} else if (0 == ret) {
 		if (s->output_type == MCC_OUTPUT_MEMORY) {
-#ifdef MCC_IS_NATIVE
+#ifdef MCC_TARGET_IS_HOST
 			ret = mcc_run(s, argc, argv);
 #endif
 		} else if (s->syntax_only) {

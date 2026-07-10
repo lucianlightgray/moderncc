@@ -1,48 +1,48 @@
 #ifndef MCC_I386_GEN_H
 #define MCC_I386_GEN_H
 
-#define NB_REGS 5
-#define NB_ASM_REGS 8
-#ifndef MCC_DISABLE_ASM
-#define CONFIG_MCC_ASM
+#define MCC_NB_REGS 5
+#define MCC_NB_ASM_REGS 8
+#ifndef MCC_CONFIG_ASM
+#define MCC_CONFIG_ASM 1
 #endif
 
-#define RC_INT 0x0001
-#define RC_FLOAT 0x0002
-#define RC_EAX 0x0004
-#define RC_EDX 0x0008
-#define RC_ECX 0x0010
-#define RC_EBX 0x0020
-#define RC_ST0 0x0040
+#define MCC_RC_INT 0x0001
+#define MCC_RC_FLOAT 0x0002
+#define MCC_RC_EAX 0x0004
+#define MCC_RC_EDX 0x0008
+#define MCC_RC_ECX 0x0010
+#define MCC_RC_EBX 0x0020
+#define MCC_RC_ST0 0x0040
 
-#define RC_IRET RC_EAX
-#define RC_IRE2 RC_EDX
-#define RC_FRET RC_ST0
+#define MCC_RC_IRET MCC_RC_EAX
+#define MCC_RC_IRE2 MCC_RC_EDX
+#define MCC_RC_FRET MCC_RC_ST0
 
 enum {
-	TREG_EAX = 0,
-	TREG_ECX,
-	TREG_EDX,
-	TREG_EBX,
-	TREG_ST0,
-	TREG_ESP = 4,
-	TREG_MEM = 0x20
+	MCC_TREG_EAX = 0,
+	MCC_TREG_ECX,
+	MCC_TREG_EDX,
+	MCC_TREG_EBX,
+	MCC_TREG_ST0,
+	MCC_TREG_ESP = 4,
+	MCC_TREG_MEM = 0x20
 };
 
 #define REG_VALUE(reg) ((reg) & 7)
 
-#define REG_IRET TREG_EAX
-#define REG_IRE2 TREG_EDX
-#define REG_FRET TREG_ST0
+#define REG_IRET MCC_TREG_EAX
+#define REG_IRE2 MCC_TREG_EDX
+#define REG_FRET MCC_TREG_ST0
 
 #define INVERT_FUNC_PARAMS
 
-#define PTR_SIZE 4
+#define MCC_PTR_SIZE 4
 
-#define LDOUBLE_SIZE 12
-#define LDOUBLE_ALIGN 4
-#define MAX_ALIGN 8
+#define MCC_LDOUBLE_SIZE 12
+#define MCC_LDOUBLE_ALIGN 4
+#define MCC_MAX_ALIGN 8
 
-#define PROMOTE_RET
+#define MCC_RET_PROMOTES_INT
 
 #endif

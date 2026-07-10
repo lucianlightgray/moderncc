@@ -389,7 +389,7 @@ static int cmd_cross(const char *name, const char *out) {
 	v.n = 0;
 	arg(&v, CC);
 	arg(&v, "-O2");
-	arg(&v, "-DSINGLE_SOURCE=1");
+	arg(&v, "-DMCC_AMALGAMATED=1");
 	{
 		static char cdefs[512];
 		snprintf(cdefs, sizeof cdefs, "%s", t->cdefs);
@@ -408,24 +408,24 @@ static int cmd_cross(const char *name, const char *out) {
 		snprintf(d[k], sizeof d[0], "-DMCC_VERSION=20260706135200");
 		arg(&v, d[k++]);
 
-		snprintf(d[k], sizeof d[0], "-DCONFIG_MCC_PREDEFS=1");
+		snprintf(d[k], sizeof d[0], "-DMCC_CONFIG_PREDEFS=1");
 		arg(&v, d[k++]);
-		snprintf(d[k], sizeof d[0], "-DCONFIG_MCC_CROSSPREFIX=\"%s-\"", name);
+		snprintf(d[k], sizeof d[0], "-DMCC_CONFIG_CROSSPREFIX=\"%s-\"", name);
 		arg(&v, d[k++]);
 		if (win) {
-			snprintf(d[k], sizeof d[0], "-DCONFIG_MCCDIR=\"%s/win32\"", out);
+			snprintf(d[k], sizeof d[0], "-DMCC_CONFIG_MCCDIR=\"%s/win32\"", out);
 			arg(&v, d[k++]);
 		}
 	}
 	if (*t->triplet) {
 		static char p[4][256];
-		snprintf(p[0], sizeof p[0], "-DCONFIG_SYSROOT=\"/usr/%s\"", t->triplet);
+		snprintf(p[0], sizeof p[0], "-DMCC_CONFIG_SYSROOT=\"/usr/%s\"", t->triplet);
 		arg(&v, p[0]);
-		snprintf(p[1], sizeof p[1], "-DCONFIG_MCC_CRTPREFIX=\"{R}/lib\"");
+		snprintf(p[1], sizeof p[1], "-DMCC_CONFIG_CRTPREFIX=\"{R}/lib\"");
 		arg(&v, p[1]);
-		snprintf(p[2], sizeof p[2], "-DCONFIG_MCC_LIBPATHS=\"{R}/lib:{B}\"");
+		snprintf(p[2], sizeof p[2], "-DMCC_CONFIG_LIBPATHS=\"{R}/lib:{B}\"");
 		arg(&v, p[2]);
-		snprintf(p[3], sizeof p[3], "-DCONFIG_MCC_SYSINCLUDEPATHS=\"{B}/include:{R}/include\"");
+		snprintf(p[3], sizeof p[3], "-DMCC_CONFIG_SYSINCLUDEPATHS=\"{B}/include:{R}/include\"");
 		arg(&v, p[3]);
 	}
 	arg(&v, Iout);
@@ -516,7 +516,7 @@ static int cmd_emit_defines(int argc, char **argv) {
 	if (!strcmp(cpu, "arm")) {
 		const char *cv = fopt(argc, argv, "--cpuver", "");
 		if (*cv)
-			EMIT("CONFIG_MCC_CPUVER=%s", cv);
+			EMIT("MCC_CONFIG_CPUVER=%s", cv);
 		if (truthy(fopt(argc, argv, "--arm-eabi", "")))
 			EMIT("MCC_ARM_EABI=1");
 		if (truthy(fopt(argc, argv, "--arm-vfp", "")))
@@ -531,51 +531,51 @@ static int cmd_emit_defines(int argc, char **argv) {
 	else if (!strcmp(os, "Darwin"))
 		EMIT("MCC_TARGET_MACHO=1");
 	else if (!strcmp(os, "Android"))
-		EMIT("TARGETOS_ANDROID=1");
+		EMIT("MCC_TARGETOS_ANDROID=1");
 	else if (!strcmp(os, "FreeBSD") || !strcmp(os, "OpenBSD") || !strcmp(os, "NetBSD") || !strcmp(os, "DragonFly"))
 		EMIT("TARGETOS_%s=1", os);
 	if (!strcmp(libc, "musl"))
-		EMIT("CONFIG_MCC_MUSL=1");
+		EMIT("MCC_CONFIG_MUSL=1");
 	else if (!strcmp(libc, "uClibc"))
-		EMIT("CONFIG_MCC_UCLIBC=1");
+		EMIT("MCC_CONFIG_UCLIBC=1");
 	if (truthy(fopt(argc, argv, "--run-mmap-exec", "")))
-		EMIT("CONFIG_RUN_MMAP_EXEC=1");
+		EMIT("MCC_CONFIG_RUN_DUALMAP=1");
 	if (truthy(fopt(argc, argv, "--pie", "")))
-		EMIT("CONFIG_MCC_PIE=1");
+		EMIT("MCC_CONFIG_PIE=1");
 	if (truthy(fopt(argc, argv, "--pic", "")))
-		EMIT("CONFIG_MCC_PIC=1");
+		EMIT("MCC_CONFIG_PIC=1");
 	if (truthy(fopt(argc, argv, "--new-dtags", "")))
-		EMIT("CONFIG_NEW_DTAGS=1");
+		EMIT("MCC_CONFIG_NEW_DTAGS=1");
 	if (truthy(fopt(argc, argv, "--codesign", "")))
-		EMIT("CONFIG_CODESIGN=1");
+		EMIT("MCC_CONFIG_CODESIGN=1");
 	if (truthy(fopt(argc, argv, "--cst", "")))
-		EMIT("CONFIG_MCC_CST=1");
+		EMIT("MCC_CONFIG_CST=1");
 	if (truthy(fopt(argc, argv, "--ast", "")))
-		EMIT("CONFIG_AST=1");
+		EMIT("MCC_CONFIG_AST=1");
 	if (!truthy(fopt(argc, argv, "--bcheck", "1")))
-		EMIT("CONFIG_MCC_BCHECK=0");
+		EMIT("MCC_CONFIG_BCHECK=0");
 	if (!truthy(fopt(argc, argv, "--asm", "1")))
-		EMIT("CONFIG_MCC_ASM=0");
+		EMIT("MCC_CONFIG_ASM=0");
 	if (!truthy(fopt(argc, argv, "--backtrace", "1")))
-		EMIT("CONFIG_MCC_BACKTRACE=0");
+		EMIT("MCC_CONFIG_BACKTRACE=0");
 	if (!strcmp(fopt(argc, argv, "--new-macho", ""), "no"))
-		EMIT("CONFIG_NEW_MACHO=0");
+		EMIT("MCC_CONFIG_MACHO_CHAINED_FIXUPS=0");
 	{
 		const char *dw = fopt(argc, argv, "--dwarf", "");
 		if (*dw)
-			EMIT("CONFIG_DWARF_VERSION=%s", dw);
+			EMIT("MCC_CONFIG_DWARF_VERSION=%s", dw);
 	}
 	{
 		const char *sl = fopt(argc, argv, "--semlock", "");
 		if (*sl)
-			EMIT("CONFIG_MCC_SEMLOCK=%s", sl);
+			EMIT("MCC_CONFIG_SEMLOCK=%s", sl);
 	}
 	{
 		struct
 		{
 			const char *flag, *name;
 		} sd[] = {
-				{"--sysincludepaths", "CONFIG_MCC_SYSINCLUDEPATHS"}, {"--libpaths", "CONFIG_MCC_LIBPATHS"}, {"--crtprefix", "CONFIG_MCC_CRTPREFIX"}, {"--elfinterp", "CONFIG_MCC_ELFINTERP"}, {"--switches", "CONFIG_MCC_SWITCHES"}, {"--triplet", "CONFIG_TRIPLET"}, {"--os-release", "CONFIG_OS_RELEASE"}};
+				{"--sysincludepaths", "MCC_CONFIG_SYSINCLUDEPATHS"}, {"--libpaths", "MCC_CONFIG_LIBPATHS"}, {"--crtprefix", "MCC_CONFIG_CRTPREFIX"}, {"--elfinterp", "MCC_CONFIG_ELFINTERP"}, {"--switches", "MCC_CONFIG_SWITCHES"}, {"--triplet", "MCC_CONFIG_TRIPLET"}, {"--os-release", "MCC_CONFIG_OS_RELEASE"}};
 		unsigned k;
 		for (k = 0; k < sizeof sd / sizeof sd[0]; k++) {
 			const char *v = fopt(argc, argv, sd[k].flag, "");
@@ -586,12 +586,12 @@ static int cmd_emit_defines(int argc, char **argv) {
 	{
 		const char *sr = fopt(argc, argv, "--sysroot", "");
 		if (*sr)
-			EMIT("CONFIG_SYSROOT=\"%s\"", sr);
+			EMIT("MCC_CONFIG_SYSROOT=\"%s\"", sr);
 	}
 	if (strcmp(os, "WIN32")) {
 		const char *md = fopt(argc, argv, "--mccdir", "");
 		if (*md)
-			EMIT("CONFIG_MCCDIR=\"%s\"", md);
+			EMIT("MCC_CONFIG_MCCDIR=\"%s\"", md);
 	}
 #undef EMIT
 
@@ -778,21 +778,21 @@ int main(int argc, char **argv) {
 
 	printf("[1/3] cc mcc.c -> mcc\n");
 	snprintf(defs[0], sizeof defs[0], "-D%s=1", tdef);
-	snprintf(defs[1], sizeof defs[1], "-DCONFIG_MCC_PREDEFS=0");
-	snprintf(defs[2], sizeof defs[2], "-DCONFIG_MCC_BACKTRACE=1");
-	snprintf(defs[3], sizeof defs[3], "-DCONFIG_MCC_BCHECK=1");
+	snprintf(defs[1], sizeof defs[1], "-DMCC_CONFIG_PREDEFS=0");
+	snprintf(defs[2], sizeof defs[2], "-DMCC_CONFIG_BACKTRACE=1");
+	snprintf(defs[3], sizeof defs[3], "-DMCC_CONFIG_BCHECK=1");
 	snprintf(defs[4], sizeof defs[4], "-DMCC_VERSION=20260706135200");
-	snprintf(defs[5], sizeof defs[5], "-DCONFIG_MCCDIR=\"%s\"", OUTDIR);
+	snprintf(defs[5], sizeof defs[5], "-DMCC_CONFIG_MCCDIR=\"%s\"", OUTDIR);
 
-	snprintf(defs[6], sizeof defs[6], "-DCONFIG_MCC_LIBPATHS=\"{B}:/usr/lib64:/usr/lib:/lib\"");
-	snprintf(defs[7], sizeof defs[7], "-DCONFIG_MCC_CRTPREFIX=\"/usr/lib64:/usr/lib:/lib\"");
-	snprintf(defs[8], sizeof defs[8], "-DCONFIG_OS_RELEASE=\"%s\"", osrel);
+	snprintf(defs[6], sizeof defs[6], "-DMCC_CONFIG_LIBPATHS=\"{B}:/usr/lib64:/usr/lib:/lib\"");
+	snprintf(defs[7], sizeof defs[7], "-DMCC_CONFIG_CRTPREFIX=\"/usr/lib64:/usr/lib:/lib\"");
+	snprintf(defs[8], sizeof defs[8], "-DMCC_CONFIG_OS_RELEASE=\"%s\"", osrel);
 	ts_path(mccpath, sizeof mccpath, OUTDIR, "mcc");
 
 	v.n = 0;
 	arg(&v, CC);
 	arg(&v, "-O2");
-	arg(&v, "-DSINGLE_SOURCE=1");
+	arg(&v, "-DMCC_AMALGAMATED=1");
 	for (i = 0; i < 9; ++i)
 		arg(&v, defs[i]);
 	args(&v, ARCH_INCS);

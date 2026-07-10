@@ -77,7 +77,7 @@ int ast_validate(const AstArena *a, char *msg, size_t msgcap);
 }
 #endif
 
-#if defined(CONFIG_AST) && CONFIG_AST && defined(MCC_INTERNAL)
+#if MCC_CONFIG_AST && defined(MCC_INTERNAL)
 
 /* Compiler integration (mcc translation unit only): the capture hooks
    mccgen.c drives while parsing a function body, and the replay,

@@ -57,7 +57,7 @@ ST_DATA const char *funcname;
 ST_DATA CType int_type, func_old_type, char_type, char_pointer_type;
 #define initstr (mcc_state->initstr)
 
-#if PTR_SIZE == 4
+#if MCC_PTR_SIZE == 4
 #define VT_SIZE_T (VT_INT | VT_UNSIGNED)
 #define VT_PTRDIFF_T VT_INT
 #elif LONG_SIZE == 4
@@ -291,7 +291,7 @@ ST_FUNC int oad(int c, int s) {
 }
 #endif
 
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 
 ST_FUNC MAYBE_UNUSED int gen_bounds_epilog_head(addr_t func_bound_offset,
 																								Sym **psym_data, int *poffset_modified) {
@@ -306,7 +306,7 @@ ST_FUNC MAYBE_UNUSED int gen_bounds_epilog_head(addr_t func_bound_offset,
 	*bounds_ptr = 0;
 
 	*psym_data = get_sym_ref(&char_pointer_type, lbounds_section,
-													 func_bound_offset, PTR_SIZE);
+													 func_bound_offset, MCC_PTR_SIZE);
 	return 1;
 }
 #endif
@@ -373,7 +373,7 @@ static int btype_size(int bt) {
 				 : bt == VT_LLONG
 						 ? 8
 				 : bt == VT_PTR
-						 ? PTR_SIZE
+						 ? MCC_PTR_SIZE
 						 : 0;
 }
 
@@ -382,7 +382,7 @@ static int R_RET(int t) {
 		return REG_IRET;
 #ifdef MCC_TARGET_X86_64
 	if ((t & VT_BTYPE) == VT_LDOUBLE)
-		return TREG_ST0;
+		return MCC_TREG_ST0;
 #elif defined MCC_TARGET_RISCV64
 	if ((t & VT_BTYPE) == VT_LDOUBLE)
 		return REG_IRET;
@@ -393,7 +393,7 @@ static int R_RET(int t) {
 static int R2_RET(int t) {
 	t &= VT_BTYPE;
 	(void)t;
-#if PTR_SIZE == 4
+#if MCC_PTR_SIZE == 4
 	if (t == VT_LLONG)
 		return REG_IRE2;
 #elif defined MCC_TARGET_X86_64
@@ -463,39 +463,39 @@ static int fold_bit_builtin(int op, int W, int64_t s) {
 	return 0;
 }
 
-static int RC_RET(int t) {
-	return reg_classes[R_RET(t)] & ~(RC_FLOAT | RC_INT);
+static int MCC_RC_RET(int t) {
+	return reg_classes[R_RET(t)] & ~(MCC_RC_FLOAT | MCC_RC_INT);
 }
 
-static int RC_TYPE(int t) {
+static int MCC_RC_TYPE(int t) {
 	if (!is_float(t))
-		return RC_INT;
+		return MCC_RC_INT;
 #ifdef MCC_TARGET_X86_64
 	if ((t & VT_BTYPE) == VT_LDOUBLE)
-		return RC_ST0;
+		return MCC_RC_ST0;
 	if ((t & VT_BTYPE) == VT_QFLOAT)
-		return RC_FRET;
+		return MCC_RC_FRET;
 #elif defined MCC_TARGET_RISCV64
 	if ((t & VT_BTYPE) == VT_LDOUBLE)
-		return RC_INT;
+		return MCC_RC_INT;
 #endif
-	return RC_FLOAT;
+	return MCC_RC_FLOAT;
 }
 
 static int RC2_TYPE(int t, int rc) {
 	if (!USING_TWO_WORDS(t))
 		return 0;
-#ifdef RC_IRE2
-	if (rc == RC_IRET)
-		return RC_IRE2;
+#ifdef MCC_RC_IRE2
+	if (rc == MCC_RC_IRET)
+		return MCC_RC_IRE2;
 #endif
-#ifdef RC_FRE2
-	if (rc == RC_FRET)
-		return RC_FRE2;
+#ifdef MCC_RC_FRE2
+	if (rc == MCC_RC_FRET)
+		return MCC_RC_FRE2;
 #endif
-	if (rc & RC_FLOAT)
-		return RC_FLOAT;
-	return RC_INT;
+	if (rc & MCC_RC_FLOAT)
+		return MCC_RC_FLOAT;
+	return MCC_RC_INT;
 }
 
 ST_FUNC int ieee_finite(double d) {
@@ -569,7 +569,7 @@ ST_FUNC int mccgen_compile(MCCState *s1) {
 	debug_modes = (s1->do_debug ? 1 : 0) | s1->test_coverage << 1;
 	global_expr = 0;
 
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 	ast_configure(s1);
 #endif
 
@@ -581,7 +581,7 @@ ST_FUNC int mccgen_compile(MCCState *s1) {
 	parse_flags = PARSE_FLAG_PREPROCESS | PARSE_FLAG_TOK_NUM | PARSE_FLAG_TOK_STR;
 	next();
 	decl(VT_CONST);
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 	ast_reemit_forward_inlines();
 #endif
 	finalize_tentative_arrays();
@@ -743,7 +743,7 @@ ST_FUNC void put_extern_sym2(Sym *sym, int sh_num,
 				can_add_underscore = 0;
 			}
 			if (ref->f.func_call == FUNC_STDCALL && can_add_underscore) {
-				snprintf(buf1, sizeof(buf1), "_%s@%d", name, ref->f.func_args * PTR_SIZE);
+				snprintf(buf1, sizeof(buf1), "_%s@%d", name, ref->f.func_args * MCC_PTR_SIZE);
 				name = buf1;
 				other |= ST_PE_STDCALL;
 				can_add_underscore = 0;
@@ -805,7 +805,7 @@ ST_FUNC void greloca(Section *s, Sym *sym, unsigned long offset, int type,
 	put_elf_reloca(symtab_section, s, offset, type, c, addend);
 }
 
-#if PTR_SIZE == 4
+#if MCC_PTR_SIZE == 4
 ST_FUNC void greloc(Section *s, Sym *sym, unsigned long offset, int type) {
 	greloca(s, sym, offset, type, 0);
 }
@@ -830,7 +830,7 @@ static Sym *__sym_malloc(void) {
 
 static inline Sym *sym_malloc(void) {
 	Sym *sym;
-#ifndef SYM_DEBUG
+#ifndef MCC_SYM_DEBUG
 	sym = sym_free_first;
 	if (!sym)
 		sym = __sym_malloc();
@@ -843,8 +843,8 @@ static inline Sym *sym_malloc(void) {
 }
 
 ST_INLN void sym_free(Sym *sym) {
-#ifndef SYM_DEBUG
-#if defined(CONFIG_AST) && CONFIG_AST
+#ifndef MCC_SYM_DEBUG
+#if MCC_CONFIG_AST
 	if (ast_sym_defer(sym))
 		return;
 #endif
@@ -1011,15 +1011,15 @@ ST_FUNC void label_pop(Sym **ptop, Sym *slast, int keep) {
 
 static void vcheck_cmp(void) {
 	if (vtop->r == VT_CMP && 0 == (nocode_wanted & ~CODE_OFF_BIT)) {
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		int sup = ast_active && !ast_replaying;
 		if (sup)
 			ast_in_op++;
-		gv(RC_INT);
+		gv(MCC_RC_INT);
 		if (sup)
 			ast_in_op--;
 #else
-		gv(RC_INT);
+		gv(MCC_RC_INT);
 #endif
 	}
 }
@@ -1034,14 +1034,14 @@ static void vsetc(CType *type, int r, CValue *vc) {
 	vtop->r2 = VT_CONST;
 	vtop->c = *vc;
 	vtop->sym = NULL;
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 	ast_hook_vpush();
 #endif
 }
 
 ST_FUNC void vswap(void) {
 	SValue tmp;
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 	ast_hook_vswap();
 #endif
 
@@ -1053,12 +1053,12 @@ ST_FUNC void vswap(void) {
 
 ST_FUNC void vpop(void) {
 	int v;
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 	ast_hook_vpop();
 #endif
 	v = vtop->r & VT_VALMASK;
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
-	if (v == TREG_ST0) {
+	if (v == MCC_TREG_ST0) {
 		o(0xd8dd);
 	} else
 #endif
@@ -1102,7 +1102,7 @@ ST_FUNC void vpushv(SValue *v) {
 		mcc_error("memory full (vstack)");
 	vtop++;
 	*vtop = *v;
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 	ast_hook_vpush();
 #endif
 }
@@ -1476,12 +1476,12 @@ ST_FUNC void save_reg_upstack(int r, int n) {
 				sv.sym = NULL;
 				store(p->r & VT_VALMASK, &sv);
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
-				if (r == TREG_ST0) {
+				if (r == MCC_TREG_ST0) {
 					o(0xd8dd);
 				}
 #endif
 				if (p->r2 < VT_CONST && USING_TWO_WORDS(bt)) {
-					sv.c.i += PTR_SIZE;
+					sv.c.i += MCC_PTR_SIZE;
 					store(p->r2, &sv);
 				}
 			}
@@ -1503,9 +1503,9 @@ ST_FUNC int get_reg_ex(int rc, int rc2) {
 	int r;
 	SValue *p;
 
-	for (r = 0; r < NB_REGS; r++) {
+	for (r = 0; r < MCC_NB_REGS; r++) {
 		if (reg_classes[r] & rc2) {
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 			if (ast_pinned_regs & (1u << r))
 				continue;
 #endif
@@ -1528,9 +1528,9 @@ ST_FUNC int get_reg(int rc) {
 	int r;
 	SValue *p;
 
-	for (r = 0; r < NB_REGS; r++) {
+	for (r = 0; r < MCC_NB_REGS; r++) {
 		if (reg_classes[r] & rc) {
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 			if (ast_pinned_regs & (1u << r))
 				continue;
 #endif
@@ -1548,14 +1548,14 @@ ST_FUNC int get_reg(int rc) {
 
 	for (p = vstack; p <= vtop; p++) {
 		r = p->r2;
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		if (r < VT_CONST && (ast_pinned_regs & (1u << r)))
 			r = VT_CONST;
 #endif
 		if (r < VT_CONST && (reg_classes[r] & rc))
 			goto save_found;
 		r = p->r & VT_VALMASK;
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		if (r < VT_CONST && (ast_pinned_regs & (1u << r)))
 			r = VT_CONST;
 #endif
@@ -1618,7 +1618,7 @@ static void move_reg(int r, int s, int t) {
 }
 
 ST_FUNC void gaddrof(void) {
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 	ast_hook_gaddrof();
 #endif
 	vtop->r &= ~VT_LVAL;
@@ -1626,7 +1626,7 @@ ST_FUNC void gaddrof(void) {
 		vtop->r = (vtop->r & ~VT_VALMASK) | VT_LOCAL | VT_LVAL;
 }
 
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 static void gen_bounded_ptr_add(void) {
 	int save = (vtop[-1].r & VT_VALMASK) == VT_LOCAL;
 	if (save) {
@@ -1727,7 +1727,7 @@ ST_FUNC void gbound_args(int nb_args) {
 		}
 		if (v == TOK_alloca)
 			func_bound_add_epilog = 1;
-#if TARGETOS_NetBSD
+#if MCC_TARGETOS_NetBSD
 		if (v == TOK_longjmp)
 			sv->sym->asm_label = TOK___bound_longjmp;
 #endif
@@ -1750,7 +1750,7 @@ static void add_local_bounds(Sym *s, Sym *e) {
 #endif
 
 static void mcc_debug_end_scope(Sym *b, int bounds) {
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 	if (mcc_state->do_bounds_check && bounds)
 		add_local_bounds(local_stack, b);
 #endif
@@ -1894,7 +1894,7 @@ ST_FUNC int gv(int rc) {
 			size = type_size(&vtop->type, &align);
 			if (NODATA_WANTED)
 				size = 0, align = 1;
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 			int fc = ast_fconst_reuse();
 			if (fc) {
 				vpop();
@@ -1904,7 +1904,7 @@ ST_FUNC int gv(int rc) {
 			{
 				offset = section_add(p.sec, size, align);
 				vpush_ref(&ltype, p.sec, offset, size);
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 				ast_fconst_record(vtop->sym->c);
 #endif
 				vswap();
@@ -1912,7 +1912,7 @@ ST_FUNC int gv(int rc) {
 				vtop->r |= VT_LVAL;
 			}
 		}
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 		if (vtop->r & VT_MUSTBOUND)
 			gbound();
 #endif
@@ -1922,8 +1922,8 @@ ST_FUNC int gv(int rc) {
 			return vtop->r;
 
 #ifdef MCC_TARGET_RISCV64
-		if (bt == VT_LDOUBLE && rc == RC_FLOAT)
-			rc = RC_INT;
+		if (bt == VT_LDOUBLE && rc == MCC_RC_FLOAT)
+			rc = MCC_RC_INT;
 #endif
 		rc2 = RC2_TYPE(bt, rc);
 
@@ -1955,7 +1955,7 @@ ST_FUNC int gv(int rc) {
 					load(r, vtop);
 					vdup();
 					vtop[-1].r = r;
-					incr_offset(PTR_SIZE);
+					incr_offset(MCC_PTR_SIZE);
 				} else {
 					if (!r_ok)
 						load(r, vtop);
@@ -2004,7 +2004,7 @@ ST_FUNC void gv2(int rc1, int rc2) {
 	}
 }
 
-#if PTR_SIZE == 4
+#if MCC_PTR_SIZE == 4
 ST_FUNC void lexpand(void) {
 	int u, v;
 	u = vtop->type.t & (VT_DEFSIGN | VT_UNSIGNED);
@@ -2016,7 +2016,7 @@ ST_FUNC void lexpand(void) {
 		vdup();
 		vtop[0].c.i += 4;
 	} else {
-		gv(RC_INT);
+		gv(MCC_RC_INT);
 		vdup();
 		vtop[0].r = vtop[-1].r2;
 		vtop[0].r2 = vtop[-1].r2 = VT_CONST;
@@ -2025,9 +2025,9 @@ ST_FUNC void lexpand(void) {
 }
 #endif
 
-#if PTR_SIZE == 4
+#if MCC_PTR_SIZE == 4
 static void lbuild(int t) {
-	gv2(RC_INT, RC_INT);
+	gv2(MCC_RC_INT, MCC_RC_INT);
 	vtop[-1].r2 = vtop[0].r;
 	vtop[-1].type.t = t;
 	vpop();
@@ -2038,10 +2038,10 @@ static void gv_dup(void) {
 	int t, rc, r;
 
 	t = vtop->type.t;
-#if PTR_SIZE == 4
+#if MCC_PTR_SIZE == 4
 	if ((t & VT_BTYPE) == VT_LLONG) {
 		if (t & VT_BITFIELD) {
-			gv(RC_INT);
+			gv(MCC_RC_INT);
 			t = vtop->type.t;
 		}
 		lexpand();
@@ -2059,7 +2059,7 @@ static void gv_dup(void) {
 		return;
 	}
 #endif
-	rc = RC_TYPE(t);
+	rc = MCC_RC_TYPE(t);
 	gv(rc);
 	r = get_reg(rc);
 	vdup();
@@ -2067,7 +2067,7 @@ static void gv_dup(void) {
 	vtop->r = r;
 }
 
-#if PTR_SIZE == 4
+#if MCC_PTR_SIZE == 4
 static void gen_opl(int op) {
 	int t, a, b, op1, c, i;
 	int func;
@@ -2090,8 +2090,8 @@ static void gen_opl(int op) {
 		func = TOK___umoddi3;
 	gen_mod_func:
 #ifdef MCC_ARM_EABI
-		reg_iret = TREG_R2;
-		reg_lret = TREG_R3;
+		reg_iret = MCC_TREG_R2;
+		reg_lret = MCC_TREG_R3;
 #endif
 	gen_func:
 		vpush_helper_func(func);
@@ -2266,7 +2266,7 @@ static void gen_opl(int op) {
 #endif
 
 static uint64_t value64(uint64_t l1, int t) {
-	if ((t & VT_BTYPE) == VT_LLONG || (PTR_SIZE == 8 && (t & VT_BTYPE) == VT_PTR))
+	if ((t & VT_BTYPE) == VT_LLONG || (MCC_PTR_SIZE == 8 && (t & VT_BTYPE) == VT_PTR))
 		return l1;
 	else if (t & VT_UNSIGNED)
 		return (uint32_t)l1;
@@ -2500,7 +2500,7 @@ static void gen_opic(int op) {
 		} else {
 		general_case:
 			if (t1 == VT_LLONG || t2 == VT_LLONG ||
-					(PTR_SIZE == 8 && (t1 == VT_PTR || t2 == VT_PTR)))
+					(MCC_PTR_SIZE == 8 && (t1 == VT_PTR || t2 == VT_PTR)))
 				gen_opl(op);
 			else
 				gen_opi(op);
@@ -2527,7 +2527,7 @@ void gen_negf(int op) {
 #endif
 	if (nocode_wanted)
 		goto gv2;
-	save_reg(gv(RC_TYPE(bt)));
+	save_reg(gv(MCC_RC_TYPE(bt)));
 	vdup();
 	incr_bf_adr(size - 1);
 	vdup();
@@ -2536,7 +2536,7 @@ void gen_negf(int op) {
 	vstore();
 	vpop();
 gv2:
-	gv(RC_TYPE(bt));
+	gv(MCC_RC_TYPE(bt));
 }
 #endif
 
@@ -2801,7 +2801,7 @@ static inline int is_null_pointer(SValue *p) {
 	return ((p->type.t & VT_BTYPE) == VT_INT && (uint32_t)p->c.i == 0) ||
 				 ((p->type.t & VT_BTYPE) == VT_LLONG && p->c.i == 0) ||
 				 ((p->type.t & VT_BTYPE) == VT_PTR &&
-					(PTR_SIZE == 4 ? (uint32_t)p->c.i == 0 : p->c.i == 0) &&
+					(MCC_PTR_SIZE == 4 ? (uint32_t)p->c.i == 0 : p->c.i == 0) &&
 					((pointed_type(&p->type)->t & VT_BTYPE) == VT_VOID) &&
 					0 == (pointed_type(&p->type)->t & VT_QUALIFY));
 }
@@ -2986,7 +2986,7 @@ static int bf_operand_bits(int tt) {
 ST_FUNC void gen_op(int op) {
 	int t1, t2, bt1, bt2, t;
 	int bf_trunc = 0;
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 	ast_hook_genop(op);
 #endif
 	CType type1, combtype;
@@ -3007,7 +3007,7 @@ redo:
 
 	if (is_complex_type(&vtop[-1].type) || is_complex_type(&vtop[0].type)) {
 		gen_complex_op(op);
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_genop_end();
 #endif
 		return;
@@ -3060,7 +3060,7 @@ redo:
 				t = t1, t1 = t2, t2 = t;
 				bt2 = bt1;
 			}
-#if PTR_SIZE == 4
+#if MCC_PTR_SIZE == 4
 			if (bt2 == VT_LLONG)
 				gen_cast_s(VT_INT);
 #endif
@@ -3068,7 +3068,7 @@ redo:
 			vpush_type_size(pointed_type(&vtop[-1].type), &align);
 			vtop->type.t &= ~VT_UNSIGNED;
 			gen_op('*');
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 			if (mcc_state->do_bounds_check && !CONST_WANTED) {
 				if (op == '-') {
 					vpushi(0);
@@ -3150,8 +3150,8 @@ redo:
 		}
 	}
 	if (vtop->r & VT_LVAL)
-		gv(RC_TYPE(vtop->type.t));
-#if defined(CONFIG_AST) && CONFIG_AST
+		gv(MCC_RC_TYPE(vtop->type.t));
+#if MCC_CONFIG_AST
 	ast_hook_genop_end();
 #endif
 }
@@ -3164,7 +3164,7 @@ static void gen_cvt_itof1(int t) {
 			(VT_LLONG | VT_UNSIGNED)) {
 		if (t == VT_FLOAT)
 			vpush_helper_func(TOK___floatundisf);
-#if LDOUBLE_SIZE != 8
+#if MCC_LDOUBLE_SIZE != 8
 		else if (t == VT_LDOUBLE)
 			vpush_helper_func(TOK___floatundixf);
 #endif
@@ -3189,7 +3189,7 @@ static void gen_cvt_ftoi1(int t) {
 		st = vtop->type.t & VT_BTYPE;
 		if (st == VT_FLOAT)
 			vpush_helper_func(TOK___fixunssfdi);
-#if LDOUBLE_SIZE != 8
+#if MCC_LDOUBLE_SIZE != 8
 		else if (st == VT_LDOUBLE)
 			vpush_helper_func(TOK___fixunsxfdi);
 #endif
@@ -3220,7 +3220,7 @@ static void gen_cast_s(int t) {
 
 static void gen_cast(CType *type) {
 	int sbt, dbt, sf, df, c;
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 	ast_hook_convert(type);
 #endif
 	int dbt_bt, sbt_bt, ds, ss, bits, trunc;
@@ -3234,7 +3234,7 @@ static void gen_cast(CType *type) {
 	if (is_complex_type(type) || is_complex_type(&vtop->type)) {
 		if (is_complex_type(type) && is_complex_type(&vtop->type) && (type->ref->next->type.t & (VT_BTYPE | VT_LONG)) == (vtop->type.ref->next->type.t & (VT_BTYPE | VT_LONG)))
 			return;
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		int sup = ast_active && !ast_replaying;
 		if (sup)
 			ast_in_op++;
@@ -3248,7 +3248,7 @@ static void gen_cast(CType *type) {
 	}
 
 	if (vtop->type.t & VT_BITFIELD)
-		gv(RC_INT);
+		gv(MCC_RC_INT);
 
 	if (IS_ENUM(type->t) && type->ref->c < 0)
 		mcc_error("cast to incomplete type");
@@ -3307,14 +3307,14 @@ again:
 						vtop->c.i = (uint64_t)vtop->c.ld;
 					else
 						vtop->c.i = (int64_t)vtop->c.ld;
-				} else if (sbt_bt == VT_LLONG || (PTR_SIZE == 8 && sbt == VT_PTR))
+				} else if (sbt_bt == VT_LLONG || (MCC_PTR_SIZE == 8 && sbt == VT_PTR))
 					;
 				else if (sbt & VT_UNSIGNED)
 					vtop->c.i = (uint32_t)vtop->c.i;
 				else
 					vtop->c.i = ((uint32_t)vtop->c.i | -(vtop->c.i & 0x80000000));
 
-				if (dbt_bt == VT_LLONG || (PTR_SIZE == 8 && dbt == VT_PTR))
+				if (dbt_bt == VT_LLONG || (MCC_PTR_SIZE == 8 && dbt == VT_PTR))
 					;
 				else if (dbt == VT_BOOL)
 					vtop->c.i = (vtop->c.i != 0);
@@ -3338,7 +3338,7 @@ again:
 
 		if (nocode_wanted & DATA_ONLY_WANTED) {
 			if (df)
-				vtop->r = get_reg(RC_FLOAT);
+				vtop->r = get_reg(MCC_RC_FLOAT);
 			goto done;
 		}
 
@@ -3374,7 +3374,7 @@ again:
 		if (dbt_bt == VT_PTR || sbt_bt == VT_PTR) {
 			mcc_warning("cast between pointer and integer of different size");
 			if (sbt_bt == VT_PTR) {
-				vtop->type.t = (PTR_SIZE == 8 ? VT_LLONG : VT_INT);
+				vtop->type.t = (MCC_PTR_SIZE == 8 ? VT_LLONG : VT_INT);
 			}
 		}
 
@@ -3384,18 +3384,18 @@ again:
 			if (ds <= ss)
 				goto done;
 			if (ds <= 4 && !(dbt == (VT_SHORT | VT_UNSIGNED) && sbt == VT_BYTE)) {
-				gv(RC_INT);
+				gv(MCC_RC_INT);
 				goto done;
 			}
 		}
-		gv(RC_INT);
+		gv(MCC_RC_INT);
 
 		trunc = 0;
-#if PTR_SIZE == 4
+#if MCC_PTR_SIZE == 4
 		if (ds == 8) {
 			if (sbt & VT_UNSIGNED) {
 				vpushi(0);
-				gv(RC_INT);
+				gv(MCC_RC_INT);
 			} else {
 				gv_dup();
 				vpushi(31);
@@ -3408,7 +3408,7 @@ again:
 		}
 		ss = 4;
 
-#elif PTR_SIZE == 8
+#elif MCC_PTR_SIZE == 8
 		if (ds == 8) {
 			if (sbt & VT_UNSIGNED) {
 #if defined(MCC_TARGET_RISCV64)
@@ -3439,7 +3439,7 @@ again:
 		}
 #endif
 	{
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 			int sup = ast_active && !ast_replaying;
 			if (sup)
 				ast_in_op++;
@@ -3452,7 +3452,7 @@ again:
 			gen_op(TOK_SAR);
 			vpushi(trunc);
 			gen_op(TOK_SHR);
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 			if (sup)
 				ast_in_op--;
 #endif
@@ -3481,15 +3481,15 @@ ST_FUNC int type_size(CType *type, int *a) {
 				return s->c;
 			return ts * s->c;
 		} else {
-			*a = PTR_SIZE;
-			return PTR_SIZE;
+			*a = MCC_PTR_SIZE;
+			return MCC_PTR_SIZE;
 		}
 	} else if (IS_ENUM(type->t) && type->ref->c < 0) {
 		*a = 0;
 		return -1;
 	} else if (bt == VT_LDOUBLE) {
-		*a = LDOUBLE_ALIGN;
-		return LDOUBLE_SIZE;
+		*a = MCC_LDOUBLE_ALIGN;
+		return MCC_LDOUBLE_SIZE;
 	} else if (bt == VT_DOUBLE || bt == VT_LLONG) {
 #if (defined MCC_TARGET_I386 && !defined MCC_TARGET_PE) || (defined MCC_TARGET_ARM && !defined MCC_ARM_EABI)
 		*a = 4;
@@ -3659,7 +3659,7 @@ static void gen_assign_cast(CType *dt) {
 
 ST_FUNC void vstore(void) {
 	int sbt, dbt, ft, r, size, align, bit_size, bit_pos, delayed_cast;
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 	ast_hook_vstore();
 #endif
 
@@ -3687,14 +3687,14 @@ ST_FUNC void vstore(void) {
 	if (sbt == VT_STRUCT) {
 		size = type_size(&vtop->type, &align);
 		vpushv(vtop - 1);
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 		if (vtop->r & VT_MUSTBOUND)
 			gbound();
 #endif
 		vtop->type.t = VT_PTR;
 		gaddrof();
 		vswap();
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 		if (vtop->r & VT_MUSTBOUND)
 			gbound();
 #endif
@@ -3703,7 +3703,7 @@ ST_FUNC void vstore(void) {
 
 #ifdef MCC_TARGET_NATIVE_STRUCT_COPY
 		if (1
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 				&& !mcc_state->do_bounds_check
 #endif
 		) {
@@ -3776,14 +3776,14 @@ ST_FUNC void vstore(void) {
 			gen_cast(&vtop[-1].type);
 		}
 
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 		if (vtop[-1].r & VT_MUSTBOUND) {
 			vswap();
 			gbound();
 			vswap();
 		}
 #endif
-		gv(RC_TYPE(dbt));
+		gv(MCC_RC_TYPE(dbt));
 
 		if (delayed_cast) {
 			vtop->r |= BFVAL(VT_MUSTCAST, (sbt == VT_LLONG) + 1);
@@ -3792,7 +3792,7 @@ ST_FUNC void vstore(void) {
 
 		if ((vtop[-1].r & VT_VALMASK) == VT_LLOCAL) {
 			SValue sv;
-			r = get_reg(RC_INT);
+			r = get_reg(MCC_RC_INT);
 			sv.type.t = VT_PTRDIFF_T;
 			sv.r = VT_LOCAL | VT_LVAL;
 			sv.c.i = vtop[-1].c.i;
@@ -3807,7 +3807,7 @@ ST_FUNC void vstore(void) {
 			vtop[-1].type.t = load_type;
 			store(r, vtop - 1);
 			vswap();
-			incr_offset(PTR_SIZE);
+			incr_offset(MCC_PTR_SIZE);
 			vswap();
 			store(vtop->r2, vtop - 1);
 		} else {
@@ -3816,7 +3816,7 @@ ST_FUNC void vstore(void) {
 		vswap();
 		vtop--;
 	}
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 	ast_hook_vstore_end();
 #endif
 }
@@ -3837,7 +3837,7 @@ ST_FUNC void inc(int post, int c) {
 		mcc_error("'++'/'--' on this '_Atomic' object is not supported "
 							"(only integer/pointer atomics up to a machine word)");
 	}
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 	ast_hook_inc(post, c);
 #endif
 	vdup();
@@ -3851,7 +3851,7 @@ ST_FUNC void inc(int post, int c) {
 	vstore();
 	if (post)
 		vpop();
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 	ast_hook_inc_end();
 #endif
 }
@@ -3972,7 +3972,7 @@ redo:
 					mcc_error("alignment must be a positive power of two");
 				skip(')');
 			} else {
-				n = MAX_ALIGN;
+				n = MCC_MAX_ALIGN;
 			}
 			ad->a.aligned = exact_log2p1(n);
 			if (n != 1 << (ad->a.aligned - 1))
@@ -4708,7 +4708,7 @@ static void complex_part(int imag) {
 	CType base = fre->type;
 	int ofs = imag ? fre->next->c : fre->c;
 
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 	ast_hook_member_begin(0);
 #endif
 	test_lvalue();
@@ -4718,14 +4718,14 @@ static void complex_part(int imag) {
 	gen_op('+');
 	vtop->type = base;
 	vtop->r |= VT_LVAL;
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 	ast_hook_member_end(ofs, &base, 0, 0, 0);
 #endif
 }
 
 static void cplx_local(CType *cplx, SValue *out) {
 	int align, size = type_size(cplx, &align);
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 	loc = ast_alloc_loc(size, align);
 #else
 	loc = (loc - size) & -align;
@@ -4740,7 +4740,7 @@ static void cplx_local(CType *cplx, SValue *out) {
 static void cplx_push_part(SValue *sv, int imag) {
 	vpushv(sv);
 	complex_part(imag);
-	gv(RC_TYPE(vtop->type.t));
+	gv(MCC_RC_TYPE(vtop->type.t));
 }
 
 static void cplx_store_part(SValue *dst, int imag) {
@@ -5133,7 +5133,7 @@ static void gen_complex_cast(CType *dt) {
 					csz = 0;
 					cal = 1;
 				}
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 				int fc = ast_fconst_reuse();
 				if (fc) {
 					vtop--;
@@ -5149,7 +5149,7 @@ static void gen_complex_cast(CType *dt) {
 					vtop--;
 					vpush_ref(dt, pp.sec, offset, csz);
 					vtop->r |= VT_LVAL;
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 					ast_fconst_record(vtop->sym->c);
 #endif
 				}
@@ -5534,7 +5534,7 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td) {
 	int *vla_array_str = NULL;
 
 	if (tok == '(') {
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 		uint32_t cst_pm = CST_MARK();
 #endif
 		next();
@@ -5590,7 +5590,7 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td) {
 				if (n < TOK_UIDENT)
 					expect("identifier");
 				convert_parameter_type(&pt);
-				arg_size += (type_size(&pt, &align) + PTR_SIZE - 1) / PTR_SIZE;
+				arg_size += (type_size(&pt, &align) + MCC_PTR_SIZE - 1) / MCC_PTR_SIZE;
 				s = sym_push(n, &pt, VT_LOCAL | VT_LVAL, 0);
 				s->vla_inner_id = file->line_num;
 				s->a.inited = 1;
@@ -5615,7 +5615,7 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td) {
 			mcc_warning_c(warn_strict_prototypes)(
 					"function declaration isn't a prototype");
 		skip(')');
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 		CST_OPEN_AT(CST_ParamList, cst_pm);
 		CST_CLOSE();
 #endif
@@ -5821,7 +5821,7 @@ static CType *type_decl_1(CType *type, AttributeDef *ad, int *v, int td,
 			goto abstract;
 	} else if (tok >= TOK_IDENT && (td & TYPE_DIRECT)) {
 		*v = tok;
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 		cst_hook_def(tok, cst_cur_tok_off());
 #endif
 		next();
@@ -5857,7 +5857,7 @@ static CType *type_decl(CType *type, AttributeDef *ad, int *v, int td) {
 }
 
 ST_FUNC void indir(void) {
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 	ast_hook_indir();
 #endif
 	if ((vtop->type.t & VT_BTYPE) != VT_PTR) {
@@ -5866,13 +5866,13 @@ ST_FUNC void indir(void) {
 		expect("pointer");
 	}
 	if (vtop->r & VT_LVAL)
-		gv(RC_INT);
+		gv(MCC_RC_INT);
 	vtop->type = *pointed_type(&vtop->type);
 	if ((vtop->type.t & VT_BTYPE) == VT_VOID && !nocode_wanted)
 		mcc_pedantic("dereferencing a 'void *' pointer");
 	if (!(vtop->type.t & (VT_ARRAY | VT_VLA)) && (vtop->type.t & VT_BTYPE) != VT_FUNC) {
 		vtop->r |= VT_LVAL;
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 		if (mcc_state->do_bounds_check)
 			vtop->r |= VT_MUSTBOUND;
 #endif
@@ -6167,7 +6167,7 @@ static void parse_atomic(int atok) {
 	PUT_R_RET(vtop, ct.t);
 	t = ct.t & VT_BTYPE;
 	if (t == VT_BYTE || t == VT_SHORT || t == VT_BOOL) {
-#ifdef PROMOTE_RET
+#ifdef MCC_RET_PROMOTES_INT
 		vtop->r |= BFVAL(VT_MUSTCAST, 1);
 #else
 		vtop->type.t = VT_INT;
@@ -6252,7 +6252,7 @@ static void gen_atomic_rmw(int op, int ret_new) {
 	PUT_R_RET(vtop, atomtype.t);
 	bt = atomtype.t & VT_BTYPE;
 	if (bt == VT_BYTE || bt == VT_SHORT || bt == VT_BOOL) {
-#ifdef PROMOTE_RET
+#ifdef MCC_RET_PROMOTES_INT
 		vtop->r |= BFVAL(VT_MUSTCAST, 1);
 #else
 		vtop->type.t = VT_INT;
@@ -6371,7 +6371,7 @@ static int atomic_store_needs_libcall(SValue *sv) {
 	if (bt == VT_STRUCT || is_float(sv->type.t))
 		return 0;
 	size = type_size(&sv->type, &align);
-	if (size <= PTR_SIZE || size > 8 || (size & (size - 1)))
+	if (size <= MCC_PTR_SIZE || size > 8 || (size & (size - 1)))
 		return 0;
 	return size;
 }
@@ -6666,7 +6666,7 @@ static void format_check(int is_scanf, const char *fmt, int favail,
 ST_FUNC void unary(void) {
 	int n, t, align, size, r;
 	CType type;
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 	uint32_t cst_um = CST_MARK();
 	uint16_t cst_nk = 0;
 #define CST_PRIMARY()                 \
@@ -6685,7 +6685,7 @@ ST_FUNC void unary(void) {
 
 	type.ref = NULL;
 tok_next:
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 	switch (tok) {
 	case '*':
 	case '&':
@@ -6731,11 +6731,11 @@ tok_next:
 		type.t = t;
 		vsetc(&type, VT_CONST, &tokc);
 		if (tok_imaginary) {
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 			ast_hook_imag_begin();
 #endif
 			gen_imaginary_complex(t);
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 			ast_hook_imag_end(t);
 #endif
 		}
@@ -6818,12 +6818,12 @@ tok_next:
 	case '(':
 		t = tok;
 		next();
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 		uint32_t cst_tm = CST_MARK();
 #endif
 		if (parse_btype(&type, &ad, 0)) {
 			type_decl(&type, &ad, &n, TYPE_ABSTRACT);
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 			CST_OPEN_AT(CST_TypeName, cst_tm);
 			CST_CLOSE();
 #endif
@@ -6859,7 +6859,7 @@ tok_next:
 				if ((vtop->r & VT_LVAL) && !nocode_wanted && !asm_lvalue_cast) {
 					int bt = vtop->type.t & VT_BTYPE;
 					if (bt != VT_STRUCT && bt != VT_VOID && !is_complex_type(&vtop->type))
-						gv(RC_TYPE(vtop->type.t));
+						gv(MCC_RC_TYPE(vtop->type.t));
 				}
 				CST_OPEN_AT(CST_Cast, cst_um);
 				CST_CLOSE();
@@ -7024,7 +7024,7 @@ tok_next:
 		CType cbase, ccplx;
 		SValue r;
 		next();
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_builtin_complex_begin();
 #endif
 		skip('(');
@@ -7062,7 +7062,7 @@ tok_next:
 			cplx_store_part(&r, 0);
 			vpushv(&r);
 		}
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_builtin_complex_end();
 #endif
 	} break;
@@ -7155,9 +7155,9 @@ tok_next:
 				write_ldouble(lb, &vtop->c.ld);
 #if defined MCC_TARGET_I386 || defined MCC_TARGET_X86_64
 
-				sb = lb[LDOUBLE_SIZE > 8 ? 9 : 7] >> 7;
+				sb = lb[MCC_LDOUBLE_SIZE > 8 ? 9 : 7] >> 7;
 #else
-				sb = lb[LDOUBLE_SIZE - 1] >> 7;
+				sb = lb[MCC_LDOUBLE_SIZE - 1] >> 7;
 #endif
 			}
 			vpop();
@@ -7323,7 +7323,7 @@ tok_next:
 		vset(&type, VT_LOCAL, 0);
 		while (level--) {
 #ifdef MCC_TARGET_RISCV64
-			vpushi(2 * PTR_SIZE);
+			vpushi(2 * MCC_PTR_SIZE);
 			gen_op('-');
 #endif
 			mk_pointer(&vtop->type);
@@ -7331,13 +7331,13 @@ tok_next:
 		}
 		if (tok1 == TOK_builtin_return_address) {
 #ifdef MCC_TARGET_ARM
-			vpushi(2 * PTR_SIZE);
+			vpushi(2 * MCC_PTR_SIZE);
 			gen_op('+');
 #elif defined MCC_TARGET_RISCV64
-			vpushi(PTR_SIZE);
+			vpushi(MCC_PTR_SIZE);
 			gen_op('-');
 #else
-			vpushi(PTR_SIZE);
+			vpushi(MCC_PTR_SIZE);
 			gen_op('+');
 #endif
 			mk_pointer(&vtop->type);
@@ -7400,7 +7400,7 @@ tok_next:
 		vpop();
 		gen_va_arg(&type);
 		vtop->type = type;
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		if (ast_active)
 			ast_bail = 1;
 #endif
@@ -7594,7 +7594,7 @@ tok_next:
 		if (tok < TOK_UIDENT)
 			mcc_error("expression expected before '%s'", get_tok_str(tok, &tokc));
 		t = tok;
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 		cst_hook_use(t, cst_cur_tok_off());
 #endif
 		next();
@@ -7650,7 +7650,7 @@ tok_next:
 			next();
 		} else if (tok == '.' || tok == TOK_ARROW) {
 			int qualifiers, cumofs, base_nonlval;
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 			ast_hook_member_begin(tok == TOK_ARROW);
 #endif
 			if (tok == TOK_ARROW)
@@ -7669,22 +7669,22 @@ tok_next:
 				parse_btype_qualify(&vtop->type, qualifiers);
 			if (!(vtop->type.t & VT_ARRAY)) {
 				vtop->r |= VT_LVAL | base_nonlval;
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 				if (mcc_state->do_bounds_check)
 					vtop->r |= VT_MUSTBOUND;
 #endif
 			}
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 			{
 				int _mbc = 0;
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 				_mbc = mcc_state->do_bounds_check;
 #endif
 				ast_hook_member_end(cumofs, &s->type, base_nonlval, qualifiers, _mbc);
 			}
 #endif
 			next();
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 			CST_OPEN_AT(CST_Member, cst_um);
 			CST_CLOSE();
 #endif
@@ -7694,7 +7694,7 @@ tok_next:
 			gen_op('+');
 			indir();
 			skip(']');
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 			CST_OPEN_AT(CST_Index, cst_um);
 			CST_CLOSE();
 #endif
@@ -7736,7 +7736,7 @@ tok_next:
 						while (size & (size - 1))
 							size = (size | (size - 1)) + 1;
 #endif
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 					loc = ast_alloc_loc(size, align);
 #else
 					loc = (loc - size) & -align;
@@ -7744,7 +7744,7 @@ tok_next:
 					ret.type = s->type;
 					ret.r = VT_LOCAL | VT_LVAL;
 					vseti(VT_LOCAL, loc);
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 					if (mcc_state->do_bounds_check)
 						--loc;
 #endif
@@ -7821,7 +7821,7 @@ tok_next:
 
 			next();
 			vcheck_cmp();
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 			ast_hook_call_begin(nb_args, (s->type.t & VT_BTYPE) == VT_STRUCT,
 													ret_nregs, s->f.func_type == FUNC_ELLIPSIS);
 #endif
@@ -7836,9 +7836,9 @@ tok_next:
 			} else {
 				n = ret_nregs;
 				while (n > 1) {
-					int rc = reg_classes[ret.r] & ~(RC_INT | RC_FLOAT);
+					int rc = reg_classes[ret.r] & ~(MCC_RC_INT | MCC_RC_FLOAT);
 					rc <<= --n;
-					for (r = 0; r < NB_REGS; ++r)
+					for (r = 0; r < MCC_NB_REGS; ++r)
 						if (reg_classes[r] & rc)
 							break;
 					vsetc(&ret.type, r, &ret.c);
@@ -7853,7 +7853,7 @@ tok_next:
 					size = (size + regsize - 1) & -regsize;
 					if (ret_align > align)
 						align = ret_align;
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 					loc = ast_alloc_loc(size, align);
 #else
 					loc = (loc - size) & -align;
@@ -7874,7 +7874,7 @@ tok_next:
 
 				t = s->type.t & VT_BTYPE;
 				if (t == VT_BYTE || t == VT_SHORT || t == VT_BOOL) {
-#ifdef PROMOTE_RET
+#ifdef MCC_RET_PROMOTES_INT
 					vtop->r |= BFVAL(VT_MUSTCAST, 1);
 #else
 					vtop->type.t = VT_INT;
@@ -7888,10 +7888,10 @@ tok_next:
 					mcc_tcov_block_end(mcc_state, -1);
 				CODE_OFF();
 			}
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 			ast_hook_call_end();
 #endif
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 			CST_OPEN_AT(CST_Call, cst_um);
 			CST_CLOSE();
 #endif
@@ -7899,7 +7899,7 @@ tok_next:
 			break;
 		}
 	}
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 	if (cst_nk) {
 		CST_OPEN_AT(cst_nk, cst_um);
 		CST_CLOSE();
@@ -7988,7 +7988,7 @@ static int condition_3way(void) {
 
 static void expr_landor(int op) {
 	int t = 0, cc = 1, f = 0, i = op == TOK_LAND, c;
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 	int first = 1;
 #endif
 	for (;;) {
@@ -7997,7 +7997,7 @@ static void expr_landor(int op) {
 			save_regs(1), cc = 0;
 		else if (c != i)
 			nocode_wanted++, f = 1;
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_landor_operand(op, c, first);
 		first = 0;
 #endif
@@ -8009,7 +8009,7 @@ static void expr_landor(int op) {
 			vpop();
 		next();
 		seqp_flush();
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_landor_next();
 #endif
 		expr_landor_next(op);
@@ -8022,7 +8022,7 @@ static void expr_landor(int op) {
 	} else {
 		gvtst_set(i, t);
 	}
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 	ast_hook_landor_end(cc || f);
 #endif
 }
@@ -8040,7 +8040,7 @@ static void expr_cond(void) {
 	SValue sv;
 	CType type;
 
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 	uint32_t cst_m = CST_MARK();
 	unary();
 	int cst_has_binop = precedence(tok) >= 1;
@@ -8057,7 +8057,7 @@ static void expr_cond(void) {
 		c = condition_3way();
 		seqp_flush();
 		g = (tok == ':' && gnu_ext);
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_ternary_begin(c, g);
 #endif
 		tt = 0;
@@ -8076,12 +8076,12 @@ static void expr_cond(void) {
 
 		if (c == 0)
 			nocode_wanted++;
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_ternary_branch(0);
 #endif
 		if (!g)
 			gexpr();
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_ternary_branch_done(0);
 #endif
 
@@ -8103,14 +8103,14 @@ static void expr_cond(void) {
 		if (c == 1)
 			nocode_wanted++;
 		skip(':');
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_ternary_branch(1);
 #endif
 		expr_cond();
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_ternary_branch_done(1);
 #endif
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 		CST_OPEN_AT(CST_Cond, cst_m);
 		CST_CLOSE();
 #endif
@@ -8153,9 +8153,9 @@ static void expr_cond(void) {
 			}
 		}
 
-		rc = RC_TYPE(type.t);
+		rc = MCC_RC_TYPE(type.t);
 		if (USING_TWO_WORDS(type.t))
-			rc = RC_RET(type.t);
+			rc = MCC_RC_RET(type.t);
 
 		tt = r2 = 0;
 		if (c < 0) {
@@ -8187,7 +8187,7 @@ static void expr_cond(void) {
 
 		if (islv)
 			indir();
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_ternary_end();
 #endif
 	}
@@ -8196,7 +8196,7 @@ static void expr_cond(void) {
 static void expr_eq(void) {
 	int t;
 	int was_assign = 0;
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 	uint32_t cst_m = CST_MARK();
 #endif
 
@@ -8243,7 +8243,7 @@ static void expr_eq(void) {
 		}
 		vstore();
 	}
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 	if (was_assign) {
 		CST_OPEN_AT(CST_Binary, cst_m);
 		CST_CLOSE();
@@ -8255,7 +8255,7 @@ static void expr_eq(void) {
 }
 
 ST_FUNC void gexpr(void) {
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 	uint32_t cst_m = CST_MARK();
 #endif
 	expr_eq();
@@ -8269,7 +8269,7 @@ ST_FUNC void gexpr(void) {
 			seqp_flush();
 			expr_eq();
 		} while (tok == ',');
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 		CST_OPEN_AT(CST_Comma, cst_m);
 		CST_CLOSE();
 #endif
@@ -8279,12 +8279,12 @@ ST_FUNC void gexpr(void) {
 		if ((vtop->r & VT_LVAL) && !nocode_wanted) {
 			int bt = vtop->type.t & VT_BTYPE;
 			if (bt != VT_STRUCT && bt != VT_VOID && bt != VT_FUNC && !(vtop->type.t & (VT_ARRAY | VT_VLA)) && !is_complex_type(&vtop->type))
-				gv(RC_TYPE(vtop->type.t));
+				gv(MCC_RC_TYPE(vtop->type.t));
 		}
 
 		if ((vtop->r & VT_VALMASK) == VT_CONST && nocode_wanted && !CONST_WANTED)
 			if (vtop->type.t != VT_VOID && (vtop->type.t & VT_BTYPE) != VT_STRUCT)
-				gv(RC_TYPE(vtop->type.t));
+				gv(MCC_RC_TYPE(vtop->type.t));
 	}
 }
 
@@ -8352,7 +8352,7 @@ static void gfunc_return(CType *func_type) {
 				vset(&ret_type, VT_LOCAL | VT_LVAL, addr);
 			}
 			vtop->type = ret_type;
-			rc = RC_RET(ret_type.t);
+			rc = MCC_RC_RET(ret_type.t);
 			for (n = ret_nregs; --n > 0;) {
 				vdup();
 				gv(rc);
@@ -8364,7 +8364,7 @@ static void gfunc_return(CType *func_type) {
 			vtop -= ret_nregs - 1;
 		}
 	} else {
-		gv(RC_RET(func_type->t));
+		gv(MCC_RC_RET(func_type->t));
 	}
 	vtop--;
 }
@@ -8374,7 +8374,7 @@ static void check_func_return(void) {
 	if ((func_vt.t & VT_BTYPE) == VT_VOID)
 		return;
 	if ((!strcmp(funcname, "main") || func_old) && (func_vt.t & VT_BTYPE) == VT_INT) {
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_implicit_return();
 #endif
 		vpushi(0);
@@ -8526,7 +8526,7 @@ static void block_cleanup(struct scope *o) {
 static void vla_restore(int loc) {
 	if (loc)
 		gen_vla_sp_restore(loc);
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 	ast_hook_vla_restore(loc);
 #endif
 }
@@ -8707,7 +8707,7 @@ static int tok_starts_declspec(void) {
 	}
 }
 
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 static uint16_t cst_stmt_kind(int t) {
 	switch (t) {
 	case '{':
@@ -8738,16 +8738,16 @@ static void block(int flags) {
 	Sym *s;
 	unsigned char stdc_save_fp, stdc_save_fenv, stdc_save_cx;
 
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 	CST_OPEN(cst_stmt_kind(tok));
 	uint32_t cst_lm = 0;
 #endif
 again:
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 	cst_lm = CST_MARK();
 #endif
 	t = tok;
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 	ast_hook_stmt(t);
 #endif
 	if (TOK_HAS_VALUE(t))
@@ -8770,11 +8770,11 @@ again:
 			mcc_warning_c(warn_parentheses)("suggest parentheses around "
 																			"assignment used as a truth value");
 		seqp_check();
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_if_begin();
 #endif
 		a = gvtst(1, 0);
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_if_gvtst_done();
 #endif
 		skip(')');
@@ -8783,7 +8783,7 @@ again:
 			d = gjmp(0);
 			gsym(a);
 			next();
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 			ast_hook_if_else();
 #endif
 			block(0);
@@ -8791,7 +8791,7 @@ again:
 		} else {
 			gsym(a);
 		}
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_if_end();
 #endif
 		prev_scope_s(&o);
@@ -8804,17 +8804,17 @@ again:
 			mcc_warning_c(warn_parentheses)("suggest parentheses around "
 																			"assignment used as a truth value");
 		seqp_check();
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_while_begin();
 #endif
 		a = gvtst(1, 0);
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_if_gvtst_done();
 #endif
 		skip(')');
 		b = 0;
 		lblock(&a, &b);
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_while_end();
 #endif
 		gjmp_addr(d);
@@ -8860,7 +8860,7 @@ again:
 		b = (func_vt.t & VT_BTYPE) != VT_VOID;
 		if (tok != ';') {
 			gexpr();
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 			ast_hook_ret_expr_done();
 #endif
 			seqp_check();
@@ -8877,7 +8877,7 @@ again:
 			mcc_warning_c(warn_return_type)("'return' with no value");
 			b = 0;
 		}
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_return(b);
 #endif
 		leave_scope(root_scope);
@@ -8888,7 +8888,7 @@ again:
 			int ret_jumps = (tok != '}' || local_scope != 1);
 			if (ret_jumps)
 				rsym = gjmp(rsym);
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 			ast_hook_return_jmp(ret_jumps);
 #endif
 		}
@@ -8903,7 +8903,7 @@ again:
 		else
 			leave_scope(loop_scope);
 		*cur_scope->bsym = gjmp(*cur_scope->bsym);
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_break_continue(0);
 #endif
 		skip(';');
@@ -8912,7 +8912,7 @@ again:
 			mcc_error("cannot continue");
 		leave_scope(loop_scope);
 		*cur_scope->csym = gjmp(*cur_scope->csym);
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_break_continue(1);
 #endif
 		skip(';');
@@ -8935,7 +8935,7 @@ again:
 		skip(';');
 		a = b = 0;
 		c = d = gind();
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_for_begin(tok != ';');
 #endif
 		if (tok != ';') {
@@ -8943,11 +8943,11 @@ again:
 			if (expr_was_assign)
 				mcc_warning_c(warn_parentheses)("suggest parentheses around "
 																				"assignment used as a truth value");
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 			ast_hook_for_cond();
 #endif
 			a = gvtst(1, 0);
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 			ast_hook_if_gvtst_done();
 #endif
 		}
@@ -8956,28 +8956,28 @@ again:
 		if (tok != ')') {
 			e = gjmp(0);
 			d = gind();
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 			ast_hook_for_incr_begin();
 #endif
 			gexpr();
 			seqp_check();
 			vpop();
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 			ast_hook_for_incr_end();
 #endif
 			gjmp_addr(c);
 			gsym(e);
 		}
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		else
 			ast_hook_for_no_incr();
 #endif
 		skip(')');
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_for_body_begin();
 #endif
 		lblock(&a, &b);
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_for_end();
 #endif
 		gjmp_addr(d);
@@ -8988,11 +8988,11 @@ again:
 		new_scope_s(&o);
 		a = b = 0;
 		d = gind();
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_do_begin();
 #endif
 		lblock(&a, &b);
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_do_body_end();
 #endif
 		gsym(b);
@@ -9003,18 +9003,18 @@ again:
 			mcc_warning_c(warn_parentheses)("suggest parentheses around "
 																			"assignment used as a truth value");
 		seqp_check();
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_do_cond();
 #endif
 		c = gvtst(0, 0);
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_if_gvtst_done();
 #endif
 		skip(')');
 		skip(';');
 		gsym_addr(c, d);
 		gsym(a);
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_do_end();
 #endif
 		prev_scope_s(&o);
@@ -9036,14 +9036,14 @@ again:
 		if (!is_integer_btype(vtop->type.t & VT_BTYPE))
 			mcc_error("switch value not an integer");
 		skip(')');
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_switch_begin();
 #endif
 		sw->sv = *vtop--;
 		a = 0;
 		b = gjmp(0);
 		lblock(&a, NULL);
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_switch_body_end();
 #endif
 		a = gjmp(a);
@@ -9070,7 +9070,7 @@ again:
 		case_sort(sw);
 		sw->bsym = NULL;
 		vpushv(&sw->sv);
-		gv(RC_INT);
+		gv(MCC_RC_INT);
 		d = gcase(sw->p, sw->n, 0);
 		vpop();
 		if (sw->def_sym)
@@ -9080,7 +9080,7 @@ again:
 	skip_switch:
 		gsym(a);
 		end_switch();
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_switch_end();
 #endif
 	} else if (t == TOK_CASE) {
@@ -9104,7 +9104,7 @@ again:
 		if (!cur_switch->nocode_wanted)
 			cr->ind = gind();
 		cr->line = file->line_num;
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_case(cr->v1, cr->v2, t);
 #endif
 		skip(':');
@@ -9117,7 +9117,7 @@ again:
 		if (cur_switch->def_sym)
 			mcc_error("too many 'default'");
 		cur_switch->def_sym = cur_switch->nocode_wanted ? -1 : gind();
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_default();
 #endif
 		skip(':');
@@ -9155,7 +9155,7 @@ again:
 				try_call_cleanup_goto(s->cleanupstate);
 				gjmp_addr(s->jind);
 			}
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 			ast_hook_goto(tok);
 #endif
 			next();
@@ -9164,18 +9164,18 @@ again:
 		}
 		skip(';');
 	} else if (t == TOK_ASM1 || t == TOK_ASM2 || t == TOK_ASM3) {
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_func_has_asm = 1;
 #endif
-#ifdef CONFIG_MCC_ASM
+#if MCC_CONFIG_ASM
 		asm_instr();
 #else
-		mcc_error("inline assembler not supported (built without CONFIG_MCC_ASM)");
+		mcc_error("inline assembler not supported (built without MCC_CONFIG_ASM)");
 #endif
 	} else {
 		if (tok == ':' && t >= TOK_UIDENT) {
 			next();
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 			CST_OPEN_AT(CST_Label, cst_lm);
 			CST_CLOSE();
 #endif
@@ -9199,7 +9199,7 @@ again:
 			s->vla_inner_id = vla_inner_scope();
 			if (s->vla_min_goto_gpp < s->vla_inner_id)
 				mcc_error("goto jumps into the scope of a variably modified declaration");
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 			ast_hook_label(t);
 #endif
 
@@ -9249,7 +9249,7 @@ again:
 
 	if (debug_modes)
 		mcc_tcov_check_line(mcc_state, 0), mcc_tcov_block_end(mcc_state, 0);
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 	CST_CLOSE();
 #endif
 }
@@ -9332,11 +9332,11 @@ static void init_putz(init_params *p, unsigned long c, int size) {
 #if defined MCC_TARGET_ARM && defined MCC_ARM_EABI
 		vswap();
 #endif
-#if CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_call_begin(3, 0, 1, 0);
 #endif
 		gfunc_call(3);
-#if CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_call_effect_end();
 #endif
 	}
@@ -9506,11 +9506,11 @@ static int decl_designator(init_params *p, CType *type, unsigned long c,
 
 static void write_ldouble(unsigned char *d, void *s) {
 #ifdef MCC_CROSS_TEST
-	if (LDOUBLE_SIZE >= 10) {
+	if (MCC_LDOUBLE_SIZE >= 10) {
 		double b = *(long double *)s;
 		s = &b;
 #else
-	if (sizeof(long double) == 8 && LDOUBLE_SIZE >= 10) {
+	if (sizeof(long double) == 8 && MCC_LDOUBLE_SIZE >= 10) {
 #endif
 		uint64_t m = *(uint64_t *)s;
 		int e = m >> 48;
@@ -9530,13 +9530,13 @@ static void write_ldouble(unsigned char *d, void *s) {
 #if (defined MCC_TARGET_I386 || defined MCC_TARGET_X86_64)
 		write64le(d, m);
 		write16le(d + 8, e);
-#elif LDOUBLE_SIZE == 16
+#elif MCC_LDOUBLE_SIZE == 16
 		write64le(d + 6, m << 1);
 		write16le(d + 14, e);
 #endif
 		;
 	} else {
-#if LDOUBLE_SIZE == 8
+#if MCC_LDOUBLE_SIZE == 8
 		double b = *(long double *)s;
 		memcpy(d, &b, 8);
 #elif (__i386__ || __x86_64__) && (defined MCC_TARGET_I386 || defined MCC_TARGET_X86_64)
@@ -9555,8 +9555,8 @@ static void write_ldouble(unsigned char *d, void *s) {
 	write64le(d, m >> 1 | ((e & 0x7fff) ? 1ULL << 63 : 0));
 	write16le(d + 8, e);
 #else
-	if (sizeof(long double) == LDOUBLE_SIZE)
-		memcpy(d, s, LDOUBLE_SIZE);
+	if (sizeof(long double) == MCC_LDOUBLE_SIZE)
+		memcpy(d, s, MCC_LDOUBLE_SIZE);
 #endif
 	}
 }
@@ -9590,7 +9590,7 @@ static void init_putv(init_params *p, CType *type, unsigned long c) {
 		gen_assign_cast(&dtype);
 		bt = type->t & VT_BTYPE;
 
-		if ((vtop->r & VT_SYM) && bt != VT_PTR && (bt != (PTR_SIZE == 8 ? VT_LLONG : VT_INT) || (type->t & VT_BITFIELD)) && !((vtop->r & VT_CONST) && vtop->sym->v >= SYM_FIRST_ANOM))
+		if ((vtop->r & VT_SYM) && bt != VT_PTR && (bt != (MCC_PTR_SIZE == 8 ? VT_LLONG : VT_INT) || (type->t & VT_BITFIELD)) && !((vtop->r & VT_CONST) && vtop->sym->v >= SYM_FIRST_ANOM))
 			mcc_error("initializer element is not computable at load time");
 
 		if (NODATA_WANTED) {
@@ -9621,7 +9621,7 @@ static void init_putv(init_params *p, CType *type, unsigned long c) {
 												 c + rel->r_offset - esym->st_value,
 												 ELFW(R_TYPE)(rel->r_info),
 												 ELFW(R_SYM)(rel->r_info),
-#if PTR_SIZE == 8
+#if MCC_PTR_SIZE == 8
 												 rel->r_addend
 #else
 												 0
@@ -9667,7 +9667,7 @@ static void init_putv(init_params *p, CType *type, unsigned long c) {
 					write_ldouble(ptr, &vtop->c.ld);
 					break;
 
-#if PTR_SIZE == 8
+#if MCC_PTR_SIZE == 8
 				case VT_LLONG:
 				case VT_PTR:
 					if (vtop->r & VT_SYM)
@@ -10055,7 +10055,7 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 	Sym *flexible_array;
 	Sym *sym = NULL;
 	int saved_nocode_wanted = nocode_wanted;
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 	int bcheck = mcc_state->do_bounds_check && !NODATA_WANTED;
 #endif
 	init_params p = {0};
@@ -10133,7 +10133,7 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 
 	if ((r & VT_VALMASK) == VT_LOCAL) {
 		sec = NULL;
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 		if (bcheck && v) {
 			loc -= align;
 		}
@@ -10141,13 +10141,13 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 		loc = (loc - size) & -align;
 		addr = loc;
 		p.local_offset = addr + size;
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 		if (bcheck && v) {
 			loc -= align;
 		}
 #endif
 		if (v) {
-#ifdef CONFIG_MCC_ASM
+#if MCC_CONFIG_ASM
 			if (ad->asm_label) {
 				int reg = asm_parse_regvar(ad->asm_label);
 				if (reg >= 0)
@@ -10192,7 +10192,7 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 
 		if (sec) {
 			addr = section_add(sec, size, align);
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 			if (bcheck)
 				section_add(sec, 1, 1);
 #endif
@@ -10213,7 +10213,7 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 			vtop->r |= r;
 		}
 
-#ifdef CONFIG_MCC_BCHECK
+#if MCC_CONFIG_BCHECK
 		if (bcheck) {
 			addr_t *bounds_ptr;
 
@@ -10249,14 +10249,14 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 			goto no_alloc;
 
 		int vla_new_save = 0;
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_vla_alloc_begin();
 #endif
 		if (cur_scope->vla.num == 0) {
 			if (cur_scope->prev && cur_scope->prev->vla.num) {
 				cur_scope->vla.locorig = cur_scope->prev->vla.loc;
 			} else {
-				gen_vla_sp_save(loc -= PTR_SIZE);
+				gen_vla_sp_save(loc -= MCC_PTR_SIZE);
 				cur_scope->vla.locorig = loc;
 				vla_new_save = 1;
 			}
@@ -10265,12 +10265,12 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 		vpush_type_size(type, &a);
 		gen_vla_alloc(type, a);
 #if defined MCC_TARGET_PE && defined MCC_TARGET_X86_64
-		gen_vla_result(addr), addr = (loc -= PTR_SIZE);
+		gen_vla_result(addr), addr = (loc -= MCC_PTR_SIZE);
 #endif
 		gen_vla_sp_save(addr);
 		cur_scope->vla.loc = addr;
 		cur_scope->vla.num++;
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 		ast_hook_vla_alloc_end(type, addr, vla_new_save, cur_scope->vla.locorig);
 #endif
 	} else if (has_init) {
@@ -10437,7 +10437,7 @@ static void gen_function(Sym *sym) {
 	gfunc_prolog(sym);
 	mcc_debug_prolog_epilog(mcc_state, 0);
 	func_vla_arg(sym);
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 	ast_func_begin(sym);
 	block(0);
 	ast_func_end(sym);
@@ -10455,7 +10455,7 @@ static void gen_function(Sym *sym) {
 	}
 	cur_func_inline_extern = 0;
 	gsym(rsym);
-#if defined(CONFIG_AST) && CONFIG_AST
+#if MCC_CONFIG_AST
 	ast_func_epilog();
 #endif
 	nocode_wanted = 0;
@@ -10600,7 +10600,7 @@ static int decl(int l) {
 	ElfSym *esym;
 
 	while (1) {
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 		uint32_t cst_dm = CST_MARK();
 #endif
 
@@ -10624,11 +10624,11 @@ static int decl(int l) {
 			if (l != VT_CONST)
 				break;
 			if (tok == TOK_ASM1 || tok == TOK_ASM2 || tok == TOK_ASM3) {
-#ifdef CONFIG_MCC_ASM
+#if MCC_CONFIG_ASM
 				asm_global_instr();
 				continue;
 #else
-				mcc_error("assembler not supported (built without CONFIG_MCC_ASM)");
+				mcc_error("assembler not supported (built without MCC_CONFIG_ASM)");
 #endif
 			}
 			if (tok >= TOK_UIDENT) {
@@ -10793,7 +10793,7 @@ static int decl(int l) {
 						cur_text_section->sh_flags = text_section->sh_flags;
 					gen_function(sym);
 				}
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 				CST_OPEN_AT(CST_FunctionDef, cst_dm);
 				CST_CLOSE();
 #endif
@@ -10895,11 +10895,11 @@ static int decl(int l) {
 							}
 							type.t |= VT_EXTERN;
 						}
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 						uint32_t cst_im = has_init ? CST_MARK() : 0;
 #endif
 						decl_initializer_alloc(&type, &ad, r, has_init, v, l);
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 						if (has_init) {
 							CST_OPEN_AT(CST_Initializer, cst_im);
 							CST_CLOSE();
@@ -10931,7 +10931,7 @@ static int decl(int l) {
 					if (l == VT_JMP)
 						return has_init ? v : 1;
 					skip(';');
-#if defined(CONFIG_MCC_CST) && CONFIG_MCC_CST
+#if MCC_CONFIG_CST
 					CST_OPEN_AT(CST_Declaration, cst_dm);
 					CST_CLOSE();
 #endif
@@ -10947,6 +10947,6 @@ static int decl(int l) {
 #undef gjmp_addr
 #undef gjmp
 
-#if defined(CONFIG_AST) && CONFIG_AST && defined(SINGLE_SOURCE) && !SINGLE_SOURCE
+#if MCC_CONFIG_AST && defined(MCC_AMALGAMATED) && !MCC_AMALGAMATED
 #include "mccast.c"
 #endif

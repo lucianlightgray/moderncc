@@ -27,7 +27,7 @@
     },
     {
       "name": "release",
-      "displayName": "Release (SINGLE_SOURCE dynamic exe, stripped, no bcheck/backtrace)",
+      "displayName": "Release (MCC_AMALGAMATED dynamic exe, stripped, no bcheck/backtrace)",
       "inherits": "debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
@@ -109,7 +109,7 @@
     },
     {
       "name": "linux-gcc-static",
-      "displayName": "CI linux / gcc / static exe (CONFIG_MCC_STATIC)",
+      "displayName": "CI linux / gcc / static exe (MCC_CONFIG_STATIC)",
       "inherits": "linux-gcc",
       "cacheVariables": { "MCC_BUILD_STATIC_EXE": "ON" }
     },

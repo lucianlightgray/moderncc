@@ -151,11 +151,11 @@ item above. Supersedes GATED.md item 9(a)'s narrower `CONFIG_AST` rename.
 
 **The rules:**
 
-- [ ] **Public** (user/build-facing, settable via CMake or `-D`):
+- [x] **Public** (user/build-facing, settable via CMake or `-D`):
       `MCC_CONFIG_<WHAT_IT_DOES>`. **Private** (derived, per-target constants,
       structural): `MCC_<WHAT_IT_IS>`. Nothing gate-like without one of the
       two prefixes.
-- [ ] Names state **what the feature does as implemented** — plain English,
+- [x] Names state **what the feature does as implemented** — plain English,
       not intent, not history, not relative terms. The repeat offenders:
       `CONFIG_NEW_MACHO` ("new" relative to what?) → e.g.
       `MCC_CONFIG_MACHO_CHAINED_FIXUPS` (that *is* what it selects);
@@ -167,13 +167,13 @@ item above. Supersedes GATED.md item 9(a)'s narrower `CONFIG_AST` rename.
       the actual test, `mcc.h:63-75`); `PROMOTE_RET` → `MCC_RET_PROMOTES_INT`
       (small integer returns are promoted); `SINGLE_SOURCE` →
       `MCC_AMALGAMATED` (one TU is what it does).
-- [ ] **No derived negatives**: `MCC_DISABLE_ASM` (the inverse shadow of
+- [x] **No derived negatives**: `MCC_DISABLE_ASM` (the inverse shadow of
       `CONFIG_MCC_ASM`, `mcc.h:101-103`) is deleted, one positive macro
       remains. Same for any `*_ONLY`/`*_OFF` shadows found in the sweep.
-- [ ] **One test idiom** per macro kind (boolean config: `#if`, never mixed
+- [x] **One test idiom** per macro kind (boolean config: `#if`, never mixed
       `#ifdef`/`#if defined(X) && X` — folds in the idiom half of GATED.md
       item 9(a)).
-- [ ] **Prefix flip**: today the C macros are `CONFIG_MCC_*` while the CMake
+- [x] **Prefix flip**: today the C macros are `CONFIG_MCC_*` while the CMake
       options are already `MCC_CONFIG_*` (`MCC_CONFIG_ASM` option →
       `CONFIG_MCC_ASM` define) — the *CMake side wins*; the C side renames to
       match. Every `CONFIG_*` without the `MCC_` root renames too
@@ -185,19 +185,19 @@ item above. Supersedes GATED.md item 9(a)'s narrower `CONFIG_AST` rename.
       `RC_*`/`TREG_*` stay as-is only if kept backend-private after SPLIT —
       decide per family during the sweep, but no unprefixed name may cross a
       file boundary).
-- [ ] **CMake refactor where it contradicts**: `CMakeLists.txt` emission
+- [x] **CMake refactor where it contradicts**: `CMakeLists.txt` emission
       blocks (`:1638-1749` area) emit the new names; `mcc_config_node` names,
       `CMakePresets.json` cache vars, and the `tools/ci.c` preset ledger stay
       in lockstep (one atomic commit — no alias/transition period; the presets
       are the single source of truth). NOTE: CMakeLists.txt stays
       comment-free.
-- [ ] **Tooling follows**: `tools/ckconfig.c` scanner prefix `CONFIG_MCC_` →
+- [x] **Tooling follows**: `tools/ckconfig.c` scanner prefix `CONFIG_MCC_` →
       `MCC_CONFIG_` — which automatically brings the formerly-unprefixed
       macros under drift audit (closing the ckconfig blind spot from GATED.md
       §3); `tools/hostgate.c` untouched (bans *system* macros, which don't
       rename); grep-gates in CI: zero hits for `CONFIG_MCC_`, bare
       `CONFIG_[A-Z]`, and the retired names.
-- [ ] Gates: full local matrix + qemu spot-check, `config-drift-invariant` +
+- [x] Gates: full local matrix + qemu spot-check, `config-drift-invariant` +
       `host-gate-invariant` + `preset-parity-invariant` ctests, 3-stage
       self-host fixpoint, and per-target `mcc -c` byte-identical objects
       (renames move no code). Docs sweep last: MCC.md/EXCESS.md/BUILD.md
