@@ -543,3 +543,16 @@ dlmf.nist.gov/3.11 (minimax polynomial approximations).
   nondeterminism in the sampler.
 - Tail-call-to-loop subagent still studying expressibility (hardest
   yet — argument-overwrite + back-edge).
+
+### 2026-07-10 — iteration 19 (pass-firing coverage confirmation)
+
+- Confirmed via `MCC_AST_REPLAY_DUMP=1` that all five replay tree passes
+  actually fire at -O1 on pass-relevant code: `ast-bfold`, `ast-cprop`,
+  `ast-dse`, `ast-sccp` fire on a mixed workload; `ast-ident` fires on a
+  same-operand form (`y-y`, `y^y`). ast-ident stays quiet on
+  const-operand identities (`x+0`, `x&-1`) by design — gen_opic elides
+  those at emit time, so the tree pass only announces the code-changing
+  same-operand/annihilator folds (documented). Coverage evidence that
+  the six landed passes are live, not dead code.
+- Tail-call-to-loop subagent reached its fixpoint-validation phase
+  (found an expressible transform); harvest imminent.
