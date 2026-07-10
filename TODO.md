@@ -432,16 +432,20 @@ misses; corrupt/foreign snapshot is ignored not trusted.
 
 Implementation (decided 2026-07-10):
 - **On-disk record = raw struct dump.** One `fwrite` of a fixed struct
-  `{ u64 version_id, key_hash; u32 best_seed, next_seed; u64 score; }` —
-  no parser. A struct-layout or `MCC_VERSION` change just misses (the key
-  carries the version), so brittleness across builds is harmless.
+  `{ u64 version_id, key_hash; u32 best_seed, next_seed; u64 cpu_ns; u32
+  peak_kb, size_bytes; }` — the best-so-far plus its three §31 objective
+  components. No parser. A struct-layout or `MCC_VERSION` change just misses
+  (the key carries the version), so brittleness across builds is harmless.
+  The record is also flushed by §31's save-checkpoint-and-stop signal, so an
+  interrupted search loses nothing.
 - **Frontier = monotonic seed cursor.** Persist `next_seed` + the best
   `{seed, score}`. Resume linearly scans `next_seed..` for this run's
   budget. (Extends to a TPE observation list once §25's search lands.)
 - **Write protocol = lock + atomic + A/B keep-best.** Hold an advisory
   lock on the entry, re-read the current record (B), and write back only
-  the better of B vs this run's result (A): lower `score` wins; on an
-  equal score keep the larger `next_seed` (more of the space explored).
+  the better of B vs this run's result (A) by §31's lexicographic
+  comparator (faster → memory → size; non-runnable TUs skip the cpu axis);
+  on a full objective tie keep the larger `next_seed` (more space explored).
   Commit via temp-file + `rename` (atomic). A run that made less progress
   or found a worse best can never clobber a better cached optimizer, and
   no reader ever sees a torn file.
@@ -532,6 +536,14 @@ vision, unconstrained by the compile-time seconds budget. Needs an ELF
 `.init_array` ctor, an embedded libmcc/JIT slice, the captured intention
 trees carried in the binary, and safe live function patching. Builds on
 §25 (JIT measurement) + §21 (cache).
+
+Decided 2026-07-10: unlike the `-O4+` compile-time search (time-bound by
+`optimize_search_seconds`, §31), the embedded runtime optimizer is
+**unbounded** — while the program runs it keeps optimizing until it has
+**exhausted every permutation of the §31 strategy portfolio**, then idles.
+It resumes across program runs from the §21 checkpoint shipped inside the
+binary, so a long-lived or repeatedly-run program converges over time
+rather than re-searching cold.
 
 ## 27. Loop-nest reordering / interchange (very large — DEFERRED, prerequisite-gated)
 
@@ -639,26 +651,38 @@ strategy, ex-§f959078e child model), the aggressive inliner (§23), Convert
 re-typing (§29), the bit-flag encoder (§30), and later the rewrite-rule
 generator (§28). Each registers itself; strategies land independently.
 
-Schedule = **exponentially-deepening round-robin**: round 1 gives every
-strategy 1× the base iteration budget, round 2 gives 2×, round 3 4×,
+Schedule = **exponentially-deepening round-robin over TIME**. Every
+strategy is **strictly time-bound, never depth/iteration-limited** — each
+gets a wall-clock slice and runs as many iterations as fit. Round 1 gives
+every strategy 1× the base time slice, round 2 gives 2×, round 3 4×,
 doubling each round until the total `optimize_search_seconds` is spent
 (`strat1*1, strat2*1, strat3*1 ; repeat *2 ; repeat *4 ; …`). A strategy's
-best(k) from a round **seeds its next, deeper round** (warm-start, persisted
-via the §21 checkpoint), so deeper rounds refine rather than restart.
+best(k) from a round **seeds its next, deeper round** (warm-start,
+persisted via the §21 checkpoint), so deeper rounds refine rather than
+restart; a strategy that goes 2 rounds with no best(k) gain is dropped and
+its time reallocated to the rest.
 
 Selection = **always take the global best by the §25 multi-objective**,
-lexicographic **faster → smaller → lowest peak memory** (cpu measured by
-JIT when the TU is runnable, static size the fallback for the "faster"
-axis). Candidates from different strategies **compose** where the §28/§29
-soundness oracle proves the combination equivalent.
+lexicographic **faster → lowest peak memory → smaller size** (cpu measured
+by JIT when the TU is runnable). For a library/non-runnable TU the "faster"
+axis has no measurement, so selection falls back to **lowest peak memory →
+smaller size**. Candidates from different strategies **compose** where the
+§28/§29 soundness oracle proves the combination equivalent.
+
+**Save-checkpoint-and-stop interrupt.** The `-O4+` compile-time search
+installs a stop-signal handler (the hypervisor's "save and stop"): on
+receipt it finishes the in-flight candidate eval, writes the §21
+checkpoint, and exits gracefully — so `optimize_search_seconds` can be cut
+short at any instant with little or no lost progress (the checkpoint always
+holds best-so-far + frontier). That bound is compile-time only; the
+embedded runtime JIT (§26) is unbounded.
 
 This is the harness §22/§24/§25 plug into: §24 (hot-slice) becomes the
-per-round budget allocator across strategies × functions; §25 is the
-scoring oracle it calls. Builds on §22 + §25 + §21.
+per-round time allocator across strategies × functions; §25 is the scoring
+oracle it calls. Builds on §22 + §25 + §21.
 
-Open confirmations (2026-07-10): `k` (best-carry count per strategy); the
-base iteration unit (proposed: 1 iteration = one candidate compile+eval);
-lexicographic vs Pareto vs weighted selection (proposed: lexicographic
-faster→smaller→memory, matching the phrasing); round-cap (proposed: keep
-doubling until the budget is spent, dropping a strategy early once it goes
-K rounds with no best(k) improvement).
+Decided 2026-07-10: lexicographic **faster → memory → size** (non-runnable:
+memory → size); strategies **strictly time-bound**, not depth-limited;
+best-carry `k = 4` (default); rounds double the time slice until the budget
+is spent, early-dropping a strategy after 2 no-gain rounds; interruptible
+via the save-checkpoint-and-stop signal.
