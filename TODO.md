@@ -407,6 +407,80 @@ stage2==3==4, optimizer-off + multisource cells green.
       vs `-O0`. Fix the float-return graft; add an inline-column exec
       golden with float/double returns so the suite covers it.
 
+# arm64 native validation queue (run on Mac — qemu can't reproduce)
+
+Native-arm64-only checks for the A→B→D→C build order. Per the standing
+optimizer gate (§32: "native arm64 spot-check for every increment") and the
+known-issue that qemu can't reproduce arm64 native failures (x86-TSO vs the
+real weak memory model; atomics/bounds/complex diverge only on real
+ubuntu-24.04-arm / Apple silicon). x86_64 ctest + fixpoint are the local
+gate; these are the checks that must run on the Mac before each increment is
+considered green. Ordered to match the A→B→D→C plan.
+
+## N1. A — §31 join-pass search registration (landed x86_64, arm64 spot-check pending)
+
+Landed: `MCC_AST_CPROP_JOIN`/`MCC_AST_CSE_JOIN` registered as budget
+dimensions of the `-O<N>` search (`so_setenv_cfg`, `SO_BUDGET_SPACE`
+36→144, `SO_CKPT_FMT` 5→6). x86_64: full ctest 1862/1862 + fixpoint
+byte-identical.
+
+- [ ] `mcc -O4 <file>` on arm64-darwin over a TU with same-key `||`
+      clusters + loop-invariant subexpressions: search runs, `so-<key>.ck`
+      v6 round-trips, no miscompile from the two new join dims.
+- [ ] Confirm `-O0..-O3` output byte-identical arm64 (the join dims only
+      fire under `-O4+` search workers; default build must be untouched).
+- [ ] 3-stage self-host fixpoint on arm64-darwin (search plumbing is
+      byte-identity-neutral, but confirm on native).
+
+## N2. B — §32c synthetic-temp infrastructure (arm64/riscv64 FIRST)
+
+Bring-up order is arm64/riscv64 before x86_64 by design: the fatal
+promotion-poison desync (Obstacle B, `ast_plan_promotion` src/mccast.c ~:2350)
+lives in a block gated `#if MCC_CONFIG_OPTIMIZER && defined(MCC_TARGET_X86_64)`
+(stub returns 0 elsewhere), so arm64/riscv64 are inherently safe from it —
+validate the fresh-temp carve there first, add the x86_64 poison guard second.
+
+- [ ] Frame carve on arm64: `gfunc_epilog` `diff = (-loc + 15) & ~15;`
+      (src/arch/arm64/arm64-gen.c ~:1625) must include the synthetic
+      strictly-negative temp offset in the frame size. Validate prologue
+      `sub sp` / epilogue match on a fresh-temp-LICM function.
+- [ ] **Unwind data**: arm64 unwind uses `-loc` (arm64-gen.c ~:1638); a
+      wrong floor corrupts unwinding — validate `-bt`/backtrace through a
+      carved-temp function natively (backtrace/unwind is exactly what qemu
+      can't be trusted for).
+- [ ] 3-stage self-host fixpoint on arm64-darwin with the fresh-temp pass
+      forced ON and OFF (both byte-identical to the OFF baseline's own
+      fixpoint); whole-corpus `--ast` columns native.
+- [ ] Then repeat for riscv64 (`riscv64-gen.c ~:848`) if a native box is
+      available; else defer riscv64 to CI.
+
+## N3. D — §30/§32a-b transform refinements
+
+New §30 branchless encodings are integer-arithmetic and arch-neutral, but the
+`VT_CMP`-consumption hazard they must avoid (the reversed-operand `ast_bf_build`
+order, TODO §30) was *originally an arm64 bug* (the `vcheck_cmp`-before-
+`gfunc_call` fix). So any new encoding (`&&`-of-`!=`, biased range,
+value-table) needs native arm64 confirmation the comparison flags aren't
+clobbered.
+
+- [ ] Edge-key sweep of each new §30 encoding on arm64-darwin
+      (−2³¹/−65/−1/0/63/64/2³²+5 × int/uint/llong/ullong/char/short),
+      hash-checksummed vs the arm64 `-O0` reference.
+- [ ] `--ast` c-torture columns native arm64 for any §32a/§32b refinement
+      (op-5 classifier, fall-through meets, Invoke-availability).
+
+## N4. C — §25 frontend-JIT scoring tier
+
+The JIT `-run` measurement path (`mcc_relocate` + `host_runmem_alloc` RWX)
+and RSS sampling are OS/arch-sensitive; Apple-silicon W^X (JIT entitlement /
+`MAP_JIT` + `pthread_jit_write_protect_np`) differs from Linux.
+
+- [ ] `-O4+` with the JIT scoring tier active on arm64-darwin: candidate
+      `-run` executes under the watchdog, best-of-K timing + `getrusage`
+      peak RSS are sane, non-runnable TUs fall back to the size objective.
+- [ ] Confirm the W^X / `MAP_JIT` runmem path (src/mcchost.c
+      `host_runmem_alloc`) works for candidate JIT on Apple silicon.
+
 # Superoptimizer / JIT ladder (open)
 
 ## Implementation status (2026-07-10, in progress)

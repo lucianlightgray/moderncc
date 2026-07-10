@@ -296,9 +296,9 @@ static void so_on_stop(int sig) {
 }
 
 #define SO_INLINE_LIMIT_MAX 160
-#define SO_CKPT_FMT 5u
+#define SO_CKPT_FMT 6u
 #define SO_GATE_SPACE (16u * (SO_INLINE_LIMIT_MAX + 1))
-#define SO_BUDGET_SPACE 36u
+#define SO_BUDGET_SPACE 144u
 #define SO_LIMIT_SPACE 5u
 #define SO_SLICE_FACTOR 8u
 #define SO_CLAIM_CHUNK 64u
@@ -471,6 +471,8 @@ static void so_setenv_cfg(unsigned gate, unsigned budget, unsigned limit_lvl) {
 	int nsel = (int)(budget % SO_NNODE);
 	int gsel = (int)((budget / SO_NNODE) % SO_NGRAFT);
 	int bfsel = (int)((budget / (SO_NNODE * SO_NGRAFT)) % SO_NBF);
+	int cpsel = (int)((budget / (SO_NNODE * SO_NGRAFT * SO_NBF)) % 2);
+	int csesel = (int)((budget / (SO_NNODE * SO_NGRAFT * SO_NBF * 2)) % 2);
 	int lv = so_limits[limit_lvl % SO_LIMIT_SPACE];
 	setenv("MCC_SEARCH_WORKER", "1", 1);
 	setenv("MCC_AST_TEMPLATES", (gate & 1) ? "1" : "0", 1);
@@ -485,6 +487,8 @@ static void so_setenv_cfg(unsigned gate, unsigned budget, unsigned limit_lvl) {
 	setenv("MCC_AST_GRAFT", buf, 1);
 	snprintf(buf, sizeof buf, "%d", so_bf[bfsel]);
 	setenv("MCC_AST_BITFLAG", buf, 1);
+	setenv("MCC_AST_CPROP_JOIN", cpsel ? "1" : "0", 1);
+	setenv("MCC_AST_CSE_JOIN", csesel ? "1" : "0", 1);
 	snprintf(buf, sizeof buf, "%d", lv);
 	setenv("MCC_AST_PROMOTE_LIMIT", buf, 1);
 	setenv("MCC_AST_OPT_LIMIT", buf, 1);
