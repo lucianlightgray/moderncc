@@ -750,3 +750,30 @@ machinery, and at what risk — to decide whether to lift the scope.
   (persistent-slot desync); peephole/Sethi-Ullman/Chaitin-Briggs
   (emitter); sin/exp (opt-in). The named-local value-ref trick has now
   unblocked BOTH local CSE and LICM that the frontier had ruled out.
+
+### 2026-07-10 — iteration 28 (capstone: code-size effect across the spectrum)
+
+- Characterized the ten-pass suite's code-size effect across three
+  workload regimes for an honest min/typical/max headline (-O1 .text vs
+  -O0, all outputs byte-identical across -O0..-O3):
+
+  | workload | -O0 → -O1 .text | regime |
+  |----------|-----------------|--------|
+  | idiom-saturated (all passes fire heavily) | 407 → 230 B · **−43.5%** | best case |
+  | mixed synthetic (iter 16) | 774 → 681 B · −12.0% | typical idiomatic |
+  | real compiler source (whole src/mcc.c, iter 26) | 601122 → 602506 B · +0.2% | generic code |
+
+  So the passes range from **−43% on code saturated with their idioms**
+  to **≈neutral on generic code** with few foldable patterns. Honest
+  takeaway: correctness-preserving, idiom-targeted optimization —
+  substantial where constant-arg libm / algebraic identities / redundant
+  subexpressions / loop invariants / dead branches & stores actually
+  occur, ~free elsewhere. Every regime keeps the self-host fixpoint
+  byte-identical.
+- **Frontier reached** (no new AST node kind, no persistent slot): the
+  ten landed passes + superoptimizer/TPE + bench stats have mined the
+  full safely-expressible space. Remaining named items (GVN global form,
+  fresh-temp CSE/LICM, IV strength reduction, Sethi–Ullman, peephole,
+  Chaitin–Briggs) each require an architectural change the campaign
+  scoped out (a value-reference node / persistent replay slot / emitter
+  rewrite) or the deferred -ffast-math sin/exp path.
