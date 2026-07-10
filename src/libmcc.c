@@ -2616,6 +2616,19 @@ LIBMCCAPI int mcc_set_options(MCCState *s, const char *r) {
 	return ret;
 }
 
+LIBMCCAPI int mcc_cache_dir(char *buf, int len) {
+	return host_cache_dir(buf, len);
+}
+
+LIBMCCAPI unsigned long long mcc_intention_hash(MCCState *s) {
+	(void)s;
+#if MCC_CONFIG_OPTIMIZER
+	return ast_intention_value();
+#else
+	return 0;
+#endif
+}
+
 PUB_FUNC void mcc_print_stats(MCCState *s1, unsigned total_time) {
 	if (!total_time)
 		total_time = 1;

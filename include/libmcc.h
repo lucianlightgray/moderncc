@@ -74,6 +74,10 @@ LIBMCCAPI void *_mcc_setjmp(MCCState *s1, void *jmp_buf, void *top_func, void *l
 typedef int MCCBtFunc(void *udata, void *pc, const char *file, int line, const char *func, const char *msg);
 LIBMCCAPI void mcc_set_backtrace_func(MCCState *s1, void *userdata, MCCBtFunc *);
 
+LIBMCCAPI int mcc_cache_dir(char *buf, int len);
+
+LIBMCCAPI unsigned long long mcc_intention_hash(MCCState *s);
+
 #ifdef __cplusplus
 }
 #endif

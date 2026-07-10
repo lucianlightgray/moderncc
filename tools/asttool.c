@@ -157,6 +157,70 @@ static void suite_template(void) {
 	ast_arena_free(a);
 }
 
+static AstLocal build_fn(AstArena *a, uint64_t callee, uint64_t local,
+												 uint64_t litval, uint64_t refoff) {
+	AstLocal bb = ast_node(a, AST_BasicBlock);
+	AstLocal call = ast_node(a, AST_Invoke);
+	ast_set_sym(a, call, callee);
+	AstLocal ref = ast_node(a, AST_Ref);
+	ast_set_sym(a, ref, local);
+	ast_set_ival(a, ref, refoff);
+	AstLocal lit = ast_node(a, AST_Literal);
+	ast_set_ival(a, lit, litval);
+	AstLocal ret = ast_node(a, AST_Return);
+	ast_add_child(a, call, ref);
+	ast_add_child(a, call, lit);
+	ast_add_child(a, ret, call);
+	ast_add_child(a, bb, ret);
+	return bb;
+}
+
+static void suite_intention(void) {
+	AstArena *a = ast_arena_new();
+	AstArena *b = ast_arena_new();
+	build_fn(a, 0x1111, 0x2222, 42, 8);
+	build_fn(b, 0x9999, 0x7777, 42, 8);
+	uint64_t ha = ast_intention_hash(a, AST_NONE);
+	uint64_t hb = ast_intention_hash(b, AST_NONE);
+	CHECK(ha != 0, "hash is nonzero");
+	CHECK(ha == ast_intention_hash(a, AST_NONE), "hash is stable");
+	CHECK(ha == hb, "alpha-renamed identifiers hash equal");
+	ast_arena_free(b);
+
+	b = ast_arena_new();
+	build_fn(b, 0x1111, 0x2222, 43, 8);
+	CHECK(ha != ast_intention_hash(b, AST_NONE),
+				"edited literal changes the hash");
+	ast_arena_free(b);
+
+	b = ast_arena_new();
+	build_fn(b, 0x1111, 0x2222, 42, 24);
+	CHECK(ha == ast_intention_hash(b, AST_NONE),
+				"Ref frame offset is excluded");
+	ast_arena_free(b);
+
+	b = ast_arena_new();
+	build_fn(b, 0x1111, 0x1111, 42, 8);
+	CHECK(ha != ast_intention_hash(b, AST_NONE),
+				"distinct identifiers collapsing to one changes the hash");
+	ast_arena_free(b);
+
+	b = ast_arena_new();
+	AstLocal bb = build_fn(b, 0x1111, 0x2222, 42, 8);
+	AstLocal extra = ast_node(b, AST_Literal);
+	ast_set_ival(b, extra, 1);
+	ast_add_child(b, bb, extra);
+	CHECK(ha != ast_intention_hash(b, AST_NONE),
+				"added node changes the hash");
+	ast_arena_free(b);
+
+	CHECK(ast_intention_hash(NULL, AST_NONE) == 0, "NULL arena hashes to 0");
+	AstArena *e = ast_arena_new();
+	CHECK(ast_intention_hash(e, AST_NONE) == 0, "empty arena hashes to 0");
+	ast_arena_free(e);
+	ast_arena_free(a);
+}
+
 int main(int argc, char **argv) {
 	const char *only = argc > 1 ? argv[1] : NULL;
 	if (!only || !strcmp(only, "arena"))
@@ -171,6 +235,8 @@ int main(int argc, char **argv) {
 		suite_provenance();
 	if (!only || !strcmp(only, "template"))
 		suite_template();
+	if (!only || !strcmp(only, "intention"))
+		suite_intention();
 
 	fprintf(stderr, "asttool: %d checks, %d failures\n", g_checks, g_failures);
 	return g_failures ? 1 : 0;

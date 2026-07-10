@@ -326,6 +326,66 @@ int ast_validate(const AstArena *a, char *msg, size_t msgcap) {
 	return 0;
 }
 
+typedef struct {
+	uint64_t *syms;
+	uint32_t nsym, cap;
+	int oom;
+} AstIhSyms;
+
+static uint64_t ast_ih_fold(uint64_t h, uint64_t v) {
+	for (int i = 0; i < 8; i++) {
+		h ^= (v >> (i * 8)) & 0xff;
+		h *= 0x100000001b3u;
+	}
+	return h;
+}
+
+static uint64_t ast_ih_sym(AstIhSyms *m, uint64_t sym) {
+	for (uint32_t i = 0; i < m->nsym; i++)
+		if (m->syms[i] == sym)
+			return i + 1;
+	if (m->nsym == m->cap) {
+		uint32_t ncap = m->cap ? m->cap * 2 : 32;
+		uint64_t *ns = realloc(m->syms, ncap * sizeof *ns);
+		if (!ns) {
+			m->oom = 1;
+			return 0;
+		}
+		m->syms = ns;
+		m->cap = ncap;
+	}
+	m->syms[m->nsym++] = sym;
+	return m->nsym;
+}
+
+static uint64_t ast_ih_node(const AstArena *a, AstLocal n, AstIhSyms *m,
+														uint64_t h) {
+	h = ast_ih_fold(h, a->kind[n]);
+	h = ast_ih_fold(h, (uint32_t)a->op[n]);
+	h = ast_ih_fold(h, (uint32_t)a->type_t[n]);
+	h = ast_ih_fold(h, a->sym[n] ? ast_ih_sym(m, a->sym[n]) : 0);
+	if (a->kind[n] != AST_Ref)
+		h = ast_ih_fold(h, a->ival[n]);
+	h = ast_ih_fold(h, a->fbits[n]);
+	h = ast_ih_fold(h, a->nchild[n]);
+	for (AstLocal c = a->first_child[n]; c != AST_NONE; c = a->next_sib[c])
+		h = ast_ih_node(a, c, m, h);
+	return h;
+}
+
+uint64_t ast_intention_hash(const AstArena *a, AstLocal root) {
+	if (!a || !a->count)
+		return 0;
+	if (root == AST_NONE)
+		root = ast_root(a);
+	if (root >= a->count)
+		return 0;
+	AstIhSyms m = {NULL, 0, 0, 0};
+	uint64_t h = ast_ih_node(a, root, &m, 0xcbf29ce484222325u);
+	free(m.syms);
+	return m.oom ? 0 : h;
+}
+
 #pragma pop_macro("malloc")
 #pragma pop_macro("realloc")
 #pragma pop_macro("free")
@@ -372,6 +432,11 @@ static int ast_graft_budget_max = 2048;
 static int ast_cost_env;
 static int ast_bitflag_env;
 static int ast_bitflag_min;
+static uint64_t ast_intention_acc;
+
+uint64_t ast_intention_value(void) {
+	return ast_intention_acc;
+}
 
 #define AST_FNCFG_MAX 256
 static struct {
@@ -610,6 +675,7 @@ void ast_configure(MCCState *s1) {
 	ast_bitflag_min = ast_env_int("MCC_AST_BITFLAG", 5);
 	if (ast_bitflag_min < 3)
 		ast_bitflag_min = 5;
+	ast_intention_acc = 0;
 	ast_fncfg_parse();
 }
 
@@ -4821,6 +4887,8 @@ void ast_func_end(Sym *sym) {
 		ast_capture = 0;
 		ast_fn_faithful = 0;
 		ast_fn_tco = 0;
+		ast_intention_acc = ast_intention_acc * 0x100000001b3u ^
+												ast_intention_hash(ast_cur, AST_NONE);
 		if (ast_cost_env)
 			ast_fn_cost(ast_cur, funcname);
 		if (ast_bitflag_env)

@@ -2890,7 +2890,7 @@ if(MCC_BUILD_TESTS)
         add_executable(asttool tools/asttool.c)
         target_include_directories(asttool PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
         target_compile_definitions(asttool PRIVATE MCC_CONFIG_OPTIMIZER=1)
-        foreach(_an arena validate dump cfg provenance template)
+        foreach(_an arena validate dump cfg provenance template intention)
             add_test(NAME "ast/${_an}" COMMAND asttool "${_an}")
             set_tests_properties("ast/${_an}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endforeach()
@@ -3398,6 +3398,11 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(hypervisor-tpe PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77
             ENVIRONMENT "MCCHV_CACHE_DIR=${CMAKE_BINARY_DIR}/hvcache-tpe")
+        add_test(NAME hypervisor-cache
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/hvcache.sh"
+                    "$<TARGET_FILE:mcchv>" "${CMAKE_BINARY_DIR}")
+        set_tests_properties(hypervisor-cache PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77)
     endif()
 
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples/ex1.c")

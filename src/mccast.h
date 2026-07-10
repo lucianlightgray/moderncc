@@ -72,6 +72,7 @@ AstLocal ast_root(const AstArena *a);
 const char *ast_kind_name(uint16_t kind);
 size_t ast_dump(const AstArena *a, AstLocal root, char *out, size_t cap);
 int ast_validate(const AstArena *a, char *msg, size_t msgcap);
+uint64_t ast_intention_hash(const AstArena *a, AstLocal root);
 
 #ifdef __cplusplus
 }
@@ -96,6 +97,7 @@ extern int ast_func_has_asm;
 extern unsigned ast_pinned_regs; /* regs promotion pinned; allocator must skip */
 
 void ast_configure(struct MCCState *s1);
+uint64_t ast_intention_value(void);
 
 void ast_func_begin(struct Sym *sym);
 void ast_func_end(struct Sym *sym);
