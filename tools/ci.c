@@ -381,7 +381,7 @@ static const struct {
 		{"local-ci", "the local-CI orchestrator itself (MCC_LOCAL_CI_AS_TEST)"},
 		{"qemu", "umbrella; the per-arch qemu-* presets are the cells"},
 		{"debug", "alias: = linux-gcc with unpinned cc (interactive use)"},
-		{"cst", "alias: MCC_CST defaults ON, = debug (interactive use)"},
+		{"cst", "feature-off axis: MCC_CONFIG_LSP=OFF (interactive use)"},
 		{"sanitize", "alias: = linux-gcc-sanitize with unpinned cc"},
 		{"diagnostics", "alias: = linux-gcc-diagnostics with unpinned cc"},
 		{"cross", "alias: = linux-gcc-cross with unpinned cc"},

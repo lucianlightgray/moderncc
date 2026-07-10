@@ -1,4 +1,4 @@
-#if MCC_CONFIG_AST && (defined(MCC_INTERNAL) || !defined(MCC_AMALGAMATED))
+#if MCC_CONFIG_OPTIMIZER && (defined(MCC_INTERNAL) || !defined(MCC_AMALGAMATED))
 
 #include "mccast.h"
 
@@ -1612,7 +1612,7 @@ void ast_hook_implicit_return(void) {
 	ast_add_child(ast_cur, bb, ret);
 }
 
-#if MCC_CONFIG_AST && defined(MCC_TARGET_X86_64)
+#if MCC_CONFIG_OPTIMIZER && defined(MCC_TARGET_X86_64)
 #define AST_PROMO_MAX 5
 static const int ast_promo_caller[3] = {10, 9, 8};
 static const int ast_promo_callee[5] = {3, 12, 13, 14, 15};
@@ -1627,7 +1627,7 @@ static int ast_promo_regpool_at(int i) {
 }
 #endif
 
-#if MCC_CONFIG_AST
+#if MCC_CONFIG_OPTIMIZER
 static void ast_replay_value(AstArena *a, AstLocal n);
 static void ast_replay_bb(AstArena *a, AstLocal bb);
 static int ast_local_is_readonly(AstArena *a, int off);
@@ -2019,7 +2019,7 @@ static int ast_local_is_readonly(AstArena *a, int off) {
 }
 #endif
 
-#if MCC_CONFIG_AST && defined(MCC_TARGET_X86_64)
+#if MCC_CONFIG_OPTIMIZER && defined(MCC_TARGET_X86_64)
 static int ast_promo_reg_of(AstArena *a, AstLocal n) {
 	if (n == AST_NONE || ast_kind(a, n) != AST_Ref)
 		return -1;
@@ -2537,7 +2537,7 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 			 s = ast_next_sib(a, s)) {
 		switch (ast_kind(a, s)) {
 		case AST_Store: {
-#if MCC_CONFIG_AST && defined(MCC_TARGET_X86_64)
+#if MCC_CONFIG_OPTIMIZER && defined(MCC_TARGET_X86_64)
 			int preg = (ast_promo_n && !ast_in_graft)
 										 ? ast_promo_reg_of(a, ast_child(a, s, 0))
 										 : -1;

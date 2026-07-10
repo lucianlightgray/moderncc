@@ -752,7 +752,7 @@ static int handle_eob(void) {
 			len = 0;
 		}
 		total_bytes += len;
-#if MCC_CONFIG_CST
+#if MCC_CONFIG_LSP
 		if (bf->fd >= 0)
 			bf->cst_base += (unsigned long)(bf->buf_end - bf->buffer);
 #endif
@@ -1332,7 +1332,7 @@ ST_FUNC void skip_to_eol(int warn) {
 static CachedInclude *
 search_cached_include(MCCState *s1, const char *filename, int add);
 
-#if MCC_CONFIG_CST
+#if MCC_CONFIG_LSP
 static BufferedFile *cst_main_bf;
 #endif
 
@@ -1431,7 +1431,7 @@ static int parse_include(MCCState *s1, int do_next, int test) {
 			if ((s1->verbose | 1) == 3)
 				printf("=> %*s%s (cached)\n",
 							 (int)(s1->include_stack_ptr - s1->include_stack), "", buf);
-#if MCC_CONFIG_CST
+#if MCC_CONFIG_LSP
 			if (!test)
 				cst_hook_include(buf, file == cst_main_bf);
 #endif
@@ -1460,7 +1460,7 @@ static int parse_include(MCCState *s1, int do_next, int test) {
 										 mcc_strdup(buf));
 		}
 		mcc_debug_bincl(s1);
-#if MCC_CONFIG_CST
+#if MCC_CONFIG_LSP
 		if (!(c == '<' && 0 == strcmp(name, "mccdefs.h") &&
 					0 == strcmp(file->prev->filename, "<command line>")))
 			cst_hook_include(buf, file->prev == cst_main_bf);
@@ -1908,7 +1908,7 @@ ST_FUNC void mccpp_putfile(const char *filename) {
 	mcc_debug_newfile(mcc_state);
 }
 
-#if MCC_CONFIG_CST
+#if MCC_CONFIG_LSP
 static uint16_t cst_pp_dir_kind(int t) {
 	switch (t) {
 	case TOK_INCLUDE:
@@ -1934,7 +1934,7 @@ ST_FUNC void preprocess(int is_bof) {
 	int c, n, saved_parse_flags;
 	char buf[1024], *q;
 	Sym *s;
-#if MCC_CONFIG_CST
+#if MCC_CONFIG_LSP
 	uint32_t cst_pp_first = 0;
 	uint16_t cst_pp_kind = 0;
 #endif
@@ -1944,7 +1944,7 @@ ST_FUNC void preprocess(int is_bof) {
 
 	next_nomacro();
 redo:
-#if MCC_CONFIG_CST
+#if MCC_CONFIG_LSP
 	cst_pp_first = cst_leafcount() ? cst_leafcount() - 1 : 0;
 	cst_pp_kind = (file == cst_main_bf) ? cst_pp_dir_kind(tok) : 0;
 #endif
@@ -2023,7 +2023,7 @@ redo:
 			file->ifndef_macro = 0;
 	test_skip:
 		if (!(c & 1)) {
-#if MCC_CONFIG_CST
+#if MCC_CONFIG_LSP
 			if (cst_pp_kind && cst_leafcount() > cst_pp_first)
 				cst_hook_wrap(cst_pp_kind, cst_pp_first, cst_leafcount());
 #endif
@@ -2132,7 +2132,7 @@ redo:
 	}
 	skip_to_eol(1);
 the_end:
-#if MCC_CONFIG_CST
+#if MCC_CONFIG_LSP
 	if (cst_pp_kind && cst_leafcount() > cst_pp_first)
 		cst_hook_wrap(cst_pp_kind, cst_pp_first, cst_leafcount());
 #endif
@@ -2789,7 +2789,7 @@ static void parse_number(const char *p) {
 		}                              \
 		break;
 
-#if MCC_CONFIG_CST
+#if MCC_CONFIG_LSP
 static unsigned long cst_prev_end;
 
 ST_FUNC void cst_capture_begin(const char *filename) {
@@ -3433,7 +3433,7 @@ redo_no_start:
 	tok_flags = 0;
 keep_tok_flags:
 	file->buf_ptr = p;
-#if MCC_CONFIG_CST
+#if MCC_CONFIG_LSP
 	cst_capture_tok();
 #endif
 	if (g_debug & MCC_DBG_TOK)
@@ -4015,14 +4015,14 @@ ST_FUNC void next(void) {
 		Sym *s = tok_ts->sym_define;
 		if (s) {
 			Sym *nested_list = NULL;
-#if MCC_CONFIG_CST
+#if MCC_CONFIG_LSP
 			uint32_t cst_mfirst = cst_mark();
 			uint32_t cst_mbefore = cst_leafcount();
 #endif
 			macro_subst_tok(&tokstr_buf, &nested_list, s);
 			tok_str_add(&tokstr_buf, 0);
 			begin_macro(&tokstr_buf, 0);
-#if MCC_CONFIG_CST
+#if MCC_CONFIG_LSP
 			if (file == cst_main_bf) {
 				uint32_t cst_mafter = cst_leafcount();
 				uint32_t cst_mlast = cst_mafter > cst_mbefore

@@ -819,7 +819,7 @@ static int mcc_compile(MCCState *s1, int filetype, const char *str, int fd) {
 			file->fd = fd;
 		}
 
-#if MCC_CONFIG_CST
+#if MCC_CONFIG_LSP
 		int cst_on = (s1->lsp && fd != -1 &&
 									s1->output_type != MCC_OUTPUT_PREPROCESS &&
 									!(filetype & (AFF_TYPE_ASM | AFF_TYPE_ASMPP)));
@@ -842,7 +842,7 @@ static int mcc_compile(MCCState *s1, int filetype, const char *str, int fd) {
 #endif
 			} else {
 				mccgen_compile(s1);
-#if MCC_CONFIG_CST
+#if MCC_CONFIG_LSP
 				if (cst_on)
 					cst_capture_end();
 #endif
@@ -2081,7 +2081,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) {
 			s->do_strip = 1;
 			break;
 		case MCC_OPTION_lsp:
-#if MCC_CONFIG_CST
+#if MCC_CONFIG_LSP
 			s->lsp = 1;
 			break;
 #else

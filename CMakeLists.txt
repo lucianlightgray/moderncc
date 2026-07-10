@@ -1134,10 +1134,10 @@ mcc_config_node(MCC_BUILD_TESTS   TYPE BOOL DEFAULT ON  GROUP "Build targets"
     HELP "Build/enable the test suite (tests/Makefile)")
 mcc_config_node(MCC_BENCH         TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Build the mccbench tool and the `bench` target (compile-speed report). Off by default; CI enables it")
-mcc_config_node(MCC_CST TYPE BOOL DEFAULT ON GROUP "Advanced" ADVANCED
-    HELP "Build the concrete syntax tree subsystem")
-mcc_config_node(MCC_AST TYPE BOOL DEFAULT ON GROUP "Advanced" ADVANCED
-    HELP "Build the AST intention-IR subsystem (side-channel; -O1 replay driver)")
+mcc_config_node(MCC_CONFIG_LSP TYPE BOOL DEFAULT ON GROUP "Advanced" ADVANCED
+    HELP "Enable --lsp capture (the side-recorded concrete syntax tree subsystem)")
+mcc_config_node(MCC_CONFIG_OPTIMIZER TYPE BOOL DEFAULT ON GROUP "Advanced" ADVANCED
+    HELP "Enable the optimizer (-O1+ AST replay driver); OFF degrades -O1+ to -O0-equivalent output")
 mcc_config_node(MCC_ALL_DIAGNOSTICS TYPE BOOL DEFAULT OFF GROUP "Diagnostics" ADVANCED
     HELP "Everything-on diagnostics: verbose warnings + debug info + build mcc_s/mcc_p/mcc_c")
 if(MCC_ALL_DIAGNOSTICS)
@@ -1693,11 +1693,11 @@ elseif(MCC_CONFIG_DIAG_RT STREQUAL "bounds")
     set(_mcc_diag_bc 1)
 endif()
 list(APPEND _mccdefs "MCC_CONFIG_DIAG_RT=${_mcc_diag_level}")
-if(MCC_CST)
-    list(APPEND _mccdefs "MCC_CONFIG_CST=1")
+if(MCC_CONFIG_LSP)
+    list(APPEND _mccdefs "MCC_CONFIG_LSP=1")
 endif()
-if(MCC_AST)
-    list(APPEND _mccdefs "MCC_CONFIG_AST=1")
+if(MCC_CONFIG_OPTIMIZER)
+    list(APPEND _mccdefs "MCC_CONFIG_OPTIMIZER=1")
 endif()
 if(MCC_CONFIG_NEW_MACHO STREQUAL "no")
     list(APPEND _mccdefs "MCC_CONFIG_MACHO_CHAINED_FIXUPS=0")
@@ -2960,10 +2960,10 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(idiom-gate-invariant PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
-    if(MCC_AST AND NOT CMAKE_CROSSCOMPILING)
+    if(MCC_CONFIG_OPTIMIZER AND NOT CMAKE_CROSSCOMPILING)
         add_executable(asttool tools/asttool.c)
         target_include_directories(asttool PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-        target_compile_definitions(asttool PRIVATE MCC_CONFIG_AST=1)
+        target_compile_definitions(asttool PRIVATE MCC_CONFIG_OPTIMIZER=1)
         foreach(_an arena validate dump cfg provenance template)
             add_test(NAME "ast/${_an}" COMMAND asttool "${_an}")
             set_tests_properties("ast/${_an}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
@@ -3105,10 +3105,10 @@ if(MCC_BUILD_TESTS)
         endif()
     endif()
 
-    if(MCC_CST AND NOT CMAKE_CROSSCOMPILING)
+    if(MCC_CONFIG_LSP AND NOT CMAKE_CROSSCOMPILING)
         add_executable(csttool tools/csttool.c)
         target_include_directories(csttool PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-        target_compile_definitions(csttool PRIVATE MCC_CONFIG_CST=1)
+        target_compile_definitions(csttool PRIVATE MCC_CONFIG_LSP=1)
         foreach(_cn store hash geom serial sym comment template)
             add_test(NAME "cst/${_cn}" COMMAND csttool "${_cn}")
             set_tests_properties("cst/${_cn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
@@ -3216,7 +3216,7 @@ if(MCC_BUILD_TESTS)
             SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env}")
     endforeach()
 
-    if(MCC_AST)
+    if(MCC_CONFIG_OPTIMIZER)
         foreach(_gl IN LISTS _exec_glines)
             string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
             set(_gn "${CMAKE_MATCH_1}")
@@ -3721,7 +3721,7 @@ if(MCC_BUILD_TESTS)
                 --run-mmap-exec "${MCC_RUN_MMAP_EXEC}" --pie "${MCC_CONFIG_PIE}" --pic "${MCC_CONFIG_PIC}"
                 --new-dtags "${MCC_CONFIG_NEW_DTAGS}" --codesign "${MCC_CONFIG_CODESIGN}"
                 --diag-rt "${MCC_CONFIG_DIAG_RT}" --asm "${MCC_CONFIG_ASM}"
-                --cst "${MCC_CST}" --ast "${MCC_AST}"
+                --cst "${MCC_CONFIG_LSP}" --ast "${MCC_CONFIG_OPTIMIZER}"
                 --new-macho "${MCC_CONFIG_NEW_MACHO}" --dwarf "${MCC_CONFIG_DWARF}" --semlock "${MCC_CONFIG_SEMLOCK}"
                 --sysincludepaths "${MCC_SYSINCLUDEPATHS}" --libpaths "${MCC_LIBPATHS}"
                 --crtprefix "${MCC_CRTPREFIX}" --elfinterp "${MCC_ELFINTERP}" --switches "${MCC_SWITCHES}"
@@ -3780,7 +3780,7 @@ if(MCC_BUILD_TESTS)
         DEPENDS mcc mccharness USES_TERMINAL
         COMMENT "gcctestsuite: gcc c-torture over mcc")
 
-    if(MCC_AST)
+    if(MCC_CONFIG_OPTIMIZER)
         foreach(_col replay promote inline)
             add_custom_target(gcctestsuite-ast-${_col}
                 COMMAND "$<TARGET_FILE:mccharness>" gcctestsuite --mcc $<TARGET_FILE:mcc>

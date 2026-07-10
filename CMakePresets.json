@@ -48,15 +48,15 @@
     },
     {
       "name": "cst",
-      "displayName": "CST database subsystem (side-recorded concrete syntax tree)",
+      "displayName": "LSP feature off (no side-recorded concrete syntax tree)",
       "inherits": "debug",
-      "cacheVariables": { "MCC_CST": "ON" }
+      "cacheVariables": { "MCC_CONFIG_LSP": "OFF" }
     },
     {
       "name": "ast",
-      "displayName": "AST intention-IR subsystem (-O1 replay driver side-channel)",
+      "displayName": "Optimizer feature off (-O1+ degrades to -O0-equivalent output)",
       "inherits": "debug",
-      "cacheVariables": { "MCC_AST": "ON", "MCC_CST": "ON" }
+      "cacheVariables": { "MCC_CONFIG_OPTIMIZER": "OFF" }
     },
     {
       "name": "cross",

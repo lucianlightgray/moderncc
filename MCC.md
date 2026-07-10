@@ -49,7 +49,7 @@ except msvc. Children (presets, by reference frequency):
 - **`macos` / `macos-cross`** (≈5) — W: macos CI cell. H: `CC=$env{CC}`, `MCC_DARWIN_HOST=ON`, arm64 native + x86_64 Rosetta. Why: enables kernel-fused apple-libc suite.
 - **`debug`** (≈5) — W: baseline interactive Debug. H: musl OFF, bcheck+backtrace ON, strip OFF.
 - **`mingw`** (≈4) — W: build-only mingw cell (winlibs GCC `16.1.0-ucrt`).
-- **`cross` / `diagnostics` / `cst` / `ast` / `local-ci`** (≈3 each) — W: alias/named-scenario dev presets (`cross`=all cross compilers; `diagnostics`=`ALL_DIAGNOSTICS`; `cst`=`MCC_CST`; `ast`=`MCC_AST`; `local-ci`=reproduces the CI matrix).
+- **`cross` / `diagnostics` / `cst` / `ast` / `local-ci`** (≈3 each) — W: alias/named-scenario dev presets (`cross`=all cross compilers; `diagnostics`=`ALL_DIAGNOSTICS`; `cst`=`MCC_CONFIG_LSP=OFF`; `ast`=`MCC_CONFIG_OPTIMIZER=OFF`; `local-ci`=reproduces the CI matrix).
 
 **CMake node catalog** — W: the 55 `mcc_config_node`s influencing a build. Whr:
 `CMakeLists.txt` §1z + loose `option()`s. Full table in EXCESS. Highest-reference children:
@@ -59,7 +59,7 @@ except msvc. Children (presets, by reference frequency):
 - **`MCC_BUILD_STATIC_EXE`** (≈11, OFF; forced OFF macOS) — W: build `mcc-static`; `MCC_AMALGAMATED` decides self-contained vs linking `libmcc.a`.
 - **`MCC_CONFIG_ASM`** (≈8, ON), **`MCC_BUILD_SANITIZE`** (≈8, OFF), **`MCC_ENABLE_CROSS`** (≈8, OFF) — see §1/§2.
 - **`MCC_BUILD_MUSL`** (≈7, OFF), **`MCC_MCCRT_USE_HOSTCC`** (≈6, auto), **`MCC_TOOLCHAIN_PROFILE`** (≈6, auto — seeds defaults, doesn't switch compilers), **`MCC_CONFIG_DIAG_RT`** (≈6, Debug), **`MCC_BUILD_DYNAMIC_EXE`** (≈6, ON) — see EXCESS for the rest.
-- **`MCC_CST`/`MCC_AST`** (≈4 each, ON) — W: build the side-channel subsystems (`MCC_CONFIG_CST`/`MCC_CONFIG_AST`); codegen byte-identical either way.
+- **`MCC_CONFIG_LSP`/`MCC_CONFIG_OPTIMIZER`** (≈4 each, ON) — W: enable `--lsp` capture / the `-O1+` optimizer by building the side-channel subsystems (CST/AST); codegen byte-identical either way.
 
 **`ci` tool** (≈13) — W: the C tool (`tools/ci.c`) every workflow job drives its
 preset through. H: subcommands `run-preset`/`qemu`/`dist`/`plan`/`parity`/`pkg`/
@@ -193,7 +193,7 @@ into [EXCESS.md](EXCESS.md) §Profiling (was `docs/PROFILING.md` + NOTES.md). Wh
 **CST database** — W: byte-faithful **concrete** syntax tree side-channel. Whr:
 `src/mcccst.{c,h}`, `tools/csttool.c`, `tests/cst/`. Why: substrate for
 `-g`/LSP/optimization; pure reflection round-trips byte-identical. Who: complete,
-gated `MCC_CST` (default ON). Children by reference frequency:
+gated `MCC_CONFIG_LSP` (default ON). Children by reference frequency:
 
 - **`H_s` structural / `H_t` trivia hash** (≈20) — W: two-channel 128-bit Merkle hash. H: `H_s` position-independent (trivia excluded), `H_t` layout; format-only edits localize without dirtying `H_s`; incremental rehash O(depth).
 - **`src/mcccst.{c,h}`** (≈15) — W: single-file implementation (per-slice split not taken); un-poisons malloc/free for self-containment.
@@ -211,7 +211,7 @@ gated `MCC_CST` (default ON). Children by reference frequency:
 
 **AST intention IR** — W: an *intention* IR (desugared, type-resolved,
 post-preprocessor) alongside the CST; 15 node kinds. Whr: `src/mccast.{c,h}`, gated
-`MCC_CONFIG_AST` (ON); the hook/replay half lives under `#ifdef _MCC_H` and reads
+`MCC_CONFIG_OPTIMIZER` (ON); the hook/replay half lives under `#ifdef _MCC_H` and reads
 `mccgen.c` statics (`vstack` et al.), so multi-TU builds `#include "mccast.c"` at
 the end of `mccgen.c` while the standalone `mccast.c` TU compiles empty — only
 `tools/asttool.c` (no `MCC_AMALGAMATED` define) compiles the arena half freestanding. Why: portable/optimizable/inlinable layer feeding an

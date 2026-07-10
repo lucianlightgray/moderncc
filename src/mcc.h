@@ -487,7 +487,7 @@ typedef struct BufferedFile {
 	struct BufferedFile *prev;
 	int line_num;
 	int line_ref;
-#if MCC_CONFIG_CST
+#if MCC_CONFIG_LSP
 	unsigned long cst_base;
 #endif
 	int ifndef_macro;
@@ -1532,7 +1532,7 @@ ST_FUNC void indir(void);
 ST_FUNC void unary(void);
 ST_FUNC void gexpr(void);
 ST_FUNC int expr_const(void);
-#if MCC_CONFIG_CST
+#if MCC_CONFIG_LSP
 ST_FUNC void cst_capture_begin(const char *filename);
 ST_FUNC CstArena *cst_capture_end(void);
 #endif

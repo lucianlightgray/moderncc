@@ -729,7 +729,7 @@ static int build_self_mcc(const char *stage1, const struct workload *wl,
 		ts_arg(&v, strdup(buf));
 	}
 	ts_arg(&v, "-DCC_NAME=CC_mcc");
-	ts_arg(&v, "-DMCC_CONFIG_AST=1");
+	ts_arg(&v, "-DMCC_CONFIG_OPTIMIZER=1");
 	if (opt)
 		ts_arg(&v, opt);
 	return host_spawn_wait(ts_argz(&v)) == 0;

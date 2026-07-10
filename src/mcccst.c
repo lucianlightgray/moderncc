@@ -1,4 +1,4 @@
-#if MCC_CONFIG_CST
+#if MCC_CONFIG_LSP
 
 #include "mcccst.h"
 

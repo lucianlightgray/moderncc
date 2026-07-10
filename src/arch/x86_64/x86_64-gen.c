@@ -1931,7 +1931,7 @@ void gen_opf(int op) {
 				r = vtop->r;
 			}
 
-#if MCC_CONFIG_AST
+#if MCC_CONFIG_OPTIMIZER
 			{
 				int dr = vtop[-1].r & VT_VALMASK;
 				if (dr < VT_CONST && (ast_pinned_regs & (1u << dr))) {

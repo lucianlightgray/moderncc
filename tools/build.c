@@ -549,9 +549,9 @@ static int cmd_emit_defines(int argc, char **argv) {
 	if (truthy(fopt(argc, argv, "--codesign", "")))
 		EMIT("MCC_CONFIG_CODESIGN=1");
 	if (truthy(fopt(argc, argv, "--cst", "")))
-		EMIT("MCC_CONFIG_CST=1");
+		EMIT("MCC_CONFIG_LSP=1");
 	if (truthy(fopt(argc, argv, "--ast", "")))
-		EMIT("MCC_CONFIG_AST=1");
+		EMIT("MCC_CONFIG_OPTIMIZER=1");
 	{
 		const char *dr = fopt(argc, argv, "--diag-rt", "bounds");
 		EMIT("MCC_CONFIG_DIAG_RT=%d",

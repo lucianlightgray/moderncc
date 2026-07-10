@@ -78,7 +78,7 @@ high-value specifics the summary omits:
 - **Feature toggles baked as `CONFIG_*`:** `MCC_CONFIG_MINGW`, `BACKTRACE`,
   `BCHECK` (needs BACKTRACE), `ASM`, `PREDEFS`, `PIE`/`PIC` (ELF),
   `RUN_MMAP_EXEC` (W^X kernels), `NEW_DTAGS` (ELF), `AUTO_MCCDIR`, `LIBC`,
-  `DWARF`, `SEMLOCK`, `MCC_CST`, `MCC_AST`, `NEW_MACHO`/`CODESIGN` (Darwin).
+  `DWARF`, `SEMLOCK`, `LSP`, `OPTIMIZER`, `NEW_MACHO`/`CODESIGN` (Darwin).
 - **Instrumentation:** `MCC_BUILD_SANITIZE` (GCC/Clang→ASan+UBSan;
   MSVC→`/fsanitize=address`; mingw/PE→trap-mode UBSan; alignment excluded — mcc's
   one intentional unaligned idiom), `MCC_BUILD_PROFILE` (`mcc_p`, `-pg -static`,
@@ -314,7 +314,7 @@ high-value specifics the summary omits:
   `render` engine, `H_s` structural hash), snapshot-serializable
   (`cst_snapshot`). Built via `ast_hook_*`-style vstack hooks, CST-independent of
   the AST (each subsystem functions with the other off; shared storage only when
-  both on, gated `CONFIG_CST || MCC_CONFIG_AST`). Substrate for `-g`/LSP (lexical
+  both on, gated `MCC_CONFIG_LSP || MCC_CONFIG_OPTIMIZER`). Substrate for `-g`/LSP (lexical
   scope spans + source ranges) and the AST's shared inline/template engine.
   Frozen spec + completed vertical slices are in the former NOTES.md (§0–§11 +
   "Completed work — CST database", D1–D5). Its per-node hash-consing is the #1
@@ -362,7 +362,7 @@ Exhaustive lists that `MCC.md` names but does not spell out, kept so no
 - **Standard CMake values:** `CMAKE_BUILD_TYPE` (Debug/Release/RelWithDebInfo/MinSizeRel, forwarded to matrix cells), `CMAKE_C_COMPILER` (the real compiler switch — profile only seeds defaults), `CMAKE_CROSSCOMPILING_EMULATOR`→`MCC_EMULATOR` (needed to run foreign mcc), `CMAKE_TOOLCHAIN_FILE`, `CMAKE_INSTALL_PREFIX` (defaults to `MCC_DIST_DIR`; must be set at configure time — mcc runtime dir bakes an absolute path), `CMAKE_OSX_DEPLOYMENT_TARGET` (auto-pinned for Homebrew gcc), `CMAKE_EXPORT_COMPILE_COMMANDS` (ON, before `project()`).
 - **Build-target knobs:** `MCC_TOOLCHAIN_PROFILE` (auto/gcc/clang/mcc/msvc/mingw; list→superbuild), `MCC_ENABLE_CROSS`, `MCC_BUILD_STATIC_LIB`, `MCC_BUILD_STATIC_EXE`, `MCC_BUILD_DYNAMIC_LIB`, `MCC_BUILD_DYNAMIC_EXE` (ON, gate MCC_AMALGAMATED=OFF), `MCC_BUILD_MUSL`, `MCC_BUILD_STRIP`, `MCC_ENABLE_RPATH` (ON, !static-lib), `MCC_SINGLE_SOURCE` (ON), `MCC_BUILD_TESTS` (ON), `MCC_BENCH`, `MCC_MCCRT_USE_HOSTCC` (auto-forced when no emulator/asm-off/embed), `MCC_EMBED_MCCRT` (ON ELF/Mach-O, OFF WIN32), `MCC_CONFIG_AUTOCORRECT`, `MCC_MINGW_SOURCE` (winlibs/multilib).
 - **Diagnostics/instrumentation:** `MCC_ALL_DIAGNOSTICS`, `MCC_BUILD_SANITIZE`, `MCC_BUILD_PROFILE` (mcc_p, `-pg -static`, fatal Darwin/MSVC), `MCC_BUILD_COVERAGE` (mcc_c).
-- **Feature toggles (→ CONFIG_*):** `MCC_CONFIG_MINGW`, `_BACKTRACE`, `_BCHECK` (needs BACKTRACE), `_ASM`, `_PREDEFS`, `_PIE`/`_PIC` (ELF), `MCC_RUN_MMAP_EXEC` (W^X kernels), `_NEW_DTAGS` (ELF, DT_RUNPATH vs DT_RPATH), `MCC_AUTO_MCCDIR`, `_LIBC` (uClibc/musl/''), `_DWARF` (0/2/3/4/5/''), `_SEMLOCK` (numeric, fatal else), `MCC_CST`, `MCC_AST`, `_NEW_MACHO`/`_CODESIGN` (Darwin).
+- **Feature toggles (→ CONFIG_*):** `MCC_CONFIG_MINGW`, `_BACKTRACE`, `_BCHECK` (needs BACKTRACE), `_ASM`, `_PREDEFS`, `_PIE`/`_PIC` (ELF), `MCC_RUN_MMAP_EXEC` (W^X kernels), `_NEW_DTAGS` (ELF, DT_RUNPATH vs DT_RPATH), `MCC_AUTO_MCCDIR`, `_LIBC` (uClibc/musl/''), `_DWARF` (0/2/3/4/5/''), `_SEMLOCK` (numeric, fatal else), `_LSP`, `_OPTIMIZER`, `_NEW_MACHO`/`_CODESIGN` (Darwin).
 - **Runtime path overrides** (STRING '', mirror `configure --…`): `MCC_SYSROOT`, `_TRIPLET`, `_SYSINCLUDEPATHS`, `_LIBPATHS`, `_CRTPREFIX`, `_ELFINTERP`, `_SWITCHES`, `_OS_RELEASE`, `_INSTALL_MCCDIR`.
 - **Extra build flags:** `MCC_EXTRA_CFLAGS`/`_LDFLAGS`/`_LIBS`.
 - **ARM ABI (gate MCC_CPU==arm):** `MCC_ARM_EABI`/`_VFP`/`_HARDFLOAT`/`_IDIV` (from `__ARM_FEATURE_IDIV`), `MCC_CPUVER` (from `__ARM_ARCH`).

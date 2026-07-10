@@ -176,23 +176,23 @@ with the user-facing parent feature's CONFIG gate from CMake**, default ON.
 The subsystems stay strippable, but by the name of what the user loses, not
 the name of the internal IR.
 
-- [ ] `MCC_CONFIG_AST` / `MCC_AST` → the optimizer feature gate (name per item-16
+- [x] `MCC_CONFIG_AST` / `MCC_AST` → the optimizer feature gate (name per item-16
       rules; working proposal `MCC_CONFIG_OPTIMIZER` — it gates what `-O1+`
       does as implemented). ~103 sites re-spelled; **no code motion**
       (AST-replay positional sensitivity — declaration-level edits only).
-- [ ] `MCC_CONFIG_CST` / `MCC_CST` → the LSP feature gate (working proposal
+- [x] `MCC_CONFIG_CST` / `MCC_CST` → the LSP feature gate (working proposal
       `MCC_CONFIG_LSP` — it gates `--lsp` capture as implemented). ~49 sites;
       csttool builds against the same gate.
-- [ ] Semantics when OFF: unchanged from today's OFF builds — `-O1+` degrades
+- [x] Semantics when OFF: unchanged from today's OFF builds — `-O1+` degrades
       to `-O0`-equivalent output, `--lsp` errors like `-b` does in a
       bcheck-less build. `-O0` output stays byte-identical ON vs OFF (the
       existing invariant).
-- [ ] Normalize the test idiom in the same sweep (kills the
+- [x] Normalize the test idiom in the same sweep (kills the
       `#if defined(X) && X` vs `#ifdef X` split for these two families).
-- [ ] CMake/presets: `MCC_AST`/`MCC_CST` options rename; the `ast`/`cst`
+- [x] CMake/presets: `MCC_AST`/`MCC_CST` options rename; the `ast`/`cst`
       experiment presets become the feature-off axes; MCC.md/EXCESS.md ledger
       rows update.
-- [ ] Gates: ON/OFF × single/multisource builds, ctest, `-O0` byte-identical
+- [x] Gates: ON/OFF × single/multisource builds, ctest, `-O0` byte-identical
       cross-check, whole-corpus mcctest at `-O0..-O3` for the ON build,
       self-host fixpoint.
 
