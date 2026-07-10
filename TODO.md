@@ -549,6 +549,19 @@ Decided 2026-07-10:
   debugging. (Retires the child-process model of §f959078e for the
   per-function path.)
 
+**Blocker found (2026-07-10, from reading `ast_func_end`).** The sibling
+passes (`ast_bfold_run`/`ast_ident_run`/…) **mutate the captured `AstArena`
+destructively in place**, and the re-emit replays that one mutated tree
+once. So a per-function search that tries *several* configs cannot just
+re-run passes on the same `ast_cur` — the first config's mutation poisons
+the tree for the next. The prerequisite is therefore an **AST clone** (deep
+copy of the `AstArena` for the function) so each config attempt starts from
+a pristine capture; then, per attempt, reset `ind` / the positional pools
+(`ast_fconst_i`, `ast_locrec_i`) exactly as the single re-emit does today,
+replay, measure the emitted length (`ind - ast_body_ind_sv`), and keep the
+smallest. That clone + repeatable-reset is the real work of §22 and must be
+validated across all four exec-replay columns + fixpoint at each step.
+
 Builds on §21 + the capture/replay driver.
 
 ## 23. Widen the inliner envelope — the "aggressive" mode (medium-large, correctness-sensitive)
