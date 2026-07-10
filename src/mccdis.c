@@ -77,14 +77,13 @@ ST_FUNC const char *disasm_reloc(disasm_ctx *dc, addr_t off, int size, int *ptyp
 			long long addend;
 			if (ptype)
 				*ptype = type;
-#if SHT_RELX == SHT_RELA
-			addend = rel->r_addend;
-#else
-
-			addend = 0;
-			if (reloc_field_size(type) == 4 && rel->r_offset + 4 <= dc->size)
-				addend = (int32_t)read32le(dc->data + rel->r_offset);
-#endif
+			if (SHT_RELX == SHT_RELA) {
+				addend = ELFW_R_ADDEND(rel);
+			} else {
+				addend = 0;
+				if (reloc_field_size(type) == 4 && rel->r_offset + 4 <= dc->size)
+					addend = (int32_t)read32le(dc->data + rel->r_offset);
+			}
 #ifdef MCC_HAVE_DISASM
 
 			addend += mcc_disasm_reloc_addend_bias(type, size);

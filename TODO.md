@@ -118,17 +118,17 @@ is runtime via a category bitmask over the existing `g_debug` int
 
 ## 10. Structural ungating where free (medium-large)
 
-- [ ] Delete `NEED_RELOC_TYPE`/`NEED_BUILD_GOT`: compile `code_reloc`,
+- [x] Delete `NEED_RELOC_TYPE`/`NEED_BUILD_GOT`: compile `code_reloc`,
       `gotplt_entry_type`, `create_plt_entry`, `relocate_plt`,
       `build_got_entries` unconditionally in all five `*-link.c` + the
       `mccelf.c:1140` consumer; remove the definitions at `mcc.h:1664-1669`.
       Cost: a few KB of unused code in PE/Mach-O builds. riscv64-link.c already
       lives this way (it never had the `NEED_RELOC_TYPE` guard).
-- [ ] Convert the three `#if SHT_RELX == SHT_RELA` compile branches
+- [x] Convert the three `#if SHT_RELX == SHT_RELA` compile branches
       (`mccelf.c:697,1014,1845`) to runtime `if` on a has-addend predicate —
       the fourth site (`mccelf.c:700`) already does exactly this. The
       `ElfW_Rel` *type* stays compile-time (no runtime type selection in C).
-- [ ] Gate: full local matrix (PE + Mach-O cells are where unused-function
+- [x] Gate: full local matrix (PE + Mach-O cells are where unused-function
       fallout appears) + per-target `mcc -c` object comparison (must be
       byte-identical — no executable text changes).
 

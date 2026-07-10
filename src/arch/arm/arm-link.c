@@ -21,7 +21,6 @@
 
 #include "mcc.h"
 
-#ifdef NEED_RELOC_TYPE
 ST_FUNC int code_reloc(int reloc_type) {
 	switch (reloc_type) {
 	case R_ARM_MOVT_ABS:
@@ -96,7 +95,6 @@ ST_FUNC int gotplt_entry_type(int reloc_type) {
 	return -1;
 }
 
-#ifdef NEED_BUILD_GOT
 ST_FUNC unsigned create_plt_entry(MCCState *s1, unsigned got_offset, struct sym_attr *attr) {
 	Section *plt = s1->plt;
 	uint8_t *p;
@@ -154,8 +152,6 @@ ST_FUNC void relocate_plt(MCCState *s1) {
 		}
 	}
 }
-#endif
-#endif
 
 ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr, addr_t addr, addr_t val) {
 	ElfW(Sym) * sym;

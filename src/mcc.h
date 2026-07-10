@@ -247,6 +247,8 @@ ST_FUNC void host_fault_unblock(unsigned detail);
 #define ElfW_Rel ElfW(Rela)
 #define SHT_RELX SHT_RELA
 #define REL_SECTION_FMT ".rela%s"
+#define ELFW_R_ADDEND(rel) ((rel)->r_addend)
+#define ELFW_SET_R_ADDEND(rel, val) ((rel)->r_addend = (val))
 #else
 #define ELFCLASSW ELFCLASS32
 #define ElfW(type) Elf##32##_##type
@@ -254,6 +256,8 @@ ST_FUNC void host_fault_unblock(unsigned detail);
 #define ElfW_Rel ElfW(Rel)
 #define SHT_RELX SHT_REL
 #define REL_SECTION_FMT ".rel%s"
+#define ELFW_R_ADDEND(rel) ((void)(rel), 0)
+#define ELFW_SET_R_ADDEND(rel, val) ((void)(rel), (void)(val))
 #endif
 #define addr_t ElfW(Addr)
 #define ElfSym ElfW(Sym)
@@ -1662,7 +1666,6 @@ ST_FUNC void mcc_add_runtime(MCCState *s1);
 ST_FUNC int mcc_add_mccrt_embedded(MCCState *s1);
 #endif
 
-#ifndef MCC_TARGET_PE
 ST_FUNC int code_reloc(int reloc_type);
 ST_FUNC int gotplt_entry_type(int reloc_type);
 
@@ -1673,14 +1676,9 @@ enum gotplt_entry {
 	ALWAYS_GOTPLT_ENTRY
 };
 
-#define NEED_RELOC_TYPE
-#if !defined MCC_TARGET_MACHO || defined MCC_IS_NATIVE
 ST_FUNC unsigned create_plt_entry(MCCState *s1, unsigned got_offset, struct sym_attr *attr);
 ST_FUNC void relocate_plt(MCCState *s1);
 ST_FUNC void build_got_entries(MCCState *s1, int got_sym);
-#define NEED_BUILD_GOT
-#endif
-#endif
 
 ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr, addr_t addr, addr_t val);
 

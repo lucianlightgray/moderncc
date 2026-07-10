@@ -691,9 +691,8 @@ ST_FUNC void put_elf_reloca(Section *symtab, Section *s, unsigned long offset,
 	rel = section_ptr_add(sr, sizeof(ElfW_Rel));
 	rel->r_offset = offset;
 	rel->r_info = ELFW(R_INFO)(symbol, type);
-#if SHT_RELX == SHT_RELA
-	rel->r_addend = addend;
-#endif
+	if (SHT_RELX == SHT_RELA)
+		ELFW_SET_R_ADDEND(rel, addend);
 	if (SHT_RELX != SHT_RELA && addend)
 		mcc_error_noabort("non-zero addend on REL architecture");
 }
@@ -1007,9 +1006,8 @@ static void relocate_section(MCCState *s1, Section *s, Section *sr) {
 		sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
 		type = ELFW(R_TYPE)(rel->r_info);
 		tgt = sym->st_value;
-#if SHT_RELX == SHT_RELA
-		tgt += rel->r_addend;
-#endif
+		if (SHT_RELX == SHT_RELA)
+			tgt += ELFW_R_ADDEND(rel);
 		if (is_dwarf && type == R_DATA_32DW && sym->st_shndx >= s1->dwlo && sym->st_shndx < s1->dwhi) {
 			add32le(ptr, tgt - s1->sections[sym->st_shndx]->sh_addr);
 			continue;
@@ -1133,7 +1131,6 @@ static int prepare_dynamic_rel(MCCState *s1, Section *sr) {
 }
 #endif
 
-#ifdef NEED_BUILD_GOT
 static int build_got(MCCState *s1) {
 	s1->got = new_section(s1, ".got", SHT_PROGBITS, SHF_ALLOC | SHF_WRITE);
 	s1->got->sh_entsize = 4;
@@ -1329,7 +1326,6 @@ redo:
 	if (got_sym)
 		((ElfW(Sym) *)symtab_section->data)[got_sym].st_size = s1->got->data_offset;
 }
-#endif
 
 ST_FUNC int set_global_sym(MCCState *s1, const char *name, Section *sec, addr_t offs) {
 	int shn = sec
@@ -1838,11 +1834,10 @@ static void fill_local_got_entries(MCCState *s1) {
 			if (offset != rel->r_offset - s1->got->sh_addr)
 				mcc_error_noabort("fill_local_got_entries: huh?");
 			rel->r_info = ELFW(R_INFO)(0, R_RELATIVE);
-#if SHT_RELX == SHT_RELA
-			rel->r_addend = sym->st_value;
-#else
-			write32le(s1->got->data + offset, sym->st_value);
-#endif
+			if (SHT_RELX == SHT_RELA)
+				ELFW_SET_R_ADDEND(rel, sym->st_value);
+			else
+				write32le(s1->got->data + offset, sym->st_value);
 		}
 	}
 }
