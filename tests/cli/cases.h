@@ -1687,6 +1687,18 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -c {W}/su.c -o {W}/su.o 2>&1 | "
 		 "grep -oE 'signed and unsigned modifier'",
 		 "signed and unsigned modifier\n"},
+		{"run_bt_dwarf4_subdir_path", "backtrace",
+		 "mkdir -p {W}/btsub && "
+		 "printf 'int mcc_backtrace(const char *, ...);\\nvoid f(void) {\\nmcc_backtrace(\"here\");\\n}\\nint main(void) {\\nf();\\nreturn 0;\\n}\\n' > {W}/btsub/btp.c && "
+		 "cd {W} && {MCC} -B{B} -bt -gdwarf-4 -run btsub/btp.c 2>&1",
+		 "btsub/btp.c:3: at f: here\nbtsub/btp.c:6: by main\n"},
+
+		{"run_bt_dwarf5_subdir_path", "backtrace",
+		 "mkdir -p {W}/btsub && "
+		 "printf 'int mcc_backtrace(const char *, ...);\\nvoid f(void) {\\nmcc_backtrace(\"here\");\\n}\\nint main(void) {\\nf();\\nreturn 0;\\n}\\n' > {W}/btsub/btp.c && "
+		 "cd {W} && {MCC} -B{B} -bt -gdwarf-5 -run btsub/btp.c 2>&1",
+		 "btsub/btp.c:3: at f: here\nbtsub/btp.c:6: by main\n"},
+
 		{"x86_64_reloc_32s_range", "cpu=x86_64,os=linux,asm",
 		 "printf '%s\\n' 'char a[1500000000];' 'char b[1500000000];' 'int main(void){int r;__asm__ volatile(\"movl $b+1499999000, %0\":\"=r\"(r));return r?0:1;}' > {W}/r32s.c && "
 		 "{MCC} -no-pie {W}/r32s.c -o {W}/r32s 2>&1 | grep -oE \"relocation .R_X86_64_32.* out of range\"",

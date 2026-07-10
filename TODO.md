@@ -76,7 +76,7 @@ Finish-or-purge decisions; the investigation *is* the task:
 - [x] `mccelf.c:3587` — disabled `DT_RPATH`/`DT_NEEDED` processing loop: verify
       the live dll-ref resolution covers every case it handled; if yes delete,
       if no finish it (it predates the current loader logic).
-- [ ] `mccrun.c:623,691,747` — the abandoned DWARF directory-table path in the
+- [x] `mccrun.c:623,691,747` — the abandoned DWARF directory-table path in the
       `-run` backtrace line-info parser: completing it yields correct backtrace
       paths for sources compiled outside the cwd. Decide finish vs purge by
       writing the failing case first (a `-bt` test with `-I`-relative sources).
@@ -202,3 +202,15 @@ item above. Supersedes GATED.md item 9(a)'s narrower `CONFIG_AST` rename.
       self-host fixpoint, and per-target `mcc -c` byte-identical objects
       (renames move no code). Docs sweep last: MCC.md/EXCESS.md/BUILD.md
       references update in the same commit.
+
+## 13. PP macro evaluation through the AST `-run` bridge (exploratory)
+
+- [ ] Without implementing new AST nodes, use the ast API to hook the
+      preprocessor and treat identifiers as if they were variables that can
+      be evaluated by calling `-run` internally — enough to calculate even a
+      recursive `ret macro-converted-to-a-function(value)` — unless this
+      would break the C standard in a destructive way. Investigation first:
+      determine where the standard constrains this (§6.10 expansion order,
+      translation phases) and land it only behind an opt-in flag if it
+      survives; write the recursive-macro evaluation case as the driving
+      test.

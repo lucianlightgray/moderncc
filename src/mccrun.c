@@ -618,9 +618,7 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 		unsigned int form;
 	} entry_format[256];
 	unsigned int dir_size;
-#if 0
-    char* dirs[DIR_TABLE_SIZE];
-#endif
+	char *dirs[DIR_TABLE_SIZE];
 	unsigned int filename_size;
 	struct
 	{
@@ -633,11 +631,13 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 	int line;
 	char *filename;
 	char *function;
+	unsigned int file_dir;
 
 	filename = NULL;
 	function = NULL;
 	func_addr = 0;
 	line = 0;
+	file_dir = 0;
 
 	ln = rc->dwarf_line;
 	while (ln < rc->dwarf_line_end) {
@@ -649,6 +649,7 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 		line = 1;
 		filename = NULL;
 		function = NULL;
+		file_dir = 0;
 		length = 4;
 		size = dwarf_read_4(ln, rc->dwarf_line_end);
 		if (size == 0xffffffffu)
@@ -686,17 +687,11 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 					if (entry_format[j].type == DW_LNCT_path) {
 						if (entry_format[j].form != DW_FORM_line_strp)
 							goto next_line;
-#if 0
-                        value = length == 4
-                                    ? dwarf_read_4(ln, end)
-                                    : dwarf_read_8(ln, end);
-                        if (i < DIR_TABLE_SIZE)
-                            dirs[i] = (char*)rc->dwarf_line_str + value;
-#else
-						length == 4
-								? dwarf_read_4(ln, end)
-								: dwarf_read_8(ln, end);
-#endif
+						value = length == 4
+												? dwarf_read_4(ln, end)
+												: dwarf_read_8(ln, end);
+						if (i < DIR_TABLE_SIZE)
+							dirs[i] = (char *)rc->dwarf_line_str + value;
 					} else
 						dwarf_ignore_type(ln, end);
 				}
@@ -707,6 +702,8 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 				entry_format[i].form = dwarf_read_uleb128(&ln, end);
 			}
 			filename_size = dwarf_read_uleb128(&ln, end);
+			for (i = 0; i < filename_size && i < FILE_TABLE_SIZE; i++)
+				filename_table[i].dir_entry = 0;
 			for (i = 0; i < filename_size; i++)
 				for (j = 0; j < col; j++) {
 					if (entry_format[j].type == DW_LNCT_path) {
@@ -742,10 +739,8 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 				}
 		} else {
 			while ((dwarf_read_1(ln, end))) {
-#if 0
-                if (++dir_size < DIR_TABLE_SIZE)
-                    dirs[dir_size - 1] = (char*)ln - 1;
-#endif
+				if (++dir_size < DIR_TABLE_SIZE)
+					dirs[dir_size] = (char *)ln - 1;
 				while (dwarf_read_1(ln, end)) {
 				}
 			}
@@ -765,8 +760,10 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 				dwarf_read_uleb128(&ln, end);
 			}
 		}
-		if (filename_size >= 1)
+		if (filename_size >= 1) {
 			filename = filename_table[0].name;
+			file_dir = filename_table[0].dir_entry;
+		}
 		while (ln < end) {
 			last_pc = pc;
 			i = dwarf_read_1(ln, end);
@@ -847,8 +844,10 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 				case DW_LNS_set_file:
 					i = dwarf_read_uleb128(&ln, end);
 					i -= i > 0 && version < 5;
-					if (i < FILE_TABLE_SIZE && i < filename_size)
+					if (i < FILE_TABLE_SIZE && i < filename_size) {
 						filename = filename_table[i].name;
+						file_dir = filename_table[i].dir_entry;
+					}
 					break;
 				case DW_LNS_const_add_pc:
 					if (max_ops_per_insn == 1)
@@ -880,8 +879,15 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 	}
 	filename = function = NULL, func_addr = 0;
 found:
-	if (filename)
-		pstrcpy(bi->file, sizeof bi->file, filename), bi->line = line;
+	if (filename) {
+		if (file_dir && file_dir < DIR_TABLE_SIZE &&
+				file_dir < dir_size + (version < 5) && filename[0] != '/')
+			snprintf(bi->file, sizeof bi->file, "%s/%s",
+							 dirs[file_dir], filename);
+		else
+			pstrcpy(bi->file, sizeof bi->file, filename);
+		bi->line = line;
+	}
 	if (function)
 		pstrcpy(bi->func, sizeof bi->func, function);
 	bi->func_pc = func_addr;
