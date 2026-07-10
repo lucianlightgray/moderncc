@@ -1699,6 +1699,11 @@ static const cli_case_t cli_cases[] = {
 		 "cd {W} && {MCC} -B{B} -bt -gdwarf-5 -run btsub/btp.c 2>&1",
 		 "btsub/btp.c:3: at f: here\nbtsub/btp.c:6: by main\n"},
 
+		{"bcheck_exe_static_bounds", "bcheck",
+		 "printf 'char g_arr[10];\\nint main(void) {\\nchar *p = g_arr;\\np[12] = 1;\\nreturn 0;\\n}\\n' > {W}/gb.c && "
+		 "{MCC} -B{B} -b {W}/gb.c -o {W}/gb && {W}/gb 2>&1 | grep -oE 'at main: RUNTIME ERROR: invalid memory access'",
+		 "at main: RUNTIME ERROR: invalid memory access\n"},
+
 		{"macro_eval_recursive", "",
 		 "printf '#define fact(n) (n <= 1 ? 1 : n * fact(n - 1))\\nint main(void) { return fact(5) == 120 ? 0 : 1; }\\n' > {W}/me.c && "
 		 "{MCC} -B{B} -fmacro-eval -run {W}/me.c && echo evaluated",

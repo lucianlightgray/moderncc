@@ -101,6 +101,11 @@ static int req_met(const char *req, char *reason, size_t rn) {
 				snprintf(reason, rn, "requires backtrace support (MCC_CONFIG_BACKTRACE)");
 				return 0;
 			}
+		} else if (!strcmp(tok, "bcheck")) {
+			if (strcmp(hc_envv("MCC_TEST_BCHECK", "0"), "1")) {
+				snprintf(reason, rn, "requires the bounds checker (MCC_CONFIG_BCHECK)");
+				return 0;
+			}
 		}
 	}
 	return 1;

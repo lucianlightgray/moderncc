@@ -1375,6 +1375,13 @@ ST_FUNC void mcc_add_bcheck(MCCState *s1) {
 
 static void set_local_sym(MCCState *s1, const char *name, Section *s, int offset) {
 	int c = find_elf_sym(s1->symtab, name);
+	if (!c) {
+		ElfW(Sym) *syms = (ElfW(Sym) *)s1->symtab->data;
+		int n = s1->symtab->data_offset / sizeof(ElfW(Sym));
+		for (int i = 1; i < n; i++)
+			if (!strcmp((char *)s1->symtab->link->data + syms[i].st_name, name))
+				c = i;
+	}
 	if (c) {
 		ElfW(Sym) *esym = (ElfW(Sym) *)s1->symtab->data + c;
 		esym->st_info = ELFW(ST_INFO)(STB_LOCAL, STT_NOTYPE);
