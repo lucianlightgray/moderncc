@@ -589,14 +589,14 @@ dlmf.nist.gov/3.11 (minimax polynomial approximations).
 
 ### 2026-07-10 — iteration 21 (reusable self-host fixpoint helper)
 
-- Committed `scripts/selfhost-fixpoint.sh` — every optimizer subagent
+- Committed `tools/fixpointgate.c` — every optimizer subagent
   was re-deriving the 3-stage byte-identical self-host gate by hand
   (extracting defines, building stages), costing minutes each. The
-  helper reads the real defines from `<build>/compile_commands.json`
+  gate reads the real defines from `<build>/compile_commands.json`
   (dropping MCC_EMBED_MCCRT which needs the generated blob), builds
-  stage2→3→4, and cmps them. One command: `scripts/selfhost-fixpoint.sh
-  cmake-debug`. Verified FIXPOINT OK on the current tree. Standing
-  campaign gate now scriptable, not folklore.
+  stage2→3→4, and cmps them. One command: `<build>/fixpointgate
+  cmake-debug` (or `ctest -R fixpoint-invariant`). Verified FIXPOINT OK
+  on the current tree. Standing campaign gate now a C tool, not folklore.
 - Jump-threading / branch-simplification subagent still in flight.
 
 ### 2026-07-10 — iteration 22 (Tier-3 jump threading / branch simplification)
@@ -611,8 +611,8 @@ dlmf.nist.gov/3.11 (minimax polynomial approximations).
   dropped, silently losing the side effect), so the pass fires only on
   pure conditions — impure `if(f())` with empty/equal arms stays intact.
   Reuses ast_ident_pure / ast_ident_same / sccp label-safety.
-- 1822 green (fixpoint verified via the new scripts/selfhost-fixpoint.sh
-  helper — byte-identical), -O0 objects identical, side-effect counter
+- 1822 green (fixpoint verified via the new tools/fixpointgate.c
+  gate — byte-identical), -O0 objects identical, side-effect counter
   byte-equal O0..O3.
 - **Eight tree passes** (bfold, ident, cprop, dse, sccp, tco, jt) +
   -O4+ superoptimizer/TPE + bench stats. Remaining named items are the
