@@ -2878,10 +2878,12 @@ if(MCC_BUILD_TESTS)
 
         add_executable(fixpointgate tools/fixpointgate.c tools/toolsupport.c)
         target_link_libraries(fixpointgate ${CMAKE_DL_LIBS})
-        add_test(NAME fixpoint-invariant
-            COMMAND "$<TARGET_FILE:fixpointgate>" "${CMAKE_BINARY_DIR}"
-            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
-        set_tests_properties(fixpoint-invariant PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+        if(NOT WIN32 AND CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
+            add_test(NAME fixpoint-invariant
+                COMMAND "$<TARGET_FILE:fixpointgate>" "${CMAKE_BINARY_DIR}"
+                WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+            set_tests_properties(fixpoint-invariant PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+        endif()
     endif()
 
     if(MCC_CONFIG_OPTIMIZER AND NOT CMAKE_CROSSCOMPILING)

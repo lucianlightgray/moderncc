@@ -56,7 +56,11 @@ int main(void) {
 	if (fmaxf(2.5f, 7.5f) != fmaxf(f25, f75))
 		ok = 0;
 
+#if defined(math_errhandling) && defined(MATH_ERRNO)
 	int check_errno = (math_errhandling & MATH_ERRNO) != 0;
+#else
+	int check_errno = 0;
+#endif
 	errno = 0;
 	double sv = sqrt(dm1);
 	if (sv == sv || (check_errno && errno != EDOM))

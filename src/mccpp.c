@@ -4401,7 +4401,7 @@ ST_FUNC int pp_macro_eval(int v, const int64_t *args, int nargs, int64_t *res) {
 	Sym *m = define_find(v), *a, *d, **older = NULL;
 	int n, i, nolder = 0, ret = -1;
 	FILE *f;
-	char path[1024], exe[1024];
+	char path[1024], exe[1024], barg[1024];
 	char *out = NULL, *end;
 	const char *name = get_tok_str(v, NULL);
 	const char *argv[6];
@@ -4440,11 +4440,14 @@ ST_FUNC int pp_macro_eval(int v, const int64_t *args, int nargs, int64_t *res) {
 	fprintf(f, "));\n\treturn 0;\n}\n");
 	fclose(f);
 
+	snprintf(barg, sizeof barg, "-B%s",
+					 mcc_state->mcc_lib_path ? mcc_state->mcc_lib_path : ".");
 	argv[0] = exe;
-	argv[1] = "-w";
-	argv[2] = "-run";
-	argv[3] = path;
-	argv[4] = NULL;
+	argv[1] = barg;
+	argv[2] = "-w";
+	argv[3] = "-run";
+	argv[4] = path;
+	argv[5] = NULL;
 	{
 		HostSpawnOpts o;
 		memset(&o, 0, sizeof o);
