@@ -980,8 +980,19 @@ differing bodies, impure key, negative consts); `cli/bitflag_transform`
 added (ctest 1858/1858); fixpoint gate stage2==3==4. Remaining §30
 extensions (search-integration era): value-table dispatch for differing
 bodies, `switch`-arm form, `&&`-of-`!=` complement, biased encodings for
-const ranges not in `[0,63]`, and §22/§31 strategy registration so the
-search permutes the threshold instead of a fixed env default.
+const ranges not in `[0,63]`.
+
+**Search registration LANDED (2026-07-10).** The threshold is a fourth
+budget dimension of the `-O<N>` whole-TU search: `so_setenv_cfg` sets
+`MCC_AST_BITFLAG` from `so_bf[] = {0, 3, 5, 9}` (budget space 9→36,
+checkpoint fmt 4→5 so stale snapshots miss cleanly), and the per-cluster
+`bitflag-candidate` report is suppressed inside search workers. Verified
+end-to-end: on a 7-way same-key `||` cluster the search's checkpointed
+winner is `best_budget=9` — bitflag threshold 3 beats every off-config on
+`.text`. **Bugfix caught while validating:** `so_copy` wrote the winning
+candidate with `fopen("wb")` mode 0644, so every *fresh* `-O4+`
+executable since `f959078e` lost its exec bit — it now propagates the
+candidate's mode. ctest 1861/1861 + fixpoint green.
 
 ## 31. Strategy-portfolio scheduler — the governing search architecture (large)
 

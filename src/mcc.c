@@ -296,9 +296,9 @@ static void so_on_stop(int sig) {
 }
 
 #define SO_INLINE_LIMIT_MAX 160
-#define SO_CKPT_FMT 4u
+#define SO_CKPT_FMT 5u
 #define SO_GATE_SPACE (16u * (SO_INLINE_LIMIT_MAX + 1))
-#define SO_BUDGET_SPACE 9u
+#define SO_BUDGET_SPACE 36u
 #define SO_LIMIT_SPACE 5u
 #define SO_SLICE_FACTOR 8u
 #define SO_CLAIM_CHUNK 64u
@@ -453,8 +453,10 @@ static unsigned so_claim(const char *path, uint64_t key, SoCkpt *shared) {
 
 #define SO_NNODE 3
 #define SO_NGRAFT 3
+#define SO_NBF 4
 static const int so_nodes[SO_NNODE] = {64, 128, 256};
 static const int so_graft[SO_NGRAFT] = {2048, 4096, 8192};
+static const int so_bf[SO_NBF] = {0, 3, 5, 9};
 
 static const int so_limits[SO_LIMIT_SPACE] = {-1, 64, 16, 4, 1};
 
@@ -468,6 +470,7 @@ static void so_setenv_cfg(unsigned gate, unsigned budget, unsigned limit_lvl) {
 	int inl = (gate >> 2) & 1;
 	int nsel = (int)(budget % SO_NNODE);
 	int gsel = (int)((budget / SO_NNODE) % SO_NGRAFT);
+	int bfsel = (int)((budget / (SO_NNODE * SO_NGRAFT)) % SO_NBF);
 	int lv = so_limits[limit_lvl % SO_LIMIT_SPACE];
 	setenv("MCC_SEARCH_WORKER", "1", 1);
 	setenv("MCC_AST_TEMPLATES", (gate & 1) ? "1" : "0", 1);
@@ -480,6 +483,8 @@ static void so_setenv_cfg(unsigned gate, unsigned budget, unsigned limit_lvl) {
 	setenv("MCC_AST_INLINE_NODES", buf, 1);
 	snprintf(buf, sizeof buf, "%d", so_graft[gsel]);
 	setenv("MCC_AST_GRAFT", buf, 1);
+	snprintf(buf, sizeof buf, "%d", so_bf[bfsel]);
+	setenv("MCC_AST_BITFLAG", buf, 1);
 	snprintf(buf, sizeof buf, "%d", lv);
 	setenv("MCC_AST_PROMOTE_LIMIT", buf, 1);
 	setenv("MCC_AST_OPT_LIMIT", buf, 1);
@@ -609,6 +614,11 @@ static int so_copy(const char *src, const char *dst) {
 		fclose(out);
 	}
 	fclose(in);
+	if (ok) {
+		struct stat st;
+		if (stat(src, &st) == 0)
+			chmod(dst, st.st_mode & 07777);
+	}
 	return ok ? 0 : -1;
 }
 

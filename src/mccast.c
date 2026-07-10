@@ -432,6 +432,7 @@ static int ast_graft_budget_max = 2048;
 static int ast_cost_env;
 static int ast_bitflag_env;
 static int ast_bitflag_min;
+static int ast_search_worker;
 static uint64_t ast_intention_acc;
 static const char *ast_hash_out;
 
@@ -678,6 +679,7 @@ void ast_configure(MCCState *s1) {
 		ast_bitflag_min = 5;
 	ast_intention_acc = 0;
 	ast_hash_out = getenv("MCC_AST_HASH_OUT");
+	ast_search_worker = getenv("MCC_SEARCH_WORKER") != NULL;
 	ast_fncfg_parse();
 }
 
@@ -4901,7 +4903,7 @@ void ast_func_end(Sym *sym) {
 		}
 		if (ast_cost_env)
 			ast_fn_cost(ast_cur, funcname);
-		if (ast_bitflag_env)
+		if (ast_bitflag_env && !ast_search_worker)
 			ast_bf_report(ast_cur, funcname);
 		int ast_sv_tmpl = ast_templates_env, ast_sv_promo = ast_promote_env,
 				ast_sv_inl = ast_inline_env;
