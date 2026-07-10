@@ -435,6 +435,7 @@ static int ast_bitflag_env;
 static int ast_bitflag_min;
 static int ast_cprop_join_env;
 static int ast_cse_join_env;
+static int ast_call_window_env;
 static int ast_search_worker;
 static uint64_t ast_intention_acc;
 static const char *ast_hash_out;
@@ -683,6 +684,7 @@ void ast_configure(MCCState *s1) {
 		ast_bitflag_min = 5;
 	ast_cprop_join_env = ast_env_gate("MCC_AST_CPROP_JOIN", 0);
 	ast_cse_join_env = ast_env_gate("MCC_AST_CSE_JOIN", 0);
+	ast_call_window_env = ast_env_gate("MCC_AST_CALL_WINDOW", 0);
 	ast_intention_acc = 0;
 	ast_hash_out = getenv("MCC_AST_HASH_OUT");
 	ast_search_worker = getenv("MCC_SEARCH_WORKER") != NULL;
@@ -4078,6 +4080,13 @@ static void ast_cprop_stmts(AstArena *a, AstLocal bb) {
 					ast_cprop_rewrite(a, c, 0);
 				}
 			}
+		} else if (k == AST_Invoke && ast_call_window_env) {
+			for (int i = 0; i < ast_cprop_kn;)
+				if (ast_cprop_escapes(a, ast_cprop_koff[i]) ||
+						ast_licm_written(a, s, ast_cprop_koff[i]))
+					ast_cprop_kill(ast_cprop_koff[i]);
+				else
+					i++;
 		} else {
 			ast_cprop_kn = 0;
 		}
@@ -5136,7 +5145,17 @@ static void ast_cse_stmts(AstArena *a, AstLocal bb) {
 		} else if (k == AST_Invoke) {
 			for (AstLocal c = ast_first_child(a, s); c != AST_NONE; c = ast_next_sib(a, c))
 				ast_cse_subst(a, c, 0);
-			ast_cse_n = 0;
+			if (ast_call_window_env) {
+				for (int i = 0; i < ast_cse_n;)
+					if (ast_cprop_escapes(a, ast_cse_off[i]) ||
+							ast_licm_written(a, s, ast_cse_off[i]) ||
+							!ast_licm_operands_ok(a, s, ast_cse_expr[i]))
+						ast_cse_kill(a, ast_cse_off[i]);
+					else
+						i++;
+			} else {
+				ast_cse_n = 0;
+			}
 		} else if (k == AST_If && ast_op(a, s) >= 2 && ast_op(a, s) <= 4) {
 			ast_licm_at_loop(a, s);
 			for (int i = 0; i < ast_cse_n;)

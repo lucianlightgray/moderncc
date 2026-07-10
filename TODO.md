@@ -1816,12 +1816,18 @@ increment.
 Build order, cheapest-first; each lands green before the next starts (all
 touch `src/mccast.c`, so serialize to avoid worktree merge conflicts):
 
-1. [ ] **§33a — cross-`Invoke` availability** (`MCC_AST_CALL_WINDOW`,
-      default off). Drop the `AST_Invoke` table reset in
-      `ast_cprop_stmts`/`ast_cse_stmts`, keeping only `ast_cprop_escapes`-
-      proven non-escaping entries. The "smallest already-named increment."
-      TDD: gate-off byte-identity (fixpoint), gate-on exec-golden + fire
-      evidence + full ctest. *(in progress — worktree)*
+1. [x] **§33a — cross-`Invoke` availability** (`MCC_AST_CALL_WINDOW`,
+      default off) — LANDED. In `ast_cprop_stmts`/`ast_cse_stmts` (join paths),
+      an entry now survives an `AST_Invoke` iff its local is non-escaping
+      (`ast_cprop_escapes`) AND un-written by the call's args
+      (`ast_licm_written`; CSE also requires `ast_licm_operands_ok`); else the
+      table still fully resets (byte-identical when off). Validated: gate-off
+      `-O0..-O3` hash-identical + full ctest 1860/1860 green; gate-on it fires
+      (0→1 cprop fold, 0→1 CSE fold) with output byte-matching the -O0
+      reference; address-taken / arg-mutated locals correctly NOT folded.
+      Requires the pass's own `MCC_AST_CPROP_JOIN`/`CSE_JOIN` gate too (only
+      the `*_stmts` join functions are wired; `*_block` is a possible
+      follow-up).
 2. [ ] **§30 additional encodings** (extend `ast_bf_*`, same
       `MCC_AST_BITFLAG` search dim): `&&`-of-`!=` complement, biased ranges
       (consts ≥64 via a subtract-bias before the shift-mask), value-table
