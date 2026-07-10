@@ -455,3 +455,27 @@ dlmf.nist.gov/3.11 (minimax polynomial approximations).
   node), Sethi–Ullman ordering. Tier-1 peephole and the whole Tier-3
   loop set remain.
 - Session tally: 7 landed optimizer passes/upgrades + 1 miscompile fix.
+
+### 2026-07-10 — iteration 16 (tree-pass code-size benchmark)
+
+- The self-host bench couldn't show the tree passes' value (mcc's hot
+  paths lack foldable idioms), so benchmarked a **synthetic workload
+  that exercises them** — constant-arg libm calls (bfold), algebraic
+  identities + annihilators (ident/annih), local const/copy-prop
+  (cprop), dead stores (dse), and a loop mixing all of it — measuring
+  `.text` size per -O level:
+
+  | -O | .text | vs -O0 |
+  |----|-------|--------|
+  | 0  | 774 B | — |
+  | 1  | 681 B | **−12.0%** |
+  | 2  | 694 B | −10.3% |
+  | 3  | 694 B | −10.3% |
+
+  All four levels return identical results (exit 163), confirming the
+  passes preserve semantics. -O1 is smallest (pure size wins from
+  fold/ident/cprop/dse); -O2/-O3 are marginally larger because
+  promotion/inlining trade a little size for speed. This is the direct
+  code-size evidence for the five landed tree passes — a **12% .text
+  reduction** on pass-relevant code, invisible on the self-host workload.
+- SCCP constant-branch-folding subagent still in flight.
