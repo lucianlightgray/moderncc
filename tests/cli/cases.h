@@ -140,6 +140,21 @@ static const cli_case_t cli_cases[] = {
 		 "readelf -r {W}/fmi3.o | grep -c asin ; readelf -r {W}/fmi3.o | grep -c acos ; readelf -r {W}/fmi3.o | grep -c hypot",
 		 "1\n1\n1\n"},
 
+		{"foldmath_more2", "cpu=x86_64,os=linux,optimizer",
+		 "printf 'double exp2(double);double expm1(double);double log1p(double);double asinh(double);double acosh(double);double atanh(double);int okc(double a,double b){double d=a-b;if(d<0)d=-d;return d<1e-9;}int okr(double a,double b){double d=a-b;if(d<0)d=-d;double e=b<0?-b:b;return d<=1e-9*e;}int main(void){if(!okc(exp2(10.0),1024.0))return 1;if(!okc(exp2(0.5),1.4142135623730951))return 2;if(!okc(exp2(-3.0),0.125))return 3;if(!okc(expm1(1.0),1.7182818284590451))return 4;if(!okr(expm1(1e-10),1.00000000005e-10))return 5;if(!okr(log1p(1e-10),9.9999999995e-11))return 6;if(!okc(log1p(0.5),0.40546510810816438))return 7;if(!okc(asinh(2.0),1.4436354751788103))return 8;if(!okc(asinh(-0.5),-0.48121182505960347))return 9;if(!okc(acosh(2.0),1.3169578969248166))return 10;if(!okc(acosh(1.0),0.0))return 11;if(!okc(atanh(0.5),0.54930614433405489))return 12;if(!okc(atanh(-0.9),-1.4722194895832204))return 13;return 0;}\\n' > {W}/fm4.c && "
+		 "{MCC} -B{B} -I{I} -ffold-math -O0 -c {W}/fm4.c -o {W}/fm4_0.o && "
+		 "{MCC} -B{B} -I{I} -ffold-math -O1 -c {W}/fm4.c -o {W}/fm4_1.o && "
+		 "readelf -r {W}/fm4_0.o | grep -Ec 'exp2|expm1|log1p|asinh|acosh|atanh' ; "
+		 "{MCC} -B{B} -I{I} -ffold-math -O0 -run {W}/fm4.c && echo O0OK ; "
+		 "{MCC} -B{B} -I{I} -ffold-math -O1 -run {W}/fm4.c && echo O1OK",
+		 "0\nO0OK\nO1OK\n"},
+
+		{"foldmath_more2_must_not", "cpu=x86_64,os=linux,optimizer",
+		 "printf 'double log1p(double);double acosh(double);double atanh(double);double a(void){return log1p(-2.0);}double b(void){return acosh(0.5);}double c(void){return atanh(2.0);}\\n' > {W}/fm4n.c && "
+		 "{MCC} -B{B} -I{I} -ffold-math -O0 -c {W}/fm4n.c -o {W}/fm4n.o && "
+		 "readelf -r {W}/fm4n.o | grep -c log1p ; readelf -r {W}/fm4n.o | grep -c acosh ; readelf -r {W}/fm4n.o | grep -c atanh",
+		 "1\n1\n1\n"},
+
 		{"O3_float_return_inline", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'static double f(double x){return x*2.0+1.0;} static float g(float x){return x*3.0f+0.5f;} static double h(int a,int b){return (double)a/(double)b+0.25;} static int ii(int x){return x*2+1;} int main(void){ if(f(10.0)!=21.0)return 1; if(g(4.0f)!=12.5f)return 2; if(h(7,2)!=3.75)return 3; if(ii(20)!=41)return 4; return 0; }\\n' > {W}/fi.c && "
 		 "{MCC} -B{B} -I{I} -O0 -run {W}/fi.c && echo O0OK && "

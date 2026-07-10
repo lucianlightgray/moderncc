@@ -6699,7 +6699,10 @@ static const struct {
 		{"tanh", 10, 0}, {"tanhf", 10, 1}, {"atan", 11, 0},  {"atanf", 11, 1},
 		{"asin", 12, 0}, {"asinf", 12, 1}, {"acos", 13, 0},  {"acosf", 13, 1},
 		{"cbrt", 14, 0}, {"cbrtf", 14, 1}, {"atan2", 15, 0}, {"atan2f", 15, 1},
-		{"hypot", 16, 0},{"hypotf", 16, 1},
+		{"hypot", 16, 0},{"hypotf", 16, 1}, {"exp2", 17, 0},  {"exp2f", 17, 1},
+		{"expm1", 18, 0},{"expm1f", 18, 1},{"log1p", 19, 0},  {"log1pf", 19, 1},
+		{"asinh", 20, 0},{"asinhf", 20, 1},{"acosh", 21, 0},  {"acoshf", 21, 1},
+		{"atanh", 22, 0},{"atanhf", 22, 1},
 };
 
 static double foldm_rint(double x) {
@@ -7285,6 +7288,191 @@ static double foldm_hypot(double x, double y) {
 	return w;
 }
 
+static double foldm_exp2(double x) {
+	double ln2 = 0.69314718055994530942;
+	double n = foldm_rint(x);
+	int k = (int)n;
+	double r = x - n;
+	double y = foldm_exp(r * ln2);
+	return foldm_scalbn(y, k);
+}
+
+static double foldm_expm1(double x) {
+	double o_threshold = 7.09782712893383973096e+02;
+	double ln2_hi = 6.93147180369123816490e-01,
+				 ln2_lo = 1.90821492927058770002e-10;
+	double invln2 = 1.44269504088896338700e+00;
+	double Q1 = -3.33333333333331316428e-02, Q2 = 1.58730158725481460165e-03,
+				 Q3 = -7.93650757867487942473e-05, Q4 = 4.00821782732936239552e-06,
+				 Q5 = -2.01099218183624371326e-07;
+	double y, hi, lo, c, t, e, hxs, hfx, r1, twopk;
+	int k, sign;
+	uint32_t hx;
+	c = 0.0;
+	k = 0;
+	hx = (uint32_t)foldm_hi(x) & 0x7fffffff;
+	sign = (foldm_hi(x) < 0);
+	if (hx >= 0x4043687A) {
+		if (sign)
+			return -1.0;
+		if (x > o_threshold)
+			return x * foldm_pow2(1023);
+	}
+	if (hx > 0x3fd62e42) {
+		if (hx < 0x3FF0A2B2) {
+			if (!sign) {
+				hi = x - ln2_hi;
+				lo = ln2_lo;
+				k = 1;
+			} else {
+				hi = x + ln2_hi;
+				lo = -ln2_lo;
+				k = -1;
+			}
+		} else {
+			k = (int)(invln2 * x + (sign ? -0.5 : 0.5));
+			t = k;
+			hi = x - t * ln2_hi;
+			lo = t * ln2_lo;
+		}
+		x = hi - lo;
+		c = (hi - x) - lo;
+	} else if (hx < 0x3c900000) {
+		return x;
+	}
+	hfx = 0.5 * x;
+	hxs = x * hfx;
+	r1 = 1.0 + hxs * (Q1 + hxs * (Q2 + hxs * (Q3 + hxs * (Q4 + hxs * Q5))));
+	t = 3.0 - r1 * hfx;
+	e = hxs * ((r1 - t) / (6.0 - x * t));
+	if (k == 0)
+		return x - (x * e - hxs);
+	e = x * (e - c) - c;
+	e -= hxs;
+	if (k == -1)
+		return 0.5 * (x - e) - 0.5;
+	if (k == 1) {
+		if (x < -0.25)
+			return -2.0 * (e - (x + 0.5));
+		return 1.0 + 2.0 * (x - e);
+	}
+	twopk = foldm_frombits((uint32_t)((0x3ff + k) << 20), 0);
+	if (k < 0 || k > 56) {
+		y = x - e + 1.0;
+		if (k == 1024)
+			y = y * 2.0 * foldm_pow2(1023);
+		else
+			y = y * twopk;
+		return y - 1.0;
+	}
+	{
+		double twonk = foldm_frombits((uint32_t)((0x3ff - k) << 20), 0);
+		if (k < 20)
+			y = (x - e + (1.0 - twonk)) * twopk;
+		else
+			y = (x - e - twonk + 1.0) * twopk;
+	}
+	return y;
+}
+
+static double foldm_log1p(double x) {
+	double ln2_hi = 6.93147180369123816490e-01,
+				 ln2_lo = 1.90821492927058770002e-10;
+	double Lg1 = 6.666666666666735130e-01, Lg2 = 3.999999999940941908e-01,
+				 Lg3 = 2.857142874366239149e-01, Lg4 = 2.222219843214978396e-01,
+				 Lg5 = 1.818357216161805012e-01, Lg6 = 1.531383769920937332e-01,
+				 Lg7 = 1.479819860511658591e-01;
+	double hfsq, f, c, s, z, R, w, t1, t2, dk;
+	uint32_t hx, hu;
+	int k;
+	f = 0.0;
+	c = 0.0;
+	hx = (uint32_t)foldm_hi(x);
+	k = 1;
+	if (hx < 0x3fda827a || (hx >> 31)) {
+		if (hx >= 0xbff00000) {
+			if (x == -1.0)
+				return x / 0.0;
+			return (x - x) / 0.0;
+		}
+		if ((hx << 1) < (0x3ca00000u << 1))
+			return x;
+		if (hx <= 0xbfd2bec4) {
+			k = 0;
+			c = 0.0;
+			f = x;
+		}
+	} else if (hx >= 0x7ff00000)
+		return x;
+	if (k) {
+		double u = 1.0 + x;
+		hu = (uint32_t)foldm_hi(u);
+		hu += 0x3ff00000 - 0x3fe6a09e;
+		k = (int)(hu >> 20) - 0x3ff;
+		if (k < 54) {
+			c = k >= 2 ? 1.0 - (u - x) : x - (u - 1.0);
+			c /= u;
+		} else
+			c = 0.0;
+		hu = (hu & 0x000fffff) + 0x3fe6a09e;
+		u = foldm_sethi(u, hu);
+		f = u - 1.0;
+	}
+	hfsq = 0.5 * f * f;
+	s = f / (2.0 + f);
+	z = s * s;
+	w = z * z;
+	t1 = w * (Lg2 + w * (Lg4 + w * Lg6));
+	t2 = z * (Lg1 + w * (Lg3 + w * (Lg5 + w * Lg7)));
+	R = t2 + t1;
+	dk = (double)k;
+	return s * (hfsq + R) + (dk * ln2_lo + c) - hfsq + f + dk * ln2_hi;
+}
+
+static double foldm_asinh(double x) {
+	double ln2 = 0.693147180559945309417232121458176568;
+	int32_t hx = foldm_hi(x);
+	int s = (hx < 0);
+	unsigned e = ((uint32_t)hx >> 20) & 0x7ff;
+	double ax = foldm_fabs(x), w;
+	if (e >= 0x3ff + 26) {
+		w = foldm_log(ax) + ln2;
+	} else if (e >= 0x3ff + 1) {
+		w = foldm_log(2.0 * ax + 1.0 / (foldm_sqrt(ax * ax + 1.0) + ax));
+	} else if (e >= 0x3ff - 26) {
+		w = foldm_log1p(ax + ax * ax / (foldm_sqrt(ax * ax + 1.0) + 1.0));
+	} else {
+		w = ax;
+	}
+	return s ? -w : w;
+}
+
+static double foldm_acosh(double x) {
+	double ln2 = 0.693147180559945309417232121458176568;
+	int32_t hx = foldm_hi(x);
+	unsigned e = ((uint32_t)hx >> 20) & 0x7ff;
+	if (e < 0x3ff + 1)
+		return foldm_log1p(x - 1.0 +
+											 foldm_sqrt((x - 1.0) * (x - 1.0) + 2.0 * (x - 1.0)));
+	if (e < 0x3ff + 26)
+		return foldm_log(2.0 * x - 1.0 / (x + foldm_sqrt(x * x - 1.0)));
+	return foldm_log(x) + ln2;
+}
+
+static double foldm_atanh(double x) {
+	int32_t hx = foldm_hi(x);
+	int s = (hx < 0);
+	unsigned e = ((uint32_t)hx >> 20) & 0x7ff;
+	double y = foldm_fabs(x);
+	if (e < 0x3ff - 1) {
+		if (e >= 0x3ff - 32)
+			y = 0.5 * foldm_log1p(2.0 * y + 2.0 * y * y / (1.0 - y));
+	} else {
+		y = 0.5 * foldm_log1p(2.0 * (y / (1.0 - y)));
+	}
+	return s ? -y : y;
+}
+
 static int foldmath_eval(int id, int flt, uint64_t inbits, uint64_t *out) {
 	double x, res;
 	uint64_t ib;
@@ -7380,6 +7568,54 @@ static int foldmath_eval(int id, int flt, uint64_t inbits, uint64_t *out) {
 		if ((ib & 0x7fffffffffffffffull) >= 0x7ff0000000000000ull)
 			return 0;
 		res = foldm_cbrt(x);
+		break;
+	}
+	case 17: {
+		uint64_t infb = 0x7ff0000000000000ull;
+		if ((ib & 0x7fffffffffffffffull) >= 0x7ff0000000000000ull)
+			return 0;
+		if (x >= 1024.0) {
+			memcpy(&res, &infb, sizeof res);
+			break;
+		}
+		res = foldm_exp2(x);
+		break;
+	}
+	case 18: {
+		if ((ib & 0x7fffffffffffffffull) >= 0x7ff0000000000000ull)
+			return 0;
+		res = foldm_expm1(x);
+		break;
+	}
+	case 19: {
+		if ((ib & 0x7fffffffffffffffull) >= 0x7ff0000000000000ull)
+			return 0;
+		if (x <= -1.0)
+			return 0;
+		res = foldm_log1p(x);
+		break;
+	}
+	case 20: {
+		if ((ib & 0x7fffffffffffffffull) >= 0x7ff0000000000000ull)
+			return 0;
+		res = foldm_asinh(x);
+		break;
+	}
+	case 21: {
+		if ((ib & 0x7fffffffffffffffull) >= 0x7ff0000000000000ull)
+			return 0;
+		if (x < 1.0)
+			return 0;
+		res = foldm_acosh(x);
+		break;
+	}
+	case 22: {
+		double ax = x < 0 ? -x : x;
+		if ((ib & 0x7fffffffffffffffull) >= 0x7ff0000000000000ull)
+			return 0;
+		if (ax >= 1.0)
+			return 0;
+		res = foldm_atanh(x);
 		break;
 	}
 	default:

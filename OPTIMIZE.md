@@ -871,6 +871,24 @@ machinery, and at what risk — to decide whether to lift the scope.
   cbrt hypot — the deterministic "sequence approximation" ask, complete.
   Tests foldmath_invtrig + foldmath_invtrig_must_not; 1838 green,
   fixpoint byte-identical, default -O0 objects identical.
+
+### 2026-07-10 — iteration 36 (-ffold-math completes the elementary set)
+
+- **`-ffold-math` extended to exp2/expm1/log1p/asinh/acosh/atanh** (+f
+  variants) — completing the elementary C99 <math.h> transcendental set.
+  fdlibm/musl coefficients (s_expm1/s_log1p/s_asinh/e_acosh/e_atanh);
+  exp2 = scalbn(exp(r·ln2), round(x)) reusing foldm_exp/foldm_scalbn;
+  asinh/acosh/atanh reuse the new foldm_log1p plus foldm_log/foldm_sqrt —
+  no duplication. **Accuracy: ≤1 ulp vs glibc across the spread**,
+  including the near-zero points where exp(x)−1 / log(1+x) lose precision
+  (expm1(1e-10)/log1p(1e-10) exact).
+- Domain/edge discipline: log1p(x≤−1), acosh(x<1), atanh(|x|≥1) NOT
+  folded (kept as calls → ±inf/NaN via libm); acosh(1)=0 folds; all
+  inf/nan inputs left as calls. Overflow(+inf)/underflow(0) for exp2/expm1
+  folded like foldm_exp.
+- `-ffold-math` now folds **23 transcendental families** — the elementary
+  set is complete. Tests foldmath_more2 + foldmath_more2_must_not; 1840
+  green, fixpoint byte-identical, default -O0 mccpp.o identical.
 - **Optimizer campaign at natural completion**: 14 landed features
   (9 replay tree passes + fold-math over 17 families + -O4+ TPE
   superoptimizer) + bench statistics + a miscompile fix + the
