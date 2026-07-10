@@ -3430,7 +3430,55 @@ static void ast_ident_setlit(AstArena *a, AstLocal n, int tt, uint64_t v) {
 	ast_set_cst(a, n, 0);
 }
 
+static int ast_ii_width(int tt) {
+	switch (tt & VT_BTYPE) {
+	case VT_BOOL:
+	case VT_BYTE:
+		return 1;
+	case VT_SHORT:
+		return 2;
+	case VT_INT:
+		return 4;
+	case VT_LLONG:
+		return 8;
+	}
+	return 0;
+}
+
+static int ast_ident_convert(AstArena *a, AstLocal n) {
+	AstLocal c, x;
+	int tt, ct, xt;
+	if (ast_kind(a, n) != AST_Convert || ast_nchild(a, n) != 1)
+		return 0;
+	tt = ast_type_t(a, n);
+	if (!ast_ident_intt(tt) || (tt & VT_VOLATILE))
+		return 0;
+	c = ast_first_child(a, n);
+	ct = ast_type_t(a, c);
+	if (!ast_ident_intt(ct) || (ct & VT_VOLATILE))
+		return 0;
+	if ((tt & (VT_BTYPE | VT_UNSIGNED)) == (ct & (VT_BTYPE | VT_UNSIGNED))) {
+		ast_ident_adopt(a, n, c);
+		return 2;
+	}
+	if (ast_kind(a, c) == AST_Convert && ast_nchild(a, c) == 1) {
+		x = ast_first_child(a, c);
+		xt = ast_type_t(a, x);
+		if (ast_ident_intt(xt) && !(xt & VT_VOLATILE) &&
+				(tt & (VT_BTYPE | VT_UNSIGNED)) == (xt & (VT_BTYPE | VT_UNSIGNED)) &&
+				(ct & VT_UNSIGNED) == (xt & VT_UNSIGNED) &&
+				ast_ii_width(ct) >= ast_ii_width(tt)) {
+			ast_ident_adopt(a, n, x);
+			return 2;
+		}
+	}
+	return 0;
+}
+
 static int ast_ident_node(AstArena *a, AstLocal n) {
+	int cr = ast_ident_convert(a, n);
+	if (cr)
+		return cr;
 	if (ast_kind(a, n) != AST_Binary || ast_nchild(a, n) != 2)
 		return 0;
 	int op = ast_op(a, n);
