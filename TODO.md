@@ -540,18 +540,30 @@ Make `--embed-jit` (default on, flag plumbed at `f959078e`) do its runtime
 job: embed an always-on optimizer into the output that, while the program
 runs, JIT-recompiles its own hot functions in a background C11-thread pool
 and hot-swaps the faster versions in place — the original hypervisor
-vision, unconstrained by the compile-time seconds budget. Needs an ELF
-`.init_array` ctor, an embedded libmcc/JIT slice, the captured intention
-trees carried in the binary, and safe live function patching. Builds on
-§25 (JIT measurement) + §21 (cache).
+vision, bounded at *runtime* by `--jit-max-duration` (default 600 s), not by
+the compile-time `optimize_search_seconds`. Add `--jit-max-duration=<sec>`
+(default 600, `0`=unlimited) alongside the existing `--embed-jit` flag.
+Needs an ELF `.init_array` ctor, an embedded libmcc/JIT slice, the captured
+intention trees carried in the binary, and safe live function patching.
+Builds on §25 (JIT measurement) + §21 (cache).
 
-Decided 2026-07-10: unlike the `-O4+` compile-time search (time-bound by
-`optimize_search_seconds`, §31), the embedded runtime optimizer is
-**unbounded** — while the program runs it keeps optimizing until it has
-**exhausted every permutation of the §31 strategy portfolio**, then idles.
-It resumes across program runs from the §21 checkpoint shipped inside the
-binary, so a long-lived or repeatedly-run program converges over time
-rather than re-searching cold.
+Decided 2026-07-10: the embedded runtime optimizer runs to the **smaller of
+permutation exhaustion or a wall-clock cap**.
+- **Permutation space = `(MAX − MIN) × strats × depth(k)`** — the value
+  range each strategy sweeps (`MIN..MAX`), times the number of §31
+  strategies, times the best-carry depth `depth(k)`.
+- **`k` is adaptive** — set from the wall-clock time the *previous*
+  iteration took: a fast iteration deepens `k`, a slow one shrinks it, so
+  each iteration stays inside its time slice (never a days-long single
+  step).
+- **Wall-clock cap = `--jit-max-duration` seconds (default 600).** A
+  compile-time flag baked into the binary, adjustable up/down at compile
+  time; `0` = unlimited ("converge forever"). Distinct from the
+  compile-time `optimize_search_seconds` (§31) — this bounds the *runtime*
+  optimizer.
+- Resumes across program runs from the §21 checkpoint shipped inside the
+  binary, so a long-lived or repeatedly-run program converges over time
+  rather than re-searching cold; the cap applies per program run.
 
 ## 27. Loop-nest reordering / interchange (very large — DEFERRED, prerequisite-gated)
 
@@ -694,9 +706,16 @@ never depends on doing work at stop time:
   already on disk from §21's incremental writes) and returns within the
   bound. A watchdog kills/abandons the eval subprocess/JIT so it can't
   stall the exit.
-- **Per-candidate eval timeout.** Each eval is itself time-bounded by its
-  own watchdog; an overrunning candidate is abandoned as no-improvement —
-  no single eval runs for days, consistent with "strictly time-bound."
+- **Per-candidate eval timeout — subprocess watchdog.** Each eval runs in
+  a **forked subprocess**; the parent enforces the time bound by killing it
+  (POSIX `fork` + `waitpid` + `SIGKILL`; Windows `CreateProcess` +
+  `TerminateProcess`). This is the most portable, robust isolation — a
+  hung, crashing, or runaway eval can never stall or take down the parent,
+  and killing a subprocess is universally reliable, unlike in-process
+  `alarm`/thread-cancellation (fragile, non-portable, unsafe mid-JIT). An
+  overrunning candidate is killed and abandoned as no-improvement. This is
+  also what gives the stop path its teeth: on `stop`, kill the eval
+  subprocess and return immediately — never wait on it.
 That bound is compile-time only; the embedded runtime JIT (§26) is
 unbounded.
 
