@@ -26,6 +26,7 @@ static const mcc_golden_t mcc_goldens[] = {
 		{"c11_complex_const_fold", "run", "exec/features_c99_c11/c11_complex_const_fold.c", "OK\n", "", "", ""},
 		{"atomic_aggregate", "run", "exec/features_c99_c11/atomic_aggregate.c", "OK\n", "", "", ""},
 		{"fp_builtins", "run", "exec/features_c99_c11/fp_builtins.c", "OK\n", "", "", ""},
+		{"libm_builtin_fold", "run", "exec/features_c99_c11/libm_builtin_fold.c", "2.5 6.25 2 3\n2 3 2.5 7.5\n2.5 6.25 2 3\n2 3 2.5 7.5\nOK\n", "-lm", "", ""},
 		{"complex_annexg", "run", "exec/features_c99_c11/complex_annexg.c", "OK\n", "", "", ""},
 		{"complex_cmplx_special", "run", "exec/features_c99_c11/complex_cmplx_special.c", "OK\n", "-lm", "", "os!=WIN32:needs complex libm (cabs/cproj), absent on the WIN32 target"},
 		{"fenv_access_fold", "run", "exec/features_c99_c11/fenv_access_fold.c", "OK\n", "-lm", "", ""},

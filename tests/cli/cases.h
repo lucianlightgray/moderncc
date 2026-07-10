@@ -89,6 +89,13 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -fno-stack-protector -c {D}/sp.c -o {W}/sp2.o && nm {W}/sp2.o | grep -c __stack_chk_fail",
 		 "0\n"},
 
+		{"O1_libm_builtin_fold", "cpu=x86_64,os=linux,optimizer",
+		 "printf 'double sqrt(double);\\ndouble f(void){return sqrt(2.0);}\\n' > {W}/bf.c && "
+		 "{MCC} -B{B} -I{I} -O0 -c {W}/bf.c -o {W}/bf0.o && "
+		 "{MCC} -B{B} -I{I} -O1 -c {W}/bf.c -o {W}/bf1.o && "
+		 "readelf -r {W}/bf0.o | grep -c sqrt && readelf -r {W}/bf1.o | grep -c sqrt",
+		 "1\n0\n"},
+
 		{"debug_default_stabs", "cpu=x86_64,os=linux,stabs",
 		 "{MCC} -B{B} -I{I} -g -c {D}/lib.c -o {W}/g.o && readelf -S {W}/g.o | grep -oE '\\.stab' | sort -u",
 		 ".stab\n"},

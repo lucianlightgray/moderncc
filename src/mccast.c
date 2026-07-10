@@ -2865,6 +2865,8 @@ static void ast_fold_rec(AstArena *a, AstLocal n) {
 	int tt = ast_type_t(a, x);
 	if (ast_bad_type(tt) || ast_bad_type(ast_type_t(a, y)))
 		return;
+	if (is_float(tt) || is_float(ast_type_t(a, y)))
+		return;
 	uint64_t l1 = value64(ast_ival(a, x), tt);
 	uint64_t l2 = value64(ast_ival(a, y), ast_type_t(a, y));
 	int ok = 1;
@@ -2883,6 +2885,246 @@ static void ast_fold_rec(AstArena *a, AstLocal n) {
 static void ast_run_templates(AstArena *a) {
 	ast_tmpl_folds = 0;
 	ast_fold_rec(a, ast_root(a));
+}
+
+static const struct {
+	const char *name;
+	unsigned char id, nargs, flt;
+} ast_bfold_tab[] = {
+		{"sqrt", 0, 1, 0},     {"sqrtf", 0, 1, 1},
+		{"fabs", 1, 1, 0},     {"fabsf", 1, 1, 1},
+		{"floor", 2, 1, 0},    {"floorf", 2, 1, 1},
+		{"ceil", 3, 1, 0},     {"ceilf", 3, 1, 1},
+		{"trunc", 4, 1, 0},    {"truncf", 4, 1, 1},
+		{"copysign", 5, 2, 0}, {"copysignf", 5, 2, 1},
+		{"fmin", 6, 2, 0},     {"fminf", 6, 2, 1},
+		{"fmax", 7, 2, 0},     {"fmaxf", 7, 2, 1},
+};
+
+static uint64_t ast_bfold_mul128(uint64_t a, uint64_t b, uint64_t *lo) {
+	uint64_t a0 = a & 0xffffffffu, a1 = a >> 32;
+	uint64_t b0 = b & 0xffffffffu, b1 = b >> 32;
+	uint64_t p00 = a0 * b0;
+	uint64_t p01 = a0 * b1;
+	uint64_t p10 = a1 * b0;
+	uint64_t p11 = a1 * b1;
+	uint64_t mid = (p00 >> 32) + (p01 & 0xffffffffu) + (p10 & 0xffffffffu);
+	*lo = (mid << 32) | (p00 & 0xffffffffu);
+	return p11 + (p01 >> 32) + (p10 >> 32) + (mid >> 32);
+}
+
+static int ast_bfold_sq_gt(uint64_t s, uint64_t hi, uint64_t lo) {
+	uint64_t sqlo, sqhi = ast_bfold_mul128(s, s, &sqlo);
+	return sqhi > hi || (sqhi == hi && sqlo > lo);
+}
+
+static double ast_bfold_sqrt(double x) {
+	uint64_t ix;
+	memcpy(&ix, &x, sizeof ix);
+	if (ix == 0 || ix == 0x8000000000000000ull || ix == 0x7ff0000000000000ull)
+		return x;
+	int e = (int)(ix >> 52) & 0x7ff;
+	uint64_t m = ix & 0x000fffffffffffffull;
+	int E;
+	if (e == 0) {
+		E = -1074;
+		while (m < (1ull << 52)) {
+			m <<= 1;
+			E--;
+		}
+	} else {
+		E = e - 1075;
+		m |= 1ull << 52;
+	}
+	if (E & 1) {
+		m <<= 1;
+		E--;
+	}
+	double dm = (double)m, r;
+	uint64_t g;
+	memcpy(&g, &dm, sizeof g);
+	g = (g >> 1) + 0x1ff8000000000000ull;
+	memcpy(&r, &g, sizeof r);
+	for (int i = 0; i < 5; i++)
+		r = 0.5 * (r + dm / r);
+	uint64_t S = (uint64_t)(r * 67108864.0);
+	uint64_t hi = m >> 10, lo = m << 54;
+	if (S < (1ull << 52))
+		S = 1ull << 52;
+	if (S > (1ull << 53) - 1)
+		S = (1ull << 53) - 1;
+	while (!ast_bfold_sq_gt(2 * S + 1, hi, lo))
+		S++;
+	while (ast_bfold_sq_gt(2 * S - 1, hi, lo))
+		S--;
+	uint64_t rbits = ((uint64_t)(E / 2 - 26 + 52 + 1023) << 52) + (S - (1ull << 52));
+	memcpy(&r, &rbits, sizeof r);
+	return r;
+}
+
+static double ast_bfold_trunc(double x) {
+	if (x >= 9007199254740992.0 || x <= -9007199254740992.0)
+		return x;
+	uint64_t ix, it;
+	double t = (double)(int64_t)x;
+	memcpy(&ix, &x, sizeof ix);
+	memcpy(&it, &t, sizeof it);
+	it |= ix & 0x8000000000000000ull;
+	memcpy(&t, &it, sizeof it);
+	return t;
+}
+
+static double ast_bfold_floor(double x) {
+	double t = ast_bfold_trunc(x);
+	return t > x ? t - 1.0 : t;
+}
+
+static double ast_bfold_ceil(double x) {
+	double t = ast_bfold_trunc(x);
+	return t < x ? t + 1.0 : t;
+}
+
+static int ast_bfold_eval_f(int id, uint32_t b0, uint32_t b1, uint64_t *out) {
+	float x0, x1, r;
+	uint32_t rb;
+	memcpy(&x0, &b0, sizeof x0);
+	memcpy(&x1, &b1, sizeof x1);
+	if (x0 != x0 || x1 != x1)
+		return 0;
+	switch (id) {
+	case 0:
+		if (x0 < 0)
+			return 0;
+		r = (float)ast_bfold_sqrt(x0);
+		break;
+	case 1:
+		*out = b0 & 0x7fffffffu;
+		return 1;
+	case 2:
+		r = (float)ast_bfold_floor(x0);
+		break;
+	case 3:
+		r = (float)ast_bfold_ceil(x0);
+		break;
+	case 4:
+		r = (float)ast_bfold_trunc(x0);
+		break;
+	case 5:
+		*out = (b0 & 0x7fffffffu) | (b1 & 0x80000000u);
+		return 1;
+	default:
+		if (x0 == 0 && x1 == 0 && ((b0 ^ b1) >> 31))
+			return 0;
+		r = id == 6 ? (x0 < x1 ? x0 : x1) : (x0 > x1 ? x0 : x1);
+		break;
+	}
+	memcpy(&rb, &r, sizeof rb);
+	*out = rb;
+	return 1;
+}
+
+static int ast_bfold_eval_d(int id, uint64_t b0, uint64_t b1, uint64_t *out) {
+	double x0, x1, r;
+	memcpy(&x0, &b0, sizeof x0);
+	memcpy(&x1, &b1, sizeof x1);
+	if (x0 != x0 || x1 != x1)
+		return 0;
+	switch (id) {
+	case 0:
+		if (x0 < 0)
+			return 0;
+		r = ast_bfold_sqrt(x0);
+		break;
+	case 1:
+		*out = b0 & 0x7fffffffffffffffull;
+		return 1;
+	case 2:
+		r = ast_bfold_floor(x0);
+		break;
+	case 3:
+		r = ast_bfold_ceil(x0);
+		break;
+	case 4:
+		r = ast_bfold_trunc(x0);
+		break;
+	case 5:
+		*out = (b0 & 0x7fffffffffffffffull) | (b1 & 0x8000000000000000ull);
+		return 1;
+	default:
+		if (x0 == 0 && x1 == 0 && ((b0 ^ b1) >> 63))
+			return 0;
+		r = id == 6 ? (x0 < x1 ? x0 : x1) : (x0 > x1 ? x0 : x1);
+		break;
+	}
+	memcpy(out, &r, sizeof r);
+	return 1;
+}
+
+static AstLocal ast_bfold_arg(AstArena *a, AstLocal arg, int bt) {
+	while (ast_kind(a, arg) == AST_Convert && ast_nchild(a, arg) == 1 &&
+				 (ast_type_t(a, arg) & VT_BTYPE) == bt)
+		arg = ast_first_child(a, arg);
+	if (ast_kind(a, arg) != AST_Literal ||
+			(ast_op(a, arg) & (VT_VALMASK | VT_LVAL | VT_SYM | VT_NONCONST)) != VT_CONST ||
+			(ast_type_t(a, arg) & VT_BTYPE) != bt)
+		return AST_NONE;
+	return arg;
+}
+
+static int ast_bfold_run(AstArena *a) {
+	int folds = 0;
+	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++) {
+		if (ast_kind(a, n) != AST_Invoke)
+			continue;
+		AstLocal cref = ast_first_child(a, n);
+		if (cref == AST_NONE || ast_kind(a, cref) != AST_Ref)
+			continue;
+		Sym *cs = (Sym *)(uintptr_t)ast_sym(a, cref);
+		if (!cs || (cs->type.t & VT_BTYPE) != VT_FUNC || (cs->type.t & VT_STATIC))
+			continue;
+		ElfSym *es = elfsym(cs);
+		if (es && es->st_shndx != SHN_UNDEF)
+			continue;
+		const char *nm = get_tok_str(cs->v, NULL);
+		int nfn = (int)(sizeof ast_bfold_tab / sizeof *ast_bfold_tab);
+		int bi;
+		for (bi = 0; bi < nfn; bi++)
+			if (!strcmp(nm, ast_bfold_tab[bi].name))
+				break;
+		if (bi == nfn)
+			continue;
+		int bt = ast_bfold_tab[bi].flt ? VT_FLOAT : VT_DOUBLE;
+		int nargs = ast_bfold_tab[bi].nargs;
+		if ((ast_type_t(a, n) & VT_BTYPE) != bt ||
+				(int)ast_nchild(a, n) != nargs + 1)
+			continue;
+		uint64_t ab[2] = {0, 0};
+		int i;
+		for (i = 0; i < nargs; i++) {
+			AstLocal lit = ast_bfold_arg(a, ast_child(a, n, i + 1), bt);
+			if (lit == AST_NONE)
+				break;
+			ab[i] = ast_ival(a, lit);
+		}
+		if (i < nargs)
+			continue;
+		uint64_t res;
+		int ok = ast_bfold_tab[bi].flt
+								 ? ast_bfold_eval_f(ast_bfold_tab[bi].id, (uint32_t)ab[0],
+																		(uint32_t)ab[1], &res)
+								 : ast_bfold_eval_d(ast_bfold_tab[bi].id, ab[0], ab[1], &res);
+		if (!ok)
+			continue;
+		ast_set_kind(a, n, AST_Literal);
+		ast_clear_children(a, n);
+		ast_set_op(a, n, VT_CONST);
+		ast_set_type(a, n, bt, 0);
+		ast_set_ival(a, n, res);
+		ast_set_sym(a, n, 0);
+		folds++;
+	}
+	return folds;
 }
 
 static int ast_replay_ok(AstArena *a) {
@@ -2979,6 +3221,7 @@ void ast_func_end(Sym *sym) {
 			Section *rsec2 = cur_text_section->reloc;
 			volatile int faithful = 0;
 			int promoted = 0;
+			int bfolds = 0;
 			jmp_buf ast_outer_jmp;
 			int ast_outer_en = mcc_state->error_set_jmp_enabled;
 			int ast_saved_nberr = mcc_state->nb_errors;
@@ -3004,6 +3247,8 @@ void ast_func_end(Sym *sym) {
 										memcmp(rsec2->data + ast_reloc0_sv, orig_rel, rel_len) == 0);
 				ast_fn_faithful = faithful;
 
+				bfolds = faithful && ast_templates_env ? ast_bfold_run(ast_cur) : 0;
+				int do_bfold = bfolds > 0;
 				int do_inline = faithful && ast_has_graftable_call(ast_cur);
 				/* Tier-4 inline and call-ful Tier-3 promotion both claim the
 				   callee-saved bank (RBX/R12-R15); combining them in one function
@@ -3012,9 +3257,9 @@ void ast_func_end(Sym *sym) {
 				ast_no_callful_promo = do_inline;
 				int do_promote = faithful && ast_promote_env && ast_plan_promotion(ast_cur) > 0;
 				ast_no_callful_promo = 0;
-				if (faithful && !do_inline && !do_promote)
+				if (faithful && !do_inline && !do_promote && !do_bfold)
 					loc = saved_loc;
-				if (do_inline || do_promote) {
+				if (do_inline || do_promote || do_bfold) {
 					ind = ast_body_ind_sv;
 					rsym = 0;
 					if (ast_rsec)
@@ -3022,7 +3267,7 @@ void ast_func_end(Sym *sym) {
 					nocode_wanted = 0;
 					loc = saved_loc;
 					anon_sym = saved_anon;
-					ast_fconst_i = 0;
+					ast_fconst_i = do_bfold ? ast_fconst_n : 0;
 					ast_locrec_i = 0;
 					ast_replaying = 1;
 					ast_rp_switch = NULL;
@@ -3079,6 +3324,8 @@ void ast_func_end(Sym *sym) {
 				if (ast_templates_env)
 					fprintf(stderr, "[ast-template] const-fold %d %s\n",
 									ast_tmpl_folds, funcname);
+				if (bfolds)
+					fprintf(stderr, "[ast-bfold] %d %s\n", bfolds, funcname);
 				if (promoted)
 					fprintf(stderr, "[ast-promote] %d %s\n", promoted, funcname);
 			}

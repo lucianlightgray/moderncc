@@ -106,6 +106,11 @@ static int req_met(const char *req, char *reason, size_t rn) {
 				snprintf(reason, rn, "requires the bounds checker (MCC_CONFIG_BCHECK)");
 				return 0;
 			}
+		} else if (!strcmp(tok, "optimizer")) {
+			if (strcmp(hc_envv("MCC_TEST_OPTIMIZER", "1"), "1")) {
+				snprintf(reason, rn, "requires the optimizer (MCC_CONFIG_OPTIMIZER)");
+				return 0;
+			}
 		}
 	}
 	return 1;

@@ -15,7 +15,7 @@ Status: `[ ]` open · `[~]` claimed/in-progress · `[x]` landed (commit)
 
 ### Tier 1 — local/expression level (least complex)
 
-- [~] **Deterministic builtin folding** of exactly-rounded libm calls on
+- [x] **Deterministic builtin folding** (`a0495e8b`+; ast_bfold_run) of exactly-rounded libm calls on
       constant args (`sqrt`, `fabs`, `floor`, `ceil`, `trunc`, `copysign`,
       `fmin`, `fmax`) in the replay const-folder. IEEE-754 requires
       correct rounding for these, so compile-time evaluation is
