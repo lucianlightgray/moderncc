@@ -377,6 +377,23 @@ tree edit) simply misses.
 
 # Superoptimizer / JIT ladder (open)
 
+## Implementation status (2026-07-10, in progress)
+
+Landed, all presets/ctest green + fixpoint byte-identical at each step:
+- **§20 done** — `host_cache_dir()` in mcchost (`97846575`).
+- **§21 first increment** — whole-TU resumable checkpoint on the `-O<N>`
+  search: warm-start-and-continue, flock + A/B keep-best + durable-atomic
+  (`da123a35`). Remaining: two-tier per-fn keys, two-phase cursor,
+  multi-objective (land with §22/§25).
+- **flags** — `--clear-cache`, `--jit-max-duration`, `--jit-functions` +
+  `host_rmrf` (`4394057f`).
+- **§23 first increment** — inline node/graft budgets are searchable env
+  knobs (default-preserving), added to the `-O<N>` space (`7e630c75`).
+  Remaining: param shapes, cross-TU static.
+Next: §23 param-shapes → §25 .text objective → §22 per-fn refactor →
+§29/§30 passes → §26. §27/§28 deferred.
+
+
 The `-O<N>` (N>=4) compile-time search landed at `f959078e`
 (`mcc_superopt_search` in `src/mcc.c`): it re-compiles the whole TU under
 different AST pass-configs via child workers and keeps the smallest object.
