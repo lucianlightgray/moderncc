@@ -97,3 +97,29 @@ real without passing it.
 - Subagent 2 claimed the protocol-infrastructure task: repeat-run
   mean ± stdev + Welch's t-test columns in tools/bench.c (mccbench).
 - Subagent 1 (Tier-1 builtin folding) still in flight.
+
+### 2026-07-09 — iteration 4
+
+- **Benchmark result resolved** (harness v3: CPU-pinned `taskset -c 2`,
+  warmup, n=15, 10 compiles/sample). Self-host codegen speed by the
+  -O-built compiler, Welch's t vs the -O0-built compiler
+  (Welch–Satterthwaite df):
+  - O0: 679.7±3.4ms
+  - O1 (templates only): 684.5±4.9ms — **t=3.18, df=25, significant
+    but SLOWER**: capture/replay of templates alone costs ~0.7% with no
+    codegen gain on this workload.
+  - **O2 (templates+promote): 667.4±2.6ms — t=−11.18, df=26,
+    significant WIN** (~1.8% faster generated compiler). Register
+    **promotion is the load-bearing optimization**; it more than pays
+    back the replay cost.
+  - O3 (+inline): 683.6±10.8ms — **t=1.35, ns**: inlining adds variance
+    and no net codegen win on the self-host workload.
+  Conclusion recorded per protocol (α=0.05, crit≈2.05 at df≈25): the
+  promotion pass is the significant lever; templates-alone and inlining
+  are not, here. Pinning cut O0 stdev 30→3.4ms — the earlier
+  inconclusive rounds were pure measurement noise.
+- §18 cache design refined + committed (`5c9bda5f`): persistent
+  JIT-optimization cache keyed by the AST-intention binary hash — the
+  hypervisor's cross-run warm-start memory.
+- Tier-1 algebraic-identity subagent still in flight; harvest next
+  iteration.
