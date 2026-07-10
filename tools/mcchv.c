@@ -1,0 +1,440 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include <inttypes.h>
+#include <math.h>
+#include "libmcc.h"
+
+#ifdef __STDC_NO_THREADS__
+int main(void) {
+	printf("mcchv: C11 threads unavailable; skipping\n");
+	return 77;
+}
+#else
+
+#include <threads.h>
+#include <stdatomic.h>
+#include <time.h>
+
+#define HV_BLOCK 64
+#define HV_NBLOCKS (1u << 16)
+#define HV_MAXPAT 16384
+#define HV_HASHCAP (HV_MAXPAT * 4)
+#define HV_TOPK 12
+#define HV_PLANTED 24
+
+typedef struct {
+	uintmax_t weight;
+	uint64_t hash;
+	uint32_t id;
+} HvPat;
+
+typedef uint32_t (*HvKernel)(const unsigned char *blk, uint64_t h);
+
+static unsigned char *hv_data;
+static unsigned char *hv_store;
+static uint32_t hv_npat;
+static HvPat hv_perm[HV_MAXPAT];
+static uint32_t hv_pos[HV_MAXPAT];
+static int32_t hv_hmap[HV_HASHCAP];
+static uint32_t hv_seq[HV_NBLOCKS];
+static mtx_t hv_mtx;
+static _Atomic(HvKernel) hv_kernel;
+static atomic_int hv_stop;
+static atomic_int hv_jit_gen;
+static char hv_mccopts[2048];
+static MCCState *hv_states[64];
+static int hv_nstates;
+
+static uint64_t hv_rng = 1;
+
+static uint64_t hv_rand(void) {
+	hv_rng ^= hv_rng << 13;
+	hv_rng ^= hv_rng >> 7;
+	hv_rng ^= hv_rng << 17;
+	return hv_rng;
+}
+
+static uint64_t hv_hash(const unsigned char *p) {
+	uint64_t h = 0xcbf29ce484222325u;
+	for (int i = 0; i < HV_BLOCK; i++) {
+		h ^= p[i];
+		h *= 0x100000001b3u;
+	}
+	return h;
+}
+
+static uint64_t hv_now_ns(void) {
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint64_t)ts.tv_sec * 1000000000u + ts.tv_nsec;
+}
+
+static void hv_bump(uint32_t id) {
+	uint32_t i = hv_pos[id];
+	if (hv_perm[i].weight < UINTMAX_MAX)
+		hv_perm[i].weight++;
+	while (i > 0 && hv_perm[i].weight > hv_perm[i - 1].weight) {
+		HvPat t = hv_perm[i - 1];
+		hv_perm[i - 1] = hv_perm[i];
+		hv_perm[i] = t;
+		hv_pos[hv_perm[i - 1].id] = i - 1;
+		hv_pos[hv_perm[i].id] = i;
+		i--;
+	}
+}
+
+static uint32_t hv_intern(const unsigned char *blk) {
+	uint64_t h = hv_hash(blk);
+	uint32_t slot = (uint32_t)(h % HV_HASHCAP);
+	for (;;) {
+		int32_t id = hv_hmap[slot];
+		if (id < 0)
+			break;
+		if (hv_perm[hv_pos[id]].hash == h &&
+				!memcmp(hv_store + (size_t)id * HV_BLOCK, blk, HV_BLOCK)) {
+			hv_bump((uint32_t)id);
+			return (uint32_t)id;
+		}
+		slot = (slot + 1) % HV_HASHCAP;
+	}
+	if (hv_npat >= HV_MAXPAT) {
+		fprintf(stderr, "mcchv: pattern table full\n");
+		exit(1);
+	}
+	uint32_t id = hv_npat++;
+	memcpy(hv_store + (size_t)id * HV_BLOCK, blk, HV_BLOCK);
+	hv_perm[id].weight = 1;
+	hv_perm[id].hash = h;
+	hv_perm[id].id = id;
+	hv_pos[id] = id;
+	hv_hmap[slot] = (int32_t)id;
+	hv_bump(id);
+	return id;
+}
+
+static uint32_t hv_lookup_baseline(const unsigned char *blk, uint64_t h) {
+	for (uint32_t i = 0; i < hv_npat; i++) {
+		if (hv_perm[i].hash == h &&
+				!memcmp(hv_store + (size_t)hv_perm[i].id * HV_BLOCK, blk, HV_BLOCK))
+			return hv_perm[i].id;
+	}
+	return UINT32_MAX;
+}
+
+static void hv_jit_error(void *opaque, const char *msg) {
+	fprintf(opaque, "mcchv jit: %s\n", msg);
+}
+
+typedef struct {
+	uint64_t hash;
+	uint32_t id;
+} HvLeaf;
+
+static int hv_leaf_cmp(const void *a, const void *b) {
+	const HvLeaf *x = a, *y = b;
+	return x->hash < y->hash ? -1 : x->hash > y->hash ? 1 : 0;
+}
+
+static size_t hv_emit_tree(char *src, size_t n, size_t cap,
+													 const HvLeaf *v, uint32_t lo, uint32_t hi) {
+	if (lo >= hi)
+		return n + (size_t)snprintf(src + n, cap - n,
+																"return hv_baseline_lookup(blk, h);");
+	uint32_t mid = lo + (hi - lo) / 2;
+	if (hi - lo == 1) {
+		uintptr_t pat = (uintptr_t)(hv_store + (size_t)v[mid].id * HV_BLOCK);
+		return n + (size_t)snprintf(src + n, cap - n,
+																"if (h == 0x%" PRIx64 "ull && !hv_memcmp(blk, (const void *)%" PRIuPTR "ul, %d)) return %" PRIu32 "u; "
+																"return hv_baseline_lookup(blk, h);",
+																v[mid].hash, pat, HV_BLOCK, v[mid].id);
+	}
+	n += (size_t)snprintf(src + n, cap - n, "if (h < 0x%" PRIx64 "ull) { ",
+												v[mid].hash);
+	n = hv_emit_tree(src, n, cap, v, lo, mid);
+	n += (size_t)snprintf(src + n, cap - n, " } else { ");
+	n = hv_emit_tree(src, n, cap, v, mid, hi);
+	n += (size_t)snprintf(src + n, cap - n, " }");
+	return n;
+}
+
+static HvKernel hv_jit_compile(const HvLeaf *leaves, uint32_t nleaf) {
+	size_t cap = (size_t)nleaf * 200 + 65536;
+	char *src = malloc(cap);
+	size_t n = 0;
+	if (!src)
+		return NULL;
+	n += (size_t)snprintf(src + n, cap - n,
+												"extern unsigned hv_baseline_lookup(const unsigned char *, unsigned long long);\n"
+												"extern int hv_memcmp(const void *, const void *, unsigned long);\n"
+												"unsigned hv_kernel_jit(const unsigned char *blk, unsigned long long h) {\n");
+	n = hv_emit_tree(src, n, cap, leaves, 0, nleaf);
+	n += (size_t)snprintf(src + n, cap - n, "\n}\n");
+
+	MCCState *s = mcc_new();
+	if (!s) {
+		free(src);
+		return NULL;
+	}
+	mcc_set_error_func(s, stderr, hv_jit_error);
+	if (hv_mccopts[0])
+		mcc_set_options(s, hv_mccopts);
+	mcc_set_options(s, "-nostdlib");
+	mcc_set_output_type(s, MCC_OUTPUT_MEMORY);
+	mcc_add_symbol(s, "hv_baseline_lookup", (const void *)hv_lookup_baseline);
+	mcc_add_symbol(s, "hv_memcmp", (const void *)memcmp);
+	if (mcc_compile_string(s, src) < 0 || mcc_relocate(s) < 0) {
+		mcc_delete(s);
+		free(src);
+		return NULL;
+	}
+	free(src);
+	HvKernel fn = (HvKernel)mcc_get_symbol(s, "hv_kernel_jit");
+	if (!fn) {
+		mcc_delete(s);
+		return NULL;
+	}
+	if (hv_nstates < (int)(sizeof hv_states / sizeof hv_states[0]))
+		hv_states[hv_nstates++] = s;
+	return fn;
+}
+
+static int hv_optimizer(void *arg) {
+	uint32_t last_n = 0;
+	(void)arg;
+	while (!atomic_load(&hv_stop)) {
+		uint32_t np;
+		mtx_lock(&hv_mtx);
+		np = hv_npat;
+		mtx_unlock(&hv_mtx);
+		if (np > 0 && np != last_n) {
+			HvLeaf *leaves = malloc((size_t)np * sizeof *leaves);
+			if (leaves) {
+				mtx_lock(&hv_mtx);
+				for (uint32_t i = 0; i < np; i++) {
+					leaves[i].hash = hv_perm[i].hash;
+					leaves[i].id = hv_perm[i].id;
+				}
+				mtx_unlock(&hv_mtx);
+				qsort(leaves, np, sizeof *leaves, hv_leaf_cmp);
+				HvKernel fn = hv_jit_compile(leaves, np);
+				free(leaves);
+				if (fn) {
+					atomic_store(&hv_kernel, fn);
+					atomic_fetch_add(&hv_jit_gen, 1);
+					last_n = np;
+				}
+			}
+		}
+		thrd_yield();
+		struct timespec ts = {0, 5000000};
+		thrd_sleep(&ts, NULL);
+	}
+	return 0;
+}
+
+typedef struct {
+	uint32_t lo, hi;
+	uint32_t bad;
+} HvRange;
+
+static int hv_sweep_worker(void *arg) {
+	HvRange *r = arg;
+	HvKernel k = atomic_load(&hv_kernel);
+	uint32_t bad = 0;
+	for (uint32_t i = r->lo; i < r->hi; i++) {
+		const unsigned char *blk = hv_data + (size_t)i * HV_BLOCK;
+		uint32_t id = k(blk, hv_hash(blk));
+		if (id != hv_seq[i])
+			bad++;
+	}
+	r->bad = bad;
+	return 0;
+}
+
+static double hv_sweep(int workers, uint32_t *bad_out) {
+	thrd_t th[64];
+	HvRange rg[64];
+	uint32_t per = HV_NBLOCKS / (uint32_t)workers;
+	uint64_t t0 = hv_now_ns();
+	for (int w = 0; w < workers; w++) {
+		rg[w].lo = (uint32_t)w * per;
+		rg[w].hi = w == workers - 1 ? HV_NBLOCKS : rg[w].lo + per;
+		rg[w].bad = 0;
+		thrd_create(&th[w], hv_sweep_worker, &rg[w]);
+	}
+	uint32_t bad = 0;
+	for (int w = 0; w < workers; w++) {
+		int res;
+		thrd_join(th[w], &res);
+		bad += rg[w].bad;
+	}
+	*bad_out = bad;
+	return (double)(hv_now_ns() - t0) / 1e6;
+}
+
+static double hv_mean(const double *v, int n) {
+	double s = 0;
+	for (int i = 0; i < n; i++)
+		s += v[i];
+	return s / n;
+}
+
+static double hv_stdev(const double *v, int n, double m) {
+	double s = 0;
+	if (n < 2)
+		return 0;
+	for (int i = 0; i < n; i++)
+		s += (v[i] - m) * (v[i] - m);
+	return sqrt(s / (n - 1));
+}
+
+static double hv_welch_t(const double *a, int na, const double *b, int nb) {
+	double ma = hv_mean(a, na), mb = hv_mean(b, nb);
+	double sa = hv_stdev(a, na, ma), sb = hv_stdev(b, nb, mb);
+	double se = sqrt(sa * sa / na + sb * sb / nb);
+	if (se == 0)
+		return ma == mb ? 0 : 1e9;
+	return (ma - mb) / se;
+}
+
+int main(int argc, char **argv) {
+	uint64_t seed = 42;
+	int passes = 6, workers = 4;
+
+	for (int i = 1; i < argc; i++) {
+		if (!strcmp(argv[i], "--seed") && i + 1 < argc) {
+			seed = strtoull(argv[++i], NULL, 0);
+		} else if (!strcmp(argv[i], "--passes") && i + 1 < argc) {
+			passes = atoi(argv[++i]);
+		} else if (!strcmp(argv[i], "--workers") && i + 1 < argc) {
+			workers = atoi(argv[++i]);
+		} else {
+			size_t l = strlen(hv_mccopts);
+			snprintf(hv_mccopts + l, sizeof hv_mccopts - l, "%s\"%s\"",
+							 l ? " " : "", argv[i]);
+		}
+	}
+	if (passes < 2)
+		passes = 2;
+	if (passes > 32)
+		passes = 32;
+	if (workers < 1)
+		workers = 1;
+	if (workers > 32)
+		workers = 32;
+	hv_rng = seed ? seed : 1;
+
+	hv_data = malloc((size_t)HV_NBLOCKS * HV_BLOCK);
+	hv_store = malloc((size_t)HV_MAXPAT * HV_BLOCK);
+	if (!hv_data || !hv_store)
+		return 1;
+	memset(hv_hmap, -1, sizeof hv_hmap);
+	mtx_init(&hv_mtx, mtx_plain);
+	atomic_store(&hv_kernel, hv_lookup_baseline);
+
+	unsigned char planted[HV_PLANTED][HV_BLOCK];
+	for (int p = 0; p < HV_PLANTED; p++)
+		for (int b = 0; b < HV_BLOCK; b++)
+			planted[p][b] = (unsigned char)hv_rand();
+	double cum[HV_PLANTED];
+	double zsum = 0;
+	for (int p = 0; p < HV_PLANTED; p++) {
+		zsum += 1.0 / (p + 1);
+		cum[p] = zsum;
+	}
+	for (uint32_t i = 0; i < HV_NBLOCKS; i++) {
+		unsigned char *blk = hv_data + (size_t)i * HV_BLOCK;
+		if (hv_rand() % 100 < 85) {
+			double r = (double)(hv_rand() % 1000000) / 1000000.0 * zsum;
+			int p = 0;
+			while (p < HV_PLANTED - 1 && cum[p] < r)
+				p++;
+			memcpy(blk, planted[p], HV_BLOCK);
+		} else {
+			for (int b = 0; b < HV_BLOCK; b++)
+				blk[b] = (unsigned char)hv_rand();
+		}
+	}
+
+	mtx_lock(&hv_mtx);
+	for (uint32_t i = 0; i < HV_NBLOCKS; i++)
+		hv_seq[i] = hv_intern(hv_data + (size_t)i * HV_BLOCK);
+	mtx_unlock(&hv_mtx);
+
+	unsigned char *replay = malloc((size_t)HV_NBLOCKS * HV_BLOCK);
+	if (!replay)
+		return 1;
+	for (uint32_t i = 0; i < HV_NBLOCKS; i++)
+		memcpy(replay + (size_t)i * HV_BLOCK,
+					 hv_store + (size_t)hv_seq[i] * HV_BLOCK, HV_BLOCK);
+	int replay_ok = !memcmp(replay, hv_data, (size_t)HV_NBLOCKS * HV_BLOCK);
+	free(replay);
+	size_t orig = (size_t)HV_NBLOCKS * HV_BLOCK;
+	size_t comp = (size_t)hv_npat * HV_BLOCK + (size_t)HV_NBLOCKS * sizeof(uint32_t);
+	printf("hv: replay %s, blocks=%u unique=%u compressed=%zu/%zu (%.2fx)\n",
+				 replay_ok ? "OK" : "MISMATCH", HV_NBLOCKS, hv_npat, comp, orig,
+				 (double)orig / (double)comp);
+	printf("hv: top weights:");
+	for (uint32_t i = 0; i < 5 && i < hv_npat; i++)
+		printf(" #%" PRIu32 "=%ju", hv_perm[i].id, hv_perm[i].weight);
+	printf(" (weight type: %zu-bit uintmax_t)\n", sizeof(uintmax_t) * 8);
+	if (!replay_ok)
+		return 1;
+
+	double base_ms[32], jit_ms[32];
+	uint32_t bad = 0;
+	for (int p = 0; p < passes; p++) {
+		base_ms[p] = hv_sweep(workers, &bad);
+		if (bad) {
+			printf("hv: baseline sweep mismatch (%u)\n", bad);
+			return 1;
+		}
+	}
+
+	thrd_t opt;
+	thrd_create(&opt, hv_optimizer, NULL);
+	int waited = 0;
+	while (atomic_load(&hv_jit_gen) == 0 && waited < 10000) {
+		struct timespec ts = {0, 1000000};
+		thrd_sleep(&ts, NULL);
+		waited++;
+	}
+	if (atomic_load(&hv_jit_gen) == 0) {
+		printf("hv: jit never landed\n");
+		atomic_store(&hv_stop, 1);
+		thrd_join(opt, NULL);
+		return 1;
+	}
+	printf("hv: jit swapped in (gen %d, binary hash tree over %u patterns, %d worker threads)\n",
+				 atomic_load(&hv_jit_gen), hv_npat, workers);
+
+	for (int p = 0; p < passes; p++) {
+		jit_ms[p] = hv_sweep(workers, &bad);
+		if (bad) {
+			printf("hv: jit sweep mismatch (%u)\n", bad);
+			atomic_store(&hv_stop, 1);
+			thrd_join(opt, NULL);
+			return 1;
+		}
+	}
+	atomic_store(&hv_stop, 1);
+	thrd_join(opt, NULL);
+
+	double bm = hv_mean(base_ms, passes), bs = hv_stdev(base_ms, passes, bm);
+	double jm = hv_mean(jit_ms, passes), js = hv_stdev(jit_ms, passes, jm);
+	double t = hv_welch_t(base_ms, passes, jit_ms, passes);
+	printf("hv: baseline %.2f±%.2fms  jit %.2f±%.2fms  speedup %.2fx  welch-t %.2f (%s)\n",
+				 bm, bs, jm, js, jm > 0 ? bm / jm : 0, t,
+				 t > 2.2 ? "significant" : "not significant");
+
+	for (int i = 0; i < hv_nstates; i++)
+		mcc_delete(hv_states[i]);
+	free(hv_data);
+	free(hv_store);
+	mtx_destroy(&hv_mtx);
+	return 0;
+}
+
+#endif

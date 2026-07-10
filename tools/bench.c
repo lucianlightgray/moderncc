@@ -1,5 +1,7 @@
 #include "toolsupport.h"
 
+#include <math.h>
+
 #if MCC_HOST_POSIX
 #include <unistd.h>
 #include <fcntl.h>
@@ -20,7 +22,8 @@
 #include <cpuid.h>
 #endif
 
-#define REPS_DEFAULT 3
+#define REPEATS_DEFAULT 5
+#define MAXREP 64
 #define MAXCC 32
 #define MAXWL 8
 
@@ -54,6 +57,71 @@ struct meas {
 	long peak_kb;
 	long long objsize;
 };
+
+struct cell {
+	struct meas m;
+	int nwall;
+	int ncpu;
+	double wall_s[MAXREP];
+	double cpu_s[MAXREP];
+};
+
+static double vec_mean(const double *x, int n) {
+	double s = 0;
+	int i;
+	for (i = 0; i < n; i++)
+		s += x[i];
+	return n ? s / n : 0;
+}
+
+static double vec_var(const double *x, int n) {
+	double m = vec_mean(x, n), s = 0;
+	int i;
+	if (n < 2)
+		return 0;
+	for (i = 0; i < n; i++)
+		s += (x[i] - m) * (x[i] - m);
+	return s / (n - 1);
+}
+
+static double t_crit_05(double df) {
+	static const double T[30] = {
+			12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262, 2.228,
+			2.201, 2.179, 2.160, 2.145, 2.131, 2.120, 2.110, 2.101, 2.093, 2.086,
+			2.080, 2.074, 2.069, 2.064, 2.060, 2.056, 2.052, 2.048, 2.045, 2.042};
+	int i = (int)df;
+	if (i < 1)
+		i = 1;
+	if (i <= 30)
+		return T[i - 1];
+	if (i < 40)
+		return 2.042;
+	if (i < 60)
+		return 2.021;
+	if (i < 120)
+		return 2.000;
+	return 1.980;
+}
+
+static int welch_sig(const double *a, int na, const double *b, int nb,
+										 int *sig) {
+	double va, vb, sea, seb, se2, t, df;
+	if (na < 2 || nb < 2)
+		return 0;
+	va = vec_var(a, na);
+	vb = vec_var(b, nb);
+	sea = va / na;
+	seb = vb / nb;
+	se2 = sea + seb;
+	if (se2 <= 0) {
+		*sig = vec_mean(a, na) != vec_mean(b, nb);
+		return 1;
+	}
+	t = (vec_mean(a, na) - vec_mean(b, nb)) / sqrt(se2);
+	df = se2 * se2 / (sea * sea / (na - 1) + seb * seb / (nb - 1));
+	*sig = fabs(t) > t_crit_05(df);
+	return 1;
+}
 
 static struct meas measure_once(const char *const *argv) {
 	struct meas m;
@@ -208,26 +276,35 @@ static void build_cmd(Argv *v, const struct compiler *cc,
 		ts_arg(v, cc->opt);
 }
 
-static struct meas bench_one(const struct compiler *cc,
-														 const struct workload *wl, int reps) {
+static void bench_one(const struct compiler *cc, const struct workload *wl,
+											int repeats, struct cell *c) {
 	struct meas best;
 	char obj[4096];
 	int r;
+	memset(c, 0, sizeof *c);
 	best.ok = 0;
 	best.wall_ms = 0;
 	best.cpu_ms = -1;
 	best.peak_kb = -1;
 	best.objsize = -1;
+	c->m = best;
 	ts_path(obj, sizeof obj, ".", "mccbench-%s-%s.o", cc->key, wl->key);
 	if (wl->needs_ccmacro && !cc->ccmacro)
-		return best;
-	for (r = 0; r < reps; r++) {
+		return;
+	for (r = 0; r < repeats; r++) {
 		Argv v = {{0}, 0};
 		struct meas m;
 		build_cmd(&v, cc, wl, obj);
 		m = measure_once(ts_argz(&v));
-		if (!m.ok)
-			return m;
+		if (!m.ok) {
+			c->m = m;
+			c->nwall = 0;
+			c->ncpu = 0;
+			return;
+		}
+		c->wall_s[c->nwall++] = (double)m.wall_ms / 1000.0;
+		if (m.cpu_ms >= 0)
+			c->cpu_s[c->ncpu++] = (double)m.cpu_ms / 1000.0;
 		if (!best.ok || m.wall_ms < best.wall_ms)
 			best = m;
 	}
@@ -238,7 +315,7 @@ static struct meas bench_one(const struct compiler *cc,
 			best.objsize = sz;
 		remove(obj);
 	}
-	return best;
+	c->m = best;
 }
 
 static void count_with_mcc(const struct compiler *mcc, struct workload *wl) {
@@ -279,53 +356,94 @@ static void count_with_mcc(const struct compiler *mcc, struct workload *wl) {
 	remove(obj);
 }
 
-static void fmt_secs(char *b, int n, long ms) {
-	if (ms < 0)
-		snprintf(b, n, "%s", "   n/a");
+static void fmt_stat(char *b, int n, double v, int have) {
+	if (!have)
+		snprintf(b, n, "%s", "n/a");
 	else
-		snprintf(b, n, "%6.3f", (double)ms / 1000.0);
+		snprintf(b, n, "%.3f", v);
+}
+
+static void vs_ref(char *b, int n, const struct compiler *ccs, int nccs,
+									 struct cell *cells, int i) {
+	const char *og = ccs[i].opt ? ccs[i].opt + 1 : "";
+	double wmean = vec_mean(cells[i].wall_s, cells[i].nwall);
+	int j;
+	b[0] = 0;
+	if (strcmp(ccs[i].key, "mcc") || !cells[i].m.ok || !cells[i].nwall)
+		return;
+	for (j = i + 1; j < nccs; j++) {
+		const char *jg = ccs[j].opt ? ccs[j].opt + 1 : "";
+		struct cell *rc = &cells[j];
+		double rmean;
+		int sig;
+		if (strcmp(jg, og))
+			return;
+		if (!strcmp(ccs[j].key, "mcc"))
+			continue;
+		if (!rc->m.ok || !rc->nwall || (rmean = vec_mean(rc->wall_s, rc->nwall)) <= 0)
+			return;
+		snprintf(b, n, "%+.1f%% vs %s%s", (wmean - rmean) * 100.0 / rmean,
+						 ccs[j].key,
+						 welch_sig(cells[i].wall_s, cells[i].nwall, rc->wall_s, rc->nwall,
+											 &sig)
+								 ? (sig ? " *" : " ns")
+								 : "");
+		return;
+	}
 }
 
 static void write_table(FILE *f, const struct compiler *ccs, int nccs,
-												struct workload *wl, int reps) {
+												struct workload *wl, int repeats) {
 	int i;
-	char cpu[16], wall[16];
+	char cpu[16], csd[16], wall[16], wsd[16], vs[64];
+	struct cell *cells = calloc((size_t)nccs, sizeof *cells);
+	if (!cells)
+		return;
+	for (i = 0; i < nccs; i++)
+		bench_one(&ccs[i], wl, repeats, &cells[i]);
 	if (wl->have_counts)
-		fprintf(f, "\nWorkload: %s  (%d lines, %d functions, best of %d)\n",
-						wl->key, wl->lines, wl->funcs, reps);
+		fprintf(f, "\nWorkload: %s  (%d lines, %d functions, n=%d runs)\n",
+						wl->key, wl->lines, wl->funcs, repeats);
 	else
-		fprintf(f, "\nWorkload: %s  (best of %d)\n", wl->key, reps);
-	fprintf(f, "  %-8s %8s %10s %8s %9s %8s\n",
-					"compiler", "cpu(s)", "funcs/s", "obj(KB)", "peak(MB)", "wall(s)");
+		fprintf(f, "\nWorkload: %s  (n=%d runs)\n", wl->key, repeats);
+	fprintf(f, "  %-8s %8s %7s %10s %8s %9s %8s %7s  %s\n",
+					"compiler", "cpu(s)", "sd", "funcs/s", "obj(KB)", "peak(MB)",
+					"wall(s)", "sd", "vs-ref");
 	for (i = 0; i < nccs; i++) {
-		struct meas m;
+		struct cell *c = &cells[i];
 		const char *pg = i ? (ccs[i - 1].opt ? ccs[i - 1].opt + 1 : "") : NULL;
 		const char *og = ccs[i].opt ? ccs[i].opt + 1 : "";
+		double wmean;
 		if (!pg || strcmp(pg, og))
 			fprintf(f, "\n  [%s]\n", ccs[i].opt ? ccs[i].opt : "default");
-		m = bench_one(&ccs[i], wl, reps);
-		fmt_secs(cpu, sizeof cpu, m.cpu_ms);
-		fmt_secs(wall, sizeof wall, (long)m.wall_ms);
-		if (!m.ok) {
-			fprintf(f, "  %-8s %8s %10s %8s %9s %8s\n",
-							ccs[i].key, "n/a", "n/a", "n/a", "n/a", "n/a");
+		if (!c->m.ok) {
+			fprintf(f, "  %-8s %8s %7s %10s %8s %9s %8s %7s\n",
+							ccs[i].key, "n/a", "", "n/a", "n/a", "n/a", "n/a", "");
 			continue;
 		}
-		fprintf(f, "  %-8s %8s ", ccs[i].key, cpu);
-		if (wl->have_counts && wl->funcs && m.wall_ms)
-			fprintf(f, "%10.0f ", (double)wl->funcs * 1000.0 / m.wall_ms);
+		wmean = vec_mean(c->wall_s, c->nwall);
+		fmt_stat(cpu, sizeof cpu, vec_mean(c->cpu_s, c->ncpu), c->ncpu > 0);
+		fmt_stat(csd, sizeof csd, sqrt(vec_var(c->cpu_s, c->ncpu)), c->ncpu > 1);
+		fmt_stat(wall, sizeof wall, wmean, c->nwall > 0);
+		fmt_stat(wsd, sizeof wsd, sqrt(vec_var(c->wall_s, c->nwall)),
+						 c->nwall > 1);
+		vs_ref(vs, sizeof vs, ccs, nccs, cells, i);
+		fprintf(f, "  %-8s %8s %7s ", ccs[i].key, cpu, csd);
+		if (wl->have_counts && wl->funcs && wmean > 0)
+			fprintf(f, "%10.0f ", (double)wl->funcs / wmean);
 		else
 			fprintf(f, "%10s ", "n/a");
-		if (m.objsize >= 0)
-			fprintf(f, "%8.1f ", (double)m.objsize / 1024.0);
+		if (c->m.objsize >= 0)
+			fprintf(f, "%8.1f ", (double)c->m.objsize / 1024.0);
 		else
 			fprintf(f, "%8s ", "n/a");
-		if (m.peak_kb >= 0)
-			fprintf(f, "%9.1f ", (double)m.peak_kb / 1024.0);
+		if (c->m.peak_kb >= 0)
+			fprintf(f, "%9.1f ", (double)c->m.peak_kb / 1024.0);
 		else
 			fprintf(f, "%9s ", "n/a");
-		fprintf(f, "%8s\n", wall);
+		fprintf(f, "%8s %7s  %s\n", wall, wsd, vs);
 	}
+	free(cells);
 }
 
 static const char *find_lim(const char *p, const char *lim, const char *needle) {
@@ -752,7 +870,7 @@ static int detect_gnu_gcc(struct compiler *cc) {
 int main(int argc, char **argv) {
 	const char *mccpath = NULL, *srcroot = ".", *builddir = ".";
 	const char *plat = NULL, *out = NULL, *junit = NULL;
-	int reps = REPS_DEFAULT, i, nccs = 0, nwl = 0;
+	int repeats = REPEATS_DEFAULT, i, nccs = 0, nwl = 0;
 	struct compiler ccs[MAXCC];
 	struct workload wls[MAXWL];
 	struct workload *self_wl = NULL;
@@ -771,16 +889,19 @@ int main(int argc, char **argv) {
 			out = argv[++i];
 		else if (!strcmp(argv[i], "--junit") && i + 1 < argc)
 			junit = argv[++i];
-		else if (!strcmp(argv[i], "--reps") && i + 1 < argc)
-			reps = atoi(argv[++i]);
+		else if ((!strcmp(argv[i], "--repeats") || !strcmp(argv[i], "--reps")) &&
+						 i + 1 < argc)
+			repeats = atoi(argv[++i]);
 	}
 	if (!mccpath || !out) {
 		fprintf(stderr, "usage: mccbench --mcc <exe> --out <file> [--srcroot D] "
-										"[--builddir D] [--plat P] [--junit XML] [--reps N]\n");
+										"[--builddir D] [--plat P] [--junit XML] [--repeats N]\n");
 		return 2;
 	}
-	if (reps < 1)
-		reps = 1;
+	if (repeats < 1)
+		repeats = 1;
+	if (repeats > MAXREP)
+		repeats = MAXREP;
 
 	{
 		struct workload *w;
@@ -922,13 +1043,21 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "mccbench: cannot write %s\n", out);
 		return 1;
 	}
-	printf("==> benchmarking %d compilers x %d workloads (best of %d) -> %s\n",
-				 nccs, nwl, reps, out);
+	printf("==> benchmarking %d compilers x %d workloads (n=%d runs) -> %s\n",
+				 nccs, nwl, repeats, out);
 	write_sysinfo(f, plat, ccs, nccs);
 	for (i = 0; i < nwl; i++) {
 		count_with_mcc(&ccs[0], &wls[i]);
-		write_table(f, ccs, nccs, &wls[i], reps);
+		write_table(f, ccs, nccs, &wls[i], repeats);
 	}
+	fprintf(f, "\nStatistics: cpu(s)/wall(s) are sample means over n=%d runs per"
+						 " cell; sd is the sample standard deviation\n"
+						 "  vs-ref: wall-time delta of each mcc row against the first"
+						 " reference compiler row in the same -O group and workload\n"
+						 "  * = significant, ns = not significant: Welch's t-test,"
+						 " two-tailed alpha=0.05, Welch-Satterthwaite df floored into"
+						 " a critical-value table\n",
+					repeats);
 	if (junit)
 		write_tests(f, junit);
 	fclose(f);
