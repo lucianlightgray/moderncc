@@ -430,6 +430,25 @@ triple so a compiler/target bump misses cleanly. Builds on §20; shares
 non-worse, more configs covered) → edit one fn → only that fn's tier
 misses; corrupt/foreign snapshot is ignored not trusted.
 
+Implementation (decided 2026-07-10):
+- **On-disk record = raw struct dump.** One `fwrite` of a fixed struct
+  `{ u64 version_id, key_hash; u32 best_seed, next_seed; u64 score; }` —
+  no parser. A struct-layout or `MCC_VERSION` change just misses (the key
+  carries the version), so brittleness across builds is harmless.
+- **Frontier = monotonic seed cursor.** Persist `next_seed` + the best
+  `{seed, score}`. Resume linearly scans `next_seed..` for this run's
+  budget. (Extends to a TPE observation list once §25's search lands.)
+- **Write protocol = lock + atomic + A/B keep-best.** Hold an advisory
+  lock on the entry, re-read the current record (B), and write back only
+  the better of B vs this run's result (A): lower `score` wins; on an
+  equal score keep the larger `next_seed` (more of the space explored).
+  Commit via temp-file + `rename` (atomic). A run that made less progress
+  or found a worse best can never clobber a better cached optimizer, and
+  no reader ever sees a torn file.
+- **No eviction.** One small file per TU/fn under `host_cache_dir()`;
+  the dir grows with distinct inputs and is user/OS-clearable. Ship a
+  documented `mcc --clear-cache` (equivalent to removing the dir).
+
 ## 22. Per-function search granularity (medium-large)
 
 The search is whole-TU: one global pass-config scored by total object
