@@ -587,3 +587,45 @@ under the oracle, scored by §25 and cached by §21. Builds on §22 + §25 +
 §28's soundness oracle. Gate on `-O0..-O3` byte-identity + an exec-golden
 column that checks the re-typed result equals the original across edge
 values (min/max, overflow boundary, non-representable floats).
+
+Decided 2026-07-10:
+- **Oracle = static range proof, differential-test fallback.** Fire when
+  statically proven (value range fits the narrower type; float exactly
+  representable). Else, if the TU is JIT-runnable, run original vs re-typed
+  over edge + sampled inputs and fire only on a match (bit-identical by
+  default); else keep the original type. Shares §28's oracle.
+- **Conversion set = integers + int↔float.** Integer narrow/widen and
+  signed↔unsigned where range-safe; `int↔f32/f64` where exact. No
+  pointer/aggregate re-typing (aliasing/ABI hazards).
+- **Float rule = exact by default, within-ulp behind an opt-in flag.**
+  Default folds float re-typings only when they round-trip bit-exactly
+  (byte-identity preserved). A relaxed-FP flag (the `-ffold-math` family)
+  additionally allows ≤k-ulp precision loss — never on by default; under
+  it the differential test's criterion loosens from bit-identical to ≤k
+  ulp.
+- **Staging = standalone safe-narrowing pass first.** Phase (a): a bounded
+  pass at `-O1+` doing only provably-safe integer narrowing (byte-identity
+  gated), landing like the other AST passes. Phase (b): fold the broader
+  oracle-gated re-typing (incl. exact/relaxed float) into the §22 search,
+  scored by §25 and cached by §21.
+
+## 30. Bit-flag conditional optimizer — permute quantized bit encodings (large, correctness-sensitive)
+
+A search-driven pass that finds conditionals dispatched on one or more
+integer-valued keys (variables, enums, whole-number values) and re-encodes
+the branch logic as bit-flag tests over a packed bitfield, searching
+permutations of the bit layout for the encoding that scores best (§25
+size/JIT). It recognizes clusters of comparisons / `switch` arms keyed on
+the same value(s), packs the predicates into a mask, and replaces the
+branch cascade with bitwise tests / a computed index (bit-test, `popcount`,
+mask-then-jump-table). "Permute quantized bit flags" = the search
+dimension: the assignment of predicates→bits and of value ranges→quantized
+flag buckets is permuted to minimize branches / maximize bit-parallel
+evaluation. Every candidate encoding is gated by the §28/§29 soundness
+oracle — the re-encoded dispatch must yield the identical outcome for every
+key value: exhaustive static enumeration when the key domain is small or
+enum-bounded, differential test otherwise. Complements §29 (which re-types
+the values; this re-encodes the conditionals over them) and can compose
+with it in the §22 search. Builds on §22 (search) + §25 (scoring) + §28's
+oracle. Gate on `-O0..-O3` byte-identity + an exec-golden that sweeps every
+key value through original vs re-encoded dispatch.
