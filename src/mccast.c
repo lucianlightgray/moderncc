@@ -430,6 +430,7 @@ static int ast_opt_total;
 static int ast_inline_node_limit = 64;
 static int ast_graft_budget_max = 2048;
 static int ast_cost_env;
+static int ast_sethi_env;
 static int ast_bitflag_env;
 static int ast_bitflag_min;
 static int ast_cprop_join_env;
@@ -675,6 +676,7 @@ void ast_configure(MCCState *s1) {
 	ast_inline_node_limit = ast_env_int("MCC_AST_INLINE_NODES", 64);
 	ast_graft_budget_max = ast_env_int("MCC_AST_GRAFT", 2048);
 	ast_cost_env = ast_env_gate("MCC_AST_COST", 0);
+	ast_sethi_env = ast_env_gate("MCC_AST_SETHI", 0);
 	ast_bitflag_env = ast_env_gate("MCC_AST_BITFLAG", 0);
 	ast_bitflag_min = ast_env_int("MCC_AST_BITFLAG", 5);
 	if (ast_bitflag_min < 3)
@@ -4896,6 +4898,81 @@ static int ast_bf_run(AstArena *a) {
 	return ast_bf_folds;
 }
 
+/* Sethi-Ullman operand ordering (§35, first increment). For a commutative
+   binary node whose two operands are both side-effect-free, evaluate the
+   operand that needs more registers first — emitted child-order is evaluation
+   order in the replay, so put the higher Sethi-Ullman-numbered operand first.
+   Commuting a side-effect-free pair is always value-preserving: +,*,&,|,^ are
+   commutative for every operand type (IEEE + and * commute bit-exactly — this
+   is commutativity, not associativity; &,|,^ are integer-only), and
+   ast_cse_regpure guarantees neither operand has an observable evaluation
+   order. So this needs no dataflow proof and no result-type restriction. */
+static int ast_sethi_folds;
+
+static int ast_sethi_commutative(int op) {
+	return op == '+' || op == '*' || op == '&' || op == '|' || op == '^';
+}
+
+/* An operand whose root is a comparison/logical op leaves a VT_CMP on the
+   vstack for the parent to consume. The replay emitter is order-sensitive
+   there (the FIX.md/§30 lesson: a leaf emitted after the compare clobbers the
+   flags before the parent op consumes them — exactly why ast_bf_build fixes
+   its `bit & guard` order). So SETHI must not reorder an operand that produces
+   a VT_CMP; skip the swap when either side is comparison/logical-rooted. */
+static int ast_sethi_cmp_root(AstArena *a, AstLocal n) {
+	if (n == AST_NONE || ast_kind(a, n) != AST_Binary)
+		return 0;
+	switch (ast_op(a, n)) {
+	case TOK_LT:
+	case TOK_GT:
+	case TOK_LE:
+	case TOK_GE:
+	case TOK_EQ:
+	case TOK_NE:
+	case TOK_ULT:
+	case TOK_UGE:
+	case TOK_ULE:
+	case TOK_UGT:
+	case TOK_LAND:
+	case TOK_LOR:
+		return 1;
+	}
+	return 0;
+}
+
+static int ast_sethi_num(AstArena *a, AstLocal n) {
+	if (n == AST_NONE)
+		return 0;
+	if (ast_kind(a, n) != AST_Binary || ast_nchild(a, n) != 2)
+		return 1;
+	int l = ast_sethi_num(a, ast_child(a, n, 0));
+	int r = ast_sethi_num(a, ast_child(a, n, 1));
+	return l == r ? l + 1 : (l > r ? l : r);
+}
+
+static int ast_sethi_run(AstArena *a) {
+	ast_sethi_folds = 0;
+	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++) {
+		if (ast_kind(a, n) != AST_Binary || !ast_sethi_commutative(ast_op(a, n)))
+			continue;
+		if (ast_nchild(a, n) != 2)
+			continue;
+		AstLocal c0 = ast_child(a, n, 0), c1 = ast_child(a, n, 1);
+		if (!ast_cse_regpure(a, c0) || !ast_cse_regpure(a, c1))
+			continue;
+		if (ast_sethi_cmp_root(a, c0) || ast_sethi_cmp_root(a, c1))
+			continue;
+		if (ast_sethi_num(a, c1) <= ast_sethi_num(a, c0))
+			continue;
+		ast_clear_children(a, n);
+		ast_add_child(a, n, c1);
+		ast_add_child(a, n, c0);
+		ast_sethi_folds++;
+	}
+	return ast_sethi_folds;
+}
+
 static void ast_licm_at_loop(AstArena *a, AstLocal s) {
 	if (ast_sccp_has_label(a, s))
 		return;
@@ -5241,6 +5318,7 @@ void ast_func_end(Sym *sym) {
 			int sccps = 0;
 			int jts = 0;
 			int bfs = 0;
+			int sethis = 0;
 			int tcos = 0;
 			jmp_buf ast_outer_jmp;
 			int ast_outer_en = mcc_state->error_set_jmp_enabled;
@@ -5276,6 +5354,7 @@ void ast_func_end(Sym *sym) {
 				sccps = faithful && ast_templates_env ? ast_sccp_run(ast_cur) : 0;
 				jts = faithful && ast_templates_env ? ast_jt_run(ast_cur) : 0;
 				bfs = faithful && ast_bitflag_env ? ast_bf_run(ast_cur) : 0;
+				sethis = faithful && ast_sethi_env ? ast_sethi_run(ast_cur) : 0;
 				tcos = faithful && ast_templates_env ? ast_tco_run(ast_cur, sym) : 0;
 				int do_bfold = bfolds > 0;
 				int do_ident = idents > 0;
@@ -5286,6 +5365,7 @@ void ast_func_end(Sym *sym) {
 				int do_sccp = sccps > 0;
 				int do_jt = jts > 0;
 				int do_bf = bfs > 0;
+				int do_sethi = sethis > 0;
 				int do_tco = tcos > 0;
 				/* A tail-self-call rewritten into a back-edge loop keeps all
 				   params/locals in their stack slots across the iteration; pinning
@@ -5307,18 +5387,20 @@ void ast_func_end(Sym *sym) {
 					ast_promo_total++;
 				if (ast_opt_limit >= 0 && ast_opt_total >= ast_opt_limit) {
 					do_inline = do_promote = do_bfold = do_ident = do_cprop = 0;
-					do_cse = do_licm = do_dse = do_sccp = do_jt = do_bf = do_tco = 0;
+					do_cse = do_licm = do_dse = do_sccp = do_jt = do_bf = do_sethi = do_tco = 0;
 					ast_promo_n = 0;
 				}
 				if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
-						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_tco)
+						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_sethi ||
+						do_tco)
 					ast_opt_total++;
 				if (faithful && !do_inline && !do_promote && !do_bfold && !do_ident &&
 						!do_cprop && !do_cse && !do_licm && !do_dse && !do_sccp && !do_jt &&
-						!do_bf && !do_tco)
+						!do_bf && !do_sethi && !do_tco)
 					loc = saved_loc;
 				if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
-						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_tco) {
+						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_sethi ||
+						do_tco) {
 					ind = ast_body_ind_sv;
 					rsym = 0;
 					if (ast_rsec)
@@ -5326,7 +5408,7 @@ void ast_func_end(Sym *sym) {
 					nocode_wanted = 0;
 					loc = saved_loc;
 					anon_sym = saved_anon;
-					ast_fconst_i = (do_bfold || do_ident || do_cprop || do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_tco || do_inline) ? ast_fconst_n : 0;
+					ast_fconst_i = (do_bfold || do_ident || do_cprop || do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_sethi || do_tco || do_inline) ? ast_fconst_n : 0;
 					ast_locrec_i = 0;
 					ast_replaying = 1;
 					ast_rp_switch = NULL;
@@ -5401,6 +5483,8 @@ void ast_func_end(Sym *sym) {
 					fprintf(stderr, "[ast-jt] %d %s\n", jts, funcname);
 				if (bfs)
 					fprintf(stderr, "[ast-bitflag] %d %s\n", bfs, funcname);
+				if (sethis)
+					fprintf(stderr, "[ast-sethi] %d %s\n", sethis, funcname);
 				if (tcos)
 					fprintf(stderr, "[ast-tco] %d %s\n", tcos, funcname);
 				if (promoted)

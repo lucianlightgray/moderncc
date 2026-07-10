@@ -1652,7 +1652,7 @@ FIX.md:225-229) — recommend the native arm64 spot-check
 
 ## 35. Sethi–Ullman evaluation-order numbering (large, codegen-order, byte-identity risk)
 
-- [ ] OPTIMIZE.md Tier-2 catalog (:81-82) + Frontier (:651): evaluation-order
+- [x] OPTIMIZE.md Tier-2 catalog (:81-82) + Frontier (:651): evaluation-order
       / register-pressure numbering in the replay emitter — reorder
       commutative operand emission to cut register pressure. Untracked by
       §17-§33. Codegen-order change ⇒ the byte-identity gate is the hard part
@@ -1660,6 +1660,32 @@ FIX.md:225-229) — recommend the native arm64 spot-check
       pass like the rest of the ladder). Same landing shape as the other AST
       passes: a default-off `MCC_AST_*` gate, exec-golden + fixpoint (off AND
       forced-on) + native arm64 spot-check. Feeds §31 as a strategy.
+
+**LANDED (2026-07-10, first increment) — `MCC_AST_SETHI` (default off).**
+`ast_sethi_run` (src/mccast.c) walks the captured tree; for a commutative
+binary node (`+ * & | ^`) whose two operands are both `ast_cse_regpure`
+(side-effect-free), it puts the higher Sethi–Ullman-numbered operand first
+(emitted child-order = evaluation order in the replay), so the operand that
+needs more registers is evaluated first. Commuting a side-effect-free pair
+is value-preserving for **every** operand type (IEEE `+`/`*` commute
+bit-exactly — commutativity, not associativity; `&|^` are integer-only), so
+no dataflow proof and no result-type restriction are needed. **One hazard
+found and guarded (the FIX.md/§30 `VT_CMP` lesson):** an operand whose root
+is a comparison/logical op (`ast_sethi_cmp_root`) leaves a `VT_CMP` the
+parent must consume immediately — reordering it clobbers the flags (this is
+exactly why `ast_bf_build` fixes its `bit & guard` order); SETHI skips the
+swap when either operand is comparison/logical-rooted. Wired into the replay
+driver mirroring the `bitflag` gate (`sethis`/`do_sethi`). Effect confirmed
+real: `.text` 81→73 B on nested arithmetic; fires 17× compiling the mcc
+self-source at `-O1`. Gates: `cmake-cross` ctest **1862/1862** default (off
+path inert) AND forced-on (`MCC_AST_SETHI=1 ctest`), `fixpoint-invariant`
+byte-identical (stage2==3==4) both off and forced-on, `bitflag_transform`
+green under SETHI (the guard), output matches gcc/`-O0`. Remaining: register
+it as a §31 search strategy; the current cut only reorders top-level
+commutative pairs where the right operand is strictly deeper — an n-ary
+reassociation-aware ordering is a later extension (reassociation itself is
+not commutative-safe, so stays out). Native arm64 spot-check recommended
+(codegen-order change; x86_64 fixpoint is the primary gate).
 
 ## 36. Chaitin–Briggs graph-coloring register allocation (largest, codegen — run LAST)
 
