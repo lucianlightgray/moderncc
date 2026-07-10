@@ -444,15 +444,37 @@ lives in a block gated `#if MCC_CONFIG_OPTIMIZER && defined(MCC_TARGET_X86_64)`
 (stub returns 0 elsewhere), so arm64/riscv64 are inherently safe from it —
 validate the fresh-temp carve there first, add the x86_64 poison guard second.
 
-NOTE (2026-07-10, native arm64): the §32c value-materializing pass is not yet
-landed — on arm64 `ast_plan_promotion` is the stub returning 0 (the real impl
-is inside the `#if … defined(MCC_TARGET_X86_64)` block), so there is no
-fresh-temp pass to force ON/OFF here yet. What *is* validated below is the
-arm64 frame-carve + unwind **invariant** the pass will rely on: any
-strictly-negative / non-16-aligned local offset (which is exactly what a
-synthetic temp adds to `loc`) is carved and unwound correctly. Exercised with
-a spill/`pad[37]`/`pad[23]`-heavy TU that drives `loc` strongly negative and
-non-aligned — the identical `gfunc_epilog` code path a synthetic temp hits.
+NOTE (2026-07-10, native arm64): the §32c *value-materializing LICM* pass is
+not yet landed (`ast_plan_promotion` is the x86_64-gated stub returning 0 on
+arm64). But the synthetic-temp **carve infrastructure** it needs *is* landed
+and exercised: the §23 inliner carves a fresh strictly-negative slot
+(`loc = (loc - rsz) & -align;` mccast.c ~:2029) to materialize every grafted
+call's return value. So the frame-carve + unwind invariant below is validated
+against real synthetic temps (the inliner's), not a hypothetical: any
+strictly-negative / non-16-aligned local offset is carved and unwound
+correctly. Exercised with a spill/`pad[37]`/`pad[23]`-heavy TU that drives
+`loc` strongly negative and non-aligned — the identical `gfunc_epilog` path a
+synthetic temp hits.
+
+BLOCKER FOUND (2026-07-10, native arm64): attempting box 3 (fresh-temp/inliner
+fixpoint ON/OFF) surfaced a **pre-existing arm64 codegen bug** independent of
+the fresh-temp pass. Any AST-replay optimized self-host of `src/mcc.c` on
+arm64 (`-O1`, `-O2`, *and* `-O3`; both `MCC_AST_INLINE=1` and `=0`) aborts in
+`load()` — `load(1, (32, 400, 0))` → `arm64-gen.c:650 assert(0)`. `0x400 ==
+VT_VLA`: a value with `sv->r == reg0 | VT_VLA` (mcc.c uses VLAs) reaches
+`load()`, whose `svr` mask at `arm64-gen.c:494` strips
+`VT_BOUNDED|VT_NONCONST|VT_NONLVAL` but **not** `VT_VLA`, so it matches no case
+and asserts (x86_64 `load()` tolerates the flag → x86 self-host stays green).
+`arm64-gen.c` is byte-identical since `e311c57a` (0 diff) so this is not from
+the JIT-score work; the `-O0` `fixpoint-invariant` gate simply never exercised
+the AST-replay path natively. Fixing it is real arm64 codegen surgery
+(establish why `VT_VLA` lands in the r-field — optimizer leak vs. intentional
+— then mask/handle it in `load()`/`store()`/`asm` without miscompiling VLA
+code in the self-hosting compiler) and must not be rushed onto `main`. This is
+the true blocker for box 3 (it is a fresh instance of the standing arm64
+"`load()` exact-match r-flag mask" hazard: every new front-end r-flag must be
+added to the `arm64-gen.c:494` / `arm64-asm.c` mask or codegen asserts while
+x86 stays green).
 
 - [x] Frame carve on arm64: `gfunc_epilog` `diff = (-loc + 15) & ~15;`
       (src/arch/arm64/arm64-gen.c ~:1625) — validated the carve covers a
@@ -466,9 +488,11 @@ non-aligned — the identical `gfunc_epilog` code path a synthetic temp hits.
       walks correctly up through 5 carved recursive frames → `mid` → `main`
       (the qemu-untrustworthy unwind path), native cmake-macos.
 - [ ] 3-stage self-host fixpoint on arm64-darwin with the fresh-temp pass
-      forced ON and OFF — **blocked**: no ON state on arm64 until §32c lands
-      (pass is x86_64-gated). OFF baseline fixpoint (`fixpoint-invariant`
-      ctest) is green natively; ON half to be run when §32c brings up here.
+      forced ON and OFF — **blocked by the arm64 `VT_VLA` `load()` assert
+      above** (fails at `-O1`+ before any fixpoint can be measured, for both
+      inline ON and OFF). The `-O0` `fixpoint-invariant` ctest is green
+      natively; the ON/OFF fixpoint here needs the `VT_VLA`/`load()` fix
+      first, then a `-O3` self-host harness. Not a fresh-temp-pass defect.
 - [ ] Then repeat for riscv64 (`riscv64-gen.c ~:848`) — deferred to CI (no
       native riscv64 box; host is arm64-darwin).
 
