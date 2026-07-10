@@ -390,8 +390,16 @@ Landed, all presets/ctest green + fixpoint byte-identical at each step:
 - **§23 first increment** — inline node/graft budgets are searchable env
   knobs (default-preserving), added to the `-O<N>` space (`7e630c75`).
   Remaining: param shapes, cross-TU static.
-Next: §23 param-shapes → §25 .text objective → §22 per-fn refactor →
-§29/§30 passes → §26. §27/§28 deferred.
+- **§25 static objective** — search scores by `.text` size (ELF section
+  sum), not whole-object (`382b7169`). Remaining: JIT cpu/mem tier (needs
+  the subprocess watchdog).
+- **§31 first real form** — the search is now a **2-strategy portfolio
+  scheduler** (gate strategy + budget strategy, greedy composition,
+  exponentially-doubling time slices, adaptive base slice, resumable
+  per-strategy cursors in the v2 checkpoint) (`f67c2234`). Remaining:
+  register more strategies, full beam width, subprocess watchdog + SIGTERM.
+Next (deep codegen, per-session): §22 per-fn refactor → §24 hot-slice →
+§29/§30 new passes → §26 embedded JIT. §27/§28 deferred.
 
 
 The `-O<N>` (N>=4) compile-time search landed at `f959078e`
