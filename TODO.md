@@ -73,19 +73,19 @@ Decided 2026-07-09: the two interdependent booleans become one three-level
 knob — `MCC_CONFIG_DIAG_RT = off | backtrace | bounds` — making the invalid
 BCHECK-without-BACKTRACE state unrepresentable.
 
-- [ ] Mechanism ("enum?" — yes, at each layer's native kind): CMake cache
+- [x] Mechanism ("enum?" — yes, at each layer's native kind): CMake cache
       STRING with `set_property(... STRINGS "off;backtrace;bounds")` (the
       configure-time enum/dropdown); emitted to C as a **numeric level macro**
       (0/1/2) since `#if` cannot evaluate C enums; a mirrored C `enum` for
       runtime-code readability.
-- [ ] Replace `#ifdef MCC_CONFIG_BCHECK` → level ≥ 2 tests,
+- [x] Replace `#ifdef MCC_CONFIG_BCHECK` → level ≥ 2 tests,
       `MCC_CONFIG_BACKTRACE` → level ≥ 1; delete the CMake dependency warning
       (`CMakeLists.txt:296`). `MCC_CONFIG_BACKTRACE_ONLY` (the amalgamation
       slice selector) is untouched — it is structural, not part of the ladder.
-- [ ] Presets: Debug ⇒ `bounds`, `release` ⇒ `off`, per current defaults;
+- [x] Presets: Debug ⇒ `bounds`, `release` ⇒ `off`, per current defaults;
       ckconfig ledger updated. Runtime flags `-b`/`-bt` and their
       "not built into this mcc" errors unchanged in behavior.
-- [ ] Gates: debug + release presets, `config-drift-invariant`, and a PE-cell
+- [x] Gates: debug + release presets, `config-drift-invariant`, and a PE-cell
       build (bcheck must remain strippable there — unsupported on msvcrt).
 
 ## 8. Investigate, then resolve, the three non-obvious `#if 0` blocks (medium)

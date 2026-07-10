@@ -2,7 +2,7 @@
 
 #ifdef MCC_TARGET_IS_HOST
 
-#if MCC_CONFIG_BACKTRACE
+#if MCC_CONFIG_DIAG_RT >= 1
 typedef struct rt_context {
 	union {
 		struct
@@ -59,7 +59,7 @@ static void rt_exit(rt_frame *f, int code);
 static int mcc_relocate_ex(MCCState *s1, void *ptr, unsigned ptr_diff);
 static void st_link(MCCState *s1);
 static void st_unlink(MCCState *s1);
-#if MCC_CONFIG_BACKTRACE
+#if MCC_CONFIG_DIAG_RT >= 1
 static int _mcc_backtrace(rt_frame *f, const char *fmt, va_list ap);
 #endif
 
@@ -82,7 +82,7 @@ LIBMCCAPI int mcc_relocate(MCCState *s1) {
 
 	if (s1->run_ptr)
 		exit(mcc_error_noabort("'mcc_relocate()' twice is no longer supported"));
-#if MCC_CONFIG_BACKTRACE
+#if MCC_CONFIG_DIAG_RT >= 1
 	if (s1->do_backtrace)
 		mcc_add_symbol(s1, "_mcc_backtrace", _mcc_backtrace);
 #endif
@@ -324,7 +324,7 @@ redo:
 }
 
 static void bt_link(MCCState *s1) {
-#if MCC_CONFIG_BACKTRACE
+#if MCC_CONFIG_DIAG_RT >= 1
 	rt_context *rc;
 	if (!s1->do_backtrace)
 		return;
@@ -336,7 +336,7 @@ static void bt_link(MCCState *s1) {
 	rc->elf_str = (char *)symtab_section->link->data;
 	if (MCC_PTR_SIZE == 8 && !s1->dwarf)
 		rc->prog_base &= 0xffffffff00000000ULL;
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (s1->do_bounds_check) {
 		void *p;
 		if ((p = mcc_get_symbol(s1, "__bound_init")))
@@ -369,7 +369,7 @@ static void ptr_unlink(void *list, void *e, unsigned next) {
 
 static void st_unlink(MCCState *s1) {
 	rt_wait_sem();
-#if MCC_CONFIG_BACKTRACE
+#if MCC_CONFIG_DIAG_RT >= 1
 	ptr_unlink(&g_rc, s1->rc, offsetof(rt_context, next));
 #endif
 	ptr_unlink(&g_s1, s1, offsetof(MCCState, next));
@@ -379,7 +379,7 @@ static void st_unlink(MCCState *s1) {
 LIBMCCAPI void *_mcc_setjmp(MCCState *s1, void *p_jmp_buf, void *func, void *p_longjmp) {
 	s1->run_lj = p_longjmp;
 	s1->run_jb = p_jmp_buf;
-#if MCC_CONFIG_BACKTRACE
+#if MCC_CONFIG_DIAG_RT >= 1
 	if (s1->rc)
 		s1->rc->top_func = func;
 #endif
@@ -416,7 +416,7 @@ static void rt_exit(rt_frame *f, int code) {
 	s = rt_find_state(f);
 	rt_post_sem();
 	if (s && s->run_lj) {
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 		if (f->fp) {
 			void *p = mcc_get_symbol(s, "__bound_exit");
 			if (p)
@@ -435,7 +435,7 @@ static void rt_exit(rt_frame *f, int code) {
 	exit(code);
 }
 #endif
-#if MCC_CONFIG_BACKTRACE
+#if MCC_CONFIG_DIAG_RT >= 1
 
 static int rt_vprintf(const char *fmt, va_list ap) {
 	int ret = vfprintf(stderr, fmt, ap);

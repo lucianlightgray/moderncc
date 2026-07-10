@@ -28,7 +28,7 @@ assembler, near-`-O0` deterministic host-independent backend. Who: TinyCC
 - **build variants** (≈7) — W: `mcc` (default single-source), `mcc-static`, `mcc-dynamic`, `-musl` siblings, cross `mcc-<arch>`. H: suffix `mcc[-<arch>][-static|-dynamic][-musl]`. → §3.
 - **libmcc** (≈12) — W: embeddable library (`libmcc.so`/`-static.a`/`-dynamic.so`). Whr: `include/libmcc.h`. Why: the embed API + what `mcc-dynamic` links. Who: exercised by `tests/embed`.
 - **integrated assembler / `MCC_CONFIG_ASM`** (≈8, default ON) — W: inline asm, `asm goto`, `.s` files, `.cfi_*`, scalar SSE. Why: a **modelled ISA subset** — unmodelled mnemonics hard-error by name; disabling forces `MCC_MCCRT_USE_HOSTCC`. → §6.
-- **bounds checker (`-b`) / backtraces (`-bt`)** (≈4) — W: optional safety. Whn: ON in Debug builds only (`MCC_CONFIG_BCHECK` needs `BACKTRACE`). Why: bcheck unsupported on PE (faults in msvcrt).
+- **bounds checker (`-b`) / backtraces (`-bt`)** (≈4) — W: optional safety. Whn: `MCC_CONFIG_DIAG_RT=bounds` in Debug builds only (one off|backtrace|bounds ladder; the bcheck-without-backtrace state is unrepresentable). Why: bcheck unsupported on PE (faults in msvcrt).
 - **CST / AST subsystems** (≈4 each, default ON) — W: side-channel IRs; `-O0` byte-identical either way. → §8, §9.
 - **machofat** (≈3) — W: self-contained universal/fat Mach-O combiner + ad-hoc codesign (no lipo). Whn: built only on Darwin; 2-slice case shells to `xcrun --show-sdk-path`. Who: `macho-universal` test.
 
@@ -58,7 +58,7 @@ except msvc. Children (presets, by reference frequency):
 - **`MCC_BUILD_STATIC_LIB`** (≈12, OFF) — W: `libmcc-static.a` vs shared `libmcc.so`.
 - **`MCC_BUILD_STATIC_EXE`** (≈11, OFF; forced OFF macOS) — W: build `mcc-static`; `MCC_AMALGAMATED` decides self-contained vs linking `libmcc.a`.
 - **`MCC_CONFIG_ASM`** (≈8, ON), **`MCC_BUILD_SANITIZE`** (≈8, OFF), **`MCC_ENABLE_CROSS`** (≈8, OFF) — see §1/§2.
-- **`MCC_BUILD_MUSL`** (≈7, OFF), **`MCC_MCCRT_USE_HOSTCC`** (≈6, auto), **`MCC_TOOLCHAIN_PROFILE`** (≈6, auto — seeds defaults, doesn't switch compilers), **`MCC_CONFIG_BACKTRACE`/`BCHECK`** (≈6, Debug), **`MCC_BUILD_DYNAMIC_EXE`** (≈6, ON) — see EXCESS for the rest.
+- **`MCC_BUILD_MUSL`** (≈7, OFF), **`MCC_MCCRT_USE_HOSTCC`** (≈6, auto), **`MCC_TOOLCHAIN_PROFILE`** (≈6, auto — seeds defaults, doesn't switch compilers), **`MCC_CONFIG_DIAG_RT`** (≈6, Debug), **`MCC_BUILD_DYNAMIC_EXE`** (≈6, ON) — see EXCESS for the rest.
 - **`MCC_CST`/`MCC_AST`** (≈4 each, ON) — W: build the side-channel subsystems (`MCC_CONFIG_CST`/`MCC_CONFIG_AST`); codegen byte-identical either way.
 
 **`ci` tool** (≈13) — W: the C tool (`tools/ci.c`) every workflow job drives its

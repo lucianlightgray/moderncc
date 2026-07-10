@@ -366,7 +366,7 @@ DEF(TOK___gttf2, "__gttf2")
 DEF(TOK___getf2, "__getf2")
 #endif
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 DEF(TOK___bound_ptr_add, "__bound_ptr_add")
 DEF(TOK___bound_ptr_indir1, "__bound_ptr_indir1")
 DEF(TOK___bound_ptr_indir2, "__bound_ptr_indir2")

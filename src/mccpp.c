@@ -4120,11 +4120,11 @@ static void mcc_predefs(MCCState *s1, CString *cs, int is_asm) {
 		putdef(cs, "__MCC_PP__");
 	if (s1->output_type == MCC_OUTPUT_MEMORY)
 		putdef(cs, "__MCC_RUN__");
-#if MCC_CONFIG_BACKTRACE
+#if MCC_CONFIG_DIAG_RT >= 1
 	if (s1->do_backtrace)
 		putdef(cs, "__MCC_BACKTRACE__");
 #endif
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (s1->do_bounds_check)
 		putdef(cs, "__MCC_BCHECK__");
 #endif

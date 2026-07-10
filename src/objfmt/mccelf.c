@@ -90,7 +90,7 @@ ST_FUNC void mccelf_new(MCCState *s) {
 	mcc_eh_frame_start(s);
 #endif
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (s->do_bounds_check) {
 		bounds_section = new_section(s, ".bounds", SHT_PROGBITS, shf_RELRO);
 		lbounds_section = new_section(s, ".lbounds", SHT_PROGBITS, shf_RELRO);
@@ -1365,7 +1365,7 @@ ST_FUNC void add_array(MCCState *s1, const char *sec, int c) {
 	section_ptr_add(s, MCC_PTR_SIZE);
 }
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 ST_FUNC void mcc_add_bcheck(MCCState *s1) {
 	if (0 == s1->do_bounds_check)
 		return;
@@ -1401,7 +1401,7 @@ static void mcc_compile_string_no_debug(MCCState *s, const char *str) {
 	s->test_coverage = save_test_coverage;
 }
 
-#if MCC_CONFIG_BACKTRACE
+#if MCC_CONFIG_DIAG_RT >= 1
 static void put_ptr(MCCState *s1, Section *s, int offs) {
 	int c;
 	c = set_global_sym(s1, NULL, s, offs);
@@ -1445,7 +1445,7 @@ ST_FUNC void mcc_add_btstub(MCCState *s1) {
 #endif
 	}
 	n = 3 * MCC_PTR_SIZE;
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (s1->do_bounds_check) {
 		put_ptr(s1, bounds_section, 0);
 		n -= MCC_PTR_SIZE;
@@ -1468,7 +1468,7 @@ ST_FUNC void mcc_add_btstub(MCCState *s1) {
 							"__attribute__((constructor)) static void __bt_init_rt(){");
 #ifdef MCC_TARGET_PE
 	if (s1->output_type == MCC_OUTPUT_DLL)
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 		cstr_printf(&cstr, "__bt_init_dll(%d);", s1->do_bounds_check);
 #else
 		cstr_printf(&cstr, "__bt_init_dll(0);");
@@ -1582,7 +1582,7 @@ ST_FUNC void mccelf_add_crtend(MCCState *s1) {
 ST_FUNC void mcc_add_runtime(MCCState *s1) {
 	s1->filetype = 0;
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	mcc_add_bcheck(s1);
 #endif
 	mcc_add_pragma_libs(s1);
@@ -1590,7 +1590,7 @@ ST_FUNC void mcc_add_runtime(MCCState *s1) {
 	if (!s1->nostdlib) {
 		int lpthread = s1->option_pthread;
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 		if (s1->do_bounds_check && s1->output_type != MCC_OUTPUT_DLL) {
 			mcc_add_support(s1, "bcheck.o");
 #if !(MCC_TARGETOS_OpenBSD || MCC_TARGETOS_NetBSD)
@@ -1599,7 +1599,7 @@ ST_FUNC void mcc_add_runtime(MCCState *s1) {
 			lpthread = 1;
 		}
 #endif
-#if MCC_CONFIG_BACKTRACE
+#if MCC_CONFIG_DIAG_RT >= 1
 		if (s1->do_backtrace) {
 			if (s1->output_type & MCC_OUTPUT_EXE)
 				mcc_add_support(s1, "bt-exe.o");

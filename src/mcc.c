@@ -49,10 +49,10 @@ static const char help[] =
 #ifdef MCC_TARGET_PE
 		"  -g.pdb              Generate a .pdb debug database\n"
 #endif
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 		"  -b                  Enable the built-in memory and bounds checker (implies -g)\n"
 #endif
-#if MCC_CONFIG_BACKTRACE
+#if MCC_CONFIG_DIAG_RT >= 1
 		"  -bt[<n>]            Link with backtrace support (show up to <n> callers)\n"
 #endif
 		"Other options:\n"

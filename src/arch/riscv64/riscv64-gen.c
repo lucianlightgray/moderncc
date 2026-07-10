@@ -43,7 +43,7 @@ ST_DATA const int reg_classes[MCC_NB_REGS] = {
 		1 << MCC_TREG_RA,
 		1 << MCC_TREG_SP};
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 #define func_bound_offset (mcc_state->cg_func_bound_offset)
 #define func_bound_ind (mcc_state->cg_func_bound_ind)
 ST_DATA int func_bound_add_epilog;
@@ -412,7 +412,7 @@ static void gcall_or_jmp(int docall) {
 	}
 }
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 
 static void gen_bounds_call(int v) {
 	Sym *sym = external_helper_sym(v);
@@ -531,7 +531,7 @@ ST_FUNC void gfunc_call(int nb_args) {
 	SValue *sv;
 	Sym *sa;
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	int bc_save = mcc_state->do_bounds_check;
 	if (mcc_state->do_bounds_check)
 		gbound_args(nb_args);
@@ -679,12 +679,12 @@ ST_FUNC void gfunc_call(int nb_args) {
 				gaddrof();
 				vtop->type = char_pointer_type;
 				vpushi(ii >> 20);
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 				if ((origtype.t & VT_BTYPE) == VT_STRUCT)
 					mcc_state->do_bounds_check = 0;
 #endif
 				gen_op('+');
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 				mcc_state->do_bounds_check = bc_save;
 #endif
 				indir();
@@ -796,7 +796,7 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) {
 			ES(0x23, 3, 8, 10 + areg[0], -8 + num_va_regs * 8);
 		}
 	}
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		gen_bounds_prolog();
 #endif
@@ -839,7 +839,7 @@ ST_FUNC void arch_transfer_ret_regs(int aftercall) {
 ST_FUNC void gfunc_epilog(void) {
 	int v, saved_ind, d, large_ofs_ind;
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		gen_bounds_epilog();
 #endif
@@ -1407,12 +1407,12 @@ ST_FUNC void gen_vla_sp_restore(int addr) {
 
 ST_FUNC void gen_vla_alloc(CType *type, int align) {
 	int rr;
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		vpushv(vtop);
 #endif
 	rr = ireg(gv(MCC_RC_INT));
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		EI(0x13, 0, rr, rr, 15 + 1);
 	else
@@ -1421,7 +1421,7 @@ ST_FUNC void gen_vla_alloc(CType *type, int align) {
 	EI(0x13, 7, rr, rr, -16);
 	ER(0x33, 0, 2, 2, rr, 0x20);
 	vpop();
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check) {
 		vpushi(0);
 		vtop->r = MCC_TREG_R(0);

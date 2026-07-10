@@ -291,7 +291,7 @@ ST_FUNC int oad(int c, int s) {
 }
 #endif
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 
 ST_FUNC MAYBE_UNUSED int gen_bounds_epilog_head(addr_t func_bound_offset,
 																								Sym **psym_data, int *poffset_modified) {
@@ -1626,7 +1626,7 @@ ST_FUNC void gaddrof(void) {
 		vtop->r = (vtop->r & ~VT_VALMASK) | VT_LOCAL | VT_LVAL;
 }
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 static void gen_bounded_ptr_add(void) {
 	int save = (vtop[-1].r & VT_VALMASK) == VT_LOCAL;
 	if (save) {
@@ -1750,7 +1750,7 @@ static void add_local_bounds(Sym *s, Sym *e) {
 #endif
 
 static void mcc_debug_end_scope(Sym *b, int bounds) {
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check && bounds)
 		add_local_bounds(local_stack, b);
 #endif
@@ -1912,7 +1912,7 @@ ST_FUNC int gv(int rc) {
 				vtop->r |= VT_LVAL;
 			}
 		}
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 		if (vtop->r & VT_MUSTBOUND)
 			gbound();
 #endif
@@ -3068,7 +3068,7 @@ redo:
 			vpush_type_size(pointed_type(&vtop[-1].type), &align);
 			vtop->type.t &= ~VT_UNSIGNED;
 			gen_op('*');
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 			if (mcc_state->do_bounds_check && !CONST_WANTED) {
 				if (op == '-') {
 					vpushi(0);
@@ -3687,14 +3687,14 @@ ST_FUNC void vstore(void) {
 	if (sbt == VT_STRUCT) {
 		size = type_size(&vtop->type, &align);
 		vpushv(vtop - 1);
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 		if (vtop->r & VT_MUSTBOUND)
 			gbound();
 #endif
 		vtop->type.t = VT_PTR;
 		gaddrof();
 		vswap();
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 		if (vtop->r & VT_MUSTBOUND)
 			gbound();
 #endif
@@ -3703,7 +3703,7 @@ ST_FUNC void vstore(void) {
 
 #ifdef MCC_TARGET_NATIVE_STRUCT_COPY
 		if (1
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 				&& !mcc_state->do_bounds_check
 #endif
 		) {
@@ -3776,7 +3776,7 @@ ST_FUNC void vstore(void) {
 			gen_cast(&vtop[-1].type);
 		}
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 		if (vtop[-1].r & VT_MUSTBOUND) {
 			vswap();
 			gbound();
@@ -5872,7 +5872,7 @@ ST_FUNC void indir(void) {
 		mcc_pedantic("dereferencing a 'void *' pointer");
 	if (!(vtop->type.t & (VT_ARRAY | VT_VLA)) && (vtop->type.t & VT_BTYPE) != VT_FUNC) {
 		vtop->r |= VT_LVAL;
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 		if (mcc_state->do_bounds_check)
 			vtop->r |= VT_MUSTBOUND;
 #endif
@@ -7697,7 +7697,7 @@ tok_next:
 				parse_btype_qualify(&vtop->type, qualifiers);
 			if (!(vtop->type.t & VT_ARRAY)) {
 				vtop->r |= VT_LVAL | base_nonlval;
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 				if (mcc_state->do_bounds_check)
 					vtop->r |= VT_MUSTBOUND;
 #endif
@@ -7705,7 +7705,7 @@ tok_next:
 #if MCC_CONFIG_AST
 			{
 				int _mbc = 0;
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 				_mbc = mcc_state->do_bounds_check;
 #endif
 				ast_hook_member_end(cumofs, &s->type, base_nonlval, qualifiers, _mbc);
@@ -7772,7 +7772,7 @@ tok_next:
 					ret.type = s->type;
 					ret.r = VT_LOCAL | VT_LVAL;
 					vseti(VT_LOCAL, loc);
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 					if (mcc_state->do_bounds_check)
 						--loc;
 #endif
@@ -10083,7 +10083,7 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 	Sym *flexible_array;
 	Sym *sym = NULL;
 	int saved_nocode_wanted = nocode_wanted;
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	int bcheck = mcc_state->do_bounds_check && !NODATA_WANTED;
 #endif
 	init_params p = {0};
@@ -10161,7 +10161,7 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 
 	if ((r & VT_VALMASK) == VT_LOCAL) {
 		sec = NULL;
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 		if (bcheck && v) {
 			loc -= align;
 		}
@@ -10169,7 +10169,7 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 		loc = (loc - size) & -align;
 		addr = loc;
 		p.local_offset = addr + size;
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 		if (bcheck && v) {
 			loc -= align;
 		}
@@ -10220,7 +10220,7 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 
 		if (sec) {
 			addr = section_add(sec, size, align);
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 			if (bcheck)
 				section_add(sec, 1, 1);
 #endif
@@ -10241,7 +10241,7 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 			vtop->r |= r;
 		}
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 		if (bcheck) {
 			addr_t *bounds_ptr;
 

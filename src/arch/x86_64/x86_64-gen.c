@@ -40,7 +40,7 @@ ST_DATA const int reg_classes[MCC_NB_REGS] = {
 #define func_stack_chk_loc (mcc_state->cg_func_stack_chk_loc)
 #endif
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 #define func_bound_offset (mcc_state->cg_func_bound_offset)
 #define func_bound_ind (mcc_state->cg_func_bound_ind)
 ST_DATA int func_bound_add_epilog;
@@ -595,7 +595,7 @@ static void gcall_or_jmp(int is_jmp) {
 	}
 }
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 
 static void gen_bounds_call(int v) {
 	Sym *sym = external_helper_sym(v);
@@ -716,7 +716,7 @@ void gfunc_call(int nb_args) {
 	int size, r, args_size, d, bt, struct_size;
 	int arg;
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		gbound_args(nb_args);
 #endif
@@ -824,7 +824,7 @@ void gfunc_call(int nb_args) {
 	if ((vtop->r & VT_SYM) && vtop->sym->v == TOK_alloca) {
 		o(0x48);
 		func_alloca = oad(0x05, func_alloca);
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 		if (mcc_state->do_bounds_check)
 			gen_bounds_call(TOK___bound_alloca_nr);
 #endif
@@ -893,7 +893,7 @@ void gfunc_prolog(Sym *func_sym) {
 		}
 		reg_param_index++;
 	}
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		gen_bounds_prolog();
 #endif
@@ -905,7 +905,7 @@ void gfunc_epilog(void) {
 	func_scratch = (func_scratch + 15) & -16;
 	loc = (loc & -16) - func_scratch;
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		gen_bounds_epilog();
 #endif
@@ -1158,7 +1158,7 @@ void gfunc_call(int nb_args) {
 	int sse_reg, gen_reg;
 	char *onstack = mcc_malloc((nb_args + 1) * sizeof(char));
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		gbound_args(nb_args);
 #endif
@@ -1527,7 +1527,7 @@ void gfunc_prolog(Sym *func_sym) {
 		gfunc_set_param(sym, param_addr, 0);
 	}
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		gen_bounds_prolog();
 #endif
@@ -1541,7 +1541,7 @@ void gfunc_prolog(Sym *func_sym) {
 void gfunc_epilog(void) {
 	int v, saved_ind;
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		gen_bounds_epilog();
 #endif
@@ -2139,7 +2139,7 @@ ST_FUNC void gen_vla_result(int addr) {
 ST_FUNC void gen_vla_alloc(CType *type, int align) {
 	int use_call = 0;
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	use_call = mcc_state->do_bounds_check;
 #endif
 #ifdef MCC_TARGET_PE

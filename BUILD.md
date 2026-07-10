@@ -313,8 +313,7 @@ These bake `CONFIG_*` values into the compiler and change its runtime behavior.
 | Value | Type | Default | Choices | Gate | Purpose |
 |---|---|---|---|---|---|
 | `MCC_CONFIG_MINGW` | BOOL | OFF | | always | Build a WIN32/mingw target (forces `MCC_TARGETOS=WIN32`). |
-| `MCC_CONFIG_BACKTRACE` | BOOL | **ON** (Debug) / OFF | | always | Stack backtraces (`-bt` / `-run`). Debugging aid: defaults ON only for Debug builds. |
-| `MCC_CONFIG_BCHECK` | BOOL | **ON** (Debug) / OFF | | **MCC_CONFIG_BACKTRACE** | Bounds checker (`-b`). Requires backtrace to link; defaults ON only for Debug builds. |
+| `MCC_CONFIG_DIAG_RT` | STRING | **bounds** (Debug) / off | off, backtrace, bounds | always | Runtime diagnostics level: `off`, `backtrace` (`-bt` / `-run` traces), or `bounds` (adds the `-b` bounds checker). Defaults to `bounds` only for Debug builds. |
 | `MCC_CONFIG_ASM` | BOOL | **ON** | | always | Integrated assembler (inline/global asm, `.s` files, asm labels). Disabling forces `MCC_MCCRT_USE_HOSTCC=ON`. |
 | `MCC_CONFIG_PREDEFS` | BOOL | **ON** | | always | Compile `mccdefs.h` into the binary (c2str). OFF ⇒ runtime dependency on `<mccdefs.h>`. |
 | `MCC_CONFIG_PIE` | BOOL | OFF | | **ELF** | mcc emits position-independent executables. |
@@ -500,7 +499,8 @@ declaration); test both the pass and the warn/fatal path. With
   `mcc` to build mccrt/tests/coverage). Autocorrect: force `MCC_MCCRT_USE_HOSTCC=ON`,
   `MCC_BUILD_TESTS=OFF`, `MCC_BUILD_COVERAGE=OFF`. WIN32 shared lib still fatal
   (needs `mcc -impdef`).
-- **`MCC_CONFIG_BCHECK` + `!MCC_CONFIG_BACKTRACE`** → warn/autocorrect (bcheck is
+- ~~`MCC_CONFIG_BCHECK` + `!MCC_CONFIG_BACKTRACE`~~ — made unrepresentable by the
+  `MCC_CONFIG_DIAG_RT` ladder (was: warn/autocorrect; bcheck is
   gated behind backtrace; `-b` won't link).
 - **`MCC_BUILD_STATIC_EXE` + `!MCC_SINGLE_SOURCE` + `!MCC_BUILD_STATIC_LIB`** → warn
   (a non-single-source `mcc-static` links the libmcc archive, but a static link
@@ -542,7 +542,7 @@ several of these already (§2).
    driver-TU + `libmcc` builds; keeps the non-amalgamated compile path covered.
 5. `MCC_CONFIG_ASM=OFF` (forces mccrt via host CC).
 6. `MCC_CONFIG_PREDEFS=OFF` (runtime mccdefs path).
-7. `MCC_CONFIG_BACKTRACE=OFF` (implies bcheck off) vs the Debug default on —
+7. `MCC_CONFIG_DIAG_RT=off` vs the Debug default on —
    the Release presets cover this slice for free (backtrace/bcheck default OFF
    outside Debug builds).
 

@@ -17,7 +17,7 @@ ST_DATA const int reg_classes[MCC_NB_REGS] = {
 
 #define func_sub_sp_offset (mcc_state->cg_func_sub_sp_offset)
 #define func_ret_sub (mcc_state->cg_func_ret_sub)
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 #define func_bound_offset (mcc_state->cg_func_bound_offset)
 #define func_bound_ind (mcc_state->cg_func_bound_ind)
 ST_DATA int func_bound_add_epilog;
@@ -458,7 +458,7 @@ ST_FUNC void gfunc_call(int nb_args) {
 	const uint8_t *fastcall_regs_ptr;
 	Sym *func_sym;
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		gbound_args(nb_args);
 #endif
@@ -647,7 +647,7 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) {
 		func_ret_sub = 4;
 #endif
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		gen_bounds_prolog();
 #endif
@@ -656,7 +656,7 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) {
 ST_FUNC void gfunc_epilog(void) {
 	addr_t v, saved_ind;
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		gen_bounds_epilog();
 #endif
@@ -1033,7 +1033,7 @@ ST_FUNC void ggoto(void) {
 	vtop--;
 }
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 
 static void gen_bound_call(int v) {
 	Sym *sym;
@@ -1122,7 +1122,7 @@ ST_FUNC void gen_vla_sp_restore(int addr) {
 ST_FUNC void gen_vla_alloc(CType *type, int align) {
 	int use_call = 0;
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	use_call = mcc_state->do_bounds_check;
 #endif
 #ifdef MCC_TARGET_PE

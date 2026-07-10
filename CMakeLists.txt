@@ -293,17 +293,6 @@ function(mcc_validate_config)
         endif()
     endif()
 
-    if(MCC_CONFIG_BCHECK AND NOT MCC_CONFIG_BACKTRACE)
-        if(MCC_CONFIG_AUTOCORRECT)
-            mcc_autocorrect(MCC_CONFIG_BACKTRACE ON
-                "bcheck (-b) requires the backtrace runtime to link")
-        else()
-            message(WARNING
-                "mcc config: MCC_CONFIG_BCHECK=ON with MCC_CONFIG_BACKTRACE=OFF -- the "
-                "bcheck runtime is gated behind backtrace, so `mcc -b` will fail to link. "
-                "Enable backtrace or disable bcheck (or set -DMCC_CONFIG_AUTOCORRECT=ON).")
-        endif()
-    endif()
     if(NOT MCC_ENABLE_RPATH AND MCC_BUILD_STATIC_LIB)
         message(WARNING
             "mcc config: MCC_ENABLE_RPATH=OFF has no effect with a static libmcc "
@@ -1189,15 +1178,13 @@ mcc_config_node(MCC_CONFIG_AUTOCORRECT TYPE BOOL DEFAULT OFF GROUP "Build target
 
 mcc_config_node(MCC_CONFIG_MINGW  TYPE BOOL DEFAULT OFF GROUP "mcc features"
     HELP "Build a WIN32/mingw target (input: forces MCC_TARGETOS=WIN32)")
-set(_mcc_bt_default OFF)
+set(_mcc_diag_default off)
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(_mcc_bt_default ON)
+    set(_mcc_diag_default bounds)
 endif()
-mcc_config_node(MCC_CONFIG_BACKTRACE TYPE BOOL DEFAULT ${_mcc_bt_default} GROUP "mcc features"
-    HELP "Enable stack backtraces (-bt / -run); defaults ON for Debug builds")
-mcc_config_node(MCC_CONFIG_BCHECK   TYPE BOOL DEFAULT ${_mcc_bt_default} GROUP "mcc features"
-    HELP "Enable bounds checker (-b); defaults ON for Debug builds"
-    VISIBLE_WHEN "MCC_CONFIG_BACKTRACE")
+mcc_config_node(MCC_CONFIG_DIAG_RT TYPE STRING DEFAULT ${_mcc_diag_default} GROUP "mcc features"
+    CHOICES off backtrace bounds
+    HELP "Runtime diagnostics level: off | backtrace (-bt / -run traces) | bounds (adds the -b bounds checker); defaults to bounds for Debug builds")
 mcc_config_node(MCC_CONFIG_ASM      TYPE BOOL DEFAULT ON GROUP "mcc features"
     HELP "Enable the integrated assembler (inline asm, global asm, .s files, asm labels)")
 mcc_config_node(MCC_CONFIG_PREDEFS  TYPE BOOL DEFAULT ON GROUP "mcc features"
@@ -1691,15 +1678,21 @@ if(MCC_CONFIG_CODESIGN)
     list(APPEND _mccdefs "MCC_CONFIG_CODESIGN=1")
 endif()
 
-if(NOT MCC_CONFIG_BCHECK)
-    list(APPEND _mccdefs "MCC_CONFIG_BCHECK=0")
-endif()
 if(NOT MCC_CONFIG_ASM)
     list(APPEND _mccdefs "MCC_CONFIG_ASM=0")
 endif()
-if(NOT MCC_CONFIG_BACKTRACE)
-    list(APPEND _mccdefs "MCC_CONFIG_BACKTRACE=0")
+set(_mcc_diag_level 0)
+set(_mcc_diag_bt 0)
+set(_mcc_diag_bc 0)
+if(MCC_CONFIG_DIAG_RT STREQUAL "backtrace")
+    set(_mcc_diag_level 1)
+    set(_mcc_diag_bt 1)
+elseif(MCC_CONFIG_DIAG_RT STREQUAL "bounds")
+    set(_mcc_diag_level 2)
+    set(_mcc_diag_bt 1)
+    set(_mcc_diag_bc 1)
 endif()
+list(APPEND _mccdefs "MCC_CONFIG_DIAG_RT=${_mcc_diag_level}")
 if(MCC_CST)
     list(APPEND _mccdefs "MCC_CONFIG_CST=1")
 endif()
@@ -1757,7 +1750,7 @@ foreach(_d IN LISTS _mccdefs)
 endforeach()
 
 message(STATUS "mcc build defines: CC_NAME=CC_${MCC_CC_NAME} predefs=${_mcc_predefs_value} "
-               "bcheck=${MCC_CONFIG_BCHECK} backtrace=${MCC_CONFIG_BACKTRACE}")
+               "diag-rt=${MCC_CONFIG_DIAG_RT}")
 
 include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 include_directories(
@@ -2364,12 +2357,12 @@ function(mcc_build_mccrt tname mcctgt cpu os native archive objdir out_extra)
 
     if(native)
         list(APPEND _objs runmain tcov)
-        if(MCC_CONFIG_BACKTRACE)
+        if(NOT MCC_CONFIG_DIAG_RT STREQUAL "off")
             list(APPEND _objs bt-exe bt-log)
             if(_win)
                 list(APPEND _objs bt-dll)
             endif()
-            if(MCC_CONFIG_BCHECK)
+            if(MCC_CONFIG_DIAG_RT STREQUAL "bounds")
                 list(APPEND _objs bcheck)
             endif()
         endif()
@@ -3187,7 +3180,7 @@ if(MCC_BUILD_TESTS)
 
     add_executable(exec_runner tests/exec/runner.c)
     target_include_directories(exec_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec")
-    set(_exec_env "MCC_TEST_EMU=${MCC_EMULATOR};MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS};MCC_TEST_ASM=$<IF:$<BOOL:${MCC_CONFIG_ASM}>,1,0>;MCC_TEST_BCHECK=$<IF:$<BOOL:${MCC_CONFIG_BCHECK}>,1,0>;MCC_TEST_BACKTRACE=$<IF:$<BOOL:${MCC_CONFIG_BACKTRACE}>,1,0>")
+    set(_exec_env "MCC_TEST_EMU=${MCC_EMULATOR};MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS};MCC_TEST_ASM=$<IF:$<BOOL:${MCC_CONFIG_ASM}>,1,0>;MCC_TEST_BCHECK=${_mcc_diag_bc};MCC_TEST_BACKTRACE=${_mcc_diag_bt}")
 
     file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/goldens.h" _exec_glines
          REGEX "^[ \t]*{[ \t]*\"[A-Za-z0-9_]+\"")
@@ -3272,7 +3265,7 @@ if(MCC_BUILD_TESTS)
         else()
             add_executable(cli_runner tests/cli/runner.c)
             target_include_directories(cli_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli")
-            set(_cli_env "MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS};MCC_TEST_ASM=$<IF:$<BOOL:${MCC_CONFIG_ASM}>,1,0>;MCC_TEST_DWARF=${MCC_CONFIG_DWARF};MCC_TEST_BACKTRACE=$<IF:$<BOOL:${MCC_CONFIG_BACKTRACE}>,1,0>;MCC_TEST_BCHECK=$<IF:$<BOOL:${MCC_CONFIG_BCHECK}>,1,0>")
+            set(_cli_env "MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS};MCC_TEST_ASM=$<IF:$<BOOL:${MCC_CONFIG_ASM}>,1,0>;MCC_TEST_DWARF=${MCC_CONFIG_DWARF};MCC_TEST_BACKTRACE=${_mcc_diag_bt};MCC_TEST_BCHECK=${_mcc_diag_bc}")
             if(_cli_sh)
                 set(_cli_env "${_cli_env};MCC_TEST_SH=${_cli_sh}")
             endif()
@@ -3418,7 +3411,7 @@ if(MCC_BUILD_TESTS)
                 "-I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
     set_tests_properties(libtest-extra PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
-    if(MCC_CONFIG_BACKTRACE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/embed/api_threaded.c")
+    if(NOT MCC_CONFIG_DIAG_RT STREQUAL "off" AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/embed/api_threaded.c")
         add_executable(libmcc_test_mt tests/embed/api_threaded.c)
         target_link_libraries(libmcc_test_mt PRIVATE libmcc)
         target_include_directories(libmcc_test_mt PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -3433,7 +3426,7 @@ if(MCC_BUILD_TESTS)
                     "-I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
         set_tests_properties(libtest-mt PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     else()
-        mcc_skip_test(libtest-mt "requires MCC_CONFIG_BACKTRACE (multithread libmcc test)")
+        mcc_skip_test(libtest-mt "requires MCC_CONFIG_DIAG_RT!=off (multithread libmcc test)")
     endif()
 
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples/ex1.c")
@@ -3585,9 +3578,9 @@ if(MCC_BUILD_TESTS)
             --testdefs "-DCC_NAME=CC_${_ref_cc_name} -DGCC_MAJOR=${_ref_cc_major}"
             --emu "${MCC_EMULATOR}")
         set_tests_properties(mcctest PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
-        if(MCC_CONFIG_BCHECK AND MCC_TARGETOS STREQUAL "WIN32")
+        if(MCC_CONFIG_DIAG_RT STREQUAL "bounds" AND MCC_TARGETOS STREQUAL "WIN32")
             mcc_skip_test(mcctest-bcheck "mcc bounds-checking is unsupported on the PE/msvcrt target (faults in msvcrt callbacks/library calls)")
-        elseif(MCC_CONFIG_BCHECK)
+        elseif(MCC_CONFIG_DIAG_RT STREQUAL "bounds")
             file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bcheck")
             add_test(NAME mcctest-bcheck COMMAND "$<TARGET_FILE:mccharness>" mcctest
                 --cc ${_ref_cc} --mcc ${_mcc_exe}
@@ -3599,11 +3592,11 @@ if(MCC_BUILD_TESTS)
                 --mccargs -b --emu "${MCC_EMULATOR}")
             set_tests_properties(mcctest-bcheck PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         else()
-            mcc_skip_test(mcctest-bcheck "requires MCC_CONFIG_BCHECK (bounds-checked differential test)")
+            mcc_skip_test(mcctest-bcheck "requires MCC_CONFIG_DIAG_RT=bounds (bounds-checked differential test)")
         endif()
     else()
         mcc_skip_test(mcctest "requires integrated assembler (MCC_CONFIG_ASM)")
-        mcc_skip_test(mcctest-bcheck "requires integrated assembler + MCC_CONFIG_BCHECK")
+        mcc_skip_test(mcctest-bcheck "requires integrated assembler + MCC_CONFIG_DIAG_RT=bounds")
     endif()
 
     if(MCC_CPU MATCHES "^(i386|x86_64)$" AND MCC_CONFIG_ASM
@@ -3706,7 +3699,7 @@ if(MCC_BUILD_TESTS)
                 --arm-hardfloat "${MCC_ARM_HARDFLOAT}" --arm-idiv "${MCC_ARM_IDIV}"
                 --run-mmap-exec "${MCC_RUN_MMAP_EXEC}" --pie "${MCC_CONFIG_PIE}" --pic "${MCC_CONFIG_PIC}"
                 --new-dtags "${MCC_CONFIG_NEW_DTAGS}" --codesign "${MCC_CONFIG_CODESIGN}"
-                --bcheck "${MCC_CONFIG_BCHECK}" --asm "${MCC_CONFIG_ASM}" --backtrace "${MCC_CONFIG_BACKTRACE}"
+                --diag-rt "${MCC_CONFIG_DIAG_RT}" --asm "${MCC_CONFIG_ASM}"
                 --cst "${MCC_CST}" --ast "${MCC_AST}"
                 --new-macho "${MCC_CONFIG_NEW_MACHO}" --dwarf "${MCC_CONFIG_DWARF}" --semlock "${MCC_CONFIG_SEMLOCK}"
                 --sysincludepaths "${MCC_SYSINCLUDEPATHS}" --libpaths "${MCC_LIBPATHS}"
@@ -4047,7 +4040,7 @@ if(MCC_BUILD_TESTS)
                     set_tests_properties(${_tn}-exec PROPERTIES
                         FIXTURES_REQUIRED "MCC_BUILT;FX_${_tn}" LABELS qemu
                         SKIP_RETURN_CODE 77 TIMEOUT 1200
-                        ENVIRONMENT "MCC_TEST_EMU=;MCC_TEST_RUNEMU=${_QEMU_${_arch}} -L ${_root};MCC_TEST_SYSROOT=${_root};MCC_TEST_CPU=${_arch};MCC_TEST_OS=${MCC_TARGETOS};MCC_TEST_ASM=$<IF:$<BOOL:${MCC_CONFIG_ASM}>,1,0>;MCC_TEST_BCHECK=0;MCC_TEST_BACKTRACE=$<IF:$<BOOL:${MCC_CONFIG_BACKTRACE}>,1,0>")
+                        ENVIRONMENT "MCC_TEST_EMU=;MCC_TEST_RUNEMU=${_QEMU_${_arch}} -L ${_root};MCC_TEST_SYSROOT=${_root};MCC_TEST_CPU=${_arch};MCC_TEST_OS=${MCC_TARGETOS};MCC_TEST_ASM=$<IF:$<BOOL:${MCC_CONFIG_ASM}>,1,0>;MCC_TEST_BCHECK=0;MCC_TEST_BACKTRACE=${_mcc_diag_bt}")
                 endif()
             endforeach()
         endforeach()

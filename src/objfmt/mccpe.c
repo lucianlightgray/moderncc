@@ -2018,9 +2018,9 @@ static void pe_add_runtime(MCCState *s1, struct pe_info *pe) {
 			++start_symbol;
 	}
 
-#if MCC_CONFIG_BACKTRACE
+#if MCC_CONFIG_DIAG_RT >= 1
 	if (s1->do_backtrace) {
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 		if (s1->do_bounds_check && s1->output_type != MCC_OUTPUT_DLL)
 			mcc_add_support(s1, "bcheck.o");
 #endif
@@ -2151,7 +2151,7 @@ ST_FUNC int pe_output_file(MCCState *s1, const char *filename) {
 	pe.s1 = s1;
 	s1->filetype = 0;
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	mcc_add_bcheck(s1);
 #endif
 	mcc_add_pragma_libs(s1);

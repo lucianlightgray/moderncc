@@ -2088,12 +2088,12 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) {
 			return mcc_error_noabort("the CST database (--lsp) was not built into this mcc");
 #endif
 		case MCC_OPTION_bt:
-#if MCC_CONFIG_BACKTRACE
+#if MCC_CONFIG_DIAG_RT >= 1
 			s->rt_num_callers = atoi(optarg);
 #endif
 			goto enable_backtrace;
 		enable_backtrace:
-#if MCC_CONFIG_BACKTRACE
+#if MCC_CONFIG_DIAG_RT >= 1
 			s->do_backtrace = 1;
 			if (0 == s->do_debug)
 				s->do_debug = 1;
@@ -2103,7 +2103,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) {
 #endif
 			break;
 		case MCC_OPTION_b:
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 			s->do_bounds_check = 1;
 			goto enable_backtrace;
 #else

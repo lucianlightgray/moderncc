@@ -27,7 +27,7 @@
     },
     {
       "name": "release",
-      "displayName": "Release (MCC_AMALGAMATED dynamic exe, stripped, no bcheck/backtrace)",
+      "displayName": "Release (MCC_AMALGAMATED dynamic exe, stripped, diag-rt off)",
       "inherits": "debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",

@@ -552,12 +552,13 @@ static int cmd_emit_defines(int argc, char **argv) {
 		EMIT("MCC_CONFIG_CST=1");
 	if (truthy(fopt(argc, argv, "--ast", "")))
 		EMIT("MCC_CONFIG_AST=1");
-	if (!truthy(fopt(argc, argv, "--bcheck", "1")))
-		EMIT("MCC_CONFIG_BCHECK=0");
+	{
+		const char *dr = fopt(argc, argv, "--diag-rt", "bounds");
+		EMIT("MCC_CONFIG_DIAG_RT=%d",
+				 !strcmp(dr, "off") ? 0 : !strcmp(dr, "backtrace") ? 1 : 2);
+	}
 	if (!truthy(fopt(argc, argv, "--asm", "1")))
 		EMIT("MCC_CONFIG_ASM=0");
-	if (!truthy(fopt(argc, argv, "--backtrace", "1")))
-		EMIT("MCC_CONFIG_BACKTRACE=0");
 	if (!strcmp(fopt(argc, argv, "--new-macho", ""), "no"))
 		EMIT("MCC_CONFIG_MACHO_CHAINED_FIXUPS=0");
 	{
@@ -779,8 +780,8 @@ int main(int argc, char **argv) {
 	printf("[1/3] cc mcc.c -> mcc\n");
 	snprintf(defs[0], sizeof defs[0], "-D%s=1", tdef);
 	snprintf(defs[1], sizeof defs[1], "-DMCC_CONFIG_PREDEFS=0");
-	snprintf(defs[2], sizeof defs[2], "-DMCC_CONFIG_BACKTRACE=1");
-	snprintf(defs[3], sizeof defs[3], "-DMCC_CONFIG_BCHECK=1");
+	snprintf(defs[2], sizeof defs[2], "-DMCC_CONFIG_DIAG_RT=2");
+	snprintf(defs[3], sizeof defs[3], "-DMCC_CONFIG_PREDEFS=0");
 	snprintf(defs[4], sizeof defs[4], "-DMCC_VERSION=20260706135200");
 	snprintf(defs[5], sizeof defs[5], "-DMCC_CONFIG_MCCDIR=\"%s\"", OUTDIR);
 

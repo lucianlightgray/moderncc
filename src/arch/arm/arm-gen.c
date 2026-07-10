@@ -39,7 +39,7 @@ ST_DATA const int reg_classes[MCC_NB_REGS] = {
 #define last_itod_magic (mcc_state->cg_last_itod_magic)
 #define leaffunc (mcc_state->cg_leaffunc)
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 #define func_bound_offset (mcc_state->cg_func_bound_offset)
 #define func_bound_ind (mcc_state->cg_func_bound_ind)
 ST_DATA int func_bound_add_epilog;
@@ -649,7 +649,7 @@ static void gcall_or_jmp(int is_jmp) {
 			o(vtop->c.i);
 		}
 	} else {
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 		vtop->r &= ~VT_MUSTBOUND;
 #endif
 		r = gv(MCC_RC_INT);
@@ -659,7 +659,7 @@ static void gcall_or_jmp(int is_jmp) {
 	}
 }
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 
 static void gen_bounds_call(int v) {
 	Sym *sym = external_helper_sym(v);
@@ -1037,7 +1037,7 @@ void gfunc_call(int nb_args) {
 	int variadic;
 #endif
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		gbound_args(nb_args);
 #endif
@@ -1185,7 +1185,7 @@ void gfunc_prolog(Sym *func_sym) {
 	last_itod_magic = 0;
 	leaffunc = 1;
 	loc = 0;
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		gen_bounds_prolog();
 #endif
@@ -1195,7 +1195,7 @@ void gfunc_epilog(void) {
 	uint32_t x;
 	int diff;
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		gen_bounds_epilog();
 #endif
@@ -1409,7 +1409,7 @@ void gen_opi(int op) {
 			}
 		}
 		fr = intr(gv(MCC_RC_INT));
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 		if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) {
 			vswap();
 			c = intr(gv(MCC_RC_INT));
@@ -1438,7 +1438,7 @@ void gen_opi(int op) {
 			o(opc | r | (c << 7) | (fr << 12));
 		} else {
 			fr = intr(gv(MCC_RC_INT));
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 			if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) {
 				vswap();
 				r = intr(gv(MCC_RC_INT));
@@ -1568,7 +1568,7 @@ void gen_opf(int op) {
 		r2 = gv(MCC_RC_FLOAT);
 		x |= vfpr(r2) << 16;
 		r |= regmask(r2);
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 		if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) {
 			vswap();
 			r = gv(MCC_RC_FLOAT);
@@ -1650,7 +1650,7 @@ void gen_opf(int op) {
 			r2 = c2 & 0xf;
 		} else {
 			r2 = fpr(gv(MCC_RC_FLOAT));
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 			if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) {
 				vswap();
 				r = fpr(gv(MCC_RC_FLOAT));
@@ -1678,7 +1678,7 @@ void gen_opf(int op) {
 			r = fpr(gv(MCC_RC_FLOAT));
 			vswap();
 			r2 = fpr(gv(MCC_RC_FLOAT));
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 			if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) {
 				vswap();
 				r = fpr(gv(MCC_RC_FLOAT));
@@ -1699,7 +1699,7 @@ void gen_opf(int op) {
 			r2 = c2;
 		else {
 			r2 = fpr(gv(MCC_RC_FLOAT));
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 			if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) {
 				vswap();
 				r = fpr(gv(MCC_RC_FLOAT));
@@ -1727,7 +1727,7 @@ void gen_opf(int op) {
 			r = fpr(gv(MCC_RC_FLOAT));
 			vswap();
 			r2 = fpr(gv(MCC_RC_FLOAT));
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 			if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) {
 				vswap();
 				r = fpr(gv(MCC_RC_FLOAT));
@@ -1784,7 +1784,7 @@ void gen_opf(int op) {
 				r2 = c2 & 0xf;
 			} else {
 				r2 = fpr(gv(MCC_RC_FLOAT));
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 				if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) {
 					vswap();
 					r = fpr(gv(MCC_RC_FLOAT));
@@ -2001,12 +2001,12 @@ ST_FUNC void gen_vla_sp_restore(int addr) {
 
 ST_FUNC void gen_vla_alloc(CType *type, int align) {
 	int r;
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		vpushv(vtop);
 #endif
 	r = intr(gv(MCC_RC_INT));
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		o(0xe2800001 | (r << 16) | (r << 12));
 #endif
@@ -2022,7 +2022,7 @@ ST_FUNC void gen_vla_alloc(CType *type, int align) {
 		mcc_error("alignment is not a power of 2: %i", align);
 	o(stuff_const(0xE3C0D000 | (r << 16), align - 1));
 	vpop();
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check) {
 		vpushi(0);
 		vtop->r = MCC_TREG_R0;

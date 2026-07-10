@@ -76,18 +76,20 @@
 #endif
 #endif
 
-#ifndef MCC_CONFIG_BACKTRACE
-#define MCC_CONFIG_BACKTRACE 1
+#ifndef MCC_CONFIG_DIAG_RT
+#define MCC_CONFIG_DIAG_RT 2
 #endif
 
-#if defined MCC_TARGET_IS_HOST && MCC_CONFIG_BACKTRACE
+enum {
+	MCC_DIAG_RT_OFF,
+	MCC_DIAG_RT_BACKTRACE,
+	MCC_DIAG_RT_BOUNDS
+};
+
+#if defined MCC_TARGET_IS_HOST && MCC_CONFIG_DIAG_RT >= 1
 ST_FUNC void host_fault_install(host_fault_fn fn);
 ST_FUNC int host_fault_regs(void *osctx, HostFaultRegs *r);
 ST_FUNC void host_fault_unblock(unsigned detail);
-#endif
-
-#ifndef MCC_CONFIG_BCHECK
-#define MCC_CONFIG_BCHECK 1
 #endif
 
 #ifndef MCC_CONFIG_MACHO_CHAINED_FIXUPS
@@ -746,7 +748,7 @@ struct MCCState {
 	unsigned char do_debug;
 	unsigned char dwarf;
 	unsigned char do_backtrace;
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	unsigned char do_bounds_check;
 #endif
 	unsigned char test_coverage;
@@ -859,7 +861,7 @@ struct MCCState {
 	Section *tdata_section, *tbss_section;
 	Section *common_section;
 	Section *cur_text_section;
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	Section *bounds_section;
 	Section *lbounds_section;
 #endif
@@ -942,7 +944,7 @@ struct MCCState {
 	void *bt_data;
 #endif
 
-#if MCC_CONFIG_BACKTRACE
+#if MCC_CONFIG_DIAG_RT >= 1
 	int rt_num_callers;
 #endif
 
@@ -1329,10 +1331,10 @@ ST_FUNC int mcc_add_crt(MCCState *s, const char *filename);
 #endif
 ST_FUNC int mcc_add_dll(MCCState *s, const char *filename, int flags);
 ST_FUNC int mcc_add_support(MCCState *s1, const char *filename);
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 ST_FUNC void mcc_add_bcheck(MCCState *s1);
 #endif
-#if MCC_CONFIG_BACKTRACE
+#if MCC_CONFIG_DIAG_RT >= 1
 ST_FUNC void mcc_add_btstub(MCCState *s1);
 #endif
 ST_FUNC void mcc_add_pragma_libs(MCCState *s1);
@@ -1534,13 +1536,13 @@ ST_FUNC int expr_const(void);
 ST_FUNC void cst_capture_begin(const char *filename);
 ST_FUNC CstArena *cst_capture_end(void);
 #endif
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 ST_FUNC Sym *get_sym_ref(CType *type, Section *sec, unsigned long offset, unsigned long size);
 #endif
 #if defined MCC_TARGET_X86_64 && !defined MCC_TARGET_PE
 ST_FUNC int classify_x86_64_va_arg(CType *ty);
 #endif
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 ST_FUNC void gbound_args(int nb_args);
 ST_DATA int func_bound_add_epilog;
 ST_FUNC int gen_bounds_epilog_head(addr_t func_bound_offset,

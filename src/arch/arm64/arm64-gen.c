@@ -43,7 +43,7 @@ ST_DATA const int reg_classes[MCC_NB_REGS] = {
 		MCC_RC_FLOAT | MCC_RC_F(6),
 		MCC_RC_FLOAT | MCC_RC_F(7)};
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 #define func_bound_offset (mcc_state->cg_func_bound_offset)
 #define func_bound_ind (mcc_state->cg_func_bound_ind)
 ST_DATA int func_bound_add_epilog;
@@ -759,14 +759,14 @@ static void arm64_gen_bl_or_b(int b) {
 						b ? R_AARCH64_JUMP26 : R_AARCH64_CALL26, 0);
 		o(b ? ARM64_B : ARM64_BL);
 	} else {
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 		vtop->r &= ~VT_MUSTBOUND;
 #endif
 		o((b ? ARM64_BR : ARM64_BLR) | intr(gv(MCC_RC_R30)) << 5);
 	}
 }
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 
 static void gen_bounds_call(int v) {
 	Sym *sym = external_helper_sym(v);
@@ -1070,7 +1070,7 @@ ST_FUNC void gfunc_call(int nb_args) {
 
 	save_regs(nb_args + 1);
 
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		gbound_args(nb_args);
 #endif
@@ -1389,7 +1389,7 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) {
 	for (i = 0; i < ARM64_FUNC_STACK_SETUP_SLOTS; ++i)
 		o(ARM64_NOP);
 	loc = 0;
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		gen_bounds_prolog();
 #endif
@@ -1610,7 +1610,7 @@ ST_FUNC void gfunc_return(CType *func_type) {
 }
 
 ST_FUNC void gfunc_epilog(void) {
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		gen_bounds_epilog();
 #endif
@@ -2263,12 +2263,12 @@ ST_FUNC void gen_vla_sp_restore(int addr) {
 
 ST_FUNC void gen_vla_alloc(CType *type, int align) {
 	uint32_t r;
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		vpushv(vtop);
 #endif
 	r = intr(gv(MCC_RC_INT));
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		o(0x91004000 | r | r << 5);
 	else
@@ -2277,7 +2277,7 @@ ST_FUNC void gen_vla_alloc(CType *type, int align) {
 	o(0x927cec00 | r | r << 5);
 	o(0xcb2063ff | r << 16);
 	vpop();
-#if MCC_CONFIG_BCHECK
+#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check) {
 		vpushi(0);
 		vtop->r = MCC_TREG_R(0);
