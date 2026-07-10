@@ -863,11 +863,23 @@ control-flow restructuring, no short-circuit):
 `MASK` u64 literal, `>>`, `&1`, outer `&`) reusing a deep-cloned `key`
 subtree (`ast_dup_sub`); adopt into the cluster root. Reads of a duplicated
 local don't call `ast_alloc_loc`, so the `ast_locrec` pool is unaffected —
-the desync risk that blocked it is gone. Two targets: the value form (`r =
-a||b||c`, materialized `AST_Binary TOK_LOR`) is the safer first cut;
-the control-flow if-chain form needs the collapse too. Gate behind the
+the desync risk that blocked it is gone. Gate behind the
 existing `MCC_AST_BITFLAG` (default off) and validate at edge keys across
 all four exec-replay columns + fixpoint.
+
+**Empirical finding (2026-07-10, prototyped + reverted).** There is **no
+expression-level shortcut**: `||` is *always* lowered to control flow in
+the captured AST — even a materialized `10 + (x==1||x==3||...)` does **not**
+produce an `AST_Binary TOK_LOR` node. A value-form pass built to the recipe
+above compiled and was correct but **never fired** on any real `||`. So the
+transform must operate on the **`AST_If` chain** (the detection form): read
+the chain's per-arm `key==const`, and — following the `ast_tco_run`
+branch-restructuring precedent (it already rewrites control flow: labels +
+jumps + built nodes) — replace the chain with a single `AST_If` whose
+condition is the branchless bit-test above, sharing the arms' body (when
+they're identical) or a mask-indexed value table (when they differ). The
+node-building and the bit-test formula are validated; the remaining work is
+the `AST_If`-chain collapse, which is the genuinely fragile part.
 
 ## 31. Strategy-portfolio scheduler — the governing search architecture (large)
 
