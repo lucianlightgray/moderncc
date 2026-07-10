@@ -134,7 +134,7 @@ is runtime via a category bitmask over the existing `g_debug` int
 
 ## 11. Execute SPLIT.md (largest of the settled set)
 
-- [ ] The `TARGET_DEFS_ONLY` → `<arch>-<part>.h` split, per
+- [x] The `TARGET_DEFS_ONLY` → `<arch>-<part>.h` split, per
       [SPLIT.md](SPLIT.md) §4-6: 13 headers created, 13 `.c` skeletons
       removed, `mcc.h:217-239` ladder rewritten, macro gone from the tree.
       Gates as specified there (matrix, ctest incl. drift invariants,

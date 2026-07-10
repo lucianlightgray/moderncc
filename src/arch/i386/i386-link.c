@@ -1,24 +1,3 @@
-#ifdef TARGET_DEFS_ONLY
-
-#define EM_MCC_TARGET EM_386
-
-#define R_DATA_32 R_386_32
-#define R_DATA_PTR R_386_32
-#define R_JMP_SLOT R_386_JMP_SLOT
-#define R_GLOB_DAT R_386_GLOB_DAT
-#define R_COPY R_386_COPY
-#define R_RELATIVE R_386_RELATIVE
-
-#define R_NUM R_386_NUM
-
-#define ELF_START_ADDR 0x08048000
-#define ELF_PAGE_SIZE 0x1000
-
-#define PCRELATIVE_DLLPLT (s1->pic != 0)
-#define RELOCATE_DLLPLT 1
-
-#else
-
 #include "mcc.h"
 
 ST_FUNC int code_reloc(int reloc_type) {
@@ -308,4 +287,3 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 	}
 }
 
-#endif

@@ -216,29 +216,27 @@ ST_FUNC void host_fault_unblock(unsigned detail);
 #define inline
 #endif
 
-#define TARGET_DEFS_ONLY
 #ifdef MCC_TARGET_I386
-#include "i386-gen.c"
-#include "i386-link.c"
+#include "i386-gen.h"
+#include "i386-link.h"
 #elif defined MCC_TARGET_X86_64
-#include "x86_64-gen.c"
-#include "x86_64-link.c"
+#include "x86_64-gen.h"
+#include "x86_64-link.h"
 #elif defined MCC_TARGET_ARM
-#include "arm-gen.c"
-#include "arm-link.c"
-#include "arm-asm.c"
+#include "arm-gen.h"
+#include "arm-link.h"
+#include "arm-asm.h"
 #elif defined MCC_TARGET_ARM64
-#include "arm64-gen.c"
-#include "arm64-link.c"
-#include "arm64-asm.c"
+#include "arm64-gen.h"
+#include "arm64-link.h"
+#include "arm64-asm.h"
 #elif defined(MCC_TARGET_RISCV64)
-#include "riscv64-gen.c"
-#include "riscv64-link.c"
-#include "riscv64-asm.c"
+#include "riscv64-gen.h"
+#include "riscv64-link.h"
+#include "riscv64-asm.h"
 #else
 #error unknown target
 #endif
-#undef TARGET_DEFS_ONLY
 
 #if PTR_SIZE == 8
 #define ELFCLASSW ELFCLASS64

@@ -1,15 +1,3 @@
-#ifdef TARGET_DEFS_ONLY
-
-#ifndef MCC_DISABLE_ASM
-#define CONFIG_MCC_ASM
-#endif
-#define NB_ASM_REGS 64
-
-ST_FUNC void g(int c);
-ST_FUNC void gen_le16(int c);
-ST_FUNC void gen_le32(int c);
-
-#else
 #define USING_GLOBALS
 #include "mcc.h"
 #ifdef CONFIG_MCC_ASM
@@ -2767,5 +2755,4 @@ static void asm_emit_css(int token, uint16_t opcode, const Operand *rs2, const O
 	}
 }
 
-#endif
 #endif

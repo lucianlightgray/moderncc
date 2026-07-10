@@ -1,24 +1,3 @@
-#ifdef TARGET_DEFS_ONLY
-
-#define EM_MCC_TARGET EM_AARCH64
-
-#define R_DATA_32 R_AARCH64_ABS32
-#define R_DATA_PTR R_AARCH64_ABS64
-#define R_JMP_SLOT R_AARCH64_JUMP_SLOT
-#define R_GLOB_DAT R_AARCH64_GLOB_DAT
-#define R_COPY R_AARCH64_COPY
-#define R_RELATIVE R_AARCH64_RELATIVE
-
-#define R_NUM R_AARCH64_NUM
-
-#define ELF_START_ADDR 0x00400000
-#define ELF_PAGE_SIZE 0x10000
-
-#define PCRELATIVE_DLLPLT 1
-#define RELOCATE_DLLPLT 1
-
-#else
-
 #include "mcc.h"
 
 #define AARCH64_TLS_TCB_SIZE 16
@@ -380,4 +359,3 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 	}
 }
 
-#endif
