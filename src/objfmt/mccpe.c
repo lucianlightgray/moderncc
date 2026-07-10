@@ -735,7 +735,11 @@ static int pe_write(struct pe_info *pe) {
 					0x00000000,
 					0x0002,
 					0x0000,
+#if defined(MCC_TARGET_ARM64)
+					0x00800000,
+#else
 					0x00100000,
+#endif
 					0x00001000,
 					0x00100000,
 					0x00001000,

@@ -373,23 +373,37 @@ long double __cdecl frexpl(long double x, int *y) {
 __CRT_INLINE
 
 double __cdecl rint(double x) {
+#if defined(__i386__) || defined(__x86_64__)
 	double retval;
 	__asm__(
 			"fldl    %1\n"
 			"frndint   \n"
 			"fstpl    %0\n" : "=m"(retval) : "m"(x));
 	return retval;
+#else
+	double f = floor(x);
+	double d = x - f;
+	if (d < 0.5)
+		return f;
+	if (d > 0.5)
+		return f + 1.0;
+	return (f * 0.5 == floor(f * 0.5)) ? f : f + 1.0;
+#endif
 }
 
 __CRT_INLINE
 
 float __cdecl rintf(float x) {
+#if defined(__i386__) || defined(__x86_64__)
 	float retval;
 	__asm__(
 			"flds    %1\n"
 			"frndint   \n"
 			"fstps    %0\n" : "=m"(retval) : "m"(x));
 	return retval;
+#else
+	return (float)rint((double)x);
+#endif
 }
 
 __CRT_INLINE
@@ -401,19 +415,27 @@ long double __cdecl rintl(long double x) {
 __CRT_INLINE
 
 long __cdecl lrint(double x) {
+#if defined(__i386__) || defined(__x86_64__)
 	long retval;
 	__asm__ __volatile__("fldl   %1\n"
 											 "fistpl %0" : "=m"(retval) : "m"(x));
 	return retval;
+#else
+	return (long)rint(x);
+#endif
 }
 
 __CRT_INLINE
 
 long __cdecl lrintf(float x) {
+#if defined(__i386__) || defined(__x86_64__)
 	long retval;
 	__asm__ __volatile__("flds   %1\n"
 											 "fistpl %0" : "=m"(retval) : "m"(x));
 	return retval;
+#else
+	return (long)rint((double)x);
+#endif
 }
 
 __CRT_INLINE
@@ -425,19 +447,27 @@ long __cdecl lrintl(long double x) {
 __CRT_INLINE
 
 long long __cdecl llrint(double x) {
+#if defined(__i386__) || defined(__x86_64__)
 	long long retval;
 	__asm__ __volatile__("fldl    %1\n"
 											 "fistpll %0" : "=m"(retval) : "m"(x));
 	return retval;
+#else
+	return (long long)rint(x);
+#endif
 }
 
 __CRT_INLINE
 
 long long __cdecl llrintf(float x) {
+#if defined(__i386__) || defined(__x86_64__)
 	long long retval;
 	__asm__ __volatile__("flds   %1\n"
 											 "fistpll %0" : "=m"(retval) : "m"(x));
 	return retval;
+#else
+	return (long long)rint((double)x);
+#endif
 }
 
 __CRT_INLINE
@@ -449,6 +479,7 @@ long long __cdecl llrintl(long double x) {
 __CRT_INLINE
 
 double __cdecl trunc(double _x) {
+#if defined(__i386__) || defined(__x86_64__)
 	double retval;
 	unsigned short saved_cw;
 	unsigned short tmp_cw;
@@ -460,6 +491,9 @@ double __cdecl trunc(double _x) {
 					"fstpl  %0;" : "=m"(retval) : "m"(_x));
 	__asm__("fldcw %0;" : : "m"(saved_cw));
 	return retval;
+#else
+	return _x < 0.0 ? ceil(_x) : floor(_x);
+#endif
 }
 
 __CRT_INLINE
