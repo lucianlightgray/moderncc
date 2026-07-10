@@ -413,16 +413,22 @@ Landed, all presets/ctest green + fixpoint byte-identical at each step:
   Exec golden across all four replay columns; gcc/O0/O3-tmpl agree.
   Remaining: range-narrowing (needs range analysis), search-gated re-typing.
 
-**Remaining full builds are the deep codegen / new-subsystem class**, each
-now investigated in code and scoped with a concrete path (see their
-sections): §22 per-function replay refactor (needs an `AstArena` clone +
-extracting the fragile re-emit into a reusable arena-parameterized routine),
-§24 budget-allocation half (needs §22), §30 bit-flag (needs `AST_If`-chain
-control-flow detection + new multi-node AST construction), §26 embedded JIT
-(infra exists; dominant cost = embedding a libmcc slice). §27/§28 stay
-deferred behind the value-reference-node decision. §29/§24 proved the safe
-patterns; each remaining full build is a focused session validated across
-all four exec-replay columns + fixpoint at every step.
+- **§22 functional** — sidestepped the fragile re-emit rewrite entirely.
+  Sub-step 1: `MCC_AST_FN_CONFIG` per-function pass-gate override
+  (`323a15a6`). Sub-step 2: `mcc_superopt_perfn` (`MCC_AST_PERFN` + `-O4+`)
+  enumerates `STT_FUNC` sizes from the object symbol table and greedily
+  picks each function's best config by measured per-function size — **real
+  per-function search, no `ast_func_end` surgery** (`11bb8323`). Also gives
+  §21 its per-fn tier and §31 its per-fn scoping.
+- **§24 functional** — cost model (`3e81960d`) + the per-function search now
+  sorts functions biggest/hottest-first so a limited budget lands where it
+  pays (`ad5cfee2`).
+
+**Remaining full builds** (deep, each a focused session): §30 bit-flag
+(needs `AST_If`-chain control-flow detection — `||` is control flow, not a
+binary node — + new multi-node AST construction), §26 embedded JIT (infra
+exists; dominant cost = embedding a libmcc slice). §27/§28 stay deferred
+behind the value-reference-node decision.
 
 
 The `-O<N>` (N>=4) compile-time search landed at `f959078e`
