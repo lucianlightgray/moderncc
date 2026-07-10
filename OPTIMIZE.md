@@ -829,3 +829,27 @@ machinery, and at what risk — to decide whether to lift the scope.
   code it eliminates the calls entirely at compile time, deterministic
   and within 1 ulp — a large, real win, opt-in and default-safe.
 - Fold-math extension subagent (log/pow/tan/hyperbolics) still in flight.
+
+### 2026-07-10 — iteration 33 (-ffold-math extended to 8 more sequences)
+
+- **`-ffold-math` extended to log/log2/log10, tan, pow, sinh/cosh/tanh**
+  (+ f-variants), same safe design (fold at emit, -O0==-O1, default OFF,
+  fdlibm coefficients, fixed IEEE-754 Horner):
+  - log (ieee754_log, 1 ulp), log2 (1), log10 (2); tan (kernel_tan,
+    1 ulp) — the shared Cody-Waite rem_pio2 was **factored out of
+    sincos** (no duplication; sincos stays byte-identical);
+    sinh/cosh (via exp, Maclaurin for |x|<0.5 to avoid cancellation,
+    ≤2 ulp), tanh (±1 saturation |x|>20, 2 ulp).
+  - **pow is deliberately conservative** — folds only pow(x,0)=1,
+    pow(1,y)=1, and pow(x,n) for finite x>0 with integer |n|≤64
+    (reciprocal for n<0, ≤6 ulp); negative/zero/inf base, non-integer or
+    large exponent, any NaN, and the general exp(y·log x) path are LEFT
+    AS CALLS. A conservative pow that folds few cases beats an aggressive
+    one with a special-case miscompile.
+  - Edge cases: log(x≤0) / tan(|x|>2^20) / all inf-NaN trig-hyperbolic
+    inputs / sinh-cosh(|x|>709.78) left as calls.
+- Tests: `foldmath_more_funcs` (8 fns fold, -O0==-O1, ≤1e-9) +
+  `foldmath_must_not_fold` (log(-1)/tan(2e6)/pow(2,0.5)/pow(-2,3) keep
+  calls). 1836 green, fixpoint byte-identical, default -O0 objects
+  identical. `-ffold-math` now covers **11 transcendental families** —
+  the full "sequence approximation" ask, deterministically.

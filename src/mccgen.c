@@ -6691,8 +6691,12 @@ static const struct {
 	const char *name;
 	unsigned char id, flt;
 } foldmath_tab[] = {
-		{"sin", 0, 0},	{"sinf", 0, 1}, {"cos", 1, 0},
-		{"cosf", 1, 1}, {"exp", 2, 0},	{"expf", 2, 1},
+		{"sin", 0, 0},	 {"sinf", 0, 1},   {"cos", 1, 0},	 {"cosf", 1, 1},
+		{"exp", 2, 0},	 {"expf", 2, 1},   {"log", 3, 0},	 {"logf", 3, 1},
+		{"log2", 4, 0},  {"log2f", 4, 1},  {"log10", 5, 0}, {"log10f", 5, 1},
+		{"tan", 6, 0},	 {"tanf", 6, 1},   {"pow", 7, 0},	 {"powf", 7, 1},
+		{"sinh", 8, 0},  {"sinhf", 8, 1},  {"cosh", 9, 0},	 {"coshf", 9, 1},
+		{"tanh", 10, 0}, {"tanhf", 10, 1},
 };
 
 static double foldm_rint(double x) {
@@ -6733,6 +6737,38 @@ static double foldm_scalbn(double x, int n) {
 	return y * foldm_pow2(n);
 }
 
+static int32_t foldm_hi(double x) {
+	uint64_t b;
+	memcpy(&b, &x, sizeof b);
+	return (int32_t)(uint32_t)(b >> 32);
+}
+
+static uint32_t foldm_lo(double x) {
+	uint64_t b;
+	memcpy(&b, &x, sizeof b);
+	return (uint32_t)b;
+}
+
+static double foldm_sethi(double x, uint32_t hi) {
+	uint64_t b;
+	memcpy(&b, &x, sizeof b);
+	b = (b & 0xffffffffull) | ((uint64_t)hi << 32);
+	memcpy(&x, &b, sizeof x);
+	return x;
+}
+
+static double foldm_hilo0(double x) {
+	uint64_t b;
+	memcpy(&b, &x, sizeof b);
+	b &= 0xffffffff00000000ull;
+	memcpy(&x, &b, sizeof x);
+	return x;
+}
+
+static double foldm_fabs(double x) {
+	return x < 0 ? -x : x;
+}
+
 static double foldm_ksin(double x) {
 	double S1 = -1.66666666666666324348e-01, S2 = 8.33333333332248946124e-03,
 				 S3 = -1.98412698298579493134e-04, S4 = 2.75573137070700676789e-06,
@@ -6751,7 +6787,7 @@ static double foldm_kcos(double x) {
 	return 1.0 - 0.5 * z + (z * z) * p;
 }
 
-static double foldm_sincos(int wantcos, double x) {
+static int foldm_rem_pio2(double x, double *y0, double *y1) {
 	double invpio2 = 6.36619772367581382433e-01;
 	double pio2_1 = 1.57079632673412561417e+00,
 				 pio2_1t = 6.07710050650619224932e-11;
@@ -6771,8 +6807,16 @@ static double foldm_sincos(int wantcos, double x) {
 	r = t - w;
 	w = fn * pio2_3t - ((t - r) - w);
 	y = r - w;
-	int q = ((int)fn + (wantcos ? 1 : 0)) & 3;
-	double s = foldm_ksin(y), c = foldm_kcos(y);
+	*y0 = y;
+	*y1 = (r - y) - w;
+	return (int)fn;
+}
+
+static double foldm_sincos(int wantcos, double x) {
+	double y0, y1;
+	int n = foldm_rem_pio2(x, &y0, &y1);
+	int q = (n + (wantcos ? 1 : 0)) & 3;
+	double s = foldm_ksin(y0), c = foldm_kcos(y0);
 	switch (q) {
 	case 0:
 		return s;
@@ -6783,6 +6827,69 @@ static double foldm_sincos(int wantcos, double x) {
 	default:
 		return -c;
 	}
+}
+
+static double foldm_ktan(double x, double y, int iy) {
+	double one = 1.0;
+	double pio4 = 7.85398163397448278999e-01,
+				 pio4lo = 3.06161699786838301793e-17;
+	double T0 = 3.33333333333334091986e-01, T1 = 1.33333333333201242699e-01,
+				 T2 = 5.39682539762260521377e-02, T3 = 2.18694882948595424599e-02,
+				 T4 = 8.86323982359930005737e-03, T5 = 3.59207910759131235356e-03,
+				 T6 = 1.45620945432529025516e-03, T7 = 5.88041240820264096874e-04,
+				 T8 = 2.46463134818469906812e-04, T9 = 7.81794442939557092300e-05,
+				 T10 = 7.14072491382608190305e-05, T11 = -1.85586374855275456654e-05,
+				 T12 = 2.59073051863633712884e-05;
+	double z, r, v, w, s;
+	int32_t hx = foldm_hi(x), ix = hx & 0x7fffffff;
+	if (ix < 0x3e300000) {
+		if ((int)x == 0) {
+			if (((uint32_t)ix | foldm_lo(x) | (uint32_t)(iy + 1)) == 0)
+				return one / foldm_fabs(x);
+			return (iy == 1) ? x : -one / x;
+		}
+	}
+	if (ix >= 0x3FE59428) {
+		if (hx < 0) {
+			x = -x;
+			y = -y;
+		}
+		z = pio4 - x;
+		w = pio4lo - y;
+		x = z + w;
+		y = 0.0;
+	}
+	z = x * x;
+	w = z * z;
+	r = T1 + w * (T3 + w * (T5 + w * (T7 + w * (T9 + w * T11))));
+	v = z * (T2 + w * (T4 + w * (T6 + w * (T8 + w * (T10 + w * T12)))));
+	s = z * x;
+	r = y + z * (s * (r + v) + y);
+	r += T0 * s;
+	w = x + r;
+	if (ix >= 0x3FE59428) {
+		v = (double)iy;
+		return (double)(1 - ((hx >> 30) & 2)) *
+					 (v - 2.0 * (x - (w * w / (w + v) - r)));
+	}
+	if (iy == 1)
+		return w;
+	else {
+		double a, t;
+		z = w;
+		z = foldm_hilo0(z);
+		v = r - (z - x);
+		t = a = -1.0 / w;
+		t = foldm_hilo0(t);
+		s = 1.0 + t * z;
+		return t + a * (s + t * v);
+	}
+}
+
+static double foldm_tan(double x) {
+	double y0, y1;
+	int n = foldm_rem_pio2(x, &y0, &y1);
+	return foldm_ktan(y0, y1, 1 - ((n & 1) << 1));
 }
 
 static double foldm_exp(double x) {
@@ -6803,6 +6910,100 @@ static double foldm_exp(double x) {
 	return foldm_scalbn(y, ki);
 }
 
+static double foldm_log(double x) {
+	double ln2_hi = 6.93147180369123816490e-01,
+				 ln2_lo = 1.90821492927058770002e-10;
+	double two54 = 1.80143985094819840000e+16;
+	double Lg1 = 6.666666666666735130e-01, Lg2 = 3.999999999940941908e-01,
+				 Lg3 = 2.857142874366239149e-01, Lg4 = 2.222219843214978396e-01,
+				 Lg5 = 1.818357216161805012e-01, Lg6 = 1.531383769920937332e-01,
+				 Lg7 = 1.479819860511658591e-01;
+	double hfsq, f, s, z, R, w, t1, t2, dk;
+	int32_t k, hx, i, j;
+	uint32_t lx;
+	hx = foldm_hi(x);
+	lx = foldm_lo(x);
+	k = 0;
+	if (hx < 0x00100000) {
+		if (((hx & 0x7fffffff) | lx) == 0)
+			return -two54 / 0.0;
+		if (hx < 0)
+			return (x - x) / 0.0;
+		k -= 54;
+		x *= two54;
+		hx = foldm_hi(x);
+	}
+	if (hx >= 0x7ff00000)
+		return x + x;
+	k += (hx >> 20) - 1023;
+	hx &= 0x000fffff;
+	i = (hx + 0x95f64) & 0x100000;
+	x = foldm_sethi(x, (uint32_t)(hx | (i ^ 0x3ff00000)));
+	k += (i >> 20);
+	f = x - 1.0;
+	if ((0x000fffff & (2 + hx)) < 3) {
+		if (f == 0.0) {
+			if (k == 0)
+				return 0.0;
+			dk = (double)k;
+			return dk * ln2_hi + dk * ln2_lo;
+		}
+		R = f * f * (0.5 - 0.33333333333333333 * f);
+		if (k == 0)
+			return f - R;
+		dk = (double)k;
+		return dk * ln2_hi - ((R - dk * ln2_lo) - f);
+	}
+	s = f / (2.0 + f);
+	dk = (double)k;
+	z = s * s;
+	i = hx - 0x6147a;
+	w = z * z;
+	j = 0x6b851 - hx;
+	t1 = w * (Lg2 + w * (Lg4 + w * Lg6));
+	t2 = z * (Lg1 + w * (Lg3 + w * (Lg5 + w * Lg7)));
+	i |= j;
+	R = t2 + t1;
+	if (i > 0) {
+		hfsq = 0.5 * f * f;
+		if (k == 0)
+			return f - (hfsq - s * (hfsq + R));
+		return dk * ln2_hi - ((hfsq - (s * (hfsq + R) + dk * ln2_lo)) - f);
+	}
+	if (k == 0)
+		return f - s * (f - R);
+	return dk * ln2_hi - ((s * (f - R) - dk * ln2_lo) - f);
+}
+
+static double foldm_sinh_mag(double ax) {
+	if (ax < 0.5) {
+		double z = ax * ax;
+		double p = 1.0 +
+			z * (1.66666666666666657415e-01 +
+			z * (8.33333333333333321769e-03 +
+			z * (1.98412698412698412526e-04 +
+			z * (2.75573192239858925110e-06 +
+			z * (2.50521083854417187751e-08 +
+			z * 1.60590438368216145994e-10)))));
+		return ax * p;
+	}
+	double ex = foldm_exp(ax);
+	return 0.5 * (ex - 1.0 / ex);
+}
+
+static double foldm_cosh_mag(double ax) {
+	double ex = foldm_exp(ax);
+	return 0.5 * (ex + 1.0 / ex);
+}
+
+static double foldm_powi(double x, int n) {
+	int neg = n < 0, i, m = neg ? -n : n;
+	double r = 1.0;
+	for (i = 0; i < m; i++)
+		r *= x;
+	return neg ? 1.0 / r : r;
+}
+
 static int foldmath_eval(int id, int flt, uint64_t inbits, uint64_t *out) {
 	double x, res;
 	uint64_t ib;
@@ -6817,7 +7018,8 @@ static int foldmath_eval(int id, int flt, uint64_t inbits, uint64_t *out) {
 	if (x != x)
 		return 0;
 	memcpy(&ib, &x, sizeof ib);
-	if (id == 2) {
+	switch (id) {
+	case 2: {
 		int neg = (int)(ib >> 63);
 		uint64_t infb = 0x7ff0000000000000ull;
 		if ((ib & 0x7fffffffffffffffull) == 0x7ff0000000000000ull) {
@@ -6832,14 +7034,55 @@ static int foldmath_eval(int id, int flt, uint64_t inbits, uint64_t *out) {
 		} else {
 			res = foldm_exp(x);
 		}
-	} else {
+		break;
+	}
+	case 0:
+	case 1:
+	case 6: {
 		double ax;
 		if ((ib & 0x7fffffffffffffffull) >= 0x7ff0000000000000ull)
 			return 0;
 		ax = x < 0 ? -x : x;
 		if (ax > 1048576.0)
 			return 0;
-		res = foldm_sincos(id, x);
+		res = id == 6 ? foldm_tan(x) : foldm_sincos(id, x);
+		break;
+	}
+	case 3:
+	case 4:
+	case 5: {
+		double l;
+		if (x <= 0.0)
+			return 0;
+		l = foldm_log(x);
+		if (id == 3)
+			res = l;
+		else if (id == 4)
+			res = l / 0.69314718055994530942;
+		else
+			res = l / 2.30258509299404568402;
+		break;
+	}
+	case 8:
+	case 9:
+	case 10: {
+		double ax, s;
+		if ((ib & 0x7fffffffffffffffull) >= 0x7ff0000000000000ull)
+			return 0;
+		ax = x < 0 ? -x : x;
+		s = x < 0 ? -1.0 : 1.0;
+		if (id == 10) {
+			res = ax > 20.0 ? s * 1.0
+											: s * (foldm_sinh_mag(ax) / foldm_cosh_mag(ax));
+		} else {
+			if (ax > 709.782712893384)
+				return 0;
+			res = id == 9 ? foldm_cosh_mag(ax) : s * foldm_sinh_mag(ax);
+		}
+		break;
+	}
+	default:
+		return 0;
 	}
 	if (flt) {
 		float rf = (float)res;
@@ -6852,19 +7095,75 @@ static int foldmath_eval(int id, int flt, uint64_t inbits, uint64_t *out) {
 	return 1;
 }
 
+static int foldm_pow_eval(double x, double y, double *out) {
+	uint64_t xb;
+	double ry;
+	if (x != x || y != y)
+		return 0;
+	if (y == 0.0) {
+		*out = 1.0;
+		return 1;
+	}
+	if (x == 1.0) {
+		*out = 1.0;
+		return 1;
+	}
+	memcpy(&xb, &x, sizeof xb);
+	if ((xb & 0x7fffffffffffffffull) >= 0x7ff0000000000000ull)
+		return 0;
+	ry = foldm_rint(y);
+	if (ry == y && x > 0.0 && ry >= -64.0 && ry <= 64.0) {
+		*out = foldm_powi(x, (int)ry);
+		return 1;
+	}
+	return 0;
+}
+
+static int foldm_isconst(SValue *v, int bt) {
+	return (v->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST &&
+				 (v->type.t & VT_BTYPE) == bt;
+}
+
+static double foldm_svd(SValue *v, int flt) {
+	if (flt) {
+		float f;
+		uint32_t b;
+		memcpy(&b, &v->c.f, sizeof b);
+		memcpy(&f, &b, sizeof f);
+		return (double)f;
+	} else {
+		double d;
+		memcpy(&d, &v->c.d, sizeof d);
+		return d;
+	}
+}
+
+static void foldm_push(int bt, int flt, double res) {
+	CValue cv;
+	CType rtype;
+	rtype.t = bt;
+	rtype.ref = NULL;
+	if (flt) {
+		float rf = (float)res;
+		uint32_t b;
+		memcpy(&b, &rf, sizeof rf);
+		memcpy(&cv.f, &b, sizeof cv.f);
+	} else {
+		memcpy(&cv.d, &res, sizeof cv.d);
+	}
+	vsetc(&rtype, VT_CONST, &cv);
+}
+
 static int foldmath_try(Sym *ftype, int nb_args) {
 	SValue *fsv, *arg;
 	Sym *cs;
 	ElfSym *es;
 	const char *nm;
-	int nfn, bi, flt, bt;
+	int nfn, bi, flt, bt, id;
 	uint64_t inbits, res;
-	CValue cv;
-	CType rtype;
 
-	if (nb_args != 1)
+	if (nb_args < 1 || nb_args > 2)
 		return 0;
-	arg = vtop;
 	fsv = vtop - nb_args;
 	if (!(fsv->r & VT_SYM))
 		return 0;
@@ -6881,11 +7180,31 @@ static int foldmath_try(Sym *ftype, int nb_args) {
 			break;
 	if (bi == nfn)
 		return 0;
+	id = foldmath_tab[bi].id;
 	flt = foldmath_tab[bi].flt;
 	bt = flt ? VT_FLOAT : VT_DOUBLE;
-	if ((ftype->type.t & VT_BTYPE) != bt ||
-			(arg->r & (VT_VALMASK | VT_LVAL | VT_SYM)) != VT_CONST ||
-			(arg->type.t & VT_BTYPE) != bt)
+	if ((ftype->type.t & VT_BTYPE) != bt)
+		return 0;
+	if (id == 7) {
+		double xb, yb, pres;
+		if (nb_args != 2)
+			return 0;
+		if (!foldm_isconst(vtop - 1, bt) || !foldm_isconst(vtop, bt))
+			return 0;
+		xb = foldm_svd(vtop - 1, flt);
+		yb = foldm_svd(vtop, flt);
+		if (!foldm_pow_eval(xb, yb, &pres))
+			return 0;
+		vpop();
+		vpop();
+		vpop();
+		foldm_push(bt, flt, pres);
+		return 1;
+	}
+	if (nb_args != 1)
+		return 0;
+	arg = vtop;
+	if (!foldm_isconst(arg, bt))
 		return 0;
 	if (flt) {
 		uint32_t b;
@@ -6894,19 +7213,22 @@ static int foldmath_try(Sym *ftype, int nb_args) {
 	} else {
 		memcpy(&inbits, &arg->c.d, sizeof inbits);
 	}
-	if (!foldmath_eval(foldmath_tab[bi].id, flt, inbits, &res))
+	if (!foldmath_eval(id, flt, inbits, &res))
 		return 0;
 	vpop();
 	vpop();
-	rtype.t = bt;
-	rtype.ref = NULL;
-	if (flt) {
-		uint32_t b = (uint32_t)res;
-		memcpy(&cv.f, &b, sizeof cv.f);
-	} else {
-		memcpy(&cv.d, &res, sizeof cv.d);
+	{
+		double rd;
+		if (flt) {
+			float rf;
+			uint32_t b = (uint32_t)res;
+			memcpy(&rf, &b, sizeof rf);
+			rd = (double)rf;
+		} else {
+			memcpy(&rd, &res, sizeof rd);
+		}
+		foldm_push(bt, flt, rd);
 	}
-	vsetc(&rtype, VT_CONST, &cv);
 	return 1;
 }
 

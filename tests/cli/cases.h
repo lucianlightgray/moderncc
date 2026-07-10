@@ -110,6 +110,21 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -O0 -c {W}/fmc.c -o {W}/fmc.o && readelf -r {W}/fmc.o | grep -c sin",
 		 "1\n"},
 
+		{"foldmath_more_funcs", "cpu=x86_64,os=linux,optimizer",
+		 "printf 'double log(double);double log2(double);double log10(double);double tan(double);double pow(double,double);double sinh(double);double cosh(double);double tanh(double);int okc(double a,double b){double d=a-b;if(d<0)d=-d;return d<1e-9;}int main(void){if(!okc(log(2.0),0.69314718055994531))return 1;if(!okc(log2(8.0),3.0))return 2;if(!okc(log10(1000.0),3.0))return 3;if(!okc(tan(1.0),1.5574077246549023))return 4;if(!okc(pow(2.0,10.0),1024.0))return 5;if(!okc(pow(2.0,-3.0),0.125))return 6;if(!okc(pow(5.0,0.0),1.0))return 7;if(!okc(pow(1.0,99.0),1.0))return 8;if(!okc(sinh(1.0),1.1752011936438014))return 9;if(!okc(cosh(1.0),1.5430806348152437))return 10;if(!okc(tanh(0.5),0.46211715726000974))return 11;return 0;}\\n' > {W}/fm2.c && "
+		 "{MCC} -B{B} -I{I} -ffold-math -O0 -c {W}/fm2.c -o {W}/fm2_0.o && "
+		 "{MCC} -B{B} -I{I} -ffold-math -O1 -c {W}/fm2.c -o {W}/fm2_1.o && "
+		 "readelf -r {W}/fm2_0.o | grep -Ec 'log|tan|pow|sinh|cosh|tanh' ; "
+		 "{MCC} -B{B} -I{I} -ffold-math -O0 -run {W}/fm2.c && echo O0OK ; "
+		 "{MCC} -B{B} -I{I} -ffold-math -O1 -run {W}/fm2.c && echo O1OK",
+		 "0\nO0OK\nO1OK\n"},
+
+		{"foldmath_must_not_fold", "cpu=x86_64,os=linux,optimizer",
+		 "printf 'double log(double);double tan(double);double pow(double,double);double a(void){return log(-1.0);}double b(void){return tan(2000000.0);}double c(void){return pow(2.0,0.5);}double d(void){return pow(-2.0,3.0);}\\n' > {W}/fm3.c && "
+		 "{MCC} -B{B} -I{I} -ffold-math -O0 -c {W}/fm3.c -o {W}/fm3.o && "
+		 "readelf -r {W}/fm3.o | grep -c log ; readelf -r {W}/fm3.o | grep -c tan ; readelf -r {W}/fm3.o | grep -c pow",
+		 "1\n1\n2\n"},
+
 		{"O3_float_return_inline", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'static double f(double x){return x*2.0+1.0;} static float g(float x){return x*3.0f+0.5f;} static double h(int a,int b){return (double)a/(double)b+0.25;} static int ii(int x){return x*2+1;} int main(void){ if(f(10.0)!=21.0)return 1; if(g(4.0f)!=12.5f)return 2; if(h(7,2)!=3.75)return 3; if(ii(20)!=41)return 4; return 0; }\\n' > {W}/fi.c && "
 		 "{MCC} -B{B} -I{I} -O0 -run {W}/fi.c && echo O0OK && "
