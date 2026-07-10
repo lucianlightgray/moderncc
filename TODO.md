@@ -361,3 +361,16 @@ tree edit) simply misses.
       Ship a cli/unit test: resolve dir, round-trip an entry, prove a hash
       match warm-starts and a hash mismatch (edited intention) misses, and
       skip cleanly where no writable home exists.
+
+## 19. BUG: float/double-return inline graft miscomputes at -O3
+
+- [ ] Surfaced while validating local const-prop (independent of it —
+      reproduces on stock compiler and with `MCC_AST_TEMPLATES=0`): a
+      `double`-returning function inlined into a caller at `-O3`
+      (`MCC_AST_INLINE`) produces the wrong value; `int`-return is fine.
+      The AST inline graft (`ast_reemit_forward_inlines` / replay inline
+      driver in `mccast.c`) mishandles the float return register/slot.
+      Not caught by the exec-replay ctest columns (none enable inline).
+      Repro: a small `double f(...){...}` called in `main` at -O3, diff
+      vs `-O0`. Fix the float-return graft; add an inline-column exec
+      golden with float/double returns so the suite covers it.

@@ -3567,6 +3567,186 @@ static int ast_ident_run(AstArena *a) {
 	return sig;
 }
 
+#define AST_CPROP_MAX 128
+static int ast_cprop_koff[AST_CPROP_MAX];
+static int ast_cprop_ktt[AST_CPROP_MAX];
+static uint64_t ast_cprop_kval[AST_CPROP_MAX];
+static int ast_cprop_kn;
+static int ast_cprop_folds;
+
+static int ast_cprop_is_local(AstArena *a, AstLocal n, int *off, int *tt) {
+	if (n == AST_NONE || ast_kind(a, n) != AST_Ref)
+		return 0;
+	int r = ast_op(a, n);
+	if ((r & VT_VALMASK) != VT_LOCAL || !(r & VT_LVAL) || (r & VT_SYM))
+		return 0;
+	int t = ast_type_t(a, n);
+	if (!ast_ident_intt(t) || (t & VT_VOLATILE))
+		return 0;
+	*off = (int)(int64_t)ast_ival(a, n);
+	*tt = t;
+	return 1;
+}
+
+static int ast_cprop_escapes(AstArena *a, int off) {
+	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++) {
+		if (ast_kind(a, n) != AST_Unary)
+			continue;
+		int op = ast_op(a, n);
+		if (op != AST_OP_ADDR && op != AST_OP_MEMBER && op != AST_OP_MEMBER_ARROW)
+			continue;
+		AstLocal c = ast_first_child(a, n);
+		if (c == AST_NONE || ast_kind(a, c) != AST_Ref)
+			continue;
+		int r = ast_op(a, c);
+		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM) &&
+				(int)(int64_t)ast_ival(a, c) == off)
+			return 1;
+	}
+	return 0;
+}
+
+static int ast_cprop_safe(AstArena *a, AstLocal n) {
+	if (ast_type_t(a, n) & VT_VOLATILE)
+		return 0;
+	switch (ast_kind(a, n)) {
+	case AST_Literal:
+	case AST_Ref:
+	case AST_Load:
+	case AST_Convert:
+	case AST_Binary:
+		break;
+	case AST_Unary:
+		switch (ast_op(a, n)) {
+		case AST_OP_ADDR:
+		case AST_OP_MEMBER:
+		case AST_OP_MEMBER_ARROW:
+			break;
+		default:
+			return 0;
+		}
+		break;
+	case AST_If:
+		if (ast_op(a, n) != 5)
+			return 0;
+		break;
+	default:
+		return 0;
+	}
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		if (!ast_cprop_safe(a, c))
+			return 0;
+	return 1;
+}
+
+static int ast_cprop_find(int off) {
+	for (int i = 0; i < ast_cprop_kn; i++)
+		if (ast_cprop_koff[i] == off)
+			return i;
+	return -1;
+}
+
+static void ast_cprop_kill(int off) {
+	int i = ast_cprop_find(off);
+	if (i < 0)
+		return;
+	ast_cprop_kn--;
+	ast_cprop_koff[i] = ast_cprop_koff[ast_cprop_kn];
+	ast_cprop_ktt[i] = ast_cprop_ktt[ast_cprop_kn];
+	ast_cprop_kval[i] = ast_cprop_kval[ast_cprop_kn];
+}
+
+static void ast_cprop_gen(int off, int tt, uint64_t v) {
+	int i = ast_cprop_find(off);
+	if (i < 0) {
+		if (ast_cprop_kn >= AST_CPROP_MAX)
+			return;
+		i = ast_cprop_kn++;
+		ast_cprop_koff[i] = off;
+	}
+	ast_cprop_ktt[i] = tt;
+	ast_cprop_kval[i] = v;
+}
+
+static int ast_cprop_lval_op(int op) {
+	switch (op) {
+	case AST_OP_ADDR:
+	case AST_OP_MEMBER:
+	case AST_OP_MEMBER_ARROW:
+	case TOK_INC:
+	case TOK_DEC:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+static void ast_cprop_rewrite(AstArena *a, AstLocal n, int lval) {
+	if (n == AST_NONE)
+		return;
+	uint16_t k = ast_kind(a, n);
+	if (k == AST_Ref && !lval) {
+		int off, tt;
+		if (ast_cprop_is_local(a, n, &off, &tt)) {
+			int i = ast_cprop_find(off);
+			if (i >= 0 && ast_cprop_ktt[i] == tt) {
+				ast_ident_setlit(a, n, tt, ast_cprop_kval[i]);
+				ast_cprop_folds++;
+			}
+		}
+		return;
+	}
+	if (k == AST_Store) {
+		ast_cprop_rewrite(a, ast_child(a, n, 0), 1);
+		ast_cprop_rewrite(a, ast_child(a, n, 1), 0);
+		return;
+	}
+	int clval = k == AST_Unary && ast_cprop_lval_op(ast_op(a, n));
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		ast_cprop_rewrite(a, c, clval);
+}
+
+static void ast_cprop_block(AstArena *a, AstLocal bb) {
+	ast_cprop_kn = 0;
+	for (AstLocal s = ast_first_child(a, bb); s != AST_NONE; s = ast_next_sib(a, s)) {
+		uint16_t k = ast_kind(a, s);
+		if (k == AST_Store) {
+			AstLocal lval = ast_child(a, s, 0), val = ast_child(a, s, 1);
+			if (!ast_cprop_safe(a, lval) || !ast_cprop_safe(a, val)) {
+				ast_cprop_kn = 0;
+				continue;
+			}
+			ast_cprop_rewrite(a, val, 0);
+			ast_cprop_rewrite(a, lval, 1);
+			int off, tt;
+			if (ast_cprop_is_local(a, lval, &off, &tt) && !ast_cprop_escapes(a, off)) {
+				int lt;
+				uint64_t lv;
+				if (ast_ident_cval(a, val, &lt, &lv) && lt == tt)
+					ast_cprop_gen(off, tt, lv);
+				else
+					ast_cprop_kill(off);
+			}
+		} else if (k == AST_Return) {
+			if (ast_cprop_safe(a, ast_first_child(a, s)))
+				ast_cprop_rewrite(a, ast_first_child(a, s), 0);
+			ast_cprop_kn = 0;
+		} else {
+			ast_cprop_kn = 0;
+		}
+	}
+}
+
+static int ast_cprop_run(AstArena *a) {
+	ast_cprop_folds = 0;
+	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++)
+		if (ast_kind(a, n) == AST_BasicBlock)
+			ast_cprop_block(a, n);
+	return ast_cprop_folds;
+}
+
 static int ast_replay_ok(AstArena *a) {
 	if (ast_bail || ast_desync || ast_vn != 0 || ast_cf_top != 0)
 		return 0;
@@ -3663,6 +3843,7 @@ void ast_func_end(Sym *sym) {
 			int promoted = 0;
 			int bfolds = 0;
 			int idents = 0;
+			int cprops = 0;
 			jmp_buf ast_outer_jmp;
 			int ast_outer_en = mcc_state->error_set_jmp_enabled;
 			int ast_saved_nberr = mcc_state->nb_errors;
@@ -3690,8 +3871,10 @@ void ast_func_end(Sym *sym) {
 
 				bfolds = faithful && ast_templates_env ? ast_bfold_run(ast_cur) : 0;
 				idents = faithful && ast_templates_env ? ast_ident_run(ast_cur) : 0;
+				cprops = faithful && ast_templates_env ? ast_cprop_run(ast_cur) : 0;
 				int do_bfold = bfolds > 0;
 				int do_ident = idents > 0;
+				int do_cprop = cprops > 0;
 				int do_inline = faithful && ast_has_graftable_call(ast_cur);
 				/* Tier-4 inline and call-ful Tier-3 promotion both claim the
 				   callee-saved bank (RBX/R12-R15); combining them in one function
@@ -3700,9 +3883,10 @@ void ast_func_end(Sym *sym) {
 				ast_no_callful_promo = do_inline;
 				int do_promote = faithful && ast_promote_env && ast_plan_promotion(ast_cur) > 0;
 				ast_no_callful_promo = 0;
-				if (faithful && !do_inline && !do_promote && !do_bfold && !do_ident)
+				if (faithful && !do_inline && !do_promote && !do_bfold && !do_ident &&
+						!do_cprop)
 					loc = saved_loc;
-				if (do_inline || do_promote || do_bfold || do_ident) {
+				if (do_inline || do_promote || do_bfold || do_ident || do_cprop) {
 					ind = ast_body_ind_sv;
 					rsym = 0;
 					if (ast_rsec)
@@ -3710,7 +3894,7 @@ void ast_func_end(Sym *sym) {
 					nocode_wanted = 0;
 					loc = saved_loc;
 					anon_sym = saved_anon;
-					ast_fconst_i = (do_bfold || do_ident) ? ast_fconst_n : 0;
+					ast_fconst_i = (do_bfold || do_ident || do_cprop) ? ast_fconst_n : 0;
 					ast_locrec_i = 0;
 					ast_replaying = 1;
 					ast_rp_switch = NULL;
@@ -3771,6 +3955,8 @@ void ast_func_end(Sym *sym) {
 					fprintf(stderr, "[ast-bfold] %d %s\n", bfolds, funcname);
 				if (idents)
 					fprintf(stderr, "[ast-ident] %d %s\n", idents, funcname);
+				if (cprops)
+					fprintf(stderr, "[ast-cprop] %d %s\n", cprops, funcname);
 				if (promoted)
 					fprintf(stderr, "[ast-promote] %d %s\n", promoted, funcname);
 			}

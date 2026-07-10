@@ -45,7 +45,7 @@ Status: `[ ]` open · `[~]` claimed/in-progress · `[x]` landed (commit)
 ### Tier 2 — dataflow within a function
 
 - [ ] **Sparse conditional constant propagation** — Wegman–Zadeck SCCP.
-- [ ] **Copy propagation** (Aho–Sethi–Ullman dragon-book dataflow).
+- [x] **Copy/constant propagation** (Aho–Sethi–Ullman dragon-book; local, `ast_cprop_run`).
 - [ ] **Dead code elimination** (liveness via **Kildall's algorithm**
       worklist dataflow).
 - [ ] **Common subexpression elimination** — Cocke's available
@@ -316,3 +316,25 @@ dlmf.nist.gov/3.11 (minimax polynomial approximations).
 - ctest `hypervisor-tpe` added; full suite **1796 green**. mcchv is a
   tool (no self-host fixpoint needed).
 - Tier-2 local value numbering subagent still in flight.
+
+### 2026-07-10 — iteration 10 (Tier-2 local constant propagation)
+
+- **Local constant propagation LANDED** (`ast_cprop_run`, third sibling
+  of bfold/ident): within a basic block, `Store(Ref local, Literal)`
+  gens a constant and a later rvalue-position `Ref` to that local is
+  retagged to the literal (cascades through `int b=a;`). Guards:
+  address-not-taken, integer-scalar non-volatile non-bitfield,
+  type-exact, straight-line only (Return/If/Jump/call/store-through-ptr
+  clear the map). Fires in ~10 test functions.
+- **Decision recorded**: true LVN/CSE (Cocke available-expressions,
+  Alpern–Wegman–Zadeck value numbering) is **not expressible** in the
+  replay AST vocabulary — no temp/value-reference node kind, and new
+  node kinds are out of scope — so the realizable Tier-2 win is local
+  const/copy propagation, which retags reads to literals in place.
+  CSE/GVN stays open, blocked on an AST value-ref node (future work).
+- **1801 tests green** (+5 cprop rows), fixpoint byte-identical at -O2,
+  -O0 objects unchanged.
+- Surfaced a **pre-existing -O3 inlining bug** (float/double-return
+  graft miscomputes; independent of cprop, reproduces on stock
+  compiler) — ticketed as TODO §19; not caught by the suite because no
+  exec-replay column enables inline.
