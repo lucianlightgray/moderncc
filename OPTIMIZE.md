@@ -660,3 +660,18 @@ Every remaining named algorithm now hits a hard structural blocker:
 Next: a feasibility study of the minimal AST value-reference node — does
 one exist that unblocks CSE/GVN/LICM without desyncing the replay slot
 machinery, and at what risk — to decide whether to lift the scope.
+
+### 2026-07-10 — iteration 24 (pass composition proof)
+
+- Demonstrated the tree passes **compose** (each enabling the next) on
+  one function `chain(x)`: `int flag=0` → **cprop** propagates the 0 →
+  **sccp** folds the now-`if(0)` dead arm away → the overwritten
+  `int r=x*2; r=x+1` → **dse** drops the dead store → `if(y){return
+  r;}else{return r;}` identical arms → **jt** collapses to `r`.
+  Replay dump shows cprop+sccp+dse+jt all fire on the single function;
+  ident's `x+0` is emitter-native (no announce). Output correct and
+  identical (6) at -O0/-O1/-O2/-O3 — the pipeline cooperates, not just
+  each pass in isolation.
+- CSE feasibility subagent found a safe path (reuse an existing named
+  local as the value-reference — no new node kind, no slot desync) and
+  is implementing; harvest next.
