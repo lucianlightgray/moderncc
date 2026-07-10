@@ -448,6 +448,19 @@ Implementation (decided 2026-07-10):
 - **No eviction.** One small file per TU/fn under `host_cache_dir()`;
   the dir grows with distinct inputs and is user/OS-clearable. Ship a
   documented `mcc --clear-cache` (equivalent to removing the dir).
+- **Key = fully alpha-renamed intention hash.** The per-function key
+  hashes the replay-relevant fields in canonical child order — kind, op,
+  `type_btype`, const payload, `sym_role` — with **every identifier
+  normalized to a positional placeholder** (locals/params AND
+  callees/globals: 1st-local, 1st-callee, …), excluding addresses,
+  capture-order slots, and source positions. So structurally identical
+  functions/TUs share a checkpoint regardless of names — maximal hits, and
+  safe because a config-only hit merely *warm-starts* a search that
+  self-corrects (A/B keep-best). The whole-TU key is the same normalization
+  over the post-preprocess form. NOTE: a machine-code / JIT-result tier
+  (§18/§25) must additionally key on **real callee identity** (or re-verify
+  on hit) — for stored executable bytes a wrong match is incorrect, not
+  merely suboptimal.
 
 ## 22. Per-function search granularity (medium-large)
 
@@ -456,8 +469,23 @@ size. Move the choice into the per-function replay (`ast_func_end`),
 picking the size-best pass subset per captured function. This is the unit
 §18's intention hash was designed for (per-function `AstArena`) and turns
 the §21 cache and the §24 selector per-function. Keep `-O0..-O3`
-byte-identical (still gated on `optimize_search_seconds>0`). Builds on
-§21 + the capture/replay driver.
+byte-identical (still gated on `optimize_search_seconds>0`).
+
+Decided 2026-07-10:
+- **Per-function replaces whole-TU.** Each function is searched
+  independently in `ast_func_end`; the "TU config" is just the composed
+  per-function winners, and the whole-TU cache tier degrades to a
+  fast-path "all functions already converged" marker. One search model,
+  naturally per-function-cached (§21) and hot-sliceable (§24).
+- **Config applied in-process via the `do_*` flags.** Replace the
+  `MCC_AST_*` env-gate reads on the search path with an in-process
+  per-function config struct that sets `do_bfold/promote/inline/...`
+  directly — the search becomes an in-compiler loop over one function's
+  replay, no `fork`, no env. The env gates stay as a manual override for
+  debugging. (Retires the child-process model of §f959078e for the
+  per-function path.)
+
+Builds on §21 + the capture/replay driver.
 
 ## 23. Widen the inliner envelope — the "aggressive" mode (medium-large, correctness-sensitive)
 
@@ -537,3 +565,25 @@ fastest). This is the only rung that makes `-O<N>` genuinely *generate*
 algorithms rather than select among hand-written ones. Builds on §22 +
 §24 + §25; needs a soundness oracle (differential test each synthesized
 rule against the faithful replay before it may fire).
+
+## 29. `Convert` representation optimizer — search type conversions (large, correctness-sensitive)
+
+A search-driven pass that tries re-typing values via the `AST_Convert`
+node: for each value/expression, cast it to alternative representations
+(narrow/widen integer widths, signed↔unsigned, int↔float↔double) and keep
+the one that scores best (§25 size/JIT) among those **provably
+value-equivalent**. "Cast to all other types" is a brute-force dimension
+over the type lattice per value, so it is a *search* transform, not an
+always-on pass, and every candidate cast is gated by the same soundness
+oracle §28 needs: the re-typed computation must round-trip / stay in range
+(static range analysis, or a differential test against the faithful replay
+before the cast may fire). Wrong casts change semantics — the gate is
+hard: bail to the original type on anything unproven, never fold a cast
+that could overflow/lose precision/alias-pun. Staged: (a) standalone
+bounded first cut — provably-safe narrowing only (`i64→i32` when the value
+range fits, `f64→f32` when exactly representable), lands like the other
+AST passes; (b) full form — the §22 search picks per-value representations
+under the oracle, scored by §25 and cached by §21. Builds on §22 + §25 +
+§28's soundness oracle. Gate on `-O0..-O3` byte-identity + an exec-golden
+column that checks the re-typed result equals the original across edge
+values (min/max, overflow boundary, non-representable floats).
