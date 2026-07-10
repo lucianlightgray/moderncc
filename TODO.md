@@ -573,6 +573,20 @@ Decided 2026-07-10:
   adds time, so min is the cleanest true-cost estimate), plus peak RSS from
   `getrusage`. Raise K when run-to-run variance is high, lower when stable.
   Portable (no perf counters).
+- **`-g` logging mechanism.** Under `-g` the compiler inserts minimal
+  logging at fn-entry and branch/switch keys into a fixed-size in-memory
+  freq-counted ring, flushed to the value cache on exit — bounded memory
+  and overhead, accumulating across runs.
+- **Oracle inputs (shared by §28/§29/§30).** The differential-equivalence
+  test runs original vs transformed over `harness inputs ∪ -g hot values ∪
+  per-type edges` (min/max/0/overflow boundary/non-representable float) —
+  consistent with scoring, targeting values that actually occur.
+- **Sampling-soundness policy.** A sampled/differential-only equivalence is
+  **never** trusted in the shipped `-O0..-O3` static object — that requires
+  a static proof or exhaustive enumeration. The **runtime JIT (§26) may**
+  fire sampled-equivalent transforms because it shadow-validates each
+  against the original on real inputs before swapping and rolls back on any
+  divergence. Keeps the binary provably correct; lets the runtime speculate.
 
 ## 26. `--embed-jit` runtime self-optimizer (largest — run LAST)
 
@@ -618,6 +632,10 @@ permutation exhaustion or a wall-clock cap**.
 - **Hot detection = per-site atomic call counters, hottest first.** A cheap
   `atomic ++count` at each site orders the work (highest count first) and
   also refines the `-g` hot-value cache (§25) / hot-slice ranking (§24).
+- **Shadow-validate before swap.** Because the runtime may use sampled
+  equivalence (§25 policy), each candidate is shadow-run against the
+  original on real inputs and only swapped in if it matches; any later
+  divergence rolls back to the previous buffer (the triple-buffer keeps it).
 - **Thread pool = default `cores-1`, `--jit-threads=<n>` override.** Scales
   to spare cores for fast convergence, leaving one for the program; tunable
   per build.
