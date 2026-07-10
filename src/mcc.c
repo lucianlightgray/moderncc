@@ -296,17 +296,20 @@ static void so_on_stop(int sig) {
 }
 
 #define SO_INLINE_LIMIT_MAX 160
-#define SO_CKPT_FMT 2u
+#define SO_CKPT_FMT 3u
 #define SO_GATE_SPACE (16u * (SO_INLINE_LIMIT_MAX + 1))
 #define SO_BUDGET_SPACE 9u
+#define SO_LIMIT_SPACE 5u
 #define SO_SLICE_FACTOR 8u
 
 typedef struct {
 	uint32_t fmt;
 	uint32_t best_gate;
 	uint32_t best_budget;
+	uint32_t best_limit;
 	uint32_t gate_cursor;
 	uint32_t budget_cursor;
+	uint32_t limit_cursor;
 	uint32_t round;
 	int64_t best_text;
 	uint64_t key;
@@ -376,11 +379,14 @@ static void so_ckpt_write(const char *path, const SoCkpt *nw) {
 				out.best_text = b.best_text;
 				out.best_gate = b.best_gate;
 				out.best_budget = b.best_budget;
+				out.best_limit = b.best_limit;
 			}
 			if (b.gate_cursor > out.gate_cursor)
 				out.gate_cursor = b.gate_cursor;
 			if (b.budget_cursor > out.budget_cursor)
 				out.budget_cursor = b.budget_cursor;
+			if (b.limit_cursor > out.limit_cursor)
+				out.limit_cursor = b.limit_cursor;
 			if (b.round > out.round)
 				out.round = b.round;
 		}
@@ -406,16 +412,19 @@ static void so_ckpt_write(const char *path, const SoCkpt *nw) {
 static const int so_nodes[SO_NNODE] = {64, 128, 256};
 static const int so_graft[SO_NGRAFT] = {2048, 4096, 8192};
 
+static const int so_limits[SO_LIMIT_SPACE] = {-1, 64, 16, 4, 1};
+
 static int so_gate_dead(unsigned gate) {
 	return !((gate >> 2) & 1) && (gate >> 4) != 0;
 }
 
-static void so_setenv_cfg(unsigned gate, unsigned budget) {
+static void so_setenv_cfg(unsigned gate, unsigned budget, unsigned limit_lvl) {
 	char buf[32];
 	unsigned limit = gate >> 4;
 	int inl = (gate >> 2) & 1;
 	int nsel = (int)(budget % SO_NNODE);
 	int gsel = (int)((budget / SO_NNODE) % SO_NGRAFT);
+	int lv = so_limits[limit_lvl % SO_LIMIT_SPACE];
 	setenv("MCC_SEARCH_WORKER", "1", 1);
 	setenv("MCC_AST_TEMPLATES", (gate & 1) ? "1" : "0", 1);
 	setenv("MCC_AST_PROMOTE", (gate >> 1) & 1 ? "1" : "0", 1);
@@ -427,6 +436,9 @@ static void so_setenv_cfg(unsigned gate, unsigned budget) {
 	setenv("MCC_AST_INLINE_NODES", buf, 1);
 	snprintf(buf, sizeof buf, "%d", so_graft[gsel]);
 	setenv("MCC_AST_GRAFT", buf, 1);
+	snprintf(buf, sizeof buf, "%d", lv);
+	setenv("MCC_AST_PROMOTE_LIMIT", buf, 1);
+	setenv("MCC_AST_OPT_LIMIT", buf, 1);
 }
 
 static long so_filesize(const char *p) {
@@ -512,8 +524,9 @@ static int so_spawn_timeout(const char **cv, unsigned timeout_ms) {
 }
 
 static long so_eval(const char **cv, const char *cand_tmp, unsigned gate,
-										unsigned budget, unsigned timeout_ms) {
-	so_setenv_cfg(gate, budget);
+										unsigned budget, unsigned limit_lvl,
+										unsigned timeout_ms) {
+	so_setenv_cfg(gate, budget, limit_lvl);
 	if (so_spawn_timeout(cv, timeout_ms) != 0)
 		return -1;
 	return so_textsize(cand_tmp);
@@ -523,8 +536,9 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 															 const char *outfile) {
 	unsigned budget_ms = s->optimize_search_seconds * 1000u;
 	unsigned start = host_clock_ms();
-	unsigned best_gate = 0, best_budget = 0;
-	unsigned gate_cur = 0, budget_cur = 0, round = 0, tried = 0, base_ms, cap_ms;
+	unsigned best_gate = 0, best_budget = 0, best_limit = 0;
+	unsigned gate_cur = 0, budget_cur = 0, limit_cur = 0, round = 0, tried = 0;
+	unsigned base_ms, cap_ms;
 	long best;
 	char exe[1024], best_tmp[1200], cand_tmp[1200], ckpt[3200];
 	const char **cv;
@@ -539,8 +553,10 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 	if (have_ckpt && so_ckpt_read(ckpt, key, &ck) == 0) {
 		best_gate = ck.best_gate;
 		best_budget = ck.best_budget;
+		best_limit = ck.best_limit;
 		gate_cur = ck.gate_cursor;
 		budget_cur = ck.budget_cursor;
+		limit_cur = ck.limit_cursor;
 		round = ck.round;
 	}
 	cv = mcc_malloc((argc + 4) * sizeof *cv);
@@ -559,7 +575,7 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 
 	{
 		unsigned t0 = host_clock_ms(), dt;
-		best = so_eval(cv, cand_tmp, best_gate, best_budget, 300000u);
+		best = so_eval(cv, cand_tmp, best_gate, best_budget, best_limit, 300000u);
 		dt = host_clock_ms() - t0;
 		base_ms = (dt ? dt : 1u) * SO_SLICE_FACTOR;
 		cap_ms = dt * 4u < 2000u ? 2000u : dt * 4u;
@@ -573,16 +589,17 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 	}
 
 	while (!so_stop && host_clock_ms() - start < budget_ms &&
-				 (gate_cur < SO_GATE_SPACE || budget_cur < SO_BUDGET_SPACE)) {
+				 (gate_cur < SO_GATE_SPACE || budget_cur < SO_BUDGET_SPACE ||
+					limit_cur < SO_LIMIT_SPACE)) {
 		unsigned slice = base_ms << (round < 16 ? round : 16);
-		unsigned g_dead = host_clock_ms() + slice, b_dead;
+		unsigned g_dead = host_clock_ms() + slice, b_dead, l_dead;
 		while (!so_stop && gate_cur < SO_GATE_SPACE && host_clock_ms() < g_dead &&
 					 host_clock_ms() - start < budget_ms) {
 			unsigned g = gate_cur++;
 			long sz;
 			if (so_gate_dead(g))
 				continue;
-			sz = so_eval(cv, cand_tmp, g, best_budget, cap_ms);
+			sz = so_eval(cv, cand_tmp, g, best_budget, best_limit, cap_ms);
 			tried++;
 			if (sz >= 0 && sz < best) {
 				best = sz;
@@ -594,11 +611,23 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 		while (!so_stop && budget_cur < SO_BUDGET_SPACE && host_clock_ms() < b_dead &&
 					 host_clock_ms() - start < budget_ms) {
 			unsigned b = budget_cur++;
-			long sz = so_eval(cv, cand_tmp, best_gate, b, cap_ms);
+			long sz = so_eval(cv, cand_tmp, best_gate, b, best_limit, cap_ms);
 			tried++;
 			if (sz >= 0 && sz < best) {
 				best = sz;
 				best_budget = b;
+				so_copy(cand_tmp, best_tmp);
+			}
+		}
+		l_dead = host_clock_ms() + slice;
+		while (!so_stop && limit_cur < SO_LIMIT_SPACE && host_clock_ms() < l_dead &&
+					 host_clock_ms() - start < budget_ms) {
+			unsigned l = limit_cur++;
+			long sz = so_eval(cv, cand_tmp, best_gate, best_budget, l, cap_ms);
+			tried++;
+			if (sz >= 0 && sz < best) {
+				best = sz;
+				best_limit = l;
 				so_copy(cand_tmp, best_tmp);
 			}
 		}
@@ -611,15 +640,18 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 		ck.key = key;
 		ck.best_gate = best_gate;
 		ck.best_budget = best_budget;
+		ck.best_limit = best_limit;
 		ck.gate_cursor = gate_cur;
 		ck.budget_cursor = budget_cur;
+		ck.limit_cursor = limit_cur;
 		ck.round = round;
 		ck.best_text = best;
 		so_ckpt_write(ckpt, &ck);
 	}
 	if (s->verbose)
-		printf("superopt: %u evals in %ums, best gate %u budget %u -> %ld .text\n",
-					 tried, host_clock_ms() - start, best_gate, best_budget, best);
+		printf("superopt: %u evals in %ums, best gate %u budget %u limit %u -> %ld .text\n",
+					 tried, host_clock_ms() - start, best_gate, best_budget, best_limit,
+					 best);
 	i = so_copy(best_tmp, outfile);
 	remove(best_tmp);
 	mcc_free(cv);
