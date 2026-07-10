@@ -415,6 +415,37 @@ static long so_filesize(const char *p) {
 	return stat(p, &st) == 0 ? (long)st.st_size : -1;
 }
 
+static long so_textsize(const char *p) {
+	FILE *f = host_fopen(p, "rb");
+	unsigned char h[64];
+	long total = 0;
+	uint64_t shoff, flags, size;
+	uint16_t shentsize, shnum, i;
+	if (!f)
+		return -1;
+	if (fread(h, 1, sizeof h, f) < 64 || h[0] != 0x7f || h[1] != 'E' ||
+			h[2] != 'L' || h[3] != 'F' || h[4] != 2) {
+		fclose(f);
+		return so_filesize(p);
+	}
+	memcpy(&shoff, h + 40, 8);
+	memcpy(&shentsize, h + 58, 2);
+	memcpy(&shnum, h + 60, 2);
+	for (i = 0; i < shnum; i++) {
+		unsigned char sh[64];
+		if (fseek(f, (long)(shoff + (uint64_t)i * shentsize), SEEK_SET) != 0)
+			break;
+		if (fread(sh, 1, sizeof sh, f) < 40)
+			break;
+		memcpy(&flags, sh + 8, 8);
+		memcpy(&size, sh + 32, 8);
+		if (flags & 0x4u)
+			total += (long)size;
+	}
+	fclose(f);
+	return total > 0 ? total : so_filesize(p);
+}
+
 static int so_copy(const char *src, const char *dst) {
 	FILE *in, *out;
 	char buf[8192];
@@ -482,7 +513,7 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 			continue;
 		so_setenv_seed(seed);
 		if (host_spawn_wait(cv) == 0) {
-			sz = so_filesize(cand_tmp);
+			sz = so_textsize(cand_tmp);
 			if (sz >= 0 && (best < 0 || sz < best)) {
 				best = sz;
 				best_seed = seed;
