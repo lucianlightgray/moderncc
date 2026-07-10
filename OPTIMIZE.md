@@ -24,7 +24,8 @@ fixpoint byte-identical + -O0 objects unchanged):
 | 6 | `-O<N>` timed superoptimizer + intention warm cache | 4 | b6dc3f6b/db006639 |
 | 7 | TPE Bayesian search (`--search tpe`) | 4 | 80feb6d9 |
 | 8 | mccbench stats: Welch t + bootstrap CI + Cohen's d | — | 9d03445e |
-| 9 | Self-recursive tail-call → loop | 3 | (this iter) |
+| 9 | Self-recursive tail-call → loop | 3 | 187880a4 |
+| 10 | Jump threading / branch simplification | 3 | (this iter) |
 | ✚ | -O3 float-return inline miscompile FIX | — | 40ca21cf |
 
 Open / blocked: Tier-1 peephole (emitter byte-identity risk); SCCP
@@ -85,7 +86,7 @@ Status: `[ ]` open · `[~]` claimed/in-progress · `[x]` landed (commit)
       Knoop–Rüthing–Steffen as the refinement).
 - [ ] **Induction-variable strength reduction** (Allen–Cocke–Kennedy).
 - [x] **Tail-call elimination** (self-recursive tail-call → loop; `ast_tco_run`).
-- [ ] **Jump threading / branch folding** over the replay basic blocks.
+- [x] **Jump threading / branch simplification** (empty-both / identical-arms if; `ast_jt_run`).
 - [ ] **Graph-coloring register allocation** (Chaitin–Briggs) — replaces
       the pinned-register promotion heuristic; largest item, last.
 
@@ -599,3 +600,25 @@ dlmf.nist.gov/3.11 (minimax polynomial approximations).
   cmake-debug`. Verified FIXPOINT OK on the current tree. Standing
   campaign gate now scriptable, not folklore.
 - Jump-threading / branch-simplification subagent still in flight.
+
+### 2026-07-10 — iteration 22 (Tier-3 jump threading / branch simplification)
+
+- **Jump threading LANDED** (`ast_jt_run`, seventh sibling). Two folds on
+  a plain `AST_If` (op 0) with a **pure** condition: (A) both arms empty
+  → retag the whole If to Poison (drop it; pure cond has no effect); (B)
+  both arms present, no label defs, structurally equal (ast_ident_same)
+  → retag to a BasicBlock of the common arm, executed unconditionally.
+  Honest finding: keeping an *impure* condition as a bare statement is
+  NOT expressible (a bare Binary/expr hits replay's `default:` and is
+  dropped, silently losing the side effect), so the pass fires only on
+  pure conditions — impure `if(f())` with empty/equal arms stays intact.
+  Reuses ast_ident_pure / ast_ident_same / sccp label-safety.
+- 1822 green (fixpoint verified via the new scripts/selfhost-fixpoint.sh
+  helper — byte-identical), -O0 objects identical, side-effect counter
+  byte-equal O0..O3.
+- **Eight tree passes** (bfold, ident, cprop, dse, sccp, tco, jt) +
+  -O4+ superoptimizer/TPE + bench stats. Remaining named items are the
+  hard-blocked/large ones: CSE/GVN + SCCP value-lattice (need an AST
+  value-ref node), Sethi–Ullman + peephole (codegen-order/emitter
+  byte-identity risk), LICM / IV-strength-reduction / Chaitin–Briggs
+  (large Tier-3), and deterministic sin/exp (deferred, -ffast-math).

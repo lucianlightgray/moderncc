@@ -3881,6 +3881,44 @@ static int ast_sccp_run(AstArena *a) {
 	return ast_sccp_folds;
 }
 
+static int ast_jt_folds;
+
+static int ast_jt_arm_empty(AstArena *a, AstLocal arm) {
+	return arm == AST_NONE ||
+				 (ast_kind(a, arm) == AST_BasicBlock && ast_nchild(a, arm) == 0);
+}
+
+static int ast_jt_run(AstArena *a) {
+	ast_jt_folds = 0;
+	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++) {
+		if (ast_kind(a, n) != AST_If || ast_op(a, n) != 0)
+			continue;
+		AstLocal cond = ast_child(a, n, 0);
+		if (cond == AST_NONE || !ast_ident_pure(a, cond))
+			continue;
+		AstLocal thenbb = ast_child(a, n, 1);
+		AstLocal elsebb = ast_child(a, n, 2);
+		if (ast_jt_arm_empty(a, thenbb) && ast_jt_arm_empty(a, elsebb)) {
+			ast_set_kind(a, n, AST_Poison);
+			ast_clear_children(a, n);
+			ast_jt_folds++;
+			continue;
+		}
+		if (thenbb != AST_NONE && elsebb != AST_NONE &&
+				ast_kind(a, thenbb) == AST_BasicBlock &&
+				ast_kind(a, elsebb) == AST_BasicBlock &&
+				!ast_sccp_has_label(a, thenbb) && !ast_sccp_has_label(a, elsebb) &&
+				ast_ident_same(a, thenbb, elsebb)) {
+			ast_set_kind(a, n, AST_BasicBlock);
+			ast_clear_children(a, n);
+			ast_add_child(a, n, thenbb);
+			ast_jt_folds++;
+		}
+	}
+	return ast_jt_folds;
+}
+
 #define AST_TCO_MAXP 16
 #define AST_TCO_LABEL (-0x54434f)
 static int ast_tco_folds;
@@ -4144,6 +4182,7 @@ void ast_func_end(Sym *sym) {
 			int cprops = 0;
 			int dses = 0;
 			int sccps = 0;
+			int jts = 0;
 			int tcos = 0;
 			jmp_buf ast_outer_jmp;
 			int ast_outer_en = mcc_state->error_set_jmp_enabled;
@@ -4175,12 +4214,14 @@ void ast_func_end(Sym *sym) {
 				cprops = faithful && ast_templates_env ? ast_cprop_run(ast_cur) : 0;
 				dses = faithful && ast_templates_env ? ast_dse_run(ast_cur) : 0;
 				sccps = faithful && ast_templates_env ? ast_sccp_run(ast_cur) : 0;
+				jts = faithful && ast_templates_env ? ast_jt_run(ast_cur) : 0;
 				tcos = faithful && ast_templates_env ? ast_tco_run(ast_cur, sym) : 0;
 				int do_bfold = bfolds > 0;
 				int do_ident = idents > 0;
 				int do_cprop = cprops > 0;
 				int do_dse = dses > 0;
 				int do_sccp = sccps > 0;
+				int do_jt = jts > 0;
 				int do_tco = tcos > 0;
 				/* A tail-self-call rewritten into a back-edge loop keeps all
 				   params/locals in their stack slots across the iteration; pinning
@@ -4195,10 +4236,10 @@ void ast_func_end(Sym *sym) {
 				int do_promote = faithful && !do_tco && ast_promote_env && ast_plan_promotion(ast_cur) > 0;
 				ast_no_callful_promo = 0;
 				if (faithful && !do_inline && !do_promote && !do_bfold && !do_ident &&
-						!do_cprop && !do_dse && !do_sccp && !do_tco)
+						!do_cprop && !do_dse && !do_sccp && !do_jt && !do_tco)
 					loc = saved_loc;
 				if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
-						do_dse || do_sccp || do_tco) {
+						do_dse || do_sccp || do_jt || do_tco) {
 					ind = ast_body_ind_sv;
 					rsym = 0;
 					if (ast_rsec)
@@ -4206,7 +4247,7 @@ void ast_func_end(Sym *sym) {
 					nocode_wanted = 0;
 					loc = saved_loc;
 					anon_sym = saved_anon;
-					ast_fconst_i = (do_bfold || do_ident || do_cprop || do_dse || do_sccp || do_tco || do_inline) ? ast_fconst_n : 0;
+					ast_fconst_i = (do_bfold || do_ident || do_cprop || do_dse || do_sccp || do_jt || do_tco || do_inline) ? ast_fconst_n : 0;
 					ast_locrec_i = 0;
 					ast_replaying = 1;
 					ast_rp_switch = NULL;
@@ -4273,6 +4314,8 @@ void ast_func_end(Sym *sym) {
 					fprintf(stderr, "[ast-dse] %d %s\n", dses, funcname);
 				if (sccps)
 					fprintf(stderr, "[ast-sccp] %d %s\n", sccps, funcname);
+				if (jts)
+					fprintf(stderr, "[ast-jt] %d %s\n", jts, funcname);
 				if (tcos)
 					fprintf(stderr, "[ast-tco] %d %s\n", tcos, funcname);
 				if (promoted)
