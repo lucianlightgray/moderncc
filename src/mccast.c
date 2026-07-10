@@ -3127,6 +3127,446 @@ static int ast_bfold_run(AstArena *a) {
 	return folds;
 }
 
+static int ast_ident_intt(int tt) {
+	if (tt & VT_BITFIELD)
+		return 0;
+	switch (tt & VT_BTYPE) {
+	case VT_BYTE:
+	case VT_SHORT:
+	case VT_INT:
+	case VT_LLONG:
+	case VT_BOOL:
+		return 1;
+	}
+	return 0;
+}
+
+static int ast_ident_common(int t1, int t2) {
+	if ((t1 & VT_BTYPE) == VT_LLONG || (t2 & VT_BTYPE) == VT_LLONG) {
+		if ((t1 & (VT_BTYPE | VT_UNSIGNED)) == (VT_LLONG | VT_UNSIGNED) ||
+				(t2 & (VT_BTYPE | VT_UNSIGNED)) == (VT_LLONG | VT_UNSIGNED))
+			return VT_LLONG | VT_UNSIGNED;
+		return VT_LLONG;
+	}
+	if ((t1 & (VT_BTYPE | VT_UNSIGNED)) == (VT_INT | VT_UNSIGNED) ||
+			(t2 & (VT_BTYPE | VT_UNSIGNED)) == (VT_INT | VT_UNSIGNED))
+		return VT_INT | VT_UNSIGNED;
+	return VT_INT;
+}
+
+static int ast_ident_keep(int lt, int xt) {
+	return ast_ident_common(lt, xt) == ast_ident_common(xt, xt);
+}
+
+static int ast_ident_etype(AstArena *a, AstLocal n, int *tt, uint64_t *ref) {
+	switch (ast_kind(a, n)) {
+	case AST_Literal:
+	case AST_Ref:
+	case AST_Convert:
+	case AST_Invoke:
+		*tt = ast_type_t(a, n);
+		*ref = ast_type_ref(a, n);
+		return 1;
+	case AST_Unary:
+		switch (ast_op(a, n)) {
+		case AST_OP_ADDR:
+		case AST_OP_MEMBER:
+		case AST_OP_MEMBER_ARROW:
+			*tt = ast_type_t(a, n);
+			*ref = ast_type_ref(a, n);
+			return 1;
+		}
+		return 0;
+	case AST_Load: {
+		AstLocal c = ast_first_child(a, n);
+		int ct;
+		uint64_t cref;
+		if (c == AST_NONE || !ast_ident_etype(a, c, &ct, &cref))
+			return 0;
+		if ((ct & VT_BTYPE) != VT_PTR || !cref)
+			return 0;
+		Sym *ps = (Sym *)(uintptr_t)cref;
+		*tt = ps->type.t;
+		*ref = (uint64_t)(uintptr_t)ps->type.ref;
+		return 1;
+	}
+	case AST_Binary: {
+		int op = ast_op(a, n);
+		switch (op) {
+		case TOK_LT:
+		case TOK_GT:
+		case TOK_LE:
+		case TOK_GE:
+		case TOK_EQ:
+		case TOK_NE:
+		case TOK_ULT:
+		case TOK_UGE:
+		case TOK_ULE:
+		case TOK_UGT:
+		case TOK_LAND:
+		case TOK_LOR:
+			*tt = VT_INT;
+			*ref = 0;
+			return 1;
+		}
+		if (ast_nchild(a, n) != 2)
+			return 0;
+		int t1, t2;
+		uint64_t r1, r2;
+		if (!ast_ident_etype(a, ast_child(a, n, 0), &t1, &r1))
+			return 0;
+		if (op == TOK_SHL || op == TOK_SHR || op == TOK_SAR) {
+			if (!ast_ident_intt(t1))
+				return 0;
+			*tt = ast_ident_common(t1, t1);
+			*ref = 0;
+			return 1;
+		}
+		if (!ast_ident_etype(a, ast_child(a, n, 1), &t2, &r2))
+			return 0;
+		int p1 = (t1 & VT_BTYPE) == VT_PTR, p2 = (t2 & VT_BTYPE) == VT_PTR;
+		if (p1 || p2) {
+			if (op == '-' && p1 && p2) {
+				*tt = VT_PTRDIFF_T;
+				*ref = 0;
+				return 1;
+			}
+			if ((op != '+' && op != '-') || (p2 && op == '-'))
+				return 0;
+			*tt = (p1 ? t1 : t2) & ~(VT_ARRAY | VT_VLA);
+			*ref = p1 ? r1 : r2;
+			return 1;
+		}
+		switch (op) {
+		case '+':
+		case '-':
+		case '*':
+		case '/':
+		case '%':
+		case '&':
+		case '|':
+		case '^':
+			break;
+		default:
+			return 0;
+		}
+		if (!ast_ident_intt(t1) || !ast_ident_intt(t2))
+			return 0;
+		*tt = ast_ident_common(t1, t2);
+		*ref = 0;
+		return 1;
+	}
+	}
+	return 0;
+}
+
+static int ast_ident_pure(AstArena *a, AstLocal n) {
+	if (ast_type_t(a, n) & VT_VOLATILE)
+		return 0;
+	switch (ast_kind(a, n)) {
+	case AST_Literal:
+	case AST_Ref:
+	case AST_Convert:
+	case AST_If:
+		break;
+	case AST_Load: {
+		AstLocal c = ast_first_child(a, n);
+		int ct;
+		uint64_t cref;
+		if (c == AST_NONE || !ast_ident_etype(a, c, &ct, &cref))
+			return 0;
+		if ((ct & VT_BTYPE) != VT_PTR || !cref)
+			return 0;
+		if (((Sym *)(uintptr_t)cref)->type.t & VT_VOLATILE)
+			return 0;
+		break;
+	}
+	case AST_Unary:
+		switch (ast_op(a, n)) {
+		case AST_OP_ADDR:
+		case AST_OP_MEMBER:
+		case AST_OP_MEMBER_ARROW:
+			break;
+		default:
+			return 0;
+		}
+		break;
+	case AST_Binary:
+		switch (ast_op(a, n)) {
+		case '+':
+		case '-':
+		case '*':
+		case '&':
+		case '|':
+		case '^':
+		case TOK_SHL:
+		case TOK_SHR:
+		case TOK_SAR:
+		case TOK_LT:
+		case TOK_GT:
+		case TOK_LE:
+		case TOK_GE:
+		case TOK_EQ:
+		case TOK_NE:
+		case TOK_ULT:
+		case TOK_UGE:
+		case TOK_ULE:
+		case TOK_UGT:
+		case TOK_LAND:
+		case TOK_LOR:
+			break;
+		default:
+			return 0;
+		}
+		break;
+	default:
+		return 0;
+	}
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		if (!ast_ident_pure(a, c))
+			return 0;
+	return 1;
+}
+
+static int ast_ident_same(const AstArena *a, AstLocal x, AstLocal y) {
+	if (a->kind[x] != a->kind[y] || a->op[x] != a->op[y] ||
+			a->type_t[x] != a->type_t[y] || a->type_ref[x] != a->type_ref[y] ||
+			a->ival[x] != a->ival[y] || a->fbits[x] != a->fbits[y] ||
+			a->sym[x] != a->sym[y] || a->nchild[x] != a->nchild[y])
+		return 0;
+	AstLocal cx = a->first_child[x], cy = a->first_child[y];
+	for (; cx != AST_NONE; cx = a->next_sib[cx], cy = a->next_sib[cy])
+		if (!ast_ident_same(a, cx, cy))
+			return 0;
+	return 1;
+}
+
+static int ast_ident_cval(AstArena *a, AstLocal n, int *tt, uint64_t *v) {
+	if (ast_kind(a, n) != AST_Literal)
+		return 0;
+	if ((ast_op(a, n) & (VT_VALMASK | VT_LVAL | VT_SYM)) != VT_CONST)
+		return 0;
+	int t = ast_type_t(a, n);
+	if (!ast_ident_intt(t))
+		return 0;
+	*tt = t;
+	*v = value64(ast_ival(a, n), t);
+	return 1;
+}
+
+static int ast_ident_m1(uint64_t v, int ct) {
+	if ((ct & VT_BTYPE) == VT_LLONG)
+		return v == ~(uint64_t)0;
+	return (uint32_t)v == 0xffffffffu;
+}
+
+static int ast_ident_leaf(AstArena *a, AstLocal n) {
+	uint16_t k = ast_kind(a, n);
+	return k == AST_Literal || k == AST_Ref;
+}
+
+static void ast_ident_adopt(AstArena *a, AstLocal n, AstLocal x) {
+	a->kind[n] = a->kind[x];
+	a->op[n] = a->op[x];
+	a->type_t[n] = a->type_t[x];
+	a->type_ref[n] = a->type_ref[x];
+	a->ival[n] = a->ival[x];
+	a->fbits[n] = a->fbits[x];
+	a->sym[n] = a->sym[x];
+	a->cst[n] = a->cst[x];
+	a->first_child[n] = a->first_child[x];
+	a->last_child[n] = a->last_child[x];
+	a->nchild[n] = a->nchild[x];
+	for (AstLocal c = a->first_child[n]; c != AST_NONE; c = a->next_sib[c])
+		a->parent[c] = n;
+	a->first_child[x] = AST_NONE;
+	a->last_child[x] = AST_NONE;
+	a->nchild[x] = 0;
+}
+
+static void ast_ident_setlit(AstArena *a, AstLocal n, int tt, uint64_t v) {
+	ast_set_kind(a, n, AST_Literal);
+	ast_clear_children(a, n);
+	ast_set_op(a, n, VT_CONST | VT_NONCONST);
+	ast_set_type(a, n, tt, 0);
+	ast_set_ival(a, n, value64(v, tt));
+	ast_set_sym(a, n, 0);
+	ast_set_fbits(a, n, 0);
+	ast_set_cst(a, n, 0);
+}
+
+static int ast_ident_node(AstArena *a, AstLocal n) {
+	if (ast_kind(a, n) != AST_Binary || ast_nchild(a, n) != 2)
+		return 0;
+	int op = ast_op(a, n);
+	AstLocal x = ast_child(a, n, 0), y = ast_child(a, n, 1);
+	int tx, ty;
+	uint64_t rx, ry;
+	if (!ast_ident_etype(a, x, &tx, &rx) || !ast_ident_etype(a, y, &ty, &ry))
+		return 0;
+	if (!ast_ident_intt(tx) || !ast_ident_intt(ty))
+		return 0;
+	int lt;
+	uint64_t lv;
+	int ct = ast_ident_common(tx, ty);
+	switch (op) {
+	case TOK_SHL:
+	case TOK_SHR:
+	case TOK_SAR:
+		if (ast_ident_cval(a, y, &lt, &lv) && lv == 0) {
+			ast_ident_adopt(a, n, x);
+			return 1;
+		}
+		return 0;
+	case '+':
+		if (ast_ident_cval(a, y, &lt, &lv) && lv == 0 && ast_ident_keep(lt, tx)) {
+			ast_ident_adopt(a, n, x);
+			return 1;
+		}
+		if (ast_ident_cval(a, x, &lt, &lv) && lv == 0 && ast_ident_keep(lt, ty)) {
+			ast_ident_adopt(a, n, y);
+			return 1;
+		}
+		return 0;
+	case '-':
+		if (ast_ident_cval(a, y, &lt, &lv) && lv == 0 && ast_ident_keep(lt, tx)) {
+			ast_ident_adopt(a, n, x);
+			return 1;
+		}
+		if (ast_ident_same(a, x, y) && ast_ident_pure(a, x)) {
+			ast_ident_setlit(a, n, ct, 0);
+			return 2;
+		}
+		return 0;
+	case '/':
+		if (ast_ident_cval(a, y, &lt, &lv) && lv == 1 && ast_ident_keep(lt, tx)) {
+			ast_ident_adopt(a, n, x);
+			return 1;
+		}
+		return 0;
+	case '*':
+		if (ast_ident_cval(a, y, &lt, &lv)) {
+			if (lv == 1 && ast_ident_keep(lt, tx)) {
+				ast_ident_adopt(a, n, x);
+				return 1;
+			}
+			if (lv == 0 && ast_ident_pure(a, x)) {
+				int sig = ast_ident_leaf(a, x) ? 1 : 2;
+				ast_ident_setlit(a, n, ct, 0);
+				return sig;
+			}
+		}
+		if (ast_ident_cval(a, x, &lt, &lv)) {
+			if (lv == 1 && ast_ident_keep(lt, ty)) {
+				ast_ident_adopt(a, n, y);
+				return 1;
+			}
+			if (lv == 0 && ast_ident_pure(a, y)) {
+				int sig = ast_ident_leaf(a, y) ? 1 : 2;
+				ast_ident_setlit(a, n, ct, 0);
+				return sig;
+			}
+		}
+		return 0;
+	case '&':
+		if (ast_ident_same(a, x, y) && ast_ident_pure(a, x)) {
+			ast_ident_adopt(a, n, x);
+			return 2;
+		}
+		if (ast_ident_cval(a, y, &lt, &lv)) {
+			if (ast_ident_m1(lv, ct) && ast_ident_keep(lt, tx)) {
+				ast_ident_adopt(a, n, x);
+				return 1;
+			}
+			if (lv == 0 && ast_ident_pure(a, x)) {
+				int sig = ast_ident_leaf(a, x) ? 1 : 2;
+				ast_ident_setlit(a, n, ct, 0);
+				return sig;
+			}
+		}
+		if (ast_ident_cval(a, x, &lt, &lv)) {
+			if (ast_ident_m1(lv, ct) && ast_ident_keep(lt, ty)) {
+				ast_ident_adopt(a, n, y);
+				return 1;
+			}
+			if (lv == 0 && ast_ident_pure(a, y)) {
+				int sig = ast_ident_leaf(a, y) ? 1 : 2;
+				ast_ident_setlit(a, n, ct, 0);
+				return sig;
+			}
+		}
+		return 0;
+	case '|':
+		if (ast_ident_same(a, x, y) && ast_ident_pure(a, x)) {
+			ast_ident_adopt(a, n, x);
+			return 2;
+		}
+		if (ast_ident_cval(a, y, &lt, &lv)) {
+			if (lv == 0 && ast_ident_keep(lt, tx)) {
+				ast_ident_adopt(a, n, x);
+				return 1;
+			}
+			if (ast_ident_m1(lv, ct) && ast_ident_pure(a, x)) {
+				int sig = ast_ident_leaf(a, x) ? 1 : 2;
+				ast_ident_setlit(a, n, ct, ~(uint64_t)0);
+				return sig;
+			}
+		}
+		if (ast_ident_cval(a, x, &lt, &lv)) {
+			if (lv == 0 && ast_ident_keep(lt, ty)) {
+				ast_ident_adopt(a, n, y);
+				return 1;
+			}
+			if (ast_ident_m1(lv, ct) && ast_ident_pure(a, y)) {
+				int sig = ast_ident_leaf(a, y) ? 1 : 2;
+				ast_ident_setlit(a, n, ct, ~(uint64_t)0);
+				return sig;
+			}
+		}
+		return 0;
+	case '^':
+		if (ast_ident_same(a, x, y) && ast_ident_pure(a, x)) {
+			ast_ident_setlit(a, n, ct, 0);
+			return 2;
+		}
+		if (ast_ident_cval(a, y, &lt, &lv) && lv == 0 && ast_ident_keep(lt, tx)) {
+			ast_ident_adopt(a, n, x);
+			return 1;
+		}
+		if (ast_ident_cval(a, x, &lt, &lv) && lv == 0 && ast_ident_keep(lt, ty)) {
+			ast_ident_adopt(a, n, y);
+			return 1;
+		}
+		return 0;
+	}
+	return 0;
+}
+
+static int ast_ident_folds;
+
+static int ast_ident_rec(AstArena *a, AstLocal n) {
+	int sig = 0;
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		sig += ast_ident_rec(a, c);
+	int r = ast_ident_node(a, n);
+	if (r) {
+		ast_ident_folds++;
+		if (r == 2)
+			sig++;
+	}
+	return sig;
+}
+
+static int ast_ident_run(AstArena *a) {
+	int sig = 0, folds;
+	ast_ident_folds = 0;
+	do {
+		folds = ast_ident_folds;
+		sig += ast_ident_rec(a, ast_root(a));
+	} while (ast_ident_folds != folds);
+	return sig;
+}
+
 static int ast_replay_ok(AstArena *a) {
 	if (ast_bail || ast_desync || ast_vn != 0 || ast_cf_top != 0)
 		return 0;
@@ -3222,6 +3662,7 @@ void ast_func_end(Sym *sym) {
 			volatile int faithful = 0;
 			int promoted = 0;
 			int bfolds = 0;
+			int idents = 0;
 			jmp_buf ast_outer_jmp;
 			int ast_outer_en = mcc_state->error_set_jmp_enabled;
 			int ast_saved_nberr = mcc_state->nb_errors;
@@ -3248,7 +3689,9 @@ void ast_func_end(Sym *sym) {
 				ast_fn_faithful = faithful;
 
 				bfolds = faithful && ast_templates_env ? ast_bfold_run(ast_cur) : 0;
+				idents = faithful && ast_templates_env ? ast_ident_run(ast_cur) : 0;
 				int do_bfold = bfolds > 0;
+				int do_ident = idents > 0;
 				int do_inline = faithful && ast_has_graftable_call(ast_cur);
 				/* Tier-4 inline and call-ful Tier-3 promotion both claim the
 				   callee-saved bank (RBX/R12-R15); combining them in one function
@@ -3257,9 +3700,9 @@ void ast_func_end(Sym *sym) {
 				ast_no_callful_promo = do_inline;
 				int do_promote = faithful && ast_promote_env && ast_plan_promotion(ast_cur) > 0;
 				ast_no_callful_promo = 0;
-				if (faithful && !do_inline && !do_promote && !do_bfold)
+				if (faithful && !do_inline && !do_promote && !do_bfold && !do_ident)
 					loc = saved_loc;
-				if (do_inline || do_promote || do_bfold) {
+				if (do_inline || do_promote || do_bfold || do_ident) {
 					ind = ast_body_ind_sv;
 					rsym = 0;
 					if (ast_rsec)
@@ -3267,7 +3710,7 @@ void ast_func_end(Sym *sym) {
 					nocode_wanted = 0;
 					loc = saved_loc;
 					anon_sym = saved_anon;
-					ast_fconst_i = do_bfold ? ast_fconst_n : 0;
+					ast_fconst_i = (do_bfold || do_ident) ? ast_fconst_n : 0;
 					ast_locrec_i = 0;
 					ast_replaying = 1;
 					ast_rp_switch = NULL;
@@ -3326,6 +3769,8 @@ void ast_func_end(Sym *sym) {
 									ast_tmpl_folds, funcname);
 				if (bfolds)
 					fprintf(stderr, "[ast-bfold] %d %s\n", bfolds, funcname);
+				if (idents)
+					fprintf(stderr, "[ast-ident] %d %s\n", idents, funcname);
 				if (promoted)
 					fprintf(stderr, "[ast-promote] %d %s\n", promoted, funcname);
 			}

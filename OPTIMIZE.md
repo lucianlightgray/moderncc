@@ -23,11 +23,22 @@ Status: `[ ]` open · `[~]` claimed/in-progress · `[x]` landed (commit)
       approximations (Taylor / Chebyshev / minimax **Remez exchange**)
       stay open until a determinism story exists, since folding through
       the host libm would break `-O0` vs `-O1` output equality.
-- [ ] **Algebraic identities / reassociation** (Muchnick catalog):
-      `x+0`, `x*1`, `x*0` (side-effect-safe), `x^x`, `2*x → x<<1`
-      (strength reduction, expression form). Verify what `gen_opic`
-      already covers at parse time; the ledger item is the *replay-level*
-      pass over the captured tree.
+- [x] **Algebraic identities / reassociation** (ast_ident_run) — replay-level
+      identity elimination over the captured tree, run after the faithful
+      first replay like ast_bfold_run: keep-x forms `x+0`/`0+x`/`x-0`,
+      `x*1`/`1*x`, `x/1`, `x<<0`/`x>>0`, `x|0`, `x^0`, `x&-1` (guarded so
+      the elided literal cannot change the combine_types common type);
+      annihilator forms `x*0`/`0*x`/`x&0` → 0 and `x|-1` → -1 only when x
+      is side-effect-free; same-operand forms `x-x`/`x^x` → 0 and
+      `x&x`/`x|x` → x for structurally equal, side-effect-free x. Integer
+      btypes only — pointers, floats, bitfields and volatile are excluded;
+      the purity predicate rejects AST_Invoke, AST_Store, inc/dec, volatile
+      refs/loads and division (trap). Verified `gen_opic` already elides
+      the const-operand identities (and does `2*x → x<<1` strength
+      reduction) at emission time, so those folds only retag the tree; the
+      pass adds the non-const forms, dead-subexpression removal for the
+      annihilators, and cascade enablement, and triggers the second replay
+      only for code-changing folds.
 - [ ] **Peephole window over emitted code** (McKeeman 1965): adjacent
       redundant load/store elision in the vstack emitter.
 
@@ -176,3 +187,25 @@ real without passing it.
   matching the AST-intention-hash design; a different stream (different
   intention) misses and searches cold, exactly as specified.
 - Algebraic-identity subagent (Tier-1) still validating; harvest next.
+
+### 2026-07-09 — iteration 7 (Tier-1 algebraic identities landed)
+
+- **Algebraic identities / reassociation LANDED** (`ast_ident_run`, a
+  sibling of `ast_bfold_run`): integer-only identity elimination on the
+  captured tree at -O1+ — keep-x forms (`x+0`, `x*1`, `x<<0`, `x|0`,
+  `x&-1`, …), annihilators (`x*0`, `x&0` → 0; `x|-1` → -1, purity-gated),
+  and same-operand forms (`x-x`, `x^x` → 0; `x&x`, `x|x` → x). Signedness
+  guard mirrors `combine_types` so `x + 0u` on signed x is not folded;
+  pointers/floats/bitfields excluded; `/`,`%`, volatile, and any
+  side-effecting subtree (Invoke/Store/inc-dec) rejected by the purity
+  predicate. Ledger finding: `gen_opic` already elides const-operand
+  identities at emit time, so the pass only triggers a second replay for
+  the code-changing folds (same-operand, non-leaf annihilators). Tests:
+  `algebraic_identities` exec golden (~60 functions, int/uint/ll/char +
+  volatile-not-folded + side-effect-preserved cases); dump confirms it
+  fires in 15 functions, output byte-equal -O0..-O3.
+- **1795 tests green**, 3-stage self-host fixpoint byte-identical at -O2
+  and -O3, -O0 objects byte-identical.
+- Tier-1 now complete except peephole. **Next:** peephole window
+  (McKeeman) over the emitted vstack code, then Tier-2 dataflow (SCCP,
+  Kildall-liveness DCE, local value numbering).
