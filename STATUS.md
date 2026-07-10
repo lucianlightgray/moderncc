@@ -112,6 +112,14 @@ transform (item 1) landed and now also sits in the search space
 LICM → PRE → IV strength reduction) is the next build, fully scoped in
 TODO §32.
 
+A `*.md` audit (2026-07-10) added TODO §34-§39 for work tracked nowhere and
+landed the tractable ones: §34 (arm64 `load()` `VT_MUSTCAST` assert, fixed —
+unblocks `MCC_AST_INLINE_NODES` on arm64), §35 (Sethi–Ullman operand
+ordering, `MCC_AST_SETHI`, first increment), §37 (`mccbench --stats`:
+credible interval + Bayes factor + ANOVA), §39 (doc-staleness
+reconciliation). Still open there: §36 (Chaitin–Briggs register allocation
+— the largest untracked build) and §38 (hardware-gated CI validations).
+
 1. **§30 bit-flag transform — LANDED.** The earlier "no expression-level
    transform" finding was half-stale: a short-circuit `||` in *condition*
    position IS captured as one flat n-ary `AST_Binary TOK_LOR` node (only

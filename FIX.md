@@ -231,10 +231,23 @@ kept anyway: it is the correct invariant (unfaithful bodies can never be
 reemitted correctly, only kept from the first pass), it mirrors the sibling
 `keep_inline` gate, and it is what stops the next codegen change from
 re-exposing the same all-n/a. The minimal knob repro (`MCC_AST_INLINE_NODES`)
-is currently unusable on `5968f6ab` for an unrelated reason: setting it trips a
+was unusable on `5968f6ab` for an unrelated reason: setting it tripped a
 new `arm64-gen.c:650 load(1,(32,400,0))` assertion from §30's bit-flag r-field
-flag not being in the arm64 `load()` mask (the known "arm64 load() r-flag
-mask" class; CI never sets that env, so it does not gate the bench).
+flag not being in the arm64 `load()` mask (the "arm64 load() r-flag mask"
+class; CI never sets that env, so it did not gate the bench).
+
+**RESOLVED 2026-07-10 (§34, `76407be9`).** The stray r-flag is `VT_MUSTCAST`
+(0x0C00 — the 0x400 bit): arm64 `load()` stripped
+`VT_BOUNDED|VT_NONCONST|VT_NONLVAL` from its `svr` location classifier but not
+`VT_MUSTCAST`, then used exact-equality case tests, so a register-source value
+with a pending cast matched no case and hit `assert(0)` — where x86_64's
+bit-testing `load()` tolerates it. Fix (`arm64-gen.c:494`): add `VT_MUSTCAST`
+to the strip mask, routing the value to the reg-to-reg move case; the cast is
+applied by the caller (`gv`/`gen_cast`), mirroring x86_64. Provably
+regression-free (any SValue that already matched had no `VT_MUSTCAST` set).
+Unblocks the `MCC_AST_INLINE_NODES` search dim on arm64; validated ctest
+1862/1862 + fixpoint byte-identical, and confirmed to fix the arm64 `-O1+`
+optimized self-host (`ed648710`).
 
 ## Open: macos-x86_64 `[-O3]` rows n/a
 

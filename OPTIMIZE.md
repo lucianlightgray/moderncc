@@ -43,10 +43,10 @@ pass-exercising code; TPE beats linear search (−34% vs −26% memory).
 jump-threading, SCCP-conditional, and local CSE have since **landed**
 (iters 17/20/22/25/27); SCCP value-lattice + dominator CSE/GVN landed via
 §32a/§32b (no value-reference node — see §32); sin/cos/exp landed behind
-`-ffold-math`. Still genuinely open: Tier-1 whole-emitter peephole
-(TODO §33d/§35), Sethi–Ullman ordering (TODO §35), Chaitin–Briggs coloring
-(TODO §36), and the §32c fresh-temp consumers (post-join PRE, IV strength
-reduction).
+`-ffold-math`; Sethi–Ullman ordering landed 2026-07-10 (first increment,
+`MCC_AST_SETHI`, TODO §35). Still genuinely open: Tier-1 whole-emitter
+peephole (TODO §33d), Chaitin–Briggs coloring (TODO §36), and the §32c
+fresh-temp consumers (post-join PRE, IV strength reduction).
 
 ## Algorithm catalog (named forms, complexity-ranked)
 
@@ -88,8 +88,11 @@ Status: `[ ]` open · `[~]` claimed/in-progress · `[x]` landed (commit)
 - [x] **Copy/constant propagation** (Aho–Sethi–Ullman dragon-book; local, `ast_cprop_run`).
 - [x] **Dead store / dead code elimination** (Kildall-flavored local liveness; `ast_dse_run`).
 - [x] **Common subexpression elimination (local, named-local subset)** — Cocke's available expressions; `ast_cse_run`. General GVN/arbitrary-temp CSE stays blocked (persistent-slot desync).
-- [ ] **Sethi–Ullman numbering** for evaluation-order/register pressure
-      in the replay emitter.
+- [x] **Sethi–Ullman numbering** for evaluation-order/register pressure
+      in the replay emitter (2026-07-10, first increment, `MCC_AST_SETHI`,
+      TODO §35): commutative-operand reorder, higher-SU operand first,
+      side-effect-free + non-`VT_CMP` operands only; `.text` 81→73 B on
+      nested arithmetic, fixpoint byte-identical off and forced-on.
 
 ### Tier 3 — loops and whole function (most complex)
 
@@ -157,17 +160,19 @@ The Wikipedia statistical-analysis canon, mapped to this campaign's use:
 - **Descriptive vs inferential** — the bench reports both: descriptive
   (mean, stdev, min per config) and inferential (does config A beat B).
 - **Inference paradigms**: Frequentist (**used**: Welch's t-test,
-  p-value/NHST), Bayesian (**planned**: Bayes factor, credible interval),
+  p-value/NHST), Bayesian (**used** 2026-07-10, `mccbench --stats`, §37:
+  BIC-approx Bayes factor + t-based credible interval),
   Likelihood (MLE), AIC (Akaike), Minimum Description Length, Fiducial,
   Structural, Universal Inference.
 - **Tests/procedures**: p-values & null-hypothesis significance testing
-  (**used**), confidence intervals (**planned via bootstrap**), credible
-  intervals & Bayes factors (**planned**).
+  (**used**), confidence intervals (**used via bootstrap**), credible
+  intervals & Bayes factors (**used** — `mccbench --stats`, §37).
 - **Estimators**: point vs interval; Maximum Likelihood Estimation,
   Minimum-Variance Unbiased Estimator, Hodges–Lehmann–Sen.
 - **Analytical methods**: Design of Experiments (the gate-lattice
   permutation matrix *is* a small DoE), Analysis of Variance (ANOVA —
-  candidate for comparing >2 -O configs at once instead of pairwise t),
+  **used** 2026-07-10, `mccbench --stats` §37: one-way F across the mcc -O
+  configs, exact incomplete-beta p-value — replaces pairwise t for >2 configs),
   Regression / GLM / Cox, cluster analysis, survey sampling,
   **bootstrapping / resampling** (**planned** for distribution-free CIs).
 - **Model assessment**: goodness-of-fit, residual analysis, model
@@ -1070,3 +1075,33 @@ gates green at each commit:
   with the invariant subset. Same gate battery: ctest 1862 with both
   joins forced on, dual-mode fixpoint, `ast-cprop-join` extended to the
   2×2 gate matrix.
+
+## 2026-07-10 — doc-audit gap sweep (§34-§39) + Sethi–Ullman
+
+Third session: a full `*.md` audit surfaced work tracked nowhere (added as
+TODO §34-§39), then landed the tractable ones. ctest 1862/1862 + fixpoint
+byte-identical at each step:
+
+- **§37 bench statistics** (`1240970b`) — `mccbench --stats` (default off,
+  report byte-unchanged without it): t-based **credible interval**,
+  BIC-approx two-sample **Bayes factor** vs the same-`-O` reference
+  (Wagenmakers 2007), and one-way **ANOVA** across the mcc `-O` configs with
+  an exact incomplete-beta F p-value. Closes the "planned" Bayesian/ANOVA
+  rows in the benchmark-protocol taxonomy above. Tool-only, math
+  unit-verified against known values.
+- **§34 arm64 `load()` `VT_MUSTCAST` assert** (`76407be9`) — the
+  long-standing "arm64 load() r-flag mask" bug (FIX.md): arm64 `load()`
+  didn't strip `VT_MUSTCAST` before its exact-equality case tests, so a
+  register value with a pending cast hit `assert(0)` where x86_64's
+  bit-testing `load()` tolerates it. Masking it (mirroring x86_64) is
+  provably regression-free and unblocks the `MCC_AST_INLINE_NODES` search
+  dim on arm64 — confirmed to fix the arm64 `-O1+` optimized self-host.
+- **§35 Sethi–Ullman ordering** (`f45a6ec5`, first increment) — see the
+  Tier-2 catalog entry: `MCC_AST_SETHI` reorders commutative side-effect-free
+  operands, higher register-pressure first, skipping `VT_CMP`-producing
+  operands (the `vcheck_cmp`/bitflag hazard — caught by
+  `cli/bitflag_transform` under forced-on ctest before the guard). `.text`
+  81→73 B on nested arithmetic.
+- **§39 doc reconciliation** (`59efb73e`) — this section's Frontier and the
+  Scoreboard "Open/blocked" para were re-pointed at the §32 resolution;
+  STATUS §25 and MCC.md §10 reconciled to their authoritative state.
