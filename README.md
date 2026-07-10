@@ -15,6 +15,7 @@ from a single source tree.
 | **Size**      | ~0.7 MB dynamic · ~1.5 MB static self-contained binary                                                                                |
 | **Assembler** | integrated (`MCC_CONFIG_ASM`, incl. scalar SSE + `.cfi_*`) · inline asm · `asm goto` · `-S` via built-in disassembler (all 5 targets) |
 | **Safety**    | optional bounds checker (`-b`) and backtraces (`-bt`)                                                                                 |
+| **Optimizer** | `-O1..-O3` AST replay passes (byte-verified against `-O0`) · `-O<N>` (N≥4) superoptimizer search with a resumable per-user cache (`--clear-cache`) — see [STATUS.md](STATUS.md) |
 | **Cross**     | `mcc-<arch>` compilers via `MCC_ENABLE_CROSS`                                                                                         |
 
 > Detailed toolchain comparisons, build-status reports, per-toolchain test

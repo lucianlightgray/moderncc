@@ -6,9 +6,9 @@ in TODO.md; per-iteration history in OPTIMIZE.md; this file is the single
 snapshot of *what is built, what remains, and how to finish it*.
 
 **Invariant held throughout:** `-O0..-O3` byte-identical, 3-stage self-host
-fixpoint byte-identical, full `ctest` green (1861) at **every** commit
-below. New behavior is gated (opt-in flags / `-O4+` / env) so the default
-compiler is unchanged.
+fixpoint byte-identical, full `ctest` green (currently 1862) at **every**
+commit below. New behavior is gated (opt-in flags / `-O4+` / env) so the
+default compiler is unchanged.
 
 ## Legend
 `done` fully implemented · `functional` end-to-end working (opt-in) ·
@@ -107,8 +107,10 @@ exec bit since `f959078e` (fixed in `676c1836`).
 
 The one remaining *full* build is the §26 runtime engine (item 2); §30's
 transform (item 1) landed and now also sits in the search space
-(`676c1836`), leaving only its listed extensions. The §32a→§32c frontier
-passes are the other open track (scoped in TODO §32).
+(`676c1836`), leaving only its listed extensions. On the §32 frontier track
+§32a and §32b are landed; §32c (synthetic-temp infrastructure → fresh-temp
+LICM → PRE → IV strength reduction) is the next build, fully scoped in
+TODO §32.
 
 1. **§30 bit-flag transform — LANDED.** The earlier "no expression-level
    transform" finding was half-stale: a short-circuit `||` in *condition*

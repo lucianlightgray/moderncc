@@ -1,8 +1,9 @@
 # TODO.md — settled gate work, in order of complexity
 
-The decided, no-further-discussion items migrated out of
-[GATED.md](GATED.md) §7 (audit of 2026-07-09, commit `eb1fd4ef`; decision
-rounds 1-2 of 2026-07-09 folded in). Ordered simplest → most complex; do them
+The decided, no-further-discussion items migrated out of GATED.md §7
+(audit of 2026-07-09, commit `eb1fd4ef`; decision rounds 1-2 of 2026-07-09
+folded in — GATED.md, SPLIT.md, and DEGLOBAL.md are historical planning
+docs no longer in the repo). Ordered simplest → most complex; do them
 top-down. Still open elsewhere: DEGLOBAL.md's stage-2 spelling (decided at
 Stage-1 fallout), and the deferred/closed GATED.md items (format arc,
 TargetDesc) which are **not** work.
@@ -238,7 +239,7 @@ is runtime via a category bitmask over the existing `g_debug` int
 ## 15. Execute SPLIT.md (large)
 
 - [x] The `TARGET_DEFS_ONLY` → `<arch>-<part>.h` split, per
-      [SPLIT.md](SPLIT.md) §4-6: 13 headers created, 13 `.c` skeletons
+      SPLIT.md §4-6: 13 headers created, 13 `.c` skeletons
       removed, `mcc.h:217-239` ladder rewritten, macro gone from the tree.
       Gates as specified there (matrix, ctest incl. drift invariants,
       self-host fixpoint, per-target byte-identical objects).
@@ -481,15 +482,18 @@ Landed, all presets/ctest green + fixpoint byte-identical at each step:
   canonical baseline kernel, storing the search-resume inputs; §21-style
   durable writes; `ast/intention` + `hypervisor-cache` tests.
 
-**Every rung §18-§26, §29-§31 now has a real, tested increment** (and
-§18/§20 are done outright), 1861 ctest + fixpoint byte-identical
+**Every rung §18-§26, §29-§32 now has a real, tested increment** (and
+§18/§20 are done outright), 1862 ctest + fixpoint byte-identical
 throughout. The remaining *full* build is the §26 runtime engine — a
 focused session. §27/§28 were deferred behind the value-reference-node
 decision (per the design round); that decision is now **resolved in §32**
 (feasibility study, 2026-07-10): no new node kind — §27/§28 are unblocked
 for their analysis/structural halves, and the value-materializing halves
-wait on the §32c synthetic-temp infrastructure. The next frontier build is
-**§32a** (scoping findings recorded in §32).
+wait on the §32c synthetic-temp infrastructure. §32a (structured-join
+const-prop) and §32b (cross-join CSE/LICM) are **landed** (notes in §32);
+the next frontier build is **§32c** (scoped in §32: carve hook +
+promo-poison guard + `AST_Convert` wrap + store-dominance rule, then
+fresh-temp LICM → PRE → IV strength reduction).
 
 
 The `-O<N>` (N>=4) compile-time search landed at `f959078e`

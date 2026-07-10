@@ -207,7 +207,11 @@ high-value specifics the summary omits:
   former `MCC_AST_REPLAY` env master gate is gone. `MCC_AST_TEMPLATES`,
   `MCC_AST_PROMOTE` and `MCC_AST_INLINE` remain env overrides on top of the
   `-O` defaults (non-`0` opens, `0` closes); `MCC_AST_REPLAY_DUMP` and
-  `MCC_AST_NO_CALLFUL` stay opt-in. The default-on
+  `MCC_AST_NO_CALLFUL` stay opt-in, and the later search/debug knobs
+  (`MCC_AST_INLINE_LIMIT`/`_INLINE_NODES`/`_GRAFT`, `_PROMOTE_LIMIT`/
+  `_OPT_LIMIT`, `_FN_CONFIG`/`_PERFN`, `_COST`, `_BITFLAG`,
+  `_CPROP_JOIN`/`_CSE_JOIN`, `_HASH_OUT`) are cataloged in STATUS.md. The
+  default-on
   flip was reverted: the full-corpus `mcctest` differential exposed
   Tier-3/Tier-4 soundness gaps on the PE target and arm64 that the per-golden
   columns miss. Faithfulness gate: pass 1 replays with no
