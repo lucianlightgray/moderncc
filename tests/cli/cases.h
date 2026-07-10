@@ -134,6 +134,11 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} --no-embed-jit -O0 -c {W}/so.c -o {W}/so2.o && echo FLAGOK",
 		 "WARMOK\nrc=55\nFLAGOK\n"},
 
+		{"ast_cost_report", "cpu=x86_64,os=linux,optimizer",
+		 "printf 'static int inner(int x){int s=0;for(int i=0;i<x;i++)for(int j=0;j<x;j++)s+=i*j;return s;}\\nint main(void){return inner(5);}\\n' > {W}/cost.c && "
+		 "MCC_AST_COST=1 {MCC} -B{B} -I{I} -O1 -c {W}/cost.c -o {W}/cost.o 2>&1 | grep '^ast-cost' | awk '{print $2, $4}' | sort",
+		 "inner loopdepth=2\nmain loopdepth=0\n"},
+
 		{"clear_cache_and_jit_flags", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'int main(void){return 0;}\\n' > {W}/cc.c && "
 		 "XDG_CACHE_HOME={W}/cch {MCC} -B{B} -I{I} -O4 -c {W}/cc.c -o {W}/cc.o && "

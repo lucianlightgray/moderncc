@@ -369,6 +369,7 @@ static int ast_opt_limit;
 static int ast_opt_total;
 static int ast_inline_node_limit = 64;
 static int ast_graft_budget_max = 2048;
+static int ast_cost_env;
 static int ast_templates_env;
 static int ast_promote_env;
 static int ast_no_callful_env;
@@ -556,6 +557,7 @@ void ast_configure(MCCState *s1) {
 	}
 	ast_inline_node_limit = ast_env_int("MCC_AST_INLINE_NODES", 64);
 	ast_graft_budget_max = ast_env_int("MCC_AST_GRAFT", 2048);
+	ast_cost_env = ast_env_gate("MCC_AST_COST", 0);
 }
 
 int ast_fconst_reuse(void) {
@@ -4336,6 +4338,26 @@ static int ast_licm_is_loop(AstArena *a, AstLocal s) {
 	return op == 2 || op == 3 || op == 4 || op == 5;
 }
 
+static void ast_fn_cost(AstArena *a, const char *fn) {
+	AstLocal nn = ast_count(a), n, p;
+	int nodes = (int)nn, calls = 0, maxdepth = 0;
+	for (n = 0; n < nn; n++) {
+		if (ast_kind(a, n) == AST_Invoke)
+			calls++;
+		if (ast_licm_is_loop(a, n)) {
+			int d = 1;
+			for (p = ast_parent(a, n); p != AST_NONE; p = ast_parent(a, p))
+				if (ast_licm_is_loop(a, p))
+					d++;
+			if (d > maxdepth)
+				maxdepth = d;
+		}
+	}
+	fprintf(stderr, "ast-cost: %s nodes=%d loopdepth=%d calls=%d score=%ld\n", fn,
+					nodes, maxdepth, calls,
+					(long)nodes * (maxdepth + 1) * (calls + 1));
+}
+
 static void ast_licm_at_loop(AstArena *a, AstLocal s) {
 	if (ast_sccp_has_label(a, s))
 		return;
@@ -4472,6 +4494,8 @@ void ast_func_end(Sym *sym) {
 		ast_capture = 0;
 		ast_fn_faithful = 0;
 		ast_fn_tco = 0;
+		if (ast_cost_env)
+			ast_fn_cost(ast_cur, funcname);
 		if (ast_replay_ok(ast_cur)) {
 			int orig_ind = ind, orig_rsym = rsym;
 			int body_len = orig_ind - ast_body_ind_sv;
