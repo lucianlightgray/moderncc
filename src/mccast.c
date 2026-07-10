@@ -2460,6 +2460,7 @@ static void ast_replay_value(AstArena *a, AstLocal n) {
 		uint32_t nc = ast_nchild(a, n);
 		for (uint32_t i = 0; i < nc; i++)
 			ast_replay_value(a, ast_child(a, n, i));
+		vcheck_cmp();
 		gfunc_call((int)nc - 1);
 		if (ast_type_t(a, n) == VT_VOID)
 			break;

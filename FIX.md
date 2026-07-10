@@ -45,7 +45,32 @@ not yet root-caused. This file is the pickup point.
      marks that workload `gnu_c` and prints a "skipped (GNU-C workload)" row
      for STYLE_CL compilers instead of n/a.
 
-## Open: arm64 stage2 crashes (macos-arm64 + msvc-arm64 CI, qemu repro)
+## FIXED: arm64 stage2 crashes — replay dropped vcheck_cmp before gfunc_call
+
+Root cause (one line): `ast_replay_value`'s `AST_Invoke` case replayed the
+call arguments then called `gfunc_call` directly, but the normal parser
+(mccgen.c:9477) runs `vcheck_cmp()` immediately before `gfunc_call`. That
+materializes a top-of-stack `VT_CMP` (a short-circuit boolean like the
+`a && b` last arg of `map_add(...)` in `func_arg_test`). Without it the
+replay left the argument as a live `VT_CMP` jump-chain value. arm64
+`gfunc_call` then `vpushv`-copies that arg to a stack slot and `gv`s the
+copy — resolving/patching the jfalse chain to a `B` — while the original
+`VT_CMP` (same chain offset) is still on the vstack; materializing it a
+second time (via `vcheck_cmp` inside `vseti`→`vsetc`) re-walks the
+already-patched link (`0x14…` read as a chain offset) → SIGSEGV in
+`gsym_addr`. x86_64 `gfunc_call` doesn't double-materialize a stacked
+`VT_CMP`, so only arm64 (and PE-arm64) crashed. The double-resolve is
+data-position-sensitive, which is why it was perturbation-fragile and only
+tripped deep into `full_language.c`.
+
+Fix: add `vcheck_cmp();` before `gfunc_call((int)nc - 1);` in the
+`AST_Invoke` replay case (src/mccast.c), matching the capture path.
+Verified on native arm64 Linux: st2 compiles full_language.c and self-hosts
+mcc.c at -O0/-O1/-O2/-O3 (was SIGSEGV at -O1+); fixpoint byte-identical
+stage2==stage3==stage4; exec + exec-replay/-tmpl/-promote suites 271/271.
+Recheck macos-arm64 / msvc-arm64 on CI.
+
+## (historical) Open: arm64 stage2 crashes (macos-arm64 + msvc-arm64 CI, qemu repro)
 
 **Symptom (CI):** on arm64 (Darwin and Windows), the self-hosted stage2 mcc
 segfaults compiling `tests/diff/full_language.c` at `-O1/-O2/-O3` (works at
