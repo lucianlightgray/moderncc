@@ -62,7 +62,7 @@ Delete outright (verify each still-referenced-nowhere while removing):
 
 ## 6. Sanitizer pairing for the memory debuggers (small, CMake)
 
-- [ ] Auto-define `MEM_DEBUG` and `SYM_DEBUG` for the `mcc_s` sanitizer target
+- [x] Auto-define `MEM_DEBUG` and `SYM_DEBUG` for the `mcc_s` sanitizer target
       (`CMakeLists.txt` ~:2237 area) so they stop being source hand-edits.
       Keep them off every other target — their presence changes allocator
       layout/locking. Gate: `sanitize` preset builds + sanitize-smoke.

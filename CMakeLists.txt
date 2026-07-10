@@ -2284,6 +2284,7 @@ if(MCC_BUILD_SANITIZE)
     set_source_files_properties(src/mcc.c PROPERTIES OBJECT_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/src/mcctools.c")
     target_include_directories(mcc_s PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_compile_definitions(mcc_s PRIVATE MEM_DEBUG=1 SYM_DEBUG=1)
     target_compile_options(mcc_s PRIVATE ${_san_cflags})
     if(_san_lflags)
         target_link_options(mcc_s PRIVATE ${_san_lflags})
