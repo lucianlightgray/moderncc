@@ -1843,11 +1843,18 @@ touch `src/mccast.c`, so serialize to avoid worktree merge conflicts):
       classification + switch(op 6) arm meets in the `MCC_AST_CPROP_JOIN`
       lattice. Gated (already default-off); TDD = cpropjoin.sh + corpus
       force-on.
-4. [ ] **§35 — Sethi–Ullman evaluation-order numbering**
-      (`MCC_AST_EVALORDER`, default off). Reorder commutative operand
-      emission to cut register pressure in the replay emitter. Highest
-      byte-identity risk in this bucket → the gate-off fixpoint check is the
-      real test; land after 1-3 prove the pattern.
+4. [x] **§35 — Sethi–Ullman evaluation-order numbering** — LANDED as
+      `MCC_AST_SETHI` (commit `f45a6ec5`, first increment): reorders
+      commutative operand emission behind a default-off gate; byte-identity
+      preserved when off. (Follow-ups: wider operand shapes, feed §31 as a
+      strategy.)
+
+Remaining Bucket-A (open, serialized on `src/mccast.c`): **§32a refinements**
+(fall-through-aware meets, op-5 `for(;;)` classification, switch(op 6) arms in
+the `MCC_AST_CPROP_JOIN` lattice) and **§32c value-materializing fresh-temp
+LICM** (now unblocked — the `-O3` self-host fixpoint gate is available). Both
+follow the same default-off + fixpoint-off/on + native-arm64 + full-ctest gate
+proven by §33a/§30; the `&&`-of-`!=` and value-table §30 encodings also remain.
 
 ## 40.3 Bucket B — milestone-scale (plan only; do NOT attempt piecemeal)
 
