@@ -287,6 +287,7 @@ static char *default_outputfile(MCCState *s, const char *first_file) {
 #include <sys/file.h>
 #include <unistd.h>
 #include <signal.h>
+#include <sys/wait.h>
 
 static volatile sig_atomic_t so_stop;
 static void so_on_stop(int sig) {
@@ -484,10 +485,36 @@ static int so_copy(const char *src, const char *dst) {
 	return ok ? 0 : -1;
 }
 
+static int so_spawn_timeout(const char **cv, unsigned timeout_ms) {
+	unsigned t0;
+	pid_t pid = fork();
+	if (pid < 0)
+		return -1;
+	if (pid == 0) {
+		execvp(cv[0], (char *const *)cv);
+		_exit(127);
+	}
+	t0 = host_clock_ms();
+	for (;;) {
+		int status;
+		pid_t r = waitpid(pid, &status, WNOHANG);
+		if (r == pid)
+			return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+		if (r < 0)
+			return -1;
+		if (so_stop || host_clock_ms() - t0 >= timeout_ms) {
+			kill(pid, SIGKILL);
+			waitpid(pid, &status, 0);
+			return -1;
+		}
+		usleep(1000);
+	}
+}
+
 static long so_eval(const char **cv, const char *cand_tmp, unsigned gate,
-										unsigned budget) {
+										unsigned budget, unsigned timeout_ms) {
 	so_setenv_cfg(gate, budget);
-	if (host_spawn_wait(cv) != 0)
+	if (so_spawn_timeout(cv, timeout_ms) != 0)
 		return -1;
 	return so_textsize(cand_tmp);
 }
@@ -497,7 +524,7 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 	unsigned budget_ms = s->optimize_search_seconds * 1000u;
 	unsigned start = host_clock_ms();
 	unsigned best_gate = 0, best_budget = 0;
-	unsigned gate_cur = 0, budget_cur = 0, round = 0, tried = 0, base_ms;
+	unsigned gate_cur = 0, budget_cur = 0, round = 0, tried = 0, base_ms, cap_ms;
 	long best;
 	char exe[1024], best_tmp[1200], cand_tmp[1200], ckpt[3200];
 	const char **cv;
@@ -531,10 +558,11 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 	signal(SIGHUP, so_on_stop);
 
 	{
-		unsigned t0 = host_clock_ms();
-		best = so_eval(cv, cand_tmp, best_gate, best_budget);
-		base_ms = host_clock_ms() - t0;
-		base_ms = (base_ms ? base_ms : 1u) * SO_SLICE_FACTOR;
+		unsigned t0 = host_clock_ms(), dt;
+		best = so_eval(cv, cand_tmp, best_gate, best_budget, 300000u);
+		dt = host_clock_ms() - t0;
+		base_ms = (dt ? dt : 1u) * SO_SLICE_FACTOR;
+		cap_ms = dt * 4u < 2000u ? 2000u : dt * 4u;
 		tried++;
 		if (best < 0) {
 			remove(cand_tmp);
@@ -554,7 +582,7 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 			long sz;
 			if (so_gate_dead(g))
 				continue;
-			sz = so_eval(cv, cand_tmp, g, best_budget);
+			sz = so_eval(cv, cand_tmp, g, best_budget, cap_ms);
 			tried++;
 			if (sz >= 0 && sz < best) {
 				best = sz;
@@ -566,7 +594,7 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 		while (!so_stop && budget_cur < SO_BUDGET_SPACE && host_clock_ms() < b_dead &&
 					 host_clock_ms() - start < budget_ms) {
 			unsigned b = budget_cur++;
-			long sz = so_eval(cv, cand_tmp, best_gate, b);
+			long sz = so_eval(cv, cand_tmp, best_gate, b, cap_ms);
 			tried++;
 			if (sz >= 0 && sz < best) {
 				best = sz;
