@@ -4696,11 +4696,12 @@ static AstLocal ast_dup_sub(AstArena *a, AstLocal n) {
 	return d;
 }
 
-static int ast_bf_eqconst(AstArena *a, AstLocal n, AstLocal *key, uint64_t *v) {
+static int ast_bf_cmpconst(AstArena *a, AstLocal n, int cmpop, AstLocal *key,
+													 uint64_t *v) {
 	AstLocal l, r, k, c;
 	int ct, kt;
 	uint64_t cv, kref;
-	if (ast_kind(a, n) != AST_Binary || ast_op(a, n) != TOK_EQ ||
+	if (ast_kind(a, n) != AST_Binary || ast_op(a, n) != cmpop ||
 			ast_nchild(a, n) != 2)
 		return 0;
 	l = ast_child(a, n, 0);
@@ -4725,13 +4726,18 @@ static int ast_bf_eqconst(AstArena *a, AstLocal n, AstLocal *key, uint64_t *v) {
 	return 1;
 }
 
+static int ast_bf_eqconst(AstArena *a, AstLocal n, AstLocal *key, uint64_t *v) {
+	return ast_bf_cmpconst(a, n, TOK_EQ, key, v);
+}
+
 #define AST_BF_MAXVALS 256
 
-static int ast_bf_cond_parse(AstArena *a, AstLocal cond, AstLocal *key,
-														 uint64_t *vals, int *cnt) {
+static int ast_bf_cond_parse_op(AstArena *a, AstLocal cond, int joinop,
+																int cmpop, AstLocal *key, uint64_t *vals,
+																int *cnt) {
 	AstLocal k;
 	uint64_t v;
-	if (ast_bf_eqconst(a, cond, &k, &v)) {
+	if (ast_bf_cmpconst(a, cond, cmpop, &k, &v)) {
 		if (*key == AST_NONE)
 			*key = k;
 		else if (!ast_ident_same(a, *key, k))
@@ -4741,12 +4747,12 @@ static int ast_bf_cond_parse(AstArena *a, AstLocal cond, AstLocal *key,
 		vals[(*cnt)++] = v;
 		return 1;
 	}
-	if (ast_kind(a, cond) != AST_Binary || ast_op(a, cond) != TOK_LOR ||
+	if (ast_kind(a, cond) != AST_Binary || ast_op(a, cond) != joinop ||
 			ast_nchild(a, cond) < 2)
 		return 0;
 	for (AstLocal c = ast_first_child(a, cond); c != AST_NONE;
 			 c = ast_next_sib(a, c)) {
-		if (!ast_bf_eqconst(a, c, &k, &v))
+		if (!ast_bf_cmpconst(a, c, cmpop, &k, &v))
 			return 0;
 		if (*key == AST_NONE)
 			*key = k;
@@ -4757,6 +4763,11 @@ static int ast_bf_cond_parse(AstArena *a, AstLocal cond, AstLocal *key,
 		vals[(*cnt)++] = v;
 	}
 	return 1;
+}
+
+static int ast_bf_cond_parse(AstArena *a, AstLocal cond, AstLocal *key,
+														 uint64_t *vals, int *cnt) {
+	return ast_bf_cond_parse_op(a, cond, TOK_LOR, TOK_EQ, key, vals, cnt);
 }
 
 static int ast_bf_window(const uint64_t *vals, int cnt, uint64_t *mask,
@@ -4929,6 +4940,29 @@ static int ast_bf_try_lor(AstArena *a, AstLocal n) {
 	return 1;
 }
 
+static int ast_bf_try_land(AstArena *a, AstLocal n) {
+	AstLocal key = AST_NONE;
+	uint64_t vals[AST_BF_MAXVALS], mask = 0, base = 0;
+	int cnt = 0;
+	if (!ast_bf_cond_parse_op(a, n, TOK_LAND, TOK_NE, &key, vals, &cnt))
+		return 0;
+	if (cnt < ast_bitflag_min || key == AST_NONE)
+		return 0;
+	if (!ast_bf_window(vals, cnt, &mask, &base))
+		return 0;
+	AstLocal member = ast_bf_build(a, key, mask, base);
+	ast_set_op(a, n, '^');
+	ast_set_type(a, n, VT_INT, 0);
+	ast_set_ival(a, n, 0);
+	ast_set_fbits(a, n, 0);
+	ast_set_sym(a, n, 0);
+	ast_set_cst(a, n, 0);
+	ast_clear_children(a, n);
+	ast_add_child(a, n, member);
+	ast_add_child(a, n, ast_bf_lit(a, VT_INT, 1));
+	return 1;
+}
+
 static int ast_bf_run(AstArena *a) {
 	ast_bf_folds = 0;
 	AstLocal nn = ast_count(a);
@@ -4939,6 +4973,10 @@ static int ast_bf_run(AstArena *a) {
 	for (AstLocal n = 0; n < nn; n++)
 		if (ast_kind(a, n) == AST_Binary && ast_op(a, n) == TOK_LOR)
 			ast_bf_folds += ast_bf_try_lor(a, n);
+	nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++)
+		if (ast_kind(a, n) == AST_Binary && ast_op(a, n) == TOK_LAND)
+			ast_bf_folds += ast_bf_try_land(a, n);
 	return ast_bf_folds;
 }
 

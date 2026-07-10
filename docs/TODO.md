@@ -1930,9 +1930,19 @@ touch `src/mccast.c`, so serialize to avoid worktree merge conflicts):
       encoding (proven by object sha), span>63 / unsigned-wraparound windows
       conservatively fall back. Validated: gate-off byte-identity + full ctest
       1860/1860; fires on a `{100,105,120,150,163}` cluster with the edge-key
-      checksum matching the transform-off reference at -O1/-O2/-O3. **Still
-      open**: `&&`-of-`!=` complement, value-table dispatch for differing
-      bodies.
+      checksum matching the transform-off reference at -O1/-O2/-O3.
+      **`&&`-of-`!=` complement — LANDED**: a same-key `key != C1 && … &&
+      key != Cn` chain (n-ary `TOK_LAND` of `TOK_NE`) now folds to `member ^ 1`
+      (the negation of the membership test), reusing `ast_bf_window`/
+      `keyexpr`/`build` via a parametrized `ast_bf_cmpconst`/`ast_bf_cond_
+      parse_op` + new `ast_bf_try_land`. `member ∈ {0,1}` so `^1` is exact
+      logical negation; out-of-window/negative keys give `guard=0 → member=0 →
+      result=1`, correct (not in the set → all `!=` true). Validated: existing
+      `==`/`||` fold byte-unchanged (object sha), gate-off `-O0..-O3`
+      byte-identical, full ctest green, fires on a `k!=100&&…&&k!=163` cluster
+      with the edge-key checksum matching the transform-off reference. **Still
+      open**: value-table dispatch for differing bodies; the If-chain
+      fall-through `!=` form (`ast_bf_try_if` still `TOK_EQ`-only).
 3. [~] **§32a refinements** — **op-5 `for(;;)` classification LANDED**: the
       `MCC_AST_CPROP_JOIN` structured descent now treats op-5 infinite loops
       with the same invariant-preserving meet as op-2..4 loops (`ast_cprop_
