@@ -3894,7 +3894,7 @@ void ast_func_end(Sym *sym) {
 					nocode_wanted = 0;
 					loc = saved_loc;
 					anon_sym = saved_anon;
-					ast_fconst_i = (do_bfold || do_ident || do_cprop) ? ast_fconst_n : 0;
+					ast_fconst_i = (do_bfold || do_ident || do_cprop || do_inline) ? ast_fconst_n : 0;
 					ast_locrec_i = 0;
 					ast_replaying = 1;
 					ast_rp_switch = NULL;

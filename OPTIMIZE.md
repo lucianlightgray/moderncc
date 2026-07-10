@@ -338,3 +338,23 @@ dlmf.nist.gov/3.11 (minimax polynomial approximations).
   graft miscomputes; independent of cprop, reproduces on stock
   compiler) — ticketed as TODO §19; not caught by the suite because no
   exec-replay column enables inline.
+
+### 2026-07-10 — iteration 11 (fixed the -O3 float-return inline miscompile)
+
+- **Miscompile FIXED** (correctness > new features this cycle). Root
+  cause was not the return slot: the inline graft re-replay reused the
+  positional float-constant-pool cache (ast_fconst) with i=0, but the
+  spliced callee body emits float constants absent from the caller's
+  faithful pass, so ast_fconst_i walked off-by-N and grafted floats
+  referenced the wrong rodata slot (f(10.0) computed 10.0*garbage →
+  1.0 instead of 21.0). The bfold/ident/cprop re-replays already
+  exhaust the cache (i = n → allocate fresh); inline wrongly did not.
+  One-line fix in ast_func_end: inline joins that set so its floats
+  allocate fresh. Int path unaffected (immediates, not pooled).
+- Repro table (-O0 vs -O3): f(10.0) 21.0 vs was-1.0 now-21.0;
+  mixi(2,3.0) 5 vs was-6 now-5; float/double-from-int paths were
+  already correct. cli test `O3_float_return_inline` pins it (fails
+  with fix reverted). 1802 green, fixpoint byte-identical, -O0 objects
+  identical on neutral inputs.
+- Two subagents landed this cycle (TPE last iter, this fix); the
+  bench bootstrap-CI/Cohen's-d stats upgrade is still in flight.

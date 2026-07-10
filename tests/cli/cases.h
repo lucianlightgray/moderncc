@@ -96,6 +96,12 @@ static const cli_case_t cli_cases[] = {
 		 "readelf -r {W}/bf0.o | grep -c sqrt && readelf -r {W}/bf1.o | grep -c sqrt",
 		 "1\n0\n"},
 
+		{"O3_float_return_inline", "cpu=x86_64,os=linux,optimizer",
+		 "printf 'static double f(double x){return x*2.0+1.0;} static float g(float x){return x*3.0f+0.5f;} static double h(int a,int b){return (double)a/(double)b+0.25;} static int ii(int x){return x*2+1;} int main(void){ if(f(10.0)!=21.0)return 1; if(g(4.0f)!=12.5f)return 2; if(h(7,2)!=3.75)return 3; if(ii(20)!=41)return 4; return 0; }\\n' > {W}/fi.c && "
+		 "{MCC} -B{B} -I{I} -O0 -run {W}/fi.c && echo O0OK && "
+		 "{MCC} -B{B} -I{I} -O3 -run {W}/fi.c && echo O3OK",
+		 "O0OK\nO3OK\n"},
+
 		{"debug_default_stabs", "cpu=x86_64,os=linux,stabs",
 		 "{MCC} -B{B} -I{I} -g -c {D}/lib.c -o {W}/g.o && readelf -S {W}/g.o | grep -oE '\\.stab' | sort -u",
 		 ".stab\n"},
