@@ -424,11 +424,19 @@ Landed, all presets/ctest green + fixpoint byte-identical at each step:
   sorts functions biggest/hottest-first so a limited budget lands where it
   pays (`ad5cfee2`).
 
-**Remaining full builds** (deep, each a focused session): §30 bit-flag
-(needs `AST_If`-chain control-flow detection — `||` is control flow, not a
-binary node — + new multi-node AST construction), §26 embedded JIT (infra
-exists; dominant cost = embedding a libmcc slice). §27/§28 stay deferred
-behind the value-reference-node decision.
+- **§30 detection increment** — same-key equality-cluster detection over
+  the control-flow (`AST_If`) form under `MCC_AST_BITFLAG` (`fb845871`).
+  Remaining: the mask-encoding transform (new multi-node AST construction).
+- **§26 manifest increment** — `-O4+ --embed-jit` resolves + reports the
+  runtime-JIT manifest (`--jit-functions`/`--jit-max-duration`) (`95037e96`).
+  Remaining: the runtime engine (ELF ctor + embedded libmcc slice + RCU
+  patching) — the large subsystem.
+
+**Every non-deferred rung (§20-§26, §29-§31) now has a real, tested
+increment**, 1857 ctest + fixpoint byte-identical throughout. The remaining
+*full* builds are the §30 mask-transform and the §26 runtime engine — each a
+focused session. §27/§28 stay deferred behind the value-reference-node
+decision (per the design round).
 
 
 The `-O<N>` (N>=4) compile-time search landed at `f959078e`
