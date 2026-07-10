@@ -698,9 +698,7 @@ static int so_spawn_run(const char **cv, unsigned timeout_ms, long *usec,
 				*usec = (long)(t1.tv_sec - t0.tv_sec) * 1000000L +
 								(long)(t1.tv_usec - t0.tv_usec);
 				*rss_kb = (long)ru.ru_maxrss;
-#ifndef __APPLE__
-				/* Linux reports ru_maxrss in KiB; Darwin in bytes. */
-#else
+#if MCC_HOST_DARWIN
 				*rss_kb /= 1024;
 #endif
 				return 0;
