@@ -287,6 +287,7 @@ static const mcc_golden_t mcc_goldens[] = {
 		{"algebraic_identities", "run", "exec/expressions/algebraic_identities.c", "40 40 40 40 40\n40 40 40 40 40\n40 0 0 0\n0 0 40 40\n-1 0 5\n0 0\n4294967280 4294967280 4294967280 4294967280\n0 4294967280\n2147483628\n1234567890123 1234567890123 0 0\n1234567890123 1234567890123 1234567890123\n40 40 40\n0 0\nf\n0\nf\n0\nf\n0\nf\n-1\nf\nf\n0\nf\nf\n7\n8\n4\n0 0\n2\n-5 -5\n200 200\n", "", "", ""},
 		{"local_const_prop", "run", "exec/optimizer/local_const_prop.c", "chk=16436925606390758899 fx=30\nOK\n", "", "", ""},
 		{"dead_store_elim", "run", "exec/optimizer/dead_store_elim.c", "chk=16121870917244830463 g=9\nOK\n", "", "", ""},
+		{"const_branch_fold", "run", "exec/optimizer/const_branch_fold.c", "chk=4795743129665478947 g=22\nOK\n", "", "", ""},
 };
 
 static const int mcc_goldens_count = (int)(sizeof mcc_goldens / sizeof mcc_goldens[0]);

@@ -44,7 +44,7 @@ Status: `[ ]` open · `[~]` claimed/in-progress · `[x]` landed (commit)
 
 ### Tier 2 — dataflow within a function
 
-- [ ] **Sparse conditional constant propagation** — Wegman–Zadeck SCCP.
+- [x] **Sparse conditional constant propagation (conditional half)** — Wegman–Zadeck; constant-branch / unreachable-arm folding, `ast_sccp_run`.
 - [x] **Copy/constant propagation** (Aho–Sethi–Ullman dragon-book; local, `ast_cprop_run`).
 - [x] **Dead store / dead code elimination** (Kildall-flavored local liveness; `ast_dse_run`).
 - [ ] **Common subexpression elimination** — Cocke's available
@@ -479,3 +479,27 @@ dlmf.nist.gov/3.11 (minimax polynomial approximations).
   code-size evidence for the five landed tree passes — a **12% .text
   reduction** on pass-relevant code, invisible on the self-host workload.
 - SCCP constant-branch-folding subagent still in flight.
+
+### 2026-07-10 — iteration 17 (Tier-2 constant-branch folding, SCCP subset)
+
+- **Constant-branch folding LANDED** (`ast_sccp_run`, fifth sibling) —
+  the safely-expressible conditional half of Wegman–Zadeck SCCP. A plain
+  `AST_If` (op 0) with a constant-integer-literal condition is retagged
+  into an `AST_BasicBlock` holding only the taken arm (or Poison when the
+  taken arm is empty, e.g. `if(0)` no-else); the dead arm is orphaned.
+  Replay gained one inert `case AST_BasicBlock` (never a direct stmt
+  child in normal capture, so it can't fire during the faithful pass).
+  Also extended cprop to rewrite an if-condition to a literal before
+  clearing its map, so `int c=0; if(c)` folds. Guards: op==0 only
+  (ternary/switch/while/do/for excluded), bare integer literal
+  (inherently pure → side-effecting conditions never fold and keep both
+  arms), and label-safety (bail if the dead arm defines a Jump label a
+  goto could target).
+- Demonstrated: `if(2*0){puts("dead");...}` drops the dead-arm code —
+  .text 330→253B (−23%); the orphaned string sits in .rodata (dead-data
+  GC is a linker --gc-sections job, not the compiler). 1812 tests green,
+  fixpoint byte-identical -O2, -O0 objects identical on neutral inputs.
+- **Tier-2 scoreboard**: const/copy-prop ✓, dead-store elim ✓, SCCP
+  conditional-branch ✓. Remaining: SCCP's value-lattice half and CSE/GVN
+  both blocked on an AST value-reference node; Sethi–Ullman ordering
+  (codegen-order, byte-identity-risky). Six landed tree passes now.

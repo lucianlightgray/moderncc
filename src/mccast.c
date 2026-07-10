@@ -2557,6 +2557,9 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 			vpop();
 			break;
 		}
+		case AST_BasicBlock:
+			ast_replay_bb(a, s);
+			break;
 		case AST_Invoke:
 			ast_replay_value(a, s);
 			if (ast_type_t(a, s) != VT_VOID)
@@ -3732,6 +3735,11 @@ static void ast_cprop_block(AstArena *a, AstLocal bb) {
 			if (ast_cprop_safe(a, ast_first_child(a, s)))
 				ast_cprop_rewrite(a, ast_first_child(a, s), 0);
 			ast_cprop_kn = 0;
+		} else if (k == AST_If && ast_op(a, s) == 0) {
+			AstLocal cond = ast_child(a, s, 0);
+			if (ast_cprop_safe(a, cond))
+				ast_cprop_rewrite(a, cond, 0);
+			ast_cprop_kn = 0;
 		} else {
 			ast_cprop_kn = 0;
 		}
@@ -3827,6 +3835,49 @@ static int ast_dse_run(AstArena *a) {
 		if (ast_kind(a, n) == AST_BasicBlock)
 			ast_dse_block(a, n);
 	return ast_dse_folds;
+}
+
+static int ast_sccp_folds;
+
+static int ast_sccp_has_label(AstArena *a, AstLocal n) {
+	if (n == AST_NONE)
+		return 0;
+	if (ast_kind(a, n) == AST_Jump && ast_op(a, n) == 4)
+		return 1;
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		if (ast_sccp_has_label(a, c))
+			return 1;
+	return 0;
+}
+
+static int ast_sccp_run(AstArena *a) {
+	ast_sccp_folds = 0;
+	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++) {
+		if (ast_kind(a, n) != AST_If || ast_op(a, n) != 0)
+			continue;
+		AstLocal cond = ast_child(a, n, 0);
+		int tt;
+		uint64_t v;
+		if (!ast_ident_cval(a, cond, &tt, &v))
+			continue;
+		AstLocal thenbb = ast_child(a, n, 1);
+		AstLocal elsebb = ast_child(a, n, 2);
+		AstLocal taken = v ? thenbb : elsebb;
+		AstLocal dead = v ? elsebb : thenbb;
+		if (ast_sccp_has_label(a, dead))
+			continue;
+		if (taken == AST_NONE) {
+			ast_set_kind(a, n, AST_Poison);
+			ast_clear_children(a, n);
+		} else {
+			ast_set_kind(a, n, AST_BasicBlock);
+			ast_clear_children(a, n);
+			ast_add_child(a, n, taken);
+		}
+		ast_sccp_folds++;
+	}
+	return ast_sccp_folds;
 }
 
 static int ast_replay_ok(AstArena *a) {
@@ -3927,6 +3978,7 @@ void ast_func_end(Sym *sym) {
 			int idents = 0;
 			int cprops = 0;
 			int dses = 0;
+			int sccps = 0;
 			jmp_buf ast_outer_jmp;
 			int ast_outer_en = mcc_state->error_set_jmp_enabled;
 			int ast_saved_nberr = mcc_state->nb_errors;
@@ -3956,10 +4008,12 @@ void ast_func_end(Sym *sym) {
 				idents = faithful && ast_templates_env ? ast_ident_run(ast_cur) : 0;
 				cprops = faithful && ast_templates_env ? ast_cprop_run(ast_cur) : 0;
 				dses = faithful && ast_templates_env ? ast_dse_run(ast_cur) : 0;
+				sccps = faithful && ast_templates_env ? ast_sccp_run(ast_cur) : 0;
 				int do_bfold = bfolds > 0;
 				int do_ident = idents > 0;
 				int do_cprop = cprops > 0;
 				int do_dse = dses > 0;
+				int do_sccp = sccps > 0;
 				int do_inline = faithful && ast_has_graftable_call(ast_cur);
 				/* Tier-4 inline and call-ful Tier-3 promotion both claim the
 				   callee-saved bank (RBX/R12-R15); combining them in one function
@@ -3969,10 +4023,10 @@ void ast_func_end(Sym *sym) {
 				int do_promote = faithful && ast_promote_env && ast_plan_promotion(ast_cur) > 0;
 				ast_no_callful_promo = 0;
 				if (faithful && !do_inline && !do_promote && !do_bfold && !do_ident &&
-						!do_cprop && !do_dse)
+						!do_cprop && !do_dse && !do_sccp)
 					loc = saved_loc;
 				if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
-						do_dse) {
+						do_dse || do_sccp) {
 					ind = ast_body_ind_sv;
 					rsym = 0;
 					if (ast_rsec)
@@ -3980,7 +4034,7 @@ void ast_func_end(Sym *sym) {
 					nocode_wanted = 0;
 					loc = saved_loc;
 					anon_sym = saved_anon;
-					ast_fconst_i = (do_bfold || do_ident || do_cprop || do_dse || do_inline) ? ast_fconst_n : 0;
+					ast_fconst_i = (do_bfold || do_ident || do_cprop || do_dse || do_sccp || do_inline) ? ast_fconst_n : 0;
 					ast_locrec_i = 0;
 					ast_replaying = 1;
 					ast_rp_switch = NULL;
@@ -4045,6 +4099,8 @@ void ast_func_end(Sym *sym) {
 					fprintf(stderr, "[ast-cprop] %d %s\n", cprops, funcname);
 				if (dses)
 					fprintf(stderr, "[ast-dse] %d %s\n", dses, funcname);
+				if (sccps)
+					fprintf(stderr, "[ast-sccp] %d %s\n", sccps, funcname);
 				if (promoted)
 					fprintf(stderr, "[ast-promote] %d %s\n", promoted, funcname);
 			}
