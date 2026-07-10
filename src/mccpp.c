@@ -4359,6 +4359,107 @@ static void define_print(MCCState *s1, int v) {
 	tok_print(s->d, "");
 }
 
+static void pp_write_toks(FILE *f, const int *str) {
+	int t, t0 = 0, sp = 1;
+	CValue cval;
+	while (str) {
+		TOK_GET(&t, &str, &cval);
+		if (t == 0 || t == TOK_EOF)
+			break;
+		if (pp_need_space(t0, t))
+			sp = 0;
+		fprintf(f, &" %s"[sp], t == TOK_PLCHLDR ? "" : get_tok_str(t, &cval));
+		sp = 1, t0 = t;
+	}
+}
+
+static void pp_write_define(FILE *f, Sym *s) {
+	fprintf(f, "#define %s", get_tok_str(s->v, NULL));
+	if (s->type.t & MACRO_FUNC) {
+		Sym *a = s->next;
+		fprintf(f, "(");
+		if (a)
+			for (;;) {
+				fprintf(f, "%s", get_tok_str(a->v, NULL));
+				if (!(a = a->next))
+					break;
+				fprintf(f, ",");
+			}
+		fprintf(f, ")");
+	}
+	fprintf(f, " ");
+	pp_write_toks(f, s->d);
+	fprintf(f, "\n");
+}
+
+ST_FUNC int pp_macro_is_func(int v) {
+	Sym *s = define_find(v);
+	return s && s->d && (s->type.t & MACRO_FUNC);
+}
+
+ST_FUNC int pp_macro_eval(int v, const int64_t *args, int nargs, int64_t *res) {
+	Sym *m = define_find(v), *a, *d, **older = NULL;
+	int n, i, nolder = 0, ret = -1;
+	FILE *f;
+	char path[1024], exe[1024];
+	char *out = NULL, *end;
+	const char *name = get_tok_str(v, NULL);
+	const char *argv[6];
+
+	if (!m || !m->d || !(m->type.t & MACRO_FUNC))
+		return -1;
+	for (n = 0, a = m->next; a; a = a->next, n++)
+		if (a->type.t)
+			return -1;
+	if (n != nargs)
+		return -1;
+	if (host_exe_path(exe, sizeof exe) < 0)
+		return -1;
+	f = host_temp_c_file(path, sizeof path);
+	if (!f)
+		return -1;
+
+	for (d = define_stack; d; d = d->prev)
+		if (d->d && !(d->v & SYM_FIELD) && d->v != v && d->v >= TOK_IDENT &&
+				!is_predef_macro(d->v))
+			dynarray_add((void ***)&older, &nolder, d);
+	for (i = nolder; i-- > 0;)
+		pp_write_define(f, older[i]);
+	mcc_free(older);
+
+	fprintf(f, "static long long %s(", name);
+	for (i = 0, a = m->next; a; a = a->next, i++)
+		fprintf(f, "%slong long %s", i ? ", " : "",
+						get_tok_str(a->v, NULL));
+	fprintf(f, "%s) {\n\treturn (", n ? "" : "void");
+	pp_write_toks(f, m->d);
+	fprintf(f, ");\n}\nextern int printf(const char *, ...);\n"
+						 "int main(void) {\n\tprintf(\"%%lld\", %s(", name);
+	for (i = 0; i < nargs; i++)
+		fprintf(f, "%s%lldLL", i ? ", " : "", (long long)args[i]);
+	fprintf(f, "));\n\treturn 0;\n}\n");
+	fclose(f);
+
+	argv[0] = exe;
+	argv[1] = "-w";
+	argv[2] = "-run";
+	argv[3] = path;
+	argv[4] = NULL;
+	{
+		HostSpawnOpts o;
+		memset(&o, 0, sizeof o);
+		o.stdout_buf = &out;
+		if (host_spawn_ex(argv, &o) == 0 && out && *out) {
+			*res = strtoll(out, &end, 10);
+			if (end != out)
+				ret = 0;
+		}
+	}
+	mcc_free(out);
+	unlink(path);
+	return ret;
+}
+
 static void pp_debug_defines(MCCState *s1) {
 	int v, t;
 	const char *vs;

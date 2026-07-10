@@ -205,7 +205,7 @@ item above. Supersedes GATED.md item 9(a)'s narrower `CONFIG_AST` rename.
 
 ## 13. PP macro evaluation through the AST `-run` bridge (exploratory)
 
-- [ ] Without implementing new AST nodes, use the ast API to hook the
+- [x] Without implementing new AST nodes, use the ast API to hook the
       preprocessor and treat identifiers as if they were variables that can
       be evaluated by calling `-run` internally — enough to calculate even a
       recursive `ret macro-converted-to-a-function(value)` — unless this

@@ -6663,6 +6663,30 @@ static void format_check(int is_scanf, const char *fmt, int favail,
 
 #define sizeof_parsed_type (mcc_state->gen_sizeof_parsed_type)
 
+#define MACRO_EVAL_MAX_ARGS 16
+
+static void macro_eval_call(int v) {
+	int64_t args[MACRO_EVAL_MAX_ARGS], res;
+	int n = 0;
+
+	skip('(');
+	if (tok != ')')
+		for (;;) {
+			if (n >= MACRO_EVAL_MAX_ARGS)
+				mcc_error("-fmacro-eval: too many arguments to '%s'",
+									get_tok_str(v, NULL));
+			args[n++] = expr_const64();
+			if (tok == ')')
+				break;
+			skip(',');
+		}
+	skip(')');
+	if (pp_macro_eval(v, args, n, &res))
+		mcc_error("-fmacro-eval: cannot evaluate '%s' as a function",
+							get_tok_str(v, NULL));
+	vpushll(res);
+}
+
 ST_FUNC void unary(void) {
 	int n, t, align, size, r;
 	CType type;
@@ -7603,6 +7627,10 @@ tok_next:
 			const char *name = get_tok_str(t, NULL);
 			if (tok != '(')
 				mcc_error("'%s' undeclared", name);
+			if (mcc_state->macro_eval && pp_macro_is_func(t)) {
+				macro_eval_call(t);
+				break;
+			}
 			mcc_warning_c(warn_implicit_function_declaration)(
 					"implicit declaration of function '%s'", name);
 			s = external_global_sym(t, &func_old_type);

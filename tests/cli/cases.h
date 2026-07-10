@@ -1699,6 +1699,16 @@ static const cli_case_t cli_cases[] = {
 		 "cd {W} && {MCC} -B{B} -bt -gdwarf-5 -run btsub/btp.c 2>&1",
 		 "btsub/btp.c:3: at f: here\nbtsub/btp.c:6: by main\n"},
 
+		{"macro_eval_recursive", "",
+		 "printf '#define fact(n) (n <= 1 ? 1 : n * fact(n - 1))\\nint main(void) { return fact(5) == 120 ? 0 : 1; }\\n' > {W}/me.c && "
+		 "{MCC} -B{B} -fmacro-eval -run {W}/me.c && echo evaluated",
+		 "evaluated\n"},
+
+		{"macro_eval_off_by_default", "",
+		 "printf '#define fact(n) (n <= 1 ? 1 : n * fact(n - 1))\\nint main(void) { return fact(5) == 120 ? 0 : 1; }\\n' > {W}/me2.c && "
+		 "{MCC} -B{B} -run {W}/me2.c 2>&1 | grep -oE \"implicit declaration of function 'fact'\"",
+		 "implicit declaration of function 'fact'\n"},
+
 		{"x86_64_reloc_32s_range", "cpu=x86_64,os=linux,asm",
 		 "printf '%s\\n' 'char a[1500000000];' 'char b[1500000000];' 'int main(void){int r;__asm__ volatile(\"movl $b+1499999000, %0\":\"=r\"(r));return r?0:1;}' > {W}/r32s.c && "
 		 "{MCC} -no-pie {W}/r32s.c -o {W}/r32s 2>&1 | grep -oE \"relocation .R_X86_64_32.* out of range\"",

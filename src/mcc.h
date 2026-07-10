@@ -685,6 +685,7 @@ struct MCCState {
 	unsigned char dollars_in_identifiers;
 	unsigned char ms_bitfields;
 	unsigned char reverse_funcargs;
+	unsigned char macro_eval;
 	unsigned char gnu89_inline;
 	unsigned char unwind_tables;
 	unsigned char short_enums;
@@ -1402,6 +1403,8 @@ ST_FUNC void tok_str_add_tok(TokenString *s);
 ST_INLN void define_push(int v, int macro_type, int *str, Sym *first_arg);
 ST_FUNC void define_undef(Sym *s);
 ST_INLN Sym *define_find(int v);
+ST_FUNC int pp_macro_is_func(int v);
+ST_FUNC int pp_macro_eval(int v, const int64_t *args, int nargs, int64_t *res);
 ST_FUNC void free_defines(Sym *b);
 ST_FUNC void parse_define(void);
 ST_FUNC void skip_to_eol(int warn);

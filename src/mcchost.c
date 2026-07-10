@@ -112,6 +112,25 @@ ST_FUNC int host_exe_path(char *buf, int size) {
 #endif
 }
 
+ST_FUNC FILE *host_temp_c_file(char *path, int size) {
+#ifdef _WIN32
+	char dir[MAX_PATH];
+	static unsigned serial;
+	if (!GetTempPathA(sizeof dir, dir))
+		return NULL;
+	snprintf(path, size, "%smcc-me-%u-%u.c", dir,
+					 (unsigned)GetCurrentProcessId(), ++serial);
+	return fopen(path, "wb");
+#else
+	int fd;
+	snprintf(path, size, "/tmp/.mccmeXXXXXX.c");
+	fd = mkstemps(path, 2);
+	if (fd < 0)
+		return NULL;
+	return fdopen(fd, "w");
+#endif
+}
+
 #ifdef MCC_HOST_AUTO_MCCDIR_W32
 ST_FUNC char *host_w32_mccdir(char *path) {
 	char *p;

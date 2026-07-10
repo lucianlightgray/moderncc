@@ -198,6 +198,7 @@ ST_FUNC void host_set_exec_bits(const char *file);
 ST_FUNC int host_stderr_isatty(void);
 
 ST_FUNC int host_exe_path(char *buf, int size);
+ST_FUNC FILE *host_temp_c_file(char *path, int size);
 
 ST_FUNC int host_system_dir(char *buf, int size);
 
