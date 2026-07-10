@@ -521,6 +521,77 @@ static long so_textsize(const char *p) {
 	return total > 0 ? total : so_filesize(p);
 }
 
+struct so_fn {
+	char name[80];
+	long size;
+	unsigned cfg;
+};
+
+static int so_fn_sizes(const char *path, struct so_fn *out, int max) {
+	FILE *f = host_fopen(path, "rb");
+	unsigned char h[64], sh[64];
+	uint64_t shoff, symoff = 0, symsz = 0, syment = 0, stroff = 0;
+	uint16_t shentsize, shnum, i;
+	uint32_t type, link = 0;
+	long o;
+	int n = 0, strtab_idx = -1;
+	if (!f)
+		return -1;
+	if (fread(h, 1, 64, f) < 64 || h[0] != 0x7f || h[4] != 2) {
+		fclose(f);
+		return -1;
+	}
+	memcpy(&shoff, h + 40, 8);
+	memcpy(&shentsize, h + 58, 2);
+	memcpy(&shnum, h + 60, 2);
+	for (i = 0; i < shnum; i++) {
+		if (fseek(f, (long)(shoff + (uint64_t)i * shentsize), SEEK_SET) != 0 ||
+				fread(sh, 1, 64, f) < 64)
+			break;
+		memcpy(&type, sh + 4, 4);
+		if (type == 2) {
+			memcpy(&symoff, sh + 24, 8);
+			memcpy(&symsz, sh + 32, 8);
+			memcpy(&link, sh + 40, 4);
+			memcpy(&syment, sh + 56, 8);
+			strtab_idx = (int)link;
+		}
+	}
+	if (strtab_idx < 0 || syment == 0) {
+		fclose(f);
+		return -1;
+	}
+	if (fseek(f, (long)(shoff + (uint64_t)strtab_idx * shentsize), SEEK_SET) == 0 &&
+			fread(sh, 1, 64, f) == 64)
+		memcpy(&stroff, sh + 24, 8);
+	for (o = 0; (uint64_t)o < symsz && n < max; o += (long)syment) {
+		unsigned char sym[24];
+		uint32_t stname;
+		uint64_t stsize;
+		char nm[80];
+		int k = 0, c;
+		if (fseek(f, (long)symoff + o, SEEK_SET) != 0 || fread(sym, 1, 24, f) < 24)
+			break;
+		memcpy(&stname, sym, 4);
+		memcpy(&stsize, sym + 16, 8);
+		if ((sym[4] & 0xf) != 2 || stsize == 0)
+			continue;
+		if (fseek(f, (long)stroff + stname, SEEK_SET) != 0)
+			continue;
+		while (k < 79 && (c = fgetc(f)) > 0)
+			nm[k++] = (char)c;
+		nm[k] = 0;
+		if (!nm[0])
+			continue;
+		snprintf(out[n].name, sizeof out[n].name, "%s", nm);
+		out[n].size = (long)stsize;
+		out[n].cfg = 0;
+		n++;
+	}
+	fclose(f);
+	return n;
+}
+
 static int so_copy(const char *src, const char *dst) {
 	FILE *in, *out;
 	char buf[8192];
@@ -593,6 +664,99 @@ static void so_ckpt_save(const char *ckpt, uint64_t key, unsigned best_gate,
 	ck.round = round;
 	ck.best_text = best;
 	so_ckpt_write(ckpt, &ck);
+}
+
+#define SO_MAXFN 400
+static long so_fn_find(struct so_fn *a, int n, const char *name) {
+	int i;
+	for (i = 0; i < n; i++)
+		if (!strcmp(a[i].name, name))
+			return a[i].size;
+	return -1;
+}
+
+static int mcc_superopt_perfn(int argc, char **argv, MCCState *s,
+															const char *outfile) {
+	unsigned budget_ms = s->optimize_search_seconds * 1000u;
+	unsigned start = host_clock_ms();
+	char exe[1024], cand[1200], *cfg;
+	const char **cv;
+	int i, argn, nf, fi, ci, p;
+	struct so_fn fns[SO_MAXFN], cur[SO_MAXFN];
+	unsigned best_cfg[SO_MAXFN];
+	long best_size[SO_MAXFN], sz;
+	static const unsigned cfgs[3] = {1, 3, 7};
+	if (host_exe_path(exe, sizeof exe) <= 0)
+		pstrcpy(exe, sizeof exe, argv[0]);
+	snprintf(cand, sizeof cand, "%s.mcc-pf", outfile);
+	cfg = mcc_malloc(SO_MAXFN * 96);
+	cv = mcc_malloc((argc + 4) * sizeof *cv);
+	argn = 0;
+	cv[argn++] = exe;
+	for (i = 1; i < argc; i++)
+		cv[argn++] = argv[i];
+	cv[argn++] = "-o";
+	cv[argn++] = cand;
+	cv[argn] = NULL;
+	so_stop = 0;
+	signal(SIGTERM, so_on_stop);
+	signal(SIGINT, so_on_stop);
+	signal(SIGHUP, so_on_stop);
+	setenv("MCC_SEARCH_WORKER", "1", 1);
+	setenv("MCC_AST_TEMPLATES", "1", 1);
+	setenv("MCC_AST_FN_CONFIG", "", 1);
+	if (so_spawn_timeout(cv, 300000u) != 0 ||
+			(nf = so_fn_sizes(cand, fns, SO_MAXFN)) <= 0) {
+		remove(cand);
+		mcc_free(cfg);
+		mcc_free(cv);
+		return -1;
+	}
+	for (fi = 0; fi < nf; fi++) {
+		best_cfg[fi] = 7;
+		best_size[fi] = fns[fi].size;
+	}
+	for (fi = 0; fi < nf && !so_stop && host_clock_ms() - start < budget_ms; fi++)
+		for (ci = 0; ci < 3; ci++) {
+			int m, j;
+			if (cfgs[ci] == best_cfg[fi] ||
+					host_clock_ms() - start >= budget_ms || so_stop)
+				continue;
+			for (p = 0, j = 0; j < nf; j++)
+				p += snprintf(cfg + p, SO_MAXFN * 96 - p, "%s=%u;", fns[j].name,
+											j == fi ? cfgs[ci] : best_cfg[j]);
+			setenv("MCC_AST_FN_CONFIG", cfg, 1);
+			if (so_spawn_timeout(cv, 300000u) != 0)
+				continue;
+			m = so_fn_sizes(cand, cur, SO_MAXFN);
+			sz = so_fn_find(cur, m, fns[fi].name);
+			if (sz > 0 && sz < best_size[fi]) {
+				best_size[fi] = sz;
+				best_cfg[fi] = cfgs[ci];
+			}
+		}
+	for (p = 0, fi = 0; fi < nf; fi++)
+		p += snprintf(cfg + p, SO_MAXFN * 96 - p, "%s=%u;", fns[fi].name,
+									best_cfg[fi]);
+	setenv("MCC_AST_FN_CONFIG", cfg, 1);
+	if (so_spawn_timeout(cv, 300000u) != 0) {
+		remove(cand);
+		mcc_free(cfg);
+		mcc_free(cv);
+		return -1;
+	}
+	i = so_copy(cand, outfile);
+	remove(cand);
+	if (s->verbose) {
+		long tot = 0;
+		for (fi = 0; fi < nf; fi++)
+			tot += best_size[fi];
+		printf("superopt-perfn: %d functions in %ums, total .text %ld\n", nf,
+					 host_clock_ms() - start, tot);
+	}
+	mcc_free(cfg);
+	mcc_free(cv);
+	return i;
 }
 
 static int mcc_superopt_search(int argc, char **argv, MCCState *s,
@@ -836,9 +1000,11 @@ redo:
 			!getenv("MCC_SEARCH_WORKER") &&
 			(s->output_type == MCC_OUTPUT_OBJ || s->output_type == MCC_OUTPUT_EXE) &&
 			s->nb_files >= 1 && s->files[0]->name && !(s->files[0]->type & AFF_TYPE_LIB)) {
+		int (*so)(int, char **, MCCState *, const char *) =
+				getenv("MCC_AST_PERFN") ? mcc_superopt_perfn : mcc_superopt_search;
 		if (!s->outfile)
 			s->outfile = default_outputfile(s, s->files[0]->name);
-		if (mcc_superopt_search(argc0, argv0, s, s->outfile) == 0) {
+		if (so(argc0, argv0, s, s->outfile) == 0) {
 			mcc_delete(s);
 			return 0;
 		}

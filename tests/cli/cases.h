@@ -134,6 +134,12 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} --no-embed-jit -O0 -c {W}/so.c -o {W}/so2.o && echo FLAGOK",
 		 "WARMOK\nrc=55\nFLAGOK\n"},
 
+		{"perfn_search", "cpu=x86_64,os=linux,optimizer",
+		 "printf 'static int sq(int x){return x*x;}static int cube(int x){return x*x*x;}int main(void){int s=0;for(int i=0;i<8;i++)s+=sq(i)+cube(i);return s;}\\n' > {W}/pfs.c && "
+		 "XDG_CACHE_HOME={W}/pfsc MCC_AST_PERFN=1 {MCC} -B{B} -I{I} -O4 -c {W}/pfs.c -o {W}/pfs.o && "
+		 "{MCC} -B{B} -I{I} {W}/pfs.o -o {W}/pfs && {W}/pfs ; echo rc=$?",
+		 "rc=156\n"},
+
 		{"per_fn_config", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'static int sq(int x){return x*x;}int main(void){int s=0;for(int i=0;i<10;i++)s+=sq(i);return s;}\\n' > {W}/pf.c && "
 		 "MCC_AST_TEMPLATES=1 MCC_AST_FN_CONFIG='main=1;sq=1' {MCC} -B{B} -I{I} -O3 -c {W}/pf.c -o {W}/pf1.o && "
