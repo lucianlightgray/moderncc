@@ -1222,16 +1222,6 @@ mcc_config_node(MCC_SYSROOT         TYPE STRING DEFAULT "" GROUP "Runtime paths"
     HELP "configure --sysroot")
 mcc_config_node(MCC_TRIPLET         TYPE STRING DEFAULT "" GROUP "Runtime paths" ADVANCED
     HELP "configure --triplet")
-mcc_config_node(MCC_SYSINCLUDEPATHS TYPE STRING DEFAULT "" GROUP "Runtime paths" ADVANCED
-    HELP "configure --sysincludepaths (colon sep)")
-mcc_config_node(MCC_LIBPATHS        TYPE STRING DEFAULT "" GROUP "Runtime paths" ADVANCED
-    HELP "configure --libpaths (colon sep)")
-mcc_config_node(MCC_CRTPREFIX       TYPE STRING DEFAULT "" GROUP "Runtime paths" ADVANCED
-    HELP "configure --crtprefix (colon sep)")
-mcc_config_node(MCC_ELFINTERP       TYPE STRING DEFAULT "" GROUP "Runtime paths" ADVANCED
-    HELP "configure --elfinterp")
-mcc_config_node(MCC_SWITCHES        TYPE STRING DEFAULT "" GROUP "Runtime paths" ADVANCED
-    HELP "configure --mcc-switches")
 mcc_config_node(MCC_OS_RELEASE      TYPE STRING DEFAULT "" GROUP "Runtime paths" ADVANCED
     HELP "configure --os-release")
 mcc_config_node(MCC_EXTRA_CFLAGS  TYPE STRING DEFAULT "" GROUP "Build flags" ADVANCED
@@ -1309,18 +1299,6 @@ if(MCC_TARGETOS STREQUAL "Darwin")
             set(MCC_CONFIG_NEW_MACHO no)
         endif()
     endif()
-elseif(MCC_TARGETOS MATCHES "FreeBSD|OpenBSD|NetBSD|DragonFly")
-    if("${MCC_ELFINTERP}" STREQUAL "")
-        if(MCC_TARGETOS STREQUAL "FreeBSD")
-            set(MCC_ELFINTERP "/libexec/ld-elf.so.1")
-        elseif(MCC_TARGETOS STREQUAL "DragonFly")
-            set(MCC_ELFINTERP "/usr/libexec/ld-elf.so.2")
-        elseif(MCC_TARGETOS STREQUAL "NetBSD")
-            set(MCC_ELFINTERP "/usr/libexec/ld.elf_so")
-        elseif(MCC_TARGETOS STREQUAL "OpenBSD")
-            set(MCC_ELFINTERP "/usr/libexec/ld.so")
-        endif()
-    endif()
 elseif(MCC_TARGETOS STREQUAL "Android")
     if(DEFINED ENV{TERMUX_VERSION})
         set(_android_sysroot "/data/data/com.termux/files/usr")
@@ -1350,26 +1328,6 @@ elseif(MCC_TARGETOS STREQUAL "Android")
         elseif(MCC_CPU STREQUAL "i386")
             set(MCC_TRIPLET "i686-linux-android")
         endif()
-    endif()
-    if(MCC_CPU MATCHES "64$")
-        set(_android_s "64")
-    else()
-        set(_android_s "")
-    endif()
-    if("${MCC_SYSINCLUDEPATHS}" STREQUAL "")
-        set(MCC_SYSINCLUDEPATHS "{B}/include:{R}/include:{R}/include/${MCC_TRIPLET}")
-    endif()
-    if("${MCC_LIBPATHS}" STREQUAL "")
-        set(MCC_LIBPATHS "{B}:{R}/lib:/system/lib${_android_s}")
-    endif()
-    if("${MCC_CRTPREFIX}" STREQUAL "")
-        set(MCC_CRTPREFIX "{R}/lib")
-    endif()
-    if("${MCC_ELFINTERP}" STREQUAL "")
-        set(MCC_ELFINTERP "/system/bin/linker${_android_s}")
-    endif()
-    if("${MCC_SWITCHES}" STREQUAL "")
-        set(MCC_SWITCHES "-Wl,-rpath=${MCC_SYSROOT}/lib")
     endif()
 endif()
 
@@ -1479,7 +1437,7 @@ if(NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT CMAKE_CROSSCOMPILING)
         endforeach()
     endif()
 
-    message(STATUS "mcc paths: triplet='${MCC_TRIPLET}' libpaths='${MCC_LIBPATHS}' crtprefix='${MCC_CRTPREFIX}'")
+    message(STATUS "mcc paths: triplet='${MCC_TRIPLET}'")
     if("${MCC_CONFIG_LIBC}" STREQUAL "")
         if(EXISTS "/lib/ld-uClibc.so.0")
             message(STATUS "Perhaps you want -DMCC_CONFIG_LIBC=uClibc")
@@ -1641,21 +1599,6 @@ if(MCC_CONFIG_LIBC STREQUAL "" AND NOT MSVC AND NOT CMAKE_CROSSCOMPILING
         message(STATUS "mcc: musl host toolchain (${_host_mach}); defaulting MCC_CONFIG_LIBC=musl")
     endif()
 endif()
-if(MCC_CONFIG_LIBC STREQUAL "musl" AND MCC_ELFINTERP STREQUAL "")
-    if(MCC_CPU STREQUAL "arm64")
-        set(_muslarch aarch64)
-    elseif(MCC_CPU STREQUAL "arm")
-        if(MCC_ARM_HARDFLOAT)
-            set(_muslarch armhf)
-        else()
-            set(_muslarch arm)
-        endif()
-    else()
-        set(_muslarch "${MCC_CPU}")
-    endif()
-    set(MCC_ELFINTERP "/lib/ld-musl-${_muslarch}.so.1")
-endif()
-
 if(MCC_CONFIG_LIBC STREQUAL "musl")
     list(APPEND _mccdefs "MCC_CONFIG_MUSL=1")
 elseif(MCC_CONFIG_LIBC STREQUAL "uClibc")
@@ -1710,11 +1653,6 @@ if(NOT "${MCC_CONFIG_SEMLOCK}" STREQUAL "")
     list(APPEND _mccdefs "MCC_CONFIG_SEMLOCK=${MCC_CONFIG_SEMLOCK}")
 endif()
 
-mcc_def_str(_mccdefs MCC_CONFIG_SYSINCLUDEPATHS "${MCC_SYSINCLUDEPATHS}")
-mcc_def_str(_mccdefs MCC_CONFIG_LIBPATHS        "${MCC_LIBPATHS}")
-mcc_def_str(_mccdefs MCC_CONFIG_CRTPREFIX       "${MCC_CRTPREFIX}")
-mcc_def_str(_mccdefs MCC_CONFIG_ELFINTERP       "${MCC_ELFINTERP}")
-mcc_def_str(_mccdefs MCC_CONFIG_SWITCHES        "${MCC_SWITCHES}")
 mcc_def_str(_mccdefs MCC_CONFIG_TRIPLET             "${MCC_TRIPLET}")
 mcc_def_str(_mccdefs MCC_CONFIG_OS_RELEASE          "${MCC_OS_RELEASE}")
 
@@ -2074,36 +2012,23 @@ if(MCC_BUILD_MUSL AND NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT APPLE)
     set(_musl_vendored OFF)
     if(NOT MCC_MUSL_SYSROOT STREQUAL "" AND NOT _mi STREQUAL "")
         set(_musl_vendored ON)
-        get_filename_component(_musl_loader "${_mi}" NAME)
-        set(_mi "${MCC_MUSL_SYSROOT}/lib/${_musl_loader}")
     endif()
 
     set(_mccdefs_musl "")
     foreach(_d IN LISTS _mccdefs)
-        if(_d MATCHES "^MCC_CONFIG_ELFINTERP="
-           OR _d MATCHES "^MCC_CONFIG_TRIPLET="
+        if(_d MATCHES "^MCC_CONFIG_TRIPLET="
            OR _d MATCHES "^MCC_CONFIG_MUSL=")
-        elseif(_musl_vendored AND (_d MATCHES "^MCC_CONFIG_SYSROOT="
-               OR _d MATCHES "^MCC_CONFIG_SYSINCLUDEPATHS="
-               OR _d MATCHES "^MCC_CONFIG_LIBPATHS="
-               OR _d MATCHES "^MCC_CONFIG_CRTPREFIX="))
+        elseif(_musl_vendored AND _d MATCHES "^MCC_CONFIG_SYSROOT=")
         else()
             list(APPEND _mccdefs_musl "${_d}")
         endif()
     endforeach()
     list(APPEND _mccdefs_musl "MCC_CONFIG_MUSL=1")
-    if(NOT _mi STREQUAL "")
-        list(APPEND _mccdefs_musl "MCC_CONFIG_ELFINTERP=\"${_mi}\"")
-    endif()
     if(NOT _mt STREQUAL "")
         list(APPEND _mccdefs_musl "MCC_CONFIG_TRIPLET=\"${_mt}\"")
     endif()
     if(_musl_vendored)
-        list(APPEND _mccdefs_musl
-            "MCC_CONFIG_SYSROOT=\"${MCC_MUSL_SYSROOT}\""
-            "MCC_CONFIG_SYSINCLUDEPATHS=\"{B}/include:{R}/include\""
-            "MCC_CONFIG_LIBPATHS=\"{B}:{R}/lib\""
-            "MCC_CONFIG_CRTPREFIX=\"{R}/lib\"")
+        list(APPEND _mccdefs_musl "MCC_CONFIG_SYSROOT=\"${MCC_MUSL_SYSROOT}\"")
         message(STATUS "mcc: musl variants target vendored sysroot ${MCC_MUSL_SYSROOT} (build it: cmake --build . --target musl-sysroot)")
     endif()
 
@@ -2695,11 +2620,7 @@ if(MCC_ENABLE_CROSS)
         endif()
         set(_cpath_defs "")
         if(NOT _ctriplet STREQUAL "")
-            list(APPEND _cpath_defs
-                "MCC_CONFIG_SYSROOT=\"/usr/${_ctriplet}\""
-                "MCC_CONFIG_CRTPREFIX=\"{R}/lib\""
-                "MCC_CONFIG_LIBPATHS=\"{R}/lib:{B}\""
-                "MCC_CONFIG_SYSINCLUDEPATHS=\"{B}/include:{R}/include\"")
+            list(APPEND _cpath_defs "MCC_CONFIG_SYSROOT=\"/usr/${_ctriplet}\"")
         endif()
 
         set(_cross_defs ${_cdefs} ${_cpath_defs}
@@ -2718,14 +2639,7 @@ if(MCC_ENABLE_CROSS)
 
         if(MCC_BUILD_MUSL AND NOT _ctriplet STREQUAL "" AND _cos STREQUAL "Linux")
             mcc_musl_target("${_ccpu}" ON _cmi _cmt)
-            set(_cpath_defs_musl
-                "MCC_CONFIG_SYSROOT=\"/usr/${_cmt}\""
-                "MCC_CONFIG_CRTPREFIX=\"{R}/lib\""
-                "MCC_CONFIG_LIBPATHS=\"{R}/lib:{B}\""
-                "MCC_CONFIG_SYSINCLUDEPATHS=\"{B}/include:{R}/include\"")
-            if(NOT _cmi STREQUAL "")
-                list(APPEND _cpath_defs_musl "MCC_CONFIG_ELFINTERP=\"${_cmi}\"")
-            endif()
+            set(_cpath_defs_musl "MCC_CONFIG_SYSROOT=\"/usr/${_cmt}\"")
             set(_cross_defs_musl ${_cdefs} ${_cpath_defs_musl}
                 "MCC_CONFIG_MUSL=1" "MCC_CONFIG_CROSSPREFIX=\"${_t}-\"")
             mcc_add_cross_mcc(mcc-${_t}-musl "mcc-${_t}-musl"
@@ -3723,8 +3637,6 @@ if(MCC_BUILD_TESTS)
                 --diag-rt "${MCC_CONFIG_DIAG_RT}" --asm "${MCC_CONFIG_ASM}"
                 --cst "${MCC_CONFIG_LSP}" --ast "${MCC_CONFIG_OPTIMIZER}"
                 --new-macho "${MCC_CONFIG_NEW_MACHO}" --dwarf "${MCC_CONFIG_DWARF}" --semlock "${MCC_CONFIG_SEMLOCK}"
-                --sysincludepaths "${MCC_SYSINCLUDEPATHS}" --libpaths "${MCC_LIBPATHS}"
-                --crtprefix "${MCC_CRTPREFIX}" --elfinterp "${MCC_ELFINTERP}" --switches "${MCC_SWITCHES}"
                 --triplet "${MCC_TRIPLET}" --os-release "${MCC_OS_RELEASE}" --sysroot "${MCC_SYSROOT}"
                 --mccdir "${MCC_RESOLVED_MCCDIR}")
             set_tests_properties(config-defines PROPERTIES FIXTURES_REQUIRED MCC_BUILT)

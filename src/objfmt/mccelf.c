@@ -106,10 +106,10 @@ ST_FUNC void mccelf_new(MCCState *s) {
 	if (NULL == s->elfint && s1->output_type != MCC_OUTPUT_OBJ) {
 		s->elfint = musl_elfinterp(s);
 		if (NULL == s->elfint) {
-			const char *p = MCC_CONFIG_ELFINTERP;
-#if defined MCC_TARGET_ARM && defined MCC_CONFIG_ELFINTERP_ARMHF
-			if (s->float_abi == ARM_HARD_FLOAT)
-				p = MCC_CONFIG_ELFINTERP_ARMHF;
+			const char *p = mcc_target_defaults.elfinterp;
+#ifdef MCC_TARGET_ARM
+			if (s->float_abi == ARM_HARD_FLOAT && mcc_target_defaults.elfinterp_armhf)
+				p = mcc_target_defaults.elfinterp_armhf;
 #endif
 #if defined MCC_TARGET_IS_HOST && defined MCC_TARGETOS_BSD
 			{

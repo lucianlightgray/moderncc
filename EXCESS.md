@@ -108,6 +108,11 @@ high-value specifics the summary omits:
   `ELFINTERP_ARMHF`/`TOOLHOST` (header `#define`s), `MCC_CONFIG_STATIC`
   (per-target via `MCC_BUILD_STATIC_EXE`, Linux-only, read in
   `src/mcchost.*`/`libmcc.c` for the static `-run` symbol table).
+- `SYSINCLUDEPATHS`/`LIBPATHS`/`CRTPREFIX`/`ELFINTERP`/`SWITCHES` defaults are
+  per-target/per-libc rows in `src/mccdefaults.h` (`mcc_target_defaults`), not
+  CMake emissions; explicit `-DMCC_CONFIG_…=` compiler defines still
+  force-override through the `#ifndef` row guards (build.c's bootstrap uses
+  that).
 - `ckconfig` (ctest `config-drift-invariant`) fails on DRIFT(a) read-with-no-
   provider and DRIFT(b) emitted-but-unread. Analogous host-macro rule:
   `tools/hostgate.c` / `MCC_HOST_*`.
@@ -362,8 +367,8 @@ Exhaustive lists that `MCC.md` names but does not spell out, kept so no
 - **Standard CMake values:** `CMAKE_BUILD_TYPE` (Debug/Release/RelWithDebInfo/MinSizeRel, forwarded to matrix cells), `CMAKE_C_COMPILER` (the real compiler switch — profile only seeds defaults), `CMAKE_CROSSCOMPILING_EMULATOR`→`MCC_EMULATOR` (needed to run foreign mcc), `CMAKE_TOOLCHAIN_FILE`, `CMAKE_INSTALL_PREFIX` (defaults to `MCC_DIST_DIR`; must be set at configure time — mcc runtime dir bakes an absolute path), `CMAKE_OSX_DEPLOYMENT_TARGET` (auto-pinned for Homebrew gcc), `CMAKE_EXPORT_COMPILE_COMMANDS` (ON, before `project()`).
 - **Build-target knobs:** `MCC_TOOLCHAIN_PROFILE` (auto/gcc/clang/mcc/msvc/mingw; list→superbuild), `MCC_ENABLE_CROSS`, `MCC_BUILD_STATIC_LIB`, `MCC_BUILD_STATIC_EXE`, `MCC_BUILD_DYNAMIC_LIB`, `MCC_BUILD_DYNAMIC_EXE` (ON, gate MCC_AMALGAMATED=OFF), `MCC_BUILD_MUSL`, `MCC_BUILD_STRIP`, `MCC_ENABLE_RPATH` (ON, !static-lib), `MCC_SINGLE_SOURCE` (ON), `MCC_BUILD_TESTS` (ON), `MCC_BENCH`, `MCC_MCCRT_USE_HOSTCC` (auto-forced when no emulator/asm-off/embed), `MCC_EMBED_MCCRT` (ON ELF/Mach-O, OFF WIN32), `MCC_CONFIG_AUTOCORRECT`, `MCC_MINGW_SOURCE` (winlibs/multilib).
 - **Diagnostics/instrumentation:** `MCC_ALL_DIAGNOSTICS`, `MCC_BUILD_SANITIZE`, `MCC_BUILD_PROFILE` (mcc_p, `-pg -static`, fatal Darwin/MSVC), `MCC_BUILD_COVERAGE` (mcc_c).
-- **Feature toggles (→ CONFIG_*):** `MCC_CONFIG_MINGW`, `_BACKTRACE`, `_BCHECK` (needs BACKTRACE), `_ASM`, `_PREDEFS`, `_PIE`/`_PIC` (ELF), `MCC_RUN_MMAP_EXEC` (W^X kernels), `_NEW_DTAGS` (ELF, DT_RUNPATH vs DT_RPATH), `MCC_AUTO_MCCDIR`, `_LIBC` (uClibc/musl/''), `_DWARF` (0/2/3/4/5/''), `_SEMLOCK` (numeric, fatal else), `_LSP`, `_OPTIMIZER`, `_NEW_MACHO`/`_CODESIGN` (Darwin).
-- **Runtime path overrides** (STRING '', mirror `configure --…`): `MCC_SYSROOT`, `_TRIPLET`, `_SYSINCLUDEPATHS`, `_LIBPATHS`, `_CRTPREFIX`, `_ELFINTERP`, `_SWITCHES`, `_OS_RELEASE`, `_INSTALL_MCCDIR`.
+- **Feature toggles (→ CONFIG_*):** `MCC_CONFIG_MINGW`, `_DIAG_RT` (off/backtrace/bounds), `_ASM`, `_PREDEFS`, `_PIE`/`_PIC` (ELF), `MCC_RUN_MMAP_EXEC` (W^X kernels), `_NEW_DTAGS` (ELF, DT_RUNPATH vs DT_RPATH), `MCC_AUTO_MCCDIR`, `_LIBC` (uClibc/musl/''), `_DWARF` (0/2/3/4/5/''), `_SEMLOCK` (numeric, fatal else), `_LSP`, `_OPTIMIZER`, `_NEW_MACHO`/`_CODESIGN` (Darwin).
+- **Runtime path overrides** (STRING '', mirror `configure --…`): `MCC_SYSROOT`, `_TRIPLET`, `_OS_RELEASE`, `_INSTALL_MCCDIR`; the path/interp/switches defaults moved to per-target rows in `src/mccdefaults.h`.
 - **Extra build flags:** `MCC_EXTRA_CFLAGS`/`_LDFLAGS`/`_LIBS`.
 - **ARM ABI (gate MCC_CPU==arm):** `MCC_ARM_EABI`/`_VFP`/`_HARDFLOAT`/`_IDIV` (from `__ARM_FEATURE_IDIV`), `MCC_CPUVER` (from `__ARM_ARCH`).
 - **Superbuild:** `MCC_TARGETS` (native/cross/custom), `_SUPERBUILD_TEST`/`_SEQUENTIAL`/`_CHILD`, `_MSVC_GENERATOR`/`_MSVC_PLATFORM` (x64), `MCC_TARGET_ARGS_<name>`, `MCC_CC_<tc>`, `MCC_GNU_GCC`.

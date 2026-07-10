@@ -335,16 +335,18 @@ These bake `CONFIG_*` values into the compiler and change its runtime behavior.
 ## 6. Runtime path overrides (`GROUP "Runtime paths"`, advanced)
 
 All STRING, default `''`, mirror `configure --…` flags. Empty = autodetect.
+The default search paths, ELF interpreter, and default-switches strings are
+no longer CMake knobs: they live as per-target/per-libc rows in
+`src/mccdefaults.h` (`mcc_target_defaults`), keyed by the target macros plus
+`MCC_CONFIG_MUSL`/`MCC_CONFIG_SYSROOT`/`MCC_CONFIG_CROSSPREFIX`, and remain
+force-overridable with explicit `-DMCC_CONFIG_SYSINCLUDEPATHS=…`-style
+compiler defines and at runtime via `-I`/`-L`/`-B`/`--sysroot`/
+`-Wl,-dynamic-linker=`.
 
 | Value | configure flag |
 |---|---|
 | `MCC_SYSROOT` | `--sysroot` |
 | `MCC_TRIPLET` | `--triplet` |
-| `MCC_SYSINCLUDEPATHS` | `--sysincludepaths` (colon sep) |
-| `MCC_LIBPATHS` | `--libpaths` (colon sep) |
-| `MCC_CRTPREFIX` | `--crtprefix` (colon sep) |
-| `MCC_ELFINTERP` | `--elfinterp` |
-| `MCC_SWITCHES` | `--mcc-switches` |
 | `MCC_OS_RELEASE` | `--os-release` |
 | `MCC_INSTALL_MCCDIR` | `MCC_CONFIG_MCCDIR`; empty = `<prefix>/<libdir>/mcc` (`GROUP "Install"`) |
 

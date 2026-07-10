@@ -418,15 +418,9 @@ static int cmd_cross(const char *name, const char *out) {
 		}
 	}
 	if (*t->triplet) {
-		static char p[4][256];
-		snprintf(p[0], sizeof p[0], "-DMCC_CONFIG_SYSROOT=\"/usr/%s\"", t->triplet);
-		arg(&v, p[0]);
-		snprintf(p[1], sizeof p[1], "-DMCC_CONFIG_CRTPREFIX=\"{R}/lib\"");
-		arg(&v, p[1]);
-		snprintf(p[2], sizeof p[2], "-DMCC_CONFIG_LIBPATHS=\"{R}/lib:{B}\"");
-		arg(&v, p[2]);
-		snprintf(p[3], sizeof p[3], "-DMCC_CONFIG_SYSINCLUDEPATHS=\"{B}/include:{R}/include\"");
-		arg(&v, p[3]);
+		static char p[256];
+		snprintf(p, sizeof p, "-DMCC_CONFIG_SYSROOT=\"/usr/%s\"", t->triplet);
+		arg(&v, p);
 	}
 	arg(&v, Iout);
 	args(&v, ARCH_INCS);
@@ -576,7 +570,7 @@ static int cmd_emit_defines(int argc, char **argv) {
 		{
 			const char *flag, *name;
 		} sd[] = {
-				{"--sysincludepaths", "MCC_CONFIG_SYSINCLUDEPATHS"}, {"--libpaths", "MCC_CONFIG_LIBPATHS"}, {"--crtprefix", "MCC_CONFIG_CRTPREFIX"}, {"--elfinterp", "MCC_CONFIG_ELFINTERP"}, {"--switches", "MCC_CONFIG_SWITCHES"}, {"--triplet", "MCC_CONFIG_TRIPLET"}, {"--os-release", "MCC_CONFIG_OS_RELEASE"}};
+				{"--triplet", "MCC_CONFIG_TRIPLET"}, {"--os-release", "MCC_CONFIG_OS_RELEASE"}};
 		unsigned k;
 		for (k = 0; k < sizeof sd / sizeof sd[0]; k++) {
 			const char *v = fopt(argc, argv, sd[k].flag, "");

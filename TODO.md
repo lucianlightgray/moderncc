@@ -123,24 +123,24 @@ names without explicit sign-off** (mcc already honors the established ones:
 `C_INCLUDE_PATH`, `CPATH`, `LIBRARY_PATH`, `DYLD_FRAMEWORK_PATH`,
 `mcc.c:224-243`; nothing new gets invented here).
 
-- [ ] Move into the table: `MCC_CONFIG_SYSINCLUDEPATHS` (`libmcc.c:1021`),
+- [x] Move into the table: `MCC_CONFIG_SYSINCLUDEPATHS` (`libmcc.c:1021`),
       `MCC_CONFIG_LIBPATHS` (`:1040`), `MCC_CONFIG_CRTPREFIX` (`:1053`),
       `MCC_CONFIG_ELFINTERP(_ARMHF)` (`mcc.h:177-193` → `mccelf.c:111-114` —
       it is already a per-CPU macro table; this makes it a *data* table),
       the PIE/PIC default selectors (`libmcc.c:1007,919`), and the musl bundle
       (`MCC_CONFIG_MUSL` triple string + the `{B}`/`{R}` sysroot overrides,
       keyed by a per-libc table row).
-- [ ] `MCC_CONFIG_SWITCHES` (`libmcc.c:950`) folds into the same table as a
+- [x] `MCC_CONFIG_SWITCHES` (`libmcc.c:950`) folds into the same table as a
       per-target default-options string through the existing
       `mcc_set_options` sink — table entry, **not** an env var.
-- [ ] CMake: the emission blocks (`CMakeLists.txt:1720-1749` area) stop
+- [x] CMake: the emission blocks (`CMakeLists.txt:1720-1749` area) stop
       injecting the covered `-D` strings; preset-level overrides (musl, cross)
       select table rows instead of overriding macros. CMakeLists stays
       comment-free.
-- [ ] All values remain runtime-overridable via the existing flags
+- [x] All values remain runtime-overridable via the existing flags
       (`-I`/`-L`/`-B`/`--sysroot`/`-dynamic-linker=`); behavior with no flags
       must be identical before/after per target.
-- [ ] Gates: `config-drift-invariant` (retiring macros will trip
+- [x] Gates: `config-drift-invariant` (retiring macros will trip
       emitted-but-unread — update the ledger), release + musl + cross presets,
       `ci pkg` dist artifacts diffed, qemu spot-check (loader paths are
       security-sensitive: wrong default = silent mislink).

@@ -916,9 +916,7 @@ LIBMCCAPI MCCState *mcc_new(void) {
 	s->dollars_in_identifiers = 1;
 	s->cversion = 201112;
 	s->pie = -1;
-#if MCC_CONFIG_PIC
-	s->pic = 2;
-#endif
+	s->pic = mcc_target_defaults.pic;
 	s->warn_implicit_function_declaration = WARN_ON | WARN_ERR;
 	s->warn_discarded_qualifiers = 1;
 	s->warn_sequence_point = 1;
@@ -947,9 +945,8 @@ LIBMCCAPI MCCState *mcc_new(void) {
 	s->include_stack_ptr = s->include_stack;
 
 	mcc_set_lib_path(s, MCC_MCCDIR_DEFAULT);
-#ifdef MCC_CONFIG_SWITCHES
-	mcc_set_options(s, MCC_CONFIG_SWITCHES);
-#endif
+	if (mcc_target_defaults.switches)
+		mcc_set_options(s, mcc_target_defaults.switches);
 	return s;
 }
 
@@ -1004,11 +1001,7 @@ LIBMCCAPI int mcc_set_output_type(MCCState *s, int output_type) {
 	if (output_type == MCC_OUTPUT_EXE) {
 		int pie = s->pie;
 		if (pie < 0) {
-#if MCC_CONFIG_PIE
-			pie = 1;
-#else
-			pie = 0;
-#endif
+			pie = mcc_target_defaults.pie;
 			if (s->static_link)
 				pie = 0;
 		}
@@ -1018,7 +1011,7 @@ LIBMCCAPI int mcc_set_output_type(MCCState *s, int output_type) {
 	s->output_type = output_type;
 
 	if (!s->nostdinc) {
-		mcc_add_sysinclude_path(s, MCC_CONFIG_SYSINCLUDEPATHS);
+		mcc_add_sysinclude_path(s, mcc_target_defaults.sysincludepaths);
 #if defined MCC_TARGET_MACHO && defined MCC_TARGET_IS_HOST
 		mcc_add_macos_sdkincludepath(s);
 #endif
@@ -1037,7 +1030,7 @@ LIBMCCAPI int mcc_set_output_type(MCCState *s, int output_type) {
 	}
 
 	if (!s->nostdlib_paths)
-		mcc_add_library_path(s, MCC_CONFIG_LIBPATHS);
+		mcc_add_library_path(s, mcc_target_defaults.libpaths);
 
 #ifdef MCC_TARGET_PE
 #ifdef MCC_TARGET_IS_HOST
@@ -1050,7 +1043,7 @@ LIBMCCAPI int mcc_set_output_type(MCCState *s, int output_type) {
 #endif
 
 #else
-	mcc_split_path(s, &s->crt_paths, &s->nb_crt_paths, MCC_CONFIG_CRTPREFIX);
+	mcc_split_path(s, &s->crt_paths, &s->nb_crt_paths, mcc_target_defaults.crtprefix);
 	if (output_type != MCC_OUTPUT_MEMORY && !s->nostdlib)
 		mccelf_add_crtbegin(s);
 #endif
