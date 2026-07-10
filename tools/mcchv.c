@@ -408,7 +408,197 @@ static double hv_measure(HvKernel fn, int workers, int reps) {
 	return best;
 }
 
-static uintmax_t hv_search(double seconds, int workers, uint32_t *best_nhot,
+typedef struct {
+	HvLeaf *leaves;
+	uint32_t np;
+	HvLeaf *hot;
+	int workers;
+	MCCState *bst;
+	double base_cpu;
+	size_t base_mem;
+	HvKernel winner;
+	MCCState *winner_st;
+	uint32_t best_nhot, best_cut;
+	double best_cpu;
+	size_t best_mem;
+} HvSearchCtx;
+
+static double hv_eval_cand(HvSearchCtx *c, uint32_t nhot, uint32_t cut) {
+	size_t mem = 0;
+	MCCState *st = NULL;
+	HvKernel fn = hv_jit_build(c->leaves, c->np, c->hot, nhot, cut, &mem, &st);
+	if (!fn)
+		return -1;
+	double cpu = hv_measure(fn, c->workers, 3);
+	if (cpu < 0) {
+		mcc_delete(st);
+		return -1;
+	}
+	int better = cpu < c->best_cpu && mem <= c->best_mem;
+	if (!better && cpu <= c->best_cpu && mem < c->best_mem)
+		better = 1;
+	if (better) {
+		if (c->winner_st && c->winner_st != c->bst)
+			mcc_delete(c->winner_st);
+		c->winner = fn;
+		c->winner_st = st;
+		c->best_nhot = nhot;
+		c->best_cut = cut;
+		c->best_cpu = cpu;
+		c->best_mem = mem;
+	} else {
+		mcc_delete(st);
+	}
+	return cpu / (c->base_cpu > 0 ? c->base_cpu : 1.0) +
+				 (double)mem / (c->base_mem ? c->base_mem : 1);
+}
+
+static const double *hv_objkey;
+
+static int hv_idx_cmp(const void *a, const void *b) {
+	double x = hv_objkey[*(const int *)a], y = hv_objkey[*(const int *)b];
+	return x < y ? -1 : x > y ? 1 : 0;
+}
+
+static void hv_parzen(const uint32_t *vals, const int *idx, int n0, int n1,
+											uint32_t vmin, uint32_t vmax, double *dens) {
+	uint32_t D = vmax - vmin + 1;
+	double s = 0;
+	for (uint32_t d = 0; d < D; d++)
+		dens[d] = 1.0 / D;
+	for (int i = n0; i < n1; i++) {
+		uint32_t v = vals[idx[i]] - vmin;
+		dens[v] += 1.0;
+		if (v > 0)
+			dens[v - 1] += 0.25;
+		if (v + 1 < D)
+			dens[v + 1] += 0.25;
+	}
+	for (uint32_t d = 0; d < D; d++)
+		s += dens[d];
+	for (uint32_t d = 0; d < D; d++)
+		dens[d] /= s;
+}
+
+static uint32_t hv_sample_dens(const double *dens, uint32_t D, uint32_t vmin) {
+	double r = (double)(hv_rand() % 1000000) / 1000000.0;
+	double acc = 0;
+	for (uint32_t d = 0; d < D; d++) {
+		acc += dens[d];
+		if (r <= acc)
+			return vmin + d;
+	}
+	return vmin + D - 1;
+}
+
+static uintmax_t hv_search_tpe(HvSearchCtx *c, uint64_t deadline,
+															 uint32_t nhot_max) {
+	enum { HV_TPE_SEED = 8, HV_TPE_EI = 24 };
+	uintmax_t cand = 0;
+	int hcap = 256, hn = 0;
+	uint32_t *h_nhot = malloc((size_t)hcap * sizeof *h_nhot);
+	uint32_t *h_cut = malloc((size_t)hcap * sizeof *h_cut);
+	double *h_obj = malloc((size_t)hcap * sizeof *h_obj);
+	int *idx = malloc((size_t)hcap * sizeof *idx);
+	char seen[65][9];
+	double gn[65], bn[65], gc[8], bc[8];
+	if (!h_nhot || !h_cut || !h_obj || !idx) {
+		free(h_nhot);
+		free(h_cut);
+		free(h_obj);
+		free(idx);
+		return 0;
+	}
+	memset(seen, 0, sizeof seen);
+	for (int s = 0; s < HV_TPE_SEED && hv_now_ns() < deadline; s++) {
+		uint32_t nhot = (uint32_t)(hv_rand() % (nhot_max + 1));
+		uint32_t cut = 1 + (uint32_t)(hv_rand() % 8);
+		double obj = hv_eval_cand(c, nhot, cut);
+		cand++;
+		if (obj < 0)
+			continue;
+		h_nhot[hn] = nhot;
+		h_cut[hn] = cut;
+		h_obj[hn] = obj;
+		hn++;
+		seen[nhot][cut] = 1;
+	}
+	while (hv_now_ns() < deadline) {
+		uint32_t sel_nhot, sel_cut;
+		if (hn < 2) {
+			sel_nhot = (uint32_t)(hv_rand() % (nhot_max + 1));
+			sel_cut = 1 + (uint32_t)(hv_rand() % 8);
+		} else {
+			int ngood = (int)(0.25 * hn);
+			if (ngood < 1)
+				ngood = 1;
+			for (int i = 0; i < hn; i++)
+				idx[i] = i;
+			hv_objkey = h_obj;
+			qsort(idx, (size_t)hn, sizeof *idx, hv_idx_cmp);
+			hv_parzen(h_nhot, idx, 0, ngood, 0, nhot_max, gn);
+			hv_parzen(h_nhot, idx, ngood, hn, 0, nhot_max, bn);
+			hv_parzen(h_cut, idx, 0, ngood, 1, 8, gc);
+			hv_parzen(h_cut, idx, ngood, hn, 1, 8, bc);
+			double best_score = 0;
+			int sel_new = 0, have = 0;
+			sel_nhot = 0;
+			sel_cut = 1;
+			for (int k = 0; k < HV_TPE_EI; k++) {
+				uint32_t nh = hv_sample_dens(gn, nhot_max + 1, 0);
+				uint32_t ct = hv_sample_dens(gc, 8, 1);
+				double score = gn[nh] * gc[ct - 1] /
+											 (bn[nh] * bc[ct - 1] + 1e-12);
+				int isnew = !seen[nh][ct];
+				int take = !have || (isnew && !sel_new) ||
+									 (isnew == sel_new && score > best_score);
+				if (take) {
+					have = 1;
+					sel_new = isnew;
+					best_score = score;
+					sel_nhot = nh;
+					sel_cut = ct;
+				}
+			}
+		}
+		double obj = hv_eval_cand(c, sel_nhot, sel_cut);
+		cand++;
+		if (obj < 0)
+			continue;
+		if (hn == hcap) {
+			int ncap = hcap * 2;
+			uint32_t *a = realloc(h_nhot, (size_t)ncap * sizeof *a);
+			uint32_t *b = realloc(h_cut, (size_t)ncap * sizeof *b);
+			double *o = realloc(h_obj, (size_t)ncap * sizeof *o);
+			int *ix = realloc(idx, (size_t)ncap * sizeof *ix);
+			if (!a || !b || !o || !ix) {
+				h_nhot = a ? a : h_nhot;
+				h_cut = b ? b : h_cut;
+				h_obj = o ? o : h_obj;
+				idx = ix ? ix : idx;
+				break;
+			}
+			h_nhot = a;
+			h_cut = b;
+			h_obj = o;
+			idx = ix;
+			hcap = ncap;
+		}
+		h_nhot[hn] = sel_nhot;
+		h_cut[hn] = sel_cut;
+		h_obj[hn] = obj;
+		hn++;
+		seen[sel_nhot][sel_cut] = 1;
+	}
+	free(h_nhot);
+	free(h_cut);
+	free(h_obj);
+	free(idx);
+	return cand;
+}
+
+static uintmax_t hv_search(double seconds, int workers, int use_tpe,
+													 uint64_t seed, uint32_t *best_nhot,
 													 uint32_t *best_cut, double *best_cpu,
 													 size_t *best_mem, double *base_cpu,
 													 size_t *base_mem, const HvCacheEntry *warm) {
@@ -432,14 +622,8 @@ static uintmax_t hv_search(double seconds, int workers, uint32_t *best_nhot,
 	MCCState *bst = NULL;
 	HvKernel bfn = hv_jit_build(leaves, np, NULL, 0, 1, &bmem, &bst);
 	double bcpu = bfn ? hv_measure(bfn, workers, 3) : -1;
-	*base_cpu = bcpu;
-	*base_mem = bmem;
-	*best_nhot = 0;
-	*best_cut = 1;
-	*best_cpu = bcpu;
-	*best_mem = bmem;
-	HvKernel winner = bfn;
-	MCCState *winner_st = bst;
+	HvSearchCtx ctx = {leaves, np, hot, workers, bst, bcpu, bmem,
+										 bfn, bst, 0, 1, bcpu, bmem};
 
 	if (warm && warm->leaf_cut >= 1) {
 		uint32_t wnhot = warm->nhot > nhot_max ? nhot_max : warm->nhot;
@@ -449,57 +633,46 @@ static uintmax_t hv_search(double seconds, int workers, uint32_t *best_nhot,
 																&wmem, &wst);
 		double wcpu = wfn ? hv_measure(wfn, workers, 3) : -1;
 		if (wfn && wcpu >= 0 &&
-				(wcpu < *best_cpu || (wcpu <= *best_cpu && wmem < *best_mem))) {
-			winner = wfn;
-			winner_st = wst;
-			*best_nhot = wnhot;
-			*best_cut = warm->leaf_cut;
-			*best_cpu = wcpu;
-			*best_mem = wmem;
-			atomic_store(&hv_kernel, winner);
+				(wcpu < ctx.best_cpu || (wcpu <= ctx.best_cpu && wmem < ctx.best_mem))) {
+			ctx.winner = wfn;
+			ctx.winner_st = wst;
+			ctx.best_nhot = wnhot;
+			ctx.best_cut = warm->leaf_cut;
+			ctx.best_cpu = wcpu;
+			ctx.best_mem = wmem;
+			atomic_store(&hv_kernel, ctx.winner);
 		} else if (wst) {
 			mcc_delete(wst);
 		}
 	}
 
 	uint64_t deadline = hv_now_ns() + (uint64_t)(seconds * 1e9);
-	uintmax_t cand = 0;
-	for (; hv_now_ns() < deadline; cand++) {
-		uint32_t nhot = (uint32_t)(cand % (nhot_max + 1));
-		uint32_t cut = 1 + (uint32_t)((cand / (nhot_max + 1)) % 8);
-		size_t mem = 0;
-		MCCState *st = NULL;
-		HvKernel fn = hv_jit_build(leaves, np, hot, nhot, cut, &mem, &st);
-		if (!fn)
-			continue;
-		double cpu = hv_measure(fn, workers, 3);
-		if (cpu < 0) {
-			mcc_delete(st);
-			continue;
-		}
-		int better = cpu < *best_cpu && mem <= *best_mem;
-		if (!better && cpu <= *best_cpu && mem < *best_mem)
-			better = 1;
-		if (better) {
-			if (winner_st && winner_st != bst)
-				mcc_delete(winner_st);
-			winner = fn;
-			winner_st = st;
-			*best_nhot = nhot;
-			*best_cut = cut;
-			*best_cpu = cpu;
-			*best_mem = mem;
-		} else {
-			mcc_delete(st);
+	uintmax_t cand;
+	if (use_tpe) {
+		hv_rng = seed ? seed ^ 0x9e3779b97f4a7c15u : 1;
+		cand = hv_search_tpe(&ctx, deadline, nhot_max);
+	} else {
+		cand = 0;
+		for (; hv_now_ns() < deadline; cand++) {
+			uint32_t nhot = (uint32_t)(cand % (nhot_max + 1));
+			uint32_t cut = 1 + (uint32_t)((cand / (nhot_max + 1)) % 8);
+			hv_eval_cand(&ctx, nhot, cut);
 		}
 	}
-	if (winner)
-		atomic_store(&hv_kernel, winner);
-	if (winner_st && hv_nstates < (int)(sizeof hv_states / sizeof hv_states[0]))
-		hv_states[hv_nstates++] = winner_st;
-	if (bst && bst != winner_st &&
+
+	if (ctx.winner)
+		atomic_store(&hv_kernel, ctx.winner);
+	if (ctx.winner_st && hv_nstates < (int)(sizeof hv_states / sizeof hv_states[0]))
+		hv_states[hv_nstates++] = ctx.winner_st;
+	if (bst && bst != ctx.winner_st &&
 			hv_nstates < (int)(sizeof hv_states / sizeof hv_states[0]))
 		hv_states[hv_nstates++] = bst;
+	*best_nhot = ctx.best_nhot;
+	*best_cut = ctx.best_cut;
+	*best_cpu = ctx.best_cpu;
+	*best_mem = ctx.best_mem;
+	*base_cpu = bcpu;
+	*base_mem = bmem;
 	free(leaves);
 	return cand;
 }
@@ -508,10 +681,16 @@ int main(int argc, char **argv) {
 	uint64_t seed = 42;
 	int passes = 6, workers = 4;
 	double search_seconds = 0;
+	int use_tpe = 0;
+	const char *envsearch = getenv("MCCHV_SEARCH");
+	if (envsearch && !strcmp(envsearch, "tpe"))
+		use_tpe = 1;
 
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "--seed") && i + 1 < argc) {
 			seed = strtoull(argv[++i], NULL, 0);
+		} else if (!strcmp(argv[i], "--search") && i + 1 < argc) {
+			use_tpe = !strcmp(argv[++i], "tpe");
 		} else if (!strcmp(argv[i], "--passes") && i + 1 < argc) {
 			passes = atoi(argv[++i]);
 		} else if (!strcmp(argv[i], "--workers") && i + 1 < argc) {
@@ -648,15 +827,18 @@ int main(int argc, char **argv) {
 		uint64_t key = hv_intention_hash();
 		HvCacheEntry prev;
 		int warm = hv_cache_read(key, &prev);
-		printf("hv: -O search budget %.0fs, intention 0x%016" PRIx64 " (%s)\n",
+		printf("hv: -O search budget %.0fs, intention 0x%016" PRIx64 " (%s) search=%s\n",
 					 search_seconds, key,
-					 warm ? "warm cache hit" : "cold — searching from scratch");
-		uintmax_t n = hv_search(search_seconds, workers, &bnhot, &bcut, &bcpu,
-														&bmem, &base_cpu, &base_mem, warm ? &prev : NULL);
+					 warm ? "warm cache hit" : "cold — searching from scratch",
+					 use_tpe ? "tpe" : "linear");
+		uintmax_t n = hv_search(search_seconds, workers, use_tpe, seed, &bnhot,
+														&bcut, &bcpu, &bmem, &base_cpu, &base_mem,
+														warm ? &prev : NULL);
 		HvCacheEntry e = {0x6d6363687643u, key, bnhot, bcut, bcpu, bmem, n};
 		long csz = hv_cache_write(key, &e);
-		printf("hv: searched %ju candidates over 0..UINTMAX; best nhot=%u leaf_cut=%u\n",
-					 n, bnhot, bcut);
+		printf("hv: searched %ju candidates via %s; best nhot=%u leaf_cut=%u\n",
+					 n, use_tpe ? "tpe (Parzen surrogate)" : "linear 0..UINTMAX sweep",
+					 bnhot, bcut);
 		printf("hv:   cpu  %.3fms -> %.3fms (%.2fx)   mem(code) %zuB -> %zuB (%+.1f%%)\n",
 					 base_cpu, bcpu, bcpu > 0 ? base_cpu / bcpu : 0, base_mem, bmem,
 					 base_mem ? 100.0 * ((double)bmem - base_mem) / base_mem : 0);

@@ -3384,6 +3384,11 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(hypervisor-search PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77
             ENVIRONMENT "MCCHV_CACHE_DIR=${CMAKE_BINARY_DIR}/hvcache")
+        add_test(NAME hypervisor-tpe
+            COMMAND mcchv "-B${CMAKE_BINARY_DIR}" --seed 42 --passes 3 --workers 2 --seconds 1.2 --search tpe)
+        set_tests_properties(hypervisor-tpe PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77
+            ENVIRONMENT "MCCHV_CACHE_DIR=${CMAKE_BINARY_DIR}/hvcache-tpe")
     endif()
 
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples/ex1.c")

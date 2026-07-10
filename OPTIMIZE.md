@@ -68,7 +68,7 @@ Status: `[ ]` open · `[~]` claimed/in-progress · `[x]` landed (commit)
 
 Grounded in actual sources this iteration (prior entries were from memory):
 
-- [ ] **Bayesian optimization of the `-O<N>` search** — replace mcchv's
+- [x] **Bayesian optimization of the `-O<N>` search** (`--search tpe`, this iter) — replace mcchv's
       linear `0..UINTMAX` sweep with a surrogate-model search that spends
       the seconds budget on promising candidates. Surrogate options from
       the literature: **Gaussian-process** (continuous, gives uncertainty),
@@ -293,4 +293,26 @@ dlmf.nist.gov/3.11 (minimax polynomial approximations).
     integer-sequence bench workload (was incidental test fodder).
 - Catalog now 16 named algorithms (2 done, 14 open) across 4 tiers, plus
   the researched statistical taxonomy. Subagent launching for TPE.
+- Tier-2 local value numbering subagent still in flight.
+
+### 2026-07-10 — iteration 9 (TPE Bayesian search landed)
+
+- **Tree-structured Parzen Estimator search LANDED** in mcchv as opt-in
+  `--search tpe` (env `MCCHV_SEARCH=tpe`; default stays `linear`).
+  Replaces the linear 0..UINTMAX sweep with a Bayesian surrogate:
+  objective = normalized cpu + normalized mem vs the pure-tree baseline;
+  gamma=0.25 good/bad split; per-dimension smoothed-histogram Parzen
+  densities l(x), g(x); acquisition samples 24 from l(x) and maximizes
+  l(x)/g(x) (≙ Expected Improvement) after 8 seeded random evals;
+  RNG reseeded from the run seed for reproducibility. Pareto winner
+  selection + intention-cache format unchanged; shared eval path with
+  the linear strategy (no duplication).
+- **TPE beats linear at equal budget** (seed 3, 2s, confirmed locally):
+  linear stuck at (0,1) mem **+0.0%**; TPE reaches (17,7) mem **−34.4%**
+  in the same wall-clock — the surrogate learns high leaf_cut dominates
+  and stops scanning the largest-tree region. Subagent's fuller table
+  (seed 7): 2s TPE −34.7% vs linear +0.0%; 4s TPE ~−26–35% vs linear
+  −17.7%. First researched item (BaCO/TPE) delivered.
+- ctest `hypervisor-tpe` added; full suite **1796 green**. mcchv is a
+  tool (no self-host fixpoint needed).
 - Tier-2 local value numbering subagent still in flight.
