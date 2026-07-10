@@ -436,19 +436,27 @@ Implementation (decided 2026-07-10):
   peak_kb, size_bytes; }` — the best-so-far plus its three §31 objective
   components. No parser. A struct-layout or `MCC_VERSION` change just misses
   (the key carries the version), so brittleness across builds is harmless.
-  The record is also flushed by §31's save-checkpoint-and-stop signal, so an
-  interrupted search loses nothing.
+  Kept current incrementally (see below), so an interrupt/crash loses at
+  most the in-flight eval, never committed progress.
 - **Frontier = monotonic seed cursor.** Persist `next_seed` + the best
-  `{seed, score}`. Resume linearly scans `next_seed..` for this run's
-  budget. (Extends to a TPE observation list once §25's search lands.)
-- **Write protocol = lock + atomic + A/B keep-best.** Hold an advisory
-  lock on the entry, re-read the current record (B), and write back only
-  the better of B vs this run's result (A) by §31's lexicographic
+  `{seed, cpu_ns, peak_kb, size}`. Resume linearly scans `next_seed..` for
+  this run's budget. (Extends to a TPE observation list once §25 lands.)
+- **Write protocol = lock + durable-atomic + A/B keep-best.** Hold an
+  advisory lock on the entry, re-read the current record (B), and write
+  back only the better of B vs this run's result (A) by §31's lexicographic
   comparator (faster → memory → size; non-runnable TUs skip the cpu axis);
-  on a full objective tie keep the larger `next_seed` (more space explored).
-  Commit via temp-file + `rename` (atomic). A run that made less progress
-  or found a worse best can never clobber a better cached optimizer, and
-  no reader ever sees a torn file.
+  on a full objective tie keep the larger `next_seed`. Commit durably:
+  write temp → `fsync(temp)` → `rename(temp, target)` → `fsync(dir)`, so a
+  crash or power loss can never leave a torn or unflushed record — a reader
+  always sees the whole old record or the whole new one, never a fragment.
+  A run that made less progress or found a worse best can never clobber a
+  better cached optimizer.
+- **Incremental, never end-only.** The record is rewritten (durable-atomic,
+  above) on **every best(k) improvement** and at most every few seconds —
+  not just at search end. So a readily-available recovery point always
+  exists on disk; the stop path, an uncatchable SIGKILL, or power loss lose
+  at most the current in-flight eval, never committed progress. This is what
+  lets §31's stop return in ~1-2 s without finishing any eval.
 - **No eviction.** One small file per TU/fn under `host_cache_dir()`;
   the dir grows with distinct inputs and is user/OS-clearable. Ship a
   documented `mcc --clear-cache` (equivalent to removing the dir).
@@ -669,13 +677,28 @@ axis has no measurement, so selection falls back to **lowest peak memory →
 smaller size**. Candidates from different strategies **compose** where the
 §28/§29 soundness oracle proves the combination equivalent.
 
-**Save-checkpoint-and-stop interrupt.** The `-O4+` compile-time search
-installs a stop-signal handler (the hypervisor's "save and stop"): on
-receipt it finishes the in-flight candidate eval, writes the §21
-checkpoint, and exits gracefully — so `optimize_search_seconds` can be cut
-short at any instant with little or no lost progress (the checkpoint always
-holds best-so-far + frontier). That bound is compile-time only; the
-embedded runtime JIT (§26) is unbounded.
+**Save-checkpoint-and-stop interrupt.** The `-O4+` search must stop within
+~1-2 s of a kill signal without waiting on any in-flight work, so recovery
+never depends on doing work at stop time:
+- **Signal = SIGTERM (primary) + SIGINT + SIGHUP.** SIGTERM is what the OS
+  / systemd / `kill` send for graceful shutdown (a grace window precedes
+  the uncatchable SIGKILL); SIGINT is Ctrl-C, SIGHUP is terminal loss.
+  SIGKILL/SIGSTOP can't be caught — which is *why* recovery leans on §21's
+  incremental checkpoint, not on the handler running.
+- **Async-signal-safe handler.** It only sets `volatile sig_atomic_t stop
+  = 1`; all filesystem work stays in the main loop (no FS/malloc in the
+  handler).
+- **Abandon the in-flight eval — don't finish it.** A single candidate
+  eval can be arbitrarily long (a deep-round JIT run), so on `stop` the
+  search drops the running eval (its result isn't needed — best-so-far is
+  already on disk from §21's incremental writes) and returns within the
+  bound. A watchdog kills/abandons the eval subprocess/JIT so it can't
+  stall the exit.
+- **Per-candidate eval timeout.** Each eval is itself time-bounded by its
+  own watchdog; an overrunning candidate is abandoned as no-improvement —
+  no single eval runs for days, consistent with "strictly time-bound."
+That bound is compile-time only; the embedded runtime JIT (§26) is
+unbounded.
 
 This is the harness §22/§24/§25 plug into: §24 (hot-slice) becomes the
 per-round time allocator across strategies × functions; §25 is the scoring
