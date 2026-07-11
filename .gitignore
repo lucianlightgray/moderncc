@@ -13,3 +13,7 @@ vgcore.*
 
 # transient artifacts written by exec tests run from the repo root
 fred.txt
+
+# qemu-user core dumps from trap tests
+qemu_*.core
+*.core
