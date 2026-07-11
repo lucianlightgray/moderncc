@@ -429,7 +429,7 @@ high-value specifics the summary omits:
   and each `MCC_AST_*` gate forced on, gating candidates under `gcc
   -fsanitize=undefined,address` (ctests `fuzz/smoke`, `fuzz/matrix`,
   `fuzz/corpus` regression-lock). Bring-up: 200 seeds × (−O0..−O3 + 7 gates), 0
-  miscompiles. A scheduled nightly campaign (`campaign.sh` +
+  miscompiles. A scheduled nightly campaign (`fuzz_runner campaign` +
   `.github/workflows/fuzz-nightly.yml`, `workflow_dispatch` budget/batch inputs)
   loops the runner with crash-class dedup + a stop-rule (`seen-classes.txt`);
   accepted repros land in `tests/fuzz/corpus/repro_seed<N>.c` (header records
