@@ -297,6 +297,20 @@ static char *default_outputfile(MCCState *s, const char *first_file) {
 #include <sys/wait.h>
 #include <sys/resource.h>
 #include <sys/time.h>
+#include <errno.h>
+
+static pid_t so_fork(void) {
+	int tries;
+	for (tries = 0; tries < 64; tries++) {
+		pid_t pid = fork();
+		if (pid >= 0)
+			return pid;
+		if (errno != EAGAIN && errno != EINTR)
+			break;
+		usleep(2000);
+	}
+	return -1;
+}
 
 static volatile sig_atomic_t so_stop;
 static void so_on_stop(int sig) {
@@ -649,7 +663,7 @@ static int so_copy(const char *src, const char *dst) {
 
 static int so_spawn_timeout(const char **cv, unsigned timeout_ms) {
 	unsigned t0;
-	pid_t pid = fork();
+	pid_t pid = so_fork();
 	if (pid < 0)
 		return -1;
 	if (pid == 0) {
@@ -662,8 +676,11 @@ static int so_spawn_timeout(const char **cv, unsigned timeout_ms) {
 		pid_t r = waitpid(pid, &status, WNOHANG);
 		if (r == pid)
 			return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
-		if (r < 0)
+		if (r < 0) {
+			if (errno == EINTR)
+				continue;
 			return -1;
+		}
 		if (so_stop || host_clock_ms() - t0 >= timeout_ms) {
 			kill(pid, SIGKILL);
 			waitpid(pid, &status, 0);
@@ -677,7 +694,7 @@ static int so_spawn_run(const char **cv, unsigned timeout_ms, long *usec,
 												long *rss_kb) {
 	struct timeval t0, t1;
 	struct rusage ru;
-	pid_t pid = fork();
+	pid_t pid = so_fork();
 	if (pid < 0)
 		return -1;
 	if (pid == 0) {
@@ -710,8 +727,11 @@ static int so_spawn_run(const char **cv, unsigned timeout_ms, long *usec,
 #endif
 				return 0;
 			}
-			if (r < 0)
+			if (r < 0) {
+				if (errno == EINTR)
+					continue;
 				return -1;
+			}
 			if (so_stop || host_clock_ms() - tstart >= timeout_ms) {
 				kill(pid, SIGKILL);
 				wait4(pid, &status, 0, &ru);
