@@ -611,6 +611,7 @@ static int ast_fncfg_find(const char *fn) {
 }
 static int ast_templates_env;
 static int ast_engine_strategy;
+static unsigned ast_search_seconds;
 static int ast_promote_env;
 static int ast_no_callful_env;
 static int ast_no_callful_promo;
@@ -785,6 +786,7 @@ void ast_configure(MCCState *s1) {
 		const char *eng = getenv("MCC_AST_ENGINE");
 		ast_engine_strategy = eng && !strcmp(eng, "strategy");
 	}
+	ast_search_seconds = s1->optimize_search_seconds;
 	ast_promote_env = ast_env_gate("MCC_AST_PROMOTE", opt_promote);
 	ast_no_callful_env = ast_env_gate("MCC_AST_NO_CALLFUL", 0);
 	ast_inline_env = ast_env_gate("MCC_AST_INLINE",
@@ -5482,6 +5484,24 @@ static int ast_licm_is_loop(AstArena *a, AstLocal s) {
 	return op == 2 || op == 3 || op == 4 || op == 5;
 }
 
+static long ast_cost_score(AstArena *a) {
+	AstLocal nn = ast_count(a), n, p;
+	int nodes = (int)nn, calls = 0, maxdepth = 0;
+	for (n = 0; n < nn; n++) {
+		if (ast_kind(a, n) == AST_Invoke)
+			calls++;
+		if (ast_licm_is_loop(a, n)) {
+			int d = 1;
+			for (p = ast_parent(a, n); p != AST_NONE; p = ast_parent(a, p))
+				if (ast_licm_is_loop(a, p))
+					d++;
+			if (d > maxdepth)
+				maxdepth = d;
+		}
+	}
+	return (long)nodes * (maxdepth + 1) * (calls + 1);
+}
+
 static void ast_fn_cost(AstArena *a, const char *fn) {
 	AstLocal nn = ast_count(a), n, p;
 	int nodes = (int)nn, calls = 0, maxdepth = 0;
@@ -5498,8 +5518,7 @@ static void ast_fn_cost(AstArena *a, const char *fn) {
 		}
 	}
 	fprintf(stderr, "ast-cost: %s nodes=%d loopdepth=%d calls=%d score=%ld\n", fn,
-					nodes, maxdepth, calls,
-					(long)nodes * (maxdepth + 1) * (calls + 1));
+					nodes, maxdepth, calls, ast_cost_score(a));
 }
 
 static int ast_bf_eqkey(AstArena *a, AstLocal n, AstLocal *key) {
@@ -6783,6 +6802,120 @@ static const AstStrategy ast_strategies[AST_STRAT_COUNT] = {
 	{"tco", &ast_templates_env, ast_strat_tco},
 };
 
+/*
+ * Live -O4+ search (rollout step 5). At -O4+ (optimize_search_seconds>0, so the
+ * driver has budget for a search) with the strategy engine, ast_func_end runs a
+ * best-first per-function search over the four toggleable fold gates (templates,
+ * narrow, bitflag, sethi) instead of applying the single frozen order. Each
+ * candidate is measured on an isolated clone by the static cost model
+ * (ast_cost_score); the search only SELECTS a gate configuration — the winning
+ * config is then produced by the normal, unmodified pipeline+emit path on the
+ * untouched captured tree, so a search bug can only pick a larger-but-correct
+ * config, never miscompile. Results are memoized by intention hash so a recurring
+ * function skips the search. -O1..-O3 (no budget) never search and stay
+ * byte-reproducible.
+ *
+ * Single-threaded and statically scored. The NCores-1 coroutine thread pool,
+ * emitted-size / JIT-runtime scoring (needs scratch-Section emit isolation), the
+ * disk-backed cross-build memo, and runtime deopt are the documented step-5+
+ * continuations in docs/TODO.md.
+ */
+enum {
+	AST_SG_TEMPLATES = 1u,
+	AST_SG_NARROW = 2u,
+	AST_SG_BITFLAG = 4u,
+	AST_SG_SETHI = 8u
+};
+
+typedef struct AstSearchMemo {
+	uint64_t hash;
+	unsigned gates;
+} AstSearchMemo;
+
+#define AST_SEARCH_MEMO_CAP 4096
+static AstSearchMemo ast_search_memo[AST_SEARCH_MEMO_CAP];
+static int ast_search_memo_n;
+
+static unsigned ast_search_gates_now(void) {
+	return (ast_templates_env ? AST_SG_TEMPLATES : 0) |
+				 (ast_narrow_env ? AST_SG_NARROW : 0) |
+				 (ast_bitflag_env ? AST_SG_BITFLAG : 0) |
+				 (ast_sethi_env ? AST_SG_SETHI : 0);
+}
+
+static void ast_search_gates_set(unsigned g) {
+	ast_templates_env = (g & AST_SG_TEMPLATES) != 0;
+	ast_narrow_env = (g & AST_SG_NARROW) != 0;
+	ast_bitflag_env = (g & AST_SG_BITFLAG) != 0;
+	ast_sethi_env = (g & AST_SG_SETHI) != 0;
+}
+
+static long ast_search_measure(AstArena *pristine, Sym *sym, int faithful,
+															 unsigned gates) {
+	AstArena *saved_cur = ast_cur;
+	AstArena *trial = ast_arena_clone(pristine);
+	if (!trial)
+		return -1;
+	ast_search_gates_set(gates);
+	ast_cur = trial;
+	for (int si = 0; si < AST_STRAT_COUNT; si++)
+		if (faithful && *ast_strategies[si].gate)
+			ast_strategies[si].apply(trial, sym);
+	long score = ast_cost_score(trial);
+	ast_cur = saved_cur;
+	ast_arena_free(trial);
+	return score;
+}
+
+static void ast_search_select(Sym *sym, int faithful) {
+	AstArena *pristine = ast_arena_clone(ast_cur);
+	if (!pristine)
+		return;
+	uint64_t h = ast_intention_hash(pristine, AST_NONE);
+	if (h) {
+		for (int i = 0; i < ast_search_memo_n; i++)
+			if (ast_search_memo[i].hash == h) {
+				ast_search_gates_set(ast_search_memo[i].gates);
+				ast_arena_free(pristine);
+				return;
+			}
+	}
+	unsigned base = ast_search_gates_now();
+	int g0 = ast_graft_total, p0 = ast_promo_total, o0 = ast_opt_total;
+	unsigned cands[5];
+	int nc = 0;
+	cands[nc++] = base;
+	if (base & AST_SG_TEMPLATES)
+		cands[nc++] = base & ~AST_SG_TEMPLATES;
+	if (base & AST_SG_NARROW)
+		cands[nc++] = base & ~AST_SG_NARROW;
+	if (base & AST_SG_BITFLAG)
+		cands[nc++] = base & ~AST_SG_BITFLAG;
+	if (base & AST_SG_SETHI)
+		cands[nc++] = base & ~AST_SG_SETHI;
+	unsigned best = base;
+	long best_score = -1;
+	for (int ci = 0; ci < nc; ci++) {
+		long sc = ast_search_measure(pristine, sym, faithful, cands[ci]);
+		if (sc < 0)
+			continue;
+		if (best_score < 0 || sc < best_score) {
+			best_score = sc;
+			best = cands[ci];
+		}
+	}
+	ast_graft_total = g0;
+	ast_promo_total = p0;
+	ast_opt_total = o0;
+	ast_search_gates_set(best);
+	if (h && ast_search_memo_n < AST_SEARCH_MEMO_CAP) {
+		ast_search_memo[ast_search_memo_n].hash = h;
+		ast_search_memo[ast_search_memo_n].gates = best;
+		ast_search_memo_n++;
+	}
+	ast_arena_free(pristine);
+}
+
 #if MCC_HOST_WIN32 && defined(__GNUC__) && !defined(__clang__)
 __attribute__((optimize("O0")))
 #endif
@@ -6890,6 +7023,9 @@ void ast_func_end(Sym *sym) {
 
 				ast_ltemp_cur = saved_loc;
 				ast_ltemp_n = 0;
+				unsigned ast_search_sv_gates = ast_search_gates_now();
+				if (faithful && ast_engine_strategy && ast_search_seconds > 0)
+					ast_search_select(sym, faithful);
 				if (ast_engine_strategy) {
 					int sf[AST_STRAT_COUNT];
 					for (int si = 0; si < AST_STRAT_COUNT; si++)
@@ -6922,6 +7058,7 @@ void ast_func_end(Sym *sym) {
 					sethis = faithful && ast_sethi_env ? ast_sethi_run(ast_cur) : 0;
 					tcos = faithful && ast_templates_env ? ast_tco_run(ast_cur, sym) : 0;
 				}
+				ast_search_gates_set(ast_search_sv_gates);
 				int do_bfold = bfolds > 0;
 				int do_ident = idents > 0;
 				int do_narrow = narrows > 0;

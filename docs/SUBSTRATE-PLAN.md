@@ -173,8 +173,34 @@ under `MCC_AST_ENGINE=strategy` (incl. fixpoint + fuzz + byte-exact goldens); sh
 strategy is 1904/1904, zero divergences. `match` = the gate; `est_cost_delta` is
 deferred to Step 5.
 
-## Out of scope (next milestone)
+## Step 5 core (landed) — the live -O4+ search
 
-Step 5 (worker pool + live -O4+ search) adds the `est_cost_delta` ranking and the memo
-that reorders the frozen table, plus the coroutine execution model and thread pool.
-That is where non-determinism enters (quarantined to -O4+); it depends on Step 4.
+At -O4+ (`optimize_search_seconds > 0`) with the strategy engine, `ast_func_end` runs a
+best-first per-function search (`ast_search_select`) over the four toggleable fold gates
+(templates, narrow, bitflag, sethi) rather than applying the single frozen order. Each
+candidate is measured on an isolated `ast_arena_clone` by the static cost model
+(`ast_cost_score`, factored out of `ast_fn_cost`); results are memoized by
+`ast_intention_hash`.
+
+**Safety architecture — search selects, existing path emits.** The search only picks a
+gate configuration; the winning config is produced by the *normal, unmodified*
+pipeline+emit path on the *untouched* captured tree. Because every gate configuration
+yields correct code (each pass is individually sound + faithful-gated), a search bug can
+only pick a larger-but-correct config — never a miscompile. Measurement runs the fold
+passes on clones and scores by static cost with **no emit**, so none of the
+emit-cursor / promo-plan / `*_total`-counter hazards apply; the module counters are
+saved/restored around the search as belt-and-suspenders.
+
+Single-threaded and deterministic. Opt-in (`MCC_AST_ENGINE=strategy` + `-O<n≥4>`);
+`-O1..-O3` carry no budget and never search. Validated: default path 1904/1904 ctest
+(search never engages); `-O5` strategy search 200/200 correct vs the gcc/clang
+differential; shadow+strategy+`-O5` 60/60 with zero side-car divergences.
+
+## Out of scope (Step 5+ continuations)
+
+Tracked in `docs/TODO.md`: emitted-size / JIT-runtime scoring (needs §22 scratch-Section
+emit isolation), a wider search space (inline/promote axes, permutations, budget-scaled
+best-first frontier by `est_cost_delta`), the disk-backed cross-build memo (subsuming the
+out-of-process `mcc_superopt_perfn`), the NCores-1 coroutine thread pool, and the runtime
+JIT + guarded deopt (depends on §26). Non-determinism enters only at the JIT tier and
+stays quarantined to -O4+.

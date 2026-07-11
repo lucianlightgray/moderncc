@@ -54,12 +54,36 @@ search's ranking key) is deferred to Step 5. The byte-identity + fixpoint precon
 for flipping the default is now met.
 
 - [ ] **Flip the `MCC_AST_ENGINE` default to `strategy`** — the gate is satisfied
-  (byte-identical + fixpoint). Deliberate one-line change once the search (Step 5) is
-  ready to warm the table, or sooner if the table-driven path is wanted as the baseline.
-- [ ] **Step 5 — coroutine strategies + optional C11 thread pool + live -O4+
-  search** — stackless `step()` state machines; NCores-1 pool confined to
-  -O4+/JIT; best-first frontier checkpointed to the disk-backed memo. Adds the
-  `est_cost_delta` ranking + memo that reorders the frozen table. (needs step 4)
+  (byte-identical + fixpoint). Deliberate one-line change once the search is wanted as
+  the baseline; keeps `legacy` as the fallback.
+
+**LANDED — Step 5 core: the live -O4+ search.** At -O4+ (`optimize_search_seconds > 0`)
+with the strategy engine, `ast_func_end` runs a best-first per-function search over the
+four toggleable fold gates (templates, narrow, bitflag, sethi) instead of the single
+frozen order (`ast_search_select`). Each candidate is measured on an isolated
+`ast_arena_clone` by the static cost model (`ast_cost_score`); the search only *selects*
+a gate configuration — the winner is emitted by the normal unmodified pipeline+emit path
+on the untouched captured tree, so a search bug can only pick a larger-but-correct
+config, never miscompile. Winners are memoized by `ast_intention_hash` so recurring
+functions skip the search. Single-threaded, deterministic. Opt-in:
+`MCC_AST_ENGINE=strategy` + `-O<n≥4>`. Validated: default `-O1..-O3` unchanged
+(1904/1904 ctest, search never engages); `-O5` strategy search 200/200 correct vs the
+gcc/clang differential; shadow+strategy+`-O5` 60/60 with zero side-car divergences.
+
+- [ ] **Step 5+ — scoring fidelity: emitted-size / JIT-runtime** — replace the static
+  `ast_cost_score` proxy with true emitted-byte size (needs the §22 scratch-`Section`
+  emit isolation so a candidate can be emitted-and-measured without the in-place
+  save/restore desync) and, at the JIT tier, measured runtime (`MCC_AST_JITSCORE`).
+- [ ] **Step 5+ — widen the search space** — beyond leave-one-out of the 4 fold gates:
+  inline/promote axes, pairwise/permutation candidates, budget-scaled by
+  `optimize_search_seconds`, best-first frontier ordered by `est_cost_delta`.
+- [ ] **Step 5+ — disk-backed cross-build memo** — persist the per-function winner to
+  the existing `pf-*.ck` cache (key via `ast_intention_hash` → `so_pf_key`), so the
+  in-process search subsumes the out-of-process `mcc_superopt_perfn` fork/exec loop.
+- [ ] **Step 5+ — NCores-1 coroutine thread pool** — stackless `step()` strategies on a
+  C11 pool (optional, confined to -O4+/JIT; disabled under `__STDC_NO_THREADS__`).
+- [ ] **Step 5+ — runtime JIT + guarded deopt** — the -O4+/JIT tier (per-tick drive,
+  entry-guarded variant dispatch); depends on §26 embedded recompiler + hot-swap.
 
 ## Bugs — surfaced by the conformance-test expansion (concrete repros)
 
