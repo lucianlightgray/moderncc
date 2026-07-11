@@ -2168,14 +2168,19 @@ Linux box does not have — parked here so they are tracked, not lost:
       3-stage self-host reaches a byte-identical fixpoint (`75bc72196818` ×3) —
       the exact thing that was "n/a." No Darwin-x86 CI runner needed after all;
       Rosetta is the runner.
-- [~] **CI re-checks pending after three landed FIX.md fixes**: the
-      `vcheck_cmp`-before-`gfunc_call` guard and the `ast_fn_faithful` reemit
-      gate are now re-verified on **macos-x86_64 (via Rosetta)** and
-      **macos-arm64 (native)** here — `-O3` self-host + exec green on both. The
-      promote frame-slot change is x86_64-only (compiled out on arm64) and its
-      macos-x86_64 codegen is exercised by the Rosetta x64 build. Remaining:
-      **msvc-arm64** (needs a Windows runner) and the ELF `-O2/-O3` linux CI
-      cells (linux runner) — genuinely off-box.
+- [~] **CI re-checks after three landed FIX.md fixes** — macos re-verified
+      on-box (2026-07-10): the `vcheck_cmp`-before-`gfunc_call` guard, the
+      `ast_fn_faithful` reemit gate, and the x86_64-only promote frame-slot
+      change are re-checked on **macos-x86_64 (Rosetta)** + **macos-arm64
+      (native)**: full x86_64-macOS ctest **1879/1880** under Rosetta, the sole
+      failure being `mcctest` — a CROSS-ARCH REFERENCE ARTIFACT, not a mcc bug:
+      the harness compares the arm64 host `cc` (long double = 64-bit) against
+      the x86_64 mcc (long double = 80-bit) and `full_language.c` exercises long
+      double; `mcctest` PASSES natively on both cmake-macos (arm64) and would
+      pass against a matched x86_64 reference. Remaining genuinely off-box:
+      **msvc-arm64** (Windows runner) and the ELF linux `-O2/-O3` cells (a
+      Linux runner / Docker — qemu on macOS provides only system, not
+      `qemu-riscv64` user-mode emulation).
 - [ ] **static-glibc self-host gap** (README.md:12 / MCC.md:25): static-glibc
       via mcc hits a `__pthread_initialize_minimal` gap (musl is the
       fully-static path). Decide finish-or-document-as-permanent.
