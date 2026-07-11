@@ -139,10 +139,17 @@ ever wanted, its own gated change (side-car shadow + fixpoint + fuzz).
   -O6 differential correct). Still open: **unify with the out-of-process `pf-*.ck`
   format** (`so_pf_key`) so the in-process search fully subsumes `mcc_superopt_perfn`,
   and compact the append-only file instead of the current ~64K-record size cap.
-- [ ] **Step 5+ — runtime JIT + guarded deopt** — the -O4+/JIT tier (per-tick drive,
-  entry-guarded variant dispatch); depends on §26 embedded recompiler + hot-swap.
-  **Blocked:** there is no runtime recompiler (`mcc_relocate` is a one-shot `-run`
-  loader; `--embed-jit` only prints a manifest) — §26 must land first.
+## NEXT MILESTONE — runtime JIT + guarded deopt (§26) — plan in `docs/JIT-PLAN.md`
+
+Not part of the completed Steps 1–5 rollout (AST.md: "rollout steps 3-5 **+ the JIT**").
+The design's `-O4+`/JIT tier: entry-guarded variant dispatch with a runtime recompiler +
+hot-swap. Reusable today: the `-run` compile-to-executable-memory + `mcc_relocate`
+pipeline, GOT/PLT indirection, `.init_array` ctors, the replayable `ast_cur`. Missing:
+the byte-faithful baseline is freed per function (retain it), calls are hard `rel32`
+(make JIT'd functions entry dispatchers), `--jit-functions`/`--jit-max-duration` are
+inert, no threads, no `eval_slice`. Staged: retain baseline → entry dispatcher →
+runtime recompile via the codegen+relocate path → guard+deopt → wire the `--jit-*`
+flags → soundness (`eval_slice` later). Open decisions D1–D8 are in `docs/JIT-PLAN.md`.
 
 ## Bugs — surfaced by the conformance-test expansion (concrete repros)
 
