@@ -1272,8 +1272,29 @@ core-driver surgery (2–3 re-emits per function with scratch text save/restore)
 it must land behind a NEW default-off gate (e.g. `MCC_AST_PERFN_INPROC`) so the
 default `-O0..-O3` and the existing `-O4` child-process search stay byte-
 identical, and be gated on the x86_64 + arm64 3-stage self-host fixpoints (per
-[[mcc-arm64-selfhost-recipe]]) + the diamond/perfn ctests. Deliberately NOT
-rushed here — the clone primitive is the safe, tested first step.
+[[mcc-arm64-selfhost-recipe]]) + the diamond/perfn ctests.
+
+**PROTOTYPE ATTEMPTED then REVERTED (2026-07-11) — a real re-emit-state bug
+found.** A first cut wired `MCC_AST_PERFN_INPROC` to trial **inline-off vs
+inline-on** per function (inlining trades a grafted body for a call, so its
+size-optimality is per-function) by re-emitting the captured tree twice through
+the existing reset block and keeping the smaller `ind - ast_body_ind_sv`, winner
+emitted last. It **worked on simple programs** — a helper called from 4 sites
++ a tiny helper went `.text` 2319→1909 B (inline-off chosen for the bloating
+helper, kept for the tiny one) with output matching `-O0`/gcc, and the gate-ON
+`-O2` self-host fixpoint **converged** — and gate-OFF stayed byte-identical
+(ctest 1888/1888, fixpoint stage2==3==4, since off ⇒ the single-config path
+verbatim). BUT gate-ON **miscompiled** `tests/ast/replay/inline.c` (returned 5,
+expected 42): re-emitting a function that inlines struct-returning / float /
+forward-declared callees more than once perturbs **graft + positional-pool
+state** (`ast_fconst`/`ast_locrec` cursors-vs-counts, `ast_inline_depth`/graft
+budget) that the final emit then reads inconsistently — a subtle multi-re-emit
+hazard, NOT visible on the `mcc.c` self-host (hence fixpoint passed) but real.
+Reverted rather than ship a known-broken gate. NEXT: the fix is to snapshot/
+restore the positional-pool COUNTS (not just the cursors) and the inline/graft
+globals around each measurement re-emit — or emit each config into a scratch
+buffer via a clean sub-context — before re-attempting, then re-run the gate-ON
+inline corpus + both self-host fixpoints + the differential fuzzer.
 
 Builds on §21 + the capture/replay driver.
 
