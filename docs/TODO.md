@@ -2639,8 +2639,23 @@ fixpoint invariant if rushed. Sequenced, not started:
   correct fixpoint; PRE-on-built arm64 mcc compiles a mixed-type TU correctly);
   a mixed-width diamond fuzzer (targets `unsigned`/`unsigned long`/`unsigned
   char`/`unsigned short`/`int`/`long`) **x86_64 400/400** (fired 393) and **arm64
-  200/200 under qemu** (fired 200) match gcc. Next broadening: table-driven
-  anticipability via the `ast_cse_state_meet` join (non-tail / cross-block E).
+  200/200 under qemu** (fired 200) match gcc. **BROADENING 3 — reuse-distance
+  scan LANDED** (2026-07-11, dual-arch): the redundant reuse of E no longer has
+  to be the *immediately*-following statement — `ast_pre_run` now scans forward
+  siblings of the if, folding the first later `Store` that contains E, and
+  **stops** as soon as an intervening statement writes any operand of E (or
+  carries a label). Sound because the same value flows only while no operand is
+  written: `ast_licm_operands_ok(s, E)` gates each intervening statement and the
+  reuse `Store` itself (so the self-update `a = …a…` and operand-written-between
+  cases both stop the scan / are rejected). Validated: gate-off ctest
+  **1887/1887**; x86_64 gate-ON `fixpointgate` converges; arm64 gate-ON 3-stage
+  self-host converges (PRE fires still more widely on `mcc.c`, byte-stable
+  fixpoint); a combined diamond fuzzer (mixed-width targets + multi-statement
+  arms + benign intervening statements + operand-written-between/self-update/
+  cond-write negatives) **x86_64 500/500** (fired 482) and **arm64 250/250 under
+  qemu** (fired 250) match gcc. Next broadening: table-driven anticipability via
+  the `ast_cse_state_meet` join (cross-block E, arm insertion — the higher-risk
+  step that killed the original prototype; gate it on the arm64 self-host).
 - **§36 Chaitin–Briggs graph-coloring regalloc** — largest, replaces
   `ast_plan_promotion`; run last.
 - **§26 `--embed-jit` runtime engine**, **§33b/c/d/e**, **§27/§28**,

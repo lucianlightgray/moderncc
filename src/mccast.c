@@ -5903,9 +5903,6 @@ static int ast_pre_run(AstArena *a) {
 		AstLocal parent = ast_parent(a, n);
 		if (parent == AST_NONE || ast_kind(a, parent) != AST_BasicBlock)
 			continue;
-		AstLocal post = ast_next_sib(a, n);
-		if (post == AST_NONE || ast_kind(a, post) != AST_Store)
-			continue;
 		AstLocal thenbb = ast_child(a, n, 1), elsebb = ast_child(a, n, 2);
 		AstLocal ts, es;
 		if (!ast_pre_arm_store(a, thenbb, &ts) ||
@@ -5924,10 +5921,22 @@ static int ast_pre_run(AstArena *a) {
 			continue;
 		if (!ast_licm_operands_ok(a, n, e))
 			continue;
-		AstLocal prhs = ast_child(a, post, 1);
-		if (!ast_pre_occurs(a, prhs, e))
-			continue;
-		if (!ast_licm_operands_ok(a, post, e))
+		AstLocal post = AST_NONE, prhs = AST_NONE;
+		for (AstLocal s = ast_next_sib(a, n); s != AST_NONE; s = ast_next_sib(a, s)) {
+			if (ast_sccp_has_label(a, s))
+				break;
+			if (ast_kind(a, s) == AST_Store) {
+				AstLocal rhs = ast_child(a, s, 1);
+				if (ast_pre_occurs(a, rhs, e) && ast_licm_operands_ok(a, s, e)) {
+					post = s;
+					prhs = rhs;
+					break;
+				}
+			}
+			if (!ast_licm_operands_ok(a, s, e))
+				break;
+		}
+		if (post == AST_NONE)
 			continue;
 		int off = (ast_ltemp_cur - 8) & -8;
 		AstLocal lref = ast_node(a, AST_Ref);
