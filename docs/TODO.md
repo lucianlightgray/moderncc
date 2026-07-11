@@ -2097,9 +2097,29 @@ not commutative-safe, so stays out). Native arm64 spot-check recommended
   correct, 0 divergences, 0 crashes**, and sharing now fires **116×** (up from
   105 — if/else/switch/ternary functions now qualify).
 
-  Remaining for §36: full backward-liveness (share *across* loop back-edges,
-  the last CFG case), spill-slot sharing, and finally *replacing* the promotion
-  heuristic outright — each fixpoint-gated + native arm64/riscv64.
+  **FOURTH INCREMENT LANDED (2026-07-11): loop-carried sharing via
+  conservative loop-span interval extension.** The gate now falls back only on
+  `goto`/label (`AST_Jump` op 4/5); functions with **loops** enter the sharing
+  path too. Soundness across back-edges is restored by *extending* intervals:
+  for each loop (BB-child `AST_If` op ∈ {2,3,4,5}) its node-index span is
+  computed by DFS (`ast_subtree_span`), and every candidate whose ref-range
+  intersects that span has its `[lo,hi]` grown to cover the whole loop — so any
+  two candidates live in the same loop necessarily overlap and never share,
+  while a pre-loop and a post-loop local (disjoint even after extension) still
+  can. The entry-load-dedup emission stays correct: a loop-body sharer is
+  def-first, and its defining write re-establishes the register on each
+  iteration before any use. Only backward `goto` (an irreducible edge the
+  span-extension can't bound) still falls back to the complete graph.
+  Validation: gate-off fixpoint stage2==3==4 byte-identical + ctest
+  **1880/1880** + all presets clean + mcc_s(ASan) clean; forced-on **229/229
+  exec corpus correct** AND the differential fuzzer finds **0 miscompiles over
+  380 random programs** (loops/branches/switch) with `MCC_AST_COLOR=1`; sharing
+  now fires **149×** (up from 116).
+
+  Remaining for §36: spill-slot sharing (coloring gives it for free once
+  extended to spilled ranges), and finally *replacing* the promotion heuristic
+  outright rather than filtering it — each fixpoint-gated + native
+  arm64/riscv64.
 
 ## 37. Bench-statistics roadmap — Bayesian + ANOVA inference (medium, tools-only)
 

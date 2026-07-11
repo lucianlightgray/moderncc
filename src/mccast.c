@@ -2303,13 +2303,24 @@ static void ast_promo_weigh(AstArena *a, AstLocal n, int depth, const int *coff,
 		ast_promo_weigh(a, c, cd, coff, nc, cweight);
 }
 
+static void ast_subtree_span(AstArena *a, AstLocal n, int *lo, int *hi) {
+	if (n == AST_NONE)
+		return;
+	if ((int)n < *lo)
+		*lo = (int)n;
+	if ((int)n > *hi)
+		*hi = (int)n;
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		ast_subtree_span(a, c, lo, hi);
+}
+
 static int ast_plan_promotion(AstArena *a) {
 	ast_promo_n = 0;
 	ast_promo_callful = 0;
 	if (!ast_promote_env || ast_func_has_asm)
 		return 0;
 	AstLocal nn = ast_count(a);
-	int has_call = 0, has_vla = 0, has_backward = 0;
+	int has_call = 0, has_vla = 0, has_goto = 0, has_loop = 0;
 	for (AstLocal n = 0; n < nn; n++) {
 		uint16_t k = ast_kind(a, n);
 		if (k == AST_Invoke)
@@ -2317,14 +2328,14 @@ static int ast_plan_promotion(AstArena *a) {
 		else if (k == AST_Unary && ast_op(a, n) == AST_OP_VLA)
 			has_vla = 1;
 		else if (k == AST_Jump && (ast_op(a, n) == 4 || ast_op(a, n) == 5))
-			has_backward = 1;
+			has_goto = 1;
 		else if (k == AST_BasicBlock) {
 			for (AstLocal s = ast_first_child(a, n); s != AST_NONE;
 					 s = ast_next_sib(a, s)) {
 				int so = ast_op(a, s);
 				if (ast_kind(a, s) == AST_If &&
 						(so == 2 || so == 3 || so == 4 || so == 5))
-					has_backward = 1;
+					has_loop = 1;
 			}
 		}
 	}
@@ -2440,7 +2451,7 @@ static int ast_plan_promotion(AstArena *a) {
 												: (int)(sizeof ast_promo_caller / sizeof *ast_promo_caller);
 	int xmm_max = has_call ? 0 : (int)(sizeof ast_promo_xmm / sizeof *ast_promo_xmm);
 	int gp_n = 0, xmm_n = 0;
-	if (ast_color_env && !has_backward) {
+	if (ast_color_env && !has_goto) {
 		int cfirst[AST_PROMO_MAX * 8], clast[AST_PROMO_MAX * 8];
 		int cdeffirst[AST_PROMO_MAX * 8];
 		for (int j = 0; j < nc; j++)
@@ -2475,6 +2486,31 @@ static int ast_plan_promotion(AstArena *a) {
 		for (int j = 0; j < nc; j++) {
 			lo[j] = cdeffirst[j] ? cfirst[j] : 0;
 			hi[j] = clast[j];
+		}
+		if (has_loop) {
+			for (AstLocal n = 0; n < nn; n++) {
+				if (ast_kind(a, n) != AST_BasicBlock)
+					continue;
+				for (AstLocal s = ast_first_child(a, n); s != AST_NONE;
+						 s = ast_next_sib(a, s)) {
+					int so = ast_op(a, s);
+					if (ast_kind(a, s) != AST_If ||
+							!(so == 2 || so == 3 || so == 4 || so == 5))
+						continue;
+					int llo = (int)s, lhi = (int)s;
+					ast_subtree_span(a, s, &llo, &lhi);
+					for (int j = 0; j < nc; j++) {
+						if (cfirst[j] < 0)
+							continue;
+						if (clast[j] < llo || cfirst[j] > lhi)
+							continue;
+						if (llo < lo[j])
+							lo[j] = llo;
+						if (lhi > hi[j])
+							hi[j] = lhi;
+					}
+				}
+			}
 		}
 		int careg[AST_PROMO_MAX * 8];
 		for (int j = 0; j < nc; j++)
