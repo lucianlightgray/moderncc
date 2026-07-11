@@ -154,6 +154,14 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -O1 {W}/bft.c -o {W}/bft0 && {W}/bft0 ; echo rc=$?",
 		 "2\nrc=68\nrc=68\nrc=68\n"},
 
+		{"bitflag_ifne", "cpu=x86_64,os=linux,optimizer",
+		 "printf 'int ni(int x){if(x!=1){if(x!=3){if(x!=5){if(x!=7){if(x!=9){return 1;}}}}}return 0;}int main(void){int k[10]={-1,0,1,2,3,64,65,7,9,10},s=0;for(int i=0;i<10;i++)s+=ni(k[i]);return s;}\\n' > {W}/bfn.c && "
+		 "MCC_AST_REPLAY_DUMP=1 MCC_AST_BITFLAG=1 {MCC} -B{B} -I{I} -O1 -c {W}/bfn.c -o {W}/bfn.o 2>&1 | grep -c 'ast-bitflag' ; "
+		 "MCC_AST_BITFLAG=1 {MCC} -B{B} -I{I} -O1 {W}/bfn.c -o {W}/bfn && {W}/bfn ; echo rc=$? ; "
+		 "MCC_AST_BITFLAG=1 {MCC} -B{B} -I{I} -O3 {W}/bfn.c -o {W}/bfn3 && {W}/bfn3 ; echo rc=$? ; "
+		 "{MCC} -B{B} -I{I} -O1 {W}/bfn.c -o {W}/bfn0 && {W}/bfn0 ; echo rc=$?",
+		 "1\nrc=6\nrc=6\nrc=6\n"},
+
 		{"perfn_search", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'static int sq(int x){return x*x;}static int cube(int x){return x*x*x;}int main(void){int s=0;for(int i=0;i<8;i++)s+=sq(i)+cube(i);return s;}\\n' > {W}/pfs.c && "
 		 "XDG_CACHE_HOME={W}/pfsc MCC_AST_PERFN=1 {MCC} -B{B} -I{I} -O4 -c {W}/pfs.c -o {W}/pfs.o && "

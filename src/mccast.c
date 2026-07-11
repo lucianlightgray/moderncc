@@ -4914,6 +4914,56 @@ static int ast_bf_try_if(AstArena *a, AstLocal s) {
 	return 1;
 }
 
+static int ast_bf_try_ifne(AstArena *a, AstLocal s) {
+	AstLocal key = AST_NONE, drop[64];
+	uint64_t vals[AST_BF_MAXVALS], mask = 0, base = 0;
+	int cnt = 0, ndrop = 0;
+	if (ast_child(a, s, 2) != AST_NONE)
+		return 0;
+	AstLocal cond0 = ast_child(a, s, 0);
+	if (ast_bf_has_label(a, cond0))
+		return 0;
+	if (!ast_bf_cond_parse_op(a, cond0, TOK_LAND, TOK_NE, &key, vals, &cnt))
+		return 0;
+	AstLocal body = ast_child(a, s, 1);
+	for (;;) {
+		if (body == AST_NONE || ast_kind(a, body) != AST_BasicBlock ||
+				ast_nchild(a, body) != 1 || ndrop > 60)
+			break;
+		AstLocal inner = ast_first_child(a, body);
+		if (ast_kind(a, inner) != AST_If || ast_op(a, inner) != 0)
+			break;
+		if (ast_child(a, inner, 2) != AST_NONE)
+			break;
+		AstLocal icond = ast_child(a, inner, 0);
+		if (ast_bf_has_label(a, icond))
+			break;
+		AstLocal k2 = key;
+		int c2 = cnt;
+		if (!ast_bf_cond_parse_op(a, icond, TOK_LAND, TOK_NE, &k2, vals, &c2))
+			break;
+		key = k2;
+		cnt = c2;
+		drop[ndrop++] = body;
+		drop[ndrop++] = inner;
+		drop[ndrop++] = icond;
+		body = ast_child(a, inner, 1);
+	}
+	if (cnt < ast_bitflag_min || key == AST_NONE || body == AST_NONE)
+		return 0;
+	if (!ast_bf_window(vals, cnt, &mask, &base))
+		return 0;
+	AstLocal member = ast_bf_build(a, key, mask, base);
+	AstLocal cond = ast_bf_bin(a, '^', VT_INT, member, ast_bf_lit(a, VT_INT, 1));
+	ast_clear_children(a, s);
+	ast_add_child(a, s, cond);
+	ast_add_child(a, s, body);
+	ast_bf_drop(a, cond0);
+	for (int i = 0; i < ndrop; i++)
+		ast_bf_drop(a, drop[i]);
+	return 1;
+}
+
 static int ast_bf_try_lor(AstArena *a, AstLocal n) {
 	AstLocal key = AST_NONE;
 	uint64_t vals[AST_BF_MAXVALS], mask = 0, base = 0;
@@ -4969,6 +5019,10 @@ static int ast_bf_run(AstArena *a) {
 	for (AstLocal n = 0; n < nn; n++)
 		if (ast_kind(a, n) == AST_If && ast_op(a, n) == 0)
 			ast_bf_folds += ast_bf_try_if(a, n);
+	nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++)
+		if (ast_kind(a, n) == AST_If && ast_op(a, n) == 0)
+			ast_bf_folds += ast_bf_try_ifne(a, n);
 	nn = ast_count(a);
 	for (AstLocal n = 0; n < nn; n++)
 		if (ast_kind(a, n) == AST_Binary && ast_op(a, n) == TOK_LOR)

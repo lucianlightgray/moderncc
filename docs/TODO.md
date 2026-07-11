@@ -2052,9 +2052,18 @@ touch `src/mccast.c`, so serialize to avoid worktree merge conflicts):
       as not-clean on a self-hosting compiler. If wanted, it is its own
       **data-emission-infrastructure project** (a table-symbol+initializer
       emitter wired into the replay/rewrite lifecycle), not an `ast_bf` fold —
-      moved to Bucket B. **Still open (small)**: the If-chain fall-through
-      `!=` form (`ast_bf_try_if` is still `TOK_EQ`-only; the `&&`-expression
-      `!=` form is landed via `ast_bf_try_land`).
+      moved to Bucket B. **If-chain fall-through `!=` form — LANDED**: a nested
+      `if(k!=C1){if(k!=C2){…body}}` chain (`AST_If` op-0, no-else, single-child
+      wrapper blocks) captures as the statement dual of the `&&` form and now
+      folds via new `ast_bf_try_ifne` (registered after `ast_bf_try_if`,
+      reusing `ast_bf_cond_parse_op(TOK_LAND,TOK_NE)`/`window`/`build` → `member
+      ^ 1`), with conservative no-else/`nchild==1`/label guards; it poisons the
+      LAND node so there's no double-fold with `ast_bf_try_land`. Validated:
+      gate-off byte-identical, existing encodings byte-unchanged, fires + edge-
+      key checksum matches the transform-off reference (+ permanent
+      `cli/bitflag_ifne` test). **§30 encodings are now COMPLETE** for the
+      arithmetic model (==/||, biased-range, `&&`-of-`!=`, If-chain `!=`); only
+      the value-table needs the separate Bucket-B data-emission project.
 3. [~] **§32a refinements** — **op-5 `for(;;)` classification LANDED**: the
       `MCC_AST_CPROP_JOIN` structured descent now treats op-5 infinite loops
       with the same invariant-preserving meet as op-2..4 loops (`ast_cprop_
