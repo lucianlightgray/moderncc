@@ -390,6 +390,60 @@ uint64_t ast_intention_hash(const AstArena *a, AstLocal root) {
 #pragma pop_macro("realloc")
 #pragma pop_macro("free")
 
+#define AST_COLOR_MAX 64
+
+int ast_color_graph(int n, const uint64_t *adj, const int *cost, int k, int *color) {
+	if (n <= 0 || k <= 0 || n > AST_COLOR_MAX)
+		return 0;
+	int deg[AST_COLOR_MAX];
+	int order[AST_COLOR_MAX];
+	uint64_t removed = 0;
+	int top = 0;
+	uint64_t all = (n < 64) ? ((uint64_t)1 << n) - 1 : ~(uint64_t)0;
+	for (int i = 0; i < n; i++) {
+		color[i] = -1;
+		deg[i] = __builtin_popcountll(adj[i] & all);
+	}
+	for (int cnt = 0; cnt < n; cnt++) {
+		int pick = -1;
+		for (int i = 0; i < n; i++)
+			if (!(removed & ((uint64_t)1 << i)) && deg[i] < k) {
+				pick = i;
+				break;
+			}
+		if (pick < 0)
+			for (int i = 0; i < n; i++)
+				if (!(removed & ((uint64_t)1 << i)) &&
+						(pick < 0 || cost[i] < cost[pick]))
+					pick = i;
+		if (pick < 0)
+			break;
+		removed |= (uint64_t)1 << pick;
+		order[top++] = pick;
+		for (int j = 0; j < n; j++)
+			if (!(removed & ((uint64_t)1 << j)) && (adj[pick] & ((uint64_t)1 << j)))
+				deg[j]--;
+	}
+	int ncol = 0;
+	for (int idx = top - 1; idx >= 0; idx--) {
+		int i = order[idx];
+		uint64_t used = 0;
+		for (int j = 0; j < n; j++)
+			if (color[j] >= 0 && (adj[i] & ((uint64_t)1 << j)))
+				used |= (uint64_t)1 << color[j];
+		int c = -1;
+		for (int cc = 0; cc < k; cc++)
+			if (!(used & ((uint64_t)1 << cc))) {
+				c = cc;
+				break;
+			}
+		color[i] = c;
+		if (c >= 0)
+			ncol++;
+	}
+	return ncol;
+}
+
 #ifdef MCC_INTERNAL
 
 /* Like the parser in mccgen.c, the capture/replay engine must emit its
@@ -442,6 +496,7 @@ static int ast_licm_temp_env;
 static int ast_ltemp_off[AST_LTEMP_MAX];
 static int ast_ltemp_n;
 static int ast_ltemp_cur;
+static int ast_color_env;
 static int ast_search_worker;
 static uint64_t ast_intention_acc;
 static const char *ast_hash_out;
@@ -692,6 +747,7 @@ void ast_configure(MCCState *s1) {
 	ast_cse_join_env = ast_env_gate("MCC_AST_CSE_JOIN", 0);
 	ast_call_window_env = ast_env_gate("MCC_AST_CALL_WINDOW", 0);
 	ast_licm_temp_env = ast_env_gate("MCC_AST_LICM_TEMP", 0);
+	ast_color_env = ast_env_gate("MCC_AST_COLOR", 0);
 	ast_intention_acc = 0;
 	ast_hash_out = getenv("MCC_AST_HASH_OUT");
 	ast_search_worker = getenv("MCC_SEARCH_WORKER") != NULL;
@@ -2361,10 +2417,37 @@ static int ast_plan_promotion(AstArena *a) {
 												: (int)(sizeof ast_promo_caller / sizeof *ast_promo_caller);
 	int xmm_max = has_call ? 0 : (int)(sizeof ast_promo_xmm / sizeof *ast_promo_xmm);
 	int gp_n = 0, xmm_n = 0;
+	int colorable[AST_PROMO_MAX * 8];
+	for (int j = 0; j < nc; j++)
+		colorable[j] = 1;
+	if (ast_color_env) {
+		for (int cls = 0; cls < 2; cls++) {
+			int idx[AST_COLOR_MAX], m = 0;
+			int kcol = cls == 0 ? gp_max : xmm_max;
+			for (int j = 0; j < nc && m < AST_COLOR_MAX; j++) {
+				if (cpoison[j] || coff[j] >= 0)
+					continue;
+				if ((cls == 0) == (is_float(ctyp[j]) != 0))
+					continue;
+				idx[m++] = j;
+			}
+			uint64_t adj[AST_COLOR_MAX];
+			int cost[AST_COLOR_MAX], col[AST_COLOR_MAX];
+			uint64_t full = (m < 64) ? ((uint64_t)1 << m) - 1 : ~(uint64_t)0;
+			for (int i = 0; i < m; i++) {
+				adj[i] = full & ~((uint64_t)1 << i);
+				cost[i] = cweight[idx[i]];
+			}
+			ast_color_graph(m, adj, cost, kcol, col);
+			for (int i = 0; i < m; i++)
+				if (col[i] < 0)
+					colorable[idx[i]] = 0;
+		}
+	}
 	for (;;) {
 		int best = -1;
 		for (int j = 0; j < nc; j++) {
-			if (cpoison[j] || coff[j] >= 0)
+			if (cpoison[j] || coff[j] >= 0 || !colorable[j])
 				continue;
 			if (is_float(ctyp[j]) ? (xmm_n >= xmm_max) : (gp_n >= gp_max))
 				continue;

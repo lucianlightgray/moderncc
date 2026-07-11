@@ -221,10 +221,64 @@ static void suite_intention(void) {
 	ast_arena_free(a);
 }
 
+static int color_valid(int n, const uint64_t *adj, const int *color, int k) {
+	for (int i = 0; i < n; i++) {
+		if (color[i] < 0)
+			continue;
+		if (color[i] >= k)
+			return 0;
+		for (int j = 0; j < n; j++)
+			if (i != j && (adj[i] & ((uint64_t)1 << j)) && color[j] == color[i])
+				return 0;
+	}
+	return 1;
+}
+
+static void suite_color(void) {
+	int color[8];
+	{
+		uint64_t adj[4];
+		int cost[4] = {10, 20, 30, 40};
+		for (int i = 0; i < 4; i++)
+			adj[i] = (0xf & ~(1u << i));
+		int nc = ast_color_graph(4, adj, cost, 4, color);
+		CHECK(nc == 4, "K4 with k=4 colors all four");
+		CHECK(color_valid(4, adj, color, 4), "K4/k=4 coloring is proper");
+	}
+	{
+		uint64_t adj[4];
+		int cost[4] = {10, 20, 30, 40};
+		for (int i = 0; i < 4; i++)
+			adj[i] = (0xf & ~(1u << i));
+		int nc = ast_color_graph(4, adj, cost, 3, color);
+		CHECK(nc == 3, "K4 with k=3 spills exactly one");
+		CHECK(color[0] < 0, "the lowest-cost node is the one spilled");
+		CHECK(color_valid(4, adj, color, 3), "K4/k=3 coloring is proper");
+	}
+	{
+		uint64_t adj[4] = {0, 0, 0, 0};
+		int cost[4] = {1, 1, 1, 1};
+		int nc = ast_color_graph(4, adj, cost, 1, color);
+		CHECK(nc == 4, "independent set needs only one color");
+		for (int i = 0; i < 4; i++)
+			CHECK(color[i] == 0, "all independent nodes share color 0");
+	}
+	{
+		uint64_t adj[4] = {0x2, 0x1 | 0x4, 0x2 | 0x8, 0x4};
+		int cost[4] = {1, 1, 1, 1};
+		int nc = ast_color_graph(4, adj, cost, 2, color);
+		CHECK(nc == 4, "a path is 2-colorable");
+		CHECK(color_valid(4, adj, color, 2), "path 2-coloring is proper");
+	}
+	CHECK(ast_color_graph(0, NULL, NULL, 4, color) == 0, "empty graph colors nothing");
+}
+
 int main(int argc, char **argv) {
 	const char *only = argc > 1 ? argv[1] : NULL;
 	if (!only || !strcmp(only, "arena"))
 		suite_arena();
+	if (!only || !strcmp(only, "color"))
+		suite_color();
 	if (!only || !strcmp(only, "validate"))
 		suite_validate();
 	if (!only || !strcmp(only, "dump"))

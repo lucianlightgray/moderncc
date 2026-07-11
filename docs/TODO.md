@@ -2007,7 +2007,7 @@ not commutative-safe, so stays out). Native arm64 spot-check recommended
 
 ## 36. Chaitin–Briggs graph-coloring register allocation (largest, codegen — run LAST)
 
-- [ ] OPTIMIZE.md Tier-3 catalog (:90-92) + Frontier (:651), self-described as
+- [~] OPTIMIZE.md Tier-3 catalog (:90-92) + Frontier (:651), self-described as
       "largest item, last." Replace the pinned-register promotion heuristic
       (`ast_plan_promotion`, `ast_promo_*`, src/mccast.c) with a real
       interference-graph coloring allocator. Untracked by §17-§33 — the single
@@ -2017,6 +2017,32 @@ not commutative-safe, so stays out). Native arm64 spot-check recommended
       correctness-critical (the promotion machinery is the source of the FIX.md
       reemit/promote regressions); lands default-off, fixpoint-gated (off AND
       forced-on) + per-target byte-identical objects + native arm64/riscv64.
+
+  **FIRST INCREMENT LANDED (2026-07-10): the coloring allocator itself,
+  default-off.** `ast_color_graph(n, adj, cost, k, color)` (src/mccast.c, in the
+  arch-neutral public region so `asttool` can unit-test it) is a full
+  **Chaitin–Briggs** allocator: build degrees → *simplify* (push nodes with
+  degree < k) → *potential-spill* (push the lowest-`cost` node when none is
+  trivially colorable) → *optimistic select* (pop, assign the lowest color free
+  among colored neighbors, leave `-1` if none). Wired into `ast_plan_promotion`
+  behind **`MCC_AST_COLOR` (default off)**: it builds a per-register-class
+  interference graph over the promotion candidates and colors it to choose which
+  are promoted, replacing the greedy top-k-by-weight loop. Current interference
+  model = **complete graph per class** (every promoted local is pinned for the
+  whole function, so all same-class candidates conflict), so this increment
+  lands the *algorithm + integration + tests*; live-range interference (the
+  register-*sharing* win, which needs the `ast_promo_entry_init` emission to
+  load at range boundaries) is the **next increment**.
+  Validation: unit test `ast/color` (K4 needs 4 colors; K4/k=3 spills the
+  lowest-cost node; independent set → 1 color; path → 2 colors; proper-coloring
+  invariant checked). Default (gate off): `-O0` 3-stage fixpoint stage2==3==4
+  byte-identical, full ctest **1880/1880**, release/cross/multisource/sanitize
+  build clean. Forced-on (`MCC_AST_COLOR=1 -O2`): objects deterministic and
+  **correct across the whole exec corpus (229/229 programs match gate-off
+  behavior, 0 divergences)**. Remaining for §36: live-range interference +
+  range-based emission (register sharing), then folding in spill-slot sharing
+  and finally *replacing* (not just informing) the promotion assignment, each
+  fixpoint-gated + native arm64/riscv64.
 
 ## 37. Bench-statistics roadmap — Bayesian + ANOVA inference (medium, tools-only)
 

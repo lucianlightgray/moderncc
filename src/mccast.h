@@ -73,6 +73,8 @@ const char *ast_kind_name(uint16_t kind);
 size_t ast_dump(const AstArena *a, AstLocal root, char *out, size_t cap);
 int ast_validate(const AstArena *a, char *msg, size_t msgcap);
 uint64_t ast_intention_hash(const AstArena *a, AstLocal root);
+int ast_color_graph(int n, const uint64_t *adj, const int *cost, int k,
+										int *color);
 
 #ifdef __cplusplus
 }
