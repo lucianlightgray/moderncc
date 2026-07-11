@@ -2258,11 +2258,14 @@ where `call`s clobber them → the non-deterministic uninitialized read. FIX
 across the optimized re-emit and clamp `loc` to it before the epilog. A faithful
 (monotonic) replay has `ast_loc_low == loc`, so the clamp is a **no-op** there —
 the change can only *enlarge* an under-sized frame, never shrink a correct one.
-Validated: `inline.c` now returns **42 deterministically at -O0..-O3** on x86_64
-AND arm64 (under qemu); full ctest **1889/1889** (incl. a new permanent
+Validated: `inline.c` now returns **42 deterministically at -O0..-O3** on
+**x86_64, arm64, AND riscv64** (the last two under qemu+musl — the fix is
+arch-neutral `loc` handling); full ctest **1889/1889** (incl. a new permanent
 `ast/inline-frame` regression running `-O0..-O3` × 4 runs each); x86_64 AND arm64
 3-stage self-host fixpoints **converge byte-identically** (correct frames
-unchanged); 200-program differential fuzz clean. This was a real, pre-existing
+unchanged); 200-program differential fuzz clean. (Full `mcc.c` self-host on
+riscv64 is separately blocked by the pre-existing Tier-3 riscv64 backend gap —
+"N2 box-4 riscv64", Bucket C — but real-program codegen there is correct.) This was a real, pre-existing
 correctness bug in the default optimizer, masked in CI by forced inline; §22's
 in-process inline-size trial is now unblocked (it can safely pick the no-inline
 config for `main`).
