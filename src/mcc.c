@@ -690,6 +690,17 @@ static int so_spawn_timeout(const char **cv, unsigned timeout_ms) {
 	}
 }
 
+static int so_spawn_must(const char **cv, unsigned timeout_ms, int tries) {
+	int rc = -1, k;
+	for (k = 0; k < tries && !so_stop; k++) {
+		rc = so_spawn_timeout(cv, timeout_ms);
+		if (rc >= 0)
+			return rc;
+		usleep((unsigned)(k + 1) * 5000u);
+	}
+	return rc;
+}
+
 static int so_spawn_run(const char **cv, unsigned timeout_ms, long *usec,
 												long *rss_kb) {
 	struct timeval t0, t1;
@@ -941,7 +952,7 @@ static int mcc_superopt_perfn(int argc, char **argv, MCCState *s,
 	setenv("MCC_AST_FN_CONFIG", "", 1);
 	remove(hashp);
 	setenv("MCC_AST_HASH_OUT", hashp, 1);
-	if (so_spawn_timeout(cv, 300000u) != 0 ||
+	if (so_spawn_must(cv, 300000u, 4) != 0 ||
 			(nf = so_fn_sizes(cand, fns, SO_MAXFN)) <= 0) {
 		unsetenv("MCC_AST_HASH_OUT");
 		remove(hashp);
@@ -1018,7 +1029,7 @@ static int mcc_superopt_perfn(int argc, char **argv, MCCState *s,
 		p += snprintf(cfg + p, SO_MAXFN * 96 - p, "%s=%u;", fns[fi].name,
 									best_cfg[fi]);
 	setenv("MCC_AST_FN_CONFIG", cfg, 1);
-	if (so_spawn_timeout(cv, 300000u) != 0) {
+	if (so_spawn_must(cv, 300000u, 4) != 0) {
 		remove(cand);
 		mcc_free(cfg);
 		mcc_free(cv);
