@@ -1877,7 +1877,19 @@ static void arm64_gen_opil(int op, uint32_t l) {
 		o(0x0a000000 | l << 31 | x | a << 5 | b << 16);
 		break;
 	case '*':
-		o(0x1b007c00 | l << 31 | x | a << 5 | b << 16);
+		if (arm64_ubsan_on() && !uns) {
+			if (l) {
+				o(0x9b407c00 | 30u | (uint32_t)a << 5 | (uint32_t)b << 16);
+				o(0x1b007c00 | 1u << 31 | x | (uint32_t)a << 5 | (uint32_t)b << 16);
+				o(0xeb800000 | (uint32_t)x << 16 | 63u << 10 | 30u << 5 | 31u);
+			} else {
+				o(0x9b207c00 | 30u | (uint32_t)a << 5 | (uint32_t)b << 16);
+				o(0x1b007c00 | x | (uint32_t)a << 5 | (uint32_t)b << 16);
+				o(0xeb200000 | 30u << 16 | 6u << 13 | 30u << 5 | 31u);
+			}
+			arm64_ubsan_trap_cond(0);
+		} else
+			o(0x1b007c00 | l << 31 | x | a << 5 | b << 16);
 		break;
 	case '+':
 		if (arm64_ubsan_on() && !uns) {

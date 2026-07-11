@@ -328,9 +328,19 @@ makes the compiler a sanitizer *provider* for user code.
       sign-extended operands) `; BEQ x7,d,+8; EBREAK` (product != the `MULW`
       truncation ⇒ overflow). Validated under qemu-riscv64: `100000*100000`
       (32) and `4e9*4e9` (64) trap, clean+unsigned don't, **72/72 exec programs
-      no false traps**. Remaining: signed-mul on x86_64 (already landed in the
-      original increment) and **arm64** (`SMULH`/`SMULL` compare — the one
-      arithmetic gap left), native-shadow ASan, TSan/MSan.
+      no false traps**.
+      **arm64 signed-mul overflow added (2026-07-11) — ARITHMETIC UBSan NOW
+      COMPLETE ON ALL THREE ARCHES.** arm64 64-bit: `SMULH x30,a,b; MUL x,a,b;
+      CMP x30,x,ASR#63; B.EQ+8; BRK` (SMULH emitted *before* MUL so the operands
+      survive result-aliasing; high != sign-of-low ⇒ overflow). arm64 32-bit:
+      `SMULL x30,Wa,Wb` (full 64-bit product) `; MUL Wx,Wa,Wb; CMP x30,W30,SXTW;
+      B.EQ+8; BRK` (product != its own sign-extended low-32 ⇒ overflow).
+      Validated under qemu-aarch64: `100000*100000` and `4e9*4e9` trap,
+      clean+unsigned don't, **74/74 exec programs no false traps**. So
+      `-fsanitize=undefined` = **signed +/-/* overflow + shift-range +
+      divide-by-zero on x86_64, arm64, AND riscv64**, each validated
+      (native / qemu-aarch64 / qemu-riscv64). Remaining §0b: native-shadow ASan,
+      TSan/MSan (x86_64 runtime stretch).
 - [x] **Test matrix:** a `tests/sanitize/` corpus with one program per UB /
       memory-error class asserting the check fires (and clean programs stay
       silent), across `-O0..-O3` and with the optimizer forced on. LANDED:
