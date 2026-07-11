@@ -2339,14 +2339,27 @@ per-target/per-runner reconvergence is the actual work here.
       **SETHI, BITFLAG, CPROP_JOIN, CSE_JOIN, CALL_WINDOW** (COST is analysis).
 - [ ] **Flip defaults to ON**, pass by pass (not all at once), each behind the
       same landing gate it has today so a regression is bisectable: after each
-      flip, the pass runs by default at its target `-O` level.
-- [ ] **Regression matrix per flip:** full `ctest` green on every preset that
+      flip, the pass runs by default at its target `-O` level. NOT flipped:
+      changing the default `-O2` codegen for all users is a user-facing,
+      hard-to-reverse decision, held for explicit sign-off + the cross-target
+      CI re-baseline below (not an autonomous flip).
+- [~] **Regression matrix per flip:** full `ctest` green on every preset that
       builds here (native `macos`; plus any cross/qemu presets that run), the
       3-stage self-host **fixpoint byte-identical**, and `-O4` search still
       converges. Critically, verify **lower levels (`-O0..-O3`) still pass all
       tests** — ungating changes their output, so the exec-golden / `--ast`
       columns / dash-s-bytes goldens must be re-baselined intentionally and
-      re-verified, not silently broken.
+      re-verified, not silently broken. **CORRECTNESS PRECONDITION MET
+      (2026-07-10, x86_64):** each of the five remaining default-off codegen
+      passes — SETHI, BITFLAG, CPROP_JOIN, CSE_JOIN, CALL_WINDOW — forced ON
+      via `MCC_AST_*=1` at `-O2` over the *entire* `src/mcc.c` self-source:
+      **3-stage fixpoint CONVERGES (stage2==3==4) AND the self-built mcc is
+      correct** (compiles+runs a probe to the right answer), for all five
+      independently. So none carries a self-host miscompile hazard — the flip
+      is a **byte-golden re-baseline**, not a correctness fix. What remains:
+      regenerate the x86_64 `dash-s-bytes`/`--ast`/exec goldens for the flipped
+      default, then the cross-target sweep below. (This is the safe evidence an
+      autonomous pass can produce without changing user-facing defaults.)
 - [ ] **Cross-target / runner sweep:** the byte-identity goldens are
       per-target; a default-ON pass must be validated on each
       target×preset×runner the CI matrix covers (x86_64/arm64/riscv64 ×
