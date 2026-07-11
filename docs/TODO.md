@@ -236,10 +236,26 @@ makes the compiler a sanitizer *provider* for user code.
       self-contained, links against nothing). The compiler-rt/`libmccsan`
       decision is deferred to the recover-mode / ASan increments, where a
       runtime *is* required.
-- [ ] **ASan design (x86_64 first):** the 1/8 shadow scheme
+- [~] **ASan design (x86_64 first):** the 1/8 shadow scheme
       (`(addr>>3)+offset`), stack/global/heap redzones, entry/exit stack
       poisoning, global registration, malloc/free interceptors; the shadow
       offset per target; ELF vs Mach-O differences.
+      **FIRST INCREMENT LANDED (2026-07-11) via bcheck consolidation** (the
+      sub-topic below): rather than build a parallel shadow-memory runtime,
+      `-fsanitize=address` (and `-fsanitize=bounds`) now enable mcc's existing
+      **bounds/memory checker** (`MCC_CONFIG_DIAG_RT >= 2`, the `-b` runtime) —
+      `do_bounds_check` + backtrace/debug, plus a new `do_sanitize_address`
+      flag that predefines **`__SANITIZE_ADDRESS__`** (gcc/clang-compatible).
+      It detects heap/stack/global out-of-bounds with a source location (its
+      redzone+bounds-table model is the ASan-analog); `thread`/`memory` still
+      error as unimplemented. Where bcheck isn't built in, `-fsanitize=address`
+      errors clearly. Validated: heap `p[12]` on a 10-byte malloc and global
+      `g[15]` on `char g[10]` both caught; `__SANITIZE_ADDRESS__` predefined;
+      clean programs run; gate-off fixpoint stage2==3==4 byte-identical, ctest
+      1880/1880 (+2 `cli/sanitize_address_*`). The *native* 1/8-shadow scheme
+      (`(addr>>3)+offset`, poison bytes, `__asan_*` ABI / clang-runtime
+      interop, malloc interceptors) remains the next increment — the bcheck
+      path is the bounded, self-contained MVP that reuses proven machinery.
 - [x] **Optimizer interaction (critical):** sanitizer checks are
       side-effecting and must survive the AST optimizer — the §30/§32/§33
       passes must NOT fold/DCE check nodes; decide whether instrumentation runs

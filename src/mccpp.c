@@ -4131,6 +4131,8 @@ static void mcc_predefs(MCCState *s1, CString *cs, int is_asm) {
 #endif
 	if (s1->do_sanitize_undefined)
 		putdef(cs, "__MCC_SANITIZE_UNDEFINED__");
+	if (s1->do_sanitize_address)
+		putdef(cs, "__SANITIZE_ADDRESS__");
 	if (s1->char_is_unsigned)
 		putdef(cs, "__CHAR_UNSIGNED__");
 	if (s1->optimize > 0)

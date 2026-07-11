@@ -1889,6 +1889,15 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -b {W}/gb.c -o {W}/gb && {W}/gb 2>&1 | grep -oE 'at main: RUNTIME ERROR: invalid memory access'",
 		 "at main: RUNTIME ERROR: invalid memory access\n"},
 
+		{"sanitize_address_heap_overflow", "bcheck",
+		 "printf 'void *malloc(unsigned long);\\nint main(void){char *p=malloc(10);p[12]=1;return 0;}\\n' > {W}/asan.c && "
+		 "{MCC} -B{B} -fsanitize=address {W}/asan.c -o {W}/asan && {W}/asan 2>&1 | grep -oE 'is outside of the region'",
+		 "is outside of the region\n"},
+		{"sanitize_address_macro", "bcheck",
+		 "printf '#ifdef __SANITIZE_ADDRESS__\\nint main(void){return 5;}\\n#else\\nint main(void){return 0;}\\n#endif\\n' > {W}/asm.c && "
+		 "{MCC} -B{B} -fsanitize=address {W}/asm.c -o {W}/asm && {W}/asm; echo rc=$?",
+		 "rc=5\n"},
+
 		{"macro_eval_recursive", "",
 		 "printf '#define fact(n) (n <= 1 ? 1 : n * fact(n - 1))\\nint main(void) { return fact(5) == 120 ? 0 : 1; }\\n' > {W}/me.c && "
 		 "{MCC} -B{B} -fmacro-eval -run {W}/me.c && echo evaluated",

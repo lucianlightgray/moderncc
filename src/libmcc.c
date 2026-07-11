@@ -2383,8 +2383,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) {
 							san_tok_eq(tok, n, "integer-divide-by-zero") ||
 							san_tok_eq(tok, n, "shift") ||
 							san_tok_eq(tok, n, "shift-exponent") ||
-							san_tok_eq(tok, n, "shift-base") ||
-							san_tok_eq(tok, n, "bounds")) {
+							san_tok_eq(tok, n, "shift-base")) {
 #if defined MCC_TARGET_X86_64 && !defined MCC_TARGET_PE
 						s->do_sanitize_undefined = 1;
 #else
@@ -2392,7 +2391,21 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) {
 								"-fsanitize=undefined is only implemented on x86_64 ELF/Mach-O");
 #endif
 					} else if (san_tok_eq(tok, n, "address") ||
-										 san_tok_eq(tok, n, "thread") ||
+										 san_tok_eq(tok, n, "bounds")) {
+#if MCC_CONFIG_DIAG_RT >= 2
+						s->do_bounds_check = 1;
+						s->do_sanitize_address = 1;
+						s->do_backtrace = 1;
+						if (0 == s->do_debug)
+							s->do_debug = 1;
+						s->dwarf = MCC_CONFIG_DWARF_VERSION;
+#else
+						return mcc_error_noabort(
+								"-fsanitize=%.*s needs the memory/bounds checker, which was not "
+								"built into this mcc",
+								n, tok);
+#endif
+					} else if (san_tok_eq(tok, n, "thread") ||
 										 san_tok_eq(tok, n, "memory")) {
 						return mcc_error_noabort(
 								"-fsanitize=%.*s is not yet implemented in this mcc", n, tok);
@@ -2403,6 +2416,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) {
 				}
 			} else if (!strcmp(optarg, "no-sanitize") || strstart("no-sanitize=", &vis)) {
 				s->do_sanitize_undefined = 0;
+				s->do_sanitize_address = 0;
 			} else if (!strcmp(optarg, "sanitize-undefined-trap-on-error") ||
 								 !strcmp(optarg, "sanitize-trap=undefined") ||
 								 !strcmp(optarg, "sanitize-recover=undefined") ||

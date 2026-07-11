@@ -629,6 +629,7 @@ struct MCCState {
 	unsigned char visibility;
 	unsigned char stack_protector;
 	unsigned char do_sanitize_undefined;
+	unsigned char do_sanitize_address;
 	unsigned char do_strip;
 	unsigned char lsp;
 

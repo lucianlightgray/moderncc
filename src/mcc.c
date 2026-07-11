@@ -59,6 +59,9 @@ static const char help[] =
 		"  -fsanitize=undefined  Trap on undefined behavior (signed overflow, out-of-range\n"
 		"                        shift, divide-by-zero) with an illegal instruction\n"
 #endif
+#if MCC_CONFIG_DIAG_RT >= 2
+		"  -fsanitize=address    Detect out-of-bounds/invalid memory access (via -b)\n"
+#endif
 		"Other options:\n"
 		"  -f[no-]<flag>       Enable (or disable) a compiler flag; see -hh\n"
 		"  -W[no-]<warn>       Enable (or disable) a warning; see -hh\n"
