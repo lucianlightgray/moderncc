@@ -443,14 +443,80 @@ static char *popen_line(const char *cmd) {
 	return o;
 }
 
-static int class_seen(char ***set, int *n, const char *key) {
+typedef struct {
+	char *key;
+	long hits;
+	unsigned long first_seed;
+	long first_round;
+	long last_epoch;
+} ScoreClass;
+
+static const char *scoreboard_path(const char *corpus, char *buf, size_t n) {
+	const char *env = hc_envv("MCC_FUZZ_SCOREBOARD", "");
+	if (env[0])
+		return env;
+	snprintf(buf, n, "%s/scoreboard.tsv", corpus);
+	return buf;
+}
+
+static ScoreClass *score_find(ScoreClass *sb, int n, const char *key) {
 	int i;
-	for (i = 0; i < *n; i++)
-		if (!strcmp((*set)[i], key))
-			return 1;
-	*set = realloc(*set, sizeof(char *) * (*n + 1));
-	(*set)[(*n)++] = strdup(key);
-	return 0;
+	for (i = 0; i < n; i++)
+		if (!strcmp(sb[i].key, key))
+			return &sb[i];
+	return NULL;
+}
+
+static int score_load(const char *path, ScoreClass **out) {
+	FILE *f = fopen(path, "rb");
+	ScoreClass *sb = NULL;
+	char line[8192];
+	int n = 0;
+	*out = NULL;
+	if (!f)
+		return 0;
+	while (fgets(line, sizeof line, f)) {
+		char *nl = strchr(line, '\n'), *tab;
+		long hits = 0, fr = 0, le = 0;
+		unsigned long fs = 0;
+		if (nl)
+			*nl = 0;
+		if (line[0] == '#' || line[0] == 0)
+			continue;
+		tab = strchr(line, '\t');
+		if (!tab)
+			continue;
+		*tab++ = 0;
+		sscanf(tab, "%ld\t%lu\t%ld\t%ld", &hits, &fs, &fr, &le);
+		sb = realloc(sb, sizeof *sb * (n + 1));
+		sb[n].key = strdup(line);
+		sb[n].hits = hits;
+		sb[n].first_seed = fs;
+		sb[n].first_round = fr;
+		sb[n].last_epoch = le;
+		n++;
+	}
+	fclose(f);
+	*out = sb;
+	return n;
+}
+
+static void score_save(const char *path, ScoreClass *sb, int n) {
+	char tmp[4096];
+	FILE *f;
+	int i;
+	snprintf(tmp, sizeof tmp, "%s.tmp", path);
+	f = fopen(tmp, "wb");
+	if (!f)
+		return;
+	fprintf(f, "# mcc fuzz miscompile-class scoreboard\n");
+	fprintf(f, "# class\thits\tfirst_seed\tfirst_round\tlast_epoch\n");
+	for (i = 0; i < n; i++)
+		fprintf(f, "%s\t%ld\t%lu\t%ld\t%ld\n", sb[i].key, sb[i].hits,
+				sb[i].first_seed, sb[i].first_round, sb[i].last_epoch);
+	fclose(f);
+	remove(path);
+	rename(tmp, path);
 }
 
 /* Nightly differential-fuzz campaign: loop the batch runner over fresh seed
@@ -473,14 +539,21 @@ static int campaign_main(const char *self, int argc, char **argv) {
 		long budget = argc > 8 ? strtol(argv[8], NULL, 10) : 3600;
 		long batch = argc > 9 ? strtol(argv[9], NULL, 10) : 50;
 		long stop_k = argc > 10 ? strtol(argv[10], NULL, 10) : 20;
-		char **classes = NULL;
-		int nclass = 0;
+		char sbbuf[4096];
+		const char *sbpath;
+		ScoreClass *sb = NULL;
+		int nsb, known_at_start;
 		time_t start = time(NULL);
 		unsigned long seed = strtoul(hc_envv("MCC_FUZZ_SEED", "1000"), NULL, 10);
-		long empty_streak = 0, total_fail = 0, round = 0;
+		long empty_streak = 0, total_fail = 0, round = 0, run_new = 0;
 
 		HC_MKDIR(corpus);
 		HC_MKDIR(work);
+		sbpath = scoreboard_path(corpus, sbbuf, sizeof sbbuf);
+		nsb = score_load(sbpath, &sb);
+		known_at_start = nsb;
+		printf("campaign: scoreboard %s (%d known class%s)\n", sbpath, nsb,
+			   nsb == 1 ? "" : "es");
 
 		for (;;) {
 			long elapsed = (long)(time(NULL) - start), nnew = 0;
@@ -513,33 +586,46 @@ static int campaign_main(const char *self, int argc, char **argv) {
 				while (fgets(line, sizeof line, lf)) {
 					char *nl = strchr(line, '\n');
 					const char *key;
+					ScoreClass *sc;
 					if (nl)
 						*nl = 0;
 					if (strncmp(line, "  attribution: ", 15))
 						continue;
 					key = line + 15;
 					total_fail++;
-					if (!class_seen(&classes, &nclass, key)) {
+					sc = score_find(sb, nsb, key);
+					if (!sc) {
+						sb = realloc(sb, sizeof *sb * (nsb + 1));
+						sc = &sb[nsb++];
+						sc->key = strdup(key);
+						sc->hits = 0;
+						sc->first_seed = seed;
+						sc->first_round = round;
 						nnew++;
+						run_new++;
 						printf("campaign: NEW miscompile class [%s] at round %ld (seed base %lu)\n",
 							   key, round, seed);
 					}
+					sc->hits++;
+					sc->last_epoch = (long)time(NULL);
 				}
 				fclose(lf);
 			}
 			empty_streak = nnew > 0 ? 0 : empty_streak + 1;
+			score_save(sbpath, sb, nsb);
 			printf("campaign: round %ld seeds %lu..%lu rc=%d new=%ld streak=%ld elapsed=%lds\n",
 				   round, seed, seed + (unsigned long)batch - 1, exitc, nnew, empty_streak,
 				   elapsed);
 			seed += (unsigned long)batch;
 		}
-		printf("campaign: done rounds=%ld miscompiles=%ld distinct-classes=%d\n", round,
-			   total_fail, nclass);
+		score_save(sbpath, sb, nsb);
+		printf("campaign: done rounds=%ld miscompiles=%ld new-classes=%ld total-classes=%d (was %d)\n",
+			   round, total_fail, run_new, nsb, known_at_start);
 		{
-			int i, ret = nclass > 0 ? 1 : 0;
-			for (i = 0; i < nclass; i++)
-				free(classes[i]);
-			free(classes);
+			int i, ret = run_new > 0 ? 1 : 0;
+			for (i = 0; i < nsb; i++)
+				free(sb[i].key);
+			free(sb);
 			return ret;
 		}
 	}

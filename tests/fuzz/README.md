@@ -60,6 +60,13 @@ is spent or `stop_k` consecutive batches surface no new miscompile *class*
 (attribution = the `-O` level + `MCC_AST_*` gate the runner blames), dedups
 those classes, and exits nonzero exactly when a new one is found.
 
+Dedup is backed by an on-disk **scoreboard** (`<corpus>/scoreboard.tsv`, or
+`$MCC_FUZZ_SCOREBOARD`): a TSV of `class  hits  first_seed  first_round
+last_epoch`, loaded at start and rewritten after every round. Classes carried
+in from earlier runs are *not* re-reported as new, so "new class" and the
+nonzero exit mean new relative to the full history, not just this invocation.
+The default path is git-ignored.
+
 ## Triage
 
 On a confirmed divergence the runner reduces the program (line-granularity

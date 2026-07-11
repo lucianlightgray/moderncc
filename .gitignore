@@ -17,3 +17,6 @@ fred.txt
 # qemu-user core dumps from trap tests
 qemu_*.core
 *.core
+
+# persistent fuzz miscompile-class scoreboard (written by `runner.c campaign`)
+/tests/fuzz/corpus/scoreboard.tsv

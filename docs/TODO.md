@@ -210,8 +210,10 @@ Research / investigative:
 - [ ] **Implement the clang-compatible `__ubsan_handle_*` diagnostic ABI** — trap
   mode ships (`ud2` on x86_64, `brk` on arm64/riscv64); no handler ABI exists.
 - [ ] **Implement a PE/mingw trap-mode UBSan** — trap mode is gated ELF-only.
-- [ ] **Implement a persistent miscompile-class scoreboard** — `campaign` mode
-  dedups classes in-memory only; no on-disk artifact.
+- [x] **Implement a persistent miscompile-class scoreboard** — `campaign` mode
+  now loads/rewrites `<corpus>/scoreboard.tsv` (or `$MCC_FUZZ_SCOREBOARD`):
+  class × hits × first_seed × first_round × last_epoch; "new class" and the
+  nonzero exit are history-relative, not per-run. Git-ignored default path.
 - [ ] **Explore `-fsanitize-coverage`** — feeds the coverage-guided fuzzer.
 - [ ] **Explore `-fsanitize=cfi` hardening** (absent today).
 - [ ] **Explore `_FORTIFY_SOURCE`-style hardening** (absent today;
