@@ -1326,6 +1326,17 @@ compilers; gate-ON 200-program differential fuzz clean; real size wins (a
 follow-ups: extend the trial past the inline axis to promotion / pass-subset
 configs (the latter needs the `ast_arena_clone` two-arena path since those mutate
 the arena differently), and score by §25 speed rather than object size alone.
+**Promotion axis ATTEMPTED then REVERTED (2026-07-11)**: a `{promote 0/1}` trial
+(safely gated so inline-on never pairs with a callful plan) miscompiled leaf
+functions under the gate (`cli/perfn_inproc` rc 28→19) — unlike the pure emit-time
+inline flag, `ast_promo_entry_init()` carries per-emit state (it decrements `loc`,
+emits prologue spills, and drives the vstack), so re-running it across the 2–3
+measurement/final emits **desyncs**. The inline-only trial has no such state and
+stays clean. NEXT for the promotion axis: snapshot/restore the promotion emit
+state (or emit each promote-config from a fresh `ast_arena_clone` sub-context)
+before re-attempting, and re-run the gate-ON self-hosts + fuzz. (One ordering
+lesson banked: `ast_loc_low` must be set AFTER `ast_promo_entry_init` so the §34b
+frame low-water includes the promo save area.)
 
 Builds on §21 + the capture/replay driver.
 
