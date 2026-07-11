@@ -1305,15 +1305,27 @@ re-emits (and/or emit each trial into a throwaway text+sym sub-context), then
 re-run the gate-ON inline corpus + both self-host fixpoints + the differential
 fuzzer. The `ast_arena_clone` prerequisite (`12d01144`) is unaffected and landed.
 
-**UPDATE (2026-07-11): the miscompile the trial hit was §34b, now FIXED.** The
-gate-ON `inline.c` failure was the frame-size low-water bug (§34b) — the no-inline
-config the trial selects for `main` exposed the under-sized frame; the varying
-"5 / 2" exits were that uninitialized read, not (only) a symbol-lifecycle leak.
-With §34b's `ast_loc_low` clamp landed, the trial's core blocker is gone. Re-
-attempt: re-apply the `MCC_AST_PERFN_INPROC` inline-off-vs-on trial (each emit now
-carries the frame clamp), keep the `sym_pop`-to-mark between measurement emits as
-a belt-and-braces guard, and re-run the full gate-ON validation. This is the
-concrete next step for §22's in-process re-emit.
+**IN-PROCESS RE-EMIT — LANDED (2026-07-11), default-off `MCC_AST_PERFN_INPROC`.**
+The miscompile the first prototype hit was §34b (frame low-water), now fixed; with
+that gone the trial works. `ast_func_end` now, under the gate, re-emits the SAME
+captured tree with inlining OFF and ON (inlining is emit-time — it reads `ast_cur`
+and grafts from the callee pool, never mutating the arena, so re-emitting is the
+established faithful→optimized pattern), keeps the smaller `ind - ast_body_ind_sv`,
+and emits the winner LAST. Between measurement emits it `sym_pop`s `local_stack`
+back to a pre-trial mark (each emit re-pushes constant/graft `Sym`s under a reset
+`anon_sym`) and applies the §34b frame low-water clamp per emit. This is the
+first working in-process per-function config search — no fork, no env round-trip,
+reusing `ast_arena_clone` (12d01144) and the existing reset block. Validated:
+gate-OFF ctest **1890/1890** + `fixpointgate` byte-identical (off ⇒ the single-
+config path verbatim); gate-ON full ctest **1890/1890** (the trial runs on every
+test TU, incl. the previously-failing `ast/replay-inline`); gate-ON x86_64 AND
+arm64 (qemu) 3-stage self-host fixpoints **converge** to correct, functional
+compilers; gate-ON 200-program differential fuzz clean; real size wins (a
+4-call bloating helper: `.text` 2319→1909 B — inline dropped for `big`, kept for
+`tiny` — output matching `-O0`/gcc). Locked by `cli/perfn_inproc`. Remaining §22
+follow-ups: extend the trial past the inline axis to promotion / pass-subset
+configs (the latter needs the `ast_arena_clone` two-arena path since those mutate
+the arena differently), and score by §25 speed rather than object size alone.
 
 Builds on §21 + the capture/replay driver.
 

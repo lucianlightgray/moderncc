@@ -172,6 +172,15 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -O2 {W}/pre.c -o {W}/pre0 && {W}/pre0 ; echo rc=$?",
 		 "DIFFER\nrc=28\nrc=28\nrc=28\n"},
 
+		{"perfn_inproc", "cpu=x86_64,os=linux,optimizer",
+		 "printf 'static int big(int x,int y){int s=0;for(int i=0;i<x;i++){s+=(i*y)^(i+x);s-=(i&y)|(x^i);s+=(i*i)-(y*y);}return s;}static int tiny(int x){return x+1;}int main(void){int s=0;s+=big(5,3)+big(7,2)+big(9,4)+big(3,6);s+=tiny(10)+tiny(20)+tiny(30);return s&0x7f;}\\n' > {W}/pfi.c && "
+		 "{MCC} -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.off.o && "
+		 "MCC_AST_PERFN_INPROC=1 {MCC} -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.on.o && "
+		 "( cmp -s {W}/pfi.off.o {W}/pfi.on.o && echo SAME || echo DIFFER ) ; "
+		 "MCC_AST_PERFN_INPROC=1 {MCC} -B{B} -I{I} -O3 {W}/pfi.c -o {W}/pfi.on && {W}/pfi.on ; echo rc=$? ; "
+		 "{MCC} -B{B} -I{I} -O0 {W}/pfi.c -o {W}/pfi.o0 && {W}/pfi.o0 ; echo rc=$?",
+		 "DIFFER\nrc=28\nrc=28\n"},
+
 		{"perfn_search", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'static int sq(int x){return x*x;}static int cube(int x){return x*x*x;}int main(void){int s=0;for(int i=0;i<8;i++)s+=sq(i)+cube(i);return s;}\\n' > {W}/pfs.c && "
 		 "XDG_CACHE_HOME={W}/pfsc MCC_AST_PERFN=1 {MCC} -B{B} -I{I} -O4 -c {W}/pfs.c -o {W}/pfs.o && "

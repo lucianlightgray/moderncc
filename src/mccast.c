@@ -533,6 +533,7 @@ static int ast_call_window_env;
 static int ast_licm_temp_env;
 static int ast_ivsr_env;
 static int ast_pre_env;
+static int ast_perfn_inproc_env;
 
 #define AST_LTEMP_MAX 32
 #define AST_LTEMP_PER_LOOP 8
@@ -797,6 +798,7 @@ void ast_configure(MCCState *s1) {
 	ast_licm_temp_env = ast_env_gate("MCC_AST_LICM_TEMP", 0);
 	ast_ivsr_env = ast_env_gate("MCC_AST_IVSR", 0);
 	ast_pre_env = ast_env_gate("MCC_AST_PRE", 0);
+	ast_perfn_inproc_env = ast_env_gate("MCC_AST_PERFN_INPROC", 0);
 	ast_color_env = ast_env_gate("MCC_AST_COLOR", 0);
 	ast_intention_acc = 0;
 	ast_hash_out = getenv("MCC_AST_HASH_OUT");
@@ -6440,45 +6442,72 @@ void ast_func_end(Sym *sym) {
 				if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
 						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_sethi ||
 						do_tco) {
-					ind = ast_body_ind_sv;
-					rsym = 0;
-					if (ast_rsec)
-						ast_rsec->data_offset = ast_reloc0_sv;
-					nocode_wanted = 0;
-					loc = saved_loc;
-					if (ast_ltemp_n)
-						loc = ast_ltemp_cur;
-					anon_sym = saved_anon;
-					ast_fconst_i = (do_bfold || do_ident || do_cprop || do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_sethi || do_tco || do_inline) ? ast_fconst_n : 0;
-					ast_locrec_i = 0;
-					ast_replaying = 1;
-					ast_rp_switch = NULL;
-					ast_rp_nlabel = 0;
-					ast_rp_bsym = ast_rp_csym = NULL;
-					ast_pinned_regs = 0;
-					ast_inline_active = do_inline;
-					ast_graft_budget = ast_graft_budget_max;
-					for (int pi = 0; pi < ast_promo_n; pi++)
-						ast_pinned_regs |= (1u << ast_promo_regpool_at(pi));
-					if (do_promote)
-						ast_promo_entry_init();
-					/* The frame size is -loc at the epilog, but ast_alloc_loc's replay
-					   path assigns loc from the captured slot list, which an
-					   optimization can desync (a fold changes the allocation count), so
-					   loc can finish shallower than the deepest slot actually emitted —
-					   under-sizing the frame so deep locals sit below rsp and get
-					   clobbered by calls (uninitialized reads). Track the true low-water
-					   during the replay and clamp loc to it so the frame always covers
-					   every slot. A faithful replay is monotonic ⇒ ast_loc_low == loc ⇒
-					   byte-identical. */
-					ast_loc_low = loc;
-					ast_replay_body(ast_cur);
-					if (ast_loc_low < loc)
-						loc = ast_loc_low;
-					ast_replaying = 0;
-					ast_inline_active = 0;
-					ast_pinned_regs = 0;
+					/* §22 in-process per-function config trial. Inlining trades size (a
+					   grafted body vs a call), so its size-optimality is per-function.
+					   Under MCC_AST_PERFN_INPROC, re-emit the SAME captured tree with
+					   inlining off and on (inlining is emit-time — it reads ast_cur and
+					   grafts from the callee pool, never mutating ast_cur, so re-emitting
+					   is the established faithful-then-optimized pattern), keep the
+					   smaller `ind - ast_body_ind_sv`, and emit the winner LAST so the
+					   live text/reloc/symbol state is its own. Each measurement re-emit
+					   pushes fresh constant/graft Sym objects onto local_stack (anon_sym
+					   is reset to the same ids), so pop them back to the pre-trial mark
+					   between attempts. The frame low-water clamp (§34b) is applied per
+					   emit. Gate off ⇒ one emit with do_inline ⇒ byte-identical to the
+					   single-config path. */
+#define AST_PF_EMIT(ui)                                                          \
+	do {                                                                           \
+		ind = ast_body_ind_sv;                                                       \
+		rsym = 0;                                                                    \
+		if (ast_rsec)                                                                \
+			ast_rsec->data_offset = ast_reloc0_sv;                                     \
+		nocode_wanted = 0;                                                           \
+		loc = saved_loc;                                                             \
+		if (ast_ltemp_n)                                                             \
+			loc = ast_ltemp_cur;                                                       \
+		anon_sym = saved_anon;                                                        \
+		ast_fconst_i = (do_bfold || do_ident || do_cprop || do_cse || do_licm ||     \
+										do_dse || do_sccp || do_jt || do_bf || do_sethi ||           \
+										do_tco || (ui))                                              \
+											 ? ast_fconst_n                                            \
+											 : 0;                                                      \
+		ast_locrec_i = 0;                                                            \
+		ast_replaying = 1;                                                           \
+		ast_rp_switch = NULL;                                                         \
+		ast_rp_nlabel = 0;                                                           \
+		ast_rp_bsym = ast_rp_csym = NULL;                                             \
+		ast_pinned_regs = 0;                                                          \
+		ast_inline_active = (ui);                                                     \
+		ast_graft_budget = ast_graft_budget_max;                                     \
+		for (int pi = 0; pi < ast_promo_n; pi++)                                      \
+			ast_pinned_regs |= (1u << ast_promo_regpool_at(pi));                       \
+		if (do_promote)                                                              \
+			ast_promo_entry_init();                                                    \
+		ast_loc_low = loc;                                                            \
+		ast_replay_body(ast_cur);                                                     \
+		if (ast_loc_low < loc)                                                        \
+			loc = ast_loc_low;                                                         \
+		ast_replaying = 0;                                                            \
+		ast_inline_active = 0;                                                        \
+		ast_pinned_regs = 0;                                                          \
+	} while (0)
+					int pf_best = do_inline;
+					if (ast_perfn_inproc_env && do_inline) {
+						Sym *pf_symmark = local_stack;
+						int pf_bestlen = -1;
+						for (int ui = 0; ui <= 1; ui++) {
+							AST_PF_EMIT(ui);
+							int len = ind - ast_body_ind_sv;
+							if (pf_bestlen < 0 || len < pf_bestlen) {
+								pf_bestlen = len;
+								pf_best = ui;
+							}
+							sym_pop(&local_stack, pf_symmark, 0);
+						}
+					}
+					AST_PF_EMIT(pf_best);
 					promoted = ast_promo_n;
+#undef AST_PF_EMIT
 				}
 			} else {
 				mcc_state->nb_errors = ast_saved_nberr;
