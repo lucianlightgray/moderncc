@@ -1985,16 +1985,26 @@ increment.
       the `include_next` shim (`a90afe80`), tested by `exec/c11_threads`. My
       earlier §40.1 registration was a doc-audit false-positive. ACTION: flip
       MCC.md:148-151 prose to "landed"; no code.
-- [ ] **NEW gap — gnu89 plain-`inline` diverges from clang** (found while
-      verifying gap 1; untracked): under `-fgnu89-inline`, `inline int
-      f(){...}` + a call link-errors in mcc but LINKS in clang (gnu89 plain
-      inline should provide the out-of-line definition); conversely mcc's
-      gnu89 `extern inline` links (emits a static copy, the documented
-      "treat extern inline as static inline" [DIFF]) where clang link-errors.
-      Root: `mccgen.c:12332-12337` only rewrites `extern inline` for gnu89;
-      plain inline always takes the C99 `diag_only` no-emit path regardless of
-      `gnu89_inline`. Untested in the suite. TDD: gnu89 link-matrix vs clang;
-      decide fix-vs-document-as-[DIFF].
+- [x] **NEW gap — gnu89 plain-`inline` diverges from clang → FIXED** (found
+      while verifying gap 1; untracked): under `-fgnu89-inline`, `inline int
+      f(){...}` + a call link-errored in mcc but LINKS in clang/gcc (gnu89
+      plain inline provides the out-of-line definition). RESOLVED as FIX: the
+      decl-time rewrite at `mccgen.c` now strips `VT_INLINE` from a bare inline
+      function def when `gnu89_inline` is set (gate: `(type.t & (VT_INLINE |
+      VT_STATIC | VT_EXTERN)) == VT_INLINE`), so it emits the external def and
+      links, matching gcc AND clang (verified via truth-table). Fully gated on
+      `gnu89_inline` (default C99 path byte-identical — proven by object sha on
+      a mixed static/extern/plain-inline sample: `7519bff1…` old==new — and by
+      `fixpoint-invariant` staying green). `gnu89_inline` is off by default and
+      unused in self-host, and mcc's own source has no bare `inline` funcs, so
+      self-host is untouched. Tests: `cli/gnu89_plain_inline_emits_def` (nm →
+      `T f`), `cli/gnu89_plain_inline_links_and_runs` (rc=42), gate
+      `cli/c99_plain_inline_default_link_error` (default still link-errors).
+      The converse gnu89 `extern inline` behavior (mcc emits a static copy and
+      links; clang link-errors at `-O0`) is left AS-IS and now recorded as an
+      intentional `[DIFF]` in MCC.md §6-A, pinned by
+      `cli/gnu89_extern_inline_static_copy_diff`. Full ctest 1861/1865 (only
+      the 4 known `bound_global` artifacts fail); fixpoint-invariant green.
 - [x] **STATUS.md rung table is stale past §32** (Agent-A gap 1/2): it stopped
       at §32 and framed §32c as "fully scoped," omitting §33/§35/§36/§37/§38/
       §39. Done: rung table extended (§32c, §25) + scope note added. NOTE the

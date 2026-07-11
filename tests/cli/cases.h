@@ -1838,6 +1838,25 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -c {D}/../exec/functions_abi/inline.c -o {W}/inlmat.o >/dev/null 2>&1 && "
 		 "nm {W}/inlmat.o | sed -E 's/ ([A-Za-z]) _/ \\1 /' | grep -oE '(U|[Tt]) (inline_inline_undeclared|extern_extern_undeclared|noinst_static_inline_predeclared|static_func|main)$' | LC_ALL=C sort",
 		 "T extern_extern_undeclared\nT main\nU inline_inline_undeclared\nt noinst_static_inline_predeclared\nt static_func\n"},
+		{"gnu89_plain_inline_emits_def", "",
+		 "printf 'inline int f(void){return 42;}\\nint g(void){return f();}\\n' > {W}/g89e.c && "
+		 "{MCC} -c -fgnu89-inline {W}/g89e.c -o {W}/g89e.o >/dev/null 2>&1 && "
+		 "nm {W}/g89e.o | sed -E 's/ ([A-Za-z]) _/ \\1 /' | grep -oE 'T f'",
+		 "T f\n"},
+		{"gnu89_plain_inline_links_and_runs", "",
+		 "printf 'inline int f(void){return 42;}\\nint main(void){return f();}\\n' > {W}/g89p.c && "
+		 "{MCC} -B{B} -I{I} -fgnu89-inline {W}/g89p.c -o {W}/g89p >/dev/null 2>&1 && "
+		 "{W}/g89p; echo rc=$?",
+		 "rc=42\n"},
+		{"c99_plain_inline_default_link_error", "",
+		 "printf 'inline int f(void){return 42;}\\nint main(void){return f();}\\n' > {W}/c99p.c && "
+		 "{MCC} -B{B} -I{I} {W}/c99p.c -o {W}/c99p 2>&1 | grep -oE 'unresolved reference to' | head -1",
+		 "unresolved reference to\n"},
+		{"gnu89_extern_inline_static_copy_diff", "",
+		 "printf 'extern inline int f(void){return 42;}\\nint main(void){return f();}\\n' > {W}/g89x.c && "
+		 "{MCC} -B{B} -I{I} -fgnu89-inline {W}/g89x.c -o {W}/g89x >/dev/null 2>&1 && "
+		 "{W}/g89x; echo rc=$?",
+		 "rc=42\n"},
 		{"c11_ucn_basic_latin_reject", "",
 		 "printf '%s\\n' 'int a\\u0041b;' > {W}/ucnbl.c && "
 		 "{MCC} -c {W}/ucnbl.c -o {W}/ucnbl.o 2>&1 | "

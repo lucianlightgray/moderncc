@@ -12334,6 +12334,9 @@ static int decl(int l) {
 						type.t = (type.t & ~VT_EXTERN) | VT_STATIC;
 					else
 						type.t &= ~VT_INLINE;
+				} else if (mcc_state->gnu89_inline &&
+									 (type.t & (VT_INLINE | VT_STATIC | VT_EXTERN)) == VT_INLINE) {
+					type.t &= ~VT_INLINE;
 				}
 			} else if (oldint) {
 				mcc_warning("type defaults to int");

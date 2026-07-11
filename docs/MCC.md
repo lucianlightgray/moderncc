@@ -150,8 +150,14 @@ plain `inline` no-extern-def now provides no external definition and
 link-errors like gcc/clang (`3ca81969`, tested `cli/c99_inline_*`); (2) K&R
 implicit-`int` params rejected under C99+ (`c1777f26`); (3) `va_start` last-arg
 check green (`cli/va_start_last_param_clean`); (4) `<threads.h>` precedence
-fixed via the `include_next` shim (`a90afe80`). Remaining §6-A residue: gnu89
-plain-`inline` link behavior diverges from clang (TODO §40.1 NEW gap).
+fixed via the `include_next` shim (`a90afe80`); (5) gnu89 plain-`inline` now
+provides the out-of-line external definition and links like gcc/clang under
+`-fgnu89-inline` (gated on `gnu89_inline`, default C99 path byte-unchanged;
+tested `cli/gnu89_plain_inline_{emits_def,links_and_runs}` + gate
+`cli/c99_plain_inline_default_link_error`). `[DIFF]` (intentional): gnu89
+`extern inline` + call still links in mcc — it emits a static out-of-line copy
+(`extern inline`→`static`, `src/mccgen.c` decl) — where clang link-errors at
+`-O0` (no def emitted); pinned by `cli/gnu89_extern_inline_static_copy_diff`.
 **§6-B coverage gaps** (≈8, mcc passes but under-tests): FAM (mcc ~1 vs gcc 13),
 `_Noreturn` (1 vs 5), `_Alignas`/`_Alignof`, VLA-jump diagnostics, UCN breadth,
 FP eval-method / Annex-F wide returns, `_Complex` Annex-G, negative-test tier.
