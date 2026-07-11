@@ -5063,6 +5063,7 @@ static void gen_complex_op(int op) {
 		cplx_push_part(&a, 0);
 		cplx_push_part(&b, 0);
 		gen_op(TOK_EQ);
+		gv(MCC_RC_INT);
 		cplx_push_part(&a, 1);
 		cplx_push_part(&b, 1);
 		gen_op(TOK_EQ);

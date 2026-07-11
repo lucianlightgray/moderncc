@@ -56,16 +56,18 @@ Research / investigative:
 
 ## Bugs — surfaced by the conformance-test expansion (concrete repros)
 
-- [ ] **Complex `==`/`!=` ignores the real component** — a comparison of two
-  `double _Complex` values that differ *only* in the real part wrongly reports
-  equal: `CMPLX(1,2) == CMPLX(9,2)` folds to 1 (mcc) vs 0 (gcc). Imag-differing
-  pairs compare correctly. Correctness miscompile; found while widening
-  `exec/complex_annexg`. (highest priority of this block)
-- [ ] **UCN-started identifier after a punctuator → "stray '\\'"** — `&é`
-  or `.ü` (a `\u`/`\U` universal-character-name that begins an identifier
-  immediately following `&`, `.`, etc.) is rejected by the lexer though gcc
-  accepts it; a single space works around it. Maximal-munch/UCN lexing gap found
-  while widening `exec/ucn_identifiers`.
+- [x] **Complex `==`/`!=` ignored the real component** — FIXED: `gen_complex_op`
+  emitted both float `ucomisd` back-to-back, so the first (real) `VT_CMP`'s flags
+  were clobbered by the second before either `sete`; result was `im_eq & im_eq`.
+  `gv(MCC_RC_INT)` now materializes the real compare before the imaginary one.
+  Regression cases added to `exec/complex_annexg`; 3-stage self-host fixpoint +
+  qemu arm64/riscv64 green.
+- [x] **UCN-started identifier after a punctuator → "stray '\\'"** — FIXED: the
+  `PEEKC` operator-lookahead macro ran a following `\` through `handle_stray`,
+  which errored on `\u`/`\U`. It now leaves a UCN `\` for the next token (guarded
+  on `p[1] != 'u' && p[1] != 'U'`), so `&é`, `.ü`, `a+é`, etc. lex.
+  Line-continuation and stray-`\` diagnostics preserved; `exec/ucn_identifiers`
+  tightened to the adjacent forms.
 - [ ] **Local auto over-alignment > 16 not honored at `-O0`** — `alignas(32)`/
   `alignas(64)` on a stack (auto) variable yields only 16-byte alignment at
   `-O0` (correct at `-O1+`); statics/globals are fine. Found while widening

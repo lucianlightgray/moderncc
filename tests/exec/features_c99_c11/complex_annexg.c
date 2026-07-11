@@ -145,6 +145,18 @@ int main(void) {
 	if (e1 != e2)
 		ok = 0;
 
+	double _Complex e4 = CMPLX(9.0, 2.0);
+	if (e1 == e4)
+		ok = 0;
+	if (!(e1 != e4))
+		ok = 0;
+	volatile double v1 = 1.0, v9 = 9.0, v2 = 2.0;
+	double _Complex r1 = CMPLX(v1, v2), r4 = CMPLX(v9, v2);
+	if (r1 == r4)
+		ok = 0;
+	if (!(r1 != r4))
+		ok = 0;
+
 	printf(ok ? "OK\n" : "FAIL\n");
 	return ok ? 0 : 1;
 }

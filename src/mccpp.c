@@ -816,11 +816,11 @@ static int handle_stray(uint8_t **p) {
 	return c;
 }
 
-#define PEEKC(c, p)         \
-	{                         \
-		c = *++p;               \
-		if (c == '\\')          \
-			c = handle_stray(&p); \
+#define PEEKC(c, p)                          \
+	{                                          \
+		c = *++p;                                \
+		if (c == '\\' && p[1] != 'u' && p[1] != 'U') \
+			c = handle_stray(&p);                  \
 	}
 
 static int skip_spaces(void) {
