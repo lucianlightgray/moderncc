@@ -541,6 +541,8 @@ MAYBE_UNUSED static void ptype(const char *msg, CType *type, int v) {
 	printf("%s : %s;\n", msg, buf);
 }
 
+static int assign_ctx_is_init;
+
 ST_FUNC void mccgen_init(MCCState *s1) {
 	vtop = vstack - 1;
 	memset(vtop, 0, sizeof *vtop);
@@ -565,6 +567,7 @@ ST_FUNC int mccgen_compile(MCCState *s1) {
 	funcname = "";
 	func_ind = -1;
 	anon_sym = SYM_FIRST_ANOM;
+	assign_ctx_is_init = 0;
 	nocode_wanted = DATA_ONLY_WANTED;
 	debug_modes = (s1->do_debug ? 1 : 0) | s1->test_coverage << 1;
 	global_expr = 0;
@@ -3594,6 +3597,14 @@ static int aggr_has_const_member(CType *type) {
 	return aggr_has_const_member_rec(type, 0);
 }
 
+static void incompatible_ptr_diag(void) {
+	const char *what = assign_ctx_is_init ? "initialization" : "assignment";
+	if (mcc_state->pedantic_errors)
+		mcc_error("%s from incompatible pointer type", what);
+	else
+		mcc_warning("%s from incompatible pointer type", what);
+}
+
 static void verify_assign_cast(CType *dt) {
 	CType *st, *type1, *type2;
 	int dbt, sbt, qualwarn, lvl, deepqual;
@@ -3640,7 +3651,7 @@ static void verify_assign_cast(CType *dt) {
 			type2 = pointed_type(type2);
 		}
 		if (deepqual) {
-			mcc_warning("assignment from incompatible pointer type");
+			incompatible_ptr_diag();
 			break;
 		}
 		if (!is_compatible_unqualified_types(type1, type2)) {
@@ -3650,7 +3661,7 @@ static void verify_assign_cast(CType *dt) {
 											 "pointer and 'void *'");
 			} else if (dbt == sbt && is_integer_btype(sbt & VT_BTYPE) && IS_ENUM(type1->t) + IS_ENUM(type2->t) + !!((type1->t ^ type2->t) & VT_UNSIGNED) < 2) {
 			} else {
-				mcc_warning("assignment from incompatible pointer type");
+				incompatible_ptr_diag();
 				break;
 			}
 		}
@@ -8530,7 +8541,12 @@ tok_next:
 				if (!(type.t & VT_ARRAY))
 					r |= VT_LVAL;
 				memset(&ad, 0, sizeof(AttributeDef));
-				decl_initializer_alloc(&type, &ad, r, 1, 0, 0);
+				{
+					int aci_prev = assign_ctx_is_init;
+					assign_ctx_is_init = 1;
+					decl_initializer_alloc(&type, &ad, r, 1, 0, 0);
+					assign_ctx_is_init = aci_prev;
+				}
 			} else if (t == TOK_SOTYPE) {
 				sizeof_parsed_type = 1;
 				vpush(&type);
@@ -11431,9 +11447,12 @@ static void decl_initializer(init_params *p, CType *type, unsigned long c, int f
 			!(((type->t & VT_ARRAY) || (type->t & VT_BTYPE) == VT_STRUCT) && (tok == '[' || tok == '.')) &&
 			(!(flags & DIF_SIZE_ONLY) || (type->t & VT_BTYPE) == VT_STRUCT)) {
 		int ncw_prev = nocode_wanted;
+		int aci_prev = assign_ctx_is_init;
 		if ((flags & DIF_SIZE_ONLY) && !p->sec)
 			++nocode_wanted;
+		assign_ctx_is_init = 0;
 		parse_init_elem(!p->sec ? EXPR_ANY : EXPR_CONST);
+		assign_ctx_is_init = aci_prev;
 		nocode_wanted = ncw_prev;
 		flags |= DIF_HAVE_ELEM;
 	}
@@ -11654,9 +11673,12 @@ static void decl_initializer(init_params *p, CType *type, unsigned long c, int f
 				skip_or_save_block(NULL);
 		} else {
 			if (!(flags & DIF_HAVE_ELEM)) {
+				int aci_prev = assign_ctx_is_init;
 				if (tok != TOK_STR && tok != TOK_LSTR && tok != TOK_U32STR && tok != TOK_U16STR && tok != TOK_U8STR)
 					expect("string constant");
+				assign_ctx_is_init = 0;
 				parse_init_elem(!p->sec ? EXPR_ANY : EXPR_CONST);
+				assign_ctx_is_init = aci_prev;
 			}
 			if (!p->sec && (flags & DIF_CLEAR) && (vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST && vtop->c.i == 0 && btype_size(type->t & VT_BTYPE))
 				vpop();
@@ -12626,7 +12648,12 @@ static int decl(int l) {
 #if MCC_CONFIG_LSP
 						uint32_t cst_im = has_init ? CST_MARK() : 0;
 #endif
-						decl_initializer_alloc(&type, &ad, r, has_init, v, l);
+						{
+							int aci_prev = assign_ctx_is_init;
+							assign_ctx_is_init = has_init ? 1 : aci_prev;
+							decl_initializer_alloc(&type, &ad, r, has_init, v, l);
+							assign_ctx_is_init = aci_prev;
+						}
 #if MCC_CONFIG_LSP
 						if (has_init) {
 							CST_OPEN_AT(CST_Initializer, cst_im);

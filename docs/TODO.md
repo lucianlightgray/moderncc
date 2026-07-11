@@ -75,12 +75,16 @@ Research / investigative:
   only static over-alignment. Needs `-O0` stack-realignment for over-aligned
   locals (per-backend).
 
-- [ ] **`-pedantic-errors` gaps (accepts-invalid)** — found while adding
-  `cli/c9911_diag_gaps3`: (a) `long long` under `-std=c89 -pedantic-errors` is
-  silently accepted (gcc: "ISO C90 does not support 'long long'"); (b) an
-  incompatible-pointer initializer/assignment only warns under `-pedantic-errors`
-  (should be a hard error), and the message says "assignment" even for an
-  initializer.
+- [x] **`-pedantic-errors` gaps (accepts-invalid)** — found while adding
+  `cli/c9911_diag_gaps3`: (a) FIXED — `long long` under `-std=c89 -pedantic-errors`
+  now diagnosed; (b) FIXED — an incompatible-pointer initializer/assignment is now
+  a hard error under `-pedantic-errors` (`incompatible_ptr_diag`), and the message
+  says "initialization" for a declaration/compound-literal initializer,
+  "assignment" for stores/argument-passing. The init context is set at the two
+  genuine parser sites (declaration + compound literal) since the shared
+  `init_putv`/`decl_initializer_alloc` machinery is reused for internal spills.
+  Regression step in `cli/c9911_diag_gaps3` (dh16); `exec/errors_and_warnings`
+  and `exec/atomic_misc` goldens updated.
 
 ## 6 — open design space
 
