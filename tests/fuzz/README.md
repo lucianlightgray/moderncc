@@ -18,7 +18,8 @@ miscompile detector for §29–§35.
 | `gen.h` | Deterministic, seed-driven generator. Emits a self-contained program that folds globals/functions/control-flow/bitfields/unions/arrays into a checksum, prints it, and returns it as the exit code. Every construct is UB-free by construction (unsigned wraparound; divisors forced non-zero; shift counts masked and operands widened to 64-bit; array indices masked in range). |
 | `runner.c` | Orchestrator: generation → differential oracle → UBSan gate → reducer → triage → corpus. |
 | `corpus/` | Graduated, reduced repros used as a regression lock. See `corpus/README.md`. |
-| `bisect.sh` | `git bisect run` predicate wrapper around a corpus repro. |
+| `runner.c campaign` | Nightly-campaign subcommand: loop the batch runner over fresh seed batches with attribution-class dedup + a no-new-class stop rule. |
+| `runner.c bisect` | `git bisect run` predicate subcommand over a corpus repro. |
 
 ## Oracle
 
@@ -46,14 +47,26 @@ fuzz_runner <mcc> <bdir> <idir> <work> <gcc> <clang> [opts]
 ```
 
 A nightly campaign is just a large `--count` with `--gates --corpus
-tests/fuzz/corpus`; runs are fully seed-reproducible.
+tests/fuzz/corpus`; runs are fully seed-reproducible. The `campaign`
+subcommand automates this as a budgeted batch loop:
+
+```sh
+fuzz_runner campaign <mcc> <bdir> <idir> <gcc> <clang> <corpus> <work> \
+    [budget_secs] [batch] [stop_k]
+```
+
+It loops the batch runner over fresh seed windows until the wall-clock budget
+is spent or `stop_k` consecutive batches surface no new miscompile *class*
+(attribution = the `-O` level + `MCC_AST_*` gate the runner blames), dedups
+those classes, and exits nonzero exactly when a new one is found.
 
 ## Triage
 
 On a confirmed divergence the runner reduces the program (line-granularity
 ddmin, guarded by re-confirming the divergence — a cvise/creduce fallback for
 hosts without them) and sweeps `-O0..-O3 × MCC_AST_*` to name the exact level /
-pass that flips it. `bisect.sh` extends this to `git bisect` over commits.
+pass that flips it. `fuzz_runner bisect <repro.c> [preset]` extends this to
+`git bisect run` over commits.
 
 ## ctest wiring
 

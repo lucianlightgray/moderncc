@@ -61,7 +61,7 @@ miscompile detector for §29–§35.
       `tests/fuzz/corpus/`.
 - [x] **Triage / bisection** — auto-sweep over (a) `-O` level and (b) which
       `MCC_AST_*` gate flips it, recorded in the saved repro's header;
-      (c) `tests/fuzz/bisect.sh` is a `git bisect run` predicate over a repro.
+      (c) `fuzz_runner bisect <repro> [preset]` is a `git bisect run` predicate over a repro.
 - [~] **Dynamic-analysis layer** — mcc's *output* is built+run under
       ASan/UBSan as the oracle's soundness gate, and compiled-program
       crashes/timeouts are classified separately from wrong-answers. Building
@@ -88,7 +88,7 @@ miscompile detector for §29–§35.
 - [x] **CI integration & budget** — runs are seed-reproducible
       (`MCC_FUZZ_SEED`/`MCC_FUZZ_COUNT`/`MCC_FUZZ_GATES`); the graduated corpus
       is a regression-lock (`fuzz/corpus`). LANDED (2026-07-11): the *scheduled*
-      nightly campaign is now wired — `tests/fuzz/campaign.sh` loops the runner
+      nightly campaign is now wired — `fuzz_runner campaign` loops the runner
       over fresh seed batches until a wall-clock budget is spent or **K
       consecutive batches surface no new miscompile class** (attribution =
       `-O` level + `MCC_AST_*` gate the runner blames), deduping classes in
@@ -130,8 +130,8 @@ compare exit+stdout hash → on divergence, cvise-reduce → save repro`, then
 layer the matrix, triage, and dynamic-analysis passes on top.
 
 **LANDED (2026-07-10).** `tests/fuzz/` = `gen.h` (custom generator) + `runner.c`
-(oracle + UBSan gate + ddmin reducer + `-O`/gate triage) + `corpus/` +
-`bisect.sh`, with `README.md`/`NOTES.md`. Wired as three x86_64-only ctests
+(oracle + UBSan gate + ddmin reducer + `-O`/gate triage + `campaign`/`bisect`
+subcommands) + `corpus/`, with `README.md`/`NOTES.md`. Wired as three x86_64-only ctests
 (`fuzz/smoke` `-O0..-O3`, `fuzz/matrix` gate sweep, `fuzz/corpus` regression
 replay), gated on native gcc+clang (reuses `MCC_DIFF3_GCC/CLANG`; SKIP
 otherwise). Bring-up campaign: **200 seeds × (-O0..-O3 + 7 gates), 0

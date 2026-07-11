@@ -67,7 +67,10 @@ preset through. H: subcommands `run-preset`/`qemu`/`dist`/`plan`/`parity`/`pkg`/
 `bench-summary`; shell-agnostic. Whr: holds the preset ledger (`PS_*`/`PLAN_*`).
 Children: **`ci plan`** (≈5, generates CI matrices via `fromJSON`), **`ci parity`**
 (≈4, ctest `preset-parity-invariant` — fails on any preset not in both workflow +
-ledger), **`ci.yml`/`dist.yml`/`release.yml`** (the workflows; `dist.yml` is the
+ledger), **`ci emit`** (≈4, generates the four workflows + two Dockerfiles + two
+docker entrypoints from `tools/ci_artifacts.h`; `--check` is the ctest
+`ci-artifact-drift`, so the checked-in files are byte-identical to the C
+templates), **`ci.yml`/`dist.yml`/`release.yml`** (the workflows; `dist.yml` is the
 one reusable pipeline).
 
 **ckconfig** (≈6) — W: config-drift checker (`tools/ckconfig.c`, ctest
@@ -107,7 +110,7 @@ Children by reference frequency:
 - **`tests/diff3/`** (≈4) — W: granular 3-way differential vs gcc **and** clang over the exec corpus (distinct from tcc-based `diff/`).
 - **`tests/cli/`** (≈4) — W: driver/CLI behavior (16, `cases.h`): flags, TLS, suffixes, `readelf`/`nm` structural checks; also the negative-diagnostic tier.
 - **`tests/ast/`** (≈3), **`preprocess/`** (≈3), **`cst/`** (≈2), **`sanitize/`** (≈2, `sanitize-smoke`), **`diagnostics/`** (≈2), **`embed`/`behavior`/`asm`/`tls`/`static`** — see EXCESS.
-- **`tests/fuzz/` (§0 differential miscompile fuzzer)** — W: a random-program miscompile fuzzer + auto-reducer: `gen.h` (custom integer-only generator — switch/for/if, bounded recursion) + `runner.c`, comparing mcc against the gcc==clang consensus across `-O0..-O3` and each `MCC_AST_*` gate forced on (ctests `fuzz/smoke`/`fuzz/matrix`/`fuzz/corpus`). Whn: a scheduled nightly campaign (`campaign.sh`, `.github/workflows/fuzz-nightly.yml`) with crash-class dedup + stop-rule; repros land in `tests/fuzz/corpus/`. Found **0 miscompiles over ~900 programs** at the §41 flipped default. → EXCESS.
+- **`tests/fuzz/` (§0 differential miscompile fuzzer)** — W: a random-program miscompile fuzzer + auto-reducer: `gen.h` (custom integer-only generator — switch/for/if, bounded recursion) + `runner.c`, comparing mcc against the gcc==clang consensus across `-O0..-O3` and each `MCC_AST_*` gate forced on (ctests `fuzz/smoke`/`fuzz/matrix`/`fuzz/corpus`). Whn: a scheduled nightly campaign (`fuzz_runner campaign`, `.github/workflows/fuzz-nightly.yml`) with crash-class dedup + stop-rule; repros land in `tests/fuzz/corpus/`. Found **0 miscompiles over ~900 programs** at the §41 flipped default. → EXCESS.
 - **`full_language.c` / `mcctest`** (≈6) — W: 416-line differential mega-TU selecting compiler-specific code via `CC_NAME`. Whn: `-O0`-only (its self-referential `__bug_table` inline-asm miscompiles under any optimizer).
 
 **qemu cross matrix** (≈6) — W: every arch × {glibc, musl} (5×2, all green). H:

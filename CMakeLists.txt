@@ -2892,6 +2892,11 @@ if(MCC_BUILD_TESTS)
             WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
         set_tests_properties(preset-parity-invariant PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
+        add_test(NAME ci-artifact-drift
+            COMMAND "$<TARGET_FILE:ci>" emit --check --srcroot "${CMAKE_CURRENT_SOURCE_DIR}"
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+        set_tests_properties(ci-artifact-drift PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
         add_executable(ckretired tools/ckretired.c tools/toolsupport.c)
         target_link_libraries(ckretired ${CMAKE_DL_LIBS})
         add_test(NAME retired-macro-invariant
@@ -3476,22 +3481,27 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(hypervisor-tpe PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77
             ENVIRONMENT "MCCHV_CACHE_DIR=${CMAKE_BINARY_DIR}/hvcache-tpe")
-        add_test(NAME hypervisor-cache
-            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/hvcache.sh"
-                    "$<TARGET_FILE:mcchv>" "${CMAKE_BINARY_DIR}")
-        set_tests_properties(hypervisor-cache PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-            SKIP_RETURN_CODE 77)
-        if(MCC_CONFIG_OPTIMIZER)
-            add_test(NAME superopt-perfn-cache
-                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/perfncache.sh"
-                        "${_mcc_exe}" "${CMAKE_BINARY_DIR}")
-            set_tests_properties(superopt-perfn-cache PROPERTIES
-                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
-            add_test(NAME ast-cprop-join
-                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cpropjoin.sh"
-                        "${_mcc_exe}" "${CMAKE_BINARY_DIR}")
-            set_tests_properties(ast-cprop-join PROPERTIES
-                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+        if(TARGET mccharness)
+            add_test(NAME hypervisor-cache
+                COMMAND mccharness hvcache --mcchv "$<TARGET_FILE:mcchv>" --bdir "${CMAKE_BINARY_DIR}")
+            set_tests_properties(hypervisor-cache PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77)
+            if(MCC_CONFIG_OPTIMIZER)
+                add_test(NAME superopt-perfn-cache
+                    COMMAND mccharness perfncache --mcc "${_mcc_exe}" --bdir "${CMAKE_BINARY_DIR}")
+                set_tests_properties(superopt-perfn-cache PROPERTIES
+                    FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+                add_test(NAME ast-cprop-join
+                    COMMAND mccharness cpropjoin --mcc "${_mcc_exe}" --bdir "${CMAKE_BINARY_DIR}")
+                set_tests_properties(ast-cprop-join PROPERTIES
+                    FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+            endif()
+        else()
+            mcc_skip_test(hypervisor-cache "requires the host mccharness driver (native build)")
+            if(MCC_CONFIG_OPTIMIZER)
+                mcc_skip_test(superopt-perfn-cache "requires the host mccharness driver (native build)")
+                mcc_skip_test(ast-cprop-join "requires the host mccharness driver (native build)")
+            endif()
         endif()
     endif()
 

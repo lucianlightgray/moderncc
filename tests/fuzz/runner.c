@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include "../support/hostcompat.h"
 #include "gen.h"
 
@@ -429,9 +430,186 @@ static void save_repro(const char *reduced, const char *corpus, unsigned long se
 	free(body);
 }
 
+static char *popen_line(const char *cmd) {
+	FILE *f = HC_POPEN_SH(cmd);
+	char *o, *nl;
+	if (!f)
+		return NULL;
+	o = slurp(f);
+	pclose(f);
+	nl = strchr(o, '\n');
+	if (nl)
+		*nl = 0;
+	return o;
+}
+
+static int class_seen(char ***set, int *n, const char *key) {
+	int i;
+	for (i = 0; i < *n; i++)
+		if (!strcmp((*set)[i], key))
+			return 1;
+	*set = realloc(*set, sizeof(char *) * (*n + 1));
+	(*set)[(*n)++] = strdup(key);
+	return 0;
+}
+
+/* Nightly differential-fuzz campaign: loop the batch runner over fresh seed
+   batches until the wall-clock budget is spent or K consecutive batches surface
+   no new miscompile *class* (attribution = the -O level + MCC_AST_* gate the
+   runner blames). Found repros are reduced+saved into the corpus by the batch
+   runner; this driver dedups their attribution classes and enforces the stop
+   rule -- exiting nonzero exactly when a new class was found. */
+static int campaign_main(const char *self, int argc, char **argv) {
+	if (argc < 8) {
+		fprintf(stderr,
+				"usage: %s campaign <mcc> <bdir> <idir> <gcc> <clang> <corpus> <work>"
+				" [budget_secs] [batch] [stop_k]\n",
+				self);
+		return 2;
+	}
+	{
+		const char *mcc = argv[1], *bdir = argv[2], *idir = argv[3], *gcc = argv[4],
+				   *clang = argv[5], *corpus = argv[6], *work = argv[7];
+		long budget = argc > 8 ? strtol(argv[8], NULL, 10) : 3600;
+		long batch = argc > 9 ? strtol(argv[9], NULL, 10) : 50;
+		long stop_k = argc > 10 ? strtol(argv[10], NULL, 10) : 20;
+		char **classes = NULL;
+		int nclass = 0;
+		time_t start = time(NULL);
+		unsigned long seed = strtoul(hc_envv("MCC_FUZZ_SEED", "1000"), NULL, 10);
+		long empty_streak = 0, total_fail = 0, round = 0;
+
+		HC_MKDIR(corpus);
+		HC_MKDIR(work);
+
+		for (;;) {
+			long elapsed = (long)(time(NULL) - start), nnew = 0;
+			char logp[2048], rdir[2048], cmd[8192];
+			int rc, exitc;
+			FILE *lf;
+
+			if (elapsed >= budget) {
+				printf("campaign: budget %lds reached\n", budget);
+				break;
+			}
+			if (empty_streak >= stop_k) {
+				printf("campaign: %ld consecutive batches with no new class -> converged\n",
+					   stop_k);
+				break;
+			}
+			round++;
+			snprintf(rdir, sizeof rdir, "%s/r%ld", work, round);
+			snprintf(logp, sizeof logp, "%s/round-%ld.log", work, round);
+			snprintf(cmd, sizeof cmd,
+					 "\"%s\" \"%s\" \"%s\" \"%s\" \"%s\" \"%s\" \"%s\" --seed %lu "
+					 "--count %ld --gates --corpus \"%s\" >\"%s\" 2>&1",
+					 self, mcc, bdir, idir, rdir, gcc, clang, seed, batch, corpus, logp);
+			rc = HC_SYSTEM_SH(cmd);
+			exitc = WIFEXITED(rc) ? WEXITSTATUS(rc) : rc;
+
+			lf = fopen(logp, "rb");
+			if (lf) {
+				char line[8192];
+				while (fgets(line, sizeof line, lf)) {
+					char *nl = strchr(line, '\n');
+					const char *key;
+					if (nl)
+						*nl = 0;
+					if (strncmp(line, "  attribution: ", 15))
+						continue;
+					key = line + 15;
+					total_fail++;
+					if (!class_seen(&classes, &nclass, key)) {
+						nnew++;
+						printf("campaign: NEW miscompile class [%s] at round %ld (seed base %lu)\n",
+							   key, round, seed);
+					}
+				}
+				fclose(lf);
+			}
+			empty_streak = nnew > 0 ? 0 : empty_streak + 1;
+			printf("campaign: round %ld seeds %lu..%lu rc=%d new=%ld streak=%ld elapsed=%lds\n",
+				   round, seed, seed + (unsigned long)batch - 1, exitc, nnew, empty_streak,
+				   elapsed);
+			seed += (unsigned long)batch;
+		}
+		printf("campaign: done rounds=%ld miscompiles=%ld distinct-classes=%d\n", round,
+			   total_fail, nclass);
+		{
+			int i, ret = nclass > 0 ? 1 : 0;
+			for (i = 0; i < nclass; i++)
+				free(classes[i]);
+			free(classes);
+			return ret;
+		}
+	}
+}
+
+/* git-bisect predicate for a saved repro: rebuild the preset at the current
+   commit, then replay the repro through the freshly built runner. Prints the
+   bisect protocol codes (0=good, 1=bad, 125=skip). */
+static int bisect_main(int argc, char **argv) {
+	const char *repro = argc > 1 ? argv[1] : NULL;
+	const char *preset = argc > 2 ? argv[2] : "debug";
+	char *root, *gcc, *clang, *work;
+	char cmd[8192], bdir[4096], one[4096];
+	int rc, exitc;
+	FILE *tf;
+
+	if (!repro || !(tf = fopen(repro, "rb"))) {
+		fprintf(stderr, "git-bisect predicate for a tests/fuzz repro (0=good,1=bad,125=skip)\n");
+		fprintf(stderr, "usage: git bisect run <fuzz_runner> bisect <repro.c> [preset]\n");
+		return 125;
+	}
+	fclose(tf);
+
+	root = popen_line("git rev-parse --show-toplevel");
+	if (!root || !*root) {
+		free(root);
+		return 125;
+	}
+	snprintf(cmd, sizeof cmd, "cmake --build --preset \"%s\" -j >/dev/null 2>&1", preset);
+	if (HC_SYSTEM_SH(cmd) != 0) {
+		free(root);
+		return 125;
+	}
+	gcc = popen_line("command -v gcc");
+	clang = popen_line("command -v clang");
+	work = popen_line("mktemp -d");
+	if (!gcc || !*gcc || !clang || !*clang || !work || !*work) {
+		free(root);
+		free(gcc);
+		free(clang);
+		free(work);
+		return 125;
+	}
+	snprintf(one, sizeof one, "%s/corpus", work);
+	HC_MKDIR(one);
+	snprintf(cmd, sizeof cmd, "cp \"%s\" \"%s\"/", repro, one);
+	rc = HC_SYSTEM_SH(cmd);
+	snprintf(bdir, sizeof bdir, "%s/cmake-%s", root, preset);
+	snprintf(cmd, sizeof cmd,
+			 "\"%s/fuzz_runner\" \"%s/mcc\" \"%s\" \"%s/runtime/include\" \"%s\" "
+			 "\"%s\" \"%s\" --corpus \"%s\" --replay",
+			 bdir, bdir, bdir, root, work, gcc, clang, one);
+	rc = HC_SYSTEM_SH(cmd);
+	exitc = WIFEXITED(rc) ? WEXITSTATUS(rc) : rc;
+	snprintf(cmd, sizeof cmd, "rm -rf \"%s\"", work);
+	if (HC_SYSTEM_SH(cmd)) {
+		/* best-effort cleanup */
+	}
+	free(root);
+	free(gcc);
+	free(clang);
+	free(work);
+	return exitc;
+}
+
 static void usage(const char *p) {
 	fprintf(stderr,
 			"usage: %s <mcc> <bdir> <idir> <work> <gcc> <clang> [opts]\n"
+			"       %s campaign <mcc> <bdir> <idir> <gcc> <clang> <corpus> <work> [budget] [batch] [stop_k]\n"
+			"       %s bisect <repro.c> [preset]\n"
 			"  --seed N        base seed (default env MCC_FUZZ_SEED or 1)\n"
 			"  --count N       programs to try (default env MCC_FUZZ_COUNT or 20)\n"
 			"  --corpus DIR    dir for saved repros / replay\n"
@@ -440,10 +618,14 @@ static void usage(const char *p) {
 			"  --reduce FILE   reduce FILE to a minimal repro (needs --corpus)\n"
 			"  --gates         also sweep MCC_AST_* gate flags per program\n"
 			"  -v              verbose\n",
-			p);
+			p, p, p);
 }
 
 int main(int argc, char **argv) {
+	if (argc >= 2 && !strcmp(argv[1], "campaign"))
+		return campaign_main(argv[0], argc - 1, argv + 1);
+	if (argc >= 2 && !strcmp(argv[1], "bisect"))
+		return bisect_main(argc - 1, argv + 1);
 	if (argc < 7) {
 		usage(argv[0]);
 		return 2;

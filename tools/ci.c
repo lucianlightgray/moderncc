@@ -387,6 +387,8 @@ static const struct {
 		{"cross", "alias: = linux-gcc-cross with unpinned cc"},
 		{0, 0}};
 
+#include "ci_artifacts.h"
+
 static int loc_have(const char *name) {
 	char buf[4096];
 	return host_find_tool(name, ".exe", buf, sizeof buf);
@@ -1798,11 +1800,112 @@ static int do_junit_summary(int argc, char **argv) {
 	return 0;
 }
 
-int main(int argc, char **argv) {
-	if (argc < 2) {
-		fprintf(stderr, "usage: ci <stage|run-preset|qemu|local|dist|matrix|plan|parity|bench-summary|pkg|sha256sums> ...\n");
+typedef struct {
+	char *p;
+	size_t n, cap;
+} EmitBuf;
+
+static void eb_put(EmitBuf *b, const char *s, size_t n) {
+	if (b->n + n + 1 > b->cap) {
+		while (b->n + n + 1 > b->cap)
+			b->cap = b->cap ? b->cap * 2 : 8192;
+		b->p = realloc(b->p, b->cap);
+	}
+	memcpy(b->p + b->n, s, n);
+	b->n += n;
+	b->p[b->n] = 0;
+}
+
+static void eb_puts(EmitBuf *b, const char *s) {
+	eb_put(b, s, strlen(s));
+}
+
+/* Expand the artifact templates' DRY tokens: @BOOT@ = the shared ci-tool
+   bootstrap line, @QEMUBINS@ = the QBIN ledger joined by spaces. */
+static void emit_expand(EmitBuf *b, const char *tmpl) {
+	const char *p = tmpl;
+	while (*p) {
+		if (*p == '@') {
+			if (!strncmp(p, "@BOOT@", 6)) {
+				eb_puts(b, "cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl");
+				p += 6;
+				continue;
+			}
+			if (!strncmp(p, "@QEMUBINS@", 10)) {
+				int i;
+				for (i = 0; QBIN[i]; i++) {
+					if (i)
+						eb_put(b, " ", 1);
+					eb_puts(b, QBIN[i]);
+				}
+				p += 10;
+				continue;
+			}
+		}
+		eb_put(b, p, 1);
+		p++;
+	}
+}
+
+static int do_emit(int argc, char **argv) {
+	const char *root = ".";
+	int i, check = 0, write = 0, drift = 0;
+
+	for (i = 0; i < argc; i++) {
+		if (!strcmp(argv[i], "--check"))
+			check = 1;
+		else if (!strcmp(argv[i], "--write"))
+			write = 1;
+		else if (!strcmp(argv[i], "--srcroot") && i + 1 < argc)
+			root = argv[++i];
+	}
+	if (check == write) {
+		fprintf(stderr, "usage: ci emit <--check|--write> [--srcroot DIR]\n");
 		return 2;
 	}
+	for (i = 0; EMIT_FILES[i].path; i++) {
+		EmitBuf b = {0, 0, 0};
+		char path[4096];
+		emit_expand(&b, EMIT_FILES[i].tmpl);
+		ts_path(path, sizeof path, root, "%s", EMIT_FILES[i].path);
+		if (check) {
+			char *cur = ts_read_file(path, NULL);
+			if (!cur || strcmp(cur, b.p)) {
+				fprintf(stderr, "ci emit: DRIFT %s\n", EMIT_FILES[i].path);
+				drift = 1;
+			}
+			free(cur);
+		} else {
+			FILE *f = fopen(path, "wb");
+			if (!f) {
+				fprintf(stderr, "ci emit: cannot write %s\n", path);
+				free(b.p);
+				return 1;
+			}
+			fwrite(b.p, 1, b.n, f);
+			fclose(f);
+			printf("ci emit: wrote %s\n", EMIT_FILES[i].path);
+		}
+		free(b.p);
+	}
+	if (check && drift) {
+		fprintf(stderr,
+						"ci emit: checked-in artifacts diverge from the tools/ci.c templates;"
+						" run `ci emit --write` to regenerate\n");
+		return 1;
+	}
+	if (check)
+		printf("ci emit: all %d artifact(s) up to date\n", i);
+	return 0;
+}
+
+int main(int argc, char **argv) {
+	if (argc < 2) {
+		fprintf(stderr, "usage: ci <stage|run-preset|qemu|local|dist|matrix|plan|parity|emit|bench-summary|pkg|sha256sums> ...\n");
+		return 2;
+	}
+	if (!strcmp(argv[1], "emit"))
+		return do_emit(argc - 2, argv + 2);
 	if (!strcmp(argv[1], "stage"))
 		return do_stage(argc - 2, argv + 2);
 	if (!strcmp(argv[1], "run-preset"))

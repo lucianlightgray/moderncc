@@ -253,6 +253,16 @@ failing on any preset without both. The curated exemptions are `local-ci`, the
 `qemu` umbrella, and the five alias dev presets; and
 `diff <(ci matrix | sort -u) <(ci parity --list)` is empty by construction.
 
+**The workflow/Docker files are themselves generated from C.** `ci emit`
+(templates in `tools/ci_artifacts.h`, DRY tokens `@BOOT@` = the shared ci-tool
+bootstrap and `@QEMUBINS@` = the `QBIN` ledger) is the single source of truth
+for the four `.github/workflows/*.yml`, the two `tests/*/docker/Dockerfile`, and
+the two docker entrypoints. `ci emit --write` regenerates the checked-in copies;
+`ci emit --check` (run in every build as the `ci-artifact-drift` ctest) fails on
+any byte-level divergence between them and the templates. So editing CI or the
+docker images means editing `tools/ci_artifacts.h` and re-running `ci emit
+--write`, not hand-patching the generated files.
+
 Build presets exist for every configure preset; test presets exist for all
 except the build-only (`mingw`), test-less (`dist-*`), superbuild
 (`matrix`), and `local-ci` (whose own build `test` target reproduces CI) ones —

@@ -3,7 +3,7 @@ name: fuzz-nightly
 # Scheduled differential-fuzz campaign (TODO §0). Runs the whole-pipeline
 # miscompile fuzzer for a time budget against gcc+clang as the same-ISA oracle,
 # with the "no-new-class in K batches" stop rule and crash-class dedup in
-# tests/fuzz/campaign.sh. x86_64-Linux only (the oracle needs native gcc AND
+# `fuzz_runner campaign`. x86_64-Linux only (the oracle needs native gcc AND
 # clang executing mcc's own target ISA). Also runnable on demand.
 
 on:
@@ -43,18 +43,17 @@ jobs:
           cmake --build cmake-debug -j"$(nproc)" --target mcc fuzz_runner
       - name: run campaign
         env:
-          FUZZ_RUNNER: ${{ github.workspace }}/cmake-debug/fuzz_runner
           MCC_FUZZ_SEED: ${{ github.run_number }}0000
         run: |
           budget='${{ github.event.inputs.budget }}'; budget="${budget:-5400}"
           batch='${{ github.event.inputs.batch }}';   batch="${batch:-50}"
           set +e
-          tests/fuzz/campaign.sh \
+          cmake-debug/fuzz_runner campaign \
             cmake-debug/mcc cmake-debug runtime/include \
             "$(command -v gcc)" "$(command -v clang)" \
             tests/fuzz/corpus "$RUNNER_TEMP/fuzz-work" \
             "$budget" "$batch" 20 | tee "$RUNNER_TEMP/campaign.log"
-          echo "campaign_rc=$?" >> "$GITHUB_ENV"
+          echo "campaign_rc=${PIPESTATUS[0]}" >> "$GITHUB_ENV"
       - name: summary
         if: always()
         run: |
