@@ -2076,10 +2076,30 @@ not commutative-safe, so stays out). Native arm64 spot-check recommended
   full ctest **1880/1880** + release/cross/multisource/sanitize clean;
   forced-on (`MCC_AST_COLOR=1 -O2`) **229/229 exec corpus correct, 0
   divergences, 0 compiler crashes**, and register sharing genuinely fires
-  **105× across the corpus**. Remaining for §36: CFG-liveness so sharing works
-  through branches/loops (lifts the straight-line restriction), spill-slot
-  sharing, and finally *replacing* the promotion heuristic outright — each
-  fixpoint-gated + native arm64/riscv64.
+  **105× across the corpus**.
+
+  **THIRD INCREMENT LANDED (2026-07-11): sharing extended to all forward
+  control flow (if/else, switch, ternary, `&&`/`||`).** The straight-line
+  restriction only ever needed to exclude *backward* edges, where node-index
+  intervals stop being sound. The sound predicate: a function has backward flow
+  iff it contains a **loop** — an `AST_If` that is a *direct child of a
+  BasicBlock* with op ∈ {2,3,4,5} (this is the key: it distinguishes `for(;;)`
+  op-5, a BB-child statement, from a *ternary* op-5, which is nested inside an
+  expression and never a BB child) — or a `goto`/label (`AST_Jump` op 4/5).
+  Everything else is forward: along any path node indices increase
+  monotonically, so disjoint node-index intervals are never simultaneously live
+  (mutually-exclusive branch locals are in fact *safer* than the interval
+  says), and the entry-load-dedup emission stays correct (a sharer's value
+  comes from its own defining write on whichever branch executes). Loops/goto
+  still fall back to the increment-1 complete graph. Validation: gate-off
+  fixpoint stage2==3==4 byte-identical + ctest **1880/1880** +
+  release/cross/multisource/sanitize clean; forced-on **229/229 exec corpus
+  correct, 0 divergences, 0 crashes**, and sharing now fires **116×** (up from
+  105 — if/else/switch/ternary functions now qualify).
+
+  Remaining for §36: full backward-liveness (share *across* loop back-edges,
+  the last CFG case), spill-slot sharing, and finally *replacing* the promotion
+  heuristic outright — each fixpoint-gated + native arm64/riscv64.
 
 ## 37. Bench-statistics roadmap — Bayesian + ANOVA inference (medium, tools-only)
 

@@ -2309,15 +2309,24 @@ static int ast_plan_promotion(AstArena *a) {
 	if (!ast_promote_env || ast_func_has_asm)
 		return 0;
 	AstLocal nn = ast_count(a);
-	int has_call = 0, has_vla = 0, has_branch = 0;
+	int has_call = 0, has_vla = 0, has_backward = 0;
 	for (AstLocal n = 0; n < nn; n++) {
 		uint16_t k = ast_kind(a, n);
 		if (k == AST_Invoke)
 			has_call = 1;
 		else if (k == AST_Unary && ast_op(a, n) == AST_OP_VLA)
 			has_vla = 1;
-		else if (k == AST_If || k == AST_Jump)
-			has_branch = 1;
+		else if (k == AST_Jump && (ast_op(a, n) == 4 || ast_op(a, n) == 5))
+			has_backward = 1;
+		else if (k == AST_BasicBlock) {
+			for (AstLocal s = ast_first_child(a, n); s != AST_NONE;
+					 s = ast_next_sib(a, s)) {
+				int so = ast_op(a, s);
+				if (ast_kind(a, s) == AST_If &&
+						(so == 2 || so == 3 || so == 4 || so == 5))
+					has_backward = 1;
+			}
+		}
 	}
 	if (has_vla)
 		return 0;
@@ -2431,7 +2440,7 @@ static int ast_plan_promotion(AstArena *a) {
 												: (int)(sizeof ast_promo_caller / sizeof *ast_promo_caller);
 	int xmm_max = has_call ? 0 : (int)(sizeof ast_promo_xmm / sizeof *ast_promo_xmm);
 	int gp_n = 0, xmm_n = 0;
-	if (ast_color_env && !has_branch) {
+	if (ast_color_env && !has_backward) {
 		int cfirst[AST_PROMO_MAX * 8], clast[AST_PROMO_MAX * 8];
 		int cdeffirst[AST_PROMO_MAX * 8];
 		for (int j = 0; j < nc; j++)
