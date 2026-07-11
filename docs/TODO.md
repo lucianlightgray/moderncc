@@ -1567,7 +1567,8 @@ restructuring (following the `ast_bf_build`/`ast_tco_run` node-construction
 precedent) — i.e. phase-(b), folded into the §22 search under the §28 oracle as
 already planned. Tracked as Bucket-B; nothing safe to land standalone.
 
-PHASE-(b) FIRST INCREMENT — LANDED (`MCC_AST_NARROW`, default off, 2026-07-11).
+PHASE-(b) FIRST INCREMENT — LANDED (`MCC_AST_NARROW`, **default-ON at -O2**
+since the §41-style ungate below, 2026-07-11).
 **Key refinement: the beneficial slice needs NO range lattice.** For the
 truncation-DISTRIBUTIVE ops `{+ − * & | ^}`, truncation is a ring homomorphism
 mod 2ⁿ: `trunc_n(X op Y) == trunc_n(trunc_n(X) op trunc_n(Y))`. So when a wide
@@ -1592,6 +1593,16 @@ dropped, real opt)**; adversarial boundary/overflow sweep (INT_MIN/MAX, 2³¹,
 clang on both arches. **Remaining §29 (deferred to the lattice/§22 search):**
 non-distributive `/ % << >>`/comparisons, and OUTER-narrow ELIMINATION (drop a
 cast when a value provably fits) — those genuinely need the range lattice.
+**PROMOTED TO DEFAULT-ON AT -O2 (2026-07-11), joining the §41 sweep.**
+`ast_narrow_env` now defaults to `s1->optimize >= 2` (mccast.c:797). Re-
+validated on the DEFAULT path (narrowing combined with all other -O2 defaults
+— the join passes, `MCC_AST_CALL_WINDOW`, and the five §41 passes): the
+explicit `-O2` whole-`mcc.c` 3-stage self-host fixpoint CONVERGES byte-
+identically (same-`-o`-name harness — the basename-embed gotcha — s1==s2==s3
+`6adacfec`; two identical `-O2` compiles are byte-equal `e921ffef`, so run-to-
+run deterministic), narrowing demonstrably FIRES in the default path (default-
+on ≠ `MCC_AST_NARROW=0`, `e921ffef` vs `1f0ff158`), and full ctest is green
+(only the two pre-existing `asan_shadow_native` worker-WIP fails, unrelated).
 
 A search-driven pass that tries re-typing values via the `AST_Convert`
 node: for each value/expression, cast it to alternative representations

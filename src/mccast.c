@@ -794,7 +794,7 @@ void ast_configure(MCCState *s1) {
 	if (ast_bitflag_min < 3)
 		ast_bitflag_min = 5;
 	ast_cprop_join_env = ast_env_gate("MCC_AST_CPROP_JOIN", s1->optimize >= 2);
-	ast_narrow_env = ast_env_gate("MCC_AST_NARROW", 0);
+	ast_narrow_env = ast_env_gate("MCC_AST_NARROW", s1->optimize >= 2);
 	ast_cse_join_env = ast_env_gate("MCC_AST_CSE_JOIN", s1->optimize >= 2);
 	ast_call_window_env = ast_env_gate("MCC_AST_CALL_WINDOW", s1->optimize >= 2);
 	ast_licm_temp_env = ast_env_gate("MCC_AST_LICM_TEMP", 0);
