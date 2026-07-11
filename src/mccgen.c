@@ -93,6 +93,7 @@ typedef struct
 	Sym *flex_array_ref;
 	char flex_is_member;
 	char flex_warned;
+	int llocal;
 } init_params;
 
 static void init_prec(void);
@@ -2818,7 +2819,10 @@ static void type_incompatibility_warning(CType *st, CType *dt, const char *fmt) 
 	char buf1[256], buf2[256];
 	type_to_str(buf1, sizeof(buf1), st, NULL);
 	type_to_str(buf2, sizeof(buf2), dt, NULL);
-	mcc_warning(fmt, buf1, buf2);
+	if (mcc_state->pedantic_errors)
+		mcc_error(fmt, buf1, buf2);
+	else
+		mcc_warning(fmt, buf1, buf2);
 }
 
 static int pointed_size(CType *type) {
@@ -4510,8 +4514,12 @@ do_decl:
 					break;
 				next();
 				ll++;
-				if (tok == '}')
+				if (tok == '}') {
+					if (mcc_state->cversion < 199901)
+						mcc_pedantic("trailing comma in enumerator list is a "
+												 "C99 feature");
 					break;
+				}
 			}
 			skip('}');
 
@@ -4599,6 +4607,9 @@ do_decl:
 						if (type_size(&type1, &align) < 0) {
 							if ((u == VT_STRUCT) && (type1.t & VT_ARRAY)) {
 								flexible = 1;
+								if (mcc_state->cversion < 199901)
+									mcc_pedantic("flexible array members are a "
+															 "C99 feature");
 								if (!c)
 									mcc_pedantic("flexible array member in a "
 															 "struct with no named members");
@@ -5752,6 +5763,8 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td) {
 				n = 0;
 				t1 = VT_VLA;
 				mcc_warning_c(warn_vla)("ISO C90 forbids variable length array");
+				if (mcc_state->cversion < 199901)
+					mcc_pedantic("variable length arrays are a C99 feature");
 			}
 		}
 		skip(']');
@@ -8532,6 +8545,8 @@ tok_next:
 #endif
 			skip(')');
 			if (tok == '{') {
+				if (mcc_state->cversion < 199901)
+					mcc_pedantic("compound literals are a C99 feature");
 				if (global_expr) {
 					if (local_scope)
 						mcc_error("initializer element is not constant");
@@ -10647,6 +10662,8 @@ again:
 			if (!decl(VT_JMP)) {
 				gexpr();
 				vpop();
+			} else if (mcc_state->cversion < 199901) {
+				mcc_pedantic("'for' loop initial declarations are a C99 feature");
 			}
 			in_for_init = 0;
 		}
@@ -11040,9 +11057,32 @@ static void init_assert(init_params *p, int offset) {
 #define init_assert(sec, offset)
 #endif
 
+static void init_llocal_push_addr(init_params *p, unsigned long c) {
+	vset(&char_pointer_type, VT_LOCAL | VT_LVAL, p->llocal);
+	if (c) {
+		vpushi((int)c);
+		gen_op('+');
+	}
+}
+
 static void init_putz(init_params *p, unsigned long c, int size) {
 	init_assert(p, c + size);
 	if (p->sec) {
+	} else if (p->llocal) {
+		vpush_helper_func(TOK_memset);
+		init_llocal_push_addr(p, c);
+		vpushi(0);
+		vpushs(size);
+#if defined MCC_TARGET_ARM && defined MCC_ARM_EABI
+		vswap();
+#endif
+#if MCC_CONFIG_OPTIMIZER
+		ast_hook_call_begin(3, 0, 1, 0);
+#endif
+		gfunc_call(3);
+#if MCC_CONFIG_OPTIMIZER
+		ast_hook_call_effect_end();
+#endif
 	} else {
 		vpush_helper_func(TOK_memset);
 		vseti(VT_LOCAL, c);
@@ -11065,6 +11105,18 @@ static void init_putz(init_params *p, unsigned long c, int size) {
 #define DIF_SIZE_ONLY 2
 #define DIF_HAVE_ELEM 4
 #define DIF_CLEAR 8
+
+#if defined MCC_TARGET_X86_64 && !defined MCC_TARGET_PE
+#define STACK_OVERALIGN_MAX 16
+#elif defined MCC_TARGET_RISCV64
+#define STACK_OVERALIGN_MAX 16
+#elif defined MCC_TARGET_ARM64
+#define STACK_OVERALIGN_MAX 16
+#elif defined MCC_TARGET_I386 && !defined MCC_TARGET_PE
+#define STACK_OVERALIGN_MAX 8
+#elif defined MCC_TARGET_ARM
+#define STACK_OVERALIGN_MAX 8
+#endif
 
 static void decl_design_delrels(Section *sec, int c, int size) {
 	ElfW_Rel *rel, *rel2, *rel_end;
@@ -11413,6 +11465,16 @@ static void init_putv(init_params *p, CType *type, unsigned long c) {
 				}
 		}
 		vtop--;
+	} else if (p->llocal) {
+		int rr;
+		init_llocal_push_addr(p, c);
+		rr = gv(MCC_RC_INT);
+		vtop->type = dtype;
+		vtop->r = rr | VT_LVAL;
+		vtop->c.i = 0;
+		vswap();
+		vstore();
+		vpop();
 	} else {
 		vset(&dtype, VT_LOCAL | VT_LVAL, c);
 		vswap();
@@ -11858,34 +11920,45 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 		size = 0, align = 1;
 
 	if ((r & VT_VALMASK) == VT_LOCAL) {
+		int overalign_indirect = 0;
 		sec = NULL;
+#ifdef STACK_OVERALIGN_MAX
+		overalign_indirect = v && align > STACK_OVERALIGN_MAX &&
+												 !(type->t & VT_VLA) && size > 0 && !NODATA_WANTED &&
+												 !asan_g
 #if MCC_CONFIG_DIAG_RT >= 2
-		if (bcheck && v) {
-			loc -= align;
-		}
+												 && !bcheck
 #endif
-		if (asan_g && v) {
-			loc -= MCC_ASAN_REDZONE;
-			if (align < 8)
-				align = 8;
-		}
-		loc = (loc - size) & -align;
-		addr = loc;
-		p.local_offset = addr + size;
-#if MCC_CONFIG_DIAG_RT >= 2
-		if (bcheck && v) {
-			loc -= align;
-		}
+				;
 #endif
-		if (v) {
-#if MCC_CONFIG_ASM
-			if (ad->asm_label) {
-				int reg = asm_parse_regvar(ad->asm_label);
-				if (reg >= 0)
-					r = (r & ~VT_VALMASK) | reg;
+		if (overalign_indirect) {
+			int ptr_slot;
+			int vla_new_save = 0;
+#if MCC_CONFIG_OPTIMIZER
+			ast_hook_vla_alloc_begin();
+#endif
+			if (cur_scope->vla.num == 0) {
+				if (cur_scope->prev && cur_scope->prev->vla.num) {
+					cur_scope->vla.locorig = cur_scope->prev->vla.loc;
+				} else {
+					gen_vla_sp_save(loc -= MCC_PTR_SIZE);
+					cur_scope->vla.locorig = loc;
+					vla_new_save = 1;
+				}
 			}
+			ptr_slot = (loc -= MCC_PTR_SIZE);
+			vpushs(size);
+			gen_vla_alloc(type, align);
+			gen_vla_sp_save(ptr_slot);
+			cur_scope->vla.loc = ptr_slot;
+			cur_scope->vla.num++;
+#if MCC_CONFIG_OPTIMIZER
+			ast_hook_vla_alloc_end(type, ptr_slot, vla_new_save, cur_scope->vla.locorig);
 #endif
-			sym = sym_push(v, type, r, addr);
+			addr = 0;
+			p.llocal = ptr_slot;
+			p.local_offset = size;
+			sym = sym_push(v, type, (r & ~VT_VALMASK) | VT_LLOCAL, ptr_slot);
 			if (ad->cleanup_func) {
 				Sym *cls = sym_push2(&all_cleanups,
 														 SYM_FIELD | ++cur_scope->cl.n, 0, 0);
@@ -11894,13 +11967,54 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 				cls->next = cur_scope->cl.s;
 				cur_scope->cl.s = cls;
 			}
-
 			sym->a = ad->a;
 			sym->vla_inner_id = file->line_num;
 			if (has_init)
 				sym->a.inited = 1;
 		} else {
-			vset(type, r, addr);
+#if MCC_CONFIG_DIAG_RT >= 2
+			if (bcheck && v) {
+				loc -= align;
+			}
+#endif
+			if (asan_g && v) {
+				loc -= MCC_ASAN_REDZONE;
+				if (align < 8)
+					align = 8;
+			}
+			loc = (loc - size) & -align;
+			addr = loc;
+			p.local_offset = addr + size;
+#if MCC_CONFIG_DIAG_RT >= 2
+			if (bcheck && v) {
+				loc -= align;
+			}
+#endif
+			if (v) {
+#if MCC_CONFIG_ASM
+				if (ad->asm_label) {
+					int reg = asm_parse_regvar(ad->asm_label);
+					if (reg >= 0)
+						r = (r & ~VT_VALMASK) | reg;
+				}
+#endif
+				sym = sym_push(v, type, r, addr);
+				if (ad->cleanup_func) {
+					Sym *cls = sym_push2(&all_cleanups,
+															 SYM_FIELD | ++cur_scope->cl.n, 0, 0);
+					cls->cleanup_sym = sym;
+					cls->cleanup_func = ad->cleanup_func;
+					cls->next = cur_scope->cl.s;
+					cur_scope->cl.s = cls;
+				}
+
+				sym->a = ad->a;
+				sym->vla_inner_id = file->line_num;
+				if (has_init)
+					sym->a.inited = 1;
+			} else {
+				vset(type, r, addr);
+			}
 		}
 	} else {
 		sec = ad->section;

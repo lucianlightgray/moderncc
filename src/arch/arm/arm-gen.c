@@ -512,6 +512,12 @@ void load(int r, SValue *sv) {
 			} else
 				o(op);
 			return;
+		} else if (v == VT_LLOCAL) {
+			v1.type.t = VT_PTR;
+			v1.r = VT_LOCAL | VT_LVAL;
+			v1.c.i = sv->c.i;
+			load(r, &v1);
+			return;
 		} else if (v == VT_CMP) {
 			o(mapcc(sv->c.i) | 0x3A00001 | (intr(r) << 12));
 			o(mapcc(negcc(sv->c.i)) | 0x3A00000 | (intr(r) << 12));

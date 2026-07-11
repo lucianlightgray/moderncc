@@ -94,6 +94,37 @@ int main(void) {
 
 	ok &= ((int)(sizeof arr_sized / sizeof arr_sized[0]) == 3);
 
+#if (defined(__x86_64__) || defined(__riscv) || defined(__aarch64__) || \
+		 defined(__i386__) || defined(__arm__)) && !defined(_WIN32)
+	{
+		_Alignas(16) char la16;
+		_Alignas(32) int la32;
+		_Alignas(64) long la64 = 41;
+		_Alignas(128) char la128[3];
+		_Alignas(32) struct S las = {.a = 5};
+		_Alignas(64) double lad[4] = {1.0, 2.0, 3.0, 4.0};
+
+		ok &= (((uintptr_t)&la16 % 16) == 0);
+		ok &= (((uintptr_t)&la32 % 32) == 0);
+		ok &= (((uintptr_t)&la64 % 64) == 0);
+		ok &= (((uintptr_t)la128 % 128) == 0);
+		ok &= (((uintptr_t)&las % 32) == 0);
+		ok &= (((uintptr_t)lad % 64) == 0);
+
+		la16 = 1;
+		la32 = 2;
+		ok &= (la16 == 1 && la32 == 2 && la64 == 41);
+		ok &= (las.a == 5);
+		ok &= (lad[0] + lad[1] + lad[2] + lad[3] == 10.0);
+
+		for (int i = 0; i < 3; i++) {
+			_Alignas(256) long loop_arr[4] = {i, i + 1, i + 2, i + 3};
+			ok &= (((uintptr_t)loop_arr % 256) == 0);
+			ok &= (loop_arr[0] + loop_arr[3] == 2 * i + 3);
+		}
+	}
+#endif
+
 	printf(ok ? "OK\n" : "FAIL\n");
 	return !ok;
 }

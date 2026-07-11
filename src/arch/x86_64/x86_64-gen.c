@@ -422,6 +422,9 @@ void load(int r, SValue *sv) {
 		} else if (v == VT_LOCAL) {
 			orex(1, 0, r, 0x8d);
 			gen_modrm(r, VT_LOCAL, sv->sym, fc);
+		} else if (v == VT_LLOCAL) {
+			orex(1, 0, r, 0x8b);
+			gen_modrm(r, VT_LOCAL, sv->sym, fc);
 		} else if (v == VT_CMP) {
 			if (fc & 0x100) {
 				v = vtop->cmp_r;
@@ -2285,10 +2288,16 @@ ST_FUNC void gen_vla_alloc(CType *type, int align) {
 		gfunc_call(1);
 	} else {
 		int r;
+		int a = align < 16 ? 16 : align;
 		r = gv(MCC_RC_INT);
 		o(0x2b48);
 		o(0xe0 | REG_VALUE(r));
-		o(0xf0e48348);
+		if (a > 16) {
+			o(0xe48148);
+			gen_le32(-a);
+		} else {
+			o(0xf0e48348);
+		}
 		vpop();
 	}
 }

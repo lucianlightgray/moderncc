@@ -93,12 +93,38 @@ Research / investigative:
   on `p[1] != 'u' && p[1] != 'U'`), so `&é`, `.ü`, `a+é`, etc. lex.
   Line-continuation and stray-`\` diagnostics preserved; `exec/ucn_identifiers`
   tightened to the adjacent forms.
-- [ ] **Local auto over-alignment not honored at `-O0`** — `alignas(N)` on a
-  stack (auto) variable is under-aligned at `-O0`: x86_64 gives 16 but not
-  `alignas(32)`/`(64)`; i386/arm give only 4 even for `alignas(16)` (gcc honors
-  all). Statics/globals are fine on every target. `exec/alignas_over` now asserts
-  only static over-alignment. Needs `-O0` stack-realignment for over-aligned
-  locals (per-backend).
+- [x] **Local auto over-alignment not honored at `-O0`** — FIXED (all five ELF/
+  native backends: x86_64, i386, arm, arm64, riscv64): an over-aligned auto local
+  (`align > STACK_OVERALIGN_MAX`, the arch's max natural alignment) is now allocated
+  via a runtime-aligned region reached through a hidden pointer slot, reusing the
+  VLA/`gen_vla_alloc` save/restore machinery and represented as `VT_LLOCAL`
+  (scalars/structs) or bare `VT_LLOCAL` (arrays — a new no-`VT_LVAL` load case in
+  each backend loads the pointer, symmetric to `VT_LOCAL`→address). Each
+  `gen_vla_alloc` now realigns sp/esp to `align` (x86_64/i386 `and`, arm64 via
+  `arm64_encode_bimm64`, riscv64 `andi`/wide-const; arm already did `bic`), so VLA
+  element over-alignment is honored too. Init flows through the pointer via a new
+  `init_params.llocal` reroute in `init_putv`/`init_putz`. Correct at `-O0/-O1/-O2`
+  (rides on VLA support, which the AST replay already handles). Gates: x86_64 full
+  ctest 1901 + 3-stage self-host fixpoint byte-identical; arm64 exec 583 + arm64
+  self-host fixpoint byte-identical; i386/arm/riscv64 exec 583 each under qemu;
+  12-way cross build green. `exec/alignas_over` asserts auto scalar/array/struct/
+  loop-scoped over-alignment (gated to the five supported arches, `!_WIN32`).
+  Gated via `STACK_OVERALIGN_MAX` (defined per-arch for ELF; PE excluded).
+  KNOWN GAPS (see the two follow-ups below): PE targets, and the `-fsanitize=address`
+  / `-b` (bounds-check) modes where the indirect path is deliberately gated off so
+  over-aligned locals stay under-aligned.
+- [ ] **Honor auto over-alignment under `-fsanitize=address` / `-b`** — the
+  over-align indirect path in `decl_initializer_alloc` is gated off when
+  `asan_g`/`bcheck` is active (the native-shadow stack instrumentation and the
+  bcheck redzone both assume an rbp-relative slot), so `alignas(32+)` autos are
+  under-aligned in those modes (verified: `-O0` gives aligned, `-fsanitize=address`
+  and `-b` give unaligned). Needs the shadow/redzone bookkeeping to follow the
+  runtime-aligned pointer, or a separate over-aligned+instrumented slot scheme.
+- [ ] **Extend auto over-alignment to the PE (Windows) targets** — x86_64/arm64/
+  i386 PE are still gated off (`STACK_OVERALIGN_MAX` undefined) because PE routes
+  VLA alloc through the `__chkstk`/alloca helper (align-16 only); needs the helper
+  parameterized on alignment + a bare-`VT_LLOCAL` load case on the PE paths. No
+  native Windows runner here, so validate on a Windows-arm64/x64 cell.
 
 - [x] **`-pedantic-errors` gaps (accepts-invalid)** — found while adding
   `cli/c9911_diag_gaps3`: (a) FIXED — `long long` under `-std=c89 -pedantic-errors`
@@ -109,9 +135,30 @@ Research / investigative:
   genuine parser sites (declaration + compound literal) since the shared
   `init_putv`/`decl_initializer_alloc` machinery is reused for internal spills.
   Regression step in `cli/c9911_diag_gaps3` (dh16); `exec/errors_and_warnings`
-  and `exec/atomic_misc` goldens updated.
+  and `exec/atomic_misc` goldens updated. Follow-up (found by the `[x]`-audit,
+  FIXED): incompatible-pointer `==`/`!=` comparison and `?:` conditional expressions
+  now also escalate to a hard error under `-pedantic-errors` (via
+  `type_incompatibility_warning`), not just init/assign; regression in
+  `cli/c9911_diag_gaps5`.
 
-## 6 — open design space
+- [x] **`-std=c89 -pedantic-errors` C99-feature gaps (batch 1)** — FIXED three
+  accepts-invalid gaps (mcc emitted no diagnostic at all): flexible array members,
+  trailing comma in an enumerator list, and `for`-loop initial declarations are now
+  each diagnosed as "a C99 feature" under C89 pedantic mode (clean under c99+ and in
+  non-pedantic c89). Regression case `cli/c9911_diag_gaps4`.
+- [x] **`-std=c89 -pedantic-errors` C99-feature gaps (batch 2a)** — FIXED three
+  more accepts-invalid gaps: compound literals and variable length arrays now
+  diagnosed as "a C99 feature" under C89 pedantic; hexadecimal floating constants
+  diagnosed in the number lexer; the `long long` integer-constant suffix (`1LL`/
+  `1ULL`) now diagnosed (an audit gap in the earlier `long long` fix, which covered
+  only the type-specifier forms). Regression case `cli/c9911_diag_gaps5`.
+- [ ] **`-std=c89 -pedantic-errors` C99-feature gaps (batch 2b)** — remaining
+  accepts-invalid gaps: declaration-after-statement (mixed declarations), `inline`,
+  `restrict` (both carry a `-std=gnu89` false-positive risk — need a strict-vs-gnu
+  gate), `//` line comments (gcc makes this a hard error even without
+  `-pedantic-errors`), and non-ASCII/UCN identifiers. Plus one C11 gap: an empty
+  initializer `{}` (a C23 feature) not diagnosed under `-std=c11 -pedantic-errors`.
+  Same fix shape — a `mcc_pedantic(...)` at each site guarded on `cversion`.
 
 - [ ] **Research the §28 rewrite-rule IR** — match→rewrite templates over the
   captured arena that the §22/§24 search composes into compound transforms, scored
@@ -248,6 +295,15 @@ Research / investigative:
   partial, with pc, shadow byte, and granule offset. The cli asan cases assert
   the class. (Full address + shadow-dump still needs the fault address preserved
   to the trap.)
+- [ ] **Preserve the faulting address to the asan-shadow trap** (found by the
+  `[x]`-audit) — the `-fasan-shadow` SIGILL report has the class, pc, shadow byte,
+  and granule offset but is missing the faulting data address, access type
+  (READ/WRITE) and size, the region-relative locator ("N bytes after M-byte region
+  [lo,hi)"), and the "Shadow bytes around the buggy address" hex dump that real
+  ASan prints. Root cause: the codegen traps with only the shadow byte (rax) and
+  granule offset (rdx) live — the fault address is not carried to the `ud2`.
+  `on_sigill` in `runtime/lib/mccasan.c` can format the rest once the address is
+  preserved.
 - [ ] **Implement the clang-compatible `__ubsan_handle_*` diagnostic ABI** — trap
   mode ships (`ud2` on x86_64, `brk` on arm64/riscv64); no handler ABI exists.
 - [ ] **Implement a PE/mingw trap-mode UBSan** — trap mode is gated ELF-only.
@@ -323,6 +379,12 @@ Research / investigative:
 
 ## 0 — fully specified or execution-blocked (no open design questions)
 
+- [ ] **Add a global `MCC_TRACE(args...)` tracing macro** — variadic macro that
+  prints `FILE:LINE func` plus the passed args (and any other helpful context) for
+  rapid feature prototyping/debugging. Instrument every function entry point and
+  every branch point with it. Compiled out by default (no-op); enabled only in an
+  `MCC_CONFIG_TRACE=ON` build. Wire `MCC_CONFIG_TRACE=ON` into the `debug` CMake
+  preset by default for now.
 - [x] **Add CMake auto-link of `runtime/lib/mccasan.c`** — `-fasan-shadow` now
   auto-links `mccasan.o` (built beside `libmccrt.a`, x86_64/ELF-native only) ahead
   of libc via `mcc_add_support`; manual-link path retained by one cli case.

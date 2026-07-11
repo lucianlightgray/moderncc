@@ -622,6 +622,11 @@ ST_FUNC void load(int r, SValue *sv) {
 		return;
 	}
 
+	if (svr == VT_LLOCAL) {
+		arm64_ldrx(0, 3, intr(r), 29, svcoff);
+		return;
+	}
+
 	if (svr == VT_JMP || svr == VT_JMPI) {
 		int t = (svr == VT_JMPI);
 		arm64_movimm(intr(r), t);
@@ -2337,6 +2342,17 @@ ST_FUNC void gen_vla_alloc(CType *type, int align) {
 		o(0x91003c00 | r | r << 5);
 	o(0x927cec00 | r | r << 5);
 	o(0xcb2063ff | r << 16);
+	{
+		int a = align < 16 ? 16 : align;
+		if (a > 16) {
+			int e = arm64_encode_bimm64((uint64_t)(-(int64_t)a));
+			if (e < 0)
+				mcc_error("unsupported over-alignment %d", a);
+			o(0x910003e0 | r);
+			o(0x92000000 | r | (r << 5) | ((uint32_t)e << 10));
+			o(0x9100001f | (r << 5));
+		}
+	}
 	vpop();
 #if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check) {

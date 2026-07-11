@@ -288,6 +288,10 @@ ST_FUNC void load(int r, SValue *sv) {
 		int br = load_symofs(r, sv, 0, &fc);
 		assert(is_ireg(r));
 		EI(0x13, 0, rr, br, fc);
+	} else if (v == VT_LLOCAL) {
+		int br = load_symofs(r, sv, 0, &fc);
+		assert(is_ireg(r));
+		EI(0x03, 3, rr, br, fc);
 	} else if (v < VT_CONST) {
 		if (is_freg(r) && is_freg(v))
 			ER(0x53, 0, rr, freg(v), freg(v), bt == VT_DOUBLE ? 0x11 : 0x10);
@@ -1497,6 +1501,17 @@ ST_FUNC void gen_vla_alloc(CType *type, int align) {
 		EI(0x13, 0, rr, rr, 15);
 	EI(0x13, 7, rr, rr, -16);
 	ER(0x33, 0, 2, 2, rr, 0x20);
+	{
+		int a = align < 16 ? 16 : align;
+		if (a > 16) {
+			if (a <= 2048) {
+				EI(0x13, 7, 2, 2, -a);
+			} else {
+				load_large_constant(rr, 0, -a);
+				ER(0x33, 7, 2, 2, rr, 0);
+			}
+		}
+	}
 	vpop();
 #if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check) {

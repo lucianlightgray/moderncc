@@ -861,6 +861,42 @@ static const cli_case_t cli_cases[] = {
 		 "grep -oE 'error: initialization from incompatible pointer type'; echo END",
 		 "duplicate case value\nswitch expected\ntoo many 'default'\ncannot break\nduplicate label 'L'\nlabel 'nowhere' used but not defined\nincompatible redefinition of 'T'\ndeclaration of void object\ndeclaration of an array of functions\nduplicate member 'm'\nassignment of read-only location\ncannot take address of bit-field\nwidth of 'b' exceeds its type\nint is not 999 bytes\nISO C90 does not support 'long long'\ninitialization from incompatible pointer type\nerror: initialization from incompatible pointer type\nEND\n"},
 
+		{"c9911_diag_gaps4", "",
+		 "printf 'struct S{int n; int a[];};\\nint main(void){return 0;}\\n' > {W}/di1.c && "
+		 "{MCC} -B{B} -I{I} -std=c89 -pedantic-errors -c {W}/di1.c -o {W}/di1.o 2>&1 | "
+		 "grep -oE 'flexible array members are a C99 feature'; "
+		 "printf 'enum E{A,B,};\\nint main(void){return B;}\\n' > {W}/di2.c && "
+		 "{MCC} -B{B} -I{I} -std=c89 -pedantic-errors -c {W}/di2.c -o {W}/di2.o 2>&1 | "
+		 "grep -oE 'trailing comma in enumerator list is a C99 feature'; "
+		 "printf 'int main(void){for(int i=0;i<3;i++); return 0;}\\n' > {W}/di3.c && "
+		 "{MCC} -B{B} -I{I} -std=c89 -pedantic-errors -c {W}/di3.c -o {W}/di3.o 2>&1 | "
+		 "grep -oE \"'for' loop initial declarations are a C99 feature\"; "
+		 "{MCC} -B{B} -I{I} -std=c99 -pedantic-errors -c {W}/di3.c -o {W}/di3.o 2>&1 && echo C99_OK; "
+		 "{MCC} -B{B} -I{I} -std=c89 -c {W}/di2.c -o {W}/di2.o 2>&1 && echo NONPED_OK; echo END",
+		 "flexible array members are a C99 feature\ntrailing comma in enumerator list is a C99 feature\n'for' loop initial declarations are a C99 feature\nC99_OK\nNONPED_OK\nEND\n"},
+
+		{"c9911_diag_gaps5", "",
+		 "printf 'int f(int n){int a[n]; return sizeof a;}\\n' > {W}/dj1.c && "
+		 "{MCC} -B{B} -I{I} -std=c89 -pedantic-errors -c {W}/dj1.c -o {W}/dj1.o 2>&1 | "
+		 "grep -oE 'variable length arrays are a C99 feature'; "
+		 "printf 'int *f(void){return (int[]){1,2};}\\n' > {W}/dj2.c && "
+		 "{MCC} -B{B} -I{I} -std=c89 -pedantic-errors -c {W}/dj2.c -o {W}/dj2.o 2>&1 | "
+		 "grep -oE 'compound literals are a C99 feature'; "
+		 "printf 'double d=0x1.5p3;\\n' > {W}/dj3.c && "
+		 "{MCC} -B{B} -I{I} -std=c89 -pedantic-errors -c {W}/dj3.c -o {W}/dj3.o 2>&1 | "
+		 "grep -oE 'hexadecimal floating constants are a C99 feature'; "
+		 "printf 'long x(void){return 1LL;}\\n' > {W}/dj4.c && "
+		 "{MCC} -B{B} -I{I} -std=c89 -pedantic-errors -c {W}/dj4.c -o {W}/dj4.o 2>&1 | "
+		 "grep -oE \"ISO C90 does not support .long long.\"; "
+		 "printf 'int c(int*a,char*b){return a==b;}\\n' > {W}/dj5.c && "
+		 "{MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/dj5.c -o {W}/dj5.o 2>&1 | "
+		 "grep -oE 'pointer type mismatch in comparison'; "
+		 "printf 'void *t(int c,int*a,char*b){return c?a:b;}\\n' > {W}/dj6.c && "
+		 "{MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/dj6.c -o {W}/dj6.o 2>&1 | "
+		 "grep -oE 'pointer type mismatch in conditional expression'; "
+		 "{MCC} -B{B} -I{I} -std=c99 -pedantic-errors -c {W}/dj1.c -o {W}/dj1.o 2>&1 && echo C99_OK; echo END",
+		 "variable length arrays are a C99 feature\ncompound literals are a C99 feature\nhexadecimal floating constants are a C99 feature\nISO C90 does not support 'long long'\npointer type mismatch in comparison\npointer type mismatch in conditional expression\nC99_OK\nEND\n"},
+
 		{"raw_utf8_identifier", "",
 		 "printf 'int caf\\303\\251 = 1;\\nint main(void){return caf\\303\\251-1;}\\n' > {W}/ui1.c && "
 		 "{MCC} -B{B} -I{I} {W}/ui1.c -o {W}/ui1 && {W}/ui1; echo \"valid=$?\"; "

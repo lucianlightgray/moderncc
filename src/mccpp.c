@@ -2553,6 +2553,12 @@ static void parse_number(const char *p) {
 	if (ch == '.' ||
 			((ch == 'e' || ch == 'E') && b == 10) ||
 			((ch == 'p' || ch == 'P') && (b == 16 || b == 2))) {
+		if (b == 16 && mcc_state->cversion < 199901 && mcc_state->warn_pedantic) {
+			if (mcc_state->pedantic_errors)
+				mcc_error("hexadecimal floating constants are a C99 feature");
+			else
+				mcc_warning("hexadecimal floating constants are a C99 feature");
+		}
 		if (b != 10) {
 			frac_bits = 0;
 			*q = '\0';
@@ -2726,6 +2732,13 @@ static void parse_number(const char *p) {
 				if (lcount == 0)
 					l0 = ch;
 				lcount++;
+				if (lcount == 2 && mcc_state->cversion < 199901 &&
+						mcc_state->warn_pedantic) {
+					if (mcc_state->pedantic_errors)
+						mcc_error("ISO C90 does not support 'long long'");
+					else
+						mcc_warning("ISO C90 does not support 'long long'");
+				}
 				ch = *p++;
 			} else if (t == 'U') {
 				if (ucount >= 1)
