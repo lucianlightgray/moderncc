@@ -268,8 +268,15 @@ Research / investigative:
 - [ ] **Audit each `mcc_skip_test` for per-triple ungating** — i386-linux blocked
   (no 32-bit sysroot); aarch64/armv7-linux partial (qemu is x86-TSO — only the
   memory-model-independent subset); arm64-windows blocked (no native arm64 ref cc).
-- [ ] **Verify `Poison` lowering.**
-- [ ] **Verify the `TranslationUnit` node.**
+- [x] **Verify `Poison` lowering.** `AST_Poison` is a real in-arena kind emitted
+  by DSE / SCCP / jump-thread / bit-flag-drop (retag-in-place, children cleared);
+  replay skips it via the `default: break;` in `ast_replay_bb`/`ast_replay_value`
+  (a no-op — correct). Added `cli/ast_poison_lowering`: asserts DSE+SCCP produce
+  `Poison` nodes at -O1 and the program stays correct at -O1/-O2.
+- [x] **Verify the `TranslationUnit` node.** Moot: `AST_TranslationUnit` is the
+  enum-zero slot only — no pass ever creates a node of this kind (the arena root
+  is always an `AST_BasicBlock` from `ast_func_begin`). Nothing to lower; kept as
+  the named zero sentinel.
 - [ ] **Revisit the `Bind`-marker** — only if the CST can't answer a `-g`/LSP query.
 - [ ] **Revisit the `k` always-inline depth policy.**
 - [ ] **Revisit size-gated outline.**

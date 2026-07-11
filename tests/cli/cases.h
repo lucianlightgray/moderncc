@@ -146,6 +146,13 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -O1 {W}/bf.c -o {W}/bfx && {W}/bfx ; echo rc=$?",
 		 "bitflag-candidate: classify cluster=4\nrc=52\n"},
 
+		{"ast_poison_lowering", "optimizer",
+		 "printf 'int dse(int x){int a;a=5;a=7;a=x+1;return a;}\\nint sccp(int x){if(1)return x*2;else return -999;}\\nint bf(int f){int r=0;if(f&1)r+=1;if(f&2)r+=2;if(f&4)r+=4;return r;}\\nint main(void){int ok=dse(10)==11&&sccp(3)==6&&bf(5)==5;return ok?0:1;}\\n' > {W}/pz.c && "
+		 "{MCC} -B{B} -O1 {W}/pz.c -o {W}/pz && {W}/pz && echo o1ok && "
+		 "{MCC} -B{B} -O2 {W}/pz.c -o {W}/pz2 && {W}/pz2 && echo o2ok && "
+		 "MCC_AST_REPLAY_DUMP=1 {MCC} -B{B} -O1 -c {W}/pz.c -o {W}/pz.o 2>&1 | grep -oE 'ast-dse|ast-sccp|Poison' | sort -u | tr '\\n' ','",
+		 "o1ok\no2ok\nPoison,ast-dse,ast-sccp,"},
+
 		{"bitflag_transform", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'int g;int f(int x){if(x==1||x==3||x==5||x==7||x==9)return 1;return 0;}int c(int x){if(x==2)g=4;else if(x==4)g=4;else if(x==6)g=4;else if(x==8)g=4;else if(x==10)g=4;else g=7;return g;}int main(void){int k[10]={-1,0,1,2,3,64,65,7,9,10},s=0;for(int i=0;i<10;i++)s+=f(k[i])+c(k[i]);return s;}\\n' > {W}/bft.c && "
 		 "MCC_AST_REPLAY_DUMP=1 MCC_AST_BITFLAG=1 {MCC} -B{B} -I{I} -O1 -c {W}/bft.c -o {W}/bft.o 2>&1 | grep -c 'ast-bitflag' ; "
