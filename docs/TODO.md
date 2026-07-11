@@ -2009,6 +2009,18 @@ output stays byte-identical to the reference and the fixpoint holds. This item
 flips that: make the AST replay + optimization code paths **ON by default**
 and prove nothing regresses.
 
+BLAST-RADIUS EVIDENCE (2026-07-10, native arm64): this is a **re-baseline
+program, not a flip.** Forcing a single gate on changes `-O2` object bytes for
+any TU where the pass fires — measured on 3 sample TUs: `CPROP_JOIN`, `BITFLAG`,
+`SETHI` each change bytes where they fire (e.g. n1_join, n3_window), `CSE_JOIN`/
+`CALL_WINDOW` unchanged only because they didn't fire on those samples. So
+default-ON necessarily perturbs the byte-identity goldens (`dash-s-bytes`,
+`--ast` columns, per-target objects) and the 3-stage fixpoint's own bytes — all
+of which must be intentionally re-baselined per target, pass by pass, not
+"fixed." The fixpoint still has to *converge* (stage2==3==4) under the new
+defaults; it just converges to different bytes than today. That re-baseline +
+per-target/per-runner reconvergence is the actual work here.
+
 - [ ] **Enumerate every gate.** List all `ast_*_env` / `MCC_AST_*` gates and
       `-O<n>`-conditioned passes (`ast_replay_env` at `s1->optimize>=1`,
       `MCC_AST_PROMOTE`/`INLINE`/`TEMPLATES`/`CPROP_JOIN`/`CSE_JOIN`/`BITFLAG`/
