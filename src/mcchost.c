@@ -16,6 +16,8 @@
 #include <sys/utsname.h>
 #include <dirent.h>
 #include <unistd.h>
+#include <signal.h>
+#include <errno.h>
 #endif
 
 ST_FUNC int host_stderr_isatty(void) {
@@ -499,6 +501,8 @@ ST_FUNC MAYBE_UNUSED int host_spawn_ex(const char *const *argv, const HostSpawnO
 		pid = fork();
 		if (pid == 0) {
 			int fo, fe;
+			if (o->timeout_ms)
+				setpgid(0, 0);
 			if (o->cwd && chdir(o->cwd))
 				_exit(127);
 			if (want_po) {
@@ -556,8 +560,32 @@ ST_FUNC MAYBE_UNUSED int host_spawn_ex(const char *const *argv, const HostSpawnO
 			close(pe[0]);
 		{
 			int status;
-			if (waitpid(pid, &status, 0) == pid && WIFEXITED(status))
+			if (o->timeout_ms) {
+				unsigned t0 = host_clock_ms();
+				for (;;) {
+					pid_t r = waitpid(pid, &status, WNOHANG);
+					if (r == pid) {
+						if (WIFEXITED(status))
+							ret = WEXITSTATUS(status);
+						break;
+					}
+					if (r < 0) {
+						if (errno == EINTR)
+							continue;
+						break;
+					}
+					if (host_clock_ms() - t0 >= o->timeout_ms) {
+						kill(-pid, SIGKILL);
+						kill(pid, SIGKILL);
+						waitpid(pid, &status, 0);
+						ret = HOST_SPAWN_TIMEOUT;
+						break;
+					}
+					usleep(2000);
+				}
+			} else if (waitpid(pid, &status, 0) == pid && WIFEXITED(status)) {
 				ret = WEXITSTATUS(status);
+			}
 		}
 	}
 #endif

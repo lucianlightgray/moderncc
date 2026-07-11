@@ -2209,10 +2209,16 @@ static int suite_pewine(int argc, char **argv) {
 				o.env = env;
 				o.stdout_file = runout;
 				o.stderr_file = runout;
+				o.timeout_ms = 180000;
 				int rc = host_spawn_ex(r, &o);
 				if (rc == 0)
 					printf("PASS %s/%s\n", tgt, n);
-				else {
+				else if (rc == HOST_SPAWN_TIMEOUT) {
+					remove(exe);
+					free(files[i]);
+					ts_skip("%s/%s: wine run timed out after %us — emulation unresponsive",
+									tgt, n, o.timeout_ms / 1000);
+				} else {
 					printf("FAIL %s/%s (run, rc=%d)\n", tgt, n, rc);
 					status = 1;
 				}

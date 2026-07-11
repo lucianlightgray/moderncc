@@ -3893,7 +3893,8 @@ if(MCC_BUILD_TESTS)
                 --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"
                 --work "${CMAKE_BINARY_DIR}/pe-wine-work")
     set_tests_properties(pe-wine-conformance PROPERTIES
-        FIXTURES_REQUIRED MCC_BUILT LABELS "wine" SKIP_RETURN_CODE 77)
+        FIXTURES_REQUIRED MCC_BUILT LABELS "wine" SKIP_RETURN_CODE 77
+        TIMEOUT 600)
 
     if(MCC_TARGETOS STREQUAL "WIN32" AND NOT CMAKE_CROSSCOMPILING)
 

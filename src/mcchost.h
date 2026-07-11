@@ -214,7 +214,10 @@ typedef struct HostSpawnOpts {
 	const char *stdout_file;
 	const char *stderr_file;
 	char **stdout_buf, **stderr_buf;
+	unsigned timeout_ms;
 } HostSpawnOpts;
+
+#define HOST_SPAWN_TIMEOUT 124
 
 ST_FUNC int host_spawn_ex(const char *const *argv, const HostSpawnOpts *o);
 
