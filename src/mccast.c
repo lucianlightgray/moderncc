@@ -528,6 +528,7 @@ static int ast_sethi_env;
 static int ast_bitflag_env;
 static int ast_bitflag_min;
 static int ast_cprop_join_env;
+static int ast_narrow_env;
 static int ast_cse_join_env;
 static int ast_call_window_env;
 static int ast_licm_temp_env;
@@ -793,6 +794,7 @@ void ast_configure(MCCState *s1) {
 	if (ast_bitflag_min < 3)
 		ast_bitflag_min = 5;
 	ast_cprop_join_env = ast_env_gate("MCC_AST_CPROP_JOIN", s1->optimize >= 2);
+	ast_narrow_env = ast_env_gate("MCC_AST_NARROW", 0);
 	ast_cse_join_env = ast_env_gate("MCC_AST_CSE_JOIN", s1->optimize >= 2);
 	ast_call_window_env = ast_env_gate("MCC_AST_CALL_WINDOW", s1->optimize >= 2);
 	ast_licm_temp_env = ast_env_gate("MCC_AST_LICM_TEMP", 0);
@@ -4077,6 +4079,139 @@ static int ast_ident_run(AstArena *a) {
 	return sig;
 }
 
+static int ast_narrow_bs(int t) {
+	return t & (VT_BTYPE | VT_UNSIGNED);
+}
+
+static int ast_narrow_class(AstArena *a, AstLocal op, int tt) {
+	int ot;
+	uint64_t oref;
+	if (!ast_ident_etype(a, op, &ot, &oref) || !ast_ident_intt(ot) ||
+			(ot & VT_VOLATILE))
+		return -1;
+	if (ast_narrow_bs(ot) == ast_narrow_bs(tt))
+		return 0;
+	if (ast_kind(a, op) == AST_Convert && ast_nchild(a, op) == 1) {
+		AstLocal inner = ast_first_child(a, op);
+		int it;
+		uint64_t iref;
+		if (ast_ident_etype(a, inner, &it, &iref) && ast_ident_intt(it) &&
+				!(it & VT_VOLATILE) && ast_narrow_bs(it) == ast_narrow_bs(tt) &&
+				(ot & VT_UNSIGNED) == (it & VT_UNSIGNED) &&
+				ast_ii_width(ot) >= ast_ii_width(tt))
+			return 1;
+	}
+	{
+		int lt;
+		uint64_t lv;
+		if (ast_ident_cval(a, op, &lt, &lv))
+			return 2;
+	}
+	return 3;
+}
+
+static AstLocal ast_narrow_make(AstArena *a, AstLocal op, int tt, int cls) {
+	switch (cls) {
+	case 1: {
+		AstLocal inner = ast_first_child(a, op);
+		ast_clear_children(a, op);
+		ast_set_kind(a, op, AST_Poison);
+		return inner;
+	}
+	case 2: {
+		int lt;
+		uint64_t lv;
+		ast_ident_cval(a, op, &lt, &lv);
+		ast_set_type(a, op, tt, 0);
+		ast_set_ival(a, op, value64(lv, tt));
+		return op;
+	}
+	case 3: {
+		AstLocal cvt = ast_node(a, AST_Convert);
+		ast_set_type(a, cvt, tt, 0);
+		ast_add_child(a, cvt, op);
+		return cvt;
+	}
+	}
+	return op;
+}
+
+static int ast_narrow_binop(int op) {
+	switch (op) {
+	case '+':
+	case '-':
+	case '*':
+	case '&':
+	case '|':
+	case '^':
+		return 1;
+	}
+	return 0;
+}
+
+static int ast_narrow_binary(AstArena *a, AstLocal bin, int tt) {
+	if (ast_kind(a, bin) != AST_Binary || ast_nchild(a, bin) != 2)
+		return 0;
+	if (!ast_ident_intt(tt) || (tt & VT_VOLATILE) || ast_ii_width(tt) < 4)
+		return 0;
+	int op = ast_op(a, bin);
+	if (!ast_narrow_binop(op))
+		return 0;
+	int wt;
+	uint64_t wref;
+	if (!ast_ident_etype(a, bin, &wt, &wref) || !ast_ident_intt(wt) ||
+			(wt & VT_VOLATILE) || ast_ii_width(wt) <= ast_ii_width(tt))
+		return 0;
+	AstLocal op0 = ast_child(a, bin, 0), op1 = ast_child(a, bin, 1);
+	int c0 = ast_narrow_class(a, op0, tt);
+	int c1 = ast_narrow_class(a, op1, tt);
+	if (c0 < 0 || c1 < 0)
+		return 0;
+	if (c0 != 0 && c0 != 1 && c1 != 0 && c1 != 1)
+		return 0;
+	AstLocal na = ast_narrow_make(a, op0, tt, c0);
+	AstLocal nb = ast_narrow_make(a, op1, tt, c1);
+	ast_set_type(a, bin, tt, 0);
+	ast_clear_children(a, bin);
+	ast_add_child(a, bin, na);
+	ast_add_child(a, bin, nb);
+	return 1;
+}
+
+static int ast_narrow_node(AstArena *a, AstLocal n) {
+	uint16_t k = ast_kind(a, n);
+	if (k == AST_Convert && ast_nchild(a, n) == 1) {
+		AstLocal bin = ast_first_child(a, n);
+		if (ast_narrow_binary(a, bin, ast_type_t(a, n))) {
+			ast_ident_adopt(a, n, bin);
+			return 1;
+		}
+		return 0;
+	}
+	if (k == AST_Store && ast_nchild(a, n) == 2) {
+		AstLocal lval = ast_child(a, n, 0), rval = ast_child(a, n, 1);
+		int tt;
+		uint64_t tref;
+		if (!ast_ident_etype(a, lval, &tt, &tref))
+			return 0;
+		return ast_narrow_binary(a, rval, tt);
+	}
+	return 0;
+}
+
+static int ast_narrow_rec(AstArena *a, AstLocal n) {
+	int sig = 0;
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE;
+			 c = ast_next_sib(a, c))
+		sig += ast_narrow_rec(a, c);
+	sig += ast_narrow_node(a, n);
+	return sig;
+}
+
+static int ast_narrow_run(AstArena *a) {
+	return ast_narrow_rec(a, ast_root(a));
+}
+
 #define AST_CPROP_MAX 128
 static int ast_cprop_koff[AST_CPROP_MAX];
 static int ast_cprop_ktt[AST_CPROP_MAX];
@@ -6359,6 +6494,7 @@ void ast_func_end(Sym *sym) {
 			int bfs = 0;
 			int sethis = 0;
 			int tcos = 0;
+			int narrows = 0;
 			jmp_buf ast_outer_jmp;
 			int ast_outer_en = mcc_state->error_set_jmp_enabled;
 			int ast_saved_nberr = mcc_state->nb_errors;
@@ -6388,6 +6524,7 @@ void ast_func_end(Sym *sym) {
 				ast_ltemp_n = 0;
 				bfolds = faithful && ast_templates_env ? ast_bfold_run(ast_cur) : 0;
 				idents = faithful && ast_templates_env ? ast_ident_run(ast_cur) : 0;
+				narrows = faithful && ast_narrow_env ? ast_narrow_run(ast_cur) : 0;
 				cprops = faithful && ast_templates_env ? ast_cprop_run(ast_cur) : 0;
 				cses = faithful && ast_templates_env ? ast_cse_run(ast_cur) : 0;
 				licms = faithful && ast_templates_env ? ast_licm_folds : 0;
@@ -6399,6 +6536,7 @@ void ast_func_end(Sym *sym) {
 				tcos = faithful && ast_templates_env ? ast_tco_run(ast_cur, sym) : 0;
 				int do_bfold = bfolds > 0;
 				int do_ident = idents > 0;
+				int do_narrow = narrows > 0;
 				int do_cprop = cprops > 0;
 				int do_cse = cses > 0;
 				int do_licm = licms > 0;
@@ -6429,19 +6567,20 @@ void ast_func_end(Sym *sym) {
 				if (ast_opt_limit >= 0 && ast_opt_total >= ast_opt_limit) {
 					do_inline = do_promote = do_bfold = do_ident = do_cprop = 0;
 					do_cse = do_licm = do_dse = do_sccp = do_jt = do_bf = do_sethi = do_tco = 0;
+					do_narrow = 0;
 					ast_promo_n = 0;
 				}
 				if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
 						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_sethi ||
-						do_tco)
+						do_tco || do_narrow)
 					ast_opt_total++;
 				if (faithful && !do_inline && !do_promote && !do_bfold && !do_ident &&
 						!do_cprop && !do_cse && !do_licm && !do_dse && !do_sccp && !do_jt &&
-						!do_bf && !do_sethi && !do_tco)
+						!do_bf && !do_sethi && !do_tco && !do_narrow)
 					loc = saved_loc;
 				if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
 						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_sethi ||
-						do_tco) {
+						do_tco || do_narrow) {
 					/* §22 in-process per-function config trial. Inlining trades size (a
 					   grafted body vs a call), so its size-optimality is per-function.
 					   Under MCC_AST_PERFN_INPROC, re-emit the SAME captured tree with
@@ -6468,7 +6607,7 @@ void ast_func_end(Sym *sym) {
 		anon_sym = saved_anon;                                                        \
 		ast_fconst_i = (do_bfold || do_ident || do_cprop || do_cse || do_licm ||     \
 										do_dse || do_sccp || do_jt || do_bf || do_sethi ||           \
-										do_tco || (ui))                                              \
+										do_tco || do_narrow || (ui))                                 \
 											 ? ast_fconst_n                                            \
 											 : 0;                                                      \
 		ast_locrec_i = 0;                                                            \
@@ -6551,6 +6690,8 @@ void ast_func_end(Sym *sym) {
 					fprintf(stderr, "[ast-bfold] %d %s\n", bfolds, funcname);
 				if (idents)
 					fprintf(stderr, "[ast-ident] %d %s\n", idents, funcname);
+				if (narrows)
+					fprintf(stderr, "[ast-narrow] %d %s\n", narrows, funcname);
 				if (cprops)
 					fprintf(stderr, "[ast-cprop] %d %s\n", cprops, funcname);
 				if (cses)

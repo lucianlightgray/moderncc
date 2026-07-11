@@ -1567,6 +1567,32 @@ restructuring (following the `ast_bf_build`/`ast_tco_run` node-construction
 precedent) — i.e. phase-(b), folded into the §22 search under the §28 oracle as
 already planned. Tracked as Bucket-B; nothing safe to land standalone.
 
+PHASE-(b) FIRST INCREMENT — LANDED (`MCC_AST_NARROW`, default off, 2026-07-11).
+**Key refinement: the beneficial slice needs NO range lattice.** For the
+truncation-DISTRIBUTIVE ops `{+ − * & | ^}`, truncation is a ring homomorphism
+mod 2ⁿ: `trunc_n(X op Y) == trunc_n(trunc_n(X) op trunc_n(Y))`. So when a wide
+integer arithmetic result is IMMEDIATELY narrowed to a `≥int` type and that
+narrowing is its SOLE consumer, the whole computation is recomputed in the
+narrow type with **no range proof and no observability question** — the bits
+the narrowing discards are discarded regardless. Two sole-consumer triggers:
+(A) `AST_Convert`-to-tt of a wide arith Binary (explicit `(int)(long_expr)`,
+return/arg/init casts); (B) `AST_Store` whose lvalue type is tt and rval is a
+wide arith Binary (the implicit `int r = <long expr>` form, captured with no
+Convert node) — **trigger (B) is what fires on `mcc.c`** (14 functions); (A)
+alone fired 0×. Fires only when ≥1 operand is narrow-native (already tt, or a
+widen that cancels), so a truncation is never added without removing ≥ as many
+widenings → never a regression. Excludes `/ % << >>`/comparisons (non-
+distributive), sub-`int` tt (promotion un-narrows), volatile, pointers.
+Validated dual-arch (independently re-verified on main): gate-off byte-NEUTRAL
+(patched vs pristine external objects IDENTICAL `-O0..-O3`); **whole-binary
+gate-ON `-O2` self-host fixpoint CONVERGES with narrowing firing on both arm64
+(`89b8c0fa` ×3) and x86_64 (`56a28cec` ×3, binary SHRANK — REX.W/widenings
+dropped, real opt)**; adversarial boundary/overflow sweep (INT_MIN/MAX, 2³¹,
+2³², LLONG_MIN/MAX, signed+unsigned, all distributive ops) matches `-O0` AND
+clang on both arches. **Remaining §29 (deferred to the lattice/§22 search):**
+non-distributive `/ % << >>`/comparisons, and OUTER-narrow ELIMINATION (drop a
+cast when a value provably fits) — those genuinely need the range lattice.
+
 A search-driven pass that tries re-typing values via the `AST_Convert`
 node: for each value/expression, cast it to alternative representations
 (narrow/widen integer widths, signed↔unsigned, int↔float↔double) and keep
