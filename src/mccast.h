@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "mccname.h"
+
 typedef enum AstKind {
 	AST_TranslationUnit = 0,
 	AST_BasicBlock,

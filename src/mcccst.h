@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "mccname.h"
+
 typedef enum CstKind {
 	CST_TranslationUnit = 0,
 	CST_Declaration,

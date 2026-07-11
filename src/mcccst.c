@@ -32,7 +32,7 @@ struct CstArena {
 	CstHash *struct_hash;
 	CstHash *trivia_hash;
 	uint64_t *sym_ref;
-	uint32_t *slot_key;
+	uint32_t *branch_tag;
 
 	uint16_t *tok_kind;
 	uint32_t *leaf_off;
@@ -90,7 +90,7 @@ static void cst_grow(CstArena *a, CstLocal need) {
 	G(struct_hash);
 	G(trivia_hash);
 	G(sym_ref);
-	G(slot_key);
+	G(branch_tag);
 	G(tok_kind);
 	G(leaf_off);
 	G(leaf_len);
@@ -129,7 +129,7 @@ void cst_arena_free(CstArena *a) {
 	free(a->struct_hash);
 	free(a->trivia_hash);
 	free(a->sym_ref);
-	free(a->slot_key);
+	free(a->branch_tag);
 	free(a->tok_kind);
 	free(a->leaf_off);
 	free(a->leaf_len);
@@ -155,7 +155,7 @@ static CstLocal cst_alloc_node(CstArena *a, uint16_t kind) {
 	a->struct_hash[n].lo = a->struct_hash[n].hi = 0;
 	a->trivia_hash[n].lo = a->trivia_hash[n].hi = 0;
 	a->sym_ref[n] = CST_ID_NONE;
-	a->slot_key[n] = 0;
+	a->branch_tag[n] = 0;
 	a->tok_kind[n] = 0;
 	a->leaf_off[n] = 0;
 	a->leaf_len[n] = 0;
@@ -542,16 +542,16 @@ CstId cst_sym_ref(const CstArena *a, CstLocal use) {
 }
 
 void cst_mark_branch(CstArena *a, CstLocal node, uint32_t branch_ord) {
-	a->slot_key[node] = branch_ord + 1;
+	a->branch_tag[node] = branch_ord + 1;
 }
 
 uint32_t cst_branch_ord(const CstArena *a, CstLocal node) {
-	uint32_t s = a->slot_key[node];
+	uint32_t s = a->branch_tag[node];
 	return s ? s - 1 : 0;
 }
 
 static int cst_is_branch(const CstArena *a, CstLocal node) {
-	return a->slot_key[node] != 0;
+	return a->branch_tag[node] != 0;
 }
 
 void cst_set_include_target(CstArena *a, CstLocal node, uint32_t template_id) {
@@ -821,7 +821,7 @@ int cst_snapshot_save(const CstArena *a, const char *path) {
 	W(struct_hash);
 	W(trivia_hash);
 	W(sym_ref);
-	W(slot_key);
+	W(branch_tag);
 	W(tok_kind);
 	W(leaf_off);
 	W(leaf_len);
@@ -863,7 +863,7 @@ CstArena *cst_snapshot_load(const char *path) {
 	R(struct_hash);
 	R(trivia_hash);
 	R(sym_ref);
-	R(slot_key);
+	R(branch_tag);
 	R(tok_kind);
 	R(leaf_off);
 	R(leaf_len);

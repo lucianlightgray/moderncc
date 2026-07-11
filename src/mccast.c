@@ -36,6 +36,7 @@ struct AstArena {
 
 	AstLocal count;
 	AstLocal cap;
+	uint64_t epoch;
 };
 
 static void ast_grow(AstArena *a, AstLocal need) {
@@ -63,6 +64,12 @@ static void ast_grow(AstArena *a, AstLocal need) {
 	a->cap = ncap;
 }
 
+#if defined(MCC_INTERNAL) && MCC_CONFIG_OPTIMIZER
+static void ast_du_invalidate(const AstArena *a);
+static void ast_memo_invalidate(const AstArena *a);
+static void ast_hash_invalidate(const AstArena *a);
+#endif
+
 AstArena *ast_arena_new(void) {
 	AstArena *a = calloc(1, sizeof *a);
 	return a;
@@ -70,11 +77,17 @@ AstArena *ast_arena_new(void) {
 
 void ast_arena_reset(AstArena *a) {
 	a->count = 0;
+	a->epoch++;
 }
 
 void ast_arena_free(AstArena *a) {
 	if (!a)
 		return;
+#if defined(MCC_INTERNAL) && MCC_CONFIG_OPTIMIZER
+	ast_du_invalidate(a);
+	ast_memo_invalidate(a);
+	ast_hash_invalidate(a);
+#endif
 	free(a->kind);
 	free(a->parent);
 	free(a->first_child);
@@ -136,11 +149,13 @@ AstLocal ast_node(AstArena *a, uint16_t kind) {
 	a->fbits[n] = 0;
 	a->sym[n] = 0;
 	a->cst[n] = 0;
+	a->epoch++;
 	return n;
 }
 
 void ast_add_child(AstArena *a, AstLocal parent, AstLocal child) {
 	AST_ASSERT(parent < a->count && child < a->count);
+	a->epoch++;
 	a->parent[child] = parent;
 	a->next_sib[child] = AST_NONE;
 	if (a->first_child[parent] == AST_NONE) {
@@ -153,31 +168,39 @@ void ast_add_child(AstArena *a, AstLocal parent, AstLocal child) {
 }
 
 void ast_set_kind(AstArena *a, AstLocal n, uint16_t kind) {
+	a->epoch++;
 	a->kind[n] = kind;
 }
 void ast_clear_children(AstArena *a, AstLocal n) {
+	a->epoch++;
 	a->first_child[n] = AST_NONE;
 	a->last_child[n] = AST_NONE;
 	a->nchild[n] = 0;
 }
 
 void ast_set_op(AstArena *a, AstLocal n, int op) {
+	a->epoch++;
 	a->op[n] = op;
 }
 void ast_set_type(AstArena *a, AstLocal n, int type_t, uint64_t type_ref) {
+	a->epoch++;
 	a->type_t[n] = type_t;
 	a->type_ref[n] = type_ref;
 }
 void ast_set_ival(AstArena *a, AstLocal n, uint64_t v) {
+	a->epoch++;
 	a->ival[n] = v;
 }
 void ast_set_fbits(AstArena *a, AstLocal n, uint64_t bits) {
+	a->epoch++;
 	a->fbits[n] = bits;
 }
 void ast_set_sym(AstArena *a, AstLocal n, uint64_t sym) {
+	a->epoch++;
 	a->sym[n] = sym;
 }
 void ast_set_cst(AstArena *a, AstLocal n, uint64_t cst_id) {
+	a->epoch++;
 	a->cst[n] = cst_id;
 }
 
@@ -2270,7 +2293,7 @@ static int ast_ref_is_local_off(AstArena *a, AstLocal n, int off) {
 				 (int)(int64_t)ast_ival(a, n) == off;
 }
 
-static int ast_local_is_readonly(AstArena *a, int off) {
+static int ast_local_is_readonly_scan(AstArena *a, int off) {
 	AstLocal nn = ast_count(a);
 	for (AstLocal n = 0; n < nn; n++) {
 		uint16_t k = ast_kind(a, n);
@@ -2280,6 +2303,283 @@ static int ast_local_is_readonly(AstArena *a, int off) {
 			return 0;
 	}
 	return 1;
+}
+
+/*
+ * Side-car def/use projection (rollout step 1). One O(n) sweep records, per
+ * VT_LOCAL slot offset, whether it is written (Store target or any Unary over an
+ * lvalue local ref) and whether it escapes (address/member Unary over the slot).
+ * The two whole-arena scanners (ast_local_is_readonly, ast_cprop_escapes) then
+ * answer from the table in O(k) over distinct slots instead of O(n) per call.
+ * The table is rebuilt lazily when a->epoch changes; every arena mutator bumps
+ * epoch, so a query never sees a stale answer. On overflow it falls back to the
+ * scan. Pure accelerator: it must agree with the scanners bit-for-bit, which the
+ * MCC_CONFIG_AST_SHADOW build asserts on every query.
+ */
+#define AST_DU_CAP 2048
+#define AST_DU_WRITTEN 1u
+#define AST_DU_ESCAPED 2u
+static const AstArena *ast_du_arena;
+static uint64_t ast_du_epoch;
+static int ast_du_state; /* 0 = must build, 1 = valid, -1 = overflowed */
+static int ast_du_n;
+static int ast_du_off[AST_DU_CAP];
+static uint8_t ast_du_flags[AST_DU_CAP];
+
+static uint8_t *ast_du_find(int off, int create) {
+	for (int i = 0; i < ast_du_n; i++)
+		if (ast_du_off[i] == off)
+			return &ast_du_flags[i];
+	if (!create || ast_du_n >= AST_DU_CAP)
+		return NULL;
+	ast_du_off[ast_du_n] = off;
+	ast_du_flags[ast_du_n] = 0;
+	return &ast_du_flags[ast_du_n++];
+}
+
+static void ast_du_build(const AstArena *a) {
+	ast_du_n = 0;
+	ast_du_state = 1;
+	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++) {
+		uint16_t k = ast_kind(a, n);
+		AstLocal c;
+		int r, off;
+		uint8_t *f;
+		if (k == AST_Store) {
+			c = ast_first_child(a, n);
+			if (c == AST_NONE || ast_kind(a, c) != AST_Ref)
+				continue;
+			r = ast_op(a, c);
+			if ((r & VT_VALMASK) != VT_LOCAL || !(r & VT_LVAL) || (r & VT_SYM))
+				continue;
+			f = ast_du_find((int)(int64_t)ast_ival(a, c), 1);
+			if (!f) {
+				ast_du_state = -1;
+				return;
+			}
+			*f |= AST_DU_WRITTEN;
+		} else if (k == AST_Unary) {
+			c = ast_first_child(a, n);
+			if (c == AST_NONE || ast_kind(a, c) != AST_Ref)
+				continue;
+			r = ast_op(a, c);
+			off = (int)(int64_t)ast_ival(a, c);
+			if ((r & VT_VALMASK) == VT_LOCAL && (r & VT_LVAL) && !(r & VT_SYM)) {
+				f = ast_du_find(off, 1);
+				if (!f) {
+					ast_du_state = -1;
+					return;
+				}
+				*f |= AST_DU_WRITTEN;
+			}
+			int op = ast_op(a, n);
+			if ((op == AST_OP_ADDR || op == AST_OP_MEMBER ||
+					 op == AST_OP_MEMBER_ARROW) &&
+					(r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM)) {
+				f = ast_du_find(off, 1);
+				if (!f) {
+					ast_du_state = -1;
+					return;
+				}
+				*f |= AST_DU_ESCAPED;
+			}
+		}
+	}
+}
+
+static void ast_du_sync(const AstArena *a) {
+	if (ast_du_state && ast_du_arena == a && ast_du_epoch == a->epoch)
+		return;
+	ast_du_arena = a;
+	ast_du_epoch = a->epoch;
+	ast_du_build(a);
+}
+
+static void ast_du_invalidate(const AstArena *a) {
+	if (ast_du_arena == a) {
+		ast_du_arena = NULL;
+		ast_du_state = 0;
+	}
+}
+
+static unsigned ast_du_slot_flags(const AstArena *a, int off) {
+	ast_du_sync(a);
+	uint8_t *f = ast_du_find(off, 0);
+	return f ? *f : 0u;
+}
+
+#if MCC_CONFIG_AST_SHADOW
+static void ast_du_diverge(const char *q, int off, int tab, int scan) {
+	fprintf(stderr,
+					"mcc: AST side-car divergence: %s(off=%d) table=%d scan=%d\n", q,
+					off, tab, scan);
+	abort();
+}
+#endif
+
+/*
+ * Per-node property memos (rollout step 2). The four monotone subtree predicates
+ * (ast_ident_pure, ast_cprop_safe, ast_sccp_has_label, ast_cse_regpure) are pure
+ * functions of the subtree rooted at a node (its fields plus the stable volatile
+ * bits of any referenced Sym), so each node's verdict is cached in a per-predicate
+ * byte array (0 unknown, 1 true, 2 false) and reused in O(1). The whole memo is
+ * cleared whenever a->epoch changes (any mutation) and grown to a->count on
+ * demand. Shadow build asserts each memoized answer equals a fresh recompute.
+ */
+enum {
+	AST_MEMO_PURE,
+	AST_MEMO_CPROPSAFE,
+	AST_MEMO_HASLABEL,
+	AST_MEMO_REGPURE,
+	AST_MEMO_PRED_COUNT
+};
+static const AstArena *ast_memo_arena;
+static uint64_t ast_memo_epoch;
+static int ast_memo_cap;
+static int8_t *ast_memo[AST_MEMO_PRED_COUNT];
+
+static void ast_memo_sync(const AstArena *a) {
+	int cnt = (int)ast_count(a);
+	if (ast_memo_arena == a && ast_memo_epoch == a->epoch && ast_memo_cap >= cnt)
+		return;
+	if (ast_memo_cap < cnt) {
+		int ncap = cnt ? cnt : 1;
+		for (int i = 0; i < AST_MEMO_PRED_COUNT; i++)
+			ast_memo[i] =
+					mcc_realloc(ast_memo[i], (size_t)ncap * sizeof *ast_memo[i]);
+		ast_memo_cap = ncap;
+	}
+	for (int i = 0; i < AST_MEMO_PRED_COUNT; i++)
+		if (ast_memo[i])
+			memset(ast_memo[i], 0, (size_t)ast_memo_cap * sizeof *ast_memo[i]);
+	ast_memo_arena = a;
+	ast_memo_epoch = a->epoch;
+}
+
+static void ast_memo_invalidate(const AstArena *a) {
+	if (ast_memo_arena == a) {
+		ast_memo_arena = NULL;
+		ast_memo_epoch = 0;
+	}
+}
+
+#if MCC_CONFIG_AST_SHADOW
+static void ast_memo_diverge(const char *q, AstLocal n, int memo, int scan) {
+	fprintf(stderr,
+					"mcc: AST side-car divergence: %s(node=%u) memo=%d scan=%d\n", q,
+					(unsigned)n, memo, scan);
+	abort();
+}
+#define AST_MEMO_SHADOW(NAME, N, R)                    \
+	do {                                                 \
+		int s_ = ast_##NAME##_compute(a, (N));             \
+		if ((R) != s_)                                     \
+			ast_memo_diverge(#NAME, (N), (R), s_);           \
+	} while (0)
+#else
+#define AST_MEMO_SHADOW(NAME, N, R) ((void)0)
+#endif
+
+#define AST_MEMO_QUERY(NAME, SLOT)                             \
+	static int ast_##NAME##_compute(AstArena *a, AstLocal n);    \
+	static int ast_##NAME(AstArena *a, AstLocal n) {             \
+		ast_memo_sync(a);                                         \
+		int8_t *m = ast_memo[SLOT];                               \
+		if (m && n < (AstLocal)ast_memo_cap && m[n]) {            \
+			int r = m[n] == 1;                                      \
+			AST_MEMO_SHADOW(NAME, n, r);                            \
+			return r;                                               \
+		}                                                         \
+		int r = ast_##NAME##_compute(a, n);                       \
+		if (m && n < (AstLocal)ast_memo_cap)                      \
+			m[n] = r ? 1 : 2;                                       \
+		return r;                                                 \
+	}
+
+AST_MEMO_QUERY(ident_pure, AST_MEMO_PURE)
+AST_MEMO_QUERY(cprop_safe, AST_MEMO_CPROPSAFE)
+AST_MEMO_QUERY(sccp_has_label, AST_MEMO_HASLABEL)
+AST_MEMO_QUERY(cse_regpure, AST_MEMO_REGPURE)
+
+/*
+ * Structural subtree hash (rollout step 3). h[n] folds the exact ast_ident_same
+ * tuple (kind, op, type_t, type_ref, ival, fbits, sym, nchild) with the ordered
+ * child hashes, so structurally-equal subtrees always hash equal. Used as a
+ * collision-proof fast reject: h[x] != h[y] proves the subtrees differ in O(1);
+ * on a hash match ast_ident_same falls through to the full ast_ident_same_scan
+ * (confirm-on-fire), so a collision can never make it report a false equality.
+ * The side-car is filled lazily per node and cleared when a->epoch changes.
+ */
+static const AstArena *ast_hash_arena;
+static uint64_t ast_hash_epoch;
+static int ast_hash_cap;
+static uint64_t *ast_hash;
+static uint8_t *ast_hash_done;
+
+static void ast_hash_sync(const AstArena *a) {
+	int cnt = (int)ast_count(a);
+	if (ast_hash_arena == a && ast_hash_epoch == a->epoch && ast_hash_cap >= cnt)
+		return;
+	if (ast_hash_cap < cnt) {
+		int ncap = cnt ? cnt : 1;
+		ast_hash = mcc_realloc(ast_hash, (size_t)ncap * sizeof *ast_hash);
+		ast_hash_done = mcc_realloc(ast_hash_done, (size_t)ncap * sizeof *ast_hash_done);
+		ast_hash_cap = ncap;
+	}
+	if (ast_hash_done)
+		memset(ast_hash_done, 0, (size_t)ast_hash_cap);
+	ast_hash_arena = a;
+	ast_hash_epoch = a->epoch;
+}
+
+static void ast_hash_invalidate(const AstArena *a) {
+	if (ast_hash_arena == a) {
+		ast_hash_arena = NULL;
+		ast_hash_epoch = 0;
+	}
+}
+
+static uint64_t ast_hash_mix(uint64_t h, uint64_t v) {
+	h ^= v;
+	h *= 0x100000001b3ull;
+	return h;
+}
+
+static uint64_t ast_hash_of(const AstArena *a, AstLocal n) {
+	if (n >= (AstLocal)ast_hash_cap)
+		return 0;
+	if (ast_hash_done[n])
+		return ast_hash[n];
+	uint64_t v = 0xcbf29ce484222325ull;
+	v = ast_hash_mix(v, a->kind[n]);
+	v = ast_hash_mix(v, (uint64_t)(uint32_t)a->op[n]);
+	v = ast_hash_mix(v, (uint64_t)(uint32_t)a->type_t[n]);
+	v = ast_hash_mix(v, a->type_ref[n]);
+	v = ast_hash_mix(v, a->ival[n]);
+	v = ast_hash_mix(v, a->fbits[n]);
+	v = ast_hash_mix(v, a->sym[n]);
+	v = ast_hash_mix(v, a->nchild[n]);
+	for (AstLocal c = a->first_child[n]; c != AST_NONE; c = a->next_sib[c])
+		v = ast_hash_mix(v, ast_hash_of(a, c));
+	ast_hash[n] = v;
+	ast_hash_done[n] = 1;
+	return v;
+}
+
+static int ast_local_is_readonly(AstArena *a, int off) {
+	int r;
+	ast_du_sync(a);
+	if (ast_du_state < 0)
+		r = ast_local_is_readonly_scan(a, off);
+	else
+		r = (ast_du_slot_flags(a, off) & AST_DU_WRITTEN) ? 0 : 1;
+#if MCC_CONFIG_AST_SHADOW
+	int s = ast_local_is_readonly_scan(a, off);
+	if (r != s)
+		ast_du_diverge("readonly", off, r, s);
+#endif
+	return r;
 }
 #endif
 
@@ -3708,7 +4008,7 @@ static int ast_ident_etype(AstArena *a, AstLocal n, int *tt, uint64_t *ref) {
 	return 0;
 }
 
-static int ast_ident_pure(AstArena *a, AstLocal n) {
+static int ast_ident_pure_compute(AstArena *a, AstLocal n) {
 	if (ast_type_t(a, n) & VT_VOLATILE)
 		return 0;
 	switch (ast_kind(a, n)) {
@@ -3776,7 +4076,7 @@ static int ast_ident_pure(AstArena *a, AstLocal n) {
 	return 1;
 }
 
-static int ast_ident_same(const AstArena *a, AstLocal x, AstLocal y) {
+static int ast_ident_same_scan(const AstArena *a, AstLocal x, AstLocal y) {
 	if (a->kind[x] != a->kind[y] || a->op[x] != a->op[y] ||
 			a->type_t[x] != a->type_t[y] || a->type_ref[x] != a->type_ref[y] ||
 			a->ival[x] != a->ival[y] || a->fbits[x] != a->fbits[y] ||
@@ -3784,9 +4084,27 @@ static int ast_ident_same(const AstArena *a, AstLocal x, AstLocal y) {
 		return 0;
 	AstLocal cx = a->first_child[x], cy = a->first_child[y];
 	for (; cx != AST_NONE; cx = a->next_sib[cx], cy = a->next_sib[cy])
-		if (!ast_ident_same(a, cx, cy))
+		if (!ast_ident_same_scan(a, cx, cy))
 			return 0;
 	return 1;
+}
+
+static int ast_ident_same(const AstArena *a, AstLocal x, AstLocal y) {
+	ast_hash_sync(a);
+	if (x < (AstLocal)ast_hash_cap && y < (AstLocal)ast_hash_cap &&
+			ast_hash_of(a, x) != ast_hash_of(a, y)) {
+#if MCC_CONFIG_AST_SHADOW
+		if (ast_ident_same_scan(a, x, y)) {
+			fprintf(stderr,
+							"mcc: AST side-car divergence: ident_same(%u,%u) hash rejected "
+							"but scan matched\n",
+							(unsigned)x, (unsigned)y);
+			abort();
+		}
+#endif
+		return 0;
+	}
+	return ast_ident_same_scan(a, x, y);
 }
 
 static int ast_ident_cval(AstArena *a, AstLocal n, int *tt, uint64_t *v) {
@@ -3814,6 +4132,7 @@ static int ast_ident_leaf(AstArena *a, AstLocal n) {
 }
 
 static void ast_ident_adopt(AstArena *a, AstLocal n, AstLocal x) {
+	a->epoch++;
 	a->kind[n] = a->kind[x];
 	a->op[n] = a->op[x];
 	a->type_t[n] = a->type_t[x];
@@ -4217,7 +4536,7 @@ static int ast_cprop_is_local(AstArena *a, AstLocal n, int *off, int *tt) {
 	return 1;
 }
 
-static int ast_cprop_escapes(AstArena *a, int off) {
+static int ast_cprop_escapes_scan(AstArena *a, int off) {
 	AstLocal nn = ast_count(a);
 	for (AstLocal n = 0; n < nn; n++) {
 		if (ast_kind(a, n) != AST_Unary)
@@ -4236,7 +4555,22 @@ static int ast_cprop_escapes(AstArena *a, int off) {
 	return 0;
 }
 
-static int ast_cprop_safe(AstArena *a, AstLocal n) {
+static int ast_cprop_escapes(AstArena *a, int off) {
+	int r;
+	ast_du_sync(a);
+	if (ast_du_state < 0)
+		r = ast_cprop_escapes_scan(a, off);
+	else
+		r = (ast_du_slot_flags(a, off) & AST_DU_ESCAPED) ? 1 : 0;
+#if MCC_CONFIG_AST_SHADOW
+	int s = ast_cprop_escapes_scan(a, off);
+	if (r != s)
+		ast_du_diverge("escapes", off, r, s);
+#endif
+	return r;
+}
+
+static int ast_cprop_safe_compute(AstArena *a, AstLocal n) {
 	if (ast_type_t(a, n) & VT_VOLATILE)
 		return 0;
 	switch (ast_kind(a, n)) {
@@ -4726,7 +5060,7 @@ static int ast_dse_run(AstArena *a) {
 
 static int ast_sccp_folds;
 
-static int ast_sccp_has_label(AstArena *a, AstLocal n) {
+static int ast_sccp_has_label_compute(AstArena *a, AstLocal n) {
 	if (n == AST_NONE)
 		return 0;
 	if (ast_kind(a, n) == AST_Jump && ast_op(a, n) == 4)
@@ -4975,7 +5309,7 @@ static int ast_cse_off[AST_CSE_MAX];
 static int ast_cse_n;
 static int ast_cse_folds;
 
-static int ast_cse_regpure(AstArena *a, AstLocal n) {
+static int ast_cse_regpure_compute(AstArena *a, AstLocal n) {
 	int t = ast_type_t(a, n);
 	if (t & VT_VOLATILE)
 		return 0;
@@ -5030,6 +5364,7 @@ static int ast_cse_regpure(AstArena *a, AstLocal n) {
 }
 
 static void ast_cse_setref(AstArena *a, AstLocal n, AstLocal ref) {
+	a->epoch++;
 	ast_clear_children(a, n);
 	a->kind[n] = AST_Ref;
 	a->op[n] = a->op[ref];
@@ -5703,6 +6038,7 @@ static void ast_ltemp_scan(AstArena *a, AstLocal loop, AstLocal n, int lval) {
 
 static int ast_ltemp_insert_before(AstArena *a, AstLocal parent, AstLocal pivot,
 																	 AstLocal node) {
+	a->epoch++;
 	if (a->first_child[parent] == pivot) {
 		a->parent[node] = parent;
 		a->next_sib[node] = pivot;

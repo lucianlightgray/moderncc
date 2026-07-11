@@ -3,7 +3,7 @@
 Sorted by number of open questions/ambiguities (first-round unknowns + the
 sub-questions immediately following them), most-open first.
 
-## AST substrate + unified optimizer — see `docs/AST.md`
+## AST substrate + unified optimizer — see `docs/AST.md`, plan in `docs/SUBSTRATE-PLAN.md`
 
 Collapse the three optimization drivers (the `ast_func_end` pipeline, the §22
 `AST_PF_EMIT` trial, the `mcc.c` out-of-process search) into one side-car
@@ -12,33 +12,44 @@ JIT. This reframes/subsumes several items below (§21 cache key, §22 emit
 isolation, §28 rewrite IR, §33b/e seam+window keys, §30 predicate bitset, H_e
 epoch hash, the time-budgeted engine, per-function `-O1`, PP-as-executable JIT).
 
-Implementation (staged; each gated by faithful replay + corpus differential +
-the 3-stage self-host fixpoint):
+**LANDED — the read-only side-car (rollout steps 1–3).** All four PRs shipped as one
+change; pure accelerators, no emitted-byte changes. Validated by the compile-time
+shadow-assert build (`MCC_CONFIG_AST_SHADOW`, default-off, opt-in `cmake-shadow` dir +
+CI) that runs each O(1) side-car answer against the legacy scan and aborts on any
+divergence: 1904/1904 ctest pass under shadow with zero divergences, including
+`fixpoint-invariant` and `fuzz/{smoke,matrix}`; the production (non-shadow) build is
+byte-neutral by the same evidence. See `docs/SUBSTRATE-PLAN.md` for the as-built notes.
 
-- [ ] **Step 1 — def/use projection + `cprop_escapes` bitmap** — collapse the
-  ~20 whole-arena slot rescans (`ast_local_is_readonly`, `ast_licm_written`,
-  `ast_cprop_escapes` (11 sites), `ast_ivsr_count_writes`) into one O(n) per-slot
-  side-table built in `ast_func_end`. Pure query, no mutation — the first proof
-  of the side-car discipline. First PR.
-- [ ] **Step 2 — per-node property memos** — bottom-up bit arrays for the
-  monotone subtree predicates (`ast_ident_pure`, `ast_sccp_has_label`,
-  `ast_cse_regpure`, `ast_cprop_safe`); O(1) on re-ask.
-- [ ] **Step 3 — structural Merkle hash for `ast_ident_same`** — per-node subtree
-  fingerprint turning the ~15 lockstep equality walks into O(1) compares. Needs
-  the parent-chain edit-repatch invalidation discipline.
+- [x] **PR-1 — `(tag,id)` naming partition** — `src/mccname.h` (`mcc_name`/
+  `mcc_name_tag`/`mcc_name_id` + `MCC_NS_{AST_SLOT,CST_BRANCH}`); CST field
+  `slot_key -> branch_tag` renamed (source-only, serialized format unchanged).
+- [x] **PR-2 — Step 1: def/use projection** — per-slot `{written,escaped}` side-car
+  (`ast_du_*`) rebuilt on `AstArena.epoch` change; `ast_cprop_escapes` (11 sites) and
+  `ast_local_is_readonly` (1) now answer from it (originals kept as `_scan` oracles).
+  Scope note: `ast_licm_written`/`ast_ivsr_count_writes` were left as-is — they are
+  subtree-scoped (not whole-arena rescans), so the whole-function table does not
+  subsume them; a descendant-indexed extension is future work.
+- [x] **PR-3 — Step 2: property memos** — per-node tri-state memos (`ast_memo_*`) for
+  `ast_ident_pure`/`ast_cprop_safe`/`ast_sccp_has_label`/`ast_cse_regpure`, cleared on
+  epoch change.
+- [x] **PR-4 — Step 3: structural hash** — lazy side-car hash (`ast_hash_*`) folding
+  the exact `ast_ident_same` tuple; used as a collision-proof O(1) fast-reject, hash
+  matches fall through to `ast_ident_same_scan` (confirm-on-fire). Design note: realized
+  as an epoch-rebuilt side-car array, NOT the incremental parent-chain-patched SoA
+  column — same correctness, and it sidesteps the invalidation risk that killed the
+  earlier prototype. The incremental SoA `h[]` column stays available if a future
+  hot path needs O(depth) updates instead of O(n) rebuilds.
+
+**Next milestone (out of current scope) — the strategy engine + search.**
+
 - [ ] **Step 4 — `Strategy` objects wrapping the 13 passes** — frozen table
-  consumed deterministically at `-O1..-O3` behind `MCC_AST_ENGINE=strategy`;
-  flip the default only after byte-identical/better differential vs the legacy
-  pipeline + self-host fixpoint. (needs steps 1-3)
+  consumed deterministically at `-O1..-O3` behind `MCC_AST_ENGINE=strategy` (env var
+  does not exist yet); flip the default only after byte-identical/better differential vs
+  the legacy pipeline + self-host fixpoint. (needs PRs 1-4)
 - [ ] **Step 5 — coroutine strategies + optional C11 thread pool + live -O4+
   search** — stackless `step()` state machines; NCores-1 pool confined to
   -O4+/JIT; best-first frontier checkpointed to the disk-backed memo. (needs
   step 4)
-- [ ] **Fix the `(tag,id)` naming partition now** (from the settled naming-authority
-  decision, independent of H_e) — add the `name(tag,id)`/`tag_of`/`id_of` header
-  mirroring `cst_id*`, mint Step-1's AST slot key in the reserved `AST_SLOT` range,
-  and rename the CST field `slot_key -> branch_tag` to end the dual-use. Cheap; done
-  up front so H_e (step 5+) needs no migration. (pairs with step 1)
 
 ## Bugs — surfaced by the conformance-test expansion (concrete repros)
 
