@@ -2653,9 +2653,26 @@ fixpoint invariant if rushed. Sequenced, not started:
   fixpoint); a combined diamond fuzzer (mixed-width targets + multi-statement
   arms + benign intervening statements + operand-written-between/self-update/
   cond-write negatives) **x86_64 500/500** (fired 482) and **arm64 250/250 under
-  qemu** (fired 250) match gcc. Next broadening: table-driven anticipability via
-  the `ast_cse_state_meet` join (cross-block E, arm insertion — the higher-risk
-  step that killed the original prototype; gate it on the arm64 self-host).
+  qemu** (fired 250) match gcc. **BROADENING 4 — single-arm anticipability
+  LANDED** (2026-07-11, dual-arch): this realizes the *essence* of the remaining
+  "table-driven anticipability" item — E computed on only ONE path — but
+  **soundly, hoist-only, without speculative arm insertion**. The matcher now
+  requires only that **at least one** arm's last `Store` is a pure `Binary` E
+  (was: both arms hold the same E) and E is reused after the join. This is not a
+  pessimization on any path: the post-join reuse already evaluates E on *every*
+  path, so hoisting E before the branch (the unchanged hoist target) never adds a
+  computation — it only removes the redundant recomputation on the arm(s) that
+  did compute E. (The genuinely speculative case — inserting E into an arm where
+  it is *not* guaranteed to reach a post-join use — is deliberately NOT done; it
+  is the arm-insertion that killed the prototype and can pessimize cold paths.)
+  Validated: gate-off ctest **1887/1887**; x86_64 gate-ON `fixpointgate`
+  converges; arm64 gate-ON 3-stage self-host converges (PRE fires on still more
+  of `mcc.c`, byte-stable + functional); a single-arm diamond fuzzer (E in then-
+  only / else-only / both, unrelated other-arm expr, + all prior negatives)
+  **x86_64 500/500** (fired 483) and **arm64 250/250 under qemu** (fired 250)
+  match gcc. §32c PRE is now **complete for the safe hoist-only model** (tail +
+  multi-stmt arms + Convert-wrapped + reuse-distance + single-arm); the only
+  residue is genuinely-speculative arm insertion, intentionally left out.
 - **§36 Chaitin–Briggs graph-coloring regalloc** — largest, replaces
   `ast_plan_promotion`; run last.
 - **§26 `--embed-jit` runtime engine**, **§33b/c/d/e**, **§27/§28**,

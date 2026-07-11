@@ -5904,14 +5904,15 @@ static int ast_pre_run(AstArena *a) {
 		if (parent == AST_NONE || ast_kind(a, parent) != AST_BasicBlock)
 			continue;
 		AstLocal thenbb = ast_child(a, n, 1), elsebb = ast_child(a, n, 2);
-		AstLocal ts, es;
-		if (!ast_pre_arm_store(a, thenbb, &ts) ||
-				!ast_pre_arm_store(a, elsebb, &es))
+		if (ast_kind(a, thenbb) != AST_BasicBlock ||
+				ast_kind(a, elsebb) != AST_BasicBlock)
 			continue;
-		AstLocal e = ast_pre_binary_of(a, ts), e2 = ast_pre_binary_of(a, es);
-		if (e == AST_NONE || e2 == AST_NONE)
-			continue;
-		if (!ast_ident_same(a, e, e2))
+		AstLocal ts, es, e = AST_NONE;
+		if (ast_pre_arm_store(a, thenbb, &ts))
+			e = ast_pre_binary_of(a, ts);
+		if (e == AST_NONE && ast_pre_arm_store(a, elsebb, &es))
+			e = ast_pre_binary_of(a, es);
+		if (e == AST_NONE)
 			continue;
 		if (!ast_cse_regpure(a, e))
 			continue;
@@ -5955,6 +5956,7 @@ static int ast_pre_run(AstArena *a) {
 		ast_set_op(a, tref, VT_LOCAL | VT_LVAL);
 		ast_set_ival(a, tref, (uint64_t)off);
 		ast_set_type(a, tref, et, er);
+		ast_licm_subst(a, thenbb, e, tref, 0);
 		ast_licm_subst(a, elsebb, e, tref, 0);
 		ast_licm_subst(a, prhs, e, tref, 0);
 		ast_cse_setref(a, e, tref);
