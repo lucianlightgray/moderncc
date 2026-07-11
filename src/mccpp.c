@@ -434,7 +434,8 @@ ST_FUNC void cstr_cat(CString *cstr, const char *str, int len) {
 	size = cstr->size + len;
 	if (size > cstr->size_allocated)
 		cstr_realloc(cstr, size);
-	memmove(cstr->data + cstr->size, str, len);
+	if (len)
+		memmove(cstr->data + cstr->size, str, len);
 	cstr->size = size;
 }
 

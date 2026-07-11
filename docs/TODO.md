@@ -66,7 +66,16 @@ miscompile detector for §29–§35.
       ASan/UBSan as the oracle's soundness gate, and compiled-program
       crashes/timeouts are classified separately from wrong-answers. Building
       mcc *itself* under ASan (the `sanitize` preset already exists) and a
-      valgrind pass over the corpus remain as follow-ups.
+      valgrind pass over the corpus remain as follow-ups. PROGRESS
+      (2026-07-10): exercised `mcc_s` (the `sanitize` preset = host
+      ASan+UBSan) over ~120 exec/behavior test programs + a full `src/mcc.c`
+      self-compile; it surfaced one hot-path latent UB in mcc itself —
+      `cstr_cat` (`mccpp.c:437`) calling `memmove(NULL, str, 0)` on an empty
+      CString (UBSan: "null pointer passed as argument 1, declared nonnull",
+      121 hits). Fixed by guarding the no-op `memmove` with `if (len)`
+      (behavior-identical; fixpoint still stage2==3==4). mcc_s is now
+      UBSan-clean over that corpus. Valgrind pass + wiring the mcc_s corpus
+      sweep as a ctest remain.
 - [~] **CI integration & budget** — runs are seed-reproducible
       (`MCC_FUZZ_SEED`/`MCC_FUZZ_COUNT`/`MCC_FUZZ_GATES`); the graduated corpus
       is a regression-lock (`fuzz/corpus`). A *scheduled* nightly N-hour
