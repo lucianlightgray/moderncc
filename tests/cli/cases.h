@@ -162,6 +162,16 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -O1 {W}/bfn.c -o {W}/bfn0 && {W}/bfn0 ; echo rc=$?",
 		 "1\nrc=6\nrc=6\nrc=6\n"},
 
+		{"pre_diamond", "cpu=x86_64,os=linux,optimizer",
+		 "printf 'int f(int a,int b,int c){int x=0,y=0,r;if(c){x=a+b;}else{y=a+b;}r=a+b;return x+y+r;}int main(void){return f(3,4,1)+f(3,4,0);}\\n' > {W}/pre.c && "
+		 "{MCC} -B{B} -I{I} -O2 -c {W}/pre.c -o {W}/pre.off.o && "
+		 "MCC_AST_PRE=1 {MCC} -B{B} -I{I} -O2 -c {W}/pre.c -o {W}/pre.on.o && "
+		 "( cmp -s {W}/pre.off.o {W}/pre.on.o && echo SAME || echo DIFFER ) ; "
+		 "MCC_AST_PRE=1 {MCC} -B{B} -I{I} -O2 {W}/pre.c -o {W}/pre2 && {W}/pre2 ; echo rc=$? ; "
+		 "MCC_AST_PRE=1 {MCC} -B{B} -I{I} -O3 {W}/pre.c -o {W}/pre3 && {W}/pre3 ; echo rc=$? ; "
+		 "{MCC} -B{B} -I{I} -O2 {W}/pre.c -o {W}/pre0 && {W}/pre0 ; echo rc=$?",
+		 "DIFFER\nrc=28\nrc=28\nrc=28\n"},
+
 		{"perfn_search", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'static int sq(int x){return x*x;}static int cube(int x){return x*x*x;}int main(void){int s=0;for(int i=0;i<8;i++)s+=sq(i)+cube(i);return s;}\\n' > {W}/pfs.c && "
 		 "XDG_CACHE_HOME={W}/pfsc MCC_AST_PERFN=1 {MCC} -B{B} -I{I} -O4 -c {W}/pfs.c -o {W}/pfs.o && "

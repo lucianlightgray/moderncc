@@ -181,6 +181,9 @@ static const gate_t GATES[] = {
 	{"SETHI", "MCC_AST_SETHI=1"},
 	{"PROMOTE", "MCC_AST_PROMOTE=1"},
 	{"INLINE", "MCC_AST_INLINE=1"},
+	{"LICM_TEMP", "MCC_AST_LICM_TEMP=1"},
+	{"IVSR", "MCC_AST_IVSR=1"},
+	{"PRE", "MCC_AST_PRE=1"},
 };
 #define NGATES ((int)(sizeof GATES / sizeof *GATES))
 

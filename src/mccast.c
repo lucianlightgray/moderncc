@@ -503,6 +503,7 @@ static int ast_cse_join_env;
 static int ast_call_window_env;
 static int ast_licm_temp_env;
 static int ast_ivsr_env;
+static int ast_pre_env;
 
 #define AST_LTEMP_MAX 32
 #define AST_LTEMP_PER_LOOP 8
@@ -761,6 +762,7 @@ void ast_configure(MCCState *s1) {
 	ast_call_window_env = ast_env_gate("MCC_AST_CALL_WINDOW", s1->optimize >= 2);
 	ast_licm_temp_env = ast_env_gate("MCC_AST_LICM_TEMP", 0);
 	ast_ivsr_env = ast_env_gate("MCC_AST_IVSR", 0);
+	ast_pre_env = ast_env_gate("MCC_AST_PRE", 0);
 	ast_color_env = ast_env_gate("MCC_AST_COLOR", 0);
 	ast_intention_acc = 0;
 	ast_hash_out = getenv("MCC_AST_HASH_OUT");
@@ -5856,6 +5858,98 @@ static int ast_ivsr_run(AstArena *a) {
 	return did;
 }
 
+static int ast_pre_single_store(AstArena *a, AstLocal bb, AstLocal *store) {
+	if (ast_kind(a, bb) != AST_BasicBlock)
+		return 0;
+	AstLocal c = ast_first_child(a, bb);
+	if (c == AST_NONE || ast_next_sib(a, c) != AST_NONE)
+		return 0;
+	if (ast_kind(a, c) != AST_Store)
+		return 0;
+	*store = c;
+	return 1;
+}
+
+static int ast_pre_occurs(AstArena *a, AstLocal n, AstLocal e) {
+	if (n == AST_NONE)
+		return 0;
+	if (n != e && ast_ident_same(a, e, n))
+		return 1;
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		if (ast_pre_occurs(a, c, e))
+			return 1;
+	return 0;
+}
+
+static int ast_pre_run(AstArena *a) {
+	int did = 0;
+	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++) {
+		if (ast_ltemp_n >= AST_LTEMP_MAX)
+			break;
+		if (ast_kind(a, n) != AST_If || ast_op(a, n) != 0)
+			continue;
+		if (ast_nchild(a, n) < 3)
+			continue;
+		if (ast_sccp_has_label(a, n))
+			continue;
+		AstLocal parent = ast_parent(a, n);
+		if (parent == AST_NONE || ast_kind(a, parent) != AST_BasicBlock)
+			continue;
+		AstLocal post = ast_next_sib(a, n);
+		if (post == AST_NONE || ast_kind(a, post) != AST_Store)
+			continue;
+		AstLocal thenbb = ast_child(a, n, 1), elsebb = ast_child(a, n, 2);
+		AstLocal ts, es;
+		if (!ast_pre_single_store(a, thenbb, &ts) ||
+				!ast_pre_single_store(a, elsebb, &es))
+			continue;
+		AstLocal e = ast_child(a, ts, 1);
+		if (ast_kind(a, e) != AST_Binary)
+			continue;
+		if (!ast_ident_same(a, e, ast_child(a, es, 1)))
+			continue;
+		if (!ast_cse_regpure(a, e))
+			continue;
+		int et;
+		uint64_t er;
+		if (!ast_ident_etype(a, e, &et, &er) || !ast_ident_intt(et))
+			continue;
+		if (!ast_licm_operands_ok(a, n, e))
+			continue;
+		AstLocal prhs = ast_child(a, post, 1);
+		if (!ast_pre_occurs(a, prhs, e))
+			continue;
+		if (!ast_licm_operands_ok(a, post, e))
+			continue;
+		int off = (ast_ltemp_cur - 8) & -8;
+		AstLocal lref = ast_node(a, AST_Ref);
+		ast_set_op(a, lref, VT_LOCAL | VT_LVAL);
+		ast_set_ival(a, lref, (uint64_t)off);
+		ast_set_type(a, lref, et, er);
+		AstLocal cvt = ast_node(a, AST_Convert);
+		ast_set_type(a, cvt, et, er);
+		ast_add_child(a, cvt, ast_dup_sub(a, e));
+		AstLocal st = ast_node(a, AST_Store);
+		ast_add_child(a, st, lref);
+		ast_add_child(a, st, cvt);
+		if (!ast_ltemp_insert_before(a, parent, n, st))
+			continue;
+		AstLocal tref = ast_node(a, AST_Ref);
+		ast_set_op(a, tref, VT_LOCAL | VT_LVAL);
+		ast_set_ival(a, tref, (uint64_t)off);
+		ast_set_type(a, tref, et, er);
+		ast_licm_subst(a, elsebb, e, tref, 0);
+		ast_licm_subst(a, prhs, e, tref, 0);
+		ast_cse_setref(a, e, tref);
+		ast_licm_folds++;
+		ast_ltemp_cur = off;
+		ast_ltemp_off[ast_ltemp_n++] = off;
+		did++;
+	}
+	return did;
+}
+
 static void ast_cse_block(AstArena *a, AstLocal bb) {
 	ast_cse_n = 0;
 	for (AstLocal s = ast_first_child(a, bb); s != AST_NONE; s = ast_next_sib(a, s)) {
@@ -6065,6 +6159,8 @@ static int ast_cse_run(AstArena *a) {
 			ast_ltemp_run(a);
 		if (ast_ivsr_env)
 			ast_ivsr_run(a);
+		if (ast_pre_env)
+			ast_pre_run(a);
 		return ast_cse_folds;
 	}
 	for (AstLocal n = 0; n < nn; n++)
@@ -6074,6 +6170,8 @@ static int ast_cse_run(AstArena *a) {
 		ast_ltemp_run(a);
 	if (ast_ivsr_env)
 		ast_ivsr_run(a);
+	if (ast_pre_env)
+		ast_pre_run(a);
 	return ast_cse_folds;
 }
 

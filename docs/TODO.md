@@ -2569,25 +2569,48 @@ fixpoint invariant if rushed. Sequenced, not started:
   `-O1/-O2/-O3` on arm64 AND x86_64 (Rosetta, promotion active); gate-ON `-O2`
   self-host fixpoint converges on both arches (arm64 `a93a08d7`, x86_64
   `cd5498cd` — obstacle B holds with IVSR accumulator temps + promotion);
-  fires (object differs, accumulator init emitted).
-  **POST-JOIN PRE — ATTEMPTED, BLOCKED by a self-host MISCOMPILE** (2026-07-11,
-  NOT landed): an `MCC_AST_PRE` prototype (hoist a pure integer `Binary`
-  computed in an If arm AND recomputed after the join into a fresh temp — the
-  anticipable case) passed gate-off byte-identity + adversarial exec vs clang
-  on both arches, BUT the **gate-ON `-O2` self-host fixpoint FAILS on arm64**:
-  PRE *does* fire on `mcc.c` (gate-off vs gate-on `-O2` object differs,
-  `116d3bb8`≠`327ab7733456`), producing a stage2 compiler whose stage2≠stage3
-  and whose stage3 miscompiles `mcc.c` (stage4 build fails). The prototype's
-  whole-function goto-label guard does NOT prevent firing on the many label-
-  free functions in `mcc.c`, and one of those firings is miscompiled — a real
-  correctness bug (the anticipability/dominance reasoning or the arm-insertion
-  is unsound for some shape). The clean self-host is a proper fixpoint
-  (`b68850f9`), so this is PRE's bug, not a base issue. LESSON: adversarial
-  exec + byte-identity are NOT sufficient for a fresh-temp arm-insertion pass;
-  the 3-stage self-host fixpoint gate is the one that catches it. Patch saved
-  (`scratchpad/pre_blocked.patch`) for debugging: bisect which `mcc.c` function
-  PRE miscompiles, tighten the guard to the store→use region, re-gate on the
-  self-host fixpoint. Remains OPEN (the other two §32c consumers landed).
+  fires (object differs, accumulator init emitted). **POST-JOIN PRE — FIRST
+  INCREMENT LANDED** (2026-07-11, dual-arch). An *earlier* general PRE prototype
+  (hoist any pure `Binary` computed in an arm AND recomputed after the join,
+  guarded only by a whole-function goto-label check) was **blocked by an arm64
+  self-host miscompile** — it fired on the many label-free functions in `mcc.c`
+  and one firing was miscompiled by the arm64 backend, so gate-ON arm64 stage2≠
+  stage3. LESSON recorded then: adversarial exec + byte-identity are *not*
+  sufficient for a fresh-temp arm-insertion pass; the arm64 self-host fixpoint is
+  what catches it. This increment takes the **strictly narrower sound "diamond"
+  subset** that avoids that class: new default-off gate `MCC_AST_PRE`
+  (`ast_pre_run`) fires only on an if/else (`AST_If` op-0) where **both arms are a
+  single `Store` of the *same* pure integer `Binary` E** (matched by
+  `ast_ident_same` + `ast_cse_regpure`) **and** E recurs in the immediately-
+  following `Store`; it hoists one copy of E into a fresh carved+`AST_Convert`-
+  wrapped temp *before* the branch (reusing the §32c carve/
+  `ast_ltemp_insert_before`/`ast_licm_subst`/`ast_cse_setref` machinery) and
+  redirects all three occurrences to the temp read. Sound by construction: E is
+  computed on every path (tail of both arms) and pure (`regpure` excludes
+  div/mod/volatile → no speculated trap), so the hoist is unconditional-
+  execution-safe with no new dataflow; `ast_licm_operands_ok(if_node, E)` +
+  `…(post, E)` reject any case where an operand of E is written in an arm, the
+  `cond`, or the reuse `Store`. Because the shape is so specific it **does not
+  occur in `mcc.c`** (so both self-hosts stay byte-identical to baseline), the
+  arm64 regression that killed the prototype cannot recur; firing is instead
+  proven by a dedicated diamond fuzzer. Validation — gate-off: `-O2` object
+  byte-identical + full ctest **1887/1887** (incl. `fixpoint-invariant` +
+  `dash-s-bytes`) + **arm64** baseline 3-stage self-host converges. Gate-ON
+  byte-safety: **x86_64** self-host fixpoint converges (`fixpointgate`) AND
+  **arm64** 3-stage self-host under qemu+musl converges (s2==s3==s4, both == the
+  gate-off arm64 mcc). Gate-ON firing correctness: a diamond fuzzer (random pure-
+  binary E over `+ - * & | ^ << < > <= >= == !=`, unsigned/int) — **x86_64
+  400/400 match gcc (PRE fired on 393)**; **arm64 200/200 match gcc under qemu
+  (PRE fired on all 200)** — this is the arm64 *execution* evidence the prototype
+  never had; plus 4 hand adversarial diamonds (long/unsigned/shift-or/comparison/
+  nested-then) correct on both arches and 2 soundness negatives (cond writes
+  operand, post self-updates operand) correctly NOT folded. The fuzz runner
+  `GATES[]` now also sweeps PRE/IVSR/LICM_TEMP (though the §0 generator does not
+  emit the diamond shape, so that sweep exercises byte-safety, not PRE firing —
+  the diamond fuzzer is the firing gate). Locked by `cli/pre_diamond`.
+  **Remaining**: broaden PRE past the single-store diamond (Convert-wrapped RHS,
+  table-driven anticipability via the `ast_cse_state_meet` join, multi-statement
+  arms) — each broadening MUST re-run the arm64 self-host fixpoint before landing.
 - **§36 Chaitin–Briggs graph-coloring regalloc** — largest, replaces
   `ast_plan_promotion`; run last.
 - **§26 `--embed-jit` runtime engine**, **§33b/c/d/e**, **§27/§28**,
