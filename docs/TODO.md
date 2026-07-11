@@ -2307,11 +2307,32 @@ of which must be intentionally re-baselined per target, pass by pass, not
 defaults; it just converges to different bytes than today. That re-baseline +
 per-target/per-runner reconvergence is the actual work here.
 
-- [ ] **Enumerate every gate.** List all `ast_*_env` / `MCC_AST_*` gates and
-      `-O<n>`-conditioned passes (`ast_replay_env` at `s1->optimize>=1`,
-      `MCC_AST_PROMOTE`/`INLINE`/`TEMPLATES`/`CPROP_JOIN`/`CSE_JOIN`/`BITFLAG`/
-      `SETHI`/`CALL_WINDOW`/… ) and, for each, its current default and the
-      `-O` level that enables it.
+- [x] **Enumerate every gate.** Done 2026-07-10 from `ast_configure`
+      (`src/mccast.c:651-689`). `ast_env_gate("NAME", D)` = env value if set,
+      else default `D`. **Correction to this item's premise: the core passes
+      are already default-ON at their `-O` level — §41 is really about the six
+      search-only passes.** Full map (default when `MCC_AST_*` unset):
+
+      | pass (env) | default | ON at |
+      |---|---|---|
+      | `ast_replay_env` (base replay/reemit) | `optimize>=1` (no env) | **-O1+** |
+      | `MCC_AST_TEMPLATES` | `optimize>=1` | **-O1+** |
+      | `MCC_AST_PROMOTE` | `x86_64 && optimize>=2` | **-O2+** (x86_64) |
+      | `MCC_AST_INLINE` | `optimize>=3 && !size` | **-O3** (non-`-Os`) |
+      | `MCC_AST_SETHI` | `0` | off (search/-O4+ only) |
+      | `MCC_AST_BITFLAG` | `0` | off (search) |
+      | `MCC_AST_CPROP_JOIN` | `0` | off (search) |
+      | `MCC_AST_CSE_JOIN` | `0` | off (search) |
+      | `MCC_AST_CALL_WINDOW` | `0` | off (search) |
+      | `MCC_AST_COST` | `0` | off (analysis-only) |
+      | `MCC_AST_NO_CALLFUL` | `0` | off |
+
+      Numeric knobs (not on/off): `INLINE_LIMIT`/`PROMOTE_LIMIT`/`OPT_LIMIT`
+      (default -1 = unlimited), `INLINE_NODES` (64), `GRAFT` (2048),
+      `BITFLAG` min-threshold (5). `PERFN`/`FN_CONFIG`/`JITSCORE`/`HASH_OUT`/
+      `REPLAY_DUMP` are search/tooling plumbing, not codegen passes. So the
+      remaining default-off *codegen* passes to consider for §41 are exactly:
+      **SETHI, BITFLAG, CPROP_JOIN, CSE_JOIN, CALL_WINDOW** (COST is analysis).
 - [ ] **Flip defaults to ON**, pass by pass (not all at once), each behind the
       same landing gate it has today so a regression is bisectable: after each
       flip, the pass runs by default at its target `-O` level.
