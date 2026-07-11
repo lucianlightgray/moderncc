@@ -2121,17 +2121,21 @@ single `--stats` toggle that emits all three (simpler; all are cheap).
 Open validations from FIX.md that need a runner this repo's local x86_64
 Linux box does not have — parked here so they are tracked, not lost:
 
-- [ ] **macos-x86_64 `[-O3]` rows n/a** (FIX.md:239-251): may be the same
-      reemit/promote bug as the landed arm64 fix (arch-independent). Retest
-      the CI matrix first; if still red, reproduce via cross mcc→Mach-O
-      (`-DMCC_TARGET_MACHO=1`) needing a Darwin runner or
-      `tests/qemu/apple-libc` to execute stage2.
-- [ ] **CI re-checks pending after three landed FIX.md fixes**: the
-      `vcheck_cmp`-before-`gfunc_call` guard (FIX.md:71 — recheck
-      macos-arm64 / msvc-arm64), the `ast_fn_faithful` reemit gate
-      (FIX.md:222-223 — recheck macos-x86_64 + arm64/msvc), and the promote
-      frame-slot change (FIX.md:253-259 — ELF `-O2/-O3` codegen, CI matrix).
-      All verified locally; only the cross-target CI runs remain.
+- [x] **macos-x86_64 `[-O3]` rows n/a** — RESOLVED (2026-07-10, via Rosetta 2
+      on this arm64 box; it WAS the arch-independent reemit/promote bug, now
+      fixed by `ast_fn_faithful`). The x86_64-macOS mcc (built from HEAD) run
+      under Rosetta: `-O0..-O3` compile+execute correctly, and the `-O3`
+      3-stage self-host reaches a byte-identical fixpoint (`75bc72196818` ×3) —
+      the exact thing that was "n/a." No Darwin-x86 CI runner needed after all;
+      Rosetta is the runner.
+- [~] **CI re-checks pending after three landed FIX.md fixes**: the
+      `vcheck_cmp`-before-`gfunc_call` guard and the `ast_fn_faithful` reemit
+      gate are now re-verified on **macos-x86_64 (via Rosetta)** and
+      **macos-arm64 (native)** here — `-O3` self-host + exec green on both. The
+      promote frame-slot change is x86_64-only (compiled out on arm64) and its
+      macos-x86_64 codegen is exercised by the Rosetta x64 build. Remaining:
+      **msvc-arm64** (needs a Windows runner) and the ELF `-O2/-O3` linux CI
+      cells (linux runner) — genuinely off-box.
 - [ ] **static-glibc self-host gap** (README.md:12 / MCC.md:25): static-glibc
       via mcc hits a `__pthread_initialize_minimal` gap (musl is the
       fully-static path). Decide finish-or-document-as-permanent.
@@ -2336,13 +2340,17 @@ fixpoint invariant if rushed. Sequenced, not started:
   arm64: gate-off `-O0..-O3` byte-identical + full ctest 1862 + gate-ON
   corpus-wide ctest green + gate-ON `-O2` 3-stage self-host fixpoint converges
   + 23 adversarial loop shapes match `-O0`/clang. **x86_64 obstacle-B
-  (promotion poison) validation is PENDING** — promotion is x86_64-only
-  (compiled out on arm64, so obstacle B is moot here); the x86_64 poison list
-  is written but untested on this box. This is exactly N2's sanctioned
-  "arm64/riscv64 FIRST, add the x86_64 poison guard second" order; the gate is
-  default-off so the default compiler is byte-identical on every arch.
-  **Remaining**: x86_64 gate-on validation (promotion+temp interaction), then
-  post-join PRE → IV strength reduction (the further §32c consumers).
+  (promotion poison) validation — DONE (2026-07-10, via Rosetta)**: the
+  x86_64-macOS mcc (built from HEAD, run under Rosetta 2 on this arm64 box)
+  exercises promotion (x86_64-only) alongside the fresh temp. With
+  `MCC_AST_LICM_TEMP=1` at `-O1/-O2/-O3` (promotion ACTIVE) a promotion-eligible
+  + fresh-temp TU (nested loops, multiple invariants) matches the `-O0`
+  reference AND system clang exactly (`832675297231051594`), and the gate-ON
+  `-O2` 3-stage x86_64 self-host fixpoint converges — so the poison guard works
+  (promotion never seeds a register from the uninitialized temp slot). §32c's
+  first increment is now validated on BOTH arm64 and x86_64; the gate stays
+  default-off. **Remaining**: post-join PRE → IV strength reduction (the further
+  §32c consumers).
 - **§36 Chaitin–Briggs graph-coloring regalloc** — largest, replaces
   `ast_plan_promotion`; run last.
 - **§26 `--embed-jit` runtime engine**, **§33b/c/d/e**, **§27/§28**,
