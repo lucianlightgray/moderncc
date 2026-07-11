@@ -80,7 +80,11 @@ miscompile detector for §29–§35.
       the sym-deferral compiled out; production was always correct). The
       mcc_s corpus sweep is now **wired as the green `sanitize-selfcheck`
       ctest** (full `tests/exec` × `-O0..-O3` under ASan+UBSan, 0 diagnostics).
-      Only a valgrind pass over the fuzz corpus remains.
+      Valgrind pass attempted but **environment-blocked**: valgrind 3.27.1 on
+      this Gentoo host SIGILLs in `_dl_start` (rtld.c:565) for *every* dynamic
+      binary incl. `/bin/true` — an unsupported-ISA-in-the-loader incompat, not
+      an mcc issue; the ASan+UBSan `mcc_s` path already provides the
+      memory-safety validation, so valgrind is redundant here and skipped.
 - [~] **CI integration & budget** — runs are seed-reproducible
       (`MCC_FUZZ_SEED`/`MCC_FUZZ_COUNT`/`MCC_FUZZ_GATES`); the graduated corpus
       is a regression-lock (`fuzz/corpus`). A *scheduled* nightly N-hour
