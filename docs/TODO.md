@@ -2199,10 +2199,13 @@ Linux box does not have — parked here so they are tracked, not lost:
       the harness compares the arm64 host `cc` (long double = 64-bit) against
       the x86_64 mcc (long double = 80-bit) and `full_language.c` exercises long
       double; `mcctest` PASSES natively on both cmake-macos (arm64) and would
-      pass against a matched x86_64 reference. Remaining genuinely off-box:
-      **msvc-arm64** (Windows runner) and the ELF linux `-O2/-O3` cells (a
-      Linux runner / Docker — qemu on macOS provides only system, not
-      `qemu-riscv64` user-mode emulation).
+      pass against a matched x86_64 reference. **ELF-linux `-O2/-O3` cells:
+      confirmed green on the x86_64 Gentoo box (2026-07-11)** — the exec corpus
+      at `-O2` AND `-O3` matches the `-O0` reference **229/229** (the exact
+      promote-frame-slot / reemit codegen the fixes touch), full ctest
+      **1882/1882**, `-O0..-O3` fixpoint byte-identical. Remaining genuinely
+      off-box: **msvc-arm64** only (a Windows-arm64 runner — no local
+      equivalent).
 - [x] **static-glibc self-host gap** (MCC.md:25): **RESOLVED — does not
       reproduce on current glibc (2.43).** Confirmed 2026-07-11 on the
       x86_64 Gentoo glibc box (the earlier note assumed it was reproducible
