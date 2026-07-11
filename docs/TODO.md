@@ -1,20 +1,4 @@
-# TODO.md — open work
-
-The single tracker of remaining, incomplete work. Completed items and their
-history have been removed; this file is only what is *left* to do. Reference
-documentation of how the shipped compiler behaves lives in
-[MCC.md](MCC.md)/[EXCESS.md](EXCESS.md); the `-O4` search is walked through in
-[OPT.md](OPT.md).
-
-**Standing gates for every item:** `ctest` green; items touching `src/` also
-need the 3-stage byte-identical self-host fixpoint (gate off AND forced-on for a
-new optimizer pass); items touching backend or format files add the local matrix
-/ a qemu spot-check. New optimizer passes land behind a default-off `MCC_AST_*`
-gate and are validated by the §0 differential fuzzer.
-
----
-
-## Sanitizers (§0 / §0b follow-ups)
+# TODO
 
 - **Native-shadow ASan follow-ups:** richer `__asan_report_*` diagnostic
   formatting, CMake auto-link of `runtime/lib/mccasan.c`, and arm64/riscv64
@@ -34,9 +18,6 @@ gate and are validated by the §0 differential fuzzer.
   hardening; a freestanding/KASAN-style sanitizer for the runtime itself; the
   compiler-rt-interop-vs-`libmccsan` decision (shapes recover-mode/ASan
   downstream).
-
-## Optimizer ladder
-
 - **§22 true per-function re-emit — promotion / pass-subset axes BLOCKED.** The
   inline-size axis ships (`MCC_AST_PERFN_INPROC`). The promotion axis and the
   arena-mutating pass-subset axis need **true emit isolation** — redirect
@@ -130,9 +111,6 @@ gate and are validated by the §0 differential fuzzer.
   arm64/riscv64.
 - **Tier-4 inline per-arch enablement.** `ast/replay-inline-spec` is registered
   on x86_64 + arm64; riscv64/other arches stay gated until per-arch verified.
-
-## CI / hardware-blocked (no local runner)
-
 - **§38 msvc-arm64 re-check** of the three landed FIX fixes (the
   `vcheck_cmp`-before-`gfunc_call` guard, the `ast_fn_faithful` reemit gate, the
   x86_64-only promote frame-slot change) — needs a Windows-arm64 runner; no
@@ -146,18 +124,12 @@ gate and are validated by the §0 differential fuzzer.
 - **i386 TLS `R_386_TLS_GD/LDM`** paths (`i386-link.c`) — need an i386 cross
   build + a 32-bit sysroot (x86_64 GD/LD/IE/LE covered by `tls-models`).
 - **`i386-fastcall-abi`** test — needs an i386 cross + an ELF-32 reference.
-
-## Conformance / test-depth (§6-B)
-
 - Deepen under-tested areas where mcc passes but under-tests vs gcc/clang:
   flexible array members (mcc ~1 vs gcc 13), `_Noreturn` (1 vs 5),
   `_Alignas`/`_Alignof`, VLA goto/switch-into-scope diagnostics,
   UCN-in-identifier breadth, FP eval-method / Annex-F wide returns, `_Complex`
   Annex-G edge cases, and a systematic negative/`dg-error` diagnostic tier
   (gcc's C99/C11 files are ~70% diagnostic).
-
-## Build / infra
-
 - **CMake normalization (incremental only).** Prefer autodetect +
   enable-what-the-host-supports, offload gating to `tools/`, fold `.cmake` files
   in — but pursue with a verifiable target, not a sweep (CI-breakage risk across
@@ -167,24 +139,14 @@ gate and are validated by the §0 differential fuzzer.
   32-bit sysroot); aarch64/armv7-linux partial (qemu is x86-TSO — can't validate
   weak-memory atomics, only the memory-model-independent subset); arm64-windows
   blocked (no native arm64 ref cc).
-
-## CST
-
 - **slice-G multi-file `#include` stitching** — currently main-file only (the
   one open CST slice).
 - **`H_e` epoch hash** — invertible slot-keyed O(1) edit patch; designed, not
   built. A future `H_e` must reconcile the `slot_key` dual-use with the
   `cst_mark_branch` PPConditional tags (`mcccst.c:512`).
-
-## Docs
-
-- Fill the thin-5W/H nouns flagged in [MCC.md](MCC.md) §Verification: `Poison`
-  lowering, `TranslationUnit` node, the long-horizon design-only nouns
-  (`-g`/LSP, LTO, SSA drivers, hot-reload, jump-table/algebraic templates), and
-  the named promote/inline gap tests without a root cause.
-
-## Parked — record of decisions, not active work
-
+- Verification: `Poison` lowering, `TranslationUnit` node, the long-horizon
+  design-only nouns (`-g`/LSP, LTO, SSA drivers, hot-reload, jump-table/algebraic
+  templates), and the named promote/inline gap tests without a root cause.
 - **Revisit-triggers:** `Bind`-marker (reopen only if the CST can't answer a
   `-g`/LSP query); `k` always-inline depth policy; size-gated outline; store
   factoring (shared render engine); template DSL past ~30 templates; per-function
@@ -193,7 +155,5 @@ gate and are validated by the §0 differential fuzzer.
   (algebraic/dead-branch/jump-table); a time-budgeted engine; dependency-ordered
   `-O1`; cross-TU LTO; `-g` from provenance; hot-reload CST snapshots; separate
   `-O2`/`-O3` SSA drivers.
-- **ACHTUNG — explicitly fenced off (DO NOT DO):** human-dimension-aware
-  diagnostics tested against terminal geometry; a full `-g` debugger + gdb test
-  suite; `-O1..100` max-seconds-to-optimize levels (superseded by the `-O<N>`
-  search); `--hotreload` from reconciled CST snapshots.
+- human friendly diagnostics tested against terminal geometry; a full `-g`
+  debugger + gdb test suite; `--hotreload` from reconciled CST snapshots.
