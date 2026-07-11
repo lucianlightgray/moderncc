@@ -2044,6 +2044,18 @@ not commutative-safe, so stays out). Native arm64 spot-check recommended
   and finally *replacing* (not just informing) the promotion assignment, each
   fixpoint-gated + native arm64/riscv64.
 
+  **SECOND INCREMENT — IN PROGRESS (2026-07-10):** live-range interference so
+  the coloring can *share* a register between promotion candidates whose live
+  ranges are disjoint (the actual codegen win over greedy). Plan: (1) compute a
+  first-ref/last-ref position interval per candidate over the AST linearization;
+  (2) build the interference graph from interval *overlap* instead of the
+  current complete graph, so non-overlapping candidates get the same color; (3)
+  make `ast_promo_entry_init` / the promoted-ref rewrite honor per-range
+  liveness (load a shared register at each range start) so physical sharing is
+  sound. Still behind `MCC_AST_COLOR` (default off); gate off stays
+  byte-identical, forced-on validated by the exec-corpus differential +
+  `-O0` fixpoint + native arm64/riscv64 before it lands.
+
 ## 37. Bench-statistics roadmap — Bayesian + ANOVA inference (medium, tools-only)
 
 `tools/bench.c` ships Welch's t-test + Cohen's d + percentile-bootstrap 95%
