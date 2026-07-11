@@ -105,8 +105,15 @@ candidates complete); asttool 55/55 with the portable `clock()` timer.
   and compact the append-only file instead of the current ~64K-record size cap.
 - [ ] **Step 5+ — NCores-1 coroutine thread pool** — stackless `step()` strategies on a
   C11 pool (optional, confined to -O4+/JIT; disabled under `__STDC_NO_THREADS__`).
+  **Blocked on thread-safe side-cars:** the search's candidate evaluation runs the fold
+  passes, which read/write the single global `ast_du_*`/`ast_memo_*`/`ast_hash_*`
+  side-cars (keyed by one arena pointer) — parallel candidates on different clones would
+  thrash them. Needs `_Thread_local` side-cars (or per-worker instances) first; that is
+  a substrate change, not a scheduler change.
 - [ ] **Step 5+ — runtime JIT + guarded deopt** — the -O4+/JIT tier (per-tick drive,
   entry-guarded variant dispatch); depends on §26 embedded recompiler + hot-swap.
+  **Blocked:** there is no runtime recompiler (`mcc_relocate` is a one-shot `-run`
+  loader; `--embed-jit` only prints a manifest) — §26 must land first.
 
 ## Bugs — surfaced by the conformance-test expansion (concrete repros)
 
