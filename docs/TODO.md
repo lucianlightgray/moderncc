@@ -1245,6 +1245,36 @@ replay, measure the emitted length (`ind - ast_body_ind_sv`), and keep the
 smallest. That clone + repeatable-reset is the real work of §22 and must be
 validated across all four exec-replay columns + fixpoint at each step.
 
+**PREREQUISITE BUILT (2026-07-11): `ast_arena_clone`.** The AST-clone the
+blocker names now exists (`src/mccast.c`, prototyped in `mccast.h`): a straight
+deep copy of the 13 parallel `AstArena` arrays (`kind/parent/first_child/
+last_child/next_sib/nchild/op/type_t/type_ref/ival/fbits/sym/cst`) + `count`,
+sized compactly to `count` (grows independently thereafter). No pointer fix-up —
+node ids are arena-relative and `sym/type_ref/cst` are arena-independent. Locked
+by the `ast/clone` unit test (47 checks): structural equality, **bidirectional
+independence** (mutating either arena never touches the other — the load-bearing
+property), independent growth, and empty-arena clone. Full ctest **1888/1888**;
+`ast_arena_clone` is not on the compile path, so `fixpoint-invariant` and every
+object golden are unchanged.
+
+**Remaining §22 (the in-process multi-config re-emit).** The mechanism is now
+fully scoped from `ast_func_end` (`src/mccast.c`): the passes mutate only the
+arena (the pass-local tables `ast_cse_*`/`ast_promo_*`/`ast_ltemp_*` self-reset
+each attempt; promotion/inline are emit-time flags, not arena mutations), so a
+trial = clone the pristine post-faithful tree, run config-A passes on `ast_cur`
+and config-B passes on the clone, re-emit each through the existing reset block
+(`ind←ast_body_ind_sv`, `rsym←0`, reloc offset, `nocode_wanted←0`, `loc`,
+`anon_sym`, `ast_fconst_i/ast_locrec_i`, `ast_replaying`, `ast_rp_*`,
+`ast_pinned_regs`, `ast_inline_active`, `ast_graft_budget`), score by
+`ind - ast_body_ind_sv`, and keep the arena whose re-emit is smaller (restoring
+its text bytes if it wasn't emitted last). This is CORRECTNESS-CRITICAL
+core-driver surgery (2–3 re-emits per function with scratch text save/restore);
+it must land behind a NEW default-off gate (e.g. `MCC_AST_PERFN_INPROC`) so the
+default `-O0..-O3` and the existing `-O4` child-process search stay byte-
+identical, and be gated on the x86_64 + arm64 3-stage self-host fixpoints (per
+[[mcc-arm64-selfhost-recipe]]) + the diamond/perfn ctests. Deliberately NOT
+rushed here — the clone primitive is the safe, tested first step.
+
 Builds on §21 + the capture/replay driver.
 
 ## 23. Widen the inliner envelope — the "aggressive" mode (medium-large, correctness-sensitive)

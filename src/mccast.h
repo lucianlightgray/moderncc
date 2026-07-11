@@ -35,6 +35,7 @@ extern "C" {
 #endif
 
 AstArena *ast_arena_new(void);
+AstArena *ast_arena_clone(const AstArena *src);
 void ast_arena_free(AstArena *a);
 void ast_arena_reset(AstArena *a);
 

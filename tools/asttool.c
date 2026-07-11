@@ -60,6 +60,58 @@ static void suite_arena(void) {
 	ast_arena_free(a);
 }
 
+static void suite_clone(void) {
+	AstArena *a = ast_arena_new();
+	AstLocal add = build_expr(a);
+	AstLocal mul = ast_child(a, add, 1);
+
+	AstArena *b = ast_arena_clone(a);
+	CHECK(b != NULL, "clone allocates");
+	CHECK(ast_count(b) == ast_count(a), "clone has same node count");
+
+	for (AstLocal n = 0; n < ast_count(a); n++) {
+		CHECK(ast_kind(b, n) == ast_kind(a, n), "clone kind matches");
+		CHECK(ast_op(b, n) == ast_op(a, n), "clone op matches");
+		CHECK(ast_ival(b, n) == ast_ival(a, n), "clone ival matches");
+		CHECK(ast_nchild(b, n) == ast_nchild(a, n), "clone nchild matches");
+		CHECK(ast_first_child(b, n) == ast_first_child(a, n), "clone first_child matches");
+		CHECK(ast_next_sib(b, n) == ast_next_sib(a, n), "clone next_sib matches");
+		CHECK(ast_parent(b, n) == ast_parent(a, n), "clone parent matches");
+	}
+	char msg[64];
+	CHECK(ast_validate(b, msg, sizeof msg) == 0, "clone validates");
+
+	/* Independence: mutating the clone must not touch the original. */
+	ast_set_op(b, add, '-');
+	ast_clear_children(b, mul);
+	CHECK(ast_op(a, add) == '+', "original op unchanged after clone mutated");
+	CHECK(ast_nchild(a, mul) == 2, "original children unchanged after clone cleared");
+	CHECK(ast_op(b, add) == '-', "clone op did change");
+	CHECK(ast_nchild(b, mul) == 0, "clone children did clear");
+
+	/* And the reverse: mutating the original must not touch the clone. */
+	AstArena *c = ast_arena_clone(a);
+	ast_set_ival(a, ast_child(a, add, 0), 99);
+	CHECK(ast_ival(c, ast_child(c, add, 0)) == 2, "second clone unchanged after original mutated");
+
+	/* Clone can grow independently past its compact capacity. */
+	AstLocal extra = ast_node(b, AST_Literal);
+	ast_set_ival(b, extra, 7);
+	CHECK(ast_count(b) == ast_count(a) + 1, "clone grew by one node");
+	CHECK(ast_count(c) == ast_count(a), "unrelated clone did not grow");
+
+	CHECK(ast_arena_clone(a) != a, "clone is a distinct object");
+	AstArena *empty = ast_arena_new();
+	AstArena *ec = ast_arena_clone(empty);
+	CHECK(ec != NULL && ast_count(ec) == 0, "clone of empty arena is empty");
+
+	ast_arena_free(a);
+	ast_arena_free(b);
+	ast_arena_free(c);
+	ast_arena_free(empty);
+	ast_arena_free(ec);
+}
+
 static void suite_validate(void) {
 	AstArena *a = ast_arena_new();
 	build_expr(a);
@@ -277,6 +329,8 @@ int main(int argc, char **argv) {
 	const char *only = argc > 1 ? argv[1] : NULL;
 	if (!only || !strcmp(only, "arena"))
 		suite_arena();
+	if (!only || !strcmp(only, "clone"))
+		suite_clone();
 	if (!only || !strcmp(only, "color"))
 		suite_color();
 	if (!only || !strcmp(only, "validate"))

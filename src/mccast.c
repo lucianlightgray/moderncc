@@ -91,6 +91,35 @@ void ast_arena_free(AstArena *a) {
 	free(a);
 }
 
+AstArena *ast_arena_clone(const AstArena *src) {
+	AstArena *a = calloc(1, sizeof *a);
+	if (!a)
+		return NULL;
+	a->count = src->count;
+	a->cap = src->count;
+	if (src->count == 0)
+		return a;
+#define AST_DUP(field)                                    \
+	a->field = malloc(a->cap * sizeof *a->field);           \
+	if (a->field)                                           \
+		memcpy(a->field, src->field, src->count * sizeof *a->field)
+	AST_DUP(kind);
+	AST_DUP(parent);
+	AST_DUP(first_child);
+	AST_DUP(last_child);
+	AST_DUP(next_sib);
+	AST_DUP(nchild);
+	AST_DUP(op);
+	AST_DUP(type_t);
+	AST_DUP(type_ref);
+	AST_DUP(ival);
+	AST_DUP(fbits);
+	AST_DUP(sym);
+	AST_DUP(cst);
+#undef AST_DUP
+	return a;
+}
+
 AstLocal ast_node(AstArena *a, uint16_t kind) {
 	ast_grow(a, a->count + 1);
 	AstLocal n = a->count++;
