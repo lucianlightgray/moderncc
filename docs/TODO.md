@@ -2569,8 +2569,25 @@ fixpoint invariant if rushed. Sequenced, not started:
   `-O1/-O2/-O3` on arm64 AND x86_64 (Rosetta, promotion active); gate-ON `-O2`
   self-host fixpoint converges on both arches (arm64 `a93a08d7`, x86_64
   `cd5498cd` — obstacle B holds with IVSR accumulator temps + promotion);
-  fires (object differs, accumulator init emitted). **Remaining**: post-join
-  PRE (the last §32c consumer).
+  fires (object differs, accumulator init emitted).
+  **POST-JOIN PRE — ATTEMPTED, BLOCKED by a self-host MISCOMPILE** (2026-07-11,
+  NOT landed): an `MCC_AST_PRE` prototype (hoist a pure integer `Binary`
+  computed in an If arm AND recomputed after the join into a fresh temp — the
+  anticipable case) passed gate-off byte-identity + adversarial exec vs clang
+  on both arches, BUT the **gate-ON `-O2` self-host fixpoint FAILS on arm64**:
+  PRE *does* fire on `mcc.c` (gate-off vs gate-on `-O2` object differs,
+  `116d3bb8`≠`327ab7733456`), producing a stage2 compiler whose stage2≠stage3
+  and whose stage3 miscompiles `mcc.c` (stage4 build fails). The prototype's
+  whole-function goto-label guard does NOT prevent firing on the many label-
+  free functions in `mcc.c`, and one of those firings is miscompiled — a real
+  correctness bug (the anticipability/dominance reasoning or the arm-insertion
+  is unsound for some shape). The clean self-host is a proper fixpoint
+  (`b68850f9`), so this is PRE's bug, not a base issue. LESSON: adversarial
+  exec + byte-identity are NOT sufficient for a fresh-temp arm-insertion pass;
+  the 3-stage self-host fixpoint gate is the one that catches it. Patch saved
+  (`scratchpad/pre_blocked.patch`) for debugging: bisect which `mcc.c` function
+  PRE miscompiles, tighten the guard to the store→use region, re-gate on the
+  self-host fixpoint. Remains OPEN (the other two §32c consumers landed).
 - **§36 Chaitin–Briggs graph-coloring regalloc** — largest, replaces
   `ast_plan_promotion`; run last.
 - **§26 `--embed-jit` runtime engine**, **§33b/c/d/e**, **§27/§28**,
