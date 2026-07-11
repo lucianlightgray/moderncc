@@ -5868,6 +5868,15 @@ static int ast_pre_arm_store(AstArena *a, AstLocal bb, AstLocal *store) {
 	return 1;
 }
 
+static AstLocal ast_pre_binary_of(AstArena *a, AstLocal store) {
+	AstLocal e = ast_child(a, store, 1);
+	while (e != AST_NONE && ast_kind(a, e) == AST_Convert && ast_nchild(a, e) == 1)
+		e = ast_first_child(a, e);
+	if (e == AST_NONE || ast_kind(a, e) != AST_Binary)
+		return AST_NONE;
+	return e;
+}
+
 static int ast_pre_occurs(AstArena *a, AstLocal n, AstLocal e) {
 	if (n == AST_NONE)
 		return 0;
@@ -5902,10 +5911,10 @@ static int ast_pre_run(AstArena *a) {
 		if (!ast_pre_arm_store(a, thenbb, &ts) ||
 				!ast_pre_arm_store(a, elsebb, &es))
 			continue;
-		AstLocal e = ast_child(a, ts, 1);
-		if (ast_kind(a, e) != AST_Binary)
+		AstLocal e = ast_pre_binary_of(a, ts), e2 = ast_pre_binary_of(a, es);
+		if (e == AST_NONE || e2 == AST_NONE)
 			continue;
-		if (!ast_ident_same(a, e, ast_child(a, es, 1)))
+		if (!ast_ident_same(a, e, e2))
 			continue;
 		if (!ast_cse_regpure(a, e))
 			continue;

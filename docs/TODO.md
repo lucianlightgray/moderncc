@@ -2627,7 +2627,20 @@ fixpoint invariant if rushed. Sequenced, not started:
   gate-ON self-host converges + functional; diamond fuzzer (now emitting multi-
   statement/side-effect arms) **x86_64 400/400** (fired 374) and **arm64 200/200
   under qemu** (fired 200) match gcc; operand-written-in-arm correctly NOT folded.
-  Next broadenings: Convert-wrapped RHS, table-driven anticipability.
+  **BROADENING 2 — Convert-wrapped RHS LANDED** (2026-07-11, dual-arch): the RHS
+  matcher (`ast_pre_binary_of`) now peels `AST_Convert` wrappers to reach the
+  inner `Binary` E, so mixed-width diamonds (`long`/`char`/`short`/… targets
+  around an `int`/`unsigned` E, where the store RHS is `Convert(Binary)`) fold —
+  E is hoisted into a temp of **E's own type** and each arm's/reuse's `Convert`
+  chain simply re-wraps the temp read, so the truncation/widening still happens
+  exactly where it did (sound: temp holds the un-converted E value). Validated:
+  gate-off ctest **1887/1887**; x86_64 gate-ON `fixpointgate` converges; arm64
+  gate-ON 3-stage self-host converges (PRE fires more widely on `mcc.c`, still a
+  correct fixpoint; PRE-on-built arm64 mcc compiles a mixed-type TU correctly);
+  a mixed-width diamond fuzzer (targets `unsigned`/`unsigned long`/`unsigned
+  char`/`unsigned short`/`int`/`long`) **x86_64 400/400** (fired 393) and **arm64
+  200/200 under qemu** (fired 200) match gcc. Next broadening: table-driven
+  anticipability via the `ast_cse_state_meet` join (non-tail / cross-block E).
 - **§36 Chaitin–Briggs graph-coloring regalloc** — largest, replaces
   `ast_plan_promotion`; run last.
 - **§26 `--embed-jit` runtime engine**, **§33b/c/d/e**, **§27/§28**,
