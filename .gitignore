@@ -10,3 +10,6 @@ logs_*.zip
 
 # valgrind core dumps
 vgcore.*
+
+# transient artifacts written by exec tests run from the repo root
+fred.txt
