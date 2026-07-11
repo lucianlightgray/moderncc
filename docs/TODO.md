@@ -2423,6 +2423,18 @@ not commutative-safe, so stays out). Native arm64 spot-check recommended
   380 random programs** (loops/branches/switch) with `MCC_AST_COLOR=1`; sharing
   now fires **149×** (up from 116).
 
+  **NATIVE arm64/riscv64 VALIDATION — DONE (2026-07-11, via qemu+musl).** The
+  four landed increments were gated x86_64-only; since `MCC_AST_COLOR` is a
+  *register allocator* (arch-specific register banks), it is now exercised on the
+  other two ISAs with optimizer-enabled cross compilers under qemu (see
+  [[mcc-arm64-selfhost-recipe]]): **arm64** — `MCC_AST_COLOR=1` exec corpus
+  **100/100** correct vs gcc AND the gate-ON `-O2` 3-stage self-host **converges**
+  (s2==s3==s4); **riscv64** — `MCC_AST_COLOR=1` exec corpus **100/100** correct,
+  the pass fires on all 100 (object differs from gate-off). So the Chaitin–Briggs
+  allocator + register-sharing is confirmed correct on all three register models,
+  not just x86_64. (riscv64 full `mcc.c` self-host is separately blocked by the
+  pre-existing Tier-3 riscv64 backend gap — Bucket C — not this pass.)
+
   Remaining for §36: spill-slot sharing (coloring gives it for free once
   extended to spilled ranges), and finally *replacing* the promotion heuristic
   outright rather than filtering it — each fixpoint-gated + native
