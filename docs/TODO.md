@@ -1181,6 +1181,25 @@ rule against the faithful replay before it may fire).
 
 ## 29. `Convert` representation optimizer — search type conversions (large, correctness-sensitive)
 
+PHASE-(a) INVESTIGATED (2026-07-10): the "standalone bounded safe-narrowing
+first cut" does NOT decompose into a clean local pass in this architecture — it
+reduces to the Bucket-B range-analysis project. Reasons (all from source):
+(1) `AST_Binary` replay recomputes the result type from operand types via
+`gen_op` (`mccast.c:2516-2533`) and ignores the node's stored type, so a
+computation cannot be narrowed by retyping its Binary node — only `AST_Convert`
+/`AST_Literal` have emission-driving types; (2) `gen_cast` constant-folds a cast
+of a literal (`mccgen.c:3278-3332`), so narrowing a constant or exact float
+literal is a byte-identical no-op; (3) there is no range/known-bits facility —
+`ast_cprop_*` tracks only exact constants (`ast_cprop_kval`); (4) the one useful
+local narrowing (`(i64)(i32)e`→inner, widen-of-narrower) is ALREADY handled by
+the landed redundant-cast pass (`ast_ident_convert`, `mccast.c:3611-3620`). So
+the local-only provable-safe narrowing set is empty (already-handled or no-op).
+Every *beneficial* narrowing (wide expression computed in a narrower type) needs
+an integer range/known-bits lattice + a use-site (context) oracle + multi-node
+restructuring (following the `ast_bf_build`/`ast_tco_run` node-construction
+precedent) — i.e. phase-(b), folded into the §22 search under the §28 oracle as
+already planned. Tracked as Bucket-B; nothing safe to land standalone.
+
 A search-driven pass that tries re-typing values via the `AST_Convert`
 node: for each value/expression, cast it to alternative representations
 (narrow/widen integer widths, signed↔unsigned, int↔float↔double) and keep
