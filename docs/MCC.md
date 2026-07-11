@@ -22,7 +22,7 @@ assembler, near-`-O0` deterministic host-independent backend. Who: TinyCC
 (Bellard) lineage, LGPL-2.1; self-hosts + cross-compiles. Children:
 
 - **targets/arches** (≈12) — W: x86_64 · i386 · arm · arm64 · riscv64. H: cross via `mcc-<arch>` (`MCC_ENABLE_CROSS`). Why: x86_64 is where Tier-3 promotion is validated; i386 has the fastcall ordering limit; riscv64/arm carry per-target `long double` widths.
-- **libcs** (≈9) — W: glibc · musl · msvcrt · libSystem. H: glibc/musl via `--sysroot`; PE links legacy `msvcrt.dll`. Why: musl enables fully-static self-host; static-glibc via mcc hits a `__pthread_initialize_minimal` gap.
+- **libcs** (≈9) — W: glibc · musl · msvcrt · libSystem. H: glibc/musl via `--sysroot`; PE links legacy `msvcrt.dll`. Why: musl enables fully-static self-host; static-glibc self-host also works (verified glibc 2.43 — `mcc -static` self-hosts static→static; the old `__pthread_initialize_minimal` gap was env/glibc-version-specific, not a standing defect).
 - **object formats** (≈8) — W: ELF · PE/COFF · Mach-O. Whr: `src/objfmt`. Why: ELF `longjmp` doesn't unwind (mingw SEH bug is PE-only); PE MSVC-ABI makes `long double`==`double`; Mach-O errors external `__thread`.
 - **modes** (≈7) — W: compile+link · `-c` · `-S` (asm listing via built-in disassembler) · `-run` (in-memory JIT, no `a.out`) · `libmcc` C API.
 - **build variants** (≈7) — W: `mcc` (default single-source), `mcc-static`, `mcc-dynamic`, `-musl` siblings, cross `mcc-<arch>`. H: suffix `mcc[-<arch>][-static|-dynamic][-musl]`. → §3.

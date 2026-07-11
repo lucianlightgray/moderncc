@@ -2203,15 +2203,21 @@ Linux box does not have — parked here so they are tracked, not lost:
       **msvc-arm64** (Windows runner) and the ELF linux `-O2/-O3` cells (a
       Linux runner / Docker — qemu on macOS provides only system, not
       `qemu-riscv64` user-mode emulation).
-- [ ] **static-glibc self-host gap** (README.md:12 / MCC.md:25): static-glibc
-      via mcc hits a `__pthread_initialize_minimal` gap (musl is the
-      fully-static path). This is a glibc-internals issue (glibc's static
-      libc reserves TLS/pthread init that mcc's crt doesn't wire), reproducible
-      only in a glibc-Linux environment (Docker/colima Linux, or CI) — not on
-      this Mach-O/libSystem host. RECOMMENDATION: document-as-permanent [DIFF]
-      — musl is the supported fully-static self-host path; static-glibc is a
-      glibc-startup-ABI corner, not a mcc codegen defect. Confirm-or-fix on the
-      Linux CI cell; not on-box.
+- [x] **static-glibc self-host gap** (MCC.md:25): **RESOLVED — does not
+      reproduce on current glibc (2.43).** Confirmed 2026-07-11 on the
+      x86_64 Gentoo glibc box (the earlier note assumed it was reproducible
+      "only in a glibc-Linux environment... not on this Mach-O host" — this IS
+      that environment): `mcc -static` links a fully-static plain program AND a
+      `-pthread` program that both run correctly (`__pthread_initialize_minimal`
+      links fine, no gap); and the **full static self-host** works —
+      `mcc -static` compiles `src/mcc.c` into a statically-linked mcc (1.78 MB,
+      `file`: "statically linked") that in turn compiles+links a program
+      correctly, and *that* static mcc self-compiles again (static→static→
+      works). So the `__pthread_initialize_minimal` gap was env/glibc-version-
+      specific (an older glibc's static-libc TLS-init ABI), not a standing mcc
+      codegen/crt defect. MCC.md:25 prose updated. musl remains the *portable*
+      fully-static path; static-glibc is no longer a documented gap on modern
+      glibc.
 
 ## 39. Doc-staleness reconciliation (docs-only, no code)
 
