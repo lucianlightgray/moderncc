@@ -634,6 +634,7 @@ int ast_replaying;
 
 static int *ast_locrec;
 static int ast_locrec_n, ast_locrec_cap, ast_locrec_i;
+static int ast_loc_low;
 
 unsigned ast_pinned_regs;
 int ast_func_has_asm;
@@ -641,9 +642,13 @@ int ast_func_has_asm;
 int ast_alloc_loc(int size, int align) {
 	if (ast_replaying && ast_locrec_i < ast_locrec_n) {
 		loc = ast_locrec[ast_locrec_i++];
+		if (loc < ast_loc_low)
+			ast_loc_low = loc;
 		return loc;
 	}
 	loc = (loc - size) & -align;
+	if (loc < ast_loc_low)
+		ast_loc_low = loc;
 	if (ast_active && !ast_replaying) {
 		if (ast_locrec_n == ast_locrec_cap) {
 			ast_locrec_cap = ast_locrec_cap ? ast_locrec_cap * 2 : 16;
@@ -6457,7 +6462,19 @@ void ast_func_end(Sym *sym) {
 						ast_pinned_regs |= (1u << ast_promo_regpool_at(pi));
 					if (do_promote)
 						ast_promo_entry_init();
+					/* The frame size is -loc at the epilog, but ast_alloc_loc's replay
+					   path assigns loc from the captured slot list, which an
+					   optimization can desync (a fold changes the allocation count), so
+					   loc can finish shallower than the deepest slot actually emitted —
+					   under-sizing the frame so deep locals sit below rsp and get
+					   clobbered by calls (uninitialized reads). Track the true low-water
+					   during the replay and clamp loc to it so the frame always covers
+					   every slot. A faithful replay is monotonic ⇒ ast_loc_low == loc ⇒
+					   byte-identical. */
+					ast_loc_low = loc;
 					ast_replay_body(ast_cur);
+					if (ast_loc_low < loc)
+						loc = ast_loc_low;
 					ast_replaying = 0;
 					ast_inline_active = 0;
 					ast_pinned_regs = 0;

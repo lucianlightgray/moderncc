@@ -3058,6 +3058,13 @@ if(MCC_BUILD_TESTS)
                     "-DINLINES=choose,clampk,mul,addk" "-DSPECIALIZES=choose,clampk,mul,addk"
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
                 set_tests_properties("ast/replay-inline-spec" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
+                add_test(NAME "ast/inline-frame" COMMAND "${CMAKE_COMMAND}"
+                    "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
+                    "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/inline.c"
+                    "-DOUT=${CMAKE_BINARY_DIR}/ast-inline-frame" "-DEXPECT_RC=42"
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/frame_regress.cmake")
+                set_tests_properties("ast/inline-frame" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
             else()
                 mcc_skip_test("ast/replay-inline"
                     "virtual-inline is arch-independent and compiles on ${MCC_CPU}, but the fixture assertion is only verified on x86_64/arm64 so far")
