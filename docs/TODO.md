@@ -278,8 +278,14 @@ makes the compiler a sanitizer *provider* for user code.
       arm64), TSan/MSan (x86_64-only stretch or documented out-of-scope) —
       gated per-target like the Tier-4 inliner. UBSan trap mode landed
       **x86_64 ELF/Mach-O only** for now (the checks live in `x86_64-gen.c`;
-      the `-fsanitize=` flag warns/erases on other targets and PE). Porting the
-      four checks to arm64/riscv64 backends + ASan/TSan/MSan remain.
+      the `-fsanitize=` flag warns/erases on other targets and PE). **ASan
+      landed via bcheck** — `-fsanitize=address`/`bounds` reuse the
+      `MCC_CONFIG_DIAG_RT>=2` memory checker on every arch where bcheck is built
+      (arch-neutral, not x86_64-gated), predefining `__SANITIZE_ADDRESS__`;
+      combining `-fsanitize=undefined,address` even routes the UBSan `ud2` trap
+      through bcheck's backtrace handler for a *sourced* diagnostic. Remaining:
+      porting the four UBSan arithmetic traps to arm64/riscv64 backends (blocked
+      on a local cross-sysroot to validate), native-shadow ASan, TSan/MSan.
 - [x] **Test matrix:** a `tests/sanitize/` corpus with one program per UB /
       memory-error class asserting the check fires (and clean programs stay
       silent), across `-O0..-O3` and with the optimizer forced on. LANDED:
@@ -294,6 +300,9 @@ makes the compiler a sanitizer *provider* for user code.
       or a small self-contained one; the decision shapes everything downstream.
 - **bcheck consolidation** — seed ASan's redzone/shadow model from the existing
       `MCC_CONFIG_DIAG_RT` bounds machinery rather than a parallel system.
+      **DONE (2026-07-11):** `-fsanitize=address` *is* bcheck (see the ASan
+      first-increment note under "ASan design") — the self-contained MVP that
+      detects heap/stack/global OOB with a source location, no parallel runtime.
 - **Trap vs recover vs abort**, and a minimal **PE/mingw trap-mode UBSan**
       (mirrors the existing MSVC/mingw host-sanitize story).
 - **`-fsanitize-coverage`** — coverage instrumentation that feeds §0's
