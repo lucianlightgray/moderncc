@@ -2535,8 +2535,21 @@ fixpoint invariant if rushed. Sequenced, not started:
   with promotion ACTIVE — gate-ON multi-invariant TU matches `-O0` AND clang
   (`832675297231051594`) at `-O1/-O2/-O3` and the gate-ON `-O2` self-host
   fixpoint converges (obstacle B holds with multiple temps + promotion).
-  **Remaining**: post-join PRE → IV strength reduction (the further §32c
-  consumers).
+  **IV STRENGTH REDUCTION — LANDED** (2026-07-11, dual-arch): new default-off
+  gate `MCC_AST_IVSR` (`ast_ivsr_run`) replaces an in-loop `iv * c` (affine IV
+  incremented by a loop-invariant literal stride, `c` loop-invariant) with a
+  fresh accumulator temp — init `t = iv_init * c` in the preheader, `t +=
+  c*stride` in the loop's increment block, `iv*c → t` in the body — reusing the
+  §32c carve/poison/`AST_Convert` machinery. Validated on BOTH arches:
+  gate-off `-O0..-O3` byte-identical (entry gated behind `ast_ivsr_env`);
+  12-function edge sweep (up/down loops, negative stride, stride≠1, negative
+  `c`, IV used bare + multiplied, unsigned/long, zero-trip, base+iv*c, nested
+  distinct IVs, start≠0, overflow boundary) matches `-O0` AND system clang at
+  `-O1/-O2/-O3` on arm64 AND x86_64 (Rosetta, promotion active); gate-ON `-O2`
+  self-host fixpoint converges on both arches (arm64 `a93a08d7`, x86_64
+  `cd5498cd` — obstacle B holds with IVSR accumulator temps + promotion);
+  fires (object differs, accumulator init emitted). **Remaining**: post-join
+  PRE (the last §32c consumer).
 - **§36 Chaitin–Briggs graph-coloring regalloc** — largest, replaces
   `ast_plan_promotion`; run last.
 - **§26 `--embed-jit` runtime engine**, **§33b/c/d/e**, **§27/§28**,

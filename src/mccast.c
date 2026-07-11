@@ -502,6 +502,7 @@ static int ast_cprop_join_env;
 static int ast_cse_join_env;
 static int ast_call_window_env;
 static int ast_licm_temp_env;
+static int ast_ivsr_env;
 
 #define AST_LTEMP_MAX 32
 #define AST_LTEMP_PER_LOOP 8
@@ -759,6 +760,7 @@ void ast_configure(MCCState *s1) {
 	ast_cse_join_env = ast_env_gate("MCC_AST_CSE_JOIN", 0);
 	ast_call_window_env = ast_env_gate("MCC_AST_CALL_WINDOW", 0);
 	ast_licm_temp_env = ast_env_gate("MCC_AST_LICM_TEMP", 0);
+	ast_ivsr_env = ast_env_gate("MCC_AST_IVSR", 0);
 	ast_color_env = ast_env_gate("MCC_AST_COLOR", 0);
 	ast_intention_acc = 0;
 	ast_hash_out = getenv("MCC_AST_HASH_OUT");
@@ -5639,6 +5641,221 @@ static int ast_ltemp_run(AstArena *a) {
 	return did;
 }
 
+static int ast_ivsr_width(int tt) {
+	switch (tt & VT_BTYPE) {
+	case VT_BOOL:
+	case VT_BYTE:
+		return 1;
+	case VT_SHORT:
+		return 2;
+	case VT_INT:
+		return 4;
+	case VT_LLONG:
+		return 8;
+	}
+	return 0;
+}
+
+static int ast_ivsr_incr_of(AstArena *a, AstLocal s, int *ivoff, int *ivtt,
+														int64_t *stride) {
+	uint16_t k = ast_kind(a, s);
+	if (k == AST_Unary && (ast_op(a, s) == TOK_INC || ast_op(a, s) == TOK_DEC)) {
+		AstLocal r = ast_first_child(a, s);
+		int off, tt;
+		if (r != AST_NONE && ast_cprop_is_local(a, r, &off, &tt) &&
+				ast_ident_intt(tt)) {
+			*ivoff = off;
+			*ivtt = tt;
+			*stride = ast_op(a, s) == TOK_INC ? 1 : -1;
+			return 1;
+		}
+		return 0;
+	}
+	if (k == AST_Store) {
+		AstLocal lval = ast_child(a, s, 0), rhs = ast_child(a, s, 1);
+		int off, tt;
+		if (!ast_cprop_is_local(a, lval, &off, &tt) || !ast_ident_intt(tt))
+			return 0;
+		if (rhs == AST_NONE || ast_kind(a, rhs) != AST_Binary ||
+				ast_nchild(a, rhs) != 2)
+			return 0;
+		int bop = ast_op(a, rhs);
+		if (bop != '+' && bop != '-')
+			return 0;
+		AstLocal x = ast_child(a, rhs, 0), y = ast_child(a, rhs, 1);
+		if (ast_ref_is_local_off(a, x, off) && ast_kind(a, y) == AST_Literal) {
+			int64_t kk = (int64_t)ast_ival(a, y);
+			*ivoff = off;
+			*ivtt = tt;
+			*stride = bop == '+' ? kk : -kk;
+			return 1;
+		}
+		if (bop == '+' && ast_ref_is_local_off(a, y, off) &&
+				ast_kind(a, x) == AST_Literal) {
+			*ivoff = off;
+			*ivtt = tt;
+			*stride = (int64_t)ast_ival(a, x);
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static int ast_ivsr_count_writes(AstArena *a, AstLocal n, int off) {
+	if (n == AST_NONE)
+		return 0;
+	uint16_t k = ast_kind(a, n);
+	int cnt = 0;
+	if (k == AST_Store && ast_ref_is_local_off(a, ast_child(a, n, 0), off))
+		cnt++;
+	if (k == AST_Unary && ast_ref_is_local_off(a, ast_first_child(a, n), off))
+		cnt++;
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		cnt += ast_ivsr_count_writes(a, c, off);
+	return cnt;
+}
+
+static AstLocal ast_ivsr_target;
+
+static AstLocal ast_ivsr_cofactor(AstArena *a, AstLocal loop, AstLocal mul,
+																	int ivoff, int ivtt) {
+	int et;
+	uint64_t er;
+	if (ast_kind(a, mul) != AST_Binary || ast_op(a, mul) != '*' ||
+			ast_nchild(a, mul) != 2 || !ast_cse_regpure(a, mul))
+		return AST_NONE;
+	if (!ast_ident_etype(a, mul, &et, &er) || !ast_ident_intt(et))
+		return AST_NONE;
+	if (!ast_ivsr_width(et) || ast_ivsr_width(et) != ast_ivsr_width(ivtt))
+		return AST_NONE;
+	AstLocal x = ast_child(a, mul, 0), y = ast_child(a, mul, 1), c;
+	if (ast_ref_is_local_off(a, x, ivoff))
+		c = y;
+	else if (ast_ref_is_local_off(a, y, ivoff))
+		c = x;
+	else
+		return AST_NONE;
+	if (!ast_cse_regpure(a, c) || !ast_licm_operands_ok(a, loop, c))
+		return AST_NONE;
+	return c;
+}
+
+static void ast_ivsr_scan(AstArena *a, AstLocal loop, AstLocal n, int ivoff,
+													int ivtt) {
+	if (n == AST_NONE || ast_ivsr_target != AST_NONE)
+		return;
+	if (ast_ivsr_cofactor(a, loop, n, ivoff, ivtt) != AST_NONE) {
+		ast_ivsr_target = n;
+		return;
+	}
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		ast_ivsr_scan(a, loop, c, ivoff, ivtt);
+}
+
+static int ast_ivsr_run(AstArena *a) {
+	int did = 0;
+	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++) {
+		if (ast_kind(a, n) != AST_If)
+			continue;
+		int op = ast_op(a, n);
+		if (op != 3 && op != 5)
+			continue;
+		if (ast_sccp_has_label(a, n))
+			continue;
+		AstLocal parent = ast_parent(a, n);
+		if (parent == AST_NONE || ast_kind(a, parent) != AST_BasicBlock)
+			continue;
+		AstLocal incrbb = ast_child(a, n, op == 3 ? 1 : 0);
+		AstLocal body = ast_child(a, n, op == 3 ? 2 : 1);
+		if (incrbb == AST_NONE || body == AST_NONE)
+			continue;
+		if (ast_kind(a, incrbb) != AST_BasicBlock ||
+				ast_kind(a, body) != AST_BasicBlock)
+			continue;
+		int ivoff = 0, ivtt = 0, found = 0;
+		int64_t stride = 0;
+		for (AstLocal s = ast_first_child(a, incrbb); s != AST_NONE;
+				 s = ast_next_sib(a, s))
+			if (ast_ivsr_incr_of(a, s, &ivoff, &ivtt, &stride)) {
+				found = 1;
+				break;
+			}
+		if (!found)
+			continue;
+		if (ast_cprop_escapes(a, ivoff))
+			continue;
+		if (ast_ivsr_count_writes(a, n, ivoff) != 1)
+			continue;
+		ast_ivsr_target = AST_NONE;
+		ast_ivsr_scan(a, n, body, ivoff, ivtt);
+		if (ast_ivsr_target == AST_NONE)
+			continue;
+		if (ast_ltemp_n >= AST_LTEMP_MAX)
+			break;
+		AstLocal mul = ast_ivsr_target;
+		AstLocal c = ast_ivsr_cofactor(a, n, mul, ivoff, ivtt);
+		if (c == AST_NONE)
+			continue;
+		int et;
+		uint64_t er;
+		ast_ident_etype(a, mul, &et, &er);
+		int off = (ast_ltemp_cur - 8) & -8;
+		AstLocal lref = ast_node(a, AST_Ref);
+		ast_set_op(a, lref, VT_LOCAL | VT_LVAL);
+		ast_set_ival(a, lref, (uint64_t)off);
+		ast_set_type(a, lref, et, er);
+		AstLocal cvt = ast_node(a, AST_Convert);
+		ast_set_type(a, cvt, et, er);
+		ast_add_child(a, cvt, ast_dup_sub(a, mul));
+		AstLocal st = ast_node(a, AST_Store);
+		ast_add_child(a, st, lref);
+		ast_add_child(a, st, cvt);
+		if (!ast_ltemp_insert_before(a, parent, n, st))
+			continue;
+		AstLocal iref = ast_node(a, AST_Ref);
+		ast_set_op(a, iref, VT_LOCAL | VT_LVAL);
+		ast_set_ival(a, iref, (uint64_t)off);
+		ast_set_type(a, iref, et, er);
+		AstLocal lit = ast_node(a, AST_Literal);
+		ast_set_op(a, lit, VT_CONST);
+		ast_set_type(a, lit, et, 0);
+		ast_set_ival(a, lit, (uint64_t)stride);
+		AstLocal delta = ast_node(a, AST_Binary);
+		ast_set_op(a, delta, '*');
+		ast_set_type(a, delta, et, er);
+		ast_add_child(a, delta, lit);
+		ast_add_child(a, delta, ast_dup_sub(a, c));
+		AstLocal add = ast_node(a, AST_Binary);
+		ast_set_op(a, add, '+');
+		ast_set_type(a, add, et, er);
+		ast_add_child(a, add, iref);
+		ast_add_child(a, add, delta);
+		AstLocal cvt2 = ast_node(a, AST_Convert);
+		ast_set_type(a, cvt2, et, er);
+		ast_add_child(a, cvt2, add);
+		AstLocal iwref = ast_node(a, AST_Ref);
+		ast_set_op(a, iwref, VT_LOCAL | VT_LVAL);
+		ast_set_ival(a, iwref, (uint64_t)off);
+		ast_set_type(a, iwref, et, er);
+		AstLocal ist = ast_node(a, AST_Store);
+		ast_add_child(a, ist, iwref);
+		ast_add_child(a, ist, cvt2);
+		ast_add_child(a, incrbb, ist);
+		AstLocal uref = ast_node(a, AST_Ref);
+		ast_set_op(a, uref, VT_LOCAL | VT_LVAL);
+		ast_set_ival(a, uref, (uint64_t)off);
+		ast_set_type(a, uref, et, er);
+		ast_licm_subst(a, body, mul, uref, 0);
+		ast_cse_setref(a, mul, uref);
+		ast_licm_folds++;
+		ast_ltemp_cur = off;
+		ast_ltemp_off[ast_ltemp_n++] = off;
+		did++;
+	}
+	return did;
+}
+
 static void ast_cse_block(AstArena *a, AstLocal bb) {
 	ast_cse_n = 0;
 	for (AstLocal s = ast_first_child(a, bb); s != AST_NONE; s = ast_next_sib(a, s)) {
@@ -5846,6 +6063,8 @@ static int ast_cse_run(AstArena *a) {
 		ast_cse_vis = NULL;
 		if (ast_licm_temp_env)
 			ast_ltemp_run(a);
+		if (ast_ivsr_env)
+			ast_ivsr_run(a);
 		return ast_cse_folds;
 	}
 	for (AstLocal n = 0; n < nn; n++)
@@ -5853,6 +6072,8 @@ static int ast_cse_run(AstArena *a) {
 			ast_cse_block(a, n);
 	if (ast_licm_temp_env)
 		ast_ltemp_run(a);
+	if (ast_ivsr_env)
+		ast_ivsr_run(a);
 	return ast_cse_folds;
 }
 
