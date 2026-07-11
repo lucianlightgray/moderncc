@@ -237,6 +237,20 @@ candidates complete); asttool 55/55 with the portable `clock()` timer.
 - [ ] **Normalize CMake incrementally** — autodetect + enable-what-the-host-
   supports, offload gating to `tools/`, fold `.cmake` files in — with a verifiable
   target, not a sweep (CI-breakage risk across ~35 presets/platforms).
+- [ ] **Cut CI wall-clock — attack the long-pole jobs** (from `logs_78925034425`:
+  run starts ~21:01, last job `dist / macos-x86_64-clang` finishes 21:24:54, so ~24
+  min end-to-end). The critical path is macOS + Windows + matrix jobs; native Linux
+  is already fast (ctest ~60s). Biggest per-job sinks, in priority order:
+  - **The `bench` target (~500s)** runs on the macOS/dist jobs (e.g. macos-cross:
+    build+ctest done 21:09:48, then `--target bench` alone runs to 21:18:21). Gate it
+    to a single fast native runner or a nightly job instead of every macOS/dist cell.
+  - **macOS ctest is ~7× native (~431s vs ~60s)** — slow runners / residual Rosetta
+    emulation (a prior pass already removed some; see [[arm64-native-ci-failures]]).
+    Shard the macOS ctest across more `-j`/jobs and shrink the emulated subset.
+  - **Matrix jobs re-run the full ctest per config cell sequentially** (38_matrix:
+    three ~146s passes ≈ 430s). Parallelize cells or prune redundant ones.
+  - **Windows msvc / sanitize-msvc / mingw ~900-970s** — profile build-vs-test split
+    and cache/prune. Measure each change against the same log-derived baseline.
 - [ ] **Implement slice-G multi-file `#include` stitching** — currently main-file
   only (the one open CST slice).
 - [ ] **Root-cause the named promote/inline gap tests.**
@@ -318,12 +332,14 @@ candidates complete); asttool 55/55 with the portable `clock()` timer.
 
 ## 0 — fully specified or execution-blocked (no open design questions)
 
-- [ ] **Add a global `MCC_TRACE(args...)` tracing macro** — variadic macro that
-  prints `FILE:LINE func` plus the passed args (and any other helpful context) for
-  rapid feature prototyping/debugging. Instrument every function entry point and
-  every branch point with it. Compiled out by default (no-op); enabled only in an
-  `MCC_CONFIG_TRACE=ON` build. Wire `MCC_CONFIG_TRACE=ON` into the `debug` CMake
-  preset by default for now.
+- [ ] **Instrument with the `MCC_TRACE(args...)` macro** — the macro itself landed
+  (`src/mcclog.h`): variadic, prints `[TRACE] FILE:LINE func:` + args, compiled out
+  unless `MCC_CONFIG_TRACE` (CMake option, default off), runtime-gated on the `[TRACE]`
+  verbosity bit. Remaining: instrument function entry points / branch points, and
+  decide whether to wire `MCC_CONFIG_TRACE=ON` into a preset (note the release-inherits-
+  debug caveat that applies to `MCC_CONFIG_AST_SHADOW`). See also the leveled-logging
+  helpers (`mcc_logf`/`MCC_DEBUG`) — existing ad-hoc `if (verbose) fprintf(stderr,...)`
+  sites can migrate to these tagged categories.
 - [ ] **Verify the three landed §38 msvc-arm64 FIX fixes** (the
   `vcheck_cmp`-before-`gfunc_call` guard, the `ast_fn_faithful` reemit gate, the
   x86_64-only promote frame-slot change) on a Windows-arm64 runner. (macos and
