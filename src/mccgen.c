@@ -843,11 +843,11 @@ static inline Sym *sym_malloc(void) {
 }
 
 ST_INLN void sym_free(Sym *sym) {
-#ifndef MCC_SYM_DEBUG
 #if MCC_CONFIG_OPTIMIZER
 	if (ast_sym_defer(sym))
 		return;
 #endif
+#ifndef MCC_SYM_DEBUG
 	sym->next = sym_free_first;
 	sym_free_first = sym;
 #else

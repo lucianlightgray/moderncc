@@ -5812,8 +5812,12 @@ void ast_func_end(Sym *sym) {
 		} else {
 			while (ast_sym_deferred) {
 				Sym *nx = ast_sym_deferred->next;
+#ifndef MCC_SYM_DEBUG
 				ast_sym_deferred->next = sym_free_first;
 				sym_free_first = ast_sym_deferred;
+#else
+				mcc_free(ast_sym_deferred);
+#endif
 				ast_sym_deferred = nx;
 			}
 		}

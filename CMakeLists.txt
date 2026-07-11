@@ -2826,6 +2826,17 @@ if(MCC_BUILD_TESTS)
             "-DASAN_BINDIR=${_san_asan_bindir}"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/sanitize/run_sanitize.cmake")
         set_tests_properties(sanitize-smoke PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
+        file(GLOB_RECURSE _selfcheck_srcs "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/*.c")
+        string(REPLACE ";" "\n" _selfcheck_list "${_selfcheck_srcs}")
+        file(WRITE "${CMAKE_BINARY_DIR}/sanitize-selfcheck.list" "${_selfcheck_list}\n")
+        add_test(NAME sanitize-selfcheck COMMAND "${CMAKE_COMMAND}"
+            "-DMCC=$<TARGET_FILE:mcc_s>" "-DBDIR=${_bdir}" "-DIDIR=${_idir}"
+            "-DSRCLIST=${CMAKE_BINARY_DIR}/sanitize-selfcheck.list"
+            "-DOUT=${CMAKE_BINARY_DIR}/sanitize-selfcheck"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/sanitize/run_selfcheck.cmake")
+        set_tests_properties(sanitize-selfcheck PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            TIMEOUT 600)
     endif()
 
     if(NOT MCC_EMULATOR AND MCC_CPU STREQUAL "x86_64" AND NOT MCC_TARGETOS STREQUAL "WIN32")

@@ -75,10 +75,12 @@ miscompile detector for §29–§35.
       121 hits). Fixed by guarding the no-op `memmove` with `if (len)`
       (behavior-identical; fixpoint still stage2==3==4). mcc_s is now
       UBSan-clean over that corpus. A *wider* `mcc_s` sweep (473 test sources ×
-      `-O0`+`-O2`) then surfaced a **second, deeper latent bug — see §0c
-      below**. Valgrind pass + wiring the mcc_s corpus sweep as a ctest remain
-      (the ctest is blocked on §0c: the sweep is not green at `-O1+` until the
-      UAF is fixed).
+      `-O0`+`-O2`) then surfaced a heap-use-after-free that turned out to be a
+      **SYM_DEBUG-build artifact, now fixed — see §0c** (the sanitize build had
+      the sym-deferral compiled out; production was always correct). The
+      mcc_s corpus sweep is now **wired as the green `sanitize-selfcheck`
+      ctest** (full `tests/exec` × `-O0..-O3` under ASan+UBSan, 0 diagnostics).
+      Only a valgrind pass over the fuzz corpus remains.
 - [~] **CI integration & budget** — runs are seed-reproducible
       (`MCC_FUZZ_SEED`/`MCC_FUZZ_COUNT`/`MCC_FUZZ_GATES`); the graduated corpus
       is a regression-lock (`fuzz/corpus`). A *scheduled* nightly N-hour
@@ -126,47 +128,52 @@ follow-ups are the two `[~]` items above (mcc-self ASan/valgrind; a *scheduled*
 nightly campaign with crash-dedup/stop-rule) plus the discovery topics below
 (EMI, coverage-guided, ABI/self-host/sanitizer-diff, scoreboard).
 
-## 0c. BUG: AST-replay reads a freed `Sym` via captured `type.ref` (use-after-free, latent since the replay optimizer landed)
+## 0c. [x] RESOLVED: `mcc_s` (SYM_DEBUG) was defer-blind — the "AST-replay UAF" was a sanitizer-build artifact, not a production bug
 
 Found 2026-07-10 by the §0 dynamic-analysis layer (mcc built under host
-ASan+UBSan = `mcc_s`, the `sanitize` preset, which defines `SYM_DEBUG` so
-`sym_free` returns syms to the system allocator instead of the pool free-list —
-exactly to expose this class). A wide sweep (473 test sources) hit a
-**heap-use-after-free** at `-O1..-O3` (clean at `-O0`); ~250 reads in
-`tests/exec/runner.c` alone.
+ASan+UBSan = `mcc_s`, the `sanitize` preset). A wide sweep (473 test sources ×
+`-O0..-O3`) hit a **heap-use-after-free** at `-O1..-O3` in the AST-replay path:
+`AST_Load` → `indir()` (`mccgen.c:5870`) → `pointed_type` dereferences a
+`type.ref` `Sym*` (a `mk_pointer` sym from a cast/compound-literal) that
+`block()`'s `prev_scope`→`sym_pop` already freed.
 
-**Precise root cause.** The AST-replay optimizer captures an SValue's
-`type.ref` as the *original* `Sym*` (stored in the arena as a `uintptr_t`,
-reconstructed at `mccast.c:2546` `mt.ref = (Sym*)(uintptr_t)ast_type_ref(...)`).
-At replay, `AST_Load` → `indir()` (`mccgen.c:5870`) calls
-`pointed_type(&vtop->type)`, dereferencing that `Sym*`. But the sym was already
-`mcc_free`'d during `block()` (`gen_function` `mccgen.c:12101`,
-`prev_scope`→`sym_pop`→`sym_free`), because the `ast_sym_defer_on` window
-(opened in `ast_func_begin` only when `ast_try_active`, closed in
-`ast_func_end` at `mccast.c:5593`) did **not** cover that free — the freed sym
-is reachable from a *different* function's captured/retained AST than the one
-whose defer window was open (cross-function `type.ref` sharing via the
-retain-for-inline path, which drops `ast_sym_deferred = NULL` at `:5594`
-without keeping every referenced sym alive). Present at every `-O1+` even with
-`MCC_AST_TEMPLATES/INLINE/PROMOTE=0`, so it is the **base `ast_replay_env`
-path**, not an optional pass.
+**Root cause = the SYM_DEBUG build, not the optimizer.** `sym_free`
+(`mccgen.c:845`) had the deferral **inside** `#ifndef MCC_SYM_DEBUG`:
 
-**Why tests are green.** Under the normal (non-`SYM_DEBUG`) build, `sym_free`
-pools freed syms on `sym_free_first` (mcc-owned memory, not returned to the
-OS), so the stale read returns valid data and the output is correct. The bug
-is real UB but currently latent — no known miscompile.
+```c
+#ifndef MCC_SYM_DEBUG
+#if MCC_CONFIG_OPTIMIZER
+    if (ast_sym_defer(sym)) return;   // production: defer during replay window
+#endif
+    ...pool on sym_free_first...
+#else
+    mcc_free(sym);                    // SYM_DEBUG: NO defer — always frees!
+#endif
+```
 
-**Why NOT rushed here.** This is correctness-critical optimizer core; a wrong
-fix miscompiles. It needs a dedicated increment with the full standing gate
-(3-stage fixpoint off AND forced-on, per-target `-c` byte-identity, native
-arm64 spot-check, CI matrix). Candidate fixes to scope: (a) extend the
-`ast_sym_defer_on` window / the retain-for-inline sym-retention so every
-`type.ref` reachable from a retained or replayed AST is kept alive until its
-last replay; (b) have the arena own a copy of the pointed-to `CType` instead of
-a raw `Sym*` (the §18 intention hash already excludes `type_ref` for
-reproducibility — the replay could too); (c) intern replay-referenced type syms
-in a never-freed table. Blocks wiring the `mcc_s` corpus sweep as a green
-ctest at `-O1+`.
+So `mcc_s` (the only `MCC_SYM_DEBUG=1` target) **disabled the very deferral
+mechanism that keeps replay-referenced syms alive**, guaranteeing a false
+positive on every replayed function. In the production build `ast_sym_defer`
+moves each freed sym to `ast_sym_deferred` for the whole `ast_func_begin`→
+`ast_func_end` window (any function that replays had `defer_on` set), so
+`type.ref` stays valid — **no production UAF, no miscompile**.
+
+**Fix (touches only the SYM_DEBUG build; production byte-identical).**
+1. `mccgen.c:sym_free` — moved the `ast_sym_defer` check *outside*
+   `#ifndef MCC_SYM_DEBUG` so the sanitize build defers exactly like production
+   (production branch unchanged → identical output).
+2. `mccast.c` deferral flush — under `MCC_SYM_DEBUG`, `mcc_free` the deferred
+   syms when the window closes (instead of pooling), so `mcc_s` still detects a
+   *genuine* post-window use-after-free rather than leaking.
+
+After the fix the whole `tests/exec` tree × `-O0..-O3` + a `src/mcc.c`
+self-compile is **0 sanitizer diagnostics** — proving the production sym
+lifetime is actually correct. Gate: production 3-stage fixpoint stage2==3==4
+byte-identical, ctest 1874/1874, `sanitize` preset builds. New regression
+lock: **`sanitize-selfcheck`** ctest (`tests/sanitize/run_selfcheck.cmake`)
+compiles the full `tests/exec` corpus under `mcc_s` at `-O0..-O3` and fails on
+any ASan/UBSan report — this is the "mcc-self ASan" half of §0's
+dynamic-analysis `[~]` follow-up, now green and wired.
 
 ## 0b. [x86_64-host] `-fsanitize=` instrumentation suite — mcc as a sanitizer provider (major, NEW 2026-07-10)
 
