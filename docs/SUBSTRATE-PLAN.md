@@ -161,8 +161,20 @@ zero divergences, including `fixpoint-invariant` (self-host byte-identity) and
 every optimization decision is bit-identical to the scanners, the substrate is
 byte-neutral.
 
+## Step 4 (landed) — the strategy engine
+
+Built on the proven substrate. Each fixed-pipeline pass is a `AstStrategy {name, gate,
+apply}`; the pipeline order is the frozen table `ast_strategies[]`, consumed
+deterministically in `ast_func_end` when `MCC_AST_ENGINE=strategy`. Default stays
+`legacy` (inline sequence, retained as fallback). Byte-identical to legacy by
+construction (same functions, order, gates, args) and by measurement: 900/900 object
+diffs across 300 generated programs × `-O1/-O2/-O3` are identical; ctest is 1904/1904
+under `MCC_AST_ENGINE=strategy` (incl. fixpoint + fuzz + byte-exact goldens); shadow +
+strategy is 1904/1904, zero divergences. `match` = the gate; `est_cost_delta` is
+deferred to Step 5.
+
 ## Out of scope (next milestone)
 
-Step 4 (`Strategy` objects behind `MCC_AST_ENGINE=strategy`) and Step 5 (worker pool +
-live -O4+ search). These fork emission behaviour and reopen determinism; they land only
-after the substrate is proven and depend on PR-2/3/4.
+Step 5 (worker pool + live -O4+ search) adds the `est_cost_delta` ranking and the memo
+that reorders the frozen table, plus the coroutine execution model and thread pool.
+That is where non-determinism enters (quarantined to -O4+); it depends on Step 4.

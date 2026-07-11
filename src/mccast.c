@@ -610,6 +610,7 @@ static int ast_fncfg_find(const char *fn) {
 	return -1;
 }
 static int ast_templates_env;
+static int ast_engine_strategy;
 static int ast_promote_env;
 static int ast_no_callful_env;
 static int ast_no_callful_promo;
@@ -780,6 +781,10 @@ void ast_configure(MCCState *s1) {
 	ast_replay_env = s1->optimize >= 1;
 	ast_replay_dump = ast_env_gate("MCC_AST_REPLAY_DUMP", 0);
 	ast_templates_env = ast_env_gate("MCC_AST_TEMPLATES", s1->optimize >= 1);
+	{
+		const char *eng = getenv("MCC_AST_ENGINE");
+		ast_engine_strategy = eng && !strcmp(eng, "strategy");
+	}
 	ast_promote_env = ast_env_gate("MCC_AST_PROMOTE", opt_promote);
 	ast_no_callful_env = ast_env_gate("MCC_AST_NO_CALLFUL", 0);
 	ast_inline_env = ast_env_gate("MCC_AST_INLINE",
@@ -6717,6 +6722,67 @@ void ast_func_begin(Sym *sym) {
 	}
 }
 
+/*
+ * Strategy engine (rollout step 4). Each fixed-pipeline pass is wrapped as an
+ * AstStrategy {name, gate, apply} and the pipeline order becomes a frozen data
+ * table (ast_strategies) rather than a hand-ordered call sequence. At -O1..-O3
+ * ast_func_end consumes the table deterministically when MCC_AST_ENGINE=strategy;
+ * the default (legacy) keeps the inline sequence as the fallback. The table order,
+ * gates, and arguments mirror the legacy block exactly, so the two engines emit
+ * byte-identical code — the precondition for later flipping the default and for
+ * the step-5 search that will reorder/select strategies. `match` is the gate and
+ * `est_cost_delta` (the search's ranking key) is deferred to step 5.
+ */
+typedef struct AstStrategy {
+	const char *name;
+	const int *gate;
+	int (*apply)(AstArena *a, Sym *sym);
+} AstStrategy;
+
+static int ast_strat_bfold(AstArena *a, Sym *s) { (void)s; return ast_bfold_run(a); }
+static int ast_strat_ident(AstArena *a, Sym *s) { (void)s; return ast_ident_run(a); }
+static int ast_strat_narrow(AstArena *a, Sym *s) { (void)s; return ast_narrow_run(a); }
+static int ast_strat_cprop(AstArena *a, Sym *s) { (void)s; return ast_cprop_run(a); }
+static int ast_strat_cse(AstArena *a, Sym *s) { (void)s; return ast_cse_run(a); }
+static int ast_strat_licm(AstArena *a, Sym *s) { (void)a; (void)s; return ast_licm_folds; }
+static int ast_strat_dse(AstArena *a, Sym *s) { (void)s; return ast_dse_run(a); }
+static int ast_strat_sccp(AstArena *a, Sym *s) { (void)s; return ast_sccp_run(a); }
+static int ast_strat_jt(AstArena *a, Sym *s) { (void)s; return ast_jt_run(a); }
+static int ast_strat_bf(AstArena *a, Sym *s) { (void)s; return ast_bf_run(a); }
+static int ast_strat_sethi(AstArena *a, Sym *s) { (void)s; return ast_sethi_run(a); }
+static int ast_strat_tco(AstArena *a, Sym *s) { return ast_tco_run(a, s); }
+
+enum {
+	AST_STRAT_BFOLD,
+	AST_STRAT_IDENT,
+	AST_STRAT_NARROW,
+	AST_STRAT_CPROP,
+	AST_STRAT_CSE,
+	AST_STRAT_LICM,
+	AST_STRAT_DSE,
+	AST_STRAT_SCCP,
+	AST_STRAT_JT,
+	AST_STRAT_BF,
+	AST_STRAT_SETHI,
+	AST_STRAT_TCO,
+	AST_STRAT_COUNT
+};
+
+static const AstStrategy ast_strategies[AST_STRAT_COUNT] = {
+	{"bfold", &ast_templates_env, ast_strat_bfold},
+	{"ident", &ast_templates_env, ast_strat_ident},
+	{"narrow", &ast_narrow_env, ast_strat_narrow},
+	{"cprop", &ast_templates_env, ast_strat_cprop},
+	{"cse", &ast_templates_env, ast_strat_cse},
+	{"licm", &ast_templates_env, ast_strat_licm},
+	{"dse", &ast_templates_env, ast_strat_dse},
+	{"sccp", &ast_templates_env, ast_strat_sccp},
+	{"jt", &ast_templates_env, ast_strat_jt},
+	{"bf", &ast_bitflag_env, ast_strat_bf},
+	{"sethi", &ast_sethi_env, ast_strat_sethi},
+	{"tco", &ast_templates_env, ast_strat_tco},
+};
+
 #if MCC_HOST_WIN32 && defined(__GNUC__) && !defined(__clang__)
 __attribute__((optimize("O0")))
 #endif
@@ -6824,18 +6890,38 @@ void ast_func_end(Sym *sym) {
 
 				ast_ltemp_cur = saved_loc;
 				ast_ltemp_n = 0;
-				bfolds = faithful && ast_templates_env ? ast_bfold_run(ast_cur) : 0;
-				idents = faithful && ast_templates_env ? ast_ident_run(ast_cur) : 0;
-				narrows = faithful && ast_narrow_env ? ast_narrow_run(ast_cur) : 0;
-				cprops = faithful && ast_templates_env ? ast_cprop_run(ast_cur) : 0;
-				cses = faithful && ast_templates_env ? ast_cse_run(ast_cur) : 0;
-				licms = faithful && ast_templates_env ? ast_licm_folds : 0;
-				dses = faithful && ast_templates_env ? ast_dse_run(ast_cur) : 0;
-				sccps = faithful && ast_templates_env ? ast_sccp_run(ast_cur) : 0;
-				jts = faithful && ast_templates_env ? ast_jt_run(ast_cur) : 0;
-				bfs = faithful && ast_bitflag_env ? ast_bf_run(ast_cur) : 0;
-				sethis = faithful && ast_sethi_env ? ast_sethi_run(ast_cur) : 0;
-				tcos = faithful && ast_templates_env ? ast_tco_run(ast_cur, sym) : 0;
+				if (ast_engine_strategy) {
+					int sf[AST_STRAT_COUNT];
+					for (int si = 0; si < AST_STRAT_COUNT; si++)
+						sf[si] = faithful && *ast_strategies[si].gate
+												 ? ast_strategies[si].apply(ast_cur, sym)
+												 : 0;
+					bfolds = sf[AST_STRAT_BFOLD];
+					idents = sf[AST_STRAT_IDENT];
+					narrows = sf[AST_STRAT_NARROW];
+					cprops = sf[AST_STRAT_CPROP];
+					cses = sf[AST_STRAT_CSE];
+					licms = sf[AST_STRAT_LICM];
+					dses = sf[AST_STRAT_DSE];
+					sccps = sf[AST_STRAT_SCCP];
+					jts = sf[AST_STRAT_JT];
+					bfs = sf[AST_STRAT_BF];
+					sethis = sf[AST_STRAT_SETHI];
+					tcos = sf[AST_STRAT_TCO];
+				} else {
+					bfolds = faithful && ast_templates_env ? ast_bfold_run(ast_cur) : 0;
+					idents = faithful && ast_templates_env ? ast_ident_run(ast_cur) : 0;
+					narrows = faithful && ast_narrow_env ? ast_narrow_run(ast_cur) : 0;
+					cprops = faithful && ast_templates_env ? ast_cprop_run(ast_cur) : 0;
+					cses = faithful && ast_templates_env ? ast_cse_run(ast_cur) : 0;
+					licms = faithful && ast_templates_env ? ast_licm_folds : 0;
+					dses = faithful && ast_templates_env ? ast_dse_run(ast_cur) : 0;
+					sccps = faithful && ast_templates_env ? ast_sccp_run(ast_cur) : 0;
+					jts = faithful && ast_templates_env ? ast_jt_run(ast_cur) : 0;
+					bfs = faithful && ast_bitflag_env ? ast_bf_run(ast_cur) : 0;
+					sethis = faithful && ast_sethi_env ? ast_sethi_run(ast_cur) : 0;
+					tcos = faithful && ast_templates_env ? ast_tco_run(ast_cur, sym) : 0;
+				}
 				int do_bfold = bfolds > 0;
 				int do_ident = idents > 0;
 				int do_narrow = narrows > 0;

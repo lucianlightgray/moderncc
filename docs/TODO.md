@@ -40,16 +40,26 @@ byte-neutral by the same evidence. See `docs/SUBSTRATE-PLAN.md` for the as-built
   earlier prototype. The incremental SoA `h[]` column stays available if a future
   hot path needs O(depth) updates instead of O(n) rebuilds.
 
-**Next milestone (out of current scope) — the strategy engine + search.**
+**LANDED — Step 4: the strategy engine.** Each fixed-pipeline pass is wrapped as an
+`AstStrategy {name, gate, apply}` and the pipeline order is now a frozen data table
+(`ast_strategies[]`) consumed deterministically in `ast_func_end` when
+`MCC_AST_ENGINE=strategy`. The default stays `legacy` (the inline sequence, retained as
+the fallback per the design's transition plan). The table order/gates/args mirror the
+legacy block exactly, so the two engines emit byte-identical code — verified: 900/900
+object comparisons (300 generated programs × `-O1/-O2/-O3`, legacy vs strategy) are
+byte-identical; the full ctest passes 1904/1904 under `MCC_AST_ENGINE=strategy`
+(incl. fixpoint-invariant + fuzz/matrix + the exact-byte goldens), and shadow+strategy
+is 1904/1904 with zero side-car divergences. `match` = the gate; `est_cost_delta` (the
+search's ranking key) is deferred to Step 5. The byte-identity + fixpoint precondition
+for flipping the default is now met.
 
-- [ ] **Step 4 — `Strategy` objects wrapping the 13 passes** — frozen table
-  consumed deterministically at `-O1..-O3` behind `MCC_AST_ENGINE=strategy` (env var
-  does not exist yet); flip the default only after byte-identical/better differential vs
-  the legacy pipeline + self-host fixpoint. (needs PRs 1-4)
+- [ ] **Flip the `MCC_AST_ENGINE` default to `strategy`** — the gate is satisfied
+  (byte-identical + fixpoint). Deliberate one-line change once the search (Step 5) is
+  ready to warm the table, or sooner if the table-driven path is wanted as the baseline.
 - [ ] **Step 5 — coroutine strategies + optional C11 thread pool + live -O4+
   search** — stackless `step()` state machines; NCores-1 pool confined to
-  -O4+/JIT; best-first frontier checkpointed to the disk-backed memo. (needs
-  step 4)
+  -O4+/JIT; best-first frontier checkpointed to the disk-backed memo. Adds the
+  `est_cost_delta` ranking + memo that reorders the frozen table. (needs step 4)
 
 ## Bugs — surfaced by the conformance-test expansion (concrete repros)
 
