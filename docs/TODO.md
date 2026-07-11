@@ -95,9 +95,14 @@ candidates complete); asttool 55/55 with the portable `clock()` timer.
   want the emitted-size scoring above, since inline/promote effects are emit-time), and
   a real `est_cost_delta` best-first frontier ordering beyond the current base-first +
   fair-time schedule.
-- [ ] **Step 5+ — disk-backed cross-build memo** — persist the per-function winner to
-  the existing `pf-*.ck` cache (key via `ast_intention_hash` → `so_pf_key`), so the
-  in-process search subsumes the out-of-process `mcc_superopt_perfn` fork/exec loop.
+- [ ] **Step 5+ — disk-backed cross-build memo** — the per-function winner now
+  persists across builds: `<cachedir>/mcc-search.memo`, append-only records
+  `{intention-hash, gates|MAGIC<<8}`, loaded once into `ast_search_memo`, a hit applies
+  `cached & base` so a winner cached under a different -O base never enables a gate this
+  build disabled; `mcc --clear-cache` wipes it (validated: cross-invocation memo hit +
+  -O6 differential correct). Still open: **unify with the out-of-process `pf-*.ck`
+  format** (`so_pf_key`) so the in-process search fully subsumes `mcc_superopt_perfn`,
+  and compact the append-only file instead of the current ~64K-record size cap.
 - [ ] **Step 5+ — NCores-1 coroutine thread pool** — stackless `step()` strategies on a
   C11 pool (optional, confined to -O4+/JIT; disabled under `__STDC_NO_THREADS__`).
 - [ ] **Step 5+ — runtime JIT + guarded deopt** — the -O4+/JIT tier (per-tick drive,

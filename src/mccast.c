@@ -6858,6 +6858,75 @@ typedef struct AstSearchMemo {
 static AstSearchMemo ast_search_memo[AST_SEARCH_MEMO_CAP];
 static int ast_search_memo_n;
 
+/*
+ * Cross-build persistence of the per-function search winner. Each record is
+ * {uint64 intention-hash, uint64 (gates | MAGIC<<8)} appended to a file in the
+ * per-user cache dir; the MAGIC in every record lets a torn or stale-format record
+ * be skipped without a global header, so the append-only file needs no locking
+ * beyond O_APPEND atomicity. Loaded once into ast_search_memo at the first search;
+ * a new winner is appended. Cleared by `mcc --clear-cache`. Opt-in with the search
+ * (MCC_AST_SEARCH); a missing/unwritable cache dir degrades to the in-memory memo. */
+#define AST_SEARCH_MEMO_MAGIC 0x4643u /* 'FC' */
+#define AST_SEARCH_DISK_MAX (1u << 20) /* stop appending past ~64K records */
+
+static int ast_search_disk_path(char *buf, int cap) {
+	char dir[1024];
+	if (host_cache_dir(dir, sizeof dir) != 0)
+		return -1;
+	if (snprintf(buf, cap, "%s/mcc-search.memo", dir) >= cap)
+		return -1;
+	return 0;
+}
+
+static void ast_search_memo_add(uint64_t h, unsigned gates) {
+	int i;
+	for (i = 0; i < ast_search_memo_n; i++)
+		if (ast_search_memo[i].hash == h) {
+			ast_search_memo[i].gates = gates;
+			return;
+		}
+	if (ast_search_memo_n < AST_SEARCH_MEMO_CAP) {
+		ast_search_memo[ast_search_memo_n].hash = h;
+		ast_search_memo[ast_search_memo_n].gates = gates;
+		ast_search_memo_n++;
+	}
+}
+
+static void ast_search_disk_load(void) {
+	char path[1152];
+	FILE *f;
+	uint64_t rec[2];
+	if (ast_search_disk_path(path, sizeof path) != 0)
+		return;
+	f = fopen(path, "rb");
+	if (!f)
+		return;
+	while (fread(rec, sizeof rec, 1, f) == 1 &&
+				 ast_search_memo_n < AST_SEARCH_MEMO_CAP)
+		if ((rec[1] >> 8) == AST_SEARCH_MEMO_MAGIC)
+			ast_search_memo_add(rec[0], (unsigned)(rec[1] & 0xff));
+	fclose(f);
+}
+
+static void ast_search_disk_store(uint64_t h, unsigned gates) {
+	char path[1152];
+	FILE *f;
+	uint64_t rec[2];
+	long sz;
+	if (ast_search_disk_path(path, sizeof path) != 0)
+		return;
+	f = fopen(path, "ab");
+	if (!f)
+		return;
+	sz = ftell(f);
+	if (sz >= 0 && (unsigned long)sz < AST_SEARCH_DISK_MAX) {
+		rec[0] = h;
+		rec[1] = (gates & 0xffu) | ((uint64_t)AST_SEARCH_MEMO_MAGIC << 8);
+		fwrite(rec, sizeof rec, 1, f);
+	}
+	fclose(f);
+}
+
 /* Round-robin time accounting (see the block comment above). Durations are in
  * milliseconds of CPU time (clock()), an accurate wall-clock proxy for the
  * single-threaded CPU-bound search and portable to every host — including the
@@ -6972,6 +7041,7 @@ static void ast_search_select(Sym *sym, int faithful) {
 		ast_search_started = 1;
 		ast_search_start_ms = ast_now_ms();
 		ast_search_budget_ms = ast_search_seconds * 1000u;
+		ast_search_disk_load();
 	}
 	base = ast_search_gates_now();
 	if (ast_search_should_stop())
@@ -6983,7 +7053,9 @@ static void ast_search_select(Sym *sym, int faithful) {
 	if (h) {
 		for (int i = 0; i < ast_search_memo_n; i++)
 			if (ast_search_memo[i].hash == h) {
-				ast_search_gates_set(ast_search_memo[i].gates);
+				/* intersect with the current base: a winner cached under a different
+				 * -O base must not enable a gate this build disabled. */
+				ast_search_gates_set(ast_search_memo[i].gates & base);
 				ast_arena_free(pristine);
 				return;
 			}
@@ -7055,10 +7127,9 @@ static void ast_search_select(Sym *sym, int faithful) {
 	ast_promo_total = p0;
 	ast_opt_total = o0;
 	ast_search_gates_set(best);
-	if (h && ast_search_memo_n < AST_SEARCH_MEMO_CAP) {
-		ast_search_memo[ast_search_memo_n].hash = h;
-		ast_search_memo[ast_search_memo_n].gates = best;
-		ast_search_memo_n++;
+	if (h) {
+		ast_search_memo_add(h, best);
+		ast_search_disk_store(h, best);
 	}
 	ast_arena_free(pristine);
 }
