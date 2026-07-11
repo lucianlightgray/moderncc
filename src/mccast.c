@@ -504,6 +504,7 @@ static int ast_call_window_env;
 static int ast_licm_temp_env;
 
 #define AST_LTEMP_MAX 32
+#define AST_LTEMP_PER_LOOP 8
 static int ast_ltemp_off[AST_LTEMP_MAX];
 static int ast_ltemp_n;
 static int ast_ltemp_cur;
@@ -5625,10 +5626,15 @@ static int ast_ltemp_run(AstArena *a) {
 		AstLocal parent = ast_parent(a, n);
 		if (parent == AST_NONE || ast_kind(a, parent) != AST_BasicBlock)
 			continue;
-		ast_ltemp_cand = AST_NONE;
-		ast_ltemp_scan(a, n, n, 0);
-		if (ast_ltemp_cand != AST_NONE)
-			did += ast_ltemp_materialize(a, n, ast_ltemp_cand);
+		for (int per = 0; per < AST_LTEMP_PER_LOOP && ast_ltemp_n < AST_LTEMP_MAX; per++) {
+			ast_ltemp_cand = AST_NONE;
+			ast_ltemp_scan(a, n, n, 0);
+			if (ast_ltemp_cand == AST_NONE)
+				break;
+			if (!ast_ltemp_materialize(a, n, ast_ltemp_cand))
+				break;
+			did++;
+		}
 	}
 	return did;
 }

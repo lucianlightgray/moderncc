@@ -2468,8 +2468,19 @@ fixpoint invariant if rushed. Sequenced, not started:
   `-O2` 3-stage x86_64 self-host fixpoint converges — so the poison guard works
   (promotion never seeds a register from the uninitialized temp slot). §32c's
   first increment is now validated on BOTH arm64 and x86_64; the gate stays
-  default-off. **Remaining**: post-join PRE → IV strength reduction (the further
-  §32c consumers).
+  default-off. **MULTI-TEMP — LANDED** (2026-07-10, dual-arch): `ast_ltemp_run`
+  now hoists up to `AST_LTEMP_PER_LOOP` (8) distinct qualifying invariants per
+  loop (was 1), each into its own carved+poisoned temp; identical
+  subexpressions share one temp via the substitution (each materialize replaces
+  all occurrences, the next scan finds the next distinct one). Change is
+  entirely inside the `MCC_AST_LICM_TEMP`-gated `ast_ltemp_run` → default path
+  byte-neutral. Validated on BOTH arches: arm64 gate-off `-O0..-O3`
+  byte-identical + gate-ON multi-invariant TU correct; **x86_64 via Rosetta**
+  with promotion ACTIVE — gate-ON multi-invariant TU matches `-O0` AND clang
+  (`832675297231051594`) at `-O1/-O2/-O3` and the gate-ON `-O2` self-host
+  fixpoint converges (obstacle B holds with multiple temps + promotion).
+  **Remaining**: post-join PRE → IV strength reduction (the further §32c
+  consumers).
 - **§36 Chaitin–Briggs graph-coloring regalloc** — largest, replaces
   `ast_plan_promotion`; run last.
 - **§26 `--embed-jit` runtime engine**, **§33b/c/d/e**, **§27/§28**,
