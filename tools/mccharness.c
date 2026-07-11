@@ -893,6 +893,492 @@ static int suite_preprocess(int argc, char **argv) {
 	return 0;
 }
 
+static const char *const *env_over(const char *const *overrides) {
+	char **env = host_environ();
+	int n = 0, ov = 0, i, j, cnt = 0;
+	const char **out;
+	while (env && env[n])
+		n++;
+	while (overrides && overrides[ov])
+		ov++;
+	out = malloc((n + ov + 1) * sizeof *out);
+	for (i = 0; i < n; i++) {
+		const char *e = env[i], *eq = strchr(e, '=');
+		size_t kl = eq ? (size_t)(eq - e) : strlen(e);
+		int hit = 0;
+		for (j = 0; j < ov; j++) {
+			const char *oeq = strchr(overrides[j], '=');
+			size_t ol = oeq ? (size_t)(oeq - overrides[j]) : strlen(overrides[j]);
+			if (ol == kl && !strncmp(overrides[j], e, kl)) {
+				hit = 1;
+				break;
+			}
+		}
+		if (!hit)
+			out[cnt++] = e;
+	}
+	for (j = 0; j < ov; j++)
+		out[cnt++] = overrides[j];
+	out[cnt] = NULL;
+	return out;
+}
+
+static const char CPROP_SRC[] =
+		"int same_join(int f) {\n"
+		"	int a = 10, b;\n"
+		"	if (f) b = a + 1; else b = a + 1;\n"
+		"	return b + a;\n"
+		"}\n"
+		"int diff_join(int f) {\n"
+		"	int b;\n"
+		"	if (f) b = 3; else b = 4;\n"
+		"	return b;\n"
+		"}\n"
+		"int one_arm(int f) {\n"
+		"	int b = 5;\n"
+		"	if (f) b = 5;\n"
+		"	return b;\n"
+		"}\n"
+		"int loop_inv(int n) {\n"
+		"	int c = 7, s = 0, i;\n"
+		"	for (i = 0; i < n; i++) s += c;\n"
+		"	return s;\n"
+		"}\n"
+		"int loop_written(int n) {\n"
+		"	int c = 1, i;\n"
+		"	for (i = 0; i < n; i++) c = c * 2;\n"
+		"	return c;\n"
+		"}\n"
+		"int nested(int f, int n) {\n"
+		"	int k = 9, s = 0, i;\n"
+		"	for (i = 0; i < n; i++) {\n"
+		"		if (f) s += k; else s += k + 1;\n"
+		"	}\n"
+		"	return s;\n"
+		"}\n"
+		"int with_break(int n) {\n"
+		"	int c = 6, s = 0, i;\n"
+		"	for (i = 0; i < n; i++) {\n"
+		"		if (i == 2) break;\n"
+		"		s += c;\n"
+		"	}\n"
+		"	return s + c;\n"
+		"}\n"
+		"int escaped(int f) {\n"
+		"	int a = 8, b;\n"
+		"	int *p = &a;\n"
+		"	*p = f ? 20 : 30;\n"
+		"	if (f) b = a; else b = a;\n"
+		"	return b;\n"
+		"}\n"
+		"int do_loop(int n) {\n"
+		"	int c = 11, s = 0, i = 0;\n"
+		"	do { s += c; i++; } while (i < n);\n"
+		"	return s;\n"
+		"}\n"
+		"int ext(int x);\n"
+		"int cse_join(int x, int f) {\n"
+		"	int t = x * 3 + 1, u, v;\n"
+		"	if (f) u = x * 3 + 1; else u = x * 3 + 1;\n"
+		"	v = x * 3 + 1;\n"
+		"	return t + u + v + ext(x * 3 + 1);\n"
+		"}\n"
+		"int cse_killed(int x, int f) {\n"
+		"	int t = x * 3 + 1, u;\n"
+		"	if (f) x = 9; else x = 10;\n"
+		"	u = x * 3 + 1;\n"
+		"	return t + u;\n"
+		"}\n"
+		"int cse_loop(int x, int n) {\n"
+		"	int b = x * 5, s = 0, i;\n"
+		"	for (i = 0; i < n; i++) s += x * 5;\n"
+		"	return s + b;\n"
+		"}\n"
+		"int ext(int x) { return x / 2; }\n"
+		"int main(void) {\n"
+		"	int acc = 0;\n"
+		"	acc = acc * 31 + same_join(1);\n"
+		"	acc = acc * 31 + same_join(0);\n"
+		"	acc = acc * 31 + diff_join(1);\n"
+		"	acc = acc * 31 + diff_join(0);\n"
+		"	acc = acc * 31 + one_arm(0);\n"
+		"	acc = acc * 31 + one_arm(1);\n"
+		"	acc = acc * 31 + loop_inv(0);\n"
+		"	acc = acc * 31 + loop_inv(4);\n"
+		"	acc = acc * 31 + loop_written(5);\n"
+		"	acc = acc * 31 + nested(1, 3);\n"
+		"	acc = acc * 31 + nested(0, 3);\n"
+		"	acc = acc * 31 + with_break(9);\n"
+		"	acc = acc * 31 + escaped(1);\n"
+		"	acc = acc * 31 + escaped(0);\n"
+		"	acc = acc * 31 + do_loop(3);\n"
+		"	acc = acc * 31 + cse_join(2, 1);\n"
+		"	acc = acc * 31 + cse_join(2, 0);\n"
+		"	acc = acc * 31 + cse_killed(5, 1);\n"
+		"	acc = acc * 31 + cse_killed(5, 0);\n"
+		"	acc = acc * 31 + cse_loop(3, 4);\n"
+		"	return ((unsigned)acc % 251u);\n"
+		"}\n";
+
+static int cprop_build_run(const char *mcc, const char *bflag, int cprop, int cse,
+													 const char *olvl, const char *src, const char *exe,
+													 int *rc_out) {
+	char cpe[48], cee[48];
+	const char *ov[3];
+	Argv v = {{0}, 0};
+	HostSpawnOpts o;
+	char *err = NULL;
+	snprintf(cpe, sizeof cpe, "MCC_AST_CPROP_JOIN=%d", cprop);
+	snprintf(cee, sizeof cee, "MCC_AST_CSE_JOIN=%d", cse);
+	ov[0] = cpe;
+	ov[1] = cee;
+	ov[2] = 0;
+	A(&v, mcc);
+	A(&v, bflag);
+	A(&v, olvl);
+	A(&v, "-o");
+	A(&v, exe);
+	A(&v, src);
+	memset(&o, 0, sizeof o);
+	o.env = env_over(ov);
+	o.stderr_buf = &err;
+	if (host_spawn_ex(Z(&v), &o)) {
+		free((void *)o.env);
+		free(err);
+		return -1;
+	}
+	free((void *)o.env);
+	free(err);
+	{
+		const char *r[] = {exe, 0};
+		*rc_out = host_spawn_ex(r, NULL);
+	}
+	return 0;
+}
+
+static int suite_cpropjoin(int argc, char **argv) {
+	const char *mcc = opt(argc, argv, "--mcc", NULL);
+	const char *bdir = opt(argc, argv, "--bdir", NULL);
+	char w[4096], src[4096], o0[4096], t[4096], Bflag[4096];
+	const char *lvls[] = {"-O1", "-O2", "-O3", 0};
+	int ref, i, gc, ge;
+
+	if (!mcc || !bdir) {
+		fprintf(stderr, "usage: mccharness cpropjoin --mcc --bdir\n");
+		return 2;
+	}
+	ts_path(w, sizeof w, bdir, "cprop-join-test");
+	host_rmrf(w);
+	if (host_mkdirs(w))
+		return 1;
+	ts_path(src, sizeof src, w, "j.c");
+	ts_path(o0, sizeof o0, w, "j-o0");
+	ts_path(t, sizeof t, w, "j-t");
+	snprintf(Bflag, sizeof Bflag, "-B%s", bdir);
+	if (write_file(src, CPROP_SRC)) {
+		fprintf(stderr, "cannot write %s\n", src);
+		return 1;
+	}
+	if (cprop_build_run(mcc, Bflag, 0, 0, "-O0", src, o0, &ref)) {
+		fprintf(stderr, "O0 build failed\n");
+		return 1;
+	}
+	for (i = 0; lvls[i]; i++)
+		for (gc = 0; gc <= 1; gc++)
+			for (ge = 0; ge <= 1; ge++) {
+				int rc;
+				if (cprop_build_run(mcc, Bflag, gc, ge, lvls[i], src, t, &rc)) {
+					fprintf(stderr, "%s cprop=%d cse=%d build failed\n", lvls[i], gc, ge);
+					return 1;
+				}
+				if (rc != ref) {
+					fprintf(stderr, "%s cprop=%d cse=%d rc=%d, expected %d\n", lvls[i], gc, ge,
+									rc, ref);
+					return 1;
+				}
+			}
+	printf("OK\n");
+	return 0;
+}
+
+static char *scan_after(const char *text, const char *tag) {
+	const char *p = text ? strstr(text, tag) : NULL, *s, *e;
+	if (!p)
+		return NULL;
+	p += strlen(tag);
+	if (p[0] != '0' || (p[1] != 'x' && p[1] != 'X'))
+		return NULL;
+	s = p;
+	e = p + 2;
+	while (isxdigit((unsigned char)*e))
+		e++;
+	{
+		size_t len = (size_t)(e - s);
+		char *r = malloc(len + 1);
+		memcpy(r, s, len);
+		r[len] = 0;
+		return r;
+	}
+}
+
+static int hv_run(const char *mcchv, const char *bflag, const char *const *ov,
+									const char *seed, char **out) {
+	Argv v = {{0}, 0};
+	HostSpawnOpts o;
+	int rc;
+	A(&v, mcchv);
+	A(&v, bflag);
+	A(&v, "--seed");
+	A(&v, seed);
+	A(&v, "--passes");
+	A(&v, "2");
+	A(&v, "--workers");
+	A(&v, "2");
+	A(&v, "--seconds");
+	A(&v, "0.6");
+	memset(&o, 0, sizeof o);
+	o.env = env_over(ov);
+	o.stdout_buf = out;
+	rc = host_spawn_ex(Z(&v), &o);
+	free((void *)o.env);
+	return rc;
+}
+
+static int suite_hvcache(int argc, char **argv) {
+	const char *mcchv = opt(argc, argv, "--mcchv", NULL);
+	const char *bdir = opt(argc, argv, "--bdir", NULL);
+	char cdir[4200], cdenv[4300], Bflag[4096];
+	char *o1 = NULL, *o2 = NULL, *o3 = NULL, *o4 = NULL;
+	char *k1 = NULL, *k2 = NULL, *k3 = NULL;
+	const char *ovc[2], *ovnone[] = {"MCCHV_CACHE_DIR=", "XDG_CACHE_HOME=", "HOME=", 0};
+	int rc, ret = 1;
+
+	if (!mcchv || !bdir) {
+		fprintf(stderr, "usage: mccharness hvcache --mcchv --bdir\n");
+		return 2;
+	}
+	ts_path(cdir, sizeof cdir, bdir, "hvcache-roundtrip");
+	host_rmrf(cdir);
+	if (host_mkdirs(cdir))
+		return 1;
+	snprintf(Bflag, sizeof Bflag, "-B%s", bdir);
+	snprintf(cdenv, sizeof cdenv, "MCCHV_CACHE_DIR=%s", cdir);
+	ovc[0] = cdenv;
+	ovc[1] = 0;
+
+	rc = hv_run(mcchv, Bflag, ovc, "42", &o1);
+	if (rc == TS_SKIP_CODE)
+		ts_skip("hypervisor unavailable");
+	if (rc != 0) {
+		fprintf(stderr, "run1 failed rc=%d\n", rc);
+		goto done;
+	}
+	if (!o1 || !strstr(o1, "hv: cache miss (cold)")) {
+		fprintf(stderr, "expected a cold miss on the first run\n");
+		goto done;
+	}
+	if (!strstr(o1, "hv:   cache file")) {
+		fprintf(stderr, "expected a cache write on the first run\n");
+		goto done;
+	}
+
+	rc = hv_run(mcchv, Bflag, ovc, "42", &o2);
+	if (rc != 0) {
+		fprintf(stderr, "run2 failed\n");
+		goto done;
+	}
+	if (!o2 || !strstr(o2, "hv: cache hit (warm-start)")) {
+		fprintf(stderr, "expected a warm hit on the second run\n");
+		goto done;
+	}
+	if (!strstr(o2, "hv: cache resume:")) {
+		fprintf(stderr, "expected resumed search state on the second run\n");
+		goto done;
+	}
+
+	k1 = scan_after(o1, "intention ");
+	k2 = scan_after(o2, "intention ");
+	if (!k1 || !k2 || strcmp(k1, k2)) {
+		fprintf(stderr, "intention key not stable across runs (%s vs %s)\n",
+						k1 ? k1 : "", k2 ? k2 : "");
+		goto done;
+	}
+
+	rc = hv_run(mcchv, Bflag, ovc, "43", &o3);
+	if (rc != 0) {
+		fprintf(stderr, "run3 failed\n");
+		goto done;
+	}
+	if (!o3 || !strstr(o3, "hv: cache miss (cold)")) {
+		fprintf(stderr, "expected a miss for the edited intention\n");
+		goto done;
+	}
+	k3 = scan_after(o3, "intention ");
+	if (!k3 || !strcmp(k1, k3)) {
+		fprintf(stderr, "edited intention did not change the key\n");
+		goto done;
+	}
+
+	{
+		Argv v = {{0}, 0};
+		HostSpawnOpts o;
+		A(&v, mcchv);
+		A(&v, Bflag);
+		A(&v, "--seed");
+		A(&v, "42");
+		A(&v, "--passes");
+		A(&v, "2");
+		A(&v, "--workers");
+		A(&v, "2");
+		A(&v, "--seconds");
+		A(&v, "0.6");
+		memset(&o, 0, sizeof o);
+		o.env = env_over(ovnone);
+		o.stdout_buf = &o4;
+		rc = host_spawn_ex(Z(&v), &o);
+		free((void *)o.env);
+	}
+	if (rc != 0) {
+		fprintf(stderr, "run without a cache dir failed\n");
+		goto done;
+	}
+	if (!o4 || !strstr(o4, "hv: cache disabled")) {
+		fprintf(stderr, "expected the cache to be disabled with no resolvable dir\n");
+		goto done;
+	}
+
+	printf("OK\n");
+	ret = 0;
+done:
+	free(o1);
+	free(o2);
+	free(o3);
+	free(o4);
+	free(k1);
+	free(k2);
+	free(k3);
+	return ret;
+}
+
+static const char PERFN_SRC[] =
+		"int f(int x) { int i, s = 0; for (i = 0; i < x; i++) s += i * 3; return s; }\n"
+		"int g(int x) { int i, s = 1; for (i = 0; i < x; i++) s += i * 5; return s; }\n"
+		"int main(void) { return f(10) == 135 ? 0 : 1; }\n";
+
+static int perfn_cached(const char *out) {
+	const char *p = out ? strstr(out, "superopt-perfn:") : NULL, *q;
+	if (!p)
+		return -1;
+	q = strstr(p, "functions (");
+	if (!q)
+		return -1;
+	return atoi(q + strlen("functions ("));
+}
+
+static int perfn_run(const char *mcc, const char *bflag, const char *w,
+										 const char *src, char **out) {
+	char xdg[4200], home[4200], ao[4200];
+	const char *ov[4];
+	Argv v = {{0}, 0};
+	HostSpawnOpts o;
+	char *err = NULL;
+	int rc;
+	snprintf(xdg, sizeof xdg, "XDG_CACHE_HOME=%s/cache", w);
+	snprintf(home, sizeof home, "HOME=%s", w);
+	ts_path(ao, sizeof ao, w, "a.o");
+	ov[0] = "MCC_AST_PERFN=1";
+	ov[1] = xdg;
+	ov[2] = home;
+	ov[3] = 0;
+	A(&v, mcc);
+	A(&v, bflag);
+	A(&v, "-O4");
+	A(&v, "-v");
+	A(&v, "-c");
+	A(&v, "-o");
+	A(&v, ao);
+	A(&v, src);
+	memset(&o, 0, sizeof o);
+	o.env = env_over(ov);
+	o.stdout_buf = out;
+	o.stderr_buf = &err;
+	rc = host_spawn_ex(Z(&v), &o);
+	free((void *)o.env);
+	free(err);
+	return rc;
+}
+
+static int suite_perfncache(int argc, char **argv) {
+	const char *mcc = opt(argc, argv, "--mcc", NULL);
+	const char *bdir = opt(argc, argv, "--bdir", NULL);
+	char w[4096], src[4096], Bflag[4096];
+	char *o1 = NULL, *o2 = NULL, *o3 = NULL, *content;
+	int ret = 1, c;
+
+	if (!mcc || !bdir) {
+		fprintf(stderr, "usage: mccharness perfncache --mcc --bdir\n");
+		return 2;
+	}
+	ts_path(w, sizeof w, bdir, "perfn-cache-test");
+	host_rmrf(w);
+	if (host_mkdirs(w))
+		return 1;
+	ts_path(src, sizeof src, w, "a.c");
+	snprintf(Bflag, sizeof Bflag, "-B%s", bdir);
+	if (write_file(src, PERFN_SRC)) {
+		fprintf(stderr, "cannot write %s\n", src);
+		return 1;
+	}
+
+	if (perfn_run(mcc, Bflag, w, src, &o1)) {
+		fprintf(stderr, "run1 failed\n");
+		goto done;
+	}
+	c = perfn_cached(o1);
+	if (c != 0) {
+		fprintf(stderr, "expected 0 cached on the cold run, got '%d'\n", c);
+		goto done;
+	}
+
+	if (perfn_run(mcc, Bflag, w, src, &o2)) {
+		fprintf(stderr, "run2 failed\n");
+		goto done;
+	}
+	c = perfn_cached(o2);
+	if (c != 3) {
+		fprintf(stderr, "expected all 3 functions cached on the warm run, got '%d'\n", c);
+		goto done;
+	}
+
+	content = ts_read_file(src, NULL);
+	if (content) {
+		char *pos = strstr(content, "i * 5");
+		if (pos) {
+			pos[4] = '7';
+			write_file(src, content);
+		}
+		free(content);
+	}
+
+	if (perfn_run(mcc, Bflag, w, src, &o3)) {
+		fprintf(stderr, "run3 failed\n");
+		goto done;
+	}
+	c = perfn_cached(o3);
+	if (c != 2) {
+		fprintf(stderr, "expected 2 cached after editing one function, got '%d'\n", c);
+		goto done;
+	}
+
+	printf("OK\n");
+	ret = 0;
+done:
+	free(o1);
+	free(o2);
+	free(o3);
+	return ret;
+}
+
 static const char *FC_CALLEE =
 		"struct P2 { int x, y; };\n"
 		"int __attribute__((fastcall)) mix_ll(int a, long long b, int c){ return (int)(a+b+c); }\n"
@@ -3234,9 +3720,15 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "usage: mccharness <suite> ... (parts|mcctest|mccexe|asmconnect|dashs|"
 										"preprocess|i386fastcall|gcctestsuite|penative|qemurun|pewine|machonative|"
 										"machoimage|machoapplelibc|machocodegen|armasm|machostructural|stackguard|pkgsmoke|"
-										"machofat|qemufetch)\n");
+										"machofat|qemufetch|cpropjoin|hvcache|perfncache)\n");
 		return 2;
 	}
+	if (!strcmp(argv[1], "cpropjoin"))
+		return suite_cpropjoin(argc, argv);
+	if (!strcmp(argv[1], "hvcache"))
+		return suite_hvcache(argc, argv);
+	if (!strcmp(argv[1], "perfncache"))
+		return suite_perfncache(argc, argv);
 	if (!strcmp(argv[1], "machofat"))
 		return suite_machofat(argc, argv);
 	if (!strcmp(argv[1], "qemufetch"))
