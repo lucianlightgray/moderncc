@@ -283,9 +283,18 @@ makes the compiler a sanitizer *provider* for user code.
       `MCC_CONFIG_DIAG_RT>=2` memory checker on every arch where bcheck is built
       (arch-neutral, not x86_64-gated), predefining `__SANITIZE_ADDRESS__`;
       combining `-fsanitize=undefined,address` even routes the UBSan `ud2` trap
-      through bcheck's backtrace handler for a *sourced* diagnostic. Remaining:
-      porting the four UBSan arithmetic traps to arm64/riscv64 backends (blocked
-      on a local cross-sysroot to validate), native-shadow ASan, TSan/MSan.
+      through bcheck's backtrace handler for a *sourced* diagnostic.
+      **arm64 UBSan started (2026-07-11): divide-by-zero trap landed** —
+      `arm64-gen.c` now emits `CBNZ divisor,#8; BRK #0` before every
+      `SDIV`/`UDIV`/`MSUB` when `do_sanitize_undefined` (arch-neutral flag; the
+      guard was widened to accept arm64). This is *higher* value than on x86_64:
+      arm64 `SDIV`/`UDIV` silently **return 0** on divide-by-zero, so hardware
+      never faults it. Validated under **qemu-aarch64** with the vendored arm64
+      musl sysroot: `100/0 -fsanitize=undefined` → `BRK`/SIGTRAP; without the
+      flag it returns 0 (no fault); `100/4` returns 25 clean; default arm64
+      codegen unbroken (24/24 exec programs agree with x86_64), x86_64 ctest
+      1882/1882. Remaining: arm64 signed-overflow (`ADDS`/`SUBS`+`B.VS`) and
+      shift-range traps, riscv64 port, native-shadow ASan, TSan/MSan.
 - [x] **Test matrix:** a `tests/sanitize/` corpus with one program per UB /
       memory-error class asserting the check fires (and clean programs stay
       silent), across `-O0..-O3` and with the optimizer forced on. LANDED:
