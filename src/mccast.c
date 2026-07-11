@@ -392,6 +392,15 @@ uint64_t ast_intention_hash(const AstArena *a, AstLocal root) {
 
 #define AST_COLOR_MAX 64
 
+static int ast_popcount64(uint64_t x) {
+	int c = 0;
+	while (x) {
+		x &= x - 1;
+		c++;
+	}
+	return c;
+}
+
 int ast_color_graph(int n, const uint64_t *adj, const int *cost, int k, int *color) {
 	for (int i = 0; i < n; i++)
 		color[i] = -1;
@@ -404,7 +413,7 @@ int ast_color_graph(int n, const uint64_t *adj, const int *cost, int k, int *col
 	uint64_t all = (n < 64) ? ((uint64_t)1 << n) - 1 : ~(uint64_t)0;
 	for (int i = 0; i < n; i++) {
 		color[i] = -1;
-		deg[i] = __builtin_popcountll(adj[i] & all);
+		deg[i] = ast_popcount64(adj[i] & all);
 	}
 	for (int cnt = 0; cnt < n; cnt++) {
 		int pick = -1;
