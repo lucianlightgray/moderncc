@@ -993,6 +993,19 @@ static void riscv64_ubsan_addsub_post(int op, int d) {
 	o(0x00100073);
 }
 
+/* a in x5, b in x6 (pre-saved); d = MUL/MULW low result. */
+static void riscv64_ubsan_mul_ovf(int ll, int d) {
+	if (ll == 8) {
+		o(0x33 | 0u << 12 | 7u << 7 | 5u << 15 | 6u << 20 | 1u << 25);
+		o(0x63 | 0u << 12 | 7u << 15 | (uint32_t)d << 20 | 8u << 7);
+	} else {
+		o(0x33 | 1u << 12 | 7u << 7 | 5u << 15 | 6u << 20 | 1u << 25);
+		o(0x13 | 5u << 12 | 5u << 7 | (uint32_t)d << 15 | 0x43fu << 20);
+		o(0x63 | 0u << 12 | 7u << 15 | 5u << 20 | 8u << 7);
+	}
+	o(0x00100073);
+}
+
 static void gen_opil(int op, int ll) {
 	int a, b, d;
 	int func3 = 0;
@@ -1133,9 +1146,15 @@ static void gen_opil(int op, int ll) {
 		riscv64_ubsan_shift(b, ll ? 32 : 64);
 		ER(0x33 | ll, 1, d, a, b, 0);
 		break;
-	case '*':
+	case '*': {
+		int chk = !uns && mcc_state->do_sanitize_undefined && !nocode_wanted;
+		if (chk)
+			riscv64_ubsan_addsub_pre(a, b);
 		ER(0x33 | ll, 0, d, a, b, 1);
+		if (chk)
+			riscv64_ubsan_mul_ovf(ll, d);
 		break;
+	}
 	case '/':
 	case TOK_PDIV:
 		riscv64_ubsan_div0(b);

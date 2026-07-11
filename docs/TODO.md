@@ -320,9 +320,17 @@ makes the compiler a sanitizer *provider* for user code.
       unsigned wrap and clean programs don't, and **46/46 exec-corpus programs
       show no false traps** under `-fsanitize=undefined`. So
       `-fsanitize=undefined` now has **full arithmetic parity on x86_64, arm64,
-      AND riscv64 (signed overflow + shift + div-by-zero)**. Remaining:
-      signed-*mul* overflow on all three (`SMULH`/`imul`-hi/RV-`mulh`),
-      native-shadow ASan, TSan/MSan.
+      AND riscv64 (signed overflow + shift + div-by-zero)**.
+      **riscv64 signed-mul overflow added (2026-07-11): riscv64 now has the
+      COMPLETE arithmetic set** (+/-/* overflow + shift + div). 64-bit:
+      `MULH x7,a,b; SRAI x5,d,63; BEQ x7,x5,+8; EBREAK` (high != sign-extend of
+      low ⇒ overflow). 32-bit: `MUL x7,a,b` (full 64-bit product of the
+      sign-extended operands) `; BEQ x7,d,+8; EBREAK` (product != the `MULW`
+      truncation ⇒ overflow). Validated under qemu-riscv64: `100000*100000`
+      (32) and `4e9*4e9` (64) trap, clean+unsigned don't, **72/72 exec programs
+      no false traps**. Remaining: signed-mul on x86_64 (already landed in the
+      original increment) and **arm64** (`SMULH`/`SMULL` compare — the one
+      arithmetic gap left), native-shadow ASan, TSan/MSan.
 - [x] **Test matrix:** a `tests/sanitize/` corpus with one program per UB /
       memory-error class asserting the check fires (and clean programs stay
       silent), across `-O0..-O3` and with the optimizer forced on. LANDED:
