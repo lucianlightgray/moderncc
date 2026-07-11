@@ -3363,12 +3363,15 @@ if(MCC_BUILD_TESTS)
                     --seed 1 --count 40)
         set_tests_properties("fuzz/smoke" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77 ENVIRONMENT "${_diff3_env}")
-        add_test(NAME "fuzz/matrix"
-            COMMAND fuzz_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
-                    "${CMAKE_BINARY_DIR}/fuzz-matrix" "${DIFF3_GCC}" "${DIFF3_CLANG}"
-                    --seed 1 --count 24 --gates)
-        set_tests_properties("fuzz/matrix" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-            SKIP_RETURN_CODE 77 ENVIRONMENT "${_diff3_env}")
+        foreach(_fm_shard RANGE 0 3)
+            math(EXPR _fm_seed "1 + ${_fm_shard} * 6")
+            add_test(NAME "fuzz/matrix-${_fm_shard}"
+                COMMAND fuzz_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                        "${CMAKE_BINARY_DIR}/fuzz-matrix-${_fm_shard}" "${DIFF3_GCC}" "${DIFF3_CLANG}"
+                        --seed ${_fm_seed} --count 6 --gates)
+            set_tests_properties("fuzz/matrix-${_fm_shard}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_diff3_env}")
+        endforeach()
         add_test(NAME "fuzz/corpus"
             COMMAND fuzz_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
                     "${CMAKE_BINARY_DIR}/fuzz-corpus" "${DIFF3_GCC}" "${DIFF3_CLANG}"

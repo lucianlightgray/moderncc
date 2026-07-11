@@ -171,6 +171,13 @@ static int do_run_preset(int argc, char **argv) {
 		snprintf(junit, sizeof junit, "cmake-%s/ctest-junit.xml", preset);
 		ts_arg(&v, "--output-junit");
 		ts_arg(&v, junit);
+		{
+			const char *excl = getenv("MCC_CI_CTEST_EXCLUDE");
+			if (excl && *excl) {
+				ts_arg(&v, "-E");
+				ts_arg(&v, excl);
+			}
+		}
 		for (i = extra_start; i < argc; i++)
 			ts_arg(&v, argv[i]);
 		printf("==> testing (preset=%s)\n", preset);

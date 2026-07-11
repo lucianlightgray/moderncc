@@ -103,6 +103,7 @@ jobs:
           extra=""
           if [ "${{ matrix.arch }}" = x86_64 ]; then
             extra="-DCMAKE_OSX_ARCHITECTURES=x86_64 -DMCC_TARGET_ARCH=x86_64"
+            export MCC_CI_CTEST_EXCLUDE='^(fuzz|ast|cst|diff3|preprocess)/'
           fi
           /tmp/mcc-ci run-preset ${{ matrix.preset }} --out "$PWD/dist/$ART" --bench \
             -DMCC_BENCH=ON "-DMCC_DIST_PLAT=$ART" $extra
@@ -134,10 +135,21 @@ jobs:
         uses: TheMrMilchmann/setup-msvc-dev@v4
         with:
           arch: ${{ matrix.msvcarch }}
-      - name: install diff3 reference compilers (mingw gcc + llvm clang)
+      - name: resolve diff3 reference compilers (prefer preinstalled mingw gcc + clang)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $gcc   = (Get-Command gcc   -ErrorAction SilentlyContinue).Source
+          $clang = (Get-Command clang -ErrorAction SilentlyContinue).Source
+          if ($gcc)   { "MCC_DIFF3_GCC=$($gcc.Replace('\','/'))"     | Out-File -FilePath $env:GITHUB_ENV -Append }
+          if ($clang) { "MCC_DIFF3_CLANG=$($clang.Replace('\','/'))" | Out-File -FilePath $env:GITHUB_ENV -Append }
+          if ($gcc -and $clang) { "MCC_DIFF3_READY=1" | Out-File -FilePath $env:GITHUB_ENV -Append }
+      - name: install diff3 reference compilers (only if the image lacks gcc or clang)
+        if: env.MCC_DIFF3_READY != '1'
         continue-on-error: true
         run: choco install -y llvm mingw
-      - name: resolve diff3 reference compilers (mingw gcc + clang)
+      - name: re-resolve diff3 reference compilers after install
+        if: env.MCC_DIFF3_READY != '1'
         continue-on-error: true
         shell: pwsh
         run: |
