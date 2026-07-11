@@ -2181,6 +2181,43 @@ same gates (the assert path exercised across all of `mcc.c`) **converges**
 (s2==s3==s4) with no assert, and the resulting compiler is functional. The
 §34 fix is confirmed on the target that originally tripped it.
 
+## 34b. BUG (NEW 2026-07-11, HIGH): AST template optimizer miscompiles `inline.c` main — uninitialized-stack read at default -O1/-O2, masked in CI by forced inline
+
+Found while scoping §22's in-process re-emit. **`mcc -O1` and `-O2` (no env, no
+gates) miscompile `tests/ast/replay/inline.c`**: the program returns 42 under
+`-O0`, `-O3`, and gcc, but at `-O1`/`-O2` it returns **garbage that varies run to
+run on the same binary** (observed 2, 3, 4, 5, 102, 149, …) — a definitive
+**uninitialized-stack read**. The AST template optimizer drops a local's
+initialization (or mis-allocates/reuses its spill slot) in `main`.
+
+Localization:
+- Bisected to **`main` only** (`MCC_AST_FN_CONFIG='main=1'` with all else off
+  reproduces; every other function optimized alone is correct). Passes that fire
+  on `main`: `ast_ident` (**30 folds**) + `ast_bfold` (1) — no join/bitflag at
+  `-O1`.
+- It is an **interaction under register pressure**: reproduces only with `main`'s
+  full ~22 locals AND a **function-pointer call** (`fp = fwd_sum; fp(4)`) AND a
+  **struct-return local** (`mkpair`) AND a **float local** (`(int)area(...)`) all
+  present. Removing any one of those three feature classes, OR shrinking the
+  local count, makes it deterministic/correct. A clean 3-feature minimal program
+  (few locals) does NOT reproduce — so the trigger is the spill/slot allocation
+  under pressure, exposed by `ast_ident`'s rewrites, not any single fold in
+  isolation.
+- **Masked in CI**: the `ast/replay-inline` ctest forces `MCC_AST_INLINE=1`;
+  inlining changes register/stack allocation and avoids the bug (returns 42), so
+  the suite is green while the default `-O1`/`-O2` path is broken on this TU.
+  The §0 differential fuzzer hasn't caught it — a coverage gap: it doesn't emit
+  fn-pointer + struct-return + float + high-local-count together.
+
+NEXT: root-cause the slot allocation in `ast_ident_run`/the promotion-off spill
+path for `main` (compare the `-O1` vs `-O0` stack-slot assignment of the
+uninitialized local; likely an `ast_ident` cast/copy fold that retargets a store
+to a slot the later load doesn't read, or a `loc` reuse collision). This is a
+real correctness bug independent of §22; §22's in-process inline-size trial
+(mechanically validated on other programs) is BLOCKED on it because choosing the
+smaller no-inline config for `main` exposes exactly this miscompile — fixing
+34b unblocks §22's trial too.
+
 ## 35. Sethi–Ullman evaluation-order numbering (large, codegen-order, byte-identity risk)
 
 - [x] OPTIMIZE.md Tier-2 catalog (:81-82) + Frontier (:651): evaluation-order
