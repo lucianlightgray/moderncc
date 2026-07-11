@@ -2044,17 +2044,34 @@ not commutative-safe, so stays out). Native arm64 spot-check recommended
   and finally *replacing* (not just informing) the promotion assignment, each
   fixpoint-gated + native arm64/riscv64.
 
-  **SECOND INCREMENT — IN PROGRESS (2026-07-10):** live-range interference so
-  the coloring can *share* a register between promotion candidates whose live
-  ranges are disjoint (the actual codegen win over greedy). Plan: (1) compute a
-  first-ref/last-ref position interval per candidate over the AST linearization;
-  (2) build the interference graph from interval *overlap* instead of the
-  current complete graph, so non-overlapping candidates get the same color; (3)
-  make `ast_promo_entry_init` / the promoted-ref rewrite honor per-range
-  liveness (load a shared register at each range start) so physical sharing is
-  sound. Still behind `MCC_AST_COLOR` (default off); gate off stays
-  byte-identical, forced-on validated by the exec-corpus differential +
-  `-O0` fixpoint + native arm64/riscv64 before it lands.
+  **SECOND INCREMENT LANDED (2026-07-10): live-range interference + register
+  sharing (sound, straight-line-restricted).** The coloring now *shares* a
+  register between promotion candidates whose live ranges are disjoint. Because
+  sound sharing under arbitrary control flow needs real CFG liveness (naive
+  node-index intervals are unsound across loop back-edges), this increment
+  restricts sharing to **straight-line functions** (no `AST_If`/`AST_Jump`),
+  where node-index order == execution order and interval overlap is exact.
+  Mechanics: (1) per candidate, compute `[firstref, lastref]` over the AST
+  linearization + whether the first reference is a *definition* (an `AST_Store`
+  target); a candidate whose first ref is a *read* is live-in (parameter) so its
+  interval is pinned to start at entry (pos 0). (2) Interference = interval
+  *overlap*; two candidates share a color only if one's refs entirely precede
+  the other's. (3) Emission: `ast_promo_entry_init` entry-loads only the first
+  candidate per physical register (the earliest-range one — a live-in param if
+  present); later sharers get their value from their own defining write, so no
+  reload machinery is needed. Branchy functions fall back to the increment-1
+  complete-graph (no sharing). Fixed en route: `ast_color_graph` now always
+  initializes `color[]` before the `k<=0` early return (the XMM class is `k=0`
+  when the function has a call), and `ast_promo_{off,typ,reg}` were resized to
+  `AST_PROMO_MAX*8` since sharing promotes more candidates than physical
+  registers. Validation: gate-off `-O0` fixpoint stage2==3==4 byte-identical +
+  full ctest **1880/1880** + release/cross/multisource/sanitize clean;
+  forced-on (`MCC_AST_COLOR=1 -O2`) **229/229 exec corpus correct, 0
+  divergences, 0 compiler crashes**, and register sharing genuinely fires
+  **105× across the corpus**. Remaining for §36: CFG-liveness so sharing works
+  through branches/loops (lifts the straight-line restriction), spill-slot
+  sharing, and finally *replacing* the promotion heuristic outright — each
+  fixpoint-gated + native arm64/riscv64.
 
 ## 37. Bench-statistics roadmap — Bayesian + ANOVA inference (medium, tools-only)
 

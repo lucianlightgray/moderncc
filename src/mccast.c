@@ -393,6 +393,8 @@ uint64_t ast_intention_hash(const AstArena *a, AstLocal root) {
 #define AST_COLOR_MAX 64
 
 int ast_color_graph(int n, const uint64_t *adj, const int *cost, int k, int *color) {
+	for (int i = 0; i < n; i++)
+		color[i] = -1;
 	if (n <= 0 || k <= 0 || n > AST_COLOR_MAX)
 		return 0;
 	int deg[AST_COLOR_MAX];
@@ -1839,9 +1841,10 @@ void ast_hook_implicit_return(void) {
 static const int ast_promo_caller[3] = {10, 9, 8};
 static const int ast_promo_callee[5] = {3, 12, 13, 14, 15};
 static const int ast_promo_xmm[2] = {22, 23};
-static int ast_promo_off[AST_PROMO_MAX];
-static int ast_promo_typ[AST_PROMO_MAX];
-static int ast_promo_reg[AST_PROMO_MAX];
+#define AST_PROMO_SLOTS (AST_PROMO_MAX * 8)
+static int ast_promo_off[AST_PROMO_SLOTS];
+static int ast_promo_typ[AST_PROMO_SLOTS];
+static int ast_promo_reg[AST_PROMO_SLOTS];
 static int ast_promo_n;
 static int ast_promo_callful;
 static int ast_promo_regpool_at(int i) {
@@ -2297,13 +2300,15 @@ static int ast_plan_promotion(AstArena *a) {
 	if (!ast_promote_env || ast_func_has_asm)
 		return 0;
 	AstLocal nn = ast_count(a);
-	int has_call = 0, has_vla = 0;
+	int has_call = 0, has_vla = 0, has_branch = 0;
 	for (AstLocal n = 0; n < nn; n++) {
 		uint16_t k = ast_kind(a, n);
 		if (k == AST_Invoke)
 			has_call = 1;
 		else if (k == AST_Unary && ast_op(a, n) == AST_OP_VLA)
 			has_vla = 1;
+		else if (k == AST_If || k == AST_Jump)
+			has_branch = 1;
 	}
 	if (has_vla)
 		return 0;
@@ -2417,6 +2422,95 @@ static int ast_plan_promotion(AstArena *a) {
 												: (int)(sizeof ast_promo_caller / sizeof *ast_promo_caller);
 	int xmm_max = has_call ? 0 : (int)(sizeof ast_promo_xmm / sizeof *ast_promo_xmm);
 	int gp_n = 0, xmm_n = 0;
+	if (ast_color_env && !has_branch) {
+		int cfirst[AST_PROMO_MAX * 8], clast[AST_PROMO_MAX * 8];
+		int cdeffirst[AST_PROMO_MAX * 8];
+		for (int j = 0; j < nc; j++)
+			cfirst[j] = -1, clast[j] = -1, cdeffirst[j] = 0;
+		for (AstLocal n = 0; n < nn; n++) {
+			if (ast_kind(a, n) != AST_Ref)
+				continue;
+			int r = ast_op(a, n);
+			if ((r & VT_VALMASK) != VT_LOCAL || !(r & VT_LVAL) || (r & VT_SYM))
+				continue;
+			int off = (int)(int64_t)ast_ival(a, n);
+			for (int j = 0; j < nc; j++)
+				if (coff[j] == off) {
+					if (cfirst[j] < 0)
+						cfirst[j] = (int)n;
+					clast[j] = (int)n;
+					break;
+				}
+		}
+		for (AstLocal n = 0; n < nn; n++) {
+			if (ast_kind(a, n) != AST_Store)
+				continue;
+			AstLocal tgt = ast_child(a, n, 0);
+			if (tgt == AST_NONE || ast_kind(a, tgt) != AST_Ref)
+				continue;
+			int off = (int)(int64_t)ast_ival(a, tgt);
+			for (int j = 0; j < nc; j++)
+				if (coff[j] == off && cfirst[j] == (int)tgt)
+					cdeffirst[j] = 1;
+		}
+		int lo[AST_PROMO_MAX * 8], hi[AST_PROMO_MAX * 8];
+		for (int j = 0; j < nc; j++) {
+			lo[j] = cdeffirst[j] ? cfirst[j] : 0;
+			hi[j] = clast[j];
+		}
+		int careg[AST_PROMO_MAX * 8];
+		for (int j = 0; j < nc; j++)
+			careg[j] = -1;
+		for (int cls = 0; cls < 2; cls++) {
+			const int *pool = cls == 0 ? gp_pool : ast_promo_xmm;
+			int kcol = cls == 0 ? gp_max : xmm_max;
+			int idx[AST_COLOR_MAX], m = 0;
+			for (int j = 0; j < nc && m < AST_COLOR_MAX; j++) {
+				if (cpoison[j] || coff[j] >= 0 || cfirst[j] < 0)
+					continue;
+				if ((cls == 0) == (is_float(ctyp[j]) != 0))
+					continue;
+				idx[m++] = j;
+			}
+			uint64_t adj[AST_COLOR_MAX];
+			int cost[AST_COLOR_MAX], col[AST_COLOR_MAX];
+			for (int i = 0; i < m; i++) {
+				adj[i] = 0;
+				cost[i] = cweight[idx[i]];
+			}
+			for (int i = 0; i < m; i++)
+				for (int j = i + 1; j < m; j++) {
+					int a1 = idx[i], b1 = idx[j];
+					int disjoint = (hi[a1] < lo[b1]) || (hi[b1] < lo[a1]);
+					if (!disjoint) {
+						adj[i] |= (uint64_t)1 << j;
+						adj[j] |= (uint64_t)1 << i;
+					}
+				}
+			ast_color_graph(m, adj, cost, kcol, col);
+			for (int i = 0; i < m; i++)
+				if (col[i] >= 0)
+					careg[idx[i]] = pool[col[i]];
+		}
+		int ord[AST_PROMO_MAX * 8], no = 0;
+		for (int j = 0; j < nc; j++)
+			if (careg[j] >= 0)
+				ord[no++] = j;
+		for (int i = 0; i < no; i++)
+			for (int j = i + 1; j < no; j++)
+				if (lo[ord[j]] < lo[ord[i]]) {
+					int t = ord[i];
+					ord[i] = ord[j];
+					ord[j] = t;
+				}
+		for (int i = 0; i < no; i++) {
+			ast_promo_off[ast_promo_n] = coff[ord[i]];
+			ast_promo_typ[ast_promo_n] = ctyp[ord[i]];
+			ast_promo_reg[ast_promo_n] = careg[ord[i]];
+			ast_promo_n++;
+		}
+		return ast_promo_n;
+	}
 	int colorable[AST_PROMO_MAX * 8];
 	for (int j = 0; j < nc; j++)
 		colorable[j] = 1;
@@ -2508,6 +2602,14 @@ static void ast_promo_entry_init(void) {
 	}
 	for (int i = 0; i < ast_promo_n; i++) {
 		int reg = ast_promo_reg[i];
+		int shared = 0;
+		for (int p = 0; p < i; p++)
+			if (ast_promo_reg[p] == reg) {
+				shared = 1;
+				break;
+			}
+		if (shared)
+			continue;
 		SValue sv;
 		memset(&sv, 0, sizeof sv);
 		sv.type.t = ast_promo_typ[i];
