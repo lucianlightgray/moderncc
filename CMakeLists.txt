@@ -3304,6 +3304,33 @@ if(MCC_BUILD_TESTS)
         mcc_skip_test(diff3-suite "needs native host + both gcc and clang (build the clang-toolchain target for a self-contained clang)")
     endif()
 
+    # Differential random-program miscompile fuzzer (TODO.md §0). x86_64-Linux
+    # only: the oracle needs gcc AND clang executing mcc's own target ISA.
+    if(NOT MCC_EMULATOR AND DIFF3_GCC AND DIFF3_CLANG AND _diff3_sh_ok
+       AND MCC_CPU STREQUAL "x86_64" AND NOT MCC_TARGETOS STREQUAL "WIN32")
+        add_executable(fuzz_runner tests/fuzz/runner.c)
+        add_test(NAME "fuzz/smoke"
+            COMMAND fuzz_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                    "${CMAKE_BINARY_DIR}/fuzz-smoke" "${DIFF3_GCC}" "${DIFF3_CLANG}"
+                    --seed 1 --count 40)
+        set_tests_properties("fuzz/smoke" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77 ENVIRONMENT "${_diff3_env}")
+        add_test(NAME "fuzz/matrix"
+            COMMAND fuzz_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                    "${CMAKE_BINARY_DIR}/fuzz-matrix" "${DIFF3_GCC}" "${DIFF3_CLANG}"
+                    --seed 1 --count 24 --gates)
+        set_tests_properties("fuzz/matrix" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77 ENVIRONMENT "${_diff3_env}")
+        add_test(NAME "fuzz/corpus"
+            COMMAND fuzz_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                    "${CMAKE_BINARY_DIR}/fuzz-corpus" "${DIFF3_GCC}" "${DIFF3_CLANG}"
+                    --corpus "${CMAKE_CURRENT_SOURCE_DIR}/tests/fuzz/corpus" --replay)
+        set_tests_properties("fuzz/corpus" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77 ENVIRONMENT "${_diff3_env}")
+    else()
+        mcc_skip_test(fuzz-suite "needs native x86_64 host + both gcc and clang (differential oracle executes mcc's own target ISA)")
+    endif()
+
     if(MCC_TARGETOS STREQUAL "WIN32")
         mcc_skip_test(parts-suite "native gcc/clang/mcc 3-way needs a shared C99 libc; the PE/msvcrt target has no msvcrt equivalent for the parts' complex/tgmath/libm surface (covered in aggregate by mcctest)")
     elseif(NOT MCC_EMULATOR AND DIFF3_GCC AND DIFF3_CLANG AND MCC_CONFIG_ASM

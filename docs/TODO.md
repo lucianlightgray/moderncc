@@ -39,38 +39,43 @@ independent validation engine for §41 (the default-ON ungate sweep) and a
 miscompile detector for §29–§35.
 
 ### Investigation tasks
-- [ ] **Generator selection** — csmith vs YARPGen vs a small custom generator:
-      weigh UB-freedom guarantees (csmith `--no-...` knobs), coverage of mcc's
-      known-weak constructs (bitfields, unions, `_Complex`, VLAs, computed
-      `goto`, inline asm, atomics, `long double`, packed structs), licensing,
-      and clean x86_64-Linux build. Decide one primary + one secondary.
-- [ ] **Oracle design** — gcc + clang at matched `-O` as a majority-vote
-      reference; canonicalize observable behavior (exit code + a hash of
-      stdout + a hash of a checksum-of-globals `main` wrapper); a policy for
-      UB/nondeterministic programs (prefer UB-free generation; else drop on
-      oracle disagreement).
-- [ ] **mcc-under-test matrix** — sweep `-O0..-O3` × each gated pass forced on
-      (`MCC_AST_CPROP_JOIN`/`CSE_JOIN`/`CALL_WINDOW`/`BITFLAG`/`SETHI`/
-      `PROMOTE`/`INLINE`/…), so a divergence is directly attributable to a
-      single pass. This is exactly the coverage §41 needs.
-- [ ] **Reduction pipeline** — cvise/creduce driven by an interestingness
-      predicate that re-confirms the mcc-vs-oracle divergence on the reduced
-      program; emit a self-contained `.c` + expected-output into a new
-      `tests/fuzz/` (or `tests/diff/`) corpus.
-- [ ] **Triage / bisection** — for a confirmed divergence, bisect over (a) the
-      `-O` level, (b) which `MCC_AST_*` gate flips it, (c) `git bisect` over
-      commits — to name the responsible change automatically.
-- [ ] **Dynamic-analysis layer** — additionally build both mcc itself and
-      mcc's *output* under ASan/UBSan and run under valgrind on x86_64 to catch
-      latent UB / crashes the pure differential oracle misses (crash vs
-      wrong-answer classification).
-- [ ] **CI integration & budget** — a nightly N-hour campaign on the x86_64
-      box: seed corpus, dedup by crash-site/repro hash, a "no new failure
-      class in K runs" stop rule (mirrors §31's loop-until-dry), seed-
-      reproducible runs, and a regression-lock of known-fixed repros.
-- [ ] **Graduation path** — how a reduced repro becomes a permanent ctest case
-      (naming, expected-output capture, and re-baselining when it's a known
-      accepted `[DIFF]` from gcc/clang rather than a bug).
+- [x] **Generator selection** — csmith/cvise/creduce are absent on the dev/CI
+      host, so a **small custom generator** (`tests/fuzz/gen.h`) is the primary,
+      seed-deterministic and UB-free by construction (bitfields, unions, arrays,
+      switch/for/if, bounded recursion; integer-only — see `tests/fuzz/NOTES.md`
+      for why float/`_Complex`/VLA/asm are excluded from the always-green band).
+      csmith/YARPGen remain a drop-in secondary in front of the same oracle.
+- [x] **Oracle design** — gcc + clang at `-O2` as the majority-vote consensus;
+      observable behavior = stdout + exit code (the generated `main` folds all
+      globals into a printed checksum and returns it); references-disagree ⇒
+      drop as impl-defined/latent-UB; every reported divergence is re-checked
+      under `gcc -fsanitize=undefined,address` and dropped if the program has UB.
+- [x] **mcc-under-test matrix** — `runner.c` sweeps `-O0..-O3` and (with
+      `--gates`) each `MCC_AST_*` pass forced on; `fuzz/matrix` ctest exercises
+      it. Divergence is attributed to a single (level, gate). This is the §41
+      coverage.
+- [x] **Reduction pipeline** — line-granularity **ddmin** (`--reduce`, a
+      cvise/creduce fallback for hosts without them) with an interestingness
+      predicate that re-confirms the mcc-vs-oracle divergence and rejects any
+      candidate gcc/clang can't build; emits a self-contained `.c` into
+      `tests/fuzz/corpus/`.
+- [x] **Triage / bisection** — auto-sweep over (a) `-O` level and (b) which
+      `MCC_AST_*` gate flips it, recorded in the saved repro's header;
+      (c) `tests/fuzz/bisect.sh` is a `git bisect run` predicate over a repro.
+- [~] **Dynamic-analysis layer** — mcc's *output* is built+run under
+      ASan/UBSan as the oracle's soundness gate, and compiled-program
+      crashes/timeouts are classified separately from wrong-answers. Building
+      mcc *itself* under ASan (the `sanitize` preset already exists) and a
+      valgrind pass over the corpus remain as follow-ups.
+- [~] **CI integration & budget** — runs are seed-reproducible
+      (`MCC_FUZZ_SEED`/`MCC_FUZZ_COUNT`/`MCC_FUZZ_GATES`); the graduated corpus
+      is a regression-lock (`fuzz/corpus`). A *scheduled* nightly N-hour
+      campaign with crash-site dedup and a "no-new-class in K runs" stop rule is
+      not yet wired (the env-driven campaign is the manual form).
+- [x] **Graduation path** — a confirmed, UB-free, reduced divergence is written
+      to `tests/fuzz/corpus/repro_seed<N>.c` (header records seed + attribution)
+      and guarded by the `fuzz/corpus` replay; accepted impl-defined `[DIFF]`s
+      are re-baselined as `corpus/accept_<name>.c` (see `corpus/README.md`).
 
 ### Sub-feature discovery topics (explore before scoping)
 - **Equivalence-Modulo-Inputs (EMI)** mutation (Orion/Athena/Hermes style):
@@ -97,6 +102,17 @@ compiler-codegen change (no fixpoint/byte-identity gate on the harness
 itself). First increment = the minimal loop: `csmith → {mcc,gcc,clang} -O2 →
 compare exit+stdout hash → on divergence, cvise-reduce → save repro`, then
 layer the matrix, triage, and dynamic-analysis passes on top.
+
+**LANDED (2026-07-10).** `tests/fuzz/` = `gen.h` (custom generator) + `runner.c`
+(oracle + UBSan gate + ddmin reducer + `-O`/gate triage) + `corpus/` +
+`bisect.sh`, with `README.md`/`NOTES.md`. Wired as three x86_64-only ctests
+(`fuzz/smoke` `-O0..-O3`, `fuzz/matrix` gate sweep, `fuzz/corpus` regression
+replay), gated on native gcc+clang (reuses `MCC_DIFF3_GCC/CLANG`; SKIP
+otherwise). Bring-up campaign: **200 seeds × (-O0..-O3 + 7 gates), 0
+miscompiles**, so the corpus starts empty (no known mcc bug). Remaining Bucket-0
+follow-ups are the two `[~]` items above (mcc-self ASan/valgrind; a *scheduled*
+nightly campaign with crash-dedup/stop-rule) plus the discovery topics below
+(EMI, coverage-guided, ABI/self-host/sanitizer-diff, scoreboard).
 
 ## 1. Delete `TAL_INFO` (trivial)
 
