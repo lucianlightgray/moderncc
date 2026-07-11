@@ -1940,9 +1940,25 @@ touch `src/mccast.c`, so serialize to avoid worktree merge conflicts):
       result=1`, correct (not in the set → all `!=` true). Validated: existing
       `==`/`||` fold byte-unchanged (object sha), gate-off `-O0..-O3`
       byte-identical, full ctest green, fires on a `k!=100&&…&&k!=163` cluster
-      with the edge-key checksum matching the transform-off reference. **Still
-      open**: value-table dispatch for differing bodies; the If-chain
-      fall-through `!=` form (`ast_bf_try_if` still `TOK_EQ`-only).
+      with the edge-key checksum matching the transform-off reference.
+      **Value-table dispatch — INVESTIGATED, reclassified out of `ast_bf`**
+      (2026-07-10): a true rodata lookup table is **blocked** — the AST layer
+      (`src/mccast.h:7-25`) has no array/global/static-data node kind and no
+      pass ever emits initialized data (`ast_fconst_push_ref` only *replays*
+      backend constant-pool indices captured by the front end; `ast_bf_build`
+      only builds `Literal`/`Binary`/`Convert` arithmetic), and synthesizing a
+      table Sym+initializer that survives the two-pass byte-identity
+      reset-and-re-emit is invasive new infrastructure. The arithmetic-only
+      *packed-immediate* fallback is expressible but requires collapsing a
+      whole if-chain into a synthesized `Store` with default-encoding — a new
+      statement-level mutation class (every existing bitflag transform only
+      rewrites expression→expression) for a narrow value/range slice; declined
+      as not-clean on a self-hosting compiler. If wanted, it is its own
+      **data-emission-infrastructure project** (a table-symbol+initializer
+      emitter wired into the replay/rewrite lifecycle), not an `ast_bf` fold —
+      moved to Bucket B. **Still open (small)**: the If-chain fall-through
+      `!=` form (`ast_bf_try_if` is still `TOK_EQ`-only; the `&&`-expression
+      `!=` form is landed via `ast_bf_try_land`).
 3. [~] **§32a refinements** — **op-5 `for(;;)` classification LANDED**: the
       `MCC_AST_CPROP_JOIN` structured descent now treats op-5 infinite loops
       with the same invariant-preserving meet as op-2..4 loops (`ast_cprop_
