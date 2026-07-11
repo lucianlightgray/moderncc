@@ -2116,9 +2116,24 @@ fixpoint invariant if rushed. Sequenced, not started:
   now DONE); the earlier "non-determinism" was a harness bug (embedded output
   basename). §32c's fixpoint gate is therefore available; §32c's remaining
   work is the value-materializing pass itself, not a determinism prerequisite.
-- **§32c value-materializing fresh-temp LICM** — buildable now (gate
-  available): fresh-temp LICM → post-join PRE → IV strength reduction, a real
-  Bucket-A-sized increment once someone picks it up; the carve infra exists.
+- **§32c value-materializing fresh-temp LICM** — **FIRST INCREMENT LANDED**
+  (arm64-first, default-off `MCC_AST_LICM_TEMP`): hoists one loop-invariant
+  pure integer `Binary` (operands invariant via `ast_licm_operands_ok`, pure
+  via `ast_cse_regpure` so no div/mod trap, used ≥2× in the loop, not already
+  in a local) into a fresh strictly-negative carved temp — obstacle A (carve
+  reserved after `loc=saved_loc`, before `ast_promo_entry_init`), C
+  (`AST_Convert`-wrapped store, comparisons excluded), D (preheader store in
+  the loop's parent BB dominates all uses) all handled. Validated native
+  arm64: gate-off `-O0..-O3` byte-identical + full ctest 1862 + gate-ON
+  corpus-wide ctest green + gate-ON `-O2` 3-stage self-host fixpoint converges
+  + 23 adversarial loop shapes match `-O0`/clang. **x86_64 obstacle-B
+  (promotion poison) validation is PENDING** — promotion is x86_64-only
+  (compiled out on arm64, so obstacle B is moot here); the x86_64 poison list
+  is written but untested on this box. This is exactly N2's sanctioned
+  "arm64/riscv64 FIRST, add the x86_64 poison guard second" order; the gate is
+  default-off so the default compiler is byte-identical on every arch.
+  **Remaining**: x86_64 gate-on validation (promotion+temp interaction), then
+  post-join PRE → IV strength reduction (the further §32c consumers).
 - **§36 Chaitin–Briggs graph-coloring regalloc** — largest, replaces
   `ast_plan_promotion`; run last.
 - **§26 `--embed-jit` runtime engine**, **§33b/c/d/e**, **§27/§28**,

@@ -436,6 +436,12 @@ static int ast_bitflag_min;
 static int ast_cprop_join_env;
 static int ast_cse_join_env;
 static int ast_call_window_env;
+static int ast_licm_temp_env;
+
+#define AST_LTEMP_MAX 32
+static int ast_ltemp_off[AST_LTEMP_MAX];
+static int ast_ltemp_n;
+static int ast_ltemp_cur;
 static int ast_search_worker;
 static uint64_t ast_intention_acc;
 static const char *ast_hash_out;
@@ -685,6 +691,7 @@ void ast_configure(MCCState *s1) {
 	ast_cprop_join_env = ast_env_gate("MCC_AST_CPROP_JOIN", 0);
 	ast_cse_join_env = ast_env_gate("MCC_AST_CSE_JOIN", 0);
 	ast_call_window_env = ast_env_gate("MCC_AST_CALL_WINDOW", 0);
+	ast_licm_temp_env = ast_env_gate("MCC_AST_LICM_TEMP", 0);
 	ast_intention_acc = 0;
 	ast_hash_out = getenv("MCC_AST_HASH_OUT");
 	ast_search_worker = getenv("MCC_SEARCH_WORKER") != NULL;
@@ -2339,6 +2346,12 @@ static int ast_plan_promotion(AstArena *a) {
 			if (coff[j] >= base && coff[j] < base + size)
 				cpoison[j] = 1;
 	}
+	for (int j = 0; j < nc; j++)
+		for (int t = 0; t < ast_ltemp_n; t++)
+			if (coff[j] == ast_ltemp_off[t]) {
+				cpoison[j] = 1;
+				break;
+			}
 	for (int j = 0; j < nc; j++)
 		cweight[j] = 0;
 	ast_promo_weigh(a, ast_root(a), 0, coff, nc, cweight);
@@ -5123,6 +5136,147 @@ static void ast_licm_at_loop(AstArena *a, AstLocal s) {
 	}
 }
 
+static int ast_ltemp_binop_ok(int op) {
+	switch (op) {
+	case '+':
+	case '-':
+	case '*':
+	case '&':
+	case '|':
+	case '^':
+	case TOK_SHL:
+	case TOK_SHR:
+	case TOK_SAR:
+		return 1;
+	}
+	return 0;
+}
+
+static void ast_ltemp_count_occ(AstArena *a, AstLocal n, AstLocal e, int lval,
+																int *cnt) {
+	if (n == AST_NONE)
+		return;
+	uint16_t k = ast_kind(a, n);
+	if (!lval && n != e && ast_ident_same(a, e, n)) {
+		(*cnt)++;
+		return;
+	}
+	if (k == AST_Store) {
+		ast_ltemp_count_occ(a, ast_child(a, n, 0), e, 1, cnt);
+		ast_ltemp_count_occ(a, ast_child(a, n, 1), e, 0, cnt);
+		return;
+	}
+	int clval = k == AST_Unary && ast_cprop_lval_op(ast_op(a, n));
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		ast_ltemp_count_occ(a, c, e, clval, cnt);
+}
+
+static AstLocal ast_ltemp_cand;
+
+static void ast_ltemp_scan(AstArena *a, AstLocal loop, AstLocal n, int lval) {
+	if (n == AST_NONE || ast_ltemp_cand != AST_NONE)
+		return;
+	uint16_t k = ast_kind(a, n);
+	if (!lval && k == AST_Binary && ast_ltemp_binop_ok(ast_op(a, n)) &&
+			ast_cse_regpure(a, n) && ast_licm_operands_ok(a, loop, n)) {
+		int et;
+		uint64_t er;
+		if (ast_ident_etype(a, n, &et, &er) && ast_ident_intt(et)) {
+			int cnt = 0;
+			ast_ltemp_count_occ(a, loop, n, 0, &cnt);
+			if (cnt >= 1) {
+				ast_ltemp_cand = n;
+				return;
+			}
+		}
+	}
+	if (k == AST_Store) {
+		ast_ltemp_scan(a, loop, ast_child(a, n, 0), 1);
+		ast_ltemp_scan(a, loop, ast_child(a, n, 1), 0);
+		return;
+	}
+	int clval = k == AST_Unary && ast_cprop_lval_op(ast_op(a, n));
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		ast_ltemp_scan(a, loop, c, clval);
+}
+
+static int ast_ltemp_insert_before(AstArena *a, AstLocal parent, AstLocal pivot,
+																	 AstLocal node) {
+	if (a->first_child[parent] == pivot) {
+		a->parent[node] = parent;
+		a->next_sib[node] = pivot;
+		a->first_child[parent] = node;
+		a->nchild[parent]++;
+		return 1;
+	}
+	for (AstLocal c = a->first_child[parent]; c != AST_NONE; c = a->next_sib[c])
+		if (a->next_sib[c] == pivot) {
+			a->parent[node] = parent;
+			a->next_sib[node] = pivot;
+			a->next_sib[c] = node;
+			a->nchild[parent]++;
+			return 1;
+		}
+	return 0;
+}
+
+static int ast_ltemp_materialize(AstArena *a, AstLocal loop, AstLocal e) {
+	int et;
+	uint64_t er;
+	if (ast_ltemp_n >= AST_LTEMP_MAX)
+		return 0;
+	if (!ast_ident_etype(a, e, &et, &er) || !ast_ident_intt(et))
+		return 0;
+	AstLocal parent = ast_parent(a, loop);
+	if (parent == AST_NONE || ast_kind(a, parent) != AST_BasicBlock)
+		return 0;
+	int off = (ast_ltemp_cur - 8) & -8;
+	AstLocal lref = ast_node(a, AST_Ref);
+	ast_set_op(a, lref, VT_LOCAL | VT_LVAL);
+	ast_set_ival(a, lref, (uint64_t)off);
+	ast_set_type(a, lref, et, er);
+	AstLocal cvt = ast_node(a, AST_Convert);
+	ast_set_type(a, cvt, et, er);
+	ast_add_child(a, cvt, ast_dup_sub(a, e));
+	AstLocal st = ast_node(a, AST_Store);
+	ast_add_child(a, st, lref);
+	ast_add_child(a, st, cvt);
+	if (!ast_ltemp_insert_before(a, parent, loop, st))
+		return 0;
+	AstLocal tref = ast_node(a, AST_Ref);
+	ast_set_op(a, tref, VT_LOCAL | VT_LVAL);
+	ast_set_ival(a, tref, (uint64_t)off);
+	ast_set_type(a, tref, et, er);
+	ast_licm_subst(a, loop, e, tref, 0);
+	ast_cse_setref(a, e, tref);
+	ast_licm_folds++;
+	ast_ltemp_cur = off;
+	ast_ltemp_off[ast_ltemp_n++] = off;
+	return 1;
+}
+
+static int ast_ltemp_run(AstArena *a) {
+	int did = 0;
+	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++) {
+		if (ast_kind(a, n) != AST_If)
+			continue;
+		int op = ast_op(a, n);
+		if (op < 2 || op > 4)
+			continue;
+		if (ast_sccp_has_label(a, n))
+			continue;
+		AstLocal parent = ast_parent(a, n);
+		if (parent == AST_NONE || ast_kind(a, parent) != AST_BasicBlock)
+			continue;
+		ast_ltemp_cand = AST_NONE;
+		ast_ltemp_scan(a, n, n, 0);
+		if (ast_ltemp_cand != AST_NONE)
+			did += ast_ltemp_materialize(a, n, ast_ltemp_cand);
+	}
+	return did;
+}
+
 static void ast_cse_block(AstArena *a, AstLocal bb) {
 	ast_cse_n = 0;
 	for (AstLocal s = ast_first_child(a, bb); s != AST_NONE; s = ast_next_sib(a, s)) {
@@ -5328,11 +5482,15 @@ static int ast_cse_run(AstArena *a) {
 				ast_cse_block(a, n);
 		mcc_free(ast_cse_vis);
 		ast_cse_vis = NULL;
+		if (ast_licm_temp_env)
+			ast_ltemp_run(a);
 		return ast_cse_folds;
 	}
 	for (AstLocal n = 0; n < nn; n++)
 		if (ast_kind(a, n) == AST_BasicBlock)
 			ast_cse_block(a, n);
+	if (ast_licm_temp_env)
+		ast_ltemp_run(a);
 	return ast_cse_folds;
 }
 
@@ -5491,6 +5649,8 @@ void ast_func_end(Sym *sym) {
 										memcmp(rsec2->data + ast_reloc0_sv, orig_rel, rel_len) == 0);
 				ast_fn_faithful = faithful;
 
+				ast_ltemp_cur = saved_loc;
+				ast_ltemp_n = 0;
 				bfolds = faithful && ast_templates_env ? ast_bfold_run(ast_cur) : 0;
 				idents = faithful && ast_templates_env ? ast_ident_run(ast_cur) : 0;
 				cprops = faithful && ast_templates_env ? ast_cprop_run(ast_cur) : 0;
@@ -5553,6 +5713,8 @@ void ast_func_end(Sym *sym) {
 						ast_rsec->data_offset = ast_reloc0_sv;
 					nocode_wanted = 0;
 					loc = saved_loc;
+					if (ast_ltemp_n)
+						loc = ast_ltemp_cur;
 					anon_sym = saved_anon;
 					ast_fconst_i = (do_bfold || do_ident || do_cprop || do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_sethi || do_tco || do_inline) ? ast_fconst_n : 0;
 					ast_locrec_i = 0;
