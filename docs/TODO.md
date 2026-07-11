@@ -84,26 +84,29 @@ correct vs gcc/clang (200/200 + 90/90 across scheduler revisions); shadow zero s
 divergences; the `-ON` budget is an absolute cap (verified no hang, finishes early when
 candidates complete); asttool 55/55 with the portable `clock()` timer.
 
-- [ ] **Step 5+ — scoring fidelity: emitted-size / JIT-runtime** — replace the static
-  `ast_cost_score` proxy with true emitted-byte size, and at the JIT tier measured
-  runtime (`MCC_AST_JITSCORE`). **Deeper blocker than first thought:** `AST_PF_EMIT`
-  reads per-candidate global emit state (`ast_ltemp_n`/`ast_ltemp_cur`, the
-  `ast_fconst_i`/`ast_locrec_i` cursors, `ast_promo_*`), which the *interleaved tick
-  scheduler* overwrites across candidates — so emit-measuring a candidate is only valid
-  immediately after that candidate is folded-to-completion, not under the fair
-  interleave. Emitted-size therefore needs the per-context fold/emit state below, not
-  just §22 scratch-`Section` isolation.
+**LANDED — Step 5+: emitted-byte-size scoring** (`MCC_AST_SEARCH_EMITSIZE`). Instead of
+the static `ast_cost_score` proxy, each candidate is folded to completion and replayed
+into the live text section (the proven in-place emit-and-rewind of the inline on/off
+trial) with inline + promotion **off** (so the promotion save/restore desync never
+arises); the emitted byte length is the score and every emit cursor is rewound. The
+interleave-thrash problem (see below) is sidestepped by running this path
+**run-to-completion** per candidate (the tick scheduler's fair interleave is kept for the
+default static-cost path). Opt-in within the search; the winner is still emitted by the
+normal pipeline on the untouched captured tree, so a mis-emit reverts through
+`ast_func_end`'s faithful revert. Validated: `MCC_AST_SEARCH_EMITSIZE -O6` differential
+correct vs gcc (15/15, zero crashes/miscompiles), default unaffected (1905/1905). Still
+open: JIT-runtime scoring (`MCC_AST_JITSCORE`) and emit-size under the *tick* scheduler
+(needs the per-context state below).
 
-- [ ] **Step 5+ PREREQUISITE — per-context fold/emit state (the common blocker)** — the
-  three items below all converge here. The optimizer keeps its working state in ~global
-  singletons (`ast_cur`; the `ast_du_*`/`ast_memo_*`/`ast_hash_*` side-cars keyed by one
-  arena pointer; `ast_ltemp_*`, `ast_fconst_*`/`ast_locrec_*` cursors; `ast_promo_*`;
-  `*_total` counters). Bundling these into a per-context object (or `_Thread_local`
-  under C11) is the single change that unblocks: **(1)** emit-size scoring (each
-  candidate folds+emits in its own context, no interleave thrash), **(2)** the NCores-1
-  thread pool (parallel candidates on independent contexts), and **(3)** any interior
-  parallelism. Milestone-scale substrate refactor; do it as its own gated change (the
-  side-car shadow build + fixpoint + fuzz are the gates), not bolted onto the search.
+- [ ] **Step 5+ PREREQUISITE — per-context fold/emit state** — still needed for emit-size
+  *under the interleaved tick scheduler* and for the thread pool below (the
+  run-to-completion emit-size path above does not need it). The optimizer keeps its
+  working state in ~global singletons (`ast_cur`; the `ast_du_*`/`ast_memo_*`/`ast_hash_*`
+  side-cars keyed by one arena pointer; `ast_ltemp_*`, `ast_fconst_*`/`ast_locrec_*`
+  cursors; `ast_promo_*`; `*_total` counters). Bundling these into a per-context object
+  (or `_Thread_local` under C11) unblocks parallel candidates on independent contexts.
+  Milestone-scale substrate refactor; its own gated change (side-car shadow +
+  fixpoint + fuzz), not bolted onto the search.
 - [ ] **Step 5+ — widen the search space** — the fold-gate candidate set is now the
   full **subset lattice** of the enabled gates (submask enumeration, ≤16, base first),
   not just leave-one-out (validated: -O6 differential 80/80, default 1905/1905). Still

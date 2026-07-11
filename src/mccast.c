@@ -615,6 +615,7 @@ static int ast_fncfg_find(const char *fn) {
 }
 static int ast_templates_env;
 static int ast_search_env;
+static int ast_search_emitsize_env;
 static unsigned ast_search_seconds;
 static int ast_promote_env;
 static int ast_no_callful_env;
@@ -787,6 +788,7 @@ void ast_configure(MCCState *s1) {
 	ast_replay_dump = ast_env_gate("MCC_AST_REPLAY_DUMP", 0);
 	ast_templates_env = ast_env_gate("MCC_AST_TEMPLATES", s1->optimize >= 1);
 	ast_search_env = ast_env_gate("MCC_AST_SEARCH", 0);
+	ast_search_emitsize_env = ast_env_gate("MCC_AST_SEARCH_EMITSIZE", 0);
 	ast_search_seconds = s1->optimize_search_seconds;
 	ast_promote_env = ast_env_gate("MCC_AST_PROMOTE", opt_promote);
 	ast_no_callful_env = ast_env_gate("MCC_AST_NO_CALLFUL", 0);
@@ -7030,7 +7032,77 @@ static void ast_cand_tick(AstCand *c, Sym *sym, int faithful) {
 	ast_cur = saved_cur;
 }
 
-static void ast_search_select(Sym *sym, int faithful) {
+/*
+ * Emitted-byte-size scoring (MCC_AST_SEARCH_EMITSIZE). Replay the fully-folded
+ * candidate into the live text section — the same in-place emit-and-rewind the
+ * inline on/off trial (AST_PF_EMIT) already does — with inline and promotion off
+ * (so the promotion save/restore desync never arises), read the byte length, then
+ * rewind every emit cursor. Correctness is unaffected: this only produces a score;
+ * the winning gate config is emitted by the normal pipeline on the untouched
+ * captured tree, and a mis-emit here reverts through ast_func_end's faithful
+ * revert. Used only in the run-to-completion path below (the fair-interleave tick
+ * scheduler thrashes the shared ltemp/fconst emit state across candidates, so a
+ * candidate is only emit-measurable right after it folds to completion). */
+static int ast_search_emit_size(AstArena *a, int saved_loc, int saved_anon) {
+	Section *rsec = cur_text_section->reloc;
+	AstArena *save_cur = ast_cur;
+	int save_ind = ind, save_rsym = rsym, save_loc = loc, save_anon = anon_sym;
+	addr_t save_reloc = rsec ? rsec->data_offset : 0;
+	int size;
+	ind = ast_body_ind_sv;
+	rsym = 0;
+	if (rsec)
+		rsec->data_offset = ast_reloc0_sv;
+	nocode_wanted = 0;
+	loc = ast_ltemp_n ? ast_ltemp_cur : saved_loc;
+	anon_sym = saved_anon;
+	ast_fconst_i = ast_fconst_n;
+	ast_locrec_i = 0;
+	ast_replaying = 1;
+	ast_rp_switch = NULL;
+	ast_rp_nlabel = 0;
+	ast_rp_bsym = ast_rp_csym = NULL;
+	ast_pinned_regs = 0;
+	ast_inline_active = 0;
+	ast_graft_budget = ast_graft_budget_max;
+	ast_loc_low = loc;
+	ast_cur = a;
+	ast_replay_body(a);
+	ast_replaying = 0;
+	size = ind - ast_body_ind_sv;
+	ast_cur = save_cur;
+	ind = save_ind;
+	rsym = save_rsym;
+	if (rsec)
+		rsec->data_offset = save_reloc;
+	loc = save_loc;
+	anon_sym = save_anon;
+	return size;
+}
+
+/* Fold a candidate to completion and score it by emitted size (run-to-completion,
+ * so its ltemp/fconst emit state is current). */
+static long ast_search_score_emitsize(AstArena *pristine, Sym *sym, int faithful,
+																			unsigned gates, int saved_loc,
+																			int saved_anon) {
+	AstArena *saved_cur = ast_cur, *trial = ast_arena_clone(pristine);
+	int si;
+	long size;
+	if (!trial)
+		return -1;
+	ast_search_gates_set(gates);
+	ast_cur = trial;
+	for (si = 0; si < AST_STRAT_COUNT; si++)
+		if (faithful && *ast_strategies[si].gate)
+			ast_strategies[si].apply(trial, sym);
+	size = ast_search_emit_size(trial, saved_loc, saved_anon);
+	ast_cur = saved_cur;
+	ast_arena_free(trial);
+	return size;
+}
+
+static void ast_search_select(Sym *sym, int faithful, int saved_loc,
+															int saved_anon) {
 	AstArena *pristine;
 	uint64_t h;
 	unsigned base, best;
@@ -7079,6 +7151,26 @@ static void ast_search_select(Sym *sym, int faithful) {
 			sub = (sub - 1) & base;
 		}
 	}
+	if (ast_search_emitsize_env) {
+		/* Emitted-byte-size scoring: fold each candidate to completion then measure
+		 * its emitted size (run-to-completion so the shared ltemp/fconst emit state is
+		 * current). Budget-bounded like the tick path. */
+		for (int i = 0; i < nc; i++) {
+			unsigned t0;
+			long sz;
+			if (ast_search_should_stop())
+				break;
+			t0 = ast_now_ms();
+			sz = ast_search_score_emitsize(pristine, sym, faithful, gatelist[i],
+																		 saved_loc, saved_anon);
+			ast_search_durwin_push(ast_now_ms() - t0);
+			if (sz >= 0 && (best_score < 0 || sz < best_score)) {
+				best_score = sz;
+				best = gatelist[i];
+			}
+		}
+		goto search_done;
+	}
 	for (int i = 0; i < nc; i++) {
 		cands[i].arena = ast_arena_clone(pristine);
 		cands[i].gates = gatelist[i];
@@ -7124,6 +7216,7 @@ static void ast_search_select(Sym *sym, int faithful) {
 	for (int i = 0; i < nc; i++)
 		if (cands[i].arena)
 			ast_arena_free(cands[i].arena);
+search_done:
 	ast_graft_total = g0;
 	ast_promo_total = p0;
 	ast_opt_total = o0;
@@ -7245,7 +7338,7 @@ void ast_func_end(Sym *sym) {
 				ast_ltemp_n = 0;
 				unsigned ast_search_sv_gates = ast_search_gates_now();
 				if (faithful && ast_search_env && ast_search_seconds > 0)
-					ast_search_select(sym, faithful);
+					ast_search_select(sym, faithful, saved_loc, saved_anon);
 				{
 					int sf[AST_STRAT_COUNT];
 					for (int si = 0; si < AST_STRAT_COUNT; si++)
