@@ -8,7 +8,7 @@ the *source* reads.
 
 ## Naming standard
 
-Settled by the gate-macro rename sweep (TODO.md §16); the drift checker
+Settled by the gate-macro rename sweep; the drift checker
 enforces the prefixes:
 
 - **`MCC_CONFIG_<WHAT_IT_DOES>`** — public, user/build-facing, settable via a

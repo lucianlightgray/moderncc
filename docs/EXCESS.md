@@ -4,7 +4,8 @@ Consolidating `docs/` into the succinct [MCC.md](MCC.md) would lose the specific
 below. This file preserves that residual, grouped by the former source doc, so it
 can be reviewed and either folded back, kept, or discarded. Nothing here is
 getting-started material (that stays in [README.md](README.md)); it is reference
-detail, deliberate-behavior records, measured numbers, and open work.
+detail, deliberate-behavior records, and measured numbers. Remaining work lives
+in [TODO.md](TODO.md).
 
 ---
 
@@ -157,18 +158,11 @@ high-value specifics the summary omits:
   `pp_invalid_paste`); four macOS `diff3` divergences are expected residual
   (predefined-macros default, MS bitfield layout, cleanup teardown order,
   freestanding-headers where mcc is most conformant).
-- **Real mcc-specific gaps (diverges from gcc==clang consensus; in TODO):**
-  1. §6.7.4p6 plain `inline` with no external def emits a global → an `-O0` call
-     *links* (rc 0) where gcc/clang fail (widest correctness impact).
-  2. §6.9.1p6 old-style K&R identifier-list params accept implicit-`int` with only
-     a warning (diagnostic-only).
-  3. §7.16.1.4p3 `va_start` 2nd arg not last named param silently accepted on
-     x86_64-SysV/i386 (fires on arm64/riscv64/PE) — needs a SysV `gen_va_start`
-     rework.
-  4. §7.26.1 bundled `include/threads.h` resolves ahead of the system header
-     (shadowing; usage still works).
-  - *Corrected/stale:* implicit function declaration now errors by default
-     (matches gcc) — the ledger row was stale; re-sweep.
+- **Formerly mcc-specific gaps — all RESOLVED (§6-A 1–5, see MCC.md §5):**
+  plain-`inline` no-extern-def now link-errors like gcc/clang; K&R implicit-`int`
+  rejected under C99+; `va_start` last-arg checked; `<threads.h>` precedence
+  fixed via the `include_next` shim; gnu89 plain-`inline` provides the external
+  def. The gnu89 `extern inline`→static-copy difference is a kept `[DIFF]`.
 - **Consensus omissions (all three lack; conforming — do not chase):**
   `_Imaginary` type family (Annex G), Annex K bounds-checking, inexact-hex-float
   diagnostic, incomplete-`_Generic`-association diagnostic.
@@ -181,7 +175,7 @@ high-value specifics the summary omits:
   torture) and clang (`test/C/C99`×19, `/C11`×16, one-file-per-WG14-paper) trees
   against mcc's suites; it is the narrative summary of the C9911 ledger.
 
-## AST intention-IR — design (was AST.md) + status (was AST-STATUS.md) + backlog (TODO.md)
+## AST intention-IR — design (was AST.md) + status (was AST-STATUS.md)
 
 - **Design principle:** two tiers split by machine-dependence — Intention (15
   node kinds: TranslationUnit, BasicBlock, If/Jump/Return, Ref/Literal/Load/
@@ -211,7 +205,7 @@ high-value specifics the summary omits:
   (`MCC_AST_INLINE_LIMIT`/`_INLINE_NODES`/`_GRAFT`, `_PROMOTE_LIMIT`/
   `_OPT_LIMIT`, `_FN_CONFIG`/`_PERFN`, `_COST`, `_SETHI`, `_BITFLAG`,
   `_CPROP_JOIN`/`_CSE_JOIN`, `_CALL_WINDOW`, `_NARROW`, `_LICM_TEMP`/`_IVSR`/
-  `_PRE`, `_PERFN_INPROC`, `_COLOR`, `_HASH_OUT`) are cataloged in STATUS.md
+  `_PRE`, `_PERFN_INPROC`, `_COLOR`, `_HASH_OUT`) are cataloged in MCC.md §9
   (many since flipped default-on at `-O2` — see the §41 bullet below). The
   default-on
   flip was reverted: the full-corpus `mcctest` differential exposed
@@ -312,7 +306,7 @@ high-value specifics the summary omits:
   `MCC_AST_BITFLAG=N` (default 5, clamped ≥3). The comparison must be the
   last-evaluated operand because replay's driver — unlike the parser's `vpush`
   path — never runs `vcheck_cmp`, so a `VT_CMP` buried under later emission gets
-  its flags clobbered (recurring FIX.md class). Remaining: value-table dispatch
+  its flags clobbered (recurring `vcheck_cmp` class). Remaining: value-table dispatch
   for differing bodies (needs `.rodata` data emission), `switch`-arm form.
 - **§36 `MCC_AST_COLOR` (Chaitin–Briggs):** `ast_color_graph(n, adj, cost, k,
   color)` — simplify-and-select: Kempe degree-`<k` simplify, else lowest-`cost`
@@ -338,111 +332,6 @@ high-value specifics the summary omits:
   `ast_promo_entry_init` before the epilog; unconditional, not env-gated.
   Validated x86_64/arm64/riscv64 (`8c78c821`).
 
-## AST — open backlog / revisit-triggers (was TODO.md)
-
-- **`-O1` transform soundness backlog — CLEARED 2026-07-09.** All 21 KNOWNGAPs
-  (14 promote + 4 inline + 3 replay) are fixed and `GCCTS_AST_KNOWN_{REPLAY,
-  PROMOTE,INLINE}` are all **empty**; every gcc-torture AST column reports 0
-  regressions with no baseline. Root causes were five x86_64 high-register
-  (r8–r15/pin) encoding bugs in `store`/`load`/`gen_opf` (missing/misplaced REX,
-  in-place SSE-dest pin clobber, setcc REX.R) invisible at `-O0`; two promotion
-  analysis holes (address-escape range poisoning; VLA functions no longer
-  promote); the inline graft not spilling caller regs before the callee body
-  (`save_regs(0)`) + honoring `__attribute__((noinline))` + only retaining
-  byte-faithful callees as graft candidates; and for replay, a stale
-  sequence-point warning firing inside a `#if` (fixed by `seqp_reset()` on
-  restore) + a self-cycle guard in `aggr_has_const_member`. A `gen_cast`
-  double-emit (internal truncation shifts captured as AST nodes) was also fixed
-  via `ast_in_op` suppression, and a recycled-`Sym` class of bugs (garbage
-  symtab names breaking the `-O1` self-LINK) closed by deferring `sym_free`
-  across the capture→replay window.
-- **`-O1` self-hosts (2026-07-09).** `mcc -O1` (replay + Tier-3 promote, both
-  call-free and call-ful pools; inline excluded by design) compiles + links
-  itself, and the `-O1`-built compiler's `-O0` output is byte-identical to the
-  `-O0`-built compiler's. Replay + promote + **inline** combined also self-hosts
-  byte-identically, gated by: a per-function `AST_GRAFT_BUDGET` (2048 nodes)
-  governor, and `ast_no_callful_promo` — Tier-4 inline and call-ful Tier-3
-  promotion both claim the callee-saved bank (RBX/R12–R15), so a function that
-  will inline-graft restricts promotion to the call-free pool (the one real
-  promote×inline interaction bug; found fast via the env-flag fallthrough gates
-  rather than byte-diffing). `MCC_AST_INLINE_LIMIT=N` caps grafts to the first N
-  (bisection aid).
-- **A1 — backward-liveness spill-slot sharing (the remaining ratified roadmap
-  item; a quality enhancement, not a correctness gap — `-O1` is complete and
-  self-hosting without it):** pin sharing across disjoint live ranges needs a real
-  backward-liveness pass + interval coloring. Blocker: promotion currently
-  entry-seeds every pin (mirrors `-O0` for read-before-write/params/loop-carried),
-  which conflicts with sharing — A1 must replace entry-seeding with per-live-range
-  seeding (a rework of the emit model, not just added analysis).
-- **Tier-4 remainder:** `ast/replay-inline-spec` is already registered on arm64
-  (the `x86_64 OR arm64` branch; CI arm64 runners exercise it); only riscv64/other
-  arches stay gated until per-arch verified.
-- **Promotion on arm64/riscv64:** needs a backend register-model extension
-  (arm64 `MCC_NB_REGS=28` doesn't expose x19–x28) + qemu validation; the arch-agnostic
-  analysis is reused.
-- **Decided-with-revisit-trigger backlog:** verify the CST answers every `-g`/LSP
-  query (else reopen the dissolved `Bind` marker); `k` value (raise always-inline
-  depth only under `-O2/-O3`/budget); size-gated outline; store factoring (first
-  virtual-inline render is the shared engine's 2nd user); template DSL past ~30
-  templates; per-function `-O1` mode; PP-as-executable-C JIT (parked).
-- **Long horizon (design only):** broader template library (algebraic,
-  dead-branch, jump-table), time-budgeted engine, dependency-ordered `-O1`,
-  cross-TU LTO, `-g` from provenance, hot-reload snapshots, separate `-O2`/`-O3`
-  (SSA) drivers.
-
-## Sanitizers & differential fuzzing (was TODO §0 / §0b / §0c)
-
-- **§0b `-fsanitize=` — mcc as a sanitizer provider.** `-fsanitize=undefined`
-  **trap mode** (no runtime library) is COMPLETE on **x86_64 (ELF/Mach-O),
-  arm64, riscv64**: signed `+`/`−`/`*` overflow, out-of-range shift,
-  divide-by-zero, null-pointer-deref, each behind the arch-neutral
-  `do_sanitize_undefined`, trapping via `ud2` (x86_64) / `BRK #0` (arm64) /
-  `EBREAK` (riscv64). The div-by-zero + shift checks carry extra value on
-  arm64/riscv64 because those ISAs *silently* return 0 / −1 / mask the count
-  rather than faulting (arm64 `SDIV`/`UDIV` → 0; RISC-V `DIV` by 0 → −1).
-  Encodings: arm64 div `CBNZ divisor,#8; BRK` before `SDIV`/`UDIV`/`MSUB`, signed
-  `ADDS`/`SUBS` then `B.VC` over a `BRK`, shift `CMP cnt,#width; B.LO` over `BRK`;
-  riscv64 div `BNE divisor,x0,+8; EBREAK`, shift `SLTIU t0,cnt,#width; BNE
-  t0,x0,+8; EBREAK`. `-fsanitize=` warns/erases on PE and any uncovered target.
-  Validated differentially: mcc-UBSan traps the same programs clang's
-  `-fsanitize=undefined -fsanitize-trap` does over §0's UB corpus, and both run
-  clean programs to identical output. TSan/MSan documented out-of-scope.
-- **ASan/bounds via bcheck.** `-fsanitize=address`/`bounds` reuse the existing
-  bcheck memory checker (`MCC_CONFIG_DIAG_RT>=2`, the `-b` runtime,
-  `runtime/lib/bcheck.c`, §7/§13) on every arch where bcheck is built
-  (arch-neutral, **not** x86_64-gated), predefining `__SANITIZE_ADDRESS__`
-  (gcc/clang-compatible); `-fsanitize=undefined,address` routes the UBSan trap
-  through bcheck's backtrace handler for a *sourced* diagnostic. This
-  bcheck-based ASan is the self-contained default.
-- **Native-shadow ASan (`-fasan-shadow`, x86_64).** `runtime/lib/mccasan.c`
-  implements the classic ASan 1/8 shadow scheme (`shadow(addr) = (addr>>3) +
-  0x7fff8000`): the ctor maps Low/High shadow (`MAP_NORESERVE`), the backend
-  (`x86_64-gen.c gen_asan_shadow_check`) emits an inline shadow probe before each
-  pointer dereference, a poisoned slot traps `UD2` (caught by a SIGILL handler
-  printing an ASan-style diagnostic), and malloc/free/calloc/realloc are
-  intercepted for 16-byte redzones (`0xfa`) + freed-region poison (`0xfd`) —
-  catching heap OOB + use-after-free on real PIE programs. (The two
-  `asan_shadow_native_*` ctests are worker-WIP reds, unrelated to the optimizer.)
-- **§0 differential miscompile fuzzer (`tests/fuzz/`).** A small custom
-  integer-only generator (`gen.h`: switch/for/if, bounded recursion) + `runner.c`
-  compares mcc against the gcc==clang `-O2` consensus oracle across `-O0..-O3`
-  and each `MCC_AST_*` gate forced on, gating candidates under `gcc
-  -fsanitize=undefined,address` (ctests `fuzz/smoke`, `fuzz/matrix`,
-  `fuzz/corpus` regression-lock). Bring-up: 200 seeds × (−O0..−O3 + 7 gates), 0
-  miscompiles. A scheduled nightly campaign (`fuzz_runner campaign` +
-  `.github/workflows/fuzz-nightly.yml`, `workflow_dispatch` budget/batch inputs)
-  loops the runner with crash-class dedup + a stop-rule (`seen-classes.txt`);
-  accepted repros land in `tests/fuzz/corpus/repro_seed<N>.c` (header records
-  seed + attribution), guarded by the `fuzz/corpus` replay. Found 0 miscompiles
-  over ~900 programs at the §41 flipped default. A separate ABI/struct-layout
-  fuzzer is a noted future orthogonal topic.
-- **§0c `mcc_s` SYM_DEBUG defer fix.** The reported "AST-replay use-after-free of
-  a freed `Sym` via captured `type.ref`" was a **SYM_DEBUG-build artifact, not a
-  production bug**: `sym_free` (`mccgen.c`) had the AST-replay deferral inside
-  `#ifndef MCC_SYM_DEBUG`, so the sanitize (`mcc_s`) build freed immediately.
-  Fixed by making the SYM_DEBUG path honor the defer window (`d0588ef4`);
-  production codegen byte-identical.
-
 ## CST database — design record (was NOTES.md §"CST database")
 
 - Companion side-channel to the AST (`src/mcccst.{c,h}`): byte-faithful
@@ -455,38 +344,6 @@ high-value specifics the summary omits:
   Frozen spec + completed vertical slices are in the former NOTES.md (§0–§11 +
   "Completed work — CST database", D1–D5). Its per-node hash-consing is the #1
   compile hot spot (see Profiling).
-
-## Open non-AST TODO (was TODO.md "Now" + audits)
-
-- **CMake normalization ("as much as possible"):** minimize gating (prefer
-  autodetect + enable-what-the-host-supports; 25 `find_program`s already),
-  reduce CMake by offloading to `tools/`, fold `.cmake` files in. Assessment:
-  folding largely moot (already monolithic); pursue incrementally with a
-  verifiable target, not a sweep (CI-breakage risk across ~35 presets/platforms).
-- **i386 TLS residual:** x86_64 GD/LD/IE/LE covered (`tls-models` ctest);
-  `R_X86_64_32[S]` range covered (`cli/x86_64_reloc_32s_range`). Still open: i386
-  `R_386_TLS_GD/LDM` paths need an i386 cross build + 32-bit sysroot.
-- **Skipped-test ungating audit (per triple):** re-evaluate each `mcc_skip_test`
-  when a host can build/run that triple. Status: x86_64-linux full;
-  i386-linux blocked (no 32-bit sysroot); aarch64/armv7-linux partial (qemu is
-  x86-TSO — can't validate weak-memory atomics; ungate only memory-model-
-  independent subset); x86_64/i386-windows available (mingw+wine); arm64-windows
-  blocked (no native arm64 ref cc); x86_64/arm64-Darwin audited 2026-07-08 (all
-  remaining skips legitimate).
-- **Divergence check** for the NOTES.md ctest counts: **decided NOT** to add a
-  strict count-checker — the registered total is documented to track upstream test
-  additions, so a hard drift-fail would break CI on every new test.
-
-## "ACHTUNG — DO NOT DO" list (verbatim from TODO.md tail)
-
-Explicitly-parked ideas, kept as a record of decisions *not* taken:
-
-- Only human-friendly warnings/errors, backed by tests checking formatted output
-  against terminal dimensions/configuration.
-- Implement/finish `-g` debugging/debugger + gdb test cases vs gcc/clang.
-- Optimization `-O1..100` levels measured in max-seconds-to-spend-optimizing.
-- Hot reload via saving/loading CST snapshots on the fly and on run
-  (`--hotreload`); run hot-reloads from reconciled CST snapshots.
 
 ## Detailed enumerations — the full tail MCC.md defers here
 
@@ -536,8 +393,8 @@ Slices S0 (gating), B (SoA CstArena store: `kind[]/parent[]/first_child[]/next_s
 
 ## Migrated code-comment rationale (was NOTES.md §"Migrated from code comments")
 
-Two batches (2026-07-06, 2026-07-09) of technical rationale stripped from source
-comments per the "no code comments" project rule and relocated to NOTES.md. This
+Two batches of technical rationale stripped from source comments per the "no code
+comments" project rule. This
 is per-function/per-subsystem design reasoning (backend, objfmt, arch quirks). It
 is voluminous and tightly coupled to specific `src/` symbols — **review before
 discarding**; it is the "why" behind non-obvious code that the code itself no

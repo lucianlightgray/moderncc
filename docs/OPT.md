@@ -5,10 +5,9 @@ This is a walkthrough of what happens when you run `mcc -O4 foo.c` (or any
 code. It explains the moving parts, roughly in the order they run, and
 points at the functions that do the work so you can go deeper.
 
-For *what state each piece is in* see [STATUS.md](STATUS.md); for the
-*design decisions and history* see [TODO.md](TODO.md) (§18, §20–§40); for
-*per-iteration measurements* see OPTIMIZE.md. This file is the "how it
-works" narrative that ties those together.
+For the current AST/optimizer behavior reference see [MCC.md](MCC.md) §9 and
+[EXCESS.md](EXCESS.md); for remaining work see [TODO.md](TODO.md). This file is
+the "how it works" narrative that ties those together.
 
 The one-sentence version: at `-O4` and above the compiler does not just
 compile your file once — it **compiles it many times with different
@@ -407,15 +406,10 @@ it can never become the shipped default.
 
 ## 7. Cross-references
 
-- **STATUS.md** — the authoritative current state: rung-by-rung status,
-  the exact user-facing flags and environment knobs, the architecture as
-  built, and the cache-file layout.
-- **OPTIMIZE.md** — per-iteration history and measurements (the numbers
-  behind "this pass saved N bytes / M microseconds").
-- **TODO.md** — the design decisions and rationale, §18 and §20–§41 in
-  particular: §21 (checkpoint cache), §22/§23 (per-function search and the
-  inliner), §24 (hot-slice selector), §25 (JIT scoring), §29 (truncation
-  narrowing), §30 (bit-flag), §31 (strategy portfolio), §32a/§32b (join
-  dataflow), §32c (fresh-temp infrastructure), §33 (call-window), §35
-  (Sethi–Ullman), §36 (Chaitin–Briggs coloring), and §41 (the default-on
-  sweep that made the passes above run at `-O2`).
+- **MCC.md** §9 — the current AST/optimizer behavior reference: the replay
+  pass suite, the per-`-O` gating table, and the user-facing flags and
+  environment knobs.
+- **EXCESS.md** — the deep AST intention-IR design detail (the two-tier IR,
+  the pass mechanisms, the cache/search internals) behind §9's summary.
+- **TODO.md** — the remaining optimizer-ladder work (the §22/§23/§24/§25/§26
+  build-out, §27–§33 frontier, §35/§36 residue).
