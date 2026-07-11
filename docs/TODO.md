@@ -114,6 +114,86 @@ follow-ups are the two `[~]` items above (mcc-self ASan/valgrind; a *scheduled*
 nightly campaign with crash-dedup/stop-rule) plus the discovery topics below
 (EMI, coverage-guided, ABI/self-host/sanitizer-diff, scoreboard).
 
+## 0b. [x86_64-host] `-fsanitize=` instrumentation suite — mcc as a sanitizer provider (major, NEW 2026-07-10)
+
+Make **mcc emit sanitizer instrumentation**: `-fsanitize=undefined` (UBSan —
+signed overflow, shift-out-of-range, div-by-zero, null/misaligned deref,
+VLA/array bounds, bool/enum load, pointer overflow, …) and `-fsanitize=address`
+(ASan — shadow memory + redzones + stack/global poisoning + allocator
+interceptors), with `-fsanitize=thread`/`memory` as an **x86_64-only stretch**.
+This is the "real sanitizer feature" §0's sanitizer-diff sub-topic seeds.
+
+**Why x86_64-host.** The sanitizer runtime ecosystem is x86_64-first: TSan and
+MSan are essentially x86_64-only (their shadow schemes / instrumentation are
+x86_64-centric and unported to most arches), ASan's shadow-offset and
+allocator/interceptor model and compiler-rt are bring-up-on-x86_64, and clang's
+mature x86_64 sanitizers are the *differential reference* to validate mcc's
+instrumentation against (directly via §0). The x86_64-Linux dev/CI box has the
+full stack; arm64-darwin's support is thinner (no MSan, restricted TSan).
+
+**Why it barely overlaps.** The whole optimizer ladder (§18–§36) *removes* work
+at compile time; codegen items (§35/§36) are order/regalloc; conformance is
+front-end. Sanitizers are the orthogonal **instrumentation + runtime** axis —
+*inserting* checks and a shadow-state runtime. The only nearby item is the
+existing **bcheck** bounds checker (`MCC_CONFIG_DIAG_RT`, §7/§13), which is a
+much narrower bounds-only tool; UBSan/ASan are a broader distinct subsystem that
+could eventually *share* bcheck's redzone/runtime machinery (consolidation, not
+duplication). Distinct too from building *mcc itself* under host ASan/UBSan (the
+`sanitize` preset / `MCC_BUILD_SANITIZE`) — that hardens the compiler; this
+makes the compiler a sanitizer *provider* for user code.
+
+### Investigation tasks
+- [ ] **UBSan first** (cheapest, arch-neutral, highest ROI): enumerate the UB
+      classes to check and decide the emission point (front-end AST insertion
+      vs codegen), `-trap` vs `-recover` modes, and the diagnostic ABI —
+      clang-compatible `__ubsan_handle_*` calls (link against system UBSan) vs
+      a minimal self-contained `libmccsan`.
+- [ ] **Runtime model / compiler-rt interop:** can mcc-instrumented objects
+      link+run against the *system* ASan/UBSan runtime (reuse clang's
+      ecosystem via the `__asan_*`/`__ubsan_handle_*` ABI), or do we ship our
+      own runtime? Investigate ABI compatibility and the trade-off.
+- [ ] **ASan design (x86_64 first):** the 1/8 shadow scheme
+      (`(addr>>3)+offset`), stack/global/heap redzones, entry/exit stack
+      poisoning, global registration, malloc/free interceptors; the shadow
+      offset per target; ELF vs Mach-O differences.
+- [ ] **Optimizer interaction (critical):** sanitizer checks are
+      side-effecting and must survive the AST optimizer — the §30/§32/§33
+      passes must NOT fold/DCE check nodes; decide whether instrumentation runs
+      before or after the replay optimizer, and confirm the default (non-`-f
+      sanitize`) build stays byte-identical (new flag is default-off → no
+      fixpoint/byte-identity risk for default codegen).
+- [ ] **Differential validation via §0:** mcc-UBSan must flag the same UB
+      clang's UBSan does over §0's UB corpus (this is exactly §0's
+      sanitizer-diff sub-topic, now with a real subject).
+- [ ] **Scope/stretch + per-arch gating:** UBSan (all arches), ASan (x86_64 +
+      arm64), TSan/MSan (x86_64-only stretch or documented out-of-scope) —
+      gated per-target like the Tier-4 inliner.
+- [ ] **Test matrix:** a `tests/sanitize/` corpus with one program per UB /
+      memory-error class asserting the check fires (and clean programs stay
+      silent), across `-O0..-O3` and with the optimizer forced on.
+
+### Sub-feature discovery topics (explore before scoping)
+- **compiler-rt interop vs `libmccsan`** — share clang's runtime (ABI-compat)
+      or a small self-contained one; the decision shapes everything downstream.
+- **bcheck consolidation** — seed ASan's redzone/shadow model from the existing
+      `MCC_CONFIG_DIAG_RT` bounds machinery rather than a parallel system.
+- **Trap vs recover vs abort**, and a minimal **PE/mingw trap-mode UBSan**
+      (mirrors the existing MSVC/mingw host-sanitize story).
+- **`-fsanitize-coverage`** — coverage instrumentation that feeds §0's
+      coverage-guided fuzzing: the two x86_64-host features compose.
+- **Adjacent hardening** — `-fstack-protector`, `-fsanitize=cfi` (vtable/type
+      control-flow integrity), `_FORTIFY_SOURCE`-style checks — x86_64-first.
+- **UBSan as a conformance amplifier** — run the existing exec corpus under
+      mcc-UBSan to surface latent UB in mcc's own tests and in mcc output.
+- **Freestanding / KASAN-style** sanitizer mode for the runtime itself.
+
+**Landing shape:** a default-off `-fsanitize=<checks>` flag (non-sanitized
+codegen byte-unchanged → no fixpoint/byte-identity risk); UBSan first
+(front-end check emission + minimal runtime), then ASan on x86_64; each check
+class lands with a `tests/sanitize/` golden and a clang differential (§0).
+First increment = `-fsanitize=undefined` for signed-overflow + shift +
+div-by-zero + null-deref in trap mode.
+
 ## 1. Delete `TAL_INFO` (trivial)
 
 - [x] Remove the `#if TAL_INFO` counters/report from `mccpp.c:113-266` and the
