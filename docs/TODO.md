@@ -12,6 +12,17 @@ JIT. This reframes/subsumes several items below (§21 cache key, §22 emit
 isolation, §28 rewrite IR, §33b/e seam+window keys, §30 predicate bitset, H_e
 epoch hash, the time-budgeted engine, per-function `-O1`, PP-as-executable JIT).
 
+**The `docs/AST.md` staged rollout (steps 1–5) is COMPLETE.** Step 1 def/use projection,
+step 2 property memos, step 3 structural hash, step 4 strategy engine (now the sole
+pipeline), and **step 5 "Worker pool + live search at -O4+, warming the shared memo"** —
+the fork process pool (`MCC_AST_SEARCH_THREADS`), the live -O4+ search (`MCC_AST_SEARCH`,
+subset-lattice candidates, static + emitted-size scoring), and the warmed memo (in-memory
++ disk-backed `mcc-search.memo`) — are all on `main`, each gated by `-O6` differentials +
+`1905/1905` ctest + the shadow build, default builds byte-neutral throughout. Runtime
+JIT + guarded deopt is **not** a rollout step (AST.md lists it as "rollout steps 3-5 **+
+the JIT**"); it is the separate post-rollout item below, gated by the design on the §26
+recompiler.
+
 **LANDED — the read-only side-car (rollout steps 1–3).** All four PRs shipped as one
 change; pure accelerators, no emitted-byte changes. Validated by the compile-time
 shadow-assert build (`MCC_CONFIG_AST_SHADOW`, default-off, opt-in `cmake-shadow` dir +
