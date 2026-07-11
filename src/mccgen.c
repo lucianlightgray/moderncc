@@ -10574,10 +10574,18 @@ again:
 			skip(';');
 		}
 
-		while (tok != '}') {
-			decl(VT_LOCAL);
-			if (tok != '}') {
-				block(flags | STMT_COMPOUND);
+		{
+			int seen_stmt = 0;
+			while (tok != '}') {
+				if (seen_stmt && mcc_state->cversion < 199901 &&
+						tok_starts_declspec())
+					mcc_pedantic("mixed declarations and code are a "
+											 "C99 feature");
+				decl(VT_LOCAL);
+				if (tok != '}') {
+					block(flags | STMT_COMPOUND);
+					seen_stmt = 1;
+				}
 			}
 		}
 
@@ -11644,6 +11652,9 @@ static void decl_initializer(init_params *p, CType *type, unsigned long c, int f
 			f = &indexsym;
 
 		do_init_list:
+			if (tok == '}' && !(flags & (DIF_HAVE_ELEM | DIF_SIZE_ONLY)) &&
+					mcc_state->cversion < 202311)
+				mcc_pedantic("empty initializer braces are a C23 feature");
 			if (!(flags & (DIF_CLEAR | DIF_SIZE_ONLY))) {
 				init_putz(p, c, n * size1);
 				flags |= DIF_CLEAR;

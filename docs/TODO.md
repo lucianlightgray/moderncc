@@ -152,13 +152,17 @@ Research / investigative:
   diagnosed in the number lexer; the `long long` integer-constant suffix (`1LL`/
   `1ULL`) now diagnosed (an audit gap in the earlier `long long` fix, which covered
   only the type-specifier forms). Regression case `cli/c9911_diag_gaps5`.
-- [ ] **`-std=c89 -pedantic-errors` C99-feature gaps (batch 2b)** — remaining
-  accepts-invalid gaps: declaration-after-statement (mixed declarations), `inline`,
-  `restrict` (both carry a `-std=gnu89` false-positive risk — need a strict-vs-gnu
-  gate), `//` line comments (gcc makes this a hard error even without
-  `-pedantic-errors`), and non-ASCII/UCN identifiers. Plus one C11 gap: an empty
-  initializer `{}` (a C23 feature) not diagnosed under `-std=c11 -pedantic-errors`.
-  Same fix shape — a `mcc_pedantic(...)` at each site guarded on `cversion`.
+- [x] **`-std=c89 -pedantic-errors` C99-feature gaps (batch 2b)** — FIXED
+  declaration-after-statement (mixed declarations, via a `tok_starts_declspec()`
+  lookahead in the compound-statement loop) as a C99-feature diagnostic, and the
+  empty initializer `{}` as a C23-feature diagnostic under `-std=c11
+  -pedantic-errors` (in `do_init_list`). Regression case `cli/c9911_diag_gaps6`.
+- [ ] **`-std=c89 -pedantic-errors` C99-feature gaps (batch 2c)** — remaining:
+  `inline` and `restrict` (both carry a `-std=gnu89` false-positive risk plus a
+  keyword-vs-identifier nuance in strict C89 — need a strict-vs-gnu gate), `//`
+  line comments (gcc makes this a hard error even without `-pedantic-errors`), and
+  non-ASCII/UCN identifiers. Same fix shape — a `mcc_pedantic(...)` at each site
+  guarded on `cversion` (+ `!gnu_ext` for inline/restrict).
 
 - [ ] **Research the §28 rewrite-rule IR** — match→rewrite templates over the
   captured arena that the §22/§24 search composes into compound transforms, scored

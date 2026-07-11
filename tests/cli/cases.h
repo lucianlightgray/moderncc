@@ -897,6 +897,18 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -std=c99 -pedantic-errors -c {W}/dj1.c -o {W}/dj1.o 2>&1 && echo C99_OK; echo END",
 		 "variable length arrays are a C99 feature\ncompound literals are a C99 feature\nhexadecimal floating constants are a C99 feature\nISO C90 does not support 'long long'\npointer type mismatch in comparison\npointer type mismatch in conditional expression\nC99_OK\nEND\n"},
 
+		{"c9911_diag_gaps6", "",
+		 "printf 'int main(void){int a=0; a++; int b=1; return a+b;}\\n' > {W}/dk1.c && "
+		 "{MCC} -B{B} -I{I} -std=c89 -pedantic-errors -c {W}/dk1.c -o {W}/dk1.o 2>&1 | "
+		 "grep -oE 'mixed declarations and code are a C99 feature'; "
+		 "printf 'int a[3]={};\\n' > {W}/dk2.c && "
+		 "{MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/dk2.c -o {W}/dk2.o 2>&1 | "
+		 "grep -oE 'empty initializer braces are a C23 feature'; "
+		 "{MCC} -B{B} -I{I} -std=c99 -pedantic-errors -c {W}/dk1.c -o {W}/dk1.o 2>&1 && echo C99_OK; "
+		 "printf 'int a[3]={1,2,3};\\n' > {W}/dk3.c && "
+		 "{MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/dk3.c -o {W}/dk3.o 2>&1 && echo NONEMPTY_OK; echo END",
+		 "mixed declarations and code are a C99 feature\nempty initializer braces are a C23 feature\nC99_OK\nNONEMPTY_OK\nEND\n"},
+
 		{"raw_utf8_identifier", "",
 		 "printf 'int caf\\303\\251 = 1;\\nint main(void){return caf\\303\\251-1;}\\n' > {W}/ui1.c && "
 		 "{MCC} -B{B} -I{I} {W}/ui1.c -o {W}/ui1 && {W}/ui1; echo \"valid=$?\"; "
