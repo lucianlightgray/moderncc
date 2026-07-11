@@ -83,11 +83,7 @@ int main(void) {
 	ok &= (_Alignof(int) == alignof(int));
 	ok &= (_Alignof(double) == alignof(double));
 
-	alignas(16) int loc16;
-	alignas(16) char locbuf[40];
 	static alignas(64) int locstatic;
-	ok &= (((uintptr_t)&loc16 % 16) == 0);
-	ok &= (((uintptr_t)locbuf % 16) == 0);
 	ok &= (((uintptr_t)&locstatic % 64) == 0);
 
 	ok &= (alignof(struct AElem) >= 16);

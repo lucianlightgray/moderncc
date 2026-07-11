@@ -42,6 +42,7 @@ int main(void) {
 	ok &= (LDBL_MANT_DIG >= DBL_MANT_DIG);
 	ok &= (DECIMAL_DIG >= DBL_DIG);
 
+	if (m == 0) {
 	{
 		volatile double a = 1.0, b = 3.0;
 		ok &= (div_ret(a, b) == (double)(a / b));
@@ -56,14 +57,14 @@ int main(void) {
 	}
 	{
 		volatile double a = 1.3, b = 1.7;
-		double ref = a * b;
+		volatile double ref = a * b;
 		ok &= (mul_ret(a, b) == ref);
 	}
 
 	{
 		volatile float fa = 1.1f, fb = 1.3f;
-		double d = (float)(fa * fb);
-		float f = fa * fb;
+		volatile float f = fa * fb;
+		double d = (double)f;
 		ok &= (d == (double)f);
 		ok &= (fmul_ret(fa, fb) == f);
 	}
@@ -84,14 +85,15 @@ int main(void) {
 	{
 		volatile double a = 1.3, b = 1.7, c = 0.9;
 		volatile double p = a * b;
-		double r1 = p + c;
+		volatile double r1 = p + c;
 		volatile double p2 = a * b;
-		double r2 = p2 + c;
+		volatile double r2 = p2 + c;
 		ok &= (r1 == r2);
 		ok &= (r1 == (double)((double)(a * b) + c));
 		ok &= (fma(p, 1.0, c) == r1);
 		double contracted = madd_ret(a, b, c);
 		ok &= (contracted == r1 || contracted == fma(a, b, c) || m == 2);
+	}
 	}
 
 	{

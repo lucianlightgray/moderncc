@@ -39,7 +39,7 @@ int main(void) {
 
 	ok &= (sizeof(struct aligned_fam) == offsetof(struct aligned_fam, d));
 	ok &= (_Alignof(struct aligned_fam) == _Alignof(double));
-	ok &= (offsetof(struct aligned_fam, d) == sizeof(double));
+	ok &= (offsetof(struct aligned_fam, d) == _Alignof(double));
 
 	struct vec *p = malloc(sizeof *p + 5 * sizeof(int));
 	p->n = 5;

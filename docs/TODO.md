@@ -68,11 +68,19 @@ Research / investigative:
   on `p[1] != 'u' && p[1] != 'U'`), so `&é`, `.ü`, `a+é`, etc. lex.
   Line-continuation and stray-`\` diagnostics preserved; `exec/ucn_identifiers`
   tightened to the adjacent forms.
-- [ ] **Local auto over-alignment > 16 not honored at `-O0`** — `alignas(32)`/
-  `alignas(64)` on a stack (auto) variable yields only 16-byte alignment at
-  `-O0` (correct at `-O1+`); statics/globals are fine. Found while widening
-  `exec/alignas_over` (the test now asserts only the guaranteed 16-byte local
-  alignment). Needs `-O0` stack-realignment for over-aligned locals.
+- [ ] **Local auto over-alignment not honored at `-O0`** — `alignas(N)` on a
+  stack (auto) variable is under-aligned at `-O0`: x86_64 gives 16 but not
+  `alignas(32)`/`(64)`; i386/arm give only 4 even for `alignas(16)` (gcc honors
+  all). Statics/globals are fine on every target. `exec/alignas_over` now asserts
+  only static over-alignment. Needs `-O0` stack-realignment for over-aligned
+  locals (per-backend).
+
+- [ ] **`-pedantic-errors` gaps (accepts-invalid)** — found while adding
+  `cli/c9911_diag_gaps3`: (a) `long long` under `-std=c89 -pedantic-errors` is
+  silently accepted (gcc: "ISO C90 does not support 'long long'"); (b) an
+  incompatible-pointer initializer/assignment only warns under `-pedantic-errors`
+  (should be a hard error), and the message says "assignment" even for an
+  initializer.
 
 ## 6 — open design space
 
