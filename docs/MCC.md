@@ -67,7 +67,10 @@ preset through. H: subcommands `run-preset`/`qemu`/`dist`/`plan`/`parity`/`pkg`/
 `bench-summary`; shell-agnostic. Whr: holds the preset ledger (`PS_*`/`PLAN_*`).
 Children: **`ci plan`** (≈5, generates CI matrices via `fromJSON`), **`ci parity`**
 (≈4, ctest `preset-parity-invariant` — fails on any preset not in both workflow +
-ledger), **`ci.yml`/`dist.yml`/`release.yml`** (the workflows; `dist.yml` is the
+ledger), **`ci emit`** (≈4, generates the four workflows + two Dockerfiles + two
+docker entrypoints from `tools/ci_artifacts.h`; `--check` is the ctest
+`ci-artifact-drift`, so the checked-in files are byte-identical to the C
+templates), **`ci.yml`/`dist.yml`/`release.yml`** (the workflows; `dist.yml` is the
 one reusable pipeline).
 
 **ckconfig** (≈6) — W: config-drift checker (`tools/ckconfig.c`, ctest

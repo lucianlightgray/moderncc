@@ -2892,6 +2892,11 @@ if(MCC_BUILD_TESTS)
             WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
         set_tests_properties(preset-parity-invariant PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
+        add_test(NAME ci-artifact-drift
+            COMMAND "$<TARGET_FILE:ci>" emit --check --srcroot "${CMAKE_CURRENT_SOURCE_DIR}"
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+        set_tests_properties(ci-artifact-drift PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
         add_executable(ckretired tools/ckretired.c tools/toolsupport.c)
         target_link_libraries(ckretired ${CMAKE_DL_LIBS})
         add_test(NAME retired-macro-invariant
