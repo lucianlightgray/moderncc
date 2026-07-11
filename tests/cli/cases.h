@@ -1920,13 +1920,13 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'void *malloc(unsigned long);void free(void*);\\nint main(void){int*p=malloc(4);*p=5;free(p);return *p;}\\n' > {W}/uaf.c && "
 		 "{MCC} -B{B} -fsanitize=address {W}/uaf.c -o {W}/uaf && {W}/uaf 2>&1 | grep -oE 'invalid memory access' | head -1",
 		 "invalid memory access\n"},
-		{"asan_shadow_native_overflow", "",
+		{"asan_shadow_native_overflow", "cpu=x86_64,os=linux",
 		 "cc -O2 -c {D}/../../runtime/lib/mccasan.c -o {W}/mccasan.o 2>/dev/null && "
 		 "printf 'extern void*malloc(unsigned long);\\nint main(void){int*p=malloc(40);p[0]=1;return p[100];}\\n' > {W}/an.c && "
 		 "{MCC} -B{B} -fasan-shadow -c {W}/an.c -o {W}/an.o && cc {W}/an.o {W}/mccasan.o -o {W}/an 2>/dev/null && "
 		 "{W}/an 2>&1 | grep -oE 'AddressSanitizer: bad memory access' | head -1",
 		 "AddressSanitizer: bad memory access\n"},
-		{"asan_shadow_native_use_after_free", "",
+		{"asan_shadow_native_use_after_free", "cpu=x86_64,os=linux",
 		 "cc -O2 -c {D}/../../runtime/lib/mccasan.c -o {W}/mccasan2.o 2>/dev/null && "
 		 "printf 'extern void*malloc(unsigned long);extern void free(void*);\\nint main(void){int*p=malloc(16);p[0]=7;free(p);return p[0];}\\n' > {W}/au.c && "
 		 "{MCC} -B{B} -fasan-shadow -c {W}/au.c -o {W}/au.o && cc {W}/au.o {W}/mccasan2.o -o {W}/au 2>/dev/null && "
