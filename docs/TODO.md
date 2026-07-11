@@ -40,79 +40,8 @@ the 3-stage self-host fixpoint):
   and rename the CST field `slot_key -> branch_tag` to end the dual-use. Cheap; done
   up front so H_e (step 5+) needs no migration. (pairs with step 1)
 
-Research / investigative:
-
-- [x] **Design the exhaustive-equivalence checker** — DECIDED (see
-  `docs/AST.md` "Settled research questions"): a standalone AST-over-values
-  interpreter `eval_slice -> {value, defined}`, independent of faithful replay
-  (replay only re-emits bytes). UB oracle seeded from `gen_opic`
-  (`mccgen.c:2314-2455`) — shift ≥ width modeled as UB, not masked; live-in domain
-  from the `ast_tco_run` enumeration pattern (`mccast.c:4836-4857`) bounded by
-  `context_in`; over-large domains refused (stay JIT-speculative). *Implementation*
-  is future work (needs step 1's def/use bitmap).
-- [x] **Design the bidirectional incremental tree/stack hash + `context_in` /
-  `context_out`** — DECIDED (see `docs/AST.md`): a per-node `h[]` column folding the
-  exact `ast_ident_same` tuple (not the current `ast_intention_hash` tuple),
-  patched O(depth) up the existing `parent[]` spine; the structured
-  `AST_If`/`BasicBlock` nesting *is* the stack, so context_in/out are prefix/suffix
-  folds. Fact store (net-new) reuses the `ast_cprop_{koff,ktt,kval}` shape.
-  *Implementation* ships as rollout step 3 + the checker's context half.
-- [x] **Design runtime guarded deopt (OSR)** — DECIDED (see `docs/AST.md`):
-  entry-guarded variant dispatch (proven variant | static byte-faithful baseline,
-  which already exists as the preserved bytes in `ast_func_end`), guard = the
-  proof's domain bound; interior state-transfer OSR deferred as highest-risk.
-  *Gated behind §26* — no runtime recompiler exists today (`mcc_relocate` is a
-  one-shot `-run` loader; `--embed-jit` prints a manifest only).
-- [x] **Settle the global naming authority** — DECIDED (see `docs/AST.md`): CST and
-  AST **stay independent** — separate local id spaces, no shared mutable id counter,
-  the only cross-link the existing one-way AST→CST `cst`/`CstId` reference
-  (`mccast.c:35`). The `(tag,id)` scheme is just the *disjoint* encoding at the H_e
-  boundary (packed like `CstId = (file<<32)|local`, `mcccst.h:57-66`): AST slot keys
-  in an `AST_SLOT` range, PP-branch tags in a `CST_BRANCH` range — neither arena
-  needs the other's ids. NB: there is no AST `slot_key` today — the only `slot_key`
-  is the CST array (`mcccst.c:35`) holding PP-branch ordinals. *Do now:* fix the tag
-  partition + rename CST `slot_key -> branch_tag`; *activates* at H_e (step 5+).
-- [x] **Decide the worst-case-vs-average scoring axis** for branch-heavy code —
-  DECIDED: **worst-case** (see `docs/AST.md`). The compiler has no branch-probability
-  data at any tier (`__builtin_expect` discarded, `mccgen.c:8678-8681`; §24/§25
-  profile sources unbuilt); `-O1..-O3` take no runtime measurement and `-O4+`
-  measures a single concrete input. Worst-case is monotone/deterministic and matches
-  the landed `ast_fn_cost` model. Revisit when §25 records real frequencies.
-
 ## Bugs — surfaced by the conformance-test expansion (concrete repros)
 
-- [x] **Complex `==`/`!=` ignored the real component** — FIXED: `gen_complex_op`
-  emitted both float `ucomisd` back-to-back, so the first (real) `VT_CMP`'s flags
-  were clobbered by the second before either `sete`; result was `im_eq & im_eq`.
-  `gv(MCC_RC_INT)` now materializes the real compare before the imaginary one.
-  Regression cases added to `exec/complex_annexg`; 3-stage self-host fixpoint +
-  qemu arm64/riscv64 green.
-- [x] **UCN-started identifier after a punctuator → "stray '\\'"** — FIXED: the
-  `PEEKC` operator-lookahead macro ran a following `\` through `handle_stray`,
-  which errored on `\u`/`\U`. It now leaves a UCN `\` for the next token (guarded
-  on `p[1] != 'u' && p[1] != 'U'`), so `&é`, `.ü`, `a+é`, etc. lex.
-  Line-continuation and stray-`\` diagnostics preserved; `exec/ucn_identifiers`
-  tightened to the adjacent forms.
-- [x] **Local auto over-alignment not honored at `-O0`** — FIXED (all five ELF/
-  native backends: x86_64, i386, arm, arm64, riscv64): an over-aligned auto local
-  (`align > STACK_OVERALIGN_MAX`, the arch's max natural alignment) is now allocated
-  via a runtime-aligned region reached through a hidden pointer slot, reusing the
-  VLA/`gen_vla_alloc` save/restore machinery and represented as `VT_LLOCAL`
-  (scalars/structs) or bare `VT_LLOCAL` (arrays — a new no-`VT_LVAL` load case in
-  each backend loads the pointer, symmetric to `VT_LOCAL`→address). Each
-  `gen_vla_alloc` now realigns sp/esp to `align` (x86_64/i386 `and`, arm64 via
-  `arm64_encode_bimm64`, riscv64 `andi`/wide-const; arm already did `bic`), so VLA
-  element over-alignment is honored too. Init flows through the pointer via a new
-  `init_params.llocal` reroute in `init_putv`/`init_putz`. Correct at `-O0/-O1/-O2`
-  (rides on VLA support, which the AST replay already handles). Gates: x86_64 full
-  ctest 1901 + 3-stage self-host fixpoint byte-identical; arm64 exec 583 + arm64
-  self-host fixpoint byte-identical; i386/arm/riscv64 exec 583 each under qemu;
-  12-way cross build green. `exec/alignas_over` asserts auto scalar/array/struct/
-  loop-scoped over-alignment (gated to the five supported arches, `!_WIN32`).
-  Gated via `STACK_OVERALIGN_MAX` (defined per-arch for ELF; PE excluded).
-  KNOWN GAPS (see the two follow-ups below): PE targets, and the `-fsanitize=address`
-  / `-b` (bounds-check) modes where the indirect path is deliberately gated off so
-  over-aligned locals stay under-aligned.
 - [ ] **Honor auto over-alignment under `-fsanitize=address` / `-b`** — the
   over-align indirect path in `decl_initializer_alloc` is gated off when
   `asan_g`/`bcheck` is active (the native-shadow stack instrumentation and the
@@ -126,37 +55,6 @@ Research / investigative:
   parameterized on alignment + a bare-`VT_LLOCAL` load case on the PE paths. No
   native Windows runner here, so validate on a Windows-arm64/x64 cell.
 
-- [x] **`-pedantic-errors` gaps (accepts-invalid)** — found while adding
-  `cli/c9911_diag_gaps3`: (a) FIXED — `long long` under `-std=c89 -pedantic-errors`
-  now diagnosed; (b) FIXED — an incompatible-pointer initializer/assignment is now
-  a hard error under `-pedantic-errors` (`incompatible_ptr_diag`), and the message
-  says "initialization" for a declaration/compound-literal initializer,
-  "assignment" for stores/argument-passing. The init context is set at the two
-  genuine parser sites (declaration + compound literal) since the shared
-  `init_putv`/`decl_initializer_alloc` machinery is reused for internal spills.
-  Regression step in `cli/c9911_diag_gaps3` (dh16); `exec/errors_and_warnings`
-  and `exec/atomic_misc` goldens updated. Follow-up (found by the `[x]`-audit,
-  FIXED): incompatible-pointer `==`/`!=` comparison and `?:` conditional expressions
-  now also escalate to a hard error under `-pedantic-errors` (via
-  `type_incompatibility_warning`), not just init/assign; regression in
-  `cli/c9911_diag_gaps5`.
-
-- [x] **`-std=c89 -pedantic-errors` C99-feature gaps (batch 1)** — FIXED three
-  accepts-invalid gaps (mcc emitted no diagnostic at all): flexible array members,
-  trailing comma in an enumerator list, and `for`-loop initial declarations are now
-  each diagnosed as "a C99 feature" under C89 pedantic mode (clean under c99+ and in
-  non-pedantic c89). Regression case `cli/c9911_diag_gaps4`.
-- [x] **`-std=c89 -pedantic-errors` C99-feature gaps (batch 2a)** — FIXED three
-  more accepts-invalid gaps: compound literals and variable length arrays now
-  diagnosed as "a C99 feature" under C89 pedantic; hexadecimal floating constants
-  diagnosed in the number lexer; the `long long` integer-constant suffix (`1LL`/
-  `1ULL`) now diagnosed (an audit gap in the earlier `long long` fix, which covered
-  only the type-specifier forms). Regression case `cli/c9911_diag_gaps5`.
-- [x] **`-std=c89 -pedantic-errors` C99-feature gaps (batch 2b)** — FIXED
-  declaration-after-statement (mixed declarations, via a `tok_starts_declspec()`
-  lookahead in the compound-statement loop) as a C99-feature diagnostic, and the
-  empty initializer `{}` as a C23-feature diagnostic under `-std=c11
-  -pedantic-errors` (in `do_init_list`). Regression case `cli/c9911_diag_gaps6`.
 - [ ] **`-std=c89 -pedantic-errors` C99-feature gaps (batch 2c)** — remaining:
   `inline` and `restrict` (both carry a `-std=gnu89` false-positive risk plus a
   keyword-vs-identifier nuance in strict C89 — need a strict-vs-gnu gate), `//`
@@ -293,12 +191,6 @@ Research / investigative:
 
 ## 1 — one open question
 
-- [x] **Implement richer `__asan_report_*` diagnostic formatting** — the SIGILL
-  handler now classifies the fault from the shadow-poison byte (rax at the ud2):
-  heap-buffer-overflow / heap-use-after-free / stack- / global-buffer-overflow /
-  partial, with pc, shadow byte, and granule offset. The cli asan cases assert
-  the class. (Full address + shadow-dump still needs the fault address preserved
-  to the trap.)
 - [ ] **Preserve the faulting address to the asan-shadow trap** (found by the
   `[x]`-audit) — the `-fasan-shadow` SIGILL report has the class, pc, shadow byte,
   and granule offset but is missing the faulting data address, access type
@@ -311,10 +203,6 @@ Research / investigative:
 - [ ] **Implement the clang-compatible `__ubsan_handle_*` diagnostic ABI** — trap
   mode ships (`ud2` on x86_64, `brk` on arm64/riscv64); no handler ABI exists.
 - [ ] **Implement a PE/mingw trap-mode UBSan** — trap mode is gated ELF-only.
-- [x] **Implement a persistent miscompile-class scoreboard** — `campaign` mode
-  now loads/rewrites `<corpus>/scoreboard.tsv` (or `$MCC_FUZZ_SCOREBOARD`):
-  class × hits × first_seed × first_round × last_epoch; "new class" and the
-  nonzero exit are history-relative, not per-run. Git-ignored default path.
 - [ ] **Explore `-fsanitize-coverage`** — feeds the coverage-guided fuzzer.
 - [ ] **Explore `-fsanitize=cfi` hardening** (absent today).
 - [ ] **Explore `_FORTIFY_SOURCE`-style hardening** (absent today;
@@ -359,21 +247,9 @@ Research / investigative:
 - [ ] **Test the i386 TLS `R_386_TLS_GD/LDM` paths** (`i386-link.c`; i386-gen.c
   only emits `R_386_TLS_LE`, so GD/LDM are untested) — needs an i386 cross + a
   32-bit sysroot.
-- [x] **Expand VLA goto/switch-into-scope diagnostic tests.**
-- [x] **Expand FP eval-method / Annex-F wide-return tests.**
-- [x] **Expand `_Complex` Annex-G edge-case tests.**
 - [ ] **Audit each `mcc_skip_test` for per-triple ungating** — i386-linux blocked
   (no 32-bit sysroot); aarch64/armv7-linux partial (qemu is x86-TSO — only the
   memory-model-independent subset); arm64-windows blocked (no native arm64 ref cc).
-- [x] **Verify `Poison` lowering.** `AST_Poison` is a real in-arena kind emitted
-  by DSE / SCCP / jump-thread / bit-flag-drop (retag-in-place, children cleared);
-  replay skips it via the `default: break;` in `ast_replay_bb`/`ast_replay_value`
-  (a no-op — correct). Added `cli/ast_poison_lowering`: asserts DSE+SCCP produce
-  `Poison` nodes at -O1 and the program stays correct at -O1/-O2.
-- [x] **Verify the `TranslationUnit` node.** Moot: `AST_TranslationUnit` is the
-  enum-zero slot only — no pass ever creates a node of this kind (the arena root
-  is always an `AST_BasicBlock` from `ast_func_begin`). Nothing to lower; kept as
-  the named zero sentinel.
 - [ ] **Revisit the `Bind`-marker** — only if the CST can't answer a `-g`/LSP query.
 - [ ] **Revisit the `k` always-inline depth policy.**
 - [ ] **Revisit size-gated outline.**
@@ -389,16 +265,9 @@ Research / investigative:
   every branch point with it. Compiled out by default (no-op); enabled only in an
   `MCC_CONFIG_TRACE=ON` build. Wire `MCC_CONFIG_TRACE=ON` into the `debug` CMake
   preset by default for now.
-- [x] **Add CMake auto-link of `runtime/lib/mccasan.c`** — `-fasan-shadow` now
-  auto-links `mccasan.o` (built beside `libmccrt.a`, x86_64/ELF-native only) ahead
-  of libc via `mcc_add_support`; manual-link path retained by one cli case.
 - [ ] **Verify the three landed §38 msvc-arm64 FIX fixes** (the
   `vcheck_cmp`-before-`gfunc_call` guard, the `ast_fn_faithful` reemit gate, the
   x86_64-only promote frame-slot change) on a Windows-arm64 runner. (macos and
   ELF-linux cells confirmed)
 - [ ] **Ungate the `i386-fastcall-abi` test** — registered but `mcc_skip_test`'d;
   needs an i386 cross + an ELF-32 reference.
-- [x] **Expand flexible-array-member tests** (mcc ~1 vs gcc 13).
-- [x] **Expand `_Noreturn` tests** (1 vs 5).
-- [x] **Expand `_Alignas`/`_Alignof` tests.**
-- [x] **Expand UCN-in-identifier breadth tests.**
