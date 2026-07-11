@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #ifndef AST_ASSERT
 #include <assert.h>
@@ -6806,19 +6807,38 @@ static const AstStrategy ast_strategies[AST_STRAT_COUNT] = {
  * Live -O4+ search (rollout step 5). At -O4+ (optimize_search_seconds>0, so the
  * driver has budget for a search) with the strategy engine, ast_func_end runs a
  * best-first per-function search over the four toggleable fold gates (templates,
- * narrow, bitflag, sethi) instead of applying the single frozen order. Each
- * candidate is measured on an isolated clone by the static cost model
- * (ast_cost_score); the search only SELECTS a gate configuration — the winning
- * config is then produced by the normal, unmodified pipeline+emit path on the
- * untouched captured tree, so a search bug can only pick a larger-but-correct
- * config, never miscompile. Results are memoized by intention hash so a recurring
- * function skips the search. -O1..-O3 (no budget) never search and stay
- * byte-reproducible.
+ * narrow, bitflag, sethi) instead of applying the single frozen order.
  *
- * Single-threaded and statically scored. The NCores-1 coroutine thread pool,
- * emitted-size / JIT-runtime scoring (needs scratch-Section emit isolation), the
- * disk-backed cross-build memo, and runtime deopt are the documented step-5+
- * continuations in docs/TODO.md.
+ * Execution model (shared shape with the future runtime JIT). Each candidate gate
+ * config is a stackless coroutine whose one "tick" applies exactly one strategy
+ * pass to its own isolated clone. The scheduler does not round-robin: it always
+ * advances the live candidate that has consumed the least total time so far (the
+ * running sum of its tick durations; ties break to the lowest index, so the
+ * baseline config finishes first as the safe fallback). Equalizing accumulated
+ * time keeps the schedule fair — no candidate starves or monopolizes the budget.
+ * A rolling window of
+ * the last 10 tick durations predicts the next tick cost; the search stops once
+ * that predicted cost would exceed the budget remaining. The budget is the -ON
+ * seconds, absolute from the first search tick; when it is spent the search stops
+ * at the next tick boundary and any unfinished candidate is abandoned.
+ * ast_search_abort is a forced-abort hook (for the pool / JIT / a deadline signal):
+ * it is checked at every tick boundary and, because each candidate mutates only a
+ * throwaway clone, an abort discards in-progress work safely — the pool's "kill and
+ * restart the worker" reduces to this discard.
+ *
+ * Correctness. The search only SELECTS a gate configuration — the winning config is
+ * produced by the normal, unmodified pipeline+emit path on the untouched captured
+ * tree, so a search bug (or a time-truncated / aborted search) can only pick a
+ * larger-but-correct config, never a miscompile. Measurement scores by the static
+ * cost model with no emit, so the emit-cursor / promo-plan / *_total-counter hazards
+ * do not arise; the module counters are saved/restored regardless. Winners are
+ * memoized by intention hash so a recurring function skips the search. -O1..-O3
+ * (no budget) never search and stay byte-reproducible.
+ *
+ * Single-threaded and statically scored here. The NCores-1 coroutine thread pool
+ * (the round-robin generalized across workers), emitted-size / JIT-runtime scoring
+ * (needs scratch-Section emit isolation), the disk-backed cross-build memo, and
+ * runtime deopt are the documented step-5+ continuations in docs/TODO.md.
  */
 enum {
 	AST_SG_TEMPLATES = 1u,
@@ -6836,6 +6856,56 @@ typedef struct AstSearchMemo {
 static AstSearchMemo ast_search_memo[AST_SEARCH_MEMO_CAP];
 static int ast_search_memo_n;
 
+/* Round-robin time accounting (see the block comment above). Durations are in
+ * milliseconds of CPU time (clock()), an accurate wall-clock proxy for the
+ * single-threaded CPU-bound search and portable to every host — including the
+ * asttool unit harness, which includes mccast.c without the mcchost timer. */
+#define AST_SEARCH_WIN 10
+static int ast_search_started;
+static unsigned ast_search_start_ms;
+static unsigned ast_search_budget_ms;
+static unsigned ast_search_durwin[AST_SEARCH_WIN];
+static int ast_search_durwin_n;
+static int ast_search_durwin_head;
+static volatile int ast_search_abort;
+
+static unsigned ast_now_ms(void) {
+	return (unsigned)((unsigned long long)clock() * 1000ull / CLOCKS_PER_SEC);
+}
+
+static void ast_search_durwin_push(unsigned dt) {
+	ast_search_durwin[ast_search_durwin_head] = dt;
+	ast_search_durwin_head = (ast_search_durwin_head + 1) % AST_SEARCH_WIN;
+	if (ast_search_durwin_n < AST_SEARCH_WIN)
+		ast_search_durwin_n++;
+}
+
+static unsigned ast_search_expect_ms(void) {
+	unsigned long long s = 0;
+	if (ast_search_durwin_n == 0)
+		return 0;
+	for (int i = 0; i < ast_search_durwin_n; i++)
+		s += ast_search_durwin[i];
+	return (unsigned)(s / (unsigned)ast_search_durwin_n);
+}
+
+static unsigned ast_search_remaining_ms(void) {
+	unsigned el = ast_now_ms() - ast_search_start_ms;
+	return el >= ast_search_budget_ms ? 0 : ast_search_budget_ms - el;
+}
+
+/* stop before the next tick: forced abort, no budget left, or the predicted next
+ * tick would overrun the remaining budget. */
+static int ast_search_should_stop(void) {
+	unsigned rem;
+	if (ast_search_abort)
+		return 1;
+	rem = ast_search_remaining_ms();
+	if (rem == 0)
+		return 1;
+	return ast_search_expect_ms() > rem;
+}
+
 static unsigned ast_search_gates_now(void) {
 	return (ast_templates_env ? AST_SG_TEMPLATES : 0) |
 				 (ast_narrow_env ? AST_SG_NARROW : 0) |
@@ -6850,28 +6920,55 @@ static void ast_search_gates_set(unsigned g) {
 	ast_sethi_env = (g & AST_SG_SETHI) != 0;
 }
 
-static long ast_search_measure(AstArena *pristine, Sym *sym, int faithful,
-															 unsigned gates) {
+typedef struct AstCand {
+	AstArena *arena;
+	unsigned gates;
+	int pass_i;
+	int alive;
+	int scored;
+	long score;
+	unsigned total_ms;
+} AstCand;
+
+/* One tick: apply the next enabled strategy pass to this candidate's clone; when
+ * every pass has run, finalize the static cost score. */
+static void ast_cand_tick(AstCand *c, Sym *sym, int faithful) {
 	AstArena *saved_cur = ast_cur;
-	AstArena *trial = ast_arena_clone(pristine);
-	if (!trial)
-		return -1;
-	ast_search_gates_set(gates);
-	ast_cur = trial;
-	for (int si = 0; si < AST_STRAT_COUNT; si++)
+	ast_search_gates_set(c->gates);
+	ast_cur = c->arena;
+	if (c->pass_i < AST_STRAT_COUNT) {
+		int si = c->pass_i++;
 		if (faithful && *ast_strategies[si].gate)
-			ast_strategies[si].apply(trial, sym);
-	long score = ast_cost_score(trial);
+			ast_strategies[si].apply(c->arena, sym);
+	}
+	if (c->pass_i >= AST_STRAT_COUNT) {
+		c->score = ast_cost_score(c->arena);
+		c->scored = 1;
+		c->alive = 0;
+	}
 	ast_cur = saved_cur;
-	ast_arena_free(trial);
-	return score;
 }
 
 static void ast_search_select(Sym *sym, int faithful) {
-	AstArena *pristine = ast_arena_clone(ast_cur);
+	AstArena *pristine;
+	uint64_t h;
+	unsigned base, best;
+	long best_score = -1;
+	int g0, p0, o0, nc = 0, alive = 0;
+	unsigned gatelist[5];
+	AstCand cands[5];
+	if (!ast_search_started) {
+		ast_search_started = 1;
+		ast_search_start_ms = ast_now_ms();
+		ast_search_budget_ms = ast_search_seconds * 1000u;
+	}
+	base = ast_search_gates_now();
+	if (ast_search_should_stop())
+		return; /* budget spent / aborted: keep the frozen order */
+	pristine = ast_arena_clone(ast_cur);
 	if (!pristine)
 		return;
-	uint64_t h = ast_intention_hash(pristine, AST_NONE);
+	h = ast_intention_hash(pristine, AST_NONE);
 	if (h) {
 		for (int i = 0; i < ast_search_memo_n; i++)
 			if (ast_search_memo[i].hash == h) {
@@ -6880,30 +6977,64 @@ static void ast_search_select(Sym *sym, int faithful) {
 				return;
 			}
 	}
-	unsigned base = ast_search_gates_now();
-	int g0 = ast_graft_total, p0 = ast_promo_total, o0 = ast_opt_total;
-	unsigned cands[5];
-	int nc = 0;
-	cands[nc++] = base;
+	g0 = ast_graft_total;
+	p0 = ast_promo_total;
+	o0 = ast_opt_total;
+	best = base;
+	gatelist[nc++] = base;
 	if (base & AST_SG_TEMPLATES)
-		cands[nc++] = base & ~AST_SG_TEMPLATES;
+		gatelist[nc++] = base & ~AST_SG_TEMPLATES;
 	if (base & AST_SG_NARROW)
-		cands[nc++] = base & ~AST_SG_NARROW;
+		gatelist[nc++] = base & ~AST_SG_NARROW;
 	if (base & AST_SG_BITFLAG)
-		cands[nc++] = base & ~AST_SG_BITFLAG;
+		gatelist[nc++] = base & ~AST_SG_BITFLAG;
 	if (base & AST_SG_SETHI)
-		cands[nc++] = base & ~AST_SG_SETHI;
-	unsigned best = base;
-	long best_score = -1;
-	for (int ci = 0; ci < nc; ci++) {
-		long sc = ast_search_measure(pristine, sym, faithful, cands[ci]);
-		if (sc < 0)
-			continue;
-		if (best_score < 0 || sc < best_score) {
-			best_score = sc;
-			best = cands[ci];
+		gatelist[nc++] = base & ~AST_SG_SETHI;
+	for (int i = 0; i < nc; i++) {
+		cands[i].arena = ast_arena_clone(pristine);
+		cands[i].gates = gatelist[i];
+		cands[i].pass_i = 0;
+		cands[i].scored = 0;
+		cands[i].total_ms = 0;
+		cands[i].alive = cands[i].arena != NULL;
+		if (cands[i].alive)
+			alive++;
+	}
+	/* Not round-robin: advance the alive candidate that has consumed the least
+	 * total time so far (running sum of its tick durations; ties -> lowest index,
+	 * so the baseline config finishes first as the safe fallback). Equalizing
+	 * accumulated time is fairer than keying on the last tick alone — no candidate
+	 * starves and none monopolizes the budget. */
+	while (alive > 0) {
+		int sel = -1;
+		unsigned t0, dt;
+		if (ast_search_should_stop())
+			break;
+		for (int i = 0; i < nc; i++) {
+			if (!cands[i].alive)
+				continue;
+			if (sel < 0 || cands[i].total_ms < cands[sel].total_ms)
+				sel = i;
+		}
+		if (sel < 0)
+			break;
+		t0 = ast_now_ms();
+		ast_cand_tick(&cands[sel], sym, faithful);
+		dt = ast_now_ms() - t0;
+		cands[sel].total_ms += dt;
+		ast_search_durwin_push(dt);
+		if (!cands[sel].alive) {
+			alive--;
+			if (cands[sel].scored &&
+					(best_score < 0 || cands[sel].score < best_score)) {
+				best_score = cands[sel].score;
+				best = cands[sel].gates;
+			}
 		}
 	}
+	for (int i = 0; i < nc; i++)
+		if (cands[i].arena)
+			ast_arena_free(cands[i].arena);
 	ast_graft_total = g0;
 	ast_promo_total = p0;
 	ast_opt_total = o0;

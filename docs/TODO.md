@@ -58,17 +58,29 @@ for flipping the default is now met.
   the baseline; keeps `legacy` as the fallback.
 
 **LANDED — Step 5 core: the live -O4+ search.** At -O4+ (`optimize_search_seconds > 0`)
-with the strategy engine, `ast_func_end` runs a best-first per-function search over the
-four toggleable fold gates (templates, narrow, bitflag, sethi) instead of the single
-frozen order (`ast_search_select`). Each candidate is measured on an isolated
-`ast_arena_clone` by the static cost model (`ast_cost_score`); the search only *selects*
-a gate configuration — the winner is emitted by the normal unmodified pipeline+emit path
-on the untouched captured tree, so a search bug can only pick a larger-but-correct
-config, never miscompile. Winners are memoized by `ast_intention_hash` so recurring
-functions skip the search. Single-threaded, deterministic. Opt-in:
-`MCC_AST_ENGINE=strategy` + `-O<n≥4>`. Validated: default `-O1..-O3` unchanged
-(1904/1904 ctest, search never engages); `-O5` strategy search 200/200 correct vs the
-gcc/clang differential; shadow+strategy+`-O5` 60/60 with zero side-car divergences.
+with the strategy engine, `ast_func_end` runs a per-function search over the four
+toggleable fold gates (templates, narrow, bitflag, sethi) instead of the single frozen
+order (`ast_search_select`). Execution model matches the intended runtime JIT: each
+candidate gate config is a stackless coroutine whose one *tick* applies exactly one
+strategy pass to its own isolated `ast_arena_clone`; the scheduler advances the
+least-total-time-consumed live candidate (running sum of tick durations, ties → baseline
+first — fair, no starvation), and a rolling 10-sample duration window makes the search
+stop once the predicted next tick would overrun the remaining budget. The budget is the
+`-ON` seconds, **absolute** from the first tick; `ast_search_abort` is a forced-abort
+hook (pool/JIT/deadline) checked at every tick boundary — because each candidate mutates
+only a throwaway clone, abort discards in-progress work safely (the pool's "kill+restart
+worker" reduces to this discard). Candidates are scored by the static cost model
+(`ast_cost_score`); the search only *selects* a gate config — the winner is emitted by
+the normal unmodified pipeline+emit path on the untouched captured tree, so a search bug
+(or a time-truncated / aborted search) can only pick a larger-but-correct config, never
+a miscompile. Winners are memoized by `ast_intention_hash`. Single-threaded; -O4+ output
+is timing-bounded and non-reproducible by design (quarantined there — `-O1..-O3` carry
+no budget, never search, stay byte-reproducible). Opt-in: `MCC_AST_ENGINE=strategy` +
+`-O<n≥4>`. Validated: default `-O1..-O3` unchanged (1904/1904 ctest, search never
+engages); `-O5`/`-O6` strategy search differential correct vs gcc/clang (200/200 + 90/90
+across scheduler revisions); shadow+strategy+`-O5/-O6` zero side-car divergences; the
+`-ON` budget is an absolute cap (verified no hang, finishes early when candidates
+complete); asttool 55/55 with the portable `clock()` timer.
 
 - [ ] **Step 5+ — scoring fidelity: emitted-size / JIT-runtime** — replace the static
   `ast_cost_score` proxy with true emitted-byte size (needs the §22 scratch-`Section`

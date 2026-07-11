@@ -176,25 +176,40 @@ deferred to Step 5.
 ## Step 5 core (landed) — the live -O4+ search
 
 At -O4+ (`optimize_search_seconds > 0`) with the strategy engine, `ast_func_end` runs a
-best-first per-function search (`ast_search_select`) over the four toggleable fold gates
-(templates, narrow, bitflag, sethi) rather than applying the single frozen order. Each
-candidate is measured on an isolated `ast_arena_clone` by the static cost model
-(`ast_cost_score`, factored out of `ast_fn_cost`); results are memoized by
-`ast_intention_hash`.
+per-function search (`ast_search_select`) over the four toggleable fold gates (templates,
+narrow, bitflag, sethi) rather than applying the single frozen order. Candidates are
+memoized by `ast_intention_hash`.
+
+**Execution model (shared shape with the runtime JIT).** Each candidate gate config is a
+stackless coroutine; one *tick* applies exactly one strategy pass to that candidate's own
+`ast_arena_clone`. The scheduler is not round-robin — it advances the live candidate with
+the **least total time consumed so far** (running sum of its tick durations; ties → the
+baseline config, finished first as the safe fallback), which keeps the schedule fair (no
+candidate starves or monopolizes the budget). A rolling window of the last 10 tick
+durations predicts the next tick's cost; the search stops once that prediction would
+overrun the remaining budget. The budget is the `-ON` seconds, **absolute** from the
+first tick (measured with a portable `clock()` CPU-time proxy — accurate for the
+single-threaded CPU-bound search, and available to the asttool unit harness which
+excludes the mcchost timer). `ast_search_abort` is a forced-abort hook (pool / JIT /
+deadline signal) checked at every tick boundary; since each candidate mutates only a
+throwaway clone, an abort discards in-progress work safely — the pool's "kill and restart
+the worker" reduces to this discard.
 
 **Safety architecture — search selects, existing path emits.** The search only picks a
 gate configuration; the winning config is produced by the *normal, unmodified*
 pipeline+emit path on the *untouched* captured tree. Because every gate configuration
-yields correct code (each pass is individually sound + faithful-gated), a search bug can
-only pick a larger-but-correct config — never a miscompile. Measurement runs the fold
-passes on clones and scores by static cost with **no emit**, so none of the
-emit-cursor / promo-plan / `*_total`-counter hazards apply; the module counters are
-saved/restored around the search as belt-and-suspenders.
+yields correct code (each pass is individually sound + faithful-gated), a search bug — or
+a time-truncated / aborted search — can only pick a larger-but-correct config, never a
+miscompile. Measurement runs the fold passes on clones and scores by static cost with
+**no emit**, so none of the emit-cursor / promo-plan / `*_total`-counter hazards apply;
+the module counters are saved/restored around the search regardless.
 
-Single-threaded and deterministic. Opt-in (`MCC_AST_ENGINE=strategy` + `-O<n≥4>`);
-`-O1..-O3` carry no budget and never search. Validated: default path 1904/1904 ctest
-(search never engages); `-O5` strategy search 200/200 correct vs the gcc/clang
-differential; shadow+strategy+`-O5` 60/60 with zero side-car divergences.
+Single-threaded. -O4+ output is timing-bounded and non-reproducible by design
+(quarantined there); `-O1..-O3` carry no budget, never search, stay byte-reproducible.
+Opt-in (`MCC_AST_ENGINE=strategy` + `-O<n≥4>`). Validated: default path 1904/1904 ctest
+(search never engages); `-O5`/`-O6` strategy differential correct vs gcc/clang; shadow +
+strategy + `-O5/-O6` zero side-car divergences; the `-ON` budget is an absolute cap
+(verified no hang, finishes early when candidates complete); asttool 55/55.
 
 ## Out of scope (Step 5+ continuations)
 
