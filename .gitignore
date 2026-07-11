@@ -7,3 +7,6 @@
 
 # CI log bundles downloaded for triage (transient)
 logs_*.zip
+
+# valgrind core dumps
+vgcore.*
