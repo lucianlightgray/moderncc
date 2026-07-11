@@ -6966,8 +6966,8 @@ static void ast_search_select(Sym *sym, int faithful) {
 	unsigned base, best;
 	long best_score = -1;
 	int g0, p0, o0, nc = 0, alive = 0;
-	unsigned gatelist[5];
-	AstCand cands[5];
+	unsigned gatelist[16];
+	AstCand cands[16];
 	if (!ast_search_started) {
 		ast_search_started = 1;
 		ast_search_start_ms = ast_now_ms();
@@ -6992,15 +6992,20 @@ static void ast_search_select(Sym *sym, int faithful) {
 	p0 = ast_promo_total;
 	o0 = ast_opt_total;
 	best = base;
-	gatelist[nc++] = base;
-	if (base & AST_SG_TEMPLATES)
-		gatelist[nc++] = base & ~AST_SG_TEMPLATES;
-	if (base & AST_SG_NARROW)
-		gatelist[nc++] = base & ~AST_SG_NARROW;
-	if (base & AST_SG_BITFLAG)
-		gatelist[nc++] = base & ~AST_SG_BITFLAG;
-	if (base & AST_SG_SETHI)
-		gatelist[nc++] = base & ~AST_SG_SETHI;
+	/* All subsets of the baseline-enabled fold gates (submask enumeration), so the
+	 * search covers pairwise/triple gate drops, not just leave-one-out. base comes
+	 * first (the safe fallback); the fair scheduler + budget bound how many of the
+	 * <=16 candidates actually complete. */
+	{
+		unsigned sub = base;
+		for (;;) {
+			if (nc < 16)
+				gatelist[nc++] = sub;
+			if (sub == 0)
+				break;
+			sub = (sub - 1) & base;
+		}
+	}
 	for (int i = 0; i < nc; i++) {
 		cands[i].arena = ast_arena_clone(pristine);
 		cands[i].gates = gatelist[i];

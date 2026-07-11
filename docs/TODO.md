@@ -88,9 +88,13 @@ candidates complete); asttool 55/55 with the portable `clock()` timer.
   `ast_cost_score` proxy with true emitted-byte size (needs the §22 scratch-`Section`
   emit isolation so a candidate can be emitted-and-measured without the in-place
   save/restore desync) and, at the JIT tier, measured runtime (`MCC_AST_JITSCORE`).
-- [ ] **Step 5+ — widen the search space** — beyond leave-one-out of the 4 fold gates:
-  inline/promote axes, pairwise/permutation candidates, budget-scaled by
-  `optimize_search_seconds`, best-first frontier ordered by `est_cost_delta`.
+- [ ] **Step 5+ — widen the search space** — the fold-gate candidate set is now the
+  full **subset lattice** of the enabled gates (submask enumeration, ≤16, base first),
+  not just leave-one-out (validated: -O6 differential 80/80, default 1905/1905). Still
+  open: the **inline/promote axes** and **budget-scaling the candidate count** (both
+  want the emitted-size scoring above, since inline/promote effects are emit-time), and
+  a real `est_cost_delta` best-first frontier ordering beyond the current base-first +
+  fair-time schedule.
 - [ ] **Step 5+ — disk-backed cross-build memo** — persist the per-function winner to
   the existing `pf-*.ck` cache (key via `ast_intention_hash` → `so_pf_key`), so the
   in-process search subsumes the out-of-process `mcc_superopt_perfn` fork/exec loop.
