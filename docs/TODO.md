@@ -298,9 +298,18 @@ makes the compiler a sanitizer *provider* for user code.
       `2e9+2e9` and `1<<40` → SIGTRAP (133); unsigned wrap `4e9+4e9` → no trap
       (correct); `100/0` → trap while no-flag returns 0; clean programs run.
       Default arm64 codegen unbroken (27/27 exec agree with x86_64), x86_64
-      ctest 1882/1882. Remaining: arm64 signed-mul overflow (`SMULH` compare),
-      **riscv64** port (same sysroot path available), native-shadow ASan,
-      TSan/MSan.
+      ctest 1882/1882.
+      **riscv64 UBSan started (2026-07-11): div-by-zero trap** — `riscv64-gen.c`
+      emits `BNE divisor,x0,+8; EBREAK` before every `DIV`/`DIVU`/`REM`/`REMU`
+      when `do_sanitize_undefined`. Again higher value than a trapping ISA:
+      RISC-V `DIV` by zero returns **−1** (no trap). Validated under
+      **qemu-riscv64** (vendored riscv64 musl sysroot): `100/0
+      -fsanitize=undefined` → `EBREAK`/SIGTRAP (133); no-flag returns 255 (−1,
+      no fault); `100/4` → 25 clean; riscv64 default codegen unbroken (21/21
+      exec agree with x86_64). So `-fsanitize=undefined` now spans **x86_64
+      (overflow+shift+div), arm64 (overflow+shift+div), riscv64 (div)**.
+      Remaining: arm64/x86_64 signed-mul overflow (`SMULH`/`imul`-hi),
+      riscv64 overflow+shift, native-shadow ASan, TSan/MSan.
 - [x] **Test matrix:** a `tests/sanitize/` corpus with one program per UB /
       memory-error class asserting the check fires (and clean programs stay
       silent), across `-O0..-O3` and with the optimizer forced on. LANDED:

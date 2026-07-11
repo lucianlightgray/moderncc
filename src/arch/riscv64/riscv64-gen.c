@@ -961,6 +961,13 @@ ST_FUNC int gjmp_cond(int op, int t) {
 	return gjmp(t);
 }
 
+static void riscv64_ubsan_div0(int b) {
+	if (!mcc_state->do_sanitize_undefined || nocode_wanted)
+		return;
+	o(0x63 | 1u << 12 | (uint32_t)b << 15 | 8u << 7);
+	o(0x00100073);
+}
+
 static void gen_opil(int op, int ll) {
 	int a, b, d;
 	int func3 = 0;
@@ -1090,6 +1097,7 @@ static void gen_opil(int op, int ll) {
 		break;
 	case '/':
 	case TOK_PDIV:
+		riscv64_ubsan_div0(b);
 		ER(0x33 | ll, 4, d, a, b, 1);
 		break;
 	case '&':
@@ -1102,12 +1110,15 @@ static void gen_opil(int op, int ll) {
 		ER(0x33, 6, d, a, b, 0);
 		break;
 	case '%':
+		riscv64_ubsan_div0(b);
 		ER(ll ? 0x3b : 0x33, 6, d, a, b, 1);
 		break;
 	case TOK_UMOD:
+		riscv64_ubsan_div0(b);
 		ER(0x33 | ll, 7, d, a, b, 1);
 		break;
 	case TOK_UDIV:
+		riscv64_ubsan_div0(b);
 		ER(0x33 | ll, 5, d, a, b, 1);
 		break;
 	}

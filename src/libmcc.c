@@ -2385,11 +2385,12 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) {
 							san_tok_eq(tok, n, "shift-exponent") ||
 							san_tok_eq(tok, n, "shift-base")) {
 #if (defined MCC_TARGET_X86_64 && !defined MCC_TARGET_PE) || \
-		defined MCC_TARGET_ARM64
+		defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64
 						s->do_sanitize_undefined = 1;
 #else
 						mcc_warning_c(warn_unsupported)(
-								"-fsanitize=undefined is only implemented on x86_64 and arm64");
+								"-fsanitize=undefined is only implemented on x86_64, arm64, "
+								"and riscv64");
 #endif
 					} else if (san_tok_eq(tok, n, "address") ||
 										 san_tok_eq(tok, n, "bounds")) {
