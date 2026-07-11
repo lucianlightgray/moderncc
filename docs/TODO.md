@@ -322,7 +322,10 @@ candidates complete); asttool 55/55 with the portable `clock()` timer.
   32-bit sysroot.
 - [ ] **Audit each `mcc_skip_test` for per-triple ungating** — i386-linux blocked
   (no 32-bit sysroot); aarch64/armv7-linux partial (qemu is x86-TSO — only the
-  memory-model-independent subset); arm64-windows blocked (no native arm64 ref cc).
+  memory-model-independent subset). arm64-windows is **no longer blocked** — CI now
+  runs a native `windows-11-arm64` cell (MSVC 2022 ARM64 as the ref cc) that passes the
+  full 1809-test suite (`logs_78925034425`); revisit the arm64-windows `mcc_skip_test`s
+  for ungating there.
 - [ ] **Revisit the `Bind`-marker** — only if the CST can't answer a `-g`/LSP query.
 - [ ] **Revisit the `k` always-inline depth policy.**
 - [ ] **Revisit size-gated outline.**
@@ -340,9 +343,5 @@ candidates complete); asttool 55/55 with the portable `clock()` timer.
   debug caveat that applies to `MCC_CONFIG_AST_SHADOW`). See also the leveled-logging
   helpers (`mcc_logf`/`MCC_DEBUG`) — existing ad-hoc `if (verbose) fprintf(stderr,...)`
   sites can migrate to these tagged categories.
-- [ ] **Verify the three landed §38 msvc-arm64 FIX fixes** (the
-  `vcheck_cmp`-before-`gfunc_call` guard, the `ast_fn_faithful` reemit gate, the
-  x86_64-only promote frame-slot change) on a Windows-arm64 runner. (macos and
-  ELF-linux cells confirmed)
 - [ ] **Ungate the `i386-fastcall-abi` test** — registered but `mcc_skip_test`'d;
   needs an i386 cross + an ELF-32 reference.
