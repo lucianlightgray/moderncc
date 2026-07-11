@@ -1,14 +1,20 @@
-# STATUS.md — superoptimizer / JIT ladder status (2026-07-10)
+# STATUS.md — superoptimizer / JIT ladder status (2026-07-11)
 
 Consolidated status of the `-O<N>` compile-time superoptimizer and the
-`--embed-jit` runtime-JIT work (TODO.md §18, §20–§32). Design decisions live
-in TODO.md; per-iteration history in OPTIMIZE.md; this file is the single
+`--embed-jit` runtime-JIT work (TODO.md §18, §20–§36, §41). Design decisions
+live in TODO.md; per-iteration history in OPTIMIZE.md; this file is the single
 snapshot of *what is built, what remains, and how to finish it*.
 
-**Invariant held throughout:** `-O0..-O3` byte-identical, 3-stage self-host
-fixpoint byte-identical, full `ctest` green (currently 1862) at **every**
-commit below. New behavior is gated (opt-in flags / `-O4+` / env) so the
-default compiler is unchanged.
+**Invariant held throughout:** 3-stage self-host fixpoint byte-identical
+(stage2==3==4 self-convergence), full `ctest` green (currently ~1877–1889 by
+preset; the only reds are two pre-existing `asan_shadow_native_*` worker-WIP
+fails, unrelated to the optimizer) at **every** commit below. **§41 re-baseline
+(2026-07-11) inverted the ladder's original "default-off" invariant:** the AST/
+optimizer codegen passes are now default-**ON at `-O2+`** (see the env table),
+so the default `-O2` compiler *is* changed — validated not by fixed byte
+goldens but by self-convergence + exec goldens + the differential fuzzer (0
+miscompiles / ~900 programs). Each pass stays individually revertible via
+`MCC_AST_<name>=0`.
 
 ## Legend
 `done` fully implemented · `functional` end-to-end working (opt-in) ·
@@ -26,21 +32,29 @@ default compiler is unchanged.
 | 24 | Hot-window / slice selector | **functional** | `3e81960d` (cost model), `ad5cfee2` (budget ordering) |
 | 25 | Frontend-JIT candidate measurement | **functional** | `382b7169` (.text objective); JIT cpu+RSS tier landed (`MCC_AST_JITSCORE`, best-of-K wall time + `getrusage`, N4) |
 | 26 | `--embed-jit` runtime self-optimizer | **increment** | `4394057f` (flags), `95037e96` (manifest); runtime engine pending |
-| 27 | Loop-nest interchange | **unblocked for analysis** (§32); value-materializing half waits on §32c | — |
-| 28 | Dynamic algorithm generation | **unblocked for analysis** (§32); value-materializing rules wait on §32c | — |
-| 29 | `Convert` representation optimizer | **increment** | `ad55ede8` (redundant integer-cast elimination) |
-| 30 | Bit-flag conditional optimizer | **functional** | `fb845871` (detection), transform landed (`ast_bf_run`), `676c1836` (threshold registered as a `-O<N>` search dimension) |
+| 27 | Loop-nest interchange | **unblocked** (§32); §32c value-materializing infra now COMPLETE | — |
+| 28 | Dynamic algorithm generation | **unblocked** (§32); §32c value-materializing infra now COMPLETE | — |
+| 29 | `Convert` representation optimizer | **landed (default-on -O2)** | `ad55ede8` (redundant integer-cast elimination), `ee56da5a` (phase-(b) truncation-sink narrowing `MCC_AST_NARROW`, dual-arch), `193965a4` (promoted default-on at -O2, joining the §41 sweep). Monotonic (never adds a truncation without removing ≥ as many widenings). Remaining needs a range lattice (non-distributive `/ % << >>`, outer-narrow elimination). |
+| 30 | Bit-flag conditional optimizer | **landed (default-on -O2)** | `fb845871` (detection), `ast_bf_run` transform, `676c1836` (threshold as `-O<N>` search dim), `fcc5845d` (else-if chain `!=` fall-through), `f8e7fc4c` (`&&`-of-`!=` complement), `a5315b7c` (biased ranges, base≥64). Gate default-on at -O2, threshold `N≥3` default 5. Remaining: value-table dispatch for differing bodies (needs `.rodata` data emission — milestone), `switch`-arm form. |
 | 31 | Strategy-portfolio scheduler | **substantial** | `f67c2234` (2-strategy), `e3a2f2d7` (3rd strategy), `c5f3349f` (save-and-stop), `35a8ef70` (watchdog), `3db65b60` (concurrency) |
 | 32 | Value-reference-node feasibility study | **resolved** (no new node kind; build order §32a→§32c) | `fde58307` |
-| 32a | SCCP value-lattice (structured-join const-prop) | **landed** — `MCC_AST_CPROP_JOIN` (default off): fork/meet at If joins, invariant-lattice loop descent, flat-scan fallback via visited bitmap; ctest green with the gate forced on corpus-wide; fixpoint byte-identical in both modes | — |
-| 32b | Cross-join CSE/LICM (dominator-carried availability) | **landed** — `MCC_AST_CSE_JOIN` (default off): arms inherit the dominating table, node-identity meet at joins, loop LICM runs on the richer incoming table then descends with invariant entries; same gates (ctest with both joins forced on, dual-mode fixpoint) | — |
-| 32c | Synthetic-temp infrastructure | **partial (unblocked)** — the fresh-temp *carve* infra is landed and exercised (the §23 inliner carves a fresh strictly-negative slot per grafted return; N2 box-3 confirmed the `-O3` 3-stage self-host fixpoint holds under fresh-temp ON and OFF). The *value-materializing consumer* pass (fresh-temp LICM → PRE → IV strength reduction) is the remaining build; its fixpoint gate is available (the earlier "-O3 non-determinism blocker" was a harness artifact, retracted). See TODO §40.3. | — |
+| 32a | SCCP value-lattice (structured-join const-prop) | **landed (default-on -O2 since §41)** — `MCC_AST_CPROP_JOIN`: fork/meet at If joins, invariant-lattice loop descent, flat-scan fallback via visited bitmap; ctest green with the gate forced on corpus-wide; fixpoint byte-identical in both modes | — |
+| 32b | Cross-join CSE/LICM (dominator-carried availability) | **landed (default-on -O2 since §41)** — `MCC_AST_CSE_JOIN`: arms inherit the dominating table, node-identity meet at joins, loop LICM runs on the richer incoming table then descends with invariant entries; same gates (ctest with both joins forced on, dual-mode fixpoint) | — |
+| 32c | Synthetic-temp infrastructure | **COMPLETE** — carve infra + all three value-materializing consumers landed: multi-temp fresh-temp LICM (`MCC_AST_LICM_TEMP`, `904f9e6a`/`05112637`), IV strength reduction (`MCC_AST_IVSR`, `ef37948e`), post-join PRE (`MCC_AST_PRE`, `ed0d295b`) + 4 broadenings (multi-stmt arms `9c4d7f9a`, Convert-wrapped RHS `b990f477`, reuse-distance scan `4dccbbad`, single-arm anticipability `5ea6b629`), dual-arch. The safe hoist-only model is done; only genuinely-speculative arm insertion is intentionally left out. These three stay **default-off** (§32c consumers are search/size dimensions). | — |
 | 25 | Frontend-JIT candidate measurement | **functional** — `.text` objective + the `MCC_AST_JITSCORE` cpu+RSS scoring tier (best-of-K `-run` timing via `wait4` + `getrusage`; W^X/MAP_JIT runmem confirmed on Apple silicon) | `9140939c` |
 
-**Rung table scope:** rungs above cover §18/§20–§32 + §25's JIT tier. Live TODO
-items **§33** (call-window), **§35** (Sethi–Ullman), **§36** (Chaitin–Briggs),
-**§37** (bench-stats, landed), **§38** (CI-blocked), **§39/§40** are tracked in
-TODO.md, not here — this table is no longer the complete ladder snapshot.
+**Rung table scope:** rungs above cover §18/§20–§32 + §25's JIT tier. Landed
+since the 2026-07-10 sweep and tracked in TODO.md, not fully in this table:
+**§33a** cross-`Invoke` availability (`MCC_AST_CALL_WINDOW`, `ef0680ce`,
+default-on -O2), **§34** arm64 `load()` `VT_MUSTCAST` assert (`76407be9`,
+confirmed on arm64 via qemu), **§34b** AST-replay frame-size low-water
+miscompile — a REAL `-O1`/`-O2` uninitialized-stack-read bug masked in CI by
+forced inline (`8c78c821`, validated x86_64/arm64/riscv64), **§35**
+Sethi–Ullman (`f45a6ec5`, default-on -O2), **§36** Chaitin–Briggs graph-coloring
+regalloc (`MCC_AST_COLOR`, `8a6893dd` + increments, validated native arm64 +
+riscv64 via qemu), **§37** (bench-stats), **§41** ungate (five default-off
+codegen passes flipped ON at -O2, `cc372774`). Still open: **§38** (CI-gated
+validations), **§22** promotion axis (BLOCKED, below), **§39/§40**.
 (N2 box-3 is DONE: the `-O3` 3-stage self-host fixpoint holds natively under
 fresh-temp ON and OFF; the briefly-reported "-O3 determinism blocker" was a
 harness artifact and is retracted.)
@@ -56,14 +70,24 @@ CLI flags (`src/mcc.c`, `src/libmcc.c`):
   (default `main`) — runtime-JIT config.
 - `--clear-cache` — remove the per-user optimizer cache dir and exit.
 
+AST pass gates (`ast_configure`, `src/mccast.c` ~L796-803). Each is
+`ast_env_gate("NAME", default)` = env value if set, else the default; so every
+pass below is individually revertible via `MCC_AST_<name>=0`.
+- **Default-ON at `-O2` (`s1->optimize >= 2`)** — the §41 sweep + §29/§33a
+  promotions: `MCC_AST_CPROP_JOIN` (§32a), `MCC_AST_CSE_JOIN` (§32b),
+  `MCC_AST_CALL_WINDOW` (§33a), `MCC_AST_NARROW` (§29), `MCC_AST_BITFLAG` (§30,
+  threshold `MCC_AST_BITFLAG=N`, N≥3 default 5), `MCC_AST_SETHI` (§35).
+- **Default-OFF (search dimensions / size trade-offs, deliberately not
+  always-on):** `MCC_AST_LICM_TEMP`, `MCC_AST_IVSR`, `MCC_AST_PRE` (§32c
+  consumers), `MCC_AST_PERFN_INPROC` (§22, BLOCKED on scratch-section
+  isolation), `MCC_AST_COLOR` (§36).
+
 Env knobs (search / debugging):
 - `MCC_AST_PERFN` — use the per-function search instead of whole-TU (`-O4+`).
 - `MCC_AST_FN_CONFIG="fn=bits;…"` — per-function pass gates
   (bit0=templates, bit1=promote, bit2=inline).
 - `MCC_AST_INLINE_NODES`, `MCC_AST_GRAFT` — inliner budgets (default 64/2048).
 - `MCC_AST_COST` — report per-function hot-slice cost.
-- `MCC_AST_BITFLAG=N` — enable the bit-flag transform at cluster threshold N
-  (also a report; the `-O<N>` search permutes it over {0,3,5,9}).
 - `MCC_AST_HASH_OUT=<file>` — internal driver↔child channel: append each
   captured function's intention hash (`name hex\n`); used by the per-fn
   cache tier.
@@ -116,19 +140,27 @@ exec bit since `f959078e` (fixed in `676c1836`).
 ## Remaining full builds (precisely scoped, de-risked)
 
 The one remaining *full* build is the §26 runtime engine (item 2); §30's
-transform (item 1) landed and now also sits in the search space
-(`676c1836`), leaving only its listed extensions. On the §32 frontier track
-§32a and §32b are landed; §32c (synthetic-temp infrastructure → fresh-temp
-LICM → PRE → IV strength reduction) is the next build, fully scoped in
-TODO §32.
+transform (item 1) landed and now sits both in the search space (`676c1836`)
+and default-on at -O2, leaving only its listed extensions. The whole §32
+frontier is now landed: §32a and §32b (default-on -O2), and §32c is COMPLETE
+(synthetic-temp infra → fresh-temp LICM → PRE → IV strength reduction — the
+safe hoist-only model, TODO §32).
 
-A `*.md` audit (2026-07-10) added TODO §34-§39 for work tracked nowhere and
+A `*.md` audit (2026-07-10) added TODO §34-§41 for work tracked nowhere and
 landed the tractable ones: §34 (arm64 `load()` `VT_MUSTCAST` assert, fixed —
-unblocks `MCC_AST_INLINE_NODES` on arm64), §35 (Sethi–Ullman operand
-ordering, `MCC_AST_SETHI`, first increment), §37 (`mccbench --stats`:
-credible interval + Bayes factor + ANOVA), §39 (doc-staleness
-reconciliation). Still open there: §36 (Chaitin–Briggs register allocation
-— the largest untracked build) and §38 (hardware-gated CI validations).
+unblocks `MCC_AST_INLINE_NODES` on arm64), §34b (AST-replay frame-size
+low-water — a REAL `-O1`/`-O2` uninitialized-stack-read miscompile masked in CI
+by forced inline; fixed by tracking `ast_loc_low` and clamping `loc` before the
+epilog, validated x86_64/arm64/riscv64), §35 (Sethi–Ullman operand ordering,
+`MCC_AST_SETHI`, default-on -O2), §36 (Chaitin–Briggs graph-coloring regalloc,
+`MCC_AST_COLOR`, validated native arm64 + riscv64 via qemu), §37 (`mccbench
+--stats`: credible interval + Bayes factor + ANOVA), §39 (doc-staleness
+reconciliation), §41 (ungate: the five default-off codegen passes flipped ON at
+-O2). Still open there: §38 (hardware-gated CI validations) and §22 —
+`ast_arena_clone` prerequisite landed (`12d01144`) and the in-process
+per-function re-emit trial (`MCC_AST_PERFN_INPROC`) landed, but the promotion
+axis was attempted twice and reverted: BLOCKED on true scratch-section
+isolation.
 
 1. **§30 bit-flag transform — LANDED.** The earlier "no expression-level
    transform" finding was half-stale: a short-circuit `||` in *condition*
@@ -145,9 +177,11 @@ reconciliation). Still open there: §36 (Chaitin–Briggs register allocation
    x86_64 size break-even (mask test is a constant ~151 B vs ~12 B per
    compare-branch). Validated: edge keys (−2³¹, −1, 0, 63, 64, 2³²+5) ×
    int/uint/llong/ullong/char/short × lor/chain/mixed/while/ternary forms;
-   full ctest 1858 incl. new `cli/bitflag_transform`; fixpoint OK. Later
-   extensions: value-table dispatch for differing bodies, `switch` arms,
-   `&&`-of-`!=` complement, biased ranges (consts ≥64).
+   ctest green incl. `cli/bitflag_transform`; fixpoint OK. The else-if chain
+   `!=` fall-through (`fcc5845d`), `&&`-of-`!=` complement (`f8e7fc4c`), and
+   biased-range consts≥64 (`a5315b7c`) forms have since landed, and the gate is
+   now default-on at -O2 (§41). Remaining extensions: value-table dispatch for
+   differing bodies (needs `.rodata` data emission — milestone), `switch` arms.
 2. **§26 runtime engine.** Infra exists (`.init_array`/`SHT_INIT_ARRAY`
    emission + `mcc_relocate`/`-run` JIT). Assembly: `-O4+ --embed-jit`
    synthesizes a ctor spawning the `--jit-threads` pool; embed the
@@ -163,8 +197,9 @@ table across dominated joins covers most of GVN; a synthetic frame-slot
 temp (the TCO/promote-fix mechanism, §32c) covers PRE/IV-strength/fresh-temp
 LICM; the true φ-node case is rejected as not worth its cost. §27/§28 are
 therefore **unblocked for their analysis/structural halves**; only their
-value-materializing sub-cases wait on §32c. Build order: §32a SCCP
-value-lattice → §32b cross-join CSE → §32c synthetic-temp infrastructure.
+value-materializing sub-cases waited on §32c, now COMPLETE. Build order (all
+landed): §32a SCCP value-lattice → §32b cross-join CSE → §32c synthetic-temp
+infrastructure (fresh-temp LICM → PRE → IV strength reduction).
 §32a scoping findings (the `AST_If`/`AST_Jump` op maps, the op-5
 ternary/for-no-cond overload hazard, and the fork/meet design against the
 real `ast_cprop` machinery) are recorded in TODO §32a.

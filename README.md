@@ -14,7 +14,7 @@ from a single source tree.
 | **Speed**     | single-pass (~75–90× faster to compile than `-O2`, vs clang/gcc — [measured](EXCESS.md#profiling--method--measured-results-was-profilingmd--notesmd))                  |
 | **Size**      | ~0.7 MB dynamic · ~1.5 MB static self-contained binary                                                                                |
 | **Assembler** | integrated (`MCC_CONFIG_ASM`, incl. scalar SSE + `.cfi_*`) · inline asm · `asm goto` · `-S` via built-in disassembler (all 5 targets) |
-| **Safety**    | optional bounds checker (`-b`) and backtraces (`-bt`)                                                                                 |
+| **Safety**    | optional bounds checker (`-b`) · backtraces (`-bt`) · `-fsanitize=undefined` (trap mode; x86_64/arm64/riscv64) · `-fsanitize=address`/`=bounds` (built-in memory-error checker) |
 | **Optimizer** | `-O1..-O3` AST replay passes (byte-verified against `-O0`) · `-O<N>` (N≥4) superoptimizer search with a resumable per-user cache (`--clear-cache`) — see [STATUS.md](STATUS.md) |
 | **Cross**     | `mcc-<arch>` compilers via `MCC_ENABLE_CROSS`                                                                                         |
 

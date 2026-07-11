@@ -44,7 +44,12 @@ MCC_CONFIG_MCCDIR="…"
 
 Level-valued knobs emit numeric macros so `#if` can compare them
 (`MCC_CONFIG_DIAG_RT`: 0 = off, 1 = backtrace, 2 = bounds — the CMake side is
-the `off;backtrace;bounds` STRING dropdown). Path/string defaults that used to
+the `off;backtrace;bounds` STRING dropdown). The `bounds` level (2) also
+compiles in mcc's own `-fsanitize=address`/`-fsanitize=bounds` support: those
+flags share the memory/bounds checker, so `libmcc.c` gates them behind
+`#if MCC_CONFIG_DIAG_RT >= 2` and errors ("needs the memory/bounds checker,
+which was not compiled in") when built below that level. Path/string defaults
+that used to
 be baked as `-D` strings live as data rows in `src/mccdefaults.h` instead
 (see BUILD.md §6); only force-overrides still arrive as defines.
 

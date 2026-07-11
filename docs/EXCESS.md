@@ -209,8 +209,10 @@ high-value specifics the summary omits:
   `-O` defaults (non-`0` opens, `0` closes); `MCC_AST_REPLAY_DUMP` and
   `MCC_AST_NO_CALLFUL` stay opt-in, and the later search/debug knobs
   (`MCC_AST_INLINE_LIMIT`/`_INLINE_NODES`/`_GRAFT`, `_PROMOTE_LIMIT`/
-  `_OPT_LIMIT`, `_FN_CONFIG`/`_PERFN`, `_COST`, `_BITFLAG`,
-  `_CPROP_JOIN`/`_CSE_JOIN`, `_HASH_OUT`) are cataloged in STATUS.md. The
+  `_OPT_LIMIT`, `_FN_CONFIG`/`_PERFN`, `_COST`, `_SETHI`, `_BITFLAG`,
+  `_CPROP_JOIN`/`_CSE_JOIN`, `_CALL_WINDOW`, `_NARROW`, `_LICM_TEMP`/`_IVSR`/
+  `_PRE`, `_PERFN_INPROC`, `_COLOR`, `_HASH_OUT`) are cataloged in STATUS.md
+  (many since flipped default-on at `-O2` — see the §41 bullet below). The
   default-on
   flip was reverted: the full-corpus `mcctest` differential exposed
   Tier-3/Tier-4 soundness gaps on the PE target and arm64 that the per-golden
@@ -263,6 +265,78 @@ high-value specifics the summary omits:
   Whether `-O1` should also enable Tier-4 inline by default is the one open
   policy call (inline is correct + self-hosts under the governor, but the
   compile-time/size trade-off past the governor cap is unmeasured).
+- **§41 default-on ungate (2026-07-11):** the AST codegen *search* passes are
+  flipped **default-on at `-O2+`** (`ast_configure`, `s1->optimize >= 2`) — the
+  **§41 five** (`MCC_AST_SETHI` §35, `MCC_AST_BITFLAG` §30, `MCC_AST_CPROP_JOIN`
+  §32a, `MCC_AST_CSE_JOIN` §32b, `MCC_AST_CALL_WINDOW` §33a) plus
+  `MCC_AST_NARROW` (§29, promoted separately via `193965a4` to join the sweep) —
+  six unique default-on `-O2` codegen passes. Each stays individually revertible
+  via `MCC_AST_<name>=0`. This *inverts* the ladder's original default-off
+  invariant, so the default `-O2` compiler is changed — but validated **not** by
+  fixed byte goldens (there are none: `dash-s-bytes` is a `-c`-vs-`-S`-reassemble
+  self-consistency check, the 3-stage build is a self-convergence fixpoint) but
+  by self-convergence + exec goldens + the §0 fuzzer (0 miscompiles / ~900
+  programs), plus arm64/riscv64 via qemu. `MCC_AST_COST` is analysis-only
+  (excluded from the five). The default-off residue is deliberate size/`-O`-policy,
+  not a correctness hazard: `MCC_AST_LICM_TEMP`/`_IVSR`/`_PRE` (§32c
+  value-materializing consumers), `MCC_AST_PERFN_INPROC` (§22, BLOCKED on
+  scratch-section isolation), `MCC_AST_COLOR` (§36 graph-coloring regalloc — the
+  largest, run-last codegen pass). With Tier-3 promote (default-on `-O2`,
+  x86_64-only) and Tier-4 inline (default-on `-O3`, non-`-Os`) already on, every
+  AST/optimizer codegen pass is now default-on at its target `-O` level.
+- **§29 `MCC_AST_NARROW` (truncation-sink narrowing):** recompute a wide integer
+  arithmetic tree directly in the narrow type when its sole consumer is a
+  truncation to a type ≥ `int`, over distributive ops `{+ − * & | ^}`
+  (`ast_narrow_binop` accepts exactly those six); monotonic (never adds a
+  truncation without removing ≥ as many widenings); no range lattice.
+  `ast_narrow_class`/`_make`/`_binary`/`_node`, dual-arch. Non-distributive
+  `/ % << >>` + outer-narrow elimination reduce to Bucket-B range analysis.
+- **§32c fresh-temp family:** carve infra + strictly-negative frame-slot temps
+  (`off = (ast_ltemp_cur - 8) & -8`), `AST_Convert`-wrapped, `ast_dup_sub` +
+  `AST_Store` before the loop/join, uses substituted via `ast_licm_subst`/
+  `ast_cse_setref`, `cpoison`-guarded against promotion — feed three consumers:
+  `MCC_AST_LICM_TEMP` (`ast_ltemp_run`, multi-temp hoist all qualifying loop
+  invariants), `MCC_AST_IVSR` (`ast_ivsr_run`, induction-variable strength
+  reduction), `MCC_AST_PRE` (`ast_pre_run`, post-join PRE on sound diamonds + 4
+  broadenings: multi-statement arms `9c4d7f9a`, `Convert`-wrapped mixed-width RHS
+  `b990f477`, reuse-distance scan `4dccbbad`, single-arm anticipability
+  `5ea6b629`). Safe hoist-only; genuinely-speculative arm insertion intentionally
+  omitted. All three default-off **manual-only gates** — unlike BITFLAG/CPROP_JOIN/
+  CSE_JOIN they are *not* wired into the `-O4` search (`so_setenv_cfg`,
+  `src/mcc.c:488`); they are size/`-O`-policy knobs. Dual-arch; §32c COMPLETE.
+- **§30 `MCC_AST_BITFLAG` (bit-flag conditional optimizer):** driver `ast_bf_run`
+  runs four form-matchers — `ast_bf_try_if` (if-chain), `_ifne` (`!=` chain),
+  `_lor` (LOR), `_land` (`&&`-of-`!=` complement) — plus biased ranges (base ≥
+  64), re-encoding an N≥3 same-key equality cluster as the branchless mask
+  `(int)((MASK >> ((unsigned)key & 63)) & 1) & ((unsigned)key < 64)`. Threshold
+  `MCC_AST_BITFLAG=N` (default 5, clamped ≥3). The comparison must be the
+  last-evaluated operand because replay's driver — unlike the parser's `vpush`
+  path — never runs `vcheck_cmp`, so a `VT_CMP` buried under later emission gets
+  its flags clobbered (recurring FIX.md class). Remaining: value-table dispatch
+  for differing bodies (needs `.rodata` data emission), `switch`-arm form.
+- **§36 `MCC_AST_COLOR` (Chaitin–Briggs):** `ast_color_graph(n, adj, cost, k,
+  color)` — simplify-and-select: Kempe degree-`<k` simplify, else lowest-`cost`
+  spill candidate, popcount degree via `ast_popcount64` (portable, `b7f41716` —
+  MSVC has no `__builtin_popcountll`), `AST_COLOR_MAX=64`. Invoked inside
+  `ast_plan_promotion`, replacing the greedy pin assignment; adds live-range
+  interference + register sharing across straight-line / forward control flow /
+  loop-carried edges. Default-off, run-last codegen; validated native arm64 +
+  riscv64 via qemu.
+- **§22 `MCC_AST_PERFN_INPROC` (in-process per-function re-emit):** re-emit the
+  same captured tree under alternative configs in one process (reusing
+  `ast_arena_clone`, `12d01144`) — the `AST_PF_EMIT` macro trials inline-off vs
+  inline-on, keeps the smaller `ind - ast_body_ind_sv`, emits the winner last,
+  pops Sym objects back to a mark, and re-applies the §34b frame low-water clamp
+  per emit — instead of forking a child per candidate. Inline-size axis landed +
+  validated; the **promotion axis was attempted twice and reverted — BLOCKED on
+  true scratch-section isolation** of the promotion emit state (multi-emit
+  `ast_promo_entry_init` desync). Default-off.
+- **§34b frame-size low-water (`ast_loc_low`):** a REAL `-O1`/`-O2`
+  uninitialized-stack-read miscompile — AST-replay re-emit under-reserved the
+  frame — masked in CI by forced inline. Fix: `ast_alloc_loc` tracks the lowest
+  `loc` reached (both replay and fresh paths) and clamps `loc` **after**
+  `ast_promo_entry_init` before the epilog; unconditional, not env-gated.
+  Validated x86_64/arm64/riscv64 (`8c78c821`).
 
 ## AST — open backlog / revisit-triggers (was TODO.md)
 
@@ -315,6 +389,59 @@ high-value specifics the summary omits:
   dead-branch, jump-table), time-budgeted engine, dependency-ordered `-O1`,
   cross-TU LTO, `-g` from provenance, hot-reload snapshots, separate `-O2`/`-O3`
   (SSA) drivers.
+
+## Sanitizers & differential fuzzing (was TODO §0 / §0b / §0c)
+
+- **§0b `-fsanitize=` — mcc as a sanitizer provider.** `-fsanitize=undefined`
+  **trap mode** (no runtime library) is COMPLETE on **x86_64 (ELF/Mach-O),
+  arm64, riscv64**: signed `+`/`−`/`*` overflow, out-of-range shift,
+  divide-by-zero, null-pointer-deref, each behind the arch-neutral
+  `do_sanitize_undefined`, trapping via `ud2` (x86_64) / `BRK #0` (arm64) /
+  `EBREAK` (riscv64). The div-by-zero + shift checks carry extra value on
+  arm64/riscv64 because those ISAs *silently* return 0 / −1 / mask the count
+  rather than faulting (arm64 `SDIV`/`UDIV` → 0; RISC-V `DIV` by 0 → −1).
+  Encodings: arm64 div `CBNZ divisor,#8; BRK` before `SDIV`/`UDIV`/`MSUB`, signed
+  `ADDS`/`SUBS` then `B.VC` over a `BRK`, shift `CMP cnt,#width; B.LO` over `BRK`;
+  riscv64 div `BNE divisor,x0,+8; EBREAK`, shift `SLTIU t0,cnt,#width; BNE
+  t0,x0,+8; EBREAK`. `-fsanitize=` warns/erases on PE and any uncovered target.
+  Validated differentially: mcc-UBSan traps the same programs clang's
+  `-fsanitize=undefined -fsanitize-trap` does over §0's UB corpus, and both run
+  clean programs to identical output. TSan/MSan documented out-of-scope.
+- **ASan/bounds via bcheck.** `-fsanitize=address`/`bounds` reuse the existing
+  bcheck memory checker (`MCC_CONFIG_DIAG_RT>=2`, the `-b` runtime,
+  `runtime/lib/bcheck.c`, §7/§13) on every arch where bcheck is built
+  (arch-neutral, **not** x86_64-gated), predefining `__SANITIZE_ADDRESS__`
+  (gcc/clang-compatible); `-fsanitize=undefined,address` routes the UBSan trap
+  through bcheck's backtrace handler for a *sourced* diagnostic. This
+  bcheck-based ASan is the self-contained default.
+- **Native-shadow ASan (`-fasan-shadow`, x86_64).** `runtime/lib/mccasan.c`
+  implements the classic ASan 1/8 shadow scheme (`shadow(addr) = (addr>>3) +
+  0x7fff8000`): the ctor maps Low/High shadow (`MAP_NORESERVE`), the backend
+  (`x86_64-gen.c gen_asan_shadow_check`) emits an inline shadow probe before each
+  pointer dereference, a poisoned slot traps `UD2` (caught by a SIGILL handler
+  printing an ASan-style diagnostic), and malloc/free/calloc/realloc are
+  intercepted for 16-byte redzones (`0xfa`) + freed-region poison (`0xfd`) —
+  catching heap OOB + use-after-free on real PIE programs. (The two
+  `asan_shadow_native_*` ctests are worker-WIP reds, unrelated to the optimizer.)
+- **§0 differential miscompile fuzzer (`tests/fuzz/`).** A small custom
+  integer-only generator (`gen.h`: switch/for/if, bounded recursion) + `runner.c`
+  compares mcc against the gcc==clang `-O2` consensus oracle across `-O0..-O3`
+  and each `MCC_AST_*` gate forced on, gating candidates under `gcc
+  -fsanitize=undefined,address` (ctests `fuzz/smoke`, `fuzz/matrix`,
+  `fuzz/corpus` regression-lock). Bring-up: 200 seeds × (−O0..−O3 + 7 gates), 0
+  miscompiles. A scheduled nightly campaign (`campaign.sh` +
+  `.github/workflows/fuzz-nightly.yml`, `workflow_dispatch` budget/batch inputs)
+  loops the runner with crash-class dedup + a stop-rule (`seen-classes.txt`);
+  accepted repros land in `tests/fuzz/corpus/repro_seed<N>.c` (header records
+  seed + attribution), guarded by the `fuzz/corpus` replay. Found 0 miscompiles
+  over ~900 programs at the §41 flipped default. A separate ABI/struct-layout
+  fuzzer is a noted future orthogonal topic.
+- **§0c `mcc_s` SYM_DEBUG defer fix.** The reported "AST-replay use-after-free of
+  a freed `Sym` via captured `type.ref`" was a **SYM_DEBUG-build artifact, not a
+  production bug**: `sym_free` (`mccgen.c`) had the AST-replay deferral inside
+  `#ifndef MCC_SYM_DEBUG`, so the sanitize (`mcc_s`) build freed immediately.
+  Fixed by making the SYM_DEBUG path honor the defer window (`d0588ef4`);
+  production codegen byte-identical.
 
 ## CST database — design record (was NOTES.md §"CST database")
 

@@ -44,9 +44,15 @@ jump-threading, SCCP-conditional, and local CSE have since **landed**
 (iters 17/20/22/25/27); SCCP value-lattice + dominator CSE/GVN landed via
 §32a/§32b (no value-reference node — see §32); sin/cos/exp landed behind
 `-ffold-math`; Sethi–Ullman ordering landed 2026-07-10 (first increment,
-`MCC_AST_SETHI`, TODO §35). Still genuinely open: Tier-1 whole-emitter
-peephole (TODO §33d), Chaitin–Briggs coloring (TODO §36), and the §32c
-fresh-temp consumers (post-join PRE, IV strength reduction).
+`MCC_AST_SETHI`, TODO §35).
+
+**Stale as of 2026-07-11 (kept for history):** Chaitin–Briggs coloring
+(TODO §36, `MCC_AST_COLOR`) and the §32c fresh-temp consumers (multi-temp
+LICM, IV strength reduction, post-join PRE) have since **landed** — see the
+2026-07-11 progress-log session. Also landed: §29 truncation-sink
+narrowing, §30 bit-flag membership encoding, §33a cross-`Invoke`
+availability, and the §41 ungate (all codegen passes default-ON at -O2).
+Still genuinely open: only the Tier-1 whole-emitter peephole (TODO §33d).
 
 ## Algorithm catalog (named forms, complexity-ranked)
 
@@ -93,15 +99,52 @@ Status: `[ ]` open · `[~]` claimed/in-progress · `[x]` landed (commit)
       TODO §35): commutative-operand reorder, higher-SU operand first,
       side-effect-free + non-`VT_CMP` operands only; `.text` 81→73 B on
       nested arithmetic, fixpoint byte-identical off and forced-on.
+      **Default-ON at -O2** since §41.
+- [x] **Truncation-sink narrowing** (§29, `MCC_AST_NARROW`, `ast_narrow_*`)
+      — a wide integer arith `Binary` over a truncation-distributive op
+      `{+ − * & | ^}` that is *immediately* narrowed to a `≥int` type and
+      is that op's *sole* consumer is recomputed in the narrow type. No
+      range lattice: truncation is a ring homomorphism mod 2ⁿ, so the
+      narrow result is bit-identical. Two triggers: (A) `AST_Convert`-to-tt
+      of a wide arith Binary; (B) `AST_Store` whose lvalue type is tt with
+      a wide-arith-Binary rval (fires on 14 functions in mcc.c). Fires only
+      when ≥1 operand is narrow-native → never a regression. **Default-ON
+      at -O2** (`193965a4`, joined the §41 ungate).
+- [x] **Branchless membership re-encoding** (§30, `MCC_AST_BITFLAG`,
+      `ast_bf_*`) — a same-key comparison cluster becomes
+      `(int)((MASK>>((unsigned)key&63))&1) & ((unsigned)key<64)`. Four
+      forms: LOR-of-`==` (`ast_bf_try_lor`), else-if chain
+      (`ast_bf_try_if`), `!=`-chain and `&&`-of-`!=` complement — XOR-1 of
+      membership — (`ast_bf_try_ifne` / `ast_bf_try_land`). Threshold N≥3
+      (default 5 = x86_64 size break-even), registered as a search budget
+      dimension. **Default-ON at -O2** since §41. Remaining: value-table
+      for differing bodies (needs data emission), switch-arm form.
+- [x] **Cross-`Invoke` availability** (§33a, `MCC_AST_CALL_WINDOW`) — drop
+      the blanket `AST_Invoke` cprop/cse table reset, retaining entries
+      proven call-clobber-free (`!ast_cprop_escapes`; CSE additionally
+      gates `ast_licm_operands_ok`). Extends the const-prop/CSE window
+      across call sites. **Default-ON at -O2** since §41.
 
 ### Tier 3 — loops and whole function (most complex)
 
 - [x] **Loop-invariant code motion** (Allen/Cocke; named-local reuse across the back-edge) — extends `ast_cse_run`.
-- [ ] **Induction-variable strength reduction** (Allen–Cocke–Kennedy).
+- [x] **Induction-variable strength reduction** (Allen–Cocke–Kennedy;
+      `MCC_AST_IVSR`, `ast_ivsr_run`, §32c) — replaces an in-loop `iv*c`
+      with a preheader-initialized accumulator carved as a fresh temp.
+      Default-OFF (search dim / size trade-off).
+- [x] **Multi-temp LICM / post-join PRE** (`MCC_AST_LICM_TEMP`
+      `ast_ltemp_run` up to 8 invariants/loop; `MCC_AST_PRE` `ast_pre_run`
+      sound diamond partial-redundancy, §32c) — the fresh-persistent-temp
+      consumers the frontier had deferred, built on the carve/poison/
+      `AST_Convert` machinery. Hoist-only; speculative arm insertion
+      deliberately excluded (it caused an arm64 self-host miscompile in
+      the prototype). Default-OFF (search dims).
 - [x] **Tail-call elimination** (self-recursive tail-call → loop; `ast_tco_run`).
 - [x] **Jump threading / branch simplification** (empty-both / identical-arms if; `ast_jt_run`).
-- [ ] **Graph-coloring register allocation** (Chaitin–Briggs) — replaces
-      the pinned-register promotion heuristic; largest item, last.
+- [x] **Graph-coloring register allocation** (Chaitin–Briggs; §36,
+      `MCC_AST_COLOR`, `ast_color_graph`) — replaces `ast_plan_promotion`,
+      the pinned-register promotion heuristic; the campaign's largest item.
+      Validated native arm64 + riscv64 (qemu). Default-OFF.
 
 ### Tier 4 — search strategy & researched approximations (2026-07-09 web research)
 
@@ -674,16 +717,24 @@ Every remaining named algorithm now hits a hard structural blocker:
   value-reference node.** Adding one is the single highest-leverage
   unlock but is a real architectural change (new node kind), out of the
   "no new node kinds" scope the passes have held to.
-- **Peephole (McKeeman), Sethi–Ullman ordering, Chaitin–Briggs
-  coloring** — emitter/register-allocation/codegen-order changes;
-  byte-identity risk against -O0, or a full backend rewrite.
-- **IV strength reduction, sin/cos/exp folding** — the former is a loop
-  transform gated on the same value-ref blocker; the latter is deferred
-  behind an -ffast-math opt-in (researched, breaks -O0-vs-O1 equality).
+- **Peephole (McKeeman)** — emitter-window load/store elision; the last
+  genuinely-open named item, byte-identity risk against -O0.
+- ~~**Sethi–Ullman ordering, Chaitin–Briggs coloring**~~ — **both
+  LANDED** (§35 `MCC_AST_SETHI`, §36 `MCC_AST_COLOR`); the coloring
+  allocator replaces `ast_plan_promotion` and validated native on arm64 +
+  riscv64 (qemu).
+- ~~**IV strength reduction**~~ — **LANDED** (§32c `MCC_AST_IVSR`) via the
+  fresh-persistent-temp carve infrastructure, along with multi-temp LICM
+  (`MCC_AST_LICM_TEMP`) and post-join PRE (`MCC_AST_PRE`) — the value-ref
+  blocker below was resolved by carving fresh temps rather than a φ-SSA
+  node. **sin/cos/exp folding** landed behind `-ffold-math` (opt-in,
+  relaxes -O0-vs-O1 equality) and now covers 27 transcendental families.
 
-Next: a feasibility study of the minimal AST value-reference node — does
-one exist that unblocks CSE/GVN/LICM without desyncing the replay slot
-machinery, and at what risk — to decide whether to lift the scope.
+The lesson from §32c's fresh-temp work: adversarial exec + byte-identity
+are NOT sufficient gates for a fresh-temp pass (a speculative-insertion
+prototype passed both yet miscompiled the arm64 self-host) — the 3-stage
+self-host fixpoint is the true gate. All three fresh-temp passes ship
+hoist-only and default-OFF.
 
 ### 2026-07-10 — iteration 24 (pass composition proof)
 
@@ -1105,3 +1156,81 @@ byte-identical at each step:
 - **§39 doc reconciliation** (`59efb73e`) — this section's Frontier and the
   Scoreboard "Open/blocked" para were re-pointed at the §32 resolution;
   STATUS §25 and MCC.md §10 reconciled to their authoritative state.
+
+## 2026-07-11 — post-sweep passes: §29/§30/§32c/§33a/§36/§41 landed
+
+Fourth session, continuing past the 2026-07-10 doc sweep (`24dd93b5`). The
+"architecturally blocked" frontier the campaign had declared complete was
+substantially *un*-blocked: the fresh-persistent-temp carve infrastructure
+lands the loop-transform trio, Chaitin–Briggs replaces the promotion
+heuristic, and the whole codegen-pass set flips default-ON at -O2. All
+commits keep the 3-stage self-host fixpoint byte-identical and the -O0
+byte-identity gate green; the loop passes are dual-arch validated (arm64 +
+riscv64 via qemu/musl).
+
+- **§29 truncation-sink narrowing** (`ee56da5a`, `MCC_AST_NARROW`,
+  `ast_narrow_*`) — recompute an immediately-truncated wide arith Binary
+  over `{+ − * & | ^}` in the narrow `≥int` type when it is the sole
+  consumer; no range lattice (truncation = ring homomorphism mod 2ⁿ).
+  Trigger A = `AST_Convert`-to-tt, trigger B = `AST_Store` to a tt lvalue
+  (B fires on 14 mcc.c functions). Only fires with ≥1 narrow-native
+  operand → never a regression. Phase-(a) local narrowing was investigated
+  and found to reduce to Bucket-B range analysis (`1452a1d6`), so this is
+  the clean phase-(b) slice. **Promoted default-ON at -O2** (`193965a4`).
+  See the Tier-2 catalog entry.
+- **§30 branchless bit-flag membership** (`MCC_AST_BITFLAG`, `ast_bf_*`) —
+  re-encodes same-key comparison clusters as a shift-mask-test. Four forms
+  completed this thread: LOR-of-`==`, else-if chain, `!=`-chain
+  (`ast_bf_try_ifne`, `fcc5845d`), and `&&`-of-`!=` complement
+  (`ast_bf_try_land`, `f8e7fc4c`), plus a biased-range base≥64 variant
+  (`a5315b7c`). Threshold N≥3 (default 5 = x86_64 break-even), registered
+  as a fourth `-O<N>` search dimension. Value-table (differing bodies) and
+  switch-arm forms stay Bucket-B — both need AST data-emission
+  (`f85c8bbf`). See the Tier-2 catalog entry.
+- **§32c fresh-temp family** (all reuse the carve/poison/`AST_Convert`
+  machinery) — the frontier's deferred loop-transform consumers, landed:
+  - **Multi-temp LICM** (`MCC_AST_LICM_TEMP`, `ast_ltemp_run`; first
+    increment `904f9e6a`, multi `05112637`) — hoists up to 8 qualifying
+    invariants per loop into carved preheader temps.
+  - **IV strength reduction** (`MCC_AST_IVSR`, `ast_ivsr_run`, `ef37948e`)
+    — replaces an in-loop `iv*c` with a preheader-initialized accumulator.
+  - **Post-join PRE** (`MCC_AST_PRE`, `ast_pre_run`, `ed0d295b`) + four
+    broadenings: multi-statement arms (`9c4d7f9a`), Convert-wrapped RHS
+    (`b990f477`), reuse-distance scan (`4dccbbad`), single-arm
+    anticipability (`5ea6b629`).
+  All are **hoist-only** and **default-OFF** (search dims / size
+  trade-offs). Speculative arm insertion was deliberately excluded: the
+  first PRE prototype was BLOCKED (`f36e2dc6`) by a self-host miscompile
+  the fixpoint gate caught even though adversarial exec + byte-identity
+  passed — the lesson recorded in the Frontier note.
+- **§33a cross-`Invoke` availability** (`ef0680ce` off, `e2f2485a`
+  registered, `MCC_AST_CALL_WINDOW`) — retains cprop/cse entries proven
+  call-clobber-free instead of the blanket table reset at every
+  `AST_Invoke`. **Default-ON at -O2.** See the Tier-2 catalog entry.
+- **§34b frame-size low-water fix** (`8c78c821`, `ast_loc_low` clamp) — a
+  real -O1/-O2 uninit-stack miscompile (`fd3e5dba`): AST-replay under-sized
+  the frame, masked in CI by forced-inline. The clamp tracks the lowest
+  local offset seen and grows the frame to cover it. This fix also
+  unblocked the §22 in-process per-function re-emit trial.
+- **§36 Chaitin–Briggs graph coloring** (first increment `8a6893dd`, then
+  live-range sharing `f41241aa`, cross-control-flow `d4afea4a`,
+  loop-carried `78a0b263`; `MCC_AST_COLOR`, `ast_color_graph`) — replaces
+  the pinned `ast_plan_promotion` heuristic with interference-graph
+  coloring + register sharing. Validated native on arm64 + riscv64 via
+  qemu (`374ccd0c`). Default-OFF. The campaign's largest named item, done.
+- **§41 ungate** (`cc372774`) — flips the five remaining default-off
+  codegen passes (`SETHI`, `BITFLAG`, `CPROP_JOIN`, `CSE_JOIN`,
+  `CALL_WINDOW`) to **default-ON at -O2**; `NARROW` joined via `193965a4`.
+  With core replay/templates/promote/inline already default-on, every
+  AST/optimizer codegen pass is now default-ON at its -O level (each still
+  revertible via `MCC_AST_<name>=0`). The feared golden re-baseline was
+  refuted by the tests' own design: dash-s-bytes is a `-S`-roundtrip
+  self-consistency check and the 3-stage fixpoint is self-convergence —
+  both stay green through the flip. Validated across debug/release/
+  multisource/sanitize presets + cross-target dash-s-bytes on arm64 +
+  riscv64.
+
+**Frontier now:** the only genuinely-open named algorithm is the Tier-1
+peephole window (emitter byte-identity risk). CSE/GVN's global form still
+wants a true value-reference node, but the fresh-temp carve resolved the
+loop-transform blockers the earlier Frontier had grouped with it.

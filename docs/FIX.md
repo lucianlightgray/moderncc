@@ -249,6 +249,55 @@ Unblocks the `MCC_AST_INLINE_NODES` search dim on arm64; validated ctest
 1862/1862 + fixpoint byte-identical, and confirmed to fix the arm64 `-O1+`
 optimized self-host (`ed648710`).
 
+## FIXED: §34b AST-replay frame-size low-water — under-sized frame miscompile (commit 8c78c821)
+
+Root cause (one line): `ast_alloc_loc`'s replay path assigns `loc` from the
+captured slot list (`ast_locrec`), so when an optimization changes the
+allocation count (a fold removes a temp) the replay consumes a different number
+of recorded slots and `loc` finishes **shallower** than the deepest slot
+actually emitted — the prologue `sub $N,%rsp` under-covers the frame and deep
+locals sit below rsp where calls clobber them.
+
+Symptom: `mcc -O1`/`-O2` (plain — no env, no gates) miscompiled
+`tests/ast/replay/inline.c`: correct = 42 (-O0/-O3/gcc), but -O1/-O2 returned
+garbage varying run-to-run on the same binary (an uninitialized-stack read).
+Masked in CI because `ast/replay-inline` forces `MCC_AST_INLINE=1`, which
+changes stack allocation and dodges it. The -O1 vs -O0 disassembly of `main` is
+byte-identical except the frame: `sub $0x80` (correct) vs `sub $0x50` (buggy),
+both referencing slots to `-0x78(%rbp)`.
+
+Fix (src/mccast.c): track a frame low-water mark `ast_loc_low` (min `loc` seen)
+across the optimized re-emit and clamp `loc` to it before the epilog. A faithful
+monotonic replay has `ast_loc_low == loc`, so the clamp is a no-op — it can only
+enlarge an under-sized frame, never shrink a correct one.
+
+Verified: inline.c returns 42 deterministically at -O0..-O3 on x86_64, arm64
+(qemu) and riscv64 (qemu+musl, commit b37bb805); full ctest 1889/1889 incl. a
+new permanent `ast/inline-frame` regression (-O0..-O3 ×4 runs); x86_64 and arm64
+3-stage self-host fixpoints converge byte-identically (correct frames
+unchanged); 200-program differential fuzz clean.
+
+## FIXED: §0c mcc_s defer-blind — SYM_DEBUG bypassed AST-replay sym deferral (commit d0588ef4)
+
+A sanitizer-build artifact, **not** a production bug. The earlier
+"AST-replay use-after-free of freed `Sym` via captured `type.ref`" (§0c) was a
+false positive: `sym_free` had the `ast_sym_defer()` call inside
+`#ifndef MCC_SYM_DEBUG`, so `mcc_s` (the only `MCC_SYM_DEBUG` target) disabled
+the deferral that keeps replay-referenced `type.ref` syms alive — a guaranteed
+heap-use-after-free report on every replayed function. Production always defers
+correctly: no UAF, no miscompile.
+
+Fix (src/mccast.c, SYM_DEBUG-only; production byte-identical): move the
+`ast_sym_defer` check outside `#ifndef MCC_SYM_DEBUG` so `mcc_s` defers like
+production, and `mcc_free` the deferred syms at window close under SYM_DEBUG so a
+genuine post-window UAF still surfaces.
+
+Verified: full tests/exec × -O0..-O3 + `src/mcc.c` self-compile report 0
+sanitizer diagnostics; new `sanitize-selfcheck` ctest (`run_selfcheck.cmake`)
+compiles the whole tests/exec corpus under `mcc_s` at -O0..-O3 and fails on any
+ASan/UBSan report — now green; production 3-stage fixpoint stage2==3==4
+byte-identical, ctest 1874/1874.
+
 ## Open: macos-x86_64 `[-O3]` rows n/a
 
 May be the same reemit bug (the fix above is arch-independent — retest CI

@@ -15,6 +15,15 @@ compile your file once — it **compiles it many times with different
 optimizer settings, keeps the best result, and remembers what it learned
 on disk so the next run picks up where this one left off.**
 
+Below `-O4` there is no search. `-O0`/`-O1` are minimal, and `-O2`/`-O3`
+run a **fixed set of always-on optimizer passes** (described in §4) exactly
+once, with no self-recompilation. As of the §41 "default-on sweep"
+(2026-07-11) that fixed set is fairly rich — the join-dataflow, bit-flag,
+cross-call, narrowing and operand-ordering passes now all run by default at
+`-O2`. The `-O4+` search is a layer *on top of* that ordinary `-O2`/`-O3`
+work: it re-tunes those passes and searches a few extra knobs, but it never
+starts unless you actually ask for `N >= 4`.
+
 ---
 
 ## 1. What `-O<N>` for N≥4 triggers at the driver level
@@ -84,7 +93,10 @@ child by `so_setenv_cfg`):
   (`{0,3,5,9}` via `MCC_AST_BITFLAG`), and two on/off join-dataflow
   switches — §32a structured-join const-prop (`MCC_AST_CPROP_JOIN`) and
   §32b cross-join CSE/LICM (`MCC_AST_CSE_JOIN`). That is
-  `3 × 3 × 4 × 2 × 2 = 144`.
+  `3 × 3 × 4 × 2 × 2 = 144`. Note that the bit-flag threshold and both join
+  switches now have **default-on baselines at `-O2`** (see §4), so inside the
+  search this dimension is mostly asking the opposite question: whether
+  *disabling* or re-tuning a pass makes a particular file smaller.
 - **Opt-limit** — a cap on how *many* functions get the expensive
   promotion/optimization work, one of `{-1, 64, 16, 4, 1}`
   (`SO_LIMIT_SPACE = 5`), driving `MCC_AST_PROMOTE_LIMIT` and
@@ -182,7 +194,31 @@ The transform passes only run when the function is faithful **and** the
 relevant environment gate is on. The umbrella gate for the "template"
 family is `MCC_AST_TEMPLATES` (default on from `-O1`); the individual
 passes are then attempted and each keeps its result only if it actually
-fired and helped. In plain English, the passes are:
+fired and helped.
+
+Two kinds of gate matter here, and the difference is the whole "always-on
+vs searched" story. Some `MCC_AST_*` gates default **on** at a fixed `-O`
+level because their pass is always beneficial or neutral — so a plain `-O2`
+build just runs them, no search involved. As of the §41 default-on sweep
+that always-on set is: the template family (`MCC_AST_TEMPLATES`, from
+`-O1`), register promotion (`MCC_AST_PROMOTE`, `-O2` on x86_64), Sethi–Ullman
+operand ordering (§35), the bit-flag transform (§30), both join-dataflow
+passes (§32a/§32b), the cross-call availability window (§33a), and
+truncation-sink narrowing (§29). The `-O4+` search does **not** turn these
+on from scratch; it *tunes* them (inline/graft budgets, the bit-flag
+threshold) and can toggle a couple back off just to check whether a given
+file is smaller without them.
+
+A few newer, more speculative passes stay default-**off** behind their own
+gates and are reached only by setting the gate by hand — they are not (yet)
+wired into the automatic search: fresh-temp loop-invariant hoisting
+(§32c, `MCC_AST_LICM_TEMP`), induction-variable strength reduction
+(`MCC_AST_IVSR`), post-join partial-redundancy elimination
+(`MCC_AST_PRE`), and graph-coloring register allocation (§36,
+`MCC_AST_COLOR`). These are the natural next search dimensions; for now they
+exist as opt-in gates you can enable to measure them.
+
+In plain English, those passes are:
 
 - **Constant / template folding** (`ast_bfold_run`) — evaluate
   compile-time-constant subexpressions and collapse them to their result,
@@ -193,6 +229,12 @@ fired and helped. In plain English, the passes are:
 - **Identity / redundant-cast elimination** (`ast_ident_run`) — drop
   no-op operations and casts that convert a value to a type it already has
   (or widen-then-narrow round-trips that provably change nothing).
+- **Truncation-sink narrowing** (§29, `MCC_AST_NARROW`) — when a wide
+  computation only ever flows into a narrower sink, so its top bits are
+  thrown away by a truncating store or cast, redo the arithmetic at the
+  narrow width. The emitter then never computes bits that are about to be
+  discarded. Every candidate narrowing is checked for soundness first, so
+  it only fires where the discarded bits provably don't matter.
 - **Common-subexpression elimination** (`ast_cse_run`) — recognize that
   the same expression is computed twice and reuse the first result instead
   of recomputing it.
@@ -210,7 +252,9 @@ fired and helped. In plain English, the passes are:
   this fires it disables promotion and inlining for that function, because
   they would break the back-edge — see the note at `mccast.c` ~5370.)
 
-Then three passes that the search toggles more deliberately:
+Then three passes the search tunes more deliberately (each carries a budget
+or threshold the search sweeps, even though the passes themselves default on
+at their `-O` level):
 
 - **Register promotion** (`MCC_AST_PROMOTE`, §22/§23 machinery via
   `ast_plan_promotion`) — pin a hot local or parameter into a
@@ -235,7 +279,8 @@ Then three passes that the search toggles more deliberately:
   The comparison must be the *last* operand evaluated (a subtle flags
   hazard — see below). It only fires above a cluster-size threshold,
   because the mask test has a fixed cost that only pays off past a few
-  compares; the search sweeps that threshold over `{0,3,5,9}`.
+  compares. It defaults **on at `-O2`** with a threshold of 5; the `-O4+`
+  search additionally sweeps that threshold over `{0,3,5,9}`.
 
 And one codegen-ordering pass:
 
@@ -250,16 +295,23 @@ And one codegen-ordering pass:
   clobbers the flags — the same hazard the bit-flag transform guards
   against.
 
-**The §32a/§32b join dataflow** deserves a note because it is what makes
-several of the passes above stronger. Ordinary const-prop and CSE reason
+**The §32a/§32b/§33a join dataflow** deserves a note because it is what
+makes several of the passes above stronger. Ordinary const-prop and CSE reason
 along straight-line code. The join passes carry dataflow facts **across
 control-flow merges**: `MCC_AST_CPROP_JOIN` (§32a) forks the constant
 lattice at each `if`, meets the two arms back together at the join, and
 descends into loops with an invariant lattice; `MCC_AST_CSE_JOIN` (§32b)
 carries the "which expressions are already available" table down the
 dominator tree so an arm inherits what the block before the branch
-computed, and runs LICM on that richer table. Both are default-off and
-searched, and both preserve the self-host fixpoint in either mode.
+computed, and runs LICM on that richer table. A third, related pass — the
+**§33a cross-`Invoke` availability window** (`MCC_AST_CALL_WINDOW`) — pushes
+the same idea across an *un-inlined* function call: normally the optimizer
+must assume a call clobbers everything and resets its availability tables at
+each `Invoke`, but where the callee is proven not to disturb the relevant
+state, §33a keeps those facts live across the call, so a value computed
+before a call need not be recomputed after it. All three are now **on by
+default from `-O2`** (the §41 sweep); the two join passes stay toggle-able by
+the search, and all three preserve the self-host fixpoint whether on or off.
 
 ---
 
@@ -319,13 +371,24 @@ at most the in-flight evaluation.
 The overriding invariant is that turning this machinery on must never
 change the *default* compiler. Several things enforce that:
 
-- **Everything is default-off and opt-in.** Every new pass sits behind an
-  `MCC_AST_*` environment gate that defaults off (or is only reached
-  through the `-O4+` search), so a normal build never runs it. The search
-  itself only starts for `N >= 4`.
-- **`-O0..-O3` stay byte-identical.** The fixed optimization levels emit
-  exactly the same bytes whether or not the search machinery is compiled
-  in. This is checked continuously.
+- **The search is opt-in; every pass is individually revertible.** The
+  `-O4+` search machinery only starts for `N >= 4` and never runs during an
+  ordinary compile. The optimizer passes it permutes each default on only at
+  a specific `-O` level (see §4), and every one stays individually
+  switchable via `MCC_AST_<name>=0`, so any single pass can be bisected out
+  without touching the others. The most speculative passes (§32c/IVSR/PRE/§36)
+  stay default-off entirely.
+- **Lower levels are unchanged; `-O2+` changed on purpose and stays
+  self-consistent.** `-O0` and `-O1` are byte-for-byte what they always
+  were. When the §41 sweep turned the always-on passes on at `-O2`, it
+  *intentionally* changed `-O2`/`-O3` output — but nothing regressed,
+  because the goldens that guard this are **self-consistency** checks, not
+  fixed byte sequences: the `dash-s-bytes` test compares a `-c` object
+  against the same code assembled from `-S` (a real change moves both
+  identically, so it still passes), and the 3-stage self-host fixpoint
+  checks that stages 2, 3 and 4 agree (they converge to *new* bytes but
+  still agree). The differential fuzzer independently found 0 miscompiles
+  over ~900 random programs at the new default.
 - **The faithfulness gate.** As in §4, a pass only reoptimizes a function
   whose unchanged replay is byte-for-byte identical to the front-end's
   output. An experimental pass that would diverge simply doesn't run on
@@ -349,8 +412,10 @@ it can never become the shipped default.
   built, and the cache-file layout.
 - **OPTIMIZE.md** — per-iteration history and measurements (the numbers
   behind "this pass saved N bytes / M microseconds").
-- **TODO.md** — the design decisions and rationale, §18 and §20–§40 in
+- **TODO.md** — the design decisions and rationale, §18 and §20–§41 in
   particular: §21 (checkpoint cache), §22/§23 (per-function search and the
-  inliner), §24 (hot-slice selector), §25 (JIT scoring), §30 (bit-flag),
-  §31 (strategy portfolio), §32a/§32b (join dataflow), §35
-  (Sethi–Ullman).
+  inliner), §24 (hot-slice selector), §25 (JIT scoring), §29 (truncation
+  narrowing), §30 (bit-flag), §31 (strategy portfolio), §32a/§32b (join
+  dataflow), §32c (fresh-temp infrastructure), §33 (call-window), §35
+  (Sethi–Ullman), §36 (Chaitin–Briggs coloring), and §41 (the default-on
+  sweep that made the passes above run at `-O2`).
