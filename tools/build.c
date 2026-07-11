@@ -548,6 +548,8 @@ static int cmd_emit_defines(int argc, char **argv) {
 		EMIT("MCC_CONFIG_OPTIMIZER=1");
 	if (truthy(fopt(argc, argv, "--ast-shadow", "")))
 		EMIT("MCC_CONFIG_AST_SHADOW=1");
+	if (truthy(fopt(argc, argv, "--trace", "")))
+		EMIT("MCC_CONFIG_TRACE=1");
 	{
 		const char *dr = fopt(argc, argv, "--diag-rt", "bounds");
 		EMIT("MCC_CONFIG_DIAG_RT=%d",

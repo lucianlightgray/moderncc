@@ -1163,6 +1163,9 @@ enum mcc_token {
 #define TOK_UIDENT TOK_DEFINE
 
 ST_DATA struct MCCState *mcc_state;
+
+#include "mcclog.h"
+
 ST_DATA void **stk_data;
 ST_DATA int nb_stk_data;
 ST_DATA int stk_data_floor;

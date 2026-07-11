@@ -1363,7 +1363,7 @@ redo:
 				if (f->type & AFF_TYPE_LIB) {
 			ret = mcc_add_library(s, f->name);
 		} else {
-			if (1 == s->verbose)
+			if (MCC_VTIER(s->verbose) == MCC_V1)
 				printf("-> %s\n", f->name);
 			if (!first_file)
 				first_file = f->name;

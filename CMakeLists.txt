@@ -1130,6 +1130,8 @@ mcc_config_node(MCC_CONFIG_OPTIMIZER TYPE BOOL DEFAULT ON GROUP "Advanced" ADVAN
     HELP "Enable the optimizer (-O1+ AST replay driver); OFF degrades -O1+ to -O0-equivalent output")
 mcc_config_node(MCC_CONFIG_AST_SHADOW TYPE BOOL DEFAULT OFF GROUP "Advanced" ADVANCED
     HELP "Cross-check the AST side-car substrate (def/use table, property memos, structural hash) against the legacy O(N) scanners at runtime; abort on divergence. Debug/CI only")
+mcc_config_node(MCC_CONFIG_TRACE TYPE BOOL DEFAULT OFF GROUP "Advanced" ADVANCED
+    HELP "Compile in the MCC_TRACE() instrumentation macro (emitted at the [TRACE] verbosity bit); off = MCC_TRACE compiles to nothing")
 mcc_config_node(MCC_ALL_DIAGNOSTICS TYPE BOOL DEFAULT OFF GROUP "Diagnostics" ADVANCED
     HELP "Everything-on diagnostics: verbose warnings + debug info + build mcc_s/mcc_p/mcc_c")
 if(MCC_ALL_DIAGNOSTICS)
@@ -1635,6 +1637,9 @@ if(MCC_CONFIG_OPTIMIZER)
 endif()
 if(MCC_CONFIG_AST_SHADOW)
     list(APPEND _mccdefs "MCC_CONFIG_AST_SHADOW=1")
+endif()
+if(MCC_CONFIG_TRACE)
+    list(APPEND _mccdefs "MCC_CONFIG_TRACE=1")
 endif()
 if(MCC_CONFIG_NEW_MACHO STREQUAL "no")
     list(APPEND _mccdefs "MCC_CONFIG_MACHO_CHAINED_FIXUPS=0")
@@ -3772,7 +3777,7 @@ if(MCC_BUILD_TESTS)
                 --run-mmap-exec "${MCC_RUN_MMAP_EXEC}" --pie "${MCC_CONFIG_PIE}" --pic "${MCC_CONFIG_PIC}"
                 --new-dtags "${MCC_CONFIG_NEW_DTAGS}" --codesign "${MCC_CONFIG_CODESIGN}"
                 --diag-rt "${MCC_CONFIG_DIAG_RT}" --asm "${MCC_CONFIG_ASM}"
-                --cst "${MCC_CONFIG_LSP}" --ast "${MCC_CONFIG_OPTIMIZER}" --ast-shadow "${MCC_CONFIG_AST_SHADOW}"
+                --cst "${MCC_CONFIG_LSP}" --ast "${MCC_CONFIG_OPTIMIZER}" --ast-shadow "${MCC_CONFIG_AST_SHADOW}" --trace "${MCC_CONFIG_TRACE}"
                 --new-macho "${MCC_CONFIG_NEW_MACHO}" --dwarf "${MCC_CONFIG_DWARF}" --semlock "${MCC_CONFIG_SEMLOCK}"
                 --triplet "${MCC_TRIPLET}" --os-release "${MCC_OS_RELEASE}" --sysroot "${MCC_SYSROOT}"
                 --mccdir "${MCC_RESOLVED_MCCDIR}")

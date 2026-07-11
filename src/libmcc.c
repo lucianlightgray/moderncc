@@ -790,7 +790,8 @@ static int _mcc_open(MCCState *s1, const char *filename) {
 		fd = 0, filename = "<stdin>";
 	else
 		fd = open(filename, O_RDONLY | O_BINARY);
-	if ((s1->verbose == 2 && fd >= 0) || s1->verbose == 3)
+	if ((MCC_VTIER(s1->verbose) == MCC_V2 && fd >= 0) ||
+			MCC_VTIER(s1->verbose) == MCC_V3)
 		printf("%s %*s%s\n", fd < 0 ? "nf" : "->",
 					 (int)(s1->include_stack_ptr - s1->include_stack), "", filename);
 	return fd;
@@ -2335,9 +2336,16 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) {
 			break;
 #endif
 		case MCC_OPTION_v:
-			do
-				++s->verbose;
-			while (*optarg++ == 'v');
+			/* -v<N> ORs an arbitrary category bitmask; -v / -vv / -vvv set the low
+			 * tier bits (CMD/PATHS/INCL) cumulatively — see mcclog.h. */
+			if (optarg[0] >= '0' && optarg[0] <= '9') {
+				s->verbose |= (unsigned char)strtoul(optarg, NULL, 0);
+			} else {
+				/* each -v sets the lowest clear tier bit: x | (x+1). */
+				do
+					s->verbose = (unsigned char)(s->verbose | (s->verbose + 1));
+				while (*optarg++ == 'v');
+			}
 			continue;
 		case MCC_OPTION_f: {
 			const char *vis = optarg;
@@ -2658,7 +2666,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) {
 	}
 	if (!empty)
 		return 0;
-	if (s->verbose == 2)
+	if (MCC_VTIER(s->verbose) == MCC_V2)
 		return OPT_PRINT_DIRS;
 	if (s->verbose)
 		return OPT_V;

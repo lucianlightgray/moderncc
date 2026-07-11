@@ -215,7 +215,7 @@ static int mcc_relocate_ex(MCCState *s1, void *ptr, unsigned ptr_diff) {
 	offset = copy = 0;
 	mem = (addr_t)ptr;
 redo:
-	if (s1->verbose == 2 && copy)
+	if (MCC_VTIER(s1->verbose) == MCC_V2 && copy)
 		printf(&"-----------------------------------------------------\n"[MCC_PTR_SIZE * 2 - 8]);
 	if (s1->nb_errors)
 		return -1;
@@ -239,7 +239,7 @@ redo:
 				continue;
 			}
 			if (copy) {
-				if (s1->verbose == 2)
+				if (MCC_VTIER(s1->verbose) == MCC_V2)
 					printf("%d: %-16s %p  len %05x  align %04x\n",
 								 k, s->name, (void *)s->sh_addr, length, s->sh_addralign);
 				ptr = (void *)s->sh_addr;
@@ -279,7 +279,7 @@ redo:
 				f = 3;
 			}
 			n = PAGEALIGN(n);
-			if (s1->verbose == 2) {
+			if (MCC_VTIER(s1->verbose) == MCC_V2) {
 				printf("protect         %3s %p  len %05x\n",
 							 &"rx\0ro\0rw\0rwx"[f * 3], (void *)addr, (unsigned)n);
 			}
