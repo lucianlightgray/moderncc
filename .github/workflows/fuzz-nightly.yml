@@ -1,0 +1,76 @@
+name: fuzz-nightly
+
+# Scheduled differential-fuzz campaign (TODO §0). Runs the whole-pipeline
+# miscompile fuzzer for a time budget against gcc+clang as the same-ISA oracle,
+# with the "no-new-class in K batches" stop rule and crash-class dedup in
+# tests/fuzz/campaign.sh. x86_64-Linux only (the oracle needs native gcc AND
+# clang executing mcc's own target ISA). Also runnable on demand.
+
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+    inputs:
+      budget:
+        description: wall-clock budget in seconds
+        default: '5400'
+      batch:
+        description: seeds per round
+        default: '50'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-nightly
+  cancel-in-progress: false
+
+jobs:
+  campaign:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build build-essential gcc clang git
+      - name: build mcc + fuzz runner
+        run: |
+          cmake --preset debug \
+            -DMCC_DIFF3_GCC="$(command -v gcc)" \
+            -DMCC_DIFF3_CLANG="$(command -v clang)"
+          cmake --build cmake-debug -j"$(nproc)" --target mcc fuzz_runner
+      - name: run campaign
+        env:
+          FUZZ_RUNNER: ${{ github.workspace }}/cmake-debug/fuzz_runner
+          MCC_FUZZ_SEED: ${{ github.run_number }}0000
+        run: |
+          budget='${{ github.event.inputs.budget }}'; budget="${budget:-5400}"
+          batch='${{ github.event.inputs.batch }}';   batch="${batch:-50}"
+          set +e
+          tests/fuzz/campaign.sh \
+            cmake-debug/mcc cmake-debug runtime/include \
+            "$(command -v gcc)" "$(command -v clang)" \
+            tests/fuzz/corpus "$RUNNER_TEMP/fuzz-work" \
+            "$budget" "$batch" 20 | tee "$RUNNER_TEMP/campaign.log"
+          echo "campaign_rc=$?" >> "$GITHUB_ENV"
+      - name: summary
+        if: always()
+        run: |
+          {
+            echo "### fuzz-nightly campaign"
+            echo '```'
+            tail -n 20 "$RUNNER_TEMP/campaign.log" 2>/dev/null || echo "(no log)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: upload new repros
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-repros-${{ github.run_number }}
+          path: tests/fuzz/corpus/repro_*.c
+          if-no-files-found: ignore
+      - name: fail on new miscompile class
+        if: always()
+        run: test "${campaign_rc:-0}" = "0"

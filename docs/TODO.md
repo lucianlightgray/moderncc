@@ -85,11 +85,19 @@ miscompile detector for §29–§35.
       binary incl. `/bin/true` — an unsupported-ISA-in-the-loader incompat, not
       an mcc issue; the ASan+UBSan `mcc_s` path already provides the
       memory-safety validation, so valgrind is redundant here and skipped.
-- [~] **CI integration & budget** — runs are seed-reproducible
+- [x] **CI integration & budget** — runs are seed-reproducible
       (`MCC_FUZZ_SEED`/`MCC_FUZZ_COUNT`/`MCC_FUZZ_GATES`); the graduated corpus
-      is a regression-lock (`fuzz/corpus`). A *scheduled* nightly N-hour
-      campaign with crash-site dedup and a "no-new-class in K runs" stop rule is
-      not yet wired (the env-driven campaign is the manual form).
+      is a regression-lock (`fuzz/corpus`). LANDED (2026-07-11): the *scheduled*
+      nightly campaign is now wired — `tests/fuzz/campaign.sh` loops the runner
+      over fresh seed batches until a wall-clock budget is spent or **K
+      consecutive batches surface no new miscompile class** (attribution =
+      `-O` level + `MCC_AST_*` gate the runner blames), deduping classes in
+      `seen-classes.txt`; `.github/workflows/fuzz-nightly.yml` runs it on a
+      nightly `cron` (+ `workflow_dispatch` with budget/batch inputs) against
+      native gcc+clang, uploads any new `repro_*.c` as artifacts, and turns the
+      job red exactly when a new class is found. Verified locally: the driver
+      converges via the stop rule, dedups, respects the budget, and exits 0 on
+      the (currently clean) corpus; YAML + `sh -n` validated.
 - [x] **Graduation path** — a confirmed, UB-free, reduced divergence is written
       to `tests/fuzz/corpus/repro_seed<N>.c` (header records seed + attribution)
       and guarded by the `fuzz/corpus` replay; accepted impl-defined `[DIFF]`s
