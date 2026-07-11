@@ -1612,6 +1612,18 @@ static void gen_ubsan_check(int cc) {
 	gsym(t);
 }
 
+void gen_ubsan_nullptr(void) {
+	int r;
+	if (!mcc_state->do_sanitize_undefined || nocode_wanted)
+		return;
+	if ((vtop->r & VT_VALMASK) >= VT_CONST)
+		return;
+	r = vtop->r & VT_VALMASK;
+	orex(1, r, r, 0x85);
+	o(0xc0 + REG_VALUE(r) * 9);
+	gen_ubsan_check(0x85);
+}
+
 void gen_opi(int op) {
 	int r, fr, opc, c;
 	int ll, uu, cc;

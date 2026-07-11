@@ -968,6 +968,15 @@ static void riscv64_ubsan_div0(int b) {
 	o(0x00100073);
 }
 
+void gen_ubsan_nullptr(void) {
+	if (!mcc_state->do_sanitize_undefined || nocode_wanted)
+		return;
+	if ((vtop->r & VT_VALMASK) >= VT_CONST)
+		return;
+	o(0x63 | 1u << 12 | (uint32_t)ireg(vtop->r & VT_VALMASK) << 15 | 8u << 7);
+	o(0x00100073);
+}
+
 static void riscv64_ubsan_shift(int cnt, uint32_t width) {
 	if (!mcc_state->do_sanitize_undefined || nocode_wanted)
 		return;

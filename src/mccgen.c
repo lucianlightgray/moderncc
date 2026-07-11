@@ -5867,6 +5867,10 @@ ST_FUNC void indir(void) {
 	}
 	if (vtop->r & VT_LVAL)
 		gv(MCC_RC_INT);
+#if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64
+	if (mcc_state->do_sanitize_undefined)
+		gen_ubsan_nullptr();
+#endif
 	vtop->type = *pointed_type(&vtop->type);
 	if ((vtop->type.t & VT_BTYPE) == VT_VOID && !nocode_wanted)
 		mcc_pedantic("dereferencing a 'void *' pointer");

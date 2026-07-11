@@ -1814,6 +1814,15 @@ static int arm64_ubsan_on(void) {
 	return mcc_state->do_sanitize_undefined && !nocode_wanted;
 }
 
+void gen_ubsan_nullptr(void) {
+	if (!arm64_ubsan_on())
+		return;
+	if ((vtop->r & VT_VALMASK) >= VT_CONST)
+		return;
+	o(0xb5000000 | (2u << 5) | intr(vtop->r));
+	o(0xd4200000);
+}
+
 static void arm64_ubsan_trap_cond(uint32_t skip_cond) {
 	o(0x54000000 | (2u << 5) | skip_cond);
 	o(0xd4200000);
