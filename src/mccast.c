@@ -6706,6 +6706,7 @@ static int ast_body_ind_sv;
 static addr_t ast_reloc0_sv;
 
 void ast_func_begin(Sym *sym) {
+	MCC_TRACE("%s\n", funcname);
 	ast_inline_capture(sym);
 	int ast_ret_bad = ast_bad_type(func_vt.t) &&
 										(func_vt.t & VT_BTYPE) != VT_STRUCT;
@@ -7138,6 +7139,7 @@ static void ast_search_select(Sym *sym, int faithful) {
 __attribute__((optimize("O0")))
 #endif
 void ast_func_end(Sym *sym) {
+	MCC_TRACE("%s\n", funcname);
 	if (ast_try_active) {
 		Section *ast_rsec = cur_text_section->reloc;
 		addr_t ast_reloc1 = ast_rsec ? ast_rsec->data_offset : 0;
@@ -7280,6 +7282,8 @@ void ast_func_end(Sym *sym) {
 				ast_no_callful_promo = do_inline;
 				int do_promote = faithful && !do_tco && ast_promote_env && ast_plan_promotion(ast_cur) > 0;
 				ast_no_callful_promo = 0;
+				MCC_TRACE("branch %s faithful=%d inline=%d promote=%d tco=%d\n",
+									funcname, faithful, do_inline, do_promote, do_tco);
 				if (do_promote && ast_promo_limit >= 0 && ast_promo_total >= ast_promo_limit) {
 					do_promote = 0;
 					ast_promo_n = 0;

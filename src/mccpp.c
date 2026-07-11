@@ -4565,6 +4565,7 @@ static void pp_pragma_operator(MCCState *s1, int *ptoken_seen) {
 }
 
 ST_FUNC int mcc_preprocess(MCCState *s1) {
+	MCC_TRACE("\n");
 	BufferedFile **iptr;
 	int token_seen, spcs, level;
 	const char *p;

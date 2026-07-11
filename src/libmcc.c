@@ -808,6 +808,7 @@ ST_FUNC int mcc_open(MCCState *s1, const char *filename) {
 
 static int mcc_compile(MCCState *s1, int filetype, const char *str, int fd) {
 	mcc_enter_state(s1);
+	MCC_TRACE("filetype=%d fd=%d\n", filetype, fd);
 	s1->error_set_jmp_enabled = 1;
 
 	if (setjmp(s1->error_jmp_buf) == 0) {

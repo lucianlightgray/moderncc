@@ -351,13 +351,22 @@ candidates complete); asttool 55/55 with the portable `clock()` timer.
 
 ## 0 — fully specified or execution-blocked (no open design questions)
 
-- [ ] **Instrument with the `MCC_TRACE(args...)` macro** — the macro itself landed
-  (`src/mcclog.h`): variadic, prints `[TRACE] FILE:LINE func:` + args, compiled out
-  unless `MCC_CONFIG_TRACE` (CMake option, default off), runtime-gated on the `[TRACE]`
-  verbosity bit. Remaining: instrument function entry points / branch points, and
-  decide whether to wire `MCC_CONFIG_TRACE=ON` into a preset (note the release-inherits-
-  debug caveat that applies to `MCC_CONFIG_AST_SHADOW`). See also the leveled-logging
-  helpers (`mcc_logf`/`MCC_DEBUG`) — existing ad-hoc `if (verbose) fprintf(stderr,...)`
-  sites can migrate to these tagged categories.
+**LANDED — `MCC_TRACE` tracing.** The macro (`src/mcclog.h`) prints
+`[TRACE] FILE:LINE func: ` + args, compiled out unless `MCC_CONFIG_TRACE` (CMake option,
+default off), runtime-gated on the `[TRACE]` verbosity bit (`-v128` logs TRACE only). The
+compiler pipeline is instrumented at its phase entry + a branch point — `mcc_compile`,
+`mcc_preprocess`, `gen_function`, `ast_func_begin`, `ast_func_end`, and the inline/
+promote/tco decision — all proven to fire (`mcc -v128 -O2 -c` shows the per-function
+trace; default trace-off build is byte-neutral, 1905/1905 ctest).
+
+- [ ] **`MCC_TRACE` follow-ups** — (a) `MCC_TRACE`/`mcc_logf` read the global
+  `mcc_state->verbose`, so a trace fires only where `mcc_state` is the current
+  verbose-carrying state (driver/link phases before `mcc_enter_state`, e.g.
+  `mcc_output_file`, don't fire — either thread the state or add a state-taking variant);
+  (b) blanket per-function instrumentation is intentionally *not* applied (it would be
+  noise) — add `MCC_TRACE` at points of interest as needed; (c) wiring `MCC_CONFIG_TRACE`
+  into a preset is deliberately skipped (the release-inherits-debug caveat that applies
+  to `MCC_CONFIG_AST_SHADOW`); (d) migrate ad-hoc `if (verbose) fprintf(stderr,...)`
+  sites to the tagged `mcc_logf`/`MCC_DEBUG` categories.
 - [ ] **Ungate the `i386-fastcall-abi` test** — registered but `mcc_skip_test`'d;
   needs an i386 cross + an ELF-32 reference.

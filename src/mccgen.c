@@ -12321,6 +12321,7 @@ static void sym_push_params(Sym *ref) {
 }
 
 static void gen_function(Sym *sym) {
+	MCC_TRACE("%s\n", get_tok_str(sym->v, NULL));
 	struct scope f = {0};
 
 	total_funcs++;
