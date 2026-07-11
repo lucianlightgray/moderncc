@@ -968,6 +968,14 @@ static void riscv64_ubsan_div0(int b) {
 	o(0x00100073);
 }
 
+static void riscv64_ubsan_shift(int cnt, uint32_t width) {
+	if (!mcc_state->do_sanitize_undefined || nocode_wanted)
+		return;
+	o(0x13 | 3u << 12 | 5u << 7 | (uint32_t)cnt << 15 | width << 20);
+	o(0x63 | 1u << 12 | 5u << 15 | 8u << 7);
+	o(0x00100073);
+}
+
 static void gen_opil(int op, int ll) {
 	int a, b, d;
 	int func3 = 0;
@@ -1084,12 +1092,15 @@ static void gen_opil(int op, int ll) {
 		ER(0x33 | ll, 0, d, a, b, 0x20);
 		break;
 	case TOK_SAR:
+		riscv64_ubsan_shift(b, ll ? 32 : 64);
 		ER(0x33 | ll | ll, 5, d, a, b, 0x20);
 		break;
 	case TOK_SHR:
+		riscv64_ubsan_shift(b, ll ? 32 : 64);
 		ER(0x33 | ll | ll, 5, d, a, b, 0);
 		break;
 	case TOK_SHL:
+		riscv64_ubsan_shift(b, ll ? 32 : 64);
 		ER(0x33 | ll, 1, d, a, b, 0);
 		break;
 	case '*':

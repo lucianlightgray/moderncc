@@ -306,10 +306,16 @@ makes the compiler a sanitizer *provider* for user code.
       **qemu-riscv64** (vendored riscv64 musl sysroot): `100/0
       -fsanitize=undefined` → `EBREAK`/SIGTRAP (133); no-flag returns 255 (−1,
       no fault); `100/4` → 25 clean; riscv64 default codegen unbroken (21/21
-      exec agree with x86_64). So `-fsanitize=undefined` now spans **x86_64
-      (overflow+shift+div), arm64 (overflow+shift+div), riscv64 (div)**.
-      Remaining: arm64/x86_64 signed-mul overflow (`SMULH`/`imul`-hi),
-      riscv64 overflow+shift, native-shadow ASan, TSan/MSan.
+      exec agree with x86_64). **riscv64 shift-range added (2026-07-11):**
+      `SLTIU t0,count,#width; BNE t0,x0,+8; EBREAK` before every `SLL/SRL/SRA`
+      (t0=x5 is the never-allocatable spill scratch — `ireg` maps allocatable
+      regs to x10-x17). Validated under qemu-riscv64: `1<<40` (32-bit) and
+      `1<<70` (64-bit) trap, `1<<5`→32 clean, no-flag masks silently; riscv64
+      default codegen unbroken (22/22). So `-fsanitize=undefined` now spans
+      **x86_64 (overflow+shift+div), arm64 (overflow+shift+div), riscv64
+      (shift+div)**. Remaining: arm64/x86_64 signed-mul overflow
+      (`SMULH`/`imul`-hi), riscv64 overflow (RV has no flags — needs the
+      2-scratch `(a^d)&(b^d)<0` sequence), native-shadow ASan, TSan/MSan.
 - [x] **Test matrix:** a `tests/sanitize/` corpus with one program per UB /
       memory-error class asserting the check fires (and clean programs stay
       silent), across `-O0..-O3` and with the optimizer forced on. LANDED:
