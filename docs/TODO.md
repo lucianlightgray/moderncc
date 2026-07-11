@@ -1336,7 +1336,20 @@ stays clean. NEXT for the promotion axis: snapshot/restore the promotion emit
 state (or emit each promote-config from a fresh `ast_arena_clone` sub-context)
 before re-attempting, and re-run the gate-ON self-hosts + fuzz. (One ordering
 lesson banked: `ast_loc_low` must be set AFTER `ast_promo_entry_init` so the §34b
-frame low-water includes the promo save area.)
+frame low-water includes the promo save area.) **SECOND ATTEMPT (2026-07-11) —
+comprehensive state restore is NOT enough.** Adding a per-emit
+`PF_RESTORE` (`sym_pop` to the pre-trial mark + `nb_stk_data` reset + `seqp_reset`
++ `vtop` rebalance) before every measurement AND the final emit still gave
+`pfi.c` rc 19 AND now **segfaulted** the inline path — resetting `vtop`/`seqp`
+before the final emit corrupts state the passes left for it, and the promotion
+desync persists. CONCLUSION: state save/restore between in-place emits is
+insufficient; the promotion / pass-subset axes need **true emit isolation** —
+redirect `cur_text_section` (+ its reloc, `ind`, symbol scope) to a throwaway
+scratch `Section` for each measurement, measure `ind`, then discard it and emit
+the winner once into the real section. That is the milestone-scale "scratch
+sub-context" (and the real production consumer of `ast_arena_clone`); the
+inline-only trial (`e0f3f778`, emit-time flag, no arena/section residue) remains
+the shipped, validated `MCC_AST_PERFN_INPROC` behavior.
 
 Builds on §21 + the capture/replay driver.
 
