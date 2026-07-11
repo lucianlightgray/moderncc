@@ -391,11 +391,15 @@ guarded by `do_sanitize_undefined && !nocode_wanted` so the default path is
 untouched. `-hh`/`-h` help updated. Gates: full ctest **1874/1874** (10 new
 `ubsan/*`), 3-stage self-host fixpoint **stage2==3==4 byte-identical**, debug
 + release + cross + multisource presets build clean, clang differential agrees
-on all four UB classes. Deferred: signed INT_MIN/-1 division (hardware `#DE`
-already faults it), constant-count OOB shift (masked at compile time),
-null-deref (hardware SIGSEGV already faults it — lower marginal value than the
-silent-UB arithmetic/shift checks), `-recover` mode + `__ubsan_handle_*` ABI,
-ASan, arm64/riscv64 ports.
+on all four UB classes. **FULLY LANDED SINCE (2026-07-11): null-deref now
+implemented too (all 3 arches), and the whole check set ported to arm64 +
+riscv64** — see the per-arch scope item below. `-fsanitize=undefined` is now
+signed +/-/* overflow + shift-range + divide-by-zero + null-pointer-deref on
+**x86_64, arm64, AND riscv64**, each validated (native / qemu-aarch64 /
+qemu-riscv64), and `-fsanitize=address` detects memory errors via bcheck.
+Deferred (small/low-value): signed INT_MIN/-1 division (hardware `#DE`/arm64/RV
+handle it), constant-count OOB shift (masked at compile time), `-recover` mode
++ `__ubsan_handle_*` ABI, native-shadow ASan, TSan/MSan.
 
 ## 1. Delete `TAL_INFO` (trivial)
 
