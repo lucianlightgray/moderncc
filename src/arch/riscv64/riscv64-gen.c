@@ -221,9 +221,10 @@ ST_FUNC void load(int r, SValue *sv) {
 			br = ireg(v);
 			fc = 0;
 		} else if (v == VT_LLOCAL) {
+			int ptr = is_ireg(r) ? rr : 5;
 			br = load_symofs(r, sv, 0, &fc);
-			EI(0x03, 3, rr, br, fc);
-			br = rr;
+			EI(0x03, 3, ptr, br, fc);
+			br = ptr;
 			fc = 0;
 		} else if (v == VT_CONST) {
 			int64_t si = sv->c.i;
