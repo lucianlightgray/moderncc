@@ -397,17 +397,7 @@ function(mcc_generate_node_doc outfile)
     message(STATUS "mcc: generated ${outfile}")
 endfunction()
 
-function(mcc_write_node_manifest outfile)
-    set(_txt "")
-    get_property(_nodes GLOBAL PROPERTY MCC_NODES)
-    foreach(_n IN LISTS _nodes)
-        get_property(_t GLOBAL PROPERTY MCC_NODE_${_n}_TYPE)
-        string(APPEND _txt "${_n} ${_t}\n")
-    endforeach()
-    file(WRITE "${outfile}" "${_txt}")
-endfunction()
-
-set(_elf "NOT MCC_TARGETOS STREQUAL \"WIN32\" AND NOT MCC_TARGETOS STREQUAL \"Darwin\"")
+set(_elf"NOT MCC_TARGETOS STREQUAL \"WIN32\" AND NOT MCC_TARGETOS STREQUAL \"Darwin\"")
 set(_darwin "MCC_TARGETOS STREQUAL \"Darwin\"")
 
 mcc_snapshot_user_presets()
@@ -1552,7 +1542,6 @@ mcc_report_config()
 if(MCC_REGEN_DOCS)
     mcc_generate_node_doc("${CMAKE_BINARY_DIR}/config-nodes.md")
 endif()
-mcc_write_node_manifest("${CMAKE_BINARY_DIR}/config-nodes.tsv")
 
 macro(mcc_def_str _var _name _val)
     if(NOT "${_val}" STREQUAL "")
@@ -3705,13 +3694,6 @@ if(MCC_BUILD_TESTS)
         target_link_libraries(dashsbytes ${CMAKE_DL_LIBS})
     endif()
     add_executable(objcheck tools/objcheck.c)
-
-    add_executable(ckbuildmd tools/ckbuildmd.c)
-    add_test(NAME build-md-nodes
-        COMMAND "$<TARGET_FILE:ckbuildmd>"
-                "${CMAKE_BINARY_DIR}/config-nodes.tsv"
-                "${CMAKE_CURRENT_SOURCE_DIR}/docs/BUILD.md")
-    set_tests_properties(build-md-nodes PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
     if(NOT CMAKE_CROSSCOMPILING)
         add_executable(defcheck tools/defcheck.c tools/toolsupport.c)
