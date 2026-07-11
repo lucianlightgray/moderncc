@@ -268,16 +268,26 @@ makes the compiler a sanitizer *provider* for user code.
       `gen_asan_shadow_check` (`x86_64-gen.c`), default-off so gate-off codegen
       is byte-identical. The companion self-contained runtime
       **`runtime/lib/mccasan.c`** maps the shadow (ctor) and poisons heap
-      redzones + freed regions. Validated end-to-end: a `malloc(40)` overflow
-      `p[100]` and a `free`-then-read both **trap via the shadow**, a valid
-      `p[5]` runs clean — locked by `cli/asan_shadow_native_overflow`. Gate-off:
-      fixpoint stage2==3==4 byte-identical, ctest 1885/1885, all presets clean.
-      This is the actual 1/8-shadow mechanism the item names. Follow-ups: the
-      full 16 TB sparse shadow map (vs the increment's fixed pool),
-      stack/global redzones, `__asan_report_*` diagnostics, and CMake auto-link.
-      (The already-shipped bcheck-based `-fsanitize=address` remains the
-      self-contained default that detects OOB + UAF, clang-verified; this native
-      path adds the ASan shadow format on top.)
+      redzones + freed regions. **NOW FULL-LAYOUT (2026-07-11):** the runtime
+      maps the complete ASan Linux/x86_64 shadow layout — **LowShadow +
+      HighShadow, sparse via `MAP_NORESERVE`** — so it works with real
+      allocations at any address (heap/**PIE**, not a fixed pool), intercepts
+      **malloc/free/calloc/realloc** to redzone allocations + poison freed
+      regions, and installs a **SIGILL handler that prints an
+      `AddressSanitizer:`-style diagnostic** (the `__asan_report` equivalent).
+      Validated on real **PIE** binaries: a `malloc(20*int)` overflow `h[100]`
+      **and** a `free`-then-read both report `AddressSanitizer: bad memory
+      access` and abort, while a real program (stack array + struct + heap, no
+      overflow) runs clean to the correct result (**no false positives**, rc
+      matches the non-instrumented reference). Locked by
+      `cli/asan_shadow_native_overflow` + `cli/asan_shadow_native_use_after_free`.
+      Gate-off: fixpoint stage2==3==4 byte-identical, ctest 1886/1886, presets
+      clean. So native-shadow ASan detects the two headline classes (heap OOB +
+      UAF) end-to-end on real programs via the true 1/8 shadow scheme. Remaining
+      follow-ups: **stack/global redzones** (compiler-side frame layout — heap
+      is done), richer `__asan_report_*` formatting, CMake auto-link. (The
+      bcheck-based `-fsanitize=address` remains the self-contained default; this
+      native path adds the ASan shadow format + tooling-compatible layout.)
 - [x] **Optimizer interaction (critical):** sanitizer checks are
       side-effecting and must survive the AST optimizer — the §30/§32/§33
       passes must NOT fold/DCE check nodes; decide whether instrumentation runs
