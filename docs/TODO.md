@@ -1983,8 +1983,18 @@ touch `src/mccast.c`, so serialize to avoid worktree merge conflicts):
       break target. Validated: gate-off `-O0..-O3` byte-identical + full ctest
       1860/1860; gate-on fires (0→1 cprop fold on a `for(;;){…break;}`
       invariant) with output matching the -O0 reference; cpropjoin.sh OK.
-      **Still open**: fall-through-aware meets, switch(op 6) arm meets (both
-      need new per-arm lattice intersection — higher risk).
+      **switch(op 6) invariant classification LANDED**: op-6 switch has the
+      same [controlling-expr(Ref/Literal), body-BB] child shape as loops, so
+      the same `<=5`→`<=6` extension gives it the invariant-preserving descent
+      — a local written nowhere in the switch survives to every case path /
+      break target (fall-through is irrelevant since only whole-switch
+      invariants are kept). Validated: gate-off byte-identical (180 objects, 0
+      diffs) + full ctest 1860/1860 + fixpoint + cpropjoin.sh OK; fires (0→1
+      fold on a switch-invariant const), gate-on output matches the -O0 ref,
+      and a switch that writes the local in a case is correctly NOT folded.
+      **Still open**: fall-through-aware *value meets* (the harder full
+      per-arm lattice intersection with case fall-through — higher risk, not
+      the keep-invariant form landed here).
 4. [x] **§35 — Sethi–Ullman evaluation-order numbering** — LANDED as
       `MCC_AST_SETHI` (commit `f45a6ec5`, first increment): reorders
       commutative operand emission behind a default-off gate; byte-identity
