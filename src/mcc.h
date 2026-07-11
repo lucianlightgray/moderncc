@@ -518,6 +518,7 @@ struct TinyAlloc;
 #define VLA_TRACK_MAX 512
 #define MAX_TEMP_LOCAL_VARIABLE_NUMBER 8
 #define SEQP_MAX 64
+#define MCC_ASAN_REDZONE 16
 
 struct scope {
 	struct scope *prev;
@@ -789,6 +790,7 @@ struct MCCState {
 	Section *text_section, *data_section, *rodata_section, *bss_section;
 	Section *tdata_section, *tbss_section;
 	Section *common_section;
+	Section *asan_lstack_section;
 	Section *cur_text_section;
 #if MCC_CONFIG_DIAG_RT >= 2
 	Section *bounds_section;
@@ -958,6 +960,8 @@ struct MCCState {
 	int cg_func_stack_chk_loc;
 	addr_t cg_func_bound_offset;
 	unsigned long cg_func_bound_ind;
+	addr_t cg_func_asan_offset;
+	unsigned long cg_func_asan_ind;
 	int cg_func_scratch, cg_func_alloca;
 	int cg_arm_float_abi;
 	int cg_last_itod_magic;
@@ -1477,6 +1481,7 @@ ST_DATA int func_bound_add_epilog;
 ST_FUNC int gen_bounds_epilog_head(addr_t func_bound_offset,
 																	 Sym **psym_data, int *poffset_modified);
 #endif
+ST_FUNC int gen_asan_stack_epilog_head(addr_t off, Sym **psym);
 ST_FUNC Sym *gfunc_set_param(Sym *s, int c, int byref);
 
 #define MCC_OUTPUT_FORMAT_ELF 0
@@ -1899,6 +1904,7 @@ dwarf_read_sleb128(unsigned char **ln, unsigned char *end) {
 #define cur_text_section MCC_STATE_VAR(cur_text_section)
 #define bounds_section MCC_STATE_VAR(bounds_section)
 #define lbounds_section MCC_STATE_VAR(lbounds_section)
+#define asan_lstack_section MCC_STATE_VAR(asan_lstack_section)
 #define symtab_section MCC_STATE_VAR(symtab_section)
 #define gnu_ext MCC_STATE_VAR(gnu_ext)
 #define mcc_error_noabort MCC_SET_STATE(_mcc_error_noabort)

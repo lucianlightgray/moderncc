@@ -1932,6 +1932,30 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -fasan-shadow -c {W}/au.c -o {W}/au.o && cc {W}/au.o {W}/mccasan2.o -o {W}/au 2>/dev/null && "
 		 "{W}/au 2>&1 | grep -oE 'AddressSanitizer: bad memory access' | head -1",
 		 "AddressSanitizer: bad memory access\n"},
+		{"asan_shadow_native_global_overflow", "cpu=x86_64,os=linux",
+		 "cc -O2 -c {D}/../../runtime/lib/mccasan.c -o {W}/mccasan3.o 2>/dev/null && "
+		 "printf 'int g[10];\\nint main(void){g[0]=1;volatile int i=10;return g[i];}\\n' > {W}/ag.c && "
+		 "{MCC} -B{B} -fasan-shadow -c {W}/ag.c -o {W}/ag.o && cc {W}/ag.o {W}/mccasan3.o -o {W}/ag 2>/dev/null && "
+		 "{W}/ag 2>&1 | grep -oE 'AddressSanitizer: bad memory access' | head -1",
+		 "AddressSanitizer: bad memory access\n"},
+		{"asan_shadow_native_global_clean", "cpu=x86_64,os=linux",
+		 "cc -O2 -c {D}/../../runtime/lib/mccasan.c -o {W}/mccasan4.o 2>/dev/null && "
+		 "printf 'int bss[16];int data[4]={1,2,3,4};char nm[6]=\"hello\";\\nint main(void){int s=0;for(int i=0;i<16;i++)bss[i]=i;s=bss[15]+data[3]+nm[4];return s==(15+4+111)?0:7;}\\n' > {W}/agc.c && "
+		 "{MCC} -B{B} -fasan-shadow -c {W}/agc.c -o {W}/agc.o && cc {W}/agc.o {W}/mccasan4.o -o {W}/agc 2>/dev/null && "
+		 "{W}/agc; echo rc=$?",
+		 "rc=0\n"},
+		{"asan_shadow_native_stack_overflow", "cpu=x86_64,os=linux",
+		 "cc -O2 -c {D}/../../runtime/lib/mccasan.c -o {W}/mccasan5.o 2>/dev/null && "
+		 "printf 'int main(void){volatile int i=12;char buf[10];buf[0]=1;return buf[i];}\\n' > {W}/as.c && "
+		 "{MCC} -B{B} -fasan-shadow -c {W}/as.c -o {W}/as.o && cc {W}/as.o {W}/mccasan5.o -o {W}/as 2>/dev/null && "
+		 "{W}/as 2>&1 | grep -oE 'AddressSanitizer: bad memory access' | head -1",
+		 "AddressSanitizer: bad memory access\n"},
+		{"asan_shadow_native_stack_clean", "cpu=x86_64,os=linux",
+		 "cc -O2 -c {D}/../../runtime/lib/mccasan.c -o {W}/mccasan6.o 2>/dev/null && "
+		 "printf 'struct P{int a,b;};\\nint main(void){char buf[10];struct P p;int x=5;int*px=&x;for(int i=0;i<10;i++)buf[i]=i;p.a=buf[9];p.b=*px;return (p.a==9&&p.b==5)?0:7;}\\n' > {W}/asc.c && "
+		 "{MCC} -B{B} -fasan-shadow -c {W}/asc.c -o {W}/asc.o && cc {W}/asc.o {W}/mccasan6.o -o {W}/asc 2>/dev/null && "
+		 "{W}/asc; echo rc=$?",
+		 "rc=0\n"},
 
 		{"macro_eval_recursive", "",
 		 "printf '#define fact(n) (n <= 1 ? 1 : n * fact(n - 1))\\nint main(void) { return fact(5) == 120 ? 0 : 1; }\\n' > {W}/me.c && "

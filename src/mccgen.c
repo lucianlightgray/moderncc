@@ -1749,11 +1749,39 @@ static void add_local_bounds(Sym *s, Sym *e) {
 }
 #endif
 
+static void add_asan_locals(Sym *s, Sym *e) {
+	if (!asan_lstack_section)
+		return;
+	for (; s != e; s = s->prev) {
+		if (!s->v || (s->r & VT_VALMASK) != VT_LOCAL)
+			continue;
+		if ((s->type.t & VT_ARRAY) || (s->type.t & VT_BTYPE) == VT_STRUCT
+			|| s->a.addrtaken) {
+			int align, size = type_size(&s->type, &align);
+			addr_t *p = section_ptr_add(asan_lstack_section, 2 * sizeof(addr_t));
+			p[0] = s->c;
+			p[1] = size;
+		}
+	}
+}
+
+ST_FUNC int gen_asan_stack_epilog_head(addr_t off, Sym **psym) {
+	addr_t *p;
+	if (!asan_lstack_section || off == asan_lstack_section->data_offset)
+		return 0;
+	p = section_ptr_add(asan_lstack_section, sizeof(addr_t));
+	*p = 0;
+	*psym = get_sym_ref(&char_pointer_type, asan_lstack_section, off, MCC_PTR_SIZE);
+	return 1;
+}
+
 static void mcc_debug_end_scope(Sym *b, int bounds) {
 #if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check && bounds)
 		add_local_bounds(local_stack, b);
 #endif
+	if (mcc_state->do_asan_shadow && bounds)
+		add_asan_locals(local_stack, b);
 	mcc_add_debug_info(mcc_state, local_stack, b);
 }
 
@@ -10256,6 +10284,8 @@ static void prev_scope(struct scope *o, int is_expr) {
 
 	if (debug_modes)
 		mcc_debug_end_scope(o->lstk, !is_expr);
+	else if (mcc_state->do_asan_shadow && !is_expr)
+		add_asan_locals(local_stack, o->lstk);
 
 	label_pop(&local_label_stack, o->llstk, is_expr);
 
@@ -11728,6 +11758,7 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 #if MCC_CONFIG_DIAG_RT >= 2
 	int bcheck = mcc_state->do_bounds_check && !NODATA_WANTED;
 #endif
+	int asan_g = mcc_state->do_asan_shadow && !NODATA_WANTED;
 	init_params p = {0};
 
 	if (scope == VT_CONST) {
@@ -11808,6 +11839,11 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 			loc -= align;
 		}
 #endif
+		if (asan_g && v) {
+			loc -= MCC_ASAN_REDZONE;
+			if (align < 8)
+				align = 8;
+		}
 		loc = (loc - size) & -align;
 		addr = loc;
 		p.local_offset = addr + size;
@@ -11858,7 +11894,12 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 				sec = data_section;
 			} else if (mcc_state->nocommon)
 				sec = bss_section;
+			else if (asan_g && v && size && !(type->t & VT_TLS))
+				sec = bss_section;
 		}
+
+		if (asan_g && v && size && sec && !(type->t & VT_TLS) && align < 8)
+			align = 8;
 
 		if (sec) {
 			addr = section_add(sec, size, align);
@@ -11866,6 +11907,8 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 			if (bcheck)
 				section_add(sec, 1, 1);
 #endif
+			if (asan_g && v && size && !(type->t & VT_TLS))
+				section_add(sec, ((size + 7) & ~7) - size + MCC_ASAN_REDZONE, 1);
 		} else {
 			addr = align;
 			sec = common_section;
@@ -11893,6 +11936,15 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 			bounds_ptr[1] = size;
 		}
 #endif
+		if (asan_g && v && size && sym && !(type->t & VT_TLS)) {
+			Section *gsec = find_section(mcc_state, "__asan_globals");
+			addr_t *gptr;
+			gsec->sh_flags |= SHF_WRITE;
+			greloca(gsec, sym, gsec->data_offset, R_DATA_PTR, 0);
+			gptr = section_ptr_add(gsec, 2 * sizeof(addr_t));
+			gptr[0] = 0;
+			gptr[1] = size;
+		}
 	}
 
 	if (!(type->t & VT_VLA) && type_is_vm(type)) {

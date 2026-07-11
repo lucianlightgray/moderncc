@@ -39,6 +39,8 @@ ST_DATA const int reg_classes[MCC_NB_REGS] = {
 #ifndef MCC_TARGET_PE
 #define func_stack_chk_loc (mcc_state->cg_func_stack_chk_loc)
 #endif
+#define func_asan_offset (mcc_state->cg_func_asan_offset)
+#define func_asan_ind (mcc_state->cg_func_asan_ind)
 
 #if MCC_CONFIG_DIAG_RT >= 2
 #define func_bound_offset (mcc_state->cg_func_bound_offset)
@@ -644,6 +646,57 @@ static void gen_bounds_epilog(void) {
 	o(0x0d8d48 + ((MCC_TREG_FASTCALL_1 == MCC_TREG_RDI) * 0x300000));
 	gen_le32(0);
 	gen_bounds_call(TOK___bound_local_delete);
+	o(0x280f);
+	o(0x102444);
+	o(0x240c280f);
+	o(0x20c48348);
+	o(0x585a);
+}
+#endif
+
+#ifndef MCC_TARGET_PE
+static void gen_asan_stack_call(const char *name) {
+	Sym *sym = external_helper_sym(tok_alloc_const(name));
+	oad(0xe8, 0);
+	greloca(cur_text_section, sym, ind - 4, R_X86_64_PLT32, -4);
+}
+
+static void gen_asan_stack_prolog(void) {
+	if (!asan_lstack_section)
+		asan_lstack_section =
+			new_section(mcc_state, ".asan_lstack", SHT_PROGBITS, SHF_ALLOC);
+	func_asan_offset = asan_lstack_section->data_offset;
+	func_asan_ind = ind;
+	o(0x3d8d48);
+	gen_le32(0);
+	o(0xee8948);
+	oad(0xb8, 0);
+}
+
+static void gen_asan_stack_epilog(void) {
+	addr_t saved_ind;
+	Sym *sym_data;
+
+	if (!gen_asan_stack_epilog_head(func_asan_offset, &sym_data))
+		return;
+
+	saved_ind = ind;
+	ind = func_asan_ind;
+	greloca(cur_text_section, sym_data, ind + 3, R_X86_64_PC32, -4);
+	ind = ind + 10;
+	gen_asan_stack_call("__asan_stack_enter");
+	ind = saved_ind;
+
+	o(0x5250);
+	o(0x20ec8348);
+	o(0x290f);
+	o(0x102444);
+	o(0x240c290f);
+	greloca(cur_text_section, sym_data, ind + 3, R_X86_64_PC32, -4);
+	o(0x3d8d48);
+	gen_le32(0);
+	o(0xee8948);
+	gen_asan_stack_call("__asan_stack_leave");
 	o(0x280f);
 	o(0x102444);
 	o(0x240c280f);
@@ -1532,6 +1585,8 @@ void gfunc_prolog(Sym *func_sym) {
 		gen_bounds_prolog();
 #endif
 #ifndef MCC_TARGET_PE
+	if (mcc_state->do_asan_shadow)
+		gen_asan_stack_prolog();
 	func_stack_chk_loc = 0;
 	if (mcc_state->stack_protector)
 		gen_stack_chk_prolog();
@@ -1546,6 +1601,8 @@ void gfunc_epilog(void) {
 		gen_bounds_epilog();
 #endif
 #ifndef MCC_TARGET_PE
+	if (mcc_state->do_asan_shadow)
+		gen_asan_stack_epilog();
 	if (func_stack_chk_loc)
 		gen_stack_chk_epilog();
 #endif

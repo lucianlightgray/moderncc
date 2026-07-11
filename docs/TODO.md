@@ -283,11 +283,62 @@ makes the compiler a sanitizer *provider* for user code.
       `cli/asan_shadow_native_overflow` + `cli/asan_shadow_native_use_after_free`.
       Gate-off: fixpoint stage2==3==4 byte-identical, ctest 1886/1886, presets
       clean. So native-shadow ASan detects the two headline classes (heap OOB +
-      UAF) end-to-end on real programs via the true 1/8 shadow scheme. Remaining
-      follow-ups: **stack/global redzones** (compiler-side frame layout — heap
-      is done), richer `__asan_report_*` formatting, CMake auto-link. (The
-      bcheck-based `-fsanitize=address` remains the self-contained default; this
-      native path adds the ASan shadow format + tooling-compatible layout.)
+      UAF) end-to-end on real programs via the true 1/8 shadow scheme.
+      **GLOBAL REDZONES LANDED (2026-07-11):** `-fasan-shadow` now instruments
+      static-storage globals/statics too. In `decl_initializer_alloc`
+      (`src/mccgen.c`, guarded by a new `asan_g = do_asan_shadow && !NODATA_WANTED`,
+      mirroring the `bcheck` path): each instrumented global is 8-byte-min-aligned,
+      routed out of COMMON into `bss`/`data`/`rodata` (so it has a concrete
+      section+offset), given a trailing redzone of `(round8(size)-size) +
+      MCC_ASAN_REDZONE(16)` bytes via `section_add`, and registered by emitting a
+      `{R_DATA_PTR reloc → global, size}` pair into a writable (`SHF_ALLOC|WRITE`,
+      no DT_TEXTREL) `__asan_globals` section. mcc auto-synthesizes
+      `__start___asan_globals`/`__stop___asan_globals` (identifier-named ALLOC
+      section, `mcc_add_linker_symbols`), which the runtime's ctor
+      (`runtime/lib/mccasan.c` `asan_register_globals`) walks to `unpoison` each
+      global (incl. the partial last granule) and poison its 16-byte right redzone
+      (`0xf9`) in shadow — required for `SHT_NOBITS` bss globals that have no
+      compile-time bytes. Validated: global `g[10]` overflow AND `g[-1]` underflow
+      both trap with the `AddressSanitizer:` diagnostic; a clean program mixing
+      bss/data/rodata/struct globals matches the non-instrumented reference bit for
+      bit (no false positive); links carry no DT_TEXTREL. Locked by
+      `cli/asan_shadow_native_global_overflow` + `cli/asan_shadow_native_global_clean`.
+      Gate-off: 3-stage self-host fixpoint stage2==3==4 byte-identical, full ctest
+      **1892/1892**.
+      **STACK REDZONES LANDED (2026-07-11):** `-fasan-shadow` now instruments
+      stack locals too (x86_64/ELF), the harder half. Mechanism mirrors `bcheck`'s
+      proven per-function machinery so it survives the AST replay optimizer (the
+      backend `gfunc_prolog`/`gfunc_epilog` hooks run on every emit, incl. reemit):
+      (1) each named local gets an 8-byte-min alignment + an `MCC_ASAN_REDZONE`(16)
+      frame gap (`decl_initializer_alloc`, guarded by `asan_g`); (2) at block-scope
+      exit `add_asan_locals` (independent of `debug_modes`, gated on
+      `do_asan_shadow`) appends the array/struct/address-taken locals' `{rbp-offset,
+      size}` pairs to a per-function `.asan_lstack` table; (3) `gen_asan_stack_prolog`
+      reserves a fixed 15-byte call stub (`lea rdi,table; mov rsi,rbp; call`) in the
+      prologue and `gen_asan_stack_epilog` back-patches it to `__asan_stack_enter`
+      (and emits a matching `__asan_stack_leave` before the frame teardown, saving
+      rax/rdx/xmm around the call) — the exact `gen_bounds_prolog`/`epilog` template
+      but with `rbp` passed explicitly (2nd arg) so it's frame-pointer-robust at any
+      `-O`. Runtime `__asan_stack_enter/leave` (`runtime/lib/mccasan.c`) poison each
+      local's right redzone then unpoison the objects (redzones-first ordering makes
+      false positives impossible even with sibling-scope slot reuse), and clear the
+      whole span on exit. Validated: stack `buf[12]` overflow traps at **-O0..-O3**
+      (survives replay); nested-scope slot reuse, recursion + address-taken,
+      address-taken-through-callee, and struct-with-array-member all run clean (no
+      false positives) at -O0/-O2; the exec corpus differential shows **0 false
+      positives, 0 divergences** (the sole trap, `bounds/bound_global.c` `arr[10]`,
+      is a *correct* global-OOB catch). Locked by `cli/asan_shadow_native_stack_overflow`
+      + `cli/asan_shadow_native_stack_clean`. Gate-off: 3-stage self-host fixpoint
+      stage2==3==4 byte-identical, full ctest **1894/1894**, release + multisource +
+      cross (all 12 backends) build clean. NOTE: stack redzones are x86_64/ELF-only
+      (the `gfunc_prolog/epilog` hooks are in the SysV `x86_64-gen.c` path); arm64/
+      riscv64/PE get heap+global only. Also: mcc-emitted multi-function objects hit a
+      *pre-existing* external-`ld` `.eh_frame` "overlapping FDEs" quirk (reproduces
+      without `-fasan-shadow`) — mcc's own linker handles them; unrelated to this work.
+      Remaining follow-ups: richer `__asan_report_*` formatting, CMake auto-link, and
+      arm64/riscv64 stack instrumentation. (The bcheck-based `-fsanitize=address`
+      remains the self-contained default; this native path adds the ASan shadow
+      format + tooling-compatible layout.)
 - [x] **Optimizer interaction (critical):** sanitizer checks are
       side-effecting and must survive the AST optimizer — the §30/§32/§33
       passes must NOT fold/DCE check nodes; decide whether instrumentation runs
