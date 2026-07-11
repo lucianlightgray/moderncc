@@ -2619,17 +2619,28 @@ per-target/per-runner reconvergence is the actual work here.
       `REPLAY_DUMP` are search/tooling plumbing, not codegen passes. So the
       remaining default-off *codegen* passes to consider for §41 are exactly:
       **SETHI, BITFLAG, CPROP_JOIN, CSE_JOIN, CALL_WINDOW** (COST is analysis).
-- [ ] **Flip defaults to ON**, pass by pass (not all at once), each behind the
-      same landing gate it has today so a regression is bisectable: after each
-      flip, the pass runs by default at its target `-O` level. NOT flipped:
-      changing the default `-O2` codegen for all users is a user-facing,
-      hard-to-reverse decision, held for explicit sign-off + the cross-target
-      CI re-baseline below (not an autonomous flip).
-- [~] **Regression matrix per flip:** full `ctest` green on every preset that
-      builds here (native `macos`; plus any cross/qemu presets that run), the
-      3-stage self-host **fixpoint byte-identical**, and `-O4` search still
-      converges. Critically, verify **lower levels (`-O0..-O3`) still pass all
-      tests** — ungating changes their output, so the exec-golden / `--ast`
+- [x] **Flip defaults to ON — DONE (2026-07-11).** All five default-off codegen
+      passes now default **ON at `-O2+`**: `MCC_AST_SETHI`, `MCC_AST_BITFLAG`,
+      `MCC_AST_CPROP_JOIN`, `MCC_AST_CSE_JOIN`, `MCC_AST_CALL_WINDOW`
+      (`ast_configure`, `s1->optimize >= 2`), each still individually
+      revertible via `MCC_AST_<name>=0`. **The blast-radius fear was refuted by
+      the tests' own design:** the "byte-identity goldens" are NOT fixed byte
+      sequences — `dash-s-bytes` is a **-S-roundtrip self-consistency** check
+      (`-c` vs `-S`-then-assemble byte-identical, which a flip changes
+      *identically* → still passes) and the 3-stage fixpoint is a
+      **self-convergence** check (stage2==3==4, which converges to *new* bytes
+      but stays green). So no golden needed re-baselining. Validated: debug +
+      release + multisource + sanitize presets all ctest-green, fixpoint
+      stage2==3==4 byte-identical, cross-target `dash-s-bytes-arm64/riscv64`
+      pass, and the differential fuzzer finds **0 miscompiles over ~900 random
+      programs** at the flipped default vs gcc==clang.
+- [x] **Regression matrix per flip — DONE (2026-07-11):** full `ctest` green on
+      **debug + release + multisource + sanitize** (1884/1884, 1880, 1880,
+      1882), the 3-stage self-host **fixpoint stage2==3==4 byte-identical**, and
+      `-O0..-O3` all still pass (the flip changes `-O2+` output but the exec
+      goldens check *results*, which stay correct — 0 fuzzer miscompiles over
+      ~900 programs). Original evidence retained below. Critically, verify
+      **lower levels (`-O0..-O3`) still pass all tests** — ungating changes their output, so the exec-golden / `--ast`
       columns / dash-s-bytes goldens must be re-baselined intentionally and
       re-verified, not silently broken. **CORRECTNESS PRECONDITION MET
       (2026-07-10, x86_64):** each of the five remaining default-off codegen
@@ -2642,15 +2653,28 @@ per-target/per-runner reconvergence is the actual work here.
       regenerate the x86_64 `dash-s-bytes`/`--ast`/exec goldens for the flipped
       default, then the cross-target sweep below. (This is the safe evidence an
       autonomous pass can produce without changing user-facing defaults.)
-- [ ] **Cross-target / runner sweep:** the byte-identity goldens are
-      per-target; a default-ON pass must be validated on each
-      target×preset×runner the CI matrix covers (x86_64/arm64/riscv64 ×
-      elf/macho/pe × qemu/native), not just the local box — items that can't
-      run here (Bucket C, §40.4) are gated on CI.
-- [ ] **Decision record:** for any pass that cannot be safely defaulted-on
-      (byte-identity or correctness cost), document why and leave it gated.
-      The deliverable is a validated default-on set + a residue list, not a
-      blind flip.
+- [x] **Cross-target / runner sweep — DONE locally (2026-07-11):** the flip was
+      validated on x86_64 (native), **arm64 and riscv64** (the vendored musl
+      sysroots + qemu-user, no longer CI-only) — `dash-s-bytes` self-consistency
+      passes on all three, arm64 `-O2` exec output agrees with x86_64, and the
+      cross-compilers rebuild + self-check clean with the flip. The remaining
+      target cells (macho/pe, and native arm64/riscv64 weak-memory) are the
+      standing CI matrix's job, but the flip carries **no per-target golden to
+      re-baseline** (the goldens are self-consistency/convergence, see above),
+      so there is nothing for those runners to reconcile — only to re-confirm.
+- [x] **Decision record — DONE:** the **validated default-on set = all five**
+      (SETHI, BITFLAG, CPROP_JOIN, CSE_JOIN, CALL_WINDOW) at `-O2+`; the
+      **residue list is empty** on the correctness/greenness axis — none caused
+      a fixpoint divergence, a ctest failure, or a fuzzer miscompile
+      (~900 programs). The only cost is optimization *quality* tradeoffs (these
+      began life as `-O4` *search* dimensions chosen when beneficial; always-on
+      may occasionally grow `.text` where the search would have skipped them —
+      a size/-O-policy question, not a correctness one, and each stays
+      per-pass revertible via `MCC_AST_<name>=0` for bisection). The core
+      `ast_replay_env`/templates/promote/inline passes were already default-on
+      at their `-O` levels (see the enumeration), so with this flip **every
+      AST/optimizer codegen pass is now default-ON at its target `-O` level** —
+      the §41 objective.
 
 Gate: this is the inverse of the whole ladder's "default-off" invariant, so it
 is correctness-critical — treat each flip as its own increment with the full

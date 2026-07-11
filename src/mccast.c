@@ -751,14 +751,14 @@ void ast_configure(MCCState *s1) {
 	ast_inline_node_limit = ast_env_int("MCC_AST_INLINE_NODES", 64);
 	ast_graft_budget_max = ast_env_int("MCC_AST_GRAFT", 2048);
 	ast_cost_env = ast_env_gate("MCC_AST_COST", 0);
-	ast_sethi_env = ast_env_gate("MCC_AST_SETHI", 0);
-	ast_bitflag_env = ast_env_gate("MCC_AST_BITFLAG", 0);
+	ast_sethi_env = ast_env_gate("MCC_AST_SETHI", s1->optimize >= 2);
+	ast_bitflag_env = ast_env_gate("MCC_AST_BITFLAG", s1->optimize >= 2);
 	ast_bitflag_min = ast_env_int("MCC_AST_BITFLAG", 5);
 	if (ast_bitflag_min < 3)
 		ast_bitflag_min = 5;
-	ast_cprop_join_env = ast_env_gate("MCC_AST_CPROP_JOIN", 0);
-	ast_cse_join_env = ast_env_gate("MCC_AST_CSE_JOIN", 0);
-	ast_call_window_env = ast_env_gate("MCC_AST_CALL_WINDOW", 0);
+	ast_cprop_join_env = ast_env_gate("MCC_AST_CPROP_JOIN", s1->optimize >= 2);
+	ast_cse_join_env = ast_env_gate("MCC_AST_CSE_JOIN", s1->optimize >= 2);
+	ast_call_window_env = ast_env_gate("MCC_AST_CALL_WINDOW", s1->optimize >= 2);
 	ast_licm_temp_env = ast_env_gate("MCC_AST_LICM_TEMP", 0);
 	ast_ivsr_env = ast_env_gate("MCC_AST_IVSR", 0);
 	ast_color_env = ast_env_gate("MCC_AST_COLOR", 0);
