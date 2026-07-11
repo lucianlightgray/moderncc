@@ -2117,6 +2117,21 @@ dependency of §33c.
   (src/mccast.c:4931), so the memory-offset survivors are orthogonal.
   This is the smallest, already-named increment (the "remaining §32b
   refinement") and the correct first step. No temp infra, φ-free.
+  **LANDED (ef0680ce, `MCC_AST_CALL_WINDOW`).** Both halves implemented as
+  designed: `ast_cprop_stmts` (src/mccast.c:4629) and `ast_cse_stmts`
+  (:6291) replace the blanket `AST_Invoke` table reset with a selective
+  kill that retains every entry `!ast_cprop_escapes` proves call-clobber-
+  free (the CSE side additionally requires `ast_licm_operands_ok`, so an
+  available expression whose operands a call could touch is dropped).
+  Confirmed the survivor set is exactly the escape-proof non-escaping
+  scalar locals, as predicted (i)/(ii); (iii) promotion hazard stays owned
+  by `ast_no_callful_promo` (orthogonal, unchanged). Promoted to **default-
+  on at `-O2`** (:799, `s1->optimize >= 2`) alongside the §41 join-pass
+  sweep; validated by the default `-O2` `fixpoint-invariant` self-host
+  staying byte-identical (the reset-removal is byte-neutral where nothing
+  survives, and where entries do survive the extra folds converge to a
+  stable fixpoint). §33b (unified post-graft window) remains the next,
+  decision-first step for the *inlined* seam.
 
 - **§33b — Unified post-graft window dataflow (macro, the core gap).**
   The merged caller+callee window must exist in *one* arena for any
