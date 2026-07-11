@@ -308,9 +308,11 @@ makes the compiler a sanitizer *provider* for user code.
       same output.
 - [~] **Scope/stretch + per-arch gating:** UBSan (all arches), ASan (x86_64 +
       arm64), TSan/MSan (x86_64-only stretch or documented out-of-scope) —
-      gated per-target like the Tier-4 inliner. UBSan trap mode landed
-      **x86_64 ELF/Mach-O only** for now (the checks live in `x86_64-gen.c`;
-      the `-fsanitize=` flag warns/erases on other targets and PE). **ASan
+      gated per-target like the Tier-4 inliner. UBSan trap mode is now COMPLETE
+      on **x86_64 (ELF/Mach-O), arm64, AND riscv64** — signed +/-/* overflow +
+      shift-range + divide-by-zero + null-pointer-deref, each validated
+      native/qemu (see the per-arch detail below); the `-fsanitize=` flag
+      warns/erases only on PE and any not-yet-covered target. **ASan
       landed via bcheck** — `-fsanitize=address`/`bounds` reuse the
       `MCC_CONFIG_DIAG_RT>=2` memory checker on every arch where bcheck is built
       (arch-neutral, not x86_64-gated), predefining `__SANITIZE_ADDRESS__`;
