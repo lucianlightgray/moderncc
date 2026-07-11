@@ -976,6 +976,23 @@ static void riscv64_ubsan_shift(int cnt, uint32_t width) {
 	o(0x00100073);
 }
 
+/* The result register d may alias a or b (get_reg reuses a freed operand
+   reg), so snapshot a->x5 and b->x6 BEFORE the add/sub clobbers them. */
+static void riscv64_ubsan_addsub_pre(int a, int b) {
+	o(0x13 | 5u << 7 | (uint32_t)a << 15);
+	o(0x13 | 6u << 7 | (uint32_t)b << 15);
+}
+
+static void riscv64_ubsan_addsub_post(int op, int d) {
+	o(0x33 | 4u << 12 | 7u << 7 | 5u << 15 | (uint32_t)d << 20);
+	o(0x33 | 4u << 12 | 5u << 7 | 5u << 15 | 6u << 20);
+	if (op == '+')
+		o(0x13 | 4u << 12 | 5u << 7 | 5u << 15 | 0xfffu << 20);
+	o(0x33 | 7u << 12 | 5u << 7 | 5u << 15 | 7u << 20);
+	o(0x63 | 5u << 12 | 5u << 15 | 8u << 7);
+	o(0x00100073);
+}
+
 static void gen_opil(int op, int ll) {
 	int a, b, d;
 	int func3 = 0;
@@ -1070,6 +1087,7 @@ static void gen_opil(int op, int ll) {
 	gv2(MCC_RC_INT, MCC_RC_INT);
 	a = ireg(vtop[-1].r);
 	b = ireg(vtop[0].r);
+	int uns = (vtop[-1].type.t & VT_UNSIGNED) != 0;
 	vtop -= 2;
 	d = get_reg(MCC_RC_INT);
 	vtop++;
@@ -1085,12 +1103,24 @@ static void gen_opil(int op, int ll) {
 		mcc_error("implement me: %s(%s)", __FUNCTION__, get_tok_str(op, NULL));
 		break;
 
-	case '+':
+	case '+': {
+		int chk = !uns && mcc_state->do_sanitize_undefined && !nocode_wanted;
+		if (chk)
+			riscv64_ubsan_addsub_pre(a, b);
 		ER(0x33 | ll, 0, d, a, b, 0);
+		if (chk)
+			riscv64_ubsan_addsub_post('+', d);
 		break;
-	case '-':
+	}
+	case '-': {
+		int chk = !uns && mcc_state->do_sanitize_undefined && !nocode_wanted;
+		if (chk)
+			riscv64_ubsan_addsub_pre(a, b);
 		ER(0x33 | ll, 0, d, a, b, 0x20);
+		if (chk)
+			riscv64_ubsan_addsub_post('-', d);
 		break;
+	}
 	case TOK_SAR:
 		riscv64_ubsan_shift(b, ll ? 32 : 64);
 		ER(0x33 | ll | ll, 5, d, a, b, 0x20);

@@ -311,11 +311,18 @@ makes the compiler a sanitizer *provider* for user code.
       (t0=x5 is the never-allocatable spill scratch — `ireg` maps allocatable
       regs to x10-x17). Validated under qemu-riscv64: `1<<40` (32-bit) and
       `1<<70` (64-bit) trap, `1<<5`→32 clean, no-flag masks silently; riscv64
-      default codegen unbroken (22/22). So `-fsanitize=undefined` now spans
-      **x86_64 (overflow+shift+div), arm64 (overflow+shift+div), riscv64
-      (shift+div)**. Remaining: arm64/x86_64 signed-mul overflow
-      (`SMULH`/`imul`-hi), riscv64 overflow (RV has no flags — needs the
-      2-scratch `(a^d)&(b^d)<0` sequence), native-shadow ASan, TSan/MSan.
+      default codegen unbroken (22/22). **riscv64 signed +/- overflow added
+      (2026-07-11):** RV has no flag register, so snapshot `a->x5, b->x6` before
+      the add/sub (the result reg aliases an operand), then trap on the sign bit
+      of `(a^d)&~(a^b)` (add) / `(a^b)&(a^d)` (sub) via `BGE …,+8; EBREAK`; RV64
+      sign-extension makes the 64-bit sign-bit test correct for 32-bit too.
+      Validated under qemu-riscv64: 32- and 64-bit add/sub overflow trap,
+      unsigned wrap and clean programs don't, and **46/46 exec-corpus programs
+      show no false traps** under `-fsanitize=undefined`. So
+      `-fsanitize=undefined` now has **full arithmetic parity on x86_64, arm64,
+      AND riscv64 (signed overflow + shift + div-by-zero)**. Remaining:
+      signed-*mul* overflow on all three (`SMULH`/`imul`-hi/RV-`mulh`),
+      native-shadow ASan, TSan/MSan.
 - [x] **Test matrix:** a `tests/sanitize/` corpus with one program per UB /
       memory-error class asserting the check fires (and clean programs stay
       silent), across `-O0..-O3` and with the optimizer forced on. LANDED:
