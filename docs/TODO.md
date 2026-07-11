@@ -205,8 +205,12 @@ Research / investigative:
 
 ## 1 — one open question
 
-- [ ] **Implement richer `__asan_report_*` diagnostic formatting** — today
-  `runtime/lib/mccasan.c` only has a one-line SIGILL handler.
+- [x] **Implement richer `__asan_report_*` diagnostic formatting** — the SIGILL
+  handler now classifies the fault from the shadow-poison byte (rax at the ud2):
+  heap-buffer-overflow / heap-use-after-free / stack- / global-buffer-overflow /
+  partial, with pc, shadow byte, and granule offset. The cli asan cases assert
+  the class. (Full address + shadow-dump still needs the fault address preserved
+  to the trap.)
 - [ ] **Implement the clang-compatible `__ubsan_handle_*` diagnostic ABI** — trap
   mode ships (`ud2` on x86_64, `brk` on arm64/riscv64); no handler ABI exists.
 - [ ] **Implement a PE/mingw trap-mode UBSan** — trap mode is gated ELF-only.

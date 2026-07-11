@@ -20,15 +20,22 @@
  * epilogue; enter poisons each local's right redzone then unpoisons the objects
  * (redzones-first => no false positives on slot reuse), leave clears the span.
  *
- * Remaining follow-ups: richer __asan_report_* diagnostics and arm64/riscv64
- * stack instrumentation. Complements the shipped bcheck-based -fsanitize=address
- * (self-contained, clang-verified).
+ * The SIGILL handler classifies the fault from the shadow-poison byte left in
+ * rax at the ud2 (heap-buffer-overflow / heap-use-after-free / stack- and
+ * global-buffer-overflow / partial). Remaining follow-ups: the faulting address
+ * + a shadow-byte dump (needs the address preserved to the trap) and
+ * arm64/riscv64 stack instrumentation. Complements the shipped bcheck-based
+ * -fsanitize=address (self-contained, clang-verified).
  */
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
 #include <sys/mman.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stddef.h>
 #include <unistd.h>
+#include <ucontext.h>
 #define OFF 0x7fff8000UL
 #define RZ 16
 #define GRZ 0xf9
@@ -39,8 +46,28 @@ static unsigned char *shadow(void *a){ return (unsigned char*)(((uintptr_t)a>>3)
 static void set_sh(void*a,size_t n,unsigned char v){ uintptr_t p=(uintptr_t)a; for(size_t i=0;i<n;i+=8) *shadow((void*)(p+i))=v; }
 static void unpoison(void*a,long n){ uintptr_t p=(uintptr_t)a; size_t full=((size_t)n/8)*8; set_sh(a,full,0); if((size_t)n%8) *shadow((void*)(p+full))=(unsigned char)((size_t)n%8); }
 static void wstr(const char*s){ long n=0; while(s[n])n++; (void)!write(2,s,(size_t)n); }
-static void whex(uintptr_t v){ char b[19]; b[0]='0';b[1]='x'; for(int i=0;i<16;i++){int d=(int)((v>>((15-i)*4))&0xf); b[2+i]=(char)(d<10?'0'+d:'a'+d-10);} b[18]='\n'; (void)!write(2,b,19); }
-static void on_sigill(int sig,siginfo_t*si,void*uc){ (void)sig;(void)uc; wstr("AddressSanitizer: bad memory access (mcc native shadow) at pc "); whex((uintptr_t)si->si_addr); _exit(1); }
+static void whexn(uintptr_t v,int nyb,int nl){ char b[19]; int i; for(i=0;i<nyb;i++){int d=(int)((v>>((nyb-1-i)*4))&0xf); b[i]=(char)(d<10?'0'+d:'a'+d-10);} if(nl)b[nyb]='\n'; (void)!write(2,b,(size_t)(nyb+(nl?1:0))); }
+static void whex(uintptr_t v){ wstr("0x"); whexn(v,16,1); }
+static const char *asan_class(int sh){
+    switch(sh&0xff){
+    case 0xfa: return "heap-buffer-overflow";
+    case 0xfd: return "heap-use-after-free";
+    case 0xf2: return "stack-buffer-overflow";
+    case GRZ:  return "global-buffer-overflow";
+    default:   return (sh>=1&&sh<=7) ? "buffer-overflow" : "bad memory access";
+    }
+}
+static void on_sigill(int sig,siginfo_t*si,void*ucv){
+    ucontext_t *uc=(ucontext_t*)ucv; (void)sig;
+    long sh = uc ? (long)uc->uc_mcontext.gregs[REG_RAX] : 0;
+    long off = uc ? (long)uc->uc_mcontext.gregs[REG_RDX] : 0;
+    wstr("=================================================================\n");
+    wstr("==ERROR: AddressSanitizer: "); wstr(asan_class((int)sh));
+    wstr(" (mcc native shadow)\n    pc "); whex((uintptr_t)si->si_addr);
+    wstr("    shadow byte 0x"); whexn((uintptr_t)(sh&0xff),2,0);
+    wstr("  granule offset "); whexn((uintptr_t)(off&0xff),2,1);
+    _exit(1);
+}
 void __asan_stack_enter(void *tab,void *fpv){
     size_t *q; size_t fp=(size_t)fpv;
     for(q=tab; q[0]; q+=2){ char*obj=(char*)(fp+q[0]); size_t sz=q[1]; set_sh(obj+((sz+7)&~(size_t)7),RZ,0xf2); }

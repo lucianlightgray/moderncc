@@ -1955,28 +1955,28 @@ static const cli_case_t cli_cases[] = {
 		{"asan_shadow_native_overflow", "cpu=x86_64,os=linux",
 		 "printf 'extern void*malloc(unsigned long);\\nint main(void){int*p=malloc(40);p[0]=1;return p[100];}\\n' > {W}/an.c && "
 		 "{MCC} -B{B} -fasan-shadow {W}/an.c -o {W}/an && "
-		 "{W}/an 2>&1 | grep -oE 'AddressSanitizer: bad memory access' | head -1",
-		 "AddressSanitizer: bad memory access\n"},
+		 "{W}/an 2>&1 | grep -oE 'AddressSanitizer: heap-buffer-overflow' | head -1",
+		 "AddressSanitizer: heap-buffer-overflow\n"},
 		{"asan_shadow_native_use_after_free", "cpu=x86_64,os=linux",
 		 "printf 'extern void*malloc(unsigned long);extern void free(void*);\\nint main(void){int*p=malloc(16);p[0]=7;free(p);return p[0];}\\n' > {W}/au.c && "
 		 "{MCC} -B{B} -fasan-shadow {W}/au.c -o {W}/au && "
-		 "{W}/au 2>&1 | grep -oE 'AddressSanitizer: bad memory access' | head -1",
-		 "AddressSanitizer: bad memory access\n"},
+		 "{W}/au 2>&1 | grep -oE 'AddressSanitizer: heap-use-after-free' | head -1",
+		 "AddressSanitizer: heap-use-after-free\n"},
 		{"asan_shadow_native_global_overflow", "cpu=x86_64,os=linux",
 		 "printf 'int g[10];\\nint main(void){g[0]=1;volatile int i=10;return g[i];}\\n' > {W}/ag.c && "
 		 "{MCC} -B{B} -fasan-shadow {W}/ag.c -o {W}/ag && "
-		 "{W}/ag 2>&1 | grep -oE 'AddressSanitizer: bad memory access' | head -1",
-		 "AddressSanitizer: bad memory access\n"},
+		 "{W}/ag 2>&1 | grep -oE 'AddressSanitizer: global-buffer-overflow' | head -1",
+		 "AddressSanitizer: global-buffer-overflow\n"},
 		{"asan_shadow_native_global_clean", "cpu=x86_64,os=linux",
 		 "printf 'int bss[16];int data[4]={1,2,3,4};char nm[6]=\"hello\";\\nint main(void){int s=0;for(int i=0;i<16;i++)bss[i]=i;s=bss[15]+data[3]+nm[4];return s==(15+4+111)?0:7;}\\n' > {W}/agc.c && "
 		 "{MCC} -B{B} -fasan-shadow {W}/agc.c -o {W}/agc && "
 		 "{W}/agc; echo rc=$?",
 		 "rc=0\n"},
 		{"asan_shadow_native_stack_overflow", "cpu=x86_64,os=linux",
-		 "printf 'int main(void){volatile int i=12;char buf[10];buf[0]=1;return buf[i];}\\n' > {W}/as.c && "
+		 "printf 'int main(void){volatile int i=20;char buf[10];buf[0]=1;return buf[i];}\\n' > {W}/as.c && "
 		 "{MCC} -B{B} -fasan-shadow {W}/as.c -o {W}/as && "
-		 "{W}/as 2>&1 | grep -oE 'AddressSanitizer: bad memory access' | head -1",
-		 "AddressSanitizer: bad memory access\n"},
+		 "{W}/as 2>&1 | grep -oE 'AddressSanitizer: stack-buffer-overflow' | head -1",
+		 "AddressSanitizer: stack-buffer-overflow\n"},
 		{"asan_shadow_native_stack_clean", "cpu=x86_64,os=linux",
 		 "printf 'struct P{int a,b;};\\nint main(void){char buf[10];struct P p;int x=5;int*px=&x;for(int i=0;i<10;i++)buf[i]=i;p.a=buf[9];p.b=*px;return (p.a==9&&p.b==5)?0:7;}\\n' > {W}/asc.c && "
 		 "{MCC} -B{B} -fasan-shadow {W}/asc.c -o {W}/asc && "
@@ -1986,8 +1986,8 @@ static const cli_case_t cli_cases[] = {
 		 "cc -O2 -c {D}/../../runtime/lib/mccasan.c -o {W}/mccasan_m.o 2>/dev/null && "
 		 "printf 'extern void*malloc(unsigned long);\\nint main(void){int*p=malloc(40);p[0]=1;return p[100];}\\n' > {W}/anm.c && "
 		 "{MCC} -B{B} -fasan-shadow -c {W}/anm.c -o {W}/anm.o && cc {W}/anm.o {W}/mccasan_m.o -o {W}/anm 2>/dev/null && "
-		 "{W}/anm 2>&1 | grep -oE 'AddressSanitizer: bad memory access' | head -1",
-		 "AddressSanitizer: bad memory access\n"},
+		 "{W}/anm 2>&1 | grep -oE 'AddressSanitizer: heap-buffer-overflow' | head -1",
+		 "AddressSanitizer: heap-buffer-overflow\n"},
 
 		{"macro_eval_recursive", "",
 		 "printf '#define fact(n) (n <= 1 ? 1 : n * fact(n - 1))\\nint main(void) { return fact(5) == 120 ? 0 : 1; }\\n' > {W}/me.c && "
