@@ -284,17 +284,23 @@ makes the compiler a sanitizer *provider* for user code.
       (arch-neutral, not x86_64-gated), predefining `__SANITIZE_ADDRESS__`;
       combining `-fsanitize=undefined,address` even routes the UBSan `ud2` trap
       through bcheck's backtrace handler for a *sourced* diagnostic.
-      **arm64 UBSan started (2026-07-11): divide-by-zero trap landed** —
-      `arm64-gen.c` now emits `CBNZ divisor,#8; BRK #0` before every
-      `SDIV`/`UDIV`/`MSUB` when `do_sanitize_undefined` (arch-neutral flag; the
-      guard was widened to accept arm64). This is *higher* value than on x86_64:
-      arm64 `SDIV`/`UDIV` silently **return 0** on divide-by-zero, so hardware
-      never faults it. Validated under **qemu-aarch64** with the vendored arm64
-      musl sysroot: `100/0 -fsanitize=undefined` → `BRK`/SIGTRAP; without the
-      flag it returns 0 (no fault); `100/4` returns 25 clean; default arm64
-      codegen unbroken (24/24 exec programs agree with x86_64), x86_64 ctest
-      1882/1882. Remaining: arm64 signed-overflow (`ADDS`/`SUBS`+`B.VS`) and
-      shift-range traps, riscv64 port, native-shadow ASan, TSan/MSan.
+      **arm64 UBSan LANDED (2026-07-11): div-by-zero + signed overflow + shift
+      range**, all in `arm64-gen.c` behind the (now arch-neutral)
+      `do_sanitize_undefined`, trap = `BRK #0`:
+      - div-by-zero: `CBNZ divisor,#8; BRK` before `SDIV`/`UDIV`/`MSUB` — higher
+        value than x86_64 since arm64 `SDIV`/`UDIV` silently **return 0** (no
+        hardware fault);
+      - signed `+`/`-`: emit `ADDS`/`SUBS` (flag-setting) then `B.VC` over a
+        `BRK` (skip when no overflow), only for signed operands;
+      - shift `<<`/`>>`: `CMP cnt,#width; B.LO` over a `BRK` (catches
+        `>=width`/negative — arm64 shift-by-register silently masks the count).
+      Validated under **qemu-aarch64** (vendored arm64 musl sysroot):
+      `2e9+2e9` and `1<<40` → SIGTRAP (133); unsigned wrap `4e9+4e9` → no trap
+      (correct); `100/0` → trap while no-flag returns 0; clean programs run.
+      Default arm64 codegen unbroken (27/27 exec agree with x86_64), x86_64
+      ctest 1882/1882. Remaining: arm64 signed-mul overflow (`SMULH` compare),
+      **riscv64** port (same sysroot path available), native-shadow ASan,
+      TSan/MSan.
 - [x] **Test matrix:** a `tests/sanitize/` corpus with one program per UB /
       memory-error class asserting the check fires (and clean programs stay
       silent), across `-O0..-O3` and with the optimizer forced on. LANDED:

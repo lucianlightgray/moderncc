@@ -1810,6 +1810,23 @@ static void arm64_ubsan_trap_if_zero(uint32_t reg, uint32_t l) {
 	o(0xd4200000);
 }
 
+static int arm64_ubsan_on(void) {
+	return mcc_state->do_sanitize_undefined && !nocode_wanted;
+}
+
+static void arm64_ubsan_trap_cond(uint32_t skip_cond) {
+	o(0x54000000 | (2u << 5) | skip_cond);
+	o(0xd4200000);
+}
+
+static void arm64_ubsan_shift_check(uint32_t cnt, uint32_t l) {
+	if (!arm64_ubsan_on())
+		return;
+	uint32_t width = l ? 64 : 32;
+	o(0x7100001f | l << 31 | (width << 10) | (cnt << 5));
+	arm64_ubsan_trap_cond(3);
+}
+
 static void arm64_gen_opil(int op, uint32_t l) {
 	uint32_t x, a, b;
 
@@ -1842,6 +1859,7 @@ static void arm64_gen_opil(int op, uint32_t l) {
 	assert(vtop[-1].r < VT_CONST && vtop[0].r < VT_CONST);
 	a = intr(vtop[-1].r);
 	b = intr(vtop[0].r);
+	uint32_t uns = (vtop[-1].type.t & VT_UNSIGNED) != 0;
 	vtop -= 2;
 	x = get_reg(MCC_RC_INT);
 	++vtop;
@@ -1862,10 +1880,18 @@ static void arm64_gen_opil(int op, uint32_t l) {
 		o(0x1b007c00 | l << 31 | x | a << 5 | b << 16);
 		break;
 	case '+':
-		o(0x0b000000 | l << 31 | x | a << 5 | b << 16);
+		if (arm64_ubsan_on() && !uns) {
+			o(0x2b000000 | l << 31 | x | a << 5 | b << 16);
+			arm64_ubsan_trap_cond(7);
+		} else
+			o(0x0b000000 | l << 31 | x | a << 5 | b << 16);
 		break;
 	case '-':
-		o(0x4b000000 | l << 31 | x | a << 5 | b << 16);
+		if (arm64_ubsan_on() && !uns) {
+			o(0x6b000000 | l << 31 | x | a << 5 | b << 16);
+			arm64_ubsan_trap_cond(7);
+		} else
+			o(0x4b000000 | l << 31 | x | a << 5 | b << 16);
 		break;
 	case '/':
 	case TOK_PDIV:
@@ -1903,12 +1929,15 @@ static void arm64_gen_opil(int op, uint32_t l) {
 		o(0x1a9f07e0 | x);
 		break;
 	case TOK_SAR:
+		arm64_ubsan_shift_check(b, l);
 		o(0x1ac02800 | l << 31 | x | a << 5 | b << 16);
 		break;
 	case TOK_SHL:
+		arm64_ubsan_shift_check(b, l);
 		o(0x1ac02000 | l << 31 | x | a << 5 | b << 16);
 		break;
 	case TOK_SHR:
+		arm64_ubsan_shift_check(b, l);
 		o(0x1ac02400 | l << 31 | x | a << 5 | b << 16);
 		break;
 	case TOK_UDIV:
