@@ -1897,6 +1897,10 @@ static const cli_case_t cli_cases[] = {
 		 "printf '#ifdef __SANITIZE_ADDRESS__\\nint main(void){return 5;}\\n#else\\nint main(void){return 0;}\\n#endif\\n' > {W}/asm.c && "
 		 "{MCC} -B{B} -fsanitize=address {W}/asm.c -o {W}/asm && {W}/asm; echo rc=$?",
 		 "rc=5\n"},
+		{"sanitize_address_use_after_free", "bcheck",
+		 "printf 'void *malloc(unsigned long);void free(void*);\\nint main(void){int*p=malloc(4);*p=5;free(p);return *p;}\\n' > {W}/uaf.c && "
+		 "{MCC} -B{B} -fsanitize=address {W}/uaf.c -o {W}/uaf && {W}/uaf 2>&1 | grep -oE 'invalid memory access' | head -1",
+		 "invalid memory access\n"},
 
 		{"macro_eval_recursive", "",
 		 "printf '#define fact(n) (n <= 1 ? 1 : n * fact(n - 1))\\nint main(void) { return fact(5) == 120 ? 0 : 1; }\\n' > {W}/me.c && "
