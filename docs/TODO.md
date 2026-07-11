@@ -852,14 +852,18 @@ BOX-3 STATUS (2026-07-10, native arm64): two layers, in order.
       `load()` assert that first blocked this was fixed by §34/`76407be9`;
       the "-O3 non-determinism" I briefly reported was a harness bug —
       different `-o` names embed different basenames — now retracted.)
-- [ ] Then repeat for riscv64 (`riscv64-gen.c ~:848`) — CI-delegated. A
-      riscv64-Linux environment IS reachable on this box (colima Linux VM +
-      qemu-riscv64 user-mode), but replicating it locally is heavy/emulated and
-      redundant with the **active CI RISE runner** which already validates
-      riscv64 (`b8f680a3` "CI: use RISE runner to test riscv64" + the riscv64
-      float/TLS/clear_cache landings). So riscv64 §32c stays on CI, not local
-      emulation. (§32c's obstacle B is x86_64-specific and already validated
-      via Rosetta; riscv64, like arm64, compiles promotion out.)
+- [x] Then repeat for riscv64 (`riscv64-gen.c ~:848`) — **VALIDATED LOCALLY
+      (2026-07-11) via qemu-riscv64** (the vendored riscv64 musl sysroot makes
+      user-mode emulation cheap after all): a frame-carve stress —
+      `rec(5)` with `volatile char pad[37]` + `volatile int pad2[23]` +
+      recursion, driving `loc` strongly negative and non-16-aligned across 6
+      frames — compiles+runs correctly at **-O0 and -O2**, output `8346` /
+      exit 26 **byte-matching the native gcc reference**, so the riscv64
+      `gfunc_epilog` carve keeps the stack balanced for any non-aligned local
+      block (the same invariant a future synthetic temp hits). This is the
+      riscv64 analog of the arm64 carve validation above; §32c's obstacle B is
+      x86_64-specific and promotion compiles out on riscv64. The active CI RISE
+      runner (`b8f680a3`) remains the belt-and-suspenders check.
 
 ## N3. D — §30/§32a-b transform refinements
 
