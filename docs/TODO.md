@@ -1305,6 +1305,16 @@ re-emits (and/or emit each trial into a throwaway text+sym sub-context), then
 re-run the gate-ON inline corpus + both self-host fixpoints + the differential
 fuzzer. The `ast_arena_clone` prerequisite (`12d01144`) is unaffected and landed.
 
+**UPDATE (2026-07-11): the miscompile the trial hit was §34b, now FIXED.** The
+gate-ON `inline.c` failure was the frame-size low-water bug (§34b) — the no-inline
+config the trial selects for `main` exposed the under-sized frame; the varying
+"5 / 2" exits were that uninitialized read, not (only) a symbol-lifecycle leak.
+With §34b's `ast_loc_low` clamp landed, the trial's core blocker is gone. Re-
+attempt: re-apply the `MCC_AST_PERFN_INPROC` inline-off-vs-on trial (each emit now
+carries the frame clamp), keep the `sym_pop`-to-mark between measurement emits as
+a belt-and-braces guard, and re-run the full gate-ON validation. This is the
+concrete next step for §22's in-process re-emit.
+
 Builds on §21 + the capture/replay driver.
 
 ## 23. Widen the inliner envelope — the "aggressive" mode (medium-large, correctness-sensitive)
