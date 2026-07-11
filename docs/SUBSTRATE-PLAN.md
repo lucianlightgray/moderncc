@@ -164,14 +164,14 @@ byte-neutral.
 ## Step 4 (landed) — the strategy engine
 
 Built on the proven substrate. Each fixed-pipeline pass is a `AstStrategy {name, gate,
-apply}`; the pipeline order is the frozen table `ast_strategies[]`, consumed
-deterministically in `ast_func_end` when `MCC_AST_ENGINE=strategy`. Default stays
-`legacy` (inline sequence, retained as fallback). Byte-identical to legacy by
-construction (same functions, order, gates, args) and by measurement: 900/900 object
-diffs across 300 generated programs × `-O1/-O2/-O3` are identical; ctest is 1904/1904
-under `MCC_AST_ENGINE=strategy` (incl. fixpoint + fuzz + byte-exact goldens); shadow +
-strategy is 1904/1904, zero divergences. `match` = the gate; `est_cost_delta` is
-deferred to Step 5.
+apply}`; the pipeline order is the frozen table `ast_strategies[]`, consumed by
+`ast_func_end`. It is the **sole** pipeline — the legacy inline block and its
+`MCC_AST_ENGINE` toggle have been removed. Byte-identical to the former legacy path by
+construction (same functions, order, gates, args) and by measurement before removal:
+900/900 object diffs across 300 generated programs × `-O1/-O2/-O3` were identical;
+making it the only engine changed no bytes — ctest stays 1904/1904 (incl. fixpoint +
+fuzz + byte-exact goldens) and shadow is 1904/1904, zero divergences. `match` = the
+gate; `est_cost_delta` is deferred to Step 5.
 
 ## Step 5 core (landed) — the live -O4+ search
 
@@ -206,10 +206,12 @@ the module counters are saved/restored around the search regardless.
 
 Single-threaded. -O4+ output is timing-bounded and non-reproducible by design
 (quarantined there); `-O1..-O3` carry no budget, never search, stay byte-reproducible.
-Opt-in (`MCC_AST_ENGINE=strategy` + `-O<n≥4>`). Validated: default path 1904/1904 ctest
-(search never engages); `-O5`/`-O6` strategy differential correct vs gcc/clang; shadow +
-strategy + `-O5/-O6` zero side-car divergences; the `-ON` budget is an absolute cap
-(verified no hang, finishes early when candidates complete); asttool 55/55.
+Opt-in (`MCC_AST_SEARCH=1` + `-O<n≥4>`) — a dedicated flag kept off the default -O4+ path
+so it does not perturb the out-of-process superopt's per-worker gate measurements.
+Validated: default path 1904/1904 ctest (search never engages); `MCC_AST_SEARCH -O5/-O6`
+differential correct vs gcc/clang; shadow zero side-car divergences; the `-ON` budget is
+an absolute cap (verified no hang, finishes early when candidates complete); asttool
+55/55.
 
 ## Out of scope (Step 5+ continuations)
 

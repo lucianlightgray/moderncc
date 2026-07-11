@@ -40,25 +40,19 @@ byte-neutral by the same evidence. See `docs/SUBSTRATE-PLAN.md` for the as-built
   earlier prototype. The incremental SoA `h[]` column stays available if a future
   hot path needs O(depth) updates instead of O(n) rebuilds.
 
-**LANDED — Step 4: the strategy engine.** Each fixed-pipeline pass is wrapped as an
-`AstStrategy {name, gate, apply}` and the pipeline order is now a frozen data table
-(`ast_strategies[]`) consumed deterministically in `ast_func_end` when
-`MCC_AST_ENGINE=strategy`. The default stays `legacy` (the inline sequence, retained as
-the fallback per the design's transition plan). The table order/gates/args mirror the
-legacy block exactly, so the two engines emit byte-identical code — verified: 900/900
-object comparisons (300 generated programs × `-O1/-O2/-O3`, legacy vs strategy) are
-byte-identical; the full ctest passes 1904/1904 under `MCC_AST_ENGINE=strategy`
-(incl. fixpoint-invariant + fuzz/matrix + the exact-byte goldens), and shadow+strategy
-is 1904/1904 with zero side-car divergences. `match` = the gate; `est_cost_delta` (the
-search's ranking key) is deferred to Step 5. The byte-identity + fixpoint precondition
-for flipping the default is now met.
-
-- [ ] **Flip the `MCC_AST_ENGINE` default to `strategy`** — the gate is satisfied
-  (byte-identical + fixpoint). Deliberate one-line change once the search is wanted as
-  the baseline; keeps `legacy` as the fallback.
+**LANDED — Step 4: the strategy engine (now the sole pipeline).** Each fixed-pipeline
+pass is wrapped as an `AstStrategy {name, gate, apply}` and the pipeline order is a frozen
+data table (`ast_strategies[]`) consumed by `ast_func_end`. It is the **only** engine —
+the legacy inline block and its `MCC_AST_ENGINE` toggle have been removed. The table
+order/gates/args reproduced the legacy block byte-for-byte (verified before removal:
+900/900 object comparisons across 300 generated programs × `-O1/-O2/-O3` were
+byte-identical), so making it the sole engine changed no emitted bytes: the full ctest
+stays 1904/1904 (incl. fixpoint-invariant + fuzz/matrix + the exact-byte goldens) and
+shadow is 1904/1904 with zero side-car divergences. `match` = the gate; `est_cost_delta`
+(the search's ranking key) is deferred to Step 5.
 
 **LANDED — Step 5 core: the live -O4+ search.** At -O4+ (`optimize_search_seconds > 0`)
-with the strategy engine, `ast_func_end` runs a per-function search over the four
+opt-in via `MCC_AST_SEARCH`, `ast_func_end` runs a per-function search over the four
 toggleable fold gates (templates, narrow, bitflag, sethi) instead of the single frozen
 order (`ast_search_select`). Execution model matches the intended runtime JIT: each
 candidate gate config is a stackless coroutine whose one *tick* applies exactly one
@@ -75,12 +69,13 @@ the normal unmodified pipeline+emit path on the untouched captured tree, so a se
 (or a time-truncated / aborted search) can only pick a larger-but-correct config, never
 a miscompile. Winners are memoized by `ast_intention_hash`. Single-threaded; -O4+ output
 is timing-bounded and non-reproducible by design (quarantined there — `-O1..-O3` carry
-no budget, never search, stay byte-reproducible). Opt-in: `MCC_AST_ENGINE=strategy` +
-`-O<n≥4>`. Validated: default `-O1..-O3` unchanged (1904/1904 ctest, search never
-engages); `-O5`/`-O6` strategy search differential correct vs gcc/clang (200/200 + 90/90
-across scheduler revisions); shadow+strategy+`-O5/-O6` zero side-car divergences; the
-`-ON` budget is an absolute cap (verified no hang, finishes early when candidates
-complete); asttool 55/55 with the portable `clock()` timer.
+no budget, never search, stay byte-reproducible). Opt-in: `MCC_AST_SEARCH=1` +
+`-O<n≥4>` — a dedicated flag, kept off the default -O4+ path so it does not perturb the
+out-of-process superopt's per-worker gate measurements. Validated: default `-O1..-O3`
+unchanged (1904/1904 ctest, search never engages); `MCC_AST_SEARCH -O5/-O6` differential
+correct vs gcc/clang (200/200 + 90/90 across scheduler revisions); shadow zero side-car
+divergences; the `-ON` budget is an absolute cap (verified no hang, finishes early when
+candidates complete); asttool 55/55 with the portable `clock()` timer.
 
 - [ ] **Step 5+ — scoring fidelity: emitted-size / JIT-runtime** — replace the static
   `ast_cost_score` proxy with true emitted-byte size (needs the §22 scratch-`Section`

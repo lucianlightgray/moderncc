@@ -611,7 +611,7 @@ static int ast_fncfg_find(const char *fn) {
 	return -1;
 }
 static int ast_templates_env;
-static int ast_engine_strategy;
+static int ast_search_env;
 static unsigned ast_search_seconds;
 static int ast_promote_env;
 static int ast_no_callful_env;
@@ -783,10 +783,7 @@ void ast_configure(MCCState *s1) {
 	ast_replay_env = s1->optimize >= 1;
 	ast_replay_dump = ast_env_gate("MCC_AST_REPLAY_DUMP", 0);
 	ast_templates_env = ast_env_gate("MCC_AST_TEMPLATES", s1->optimize >= 1);
-	{
-		const char *eng = getenv("MCC_AST_ENGINE");
-		ast_engine_strategy = eng && !strcmp(eng, "strategy");
-	}
+	ast_search_env = ast_env_gate("MCC_AST_SEARCH", 0);
 	ast_search_seconds = s1->optimize_search_seconds;
 	ast_promote_env = ast_env_gate("MCC_AST_PROMOTE", opt_promote);
 	ast_no_callful_env = ast_env_gate("MCC_AST_NO_CALLFUL", 0);
@@ -6744,14 +6741,13 @@ void ast_func_begin(Sym *sym) {
 
 /*
  * Strategy engine (rollout step 4). Each fixed-pipeline pass is wrapped as an
- * AstStrategy {name, gate, apply} and the pipeline order becomes a frozen data
- * table (ast_strategies) rather than a hand-ordered call sequence. At -O1..-O3
- * ast_func_end consumes the table deterministically when MCC_AST_ENGINE=strategy;
- * the default (legacy) keeps the inline sequence as the fallback. The table order,
- * gates, and arguments mirror the legacy block exactly, so the two engines emit
- * byte-identical code — the precondition for later flipping the default and for
- * the step-5 search that will reorder/select strategies. `match` is the gate and
- * `est_cost_delta` (the search's ranking key) is deferred to step 5.
+ * AstStrategy {name, gate, apply} and the pipeline order is a frozen data table
+ * (ast_strategies) rather than a hand-ordered call sequence. ast_func_end always
+ * consumes this table — it is the sole pipeline (the earlier legacy inline block
+ * and its MCC_AST_ENGINE toggle have been removed). The table order, gates, and
+ * arguments reproduced the legacy block byte-for-byte, so making it the only
+ * engine changed no emitted bytes. `match` is the gate; `est_cost_delta` (the
+ * step-5 search's ranking key) is deferred.
  */
 typedef struct AstStrategy {
 	const char *name;
@@ -6804,10 +6800,12 @@ static const AstStrategy ast_strategies[AST_STRAT_COUNT] = {
 };
 
 /*
- * Live -O4+ search (rollout step 5). At -O4+ (optimize_search_seconds>0, so the
- * driver has budget for a search) with the strategy engine, ast_func_end runs a
- * best-first per-function search over the four toggleable fold gates (templates,
- * narrow, bitflag, sethi) instead of applying the single frozen order.
+ * Live -O4+ search (rollout step 5). Opt-in via MCC_AST_SEARCH at -O4+
+ * (optimize_search_seconds>0, so the driver has budget for a search): ast_func_end
+ * runs a best-first per-function search over the four toggleable fold gates
+ * (templates, narrow, bitflag, sethi) instead of applying the single frozen order.
+ * It is a separate opt-in (not the default -O4+ path) so it does not perturb the
+ * out-of-process superopt's per-worker gate measurements.
  *
  * Execution model (shared shape with the future runtime JIT). Each candidate gate
  * config is a stackless coroutine whose one "tick" applies exactly one strategy
@@ -7155,9 +7153,9 @@ void ast_func_end(Sym *sym) {
 				ast_ltemp_cur = saved_loc;
 				ast_ltemp_n = 0;
 				unsigned ast_search_sv_gates = ast_search_gates_now();
-				if (faithful && ast_engine_strategy && ast_search_seconds > 0)
+				if (faithful && ast_search_env && ast_search_seconds > 0)
 					ast_search_select(sym, faithful);
-				if (ast_engine_strategy) {
+				{
 					int sf[AST_STRAT_COUNT];
 					for (int si = 0; si < AST_STRAT_COUNT; si++)
 						sf[si] = faithful && *ast_strategies[si].gate
@@ -7175,19 +7173,6 @@ void ast_func_end(Sym *sym) {
 					bfs = sf[AST_STRAT_BF];
 					sethis = sf[AST_STRAT_SETHI];
 					tcos = sf[AST_STRAT_TCO];
-				} else {
-					bfolds = faithful && ast_templates_env ? ast_bfold_run(ast_cur) : 0;
-					idents = faithful && ast_templates_env ? ast_ident_run(ast_cur) : 0;
-					narrows = faithful && ast_narrow_env ? ast_narrow_run(ast_cur) : 0;
-					cprops = faithful && ast_templates_env ? ast_cprop_run(ast_cur) : 0;
-					cses = faithful && ast_templates_env ? ast_cse_run(ast_cur) : 0;
-					licms = faithful && ast_templates_env ? ast_licm_folds : 0;
-					dses = faithful && ast_templates_env ? ast_dse_run(ast_cur) : 0;
-					sccps = faithful && ast_templates_env ? ast_sccp_run(ast_cur) : 0;
-					jts = faithful && ast_templates_env ? ast_jt_run(ast_cur) : 0;
-					bfs = faithful && ast_bitflag_env ? ast_bf_run(ast_cur) : 0;
-					sethis = faithful && ast_sethi_env ? ast_sethi_run(ast_cur) : 0;
-					tcos = faithful && ast_templates_env ? ast_tco_run(ast_cur, sym) : 0;
 				}
 				ast_search_gates_set(ast_search_sv_gates);
 				int do_bfold = bfolds > 0;
