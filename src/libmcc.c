@@ -1911,6 +1911,10 @@ static const FlagDef options_m[] = {
 #endif
 		{0, 0, NULL}};
 
+static int san_tok_eq(const char *tok, int n, const char *name) {
+	return (int)strlen(name) == n && !memcmp(tok, name, n);
+}
+
 static int set_flag(MCCState *s, const FlagDef *flags, const char *name) {
 	int value, mask, ret;
 	const FlagDef *p;
@@ -2366,6 +2370,44 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) {
 #endif
 			} else if (!strcmp(optarg, "no-stack-protector")) {
 				s->stack_protector = 0;
+			} else if (strstart("sanitize=", &vis)) {
+				const char *tok = vis;
+				while (*tok) {
+					const char *end = tok;
+					int n;
+					while (*end && *end != ',')
+						end++;
+					n = (int)(end - tok);
+					if (san_tok_eq(tok, n, "undefined") ||
+							san_tok_eq(tok, n, "signed-integer-overflow") ||
+							san_tok_eq(tok, n, "integer-divide-by-zero") ||
+							san_tok_eq(tok, n, "shift") ||
+							san_tok_eq(tok, n, "shift-exponent") ||
+							san_tok_eq(tok, n, "shift-base") ||
+							san_tok_eq(tok, n, "bounds")) {
+#if defined MCC_TARGET_X86_64 && !defined MCC_TARGET_PE
+						s->do_sanitize_undefined = 1;
+#else
+						mcc_warning_c(warn_unsupported)(
+								"-fsanitize=undefined is only implemented on x86_64 ELF/Mach-O");
+#endif
+					} else if (san_tok_eq(tok, n, "address") ||
+										 san_tok_eq(tok, n, "thread") ||
+										 san_tok_eq(tok, n, "memory")) {
+						return mcc_error_noabort(
+								"-fsanitize=%.*s is not yet implemented in this mcc", n, tok);
+					} else {
+						return mcc_error_noabort("unknown -fsanitize= check '%.*s'", n, tok);
+					}
+					tok = *end ? end + 1 : end;
+				}
+			} else if (!strcmp(optarg, "no-sanitize") || strstart("no-sanitize=", &vis)) {
+				s->do_sanitize_undefined = 0;
+			} else if (!strcmp(optarg, "sanitize-undefined-trap-on-error") ||
+								 !strcmp(optarg, "sanitize-trap=undefined") ||
+								 !strcmp(optarg, "sanitize-recover=undefined") ||
+								 !strcmp(optarg, "no-sanitize-recover=undefined")) {
+				;
 			} else if (!strcmp(optarg, "diagnostics-color") || !strcmp(optarg, "diagnostics-color=always") || !strcmp(optarg, "color-diagnostics")) {
 				s->diag_color = 1;
 			} else if (!strcmp(optarg, "diagnostics-color=never") || !strcmp(optarg, "no-diagnostics-color") || !strcmp(optarg, "no-color-diagnostics")) {

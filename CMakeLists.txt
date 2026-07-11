@@ -2828,6 +2828,39 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(sanitize-smoke PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
+    if(NOT MCC_EMULATOR AND MCC_CPU STREQUAL "x86_64" AND NOT MCC_TARGETOS STREQUAL "WIN32")
+        set(_ubsan_dir "${CMAKE_CURRENT_SOURCE_DIR}/tests/sanitize/ubsan")
+        file(GLOB _ubsan_traps RELATIVE "${_ubsan_dir}" "${_ubsan_dir}/trap_*.c")
+        foreach(_uf IN LISTS _ubsan_traps)
+            string(REGEX REPLACE "\\.c$" "" _un "${_uf}")
+            add_test(NAME "ubsan/${_un}" COMMAND "${CMAKE_COMMAND}"
+                "-DMCC=${_mcc_exe}" "-DBDIR=${_bdir}"
+                "-DSRC=${_ubsan_dir}/${_uf}"
+                "-DOUT=${CMAKE_BINARY_DIR}/ubsan-${_un}${MCC_EXESUF}"
+                "-DMODE=trap"
+                -P "${_ubsan_dir}/run_ubsan.cmake")
+            set_tests_properties("ubsan/${_un}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+        endforeach()
+        add_test(NAME "ubsan/clean_arith" COMMAND "${CMAKE_COMMAND}"
+            "-DMCC=${_mcc_exe}" "-DBDIR=${_bdir}"
+            "-DSRC=${_ubsan_dir}/clean_arith.c"
+            "-DOUT=${CMAKE_BINARY_DIR}/ubsan-clean_arith${MCC_EXESUF}"
+            "-DMODE=clean"
+            "-DEXPECT=70000 -10000 1200000000 1200000000 1073741824 40000 0"
+            -P "${_ubsan_dir}/run_ubsan.cmake")
+        set_tests_properties("ubsan/clean_arith" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+        add_test(NAME "ubsan/clean_unsigned_wrap" COMMAND "${CMAKE_COMMAND}"
+            "-DMCC=${_mcc_exe}" "-DBDIR=${_bdir}"
+            "-DSRC=${_ubsan_dir}/clean_unsigned_wrap.c"
+            "-DOUT=${CMAKE_BINARY_DIR}/ubsan-clean_unsigned_wrap${MCC_EXESUF}"
+            "-DMODE=clean"
+            "-DEXPECT=3705032704 1983905792 2147483648"
+            -P "${_ubsan_dir}/run_ubsan.cmake")
+        set_tests_properties("ubsan/clean_unsigned_wrap" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+    else()
+        mcc_skip_test(ubsan-suite "-fsanitize=undefined instrumentation is x86_64 ELF/Mach-O only")
+    endif()
+
     if(NOT CMAKE_CROSSCOMPILING)
         add_executable(hostgate tools/hostgate.c tools/toolsupport.c)
         target_link_libraries(hostgate ${CMAKE_DL_LIBS})

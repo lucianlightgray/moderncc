@@ -55,6 +55,10 @@ static const char help[] =
 #if MCC_CONFIG_DIAG_RT >= 1
 		"  -bt[<n>]            Link with backtrace support (show up to <n> callers)\n"
 #endif
+#if defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_PE)
+		"  -fsanitize=undefined  Trap on undefined behavior (signed overflow, out-of-range\n"
+		"                        shift, divide-by-zero) with an illegal instruction\n"
+#endif
 		"Other options:\n"
 		"  -f[no-]<flag>       Enable (or disable) a compiler flag; see -hh\n"
 		"  -W[no-]<warn>       Enable (or disable) a warning; see -hh\n"

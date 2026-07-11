@@ -1604,6 +1604,14 @@ ST_FUNC int gjmp_cond(int op, int t) {
 	return t;
 }
 
+static void gen_ubsan_check(int cc) {
+	int t;
+	g(0x0f);
+	t = gjmp2(cc, 0);
+	o(0x0b0f);
+	gsym(t);
+}
+
 void gen_opi(int op) {
 	int r, fr, opc, c;
 	int ll, uu, cc;
@@ -1637,6 +1645,9 @@ void gen_opi(int op) {
 			orex(ll, r, fr, (opc << 3) | 0x01);
 			o(0xc0 + REG_VALUE(r) + REG_VALUE(fr) * 8);
 		}
+		if (mcc_state->do_sanitize_undefined && !nocode_wanted && !uu &&
+				(op == '+' || op == '-'))
+			gen_ubsan_check(0x81);
 		vtop--;
 		if (op >= TOK_ULT && op <= TOK_GT)
 			vset_VT_CMP(op);
@@ -1666,6 +1677,8 @@ void gen_opi(int op) {
 		fr = vtop[0].r;
 		orex(ll, fr, r, 0xaf0f);
 		o(0xc0 + REG_VALUE(fr) + REG_VALUE(r) * 8);
+		if (mcc_state->do_sanitize_undefined && !nocode_wanted && !uu)
+			gen_ubsan_check(0x81);
 		vtop--;
 		break;
 	case TOK_SHL:
@@ -1688,6 +1701,12 @@ void gen_opi(int op) {
 		} else {
 			gv2(MCC_RC_INT, MCC_RC_RCX);
 			r = vtop[-1].r;
+			if (mcc_state->do_sanitize_undefined && !nocode_wanted) {
+				orex(0, MCC_TREG_RCX, 0, 0x83);
+				o((0xc0 | (7 << 3)) + REG_VALUE(MCC_TREG_RCX));
+				g(ll ? 64 : 32);
+				gen_ubsan_check(0x82);
+			}
 			orex(ll, r, 0, 0xd3);
 			o(opc | REG_VALUE(r));
 		}
@@ -1707,6 +1726,11 @@ void gen_opi(int op) {
 		fr = vtop[0].r;
 		vtop--;
 		save_reg(MCC_TREG_RDX);
+		if (mcc_state->do_sanitize_undefined && !nocode_wanted) {
+			orex(ll, fr, fr, 0x85);
+			o(0xc0 + REG_VALUE(fr) * 9);
+			gen_ubsan_check(0x85);
+		}
 		orex(ll, 0, 0, uu ? 0xd231 : 0x99);
 		orex(ll, fr, 0, 0xf7);
 		o((uu ? 0xf0 : 0xf8) + REG_VALUE(fr));

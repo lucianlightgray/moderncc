@@ -4128,6 +4128,8 @@ static void mcc_predefs(MCCState *s1, CString *cs, int is_asm) {
 	if (s1->do_bounds_check)
 		putdef(cs, "__MCC_BCHECK__");
 #endif
+	if (s1->do_sanitize_undefined)
+		putdef(cs, "__MCC_SANITIZE_UNDEFINED__");
 	if (s1->char_is_unsigned)
 		putdef(cs, "__CHAR_UNSIGNED__");
 	if (s1->optimize > 0)

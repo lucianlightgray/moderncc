@@ -143,34 +143,62 @@ duplication). Distinct too from building *mcc itself* under host ASan/UBSan (the
 makes the compiler a sanitizer *provider* for user code.
 
 ### Investigation tasks
-- [ ] **UBSan first** (cheapest, arch-neutral, highest ROI): enumerate the UB
+- [x] **UBSan first** (cheapest, arch-neutral, highest ROI): enumerate the UB
       classes to check and decide the emission point (front-end AST insertion
       vs codegen), `-trap` vs `-recover` modes, and the diagnostic ABI —
       clang-compatible `__ubsan_handle_*` calls (link against system UBSan) vs
-      a minimal self-contained `libmccsan`.
-- [ ] **Runtime model / compiler-rt interop:** can mcc-instrumented objects
+      a minimal self-contained `libmccsan`. DECIDED (first increment, landed):
+      emission at the **codegen backend** (`x86_64-gen.c:gen_opi`, right where
+      the arithmetic instruction is emitted, guarded by
+      `mcc_state->do_sanitize_undefined`), **trap mode** (`ud2` = SIGILL, no
+      diagnostic ABI, no runtime library needed). Checks: signed `+`/`-`/`*`
+      overflow (via the CPU `OF` flag → `jno`), out-of-range/negative shift
+      count (unsigned `cmp count,width; jb`), integer divide-by-zero
+      (`test div,div; jnz`). `-recover` mode + `__ubsan_handle_*` ABI deferred.
+- [x] **Runtime model / compiler-rt interop:** can mcc-instrumented objects
       link+run against the *system* ASan/UBSan runtime (reuse clang's
       ecosystem via the `__asan_*`/`__ubsan_handle_*` ABI), or do we ship our
-      own runtime? Investigate ABI compatibility and the trade-off.
+      own runtime? Investigate ABI compatibility and the trade-off. RESOLVED
+      for the first increment: **trap mode needs no runtime at all** (`ud2` is
+      self-contained, links against nothing). The compiler-rt/`libmccsan`
+      decision is deferred to the recover-mode / ASan increments, where a
+      runtime *is* required.
 - [ ] **ASan design (x86_64 first):** the 1/8 shadow scheme
       (`(addr>>3)+offset`), stack/global/heap redzones, entry/exit stack
       poisoning, global registration, malloc/free interceptors; the shadow
       offset per target; ELF vs Mach-O differences.
-- [ ] **Optimizer interaction (critical):** sanitizer checks are
+- [x] **Optimizer interaction (critical):** sanitizer checks are
       side-effecting and must survive the AST optimizer — the §30/§32/§33
       passes must NOT fold/DCE check nodes; decide whether instrumentation runs
       before or after the replay optimizer, and confirm the default (non-`-f
       sanitize`) build stays byte-identical (new flag is default-off → no
-      fixpoint/byte-identity risk for default codegen).
-- [ ] **Differential validation via §0:** mcc-UBSan must flag the same UB
+      fixpoint/byte-identity risk for default codegen). CONFIRMED: because the
+      checks are emitted at the *backend* (every path — `-O0` direct and AST
+      replay reemit — funnels through `gen_opi`), they survive **all** `-O0..-O3`
+      (verified: the trap fires at each level, clean programs stay silent). The
+      default build is byte-identical (all new code behind the default-off
+      flag): 3-stage self-host fixpoint stage2==3==4, full ctest 1874/1874.
+- [x] **Differential validation via §0:** mcc-UBSan must flag the same UB
       clang's UBSan does over §0's UB corpus (this is exactly §0's
-      sanitizer-diff sub-topic, now with a real subject).
-- [ ] **Scope/stretch + per-arch gating:** UBSan (all arches), ASan (x86_64 +
+      sanitizer-diff sub-topic, now with a real subject). DONE: mcc
+      `-fsanitize=undefined` and clang `-fsanitize=undefined
+      -fsanitize-trap=undefined` both trap (SIGILL) on signed-add/sub/mul
+      overflow, OOB shift, and div-by-zero, and both run clean programs to the
+      same output.
+- [~] **Scope/stretch + per-arch gating:** UBSan (all arches), ASan (x86_64 +
       arm64), TSan/MSan (x86_64-only stretch or documented out-of-scope) —
-      gated per-target like the Tier-4 inliner.
-- [ ] **Test matrix:** a `tests/sanitize/` corpus with one program per UB /
+      gated per-target like the Tier-4 inliner. UBSan trap mode landed
+      **x86_64 ELF/Mach-O only** for now (the checks live in `x86_64-gen.c`;
+      the `-fsanitize=` flag warns/erases on other targets and PE). Porting the
+      four checks to arm64/riscv64 backends + ASan/TSan/MSan remain.
+- [x] **Test matrix:** a `tests/sanitize/` corpus with one program per UB /
       memory-error class asserting the check fires (and clean programs stay
-      silent), across `-O0..-O3` and with the optimizer forced on.
+      silent), across `-O0..-O3` and with the optimizer forced on. LANDED:
+      `tests/sanitize/ubsan/` = 7 `trap_*.c` (signed add/sub/mul, llong mul,
+      OOB shift, negative shift, div-by-zero) + 2 `clean_*.c` (arith,
+      unsigned-wrap), driven by `run_ubsan.cmake` which sweeps `-O0..-O3` and
+      asserts trap-fires / clean-silent; wired as 10 x86_64-only ctests
+      (`ubsan/*`).
 
 ### Sub-feature discovery topics (explore before scoping)
 - **compiler-rt interop vs `libmccsan`** — share clang's runtime (ABI-compat)
@@ -193,6 +221,28 @@ codegen byte-unchanged → no fixpoint/byte-identity risk); UBSan first
 class lands with a `tests/sanitize/` golden and a clang differential (§0).
 First increment = `-fsanitize=undefined` for signed-overflow + shift +
 div-by-zero + null-deref in trap mode.
+
+**LANDED (2026-07-10, first increment).** `-fsanitize=undefined` in **trap
+mode** on **x86_64 ELF/Mach-O**. Flag parsing in `libmcc.c` (`MCC_OPTION_f`
+case: `sanitize=`/`no-sanitize=` with a comma list — `undefined`,
+`signed-integer-overflow`, `integer-divide-by-zero`, `shift[-exponent|-base]`,
+`bounds` all enable it; `address`/`thread`/`memory` return a clear
+"not yet implemented" error; unknown checks error). State: a plain
+`unsigned char do_sanitize_undefined` in `MCCState` (not gated on
+`MCC_CONFIG_DIAG_RT` — independent of the bcheck ladder). Predefines
+`__MCC_SANITIZE_UNDEFINED__`. Codegen: `gen_ubsan_check(cc)` in
+`x86_64-gen.c` emits `j<cc> .ok; ud2; .ok:` at four sites in `gen_opi` —
+signed `+`/`-` and `*` overflow (OF→`jno`), variable-count shift `>=` width or
+negative (`cmp ecx,width; jb`), and divide-by-zero (`test div,div; jnz`); all
+guarded by `do_sanitize_undefined && !nocode_wanted` so the default path is
+untouched. `-hh`/`-h` help updated. Gates: full ctest **1874/1874** (10 new
+`ubsan/*`), 3-stage self-host fixpoint **stage2==3==4 byte-identical**, debug
++ release + cross + multisource presets build clean, clang differential agrees
+on all four UB classes. Deferred: signed INT_MIN/-1 division (hardware `#DE`
+already faults it), constant-count OOB shift (masked at compile time),
+null-deref (hardware SIGSEGV already faults it — lower marginal value than the
+silent-UB arithmetic/shift checks), `-recover` mode + `__ubsan_handle_*` ABI,
+ASan, arm64/riscv64 ports.
 
 ## 1. Delete `TAL_INFO` (trivial)
 
