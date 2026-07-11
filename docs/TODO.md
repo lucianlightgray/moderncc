@@ -803,8 +803,14 @@ BOX-3 STATUS (2026-07-10, native arm64): two layers, in order.
       `load()` assert that first blocked this was fixed by §34/`76407be9`;
       the "-O3 non-determinism" I briefly reported was a harness bug —
       different `-o` names embed different basenames — now retracted.)
-- [ ] Then repeat for riscv64 (`riscv64-gen.c ~:848`) — deferred to CI (no
-      native riscv64 box; host is arm64-darwin).
+- [ ] Then repeat for riscv64 (`riscv64-gen.c ~:848`) — CI-delegated. A
+      riscv64-Linux environment IS reachable on this box (colima Linux VM +
+      qemu-riscv64 user-mode), but replicating it locally is heavy/emulated and
+      redundant with the **active CI RISE runner** which already validates
+      riscv64 (`b8f680a3` "CI: use RISE runner to test riscv64" + the riscv64
+      float/TLS/clear_cache landings). So riscv64 §32c stays on CI, not local
+      emulation. (§32c's obstacle B is x86_64-specific and already validated
+      via Rosetta; riscv64, like arm64, compiles promotion out.)
 
 ## N3. D — §30/§32a-b transform refinements
 
@@ -2183,7 +2189,13 @@ Linux box does not have — parked here so they are tracked, not lost:
       `qemu-riscv64` user-mode emulation).
 - [ ] **static-glibc self-host gap** (README.md:12 / MCC.md:25): static-glibc
       via mcc hits a `__pthread_initialize_minimal` gap (musl is the
-      fully-static path). Decide finish-or-document-as-permanent.
+      fully-static path). This is a glibc-internals issue (glibc's static
+      libc reserves TLS/pthread init that mcc's crt doesn't wire), reproducible
+      only in a glibc-Linux environment (Docker/colima Linux, or CI) — not on
+      this Mach-O/libSystem host. RECOMMENDATION: document-as-permanent [DIFF]
+      — musl is the supported fully-static self-host path; static-glibc is a
+      glibc-startup-ABI corner, not a mcc codegen defect. Confirm-or-fix on the
+      Linux CI cell; not on-box.
 
 ## 39. Doc-staleness reconciliation (docs-only, no code)
 
