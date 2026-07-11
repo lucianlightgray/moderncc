@@ -5295,6 +5295,8 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) {
 			if ((t & VT_BTYPE) == VT_DOUBLE) {
 				t = (t & ~(VT_BTYPE | VT_LONG)) | VT_LDOUBLE;
 			} else if ((t & (VT_BTYPE | VT_LONG)) == VT_LONG) {
+				if (mcc_state->cversion < 199901)
+					mcc_pedantic("ISO C90 does not support 'long long'");
 				t = (t & ~(VT_BTYPE | VT_LONG)) | VT_LLONG;
 			} else {
 				u = VT_LONG;

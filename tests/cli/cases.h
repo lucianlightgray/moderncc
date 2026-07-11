@@ -850,8 +850,11 @@ static const cli_case_t cli_cases[] = {
 		 "grep -oE 'width of .b. exceeds its type'; "
 		 "printf '_Static_assert(sizeof(int)==999,\\\"int is not 999 bytes\\\");\\nint main(void){return 0;}\\n' > {W}/dh14.c && "
 		 "{MCC} -B{B} -I{I} -std=c11 -fno-diagnostics-show-caret -c {W}/dh14.c -o {W}/dh14.o 2>&1 | "
-		 "grep -oE 'int is not 999 bytes'; echo END",
-		 "duplicate case value\nswitch expected\ntoo many 'default'\ncannot break\nduplicate label 'L'\nlabel 'nowhere' used but not defined\nincompatible redefinition of 'T'\ndeclaration of void object\ndeclaration of an array of functions\nduplicate member 'm'\nassignment of read-only location\ncannot take address of bit-field\nwidth of 'b' exceeds its type\nint is not 999 bytes\nEND\n"},
+		 "grep -oE 'int is not 999 bytes'; "
+		 "printf 'long long x;\\nint main(void){return (int)x;}\\n' > {W}/dh15.c && "
+		 "{MCC} -B{B} -I{I} -std=c89 -pedantic-errors -c {W}/dh15.c -o {W}/dh15.o 2>&1 | "
+		 "grep -oE 'ISO C90 does not support .long long.'; echo END",
+		 "duplicate case value\nswitch expected\ntoo many 'default'\ncannot break\nduplicate label 'L'\nlabel 'nowhere' used but not defined\nincompatible redefinition of 'T'\ndeclaration of void object\ndeclaration of an array of functions\nduplicate member 'm'\nassignment of read-only location\ncannot take address of bit-field\nwidth of 'b' exceeds its type\nint is not 999 bytes\nISO C90 does not support 'long long'\nEND\n"},
 
 		{"raw_utf8_identifier", "",
 		 "printf 'int caf\\303\\251 = 1;\\nint main(void){return caf\\303\\251-1;}\\n' > {W}/ui1.c && "
