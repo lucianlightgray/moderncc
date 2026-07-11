@@ -2280,9 +2280,21 @@ touch `src/mccast.c`, so serialize to avoid worktree merge conflicts):
       diffs) + full ctest 1860/1860 + fixpoint + cpropjoin.sh OK; fires (0→1
       fold on a switch-invariant const), gate-on output matches the -O0 ref,
       and a switch that writes the local in a case is correctly NOT folded.
-      **Still open**: fall-through-aware *value meets* (the harder full
-      per-arm lattice intersection with case fall-through — higher risk, not
-      the keep-invariant form landed here).
+      **switch per-arm VALUE meet — LANDED** (sound subset): `ast_cprop_switch_
+      meet` meets the per-arm exit lattices (generalizing the op-0 two-arm meet
+      to N arms) so a value set identically in every arm survives — but ONLY
+      when the switch is provably safe: has a `default` (total), zero
+      fall-through between arms, no labels, no mid-arm break/continue/return,
+      no nested loop/switch in an arm (empty/trailing segments fold in the
+      entry state); any violation falls back to the keep-invariant descent.
+      Validated: gate-off byte-identical, gate-ON full ctest zero new failures
+      (incl. self-host exec-replay-promote), cpropjoin.sh OK, 10 positive
+      shapes fire + 6 negatives (fall-through/no-default/diff-values/mid-return/
+      mid-break/loop-in-arm) correctly NOT folded + soundness edges safe,
+      adversarial matches clang. **§32a is now essentially complete** for the
+      structured-join lattice (op-0 meet, op-2..5 loop invariants, op-6 switch
+      invariants + sound value meet); the only residue is cross-loop-iteration
+      value merging (needs widening/fixpoint dataflow — Bucket-B).
 4. [x] **§35 — Sethi–Ullman evaluation-order numbering** — LANDED as
       `MCC_AST_SETHI` (commit `f45a6ec5`, first increment): reorders
       commutative operand emission behind a default-off gate; byte-identity
