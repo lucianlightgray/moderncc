@@ -1641,9 +1641,6 @@ static void gccts_setenv(const char *k, const char *v) {
 #endif
 }
 
-/* The AST stack is driven by the -O level (-O0 disables it), so the
-   baseline leg of the differential compiles at -O0 and the AST leg at
-   -O1 with the gates its column does not exercise closed via env. */
 static const char *gccts_opt = "-O0";
 
 static void gccts_ast_env(const char *mode, int on) {

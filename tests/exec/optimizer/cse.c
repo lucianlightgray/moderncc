@@ -12,8 +12,6 @@ static void wr(int *p, int v) {
 	*p = v;
 }
 
-/* Eliminable: repeated pure subexpression in one basic block. */
-
 static int c_basic(int a, int b, int c) {
 	int t = a * b + c;
 	int u = a * b + c;
@@ -81,8 +79,6 @@ static int c_chain(int a, int b, int c) {
 	int w = a * b + c;
 	return t + u + w;
 }
-
-/* Must-NOT eliminate: intervening store / call / branch / volatile / alias. */
 
 static int nf_call_between(int a, int b) {
 	int t = a * b;

@@ -486,17 +486,8 @@ int ast_color_graph(int n, const uint64_t *adj, const int *cost, int k, int *col
 
 #ifdef MCC_INTERNAL
 
-/* Like the parser in mccgen.c, the capture/replay engine must emit its
-   jumps through the _acs wrappers so dead code after an unconditional
-   jump stays suppressed (CODE_OFF). */
 #define gjmp_addr gjmp_addr_acs
 #define gjmp gjmp_acs
-
-/* ==================================================================== */
-/* Compiler integration: the capture hooks mccgen.c drives while it     */
-/* parses a function body, and the replay/promote/inline drivers that   */
-/* re-emit the body from the recorded intention tree.                   */
-/* ==================================================================== */
 
 static int ast_env_gate(const char *name, int dflt) {
 	const char *v = getenv(name);
@@ -1996,9 +1987,6 @@ static void ast_inline_capture(Sym *fnsym) {
 			return;
 		if (bt == VT_STRUCT && is_complex_type(&ls->type))
 			return;
-		/* func_vla_arg evaluates VLA-parameter size expressions (and their
-		   side effects) in the prologue, which is outside the captured body,
-		   so a grafted call would silently skip them. */
 		if (bt == VT_PTR && ls->type.ref &&
 				((((Sym *)ls->type.ref)->type.t & VT_VLA) ||
 				 ((Sym *)ls->type.ref)->vla_array_str))
@@ -2657,10 +2645,6 @@ static int ast_plan_promotion(AstArena *a) {
 	return ast_promo_n;
 }
 
-/* The saved pinned registers live in rbp-relative frame slots, not in
-   push slots below the frame: on PE the outgoing-call area (win64 home
-   space + stack args) is rsp-relative at the frame bottom, so anything
-   pushed below the frame sits inside it and gets scribbled by callees. */
 static int ast_promo_save_loc;
 
 static void ast_promo_save_sv(SValue *sv, int i) {
@@ -5579,27 +5563,12 @@ static int ast_bf_run(AstArena *a) {
 	return ast_bf_folds;
 }
 
-/* Sethi-Ullman operand ordering (§35, first increment). For a commutative
-   binary node whose two operands are both side-effect-free, evaluate the
-   operand that needs more registers first — emitted child-order is evaluation
-   order in the replay, so put the higher Sethi-Ullman-numbered operand first.
-   Commuting a side-effect-free pair is always value-preserving: +,*,&,|,^ are
-   commutative for every operand type (IEEE + and * commute bit-exactly — this
-   is commutativity, not associativity; &,|,^ are integer-only), and
-   ast_cse_regpure guarantees neither operand has an observable evaluation
-   order. So this needs no dataflow proof and no result-type restriction. */
 static int ast_sethi_folds;
 
 static int ast_sethi_commutative(int op) {
 	return op == '+' || op == '*' || op == '&' || op == '|' || op == '^';
 }
 
-/* An operand whose root is a comparison/logical op leaves a VT_CMP on the
-   vstack for the parent to consume. The replay emitter is order-sensitive
-   there (the FIX.md/§30 lesson: a leaf emitted after the compare clobbers the
-   flags before the parent op consumes them — exactly why ast_bf_build fixes
-   its `bit & guard` order). So SETHI must not reorder an operand that produces
-   a VT_CMP; skip the swap when either side is comparison/logical-rooted. */
 static int ast_sethi_cmp_root(AstArena *a, AstLocal n) {
 	if (n == AST_NONE || ast_kind(a, n) != AST_Binary)
 		return 0;
@@ -6412,9 +6381,6 @@ void ast_func_begin(Sym *sym) {
 	}
 }
 
-/* The replay error trap below is the setjmp that miscompiles under
-   mingw-gcc SEH at -O2 (see EXCESS.md); keep this frame unoptimized
-   on that host. */
 #if MCC_HOST_WIN32 && defined(__GNUC__) && !defined(__clang__)
 __attribute__((optimize("O0")))
 #endif
@@ -6546,15 +6512,7 @@ void ast_func_end(Sym *sym) {
 				int do_bf = bfs > 0;
 				int do_sethi = sethis > 0;
 				int do_tco = tcos > 0;
-				/* A tail-self-call rewritten into a back-edge loop keeps all
-				   params/locals in their stack slots across the iteration; pinning
-				   a param to a register (promotion) or splicing this body into a
-				   caller (inline) would break the back-edge, so disable both here. */
 				int do_inline = faithful && !do_tco && ast_has_graftable_call(ast_cur);
-				/* Tier-4 inline and call-ful Tier-3 promotion both claim the
-				   callee-saved bank (RBX/R12-R15); combining them in one function
-				   corrupts a pin across the graft. When a function will graft,
-				   restrict promotion to the call-free (caller-saved) pool. */
 				ast_no_callful_promo = do_inline;
 				int do_promote = faithful && !do_tco && ast_promote_env && ast_plan_promotion(ast_cur) > 0;
 				ast_no_callful_promo = 0;
@@ -6581,19 +6539,6 @@ void ast_func_end(Sym *sym) {
 				if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
 						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_sethi ||
 						do_tco || do_narrow) {
-					/* §22 in-process per-function config trial. Inlining trades size (a
-					   grafted body vs a call), so its size-optimality is per-function.
-					   Under MCC_AST_PERFN_INPROC, re-emit the SAME captured tree with
-					   inlining off and on (inlining is emit-time — it reads ast_cur and
-					   grafts from the callee pool, never mutating ast_cur, so re-emitting
-					   is the established faithful-then-optimized pattern), keep the
-					   smaller `ind - ast_body_ind_sv`, and emit the winner LAST so the
-					   live text/reloc/symbol state is its own. Each measurement re-emit
-					   pushes fresh constant/graft Sym objects onto local_stack (anon_sym
-					   is reset to the same ids), so pop them back to the pre-trial mark
-					   between attempts. The frame low-water clamp (§34b) is applied per
-					   emit. Gate off ⇒ one emit with do_inline ⇒ byte-identical to the
-					   single-config path. */
 #define AST_PF_EMIT(ui)                                                          \
 	do {                                                                           \
 		ind = ast_body_ind_sv;                                                       \
@@ -6847,6 +6792,6 @@ void ast_reemit_forward_inlines(void) {
 #undef gjmp_addr
 #undef gjmp
 
-#endif /* MCC_INTERNAL */
+#endif
 
 #endif

@@ -985,8 +985,6 @@ static void riscv64_ubsan_shift(int cnt, uint32_t width) {
 	o(0x00100073);
 }
 
-/* The result register d may alias a or b (get_reg reuses a freed operand
-   reg), so snapshot a->x5 and b->x6 BEFORE the add/sub clobbers them. */
 static void riscv64_ubsan_addsub_pre(int a, int b) {
 	o(0x13 | 5u << 7 | (uint32_t)a << 15);
 	o(0x13 | 6u << 7 | (uint32_t)b << 15);
@@ -1002,7 +1000,6 @@ static void riscv64_ubsan_addsub_post(int op, int d) {
 	o(0x00100073);
 }
 
-/* a in x5, b in x6 (pre-saved); d = MUL/MULW low result. */
 static void riscv64_ubsan_mul_ovf(int ll, int d) {
 	if (ll == 8) {
 		o(0x33 | 0u << 12 | 7u << 7 | 5u << 15 | 6u << 20 | 1u << 25);

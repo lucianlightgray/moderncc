@@ -1,12 +1,6 @@
 #ifndef MCC_CI_ARTIFACTS_H
 #define MCC_CI_ARTIFACTS_H
 
-/* Generated CI/Docker artifact templates -- the emitter (`ci emit`) is the
-   single source of truth for the checked-in workflow/Dockerfile/entrypoint
-   files; `ci emit --check` (ctest ci-artifact-drift) fails on any drift.
-   @BOOT@ expands to the shared ci-tool bootstrap; @QEMUBINS@ to the QBIN
-   ledger. Regenerate with tools/ci.c `ci emit --write`. */
-
 static const char TMPL_CI_YML[] =
 		"name: CI\n"
 		"\n"

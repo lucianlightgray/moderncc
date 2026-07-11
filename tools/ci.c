@@ -1820,8 +1820,6 @@ static void eb_puts(EmitBuf *b, const char *s) {
 	eb_put(b, s, strlen(s));
 }
 
-/* Expand the artifact templates' DRY tokens: @BOOT@ = the shared ci-tool
-   bootstrap line, @QEMUBINS@ = the QBIN ledger joined by spaces. */
 static void emit_expand(EmitBuf *b, const char *tmpl) {
 	const char *p = tmpl;
 	while (*p) {

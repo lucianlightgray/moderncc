@@ -81,7 +81,6 @@ static void suite_clone(void) {
 	char msg[64];
 	CHECK(ast_validate(b, msg, sizeof msg) == 0, "clone validates");
 
-	/* Independence: mutating the clone must not touch the original. */
 	ast_set_op(b, add, '-');
 	ast_clear_children(b, mul);
 	CHECK(ast_op(a, add) == '+', "original op unchanged after clone mutated");
@@ -89,12 +88,10 @@ static void suite_clone(void) {
 	CHECK(ast_op(b, add) == '-', "clone op did change");
 	CHECK(ast_nchild(b, mul) == 0, "clone children did clear");
 
-	/* And the reverse: mutating the original must not touch the clone. */
 	AstArena *c = ast_arena_clone(a);
 	ast_set_ival(a, ast_child(a, add, 0), 99);
 	CHECK(ast_ival(c, ast_child(c, add, 0)) == 2, "second clone unchanged after original mutated");
 
-	/* Clone can grow independently past its compact capacity. */
 	AstLocal extra = ast_node(b, AST_Literal);
 	ast_set_ival(b, extra, 7);
 	CHECK(ast_count(b) == ast_count(a) + 1, "clone grew by one node");

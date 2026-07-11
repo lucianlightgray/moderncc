@@ -83,21 +83,16 @@ int ast_color_graph(int n, const uint64_t *adj, const int *cost, int k,
 
 #if MCC_CONFIG_OPTIMIZER && defined(MCC_INTERNAL)
 
-/* Compiler integration (mcc translation unit only): the capture hooks
-   mccgen.c drives while parsing a function body, and the replay,
-   promotion and inline drivers that re-emit the body from the recorded
-   intention tree.  Implemented in the MCC_INTERNAL section of mccast.c. */
-
 struct MCCState;
 struct Sym;
 struct CType;
 
-extern int ast_active;    /* capturing the current function body */
-extern int ast_replaying; /* re-emitting code from the captured tree */
-extern int ast_in_op;     /* >0: helper-emitted values, not source ops */
-extern int ast_bail;      /* body not representable; drop the capture */
+extern int ast_active;
+extern int ast_replaying;
+extern int ast_in_op;
+extern int ast_bail;
 extern int ast_func_has_asm;
-extern unsigned ast_pinned_regs; /* regs promotion pinned; allocator must skip */
+extern unsigned ast_pinned_regs;
 
 void ast_configure(struct MCCState *s1);
 uint64_t ast_intention_value(void);

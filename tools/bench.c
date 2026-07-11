@@ -174,9 +174,6 @@ static double cohens_d(const double *a, int na, const double *b, int nb,
 
 static int g_stats;
 
-/* 95% Bayesian credible interval for the mean under a Jeffreys prior: the
-   posterior is Student-t, so the interval is mean +- t_.05(n-1) * se —
-   numerically the t-interval, read as a credible region. */
 static int cred_interval(const double *x, int n, double *lo, double *hi) {
 	double m, se;
 	if (n < 2)
@@ -188,10 +185,6 @@ static int cred_interval(const double *x, int n, double *lo, double *hi) {
 	return 1;
 }
 
-/* BF10 via the Wagenmakers (2007) BIC approximation from a pooled two-sample
-   t: dBIC = n*ln(1 + t^2/df) - ln(n), BF10 = exp(dBIC/2). >1 favors "means
-   differ", <1 favors "equal"; robust and dependency-free (approximation, so
-   labeled as such in the report). */
 static int bayes_factor(const double *a, int na, const double *b, int nb,
 												double *bf10, const char **label) {
 	double va, vb, sp2, sp, t, n, df, dbic;
@@ -265,7 +258,6 @@ static double bt_betacf(double a, double b, double x) {
 	return h;
 }
 
-/* Regularized incomplete beta I_x(a,b) (Numerical Recipes 6.4). */
 static double bt_betai(double a, double b, double x) {
 	double bt;
 	if (x <= 0)
@@ -279,8 +271,6 @@ static double bt_betai(double a, double b, double x) {
 	return 1 - bt * bt_betacf(b, a, 1 - x) / b;
 }
 
-/* One-way ANOVA F across G>=2 groups; p is the exact upper-tail F survival
-   via the incomplete beta. Returns 0 if fewer than 2 usable groups. */
 static int anova_oneway(double *const *grp, const int *ng, int G, double *F,
 												int *df1, int *df2, double *p) {
 	double grand = 0, ssb = 0, ssw = 0;
@@ -1076,9 +1066,6 @@ static void host_target_defs(const char **defs, int *n) {
 #endif
 }
 
-/* Build a stage2 mcc: the --mcc compiler compiles src/mcc.c (the mcc-self
-   workload) at the given -O level into a runnable binary next to the
-   build tree, so auto-mccdir resolves the bundled headers. */
 static int build_self_mcc(const char *stage1, const struct workload *wl,
 													const char *builddir, const char *opt,
 													char *out, int outsz) {
@@ -1251,9 +1238,6 @@ int main(int argc, char **argv) {
 			struct compiler *mc;
 			if (nccs >= MAXCC)
 				break;
-			/* the mcc row of every -O group is a stage2 binary: the --mcc
-			   compiler builds src/mcc.c at that group's level, so the row
-			   measures a self-hosted mcc optimized by its own optimizer */
 			mc = &ccs[nccs++];
 			*mc = base[0];
 			mc->opt = gccopts[o];
