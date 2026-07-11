@@ -3,6 +3,57 @@
 Sorted by number of open questions/ambiguities (first-round unknowns + the
 sub-questions immediately following them), most-open first.
 
+## AST substrate + unified optimizer — see `docs/AST.md`
+
+Collapse the three optimization drivers (the `ast_func_end` pipeline, the §22
+`AST_PF_EMIT` trial, the `mcc.c` out-of-process search) into one side-car
+substrate + one memo + one strategy engine, shared by the AOT backend and a live
+JIT. This reframes/subsumes several items below (§21 cache key, §22 emit
+isolation, §28 rewrite IR, §33b/e seam+window keys, §30 predicate bitset, H_e
+epoch hash, the time-budgeted engine, per-function `-O1`, PP-as-executable JIT).
+
+Implementation (staged; each gated by faithful replay + corpus differential +
+the 3-stage self-host fixpoint):
+
+- [ ] **Step 1 — def/use projection + `cprop_escapes` bitmap** — collapse the
+  ~20 whole-arena slot rescans (`ast_local_is_readonly`, `ast_licm_written`,
+  `ast_cprop_escapes` (11 sites), `ast_ivsr_count_writes`) into one O(n) per-slot
+  side-table built in `ast_func_end`. Pure query, no mutation — the first proof
+  of the side-car discipline. First PR.
+- [ ] **Step 2 — per-node property memos** — bottom-up bit arrays for the
+  monotone subtree predicates (`ast_ident_pure`, `ast_sccp_has_label`,
+  `ast_cse_regpure`, `ast_cprop_safe`); O(1) on re-ask.
+- [ ] **Step 3 — structural Merkle hash for `ast_ident_same`** — per-node subtree
+  fingerprint turning the ~15 lockstep equality walks into O(1) compares. Needs
+  the parent-chain edit-repatch invalidation discipline.
+- [ ] **Step 4 — `Strategy` objects wrapping the 13 passes** — frozen table
+  consumed deterministically at `-O1..-O3` behind `MCC_AST_ENGINE=strategy`;
+  flip the default only after byte-identical/better differential vs the legacy
+  pipeline + self-host fixpoint. (needs steps 1-3)
+- [ ] **Step 5 — coroutine strategies + optional C11 thread pool + live -O4+
+  search** — stackless `step()` state machines; NCores-1 pool confined to
+  -O4+/JIT; best-first frontier checkpointed to the disk-backed memo. (needs
+  step 4)
+
+Research / investigative:
+
+- [ ] **Design the exhaustive-equivalence checker** — the UB-modeling slice
+  executor that proves a speculative rewrite over the *context-restricted* input
+  domain; shared by the -O4+ round-robin and the JIT; sanity-check time tracked
+  separately from apply time. (the correctness gate for all speculation)
+- [ ] **Design the bidirectional incremental tree/stack hash + `context_in` /
+  `context_out`** — the index that produces the `slice (X) context` memo key and
+  restricts the proof domain. (feeds the H_e O(1) accumulator)
+- [ ] **Design runtime guarded deopt (OSR)** — guard = the proof's domain
+  restriction; anonymous-data guard-fail dispatches to a matching proven variant
+  or the static fallback while the new data is bounds-checked. Highest-risk
+  component; realizes the re-contextualization assumption.
+- [ ] **Settle the global naming authority** — the `(tag,id)` merge of the AST
+  `slot_key` vs `cst_mark_branch` PPConditional tags (`mcccst.c:544/1112`); only
+  bites when the H_e accumulator lands (step 5+).
+- [ ] **Decide the worst-case-vs-average scoring axis** for branch-heavy code
+  (the one remaining OPEN scoring question).
+
 ## 6 — open design space
 
 - [ ] **Research the §28 rewrite-rule IR** — match→rewrite templates over the
