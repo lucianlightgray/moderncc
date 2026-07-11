@@ -5858,15 +5858,13 @@ static int ast_ivsr_run(AstArena *a) {
 	return did;
 }
 
-static int ast_pre_single_store(AstArena *a, AstLocal bb, AstLocal *store) {
+static int ast_pre_arm_store(AstArena *a, AstLocal bb, AstLocal *store) {
 	if (ast_kind(a, bb) != AST_BasicBlock)
 		return 0;
-	AstLocal c = ast_first_child(a, bb);
-	if (c == AST_NONE || ast_next_sib(a, c) != AST_NONE)
+	AstLocal last = ast_last_child(a, bb);
+	if (last == AST_NONE || ast_kind(a, last) != AST_Store)
 		return 0;
-	if (ast_kind(a, c) != AST_Store)
-		return 0;
-	*store = c;
+	*store = last;
 	return 1;
 }
 
@@ -5901,8 +5899,8 @@ static int ast_pre_run(AstArena *a) {
 			continue;
 		AstLocal thenbb = ast_child(a, n, 1), elsebb = ast_child(a, n, 2);
 		AstLocal ts, es;
-		if (!ast_pre_single_store(a, thenbb, &ts) ||
-				!ast_pre_single_store(a, elsebb, &es))
+		if (!ast_pre_arm_store(a, thenbb, &ts) ||
+				!ast_pre_arm_store(a, elsebb, &es))
 			continue;
 		AstLocal e = ast_child(a, ts, 1);
 		if (ast_kind(a, e) != AST_Binary)

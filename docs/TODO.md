@@ -2611,6 +2611,23 @@ fixpoint invariant if rushed. Sequenced, not started:
   **Remaining**: broaden PRE past the single-store diamond (Convert-wrapped RHS,
   table-driven anticipability via the `ast_cse_state_meet` join, multi-statement
   arms) — each broadening MUST re-run the arm64 self-host fixpoint before landing.
+  **BROADENING 1 — multi-statement arms LANDED** (2026-07-11, dual-arch): the arm
+  matcher (`ast_pre_arm_store`) now accepts an arm whose **last** statement is a
+  `Store` of E (was: the arm's *only* statement), so diamonds with benign
+  side-effect statements before the tail store fold. Still sound: the pre-
+  existing `ast_licm_operands_ok(if_node, E)` already rejects any operand of E
+  being written *anywhere* in the if — including the earlier arm statements — so
+  E at the arm tail still equals E before the branch. Consequence: PRE **now
+  fires on `mcc.c` itself**, and the **arm64 gate-ON 3-stage self-host still
+  converges** (s2==s3==s4, ~32 bytes smaller than the gate-off arm64 mcc) — i.e.
+  the exact scenario that killed the earlier general prototype (PRE firing on
+  `mcc.c` on arm64), now passing; the PRE-on-built arm64 mcc is functionally
+  correct (compiles adv.c + 20 diamond programs correctly under qemu). Validated:
+  gate-off ctest **1887/1887**; x86_64 gate-ON `fixpointgate` converges; arm64
+  gate-ON self-host converges + functional; diamond fuzzer (now emitting multi-
+  statement/side-effect arms) **x86_64 400/400** (fired 374) and **arm64 200/200
+  under qemu** (fired 200) match gcc; operand-written-in-arm correctly NOT folded.
+  Next broadenings: Convert-wrapped RHS, table-driven anticipability.
 - **§36 Chaitin–Briggs graph-coloring regalloc** — largest, replaces
   `ast_plan_promotion`; run last.
 - **§26 `--embed-jit` runtime engine**, **§33b/c/d/e**, **§27/§28**,
