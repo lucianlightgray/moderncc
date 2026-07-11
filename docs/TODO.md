@@ -1286,15 +1286,24 @@ helper, kept for the tiny one) with output matching `-O0`/gcc, and the gate-ON
 (ctest 1888/1888, fixpoint stage2==3==4, since off ⇒ the single-config path
 verbatim). BUT gate-ON **miscompiled** `tests/ast/replay/inline.c` (returned 5,
 expected 42): re-emitting a function that inlines struct-returning / float /
-forward-declared callees more than once perturbs **graft + positional-pool
-state** (`ast_fconst`/`ast_locrec` cursors-vs-counts, `ast_inline_depth`/graft
-budget) that the final emit then reads inconsistently — a subtle multi-re-emit
-hazard, NOT visible on the `mcc.c` self-host (hence fixpoint passed) but real.
-Reverted rather than ship a known-broken gate. NEXT: the fix is to snapshot/
-restore the positional-pool COUNTS (not just the cursors) and the inline/graft
-globals around each measurement re-emit — or emit each config into a scratch
-buffer via a clean sub-context — before re-attempting, then re-run the gate-ON
-inline corpus + both self-host fixpoints + the differential fuzzer.
+forward-declared callees more than once perturbs per-emit **symbol/graft state**
+that the final emit then reads inconsistently — a subtle multi-re-emit hazard,
+NOT visible on the `mcc.c` self-host (hence fixpoint passed) but real. Reverted
+rather than ship a known-broken gate. Root cause NARROWED (not yet fixed): it is
+**NOT the positional pools** — `ast_alloc_loc`/`ast_fconst_record` gate their
+appends on `!ast_replaying` (`src/mccast.c:647, 808`), so `ast_locrec_n`/
+`ast_fconst_n` do not grow across replay emits (my first guess was wrong). The
+remaining suspects are per-emit **symbol accumulation** (each re-emit resets
+`anon_sym` to `saved_anon` and re-pushes `Sym`s with duplicate ids via
+`ast_fconst_push_ref`/graft, so a later emit can collide with a stale duplicate —
+`sym_free_first` is only restored once, after the whole block) and the **struct-
+return / hidden-pointer graft** path (the failing TU inlines `mkpair`/`sumbig`/
+`addpt` + a `double` callee). NEXT: instrument a two-emit repro (inline-off then
+inline-on, no final) to localize which emit leaks symbol/vstack state; the likely
+fix is to free `sym_free_first` back to the pre-emit mark between measurement
+re-emits (and/or emit each trial into a throwaway text+sym sub-context), then
+re-run the gate-ON inline corpus + both self-host fixpoints + the differential
+fuzzer. The `ast_arena_clone` prerequisite (`12d01144`) is unaffected and landed.
 
 Builds on §21 + the capture/replay driver.
 
