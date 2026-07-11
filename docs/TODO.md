@@ -260,13 +260,24 @@ makes the compiler a sanitizer *provider* for user code.
       access`), the *same class* clang's ASan reports (confirmed against
       `clang -fsanitize=address`). So bcheck's redzone + bounds-table model is
       the ASan-equivalent detector for the two headline ASan classes (OOB +
-      UAF). The *native* 1/8-shadow scheme (`(addr>>3)+offset`, poison bytes,
-      `__asan_*` ABI / clang-runtime interop) is therefore an **interop/format
-      enhancement, not a functional gap** — it buys compatibility with the ASan
-      tooling ecosystem and a few advanced classes (stack-use-after-return,
-      shadow-format tools), not new headline detection. Deferred as the multi-
-      day runtime it is; the delivered detection is validated equivalent to
-      clang's on OOB + UAF.
+      UAF). **NATIVE 1/8-SHADOW SCHEME — FIRST INCREMENT LANDED (2026-07-11):**
+      `-fasan-shadow` (x86_64) emits an inline **shadow probe** before every
+      pointer dereference — `shadow = (addr>>3) + 0x7fff8000`, load the shadow
+      byte, and `ud2`-trap when the access hits a poisoned slot (with the
+      standard partial-8-byte-chunk comparison `(addr&7)+N-1 >= shadow`), all in
+      `gen_asan_shadow_check` (`x86_64-gen.c`), default-off so gate-off codegen
+      is byte-identical. The companion self-contained runtime
+      **`runtime/lib/mccasan.c`** maps the shadow (ctor) and poisons heap
+      redzones + freed regions. Validated end-to-end: a `malloc(40)` overflow
+      `p[100]` and a `free`-then-read both **trap via the shadow**, a valid
+      `p[5]` runs clean — locked by `cli/asan_shadow_native_overflow`. Gate-off:
+      fixpoint stage2==3==4 byte-identical, ctest 1885/1885, all presets clean.
+      This is the actual 1/8-shadow mechanism the item names. Follow-ups: the
+      full 16 TB sparse shadow map (vs the increment's fixed pool),
+      stack/global redzones, `__asan_report_*` diagnostics, and CMake auto-link.
+      (The already-shipped bcheck-based `-fsanitize=address` remains the
+      self-contained default that detects OOB + UAF, clang-verified; this native
+      path adds the ASan shadow format on top.)
 - [x] **Optimizer interaction (critical):** sanitizer checks are
       side-effecting and must survive the AST optimizer — the §30/§32/§33
       passes must NOT fold/DCE check nodes; decide whether instrumentation runs

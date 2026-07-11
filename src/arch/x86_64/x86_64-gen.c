@@ -1624,6 +1624,47 @@ void gen_ubsan_nullptr(void) {
 	gen_ubsan_check(0x85);
 }
 
+void gen_asan_shadow_check(int sz) {
+	int r, t = 0;
+	if (!mcc_state->do_asan_shadow || nocode_wanted)
+		return;
+	if ((vtop->r & VT_VALMASK) >= VT_CONST || sz <= 0 || sz > 8)
+		return;
+	r = vtop->r & VT_VALMASK;
+	g(0x50);
+	g(0x52);
+	orex(1, 2, r, 0x89);
+	o(0xc0 | REG_VALUE(r) << 3 | 2);
+	orex(1, 0, r, 0x89);
+	o(0xc0 | REG_VALUE(r) << 3 | 0);
+	g(0x48);
+	g(0xc1);
+	g(0xe8);
+	g(0x03);
+	g(0x0f);
+	g(0xbe);
+	g(0x80);
+	gen_le32(0x7fff8000);
+	g(0x85);
+	g(0xc0);
+	g(0x0f);
+	t = gjmp2(0x84, t);
+	g(0x83);
+	g(0xe2);
+	g(0x07);
+	g(0x83);
+	g(0xc2);
+	g(sz - 1);
+	g(0x39);
+	g(0xc2);
+	g(0x0f);
+	t = gjmp2(0x8c, t);
+	o(0x0b0f);
+	gsym(t);
+	g(0x5a);
+	g(0x58);
+}
+
 void gen_opi(int op) {
 	int r, fr, opc, c;
 	int ll, uu, cc;

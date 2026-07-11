@@ -5871,6 +5871,13 @@ ST_FUNC void indir(void) {
 	if (mcc_state->do_sanitize_undefined)
 		gen_ubsan_nullptr();
 #endif
+#ifdef MCC_TARGET_X86_64
+	if (mcc_state->do_asan_shadow) {
+		int asz, aal;
+		asz = type_size(pointed_type(&vtop->type), &aal);
+		gen_asan_shadow_check(asz);
+	}
+#endif
 	vtop->type = *pointed_type(&vtop->type);
 	if ((vtop->type.t & VT_BTYPE) == VT_VOID && !nocode_wanted)
 		mcc_pedantic("dereferencing a 'void *' pointer");

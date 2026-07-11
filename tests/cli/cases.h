@@ -1901,6 +1901,12 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'void *malloc(unsigned long);void free(void*);\\nint main(void){int*p=malloc(4);*p=5;free(p);return *p;}\\n' > {W}/uaf.c && "
 		 "{MCC} -B{B} -fsanitize=address {W}/uaf.c -o {W}/uaf && {W}/uaf 2>&1 | grep -oE 'invalid memory access' | head -1",
 		 "invalid memory access\n"},
+		{"asan_shadow_native_overflow", "",
+		 "cc -O2 -c {D}/../../runtime/lib/mccasan.c -o {W}/mccasan.o 2>/dev/null && "
+		 "printf 'extern void*malloc(unsigned long);\\nint main(void){int*p=malloc(40);p[0]=1;return p[100];}\\n' > {W}/an.c && "
+		 "{MCC} -B{B} -fasan-shadow -c {W}/an.c -o {W}/an.o && cc -no-pie {W}/an.o {W}/mccasan.o -o {W}/an 2>/dev/null && "
+		 "{W}/an >/dev/null 2>&1; test $? -gt 128 && echo trapped",
+		 "trapped\n"},
 
 		{"macro_eval_recursive", "",
 		 "printf '#define fact(n) (n <= 1 ? 1 : n * fact(n - 1))\\nint main(void) { return fact(5) == 120 ? 0 : 1; }\\n' > {W}/me.c && "
