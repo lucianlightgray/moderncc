@@ -7,6 +7,8 @@
 #include <string.h>
 #include <time.h>
 
+#include "mccforecast.h"
+
 #ifndef AST_ASSERT
 #include <assert.h>
 #define AST_ASSERT(x) assert(x)
@@ -6878,13 +6880,22 @@ static void ast_search_durwin_push(unsigned dt) {
 		ast_search_durwin_n++;
 }
 
+/* Predict the next tick's duration from the rolling window via the forecasting
+ * ensemble (mccforecast.h): the samples are extracted oldest->newest and handed to
+ * ast_fc_forecast, which picks the least-outlier of its three most accurate
+ * one-step predictors. */
 static unsigned ast_search_expect_ms(void) {
-	unsigned long long s = 0;
-	if (ast_search_durwin_n == 0)
+	double y[AST_SEARCH_WIN], pred;
+	int n = ast_search_durwin_n, start, i;
+	if (n <= 0)
 		return 0;
-	for (int i = 0; i < ast_search_durwin_n; i++)
-		s += ast_search_durwin[i];
-	return (unsigned)(s / (unsigned)ast_search_durwin_n);
+	start = (ast_search_durwin_head - n + AST_SEARCH_WIN * 2) % AST_SEARCH_WIN;
+	for (i = 0; i < n; i++)
+		y[i] = (double)ast_search_durwin[(start + i) % AST_SEARCH_WIN];
+	pred = ast_fc_forecast(y, n);
+	if (pred < 0)
+		pred = 0;
+	return (unsigned)(pred + 0.5);
 }
 
 static unsigned ast_search_remaining_ms(void) {

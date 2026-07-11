@@ -322,10 +322,46 @@ static void suite_color(void) {
 	CHECK(ast_color_graph(0, NULL, NULL, 4, color) == 0, "empty graph colors nothing");
 }
 
+static void suite_forecast(void) {
+	{
+		double y[3] = {10, 20, 30};
+		CHECK(ast_fc_rw(y, 3) == 30, "rw predicts the last sample");
+	}
+	{
+		double y[4] = {1, 2, 3, 4};
+		double p = ast_fc_lin(y, 4); /* slope 1 at t=4 -> 5 */
+		CHECK(p > 4.5 && p < 5.5, "lin extrapolates a ramp");
+	}
+	{
+		double y[5] = {7, 7, 7, 7, 7};
+		double p = ast_fc_forecast(y, 5);
+		CHECK(p > 6.9 && p < 7.1, "ensemble holds a constant series");
+	}
+	{
+		double y[6] = {2, 4, 6, 8, 10, 12};
+		double p = ast_fc_forecast(y, 6);
+		CHECK(p > 11.0 && p < 15.0, "ensemble tracks a linear ramp");
+		CHECK(ast_fc_finite(p), "ensemble prediction is finite");
+	}
+	{
+		double y[10] = {5, 1, 9, 3, 7, 2, 8, 4, 6, 5};
+		int k;
+		for (k = 0; k < AST_FC_COUNT; k++)
+			CHECK(ast_fc_finite(ast_fc_call(k, y, 10)), ast_fc_models[k].name);
+	}
+	{
+		double e0 = ast_fc_exp(0.0), en = ast_fc_exp(-1.0);
+		CHECK(e0 > 0.99 && e0 < 1.01, "exp(0) ~ 1");
+		CHECK(en > 0.30 && en < 0.42, "exp(-1) ~ 0.3679");
+	}
+}
+
 int main(int argc, char **argv) {
 	const char *only = argc > 1 ? argv[1] : NULL;
 	if (!only || !strcmp(only, "arena"))
 		suite_arena();
+	if (!only || !strcmp(only, "forecast"))
+		suite_forecast();
 	if (!only || !strcmp(only, "clone"))
 		suite_clone();
 	if (!only || !strcmp(only, "color"))

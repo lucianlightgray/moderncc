@@ -59,7 +59,14 @@ candidate gate config is a stackless coroutine whose one *tick* applies exactly 
 strategy pass to its own isolated `ast_arena_clone`; the scheduler advances the
 least-total-time-consumed live candidate (running sum of tick durations, ties → baseline
 first — fair, no starvation), and a rolling 10-sample duration window makes the search
-stop once the predicted next tick would overrun the remaining budget. The budget is the
+stop once the predicted next tick would overrun the remaining budget. The next-tick
+prediction is a forecasting ensemble (`src/mccforecast.h`): thirteen self-contained
+one-step predictors (random walk, SES, AR(1), linear/Bayesian-ridge regression, penalized
+spline, GAM, local-level Kalman/BSTS, Gaussian-process, gradient-boosted stumps, Holt,
+Theil-Sen, moving median) are scored on their online accuracy over the window; the three
+most accurate vote and the one closest to their median (least distance to consensus) is
+used. The same module is exposed to `-ffold-math` (constant-arg `mcc_fc_*` builtins fold
+to a compile-time prediction) — one implementation, two consumers. The budget is the
 `-ON` seconds, **absolute** from the first tick; `ast_search_abort` is a forced-abort
 hook (pool/JIT/deadline) checked at every tick boundary — because each candidate mutates
 only a throwaway clone, abort discards in-progress work safely (the pool's "kill+restart

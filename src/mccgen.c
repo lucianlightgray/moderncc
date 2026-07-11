@@ -1,6 +1,8 @@
 #define USING_GLOBALS
 #include "mcc.h"
 
+#include "mccforecast.h"
+
 ST_DATA int rsym, anon_sym, ind, loc;
 
 ST_DATA Sym *global_stack;
@@ -8379,6 +8381,68 @@ static int foldmath_try(Sym *ftype, int nb_args) {
 	return 1;
 }
 
+/*
+ * -ffold-math for the time-series forecasting formulas (mccforecast.h). A call to
+ * one of the mcc_fc_<model> builtins with all-constant double arguments folds at
+ * compile time to that model's one-step-ahead prediction over the argument vector
+ * (mcc_fc_forecast uses the full ensemble). Same implementation as the -O4+ search
+ * predictor — one module, two consumers.
+ */
+static const struct {
+	const char *name;
+	int model; /* index into ast_fc_models, or -1 for the ensemble */
+} foldfc_tab[] = {
+		{"mcc_fc_forecast", -1}, {"mcc_fc_rw", 0},     {"mcc_fc_ses", 1},
+		{"mcc_fc_ar1", 2},       {"mcc_fc_lin", 3},    {"mcc_fc_pspline", 4},
+		{"mcc_fc_gam", 5},       {"mcc_fc_bsts", 6},   {"mcc_fc_bridge", 7},
+		{"mcc_fc_gp", 8},        {"mcc_fc_gbm", 9},    {"mcc_fc_holt", 10},
+		{"mcc_fc_theilsen", 11}, {"mcc_fc_movmed", 12},
+};
+
+static int foldfc_try(Sym *ftype, int nb_args) {
+	SValue *fsv;
+	Sym *cs;
+	ElfSym *es;
+	const char *nm;
+	double y[AST_FC_MAXN], pred;
+	int i, nfc, model = -2;
+
+	if (nb_args < 1 || nb_args > AST_FC_MAXN)
+		return 0;
+	fsv = vtop - nb_args;
+	if (!(fsv->r & VT_SYM))
+		return 0;
+	cs = fsv->sym;
+	if (!cs || (cs->type.t & VT_BTYPE) != VT_FUNC || (cs->type.t & VT_STATIC))
+		return 0;
+	es = elfsym(cs);
+	if (es && es->st_shndx != SHN_UNDEF)
+		return 0;
+	if ((ftype->type.t & VT_BTYPE) != VT_DOUBLE)
+		return 0;
+	nm = get_tok_str(cs->v, NULL);
+	nfc = (int)(sizeof foldfc_tab / sizeof *foldfc_tab);
+	for (i = 0; i < nfc; i++)
+		if (!strcmp(nm, foldfc_tab[i].name)) {
+			model = foldfc_tab[i].model;
+			break;
+		}
+	if (model == -2)
+		return 0;
+	for (i = 0; i < nb_args; i++) {
+		SValue *a = vtop - nb_args + 1 + i;
+		if (!foldm_isconst(a, VT_DOUBLE))
+			return 0;
+		y[i] = foldm_svd(a, 0);
+	}
+	pred = model < 0 ? ast_fc_forecast(y, nb_args) : ast_fc_call(model, y, nb_args);
+	for (i = 0; i < nb_args; i++)
+		vpop();
+	vpop();
+	foldm_push(VT_DOUBLE, 0, pred);
+	return 1;
+}
+
 ST_FUNC void unary(void) {
 	int n, t, align, size, r;
 	CType type;
@@ -9548,7 +9612,8 @@ tok_next:
 
 			next();
 			vcheck_cmp();
-			if (mcc_state->fold_math && foldmath_try(s, nb_args)) {
+			if (mcc_state->fold_math &&
+					(foldmath_try(s, nb_args) || foldfc_try(s, nb_args))) {
 				expr_has_effect = 1;
 				goto call_folded;
 			}
