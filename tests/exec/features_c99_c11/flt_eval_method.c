@@ -90,9 +90,13 @@ int main(void) {
 		volatile double r2 = p2 + c;
 		ok &= (r1 == r2);
 		ok &= (r1 == (double)((double)(a * b) + c));
-		ok &= (fma(p, 1.0, c) == r1);
 		double contracted = madd_ret(a, b, c);
+#ifdef _WIN32
+		ok &= (contracted == r1 || m == 2);
+#else
+		ok &= (fma(p, 1.0, c) == r1);
 		ok &= (contracted == r1 || contracted == fma(a, b, c) || m == 2);
+#endif
 	}
 	}
 

@@ -1,10 +1,12 @@
 #include <stdio.h>
 #include <setjmp.h>
 #include <stdlib.h>
+#include <stdnoreturn.h>
+#ifndef _WIN32
 #include <signal.h>
 #include <unistd.h>
 #include <sys/wait.h>
-#include <stdnoreturn.h>
+#endif
 
 static jmp_buf jb;
 
@@ -29,13 +31,6 @@ _Noreturn static int diverge_int(void) {
 __attribute__((noreturn)) static void diverge_attr(void) {
 	longjmp(jb, 8);
 }
-_Noreturn static void call_exit(void) {
-	exit(42);
-}
-_Noreturn static void call_abort(void) {
-	abort();
-}
-
 static int drive(void (*fp)(void)) {
 	volatile int reached = 0;
 	if (setjmp(jb) == 0) {
@@ -52,6 +47,14 @@ static int drive_int(int (*fp)(void)) {
 		reached = 1;
 	}
 	return !reached;
+}
+
+#ifndef _WIN32
+_Noreturn static void call_exit(void) {
+	exit(42);
+}
+_Noreturn static void call_abort(void) {
+	abort();
 }
 
 static int child_exit_code(void (*fp)(void)) {
@@ -81,6 +84,7 @@ static int child_signal(void (*fp)(void)) {
 		return WTERMSIG(st);
 	return -1;
 }
+#endif
 
 int main(void) {
 	int ok = 1;
@@ -117,8 +121,10 @@ int main(void) {
 		ok &= drive(fp);
 	}
 
+#ifndef _WIN32
 	ok &= (child_exit_code(call_exit) == 42);
 	ok &= (child_signal(call_abort) == SIGABRT);
+#endif
 
 	printf(ok ? "OK\n" : "FAIL\n");
 	return !ok;
