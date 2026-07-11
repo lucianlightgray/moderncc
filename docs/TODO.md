@@ -2111,6 +2111,15 @@ routing. Gates: full `cmake-cross` ctest **1862/1862** (27/27 arm64 cells),
 assert needs the CI arm64-sysroot self-compile to reproduce (layout-specific,
 FIX.md:225-229) — recommend the native arm64 spot-check
 (`MCC_AST_BITFLAG=1 MCC_AST_INLINE_NODES=8`, bitflag corpus) confirm it there.
+**ARM64 SPOT-CHECK DONE (2026-07-11, via qemu+musl).** Reproduced the exact
+assert path on real arm64 code: a bitflag-cluster classify TU compiled by an
+optimizer-enabled arm64 mcc (host-built, run under qemu — see
+[[mcc-arm64-selfhost-recipe]]) with `MCC_AST_BITFLAG=1 MCC_AST_INLINE_NODES=8`
+at `-O1` AND `-O3` compiles WITHOUT the `load()` assert and runs correctly
+(`68`, matching gcc). Stronger: the full **arm64 3-stage self-host** under those
+same gates (the assert path exercised across all of `mcc.c`) **converges**
+(s2==s3==s4) with no assert, and the resulting compiler is functional. The
+§34 fix is confirmed on the target that originally tripped it.
 
 ## 35. Sethi–Ullman evaluation-order numbering (large, codegen-order, byte-identity risk)
 
