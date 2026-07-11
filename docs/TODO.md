@@ -98,15 +98,21 @@ normal pipeline on the untouched captured tree, so a mis-emit reverts through
 open: JIT-runtime scoring (`MCC_AST_JITSCORE`) and emit-size under the *tick* scheduler
 (needs the per-context state below).
 
-- [ ] **Step 5+ PREREQUISITE — per-context fold/emit state** — still needed for emit-size
-  *under the interleaved tick scheduler* and for the thread pool below (the
-  run-to-completion emit-size path above does not need it). The optimizer keeps its
-  working state in ~global singletons (`ast_cur`; the `ast_du_*`/`ast_memo_*`/`ast_hash_*`
-  side-cars keyed by one arena pointer; `ast_ltemp_*`, `ast_fconst_*`/`ast_locrec_*`
-  cursors; `ast_promo_*`; `*_total` counters). Bundling these into a per-context object
-  (or `_Thread_local` under C11) unblocks parallel candidates on independent contexts.
-  Milestone-scale substrate refactor; its own gated change (side-car shadow +
-  fixpoint + fuzz), not bolted onto the search.
+**LANDED — Step 5+: NCores-1 process pool** (`MCC_AST_SEARCH_THREADS`). `ast_search_pool`
+forks up to `host_nproc()-1` score-only workers over the candidate set. A **fork gives
+each worker its own copy of every optimizer global (COW)**, so a worker folds+scores its
+candidates with zero shared-state contention and **no `_Thread_local` marking** — the
+fork isolation replaces the whole per-context-state refactor for the scoring step.
+Workers only read the shared `pristine` tree (COW) and write `{index, score}` records to
+a pipe, then `_exit` without flushing; the parent (which never mutates shared state
+during the fork window) collects them and applies the winner single-threaded. Handles
+both static-cost and emit-size scoring. POSIX only (`#if MCC_HOST_POSIX`; elsewhere falls
+back to serial). Validated: `MCC_AST_SEARCH_THREADS -O6` differential correct vs gcc
+(16/16, incl. +emit-size), zero crashes/hangs; default unaffected (1905/1905); asttool
+excludes it. Still open: the design's *C11-thread* pool with `_Thread_local` per-context
+state (only needed for interior/tick-mode parallelism, not candidate scoring — the fork
+pool covers that); the per-context refactor is the remaining substrate item if that is
+ever wanted, its own gated change (side-car shadow + fixpoint + fuzz).
 - [ ] **Step 5+ — widen the search space** — the fold-gate candidate set is now the
   full **subset lattice** of the enabled gates (submask enumeration, ≤16, base first),
   not just leave-one-out (validated: -O6 differential 80/80, default 1905/1905). Still
@@ -122,10 +128,6 @@ open: JIT-runtime scoring (`MCC_AST_JITSCORE`) and emit-size under the *tick* sc
   -O6 differential correct). Still open: **unify with the out-of-process `pf-*.ck`
   format** (`so_pf_key`) so the in-process search fully subsumes `mcc_superopt_perfn`,
   and compact the append-only file instead of the current ~64K-record size cap.
-- [ ] **Step 5+ — NCores-1 coroutine thread pool** — stackless `step()` strategies on a
-  C11 pool (optional, confined to -O4+/JIT; disabled under `__STDC_NO_THREADS__`).
-  Blocked on the per-context fold/emit state prerequisite above (parallel candidates need
-  independent contexts, not one global set of side-cars/cursors).
 - [ ] **Step 5+ — runtime JIT + guarded deopt** — the -O4+/JIT tier (per-tick drive,
   entry-guarded variant dispatch); depends on §26 embedded recompiler + hot-swap.
   **Blocked:** there is no runtime recompiler (`mcc_relocate` is a one-shot `-run`

@@ -616,6 +616,7 @@ static int ast_fncfg_find(const char *fn) {
 static int ast_templates_env;
 static int ast_search_env;
 static int ast_search_emitsize_env;
+static int ast_search_threads_env;
 static unsigned ast_search_seconds;
 static int ast_promote_env;
 static int ast_no_callful_env;
@@ -789,6 +790,7 @@ void ast_configure(MCCState *s1) {
 	ast_templates_env = ast_env_gate("MCC_AST_TEMPLATES", s1->optimize >= 1);
 	ast_search_env = ast_env_gate("MCC_AST_SEARCH", 0);
 	ast_search_emitsize_env = ast_env_gate("MCC_AST_SEARCH_EMITSIZE", 0);
+	ast_search_threads_env = ast_env_gate("MCC_AST_SEARCH_THREADS", 0);
 	ast_search_seconds = s1->optimize_search_seconds;
 	ast_promote_env = ast_env_gate("MCC_AST_PROMOTE", opt_promote);
 	ast_no_callful_env = ast_env_gate("MCC_AST_NO_CALLFUL", 0);
@@ -7101,6 +7103,106 @@ static long ast_search_score_emitsize(AstArena *pristine, Sym *sym, int faithful
 	return size;
 }
 
+/* Score one candidate (static cost or emit-size) — used by both the serial paths
+ * and the fork-pool workers. */
+static long ast_search_score_one(AstArena *pristine, Sym *sym, int faithful,
+																 unsigned gates, int saved_loc, int saved_anon) {
+	AstArena *saved_cur, *trial;
+	int si;
+	long sc;
+	if (ast_search_emitsize_env)
+		return ast_search_score_emitsize(pristine, sym, faithful, gates, saved_loc,
+																		 saved_anon);
+	saved_cur = ast_cur;
+	trial = ast_arena_clone(pristine);
+	if (!trial)
+		return -1;
+	ast_search_gates_set(gates);
+	ast_cur = trial;
+	for (si = 0; si < AST_STRAT_COUNT; si++)
+		if (faithful && *ast_strategies[si].gate)
+			ast_strategies[si].apply(trial, sym);
+	sc = ast_cost_score(trial);
+	ast_cur = saved_cur;
+	ast_arena_free(trial);
+	return sc;
+}
+
+/*
+ * NCores-1 process pool. Fork up to nproc-1 score-only workers over the candidate
+ * set. A fork gives each worker its own copy of every optimizer global (COW), so a
+ * worker folds+scores its candidates with zero shared-state contention and no
+ * _Thread_local marking — the fork isolation replaces the whole per-context state
+ * refactor for the scoring step. Workers only read the shared pristine tree (COW)
+ * and write {index, score} records to a pipe, then _exit without flushing; the
+ * parent (which never mutates shared state during the fork window) collects the
+ * records and applies the winner single-threaded. POSIX only; elsewhere the caller
+ * falls back to the serial loop. Returns 1 if it produced a result. */
+#if MCC_HOST_POSIX
+#include <sys/wait.h>
+#include <unistd.h>
+
+typedef struct AstScoreRec {
+	int idx;
+	long score;
+} AstScoreRec;
+
+static int ast_search_pool(AstArena *pristine, Sym *sym, int faithful,
+													 const unsigned *gatelist, int nc, int saved_loc,
+													 int saved_anon, unsigned *best_out,
+													 long *best_score_out) {
+	int nw = host_nproc() - 1, pipefd[2], w, i, done = 0;
+	pid_t pids[64];
+	unsigned best = gatelist[0];
+	long best_score = -1;
+	AstScoreRec rec;
+	if (nw < 2)
+		return 0; /* not worth forking */
+	if (nw > nc)
+		nw = nc;
+	if (nw > 64)
+		nw = 64;
+	if (pipe(pipefd) != 0)
+		return 0;
+	for (w = 0; w < nw; w++) {
+		pid_t pid = fork();
+		if (pid == 0) {
+			close(pipefd[0]);
+			for (i = w; i < nc; i += nw) {
+				AstScoreRec r;
+				r.idx = i;
+				r.score = ast_search_score_one(pristine, sym, faithful, gatelist[i],
+																			 saved_loc, saved_anon);
+				if (write(pipefd[1], &r, sizeof r) != (ssize_t)sizeof r)
+					break;
+			}
+			close(pipefd[1]);
+			_exit(0);
+		}
+		pids[w] = pid; /* pid<0 (fork failed): recorded, waitpid skips it */
+	}
+	close(pipefd[1]);
+	while (read(pipefd[0], &rec, sizeof rec) == (ssize_t)sizeof rec) {
+		done++;
+		if (rec.score >= 0 && (best_score < 0 || rec.score < best_score)) {
+			best_score = rec.score;
+			best = gatelist[rec.idx];
+		}
+	}
+	close(pipefd[0]);
+	for (w = 0; w < nw; w++)
+		if (pids[w] > 0) {
+			int st;
+			waitpid(pids[w], &st, 0);
+		}
+	if (!done)
+		return 0; /* every fork failed: fall back to serial */
+	*best_out = best;
+	*best_score_out = best_score;
+	return 1;
+}
+#endif
+
 static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 															int saved_anon) {
 	AstArena *pristine;
@@ -7151,6 +7253,12 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 			sub = (sub - 1) & base;
 		}
 	}
+#if MCC_HOST_POSIX
+	if (ast_search_threads_env &&
+			ast_search_pool(pristine, sym, faithful, gatelist, nc, saved_loc,
+											saved_anon, &best, &best_score))
+		goto search_done;
+#endif
 	if (ast_search_emitsize_env) {
 		/* Emitted-byte-size scoring: fold each candidate to completion then measure
 		 * its emitted size (run-to-completion so the shared ltemp/fconst emit state is
