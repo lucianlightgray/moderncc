@@ -94,7 +94,7 @@ interleave-thrash problem (see below) is sidestepped by running this path
 default static-cost path). Opt-in within the search; the winner is still emitted by the
 normal pipeline on the untouched captured tree, so a mis-emit reverts through
 `ast_func_end`'s faithful revert. Validated: `MCC_AST_SEARCH_EMITSIZE -O6` differential
-correct vs gcc (15/15, zero crashes/miscompiles), default unaffected (1905/1905). Still
+135/135 correct vs gcc, zero crashes/miscompiles; default unaffected (1905/1905). Still
 open: JIT-runtime scoring (`MCC_AST_JITSCORE`) and emit-size under the *tick* scheduler
 (needs the per-context state below).
 
