@@ -85,9 +85,25 @@ divergences; the `-ON` budget is an absolute cap (verified no hang, finishes ear
 candidates complete); asttool 55/55 with the portable `clock()` timer.
 
 - [ ] **Step 5+ — scoring fidelity: emitted-size / JIT-runtime** — replace the static
-  `ast_cost_score` proxy with true emitted-byte size (needs the §22 scratch-`Section`
-  emit isolation so a candidate can be emitted-and-measured without the in-place
-  save/restore desync) and, at the JIT tier, measured runtime (`MCC_AST_JITSCORE`).
+  `ast_cost_score` proxy with true emitted-byte size, and at the JIT tier measured
+  runtime (`MCC_AST_JITSCORE`). **Deeper blocker than first thought:** `AST_PF_EMIT`
+  reads per-candidate global emit state (`ast_ltemp_n`/`ast_ltemp_cur`, the
+  `ast_fconst_i`/`ast_locrec_i` cursors, `ast_promo_*`), which the *interleaved tick
+  scheduler* overwrites across candidates — so emit-measuring a candidate is only valid
+  immediately after that candidate is folded-to-completion, not under the fair
+  interleave. Emitted-size therefore needs the per-context fold/emit state below, not
+  just §22 scratch-`Section` isolation.
+
+- [ ] **Step 5+ PREREQUISITE — per-context fold/emit state (the common blocker)** — the
+  three items below all converge here. The optimizer keeps its working state in ~global
+  singletons (`ast_cur`; the `ast_du_*`/`ast_memo_*`/`ast_hash_*` side-cars keyed by one
+  arena pointer; `ast_ltemp_*`, `ast_fconst_*`/`ast_locrec_*` cursors; `ast_promo_*`;
+  `*_total` counters). Bundling these into a per-context object (or `_Thread_local`
+  under C11) is the single change that unblocks: **(1)** emit-size scoring (each
+  candidate folds+emits in its own context, no interleave thrash), **(2)** the NCores-1
+  thread pool (parallel candidates on independent contexts), and **(3)** any interior
+  parallelism. Milestone-scale substrate refactor; do it as its own gated change (the
+  side-car shadow build + fixpoint + fuzz are the gates), not bolted onto the search.
 - [ ] **Step 5+ — widen the search space** — the fold-gate candidate set is now the
   full **subset lattice** of the enabled gates (submask enumeration, ≤16, base first),
   not just leave-one-out (validated: -O6 differential 80/80, default 1905/1905). Still
@@ -105,11 +121,8 @@ candidates complete); asttool 55/55 with the portable `clock()` timer.
   and compact the append-only file instead of the current ~64K-record size cap.
 - [ ] **Step 5+ — NCores-1 coroutine thread pool** — stackless `step()` strategies on a
   C11 pool (optional, confined to -O4+/JIT; disabled under `__STDC_NO_THREADS__`).
-  **Blocked on thread-safe side-cars:** the search's candidate evaluation runs the fold
-  passes, which read/write the single global `ast_du_*`/`ast_memo_*`/`ast_hash_*`
-  side-cars (keyed by one arena pointer) — parallel candidates on different clones would
-  thrash them. Needs `_Thread_local` side-cars (or per-worker instances) first; that is
-  a substrate change, not a scheduler change.
+  Blocked on the per-context fold/emit state prerequisite above (parallel candidates need
+  independent contexts, not one global set of side-cars/cursors).
 - [ ] **Step 5+ — runtime JIT + guarded deopt** — the -O4+/JIT tier (per-tick drive,
   entry-guarded variant dispatch); depends on §26 embedded recompiler + hot-swap.
   **Blocked:** there is no runtime recompiler (`mcc_relocate` is a one-shot `-run`
