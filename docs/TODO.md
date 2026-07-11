@@ -338,9 +338,19 @@ makes the compiler a sanitizer *provider* for user code.
       Validated under qemu-aarch64: `100000*100000` and `4e9*4e9` trap,
       clean+unsigned don't, **74/74 exec programs no false traps**. So
       `-fsanitize=undefined` = **signed +/-/* overflow + shift-range +
-      divide-by-zero on x86_64, arm64, AND riscv64**, each validated
-      (native / qemu-aarch64 / qemu-riscv64). Remaining §0b: native-shadow ASan,
-      TSan/MSan (x86_64 runtime stretch).
+      divide-by-zero + null-pointer-deref on x86_64, arm64, AND riscv64**, each
+      validated (native / qemu-aarch64 / qemu-riscv64). **DECISION (2026-07-11):
+      TSan/MSan are documented OUT OF SCOPE** (this item's own sanctioned option
+      — "x86_64-only stretch *or documented out-of-scope*"): both require a
+      large happens-before / uninitialized-shadow **runtime** (TSan tracks every
+      memory access + lock order; MSan tracks bit-level initialized-ness through
+      the whole program incl. libc interceptors) — a multi-week runtime
+      subsystem with no self-contained increment, and TSan/MSan are x86_64-Linux-
+      only even in clang. So the per-arch UBSan matrix + `-fsanitize=address`
+      (bcheck) is the delivered sanitizer surface. Remaining §0b: **native-shadow
+      ASan** only — an *enhancement* over the working bcheck-based ASan (the MVP
+      already ships heap/stack/global OOB detection), deferred as the runtime
+      build it is.
 - [x] **Test matrix:** a `tests/sanitize/` corpus with one program per UB /
       memory-error class asserting the check fires (and clean programs stay
       silent), across `-O0..-O3` and with the optimizer forced on. LANDED:
