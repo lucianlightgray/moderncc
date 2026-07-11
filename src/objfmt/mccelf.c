@@ -1615,6 +1615,10 @@ ST_FUNC void mcc_add_runtime(MCCState *s1) {
 			lpthread = 1;
 		}
 #endif
+#ifdef MCC_TARGET_X86_64
+		if (s1->do_asan_shadow && s1->output_type != MCC_OUTPUT_DLL)
+			mcc_add_support(s1, "mccasan.o");
+#endif
 #if MCC_CONFIG_DIAG_RT >= 1
 		if (s1->do_backtrace) {
 			if (s1->output_type & MCC_OUTPUT_EXE)

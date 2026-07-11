@@ -2226,7 +2226,7 @@ if(MCC_BUILD_STATIC_EXE AND NOT MSVC AND NOT APPLE
     endforeach()
 endif()
 
-set(MCC_MCCRT_EXTRA_O runmain bt-exe bt-dll bt-log bcheck)
+set(MCC_MCCRT_EXTRA_O runmain bt-exe bt-dll bt-log bcheck mccasan)
 
 function(_mcc_mccrt_src obj outvar)
     set(_lib "${CMAKE_CURRENT_SOURCE_DIR}/runtime/lib")
@@ -2271,6 +2271,9 @@ function(mcc_build_mccrt tname mcctgt cpu os native archive objdir out_extra)
 
     if(native)
         list(APPEND _objs runmain tcov)
+        if(cpu STREQUAL "x86_64" AND NOT os STREQUAL "WIN32" AND NOT os STREQUAL "Darwin")
+            list(APPEND _objs mccasan)
+        endif()
         if(NOT MCC_CONFIG_DIAG_RT STREQUAL "off")
             list(APPEND _objs bt-exe bt-log)
             if(_win)

@@ -20,9 +20,9 @@
  * epilogue; enter poisons each local's right redzone then unpoisons the objects
  * (redzones-first => no false positives on slot reuse), leave clears the span.
  *
- * Remaining follow-ups: richer __asan_report_* diagnostics, CMake auto-link, and
- * arm64/riscv64 stack instrumentation. Complements the shipped bcheck-based
- * -fsanitize=address (self-contained, clang-verified).
+ * Remaining follow-ups: richer __asan_report_* diagnostics and arm64/riscv64
+ * stack instrumentation. Complements the shipped bcheck-based -fsanitize=address
+ * (self-contained, clang-verified).
  */
 #include <sys/mman.h>
 #include <signal.h>

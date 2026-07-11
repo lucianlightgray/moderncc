@@ -54,6 +54,24 @@ Research / investigative:
 - [ ] **Decide the worst-case-vs-average scoring axis** for branch-heavy code
   (the one remaining OPEN scoring question).
 
+## Bugs — surfaced by the conformance-test expansion (concrete repros)
+
+- [ ] **Complex `==`/`!=` ignores the real component** — a comparison of two
+  `double _Complex` values that differ *only* in the real part wrongly reports
+  equal: `CMPLX(1,2) == CMPLX(9,2)` folds to 1 (mcc) vs 0 (gcc). Imag-differing
+  pairs compare correctly. Correctness miscompile; found while widening
+  `exec/complex_annexg`. (highest priority of this block)
+- [ ] **UCN-started identifier after a punctuator → "stray '\\'"** — `&é`
+  or `.ü` (a `\u`/`\U` universal-character-name that begins an identifier
+  immediately following `&`, `.`, etc.) is rejected by the lexer though gcc
+  accepts it; a single space works around it. Maximal-munch/UCN lexing gap found
+  while widening `exec/ucn_identifiers`.
+- [ ] **Local auto over-alignment > 16 not honored at `-O0`** — `alignas(32)`/
+  `alignas(64)` on a stack (auto) variable yields only 16-byte alignment at
+  `-O0` (correct at `-O1+`); statics/globals are fine. Found while widening
+  `exec/alignas_over` (the test now asserts only the guaranteed 16-byte local
+  alignment). Needs `-O0` stack-realignment for over-aligned locals.
+
 ## 6 — open design space
 
 - [ ] **Research the §28 rewrite-rule IR** — match→rewrite templates over the
@@ -236,9 +254,9 @@ Research / investigative:
 - [ ] **Test the i386 TLS `R_386_TLS_GD/LDM` paths** (`i386-link.c`; i386-gen.c
   only emits `R_386_TLS_LE`, so GD/LDM are untested) — needs an i386 cross + a
   32-bit sysroot.
-- [ ] **Expand VLA goto/switch-into-scope diagnostic tests.**
-- [ ] **Expand FP eval-method / Annex-F wide-return tests.**
-- [ ] **Expand `_Complex` Annex-G edge-case tests.**
+- [x] **Expand VLA goto/switch-into-scope diagnostic tests.**
+- [x] **Expand FP eval-method / Annex-F wide-return tests.**
+- [x] **Expand `_Complex` Annex-G edge-case tests.**
 - [ ] **Audit each `mcc_skip_test` for per-triple ungating** — i386-linux blocked
   (no 32-bit sysroot); aarch64/armv7-linux partial (qemu is x86-TSO — only the
   memory-model-independent subset); arm64-windows blocked (no native arm64 ref cc).
@@ -253,14 +271,16 @@ Research / investigative:
 
 ## 0 — fully specified or execution-blocked (no open design questions)
 
-- [ ] **Add CMake auto-link of `runtime/lib/mccasan.c`** — tests link it by hand.
+- [x] **Add CMake auto-link of `runtime/lib/mccasan.c`** — `-fasan-shadow` now
+  auto-links `mccasan.o` (built beside `libmccrt.a`, x86_64/ELF-native only) ahead
+  of libc via `mcc_add_support`; manual-link path retained by one cli case.
 - [ ] **Verify the three landed §38 msvc-arm64 FIX fixes** (the
   `vcheck_cmp`-before-`gfunc_call` guard, the `ast_fn_faithful` reemit gate, the
   x86_64-only promote frame-slot change) on a Windows-arm64 runner. (macos and
   ELF-linux cells confirmed)
 - [ ] **Ungate the `i386-fastcall-abi` test** — registered but `mcc_skip_test`'d;
   needs an i386 cross + an ELF-32 reference.
-- [ ] **Expand flexible-array-member tests** (mcc ~1 vs gcc 13).
-- [ ] **Expand `_Noreturn` tests** (1 vs 5).
-- [ ] **Expand `_Alignas`/`_Alignof` tests.**
-- [ ] **Expand UCN-in-identifier breadth tests.**
+- [x] **Expand flexible-array-member tests** (mcc ~1 vs gcc 13).
+- [x] **Expand `_Noreturn` tests** (1 vs 5).
+- [x] **Expand `_Alignas`/`_Alignof` tests.**
+- [x] **Expand UCN-in-identifier breadth tests.**

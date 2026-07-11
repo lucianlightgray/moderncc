@@ -635,6 +635,38 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -std=c11 {W}/j4.c -o {W}/j4 && echo VALID_OK",
 		 "variably modified declaration\nvariably modified declaration\nvariably modified declaration\nvariably modified declaration\nVALID_OK\n"},
 
+		{"jump_into_vla_scope_ext", "",
+		 "printf 'int n=3,m=4; int f(void){ goto L; int (*p)[n][m]; L: p=0; return !!p; }\\n' > {W}/e1.c && "
+		 "{MCC} -B{B} -I{I} -std=c11 -c {W}/e1.c -o {W}/e1.o 2>&1 | "
+		 "grep -oE 'variably modified declaration'; "
+		 "printf 'int n=3; int f(void){ goto L; typedef int VM[n]; VM a; L: return sizeof a; }\\n' > {W}/e2.c && "
+		 "{MCC} -B{B} -I{I} -std=c11 -c {W}/e2.c -o {W}/e2.o 2>&1 | "
+		 "grep -oE 'variably modified declaration'; "
+		 "printf 'int n=3; int f(void){ goto L; int a[n][n]; L: return sizeof a; }\\n' > {W}/e4.c && "
+		 "{MCC} -B{B} -I{I} -std=c11 -c {W}/e4.c -o {W}/e4.o 2>&1 | "
+		 "grep -oE 'variably modified declaration'; "
+		 "printf 'int n=3; int g(int c){ switch(c){ case 0: { int a[n]; case 1: return sizeof a; } default: return 0; } }\\n' > {W}/e3.c && "
+		 "{MCC} -B{B} -I{I} -std=c11 -c {W}/e3.c -o {W}/e3.o 2>&1 | "
+		 "grep -oE 'variably modified declaration'; "
+		 "printf 'int n=3; int g(int c){ switch(c){ int a[n]; case 1: return sizeof a; case 2: return 0; } return 0; }\\n' > {W}/e5.c && "
+		 "{MCC} -B{B} -I{I} -std=c11 -c {W}/e5.c -o {W}/e5.o 2>&1 | "
+		 "grep -oE 'variably modified declaration'; "
+		 "printf 'int n=3; int f(void){ goto L; int (*p)[n]; int (*q)[n]; L: p=q=0; return p==q; }\\n' > {W}/e6.c && "
+		 "{MCC} -B{B} -I{I} -std=c11 -c {W}/e6.c -o {W}/e6.o 2>&1 | "
+		 "grep -oE 'variably modified declaration'; "
+		 "printf 'int n=3;\\nint ok(void){ int a[n]; L: if(a[0]) goto L; return sizeof a; }\\n"
+		 "int main(void){return 0;}\\n' > {W}/v1.c && "
+		 "{MCC} -B{B} -I{I} -std=c11 {W}/v1.c -o {W}/v1 && echo VALID_OK; "
+		 "printf 'int n=3;\\nint ok(int c){ if(c) goto L; c=1; L: { int a[n]; return sizeof a + c; } }\\n"
+		 "int main(void){return 0;}\\n' > {W}/v2.c && "
+		 "{MCC} -B{B} -I{I} -std=c11 {W}/v2.c -o {W}/v2 && echo VALID_OK; "
+		 "printf 'int n=3;\\nint ok(int c){ switch(c){ case 1: return 1; default: return 0; } }\\n"
+		 "int main(void){return 0;}\\n' > {W}/v3.c && "
+		 "{MCC} -B{B} -I{I} -std=c11 {W}/v3.c -o {W}/v3 && echo VALID_OK",
+		 "variably modified declaration\nvariably modified declaration\nvariably modified declaration\n"
+		 "variably modified declaration\nvariably modified declaration\nvariably modified declaration\n"
+		 "VALID_OK\nVALID_OK\nVALID_OK\n"},
+
 		{"atomic_large_generic", "",
 		 "printf '#include <stdatomic.h>\\ntypedef struct{long a,b,c;}Big;\\n"
 		 "_Atomic Big g;\\nvoid f(Big v,Big*e,Big d){ atomic_store(&g,v);"
@@ -1921,41 +1953,41 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -fsanitize=address {W}/uaf.c -o {W}/uaf && {W}/uaf 2>&1 | grep -oE 'invalid memory access' | head -1",
 		 "invalid memory access\n"},
 		{"asan_shadow_native_overflow", "cpu=x86_64,os=linux",
-		 "cc -O2 -c {D}/../../runtime/lib/mccasan.c -o {W}/mccasan.o 2>/dev/null && "
 		 "printf 'extern void*malloc(unsigned long);\\nint main(void){int*p=malloc(40);p[0]=1;return p[100];}\\n' > {W}/an.c && "
-		 "{MCC} -B{B} -fasan-shadow -c {W}/an.c -o {W}/an.o && cc {W}/an.o {W}/mccasan.o -o {W}/an 2>/dev/null && "
+		 "{MCC} -B{B} -fasan-shadow {W}/an.c -o {W}/an && "
 		 "{W}/an 2>&1 | grep -oE 'AddressSanitizer: bad memory access' | head -1",
 		 "AddressSanitizer: bad memory access\n"},
 		{"asan_shadow_native_use_after_free", "cpu=x86_64,os=linux",
-		 "cc -O2 -c {D}/../../runtime/lib/mccasan.c -o {W}/mccasan2.o 2>/dev/null && "
 		 "printf 'extern void*malloc(unsigned long);extern void free(void*);\\nint main(void){int*p=malloc(16);p[0]=7;free(p);return p[0];}\\n' > {W}/au.c && "
-		 "{MCC} -B{B} -fasan-shadow -c {W}/au.c -o {W}/au.o && cc {W}/au.o {W}/mccasan2.o -o {W}/au 2>/dev/null && "
+		 "{MCC} -B{B} -fasan-shadow {W}/au.c -o {W}/au && "
 		 "{W}/au 2>&1 | grep -oE 'AddressSanitizer: bad memory access' | head -1",
 		 "AddressSanitizer: bad memory access\n"},
 		{"asan_shadow_native_global_overflow", "cpu=x86_64,os=linux",
-		 "cc -O2 -c {D}/../../runtime/lib/mccasan.c -o {W}/mccasan3.o 2>/dev/null && "
 		 "printf 'int g[10];\\nint main(void){g[0]=1;volatile int i=10;return g[i];}\\n' > {W}/ag.c && "
-		 "{MCC} -B{B} -fasan-shadow -c {W}/ag.c -o {W}/ag.o && cc {W}/ag.o {W}/mccasan3.o -o {W}/ag 2>/dev/null && "
+		 "{MCC} -B{B} -fasan-shadow {W}/ag.c -o {W}/ag && "
 		 "{W}/ag 2>&1 | grep -oE 'AddressSanitizer: bad memory access' | head -1",
 		 "AddressSanitizer: bad memory access\n"},
 		{"asan_shadow_native_global_clean", "cpu=x86_64,os=linux",
-		 "cc -O2 -c {D}/../../runtime/lib/mccasan.c -o {W}/mccasan4.o 2>/dev/null && "
 		 "printf 'int bss[16];int data[4]={1,2,3,4};char nm[6]=\"hello\";\\nint main(void){int s=0;for(int i=0;i<16;i++)bss[i]=i;s=bss[15]+data[3]+nm[4];return s==(15+4+111)?0:7;}\\n' > {W}/agc.c && "
-		 "{MCC} -B{B} -fasan-shadow -c {W}/agc.c -o {W}/agc.o && cc {W}/agc.o {W}/mccasan4.o -o {W}/agc 2>/dev/null && "
+		 "{MCC} -B{B} -fasan-shadow {W}/agc.c -o {W}/agc && "
 		 "{W}/agc; echo rc=$?",
 		 "rc=0\n"},
 		{"asan_shadow_native_stack_overflow", "cpu=x86_64,os=linux",
-		 "cc -O2 -c {D}/../../runtime/lib/mccasan.c -o {W}/mccasan5.o 2>/dev/null && "
 		 "printf 'int main(void){volatile int i=12;char buf[10];buf[0]=1;return buf[i];}\\n' > {W}/as.c && "
-		 "{MCC} -B{B} -fasan-shadow -c {W}/as.c -o {W}/as.o && cc {W}/as.o {W}/mccasan5.o -o {W}/as 2>/dev/null && "
+		 "{MCC} -B{B} -fasan-shadow {W}/as.c -o {W}/as && "
 		 "{W}/as 2>&1 | grep -oE 'AddressSanitizer: bad memory access' | head -1",
 		 "AddressSanitizer: bad memory access\n"},
 		{"asan_shadow_native_stack_clean", "cpu=x86_64,os=linux",
-		 "cc -O2 -c {D}/../../runtime/lib/mccasan.c -o {W}/mccasan6.o 2>/dev/null && "
 		 "printf 'struct P{int a,b;};\\nint main(void){char buf[10];struct P p;int x=5;int*px=&x;for(int i=0;i<10;i++)buf[i]=i;p.a=buf[9];p.b=*px;return (p.a==9&&p.b==5)?0:7;}\\n' > {W}/asc.c && "
-		 "{MCC} -B{B} -fasan-shadow -c {W}/asc.c -o {W}/asc.o && cc {W}/asc.o {W}/mccasan6.o -o {W}/asc 2>/dev/null && "
+		 "{MCC} -B{B} -fasan-shadow {W}/asc.c -o {W}/asc && "
 		 "{W}/asc; echo rc=$?",
 		 "rc=0\n"},
+		{"asan_shadow_manual_link", "cpu=x86_64,os=linux",
+		 "cc -O2 -c {D}/../../runtime/lib/mccasan.c -o {W}/mccasan_m.o 2>/dev/null && "
+		 "printf 'extern void*malloc(unsigned long);\\nint main(void){int*p=malloc(40);p[0]=1;return p[100];}\\n' > {W}/anm.c && "
+		 "{MCC} -B{B} -fasan-shadow -c {W}/anm.c -o {W}/anm.o && cc {W}/anm.o {W}/mccasan_m.o -o {W}/anm 2>/dev/null && "
+		 "{W}/anm 2>&1 | grep -oE 'AddressSanitizer: bad memory access' | head -1",
+		 "AddressSanitizer: bad memory access\n"},
 
 		{"macro_eval_recursive", "",
 		 "printf '#define fact(n) (n <= 1 ? 1 : n * fact(n - 1))\\nint main(void) { return fact(5) == 120 ? 0 : 1; }\\n' > {W}/me.c && "
