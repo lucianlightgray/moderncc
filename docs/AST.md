@@ -1,9 +1,11 @@
 # AST optimization substrate
 
 Status: design finalized. The staged rollout at the end is the implementation
-order; step 1 is the first PR. Two items remain **OPEN** (worst-case scoring
-axis; the naming authority) but neither blocks steps 1-4. Open work is tracked in
-`docs/TODO.md`.
+order; step 1 is the first PR. The two previously-**OPEN** items (worst-case
+scoring axis; the naming authority) and the three research/investigative designs
+(equivalence checker, bidirectional hash + context, guarded deopt) are now
+settled — see "Settled research questions" below. Implementation of each stays
+future work tracked in `docs/TODO.md`.
 
 ## Purpose
 
@@ -281,14 +283,144 @@ isolation replaces the in-place save/restore desync.
   run single-threaded. Scheduling nondeterminism touches only the cache, never a
   sealed build's bytes.
 
-## Still OPEN
+## Settled research questions
 
-- Worst-case vs average scoring axis for branch-heavy code — confirm before
-  wiring.
-- The global naming authority for "no anonymous" (the `slot_key` vs
-  `cst_mark_branch` PPConditional partition, `mcccst.c:544/1112`). Deferred by
-  construction: steps 1-4 are pure-AST and never cross into PP tags; the
-  reconciliation only bites when the H_e O(1) accumulator (step 5+) lands.
+The five research/investigative items from `docs/TODO.md` are decided below.
+Each is a settled *design*; the implementation of each stays future work
+(rollout steps 3-5 + the JIT). Code anchors are the grounding evidence.
+
+### Exhaustive-equivalence checker — a second, independent AST evaluator
+
+Decision: the checker is a **standalone AST-over-values interpreter**
+`eval_slice(arena, slice, env) -> {value, defined}` over the 15-kind IR, **not** a
+reuse of faithful replay. Replay (`ast_replay_value`, `mccast.c:2747+`) only
+re-emits machine code — it never computes a result — so the checker is a fresh
+evaluator, and original-vs-rewrite becomes a *differential* between two unrelated
+implementations, which is the point.
+
+- **UB-definedness oracle.** `eval` returns `defined = false` on any UB; agreement
+  is required only where the *original* is defined (per Soundness above). The UB
+  catalog is seeded from the constant folder `gen_opic` (`mccgen.c:2314-2455`):
+  signed `+ - *` overflow (`pp_signed_ovf`), div/mod by zero, and — critically —
+  **shift ≥ width must be modeled as UB**, because `gen_opic` currently *masks* the
+  shift as a platform behavior (`l2 & 63|31`), which would certify a wrong rewrite.
+  Extend with the UBSan hook classes (null deref, etc.).
+- **Domain from `context_in`.** Live-in slots are enumerated by the existing pattern
+  in `ast_tco_run` (`mccast.c:4836-4857`): `VT_LOCAL` refs filtered through
+  `ast_cprop_escapes` / `ast_local_is_readonly`, already restricted to the
+  enumerable (integer, non-escaping) domain. The context-restricted domain bounds
+  the enumeration; a slice whose domain exceeds a fixed cap is **refused** — it
+  stays JIT-speculative and never enters `-O1..-O3` (the tractability rule).
+- Sanity-check time is tracked separately from apply time (already required).
+
+Depends on rollout step 1 (def/use bitmap) for O(1) live-in enumeration.
+
+### Bidirectional incremental tree/stack hash + `context_in`/`context_out`
+
+Decision: add one **per-node `uint64_t h[]` column** to the arena SoA
+(`mccast.c:21`) folding the **exact `ast_ident_same` tuple** — `kind, op, type_t,
+type_ref, ival, fbits, sym, nchild, combine(child h)`. This is deliberately *not*
+the current `ast_intention_hash` tuple, which omits `type_ref`, interns `sym`, and
+skips a Ref's `ival` (`mccast.c:392-397`); folding the equality tuple is what makes
+`h` a sound O(1) stand-in for `ast_ident_same` (~15 sites), with confirm-on-fire
+covering collisions.
+
+- **Incremental via the existing `parent[]` spine.** `parent` is already a column
+  (`mccast.c:23`), maintained even across splices (`ast_ident_adopt` re-parents,
+  `mccast.c:3828`). On edit: recompute `h[n]`, then re-fold up the parent chain —
+  O(depth). The ~10 mutators (`ast_set_{kind,op,type,ival,fbits,sym}`,
+  `ast_add_child`, `ast_clear_children`, `ast_ident_adopt`, `ast_ident_setlit`, the
+  Poison retag) must be wrapped so no edit path bypasses the patch. `adopt` and
+  Poison are the sharp cases — they change `nchild`/child-set, so `combine()` must
+  be re-derived, not leaf-patched.
+- **Bidirectional = the structured tree is its own stack.** Because control flow is
+  the `AST_If`/`AST_BasicBlock` nesting (no arbitrary CFG edges),
+  `context_in(point)` is the hash-fold of the reaching prefix (entry→point in
+  structured order) and `context_out` the fold of the continuation — both walked
+  along the ancestor chain + left-siblings. That structural nesting is what makes it
+  O(depth) incremental instead of a full CFG dataflow fixpoint.
+- **Facts, first cut.** `context_in` carries (a) the structural prefix hash (the
+  memo key) and (b) the value-domain restriction on live-in slots (the checker's
+  enumeration bound). (b) comes from a bounded backward walk collecting the
+  equality/range predicates of dominating `AST_If` conditions — O(fixpoint) first,
+  O(1) warm — reusing the transient `ast_cprop_{koff,ktt,kval}` set shape
+  (`mccast.c:4199-4204`) as the fact representation. No persistent lattice exists
+  today; this is the net-new half.
+
+Ships as rollout step 3 (structural hash) first; the `context_in` domain half
+layers in alongside the checker.
+
+### Runtime guarded deopt (OSR) — entry-guarded dispatch first, interior OSR deferred
+
+Decision: deopt lands as **entry-guarded variant dispatch**, not interior state
+transfer. At a JIT-optimized region's entry, check the live-in domain bound (the
+guard *is* the proof's domain restriction — no separate synthesis); on failure,
+dispatch to a proven variant matching the new `slice (X) context` (memo lookup), or
+fall through to the **static byte-faithful baseline** — which already exists as the
+preserved original bytes in `ast_func_end` (`mccast.c:6422-6423, 6618-6619`). An
+entry guard keeps the OSR state map trivial (just the incoming live-ins),
+sidestepping mid-function live-state transfer.
+
+- **Interior OSR is deferred** as the highest-risk piece, behind the same
+  domain-restriction guard, until a runtime recompiler + hot-swap exist.
+- **Hard prerequisite:** there is *no* runtime recompiler today — `mcc_relocate`
+  (`mccrun.c:80-99`) is a one-shot `-run` loader, `--embed-jit` only prints a
+  manifest (`mcc.c:1339-1342`), and `so_jitscore` is a build-time autotuner
+  (`mcc.c:321-1236`). Deopt is therefore gated behind §26 (embedded recompile +
+  atomic-pointer hot-swap). Confined to -O4+/JIT throughout; `-O1..-O3` never deopt.
+
+### Global naming authority — disjoint `(tag,id)` partition, activated at H_e
+
+**Principle: the CST and AST stay independent.** They keep their own separate local
+id spaces (`CstLocal`, `AstLocal`) and never share a mutable id counter or a
+back-pointer. The `(tag,id)` scheme is *not* a merged namespace that couples the two
+arenas — it is only the disjoint encoding used at the H_e boundary, where a name
+must be globally unambiguous. The sole cross-link is the existing **one-way,
+explicit AST→CST reference**: the `cst` column (`mccast.c:35`) holding an opaque
+`CstId`. That is the only "reliable/safe" sharing channel; nothing reaches the other
+way, and neither arena's local ids leak into the other's.
+
+Decision: the global name = **`(tag, id)`**, `tag` = namespace discriminant, `id` =
+per-namespace ordinal, packed exactly like the existing `CstId = (file<<32)|local`
+(`mcccst.h:57-66`). The AST per-slot key (built in rollout step 1) is minted in an
+`AST_SLOT` tag range with `id` = the `VT_LOCAL` slot offset; the CST PP-branch tag
+lives in a `CST_BRANCH` range with `id` = `branch_ord`. Disjoint by construction —
+the tag partition is what lets both name spaces coexist in one H_e hash *without*
+either arena having to know the other's ids.
+
+- **Correction of record:** there is no AST `slot_key` today. The only `slot_key` is
+  the CST array (`mcccst.c:35`), used *solely* to hold PP-conditional branch
+  ordinals via `cst_mark_branch` (`mcccst.c:544-555`, `+1`-biased, 0 = "not a
+  branch"). The bridge between the id spaces is the AST `cst` column (`mccast.c:35`)
+  holding a `CstId`.
+- **Do now (cheap), activate later.** Fix the tag *partition* immediately — a header
+  enum + `name(tag,id)` / `tag_of` / `id_of` macros mirroring `cst_id*` — so step 1
+  mints AST slot keys in the reserved range from day one and no migration is needed
+  when H_e lands. Rename the CST field `slot_key -> branch_tag` to kill the
+  misleading dual-use name. The authority only *activates* at the H_e accumulator
+  (step 5+); the partition is defined up front to avoid rework.
+
+### Worst-case vs average scoring axis — worst-case
+
+Decision: score the runtime-delta axis by **worst-case path cost**, not
+profile-weighted average.
+
+- Average-case needs per-branch probabilities the compiler **has at no tier**:
+  `__builtin_expect`'s weight is discarded (`parse_builtin_params(0,"ee"); vpop();`,
+  `mccgen.c:8678-8681`), and both would-be profile sources (§24 `-g`
+  entry-frequency, §25 hot-value branch/switch cache) are unbuilt.
+- `-O1..-O3` take **no** runtime measurement (only static `ast_fn_cost` and byte
+  size); `-O4+` `MCC_AST_JITSCORE` measures a **single concrete input**, best-of-3
+  (`mcc.c:756-770, 1095-1113`) — one path, not a distribution, so it cannot validate
+  an average either.
+- Worst-case is monotone and deterministic — compatible with the `-O1..-O3`
+  byte-reproducibility invariant; profile weighting would inject input-dependent
+  nondeterminism into the frozen order. The landed model is already worst-case
+  (`ast_fn_cost = nodes*(maxdepth+1)*(calls+1)`, `mccast.c:5145-5163`; promotion
+  weighting `1<<depth`, `mccast.c:2327`), with static loop-depth as the frequency
+  proxy.
+- **Revisit** only when §25 records real branch/switch frequencies — the first point
+  at which an average is computable.
 
 ## Staged rollout
 
