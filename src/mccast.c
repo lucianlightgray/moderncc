@@ -689,6 +689,7 @@ static int ast_inline_pass_env;
 static int ast_vlat_env;
 static int ast_jit_env; /* MCC_AST_JIT: retain byte-faithful baseline + AST per function as the guarded-deopt fallback (§26 W1) */
 static int ast_jit_splice_env; /* MCC_AST_JIT_SPLICE: re-emit each faithful body from its retained baseline bytes at a shifted offset (§26 W2 splice-primitive validation) */
+static int ast_jit_dispatch_env; /* MCC_AST_JIT_DISPATCH: wrap each faithful body in an entry dispatcher {guard; jcc deopt; AOT arm; jmp; deopt: AOT-baseline splice} — 1=never-deopt, 2=always-deopt (§26 W2.2) */
 static int ast_data_report_env; /* MCC_AST_DATA_REPORT: dump const-data records to stderr */
 int ast_zero_bss_env;           /* MCC_ZERO_BSS: move all-zero .data statics into .bss */
 int ast_merge_strings_env;      /* MCC_MERGE_STRINGS: pool identical rodata string literals */
@@ -1112,6 +1113,7 @@ void ast_configure(MCCState *s1) {
 	ast_vlat_env = ast_env_gate("MCC_AST_VLAT", 0);
 	ast_jit_env = ast_env_gate("MCC_AST_JIT", 0);
 	ast_jit_splice_env = ast_env_gate("MCC_AST_JIT_SPLICE", 0);
+	ast_jit_dispatch_env = ast_env_int("MCC_AST_JIT_DISPATCH", 0);
 	ast_data_report_env = ast_env_gate("MCC_AST_DATA_REPORT", 0);
 	ast_zero_bss_env = ast_env_gate("MCC_ZERO_BSS", s1->optimize >= 2);
 	ast_merge_strings_env = ast_env_gate("MCC_MERGE_STRINGS", s1->optimize >= 2);
@@ -10548,6 +10550,35 @@ void ast_func_end(Sym *sym) {
 					AST_PF_EMIT(pf_best);
 					promoted = ast_promo_n;
 #undef AST_PF_EMIT
+				}
+				if (ast_jit_dispatch_env && faithful && !ast_jit_splice_env) {
+					int aot_base = ast_body_ind_sv;
+					int aot_len = ind - aot_base;
+					Section *rs = cur_text_section->reloc;
+					int aot_rlen = rs ? (int)(rs->data_offset - ast_reloc0_sv) : 0;
+					int aot_chain = rsym;
+					unsigned char *aot_code = mcc_malloc(aot_len > 0 ? aot_len : 1);
+					memcpy(aot_code, cur_text_section->data + aot_base, aot_len > 0 ? aot_len : 1);
+					unsigned char *aot_rel = mcc_malloc(aot_rlen > 0 ? aot_rlen : 1);
+					if (aot_rlen > 0)
+						memcpy(aot_rel, rs->data + ast_reloc0_sv, aot_rlen);
+					ind = aot_base;
+					rsym = 0;
+					if (rs)
+						rs->data_offset = ast_reloc0_sv;
+					nocode_wanted = 0;
+					o(0xc031); /* xor %eax,%eax (dead-at-entry scratch) */
+					o(0x0f);
+					int ast_guard_slot = oad(ast_jit_dispatch_env >= 2 ? 0x84 : 0x85, 0);
+					ast_baseline_splice(aot_code, aot_len, aot_rel, aot_rlen, aot_base, aot_chain);
+					nocode_wanted = 0;
+					rsym = gjmp(rsym);
+					gsym(ast_guard_slot);
+					ast_baseline_splice(aot_code, aot_len, aot_rel, aot_rlen, aot_base, aot_chain);
+					mcc_free(aot_code);
+					mcc_free(aot_rel);
+					MCC_TRACE("jit-dispatch %s mode=%d (%d code, %d rel)\n", funcname,
+										ast_jit_dispatch_env, aot_len, aot_rlen);
 				}
 			} else {
 				mcc_state->nb_errors = ast_saved_nberr;
