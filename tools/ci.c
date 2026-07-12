@@ -1148,10 +1148,13 @@ static void plan_presets(const char *job, StrSet *s) {
 	int i, t;
 	if (!strcmp(job, "linux")) {
 		static const char **T[] = {
-				PS_LINUX_GCC, PS_LINUX_CLANG, PS_DEV, PS_SUPER, 0};
+				PS_LINUX_GCC, PS_LINUX_CLANG, PS_DEV, 0};
 		for (t = 0; T[t]; t++)
 			for (i = 0; T[t][i]; i++)
 				set_add(s, T[t][i], (int)strlen(T[t][i]));
+	} else if (!strcmp(job, "matrix")) {
+		for (i = 0; PS_SUPER[i]; i++)
+			set_add(s, PS_SUPER[i], (int)strlen(PS_SUPER[i]));
 	} else if (!strcmp(job, "macos")) {
 		for (i = 0; PS_DARWIN[i]; i++)
 			set_add(s, PS_DARWIN[i], (int)strlen(PS_DARWIN[i]));
@@ -1209,7 +1212,7 @@ static int do_plan(int argc, char **argv) {
 			job = argv[++i];
 	if (!job) {
 		fprintf(stderr,
-						"usage: ci plan --job <linux|macos|msvc|qemu|dist-unix|dist-windows>\n");
+						"usage: ci plan --job <linux|matrix|macos|msvc|qemu|dist-unix|dist-windows>\n");
 		return 2;
 	}
 	printf("[");
@@ -1221,10 +1224,10 @@ static int do_plan(int argc, char **argv) {
 				for (k = 0; PLAN_HOSTS[k]; k++)
 					plan_cell(&first, "\"preset\":\"%s\",\"arch\":\"%s\"",
 										T[t][i], PLAN_HOSTS[k]);
+	} else if (!strcmp(job, "matrix")) {
 		for (i = 0; PS_SUPER[i]; i++)
 			for (k = 0; PLAN_HOSTS[k]; k++)
-				plan_cell(&first,
-									"\"preset\":\"%s\",\"arch\":\"%s\",\"flags\":\"--no-test\"",
+				plan_cell(&first, "\"preset\":\"%s\",\"arch\":\"%s\"",
 									PS_SUPER[i], PLAN_HOSTS[k]);
 	} else if (!strcmp(job, "macos")) {
 		static const char *CC[] = {"clang", "gcc", 0};
@@ -1286,6 +1289,7 @@ static char *par_read(const char *root, const char *rel) {
 static int do_parity(int argc, char **argv) {
 	static const char *WF[] = {
 			".github/workflows/ci.yml",
+			".github/workflows/matrix.yml",
 			".github/workflows/release.yml",
 			".github/workflows/dist.yml", 0};
 	const char *root = ".";

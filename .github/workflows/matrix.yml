@@ -1,0 +1,64 @@
+name: Matrix
+
+# Full gcc;clang x native;cross superbuild (the `matrix` configure preset:
+# MCC_TOOLCHAIN_PROFILE=gcc;clang, MCC_TARGETS=native;cross), built on both
+# host arches. Split out of the per-push/PR CI matrix — where each of its
+# two host cells was a ~40-min build and gated the critical path — into its
+# own push-to-main trigger. It is a build-only smoke test (no tests; ci.yml
+# already tests each toolchain), so it never blocks a PR. Also runnable on
+# demand. Cells come from the same preset ledger as ci.yml
+# (`ci plan --job matrix`), so `ci parity` still covers the matrix preset.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: matrix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.gen.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: gen
+        run: |
+          cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl
+          echo "matrix=$(/tmp/mcc-ci plan --job matrix)" >> "$GITHUB_OUTPUT"
+
+  matrix:
+    needs: plan
+    name: ${{ matrix.preset }} / ${{ matrix.arch }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      ART: mcc-${{ matrix.preset }}-${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: install toolchain (everything the platform offers)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build build-essential gcc clang lld wine64 git rsync \
+            mingw-w64
+      - name: run ${{ matrix.preset }} (gcc;clang x native;cross superbuild, build-only)
+        run: |
+          cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl
+          mkdir -p "dist/$ART"
+          /tmp/mcc-ci run-preset ${{ matrix.preset }} --out "dist/$ART" --no-test
+      - name: pack build targets
+        run: tar cJf "$ART.tar.xz" -C dist "$ART"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.ART }}
+          path: ${{ env.ART }}.tar.xz
