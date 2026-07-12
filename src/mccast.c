@@ -687,6 +687,7 @@ static int ast_bfold_round_env;
 static int ast_bfold_minmax_env;
 static int ast_inline_pass_env;
 static int ast_vlat_env;
+static int ast_jit_env; /* MCC_AST_JIT: retain byte-faithful baseline + AST per function as the guarded-deopt fallback (§26 W1) */
 static int ast_data_report_env; /* MCC_AST_DATA_REPORT: dump const-data records to stderr */
 int ast_zero_bss_env;           /* MCC_ZERO_BSS: move all-zero .data statics into .bss */
 int ast_merge_strings_env;      /* MCC_MERGE_STRINGS: pool identical rodata string literals */
@@ -1108,6 +1109,7 @@ void ast_configure(MCCState *s1) {
 	ast_bfold_minmax_env = ast_env_gate("MCC_AST_BFOLD_MINMAX", 1);
 	ast_inline_pass_env = ast_env_gate("MCC_AST_INLINE_PASS", 0);
 	ast_vlat_env = ast_env_gate("MCC_AST_VLAT", 0);
+	ast_jit_env = ast_env_gate("MCC_AST_JIT", 0);
 	ast_data_report_env = ast_env_gate("MCC_AST_DATA_REPORT", 0);
 	ast_zero_bss_env = ast_env_gate("MCC_ZERO_BSS", s1->optimize >= 2);
 	ast_merge_strings_env = ast_env_gate("MCC_MERGE_STRINGS", s1->optimize >= 2);
@@ -2588,6 +2590,36 @@ static int ast_reemit_retain(AstArena *a, Sym *sym) {
 	ast_reemit_pool[ast_reemit_n].ast = a;
 	ast_reemit_pool[ast_reemit_n].inline_n_at_gen = ast_inline_n;
 	ast_reemit_n++;
+	return 1;
+}
+
+static struct AstBaselineFn {
+	Sym *sym;
+	AstArena *ast;
+	unsigned char *code;
+	unsigned char *rel;
+	int code_len;
+	int rel_len;
+	int body_ind;
+	addr_t reloc0;
+} ast_baseline_pool[AST_INLINE_MAX];
+static int ast_baseline_n;
+
+static int ast_baseline_retain(Sym *sym, AstArena *a, unsigned char *code, int code_len,
+															 unsigned char *rel, int rel_len, int body_ind, addr_t reloc0) {
+	if (!ast_jit_env || ast_baseline_n >= AST_INLINE_MAX)
+		return 0;
+	struct AstBaselineFn *e = &ast_baseline_pool[ast_baseline_n++];
+	e->sym = sym;
+	e->ast = a;
+	e->code = code;
+	e->code_len = code_len;
+	e->rel = rel;
+	e->rel_len = rel_len;
+	e->body_ind = body_ind;
+	e->reloc0 = reloc0;
+	MCC_TRACE("jit-baseline retain %s (%d code, %d rel)\n", get_tok_str(sym->v, NULL),
+						code_len, rel_len);
 	return 1;
 }
 
@@ -10240,6 +10272,7 @@ void ast_func_end(Sym *sym) {
 				ast_inline_env = ast_fncfg[fi].inl;
 			}
 		}
+		int keep_baseline = 0;
 		if (ast_replay_ok(ast_cur)) {
 			int orig_ind = ind, orig_rsym = rsym;
 			int body_len = orig_ind - ast_body_ind_sv;
@@ -10509,16 +10542,21 @@ void ast_func_end(Sym *sym) {
 				if (promoted)
 					fprintf(stderr, "[ast-promote] %d %s\n", promoted, funcname);
 			}
-			mcc_free(orig);
-			mcc_free(orig_rel);
+			if (ast_jit_env && faithful)
+				keep_baseline = ast_baseline_retain(sym, ast_cur, orig, body_len, orig_rel,
+																						(int)rel_len, ast_body_ind_sv, ast_reloc0_sv);
+			if (!keep_baseline) {
+				mcc_free(orig);
+				mcc_free(orig_rel);
+			}
 		}
 		int keep_inline = ast_fn_faithful && ast_inline_retain(ast_cur, sym);
 		int keep_reemit = ast_fn_faithful && ast_reemit_retain(ast_cur, sym);
-		if (!keep_inline && !keep_reemit)
+		if (!keep_inline && !keep_reemit && !keep_baseline)
 			ast_arena_free(ast_cur);
 		ast_cur = NULL;
 		ast_sym_defer_on = 0;
-		if (keep_inline || keep_reemit) {
+		if (keep_inline || keep_reemit || keep_baseline) {
 			ast_sym_deferred = NULL;
 		} else {
 			while (ast_sym_deferred) {
