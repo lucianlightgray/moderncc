@@ -16,6 +16,7 @@
 #include "goldens.h"
 
 #define MCC_SKIP_RC 77
+#define MAX_REFS 16
 
 static int verbose;
 
@@ -232,23 +233,52 @@ static int build_run(const char *label, const char *cc, const char *mcc,
 	return 1;
 }
 
+static int majority_index(char *const *out, int n, int *count) {
+	int best = -1, bestc = 0;
+	for (int a = 0; a < n; a++) {
+		int c = 0;
+		for (int b = 0; b < n; b++)
+			if (!strcmp(out[a], out[b]))
+				c++;
+		if (c > bestc) {
+			bestc = c;
+			best = a;
+		}
+	}
+	if (count)
+		*count = bestc;
+	return (bestc * 2 > n) ? best : -1;
+}
+
 int main(int argc, char **argv) {
-	if (argc < 8) {
-		fprintf(stderr, "usage: %s <mcc> <bdir> <idir> <root> <work> <gcc> <clang>"
-										" [--list] [--only <name>]\n",
+	if (argc < 6) {
+		fprintf(stderr,
+						"usage: %s <mcc> <bdir> <idir> <root> <work> "
+						"--ref <label> <path> [--ref <label> <path>]... "
+						"[--list] [--only <name>]\n",
 						argv[0]);
 		return 2;
 	}
 	const char *mcc = argv[1], *bdir = argv[2], *idir = argv[3], *root = argv[4],
-						 *work = argv[5], *gcc = argv[6], *clang = argv[7];
+						 *work = argv[5];
 
+	const char *reflabel[MAX_REFS], *refpath[MAX_REFS];
+	int nref = 0;
 	const char *only = NULL;
 	int list_mode = 0;
-	for (int i = 8; i < argc; i++) {
+	for (int i = 6; i < argc; i++) {
 		if (!strcmp(argv[i], "--list"))
 			list_mode = 1;
 		else if (!strcmp(argv[i], "--only") && i + 1 < argc)
 			only = argv[++i];
+		else if (!strcmp(argv[i], "--ref") && i + 2 < argc) {
+			if (nref < MAX_REFS) {
+				reflabel[nref] = argv[i + 1];
+				refpath[nref] = argv[i + 2];
+				nref++;
+			}
+			i += 2;
+		}
 	}
 	if (list_mode) {
 		for (int i = 0; i < mcc_goldens_count; i++) {
@@ -271,11 +301,22 @@ int main(int argc, char **argv) {
 	hc_set_workdir(work);
 	HC_MKDIR(work);
 
-	if (same_compiler(gcc, clang)) {
-		printf("diff3: SKIP -- '%s' and '%s' are the same compiler; a three-way "
-					 "differential needs two distinct references (the exec golden suite "
-					 "still covers these programs)\n",
-					 gcc, clang);
+	int kept[MAX_REFS], nkept = 0;
+	for (int i = 0; i < nref; i++) {
+		int dup = 0;
+		for (int j = 0; j < nkept; j++)
+			if (same_compiler(refpath[i], refpath[kept[j]])) {
+				dup = 1;
+				break;
+			}
+		if (!dup)
+			kept[nkept++] = i;
+	}
+	if (nkept < 2) {
+		printf("diff3: SKIP -- need >=2 distinct reference compilers, have %d; a "
+					 "differential consensus needs independent references (the exec "
+					 "golden suite still covers these programs)\n",
+					 nkept);
 		return MCC_SKIP_RC;
 	}
 
@@ -313,47 +354,77 @@ int main(int argc, char **argv) {
 			fprintf(stderr, "RUN   %s\n", g->name);
 			fflush(stderr);
 		}
-		char *gout, *cout, *mout;
-		int gok = build_run("gcc", gcc, NULL, bdir, idir, sup, work, src, flags, args, &gout);
-		int cok = build_run("clang", clang, NULL, bdir, idir, sup, work, src, flags, args, &cout);
+		char *mout;
 		int mok = build_run("mcc", NULL, mcc, bdir, idir, sup, work, src, flags, args, &mout);
-
-		if (gok == 2 || cok == 2 || mok == 2) {
-
+		if (mok == 2) {
 			if (verbose)
-				printf("SKIP  %-28s -- build/run hit %ds watchdog or crashed (inconclusive)\n",
+				printf("SKIP  %-28s -- mcc build/run hit %ds watchdog or crashed (inconclusive)\n",
 							 g->name, DIFF3_RUN_TIMEOUT);
 			skip++;
-		} else if (!mok) {
+			free(mout);
+			continue;
+		}
+		if (!mok) {
 			printf("FAIL  %-28s -- mcc failed to build\n", g->name);
 			mcc_build_fail++;
-		} else if (!gok || !cok) {
+			free(mout);
+			continue;
+		}
+
+		char *rout[MAX_REFS];
+		const char *rlab[MAX_REFS];
+		int nbuilt = 0;
+		for (int k = 0; k < nkept; k++) {
+			int ri = kept[k];
+			char *o;
+			int rc = build_run(reflabel[ri], refpath[ri], NULL, bdir, idir, sup,
+												 work, src, flags, args, &o);
+			if (rc == 1) {
+				rout[nbuilt] = o;
+				rlab[nbuilt] = reflabel[ri];
+				nbuilt++;
+			} else {
+				free(o);
+			}
+		}
+
+		if (nbuilt < 2) {
 			if (verbose)
-				printf("SKIP  %-28s -- reference compiler can't build (mcc-only)\n", g->name);
-			skip++;
-		} else if (!strcmp(gout, cout) && !strcmp(mout, gout)) {
-			if (verbose)
-				printf("ok    %s\n", g->name);
-			pass++;
-		} else if (!strcmp(gout, cout) && strcmp(mout, gout)) {
-			if (intentional_divergence(g->name)) {
-				printf("INFO  %-28s -- mcc intentionally diverges from gcc==clang "
-							 "(bundled headers/predefines/impl-defined); exec golden suite is the guardrail\n",
+				printf("SKIP  %-28s -- <2 reference compilers could build/run (mcc-only)\n",
 							 g->name);
+			skip++;
+		} else {
+			int wins = 0, cons = majority_index(rout, nbuilt, &wins);
+			if (cons < 0) {
+				printf("INFO  %-28s -- %d references disagree, no majority (implementation-defined)\n",
+							 g->name, nbuilt);
+				impl++;
+				pass++;
+			} else if (!strcmp(mout, rout[cons])) {
+				if (verbose)
+					printf("ok    %s\n", g->name);
+				pass++;
+			} else if (intentional_divergence(g->name)) {
+				printf("INFO  %-28s -- mcc intentionally diverges from the %d/%d-ref "
+							 "consensus (bundled headers/predefines/impl-defined); exec golden suite is the guardrail\n",
+							 g->name, wins, nbuilt);
 				intent++;
 				pass++;
 			} else {
-				printf("FAIL  %-28s -- mcc differs from gcc==clang consensus\n", g->name);
-				printf("  gcc==clang: %s\n  mcc       : %s\n", gout, mout);
+				printf("FAIL  %-28s -- mcc differs from the %d/%d-ref consensus\n",
+							 g->name, wins, nbuilt);
+				printf("  consensus (");
+				for (int b = 0, first = 1; b < nbuilt; b++)
+					if (!strcmp(rout[b], rout[cons])) {
+						printf("%s%s", first ? "" : "+", rlab[b]);
+						first = 0;
+					}
+				printf("): %s\n  mcc       : %s\n", rout[cons], mout);
 				mcc_diff++;
 			}
-		} else {
-			printf("INFO  %-28s -- gcc != clang (implementation-defined)\n", g->name);
-			impl++;
-			pass++;
 		}
-		free(gout);
-		free(cout);
+		for (int k = 0; k < nbuilt; k++)
+			free(rout[k]);
 		free(mout);
 	}
 	printf("diff3: %d agree, %d mcc-divergence, %d impl-defined, %d intentional, "
