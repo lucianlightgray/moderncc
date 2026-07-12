@@ -131,21 +131,116 @@ ever wanted, its own gated change (side-car shadow + fixpoint + fuzz).
   want the emitted-size scoring above, since inline/promote effects are emit-time), and
   a real `est_cost_delta` best-first frontier ordering beyond the current base-first +
   fair-time schedule.
-- [ ] **Step 5+ — disk-backed cross-build memo (refcounted, LFU-evicted)** — the
-  per-function winner persists across builds as a **refcounted permutation**:
-  `<cachedir>/mcc-search.memo`, 24-byte records `{intention-hash, gates|MAGIC<<8,
-  refcount}`, loaded into `ast_search_memo`; a hit applies `cached & base` (a winner
-  cached under a different -O base never enables a gate this build disabled), **bumps the
-  permutation's refcount**, and re-appends it (last-wins). Every accessor (load / store /
-  hit) checks the **shared cache-dir disk usage**; at **10 GiB** it evicts the
-  lowest-refcount quarter of the working set and rewrites the file (temp + rename),
-  keeping the most-reused permutations. `mcc --clear-cache` wipes it. Validated:
-  cross-invocation refcount accumulation, -O6 differential correct, and the eviction path
-  (lowered-cap test: file grows then compacts, output preserved). Still open: **unify
-  with the out-of-process `pf-*.ck` format** (`so_pf_key`) so the in-process search fully
-  subsumes `mcc_superopt_perfn`; raise `AST_SEARCH_MEMO_CAP` (the in-memory working set,
-  which bounds a compaction) if the 4096-entry hot set proves too small; throttle the
+- [ ] **Step 5+ — disk-backed cross-build memo (refcounted, LFU-evicted, compressed)** —
+  the per-function winner persists across builds as a **refcounted permutation**:
+  `<cachedir>/mcc-search.memo`, records `{intention-hash, gates|MAGIC<<8, refcount}`,
+  loaded into `ast_search_memo`; a hit applies `cached & base` (a winner cached under a
+  different -O base never enables a gate this build disabled), **bumps the permutation's
+  refcount**, and persists. The on-disk form is a **compressed whole-file container**
+  ("MSZ1" magic + best-of-3 rle/lzss/lzw over the serialized record image; a rewrite
+  replaces the old raw append-log, so a hit rewrites only when the working set changed).
+  Every accessor (load / store / hit) checks the **shared cache-dir disk usage**; at
+  **10 GiB** it evicts the lowest-refcount quarter of the working set and rewrites the file
+  (temp + rename), keeping the most-reused permutations. `mcc --clear-cache` wipes it.
+  Validated: cross-invocation refcount accumulation, -O6 differential correct, the eviction
+  path (lowered-cap test: file grows then compacts, output preserved), and the compressed
+  round-trip (real -O4 populate+reload). Still open (now tracked as **M2/M3** in the macro
+  roadmap below): **unify with the out-of-process `pf-*.ck` format** (`so_pf_key`) so the
+  in-process search fully subsumes `mcc_superopt_perfn`; salt the key with version/triplet;
+  raise `AST_SEARCH_MEMO_CAP` if the 4096-entry hot set proves too small; throttle the
   per-accessor dir-walk if it shows up on very large caches.
+
+**LANDED — compression codecs + the `mcccombo` substrate wrapper (not yet wired).**
+`src/algorithms/{rle,lzss,lzw}.h` — header-only static-inline PackBits-RLE / LZSS / LZW,
+round-trip selftest `src/algorithms/selftest.c` (18/18). `src/mcccombo.h` — a header-only
+wrapper for the recurring "try permutations of formulaic combinations, score, keep the best,
+memoize by key->value" pattern: `combo_run` (subset × ordering enumerator, `COMBO_MAX 16`,
+`ComboScoreFn` lower-is-better), `combo_codecs`/`combo_pipeline_search` (codecs as a permutable
+formula family — best codec *chain*), `ComboMemo` (key->value cache, values best-of-3 compressed,
+refcount + LFU byte-cap eviction); selftest `src/algorithms/combo_selftest.c` (20/20). The disk
+memo now stores a **compressed container** ("MSZ1" magic, best-of-3 rle/lzss/lzw — a real -O4 run
+packs 216->111 bytes) in place of the raw 24-byte append-log. `mcccombo.h` is written but **used
+only by its selftest** — the roadmap below wires the real call-sites onto it. Validated:
+1905/1905, real -O4 populate+reload round-trip.
+
+### Macro roadmap — collapse both searches + const-data onto one substrate
+
+Grounded by two audits: (i) the out-of-process superopt duplicates **every** concern of the
+in-process `ast_search` on a second substrate (process-spawn + ELF-file measurement vs.
+arena-clone + cost model); (ii) the substrate target (`src/mcccombo.h`) and its four migration
+call-sites already exist. Numbered macro steps; lettered sub-features inline; `(A)` nested
+subgroups; each names the concrete hook and the double-checked blocker. Order is dependency order
+(M4 before M6; M5 before M6).
+
+- [ ] **M1 — wire the live -O4 search onto `combo_run`** (behavior-preserving first).
+  a) enumerand = `ast_strategies[]` gate bits (`AST_SG_*`, `mccast.c:6855`) as `sel[]`;
+  b) scorer = `ast_search_score_one` (`mccast.c:7303`, static `ast_cost_score` / emit-size) as the
+  `ComboScoreFn`; c) then enable **ordered** enumeration (strategy *pipelines*, not just subsets — a
+  strictly larger space the current submask search cannot reach). **(A) Blocker (audited):** fold
+  passes read `ast_templates_env` etc. **globally**, so the callback must set the global gates per
+  candidate (the category dead-end) — the callback wraps set→apply→score; no clean decoupling.
+  **(B) Gate:** byte-identical while `ordered=0, subsets`; permutations land behind an env flag.
+  *Synergy:* `ast_fc_forecast` (`mccforecast.h:465`) orders which candidate to try first (feed past
+  emit-size deltas as `y`), replacing the base-first + fair-time schedule.
+
+- [ ] **M2 — unify the memo on `ComboMemo` + disk backing.** a) key = `ast_intention_hash`
+  (`mccast.c:435`, already the memo key, stable across builds); b) value = winner record (gates +
+  score/size) stored best-of-3 compressed (the "MSZ1" container logic moves into `ComboMemo`);
+  c) refcount + LFU eviction under the shared 10 GiB cap (already present). **(A)** extend
+  `ComboMemo` with disk load/store. **(B) Blocker (audited):** the memo key has **no version/triplet
+  salt** (`so_pf_key` does, `mcc.c:826`) — add one or a winner cached under an incompatible build is
+  silently reused. *Synergy:* the shadow oracle `MCC_CONFIG_AST_SHADOW` (`mccast.c:2485`) validates a
+  cache hit == recompute, reusing the per-node memo's existing shadow-assert harness.
+
+- [ ] **M3 — subsume the out-of-process superopt** (`mcc_superopt_perfn`/`mcc_superopt_search`,
+  `mcc.c:922/1053`) onto the substrate. a) map perfn `{1,3,7}` config bits and the search 3-axis
+  int product into the `sel[]`/gate vocabulary; b) fold `pf-*.ck`/`so-*.ck` (`mcc.c:817-896`) into
+  the compressed container; c) reconcile concurrency — per-key `flock` + claim-cursor work-stealing
+  (`so_claim`, `mcc.c:447`) vs the memo's whole-file rewrite. **(A) Blocker (audited):** the memo
+  record stores **no size/score and no per-config `tried` progress** the drivers depend on — add
+  those fields. **(B) Blocker:** config-bit vocabularies differ (tmpl/promo/inl vs
+  TEMPLATES/NARROW/BITFLAG/SETHI) — define a lossless mapping. *Synergy:* the fork score-only pool
+  (`ast_search_pool`, `mccast.c:7345`) replaces fork+exec child compilers for scoring; one cache dir,
+  one eviction, one key scheme retires the second substrate.
+
+- [ ] **M4 — extend scoring to data/rodata** (prerequisite for const-data compression to *compete*).
+  a) snapshot `data_section->data_offset` + `rodata_section->data_offset` before replay and diff
+  after — mirrors the reloc-cursor save/restore `ast_search_emit_size` already does (`mccast.c:7247`);
+  b) combined score = text delta + data/rodata delta; c) add a data-size term to `ast_cost_score`
+  (`mccast.c:5497`, today text/AST only). **(A) Audited fact:** emit-size scoring is **text-delta
+  only** — a data-shrinking transform currently scores as a net regression, so without M4 datacomp
+  can never be chosen. *Synergy:* makes M6 visible to the search; no separate scoring path.
+
+- [ ] **M5 — const-data emission foundation** (the existing `.rodata data-emission` item above).
+  Add an `AstKind` array/global/static-data node + a table-symbol+initializer emitter wired into the
+  replay/rewrite lifecycle. **(A) Audited blocker:** const data is `memcpy`'d into `Section->data` at
+  **parse time, outside the AST capture window** (`init_putv`, `mccgen.c`) — this step is what brings
+  it under the substrate so a pass can rewrite it. *Synergy:* also unblocks §30 value-table dispatch.
+
+- [ ] **M6 — datacomp: const-data compression pass** (codegen-layer, opt-in; **not** an AST
+  strategy — audited infeasible as one: data absent from the AST, text-only score, needs a
+  synthesized ctor). **(A) Target:** a) string literals ・ b) `static const` arrays ・ c) both;
+  threshold by size×entropy. **(B) Codec:** per-blob best via `combo_pack`, or `combo_pipeline_search`
+  for a chain. **(C) Decompression:** a) eager `.init_array` ctor (`add_array`) ・ b) lazy first-use
+  guard ・ c) both. **(D) Runtime:** new `__mcc_decompress` in `runtime/`, call emitted via
+  `vpush_helper_func`+`gfunc_call`. **Blockers (audited):** breaks link-time-constant consumers;
+  `const`→writable `.bss`; multi-backend ctor synthesis (x86_64/arm64/riscv64/i386/arm32). **Gate:**
+  off by default; fires only when M4 scoring says it net-shrinks.
+
+- [ ] **M7 — formula-family unification** (the long tail). a) expose cost/ratio formulas as
+  fold-math builtins (`mcc_cost_*`/`mcc_ratio_*`, copy-pasting the `foldfc_try` template,
+  `mccgen.c:8402`); b) make the forecast ensemble a first-class `combo` formula family (pick
+  codec/strategy/threshold, not just next-tick duration); c) one `-f` front — extend `fold-math`
+  (`s->fold_math`, `libmcc.c:1902`), which **already** unifies libm + forecast folding, or add a new
+  gate. *Synergy:* one enumerator over {strategies, predictors, codecs}; one flag family; the
+  four `host_cache_dir` caches collapse to one `ComboMemo` store.
+
+- [ ] **M8 — validation gates** (apply to *each* of M1–M7 as it lands). a) full ctest 1905/1905;
+  b) `-O6` differentials vs gcc/clang; c) self-host 3-stage fixpoint; d) sanitizers (UBSan/ASan);
+  e) cross-arch (i386/arm32/riscv64/arm64, qemu-docker); f) differential miscompile fuzz;
+  g) `MCC_CONFIG_AST_SHADOW` zero-divergence. Behavior-preserving steps (M1 subset-mode, M2, M3)
+  must stay byte-identical; M4–M7 are gated opt-in and may change emitted bytes only under their flag.
+
 ## NEXT MILESTONE — runtime JIT + guarded deopt (§26) — plan in `docs/JIT-PLAN.md`
 
 Not part of the completed Steps 1–5 rollout (AST.md: "rollout steps 3-5 **+ the JIT**").
