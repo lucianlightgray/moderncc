@@ -6,6 +6,13 @@ D4=A runtime-observed live-in range · **D5=both (.init_array ctor + jit-profile
 **D6=deopt-first, eval_slice as later hardening** · **D7=ELF x86_64 first** · **D8=pthread pool via
 `runtime/include/threads.h`**.
 
+**Baseline & cache model.** The JIT *baseline* is the AOT-compiled, possibly-optimized function
+that ships in the object (the final emit at the chosen `-O`), NOT the pre-fold parse-time body. At
+runtime the JIT produces a *further*-optimized variant specialized to an observed context, keyed by a
+hash of that context (§21 epoch/cache key + §25 hot-value key); the cache maps `key → best-known
+variant` (the baseline itself, or a more-optimized version). The dispatcher runs the cached variant
+for the live key and **deopts to the AOT baseline on guard-fail / key-miss**.
+
 Global gate: `MCC_AST_JIT` (default off) until the full validation bar passes, then P0-style flip.
 Every milestone must clear the repo bar before the next: default byte-identical (ctest object-diff 0),
 self-host 3-stage fixpoint byte-identical, -O6 differential == gcc == clang, cross-arch i386/arm64,
@@ -16,9 +23,10 @@ differential fuzz 0 miscompiles, shadow zero-divergence, UBSan trap clean.
 - `ast_strategies[]` has 4 free slots (20/24, `mccast.c:817,8872`) — exactly the 4 jit rows.
 - Entry-prepend prior art: `ast_tco_run` tail rebuilds the root child list (`mccast.c:6068-6079`).
   Guard = `AST_If` (op-encoded); label/goto = `AST_Jump` op 4/5. No new node kind needed.
-- Baseline fallback already 90% present: `orig`/`orig_rel` snapshot at `mccast.c:10246-10252`,
-  freed at `10512-10513`; `ast_cur` already survives via `keep_inline`/`keep_reemit`
-  (`10515-10519`). Add a `keep_baseline` sibling pool keyed by `sym`.
+- Baseline = the AOT final emit (post-strategy), snapshotted from the live text section at the tail of
+  `ast_func_end` into a `keep_baseline` pool keyed by `sym` (`orig`/`orig_rel` at `mccast.c:10246` are
+  the pre-fold body + revert buffer, NOT the baseline). `ast_cur` already survives via
+  `keep_inline`/`keep_reemit` (`10515-10519`); `keep_baseline` joins that condition.
 - D3=A dispatcher sidesteps the static-`E8 rel32` problem (`x86_64-gen.c:588`): call sites unchanged,
   dispatcher reads a swappable data pointer. One aligned 8-byte atomic store; no GOT/i-cache trick.
 - Recompile into a fresh `run_ptr` (`mcc_relocate` rejects double-relocate, `mccrun.c:83`); W^X dual
@@ -31,22 +39,31 @@ differential fuzz 0 miscompiles, shadow zero-divergence, UBSan trap clean.
 
 ## Milestones
 
-### M1 — Baseline retention (W1)
-Stop freeing `orig`/`orig_rel`; stash `{orig, orig_rel, ast_body_ind_sv, ast_reloc0_sv, body_len,
-rel_len, orig_ind, orig_rsym}` + retained `ast_cur` in a new `ast_baseline_pool[]` keyed by `sym`,
-via a `keep_baseline` flag beside `keep_inline`/`keep_reemit` (`mccast.c:10515`). Gated `MCC_AST_JIT`.
-Validate: pool only allocates when the gate is on → default path byte-identical; no leak regression
-(reuse the shadow build). No behavior change yet.
+### M1 — Baseline retention (W1) — LANDED (10cc7f05, 7114e90c)
+`ast_baseline_retain` snapshots the AOT final emit (code `[ast_body_ind_sv, ind)`, relocs past
+`ast_reloc0_sv`, shipped-body return-chain head `rsym`) + retained `ast_cur` into `ast_baseline_pool[]`
+keyed by `sym`, via a `keep_baseline` flag beside `keep_inline`/`keep_reemit`. Gated `MCC_AST_JIT`
+(default off). Validated: emit-neutral, retention fires, ctest 3968/3968 default + JIT-on.
 
-### M2 — Stage 1 strategies `jit-guard` + `jit-dispatch` (W2, ships a complete guarded-deopt)
-Add 2 rows to `ast_strategies[]` + `AST_STRAT_*` enum; 2 gate bits `AST_SG_JIT_DISPATCH/_GUARD`
-(bits 40/41, `mccgate.h`); mirror in `ast_search_gates_now`/`_set` (`9393/9431`) and the searchable
-set (`10009-10017`). Emit entirely at compile time: prepend an `AST_If` guard on the static
-`context_in` live-in domain; then-arm = the optimized variant (existing fold strategies on a
-domain-restricted clone); else-arm = the retained faithful baseline re-emitted inline via
-`ast_replay_body` (`4070`) / the revert `memcpy` (`10469`). Reuse the `ast_tco_run` root-rebuild
-idiom to prepend. This is real, differential-validatable guarded deopt with **no runtime recompiler**.
-Validate: full repo bar with `MCC_AST_JIT=1`.
+### M2 — Stage 1 entry-dispatcher (W2, machine-byte splice, x86_64 first) — ships a complete guarded-deopt
+Mechanism B (settled): the deopt arm is the AOT baseline reinstalled as *machine bytes*, not an
+AST_If. Emit at compile time, replacing the body with `[guard; jcc deopt] [speculative arm] [jmp
+epilogue] deopt: [AOT-baseline splice]`; both arms share one prologue/epilogue (frame = max(loc)) and
+one `rsym` return chain.
+
+- **W2.1 — reloc-rebasing splice primitive — LANDED (f18031e5).** `ast_baseline_splice` copies retained
+  bytes to the live `ind`, rebases each reloc by `r_offset` only (`r_info`+addend position-independent
+  for every x86_64 body reloc kind), and re-threads the open return-jump chain into `rsym`. Validated
+  by the default-off `MCC_AST_JIT_SPLICE` harness: bit-correct execution over returns/loops/recursion/
+  PLT calls; corpus semantics-clean.
+- **W2.2 — dispatcher control flow — IN PROGRESS.** Guard (synthetic `xor eax,eax; jcc` for now) +
+  speculative arm (non-rewinding replay, since `AST_PF_EMIT` hard-rewinds `ind`) + jmp-over + AOT-
+  baseline splice; validated in two runtime modes (`MCC_AST_JIT_DISPATCH=1` never-deopt / `=2`
+  always-deopt) so both arms are exercised. No runtime recompiler.
+- **W2.3 — real speculative guard.** Replace the synthetic guard with a live-in domain check
+  (`AstVLat`/`context_in`) where the speculative arm is a domain-specialized further-optimization;
+  under deopt-first this rides the AOT differential. Also register `jit-dispatch`/`jit-guard` as gate
+  bits (40/41, `mccgate.h`) + `ast_strategies[]` rows if search-selection is wanted.
 
 ### M3 — Wire `--jit-functions` selection (D8 partial)
 Make the parsed-but-inert `--jit-functions` (`libmcc.c:2152`) actually select which `sym`s get the
