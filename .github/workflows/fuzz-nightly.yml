@@ -50,9 +50,10 @@ jobs:
           set +e
           cmake-debug/fuzz_runner campaign \
             cmake-debug/mcc cmake-debug runtime/include \
-            "$(command -v gcc)" "$(command -v clang)" \
             tests/fuzz/corpus "$RUNNER_TEMP/fuzz-work" \
-            "$budget" "$batch" 20 | tee "$RUNNER_TEMP/campaign.log"
+            "$budget" "$batch" 20 \
+            --ref gcc "$(command -v gcc)" --ref clang "$(command -v clang)" \
+            | tee "$RUNNER_TEMP/campaign.log"
           echo "campaign_rc=${PIPESTATUS[0]}" >> "$GITHUB_ENV"
       - name: summary
         if: always()

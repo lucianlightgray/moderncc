@@ -18,6 +18,7 @@
 
 #define MCC_SKIP_RC 77
 #define RUN_TIMEOUT 20
+#define MAX_REFS 16
 
 #define RUN_SYSTEM(c) HC_SYSTEM_SH(c)
 #define RUN_POPEN(c) HC_POPEN_SH(c)
@@ -98,8 +99,74 @@ static void runres_free(runres *r) {
 	r->out = NULL;
 }
 
+typedef struct {
+	const char *label[MAX_REFS], *path[MAX_REFS];
+	int n;
+} Refs;
+
+static int same_cc(const char *a, const char *b) {
+	char cmd[4096];
+	snprintf(cmd, sizeof cmd, "\"%s\" --version 2>/dev/null", a);
+	char *va = cap_cmd(cmd, NULL);
+	snprintf(cmd, sizeof cmd, "\"%s\" --version 2>/dev/null", b);
+	char *vb = cap_cmd(cmd, NULL);
+	int same = va[0] && !strcmp(va, vb);
+	free(va);
+	free(vb);
+	return same;
+}
+
+static void refs_dedup(Refs *r) {
+	Refs o = {{0}, {0}, 0};
+	for (int i = 0; i < r->n; i++) {
+		int dup = 0;
+		for (int j = 0; j < o.n; j++)
+			if (same_cc(r->path[i], o.path[j])) {
+				dup = 1;
+				break;
+			}
+		if (!dup) {
+			o.label[o.n] = r->label[i];
+			o.path[o.n] = r->path[i];
+			o.n++;
+		}
+	}
+	*r = o;
+}
+
+static int refs_add(Refs *r, const char *label, const char *path) {
+	if (r->n >= MAX_REFS)
+		return 0;
+	r->label[r->n] = label;
+	r->path[r->n] = path;
+	r->n++;
+	return 1;
+}
+
 static int runres_eq(const runres *a, const runres *b) {
 	return a->exit_code == b->exit_code && !strcmp(a->out, b->out);
+}
+
+static int runres_majority(const runres *r, const int *ok, int n, int *wc) {
+	int best = -1, bestc = 0, nok = 0;
+	for (int i = 0; i < n; i++)
+		if (ok[i])
+			nok++;
+	for (int a = 0; a < n; a++) {
+		if (!ok[a])
+			continue;
+		int c = 0;
+		for (int b = 0; b < n; b++)
+			if (ok[b] && runres_eq(&r[a], &r[b]))
+				c++;
+		if (c > bestc) {
+			bestc = c;
+			best = a;
+		}
+	}
+	if (wc)
+		*wc = bestc;
+	return (nok >= 2 && bestc * 2 > nok) ? best : -1;
 }
 
 static runres build_run(const char *cc, const char *mcc, const char *bdir,
@@ -206,20 +273,26 @@ static const gate_t GATES[] = {
 };
 #define NGATES ((int)(sizeof GATES / sizeof *GATES))
 
-static int consensus(const char *gcc, const char *clang, const char *bdir,
-					 const char *idir, const char *work, const char *src,
-					 runres *cons) {
-	runres g = build_run(gcc, NULL, bdir, idir, NULL, "-O2", work, "ref_gcc", src);
-	runres c = build_run(clang, NULL, bdir, idir, NULL, "-O2", work, "ref_clang", src);
-	int ok = g.kind == RES_OK && c.kind == RES_OK && runres_eq(&g, &c);
-	if (ok) {
-		*cons = g;
-		runres_free(&c);
-		return 1;
+static int consensus(const Refs *refs, const char *bdir, const char *idir,
+					 const char *work, const char *src, runres *cons) {
+	runres r[MAX_REFS];
+	int ok[MAX_REFS];
+	for (int i = 0; i < refs->n; i++) {
+		char lbl[64];
+		snprintf(lbl, sizeof lbl, "ref_%s", refs->label[i]);
+		r[i] = build_run(refs->path[i], NULL, bdir, idir, NULL, "-O2", work, lbl, src);
+		ok[i] = r[i].kind == RES_OK;
 	}
-	runres_free(&g);
-	runres_free(&c);
-	return 0;
+	int wc = 0, win = runres_majority(r, ok, refs->n, &wc);
+	int ret = 0;
+	if (win >= 0) {
+		*cons = r[win];
+		r[win].out = NULL;
+		ret = 1;
+	}
+	for (int i = 0; i < refs->n; i++)
+		runres_free(&r[i]);
+	return ret;
 }
 
 static int mcc_diverges(const char *mcc, const char *bdir, const char *idir,
@@ -238,14 +311,14 @@ typedef struct {
 	char gate[32];
 } attribution;
 
-static attribution triage(const char *mcc, const char *gcc, const char *clang,
+static attribution triage(const char *mcc, const Refs *refs,
 						  const char *bdir, const char *idir, const char *work,
 						  const char *src) {
 	attribution a;
 	a.found = 0;
 	a.opt[0] = a.gate[0] = 0;
 	runres cons;
-	if (!consensus(gcc, clang, bdir, idir, work, src, &cons))
+	if (!consensus(refs, bdir, idir, work, src, &cons))
 		return a;
 	for (int i = 0; i < NOPTS; i++) {
 		if (mcc_diverges(mcc, bdir, idir, work, src, &cons, NULL, OPTS[i])) {
@@ -314,13 +387,13 @@ static void doc_write(const doc *d, const char *path, const char *keep) {
 	fclose(f);
 }
 
-static int interesting(const char *mcc, const char *gcc, const char *clang,
+static int interesting(const char *mcc, const Refs *refs,
 					   const char *bdir, const char *idir, const char *work,
 					   const char *cand) {
 	runres cons;
-	if (!consensus(gcc, clang, bdir, idir, work, cand, &cons))
+	if (!consensus(refs, bdir, idir, work, cand, &cons))
 		return 0;
-	if (has_ub(gcc, work, cand)) {
+	if (refs->n && has_ub(refs->path[0], work, cand)) {
 		runres_free(&cons);
 		return 0;
 	}
@@ -335,7 +408,7 @@ static int interesting(const char *mcc, const char *gcc, const char *clang,
 	return div;
 }
 
-static void reduce(const char *mcc, const char *gcc, const char *clang,
+static void reduce(const char *mcc, const Refs *refs,
 				   const char *bdir, const char *idir, const char *work,
 				   const char *src, const char *outpath) {
 	doc d = doc_read(src);
@@ -358,7 +431,7 @@ static void reduce(const char *mcc, const char *gcc, const char *clang,
 			if (!any)
 				continue;
 			doc_write(&d, cand, keep);
-			if (interesting(mcc, gcc, clang, bdir, idir, work, cand))
+			if (interesting(mcc, refs, bdir, idir, work, cand))
 				changed = 1;
 			else
 				for (int i = start; i < start + chunk && i < d.n; i++)
@@ -379,7 +452,7 @@ static int ends_with(const char *s, const char *sfx) {
 	return ls >= lf && !strcmp(s + ls - lf, sfx);
 }
 
-static int replay_corpus(const char *mcc, const char *gcc, const char *clang,
+static int replay_corpus(const char *mcc, const Refs *refs,
 						 const char *bdir, const char *idir, const char *work,
 						 const char *dir) {
 	char cmd[4096];
@@ -400,7 +473,7 @@ static int replay_corpus(const char *mcc, const char *gcc, const char *clang,
 		}
 		total++;
 		runres cons;
-		if (!consensus(gcc, clang, bdir, idir, work, ln, &cons)) {
+		if (!consensus(refs, bdir, idir, work, ln, &cons)) {
 			printf("corpus: SKIP  %-40s -- references disagree / cannot build\n", base);
 			skip++;
 			continue;
@@ -544,19 +617,37 @@ static void score_save(const char *path, ScoreClass *sb, int n) {
    runner; this driver dedups their attribution classes and enforces the stop
    rule -- exiting nonzero exactly when a new class was found. */
 static int campaign_main(const char *self, int argc, char **argv) {
-	if (argc < 8) {
+	Refs refs = {{0}, {0}, 0};
+	const char *pos[16];
+	int npos = 0;
+	for (int i = 1; i < argc; i++) {
+		if (!strcmp(argv[i], "--ref") && i + 2 < argc) {
+			refs_add(&refs, argv[i + 1], argv[i + 2]);
+			i += 2;
+		} else if (npos < 16) {
+			pos[npos++] = argv[i];
+		}
+	}
+	refs_dedup(&refs);
+	if (npos < 5 || refs.n < 2) {
 		fprintf(stderr,
-				"usage: %s campaign <mcc> <bdir> <idir> <gcc> <clang> <corpus> <work>"
-				" [budget_secs] [batch] [stop_k]\n",
+				"usage: %s campaign <mcc> <bdir> <idir> <corpus> <work>"
+				" [budget_secs] [batch] [stop_k] --ref <label> <path> [--ref ...]\n",
 				self);
 		return 2;
 	}
 	{
-		const char *mcc = argv[1], *bdir = argv[2], *idir = argv[3], *gcc = argv[4],
-				   *clang = argv[5], *corpus = argv[6], *work = argv[7];
-		long budget = argc > 8 ? strtol(argv[8], NULL, 10) : 3600;
-		long batch = argc > 9 ? strtol(argv[9], NULL, 10) : 50;
-		long stop_k = argc > 10 ? strtol(argv[10], NULL, 10) : 20;
+		const char *mcc = pos[0], *bdir = pos[1], *idir = pos[2], *corpus = pos[3],
+				   *work = pos[4];
+		long budget = npos > 5 ? strtol(pos[5], NULL, 10) : 3600;
+		long batch = npos > 6 ? strtol(pos[6], NULL, 10) : 50;
+		long stop_k = npos > 7 ? strtol(pos[7], NULL, 10) : 20;
+		char refargs[4096] = "";
+		for (int i = 0; i < refs.n; i++) {
+			char one[1024];
+			snprintf(one, sizeof one, " --ref \"%s\" \"%s\"", refs.label[i], refs.path[i]);
+			strncat(refargs, one, sizeof refargs - strlen(refargs) - 1);
+		}
 		char sbbuf[4096];
 		const char *sbpath;
 		ScoreClass *sb = NULL;
@@ -592,9 +683,9 @@ static int campaign_main(const char *self, int argc, char **argv) {
 			snprintf(rdir, sizeof rdir, "%s/r%ld", work, round);
 			snprintf(logp, sizeof logp, "%s/round-%ld.log", work, round);
 			snprintf(cmd, sizeof cmd,
-					 "\"%s\" \"%s\" \"%s\" \"%s\" \"%s\" \"%s\" \"%s\" --seed %lu "
-					 "--count %ld --gates --corpus \"%s\" >\"%s\" 2>&1",
-					 self, mcc, bdir, idir, rdir, gcc, clang, seed, batch, corpus, logp);
+					 "\"%s\" \"%s\" \"%s\" \"%s\" \"%s\" --seed %lu "
+					 "--count %ld --gates --corpus \"%s\"%s >\"%s\" 2>&1",
+					 self, mcc, bdir, idir, rdir, seed, batch, corpus, refargs, logp);
 			rc = HC_SYSTEM_SH(cmd);
 			exitc = WIFEXITED(rc) ? WEXITSTATUS(rc) : rc;
 
@@ -694,8 +785,8 @@ static int bisect_main(int argc, char **argv) {
 	snprintf(bdir, sizeof bdir, "%s/cmake-%s", root, preset);
 	snprintf(cmd, sizeof cmd,
 			 "\"%s/fuzz_runner\" \"%s/mcc\" \"%s\" \"%s/runtime/include\" \"%s\" "
-			 "\"%s\" \"%s\" --corpus \"%s\" --replay",
-			 bdir, bdir, bdir, root, work, gcc, clang, one);
+			 "--corpus \"%s\" --replay --ref gcc \"%s\" --ref clang \"%s\"",
+			 bdir, bdir, bdir, root, work, one, gcc, clang);
 	rc = HC_SYSTEM_SH(cmd);
 	exitc = WIFEXITED(rc) ? WEXITSTATUS(rc) : rc;
 	snprintf(cmd, sizeof cmd, "rm -rf \"%s\"", work);
@@ -711,9 +802,10 @@ static int bisect_main(int argc, char **argv) {
 
 static void usage(const char *p) {
 	fprintf(stderr,
-			"usage: %s <mcc> <bdir> <idir> <work> <gcc> <clang> [opts]\n"
-			"       %s campaign <mcc> <bdir> <idir> <gcc> <clang> <corpus> <work> [budget] [batch] [stop_k]\n"
+			"usage: %s <mcc> <bdir> <idir> <work> --ref <label> <path> [--ref ...] [opts]\n"
+			"       %s campaign <mcc> <bdir> <idir> <corpus> <work> [budget] [batch] [stop_k] --ref <label> <path> [--ref ...]\n"
 			"       %s bisect <repro.c> [preset]\n"
+			"  --ref LABEL P   a reference compiler (>=2 distinct needed for the majority consensus)\n"
 			"  --seed N        base seed (default env MCC_FUZZ_SEED or 1)\n"
 			"  --count N       programs to try (default env MCC_FUZZ_COUNT or 20)\n"
 			"  --corpus DIR    dir for saved repros / replay\n"
@@ -730,18 +822,18 @@ int main(int argc, char **argv) {
 		return campaign_main(argv[0], argc - 1, argv + 1);
 	if (argc >= 2 && !strcmp(argv[1], "bisect"))
 		return bisect_main(argc - 1, argv + 1);
-	if (argc < 7) {
+	if (argc < 5) {
 		usage(argv[0]);
 		return 2;
 	}
-	const char *mcc = argv[1], *bdir = argv[2], *idir = argv[3], *work = argv[4],
-			   *gcc = argv[5], *clang = argv[6];
+	const char *mcc = argv[1], *bdir = argv[2], *idir = argv[3], *work = argv[4];
 	unsigned long seed = strtoul(hc_envv("MCC_FUZZ_SEED", "1"), NULL, 10);
 	long count = strtol(hc_envv("MCC_FUZZ_COUNT", "20"), NULL, 10);
 	const char *corpus = NULL, *reduce_in = NULL;
 	int do_replay = 0, do_gates = 0;
 	long gen_seed = -1;
-	for (int i = 7; i < argc; i++) {
+	Refs refs = {{0}, {0}, 0};
+	for (int i = 5; i < argc; i++) {
 		if (!strcmp(argv[i], "--seed") && i + 1 < argc)
 			seed = strtoul(argv[++i], NULL, 10);
 		else if (!strcmp(argv[i], "--count") && i + 1 < argc)
@@ -756,11 +848,15 @@ int main(int argc, char **argv) {
 			gen_seed = strtol(argv[++i], NULL, 10);
 		else if (!strcmp(argv[i], "--reduce") && i + 1 < argc)
 			reduce_in = argv[++i];
-		else if (!strcmp(argv[i], "-v"))
+		else if (!strcmp(argv[i], "--ref") && i + 2 < argc) {
+			refs_add(&refs, argv[i + 1], argv[i + 2]);
+			i += 2;
+		} else if (!strcmp(argv[i], "-v"))
 			verbose = 1;
 	}
 	if (hc_envv("MCC_FUZZ_GATES", "")[0])
 		do_gates = 1;
+	refs_dedup(&refs);
 
 	if (gen_seed >= 0) {
 		fuzz_emit((unsigned long)gen_seed, stdout);
@@ -771,12 +867,19 @@ int main(int argc, char **argv) {
 	hc_set_workdir(work);
 	HC_MKDIR(work);
 
+	if (refs.n < 2) {
+		fprintf(stderr,
+				"fuzz: need >=2 distinct reference compilers (--ref <label> <path>); have %d\n",
+				refs.n);
+		return MCC_SKIP_RC;
+	}
+
 	if (do_replay) {
 		if (!corpus) {
 			fprintf(stderr, "--replay needs --corpus DIR\n");
 			return 2;
 		}
-		return replay_corpus(mcc, gcc, clang, bdir, idir, work, corpus);
+		return replay_corpus(mcc, &refs, bdir, idir, work, corpus);
 	}
 
 	if (reduce_in) {
@@ -786,8 +889,8 @@ int main(int argc, char **argv) {
 		}
 		char red[2048];
 		snprintf(red, sizeof red, "%s/reduced.c", work);
-		reduce(mcc, gcc, clang, bdir, idir, work, reduce_in, red);
-		attribution a = triage(mcc, gcc, clang, bdir, idir, work, red);
+		reduce(mcc, &refs, bdir, idir, work, reduce_in, red);
+		attribution a = triage(mcc, &refs, bdir, idir, work, red);
 		save_repro(red, corpus, seed, &a);
 		return 0;
 	}
@@ -806,7 +909,7 @@ int main(int argc, char **argv) {
 		fclose(f);
 
 		runres cons;
-		if (!consensus(gcc, clang, bdir, idir, work, src, &cons)) {
+		if (!consensus(&refs, bdir, idir, work, src, &cons)) {
 			drop++;
 			if (verbose)
 				printf("drop  seed=%lu -- references disagree / cannot build (latent UB)\n", s);
@@ -834,21 +937,21 @@ int main(int argc, char **argv) {
 			pass++;
 			continue;
 		}
-		if (has_ub(gcc, work, src)) {
+		if (has_ub(refs.path[0], work, src)) {
 			drop++;
 			if (verbose)
 				printf("drop  seed=%lu -- divergence but program has UB\n", s);
 			continue;
 		}
 		fail++;
-		printf("FAIL  seed=%lu -- mcc diverges from gcc==clang at %s %s\n", s,
-			   confopt, confenv);
+		printf("FAIL  seed=%lu -- mcc diverges from the %d-ref consensus at %s %s\n", s,
+			   refs.n, confopt, confenv);
 		if (corpus) {
 			HC_MKDIR(corpus);
 			char red[2048];
 			snprintf(red, sizeof red, "%s/reduced_%lu.c", work, s);
-			reduce(mcc, gcc, clang, bdir, idir, work, src, red);
-			attribution a = triage(mcc, gcc, clang, bdir, idir, work, red);
+			reduce(mcc, &refs, bdir, idir, work, src, red);
+			attribution a = triage(mcc, &refs, bdir, idir, work, red);
 			printf("  attribution: %s %s\n", a.found ? a.opt : "?",
 				   a.found ? a.gate : "");
 			save_repro(red, corpus, s, &a);

@@ -3495,12 +3495,12 @@ if(MCC_BUILD_TESTS)
 
     # Differential random-program miscompile fuzzer (TODO.md §0). x86_64-Linux
     # only: the oracle needs gcc AND clang executing mcc's own target ISA.
-    if(NOT MCC_EMULATOR AND DIFF3_GCC AND DIFF3_CLANG AND _diff3_sh_ok
+    if(NOT MCC_EMULATOR AND _diff3_nref GREATER_EQUAL 2 AND _diff3_sh_ok
        AND MCC_CPU STREQUAL "x86_64" AND NOT MCC_TARGETOS STREQUAL "WIN32")
         add_executable(fuzz_runner tests/fuzz/runner.c)
         add_test(NAME "fuzz/smoke"
             COMMAND fuzz_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
-                    "${CMAKE_BINARY_DIR}/fuzz-smoke" "${DIFF3_GCC}" "${DIFF3_CLANG}"
+                    "${CMAKE_BINARY_DIR}/fuzz-smoke" ${_diff3_ref_args}
                     --seed 1 --count 40)
         set_tests_properties("fuzz/smoke" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77 ENVIRONMENT "${_diff3_env}")
@@ -3508,19 +3508,19 @@ if(MCC_BUILD_TESTS)
             math(EXPR _fm_seed "1 + ${_fm_shard} * 6")
             add_test(NAME "fuzz/matrix-${_fm_shard}"
                 COMMAND fuzz_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
-                        "${CMAKE_BINARY_DIR}/fuzz-matrix-${_fm_shard}" "${DIFF3_GCC}" "${DIFF3_CLANG}"
+                        "${CMAKE_BINARY_DIR}/fuzz-matrix-${_fm_shard}" ${_diff3_ref_args}
                         --seed ${_fm_seed} --count 6 --gates)
             set_tests_properties("fuzz/matrix-${_fm_shard}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_diff3_env}")
         endforeach()
         add_test(NAME "fuzz/corpus"
             COMMAND fuzz_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
-                    "${CMAKE_BINARY_DIR}/fuzz-corpus" "${DIFF3_GCC}" "${DIFF3_CLANG}"
+                    "${CMAKE_BINARY_DIR}/fuzz-corpus" ${_diff3_ref_args}
                     --corpus "${CMAKE_CURRENT_SOURCE_DIR}/tests/fuzz/corpus" --replay)
         set_tests_properties("fuzz/corpus" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77 ENVIRONMENT "${_diff3_env}")
     else()
-        mcc_skip_test(fuzz-suite "needs native x86_64 host + both gcc and clang (differential oracle executes mcc's own target ISA)")
+        mcc_skip_test(fuzz-suite "needs native x86_64 host + >=2 distinct reference compilers (differential oracle executes mcc's own target ISA; add -DMCC_DIFF3_EXTRA_REFS=label=path to widen)")
     endif()
 
     if(MCC_TARGETOS STREQUAL "WIN32")
