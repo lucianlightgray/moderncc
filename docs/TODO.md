@@ -446,21 +446,6 @@ subgroups; each names the concrete hook and the double-checked blocker. Order is
   byte-identical self-host fixpoint, cross-arch i386/arm64, shadow 2990/2990, fuzz). **Remaining:**
   TLS `tdata`→`tbss` and the asan/bcheck cases (excluded by guards).
 
-- [x] **[P0] M6s — string-literal merging** (`-fmerge-constants`-style rodata pooling; opt-in
-  `MCC_MERGE_STRINGS`). **LANDED, full M8 bar.** C11 6.4.5p7 leaves identical string literals'
-  distinctness unspecified, so sharing storage is sound (unlike const *array* dedup, which C11 6.5.9
-  forbids). A value-use literal (`str_init`, `v==0`) is homed at an anonymous symbol; references are
-  symbol-keyed, so merging is the same symbol-rebind as M6z. In `decl_initializer_alloc` after
-  `decl_initializer`: content-key the just-written bytes (`ast_strpool_find_or_add` — hash + memcmp on
-  bytes+size+align so wide never aliases narrow, per-TU); on a hit, zero the reclaimed slot (restores
-  the "space at/after `data_offset` is zero" invariant — a bug the regimen caught), truncate
-  `rodata_section->data_offset`, re-home the symbol. **Suffix/tail sharing also landed** (`"bar"` inside
-  `"foobar"`): re-home to `A_addr + (A_size − size)` — references are `symbol + addend` so they resolve
-  into the interior (C11 6.5.2.5 permits overlapping representations), guarded by `interior_off % align
-  == 0`. Validated default byte-neutral; `MCC_MERGE_STRINGS=1` exec x86_64 + i386 + arm64, self-host,
-  fuzz 7/7; `exec-mergestrings/` locks it. `-v128` TRACE `string merge`/`strpool suffix`.
-  **P0: LANDED default-on at `-O2+`** (`s1->optimize >= 2`, full-M8 batch with the sibling knobs).
-
 - [ ] **[FLOAT] M7 — formula-family unification** (the long tail). a) expose cost/ratio formulas as
   fold-math builtins (`mcc_cost_*`/`mcc_ratio_*`, copy-pasting the `foldfc_try` template,
   `mccgen.c:8402`); b) make the forecast ensemble a first-class `combo` formula family (pick
@@ -1063,15 +1048,10 @@ flip `MCC_AST_VLAT` default-on (P0-style) once broadly exposed.**
 - [ ] **Add the §22 arena-mutating pass-subset re-emit axis** on top of emit
   isolation. (needs the scratch-`Section` isolation; inline-size axis
   `MCC_AST_PERFN_INPROC` already ships)
-- [x] **Widen the §23 inliner budgets** — **LANDED (all three now runtime knobs).** graft
-  (`MCC_AST_GRAFT`=2048) and node-limit (`MCC_AST_INLINE_NODES`=64) were already env-configurable;
-  the depth cap `AST_INLINE_MAX_DEPTH`(8) is now split into an array cap (32) + runtime
-  `ast_inline_depth_max` (`MCC_AST_INLINE_DEPTH`, default 8 → byte-identical), raisable for deeper
-  inline chains. Byte-identity-gated (default preserved), validated: ctest 3070, deep-inline exec
-  (10-level chain correct at depth 8 vs 16), fuzz `GATES[]` `INLINE_DEEP` (`MCC_AST_INLINE=1
-  MCC_AST_INLINE_DEPTH=16`, 80 seeds 0 miscompiles), self-host with depth=16. Still to do: register
-  as a §22 search knob (it's a value axis, not a bit — wants the emitted-size scoring since inline
-  effects are emit-time). (§23 step 1)
+- [ ] **Register the §23 inline budgets as a §22 search value-axis** — the graft/node/depth runtime
+  knobs (`MCC_AST_GRAFT`/`MCC_AST_INLINE_NODES`/`MCC_AST_INLINE_DEPTH`) all landed; the open work is
+  exposing them to the -O4 search, which needs emit-size scoring since inline effects are emit-time
+  (a value axis, not a gate bit). (§23 step 1)
 - [ ] **Add more §23 param shapes.** (§23 step 2)
 - [ ] **Add the `--jit-threads` flag** — does not exist yet (§26).
 - [ ] **Build the §26 ELF `.init_array` ctor** spawning the `--jit-threads` pool.
