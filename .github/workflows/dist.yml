@@ -1,11 +1,17 @@
 name: Dist
 
-# Reusable dist pipeline: called by ci.yml (per-push packaging smoke, version
-# ci-<sha12>) and release.yml (tagged bundles, version = the tag). The cell
-# matrices come from the preset ledger via `ci plan --job dist-unix` /
-# `--job dist-windows`, and every flow step is a `ci` tool verb.
+# Dist pipeline: runs nightly (packaging smoke, version ci-<sha12>), is
+# callable by release.yml (tagged bundles, version = the tag), and on demand.
+# It was on every per-push/PR run via ci.yml, but packaging verification does
+# not gate and its Windows cells were the slowest jobs, so it moved to a
+# nightly cadence with bench/matrix. The cell matrices come from the preset
+# ledger via `ci plan --job dist-unix` / `--job dist-windows`, and every flow
+# step is a `ci` tool verb.
 
 on:
+  schedule:
+    - cron: '15 5 * * *'
+  workflow_dispatch:
   workflow_call:
     inputs:
       version:

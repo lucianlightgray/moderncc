@@ -264,8 +264,3 @@ jobs:
         run: |
           /tmp/mcc-ci junit-summary "cmake-qemu/ctest-junit.xml" \
             "qemu / ${{ matrix.host }} / ${{ matrix.label }}" >> "$GITHUB_STEP_SUMMARY" || true
-
-  dist:
-    # Shared dist pipeline (.github/workflows/dist.yml, also used by
-    # release.yml); with no version input it stamps ci-<sha12>.
-    uses: ./.github/workflows/dist.yml

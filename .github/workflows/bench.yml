@@ -6,11 +6,13 @@ name: Bench
 # own push-to-main trigger. It rebuilds mcc (no tests; ci.yml already tests) and
 # runs the `bench` target on one representative native cell per OS family, so
 # the reference compilers (gcc+clang+mingw on Linux, msvc on Windows) are all
-# covered without re-running the whole build matrix. Also runnable on demand.
+# covered without re-running the whole build matrix. Runs nightly (it was
+# per-push-to-main, but as a non-gating check it competed with the gating CI
+# matrix for the shared runner-concurrency cap). Also runnable on demand.
 
 on:
-  push:
-    branches: [main]
+  schedule:
+    - cron: '31 4 * * *'
   workflow_dispatch:
 
 permissions:
