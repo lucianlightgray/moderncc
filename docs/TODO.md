@@ -2,9 +2,11 @@
 
 Two layers. **§ Strategic path** (next section) is the authoritative execution order — the
 recommended sequence, the two resolved forks, and what is deferred. Everything below it is
-the **reference library**: the full landed-work record and the long tail, retagged with the
-phase that consumes each item (`[P0]`/`[P1]`/`[P2]`/`[P3]`/`[FLOAT]`/`[DEFER]`). When the
-path and the library disagree, the path wins.
+the **reference library**: the open + partially-landed backlog and the long tail, retagged
+with the phase that consumes each item (`[P0]`/`[P1]`/`[P2]`/`[P3]`/`[FLOAT]`/`[DEFER]`).
+Fully-finished items (zero remaining work) are pruned — this is no longer a full historical
+record; the landed cores of still-open items stay for context. When the path and the library
+disagree, the path wins.
 
 ## Strategic path — least resistance × greatest gains
 
@@ -1141,14 +1143,6 @@ flip `MCC_AST_VLAT` default-on (P0-style) once broadly exposed.**
 - [ ] **Revisit per-function `-O1` mode.**
 
 ## 0 — fully specified or execution-blocked (no open design questions)
-
-**LANDED — `MCC_TRACE` tracing.** The macro (`src/mcclog.h`) prints
-`[TRACE] FILE:LINE func: ` + args, compiled out unless `MCC_CONFIG_TRACE` (CMake option,
-default off), runtime-gated on the `[TRACE]` verbosity bit (`-v128` logs TRACE only). The
-compiler pipeline is instrumented at its phase entry + a branch point — `mcc_compile`,
-`mcc_preprocess`, `gen_function`, `ast_func_begin`, `ast_func_end`, and the inline/
-promote/tco decision — all proven to fire (`mcc -v128 -O2 -c` shows the per-function
-trace; default trace-off build is byte-neutral, 1905/1905 ctest).
 
 - [ ] **`MCC_TRACE` follow-ups** — (a) `MCC_TRACE`/`mcc_logf` read the global
   `mcc_state->verbose`, so a trace fires only where `mcc_state` is the current
