@@ -60,10 +60,16 @@ one `rsym` return chain.
   speculative arm (non-rewinding replay, since `AST_PF_EMIT` hard-rewinds `ind`) + jmp-over + AOT-
   baseline splice; validated in two runtime modes (`MCC_AST_JIT_DISPATCH=1` never-deopt / `=2`
   always-deopt) so both arms are exercised. No runtime recompiler.
-- **W2.3 — real speculative guard.** Replace the synthetic guard with a live-in domain check
-  (`AstVLat`/`context_in`) where the speculative arm is a domain-specialized further-optimization;
-  under deopt-first this rides the AOT differential. Also register `jit-dispatch`/`jit-guard` as gate
-  bits (40/41, `mccgate.h`) + `ast_strategies[]` rows if search-selection is wanted.
+- **W2.3 — non-null speculative specialization — LANDED (5840d9b9, MCC_AST_JIT_DISPATCH=3).** Real guard:
+  per read-only pointer param, `cmp qword [rbp+off],0 ; jz deopt`. Speculative arm = a CLONE of
+  `ast_cur` run through a new `ast_nonnull_fold` mini-pass (`p==0`→0, `p!=0`→1 for the assumed offsets)
+  + `ast_sccp_run` (drops the dead `if(!p)` arms), replayed fresh; deopt arm = AOT-baseline splice.
+  Soundness: only `ast_local_is_readonly` param slots qualify (a reassigned/addr-taken param may be
+  null after the guard); cloning keeps `ast_cur` pristine so inlining + baseline stay sound. No
+  existing fold consumes a non-null fact (verified) so the mini-pass was required. Validated:
+  disasm-confirmed null-check elision, bit-correct on null/non-null, ctest 3968/3968 in modes 0/1/2/3.
+  Future: generalize the guard/domain (alias, ranges) and optionally register `jit-dispatch`/`jit-guard`
+  as `ast_strategies[]` gate bits (40/41) for search-selection.
 
 ### M3 — Wire `--jit-functions` selection (D8 partial)
 Make the parsed-but-inert `--jit-functions` (`libmcc.c:2152`) actually select which `sym`s get the
