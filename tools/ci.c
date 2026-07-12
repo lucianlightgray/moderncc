@@ -343,7 +343,7 @@ static const char *PS_SUPER[] = {"matrix", 0};
 static const char *PS_DARWIN[] = {"macos", "macos-cross", 0};
 static const char *PS_WIN_MSVC[] = {"msvc", "sanitize-msvc", 0};
 
-static const char *PS_WIN_BUILDONLY[] = {"mingw", 0};
+static const char *PS_WIN_MINGW[] = {"mingw", 0};
 static const char *QARCH[] = {"x86_64", "i386", "arm", "arm64", "riscv64", 0};
 static const char *QBIN[] = {
 		"qemu-x86_64", "qemu-i386", "qemu-arm",
@@ -362,6 +362,13 @@ static const struct {
 		{"x86_64", "windows-latest", "x64"},
 		{"arm64", "windows-11-arm", "arm64"},
 		{0, 0, 0}};
+static const struct {
+	const char *arch;
+	int experimental;
+} PLAN_MINGW[] = {
+		{"x86_64", 0},
+		{"i686", 1},
+		{0, 0}};
 static const struct {
 	const char *preset, *plat, *os;
 	int rosetta;
@@ -670,8 +677,8 @@ static int do_local(int argc, char **argv) {
 				LOC_SKIP("%s - cl (MSVC) not found (run from a VS dev shell)",
 								 PS_WIN_MSVC[i]);
 		}
-		for (i = 0; PS_WIN_BUILDONLY[i]; i++)
-			LOC_TEST(PS_WIN_BUILDONLY[i], "", 1, 0);
+		for (i = 0; PS_WIN_MINGW[i]; i++)
+			LOC_TEST(PS_WIN_MINGW[i], "", 1, 0);
 	}
 
 	if (!loc_env_on("LOCAL_CI_SKIP_QEMU")) {
@@ -1126,7 +1133,7 @@ static const char *par_exempt(const char *nm) {
 static void par_local_set(StrSet *loc) {
 	static const char **T[] = {
 			PS_LINUX_GCC, PS_LINUX_CLANG, PS_DEV, PS_SUPER,
-			PS_DARWIN, PS_WIN_MSVC, PS_WIN_BUILDONLY, 0};
+			PS_DARWIN, PS_WIN_MSVC, PS_WIN_MINGW, 0};
 	int t, k;
 	for (t = 0; T[t]; t++)
 		for (k = 0; T[t][k]; k++)
@@ -1158,9 +1165,11 @@ static void plan_presets(const char *job, StrSet *s) {
 	} else if (!strcmp(job, "macos")) {
 		for (i = 0; PS_DARWIN[i]; i++)
 			set_add(s, PS_DARWIN[i], (int)strlen(PS_DARWIN[i]));
-	} else if (!strcmp(job, "msvc")) {
+	} else if (!strcmp(job, "windows")) {
 		for (i = 0; PS_WIN_MSVC[i]; i++)
 			set_add(s, PS_WIN_MSVC[i], (int)strlen(PS_WIN_MSVC[i]));
+		for (i = 0; PS_WIN_MINGW[i]; i++)
+			set_add(s, PS_WIN_MINGW[i], (int)strlen(PS_WIN_MINGW[i]));
 	} else if (!strcmp(job, "qemu")) {
 		for (i = 0; QARCH[i]; i++) {
 			char q[64];
@@ -1212,7 +1221,7 @@ static int do_plan(int argc, char **argv) {
 			job = argv[++i];
 	if (!job) {
 		fprintf(stderr,
-						"usage: ci plan --job <linux|matrix|macos|msvc|qemu|dist-unix|dist-windows>\n");
+						"usage: ci plan --job <linux|matrix|macos|windows|qemu|dist-unix|dist-windows>\n");
 		return 2;
 	}
 	printf("[");
@@ -1244,13 +1253,20 @@ static int do_plan(int argc, char **argv) {
 		for (i = 0; PS_DARWIN[i]; i++)
 			plan_cell(&first, "\"preset\":\"%s\",\"cc\":\"clang\",\"arch\":\"x86_64\"",
 								PS_DARWIN[i]);
-	} else if (!strcmp(job, "msvc")) {
+	} else if (!strcmp(job, "windows")) {
 		for (i = 0; PS_WIN_MSVC[i]; i++)
 			for (k = 0; PLAN_WIN[k].arch; k++)
 				plan_cell(&first,
 									"\"preset\":\"%s\",\"arch\":\"%s\",\"runner\":\"%s\",\"msvcarch\":\"%s\"",
 									PS_WIN_MSVC[i], PLAN_WIN[k].arch,
 									PLAN_WIN[k].runner, PLAN_WIN[k].msvcarch);
+		for (i = 0; PS_WIN_MINGW[i]; i++)
+			for (k = 0; PLAN_MINGW[k].arch; k++)
+				plan_cell(&first,
+									"\"preset\":\"%s\",\"arch\":\"%s\",\"runner\":\"windows-latest\","
+									"\"msvcarch\":\"x64\",\"mingw\":true%s",
+									PS_WIN_MINGW[i], PLAN_MINGW[k].arch,
+									PLAN_MINGW[k].experimental ? ",\"experimental\":true" : "");
 	} else if (!strcmp(job, "qemu")) {
 		static const char *L[] = {"glibc", "musl", 0};
 		int h, l;

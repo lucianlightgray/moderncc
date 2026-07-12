@@ -136,7 +136,11 @@ function(mcc_map_toolchain_cc tc outvar)
     if(tc STREQUAL "mingw")
 
         mcc_mingw_resolve()
-        set(${outvar} "${_MCC_MINGW_X86_64_GCC}" PARENT_SCOPE)
+        if(MCC_MINGW_ARCH STREQUAL "i686")
+            set(${outvar} "${_MCC_MINGW_I686_GCC}" PARENT_SCOPE)
+        else()
+            set(${outvar} "${_MCC_MINGW_X86_64_GCC}" PARENT_SCOPE)
+        endif()
         return()
     endif()
     if(tc STREQUAL "gcc")
@@ -434,6 +438,9 @@ set(MCC_DIST_DIR "${CMAKE_SOURCE_DIR}/dist" CACHE PATH
 mcc_config_node(MCC_MINGW_SOURCE TYPE STRING DEFAULT winlibs GROUP "Build targets" ADVANCED
     HELP "Source for the `mingw-toolchain` download: winlibs (dual-arch, current) or multilib (single gcc -m32/-m64)"
     CHOICES winlibs multilib)
+mcc_config_node(MCC_MINGW_ARCH TYPE STRING DEFAULT x86_64 GROUP "Build targets" ADVANCED
+    HELP "Arch the `mingw` toolchain profile builds mcc for: x86_64 (winlibs mingw64 gcc) or i686 (winlibs mingw32 gcc)"
+    CHOICES x86_64 i686)
 set(MCC_MINGW_DIR "${MCC_VENDOR_DIR}" CACHE PATH
     "Parent directory the downloaded mingw toolchain trees live in")
 set(MCC_MINGW_WINLIBS_VER "16.1.0-ucrt" CACHE STRING
@@ -1032,6 +1039,7 @@ if(_is_matrix AND NOT MCC_SUPERBUILD_CHILD)
                 endif()
                 ExternalProject_Add_Step(${_cell} ctest
                     COMMAND "${CMAKE_CTEST_COMMAND}" ${_cell_ctest_cfg} --output-on-failure
+                            --output-junit ctest-junit.xml
                     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/${_cell}"
                     DEPENDEES build ALWAYS ON USES_TERMINAL ON)
             endif()
