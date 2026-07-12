@@ -8968,12 +8968,12 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 					AstGateMask cand = base ^ items[i];
 					long sc;
 					if (ast_search_should_stop()) {
-						idelta[i] = (long)1 << 60; /* untried: sort last */
+						idelta[i] = LONG_MAX; /* untried: sort last */
 						continue;
 					}
 					sc = ast_search_score_one(pristine, sym, faithful, cand, saved_loc,
 																		saved_anon);
-					idelta[i] = (sc < 0) ? ((long)1 << 60) : sc;
+					idelta[i] = (sc < 0) ? LONG_MAX : sc;
 					if (sc >= 0 && (best_score < 0 || sc < best_score)) {
 						best = cand;
 						best_score = sc;

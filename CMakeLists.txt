@@ -1345,6 +1345,15 @@ endif()
 
 message(STATUS "mcc target: CPU=${MCC_CPU} OS=${MCC_TARGETOS} bigendian=${MCC_BIGENDIAN}")
 
+set(_mcc_target_ptr 8)
+if(MCC_CPU STREQUAL "i386" OR MCC_CPU STREQUAL "arm")
+    set(_mcc_target_ptr 4)
+endif()
+set(MCC_TARGET_IS_HOST TRUE)
+if(DEFINED CMAKE_SIZEOF_VOID_P AND NOT CMAKE_SIZEOF_VOID_P EQUAL _mcc_target_ptr)
+    set(MCC_TARGET_IS_HOST FALSE)
+endif()
+
 set(_mcc_cpu_define_i386    MCC_TARGET_I386)
 set(_mcc_cpu_define_x86_64  MCC_TARGET_X86_64)
 set(_mcc_cpu_define_arm     MCC_TARGET_ARM)
@@ -3561,41 +3570,47 @@ if(MCC_BUILD_TESTS)
             "needs native host + both gcc and clang (build the clang-toolchain target for a self-contained clang)")
     endif()
 
-    add_executable(libmcc_test tests/embed/api_basic.c)
-    target_link_libraries(libmcc_test PRIVATE libmcc)
-    target_include_directories(libmcc_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-    add_test(NAME libtest
-        COMMAND libmcc_test "-B${CMAKE_BINARY_DIR}"
-                "-I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
-    set_tests_properties(libtest PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
-
-    add_executable(libmcc_test_extra tests/embed/api_extra.c)
-    target_link_libraries(libmcc_test_extra PRIVATE libmcc)
-    target_include_directories(libmcc_test_extra PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-    add_test(NAME libtest-extra
-        COMMAND libmcc_test_extra "-B${CMAKE_BINARY_DIR}"
-                "-I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
-    set_tests_properties(libtest-extra PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
-
-    if(NOT MCC_CONFIG_DIAG_RT STREQUAL "off" AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/embed/api_threaded.c")
-        add_executable(libmcc_test_mt tests/embed/api_threaded.c)
-        target_link_libraries(libmcc_test_mt PRIVATE libmcc)
-        target_include_directories(libmcc_test_mt PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-        find_package(Threads)
-        if(Threads_FOUND)
-            target_link_libraries(libmcc_test_mt PRIVATE Threads::Threads)
-        endif()
-        add_test(NAME libtest-mt
-            COMMAND libmcc_test_mt
-                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/embed/mt_workload.c"
-                    "-B${CMAKE_BINARY_DIR}"
+    if(MCC_TARGET_IS_HOST)
+        add_executable(libmcc_test tests/embed/api_basic.c)
+        target_link_libraries(libmcc_test PRIVATE libmcc)
+        target_include_directories(libmcc_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+        add_test(NAME libtest
+            COMMAND libmcc_test "-B${CMAKE_BINARY_DIR}"
                     "-I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
-        set_tests_properties(libtest-mt PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+        set_tests_properties(libtest PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
+        add_executable(libmcc_test_extra tests/embed/api_extra.c)
+        target_link_libraries(libmcc_test_extra PRIVATE libmcc)
+        target_include_directories(libmcc_test_extra PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+        add_test(NAME libtest-extra
+            COMMAND libmcc_test_extra "-B${CMAKE_BINARY_DIR}"
+                    "-I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
+        set_tests_properties(libtest-extra PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
+        if(NOT MCC_CONFIG_DIAG_RT STREQUAL "off" AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/embed/api_threaded.c")
+            add_executable(libmcc_test_mt tests/embed/api_threaded.c)
+            target_link_libraries(libmcc_test_mt PRIVATE libmcc)
+            target_include_directories(libmcc_test_mt PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+            find_package(Threads)
+            if(Threads_FOUND)
+                target_link_libraries(libmcc_test_mt PRIVATE Threads::Threads)
+            endif()
+            add_test(NAME libtest-mt
+                COMMAND libmcc_test_mt
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/embed/mt_workload.c"
+                        "-B${CMAKE_BINARY_DIR}"
+                        "-I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
+            set_tests_properties(libtest-mt PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+        else()
+            mcc_skip_test(libtest-mt "requires MCC_CONFIG_DIAG_RT!=off (multithread libmcc test)")
+        endif()
     else()
-        mcc_skip_test(libtest-mt "requires MCC_CONFIG_DIAG_RT!=off (multithread libmcc test)")
+        mcc_skip_test(libtest "mcc targets ${MCC_CPU} but runs on a ${CMAKE_SIZEOF_VOID_P}-byte host: the JIT run API (mcc_run/mcc_relocate) is compiled out")
+        mcc_skip_test(libtest-extra "mcc targets ${MCC_CPU} but runs on a ${CMAKE_SIZEOF_VOID_P}-byte host: the JIT run API (mcc_run/mcc_relocate) is compiled out")
+        mcc_skip_test(libtest-mt "mcc targets ${MCC_CPU} but runs on a ${CMAKE_SIZEOF_VOID_P}-byte host: the JIT run API (mcc_run/mcc_relocate) is compiled out")
     endif()
 
-    if(NOT MCC_TARGETOS STREQUAL "WIN32")
+    if(MCC_TARGET_IS_HOST AND NOT MCC_TARGETOS STREQUAL "WIN32")
         add_executable(mcchv tools/mcchv.c)
         target_link_libraries(mcchv PRIVATE libmcc m)
         target_include_directories(mcchv PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -3704,7 +3719,7 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(vla_test-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/embed/abi.c")
+    if(MCC_TARGET_IS_HOST AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/embed/abi.c")
         add_executable(abitest tests/embed/abi.c)
         target_link_libraries(abitest PRIVATE libmcc)
         target_include_directories(abitest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
