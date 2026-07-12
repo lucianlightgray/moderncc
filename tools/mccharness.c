@@ -347,6 +347,45 @@ static int suite_parts(int argc, char **argv) {
 	return fail ? 1 : 0;
 }
 
+static void mcctest_report_diff(const char *refout, const char *mccout) {
+	long rn = 0, mn = 0;
+	char *r = ts_read_file(refout, &rn);
+	char *m = ts_read_file(mccout, &mn);
+	long i = 0, ln = 1, la = 0, lb = 0;
+	if (!r || !m) {
+		fprintf(stderr, "  (unable to read outputs: ref=%s mcc=%s)\n", r ? "ok" : "FAIL",
+						m ? "ok" : "FAIL");
+		free(r);
+		free(m);
+		return;
+	}
+	while (i < rn && i < mn && r[i] == m[i]) {
+		if (r[i] == '\n')
+			ln++;
+		i++;
+	}
+	la = i;
+	while (la > 0 && r[la - 1] != '\n')
+		la--;
+	lb = la;
+	{
+		long ra = la, rb = lb;
+		char sa[256], sb[256];
+		int na = 0, nb = 0;
+		while (ra < rn && r[ra] != '\n' && na < (int)sizeof sa - 1)
+			sa[na++] = r[ra++];
+		while (rb < mn && m[rb] != '\n' && nb < (int)sizeof sb - 1)
+			sb[nb++] = m[rb++];
+		sa[na] = 0;
+		sb[nb] = 0;
+		fprintf(stderr, "  first diff at line %ld (byte %ld):\n", ln, i);
+		fprintf(stderr, "    cc : %s\n", sa);
+		fprintf(stderr, "    mcc: %s\n", sb);
+	}
+	free(r);
+	free(m);
+}
+
 static int suite_mcctest(int argc, char **argv) {
 	const char *cc = opt(argc, argv, "--cc", NULL);
 	const char *mcc = opt(argc, argv, "--mcc", NULL);
@@ -435,6 +474,7 @@ static int suite_mcctest(int argc, char **argv) {
 
 	if (ts_file_equal(refout, mccout) != 1) {
 		fprintf(stderr, "mcctest mismatch (cc vs mcc) for %s\n", src);
+		mcctest_report_diff(refout, mccout);
 		return 1;
 	}
 	printf("mcctest: cc==mcc stdout identical\n");
