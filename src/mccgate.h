@@ -92,6 +92,12 @@ typedef uint64_t AstGateMask;
  * (`MCC_AST_SCCP_FIX`). Off in every -O baseline; the search ADDS it when
  * templates is in base, like ltemp/ivsr/pre. */
 #define AST_SG_SCCPFIX ((AstGateMask)2097152)
+#define AST_SG_IDENT_CONV ((AstGateMask)4194304)
+#define AST_SG_IDENT_SHIFT ((AstGateMask)8388608)
+#define AST_SG_IDENT_ARITH ((AstGateMask)16777216)
+#define AST_SG_IDENT_BIT ((AstGateMask)33554432)
+#define AST_SG_IDENT_REL ((AstGateMask)67108864)
+#define AST_SG_IDENT_URANGE ((AstGateMask)134217728)
 
 enum {
 	SO_GATE_TEMPLATES = 1u,

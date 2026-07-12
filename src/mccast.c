@@ -660,6 +660,12 @@ static int ast_cprop_join_env;
 static int ast_narrow_env;
 static int ast_narrow_fix_env;
 static int ast_sccp_fix_env;
+static int ast_ident_conv_env;
+static int ast_ident_shift_env;
+static int ast_ident_arith_env;
+static int ast_ident_bit_env;
+static int ast_ident_rel_env;
+static int ast_ident_urange_env;
 static int ast_dse_call_env;
 static int ast_tco_ptr_env;
 static int ast_cse_comm_env;
@@ -1063,6 +1069,12 @@ void ast_configure(MCCState *s1) {
 	ast_narrow_env = ast_env_gate("MCC_AST_NARROW", s1->optimize >= 2);
 	ast_narrow_fix_env = ast_env_gate("MCC_AST_NARROW_FIX", s1->optimize >= 2);
 	ast_sccp_fix_env = ast_env_gate("MCC_AST_SCCP_FIX", s1->optimize >= 2);
+	ast_ident_conv_env = ast_env_gate("MCC_AST_IDENT_CONV", 1);
+	ast_ident_shift_env = ast_env_gate("MCC_AST_IDENT_SHIFT", 1);
+	ast_ident_arith_env = ast_env_gate("MCC_AST_IDENT_ARITH", 1);
+	ast_ident_bit_env = ast_env_gate("MCC_AST_IDENT_BIT", 1);
+	ast_ident_rel_env = ast_env_gate("MCC_AST_IDENT_REL", 1);
+	ast_ident_urange_env = ast_env_gate("MCC_AST_IDENT_URANGE", 1);
 	ast_dse_call_env = ast_env_gate("MCC_AST_DSE_CALL", s1->optimize >= 2);
 	ast_tco_ptr_env = ast_env_gate("MCC_AST_TCO_PTR", s1->optimize >= 2);
 	ast_cse_comm_env = ast_env_gate("MCC_AST_CSE_COMM", s1->optimize >= 2);
@@ -4718,9 +4730,11 @@ static int ast_ident_convert(AstArena *a, AstLocal n) {
 }
 
 static int ast_ident_node(AstArena *a, AstLocal n) {
-	int cr = ast_ident_convert(a, n);
-	if (cr)
-		return cr;
+	if (ast_ident_conv_env) {
+		int cr = ast_ident_convert(a, n);
+		if (cr)
+			return cr;
+	}
 	if (ast_kind(a, n) != AST_Binary || ast_nchild(a, n) != 2)
 		return 0;
 	int op = ast_op(a, n);
@@ -4738,12 +4752,14 @@ static int ast_ident_node(AstArena *a, AstLocal n) {
 	case TOK_SHL:
 	case TOK_SHR:
 	case TOK_SAR:
-		if (ast_ident_cval(a, y, &lt, &lv) && lv == 0) {
+		if (ast_ident_shift_env && ast_ident_cval(a, y, &lt, &lv) && lv == 0) {
 			ast_ident_adopt(a, n, x);
 			return 1;
 		}
 		return 0;
 	case '+':
+		if (!ast_ident_arith_env)
+			return 0;
 		if (ast_ident_cval(a, y, &lt, &lv) && lv == 0 && ast_ident_keep(lt, tx)) {
 			ast_ident_adopt(a, n, x);
 			return 1;
@@ -4754,6 +4770,8 @@ static int ast_ident_node(AstArena *a, AstLocal n) {
 		}
 		return 0;
 	case '-':
+		if (!ast_ident_arith_env)
+			return 0;
 		if (ast_ident_cval(a, y, &lt, &lv) && lv == 0 && ast_ident_keep(lt, tx)) {
 			ast_ident_adopt(a, n, x);
 			return 1;
@@ -4764,12 +4782,16 @@ static int ast_ident_node(AstArena *a, AstLocal n) {
 		}
 		return 0;
 	case '/':
+		if (!ast_ident_arith_env)
+			return 0;
 		if (ast_ident_cval(a, y, &lt, &lv) && lv == 1 && ast_ident_keep(lt, tx)) {
 			ast_ident_adopt(a, n, x);
 			return 1;
 		}
 		return 0;
 	case '*':
+		if (!ast_ident_arith_env)
+			return 0;
 		if (ast_ident_cval(a, y, &lt, &lv)) {
 			if (lv == 1 && ast_ident_keep(lt, tx)) {
 				ast_ident_adopt(a, n, x);
@@ -4794,6 +4816,8 @@ static int ast_ident_node(AstArena *a, AstLocal n) {
 		}
 		return 0;
 	case '&':
+		if (!ast_ident_bit_env)
+			return 0;
 		if (ast_ident_same(a, x, y) && ast_ident_pure(a, x)) {
 			ast_ident_adopt(a, n, x);
 			return 2;
@@ -4822,6 +4846,8 @@ static int ast_ident_node(AstArena *a, AstLocal n) {
 		}
 		return 0;
 	case '|':
+		if (!ast_ident_bit_env)
+			return 0;
 		if (ast_ident_same(a, x, y) && ast_ident_pure(a, x)) {
 			ast_ident_adopt(a, n, x);
 			return 2;
@@ -4850,6 +4876,8 @@ static int ast_ident_node(AstArena *a, AstLocal n) {
 		}
 		return 0;
 	case '^':
+		if (!ast_ident_bit_env)
+			return 0;
 		if (ast_ident_same(a, x, y) && ast_ident_pure(a, x)) {
 			ast_ident_setlit(a, n, ct, 0);
 			return 2;
@@ -4878,7 +4906,7 @@ static int ast_ident_node(AstArena *a, AstLocal n) {
 		 * there is no float NaN concern). `<`,`>`,`!=` are always 0; `<=`,`>=`,`==` always 1;
 		 * signed/unsigned is immaterial when comparing a value to itself. A relational node
 		 * stores no result type (type_t==0); the C result type is int (VT_INT). */
-		if (ast_ident_same(a, x, y) && ast_ident_pure(a, x)) {
+		if (ast_ident_rel_env && ast_ident_same(a, x, y) && ast_ident_pure(a, x)) {
 			int one = (op == TOK_EQ || op == TOK_LE || op == TOK_GE || op == TOK_ULE ||
 								 op == TOK_UGE);
 			ast_ident_setlit(a, n, VT_INT, one ? 1u : 0u);
@@ -4889,23 +4917,23 @@ static int ast_ident_node(AstArena *a, AstLocal n) {
 		 * The relational op is the SIGNED token (TOK_GE/LT/LE/GT); the comparison is
 		 * unsigned iff the operand type carries VT_UNSIGNED (checked on the non-zero side).
 		 * The discarded operand must be pure. Signed `x >= 0` is left alone (value-dependent). */
-		if (op == TOK_GE && (tx & VT_UNSIGNED) && ast_ident_cval(a, y, &lt, &lv) &&
-				lv == 0 && ast_ident_pure(a, x)) {
+		if (ast_ident_urange_env && op == TOK_GE && (tx & VT_UNSIGNED) &&
+				ast_ident_cval(a, y, &lt, &lv) && lv == 0 && ast_ident_pure(a, x)) {
 			ast_ident_setlit(a, n, VT_INT, 1u); /* u >= 0 */
 			return 2;
 		}
-		if (op == TOK_LT && (tx & VT_UNSIGNED) && ast_ident_cval(a, y, &lt, &lv) &&
-				lv == 0 && ast_ident_pure(a, x)) {
+		if (ast_ident_urange_env && op == TOK_LT && (tx & VT_UNSIGNED) &&
+				ast_ident_cval(a, y, &lt, &lv) && lv == 0 && ast_ident_pure(a, x)) {
 			ast_ident_setlit(a, n, VT_INT, 0u); /* u < 0 */
 			return 2;
 		}
-		if (op == TOK_LE && (ty & VT_UNSIGNED) && ast_ident_cval(a, x, &lt, &lv) &&
-				lv == 0 && ast_ident_pure(a, y)) {
+		if (ast_ident_urange_env && op == TOK_LE && (ty & VT_UNSIGNED) &&
+				ast_ident_cval(a, x, &lt, &lv) && lv == 0 && ast_ident_pure(a, y)) {
 			ast_ident_setlit(a, n, VT_INT, 1u); /* 0 <= u */
 			return 2;
 		}
-		if (op == TOK_GT && (ty & VT_UNSIGNED) && ast_ident_cval(a, x, &lt, &lv) &&
-				lv == 0 && ast_ident_pure(a, y)) {
+		if (ast_ident_urange_env && op == TOK_GT && (ty & VT_UNSIGNED) &&
+				ast_ident_cval(a, x, &lt, &lv) && lv == 0 && ast_ident_pure(a, y)) {
 			ast_ident_setlit(a, n, VT_INT, 0u); /* 0 > u */
 			return 2;
 		}
@@ -9307,7 +9335,13 @@ static AstGateMask ast_search_gates_now(void) {
 				 (ast_divmagic_env ? AST_SG_DIVMAGIC : 0) |
 				 (ast_abs_env ? AST_SG_ABS : 0) |
 				 (ast_reassoc_env ? AST_SG_REASSOC : 0) |
-				 (ast_sccp_fix_env ? AST_SG_SCCPFIX : 0);
+				 (ast_sccp_fix_env ? AST_SG_SCCPFIX : 0) |
+				 (ast_ident_conv_env ? AST_SG_IDENT_CONV : 0) |
+				 (ast_ident_shift_env ? AST_SG_IDENT_SHIFT : 0) |
+				 (ast_ident_arith_env ? AST_SG_IDENT_ARITH : 0) |
+				 (ast_ident_bit_env ? AST_SG_IDENT_BIT : 0) |
+				 (ast_ident_rel_env ? AST_SG_IDENT_REL : 0) |
+				 (ast_ident_urange_env ? AST_SG_IDENT_URANGE : 0);
 }
 
 static void ast_search_gates_set(AstGateMask g) {
@@ -9328,6 +9362,12 @@ static void ast_search_gates_set(AstGateMask g) {
 	ast_abs_env = (g & AST_SG_ABS) != 0;
 	ast_reassoc_env = (g & AST_SG_REASSOC) != 0;
 	ast_sccp_fix_env = (g & AST_SG_SCCPFIX) != 0;
+	ast_ident_conv_env = (g & AST_SG_IDENT_CONV) != 0;
+	ast_ident_shift_env = (g & AST_SG_IDENT_SHIFT) != 0;
+	ast_ident_arith_env = (g & AST_SG_IDENT_ARITH) != 0;
+	ast_ident_bit_env = (g & AST_SG_IDENT_BIT) != 0;
+	ast_ident_rel_env = (g & AST_SG_IDENT_REL) != 0;
+	ast_ident_urange_env = (g & AST_SG_IDENT_URANGE) != 0;
 }
 
 #ifndef SHF_PRIVATE
@@ -9876,7 +9916,7 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 							 /* ltemp/ivsr/pre run inside cse (templates-gated), so offer them only
 								* when templates is in base. Safe to add now that the candidate count is
 								* budget-capped (AST_SEARCH_MAX_CAND) — otherwise 4 gates + 5 knobs = 2^9. */
-							 ((base & AST_SG_TEMPLATES) ? (AST_SG_LTEMP | AST_SG_IVSR | AST_SG_PRE | AST_SG_DSECALL | AST_SG_TCOPTR | AST_SG_CSECOMM | AST_SG_SCCPFIX)
+							 ((base & AST_SG_TEMPLATES) ? (AST_SG_LTEMP | AST_SG_IVSR | AST_SG_PRE | AST_SG_DSECALL | AST_SG_TCOPTR | AST_SG_CSECOMM | AST_SG_SCCPFIX | AST_SG_IDENT_CONV | AST_SG_IDENT_SHIFT | AST_SG_IDENT_ARITH | AST_SG_IDENT_BIT | AST_SG_IDENT_REL | AST_SG_IDENT_URANGE)
 																				 : 0);
 	if (ast_search_should_stop())
 		return; /* budget spent / aborted: keep the frozen order */

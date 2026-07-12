@@ -534,6 +534,22 @@ candidate **search knob** — a distinct `AstStrategy` row or a per-strategy par
   table rows could each be a sub-knob. Each split is byte-neutral (same transforms, finer gating) and
   M8-gated; the payoff is realized by the order/cycle search once non-confluent parts exist. Ties to
   D6 (all-opts-as-strategies) and the A1b per-row vocabulary.
+  **AUDIT DONE + FIRST SPLIT LANDED (2026-07-12).** Governing distinction: a **gate-split** (per-family
+  `if(gate)` guard inside the one pass, default all-on) is byte-neutral by construction (the SETHI_LEAF/
+  NARROW_FIX pattern); a **row-split** (extract a reorderable `ast_strategies[]` row) is byte-neutral ONLY
+  for an *independent whole-arena* pass — NOT for a per-node dispatch bundle (N sequential full passes see
+  different arena-wide intermediate state than one interleaved pass). So most bundles here are gate-split
+  levers, not row-split. **`ident` family gate-split LANDED:** 6 sub-gates `MCC_AST_IDENT_{CONV,SHIFT,ARITH,
+  BIT,REL,URANGE}` + `AST_SG_IDENT_*` bits (2^22..2^27) wired into `searchable`, default all-on ⇒
+  byte-identical (object-diff 976/0, ctest 3958, shadow 0, fuzz 0-miscompile default+families-off;
+  `MCC_AST_IDENT_REL=0` on `g==g` → real compare not `1`). This isolates the constant-**producing** families
+  (`x==x`, unsigned-vs-0 — non-confluent, feed cprop/sccp/bfold) from pure **absorbers** (`x+0`,`x*1`,shift0)
+  as independent search levers. **Verdicts (do NOT attempt as row-splits):** `licm` core is NOT separable
+  from `cse` — `ast_licm_at_loop` reads the LIVE CSE availability window (`ast_cse_expr[]` at the exact walk
+  position), so extracted it hoists nothing; `cprop`+`sccp` must stay FUSED (joint fixpoint, default-on -O2).
+  **Remaining clean splits:** the `cse` *tail* (`ltemp`/`ivsr`/`pre`, whole-arena, default-off) IS cleanly
+  row-extractable into 3 reorderable rows (secondary, modest value); `reassoc`'s 4 transforms + `bfold` per-op
+  are gate-splittable but low value.
 
 - [ ] **V-bfold** (`ast_bfold_run`, table `ast_bfold_tab`, ~~8~~ 9 ops) — **a) PARTIAL — `round`/
   `roundf` LANDED (default-on).** New id-8 table rows + a bit-exact hand-rolled `ast_bfold_round`
