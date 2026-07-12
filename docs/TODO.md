@@ -796,10 +796,18 @@ candidate **search knob** — a distinct `AstStrategy` row or a per-strategy par
   use `cmake-cross/mcc-i386` (ELF32 runs on the host) and `cmake-cross/mcc-arm64` (via
   `qemu-aarch64 -L vendor/gentoo-stage3-arm64-glibc`) for real cross-arch checks.
 
-## NEXT MILESTONE — runtime JIT + guarded deopt (§26) · [Stage 1 = P3 · Stages 2–4 = DEFER]
+## NEXT MILESTONE — runtime JIT + guarded deopt (§26) · [Stage 1 = LANDED · Stages 2–4 = DEFER]
 
 The design's separate "+ the JIT" work (the "rollout steps 3-5 **+ the JIT**"), deferred behind the
 §26 embedded recompiler — entry-guarded variant dispatch with a runtime recompiler + hot-swap.
+
+**Full finish plan + milestone status: `docs/JIT-PLAN.md`.** Stage 1 (guarded deopt, NO runtime
+recompiler) is **LANDED** on main: M1 baseline retention (`MCC_AST_JIT`), W2.1 reloc-rebasing
+byte-splice primitive, W2.2 entry-dispatcher control flow, W2.3 non-null speculative specialization
+(`MCC_AST_JIT_DISPATCH=3`) — all default-off, ctest 3968/3968. The mechanism chosen was **B: machine-
+byte splice** (the deopt arm reinstalls the retained AOT baseline bytes with rebased relocations), NOT
+the AST-level `ast_strategies[]` rows sketched below; those rows remain optional (only needed to make
+the dispatcher search-selectable). Remainder below (Stages 2–4, embed-engine, flags) is unchanged.
 
 **Reusable infra (survey).** The `-run` compile-to-executable-memory path (`mcc_run`, `mccrun.c`;
 `host_runmem_alloc` RWX / W^X dual-map, `mcchost.c`) + `mcc_relocate` (`mccrun.c`), host==target on
@@ -807,13 +815,15 @@ ELF x86_64/arm64/riscv64/arm/i386 + PE + macho; GOT/PLT indirection (`build_got_
 `put_got_entry`, `mccelf.c`) as the per-function hot-swap redirect; `.init_array` ctor emission for a
 startup pool; the replayable `ast_cur` (survives the function under `keep_inline`/`keep_reemit`).
 
-**The §26 gap (missing).** (i) the byte-faithful baseline (`orig`/`orig_rel`) is `mcc_free`'d per
-function (`mccast.c`) — must be **retained** as the deopt fallback; (ii) intra-module calls are hard
-`E8 rel32` (`x86_64-gen.c`) with no swappable slot → the JIT'd function must be an **entry dispatcher**
-so call sites need no change; (iii) `--jit-functions`/`--jit-max-duration` are parsed but inert
-(`libmcc.c`), `--embed-jit` only prints a manifest + gates the build-time superopt; (iv) `--jit-threads`
-and C11 `<threads.h>` do not exist (concurrency is `fork`); (v) the `eval_slice` value-level
-equivalence checker does not exist.
+**The §26 gap.** (i) ~~the byte-faithful baseline is freed per function~~ **DONE (M1)** — the AOT final
+emit + return-chain are now retained per `sym` (`ast_baseline_pool`, `MCC_AST_JIT`); (ii) intra-module
+calls are hard `E8 rel32` (`x86_64-gen.c`) with no swappable slot → the JIT'd function is an **entry
+dispatcher** so call sites need no change **(landed W2.2)**; (iii) `--jit-functions`/`--jit-max-duration`
+are parsed but inert (`libmcc.c`), `--embed-jit` only prints a manifest + gates the build-time superopt
+**(still open — M3)**; (iv) `--jit-threads` does not exist — but C11 `<threads.h>` **DOES** (a real
+pthread shim, `runtime/include/threads.h`; the old "concurrency is fork" note was stale), so the M6
+pool uses pthreads (D8); (v) the `eval_slice` value-level equivalence checker does not exist **(M8,
+deopt-first defers it)**.
 
 **Architecture — the JIT is mostly Strategy objects, not a separate subsystem** ("one code path and
 one memo; the opt level is a dial, not a fork"). The compile-time pieces are new rows in the same
@@ -833,12 +843,14 @@ on a hot function (D2A); hot-swap = one atomic pointer store; trigger = `.init_a
 
 **Staged (each independently gated by a JIT differential):**
 
-- [ ] **[P3] Stage 1 — guarded deopt as pure strategies, NO runtime recompiler** — add `jit-dispatch` +
-  `jit-guard` to `ast_strategies[]`; together they emit `{guard; AOT-optimized-variant else baseline}`
-  entirely at compile time (variant = the existing fold strategies; baseline = the retained faithful
-  emit — stop freeing `orig`/`orig_rel`, or re-emit from the kept `ast_cur`). Real guarded deopt,
-  differential-validatable, ships **without** §26. This is the key payoff: a first complete version
-  needs no runtime recompiler, and §26 shrinks to a stage-2 driver.
+- [x] **Stage 1 — guarded deopt, NO runtime recompiler — LANDED** — the JIT'd function is an entry
+  dispatcher emitting `{guard; jcc deopt; speculative-arm; jmp; deopt: AOT-baseline}` entirely at
+  compile time. Baseline = the retained AOT final emit, reinstalled via the W2.1 machine-byte splice
+  (rebased relocations + rethreaded return chain), NOT `ast_strategies[]` rows. First real speculative
+  variant (W2.3): read-only pointer params assumed non-null under a `cmp [rbp+off],0; jz deopt` guard,
+  spec arm = clone + `ast_nonnull_fold` + `ast_sccp_run` (dead null-check elimination). Real guarded
+  deopt, differential-validatable, ships **without** §26 — the key payoff. §26 shrinks to a stage-2
+  driver. See `docs/JIT-PLAN.md` M1/W2.1/W2.2/W2.3.
 - [ ] **[DEFER] Stage 2 — runtime recompile (§26 driver, thin)** — a minimal embedded runtime re-invokes the
   strategy engine (D2A) on a hot function into fresh executable memory via the `mcc_relocate` path, and
   atomically publishes the pointer the dispatcher reads. (implements "§26 hot-function recompile +
@@ -855,11 +867,12 @@ on a hot function (D2A); hot-swap = one atomic pointer store; trigger = `.init_a
   the `ast_tco_run` live-in pattern; refuse any slice whose context-restricted domain exceeds a fixed
   cap (stays JIT-speculative). Also: a static `context_in` domain to replace the observed range.
 
-**Decisions (settled with the user):** **D1=B** (embedded), **D2=A** (recompile = re-invoke the engine),
-**D3=A** (entry dispatcher; the code-patch D3B is the `jit-patchpoint` strategy), **D4=A**
-(runtime-observed live-in range). **Remaining:** **D5** trigger (startup ctor vs hot counter — the
-counter is `jit-profile`); **D6** `eval_slice` now vs trust-the-AOT-gate + differential; **D7** platform
-(ELF x86_64 first); **D8** wire the inert `--jit-*` flags.
+**Decisions (all settled with the user):** **D1=B** (embedded), **D2=A** (recompile = re-invoke the
+engine), **D3=A** (entry dispatcher; the code-patch D3B is the `jit-patchpoint` strategy), **D4=A**
+(runtime-observed live-in range), **D5=both** (startup `.init_array` ctor AND `jit-profile` hot
+counter), **D6=deopt-first** (`eval_slice` is later hardening, M8 — Stage 1 rides the AOT differential
++ retained-baseline fallback), **D7=ELF x86_64 first**, **D8=pthread pool** via
+`runtime/include/threads.h`. Deopt-arm mechanism = **B (machine-byte splice)**, not AST-level.
 
 ## Bugs — surfaced by the conformance-test expansion (concrete repros)
 
