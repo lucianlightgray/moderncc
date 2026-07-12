@@ -217,11 +217,14 @@ jobs:
 
   qemu:
     # user-mode qemu exists only on Linux, so this runs natively on the ubuntu
-    # runners (no Docker), on both host arches. One job per (host x arch x
-    # libc) cell keeps each run small and fetches only that cell's Gentoo
-    # stage3 sysroot (target-side data, so the cache is shared across hosts).
+    # runners (no Docker), on both host arches. One job per (host x batch),
+    # where a batch runs its arches x {glibc,musl} in a single umbrella `qemu`
+    # build: the emulated work per cell is tiny, so batching amortizes the
+    # apt/checkout/cache setup that used to dominate 20 one-cell jobs. The
+    # stage3 sysroots are target-side data, keyed by batch and shared across
+    # hosts via the restore-key prefix.
     needs: plan
-    name: qemu / ${{ matrix.host }} / ${{ matrix.arch }} / ${{ matrix.libc }}
+    name: qemu / ${{ matrix.host }} / ${{ matrix.label }}
     runs-on: ${{ matrix.host == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
@@ -239,19 +242,20 @@ jobs:
         uses: actions/cache@v5
         with:
           path: vendor/gentoo-stage3-*
-          key: gentoo-stage3-${{ matrix.arch }}-${{ matrix.libc }}
-      - name: run qemu-${{ matrix.arch }} / ${{ matrix.libc }}
+          key: gentoo-stage3-${{ matrix.batch }}
+          restore-keys: gentoo-stage3-
+      - name: run qemu batch ${{ matrix.batch }} (${{ matrix.label }})
         env:
-          PRESET: ${{ matrix.preset }}
-          LIBCS: ${{ matrix.libc }}
+          ARCHS: ${{ matrix.archs }}
+          LIBCS: glibc;musl
         run: |
           cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl
           /tmp/mcc-ci qemu
       - name: test summary
         if: always()
         run: |
-          /tmp/mcc-ci junit-summary "cmake-qemu-${{ matrix.arch }}/ctest-junit.xml" \
-            "qemu / ${{ matrix.host }} / ${{ matrix.arch }} / ${{ matrix.libc }}" >> "$GITHUB_STEP_SUMMARY" || true
+          /tmp/mcc-ci junit-summary "cmake-qemu/ctest-junit.xml" \
+            "qemu / ${{ matrix.host }} / ${{ matrix.label }}" >> "$GITHUB_STEP_SUMMARY" || true
 
   dist:
     # Shared dist pipeline (.github/workflows/dist.yml, also used by

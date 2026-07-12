@@ -349,6 +349,18 @@ static const char *QBIN[] = {
 		"qemu-x86_64", "qemu-i386", "qemu-arm",
 		"qemu-aarch64", "qemu-riscv64", 0};
 
+/* One qemu job per (host x batch): each batch runs its arches x {glibc,musl}
+ * in a single umbrella `qemu` build, so a whole host collapses from 10 cells
+ * to 2. The emulated work per (arch,libc) is tiny; the per-cell cost was
+ * mostly redundant apt/checkout/cache, which batching pays once. Batches are
+ * balanced by measured wall-time (arm64+riscv64 are the slow emulated pair).*/
+static const struct {
+	const char *name, *archs, *label;
+} QBATCH[] = {
+		{"a", "x86_64;i386;arm", "x86_64 i386 arm"},
+		{"b", "arm64;riscv64", "arm64 riscv64"},
+		{0, 0, 0}};
+
 #define PS_DIST_LINUX_GCC "dist-linux-gcc"
 #define PS_DIST_LINUX_CLANG "dist-linux-clang"
 #define PS_DIST_MACOS "dist-macos"
@@ -1268,14 +1280,13 @@ static int do_plan(int argc, char **argv) {
 									PS_WIN_MINGW[i], PLAN_MINGW[k].arch,
 									PLAN_MINGW[k].experimental ? ",\"experimental\":true" : "");
 	} else if (!strcmp(job, "qemu")) {
-		static const char *L[] = {"glibc", "musl", 0};
-		int h, l;
+		int h, b;
 		for (h = 0; PLAN_HOSTS[h]; h++)
-			for (i = 0; QARCH[i]; i++)
-				for (l = 0; L[l]; l++)
-					plan_cell(&first,
-										"\"host\":\"%s\",\"arch\":\"%s\",\"libc\":\"%s\",\"preset\":\"qemu-%s\"",
-										PLAN_HOSTS[h], QARCH[i], L[l], QARCH[i]);
+			for (b = 0; QBATCH[b].name; b++)
+				plan_cell(&first,
+									"\"host\":\"%s\",\"batch\":\"%s\",\"archs\":\"%s\",\"label\":\"%s\"",
+									PLAN_HOSTS[h], QBATCH[b].name, QBATCH[b].archs,
+									QBATCH[b].label);
 	} else if (!strcmp(job, "dist-unix")) {
 		for (i = 0; PLAN_DIST_UNIX[i].preset; i++)
 			plan_cell(&first, "\"preset\":\"%s\",\"plat\":\"%s\",\"os\":\"%s\"%s",
