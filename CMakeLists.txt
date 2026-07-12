@@ -2961,7 +2961,7 @@ if(MCC_BUILD_TESTS)
         if(MCC_CONFIG_AST_SHADOW)
             target_compile_definitions(asttool PRIVATE MCC_CONFIG_AST_SHADOW=1)
         endif()
-        foreach(_an arena clone validate dump cfg provenance template intention color forecast gatemap magic)
+        foreach(_an arena clone validate dump cfg provenance template intention color forecast gatemap magic vlat combo_walk)
             add_test(NAME "ast/${_an}" COMMAND asttool "${_an}")
             set_tests_properties("ast/${_an}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endforeach()
@@ -3268,6 +3268,21 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_BINARY_DIR}/exec-narrowfix-${_gn}" --only "${_gn}")
             set_tests_properties("exec-narrowfix/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_NARROW_FIX=1;MCC_AST_SETHI_LEAF=1;MCC_AST_SCCP_FIX=1;MCC_AST_LICM_TEMP=1;MCC_AST_IVSR=1;MCC_AST_PRE=1;MCC_AST_DSE_CALL=1;MCC_AST_TCO_PTR=1;MCC_AST_CSE_COMM=1;MCC_AST_RANGE=1;MCC_AST_DIVMAGIC=1;MCC_AST_ABS=1;MCC_AST_REASSOC=1;MCC_AST_CSE_WINDOW=256;MCC_AST_CPROP_WINDOW=512")
+        endforeach()
+
+        # P1 PR-2: force the value-lattice ranged-narrowing consumer (MCC_AST_VLAT) ON at
+        # -O2 across the whole exec corpus, so the non-distributive narrowings (unsigned / %,
+        # << const-count) are exercised end-to-end and their runtime output validated. Value-
+        # changing (narrows long-long->int ops), so an exec variant, not a golden.
+        foreach(_gl IN LISTS _exec_glines)
+            string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
+            set(_gn "${CMAKE_MATCH_1}")
+            add_test(NAME "exec-vlat/${_gn}"
+                COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+                        "${CMAKE_BINARY_DIR}/exec-vlat-${_gn}" --only "${_gn}")
+            set_tests_properties("exec-vlat/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_VLAT=1")
         endforeach()
 
         # M6z: force zero-init .bss placement ON across the whole exec corpus, so every

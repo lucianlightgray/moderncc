@@ -19,26 +19,66 @@ Net shape: **P0 free money → P1 the multiplier → P2 the root-blocker → P3 
 with substrate-unify floating and the two hard forks pre-resolved so no phase stalls on a
 decision.
 
-### P0 — Default-on sweep · *warm-up; near-zero resistance*
+### P0 — Default-on sweep · *warm-up; near-zero resistance* — **8/10 LANDED**
 
 Flip the knobs that already cleared the full M8 bar from opt-in to default, after one broader
 field-exposure pass. Gain lands on every compile; no new code, only golden churn. Also shakes
 out the search vocabulary before P1..P3 lean on it.
 
-- Candidates (validated, currently opt-in): `MCC_AST_RANGE` (V-bf range folds), M6z
-  `MCC_ZERO_BSS`, M6s `MCC_MERGE_STRINGS`; audit the remaining `AST_SG_*` knobs (NARROWFIX,
-  DSE_CALL, CSE_COMM, SCCP_FIX, ABS, DIVMAGIC, TCO_PTR) for default-on readiness. (The
-  comparison-identity + unsigned-range-vs-0 folds are already default-on.)
+- **LANDED (default-on at `-O2+`, `s1->optimize >= 2` in `ast_func_end`'s config block, `mccast.c`):**
+  `MCC_AST_RANGE` (V-bf range folds), M6z `MCC_ZERO_BSS`, M6s `MCC_MERGE_STRINGS`, plus the audited
+  `AST_SG_*` knobs `MCC_AST_NARROW_FIX`, `MCC_AST_SCCP_FIX`, `MCC_AST_DSE_CALL`, `MCC_AST_TCO_PTR`,
+  `MCC_AST_CSE_COMM`. Validated to the full M8 bar as a batch: ctest **3653/3653**; self-host 3-stage
+  fixpoint **byte-identical** (stage2==3==4, all-8-on); real cross-arch i386/arm64 exec (fail-sets
+  identical on-vs-off, no regressions); `MCC_CONFIG_AST_SHADOW` **2990/2990 zero-divergence**;
+  differential fuzz 150 seeds **0 miscompiles**. Each is `-v128` TRACE-observable (`zero-bss move`,
+  `string merge`, `range fold`, etc.) and env-overridable (`MCC_AST_X=0` force-off even when default-on).
+  (The comparison-identity + unsigned-range-vs-0 folds were already default-on.)
+- **HELD opt-in (default `0`):**
+  - `MCC_AST_DIVMAGIC` — **blocked by an x86_64-specific self-host miscompile** the M8 bar caught:
+    default-on at `-O2`, mcc's stage2 (compiled with DIVMAGIC) **SIGSEGVs recompiling `src/mcc.c`**
+    (deterministic stack-overflow via runaway self-recursion). NOT a wrong quotient (div/rem results
+    match gcc exactly, fuzz-clean) — it is a **non-local x86_64 mul-high (`imul; shr $0x20`) register-
+    pressure codegen bug** that only manifests on a heavy TU (i386/arm64 self-host + the whole exec
+    corpus + `-g` builds are all clean; the crash is masked by regalloc changes). DIVMAGIC fires 34× on
+    `mcc.c`. Fix the 64-bit/mul-high x86_64 register allocation (ties to the open "optimal 1×-multiply
+    form" item — needs a real temp-materialization mechanism) before flipping. Interim: opt-in works.
+  - `MCC_AST_ABS` — held on a perf judgment, not a bug: its branchless bit-trick
+    (`(x^(x>>31))-(x>>31)`) vs a (well-predicted) branch is a genuine tradeoff, and gcc's chosen
+    branchless form is `neg;cmovs` (cmov), which mcc lacks. Revisit when the cmov backend lands
+    (see the `[DEFER]` "branchless select" item), which would make the bit-trick moot.
 - Not in P0: the inline/promote value axes — they want emit-size scoring (needs §22
   scratch-`Section` isolation), so they stay `[FLOAT]`.
 
-### P1 — Unified value lattice · *keystone; highest multiplier* — **resolves Fork L**
+### P1 — Unified value lattice · *keystone; highest multiplier* — **resolves Fork L** · **PR-1 LANDED**
 
 Build §29 range/known-bits and `context_in`/`context_out` as **one** artifact with two
 projections, not two lattices. One integer value-domain lattice over locals, mining the
 dominating-`AST_If` predicate source; §29 reads the narrowing-residue projection, `context_in`
 reads the reaching-context / memo-key projection (the 4th side-car predicate-vector reads a
 third view later). Hooks the existing `ast_du_*` / `ast_hash_*` epoch machinery.
+
+**PR-1 LANDED — the side-car representation + both projections, byte-neutral, no consumer.**
+`AstVLat` (`src/mccast.c`: `int64 lo,hi` interval ∧ `uint64 kzero,kone` known-bits ∧ `tt` ∧
+`state` TOP/FACT/BOTTOM) with `ast_vlat_meet` (interval union ∧ known-bits intersection — the
+control-flow-merge over-approximation, generalizing `ast_cprop_state_meet`). `AST_VLAT_CAP`
+slot-offset side-car (mirrors `ast_du_`), epoch-synced (`ast_vlat_sync`/`_invalidate` wired into
+the invalidate decls + `ast_arena_free`). `ast_vlat_build` = `do{}while(changed)` fixpoint
+(house style, bounded by `ast_count`): for each never-written (`ast_local_is_readonly`) integer
+local, walk the `a->parent[]` spine of each use meeting in every dominating branch predicate
+(`if` then-arms op 0 child 1, loop bodies op ∈{2,3,4}, incl. `&&`/`TOK_LAND` conjunctions parsed
+by reusing `ast_range_bound`). Two projections: `ast_vlat_narrowing(off,width_tt)` (§29 residue,
+"provably fits width", TOP-safe → returns "doesn't fit" when unknown/env-off so a consumer can
+never widen on an unproven fact) and `ast_vlat_context(off,*out)` (the `context_in` fact). Gated
+`MCC_AST_VLAT` (default off) → **byte-neutral**. Under `MCC_CONFIG_AST_SHADOW`, `ast_vlat_check_sound`
+asserts cached ⊇ fresh recompute (never narrower / never claims a bit fresh doesn't). `-v128` TRACE
+`vlat build slots=N iters=M`. Validated: ctest **3654/3654** (env-off byte-identical + new `ast/vlat`);
+`tools/asttool.c` `suite_vlat` **25/0** (meet/transfer/narrowing/conservatism on known fixtures — the
+logic gate ctest can't provide with no consumer); shadow **2991/2991** zero-divergence + a 400-source
+`MCC_AST_VLAT=1` soundness sweep (0 aborts). **PR-2+ (deferred):** wire the first consumer — replace
+`ast_ii_width` in `ast_narrow_binary` with `ast_vlat_narrowing` (the value-changing narrowing), then
+feed `ast_vlat_context` into a memo key; then the `/ % << >>` + comparison narrowings; then the
+predicate-vector 4th index.
 
 - **Unblocks in one build:** §29 non-distributive narrowing (`/ % << >>` + comparisons), §29
   outer-narrow elimination, V-cprop(c) known-bits/range variant, V-cse(c) redundant-load
@@ -194,9 +234,12 @@ never rollout steps and have no symbol in `src/` today:
   restriction on live-in slots: a bounded backward walk collecting the equality/range predicates of
   dominating `AST_If` conditions (reuse the `ast_cprop_{koff,ktt,kval}` set shape), O(fixpoint) first /
   O(1) warm. It is the checker's enumeration bound (see `eval_slice`, §26 Stage 4) and the memo's
-  *context* key. Step 3 shipped only the structural-hash half (`ast_hash_*`); no `context_in`/
-  `context_out` symbol exists. Overlaps but is not §29 (that lattice is scoped to narrowing residue,
-  not the reaching-context proof-domain / memo key).
+  *context* key. Step 3 shipped only the structural-hash half (`ast_hash_*`). **PR-1 LANDED as the
+  unified `AstVLat` side-car** (see P1 in § Strategic path): the value-domain lattice + the bounded
+  parent-spine dominating-`AST_If` walk exist, and `ast_vlat_context(off,*out)` is the reaching-context
+  projection accessor. Remaining: feed `ast_vlat_context` into an actual memo/`eval_slice` key
+  (the value-changing consumer) — PR-2+. Overlaps but is not §29 (that reads the *narrowing-residue*
+  projection `ast_vlat_narrowing` of the same lattice).
 - [ ] **[P1] Descendant-indexed (DFS enter/exit) def/use extension** — so the two *subtree-scoped* write
   queries `ast_licm_written` (`mccast.c`, called from cse/licm) and `ast_ivsr_count_writes` (`mccast.c`,
   ivsr) become O(1) table lookups. PR-2's whole-function `ast_du_*` table subsumes only the two
@@ -224,6 +267,45 @@ subgroups; each names the concrete hook and the double-checked blocker. Order is
   vocabulary; making it meaningful needs `ast_strategies[]` as the ordered combo vocabulary AND
   `ast_func_end`'s frozen loop to honor the discovered per-fn order (tracked in the variation catalog
   below); `ast_fc_forecast` best-first ordering is the open synergy.
+  **Traversal-generator groundwork LANDED (byte-neutral) — the strategy-runner refactor (D1–D6, settled
+  with the user).** `combo_run` now takes a `ComboSpec.walk` mode + an observer `visit` callback and
+  offers three selectable enumeration orders over the subset lattice besides the default linear
+  mask-counter: `COMBO_WALK_DFS` (depth-first — deepen a branch fully), `COMBO_WALK_BFS` (breadth by
+  subset size), `COMBO_WALK_PRODUCT` (DFS×BFS hybrid — breadth over roots, then DFS-deepen each). Env
+  `MCC_AST_SEARCH_WALK={linear,dfs,bfs,product}` selects it on the -O4+ search; `ast_search_walk_trace`
+  emits `-v128` `combo walk=%s depth=%d k=%d seq=%s` per visit. **Winner is INVARIANT across walks**
+  (same candidate set, different visit order — the correctness anchor, since scoring is still the
+  commutative gate-mask; ordering does not yet change output). `tools/asttool.c suite_combo_walk` (16/0)
+  asserts the exact DFS/BFS/PRODUCT/linear visit orders + winner-invariance; `-v128` demonstrates all
+  three live; default `linear` + observer `visit` ⇒ ctest 3958/3958 byte-identical, self-host untouched.
+  **This is the DFS/BFS-runner half of D2.**
+
+  **M1(c) KEYSTONE LANDED (Deliverable B, both phases) — order-honoring emit + row-order search + memo
+  order persistence, byte-neutral by default.** `ast_func_end`'s emit and both scorers now iterate through
+  a per-fn `ast_strat_order[]`/`_n` (identity default ⇒ byte-for-byte the frozen `si=0..COUNT` loop). The
+  `MCC_AST_SEARCH_ORDER` search (opt-in, -O4+) ranges its vocabulary over the **base-enabled strategy ROW
+  indices** (not gate bits), `combo_run(ordered=1)` enumerates subset+permutation candidates over the
+  selected walk, and `ast_search_score_order` applies `ast_strategies[seq[i]]` **in seq order** (each row
+  already gate-enabled ⇒ any order correct-by-construction). The winning order is written to
+  `ast_strat_order[]` for emit and **persisted in the disk memo** (record grew 5→7 words: `order_packed`
+  16-nibble + `order_n`; MAGIC `0x4643→0x4644` rejects old records). Forced-order override
+  `MCC_AST_STRAT_ORDER="i,j,k"` for testing. Validated to the **full M8 bar**: default byte-identical
+  (ctest 3958, object-diff 0/960, asttool 656/0); self-host 3-stage fixpoint **byte-identical** with
+  `MCC_AST_SEARCH_ORDER=1`; -O6 differential vs gcc/clang 0 miscompiles; fuzz 130 seeds 0 miscompiles;
+  shadow 240/0 zero-divergence; memo 7-word round-trip + old-record reject + cross-run order persistence.
+  TRACE: `strat order forced`, `combo winner order`, `memo store/hit order`.
+  **KEY FINDING (honest):** order-honoring is *byte*-non-confluent (a forced reorder changes emitted bytes)
+  but the current 16 strategies are ***cost/size-confluent*** — reordering doesn't change the score metric,
+  so the search always keeps identity (ties→base) and order-search yields **no measured gain yet**. The
+  machinery is correct + byte-neutral infrastructure; a *scoring* gain needs a pass whose reordering changes
+  cost/size — the future inline/promote (D6, gated on §22 scratch-`Section` isolation) or a size-scored
+  reassoc. (Subset *selection* does fire: the search picked a 3-row subset scoring better than base.)
+
+  **Still open toward the settled design:** sequence-with-repetition + cycle-to-fixpoint runner (D1b/c+D3+D5a,
+  repetition emergent via re-cycling until 0 hits), runner-as-strategy + memo identity (D2b), the unified
+  score/forecast estimator interface (D4/M7), and all-opts-as-strategies (D6). Cycle value is real only across
+  *interleaving* (`fold→inline→fold`): a strategy already self-iterates to its own fixpoint, so a
+  different mutator between repeats is the only thing that reopens the surface.
 
 - [ ] **[FLOAT] M2 — unify the memo on `ComboMemo` + disk backing.** a) key = `ast_intention_hash`
   (`mccast.c:435`, already the memo key, stable across builds); b) value = winner record (gates +
@@ -270,9 +352,9 @@ subgroups; each names the concrete hook and the double-checked blocker. Order is
 
 - [ ] **[P2] M4 — extend scoring to data/rodata** (prerequisite for const-data compression to *compete*).
   a) snapshot `data_section->data_offset` + `rodata_section->data_offset` before replay and diff
-  after — mirrors the reloc-cursor save/restore `ast_search_emit_size` already does (`mccast.c:7247`);
+  after — mirrors the reloc-cursor save/restore `ast_search_emit_size` already does (`mccast.c:8925`);
   b) combined score = text delta + data/rodata delta; c) add a data-size term to `ast_cost_score`
-  (`mccast.c:5497`, today text/AST only). **(A) Audited fact:** emit-size scoring is **text-delta
+  (`mccast.c:6017`, today text/AST only). **(A) Audited fact:** emit-size scoring is **text-delta
   only** — a data-shrinking transform currently scores as a net regression, so without M4 datacomp
   can never be chosen. *Synergy:* makes M6 visible to the search; no separate scoring path.
   **OBSERVABILITY FOUNDATION LANDED (byte-neutral).** `ast_search_emit_size` (`mccast.c`) now
@@ -339,18 +421,20 @@ subgroups; each names the concrete hook and the double-checked blocker. Order is
 
 - [ ] **[P0] M6z — zero-init `.bss` placement** (a free placement fix surfaced by the M5 side-car; NOT
   compression). mcc emitted `static int x[256]={0}` into `.data` as 1024 zero disk bytes; C11 6.7.9
-  makes `={0}` ≡ no initializer, so it belongs in `.bss` (NOBITS). **LANDED (opt-in `MCC_ZERO_BSS`,
-  full M8 bar).** Approach B (post-emission move) in `decl_initializer_alloc`: truncate
+  makes `={0}` ≡ no initializer, so it belongs in `.bss` (NOBITS). **LANDED — P0 default-on at `-O2+`
+  (flag `MCC_ZERO_BSS`, full M8 bar).** Approach B (post-emission move) in `decl_initializer_alloc`: truncate
   `data_section->data_offset` back to the object's `addr`, re-allocate in `bss_section`, re-bind the
   symbol (`put_extern_sym`) — relocations are symbol-keyed so references fix automatically. Guarded to a
   provably-safe subset (`v && sym`, `sec==data_section`, `!bcheck && !asan_g && !flexible_array && !TLS`,
   last-allocation, and **initializer emitted no relocation** — the critical guard: a pointer init
   `={0,&g}` has zero bytes but a reloc, so it is correctly NOT moved). Validated default byte-neutral;
   `MCC_ZERO_BSS=1` exec 292/292 x86_64 + i386 + arm64, self-host, fuzz 7/7; `exec-zerobss/` ctest locks
-  it. `-v128` TRACE `zero-bss move`. **Remaining:** TLS `tdata`→`tbss` and the asan/bcheck cases
-  (excluded by guards); flip to default-on after broader field exposure.
+  it. `-v128` TRACE `zero-bss move`. **P0 default-on landed** (`s1->optimize >= 2`) after the
+  broader field-exposure pass — batched with 7 sibling knobs to the full M8 bar (ctest 3653/3653,
+  byte-identical self-host fixpoint, cross-arch i386/arm64, shadow 2990/2990, fuzz). **Remaining:**
+  TLS `tdata`→`tbss` and the asan/bcheck cases (excluded by guards).
 
-- [ ] **[P0] M6s — string-literal merging** (`-fmerge-constants`-style rodata pooling; opt-in
+- [x] **[P0] M6s — string-literal merging** (`-fmerge-constants`-style rodata pooling; opt-in
   `MCC_MERGE_STRINGS`). **LANDED, full M8 bar.** C11 6.4.5p7 leaves identical string literals'
   distinctness unspecified, so sharing storage is sound (unlike const *array* dedup, which C11 6.5.9
   forbids). A value-use literal (`str_init`, `v==0`) is homed at an anonymous symbol; references are
@@ -363,7 +447,7 @@ subgroups; each names the concrete hook and the double-checked blocker. Order is
   into the interior (C11 6.5.2.5 permits overlapping representations), guarded by `interior_off % align
   == 0`. Validated default byte-neutral; `MCC_MERGE_STRINGS=1` exec x86_64 + i386 + arm64, self-host,
   fuzz 7/7; `exec-mergestrings/` locks it. `-v128` TRACE `string merge`/`strpool suffix`.
-  **Remaining:** default-on.
+  **P0: LANDED default-on at `-O2+`** (`s1->optimize >= 2`, full-M8 batch with the sibling knobs).
 
 - [ ] **[FLOAT] M7 — formula-family unification** (the long tail). a) expose cost/ratio formulas as
   fold-math builtins (`mcc_cost_*`/`mcc_ratio_*`, copy-pasting the `foldfc_try` template,
@@ -400,7 +484,7 @@ subgroups; each names the concrete hook and the double-checked blocker. Order is
   functions at runtime, it bakes the search's disk-memoized winners into the compiler; rides M2's
   `ComboMemo`/MSZ1 format and M3's `AstGateMask` vocabulary directly. Gated by M8.
 
-- [ ] **[guardrail] M8 — validation gates** (apply to *each* of M1–M7 as it lands; = the Strategic-path guardrail). a) full ctest 1905/1905;
+- [ ] **[guardrail] M8 — validation gates** (apply to *each* of M1–M7 as it lands; = the Strategic-path guardrail). a) full ctest (currently 3654/3654);
   b) `-O6` differentials vs gcc/clang; c) self-host 3-stage fixpoint; d) sanitizers (UBSan/ASan);
   e) cross-arch (i386/arm32/riscv64/arm64, qemu-docker); f) differential miscompile fuzz;
   g) `MCC_CONFIG_AST_SHADOW` zero-divergence. Behavior-preserving steps (M1 subset-mode, M2, M3)
@@ -415,6 +499,28 @@ already returns a hit count (now consumed by `ast_search_pack_score`). Each vari
 candidate **search knob** — a distinct `AstStrategy` row or a per-strategy parameter the M1
 `combo_run` vocabulary enumerates over. The M1(c) precondition applies to any *ordering* or
 *pipeline* variant: the emit path must honor the discovered per-fn order, not just the frozen table.
+
+- [ ] **[FLOAT] Vet strategies for excessive macro-scope; decompose the sweeping ones into their
+  smallest purpose-preserving parts.** Now that the order/combo/cycle machinery is landing (walks +
+  M1(c) order-search + cycle-to-fixpoint), the *granularity* of `ast_strategies[]` is the limiting
+  factor on what the search can explore: a coarse pass that bundles N independent transforms is one
+  atomic row the search can only take-or-leave and can never *interleave/reorder* internally, and it is
+  more likely to be reordering-**confluent** (why order-search currently pays nothing — see M1(c)
+  finding). Splitting a macro pass into atomic rows (a) widens the reorderable/cyclable vocabulary, (b)
+  exposes intra-pass ordering the frozen internal sequence hides, and (c) tends to make the parts
+  non-confluent (so ordering/cycling begins to matter). **Task:** audit each of the 16 rows for bundled-
+  yet-separable transforms and split the offenders into the smallest rows that still each carry a
+  coherent purpose — WITHOUT over-fragmenting past a transform's real correctness/data-dependency unit
+  (don't split where the parts are only correct together, and keep each part individually sound so the
+  "any order is correct" search-safety model holds). **Known candidates from the existing audit:**
+  `licm` is embedded *inside* `ast_cse_run` (folds counted in `ast_licm_folds`, so toggling `cse` off
+  zeroes licm — a conflation, not a real dependency → separate row); `ident` (`ast_ident_rec`) sweeps
+  several identity families (comparison-identity, unsigned-range-vs-0, the disabled strength-reduction/
+  float-identity blocks) in one iterated pass → split per family; `cprop`+`sccp` are fused under
+  `MCC_AST_SCCP_FIX` → already a knob, but the fused unit could be two ordered rows; `bfold`'s per-op
+  table rows could each be a sub-knob. Each split is byte-neutral (same transforms, finer gating) and
+  M8-gated; the payoff is realized by the order/cycle search once non-confluent parts exist. Ties to
+  D6 (all-opts-as-strategies) and the A1b per-row vocabulary.
 
 - [ ] **V-bfold** (`ast_bfold_run`, table `ast_bfold_tab`, ~~8~~ 9 ops) — **a) PARTIAL — `round`/
   `roundf` LANDED (default-on).** New id-8 table rows + a bit-exact hand-rolled `ast_bfold_round`
@@ -451,7 +557,7 @@ candidate **search knob** — a distinct `AstStrategy` row or a per-strategy par
   attempt wrongly keyed on `TOK_UGE` (never emitted at the AST level). Default-on, validated: ctest
   3070, exec, fuzz (80 seeds 0 miscompiles), self-host. d) a worklist/BFS ordering variant.
 - [ ] **V-narrow** (`ast_narrow_rec`, single post-order pass, NOT iterated) — **a) LANDED:**
-  `ast_narrow_run` iterates to a `do/while` fixpoint under `MCC_AST_NARROW_FIX` (default off →
+  `ast_narrow_run` iterates to a `do/while` fixpoint under `MCC_AST_NARROW_FIX` (**P0 default-on at `-O2+`**; `=0` →
   single pass, byte-identical), wired into the search as the opt-in `AST_SG_NARROWFIX` knob (see
   "widen the search space" above). b) replace the type-width heuristic (`ast_ii_width`) with a
   demanded-bits/known-bits analysis; c) extend `ast_narrow_binop` past `+ - * & | ^` to shifts and
@@ -466,7 +572,7 @@ candidate **search knob** — a distinct `AstStrategy` row or a per-strategy par
   self-host, i386 cross-arch (292/292).
 - [ ] **V-cse** (`ast_cse_run`, O(n²) structural `ast_ident_same` match, cap 64) — a) hash-based
   value-numbering (LVN/GVN) alternative; **b) LANDED (commutative-aware match)** — `ast_cse_same`
-  (`MCC_AST_CSE_COMM`, default off → exact match only, byte-identical; `AST_SG_CSECOMM` search knob)
+  (`MCC_AST_CSE_COMM`, **P0 default-on at `-O2+`**; `=0` → exact match only, byte-identical; `AST_SG_CSECOMM` search knob)
   also matches `a OP b` against `b OP a` for commutative `+ * & | ^`, so the two share one cached
   result — correct-by-construction (commutative ops yield equal values incl. IEEE add/mul). Top-level
   pair only; deeper structure still exact. Validated to the **full M8 bar**: ctest 3070, exec-corpus
@@ -494,7 +600,7 @@ candidate **search knob** — a distinct `AstStrategy` row or a per-strategy par
   was unblocked by **budget-scaling** (below). **Knob-boundary caveat:** `licm` folds are counted
   inside `cse`, so toggling `cse` off zeroes `ast_licm_folds`.
 - [ ] **V-dse** (`ast_dse_block`, resets on any non-Store stmt → strictly intra-block) —
-  **d) LANDED — see through bare calls** (`MCC_AST_DSE_CALL`, default off → full reset, byte-
+  **d) LANDED — see through bare calls** (`MCC_AST_DSE_CALL`, **P0 default-on at `-O2+`**; `=0` → full reset, byte-
   identical): instead of the conservative full reset on a non-store statement, an `AST_Invoke` (a
   bare call) only `kill_reads` the locals it reads via its args and keeps the rest of the dead-store
   tracking — so `x=1; foo(); x=2` drops the dead `x=1`. **Correct by DSE's existing escape analysis:**
@@ -510,7 +616,7 @@ candidate **search knob** — a distinct `AstStrategy` row or a per-strategy par
   lattice) — a) implement **true** sparse-conditional constant propagation (constant lattice +
   CFG-edge worklist pruning unreachable edges); b) switch/computed-branch folding; **c) LANDED —
   fuse cprop+sccp into one fixpoint:** `ast_sccp_run` now loops `{ ast_cprop_run; ast_sccp_scan }`
-  under `MCC_AST_SCCP_FIX` (default off → single scan, byte-identical) so a folded constant branch
+  under `MCC_AST_SCCP_FIX` (**P0 default-on at `-O2+`**; `=0` → single scan, byte-identical) so a folded constant branch
   exposes constants that cprop propagates and sccp re-folds. Correct-by-construction and terminating
   — cprop only *adds* constants, sccp only *removes* dead branches (both monotonic, neither reverts
   the other → converges, bounded by node count). Validated: default byte-identical (ctest 3070);
@@ -534,8 +640,8 @@ candidate **search knob** — a distinct `AstStrategy` row or a per-strategy par
   b) duplicate-condition threading across straight-line blocks (`ast_ident_pure` proves re-eval
   safety); c) correlated-condition threading (`if(x>0)…if(x>=1)…`); d) hammock merge.
 - [ ] **V-bf** (`ast_bf_run`, 4 flat scans, window ≤63) — **a) LANDED — range predicates `lo<=x &&
-  x<=hi` → `(unsigned)(x-lo) <= (hi-lo)`** (`ast_range_run`, `MCC_AST_RANGE`, `AST_STRAT_RANGE`, default
-  off → byte-identical). A new sibling pass modeled on `ast_bf_run`, reusing its builders
+  x<=hi` → `(unsigned)(x-lo) <= (hi-lo)`** (`ast_range_run`, `MCC_AST_RANGE`, `AST_STRAT_RANGE`; **P0 default-on
+  at `-O2+`**, `=0` → byte-identical). A new sibling pass modeled on `ast_bf_run`, reusing its builders
   (`ast_bf_keyexpr` = `(unsigned)x - base`, `ast_bf_lit`) and its purity/const readers. Matches a
   `TOK_LAND` `AST_Binary` (the `&&`-as-condition form; value-context `&&` desyncs the AST so isn't
   touched) whose two children are **signed** relationals (`TOK_LE/GE/LT/GT`, literal on either side,
@@ -574,7 +680,7 @@ candidate **search knob** — a distinct `AstStrategy` row or a per-strategy par
   TCO's to a loop (correct output) at maxp=32. Validated: ctest 3070, that exec test, fuzz `GATES[]`
   `TCO_MAXP` (60 seeds 0 miscompiles), self-host (maxp=32).
   a) break param cycles via temporaries instead of `if (cyc) continue`; b) general/sibling tail
-  calls via a tail-call ABI; **c) LANDED (pointer params)** — `MCC_AST_TCO_PTR` (default off →
+  calls via a tail-call ABI; **c) LANDED (pointer params)** — `MCC_AST_TCO_PTR` (**P0 default-on at `-O2+`**; `=0` →
   int-only, byte-identical) also accepts `VT_PTR` params: the param store/reload is already
   type-generic (`ast_set_type` with the captured `ptt`/`pref`), so a pointer stores/reloads exactly
   like an integer of the same width; arrays/VLAs/volatile still excluded. Common in list/tree walkers
@@ -623,6 +729,11 @@ candidate **search knob** — a distinct `AstStrategy` row or a per-strategy par
   non-pow2 — replacing hardware `div`/`idiv` with `imul;shr`/`sar` sequences. Validated to the full
   M8 bar with genuine cross-arch (exhaustive differential sweeps vs a volatile-divisor reference = 0
   fails on x86_64 + real i386 + real arm64; self-host; fuzz `GATES[]` `DIVMAGIC`); default byte-neutral.
+  **⚠ NOT default-on-ready (P0):** as an *opt-in* knob it clears M8, but flipping it default-on at -O2
+  makes x86_64 stage2 self-host **SIGSEGV** recompiling `src/mcc.c` — a non-local mul-high (`imul; shr
+  $0x20`) **register-pressure** codegen bug that only heavy TUs trip (i386/arm64 self-host, exec corpus,
+  ctest, `-g` all clean; fuzz never reproduces it). Correct quotients throughout — it is a regalloc bug,
+  same root as (b). Fix (b)/x86_64 mul-high regalloc before P0 can flip it. See P0 section.
   **Open:** (a) **64-bit** — genuinely backend-blocked: needs the HIGH 64 bits of a 64×64→128 product
   (`mulh`), which mcc's type system can't express (`__int128` is a parse error, `mccgen.c`) — a
   per-backend primitive (x86_64 `mulq`, arm64 `umulh`/`smulh`, riscv `mulhu`, i386→runtime helper).
@@ -748,11 +859,40 @@ tag and are sequenced by § Strategic path, not by their bucket.
   join pass sees the merged window) vs two-pass hand-off (B: thread the caller's
   exit facts into `ast_inline_graft` as the callee replay's entry facts).
   Deliverable is the A-vs-B decision + arena/gate design.
-- [ ] **Build scratch-`Section` emit isolation for §22** — redirect
+- [~] **Build scratch-`Section` emit isolation for §22 (cell C1c)** — redirect
   `cur_text_section` (+ reloc, `ind`, symbol scope) to a throwaway `Section` per
   measurement, measure, discard, emit the winner once. In-place save/restore was
-  proven insufficient (`ast_promo_entry_init` desyncs). The real production
-  consumer of `ast_arena_clone` (today only in `tools/asttool.c`); milestone-scale.
+  proven insufficient (`ast_promo_entry_init` desyncs).
+  **STEP 1 LANDED (byte + score-neutral) — `MCC_AST_SEARCH_EMITISO`, default off.** `ast_scratch_init`/
+  `_enter`/`_measure_exit` (`src/mccast.c`) redirect `cur_text_section` to a lazily-created private
+  `.mcc.scratch.text` + `.rela.mcc.scratch.text` (flagged `SHF_PRIVATE` so they never leak into the
+  output object); `ast_search_emit_size` brackets its replay with enter/measure_exit when the flag is on.
+  **TEXT + reloc isolated ONLY** — `data`/`rodata` deliberately left shared-and-grown (never truncated:
+  the M4 rodata-truncation miscompile trap), score = text-delta, so the winner selection is IDENTICAL to
+  the in-place path. `AstScratchSave` snapshots text/ind/rsym/loc/anon_sym/local_stack-mark/`ast_promo_*`/
+  counters (phase-2-complete). Validated: default byte-identical (ctest 3958/3958); **score-neutral**
+  (EMITISO 0 vs 1 → identical `combo winner` score + byte-identical `.o`, personally reverified: score
+  446462, `.o` identical); self-host 3-stage fixpoint byte-identical with EMITISO=1; shadow zero-
+  divergence; -O6 differential == gcc == clang. `-v128` TRACE `scratch enter/measure/exit` (no `scratch
+  LEAK`). *Bonus finding:* the OLD in-place path leaks duplicate rodata constants (441 vs 6 clean); scratch
+  isolation is if anything MORE correct (picks the canonical low-offset copy), though production emit is
+  unaffected either way. **STEP 2 (E1b) — INLINE axis LANDED (`MCC_AST_SEARCH_INLINE`, default off).**
+  `ast_search_emit_size` honors `ast_search_want_inline` inside the scratch measurement; `ast_search_axis_pick`
+  enumerates inline∈{0,1} on the winning gates, seeds the heuristic (inline-on) with a strict-less keep so
+  ties stay byte-identical, and the real emit ANDs the searched pick into `do_inline` (can only decline an
+  inline the heuristic would take). Validated: default byte-identical (ctest 3958/3958); self-host 3-stage
+  fixpoint byte-identical with `MCC_AST_SEARCH_INLINE=1 EMITISO=1 EMITSIZE=1` (stage3==stage4); 140-seed
+  gcc+clang differential + 70-file axis-on-vs-off exec differential 0 miscompiles; shadow 0 divergence / 0
+  `scratch LEAK`. TRACE `emit-size inline=%d size` + `search picks inline=%d` (proof: a graftable large
+  callee is measured inline=1 size=264 vs inline=0 size=62 → search picks inline=0, `.o` drops the caller
+  from 97 to 37 insns; a constant-folding callee measures inline=1 size=24 < inline=0 size=36 → picks
+  inline=1). **PROMOTE axis DEFERRED:** running `ast_plan_promotion`/`ast_promo_entry_init` (or even the
+  promoted-local body substitution) inside the scratch measurement corrupts register-allocator/frame state
+  the scratch does not snapshot (`AstScratchSave` isolates text+reloc+promo-counters, NOT the value stack /
+  spill slots / reg-alloc) → miscompiles the self-host stage3 (`empty character constant`). Isolating that
+  is the separate riskier change; promote stays at its heuristic. Also still deferred: inline as a
+  freely-reorderable mid-sequence arena graft (`fold→inline→fold`) — `ast_inline_graft` grafts during the
+  emit-replay traversal, not as a standalone pass.
 - [ ] **Explore EMI mutation (Orion/Athena/Hermes)** targeting optimizer
   miscompiles.
 - [ ] **Design the broader template library** (algebraic/dead-branch/jump-table).
@@ -821,7 +961,26 @@ tag and are sequenced by § Strategic path, not by their bucket.
   window (optional).
 - [ ] **[P1] Build the §29 integer range/known-bits lattice** — shared prerequisite for
   the narrowing residue. **In P1 this is built as the one lattice with two projections
-  (with `context_in`); see § Strategic path.**
+  (with `context_in`); see § Strategic path. Representation LANDED (PR-1) as `AstVLat` +
+  both projection accessors (`ast_vlat_narrowing`/`ast_vlat_context`); the value-changing
+  narrowing consumer is PR-2+.
+
+**PR-2 (first slice) LANDED — the first value-changing consumer, gated `MCC_AST_VLAT`.** Extends the
+truncation-sink narrowing (`ast_narrow_binary`) past the distributive `+ - * & | ^` to the
+non-distributive **unsigned `/` `%`** and **`<<` with constant count ∈[0,31]**, gated behind
+`ast_vlat_env` (default off → -O2 byte-identical; distributive path unchanged). Every narrowing here is
+LONG-LONG→INT (the pass's own width gates force `tt`=4,`wt`=8), so soundness reduces to "low-32 of the
+64-bit op == the 32-bit op on truncated operands." New `ast_narrow_binop_ranged`/`_operand_off`/`_fits`/
+`_ranged_ok`: unsigned `/ %` require both operands proven to fit `[0,UINT32_MAX]` (via `ast_narrow_class`
+0/1, an in-range constant, or `ast_vlat_context` — NOT raw `ast_vlat_narrowing`, which would unsoundly
+accept a proven-negative signed local); `<<` needs only a constant count in range (low-bits-only,
+sign-agnostic). Deferred to PR-3: signed `/ %` (INT_MIN/−1 trap divergence), `>>` (TOK_SAR, needs op0
+fit + count), `<<` value-count; comparisons SKIP (wrong pass shape). Validated to the **full M8 bar with
+`MCC_AST_VLAT=1`**: default byte-identical (ctest, object-diff 0); **self-host 3-stage fixpoint
+byte-identical** (the gate P0's DIVMAGIC failed); -O6 differential == gcc == clang; real cross-arch
+i386/arm64; differential fuzz 144 seeds 0 miscompiles; shadow 304/304 zero-divergence; UBSan trap-mode
+clean. `-v128` TRACE `narrow ranged op=.. tt=.. wt=..`. **Remaining PR-3+:** the deferred ops, then
+flip `MCC_AST_VLAT` default-on (P0-style) once broadly exposed.**
 - [ ] **Implement §30 value-table dispatch** for bit-flag clusters with *differing*
   bodies. (needs `.rodata` data-emission)
 - [ ] **Refactor the §31 scheduler to a static-vtable strategy registry** — passes

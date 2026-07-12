@@ -44,12 +44,34 @@ typedef uint64_t combo_u64;
 #define COMBO_REJECT ((long)-1)
 typedef long (*ComboScoreFn)(const int *sel, int k, void *user);
 
+#define COMBO_WALK_LINEAR 0
+#define COMBO_WALK_DFS 1
+#define COMBO_WALK_BFS 2
+#define COMBO_WALK_PRODUCT 3
+
+static const char *combo_walk_name(int w) {
+	switch (w) {
+	case COMBO_WALK_LINEAR:
+		return "linear";
+	case COMBO_WALK_DFS:
+		return "dfs";
+	case COMBO_WALK_BFS:
+		return "bfs";
+	case COMBO_WALK_PRODUCT:
+		return "product";
+	default:
+		return "?";
+	}
+}
+
 typedef struct ComboSpec {
 	int nitems;         /* number of formulas to choose from (<= COMBO_MAX) */
 	int min_k, max_k;   /* inclusive bounds on selection size */
 	int ordered;        /* 0: combinations only; 1: also every ordering (permutations) */
+	int walk;
 	long budget;        /* max candidates to score (0 = whole space) */
 	ComboScoreFn score;
+	void (*visit)(const int *sel, int k, int depth, int walk, void *user);
 	void *user;
 } ComboSpec;
 
@@ -76,12 +98,130 @@ static int combo_next_perm(int *a, int k) {
 	return 1;
 }
 
+static int combo_emit(const ComboSpec *s, ComboBest *best, const int *members, int k,
+											long *evaluated) {
+	int buf[COMBO_MAX], i;
+	if (k < s->min_k || k > s->max_k)
+		return 1;
+	for (i = 0; i < k; i++)
+		buf[i] = members[i];
+	do {
+		long sc;
+		if (s->budget && *evaluated >= s->budget) {
+			best->exhausted = 0;
+			return 0;
+		}
+		if (s->visit)
+			s->visit(buf, k, k, s->walk, s->user);
+		sc = s->score(buf, k, s->user);
+		(*evaluated)++;
+		if (sc != COMBO_REJECT && (best->k == 0 || sc < best->score)) {
+			best->score = sc;
+			best->k = k;
+			for (i = 0; i < k; i++)
+				best->sel[i] = buf[i];
+		}
+		if (!s->ordered)
+			break;
+	} while (combo_next_perm(buf, k));
+	return 1;
+}
+
+static int combo_dfs(const ComboSpec *s, ComboBest *best, int *prefix, int plen,
+										 int start, int n, long *evaluated) {
+	int i;
+	if (!combo_emit(s, best, prefix, plen, evaluated))
+		return 0;
+	for (i = start; i < n; i++) {
+		prefix[plen] = i;
+		if (!combo_dfs(s, best, prefix, plen + 1, i + 1, n, evaluated))
+			return 0;
+	}
+	return 1;
+}
+
+static int combo_bfs(const ComboSpec *s, ComboBest *best, int n, long *evaluated) {
+	int comb[COMBO_MAX], size, i, j, hi = s->max_k;
+	if (hi > n)
+		hi = n;
+	for (size = s->min_k < 1 ? 1 : s->min_k; size <= hi; size++) {
+		for (i = 0; i < size; i++)
+			comb[i] = i;
+		for (;;) {
+			if (!combo_emit(s, best, comb, size, evaluated))
+				return 0;
+			i = size - 1;
+			while (i >= 0 && comb[i] == n - size + i)
+				i--;
+			if (i < 0)
+				break;
+			comb[i]++;
+			for (j = i + 1; j < size; j++)
+				comb[j] = comb[j - 1] + 1;
+		}
+	}
+	return 1;
+}
+
+static int combo_product_deepen(const ComboSpec *s, ComboBest *best, int *prefix,
+																int plen, int start, int n, long *evaluated) {
+	int i;
+	for (i = start; i < n; i++) {
+		prefix[plen] = i;
+		if (!combo_emit(s, best, prefix, plen + 1, evaluated))
+			return 0;
+		if (!combo_product_deepen(s, best, prefix, plen + 1, i + 1, n, evaluated))
+			return 0;
+	}
+	return 1;
+}
+
+static int combo_product(const ComboSpec *s, ComboBest *best, int n, long *evaluated) {
+	int prefix[COMBO_MAX], i;
+	for (i = 0; i < n; i++) {
+		prefix[0] = i;
+		if (!combo_emit(s, best, prefix, 1, evaluated))
+			return 0;
+	}
+	for (i = 0; i < n; i++) {
+		prefix[0] = i;
+		if (!combo_product_deepen(s, best, prefix, 1, i + 1, n, evaluated))
+			return 0;
+	}
+	return 1;
+}
+
+static int combo_walk_run(const ComboSpec *s, ComboBest *best) {
+	int prefix[COMBO_MAX], n = s->nitems;
+	long evaluated = 0;
+	if (n > COMBO_MAX)
+		n = COMBO_MAX;
+	best->k = 0;
+	best->score = 0;
+	best->exhausted = 1;
+	switch (s->walk) {
+	case COMBO_WALK_DFS:
+		combo_dfs(s, best, prefix, 0, 0, n, &evaluated);
+		break;
+	case COMBO_WALK_BFS:
+		combo_bfs(s, best, n, &evaluated);
+		break;
+	case COMBO_WALK_PRODUCT:
+		combo_product(s, best, n, &evaluated);
+		break;
+	}
+	best->evaluated = evaluated;
+	return best->k > 0;
+}
+
 /* Enumerate combinations x (optionally) permutations, scoring each; fills `best`.
  * Returns 1 if any candidate was accepted. */
 static int combo_run(const ComboSpec *s, ComboBest *best) {
 	unsigned mask, full;
 	int members[COMBO_MAX], k, i, n = s->nitems;
 	long evaluated = 0;
+	if (s->walk != COMBO_WALK_LINEAR)
+		return combo_walk_run(s, best);
 	if (n > COMBO_MAX)
 		n = COMBO_MAX;
 	full = (n >= 31) ? 0x7fffffffu : ((1u << n) - 1u);
@@ -101,6 +241,8 @@ static int combo_run(const ComboSpec *s, ComboBest *best) {
 				best->exhausted = 0;
 				goto done;
 			}
+			if (s->visit)
+				s->visit(members, k, k, s->walk, s->user);
 			sc = s->score(members, k, s->user);
 			evaluated++;
 			if (sc != COMBO_REJECT && (best->k == 0 || sc < best->score)) {
@@ -248,8 +390,10 @@ static int combo_pipeline_search(const unsigned char *data, long n, int maxdepth
 	spec.min_k = 1;
 	spec.max_k = maxdepth < 1 ? 1 : maxdepth;
 	spec.ordered = 1; /* order matters: rle-then-lzw != lzw-then-rle */
+	spec.walk = COMBO_WALK_LINEAR;
 	spec.budget = 0;
 	spec.score = combo_pipe_score;
+	spec.visit = NULL;
 	spec.user = &ctx;
 	return combo_run(&spec, best);
 }

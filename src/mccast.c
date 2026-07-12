@@ -77,6 +77,7 @@ static void ast_grow(AstArena *a, AstLocal need) {
 static void ast_du_invalidate(const AstArena *a);
 static void ast_memo_invalidate(const AstArena *a);
 static void ast_hash_invalidate(const AstArena *a);
+static void ast_vlat_invalidate(const AstArena *a);
 #endif
 
 AstArena *ast_arena_new(void) {
@@ -96,6 +97,7 @@ void ast_arena_free(AstArena *a) {
 	ast_du_invalidate(a);
 	ast_memo_invalidate(a);
 	ast_hash_invalidate(a);
+	ast_vlat_invalidate(a);
 #endif
 	free(a->kind);
 	free(a->parent);
@@ -516,6 +518,108 @@ int ast_color_graph(int n, const uint64_t *adj, const int *cost, int k, int *col
 	return ncol;
 }
 
+#if defined(__GNUC__)
+#define AST_VLAT_ATTR __attribute__((unused))
+#else
+#define AST_VLAT_ATTR
+#endif
+
+typedef struct {
+	int64_t lo, hi;
+	uint64_t kzero, kone;
+	int tt;
+	uint8_t state;
+} AstVLat;
+
+enum { AST_VLAT_TOP = 0, AST_VLAT_FACT = 1, AST_VLAT_BOTTOM = 2 };
+
+static AstVLat ast_vlat_top(void) AST_VLAT_ATTR;
+static AstVLat ast_vlat_top(void) {
+	AstVLat v;
+	v.lo = 0;
+	v.hi = 0;
+	v.kzero = 0;
+	v.kone = 0;
+	v.tt = 0;
+	v.state = AST_VLAT_TOP;
+	return v;
+}
+
+static AstVLat ast_vlat_bottom(void) AST_VLAT_ATTR;
+static AstVLat ast_vlat_bottom(void) {
+	AstVLat v;
+	v.lo = INT64_MIN;
+	v.hi = INT64_MAX;
+	v.kzero = 0;
+	v.kone = 0;
+	v.tt = 0;
+	v.state = AST_VLAT_BOTTOM;
+	return v;
+}
+
+static AstVLat ast_vlat_full_fact(int64_t lo, int64_t hi, int tt) AST_VLAT_ATTR;
+static AstVLat ast_vlat_full_fact(int64_t lo, int64_t hi, int tt) {
+	AstVLat v;
+	v.lo = lo;
+	v.hi = hi;
+	v.kzero = 0;
+	v.kone = 0;
+	v.tt = tt;
+	v.state = AST_VLAT_FACT;
+	return v;
+}
+
+static AstVLat ast_vlat_meet(AstVLat x, AstVLat y) AST_VLAT_ATTR;
+static AstVLat ast_vlat_meet(AstVLat x, AstVLat y) {
+	AstVLat r;
+	if (x.state == AST_VLAT_TOP)
+		return y;
+	if (y.state == AST_VLAT_TOP)
+		return x;
+	if (x.state == AST_VLAT_BOTTOM || y.state == AST_VLAT_BOTTOM)
+		return ast_vlat_bottom();
+	r.lo = x.lo < y.lo ? x.lo : y.lo;
+	r.hi = x.hi > y.hi ? x.hi : y.hi;
+	r.kzero = x.kzero & y.kzero;
+	r.kone = x.kone & y.kone;
+	r.tt = x.tt;
+	r.state = AST_VLAT_FACT;
+	return r;
+}
+
+static void ast_vlat_refine_bound(AstVLat *v, int64_t bound, int is_lower) AST_VLAT_ATTR;
+static void ast_vlat_refine_bound(AstVLat *v, int64_t bound, int is_lower) {
+	if (v->state != AST_VLAT_FACT)
+		return;
+	if (is_lower) {
+		if (bound > v->lo)
+			v->lo = bound;
+	} else if (bound < v->hi) {
+		v->hi = bound;
+	}
+	if (v->lo > v->hi)
+		*v = ast_vlat_bottom();
+}
+
+static int ast_vlat_narrowing(AstArena *a, int off, int width_tt) AST_VLAT_ATTR;
+static int ast_vlat_context(AstArena *a, int off, AstVLat *out) AST_VLAT_ATTR;
+
+static int ast_vlat_fits_bytes(const AstVLat *v, int width) AST_VLAT_ATTR;
+static int ast_vlat_fits_bytes(const AstVLat *v, int width) {
+	uint64_t umax;
+	int64_t smax, smin;
+	if (v->state != AST_VLAT_FACT || width <= 0 || width >= 8)
+		return 0;
+	umax = ((uint64_t)1 << (width * 8)) - 1;
+	smax = (int64_t)(umax >> 1);
+	smin = -smax - 1;
+	if (v->lo >= 0 && (uint64_t)v->hi <= umax)
+		return 1;
+	if (v->lo >= smin && v->hi <= smax)
+		return 1;
+	return 0;
+}
+
 #ifdef MCC_INTERNAL
 
 #define gjmp_addr gjmp_addr_acs
@@ -563,6 +667,7 @@ static int ast_range_env; /* MCC_AST_RANGE: fold lo<=x && x<=hi to one unsigned 
 static int ast_divmagic_env; /* MCC_AST_DIVMAGIC: strength-reduce unsigned x/C, x%C */
 static int ast_abs_env; /* MCC_AST_ABS: branchless abs from x<0?-x:x */
 static int ast_reassoc_env; /* MCC_AST_REASSOC: combine (x OP c1) OP c2 */
+static int ast_vlat_env;
 static int ast_data_report_env; /* MCC_AST_DATA_REPORT: dump const-data records to stderr */
 int ast_zero_bss_env;           /* MCC_ZERO_BSS: move all-zero .data statics into .bss */
 int ast_merge_strings_env;      /* MCC_MERGE_STRINGS: pool identical rodata string literals */
@@ -656,9 +761,86 @@ static int ast_fncfg_find(const char *fn) {
 static int ast_templates_env;
 static int ast_search_env;
 static int ast_search_emitsize_env;
+static int ast_search_emitiso_env;
+static int ast_search_inline_env;
+static int ast_search_want_inline;
+static int ast_search_axis_ran;
+static int ast_search_pick_inline;
 static int ast_search_threads_env;
 static int ast_search_ordered_env;
+static int ast_search_walk_env;
 static unsigned ast_search_seconds;
+
+static int ast_search_walk_from_env(void) {
+	const char *v = getenv("MCC_AST_SEARCH_WALK");
+	if (!v || !v[0] || !strcmp(v, "linear"))
+		return COMBO_WALK_LINEAR;
+	if (!strcmp(v, "dfs"))
+		return COMBO_WALK_DFS;
+	if (!strcmp(v, "bfs"))
+		return COMBO_WALK_BFS;
+	if (!strcmp(v, "product"))
+		return COMBO_WALK_PRODUCT;
+	return COMBO_WALK_LINEAR;
+}
+
+static void ast_search_walk_trace(const int *sel, int k, int depth, int walk,
+																	void *user) {
+	char seq[COMBO_MAX * 4];
+	int i, p = 0;
+	(void)user;
+	for (i = 0; i < k && p < (int)sizeof seq - 8; i++)
+		p += sprintf(seq + p, "%s%d", i ? "," : "", sel[i]);
+	seq[p] = '\0';
+	MCC_TRACE("combo walk=%s depth=%d k=%d seq=%s\n", combo_walk_name(walk), depth, k,
+						seq);
+}
+#define AST_STRAT_COUNT_MAX 16
+static int ast_search_order_env;
+static int ast_strat_order[AST_STRAT_COUNT_MAX];
+static int ast_strat_order_n;
+static int ast_strat_order_forced;
+
+static void ast_strat_order_reset(void) {
+	int i;
+	for (i = 0; i < AST_STRAT_COUNT_MAX; i++)
+		ast_strat_order[i] = i;
+	ast_strat_order_n = AST_STRAT_COUNT_MAX;
+}
+
+static void ast_order_seq_str(const int *seq, int n, char *out) {
+	int i, p = 0;
+	for (i = 0; i < n && p < AST_STRAT_COUNT_MAX * 4 - 8; i++)
+		p += sprintf(out + p, "%s%d", i ? "," : "", seq[i]);
+	out[p] = '\0';
+}
+
+static void ast_strat_order_from_env(void) {
+	const char *ov = getenv("MCC_AST_STRAT_ORDER");
+	const char *p;
+	int n = 0, val = 0, have = 0;
+	ast_strat_order_reset();
+	ast_strat_order_forced = 0;
+	if (!ov || !ov[0])
+		return;
+	for (p = ov;; p++) {
+		if (*p >= '0' && *p <= '9') {
+			val = val * 10 + (*p - '0');
+			have = 1;
+		} else {
+			if (have && n < AST_STRAT_COUNT_MAX && val < AST_STRAT_COUNT_MAX)
+				ast_strat_order[n++] = val;
+			val = 0;
+			have = 0;
+			if (!*p)
+				break;
+		}
+	}
+	if (n > 0) {
+		ast_strat_order_n = n;
+		ast_strat_order_forced = 1;
+	}
+}
 static int ast_promote_env;
 static int ast_no_callful_env;
 static int ast_no_callful_promo;
@@ -831,8 +1013,18 @@ void ast_configure(MCCState *s1) {
 	ast_templates_env = ast_env_gate("MCC_AST_TEMPLATES", s1->optimize >= 1);
 	ast_search_env = ast_env_gate("MCC_AST_SEARCH", 0);
 	ast_search_emitsize_env = ast_env_gate("MCC_AST_SEARCH_EMITSIZE", 0);
+	ast_search_emitiso_env = ast_env_gate("MCC_AST_SEARCH_EMITISO", 0);
+	ast_search_inline_env = ast_env_gate("MCC_AST_SEARCH_INLINE", 0);
 	ast_search_threads_env = ast_env_gate("MCC_AST_SEARCH_THREADS", 0);
 	ast_search_ordered_env = ast_env_gate("MCC_AST_SEARCH_ORDERED", 0);
+	ast_search_order_env = ast_env_gate("MCC_AST_SEARCH_ORDER", 0);
+	ast_search_walk_env = ast_search_walk_from_env();
+	ast_strat_order_from_env();
+	if (ast_strat_order_forced) {
+		char sq[AST_STRAT_COUNT_MAX * 4];
+		ast_order_seq_str(ast_strat_order, ast_strat_order_n, sq);
+		MCC_TRACE("strat order forced n=%d seq=%s\n", ast_strat_order_n, sq);
+	}
 	ast_search_seconds = s1->optimize_search_seconds;
 	ast_promote_env = ast_env_gate("MCC_AST_PROMOTE", opt_promote);
 	ast_no_callful_env = ast_env_gate("MCC_AST_NO_CALLFUL", 0);
@@ -865,18 +1057,19 @@ void ast_configure(MCCState *s1) {
 		ast_bitflag_min = 5;
 	ast_cprop_join_env = ast_env_gate("MCC_AST_CPROP_JOIN", s1->optimize >= 2);
 	ast_narrow_env = ast_env_gate("MCC_AST_NARROW", s1->optimize >= 2);
-	ast_narrow_fix_env = ast_env_gate("MCC_AST_NARROW_FIX", 0);
-	ast_sccp_fix_env = ast_env_gate("MCC_AST_SCCP_FIX", 0);
-	ast_dse_call_env = ast_env_gate("MCC_AST_DSE_CALL", 0);
-	ast_tco_ptr_env = ast_env_gate("MCC_AST_TCO_PTR", 0);
-	ast_cse_comm_env = ast_env_gate("MCC_AST_CSE_COMM", 0);
-	ast_range_env = ast_env_gate("MCC_AST_RANGE", 0);
+	ast_narrow_fix_env = ast_env_gate("MCC_AST_NARROW_FIX", s1->optimize >= 2);
+	ast_sccp_fix_env = ast_env_gate("MCC_AST_SCCP_FIX", s1->optimize >= 2);
+	ast_dse_call_env = ast_env_gate("MCC_AST_DSE_CALL", s1->optimize >= 2);
+	ast_tco_ptr_env = ast_env_gate("MCC_AST_TCO_PTR", s1->optimize >= 2);
+	ast_cse_comm_env = ast_env_gate("MCC_AST_CSE_COMM", s1->optimize >= 2);
+	ast_range_env = ast_env_gate("MCC_AST_RANGE", s1->optimize >= 2);
 	ast_divmagic_env = ast_env_gate("MCC_AST_DIVMAGIC", 0);
 	ast_abs_env = ast_env_gate("MCC_AST_ABS", 0);
 	ast_reassoc_env = ast_env_gate("MCC_AST_REASSOC", 0);
+	ast_vlat_env = ast_env_gate("MCC_AST_VLAT", 0);
 	ast_data_report_env = ast_env_gate("MCC_AST_DATA_REPORT", 0);
-	ast_zero_bss_env = ast_env_gate("MCC_ZERO_BSS", 0);
-	ast_merge_strings_env = ast_env_gate("MCC_MERGE_STRINGS", 0);
+	ast_zero_bss_env = ast_env_gate("MCC_ZERO_BSS", s1->optimize >= 2);
+	ast_merge_strings_env = ast_env_gate("MCC_MERGE_STRINGS", s1->optimize >= 2);
 	ast_strpool_n = 0; /* content pool is per translation unit */
 	ast_cse_window = ast_env_int("MCC_AST_CSE_WINDOW", 64);
 	if (ast_cse_window < 1)
@@ -3324,6 +3517,7 @@ static void ast_promo_exit_restore(void) {
 }
 static int ast_promo_n;
 static int ast_promo_callful;
+static int ast_promo_save_loc;
 static int ast_promo_regpool_at(int i) {
 	(void)i;
 	return 0;
@@ -4810,13 +5004,73 @@ static int ast_narrow_binop(int op) {
 	return 0;
 }
 
+static int ast_narrow_binop_ranged(int op) {
+	switch (op) {
+	case '/':
+	case '%':
+	case TOK_SHL:
+		return 1;
+	}
+	return 0;
+}
+
+static int ast_narrow_operand_off(AstArena *a, AstLocal op, int *off) {
+	int r;
+	if (ast_kind(a, op) != AST_Ref)
+		return 0;
+	r = ast_op(a, op);
+	if ((r & VT_VALMASK) != VT_LOCAL || !(r & VT_LVAL) || (r & VT_SYM))
+		return 0;
+	*off = (int)(int64_t)ast_ival(a, op);
+	return 1;
+}
+
+static int ast_narrow_fits(AstArena *a, AstLocal op, int cls, int tt) {
+	int lt, off, w;
+	uint64_t lv, umax;
+	AstVLat ctx;
+	if (cls == 0 || cls == 1)
+		return 1;
+	if (ast_ident_cval(a, op, &lt, &lv))
+		return value64(lv, tt) == lv;
+	if (!ast_narrow_operand_off(a, op, &off) || !ast_vlat_context(a, off, &ctx))
+		return 0;
+	w = ast_ii_width(tt);
+	if (w <= 0 || w >= 8)
+		return 0;
+	umax = ((uint64_t)1 << (w * 8)) - 1;
+	return ctx.lo >= 0 && (uint64_t)ctx.hi <= umax;
+}
+
+static int ast_narrow_ranged_ok(AstArena *a, int op, int tt, int wt, AstLocal op0,
+																AstLocal op1, int c0, int c1) {
+	int lt;
+	uint64_t lv;
+	switch (op) {
+	case '/':
+	case '%':
+		if (!(tt & VT_UNSIGNED) || !(wt & VT_UNSIGNED))
+			return 0;
+		return ast_narrow_fits(a, op0, c0, tt) && ast_narrow_fits(a, op1, c1, tt);
+	case TOK_SHL:
+		(void)c0;
+		(void)c1;
+		if (!ast_ident_cval(a, op1, &lt, &lv))
+			return 0;
+		return (int64_t)lv >= 0 && (int64_t)lv <= 31;
+	}
+	return 0;
+}
+
 static int ast_narrow_binary(AstArena *a, AstLocal bin, int tt) {
 	if (ast_kind(a, bin) != AST_Binary || ast_nchild(a, bin) != 2)
 		return 0;
 	if (!ast_ident_intt(tt) || (tt & VT_VOLATILE) || ast_ii_width(tt) < 4)
 		return 0;
 	int op = ast_op(a, bin);
-	if (!ast_narrow_binop(op))
+	int distributive = ast_narrow_binop(op);
+	int ranged = ast_vlat_env && !distributive && ast_narrow_binop_ranged(op);
+	if (!distributive && !ranged)
 		return 0;
 	int wt;
 	uint64_t wref;
@@ -4828,8 +5082,14 @@ static int ast_narrow_binary(AstArena *a, AstLocal bin, int tt) {
 	int c1 = ast_narrow_class(a, op1, tt);
 	if (c0 < 0 || c1 < 0)
 		return 0;
-	if (c0 != 0 && c0 != 1 && c1 != 0 && c1 != 1)
-		return 0;
+	if (distributive) {
+		if (c0 != 0 && c0 != 1 && c1 != 0 && c1 != 1)
+			return 0;
+	} else {
+		if (!ast_narrow_ranged_ok(a, op, tt, wt, op0, op1, c0, c1))
+			return 0;
+		MCC_TRACE("narrow ranged op=%d tt=%d wt=%d\n", op, tt, wt);
+	}
 	AstLocal na = ast_narrow_make(a, op0, tt, c0);
 	AstLocal nb = ast_narrow_make(a, op1, tt, c1);
 	ast_set_type(a, bin, tt, 0);
@@ -6416,6 +6676,234 @@ static int ast_range_bound(AstArena *a, AstLocal n, AstLocal *key, int64_t *boun
 		return 0;
 	}
 	*key = k;
+	return 1;
+}
+
+#define AST_VLAT_CAP 2048
+static const AstArena *ast_vlat_arena;
+static uint64_t ast_vlat_epoch;
+static int ast_vlat_state;
+static int ast_vlat_n;
+static int ast_vlat_off[AST_VLAT_CAP];
+static AstVLat ast_vlat_slot[AST_VLAT_CAP];
+
+static AstVLat *ast_vlat_find(int off, int create) {
+	for (int i = 0; i < ast_vlat_n; i++)
+		if (ast_vlat_off[i] == off)
+			return &ast_vlat_slot[i];
+	if (!create || ast_vlat_n >= AST_VLAT_CAP)
+		return NULL;
+	ast_vlat_off[ast_vlat_n] = off;
+	ast_vlat_slot[ast_vlat_n] = ast_vlat_top();
+	return &ast_vlat_slot[ast_vlat_n++];
+}
+
+static int ast_vlat_eq(const AstVLat *x, const AstVLat *y) {
+	return x->state == y->state && x->lo == y->lo && x->hi == y->hi &&
+				 x->kzero == y->kzero && x->kone == y->kone && x->tt == y->tt;
+}
+
+static AstVLat ast_vlat_type_full(int tt) {
+	int w = ast_ii_width(tt);
+	int64_t smax;
+	if (w <= 0 || w > 8)
+		return ast_vlat_bottom();
+	if (w == 8)
+		return ast_vlat_full_fact(INT64_MIN, INT64_MAX, tt);
+	if (tt & VT_UNSIGNED)
+		return ast_vlat_full_fact(0, (int64_t)(((uint64_t)1 << (w * 8)) - 1), tt);
+	smax = ((int64_t)1 << (w * 8 - 1)) - 1;
+	return ast_vlat_full_fact(-smax - 1, smax, tt);
+}
+
+static void ast_vlat_transfer(AstArena *a, AstLocal ifnode, int off, AstVLat *el) {
+	AstLocal cond = ast_child(a, ifnode, 0);
+	AstLocal parts[2];
+	int nparts = 1, i;
+	if (cond == AST_NONE)
+		return;
+	parts[0] = cond;
+	if (ast_kind(a, cond) == AST_Binary && ast_op(a, cond) == TOK_LAND &&
+			ast_nchild(a, cond) == 2) {
+		parts[0] = ast_child(a, cond, 0);
+		parts[1] = ast_child(a, cond, 1);
+		nparts = 2;
+	}
+	for (i = 0; i < nparts; i++) {
+		AstLocal key;
+		int64_t bound;
+		int is_lower, r;
+		if (!ast_range_bound(a, parts[i], &key, &bound, &is_lower))
+			continue;
+		if (ast_kind(a, key) != AST_Ref)
+			continue;
+		r = ast_op(a, key);
+		if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
+			continue;
+		if ((int)(int64_t)ast_ival(a, key) != off)
+			continue;
+		ast_vlat_refine_bound(el, bound, is_lower);
+	}
+}
+
+static int ast_vlat_use_of(AstArena *a, AstLocal u, int *off, int *kt) {
+	int r;
+	uint64_t kref;
+	if (ast_kind(a, u) != AST_Ref)
+		return 0;
+	r = ast_op(a, u);
+	if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM) || !(r & VT_LVAL))
+		return 0;
+	if (!ast_ident_etype(a, u, kt, &kref) || !ast_ident_intt(*kt))
+		return 0;
+	*off = (int)(int64_t)ast_ival(a, u);
+	return ast_local_is_readonly(a, *off);
+}
+
+static AstVLat ast_vlat_element(AstArena *a, AstLocal u, int off, int kt) {
+	AstVLat el = ast_vlat_type_full(kt);
+	AstLocal child = u;
+	AstLocal p = ast_parent(a, u);
+	while (p != AST_NONE) {
+		if (ast_kind(a, p) == AST_If) {
+			int op = ast_op(a, p), apply = 0;
+			if (op == 0)
+				apply = child == ast_child(a, p, 1);
+			else if (op == 2 || op == 3 || op == 4)
+				apply = 1;
+			if (apply)
+				ast_vlat_transfer(a, p, off, &el);
+		}
+		child = p;
+		p = ast_parent(a, p);
+	}
+	return el;
+}
+
+#if MCC_CONFIG_AST_SHADOW
+static void ast_vlat_check_sound(const char *q, AstArena *a, int off,
+																 const AstVLat *cached);
+#endif
+
+static int ast_vlat_pass(AstArena *a) {
+	int changed = 0;
+	AstLocal nn = ast_count(a);
+	for (AstLocal u = 0; u < nn; u++) {
+		int off, kt;
+		AstVLat *slot, merged;
+		if (!ast_vlat_use_of(a, u, &off, &kt))
+			continue;
+		merged = ast_vlat_element(a, u, off, kt);
+		slot = ast_vlat_find(off, 1);
+		if (!slot) {
+			ast_vlat_state = -1;
+			return 0;
+		}
+		merged = ast_vlat_meet(*slot, merged);
+		if (!ast_vlat_eq(&merged, slot)) {
+			*slot = merged;
+			changed = 1;
+		}
+	}
+	return changed;
+}
+
+static int ast_vlat_build(AstArena *a) {
+	int iters = 0, changed, bound = (int)ast_count(a) + 1;
+	ast_vlat_n = 0;
+	ast_vlat_state = 1;
+	do {
+		changed = ast_vlat_pass(a);
+		iters++;
+	} while (changed && iters < bound && ast_vlat_state >= 0);
+	if (ast_vlat_env)
+		MCC_TRACE("vlat build slots=%d iters=%d\n", ast_vlat_n, iters);
+#if MCC_CONFIG_AST_SHADOW
+	for (int i = 0; i < ast_vlat_n; i++)
+		ast_vlat_check_sound("build", a, ast_vlat_off[i], &ast_vlat_slot[i]);
+#endif
+	return ast_vlat_n;
+}
+
+static void ast_vlat_sync(AstArena *a) {
+	if (ast_vlat_state && ast_vlat_arena == a && ast_vlat_epoch == a->epoch)
+		return;
+	ast_vlat_arena = a;
+	ast_vlat_epoch = a->epoch;
+	ast_vlat_build(a);
+}
+
+static void ast_vlat_invalidate(const AstArena *a) {
+	if (ast_vlat_arena == a) {
+		ast_vlat_arena = NULL;
+		ast_vlat_state = 0;
+	}
+}
+
+#if MCC_CONFIG_AST_SHADOW
+static void ast_vlat_diverge(const char *q, int off, int64_t clo, int64_t chi) {
+	fprintf(stderr,
+					"mcc: AST side-car divergence: %s(off=%d) cached=[%lld,%lld]\n", q,
+					off, (long long)clo, (long long)chi);
+	abort();
+}
+
+static AstVLat ast_vlat_recompute(AstArena *a, int off) {
+	AstVLat acc = ast_vlat_top();
+	AstLocal nn = ast_count(a);
+	for (AstLocal u = 0; u < nn; u++) {
+		int uoff, kt;
+		if (!ast_vlat_use_of(a, u, &uoff, &kt) || uoff != off)
+			continue;
+		acc = ast_vlat_meet(acc, ast_vlat_element(a, u, off, kt));
+	}
+	return acc;
+}
+
+static void ast_vlat_check_sound(const char *q, AstArena *a, int off,
+																 const AstVLat *cached) {
+	AstVLat fresh;
+	if (cached->state != AST_VLAT_FACT)
+		return;
+	fresh = ast_vlat_recompute(a, off);
+	if (fresh.state != AST_VLAT_FACT)
+		return;
+	if (cached->lo > fresh.lo || cached->hi < fresh.hi ||
+			(cached->kzero & ~fresh.kzero) || (cached->kone & ~fresh.kone))
+		ast_vlat_diverge(q, off, cached->lo, cached->hi);
+}
+#endif
+
+static int ast_vlat_narrowing(AstArena *a, int off, int width_tt) {
+	AstVLat *v;
+	if (!ast_vlat_env)
+		return 0;
+	ast_vlat_sync(a);
+	if (ast_vlat_state < 0)
+		return 0;
+	v = ast_vlat_find(off, 0);
+	if (!v)
+		return 0;
+#if MCC_CONFIG_AST_SHADOW
+	ast_vlat_check_sound("narrowing", a, off, v);
+#endif
+	return ast_vlat_fits_bytes(v, ast_ii_width(width_tt));
+}
+
+static int ast_vlat_context(AstArena *a, int off, AstVLat *out) {
+	AstVLat *v;
+	if (!ast_vlat_env)
+		return 0;
+	ast_vlat_sync(a);
+	if (ast_vlat_state < 0)
+		return 0;
+	v = ast_vlat_find(off, 0);
+	if (!v || v->state != AST_VLAT_FACT)
+		return 0;
+#if MCC_CONFIG_AST_SHADOW
+	ast_vlat_check_sound("context", a, off, v);
+#endif
+	*out = *v;
 	return 1;
 }
 
@@ -8087,6 +8575,7 @@ enum {
 	AST_STRAT_TCO,
 	AST_STRAT_COUNT
 };
+typedef char ast_strat_count_fits[AST_STRAT_COUNT <= AST_STRAT_COUNT_MAX ? 1 : -1];
 
 static const AstStrategy ast_strategies[AST_STRAT_COUNT] = {
 	{"bfold", &ast_templates_env, ast_strat_bfold},
@@ -8163,7 +8652,27 @@ typedef struct AstSearchMemo {
 	 * compare against the superopt's best_size + tried without a second substrate. */
 	int64_t score;
 	uint64_t tried;
+	uint64_t order_packed;
+	uint64_t order_n;
 } AstSearchMemo;
+
+static uint64_t ast_order_pack(const int *seq, int n) {
+	uint64_t p = 0;
+	int i;
+	if (n > AST_STRAT_COUNT_MAX)
+		n = AST_STRAT_COUNT_MAX;
+	for (i = 0; i < n; i++)
+		p |= (uint64_t)(seq[i] & 0xf) << (i * 4);
+	return p;
+}
+
+static void ast_order_unpack(uint64_t p, int n, int *seq) {
+	int i;
+	if (n > AST_STRAT_COUNT_MAX)
+		n = AST_STRAT_COUNT_MAX;
+	for (i = 0; i < n; i++)
+		seq[i] = (int)((p >> (i * 4)) & 0xf);
+}
 
 #define AST_SEARCH_MEMO_CAP 4096
 /* Max candidates the per-function search enumerates (budget cap on the subset lattice
@@ -8188,7 +8697,7 @@ static int ast_search_memo_n;
  * opt-in with MCC_AST_SEARCH; a missing/unwritable cache dir degrades to the
  * in-memory memo. The in-memory working set is capped (AST_SEARCH_MEMO_CAP), so an
  * eviction rewrite also compacts the file down to that hot set. */
-#define AST_SEARCH_MEMO_MAGIC 0x4643u /* 'FC' */
+#define AST_SEARCH_MEMO_MAGIC 0x4644u /* 'FD' — order-carrying 7-word record */
 /* On-disk record word layout: the low AST_GATE_BITS hold the AstGateMask (up to 48
  * strategy knobs — past any host's native width), MAGIC occupies the high 16 bits so
  * a torn/stale record is still skippable without a global header. Widened from the
@@ -8276,7 +8785,8 @@ static unsigned long long ast_search_disk_usage(void) {
 /* Returns 1 if the working set changed (new record, or a bumped gate/refcount), 0
  * if the call was a no-op — the disk store uses this to skip a pointless rewrite. */
 static int ast_search_memo_add(uint64_t h, AstGateMask gates, unsigned refcount,
-															 int64_t score, uint64_t tried) {
+															 int64_t score, uint64_t tried,
+															 uint64_t order_packed, uint64_t order_n) {
 	int i, changed = 0;
 	for (i = 0; i < ast_search_memo_n; i++)
 		if (ast_search_memo[i].hash == h) {
@@ -8296,6 +8806,12 @@ static int ast_search_memo_add(uint64_t h, AstGateMask gates, unsigned refcount,
 				ast_search_memo[i].tried |= tried; /* accumulate measured-config progress */
 				changed = 1;
 			}
+			if (order_n > 0 && (ast_search_memo[i].order_packed != order_packed ||
+													ast_search_memo[i].order_n != order_n)) {
+				ast_search_memo[i].order_packed = order_packed;
+				ast_search_memo[i].order_n = order_n;
+				changed = 1;
+			}
 			return changed;
 		}
 	if (ast_search_memo_n < AST_SEARCH_MEMO_CAP) {
@@ -8304,6 +8820,8 @@ static int ast_search_memo_add(uint64_t h, AstGateMask gates, unsigned refcount,
 		ast_search_memo[ast_search_memo_n].refcount = refcount;
 		ast_search_memo[ast_search_memo_n].score = score;
 		ast_search_memo[ast_search_memo_n].tried = tried;
+		ast_search_memo[ast_search_memo_n].order_packed = order_packed;
+		ast_search_memo[ast_search_memo_n].order_n = order_n;
 		ast_search_memo_n++;
 		changed = 1;
 	}
@@ -8321,7 +8839,7 @@ static int ast_search_memo_add(uint64_t h, AstGateMask gates, unsigned refcount,
  * memo image is highly compressible (a repeated per-record MAGIC, small gate masks,
  * structured 64-bit fields), so a codec almost always beats codec 0 (stored). */
 #define AST_MEMO_CONT_MAGIC 0x315a534dUL /* "MSZ1" */
-#define AST_MEMO_RECWORDS 5 /* {hash, gates|magic, refcount, score, tried} */
+#define AST_MEMO_RECWORDS 7 /* {hash, gates|magic, refcount, score, tried, order_packed, order_n} */
 #define AST_MEMO_RECBYTES (AST_MEMO_RECWORDS * 8)
 #define AST_MEMO_RAWMAX (AST_SEARCH_MEMO_CAP * AST_MEMO_RECBYTES)
 static unsigned char ast_memo_raw[AST_MEMO_RAWMAX];
@@ -8392,6 +8910,8 @@ static void ast_search_disk_rewrite(void) {
 		rec[2] = ast_search_memo[i].refcount;
 		rec[3] = (uint64_t)ast_search_memo[i].score;
 		rec[4] = ast_search_memo[i].tried;
+		rec[5] = ast_search_memo[i].order_packed;
+		rec[6] = ast_search_memo[i].order_n;
 		memcpy(ast_memo_raw + rn, rec, sizeof rec);
 		rn += (long)sizeof rec;
 	}
@@ -8464,7 +8984,7 @@ static void ast_search_disk_load(void) {
 		memcpy(rec, ast_memo_raw + i, sizeof rec);
 		if ((rec[1] >> AST_GATE_BITS) == AST_SEARCH_MEMO_MAGIC)
 			ast_search_memo_add(rec[0], rec[1] & AST_GATE_DISK_MASK, (unsigned)rec[2],
-													(int64_t)rec[3], rec[4]);
+													(int64_t)rec[3], rec[4], rec[5], rec[6]);
 	}
 	MCC_TRACE("disk load: %s codec=%u raw=%ldB -> %d memo entries\n", path, hdr[1], rl,
 						ast_search_memo_n);
@@ -8475,8 +8995,9 @@ static void ast_search_disk_load(void) {
  * rewrite the compressed container. Every accessor also triggers the shared-disk
  * eviction check. */
 static void ast_search_disk_store(uint64_t h, AstGateMask gates, unsigned refcount,
-																	int64_t score, uint64_t tried) {
-	if (ast_search_memo_add(h, gates, refcount, score, tried))
+																	int64_t score, uint64_t tried,
+																	uint64_t order_packed, uint64_t order_n) {
+	if (ast_search_memo_add(h, gates, refcount, score, tried, order_packed, order_n))
 		ast_search_disk_rewrite();
 	ast_search_disk_evict();
 }
@@ -8580,6 +9101,91 @@ static void ast_search_gates_set(AstGateMask g) {
 	ast_sccp_fix_env = (g & AST_SG_SCCPFIX) != 0;
 }
 
+#ifndef SHF_PRIVATE
+#define SHF_PRIVATE 0x80000000
+#endif
+
+typedef struct {
+	Section *sec;
+	unsigned long sec_doff;
+	int ind, rsym, loc, anon_sym;
+	SValue *vtop;
+	Sym *lsmark;
+	unsigned pinned;
+	int promo_n, promo_callful, promo_save_loc;
+	int promo_total, graft_total, opt_total;
+} AstScratchSave;
+
+static Section *ast_scratch_sec;
+
+static void ast_scratch_init(void) {
+	Section *sr;
+	char buf[64];
+	if (ast_scratch_sec)
+		return;
+	ast_scratch_sec = new_section(mcc_state, ".mcc.scratch.text", SHT_PROGBITS,
+																SHF_PRIVATE);
+	snprintf(buf, sizeof(buf), REL_SECTION_FMT, ".mcc.scratch.text");
+	sr = new_section(mcc_state, buf, SHT_RELX, SHF_PRIVATE);
+	sr->sh_entsize = sizeof(ElfW_Rel);
+	sr->link = symtab_section;
+	sr->sh_info = ast_scratch_sec->sh_num;
+	ast_scratch_sec->reloc = sr;
+}
+
+static void ast_scratch_enter(AstScratchSave *sv) {
+	ast_scratch_init();
+	sv->sec = cur_text_section;
+	sv->sec_doff = cur_text_section->data_offset;
+	sv->ind = ind;
+	sv->rsym = rsym;
+	sv->loc = loc;
+	sv->anon_sym = anon_sym;
+	sv->vtop = vtop;
+	sv->lsmark = local_stack;
+	sv->pinned = ast_pinned_regs;
+	sv->promo_n = ast_promo_n;
+	sv->promo_callful = ast_promo_callful;
+	sv->promo_save_loc = ast_promo_save_loc;
+	sv->promo_total = ast_promo_total;
+	sv->graft_total = ast_graft_total;
+	sv->opt_total = ast_opt_total;
+	cur_text_section = ast_scratch_sec;
+	ast_scratch_sec->data_offset = 0;
+	if (ast_scratch_sec->reloc)
+		ast_scratch_sec->reloc->data_offset = 0;
+	MCC_TRACE("scratch enter sec=%s ind0=%d\n", sv->sec->name, sv->ind);
+}
+
+static int ast_scratch_measure_exit(AstScratchSave *sv) {
+	int size = ind - ast_body_ind_sv;
+	MCC_TRACE("scratch measure size=%d\n", size);
+	ast_scratch_sec->data_offset = 0;
+	if (ast_scratch_sec->reloc)
+		ast_scratch_sec->reloc->data_offset = 0;
+	sym_pop(&local_stack, sv->lsmark, 0);
+	cur_text_section = sv->sec;
+	ind = sv->ind;
+	rsym = sv->rsym;
+	loc = sv->loc;
+	anon_sym = sv->anon_sym;
+	vtop = sv->vtop;
+	ast_pinned_regs = sv->pinned;
+	ast_promo_n = sv->promo_n;
+	ast_promo_callful = sv->promo_callful;
+	ast_promo_save_loc = sv->promo_save_loc;
+	ast_promo_total = sv->promo_total;
+	ast_graft_total = sv->graft_total;
+	ast_opt_total = sv->opt_total;
+	if (sv->sec->data_offset != sv->sec_doff) {
+		MCC_TRACE("scratch LEAK doff=%lu/%lu\n", sv->sec->data_offset,
+							sv->sec_doff);
+		mcc_internal_error("ast scratch isolation leak");
+	}
+	MCC_TRACE("scratch exit ok\n");
+	return size;
+}
+
 /*
  * Emitted-byte-size scoring (MCC_AST_SEARCH_EMITSIZE). Replay the fully-folded
  * candidate into the live text section — the same in-place emit-and-rewind the
@@ -8592,14 +9198,23 @@ static void ast_search_gates_set(AstGateMask g) {
  * scheduler thrashes the shared ltemp/fconst emit state across candidates, so a
  * candidate is only emit-measurable right after it folds to completion). */
 static int ast_search_emit_size(AstArena *a, int saved_loc, int saved_anon) {
-	Section *rsec = cur_text_section->reloc;
+	AstScratchSave scr;
+	Section *rsec;
 	AstArena *save_cur = ast_cur;
-	int save_ind = ind, save_rsym = rsym, save_loc = loc, save_anon = anon_sym;
-	addr_t save_reloc = rsec ? rsec->data_offset : 0;
-	addr_t save_doff = data_section ? data_section->data_offset : 0;
-	addr_t save_roff = rodata_section ? rodata_section->data_offset : 0;
+	int save_ind, save_rsym, save_loc, save_anon;
+	addr_t save_reloc, save_doff, save_roff;
 	addr_t ddelta, rodelta;
 	int size;
+	if (ast_search_emitiso_env)
+		ast_scratch_enter(&scr);
+	rsec = cur_text_section->reloc;
+	save_ind = ind;
+	save_rsym = rsym;
+	save_loc = loc;
+	save_anon = anon_sym;
+	save_reloc = rsec ? rsec->data_offset : 0;
+	save_doff = data_section ? data_section->data_offset : 0;
+	save_roff = rodata_section ? rodata_section->data_offset : 0;
 	ind = ast_body_ind_sv;
 	rsym = 0;
 	if (rsec)
@@ -8614,12 +9229,15 @@ static int ast_search_emit_size(AstArena *a, int saved_loc, int saved_anon) {
 	ast_rp_nlabel = 0;
 	ast_rp_bsym = ast_rp_csym = NULL;
 	ast_pinned_regs = 0;
-	ast_inline_active = 0;
+	ast_inline_active = ast_search_emitiso_env ? ast_search_want_inline : 0;
 	ast_graft_budget = ast_graft_budget_max;
 	ast_loc_low = loc;
 	ast_cur = a;
 	ast_replay_body(a);
+	if (ast_loc_low < loc)
+		loc = ast_loc_low;
 	ast_replaying = 0;
+	ast_inline_active = 0;
 	ddelta = (data_section ? data_section->data_offset : 0) - save_doff;
 	rodelta = (rodata_section ? rodata_section->data_offset : 0) - save_roff;
 	size = ind - ast_body_ind_sv;
@@ -8627,12 +9245,16 @@ static int ast_search_emit_size(AstArena *a, int saved_loc, int saved_anon) {
 		MCC_TRACE("emit-size data delta text=%d data=%lld rodata=%lld\n", size,
 							(long long)ddelta, (long long)rodelta);
 	ast_cur = save_cur;
-	ind = save_ind;
-	rsym = save_rsym;
-	if (rsec)
-		rsec->data_offset = save_reloc;
-	loc = save_loc;
-	anon_sym = save_anon;
+	if (ast_search_emitiso_env) {
+		size = ast_scratch_measure_exit(&scr);
+	} else {
+		ind = save_ind;
+		rsym = save_rsym;
+		if (rsec)
+			rsec->data_offset = save_reloc;
+		loc = save_loc;
+		anon_sym = save_anon;
+	}
 	return size;
 }
 
@@ -8661,15 +9283,17 @@ static long ast_search_score_emitsize(AstArena *pristine, Sym *sym, int faithful
 																			AstGateMask gates, int saved_loc,
 																			int saved_anon) {
 	AstArena *saved_cur = ast_cur, *trial = ast_arena_clone(pristine);
-	int si;
+	int si, oi;
 	long size, hits = 0;
 	if (!trial)
 		return -1;
 	ast_search_gates_set(gates);
 	ast_cur = trial;
-	for (si = 0; si < AST_STRAT_COUNT; si++)
+	for (oi = 0; oi < ast_strat_order_n; oi++) {
+		si = ast_strat_order[oi];
 		if (faithful && *ast_strategies[si].gate)
 			hits += ast_strategies[si].apply(trial, sym);
+	}
 	size = ast_search_emit_size(trial, saved_loc, saved_anon);
 	ast_cur = saved_cur;
 	ast_arena_free(trial);
@@ -8681,7 +9305,7 @@ static long ast_search_score_emitsize(AstArena *pristine, Sym *sym, int faithful
 static long ast_search_score_one(AstArena *pristine, Sym *sym, int faithful,
 																 AstGateMask gates, int saved_loc, int saved_anon) {
 	AstArena *saved_cur, *trial;
-	int si;
+	int si, oi;
 	long sc, hits = 0;
 	if (ast_search_emitsize_env)
 		return ast_search_score_emitsize(pristine, sym, faithful, gates, saved_loc,
@@ -8692,13 +9316,71 @@ static long ast_search_score_one(AstArena *pristine, Sym *sym, int faithful,
 		return -1;
 	ast_search_gates_set(gates);
 	ast_cur = trial;
-	for (si = 0; si < AST_STRAT_COUNT; si++)
+	for (oi = 0; oi < ast_strat_order_n; oi++) {
+		si = ast_strat_order[oi];
 		if (faithful && *ast_strategies[si].gate)
 			hits += ast_strategies[si].apply(trial, sym);
+	}
 	sc = ast_cost_score(trial);
 	ast_cur = saved_cur;
 	ast_arena_free(trial);
 	return ast_search_pack_score(sc, hits);
+}
+
+static long ast_search_score_order(AstArena *pristine, Sym *sym, int faithful,
+																	 const int *seq, int k, int saved_loc,
+																	 int saved_anon) {
+	AstArena *saved_cur, *trial;
+	long sc, hits = 0;
+	int i;
+	trial = ast_arena_clone(pristine);
+	if (!trial)
+		return -1;
+	saved_cur = ast_cur;
+	ast_cur = trial;
+	for (i = 0; i < k; i++) {
+		int si = seq[i];
+		if (faithful && *ast_strategies[si].gate)
+			hits += ast_strategies[si].apply(trial, sym);
+	}
+	sc = ast_search_emitsize_env ? ast_search_emit_size(trial, saved_loc, saved_anon)
+															 : ast_cost_score(trial);
+	ast_cur = saved_cur;
+	ast_arena_free(trial);
+	return ast_search_pack_score(sc, hits);
+}
+
+typedef struct AstOrderCtx {
+	AstArena *pristine;
+	Sym *sym;
+	int faithful;
+	int saved_loc;
+	int saved_anon;
+	const int *rows;
+	uint64_t tried;
+	int ord;
+} AstOrderCtx;
+
+static long ast_search_order_combo_score(const int *sel, int k, void *user) {
+	AstOrderCtx *cx = (AstOrderCtx *)user;
+	int seq[AST_STRAT_COUNT_MAX];
+	unsigned t0;
+	long sc;
+	int i;
+	if (ast_search_should_stop())
+		return COMBO_REJECT;
+	if (cx->ord < 64)
+		cx->tried |= (uint64_t)1 << cx->ord;
+	cx->ord++;
+	for (i = 0; i < k; i++)
+		seq[i] = cx->rows[sel[i]];
+	t0 = ast_now_ms();
+	sc = ast_search_score_order(cx->pristine, cx->sym, cx->faithful, seq, k, cx->saved_loc,
+															cx->saved_anon);
+	ast_search_durwin_push(ast_now_ms() - t0);
+	if (sc < 0)
+		return COMBO_REJECT;
+	return sc;
 }
 
 /*
@@ -8821,6 +9503,137 @@ static int ast_search_pool(AstArena *pristine, Sym *sym, int faithful,
 }
 #endif
 
+static void ast_search_select_order(Sym *sym, int faithful, int saved_loc,
+																		int saved_anon, AstArena *pristine, uint64_t h) {
+	int rows[AST_STRAT_COUNT_MAX], nrows = 0;
+	int best_seq[AST_STRAT_COUNT_MAX], best_k;
+	int i, si, g0, p0, o0;
+	long best_score;
+	char sq[AST_STRAT_COUNT_MAX * 4];
+	for (si = 0; si < AST_STRAT_COUNT; si++)
+		if (faithful && *ast_strategies[si].gate)
+			rows[nrows++] = si;
+	if (h) {
+		for (i = 0; i < ast_search_memo_n; i++)
+			if (ast_search_memo[i].hash == h) {
+				if (ast_search_memo[i].order_n > 0) {
+					int useq[AST_STRAT_COUNT_MAX], un = (int)ast_search_memo[i].order_n, j, kk = 0;
+					if (un > AST_STRAT_COUNT_MAX)
+						un = AST_STRAT_COUNT_MAX;
+					ast_order_unpack(ast_search_memo[i].order_packed, un, useq);
+					for (j = 0; j < un; j++) {
+						int r = useq[j];
+						if (r >= 0 && r < AST_STRAT_COUNT && *ast_strategies[r].gate)
+							ast_strat_order[kk++] = r;
+					}
+					ast_strat_order_n = kk;
+					ast_order_seq_str(ast_strat_order, kk, sq);
+					MCC_TRACE("memo hit order %s hash=%016llx n=%d seq=%s\n", funcname,
+										(unsigned long long)h, kk, sq);
+					ast_search_disk_store(ast_search_memo[i].hash, ast_search_memo[i].gates,
+																ast_search_memo[i].refcount + 1,
+																ast_search_memo[i].score, ast_search_memo[i].tried,
+																ast_search_memo[i].order_packed,
+																ast_search_memo[i].order_n);
+					ast_arena_free(pristine);
+					return;
+				}
+				break;
+			}
+	}
+	g0 = ast_graft_total;
+	p0 = ast_promo_total;
+	o0 = ast_opt_total;
+	best_k = nrows;
+	for (i = 0; i < nrows; i++)
+		best_seq[i] = rows[i];
+	best_score = ast_search_score_order(pristine, sym, faithful, best_seq, nrows,
+																			saved_loc, saved_anon);
+	if (nrows > 0 && !ast_search_should_stop()) {
+		ComboSpec spec;
+		ComboBest cbest;
+		AstOrderCtx cx;
+		cx.pristine = pristine;
+		cx.sym = sym;
+		cx.faithful = faithful;
+		cx.saved_loc = saved_loc;
+		cx.saved_anon = saved_anon;
+		cx.rows = rows;
+		cx.tried = 0;
+		cx.ord = 0;
+		spec.nitems = nrows;
+		spec.min_k = 1;
+		spec.max_k = nrows;
+		spec.ordered = 1;
+		spec.walk = ast_search_walk_env;
+		spec.budget = AST_SEARCH_MAX_CAND;
+		spec.score = ast_search_order_combo_score;
+		spec.visit = ast_search_walk_trace;
+		spec.user = &cx;
+		if (combo_run(&spec, &cbest) && cbest.score >= 0 && cbest.score < best_score) {
+			best_k = cbest.k;
+			for (i = 0; i < cbest.k; i++)
+				best_seq[i] = rows[cbest.sel[i]];
+			best_score = cbest.score;
+		}
+	}
+	ast_graft_total = g0;
+	ast_promo_total = p0;
+	ast_opt_total = o0;
+	for (i = 0; i < best_k; i++)
+		ast_strat_order[i] = best_seq[i];
+	ast_strat_order_n = best_k;
+	ast_order_seq_str(best_seq, best_k, sq);
+	MCC_TRACE("combo winner order n=%d seq=%s score=%ld nitems=%d walk=%s\n", best_k, sq,
+						best_score, nrows, combo_walk_name(ast_search_walk_env));
+	if (h) {
+		MCC_TRACE("memo store order %s hash=%016llx n=%d seq=%s score=%ld\n", funcname,
+							(unsigned long long)h, best_k, sq, best_score);
+		ast_search_disk_store(h, ast_search_gates_now(), 1, best_score, 0,
+													ast_order_pack(best_seq, best_k), (uint64_t)best_k);
+	}
+	ast_arena_free(pristine);
+}
+
+static void ast_search_axis_pick(Sym *sym, int faithful, int saved_loc,
+																 int saved_anon) {
+	AstArena *saved_cur, *trial;
+	int oi, si, ci, first = 1, bi = 1;
+	long best = -1;
+	if (!ast_search_inline_env || !ast_search_emitiso_env ||
+			!ast_search_emitsize_env || !faithful)
+		return;
+	trial = ast_arena_clone(ast_cur);
+	if (!trial)
+		return;
+	saved_cur = ast_cur;
+	ast_cur = trial;
+	for (oi = 0; oi < ast_strat_order_n; oi++) {
+		si = ast_strat_order[oi];
+		if (si < 0 || si >= AST_STRAT_COUNT)
+			continue;
+		if (*ast_strategies[si].gate)
+			ast_strategies[si].apply(trial, sym);
+	}
+	for (ci = 1; ci >= 0; ci--) {
+		long sz;
+		ast_search_want_inline = ci;
+		sz = ast_search_emit_size(trial, saved_loc, saved_anon);
+		MCC_TRACE("emit-size inline=%d size=%ld\n", ci, sz);
+		if (sz >= 0 && (first || sz < best)) {
+			best = sz;
+			bi = ci;
+			first = 0;
+		}
+	}
+	ast_search_want_inline = 0;
+	ast_cur = saved_cur;
+	ast_arena_free(trial);
+	ast_search_pick_inline = bi;
+	ast_search_axis_ran = 1;
+	MCC_TRACE("search picks inline=%d\n", bi);
+}
+
 static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 															int saved_anon) {
 	AstArena *pristine;
@@ -8862,6 +9675,10 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 	h = ast_intention_hash(pristine, AST_NONE);
 	if (h)
 		h = ast_search_key_salt(h); /* partition the cache by version + triplet */
+	if (ast_search_order_env) {
+		ast_search_select_order(sym, faithful, saved_loc, saved_anon, pristine, h);
+		return;
+	}
 	if (h) {
 		for (int i = 0; i < ast_search_memo_n; i++)
 			if (ast_search_memo[i].hash == h) {
@@ -8882,7 +9699,9 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 				ast_search_gates_set(ast_search_memo[i].gates & searchable);
 				ast_search_disk_store(ast_search_memo[i].hash, ast_search_memo[i].gates,
 															ast_search_memo[i].refcount + 1,
-															ast_search_memo[i].score, ast_search_memo[i].tried);
+															ast_search_memo[i].score, ast_search_memo[i].tried,
+															ast_search_memo[i].order_packed,
+															ast_search_memo[i].order_n);
 				ast_arena_free(pristine);
 				return;
 			}
@@ -8941,8 +9760,10 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 			spec.min_k = 1;
 			spec.max_k = nitems;
 			spec.ordered = ast_search_ordered_env ? 1 : 0;
+			spec.walk = ast_search_walk_env;
 			spec.budget = AST_SEARCH_MAX_CAND; /* budget-cap the enumerated candidates */
 			spec.score = ast_search_combo_score;
+			spec.visit = ast_search_walk_trace;
 			spec.user = &cx;
 			/* base (the full enabled set) is the safe fallback and wins ties: score it
 			 * first, then let combo_run search every non-empty subset/ordering and
@@ -9031,7 +9852,7 @@ search_done:
 					* score = the winning config's search score; tried = the bitmask of candidates
 					* actually measured before the budget ran out (M3 blocker A progress fields).
 					* A future resumable / unified search reads both to skip re-measuring. */
-		ast_search_disk_store(h, best, 1, best_score, tried_mask);
+		ast_search_disk_store(h, best, 1, best_score, tried_mask, 0, 0);
 	ast_arena_free(pristine);
 }
 
@@ -9104,6 +9925,7 @@ void ast_func_end(Sym *sym) {
 			Section *rsec2 = cur_text_section->reloc;
 			volatile int faithful = 0;
 			int promoted = 0;
+			ast_search_axis_ran = 0;
 			int bfolds = 0;
 			int idents = 0;
 			int cprops = 0;
@@ -9143,15 +9965,31 @@ void ast_func_end(Sym *sym) {
 
 				ast_ltemp_cur = saved_loc;
 				ast_ltemp_n = 0;
+				if (ast_vlat_env && faithful) {
+					AstVLat ast_vlat_ctx;
+					ast_vlat_sync(ast_cur);
+					(void)ast_vlat_narrowing(ast_cur, 0, VT_INT);
+					(void)ast_vlat_context(ast_cur, 0, &ast_vlat_ctx);
+				}
 				AstGateMask ast_search_sv_gates = ast_search_gates_now();
-				if (faithful && ast_search_env && ast_search_seconds > 0)
+				if (!ast_strat_order_forced)
+					ast_strat_order_reset();
+				if (faithful && ast_search_env && ast_search_seconds > 0) {
 					ast_search_select(sym, faithful, saved_loc, saved_anon);
+					ast_search_axis_pick(sym, faithful, saved_loc, saved_anon);
+				}
 				{
 					int sf[AST_STRAT_COUNT];
 					for (int si = 0; si < AST_STRAT_COUNT; si++)
+						sf[si] = 0;
+					for (int oi = 0; oi < ast_strat_order_n; oi++) {
+						int si = ast_strat_order[oi];
+						if (si < 0 || si >= AST_STRAT_COUNT)
+							continue;
 						sf[si] = faithful && *ast_strategies[si].gate
 												 ? ast_strategies[si].apply(ast_cur, sym)
 												 : 0;
+					}
 					bfolds = sf[AST_STRAT_BFOLD];
 					idents = sf[AST_STRAT_IDENT];
 					narrows = sf[AST_STRAT_NARROW];
@@ -9179,6 +10017,8 @@ void ast_func_end(Sym *sym) {
 				int do_sethi = sethis > 0;
 				int do_tco = tcos > 0;
 				int do_inline = faithful && !do_tco && ast_has_graftable_call(ast_cur);
+				if (ast_search_axis_ran && !ast_search_pick_inline)
+					do_inline = 0;
 				ast_no_callful_promo = do_inline;
 				int do_promote = faithful && !do_tco && ast_promote_env && ast_plan_promotion(ast_cur) > 0;
 				ast_no_callful_promo = 0;

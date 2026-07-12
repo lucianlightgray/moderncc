@@ -451,6 +451,149 @@ static void suite_magic(void) {
 	CHECK(sok, "signed magic division matches native / over divisors +-2..20000");
 }
 
+static void suite_vlat(void) {
+	AstVLat top = ast_vlat_top();
+	AstVLat bot = ast_vlat_bottom();
+	AstVLat a = ast_vlat_full_fact(0, 10, 0);
+	AstVLat b = ast_vlat_full_fact(5, 20, 0);
+
+	CHECK(top.state == AST_VLAT_TOP, "top is TOP");
+	CHECK(bot.state == AST_VLAT_BOTTOM, "bottom is BOTTOM");
+	CHECK(a.state == AST_VLAT_FACT, "full_fact is a FACT");
+
+	AstVLat m1 = ast_vlat_meet(top, a);
+	CHECK(m1.state == AST_VLAT_FACT && m1.lo == 0 && m1.hi == 10, "TOP meet x == x");
+	AstVLat m2 = ast_vlat_meet(a, top);
+	CHECK(m2.state == AST_VLAT_FACT && m2.lo == 0 && m2.hi == 10, "x meet TOP == x");
+	CHECK(ast_vlat_meet(bot, a).state == AST_VLAT_BOTTOM, "BOTTOM meet x == BOTTOM");
+	CHECK(ast_vlat_meet(a, bot).state == AST_VLAT_BOTTOM, "x meet BOTTOM == BOTTOM");
+
+	a.kzero = 0xF0;
+	a.kone = 0x02;
+	b.kzero = 0x30;
+	b.kone = 0x06;
+	AstVLat u = ast_vlat_meet(a, b);
+	CHECK(u.state == AST_VLAT_FACT, "meet of two facts is a fact");
+	CHECK(u.lo == 0 && u.hi == 20, "meet is the interval union [0,20]");
+	CHECK(u.kzero == 0x30, "meet intersects known-zero bits");
+	CHECK(u.kone == 0x02, "meet intersects known-one bits");
+
+	AstVLat t = ast_vlat_full_fact(-2147483647 - 1, 2147483647, 0);
+	ast_vlat_refine_bound(&t, 10, 1);
+	CHECK(t.lo == 10, "refine x >= 10 raises the lower bound");
+	ast_vlat_refine_bound(&t, 20, 0);
+	CHECK(t.hi == 20, "refine x <= 20 lowers the upper bound");
+	CHECK(t.state == AST_VLAT_FACT && t.lo == 10 && t.hi == 20,
+				"if(x>=10 && x<=20) transfer yields [10,20]");
+	ast_vlat_refine_bound(&t, 30, 1);
+	CHECK(t.state == AST_VLAT_BOTTOM, "empty intersection collapses to BOTTOM");
+
+	AstVLat lo8 = ast_vlat_full_fact(0, 200, 0);
+	CHECK(ast_vlat_fits_bytes(&lo8, 1) == 1, "[0,200] fits an 8-bit width");
+	CHECK(ast_vlat_fits_bytes(&lo8, 2) == 1, "[0,200] fits a 16-bit width");
+	AstVLat wide = ast_vlat_full_fact(0, 100000, 0);
+	CHECK(ast_vlat_fits_bytes(&wide, 2) == 0, "[0,100000] does not fit a 16-bit width");
+	CHECK(ast_vlat_fits_bytes(&wide, 4) == 1, "[0,100000] fits a 32-bit width");
+	AstVLat neg = ast_vlat_full_fact(-100, 100, 0);
+	CHECK(ast_vlat_fits_bytes(&neg, 1) == 1, "[-100,100] fits a signed 8-bit width");
+	AstVLat negwide = ast_vlat_full_fact(-200, 100, 0);
+	CHECK(ast_vlat_fits_bytes(&negwide, 1) == 0, "[-200,100] does not fit any 8-bit width");
+
+	CHECK(ast_vlat_fits_bytes(&top, 4) == 0, "TOP never fits (conservative)");
+	CHECK(ast_vlat_fits_bytes(&bot, 4) == 0, "BOTTOM never fits (conservative)");
+	CHECK(ast_vlat_fits_bytes(&lo8, 8) == 0, "8-byte width query is refused (no narrowing)");
+	CHECK(ast_vlat_fits_bytes(&lo8, 0) == 0, "zero-width query is refused");
+}
+
+typedef struct WalkRec {
+	int logk[64];
+	int logsel[64][COMBO_MAX];
+	int n;
+} WalkRec;
+
+static long walk_sum_score(const int *sel, int k, void *user) {
+	long s = 0;
+	int i;
+	(void)user;
+	for (i = 0; i < k; i++)
+		s += sel[i];
+	return s;
+}
+
+static void walk_recorder(const int *sel, int k, int depth, int walk, void *user) {
+	WalkRec *r = (WalkRec *)user;
+	int i;
+	(void)depth;
+	(void)walk;
+	if (r->n >= 64)
+		return;
+	r->logk[r->n] = k;
+	for (i = 0; i < k; i++)
+		r->logsel[r->n][i] = sel[i];
+	r->n++;
+}
+
+static int walk_match(const WalkRec *r, const int (*exp)[4], int rows) {
+	int i, j;
+	if (r->n != rows)
+		return 0;
+	for (i = 0; i < rows; i++) {
+		if (r->logk[i] != exp[i][0])
+			return 0;
+		for (j = 0; j < r->logk[i]; j++)
+			if (r->logsel[i][j] != exp[i][1 + j])
+				return 0;
+	}
+	return 1;
+}
+
+static void suite_combo_walk(void) {
+	static const int exp_linear[][4] = {{1, 0}, {1, 1}, {2, 0, 1}, {1, 2},
+																			{2, 0, 2}, {2, 1, 2}, {3, 0, 1, 2}};
+	static const int exp_dfs[][4] = {{1, 0}, {2, 0, 1}, {3, 0, 1, 2}, {2, 0, 2},
+																	 {1, 1}, {2, 1, 2}, {1, 2}};
+	static const int exp_bfs[][4] = {{1, 0}, {1, 1}, {1, 2}, {2, 0, 1},
+																	 {2, 0, 2}, {2, 1, 2}, {3, 0, 1, 2}};
+	static const int exp_product[][4] = {{1, 0}, {1, 1}, {1, 2}, {2, 0, 1},
+																			 {3, 0, 1, 2}, {2, 0, 2}, {2, 1, 2}};
+	ComboSpec spec;
+	ComboBest best[4];
+	WalkRec rec;
+	int w, i;
+	spec.nitems = 3;
+	spec.min_k = 1;
+	spec.max_k = 3;
+	spec.ordered = 0;
+	spec.budget = 0;
+	spec.score = walk_sum_score;
+	spec.visit = walk_recorder;
+	spec.user = &rec;
+	for (w = 0; w < 4; w++) {
+		rec.n = 0;
+		spec.walk = w;
+		CHECK(combo_run(&spec, &best[w]), "combo_run finds a best for each walk");
+		if (w == COMBO_WALK_LINEAR)
+			CHECK(walk_match(&rec, exp_linear, 7), "LINEAR visit order is the mask-counter order");
+		else if (w == COMBO_WALK_DFS)
+			CHECK(walk_match(&rec, exp_dfs, 7), "DFS visits the subset lattice depth-first");
+		else if (w == COMBO_WALK_BFS)
+			CHECK(walk_match(&rec, exp_bfs, 7), "BFS visits subsets by increasing size, lex order");
+		else
+			CHECK(walk_match(&rec, exp_product, 7),
+						"PRODUCT visits breadth roots then deepens each");
+		CHECK(rec.n == 7, "each walk enumerates all 7 non-empty subsets of 3 items");
+	}
+	for (w = 1; w < 4; w++) {
+		int same = best[w].k == best[0].k && best[w].score == best[0].score;
+		for (i = 0; i < best[0].k; i++)
+			if (best[w].sel[i] != best[0].sel[i])
+				same = 0;
+		CHECK(same, "winner (sel + score) is invariant across all four walks");
+	}
+	CHECK(best[0].k == 1 && best[0].sel[0] == 0 && best[0].score == 0,
+				"the deterministic winner is the singleton {0}");
+}
+
 int main(int argc, char **argv) {
 	const char *only = argc > 1 ? argv[1] : NULL;
 	if (!only || !strcmp(only, "arena"))
@@ -477,6 +620,10 @@ int main(int argc, char **argv) {
 		suite_gatemap();
 	if (!only || !strcmp(only, "magic"))
 		suite_magic();
+	if (!only || !strcmp(only, "vlat"))
+		suite_vlat();
+	if (!only || !strcmp(only, "combo_walk"))
+		suite_combo_walk();
 
 	fprintf(stderr, "asttool: %d checks, %d failures\n", g_checks, g_failures);
 	return g_failures ? 1 : 0;

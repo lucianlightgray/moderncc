@@ -28,11 +28,27 @@ typedef struct {
 	int use_switch;
 	int use_signed;
 	int depth_limit;
+	int pressure;
+	int nlocals;
 } fuzz_cfg;
 
 static void fuzz_expr(fuzz_rng *r, const fuzz_cfg *c, FILE *o, int fuel);
 
+static void fuzz_cdiv(fuzz_rng *r, FILE *o) {
+	static const unsigned D[] = {3U,   5U,   7U,   10U, 13U, 17U,
+								 100U, 255U, 625U, 9U,  11U, 1000U};
+	unsigned k = fuzz_pick(r, sizeof D / sizeof *D + 3);
+	if (k < sizeof D / sizeof *D)
+		fprintf(o, "%uU", D[k]);
+	else
+		fprintf(o, "%uU", (unsigned)(fuzz_next(r) % 4093U) + 3U);
+}
+
 static void fuzz_var(fuzz_rng *r, const fuzz_cfg *c, FILE *o) {
+	if (c->pressure && c->nlocals > 0 && fuzz_pick(r, 2)) {
+		fprintf(o, "L%u", fuzz_pick(r, (unsigned)c->nlocals));
+		return;
+	}
 	unsigned k = fuzz_pick(r, 6 + (c->use_array ? 1 : 0) + (c->use_struct ? 1 : 0));
 	switch (k) {
 	case 0:
@@ -71,7 +87,7 @@ static void fuzz_expr(fuzz_rng *r, const fuzz_cfg *c, FILE *o, int fuel) {
 		fuzz_var(r, c, o);
 		return;
 	}
-	unsigned k = fuzz_pick(r, 10);
+	unsigned k = fuzz_pick(r, 12);
 	switch (k) {
 	case 0:
 	case 1: {
@@ -132,6 +148,22 @@ static void fuzz_expr(fuzz_rng *r, const fuzz_cfg *c, FILE *o, int fuel) {
 			fputs(")", o);
 		}
 		break;
+	case 7: {
+		fputs("((unsigned long)((unsigned)(", o);
+		fuzz_expr(r, c, o, fuel - 1);
+		fputs(") / ", o);
+		fuzz_cdiv(r, o);
+		fputs("))", o);
+		break;
+	}
+	case 8: {
+		fputs("((unsigned long)((unsigned)(", o);
+		fuzz_expr(r, c, o, fuel - 1);
+		fputs(") % ", o);
+		fuzz_cdiv(r, o);
+		fputs("))", o);
+		break;
+	}
 	default:
 		fuzz_var(r, c, o);
 		break;
@@ -229,6 +261,69 @@ static void fuzz_stmt(fuzz_rng *r, const fuzz_cfg *c, FILE *o, int fi, int fuel,
 	}
 }
 
+static void fuzz_pexpr(fuzz_rng *r, const fuzz_cfg *c, FILE *o) {
+	static const char *op[] = {"+", "-", "*", "^", "&", "|"};
+	int terms = 3 + (int)fuzz_pick(r, 4);
+	int dpos = (int)fuzz_pick(r, (unsigned)terms);
+	fputc('(', o);
+	for (int t = 0; t < terms; t++) {
+		if (t)
+			fprintf(o, " %s ", op[fuzz_pick(r, 6)]);
+		if (t == dpos) {
+			int subt = 2 + (int)fuzz_pick(r, 3);
+			fputs("((unsigned long)((unsigned)(", o);
+			for (int u = 0; u < subt; u++) {
+				if (u)
+					fprintf(o, " %s ", op[fuzz_pick(r, 6)]);
+				fprintf(o, "L%u", fuzz_pick(r, (unsigned)c->nlocals));
+			}
+			fprintf(o, ") %s ", fuzz_pick(r, 2) ? "/" : "%");
+			fuzz_cdiv(r, o);
+			fputs("))", o);
+		} else {
+			fprintf(o, "L%u", fuzz_pick(r, (unsigned)c->nlocals));
+		}
+	}
+	fputc(')', o);
+}
+
+static void fuzz_func_pressure(fuzz_rng *r, const fuzz_cfg *c, FILE *o, int fi) {
+	fprintf(o, "static unsigned long f%d(unsigned long a, unsigned long b, "
+			   "int depth) {\n\tunsigned long acc = a ^ (b * 3UL);\n",
+			fi);
+	for (int i = 0; i < c->nlocals; i++) {
+		fprintf(o, "\tunsigned long L%d = ", i);
+		if (i == 0) {
+			fputs("a + b;\n", o);
+		} else {
+			fprintf(o, "((a * %luUL) ^ (b + %luUL)) + L%u;\n",
+					((unsigned long)(fuzz_next(r) & 0xffffUL)) | 1UL,
+					(unsigned long)(fuzz_next(r) & 0xffffUL),
+					fuzz_pick(r, (unsigned)i));
+		}
+	}
+	int stmts = c->nlocals + (int)fuzz_pick(r, 8);
+	for (int si = 0; si < stmts; si++) {
+		unsigned dst = fuzz_pick(r, (unsigned)c->nlocals);
+		fprintf(o, "\tL%u = ", dst);
+		fuzz_pexpr(r, c, o);
+		fputs(";\n", o);
+		if (fi > 0 && fuzz_pick(r, 5) == 0) {
+			fprintf(o, "\tif (depth < %d) acc += f%u(L%u, L%u, depth + 1);\n",
+					c->depth_limit, fuzz_pick(r, (unsigned)fi),
+					fuzz_pick(r, (unsigned)c->nlocals),
+					fuzz_pick(r, (unsigned)c->nlocals));
+		}
+	}
+	fputs("\tacc += ", o);
+	for (int i = 0; i < c->nlocals; i++)
+		fprintf(o, "%sL%d", i ? " + " : "", i);
+	fputs(";\n", o);
+	if (c->use_union)
+		fputs("\tacc += u.h[a & 1UL] ^ u.w;\n", o);
+	fputs("\treturn acc;\n}\n\n", o);
+}
+
 static void fuzz_emit(unsigned long seed, FILE *o) {
 	fuzz_rng r;
 	r.s = seed * 0x2545f4914f6cdd1dull + 0x1234567ull;
@@ -242,6 +337,8 @@ static void fuzz_emit(unsigned long seed, FILE *o) {
 	c.use_switch = fuzz_pick(&r, 2);
 	c.use_signed = fuzz_pick(&r, 2);
 	c.depth_limit = 3 + (int)fuzz_pick(&r, 4);
+	c.pressure = fuzz_pick(&r, 3) == 0;
+	c.nlocals = c.pressure ? 12 + (int)fuzz_pick(&r, 29) : 0;
 
 	fprintf(o, "#include <stdio.h>\n\n");
 	if (c.use_struct)
@@ -258,6 +355,10 @@ static void fuzz_emit(unsigned long seed, FILE *o) {
 	fputc('\n', o);
 
 	for (int fi = 0; fi < c.nfuncs; fi++) {
+		if (c.pressure) {
+			fuzz_func_pressure(&r, &c, o, fi);
+			continue;
+		}
 		fprintf(o, "static unsigned long f%d(unsigned long a, unsigned long b, "
 				   "int depth) {\n\tunsigned long acc = a ^ (b * 3UL);\n",
 				fi);

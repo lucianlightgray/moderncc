@@ -183,7 +183,7 @@ void ast_hook_landor_end(int materialized);
  * visibility. `is_ro` = the object went to .rodata (const). */
 void ast_hook_data(void *sec, long off, long size, int is_ro);
 
-/* M6z zero-init .bss placement. `ast_zero_bss_env` (MCC_ZERO_BSS, default off) enables
+/* M6z zero-init .bss placement. `ast_zero_bss_env` (MCC_ZERO_BSS, default on at -O2+) enables
  * moving an all-zero writable static from .data to .bss (NOBITS) — see decl_initializer_alloc.
  * `ast_data_all_zero` is the byte-scan predicate shared by the mover and the analysis. */
 extern int ast_zero_bss_env;
@@ -191,7 +191,7 @@ int ast_data_all_zero(void *sec, long off, long size);
 
 /* -fmerge-constants-style rodata string-literal pooling (roadmap M6-adjacent). C11 6.4.5p7
  * leaves identical string literals' distinctness unspecified, so sharing storage is sound.
- * `ast_merge_strings_env` (MCC_MERGE_STRINGS, default off) enables it in decl_initializer_alloc.
+ * `ast_merge_strings_env` (MCC_MERGE_STRINGS, default on at -O2+) enables it in decl_initializer_alloc.
  * `ast_strpool_find_or_add` returns the offset of a byte-identical prior rodata literal (same
  * size+align), or -1 after recording this one. Content-keyed; reset per translation unit. */
 extern int ast_merge_strings_env;

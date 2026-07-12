@@ -35,8 +35,10 @@ static void test_enumerate(void) {
 	spec.min_k = 2;
 	spec.max_k = 2;
 	spec.ordered = 0;
+	spec.walk = COMBO_WALK_LINEAR;
 	spec.budget = 0;
 	spec.score = sum_score;
+	spec.visit = NULL;
 	spec.user = NULL;
 	CHECK(combo_run(&spec, &best), "combo_run finds a best");
 	CHECK(best.k == 2 && best.score == 1, "best k=2 combination is {0,1} (score 1)");
