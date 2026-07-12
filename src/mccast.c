@@ -689,7 +689,7 @@ static int ast_inline_pass_env;
 static int ast_vlat_env;
 static int ast_jit_env; /* MCC_AST_JIT: retain byte-faithful baseline + AST per function as the guarded-deopt fallback (§26 W1) */
 static int ast_jit_splice_env; /* MCC_AST_JIT_SPLICE: re-emit each faithful body from its retained baseline bytes at a shifted offset (§26 W2 splice-primitive validation) */
-static int ast_jit_dispatch_env; /* MCC_AST_JIT_DISPATCH: wrap each faithful body in an entry dispatcher {guard; jcc deopt; AOT arm; jmp; deopt: AOT-baseline splice} — 1=never-deopt, 2=always-deopt (§26 W2.2) */
+static int ast_jit_dispatch_env; /* MCC_AST_JIT_DISPATCH: wrap each faithful body in an entry dispatcher {guard; jcc deopt; AOT arm; jmp; deopt: AOT-baseline splice} — 1=never-deopt, 2=always-deopt, 3=non-null speculative (§26 W2.2/W2.3) */
 static int ast_data_report_env; /* MCC_AST_DATA_REPORT: dump const-data records to stderr */
 int ast_zero_bss_env;           /* MCC_ZERO_BSS: move all-zero .data statics into .bss */
 int ast_merge_strings_env;      /* MCC_MERGE_STRINGS: pool identical rodata string literals */
@@ -2683,6 +2683,7 @@ static void ast_baseline_splice(const unsigned char *code, int code_len,
 		t = next;
 	}
 }
+
 
 static int ast_reemit_has_forward(struct AstReemitFn *f) {
 	AstArena *a = f->ast;
@@ -5946,6 +5947,73 @@ static int ast_sccp_scan(AstArena *a) {
 		folded++;
 	}
 	return folded;
+}
+
+/* Collect the frame offsets of the pointer parameters of `fsym` (the assumed-non-null
+ * set for a speculative variant). Same param-chain walk / local-Sym gate as ast_tco_run. */
+static int ast_nonnull_params(AstArena *a, Sym *fsym, int *offs, int max) {
+	int n = 0;
+	if (!fsym || !fsym->type.ref || fsym->type.ref->f.func_type != FUNC_NEW)
+		return 0;
+	for (Sym *p = fsym->type.ref->next; p; p = p->next) {
+		int v = p->v & ~SYM_FIELD;
+		if (v < TOK_IDENT)
+			continue;
+		Sym *ls = sym_find(v);
+		if (!ls)
+			continue;
+		if ((ls->r & VT_VALMASK) != VT_LOCAL || !(ls->r & VT_LVAL) || (ls->r & VT_SYM))
+			continue;
+		if ((ls->type.t & VT_BTYPE) != VT_PTR)
+			continue;
+		/* Only read-only param slots: a reassigned/address-taken slot may hold null
+		 * later even though the incoming argument (all the guard checks) was non-null. */
+		if (!ast_local_is_readonly(a, (int)ls->c))
+			continue;
+		if (n < max)
+			offs[n++] = (int)ls->c;
+	}
+	return n;
+}
+
+static int ast_nonnull_ref(AstArena *a, AstLocal op, const int *offs, int noff) {
+	int r, off;
+	if (ast_kind(a, op) != AST_Ref)
+		return 0;
+	r = ast_op(a, op);
+	if ((r & VT_VALMASK) != VT_LOCAL || !(r & VT_LVAL) || (r & VT_SYM))
+		return 0;
+	off = (int)(int64_t)ast_ival(a, op);
+	for (int i = 0; i < noff; i++)
+		if (offs[i] == off)
+			return 1;
+	return 0;
+}
+
+/* Speculative non-null fold: assuming the params at `offs` are non-null, rewrite
+ * `p == 0` -> 0 and `p != 0` -> 1 to literals. ast_sccp_run then drops the now-dead
+ * `if (!p) ...` arms. Only sound behind a runtime guard that deopts when a param is null. */
+static int ast_nonnull_fold(AstArena *a, const int *offs, int noff) {
+	int folds = 0;
+	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++) {
+		int op, lt;
+		uint64_t lv;
+		AstLocal x, y;
+		if (ast_kind(a, n) != AST_Binary || ast_nchild(a, n) != 2)
+			continue;
+		op = ast_op(a, n);
+		if (op != TOK_EQ && op != TOK_NE)
+			continue;
+		x = ast_child(a, n, 0);
+		y = ast_child(a, n, 1);
+		if (!((ast_nonnull_ref(a, x, offs, noff) && ast_ident_cval(a, y, &lt, &lv) && lv == 0) ||
+					(ast_nonnull_ref(a, y, offs, noff) && ast_ident_cval(a, x, &lt, &lv) && lv == 0)))
+			continue;
+		ast_ident_setlit(a, n, VT_INT, op == TOK_NE ? 1u : 0u);
+		folds++;
+	}
+	return folds;
 }
 
 static int ast_sccp_run(AstArena *a) {
@@ -10562,23 +10630,79 @@ void ast_func_end(Sym *sym) {
 					unsigned char *aot_rel = mcc_malloc(aot_rlen > 0 ? aot_rlen : 1);
 					if (aot_rlen > 0)
 						memcpy(aot_rel, rs->data + ast_reloc0_sv, aot_rlen);
+					int poffs[AST_TCO_MAXP];
+					int npoff = ast_jit_dispatch_env >= 3 ? ast_nonnull_params(ast_cur, sym, poffs, AST_TCO_MAXP) : 0;
+					/* Specialize a CLONE (ast_cur stays pristine → still inline-graftable / sound). */
+					AstArena *ast_spec = NULL;
+					if (npoff > 0 && (ast_spec = ast_arena_clone(ast_cur))) {
+						AstArena *sv = ast_cur;
+						ast_cur = ast_spec;
+						ast_nonnull_fold(ast_spec, poffs, npoff);
+						ast_sccp_run(ast_spec);
+						ast_cur = sv;
+					}
+					int spec = ast_spec != NULL;
 					ind = aot_base;
 					rsym = 0;
 					if (rs)
 						rs->data_offset = ast_reloc0_sv;
 					nocode_wanted = 0;
-					o(0xc031); /* xor %eax,%eax (dead-at-entry scratch) */
-					o(0x0f);
-					int ast_guard_slot = oad(ast_jit_dispatch_env >= 2 ? 0x84 : 0x85, 0);
-					ast_baseline_splice(aot_code, aot_len, aot_rel, aot_rlen, aot_base, aot_chain);
+					int ast_guard_slots[AST_TCO_MAXP + 1], ast_guard_n = 0;
+					if (spec) {
+						for (int i = 0; i < npoff; i++) {
+							g(0x48); /* cmp qword [rbp+off32], 0 */
+							g(0x83);
+							g(0xbd);
+							gen_le32(poffs[i]);
+							g(0x00);
+							g(0x0f); /* jz deopt */
+							ast_guard_slots[ast_guard_n++] = oad(0x84, 0);
+						}
+					} else {
+						o(0xc031); /* xor %eax,%eax (dead-at-entry scratch) */
+						o(0x0f);
+						ast_guard_slots[ast_guard_n++] = oad(ast_jit_dispatch_env >= 2 ? 0x84 : 0x85, 0);
+					}
+					if (spec) {
+						AstArena *sv = ast_cur;
+						ast_cur = ast_spec;
+						loc = saved_loc;
+						if (ast_ltemp_n)
+							loc = ast_ltemp_cur;
+						anon_sym = saved_anon;
+						ast_fconst_i = ast_fconst_n;
+						ast_locrec_i = 0;
+						ast_replaying = 1;
+						ast_rp_switch = NULL;
+						ast_rp_nlabel = 0;
+						ast_rp_bsym = ast_rp_csym = NULL;
+						ast_pinned_regs = 0;
+						ast_inline_active = 0;
+						ast_inline_bias = 0;
+						ast_argsub_n = 0;
+						ast_promo_n = 0;
+						ast_graft_budget = ast_graft_budget_max;
+						ast_loc_low = loc;
+						ast_replay_body(ast_spec);
+						if (ast_loc_low < loc)
+							loc = ast_loc_low;
+						ast_replaying = 0;
+						ast_cur = sv;
+						ast_arena_free(ast_spec);
+					} else {
+						ast_baseline_splice(aot_code, aot_len, aot_rel, aot_rlen, aot_base, aot_chain);
+					}
 					nocode_wanted = 0;
 					rsym = gjmp(rsym);
-					gsym(ast_guard_slot);
+					for (int i = 0; i < ast_guard_n; i++)
+						gsym(ast_guard_slots[i]);
 					ast_baseline_splice(aot_code, aot_len, aot_rel, aot_rlen, aot_base, aot_chain);
+					if (saved_loc < loc)
+						loc = saved_loc;
 					mcc_free(aot_code);
 					mcc_free(aot_rel);
-					MCC_TRACE("jit-dispatch %s mode=%d (%d code, %d rel)\n", funcname,
-										ast_jit_dispatch_env, aot_len, aot_rlen);
+					MCC_TRACE("jit-dispatch %s mode=%d spec=%d np=%d (%d code, %d rel)\n", funcname,
+										ast_jit_dispatch_env, spec, npoff, aot_len, aot_rlen);
 				}
 			} else {
 				mcc_state->nb_errors = ast_saved_nberr;
