@@ -6857,6 +6857,7 @@ enum {
 typedef struct AstSearchMemo {
 	uint64_t hash;
 	unsigned gates;
+	unsigned refcount;
 } AstSearchMemo;
 
 #define AST_SEARCH_MEMO_CAP 4096
@@ -6864,43 +6865,147 @@ static AstSearchMemo ast_search_memo[AST_SEARCH_MEMO_CAP];
 static int ast_search_memo_n;
 
 /*
- * Cross-build persistence of the per-function search winner. Each record is
- * {uint64 intention-hash, uint64 (gates | MAGIC<<8)} appended to a file in the
- * per-user cache dir; the MAGIC in every record lets a torn or stale-format record
- * be skipped without a global header, so the append-only file needs no locking
- * beyond O_APPEND atomicity. Loaded once into ast_search_memo at the first search;
- * a new winner is appended. Cleared by `mcc --clear-cache`. Opt-in with the search
- * (MCC_AST_SEARCH); a missing/unwritable cache dir degrades to the in-memory memo. */
+ * Cross-build persistence of the per-function search winner, as REFCOUNTED
+ * permutations. Each record is {uint64 intention-hash, uint64 (gates | MAGIC<<8),
+ * uint64 refcount} appended to a file in the per-user cache dir; the MAGIC in every
+ * record lets a torn/stale record be skipped without a global header. A hit bumps
+ * the winning permutation's refcount and re-appends it (last-wins on load).
+ *
+ * Eviction: every cache accessor (load / store / hit — all route through
+ * ast_search_disk_store) checks the *shared* disk usage of the whole cache dir; once
+ * it reaches AST_SEARCH_DISK_MAX (10 GiB, shared across concurrent builds) it drops
+ * the lowest-refcount quarter of the working set and rewrites the file (temp +
+ * rename), keeping the most-reused permutations. Cleared by `mcc --clear-cache`;
+ * opt-in with MCC_AST_SEARCH; a missing/unwritable cache dir degrades to the
+ * in-memory memo. The in-memory working set is capped (AST_SEARCH_MEMO_CAP), so an
+ * eviction rewrite also compacts the file down to that hot set. */
 #define AST_SEARCH_MEMO_MAGIC 0x4643u /* 'FC' */
-#define AST_SEARCH_DISK_MAX (1u << 20) /* stop appending past ~64K records */
+#define AST_SEARCH_DISK_MAX (10ull << 30) /* 10 GiB shared cache-dir cap */
+
+static int ast_search_cache_dir(char *buf, int cap) {
+	return host_cache_dir(buf, cap);
+}
 
 static int ast_search_disk_path(char *buf, int cap) {
 	char dir[1024];
-	if (host_cache_dir(dir, sizeof dir) != 0)
+	if (ast_search_cache_dir(dir, sizeof dir) != 0)
 		return -1;
 	if (snprintf(buf, cap, "%s/mcc-search.memo", dir) >= cap)
 		return -1;
 	return 0;
 }
 
-static void ast_search_memo_add(uint64_t h, unsigned gates) {
+/* Total bytes of the shared cache dir (all users' files). POSIX: sum the regular
+ * files; else fall back to just the memo file's size. */
+#if MCC_HOST_POSIX
+#include <dirent.h>
+#include <sys/stat.h>
+static unsigned long long ast_search_disk_usage(void) {
+	char dir[1024], path[1152];
+	DIR *d;
+	struct dirent *e;
+	struct stat st;
+	unsigned long long total = 0;
+	if (ast_search_cache_dir(dir, sizeof dir) != 0)
+		return 0;
+	d = opendir(dir);
+	if (!d)
+		return 0;
+	while ((e = readdir(d)) != NULL) {
+		if (snprintf(path, sizeof path, "%s/%s", dir, e->d_name) >= (int)sizeof path)
+			continue;
+		if (stat(path, &st) == 0 && S_ISREG(st.st_mode))
+			total += (unsigned long long)st.st_size;
+	}
+	closedir(d);
+	return total;
+}
+#else
+static unsigned long long ast_search_disk_usage(void) {
+	char path[1152];
+	FILE *f;
+	long sz;
+	if (ast_search_disk_path(path, sizeof path) != 0)
+		return 0;
+	f = fopen(path, "rb");
+	if (!f)
+		return 0;
+	fseek(f, 0, SEEK_END);
+	sz = ftell(f);
+	fclose(f);
+	return sz > 0 ? (unsigned long long)sz : 0;
+}
+#endif
+
+static void ast_search_memo_add(uint64_t h, unsigned gates, unsigned refcount) {
 	int i;
 	for (i = 0; i < ast_search_memo_n; i++)
 		if (ast_search_memo[i].hash == h) {
 			ast_search_memo[i].gates = gates;
+			if (refcount > ast_search_memo[i].refcount)
+				ast_search_memo[i].refcount = refcount;
 			return;
 		}
 	if (ast_search_memo_n < AST_SEARCH_MEMO_CAP) {
 		ast_search_memo[ast_search_memo_n].hash = h;
 		ast_search_memo[ast_search_memo_n].gates = gates;
+		ast_search_memo[ast_search_memo_n].refcount = refcount;
 		ast_search_memo_n++;
 	}
+}
+
+/* Rewrite the memo file from the in-memory working set (temp + atomic rename). */
+static void ast_search_disk_rewrite(void) {
+	char path[1152], tmp[1200];
+	FILE *f;
+	int i;
+	if (ast_search_disk_path(path, sizeof path) != 0)
+		return;
+	if (snprintf(tmp, sizeof tmp, "%s.tmp", path) >= (int)sizeof tmp)
+		return;
+	f = fopen(tmp, "wb");
+	if (!f)
+		return;
+	for (i = 0; i < ast_search_memo_n; i++) {
+		uint64_t rec[3];
+		rec[0] = ast_search_memo[i].hash;
+		rec[1] = (ast_search_memo[i].gates & 0xffu) |
+						 ((uint64_t)AST_SEARCH_MEMO_MAGIC << 8);
+		rec[2] = ast_search_memo[i].refcount;
+		if (fwrite(rec, sizeof rec, 1, f) != 1)
+			break;
+	}
+	fclose(f);
+	if (rename(tmp, path) != 0)
+		remove(tmp);
+}
+
+static int ast_search_memo_cmp(const void *a, const void *b) {
+	const AstSearchMemo *x = a, *y = b;
+	if (x->refcount < y->refcount)
+		return 1; /* descending: high refcount first */
+	if (x->refcount > y->refcount)
+		return -1;
+	return 0;
+}
+
+/* Triggered by each accessor: if the shared cache dir has reached the cap, evict the
+ * lowest-refcount quarter of the working set and rewrite the file. */
+static void ast_search_disk_evict(void) {
+	if (ast_search_memo_n < 4)
+		return;
+	if (ast_search_disk_usage() < AST_SEARCH_DISK_MAX)
+		return;
+	qsort(ast_search_memo, (size_t)ast_search_memo_n, sizeof ast_search_memo[0],
+				ast_search_memo_cmp);
+	ast_search_memo_n -= ast_search_memo_n / 4;
+	ast_search_disk_rewrite();
 }
 
 static void ast_search_disk_load(void) {
 	char path[1152];
 	FILE *f;
-	uint64_t rec[2];
+	uint64_t rec[3];
 	if (ast_search_disk_path(path, sizeof path) != 0)
 		return;
 	f = fopen(path, "rb");
@@ -6909,27 +7014,26 @@ static void ast_search_disk_load(void) {
 	while (fread(rec, sizeof rec, 1, f) == 1 &&
 				 ast_search_memo_n < AST_SEARCH_MEMO_CAP)
 		if ((rec[1] >> 8) == AST_SEARCH_MEMO_MAGIC)
-			ast_search_memo_add(rec[0], (unsigned)(rec[1] & 0xff));
+			ast_search_memo_add(rec[0], (unsigned)(rec[1] & 0xff), (unsigned)rec[2]);
 	fclose(f);
+	ast_search_disk_evict();
 }
 
-static void ast_search_disk_store(uint64_t h, unsigned gates) {
+static void ast_search_disk_store(uint64_t h, unsigned gates, unsigned refcount) {
 	char path[1152];
 	FILE *f;
-	uint64_t rec[2];
-	long sz;
+	uint64_t rec[3];
 	if (ast_search_disk_path(path, sizeof path) != 0)
 		return;
 	f = fopen(path, "ab");
 	if (!f)
 		return;
-	sz = ftell(f);
-	if (sz >= 0 && (unsigned long)sz < AST_SEARCH_DISK_MAX) {
-		rec[0] = h;
-		rec[1] = (gates & 0xffu) | ((uint64_t)AST_SEARCH_MEMO_MAGIC << 8);
-		fwrite(rec, sizeof rec, 1, f);
-	}
+	rec[0] = h;
+	rec[1] = (gates & 0xffu) | ((uint64_t)AST_SEARCH_MEMO_MAGIC << 8);
+	rec[2] = refcount;
+	fwrite(rec, sizeof rec, 1, f);
 	fclose(f);
+	ast_search_disk_evict();
 }
 
 /* Round-robin time accounting (see the block comment above). Durations are in
@@ -7228,9 +7332,14 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 	if (h) {
 		for (int i = 0; i < ast_search_memo_n; i++)
 			if (ast_search_memo[i].hash == h) {
-				/* intersect with the current base: a winner cached under a different
-				 * -O base must not enable a gate this build disabled. */
+				/* hit: bump this permutation's refcount and persist it (also triggers
+				 * the shared-disk eviction check). intersect gates with the current base:
+				 * a winner cached under a different -O base must not enable a gate this
+				 * build disabled. */
+				ast_search_memo[i].refcount++;
 				ast_search_gates_set(ast_search_memo[i].gates & base);
+				ast_search_disk_store(ast_search_memo[i].hash, ast_search_memo[i].gates,
+															ast_search_memo[i].refcount);
 				ast_arena_free(pristine);
 				return;
 			}
@@ -7330,8 +7439,8 @@ search_done:
 	ast_opt_total = o0;
 	ast_search_gates_set(best);
 	if (h) {
-		ast_search_memo_add(h, best);
-		ast_search_disk_store(h, best);
+		ast_search_memo_add(h, best, 1);
+		ast_search_disk_store(h, best, 1);
 	}
 	ast_arena_free(pristine);
 }

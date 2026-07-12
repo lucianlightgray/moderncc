@@ -131,14 +131,21 @@ ever wanted, its own gated change (side-car shadow + fixpoint + fuzz).
   want the emitted-size scoring above, since inline/promote effects are emit-time), and
   a real `est_cost_delta` best-first frontier ordering beyond the current base-first +
   fair-time schedule.
-- [ ] **Step 5+ — disk-backed cross-build memo** — the per-function winner now
-  persists across builds: `<cachedir>/mcc-search.memo`, append-only records
-  `{intention-hash, gates|MAGIC<<8}`, loaded once into `ast_search_memo`, a hit applies
-  `cached & base` so a winner cached under a different -O base never enables a gate this
-  build disabled; `mcc --clear-cache` wipes it (validated: cross-invocation memo hit +
-  -O6 differential correct). Still open: **unify with the out-of-process `pf-*.ck`
-  format** (`so_pf_key`) so the in-process search fully subsumes `mcc_superopt_perfn`,
-  and compact the append-only file instead of the current ~64K-record size cap.
+- [ ] **Step 5+ — disk-backed cross-build memo (refcounted, LFU-evicted)** — the
+  per-function winner persists across builds as a **refcounted permutation**:
+  `<cachedir>/mcc-search.memo`, 24-byte records `{intention-hash, gates|MAGIC<<8,
+  refcount}`, loaded into `ast_search_memo`; a hit applies `cached & base` (a winner
+  cached under a different -O base never enables a gate this build disabled), **bumps the
+  permutation's refcount**, and re-appends it (last-wins). Every accessor (load / store /
+  hit) checks the **shared cache-dir disk usage**; at **10 GiB** it evicts the
+  lowest-refcount quarter of the working set and rewrites the file (temp + rename),
+  keeping the most-reused permutations. `mcc --clear-cache` wipes it. Validated:
+  cross-invocation refcount accumulation, -O6 differential correct, and the eviction path
+  (lowered-cap test: file grows then compacts, output preserved). Still open: **unify
+  with the out-of-process `pf-*.ck` format** (`so_pf_key`) so the in-process search fully
+  subsumes `mcc_superopt_perfn`; raise `AST_SEARCH_MEMO_CAP` (the in-memory working set,
+  which bounds a compaction) if the 4096-entry hot set proves too small; throttle the
+  per-accessor dir-walk if it shows up on very large caches.
 ## NEXT MILESTONE — runtime JIT + guarded deopt (§26) — plan in `docs/JIT-PLAN.md`
 
 Not part of the completed Steps 1–5 rollout (AST.md: "rollout steps 3-5 **+ the JIT**").
