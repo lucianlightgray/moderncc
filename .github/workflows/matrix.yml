@@ -87,6 +87,10 @@ jobs:
         include: ${{ fromJSON(needs.plan.outputs.macos) }}
     env:
       ART: mcc-${{ matrix.preset }}-${{ matrix.cc }}-${{ matrix.arch }}
+      # The macos preset resolves its build compiler from $CC; the x86_64
+      # cells are clang-only, so pin it (the gating arm64 job resolves CC in a
+      # step because it also runs gcc cells).
+      CC: clang
     steps:
       - uses: actions/checkout@v5
       - name: install Rosetta 2 (x86_64 build + tests under emulation)
