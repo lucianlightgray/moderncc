@@ -1,9 +1,108 @@
 # TODO
 
-Sorted by number of open questions/ambiguities (first-round unknowns + the
-sub-questions immediately following them), most-open first.
+Two layers. **§ Strategic path** (next section) is the authoritative execution order — the
+recommended sequence, the two resolved forks, and what is deferred. Everything below it is
+the **reference library**: the full landed-work record and the long tail, retagged with the
+phase that consumes each item (`[P0]`/`[P1]`/`[P2]`/`[P3]`/`[FLOAT]`/`[DEFER]`). When the
+path and the library disagree, the path wins.
 
-## AST substrate + unified optimizer
+## Strategic path — least resistance × greatest gains
+
+**Ordering rule.** At each step take the lowest-resistance item among the highest remaining
+gain, and make it unblock the next. **Guardrail (every phase):** the full M8 bar — ctest,
+`-O6` differentials vs gcc/clang, self-host 3-stage fixpoint, sanitizers (UBSan/ASan),
+cross-arch (i386/arm32/riscv64/arm64, qemu-docker), differential miscompile fuzz,
+`MCC_CONFIG_AST_SHADOW` zero-divergence. Every step stays byte-neutral on the default path
+until its own opt-in flag; nothing here may regress `-O1..-O3`.
+
+Net shape: **P0 free money → P1 the multiplier → P2 the root-blocker → P3 the milestone**,
+with substrate-unify floating and the two hard forks pre-resolved so no phase stalls on a
+decision.
+
+### P0 — Default-on sweep · *warm-up; near-zero resistance*
+
+Flip the knobs that already cleared the full M8 bar from opt-in to default, after one broader
+field-exposure pass. Gain lands on every compile; no new code, only golden churn. Also shakes
+out the search vocabulary before P1..P3 lean on it.
+
+- Candidates (validated, currently opt-in): `MCC_AST_RANGE` (V-bf range folds), M6z
+  `MCC_ZERO_BSS`, M6s `MCC_MERGE_STRINGS`; audit the remaining `AST_SG_*` knobs (NARROWFIX,
+  DSE_CALL, CSE_COMM, SCCP_FIX, ABS, DIVMAGIC, TCO_PTR) for default-on readiness. (The
+  comparison-identity + unsigned-range-vs-0 folds are already default-on.)
+- Not in P0: the inline/promote value axes — they want emit-size scoring (needs §22
+  scratch-`Section` isolation), so they stay `[FLOAT]`.
+
+### P1 — Unified value lattice · *keystone; highest multiplier* — **resolves Fork L**
+
+Build §29 range/known-bits and `context_in`/`context_out` as **one** artifact with two
+projections, not two lattices. One integer value-domain lattice over locals, mining the
+dominating-`AST_If` predicate source; §29 reads the narrowing-residue projection, `context_in`
+reads the reaching-context / memo-key projection (the 4th side-car predicate-vector reads a
+third view later). Hooks the existing `ast_du_*` / `ast_hash_*` epoch machinery.
+
+- **Unblocks in one build:** §29 non-distributive narrowing (`/ % << >>` + comparisons), §29
+  outer-narrow elimination, V-cprop(c) known-bits/range variant, V-cse(c) redundant-load
+  elimination — and pre-pays `eval_slice`'s enumeration bound for P3.
+- **Resolves Fork L** (lattice same-or-distinct): *same lattice, two projections.* The
+  reference note "overlaps but is not §29" is superseded by "shares representation, differs
+  in scope."
+- First-PR surface: representation (range ∧ known-bits), the two projections, the fixpoint
+  driver, and the `ast_du_*`/`ast_hash_*` hook points.
+
+### P2 — Const-data rewrite · *root-blocker clear*
+
+Build the M5 `AstKind` data node + re-emit pass — the single missing mechanism the whole data
+cluster waits on (`kind_names[]` has no data kind; const bytes are `memcpy`'d at parse time
+outside the AST capture window). Then M6 datacomp (ctor + `__mcc_decompress` runtime) and M4
+fair scoring fall out.
+
+- **Decouples the M4↔M6 apparent circularity:** once a transform *owns* a candidate's bytes
+  the data-delta is per-candidate and transform-attributed, so M4(b/c) folds into the score
+  without the shared-rodata order-noise that blocks it today. Direction is M5 rewrite node →
+  M6 owned delta → M4 fold-into-score — sequencing, not a cycle.
+- **Consumes (landed):** the M5 visibility side-car (`ast_hook_data`), the M6 candidate-ID
+  estimator + round-trip gate (`ast_data_estimate`/`ast_data_roundtrips`), the M4a data/rodata
+  snapshot.
+- **Also unblocks:** §30 value-table dispatch.
+- Gain: shippable binary-size wins under a flag; visible, per-compile.
+
+### P3 — Guarded-deopt Stage 1 · *capability milestone; self-contained*
+
+Add `jit-dispatch` + `jit-guard` as rows in `ast_strategies[]` and retain the baseline (stop
+`mcc_free`ing `orig`/`orig_rel`, or re-emit from the kept `ast_cur` via `keep_reemit` — already
+partly present). Emits real `{guard; AOT-variant else baseline}` entirely at compile time; §26
+collapses to a thin Stage-2 driver.
+
+- **Answers D6 "now, not later":** P1's lattice gives `eval_slice` its `context_in` enumeration
+  domain, so the soundness gate is the value-interpreter, not trust-the-AOT-gate + differential.
+- Independent of the §26 runtime recompiler (confirmed): the entry-dispatcher makes call sites
+  need no change (sidesteps the `E8 rel32` gap), and the baseline-retention path is non-§26.
+
+### [FLOAT] — Substrate unification · *drop in between P1..P3; maintenance gain* — **resolves Fork C**
+
+Finish M1–M3 / M7 leftovers: `ComboMemo` + MSZ1 as the one memo, one eviction, one key
+(`ast_search_key_salt` ≡ `so_pf_key` already converged). Retires the out-of-process superopt's
+second measurement engine.
+
+- **Resolves Fork C** (memo concurrency): adopt **whole-file rewrite** (the working in-proc
+  model); add a `claim` sub-record to the MSZ1 container *only if/when* distributed superopt
+  work-stealing is actually wanted. Not on the capability critical path — slot it as a
+  palate-cleanser, never ahead of P1/P2.
+- Rolled-in sub-decisions: the int-axis vocabulary (budgets/levels with no gate bit) — quantize
+  into `AstGateMask` bits vs. a new `combo_run` parameter dimension; M7b `jit.h` graduation
+  (mask-replay vs algorithm-synthesis) stays `[DEFER]`.
+
+### [DEFER] — after P1–P3 land
+
+- **Backend parity vs gcc** — cmov/csel branchless select, 64-bit div-magic (needs a
+  `mulh`/`__int128` primitive), boolean-normalizing ternary. High per-compile gain but a
+  5-backend grind + a missing primitive; pick up opportunistically per-backend.
+- **§27 loop-nest foundation, §28 rewrite-rule IR, full runtime JIT (§26 Stages 2–4)** —
+  Explore-tier; gate behind P1–P3.
+
+---
+
+## AST substrate + unified optimizer · [FLOAT reference]
 
 Collapse the three optimization drivers (the `ast_func_end` pipeline, the §22
 `AST_PF_EMIT` trial, the `mcc.c` out-of-process search) into one side-car
@@ -80,31 +179,31 @@ search, `ComboMemo` refcount + LFU-evicted key->value cache; selftest 20/20). Th
 `ast_search` onto `combo_run`**; the remaining call-site migration (the memo struct, the superopt,
 the formula families) is tracked as M2/M3/M7 below.
 
-### Substrate indices/analyses designed but not built (from the retired substrate design doc)
+### Substrate indices/analyses designed but not built (from the retired substrate design doc) · [P1 reference]
 
 The rollout built three of the four planned side-car indices (`ast_hash_*` structural hash, `ast_du_*`
 def/use, `ast_memo_*` property memos) plus the strategy engine and search. These designed pieces were
 never rollout steps and have no symbol in `src/` today:
 
-- [ ] **Predicate-vector projection — the 4th side-car index** — a packed bitset of tested-predicate
+- [ ] **[P1] Predicate-vector projection — the 4th side-car index** — a packed bitset of tested-predicate
   truths over ≤8 named slots in a window (the `predicate_vector(cursor, keys≤8) -> bitset` verb), the
   semantic sibling of the structural hash, for **branch coalescing** — generalizes `ast_bf_run` (V-bf)
   + the §30 value-table/bit-flag dispatch. No `predvec`/`predicate_vector` symbol exists (only the
   three other indices were built). Distinct from the §30 *transform*: this is the index it would read.
-- [ ] **`context_in` / `context_out` value-domain fact lattice (the "net-new half")** — the value-domain
+- [ ] **[P1] `context_in` / `context_out` value-domain fact lattice (the "net-new half")** — the value-domain
   restriction on live-in slots: a bounded backward walk collecting the equality/range predicates of
   dominating `AST_If` conditions (reuse the `ast_cprop_{koff,ktt,kval}` set shape), O(fixpoint) first /
   O(1) warm. It is the checker's enumeration bound (see `eval_slice`, §26 Stage 4) and the memo's
   *context* key. Step 3 shipped only the structural-hash half (`ast_hash_*`); no `context_in`/
   `context_out` symbol exists. Overlaps but is not §29 (that lattice is scoped to narrowing residue,
   not the reaching-context proof-domain / memo key).
-- [ ] **Descendant-indexed (DFS enter/exit) def/use extension** — so the two *subtree-scoped* write
+- [ ] **[P1] Descendant-indexed (DFS enter/exit) def/use extension** — so the two *subtree-scoped* write
   queries `ast_licm_written` (`mccast.c`, called from cse/licm) and `ast_ivsr_count_writes` (`mccast.c`,
   ivsr) become O(1) table lookups. PR-2's whole-function `ast_du_*` table subsumes only the two
   whole-arena scanners (`ast_cprop_escapes`, `ast_local_is_readonly`); "written under node n" needs a
   descendant range index. Both remain recursive subtree walks today.
 
-### Macro roadmap — collapse both searches + const-data onto one substrate
+### Macro roadmap — collapse both searches + const-data onto one substrate · [M1–M3/M7/M7b = FLOAT · M4–M6 = P2]
 
 Grounded by two audits: (i) the out-of-process superopt duplicates **every** concern of the
 in-process `ast_search` on a second substrate (process-spawn + ELF-file measurement vs.
@@ -113,7 +212,7 @@ call-sites already exist. Numbered macro steps; lettered sub-features inline; `(
 subgroups; each names the concrete hook and the double-checked blocker. Order is dependency order
 (M4 before M6; M5 before M6).
 
-- [x] **M1 — wire the live -O4 search onto `combo_run`** — **LANDED (subset mode, byte-identical).**
+- [x] **[FLOAT] M1 — wire the live -O4 search onto `combo_run`** — **LANDED (subset mode, byte-identical).**
   `ast_search_select` drives the serial static-cost and emit-size searches through `combo_run`
   (`ast_search_combo_score` → `ast_search_score_one`, which owns the `ast_cur` + gate save/restore so
   `combo_run` stays a pure enumerator; budget/abort via `COMBO_REJECT`); base is scored first and wins
@@ -126,7 +225,7 @@ subgroups; each names the concrete hook and the double-checked blocker. Order is
   `ast_func_end`'s frozen loop to honor the discovered per-fn order (tracked in the variation catalog
   below); `ast_fc_forecast` best-first ordering is the open synergy.
 
-- [ ] **M2 — unify the memo on `ComboMemo` + disk backing.** a) key = `ast_intention_hash`
+- [ ] **[FLOAT] M2 — unify the memo on `ComboMemo` + disk backing.** a) key = `ast_intention_hash`
   (`mccast.c:435`, already the memo key, stable across builds); b) value = winner record (gates +
   score/size) stored best-of-3 compressed (the "MSZ1" container logic moves into `ComboMemo`);
   c) refcount + LFU eviction under the shared 10 GiB cap (already present). **(A)** extend
@@ -141,7 +240,7 @@ subgroups; each names the concrete hook and the double-checked blocker. Order is
   *Synergy:* the shadow oracle `MCC_CONFIG_AST_SHADOW` (`mccast.c:2485`) validates a
   cache hit == recompute, reusing the per-node memo's existing shadow-assert harness.
 
-- [ ] **M3 — subsume the out-of-process superopt** (`mcc_superopt_perfn`/`mcc_superopt_search`,
+- [ ] **[FLOAT] M3 — subsume the out-of-process superopt** (`mcc_superopt_perfn`/`mcc_superopt_search`,
   `mcc.c:922/1053`) onto the substrate. a) map perfn `{1,3,7}` config bits and the search 3-axis
   int product into the `sel[]`/gate vocabulary; b) fold `pf-*.ck`/`so-*.ck` (`mcc.c:817-896`) into
   the compressed container; c) reconcile concurrency — per-key `flock` + claim-cursor work-stealing
@@ -169,7 +268,7 @@ subgroups; each names the concrete hook and the double-checked blocker. Order is
   fork+exec child compilers for scoring; one cache dir, one eviction, one key scheme retires the
   second substrate.
 
-- [ ] **M4 — extend scoring to data/rodata** (prerequisite for const-data compression to *compete*).
+- [ ] **[P2] M4 — extend scoring to data/rodata** (prerequisite for const-data compression to *compete*).
   a) snapshot `data_section->data_offset` + `rodata_section->data_offset` before replay and diff
   after — mirrors the reloc-cursor save/restore `ast_search_emit_size` already does (`mccast.c:7247`);
   b) combined score = text delta + data/rodata delta; c) add a data-size term to `ast_cost_score`
@@ -192,7 +291,7 @@ subgroups; each names the concrete hook and the double-checked blocker. Order is
   step provides a real, per-candidate, transform-attributed data delta to count. The snapshot must
   **not** rewind data/rodata (they are shared, deliberately grown by the original path).
 
-- [ ] **M5 — const-data emission foundation** (the existing `.rodata data-emission` item above).
+- [ ] **[P2] M5 — const-data emission foundation** (the existing `.rodata data-emission` item above).
   Add an `AstKind` array/global/static-data node + a table-symbol+initializer emitter wired into the
   replay/rewrite lifecycle. **(A) Audited blocker:** const data is `memcpy`'d into `Section->data` at
   **parse time, outside the AST capture window** (`init_putv`, `mccgen.c`) — this step is what brings
@@ -211,7 +310,7 @@ subgroups; each names the concrete hook and the double-checked blocker. Order is
   **Remaining (non-neutral):** the `AstKind` data node + a re-emit pass so a pass can *rewrite* the
   bytes (not just observe them). *Synergy:* also unblocks §30 value-table dispatch.
 
-- [ ] **M6 — datacomp: const-data compression pass** (codegen-layer, opt-in; **not** an AST
+- [ ] **[P2] M6 — datacomp: const-data compression pass** (codegen-layer, opt-in; **not** an AST
   strategy — audited infeasible as one: data absent from the AST, text-only score, needs a
   synthesized ctor). **(A) Target:** a) string literals ・ b) `static const` arrays ・ c) both;
   threshold by size×entropy. **(B) Codec:** per-blob best via `combo_pack`, or `combo_pipeline_search`
@@ -238,7 +337,7 @@ subgroups; each names the concrete hook and the double-checked blocker. Order is
   prints `^ compressible A->B chain=rle+lzss ... round-trip OK`; `-v128` TRACE `data pack ... k=N` /
   `LOSSY chain`. **Remaining:** the actual (C) ctor + (D) runtime, which need M5's non-neutral rewrite step.
 
-- [ ] **M6z — zero-init `.bss` placement** (a free placement fix surfaced by the M5 side-car; NOT
+- [ ] **[P0] M6z — zero-init `.bss` placement** (a free placement fix surfaced by the M5 side-car; NOT
   compression). mcc emitted `static int x[256]={0}` into `.data` as 1024 zero disk bytes; C11 6.7.9
   makes `={0}` ≡ no initializer, so it belongs in `.bss` (NOBITS). **LANDED (opt-in `MCC_ZERO_BSS`,
   full M8 bar).** Approach B (post-emission move) in `decl_initializer_alloc`: truncate
@@ -251,7 +350,7 @@ subgroups; each names the concrete hook and the double-checked blocker. Order is
   it. `-v128` TRACE `zero-bss move`. **Remaining:** TLS `tdata`→`tbss` and the asan/bcheck cases
   (excluded by guards); flip to default-on after broader field exposure.
 
-- [ ] **M6s — string-literal merging** (`-fmerge-constants`-style rodata pooling; opt-in
+- [ ] **[P0] M6s — string-literal merging** (`-fmerge-constants`-style rodata pooling; opt-in
   `MCC_MERGE_STRINGS`). **LANDED, full M8 bar.** C11 6.4.5p7 leaves identical string literals'
   distinctness unspecified, so sharing storage is sound (unlike const *array* dedup, which C11 6.5.9
   forbids). A value-use literal (`str_init`, `v==0`) is homed at an anonymous symbol; references are
@@ -266,7 +365,7 @@ subgroups; each names the concrete hook and the double-checked blocker. Order is
   fuzz 7/7; `exec-mergestrings/` locks it. `-v128` TRACE `string merge`/`strpool suffix`.
   **Remaining:** default-on.
 
-- [ ] **M7 — formula-family unification** (the long tail). a) expose cost/ratio formulas as
+- [ ] **[FLOAT] M7 — formula-family unification** (the long tail). a) expose cost/ratio formulas as
   fold-math builtins (`mcc_cost_*`/`mcc_ratio_*`, copy-pasting the `foldfc_try` template,
   `mccgen.c:8402`); b) make the forecast ensemble a first-class `combo` formula family (pick
   codec/strategy/threshold, not just next-tick duration); c) one `-f` front — extend `fold-math`
@@ -274,7 +373,7 @@ subgroups; each names the concrete hook and the double-checked blocker. Order is
   gate. *Synergy:* one enumerator over {strategies, predictors, codecs}; one flag family; the
   four `host_cache_dir` caches collapse to one `ComboMemo` store.
 
-- [ ] **M7b — graduate the disk search-memo into compiled-in strategies (`cache` -> `src/algorithms/jit.h`).**
+- [ ] **[DEFER] M7b — graduate the disk search-memo into compiled-in strategies (`cache` -> `src/algorithms/jit.h`).**
   A new `tools/` C utility + a CMake target that reads the shared cache dir (`~/.cache/mcc/`, i.e. the
   `mcc-search.memo` MSZ1 container — records `{intention-hash, gates|MAGIC<<8, refcount, score, tried}`,
   see M2) and **materializes each hot (high-refcount) memoized winner as an entry in a generated header
@@ -301,13 +400,13 @@ subgroups; each names the concrete hook and the double-checked blocker. Order is
   functions at runtime, it bakes the search's disk-memoized winners into the compiler; rides M2's
   `ComboMemo`/MSZ1 format and M3's `AstGateMask` vocabulary directly. Gated by M8.
 
-- [ ] **M8 — validation gates** (apply to *each* of M1–M7 as it lands). a) full ctest 1905/1905;
+- [ ] **[guardrail] M8 — validation gates** (apply to *each* of M1–M7 as it lands; = the Strategic-path guardrail). a) full ctest 1905/1905;
   b) `-O6` differentials vs gcc/clang; c) self-host 3-stage fixpoint; d) sanitizers (UBSan/ASan);
   e) cross-arch (i386/arm32/riscv64/arm64, qemu-docker); f) differential miscompile fuzz;
   g) `MCC_CONFIG_AST_SHADOW` zero-divergence. Behavior-preserving steps (M1 subset-mode, M2, M3)
   must stay byte-identical; M4–M7 are gated opt-in and may change emitted bytes only under their flag.
 
-### Strategy-variation catalog — one algorithm-variant per pass today; widen the search vocabulary
+### Strategy-variation catalog — one algorithm-variant per pass today; widen the search vocabulary · [P0 default-on candidates + FLOAT]
 
 Audit result: of the 12 `ast_strategies[]` passes, **9 implement a single algorithmic variation**
 (bfold, ident, narrow, licm, dse, sccp, jt, sethi, tco) and 3 already carry one extra axis
@@ -486,7 +585,7 @@ candidate **search knob** — a distinct `AstStrategy` row or a per-strategy par
   d) tail-recursion-modulo-accumulator (`return n*fact(n-1)` → loop + accumulator).
 
 ### Confirmed backend codegen gaps vs gcc (measured via `-S`; NOT bounded AST folds — backend/
-### target-specific dedicated sessions, unlike the range folds which were target-independent rewrites)
+### target-specific dedicated sessions, unlike the range folds which were target-independent rewrites) · [DEFER]
 
 - [ ] **Branchless select for min/max/abs/sign** (`cmov`/`csel`). **Measured:** mcc emits a compare +
   conditional **branch** for `a<b?a:b`, `a>b?a:b`, `x<0?-x:x`; gcc emits branchless `cmovle`/`cmovge`/
@@ -534,7 +633,7 @@ candidate **search knob** — a distinct `AstStrategy` row or a per-strategy par
   use `cmake-cross/mcc-i386` (ELF32 runs on the host) and `cmake-cross/mcc-arm64` (via
   `qemu-aarch64 -L vendor/gentoo-stage3-arm64-glibc`) for real cross-arch checks.
 
-## NEXT MILESTONE — runtime JIT + guarded deopt (§26)
+## NEXT MILESTONE — runtime JIT + guarded deopt (§26) · [Stage 1 = P3 · Stages 2–4 = DEFER]
 
 The design's separate "+ the JIT" work (the "rollout steps 3-5 **+ the JIT**"), deferred behind the
 §26 embedded recompiler — entry-guarded variant dispatch with a runtime recompiler + hot-swap.
@@ -571,20 +670,20 @@ on a hot function (D2A); hot-swap = one atomic pointer store; trigger = `.init_a
 
 **Staged (each independently gated by a JIT differential):**
 
-- [ ] **Stage 1 — guarded deopt as pure strategies, NO runtime recompiler** — add `jit-dispatch` +
+- [ ] **[P3] Stage 1 — guarded deopt as pure strategies, NO runtime recompiler** — add `jit-dispatch` +
   `jit-guard` to `ast_strategies[]`; together they emit `{guard; AOT-optimized-variant else baseline}`
   entirely at compile time (variant = the existing fold strategies; baseline = the retained faithful
   emit — stop freeing `orig`/`orig_rel`, or re-emit from the kept `ast_cur`). Real guarded deopt,
   differential-validatable, ships **without** §26. This is the key payoff: a first complete version
   needs no runtime recompiler, and §26 shrinks to a stage-2 driver.
-- [ ] **Stage 2 — runtime recompile (§26 driver, thin)** — a minimal embedded runtime re-invokes the
+- [ ] **[DEFER] Stage 2 — runtime recompile (§26 driver, thin)** — a minimal embedded runtime re-invokes the
   strategy engine (D2A) on a hot function into fresh executable memory via the `mcc_relocate` path, and
   atomically publishes the pointer the dispatcher reads. (implements "§26 hot-function recompile +
   hot-swap" in §2 below)
-- [ ] **Stage 3 — profiling + trigger** — add the `jit-profile` strategy; drive recompilation from a
+- [ ] **[DEFER] Stage 3 — profiling + trigger** — add the `jit-profile` strategy; drive recompilation from a
   startup `.init_array` ctor and/or a hot counter; wire `--jit-functions` (which functions get a
   dispatcher) and `--jit-max-duration` (budget). (implements the inert-`--jit-*`-flag items in §2/§1)
-- [ ] **Stage 4 — soundness hardening: `eval_slice`** — build `eval_slice(arena, slice, env) ->
+- [ ] **[P3-adjacent] Stage 4 — soundness hardening: `eval_slice`** — build `eval_slice(arena, slice, env) ->
   {value, defined}` as a **second, independent AST-over-values interpreter** (NOT a reuse of faithful
   replay), exhaustively checking equivalence over the guarded domain as the per-strategy gate. UB-oracle
   catalog seeded from `gen_opic` (`mccgen.c`): signed +/−/* overflow, div/mod by zero, and critically
@@ -626,6 +725,12 @@ counter is `jit-profile`); **D6** `eval_slice` now vs trust-the-AOT-gate + diffe
   by §25, cached by §21, each rule differential-tested against the faithful replay
   before it may fire. (IR form? how does the search compose rules? scoring hook?
   cache key? the per-rule soundness gate?)
+
+## Long tail — buckets by open-question count · [DEFER unless phase-tagged]
+
+The `## 5 … ## 0` buckets below are the reference backlog, still ordered most-open-first.
+Default status is `[DEFER]`; items a phase pulls forward carry an inline `[P1]`/`[P2]`/`[P3]`
+tag and are sequenced by § Strategic path, not by their bucket.
 
 ## 5 — many open questions
 
@@ -714,8 +819,9 @@ counter is `jit-profile`); **D6** `eval_slice` now vs trust-the-AOT-gate + diffe
   triple-buffer/RCU reclamation.
 - [ ] **Explore §28 instruction-level superoptimization** over a fixed emitted
   window (optional).
-- [ ] **Build the §29 integer range/known-bits lattice** — shared prerequisite for
-  the narrowing residue.
+- [ ] **[P1] Build the §29 integer range/known-bits lattice** — shared prerequisite for
+  the narrowing residue. **In P1 this is built as the one lattice with two projections
+  (with `context_in`); see § Strategic path.**
 - [ ] **Implement §30 value-table dispatch** for bit-flag clusters with *differing*
   bodies. (needs `.rodata` data-emission)
 - [ ] **Refactor the §31 scheduler to a static-vtable strategy registry** — passes
@@ -804,10 +910,10 @@ counter is `jit-profile`); **D6** `eval_slice` now vs trust-the-AOT-gate + diffe
   nest changes. (needs the loop-nest analysis foundation)
 - [ ] **Implement §27 loop fusion.** (needs the loop-nest analysis foundation)
 - [ ] **Implement §27 loop tiling.** (needs the loop-nest analysis foundation)
-- [ ] **Extend §29 narrowing to non-distributive `/ % << >>` + comparisons** —
+- [ ] **[P1] Extend §29 narrowing to non-distributive `/ % << >>` + comparisons** —
   `ast_narrow_binop` handles only the distributive `+ - * & | ^` today. (needs the
   lattice; `MCC_AST_NARROW` truncation-sink narrowing ships default-on -O2)
-- [ ] **Implement §29 outer-narrow elimination** — drop a cast when the value
+- [ ] **[P1] Implement §29 outer-narrow elimination** — drop a cast when the value
   provably fits. (needs the lattice)
 - [ ] **Add the §30 `switch`-arm detection form.**
 - [ ] **Implement §31 adaptive beam width.**
