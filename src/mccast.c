@@ -667,6 +667,7 @@ static int ast_range_env; /* MCC_AST_RANGE: fold lo<=x && x<=hi to one unsigned 
 static int ast_divmagic_env; /* MCC_AST_DIVMAGIC: strength-reduce unsigned x/C, x%C */
 static int ast_abs_env; /* MCC_AST_ABS: branchless abs from x<0?-x:x */
 static int ast_reassoc_env; /* MCC_AST_REASSOC: combine (x OP c1) OP c2 */
+static int ast_inline_pass_env;
 static int ast_vlat_env;
 static int ast_data_report_env; /* MCC_AST_DATA_REPORT: dump const-data records to stderr */
 int ast_zero_bss_env;           /* MCC_ZERO_BSS: move all-zero .data statics into .bss */
@@ -795,7 +796,7 @@ static void ast_search_walk_trace(const int *sel, int k, int depth, int walk,
 	MCC_TRACE("combo walk=%s depth=%d k=%d seq=%s\n", combo_walk_name(walk), depth, k,
 						seq);
 }
-#define AST_STRAT_COUNT_MAX 16
+#define AST_STRAT_COUNT_MAX 20
 #define AST_CYCLE_MAX 8
 static int ast_search_order_env;
 static int ast_cycle_env;
@@ -1069,6 +1070,7 @@ void ast_configure(MCCState *s1) {
 	ast_divmagic_env = ast_env_gate("MCC_AST_DIVMAGIC", 0);
 	ast_abs_env = ast_env_gate("MCC_AST_ABS", 0);
 	ast_reassoc_env = ast_env_gate("MCC_AST_REASSOC", 0);
+	ast_inline_pass_env = ast_env_gate("MCC_AST_INLINE_PASS", 0);
 	ast_vlat_env = ast_env_gate("MCC_AST_VLAT", 0);
 	ast_data_report_env = ast_env_gate("MCC_AST_DATA_REPORT", 0);
 	ast_zero_bss_env = ast_env_gate("MCC_ZERO_BSS", s1->optimize >= 2);
@@ -2246,7 +2248,7 @@ static AstArena *ast_inline_lookup(void *sym) {
 }
 
 static int ast_fn_inlinable(AstArena *a, Sym *sym) {
-	if (!ast_inline_env || ast_bail || ast_desync)
+	if ((!ast_inline_env && !ast_inline_pass_env) || ast_bail || ast_desync)
 		return 0;
 	if (!(sym->type.t & VT_STATIC))
 		return 0;
@@ -2278,7 +2280,7 @@ static int ast_fn_inlinable(AstArena *a, Sym *sym) {
 static void ast_inline_capture(Sym *fnsym) {
 	ast_inline_cap_np = 0;
 	ast_inline_cap_ok = 0;
-	if (!ast_inline_env)
+	if (!ast_inline_env && !ast_inline_pass_env)
 		return;
 	int n = 0;
 	for (Sym *p = fnsym->type.ref->next; p; p = p->next) {
@@ -6274,6 +6276,194 @@ static AstLocal ast_dup_sub(AstArena *a, AstLocal n) {
 	return d;
 }
 
+static int ast_inline_scalar_int(int tt) {
+	int bt = tt & VT_BTYPE;
+	return bt == VT_BOOL || bt == VT_BYTE || bt == VT_SHORT || bt == VT_INT ||
+				 bt == VT_LLONG || bt == VT_PTR;
+}
+
+static int ast_inline_type_ok(AstArena *a, AstLocal n) {
+	int tt = ast_type_t(a, n);
+	if (tt & VT_VOLATILE)
+		return 0;
+	int bt = tt & VT_BTYPE;
+	if (bt == VT_FLOAT || bt == VT_DOUBLE || bt == VT_LDOUBLE || bt == VT_QFLOAT ||
+			bt == VT_QLONG || bt == VT_STRUCT)
+		return 0;
+	return 1;
+}
+
+static int ast_inline_node_allowed(AstArena *a, AstLocal n) {
+	uint16_t k = ast_kind(a, n);
+	switch (k) {
+	case AST_Literal:
+	case AST_Ref:
+	case AST_Load:
+	case AST_Convert:
+	case AST_Binary:
+		return 1;
+	case AST_Unary: {
+		int op = ast_op(a, n);
+		return op == AST_OP_ADDR || op == AST_OP_MEMBER || op == AST_OP_MEMBER_ARROW;
+	}
+	case AST_If:
+		return ast_op(a, n) == 5 && ast_nchild(a, n) == 3;
+	default:
+		return 0;
+	}
+}
+
+static int ast_inline_expr_pure(AstArena *a, AstLocal n) {
+	if (n == AST_NONE)
+		return 0;
+	if (!ast_inline_type_ok(a, n) || !ast_inline_node_allowed(a, n))
+		return 0;
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		if (!ast_inline_expr_pure(a, c))
+			return 0;
+	return 1;
+}
+
+static int ast_inline_pass_simple(struct AstInlineFn *e) {
+	if (!e->graftable)
+		return 0;
+	AstArena *a = e->ast;
+	AstLocal nn = ast_count(a);
+	int nret = 0;
+	for (AstLocal n = 0; n < nn; n++) {
+		uint16_t k = ast_kind(a, n);
+		if (k == AST_BasicBlock)
+			continue;
+		if (k == AST_Return) {
+			if (ast_nchild(a, n) != 1)
+				return 0;
+			nret++;
+			continue;
+		}
+		if (!ast_inline_type_ok(a, n) || !ast_inline_node_allowed(a, n))
+			return 0;
+		if (k == AST_Ref) {
+			int r = ast_op(a, n);
+			if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM)) {
+				int off = (int)(int64_t)ast_ival(a, n), isparam = 0;
+				for (int i = 0; i < e->nparams; i++)
+					if (e->param_off[i] == off) {
+						isparam = 1;
+						break;
+					}
+				if (!isparam)
+					return 0;
+			}
+		}
+	}
+	return nret == 1;
+}
+
+static AstLocal ast_inline_copy_expr(AstArena *dst, AstArena *src, AstLocal n,
+																		 const AstLocal *argmap, const int *param_off,
+																		 int nparams) {
+	if (ast_kind(src, n) == AST_Ref) {
+		int r = ast_op(src, n);
+		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM)) {
+			int off = (int)(int64_t)ast_ival(src, n);
+			for (int i = 0; i < nparams; i++)
+				if (param_off[i] == off) {
+					AstLocal cv = ast_node(dst, AST_Convert);
+					ast_set_type(dst, cv, ast_type_t(src, n), ast_type_ref(src, n));
+					ast_add_child(dst, cv, ast_dup_sub(dst, argmap[i]));
+					return cv;
+				}
+			AST_ASSERT(0);
+		}
+	}
+	AstLocal d = ast_node(dst, ast_kind(src, n));
+	ast_set_op(dst, d, ast_op(src, n));
+	ast_set_type(dst, d, ast_type_t(src, n), ast_type_ref(src, n));
+	ast_set_ival(dst, d, ast_ival(src, n));
+	ast_set_fbits(dst, d, ast_fbits(src, n));
+	ast_set_sym(dst, d, ast_sym(src, n));
+	ast_set_cst(dst, d, ast_cst(src, n));
+	for (AstLocal c = ast_first_child(src, n); c != AST_NONE; c = ast_next_sib(src, c))
+		ast_add_child(dst, d, ast_inline_copy_expr(dst, src, c, argmap, param_off, nparams));
+	return d;
+}
+
+static int ast_inline_graft_node(AstArena *a, AstLocal call, struct AstInlineFn *e) {
+	int nargs = (int)ast_nchild(a, call) - 1;
+	if (nargs != e->nparams)
+		return 0;
+	if (ast_inline_depth >= ast_inline_depth_max)
+		return 0;
+	if (ast_graft_budget < (int)ast_count(e->ast))
+		return 0;
+	if (ast_graft_limit >= 0 && ast_graft_total >= ast_graft_limit)
+		return 0;
+	AstLocal argmap[AST_INLINE_MAX_PARAMS];
+	for (int i = 0; i < e->nparams; i++) {
+		AstLocal arg = ast_child(a, call, (uint32_t)(i + 1));
+		if (arg == AST_NONE || !ast_inline_expr_pure(a, arg))
+			return 0;
+		argmap[i] = arg;
+	}
+	int callt = ast_type_t(a, call);
+	uint64_t callr = ast_type_ref(a, call);
+	if (!ast_inline_scalar_int(callt))
+		return 0;
+	AstArena *ca = e->ast;
+	AstLocal cnn = ast_count(ca), rv = AST_NONE;
+	for (AstLocal n = 0; n < cnn; n++)
+		if (ast_kind(ca, n) == AST_Return && ast_nchild(ca, n) == 1) {
+			rv = ast_first_child(ca, n);
+			break;
+		}
+	if (rv == AST_NONE)
+		return 0;
+	ast_graft_total++;
+	ast_graft_budget -= (int)ast_count(ca);
+	AstLocal nv = ast_inline_copy_expr(a, ca, rv, argmap, e->param_off, e->nparams);
+	ast_set_kind(a, call, AST_Convert);
+	ast_set_op(a, call, 0);
+	ast_set_type(a, call, callt, callr);
+	ast_set_ival(a, call, 0);
+	ast_set_fbits(a, call, 0);
+	ast_set_sym(a, call, 0);
+	ast_set_cst(a, call, 0);
+	ast_clear_children(a, call);
+	ast_add_child(a, call, nv);
+	return 1;
+}
+
+static int ast_inline_run(AstArena *a) {
+	if (!ast_inline_pass_env)
+		return 0;
+	AstLocal nn = ast_count(a);
+	int grafted = 0;
+	ast_inline_depth = 0;
+	ast_graft_budget = ast_graft_budget_max;
+	for (AstLocal n = 0; n < nn; n++) {
+		if (ast_kind(a, n) != AST_Invoke)
+			continue;
+		AstLocal cref = ast_child(a, n, 0);
+		if (cref == AST_NONE || ast_kind(a, cref) != AST_Ref)
+			continue;
+		void *csym = (void *)(uintptr_t)ast_sym(a, cref);
+		struct AstInlineFn *e = NULL;
+		for (int i = 0; i < ast_inline_n; i++)
+			if (ast_inline_pool[i].sym == csym) {
+				e = &ast_inline_pool[i];
+				break;
+			}
+		if (!e || !e->graftable || !ast_inline_pass_simple(e))
+			continue;
+		if (ast_inline_graft_node(a, n, e)) {
+			grafted++;
+			MCC_TRACE("inline graft call=%u callee=%s\n", (unsigned)n,
+								get_tok_str(((Sym *)csym)->v, NULL));
+		}
+	}
+	return grafted;
+}
+
 static int ast_bf_cmpconst(AstArena *a, AstLocal n, int cmpop, AstLocal *key,
 													 uint64_t *v) {
 	AstLocal l, r, k, c;
@@ -8558,6 +8748,7 @@ static int ast_strat_abs(AstArena *a, Sym *s) { (void)s; return ast_abs_run(a); 
 static int ast_strat_reassoc(AstArena *a, Sym *s) { (void)s; return ast_reassoc_run(a); }
 static int ast_strat_sethi(AstArena *a, Sym *s) { (void)s; return ast_sethi_run(a); }
 static int ast_strat_tco(AstArena *a, Sym *s) { return ast_tco_run(a, s); }
+static int ast_strat_inline(AstArena *a, Sym *s) { (void)s; return ast_inline_run(a); }
 
 enum {
 	AST_STRAT_BFOLD,
@@ -8576,6 +8767,7 @@ enum {
 	AST_STRAT_REASSOC,
 	AST_STRAT_SETHI,
 	AST_STRAT_TCO,
+	AST_STRAT_INLINE,
 	AST_STRAT_COUNT
 };
 typedef char ast_strat_count_fits[AST_STRAT_COUNT <= AST_STRAT_COUNT_MAX ? 1 : -1];
@@ -8597,6 +8789,7 @@ static const AstStrategy ast_strategies[AST_STRAT_COUNT] = {
 	{"reassoc", &ast_reassoc_env, ast_strat_reassoc},
 	{"sethi", &ast_sethi_env, ast_strat_sethi},
 	{"tco", &ast_templates_env, ast_strat_tco},
+	{"inline", &ast_inline_pass_env, ast_strat_inline},
 };
 
 static long ast_run_strat_seq(AstArena *a, Sym *sym, int faithful,
@@ -10028,7 +10221,8 @@ void ast_func_end(Sym *sym) {
 				int do_bf = bfs > 0;
 				int do_sethi = sethis > 0;
 				int do_tco = tcos > 0;
-				int do_inline = faithful && !do_tco && ast_has_graftable_call(ast_cur);
+				int do_inline = faithful && !do_tco && !ast_inline_pass_env &&
+												ast_has_graftable_call(ast_cur);
 				if (ast_search_axis_ran && !ast_search_pick_inline)
 					do_inline = 0;
 				ast_no_callful_promo = do_inline;

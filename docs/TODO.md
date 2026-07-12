@@ -313,11 +313,27 @@ subgroups; each names the concrete hook and the double-checked blocker. Order is
   Validated to full M8: default ctest 3958/3958 + object-diff 0/320; self-host 3-stage byte-identical with
   `MCC_AST_CYCLE=1` (1701071 B each); -O6 differential + 120-seed register-pressure fuzz + `--gates`×DIVMAGIC
   0 miscompiles; shadow 0 divergence. This is the **pipeline-fixpoint half** of A3c.
-  **Still open toward the settled design:** the *inline-interleaving* payoff (`fold→inline→fold`, D3) —
-  pends decoupling `ast_inline_graft` into a standalone reorderable arena pass (a strategy already
-  self-iterates, so only a *different* mutator between repeats reopens the surface; DIVMAGIC-expansion is
-  one such mutator, hence the cascade above); sequence-with-repetition encoding; runner-as-strategy + memo
-  identity (D2b); the unified score/forecast estimator (D4/M7); all-opts-as-strategies (D6, gated on §22).
+  **`fold→inline→fold` UNLOCKED (D3) — arena inliner PR-1 LANDED (`MCC_AST_INLINE_PASS`, default off).**
+  Key reframe from the research: `ast_inline_graft` is *emit-time codegen* (replays the callee arena into
+  the byte stream), NOT an arena op — so the arena inliner was **built from scratch**, not decoupled. New
+  `AST_STRAT_INLINE` strategy row: `ast_inline_run` snapshots `nn=ast_count`, rewrites eligible `AST_Invoke`
+  nodes in place (divmagic-style) via `ast_inline_copy_expr` (cross-arena expr copy with `Convert`-wrapped
+  param→arg substitution). **PR-1 scope = pure-expression callees only** (one `Return` of a pure scalar-
+  int/ptr expr over params; NO locals/control-flow/nested-calls/struct-return/varargs/FP) → the copy needs
+  **no frame-offset or label remap**, sidestepping the §34b/arm64 miscompile classes. Args must be pure
+  (impure ⇒ skip), so duplicating multiply-used args preserves single-eval (no temps). Now inline is a
+  **tree-expanding reorderable row** the A3c cycle interleaves: `add(2,3)+sq(5)` → `cycle iter=1` grafts,
+  `iter=2 hits=4` folds the grafted bodies → `iter=3` fixpoint, object 1686→1606. Validated: default
+  byte-identical (ctest 3958/3958); self-host x86_64 stage2==3==4 byte-identical with the pass ON (**fires
+  7× on `mcc.c`** — narrow_bs ×4, ucn_disallowed_initial, so_gate_dead, host_path_normalize — real firing,
+  still a fixpoint); differential 800/800 vs gcc + fuzz (register-pressure) **0 miscompiles** + -O6 30/30;
+  cross-arch i386/arm64 (qemu) fire + match gcc (arm64-native = CI-only). `-v128` TRACE `inline graft
+  call=%u callee=%s`. **PR-2+ (deferred):** callees with LOCALS + control flow (needs the frame-offset +
+  label/switch/break-continue remap — the §34b-risky part) + struct-return/const-arg specialization.
+  Promote stays emit-time (planning already split, but register-binding emission is irreducibly late — not
+  decouplable). Order-matters emit-divergence: not yet — emit-time const-fold makes constant cases converge.
+  **Still open:** sequence-with-repetition encoding; runner-as-strategy + memo identity (D2b); the unified
+  score/forecast estimator (D4/M7); all-opts-as-strategies (D6, gated on §22).
 
 - [ ] **[FLOAT] M2 — unify the memo on `ComboMemo` + disk backing.** a) key = `ast_intention_hash`
   (`mccast.c:435`, already the memo key, stable across builds); b) value = winner record (gates +
