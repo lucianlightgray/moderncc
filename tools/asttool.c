@@ -1,4 +1,6 @@
 #include "mccast.c"
+#include "mccgate.h" /* the gate vocabulary + M3 bridge (MCC_INTERNAL-independent) */
+#include "mccmagic.h" /* constant-division magic numbers, selftested before wiring */
 
 #include <stdio.h>
 #include <string.h>
@@ -356,6 +358,99 @@ static void suite_forecast(void) {
 	}
 }
 
+static void suite_gatemap(void) {
+	unsigned g, c;
+	AstGateMask m;
+	/* superopt-search 4-bit gate <-> unified AstGateMask: lossless round-trip over
+	 * the whole 16-value space, both directions. */
+	for (g = 0; g < 16; g++)
+		CHECK(ast_gate_to_so(ast_gate_from_so(g)) == g,
+					"so_gate round-trips through the unified mask");
+	for (m = 0; m <= (AST_SG_TEMPLATES | AST_SG_PROMOTE | AST_SG_INLINE | AST_SG_NOCALLFUL);
+			 m++) {
+		AstGateMask keep = m & (AST_SG_TEMPLATES | AST_SG_PROMOTE | AST_SG_INLINE |
+														AST_SG_NOCALLFUL);
+		CHECK(ast_gate_from_so(ast_gate_to_so(keep)) == keep,
+					"unified so-subset round-trips back through so_gate");
+	}
+	/* exact bit correspondences (mirror so_setenv_cfg). */
+	CHECK(ast_gate_from_so(SO_GATE_TEMPLATES) == AST_SG_TEMPLATES, "so templates bit");
+	CHECK(ast_gate_from_so(SO_GATE_PROMOTE) == AST_SG_PROMOTE, "so promote bit");
+	CHECK(ast_gate_from_so(SO_GATE_INLINE) == AST_SG_INLINE, "so inline bit");
+	CHECK(ast_gate_from_so(SO_GATE_NOCALLFUL) == AST_SG_NOCALLFUL, "so no_callful bit");
+	CHECK(ast_gate_from_so(15) ==
+					(AST_SG_TEMPLATES | AST_SG_PROMOTE | AST_SG_INLINE | AST_SG_NOCALLFUL),
+				"all four so bits map to all four unified bits");
+	/* perfn best_cfg (bit0=tmpl, bit1=promo, bit2=inl; the drivers use values 1/3/7). */
+	for (c = 0; c < 8; c++)
+		CHECK(ast_gate_to_perfn(ast_gate_from_perfn(c)) == c, "perfn cfg round-trips");
+	CHECK(ast_gate_from_perfn(1) == AST_SG_TEMPLATES, "perfn cfg=1 is templates only");
+	CHECK(ast_gate_from_perfn(3) == (AST_SG_TEMPLATES | AST_SG_PROMOTE),
+				"perfn cfg=3 is templates+promote");
+	CHECK(ast_gate_from_perfn(7) ==
+					(AST_SG_TEMPLATES | AST_SG_PROMOTE | AST_SG_INLINE),
+				"perfn cfg=7 is templates+promote+inline");
+	/* the superopt-only unified bits sit ABOVE the six in-process fold-gate/knob bits,
+	 * so the two vocabularies never collide in one mask. */
+	CHECK((AST_SG_PROMOTE | AST_SG_INLINE | AST_SG_NOCALLFUL | AST_SG_CPROPJOIN |
+				 AST_SG_CSEJOIN) >
+					(AST_SG_TEMPLATES | AST_SG_NARROW | AST_SG_BITFLAG | AST_SG_SETHI |
+					 AST_SG_NARROWFIX | AST_SG_SETHILEAF),
+				"superopt-only unified bits are disjoint above the fold-gate/knob bits");
+}
+
+/* Exhaustively prove the constant-division magic numbers against native `/` and `%`
+ * before any AST transform trusts them. For each divisor in a large range, apply the
+ * magic to a dense, boundary-heavy dividend set (0, 1, near multiples, the sign/word
+ * extremes) and require an exact match. A single mismatch would be a silent arithmetic
+ * miscompile, so this is the gate that lets the fold be built with confidence. */
+static void suite_magic(void) {
+	static const uint32_t uedge[] = {0u,        1u,        2u,          3u,
+																	 0x7FFFFFFFu, 0x80000000u, 0x80000001u, 0xFFFFFFFEu,
+																	 0xFFFFFFFFu, 0x01234567u, 0xFEDCBA98u, 0xAAAAAAAAu};
+	static const int32_t sedge[] = {0,          1,          -1,        2,
+																	-2,         3,          -3,        0x7FFFFFFF,
+																	(-0x7FFFFFFF - 1), 0x40000000, -0x40000000, 123456789};
+	uint32_t d;
+	int uok = 1, sok = 1, i;
+	for (d = 2; d <= 20000 && uok; d++) {
+		MccMagicU mu = mcc_magicu(d);
+		uint32_t n;
+		for (i = 0; i < (int)(sizeof uedge / sizeof uedge[0]); i++)
+			if (mcc_divu_apply(uedge[i], mu) != uedge[i] / d)
+				uok = 0;
+		/* dense sweep around every multiple boundary up to a cap */
+		for (n = 0; n < 40000u; n++)
+			if (mcc_divu_apply(n, mu) != n / d)
+				uok = 0;
+		for (n = d - 1; n < 40000u * d && n >= d - 1; n += d) {
+			if (mcc_divu_apply(n, mu) != n / d || mcc_divu_apply(n + 1, mu) != (n + 1) / d) {
+				uok = 0;
+				break;
+			}
+		}
+	}
+	CHECK(uok, "unsigned magic division matches native / over divisors 2..20000");
+
+	for (d = 2; d <= 20000 && sok; d++) {
+		MccMagicS mp = mcc_magics((int32_t)d);
+		MccMagicS mn = mcc_magics(-(int32_t)d);
+		int32_t v;
+		for (i = 0; i < (int)(sizeof sedge / sizeof sedge[0]); i++) {
+			int32_t x = sedge[i];
+			if (mcc_divs_apply(x, (int32_t)d, mp) != x / (int32_t)d)
+				sok = 0;
+			if (mcc_divs_apply(x, -(int32_t)d, mn) != x / -(int32_t)d)
+				sok = 0;
+		}
+		for (v = -30000; v < 30000; v++)
+			if (mcc_divs_apply(v, (int32_t)d, mp) != v / (int32_t)d ||
+					mcc_divs_apply(v, -(int32_t)d, mn) != v / -(int32_t)d)
+				sok = 0;
+	}
+	CHECK(sok, "signed magic division matches native / over divisors +-2..20000");
+}
+
 int main(int argc, char **argv) {
 	const char *only = argc > 1 ? argv[1] : NULL;
 	if (!only || !strcmp(only, "arena"))
@@ -378,6 +473,10 @@ int main(int argc, char **argv) {
 		suite_template();
 	if (!only || !strcmp(only, "intention"))
 		suite_intention();
+	if (!only || !strcmp(only, "gatemap"))
+		suite_gatemap();
+	if (!only || !strcmp(only, "magic"))
+		suite_magic();
 
 	fprintf(stderr, "asttool: %d checks, %d failures\n", g_checks, g_failures);
 	return g_failures ? 1 : 0;

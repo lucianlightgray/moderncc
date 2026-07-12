@@ -12,6 +12,8 @@
 #include "algorithms/lzss.h"
 #include "algorithms/lzw.h"
 #include "algorithms/rle.h"
+#include "mcccombo.h"
+#include "mccmagic.h" /* constant-division magic (selftested in tools/asttool.c:suite_magic) */
 
 #ifndef AST_ASSERT
 #include <assert.h>
@@ -546,11 +548,45 @@ static int ast_inline_node_limit = 64;
 static int ast_graft_budget_max = 2048;
 static int ast_cost_env;
 static int ast_sethi_env;
+static int ast_sethi_leaf_env;
 static int ast_bitflag_env;
 static int ast_bitflag_report_env;
 static int ast_bitflag_min;
 static int ast_cprop_join_env;
 static int ast_narrow_env;
+static int ast_narrow_fix_env;
+static int ast_sccp_fix_env;
+static int ast_dse_call_env;
+static int ast_tco_ptr_env;
+static int ast_cse_comm_env;
+static int ast_range_env; /* MCC_AST_RANGE: fold lo<=x && x<=hi to one unsigned compare */
+static int ast_divmagic_env; /* MCC_AST_DIVMAGIC: strength-reduce unsigned x/C, x%C */
+static int ast_abs_env; /* MCC_AST_ABS: branchless abs from x<0?-x:x */
+static int ast_reassoc_env; /* MCC_AST_REASSOC: combine (x OP c1) OP c2 */
+static int ast_data_report_env; /* MCC_AST_DATA_REPORT: dump const-data records to stderr */
+int ast_zero_bss_env;           /* MCC_ZERO_BSS: move all-zero .data statics into .bss */
+int ast_merge_strings_env;      /* MCC_MERGE_STRINGS: pool identical rodata string literals */
+static int ast_strpool_n;       /* live entries in the per-TU string-content pool */
+/* Array capacity for the CSE availability window; the *effective* window is the runtime
+ * `ast_cse_window` (V-cse(d): MCC_AST_CSE_WINDOW, default 64 → byte-identical; raise up to
+ * AST_CSE_MAX to catch more common subexpressions in large functions). */
+#define AST_CSE_MAX 256
+static int ast_cse_window = 64;
+/* V-cprop(d): same pattern for the const-propagation state cap — default 128 (the
+ * former fixed AST_CPROP_MAX) → byte-identical; raise to catch more live constants. */
+#define AST_CPROP_MAX 512
+static int ast_cprop_window = 128;
+/* §23 inliner budget: the recursion-depth cap. Array sized to the max; the effective
+ * cap is the runtime `ast_inline_depth_max` (MCC_AST_INLINE_DEPTH, default 8 →
+ * byte-identical; raise for deeper inlining — the graft/node/limit budgets are already
+ * env-knobs, this completes "widen the §23 inliner budgets"). */
+#define AST_INLINE_MAX_DEPTH 32
+static int ast_inline_depth_max = 8;
+/* V-tco: the max tail-recursion params handled (former fixed AST_TCO_MAXP=16). Array
+ * cap 64; effective cap is runtime `ast_tco_maxp` (MCC_AST_TCO_MAXP, default 16 →
+ * byte-identical; raise so functions with more params can be TCO'd to a loop). */
+#define AST_TCO_MAXP 64
+static int ast_tco_maxp = 16;
 static int ast_cse_join_env;
 static int ast_call_window_env;
 static int ast_licm_temp_env;
@@ -621,6 +657,7 @@ static int ast_templates_env;
 static int ast_search_env;
 static int ast_search_emitsize_env;
 static int ast_search_threads_env;
+static int ast_search_ordered_env;
 static unsigned ast_search_seconds;
 static int ast_promote_env;
 static int ast_no_callful_env;
@@ -795,6 +832,7 @@ void ast_configure(MCCState *s1) {
 	ast_search_env = ast_env_gate("MCC_AST_SEARCH", 0);
 	ast_search_emitsize_env = ast_env_gate("MCC_AST_SEARCH_EMITSIZE", 0);
 	ast_search_threads_env = ast_env_gate("MCC_AST_SEARCH_THREADS", 0);
+	ast_search_ordered_env = ast_env_gate("MCC_AST_SEARCH_ORDERED", 0);
 	ast_search_seconds = s1->optimize_search_seconds;
 	ast_promote_env = ast_env_gate("MCC_AST_PROMOTE", opt_promote);
 	ast_no_callful_env = ast_env_gate("MCC_AST_NO_CALLFUL", 0);
@@ -819,6 +857,7 @@ void ast_configure(MCCState *s1) {
 	ast_graft_budget_max = ast_env_int("MCC_AST_GRAFT", 2048);
 	ast_cost_env = ast_env_gate("MCC_AST_COST", 0);
 	ast_sethi_env = ast_env_gate("MCC_AST_SETHI", s1->optimize >= 2);
+	ast_sethi_leaf_env = ast_env_gate("MCC_AST_SETHI_LEAF", 0);
 	ast_bitflag_env = ast_env_gate("MCC_AST_BITFLAG", s1->optimize >= 2);
 	ast_bitflag_report_env = ast_env_gate("MCC_AST_BITFLAG_REPORT", 0);
 	ast_bitflag_min = ast_env_int("MCC_AST_BITFLAG", 5);
@@ -826,6 +865,39 @@ void ast_configure(MCCState *s1) {
 		ast_bitflag_min = 5;
 	ast_cprop_join_env = ast_env_gate("MCC_AST_CPROP_JOIN", s1->optimize >= 2);
 	ast_narrow_env = ast_env_gate("MCC_AST_NARROW", s1->optimize >= 2);
+	ast_narrow_fix_env = ast_env_gate("MCC_AST_NARROW_FIX", 0);
+	ast_sccp_fix_env = ast_env_gate("MCC_AST_SCCP_FIX", 0);
+	ast_dse_call_env = ast_env_gate("MCC_AST_DSE_CALL", 0);
+	ast_tco_ptr_env = ast_env_gate("MCC_AST_TCO_PTR", 0);
+	ast_cse_comm_env = ast_env_gate("MCC_AST_CSE_COMM", 0);
+	ast_range_env = ast_env_gate("MCC_AST_RANGE", 0);
+	ast_divmagic_env = ast_env_gate("MCC_AST_DIVMAGIC", 0);
+	ast_abs_env = ast_env_gate("MCC_AST_ABS", 0);
+	ast_reassoc_env = ast_env_gate("MCC_AST_REASSOC", 0);
+	ast_data_report_env = ast_env_gate("MCC_AST_DATA_REPORT", 0);
+	ast_zero_bss_env = ast_env_gate("MCC_ZERO_BSS", 0);
+	ast_merge_strings_env = ast_env_gate("MCC_MERGE_STRINGS", 0);
+	ast_strpool_n = 0; /* content pool is per translation unit */
+	ast_cse_window = ast_env_int("MCC_AST_CSE_WINDOW", 64);
+	if (ast_cse_window < 1)
+		ast_cse_window = 1;
+	if (ast_cse_window > AST_CSE_MAX)
+		ast_cse_window = AST_CSE_MAX;
+	ast_cprop_window = ast_env_int("MCC_AST_CPROP_WINDOW", 128);
+	if (ast_cprop_window < 1)
+		ast_cprop_window = 1;
+	if (ast_cprop_window > AST_CPROP_MAX)
+		ast_cprop_window = AST_CPROP_MAX;
+	ast_inline_depth_max = ast_env_int("MCC_AST_INLINE_DEPTH", 8);
+	if (ast_inline_depth_max < 1)
+		ast_inline_depth_max = 1;
+	if (ast_inline_depth_max > AST_INLINE_MAX_DEPTH)
+		ast_inline_depth_max = AST_INLINE_MAX_DEPTH;
+	ast_tco_maxp = ast_env_int("MCC_AST_TCO_MAXP", 16);
+	if (ast_tco_maxp < 1)
+		ast_tco_maxp = 1;
+	if (ast_tco_maxp > AST_TCO_MAXP)
+		ast_tco_maxp = AST_TCO_MAXP;
 	ast_cse_join_env = ast_env_gate("MCC_AST_CSE_JOIN", s1->optimize >= 2);
 	ast_call_window_env = ast_env_gate("MCC_AST_CALL_WINDOW", s1->optimize >= 2);
 	ast_licm_temp_env = ast_env_gate("MCC_AST_LICM_TEMP", 0);
@@ -2073,7 +2145,6 @@ static int ast_fn_tco;
 static CType ast_graft_rt;
 static int ast_inline_ret_sym;
 static int ast_inline_ret_slot;
-#define AST_INLINE_MAX_DEPTH 8
 static void *ast_inline_stack[AST_INLINE_MAX_DEPTH];
 static int ast_graft_budget;
 static int ast_inline_depth;
@@ -2097,7 +2168,7 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 	int hidden = ((ast_type_t(a, n) & VT_BTYPE) == VT_STRUCT && nargs == e->nparams + 1) ? 1 : 0;
 	if (nargs - hidden != e->nparams)
 		return 0;
-	if (ast_inline_depth >= AST_INLINE_MAX_DEPTH)
+	if (ast_inline_depth >= ast_inline_depth_max)
 		return 0;
 	for (int i = 0; i < ast_inline_depth; i++)
 		if (ast_inline_stack[i] == csym)
@@ -2333,6 +2404,209 @@ static int ast_local_is_readonly_scan(AstArena *a, int off) {
  * scan. Pure accelerator: it must agree with the scanners bit-for-bit, which the
  * MCC_CONFIG_AST_SHADOW build asserts on every query.
  */
+/*
+ * M5 const-data visibility side-car (roadmap step M5, first bounded/byte-neutral step).
+ * Initialized static/global data is written into Section->data at PARSE time, OUTSIDE
+ * the per-function AST capture window (init_putv / decl_initializer_alloc, mccgen.c), so
+ * it is never recorded as AstKind nodes and a pass cannot yet rewrite it. This side-car
+ * records one entry per emitted object — (section, offset, size, is_rodata) — read-only,
+ * changing no bytes, mirroring the def/use side-car (ast_du_*) below. It makes the const-
+ * data footprint queryable (a diagnostic today; M4 data-size scoring / M6 datacomp later);
+ * bringing the bytes *under* the AST for rewrite (a data AstKind + re-emit pass) is the
+ * next, non-neutral step this visibility unblocks.
+ */
+#define AST_DATA_CAP 4096
+typedef struct {
+	void *sec;
+	long off;
+	long size;
+	int is_ro;
+} AstDataRec;
+static AstDataRec ast_data_recs[AST_DATA_CAP];
+static int ast_data_n;
+static long ast_data_total_ro; /* total .rodata (const) bytes */
+static long ast_data_total_rw; /* total .data (mutable init) bytes */
+
+/* M6 datacomp candidate identification (read-only): the visibility side-car searches a
+ * codec CHAIN (combo_pipeline_search, mcccombo.h — the same combo_run permutation engine
+ * the -O4 gate search rides) over each object's just-emitted bytes to estimate how much a
+ * datacomp pass would save. A chain (e.g. lzss-then-rle) can beat any single codec, so the
+ * estimate is tighter than a best-of-3 pack, and the winning chain is exactly the recipe
+ * M6's rewrite step would emit. This changes no emitted bytes — it only measures — and
+ * answers "which const objects are worth compressing, and with what codec chain?". Objects
+ * below AST_DATA_PACKMIN are skipped (codec headers dominate); above AST_DATA_PACKMAX the
+ * estimate is skipped to bound the ping-pong scratch buffers. */
+#define AST_DATA_PACKMIN 32
+#define AST_DATA_PACKMAX 8192
+#define AST_DATA_PIPE_DEPTH 3
+static unsigned char ast_data_pipe_a[AST_DATA_PACKMAX * 2];
+static unsigned char ast_data_pipe_b[AST_DATA_PACKMAX * 2];
+static unsigned char ast_data_pipe_c[AST_DATA_PACKMAX * 2]; /* holds the compressed blob */
+static int ast_data_ncompressible; /* objects whose best chain packs to <50%, round-trip OK */
+static long ast_data_saved;        /* estimated bytes a datacomp pass could reclaim */
+static int ast_data_nlossy;        /* chains that FAILED to round-trip (codec bug signal) */
+static int ast_data_nzerobss;      /* all-zero writable objects (belong in .bss, not .data) */
+static long ast_data_zerobytes;    /* disk bytes reclaimable by moving them to .bss (NOBITS) */
+
+/* Detect an all-zero object emitted into a writable PROGBITS section (.data). C11 6.7.9:
+ * a static object with an all-zero initializer is identical to one with none, so it belongs
+ * in .bss (NOBITS — zero disk bytes) rather than occupying `size` zero bytes on disk. This
+ * is the read-only ANALYSIS half of a future zero-init-placement optimization (mirrors the
+ * M6 estimate→rewrite split): it quantifies the reclaimable disk without moving anything.
+ * .rodata all-zero objects are excluded — const zeros are a separate placement question. */
+int ast_data_all_zero(void *sec, long off, long size) {
+	const unsigned char *bytes = ((Section *)sec)->data + off;
+	long i;
+	for (i = 0; i < size; i++)
+		if (bytes[i])
+			return 0;
+	return 1;
+}
+
+/* Content pool for -fmerge-constants-style string-literal sharing. Keyed on the exact bytes
+ * plus (size, align) so a wide literal never aliases a byte literal and a reused slot always
+ * satisfies the dup's alignment. Linear probe with a hash prefilter — bounded by AST_STRPOOL_CAP
+ * per TU. Offsets index rodata_section->data, valid for the whole TU (rodata only grows). */
+#define AST_STRPOOL_CAP 8192
+typedef struct {
+	uint32_t hash;
+	long addr;
+	long size;
+	int align;
+} AstStrRec;
+static AstStrRec ast_strpool[AST_STRPOOL_CAP];
+
+static uint32_t ast_str_hash(const unsigned char *b, long n) {
+	uint32_t h = 2166136261u;
+	long i;
+	for (i = 0; i < n; i++) {
+		h ^= b[i];
+		h *= 16777619u;
+	}
+	return h;
+}
+
+long ast_strpool_find_or_add(void *sec, long addr, long size, int align) {
+	unsigned char *data = ((Section *)sec)->data;
+	const unsigned char *bytes = data + addr;
+	uint32_t h = ast_str_hash(bytes, size);
+	int i;
+	/* Reuse the exact bytes OR a suffix of a longer pooled literal (C11 6.5.2.5 footnote
+	 * permits sharing literals with overlapping representations). A pooled entry r covers
+	 * this one if this literal's bytes equal r's last `size` bytes AND that interior offset
+	 * meets this literal's alignment — then references (symbol + addend) re-home cleanly into
+	 * the middle of r. Exact match is the r->size == size case (off == r->addr). */
+	for (i = 0; i < ast_strpool_n; i++) {
+		AstStrRec *r = &ast_strpool[i];
+		long off;
+		if (r->size < size)
+			continue;
+		off = r->addr + (r->size - size);
+		if (off % align != 0)
+			continue;
+		if ((r->size == size ? r->hash == h : 1) &&
+				memcmp(data + off, bytes, (size_t)size) == 0) {
+			MCC_TRACE("strpool %s addr=%ld size=%ld -> shared=%ld (in %ld@%ld)\n",
+								off == r->addr ? "exact" : "suffix", addr, size, off, r->size, r->addr);
+			return off;
+		}
+	}
+	if (ast_strpool_n < AST_STRPOOL_CAP) {
+		ast_strpool[ast_strpool_n].hash = h;
+		ast_strpool[ast_strpool_n].addr = addr;
+		ast_strpool[ast_strpool_n].size = size;
+		ast_strpool[ast_strpool_n].align = align;
+		ast_strpool_n++;
+	}
+	return -1;
+}
+
+static void ast_data_zero_check(void *sec, long off, long size, int is_ro) {
+	if (is_ro || size <= 0)
+		return;
+	if (!ast_data_all_zero(sec, off, size))
+		return;
+	ast_data_nzerobss++;
+	ast_data_zerobytes += size;
+	MCC_TRACE("data zero off=%ld size=%ld (.bss-movable; reclaimable=%ld)\n", off, size,
+						ast_data_zerobytes);
+	if (ast_data_report_env)
+		fprintf(stderr,
+						"mcc: const-data:   ^ all-zero .data off=%ld size=%ld (belongs in .bss; reclaimable=%ld)\n",
+						off, size, ast_data_zerobytes);
+}
+
+/* Verify the winning chain actually decodes back to the exact source bytes. A datacomp
+ * rewrite that trusted a lossy chain would silently miscompile, so a candidate is only
+ * counted if compress→decompress is bit-exact. Doubles as a decoder bug-hunt: every const
+ * object in every compiled TU exercises the chosen dec() path against a known original. */
+static int ast_data_roundtrips(const unsigned char *bytes, long size, const ComboBest *best) {
+	unsigned char *comp, *back;
+	long clen, blen;
+	clen = combo_pipe_apply(best->sel, best->k, bytes, size, ast_data_pipe_a, ast_data_pipe_b,
+													sizeof ast_data_pipe_a, &comp);
+	if (clen < 0 || clen > (long)sizeof ast_data_pipe_c)
+		return 0;
+	memcpy(ast_data_pipe_c, comp, (size_t)clen);
+	blen = combo_pipe_unapply(best->sel, best->k, ast_data_pipe_c, clen, ast_data_pipe_a,
+														ast_data_pipe_b, sizeof ast_data_pipe_a, &back);
+	return blen == size && memcmp(back, bytes, (size_t)size) == 0;
+}
+
+static void ast_data_estimate(void *sec, long off, long size, int is_ro) {
+	const unsigned char *bytes;
+	ComboBest best;
+	int i;
+	if (size < AST_DATA_PACKMIN || size > AST_DATA_PACKMAX)
+		return;
+	bytes = ((Section *)sec)->data + off;
+	if (!combo_pipeline_search(bytes, size, AST_DATA_PIPE_DEPTH, ast_data_pipe_a,
+														 ast_data_pipe_b, sizeof ast_data_pipe_a, &best))
+		return;
+	MCC_TRACE("data pack off=%ld size=%ld k=%d packed=%ld evaluated=%ld (%s)\n", off, size,
+						best.k, best.score, best.evaluated, is_ro ? "rodata" : "data");
+	if (best.score <= 0 || best.score * 2 >= size)
+		return;
+	if (!ast_data_roundtrips(bytes, size, &best)) {
+		ast_data_nlossy++;
+		MCC_TRACE("data pack off=%ld size=%ld LOSSY chain (rejected, codec bug?)\n", off, size);
+		if (ast_data_report_env)
+			fprintf(stderr, "mcc: const-data:   ^ chain did NOT round-trip; rejected (off=%ld)\n", off);
+		return;
+	}
+	ast_data_ncompressible++;
+	ast_data_saved += size - best.score;
+	if (ast_data_report_env) {
+		fprintf(stderr, "mcc: const-data:   ^ compressible %ld->%ld chain=", size, best.score);
+		for (i = 0; i < best.k; i++)
+			fprintf(stderr, "%s%s", i ? "+" : "", combo_codecs[best.sel[i]].name);
+		fprintf(stderr, " (M6 candidate, round-trip OK; est saved=%ld)\n", ast_data_saved);
+	}
+}
+
+void ast_hook_data(void *sec, long off, long size, int is_ro) {
+	if (size <= 0)
+		return;
+	if (is_ro)
+		ast_data_total_ro += size;
+	else
+		ast_data_total_rw += size;
+	if (ast_data_n < AST_DATA_CAP) {
+		ast_data_recs[ast_data_n].sec = sec;
+		ast_data_recs[ast_data_n].off = off;
+		ast_data_recs[ast_data_n].size = size;
+		ast_data_recs[ast_data_n].is_ro = is_ro;
+		ast_data_n++;
+	}
+	MCC_TRACE("data emit sec=%p off=%ld size=%ld %s (ro=%ld rw=%ld)\n", sec, off, size,
+						is_ro ? "rodata" : "data", ast_data_total_ro, ast_data_total_rw);
+	if (ast_data_report_env)
+		fprintf(stderr, "mcc: const-data: %-6s off=%-8ld size=%-6ld (running ro=%ld rw=%ld)\n",
+						is_ro ? "rodata" : "data", off, size, ast_data_total_ro, ast_data_total_rw);
+	ast_data_estimate(sec, off, size, is_ro);
+	ast_data_zero_check(sec, off, size, is_ro);
+}
+
 #define AST_DU_CAP 2048
 #define AST_DU_WRITTEN 1u
 #define AST_DU_ESCAPED 2u
@@ -4370,6 +4644,53 @@ static int ast_ident_node(AstArena *a, AstLocal n) {
 			return 1;
 		}
 		return 0;
+	case TOK_EQ:
+	case TOK_NE:
+	case TOK_LT:
+	case TOK_GT:
+	case TOK_LE:
+	case TOK_GE:
+	case TOK_ULT:
+	case TOK_UGT:
+	case TOK_ULE:
+	case TOK_UGE:
+		/* V-ident(c): `x OP x` folds to a compile-time 0/1 for any relational OP and any
+		 * pure integer x (the operands are integer — the ast_ident_intt gate at entry — so
+		 * there is no float NaN concern). `<`,`>`,`!=` are always 0; `<=`,`>=`,`==` always 1;
+		 * signed/unsigned is immaterial when comparing a value to itself. A relational node
+		 * stores no result type (type_t==0); the C result type is int (VT_INT). */
+		if (ast_ident_same(a, x, y) && ast_ident_pure(a, x)) {
+			int one = (op == TOK_EQ || op == TOK_LE || op == TOK_GE || op == TOK_ULE ||
+								 op == TOK_UGE);
+			ast_ident_setlit(a, n, VT_INT, one ? 1u : 0u);
+			return 2;
+		}
+		/* V-ident(c): unsigned range against 0 — the unsigned minimum is 0, so for any
+		 * unsigned u: `u >= 0` and `0 <= u` are always 1, `u < 0` and `0 > u` always 0.
+		 * The relational op is the SIGNED token (TOK_GE/LT/LE/GT); the comparison is
+		 * unsigned iff the operand type carries VT_UNSIGNED (checked on the non-zero side).
+		 * The discarded operand must be pure. Signed `x >= 0` is left alone (value-dependent). */
+		if (op == TOK_GE && (tx & VT_UNSIGNED) && ast_ident_cval(a, y, &lt, &lv) &&
+				lv == 0 && ast_ident_pure(a, x)) {
+			ast_ident_setlit(a, n, VT_INT, 1u); /* u >= 0 */
+			return 2;
+		}
+		if (op == TOK_LT && (tx & VT_UNSIGNED) && ast_ident_cval(a, y, &lt, &lv) &&
+				lv == 0 && ast_ident_pure(a, x)) {
+			ast_ident_setlit(a, n, VT_INT, 0u); /* u < 0 */
+			return 2;
+		}
+		if (op == TOK_LE && (ty & VT_UNSIGNED) && ast_ident_cval(a, x, &lt, &lv) &&
+				lv == 0 && ast_ident_pure(a, y)) {
+			ast_ident_setlit(a, n, VT_INT, 1u); /* 0 <= u */
+			return 2;
+		}
+		if (op == TOK_GT && (ty & VT_UNSIGNED) && ast_ident_cval(a, x, &lt, &lv) &&
+				lv == 0 && ast_ident_pure(a, y)) {
+			ast_ident_setlit(a, n, VT_INT, 0u); /* 0 > u */
+			return 2;
+		}
+		return 0;
 	}
 	return 0;
 }
@@ -4529,10 +4850,23 @@ static int ast_narrow_rec(AstArena *a, AstLocal n) {
 }
 
 static int ast_narrow_run(AstArena *a) {
-	return ast_narrow_rec(a, ast_root(a));
+	int total = ast_narrow_rec(a, ast_root(a));
+	/* V-narrow(a): iterate to a fixpoint (MCC_AST_NARROW_FIX) so a narrowing that
+	 * exposes another — a freshly narrowed operand letting its parent narrow — is
+	 * caught in one strategy invocation instead of leaving residue for the next
+	 * whole-pipeline round. Default off → single post-order pass (byte-identical);
+	 * a search knob when on (each pass is individually sound, so the fixpoint only
+	 * removes more casts, never changes semantics). */
+	if (ast_narrow_fix_env) {
+		int sig;
+		do {
+			sig = ast_narrow_rec(a, ast_root(a));
+			total += sig;
+		} while (sig);
+	}
+	return total;
 }
 
-#define AST_CPROP_MAX 128
 static int ast_cprop_koff[AST_CPROP_MAX];
 static int ast_cprop_ktt[AST_CPROP_MAX];
 static uint64_t ast_cprop_kval[AST_CPROP_MAX];
@@ -4640,7 +4974,7 @@ static void ast_cprop_kill(int off) {
 static void ast_cprop_gen(int off, int tt, uint64_t v) {
 	int i = ast_cprop_find(off);
 	if (i < 0) {
-		if (ast_cprop_kn >= AST_CPROP_MAX)
+		if (ast_cprop_kn >= ast_cprop_window)
 			return;
 		i = ast_cprop_kn++;
 		ast_cprop_koff[i] = off;
@@ -5042,6 +5376,19 @@ static void ast_dse_block(AstArena *a, AstLocal bb) {
 	ast_dse_kn = 0;
 	for (AstLocal s = ast_first_child(a, bb); s != AST_NONE; s = ast_next_sib(a, s)) {
 		if (ast_kind(a, s) != AST_Store) {
+			/* V-dse: a bare call statement cannot write a NON-ESCAPING tracked local (its
+			 * address never escaped, so no pointer — global or argument — can reach it) and
+			 * reads it only via its own arguments. So instead of the conservative full reset,
+			 * kill only the locals the call reads (kill_reads scans the arg subtree; a nested
+			 * store to a local reads its Ref lval → also killed, staying conservative) and
+			 * keep the rest of the dead-store tracking. Correct by the same escape analysis
+			 * DSE already relies on. Off by default (MCC_AST_DSE_CALL) → full reset, byte-
+			 * identical; a search-explorable knob when on. Control-flow / asm / other kinds
+			 * still reset — only AST_Invoke (a call) is seen through. */
+			if (ast_dse_call_env && ast_kind(a, s) == AST_Invoke) {
+				ast_dse_kill_reads(a, s);
+				continue;
+			}
 			ast_dse_kn = 0;
 			continue;
 		}
@@ -5088,8 +5435,10 @@ static int ast_sccp_has_label_compute(AstArena *a, AstLocal n) {
 	return 0;
 }
 
-static int ast_sccp_run(AstArena *a) {
-	ast_sccp_folds = 0;
+/* One scan: fold every constant-condition two-arm If to its taken arm. Returns the
+ * number folded this scan. */
+static int ast_sccp_scan(AstArena *a) {
+	int folded = 0;
 	AstLocal nn = ast_count(a);
 	for (AstLocal n = 0; n < nn; n++) {
 		if (ast_kind(a, n) != AST_If || ast_op(a, n) != 0)
@@ -5113,7 +5462,28 @@ static int ast_sccp_run(AstArena *a) {
 			ast_clear_children(a, n);
 			ast_add_child(a, n, taken);
 		}
-		ast_sccp_folds++;
+		folded++;
+	}
+	return folded;
+}
+
+static int ast_sccp_run(AstArena *a) {
+	ast_sccp_folds = ast_sccp_scan(a);
+	/* V-sccp: fuse cprop+sccp to a fixpoint (MCC_AST_SCCP_FIX). Folding a constant
+	 * branch can expose new constants (a value written only on the removed arm becomes
+	 * provably constant); cprop propagates them, sccp folds the newly-constant branches,
+	 * and so on. Correct-by-construction and terminating: cprop only *adds* constants and
+	 * sccp only *removes* dead branches — both monotonic, neither reverts the other, so
+	 * the loop converges (bounded by node count). Default off → single scan (byte-
+	 * identical); a search knob when on. */
+	if (ast_sccp_fix_env) {
+		for (;;) {
+			int c = ast_cprop_run(a);
+			int s = ast_sccp_scan(a);
+			ast_sccp_folds += s;
+			if (c == 0 && s == 0)
+				break;
+		}
 	}
 	return ast_sccp_folds;
 }
@@ -5156,7 +5526,6 @@ static int ast_jt_run(AstArena *a) {
 	return ast_jt_folds;
 }
 
-#define AST_TCO_MAXP 16
 #define AST_TCO_LABEL (-0x54434f)
 static int ast_tco_folds;
 
@@ -5186,7 +5555,7 @@ static int ast_tco_run(AstArena *a, Sym *fsym) {
 	int np = 0;
 	for (Sym *p = fsym->type.ref->next; p; p = p->next) {
 		int v = p->v & ~SYM_FIELD;
-		if (v < TOK_IDENT || np >= AST_TCO_MAXP)
+		if (v < TOK_IDENT || np >= ast_tco_maxp)
 			return 0;
 		Sym *ls = sym_find(v);
 		if (!ls)
@@ -5194,7 +5563,13 @@ static int ast_tco_run(AstArena *a, Sym *fsym) {
 		if ((ls->r & VT_VALMASK) != VT_LOCAL || !(ls->r & VT_LVAL) || (ls->r & VT_SYM))
 			return 0;
 		int t = ls->type.t;
-		if (!ast_ident_intt(t) || (t & VT_VOLATILE) || (t & (VT_ARRAY | VT_VLA)))
+		/* V-tco(c): pointer params. The param store/reload below is type-generic
+		 * (ast_set_type with the captured ptt/pref), so a pointer stores/reloads exactly
+		 * like an integer of the same width — accept VT_PTR under MCC_AST_TCO_PTR (default
+		 * off → int-only, byte-identical). Arrays/VLAs/volatile still excluded. */
+		if ((!ast_ident_intt(t) &&
+				 !(ast_tco_ptr_env && (t & VT_BTYPE) == VT_PTR)) ||
+				(t & VT_VOLATILE) || (t & (VT_ARRAY | VT_VLA)))
 			return 0;
 		poff[np] = (int)ls->c;
 		ptt[np] = t;
@@ -5319,7 +5694,6 @@ static int ast_tco_run(AstArena *a, Sym *fsym) {
 	return converted;
 }
 
-#define AST_CSE_MAX 64
 static AstLocal ast_cse_expr[AST_CSE_MAX];
 static AstLocal ast_cse_ref[AST_CSE_MAX];
 static int ast_cse_off[AST_CSE_MAX];
@@ -5393,11 +5767,34 @@ static void ast_cse_setref(AstArena *a, AstLocal n, AstLocal ref) {
 	a->cst[n] = a->cst[ref];
 }
 
+/* V-cse(b): commutative-aware match. `a OP b` and `b OP a` compute the same value
+ * for a commutative OP (+ * & | ^ on int or float — IEEE add/mul are commutative), so
+ * reusing the first's cached result for the second is correct. Only the top-level
+ * commutative pair is reordered; deeper structure still needs exact ast_ident_same.
+ * Off by default (MCC_AST_CSE_COMM) → exact match only, byte-identical. */
+static int ast_cse_commutative_op(int op) {
+	return op == '+' || op == '*' || op == '&' || op == '|' || op == '^';
+}
+
+static int ast_cse_same(AstArena *a, AstLocal x, AstLocal y) {
+	if (ast_ident_same(a, x, y))
+		return 1;
+	if (ast_cse_comm_env && ast_kind(a, x) == AST_Binary &&
+			ast_kind(a, y) == AST_Binary && ast_nchild(a, x) == 2 &&
+			ast_nchild(a, y) == 2 && ast_op(a, x) == ast_op(a, y) &&
+			ast_cse_commutative_op(ast_op(a, x)) && ast_type_t(a, x) == ast_type_t(a, y)) {
+		AstLocal x0 = ast_child(a, x, 0), x1 = ast_child(a, x, 1);
+		AstLocal y0 = ast_child(a, y, 0), y1 = ast_child(a, y, 1);
+		return ast_ident_same(a, x0, y1) && ast_ident_same(a, x1, y0);
+	}
+	return 0;
+}
+
 static int ast_cse_try_match(AstArena *a, AstLocal n) {
 	for (int i = 0; i < ast_cse_n; i++) {
 		if (ast_cse_expr[i] == n)
 			continue;
-		if (ast_ident_same(a, ast_cse_expr[i], n)) {
+		if (ast_cse_same(a, ast_cse_expr[i], n)) {
 			ast_cse_setref(a, n, ast_cse_ref[i]);
 			ast_cse_folds++;
 			return 1;
@@ -5932,6 +6329,865 @@ static int ast_bf_run(AstArena *a) {
 	return ast_bf_folds;
 }
 
+/* V-bf(a) range-predicate fold: rewrite a signed range test `lo <= x && x <= hi`
+ * (as a condition, so the `&&` is a TOK_LAND AST_Binary node) into the branchless
+ * `(unsigned)(x - lo) <= (hi - lo)`. Correct-by-construction for constant lo <= hi and a
+ * pure integer key x (standard unsigned-subtract range identity); gcc emits this as
+ * `sub; cmp; setbe`, mcc otherwise leaves two signed compares + two branches. */
+static int ast_range_folds;
+
+/* Parse one signed relational `x REL const` (literal on either side) into an inclusive
+ * bound on the pure integer key: *is_lower=1 => x >= *bound, else x <= *bound. */
+static int ast_range_bound(AstArena *a, AstLocal n, AstLocal *key, int64_t *bound,
+													 int *is_lower) {
+	int op = ast_op(a, n), eff, ct, kt, keyleft;
+	AstLocal l, r, k, c;
+	uint64_t cv, kref;
+	int64_t cval;
+	if (ast_kind(a, n) != AST_Binary || ast_nchild(a, n) != 2)
+		return 0;
+	if (op != TOK_LE && op != TOK_GE && op != TOK_LT && op != TOK_GT)
+		return 0;
+	l = ast_child(a, n, 0);
+	r = ast_child(a, n, 1);
+	if (ast_kind(a, r) == AST_Literal) {
+		k = l;
+		c = r;
+		keyleft = 1;
+	} else if (ast_kind(a, l) == AST_Literal) {
+		k = r;
+		c = l;
+		keyleft = 0;
+	} else {
+		return 0;
+	}
+	if (!ast_ident_cval(a, c, &ct, &cv))
+		return 0;
+	if (!ast_ident_etype(a, k, &kt, &kref) || !ast_ident_intt(kt) || (kt & VT_UNSIGNED))
+		return 0;
+	if (!ast_ident_pure(a, k))
+		return 0;
+	cval = (int64_t)cv; /* value64 already sign-extended the signed literal */
+	eff = op;
+	if (!keyleft) /* `C REL x` mirrors to `x REL' C` */
+		eff = op == TOK_LE ? TOK_GE : op == TOK_GE ? TOK_LE : op == TOK_LT ? TOK_GT : TOK_LT;
+	switch (eff) {
+	case TOK_LE:
+		*is_lower = 0;
+		*bound = cval;
+		break;
+	case TOK_LT:
+		if (cval == INT64_MIN)
+			return 0; /* x < INT64_MIN: empty half-range, and cval-1 would overflow */
+		*is_lower = 0;
+		*bound = cval - 1;
+		break;
+	case TOK_GE:
+		*is_lower = 1;
+		*bound = cval;
+		break;
+	case TOK_GT:
+		if (cval == INT64_MAX)
+			return 0;
+		*is_lower = 1;
+		*bound = cval + 1;
+		break;
+	default:
+		return 0;
+	}
+	*key = k;
+	return 1;
+}
+
+static int ast_range_try(AstArena *a, AstLocal n) {
+	AstLocal c0 = ast_child(a, n, 0), c1 = ast_child(a, n, 1), k0, k1, key, kexpr, hlit;
+	int64_t b0, b1, lo, hi;
+	int low0, low1, kt, kw;
+	uint64_t kref, span;
+	if (!ast_range_bound(a, c0, &k0, &b0, &low0) ||
+			!ast_range_bound(a, c1, &k1, &b1, &low1))
+		return 0;
+	if (low0 == low1 || !ast_ident_same(a, k0, k1)) /* need one lower + one upper on same x */
+		return 0;
+	key = k0;
+	if (low0) {
+		lo = b0;
+		hi = b1;
+	} else {
+		lo = b1;
+		hi = b0;
+	}
+	if (lo > hi) /* empty/inverted range: leave it (rare, and folds to a constant elsewhere) */
+		return 0;
+	ast_ident_etype(a, key, &kt, &kref);
+	kw = (kt & VT_BTYPE) == VT_LLONG ? VT_LLONG | VT_UNSIGNED : VT_INT | VT_UNSIGNED;
+	span = (uint64_t)hi - (uint64_t)lo; /* fits: modular width matches the key type */
+	kexpr = ast_bf_keyexpr(a, kw, key, (uint64_t)lo);
+	hlit = ast_bf_lit(a, kw, span);
+	MCC_TRACE("range fold key=%u lo=%lld hi=%lld span=%llu kw=0x%x\n", (unsigned)key,
+						(long long)lo, (long long)hi, (unsigned long long)span, kw);
+	ast_set_op(a, n, TOK_ULE);
+	ast_set_type(a, n, VT_INT, 0);
+	ast_set_ival(a, n, 0);
+	ast_set_fbits(a, n, 0);
+	ast_set_sym(a, n, 0);
+	ast_set_cst(a, n, 0);
+	ast_clear_children(a, n);
+	ast_add_child(a, n, kexpr);
+	ast_add_child(a, n, hlit);
+	return 1;
+}
+
+/* OR/out-of-range form: parse a signed relational into a KEPT-range bound. `is_below=1`
+ * means the term excludes values below the range (sets the kept lower bound); else it
+ * excludes values above (sets the kept upper bound). Mirror of ast_range_bound. */
+static int ast_range_bound_or(AstArena *a, AstLocal n, AstLocal *key, int64_t *bound,
+															int *is_below) {
+	int op = ast_op(a, n), eff, ct, kt, keyleft;
+	AstLocal l, r, k, c;
+	uint64_t cv, kref;
+	int64_t cval;
+	if (ast_kind(a, n) != AST_Binary || ast_nchild(a, n) != 2)
+		return 0;
+	if (op != TOK_LE && op != TOK_GE && op != TOK_LT && op != TOK_GT)
+		return 0;
+	l = ast_child(a, n, 0);
+	r = ast_child(a, n, 1);
+	if (ast_kind(a, r) == AST_Literal) {
+		k = l;
+		c = r;
+		keyleft = 1;
+	} else if (ast_kind(a, l) == AST_Literal) {
+		k = r;
+		c = l;
+		keyleft = 0;
+	} else {
+		return 0;
+	}
+	if (!ast_ident_cval(a, c, &ct, &cv))
+		return 0;
+	if (!ast_ident_etype(a, k, &kt, &kref) || !ast_ident_intt(kt) || (kt & VT_UNSIGNED))
+		return 0;
+	if (!ast_ident_pure(a, k))
+		return 0;
+	cval = (int64_t)cv;
+	eff = op;
+	if (!keyleft)
+		eff = op == TOK_LE ? TOK_GE : op == TOK_GE ? TOK_LE : op == TOK_LT ? TOK_GT : TOK_LT;
+	switch (eff) {
+	case TOK_LT: /* x<C excluded -> kept lo=C */
+		*is_below = 1;
+		*bound = cval;
+		break;
+	case TOK_LE: /* x<=C excluded -> kept lo=C+1 */
+		if (cval == INT64_MAX)
+			return 0;
+		*is_below = 1;
+		*bound = cval + 1;
+		break;
+	case TOK_GT: /* x>C excluded -> kept hi=C */
+		*is_below = 0;
+		*bound = cval;
+		break;
+	case TOK_GE: /* x>=C excluded -> kept hi=C-1 */
+		if (cval == INT64_MIN)
+			return 0;
+		*is_below = 0;
+		*bound = cval - 1;
+		break;
+	default:
+		return 0;
+	}
+	*key = k;
+	return 1;
+}
+
+/* `x < lo || x > hi` (an out-of-range/bounds check, TOK_LOR of two relationals) ->
+ * `(unsigned)(x - lo) > (hi - lo)`. The complement of ast_range_try; same identity. */
+static int ast_range_try_lor(AstArena *a, AstLocal n) {
+	AstLocal c0 = ast_child(a, n, 0), c1 = ast_child(a, n, 1), k0, k1, key, kexpr, hlit;
+	int64_t b0, b1, lo, hi;
+	int bel0, bel1, kt, kw;
+	uint64_t kref, span;
+	if (!ast_range_bound_or(a, c0, &k0, &b0, &bel0) ||
+			!ast_range_bound_or(a, c1, &k1, &b1, &bel1))
+		return 0;
+	if (bel0 == bel1 || !ast_ident_same(a, k0, k1))
+		return 0;
+	key = k0;
+	if (bel0) {
+		lo = b0;
+		hi = b1;
+	} else {
+		lo = b1;
+		hi = b0;
+	}
+	if (lo > hi)
+		return 0;
+	ast_ident_etype(a, key, &kt, &kref);
+	kw = (kt & VT_BTYPE) == VT_LLONG ? VT_LLONG | VT_UNSIGNED : VT_INT | VT_UNSIGNED;
+	span = (uint64_t)hi - (uint64_t)lo;
+	kexpr = ast_bf_keyexpr(a, kw, key, (uint64_t)lo);
+	hlit = ast_bf_lit(a, kw, span);
+	MCC_TRACE("range fold(or) key=%u lo=%lld hi=%lld span=%llu kw=0x%x\n", (unsigned)key,
+						(long long)lo, (long long)hi, (unsigned long long)span, kw);
+	ast_set_op(a, n, TOK_UGT);
+	ast_set_type(a, n, VT_INT, 0);
+	ast_set_ival(a, n, 0);
+	ast_set_fbits(a, n, 0);
+	ast_set_sym(a, n, 0);
+	ast_set_cst(a, n, 0);
+	ast_clear_children(a, n);
+	ast_add_child(a, n, kexpr);
+	ast_add_child(a, n, hlit);
+	return 1;
+}
+
+static int ast_range_run(AstArena *a) {
+	AstLocal nn = ast_count(a);
+	ast_range_folds = 0;
+	for (AstLocal n = 0; n < nn; n++)
+		if (ast_kind(a, n) == AST_Binary && ast_op(a, n) == TOK_LAND &&
+				ast_nchild(a, n) == 2)
+			ast_range_folds += ast_range_try(a, n);
+	nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++)
+		if (ast_kind(a, n) == AST_Binary && ast_op(a, n) == TOK_LOR &&
+				ast_nchild(a, n) == 2)
+			ast_range_folds += ast_range_try_lor(a, n);
+	return ast_range_folds;
+}
+
+/* Constant unsigned division/remainder strength reduction: `x / C` and `x % C` for a
+ * 32-bit unsigned x and a non-power-of-2 constant C become a high-multiply + shift, using
+ * the magic (M, s) proven exhaustively in tools/asttool.c:suite_magic. This first cut
+ * handles the clean subset where the magic needs no overflow-add correction (`mag.a==0`),
+ * so x is evaluated exactly once (in the mul-high) — no expensive duplication. The magic
+ * arithmetic is trusted (selftested); the remaining risk is only this AST construction,
+ * which the full M8 regimen validates. Signed division and the add-correction case are
+ * deferred (they need a shared-quotient temp / duplication). */
+static int ast_divmagic_folds;
+
+static int ast_divmagic_try(AstArena *a, AstLocal n) {
+	int op = ast_op(a, n), nt, ct, xt;
+	AstLocal x = ast_child(a, n, 0), cnode = ast_child(a, n, 1), xu, prod, hi, hi32;
+	uint64_t nref, xref, cv;
+	uint32_t C;
+	MccMagicU mag;
+	const int U64 = VT_LLONG | VT_UNSIGNED, U32 = VT_INT | VT_UNSIGNED;
+	if (!ast_ident_etype(a, n, &nt, &nref) || (nt & (VT_BTYPE | VT_UNSIGNED)) != U32)
+		return 0; /* only 32-bit unsigned division */
+	if (ast_kind(a, cnode) != AST_Literal || !ast_ident_cval(a, cnode, &ct, &cv))
+		return 0;
+	C = (uint32_t)cv;
+	if (C < 3 || (C & (C - 1)) == 0) /* skip 0/1/2 and powers of 2 (backend does shr/and) */
+		return 0;
+	if (!ast_ident_etype(a, x, &xt, &xref) || (xt & (VT_BTYPE | VT_UNSIGNED)) != U32)
+		return 0; /* dividend must be a genuine unsigned int (u64 cast zero-extends) */
+	if (!ast_ident_pure(a, x))
+		return 0;
+	mag = mcc_magicu(C);
+	if (mag.a && mag.s < 1) /* add-correction needs s>=1 for the (s-1) shift; skip degenerate */
+		return 0;
+	{
+		AstLocal inner;
+		uint64_t shamt;
+		/* hi32 = (uint32)(((uint64)x * M) >> 32)  — the mul-high, mirrors mcc_divu_apply */
+		xu = ast_bf_ucast(a, U64, x); /* (u64)x, dups x */
+		prod = ast_bf_bin(a, '*', U64, xu, ast_bf_lit(a, U64, mag.M));
+		hi = ast_bf_bin(a, TOK_SHR, U64, prod, ast_bf_lit(a, U64, 32));
+		hi32 = ast_node(a, AST_Convert);
+		ast_set_type(a, hi32, U32, 0);
+		ast_add_child(a, hi32, hi);
+		if (!mag.a) { /* quotient = hi32 >> s */
+			inner = hi32;
+			shamt = (uint64_t)mag.s;
+		} else { /* add-correction: t = ((x - hi32) >> 1) + hi32; quotient = t >> (s-1) */
+			AstLocal sub = ast_bf_bin(a, '-', U32, ast_dup_sub(a, x), hi32);
+			AstLocal shr1 = ast_bf_bin(a, TOK_SHR, U32, sub, ast_bf_lit(a, U32, 1));
+			inner = ast_bf_bin(a, '+', U32, shr1, ast_dup_sub(a, hi32)); /* dup -> 2x mul-high */
+			shamt = (uint64_t)(mag.s - 1);
+		}
+		MCC_TRACE("divmagic %s C=%u M=0x%x s=%d add=%d\n", op == '/' ? "div" : "rem", C, mag.M,
+							mag.s, mag.a);
+		ast_set_type(a, n, U32, 0);
+		ast_set_ival(a, n, 0);
+		ast_set_fbits(a, n, 0);
+		ast_set_sym(a, n, 0);
+		ast_set_cst(a, n, 0);
+		ast_clear_children(a, n);
+		if (op == '/') { /* n := inner >> shamt */
+			ast_set_op(a, n, TOK_SHR);
+			ast_add_child(a, n, inner);
+			ast_add_child(a, n, ast_bf_lit(a, U32, shamt));
+		} else { /* x % C = x - (x/C)*C */
+			AstLocal q = ast_bf_bin(a, TOK_SHR, U32, inner, ast_bf_lit(a, U32, shamt));
+			AstLocal qC = ast_bf_bin(a, '*', U32, q, ast_bf_lit(a, U32, C));
+			ast_set_op(a, n, '-');
+			ast_add_child(a, n, ast_dup_sub(a, x));
+			ast_add_child(a, n, qC);
+		}
+	}
+	return 1;
+}
+
+/* Signed division/remainder by a positive power of two, which mcc otherwise lowers to a
+ * `cltd; idiv` (~20-40 cyc) instead of gcc's cheap shift/and sequence. Correct-by-
+ * construction round-toward-zero identity: `x / 2^k = (x + ((x>>31) & (2^k-1))) >> k`
+ * (arithmetic shifts), and `x % 2^k = x - (x/2^k << k)`. Only the pure dividend x is
+ * duplicated (a cheap re-load, no multiply), so unlike the general signed magic this needs
+ * no shared-quotient temp. */
+static int ast_divmagic_try_spow2(AstArena *a, AstLocal n) {
+	int op = ast_op(a, n), nt, ct, xt, k, neg;
+	AstLocal x = ast_child(a, n, 0), cnode = ast_child(a, n, 1), bias, sum;
+	uint64_t nref, xref, cv, t, ac;
+	int64_t C;
+	const int S32 = VT_INT;
+	if (!ast_ident_etype(a, n, &nt, &nref) || (nt & (VT_BTYPE | VT_UNSIGNED)) != VT_INT)
+		return 0; /* signed 32-bit only */
+	if (ast_kind(a, cnode) != AST_Literal || !ast_ident_cval(a, cnode, &ct, &cv))
+		return 0;
+	C = (int64_t)cv;
+	neg = C < 0;
+	ac = (uint64_t)(neg ? -C : C); /* |C| */
+	if (ac < 2 || (ac & (ac - 1)) != 0) /* |C| a power of two >= 2 (handles negative C too) */
+		return 0;
+	if (!ast_ident_etype(a, x, &xt, &xref) || (xt & (VT_BTYPE | VT_UNSIGNED)) != VT_INT)
+		return 0;
+	if (!ast_ident_pure(a, x))
+		return 0;
+	for (k = 0, t = ac; t > 1; t >>= 1)
+		k++;
+	/* bias = (x >> 31) & (|C|-1); sum = x + bias */
+	bias = ast_bf_bin(a, '&', S32,
+										ast_bf_bin(a, TOK_SAR, S32, ast_dup_sub(a, x), ast_bf_lit(a, S32, 31)),
+										ast_bf_lit(a, S32, ac - 1));
+	sum = ast_bf_bin(a, '+', S32, ast_dup_sub(a, x), bias);
+	MCC_TRACE("divmagic spow2 %s C=%lld k=%d neg=%d\n", op == '/' ? "div" : "rem", (long long)C,
+						k, neg);
+	if (op == '/') { /* q = sum >> k (arithmetic); x/(-2^k) = -q */
+		ast_set_type(a, n, S32, 0);
+		ast_set_ival(a, n, 0);
+		ast_set_fbits(a, n, 0);
+		ast_set_sym(a, n, 0);
+		ast_set_cst(a, n, 0);
+		ast_clear_children(a, n);
+		if (neg) { /* n := 0 - (sum >> k) */
+			AstLocal q = ast_bf_bin(a, TOK_SAR, S32, sum, ast_bf_lit(a, S32, (uint64_t)k));
+			ast_set_op(a, n, '-');
+			ast_add_child(a, n, ast_bf_lit(a, S32, 0));
+			ast_add_child(a, n, q);
+		} else { /* n := sum >> k */
+			ast_set_op(a, n, TOK_SAR);
+			ast_add_child(a, n, sum);
+			ast_add_child(a, n, ast_bf_lit(a, S32, (uint64_t)k));
+		}
+	} else { /* n := x - ((sum >> k) << k)  — same result for -2^k as for 2^k (x%C == x%|C|) */
+		AstLocal quot = ast_bf_bin(a, TOK_SAR, S32, sum, ast_bf_lit(a, S32, (uint64_t)k));
+		AstLocal shl = ast_bf_bin(a, TOK_SHL, S32, quot, ast_bf_lit(a, S32, (uint64_t)k));
+		AstLocal xdup = ast_dup_sub(a, x);
+		ast_set_op(a, n, '-');
+		ast_set_type(a, n, S32, 0);
+		ast_set_ival(a, n, 0);
+		ast_set_fbits(a, n, 0);
+		ast_set_sym(a, n, 0);
+		ast_set_cst(a, n, 0);
+		ast_clear_children(a, n);
+		ast_add_child(a, n, xdup);
+		ast_add_child(a, n, shl);
+	}
+	return 1;
+}
+
+/* Signed non-power-of-two `x / C` and `x % C` via the (exhaustively selftested) signed
+ * magic, mirroring mcc_divs_apply. The sign-bit correction reuses the shifted quotient, so
+ * the mul-high is duplicated once (CSE runs earlier in the pipeline, so it isn't merged) — a
+ * 2× multiply for `/` (3× for `% = x - (x/C)*C`), still a clear win over `idiv`. */
+static int ast_divmagic_try_signed(AstArena *a, AstLocal n) {
+	int op = ast_op(a, n), nt, ct, xt;
+	AstLocal x = ast_child(a, n, 0), cnode = ast_child(a, n, 1);
+	AstLocal Mi, xi, prod, hi, q0, q1, q2, cvt, signbit;
+	uint64_t nref, xref, cv, ac;
+	int64_t C;
+	MccMagicS mag;
+	const int S64 = VT_LLONG, S32 = VT_INT, U32 = VT_INT | VT_UNSIGNED;
+	if (!ast_ident_etype(a, n, &nt, &nref) || (nt & (VT_BTYPE | VT_UNSIGNED)) != VT_INT)
+		return 0; /* signed 32-bit */
+	if (ast_kind(a, cnode) != AST_Literal || !ast_ident_cval(a, cnode, &ct, &cv))
+		return 0;
+	C = (int64_t)cv;
+	if (C >= -1 && C <= 1)
+		return 0;
+	ac = (uint64_t)(C < 0 ? -C : C);
+	if ((ac & (ac - 1)) == 0) /* power of two: pos handled by spow2, neg left as idiv */
+		return 0;
+	if (!ast_ident_etype(a, x, &xt, &xref) || (xt & (VT_BTYPE | VT_UNSIGNED)) != VT_INT)
+		return 0;
+	if (!ast_ident_pure(a, x))
+		return 0;
+	mag = mcc_magics((int32_t)C);
+	/* q0 = (int32)((int64)M * (int64)x >> 32) */
+	Mi = ast_bf_lit(a, S64, (uint64_t)(int64_t)mag.M);
+	xi = ast_bf_ucast(a, S64, x); /* Convert to i64, dups x (sign-extends: signed dest) */
+	prod = ast_bf_bin(a, '*', S64, Mi, xi);
+	hi = ast_bf_bin(a, TOK_SAR, S64, prod, ast_bf_lit(a, S64, 32));
+	q0 = ast_node(a, AST_Convert);
+	ast_set_type(a, q0, S32, 0);
+	ast_add_child(a, q0, hi);
+	if (C > 0 && mag.M < 0)
+		q1 = ast_bf_bin(a, '+', S32, q0, ast_dup_sub(a, x));
+	else if (C < 0 && mag.M > 0)
+		q1 = ast_bf_bin(a, '-', S32, q0, ast_dup_sub(a, x));
+	else
+		q1 = q0;
+	q2 = ast_bf_bin(a, TOK_SAR, S32, q1, ast_bf_lit(a, S32, (uint64_t)mag.s));
+	/* signbit = (uint32)q2 >> 31 (logical) */
+	cvt = ast_node(a, AST_Convert);
+	ast_set_type(a, cvt, U32, 0);
+	ast_add_child(a, cvt, ast_dup_sub(a, q2));
+	signbit = ast_bf_bin(a, TOK_SHR, U32, cvt, ast_bf_lit(a, U32, 31));
+	MCC_TRACE("divmagic signed %s C=%lld M=0x%x s=%d\n", op == '/' ? "div" : "rem",
+						(long long)C, (unsigned)mag.M, mag.s);
+	ast_set_type(a, n, S32, 0);
+	ast_set_ival(a, n, 0);
+	ast_set_fbits(a, n, 0);
+	ast_set_sym(a, n, 0);
+	ast_set_cst(a, n, 0);
+	ast_clear_children(a, n);
+	if (op == '/') { /* n := q2 + signbit (the quotient) */
+		ast_set_op(a, n, '+');
+		ast_add_child(a, n, q2);
+		ast_add_child(a, n, signbit);
+	} else { /* n := x - (x/C)*C */
+		AstLocal qexpr = ast_bf_bin(a, '+', S32, q2, signbit);
+		AstLocal qC = ast_bf_bin(a, '*', S32, qexpr, ast_bf_lit(a, S32, (uint64_t)(uint32_t)C));
+		ast_set_op(a, n, '-');
+		ast_add_child(a, n, ast_dup_sub(a, x));
+		ast_add_child(a, n, qC);
+	}
+	return 1;
+}
+
+static int ast_divmagic_run(AstArena *a) {
+	AstLocal nn = ast_count(a);
+	ast_divmagic_folds = 0;
+	for (AstLocal n = 0; n < nn; n++)
+		if (ast_kind(a, n) == AST_Binary && (ast_op(a, n) == '/' || ast_op(a, n) == '%') &&
+				ast_nchild(a, n) == 2) {
+			int f = ast_divmagic_try(a, n); /* unsigned magic */
+			if (!f)
+				f = ast_divmagic_try_spow2(a, n); /* signed power-of-two */
+			if (!f)
+				f = ast_divmagic_try_signed(a, n); /* signed non-power-of-two division */
+			ast_divmagic_folds += f;
+		}
+	return ast_divmagic_folds;
+}
+
+/* Branchless abs/-abs: mcc lowers `x < 0 ? -x : x` to a compare + branch; the identity
+ * `abs(x) = (x ^ (x>>31)) - (x>>31)` (arithmetic shift) is branchless and target-independent,
+ * duplicating only the pure x (cheap, no temp/cmov). A strict win over the branch. */
+static int ast_abs_folds;
+
+/* `0 - k` -> k, else AST_NONE. Unary minus is lowered to `0 - x` (mccgen `vpushi(0);gen_op('-')`). */
+static AstLocal ast_abs_neg_of(AstArena *a, AstLocal n) {
+	AstLocal l;
+	int ct;
+	uint64_t cv;
+	if (ast_kind(a, n) != AST_Binary || ast_op(a, n) != '-' || ast_nchild(a, n) != 2)
+		return AST_NONE;
+	l = ast_child(a, n, 0);
+	if (ast_kind(a, l) != AST_Literal || !ast_ident_cval(a, l, &ct, &cv) || cv != 0)
+		return AST_NONE;
+	return ast_child(a, n, 1);
+}
+
+/* Is n the integer literal 0? (for clamp-to-zero max(x,0)/min(x,0) recognition) */
+static int ast_abs_is_zero(AstArena *a, AstLocal n) {
+	int ct;
+	uint64_t cv;
+	return ast_kind(a, n) == AST_Literal && ast_ident_cval(a, n, &ct, &cv) && cv == 0;
+}
+
+/* `x REL 0` -> key + rel normalized onto x (LT/LE/GT/GE); literal must be exactly 0. */
+static int ast_abs_cmp_zero(AstArena *a, AstLocal n, AstLocal *key, int *rel) {
+	int op = ast_op(a, n), ct, keyleft;
+	AstLocal l, r, k, c;
+	uint64_t cv;
+	if (ast_kind(a, n) != AST_Binary || ast_nchild(a, n) != 2)
+		return 0;
+	if (op != TOK_LT && op != TOK_LE && op != TOK_GT && op != TOK_GE)
+		return 0;
+	l = ast_child(a, n, 0);
+	r = ast_child(a, n, 1);
+	if (ast_kind(a, r) == AST_Literal) {
+		k = l;
+		c = r;
+		keyleft = 1;
+	} else if (ast_kind(a, l) == AST_Literal) {
+		k = r;
+		c = l;
+		keyleft = 0;
+	} else {
+		return 0;
+	}
+	if (!ast_ident_cval(a, c, &ct, &cv) || cv != 0)
+		return 0;
+	*rel = keyleft ? op
+								 : op == TOK_LT ? TOK_GT : op == TOK_GT ? TOK_LT : op == TOK_LE ? TOK_GE : TOK_LE;
+	*key = k;
+	return 1;
+}
+
+/* `S(x) = x >> (width-1)` (arithmetic sign mask: 0 if x>=0, -1 if x<0). */
+static AstLocal ast_abs_signmask(AstArena *a, AstLocal key, int ty, int sh) {
+	return ast_bf_bin(a, TOK_SAR, ty, ast_dup_sub(a, key), ast_bf_lit(a, ty, (uint64_t)sh));
+}
+
+/* Recognize a signed `x REL 0 ? A : B` ternary and lower it branchlessly (32- or 64-bit):
+ *  abs(x)      = (x^s) - s     -abs(x)     = s - (x^s)          (s = x>>(w-1))
+ *  max(x,0)    = x - (x & s)   min(x,0)    = x & s
+ * where {A,B} is {x,-x} (abs) or {x,0} (clamp). Only pure signed x is duplicated. */
+static int ast_abs_try(AstArena *a, AstLocal n) {
+	AstLocal cond, tval, fval, key, negval, posval;
+	int rel, kt, neg_is_t, mode, ty, sh; /* mode: 0 abs, 1 -abs, 2 max(x,0), 3 min(x,0) */
+	uint64_t kref;
+	if (ast_kind(a, n) != AST_If || ast_op(a, n) != 5 || ast_nchild(a, n) != 3)
+		return 0;
+	cond = ast_child(a, n, 0);
+	tval = ast_child(a, n, 1);
+	fval = ast_child(a, n, 2);
+	if (!ast_abs_cmp_zero(a, cond, &key, &rel))
+		return 0;
+	if (!ast_ident_etype(a, key, &kt, &kref) || (kt & VT_UNSIGNED))
+		return 0; /* signed integer key */
+	if ((kt & VT_BTYPE) == VT_INT) {
+		ty = VT_INT;
+		sh = 31;
+	} else if ((kt & VT_BTYPE) == VT_LLONG) {
+		ty = VT_LLONG;
+		sh = 63;
+	} else {
+		return 0; /* 32- or 64-bit signed only */
+	}
+	if (!ast_ident_pure(a, key))
+		return 0;
+	/* which value is chosen when x < 0? */
+	neg_is_t = (rel == TOK_LT || rel == TOK_LE);
+	negval = neg_is_t ? tval : fval; /* value for x<0 */
+	posval = neg_is_t ? fval : tval; /* value for x>=0 */
+	{
+		AstLocal nn = ast_abs_neg_of(a, negval), pn = ast_abs_neg_of(a, posval);
+		if (nn != AST_NONE && ast_ident_same(a, nn, key) && ast_ident_same(a, posval, key))
+			mode = 0; /* x<0 -> -x, x>=0 -> x  ==> abs */
+		else if (pn != AST_NONE && ast_ident_same(a, pn, key) && ast_ident_same(a, negval, key))
+			mode = 1; /* x<0 -> x, x>=0 -> -x  ==> -abs */
+		else if (ast_abs_is_zero(a, negval) && ast_ident_same(a, posval, key))
+			mode = 2; /* x<0 -> 0, x>=0 -> x  ==> max(x,0) */
+		else if (ast_abs_is_zero(a, posval) && ast_ident_same(a, negval, key))
+			mode = 3; /* x<0 -> x, x>=0 -> 0  ==> min(x,0) */
+		else
+			return 0;
+	}
+	MCC_TRACE("abs/clamp fold key=%u mode=%d ty=0x%x\n", (unsigned)key, mode, ty);
+	ast_set_type(a, n, ty, 0);
+	ast_set_ival(a, n, 0);
+	ast_set_fbits(a, n, 0);
+	ast_set_sym(a, n, 0);
+	ast_set_cst(a, n, 0);
+	ast_set_kind(a, n, AST_Binary); /* was AST_If (ternary) */
+	ast_clear_children(a, n);
+	if (mode == 0) { /* abs = (x^s) - s */
+		ast_set_op(a, n, '-');
+		ast_add_child(a, n,
+									ast_bf_bin(a, '^', ty, ast_dup_sub(a, key), ast_abs_signmask(a, key, ty, sh)));
+		ast_add_child(a, n, ast_abs_signmask(a, key, ty, sh));
+	} else if (mode == 1) { /* -abs = s - (x^s) */
+		ast_set_op(a, n, '-');
+		ast_add_child(a, n, ast_abs_signmask(a, key, ty, sh));
+		ast_add_child(a, n,
+									ast_bf_bin(a, '^', ty, ast_dup_sub(a, key), ast_abs_signmask(a, key, ty, sh)));
+	} else if (mode == 2) { /* max(x,0) = x - (x & s) */
+		ast_set_op(a, n, '-');
+		ast_add_child(a, n, ast_dup_sub(a, key));
+		ast_add_child(a, n,
+									ast_bf_bin(a, '&', ty, ast_dup_sub(a, key), ast_abs_signmask(a, key, ty, sh)));
+	} else { /* min(x,0) = x & s */
+		ast_set_op(a, n, '&');
+		ast_add_child(a, n, ast_dup_sub(a, key));
+		ast_add_child(a, n, ast_abs_signmask(a, key, ty, sh));
+	}
+	return 1;
+}
+
+static int ast_abs_run(AstArena *a) {
+	AstLocal nn = ast_count(a);
+	ast_abs_folds = 0;
+	for (AstLocal n = 0; n < nn; n++)
+		if (ast_kind(a, n) == AST_If && ast_op(a, n) == 5 && ast_nchild(a, n) == 3) {
+			ast_abs_folds += ast_abs_try(a, n);
+		}
+	return ast_abs_folds;
+}
+
+/* Constant reassociation: `(x OP c1) OP c2` -> `x OP combine(c1,c2)` for a same-op nest with
+ * two integer-literal constants. mcc otherwise emits both ops (e.g. `shr;shr`, `and;and`).
+ * Correct-by-construction: &/|/^ combine exactly; +/* are modular (machine-equivalent); shifts
+ * combine only when the summed count stays below the type width (else the double shift ≠ a
+ * single one). x is duplicated so it must be pure. */
+static int ast_reassoc_folds;
+
+static int ast_reassoc_try(AstArena *a, AstLocal n) {
+	int op = ast_op(a, n), c1t, c2t, xt, nt, iop, additive, result_op;
+	AstLocal inner, c2n, x, c1n;
+	uint64_t c1v, c2v, combined, xref, nref, width;
+	if (op != '&' && op != '|' && op != '^' && op != '+' && op != '-' && op != '*' &&
+			op != TOK_SHL && op != TOK_SHR && op != TOK_SAR)
+		return 0;
+	if (ast_nchild(a, n) != 2)
+		return 0;
+	/* Find the outer constant (c2) and the inner subtree. For a commutative op the constant
+	 * may be on either side (`3 + (x+5)`); for `-`/shifts it must be the right operand. */
+	{
+		AstLocal ch0 = ast_child(a, n, 0), ch1 = ast_child(a, n, 1);
+		int comm = (op == '+' || op == '*' || op == '&' || op == '|' || op == '^');
+		if (ast_kind(a, ch1) == AST_Literal && ast_ident_cval(a, ch1, &c2t, &c2v))
+			inner = ch0;
+		else if (comm && ast_kind(a, ch0) == AST_Literal && ast_ident_cval(a, ch0, &c2t, &c2v))
+			inner = ch1;
+		else
+			return 0;
+	}
+	(void)c2n;
+	if (ast_kind(a, inner) != AST_Binary || ast_nchild(a, inner) != 2)
+		return 0;
+	/* +/- are one additive group: allow mixing (`(x+c1)-c2`); other ops need a same-op nest. */
+	iop = ast_op(a, inner);
+	additive = (op == '+' || op == '-');
+	if (additive ? (iop != '+' && iop != '-') : (iop != op))
+		return 0;
+	/* extract the inner's constant (c1) + the variable x, const on either side if commutative. */
+	{
+		AstLocal ich0 = ast_child(a, inner, 0), ich1 = ast_child(a, inner, 1);
+		int icomm = (iop == '+' || iop == '*' || iop == '&' || iop == '|' || iop == '^');
+		if (ast_kind(a, ich1) == AST_Literal && ast_ident_cval(a, ich1, &c1t, &c1v))
+			x = ich0;
+		else if (icomm && ast_kind(a, ich0) == AST_Literal && ast_ident_cval(a, ich0, &c1t, &c1v))
+			x = ich1;
+		else
+			return 0;
+	}
+	(void)c1n;
+	if (!ast_ident_etype(a, n, &nt, &nref) || !ast_ident_intt(nt))
+		return 0;
+	if (!ast_ident_etype(a, x, &xt, &xref) || !ast_ident_pure(a, x))
+		return 0;
+	width = (nt & VT_BTYPE) == VT_LLONG ? 64 : 32;
+	result_op = op;
+	if (additive) { /* net offset; always emit `x + net` (backend turns +neg into sub) */
+		combined = (iop == '+' ? c1v : (uint64_t)(0 - c1v)) +
+							 (op == '+' ? c2v : (uint64_t)(0 - c2v));
+		result_op = '+';
+	} else
+		switch (op) {
+		case '&': combined = c1v & c2v; break;
+		case '|': combined = c1v | c2v; break;
+		case '^': combined = c1v ^ c2v; break;
+		case '*': combined = c1v * c2v; break;
+		default: /* shifts: only when the combined count stays in range */
+			if (c1v >= width || c2v >= width || c1v + c2v >= width)
+				return 0;
+			combined = c1v + c2v;
+			break;
+		}
+	MCC_TRACE("reassoc op=%d iop=%d c1=%llu c2=%llu -> op=%d %llu\n", op, iop,
+						(unsigned long long)c1v, (unsigned long long)c2v, result_op,
+						(unsigned long long)combined);
+	ast_set_op(a, n, result_op);
+	ast_set_type(a, n, nt, nref);
+	ast_set_ival(a, n, 0);
+	ast_set_fbits(a, n, 0);
+	ast_set_sym(a, n, 0);
+	ast_set_cst(a, n, 0);
+	ast_clear_children(a, n);
+	ast_add_child(a, n, ast_dup_sub(a, x));
+	ast_add_child(a, n, ast_bf_lit(a, nt, combined));
+	return 1;
+}
+
+/* `(x << c) >> c` for UNSIGNED (logical shifts) clears the top c bits -> `x & (~0 >> c)`.
+ * mcc otherwise emits two shifts. Only unsigned: for signed the arithmetic `>>` sign-extends
+ * (not a mask). Same shift count, c in (0,width). x duplicated so must be pure. */
+static int ast_reassoc_shlshr(AstArena *a, AstLocal n) {
+	int nt, ct, ict, xt;
+	AstLocal inner, c2n, x, c1n;
+	uint64_t c1v, c2v, nref, xref, width, mask;
+	/* the parser emits TOK_SAR ('>') for `>>`; logical-vs-arithmetic is the operand TYPE, so
+	 * the VT_UNSIGNED check below is what makes this a logical (mask-equivalent) shift. */
+	if (ast_op(a, n) != TOK_SAR || ast_nchild(a, n) != 2)
+		return 0;
+	inner = ast_child(a, n, 0);
+	c2n = ast_child(a, n, 1);
+	if (ast_kind(a, c2n) != AST_Literal || !ast_ident_cval(a, c2n, &ct, &c2v))
+		return 0;
+	if (ast_kind(a, inner) != AST_Binary || ast_op(a, inner) != TOK_SHL ||
+			ast_nchild(a, inner) != 2)
+		return 0;
+	x = ast_child(a, inner, 0);
+	c1n = ast_child(a, inner, 1);
+	if (ast_kind(a, c1n) != AST_Literal || !ast_ident_cval(a, c1n, &ict, &c1v) || c1v != c2v)
+		return 0;
+	if (!ast_ident_etype(a, n, &nt, &nref) || !ast_ident_intt(nt) || !(nt & VT_UNSIGNED))
+		return 0; /* unsigned only */
+	width = (nt & VT_BTYPE) == VT_LLONG ? 64 : 32;
+	if (c1v == 0 || c1v >= width)
+		return 0;
+	if (!ast_ident_etype(a, x, &xt, &xref) || !ast_ident_pure(a, x))
+		return 0;
+	mask = width == 64 ? (~0ULL >> c1v) : (uint64_t)(0xFFFFFFFFu >> c1v);
+	MCC_TRACE("reassoc shlshr c=%llu -> & 0x%llx\n", (unsigned long long)c1v,
+						(unsigned long long)mask);
+	ast_set_op(a, n, '&');
+	ast_set_type(a, n, nt, nref);
+	ast_set_ival(a, n, 0);
+	ast_set_fbits(a, n, 0);
+	ast_set_sym(a, n, 0);
+	ast_set_cst(a, n, 0);
+	ast_clear_children(a, n);
+	ast_add_child(a, n, ast_dup_sub(a, x));
+	ast_add_child(a, n, ast_bf_lit(a, nt, mask));
+	return 1;
+}
+
+/* `(x >> c) << c` clears the LOW c bits -> `x & ~((1<<c)-1)` (align-down). Works for BOTH
+ * signed and unsigned: clearing low bits is sign-independent (arith `>>` then `<<` still just
+ * zeros the low c bits). Same shift count, c in (0,width). x duplicated so must be pure. */
+static int ast_reassoc_shrshl(AstArena *a, AstLocal n) {
+	int nt, ct, ict, xt;
+	AstLocal inner, c2n, x, c1n;
+	uint64_t c1v, c2v, nref, xref, width, mask;
+	if (ast_op(a, n) != TOK_SHL || ast_nchild(a, n) != 2) /* outer `<<` */
+		return 0;
+	inner = ast_child(a, n, 0);
+	c2n = ast_child(a, n, 1);
+	if (ast_kind(a, c2n) != AST_Literal || !ast_ident_cval(a, c2n, &ct, &c2v))
+		return 0;
+	if (ast_kind(a, inner) != AST_Binary || ast_op(a, inner) != TOK_SAR || /* inner `>>` */
+			ast_nchild(a, inner) != 2)
+		return 0;
+	x = ast_child(a, inner, 0);
+	c1n = ast_child(a, inner, 1);
+	if (ast_kind(a, c1n) != AST_Literal || !ast_ident_cval(a, c1n, &ict, &c1v) || c1v != c2v)
+		return 0;
+	if (!ast_ident_etype(a, n, &nt, &nref) || !ast_ident_intt(nt))
+		return 0; /* signed OR unsigned — clearing low bits is sign-independent */
+	width = (nt & VT_BTYPE) == VT_LLONG ? 64 : 32;
+	if (c1v == 0 || c1v >= width)
+		return 0;
+	if (!ast_ident_etype(a, x, &xt, &xref) || !ast_ident_pure(a, x))
+		return 0;
+	mask = width == 64 ? (~0ULL << c1v) : (uint64_t)(0xFFFFFFFFu << c1v);
+	MCC_TRACE("reassoc shrshl c=%llu -> & 0x%llx\n", (unsigned long long)c1v,
+						(unsigned long long)mask);
+	ast_set_op(a, n, '&');
+	ast_set_type(a, n, nt, nref);
+	ast_set_ival(a, n, 0);
+	ast_set_fbits(a, n, 0);
+	ast_set_sym(a, n, 0);
+	ast_set_cst(a, n, 0);
+	ast_clear_children(a, n);
+	ast_add_child(a, n, ast_dup_sub(a, x));
+	ast_add_child(a, n, ast_bf_lit(a, nt, mask));
+	return 1;
+}
+
+/* Extract (x, const) from a commutative `x * const` node. */
+static int ast_reassoc_mulconst(AstArena *a, AstLocal n, AstLocal *x, uint64_t *cv) {
+	AstLocal l, r;
+	int ct;
+	if (ast_kind(a, n) != AST_Binary || ast_op(a, n) != '*' || ast_nchild(a, n) != 2)
+		return 0;
+	l = ast_child(a, n, 0);
+	r = ast_child(a, n, 1);
+	if (ast_kind(a, r) == AST_Literal && ast_ident_cval(a, r, &ct, cv)) {
+		*x = l;
+		return 1;
+	}
+	if (ast_kind(a, l) == AST_Literal && ast_ident_cval(a, l, &ct, cv)) {
+		*x = r;
+		return 1;
+	}
+	return 0;
+}
+
+/* Multiply distribution: `(x*C1) + (x*C2)` -> `x*(C1+C2)`, `(x*C1) - (x*C2)` -> `x*(C1-C2)`
+ * (same x, both constants). mcc otherwise emits two multiplies; the combined constant multiply
+ * is one imul (or a shl when the product is a power of two). Distributive, exact modulo 2^w.
+ * x is duplicated so must be pure. combined 0/1 collapse to 0 / x. */
+static int ast_reassoc_muldist(AstArena *a, AstLocal n) {
+	int op = ast_op(a, n), nt, xt;
+	AstLocal l, r, x1, x2;
+	uint64_t c1, c2, combined, nref, xref;
+	if ((op != '+' && op != '-') || ast_nchild(a, n) != 2)
+		return 0;
+	l = ast_child(a, n, 0);
+	r = ast_child(a, n, 1);
+	{
+		/* Each operand is `x*const`, or a bare `x` (treated as x*1). At least one must be a
+		 * multiply — else it's `x+x`/`x-x`, better left to the backend. */
+		int got_l = ast_reassoc_mulconst(a, l, &x1, &c1);
+		int got_r = ast_reassoc_mulconst(a, r, &x2, &c2);
+		if (!got_l && !got_r)
+			return 0;
+		if (!got_l) {
+			x1 = l;
+			c1 = 1;
+		}
+		if (!got_r) {
+			x2 = r;
+			c2 = 1;
+		}
+	}
+	if (!ast_ident_same(a, x1, x2))
+		return 0;
+	if (!ast_ident_etype(a, n, &nt, &nref) || !ast_ident_intt(nt))
+		return 0;
+	if (!ast_ident_etype(a, x1, &xt, &xref) || !ast_ident_pure(a, x1))
+		return 0;
+	combined = op == '+' ? c1 + c2 : c1 - c2;
+	if (combined == 0 || combined == 1) /* x*0=0, x*1=x — rare degenerate; leave to keep it simple */
+		return 0;
+	MCC_TRACE("reassoc muldist op=%d c1=%llu c2=%llu -> x*%llu\n", op, (unsigned long long)c1,
+						(unsigned long long)c2, (unsigned long long)combined);
+	ast_set_op(a, n, '*');
+	ast_set_type(a, n, nt, nref);
+	ast_set_ival(a, n, 0);
+	ast_set_fbits(a, n, 0);
+	ast_set_sym(a, n, 0);
+	ast_set_cst(a, n, 0);
+	ast_clear_children(a, n);
+	ast_add_child(a, n, ast_dup_sub(a, x1));
+	ast_add_child(a, n, ast_bf_lit(a, nt, combined));
+	return 1;
+}
+
+static int ast_reassoc_run(AstArena *a) {
+	AstLocal nn = ast_count(a);
+	ast_reassoc_folds = 0;
+	for (AstLocal n = 0; n < nn; n++)
+		if (ast_kind(a, n) == AST_Binary && ast_nchild(a, n) == 2) {
+			int f = ast_reassoc_try(a, n);
+			if (!f)
+				f = ast_reassoc_shlshr(a, n);
+			if (!f)
+				f = ast_reassoc_shrshl(a, n);
+			if (!f)
+				f = ast_reassoc_muldist(a, n);
+			ast_reassoc_folds += f;
+		}
+	return ast_reassoc_folds;
+}
+
 static int ast_sethi_folds;
 
 static int ast_sethi_commutative(int op) {
@@ -5962,8 +7218,15 @@ static int ast_sethi_cmp_root(AstArena *a, AstLocal n) {
 static int ast_sethi_num(AstArena *a, AstLocal n) {
 	if (n == AST_NONE)
 		return 0;
-	if (ast_kind(a, n) != AST_Binary || ast_nchild(a, n) != 2)
+	if (ast_kind(a, n) != AST_Binary || ast_nchild(a, n) != 2) {
+		/* V-sethi(a): a literal leaf is an immediate operand (0 registers); other
+		 * leaves (a variable ref / load) need 1. Off by default -> every leaf counts
+		 * 1 (byte-identical); the AST_SG_SETHILEAF search knob turns on the refinement
+		 * so the higher-register-need subtree, not just the deeper one, sorts first. */
+		if (ast_sethi_leaf_env && ast_kind(a, n) == AST_Literal)
+			return 0;
 		return 1;
+	}
 	int l = ast_sethi_num(a, ast_child(a, n, 0));
 	int r = ast_sethi_num(a, ast_child(a, n, 1));
 	return l == r ? l + 1 : (l > r ? l : r);
@@ -6495,7 +7758,7 @@ static void ast_cse_block(AstArena *a, AstLocal bb) {
 				ast_cse_kill(a, off);
 				int et;
 				uint64_t er;
-				if (!ast_cprop_escapes(a, off) && ast_cse_n < AST_CSE_MAX &&
+				if (!ast_cprop_escapes(a, off) && ast_cse_n < ast_cse_window &&
 						ast_cse_regpure(a, val) && !ast_ident_leaf(a, val) &&
 						!ast_tco_reads_off(a, val, off) &&
 						ast_ident_etype(a, val, &et, &er) && ast_ident_intt(et) &&
@@ -6591,7 +7854,7 @@ static void ast_cse_stmts(AstArena *a, AstLocal bb) {
 				ast_cse_kill(a, off);
 				int et;
 				uint64_t er;
-				if (!ast_cprop_escapes(a, off) && ast_cse_n < AST_CSE_MAX &&
+				if (!ast_cprop_escapes(a, off) && ast_cse_n < ast_cse_window &&
 						ast_cse_regpure(a, val) && !ast_ident_leaf(a, val) &&
 						!ast_tco_reads_off(a, val, off) &&
 						ast_ident_etype(a, val, &et, &er) && ast_ident_intt(et) &&
@@ -6778,6 +8041,10 @@ static int ast_strat_dse(AstArena *a, Sym *s) { (void)s; return ast_dse_run(a); 
 static int ast_strat_sccp(AstArena *a, Sym *s) { (void)s; return ast_sccp_run(a); }
 static int ast_strat_jt(AstArena *a, Sym *s) { (void)s; return ast_jt_run(a); }
 static int ast_strat_bf(AstArena *a, Sym *s) { (void)s; return ast_bf_run(a); }
+static int ast_strat_range(AstArena *a, Sym *s) { (void)s; return ast_range_run(a); }
+static int ast_strat_divmagic(AstArena *a, Sym *s) { (void)s; return ast_divmagic_run(a); }
+static int ast_strat_abs(AstArena *a, Sym *s) { (void)s; return ast_abs_run(a); }
+static int ast_strat_reassoc(AstArena *a, Sym *s) { (void)s; return ast_reassoc_run(a); }
 static int ast_strat_sethi(AstArena *a, Sym *s) { (void)s; return ast_sethi_run(a); }
 static int ast_strat_tco(AstArena *a, Sym *s) { return ast_tco_run(a, s); }
 
@@ -6792,6 +8059,10 @@ enum {
 	AST_STRAT_SCCP,
 	AST_STRAT_JT,
 	AST_STRAT_BF,
+	AST_STRAT_RANGE,
+	AST_STRAT_DIVMAGIC,
+	AST_STRAT_ABS,
+	AST_STRAT_REASSOC,
 	AST_STRAT_SETHI,
 	AST_STRAT_TCO,
 	AST_STRAT_COUNT
@@ -6808,6 +8079,10 @@ static const AstStrategy ast_strategies[AST_STRAT_COUNT] = {
 	{"sccp", &ast_templates_env, ast_strat_sccp},
 	{"jt", &ast_templates_env, ast_strat_jt},
 	{"bf", &ast_bitflag_env, ast_strat_bf},
+	{"range", &ast_range_env, ast_strat_range},
+	{"divmagic", &ast_divmagic_env, ast_strat_divmagic},
+	{"abs", &ast_abs_env, ast_strat_abs},
+	{"reassoc", &ast_reassoc_env, ast_strat_reassoc},
 	{"sethi", &ast_sethi_env, ast_strat_sethi},
 	{"tco", &ast_templates_env, ast_strat_tco},
 };
@@ -6851,20 +8126,30 @@ static const AstStrategy ast_strategies[AST_STRAT_COUNT] = {
  * (needs scratch-Section emit isolation), the disk-backed cross-build memo, and
  * runtime deopt are the documented step-5+ continuations in docs/TODO.md.
  */
-enum {
-	AST_SG_TEMPLATES = 1u,
-	AST_SG_NARROW = 2u,
-	AST_SG_BITFLAG = 4u,
-	AST_SG_SETHI = 8u
-};
+/* The strategy/knob bitset (AstGateMask), the AST_SG_* gates, and the M3 superopt
+ * vocabulary bridge live in a shared, dependency-free header so the unit harness
+ * (tools/asttool.c) can selftest the bridge without the MCC_INTERNAL search body. */
+#include "mccgate.h"
 
 typedef struct AstSearchMemo {
 	uint64_t hash;
-	unsigned gates;
+	AstGateMask gates;
 	unsigned refcount;
+	/* M3 blocker A: fields the out-of-process drivers keep in SoPfCkpt so one record
+	 * can serve both searches. `score` = the winning config's search score (the packed
+	 * cost/emit-size ranking key, -1 if unknown); `tried` = a bitmask of which candidate
+	 * configs have been measured, for a resumable per-function search (0 = not tracked by
+	 * the in-process search yet). Both persisted so a future unified driver can resume /
+	 * compare against the superopt's best_size + tried without a second substrate. */
+	int64_t score;
+	uint64_t tried;
 } AstSearchMemo;
 
 #define AST_SEARCH_MEMO_CAP 4096
+/* Max candidates the per-function search enumerates (budget cap on the subset lattice
+ * of `searchable`; the per-tick time budget is the primary bound). Also sizes the fork
+ * pool's gatelist. 128 comfortably covers 4 fold gates + the opt-in knobs (<=2^9). */
+#define AST_SEARCH_MAX_CAND 128
 static AstSearchMemo ast_search_memo[AST_SEARCH_MEMO_CAP];
 static int ast_search_memo_n;
 
@@ -6884,7 +8169,34 @@ static int ast_search_memo_n;
  * in-memory memo. The in-memory working set is capped (AST_SEARCH_MEMO_CAP), so an
  * eviction rewrite also compacts the file down to that hot set. */
 #define AST_SEARCH_MEMO_MAGIC 0x4643u /* 'FC' */
+/* On-disk record word layout: the low AST_GATE_BITS hold the AstGateMask (up to 48
+ * strategy knobs — past any host's native width), MAGIC occupies the high 16 bits so
+ * a torn/stale record is still skippable without a global header. Widened from the
+ * original 8-bit gate field so added knobs are never truncated on persist/reload. */
+#define AST_GATE_BITS 48
+#define AST_GATE_DISK_MASK ((uint64_t)(((uint64_t)1 << AST_GATE_BITS) - 1))
 #define AST_SEARCH_DISK_MAX (10ull << 30) /* 10 GiB shared cache-dir cap */
+
+/* Salt the search-memo key with the build version + target triplet (mirrors
+ * so_pf_key in mcc.c, roadmap M2 blocker B): ast_intention_hash folds only AST
+ * structure, so without this a winner cached by an incompatible mcc build or a
+ * different target would be silently reused across the shared cache dir. The
+ * version string is only visible when mccast.c is compiled inside the mcc TU
+ * (mcc.h present); the asttool unit harness includes it standalone, so guard on
+ * the macro and fall back to triplet-only (which is a compile define everywhere). */
+static uint64_t ast_search_key_salt(uint64_t h) {
+	const char *s;
+	(void)s;
+#ifdef MCC_VERSION_STR
+	for (s = MCC_VERSION_STR; *s; s++)
+		h = (h ^ (unsigned char)*s) * 0x100000001b3ull;
+#endif
+#ifdef MCC_CONFIG_TRIPLET
+	for (s = MCC_CONFIG_TRIPLET; *s; s++)
+		h = (h ^ (unsigned char)*s) * 0x100000001b3ull;
+#endif
+	return h;
+}
 
 static int ast_search_cache_dir(char *buf, int cap) {
 	return host_cache_dir(buf, cap);
@@ -6943,7 +8255,8 @@ static unsigned long long ast_search_disk_usage(void) {
 
 /* Returns 1 if the working set changed (new record, or a bumped gate/refcount), 0
  * if the call was a no-op — the disk store uses this to skip a pointless rewrite. */
-static int ast_search_memo_add(uint64_t h, unsigned gates, unsigned refcount) {
+static int ast_search_memo_add(uint64_t h, AstGateMask gates, unsigned refcount,
+															 int64_t score, uint64_t tried) {
 	int i, changed = 0;
 	for (i = 0; i < ast_search_memo_n; i++)
 		if (ast_search_memo[i].hash == h) {
@@ -6955,12 +8268,22 @@ static int ast_search_memo_add(uint64_t h, unsigned gates, unsigned refcount) {
 				ast_search_memo[i].refcount = refcount;
 				changed = 1;
 			}
+			if (score >= 0 && score != ast_search_memo[i].score) {
+				ast_search_memo[i].score = score;
+				changed = 1;
+			}
+			if ((tried | ast_search_memo[i].tried) != ast_search_memo[i].tried) {
+				ast_search_memo[i].tried |= tried; /* accumulate measured-config progress */
+				changed = 1;
+			}
 			return changed;
 		}
 	if (ast_search_memo_n < AST_SEARCH_MEMO_CAP) {
 		ast_search_memo[ast_search_memo_n].hash = h;
 		ast_search_memo[ast_search_memo_n].gates = gates;
 		ast_search_memo[ast_search_memo_n].refcount = refcount;
+		ast_search_memo[ast_search_memo_n].score = score;
+		ast_search_memo[ast_search_memo_n].tried = tried;
 		ast_search_memo_n++;
 		changed = 1;
 	}
@@ -6978,7 +8301,9 @@ static int ast_search_memo_add(uint64_t h, unsigned gates, unsigned refcount) {
  * memo image is highly compressible (a repeated per-record MAGIC, small gate masks,
  * structured 64-bit fields), so a codec almost always beats codec 0 (stored). */
 #define AST_MEMO_CONT_MAGIC 0x315a534dUL /* "MSZ1" */
-#define AST_MEMO_RAWMAX (AST_SEARCH_MEMO_CAP * 24)
+#define AST_MEMO_RECWORDS 5 /* {hash, gates|magic, refcount, score, tried} */
+#define AST_MEMO_RECBYTES (AST_MEMO_RECWORDS * 8)
+#define AST_MEMO_RAWMAX (AST_SEARCH_MEMO_CAP * AST_MEMO_RECBYTES)
 static unsigned char ast_memo_raw[AST_MEMO_RAWMAX];
 static unsigned char ast_memo_pk[AST_MEMO_RAWMAX * 2 + 64];
 static unsigned char ast_memo_try[AST_MEMO_RAWMAX * 2 + 64];
@@ -7040,11 +8365,13 @@ static void ast_search_disk_rewrite(void) {
 	if (snprintf(tmp, sizeof tmp, "%s.tmp", path) >= (int)sizeof tmp)
 		return;
 	for (i = 0; i < ast_search_memo_n; i++) {
-		uint64_t rec[3];
+		uint64_t rec[AST_MEMO_RECWORDS];
 		rec[0] = ast_search_memo[i].hash;
-		rec[1] = (ast_search_memo[i].gates & 0xffu) |
-						 ((uint64_t)AST_SEARCH_MEMO_MAGIC << 8);
+		rec[1] = (ast_search_memo[i].gates & AST_GATE_DISK_MASK) |
+						 ((uint64_t)AST_SEARCH_MEMO_MAGIC << AST_GATE_BITS);
 		rec[2] = ast_search_memo[i].refcount;
+		rec[3] = (uint64_t)ast_search_memo[i].score;
+		rec[4] = ast_search_memo[i].tried;
 		memcpy(ast_memo_raw + rn, rec, sizeof rec);
 		rn += (long)sizeof rec;
 	}
@@ -7081,6 +8408,8 @@ static void ast_search_disk_evict(void) {
 		return;
 	qsort(ast_search_memo, (size_t)ast_search_memo_n, sizeof ast_search_memo[0],
 				ast_search_memo_cmp);
+	MCC_TRACE("disk evict: usage=%lluMiB >= cap, dropping %d/%d lowest-refcount entries\n",
+						ast_search_disk_usage() >> 20, ast_search_memo_n / 4, ast_search_memo_n);
 	ast_search_memo_n -= ast_search_memo_n / 4;
 	ast_search_disk_rewrite();
 }
@@ -7109,20 +8438,25 @@ static void ast_search_disk_load(void) {
 	rl = ast_memo_unpack((int)hdr[1], clen);
 	if (rl != (long)hdr[2])
 		return; /* codec/length mismatch: corrupt container */
-	for (i = 0; i + 24 <= rl && ast_search_memo_n < AST_SEARCH_MEMO_CAP; i += 24) {
-		uint64_t rec[3];
+	for (i = 0; i + AST_MEMO_RECBYTES <= rl && ast_search_memo_n < AST_SEARCH_MEMO_CAP;
+			 i += AST_MEMO_RECBYTES) {
+		uint64_t rec[AST_MEMO_RECWORDS];
 		memcpy(rec, ast_memo_raw + i, sizeof rec);
-		if ((rec[1] >> 8) == AST_SEARCH_MEMO_MAGIC)
-			ast_search_memo_add(rec[0], (unsigned)(rec[1] & 0xff), (unsigned)rec[2]);
+		if ((rec[1] >> AST_GATE_BITS) == AST_SEARCH_MEMO_MAGIC)
+			ast_search_memo_add(rec[0], rec[1] & AST_GATE_DISK_MASK, (unsigned)rec[2],
+													(int64_t)rec[3], rec[4]);
 	}
+	MCC_TRACE("disk load: %s codec=%u raw=%ldB -> %d memo entries\n", path, hdr[1], rl,
+						ast_search_memo_n);
 	ast_search_disk_evict();
 }
 
 /* Persist a permutation: fold it into the working set and, if that changed the set,
  * rewrite the compressed container. Every accessor also triggers the shared-disk
  * eviction check. */
-static void ast_search_disk_store(uint64_t h, unsigned gates, unsigned refcount) {
-	if (ast_search_memo_add(h, gates, refcount))
+static void ast_search_disk_store(uint64_t h, AstGateMask gates, unsigned refcount,
+																	int64_t score, uint64_t tried) {
+	if (ast_search_memo_add(h, gates, refcount, score, tried))
 		ast_search_disk_rewrite();
 	ast_search_disk_evict();
 }
@@ -7186,47 +8520,42 @@ static int ast_search_should_stop(void) {
 	return ast_search_expect_ms() > rem;
 }
 
-static unsigned ast_search_gates_now(void) {
+static AstGateMask ast_search_gates_now(void) {
 	return (ast_templates_env ? AST_SG_TEMPLATES : 0) |
 				 (ast_narrow_env ? AST_SG_NARROW : 0) |
 				 (ast_bitflag_env ? AST_SG_BITFLAG : 0) |
-				 (ast_sethi_env ? AST_SG_SETHI : 0);
+				 (ast_sethi_env ? AST_SG_SETHI : 0) |
+				 (ast_narrow_fix_env ? AST_SG_NARROWFIX : 0) |
+				 (ast_sethi_leaf_env ? AST_SG_SETHILEAF : 0) |
+				 (ast_licm_temp_env ? AST_SG_LTEMP : 0) |
+				 (ast_ivsr_env ? AST_SG_IVSR : 0) |
+				 (ast_pre_env ? AST_SG_PRE : 0) |
+				 (ast_dse_call_env ? AST_SG_DSECALL : 0) |
+				 (ast_tco_ptr_env ? AST_SG_TCOPTR : 0) |
+				 (ast_cse_comm_env ? AST_SG_CSECOMM : 0) |
+				 (ast_range_env ? AST_SG_RANGE : 0) |
+				 (ast_divmagic_env ? AST_SG_DIVMAGIC : 0) |
+				 (ast_abs_env ? AST_SG_ABS : 0) |
+				 (ast_reassoc_env ? AST_SG_REASSOC : 0);
 }
 
-static void ast_search_gates_set(unsigned g) {
+static void ast_search_gates_set(AstGateMask g) {
 	ast_templates_env = (g & AST_SG_TEMPLATES) != 0;
 	ast_narrow_env = (g & AST_SG_NARROW) != 0;
 	ast_bitflag_env = (g & AST_SG_BITFLAG) != 0;
 	ast_sethi_env = (g & AST_SG_SETHI) != 0;
-}
-
-typedef struct AstCand {
-	AstArena *arena;
-	unsigned gates;
-	int pass_i;
-	int alive;
-	int scored;
-	long score;
-	unsigned total_ms;
-} AstCand;
-
-/* One tick: apply the next enabled strategy pass to this candidate's clone; when
- * every pass has run, finalize the static cost score. */
-static void ast_cand_tick(AstCand *c, Sym *sym, int faithful) {
-	AstArena *saved_cur = ast_cur;
-	ast_search_gates_set(c->gates);
-	ast_cur = c->arena;
-	if (c->pass_i < AST_STRAT_COUNT) {
-		int si = c->pass_i++;
-		if (faithful && *ast_strategies[si].gate)
-			ast_strategies[si].apply(c->arena, sym);
-	}
-	if (c->pass_i >= AST_STRAT_COUNT) {
-		c->score = ast_cost_score(c->arena);
-		c->scored = 1;
-		c->alive = 0;
-	}
-	ast_cur = saved_cur;
+	ast_narrow_fix_env = (g & AST_SG_NARROWFIX) != 0;
+	ast_sethi_leaf_env = (g & AST_SG_SETHILEAF) != 0;
+	ast_licm_temp_env = (g & AST_SG_LTEMP) != 0;
+	ast_ivsr_env = (g & AST_SG_IVSR) != 0;
+	ast_pre_env = (g & AST_SG_PRE) != 0;
+	ast_dse_call_env = (g & AST_SG_DSECALL) != 0;
+	ast_tco_ptr_env = (g & AST_SG_TCOPTR) != 0;
+	ast_cse_comm_env = (g & AST_SG_CSECOMM) != 0;
+	ast_range_env = (g & AST_SG_RANGE) != 0;
+	ast_divmagic_env = (g & AST_SG_DIVMAGIC) != 0;
+	ast_abs_env = (g & AST_SG_ABS) != 0;
+	ast_reassoc_env = (g & AST_SG_REASSOC) != 0;
 }
 
 /*
@@ -7277,34 +8606,53 @@ static int ast_search_emit_size(AstArena *a, int saved_loc, int saved_anon) {
 	return size;
 }
 
+/*
+ * Pack the primary metric (static cost or emitted size, lower better) with the
+ * candidate's total hit count (the sum of fold-counts every applied strategy
+ * reported on this AST window) so a single `long` ranks by cost first and, WITHIN
+ * an equal cost, favors the config whose algorithms actually fired more on this
+ * slice — a config that enables a gate which lands many folds beats one where the
+ * gate does nothing. The primary occupies the high bits; the low AST_SCORE_HITBITS
+ * hold (max_hits - clamp(hits)) so more hits lowers the packed score. Ties in cost
+ * therefore break to more hits, and the primary ordering is otherwise unchanged. */
+#define AST_SCORE_HITBITS 12
+#define AST_SCORE_HITMAX ((1L << AST_SCORE_HITBITS) - 1)
+static long ast_search_pack_score(long primary, long hits) {
+	long h;
+	if (primary < 0)
+		return -1; /* propagate clone failure / reject */
+	h = hits < 0 ? 0 : (hits > AST_SCORE_HITMAX ? AST_SCORE_HITMAX : hits);
+	return (primary << AST_SCORE_HITBITS) + (AST_SCORE_HITMAX - h);
+}
+
 /* Fold a candidate to completion and score it by emitted size (run-to-completion,
  * so its ltemp/fconst emit state is current). */
 static long ast_search_score_emitsize(AstArena *pristine, Sym *sym, int faithful,
-																			unsigned gates, int saved_loc,
+																			AstGateMask gates, int saved_loc,
 																			int saved_anon) {
 	AstArena *saved_cur = ast_cur, *trial = ast_arena_clone(pristine);
 	int si;
-	long size;
+	long size, hits = 0;
 	if (!trial)
 		return -1;
 	ast_search_gates_set(gates);
 	ast_cur = trial;
 	for (si = 0; si < AST_STRAT_COUNT; si++)
 		if (faithful && *ast_strategies[si].gate)
-			ast_strategies[si].apply(trial, sym);
+			hits += ast_strategies[si].apply(trial, sym);
 	size = ast_search_emit_size(trial, saved_loc, saved_anon);
 	ast_cur = saved_cur;
 	ast_arena_free(trial);
-	return size;
+	return ast_search_pack_score(size, hits);
 }
 
 /* Score one candidate (static cost or emit-size) — used by both the serial paths
  * and the fork-pool workers. */
 static long ast_search_score_one(AstArena *pristine, Sym *sym, int faithful,
-																 unsigned gates, int saved_loc, int saved_anon) {
+																 AstGateMask gates, int saved_loc, int saved_anon) {
 	AstArena *saved_cur, *trial;
 	int si;
-	long sc;
+	long sc, hits = 0;
 	if (ast_search_emitsize_env)
 		return ast_search_score_emitsize(pristine, sym, faithful, gates, saved_loc,
 																		 saved_anon);
@@ -7316,10 +8664,55 @@ static long ast_search_score_one(AstArena *pristine, Sym *sym, int faithful,
 	ast_cur = trial;
 	for (si = 0; si < AST_STRAT_COUNT; si++)
 		if (faithful && *ast_strategies[si].gate)
-			ast_strategies[si].apply(trial, sym);
+			hits += ast_strategies[si].apply(trial, sym);
 	sc = ast_cost_score(trial);
 	ast_cur = saved_cur;
 	ast_arena_free(trial);
+	return ast_search_pack_score(sc, hits);
+}
+
+/*
+ * combo substrate wiring (roadmap M1). The -O4 gate search runs on combo_run
+ * (src/mcccombo.h): each combo item is one baseline-enabled fold gate, sel[] is a
+ * subset (subset mode) or ordering (MCC_AST_SEARCH_ORDERED) of those items, and the
+ * score fn maps sel[] back to an AST_SG_* mask and scores it with the existing
+ * ast_search_score_one (static cost or emit-size, whichever the env selects). The
+ * fn owns the process-global save/restore inside ast_search_score_one, so combo_run
+ * stays a pure enumerator. Budget/abort is enforced here: once the time budget is
+ * spent every remaining candidate is rejected (combo_run keeps iterating the <=16
+ * space but each check is O(1)). Lower score wins; ties resolve to the base config
+ * in ast_search_select (scored first, strict-less keep-rule). */
+typedef struct AstComboCtx {
+	AstArena *pristine;
+	Sym *sym;
+	int faithful;
+	int saved_loc;
+	int saved_anon;
+	const AstGateMask *items;
+	uint64_t tried; /* bit per candidate actually measured (M3 blocker A progress) */
+	int ord;        /* running candidate ordinal, capped at 63 */
+} AstComboCtx;
+
+static long ast_search_combo_score(const int *sel, int k, void *user) {
+	AstComboCtx *cx = (AstComboCtx *)user;
+	AstGateMask gates = 0;
+	unsigned t0;
+	long sc;
+	int i;
+	if (ast_search_should_stop())
+		return COMBO_REJECT; /* budget spent: this candidate is NOT measured/tried */
+	if (cx->ord < 64)
+		cx->tried |= (uint64_t)1 << cx->ord; /* record that this candidate was measured */
+	cx->ord++;
+	for (i = 0; i < k; i++)
+		gates |= cx->items[sel[i]];
+	t0 = ast_now_ms();
+	sc = ast_search_score_one(cx->pristine, cx->sym, cx->faithful, gates,
+														cx->saved_loc, cx->saved_anon);
+	ast_search_durwin_push(ast_now_ms() - t0);
+	MCC_TRACE("combo cand gates=%llx k=%d score=%ld\n", (unsigned long long)gates, k, sc);
+	if (sc < 0)
+		return COMBO_REJECT;
 	return sc;
 }
 
@@ -7343,12 +8736,12 @@ typedef struct AstScoreRec {
 } AstScoreRec;
 
 static int ast_search_pool(AstArena *pristine, Sym *sym, int faithful,
-													 const unsigned *gatelist, int nc, int saved_loc,
-													 int saved_anon, unsigned *best_out,
+													 const AstGateMask *gatelist, int nc, int saved_loc,
+													 int saved_anon, AstGateMask *best_out,
 													 long *best_score_out) {
 	int nw = host_nproc() - 1, pipefd[2], w, i, done = 0;
 	pid_t pids[64];
-	unsigned best = gatelist[0];
+	AstGateMask best = gatelist[0];
 	long best_score = -1;
 	AstScoreRec rec;
 	if (nw < 2)
@@ -7402,11 +8795,16 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 															int saved_anon) {
 	AstArena *pristine;
 	uint64_t h;
-	unsigned base, best;
+	AstGateMask base, best, searchable;
 	long best_score = -1;
-	int g0, p0, o0, nc = 0, alive = 0;
-	unsigned gatelist[16];
-	AstCand cands[16];
+	uint64_t tried_mask = 0; /* which candidates were measured (M3 blocker A progress) */
+	int g0, p0, o0, nc = 0;
+	/* Budget-scaling the candidate count: the subset lattice of `searchable` can be as
+	 * large as 2^(fold gates + opt-in knobs) (up to 2^9 once ltemp/ivsr/pre are offered),
+	 * so both the combo enumeration (spec.budget) and the fork pool's gatelist are capped
+	 * at AST_SEARCH_MAX_CAND. The per-tick time budget (ast_search_should_stop) remains the
+	 * primary bound; this cap prevents pathological enumeration and gatelist overflow. */
+	AstGateMask gatelist[AST_SEARCH_MAX_CAND];
 	if (!ast_search_started) {
 		ast_search_started = 1;
 		ast_search_start_ms = ast_now_ms();
@@ -7414,24 +8812,47 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 		ast_search_disk_load();
 	}
 	base = ast_search_gates_now();
+	/* searchable = base plus the opt-in enablement knobs the search may ADD this
+	 * build. These are off in every -O baseline, so the subset lattice can never
+	 * reach them by dropping bits — the search enables them. narrow-fixpoint only
+	 * bites when narrow itself is enabled, so gate it on AST_SG_NARROW. */
+	searchable = base | AST_SG_RANGE | AST_SG_DIVMAGIC | AST_SG_ABS | AST_SG_REASSOC | /* standalone */
+							 ((base & AST_SG_NARROW) ? AST_SG_NARROWFIX : 0) |
+							 ((base & AST_SG_SETHI) ? AST_SG_SETHILEAF : 0) |
+							 /* ltemp/ivsr/pre run inside cse (templates-gated), so offer them only
+								* when templates is in base. Safe to add now that the candidate count is
+								* budget-capped (AST_SEARCH_MAX_CAND) — otherwise 4 gates + 5 knobs = 2^9. */
+							 ((base & AST_SG_TEMPLATES) ? (AST_SG_LTEMP | AST_SG_IVSR | AST_SG_PRE | AST_SG_DSECALL | AST_SG_TCOPTR | AST_SG_CSECOMM)
+																				 : 0);
 	if (ast_search_should_stop())
 		return; /* budget spent / aborted: keep the frozen order */
 	pristine = ast_arena_clone(ast_cur);
 	if (!pristine)
 		return;
 	h = ast_intention_hash(pristine, AST_NONE);
+	if (h)
+		h = ast_search_key_salt(h); /* partition the cache by version + triplet */
 	if (h) {
 		for (int i = 0; i < ast_search_memo_n; i++)
 			if (ast_search_memo[i].hash == h) {
 				/* hit: bump this permutation's refcount and persist it (also triggers
-				 * the shared-disk eviction check). intersect gates with the current base:
-				 * a winner cached under a different -O base must not enable a gate this
-				 * build disabled. The refcount bump is applied by ast_search_disk_store ->
-				 * ast_search_memo_add (refcount+1 > current), so the store sees a real
-				 * change and rewrites the container. */
-				ast_search_gates_set(ast_search_memo[i].gates & base);
+				 * the shared-disk eviction check). intersect gates with `searchable`
+				 * (base + this build's opt-in knobs): a winner cached under a different -O
+				 * base must not enable a fold gate this build disabled, but MUST be allowed
+				 * to re-enable an opt-in knob (narrow-fixpoint) the search legitimately
+				 * reaches here — `& base` alone would wrongly strip it. The refcount bump is
+				 * applied by ast_search_disk_store -> ast_search_memo_add (refcount+1 >
+				 * current), so the store sees a real change and rewrites the container. */
+				MCC_TRACE("memo hit %s hash=%016llx gates=%llx&%llx->%llx refcount=%u->%u\n",
+									funcname, (unsigned long long)h,
+									(unsigned long long)ast_search_memo[i].gates,
+									(unsigned long long)searchable,
+									(unsigned long long)(ast_search_memo[i].gates & searchable),
+									ast_search_memo[i].refcount, ast_search_memo[i].refcount + 1);
+				ast_search_gates_set(ast_search_memo[i].gates & searchable);
 				ast_search_disk_store(ast_search_memo[i].hash, ast_search_memo[i].gates,
-															ast_search_memo[i].refcount + 1);
+															ast_search_memo[i].refcount + 1,
+															ast_search_memo[i].score, ast_search_memo[i].tried);
 				ast_arena_free(pristine);
 				return;
 			}
@@ -7440,98 +8861,142 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 	p0 = ast_promo_total;
 	o0 = ast_opt_total;
 	best = base;
-	/* All subsets of the baseline-enabled fold gates (submask enumeration), so the
-	 * search covers pairwise/triple gate drops, not just leave-one-out. base comes
-	 * first (the safe fallback); the fair scheduler + budget bound how many of the
-	 * <=16 candidates actually complete. */
+	/* Candidate space = the subset lattice of `searchable` (the baseline-enabled
+	 * fold gates plus this build's opt-in enablement knobs), driven by the combo
+	 * substrate (roadmap M1 + "widen the search space"). items[i] is one AST_SG_*
+	 * bit; combo_run enumerates every non-empty subset (subset mode) or every
+	 * ordering (MCC_AST_SEARCH_ORDERED) of them. base (opt-in knobs off) is still
+	 * scored first as the safe fallback. The fork pool consumes an explicit
+	 * base-first submask gatelist over the same `searchable` set. */
 	{
-		unsigned sub = base;
-		for (;;) {
-			if (nc < 16)
-				gatelist[nc++] = sub;
-			if (sub == 0)
-				break;
-			sub = (sub - 1) & base;
-		}
-	}
+		AstGateMask items[64];
+		int nitems = 0, b;
+		for (b = 0; b < 64; b++)
+			if (searchable & ((AstGateMask)1 << b))
+				items[nitems++] = (AstGateMask)1 << b;
 #if MCC_HOST_POSIX
-	if (ast_search_threads_env &&
-			ast_search_pool(pristine, sym, faithful, gatelist, nc, saved_loc,
-											saved_anon, &best, &best_score))
-		goto search_done;
+		if (ast_search_threads_env) {
+			AstGateMask sub = searchable;
+			for (;;) {
+				if (nc < AST_SEARCH_MAX_CAND)
+					gatelist[nc++] = sub;
+				else {
+					MCC_TRACE("fork pool: submask space > %d, capped (budget)\n",
+										AST_SEARCH_MAX_CAND);
+					break; /* budget cap: don't silently overrun gatelist */
+				}
+				if (sub == 0)
+					break;
+				sub = (sub - 1) & searchable;
+			}
+			if (ast_search_pool(pristine, sym, faithful, gatelist, nc, saved_loc,
+													saved_anon, &best, &best_score))
+				goto search_done;
+			best_score = -1; /* pool declined (too few cores / all forks failed) */
+		}
 #endif
-	if (ast_search_emitsize_env) {
-		/* Emitted-byte-size scoring: fold each candidate to completion then measure
-		 * its emitted size (run-to-completion so the shared ltemp/fconst emit state is
-		 * current). Budget-bounded like the tick path. */
-		for (int i = 0; i < nc; i++) {
-			unsigned t0;
-			long sz;
-			if (ast_search_should_stop())
-				break;
-			t0 = ast_now_ms();
-			sz = ast_search_score_emitsize(pristine, sym, faithful, gatelist[i],
-																		 saved_loc, saved_anon);
-			ast_search_durwin_push(ast_now_ms() - t0);
-			if (sz >= 0 && (best_score < 0 || sz < best_score)) {
-				best_score = sz;
-				best = gatelist[i];
+		if (best_score < 0) {
+			ComboSpec spec;
+			ComboBest cbest;
+			AstComboCtx cx;
+			cx.pristine = pristine;
+			cx.sym = sym;
+			cx.faithful = faithful;
+			cx.saved_loc = saved_loc;
+			cx.saved_anon = saved_anon;
+			cx.items = items;
+			cx.tried = 0;
+			cx.ord = 0;
+			spec.nitems = nitems;
+			spec.min_k = 1;
+			spec.max_k = nitems;
+			spec.ordered = ast_search_ordered_env ? 1 : 0;
+			spec.budget = AST_SEARCH_MAX_CAND; /* budget-cap the enumerated candidates */
+			spec.score = ast_search_combo_score;
+			spec.user = &cx;
+			/* base (the full enabled set) is the safe fallback and wins ties: score it
+			 * first, then let combo_run search every non-empty subset/ordering and
+			 * finally the empty (all-off) config; the strict-less keep-rule below only
+			 * displaces base on a real improvement. */
+			best = base;
+			best_score = ast_search_score_one(pristine, sym, faithful, base, saved_loc,
+																				saved_anon);
+			/* Best-first frontier + forecast-driven ordering (est_cost_delta): when the
+			 * vocabulary is large enough that the AST_SEARCH_MAX_CAND budget truncates the
+			 * enumeration, combo_run's ascending-mask order can miss base's single-toggle
+			 * neighbours (drop one enabled gate / add one opt-in knob) — the highest-value
+			 * nearby configs. Score each explicitly first (so they are never crowded out by
+			 * the cap), record its marginal delta, then REORDER items[] by that measured
+			 * delta so the capped combo enumeration spends its candidates on the most-
+			 * promising gate combinations first. Scheduling only (any order → correct
+			 * winner); skipped when the whole space fits under the cap, so small-vocabulary
+			 * searches are byte-identical. */
+			if (((AstGateMask)1 << nitems) > AST_SEARCH_MAX_CAND) {
+				long idelta[64];
+				int i, j;
+				for (i = 0; i < nitems; i++) {
+					AstGateMask cand = base ^ items[i];
+					long sc;
+					if (ast_search_should_stop()) {
+						idelta[i] = (long)1 << 60; /* untried: sort last */
+						continue;
+					}
+					sc = ast_search_score_one(pristine, sym, faithful, cand, saved_loc,
+																		saved_anon);
+					idelta[i] = (sc < 0) ? ((long)1 << 60) : sc;
+					if (sc >= 0 && (best_score < 0 || sc < best_score)) {
+						best = cand;
+						best_score = sc;
+					}
+				}
+				/* insertion sort items[] by measured delta, most-improving (lowest) first */
+				for (i = 1; i < nitems; i++) {
+					AstGateMask ki = items[i];
+					long kd = idelta[i];
+					for (j = i - 1; j >= 0 && idelta[j] > kd; j--) {
+						items[j + 1] = items[j];
+						idelta[j + 1] = idelta[j];
+					}
+					items[j + 1] = ki;
+					idelta[j + 1] = kd;
+				}
 			}
-		}
-		goto search_done;
-	}
-	for (int i = 0; i < nc; i++) {
-		cands[i].arena = ast_arena_clone(pristine);
-		cands[i].gates = gatelist[i];
-		cands[i].pass_i = 0;
-		cands[i].scored = 0;
-		cands[i].total_ms = 0;
-		cands[i].alive = cands[i].arena != NULL;
-		if (cands[i].alive)
-			alive++;
-	}
-	/* Not round-robin: advance the alive candidate that has consumed the least
-	 * total time so far (running sum of its tick durations; ties -> lowest index,
-	 * so the baseline config finishes first as the safe fallback). Equalizing
-	 * accumulated time is fairer than keying on the last tick alone — no candidate
-	 * starves and none monopolizes the budget. */
-	while (alive > 0) {
-		int sel = -1;
-		unsigned t0, dt;
-		if (ast_search_should_stop())
-			break;
-		for (int i = 0; i < nc; i++) {
-			if (!cands[i].alive)
-				continue;
-			if (sel < 0 || cands[i].total_ms < cands[sel].total_ms)
-				sel = i;
-		}
-		if (sel < 0)
-			break;
-		t0 = ast_now_ms();
-		ast_cand_tick(&cands[sel], sym, faithful);
-		dt = ast_now_ms() - t0;
-		cands[sel].total_ms += dt;
-		ast_search_durwin_push(dt);
-		if (!cands[sel].alive) {
-			alive--;
-			if (cands[sel].scored &&
-					(best_score < 0 || cands[sel].score < best_score)) {
-				best_score = cands[sel].score;
-				best = cands[sel].gates;
+			if (combo_run(&spec, &cbest)) {
+				AstGateMask g = 0;
+				int i;
+				for (i = 0; i < cbest.k; i++)
+					g |= items[cbest.sel[i]];
+				if (cbest.score >= 0 && (best_score < 0 || cbest.score < best_score)) {
+					best = g;
+					best_score = cbest.score;
+				}
 			}
+			{
+				long z = ast_search_score_one(pristine, sym, faithful, 0, saved_loc,
+																			saved_anon);
+				if (z >= 0 && best_score >= 0 && z < best_score) {
+					best = 0;
+					best_score = z;
+				}
+			}
+			tried_mask = cx.tried;
+			MCC_TRACE("combo winner gates=%llx base=%llx searchable=%llx score=%ld "
+								"ordered=%d nitems=%d tried=%llx\n",
+								(unsigned long long)best, (unsigned long long)base,
+								(unsigned long long)searchable, best_score, spec.ordered, nitems,
+								(unsigned long long)tried_mask);
 		}
 	}
-	for (int i = 0; i < nc; i++)
-		if (cands[i].arena)
-			ast_arena_free(cands[i].arena);
 search_done:
 	ast_graft_total = g0;
 	ast_promo_total = p0;
 	ast_opt_total = o0;
 	ast_search_gates_set(best);
-	if (h) /* store folds the winner into the memo (memo_add) and rewrites the file */
-		ast_search_disk_store(h, best, 1);
+	if (h) /* store folds the winner into the memo (memo_add) and rewrites the file.
+					* score = the winning config's search score; tried = the bitmask of candidates
+					* actually measured before the budget ran out (M3 blocker A progress fields).
+					* A future resumable / unified search reads both to skip re-measuring. */
+		ast_search_disk_store(h, best, 1, best_score, tried_mask);
 	ast_arena_free(pristine);
 }
 
@@ -7643,7 +9108,7 @@ void ast_func_end(Sym *sym) {
 
 				ast_ltemp_cur = saved_loc;
 				ast_ltemp_n = 0;
-				unsigned ast_search_sv_gates = ast_search_gates_now();
+				AstGateMask ast_search_sv_gates = ast_search_gates_now();
 				if (faithful && ast_search_env && ast_search_seconds > 0)
 					ast_search_select(sym, faithful, saved_loc, saved_anon);
 				{

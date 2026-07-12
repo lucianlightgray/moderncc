@@ -2944,7 +2944,7 @@ if(MCC_BUILD_TESTS)
         if(MCC_CONFIG_AST_SHADOW)
             target_compile_definitions(asttool PRIVATE MCC_CONFIG_AST_SHADOW=1)
         endif()
-        foreach(_an arena clone validate dump cfg provenance template intention color forecast)
+        foreach(_an arena clone validate dump cfg provenance template intention color forecast gatemap magic)
             add_test(NAME "ast/${_an}" COMMAND asttool "${_an}")
             set_tests_properties("ast/${_an}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endforeach()
@@ -3235,6 +3235,99 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_BINARY_DIR}/exec-replay-promote-${_gn}" --only "${_gn}")
             set_tests_properties("exec-replay-promote/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O1;MCC_AST_TEMPLATES=0;MCC_AST_PROMOTE=1;MCC_AST_INLINE=0")
+        endforeach()
+
+        # Force the opt-in search knobs (V-narrow(a) narrow-to-fixpoint, V-sethi(a)
+        # leaf-aware Sethi-Ullman) ON directly at -O2 across the whole exec corpus, so
+        # their codegen is exercised end-to-end and validated for correct runtime output.
+        # Cheap (no -O4 search / superopt) — the knobs are normally only reachable via the
+        # search, so without this their code paths have no ctest coverage.
+        foreach(_gl IN LISTS _exec_glines)
+            string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
+            set(_gn "${CMAKE_MATCH_1}")
+            add_test(NAME "exec-narrowfix/${_gn}"
+                COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+                        "${CMAKE_BINARY_DIR}/exec-narrowfix-${_gn}" --only "${_gn}")
+            set_tests_properties("exec-narrowfix/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_NARROW_FIX=1;MCC_AST_SETHI_LEAF=1;MCC_AST_SCCP_FIX=1;MCC_AST_LICM_TEMP=1;MCC_AST_IVSR=1;MCC_AST_PRE=1;MCC_AST_DSE_CALL=1;MCC_AST_TCO_PTR=1;MCC_AST_CSE_COMM=1;MCC_AST_RANGE=1;MCC_AST_DIVMAGIC=1;MCC_AST_ABS=1;MCC_AST_REASSOC=1;MCC_AST_CSE_WINDOW=256;MCC_AST_CPROP_WINDOW=512")
+        endforeach()
+
+        # M6z: force zero-init .bss placement ON across the whole exec corpus, so every
+        # all-zero writable static that qualifies is relocated .data -> .bss and the program's
+        # runtime behavior is validated (a dropped relocation or wrong address would surface as
+        # a wrong result). Byte-changing, so it lives as an exec (runtime) variant, not a golden.
+        foreach(_gl IN LISTS _exec_glines)
+            string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
+            set(_gn "${CMAKE_MATCH_1}")
+            add_test(NAME "exec-zerobss/${_gn}"
+                COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+                        "${CMAKE_BINARY_DIR}/exec-zerobss-${_gn}" --only "${_gn}")
+            set_tests_properties("exec-zerobss/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_ZERO_BSS=1")
+        endforeach()
+
+        # -fmerge-constants string pooling: force MCC_MERGE_STRINGS on across the exec corpus so
+        # every identical rodata literal is merged and re-homed, and the runtime output validates
+        # that the shared storage + symbol re-bind is correct (a lost NUL or wrong offset shows up
+        # as wrong output). Byte-changing, so an exec (runtime) variant, not a golden.
+        foreach(_gl IN LISTS _exec_glines)
+            string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
+            set(_gn "${CMAKE_MATCH_1}")
+            add_test(NAME "exec-mergestrings/${_gn}"
+                COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+                        "${CMAKE_BINARY_DIR}/exec-mergestrings-${_gn}" --only "${_gn}")
+            set_tests_properties("exec-mergestrings/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_MERGE_STRINGS=1")
+        endforeach()
+
+        # Exercise the live -O4 combo search (M1 enumeration on combo_run, the
+        # ast_intention_hash memo + 5-word disk record, hit-count/static-cost scoring,
+        # and the opt-in knobs reached via `searchable`) across the whole exec corpus,
+        # validating that whatever config the search selects emits a correct executable.
+        # MCC_SEARCH_WORKER=1 runs the in-process search directly and suppresses the
+        # out-of-process superopt spawn (whose fork+exec + argv-rewriting collides with
+        # the runner's -o handling) — the in-process search is what these items added.
+        # -O4 search output is non-reproducible by design; the runtime OUTPUT is stable
+        # (any selected gate config is correct-by-construction), which is what is checked.
+        foreach(_gl IN LISTS _exec_glines)
+            string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
+            set(_gn "${CMAKE_MATCH_1}")
+            add_test(NAME "exec-search/${_gn}"
+                COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+                        "${CMAKE_BINARY_DIR}/exec-search-${_gn}" --only "${_gn}")
+            set_tests_properties("exec-search/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O4;MCC_AST_SEARCH=1;MCC_SEARCH_WORKER=1")
+        endforeach()
+
+        # Emitted-byte-size scoring path (ast_search_emit_size: fold each candidate to
+        # completion, replay into the live text section, measure, rewind every cursor) —
+        # a distinct, complex code path from the static-cost search, otherwise unexercised.
+        foreach(_gl IN LISTS _exec_glines)
+            string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
+            set(_gn "${CMAKE_MATCH_1}")
+            add_test(NAME "exec-search-emitsize/${_gn}"
+                COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+                        "${CMAKE_BINARY_DIR}/exec-search-emitsize-${_gn}" --only "${_gn}")
+            set_tests_properties("exec-search-emitsize/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O4;MCC_AST_SEARCH=1;MCC_AST_SEARCH_EMITSIZE=1;MCC_SEARCH_WORKER=1")
+        endforeach()
+
+        # NCores-1 fork score-only pool (ast_search_pool) — a distinct concurrency path
+        # (fork COW isolation, pipe collection, single-threaded winner apply).
+        foreach(_gl IN LISTS _exec_glines)
+            string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
+            set(_gn "${CMAKE_MATCH_1}")
+            add_test(NAME "exec-search-threads/${_gn}"
+                COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+                        "${CMAKE_BINARY_DIR}/exec-search-threads-${_gn}" --only "${_gn}")
+            set_tests_properties("exec-search-threads/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O4;MCC_AST_SEARCH=1;MCC_AST_SEARCH_THREADS=1;MCC_SEARCH_WORKER=1")
         endforeach()
     endif()
 

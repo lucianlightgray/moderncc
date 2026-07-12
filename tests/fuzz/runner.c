@@ -185,6 +185,24 @@ static const gate_t GATES[] = {
 	{"LICM_TEMP", "MCC_AST_LICM_TEMP=1"},
 	{"IVSR", "MCC_AST_IVSR=1"},
 	{"PRE", "MCC_AST_PRE=1"},
+	/* Opt-in -O4 search knobs (normally reached only via the gate search). Forcing
+	 * them on directly lets the differential fuzzer stress their codegen against
+	 * gcc/clang across random programs — V-narrow(a) narrow-to-fixpoint and
+	 * V-sethi(a) leaf-aware Sethi-Ullman. */
+	{"NARROW_FIX", "MCC_AST_NARROW_FIX=1"},
+	{"SETHI_LEAF", "MCC_AST_SETHI_LEAF=1"},
+	{"SCCP_FIX", "MCC_AST_SCCP_FIX=1"},
+	{"DSE_CALL", "MCC_AST_DSE_CALL=1"},
+	{"TCO_PTR", "MCC_AST_TCO_PTR=1"},
+	{"CSE_COMM", "MCC_AST_CSE_COMM=1"},
+	{"RANGE", "MCC_AST_RANGE=1"},
+	{"DIVMAGIC", "MCC_AST_DIVMAGIC=1"},
+	{"ABS", "MCC_AST_ABS=1"},
+	{"REASSOC", "MCC_AST_REASSOC=1"},
+	{"CSE_WINDOW", "MCC_AST_CSE_WINDOW=256"},
+	{"CPROP_WINDOW", "MCC_AST_CPROP_WINDOW=512"},
+	{"INLINE_DEEP", "MCC_AST_INLINE=1 MCC_AST_INLINE_DEPTH=16"},
+	{"TCO_MAXP", "MCC_AST_TCO_MAXP=32"},
 };
 #define NGATES ((int)(sizeof GATES / sizeof *GATES))
 

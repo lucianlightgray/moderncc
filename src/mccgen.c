@@ -12229,10 +12229,56 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 			}
 		}
 		seqp_reset();
+#if MCC_CONFIG_OPTIMIZER
+		unsigned long zbss_rel0 = data_section->reloc ? data_section->reloc->data_offset : 0;
+#endif
 		decl_initializer(&p, type, addr, DIF_FIRST);
 		seqp_check();
 		if (flexible_array)
 			flexible_array->type.ref->c = -1;
+#if MCC_CONFIG_OPTIMIZER
+		/* M5 const-data visibility: record this initialized static/global object AFTER
+		 * its bytes are written, so the side-car can also estimate datacomp
+		 * compressibility (M6 candidate ID). Read-only; changes no emitted bytes. */
+		if (sec && size > 0)
+			ast_hook_data(sec, addr, size, sec == rodata_section);
+		/* M6z: an all-zero writable static is semantically identical to an uninitialized one
+		 * (C11 6.7.9), so relocate it from .data (zero disk bytes) to .bss (NOBITS). Guarded
+		 * to a provably-safe subset — named object, last allocation in data_section, its
+		 * initializer emitted no relocation (excludes pointer inits whose zero bytes carry a
+		 * reloc), all bytes zero. Relocations are symbol-keyed, so re-binding the symbol fixes
+		 * every reference. Opt-in via MCC_ZERO_BSS. */
+		if (ast_zero_bss_env && v && sym && size > 0 && sec == data_section && !bcheck &&
+				!asan_g && !flexible_array && !(type->t & VT_TLS) &&
+				(unsigned long)(addr + size) == data_section->data_offset &&
+				(data_section->reloc ? data_section->reloc->data_offset : 0) == zbss_rel0 &&
+				ast_data_all_zero(data_section, addr, size)) {
+			int new_addr;
+			data_section->data_offset = addr;
+			new_addr = (int)section_add(bss_section, size, align);
+			put_extern_sym(sym, bss_section, new_addr, size);
+			MCC_TRACE("zero-bss move v=%d size=%d data@%d -> bss@%d\n", v, size, addr, new_addr);
+		}
+		/* -fmerge-constants: an anonymous rodata string literal (v==0, put in rodata via
+		 * str_init) whose exact bytes already appeared this TU can share the prior copy.
+		 * C11 6.4.5p7 leaves identical literals' distinctness unspecified, so this is sound.
+		 * Same symbol-rebind mechanism as M6z: re-home the literal's anon symbol at the shared
+		 * offset (references are symbol-keyed) and roll back the just-written duplicate bytes.
+		 * Guarded to the last allocation so the truncation is safe. Opt-in via MCC_MERGE_STRINGS. */
+		if (ast_merge_strings_env && v == 0 && sym && size > 0 && sec == rodata_section &&
+				(unsigned long)(addr + size) == rodata_section->data_offset) {
+			long shared = ast_strpool_find_or_add(sec, addr, size, align);
+			if (shared >= 0 && shared != addr) {
+				/* Zero the reclaimed slot: the duplicate's bytes are still in the buffer, and
+				 * the next allocation's initializer may rely on pre-zeroed tail padding (string
+				 * literals memcpy only their content, expecting the trailing NUL already zero). */
+				memset(rodata_section->data + addr, 0, (size_t)size);
+				rodata_section->data_offset = addr;
+				put_extern_sym(sym, rodata_section, shared, size);
+				MCC_TRACE("string merge size=%d rodata@%d -> shared@%ld\n", size, addr, shared);
+			}
+		}
+#endif
 	}
 
 no_alloc:
