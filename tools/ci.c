@@ -1225,10 +1225,15 @@ static int do_plan(int argc, char **argv) {
 					plan_cell(&first, "\"preset\":\"%s\",\"arch\":\"%s\"",
 										T[t][i], PLAN_HOSTS[k]);
 	} else if (!strcmp(job, "matrix")) {
-		for (i = 0; PS_SUPER[i]; i++)
-			for (k = 0; PLAN_HOSTS[k]; k++)
-				plan_cell(&first, "\"preset\":\"%s\",\"arch\":\"%s\"",
-									PS_SUPER[i], PLAN_HOSTS[k]);
+		static const char *PROF[] = {"gcc", "clang", 0};
+		static const char *TGT[] = {"native", "cross", 0};
+		int p, t;
+		for (p = 0; PROF[p]; p++)
+			for (t = 0; TGT[t]; t++)
+				for (k = 0; PLAN_HOSTS[k]; k++)
+					plan_cell(&first,
+										"\"preset\":\"%s\",\"profile\":\"%s\",\"target\":\"%s\",\"arch\":\"%s\"",
+										PS_SUPER[0], PROF[p], TGT[t], PLAN_HOSTS[k]);
 	} else if (!strcmp(job, "macos")) {
 		static const char *CC[] = {"clang", "gcc", 0};
 		for (i = 0; PS_DARWIN[i]; i++)

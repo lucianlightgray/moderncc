@@ -1,13 +1,16 @@
 name: Matrix
 
-# Full gcc;clang x native;cross superbuild (the `matrix` configure preset:
-# MCC_TOOLCHAIN_PROFILE=gcc;clang, MCC_TARGETS=native;cross), built on both
-# host arches. Split out of the per-push/PR CI matrix — where each of its
-# two host cells was a ~40-min build and gated the critical path — into its
-# own push-to-main trigger. It is a build-only smoke test (no tests; ci.yml
-# already tests each toolchain), so it never blocks a PR. Also runnable on
-# demand. Cells come from the same preset ledger as ci.yml
-# (`ci plan --job matrix`), so `ci parity` still covers the matrix preset.
+# gcc;clang x native;cross x host-arch, fanned out one build per cell. The
+# `matrix` configure preset defaults to the full MCC_TOOLCHAIN_PROFILE=gcc;clang
+# / MCC_TARGETS=native;cross superbuild; here each cell overrides those to a
+# single profile x single target (-DMCC_TOOLCHAIN_PROFILE / -DMCC_TARGETS) so
+# the 2x2x2 = 8 builds run in parallel and each surfaces as its own job in the
+# Actions UI — instead of two ~40-min host superbuilds. Split out of the
+# per-push/PR CI matrix (it gated the critical path) into its own push-to-main
+# trigger. Build-only smoke test (no tests; ci.yml already tests each
+# toolchain), so it never blocks a PR. Also runnable on demand. Cells come
+# from the same preset ledger as ci.yml (`ci plan --job matrix`), so
+# `ci parity` still covers the matrix preset.
 
 on:
   push:
@@ -35,14 +38,14 @@ jobs:
 
   matrix:
     needs: plan
-    name: ${{ matrix.preset }} / ${{ matrix.arch }}
+    name: ${{ matrix.profile }} / ${{ matrix.target }} / ${{ matrix.arch }}
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.matrix) }}
     env:
-      ART: mcc-${{ matrix.preset }}-${{ matrix.arch }}
+      ART: mcc-${{ matrix.preset }}-${{ matrix.profile }}-${{ matrix.target }}-${{ matrix.arch }}
     steps:
       - uses: actions/checkout@v5
       - name: install toolchain (everything the platform offers)
@@ -51,11 +54,12 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build build-essential gcc clang lld wine64 git rsync \
             mingw-w64
-      - name: run ${{ matrix.preset }} (gcc;clang x native;cross superbuild, build-only)
+      - name: run ${{ matrix.profile }} x ${{ matrix.target }} (single-cell build, build-only)
         run: |
           cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl
           mkdir -p "dist/$ART"
-          /tmp/mcc-ci run-preset ${{ matrix.preset }} --out "dist/$ART" --no-test
+          /tmp/mcc-ci run-preset ${{ matrix.preset }} --out "dist/$ART" --no-test \
+            -DMCC_TOOLCHAIN_PROFILE=${{ matrix.profile }} -DMCC_TARGETS=${{ matrix.target }}
       - name: pack build targets
         run: tar cJf "$ART.tar.xz" -C dist "$ART"
       - uses: actions/upload-artifact@v7
