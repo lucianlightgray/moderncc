@@ -1,0 +1,96 @@
+name: Bench
+
+# Compile-speed benchmark (self-hosted mcc per -O level vs gcc/clang/mingw/msvc
+# via mccbench). Split out of the per-push/PR CI matrix — where it was ~50% of
+# every macOS/MSVC/mingw job's wall-clock and gated the critical path — into its
+# own push-to-main trigger. It rebuilds mcc (no tests; ci.yml already tests) and
+# runs the `bench` target on one representative native cell per OS family, so
+# the reference compilers (gcc+clang+mingw on Linux, msvc on Windows) are all
+# covered without re-running the whole build matrix. Also runnable on demand.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bench-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: bench / linux-x86_64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: install toolchain (gcc + clang + mingw references)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build build-essential gcc clang lld mingw-w64
+      - name: build + benchmark (linux-gcc)
+        run: |
+          cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl
+          /tmp/mcc-ci run-preset linux-gcc --no-test --bench \
+            -DMCC_BENCH=ON -DMCC_DIST_PLAT=linux-x86_64
+      - name: benchmark summary
+        if: always()
+        run: /tmp/mcc-ci bench-summary --plat linux-x86_64 --append "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bench-linux-x86_64
+          path: dist/bench-*.txt
+          if-no-files-found: ignore
+
+  macos:
+    name: bench / macos-arm64
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+      - name: cache Homebrew downloads (gcc bottle + deps)
+        uses: actions/cache@v5
+        with:
+          path: ~/Library/Caches/Homebrew/downloads
+          key: brew-${{ runner.os }}-${{ runner.arch }}-cmake-ninja-gcc
+      - name: install toolchain (clang + gcc references)
+        run: |
+          brew untap aws/tap 2>/dev/null || true
+          brew install cmake ninja gcc
+      - name: build + benchmark (macos, native arm64)
+        run: |
+          cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c
+          /tmp/mcc-ci run-preset macos --no-test --bench \
+            -DMCC_BENCH=ON -DMCC_DIST_PLAT=macos-arm64
+      - name: benchmark summary
+        if: always()
+        run: /tmp/mcc-ci bench-summary --plat macos-arm64 --append "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bench-macos-arm64
+          path: dist/bench-*.txt
+          if-no-files-found: ignore
+
+  windows:
+    name: bench / windows-x86_64-msvc
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: set up MSVC dev shell (cl reference + ci bootstrap)
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: x64
+      - name: build + benchmark (msvc)
+        run: |
+          cl /nologo /O2 /Fe:ci.exe tools\ci.c tools\toolsupport.c
+          .\ci.exe run-preset msvc --config Release --no-test --bench "-DMCC_BENCH=ON" "-DMCC_DIST_PLAT=windows-x86_64-msvc"
+      - name: benchmark summary
+        if: always()
+        run: .\ci.exe bench-summary --plat windows-x86_64-msvc --append "${env:GITHUB_STEP_SUMMARY}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bench-windows-x86_64-msvc
+          path: dist/bench-*.txt
+          if-no-files-found: ignore

@@ -13,6 +13,11 @@ on:
         type: string
         default: ''
         required: false
+      bench:
+        description: Run the compile-speed benchmark as part of dist (releases do; per-push smoke does not)
+        type: boolean
+        default: false
+        required: false
 
 permissions:
   contents: read
@@ -56,9 +61,10 @@ jobs:
         run: |
           brew untap aws/tap 2>/dev/null || true
           brew install cmake ninja
-      - name: dist (configure + build + install + strip + bench + package)
+      - name: dist (configure + build + install + strip + package; bench on release)
         # `ci dist` runs the whole flow (the macOS local-symbol strip is
-        # folded in); Rosetta's cross flags pass through after `--`.
+        # folded in); Rosetta's cross flags pass through after `--`. The
+        # compile-speed bench is skipped (--no-bench) unless inputs.bench.
         run: |
           set -eux
           cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c $([ "$RUNNER_OS" = Linux ] && echo -ldl)
@@ -67,9 +73,10 @@ jobs:
             extra="-- -DCMAKE_OSX_ARCHITECTURES=x86_64 -DMCC_TARGET_ARCH=x86_64"
           fi
           /tmp/mcc-ci dist --preset ${{ matrix.preset }} --plat ${{ matrix.plat }} \
-            --version "${VERSION:-ci-${GITHUB_SHA::12}}" $extra
+            --version "${VERSION:-ci-${GITHUB_SHA::12}}" \
+            $([ "${{ inputs.bench }}" = true ] || echo --no-bench) $extra
       - name: benchmark summary
-        if: always()
+        if: ${{ inputs.bench }}
         run: /tmp/mcc-ci bench-summary --plat "${{ matrix.plat }}" --append "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
         with:
@@ -98,13 +105,21 @@ jobs:
       - name: install ninja
         if: matrix.mingw
         run: choco install ninja -y
-      - name: dist (configure + build + install + bench + package)
+      - name: cache winlibs mingw toolchain (superbuild download target)
+        if: matrix.mingw
+        uses: actions/cache@v5
+        with:
+          path: vendor/winlibs-mingw-w64-*
+          key: winlibs-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: winlibs-
+      - name: dist (configure + build + install + package)
         run: |
           cl /nologo /O2 /Fe:ci.exe tools\ci.c tools\toolsupport.c
           if (-not $env:VERSION) { $env:VERSION = "ci-" + $env:GITHUB_SHA.Substring(0,12) }
-          .\ci.exe dist --preset ${{ matrix.preset }} --plat ${{ matrix.plat }} --version "$env:VERSION"
+          $bench = if ("${{ inputs.bench }}" -eq "true") { @() } else { ,"--no-bench" }
+          .\ci.exe dist --preset ${{ matrix.preset }} --plat ${{ matrix.plat }} --version "$env:VERSION" @bench
       - name: benchmark summary
-        if: always()
+        if: ${{ inputs.bench }}
         run: .\ci.exe bench-summary --plat "${{ matrix.plat }}" --append "${env:GITHUB_STEP_SUMMARY}"
       - uses: actions/upload-artifact@v7
         with:

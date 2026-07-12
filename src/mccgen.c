@@ -12248,7 +12248,10 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 		 * initializer emitted no relocation (excludes pointer inits whose zero bytes carry a
 		 * reloc), all bytes zero. Relocations are symbol-keyed, so re-binding the symbol fixes
 		 * every reference. Opt-in via MCC_ZERO_BSS. */
-		if (ast_zero_bss_env && v && sym && size > 0 && sec == data_section && !bcheck &&
+		if (ast_zero_bss_env && v && sym && size > 0 && sec == data_section &&
+#if MCC_CONFIG_DIAG_RT >= 2
+				!bcheck &&
+#endif
 				!asan_g && !flexible_array && !(type->t & VT_TLS) &&
 				(unsigned long)(addr + size) == data_section->data_offset &&
 				(data_section->reloc ? data_section->reloc->data_offset : 0) == zbss_rel0 &&

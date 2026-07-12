@@ -82,6 +82,11 @@ jobs:
       - uses: actions/checkout@v5
       - name: install Rosetta 2 (x86_64 cells + x86_64 wine on Apple silicon)
         run: sudo softwareupdate --install-rosetta --agree-to-license
+      - name: cache Homebrew downloads (gcc bottle + deps)
+        uses: actions/cache@v5
+        with:
+          path: ~/Library/Caches/Homebrew/downloads
+          key: brew-${{ runner.os }}-${{ runner.arch }}-cmake-ninja-gcc
       - name: install toolchain (everything the platform offers)
         run: |
           brew untap aws/tap 2>/dev/null || true
@@ -97,27 +102,28 @@ jobs:
           else
             echo "CC=clang" >> "$GITHUB_ENV"
           fi
-      - name: run ${{ matrix.preset }} (configure + build + test + bench + install)
+      - name: run ${{ matrix.preset }} (configure + build + test + install)
+        # The benchmark lives in its own workflow (bench.yml, push-to-main
+        # only) so per-push/PR CI is not gated on a ~10-min compile-speed run.
         run: |
           cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c
           extra=""
           if [ "${{ matrix.arch }}" = x86_64 ]; then
             extra="-DCMAKE_OSX_ARCHITECTURES=x86_64 -DMCC_TARGET_ARCH=x86_64"
-            export MCC_CI_CTEST_EXCLUDE='^(fuzz|ast|cst|diff3|preprocess)/'
+            # The x86_64 cell runs under Rosetta; also drop the arch-independent
+            # object-format cli probes (symbol typing / response file / fat64),
+            # which serialize on the Rosetta translation lock for ~70s here yet
+            # are fully covered by the native arm64 macOS and Linux cells.
+            export MCC_CI_CTEST_EXCLUDE='^(fuzz|ast|cst|diff3|preprocess)/|^cli/(symbol_type_func_object|response_file|macho_fat64_dylib)$'
           fi
-          /tmp/mcc-ci run-preset ${{ matrix.preset }} --out "$PWD/dist/$ART" --bench \
-            -DMCC_BENCH=ON "-DMCC_DIST_PLAT=$ART" $extra
-      - name: benchmark summary
-        if: always()
-        run: /tmp/mcc-ci bench-summary --plat "$ART" --append "$GITHUB_STEP_SUMMARY"
+          /tmp/mcc-ci run-preset ${{ matrix.preset }} --out "$PWD/dist/$ART" \
+            "-DMCC_DIST_PLAT=$ART" $extra
       - name: pack build targets
         run: tar cJf "$ART.tar.xz" -C dist "$ART"
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ART }}
-          path: |
-            ${{ env.ART }}.tar.xz
-            dist/bench-*.txt
+          path: ${{ env.ART }}.tar.xz
 
   msvc:
     needs: plan
@@ -157,24 +163,20 @@ jobs:
           $clang = (Get-Command clang -ErrorAction SilentlyContinue).Source
           if ($gcc)   { "MCC_DIFF3_GCC=$($gcc.Replace('\','/'))"     | Out-File -FilePath $env:GITHUB_ENV -Append }
           if ($clang) { "MCC_DIFF3_CLANG=$($clang.Replace('\','/'))" | Out-File -FilePath $env:GITHUB_ENV -Append }
-      - name: run ${{ matrix.preset }} (configure + build + test + bench + install)
+      - name: run ${{ matrix.preset }} (configure + build + test + install)
         # --timeout caps any single test: a hung test (e.g. a thread-contention
         # deadlock that only manifests on real arm64 silicon) is killed and named
         # in the log instead of stalling the whole job until it is cancelled.
+        # Benchmark runs in bench.yml (push-to-main only), not here.
         run: |
           cl /nologo /O2 /Fe:ci.exe tools\ci.c tools\toolsupport.c
-          .\ci.exe run-preset ${{ matrix.preset }} --config Release --out "$($PWD.Path.Replace('\','/'))/dist/${env:ART}" --bench "-DMCC_BENCH=ON" "-DMCC_DIST_PLAT=${env:ART}" -- --timeout 300
-      - name: benchmark summary
-        if: always()
-        run: .\ci.exe bench-summary --plat ${env:ART} --append "${env:GITHUB_STEP_SUMMARY}"
+          .\ci.exe run-preset ${{ matrix.preset }} --config Release --out "$($PWD.Path.Replace('\','/'))/dist/${env:ART}" "-DMCC_DIST_PLAT=${env:ART}" -- --timeout 300
       - name: pack build targets
         run: tar cJf "${env:ART}.tar.xz" -C dist "${env:ART}"
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ART }}
-          path: |
-            ${{ env.ART }}.tar.xz
-            dist/bench-*.txt
+          path: ${{ env.ART }}.tar.xz
 
   mingw:
     name: mingw / native
@@ -188,21 +190,22 @@ jobs:
           arch: x64
       - name: install ninja
         run: choco install ninja -y
+      - name: cache winlibs mingw toolchain (superbuild download target)
+        uses: actions/cache@v5
+        with:
+          path: vendor/winlibs-mingw-w64-*
+          key: winlibs-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: winlibs-
       - name: run mingw (superbuild fetches winlibs GCC; cells ctest while building)
         run: |
           cl /nologo /O2 /Fe:ci.exe tools\ci.c tools\toolsupport.c
-          .\ci.exe run-preset mingw --no-test --out "$($PWD.Path.Replace('\','/'))/dist/${env:ART}" --bench "-DMCC_BENCH=ON" "-DMCC_DIST_PLAT=${env:ART}"
-      - name: benchmark summary
-        if: always()
-        run: .\ci.exe bench-summary --plat ${env:ART} --append "${env:GITHUB_STEP_SUMMARY}"
+          .\ci.exe run-preset mingw --no-test --out "$($PWD.Path.Replace('\','/'))/dist/${env:ART}" "-DMCC_DIST_PLAT=${env:ART}"
       - name: pack build targets
         run: tar cJf "${env:ART}.tar.xz" -C dist "${env:ART}"
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ART }}
-          path: |
-            ${{ env.ART }}.tar.xz
-            dist/bench-*.txt
+          path: ${{ env.ART }}.tar.xz
 
   qemu:
     # user-mode qemu exists only on Linux, so this runs natively on the ubuntu

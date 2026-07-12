@@ -22,6 +22,7 @@ jobs:
       contents: read
     with:
       version: ${{ github.ref_name }}
+      bench: true
 
   publish:
     name: publish release

@@ -481,7 +481,7 @@ static int loc_fetch_clang(void) {
 }
 
 static int run_dist(const char *preset, const char *plat, const char *ver,
-										char **extra, int n_extra) {
+										char **extra, int n_extra, int no_bench) {
 	char pdv[256], pdp[256], bdir[128];
 	int msvc = strstr(preset, "msvc") != NULL, i;
 
@@ -526,7 +526,7 @@ static int run_dist(const char *preset, const char *plat, const char *ver,
 		}
 	}
 #endif
-	{
+	if (!no_bench) {
 		const char *a[] = {
 				"cmake", "--build", "--preset",
 				preset, "--target", "bench", 0};
@@ -797,7 +797,7 @@ static int do_local(int argc, char **argv) {
 			snprintf(dflag, sizeof dflag, "-DCMAKE_C_COMPILER=%s", vclang);
 			extra[n_extra++] = dflag;
 		}
-		rc = run_dist(dist[i].preset, dist[i].plat, ver, extra, n_extra);
+		rc = run_dist(dist[i].preset, dist[i].plat, ver, extra, n_extra, 0);
 		if (rc == 0) {
 			snprintf(results[n_res++], 192, "PASS  dist %.63s -> %.63s",
 							 dist[i].preset, dist[i].plat);
@@ -833,7 +833,7 @@ static int do_local(int argc, char **argv) {
 static int do_dist(int argc, char **argv) {
 	const char *preset = NULL, *plat = NULL, *ver = "v0.0.0-local";
 	char **extra = NULL;
-	int n_extra = 0, i;
+	int n_extra = 0, i, no_bench = 0;
 
 	for (i = 0; i < argc; i++) {
 		if (!strcmp(argv[i], "--preset") && i + 1 < argc)
@@ -842,6 +842,8 @@ static int do_dist(int argc, char **argv) {
 			plat = argv[++i];
 		else if (!strcmp(argv[i], "--version") && i + 1 < argc)
 			ver = argv[++i];
+		else if (!strcmp(argv[i], "--no-bench"))
+			no_bench = 1;
 		else if (!strcmp(argv[i], "--")) {
 			extra = &argv[i + 1];
 			n_extra = argc - (i + 1);
@@ -850,10 +852,10 @@ static int do_dist(int argc, char **argv) {
 	}
 	if (!preset || !plat) {
 		fprintf(stderr, "usage: ci dist --preset P --plat PLAT [--version V] "
-										"[-- <extra -D configure args>]\n");
+										"[--no-bench] [-- <extra -D configure args>]\n");
 		return 2;
 	}
-	return run_dist(preset, plat, ver, extra, n_extra);
+	return run_dist(preset, plat, ver, extra, n_extra, no_bench);
 }
 
 static const char *g_filter;
