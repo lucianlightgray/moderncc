@@ -7,7 +7,11 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  # Cancel superseded runs on PRs and on main: a newer push to the same ref
+  # supersedes the in-progress run, so consecutive commits stop queueing behind
+  # (and starving the shared runner pools of) each other. Tag pushes are
+  # excluded so a release-tag run always completes.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/main' }}
 
 permissions:
   contents: read
