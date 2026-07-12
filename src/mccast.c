@@ -2604,22 +2604,39 @@ static struct AstBaselineFn {
 	int rel_len;
 	int body_ind;
 	addr_t reloc0;
+	int chain_head;
 } ast_baseline_pool[AST_INLINE_MAX];
 static int ast_baseline_n;
 
-static int ast_baseline_retain(Sym *sym, AstArena *a, unsigned char *code, int code_len,
-															 unsigned char *rel, int rel_len, int body_ind, addr_t reloc0) {
+/*
+ * Retain the AOT baseline: a snapshot of the *final* (shipped, possibly optimized)
+ * emit for `sym`, taken from the live text section after the strategy pipeline has
+ * run — this is the deopt fallback the dispatcher reverts to on guard-fail / key-miss,
+ * and the seed the runtime recompiler specializes. Called at the end of ast_func_end
+ * with `src_base`=ast_body_ind_sv, `reloc0`=ast_reloc0_sv, `chain_head`=the shipped
+ * body's open return-jump chain (rsym).
+ */
+static int ast_baseline_retain(Sym *sym, AstArena *a, int src_base, addr_t reloc0,
+															 int chain_head) {
 	if (!ast_jit_env || ast_baseline_n >= AST_INLINE_MAX)
 		return 0;
+	Section *ts = cur_text_section;
+	Section *rs = ts->reloc;
+	int code_len = ind - src_base;
+	int rel_len = rs ? (int)(rs->data_offset - reloc0) : 0;
 	struct AstBaselineFn *e = &ast_baseline_pool[ast_baseline_n++];
 	e->sym = sym;
 	e->ast = a;
-	e->code = code;
 	e->code_len = code_len;
-	e->rel = rel;
 	e->rel_len = rel_len;
-	e->body_ind = body_ind;
+	e->body_ind = src_base;
 	e->reloc0 = reloc0;
+	e->chain_head = chain_head;
+	e->code = mcc_malloc(code_len > 0 ? code_len : 1);
+	memcpy(e->code, ts->data + src_base, code_len > 0 ? code_len : 1);
+	e->rel = mcc_malloc(rel_len > 0 ? rel_len : 1);
+	if (rel_len > 0)
+		memcpy(e->rel, rs->data + reloc0, rel_len);
 	MCC_TRACE("jit-baseline retain %s (%d code, %d rel)\n", get_tok_str(sym->v, NULL),
 						code_len, rel_len);
 	return 1;
@@ -10598,12 +10615,10 @@ void ast_func_end(Sym *sym) {
 					fprintf(stderr, "[ast-promote] %d %s\n", promoted, funcname);
 			}
 			if (ast_jit_env && faithful)
-				keep_baseline = ast_baseline_retain(sym, ast_cur, orig, body_len, orig_rel,
-																						(int)rel_len, ast_body_ind_sv, ast_reloc0_sv);
-			if (!keep_baseline) {
-				mcc_free(orig);
-				mcc_free(orig_rel);
-			}
+				keep_baseline = ast_baseline_retain(sym, ast_cur, ast_body_ind_sv,
+																						ast_reloc0_sv, rsym);
+			mcc_free(orig);
+			mcc_free(orig_rel);
 		}
 		int keep_inline = ast_fn_faithful && ast_inline_retain(ast_cur, sym);
 		int keep_reemit = ast_fn_faithful && ast_reemit_retain(ast_cur, sym);
