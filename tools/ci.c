@@ -1174,7 +1174,7 @@ static void plan_presets(const char *job, StrSet *s) {
 	} else if (!strcmp(job, "matrix")) {
 		for (i = 0; PS_SUPER[i]; i++)
 			set_add(s, PS_SUPER[i], (int)strlen(PS_SUPER[i]));
-	} else if (!strcmp(job, "macos")) {
+	} else if (!strcmp(job, "macos") || !strcmp(job, "macos-x86")) {
 		for (i = 0; PS_DARWIN[i]; i++)
 			set_add(s, PS_DARWIN[i], (int)strlen(PS_DARWIN[i]));
 	} else if (!strcmp(job, "windows")) {
@@ -1233,7 +1233,7 @@ static int do_plan(int argc, char **argv) {
 			job = argv[++i];
 	if (!job) {
 		fprintf(stderr,
-						"usage: ci plan --job <linux|matrix|macos|windows|qemu|dist-unix|dist-windows>\n");
+						"usage: ci plan --job <linux|matrix|macos|macos-x86|windows|qemu|dist-unix|dist-windows>\n");
 		return 2;
 	}
 	printf("[");
@@ -1261,7 +1261,7 @@ static int do_plan(int argc, char **argv) {
 			for (k = 0; CC[k]; k++)
 				plan_cell(&first, "\"preset\":\"%s\",\"cc\":\"%s\",\"arch\":\"arm64\"",
 									PS_DARWIN[i], CC[k]);
-
+	} else if (!strcmp(job, "macos-x86")) {
 		for (i = 0; PS_DARWIN[i]; i++)
 			plan_cell(&first, "\"preset\":\"%s\",\"cc\":\"clang\",\"arch\":\"x86_64\"",
 								PS_DARWIN[i]);

@@ -1,16 +1,21 @@
 name: Matrix
 
-# gcc;clang x native;cross x host-arch, fanned out one build per cell. The
-# `matrix` configure preset defaults to the full MCC_TOOLCHAIN_PROFILE=gcc;clang
-# / MCC_TARGETS=native;cross superbuild; here each cell overrides those to a
-# single profile x single target (-DMCC_TOOLCHAIN_PROFILE / -DMCC_TARGETS) so
-# the 2x2x2 = 8 builds run in parallel and each surfaces as its own job in the
-# Actions UI — instead of two ~40-min host superbuilds. Split out of the
-# per-push/PR CI matrix (it gated the critical path) into its own push-to-main
-# trigger. Build-only smoke test (no tests; ci.yml already tests each
-# toolchain), so it never blocks a PR. Also runnable on demand. Cells come
-# from the same preset ledger as ci.yml (`ci plan --job matrix`), so
-# `ci parity` still covers the matrix preset.
+# Heavy, non-gating cells split out of the per-push/PR CI critical path onto a
+# push-to-main trigger. Two families:
+#
+#   matrix    - the toolchain superbuild: gcc;clang x native;cross x host-arch,
+#               one build per cell (each overrides MCC_TOOLCHAIN_PROFILE /
+#               MCC_TARGETS to a single profile x target) so the 2x2x2 = 8
+#               builds run in parallel and each surfaces as its own job
+#               instead of two ~40-min host superbuilds. Build-only smoke
+#               (ci.yml already tests each toolchain).
+#   macos-x86 - the emulated x86_64 macOS cells (build + test under Rosetta,
+#               ~14 min each). These were the gating critical path; ci.yml now
+#               gates only the native arm64 macOS cells.
+#
+# Both come from the same preset ledger as ci.yml (`ci plan --job matrix` /
+# `--job macos-x86`), so `ci parity` still covers their presets. Never blocks a
+# PR; also runnable on demand.
 
 on:
   push:
@@ -29,12 +34,14 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.gen.outputs.matrix }}
+      macos: ${{ steps.gen.outputs.macos }}
     steps:
       - uses: actions/checkout@v5
       - id: gen
         run: |
           cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl
           echo "matrix=$(/tmp/mcc-ci plan --job matrix)" >> "$GITHUB_OUTPUT"
+          echo "macos=$(/tmp/mcc-ci plan --job macos-x86)" >> "$GITHUB_OUTPUT"
 
   matrix:
     needs: plan
@@ -66,3 +73,45 @@ jobs:
         with:
           name: ${{ env.ART }}
           path: ${{ env.ART }}.tar.xz
+
+  macos-x86:
+    # The emulated x86_64 macOS cells (clang, native + cross), formerly gating
+    # in ci.yml. Full configure + build + test under Rosetta, so they carry the
+    # same coverage as the arm64 cells — just off the per-push critical path.
+    needs: plan
+    name: ${{ matrix.preset }} / ${{ matrix.cc }} / ${{ matrix.arch }}
+    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.macos) }}
+    env:
+      ART: mcc-${{ matrix.preset }}-${{ matrix.cc }}-${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: install Rosetta 2 (x86_64 build + tests under emulation)
+        run: sudo softwareupdate --install-rosetta --agree-to-license
+      - name: cache Homebrew downloads (gcc bottle + deps)
+        uses: actions/cache@v5
+        with:
+          path: ~/Library/Caches/Homebrew/downloads
+          key: brew-${{ runner.os }}-${{ runner.arch }}-cmake-ninja-gcc-mingw
+      - name: install toolchain (everything the platform offers)
+        run: |
+          brew untap aws/tap 2>/dev/null || true
+          brew install cmake ninja gcc
+      - name: install mingw-w64 (PE reference compiler; conformance/diff3 oracle)
+        continue-on-error: true
+        run: brew install mingw-w64
+      - name: install wine (drives pe-wine-conformance in macos-cross)
+        continue-on-error: true
+        run: HOMEBREW_CASK_OPTS=--no-quarantine brew install --cask wine-stable
+      - name: run ${{ matrix.preset }} x86_64 under Rosetta (configure + build + test)
+        # x86_64 cells are clang-only; the Rosetta translation lock serializes a
+        # handful of arch-independent probes, so drop those (fully covered by the
+        # native arm64 macOS and Linux cells).
+        run: |
+          cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c
+          export MCC_CI_CTEST_EXCLUDE='^(fuzz|ast|cst|diff3|preprocess)/|^cli/(symbol_type_func_object|response_file|macho_fat64_dylib)$'
+          /tmp/mcc-ci run-preset ${{ matrix.preset }} --out "$PWD/dist/$ART" \
+            "-DMCC_DIST_PLAT=$ART" -DCMAKE_OSX_ARCHITECTURES=x86_64 -DMCC_TARGET_ARCH=x86_64

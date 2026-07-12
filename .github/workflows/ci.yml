@@ -69,6 +69,10 @@ jobs:
           path: ${{ env.ART }}.tar.xz
 
   macos:
+    # Native arm64 cells only. The emulated x86_64 macOS cells (build + test
+    # under Rosetta, ~14 min each) were the gating critical path, so they were
+    # split out to the push-to-main Matrix workflow (`ci plan --job macos-x86`),
+    # same as bench and the superbuild.
     needs: plan
     name: ${{ matrix.preset }} / ${{ matrix.cc }} / ${{ matrix.arch }}
     runs-on: macos-15
