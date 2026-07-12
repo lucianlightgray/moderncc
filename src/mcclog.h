@@ -22,6 +22,13 @@
  *                                               // the TRACE bit is set; compiled out
  *                                               // unless the build sets MCC_CONFIG_TRACE.
  *
+ * The plain macros read the mcc_state global, so they are silent in driver/link
+ * phases that run before mcc_enter_state (mcc_state == NULL there). The _st
+ * variants take an explicit MCCState* so tracing fires in those phases too:
+ *
+ *   mcc_logf_st(s, MCC_LOG_DEBUG, "%d evals\n", n);   // reads s->verbose
+ *   MCC_TRACE_ST(s, "output %s\n", file);             // fires pre-mcc_enter_state
+ *
  * Requires MCCState (for ->verbose) and the mcc_state global; include after mcc.h.
  */
 
@@ -69,9 +76,24 @@ static inline int mcc_log_enabled(MccLogMask bit) {
 	return mcc_state && (mcc_state->verbose & bit) != 0;
 }
 
+static inline int mcc_log_enabled_st(const MCCState *st, MccLogMask bit) {
+	return st && (st->verbose & bit) != 0;
+}
+
 static inline void mcc_logf(MccLogMask bit, const char *fmt, ...) {
 	va_list ap;
 	if (!mcc_log_enabled(bit))
+		return;
+	fputs(mcc_log_tag(bit), stderr);
+	va_start(ap, fmt);
+	vfprintf(stderr, fmt, ap);
+	va_end(ap);
+}
+
+static inline void mcc_logf_st(const MCCState *st, MccLogMask bit,
+															 const char *fmt, ...) {
+	va_list ap;
+	if (!mcc_log_enabled_st(st, bit))
 		return;
 	fputs(mcc_log_tag(bit), stderr);
 	va_start(ap, fmt);
@@ -90,12 +112,27 @@ static inline void mcc_trace_at(const char *file, int line, const char *func,
 	va_end(ap);
 }
 
+static inline void mcc_trace_at_st(const MCCState *st, const char *file, int line,
+																	 const char *func, const char *fmt, ...) {
+	va_list ap;
+	if (!mcc_log_enabled_st(st, MCC_LOG_TRACE))
+		return;
+	fprintf(stderr, "%s%s:%d %s: ", mcc_log_tag(MCC_LOG_TRACE), file, line, func);
+	va_start(ap, fmt);
+	vfprintf(stderr, fmt, ap);
+	va_end(ap);
+}
+
 #define MCC_DEBUG(...) mcc_logf(MCC_LOG_DEBUG, __VA_ARGS__)
+#define MCC_DEBUG_ST(st, ...) mcc_logf_st(st, MCC_LOG_DEBUG, __VA_ARGS__)
 
 #if defined(MCC_CONFIG_TRACE) && MCC_CONFIG_TRACE
 #define MCC_TRACE(...) mcc_trace_at(__FILE__, __LINE__, __func__, __VA_ARGS__)
+#define MCC_TRACE_ST(st, ...)                                                  \
+	mcc_trace_at_st(st, __FILE__, __LINE__, __func__, __VA_ARGS__)
 #else
 #define MCC_TRACE(...) ((void)0)
+#define MCC_TRACE_ST(st, ...) ((void)0)
 #endif
 
 #endif

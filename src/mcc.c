@@ -1038,12 +1038,13 @@ static int mcc_superopt_perfn(int argc, char **argv, MCCState *s,
 	}
 	i = so_copy(cand, outfile);
 	remove(cand);
-	if (s->verbose) {
+	if (mcc_log_enabled_st(s, MCC_LOG_DEBUG)) {
 		long tot = 0;
 		for (fi = 0; fi < nf; fi++)
 			tot += best_size[fi];
-		printf("superopt-perfn: %d functions (%d cached) in %ums, total .text %ld\n",
-					 nf, cached, host_clock_ms() - start, tot);
+		mcc_logf_st(s, MCC_LOG_DEBUG,
+								"superopt-perfn: %d functions (%d cached) in %ums, total .text %ld\n",
+								nf, cached, host_clock_ms() - start, tot);
 	}
 	mcc_free(cfg);
 	mcc_free(cv);
@@ -1220,16 +1221,19 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 	}
 	i = so_copy(cand_tmp, outfile);
 	remove(cand_tmp);
-	if (s->verbose) {
+	if (mcc_log_enabled_st(s, MCC_LOG_DEBUG)) {
 		if (so_jitscore)
-			printf("superopt: %u evals in %ums, best gate %u budget %u limit %u -> "
-						 "%ld us/run, peak RSS %ld KiB\n",
-						 tried, host_clock_ms() - start, best_gate, best_budget, best_limit,
-						 best, so_last_rss);
+			mcc_logf_st(s, MCC_LOG_DEBUG,
+									"superopt: %u evals in %ums, best gate %u budget %u limit %u -> "
+									"%ld us/run, peak RSS %ld KiB\n",
+									tried, host_clock_ms() - start, best_gate, best_budget,
+									best_limit, best, so_last_rss);
 		else
-			printf("superopt: %u evals in %ums, best gate %u budget %u limit %u -> %ld .text\n",
-						 tried, host_clock_ms() - start, best_gate, best_budget, best_limit,
-						 best);
+			mcc_logf_st(s, MCC_LOG_DEBUG,
+									"superopt: %u evals in %ums, best gate %u budget %u limit %u -> "
+									"%ld .text\n",
+									tried, host_clock_ms() - start, best_gate, best_budget,
+									best_limit, best);
 	}
 	mcc_free(cv);
 	mcc_free(rv);
@@ -1343,6 +1347,7 @@ redo:
 						 s->jit_max_duration == 0 ? " (unlimited)" : "");
 		if (!s->outfile)
 			s->outfile = default_outputfile(s, s->files[0]->name);
+		MCC_TRACE_ST(s, "superopt dispatch %s -> %s\n", s->files[0]->name, s->outfile);
 		if (so(argc0, argv0, s, s->outfile) == 0) {
 			mcc_delete(s);
 			return 0;
@@ -1392,6 +1397,7 @@ redo:
 		} else {
 			if (!s->outfile)
 				s->outfile = default_outputfile(s, first_file);
+			MCC_TRACE_ST(s, "output_file %s type=%d\n", s->outfile, s->output_type);
 			if (!s->just_deps)
 				ret = mcc_output_file(s, s->outfile);
 			if (!ret && s->gen_deps)
