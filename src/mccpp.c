@@ -410,6 +410,7 @@ static int utf8_next_cp(const uint8_t **pp, const uint8_t *end) {
 static void validate_utf8_identifier(const char *s, int len) {
 	const uint8_t *p = (const uint8_t *)s, *end = p + len;
 	int first = 1;
+	int warned = 0;
 	while (p < end) {
 		int leadbyte = *p;
 		int cp = utf8_next_cp(&p, end);
@@ -418,6 +419,13 @@ static void validate_utf8_identifier(const char *s, int len) {
 				mcc_error("universal character \\u%04x is not valid in an "
 									"identifier",
 									cp);
+			else if (!warned && mcc_state->warn_pedantic && mcc_state->cversion < 199901) {
+				warned = 1;
+				if (mcc_state->pedantic_errors)
+					mcc_error("extended identifiers are a C99 feature");
+				else
+					mcc_warning("extended identifiers are a C99 feature");
+			}
 			if (first && ucn_disallowed_initial(cp))
 				mcc_error("universal character \\u%04x is not valid as the "
 									"first character of an identifier",
@@ -2969,6 +2977,12 @@ redo_no_start:
 				mcc_error("universal character \\u%04x is not valid as the "
 									"first character of an identifier",
 									uc);
+			if (mcc_state->warn_pedantic && mcc_state->cversion < 199901) {
+				if (mcc_state->pedantic_errors)
+					mcc_error("extended identifiers are a C99 feature");
+				else
+					mcc_warning("extended identifiers are a C99 feature");
+			}
 			cstr_reset(&tokcstr);
 			cstr_u8cat(&tokcstr, uc);
 			c = *p;
@@ -3389,6 +3403,12 @@ redo_no_start:
 			tok = ' ';
 			goto maybe_space;
 		} else if (c == '/') {
+			if (mcc_state->warn_pedantic && mcc_state->cversion < 199901) {
+				if (mcc_state->pedantic_errors)
+					mcc_error("C++ style comments are a C99 feature");
+				else
+					mcc_warning("C++ style comments are a C99 feature");
+			}
 			p = parse_line_comment(p);
 			tok = ' ';
 			goto maybe_space;

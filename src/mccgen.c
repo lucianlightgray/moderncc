@@ -5423,6 +5423,8 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) {
 		case TOK_RESTRICT1:
 		case TOK_RESTRICT2:
 		case TOK_RESTRICT3:
+			if (tok == TOK_RESTRICT1 && mcc_state->cversion < 199901)
+				mcc_pedantic("'restrict' is a C99 feature");
 			ad->storage_class |= 4;
 			next();
 			break;
@@ -5452,6 +5454,8 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) {
 		case TOK_INLINE1:
 		case TOK_INLINE2:
 		case TOK_INLINE3:
+			if (tok == TOK_INLINE1 && mcc_state->cversion < 199901)
+				mcc_pedantic("'inline' is a C99 feature");
 			t |= VT_INLINE;
 			next();
 			break;
@@ -5712,6 +5716,8 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td) {
 				case TOK_STATIC:
 					if (td & TYPE_NEST)
 						mcc_error("'static' or type qualifiers used in non-outermost array declarator");
+					if (tok == TOK_RESTRICT1 && mcc_state->cversion < 199901)
+						mcc_pedantic("'restrict' is a C99 feature");
 					if (tok == TOK_STATIC)
 						saw_static = 1;
 					ad->storage_class |= 64;
@@ -5852,6 +5858,8 @@ static CType *type_decl_1(CType *type, AttributeDef *ad, int *v, int td,
 		case TOK_RESTRICT1:
 		case TOK_RESTRICT2:
 		case TOK_RESTRICT3:
+			if (tok == TOK_RESTRICT1 && mcc_state->cversion < 199901)
+				mcc_pedantic("'restrict' is a C99 feature");
 			restrict_q = 1;
 			goto redo;
 		case TOK_ATTRIBUTE1:
