@@ -4362,6 +4362,31 @@ static AstLocal ast_bfold_arg(AstArena *a, AstLocal arg, int bt) {
 	return arg;
 }
 
+static void ast_bfold_emit(AstArena *a, AstLocal n, int bt, uint64_t res) {
+	ast_set_kind(a, n, AST_Literal);
+	ast_clear_children(a, n);
+	ast_set_op(a, n, VT_CONST);
+	ast_set_type(a, n, bt, 0);
+	ast_set_ival(a, n, res);
+	ast_set_sym(a, n, 0);
+}
+
+static int ast_bfold_minmax_inf(AstArena *a, AstLocal n, int bid, int bt,
+																uint64_t *out) {
+	uint64_t dom = bt == VT_FLOAT ? (bid == 6 ? 0xff800000ull : 0x7f800000ull)
+															 : (bid == 6 ? 0xfff0000000000000ull
+																					 : 0x7ff0000000000000ull);
+	uint64_t mask = bt == VT_FLOAT ? 0xffffffffull : ~0ull;
+	for (int i = 0; i < 2; i++) {
+		AstLocal lit = ast_bfold_arg(a, ast_child(a, n, i + 1), bt);
+		if (lit != AST_NONE && (ast_ival(a, lit) & mask) == dom) {
+			*out = dom;
+			return 1;
+		}
+	}
+	return 0;
+}
+
 static int ast_bfold_run(AstArena *a) {
 	int folds = 0;
 	AstLocal nn = ast_count(a);
@@ -4405,8 +4430,17 @@ static int ast_bfold_run(AstArena *a) {
 				break;
 			ab[i] = ast_ival(a, lit);
 		}
-		if (i < nargs)
+		if (i < nargs) {
+			uint64_t pres;
+			if ((bid == 6 || bid == 7) &&
+					ast_bfold_minmax_inf(a, n, bid, bt, &pres)) {
+				MCC_TRACE("bfold %s partial-minmax id=%d flt=%d res=0x%llx\n", nm, bid,
+									(int)ast_bfold_tab[bi].flt, (unsigned long long)pres);
+				ast_bfold_emit(a, n, bt, pres);
+				folds++;
+			}
 			continue;
+		}
 		uint64_t res;
 		int ok = ast_bfold_tab[bi].flt
 								 ? ast_bfold_eval_f(ast_bfold_tab[bi].id, (uint32_t)ab[0],
@@ -4417,12 +4451,7 @@ static int ast_bfold_run(AstArena *a) {
 		MCC_TRACE("bfold %s id=%d nargs=%d flt=%d res=0x%llx\n", nm,
 							(int)ast_bfold_tab[bi].id, nargs, (int)ast_bfold_tab[bi].flt,
 							(unsigned long long)res);
-		ast_set_kind(a, n, AST_Literal);
-		ast_clear_children(a, n);
-		ast_set_op(a, n, VT_CONST);
-		ast_set_type(a, n, bt, 0);
-		ast_set_ival(a, n, res);
-		ast_set_sym(a, n, 0);
+		ast_bfold_emit(a, n, bt, res);
 		folds++;
 	}
 	return folds;
