@@ -301,11 +301,23 @@ subgroups; each names the concrete hook and the double-checked blocker. Order is
   cost/size — the future inline/promote (D6, gated on §22 scratch-`Section` isolation) or a size-scored
   reassoc. (Subset *selection* does fire: the search picked a 3-row subset scoring better than base.)
 
-  **Still open toward the settled design:** sequence-with-repetition + cycle-to-fixpoint runner (D1b/c+D3+D5a,
-  repetition emergent via re-cycling until 0 hits), runner-as-strategy + memo identity (D2b), the unified
-  score/forecast estimator interface (D4/M7), and all-opts-as-strategies (D6). Cycle value is real only across
-  *interleaving* (`fold→inline→fold`): a strategy already self-iterates to its own fixpoint, so a
-  different mutator between repeats is the only thing that reopens the surface.
+  **A3c PIPELINE cycle-to-fixpoint LANDED (`MCC_AST_CYCLE`, default off → single pass → byte-identical).**
+  `ast_run_strat_seq` (run the ordered sequence once, sum apply() hits) + `ast_run_strat_cycle`
+  (`do{chits=run_seq; TRACE cycle iter/hits}while(chits>0 && iter<AST_CYCLE_MAX(8) && ast_cycle_env)`, cap
+  non-silent) wrap the strategy phase in BOTH `ast_func_end` emit and all three scorers (scored winner ==
+  emitted result). The `AST_PF_EMIT`/inline/promote emit stage still runs ONCE after the fixpoint.
+  **Finding:** under default gates NO cross-pass cascade exists (400 seeds converge in 1 iter — the passes'
+  internal fixpoints already cover it), so cycle is pure byte-neutral infra there. A real cascade appears
+  when a **tree-EXPANDING** pass runs: `MCC_AST_DIVMAGIC=1` (div→magic-multiply expansion) re-exposes folds
+  for bfold/cse/sccp → `cycle iter=1 hits=3 → iter=2 hits=1 → iter=3 hits=0`, cycle-on object ~16 B smaller.
+  Validated to full M8: default ctest 3958/3958 + object-diff 0/320; self-host 3-stage byte-identical with
+  `MCC_AST_CYCLE=1` (1701071 B each); -O6 differential + 120-seed register-pressure fuzz + `--gates`×DIVMAGIC
+  0 miscompiles; shadow 0 divergence. This is the **pipeline-fixpoint half** of A3c.
+  **Still open toward the settled design:** the *inline-interleaving* payoff (`fold→inline→fold`, D3) —
+  pends decoupling `ast_inline_graft` into a standalone reorderable arena pass (a strategy already
+  self-iterates, so only a *different* mutator between repeats reopens the surface; DIVMAGIC-expansion is
+  one such mutator, hence the cascade above); sequence-with-repetition encoding; runner-as-strategy + memo
+  identity (D2b); the unified score/forecast estimator (D4/M7); all-opts-as-strategies (D6, gated on §22).
 
 - [ ] **[FLOAT] M2 — unify the memo on `ComboMemo` + disk backing.** a) key = `ast_intention_hash`
   (`mccast.c:435`, already the memo key, stable across builds); b) value = winner record (gates +

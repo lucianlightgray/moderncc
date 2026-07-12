@@ -796,7 +796,9 @@ static void ast_search_walk_trace(const int *sel, int k, int depth, int walk,
 						seq);
 }
 #define AST_STRAT_COUNT_MAX 16
+#define AST_CYCLE_MAX 8
 static int ast_search_order_env;
+static int ast_cycle_env;
 static int ast_strat_order[AST_STRAT_COUNT_MAX];
 static int ast_strat_order_n;
 static int ast_strat_order_forced;
@@ -1018,6 +1020,7 @@ void ast_configure(MCCState *s1) {
 	ast_search_threads_env = ast_env_gate("MCC_AST_SEARCH_THREADS", 0);
 	ast_search_ordered_env = ast_env_gate("MCC_AST_SEARCH_ORDERED", 0);
 	ast_search_order_env = ast_env_gate("MCC_AST_SEARCH_ORDER", 0);
+	ast_cycle_env = ast_env_gate("MCC_AST_CYCLE", 0);
 	ast_search_walk_env = ast_search_walk_from_env();
 	ast_strat_order_from_env();
 	if (ast_strat_order_forced) {
@@ -8596,6 +8599,39 @@ static const AstStrategy ast_strategies[AST_STRAT_COUNT] = {
 	{"tco", &ast_templates_env, ast_strat_tco},
 };
 
+static long ast_run_strat_seq(AstArena *a, Sym *sym, int faithful,
+															const int *seq, int k, int *sf) {
+	long hits = 0;
+	int oi;
+	for (oi = 0; oi < k; oi++) {
+		int si = seq[oi];
+		if (si < 0 || si >= AST_STRAT_COUNT)
+			continue;
+		if (faithful && *ast_strategies[si].gate) {
+			int h = ast_strategies[si].apply(a, sym);
+			hits += h;
+			if (sf)
+				sf[si] += h;
+		}
+	}
+	return hits;
+}
+
+static long ast_run_strat_cycle(AstArena *a, Sym *sym, int faithful,
+																const int *seq, int k, int *sf) {
+	long total = 0, chits;
+	int citer = 0;
+	do {
+		chits = ast_run_strat_seq(a, sym, faithful, seq, k, sf);
+		total += chits;
+		citer++;
+		MCC_TRACE("cycle iter=%d hits=%ld\n", citer, chits);
+	} while (chits > 0 && citer < AST_CYCLE_MAX && ast_cycle_env);
+	if (ast_cycle_env && citer >= AST_CYCLE_MAX && chits > 0)
+		MCC_TRACE("cycle CAP hit iter=%d\n", citer);
+	return total;
+}
+
 /*
  * Live -O4+ search (rollout step 5). Opt-in via MCC_AST_SEARCH at -O4+
  * (optimize_search_seconds>0, so the driver has budget for a search): ast_func_end
@@ -9283,17 +9319,13 @@ static long ast_search_score_emitsize(AstArena *pristine, Sym *sym, int faithful
 																			AstGateMask gates, int saved_loc,
 																			int saved_anon) {
 	AstArena *saved_cur = ast_cur, *trial = ast_arena_clone(pristine);
-	int si, oi;
-	long size, hits = 0;
+	long size, hits;
 	if (!trial)
 		return -1;
 	ast_search_gates_set(gates);
 	ast_cur = trial;
-	for (oi = 0; oi < ast_strat_order_n; oi++) {
-		si = ast_strat_order[oi];
-		if (faithful && *ast_strategies[si].gate)
-			hits += ast_strategies[si].apply(trial, sym);
-	}
+	hits = ast_run_strat_cycle(trial, sym, faithful, ast_strat_order,
+														 ast_strat_order_n, NULL);
 	size = ast_search_emit_size(trial, saved_loc, saved_anon);
 	ast_cur = saved_cur;
 	ast_arena_free(trial);
@@ -9305,8 +9337,7 @@ static long ast_search_score_emitsize(AstArena *pristine, Sym *sym, int faithful
 static long ast_search_score_one(AstArena *pristine, Sym *sym, int faithful,
 																 AstGateMask gates, int saved_loc, int saved_anon) {
 	AstArena *saved_cur, *trial;
-	int si, oi;
-	long sc, hits = 0;
+	long sc, hits;
 	if (ast_search_emitsize_env)
 		return ast_search_score_emitsize(pristine, sym, faithful, gates, saved_loc,
 																		 saved_anon);
@@ -9316,11 +9347,8 @@ static long ast_search_score_one(AstArena *pristine, Sym *sym, int faithful,
 		return -1;
 	ast_search_gates_set(gates);
 	ast_cur = trial;
-	for (oi = 0; oi < ast_strat_order_n; oi++) {
-		si = ast_strat_order[oi];
-		if (faithful && *ast_strategies[si].gate)
-			hits += ast_strategies[si].apply(trial, sym);
-	}
+	hits = ast_run_strat_cycle(trial, sym, faithful, ast_strat_order,
+														 ast_strat_order_n, NULL);
 	sc = ast_cost_score(trial);
 	ast_cur = saved_cur;
 	ast_arena_free(trial);
@@ -9331,18 +9359,13 @@ static long ast_search_score_order(AstArena *pristine, Sym *sym, int faithful,
 																	 const int *seq, int k, int saved_loc,
 																	 int saved_anon) {
 	AstArena *saved_cur, *trial;
-	long sc, hits = 0;
-	int i;
+	long sc, hits;
 	trial = ast_arena_clone(pristine);
 	if (!trial)
 		return -1;
 	saved_cur = ast_cur;
 	ast_cur = trial;
-	for (i = 0; i < k; i++) {
-		int si = seq[i];
-		if (faithful && *ast_strategies[si].gate)
-			hits += ast_strategies[si].apply(trial, sym);
-	}
+	hits = ast_run_strat_cycle(trial, sym, faithful, seq, k, NULL);
 	sc = ast_search_emitsize_env ? ast_search_emit_size(trial, saved_loc, saved_anon)
 															 : ast_cost_score(trial);
 	ast_cur = saved_cur;
@@ -9598,7 +9621,7 @@ static void ast_search_select_order(Sym *sym, int faithful, int saved_loc,
 static void ast_search_axis_pick(Sym *sym, int faithful, int saved_loc,
 																 int saved_anon) {
 	AstArena *saved_cur, *trial;
-	int oi, si, ci, first = 1, bi = 1;
+	int ci, first = 1, bi = 1;
 	long best = -1;
 	if (!ast_search_inline_env || !ast_search_emitiso_env ||
 			!ast_search_emitsize_env || !faithful)
@@ -9608,13 +9631,8 @@ static void ast_search_axis_pick(Sym *sym, int faithful, int saved_loc,
 		return;
 	saved_cur = ast_cur;
 	ast_cur = trial;
-	for (oi = 0; oi < ast_strat_order_n; oi++) {
-		si = ast_strat_order[oi];
-		if (si < 0 || si >= AST_STRAT_COUNT)
-			continue;
-		if (*ast_strategies[si].gate)
-			ast_strategies[si].apply(trial, sym);
-	}
+	ast_run_strat_cycle(trial, sym, faithful, ast_strat_order, ast_strat_order_n,
+											NULL);
 	for (ci = 1; ci >= 0; ci--) {
 		long sz;
 		ast_search_want_inline = ci;
@@ -9982,14 +10000,8 @@ void ast_func_end(Sym *sym) {
 					int sf[AST_STRAT_COUNT];
 					for (int si = 0; si < AST_STRAT_COUNT; si++)
 						sf[si] = 0;
-					for (int oi = 0; oi < ast_strat_order_n; oi++) {
-						int si = ast_strat_order[oi];
-						if (si < 0 || si >= AST_STRAT_COUNT)
-							continue;
-						sf[si] = faithful && *ast_strategies[si].gate
-												 ? ast_strategies[si].apply(ast_cur, sym)
-												 : 0;
-					}
+					ast_run_strat_cycle(ast_cur, sym, faithful, ast_strat_order,
+															ast_strat_order_n, sf);
 					bfolds = sf[AST_STRAT_BFOLD];
 					idents = sf[AST_STRAT_IDENT];
 					narrows = sf[AST_STRAT_NARROW];
