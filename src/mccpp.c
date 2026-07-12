@@ -32,6 +32,15 @@ static void next_nomacro(void);
 static void parse_number(const char *p);
 static void parse_string(const char *p, int len);
 
+static int pp_in_system_header(void) {
+	BufferedFile *wf;
+	if (!mcc_state->error_set_jmp_enabled)
+		return 0;
+	for (wf = file; wf && wf->filename[0] == ':'; wf = wf->prev)
+		;
+	return wf && wf->system_header;
+}
+
 #define toksym_alloc (mcc_state->toksym_alloc)
 #define tokstr_alloc (mcc_state->tokstr_alloc)
 
@@ -3403,7 +3412,8 @@ redo_no_start:
 			tok = ' ';
 			goto maybe_space;
 		} else if (c == '/') {
-			if (mcc_state->warn_pedantic && mcc_state->cversion < 199901) {
+			if (mcc_state->warn_pedantic && mcc_state->cversion < 199901 &&
+					!pp_in_system_header()) {
 				if (mcc_state->pedantic_errors)
 					mcc_error("C++ style comments are a C99 feature");
 				else
