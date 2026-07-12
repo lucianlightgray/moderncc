@@ -12,190 +12,48 @@ JIT. This reframes/subsumes several items below (§21 cache key, §22 emit
 isolation, §28 rewrite IR, §33b/e seam+window keys, §30 predicate bitset, H_e
 epoch hash, the time-budgeted engine, per-function `-O1`, PP-as-executable JIT).
 
-**The `docs/AST.md` staged rollout (steps 1–5) is COMPLETE.** Step 1 def/use projection,
-step 2 property memos, step 3 structural hash, step 4 strategy engine (now the sole
-pipeline), and **step 5 "Worker pool + live search at -O4+, warming the shared memo"** —
-the fork process pool (`MCC_AST_SEARCH_THREADS`), the live -O4+ search (`MCC_AST_SEARCH`,
-subset-lattice candidates, static + emitted-size scoring), and the warmed memo (in-memory
-+ disk-backed `mcc-search.memo`) — are all on `main`, each gated by `-O6` differentials +
-`1905/1905` ctest + the shadow build, default builds byte-neutral throughout. Runtime
-JIT + guarded deopt is **not** a rollout step (AST.md lists it as "rollout steps 3-5 **+
-the JIT**"); it is the separate post-rollout item below, gated by the design on the §26
-recompiler.
+**The `docs/AST.md` staged rollout (steps 1–5) is COMPLETE — as-built detail in
+`docs/SUBSTRATE-PLAN.md`; not repeated here.** On `main`, default byte-neutral, each gated by `-O6`
+differentials + full ctest + the `MCC_CONFIG_AST_SHADOW` shadow build (zero side-car divergence):
+the `(tag,id)` naming partition (`src/mccname.h`); the read-only side-car (step-1 `ast_du_*` def/use,
+step-2 `ast_memo_*` property memos, step-3 `ast_hash_*` structural hash); the step-4 strategy engine
+(the sole `ast_strategies[]` pipeline; the legacy inline block + `MCC_AST_ENGINE` removed); and the
+step-5 live -O4+ search (`ast_search_select`/`MCC_AST_SEARCH` over the fold-gate lattice, with
+static-cost, emit-size `MCC_AST_SEARCH_EMITSIZE`, and NCores-1 fork-pool `MCC_AST_SEARCH_THREADS`
+scoring; next-tick forecast in `src/mccforecast.h`; in-memory + disk memo `mcc-search.memo` keyed by
+`ast_intention_hash`). The search only *selects* a gate config — the normal pipeline emits the winner
+on the untouched tree, so a search bug can only pick a larger-but-correct config, never a miscompile;
+-O4+ output is timing-bounded / non-reproducible by design (quarantined there — `-O1..-O3` never
+search, stay byte-reproducible). Runtime JIT + guarded deopt is **not** a rollout step (AST.md lists
+it as "steps 3-5 **+ the JIT**") — it is the separate post-rollout item below, gated by the §26
+recompiler design.
 
-**LANDED — the read-only side-car (rollout steps 1–3).** All four PRs shipped as one
-change; pure accelerators, no emitted-byte changes. Validated by the compile-time
-shadow-assert build (`MCC_CONFIG_AST_SHADOW`, default-off, opt-in `cmake-shadow` dir +
-CI) that runs each O(1) side-car answer against the legacy scan and aborts on any
-divergence: 1904/1904 ctest pass under shadow with zero divergences, including
-`fixpoint-invariant` and `fuzz/{smoke,matrix}`; the production (non-shadow) build is
-byte-neutral by the same evidence. See `docs/SUBSTRATE-PLAN.md` for the as-built notes.
+The Step-5+ scoring/parallelism continuations still open (were inline in the removed LANDED prose):
 
-- [x] **PR-1 — `(tag,id)` naming partition** — `src/mccname.h` (`mcc_name`/
-  `mcc_name_tag`/`mcc_name_id` + `MCC_NS_{AST_SLOT,CST_BRANCH}`); CST field
-  `slot_key -> branch_tag` renamed (source-only, serialized format unchanged).
-- [x] **PR-2 — Step 1: def/use projection** — per-slot `{written,escaped}` side-car
-  (`ast_du_*`) rebuilt on `AstArena.epoch` change; `ast_cprop_escapes` (11 sites) and
-  `ast_local_is_readonly` (1) now answer from it (originals kept as `_scan` oracles).
-  Scope note: `ast_licm_written`/`ast_ivsr_count_writes` were left as-is — they are
-  subtree-scoped (not whole-arena rescans), so the whole-function table does not
-  subsume them; a descendant-indexed extension is future work.
-- [x] **PR-3 — Step 2: property memos** — per-node tri-state memos (`ast_memo_*`) for
-  `ast_ident_pure`/`ast_cprop_safe`/`ast_sccp_has_label`/`ast_cse_regpure`, cleared on
-  epoch change.
-- [x] **PR-4 — Step 3: structural hash** — lazy side-car hash (`ast_hash_*`) folding
-  the exact `ast_ident_same` tuple; used as a collision-proof O(1) fast-reject, hash
-  matches fall through to `ast_ident_same_scan` (confirm-on-fire). Design note: realized
-  as an epoch-rebuilt side-car array, NOT the incremental parent-chain-patched SoA
-  column — same correctness, and it sidesteps the invalidation risk that killed the
-  earlier prototype. The incremental SoA `h[]` column stays available if a future
-  hot path needs O(depth) updates instead of O(n) rebuilds.
-
-**LANDED — Step 4: the strategy engine (now the sole pipeline).** Each fixed-pipeline
-pass is wrapped as an `AstStrategy {name, gate, apply}` and the pipeline order is a frozen
-data table (`ast_strategies[]`) consumed by `ast_func_end`. It is the **only** engine —
-the legacy inline block and its `MCC_AST_ENGINE` toggle have been removed. The table
-order/gates/args reproduced the legacy block byte-for-byte (verified before removal:
-900/900 object comparisons across 300 generated programs × `-O1/-O2/-O3` were
-byte-identical), so making it the sole engine changed no emitted bytes: the full ctest
-stays 1904/1904 (incl. fixpoint-invariant + fuzz/matrix + the exact-byte goldens) and
-shadow is 1904/1904 with zero side-car divergences. `match` = the gate; `est_cost_delta`
-(the search's ranking key) is deferred to Step 5.
-
-**LANDED — Step 5 core: the live -O4+ search.** At -O4+ (`optimize_search_seconds > 0`)
-opt-in via `MCC_AST_SEARCH`, `ast_func_end` runs a per-function search over the four
-toggleable fold gates (templates, narrow, bitflag, sethi) instead of the single frozen
-order (`ast_search_select`). Execution model matches the intended runtime JIT: each
-candidate gate config is a stackless coroutine whose one *tick* applies exactly one
-strategy pass to its own isolated `ast_arena_clone`; the scheduler advances the
-least-total-time-consumed live candidate (running sum of tick durations, ties → baseline
-first — fair, no starvation), and a rolling 10-sample duration window makes the search
-stop once the predicted next tick would overrun the remaining budget. The next-tick
-prediction is a forecasting ensemble (`src/mccforecast.h`): thirteen self-contained
-one-step predictors (random walk, SES, AR(1), linear/Bayesian-ridge regression, penalized
-spline, GAM, local-level Kalman/BSTS, Gaussian-process, gradient-boosted stumps, Holt,
-Theil-Sen, moving median) are scored on their online accuracy over the window; the three
-most accurate vote and the one closest to their median (least distance to consensus) is
-used. The same module is exposed to `-ffold-math` (constant-arg `mcc_fc_*` builtins fold
-to a compile-time prediction) — one implementation, two consumers. The budget is the
-`-ON` seconds, **absolute** from the first tick; `ast_search_abort` is a forced-abort
-hook (pool/JIT/deadline) checked at every tick boundary — because each candidate mutates
-only a throwaway clone, abort discards in-progress work safely (the pool's "kill+restart
-worker" reduces to this discard). Candidates are scored by the static cost model
-(`ast_cost_score`); the search only *selects* a gate config — the winner is emitted by
-the normal unmodified pipeline+emit path on the untouched captured tree, so a search bug
-(or a time-truncated / aborted search) can only pick a larger-but-correct config, never
-a miscompile. Winners are memoized by `ast_intention_hash`. Single-threaded; -O4+ output
-is timing-bounded and non-reproducible by design (quarantined there — `-O1..-O3` carry
-no budget, never search, stay byte-reproducible). Opt-in: `MCC_AST_SEARCH=1` +
-`-O<n≥4>` — a dedicated flag, kept off the default -O4+ path so it does not perturb the
-out-of-process superopt's per-worker gate measurements. Validated: default `-O1..-O3`
-unchanged (1904/1904 ctest, search never engages); `MCC_AST_SEARCH -O5/-O6` differential
-correct vs gcc/clang (200/200 + 90/90 across scheduler revisions); shadow zero side-car
-divergences; the `-ON` budget is an absolute cap (verified no hang, finishes early when
-candidates complete); asttool 55/55 with the portable `clock()` timer.
-
-**LANDED — Step 5+: emitted-byte-size scoring** (`MCC_AST_SEARCH_EMITSIZE`). Instead of
-the static `ast_cost_score` proxy, each candidate is folded to completion and replayed
-into the live text section (the proven in-place emit-and-rewind of the inline on/off
-trial) with inline + promotion **off** (so the promotion save/restore desync never
-arises); the emitted byte length is the score and every emit cursor is rewound. The
-interleave-thrash problem (see below) is sidestepped by running this path
-**run-to-completion** per candidate (the tick scheduler's fair interleave is kept for the
-default static-cost path). Opt-in within the search; the winner is still emitted by the
-normal pipeline on the untouched captured tree, so a mis-emit reverts through
-`ast_func_end`'s faithful revert. Validated: `MCC_AST_SEARCH_EMITSIZE -O6` differential
-135/135 correct vs gcc, zero crashes/miscompiles; default unaffected (1905/1905). Still
-open: JIT-runtime scoring (`MCC_AST_JITSCORE`) and emit-size under the *tick* scheduler
-(needs the per-context state below).
-
-**LANDED — Step 5+: NCores-1 process pool** (`MCC_AST_SEARCH_THREADS`). `ast_search_pool`
-forks up to `host_nproc()-1` score-only workers over the candidate set. A **fork gives
-each worker its own copy of every optimizer global (COW)**, so a worker folds+scores its
-candidates with zero shared-state contention and **no `_Thread_local` marking** — the
-fork isolation replaces the whole per-context-state refactor for the scoring step.
-Workers only read the shared `pristine` tree (COW) and write `{index, score}` records to
-a pipe, then `_exit` without flushing; the parent (which never mutates shared state
-during the fork window) collects them and applies the winner single-threaded. Handles
-both static-cost and emit-size scoring. POSIX only (`#if MCC_HOST_POSIX`; elsewhere falls
-back to serial). Validated: `MCC_AST_SEARCH_THREADS -O6` differential correct vs gcc
-(16/16, incl. +emit-size), zero crashes/hangs; default unaffected (1905/1905); asttool
-excludes it. Still open: the design's *C11-thread* pool with `_Thread_local` per-context
-state (only needed for interior/tick-mode parallelism, not candidate scoring — the fork
-pool covers that); the per-context refactor is the remaining substrate item if that is
-ever wanted, its own gated change (side-car shadow + fixpoint + fuzz).
-- [ ] **Step 5+ — widen the search space** — the fold-gate candidate set is the full
-  **subset lattice** of the enabled gates (now on `combo_run`, see M1). **LANDED — opt-in
-  enablement knobs (the search ADDS, not just drops).** The candidate space is now the
-  subset lattice of `searchable = base | opt-in-knobs`, not just `subsets(base)`: knobs that
-  are **off in every -O baseline** (so the subset-of-base lattice can never reach them) are
-  offered to the search to turn ON. Two knobs land, both **gated on a gate reliably in `base`
-  in BOTH superopt modes** (`base` is `narrow|sethi`=10 in search-mode workers, `15` under
-  `MCC_AST_PERFN` — so only narrow/sethi-gated knobs fire; templates/bitflag-gated ones are
-  shadowed by the superopt's own axes, the M1/M3 duplication in vivo). **The strategy bitmask is
-  now `AstGateMask` = `uint64_t`** (was `unsigned` in memory but hard-capped at **8 bits** on disk
-  via `gates & 0xff` + `MAGIC<<8`): it starts using only the low bits and scales to the host's max
-  width — 64 knobs in memory, the low **48** persisted (`AST_GATE_BITS`, MAGIC moved to the high 16
-  of the on-disk word), so an added knob past bit 7 is no longer silently truncated on
-  persist/reload. Old 8-bit-format records fail the per-record MAGIC check and are skipped (cache
-  rebuilds; already version/triplet-salted). Validated: ctest 1905/1905, 48-bit disk round-trip,
-  exec 12/12. The two landed knobs:
-  **Regression coverage (NEW — the whole search subsystem had zero ctest coverage before):**
-  two exec-corpus ctest variants over all ~291 exec goldens, total ctest **1906 → 2488**, all pass.
-  (i) `exec-narrowfix/*` forces both knobs ON at -O2 (`MCC_AST_NARROW_FIX=1 MCC_AST_SETHI_LEAF=1`),
-  cheap, covering the V-narrow(a)/V-sethi(a) codegen. (ii) `exec-search/*` runs the live -O4 combo
-  search (`MCC_AST_SEARCH=1 MCC_SEARCH_WORKER=1` — the worker flag runs the in-process search
-  directly and suppresses the out-of-process superopt spawn, whose fork+exec argv-rewrite otherwise
-  collides with the exec runner's `-o`; diagnosed via the correct sorted output proving no
-  miscompile), covering M1 enumeration + the memo/5-word disk record + scoring + knobs-via-`searchable`.
-  (iii) `exec-search-emitsize/*` and `exec-search-threads/*` cover the two other scoring paths —
-  the emit-size scorer (`ast_search_emit_size`: fold-to-completion + in-place emit-and-rewind) and
-  the NCores-1 fork pool (`ast_search_pool`) — across the whole corpus. (iv) Both knobs are
-  registered in the differential miscompile fuzzer's `GATES[]` table (`tests/fuzz/runner.c` —
-  `NARROW_FIX`/`SETHI_LEAF`), so `fuzz/matrix` now stress-tests their codegen against the gcc+clang
-  consensus on random programs; a 110-seed campaign ran 0 miscompiles. **Total ctest now 3070**
-  (was 1906 before this coverage) — the entire search subsystem is CI-covered end-to-end.
-  (v) **Self-host validated:** mcc compiled its own ~100K-line source with all three knobs
-  (`NARROW_FIX`+`SETHI_LEAF`+`SCCP_FIX`) forced on → clean object; linked (mcc as linker, its runtime
-  supplies `__floatundixf`/`__fixxfdi`); the resulting knobs-on self-hosted mcc correctly compiles
-  and runs `fib(10)=55` and the exec-corpus quicksort. Full M8 validation for the landed transforms:
-  exec-corpus (1164 tests) + differential fuzz (~410 seeds, 0 miscompiles) + self-host.
-  a) **`AST_SG_NARROWFIX`** (narrow iterate-to-fixpoint, `MCC_AST_NARROW_FIX`, gated on
-  `AST_SG_NARROW`) — V-narrow(a); b) **`AST_SG_SETHILEAF`** (leaf-aware Sethi-Ullman
-  register-need: a literal leaf needs 0 registers, `MCC_AST_SETHI_LEAF`, gated on
-  `AST_SG_SETHI`) — V-sethi(a), correct-by-construction since sethi only reorders commutative
-  operands. The memo-hit intersection was widened `& base → & searchable` so a cached winner
-  keeps its opt-in knobs; the fork-pool `gatelist` grew 16→64 (2^6). Validated: default
-  `-O1..-O3` byte-identical (**1905/1905**, asttool 130/0); `MCC_AST_SEARCH -O6` enumerates the
-  full 2^4 lattice over `{narrow,sethi,narrowfix,sethileaf}` (TRACE: `searchable=58`, candidate
-  masks 2..58 incl. the 16/32 knob bits) and stays exec-identical to baseline (14/14 + `w()`
-  cascade). A tried droppable CPROPJOIN knob was removed — droppable knobs need the gate in
-  `base`, which the superopt strips, so only the **addable** pattern reliably fires. This is
-  the template for the remaining opt-in axes.
-  **Budget-scaling the candidate count — LANDED:** `combo_run`'s `spec.budget` is now
-  `AST_SEARCH_MAX_CAND` (128) instead of 0/unbounded, and the fork pool's `gatelist` is sized to it
-  with an explicit (TRACE-logged, non-silent) cap on the submask enumeration — so the subset lattice
-  of `searchable` can grow to 2^9 (4 fold gates + the 5 opt-in knobs) without pathological
-  enumeration or `gatelist` overflow. This unblocked wiring `LTEMP`/`IVSR`/`PRE` into `searchable`
-  (V-licm(d), above). Validated: default byte-identical (search-mode base=10 → 15 candidates, well
-  under the cap; ctest 3070), perfn-mode 12/12 exec + self-host. **Best-first frontier (est_cost_delta seed) — LANDED:** when
-  the vocabulary is large enough that the `AST_SEARCH_MAX_CAND` budget truncates the enumeration,
-  base's single-toggle neighbours (drop one enabled gate / add one opt-in knob — the highest-value
-  nearby configs) are scored explicitly *before* the general combo enumeration, so the cap can't
-  crowd them out. **Data-driven ordering (est_cost_delta) — LANDED:** each frontier probe's measured
-  marginal delta then REORDERS `items[]` (insertion sort, most-improving first), so combo_run's
-  budget-capped ascending-mask enumeration spends its candidates on the most-promising gate
-  combinations first — measured deltas are a stronger ordering signal than an `ast_fc_forecast`
-  prediction would be, since the frontier already evaluates them directly. Scheduling-only
-  (correct-by-construction, any order → correct winner) and gated on `(1<<nitems) > cap`, so
-  small-vocabulary searches (default search-mode) are byte-identical. Validated: ctest 3070, perfn
-  14/14 exec, self-host. **Catalog knobs wired to `AST_SG_*` bits — 7 opt-in knobs now
-  search-selectable:** `NARROWFIX`(16), `SETHILEAF`(32), then templates-gated `LTEMP`(2048)/
-  `IVSR`(4096)/`PRE`(8192)/`DSECALL`(16384)/`TCOPTR`(32768). perfn-mode `searchable=0xf83f` = the
-  full 11-bit vocabulary (4 fold gates + 7 knobs), budget-capped at 128 so 2^11 doesn't explode
-  (validated: default byte-identical ctest 3070, perfn 12/12 exec, self-host). Still open: the
-  **inline/promote axes** (want emitted-size scoring, since inline/promote effects are emit-time),
-  and the search-mode superopt shadowing (templates-gated knobs only fire in perfn mode → M3 wiring).
+- [ ] **Step 5+ — emit-size scoring under the *tick* scheduler + JIT-runtime scoring** — emit-size
+  scoring is run-to-completion per candidate today because the fair-interleave tick scheduler
+  thrashes the shared ltemp/fconst emit state across candidates; making it tick-interleavable needs
+  the per-context emit state (the C11-thread item below). JIT-runtime scoring — wiring the shipped
+  `MCC_AST_JITSCORE` runtime measurement into the search's ranking key — is the other half. (needs
+  §22 scratch-`Section` emit isolation)
+- [ ] **Step 5+ — C11-thread pool with `_Thread_local` per-context state** — the fork pool (COW
+  isolation) already covers candidate *scoring* with no thread-local marking, so this is only needed
+  for interior / tick-mode parallelism. The per-context-state refactor is the remaining substrate
+  item if ever wanted — its own gated change (side-car shadow + fixpoint + fuzz).
+- [ ] **Step 5+ — widen the search space** — the candidate set is the subset lattice of
+  `searchable = base | opt-in-knobs` on `combo_run` (see M1). **LANDED:** the search ADDS knobs that
+  are off in every -O baseline (not just drops base gates); `AstGateMask` is a `uint64_t` (low 48 bits
+  persisted — `AST_GATE_BITS`; MAGIC in the high 16, old 8-bit records rejected); budget-scaled to
+  `AST_SEARCH_MAX_CAND`=128 with a best-first `est_cost_delta` frontier that scores base's
+  single-toggle neighbours first and reorders `items[]` most-improving-first (non-silent when the cap
+  truncates). 13 opt-in knobs are wired to `AST_SG_*` bits and added to `searchable`: NARROWFIX,
+  SETHILEAF, LTEMP, IVSR, PRE, DSECALL, TCOPTR, CSECOMM, RANGE, DIVMAGIC, ABS, REASSOC, SCCPFIX (the
+  narrow/sethi/templates-modifier knobs are base-gated; RANGE/DIVMAGIC/ABS/REASSOC/SCCPFIX standalone).
+  CI coverage: the `exec-{narrowfix,search,search-emitsize,search-threads}/*` ctest variants + the
+  fuzzer `GATES[]` table cover the whole search subsystem end-to-end; default `-O1..-O3` byte-identical.
+  **Still open:** the **inline/promote axes** (want emit-size scoring — inline/promote effects are
+  emit-time), and the search-mode superopt shadowing (templates-gated knobs only fire in perfn mode,
+  so the search-mode workers never exercise them → M3 wiring).
 - [ ] **Step 5+ — disk-backed cross-build memo (refcounted, LFU-evicted, compressed)** —
   the per-function winner persists across builds as a **refcounted permutation**:
   `<cachedir>/mcc-search.memo`, records `{intention-hash, gates|MAGIC<<8, refcount}`,
@@ -215,18 +73,13 @@ ever wanted, its own gated change (side-car shadow + fixpoint + fuzz).
   raise `AST_SEARCH_MEMO_CAP` if the 4096-entry hot set proves too small; throttle the
   per-accessor dir-walk if it shows up on very large caches.
 
-**LANDED — compression codecs + the `mcccombo` substrate wrapper (not yet wired).**
-`src/algorithms/{rle,lzss,lzw}.h` — header-only static-inline PackBits-RLE / LZSS / LZW,
-round-trip selftest `src/algorithms/selftest.c` (18/18). `src/mcccombo.h` — a header-only
-wrapper for the recurring "try permutations of formulaic combinations, score, keep the best,
-memoize by key->value" pattern: `combo_run` (subset × ordering enumerator, `COMBO_MAX 16`,
-`ComboScoreFn` lower-is-better), `combo_codecs`/`combo_pipeline_search` (codecs as a permutable
-formula family — best codec *chain*), `ComboMemo` (key->value cache, values best-of-3 compressed,
-refcount + LFU byte-cap eviction); selftest `src/algorithms/combo_selftest.c` (20/20). The disk
-memo now stores a **compressed container** ("MSZ1" magic, best-of-3 rle/lzss/lzw — a real -O4 run
-packs 216->111 bytes) in place of the raw 24-byte append-log. `mcccombo.h` is written but **used
-only by its selftest** — the roadmap below wires the real call-sites onto it. Validated:
-1905/1905, real -O4 populate+reload round-trip.
+**LANDED — compression codecs + the `mcccombo` substrate.** `src/algorithms/{rle,lzss,lzw}.h`
+(header-only PackBits-RLE / LZSS / LZW, selftest 18/18) and `src/mcccombo.h` (`combo_run`
+subset×ordering enumerator with `ComboScoreFn` lower-is-better, `combo_pipeline_search` codec-chain
+search, `ComboMemo` refcount + LFU-evicted key->value cache; selftest 20/20). The -O4 disk memo
+(`mcc-search.memo`) stores a compressed "MSZ1" best-of-3 (rle/lzss/lzw) container. **M1 wired
+`ast_search` onto `combo_run`**; the remaining call-site migration (the memo struct, the superopt,
+the formula families) is tracked as M2/M3/M7 below.
 
 ### Macro roadmap — collapse both searches + const-data onto one substrate
 
@@ -237,35 +90,18 @@ call-sites already exist. Numbered macro steps; lettered sub-features inline; `(
 subgroups; each names the concrete hook and the double-checked blocker. Order is dependency order
 (M4 before M6; M5 before M6).
 
-- [x] **M1 — wire the live -O4 search onto `combo_run`** (behavior-preserving first). **LANDED
-  (subset mode, byte-identical).** `ast_search_select` now drives the serial static-cost and
-  emit-size searches through `combo_run` (`src/mcccombo.h`): `items[]` = the baseline-enabled
-  `AST_SG_*` bits, the `ComboScoreFn` (`ast_search_combo_score`) wraps `ast_search_score_one`
-  (owning the `ast_cur` + 4-gate global save/restore that keeps `combo_run` a pure enumerator),
-  budget/abort enforced by `ast_search_should_stop` → `COMBO_REJECT`. base is scored first and
-  wins ties (safe-fallback); the empty (all-off) config competes too, so the candidate SET equals
-  the old submask lattice `{base .. 0}`. The fork pool keeps its own submask `gatelist[]`.
-  Validated: **byte-identical to HEAD** across default `-O2`, `MCC_AST_SEARCH`, `+EMITSIZE`,
-  `+THREADS` (diff of every emitted `.o`); full ctest **1905/1905**; asttool 130/0.
-  c) **ordered enumeration** (`MCC_AST_SEARCH_ORDERED`) is plumbed to `combo_run`'s permutation
-  mode but is a **no-op over the current 4-gate vocabulary** — gates combine as a bitmask
-  (`gates |= items[sel[i]]`) so orderings collapse to the same mask/score (verified byte-identical
-  to subset mode). Making it meaningful (strategy *pipelines*) needs (i) the 12-entry
-  `ast_strategies[]` as the combo vocabulary with order-respecting application, AND (ii) the
-  **emit path** (`ast_func_end`'s frozen `ast_strategies[]` loop) to honor the discovered per-fn
-  order — otherwise the winning order is selected but never applied. That emit-path change is the
-  remaining M1(c) work (tracked in the variation catalog below). *Synergy still open:*
-  `ast_fc_forecast` best-first candidate ordering.
-
-  **LANDED (on top of M1) — hit-count tie-break (`ast_search_pack_score`).** Each candidate now
-  sums the fold-count every applied strategy reports (`apply()` returns a hit count) and packs it
-  into the score: `(primary << 12) + (HITMAX - clamp(hits))`, so ranking is cost-first and, WITHIN
-  an equal cost, favors the config whose algorithms actually **fired more on this AST slice** (a
-  gate that lands many folds beats one that does nothing; base still wins its own ties as the
-  fallback). Applies to both static-cost and emit-size scoring and the fork pool. Deliberately
-  changes -O4+ winner selection (quarantined non-reproducible tier); default `-O1..-O3` untouched
-  (**1905/1905**), `MCC_AST_SEARCH -O6` exec-identical to gcc. Verified via `-v128` TRACE: on a
-  slice where narrow lands 0 folds and sethi lands 1 at equal cost, sethi now outranks narrow.
+- [x] **M1 — wire the live -O4 search onto `combo_run`** — **LANDED (subset mode, byte-identical).**
+  `ast_search_select` drives the serial static-cost and emit-size searches through `combo_run`
+  (`ast_search_combo_score` → `ast_search_score_one`, which owns the `ast_cur` + gate save/restore so
+  `combo_run` stays a pure enumerator; budget/abort via `COMBO_REJECT`); base is scored first and wins
+  ties, and the candidate set equals the old submask lattice `{base .. 0}`. Byte-identical to HEAD
+  across `-O2` / `MCC_AST_SEARCH` / `+EMITSIZE` / `+THREADS`. Also landed on top: the **hit-count
+  tie-break** (`ast_search_pack_score` — within an equal cost, favor the config whose passes fired
+  more folds; -O4+ only, default untouched). **Remaining — M1(c):** ordered enumeration
+  (`MCC_AST_SEARCH_ORDERED`) is plumbed to `combo_run`'s permutation mode but a no-op over the bitmask
+  vocabulary; making it meaningful needs `ast_strategies[]` as the ordered combo vocabulary AND
+  `ast_func_end`'s frozen loop to honor the discovered per-fn order (tracked in the variation catalog
+  below); `ast_fc_forecast` best-first ordering is the open synergy.
 
 - [ ] **M2 — unify the memo on `ComboMemo` + disk backing.** a) key = `ast_intention_hash`
   (`mccast.c:435`, already the memo key, stable across builds); b) value = winner record (gates +
@@ -379,65 +215,33 @@ subgroups; each names the concrete hook and the double-checked blocker. Order is
   prints `^ compressible A->B chain=rle+lzss ... round-trip OK`; `-v128` TRACE `data pack ... k=N` /
   `LOSSY chain`. **Remaining:** the actual (C) ctor + (D) runtime, which need M5's non-neutral rewrite step.
 
-- [ ] **M6z — zero-init `.bss` placement** (a cheaper cousin of M6, surfaced by the M5 side-car; NOT
-  compression — a free placement fix). **Finding:** mcc emits an all-zero-initialized writable static
-  object (`static int x[256] = {0};`) into `.data` as `size` zero bytes on disk, when C11 6.7.9 makes
-  `={0}` identical to no initializer → it belongs in `.bss` (NOBITS, zero disk bytes). `size -A`
-  confirmed a 256-int `={0}` costs 1024 `.data` bytes under mcc (gcc puts it in `.bss`). The section is
-  chosen in `decl_initializer_alloc` (`mccgen.c:12108`, `has_init → data_section`) **before** the
-  initializer bytes exist, so the fix needs either an all-zero pre-scan of the initializer or
-  post-emission section move (symbol re-bind + `.data` reclaim) — a non-neutral, cross-arch change.
-  **Analysis step LANDED (byte-neutral):** `ast_data_zero_check` (`mccast.c`, on the visibility
-  side-car) flags each all-zero writable object as `.bss`-movable and accumulates the reclaimable disk
-  (`MCC_AST_DATA_REPORT` prints `^ all-zero .data ... belongs in .bss`; `-v128` TRACE `data zero`).
-  Verified: `int[256]={0}`→flagged 1024B reclaimable, `int[256]={1}` correctly NOT flagged; src/mcc.c →
-  0 (already clean); ctest 3070 byte-identical. `.rodata` all-zero excluded (const-placement is separate).
-  **REWRITE LANDED (non-neutral, opt-in `MCC_ZERO_BSS`, validated to the full M8 bar).** Approach B
-  (post-emission move) in `decl_initializer_alloc` (`mccgen.c`, right after `decl_initializer`):
-  truncate `data_section->data_offset` back to the object's `addr`, re-allocate it in `bss_section`, and
-  re-bind the symbol with `put_extern_sym(sym, bss_section, new_addr, size)`. Relocations are
-  symbol-keyed (`greloca` stores `sym->c`), so re-homing the symbol fixes every reference automatically.
-  Guarded to a provably-safe subset — `v && sym`, `sec==data_section`, `!bcheck && !asan_g &&
-  !flexible_array && !TLS`, **last-allocation** (`addr+size == data_section->data_offset`, auto-excludes
-  bcheck byte / asan redzone), and **initializer emitted no relocation** (`data_section->reloc->data_offset`
-  unchanged across `decl_initializer`) — the last guard is the critical one: a pointer init (`={0,&g}`)
-  leaves zero *bytes* but carries a reloc, and moving it to NOBITS would drop the pointer. Correctness is
-  C11 6.7.9 (`={0}` ≡ no initializer). **Validated:** default byte-neutral (ctest 3070, gated off); with
-  `MCC_ZERO_BSS=1` — exec 292/292 (x86_64), cross-arch exec i386 292/292 + arm64 292/292, self-host
-  (mcc self-compiles + correct executables), differential fuzz vs gcc/clang 7/7; the pointer-init repro
-  (`static int *pz[4]={0,0,0,&g}`) keeps `*pz[3]==42` (reloc preserved, object correctly NOT moved).
-  Regression-locked by the `exec-zerobss/` ctest variant (CMakeLists, forces the move on across the corpus).
-  `-v128` TRACE `zero-bss move v=.. size=.. data@.. -> bss@..`. **Remaining (deferred):** TLS `tdata`→`tbss`
-  and the asan/bcheck cases (excluded by guards for now); flip to default-on after broader field exposure.
+- [ ] **M6z — zero-init `.bss` placement** (a free placement fix surfaced by the M5 side-car; NOT
+  compression). mcc emitted `static int x[256]={0}` into `.data` as 1024 zero disk bytes; C11 6.7.9
+  makes `={0}` ≡ no initializer, so it belongs in `.bss` (NOBITS). **LANDED (opt-in `MCC_ZERO_BSS`,
+  full M8 bar).** Approach B (post-emission move) in `decl_initializer_alloc`: truncate
+  `data_section->data_offset` back to the object's `addr`, re-allocate in `bss_section`, re-bind the
+  symbol (`put_extern_sym`) — relocations are symbol-keyed so references fix automatically. Guarded to a
+  provably-safe subset (`v && sym`, `sec==data_section`, `!bcheck && !asan_g && !flexible_array && !TLS`,
+  last-allocation, and **initializer emitted no relocation** — the critical guard: a pointer init
+  `={0,&g}` has zero bytes but a reloc, so it is correctly NOT moved). Validated default byte-neutral;
+  `MCC_ZERO_BSS=1` exec 292/292 x86_64 + i386 + arm64, self-host, fuzz 7/7; `exec-zerobss/` ctest locks
+  it. `-v128` TRACE `zero-bss move`. **Remaining:** TLS `tdata`→`tbss` and the asan/bcheck cases
+  (excluded by guards); flip to default-on after broader field exposure.
 
-- [ ] **M6s — string-literal merging** (`-fmerge-constants`-style rodata pooling; opt-in `MCC_MERGE_STRINGS`).
-  **LANDED, validated to the full M8 bar.** C11 6.4.5p7 leaves identical string literals' distinctness
-  unspecified, so sharing storage is sound (unlike const *array* dedup, which C11 6.5.9 forbids — distinct
-  named objects must have distinct addresses). mcc previously emitted a fresh rodata copy per literal
-  (confirmed: two `const char*="dup"` gave two copies). A value-use string literal (`str_init`,
-  `mccgen.c:8593`, `v==0`) is homed at an anonymous symbol via `vpush_ref`→`get_sym_ref`, and references
-  are symbol-keyed (`greloca(sec, vtop->sym,…)`, `mccgen.c:11518`) — so merging is the SAME symbol-rebind
-  as M6z, no reloc rewriting. In `decl_initializer_alloc` after `decl_initializer`: content-key the just-
-  written bytes (`ast_strpool_find_or_add`, `mccast.c` — hash + exact memcmp, keyed on bytes+size+align so
-  wide never aliases narrow; per-TU, reset in `ast_configure`); on a hit, **zero the reclaimed slot**,
-  truncate `rodata_section->data_offset` to `addr`, and re-home the symbol to the shared offset. Guards:
-  `v==0 && sym`, `sec==rodata_section`, last-allocation, `size>0`. `char arr[]="dup"` (copied into the
-  object) is naturally excluded (`v!=0`). **Bug caught+fixed by the regimen:** truncating left the dup's
-  bytes in the buffer, and the next literal's `decl_initializer` memcpys only content and relies on a
-  pre-zeroed trailing NUL → a format string lost its NUL and read a stray `c` from the reclaimed slot; the
-  `memset(rodata+addr, 0, size)` on truncation restores the "space at/after data_offset is always zero"
-  invariant (M6z didn't need it — its reclaimed bytes were already zero). **Validated:** default byte-
-  neutral (ctest 3361, gated off); `MCC_MERGE_STRINGS=1` — exec 292/292 (x86_64) + i386 292/292 + arm64
-  292/292, self-host OK, differential fuzz vs gcc/clang 7/7; rodata 141→77B on the repro. Regression-locked
-  by `exec-mergestrings/`. `-v128` TRACE `string merge`/`strpool exact`. **Suffix/tail sharing ALSO LANDED**
-  (clang shares `"bar"` inside `"foobar"`): NO reloc-addend surgery needed after all — since references are
-  `symbol + addend`, re-homing the literal's symbol to `A_addr + (A_size − size)` makes every reference
-  resolve into the interior of the longer literal `A`; C11 6.5.2.5 footnote permits sharing *overlapping*
-  representations. `ast_strpool_find_or_add` now matches this literal against the last `size` bytes of each
-  pooled entry (guarded by `interior_off % align == 0` so a reused slot always meets alignment; exact match
-  is the `A_size==size` case). Verified: `"foobar"`/`"bar"`/`"obar"` fold to one `foobar\0` (rodata 37→28B),
-  output correct; revalidated full M8 (default byte-neutral 3652; `MCC_MERGE_STRINGS=1` exec 583 x86_64 +
-  i386 292 + arm64 292, self-host OK, fuzz 7/7). `-v128` TRACE `strpool suffix`. **Remaining:** default-on.
+- [ ] **M6s — string-literal merging** (`-fmerge-constants`-style rodata pooling; opt-in
+  `MCC_MERGE_STRINGS`). **LANDED, full M8 bar.** C11 6.4.5p7 leaves identical string literals'
+  distinctness unspecified, so sharing storage is sound (unlike const *array* dedup, which C11 6.5.9
+  forbids). A value-use literal (`str_init`, `v==0`) is homed at an anonymous symbol; references are
+  symbol-keyed, so merging is the same symbol-rebind as M6z. In `decl_initializer_alloc` after
+  `decl_initializer`: content-key the just-written bytes (`ast_strpool_find_or_add` — hash + memcmp on
+  bytes+size+align so wide never aliases narrow, per-TU); on a hit, zero the reclaimed slot (restores
+  the "space at/after `data_offset` is zero" invariant — a bug the regimen caught), truncate
+  `rodata_section->data_offset`, re-home the symbol. **Suffix/tail sharing also landed** (`"bar"` inside
+  `"foobar"`): re-home to `A_addr + (A_size − size)` — references are `symbol + addend` so they resolve
+  into the interior (C11 6.5.2.5 permits overlapping representations), guarded by `interior_off % align
+  == 0`. Validated default byte-neutral; `MCC_MERGE_STRINGS=1` exec x86_64 + i386 + arm64, self-host,
+  fuzz 7/7; `exec-mergestrings/` locks it. `-v128` TRACE `string merge`/`strpool suffix`.
+  **Remaining:** default-on.
 
 - [ ] **M7 — formula-family unification** (the long tail). a) expose cost/ratio formulas as
   fold-math builtins (`mcc_cost_*`/`mcc_ratio_*`, copy-pasting the `foldfc_try` template,
@@ -689,67 +493,23 @@ candidate **search knob** — a distinct `AstStrategy` row or a per-strategy par
   correct over ±1000 on x86_64 **and real i386 and real arm64**; exec-narrowfix, self-host, fuzz (`GATES[]`
   `ABS`). gcc's `neg;cmovs` is marginally better (needs the cmov backend), but this beats the branch.
   min/max bit-tricks (`b ^ ((a^b) & -(a<b))`) are uglier (multi-operand) — still best via cmov.
-- [ ] **Constant integer division/remainder strength reduction** (magic-number multiply). **Measured:**
-  mcc only strength-reduces power-of-2 (`x/2^k→shr`, `x%2^k→and`); a general `x / 7` stays a hardware
-  `div` (~20-40 cyc) where gcc/clang emit a multiply-shift (~5 cyc). **FOUNDATION LANDED (byte-neutral,
-  selftested-before-wire):** `src/mccmagic.h` (dep-free, only `<stdint.h>`) — `mcc_magicu`/`mcc_magics`
-  (Granlund-Montgomery / Hacker's Delight) compute the 32-bit unsigned/signed magic `(M, shift, add)`,
-  and `mcc_divu_apply`/`mcc_divs_apply` are the reference sequences the AST fold will mirror
-  (`(uint32)((uint64)x*M>>32)` + shift + the add/sign corrections). Proven by the new `ast/magic` ctest
-  (`tools/asttool.c:suite_magic`): **exhaustive** — every divisor ±2..20000 × a dense boundary-heavy
-  dividend set (0/1/near-multiples/`0x80000000`/`0xFFFFFFFF`/`INT_MIN`/`INT_MAX`) all match native `/`,
-  millions of checks, 0 failures. So the arithmetic is now trustworthy; **remaining = the AST transform
-  only** — match `x / C`/`x % C` (`AST_Binary` `'/'`/`'%'` with a const divisor, non-0/1/pow2), build the
-  replacement mirroring `mcc_div*_apply`, gate a default-off knob, validate to full M8 (the risk that
-  remains is AST-construction, not the magic algorithm). 64-bit division needs a 128-bit high-multiply
-  (`mulh`) primitive → backend support; 32-bit is target-independent (uses `(int64_t)` intermediates).
-  **TRANSFORM LANDED for the unsigned/no-add-correction subset** (`ast_divmagic_run`, `MCC_AST_DIVMAGIC`,
-  `AST_SG_DIVMAGIC` bit18, default off, search-selectable): 32-bit unsigned `x/C`/`x%C` (C non-0/1/pow2, x
-  pure, `mag.a==0`) fold to `(uint32)((uint64)x*M>>32)>>s` and `x-(x/C)*C`. Skips `mag.a==1` (needs a
-  shared-quotient temp), power-of-2 (backend `shr` for UNSIGNED), and signed non-pow2 (deferred). Verified
-  `x/3`,`x/10`,`x%10`→`imul;shr`; `x/7` (a==1) stays `div`. **Signed power-of-two `x/2^k`,`x%2^k` ALSO
-  landed** (`ast_divmagic_try_spow2`): mcc otherwise emits `cltd;idiv` for signed pow2 (unlike unsigned,
-  the backend does NOT reduce it); folds to the round-toward-zero identity `(x+((x>>31)&(2^k-1)))>>k` (arith
-  shifts) and `x-((x/2^k)<<k)` — only pure x duplicated (cheap load, no multiply → no temp needed). Verified
-  `x/8`,`x%8`→`sar;and;add;sar`, no idiv (**negative pow2 `x/-8` too**: `x/-2^k = -(x/2^k)`, `x%-2^k = x%2^k`
-  — exhaustively validated incl. negatives on 3 real arches). Validated **with GENUINE cross-arch**: default byte-neutral (ctest
-  3653); an **exhaustive differential test** (unsigned: 26 divisors × boundary dividends + 300k sweep; signed
-  pow2: 10 powers × boundaries incl negatives + 1M sweep; folded `x/C` vs a volatile-divisor reference) = 0
-  fails on x86_64 **and real i386 and real arm64**; self-host; differential fuzz (`GATES[]` `DIVMAGIC`).
-  **Signed NON-pow2 DIVISION `x/C` ALSO landed** (`ast_divmagic_try_signed`, mirrors `mcc_divs_apply`):
-  mulsh(M,x) + d/M-sign correction + `>>s` + sign-bit add. The sign-bit add reuses the shifted quotient so
-  the mul-high is DUPLICATED once (2× `imul`; CSE runs earlier so it isn't merged) — suboptimal but a clear
-  win over `idiv` (~8-12 vs ~26 cyc), correct; I was over-deferring by treating the 2× multiply as a hard
-  blocker. Verified `x/10`,`x/-7`→2×`imul` no idiv; exhaustive differential (19 divisors incl NEGATIVES ×
-  boundaries incl INT_MIN/MAX + 800k sweep vs volatile ref) = 0 fails on x86_64 **and real i386 and real
-  arm64**; full M8. **Signed non-pow2 REMAINDER `x%C` ALSO landed** (same handler, `x-(x/C)*C` — the
-  division subtree, 2× imul, is reused once → ~3× imul, still beats signed `idiv`): exhaustive diff (14
-  divisors incl negatives × boundaries + 700k sweep) = 0 fails on x86_64 + real i386 + real arm64; full M8.
-  **Reorder-before-CSE tried and REVERTED (doesn't work):** moving divmagic before CSE so CSE merges the
-  duplicated mul-high does NOT reduce the imul count — even with templates/CSE on at -O2, CSE's structural
-  match does not merge the two mul-high subtrees (verified: `x/10` stays 2 imul). So the optimal 1×-multiply
-  form genuinely needs a real temp-materialization mechanism (a Store to a fresh local + Loads), not a
-  pipeline reorder. The 2-3× imul cases are correct and beat `idiv`; the 1× refinement is deferred to a temp
-  mechanism.
-  **Unsigned `mag.a==1` add-correction ALSO landed** (`t=((x-q)>>1)+q; >>(s-1)`, dups the mul-high → 2×
-  imul, still beats `div`): `x/7u`→2×imul, `x%7u`→3×imul, no div; exhaustive (18 divisors incl many a==1 ×
-  1.5M dividends + boundaries) = 0 fails x86_64 + real i386 + real arm64. **So the 32-bit constant div/mod
-  strength reduction is now COMPLETE — divmagic covers EVERY 32-bit case** (unsigned a==0 & a==1, signed
-  pow2, signed non-pow2; both div and rem), all with genuine cross-arch validation. **Only 64-bit remains**
-  (needs a `mulh` high-multiply backend primitive — genuine backend infra). The duplicated-mul cases emit 2-3×
-  imul (CSE runs earlier); optimal 1× form = reorder divmagic before CSE OR a temp mechanism (follow-up).
-  **64-bit confirmed genuinely blocked (not an over-deferral):** mcc has NO 128-bit integer type — `__int128`
-  is a parse error and `mccgen.c:4121` errors that TI-mode "requires 128-bit integers". So unlike the 32-bit
-  magic (which used the existing 64-bit multiply via `(int64)` casts), the 64-bit magic needs the HIGH 64
-  bits of a 64×64→128 product, i.e. a `mulh` op the AST/type system can't express — a per-backend primitive
-  (x86_64 `mulq`→rdx:rax, arm64 `umulh`/`smulh`, riscv `mulhu`, i386 has none for 64-bit → runtime helper).
-  So 64-bit div/mod strength reduction is a genuine backend session, deferred with a real blocker. Optimal 1×-multiply form for the duplicated cases = reorder divmagic before CSE OR a
-  temp mechanism — a documented follow-up.
-  **⚠ CROSS-ARCH VALIDATION FIX:** `cmake-qemu-i386`/`cmake-qemu-arm64` currently emit **x86_64** (native,
-  `MCC_TEST_EMU` empty) — their exec suite is NOT cross-arch. Real cross compilers: `cmake-cross/mcc-i386`
-  (`-dumpmachine i386-pc-linux-gnu`; its ELF runs directly on an x86_64 host) and `cmake-cross/mcc-arm64`
-  (`aarch64-linux-gnu`; run via `qemu-aarch64 -L vendor/gentoo-stage3-arm64-glibc`). Use those for real
-  cross-arch checks.
+- [ ] **Constant integer division/remainder strength reduction** (magic-number multiply).
+  **32-bit is COMPLETE** — `src/mccmagic.h` (`mcc_magicu`/`mcc_magics`, Granlund-Montgomery /
+  Hacker's Delight, exhaustively selftested by the `ast/magic` ctest) + `ast_divmagic_run`
+  (`MCC_AST_DIVMAGIC`, bit 18, default off, search-selectable) fold EVERY 32-bit case: unsigned
+  `x/C`,`x%C` (both `a==0` and the `a==1` add-correction), signed pow2 (incl. negative), and signed
+  non-pow2 — replacing hardware `div`/`idiv` with `imul;shr`/`sar` sequences. Validated to the full
+  M8 bar with genuine cross-arch (exhaustive differential sweeps vs a volatile-divisor reference = 0
+  fails on x86_64 + real i386 + real arm64; self-host; fuzz `GATES[]` `DIVMAGIC`); default byte-neutral.
+  **Open:** (a) **64-bit** — genuinely backend-blocked: needs the HIGH 64 bits of a 64×64→128 product
+  (`mulh`), which mcc's type system can't express (`__int128` is a parse error, `mccgen.c`) — a
+  per-backend primitive (x86_64 `mulq`, arm64 `umulh`/`smulh`, riscv `mulhu`, i386→runtime helper).
+  (b) the **optimal 1×-multiply form** for the signed / `a==1` cases (they emit 2-3× `imul` because CSE,
+  which runs earlier, won't merge the duplicated mul-high — reorder-before-CSE was tried and does not
+  merge them) → needs a real temp-materialization mechanism (Store to a fresh local + Loads).
+  **⚠ Cross-arch validation caveat:** `cmake-qemu-i386`/`-arm64` emit **native x86_64** (not cross);
+  use `cmake-cross/mcc-i386` (ELF32 runs on the host) and `cmake-cross/mcc-arm64` (via
+  `qemu-aarch64 -L vendor/gentoo-stage3-arm64-glibc`) for real cross-arch checks.
 
 ## NEXT MILESTONE — runtime JIT + guarded deopt (§26) — plan in `docs/JIT-PLAN.md`
 
