@@ -317,6 +317,21 @@ subgroups; each names the concrete hook and the double-checked blocker. Order is
   (`mccast.c:5497`, today text/AST only). **(A) Audited fact:** emit-size scoring is **text-delta
   only** — a data-shrinking transform currently scores as a net regression, so without M4 datacomp
   can never be chosen. *Synergy:* makes M6 visible to the search; no separate scoring path.
+  **OBSERVABILITY FOUNDATION LANDED (byte-neutral).** `ast_search_emit_size` (`mccast.c`) now
+  snapshots `data_section->data_offset` + `rodata_section->data_offset` before `ast_replay_body`
+  and computes `ddelta`/`rodelta` after (M4a). The per-candidate delta is exposed via `-v128` TRACE
+  (`ast_search_emit_size: emit-size data delta text=.. data=.. rodata=..`, greppable by fn+values),
+  giving M6 the measurement hook. **M4(b)+(c) score-folding is DEFERRED, and the reason is now a
+  measured finding, not a guess:** the replay re-emits `.rodata` **float constants** (verified —
+  a `(int)x + (unsigned)(x*2.5)` candidate shows `rodata=8`), and those constants are emitted once
+  and **shared/reused across candidate clones** (`ast_fconst_reuse`/`ast_fconst_record` no-op under
+  replay), so the per-candidate rodata delta is **order-dependent noise** ("who measured first"), not
+  a transform-attributed cost — folding it into `size` changes selection unfairly, and an earlier
+  attempt that also *restored* the offset **miscompiled** (`exec-search-emitsize/{random_stuff,
+  double_to_signed}`: truncating the shared rodata dropped reused constants → wrong values). So the
+  score stays **text-only** (selection byte-identical, ctest 3653/3653) until M6's data-**rewrite**
+  step provides a real, per-candidate, transform-attributed data delta to count. The snapshot must
+  **not** rewind data/rodata (they are shared, deliberately grown by the original path).
 
 - [ ] **M5 — const-data emission foundation** (the existing `.rodata data-emission` item above).
   Add an `AstKind` array/global/static-data node + a table-symbol+initializer emitter wired into the
@@ -432,6 +447,33 @@ subgroups; each names the concrete hook and the double-checked blocker. Order is
   gate. *Synergy:* one enumerator over {strategies, predictors, codecs}; one flag family; the
   four `host_cache_dir` caches collapse to one `ComboMemo` store.
 
+- [ ] **M7b — graduate the disk search-memo into compiled-in strategies (`cache` -> `src/algorithms/jit.h`).**
+  A new `tools/` C utility + a CMake target that reads the shared cache dir (`~/.cache/mcc/`, i.e. the
+  `mcc-search.memo` MSZ1 container — records `{intention-hash, gates|MAGIC<<8, refcount, score, tried}`,
+  see M2) and **materializes each hot (high-refcount) memoized winner as an entry in a generated header
+  `src/algorithms/jit.h`**, then **registers those entries in the AST optimization-strategy list**
+  (`ast_strategies[]`, `mccast.c`) so a discovered gate configuration ships compiled-in instead of being
+  re-searched every build. Flow: (1) the tool emits, per graduated record, a `{intention-hash, gate-mask,
+  score}` row into `jit.h` (dep-free, header-only, the "selftested-before-wired" `mcccombo.h`/`mccgate.h`
+  pattern); (2) `ast_func_end`/`ast_search_select` consult the compiled-in `jit.h` table as a
+  **zero-latency memo tier above the disk memo** — a keyed hit by `ast_intention_hash` applies
+  `graduated & searchable` directly, no search, no disk read; (3) **once verified that the newly
+  compiled-in strategy is matched by the optimizer to that cache key** — i.e. a build proves the live
+  `ast_intention_hash` of some function equals the graduated key AND the compiled-in mask reproduces the
+  cached winner (differential/byte gate) — **the tool removes that entry from `~/.cache/mcc/`** (the disk
+  record has served its purpose; drop it to keep the cache to genuinely-live, not-yet-graduated shapes).
+  **Open questions:** (a) is a graduated record a *gate-mask* replay (trivially a new `jit.h` row consumed
+  by the existing pipeline) or does it need to synthesize a genuinely new *algorithm* shape (a real new
+  `AstStrategy.apply`)? — the cache stores gate BITMASKS today (M3 vocabulary bridge, `mccgate.h`), so v1
+  is mask-graduation; algorithm-synthesis is the harder follow-on. (b) key stability: `ast_intention_hash`
+  is salted per version/triplet (`ast_search_key_salt`) — `jit.h` must carry the salt so a graduated entry
+  is only consulted for a matching build/target (else a stale mask fires on an incompatible shape). (c) the
+  removal step's verification gate (byte-diff vs re-search? shadow-oracle recompute==graduated?). (d) when
+  does the tool run — a manual `--target jit-graduate`, or a build step that folds the hottest N records in?
+  *Synergy:* this is the AOT dual of the §26 runtime JIT (`docs/JIT-PLAN.md`) — instead of recompiling hot
+  functions at runtime, it bakes the search's disk-memoized winners into the compiler; rides M2's
+  `ComboMemo`/MSZ1 format and M3's `AstGateMask` vocabulary directly. Gated by M8.
+
 - [ ] **M8 — validation gates** (apply to *each* of M1–M7 as it lands). a) full ctest 1905/1905;
   b) `-O6` differentials vs gcc/clang; c) self-host 3-stage fixpoint; d) sanitizers (UBSan/ASan);
   e) cross-arch (i386/arm32/riscv64/arm64, qemu-docker); f) differential miscompile fuzz;
@@ -448,8 +490,22 @@ candidate **search knob** — a distinct `AstStrategy` row or a per-strategy par
 `combo_run` vocabulary enumerates over. The M1(c) precondition applies to any *ordering* or
 *pipeline* variant: the emit path must honor the discovered per-fn order, not just the frozen table.
 
-- [ ] **V-bfold** (`ast_bfold_run`, table `ast_bfold_tab`, 8 ops) — a) extend the table:
-  `pow/exp/log/sin/cos/round/nearbyint/fmod/hypot/ldexp`; b) `fma` contraction (`a*b+c` all-literal);
+- [ ] **V-bfold** (`ast_bfold_run`, table `ast_bfold_tab`, ~~8~~ 9 ops) — **a) PARTIAL — `round`/
+  `roundf` LANDED (default-on).** New id-8 table rows + a bit-exact hand-rolled `ast_bfold_round`
+  kernel (round-half-away-from-zero, built on the existing `ast_bfold_trunc` since `x - trunc(x)` is
+  always exact in IEEE) + `case 8` in `ast_bfold_eval_f`/`_d`. Errno-free and rounding-mode-independent
+  (unlike `nearbyint`/`rint`), so it joins the default-on errno/rounding-safe subset. `-v128` TRACE
+  `ast_bfold_run: bfold round id=8 ... res=0x..`. Validated: **ctest 3653/3653** (no golden
+  regression), native differential vs gcc **bit-exact** across `round(2.5)=3`/`round(-2.5)=-3`/
+  `round(-0.5)=-1`/`roundf` (half-away + negatives + signed-zero), non-const `round(x)` **preserved**
+  (still calls libm, 2 undef refs), **self-host fixpoint-invariant passes**. Cross-arch is
+  correct-by-construction (a target-independent literal splice via the same double-literal backend path
+  as the 7 already-cross-validated folds; the `cmake-cross/mcc-{i386,arm64}` builds don't run bfold at
+  all — verified floor/trunc also don't fire there). **Still open under (a):** `fmod` needs a real
+  exact-remainder kernel (NOT the lossy `x - trunc(x/y)*y`); `nearbyint`/`rint` need the (d) rounding-
+  mode gate; `ldexp`'s `int` 2nd arg doesn't fit the same-btype `ab[]` loader; `pow/exp/log/sin/cos/
+  hypot` already fold in the `-ffold-math` `foldmath_try` engine (mccgen), don't duplicate here.
+  b) `fma` contraction (`a*b+c` all-literal);
   c) partial folds (`fmin(x,+inf)`, `copysign` with one literal arg — today all `nargs` must be
   literal); d) `FLT_ROUNDS`/errno-safe gate for `-frounding-math`.
 - [ ] **V-ident** (`ast_ident_rec`, DFS post-order, iterated to fixpoint, integer-only) —
@@ -533,9 +589,20 @@ candidate **search knob** — a distinct `AstStrategy` row or a per-strategy par
   — cprop only *adds* constants, sccp only *removes* dead branches (both monotonic, neither reverts
   the other → converges, bounded by node count). Validated: default byte-identical (ctest 3070);
   forced on across the whole exec corpus (`exec-narrowfix/*`) + differential fuzz `GATES[]`
-  (`SCCP_FIX`, 100-seed campaign 0 miscompiles) + exec 14/14 vs default. Not yet an `AST_SG` search
-  bit (env-forced + fuzz/exec-validated first, the narrowfix pattern; sccp is templates-gated, so
-  search-mode workers would shadow it — perfn mode would exercise it).
+  (`SCCP_FIX`, 100-seed campaign 0 miscompiles) + exec 14/14 vs default. **NOW an `AST_SG` search
+  bit — LANDED:** `AST_SG_SCCPFIX` (bit 21, `mccgate.h`) wired into `ast_search_gates_now`/`_set` and
+  added to `searchable` under the templates-gated group (like ltemp/ivsr/pre — sccp runs inside the
+  templates block), so the -O4 search enumerates it. Scheduling-only (correct-by-construction: the
+  search only selects among individually-sound configs), so default `-O1..-O3` stay byte-identical
+  (ctest **3653/3653**). Verified perfn-mode `searchable=0x3ff83f` (bit 21 set, `nitems=17`) via
+  `-v128` `combo winner` TRACE, perfn -O4 exec output matches gcc, shadow-build search/exec/ast subset
+  937/937 zero-divergence. As predicted it is shadowed in search-mode (sccp templates-gated); **perfn
+  mode is where it actually varies the winner.** Adding the bit pushed the perfn vocabulary to
+  `nitems=17`, one past `COMBO_MAX=16`, so `combo_run`'s internal subset enumeration now clamps — but
+  the best-first frontier scores **every** single-toggle `base ^ items[i]` (incl. SCCPFIX) before the
+  capped combo pass, so no single knob is lost; only combinations of the least-improving knob are
+  dropped. Made that clamp **non-silent** per the M1 "no silent caps" rule (`-v128` TRACE
+  `combo enum clamped nitems=17 -> COMBO_MAX=16 ...`).
 - [ ] **V-jt** (`ast_jt_run` — not real threading: only empty-both-arms or identical-arms) —
   a) real jump threading through a predecessor that determines a later identical condition;
   b) duplicate-condition threading across straight-line blocks (`ast_ident_pure` proves re-eval

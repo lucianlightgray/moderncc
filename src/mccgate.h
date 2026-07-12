@@ -88,6 +88,10 @@ typedef uint64_t AstGateMask;
 /* Standalone opt-in pass: branchless abs from `x<0?-x:x`. Search ADDS it via `searchable`. */
 #define AST_SG_ABS ((AstGateMask)524288)
 #define AST_SG_REASSOC ((AstGateMask)1048576)
+/* Modifier of the templates-gated sccp pass: fuse cprop+sccp to a fixpoint
+ * (`MCC_AST_SCCP_FIX`). Off in every -O baseline; the search ADDS it when
+ * templates is in base, like ltemp/ivsr/pre. */
+#define AST_SG_SCCPFIX ((AstGateMask)2097152)
 
 enum {
 	SO_GATE_TEMPLATES = 1u,

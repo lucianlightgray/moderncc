@@ -3938,6 +3938,7 @@ static const struct {
 		{"copysign", 5, 2, 0}, {"copysignf", 5, 2, 1},
 		{"fmin", 6, 2, 0},     {"fminf", 6, 2, 1},
 		{"fmax", 7, 2, 0},     {"fmaxf", 7, 2, 1},
+		{"round", 8, 1, 0},    {"roundf", 8, 1, 1},
 };
 
 static uint64_t ast_bfold_mul128(uint64_t a, uint64_t b, uint64_t *lo) {
@@ -4023,6 +4024,16 @@ static double ast_bfold_ceil(double x) {
 	return t < x ? t + 1.0 : t;
 }
 
+static double ast_bfold_round(double x) {
+	double t = ast_bfold_trunc(x);
+	double d = x - t;
+	if (d >= 0.5)
+		return t + 1.0;
+	if (d <= -0.5)
+		return t - 1.0;
+	return t;
+}
+
 static int ast_bfold_eval_f(int id, uint32_t b0, uint32_t b1, uint64_t *out) {
 	float x0, x1, r;
 	uint32_t rb;
@@ -4051,6 +4062,9 @@ static int ast_bfold_eval_f(int id, uint32_t b0, uint32_t b1, uint64_t *out) {
 	case 5:
 		*out = (b0 & 0x7fffffffu) | (b1 & 0x80000000u);
 		return 1;
+	case 8:
+		r = (float)ast_bfold_round(x0);
+		break;
 	default:
 		if (x0 == 0 && x1 == 0 && ((b0 ^ b1) >> 31))
 			return 0;
@@ -4089,6 +4103,9 @@ static int ast_bfold_eval_d(int id, uint64_t b0, uint64_t b1, uint64_t *out) {
 	case 5:
 		*out = (b0 & 0x7fffffffffffffffull) | (b1 & 0x8000000000000000ull);
 		return 1;
+	case 8:
+		r = ast_bfold_round(x0);
+		break;
 	default:
 		if (x0 == 0 && x1 == 0 && ((b0 ^ b1) >> 63))
 			return 0;
@@ -4155,6 +4172,9 @@ static int ast_bfold_run(AstArena *a) {
 								 : ast_bfold_eval_d(ast_bfold_tab[bi].id, ab[0], ab[1], &res);
 		if (!ok)
 			continue;
+		MCC_TRACE("bfold %s id=%d nargs=%d flt=%d res=0x%llx\n", nm,
+							(int)ast_bfold_tab[bi].id, nargs, (int)ast_bfold_tab[bi].flt,
+							(unsigned long long)res);
 		ast_set_kind(a, n, AST_Literal);
 		ast_clear_children(a, n);
 		ast_set_op(a, n, VT_CONST);
@@ -8536,7 +8556,8 @@ static AstGateMask ast_search_gates_now(void) {
 				 (ast_range_env ? AST_SG_RANGE : 0) |
 				 (ast_divmagic_env ? AST_SG_DIVMAGIC : 0) |
 				 (ast_abs_env ? AST_SG_ABS : 0) |
-				 (ast_reassoc_env ? AST_SG_REASSOC : 0);
+				 (ast_reassoc_env ? AST_SG_REASSOC : 0) |
+				 (ast_sccp_fix_env ? AST_SG_SCCPFIX : 0);
 }
 
 static void ast_search_gates_set(AstGateMask g) {
@@ -8556,6 +8577,7 @@ static void ast_search_gates_set(AstGateMask g) {
 	ast_divmagic_env = (g & AST_SG_DIVMAGIC) != 0;
 	ast_abs_env = (g & AST_SG_ABS) != 0;
 	ast_reassoc_env = (g & AST_SG_REASSOC) != 0;
+	ast_sccp_fix_env = (g & AST_SG_SCCPFIX) != 0;
 }
 
 /*
@@ -8574,6 +8596,9 @@ static int ast_search_emit_size(AstArena *a, int saved_loc, int saved_anon) {
 	AstArena *save_cur = ast_cur;
 	int save_ind = ind, save_rsym = rsym, save_loc = loc, save_anon = anon_sym;
 	addr_t save_reloc = rsec ? rsec->data_offset : 0;
+	addr_t save_doff = data_section ? data_section->data_offset : 0;
+	addr_t save_roff = rodata_section ? rodata_section->data_offset : 0;
+	addr_t ddelta, rodelta;
 	int size;
 	ind = ast_body_ind_sv;
 	rsym = 0;
@@ -8595,7 +8620,12 @@ static int ast_search_emit_size(AstArena *a, int saved_loc, int saved_anon) {
 	ast_cur = a;
 	ast_replay_body(a);
 	ast_replaying = 0;
+	ddelta = (data_section ? data_section->data_offset : 0) - save_doff;
+	rodelta = (rodata_section ? rodata_section->data_offset : 0) - save_roff;
 	size = ind - ast_body_ind_sv;
+	if (ddelta || rodelta)
+		MCC_TRACE("emit-size data delta text=%d data=%lld rodata=%lld\n", size,
+							(long long)ddelta, (long long)rodelta);
 	ast_cur = save_cur;
 	ind = save_ind;
 	rsym = save_rsym;
@@ -8822,7 +8852,7 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 							 /* ltemp/ivsr/pre run inside cse (templates-gated), so offer them only
 								* when templates is in base. Safe to add now that the candidate count is
 								* budget-capped (AST_SEARCH_MAX_CAND) — otherwise 4 gates + 5 knobs = 2^9. */
-							 ((base & AST_SG_TEMPLATES) ? (AST_SG_LTEMP | AST_SG_IVSR | AST_SG_PRE | AST_SG_DSECALL | AST_SG_TCOPTR | AST_SG_CSECOMM)
+							 ((base & AST_SG_TEMPLATES) ? (AST_SG_LTEMP | AST_SG_IVSR | AST_SG_PRE | AST_SG_DSECALL | AST_SG_TCOPTR | AST_SG_CSECOMM | AST_SG_SCCPFIX)
 																				 : 0);
 	if (ast_search_should_stop())
 		return; /* budget spent / aborted: keep the frozen order */
@@ -8961,6 +8991,11 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 					idelta[j + 1] = kd;
 				}
 			}
+			if (nitems > COMBO_MAX)
+				MCC_TRACE("combo enum clamped nitems=%d -> COMBO_MAX=%d (frontier scored "
+									"every single-toggle; only combinations of the %d least-improving "
+									"knobs are dropped)\n",
+									nitems, COMBO_MAX, nitems - COMBO_MAX);
 			if (combo_run(&spec, &cbest)) {
 				AstGateMask g = 0;
 				int i;
