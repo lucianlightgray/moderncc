@@ -579,9 +579,19 @@ candidate **search knob** — a distinct `AstStrategy` row or a per-strategy par
   exact-remainder kernel (NOT the lossy `x - trunc(x/y)*y`); `nearbyint`/`rint` need the (d) rounding-
   mode gate; `ldexp`'s `int` 2nd arg doesn't fit the same-btype `ab[]` loader; `pow/exp/log/sin/cos/
   hypot` already fold in the `-ffold-math` `foldmath_try` engine (mccgen), don't duplicate here.
-  b) `fma` contraction (`a*b+c` all-literal);
-  c) partial folds (`fmin(x,+inf)`, `copysign` with one literal arg — today all `nargs` must be
-  literal); d) `FLT_ROUNDS`/errno-safe gate for `-frounding-math`.
+  b) `fma` contraction (`a*b+c` all-literal) — DROPPED this pass (needs the `ab[]` loader extended
+  to 3 args + reliance on a correctly-rounded host `fma`; single-rounding risk outside the low-risk
+  envelope);
+  c) **PARTIAL — min/max ∞ partials LANDED (default-on):** `fmin(x,-inf)→-inf`, `fmax(x,+inf)→+inf`
+  (only the ∞ arg literal, `x` runtime) via the literal-splice path, guarded by the existing
+  `AST_SG_BFOLD_MINMAX`. Sound for ALL x incl NaN/±0 (fmin/fmax return the non-NaN arg, ∓∞ dominates
+  the ordering). ctest 3968/3968, gcc-differential bit-exact, self-host byte-identical, shadow 0-div,
+  fuzz 150-seed 0-miscompile. The complementary `fmin(x,+inf)→x`/`fmax(x,-inf)→x` are UNSOUND for NaN
+  x (`fmin(NaN,+inf)=+inf≠x`) and deliberately do NOT fire. **`copysign(x,C)` DROPPED:** it is
+  `±fabs(x)` not `±x` (a magnitude op), and `-fabs(x)` has no bit-exact AST encoding (no float-negate
+  node; `0.0-fabs(x)` gives `+0.0` at `x==0` where the result must be `-0.0`), while `fabs(x)` needs a
+  risky synthesized-`Sym` callee retarget — revisit when the heavy gates are wired.
+  d) `FLT_ROUNDS`/errno-safe gate for `-frounding-math` (still open).
 - [ ] **V-ident** (`ast_ident_rec`, DFS post-order, iterated to fixpoint, integer-only) —
   a) strength reduction (`x*2^k → x<<k`) is **backend-redundant** (mcc already emits `shl` for
   `x*8`) — skip; b) fast-math-gated float identities (drop the `ast_ident_intt` block);
@@ -866,12 +876,15 @@ counter is `jit-profile`); **D6** `eval_slice` now vs trust-the-AOT-gate + diffe
   parameterized on alignment + a bare-`VT_LLOCAL` load case on the PE paths. No
   native Windows runner here, so validate on a Windows-arm64/x64 cell.
 
-- [ ] **`-std=c89 -pedantic-errors` C99-feature gaps (batch 2c)** — remaining:
-  `inline` and `restrict` (both carry a `-std=gnu89` false-positive risk plus a
-  keyword-vs-identifier nuance in strict C89 — need a strict-vs-gnu gate), `//`
-  line comments (gcc makes this a hard error even without `-pedantic-errors`), and
-  non-ASCII/UCN identifiers. Same fix shape — a `mcc_pedantic(...)` at each site
-  guarded on `cversion` (+ `!gnu_ext` for inline/restrict).
+- [x] **`-std=c89 -pedantic-errors` C99-feature gaps (batch 2c)** — LANDED: `mcc_pedantic`
+  diags for `inline` (`mccgen.c`), `restrict` (3 sites: declspec + array-declarator + pointer
+  qualifier loops), `//` line comments (`mccpp.c`, kept a pedantic diag not a hard error), and
+  non-ASCII/UCN extended identifiers (`validate_utf8_identifier` + `decode_ucn`). Default mode
+  stays silent; ctest 3968/3968. **Gated on `cversion < 199901` ALONE, not `!gnu_ext`:** `gnu_ext`
+  is a hardcoded constant `1` in `mcc_new` (`libmcc.c`), never cleared, so there is no c89-vs-gnu89
+  discriminator in state — the diags fire under both `-std=c89` and `-std=gnu89` with
+  `-pedantic-errors`, matching the existing VLA/compound-literal precedent. A true strict-vs-gnu
+  split needs a new state field in `libmcc.c` (separate task).
 
 - [ ] **Research the §28 rewrite-rule IR** — match→rewrite templates over the
   captured arena that the §22/§24 search composes into compound transforms, scored
@@ -961,8 +974,11 @@ tag and are sequenced by § Strategic path, not by their bucket.
   Prerequisite for §30 value-table dispatch.
 - [ ] **Close the riscv64 Tier-3 backend gap** that blocks full `src/mcc.c`
   self-host (real-program codegen is correct; the whole-compiler self-host is not).
-- [ ] **Build a systematic negative/`dg-error` diagnostic tier** — gcc's C99/C11
-  files are ~70% diagnostic.
+- [~] **Build a systematic negative/`dg-error` diagnostic tier** — LANDED first tier:
+  `tests/diagnostics/dg-error/*.c` (10 cases) + `run_dgerror.cmake` harness (leading
+  `/* dg-error: <substring> */` convention, per-case `add_test` `diag.dg-error.*` asserting
+  non-zero exit AND stderr substring match, glob+CONFIGURE_DEPENDS so new cases need no CMake
+  edit). Remaining: broaden toward gcc's C99/C11 diagnostic files (~70% diagnostic).
 - [ ] **Build the `H_e` epoch hash** — invertible slot-keyed O(1) edit patch;
   designed, not built. (The `slot_key -> branch_tag` naming split it needed is already
   done — `src/mccname.h` `MCC_NS_{AST_SLOT,CST_BRANCH}`, `cst_mark_branch` uses
@@ -1147,7 +1163,9 @@ flip `MCC_AST_VLAT` default-on (P0-style) once broadly exposed.**
 - [ ] **`MCC_TRACE` follow-ups** — (a) `MCC_TRACE`/`mcc_logf` read the global
   `mcc_state->verbose`, so a trace fires only where `mcc_state` is the current
   verbose-carrying state (driver/link phases before `mcc_enter_state`, e.g.
-  `mcc_output_file`, don't fire — either thread the state or add a state-taking variant);
+  `mcc_output_file`, don't fire) — **DONE:** added state-taking `mcc_logf_st`/`MCC_DEBUG_ST`/
+  `MCC_TRACE_ST` (explicit `MCCState*`) in `mcclog.h`, threaded into the driver `mcc_output_file`
+  + superopt-dispatch callsites, proven firing under `-v128` in the pre-`mcc_enter_state` phase;
   (b) blanket per-function instrumentation is intentionally *not* applied (it would be
   noise) — add `MCC_TRACE` at points of interest as needed. **Points added (search subsystem):**
   the combo candidate + winner (`gates`/`score`/`base`/`searchable`), the memo hit
@@ -1155,7 +1173,11 @@ flip `MCC_AST_VLAT` default-on (P0-style) once broadly exposed.**
   count), and the disk eviction (usage/dropped-count) — all greppable by exact function name and
   argument values, e.g. `-v128 ... | grep 'memo hit'`. (c) wiring `MCC_CONFIG_TRACE`
   into a preset is deliberately skipped (the release-inherits-debug caveat that applies
-  to `MCC_CONFIG_AST_SHADOW`); (d) migrate ad-hoc `if (verbose) fprintf(stderr,...)`
-  sites to the tagged `mcc_logf`/`MCC_DEBUG` categories.
-- [ ] **Ungate the `i386-fastcall-abi` test** — registered but `mcc_skip_test`'d;
-  needs an i386 cross + an ELF-32 reference.
+  to `MCC_CONFIG_AST_SHADOW`); (d) **DONE:** migrated the two superopt summary prints to
+  `mcc_logf_st(s, MCC_LOG_DEBUG, …)` (state-taking — they run pre-`mcc_enter_state`). Left the
+  `mcctools.c` ar `a - member` print as-is: it is GNU-ar `v`-modifier stdout output, not
+  `mcc_state`-driven debug noise.
+- [ ] **Ungate the `i386-fastcall-abi` test** — the CMake is already conditionally ungated on
+  `if(TARGET mcc-i386)` (real test) with `mcc_skip_test` only as the else-fallback; the remaining
+  blocker is building the `mcc-i386` cross target via `cmake --preset cross` (the ELF-32/`gcc -m32`
+  reference is available on Linux hosts with 32-bit multilib).
