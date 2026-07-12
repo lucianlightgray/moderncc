@@ -1134,6 +1134,11 @@ ST_FUNC void gen_vla_alloc(CType *type, int align) {
 		vpush_helper_func(TOK_alloca);
 		vswap();
 		gfunc_call(1);
+		if (align > 8) {
+			o(0x81);
+			g(0xe4);
+			gen_le32(-align);
+		}
 	} else {
 		int r;
 		int a = align < 16 ? 16 : align;

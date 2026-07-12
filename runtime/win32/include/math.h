@@ -390,6 +390,8 @@ extern long double __cdecl remquol(long double, long double, int *);
 extern double __cdecl copysign(double, double);
 extern float __cdecl copysignf(float, float);
 extern long double __cdecl copysignl(long double, long double);
+#define copysignf(x, y) __builtin_copysignf(x, y)
+#define copysignl(x, y) __builtin_copysignl(x, y)
 
 extern double __cdecl nan(const char *tagp);
 extern float __cdecl nanf(const char *tagp);

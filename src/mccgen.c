@@ -11185,7 +11185,7 @@ static void init_putz(init_params *p, unsigned long c, int size) {
 #define STACK_OVERALIGN_MAX 16
 #elif defined MCC_TARGET_ARM64
 #define STACK_OVERALIGN_MAX 16
-#elif defined MCC_TARGET_I386 && !defined MCC_TARGET_PE
+#elif defined MCC_TARGET_I386
 #define STACK_OVERALIGN_MAX 8
 #elif defined MCC_TARGET_ARM
 #define STACK_OVERALIGN_MAX 8

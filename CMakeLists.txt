@@ -1241,6 +1241,9 @@ if(NOT "${MCC_EXTRA_LDFLAGS}" STREQUAL "")
     add_link_options(${_mcc_extra_ldflags})
 endif()
 
+if("${MCC_TARGET_ARCH}" STREQUAL "" AND MCC_MINGW_ARCH STREQUAL "i686")
+    set(MCC_TARGET_ARCH "i386")
+endif()
 set(_proc "${CMAKE_SYSTEM_PROCESSOR}")
 if(MCC_TARGET_ARCH)
     set(_proc "${MCC_TARGET_ARCH}")
@@ -3901,7 +3904,7 @@ if(MCC_BUILD_TESTS)
                 PASS_REGULAR_EXPRESSION "@")
         endif()
 
-        if(TARGET mccbuild AND NOT CMAKE_CROSSCOMPILING)
+        if(TARGET mccbuild AND NOT CMAKE_CROSSCOMPILING AND "${MCC_TARGET_ARCH}" STREQUAL "")
             add_test(NAME host-detect COMMAND "$<TARGET_FILE:mccbuild>" --detect
                 --cc "${CMAKE_C_COMPILER}"
                 --expect-cpu "${MCC_CPU}" --expect-os "${MCC_TARGETOS}"
