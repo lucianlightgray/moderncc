@@ -60,6 +60,10 @@ jobs:
           brew untap aws/tap 2>/dev/null || true
           brew install cmake ninja gcc
       - name: build + benchmark (macos, native arm64)
+        # The `macos` preset takes its build compiler from $env{CC} (ci.yml
+        # resolves it per matrix cell); bench builds mcc with the native clang.
+        env:
+          CC: clang
         run: |
           cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c
           /tmp/mcc-ci run-preset macos --no-test --bench \
