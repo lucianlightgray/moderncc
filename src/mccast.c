@@ -5949,6 +5949,7 @@ static int ast_sccp_scan(AstArena *a) {
 	return folded;
 }
 
+#if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
 /* Collect the frame offsets of the pointer parameters of `fsym` (the assumed-non-null
  * set for a speculative variant). Same param-chain walk / local-Sym gate as ast_tco_run. */
 static int ast_nonnull_params(AstArena *a, Sym *fsym, int *offs, int max) {
@@ -6015,6 +6016,7 @@ static int ast_nonnull_fold(AstArena *a, const int *offs, int noff) {
 	}
 	return folds;
 }
+#endif
 
 static int ast_sccp_run(AstArena *a) {
 	ast_sccp_folds = ast_sccp_scan(a);
@@ -10620,6 +10622,7 @@ void ast_func_end(Sym *sym) {
 #undef AST_PF_EMIT
 				}
 				if (ast_jit_dispatch_env && faithful && !ast_jit_splice_env) {
+#if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
 					int aot_base = ast_body_ind_sv;
 					int aot_len = ind - aot_base;
 					Section *rs = cur_text_section->reloc;
@@ -10703,6 +10706,7 @@ void ast_func_end(Sym *sym) {
 					mcc_free(aot_rel);
 					MCC_TRACE("jit-dispatch %s mode=%d spec=%d np=%d (%d code, %d rel)\n", funcname,
 										ast_jit_dispatch_env, spec, npoff, aot_len, aot_rlen);
+#endif
 				}
 			} else {
 				mcc_state->nb_errors = ast_saved_nberr;
