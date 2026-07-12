@@ -659,6 +659,10 @@ static int ast_bitflag_min;
 static int ast_cprop_join_env;
 static int ast_narrow_env;
 static int ast_narrow_fix_env;
+static int ast_narrow_c0_env;
+static int ast_narrow_c1_env;
+static int ast_narrow_c2_env;
+static int ast_narrow_c3_env;
 static int ast_sccp_fix_env;
 static int ast_ident_conv_env;
 static int ast_ident_shift_env;
@@ -673,6 +677,14 @@ static int ast_range_env; /* MCC_AST_RANGE: fold lo<=x && x<=hi to one unsigned 
 static int ast_divmagic_env; /* MCC_AST_DIVMAGIC: strength-reduce unsigned x/C, x%C */
 static int ast_abs_env; /* MCC_AST_ABS: branchless abs from x<0?-x:x */
 static int ast_reassoc_env; /* MCC_AST_REASSOC: combine (x OP c1) OP c2 */
+static int ast_reassoc_assoc_env;
+static int ast_reassoc_shlshr_env;
+static int ast_reassoc_shrshl_env;
+static int ast_reassoc_muldist_env;
+static int ast_bfold_sqrt_env;
+static int ast_bfold_sign_env;
+static int ast_bfold_round_env;
+static int ast_bfold_minmax_env;
 static int ast_inline_pass_env;
 static int ast_vlat_env;
 static int ast_data_report_env; /* MCC_AST_DATA_REPORT: dump const-data records to stderr */
@@ -802,7 +814,7 @@ static void ast_search_walk_trace(const int *sel, int k, int depth, int walk,
 	MCC_TRACE("combo walk=%s depth=%d k=%d seq=%s\n", combo_walk_name(walk), depth, k,
 						seq);
 }
-#define AST_STRAT_COUNT_MAX 20
+#define AST_STRAT_COUNT_MAX 24
 #define AST_CYCLE_MAX 8
 static int ast_search_order_env;
 static int ast_cycle_env;
@@ -1068,6 +1080,10 @@ void ast_configure(MCCState *s1) {
 	ast_cprop_join_env = ast_env_gate("MCC_AST_CPROP_JOIN", s1->optimize >= 2);
 	ast_narrow_env = ast_env_gate("MCC_AST_NARROW", s1->optimize >= 2);
 	ast_narrow_fix_env = ast_env_gate("MCC_AST_NARROW_FIX", s1->optimize >= 2);
+	ast_narrow_c0_env = ast_env_gate("MCC_AST_NARROW_CLASS0", 1);
+	ast_narrow_c1_env = ast_env_gate("MCC_AST_NARROW_CLASS1", 1);
+	ast_narrow_c2_env = ast_env_gate("MCC_AST_NARROW_CLASS2", 1);
+	ast_narrow_c3_env = ast_env_gate("MCC_AST_NARROW_CLASS3", 1);
 	ast_sccp_fix_env = ast_env_gate("MCC_AST_SCCP_FIX", s1->optimize >= 2);
 	ast_ident_conv_env = ast_env_gate("MCC_AST_IDENT_CONV", 1);
 	ast_ident_shift_env = ast_env_gate("MCC_AST_IDENT_SHIFT", 1);
@@ -1082,6 +1098,14 @@ void ast_configure(MCCState *s1) {
 	ast_divmagic_env = ast_env_gate("MCC_AST_DIVMAGIC", 0);
 	ast_abs_env = ast_env_gate("MCC_AST_ABS", 0);
 	ast_reassoc_env = ast_env_gate("MCC_AST_REASSOC", 0);
+	ast_reassoc_assoc_env = ast_env_gate("MCC_AST_REASSOC_ASSOC", 1);
+	ast_reassoc_shlshr_env = ast_env_gate("MCC_AST_REASSOC_SHLSHR", 1);
+	ast_reassoc_shrshl_env = ast_env_gate("MCC_AST_REASSOC_SHRSHL", 1);
+	ast_reassoc_muldist_env = ast_env_gate("MCC_AST_REASSOC_MULDIST", 1);
+	ast_bfold_sqrt_env = ast_env_gate("MCC_AST_BFOLD_SQRT", 1);
+	ast_bfold_sign_env = ast_env_gate("MCC_AST_BFOLD_SIGN", 1);
+	ast_bfold_round_env = ast_env_gate("MCC_AST_BFOLD_ROUND", 1);
+	ast_bfold_minmax_env = ast_env_gate("MCC_AST_BFOLD_MINMAX", 1);
 	ast_inline_pass_env = ast_env_gate("MCC_AST_INLINE_PASS", 0);
 	ast_vlat_env = ast_env_gate("MCC_AST_VLAT", 0);
 	ast_data_report_env = ast_env_gate("MCC_AST_DATA_REPORT", 0);
@@ -4361,6 +4385,13 @@ static int ast_bfold_run(AstArena *a) {
 				break;
 		if (bi == nfn)
 			continue;
+		int bid = ast_bfold_tab[bi].id;
+		int bgate = bid == 0							 ? ast_bfold_sqrt_env
+								: bid == 1 || bid == 5 ? ast_bfold_sign_env
+								: bid == 6 || bid == 7 ? ast_bfold_minmax_env
+																			 : ast_bfold_round_env;
+		if (!bgate)
+			continue;
 		int bt = ast_bfold_tab[bi].flt ? VT_FLOAT : VT_DOUBLE;
 		int nargs = ast_bfold_tab[bi].nargs;
 		if ((ast_type_t(a, n) & VT_BTYPE) != bt ||
@@ -5095,6 +5126,19 @@ static int ast_narrow_ranged_ok(AstArena *a, int op, int tt, int wt, AstLocal op
 	return 0;
 }
 
+static int ast_narrow_class_gate(int cls) {
+	switch (cls) {
+	case 0:
+		return ast_narrow_c0_env;
+	case 1:
+		return ast_narrow_c1_env;
+	case 2:
+		return ast_narrow_c2_env;
+	default:
+		return ast_narrow_c3_env;
+	}
+}
+
 static int ast_narrow_binary(AstArena *a, AstLocal bin, int tt) {
 	if (ast_kind(a, bin) != AST_Binary || ast_nchild(a, bin) != 2)
 		return 0;
@@ -5114,6 +5158,8 @@ static int ast_narrow_binary(AstArena *a, AstLocal bin, int tt) {
 	int c0 = ast_narrow_class(a, op0, tt);
 	int c1 = ast_narrow_class(a, op1, tt);
 	if (c0 < 0 || c1 < 0)
+		return 0;
+	if (!ast_narrow_class_gate(c0) || !ast_narrow_class_gate(c1))
 		return 0;
 	if (distributive) {
 		if (c0 != 0 && c0 != 1 && c1 != 0 && c1 != 1)
@@ -7905,12 +7951,12 @@ static int ast_reassoc_run(AstArena *a) {
 	ast_reassoc_folds = 0;
 	for (AstLocal n = 0; n < nn; n++)
 		if (ast_kind(a, n) == AST_Binary && ast_nchild(a, n) == 2) {
-			int f = ast_reassoc_try(a, n);
-			if (!f)
+			int f = ast_reassoc_assoc_env ? ast_reassoc_try(a, n) : 0;
+			if (!f && ast_reassoc_shlshr_env)
 				f = ast_reassoc_shlshr(a, n);
-			if (!f)
+			if (!f && ast_reassoc_shrshl_env)
 				f = ast_reassoc_shrshl(a, n);
-			if (!f)
+			if (!f && ast_reassoc_muldist_env)
 				f = ast_reassoc_muldist(a, n);
 			ast_reassoc_folds += f;
 		}
@@ -8675,23 +8721,11 @@ static int ast_cse_run(AstArena *a) {
 				ast_cse_block(a, n);
 		mcc_free(ast_cse_vis);
 		ast_cse_vis = NULL;
-		if (ast_licm_temp_env)
-			ast_ltemp_run(a);
-		if (ast_ivsr_env)
-			ast_ivsr_run(a);
-		if (ast_pre_env)
-			ast_pre_run(a);
 		return ast_cse_folds;
 	}
 	for (AstLocal n = 0; n < nn; n++)
 		if (ast_kind(a, n) == AST_BasicBlock)
 			ast_cse_block(a, n);
-	if (ast_licm_temp_env)
-		ast_ltemp_run(a);
-	if (ast_ivsr_env)
-		ast_ivsr_run(a);
-	if (ast_pre_env)
-		ast_pre_run(a);
 	return ast_cse_folds;
 }
 
@@ -8765,6 +8799,9 @@ static int ast_strat_ident(AstArena *a, Sym *s) { (void)s; return ast_ident_run(
 static int ast_strat_narrow(AstArena *a, Sym *s) { (void)s; return ast_narrow_run(a); }
 static int ast_strat_cprop(AstArena *a, Sym *s) { (void)s; return ast_cprop_run(a); }
 static int ast_strat_cse(AstArena *a, Sym *s) { (void)s; return ast_cse_run(a); }
+static int ast_strat_ltemp(AstArena *a, Sym *s) { (void)s; return ast_ltemp_run(a); }
+static int ast_strat_ivsr(AstArena *a, Sym *s) { (void)s; return ast_ivsr_run(a); }
+static int ast_strat_pre(AstArena *a, Sym *s) { (void)s; return ast_pre_run(a); }
 static int ast_strat_licm(AstArena *a, Sym *s) { (void)a; (void)s; return ast_licm_folds; }
 static int ast_strat_dse(AstArena *a, Sym *s) { (void)s; return ast_dse_run(a); }
 static int ast_strat_sccp(AstArena *a, Sym *s) { (void)s; return ast_sccp_run(a); }
@@ -8784,6 +8821,9 @@ enum {
 	AST_STRAT_NARROW,
 	AST_STRAT_CPROP,
 	AST_STRAT_CSE,
+	AST_STRAT_LTEMP,
+	AST_STRAT_IVSR,
+	AST_STRAT_PRE,
 	AST_STRAT_LICM,
 	AST_STRAT_DSE,
 	AST_STRAT_SCCP,
@@ -8806,6 +8846,9 @@ static const AstStrategy ast_strategies[AST_STRAT_COUNT] = {
 	{"narrow", &ast_narrow_env, ast_strat_narrow},
 	{"cprop", &ast_templates_env, ast_strat_cprop},
 	{"cse", &ast_templates_env, ast_strat_cse},
+	{"ltemp", &ast_licm_temp_env, ast_strat_ltemp},
+	{"ivsr", &ast_ivsr_env, ast_strat_ivsr},
+	{"pre", &ast_pre_env, ast_strat_pre},
 	{"licm", &ast_templates_env, ast_strat_licm},
 	{"dse", &ast_templates_env, ast_strat_dse},
 	{"sccp", &ast_templates_env, ast_strat_sccp},
@@ -9341,7 +9384,19 @@ static AstGateMask ast_search_gates_now(void) {
 				 (ast_ident_arith_env ? AST_SG_IDENT_ARITH : 0) |
 				 (ast_ident_bit_env ? AST_SG_IDENT_BIT : 0) |
 				 (ast_ident_rel_env ? AST_SG_IDENT_REL : 0) |
-				 (ast_ident_urange_env ? AST_SG_IDENT_URANGE : 0);
+				 (ast_ident_urange_env ? AST_SG_IDENT_URANGE : 0) |
+				 (ast_reassoc_assoc_env ? AST_SG_REASSOC_ASSOC : 0) |
+				 (ast_reassoc_shlshr_env ? AST_SG_REASSOC_SHLSHR : 0) |
+				 (ast_reassoc_shrshl_env ? AST_SG_REASSOC_SHRSHL : 0) |
+				 (ast_reassoc_muldist_env ? AST_SG_REASSOC_MULDIST : 0) |
+				 (ast_bfold_sqrt_env ? AST_SG_BFOLD_SQRT : 0) |
+				 (ast_bfold_sign_env ? AST_SG_BFOLD_SIGN : 0) |
+				 (ast_bfold_round_env ? AST_SG_BFOLD_ROUND : 0) |
+				 (ast_bfold_minmax_env ? AST_SG_BFOLD_MINMAX : 0) |
+				 (ast_narrow_c0_env ? AST_SG_NARROW_C0 : 0) |
+				 (ast_narrow_c1_env ? AST_SG_NARROW_C1 : 0) |
+				 (ast_narrow_c2_env ? AST_SG_NARROW_C2 : 0) |
+				 (ast_narrow_c3_env ? AST_SG_NARROW_C3 : 0);
 }
 
 static void ast_search_gates_set(AstGateMask g) {
@@ -9368,6 +9423,18 @@ static void ast_search_gates_set(AstGateMask g) {
 	ast_ident_bit_env = (g & AST_SG_IDENT_BIT) != 0;
 	ast_ident_rel_env = (g & AST_SG_IDENT_REL) != 0;
 	ast_ident_urange_env = (g & AST_SG_IDENT_URANGE) != 0;
+	ast_reassoc_assoc_env = (g & AST_SG_REASSOC_ASSOC) != 0;
+	ast_reassoc_shlshr_env = (g & AST_SG_REASSOC_SHLSHR) != 0;
+	ast_reassoc_shrshl_env = (g & AST_SG_REASSOC_SHRSHL) != 0;
+	ast_reassoc_muldist_env = (g & AST_SG_REASSOC_MULDIST) != 0;
+	ast_bfold_sqrt_env = (g & AST_SG_BFOLD_SQRT) != 0;
+	ast_bfold_sign_env = (g & AST_SG_BFOLD_SIGN) != 0;
+	ast_bfold_round_env = (g & AST_SG_BFOLD_ROUND) != 0;
+	ast_bfold_minmax_env = (g & AST_SG_BFOLD_MINMAX) != 0;
+	ast_narrow_c0_env = (g & AST_SG_NARROW_C0) != 0;
+	ast_narrow_c1_env = (g & AST_SG_NARROW_C1) != 0;
+	ast_narrow_c2_env = (g & AST_SG_NARROW_C2) != 0;
+	ast_narrow_c3_env = (g & AST_SG_NARROW_C3) != 0;
 }
 
 #ifndef SHF_PRIVATE
@@ -9911,12 +9978,13 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 	 * reach them by dropping bits — the search enables them. narrow-fixpoint only
 	 * bites when narrow itself is enabled, so gate it on AST_SG_NARROW. */
 	searchable = base | AST_SG_RANGE | AST_SG_DIVMAGIC | AST_SG_ABS | AST_SG_REASSOC | /* standalone */
-							 ((base & AST_SG_NARROW) ? AST_SG_NARROWFIX : 0) |
+							 AST_SG_REASSOC_ASSOC | AST_SG_REASSOC_SHLSHR | AST_SG_REASSOC_SHRSHL | AST_SG_REASSOC_MULDIST |
+							 ((base & AST_SG_NARROW) ? (AST_SG_NARROWFIX | AST_SG_NARROW_C0 | AST_SG_NARROW_C1 | AST_SG_NARROW_C2 | AST_SG_NARROW_C3) : 0) |
 							 ((base & AST_SG_SETHI) ? AST_SG_SETHILEAF : 0) |
 							 /* ltemp/ivsr/pre run inside cse (templates-gated), so offer them only
 								* when templates is in base. Safe to add now that the candidate count is
 								* budget-capped (AST_SEARCH_MAX_CAND) — otherwise 4 gates + 5 knobs = 2^9. */
-							 ((base & AST_SG_TEMPLATES) ? (AST_SG_LTEMP | AST_SG_IVSR | AST_SG_PRE | AST_SG_DSECALL | AST_SG_TCOPTR | AST_SG_CSECOMM | AST_SG_SCCPFIX | AST_SG_IDENT_CONV | AST_SG_IDENT_SHIFT | AST_SG_IDENT_ARITH | AST_SG_IDENT_BIT | AST_SG_IDENT_REL | AST_SG_IDENT_URANGE)
+							 ((base & AST_SG_TEMPLATES) ? (AST_SG_LTEMP | AST_SG_IVSR | AST_SG_PRE | AST_SG_DSECALL | AST_SG_TCOPTR | AST_SG_CSECOMM | AST_SG_SCCPFIX | AST_SG_IDENT_CONV | AST_SG_IDENT_SHIFT | AST_SG_IDENT_ARITH | AST_SG_IDENT_BIT | AST_SG_IDENT_REL | AST_SG_IDENT_URANGE | AST_SG_BFOLD_SQRT | AST_SG_BFOLD_SIGN | AST_SG_BFOLD_ROUND | AST_SG_BFOLD_MINMAX)
 																				 : 0);
 	if (ast_search_should_stop())
 		return; /* budget spent / aborted: keep the frozen order */

@@ -547,9 +547,20 @@ candidate **search knob** — a distinct `AstStrategy` row or a per-strategy par
   as independent search levers. **Verdicts (do NOT attempt as row-splits):** `licm` core is NOT separable
   from `cse` — `ast_licm_at_loop` reads the LIVE CSE availability window (`ast_cse_expr[]` at the exact walk
   position), so extracted it hoists nothing; `cprop`+`sccp` must stay FUSED (joint fixpoint, default-on -O2).
-  **Remaining clean splits:** the `cse` *tail* (`ltemp`/`ivsr`/`pre`, whole-arena, default-off) IS cleanly
-  row-extractable into 3 reorderable rows (secondary, modest value); `reassoc`'s 4 transforms + `bfold` per-op
-  are gate-splittable but low value.
+  **ALL LOW-RISK SPLITS LANDED (2026-07-12 batch, byte-neutral, object-diff 996/0, fuzz 0-miscompile):**
+  (1) **cse-tail row-extract** — `ltemp`/`ivsr`/`pre` moved out of `ast_cse_run`'s tail into 3 reorderable
+  `AST_STRAT_{LTEMP,IVSR,PRE}` rows immediately after `cse` (gated by existing envs; `AST_STRAT_COUNT_MAX`
+  20→24); (2) **reassoc gate-split** — 4 sub-gates `MCC_AST_REASSOC_{ASSOC,SHLSHR,SHRSHL,MULDIST}` +
+  `AST_SG_REASSOC_*` (2²⁸–2³¹); (3) **bfold gate-split** — 4 op-families `MCC_AST_BFOLD_{SQRT,SIGN,ROUND,
+  MINMAX}` + `AST_SG_BFOLD_*` (2³²–2³⁵); (4) **narrow per-class gate-split** — `MCC_AST_NARROW_CLASS{0..3}`
+  + `AST_SG_NARROW_C{0..3}` (2³⁶–2³⁹). All default-on/preserve = byte-identical; each gate proven to control
+  its family (behavioral deltas: `MULDIST=0` → 2×imul not `shl`; `BFOLD_SQRT=0` → `call sqrt`; `NARROW_CLASS3=0`
+  → 64-bit add+truncate; `PRE=1` runs as an extracted row). The gate mask now uses bits up to 2³⁹ (search
+  enumerates up to bit 63). **Finding (pre-existing, not the batch):** 3 exec files (atomic_aggregate,
+  c11_freestanding_headers, c11_threads) shift string-literal `L.N`/anon-symbol numbering under ANY source
+  change (proven with a dummy fn) — a latent layout-sensitivity; code is identical, goldens pass; excluded
+  from the object-diff oracle. **Not attempted (verdicts hold):** `licm` core (reads live CSE window),
+  cprop+sccp de-fusion (joint fixpoint), per-node-bundle row-splits (non-neutral).
 
 - [ ] **V-bfold** (`ast_bfold_run`, table `ast_bfold_tab`, ~~8~~ 9 ops) — **a) PARTIAL — `round`/
   `roundf` LANDED (default-on).** New id-8 table rows + a bit-exact hand-rolled `ast_bfold_round`
