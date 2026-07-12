@@ -4046,6 +4046,23 @@ if(MCC_BUILD_TESTS)
             -o "${CMAKE_BINARY_DIR}/orphan_${_n}.o")
         set_tests_properties(compile.${_n} PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endforeach()
+
+    if(NOT MCC_EMULATOR)
+        file(GLOB _dgerror_srcs CONFIGURE_DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/diagnostics/dg-error/*.c")
+        foreach(_f IN LISTS _dgerror_srcs)
+            get_filename_component(_n "${_f}" NAME_WE)
+            add_test(NAME diag.dg-error.${_n} COMMAND "${CMAKE_COMMAND}"
+                "-DMCC=${_mcc_exe}" "-DBDIR=${_bdir}" "-DSRC=${_f}"
+                "-DOUT=${CMAKE_BINARY_DIR}/dgerror_${_n}.o"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/diagnostics/run_dgerror.cmake")
+            set_tests_properties(diag.dg-error.${_n} PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+        endforeach()
+    else()
+        mcc_skip_test(diag.dg-error
+            "negative diagnostic tier runs mcc directly; not registered under an emulator")
+    endif()
+
     if(MCC_TARGETOS STREQUAL "WIN32")
         file(GLOB _win_ex CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/runtime/win32/examples/*.c")
         foreach(_f IN LISTS _win_ex)
