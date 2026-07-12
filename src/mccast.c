@@ -688,6 +688,7 @@ static int ast_bfold_minmax_env;
 static int ast_inline_pass_env;
 static int ast_vlat_env;
 static int ast_jit_env; /* MCC_AST_JIT: retain byte-faithful baseline + AST per function as the guarded-deopt fallback (§26 W1) */
+static int ast_jit_splice_env; /* MCC_AST_JIT_SPLICE: re-emit each faithful body from its retained baseline bytes at a shifted offset (§26 W2 splice-primitive validation) */
 static int ast_data_report_env; /* MCC_AST_DATA_REPORT: dump const-data records to stderr */
 int ast_zero_bss_env;           /* MCC_ZERO_BSS: move all-zero .data statics into .bss */
 int ast_merge_strings_env;      /* MCC_MERGE_STRINGS: pool identical rodata string literals */
@@ -1110,6 +1111,7 @@ void ast_configure(MCCState *s1) {
 	ast_inline_pass_env = ast_env_gate("MCC_AST_INLINE_PASS", 0);
 	ast_vlat_env = ast_env_gate("MCC_AST_VLAT", 0);
 	ast_jit_env = ast_env_gate("MCC_AST_JIT", 0);
+	ast_jit_splice_env = ast_env_gate("MCC_AST_JIT_SPLICE", 0);
 	ast_data_report_env = ast_env_gate("MCC_AST_DATA_REPORT", 0);
 	ast_zero_bss_env = ast_env_gate("MCC_ZERO_BSS", s1->optimize >= 2);
 	ast_merge_strings_env = ast_env_gate("MCC_MERGE_STRINGS", s1->optimize >= 2);
@@ -2621,6 +2623,46 @@ static int ast_baseline_retain(Sym *sym, AstArena *a, unsigned char *code, int c
 	MCC_TRACE("jit-baseline retain %s (%d code, %d rel)\n", get_tok_str(sym->v, NULL),
 						code_len, rel_len);
 	return 1;
+}
+
+/*
+ * Splice a retained byte-faithful function body into cur_text_section at the live
+ * emit cursor `ind`, resolving to the new location. `code`/`rel` are the retained
+ * orig/orig_rel buffers, `src_base` is the ast_body_ind_sv they were captured at,
+ * `chain_head` is the open return-jump chain head (orig_rsym) inside `code`.
+ *
+ * Relocations rebase by r_offset only (r_info + addend are position-independent for
+ * every x86_64 body reloc kind); intra-body relative branches survive the verbatim
+ * byte copy unchanged; the still-open return-jump chain is re-threaded into the live
+ * `rsym` so the caller's terminal gsym(rsym) retargets both arms' returns to the one
+ * shared epilogue.
+ */
+static void ast_baseline_splice(const unsigned char *code, int code_len,
+																const unsigned char *rel, int rel_len, int src_base,
+																int chain_head) {
+	Section *ts = cur_text_section;
+	int dst = ind;
+	if (code_len > 0) {
+		if ((unsigned long)(ind + code_len) > ts->data_allocated)
+			section_realloc(ts, ind + code_len);
+		memcpy(ts->data + ind, code, code_len);
+		ind += code_len;
+	}
+	for (int roff = 0; roff + (int)sizeof(ElfW_Rel) <= rel_len; roff += (int)sizeof(ElfW_Rel)) {
+		const ElfW_Rel *r = (const ElfW_Rel *)(rel + roff);
+		put_elf_reloca(symtab_section, ts, dst + (r->r_offset - src_base),
+									 ELFW(R_TYPE)(r->r_info), ELFW(R_SYM)(r->r_info),
+									 ELFW_R_ADDEND(r));
+	}
+	for (int t = chain_head; t;) {
+		int boff = t - src_base;
+		if (boff < 0 || boff + 4 > code_len)
+			break;
+		int next = (int)read32le((unsigned char *)code + boff);
+		write32le(ts->data + dst + boff, (uint32_t)rsym);
+		rsym = dst + boff;
+		t = next;
+	}
 }
 
 static int ast_reemit_has_forward(struct AstReemitFn *f) {
@@ -10420,7 +10462,20 @@ void ast_func_end(Sym *sym) {
 						!do_cprop && !do_cse && !do_licm && !do_dse && !do_sccp && !do_jt &&
 						!do_bf && !do_sethi && !do_tco && !do_narrow)
 					loc = saved_loc;
-				if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
+				if (ast_jit_splice_env && faithful) {
+					ind = ast_body_ind_sv;
+					rsym = 0;
+					if (ast_rsec)
+						ast_rsec->data_offset = ast_reloc0_sv;
+					nocode_wanted = 0;
+					loc = saved_loc;
+					int ast_splice_jmp = gjmp(0);
+					gsym(ast_splice_jmp);
+					ast_baseline_splice(orig, body_len, orig_rel, (int)rel_len, ast_body_ind_sv,
+															orig_rsym);
+					MCC_TRACE("jit-splice %s (%d code, %d rel)\n", funcname, body_len,
+										(int)rel_len);
+				} else if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
 						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_sethi ||
 						do_tco || do_narrow) {
 #define AST_PF_EMIT(ui)                                                          \
