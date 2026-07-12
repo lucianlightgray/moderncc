@@ -3,7 +3,7 @@
 Sorted by number of open questions/ambiguities (first-round unknowns + the
 sub-questions immediately following them), most-open first.
 
-## AST substrate + unified optimizer — see `docs/AST.md`, plan in `docs/SUBSTRATE-PLAN.md`
+## AST substrate + unified optimizer
 
 Collapse the three optimization drivers (the `ast_func_end` pipeline, the §22
 `AST_PF_EMIT` trial, the `mcc.c` out-of-process search) into one side-car
@@ -12,8 +12,7 @@ JIT. This reframes/subsumes several items below (§21 cache key, §22 emit
 isolation, §28 rewrite IR, §33b/e seam+window keys, §30 predicate bitset, H_e
 epoch hash, the time-budgeted engine, per-function `-O1`, PP-as-executable JIT).
 
-**The `docs/AST.md` staged rollout (steps 1–5) is COMPLETE — as-built detail in
-`docs/SUBSTRATE-PLAN.md`; not repeated here.** On `main`, default byte-neutral, each gated by `-O6`
+**The staged AST-optimizer rollout (steps 1–5) is COMPLETE.** On `main`, default byte-neutral, each gated by `-O6`
 differentials + full ctest + the `MCC_CONFIG_AST_SHADOW` shadow build (zero side-car divergence):
 the `(tag,id)` naming partition (`src/mccname.h`); the read-only side-car (step-1 `ast_du_*` def/use,
 step-2 `ast_memo_*` property memos, step-3 `ast_hash_*` structural hash); the step-4 strategy engine
@@ -24,9 +23,9 @@ scoring; next-tick forecast in `src/mccforecast.h`; in-memory + disk memo `mcc-s
 `ast_intention_hash`). The search only *selects* a gate config — the normal pipeline emits the winner
 on the untouched tree, so a search bug can only pick a larger-but-correct config, never a miscompile;
 -O4+ output is timing-bounded / non-reproducible by design (quarantined there — `-O1..-O3` never
-search, stay byte-reproducible). Runtime JIT + guarded deopt is **not** a rollout step (AST.md lists
-it as "steps 3-5 **+ the JIT**") — it is the separate post-rollout item below, gated by the §26
-recompiler design.
+search, stay byte-reproducible). Runtime JIT + guarded deopt is **not** a rollout step (the design
+lists it as "steps 3-5 **+ the JIT**") — it is the separate post-rollout milestone below, gated by
+the §26 recompiler design.
 
 The Step-5+ scoring/parallelism continuations still open (were inline in the removed LANDED prose):
 
@@ -80,6 +79,30 @@ search, `ComboMemo` refcount + LFU-evicted key->value cache; selftest 20/20). Th
 (`mcc-search.memo`) stores a compressed "MSZ1" best-of-3 (rle/lzss/lzw) container. **M1 wired
 `ast_search` onto `combo_run`**; the remaining call-site migration (the memo struct, the superopt,
 the formula families) is tracked as M2/M3/M7 below.
+
+### Substrate indices/analyses designed but not built (from the retired substrate design doc)
+
+The rollout built three of the four planned side-car indices (`ast_hash_*` structural hash, `ast_du_*`
+def/use, `ast_memo_*` property memos) plus the strategy engine and search. These designed pieces were
+never rollout steps and have no symbol in `src/` today:
+
+- [ ] **Predicate-vector projection — the 4th side-car index** — a packed bitset of tested-predicate
+  truths over ≤8 named slots in a window (the `predicate_vector(cursor, keys≤8) -> bitset` verb), the
+  semantic sibling of the structural hash, for **branch coalescing** — generalizes `ast_bf_run` (V-bf)
+  + the §30 value-table/bit-flag dispatch. No `predvec`/`predicate_vector` symbol exists (only the
+  three other indices were built). Distinct from the §30 *transform*: this is the index it would read.
+- [ ] **`context_in` / `context_out` value-domain fact lattice (the "net-new half")** — the value-domain
+  restriction on live-in slots: a bounded backward walk collecting the equality/range predicates of
+  dominating `AST_If` conditions (reuse the `ast_cprop_{koff,ktt,kval}` set shape), O(fixpoint) first /
+  O(1) warm. It is the checker's enumeration bound (see `eval_slice`, §26 Stage 4) and the memo's
+  *context* key. Step 3 shipped only the structural-hash half (`ast_hash_*`); no `context_in`/
+  `context_out` symbol exists. Overlaps but is not §29 (that lattice is scoped to narrowing residue,
+  not the reaching-context proof-domain / memo key).
+- [ ] **Descendant-indexed (DFS enter/exit) def/use extension** — so the two *subtree-scoped* write
+  queries `ast_licm_written` (`mccast.c`, called from cse/licm) and `ast_ivsr_count_writes` (`mccast.c`,
+  ivsr) become O(1) table lookups. PR-2's whole-function `ast_du_*` table subsumes only the two
+  whole-arena scanners (`ast_cprop_escapes`, `ast_local_is_readonly`); "written under node n" needs a
+  descendant range index. Both remain recursive subtree walks today.
 
 ### Macro roadmap — collapse both searches + const-data onto one substrate
 
@@ -274,7 +297,7 @@ subgroups; each names the concrete hook and the double-checked blocker. Order is
   is only consulted for a matching build/target (else a stale mask fires on an incompatible shape). (c) the
   removal step's verification gate (byte-diff vs re-search? shadow-oracle recompute==graduated?). (d) when
   does the tool run — a manual `--target jit-graduate`, or a build step that folds the hottest N records in?
-  *Synergy:* this is the AOT dual of the §26 runtime JIT (`docs/JIT-PLAN.md`) — instead of recompiling hot
+  *Synergy:* this is the AOT dual of the §26 runtime JIT (NEXT MILESTONE below) — instead of recompiling hot
   functions at runtime, it bakes the search's disk-memoized winners into the compiler; rides M2's
   `ComboMemo`/MSZ1 format and M3's `AstGateMask` vocabulary directly. Gated by M8.
 
@@ -511,17 +534,70 @@ candidate **search knob** — a distinct `AstStrategy` row or a per-strategy par
   use `cmake-cross/mcc-i386` (ELF32 runs on the host) and `cmake-cross/mcc-arm64` (via
   `qemu-aarch64 -L vendor/gentoo-stage3-arm64-glibc`) for real cross-arch checks.
 
-## NEXT MILESTONE — runtime JIT + guarded deopt (§26) — plan in `docs/JIT-PLAN.md`
+## NEXT MILESTONE — runtime JIT + guarded deopt (§26)
 
-Not part of the completed Steps 1–5 rollout (AST.md: "rollout steps 3-5 **+ the JIT**").
-The design's `-O4+`/JIT tier: entry-guarded variant dispatch with a runtime recompiler +
-hot-swap. Reusable today: the `-run` compile-to-executable-memory + `mcc_relocate`
-pipeline, GOT/PLT indirection, `.init_array` ctors, the replayable `ast_cur`. Missing:
-the byte-faithful baseline is freed per function (retain it), calls are hard `rel32`
-(make JIT'd functions entry dispatchers), `--jit-functions`/`--jit-max-duration` are
-inert, no threads, no `eval_slice`. Staged: retain baseline → entry dispatcher →
-runtime recompile via the codegen+relocate path → guard+deopt → wire the `--jit-*`
-flags → soundness (`eval_slice` later). Open decisions D1–D8 are in `docs/JIT-PLAN.md`.
+The design's separate "+ the JIT" work (the "rollout steps 3-5 **+ the JIT**"), deferred behind the
+§26 embedded recompiler — entry-guarded variant dispatch with a runtime recompiler + hot-swap.
+
+**Reusable infra (survey).** The `-run` compile-to-executable-memory path (`mcc_run`, `mccrun.c`;
+`host_runmem_alloc` RWX / W^X dual-map, `mcchost.c`) + `mcc_relocate` (`mccrun.c`), host==target on
+ELF x86_64/arm64/riscv64/arm/i386 + PE + macho; GOT/PLT indirection (`build_got_entries`/
+`put_got_entry`, `mccelf.c`) as the per-function hot-swap redirect; `.init_array` ctor emission for a
+startup pool; the replayable `ast_cur` (survives the function under `keep_inline`/`keep_reemit`).
+
+**The §26 gap (missing).** (i) the byte-faithful baseline (`orig`/`orig_rel`) is `mcc_free`'d per
+function (`mccast.c`) — must be **retained** as the deopt fallback; (ii) intra-module calls are hard
+`E8 rel32` (`x86_64-gen.c`) with no swappable slot → the JIT'd function must be an **entry dispatcher**
+so call sites need no change; (iii) `--jit-functions`/`--jit-max-duration` are parsed but inert
+(`libmcc.c`), `--embed-jit` only prints a manifest + gates the build-time superopt; (iv) `--jit-threads`
+and C11 `<threads.h>` do not exist (concurrency is `fork`); (v) the `eval_slice` value-level
+equivalence checker does not exist.
+
+**Architecture — the JIT is mostly Strategy objects, not a separate subsystem** ("one code path and
+one memo; the opt level is a dial, not a fork"). The compile-time pieces are new rows in the same
+`ast_strategies[]` table the search already consumes + scores; only a thin runtime remains.
+
+- [ ] **§26 `jit-dispatch` strategy** — rewrite a function to `{guard; call variant-ptr else baseline}`.
+- [ ] **§26 `jit-guard` strategy** — insert the live-in domain check at entry.
+- [ ] **§26 `jit-profile` strategy** — insert live-in range-capture instrumentation (also the D5
+  hot-counter trigger source).
+- [ ] **§26 `jit-patchpoint` strategy** — emit a nop-padded patchable prologue (the code-patch
+  hot-swap is a strategy, the D3B variant — not a bespoke mechanism). The optimized variant itself is
+  just the existing fold strategies applied.
+
+**Thin runtime (not a compile-time transform):** recompile = re-invoke the strategy engine at runtime
+on a hot function (D2A); hot-swap = one atomic pointer store; trigger = `.init_array` ctor or a
+`jit-profile` counter threshold. `eval_slice` is the per-strategy soundness gate (Stage 4).
+
+**Staged (each independently gated by a JIT differential):**
+
+- [ ] **Stage 1 — guarded deopt as pure strategies, NO runtime recompiler** — add `jit-dispatch` +
+  `jit-guard` to `ast_strategies[]`; together they emit `{guard; AOT-optimized-variant else baseline}`
+  entirely at compile time (variant = the existing fold strategies; baseline = the retained faithful
+  emit — stop freeing `orig`/`orig_rel`, or re-emit from the kept `ast_cur`). Real guarded deopt,
+  differential-validatable, ships **without** §26. This is the key payoff: a first complete version
+  needs no runtime recompiler, and §26 shrinks to a stage-2 driver.
+- [ ] **Stage 2 — runtime recompile (§26 driver, thin)** — a minimal embedded runtime re-invokes the
+  strategy engine (D2A) on a hot function into fresh executable memory via the `mcc_relocate` path, and
+  atomically publishes the pointer the dispatcher reads. (implements "§26 hot-function recompile +
+  hot-swap" in §2 below)
+- [ ] **Stage 3 — profiling + trigger** — add the `jit-profile` strategy; drive recompilation from a
+  startup `.init_array` ctor and/or a hot counter; wire `--jit-functions` (which functions get a
+  dispatcher) and `--jit-max-duration` (budget). (implements the inert-`--jit-*`-flag items in §2/§1)
+- [ ] **Stage 4 — soundness hardening: `eval_slice`** — build `eval_slice(arena, slice, env) ->
+  {value, defined}` as a **second, independent AST-over-values interpreter** (NOT a reuse of faithful
+  replay), exhaustively checking equivalence over the guarded domain as the per-strategy gate. UB-oracle
+  catalog seeded from `gen_opic` (`mccgen.c`): signed +/−/* overflow, div/mod by zero, and critically
+  **shift ≥ width modeled as UB** (`gen_opic` currently masks it `l2 & 63|31`, which would otherwise
+  certify a wrong rewrite). Enumeration domain from `context_in` (the value-domain lattice above) via
+  the `ast_tco_run` live-in pattern; refuse any slice whose context-restricted domain exceeds a fixed
+  cap (stays JIT-speculative). Also: a static `context_in` domain to replace the observed range.
+
+**Decisions (settled with the user):** **D1=B** (embedded), **D2=A** (recompile = re-invoke the engine),
+**D3=A** (entry dispatcher; the code-patch D3B is the `jit-patchpoint` strategy), **D4=A**
+(runtime-observed live-in range). **Remaining:** **D5** trigger (startup ctor vs hot counter — the
+counter is `jit-profile`); **D6** `eval_slice` now vs trust-the-AOT-gate + differential; **D7** platform
+(ELF x86_64 first); **D8** wire the inert `--jit-*` flags.
 
 ## Bugs — surfaced by the conformance-test expansion (concrete repros)
 
@@ -601,8 +677,9 @@ flags → soundness (`eval_slice` later). Open decisions D1–D8 are in `docs/JI
 - [ ] **Build a systematic negative/`dg-error` diagnostic tier** — gcc's C99/C11
   files are ~70% diagnostic.
 - [ ] **Build the `H_e` epoch hash** — invertible slot-keyed O(1) edit patch;
-  designed, not built. Must reconcile the `slot_key` dual-use with the
-  `cst_mark_branch` PPConditional tags (`mcccst.c:544`, invoked at `mcccst.c:1112`).
+  designed, not built. (The `slot_key -> branch_tag` naming split it needed is already
+  done — `src/mccname.h` `MCC_NS_{AST_SLOT,CST_BRANCH}`, `cst_mark_branch` uses
+  `branch_tag`; only the H_e patch itself remains.)
 - [ ] **Design cross-TU LTO.**
 - [ ] **Design separate `-O2`/`-O3` SSA drivers.**
 - [ ] **Design a full `-g` debugger + gdb test suite.**
