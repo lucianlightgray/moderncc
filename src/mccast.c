@@ -9,6 +9,10 @@
 
 #include "mccforecast.h"
 
+#include "algorithms/lzss.h"
+#include "algorithms/lzw.h"
+#include "algorithms/rle.h"
+
 #ifndef AST_ASSERT
 #include <assert.h>
 #define AST_ASSERT(x) assert(x)
@@ -6937,34 +6941,103 @@ static unsigned long long ast_search_disk_usage(void) {
 }
 #endif
 
-static void ast_search_memo_add(uint64_t h, unsigned gates, unsigned refcount) {
-	int i;
+/* Returns 1 if the working set changed (new record, or a bumped gate/refcount), 0
+ * if the call was a no-op — the disk store uses this to skip a pointless rewrite. */
+static int ast_search_memo_add(uint64_t h, unsigned gates, unsigned refcount) {
+	int i, changed = 0;
 	for (i = 0; i < ast_search_memo_n; i++)
 		if (ast_search_memo[i].hash == h) {
-			ast_search_memo[i].gates = gates;
-			if (refcount > ast_search_memo[i].refcount)
+			if (ast_search_memo[i].gates != gates) {
+				ast_search_memo[i].gates = gates;
+				changed = 1;
+			}
+			if (refcount > ast_search_memo[i].refcount) {
 				ast_search_memo[i].refcount = refcount;
-			return;
+				changed = 1;
+			}
+			return changed;
 		}
 	if (ast_search_memo_n < AST_SEARCH_MEMO_CAP) {
 		ast_search_memo[ast_search_memo_n].hash = h;
 		ast_search_memo[ast_search_memo_n].gates = gates;
 		ast_search_memo[ast_search_memo_n].refcount = refcount;
 		ast_search_memo_n++;
+		changed = 1;
 	}
+	return changed;
 }
 
-/* Rewrite the memo file from the in-memory working set (temp + atomic rename). */
+/*
+ * On-disk container. The working set is serialized to a raw record image, then
+ * compressed with the best of the three src/algorithms codecs (rle/lzss/lzw) and
+ * written whole (temp + atomic rename): {u32 magic, u32 codec, u32 raw_len,
+ * u32 comp_len} followed by the payload. Compressing each build's memo file keeps
+ * every user's cache small so far more permutations fit under the shared 10 GiB cap
+ * before eviction. The container magic differs from the old raw append-log format,
+ * so a pre-compression file simply reads as empty (a harmless cache rebuild). The
+ * memo image is highly compressible (a repeated per-record MAGIC, small gate masks,
+ * structured 64-bit fields), so a codec almost always beats codec 0 (stored). */
+#define AST_MEMO_CONT_MAGIC 0x315a534dUL /* "MSZ1" */
+#define AST_MEMO_RAWMAX (AST_SEARCH_MEMO_CAP * 24)
+static unsigned char ast_memo_raw[AST_MEMO_RAWMAX];
+static unsigned char ast_memo_pk[AST_MEMO_RAWMAX * 2 + 64];
+static unsigned char ast_memo_try[AST_MEMO_RAWMAX * 2 + 64];
+
+/* Compress ast_memo_raw[0..rn) into ast_memo_pk with the smallest of the three
+ * codecs; returns the codec id (0 = stored, when nothing beats raw) and sets *plen. */
+static int ast_memo_pack(long rn, long *plen) {
+	long best = rn, l;
+	int codec = 0;
+	memcpy(ast_memo_pk, ast_memo_raw, (size_t)rn);
+	l = rle_compress(ast_memo_raw, rn, ast_memo_try, (long)sizeof ast_memo_try);
+	if (l >= 0 && l < best) {
+		best = l, codec = 1;
+		memcpy(ast_memo_pk, ast_memo_try, (size_t)l);
+	}
+	l = lzss_compress(ast_memo_raw, rn, ast_memo_try, (long)sizeof ast_memo_try);
+	if (l >= 0 && l < best) {
+		best = l, codec = 2;
+		memcpy(ast_memo_pk, ast_memo_try, (size_t)l);
+	}
+	l = lzw_compress(ast_memo_raw, rn, ast_memo_try, (long)sizeof ast_memo_try);
+	if (l >= 0 && l < best) {
+		best = l, codec = 3;
+		memcpy(ast_memo_pk, ast_memo_try, (size_t)l);
+	}
+	*plen = best;
+	return codec;
+}
+
+/* Decompress a container payload in ast_memo_pk[0..clen) into ast_memo_raw; returns
+ * the raw length, or -1 on a corrupt/oversized payload. */
+static long ast_memo_unpack(int codec, long clen) {
+	switch (codec) {
+	case 0:
+		if (clen > AST_MEMO_RAWMAX)
+			return -1;
+		memcpy(ast_memo_raw, ast_memo_pk, (size_t)clen);
+		return clen;
+	case 1:
+		return rle_decompress(ast_memo_pk, clen, ast_memo_raw, AST_MEMO_RAWMAX);
+	case 2:
+		return lzss_decompress(ast_memo_pk, clen, ast_memo_raw, AST_MEMO_RAWMAX);
+	case 3:
+		return lzw_decompress(ast_memo_pk, clen, ast_memo_raw, AST_MEMO_RAWMAX);
+	}
+	return -1;
+}
+
+/* Rewrite the memo file as a compressed container from the in-memory working set. */
 static void ast_search_disk_rewrite(void) {
 	char path[1152], tmp[1200];
 	FILE *f;
 	int i;
+	long rn = 0, plen = 0;
+	unsigned hdr[4];
+	int codec;
 	if (ast_search_disk_path(path, sizeof path) != 0)
 		return;
 	if (snprintf(tmp, sizeof tmp, "%s.tmp", path) >= (int)sizeof tmp)
-		return;
-	f = fopen(tmp, "wb");
-	if (!f)
 		return;
 	for (i = 0; i < ast_search_memo_n; i++) {
 		uint64_t rec[3];
@@ -6972,9 +7045,19 @@ static void ast_search_disk_rewrite(void) {
 		rec[1] = (ast_search_memo[i].gates & 0xffu) |
 						 ((uint64_t)AST_SEARCH_MEMO_MAGIC << 8);
 		rec[2] = ast_search_memo[i].refcount;
-		if (fwrite(rec, sizeof rec, 1, f) != 1)
-			break;
+		memcpy(ast_memo_raw + rn, rec, sizeof rec);
+		rn += (long)sizeof rec;
 	}
+	codec = ast_memo_pack(rn, &plen);
+	f = fopen(tmp, "wb");
+	if (!f)
+		return;
+	hdr[0] = (unsigned)AST_MEMO_CONT_MAGIC;
+	hdr[1] = (unsigned)codec;
+	hdr[2] = (unsigned)rn;
+	hdr[3] = (unsigned)plen;
+	if (fwrite(hdr, sizeof hdr, 1, f) == 1 && plen > 0)
+		fwrite(ast_memo_pk, 1, (size_t)plen, f);
 	fclose(f);
 	if (rename(tmp, path) != 0)
 		remove(tmp);
@@ -7005,34 +7088,42 @@ static void ast_search_disk_evict(void) {
 static void ast_search_disk_load(void) {
 	char path[1152];
 	FILE *f;
-	uint64_t rec[3];
+	unsigned hdr[4];
+	long clen, rl, i;
 	if (ast_search_disk_path(path, sizeof path) != 0)
 		return;
 	f = fopen(path, "rb");
 	if (!f)
 		return;
-	while (fread(rec, sizeof rec, 1, f) == 1 &&
-				 ast_search_memo_n < AST_SEARCH_MEMO_CAP)
+	if (fread(hdr, sizeof hdr, 1, f) != 1 || hdr[0] != (unsigned)AST_MEMO_CONT_MAGIC ||
+			hdr[2] > (unsigned)AST_MEMO_RAWMAX || hdr[3] > (unsigned)sizeof ast_memo_pk) {
+		fclose(f); /* absent / old raw-log / corrupt: start empty (cache rebuilds) */
+		return;
+	}
+	clen = (long)hdr[3];
+	if (clen > 0 && fread(ast_memo_pk, 1, (size_t)clen, f) != (size_t)clen) {
+		fclose(f);
+		return;
+	}
+	fclose(f);
+	rl = ast_memo_unpack((int)hdr[1], clen);
+	if (rl != (long)hdr[2])
+		return; /* codec/length mismatch: corrupt container */
+	for (i = 0; i + 24 <= rl && ast_search_memo_n < AST_SEARCH_MEMO_CAP; i += 24) {
+		uint64_t rec[3];
+		memcpy(rec, ast_memo_raw + i, sizeof rec);
 		if ((rec[1] >> 8) == AST_SEARCH_MEMO_MAGIC)
 			ast_search_memo_add(rec[0], (unsigned)(rec[1] & 0xff), (unsigned)rec[2]);
-	fclose(f);
+	}
 	ast_search_disk_evict();
 }
 
+/* Persist a permutation: fold it into the working set and, if that changed the set,
+ * rewrite the compressed container. Every accessor also triggers the shared-disk
+ * eviction check. */
 static void ast_search_disk_store(uint64_t h, unsigned gates, unsigned refcount) {
-	char path[1152];
-	FILE *f;
-	uint64_t rec[3];
-	if (ast_search_disk_path(path, sizeof path) != 0)
-		return;
-	f = fopen(path, "ab");
-	if (!f)
-		return;
-	rec[0] = h;
-	rec[1] = (gates & 0xffu) | ((uint64_t)AST_SEARCH_MEMO_MAGIC << 8);
-	rec[2] = refcount;
-	fwrite(rec, sizeof rec, 1, f);
-	fclose(f);
+	if (ast_search_memo_add(h, gates, refcount))
+		ast_search_disk_rewrite();
 	ast_search_disk_evict();
 }
 
@@ -7335,11 +7426,12 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 				/* hit: bump this permutation's refcount and persist it (also triggers
 				 * the shared-disk eviction check). intersect gates with the current base:
 				 * a winner cached under a different -O base must not enable a gate this
-				 * build disabled. */
-				ast_search_memo[i].refcount++;
+				 * build disabled. The refcount bump is applied by ast_search_disk_store ->
+				 * ast_search_memo_add (refcount+1 > current), so the store sees a real
+				 * change and rewrites the container. */
 				ast_search_gates_set(ast_search_memo[i].gates & base);
 				ast_search_disk_store(ast_search_memo[i].hash, ast_search_memo[i].gates,
-															ast_search_memo[i].refcount);
+															ast_search_memo[i].refcount + 1);
 				ast_arena_free(pristine);
 				return;
 			}
@@ -7438,10 +7530,8 @@ search_done:
 	ast_promo_total = p0;
 	ast_opt_total = o0;
 	ast_search_gates_set(best);
-	if (h) {
-		ast_search_memo_add(h, best, 1);
+	if (h) /* store folds the winner into the memo (memo_add) and rewrites the file */
 		ast_search_disk_store(h, best, 1);
-	}
 	ast_arena_free(pristine);
 }
 
