@@ -12910,6 +12910,8 @@ void ast_func_end(Sym *sym) {
 				if (promoted)
 					fprintf(stderr, "[ast-promote] %d %s\n", promoted, funcname);
 			}
+			if (faithful && ind < orig_ind)
+				memset(cur_text_section->data + ind, 0, (size_t)(orig_ind - ind));
 			if (ast_jit_env && faithful && ast_jit_selected(funcname))
 				keep_baseline = ast_baseline_retain(sym, ast_cur, ast_body_ind_sv,
 																						ast_reloc0_sv, rsym);
