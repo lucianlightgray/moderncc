@@ -5,6 +5,9 @@
 #include "mccgate.h"
 #include "algorithms/jit.h"
 
+#include <pthread.h>
+#include <time.h>
+
 #if defined(__GNUC__) || defined(__clang__)
 #define MCCJIT_LOCAL __attribute__((visibility("hidden")))
 #else
@@ -902,18 +905,94 @@ static void *mccjit_make_trampoline(void *variant) {
 static void *mccjit_make_trampoline(void *variant) { return variant; }
 #endif
 
-void mccjit_boot_swap(void **slot, const void *blob, unsigned long len) {
-	void *variant = mcc_jit_recompile_blob(blob, (size_t)len);
-	void *entry = variant ? mccjit_make_trampoline(variant) : NULL;
+static double mccjit_elapsed(const struct timespec *t0) {
+	struct timespec t1;
+	if (clock_gettime(CLOCK_MONOTONIC, &t1) != 0)
+		return -1.0;
+	return (double)(t1.tv_sec - t0->tv_sec) +
+				 (double)(t1.tv_nsec - t0->tv_nsec) / 1000000000.0;
+}
+
+static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long len,
+																 unsigned long max_duration, const char *mode,
+																 const struct timespec *t0, int timed) {
+	void *variant = NULL;
+	void *entry = NULL;
+	int over = 0;
+	int skipped = 0;
+	if (timed && max_duration && mccjit_elapsed(t0) > (double)max_duration) {
+		skipped = 1;
+	} else {
+		variant = mcc_jit_recompile_blob(blob, (size_t)len);
+		entry = variant ? mccjit_make_trampoline(variant) : NULL;
+		if (timed && max_duration && entry &&
+				mccjit_elapsed(t0) > (double)max_duration) {
+			over = 1;
+			entry = NULL;
+		}
+	}
 	if (getenv("MCC_JIT_VERBOSE")) {
 		int probe = variant ? ((int (*)(int))variant)(7) : -1;
 		fprintf(stderr,
-						"mccjit-boot: slot=%p old=%p blob=%p len=%lu variant=%p entry=%p probe(7)=%d %s\n",
-						(void *)slot, slot ? *slot : (void *)0, blob, len, variant, entry,
-						probe, entry ? "swapped" : "kept-aot");
+						"mccjit-boot[%s]: slot=%p old=%p blob=%p len=%lu variant=%p entry=%p probe(7)=%d %s\n",
+						mode, (void *)slot, slot ? *slot : (void *)0, blob, len, variant, entry,
+						probe,
+						skipped ? "budget-skip"
+										: over ? "over-budget-kept-aot" : entry ? "swapped" : "kept-aot");
 	}
 	if (entry)
 		mcc_jit_publish(slot, entry);
+}
+
+void mccjit_boot_swap(void **slot, const void *blob, unsigned long len) {
+	mccjit_boot_swap_run(slot, blob, len, 0, "sync", NULL, 0);
+}
+
+typedef struct MccjitSwapJob {
+	void **slot;
+	const void *blob;
+	unsigned long len;
+	unsigned long max_duration;
+	struct timespec start;
+	int timed;
+} MccjitSwapJob;
+
+static pthread_mutex_t mccjit_swap_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static void *mccjit_swap_worker(void *p) {
+	MccjitSwapJob job = *(MccjitSwapJob *)p;
+	mcc_free(p);
+	pthread_mutex_lock(&mccjit_swap_lock);
+	mccjit_boot_swap_run(job.slot, job.blob, job.len, job.max_duration, "async",
+											 &job.start, job.timed);
+	pthread_mutex_unlock(&mccjit_swap_lock);
+	return NULL;
+}
+
+void mccjit_boot_swap_async(void **slot, const void *blob, unsigned long len,
+														unsigned long max_duration) {
+	MccjitSwapJob *job = mcc_malloc(sizeof *job);
+	if (job) {
+		pthread_t th;
+		job->slot = slot;
+		job->blob = blob;
+		job->len = len;
+		job->max_duration = max_duration;
+		job->timed =
+				(max_duration != 0) && (clock_gettime(CLOCK_MONOTONIC, &job->start) == 0);
+		if (pthread_create(&th, NULL, mccjit_swap_worker, job) == 0) {
+			pthread_detach(th);
+			return;
+		}
+		mcc_free(job);
+	}
+	{
+		struct timespec t0;
+		int timed =
+				(max_duration != 0) && (clock_gettime(CLOCK_MONOTONIC, &t0) == 0);
+		mccjit_boot_swap_run(slot, blob, len, max_duration, "sync-fallback", &t0,
+												 timed);
+	}
 }
 
 int mccjit_embed_have_fns(void) {
@@ -928,8 +1007,12 @@ void mccjit_embed_finalize(MCCState *s1) {
 	if (s1->output_type == MCC_OUTPUT_MEMORY)
 		return;
 	cstr_new(&cs);
-	cstr_printf(&cs,
-							"extern void mccjit_boot_swap(void**, const void*, unsigned long);\n");
+	if (s1->jit_threads > 0)
+		cstr_printf(&cs,
+								"extern void mccjit_boot_swap_async(void**, const void*, unsigned long, unsigned long);\n");
+	else
+		cstr_printf(&cs,
+								"extern void mccjit_boot_swap(void**, const void*, unsigned long);\n");
 	for (e = mccjit_embed_fns; e; e = e->next) {
 		int off = data_section->data_offset;
 		unsigned char *p = section_ptr_add(data_section, e->len ? e->len : 1);
@@ -940,10 +1023,17 @@ void mccjit_embed_finalize(MCCState *s1) {
 		set_global_sym(s1, blobname, data_section, off);
 		cstr_printf(&cs, "extern unsigned char __mccjit_blob_%s[];\n", e->name);
 		cstr_printf(&cs, "extern void *__mccjit_slot_%s;\n", e->name);
-		cstr_printf(&cs,
-								"__attribute__((constructor)) static void __mccjit_boot_%s(void){"
-								"mccjit_boot_swap(&__mccjit_slot_%s, __mccjit_blob_%s, %luUL);}\n",
-								e->name, e->name, e->name, (unsigned long)e->len);
+		if (s1->jit_threads > 0)
+			cstr_printf(&cs,
+									"__attribute__((constructor)) static void __mccjit_boot_%s(void){"
+									"mccjit_boot_swap_async(&__mccjit_slot_%s, __mccjit_blob_%s, %luUL, %luUL);}\n",
+									e->name, e->name, e->name, (unsigned long)e->len,
+									(unsigned long)s1->jit_max_duration);
+		else
+			cstr_printf(&cs,
+									"__attribute__((constructor)) static void __mccjit_boot_%s(void){"
+									"mccjit_boot_swap(&__mccjit_slot_%s, __mccjit_blob_%s, %luUL);}\n",
+									e->name, e->name, e->name, (unsigned long)e->len);
 	}
 	mcc_compile_string(s1, cs.data);
 	cstr_free(&cs);
