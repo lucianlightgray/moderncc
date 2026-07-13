@@ -1155,11 +1155,14 @@ flip `MCC_AST_VLAT` default-on (P0-style) once broadly exposed.**
   are invoked by a hardcoded env-gated `if` chain today.
 - [ ] **Build widening/fixpoint dataflow for §32a** cross-loop-iteration value
   merging (none present today).
-- [ ] **Implement §33c argument de-spill / caller-value forwarding** — forward a
-  caller's live single-use value directly into the callee's first param use (the
-  non-const generalization of the const `ast_argsub` channel); legality = param
-  read-once before any store, operands unclobbered. (needs §33b's seam; optionally
-  §32c)
+- [~] **§33c argument de-spill / caller-value forwarding — LANDED gated (0cf09f38,
+  `MCC_AST_ARGFWD` default off)** — forwards a caller value into the callee's single param use via the
+  generalized `ast_argsub` channel, eliding the spill. Legality: param readonly + non-escaping + single
+  read, and the actual is a pure const or a non-escaping caller local's `AST_Ref`. Default 3968/3968
+  byte-identical; gate-on fuzz 100/0-miscompile + firing/fallback correct vs gcc + self-host fixpoint.
+  **Remaining:** widen past single-use (needs the §33b seam for clobber-safety across multiple uses);
+  an argfwd-exercising self-host binary is blocked by the pre-existing mcc-linker segfault on inlined
+  `mcc.c` + GNU-ld eh_frame quirk; flip default-on after broad exposure.
 - [ ] **Design the §33e window-level cache key** — `ast_intention_hash` runs
   pre-graft over the caller arena, excluding the callee body, so a window transform
   needs a window-level key or an accepted first-graft cache miss.
