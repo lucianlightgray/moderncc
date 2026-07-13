@@ -668,6 +668,7 @@ static int ast_narrow_c0_env;
 static int ast_narrow_c1_env;
 static int ast_narrow_c2_env;
 static int ast_narrow_c3_env;
+static int ast_narrow_elim_env;
 static int ast_sccp_fix_env;
 static int ast_ident_conv_env;
 static int ast_ident_shift_env;
@@ -1139,6 +1140,7 @@ void ast_configure(MCCState *s1) {
 	ast_narrow_c1_env = ast_env_gate("MCC_AST_NARROW_CLASS1", 1);
 	ast_narrow_c2_env = ast_env_gate("MCC_AST_NARROW_CLASS2", 1);
 	ast_narrow_c3_env = ast_env_gate("MCC_AST_NARROW_CLASS3", 1);
+	ast_narrow_elim_env = ast_env_gate("MCC_AST_NARROW_ELIM", 0);
 	ast_sccp_fix_env = ast_env_gate("MCC_AST_SCCP_FIX", s1->optimize >= 2);
 	ast_ident_conv_env = ast_env_gate("MCC_AST_IDENT_CONV", 1);
 	ast_ident_shift_env = ast_env_gate("MCC_AST_IDENT_SHIFT", 1);
@@ -5376,6 +5378,79 @@ static int ast_narrow_binary(AstArena *a, AstLocal bin, int tt) {
 	return 1;
 }
 
+static int ast_vlat_in_type(const AstVLat *v, int tt) {
+	int w = ast_ii_width(tt);
+	uint64_t umax;
+	int64_t smax, smin;
+	if (v->state != AST_VLAT_FACT || w <= 0 || w >= 8)
+		return 0;
+	umax = ((uint64_t)1 << (w * 8)) - 1;
+	if (tt & VT_UNSIGNED)
+		return v->lo >= 0 && (uint64_t)v->hi <= umax;
+	smax = (int64_t)(umax >> 1);
+	smin = -smax - 1;
+	return v->lo >= smin && v->hi <= smax;
+}
+
+static int ast_narrow_elim_srcrange(AstArena *a, AstLocal c, AstVLat *out) {
+	int off, ct, it;
+	uint64_t cref, iref;
+	AstLocal inner;
+	if (ast_narrow_operand_off(a, c, &off))
+		return ast_vlat_context(a, off, out);
+	if (ast_kind(a, c) != AST_Convert || ast_nchild(a, c) != 1)
+		return 0;
+	inner = ast_first_child(a, c);
+	if (!ast_narrow_operand_off(a, inner, &off))
+		return 0;
+	if (!ast_ident_etype(a, c, &ct, &cref) || !ast_ident_intt(ct) ||
+			(ct & VT_VOLATILE))
+		return 0;
+	if (!ast_ident_etype(a, inner, &it, &iref) || !ast_ident_intt(it) ||
+			(it & VT_VOLATILE))
+		return 0;
+	if (ast_ii_width(it) >= ast_ii_width(ct))
+		return 0;
+	if (!(it & VT_UNSIGNED) && (ct & VT_UNSIGNED))
+		return 0;
+	return ast_vlat_context(a, off, out);
+}
+
+static int ast_narrow_elim_fits(AstArena *a, AstLocal c, int tt) {
+	int lt;
+	uint64_t lv;
+	AstVLat ctx;
+	if (ast_ii_width(tt) < 1 || ast_ii_width(tt) >= 8)
+		return 0;
+	if (ast_ident_cval(a, c, &lt, &lv))
+		return value64(lv, tt) == lv;
+	if (!ast_narrow_elim_srcrange(a, c, &ctx))
+		return 0;
+	return ast_vlat_in_type(&ctx, tt);
+}
+
+static int ast_narrow_elim(AstArena *a, AstLocal n) {
+	AstLocal c;
+	int tt, ct;
+	if (!ast_narrow_elim_env)
+		return 0;
+	tt = ast_type_t(a, n);
+	if (!ast_ident_intt(tt) || (tt & VT_VOLATILE))
+		return 0;
+	c = ast_first_child(a, n);
+	ct = ast_type_t(a, c);
+	if (!ast_ident_intt(ct) || (ct & VT_VOLATILE))
+		return 0;
+	if (ast_ii_width(tt) < 1 || ast_ii_width(ct) > 4 ||
+			ast_ii_width(ct) <= ast_ii_width(tt))
+		return 0;
+	if (!ast_narrow_elim_fits(a, c, tt))
+		return 0;
+	MCC_TRACE("narrow elim ct=%d tt=%d\n", ct, tt);
+	ast_ident_adopt(a, n, c);
+	return 1;
+}
+
 static int ast_narrow_node(AstArena *a, AstLocal n) {
 	uint16_t k = ast_kind(a, n);
 	if (k == AST_Convert && ast_nchild(a, n) == 1) {
@@ -5384,7 +5459,7 @@ static int ast_narrow_node(AstArena *a, AstLocal n) {
 			ast_ident_adopt(a, n, bin);
 			return 1;
 		}
-		return 0;
+		return ast_narrow_elim(a, n);
 	}
 	if (k == AST_Store && ast_nchild(a, n) == 2) {
 		AstLocal lval = ast_child(a, n, 0), rval = ast_child(a, n, 1);
