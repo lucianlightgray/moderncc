@@ -1217,8 +1217,21 @@ flip `MCC_AST_VLAT` default-on (P0-style) once broadly exposed.**
   interchange/fusion model in `ast_func_end`: a default-off env (`ast_*_run` gated), the body-safety
   whitelist `ast_interchange_body_ok` (rejects calls / scalar carried deps / nested control the
   affine dep test can't model), the `ast_li_list_*` + `ast_li_append_children` sibling-list surgery
-  helpers, and OR the pass's fired-flag into the `AST_PF_EMIT` re-emit conditions. Tiling is the
-  harder one — it splits one loop into a strip-mined pair and needs new IV nodes, not just relinking.)
+  helpers, and OR the pass's fired-flag into the `AST_PF_EMIT` re-emit conditions.
+  **De-risked (2026-07-13): NOT blocked on new-local allocation** — the `ast_ltemp` pass already
+  mints a fresh stack slot during replay (`off = (ast_ltemp_cur - 8) & -8`, tracked in
+  `ast_ltemp_off[]`/`ast_ltemp_n`, frame reserved via `loc = ast_ltemp_n ? ast_ltemp_cur :
+  saved_loc`); reuse that to allocate the strip IV `ii`. Remaining work is loop-HEADER node
+  synthesis: strip-mine `for(i=0;i<N;i++)BODY` → `for(ii=0;ii<N;ii+=T) for(i=ii; i<N && i<ii+T; i++)
+  BODY` — build the outer `AST_If op3` (cond `ii<N`, incrBB `ii+=T`), rewrite the inner init to
+  `i=ii` and AND its cond with `i<ii+T` (a `TOK_LAND` the bound classifier still parses), nest the
+  original loop in the outer body. Correct for any N,T (the `i<N` conjunct caps the last partial
+  tile). **BUT strip-mining a single loop alone has NO locality benefit** — real tiling strip-mines
+  BOTH loops of a nest then interchanges the two strip (`ii`,`jj`) loops outward
+  (tile-and-interchange), composing the strip primitive with the landed `ast_interchange_*`. Higher
+  node-synthesis surface than interchange/fusion (comparisons, `&&`, `+=T` stores, two new IVs, a
+  4-loop result) → its own careful M8 cycle; a reuse/footprint heuristic picks T and which nests are
+  worth tiling. Do it as a focused session, not a turn-tail.)
 - [~] **[P1] Extend §29 narrowing to non-distributive `/ % << >>` + comparisons** —
   `ast_narrow_binop_ranged` (gated `MCC_AST_VLAT`) now covers **unsigned `/ %` + `<<`const** (PR-2) and
   **`>>` (`TOK_SAR`/`TOK_SHR`, PR-3, 2a24c2b4)** — constant count [0,31] + op0-fit, signedness-aware.
