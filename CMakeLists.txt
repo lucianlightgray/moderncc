@@ -3068,6 +3068,16 @@ if(MCC_BUILD_TESTS)
                     "-DEXPECT_RC=42" "-DREPLAYED=loopy" "-DPROMOTE=1" "-DPROMOTES=loopy,callful,sumptr,fdot"
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
                 set_tests_properties("ast/replay-promote" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+                # Same, but through the graph-coloring allocator + spill-slot sharing
+                # (MCC_AST_COLOR + MCC_AST_SPILL_SHARE): promotion must still fire and
+                # stay correct. On arm64 this path was inert until x19–x28 were exposed.
+                add_test(NAME "ast/replay-promote-color" COMMAND "${CMAKE_COMMAND}"
+                    "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
+                    "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/promote.c"
+                    "-DOUT=${CMAKE_BINARY_DIR}/ast-replay-color"
+                    "-DEXPECT_RC=42" "-DREPLAYED=loopy" "-DPROMOTE=1" "-DCOLOR=1" "-DPROMOTES=loopy,callful,sumptr,fdot"
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
+                set_tests_properties("ast/replay-promote-color" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
             else()
                 mcc_skip_test("ast/replay-promote"
                     "Tier-3 register promotion is wired for x86_64 + arm64; on ${MCC_CPU} it is a no-op — coverage stays via exec-replay-promote")

@@ -860,9 +860,13 @@ The `## 5 … ## 0` buckets below are the reference backlog, ordered most-open-f
 - [ ] **Design the §33e window-level cache key** — `ast_intention_hash` runs pre-graft over the caller arena,
   excluding the callee body, so a window transform needs a window-level key or an accepted first-graft miss.
 - [~] **§36 spill-slot sharing — landed gated (`MCC_AST_SPILL_SHARE` off)** — the callee-save COLOR promotion
-  save-area shares one spill slot per distinct register. **Remaining:** general per-value spill slots (backend
-  `get_temp_local_var` recycles by liveness; user-local offsets front-end-fixed); run the COLOR+SHARE self-host
-  fixpoint now that the `MCC_AST_COLOR=1` segfault is fixed (556de5c2); native arm64/riscv64.
+  save-area shares one spill slot per distinct register. **arm64 COLOR+SHARE self-host fixpoint now VALIDATED**
+  (2026-07-13, unblocked by the arm64 promotion PRs — COLOR/SPILL_SHARE live inside the now-arm64-enabled
+  `ast_plan_promotion`/`ast_promo_save_plan`): on native arm64/macOS, `PROMOTE+COLOR+SPILL_SHARE` exec 296/296,
+  and `mcc.c` recompiled with `MCC_AST_PROMOTE=1 MCC_AST_COLOR=1 MCC_AST_SPILL_SHARE=1` reaches a **byte-identical
+  stage2==stage3 fixpoint** (2068166 B); the plain `PROMOTE`-only fixpoint is byte-identical too. **Remaining:**
+  general per-value spill slots (backend `get_temp_local_var` recycles by liveness; user-local offsets
+  front-end-fixed); the riscv64 fixpoint (needs riscv64 promotion first — its own TODO item).
 - [ ] **Normalize CMake incrementally** — autodetect + enable-what-the-host-supports, offload gating to
   `tools/`, fold `.cmake` files in — with a verifiable target, not a sweep (CI-breakage risk across ~35
   presets/platforms).
@@ -958,10 +962,18 @@ The `## 5 … ## 0` buckets below are the reference backlog, ordered most-open-f
   `exec-replay-promote` 296/296; `ast/replay-promote` now unified with x86 (asserts loopy+callful+sumptr+
   fdot all promote); disasm confirms leaf `loopy` holds `s`/`v` in x9/x10 (initialized + updated) and
   callful holds locals in x19–x28 across `bl` with stack save-restore; **self-host** — `mcc.c` recompiled
-  with promotion (all pools) → a working stage2 mcc that itself compiles+promotes correctly. **Remaining
-  (PR-3):** callee-saved float pool (v8–v15) for callful float promotion; the x86-style qemu-arm64-Linux
-  cross differential + the COLOR+SPILL_SHARE self-host fixpoint on arm64 ([[macos-arm64-status]]); then flip
-  `opt_promote` on for arm64 after broad exposure.
+  with promotion (all pools) → a working stage2 mcc that itself compiles+promotes correctly; the
+  **PROMOTE-only and PROMOTE+COLOR+SPILL_SHARE self-host fixpoints are byte-identical** (stage2==stage3,
+  2068166 B). **The `long double` libcall guard is correct-by-construction but NOT exercised end-to-end
+  anywhere reachable locally:** macOS is `MCC_USING_DOUBLE_FOR_LDOUBLE` (no `VT_LDOUBLE` nodes → guard never
+  fires), and the local `cmake-cross/mcc-arm64` is **built without `MCC_CONFIG_OPTIMIZER`** (verified in its
+  compile_commands — the AST replay/promotion is compiled out, so no `[ast-replay]`/`[ast-promote]` fires and
+  promotion cannot be checked on it at all) ([[macos-arm64-status]]). **Remaining (PR-3):** callee-saved
+  float pool (v8–v15) for callful float promotion (needs a renumber — float indices must stay inside
+  `IS_FREG`'s range; e.g. v0–v15 at 20–35, int callee x19–x28 at 36–45); the x86-style qemu-arm64-**Linux**
+  cross differential (needs an **optimizer-enabled** aarch64-linux mcc + qemu-aarch64/sysroot — the docker CI
+  matrix; this is the only place the `long double` guard actually fires); then flip `opt_promote` on for
+  arm64 after broad exposure.
 - [ ] **Extend the riscv64 backend register model for Tier-3 register promotion** + qemu validation.
 - [ ] **Test the i386 TLS `R_386_TLS_GD/LDM` paths** (`i386-link.c`; i386-gen.c only emits `R_386_TLS_LE`) —
   needs an i386 cross + a 32-bit sysroot.
