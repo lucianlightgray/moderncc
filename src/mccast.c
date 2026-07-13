@@ -658,6 +658,7 @@ static int ast_graft_budget_max = 2048;
 static int ast_cost_env;
 static int ast_sethi_env;
 static int ast_sethi_leaf_env;
+static int ast_sethi_nary_env;
 static int ast_bitflag_env;
 static int ast_bitflag_report_env;
 static int ast_bitflag_min;
@@ -1129,6 +1130,7 @@ void ast_configure(MCCState *s1) {
 	ast_cost_env = ast_env_gate("MCC_AST_COST", 0);
 	ast_sethi_env = ast_env_gate("MCC_AST_SETHI", s1->optimize >= 2);
 	ast_sethi_leaf_env = ast_env_gate("MCC_AST_SETHI_LEAF", 0);
+	ast_sethi_nary_env = ast_env_gate("MCC_AST_SETHI_NARY", 0);
 	ast_bitflag_env = ast_env_gate("MCC_AST_BITFLAG", s1->optimize >= 2);
 	ast_bitflag_report_env = ast_env_gate("MCC_AST_BITFLAG_REPORT", 0);
 	ast_bitflag_min = ast_env_int("MCC_AST_BITFLAG", 5);
@@ -8523,9 +8525,98 @@ static int ast_sethi_num(AstArena *a, AstLocal n) {
 	return l == r ? l + 1 : (l > r ? l : r);
 }
 
+#define AST_SETHI_NARY_MAX 128
+
+static int ast_sethi_chain_node(AstArena *a, AstLocal n, int op) {
+	return n != AST_NONE && ast_kind(a, n) == AST_Binary &&
+	       ast_nchild(a, n) == 2 && ast_op(a, n) == op;
+}
+
+static int ast_sethi_nary_leaf_ok(AstArena *a, AstLocal leaf, int t0) {
+	int lt;
+	uint64_t lref;
+	return leaf != AST_NONE && ast_cse_regpure(a, leaf) &&
+	       !ast_sethi_cmp_root(a, leaf) && ast_ident_etype(a, leaf, &lt, &lref) &&
+	       ast_ident_common(lt, lt) == t0;
+}
+
+static int ast_sethi_nary_chain(AstArena *a, AstLocal top) {
+	int op = ast_op(a, top);
+	int t0;
+	uint64_t t0ref;
+	if (!ast_ident_etype(a, top, &t0, &t0ref) || !ast_ident_intt(t0))
+		return 0;
+	AstLocal nodes[AST_SETHI_NARY_MAX];
+	AstLocal leaves[AST_SETHI_NARY_MAX + 1];
+	int keys[AST_SETHI_NARY_MAX + 1];
+	int nnodes = 0, nleaf = 0;
+	AstLocal cur = top;
+	while (ast_sethi_chain_node(a, cur, op)) {
+		if (nnodes >= AST_SETHI_NARY_MAX || nleaf >= AST_SETHI_NARY_MAX)
+			return 0;
+		AstLocal r = ast_child(a, cur, 1);
+		if (!ast_sethi_nary_leaf_ok(a, r, t0))
+			return 0;
+		nodes[nnodes++] = cur;
+		leaves[nleaf++] = r;
+		cur = ast_child(a, cur, 0);
+	}
+	if (!ast_sethi_nary_leaf_ok(a, cur, t0))
+		return 0;
+	leaves[nleaf++] = cur;
+	if (nleaf < 3)
+		return 0;
+	AstLocal order[AST_SETHI_NARY_MAX + 1];
+	for (int i = 0; i <= nnodes; i++)
+		order[i] = leaves[nnodes - i];
+	for (int i = 0; i <= nnodes; i++)
+		keys[i] = ast_sethi_num(a, order[i]);
+	int changed = 0;
+	for (int i = 1; i <= nnodes; i++) {
+		AstLocal v = order[i];
+		int k = keys[i];
+		int j = i - 1;
+		while (j >= 0 && keys[j] < k) {
+			order[j + 1] = order[j];
+			keys[j + 1] = keys[j];
+			j--;
+		}
+		order[j + 1] = v;
+		keys[j + 1] = k;
+		if (j + 1 != i)
+			changed = 1;
+	}
+	if (!changed)
+		return 0;
+	for (int i = 0; i < nnodes; i++) {
+		AstLocal node = nodes[i];
+		AstLocal left = (i == nnodes - 1) ? order[0] : nodes[i + 1];
+		AstLocal right = order[nnodes - i];
+		ast_clear_children(a, node);
+		ast_add_child(a, node, left);
+		ast_add_child(a, node, right);
+	}
+	MCC_TRACE("sethi nary op=%c n=%d\n", op, nnodes + 1);
+	return 1;
+}
+
 static int ast_sethi_run(AstArena *a) {
 	ast_sethi_folds = 0;
 	AstLocal nn = ast_count(a);
+	if (ast_sethi_nary_env) {
+		for (AstLocal n = 0; n < nn; n++) {
+			if (ast_kind(a, n) != AST_Binary ||
+					!ast_sethi_commutative(ast_op(a, n)))
+				continue;
+			if (ast_nchild(a, n) != 2)
+				continue;
+			AstLocal p = ast_parent(a, n);
+			if (p != AST_NONE && ast_kind(a, p) == AST_Binary &&
+					ast_op(a, p) == ast_op(a, n) && ast_child(a, p, 0) == n)
+				continue;
+			ast_sethi_folds += ast_sethi_nary_chain(a, n);
+		}
+	}
 	for (AstLocal n = 0; n < nn; n++) {
 		if (ast_kind(a, n) != AST_Binary || !ast_sethi_commutative(ast_op(a, n)))
 			continue;
