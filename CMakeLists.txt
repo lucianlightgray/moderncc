@@ -2310,7 +2310,7 @@ function(mcc_build_mccrt tname mcctgt cpu os native archive objdir out_extra)
 
     if(native)
         list(APPEND _objs runmain tcov)
-        if(cpu STREQUAL "x86_64" AND NOT os STREQUAL "WIN32" AND NOT os STREQUAL "Darwin")
+        if((cpu STREQUAL "x86_64" OR cpu STREQUAL "arm64") AND NOT os STREQUAL "WIN32" AND NOT os STREQUAL "Darwin")
             list(APPEND _objs mccasan)
         endif()
         if(NOT MCC_CONFIG_DIAG_RT STREQUAL "off")

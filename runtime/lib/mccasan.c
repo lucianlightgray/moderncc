@@ -59,8 +59,13 @@ static const char *asan_class(int sh){
 }
 static void on_sigill(int sig,siginfo_t*si,void*ucv){
     ucontext_t *uc=(ucontext_t*)ucv; (void)sig;
+#if defined(__aarch64__)
+    long sh = uc ? (long)uc->uc_mcontext.regs[17] : 0;
+    long off = uc ? (long)uc->uc_mcontext.regs[16] : 0;
+#else
     long sh = uc ? (long)uc->uc_mcontext.gregs[REG_RAX] : 0;
     long off = uc ? (long)uc->uc_mcontext.gregs[REG_RDX] : 0;
+#endif
     wstr("=================================================================\n");
     wstr("==ERROR: AddressSanitizer: "); wstr(asan_class((int)sh));
     wstr(" (mcc native shadow)\n    pc "); whex((uintptr_t)si->si_addr);
@@ -86,10 +91,24 @@ static void asan_register_globals(void){
     }
 }
 __attribute__((constructor)) static void asan_init(void){
+#if defined(__aarch64__)
+    /* arm64/Linux (top-down, 48-bit VA): shadow((a>>3)+OFF) of the entire 48-bit
+       address space lands in [OFF, 2^45+OFF) ~ [2GB, 32TB), below where PIE/heap/
+       stack (top-down) live, so one sparse NORESERVE region covers all of it.
+       (Robustness for 39-bit VA / bottom-up mmap is a follow-up.) The trap is a
+       brk -> SIGTRAP, and w17/w16 (shadow/granule) map to regs[17]/regs[16]. */
+    mmap((void*)0x7fff8000UL,(size_t)(0x210000000000UL-0x7fff8000UL),PROT_READ|PROT_WRITE,MAP_FIXED|MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+#else
     mmap((void*)0x7fff8000UL,(size_t)(0x8fff7000UL-0x7fff8000UL),PROT_READ|PROT_WRITE,MAP_FIXED|MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
     mmap((void*)0x2008fff7000UL,(size_t)(0x10007fff8000UL-0x2008fff7000UL),PROT_READ|PROT_WRITE,MAP_FIXED|MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+#endif
     struct sigaction sa; for(size_t i=0;i<sizeof sa;i++) ((char*)&sa)[i]=0;
-    sa.sa_sigaction=on_sigill; sa.sa_flags=SA_SIGINFO; sigaction(SIGILL,&sa,0);
+    sa.sa_sigaction=on_sigill; sa.sa_flags=SA_SIGINFO;
+#if defined(__aarch64__)
+    sigaction(SIGTRAP,&sa,0);
+#else
+    sigaction(SIGILL,&sa,0);
+#endif
     asan_register_globals();
 }
 void *malloc(size_t n){

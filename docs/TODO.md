@@ -940,8 +940,21 @@ The `## 5 … ## 0` buckets below are the reference backlog, ordered most-open-f
 
 ## 2 — two open questions
 
-- [ ] **Port native-shadow ASan (inline probe + `mccasan.c` runtime) to arm64/riscv64** — the native shadow is
-  x86_64/ELF-only end-to-end; those arches only have the separate bcheck-based `-fsanitize=address` today.
+- [~] **Port native-shadow ASan to arm64/riscv64 — arm64 PR-1 landed (heap detection, `-fasan-shadow`).** The
+  x86_64-only inline probe + runtime now works on arm64-Linux. **Inline probe** (`arm64-gen.c`
+  `gen_asan_shadow_check`): mirrors x86's algorithm in ~13 arm64 insns — `stp x16,x17` scratch save;
+  `shadow=(int8)*((addr>>3)+OFF)` via `arm64_movimm(x17,OFF)`+`add …,lsr #3`+`ldrsb`; `cbz` fast-path;
+  `(addr&7)+sz-1 < shadow` partial-granule check; `brk #0` on poison (w17=shadow, w16=granule for the handler);
+  `ldp` restore. Transparent to the pointer reg even when it IS x16/x17 (save-then-`mov`, restore at `ok:`).
+  Enabled on arm64 in `mccgen.c`/`mcc.h`/`mccelf.c` (`#if X86_64||ARM64`) + CMake builds `mccasan.o` on
+  arm64-linux (NOT Darwin — ELF-only). **Runtime** (`mccasan.c`, `#if __aarch64__`): `brk`→**SIGTRAP** handler
+  reads `regs[17]`/`regs[16]`; one sparse `MAP_NORESERVE` shadow region `[OFF, 2^45+OFF)` covers the whole
+  48-bit top-down VA. **Validated end-to-end on real arm64-Linux** (native-in-container, `tests/qemu/native-
+  optcheck.sh` path): probe disasm exact; heap-buffer-overflow → trap `shadow byte 0xfa`; heap-use-after-free →
+  `0xfd`; clean programs (incl. `-O1` optimizer+asan) no false positive, exit 0. Default macOS/x86 unaffected
+  (gated behind `-fasan-shadow`). **Remaining:** stack-redzone (next item) + globals table on arm64; 39-bit-VA
+  / bottom-up-mmap shadow-layout robustness (PR-1 assumes 48-bit top-down); the faulting-address + shadow dump;
+  then riscv64.
 - [ ] **Implement arm64/riscv64 native-shadow stack-redzone instrumentation** via the `gfunc_prolog`/
   `gfunc_epilog` hooks (x86_64/ELF-only today). (needs the native-shadow port)
 - [ ] **Implement UBSan `-recover` mode** — `sanitize-recover=undefined` is parsed but silently ignored; no

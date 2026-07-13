@@ -1632,7 +1632,7 @@ ST_FUNC void gen_opf(int op);
 #if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64
 void gen_ubsan_nullptr(void);
 #endif
-#ifdef MCC_TARGET_X86_64
+#if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64
 void gen_asan_shadow_check(int sz);
 #endif
 ST_FUNC void gen_cvt_ftoi(int t);
