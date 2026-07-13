@@ -380,7 +380,7 @@ MCCJIT_LOCAL int mccjit_embed_active(void) {
 	return 1;
 }
 
-MCCJIT_LOCAL int mccjit_embed_manifest(MCCState *s) {
+int mccjit_embed_manifest(MCCState *s) {
 	if (!s || !s->verbose)
 		return mccjit_embed_active();
 	printf("embed-jit manifest: functions=%s max-duration=%us%s\n",

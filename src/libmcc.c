@@ -13,6 +13,9 @@
 #include "mccelf.c"
 #include "mccrun.c"
 #include "mccdis.c"
+#ifdef MCC_EMBED_JIT
+#include "mccjit_embed.c"
+#endif
 #ifdef MCC_TARGET_I386
 #include "i386-gen.c"
 #include "i386-link.c"

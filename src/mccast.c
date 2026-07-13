@@ -12,6 +12,9 @@
 #include "algorithms/lzss.h"
 #include "algorithms/lzw.h"
 #include "algorithms/rle.h"
+#ifdef MCC_EMBED_JIT
+#include "algorithms/jit.h"
+#endif
 #include "mcccombo.h"
 #include "mccmagic.h" /* constant-division magic (selftested in tools/asttool.c:suite_magic) */
 
@@ -10372,6 +10375,20 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 	h = ast_intention_hash(pristine, AST_NONE);
 	if (h)
 		h = ast_search_key_salt(h); /* partition the cache by version + triplet */
+#ifdef MCC_EMBED_JIT
+	if (h) {
+		const JitGraduatedRecord *gr =
+				jit_graduated_find(h, ast_search_key_salt(0xcbf29ce484222325ULL));
+		if (gr) {
+			MCC_TRACE("jit-graduated hit %s hash=%016llx gates=%llx\n", funcname,
+								(unsigned long long)h,
+								(unsigned long long)(gr->gate_mask & searchable));
+			ast_search_gates_set(gr->gate_mask & searchable);
+			ast_arena_free(pristine);
+			return;
+		}
+	}
+#endif
 	if (ast_search_order_env) {
 		ast_search_select_order(sym, faithful, saved_loc, saved_anon, pristine, h);
 		return;
