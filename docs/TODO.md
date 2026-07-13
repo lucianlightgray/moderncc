@@ -1219,13 +1219,25 @@ flip `MCC_AST_VLAT` default-on (P0-style) once broadly exposed.**
   much narrower "is this fn promotion-measurable" guard), not just the scratch cursor set. Emit-size
   scoring only ranks, but the promotion APPLICATION during measurement emits real code + mutates
   allocator state, so it is NOT purely side-effect-free — that is the crux to solve first.
+  **SHARED-DEFECT FINDING (2026-07-13): the emit-time value-axis measurement is unsound for the INLINE
+  axis too, not just promotion.** The pre-existing inline axis (`MCC_AST_SEARCH_INLINE` →
+  `ast_search_axis_pick`, measures inline on/off under scratch and overrides `do_inline`) had NO ctest
+  coverage; a throwaway `exec-search-inline/` variant (`-O4` + emitsize + emitiso + SEARCH_INLINE)
+  fails **4/296** on the corpus — the same leak class. So the root problem is the emit-size
+  *value-axis* framework (measuring by actually APPLYING inline/promotion emission), not any one axis.
+  Fix the framework's full-state save/restore ONCE, then both the inline axis and the promotion/budget
+  axes ride it. Until then, do not enable `MCC_AST_SEARCH_INLINE`/`_PROMOTE` in any default or CI path
+  (they are opt-in and off by default, so nothing regresses).
 - [ ] **Add the §22 arena-mutating pass-subset re-emit axis** on top of emit
   isolation. (Scratch-`Section` isolation LANDED; inline-size axis `MCC_AST_PERFN_INPROC` already
   ships.)
 - [ ] **Register the §23 inline budgets as a §22 search value-axis** — the graft/node/depth runtime
   knobs (`MCC_AST_GRAFT`/`MCC_AST_INLINE_NODES`/`MCC_AST_INLINE_DEPTH`) all landed; the open work is
   exposing them to the -O4 search, which needs emit-size scoring since inline effects are emit-time
-  (a value axis, not a gate bit). (§23 step 1)
+  (a value axis, not a gate bit). (§23 step 1) **BLOCKED on the emit-time value-axis framework being
+  unsound — the existing binary inline axis already fails 4/296 under emit-size measurement (see the
+  §22 promotion-axis item's SHARED-DEFECT FINDING). Fix the framework's full-state save/restore before
+  adding budget levels on top.**
 - [ ] **Add more §23 param shapes.** (§23 step 2)
 - [~] **§27 loop tiling — LANDED (`MCC_AST_TILE`, default off; `MCC_AST_TILE_SIZE`, default 32).**
   Tile-and-interchange: strip-mines the inner loop of a 2-deep perfect nest and hoists the strip loop
