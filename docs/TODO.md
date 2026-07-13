@@ -192,7 +192,13 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
    variant calls already reuse the reloc path (`ast_reemit_extern`→`mcc_relocate`→`dlsym(RTLD_DEFAULT)`), no
    change needed. Test: `jit/selftest-fork` (child sees reset pool + runs installed variant + restarts pool;
    parent pool intact) — verified to fail without the handler.
-3. **[hardened-env + observability]** boot-probe JIT feasibility (silent baseline fallback) + emit `perf-<pid>.map`.
+3. ✅ **[hardened-env + observability]** DONE. `mccjit_feasible()` (probe: `mmap` a `PROT_READ|WRITE|EXEC`
+   page + execute a 6-byte `mov eax,imm; ret`, `pthread_once`-cached) gates `mccjit_boot_swap`/`_async`; a
+   W^X-denied host silently keeps the AOT baseline (+ `MCC_JIT_VERBOSE` note), never errors. `perf-<pid>.map`:
+   `mccjit_perf_map_emit` appends `<hexaddr> <hexsize> <fn>` (from the variant's ELF `st_value`/`st_size`) to
+   `/tmp/perf-<pid>.map` for each recompiled body, opt-in via `MCC_JIT_PERF_MAP` (default off → clean /tmp +
+   reproducible/CI-safe). Test: `jit/selftest-observability` (`MCC_JIT_FORCE_INFEASIBLE` gives the fallback path
+   teeth).
 4. **[J3A]** per-sym blob registry + one generic ctor → **live in-program recompile** (the "real live JIT").
 5. **[J1A/K1C/K2/L6A/L7A]** mismatch policy — split code/data keys, ratio poison, one classified
    {good,bad,unknown} set, poison-as-search-input (a 99%-variant + a benchmarked switch-table cover).
@@ -813,11 +819,17 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
   entry/exit counter** (slowest + unsafe under non-local exit). In-place patch (D3B) is gated behind a
   search-*proved* safety property (no non-local exit + all callers instrumented); else pointer-swap wins by
   default. Once ≥2 mechanisms exist the quiescence/reclaim mechanism is itself a benchmarkable axis.
-- [ ] **[hardened-env] Boot-probe JIT feasibility** — the `.init_array` ctor probes `MAP_JIT`/RWX; on failure
-  run the AOT baseline silently (deopt-first) + a `MCC_JIT_VERBOSE` note. Never errors.
-- [ ] **[observability] Emit `perf-<pid>.map`** for JIT'd variants (unblocks `perf` on JIT'd frames). Runtime
-  DWARF/unwind deferred (QSBR needs no unwind — but the L3 `membarrier`+stack-scan reclamation tier does, so
-  unwind info returns as a *reclamation* dependency if leak-and-cap/epoch prove insufficient).
+- [x] **[hardened-env] Boot-probe JIT feasibility** — DONE. `mccjit_feasible()` (`pthread_once`-cached) probes
+  by `mmap`-ing a `PROT_READ|WRITE|EXEC` page and executing a tiny x86_64 stub; it gates `mccjit_boot_swap` and
+  `mccjit_boot_swap_async`, so a W^X-denied / hardened host silently keeps the AOT baseline (deopt-first) + a
+  `MCC_JIT_VERBOSE` note, never errors. `MCC_JIT_FORCE_INFEASIBLE` forces the fallback (test hook).
+- [x] **[observability] Emit `perf-<pid>.map`** — DONE, opt-in via `MCC_JIT_PERF_MAP` (default off keeps /tmp
+  clean and runs reproducible/CI-safe). `mccjit_perf_map_emit` appends `<hexaddr> <hexsize> <fn>` per recompiled
+  body (address+length from the variant state's ELF `st_value`/`st_size` via `find_elf_sym(js->symtab,…)`) to
+  `/tmp/perf-<pid>.map`, so `perf` symbolizes both the specialized variant and its retained baseline; the KGC
+  stub routes through the normally-symbolized `mccjit_kgc_calln`. Runtime DWARF/unwind still deferred (QSBR
+  needs none; the L3 `membarrier`+stack-scan reclamation tier does — returns as a *reclamation* dependency if
+  leak-and-cap/epoch prove insufficient).
 - [x] **[L11A] Runtime robustness** (one item, not a fork) — DONE. `pthread_atfork` resets the worker-pool code
   cache across `fork()` (`mccjit_atfork_prepare`/`_parent`/`_child` registered once via `pthread_once` in
   `mccjit_pool_start`): the child drops the phantom job queue, resets `started`/`nworkers`, and reinits

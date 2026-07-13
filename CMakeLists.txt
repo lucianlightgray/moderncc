@@ -3736,6 +3736,12 @@ if(MCC_BUILD_TESTS)
             target_include_directories(jit_selftest_fork PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
             add_test(NAME jit/selftest-fork COMMAND jit_selftest_fork)
             set_tests_properties(jit/selftest-fork PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
+            add_executable(jit_selftest_observability tests/embed/jit_selftest_observability.c)
+            target_link_libraries(jit_selftest_observability PRIVATE libmcc)
+            target_include_directories(jit_selftest_observability PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+            add_test(NAME jit/selftest-observability COMMAND jit_selftest_observability)
+            set_tests_properties(jit/selftest-observability PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endif()
 
         add_executable(libmcc_test_extra tests/embed/api_extra.c)

@@ -898,6 +898,28 @@ MCCJIT_LOCAL Sym *mccjit_rebuild_sym(const MccjitIntent *it) {
 														 &functype);
 }
 
+static void mccjit_perf_map_emit(MCCState *js, const char *name, void *addr) {
+	char path[64];
+	FILE *f;
+	size_t size = 0;
+	int si;
+	if (!getenv("MCC_JIT_PERF_MAP") || !addr || !name || !name[0] || !js ||
+			!js->symtab)
+		return;
+	si = find_elf_sym(js->symtab, name);
+	if (si > 0)
+		size = (size_t)((ElfSym *)js->symtab->data)[si].st_size;
+	if (!size)
+		size = 16;
+	snprintf(path, sizeof path, "/tmp/perf-%d.map", (int)getpid());
+	f = fopen(path, "a");
+	if (!f)
+		return;
+	fprintf(f, "%lx %lx %s\n", (unsigned long)(uintptr_t)addr,
+					(unsigned long)size, name);
+	fclose(f);
+}
+
 static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 																		 int param_index, int64_t const_val) {
 	MccjitIntent it;
@@ -961,6 +983,9 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 
 	if (sym && mcc_relocate(js) == 0)
 		entry = mcc_get_symbol(js, it.fn_name);
+
+	if (entry)
+		mccjit_perf_map_emit(js, it.fn_name, entry);
 
 	mccjit_intent_release(&it);
 
@@ -1445,7 +1470,47 @@ static int mccjit_lazy_enabled(void) {
 	return e && e[0] && e[0] != '0';
 }
 
+static int mccjit_probe_exec_mem(void) {
+	void *p = mmap(0, 4096, PROT_READ | PROT_WRITE | PROT_EXEC,
+								 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (p == MAP_FAILED)
+		return 0;
+#if defined(__x86_64__)
+	{
+		static const unsigned char code[] = {0xb8, 0x5a, 0x5a, 0x00, 0x00, 0xc3};
+		int got;
+		memcpy(p, code, sizeof code);
+		got = ((int (*)(void))p)();
+		munmap(p, 4096);
+		return got == 0x5a5a;
+	}
+#else
+	munmap(p, 4096);
+	return 1;
+#endif
+}
+
+static int mccjit_feasible_flag;
+static pthread_once_t mccjit_feasible_once = PTHREAD_ONCE_INIT;
+
+static void mccjit_feasible_probe(void) {
+	mccjit_feasible_flag = mccjit_probe_exec_mem();
+	if (!mccjit_feasible_flag && getenv("MCC_JIT_VERBOSE"))
+		fprintf(stderr,
+						"mccjit: executable-memory probe failed — JIT disabled, running "
+						"AOT baseline\n");
+}
+
+static int mccjit_feasible(void) {
+	if (getenv("MCC_JIT_FORCE_INFEASIBLE"))
+		return 0;
+	pthread_once(&mccjit_feasible_once, mccjit_feasible_probe);
+	return mccjit_feasible_flag;
+}
+
 void mccjit_boot_swap(void **slot, const void *blob, unsigned long len) {
+	if (!mccjit_feasible())
+		return;
 	if (mccjit_lazy_enabled() && mccjit_lazy_install(slot, blob, len) == 0)
 		return;
 	mccjit_boot_swap_run(slot, blob, len, 0, "sync", NULL, 0);
@@ -1454,7 +1519,10 @@ void mccjit_boot_swap(void **slot, const void *blob, unsigned long len) {
 void mccjit_boot_swap_async(void **slot, const void *blob, unsigned long len,
 														unsigned long max_duration, unsigned long workers) {
 	MccjitSwapJob *job;
-	int nw = mccjit_pool_start(workers);
+	int nw;
+	if (!mccjit_feasible())
+		return;
+	nw = mccjit_pool_start(workers);
 	if (mccjit_lazy_enabled() && mccjit_lazy_install(slot, blob, len) == 0)
 		return;
 	job = (nw > 0) ? mcc_malloc(sizeof *job) : NULL;
@@ -3225,6 +3293,105 @@ int mccjit_selftest_fork(void) {
 	mcc_delete(s1);
 	printf("mccjit-selftest-fork: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
 				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
+int mccjit_selftest_observability(void) {
+	static const char src[] = "int f(int x){return x*2+1;}";
+	int fails = 0;
+	char path[64];
+	unsigned char *blob;
+	size_t blen;
+	MCCState *s1;
+
+	printf("mccjit-selftest-observability: begin\n");
+
+	if (!mccjit_feasible()) {
+		printf("mccjit-selftest-observability: exec-mem probe infeasible on this "
+					 "host FAIL\n");
+		fails++;
+	} else {
+		printf("mccjit-selftest-observability: exec-mem probe feasible OK\n");
+	}
+
+	blob = mccjit_stash_one(src, "f", 1, &blen, &s1);
+	if (!s1 || !blob) {
+		printf("mccjit-selftest-observability: stash failed\n");
+		if (s1)
+			mcc_delete(s1);
+		mcc_free(blob);
+		return fails + 1;
+	}
+
+	{
+		void *baseline = mcc_jit_recompile_blob(blob, blen);
+		MCCState *bstate = mccjit_last_state;
+		void *slot = baseline;
+		mccjit_last_state = NULL;
+		if (!baseline) {
+			printf("mccjit-selftest-observability: baseline recompile NULL FAIL\n");
+			fails++;
+		} else {
+			setenv("MCC_JIT_FORCE_INFEASIBLE", "1", 1);
+			mccjit_boot_swap(&slot, blob, blen);
+			unsetenv("MCC_JIT_FORCE_INFEASIBLE");
+			if (slot != baseline) {
+				printf("mccjit-selftest-observability: infeasible boot swapped anyway "
+							 "(no silent fallback) FAIL\n");
+				fails++;
+			} else {
+				printf("mccjit-selftest-observability: infeasible -> kept AOT baseline "
+							 "OK\n");
+			}
+		}
+		if (bstate)
+			mcc_delete(bstate);
+		mccjit_last_state = NULL;
+	}
+
+	{
+		void *v;
+		MCCState *vstate;
+		FILE *f;
+		int found = 0;
+		snprintf(path, sizeof path, "/tmp/perf-%d.map", (int)getpid());
+		remove(path);
+		setenv("MCC_JIT_PERF_MAP", "1", 1);
+		v = mcc_jit_recompile_blob(blob, blen);
+		vstate = mccjit_last_state;
+		mccjit_last_state = NULL;
+		unsetenv("MCC_JIT_PERF_MAP");
+		if (!v) {
+			printf("mccjit-selftest-observability: perf-map recompile NULL FAIL\n");
+			fails++;
+		}
+		f = fopen(path, "r");
+		if (f) {
+			char line[256];
+			while (fgets(line, sizeof line, f)) {
+				unsigned long a = 0, sz = 0;
+				char nm[128] = {0};
+				if (sscanf(line, "%lx %lx %127s", &a, &sz, nm) == 3 &&
+						!strcmp(nm, "f") && a == (unsigned long)(uintptr_t)v && sz > 0)
+					found = 1;
+			}
+			fclose(f);
+		}
+		printf("mccjit-selftest-observability: perf-map %s (%s addr=%p) %s\n",
+					 found ? "line for 'f' present" : "line MISSING", path, v,
+					 found ? "OK" : "FAIL");
+		if (!found)
+			fails++;
+		remove(path);
+		if (vstate)
+			mcc_delete(vstate);
+		mccjit_last_state = NULL;
+	}
+
+	mcc_free(blob);
+	mcc_delete(s1);
+	printf("mccjit-selftest-observability: %s (%d failure%s)\n",
+				 fails ? "FAIL" : "PASS", fails, fails == 1 ? "" : "s");
 	return fails ? 1 : 0;
 }
 
