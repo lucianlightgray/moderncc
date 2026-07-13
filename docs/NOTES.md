@@ -45,6 +45,12 @@ Decisions taken this push (A1a-indexed matrix), with the non-obvious "why":
   static guard/`eval_slice` oracle is imperfect — the static side just lets in-domain values skip the
   miss-path check. Key caveat: comparing by re-running both arms is only valid for PURE functions;
   impure functions need buffered/rolled-back effects or a pure-slice restriction (gates eligibility).
+- **M5c pure/impure slicing (settled 2026-07-12)** — the answer to M5b's side-effect gate: slice a JIT'd
+  function into pure computation kernels and impure boundary ops. Pure kernels get a bespoke off-C-ABI
+  calling convention (register live-ins/outs, no ABI frame) and are freely re-runnable, so they are the
+  only part M5b re-runs to compare against baseline; impure ops stay C-ABI "bound" calls executed once in
+  order. The slice split is simultaneously the optimization win (custom ABI on the hot kernel) and the
+  correctness gate (only pure slices are re-run/memoized).
 - **P2a** — `MCC_AST_JIT` is targeted to flip default-on (P0-style) after the full validation bar
   (byte-identity, shadow, differential vs gcc/clang, self-host fixpoint, fuzz, cross-arch) plus a soak
   — it is not a permanent opt-in.

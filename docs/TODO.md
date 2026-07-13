@@ -900,7 +900,27 @@ label/goto = `AST_Jump` op 4/5 (no new node kind); `ast_cur` survives the functi
     restriction (this gates which functions qualify); insertion concurrency (append+resort under a lock,
     or per-thread staging merged periodically); eviction / size bound of the set; mismatch →
     invalidate-vs-recompile policy; interaction with the M8 static oracle (static-in-domain values skip
-    the runtime check entirely).
+    the runtime check entirely); **side-effect safety is solved by the pure/impure slicing in M5c**.
+- [ ] **[DEFER] M5c — pure/impure function slicing + custom-ABI pure slices** — partition each JIT'd
+  function into **pure** (side-effect-free) computation slices and **impure** (effectful) boundary ops,
+  so the hot computation can be hyper-optimized off the C ABI while the effectful skeleton stays
+  standard-callable. This is the mechanism that makes M5b's differential deopt-verify sound.
+  - **Pure slices** sidestep the C ABI: a bespoke calling convention (live-ins/outs in registers, no ABI
+    stack frame / caller-saved / red-zone constraints), free specialization. Being pure, they are freely
+    **re-runnable** → safe to run-and-compare against the baseline for the M5b known-good check, and safe
+    to memoize/speculate.
+  - **Impure parts** — stores visible to the caller, I/O, calls to impure/external functions — stay
+    **C-ABI-compliant boundary ("bound") calls**, executed once in program order, preserving interop and
+    forbidding unsafe re-execution.
+  - The slice split IS the M5b eligibility gate: only pure slices qualify for re-run-and-compare; the
+    impure boundary is never re-run. Lets the JIT give the hot pure kernel a custom ABI while the
+    effectful shell remains ordinary-C-callable (and deopt-able to the retained AOT baseline).
+  - **Open questions:** purity/effect analysis to find the slices (reuse `ast_local_is_readonly` +
+    no-store + no-impure-call, or a new effect lattice?); the custom pure-slice ABI (register assignment,
+    how the impure skeleton calls into/out of a pure slice, spill discipline); how a pure slice's live-ins
+    key the M5b known-good cache; interaction with inlining and with W2.3 speculative arms; whether an
+    impure "bound" call can itself be partially specialized (e.g. constant-folded arguments) without
+    losing ABI compliance.
 - [~] **[DEFER] M6 — Stage 3 triggers + threads + budget — PLUMBING LANDED (362fe0d5), pool deferred** —
   `--jit-threads` flag + `jit_threads` field added; libpthread link now gated on `jit_threads>0` (not
   `embed_jit`). Remaining: `jit-profile` hot-counter strategy, the `.init_array` pool-spawn ctor
