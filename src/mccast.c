@@ -730,6 +730,7 @@ static int ast_licm_temp_env;
 static int ast_ivsr_env;
 static int ast_pre_env;
 static int ast_loopnest_dump_env;
+static int ast_loopdep_dump_env;
 static int ast_perfn_inproc_env;
 static int ast_argfwd_env;
 
@@ -1205,6 +1206,7 @@ void ast_configure(MCCState *s1) {
 	ast_ivsr_env = ast_env_gate("MCC_AST_IVSR", 0);
 	ast_pre_env = ast_env_gate("MCC_AST_PRE", 0);
 	ast_loopnest_dump_env = ast_env_gate("MCC_AST_LOOPNEST_DUMP", 0);
+	ast_loopdep_dump_env = ast_env_gate("MCC_AST_LOOPDEP_DUMP", 0);
 	ast_perfn_inproc_env = ast_env_gate("MCC_AST_PERFN_INPROC", 0);
 	ast_argfwd_env = ast_env_gate("MCC_AST_ARGFWD", 0);
 	ast_color_env = ast_env_gate("MCC_AST_COLOR", 0);
@@ -9396,6 +9398,599 @@ void ast_loopnest_dump(AstArena *a, const char *fname) {
 	}
 }
 
+#define AST_DEP_MAXIV 8
+#define AST_DEP_MAXDIM 4
+#define AST_DEP_MAXREF 64
+
+enum { AST_DEP_INDEP = 0, AST_DEP_YES = 1, AST_DEP_CONSERV = 2 };
+
+typedef struct AstDepSub {
+	int64_t coeff[AST_DEP_MAXIV];
+	int64_t cst;
+} AstDepSub;
+
+typedef struct AstDepRef {
+	AstLocal node;
+	int is_store;
+	int base_kind;
+	uint64_t base_sym;
+	int64_t base_off;
+	int ndim;
+	int ok;
+	AstDepSub sub[AST_DEP_MAXDIM];
+} AstDepRef;
+
+static AstLocal ast_dep_strip(AstArena *a, AstLocal n) {
+	while (n != AST_NONE && ast_kind(a, n) == AST_Convert &&
+				 ast_nchild(a, n) == 1)
+		n = ast_first_child(a, n);
+	return n;
+}
+
+static int ast_dep_affine_acc(AstArena *a, AstLocal E, const int *ivs, int niv,
+															int64_t *coeff, int64_t *cst, int64_t mul) {
+	E = ast_dep_strip(a, E);
+	if (E == AST_NONE)
+		return 0;
+	uint16_t k = ast_kind(a, E);
+	if (k == AST_Literal) {
+		*cst += mul * (int64_t)ast_ival(a, E);
+		return 1;
+	}
+	if (k == AST_Ref) {
+		int r = ast_op(a, E);
+		if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
+			return 0;
+		int off = (int)(int64_t)ast_ival(a, E);
+		for (int i = 0; i < niv; i++)
+			if (ivs[i] == off) {
+				coeff[i] += mul;
+				return 1;
+			}
+		return 0;
+	}
+	if (k == AST_Binary && ast_nchild(a, E) == 2) {
+		int op = ast_op(a, E);
+		AstLocal L = ast_child(a, E, 0), R = ast_child(a, E, 1);
+		if (op == '+')
+			return ast_dep_affine_acc(a, L, ivs, niv, coeff, cst, mul) &&
+						 ast_dep_affine_acc(a, R, ivs, niv, coeff, cst, mul);
+		if (op == '-')
+			return ast_dep_affine_acc(a, L, ivs, niv, coeff, cst, mul) &&
+						 ast_dep_affine_acc(a, R, ivs, niv, coeff, cst, -mul);
+		if (op == '*') {
+			AstLocal Ls = ast_dep_strip(a, L), Rs = ast_dep_strip(a, R);
+			if (ast_kind(a, Ls) == AST_Literal)
+				return ast_dep_affine_acc(a, R, ivs, niv, coeff, cst,
+																	mul * (int64_t)ast_ival(a, Ls));
+			if (ast_kind(a, Rs) == AST_Literal)
+				return ast_dep_affine_acc(a, L, ivs, niv, coeff, cst,
+																	mul * (int64_t)ast_ival(a, Rs));
+			return 0;
+		}
+		return 0;
+	}
+	return 0;
+}
+
+static int ast_dep_affine(AstArena *a, AstLocal E, const int *ivs, int niv,
+													int64_t *coeff, int64_t *cst) {
+	for (int i = 0; i < niv; i++)
+		coeff[i] = 0;
+	*cst = 0;
+	return ast_dep_affine_acc(a, E, ivs, niv, coeff, cst, 1);
+}
+
+static void ast_dep_decode(AstArena *a, AstLocal E, const int *ivs, int niv,
+													 AstDepRef *r, unsigned char *consumed, int nn) {
+	memset(r, 0, sizeof *r);
+	AstDepSub tmp[AST_DEP_MAXDIM];
+	int nd = 0;
+	for (;;) {
+		E = ast_dep_strip(a, E);
+		if (E == AST_NONE)
+			return;
+		uint16_t k = ast_kind(a, E);
+		if (k == AST_Binary && ast_nchild(a, E) == 2 &&
+				(ast_op(a, E) == '+' || ast_op(a, E) == '-')) {
+			int op = ast_op(a, E);
+			AstLocal L = ast_child(a, E, 0), R = ast_child(a, E, 1);
+			int64_t cR[AST_DEP_MAXIV], kR, cL[AST_DEP_MAXIV], kL;
+			int okR = ast_dep_affine(a, R, ivs, niv, cR, &kR);
+			int okL = ast_dep_affine(a, L, ivs, niv, cL, &kL);
+			int64_t *co;
+			int64_t cst;
+			AstLocal chain;
+			int sign;
+			if (okR && !okL) {
+				co = cR;
+				cst = kR;
+				chain = L;
+				sign = op == '-' ? -1 : 1;
+			} else if (okL && !okR && op == '+') {
+				co = cL;
+				cst = kL;
+				chain = R;
+				sign = 1;
+			} else {
+				return;
+			}
+			if (nd >= AST_DEP_MAXDIM)
+				return;
+			for (int i = 0; i < niv; i++)
+				tmp[nd].coeff[i] = sign * co[i];
+			tmp[nd].cst = sign * cst;
+			nd++;
+			E = chain;
+			continue;
+		}
+		if (k == AST_Load && ast_nchild(a, E) >= 1) {
+			if (consumed && (uint32_t)E < (uint32_t)nn)
+				consumed[E] = 1;
+			E = ast_first_child(a, E);
+			continue;
+		}
+		if (k == AST_Ref) {
+			int rr = ast_op(a, E);
+			if ((rr & VT_VALMASK) == VT_CONST && (rr & VT_SYM) &&
+					ast_sym(a, E) != 0) {
+				r->base_kind = 1;
+				r->base_sym = ast_sym(a, E);
+			} else if ((rr & VT_VALMASK) == VT_LOCAL) {
+				r->base_kind = 2;
+				r->base_off = (int64_t)(int)ast_ival(a, E);
+			} else {
+				return;
+			}
+			for (int i = 0; i < nd; i++)
+				r->sub[i] = tmp[nd - 1 - i];
+			r->ndim = nd;
+			r->ok = 1;
+			return;
+		}
+		return;
+	}
+}
+
+static void ast_dep_collect_rec(AstArena *a, AstLocal n, const int *ivs,
+																int niv, AstDepRef *refs, int *nref,
+																int *overflow, unsigned char *consumed,
+																int nn) {
+	if (n == AST_NONE)
+		return;
+	if ((uint32_t)n < (uint32_t)nn && consumed[n])
+		return;
+	uint16_t k = ast_kind(a, n);
+	if (k == AST_Store && ast_nchild(a, n) >= 2) {
+		AstLocal lv = ast_child(a, n, 0);
+		if (lv != AST_NONE && ast_kind(a, lv) == AST_Load &&
+				ast_nchild(a, lv) >= 1) {
+			if ((uint32_t)lv < (uint32_t)nn)
+				consumed[lv] = 1;
+			if (*nref >= AST_DEP_MAXREF)
+				*overflow = 1;
+			else {
+				AstDepRef *r = &refs[*nref];
+				ast_dep_decode(a, ast_first_child(a, lv), ivs, niv, r, consumed, nn);
+				r->node = n;
+				r->is_store = 1;
+				(*nref)++;
+			}
+		}
+	} else if (k == AST_Load && ast_nchild(a, n) >= 1) {
+		if (*nref >= AST_DEP_MAXREF)
+			*overflow = 1;
+		else {
+			AstDepRef *r = &refs[*nref];
+			ast_dep_decode(a, ast_first_child(a, n), ivs, niv, r, consumed, nn);
+			r->node = n;
+			r->is_store = 0;
+			(*nref)++;
+		}
+	}
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		ast_dep_collect_rec(a, c, ivs, niv, refs, nref, overflow, consumed, nn);
+}
+
+static AstDepRef *ast_dep_collect(AstArena *a, AstLocal body, const int *ivs,
+																	int niv, int *nref, int *overflow) {
+	int nn = (int)ast_count(a);
+	unsigned char *consumed = mcc_mallocz((unsigned long)(nn > 0 ? nn : 1));
+	AstDepRef *refs = mcc_malloc(sizeof(AstDepRef) * AST_DEP_MAXREF);
+	*nref = 0;
+	*overflow = 0;
+	ast_dep_collect_rec(a, body, ivs, niv, refs, nref, overflow, consumed, nn);
+	mcc_free(consumed);
+	return refs;
+}
+
+static int ast_dep_base_same(const AstDepRef *r1, const AstDepRef *r2) {
+	if (!r1->ok || !r2->ok || r1->base_kind != r2->base_kind)
+		return 0;
+	if (r1->base_kind == 1)
+		return r1->base_sym == r2->base_sym;
+	if (r1->base_kind == 2)
+		return r1->base_off == r2->base_off;
+	return 0;
+}
+
+static int ast_dep_base_distinct(const AstDepRef *r1, const AstDepRef *r2) {
+	if (!r1->ok || !r2->ok)
+		return 0;
+	if (r1->base_kind == 1 && r2->base_kind == 1)
+		return r1->base_sym != r2->base_sym;
+	return 0;
+}
+
+static int ast_dep_direction(const AstDepRef *r1, const AstDepRef *r2, int niv,
+														 char *dir) {
+	for (int k = 0; k < niv; k++)
+		dir[k] = '*';
+	if (!r1->ok || !r2->ok || r1->ndim != r2->ndim)
+		return AST_DEP_CONSERV;
+	int64_t D[AST_DEP_MAXIV];
+	char Dset[AST_DEP_MAXIV];
+	for (int k = 0; k < niv; k++) {
+		D[k] = 0;
+		Dset[k] = 0;
+	}
+	for (int d = 0; d < r1->ndim; d++) {
+		const AstDepSub *s1 = &r1->sub[d], *s2 = &r2->sub[d];
+		int c1n = 0, c2n = 0, u1 = -1, u2 = -1;
+		for (int k = 0; k < niv; k++) {
+			if (s1->coeff[k]) {
+				c1n++;
+				u1 = k;
+			}
+			if (s2->coeff[k]) {
+				c2n++;
+				u2 = k;
+			}
+		}
+		if (c1n == 0 && c2n == 0) {
+			if (s1->cst != s2->cst)
+				return AST_DEP_INDEP;
+			continue;
+		}
+		if (c1n != 1 || c2n != 1 || u1 != u2)
+			return AST_DEP_CONSERV;
+		int64_t A = s1->coeff[u1];
+		if (A == 0 || A != s2->coeff[u2])
+			return AST_DEP_CONSERV;
+		int64_t num = s1->cst - s2->cst;
+		if (num % A != 0)
+			return AST_DEP_INDEP;
+		int64_t dk = num / A;
+		if (Dset[u1] && D[u1] != dk)
+			return AST_DEP_INDEP;
+		D[u1] = dk;
+		Dset[u1] = 1;
+	}
+	for (int k = 0; k < niv; k++)
+		dir[k] = Dset[k] ? (D[k] > 0 ? '<' : (D[k] < 0 ? '>' : '=')) : '*';
+	return AST_DEP_YES;
+}
+
+static int ast_dep_perfect_nest(AstArena *a, AstLocal outer, AstLocal inner) {
+	AstLocal body, incr;
+	ast_loop_parts(a, outer, ast_op(a, outer), &body, &incr);
+	if (body == AST_NONE || ast_kind(a, body) != AST_BasicBlock)
+		return 0;
+	int found = 0;
+	for (AstLocal c = ast_first_child(a, body); c != AST_NONE;
+			 c = ast_next_sib(a, c)) {
+		if (c == inner) {
+			found = 1;
+			continue;
+		}
+		if (ast_licm_is_loop(a, c))
+			return 0;
+		if (ast_kind(a, c) == AST_Store) {
+			AstLocal lv = ast_child(a, c, 0);
+			if (lv != AST_NONE && ast_kind(a, lv) == AST_Load)
+				return 0;
+			continue;
+		}
+		return 0;
+	}
+	return found;
+}
+
+static int ast_dep_loop_start(AstArena *a, AstLocal loop, int iv_off,
+															int64_t *start) {
+	AstLocal bb = ast_parent(a, loop);
+	if (bb == AST_NONE || ast_kind(a, bb) != AST_BasicBlock)
+		return 0;
+	int found = 0;
+	int64_t val = 0;
+	for (AstLocal c = ast_first_child(a, bb); c != AST_NONE && c != loop;
+			 c = ast_next_sib(a, c)) {
+		if (ast_kind(a, c) == AST_Store && ast_nchild(a, c) >= 2 &&
+				ast_ref_is_local_off(a, ast_child(a, c, 0), iv_off)) {
+			AstLocal v = ast_dep_strip(a, ast_child(a, c, 1));
+			if (v != AST_NONE && ast_kind(a, v) == AST_Literal) {
+				val = (int64_t)ast_ival(a, v);
+				found = 1;
+			}
+		}
+	}
+	*start = val;
+	return found;
+}
+
+static int ast_dep_adjacent(AstArena *a, AstLocal l1, AstLocal l2) {
+	AstLocal bb = ast_parent(a, l1);
+	if (bb == AST_NONE || ast_parent(a, l2) != bb)
+		return 0;
+	AstLocal c = ast_first_child(a, bb);
+	while (c != AST_NONE && c != l1)
+		c = ast_next_sib(a, c);
+	if (c != l1)
+		return 0;
+	for (c = ast_next_sib(a, c); c != AST_NONE && c != l2; c = ast_next_sib(a, c)) {
+		if (ast_licm_is_loop(a, c))
+			return 0;
+		if (ast_kind(a, c) != AST_Store)
+			return 0;
+		AstLocal lv = ast_child(a, c, 0);
+		if (lv != AST_NONE && ast_kind(a, lv) == AST_Load)
+			return 0;
+	}
+	return c == l2;
+}
+
+static int ast_dep_same_trip(AstArena *a, AstLocal l1, AstLocal l2) {
+	int64_t b1, b2;
+	int lo1, lo2;
+	if (!ast_loop_bounds(a, l1, &b1, &lo1) || !ast_loop_bounds(a, l2, &b2, &lo2))
+		return 0;
+	if (b1 != b2 || lo1 != lo2)
+		return 0;
+	int o1, o2, t;
+	int64_t s1, s2;
+	if (!ast_loop_iv(a, l1, &o1, &t, &s1) || !ast_loop_iv(a, l2, &o2, &t, &s2))
+		return 0;
+	if (s1 != s2)
+		return 0;
+	int64_t st1, st2;
+	if (!ast_dep_loop_start(a, l1, o1, &st1) ||
+			!ast_dep_loop_start(a, l2, o2, &st2))
+		return 0;
+	return st1 == st2;
+}
+
+int ast_loop_interchange_legal(AstArena *a, AstLocal outer, AstLocal inner) {
+	ast_loopnest_sync(a);
+	if (!ast_loop_analyzable(a, outer) || !ast_loop_analyzable(a, inner))
+		return 0;
+	if (ast_loop_parent(a, inner) != outer)
+		return 0;
+	if (!ast_dep_perfect_nest(a, outer, inner))
+		return 0;
+	int ivo, ivi, t;
+	int64_t st;
+	if (!ast_loop_iv(a, outer, &ivo, &t, &st) ||
+			!ast_loop_iv(a, inner, &ivi, &t, &st))
+		return 0;
+	int ivs[2] = {ivo, ivi};
+	AstLocal body, incr;
+	ast_loop_parts(a, inner, ast_op(a, inner), &body, &incr);
+	int nref, overflow;
+	AstDepRef *refs = ast_dep_collect(a, body, ivs, 2, &nref, &overflow);
+	int legal = 1;
+	if (overflow)
+		legal = 0;
+	for (int i = 0; i < nref && legal; i++)
+		for (int j = i; j < nref && legal; j++) {
+			if (!(refs[i].is_store || refs[j].is_store))
+				continue;
+			if (ast_dep_base_distinct(&refs[i], &refs[j]))
+				continue;
+			if (!ast_dep_base_same(&refs[i], &refs[j])) {
+				legal = 0;
+				break;
+			}
+			char dir[2];
+			int dep = ast_dep_direction(&refs[i], &refs[j], 2, dir);
+			if (dep == AST_DEP_INDEP)
+				continue;
+			if (dep == AST_DEP_CONSERV) {
+				legal = 0;
+				break;
+			}
+			int lead = -1;
+			for (int k = 0; k < 2; k++)
+				if (dir[k] != '=') {
+					lead = k;
+					break;
+				}
+			if (lead < 0)
+				continue;
+			if (dir[lead] == '*') {
+				legal = 0;
+				break;
+			}
+			if (dir[lead] == '>')
+				for (int k = 0; k < 2; k++) {
+					if (dir[k] == '<')
+						dir[k] = '>';
+					else if (dir[k] == '>')
+						dir[k] = '<';
+				}
+			if (dir[0] == '*' || dir[1] == '*') {
+				legal = 0;
+				break;
+			}
+			if (dir[0] == '<' && dir[1] == '>') {
+				legal = 0;
+				break;
+			}
+		}
+	mcc_free(refs);
+	return legal;
+}
+
+static int ast_dep_fusion_pair_illegal(const AstDepRef *r1,
+																			 const AstDepRef *r2) {
+	if (!r1->ok || !r2->ok)
+		return 1;
+	if (ast_dep_base_distinct(r1, r2))
+		return 0;
+	if (!ast_dep_base_same(r1, r2))
+		return 1;
+	if (r1->ndim != r2->ndim)
+		return 1;
+	int64_t D = 0;
+	int Dset = 0;
+	for (int d = 0; d < r1->ndim; d++) {
+		const AstDepSub *s1 = &r1->sub[d], *s2 = &r2->sub[d];
+		int c1 = s1->coeff[0] != 0, c2 = s2->coeff[0] != 0;
+		if (!c1 && !c2) {
+			if (s1->cst != s2->cst)
+				return 0;
+			continue;
+		}
+		if (!c1 || !c2)
+			return 1;
+		int64_t A = s1->coeff[0];
+		if (A == 0 || A != s2->coeff[0])
+			return 1;
+		int64_t num = s2->cst - s1->cst;
+		if (num % A != 0)
+			return 0;
+		int64_t dk = num / A;
+		if (Dset && D != dk)
+			return 0;
+		D = dk;
+		Dset = 1;
+	}
+	if (!Dset)
+		return 1;
+	return D > 0 ? 1 : 0;
+}
+
+int ast_loop_fusion_legal(AstArena *a, AstLocal loop1, AstLocal loop2) {
+	ast_loopnest_sync(a);
+	if (!ast_loop_analyzable(a, loop1) || !ast_loop_analyzable(a, loop2))
+		return 0;
+	if (!ast_dep_adjacent(a, loop1, loop2))
+		return 0;
+	if (!ast_dep_same_trip(a, loop1, loop2))
+		return 0;
+	int o1, o2, t;
+	int64_t s;
+	ast_loop_iv(a, loop1, &o1, &t, &s);
+	ast_loop_iv(a, loop2, &o2, &t, &s);
+	int iv1[1] = {o1}, iv2[1] = {o2};
+	AstLocal b1, b2, incr;
+	ast_loop_parts(a, loop1, ast_op(a, loop1), &b1, &incr);
+	ast_loop_parts(a, loop2, ast_op(a, loop2), &b2, &incr);
+	int n1, n2, ov1, ov2;
+	AstDepRef *r1 = ast_dep_collect(a, b1, iv1, 1, &n1, &ov1);
+	AstDepRef *r2 = ast_dep_collect(a, b2, iv2, 1, &n2, &ov2);
+	int legal = 1;
+	if (ov1 || ov2)
+		legal = 0;
+	for (int i = 0; i < n1 && legal; i++)
+		for (int j = 0; j < n2 && legal; j++) {
+			if (!(r1[i].is_store || r2[j].is_store))
+				continue;
+			if (ast_dep_fusion_pair_illegal(&r1[i], &r2[j])) {
+				legal = 0;
+				break;
+			}
+		}
+	mcc_free(r1);
+	mcc_free(r2);
+	return legal;
+}
+
+static void ast_dep_nest_ivs(AstArena *a, AstLocal loop, int *ivs, int *niv) {
+	int tmp[AST_DEP_MAXIV];
+	int n = 0;
+	for (AstLocal l = loop; l != AST_NONE; l = ast_loop_parent(a, l)) {
+		int off, t;
+		int64_t st;
+		if (n < AST_DEP_MAXIV && ast_loop_iv(a, l, &off, &t, &st))
+			tmp[n++] = off;
+	}
+	for (int i = 0; i < n; i++)
+		ivs[i] = tmp[n - 1 - i];
+	*niv = n;
+}
+
+static void ast_dep_dump_refs(AstArena *a, AstLocal loop) {
+	if (!ast_loop_analyzable(a, loop))
+		return;
+	int ivs[AST_DEP_MAXIV], niv;
+	ast_dep_nest_ivs(a, loop, ivs, &niv);
+	AstLocal body, incr;
+	ast_loop_parts(a, loop, ast_op(a, loop), &body, &incr);
+	int nref, overflow;
+	AstDepRef *refs = ast_dep_collect(a, body, ivs, niv, &nref, &overflow);
+	for (int i = 0; i < nref; i++) {
+		AstDepRef *r = &refs[i];
+		fprintf(stderr, "    %s ", r->is_store ? "store" : "load ");
+		if (!r->ok) {
+			fprintf(stderr, "base=? (non-affine/indirect)\n");
+			continue;
+		}
+		if (r->base_kind == 1)
+			fprintf(stderr, "base=sym#%llu", (unsigned long long)r->base_sym);
+		else
+			fprintf(stderr, "base=@%lld", (long long)r->base_off);
+		for (int d = 0; d < r->ndim; d++) {
+			fprintf(stderr, "[");
+			int first = 1;
+			for (int k = 0; k < niv; k++)
+				if (r->sub[d].coeff[k]) {
+					fprintf(stderr, "%s%lld*@%d", first ? "" : "+",
+									(long long)r->sub[d].coeff[k], ivs[k]);
+					first = 0;
+				}
+			if (r->sub[d].cst || first)
+				fprintf(stderr, "%s%lld", first ? "" : "+", (long long)r->sub[d].cst);
+			fprintf(stderr, "]");
+		}
+		fprintf(stderr, "\n");
+	}
+	mcc_free(refs);
+}
+
+void ast_loopdep_dump(AstArena *a, const char *fname) {
+	ast_loopnest_sync(a);
+	fprintf(stderr, "[LOOPDEP] %s: %d loop(s)\n", fname ? fname : "?",
+					ast_loopnest_n);
+	for (int i = 0; i < ast_loopnest_n; i++) {
+		AstLoopInfo *li = &ast_loopnest[i];
+		if (li->unanalyzable || !li->has_iv)
+			continue;
+		fprintf(stderr, "  loop#%u refs:\n", (unsigned)li->header);
+		ast_dep_dump_refs(a, li->header);
+	}
+	for (int i = 0; i < ast_loopnest_n; i++) {
+		AstLoopInfo *li = &ast_loopnest[i];
+		if (li->parent == AST_NONE)
+			continue;
+		int lg = ast_loop_interchange_legal(a, li->parent, li->header);
+		fprintf(stderr, "  interchange(outer#%u,inner#%u): %s\n",
+						(unsigned)li->parent, (unsigned)li->header,
+						lg ? "legal" : "ILLEGAL");
+	}
+	for (int i = 0; i < ast_loopnest_n; i++)
+		for (int j = 0; j < ast_loopnest_n; j++) {
+			if (i == j)
+				continue;
+			if (ast_dep_adjacent(a, ast_loopnest[i].header, ast_loopnest[j].header)) {
+				int lg = ast_loop_fusion_legal(a, ast_loopnest[i].header,
+																			 ast_loopnest[j].header);
+				fprintf(stderr, "  fusion(#%u,#%u): %s\n",
+								(unsigned)ast_loopnest[i].header,
+								(unsigned)ast_loopnest[j].header, lg ? "legal" : "ILLEGAL");
+			}
+		}
+}
+
 static int ast_pre_arm_store(AstArena *a, AstLocal bb, AstLocal *store) {
 	if (ast_kind(a, bb) != AST_BasicBlock)
 		return 0;
@@ -11230,6 +11825,8 @@ void ast_func_end(Sym *sym) {
 			ast_bf_report(ast_cur, funcname);
 		if (ast_loopnest_dump_env)
 			ast_loopnest_dump(ast_cur, funcname);
+		if (ast_loopdep_dump_env)
+			ast_loopdep_dump(ast_cur, funcname);
 		int ast_sv_tmpl = ast_templates_env, ast_sv_promo = ast_promote_env,
 				ast_sv_inl = ast_inline_env;
 		if (ast_fncfg_n) {

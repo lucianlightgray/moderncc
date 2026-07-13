@@ -215,6 +215,10 @@ int ast_loop_bounds(AstArena *a, AstLocal loop, int64_t *bound, int *is_lower);
 int ast_loop_analyzable(AstArena *a, AstLocal loop);
 void ast_loopnest_dump(AstArena *a, const char *fname);
 
+int ast_loop_interchange_legal(AstArena *a, AstLocal outer, AstLocal inner);
+int ast_loop_fusion_legal(AstArena *a, AstLocal loop1, AstLocal loop2);
+void ast_loopdep_dump(AstArena *a, const char *fname);
+
 #endif
 
 #endif
